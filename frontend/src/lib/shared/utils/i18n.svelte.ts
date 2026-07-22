@@ -14,7 +14,12 @@ let _messages = $state<Record<string, string>>({});
 export function i18nMsg(key: string, fallback: string, args?: Record<string, string | number>): string {
 	const raw = _messages[key] || fallback;
 	if (!args) return raw;
-	return raw.replace(/\{\s*\$(\w+)\s*\}/g, (_, k) => String(args[k] ?? ''));
+	// Le backend pré-résout les messages Fluent SANS arguments : une variable
+	// `{ $x }` non résolue en ressort entourée des marques d'isolation
+	// bidirectionnelle U+2068 (FSI) / U+2069 (PDI) — invisibles à l'écran, mais
+	// bien présentes dans le DOM, où elles cassent toute assertion ou regex
+	// portant sur la valeur interpolée. On les consomme avec le placeholder.
+	return raw.replace(/\u2068?\{\s*\$(\w+)\s*\}\u2069?/g, (_, k) => String(args[k] ?? ''));
 }
 
 /** Charge les traductions depuis l'API (appel idempotent côté serveur). */

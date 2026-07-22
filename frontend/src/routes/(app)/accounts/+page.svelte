@@ -180,7 +180,9 @@
 				role: createRole === NO_ROLE ? null : (createRole as AccountRole),
 				postable: createPostable,
 			});
-			toast.success(`${i18nMsg('accounts-created', 'Compte créé')} — ${createNumber.trim()}`);
+			toast.success(
+				i18nMsg('accounts-created', 'Compte { $number } créé', { number: createNumber.trim() })
+			);
 			createOpen = false;
 			await loadAccounts();
 		} catch (err) {
@@ -233,7 +235,9 @@
 				postable: editPostable,
 				version: editAccount.version,
 			});
-			toast.success(`${i18nMsg('accounts-updated', 'Compte modifié')} — ${editAccount.number}`);
+			toast.success(
+				i18nMsg('accounts-updated', 'Compte { $number } modifié', { number: editAccount.number })
+			);
 			editOpen = false;
 			await loadAccounts();
 		} catch (err) {
@@ -262,7 +266,9 @@
 		archiveSubmitting = true;
 		try {
 			await archiveAccount(archiveTarget.id, { version: archiveTarget.version });
-			toast.success(`${i18nMsg('accounts-archived', 'Compte archivé')} — ${archiveTarget.number}`);
+			toast.success(
+				i18nMsg('accounts-archived', 'Compte { $number } archivé', { number: archiveTarget.number })
+			);
 			archiveOpen = false;
 			await loadAccounts();
 		} catch (err) {
@@ -285,7 +291,9 @@
 		reactivatingId = account.id;
 		try {
 			await reactivateAccount(account.id, { version: account.version });
-			toast.success(`${i18nMsg('accounts-reactivated', 'Compte réactivé')} — ${account.number}`);
+			toast.success(
+				i18nMsg('accounts-reactivated', 'Compte { $number } réactivé', { number: account.number })
+			);
 			await loadAccounts();
 		} catch (err) {
 			if (isApiError(err)) {

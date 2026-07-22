@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev
+review
 
 ## Story
 
@@ -286,20 +286,20 @@ Deux nombres différents sous des libellés quasi identiques. **L'arithmétique 
 
 ## Tasks / Subtasks
 
-- [ ] **T1** `AccountRole` en **deux** exemplaires (`kesh-core` `Deserialize` seul + `kesh-db` avec impls sqlx), conversion via `as_str()`/`FromStr` dans `bulk_create_from_chart`, + test de cohérence des deux enums. **Décision déjà tranchée** (§Décision « où vit `AccountRole` », orphan rule) — ne pas la rouvrir — AC-C/F.
-- [ ] **T2** Migration `2026MMDD000001_accounts_role_postable.sql` : `role` + CHECK, `postable`, `singleton_role` généré + UNIQUE, backfill rôles `WHERE role IS NULL`, backfill `postable` (enfants puis `CurrentYearResult`). En-tête commentée au format des migrations récentes (justification métier, bloc « Idempotence », mention non-breaking / pas de bump) — AC-A/B.
-- [ ] **T3** `docs/migrations-idempotence-audit.md` : ligne du tableau + section « Statistiques » (54→55, tracked-by-sqlx 43→44) — AC-A.
-- [ ] **T4** `entities/account.rs` : enum `AccountRole` (pattern `AccountType:11-66`) + `is_singleton()` + champs sur `Account` / `NewAccount` / `AccountUpdate` — AC-C.
-- [ ] **T5** *(pense aussi aux 7 littéraux `AccountUpdate { … }` — `routes/accounts.rs:183` + `repositories/accounts.rs` ×6 — tous dans des fichiers de cette tâche, mais ils cassent à la compilation)* `repositories/accounts.rs` : `COLUMNS:17` **et** `FIND_BY_ID_SQL:19`, `account_snapshot_json:27-38`, `is_no_op_change:164-166`, `create:41`, `update:170` (UPDATE SQL + binds), `bulk_create:354`, `bulk_create_from_chart:421` (rôles du chart + calcul de `postable`) — AC-C/F.
-- [ ] **T6** `repositories/accounts.rs` : `reactivate(pool, id, version, user_id)` — garde parent archivé, no-op si déjà actif, verrou optimiste, audit `account.reactivated`, calqué sur `archive:270` (garde `:278-290`) — AC-E.
-- [ ] **T7** `routes/accounts.rs` : DTO (`AccountResponse`, `CreateAccountRequest`, `UpdateAccountRequest`) + `ReactivateAccountRequest` + handler + route `PUT /{id}/reactivate` dans `comptable_routes` (`lib.rs:282-284`). **+ variant `AppError::AccountRoleAlreadyAssigned` dédié** (modèle `IdeAlreadyExists`, `kesh-api/src/errors.rs:190-196`) avec `details: { accountId, accountNumber, accountName }`, alimenté par un `SELECT` préalable du porteur du rôle ; le `1062` reste le filet de sécurité — AC-D/E.
-- [ ] **T8** `kesh-core/chart_of_accounts` : `AccountRole` (`Deserialize` seul) **+ son propre `is_singleton()`** (`validate_chart:88` est privé dans ce crate), `ChartEntry.role` (`#[serde(default)]`), validation singleton dans `validate_chart`, annotation `role` des 3 JSON — AC-F.
-- [ ] **T9** `exports/csv_tables.rs:198-231` : 2 colonnes de plus dans l'en-tête **et** les lignes — AC-G.
-- [ ] **T10** i18n × 4 locales (nouvelles clés) — AC-H.
-- [ ] **T11** Frontend : `accounts.types.ts` (`AccountRole`, champs sur `AccountResponse`/`Create`/`Update`), `accounts.api.ts` (`reactivateAccount`), page `/accounts/+page.svelte` (colonne Rôle, sélecteurs dialogs, case Postable, bouton Réactiver, migration i18n complète) — AC-E/H.
-- [ ] **T12** Tests : repo inline, chart, migrations (dont invariant « seed ≡ backfill »), `accounts_e2e.rs` (nouveau), CSV export, Vitest, Playwright `accounts.spec.ts` — AC-G.
-- [ ] **T13** Mettre à jour les **29 littéraux `NewAccount { … }`** (15 fichiers, dont les 13 de test listés en AC-G) + les **7 littéraux `AccountUpdate { … }`** (`role: None, postable: true`, ou constructeur dédié). À faire **tôt**, pas au moment du gate — AC-G.
-- [ ] **T14** Doc : `CHANGELOG.md` (entrée [Non publié]) + `README.md` si la feuille de route bouge + **manuel utilisateur FR** `docs/manual/fr/user-manual.tex` section Plan comptable (colonne Rôle, case Postable, bouton Réactiver = features **visibles utilisateur**, donc gate doc-sync CLAUDE.md « stories qui ajoutent/modifient des features visibles utilisateur ») + régénérer le PDF (`make fr` dans `docs/manual/`) si le `.tex` change. Conclure explicitement « aucun changement requis » après lecture si tel est le cas — ne pas sauter l'étape en silence. Puis gate complet backend + frontend + E2E — AC-G.
+- [x] **T1** `AccountRole` en **deux** exemplaires (`kesh-core` `Deserialize` seul + `kesh-db` avec impls sqlx), conversion via `as_str()`/`FromStr` dans `bulk_create_from_chart`, + test de cohérence des deux enums. **Décision déjà tranchée** (§Décision « où vit `AccountRole` », orphan rule) — ne pas la rouvrir — AC-C/F.
+- [x] **T2** Migration `2026MMDD000001_accounts_role_postable.sql` : `role` + CHECK, `postable`, `singleton_role` généré + UNIQUE, backfill rôles `WHERE role IS NULL`, backfill `postable` (enfants puis `CurrentYearResult`). En-tête commentée au format des migrations récentes (justification métier, bloc « Idempotence », mention non-breaking / pas de bump) — AC-A/B.
+- [x] **T3** `docs/migrations-idempotence-audit.md` : ligne du tableau + section « Statistiques » (54→55, tracked-by-sqlx 43→44) — AC-A.
+- [x] **T4** `entities/account.rs` : enum `AccountRole` (pattern `AccountType:11-66`) + `is_singleton()` + champs sur `Account` / `NewAccount` / `AccountUpdate` — AC-C.
+- [x] **T5** *(pense aussi aux 7 littéraux `AccountUpdate { … }` — `routes/accounts.rs:183` + `repositories/accounts.rs` ×6 — tous dans des fichiers de cette tâche, mais ils cassent à la compilation)* `repositories/accounts.rs` : `COLUMNS:17` **et** `FIND_BY_ID_SQL:19`, `account_snapshot_json:27-38`, `is_no_op_change:164-166`, `create:41`, `update:170` (UPDATE SQL + binds), `bulk_create:354`, `bulk_create_from_chart:421` (rôles du chart + calcul de `postable`) — AC-C/F.
+- [x] **T6** `repositories/accounts.rs` : `reactivate(pool, id, version, user_id)` — garde parent archivé, no-op si déjà actif, verrou optimiste, audit `account.reactivated`, calqué sur `archive:270` (garde `:278-290`) — AC-E.
+- [x] **T7** `routes/accounts.rs` : DTO (`AccountResponse`, `CreateAccountRequest`, `UpdateAccountRequest`) + `ReactivateAccountRequest` + handler + route `PUT /{id}/reactivate` dans `comptable_routes` (`lib.rs:282-284`). **+ variant `AppError::AccountRoleAlreadyAssigned` dédié** (modèle `IdeAlreadyExists`, `kesh-api/src/errors.rs:190-196`) avec `details: { accountId, accountNumber, accountName }`, alimenté par un `SELECT` préalable du porteur du rôle ; le `1062` reste le filet de sécurité — AC-D/E.
+- [x] **T8** `kesh-core/chart_of_accounts` : `AccountRole` (`Deserialize` seul) **+ son propre `is_singleton()`** (`validate_chart:88` est privé dans ce crate), `ChartEntry.role` (`#[serde(default)]`), validation singleton dans `validate_chart`, annotation `role` des 3 JSON — AC-F.
+- [x] **T9** `exports/csv_tables.rs:198-231` : 2 colonnes de plus dans l'en-tête **et** les lignes — AC-G.
+- [x] **T10** i18n × 4 locales (nouvelles clés) — AC-H.
+- [x] **T11** Frontend : `accounts.types.ts` (`AccountRole`, champs sur `AccountResponse`/`Create`/`Update`), `accounts.api.ts` (`reactivateAccount`), page `/accounts/+page.svelte` (colonne Rôle, sélecteurs dialogs, case Postable, bouton Réactiver, migration i18n complète) — AC-E/H.
+- [x] **T12** Tests : repo inline, chart, migrations (dont invariant « seed ≡ backfill »), `accounts_e2e.rs` (nouveau), CSV export, Vitest, Playwright `accounts.spec.ts` — AC-G.
+- [x] **T13** Mettre à jour les **29 littéraux `NewAccount { … }`** (15 fichiers, dont les 13 de test listés en AC-G) + les **7 littéraux `AccountUpdate { … }`** (`role: None, postable: true`, ou constructeur dédié). À faire **tôt**, pas au moment du gate — AC-G.
+- [x] **T14** Doc : `CHANGELOG.md` (entrée [Non publié]) + `README.md` si la feuille de route bouge + **manuel utilisateur FR** `docs/manual/fr/user-manual.tex` section Plan comptable (colonne Rôle, case Postable, bouton Réactiver = features **visibles utilisateur**, donc gate doc-sync CLAUDE.md « stories qui ajoutent/modifient des features visibles utilisateur ») + régénérer le PDF (`make fr` dans `docs/manual/`) si le `.tex` change. Conclure explicitement « aucun changement requis » après lecture si tel est le cas — ne pas sauter l'étape en silence. Puis gate complet backend + frontend + E2E — AC-G.
 
 ## Dev Notes
 
@@ -414,8 +414,69 @@ Spec **`ready-for-dev`** confirmée. Prochaine étape : `bmad-dev-story`.
 
 ### Agent Model Used
 
-### Debug Log References
+Opus 4.8 (1M context) — 2026-07-22.
 
-### Completion Notes List
+### Implementation Plan
+
+Ordre dirigé par les dépendances, pas par la numérotation des tâches :
+`kesh-core` (enum + charts) → migration → entité `kesh-db` → repository →
+routes/API → export CSV → **littéraux du workspace (tôt, pas au gate)** →
+i18n → frontend → tests → doc → gate.
+
+### Completion Notes
+
+**Trois défauts réels trouvés par les tests pendant le dev** (chacun corrigé avec son test de non-régression) :
+
+1. **`PUT` sans `role` effaçait le rôle en silence.** serde traite un champ `Option<T>` **absent** comme `None` : `role: Option<AccountRole>` rendait donc le contrat « full-replace » illusoire — un client corrigeant un libellé aurait effacé le rôle du compte, précisément la perte de donnée que la décision d'AC-D voulait empêcher. Corrigé par `Option<Option<AccountRole>>` + désérialiseur `present_or_null` (le double `Option` seul ne suffit pas : serde mappe `null` sur le `None` **externe**). Trouvé par `put_requires_role_and_postable_explicitly`.
+2. **Incohérence de code d'erreur.** `postable` manquant produisait un **422** (rejet serde) là où `role` manquant donnait un **400**. `postable` est passé en `Option<bool>` validé explicitement → les deux champs manquants donnent le même 400 avec un message parlant.
+3. **Une troisième liste de colonnes en dur.** La spec en signalait deux (`COLUMNS`, `FIND_BY_ID_SQL`) ; `find_by_id_in_company:122-125` en avait une **troisième**, non inventoriée. Plutôt que de maintenir trois copies, `FIND_BY_ID_SQL` est devenu `find_by_id_sql()` et les trois sites dérivent de `COLUMNS` — le piège n°1 de la story disparaît structurellement.
+
+**Écarts assumés par rapport à la spec :**
+
+- **`NewAccount::new()` + `with_role()` retenus** plutôt que d'ajouter `role: None, postable: true` à 29 littéraux (l'alternative que la spec recommandait). Absorbe le churn des prochains champs.
+- **`kesh-core` gagne `is_postable()` et `parent_numbers()`** (fonctions pures publiques) : c'est la **contrepartie exacte** des deux `UPDATE` de backfill, ce qui rend l'invariant « seed ≡ backfill » testable sans dupliquer la logique.
+- **Blast radius réel plus large que l'inventaire** : 35 littéraux corrigés au total (29 `NewAccount` + 7 `AccountUpdate` prévus, **plus 8 `ChartEntry`** dans les tests `kesh-core` et 4 fixtures TypeScript non inventoriées).
+- **Prettier n'est pas utilisé par ce projet** (aucune config, aucun script) : un passage `npx prettier` a été annulé et les fichiers restaurés au style du repo (tabulations, quotes simples). Diff frontend final : **+78 / −0** sur les deux fichiers de la feature.
+
+**Vérifications empiriques sur MariaDB 10.11** (le pin de production, pas seulement la 11.3 de la machine de dev) : `ALTER` complet en une instruction sur table peuplée, colonne `VIRTUAL` + UNIQUE, `1062` sur doublon singleton, `4025` sur valeur hors CHECK, `EXTRA = 'VIRTUAL GENERATED'` bien filtré par `backup.rs`, et `UPDATE` auto-référentiel accepté (pas d'`ERROR 1093` — la table dérivée envisagée était inutile).
 
 ### File List
+
+**Backend**
+- `crates/kesh-db/migrations/20260722000001_accounts_role_postable.sql` — **nouveau** : colonnes + contraintes + 12 UPDATE de backfill
+- `crates/kesh-core/src/chart_of_accounts/mod.rs` — `AccountRole` (+`is_singleton`), `ChartEntry.role`, validation singleton, `is_postable`, `parent_numbers`, 6 tests
+- `crates/kesh-core/assets/charts/{pme,association,independant}.json` — annotations `"role"` (10 / 11 / 11 entrées)
+- `crates/kesh-db/src/entities/account.rs` — `AccountRole` + impls sqlx, champs sur `Account`/`NewAccount`/`AccountUpdate`, `NewAccount::new`/`with_role`
+- `crates/kesh-db/src/entities/mod.rs` — réexport `AccountRole`
+- `crates/kesh-db/src/errors.rs` — variant `AccountRoleAlreadyAssigned` + `error_code`
+- `crates/kesh-db/src/repositories/accounts.rs` — `COLUMNS` unique source, `find_by_id_sql()`, snapshot audit, `is_no_op_change`, `create`/`update`/`bulk_create`/`bulk_create_from_chart`, **`reactivate`**, `find_singleton_role_holder`, 8 tests
+- `crates/kesh-api/src/routes/accounts.rs` — DTO, `present_or_null`, handler `reactivate_account`
+- `crates/kesh-api/src/lib.rs` — route `PUT /accounts/{id}/reactivate`
+- `crates/kesh-api/src/errors.rs` — mapping 409 `ACCOUNT_ROLE_ALREADY_ASSIGNED` + `details`
+- `crates/kesh-api/src/exports/csv_tables.rs` — 12 colonnes + 2 tests
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` — 30 clés × 4 locales
+- `crates/kesh-db/tests/accounts_role_backfill.rs` — **nouveau** : invariant seed≡backfill, comptes archivés, colonne générée hors backup
+- `crates/kesh-api/tests/accounts_e2e.rs` — **nouveau** : 10 tests E2E
+- `crates/kesh-db/tests/migrations_upgrade_path.rs` — compteurs 54→55, fenêtre `total - 21`
+- 13 fichiers de test — littéraux `NewAccount` / `AccountUpdate` / `ChartEntry`
+
+**Frontend**
+- `frontend/src/lib/features/accounts/accounts.types.ts` — `AccountRole`, `ACCOUNT_ROLES`, `accountRoleKey`, champs DTO
+- `frontend/src/lib/features/accounts/accounts.api.ts` — `reactivateAccount`
+- `frontend/src/lib/features/accounts/accounts.test.ts` — **nouveau** : 7 tests
+- `frontend/src/routes/(app)/accounts/+page.svelte` — colonne Rôle, badges, dialogs, bouton Réactiver, i18n intégrale
+- `frontend/tests/e2e/accounts.spec.ts` — 3 scénarios Playwright
+- 3 fixtures de test — `role`/`postable`
+
+**Docs**
+- `docs/migrations-idempotence-audit.md` — ligne + statistiques (P5)
+- `CHANGELOG.md`, `README.md`
+- `docs/manual/fr/user-manual.tex` + 3 PDF régénérés
+
+## Change Log — dev
+
+### dev-story (Opus 4.8, 2026-07-22) — socle des rôles de comptes
+
+Implémentation des 14 tâches. Modèle : `role` (10 valeurs, CHECK BINARY fermé) + `postable` sur `accounts`, unicité **structurelle** des 8 rôles singleton par colonne générée `VIRTUAL` `active`-aware + UNIQUE — reprise du « Workaround Option A » déjà en place pour `reconciliation_rules.active_uniq`. Backfill par numéro une seule fois en migration (`WHERE role IS NULL AND active = TRUE`), deux backfills `postable` chart-agnostiques. Réactivation d'un compte archivé (#269) avec garde parent archivé, no-op idempotent et détection du rôle repris. Aucun consommateur du rôle : comportement métier strictement inchangé (AC-I).
+
+Trois défauts trouvés par les tests pendant le dev (effacement silencieux du rôle sur PUT, incohérence 400/422, troisième liste de colonnes en dur) — détail en Completion Notes.
