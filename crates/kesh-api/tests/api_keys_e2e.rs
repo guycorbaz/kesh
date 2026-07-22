@@ -469,6 +469,8 @@ async fn pat_mutation_is_audited_as_api_key(pool: MySqlPool) {
             name: "Caisse".into(),
             account_type: AccountType::Asset,
             parent_id: None,
+            role: None,
+            postable: true,
         },
     )
     .await

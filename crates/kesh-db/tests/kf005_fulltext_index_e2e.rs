@@ -197,6 +197,8 @@ async fn seed_fiscal_year_and_accounts(
             name: "Actif test".into(),
             account_type: AccountType::Asset,
             parent_id: None,
+            role: None,
+            postable: true,
         },
     )
     .await
@@ -212,6 +214,8 @@ async fn seed_fiscal_year_and_accounts(
             name: "Charge test".into(),
             account_type: AccountType::Expense,
             parent_id: None,
+            role: None,
+            postable: true,
         },
     )
     .await

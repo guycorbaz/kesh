@@ -39,7 +39,7 @@ pub mod supplier_invoice;
 pub mod user;
 pub mod vat_rate;
 
-pub use account::{Account, AccountType, AccountUpdate, NewAccount};
+pub use account::{Account, AccountRole, AccountType, AccountUpdate, NewAccount};
 pub use api_key::{ApiKey, ApiKeyScope, NewApiKey};
 pub use audit_log::{AUDIT_ENTITY_ID_NONE, ActorType, AuditLogEntry, NewAuditLogEntry};
 pub use bank_account::{BankAccount, NewBankAccount};

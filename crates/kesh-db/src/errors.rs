@@ -57,6 +57,27 @@ pub enum DbError {
     #[error("La date n'est pas dans l'exercice courant de cette écriture")]
     DateOutsideFiscalYear,
 
+    /// Un rôle de compte **singleton** est déjà porté par un autre compte actif
+    /// de la même société (Story 14-3a).
+    ///
+    /// Variante dédiée — et non le générique [`DbError::UniqueConstraintViolation`]
+    /// — pour que l'API puisse **nommer le compte en conflit** : le mapping
+    /// générique du code MariaDB 1062 produit un message fixe et jette le détail.
+    /// Les champs viennent d'un `SELECT` fait dans la même transaction, avant
+    /// l'écriture ; la contrainte `uq_accounts_company_singleton_role` reste la
+    /// source de vérité (elle rattrape les courses perdues en 1062).
+    #[error("Le rôle {role} est déjà attribué au compte {account_number}")]
+    AccountRoleAlreadyAssigned {
+        /// Rôle en conflit, en PascalCase (ex. `"Receivable"`).
+        role: String,
+        /// ID du compte qui porte déjà le rôle.
+        account_id: i64,
+        /// Numéro du compte qui porte déjà le rôle.
+        account_number: String,
+        /// Libellé du compte qui porte déjà le rôle.
+        account_name: String,
+    },
+
     /// Aucun exercice ouvert ne couvre la date fournie (Story 5.2).
     /// Distinct de `FiscalYearClosed` — l'exercice est peut-être
     /// inexistant (date hors de tous les exercices connus) OU clôturé.
@@ -119,6 +140,7 @@ impl DbError {
             Self::FiscalYearClosed => "FISCAL_YEAR_CLOSED",
             Self::InactiveOrInvalidAccounts => "INACTIVE_OR_INVALID_ACCOUNTS",
             Self::DateOutsideFiscalYear => "DATE_OUTSIDE_FISCAL_YEAR",
+            Self::AccountRoleAlreadyAssigned { .. } => "ACCOUNT_ROLE_ALREADY_ASSIGNED",
             Self::FiscalYearInvalid => "FISCAL_YEAR_INVALID",
             Self::ConfigurationRequired(_) => "CONFIGURATION_REQUIRED",
             Self::ConnectionUnavailable(_) => "CONNECTION_UNAVAILABLE",

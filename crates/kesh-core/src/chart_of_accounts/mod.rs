@@ -31,10 +31,126 @@ impl AccountType {
     }
 }
 
+/// Rôle métier explicite d'un compte (Story 14-3a).
+///
+/// Le rôle dit **à quoi sert** un compte, indépendamment de son numéro : le plan
+/// comptable suisse est un usage, pas une obligation légale, et l'utilisateur
+/// peut renuméroter ses comptes. Aucune logique applicative ne doit déduire un
+/// rôle d'un numéro.
+///
+/// # Duplication assumée avec `kesh-db`
+///
+/// Cet enum existe **en double** : ici (`Deserialize` seul, pour les plans JSON)
+/// et dans `kesh_db::entities::account::AccountRole` (avec les impls `sqlx`).
+/// Ce n'est **pas** une négligence : `sqlx` n'est une dépendance que de
+/// `kesh-db`, et l'orphan rule Rust interdit d'implémenter `Type<MySql>` sur un
+/// type de `kesh-core` depuis `kesh-db` (`error[E0117]`) ; l'inverse créerait un
+/// cycle Cargo. `AccountType` est dupliqué pour exactement la même raison.
+/// Le garde-fou est le test de cohérence, pas la fusion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
+pub enum AccountRole {
+    /// Créances clients (débiteurs).
+    Receivable,
+    /// Produit par défaut de facturation.
+    DefaultRevenue,
+    /// Dettes fournisseurs (créanciers).
+    Payable,
+    /// Impôt préalable (TVA récupérable).
+    VatRecoverable,
+    /// TVA due.
+    VatPayable,
+    /// Décompte TVA.
+    VatSettlement,
+    /// Capital (social / de l'exploitant / de l'association).
+    EquityCapital,
+    /// Autres fonds propres : réserves, fonds affectés ou libres, prélèvements
+    /// et apports privés. Intitulé volontairement **neutre** — les numéros
+    /// 2850/2860 désignent des « fonds » en association mais des mouvements de
+    /// capital de l'exploitant chez l'indépendant. La sémantique fine est
+    /// portée par le nom du compte, pas par le rôle.
+    EquityOther,
+    /// Bénéfice / perte reporté.
+    RetainedEarnings,
+    /// Résultat de l'exercice.
+    CurrentYearResult,
+}
+
+impl AccountRole {
+    /// Les 10 rôles, dans l'ordre de déclaration (source du test de cohérence).
+    pub const ALL: [AccountRole; 10] = [
+        Self::Receivable,
+        Self::DefaultRevenue,
+        Self::Payable,
+        Self::VatRecoverable,
+        Self::VatPayable,
+        Self::VatSettlement,
+        Self::EquityCapital,
+        Self::EquityOther,
+        Self::RetainedEarnings,
+        Self::CurrentYearResult,
+    ];
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Receivable => "Receivable",
+            Self::DefaultRevenue => "DefaultRevenue",
+            Self::Payable => "Payable",
+            Self::VatRecoverable => "VatRecoverable",
+            Self::VatPayable => "VatPayable",
+            Self::VatSettlement => "VatSettlement",
+            Self::EquityCapital => "EquityCapital",
+            Self::EquityOther => "EquityOther",
+            Self::RetainedEarnings => "RetainedEarnings",
+            Self::CurrentYearResult => "CurrentYearResult",
+        }
+    }
+
+    /// `true` si au plus **un compte actif** par société peut porter ce rôle.
+    ///
+    /// # ⚠️ Liste synchronisée à TROIS endroits
+    ///
+    /// 1. le `CASE WHEN active AND role IN (…)` de la colonne générée
+    ///    `accounts.singleton_role` (migration `20260722000001_accounts_role_postable.sql`) ;
+    /// 2. `kesh_db::entities::account::AccountRole::is_singleton()` ;
+    /// 3. **ici** — nécessaire car [`validate_chart`] est privé à ce crate et
+    ///    `kesh-core` ne peut pas atteindre `kesh-db`.
+    ///
+    /// Toute modification doit toucher les trois. Le test
+    /// `singleton_list_matches_sql_generation_expression` (crate `kesh-db`)
+    /// compare la liste Rust à l'expression SQL réellement en base.
+    pub fn is_singleton(&self) -> bool {
+        match self {
+            Self::Receivable
+            | Self::DefaultRevenue
+            | Self::Payable
+            | Self::VatRecoverable
+            | Self::VatPayable
+            | Self::VatSettlement
+            | Self::RetainedEarnings
+            | Self::CurrentYearResult => true,
+            // Multi-valués : une société a couramment plusieurs comptes de
+            // capital ou de fonds propres divers (2800 + 2850 + 2860).
+            Self::EquityCapital | Self::EquityOther => false,
+        }
+    }
+}
+
+impl std::str::FromStr for AccountRole {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::ALL
+            .iter()
+            .find(|r| r.as_str() == s)
+            .copied()
+            .ok_or_else(|| format!("AccountRole inconnu : {s}"))
+    }
+}
+
 /// Entrée d'un plan comptable JSON.
 ///
 /// Les noms sont multilingues (clés : `"fr"`, `"de"`, `"it"`, `"en"`).
 /// `parent_number` référence le numéro du compte parent dans la hiérarchie.
+/// `role` est optionnel : un plan sans annotation reste valide (non-breaking).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChartEntry {
@@ -43,6 +159,8 @@ pub struct ChartEntry {
     #[serde(rename = "type")]
     pub account_type: AccountType,
     pub parent_number: Option<String>,
+    #[serde(default)]
+    pub role: Option<AccountRole>,
 }
 
 /// Résout le nom d'un compte dans la langue demandée, avec fallback FR.
@@ -110,7 +228,55 @@ fn validate_chart(entries: &[ChartEntry]) -> Result<(), CoreError> {
         }
     }
 
+    // Story 14-3a : un rôle singleton ne peut être porté que par un compte par
+    // société — le détecter dès le JSON évite qu'une faute de frappe dans un
+    // plan livré ne se transforme en violation de `uq_accounts_company_singleton_role`
+    // au moment du seed, où le diagnostic serait bien plus obscur.
+    let mut singletons = HashSet::new();
+    for entry in entries {
+        if let Some(role) = entry.role
+            && role.is_singleton()
+            && !singletons.insert(role)
+        {
+            return Err(CoreError::InvalidChart(format!(
+                "rôle singleton dupliqué : {} (compte {})",
+                role.as_str(),
+                entry.number
+            )));
+        }
+    }
+
     Ok(())
+}
+
+/// `true` si l'entrée doit être créée non-postable.
+///
+/// Deux causes, toutes deux **chart-agnostiques** (aucun numéro codé en dur) :
+/// 1. l'entrée est le parent d'une autre entrée du plan — c'est un compte titre
+///    ou de regroupement, on ne poste pas dessus ;
+/// 2. l'entrée porte le rôle [`AccountRole::CurrentYearResult`] — en modèle
+///    « temps réel virtuel » (Story 14-1), l'application **calcule** le résultat
+///    de l'exercice à chaque rendu ; y poster serait un double-comptage garanti.
+///
+/// [`AccountRole::RetainedEarnings`] reste postable : un utilisateur qui migre
+/// depuis un autre logiciel doit pouvoir poser son report à nouveau d'ouverture.
+///
+/// Cette fonction est la **contrepartie exacte** des deux `UPDATE` de backfill
+/// de la migration `20260722000001_accounts_role_postable.sql` ; l'invariant
+/// « seed ≡ backfill » est vérifié par un test dédié dans `kesh-db`.
+pub fn is_postable(entry: &ChartEntry, parent_numbers: &HashSet<&str>) -> bool {
+    if parent_numbers.contains(entry.number.as_str()) {
+        return false;
+    }
+    entry.role != Some(AccountRole::CurrentYearResult)
+}
+
+/// Collecte les numéros qui sont parents d'au moins une entrée du plan.
+pub fn parent_numbers(entries: &[ChartEntry]) -> HashSet<&str> {
+    entries
+        .iter()
+        .filter_map(|e| e.parent_number.as_deref())
+        .collect()
 }
 
 #[cfg(test)]
@@ -256,6 +422,7 @@ mod tests {
             ]),
             account_type: AccountType::Asset,
             parent_number: None,
+            role: None,
         };
         assert_eq!(resolve_name(&entry, "de"), "Kasse");
         assert_eq!(resolve_name(&entry, "DE"), "Kasse");
@@ -268,6 +435,7 @@ mod tests {
             name: HashMap::from([("fr".to_string(), "Caisse".to_string())]),
             account_type: AccountType::Asset,
             parent_number: None,
+            role: None,
         };
         assert_eq!(resolve_name(&entry, "de"), "Caisse");
     }
@@ -279,6 +447,7 @@ mod tests {
             name: HashMap::new(),
             account_type: AccountType::Asset,
             parent_number: None,
+            role: None,
         };
         assert_eq!(resolve_name(&entry, "fr"), "1000");
     }
@@ -291,12 +460,14 @@ mod tests {
                 name: HashMap::from([("fr".to_string(), "A".to_string())]),
                 account_type: AccountType::Asset,
                 parent_number: None,
+                role: None,
             },
             ChartEntry {
                 number: "1000".to_string(),
                 name: HashMap::from([("fr".to_string(), "B".to_string())]),
                 account_type: AccountType::Asset,
                 parent_number: None,
+                role: None,
             },
         ];
         let err = validate_chart(&entries).unwrap_err();
@@ -310,8 +481,138 @@ mod tests {
             name: HashMap::from([("fr".to_string(), "Caisse".to_string())]),
             account_type: AccountType::Asset,
             parent_number: Some("999".to_string()),
+            role: None,
         }];
         let err = validate_chart(&entries).unwrap_err();
         assert!(err.to_string().contains("parent inexistant"));
+    }
+
+    // =======================================================================
+    // Story 14-3a — rôles dans les plans comptables
+    // =======================================================================
+
+    #[test]
+    fn each_chart_carries_expected_roles() {
+        for org in ["Pme", "Association", "Independant"] {
+            let chart = load_chart(org).unwrap();
+            let with_role: Vec<_> = chart.iter().filter(|e| e.role.is_some()).collect();
+            assert!(
+                with_role.len() >= 10,
+                "{org} : au moins 10 comptes doivent porter un rôle, trouvé {}",
+                with_role.len()
+            );
+
+            // Les 8 rôles singleton apparaissent EXACTEMENT une fois par plan.
+            for role in AccountRole::ALL.iter().filter(|r| r.is_singleton()) {
+                let n = chart.iter().filter(|e| e.role == Some(*role)).count();
+                assert_eq!(
+                    n,
+                    1,
+                    "{org} : le rôle singleton {} doit apparaître exactement une fois (trouvé {n})",
+                    role.as_str()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn equity_other_differs_across_charts_but_stays_multi_valued() {
+        // PME : 2900 seul. Association/Indépendant : 2850 + 2860. Ensembles
+        // disjoints — d'où un backfill unique WHERE number IN ('2900','2850','2860').
+        let pme: Vec<&str> = load_chart("Pme")
+            .unwrap()
+            .iter()
+            .filter(|e| e.role == Some(AccountRole::EquityOther))
+            .map(|e| e.number.clone().leak() as &str)
+            .collect();
+        assert_eq!(pme, vec!["2900"]);
+
+        for org in ["Association", "Independant"] {
+            let chart = load_chart(org).unwrap();
+            let mut nums: Vec<&str> = chart
+                .iter()
+                .filter(|e| e.role == Some(AccountRole::EquityOther))
+                .map(|e| e.number.as_str())
+                .collect();
+            nums.sort_unstable();
+            assert_eq!(nums, vec!["2850", "2860"], "{org}");
+        }
+        assert!(!AccountRole::EquityOther.is_singleton());
+    }
+
+    #[test]
+    fn validate_chart_rejects_duplicate_singleton_role() {
+        let mk = |number: &str, role: Option<AccountRole>| ChartEntry {
+            number: number.into(),
+            name: HashMap::from([("fr".to_string(), format!("Compte {number}"))]),
+            account_type: AccountType::Asset,
+            parent_number: None,
+            role,
+        };
+
+        // Deux comptes portant Receivable (singleton) → rejet.
+        let dup = vec![
+            mk("1100", Some(AccountRole::Receivable)),
+            mk("1101", Some(AccountRole::Receivable)),
+        ];
+        let err = validate_chart(&dup).expect_err("doublon de rôle singleton attendu");
+        assert!(
+            format!("{err:?}").contains("Receivable"),
+            "le message doit nommer le rôle : {err:?}"
+        );
+
+        // Deux comptes EquityOther (multi-valué) → accepté.
+        let ok = vec![
+            mk("2850", Some(AccountRole::EquityOther)),
+            mk("2860", Some(AccountRole::EquityOther)),
+        ];
+        validate_chart(&ok).expect("EquityOther est multi-valué");
+    }
+
+    #[test]
+    fn chart_without_role_field_still_parses() {
+        // Non-breaking : un plan JSON sans `role` reste valide (#[serde(default)]).
+        let json = r#"[{"number":"1","name":{"fr":"Actifs"},"type":"Asset","parentNumber":null}]"#;
+        let entries: Vec<ChartEntry> = serde_json::from_str(json).unwrap();
+        assert_eq!(entries[0].role, None);
+    }
+
+    #[test]
+    fn postability_is_chart_agnostic() {
+        let chart = load_chart("Pme").unwrap();
+        let parents = parent_numbers(&chart);
+
+        let by_number = |n: &str| chart.iter().find(|e| e.number == n).unwrap();
+
+        // Comptes titres (ont des enfants) → non-postables, sans référence au numéro.
+        assert!(
+            !is_postable(by_number("1"), &parents),
+            "1 est un compte titre"
+        );
+        assert!(
+            !is_postable(by_number("10"), &parents),
+            "10 est un compte titre"
+        );
+        assert!(
+            !is_postable(by_number("28"), &parents),
+            "28 est un compte titre"
+        );
+
+        // Feuille ordinaire → postable.
+        assert!(is_postable(by_number("1000"), &parents));
+
+        // Le compte de résultat est non-postable (l'app le calcule, Story 14-1).
+        assert!(!is_postable(by_number("2979"), &parents));
+
+        // Le report à nouveau reste postable (soldes d'ouverture d'un migrant).
+        assert!(is_postable(by_number("2970"), &parents));
+    }
+
+    #[test]
+    fn account_role_from_str_round_trip() {
+        for r in AccountRole::ALL {
+            assert_eq!(r.as_str().parse::<AccountRole>().unwrap(), r);
+        }
+        assert!("Bogus".parse::<AccountRole>().is_err());
     }
 }

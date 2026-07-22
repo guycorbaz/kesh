@@ -2006,6 +2006,38 @@ impl IntoResponse for AppError {
                         &t("error-conflict", "Ressource déjà existante"),
                     )
                 }
+                // Story 14-3a : code client dédié, distinct du générique
+                // RESOURCE_CONFLICT, pour que le formulaire puisse NOMMER le
+                // compte qui porte déjà le rôle (le mapping 1062 générique
+                // renvoie un message fixe et jette le détail). Même motivation
+                // que `IdeAlreadyExists`.
+                DbError::AccountRoleAlreadyAssigned {
+                    role,
+                    account_id,
+                    account_number,
+                    account_name,
+                } => {
+                    let fallback = format!(
+                        "Le rôle est déjà attribué au compte {account_number} — {account_name}. Retirez-le d'abord de ce compte."
+                    );
+                    let mut args = FluentArgs::new();
+                    args.set("number", account_number.clone());
+                    args.set("name", account_name.clone());
+                    let msg = t_args("accounts-role-conflict", &fallback, &args);
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "ACCOUNT_ROLE_ALREADY_ASSIGNED",
+                            "message": msg,
+                            "details": {
+                                "role": role,
+                                "accountId": account_id,
+                                "accountNumber": account_number,
+                                "accountName": account_name,
+                            },
+                        }
+                    });
+                    (StatusCode::CONFLICT, Json(body)).into_response()
+                }
                 DbError::ForeignKeyViolation(m) => {
                     tracing::warn!("fk violation: {m}");
                     // Cas spécifique : suppression d'une écriture comptable encore

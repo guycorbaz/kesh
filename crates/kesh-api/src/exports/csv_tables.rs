@@ -207,6 +207,10 @@ pub fn serialize_accounts_csv<W: Write>(rows: &[Account], writer: W) -> Result<(
         "account_type",
         "parent_id",
         "active",
+        // Story 14-3a — l'en-tête est écrit à la main : tout champ ajouté à
+        // `Account` doit être répercuté ici ET dans le write_record ci-dessous.
+        "role",
+        "postable",
         "version",
         "created_at",
         "updated_at",
@@ -221,6 +225,8 @@ pub fn serialize_accounts_csv<W: Write>(rows: &[Account], writer: W) -> Result<(
             a.account_type.as_str().to_string(),
             fmt_opt_i64(a.parent_id),
             fmt_bool(a.active),
+            a.role.map(|r| r.as_str().to_string()).unwrap_or_default(),
+            fmt_bool(a.postable),
             a.version.to_string(),
             fmt_dt(a.created_at),
             fmt_dt(a.updated_at),
@@ -932,7 +938,7 @@ pub fn serialize_bank_profiles_csv<W: Write>(
 mod tests {
     use super::*;
     use chrono::NaiveTime;
-    use kesh_db::entities::{AccountType, Journal as JournalEnum};
+    use kesh_db::entities::{AccountRole, AccountType, Journal as JournalEnum};
     use rust_decimal_macros::dec;
 
     fn naive_dt(y: i32, m: u32, d: u32, h: u32, mi: u32, s: u32) -> NaiveDateTime {
@@ -950,6 +956,8 @@ mod tests {
             account_type: AccountType::Asset,
             parent_id: None,
             active: true,
+            role: Some(AccountRole::Receivable),
+            postable: true,
             version: 1,
             created_at: naive_dt(2026, 1, 1, 0, 0, 0),
             updated_at: naive_dt(2026, 1, 2, 12, 30, 45),

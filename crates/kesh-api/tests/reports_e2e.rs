@@ -219,6 +219,8 @@ async fn create_acc(
             name: name.into(),
             account_type,
             parent_id: None,
+            role: None,
+            postable: true,
         },
     )
     .await

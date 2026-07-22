@@ -215,6 +215,8 @@ async fn create_account_with_type(
             name: name.into(),
             account_type,
             parent_id: None,
+            role: None,
+            postable: true,
         },
     )
     .await

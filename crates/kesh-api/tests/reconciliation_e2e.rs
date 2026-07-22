@@ -2417,6 +2417,8 @@ async fn accept_with_explicit_split_type_runs_split_flow(pool: MySqlPool) {
             name: "Banque".into(),
             account_type: AccountType::Asset,
             parent_id: None,
+            role: None,
+            postable: true,
         },
     )
     .await
@@ -2431,6 +2433,8 @@ async fn accept_with_explicit_split_type_runs_split_flow(pool: MySqlPool) {
             name: "Salaires".into(),
             account_type: AccountType::Expense,
             parent_id: None,
+            role: None,
+            postable: true,
         },
     )
     .await
@@ -2445,6 +2449,8 @@ async fn accept_with_explicit_split_type_runs_split_flow(pool: MySqlPool) {
             name: "Charges sociales".into(),
             account_type: AccountType::Expense,
             parent_id: None,
+            role: None,
+            postable: true,
         },
     )
     .await

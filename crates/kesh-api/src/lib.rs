@@ -282,6 +282,11 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/accounts/{id}/archive",
             put(routes::accounts::archive_account),
         )
+        // Story 14-3a (#269) — réactivation d'un compte archivé.
+        .route(
+            "/api/v1/accounts/{id}/reactivate",
+            put(routes::accounts::reactivate_account),
+        )
         .route(
             "/api/v1/journal-entries",
             post(routes::journal_entries::create_journal_entry),
