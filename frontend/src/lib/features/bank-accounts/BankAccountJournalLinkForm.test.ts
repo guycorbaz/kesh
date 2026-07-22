@@ -34,6 +34,8 @@ function makeAccount(
 		accountType,
 		parentId: null,
 		active,
+		role: null,
+		postable: true,
 		version: 1,
 		createdAt: '2026-01-01T00:00:00Z',
 		updatedAt: '2026-01-01T00:00:00Z',

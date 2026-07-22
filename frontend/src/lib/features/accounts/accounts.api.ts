@@ -4,6 +4,7 @@ import type {
 	CreateAccountRequest,
 	UpdateAccountRequest,
 	ArchiveAccountRequest,
+	ReactivateAccountRequest,
 } from './accounts.types';
 
 export async function fetchAccounts(includeArchived = false): Promise<AccountResponse[]> {
@@ -28,4 +29,21 @@ export async function archiveAccount(
 	req: ArchiveAccountRequest
 ): Promise<AccountResponse> {
 	return apiClient.put<AccountResponse>(`/api/v1/accounts/${id}/archive`, req);
+}
+
+/**
+ * Réactive un compte archivé (Story 14-3a, #269).
+ *
+ * `PUT` par symétrie locale avec `archiveAccount` — la feature Projets utilise
+ * `POST /unarchive`, mais on privilégie ici la cohérence de la ressource.
+ *
+ * Peut échouer en 409 : parent archivé, conflit de version, ou
+ * `ACCOUNT_ROLE_ALREADY_ASSIGNED` si le rôle singleton du compte a été repris
+ * par un autre compte pendant son archivage.
+ */
+export async function reactivateAccount(
+	id: number,
+	req: ReactivateAccountRequest
+): Promise<AccountResponse> {
+	return apiClient.put<AccountResponse>(`/api/v1/accounts/${id}/reactivate`, req);
 }

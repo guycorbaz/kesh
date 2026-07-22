@@ -157,6 +157,37 @@ account-type-liability = Liability
 account-type-revenue = Revenue
 account-type-expense = Expense
 account-archived-label = Archived
+# --- Story 14-3a: account roles & postability ---
+account-field-role = Role
+account-role-none = None
+account-role-receivable = Trade receivables
+account-role-default-revenue = Default revenue
+account-role-payable = Trade payables
+account-role-vat-recoverable = Input VAT
+account-role-vat-payable = VAT payable
+account-role-vat-settlement = VAT settlement
+account-role-equity-capital = Capital
+account-role-equity-other = Other equity
+account-role-retained-earnings = Retained earnings
+account-role-current-year-result = Current year result
+account-role-archived-hint = Role inactive — this account is archived
+account-field-postable = Postable
+account-postable-no = Not postable
+account-postable-hint = Informational — journal entry input is not blocked yet
+accounts-reactivate = Reactivate
+accounts-reactivate-aria = Reactivate account { $number }
+accounts-reactivated = Account reactivated
+accounts-role-conflict = The role is already assigned to account { $number } — { $name }. Remove it from that account first.
+accounts-error-number-required = Number is required.
+accounts-error-name-required = Name is required.
+accounts-error-number-exists = This account number already exists.
+accounts-error-stale = This page is out of date. Reload it and try again.
+accounts-created = Account created
+accounts-updated = Account updated
+accounts-archived = Account archived
+accounts-count = { $count } accounts
+accounts-show-archived = Show archived accounts
+
 
 # Mode Guided/Expert (Story 2.5)
 mode-guided-label = Guided

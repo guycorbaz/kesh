@@ -157,6 +157,37 @@ account-type-liability = Passivo
 account-type-revenue = Ricavo
 account-type-expense = Costo
 account-archived-label = Archiviato
+# --- Story 14-3a: ruoli dei conti e registrabilità ---
+account-field-role = Ruolo
+account-role-none = Nessuno
+account-role-receivable = Crediti verso clienti
+account-role-default-revenue = Ricavo predefinito
+account-role-payable = Debiti verso fornitori
+account-role-vat-recoverable = Imposta precedente (IVA recuperabile)
+account-role-vat-payable = IVA dovuta
+account-role-vat-settlement = Rendiconto IVA
+account-role-equity-capital = Capitale
+account-role-equity-other = Altri fondi propri
+account-role-retained-earnings = Utile/perdita riportato
+account-role-current-year-result = Risultato dell'esercizio
+account-role-archived-hint = Ruolo inattivo — questo conto è archiviato
+account-field-postable = Registrabile
+account-postable-no = Non registrabile
+account-postable-hint = Indicativo — la registrazione non è ancora bloccata
+accounts-reactivate = Riattivare
+accounts-reactivate-aria = Riattivare il conto { $number }
+accounts-reactivated = Conto riattivato
+accounts-role-conflict = Il ruolo è già assegnato al conto { $number } — { $name }. Rimuovetelo prima da quel conto.
+accounts-error-number-required = Il numero è obbligatorio.
+accounts-error-name-required = Il nome è obbligatorio.
+accounts-error-number-exists = Questo numero di conto esiste già.
+accounts-error-stale = La pagina non è più aggiornata. Ricaricatela e riprovate.
+accounts-created = Conto creato
+accounts-updated = Conto modificato
+accounts-archived = Conto archiviato
+accounts-count = { $count } conti
+accounts-show-archived = Mostrare i conti archiviati
+
 
 # Modalità Guidato/Esperto (Story 2.5)
 mode-guided-label = Guidato

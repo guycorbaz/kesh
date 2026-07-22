@@ -157,6 +157,37 @@ account-type-liability = Passiv
 account-type-revenue = Ertrag
 account-type-expense = Aufwand
 account-archived-label = Archiviert
+# --- Story 14-3a: Kontenrollen & Buchbarkeit ---
+account-field-role = Rolle
+account-role-none = Keine
+account-role-receivable = Forderungen aus Lieferungen und Leistungen
+account-role-default-revenue = Standard-Ertragskonto
+account-role-payable = Verbindlichkeiten aus Lieferungen und Leistungen
+account-role-vat-recoverable = Vorsteuer
+account-role-vat-payable = Geschuldete MWST
+account-role-vat-settlement = MWST-Abrechnung
+account-role-equity-capital = Kapital
+account-role-equity-other = Übriges Eigenkapital
+account-role-retained-earnings = Gewinn-/Verlustvortrag
+account-role-current-year-result = Jahresergebnis
+account-role-archived-hint = Rolle inaktiv — dieses Konto ist archiviert
+account-field-postable = Buchbar
+account-postable-no = Nicht buchbar
+account-postable-hint = Nur Hinweis — die Buchungserfassung wird noch nicht blockiert
+accounts-reactivate = Reaktivieren
+accounts-reactivate-aria = Konto { $number } reaktivieren
+accounts-reactivated = Konto reaktiviert
+accounts-role-conflict = Die Rolle ist bereits dem Konto { $number } — { $name } zugewiesen. Entfernen Sie sie zuerst dort.
+accounts-error-number-required = Die Nummer ist erforderlich.
+accounts-error-name-required = Der Name ist erforderlich.
+accounts-error-number-exists = Diese Kontonummer existiert bereits.
+accounts-error-stale = Die Seite ist nicht mehr aktuell. Laden Sie sie neu und versuchen Sie es erneut.
+accounts-created = Konto erstellt
+accounts-updated = Konto geändert
+accounts-archived = Konto archiviert
+accounts-count = { $count } Konten
+accounts-show-archived = Archivierte Konten anzeigen
+
 
 # Mode Geführt/Experte (Story 2.5)
 mode-guided-label = Geführt

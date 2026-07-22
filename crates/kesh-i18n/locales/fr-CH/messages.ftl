@@ -157,6 +157,37 @@ account-type-liability = Passif
 account-type-revenue = Produit
 account-type-expense = Charge
 account-archived-label = Archivé
+# --- Story 14-3a : rôles de comptes & postabilité ---
+account-field-role = Rôle
+account-role-none = Aucun
+account-role-receivable = Créances clients
+account-role-default-revenue = Produit par défaut
+account-role-payable = Dettes fournisseurs
+account-role-vat-recoverable = Impôt préalable (TVA récupérable)
+account-role-vat-payable = TVA due
+account-role-vat-settlement = Décompte TVA
+account-role-equity-capital = Capital
+account-role-equity-other = Autres fonds propres
+account-role-retained-earnings = Bénéfice/perte reporté
+account-role-current-year-result = Résultat de l'exercice
+account-role-archived-hint = Rôle inactif — ce compte est archivé
+account-field-postable = Postable
+account-postable-no = Non postable
+account-postable-hint = Indicatif — la saisie d'écriture ne le bloque pas encore
+accounts-reactivate = Réactiver
+accounts-reactivate-aria = Réactiver le compte { $number }
+accounts-reactivated = Compte réactivé
+accounts-role-conflict = Le rôle est déjà attribué au compte { $number } — { $name }. Retirez-le d'abord de ce compte.
+accounts-error-number-required = Le numéro est requis.
+accounts-error-name-required = Le nom est requis.
+accounts-error-number-exists = Ce numéro de compte existe déjà.
+accounts-error-stale = La page n'est plus à jour. Rechargez-la avant de réessayer.
+accounts-created = Compte créé
+accounts-updated = Compte modifié
+accounts-archived = Compte archivé
+accounts-count = { $count } comptes
+accounts-show-archived = Afficher les comptes archivés
+
 
 # Mode Guidé/Expert (Story 2.5)
 mode-guided-label = Guidé
