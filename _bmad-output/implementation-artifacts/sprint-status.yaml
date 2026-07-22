@@ -221,7 +221,7 @@ development_status:
 
   # Epic 14: Clôture d'Exercice (ex-Epic 12, renumbered 2026-04-20)
   epic-14: in-progress
-  14-1-cloture-report-des-soldes: review
+  14-1-cloture-report-des-soldes: done
   14-2-reouvrir-degiger-exercice: backlog  # Admin-only + motif obligatoire + audit fiscal_year.reopened + garde-fou d'ordre (interdit si exercice postérieur clos) ; change la décision 'réouverture interdite' (fiscal_years.rs:600) — modèle Odoo verrou réversible tracé
   14-3-roles-comptes-configurables: backlog  # attribut role sur accounts (chart-agnostic) : role explicite par compte, JAMAIS déduit du numéro ; remplace le hardcode EQUITY_RESULT_ACCOUNT_NUMBERS ; durcit 14-1 (compte de résultat non-postable, présentation equity par role)
   14-4-bilan-ouverture-soldes-depart: backlog  # saisie des soldes de départ au 1er démarrage (migration depuis autre logiciel) → écriture d'ouverture spéciale datée au 1er jour du 1er exercice ; dépend de 14-3 (roles)

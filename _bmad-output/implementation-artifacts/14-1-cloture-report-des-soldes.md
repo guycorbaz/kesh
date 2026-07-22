@@ -2,7 +2,7 @@
 
 ## Status
 
-review
+done
 
 ## Story
 
@@ -128,7 +128,7 @@ Le code exclut aujourd'hui `EQUITY_RESULT_ACCOUNT_NUMBERS = ["2979","2800"]` de 
 
 Pass 1 (code-review adversarial, Sonnet ×3 : Blind Hunter + Edge Case Hunter + Acceptance Auditor, 2026-07-21) :
 
-- [ ] [Review][Patch] Garde « rapport vide » ignore `retained_earnings`/`equity_result` — la section fonds propres est masquée quand actif ET passif sont vides mais report/résultat non-nuls et opposés (bénéfice N entièrement dépensé en N+1 → tous les comptes de bilan retombent à 0). 3 couches : `frontend/src/lib/features/reports/reports.api.ts:150` (`isReportEmpty`), `crates/kesh-report/src/csv.rs:71`, `crates/kesh-report/src/pdf.rs:458`. Sévérité **HIGH** (edge+auditor). Correctif : ajouter `&& retained.is_zero() && equity_result.is_zero()` (resp. `&& Number(retainedEarnings)===0 && Number(equityResult)===0`) aux 3 gardes + tests couvrant le cas.
+- [x] [Review][Patch] Garde « rapport vide » ignore `retained_earnings`/`equity_result` — la section fonds propres est masquée quand actif ET passif sont vides mais report/résultat non-nuls et opposés (bénéfice N entièrement dépensé en N+1 → tous les comptes de bilan retombent à 0). 3 couches : `frontend/src/lib/features/reports/reports.api.ts:150` (`isReportEmpty`), `crates/kesh-report/src/csv.rs:71`, `crates/kesh-report/src/pdf.rs:458`. Sévérité **HIGH** (edge+auditor). **RÉSOLU** Pass 1 : `&& retained.is_zero() && equity_result.is_zero()` (resp. `Number(...)===0`) aux 3 gardes + 3 tests de régression (csv/pdf/isReportEmpty). Confirmé sain en Pass 2 (Haiku ×3, 0 finding).
 - [x] [Review][Dismiss] BH-1 (HIGH) « garde `create_in_tx` casse les appelants » — **faux positif** : tous les call sites (`invoices`, `supplier_invoices` ×3, `credit_notes`, `reconciliation` ×4) résolvent l'exercice via `find_open_covering_date(<date d'écriture>)` → garde inatteignable. Réfuté par grep + gate 1898/1898.
 - [x] [Review][Dismiss] BH-2 (MEDIUM) « exercices Open chevauchants cassent le split » — **faux positif** : `fiscal_years::find_overlapping` bloque les chevauchements à la création.
 
@@ -255,3 +255,14 @@ Cartographie ground-truth (Read direct des fichiers, ancres spec confirmées) �
 ### dev-story (Opus 4.8, 2026-07-21) — modèle temps réel virtuel implémenté
 
 Implémentation bout-en-bout des 10 tâches (T1-T10). Modèle « report à-nouveau virtuel » : bilan cumulatif cross-exercice depuis un **point unique** (`fetch_cumulative_section`, couture snapshot), split fonds propres « résultat reporté / résultat de l'exercice » ancré `fy_start`, hardcode `EQUITY_RESULT_ACCOUNT_NUMBERS` **retiré**. Garde structurelle `create_in_tx` (`DateOutsideFiscalYear`) → équation vraie par construction. Exports CSV/PDF + frontend + i18n 4 langues + note AC-F trial_balance. `EXPLAIN` : index-served (pas de migration). Issue snapshot #270 créée. Gate : fmt/clippy verts, `report_aggregates` 11/11, `reports_e2e` 35/35, frontend check/lint-i18n/415 unit/build verts.
+
+## Change Log — code-review
+
+### CONVERGÉ en 2 passes (Sonnet ×3 → Haiku ×3, rotation LLM + contexte frais)
+
+- **Pass 1** (Sonnet ×3 : Blind Hunter + Edge Case Hunter + Acceptance Auditor, 2026-07-21) — **1 HIGH réel** + 2 faux positifs :
+  - **HIGH (edge+auditor)** — garde « rapport vide » ignorait `retained_earnings`/`equity_result` → section fonds propres masquée quand actif/passif retombent à 0 mais report/résultat non nuls et opposés (bénéfice N dépensé en N+1). 3 couches. **Patché** (`isReportEmpty`/`csv.rs`/`pdf.rs` : garde = actif/passif vides ET report/résultat nuls) + 3 tests de régression.
+  - **DISMISS** BH-1 (HIGH « garde `create_in_tx` casse les appelants ») — faux positif : tous les call sites résolvent l'exercice via `find_open_covering_date(date d'écriture)` (grep ground-truth + gate 1898/1898).
+  - **DISMISS** BH-2 (MEDIUM « exercices Open chevauchants ») — faux positif : `find_overlapping` bloque les chevauchements à la création.
+- **Pass 2** (Haiku ×3, contexte frais, diff aplati final, 2026-07-21) — **0 finding** sur les 3 reviewers. Patch Pass 1 vérifié appliqué sur les 3 couches (grep ground-truth), cœur confirmé sain (signes, bornes, ancrage `fy_start`, hardcode retiré), AC A-I conformes.
+- **Trend** : Pass 1 (1 HIGH + 2 FP) → Pass 2 (0) → **CONVERGÉ**. Critère d'arrêt Review Iteration Rule atteint (0 CRITICAL/HIGH/MEDIUM). Gate complet re-validé post-patch sur MariaDB tmpfs.
