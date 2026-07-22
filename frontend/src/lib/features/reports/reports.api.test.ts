@@ -10,7 +10,9 @@ import {
 	slugify,
 	getAgedReceivables,
 	downloadAgedReceivables,
+	isReportEmpty,
 } from './reports.api';
+import type { BalanceSheetDto } from './reports.types';
 
 function fakeJwt(): string {
 	const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
@@ -311,6 +313,51 @@ describe('reports.api — Story 9-2a', () => {
 			const url = mockFetch.mock.calls[0][0] as string;
 			expect(url).toContain('/api/v1/reports/aged-receivables/export');
 			expect(url).toContain('format=csv');
+		});
+	});
+
+	// Story 14-1 review Pass 1 — `isReportEmpty('balance-sheet', …)` doit tenir
+	// compte de retainedEarnings/equityResult, sinon la section fonds propres est
+	// masquée quand actif/passif retombent à 0 mais report/résultat sont non nuls.
+	describe('isReportEmpty — balance-sheet (Story 14-1)', () => {
+		function bs(partial: Partial<BalanceSheetDto>): BalanceSheetDto {
+			return {
+				period: { fiscalYearId: 1, startDate: '2026-01-01', endDate: '2026-12-31' },
+				assets: [],
+				liabilities: [],
+				totalAssets: '0',
+				totalLiabilities: '0',
+				retainedEarnings: '0',
+				equityResult: '0',
+				equationHolds: true,
+				...partial,
+			};
+		}
+
+		it('vide quand actif/passif ET report/résultat sont tous nuls', () => {
+			expect(isReportEmpty('balance-sheet', bs({}))).toBe(true);
+		});
+
+		it("PAS vide quand actif/passif nuls mais report/résultat non nuls et opposés", () => {
+			const dto = bs({ retainedEarnings: '1000', equityResult: '-1000' });
+			expect(isReportEmpty('balance-sheet', dto)).toBe(false);
+		});
+
+		it('PAS vide quand il y a des comptes de bilan', () => {
+			const dto = bs({
+				assets: [
+					{
+						accountId: 1,
+						accountNumber: '1000',
+						accountName: 'Banque',
+						accountType: 'Asset',
+						active: true,
+						balance: '500',
+					},
+				],
+				totalAssets: '500',
+			});
+			expect(isReportEmpty('balance-sheet', dto)).toBe(false);
 		});
 	});
 });

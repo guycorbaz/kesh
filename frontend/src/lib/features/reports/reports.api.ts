@@ -147,7 +147,15 @@ export function isReportEmpty(
 	switch (type) {
 		case 'balance-sheet': {
 			const bs = dto as BalanceSheetDto;
-			return bs.assets.length === 0 && bs.liabilities.length === 0;
+			// Story 14-1 : « vide » ⇒ aucun compte de bilan ET report/résultat nuls.
+			// Sinon (actif/passif retombés à 0 mais report & résultat non nuls et
+			// opposés) les 2 lignes de fonds propres seraient masquées à tort.
+			return (
+				bs.assets.length === 0 &&
+				bs.liabilities.length === 0 &&
+				Number(bs.retainedEarnings) === 0 &&
+				Number(bs.equityResult) === 0
+			);
 		}
 		case 'income-statement': {
 			const is_ = dto as IncomeStatementDto;

@@ -67,8 +67,15 @@ pub fn render_balance_sheet_csv<W: Write>(
     wtr.write_record(["Section", "NumeroCompte", "NomCompte", "Solde"])
         .map_err(map_csv_err)?;
 
-    // Cas rapport vide : header seul, pas de data rows (Pass 1 ECH-M1)
-    if bs.assets.is_empty() && bs.liabilities.is_empty() {
+    // Cas rapport vide : header seul, pas de data rows (Pass 1 ECH-M1).
+    // Story 14-1 : « vide » ⇒ report/résultat AUSSI nuls — sinon (actif/passif retombés
+    // à 0 mais report & résultat non nuls et opposés) on masquerait la section fonds
+    // propres, or « le report à-nouveau DOIT figurer dans l'export » (finding review Pass 1).
+    if bs.assets.is_empty()
+        && bs.liabilities.is_empty()
+        && bs.retained_earnings.is_zero()
+        && bs.equity_result.is_zero()
+    {
         wtr.flush().map_err(map_io_err)?;
         return Ok(());
     }
@@ -778,6 +785,39 @@ mod tests {
             "empty CSV must have only header line, got: {lines:?}"
         );
         assert_eq!(lines[0], "Section;NumeroCompte;NomCompte;Solde");
+    }
+
+    /// Review Pass 1 — actif/passif vides mais report/résultat non nuls et opposés
+    /// (bénéfice N entièrement dépensé en N+1) : la section fonds propres NE DOIT PAS
+    /// être masquée (sinon bilan exporté déséquilibré). Régression du finding HIGH.
+    #[test]
+    fn balance_sheet_csv_shows_equity_when_assets_liabilities_net_to_zero() {
+        let bs = BalanceSheet {
+            period: period(),
+            assets: vec![],
+            liabilities: vec![],
+            total_assets: Decimal::ZERO,
+            total_liabilities: Decimal::ZERO,
+            retained_earnings: dec!(1000),
+            equity_result: dec!(-1000),
+            equation_holds: true,
+        };
+        let mut buf = Vec::new();
+        render_balance_sheet_csv(&bs, &mut buf).unwrap();
+        let body = String::from_utf8(buf[3..].to_vec()).unwrap();
+        assert!(
+            body.contains("Résultat reporté"),
+            "la ligne « Résultat reporté » doit figurer, body:\n{body}"
+        );
+        assert!(
+            body.contains("Résultat de l'exercice"),
+            "la ligne « Résultat de l'exercice » doit figurer, body:\n{body}"
+        );
+        // Total passifs + capitaux propres = 0 + 1000 + (-1000) = 0 (équilibré, présent)
+        assert!(
+            body.contains("Total passifs + capitaux propres"),
+            "le total fonds propres doit figurer, body:\n{body}"
+        );
     }
 
     #[test]

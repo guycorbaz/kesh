@@ -124,6 +124,14 @@ Le code exclut aujourd'hui `EQUITY_RESULT_ACCOUNT_NUMBERS = ["2979","2800"]` de 
 - [x] **T9** Issue snapshot (#270) + issue liée compte archivé (#269) + CHANGELOG + README (E14 en cours) + gate complet — AC-G/I.
 - [x] **T10** Garde défensive `create_in_tx` (`DateOutsideFiscalYear`, symétrique à `update`) — invariant `entry_date ∈ exercice` dont dépend l'équation (Dev Note 4, fix structurel).
 
+### Review Findings
+
+Pass 1 (code-review adversarial, Sonnet ×3 : Blind Hunter + Edge Case Hunter + Acceptance Auditor, 2026-07-21) :
+
+- [ ] [Review][Patch] Garde « rapport vide » ignore `retained_earnings`/`equity_result` — la section fonds propres est masquée quand actif ET passif sont vides mais report/résultat non-nuls et opposés (bénéfice N entièrement dépensé en N+1 → tous les comptes de bilan retombent à 0). 3 couches : `frontend/src/lib/features/reports/reports.api.ts:150` (`isReportEmpty`), `crates/kesh-report/src/csv.rs:71`, `crates/kesh-report/src/pdf.rs:458`. Sévérité **HIGH** (edge+auditor). Correctif : ajouter `&& retained.is_zero() && equity_result.is_zero()` (resp. `&& Number(retainedEarnings)===0 && Number(equityResult)===0`) aux 3 gardes + tests couvrant le cas.
+- [x] [Review][Dismiss] BH-1 (HIGH) « garde `create_in_tx` casse les appelants » — **faux positif** : tous les call sites (`invoices`, `supplier_invoices` ×3, `credit_notes`, `reconciliation` ×4) résolvent l'exercice via `find_open_covering_date(<date d'écriture>)` → garde inatteignable. Réfuté par grep + gate 1898/1898.
+- [x] [Review][Dismiss] BH-2 (MEDIUM) « exercices Open chevauchants cassent le split » — **faux positif** : `fiscal_years::find_overlapping` bloque les chevauchements à la création.
+
 ## Dev Notes
 
 ### Pièges, par ordre de coût

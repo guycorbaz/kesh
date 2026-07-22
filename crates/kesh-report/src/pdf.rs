@@ -455,7 +455,13 @@ pub fn render_balance_sheet_pdf(
         bs.period.end_date,
     );
 
-    let is_empty = bs.assets.is_empty() && bs.liabilities.is_empty();
+    // Story 14-1 : « vide » ⇒ aucun compte de bilan ET report/résultat nuls. Sinon
+    // (actif/passif retombés à 0 mais report & résultat non nuls et opposés) la section
+    // fonds propres serait masquée à tort (finding review Pass 1).
+    let is_empty = bs.assets.is_empty()
+        && bs.liabilities.is_empty()
+        && bs.retained_earnings.is_zero()
+        && bs.equity_result.is_zero();
     if is_empty {
         draw_empty_message(&mut builder, ctx);
         return builder.finalize();
@@ -1648,6 +1654,30 @@ mod tests {
         assert!(
             bytes.len() > 200,
             "empty PDF should still have minimal content"
+        );
+    }
+
+    /// Review Pass 1 — actif/passif vides mais report/résultat non nuls et opposés :
+    /// le PDF NE DOIT PAS afficher le message « vide » ; il doit dessiner la section
+    /// fonds propres. On le prouve en comparant à un bilan RÉELLEMENT vide (tout à 0) :
+    /// le rendu non-vide (2 sections + 2 lignes fonds propres) est plus volumineux.
+    #[test]
+    fn balance_sheet_pdf_shows_equity_when_assets_liabilities_net_to_zero() {
+        let ctx = PdfContext::fr_ch_default("CI Test Company");
+        let truly_empty = render_balance_sheet_pdf(&fixture_bs(true), &ctx).unwrap();
+
+        let mut bs = fixture_bs(true);
+        bs.retained_earnings = dec!(1000);
+        bs.equity_result = dec!(-1000);
+        let with_equity = render_balance_sheet_pdf(&bs, &ctx).unwrap();
+
+        assert!(with_equity.starts_with(b"%PDF-1."));
+        assert!(
+            with_equity.len() > truly_empty.len(),
+            "un bilan actif/passif nuls mais report/résultat non nuls doit dessiner la \
+             section fonds propres (rendu > message vide) : {} vs {}",
+            with_equity.len(),
+            truly_empty.len()
         );
     }
 
