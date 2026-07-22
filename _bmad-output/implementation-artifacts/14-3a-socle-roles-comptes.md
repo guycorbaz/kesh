@@ -390,6 +390,26 @@ Deux nombres différents sous des libellés quasi identiques. **L'arithmétique 
 - **Validé positivement par les deux reviewers** : faisabilité MariaDB de bout en bout (ALTER + colonne générée + UNIQUE + backfills dans le même script ; `ALGORITHM=INSTANT` refusé comme annoncé) ; non-breaking confirmé (**aucun `SELECT *` sur `accounts` dans tout le workspace**) → pas de bump `min_required` ; `Option<AccountRole>` en `FromRow` a un précédent exact (`OnboardingState.ui_mode`) ; compteurs de `docs/migrations-idempotence-audit.md` (54→55, 43→44) exacts ; `backup.rs` gère nativement la colonne générée ; ~95 % des ~150 ancres exactes au caractère près ; l'équation du bilan de 14-1 n'est **pas** cassée par un `RetainedEarnings` postable (calcul chiffré à l'appui) ; AC-E répond entièrement à #269 ; découpage 14-3a/14-3b conforme au pattern CLAUDE.md.
 - **Trend** : Pass 1 (1 CRIT + 4 HIGH + 6 MED) → patchés. **Pass 2 requise** (CRITICAL et HIGH trouvés), LLM différent, contexte frais.
 
+### Pass 3 (Haiku, contexte frais, fichier final complet — pas de diff multi-commit, 2026-07-22) — **CONVERGÉ (0 > LOW)**
+
+Vérification par `grep -nF` / `sed` / requêtes MariaDB, sans finding CRITICAL, HIGH ni MEDIUM :
+
+- **Patches des Pass 1 et 2 réellement présents** dans le corps du document, pas seulement annoncés dans le Change Log — aucune trace résiduelle des décisions abandonnées (`STORED`, `EquityReserve`, `is_singleton()` sur un seul enum).
+- **Ancres re-sondées** : les 6 lookups par numéro de `company_invoice_settings.rs` (275/284/296/396/405/416), le précédent `active_uniq` (`reconciliation_rules.sql:54`), la double liste de colonnes (`accounts.rs:17` vs `:19`), l'écart de lignes des locales FTL, le compteur de 54 migrations.
+- **Couverture AC ↔ tâches complète** (A→I couverts par T1→T14, aucun orphelin dans un sens ni dans l'autre).
+- **Faisabilité SQL reconfirmée** sur MariaDB 11.3.2 : colonne `VIRTUAL` + UNIQUE avec `active AND`, backfill auto-référentiel sans `ERROR 1093`.
+- **Non-breaking reconfirmé** → pas de bump `kesh_version_min_required`.
+
+### Décision — validate
+
+**CONVERGÉ en 3 passes** (Sonnet ×2 → Opus → Haiku ; rotation LLM, contexte frais à chaque passe, grep ground-truth systématique). Critère d'arrêt de la Review Iteration Rule atteint : **0 CRITICAL / HIGH / MEDIUM**.
+
+**Trend** : Pass 1 (1 CRIT + 4 HIGH + 6 MED) → Pass 2 (0 CRIT + 2 HIGH + 6 MED, dont 1 HIGH de régression du patch précédent) → Pass 3 (0 > LOW).
+
+Enseignement à reporter en rétrospective : la Pass 2 a produit **exactement** le profil annoncé par le carry-forward « un patch de review vient AVEC son test » — son finding HIGH principal était une **conséquence non propagée du patch CRITICAL de la Pass 1** (décision « deux enums » appliquée dans 4 sections mais pas à `is_singleton()`). La remédiation reste la première source de défauts de la passe suivante ; seuls un modèle orthogonal et un contexte frais la détectent.
+
+Spec **`ready-for-dev`** confirmée. Prochaine étape : `bmad-dev-story`.
+
 ## Dev Agent Record
 
 ### Agent Model Used
