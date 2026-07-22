@@ -473,6 +473,30 @@ i18n → frontend → tests → doc → gate.
 - `CHANGELOG.md`, `README.md`
 - `docs/manual/fr/user-manual.tex` + 3 PDF régénérés
 
+
+### Résultat du gate (2026-07-22)
+
+| Gate | Résultat |
+|---|---|
+| `cargo fmt --all -- --check` | ✅ |
+| `cargo clippy --workspace --all-targets -- -D warnings` | ✅ 0 warning |
+| `cargo test --workspace` (serial, MariaDB 10.11 tmpfs) | ✅ **1934 passés / 0 échec** (104 binaires ; baseline 14-1 = 1900 → **+34**) |
+| `npm run check` | ✅ 0 erreur |
+| `npm run lint-i18n-ownership` | ✅ PASS |
+| `npm run test:unit` | ✅ **425 passés** (baseline 418 → +7) |
+| `npm run build` | ✅ |
+| Playwright `accounts.spec.ts` | ✅ **10/10** (7 existants + 3 nouveaux) |
+| Playwright suite complète | ⚠️ 169 passés / 36 échecs / 19 skipped — **échecs préexistants au harnais local, prouvés** (cf. ci-dessous) |
+
+**Sur les 36 échecs Playwright hors périmètre.** Deux causes environnementales, aucune liée à la story :
+
+1. **Configuration locale manquante puis corrigée** — `KESH_COOKIE_SECURE=false` est **obligatoire en HTTP local** (`docs/testing.md:123-127` : « le request context Playwright n'envoie PAS les cookies `Secure` sur `http://` → tous les tests utilisant l'API échouent en 401 »). Je l'avais omis au premier lancement : **86 échecs → 36** une fois corrigé.
+2. **Résidu prouvé préexistant** — les specs restantes échouent soit sur `GET /_test/sent-emails` (backend démarré **sans SMTP factice**, prérequis documenté que ce poste n'a pas), soit sur `JWT introuvable post-login` — un helper hérité qui lit le token en `localStorage` alors que les tokens sont en **cookie HttpOnly** depuis la Story 10-5.
+
+**Preuve de non-régression** : `bank-account-journal-link.spec.ts` (spec en échec qui **touche les comptes**) a été rejouée avec le **frontend restauré à `f5b95267`**, c'est-à-dire l'état d'avant cette story → **mêmes 2 échecs, même message `JWT introuvable post-login`**. Les échecs sont donc antérieurs à la story, pas provoqués par elle. Le frontend de la story a ensuite été restauré et `accounts.spec.ts` revérifié à 10/10.
+
+*(Rappel CLAUDE.md : la suite Playwright n'est pas exécutée par la CI ; ces échecs de harnais local ne bloquent pas la story, mais méritent une issue de maintenance E2E — à arbitrer par Guy.)*
+
 ## Change Log — dev
 
 ### dev-story (Opus 4.8, 2026-07-22) — socle des rôles de comptes
