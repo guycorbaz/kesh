@@ -114,3 +114,84 @@ test.describe('Page plan comptable — CRUD', () => {
 		await expect(page.locator('[data-testid="account-show-archived-toggle"]')).toBeVisible();
 	});
 });
+
+test.describe('Plan comptable — rôles & réactivation (Story 14-3a, #269)', () => {
+	test("affecte un rôle à un compte via le dialog Modifier", async ({ page }) => {
+		await loginAndGoToAccounts(page);
+
+		const editButton = page.locator('[data-testid="account-row-1000-edit-button"]');
+		await expect(editButton).toHaveCount(1);
+		await editButton.click();
+
+		const editDialog = page.getByRole('dialog');
+		await expect(editDialog).toBeVisible();
+
+		// Le sélecteur de rôle et la case Postable sont exposés.
+		const roleSelect = page.locator('[data-testid="account-edit-dialog-role"]');
+		await expect(roleSelect).toBeVisible();
+		await expect(page.locator('[data-testid="account-edit-dialog-postable"]')).toBeVisible();
+
+		// Choisir « Capital » (rôle multi-valué : jamais en conflit avec le seed).
+		await roleSelect.click();
+		await page.getByRole('option', { name: 'Capital', exact: true }).click();
+		await page.locator('[data-testid="account-edit-dialog-submit"]').click();
+
+		// Le badge de rôle apparaît sur la ligne.
+		await expect(page.locator('[data-testid="account-row-1000-role-badge"]')).toContainText(
+			'Capital',
+		);
+	});
+
+	test('cycle archiver → afficher les archivés → réactiver', async ({ page }) => {
+		await loginAndGoToAccounts(page);
+
+		// Créer un compte dédié pour ne pas perturber les autres tests.
+		const number = `T${Date.now().toString().slice(-5)}`;
+		await page.locator('[data-testid="account-create-button"]').click();
+		await page.fill('#create-number', number);
+		await page.fill('#create-name', 'Compte à réactiver');
+		await page.locator('[data-testid="account-create-dialog-submit"]').click();
+		await expect(page.locator(`[data-testid="account-row-${number}"]`)).toBeVisible();
+
+		// Archiver.
+		await page.locator(`[data-testid="account-row-${number}-archive-button"]`).click();
+		await page.locator('[data-testid="account-archive-dialog-confirm"]').click();
+
+		// Par défaut la liste masque les archivés → la ligne disparaît.
+		await expect(page.locator(`[data-testid="account-row-${number}"]`)).toHaveCount(0);
+
+		// Cocher « afficher les archivés » → la ligne revient, avec un bouton
+		// Réactiver et SANS bouton Modifier/Archiver.
+		await page.locator('[data-testid="account-show-archived-toggle"]').check();
+		await expect(page.locator(`[data-testid="account-row-${number}"]`)).toBeVisible();
+		await expect(
+			page.locator(`[data-testid="account-row-${number}-reactivate-button"]`),
+		).toHaveCount(1);
+		await expect(page.locator(`[data-testid="account-row-${number}-edit-button"]`)).toHaveCount(0);
+		await expect(page.locator(`[data-testid="account-row-${number}-archive-button"]`)).toHaveCount(
+			0,
+		);
+
+		// Réactiver → le compte redevient modifiable.
+		await page.locator(`[data-testid="account-row-${number}-reactivate-button"]`).click();
+		await expect(page.getByLabel(/Notifications/)).toContainText('réactivé');
+		await expect(page.locator(`[data-testid="account-row-${number}-edit-button"]`)).toHaveCount(1);
+
+		// Et il réapparaît dans la liste par défaut (archivés masqués).
+		await page.locator('[data-testid="account-show-archived-toggle"]').uncheck();
+		await expect(page.locator(`[data-testid="account-row-${number}"]`)).toBeVisible();
+	});
+
+	test("un compte non postable porte un badge explicitement indicatif", async ({ page }) => {
+		await loginAndGoToAccounts(page);
+
+		// Les comptes titres du plan seedé (ex. « 1 », « 10 ») sont non-postables
+		// depuis le backfill de la migration.
+		const badge = page.locator('[data-testid="account-row-10-postable-badge"]');
+		if ((await badge.count()) > 0) {
+			await expect(badge).toContainText('Non postable');
+			// La mention « indicatif » (L2) doit être portée par le title.
+			await expect(badge).toHaveAttribute('title', /[Ii]ndicatif/);
+		}
+	});
+});

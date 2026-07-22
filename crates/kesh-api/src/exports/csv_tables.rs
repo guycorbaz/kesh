@@ -1087,6 +1087,49 @@ mod tests {
         );
     }
 
+    /// Story 14-3a — l'en-tête du CSV est écrit **à la main** : l'oubli d'une
+    /// colonne y est silencieux (aucune erreur, juste une donnée qui disparaît
+    /// de l'export global). Ce test fige donc l'en-tête complet.
+    #[test]
+    fn serialize_accounts_csv_includes_role_and_postable() {
+        let mut buf = Vec::new();
+        serialize_accounts_csv(&[sample_account()], &mut buf).expect("serialize ok");
+        let text = std::str::from_utf8(&buf[3..]).unwrap();
+        let mut lines = text.split("\r\n");
+
+        assert_eq!(
+            lines.next().unwrap(),
+            "id;company_id;number;name;account_type;parent_id;active;role;postable;version;created_at;updated_at",
+            "en-tête CSV des comptes (12 colonnes depuis la Story 14-3a)"
+        );
+
+        let row = lines.next().unwrap();
+        assert!(
+            row.contains(";Receivable;true;"),
+            "le rôle et la postabilité doivent figurer dans la ligne : {row}"
+        );
+    }
+
+    /// Un compte sans rôle exporte une cellule **vide**, pas la chaîne "null".
+    #[test]
+    fn serialize_accounts_csv_renders_absent_role_as_empty_cell() {
+        let mut account = sample_account();
+        account.role = None;
+        account.postable = false;
+        let mut buf = Vec::new();
+        serialize_accounts_csv(&[account], &mut buf).expect("serialize ok");
+        let text = std::str::from_utf8(&buf[3..]).unwrap();
+        let row = text.split("\r\n").nth(1).unwrap();
+        assert!(
+            row.contains(";;false;"),
+            "rôle absent → cellule vide, postable=false : {row}"
+        );
+        assert!(
+            !row.contains("null"),
+            "ne jamais écrire la chaîne 'null' : {row}"
+        );
+    }
+
     #[test]
     fn serialize_accounts_csv_empty_produces_bom_header_only() {
         let mut buf = Vec::new();

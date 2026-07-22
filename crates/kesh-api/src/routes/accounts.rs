@@ -44,6 +44,21 @@ fn default_true() -> bool {
     true
 }
 
+/// Désérialise un champ en distinguant **absent** de **`null`**.
+///
+/// `Option<Option<T>>` seul ne suffit pas : serde mappe `null` sur le `None`
+/// **externe**, rendant les deux cas indiscernables. En déléguant à
+/// `Option<T>` puis en enveloppant systématiquement dans `Some`, on obtient
+/// `None` uniquement quand serde n'appelle pas ce désérialiseur — c'est-à-dire
+/// quand la clé est absente (grâce à `#[serde(default)]`).
+fn present_or_null<'de, T, D>(de: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: serde::Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    Option::<T>::deserialize(de).map(Some)
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 /// Sémantique **full-replace** — `role` et `postable` sont **obligatoires**.
@@ -56,8 +71,21 @@ fn default_true() -> bool {
 pub struct UpdateAccountRequest {
     pub name: String,
     pub account_type: AccountType,
-    pub role: Option<AccountRole>,
-    pub postable: bool,
+    /// `None` = champ **absent** du payload (rejeté en 400) ; `Some(None)` =
+    /// `"role": null` explicite (retire le rôle) ; `Some(Some(r))` = rôle posé.
+    ///
+    /// Le double `Option` est indispensable : serde considère un `Option<T>`
+    /// manquant comme `None`, donc un simple `Option<AccountRole>` aurait
+    /// silencieusement **effacé le rôle** d'un compte dès qu'un client omet le
+    /// champ — précisément la perte de donnée que le contrat full-replace veut
+    /// empêcher.
+    #[serde(default, deserialize_with = "present_or_null")]
+    pub role: Option<Option<AccountRole>>,
+    /// `None` = champ absent → 400. Optionnel côté serde uniquement pour que
+    /// l'absence produise la **même** erreur explicite que `role` (un `bool` nu
+    /// serait rejeté par serde en 422, incohérent pour le client).
+    #[serde(default)]
+    pub postable: Option<bool>,
     pub version: i32,
 }
 
@@ -214,11 +242,22 @@ pub async fn update_account(
         ));
     }
 
+    // Contrat full-replace : les deux champs doivent être présents — `role`
+    // peut valoir `null` (retire le rôle), mais son absence est une erreur.
+    let role = req.role.ok_or_else(|| {
+        AppError::Validation(
+            "role is required (send `null` to clear it) — full-replace semantics".into(),
+        )
+    })?;
+    let postable = req.postable.ok_or_else(|| {
+        AppError::Validation("postable is required — full-replace semantics".into())
+    })?;
+
     let changes = AccountUpdate {
         name: trimmed_name,
         account_type: req.account_type,
-        role: req.role,
-        postable: req.postable,
+        role,
+        postable,
     };
 
     let account =

@@ -274,17 +274,35 @@ Le plan comptable est la colonne vertébrale de votre comptabilité. Kesh fourni
     \item \textbf{Libellé} : par exemple « CCP 12-345-6 ».
     \item \textbf{Compte parent} : compte de niveau supérieur (1020 dans l'exemple).
     \item \textbf{Type} : Actif / Passif / Produit / Charge / Bilan / Résultat.
+    \item \textbf{Rôle} : fonction du compte dans l'application (\emph{Créances clients}, \emph{TVA due}, \emph{Capital}, \emph{Résultat de l'exercice}\ldots) ou \emph{Aucun}. Voir la section \emph{Rôles des comptes} ci-dessous.
+    \item \textbf{Postable} : décocher pour un compte de regroupement (compte titre) sur lequel on ne saisit pas d'écriture.
     \item \textbf{Devise} : CHF par défaut.
     \item \textbf{Compte de banque} : cocher si ce compte représente un compte bancaire (active la liaison avec l'import CAMT.053).
 \end{itemize}
 
 \subsection{Modification d'un compte}
 
-Cliquer sur un compte ouvre son détail. Vous pouvez modifier le libellé, le compte parent, le type. Le numéro n'est pas modifiable une fois des écritures saisies (pour préserver l'audit-trail).
+Cliquer sur un compte ouvre son détail. Vous pouvez modifier le libellé, le compte parent, le type, le \textbf{rôle} et l'indicateur \textbf{postable}. Le numéro n'est pas modifiable une fois des écritures saisies (pour préserver l'audit-trail).
 
 \subsection{Suppression d'un compte}
 
 Un compte ne peut être supprimé que s'il n'a aucune écriture ni sous-compte. Sinon, vous pouvez l'\textbf{archiver} (le compte reste visible dans les écritures historiques mais n'est plus proposé à la saisie).
+
+Pour retrouver un compte archivé, cocher \emph{Afficher les archivés} en haut de la page. Un bouton \textbf{Réactiver} permet de le remettre en service. La réactivation est refusée dans deux cas : si son \textbf{compte parent} est lui-même archivé (il faut le réactiver d'abord), ou si son \textbf{rôle} a été attribué à un autre compte pendant son archivage — le message d'erreur nomme alors le compte concerné, dont il faut retirer le rôle au préalable.
+
+\subsection{Rôles des comptes}
+
+Chaque compte peut porter un \textbf{rôle} qui indique à Kesh à quoi il sert : compte de créances clients, de TVA due, de capital, de résultat de l'exercice, etc. Ce rôle est \textbf{explicite et modifiable} : Kesh ne devine jamais la fonction d'un compte à partir de son \emph{numéro}. C'est ce qui vous permet de renuméroter ou de restructurer votre plan comptable sans rien casser — le plan comptable suisse est un usage, pas une obligation légale.
+
+Certains rôles sont \textbf{uniques} : un seul compte actif à la fois peut être le compte de créances clients, de TVA due, de résultat de l'exercice, etc. D'autres peuvent être portés par plusieurs comptes (capital, autres fonds propres). Si vous attribuez un rôle unique déjà pris, Kesh refuse la modification et vous indique quel compte le détient.
+
+\begin{keshwarning}
+Lors de la mise à jour vers cette version, Kesh a \textbf{pré-attribué les rôles} d'après les numéros du plan comptable standard (1100 → créances clients, 2200 → TVA due, etc.). Si vous aviez \textbf{renuméroté} vos comptes, vérifiez la colonne \emph{Rôle} de votre plan comptable et corrigez les attributions le cas échéant.
+\end{keshwarning}
+
+\begin{keshnote}
+Dans cette version, l'indicateur \emph{postable} est \textbf{informatif} : il signale les comptes sur lesquels il ne faut pas saisir d'écriture, mais la saisie n'est pas encore bloquée. Le blocage effectif arrive dans une prochaine version.
+\end{keshnote}
 
 \subsection{Import d'un plan personnalisé}
 
