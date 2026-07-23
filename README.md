@@ -2,6 +2,9 @@
 
 [![CI](https://github.com/guycorbaz/kesh/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/guycorbaz/kesh/actions/workflows/ci.yml)
 [![Release](https://github.com/guycorbaz/kesh/actions/workflows/release.yml/badge.svg)](https://github.com/guycorbaz/kesh/actions/workflows/release.yml)
+[![Docker Pulls](https://img.shields.io/docker/pulls/gcorbaz/kesh)](https://hub.docker.com/r/gcorbaz/kesh)
+[![Docker Image Version](https://img.shields.io/docker/v/gcorbaz/kesh?sort=semver&label=docker)](https://hub.docker.com/r/gcorbaz/kesh/tags)
+[![Docker Image Size](https://img.shields.io/docker/image-size/gcorbaz/kesh?sort=semver)](https://hub.docker.com/r/gcorbaz/kesh/tags)
 [![License: EUPL 1.2](https://img.shields.io/badge/license-EUPL--1.2-blue.svg)](https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12)
 [![Rust](https://img.shields.io/badge/rust-1.96-orange.svg)](https://www.rust-lang.org/)
 [![SvelteKit](https://img.shields.io/badge/svelte-5-ff3e00.svg)](https://svelte.dev/)
