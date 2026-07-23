@@ -44,14 +44,16 @@
 	let salesJournal = $state<JournalCode>('Ventes');
 	let version = $state(0);
 
+	// Story 14-3b : comptes de config de facturation → postés à la génération
+	// d'écriture, donc filtrés `postable` (protège d'un rejet en aval).
 	let assetAccounts = $derived(
-		accounts.filter((a) => a.active && a.accountType === 'Asset'),
+		accounts.filter((a) => a.active && a.postable && a.accountType === 'Asset'),
 	);
 	let revenueAccounts = $derived(
-		accounts.filter((a) => a.active && a.accountType === 'Revenue'),
+		accounts.filter((a) => a.active && a.postable && a.accountType === 'Revenue'),
 	);
 	let liabilityAccounts = $derived(
-		accounts.filter((a) => a.active && a.accountType === 'Liability'),
+		accounts.filter((a) => a.active && a.postable && a.accountType === 'Liability'),
 	);
 
 	let formatValidation = $derived(validateFormatTemplate(format));

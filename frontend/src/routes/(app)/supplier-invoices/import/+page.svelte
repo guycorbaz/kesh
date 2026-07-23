@@ -99,7 +99,9 @@
 				listVatRates(),
 			]);
 			suppliers = contactsRes.items;
-			expenseAccounts = accountsRes.filter((a) => a.accountType === 'Expense' && a.active);
+			expenseAccounts = accountsRes.filter(
+				(a) => a.accountType === 'Expense' && a.active && a.postable,
+			); // 14-3b : compte de charge posté à la complétion d'import
 			vatRates = ratesRes;
 		} catch (err) {
 			if (isApiError(err)) errorMsg = err.message;

@@ -818,3 +818,91 @@ async fn migration_backfill_keys_on_chart_presence_not_stub_flag(pool: MySqlPool
         "company mid-onboarding (plan présent, is_stub encore TRUE) doit être backfillée"
     );
 }
+
+// ─── Story 14-3b (chantier C) : résolution des comptes de facturation par rôle ───
+
+/// Société + plan PME seedé (rôles inclus via `bulk_create_from_chart`).
+async fn company_with_pme_chart(pool: &MySqlPool, name: &str) -> i64 {
+    let company = companies::create(
+        pool,
+        NewCompany {
+            name: name.to_string(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
+            ide_number: None,
+            org_type: OrgType::Pme,
+            accounting_language: Language::Fr,
+            instance_language: Language::Fr,
+        },
+    )
+    .await
+    .expect("create company");
+    let chart = kesh_core::chart_of_accounts::load_chart("Pme").expect("load chart");
+    accounts::bulk_create_from_chart(pool, company.id, &chart, "fr")
+        .await
+        .expect("seed chart");
+    company.id
+}
+
+/// AC-C / AC-E — plan RENUMÉROTÉ : le compte de créances porte le rôle
+/// `Receivable` sur un numéro ≠ 1100 → la résolution PAR RÔLE le trouve quand
+/// même (contrairement à l'ancien lookup `WHERE number = '1100'`).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn insert_with_defaults_resolves_receivable_by_role_when_renumbered(pool: MySqlPool) {
+    let company_id = company_with_pme_chart(&pool, "Renum Co").await;
+
+    // Renuméroter le compte de créances (rôle Receivable) : 1100 → 1055.
+    let receivable_id: i64 =
+        sqlx::query_scalar("SELECT id FROM accounts WHERE company_id = ? AND number = '1100'")
+            .bind(company_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    sqlx::query("UPDATE accounts SET number = '1055' WHERE id = ?")
+        .bind(receivable_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let settings = company_invoice_settings::insert_with_defaults(&pool, company_id)
+        .await
+        .expect("résolution par rôle malgré la renumérotation");
+    assert_eq!(
+        settings.default_receivable_account_id,
+        Some(receivable_id),
+        "le compte de créances doit être résolu par son rôle, pas par le numéro 1100"
+    );
+}
+
+/// AC-C / AC-E — fail-fast : un plan sans compte ACTIF portant le rôle
+/// `Receivable` fait échouer l'init de config en `InactiveOrInvalidAccounts`
+/// (logique inchangée par rapport à l'ancien lookup par numéro).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn insert_with_defaults_fails_fast_when_no_receivable_role(pool: MySqlPool) {
+    let company_id = company_with_pme_chart(&pool, "No Receivable Co").await;
+
+    // Retirer le rôle Receivable (le compte 1100 reste actif mais n'est plus
+    // le compte de créances) → aucun compte actif ne porte plus ce rôle.
+    sqlx::query("UPDATE accounts SET role = NULL WHERE company_id = ? AND number = '1100'")
+        .bind(company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let result = company_invoice_settings::insert_with_defaults(&pool, company_id).await;
+    assert!(
+        matches!(
+            result,
+            Err(kesh_db::errors::DbError::InactiveOrInvalidAccounts)
+        ),
+        "plan sans rôle Receivable actif → InactiveOrInvalidAccounts, obtenu {:?}",
+        result
+    );
+}

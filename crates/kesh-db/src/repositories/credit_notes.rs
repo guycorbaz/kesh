@@ -345,6 +345,9 @@ pub async fn create_credit_note(
                 project_id: invoice.project_id,
                 lines: entry_lines,
             },
+            // Flux automatique (avoir) : garde de postabilité désactivée
+            // (Story 14-3b, D-A0).
+            false,
         )
         .await?;
 

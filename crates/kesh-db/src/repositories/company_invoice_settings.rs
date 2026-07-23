@@ -19,7 +19,7 @@
 use sqlx::mysql::MySqlPool;
 
 use crate::entities::audit_log::NewAuditLogEntry;
-use crate::entities::{CompanyInvoiceSettings, CompanyInvoiceSettingsUpdate, Journal};
+use crate::entities::{AccountRole, CompanyInvoiceSettings, CompanyInvoiceSettingsUpdate, Journal};
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::audit_log;
 
@@ -246,12 +246,19 @@ pub async fn update(
 /// using a generic executor macro due to SQLx 0.8 HRTB fragility (see repository docstring P13).
 /// The 5-line body at lines marked MIRROR must stay synchronized.
 ///
-/// Standard Swiss account numbers:
-/// - 1100: Receivables (clients/créances)
-/// - 3000: Revenue (ventes/produits)
+/// Résolution des comptes par défaut **par rôle** (Story 14-3b, chantier C) et
+/// non plus par numéro codé en dur — le plan comptable reste celui de
+/// l'utilisateur (il peut renuméroter). Mapping rôle → compte :
+/// - `AccountRole::Receivable` → créances clients (ex-`1100`)
+/// - `AccountRole::DefaultRevenue` → produit de facturation par défaut (ex-`3000`)
+/// - `AccountRole::Payable` → dettes fournisseurs, optionnel (ex-`2000`)
 ///
-/// Account number column is VARCHAR(50) - lookups with string literals '1100', '3000' are safe.
-/// Schema constraint: UNIQUE(company_id, number) enforced on accounts table ensures single result.
+/// Ces trois rôles sont **singleton** : au plus un compte actif par société les
+/// porte (`uq_accounts_company_singleton_role`), donc `ORDER BY id LIMIT 1`
+/// devient sémantiquement redondant mais est conservé (lock déterministe,
+/// cohérence avec `FOR UPDATE`). `AND active = true` est **obligatoire** :
+/// l'unicité du rôle singleton ne vaut que parmi les comptes actifs (invariant
+/// légué 14-3a — la colonne générée est `active`-aware).
 ///
 /// Template placeholders ({YEAR}, {SEQ:04}, {INVOICE_NUMBER}) are literal database values,
 /// not Rust format strings - braces are intentionally single (not {{escaped}}).
@@ -272,18 +279,20 @@ pub async fn insert_with_defaults(
     // SELECT FOR UPDATE prevents other transactions from modifying these rows until commit.
     // ORDER BY id LIMIT 1 ensures deterministic single-row lock (schema uniqueness guarantee).
     let receivable = sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT id FROM accounts WHERE company_id = ? AND number = '1100' AND active = true ORDER BY id LIMIT 1 FOR UPDATE"
+        "SELECT id FROM accounts WHERE company_id = ? AND role = ? AND active = true ORDER BY id LIMIT 1 FOR UPDATE"
     )
     .bind(company_id)
+    .bind(AccountRole::Receivable)
     .fetch_optional(&mut *tx)
     .await
     .map_err(map_db_error)?
     .flatten();
 
     let revenue = sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT id FROM accounts WHERE company_id = ? AND number = '3000' AND active = true ORDER BY id LIMIT 1 FOR UPDATE"
+        "SELECT id FROM accounts WHERE company_id = ? AND role = ? AND active = true ORDER BY id LIMIT 1 FOR UPDATE"
     )
     .bind(company_id)
+    .bind(AccountRole::DefaultRevenue)
     .fetch_optional(&mut *tx)
     .await
     .map_err(map_db_error)?
@@ -293,9 +302,10 @@ pub async fn insert_with_defaults(
     // OPTIONNEL (non fail-fast) — présent dans les charts standards mais
     // l'absence ne doit pas bloquer la finalisation d'onboarding.
     let payable = sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT id FROM accounts WHERE company_id = ? AND number = '2000' AND active = true ORDER BY id LIMIT 1 FOR UPDATE"
+        "SELECT id FROM accounts WHERE company_id = ? AND role = ? AND active = true ORDER BY id LIMIT 1 FOR UPDATE"
     )
     .bind(company_id)
+    .bind(AccountRole::Payable)
     .fetch_optional(&mut *tx)
     .await
     .map_err(map_db_error)?
@@ -393,18 +403,20 @@ pub async fn insert_with_defaults_in_tx(
     // SELECT FOR UPDATE prevents other transactions from modifying these rows until commit.
     // ORDER BY id LIMIT 1 ensures deterministic single-row lock (schema uniqueness guarantee).
     let receivable = sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT id FROM accounts WHERE company_id = ? AND number = '1100' AND active = true ORDER BY id LIMIT 1 FOR UPDATE"
+        "SELECT id FROM accounts WHERE company_id = ? AND role = ? AND active = true ORDER BY id LIMIT 1 FOR UPDATE"
     )
     .bind(company_id)
+    .bind(AccountRole::Receivable)
     .fetch_optional(&mut **tx)
     .await
     .map_err(map_db_error)?
     .flatten();
 
     let revenue = sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT id FROM accounts WHERE company_id = ? AND number = '3000' AND active = true ORDER BY id LIMIT 1 FOR UPDATE"
+        "SELECT id FROM accounts WHERE company_id = ? AND role = ? AND active = true ORDER BY id LIMIT 1 FOR UPDATE"
     )
     .bind(company_id)
+    .bind(AccountRole::DefaultRevenue)
     .fetch_optional(&mut **tx)
     .await
     .map_err(map_db_error)?
@@ -413,9 +425,10 @@ pub async fn insert_with_defaults_in_tx(
     // Story 12.2 : compte créanciers 2000 (contrepartie achat fournisseur).
     // OPTIONNEL (non fail-fast) — cf. variante pool.
     let payable = sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT id FROM accounts WHERE company_id = ? AND number = '2000' AND active = true ORDER BY id LIMIT 1 FOR UPDATE"
+        "SELECT id FROM accounts WHERE company_id = ? AND role = ? AND active = true ORDER BY id LIMIT 1 FOR UPDATE"
     )
     .bind(company_id)
+    .bind(AccountRole::Payable)
     .fetch_optional(&mut **tx)
     .await
     .map_err(map_db_error)?

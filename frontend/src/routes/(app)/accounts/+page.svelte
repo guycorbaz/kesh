@@ -421,7 +421,7 @@
 					{#if !account.postable}
 						<span
 							class="inline-flex items-center rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400 whitespace-nowrap"
-							title={i18nMsg('account-postable-hint', 'Indicatif — la saisie d’écriture ne le bloque pas encore')}
+							title={i18nMsg('account-postable-hint', 'Un compte non postable n’accepte pas de saisie d’écriture manuelle')}
 							data-testid="account-row-{account.number}-postable-badge"
 						>
 							{i18nMsg('account-postable-no', 'Non postable')}
@@ -529,7 +529,7 @@
 					{i18nMsg('account-field-postable', 'Postable')}
 				</label>
 				<p class="mt-1 text-xs text-text-muted">
-					{i18nMsg('account-postable-hint', 'Indicatif — la saisie d’écriture ne le bloque pas encore')}
+					{i18nMsg('account-postable-hint', 'Un compte non postable n’accepte pas de saisie d’écriture manuelle')}
 				</p>
 			</div>
 			{#if createError}
@@ -601,7 +601,7 @@
 					{i18nMsg('account-field-postable', 'Postable')}
 				</label>
 				<p class="mt-1 text-xs text-text-muted">
-					{i18nMsg('account-postable-hint', 'Indicatif — la saisie d’écriture ne le bloque pas encore')}
+					{i18nMsg('account-postable-hint', 'Un compte non postable n’accepte pas de saisie d’écriture manuelle')}
 				</p>
 			</div>
 			{#if editError}

@@ -46,6 +46,7 @@
 			.filter(
 				(a) =>
 					a.active &&
+					a.postable && // 14-3b : compte lié posté à la réconciliation
 					(a.accountType === 'Asset' || a.accountType === 'Liability') &&
 					(a.number.startsWith('1') || a.number.startsWith('2')),
 			)

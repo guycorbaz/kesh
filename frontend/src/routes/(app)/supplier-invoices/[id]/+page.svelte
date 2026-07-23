@@ -63,7 +63,7 @@
 				listProjects(true), // inclut les archivés pour résoudre le nom d'un projet tagué puis archivé
 			]);
 			bankAccounts = banks.filter((b) => b.journalAccountId !== null);
-			accounts = accts.filter((a) => a.active);
+			accounts = accts.filter((a) => a.active && a.postable); // 14-3b : compte posté
 			projects = projs;
 		} catch (err) {
 			if (isApiError(err)) errorMsg = err.message;
