@@ -217,3 +217,26 @@ Un rôle singleton n'est unique **que parmi les comptes actifs** (`archive()` ne
 ### Completion Notes List
 
 ### File List
+
+## Change Log — validate
+
+### Pass 1 (Sonnet ×2, contexte frais, 2026-07-23) — 1 CRITICAL + 2 HIGH + 3 MEDIUM → tous patchés
+
+Deux lentilles parallèles : (a) ancres ground-truth & faisabilité, (b) métier comptable & complétude AC.
+- **CRITICAL** — la garde postable partageait `create_in_tx` avec les flux automatiques (facture/avoir/réconciliation) → régression du moteur comptable si un compte de config devient non-postable. **Décision Guy** : garde MANUELLE uniquement (`enforce_postable`, D-A0).
+- **HIGH** — `update_in_tx` inexistant (c'est `update`, rollback interne, `before_lines` fetché après la validation) → corrigé + réordonnancement prescrit (T1).
+- **HIGH** — grandfather ambigu (`DELETE`+ré-INSERT, pas d'identité de ligne). **Décision Guy** : grandfather PAR COMPTE + brèche L3 assumée.
+- **MEDIUM** — chaîne i18n `account-postable-hint` (« ne bloque pas encore ») devient un mensonge in-app → correction 4 locales (T2/T5).
+- **MEDIUM** — gain Chantier C surestimé (résolution par rôle seulement à l'onboarding) → AC-D reformulé.
+- **MEDIUM** — message onboarding générique → accepté v0.1 (L4).
+- **LOW** — RuleFormModal `:42`→`:43`.
+
+Contrôle positif : la grande majorité des ancres vérifiées exactes au caractère près, « dernier hardcode par numéro » confirmé par grep, point de passage unique `create_in_tx` confirmé pour tous les flux, `CurrentYearResult`/`RetainedEarnings` sains vis-à-vis de la garde.
+
+### Pass 2 (Haiku 4.5, contexte frais, grep ground-truth, 2026-07-23) — **CONVERGÉ (0 > LOW)**
+
+Vérification par grep des ancres introduites/modifiées par la passe 1 : 9 appelants réels de `journal_entries::create_in_tx` (aucun oublié dans T1), 6 lookups `:275/:284/:296/:396/:405/:416` avec `active=true`, réordonnancement `update` (`:696-719` avant `:730-736`) confirmé, `account-postable-hint` présente aux 4 locales + 3 sites. Cohérence interne AC↔décisions↔tasks vérifiée, hors-scope net. **0 finding > LOW.**
+
+### Décision — validate
+
+**Trend** : Pass 1 Sonnet ×2 (1 CRIT + 2 HIGH + 3 MED) → Pass 2 Haiku (0 > LOW). **CONVERGÉ en 2 passes**, LLM distincts, contexte frais, patchs appliqués avant la passe 2. Critère d'arrêt Review Iteration Rule atteint. 2 décisions de conception tranchées par Guy (D-A0 garde manuelle, D-A1 grandfather par compte). Spec **ready-for-dev**.
