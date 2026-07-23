@@ -1017,17 +1017,22 @@ async fn run_path_b_until_finalize(app: &TestApp, token: &str) {
 /// (la route `accounts::create` requiert un user_id et passe par audit log
 /// — superflu pour un setup de test).
 async fn seed_minimal_chart(pool: &MySqlPool, company_id: i64) {
+    // Story 14-3b (Chantier C) : `company_invoice_settings::insert_with_defaults_in_tx`
+    // résout désormais les comptes de facturation par `role` (et non plus par
+    // `number = '1100'/'3000'`). Un vrai plan Kesh porte ces rôles (backfill 14-3a
+    // ou charts JSON annotés) ; ce fixture minimal doit donc les poser explicitement,
+    // sinon le fail-fast `InactiveOrInvalidAccounts` fait échouer `finalize` en 400.
     sqlx::query(
-        "INSERT INTO accounts (company_id, number, name, account_type, active) \
-         VALUES (?, '1100', 'Créances clients', 'Asset', TRUE)",
+        "INSERT INTO accounts (company_id, number, name, account_type, role, active) \
+         VALUES (?, '1100', 'Créances clients', 'Asset', 'Receivable', TRUE)",
     )
     .bind(company_id)
     .execute(pool)
     .await
     .expect("seed account 1100");
     sqlx::query(
-        "INSERT INTO accounts (company_id, number, name, account_type, active) \
-         VALUES (?, '3000', 'Ventes', 'Revenue', TRUE)",
+        "INSERT INTO accounts (company_id, number, name, account_type, role, active) \
+         VALUES (?, '3000', 'Ventes', 'Revenue', 'DefaultRevenue', TRUE)",
     )
     .bind(company_id)
     .execute(pool)
