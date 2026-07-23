@@ -86,7 +86,7 @@ Conforme CO art. 959a (distinction capitaux étrangers / capitaux propres).
 
 ### C. Export CSV — section Capitaux propres par rôle (FR-CH hardcode)
 
-- **Given** `render_balance_sheet_csv` (`csv.rs:60-150`), **When** on exporte, **Then** une section `CapitauxPropres` liste les comptes physiques equity **groupés par rôle** (une ligne `Section;NumeroCompte;NomCompte;Solde` par compte, ordre D2), suivie des **2 lignes calculées** distinctes (« Résultat reporté (calculé) », « Résultat de l'exercice »), puis `Total capitaux propres`.
+- **Given** `render_balance_sheet_csv` (`csv.rs:60-150`), **When** on exporte, **Then** une section `CapitauxPropres` liste les comptes physiques equity **dans l'ordre par rôle (D2), sans en-têtes de groupe** (format linéaire une ligne `Section;NumeroCompte;NomCompte;Solde` par compte — contrairement au PDF/frontend qui ont des sous-titres de rôle ; l'ordre porte le regroupement), suivie des **2 lignes calculées** distinctes (« Résultat reporté (calculé) », « Résultat de l'exercice »), puis `Total capitaux propres`.
 - **And** les comptes equity **ne figurent plus** dans la section `Passifs` (partition D2). `Total passifs` = dettes seules.
 - **And** la ligne invariant finale reste correcte : `total_liabilities + total_equity + retained_earnings + equity_result`.
 - **And** labels **hardcodés FR-CH** (littéraux inline, cohérent existant `csv.rs:120-136`).
@@ -137,7 +137,8 @@ Conforme CO art. 959a (distinction capitaux étrangers / capitaux propres).
   - collision D1 : compte physique `RetainedEarnings` solde 50 000 + `retained_earnings` calculé 5 000 → **2 lignes distinctes**, pas de fusion.
   - **reclassement pur equity** (P1-F1) : 2 comptes equity non nuls s'annulant (`total_equity` net 0 mais lignes présentes), assets/liabilities vides, virtuels nuls → rapport **NON vide** (`is_empty` == false).
   - `CurrentYearResult` non-postable solde nul → absent (via `HAVING balance != 0`).
-  - **`balance_sheet_counts_2979_in_liabilities` (`report_aggregates.rs:412-465`)** : **modifier le fixture pour poser `role: Some(AccountRole::CurrentYearResult)` sur 2979** (le helper actuel met `role: None` → sinon le compte resterait en `liabilities` et le test échouerait pour la mauvaise raison), renommer le test (ex. `balance_sheet_counts_2979_in_equity`) et retourner l'assertion `liabilities`→`equity`.
+  - **`CurrentYearResult` avec solde legacy NON-nul** (remédiation validate P2, MEDIUM) : un posting antérieur à 14-3a (avant que le rôle devienne non-postable) laisse un solde ≠ 0 → le compte **s'affiche dans `equity`** (même chemin de partition par rôle, `HAVING` l'inclut). Test discriminant inverse du cas nul.
+  - **`balance_sheet_counts_2979_in_liabilities` (`report_aggregates.rs:412-465`)** : **modifier le fixture pour poser `role: Some(AccountRole::CurrentYearResult)` sur 2979** (le helper actuel met `role: None` → sinon le compte resterait en `liabilities` et le test échouerait pour la mauvaise raison), renommer le test (ex. `balance_sheet_counts_2979_in_equity`), **mettre à jour son commentaire de doc** (`report_aggregates.rs:404-410`, actuellement « inclut 2979 dans les passifs » → « partitionne 2979 rôle CurrentYearResult dans equity »), et retourner l'assertion `liabilities`→`equity`.
   - **Vitest frontend** : section Capitaux propres groupée par rôle, distinction physique/calculé visible, comptes equity absents de la table Passifs, `isReportEmpty` false sur reclassement pur equity.
 - [ ] **T9 — Doc-sync** : CHANGELOG (nouvelle présentation fonds propres par rôle au bilan) ; manuel utilisateur si section bilan documentée ; pas de nouvelle limitation attendue hors L (voir Limitations).
 
@@ -221,4 +222,10 @@ Spec créée 2026-07-23 par cartographie ground-truth parallèle (3 agents : mot
 - **P1-F7 (MEDIUM)** rôle equity acceptable sur compte `Asset` → hors section. Fix : limitation **L3** documentée + test de non-régression.
 - (LOW) volume de littéraux struct → recensé dans T3.
 
-Prochaine : Pass 2 (Haiku, contexte frais, diff/spec patchée) — boucle jusqu'à 0 > LOW.
+### Pass 2 (Haiku ×2 : adversarial + cas limites, contexte frais, grep ground-truth, 2026-07-23) — 1 MEDIUM + 2 LOW → patchés
+- **P2 (MEDIUM)** test manquant : `CurrentYearResult` avec solde **legacy non-nul** → doit s'afficher en `equity` (AC-G ne testait que le cas nul). Fix : test discriminant inverse ajouté (T8). Comportement déjà correct (même partition), gap de couverture seul.
+- **P2 (LOW)** AC-C : CSV sans en-têtes de groupe (format linéaire, ordre porte le regroupement) → clarifié.
+- **P2 (LOW)** commentaire de doc du test 2979 à mettre à jour au renommage → noté T8.
+- Toutes les corrections P1 vérifiées cohérentes entre elles, 0 CRITICAL/HIGH résiduel, ancres reconfirmées par grep.
+
+Prochaine : Pass 3 (Opus, contexte frais) — 1 MEDIUM en P2 déclenche la relance.
