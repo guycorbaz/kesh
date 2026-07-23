@@ -301,7 +301,7 @@ Lors de la mise à jour vers cette version, Kesh a \textbf{pré-attribué les r�
 \end{keshwarning}
 
 \begin{keshnote}
-Dans cette version, l'indicateur \emph{postable} est \textbf{informatif} : il signale les comptes sur lesquels il ne faut pas saisir d'écriture, mais la saisie n'est pas encore bloquée. Le blocage effectif arrive dans une prochaine version.
+Dans cette version, l'indicateur \emph{postable} \textbf{bloque la saisie manuelle} : Kesh refuse une écriture saisie à la main (création ou modification) dont une ligne vise un compte non-postable — typiquement un compte de regroupement ou le compte de résultat. Les écritures \textbf{déjà enregistrées} sur un tel compte restent modifiables (seule une \emph{nouvelle} ligne vers un compte non-postable est refusée), et les flux automatiques (factures, avoirs, réconciliation) ne sont pas concernés.
 \end{keshnote}
 
 \subsection{Import d'un plan personnalisé}
