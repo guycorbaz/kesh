@@ -1011,8 +1011,9 @@ async fn run_path_b_until_finalize(app: &TestApp, token: &str) {
         .unwrap();
 }
 
-/// Pré-requis Path B finalize : `insert_with_defaults_in_tx` exige les
-/// comptes 1100 et 3000 pour pré-remplir les `company_invoice_settings`.
+/// Pré-requis Path B finalize : `insert_with_defaults_in_tx` exige des comptes
+/// actifs portant les rôles `Receivable`/`DefaultRevenue` (Story 14-3b, résolution
+/// par rôle) pour pré-remplir les `company_invoice_settings`.
 /// On les insère directement en SQL pour éviter de dépendre du chart loader
 /// (la route `accounts::create` requiert un user_id et passe par audit log
 /// — superflu pour un setup de test).

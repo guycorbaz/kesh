@@ -906,3 +906,35 @@ async fn insert_with_defaults_fails_fast_when_no_receivable_role(pool: MySqlPool
         result
     );
 }
+
+/// AC-E (« fail-fast miroir des DEUX fonctions ») — variante tx-level
+/// `insert_with_defaults_in_tx` (utilisée par l'onboarding Path B `onboarding.rs`).
+/// Miroir de `insert_with_defaults_fails_fast_when_no_receivable_role` : sans compte
+/// actif portant le rôle `Receivable`, l'init de config échoue en
+/// `InactiveOrInvalidAccounts` sans écrire de ligne. Contrairement à la variante
+/// pool (qui rollback elle-même), le rollback est ici à la charge de l'appelant.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn insert_with_defaults_in_tx_fails_fast_when_no_receivable_role(pool: MySqlPool) {
+    let company_id = company_with_pme_chart(&pool, "No Receivable Co (tx)").await;
+
+    // Retirer le rôle Receivable (le compte 1100 reste actif mais n'est plus
+    // le compte de créances) → aucun compte actif ne porte plus ce rôle.
+    sqlx::query("UPDATE accounts SET role = NULL WHERE company_id = ? AND number = '1100'")
+        .bind(company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let mut tx = pool.begin().await.unwrap();
+    let result = company_invoice_settings::insert_with_defaults_in_tx(&mut tx, company_id).await;
+    assert!(
+        matches!(
+            result,
+            Err(kesh_db::errors::DbError::InactiveOrInvalidAccounts)
+        ),
+        "variante _in_tx : plan sans rôle Receivable actif → InactiveOrInvalidAccounts, obtenu {:?}",
+        result
+    );
+    // Le caller possède la tx → rollback explicite (la fonction ne le fait pas).
+    tx.rollback().await.unwrap();
+}
