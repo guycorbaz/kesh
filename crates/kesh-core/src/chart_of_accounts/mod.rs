@@ -133,6 +133,37 @@ impl AccountRole {
             Self::EquityCapital | Self::EquityOther => false,
         }
     }
+
+    /// `true` si `account_type` (PascalCase : `"Asset"`, `"Liability"`,
+    /// `"Revenue"`, `"Expense"`) peut porter ce rôle.
+    ///
+    /// # Contrainte volontairement minimale — code review 14-3a, décision D1
+    ///
+    /// On ne valide que la frontière **bilan / résultat**, jamais le côté du
+    /// bilan :
+    ///
+    /// - `DefaultRevenue` est le seul rôle d'un compte de **résultat**, et c'est
+    ///   forcément un produit ;
+    /// - les 9 autres sont des postes de **bilan** — `Asset` ou `Liability`, au
+    ///   choix de l'utilisateur.
+    ///
+    /// Refuser un côté précis serait retomber dans le travers que la Story
+    /// 14-3a corrige : encoder *une* lecture du plan suisse. Contre-exemple
+    /// concret — l'impôt préalable (`VatRecoverable`, 1171) est un **actif**
+    /// alors que la TVA due (`VatPayable`, 2200) est un **passif** ; une table
+    /// « rôles TVA → passif » serait fausse dès le premier compte. Ce qui reste
+    /// interdit est ce qui est indiscutablement faux : un rôle de bilan posé sur
+    /// un compte de charge ou de produit, qui ferait générer à la Story 14-3b
+    /// des écritures du mauvais côté.
+    ///
+    /// Un `account_type` inconnu retourne `false` — mieux vaut refuser une
+    /// valeur qu'on ne sait pas juger que l'accepter par défaut.
+    pub fn accepts_account_type(&self, account_type: &str) -> bool {
+        match self {
+            Self::DefaultRevenue => account_type == "Revenue",
+            _ => matches!(account_type, "Asset" | "Liability"),
+        }
+    }
 }
 
 impl std::str::FromStr for AccountRole {
@@ -242,6 +273,22 @@ fn validate_chart(entries: &[ChartEntry]) -> Result<(), CoreError> {
                 "rôle singleton dupliqué : {} (compte {})",
                 role.as_str(),
                 entry.number
+            )));
+        }
+    }
+
+    // Code review 14-3a (D1) : un rôle posé sur un type de compte incompatible
+    // — p. ex. `Payable` sur une charge — passerait le seed sans bruit et ferait
+    // générer à la Story 14-3b des écritures du mauvais côté du bilan.
+    for entry in entries {
+        if let Some(role) = entry.role
+            && !role.accepts_account_type(entry.account_type.as_str())
+        {
+            return Err(CoreError::InvalidChart(format!(
+                "compte {} : le rôle {} est incompatible avec le type {}",
+                entry.number,
+                role.as_str(),
+                entry.account_type.as_str()
             )));
         }
     }
@@ -567,6 +614,79 @@ mod tests {
             mk("2860", Some(AccountRole::EquityOther)),
         ];
         validate_chart(&ok).expect("EquityOther est multi-valué");
+    }
+
+    #[test]
+    fn role_accepts_only_the_right_side_of_the_chart() {
+        // `DefaultRevenue` est le seul rôle d'un compte de résultat.
+        assert!(AccountRole::DefaultRevenue.accepts_account_type("Revenue"));
+        assert!(!AccountRole::DefaultRevenue.accepts_account_type("Asset"));
+        assert!(!AccountRole::DefaultRevenue.accepts_account_type("Liability"));
+
+        // Les 9 autres sont des postes de bilan, des DEUX côtés : l'impôt
+        // préalable est un actif, la TVA due un passif — d'où la contrainte
+        // volontairement lâche (D1).
+        assert!(AccountRole::VatRecoverable.accepts_account_type("Asset"));
+        assert!(AccountRole::VatPayable.accepts_account_type("Liability"));
+        assert!(AccountRole::Receivable.accepts_account_type("Asset"));
+        assert!(AccountRole::EquityCapital.accepts_account_type("Liability"));
+
+        // Mais jamais sur un compte de résultat.
+        for role in AccountRole::ALL {
+            if role == AccountRole::DefaultRevenue {
+                continue;
+            }
+            assert!(
+                !role.accepts_account_type("Expense"),
+                "{} ne doit pas être posable sur une charge",
+                role.as_str()
+            );
+            assert!(
+                !role.accepts_account_type("Revenue"),
+                "{} ne doit pas être posable sur un produit",
+                role.as_str()
+            );
+        }
+
+        // Type inconnu → refus (on ne juge pas ce qu'on ne connaît pas).
+        assert!(!AccountRole::Receivable.accepts_account_type("Bogus"));
+    }
+
+    #[test]
+    fn validate_chart_rejects_role_on_incompatible_type() {
+        let entries = vec![ChartEntry {
+            number: "6500".into(),
+            name: HashMap::from([("fr".to_string(), "Frais admin".to_string())]),
+            account_type: AccountType::Expense,
+            parent_number: None,
+            role: Some(AccountRole::Payable),
+        }];
+        let err = validate_chart(&entries).expect_err("Payable sur une charge doit être rejeté");
+        let msg = format!("{err:?}");
+        assert!(
+            msg.contains("Payable") && msg.contains("Expense"),
+            "le message doit nommer le rôle et le type : {msg}"
+        );
+    }
+
+    #[test]
+    fn shipped_charts_have_coherent_role_types() {
+        // Les 3 plans livrés doivent passer la contrainte D1 — `load_chart`
+        // appelle déjà `validate_chart`, ce test rend l'intention explicite.
+        for org in ["Pme", "Association", "Independant"] {
+            let chart = load_chart(org).unwrap_or_else(|e| panic!("plan {org} invalide : {e:?}"));
+            for entry in &chart {
+                if let Some(role) = entry.role {
+                    assert!(
+                        role.accepts_account_type(entry.account_type.as_str()),
+                        "plan {org}, compte {} : rôle {} sur type {}",
+                        entry.number,
+                        role.as_str(),
+                        entry.account_type.as_str()
+                    );
+                }
+            }
+        }
     }
 
     #[test]

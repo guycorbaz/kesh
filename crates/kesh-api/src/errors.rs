@@ -2000,11 +2000,30 @@ impl IntoResponse for AppError {
                 ),
                 DbError::UniqueConstraintViolation(m) => {
                     tracing::warn!("unique violation: {m}");
-                    build_response(
-                        StatusCode::CONFLICT,
-                        "RESOURCE_CONFLICT",
-                        &t("error-conflict", "Ressource déjà existante"),
-                    )
+                    // Course perdue sur un rôle singleton : deux requêtes
+                    // concurrentes passent le pré-SELECT du repository, la
+                    // seconde heurte la contrainte. Le message MariaDB porte le
+                    // nom de la contrainte → on renvoie le code métier plutôt
+                    // que « Ressource déjà existante », qui ferait afficher au
+                    // formulaire « ce numéro existe déjà ». On ne peut pas
+                    // nommer le compte détenteur ici (l'info n'est pas dans
+                    // l'erreur), d'où le message sans argument.
+                    if m.contains("uq_accounts_company_singleton_role") {
+                        build_response(
+                            StatusCode::CONFLICT,
+                            "ACCOUNT_ROLE_ALREADY_ASSIGNED",
+                            &t(
+                                "accounts-role-conflict-generic",
+                                "Ce rôle vient d'être attribué à un autre compte. Rechargez la page.",
+                            ),
+                        )
+                    } else {
+                        build_response(
+                            StatusCode::CONFLICT,
+                            "RESOURCE_CONFLICT",
+                            &t("error-conflict", "Ressource déjà existante"),
+                        )
+                    }
                 }
                 // Story 14-3a : code client dédié, distinct du générique
                 // RESOURCE_CONFLICT, pour que le formulaire puisse NOMMER le
@@ -2037,6 +2056,35 @@ impl IntoResponse for AppError {
                         }
                     });
                     (StatusCode::CONFLICT, Json(body)).into_response()
+                }
+                // Story 14-3a / code review : ces deux cas passaient par des
+                // variantes génériques (`ILLEGAL_STATE_TRANSITION` → « Transition
+                // d'état interdite », `CHECK_CONSTRAINT_VIOLATION` → « Valeur
+                // invalide »), qui ne disent pas à l'utilisateur quoi corriger.
+                DbError::AccountParentArchived { parent_number } => {
+                    let fallback = format!(
+                        "Le compte parent {parent_number} est archivé. Réactivez-le d'abord."
+                    );
+                    let mut args = FluentArgs::new();
+                    args.set("number", parent_number.clone());
+                    build_response(
+                        StatusCode::CONFLICT,
+                        "ACCOUNT_PARENT_ARCHIVED",
+                        &t_args("accounts-parent-archived", &fallback, &args),
+                    )
+                }
+                DbError::AccountRoleInvalidForType { role, account_type } => {
+                    let fallback = format!(
+                        "Le rôle {role} ne peut pas être attribué à un compte de type {account_type}."
+                    );
+                    let mut args = FluentArgs::new();
+                    args.set("role", role.clone());
+                    args.set("type", account_type.clone());
+                    build_response(
+                        StatusCode::BAD_REQUEST,
+                        "ACCOUNT_ROLE_INVALID_FOR_TYPE",
+                        &t_args("accounts-role-invalid-for-type", &fallback, &args),
+                    )
                 }
                 DbError::ForeignKeyViolation(m) => {
                     tracing::warn!("fk violation: {m}");

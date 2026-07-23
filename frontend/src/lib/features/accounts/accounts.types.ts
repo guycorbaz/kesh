@@ -88,4 +88,11 @@ export interface ArchiveAccountRequest {
 /** Story 14-3a (#269) — réactivation d'un compte archivé. */
 export interface ReactivateAccountRequest {
 	version: number;
+	/**
+	 * Réactiver sans le rôle porté au moment de l'archivage (code review 14-3a,
+	 * D4). Omis / `false` par défaut : la réactivation échoue si le rôle
+	 * singleton a été repris entre-temps. `true` = « réactiver quand même »,
+	 * proposé par l'UI après ce refus.
+	 */
+	clearRole?: boolean;
 }

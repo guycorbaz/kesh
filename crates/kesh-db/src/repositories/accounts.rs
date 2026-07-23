@@ -9,24 +9,34 @@
 
 use sqlx::mysql::MySqlPool;
 
-use crate::entities::account::{Account, AccountRole, AccountUpdate, NewAccount};
+use crate::entities::account::{Account, AccountRole, AccountType, AccountUpdate, NewAccount};
 use crate::entities::audit_log::NewAuditLogEntry;
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::audit_log;
 
-/// Colonnes de `accounts` sélectionnées pour hydrater [`Account`].
+/// Colonnes de `accounts` sélectionnées pour hydrater [`Account`], sous forme de
+/// littéral — un `macro_rules!` plutôt qu'un `const` pour rester utilisable dans
+/// `concat!`, qui n'accepte que des littéraux.
 ///
 /// ⚠️ La colonne générée `singleton_role` est **volontairement absente** : elle
 /// n'existe que pour porter la contrainte d'unicité partielle des rôles
 /// singleton, elle n'a pas de représentation Rust.
-const COLUMNS: &str = "id, company_id, number, name, account_type, parent_id, active, role, postable, version, created_at, updated_at";
-
-/// ⚠️ Duplique volontairement [`COLUMNS`] (via `format!` pour rester synchrone).
-/// Toute colonne ajoutée à [`Account`] doit apparaître dans les deux — l'oubli
-/// ne casse pas la compilation mais fait échouer `FromRow` au runtime.
-fn find_by_id_sql() -> String {
-    format!("SELECT {COLUMNS} FROM accounts WHERE id = ?")
+macro_rules! columns {
+    () => {
+        "id, company_id, number, name, account_type, parent_id, active, role, postable, version, created_at, updated_at"
+    };
 }
+
+/// Source unique des colonnes, pour les requêtes construites dynamiquement.
+const COLUMNS: &str = columns!();
+
+/// Requête de relecture par ID, assemblée **à la compilation**.
+///
+/// Code review 14-3a : c'était un `fn -> String` appelé 7× par le module, soit
+/// une allocation par requête pour concaténer deux littéraux. `concat!` sur la
+/// macro [`columns!`] donne le même résultat à coût nul, sans réintroduire la
+/// duplication que le `format!` cherchait à éviter.
+const FIND_BY_ID_SQL: &str = concat!("SELECT ", columns!(), " FROM accounts WHERE id = ?");
 
 /// Snapshot JSON d'un compte pour l'audit log (Story 3.5).
 ///
@@ -50,9 +60,102 @@ fn account_snapshot_json(account: &Account) -> serde_json::Value {
     })
 }
 
+/// Vérifie que `role` est compatible avec `account_type` (code review 14-3a, D1).
+///
+/// La règle vit dans `kesh-core` — source unique partagée avec la validation des
+/// plans comptables JSON. On la joint par la représentation textuelle commune
+/// des deux enums jumeaux plutôt que par un `match` à 10 bras, qui deviendrait
+/// une quatrième source à synchroniser.
+fn check_role_account_type(
+    role: Option<AccountRole>,
+    account_type: AccountType,
+) -> Result<(), DbError> {
+    let Some(role) = role else {
+        return Ok(());
+    };
+    let core = kesh_core::chart_of_accounts::AccountRole::ALL
+        .into_iter()
+        .find(|c| c.as_str() == role.as_str())
+        .ok_or_else(|| {
+            DbError::Invariant(format!(
+                "rôle {} absent de kesh_core::AccountRole::ALL — les deux enums ont divergé",
+                role.as_str()
+            ))
+        })?;
+
+    if core.accepts_account_type(account_type.as_str()) {
+        Ok(())
+    } else {
+        Err(DbError::AccountRoleInvalidForType {
+            role: role.as_str().to_string(),
+            account_type: account_type.as_str().to_string(),
+        })
+    }
+}
+
+/// `true` si le compte a au moins un sous-compte **actif**.
+async fn has_active_children(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    id: i64,
+) -> Result<bool, DbError> {
+    let row: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM accounts WHERE parent_id = ? AND active = TRUE")
+            .bind(id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(map_db_error)?;
+    Ok(row.0 > 0)
+}
+
+/// Postabilité effective d'un compte — code review 14-3a, décisions D1 et D2.
+///
+/// Deux normalisations, appliquées à **toutes** les écritures (`create` comme
+/// `update`) plutôt qu'à un seul chemin :
+///
+/// 1. le compte de **résultat de l'exercice** n'est jamais postable — l'appli
+///    calcule ce solde (Story 14-1) ; l'accepter postable ouvrirait un
+///    double-comptage à la Story 14-3b ;
+/// 2. un compte ayant des **sous-comptes actifs** est un compte de regroupement,
+///    donc non postable — c'est la règle que le seed et le backfill de migration
+///    appliquent déjà.
+///
+/// Normaliser des deux côtés est ce qui rend l'invariant **structurel** : le
+/// contrat full-replace du `PUT` fait qu'un client dont la page date d'avant la
+/// création d'un sous-compte renverrait `postable: true` et rétablirait l'état
+/// incohérent si seul `create` corrigeait le parent.
+fn effective_postable(role: Option<AccountRole>, requested: bool, has_children: bool) -> bool {
+    if role == Some(AccountRole::CurrentYearResult) || has_children {
+        return false;
+    }
+    requested
+}
+
 /// Crée un compte et retourne l'entité persistée, avec audit log atomique (Story 3.5).
+///
+/// # Gardes de rôle (code review 14-3a)
+///
+/// Symétriques de celles d'[`update`] : compatibilité rôle ↔ type, unicité des
+/// rôles singleton (nommant le compte détenteur), normalisation de `postable`.
+/// Sans elles, un `POST` heurtait directement `uq_accounts_company_singleton_role`
+/// et remontait un 1062 générique que le formulaire traduisait en « ce numéro
+/// existe déjà » — alors que le numéro était libre.
 pub async fn create(pool: &MySqlPool, user_id: i64, new: NewAccount) -> Result<Account, DbError> {
+    check_role_account_type(new.role, new.account_type)?;
+
     let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    // Un compte neuf n'a pas encore d'enfants : seule la règle « résultat de
+    // l'exercice » peut s'appliquer ici.
+    let postable = effective_postable(new.role, new.postable, false);
+
+    // Le rôle singleton est-il déjà porté ? `exclude_id = 0` : aucune ligne ne
+    // porte cet ID (AUTO_INCREMENT démarre à 1), donc rien n'est exclu.
+    if let Some(role) = new.role
+        && let Some(holder) = find_singleton_role_holder(&mut tx, new.company_id, role, 0).await?
+    {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Err(role_conflict(role, holder));
+    }
 
     let result = sqlx::query(
         "INSERT INTO accounts (company_id, number, name, account_type, parent_id, role, postable) \
@@ -64,7 +167,7 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewAccount) -> Result<A
     .bind(new.account_type)
     .bind(new.parent_id)
     .bind(new.role)
-    .bind(new.postable)
+    .bind(postable)
     .execute(&mut *tx)
     .await
     .map_err(map_db_error)?;
@@ -79,7 +182,24 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewAccount) -> Result<A
     let id = i64::try_from(last_id)
         .map_err(|_| DbError::Invariant(format!("last_insert_id {last_id} dépasse i64::MAX")))?;
 
-    let account = sqlx::query_as::<_, Account>(&find_by_id_sql())
+    // Code review 14-3a (D2) : le parent vient d'acquérir un sous-compte, il
+    // devient donc un compte de regroupement. `parent_id` étant immuable après
+    // création (cf. `AccountUpdate`), c'est le seul chemin — avec le seed — qui
+    // crée une relation de parenté ; la normalisation d'[`update`] couvre le
+    // reste. Le scope `company_id` est défensif : sans lui, un `parentId`
+    // pointant sur une autre société ferait écrire hors du tenant courant.
+    // Pas de bump de `version` : `postable` est ici une conséquence structurelle,
+    // pas une modification demandée par un utilisateur sur le parent.
+    if let Some(parent_id) = new.parent_id {
+        sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ? AND company_id = ?")
+            .bind(parent_id)
+            .bind(new.company_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_db_error)?;
+    }
+
+    let account = sqlx::query_as::<_, Account>(FIND_BY_ID_SQL)
         .bind(id)
         .fetch_optional(&mut *tx)
         .await
@@ -111,7 +231,7 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewAccount) -> Result<A
 
 /// Retourne un compte par ID (ou None).
 pub async fn find_by_id(pool: &MySqlPool, id: i64) -> Result<Option<Account>, DbError> {
-    sqlx::query_as::<_, Account>(&find_by_id_sql())
+    sqlx::query_as::<_, Account>(FIND_BY_ID_SQL)
         .bind(id)
         .fetch_optional(pool)
         .await
@@ -194,10 +314,12 @@ pub async fn update(
     user_id: i64,
     changes: AccountUpdate,
 ) -> Result<Account, DbError> {
+    check_role_account_type(changes.role, changes.account_type)?;
+
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
     // Snapshot "before" AVANT l'UPDATE, dans la même transaction.
-    let before_opt = sqlx::query_as::<_, Account>(&find_by_id_sql())
+    let before_opt = sqlx::query_as::<_, Account>(FIND_BY_ID_SQL)
         .bind(id)
         .fetch_optional(&mut *tx)
         .await
@@ -219,6 +341,18 @@ pub async fn update(
             return Err(DbError::OptimisticLockConflict);
         }
         Some(a) => a,
+    };
+
+    // Code review 14-3a (D1/D2) : normaliser AVANT le court-circuit no-op, sinon
+    // un payload demandant `postable: true` sur un compte de regroupement serait
+    // vu comme un changement (puis normalisé) au lieu d'être un no-op.
+    let changes = AccountUpdate {
+        postable: effective_postable(
+            changes.role,
+            changes.postable,
+            has_active_children(&mut tx, id).await?,
+        ),
+        ..changes
     };
 
     // KF-004 : court-circuit no-op AVANT toute mutation.
@@ -266,7 +400,7 @@ pub async fn update(
         return Err(DbError::OptimisticLockConflict);
     }
 
-    let after = sqlx::query_as::<_, Account>(&find_by_id_sql())
+    let after = sqlx::query_as::<_, Account>(FIND_BY_ID_SQL)
         .bind(id)
         .fetch_one(&mut *tx)
         .await
@@ -336,7 +470,7 @@ pub async fn archive(
 
     if rows == 0 {
         tx.rollback().await.map_err(map_db_error)?;
-        let exists = sqlx::query_as::<_, Account>(&find_by_id_sql())
+        let exists = sqlx::query_as::<_, Account>(FIND_BY_ID_SQL)
             .bind(id)
             .fetch_optional(pool)
             .await
@@ -348,7 +482,7 @@ pub async fn archive(
         };
     }
 
-    let account = sqlx::query_as::<_, Account>(&find_by_id_sql())
+    let account = sqlx::query_as::<_, Account>(FIND_BY_ID_SQL)
         .bind(id)
         .fetch_one(&mut *tx)
         .await
@@ -434,15 +568,25 @@ fn role_conflict(role: AccountRole, holder: Account) -> DbError {
 ///   pouvoir nommer le compte qui bloque.
 /// - **Compte déjà actif** → no-op idempotent : entité retournée telle quelle,
 ///   sans bump de version ni audit (cohérent avec le court-circuit KF-004 d'[`update`]).
+///
+/// # `clear_role` — code review 14-3a, décision D4
+///
+/// Un compte archivé conserve son rôle, mais [`update`] refuse de modifier un
+/// compte inactif : si le rôle a été repris entre-temps, l'utilisateur était
+/// coincé dans une séquence en quatre étapes (retirer le rôle du détenteur,
+/// réactiver, retirer le rôle de l'ancien, le rendre au détenteur) que rien
+/// n'indiquait. Avec `clear_role = true`, la réactivation **retire** le rôle du
+/// compte au lieu d'échouer — le garde ci-dessus devient sans objet.
 pub async fn reactivate(
     pool: &MySqlPool,
     id: i64,
     version: i32,
     user_id: i64,
+    clear_role: bool,
 ) -> Result<Account, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
-    let before = match sqlx::query_as::<_, Account>(&find_by_id_sql())
+    let before = match sqlx::query_as::<_, Account>(FIND_BY_ID_SQL)
         .bind(id)
         .fetch_optional(&mut *tx)
         .await
@@ -455,35 +599,44 @@ pub async fn reactivate(
         Some(a) => a,
     };
 
+    // Code review 14-3a : le contrôle de version passe AVANT le court-circuit
+    // no-op — dans l'autre ordre, réactiver avec une version périmée un compte
+    // qu'un tiers a déjà réactivé puis modifié retournait 200 avec une entité
+    // que le client ne connaissait pas, au lieu du 409 que toutes les autres
+    // mutations de la ressource renvoient. Ordre aligné sur [`update`].
+    if before.version != version {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Err(DbError::OptimisticLockConflict);
+    }
+
     // No-op idempotent : déjà actif → on ne touche à rien.
     if before.active {
         tx.rollback().await.map_err(map_db_error)?;
         return Ok(before);
     }
 
-    if before.version != version {
-        tx.rollback().await.map_err(map_db_error)?;
-        return Err(DbError::OptimisticLockConflict);
-    }
-
     // Garde 1 : le parent doit être actif (sinon arborescence incohérente).
     if let Some(parent_id) = before.parent_id {
-        let parent_active: Option<(bool,)> =
-            sqlx::query_as("SELECT active FROM accounts WHERE id = ?")
+        let parent: Option<(bool, String)> =
+            sqlx::query_as("SELECT active, number FROM accounts WHERE id = ?")
                 .bind(parent_id)
                 .fetch_optional(&mut *tx)
                 .await
                 .map_err(map_db_error)?;
-        if !parent_active.map(|(a,)| a).unwrap_or(false) {
+        let (parent_active, parent_number) = parent.unwrap_or((false, parent_id.to_string()));
+        if !parent_active {
             tx.rollback().await.map_err(map_db_error)?;
-            return Err(DbError::IllegalStateTransition(
-                "impossible de réactiver un compte dont le parent est archivé".into(),
-            ));
+            // Variante dédiée, et non `IllegalStateTransition` : ce dernier est
+            // mappé sur un message générique côté API, si bien que l'explication
+            // écrite ici n'atteignait jamais l'utilisateur (code review 14-3a).
+            return Err(DbError::AccountParentArchived { parent_number });
         }
     }
 
     // Garde 2 : le rôle singleton du compte a-t-il été repris pendant l'archivage ?
-    if let Some(role) = before.role
+    // Sans objet si l'appelant a demandé à réactiver sans le rôle (D4).
+    if !clear_role
+        && let Some(role) = before.role
         && let Some(holder) =
             find_singleton_role_holder(&mut tx, before.company_id, role, id).await?
     {
@@ -491,10 +644,13 @@ pub async fn reactivate(
         return Err(role_conflict(role, holder));
     }
 
-    let rows = sqlx::query(
+    let rows = sqlx::query(if clear_role {
+        "UPDATE accounts SET active = TRUE, role = NULL, version = version + 1 \
+         WHERE id = ? AND version = ? AND active = FALSE"
+    } else {
         "UPDATE accounts SET active = TRUE, version = version + 1 \
-         WHERE id = ? AND version = ? AND active = FALSE",
-    )
+         WHERE id = ? AND version = ? AND active = FALSE"
+    })
     .bind(id)
     .bind(version)
     .execute(&mut *tx)
@@ -508,7 +664,7 @@ pub async fn reactivate(
         return Err(DbError::OptimisticLockConflict);
     }
 
-    let after = sqlx::query_as::<_, Account>(&find_by_id_sql())
+    let after = sqlx::query_as::<_, Account>(FIND_BY_ID_SQL)
         .bind(id)
         .fetch_one(&mut *tx)
         .await
@@ -750,6 +906,62 @@ mod tests {
             .await
             .expect("need at least one Admin user in DB for tests");
         row.0
+    }
+
+    /// Helper : société **jetable**, dédiée aux tests qui posent un rôle singleton.
+    ///
+    /// Code review 14-3a : ces tests s'exécutaient sur la société partagée
+    /// (`get_company_id`). Si celle-ci possède les comptes 1100 / 2000 / 3000 —
+    /// ce qui est le cas d'une base de développement seedée **avant** la
+    /// migration 14-3a, dont le backfill leur attribue alors `Receivable`,
+    /// `Payable` et `DefaultRevenue` — l'INSERT du test heurte
+    /// `uq_accounts_company_singleton_role` et panique. Le résultat dépendait du
+    /// contenu de la base, pas du code. Une société propre par test supprime le
+    /// couplage.
+    async fn mk_role_company(pool: &MySqlPool, tag: &str) -> i64 {
+        let name = format!("Test roles {tag}");
+        // Résidu d'un run précédent interrompu avant le nettoyage.
+        drop_role_company_by_name(pool, &name).await;
+
+        let res = sqlx::query(
+            "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+             VALUES (?, 'Test Address\n1000 Lausanne', 'Independant', 'FR', 'FR')",
+        )
+        .bind(&name)
+        .execute(pool)
+        .await
+        .expect("création de la société de test");
+        res.last_insert_id() as i64
+    }
+
+    /// Supprime une société de test et ses comptes.
+    async fn drop_role_company(pool: &MySqlPool, company_id: i64) {
+        sqlx::query("UPDATE accounts SET parent_id = NULL WHERE company_id = ?")
+            .bind(company_id)
+            .execute(pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM accounts WHERE company_id = ?")
+            .bind(company_id)
+            .execute(pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM companies WHERE id = ?")
+            .bind(company_id)
+            .execute(pool)
+            .await
+            .ok();
+    }
+
+    async fn drop_role_company_by_name(pool: &MySqlPool, name: &str) {
+        if let Ok(Some(row)) =
+            sqlx::query_as::<_, (i64,)>("SELECT id FROM companies WHERE name = ?")
+                .bind(name)
+                .fetch_optional(pool)
+                .await
+        {
+            drop_role_company(pool, row.0).await;
+        }
     }
 
     /// Helper : nettoie les comptes de test (numéros commençant par "T").
@@ -1371,9 +1583,8 @@ mod tests {
     #[tokio::test]
     async fn role_and_postable_round_trip() {
         let pool = test_pool().await;
-        let company_id = get_company_id(&pool).await;
+        let company_id = mk_role_company(&pool, "round-trip").await;
         let user_id = get_admin_user_id(&pool).await;
-        cleanup_test_accounts(&pool, company_id).await;
 
         let a = mk(
             &pool,
@@ -1399,7 +1610,7 @@ mod tests {
             .unwrap();
         assert_eq!(scoped.role, Some(AccountRole::VatPayable));
 
-        cleanup_test_accounts(&pool, company_id).await;
+        drop_role_company(&pool, company_id).await;
     }
 
     #[tokio::test]
@@ -1503,9 +1714,8 @@ mod tests {
     #[tokio::test]
     async fn singleton_role_rejected_twice_in_same_company() {
         let pool = test_pool().await;
-        let company_id = get_company_id(&pool).await;
+        let company_id = mk_role_company(&pool, "dup-singleton").await;
         let user_id = get_admin_user_id(&pool).await;
-        cleanup_test_accounts(&pool, company_id).await;
 
         let holder = mk(
             &pool,
@@ -1550,7 +1760,7 @@ mod tests {
             other => panic!("attendu AccountRoleAlreadyAssigned, obtenu {other:?}"),
         }
 
-        cleanup_test_accounts(&pool, company_id).await;
+        drop_role_company(&pool, company_id).await;
     }
 
     #[tokio::test]
@@ -1598,9 +1808,8 @@ mod tests {
     #[tokio::test]
     async fn singleton_role_is_released_on_archive_and_blocks_reactivation() {
         let pool = test_pool().await;
-        let company_id = get_company_id(&pool).await;
+        let company_id = mk_role_company(&pool, "release-on-archive").await;
         let user_id = get_admin_user_id(&pool).await;
-        cleanup_test_accounts(&pool, company_id).await;
 
         // A porte le rôle.
         let a = mk(
@@ -1634,7 +1843,7 @@ mod tests {
         .await;
 
         // Réactiver A est refusé, en nommant B.
-        let err = reactivate(&pool, a.id, a.version, user_id)
+        let err = reactivate(&pool, a.id, a.version, user_id, false)
             .await
             .expect_err("le rôle Payable a été repris par B");
         match err {
@@ -1660,11 +1869,295 @@ mod tests {
         .await
         .unwrap();
 
-        let a = reactivate(&pool, a.id, a.version, user_id).await.unwrap();
+        let a = reactivate(&pool, a.id, a.version, user_id, false)
+            .await
+            .unwrap();
         assert!(a.active);
         assert_eq!(a.role, Some(AccountRole::Payable));
 
-        cleanup_test_accounts(&pool, company_id).await;
+        drop_role_company(&pool, company_id).await;
+    }
+
+    /// Code review 14-3a (D4) : plutôt que la séquence en quatre étapes imposée
+    /// à l'utilisateur, `clear_role` réactive le compte en lui retirant le rôle.
+    #[tokio::test]
+    async fn reactivate_with_clear_role_drops_the_conflicting_role() {
+        let pool = test_pool().await;
+        let company_id = mk_role_company(&pool, "clear-role").await;
+        let user_id = get_admin_user_id(&pool).await;
+
+        let a = mk(
+            &pool,
+            company_id,
+            user_id,
+            "T950",
+            Some(AccountRole::Receivable),
+            true,
+        )
+        .await;
+        let a = archive(&pool, a.id, a.version, user_id).await.unwrap();
+
+        // B reprend le rôle pendant l'archivage.
+        mk(
+            &pool,
+            company_id,
+            user_id,
+            "T951",
+            Some(AccountRole::Receivable),
+            true,
+        )
+        .await;
+
+        // Sans le drapeau : refus (comportement nominal conservé).
+        let err = reactivate(&pool, a.id, a.version, user_id, false)
+            .await
+            .expect_err("le rôle a été repris");
+        assert!(
+            matches!(err, DbError::AccountRoleAlreadyAssigned { .. }),
+            "obtenu {err:?}"
+        );
+
+        // Avec le drapeau : réactivé, sans le rôle.
+        let back = reactivate(&pool, a.id, a.version, user_id, true)
+            .await
+            .expect("réactivation sans le rôle");
+        assert!(back.active);
+        assert_eq!(back.role, None, "le rôle doit avoir été retiré");
+        assert_eq!(back.version, a.version + 1);
+
+        drop_role_company(&pool, company_id).await;
+    }
+
+    /// AC-G : le même rôle singleton dans DEUX sociétés est légitime — c'est
+    /// tout l'objet du `company_id` dans `uq_accounts_company_singleton_role`.
+    /// Sans ce test, une migration retirant `company_id` de la contrainte
+    /// passerait toute la suite au vert.
+    #[tokio::test]
+    async fn same_singleton_role_allowed_in_two_companies() {
+        let pool = test_pool().await;
+        let a_id = mk_role_company(&pool, "tenant-a").await;
+        let b_id = mk_role_company(&pool, "tenant-b").await;
+        let user_id = get_admin_user_id(&pool).await;
+
+        mk(
+            &pool,
+            a_id,
+            user_id,
+            "T960",
+            Some(AccountRole::Receivable),
+            true,
+        )
+        .await;
+        mk(
+            &pool,
+            b_id,
+            user_id,
+            "T960",
+            Some(AccountRole::Receivable),
+            true,
+        )
+        .await;
+
+        drop_role_company(&pool, a_id).await;
+        drop_role_company(&pool, b_id).await;
+    }
+
+    /// Code review 14-3a (HIGH) : le conflit de rôle doit être détecté au
+    /// `create`, pas seulement à l'`update`. Sinon le 1062 remonte en
+    /// `UniqueConstraintViolation` générique et le formulaire affiche
+    /// « ce numéro existe déjà » alors que le numéro est libre.
+    #[tokio::test]
+    async fn create_rejects_taken_singleton_role_and_names_the_holder() {
+        let pool = test_pool().await;
+        let company_id = mk_role_company(&pool, "create-conflict").await;
+        let user_id = get_admin_user_id(&pool).await;
+
+        let holder = mk(
+            &pool,
+            company_id,
+            user_id,
+            "T970",
+            Some(AccountRole::Receivable),
+            true,
+        )
+        .await;
+
+        let err = create(
+            &pool,
+            user_id,
+            NewAccount::new(company_id, "T971", "Autre", AccountType::Asset, None)
+                .with_role(Some(AccountRole::Receivable), true),
+        )
+        .await
+        .expect_err("le rôle Receivable est déjà porté par T970");
+
+        match err {
+            DbError::AccountRoleAlreadyAssigned {
+                account_id,
+                ref account_number,
+                ..
+            } => {
+                assert_eq!(account_id, holder.id);
+                assert_eq!(account_number, "T970");
+            }
+            other => panic!("attendu AccountRoleAlreadyAssigned, obtenu {other:?}"),
+        }
+
+        // Un rôle multi-valué reste acceptable deux fois au `create`.
+        create(
+            &pool,
+            user_id,
+            NewAccount::new(company_id, "T972", "Fonds", AccountType::Liability, None)
+                .with_role(Some(AccountRole::EquityOther), true),
+        )
+        .await
+        .unwrap();
+        create(
+            &pool,
+            user_id,
+            NewAccount::new(company_id, "T973", "Fonds 2", AccountType::Liability, None)
+                .with_role(Some(AccountRole::EquityOther), true),
+        )
+        .await
+        .unwrap();
+
+        drop_role_company(&pool, company_id).await;
+    }
+
+    /// Code review 14-3a (D1) : la frontière bilan / résultat est la seule
+    /// contrainte de type, et elle vaut pour `create` comme pour `update`.
+    #[tokio::test]
+    async fn role_must_match_the_side_of_the_chart() {
+        let pool = test_pool().await;
+        let company_id = mk_role_company(&pool, "role-type").await;
+        let user_id = get_admin_user_id(&pool).await;
+
+        // `Payable` sur une charge → refus au create.
+        let err = create(
+            &pool,
+            user_id,
+            NewAccount::new(company_id, "T980", "Charges", AccountType::Expense, None)
+                .with_role(Some(AccountRole::Payable), true),
+        )
+        .await
+        .expect_err("Payable sur une charge");
+        match err {
+            DbError::AccountRoleInvalidForType {
+                ref role,
+                ref account_type,
+            } => {
+                assert_eq!(role, "Payable");
+                assert_eq!(account_type, "Expense");
+            }
+            other => panic!("attendu AccountRoleInvalidForType, obtenu {other:?}"),
+        }
+
+        // …et au update.
+        let a = mk(&pool, company_id, user_id, "T981", None, true).await;
+        let err = update(
+            &pool,
+            a.id,
+            a.version,
+            user_id,
+            AccountUpdate {
+                name: a.name.clone(),
+                account_type: AccountType::Expense,
+                role: Some(AccountRole::Receivable),
+                postable: true,
+            },
+        )
+        .await
+        .expect_err("Receivable sur une charge");
+        assert!(
+            matches!(err, DbError::AccountRoleInvalidForType { .. }),
+            "obtenu {err:?}"
+        );
+
+        // `DefaultRevenue` exige un compte de produit — et l'accepte.
+        create(
+            &pool,
+            user_id,
+            NewAccount::new(company_id, "T982", "Ventes", AccountType::Revenue, None)
+                .with_role(Some(AccountRole::DefaultRevenue), true),
+        )
+        .await
+        .expect("DefaultRevenue sur un produit est valide");
+
+        drop_role_company(&pool, company_id).await;
+    }
+
+    /// Code review 14-3a (D1/D2) : `postable` est normalisé à chaque écriture,
+    /// pas seulement au seed.
+    #[tokio::test]
+    async fn postable_is_normalised_on_every_write() {
+        let pool = test_pool().await;
+        let company_id = mk_role_company(&pool, "postable-norm").await;
+        let user_id = get_admin_user_id(&pool).await;
+
+        // 1. Le compte de résultat de l'exercice n'est jamais postable, même si
+        //    l'appelant demande explicitement `postable: true`.
+        let result_account = create(
+            &pool,
+            user_id,
+            NewAccount::new(company_id, "T990", "Résultat", AccountType::Liability, None)
+                .with_role(Some(AccountRole::CurrentYearResult), true),
+        )
+        .await
+        .unwrap();
+        assert!(
+            !result_account.postable,
+            "CurrentYearResult doit être forcé non-postable"
+        );
+
+        // 2. Créer un enfant rend le parent non-postable.
+        let parent = mk(&pool, company_id, user_id, "T991", None, true).await;
+        assert!(parent.postable);
+        create(
+            &pool,
+            user_id,
+            NewAccount::new(
+                company_id,
+                "T992",
+                "Enfant",
+                AccountType::Asset,
+                Some(parent.id),
+            ),
+        )
+        .await
+        .unwrap();
+        let parent = find_by_id(&pool, parent.id).await.unwrap().unwrap();
+        assert!(
+            !parent.postable,
+            "un compte qui acquiert un sous-compte devient un compte de regroupement"
+        );
+
+        // 3. Un client dont la page date d'avant ne peut pas le rétablir : le
+        //    contrat full-replace du PUT est normalisé à l'écriture. Sans cela,
+        //    l'invariant tiendrait au create et se dégraderait au premier update.
+        let same = update(
+            &pool,
+            parent.id,
+            parent.version,
+            user_id,
+            AccountUpdate {
+                name: parent.name.clone(),
+                account_type: parent.account_type,
+                role: parent.role,
+                postable: true,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(
+            !same.postable,
+            "la normalisation doit gagner sur le payload"
+        );
+        assert_eq!(
+            same.version, parent.version,
+            "après normalisation il n'y a plus de changement → no-op, pas de bump"
+        );
+
+        drop_role_company(&pool, company_id).await;
     }
 
     #[tokio::test]
@@ -1694,7 +2187,7 @@ mod tests {
             .await
             .unwrap();
         assert!(!archived.active);
-        let back = reactivate(&pool, archived.id, archived.version, user_id)
+        let back = reactivate(&pool, archived.id, archived.version, user_id, false)
             .await
             .unwrap();
         assert!(back.active);
@@ -1712,7 +2205,7 @@ mod tests {
         assert_eq!(n.0, 1);
 
         // --- déjà actif : no-op, pas de bump, pas d'audit supplémentaire
-        let noop = reactivate(&pool, back.id, back.version, user_id)
+        let noop = reactivate(&pool, back.id, back.version, user_id, false)
             .await
             .unwrap();
         assert_eq!(
@@ -1729,11 +2222,23 @@ mod tests {
         .unwrap();
         assert_eq!(n2.0, 1, "no-op ne doit PAS écrire d'audit");
 
+        // --- déjà actif MAIS version périmée → conflit, pas no-op silencieux.
+        //     Code review 14-3a : le no-op était évalué avant le contrôle de
+        //     version, si bien qu'un client travaillant sur une page obsolète
+        //     recevait 200 avec une entité qu'il n'avait jamais vue.
+        let err = reactivate(&pool, back.id, back.version + 99, user_id, false)
+            .await
+            .expect_err("version périmée sur un compte déjà actif");
+        assert!(
+            matches!(err, DbError::OptimisticLockConflict),
+            "attendu OptimisticLockConflict, obtenu {err:?}"
+        );
+
         // --- mauvaise version → conflit optimiste
         let archived = archive(&pool, back.id, back.version, user_id)
             .await
             .unwrap();
-        let err = reactivate(&pool, archived.id, archived.version + 99, user_id)
+        let err = reactivate(&pool, archived.id, archived.version + 99, user_id, false)
             .await
             .expect_err("version incorrecte");
         assert!(
@@ -1741,17 +2246,21 @@ mod tests {
             "obtenu {err:?}"
         );
 
-        // --- parent archivé → refus
+        // --- parent archivé → refus, avec une erreur qui NOMME le parent
+        //     (le générique IllegalStateTransition était mappé côté API sur
+        //     « Transition d'état interdite », sans dire quoi corriger).
         archive(&pool, parent.id, parent.version, user_id)
             .await
             .unwrap();
-        let err = reactivate(&pool, archived.id, archived.version, user_id)
+        let err = reactivate(&pool, archived.id, archived.version, user_id, false)
             .await
             .expect_err("parent archivé");
-        assert!(
-            matches!(err, DbError::IllegalStateTransition(_)),
-            "attendu IllegalStateTransition, obtenu {err:?}"
-        );
+        match err {
+            DbError::AccountParentArchived { ref parent_number } => {
+                assert_eq!(parent_number, "T940");
+            }
+            other => panic!("attendu AccountParentArchived, obtenu {other:?}"),
+        }
 
         cleanup_test_accounts(&pool, company_id).await;
     }
@@ -1772,6 +2281,18 @@ mod tests {
         .fetch_one(&pool)
         .await
         .expect("colonne générée singleton_role introuvable");
+
+        // Code review 14-3a : le `active AND` n'est PAS cosmétique — c'est lui
+        // qui libère le rôle à l'archivage et le fait reprendre à la
+        // réactivation. En n'extrayant que les littéraux entre quotes, ce test
+        // restait vert si un refactor le supprimait, alors qu'en production un
+        // compte archivé aurait squatté son rôle à vie.
+        let normalised = expr.0.replace('`', "").to_lowercase();
+        assert!(
+            normalised.contains("active"),
+            "l'expression générée doit rester conditionnée par `active` : {}",
+            expr.0
+        );
 
         // Extrait les littéraux entre quotes simples de l'expression normalisée
         // par MariaDB, p.ex. : case when `active` <> 0 and `role` in ('A','B') …
@@ -1815,5 +2336,39 @@ mod tests {
                 c.as_str()
             );
         }
+
+        // Et la liste FERMÉE des 10 rôles du CHECK doit couvrir l'enum : un 11ᵉ
+        // rôle ajouté côté Rust sans migration passerait la comparaison
+        // ci-dessus (elle ne porte que sur les 8 singletons) puis échouerait au
+        // premier POST en 4025 « CONSTRAINT chk_accounts_role failed ».
+        let check: (String,) = sqlx::query_as(
+            "SELECT CHECK_CLAUSE FROM information_schema.CHECK_CONSTRAINTS \
+             WHERE CONSTRAINT_SCHEMA = DATABASE() AND CONSTRAINT_NAME = 'chk_accounts_role'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("contrainte chk_accounts_role introuvable");
+
+        let mut from_check: Vec<String> = check
+            .0
+            .split('\'')
+            .skip(1)
+            .step_by(2)
+            .map(|s| s.to_string())
+            .collect();
+        from_check.sort();
+        from_check.dedup();
+
+        let mut all_rust: Vec<String> = AccountRole::ALL
+            .iter()
+            .map(|r| r.as_str().to_string())
+            .collect();
+        all_rust.sort();
+
+        assert_eq!(
+            from_check, all_rust,
+            "la liste des rôles du CHECK SQL ({from_check:?}) diverge de AccountRole::ALL ({all_rust:?}) \
+             — ajouter une migration ALTER … DROP CHECK / ADD CHECK"
+        );
     }
 }

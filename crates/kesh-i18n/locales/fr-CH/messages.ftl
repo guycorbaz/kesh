@@ -174,7 +174,6 @@ account-role-archived-hint = Rôle inactif — ce compte est archivé
 account-field-postable = Postable
 account-postable-no = Non postable
 account-postable-hint = Indicatif — la saisie d'écriture ne le bloque pas encore
-accounts-reactivate = Réactiver
 accounts-reactivate-aria = Réactiver le compte { $number }
 accounts-reactivated = Compte { $number } réactivé
 accounts-role-conflict = Le rôle est déjà attribué au compte { $number } — { $name }. Retirez-le d'abord de ce compte.
@@ -187,6 +186,24 @@ accounts-updated = Compte { $number } modifié
 accounts-archived = Compte { $number } archivé
 accounts-count = { $count } comptes
 accounts-show-archived = Afficher les comptes archivés
+# Story 14-3a — code review : libellés des dialogs et erreurs de rôle
+accounts-create-description = Ajoutez un compte au plan comptable.
+accounts-edit-title = Modifier le compte { $number }
+accounts-edit-description = Le numéro n'est pas modifiable après création.
+accounts-archive-title = Archiver le compte { $number } ?
+accounts-archiving = Archivage…
+account-field-parent-optional = Compte parent (optionnel)
+accounts-parent-none = Aucun
+accounts-parent-archived = Le compte parent { $number } est archivé. Réactivez-le d'abord.
+accounts-role-invalid-for-type = Le rôle { $role } ne peut pas être attribué à un compte de type { $type }.
+accounts-role-conflict-generic = Ce rôle vient d'être attribué à un autre compte. Rechargez la page.
+accounts-reactivate-without-role = Réactiver sans le rôle
+accounts-reactivate-without-role-description = Le rôle de ce compte a été repris par un autre compte. Vous pouvez le réactiver sans son rôle — il restera modifiable ensuite.
+accounts-reactivating = Réactivation…
+common-empty = Aucun élément trouvé.
+common-create = Créer
+common-creating = Création…
+common-saving = Enregistrement…
 
 
 # Mode Guidé/Expert (Story 2.5)

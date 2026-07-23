@@ -78,6 +78,33 @@ pub enum DbError {
         account_name: String,
     },
 
+    /// Réactivation refusée : le compte parent est archivé (Story 14-3a, #269).
+    ///
+    /// Variante dédiée — et non le générique [`DbError::IllegalStateTransition`]
+    /// — parce que ce dernier est mappé sur un message fixe (« Transition d'état
+    /// interdite ») qui ne dit **pas** à l'utilisateur ce qu'il doit faire. Le
+    /// code review Pass 1 a montré que le message explicatif écrit côté
+    /// repository n'atteignait jamais le client. Le numéro du parent permet à
+    /// l'API de produire un message actionnable et traduit.
+    #[error("Le compte parent {parent_number} est archivé")]
+    AccountParentArchived {
+        /// Numéro du compte parent archivé.
+        parent_number: String,
+    },
+
+    /// Le rôle demandé est incompatible avec le type du compte (Story 14-3a).
+    ///
+    /// Contrainte volontairement **minimale** : seule la frontière bilan /
+    /// résultat est vérifiée (cf. `AccountRole::accepts_account_type`). Mappée
+    /// vers HTTP 400 côté API.
+    #[error("Le rôle {role} est incompatible avec un compte de type {account_type}")]
+    AccountRoleInvalidForType {
+        /// Rôle demandé, en PascalCase (ex. `"Payable"`).
+        role: String,
+        /// Type du compte, en PascalCase (ex. `"Expense"`).
+        account_type: String,
+    },
+
     /// Aucun exercice ouvert ne couvre la date fournie (Story 5.2).
     /// Distinct de `FiscalYearClosed` — l'exercice est peut-être
     /// inexistant (date hors de tous les exercices connus) OU clôturé.
@@ -141,6 +168,8 @@ impl DbError {
             Self::InactiveOrInvalidAccounts => "INACTIVE_OR_INVALID_ACCOUNTS",
             Self::DateOutsideFiscalYear => "DATE_OUTSIDE_FISCAL_YEAR",
             Self::AccountRoleAlreadyAssigned { .. } => "ACCOUNT_ROLE_ALREADY_ASSIGNED",
+            Self::AccountParentArchived { .. } => "ACCOUNT_PARENT_ARCHIVED",
+            Self::AccountRoleInvalidForType { .. } => "ACCOUNT_ROLE_INVALID_FOR_TYPE",
             Self::FiscalYearInvalid => "FISCAL_YEAR_INVALID",
             Self::ConfigurationRequired(_) => "CONFIGURATION_REQUIRED",
             Self::ConnectionUnavailable(_) => "CONNECTION_UNAVAILABLE",

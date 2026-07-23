@@ -100,6 +100,13 @@ pub struct ArchiveAccountRequest {
 #[serde(rename_all = "camelCase")]
 pub struct ReactivateAccountRequest {
     pub version: i32,
+    /// Réactiver **sans** le rôle porté au moment de l'archivage (code review
+    /// 14-3a, D4). `false` par défaut : la réactivation échoue en 409 si le rôle
+    /// a été repris entre-temps, ce qui reste le comportement voulu quand
+    /// l'utilisateur veut récupérer son rôle. Passer `true` est le geste
+    /// « réactiver quand même », proposé par l'interface après ce 409.
+    #[serde(default)]
+    pub clear_role: bool,
 }
 
 #[derive(Serialize)]
@@ -192,9 +199,12 @@ pub async fn create_account(
         ));
     }
 
-    // Valider que le parent existe et est actif
+    // Valider que le parent existe, appartient à la société courante et est actif.
+    // Le scope société n'était pas vérifié : un `parentId` d'une autre société
+    // était accepté (code review 14-3a — d'autant plus sensible maintenant que
+    // la création d'un enfant modifie la postabilité du parent).
     if let Some(pid) = req.parent_id {
-        let parent = accounts::find_by_id(&state.pool, pid).await?;
+        let parent = accounts::find_by_id_in_company(&state.pool, pid, company.id).await?;
         match parent {
             None => return Err(AppError::Validation("parent account not found".into())),
             Some(p) if !p.active => {
@@ -229,8 +239,17 @@ pub async fn update_account(
     Path(id): Path<i64>,
     Json(req): Json<UpdateAccountRequest>,
 ) -> Result<Json<AccountResponse>, AppError> {
-    // Validate company exists (defensive: company_id staleness window)
-    let _ = get_company_for(&current_user, &state.pool).await?;
+    // Verify account belongs to current user's company (IDOR check).
+    //
+    // Code review 14-3a : `archive_account` et `reactivate_account` faisaient
+    // cette vérification, `update_account` non — l'`UPDATE` du repository ne
+    // porte pas de `company_id`, si bien qu'un utilisateur pouvait modifier le
+    // compte d'une autre société. Défaut antérieur à la story, mais celle-ci y
+    // fait désormais transiter `role` et `postable` : l'impact passe d'un
+    // renommage à la corruption de la configuration comptable d'un autre tenant.
+    let _existing = accounts::find_by_id_in_company(&state.pool, id, current_user.company_id)
+        .await?
+        .ok_or(AppError::Database(DbError::NotFound))?;
 
     let trimmed_name = req.name.trim().to_string();
     if trimmed_name.is_empty() {
@@ -301,6 +320,13 @@ pub async fn reactivate_account(
         .await?
         .ok_or(AppError::Database(DbError::NotFound))?;
 
-    let account = accounts::reactivate(&state.pool, id, req.version, current_user.user_id).await?;
+    let account = accounts::reactivate(
+        &state.pool,
+        id,
+        req.version,
+        current_user.user_id,
+        req.clear_role,
+    )
+    .await?;
     Ok(Json(AccountResponse::from(account)))
 }

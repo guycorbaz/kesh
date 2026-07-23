@@ -185,13 +185,38 @@ test.describe('Plan comptable — rôles & réactivation (Story 14-3a, #269)', (
 	test("un compte non postable porte un badge explicitement indicatif", async ({ page }) => {
 		await loginAndGoToAccounts(page);
 
-		// Les comptes titres du plan seedé (ex. « 1 », « 10 ») sont non-postables
-		// depuis le backfill de la migration.
-		const badge = page.locator('[data-testid="account-row-10-postable-badge"]');
-		if ((await badge.count()) > 0) {
-			await expect(badge).toContainText('Non postable');
-			// La mention « indicatif » (L2) doit être portée par le title.
-			await expect(badge).toHaveAttribute('title', /[Ii]ndicatif/);
-		}
+		// Code review 14-3a : ne PAS dépendre d'un compte titre du seed (le seed CI
+		// est plat, `badge.count()` valait toujours 0 et le test ne vérifiait
+		// rien). On CONSTRUIT l'état : un compte parent devient non-postable dès
+		// qu'on lui crée un sous-compte (invariant normalisé à l'écriture).
+		const parent = `T${Date.now().toString().slice(-5)}`;
+		await page.locator('[data-testid="account-create-button"]').click();
+		await page.fill('#create-number', parent);
+		await page.fill('#create-name', 'Compte parent E2E');
+		await page.locator('[data-testid="account-create-dialog-submit"]').click();
+		await expect(page.locator(`[data-testid="account-row-${parent}"]`)).toBeVisible();
+
+		// Tant qu'il est une feuille, aucun badge « Non postable ».
+		await expect(
+			page.locator(`[data-testid="account-row-${parent}-postable-badge"]`),
+		).toHaveCount(0);
+
+		// Créer un enfant rattaché à ce parent.
+		const child = `${parent}1`;
+		await page.locator('[data-testid="account-create-button"]').click();
+		await page.fill('#create-number', child);
+		await page.fill('#create-name', 'Sous-compte E2E');
+		await page.locator('[data-testid="account-create-dialog-role"]').scrollIntoViewIfNeeded();
+		// Sélectionner le parent dans le Select « Compte parent ».
+		await page.locator('#create-parent').click();
+		await page.getByRole('option', { name: new RegExp(`^${parent} `) }).click();
+		await page.locator('[data-testid="account-create-dialog-submit"]').click();
+		await expect(page.locator(`[data-testid="account-row-${child}"]`)).toBeVisible();
+
+		// Le parent porte désormais le badge « Non postable », avec le title indicatif.
+		const badge = page.locator(`[data-testid="account-row-${parent}-postable-badge"]`);
+		await expect(badge).toHaveCount(1);
+		await expect(badge).toContainText('Non postable');
+		await expect(badge).toHaveAttribute('title', /[Ii]ndicatif/);
 	});
 });

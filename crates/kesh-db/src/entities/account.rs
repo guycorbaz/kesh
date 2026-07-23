@@ -83,7 +83,9 @@ impl<'r> Decode<'r, MySql> for AccountType {
 /// `kesh-db`, donc `impl Type<MySql> for kesh_core::…::AccountRole` est
 /// `error[E0117]`, et déplacer l'enum ici créerait un cycle Cargo. `AccountType`
 /// est dupliqué pour exactement la même raison. Le garde-fou est le test de
-/// cohérence `account_role_enums_are_in_sync`, pas la fusion.
+/// cohérence `singleton_list_matches_sql_generation_expression`
+/// (`repositories::accounts`), qui compare les deux enums entre eux **et** au
+/// schéma réellement en base — pas la fusion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum AccountRole {
     /// Créances clients (débiteurs).
@@ -231,6 +233,10 @@ pub struct Account {
     ///
     /// **Story 14-3a : cet attribut n'est lu par aucun code métier.** La garde à
     /// la saisie d'écriture est posée par la Story 14-3b.
+    ///
+    /// L'invariant « compte avec sous-comptes actifs ⇒ non postable » est
+    /// normalisé à l'écriture par le repository (`create` et `update`), pas
+    /// seulement au seed — cf. `effective_postable`.
     pub postable: bool,
     pub version: i32,
     pub created_at: NaiveDateTime,

@@ -174,7 +174,6 @@ account-role-archived-hint = Rolle inaktiv — dieses Konto ist archiviert
 account-field-postable = Buchbar
 account-postable-no = Nicht buchbar
 account-postable-hint = Nur Hinweis — die Buchungserfassung wird noch nicht blockiert
-accounts-reactivate = Reaktivieren
 accounts-reactivate-aria = Konto { $number } reaktivieren
 accounts-reactivated = Konto { $number } reaktiviert
 accounts-role-conflict = Die Rolle ist bereits dem Konto { $number } — { $name } zugewiesen. Entfernen Sie sie zuerst dort.
@@ -187,6 +186,24 @@ accounts-updated = Konto { $number } geändert
 accounts-archived = Konto { $number } archiviert
 accounts-count = { $count } Konten
 accounts-show-archived = Archivierte Konten anzeigen
+# Story 14-3a — Code-Review: Dialog-Beschriftungen und Rollenfehler
+accounts-create-description = Fügen Sie dem Kontenplan ein Konto hinzu.
+accounts-edit-title = Konto { $number } bearbeiten
+accounts-edit-description = Die Nummer kann nach der Erstellung nicht mehr geändert werden.
+accounts-archive-title = Konto { $number } archivieren?
+accounts-archiving = Archivierung…
+account-field-parent-optional = Übergeordnetes Konto (optional)
+accounts-parent-none = Keines
+accounts-parent-archived = Das übergeordnete Konto { $number } ist archiviert. Reaktivieren Sie es zuerst.
+accounts-role-invalid-for-type = Die Rolle { $role } kann keinem Konto vom Typ { $type } zugewiesen werden.
+accounts-role-conflict-generic = Diese Rolle wurde soeben einem anderen Konto zugewiesen. Bitte laden Sie die Seite neu.
+accounts-reactivate-without-role = Ohne Rolle reaktivieren
+accounts-reactivate-without-role-description = Die Rolle dieses Kontos wurde von einem anderen Konto übernommen. Sie können es ohne seine Rolle reaktivieren — sie lässt sich danach jederzeit ändern.
+accounts-reactivating = Reaktivierung…
+common-empty = Keine Einträge gefunden.
+common-create = Erstellen
+common-creating = Erstellung…
+common-saving = Speicherung…
 
 
 # Mode Geführt/Experte (Story 2.5)

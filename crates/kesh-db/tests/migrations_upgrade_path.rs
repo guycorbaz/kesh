@@ -277,6 +277,34 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
         .expect("SELECT status FROM invoices failed");
     assert_eq!(i_status, "draft");
 
+    // Étape 5-bis (AC-G Story 14-3a) : le backfill de rôle a tourné sur les
+    // comptes INSÉRÉS par une migration antérieure (1171 Impôt préalable et 2206
+    // Décompte TVA, posés par 20260614000001_vat_accounts_config), pas seulement
+    // sur ceux du seed manuel du fixture. C'est le seul cas que le test dédié
+    // `accounts_role_backfill.rs` (montage sur charts JSON) ne couvre pas.
+    let role_1171: Option<String> =
+        sqlx::query_scalar("SELECT role FROM accounts WHERE company_id = ? AND number = '1171'")
+            .bind(company_id)
+            .fetch_one(&pool)
+            .await
+            .expect("compte 1171 introuvable après upgrade");
+    assert_eq!(
+        role_1171.as_deref(),
+        Some("VatRecoverable"),
+        "le backfill 14-3a doit taguer 1171 (inséré par vat_accounts_config)"
+    );
+    let role_2206: Option<String> =
+        sqlx::query_scalar("SELECT role FROM accounts WHERE company_id = ? AND number = '2206'")
+            .bind(company_id)
+            .fetch_one(&pool)
+            .await
+            .expect("compte 2206 introuvable après upgrade");
+    assert_eq!(
+        role_2206.as_deref(),
+        Some("VatSettlement"),
+        "le backfill 14-3a doit taguer 2206 (inséré par vat_accounts_config)"
+    );
+
     // Étape 6 : assertion `_kesh_version` créée + row initiale, last_boot_at NULL.
     let (last_applied, last_boot_at): (String, Option<chrono::NaiveDateTime>) = sqlx::query_as(
         "SELECT kesh_version_last_applied, last_boot_at FROM _kesh_version WHERE id = 1",

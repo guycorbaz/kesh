@@ -58,9 +58,10 @@
 --
 -- Idempotence (docs/migrations-idempotence-audit.md) : tracked-by-sqlx. L'ALTER
 -- n'a pas d'IF NOT EXISTS (convention majoritaire du repo) — une ré-exécution
--- hors sqlx échouerait (1060 sur le premier ADD COLUMN). Les trois UPDATE de
--- backfill sont en revanche intrinsèquement idempotents (`WHERE role IS NULL`
--- pour les rôles ; `SET postable = FALSE` est un point fixe).
+-- hors sqlx échouerait (1060 sur le premier ADD COLUMN). Les douze UPDATE de
+-- backfill (10 pour `role`, 2 pour `postable`) sont en revanche intrinsèquement
+-- idempotents (`WHERE role IS NULL` pour les rôles ; `SET postable = FALSE` est
+-- un point fixe).
 --
 -- NON-BREAKING → PAS de bump `kesh_version_min_required` (politique P1/P3
 -- CLAUDE.md) : ADD COLUMN nullable + ADD COLUMN NOT NULL DEFAULT + nouvelle
@@ -137,13 +138,34 @@ UPDATE accounts SET role = 'CurrentYearResult' WHERE number = '2979' AND role IS
 UPDATE accounts SET role = 'DefaultRevenue'    WHERE number = '3000' AND role IS NULL AND active = TRUE;
 
 -- Backfill #1 de `postable` : les comptes titres / de regroupement.
--- PUREMENT STRUCTUREL — aucun numéro. Un compte qui a des enfants est un
+-- PUREMENT STRUCTUREL — aucun numéro. Un compte qui a des enfants ACTIFS est un
 -- niveau d'agrégation, on ne poste pas dessus.
 -- (MariaDB autorise l'EXISTS corrélé sur la table cible dans un UPDATE — pas
 -- d'ERROR 1093, vérifié sur 10.11 ; inutile de passer par une table dérivée.)
+--
+-- Deux restrictions ajoutées en code review 14-3a (décision D3) :
+--
+--   * `c.active` — un sous-compte ARCHIVÉ ne fait pas de son parent un compte de
+--     regroupement ; sans ce filtre, archiver l'unique enfant laissait le parent
+--     définitivement non-postable.
+--   * `NOT EXISTS (journal_entry_lines)` — sur une base EXISTANTE, un compte
+--     historiquement mouvementé auquel l'utilisateur a ajouté un sous-compte
+--     après coup deviendrait non-postable ; inoffensif en 14-3a (l'attribut est
+--     indicatif) mais la Story 14-3b bloque la saisie, et son écriture
+--     d'ajustement de fin d'exercice serait refusée sans qu'il n'ait rien
+--     demandé. On préfère un compte encore postable — l'utilisateur peut le
+--     marquer lui-même — à un compte silencieusement verrouillé.
+--
+-- L'invariant « seed ≡ backfill » n'est pas affecté : un plan fraîchement semé
+-- n'a ni écriture ni enfant archivé (test `backfill_matches_seed_for_every_chart`).
 UPDATE accounts a
    SET a.postable = FALSE
- WHERE EXISTS (SELECT 1 FROM accounts c WHERE c.parent_id = a.id);
+ WHERE EXISTS (
+           SELECT 1 FROM accounts c WHERE c.parent_id = a.id AND c.active = TRUE
+       )
+   AND NOT EXISTS (
+           SELECT 1 FROM journal_entry_lines l WHERE l.account_id = a.id
+       );
 
 -- Backfill #2 de `postable` : le compte de résultat de l'exercice.
 -- En modèle temps réel virtuel (Story 14-1), l'application CALCULE le résultat à

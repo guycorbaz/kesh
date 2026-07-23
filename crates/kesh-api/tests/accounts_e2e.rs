@@ -488,6 +488,175 @@ async fn reactivate_refused_when_parent_archived(pool: MySqlPool) {
         409,
         "un compte actif sous un parent archivé serait incohérent"
     );
+    let body: Value = res.json().await.unwrap();
+    assert_eq!(
+        body["error"]["code"], "ACCOUNT_PARENT_ARCHIVED",
+        "code dédié, pour un message qui dit à l'utilisateur quoi corriger"
+    );
+    assert!(
+        body["error"]["message"].as_str().unwrap().contains("10"),
+        "le message doit nommer le parent archivé : {}",
+        body["error"]["message"]
+    );
+}
+
+/// Code review 14-3a (HIGH) : le conflit de rôle singleton doit être détecté au
+/// `POST`, avec le compte détenteur nommé — pas remonté en `RESOURCE_CONFLICT`
+/// générique que le formulaire traduirait par « ce numéro existe déjà ».
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn create_names_the_holder_on_singleton_role_conflict(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let (company_id, admin_id, token) = setup(&pool).await;
+    let holder = mk_account(
+        &pool,
+        company_id,
+        admin_id,
+        "1100",
+        Some(AccountRole::Receivable),
+    )
+    .await;
+
+    let res = app
+        .client
+        .post(app.url("/api/v1/accounts"))
+        .bearer_auth(&token)
+        .json(&json!({
+            "number": "1101", "name": "Débiteurs bis", "accountType": "Asset",
+            "role": "Receivable"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), 409);
+    let body: Value = res.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ACCOUNT_ROLE_ALREADY_ASSIGNED");
+    assert_eq!(body["error"]["details"]["accountId"], holder);
+    assert_eq!(body["error"]["details"]["accountNumber"], "1100");
+    assert!(
+        body["error"]["message"].as_str().unwrap().contains("1100"),
+        "le message doit nommer le compte détenteur : {}",
+        body["error"]["message"]
+    );
+}
+
+/// Code review 14-3a (D1) : la frontière bilan / résultat est validée au POST
+/// comme au PUT — un rôle de bilan sur une charge est un 400 typé.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn create_rejects_role_on_incompatible_type(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let (_company_id, _admin_id, token) = setup(&pool).await;
+
+    let res = app
+        .client
+        .post(app.url("/api/v1/accounts"))
+        .bearer_auth(&token)
+        .json(&json!({
+            "number": "6500", "name": "Frais admin", "accountType": "Expense",
+            "role": "Payable"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), 400);
+    let body: Value = res.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ACCOUNT_ROLE_INVALID_FOR_TYPE");
+}
+
+/// Code review 14-3a (HIGH) : `PUT /accounts/{id}` doit refuser un compte d'une
+/// autre société (IDOR) — la garde existait sur archive/reactivate mais pas ici,
+/// et la story y fait désormais transiter `role`/`postable`.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn update_is_scoped_to_company(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let (_company_a, _admin_a, token_a) = setup(&pool).await;
+
+    // Compte appartenant à une AUTRE société.
+    let company_b = create_company(&pool, "Autre SA").await;
+    let admin_b = create_user(&pool, "admin_b", Role::Admin, company_b).await;
+    let victim = mk_account(&pool, company_b, admin_b, "1100", None).await;
+
+    let res = app
+        .client
+        .put(app.url(&format!("/api/v1/accounts/{victim}")))
+        .bearer_auth(&token_a)
+        .json(&json!({
+            "name": "Détourné", "accountType": "Asset",
+            "role": "Receivable", "postable": true, "version": 1
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        res.status(),
+        404,
+        "IDOR : modifier le compte d'une autre société doit renvoyer 404"
+    );
+
+    // Et le compte victime est intact.
+    let still = accounts::find_by_id(&pool, victim).await.unwrap().unwrap();
+    assert_eq!(still.name, "Compte 1100");
+    assert_eq!(still.role, None);
+}
+
+/// Code review 14-3a (D4) : `clearRole: true` réactive un compte dont le rôle a
+/// été repris, en le laissant sans rôle plutôt qu'en échouant.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn reactivate_with_clear_role_succeeds_after_conflict(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let (company_id, admin_id, token) = setup(&pool).await;
+
+    let a = accounts::create(
+        &pool,
+        admin_id,
+        NewAccount::new(company_id, "1100", "Débiteurs", AccountType::Asset, None)
+            .with_role(Some(AccountRole::Receivable), true),
+    )
+    .await
+    .unwrap();
+    let a = accounts::archive(&pool, a.id, a.version, admin_id)
+        .await
+        .unwrap();
+    // B reprend le rôle.
+    mk_account(
+        &pool,
+        company_id,
+        admin_id,
+        "1101",
+        Some(AccountRole::Receivable),
+    )
+    .await;
+
+    // Sans le drapeau : 409.
+    let res = app
+        .client
+        .put(app.url(&format!("/api/v1/accounts/{}/reactivate", a.id)))
+        .bearer_auth(&token)
+        .json(&json!({ "version": a.version }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 409);
+    assert_eq!(
+        res.json::<Value>().await.unwrap()["error"]["code"],
+        "ACCOUNT_ROLE_ALREADY_ASSIGNED"
+    );
+
+    // Avec clearRole : 200, sans rôle.
+    let res = app
+        .client
+        .put(app.url(&format!("/api/v1/accounts/{}/reactivate", a.id)))
+        .bearer_auth(&token)
+        .json(&json!({ "version": a.version, "clearRole": true }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+    let body: Value = res.json().await.unwrap();
+    assert_eq!(body["active"], true);
+    assert_eq!(body["role"], Value::Null, "le rôle doit avoir été retiré");
 }
 
 /// Conséquence directe du `active AND` de la colonne générée : le rôle est

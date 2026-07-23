@@ -2,7 +2,7 @@
 
 ## Status
 
-review
+done
 
 ## Story
 
@@ -444,34 +444,36 @@ i18n → frontend → tests → doc → gate.
 
 **Backend**
 - `crates/kesh-db/migrations/20260722000001_accounts_role_postable.sql` — **nouveau** : colonnes + contraintes + 12 UPDATE de backfill
-- `crates/kesh-core/src/chart_of_accounts/mod.rs` — `AccountRole` (+`is_singleton`), `ChartEntry.role`, validation singleton, `is_postable`, `parent_numbers`, 6 tests
+- `crates/kesh-core/src/chart_of_accounts/mod.rs` — `AccountRole` (+`is_singleton`, **+`accepts_account_type`** review D1), `ChartEntry.role`, validation singleton **+ validation rôle↔type**, `is_postable`, `parent_numbers`, 9 tests
 - `crates/kesh-core/assets/charts/{pme,association,independant}.json` — annotations `"role"` (10 / 11 / 11 entrées)
 - `crates/kesh-db/src/entities/account.rs` — `AccountRole` + impls sqlx, champs sur `Account`/`NewAccount`/`AccountUpdate`, `NewAccount::new`/`with_role`
 - `crates/kesh-db/src/entities/mod.rs` — réexport `AccountRole`
-- `crates/kesh-db/src/errors.rs` — variant `AccountRoleAlreadyAssigned` + `error_code`
-- `crates/kesh-db/src/repositories/accounts.rs` — `COLUMNS` unique source, `find_by_id_sql()`, snapshot audit, `is_no_op_change`, `create`/`update`/`bulk_create`/`bulk_create_from_chart`, **`reactivate`**, `find_singleton_role_holder`, 8 tests
-- `crates/kesh-api/src/routes/accounts.rs` — DTO, `present_or_null`, handler `reactivate_account`
+- `crates/kesh-db/src/errors.rs` — variants `AccountRoleAlreadyAssigned` **+ `AccountParentArchived` + `AccountRoleInvalidForType`** (review) + `error_code`
+- `crates/kesh-db/src/repositories/accounts.rs` — macro `columns!` + `FIND_BY_ID_SQL` const (review, plus d'alloc/requête), snapshot audit, `is_no_op_change`, `create`/`update`/`bulk_create`/`bulk_create_from_chart`, **`reactivate(clear_role)`**, `find_singleton_role_holder`, **`check_role_account_type`/`has_active_children`/`effective_postable`** (review D1/D2), **garde conflit + normalisation postable dans `create`**, **ordre version/no-op corrigé dans `reactivate`**, **20 tests** (société jetable par test)
+- `crates/kesh-api/src/routes/accounts.rs` — DTO (+`clearRole`), `present_or_null`, handler `reactivate_account`, **garde IDOR + parent scopé société dans `update_account`/`create_account`** (review)
 - `crates/kesh-api/src/lib.rs` — route `PUT /accounts/{id}/reactivate`
-- `crates/kesh-api/src/errors.rs` — mapping 409 `ACCOUNT_ROLE_ALREADY_ASSIGNED` + `details`
+- `crates/kesh-api/src/errors.rs` — mapping 409 `ACCOUNT_ROLE_ALREADY_ASSIGNED` + `details`, **`ACCOUNT_PARENT_ARCHIVED` + `ACCOUNT_ROLE_INVALID_FOR_TYPE` + route du 1062 `singleton_role` vers le code métier** (review)
 - `crates/kesh-api/src/exports/csv_tables.rs` — 12 colonnes + 2 tests
-- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` — 30 clés × 4 locales
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` — clés × 4 locales (**+17 review** : libellés dialogs, erreurs rôle/parent, « réactiver sans le rôle » ; **−1** clé morte `accounts-reactivate`)
 - `crates/kesh-db/tests/accounts_role_backfill.rs` — **nouveau** : invariant seed≡backfill, comptes archivés, colonne générée hors backup
-- `crates/kesh-api/tests/accounts_e2e.rs` — **nouveau** : 10 tests E2E
-- `crates/kesh-db/tests/migrations_upgrade_path.rs` — compteurs 54→55, fenêtre `total - 21`
+- `crates/kesh-api/tests/accounts_e2e.rs` — **nouveau** : **14 tests E2E** (+4 review : POST conflit nommé, POST rôle↔type, IDOR PUT, clearRole)
+- `crates/kesh-db/tests/migrations_upgrade_path.rs` — compteurs 54→55, fenêtre `total - 21`, **+ assertion backfill rôle sur 1171/2206** (review AC-G)
 - 13 fichiers de test — littéraux `NewAccount` / `AccountUpdate` / `ChartEntry`
 
 **Frontend**
-- `frontend/src/lib/features/accounts/accounts.types.ts` — `AccountRole`, `ACCOUNT_ROLES`, `accountRoleKey`, champs DTO
+- `frontend/src/lib/features/accounts/accounts.types.ts` — `AccountRole`, `ACCOUNT_ROLES`, `accountRoleKey`, champs DTO, **`clearRole`** (review)
 - `frontend/src/lib/features/accounts/accounts.api.ts` — `reactivateAccount`
 - `frontend/src/lib/features/accounts/accounts.test.ts` — **nouveau** : 7 tests
-- `frontend/src/routes/(app)/accounts/+page.svelte` — colonne Rôle, badges, dialogs, bouton Réactiver, i18n intégrale
-- `frontend/tests/e2e/accounts.spec.ts` — 3 scénarios Playwright
+- `frontend/src/routes/(app)/accounts/+page.svelte` — colonne Rôle, badges, dialogs, bouton Réactiver, i18n intégrale ; **review : i18n des 3 dialogs, `roleLabel` repli `String(r)`, `Set` de réactivations, dialog « réactiver sans le rôle »**
+- `frontend/src/lib/shared/utils/i18n.svelte.ts` — **fix marques d'isolation Fluent U+2068/U+2069** (utilitaire partagé, commit `4b123f61` — ajouté à la File List en review)
+- `frontend/tests/e2e/accounts.spec.ts` — 3 scénarios Playwright (**badge non-postable rendu déterministe** : construit parent+enfant au lieu de dépendre du seed — review)
 - 3 fixtures de test — `role`/`postable`
 
 **Docs**
-- `docs/migrations-idempotence-audit.md` — ligne + statistiques (P5)
+- `docs/migrations-idempotence-audit.md` — ligne rattachée au tableau (review) + statistiques (P5)
 - `CHANGELOG.md`, `README.md`
 - `docs/manual/fr/user-manual.tex` + 3 PDF régénérés
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — `STORED`→`VIRTUAL` (review)
 
 
 ### Résultat du gate (2026-07-22)
@@ -504,3 +506,87 @@ i18n → frontend → tests → doc → gate.
 Implémentation des 14 tâches. Modèle : `role` (10 valeurs, CHECK BINARY fermé) + `postable` sur `accounts`, unicité **structurelle** des 8 rôles singleton par colonne générée `VIRTUAL` `active`-aware + UNIQUE — reprise du « Workaround Option A » déjà en place pour `reconciliation_rules.active_uniq`. Backfill par numéro une seule fois en migration (`WHERE role IS NULL AND active = TRUE`), deux backfills `postable` chart-agnostiques. Réactivation d'un compte archivé (#269) avec garde parent archivé, no-op idempotent et détection du rôle repris. Aucun consommateur du rôle : comportement métier strictement inchangé (AC-I).
 
 Trois défauts trouvés par les tests pendant le dev (effacement silencieux du rôle sur PUT, incohérence 400/422, troisième liste de colonnes en dur) — détail en Completion Notes.
+
+## Review Findings — code review Pass 1 (Opus 4.8, 3 couches, 2026-07-22)
+
+Couches : **Blind Hunter** (diff seul, 14 findings) · **Edge Case Hunter** (diff + repo, 12) · **Acceptance Auditor** (diff + spec + CLAUDE.md, 8). Après dédoublonnage et vérification ground-truth (`grep -nF` / lecture directe / interrogation MariaDB) : **4 decision-needed, 17 patch, 2 defer, 1 dismiss**.
+
+### Décisions requises
+
+- [x] [Review][Decision] **Validation `role` ↔ `account_type`** — l'API accepte `Payable` sur un compte de charge, `Receivable` sur un `Revenue`, etc. (`routes/accounts.rs` transmet `req.role` tel quel). En 14-3b, un rôle mal typé produirait des écritures sur le mauvais côté du bilan. Options : (a) table de compatibilité stricte rôle → `AccountType` validée en create/update ; (b) avertissement non bloquant côté UI ; (c) aucune contrainte (le rôle est déclaratif, l'utilisateur est souverain sur son plan). Impacte les tests existants qui posent `Receivable` sur des `Asset` arbitraires.
+- [x] [Review][Decision] **Invariant « parent ⇒ non postable » non maintenu après le seed** — `create` d'un enfant ne repasse pas le parent à `postable = FALSE` (`repositories/accounts.rs:58`), alors que la migration et `kesh_core::is_postable` posent la règle structurellement. Options : (a) maintenir l'invariant dans la transaction de `create` ; (b) assumer que `postable` est déclaratif après le seed et retirer le vocabulaire « structurel » de la doc.
+- [x] [Review][Decision] **Backfill `postable = FALSE` sur les comptes ayant des enfants, sans égard aux écritures existantes** (`migration:145-147`, le sous-`EXISTS` ne filtre même pas `c.active`). Inoffensif en 14-3a (badge), mais 14-3b promet de bloquer la saisie : un compte historiquement mouvementé deviendrait interdit. Options : (a) exclure du backfill les comptes portant déjà des lignes d'écriture ; (b) le documenter comme point de contrôle bloquant pour 14-3b.
+- [x] [Review][Decision] **Un compte archivé conserve son rôle et rien ne permet de le libérer** — la ligne archivée n'expose que « Réactiver » et `update` refuse un compte inactif (`WHERE … AND active = TRUE`). L'utilisateur doit deviner une séquence en 4 étapes. Options : (a) autoriser l'édition du seul champ `role` sur un compte archivé ; (b) proposer « Réactiver sans le rôle » dans le toast de conflit ; (c) accepter, le message de conflit désignant déjà le détenteur actif.
+
+### Patches
+
+- [x] [Review][Patch] **[HIGH] `POST /accounts` ne détecte pas le conflit de rôle singleton → message frontend faux** — `find_singleton_role_holder` n'a que 2 call sites (`update`, `reactivate`), pas `create` ; le 1062 remonte en `RESOURCE_CONFLICT` que l'UI traduit en « Ce numéro de compte existe déjà » alors que le numéro est libre. Viole AC-D et AC-H. Ajouter la garde dans `create` (+ `bulk_create`), router le 1062 `uq_accounts_company_singleton_role` vers `ACCOUNT_ROLE_ALREADY_ASSIGNED` (couvre aussi la course perdue), + test E2E `POST` miroir. [`crates/kesh-db/src/repositories/accounts.rs:55`, `frontend/src/routes/(app)/accounts/+page.svelte:190`]
+- [x] [Review][Patch] **[HIGH] IDOR sur `PUT /api/v1/accounts/{id}`** — aucune garde d'appartenance société, contrairement à `archive_account` et `reactivate_account` ; l'`UPDATE` repo n'a pas de `company_id`. **Pré-existant** (absent aussi sur `main`, vérifié), mais la story y fait désormais transiter `role` et `postable` : l'impact passe d'un renommage à la corruption de la configuration métier d'un autre tenant. Appliquer le pattern `find_by_id_in_company(...).ok_or(NotFound)?` + test cross-tenant. [`crates/kesh-api/src/routes/accounts.rs:226`]
+- [x] [Review][Patch] **[HIGH] Le test E2E du badge « Non postable » ne teste rien** — `if ((await badge.count()) > 0)` et le seed CI ne contient que 5 comptes plats, sans relation parent/enfant → la condition est **toujours** fausse, le test passe à vide. C'est la seule couverture bout-en-bout de `postable`. Créer le parent/enfant dans le test et remplacer le `if` par une assertion dure. [`frontend/tests/e2e/accounts.spec.ts:190`]
+- [x] [Review][Patch] **[HIGH] Tests repository singleton non déterministes sur la base partagée** — ils utilisent `test_pool()` + `get_company_id()` (base de dev, pas `#[sqlx::test]`) et posent `Receivable`/`Payable`/`EquityCapital` sur cette société. **Vérifié empiriquement** : la base de dev contient `1100`, `2000`, `3000` actifs pour la société 1 → une fois la migration jouée, le backfill leur attribue ces rôles et les `mk(...)` heurteront `uq_accounts_company_singleton_role` (1062 → panic). Le gate est passé parce que la base tmpfs seede les comptes **après** les migrations. [`crates/kesh-db/src/repositories/accounts.rs:1372+`]
+- [x] [Review][Patch] **[MEDIUM] Aucune validation `role` ↔ `postable`** — l'API permet `CurrentYearResult` avec `postable = true` (défaut serde), contournant l'invariant que le seed et le backfill garantissent tous deux. Forcer `postable = false` côté repository pour ce rôle, en `create` et `update`. [`crates/kesh-api/src/routes/accounts.rs`]
+- [x] [Review][Patch] **[MEDIUM] `reactivate` court-circuite le verrou optimiste** — le no-op « déjà actif » est évalué **avant** le contrôle de version, à l'inverse d'`update`. Réactiver avec une version périmée retourne 200 au lieu de 409 `OPTIMISTIC_LOCK_CONFLICT`. Inverser les deux blocs. [`crates/kesh-db/src/repositories/accounts.rs:458-467`]
+- [x] [Review][Patch] **[MEDIUM] Erreur « parent archivé » non traduite** — message français brut renvoyé en `IllegalStateTransition` et affiché tel quel par `toast.error(err.message)`, alors que le cas jumeau (`accounts-role-conflict`) est traduit dans les 4 locales. Ajouter la clé + le mapping dédié. [`crates/kesh-db/src/repositories/accounts.rs`, `crates/kesh-api/src/errors.rs`]
+- [x] [Review][Patch] **[MEDIUM] i18n de la page incomplète (AC-H « entièrement internationalisée »)** — titres, descriptions et boutons des 3 dialogs restent en français en dur (`:431`, `:456`, `:502`, `:505`, `:516`, `:517`, `:574`, `:577`, `:588`, `:595`, `:598`), et `common-empty` (`:353`) n'existe dans **aucune** des 4 locales. [`frontend/src/routes/(app)/accounts/+page.svelte`]
+- [x] [Review][Patch] **[MEDIUM] Le garde-fou « trois sources synchronisées » est plus faible qu'annoncé** — le test n'extrait que les littéraux entre quotes de `GENERATION_EXPRESSION` : il ne vérifie ni la présence du `active AND` (pourtant le cœur du design archive → libération du rôle), ni la liste des 10 valeurs du `chk_accounts_role` (un 11ᵉ rôle non-singleton passerait tous les tests puis échouerait en 500 à l'exécution). Ajouter les deux assertions. [`crates/kesh-db/src/repositories/accounts.rs:1764`]
+- [x] [Review][Patch] **[LOW] `roleLabel` affiche littéralement `undefined`** pour un rôle inconnu (déploiement mixte front/API) — `ROLE_FALLBACK[r] ?? String(r)`. [`frontend/src/routes/(app)/accounts/+page.svelte:54`]
+- [x] [Review][Patch] **[LOW] `reactivatingId` mono-valué** — deux réactivations rapprochées : le `finally` de la première réarme le bouton de la seconde encore en vol. Passer à un `Set` d'ids. [`frontend/src/routes/(app)/accounts/+page.svelte:94`]
+- [x] [Review][Patch] **[LOW] La ligne d'audit d'idempotence (P5) est détachée du tableau** — une ligne blanche la sépare de la dernière ligne du tableau, elle ne rendra pas comme une ligne de tableau. [`docs/migrations-idempotence-audit.md:64`]
+- [x] [Review][Patch] **[LOW] Commentaire de migration faux** — « Les trois UPDATE de backfill » alors que le fichier en contient **12** (le doc d'audit les compte correctement). [`crates/kesh-db/migrations/20260722000001_accounts_role_postable.sql:61`]
+- [x] [Review][Patch] **[LOW] Doc-comment pointant vers un test inexistant** — `account_role_enums_are_in_sync` n'existe nulle part ; le test réel est `singleton_list_matches_sql_generation_expression`. [`crates/kesh-db/src/entities/account.rs:86`]
+- [x] [Review][Patch] **[LOW] Deux bullets d'AC-G non couverts** — (a) « même rôle singleton sur deux sociétés → accepté » (garanti structurellement, mais non figé : une migration retirant `company_id` de la contrainte passerait tous les tests) ; (b) assertions `role='VatRecoverable'` sur `1171` / `VatSettlement` sur `2206` après `MIGRATOR.run()` dans `migrations_upgrade_path.rs`.
+- [x] [Review][Patch] **[LOW] Nettoyages** — clé FTL `accounts-reactivate` ajoutée mais jamais référencée (le bouton n'utilise que `accounts-reactivate-aria`) ; `FIND_BY_ID_SQL` est passé d'un `const &str` à `fn … -> String` avec `format!` appelé 7×, soit une allocation par requête là où `concat!`/`const` coûte zéro.
+- [x] [Review][Patch] **[LOW] Traçabilité** — `frontend/src/lib/shared/utils/i18n.svelte.ts` (fix des marques d'isolation Fluent, commit `4b123f61`) absent de la File List alors qu'il modifie un utilitaire **partagé** par toute l'application ; `sprint-status.yaml:227` décrit encore la colonne générée comme `STORED` au lieu de `VIRTUAL`.
+
+### Reportés
+
+- [x] [Review][Defer] **[LOW] `accounts-count` sans forme plurielle** (« 1 comptes » / « 1 Konten » / « 1 conti ») — deferred : le correctif propre passe par le sélecteur `{ $count -> [one] … }` de Fluent, que `i18nMsg` ne sait pas interpréter (simple `String.replace` de `{ $var }`). Étendre le moteur i18n dépasse le périmètre de la story et concerne toute l'application.
+- [x] [Review][Defer] **[LOW] Colonne Rôle : rien n'est rendu quand `role` est `null`** au lieu du tiret prévu par la lettre d'AC-H (`{#if account.role}`) — deferred : divergence cosmétique assumée, la page présente les rôles sous forme de badges et une cellule vide y est cohérente ; `roleLabel(null)` gère déjà « Aucun » si le besoin réapparaît.
+
+### Écarté
+
+- **[Blind Hunter, MEDIUM] « `accounts-title` / `accounts-add` / `accounts-edit` / `account-field-*` lues sans être définies → français dans les 3 autres locales »** — **faux positif d'aveuglement**. Le Blind Hunter n'ayant que le diff, il a conclu de l'absence de ces clés dans les hunks `.ftl` qu'elles n'existaient pas. Ground-truth : `crates/kesh-i18n/locales/fr-CH/messages.ftl:146-153` les définit déjà, et l'alignement des 4 locales est vérifié par `npm run lint-i18n-ownership` (PASS au gate). Le vrai défaut résiduel — les littéraux en dur des dialogs — est capturé par le patch i18n ci-dessus.
+
+## Change Log — code review
+
+### Pass 1 (Opus 4.8, 3 couches parallèles, 2026-07-22/23) — 4 décisions + 17 patches + 2 reportés
+
+**Couches** : Blind Hunter (diff seul), Edge Case Hunter (diff + repo), Acceptance Auditor (diff + spec + CLAUDE.md), toutes Opus 4.8. **34 findings bruts** → après dédoublonnage et vérification ground-truth : **4 decision-needed, 17 patch, 2 defer, 1 dismiss**.
+
+**Convergence notable** : les 3 couches ont indépendamment trouvé le HIGH n°1 (conflit de rôle non détecté au `POST`).
+
+**Décisions (Guy, 2026-07-23)** : `D1:a-minimale D2:a D3:a D4:b`.
+- **D1** — validation `role` ↔ `account_type` **minimale** : seule la frontière bilan/résultat (`DefaultRevenue`⇒Revenue ; les 9 autres ⇒ Asset|Liability, au choix). Refuser un côté précis aurait ré-encodé une lecture du plan suisse (l'impôt préalable est un actif, la TVA due un passif). Source unique `kesh_core::AccountRole::accepts_account_type`, appliquée en `create` et `update`.
+- **D2** — invariant « parent ⇒ non postable » maintenu dans la transaction de `create` (`parent_id` immuable ⇒ 2 seuls chemins de parenté : seed + create).
+- **D3** — backfill `postable` restreint aux comptes ayant un enfant **actif** ET **sans écriture** (v0.7.0 tourne en prod : ne pas verrouiller à la 14-3b un compte historiquement mouvementé).
+- **D4** — « Réactiver sans le rôle » (drapeau `clearRole` + dialog de confirmation) plutôt qu'une séquence en 4 étapes.
+
+**Patches HIGH** (tous vérifiés ground-truth) :
+1. **Conflit de rôle au `POST`** — `find_singleton_role_holder` ajouté à `create` ; le 1062 `uq_accounts_company_singleton_role` routé vers `ACCOUNT_ROLE_ALREADY_ASSIGNED` (couvre la course perdue). Test repo + E2E `POST`.
+2. **IDOR sur `PUT /accounts/{id}`** — garde `find_by_id_in_company` (pré-existant, absent aussi sur `main` — vérifié ; corrigé ici car la story y fait transiter `role`/`postable`). + parent scopé société dans `create`. Test E2E cross-tenant.
+3. **Test E2E badge non-postable inopérant** — `if (count>0)` sur un seed plat → réécrit pour construire parent+enfant et asserter durement.
+4. **Tests repo singleton non déterministes** — société **jetable par test** (`mk_role_company`) au lieu de la société partagée ; vérifié empiriquement que la DB de dev contient 1100/2000/3000 → collision réelle.
+
+**Patches MEDIUM** : validation `role`↔`postable` (`CurrentYearResult` forcé non-postable) ; ordre version/no-op inversé dans `reactivate` (409 au lieu de 200 silencieux) ; erreur « parent archivé » typée + traduite (`ACCOUNT_PARENT_ARCHIVED`) ; i18n des 3 dialogs + `common-empty` (4 locales) ; garde-fou « 3 sources » renforcé (assert `active` dans l'expression générée + comparaison de la liste fermée du `chk_accounts_role` à `AccountRole::ALL`).
+
+**Patches LOW** : `roleLabel` repli `String(r)` ; `Set` de réactivations (double-clic) ; ligne d'audit d'idempotence rattachée au tableau ; commentaire migration « trois »→« douze » UPDATE ; doc-comment `account_role_enums_are_in_sync`→`singleton_list_matches_sql_generation_expression` ; 2 bullets AC-G (test 2-sociétés + assertion backfill 1171/2206) ; clé morte `accounts-reactivate` supprimée + `FIND_BY_ID_SQL` reconstruit en `const` (macro `columns!` + `concat!`, plus d'alloc/requête) ; File List + `sprint-status` `STORED`→`VIRTUAL`.
+
+**Reportés** (cf. `deferred-work.md`) : D1 pluralisation `accounts-count` (nécessite le sélecteur Fluent, hors moteur `i18nMsg` — lot i18n dédié) ; D2 cellule Rôle vide au lieu du tiret (badges, divergence cosmétique assumée).
+
+**Dismiss** : Blind Hunter « clés `accounts-title/add/edit` non définies » — faux positif d'aveuglement, réfuté par `grep -nF` (`fr-CH/messages.ftl:146-153`) + `lint-i18n-ownership` PASS.
+
+**Gate après patches** (DB dev migrée manuellement `sqlx migrate run`) : `cargo fmt` ✅ · `clippy -D warnings` ✅ · **`cargo test --workspace -j1 --test-threads=1` ✅ 1946/1946 (0 échec, 104 suites ; baseline 14-3a dev = 1934 → +12 tests de review)** · `npm run check` ✅ 0 err · `lint-i18n-ownership` ✅ · `vitest` ✅ 425/425 · `build` ✅.
+
+### Pass 2 (Sonnet 4.6, contexte frais, 2026-07-23) — 1 MEDIUM → patché
+
+Lentilles combinées sur le diff final aplati (patchs passe 1 inclus). **1 seul finding, MEDIUM** : la description du dialog **Archiver** (`+page.svelte:628`) était restée en français en dur — régression résiduelle de ma remédiation i18n passe 1, qui avait traité les 3 autres dialogs mais oublié celui-ci. Corrigé en réutilisant la clé existante `accounts-archive-confirm` (présente dans les 4 locales). Le reste des patchs passe 1 vérifié sain point par point (create/update/reactivate, mapping d'erreur, migration, frontend, tests) — 0 CRITICAL/HIGH.
+
+### Pass 3 (Haiku 4.5, contexte frais, diff aplati, 2026-07-23) — **CONVERGÉ (0 > LOW)**
+
+Grep ground-truth systématique (garde-fou CLAUDE.md Haiku) sur les 17 patchs + le fix passe 2. Tous confirmés présents et corrects : `active AND` de la colonne générée, liste des 8 singletons synchronisée aux 3 sources + CHECK, `check_role_account_type` en create+update, IDOR `find_by_id_in_company` sur PUT, ordre version→no-op en reactivate, garde singleton en create, invariant seed≡backfill, test badge non-postable déterministe, i18n 4 locales. **0 finding > LOW.**
+
+### Décision — code review
+
+**Trend** : Pass 1 Opus (1 dismiss + 4 décisions + **17 patches** dont 4 HIGH + 5 MEDIUM) → Pass 2 Sonnet (**1 MEDIUM**) → Pass 3 Haiku (**0 > LOW**). **CONVERGÉ en 3 passes**, cycle Opus→Sonnet→Haiku (3 LLM distincts, contexte frais à chaque passe, patchs appliqués avant la passe suivante — conforme Review Iteration Rule). Critère d'arrêt atteint (0 CRITICAL/HIGH/MEDIUM). Chaque patch livré **avec son test** (leçon 21-5b). Gate complet vert après convergence.
+
+Décisions D1-D4 tranchées par Guy (`D1:a-minimale D2:a D3:a D4:b`) et implémentées — voir Pass 1 ci-dessus. Story → **done**.

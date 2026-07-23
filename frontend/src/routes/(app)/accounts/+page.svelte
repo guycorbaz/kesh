@@ -50,10 +50,16 @@
 		CurrentYearResult: "Résultat de l'exercice",
 	};
 
-	/** Libellé traduit d'un rôle ; `null` → « Aucun ». */
+	/** Libellé traduit d'un rôle ; `null` → « Aucun ».
+	 *
+	 * Le repli sur `String(r)` couvre le déploiement mixte : un backend plus
+	 * récent peut renvoyer un rôle que ce bundle ne connaît pas, et
+	 * `ROLE_FALLBACK[r]` vaudrait alors `undefined` — la cellule afficherait
+	 * littéralement « undefined ». Mieux vaut montrer la valeur brute.
+	 */
 	function roleLabel(r: AccountRole | null): string {
 		if (!r) return i18nMsg('account-role-none', 'Aucun');
-		return i18nMsg(accountRoleKey(r), ROLE_FALLBACK[r]);
+		return i18nMsg(accountRoleKey(r), ROLE_FALLBACK[r] ?? String(r));
 	}
 
 	/** Valeur sentinelle du sélecteur pour « aucun rôle » (Select n'aime pas null). */
@@ -90,8 +96,19 @@
 	let archiveTarget = $state<AccountResponse | null>(null);
 	let archiveSubmitting = $state(false);
 
-	// Réactivation (Story 14-3a, #269) — pas de dialog : action directe idempotente.
-	let reactivatingId = $state<number | null>(null);
+	// Réactivation (Story 14-3a, #269) — action directe idempotente.
+	//
+	// Un `Set` et non un id unique : avec un scalaire, la réponse d'une première
+	// réactivation remettait l'état à `null` alors qu'une seconde était encore en
+	// vol, réarmant son bouton et autorisant un double envoi (code review 14-3a).
+	let reactivatingIds = $state<Set<number>>(new Set());
+
+	// Confirmation « réactiver sans le rôle » (code review 14-3a, D4) : proposée
+	// seulement après un refus pour rôle repris, pour sortir l'utilisateur du
+	// cul-de-sac sans lui faire perdre le rôle par inadvertance.
+	let clearRoleOpen = $state(false);
+	let clearRoleTarget = $state<AccountResponse | null>(null);
+	let clearRoleSubmitting = $state(false);
 
 	// --- Computed: tree structure ---
 	interface TreeAccount extends AccountResponse {
@@ -287,28 +304,49 @@
 	}
 
 	// --- Réactivation (Story 14-3a, #269) ---
-	async function submitReactivate(account: AccountResponse) {
-		reactivatingId = account.id;
+	async function submitReactivate(account: AccountResponse, clearRole = false) {
+		// Réassignation et non mutation : Svelte 5 ne suit pas `Set.add()` in place.
+		reactivatingIds = new Set(reactivatingIds).add(account.id);
 		try {
-			await reactivateAccount(account.id, { version: account.version });
+			await reactivateAccount(account.id, { version: account.version, clearRole });
 			toast.success(
 				i18nMsg('accounts-reactivated', 'Compte { $number } réactivé', { number: account.number })
 			);
+			clearRoleOpen = false;
 			await loadAccounts();
 		} catch (err) {
 			if (isApiError(err)) {
 				if (err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
 					toast.error(i18nMsg('accounts-error-stale', 'Les données ont été modifiées. Rechargez la page.'));
+				} else if (err.code === 'ACCOUNT_ROLE_ALREADY_ASSIGNED' && !clearRole) {
+					// Le rôle a été repris pendant l'archivage. Plutôt que de laisser
+					// l'utilisateur devant un cul-de-sac (l'édition d'un compte archivé
+					// est refusée), on lui propose de réactiver sans le rôle.
+					toast.error(err.message);
+					clearRoleTarget = account;
+					clearRoleOpen = true;
 				} else {
-					// ACCOUNT_ROLE_ALREADY_ASSIGNED (rôle repris pendant l'archivage)
-					// et parent archivé arrivent ici avec un message explicite.
+					// ACCOUNT_PARENT_ARCHIVED et le reste portent déjà un message
+					// traduit et actionnable.
 					toast.error(err.message);
 				}
 			} else {
 				toast.error(i18nMsg('error-unexpected', 'Erreur inattendue.'));
 			}
 		} finally {
-			reactivatingId = null;
+			const next = new Set(reactivatingIds);
+			next.delete(account.id);
+			reactivatingIds = next;
+		}
+	}
+
+	async function submitReactivateWithoutRole() {
+		if (!clearRoleTarget) return;
+		clearRoleSubmitting = true;
+		try {
+			await submitReactivate(clearRoleTarget, true);
+		} finally {
+			clearRoleSubmitting = false;
 		}
 	}
 
@@ -350,7 +388,7 @@
 {#if loading && accounts.length === 0}
 	<p class="text-sm text-text-muted">{i18nMsg('common-loading', 'Chargement…')}</p>
 {:else if treeAccounts.length === 0}
-	<p class="text-sm text-text-muted">{i18nMsg('common-empty', 'Aucun compte trouvé.')}</p>
+	<p class="text-sm text-text-muted">{i18nMsg('common-empty', 'Aucun élément trouvé.')}</p>
 {:else}
 	<div class="border border-border rounded-lg overflow-hidden" data-testid="account-table">
 		{#each treeAccounts as account (account.id)}
@@ -407,7 +445,7 @@
 							<Button
 								variant="ghost"
 								size="icon-xs"
-								disabled={reactivatingId === account.id}
+								disabled={reactivatingIds.has(account.id)}
 								onclick={() => submitReactivate(account)}
 								aria-label={i18nMsg('accounts-reactivate-aria', 'Réactiver le compte { $number }', { number: account.number })}
 								data-testid="account-row-{account.number}-reactivate-button"
@@ -428,7 +466,7 @@
 	<Dialog.Content>
 		<Dialog.Header>
 			<Dialog.Title>{i18nMsg('accounts-add', 'Nouveau compte')}</Dialog.Title>
-			<Dialog.Description>Ajoutez un compte au plan comptable.</Dialog.Description>
+			<Dialog.Description>{i18nMsg('accounts-create-description', 'Ajoutez un compte au plan comptable.')}</Dialog.Description>
 		</Dialog.Header>
 		<form onsubmit={(e) => { e.preventDefault(); submitCreate(); }} class="flex flex-col gap-4 mt-4">
 			<div>
@@ -453,13 +491,13 @@
 				</Select.Root>
 			</div>
 			<div>
-				<label for="create-parent" class="text-sm font-medium text-text">Compte parent (optionnel)</label>
+				<label for="create-parent" class="text-sm font-medium text-text">{i18nMsg('account-field-parent-optional', 'Compte parent (optionnel)')}</label>
 				<Select.Root type="single" bind:value={createParentId}>
 					<Select.Trigger id="create-parent" class="w-full mt-1">
-						{createParentId ? parentOptions.find(p => p.value === createParentId)?.label ?? '—' : 'Aucun'}
+						{createParentId ? parentOptions.find(p => p.value === createParentId)?.label ?? '—' : i18nMsg('accounts-parent-none', 'Aucun')}
 					</Select.Trigger>
 					<Select.Content>
-						<Select.Item value="" label="Aucun">Aucun</Select.Item>
+						<Select.Item value="" label={i18nMsg('accounts-parent-none', 'Aucun')}>{i18nMsg('accounts-parent-none', 'Aucun')}</Select.Item>
 						{#each parentOptions as opt}
 							<Select.Item value={opt.value} label={opt.label}>{opt.label}</Select.Item>
 						{/each}
@@ -499,10 +537,10 @@
 			{/if}
 			<Dialog.Footer>
 				<Dialog.Close>
-					<Button variant="outline" type="button" data-testid="account-create-dialog-cancel">Annuler</Button>
+					<Button variant="outline" type="button" data-testid="account-create-dialog-cancel">{i18nMsg('common-cancel', 'Annuler')}</Button>
 				</Dialog.Close>
 				<Button type="submit" disabled={createSubmitting} data-testid="account-create-dialog-submit">
-					{createSubmitting ? 'Création…' : 'Créer'}
+					{createSubmitting ? i18nMsg('common-creating', 'Création…') : i18nMsg('common-create', 'Créer')}
 				</Button>
 			</Dialog.Footer>
 		</form>
@@ -513,8 +551,8 @@
 <Dialog.Root bind:open={editOpen}>
 	<Dialog.Content>
 		<Dialog.Header>
-			<Dialog.Title>Modifier le compte {editAccount?.number}</Dialog.Title>
-			<Dialog.Description>Le numéro n'est pas modifiable après création.</Dialog.Description>
+			<Dialog.Title>{i18nMsg('accounts-edit-title', 'Modifier le compte { $number }', { number: editAccount?.number ?? '' })}</Dialog.Title>
+			<Dialog.Description>{i18nMsg('accounts-edit-description', "Le numéro n'est pas modifiable après création.")}</Dialog.Description>
 		</Dialog.Header>
 		<form onsubmit={(e) => { e.preventDefault(); submitEdit(); }} class="flex flex-col gap-4 mt-4">
 			<div>
@@ -571,10 +609,10 @@
 			{/if}
 			<Dialog.Footer>
 				<Dialog.Close>
-					<Button variant="outline" type="button" data-testid="account-edit-dialog-cancel">Annuler</Button>
+					<Button variant="outline" type="button" data-testid="account-edit-dialog-cancel">{i18nMsg('common-cancel', 'Annuler')}</Button>
 				</Dialog.Close>
 				<Button type="submit" disabled={editSubmitting} data-testid="account-edit-dialog-submit">
-					{editSubmitting ? 'Enregistrement…' : 'Enregistrer'}
+					{editSubmitting ? i18nMsg('common-saving', 'Enregistrement…') : i18nMsg('common-save', 'Enregistrer')}
 				</Button>
 			</Dialog.Footer>
 		</form>
@@ -585,17 +623,37 @@
 <Dialog.Root bind:open={archiveOpen}>
 	<Dialog.Content>
 		<Dialog.Header>
-			<Dialog.Title>Archiver le compte {archiveTarget?.number} ?</Dialog.Title>
+			<Dialog.Title>{i18nMsg('accounts-archive-title', 'Archiver le compte { $number } ?', { number: archiveTarget?.number ?? '' })}</Dialog.Title>
 			<Dialog.Description>
-				Le compte ne sera plus disponible dans les sélections futures, mais restera visible dans les écritures existantes et dans cette liste.
+				{i18nMsg('accounts-archive-confirm', 'Le compte ne sera plus disponible dans les sélections futures, mais restera visible dans les écritures existantes.')}
 			</Dialog.Description>
 		</Dialog.Header>
 		<Dialog.Footer class="mt-4">
 			<Dialog.Close>
-				<Button variant="outline" type="button" autofocus data-testid="account-archive-dialog-cancel">Annuler</Button>
+				<Button variant="outline" type="button" autofocus data-testid="account-archive-dialog-cancel">{i18nMsg('common-cancel', 'Annuler')}</Button>
 			</Dialog.Close>
 			<Button variant="destructive" disabled={archiveSubmitting} onclick={submitArchive} data-testid="account-archive-dialog-confirm">
-				{archiveSubmitting ? 'Archivage…' : 'Archiver'}
+				{archiveSubmitting ? i18nMsg('accounts-archiving', 'Archivage…') : i18nMsg('accounts-archive', 'Archiver')}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<!-- Dialog : Réactiver sans le rôle (code review 14-3a, D4) -->
+<Dialog.Root bind:open={clearRoleOpen}>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title>{i18nMsg('accounts-reactivate-without-role', 'Réactiver sans le rôle')}</Dialog.Title>
+			<Dialog.Description>
+				{i18nMsg('accounts-reactivate-without-role-description', 'Le rôle de ce compte a été repris par un autre compte. Vous pouvez le réactiver sans son rôle — il restera modifiable ensuite.')}
+			</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer class="mt-4">
+			<Dialog.Close>
+				<Button variant="outline" type="button" data-testid="account-clear-role-dialog-cancel">{i18nMsg('common-cancel', 'Annuler')}</Button>
+			</Dialog.Close>
+			<Button disabled={clearRoleSubmitting} onclick={submitReactivateWithoutRole} data-testid="account-clear-role-dialog-confirm">
+				{clearRoleSubmitting ? i18nMsg('accounts-reactivating', 'Réactivation…') : i18nMsg('accounts-reactivate-without-role', 'Réactiver sans le rôle')}
 			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>

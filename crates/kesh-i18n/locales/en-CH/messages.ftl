@@ -174,7 +174,6 @@ account-role-archived-hint = Role inactive — this account is archived
 account-field-postable = Postable
 account-postable-no = Not postable
 account-postable-hint = Informational — journal entry input is not blocked yet
-accounts-reactivate = Reactivate
 accounts-reactivate-aria = Reactivate account { $number }
 accounts-reactivated = Account { $number } reactivated
 accounts-role-conflict = The role is already assigned to account { $number } — { $name }. Remove it from that account first.
@@ -187,6 +186,24 @@ accounts-updated = Account { $number } updated
 accounts-archived = Account { $number } archived
 accounts-count = { $count } accounts
 accounts-show-archived = Show archived accounts
+# Story 14-3a — code review: dialog labels and role errors
+accounts-create-description = Add an account to the chart of accounts.
+accounts-edit-title = Edit account { $number }
+accounts-edit-description = The number cannot be changed after creation.
+accounts-archive-title = Archive account { $number }?
+accounts-archiving = Archiving…
+account-field-parent-optional = Parent account (optional)
+accounts-parent-none = None
+accounts-parent-archived = Parent account { $number } is archived. Reactivate it first.
+accounts-role-invalid-for-type = The { $role } role cannot be assigned to a { $type } account.
+accounts-role-conflict-generic = This role has just been assigned to another account. Please reload the page.
+accounts-reactivate-without-role = Reactivate without the role
+accounts-reactivate-without-role-description = This account's role has been taken over by another account. You can reactivate it without its role — it stays editable afterwards.
+accounts-reactivating = Reactivating…
+common-empty = No items found.
+common-create = Create
+common-creating = Creating…
+common-saving = Saving…
 
 
 # Mode Guided/Expert (Story 2.5)
