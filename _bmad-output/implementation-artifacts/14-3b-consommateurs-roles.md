@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev
+done
 
 ## Story
 
@@ -241,3 +241,27 @@ Vérification par grep des ancres introduites/modifiées par la passe 1 : 9 appe
 ### Décision — validate
 
 **Trend** : Pass 1 Sonnet ×2 (1 CRIT + 2 HIGH + 3 MED) → Pass 2 Haiku (0 > LOW). **CONVERGÉ en 2 passes**, LLM distincts, contexte frais, patchs appliqués avant la passe 2. Critère d'arrêt Review Iteration Rule atteint. 2 décisions de conception tranchées par Guy (D-A0 garde manuelle, D-A1 grandfather par compte). Spec **ready-for-dev**.
+
+## Change Log — code review (post-dev)
+
+Dev-story implémentée (chantiers A + C), puis 3 couches adversariales (Blind Hunter / Edge Case Hunter / Acceptance Auditor) par passe, cycle LLM **Opus → Sonnet → Haiku**, contexte frais à chaque passe, diff aplati `base..HEAD` pour la passe Haiku (garde-fou CLAUDE.md indexation multi-commit).
+
+### Pass 1 (Opus ×3, 2026-07-23) — 2 MEDIUM
+- **AA-F1 (MED)** `CHANGELOG.md` disait encore « la saisie n'est pas encore bloquée » (hérité 14-3a, faux depuis 14-3b) → corrigé.
+- **AA-F2 (MED)** `docs/manual/fr/user-manual.tex` même mention obsolète → corrigée + PDF régénéré.
+- Dismiss : BH grandfather-picker (le `$effect` d'`AccountAutocomplete` résout le libellé via la liste complète), BH sérialisation `postable` (champ obligatoire type-checked). Defer LOW : `<select>` config, asymétrie réconciliation D-A0, grandfather active/postable pré-existant.
+
+### Pass 2 (Sonnet ×3, 2026-07-23) — 5 MEDIUM (4 patchés + 1 différé)
+- **BH-F2 (MED)** formulation doc « nouvelle ligne » imprécise (contredite par le test L3) → « ligne vers un compte non-postable pas déjà utilisé par l'écriture » (CHANGELOG + manuel).
+- **AA-F1 (MED)** test fail-fast AC-E absent sur le miroir `insert_with_defaults_in_tx` → test `insert_with_defaults_in_tx_fails_fast_when_no_receivable_role` ajouté.
+- **AA-F2 (LOW/MED)** 3 commentaires/docstrings citant `1100/3000` en dur → mis à jour par rôle.
+- **ECH-F2 (MED perf, décision Guy = corriger)** les 6 lookups `WHERE role = ? AND active = true` n'utilisaient pas l'index `uq_accounts_company_singleton_role` (scan au lieu de `const`) → `WHERE singleton_role = ?` (encode déjà `active`, réalise l'intention documentée de la migration 14-3a).
+- **ECH-F1 (MED, décision Guy = dette v0.2)** `<select>` config natif affiche vide une valeur non-postable persistée → nullification silencieuse possible. **Différé** : [issue #271](https://github.com/guycorbaz/kesh/issues/271) + limitation **L5**.
+- Dismiss : BH-F1 HIGH réfuté → LOW (post_manual/split `enforce_postable=false` est la décision D-A0, filtré côté frontend).
+
+### Pass 3 (Haiku ×3, diff aplati, 2026-07-23) — **CONVERGÉ (0 > LOW)**
+Blind Hunter = 0 (« READY FOR MERGE »), Edge Case Hunter = 1 LOW (fallback `loadError` d'`AccountAutocomplete` : saisie ID direct sans filtre `postable`, mais rejeté en aval par le backend `enforce_postable=true` — aucune corruption), Acceptance Auditor = 0 (100 % conforme AC-A à AC-E, D-A0/D-A1/D-A2/D-C1/D-C2). **0 finding > LOW.**
+
+### Décision — code review
+
+**Trend** : Pass 1 Opus (2 MED) → Pass 2 Sonnet (5 MED : 4 patchés + 1 différé #271) → Pass 3 Haiku (**0 > LOW**). **CONVERGÉ en 3 passes**, cycle Opus→Sonnet→Haiku, contexte frais, patchs appliqués avant chaque passe suivante. Critère d'arrêt Review Iteration Rule atteint. 2 décisions de scope tranchées par Guy (ECH-F2 corriger via `singleton_role`, ECH-F1 dette v0.2 #271). Gate : 1947/1947 backend + 426 frontend + gate final workspace vert.
