@@ -228,4 +228,9 @@ Spec créée 2026-07-23 par cartographie ground-truth parallèle (3 agents : mot
 - **P2 (LOW)** commentaire de doc du test 2979 à mettre à jour au renommage → noté T8.
 - Toutes les corrections P1 vérifiées cohérentes entre elles, 0 CRITICAL/HIGH résiduel, ancres reconfirmées par grep.
 
-Prochaine : Pass 3 (Opus, contexte frais) — 1 MEDIUM en P2 déclenche la relance.
+### Pass 3 (Opus, contexte frais, grep ground-truth, 2026-07-23) — **CONVERGÉ (0 finding)**
+Vérification exhaustive de la cohérence mutuelle des patches P1/P2 + reconfirmation de toutes les ancres contre le code réel. `is_empty` centralisé backend + frontend séparé = cohérent (assumé, nommé) ; tri backend par rang de rôle sain (aucun `None` dans `equity`, la partition exclut role NULL/non-equity vers `liabilities`) ; D1 non-divergent sur les 3 renderers ; complétude AC↔tâches (aucune orpheline) ; scope ~4 modules (< seuil splitting). **0 finding > LOW ET 0 LOW réel.**
+
+### Décision — validate
+
+**Trend** : Pass 1 Sonnet ×2 (1 CRIT + 4 HIGH + 2 MED) → Pass 2 Haiku ×2 (1 MED + 2 LOW) → Pass 3 Opus (**0**). **CONVERGÉ en 3 passes**, cycle Sonnet→Haiku→Opus, contexte frais, patchs appliqués avant chaque passe suivante, grep ground-truth sur la passe Haiku. Critère d'arrêt Review Iteration Rule atteint. 3 décisions de conception tranchées par Guy (D1 distinguer, D2 section dédiée + équation restructurée, D3 hardcode FR-CH PDF/CSV + i18n frontend) ; 3 limitations documentées (L1 i18n export FR-CH, L2 distinction textuelle, L3 rôle equity sur compte Asset hors section). **Spec scellée — ready-for-dev.** Prochaine : `bmad-dev-story`.
