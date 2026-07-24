@@ -77,6 +77,7 @@ La réouverture est **refusée** s'il existe **au moins un exercice de `start_da
   - `if motif.is_empty() { return Err(AppError::Validation(t("error-fiscal-year-reopen-motif-empty", ...))); }` → **400 `VALIDATION_ERROR`** (miroir exact de `fiscal_years.rs:186-193`).
   - `if motif.chars().count() > REOPEN_MOTIF_MAX { return Err(AppError::Validation(t("error-fiscal-year-reopen-motif-too-long", ...))); }` → **400** (finding P1-M5). `const REOPEN_MOTIF_MAX: usize = 500;` — **borne miroir client+serveur** sur le modèle exact de `PAUSE_NOTE_MAX = 500` (`dunning_reminders.rs:133`/`201` + `DunningPauseDialog.svelte:20`), pour ne pas laisser un motif de plusieurs Mo grossir `audit_log` (rétention 10 ans, sans purge).
   - Le frontend pré-valide (bouton de confirmation désactivé si motif vide **ou** > `REOPEN_MOTIF_MAX` ; `maxlength` sur la textarea).
+  - **Note asymétrie (P2-M1)** : `chars().count()` (Rust, graphèmes ~ scalar values) et le `maxlength` HTML (UTF-16 code units) peuvent diverger sur emoji/multi-octets. Asymétrie mineure **acceptée** (identique au précédent `PAUSE_NOTE_MAX`, sans incident) ; le serveur reste l'autorité (400 si dépassement) — le `maxlength` client n'est qu'un garde-fou UX.
 
 ### D5 — `ensure_not_pat` : réouverture interdite via clé API (PAT)
 
@@ -94,7 +95,7 @@ La réouverture d'un exercice clos est une opération **privilégiée et sensibl
 **Décision Gui 2026-07-24 = « messages distincts, code partagé »** — reproduire le pattern **déjà en place** dans ce module (`FY_NAME_DUPLICATE_KEY` + `map_create_error`/`map_update_error`, `fiscal_years.rs:87-142`) :
 
 1. **Constantes clés namespacées** (repo `fiscal_years.rs`, à côté de `FY_NAME_DUPLICATE_KEY`) : `FY_REOPEN_ALREADY_OPEN_KEY`, `FY_REOPEN_LIFO_BLOCKED_KEY` (+ `FY_REOPEN_UNEXPECTED_KEY` défensif). `reopen` émet `DbError::Invariant(<KEY>)`.
-2. **Nouveau variant `AppError::IllegalState(String)`** (`kesh-api/errors.rs`) → mappé **409** code `ILLEGAL_STATE_TRANSITION` mais avec le **message passé** (déjà localisé par `t()` au niveau du mapper). Réutilisable, distinct du générique `DbError::IllegalStateTransition` (inchangé, conservé pour `close`).
+2. **Nouveau variant `AppError::IllegalState(String)`** (`kesh-api/errors.rs`) → mappé **409** code `ILLEGAL_STATE_TRANSITION` mais avec le **message passé** (déjà localisé par `t()` au niveau du mapper). Porter un message **déjà localisé** dans le `String` d'un variant `AppError` est **cohérent avec le précédent `AppError::Validation`** (que `map_create_error` construit déjà via `AppError::Validation(t("error-...", ...))`, `fiscal_years.rs:89-105`) — ce n'est pas une rupture de l'invariant « String = détail brut » (finding P2-M2). Réutilisable, distinct du générique `DbError::IllegalStateTransition` (inchangé, conservé pour `close`).
 3. **`map_reopen_error`** (route `routes/fiscal_years.rs`, miroir `map_create_error`) : `Invariant(k) if k == FY_REOPEN_ALREADY_OPEN_KEY → AppError::IllegalState(t("error-fiscal-year-already-open", ...))` ; `… == FY_REOPEN_LIFO_BLOCKED_KEY → AppError::IllegalState(t("error-fiscal-year-reopen-blocked", ...))` ; tout autre `Invariant` **retombe** vers le mapping global (→ 500 `INTERNAL_ERROR`, défensif, cohérent `FY_REOPEN_UNEXPECTED_KEY`).
 
 **Conséquence** : les deux cas restent **409 `ILLEGAL_STATE_TRANSITION`** (code machine **partagé** — un code d'erreur *distinct* reste future work, cf. L2) mais avec des **messages utilisateur distincts** et localisés. Le code partagé + message distinct est exactement ce que veulent D3/§G sans sur-ingénierie. **Les tests e2e assertent le *contenu* du message** (pas seulement le code HTTP), sinon le défaut C1 repasserait silencieusement la gate (finding P1-C1).
@@ -118,6 +119,7 @@ La réouverture d'un exercice clos est une opération **privilégiée et sensibl
 
 - **Given** un exercice rouvert (`Open`), **When** on crée / modifie / supprime une écriture datée dans cet exercice, **Then** l'opération **réussit** (les gardes `journal_entries.rs` lisent le statut vivant `Open`) — **aucune** modification de `journal_entries.rs` n'est requise.
 - **And** l'exercice rouvert peut être **re-clôturé** via `close` existant (re-verrou + audit `fiscal_year.closed`).
+- **And (comportement intentionnel du modèle virtuel 14-1, finding P2-M4)** : éditer une écriture d'un exercice rouvert dont un exercice **postérieur** est `Open` recalcule **en direct** le report à-nouveau de cet exercice postérieur (report CALCULÉ, aucun snapshot — `balance_sheet.rs`). C'est **voulu** (cœur du modèle temps réel virtuel), **pas** une corruption ; cohérent avec L4. Aucune invalidation à déclencher tant que la couture snapshot (L3) n'existe pas.
 - **Régression** : un exercice resté `Closed` bloque toujours l'édition (`DbError::FiscalYearClosed`) — inchangé.
 
 ### D. API — endpoint Admin-only `POST /api/v1/fiscal-years/{id}/reopen`
@@ -225,7 +227,7 @@ La réouverture d'un exercice clos est une opération **privilégiée et sensibl
 2. **Verrou `FOR UPDATE`** dans `reopen` **et** la query LIFO : sinon course avec une clôture/édition concurrente (l'équation/immutabilité repose sur la sérialisation). `reopen` ne touche **que** `fiscal_years` (table isolée, doc module `:9-16`) — **pas** de chaîne cross-table `companies → projects → fiscal_years` (mention retirée, P1-LOW). La query LIFO s'appuie sur le next-key locking InnoDB (filtre `status` non indexé) — hypothèse **testée** (course concurrente, AC-H / P1-M6).
 3. **Motif dans l'audit uniquement** (D1) : `json!({"before":.., "after":.., "motif":..})`. Ne PAS ajouter de colonne. Le test lit `audit_log.details_json`.
 4. **Admin-only au router-layer** (D4) : route dans `admin_routes`, **jamais** de check de rôle dans le handler. Ne pas la mettre par erreur dans `comptable_routes` (où vit `close`).
-5. **`ensure_not_pat`** (D5) avant tout : la réouverction n'est pas une opération d'automatisation.
+5. **`ensure_not_pat`** (D5) avant tout : la réouverture n'est pas une opération d'automatisation.
 6. **Garde LIFO = `start_date >` strict** (D3) : borne stricte, statut `Closed`. Frontend désactive proactivement ; serveur = filet 409.
 7. **`close` idempotence** : la branche `:599-601` reste (re-clore un exercice clos = erreur), seul son **message** change (D6). Ne pas la supprimer.
 8. **`already-open` vs `LIFO`** (D7, P1-C1) : NE PAS émettre `DbError::IllegalStateTransition` (son `Display` est **log-only**, `kesh-api/errors.rs:2124` → message générique unique → clés i18n mortes). Émettre `Invariant(KEY)` namespacés + `map_reopen_error` → `AppError::IllegalState(t(...))` (409, code partagé, **messages distincts**). Le frontend affiche `err.message` sur échec du modal (les deux messages sont localisés **au mapper** via `t()`). Les tests e2e assertent le **contenu** du message.
@@ -240,7 +242,7 @@ La réouverture d'un exercice clos est une opération **privilégiée et sensibl
 ### References
 
 - Conception : note léguée **14-1:43/52/156** (interaction réouverture ↔ snapshot, ancre `fiscal_years.rs:600`) ; sprint-status (scope Admin+motif+audit+garde d'ordre) ; décisions Guy 2026-07-24 (D1 audit-only, D3 LIFO strict).
-- Norme : CO art. 957-964 (immutabilité + rétention 10 ans ; la réouverction tracée reste conforme — la piste d'audit prime).
+- Norme : CO art. 957-964 (immutabilité + rétention 10 ans ; la réouverture tracée reste conforme — la piste d'audit prime).
 - Conventions : CLAUDE.md § Test Locally First, § Review Iteration Rule, § Règle de commit, § Issue Tracking Rule.
 
 ## Change Log — create-story
@@ -263,4 +265,16 @@ Findings & remédiation :
 - **P1-M6** — course concurrente `reopen`/`close` : test d'intégration + hypothèse next-key locking documentée (D3/AC-H/T2/T8).
 - **P1-LOW** — ordre de verrou `companies→projects→fiscal_years` retiré de D2 (reopen isole `fiscal_years`) ; span `lib.rs` harmonisé D4.
 
-Prochaine étape : **Passe 2 (Haiku ×3, contexte frais, spec patchée)**.
+**Passe 2 (Haiku ×3 — ancres+régressions / edge+logique / complétude+conventions, contexte frais, spec patchée, garde-fou grep ground-truth actif)** : **0 CRITICAL, 0 HIGH net-nouveau, 0 MEDIUM net-nouveau** après triage. Aucune hallucination Haiku détectée (les CRITICAL/HIGH ont été grep-vérifiés).
+
+Triage des findings Haiku :
+- **H1 (HIGH déclaré)** — message `close` « réouverture interdite » (`fiscal_years.rs:600`, grep-confirmé) : **déjà couvert** par D6/AC-J/T3 (la remédiation est planifiée, pas un trou de spec). Non net-nouveau.
+- **P2-M2 (MED)** — `AppError::IllegalState(String)` porte un message pré-localisé : **non-issue**, cohérent avec le précédent `AppError::Validation` (`map_create_error` fait déjà `Validation(t(...))`). → note ajoutée D7.
+- **P2-M3 (MED)** — hypothèse next-key locking : **déjà couvert** (note D3 + test course AC-H/P1-M6).
+- **P2-M4 (MED, auto-reclassé LOW)** — édition post-reopen recalcule le report des exercices postérieurs ouverts : conforme modèle virtuel → **note explicite ajoutée à AC-C**.
+- **P2-M1 (MED→LOW)** — asymétrie `chars().count()` / `maxlength` UTF-16 : note défensive ajoutée D4 (idem `PAUSE_NOTE_MAX`).
+- **LOW** — typo « réouverction » ×2 corrigée ; L1/L2 (doc module, routing) déjà couverts T3/T5.
+
+Trend : **Passe 1 (Sonnet ×3) : 1 CRIT / 2 HIGH / 5 MED > LOW → Passe 2 (Haiku ×3) : 0 > LOW net-nouveau.** Critère d'arrêt atteint au sens strict. Passe 3 (Opus ×3, modèle orthogonal) lancée en **confirmation** (le pattern projet 3-passes + Haiku = modèle le plus faible justifient une passe de contrôle orthogonale avant de sceller).
+
+Prochaine étape : **Passe 3 (Opus ×3, contexte frais, confirmation)**.
