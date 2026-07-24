@@ -312,6 +312,16 @@ impl PdfBuilder {
         }
     }
 
+    /// Réserve la place de `n` lignes consécutives sur la page courante ; sinon
+    /// saute de page. Sert au **keep-with-next** : dessiner un sous-titre de groupe
+    /// (ex. rôle de fonds propres, Story 14-3c) seulement s'il tient AVEC au moins
+    /// sa première ligne de contenu — évite un sous-titre orphelin en bas de page.
+    fn ensure_space_for_rows(&mut self, n: f32) {
+        if self.cursor_y - n * LINE_HEIGHT_MM < MARGIN_BOTTOM_MM {
+            self.new_page();
+        }
+    }
+
     /// Dessine du texte à la position courante (curseur Y) puis avance d'une ligne.
     fn write_line(&mut self, text: &str, font_size: f32, bold: bool, x_offset: f32) {
         let layer = self.current_layer();
@@ -531,9 +541,22 @@ pub fn render_balance_sheet_pdf(
     for ab in &bs.equity {
         if current_role != Some(ab.role) {
             // Nouveau groupe de rôle → sous-titre gras indenté.
-            if let Some(label) = ctx.section_labels.equity_role_label(ab.role) {
-                builder.ensure_space_for_row();
-                builder.write_line(label, FONT_SIZE_PT, true, 5.0);
+            match ctx.section_labels.equity_role_label(ab.role) {
+                Some(label) => {
+                    // Keep-with-next (ECH-1) : réserver le sous-titre + sa 1re ligne
+                    // ensemble, pour ne pas laisser le sous-titre orphelin en bas de page.
+                    builder.ensure_space_for_rows(2.0);
+                    builder.write_line(label, FONT_SIZE_PT, true, 5.0);
+                }
+                // Défense en profondeur (BH-1) : `is_equity_role` garantit en amont que
+                // tout compte de `bs.equity` porte un rôle equity ; un `None` ici signale
+                // une régression de la partition — on la journalise sans crasher le rendu.
+                None => tracing::warn!(
+                    account_number = %ab.account_number,
+                    role = ?ab.role,
+                    "balance_sheet PDF : compte sans rôle de fonds propres dans la section \
+                     equity (partition incohérente ? cf. is_equity_role)"
+                ),
             }
             current_role = Some(ab.role);
         }
@@ -1619,6 +1642,44 @@ mod tests {
         let ctx = PdfContext::fr_ch_default("CI Test Company");
         let bytes = render_income_statement_pdf(&fixture_is(false), &ctx).unwrap();
         assert!(bytes.starts_with(b"%PDF-1."));
+    }
+
+    /// Story 14-3c (ECH-1) : une section Capitaux propres avec de nombreux comptes de
+    /// fonds propres, groupés par rôle, force plusieurs pages — le rendu par rôle (avec
+    /// sous-titres keep-with-next `ensure_space_for_rows`) ne doit pas paniquer et produit
+    /// un PDF valide multi-pages. Exerce le chemin de pagination des sous-titres de groupe.
+    #[test]
+    fn balance_sheet_pdf_multi_role_equity_paginates_without_panic() {
+        use kesh_db::entities::AccountRole;
+        let eq = |i: usize, role: AccountRole| AccountBalance {
+            account_id: 5000 + i as i64,
+            account_number: format!("29{i:02}"),
+            account_name: format!("Fonds propres #{i}"),
+            account_type: AccountType::Liability,
+            active: true,
+            balance: dec!(100),
+            role: Some(role),
+        };
+        // 120 comptes EquityOther + 1 EquityCapital → 2 groupes de rôle, > 1 page A4.
+        let mut equity: Vec<AccountBalance> = vec![eq(0, AccountRole::EquityCapital)];
+        equity.extend((1..120).map(|i| eq(i, AccountRole::EquityOther)));
+        let total_equity: Decimal = equity.iter().map(|a| a.balance).sum();
+        let bs = BalanceSheet {
+            period: period(),
+            assets: vec![],
+            liabilities: vec![],
+            equity,
+            total_assets: total_equity,
+            total_liabilities: Decimal::ZERO,
+            total_equity,
+            retained_earnings: Decimal::ZERO,
+            equity_result: Decimal::ZERO,
+            equation_holds: true,
+        };
+        let ctx = PdfContext::fr_ch_default("CI Test Company");
+        let bytes = render_balance_sheet_pdf(&bs, &ctx).unwrap();
+        assert!(bytes.starts_with(b"%PDF-1."), "PDF multi-pages valide");
+        assert!(bytes.len() > 3000, "contenu multi-pages non trivial");
     }
 
     #[test]

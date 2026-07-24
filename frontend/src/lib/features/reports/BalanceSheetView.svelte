@@ -193,7 +193,7 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each equityGroups as group (group.role ?? 'none')}
+						{#each equityGroups as group, i (i)}
 							{#if group.role}
 								<tr class="bg-gray-100 text-sm font-semibold">
 									<td colspan="3" class="px-2 py-1"

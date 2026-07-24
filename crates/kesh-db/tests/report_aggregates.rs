@@ -1276,3 +1276,83 @@ async fn balance_sheet_pure_equity_reclass_is_not_empty(pool: MySqlPool) {
     );
     assert!(bs.equation_holds);
 }
+
+/// L3 (non-régression, validate P1-F7) : `accepts_account_type` autorise **techniquement**
+/// un rôle equity sur un compte de type `Asset` (les 4 rôles equity acceptent
+/// `Asset|Liability`). La partition ne scanne que la section `Liability`, donc un tel
+/// compte reste dans **Actifs** et n'apparaît **jamais** dans « Capitaux propres » —
+/// arithmétiquement sain (compté une fois dans `total_assets`), problème de présentation
+/// seul, cas rare. Ce test **documente et verrouille** ce comportement : un futur refactor
+/// de la partition (ex. scan aussi de `assets`) le ferait échouer, signalant la régression.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn balance_sheet_equity_role_on_asset_stays_in_assets(pool: MySqlPool) {
+    let cid = create_company(&pool, "co143c6").await;
+    let uid = create_user(&pool, "u143c6", cid).await;
+    let fy = create_fy(
+        &pool,
+        uid,
+        cid,
+        "FY",
+        NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+    )
+    .await;
+    // Compte mal typé : type Asset MAIS rôle EquityCapital (autorisé par
+    // accepts_account_type qui accepte Asset|Liability pour les rôles equity).
+    let asset_equity = create_acc_with_role(
+        &pool,
+        uid,
+        cid,
+        "1090",
+        "Compte courant associé (équité mal typée)",
+        AccountType::Asset,
+        Some(AccountRole::EquityCapital),
+    )
+    .await;
+    let liab = create_acc_with_role(
+        &pool,
+        uid,
+        cid,
+        "2000",
+        "Fournisseurs",
+        AccountType::Liability,
+        Some(AccountRole::Payable),
+    )
+    .await;
+    // Débit du compte Asset mal typé / crédit d'une dette → Asset (débit−crédit) = +1000.
+    post_entry(
+        &pool,
+        uid,
+        fy,
+        cid,
+        NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
+        Journal::OD,
+        asset_equity,
+        liab,
+        dec!(1000),
+    )
+    .await;
+
+    let period = ReportPeriod::resolve(&pool, cid, fy, None, None)
+        .await
+        .unwrap();
+    let bs = kesh_report::generate_balance_sheet(&pool, cid, &period)
+        .await
+        .unwrap();
+
+    // Le compte reste dans Actifs (partition ne scanne que les Passifs).
+    assert!(
+        bs.assets.iter().any(|a| a.account_number == "1090"),
+        "un rôle equity sur un compte Asset reste dans Actifs (L3)"
+    );
+    // Il n'est JAMAIS dans la section Capitaux propres.
+    assert!(
+        !bs.equity.iter().any(|a| a.account_number == "1090"),
+        "un compte Asset ne doit jamais apparaître dans equity (L3)"
+    );
+    // Compté une fois dans total_assets, pas de double-comptage → équation tient.
+    assert_eq!(bs.total_assets, dec!(1000));
+    assert_eq!(bs.total_equity, Decimal::ZERO);
+    assert_eq!(bs.total_liabilities, dec!(1000));
+    assert!(bs.equation_holds);
+}
