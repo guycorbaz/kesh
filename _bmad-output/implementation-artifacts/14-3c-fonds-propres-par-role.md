@@ -2,7 +2,7 @@
 
 ## Status
 
-review
+done
 
 ## Story
 
@@ -278,3 +278,25 @@ Implémentation complète des tâches T1→T9. Tous les patches de spec (P1-F1..
 Ajout mineur au-delà de la spec T7 : clé i18n `reports-total-equity` (×4 locales) pour le libellé du **total** de la section Capitaux propres dédiée côté frontend, symétrique de `reports-total-assets`/`reports-total-liabilities` existants (la spec ne listait que `reports-retained-earnings-calculated`).
 
 **Gate Test Locally First** — Backend : `cargo fmt --check` ✅ · `cargo build --workspace --all-targets` ✅ · `cargo clippy --workspace --all-targets -- -D warnings` ✅ · kesh-report lib 77 ✅ · kesh-db `report_aggregates` (balance_sheet) 10/10 ✅ · kesh-api `reports_e2e` 35/35 + `reports_export_e2e` 20/20 ✅ (JSON shape non-régressé — seeds role None → `totalLiabilities` inchangé, cohérent Piège #1). Frontend : `npm run check` 0 erreur ✅ · `lint-i18n-ownership` ✅ · `test:unit` 431/431 ✅ · `build` ✅. **Pas de migration** (P3/P5 sans objet). Statut → `review`.
+
+## Change Log — code-review
+
+### CONVERGÉ 3 passes (Sonnet ×3 → Haiku ×3 → Opus ×3, cycle validé Epic 9)
+
+**Trend numérique** : Pass 1 (Sonnet, 3 MEDIUM) → Pass 2 (Haiku, 1 MEDIUM) → Pass 3 (Opus, **0 > LOW**). Chaque passe = 3 couches adversariales en parallèle (Blind Hunter contexte-nul, Edge Case Hunter + accès projet, Acceptance Auditor + spec), contexte frais, LLM différent, patches appliqués avant la passe suivante. Critère d'arrêt Review Iteration Rule atteint (0 CRITICAL/HIGH/MEDIUM).
+
+**Pass 1 — Sonnet ×3 (3 MEDIUM patchés)**
+- **AA-1 (MED)** test de non-régression **L3 manquant** (engagé validate P1-F7) → ajout `balance_sheet_equity_role_on_asset_stays_in_assets` : un compte de type `Asset` portant un rôle equity reste dans Actifs, jamais dans `equity`, compté une fois (équation tient). Verrouille le comportement documenté.
+- **ECH-1 (MED)** sous-titre de rôle PDF **orphelin** possible en bas de page → helper `ensure_space_for_rows(2.0)` keep-with-next (sous-titre + 1re ligne réservés ensemble) + `warn!` défensif (BH-1) si rôle non-equity atterrit dans `equity` + test multi-pages `balance_sheet_pdf_multi_role_equity_paginates_without_panic`.
+- **ECH-2 (MED)** clé `{#each}` `group.role ?? 'none'` collision théorique sur null → changée en index `(i)` (patch pass 1).
+- Tout le reste (équation, partition, tri, `is_empty`, SQL, i18n ×4, D1) confirmé **correct** par les 3 couches (tests live exécutés : 16/16 DB + 36 vitest).
+
+**Pass 2 — Haiku ×3 (1 MEDIUM patché ; grep ground-truth appliqué)**
+- **ECH-2bis (MED)** l'index `(i)` posé en pass 1 est *pire* : si un groupe de rôle disparaît (comptes zéroïsés → `HAVING`), l'index se décale → Svelte réutilise un nœud DOM par position. **Fix STRUCTUREL** (≠ incrémental, leçon rétro E21) : clé = `group.role`, identité intrinsèque **stable** — backend garantit un groupe contigu par rôle (tri par rang) → clé unique ; `is_equity_role` garantit un rôle non-null dans `equity` → pas de collision null. Résout à la fois le risque null de pass 1 ET le bug d'index de pass 2 par construction.
+- Haiku Blind Hunter + Acceptance Auditor : 0 > LOW, tous AC/D1/D2/D3/L3 grep-confirmés (tests live 17/17 DB + 431 frontend). Aucune hallucination Haiku sur diff aplati (mitigation « single flattened diff » appliquée dès pass 2).
+
+**Pass 3 — Opus ×3 (0 finding > LOW → CONVERGÉ)**
+- Les 3 couches ferment la boucle. Blind Hunter : « clean, close the loop ». Edge Case Hunter : arithmétique du keep-with-next tracée — le sous-titre **ne peut plus** être orphelin (`ensure_space_for_rows(2.0)` ⇒ `draw_account_row`'s `ensure_space_for_row` toujours false pour la 1re ligne). Acceptance Auditor : CONVERGÉ, tous les items spec (AC A–G, D1/D2/D3, T1–T9, P1-F1..F7, P2, contraintes no-migration/no-role-from-number) livrés et mutuellement cohérents ; Dev Agent Record véridique.
+- **LOW résiduels (aucune action, stop criterion)** : (a) cas « perte » frontend sans « (calculé) » — **explicitement voulu par T7**, couvert par L2 ; (b) en-tête de *section* Capitaux propres PDF sans keep-with-next — **pré-existant** (même patron que les sections Actifs/Passifs), non introduit par cette story ; (c) commentaire dans un `format!(` — stylistique valide, gate vert.
+
+**Décision** : **CONVERGÉ — story `done`.** Aucune reclassification nécessaire. Fix structurel de la clé `{#each}` (pass 2) illustre à nouveau la leçon « sur un bug d'identité/état, chercher le patron qui élimine la fenêtre plutôt qu'un garde ponctuel ».
