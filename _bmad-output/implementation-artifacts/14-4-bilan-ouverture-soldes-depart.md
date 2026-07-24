@@ -273,3 +273,30 @@ Trend : **P1 (Sonnet×3) 1 CRIT/2 HIGH/6 MED → P2 (Haiku×3) 0 → P3 (Opus×3
 - **LOW** — citation d'ancre `IN` corrigée (`reconciliation.rs:196-205` = placeholders bindés manuels, pas `QueryBuilder`, P3-ECH-LOW-1) ; L4 résidu **reclassé catégorie B** + mécanisme nommé (mauvais millésime de datation, pas doublon ; P3-AA-LOW/ECH-LOW-2).
 
 Trend : **P1 1CRIT/2HIGH/6MED → P2 0 → P3 3MED → P4 (Sonnet×3) 1 MED (complétion du fix P3, textuelle).** Gravité et périmètre strictement décroissants (fix structurel P3 → alignement de 3 phrases). Le MED patché → **Passe 5 de confirmation (Haiku, prochain du cycle)** requise.
+
+**Passe 5 (Haiku ×3 — confirmation de convergence, contexte frais, grep ground-truth)** : **0 CRITICAL / 0 HIGH / 0 MEDIUM / 0 LOW net.** Convergé sur les 3 lentilles :
+- **Blind Hunter** : garde `count_by_company` uniforme partout (35× attesté), aucune phrase « premier exercice vierge » comme critère (hors mentions historiques du bug fermé), contrat d'erreur précis, aucune contradiction Change Log↔corps. 0 finding.
+- **Edge Case Hunter** : toutes les ancres `fichier:ligne` re-vérifiées **exactes**, les 4 helpers/fn confirmés absents et faisables (pattern `Executor` générique, atomicité `validate_invoice`, locale company, `map_core_error` `pub(crate)`, garde `ids.is_empty()`). 0 finding.
+- **Acceptance Auditor** : sur tout le **contenu** — traçabilité D→AC→T→tests 100%, `count_by_company` uniforme, contrat d'erreur cohérent, i18n complète, limitations correctes, doc-sync — **0 écart de contenu**. Son unique « CRITICAL » (« Pass 5 non exécutée, status ready-for-dev viole la règle ») est **RÉFUTÉ comme hallucination de processus Haiku** (garde CLAUDE.md § Haiku-specific guardrails) : l'agent **EST** un reviewer de la Pass 5, et la section Change Log Pass 5 + le scellage du status s'écrivent **après** la passe, pas avant. Aucune assertion de contenu code/spec ; dismiss.
+
+---
+
+### ✅ CONVERGENCE — spec scellée `ready-for-dev` (2026-07-24)
+
+**Trend numérique (Review Iteration Rule)** :
+
+| Passe | Modèles (×3, contexte frais) | Findings > LOW | Détail |
+|-------|------------------------------|----------------|--------|
+| 1 | **Sonnet** ×3 | **9** (1 CRIT / 2 HIGH / 6 MED) | C1 atomicité, H1 locale company, H1-BH code erreur, M helper types, post-génération, test course, GET/status 4 reasons, branches AC-B, Playwright, garde COUNT |
+| 2 | **Haiku** ×3 | **0** | Patches P1 confirmés grep ground-truth ; 1 LOW (i18n) |
+| 3 | **Opus** ×3 | **3** (3 MED) | P3-BH3-1 double-ouverture (fix `count_by_company`), P3-AA-1 code/clé, P3-AA-2 pré-check épinglé |
+| 4 | **Sonnet** ×3 | **1** (1 MED) | P4-M1 résidu textuel du fix P3 (3 phrases « premier exercice vierge ») |
+| 5 | **Haiku** ×3 | **0** | Convergé sur les 3 lentilles ✓ (1 CRITICAL AA réfuté = hallucination processus) |
+
+**Cycle LLM** : Sonnet → Haiku → Opus → Sonnet → Haiku (5 passes, ×3 agents = **15 revues** adversariales, chacune avec grep ground-truth). Critère d'arrêt atteint : 0 finding > LOW en passe 5 (< 8 passes max).
+
+**Décisions de reclassement** : L1/L2/L3/L5 → catégorie C (design intentionnel) ; L4 garde company-wide = C, son résidu théorique « mauvais millésime » = **catégorie B tracée** (remédiation = marqueur L3). AA-P5 CRITICAL réfuté (process-hallucination Haiku, garde grep ground-truth).
+
+**Cœur confirmé sain (15 revues)** : fix C1 atomique (`create_opening_entry` own tx + `FOR UPDATE` status+count sous lock + `create_in_tx` direct ; sans `project_id` → verrouille QUE `fiscal_years` → pas d'inversion ABBA) ; garde double-ouverture fermée par `count_by_company==0` (company vierge) ; contrat d'erreur D7 (409 code partagé + message distinct) + pré-check épinglé ; description en langue company ; comptabilité juste (bilan d'ouverture équilibré, report négatif = débit equity, distinction physique/calculé 14-3c, aucune modif `balance_sheet.rs`) ; **pas de migration**.
+
+**Prochaine étape** : `bmad-dev-story` 14-4 (sur la branche `story/14-4-bilan-ouverture-soldes-depart`).
