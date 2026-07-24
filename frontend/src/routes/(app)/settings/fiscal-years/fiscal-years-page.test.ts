@@ -127,6 +127,27 @@ describe('modal de réouverture — motif obligatoire + submit', () => {
 
 		await waitFor(() => expect(reopenFiscalYearMock).toHaveBeenCalledWith(7, { motif: 'Correction TVA' }));
 	});
+
+	it("n'est PAS désactivée pour 500 caractères significatifs suivis d'espaces (F1 — miroir trim serveur)", async () => {
+		authState.login({ userId: '1', username: 'admin', role: 'Admin', expiresIn: 3600 });
+		listFiscalYearsMock.mockResolvedValue([fy({ id: 7, status: 'Closed' })]);
+
+		render(Page);
+
+		const openBtn = await screen.findByTestId('fiscal-year-reopen-7');
+		await fireEvent.click(openBtn);
+
+		const confirm = (await screen.findByTestId('fiscal-year-reopen-confirm')) as HTMLButtonElement;
+		const motif = (await screen.findByTestId('fiscal-year-reopen-motif')) as HTMLTextAreaElement;
+
+		// 500 caractères significatifs + espaces de fin : le serveur trim puis
+		// compte (500 ≤ 500 → accepté). Le client doit faire pareil et NE PAS
+		// bloquer. Avant le fix F1 (`.length` brut = 503 > 500), le bouton était
+		// désactivé à tort.
+		await fireEvent.input(motif, { target: { value: 'x'.repeat(500) + '   ' } });
+
+		await waitFor(() => expect(confirm.disabled).toBe(false));
+	});
 });
 
 describe('dialogue de clôture — ne ment plus sur l’irréversibilité (P4-F2)', () => {

@@ -175,7 +175,7 @@ fn map_reopen_error(err: DbError) -> AppError {
         )),
         DbError::Invariant(ref s) if s == FY_REOPEN_LIFO_BLOCKED_KEY => AppError::IllegalState(t(
             "error-fiscal-year-reopen-blocked",
-            "Réouverture impossible : un exercice postérieur est clos ; rouvrez-le d'abord.",
+            "Réouverture impossible : un exercice postérieur est clôturé ; rouvrez-le d'abord.",
         )),
         other => AppError::from(other),
     }
@@ -316,7 +316,15 @@ pub async fn reopen_fiscal_year(
     // D5 — anti-PAT : la réouverture n'est pas une opération d'automatisation.
     ensure_not_pat(&current_user)?;
 
-    // Validation du motif au handler (D4, miroir `create_fiscal_year:186-193`).
+    // Multi-tenant scoping D'ABORD : 404 si l'exercice n'existe pas dans cette
+    // company (anti-énumération, miroir `close_fiscal_year` — check d'existence
+    // avant toute validation de body, cohérent avec les handlers-sœurs).
+    let _existing = fiscal_years::find_by_id_in_company(&state.pool, current_user.company_id, id)
+        .await?
+        .ok_or(AppError::Database(DbError::NotFound))?;
+
+    // Validation du motif au handler (D4). `trim()` puis `chars().count()`
+    // (scalaires Unicode) — le frontend miroite cette borne sur `[...trimmed]`.
     let motif = req.motif.trim().to_string();
     if motif.is_empty() {
         return Err(AppError::Validation(t(
@@ -330,12 +338,6 @@ pub async fn reopen_fiscal_year(
             "Le motif de réouverture est trop long (500 caractères maximum).",
         )));
     }
-
-    // Multi-tenant scoping : 404 si l'exercice n'existe pas dans cette company
-    // (anti-énumération, miroir `close_fiscal_year`).
-    let _existing = fiscal_years::find_by_id_in_company(&state.pool, current_user.company_id, id)
-        .await?
-        .ok_or(AppError::Database(DbError::NotFound))?;
 
     let fy = fiscal_years::reopen(
         &state.pool,

@@ -1669,6 +1669,32 @@ async fn reopen_motif_too_long_returns_400(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
 }
 
+/// M2 (code-review Pass 1) — borne EXACTE : un motif de 500 caractères (==
+/// `REOPEN_MOTIF_MAX`) est **accepté** (200). Caractérise la stricte inégalité
+/// `> REOPEN_MOTIF_MAX` : une régression `>` → `>=` casserait ce test.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn reopen_motif_exactly_max_is_accepted(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+    let id = create_and_close_fy(&app, &token, "Exercice 2027", 2027).await;
+
+    let motif = "x".repeat(500);
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/fiscal-years/{id}/reopen")))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "motif": motif }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        200,
+        "motif de 500 caractères doit être accepté"
+    );
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["status"], "Open");
+}
+
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn reopen_other_company_returns_404(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;

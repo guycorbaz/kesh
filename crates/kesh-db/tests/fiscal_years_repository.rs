@@ -1032,6 +1032,12 @@ async fn close_already_closed_message_no_longer_claims_reopen_forbidden(pool: My
                 !msg.contains("réouverture interdite"),
                 "close message must no longer claim reopening is forbidden: {msg}"
             );
+            // Assertion positive (F4) : le message reformulé mentionne bien
+            // « déjà clos » — un futur refactor qui viderait le message échouerait.
+            assert!(
+                msg.contains("déjà clos"),
+                "close message should state the year is already closed: {msg}"
+            );
         }
         other => panic!("expected IllegalStateTransition, got {other:?}"),
     }

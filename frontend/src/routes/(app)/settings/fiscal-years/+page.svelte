@@ -76,7 +76,12 @@
 		if (!trimmed) {
 			return msg('error-fiscal-year-reopen-motif-empty', 'Le motif de réouverture est obligatoire.');
 		}
-		if (reopenMotif.length > REOPEN_MOTIF_MAX) {
+		// Miroir exact du serveur : il valide `motif.trim()` PUIS `chars().count()`
+		// (scalaires Unicode). On compte donc les code points du motif **trimmé**
+		// (`[...trimmed].length`, pas `.length` qui compte les unités UTF-16) pour
+		// ne pas bloquer côté client un motif que le serveur accepterait
+		// (espaces de fin, emoji hors-BMP). Le serveur reste l'autorité (400).
+		if ([...trimmed].length > REOPEN_MOTIF_MAX) {
 			return msg(
 				'error-fiscal-year-reopen-motif-too-long',
 				'Le motif de réouverture est trop long (500 caractères maximum).'
