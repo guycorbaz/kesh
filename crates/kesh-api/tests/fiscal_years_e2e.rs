@@ -1630,6 +1630,12 @@ async fn reopen_via_pat_returns_403(pool: MySqlPool) {
         .await
         .unwrap();
     assert_eq!(resp.status(), 403, "réouverture via PAT → 403");
+    // Code-review Pass 3 (F3) — asserter le CODE prouve que le 403 vient bien de
+    // `ensure_not_pat` (D5) et non du middleware RBAC : la clé PAT porte le rôle
+    // Admin de son créateur, donc `require_admin_role` passe et c'est le handler
+    // qui refuse. Miroir de `full_export_via_pat_returns_403`.
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "API_KEY_MANAGEMENT_FORBIDDEN");
 }
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]

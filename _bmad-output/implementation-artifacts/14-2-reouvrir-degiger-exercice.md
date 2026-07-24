@@ -2,7 +2,7 @@
 
 ## Status
 
-review
+done
 
 ## Story
 
@@ -379,3 +379,30 @@ Implémentation complète T1→T9 en un seul passage (spec scellée 5 passes, au
 **Docs**
 - `CHANGELOG.md`, `README.md`, `docs/manual/fr/admin-manual.tex`, `docs/manual/fr/user-manual.tex` (modifiés)
 - GitHub issue #270 (label `v0.2-milestone` + commentaire L3)
+
+### Change Log — code-review (2026-07-24) — CONVERGÉ 3 passes
+
+Revue adversariale multi-passes (Review Iteration Rule), 3 reviewers ×3 passes = **9 revues**, cycle LLM **Sonnet → Haiku → Opus** (contexte frais à chaque passe, diff aplati unique dès la Pass 2 pour la garde Haiku).
+
+**Trend numérique :**
+
+| Passe | Modèles (×3) | Findings > LOW | Détail |
+|-------|--------------|----------------|--------|
+| 1 | **Sonnet** ×3 | **3 MED** | F1/M1 (frontend check longueur sur brut ≠ serveur, convergé BH+ECH), M2 (pas de test borne exacte 500), F2 (const dupliquée Rust/TS) |
+| 2 | **Haiku** ×3 | **0** | Patches Pass 1 confirmés grep ground-truth ; MEDIUMs Haiku auto-dissous à la vérif ; 0 hallucination |
+| 3 | **Opus** ×3 | **0** | Cœur confirmé sain une 3e fois (transaction, atomicité, LIFO, D7) ; uniquement LOW cosmétiques |
+
+**Patches Pass 1 :**
+- **F1/M1 (MED, convergé BH+ECH)** → frontend `reopenClientError` : `reopenMotif.length` (brut, UTF-16) remplacé par `[...trimmed].length` (code points du trimmé, miroir exact du serveur `trim()` + `chars().count()`) + test Vitest (500 significatifs + espaces de fin → bouton actif).
+- **M2 (MED)** → nouveau test e2e `reopen_motif_exactly_max_is_accepted` (motif 500 → 200), caractérise la stricte inégalité `>`.
+- **F2 (MED) → reclassé catégorie C** : `REOPEN_MOTIF_MAX` dupliqué Rust/TS est le **pattern projet accepté** (miroir explicite de `PAUSE_NOTE_MAX`, spec D4) — pas une dette (aucun mécanisme de config partagé dans le repo, cohérent avec le précédent).
+- **LOW patchés** : F3 fallback Rust « clos » → « clôturé » (aligné FTL) ; F4 assertion positive « déjà clos » au test close-message ; L1 handler réordonné (pré-check existence 404 AVANT validation motif 400, cohérent avec `close_fiscal_year`) + commentaire corrigé.
+- **LOW documentés sans changement** : message serveur LIFO non-nommé (by-design D3 — client proactif nomme, serveur = filet) ; `submitReopen` garde la modale ouverte sur 409 (AC-E, erreur inline).
+
+**Patch Pass 3 (LOW, hors boucle >LOW) :** F3-P3 — test PAT durci pour asserter le code `API_KEY_MANAGEMENT_FORBIDDEN` (prouve que le 403 vient de `ensure_not_pat`/D5, pas du RBAC), miroir `full_export_via_pat_returns_403`.
+
+**Cœur confirmé sain (9 revues)** : ordre transactionnel `reopen` (FOR UPDATE → déjà-ouvert → LIFO → UPDATE → re-SELECT défensif → audit → commit), rollback sur chaque chemin d'erreur, atomicité flip+audit (rollback-on-drop), sérialisation `reopen`/`close` par next-key locking InnoDB (index `(company_id, start_date)` vérifié au schéma réel, `status` non indexé), mapping D7 bout-en-bout (générique `IllegalStateTransition` jamais émis par reopen), parité client/serveur (validation motif code points + garde LIFO `nearestLaterClosed`), 11 clés i18n × 4 locales, 2 fallbacks svelte du dialogue de clôture corrigés + testés, `journal_entries.rs` intouché (immutabilité pilotée par statut vivant), pas de migration.
+
+**Gate final (DB de gate seedée `kesh_gate`)** : `cargo fmt/clippy/build` ✅ + `cargo test --workspace` (serial) **1985 tests, 0 échec** (dont 12 e2e reopen + 9 repo reopen) + frontend `check`/`lint-i18n`/`test:unit`/`build` ✅ (6 Vitest page fiscal-years).
+
+**Critère d'arrêt Review Iteration Rule atteint** : 0 finding > LOW en Pass 3 (< 8 passes). Story scellée **done**.
