@@ -307,4 +307,30 @@ Confirmations Sonnet (toutes vertes) : interactions cross-modules (factures/four
 
 Trend : **P1 (Sonnet×3) 1 CRIT/2 HIGH/5 MED → P2 (Haiku×3) 0>LOW → P3 (Opus×3) 1 MED (P3-F1) → P4 (Sonnet×3) 2 MED (complétions de P3-F1).** Tendance strictement décroissante en **gravité et périmètre** (architecture → une seule copie de dialogue + son test). Ce n'est PAS le cas « sur-étalement » de la règle de splitting (le design a convergé dès P3, tous les Opus jugeant le cœur sain) — c'est la **queue de convergence** d'un unique fix P3-F1. Les 2 MED patchés (fix structurel : les 2 fallbacks + le test qui garde-fou la copie) → **Passe 5 de confirmation (Haiku, prochain du cycle)** requise.
 
-Prochaine étape : **Passe 5 (Haiku ×3, contexte frais, confirmation post-P4-F1/F2)**.
+**Passe 5 (Haiku ×3 — confirmation P4-F1/F2 / balayage global ancres+logique / conventions+doc-sync, contexte frais, garde-fou grep actif)** : **0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW** sur les 3 lentilles. Les 2 patches P4 grep-vérifiés **complètement appliqués** (les 2 fallbacks `:405`+`:428` ; Test scindé a/b + assertion Vitest). Aucune régression, aucune contradiction résiduelle, toutes les ancres re-vérifiées exactes, sprint-status déjà `ready-for-dev` (ligne confirmée). Aucune hallucination Haiku.
+
+---
+
+### ✅ CONVERGENCE — spec scellée `ready-for-dev` (2026-07-24)
+
+**Trend numérique (Review Iteration Rule)** :
+
+| Passe | Modèles (×3, contexte frais) | Findings > LOW | Détail |
+|-------|------------------------------|----------------|--------|
+| 1 | **Sonnet** ×3 | **8** (1 CRIT / 2 HIGH / 5 MED) | C1 mapping erreur, H1 user-manual CLI, H2 asymétrie close, M1 README, M2 triage L, M3 AC-J, M4 ordre, M5 motif borné, M6 course |
+| 2 | **Haiku** ×3 | **0** net-nouveau | Tous les MED = doc-tasks déjà planifiées (T3/T9) ; 0 hallucination |
+| 3 | **Opus** ×3 | **1** (1 MED) | P3-F1 : dialogue de clôture ment sur l'irréversibilité (manqué par P1-2) |
+| 4 | **Sonnet** ×3 | **2** (2 MED) | P4-F1/F2 : complétions de P3-F1 (fallback `:428` oublié + test copie) |
+| 5 | **Haiku** ×3 | **0** | Convergé sur les 3 lentilles ✓ |
+
+**Cycle LLM** : Sonnet → Haiku → Opus → Sonnet → Haiku (5 passes, ×3 agents = 15 revues adversariales, chacune avec grep ground-truth). Critère d'arrêt atteint : 0 finding > LOW en passe 5 (< 8 passes max).
+
+**Décisions Gui tranchées en cours de boucle** : (C1) « messages 409 distincts, code partagé » → D7 ; (H2) « documenter l'asymétrie close » → L4.
+
+**Reclassements** : L1 (motif non-requêtable) et L2 (code 409 partagé) → **catégorie C** (décisions design intentionnelles, pas dette) ; L3 (snapshot) → **catégorie B** tracée (issue `v0.2-milestone`, T9) ; L4 (asymétrie close) → **catégorie C** (pré-existant, sans corruption en modèle virtuel).
+
+**Note sur la longueur de boucle (règle de splitting préventif)** : 5 passes > le seuil indicatif de 4, MAIS ce n'est **pas** le cas « sur-étalement / profondeur d'incertitude » que la règle cible — le **design a convergé dès P3** (tous les Opus jugeant le cœur backend sain et implémentable). Les passes 4-5 n'ont traité que la **queue de convergence d'un unique fix** (P3-F1, dialogue de clôture) et sa complétion (2 fallbacks + son test). La gravité et le périmètre ont strictement décru (architecture → une copie de dialogue). Pas de split requis.
+
+**Cœur confirmé sain (creusé par les 15 revues)** : D7 mapping erreur bout-en-bout ; transaction/audit atomiques ; garde LIFO correcte 2 & 3+ exercices ; **multi-tenant sans IDOR** ; courses (reopen×reopen, reopen×close, LIFO concurrent) sérialisées par `FOR UPDATE` ; invariant comptable (report recalculé pour TOUS les postérieurs, balance équilibrée) ; piste d'audit CO 957-964 complète ; interactions cross-modules débloquées par le statut vivant ; frontend ancré patterns réels ; **pas de migration**.
+
+**Prochaine étape** : `bmad-dev-story` sur la branche `story/14-2-reouverture-exercice`.
