@@ -448,22 +448,25 @@ Le nouvel exercice s'ouvre vide. Les comptes du bilan sont automatiquement repor
 
 \emph{Administration} → \emph{Exercices comptables} → sélectionner l'exercice → \emph{Clôturer}.
 
-La clôture :
+La clôture est un simple \textbf{verrou} : elle ne génère aucune écriture. Le report des soldes de bilan d'un exercice à l'autre est \textbf{calculé en temps réel} depuis l'origine (report à-nouveau automatique), sans écriture de clôture ni de report à passer. La clôture :
 
 \begin{itemize}
-    \item Verrouille toutes les écritures de l'exercice (modification impossible, contre-passation toujours possible si nécessaire).
-    \item Génère les écritures de clôture (transfert des comptes de résultat vers le bilan).
-    \item Reporte les soldes des comptes de bilan vers le nouvel exercice.
-    \item Génère les rapports finaux (bilan de clôture, compte de résultat, balance).
+    \item Verrouille toutes les écritures de l'exercice : plus aucune écriture ne peut y être saisie, modifiée ou supprimée tant qu'il reste clôturé (immutabilité, CO art. 957-964).
+    \item Inscrit l'opération dans le journal d'audit (\texttt{audit\_log}).
+    \item N'affecte pas le report à-nouveau, qui reste calculé automatiquement — les rapports finaux (bilan, compte de résultat, balance) demeurent consultables et exportables (CSV/PDF).
 \end{itemize}
 
 \begin{keshwarning}
-La clôture d'un exercice est une opération critique. Effectuez d'abord une sauvegarde complète. Une fois clôturé, l'exercice ne peut plus être modifié sans intervention administrateur exceptionnelle.
+La clôture d'un exercice est une opération critique. Effectuez d'abord une sauvegarde complète. Une fois clôturé, l'exercice ne peut plus être modifié tant qu'il reste clôturé ; seul un administrateur peut le rouvrir (voir ci-dessous).
 \end{keshwarning}
 
 \subsection{Réouverture d'un exercice clôturé}
 
-En cas d'erreur découverte après clôture, un administrateur peut rouvrir un exercice via une procédure CLI (cf. Manuel administrateur, section Dépannage). L'opération est tracée dans l'\texttt{audit\_log}. Effectuer cette opération avec parcimonie pour préserver l'intégrité légale.
+En cas d'erreur découverte après clôture, un \textbf{administrateur} peut rouvrir l'exercice directement depuis l'interface : \emph{Paramètres} → \emph{Exercices comptables} → bouton \emph{Réouvrir} (visible uniquement pour les administrateurs sur un exercice clôturé). Un \textbf{motif est obligatoire} ; il est conservé, avec l'auteur et l'horodatage, dans le journal d'audit (\texttt{audit\_log}, conservation 10 ans). L'exercice rouvert redevient modifiable, puis pourra être re-clôturé.
+
+\begin{keshtip}
+On rouvre les exercices \textbf{du plus récent vers l'ancien} : si un exercice postérieur est encore clôturé, Kesh refuse la réouverture et indique lequel rouvrir d'abord. Effectuer cette opération avec parcimonie pour préserver l'intégrité légale.
+\end{keshtip}
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Carnet d'adresses}

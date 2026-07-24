@@ -33,8 +33,14 @@ pub enum DbError {
     #[error("Contrainte CHECK violée : {0}")]
     CheckConstraintViolation(String),
 
-    /// Transition d'état métier interdite (ex: clôturer un exercice déjà clos,
-    /// réouvrir un exercice clos). Mappé vers HTTP 409 Conflict côté API.
+    /// Transition d'état métier interdite (ex: re-clôturer un exercice déjà
+    /// clos — idempotence de `close`). Mappé vers HTTP 409 Conflict côté API.
+    ///
+    /// **Note (Story 14-2)** : la réouverture d'un exercice clos est désormais
+    /// **autorisée** (via `fiscal_years::reopen`, Admin + motif + audit). Ses
+    /// conflits métier (déjà ouvert, garde LIFO) sont émis en
+    /// [`DbError::Invariant`] namespacés (message distinct localisé au mapper),
+    /// **pas** via cette variante dont le `Display` est log-only.
     #[error("Transition d'état interdite : {0}")]
     IllegalStateTransition(String),
 

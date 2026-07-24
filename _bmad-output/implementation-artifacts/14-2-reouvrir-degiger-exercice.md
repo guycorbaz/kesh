@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev
+review
 
 ## Story
 
@@ -190,15 +190,15 @@ La réouverture d'un exercice clos est une opération **privilégiée et sensibl
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Repo `fiscal_years::reopen`** (`fiscal_years.rs`, nouvelle fn calquée sur `update_name:290-371`) : constantes clés `FY_REOPEN_ALREADY_OPEN_KEY` / `FY_REOPEN_LIFO_BLOCKED_KEY` / `FY_REOPEN_UNEXPECTED_KEY` (à côté de `FY_NAME_DUPLICATE_KEY`, D7) ; tx + `FOR UPDATE` before ; **désambiguïsation « déjà ouvert » via `before.status == Open` AVANT la garde LIFO** (P1-M4) → `Invariant(FY_REOPEN_ALREADY_OPEN_KEY)` ; garde LIFO (T2) ; `UPDATE ... status='Open' WHERE status='Closed'` ; `rows_affected==0` → re-SELECT (`Open`→`Invariant(ALREADY_OPEN)` ; `None`→`NotFound` ; sinon `Invariant(UNEXPECTED)`) ; audit `fiscal_year.reopened` `json!({before, after, motif})` via `build_audit_entry`/`insert_in_tx` ; commit. — AC-A.
-- [ ] **T2 — Query LIFO** `find_later_closed_in_tx(&mut tx, company_id, start_date)` (`WHERE start_date > ? AND status='Closed' ... LIMIT 1 FOR UPDATE`, miroir `find_overlapping`) + branchement dans `reopen` → `Invariant(FY_REOPEN_LIFO_BLOCKED_KEY)` si présent. Documenter l'hypothèse next-key locking dans le doc-comment (comme `find_overlapping`). — AC-B.
-- [ ] **T3 — Reformuler `close`/docs** : message `fiscal_years.rs:599-601` (« déjà clos », sans « réouverture interdite ») ; doc module `:3-16` (+ **ajouter `reopen`** à la liste des fns, P3-N1) ; doc `errors.rs:37`. **`close` non modifié fonctionnellement.** — AC-J/D6.
-- [ ] **T4 — API handler `reopen_fiscal_year` + mapping D7** (`routes/fiscal_years.rs`, miroir `close_fiscal_year:242-259`) : `ensure_not_pat` (D5) ; pré-check `find_by_id_in_company` (404) ; validation motif **non vide ET ≤ `REOPEN_MOTIF_MAX=500`** → `AppError::Validation` (400, miroir `:186-193`, P1-M5) ; appel `reopen` **via `.map_err(map_reopen_error)`** ; `Json<FiscalYearResponse>`. **Nouveau `map_reopen_error`** (miroir `map_create_error:87`) + **nouveau variant `AppError::IllegalState(String)`** (`kesh-api/errors.rs` → 409 `ILLEGAL_STATE_TRANSITION` + message passé, D7). Nouveau DTO `ReopenFiscalYearRequest { motif }`. — AC-D/D7.
-- [ ] **T5 — Route Admin-only** : enregistrer `POST /api/v1/fiscal-years/{id}/reopen` dans le bloc **`admin_routes` (`lib.rs:182-268`)**, scellé par `require_admin_role` (`:269-271`). **PAS** dans `comptable_routes`. — AC-D.
-- [ ] **T6 — Frontend** : `ReopenFiscalYearRequest` (types) + `reopenFiscalYear` (api) ; page `settings/fiscal-years/+page.svelte` — `isAdmin` derived, bouton Réouvrir (`{#if fy.status==='Closed'}` + `{#if isAdmin}`, désactivé + tooltip **nommant le plus proche postérieur clos** si LIFO client, P3-F4), état + `submitReopen()` (clone `submitClose:166-201`), modal motif (mirror `DunningPauseDialog` + champ requis `ManualReminderDialog`) avec `maxlength=REOPEN_MOTIF_MAX` + `clientError` sur vide/trop long (P1-M5). **+ Corriger les DEUX fallbacks svelte hardcodés du dialogue de clôture : `:405` (body) ET `:428` (action « Clôturer définitivement » → « Clôturer »)** (irréversibilité absolue → « tant qu'il reste clôturé », P3-F1 + P4-F1). — AC-E/F/J.
-- [ ] **T7 — i18n** : **11 nouvelles clés** `fiscal-year-reopen-*` / `error-fiscal-year-*` (dont `-motif-too-long`) × **4 locales** (AC-G) **+ ÉDITER 2 clés existantes** `fiscal-year-close-confirmation-body` et `fiscal-year-close-confirmation-action` × 4 locales (retirer l'irréversibilité absolue / « définitivement », P3-F1/AC-J).
-- [ ] **T8 — Tests** : repo (`fiscal_years_repository.rs`, dont **course concurrente** P1-M6) + e2e (`fiscal_years_e2e.rs`, dont **assertion du contenu de message** already-open/LIFO P1-C1 + **motif > 500** P1-M5) + Vitest frontend (cf. AC-H). Chaque patch avec son test (`feedback_review_patch_needs_test`).
-- [ ] **T9 — Doc-sync** : CHANGELOG + admin-manual.tex + **`user-manual.tex:464-466`+`:445-457`** (P1-H1, corriger la fausse « procédure CLI ») + **`README.md:208`** (P1-M1, retirer « à suivre ») + docs modules (AC-I). Créer une **issue GitHub snapshot-invalidation** (ou compléter l'issue snapshot existante de 14-1) — labellée **`v0.2-milestone`** (P1-M2, formalise L3 catégorie B) — notant que `fiscal_year.reopened` devra invalider un futur snapshot ; rien à coder en v1 virtuel. **Pas de migration.**
+- [x] **T1 — Repo `fiscal_years::reopen`** (`fiscal_years.rs`, nouvelle fn calquée sur `update_name:290-371`) : constantes clés `FY_REOPEN_ALREADY_OPEN_KEY` / `FY_REOPEN_LIFO_BLOCKED_KEY` / `FY_REOPEN_UNEXPECTED_KEY` (à côté de `FY_NAME_DUPLICATE_KEY`, D7) ; tx + `FOR UPDATE` before ; **désambiguïsation « déjà ouvert » via `before.status == Open` AVANT la garde LIFO** (P1-M4) → `Invariant(FY_REOPEN_ALREADY_OPEN_KEY)` ; garde LIFO (T2) ; `UPDATE ... status='Open' WHERE status='Closed'` ; `rows_affected==0` → re-SELECT (`Open`→`Invariant(ALREADY_OPEN)` ; `None`→`NotFound` ; sinon `Invariant(UNEXPECTED)`) ; audit `fiscal_year.reopened` `json!({before, after, motif})` via `build_audit_entry`/`insert_in_tx` ; commit. — AC-A.
+- [x] **T2 — Query LIFO** `find_later_closed_in_tx(&mut tx, company_id, start_date)` (`WHERE start_date > ? AND status='Closed' ... LIMIT 1 FOR UPDATE`, miroir `find_overlapping`) + branchement dans `reopen` → `Invariant(FY_REOPEN_LIFO_BLOCKED_KEY)` si présent. Documenter l'hypothèse next-key locking dans le doc-comment (comme `find_overlapping`). — AC-B.
+- [x] **T3 — Reformuler `close`/docs** : message `fiscal_years.rs:599-601` (« déjà clos », sans « réouverture interdite ») ; doc module `:3-16` (+ **ajouter `reopen`** à la liste des fns, P3-N1) ; doc `errors.rs:37`. **`close` non modifié fonctionnellement.** — AC-J/D6.
+- [x] **T4 — API handler `reopen_fiscal_year` + mapping D7** (`routes/fiscal_years.rs`, miroir `close_fiscal_year:242-259`) : `ensure_not_pat` (D5) ; pré-check `find_by_id_in_company` (404) ; validation motif **non vide ET ≤ `REOPEN_MOTIF_MAX=500`** → `AppError::Validation` (400, miroir `:186-193`, P1-M5) ; appel `reopen` **via `.map_err(map_reopen_error)`** ; `Json<FiscalYearResponse>`. **Nouveau `map_reopen_error`** (miroir `map_create_error:87`) + **nouveau variant `AppError::IllegalState(String)`** (`kesh-api/errors.rs` → 409 `ILLEGAL_STATE_TRANSITION` + message passé, D7). Nouveau DTO `ReopenFiscalYearRequest { motif }`. — AC-D/D7.
+- [x] **T5 — Route Admin-only** : enregistrer `POST /api/v1/fiscal-years/{id}/reopen` dans le bloc **`admin_routes` (`lib.rs:182-268`)**, scellé par `require_admin_role` (`:269-271`). **PAS** dans `comptable_routes`. — AC-D.
+- [x] **T6 — Frontend** : `ReopenFiscalYearRequest` (types) + `reopenFiscalYear` (api) ; page `settings/fiscal-years/+page.svelte` — `isAdmin` derived, bouton Réouvrir (`{#if fy.status==='Closed'}` + `{#if isAdmin}`, désactivé + tooltip **nommant le plus proche postérieur clos** si LIFO client, P3-F4), état + `submitReopen()` (clone `submitClose:166-201`), modal motif (mirror `DunningPauseDialog` + champ requis `ManualReminderDialog`) avec `maxlength=REOPEN_MOTIF_MAX` + `clientError` sur vide/trop long (P1-M5). **+ Corriger les DEUX fallbacks svelte hardcodés du dialogue de clôture : `:405` (body) ET `:428` (action « Clôturer définitivement » → « Clôturer »)** (irréversibilité absolue → « tant qu'il reste clôturé », P3-F1 + P4-F1). — AC-E/F/J.
+- [x] **T7 — i18n** : **11 nouvelles clés** `fiscal-year-reopen-*` / `error-fiscal-year-*` (dont `-motif-too-long`) × **4 locales** (AC-G) **+ ÉDITER 2 clés existantes** `fiscal-year-close-confirmation-body` et `fiscal-year-close-confirmation-action` × 4 locales (retirer l'irréversibilité absolue / « définitivement », P3-F1/AC-J).
+- [x] **T8 — Tests** : repo (`fiscal_years_repository.rs`, dont **course concurrente** P1-M6) + e2e (`fiscal_years_e2e.rs`, dont **assertion du contenu de message** already-open/LIFO P1-C1 + **motif > 500** P1-M5) + Vitest frontend (cf. AC-H). Chaque patch avec son test (`feedback_review_patch_needs_test`).
+- [x] **T9 — Doc-sync** : CHANGELOG + admin-manual.tex + **`user-manual.tex:464-466`+`:445-457`** (P1-H1, corriger la fausse « procédure CLI ») + **`README.md:208`** (P1-M1, retirer « à suivre ») + docs modules (AC-I). Créer une **issue GitHub snapshot-invalidation** (ou compléter l'issue snapshot existante de 14-1) — labellée **`v0.2-milestone`** (P1-M2, formalise L3 catégorie B) — notant que `fiscal_year.reopened` devra invalider un futur snapshot ; rien à coder en v1 virtuel. **Pas de migration.**
 
 ## Dev Notes
 
@@ -334,3 +334,48 @@ Trend : **P1 (Sonnet×3) 1 CRIT/2 HIGH/5 MED → P2 (Haiku×3) 0>LOW → P3 (Opu
 **Cœur confirmé sain (creusé par les 15 revues)** : D7 mapping erreur bout-en-bout ; transaction/audit atomiques ; garde LIFO correcte 2 & 3+ exercices ; **multi-tenant sans IDOR** ; courses (reopen×reopen, reopen×close, LIFO concurrent) sérialisées par `FOR UPDATE` ; invariant comptable (report recalculé pour TOUS les postérieurs, balance équilibrée) ; piste d'audit CO 957-964 complète ; interactions cross-modules débloquées par le statut vivant ; frontend ancré patterns réels ; **pas de migration**.
 
 **Prochaine étape** : `bmad-dev-story` sur la branche `story/14-2-reouverture-exercice`.
+
+## Dev Agent Record
+
+### Change Log — dev-story (2026-07-24)
+
+Implémentation complète T1→T9 en un seul passage (spec scellée 5 passes, aucune ambiguïté). **Pas de migration** (D1 : motif dans `audit_log.details_json`). Aucune déviation du design validé.
+
+- **T1/T2 (repo)** : `fiscal_years::reopen` calquée sur `update_name` (flip guardé `Closed→Open` + audit `fiscal_year.reopened` `{before, after, motif}`, `FOR UPDATE`, désambiguïsation « déjà ouvert » avant LIFO, re-SELECT défensif) + `find_later_closed_in_tx` (garde LIFO, `start_date > ?` strict, `ORDER BY start_date ASC LIMIT 1 FOR UPDATE`, hypothèse next-key locking documentée). Constantes `FY_REOPEN_ALREADY_OPEN_KEY` / `FY_REOPEN_LIFO_BLOCKED_KEY` / `FY_REOPEN_UNEXPECTED_KEY` + `REOPEN_MOTIF_MAX=500`.
+- **T3 (D6)** : message de re-clôture reformulé (« déjà clos (re-clôture no-op) », ne prétend plus « réouverture interdite ») ; doc module + `close` doc-comment + doc `kesh-db/errors.rs` `IllegalStateTransition` mis à jour. `close` non modifié fonctionnellement.
+- **T4/T5 (API, D7)** : handler `reopen_fiscal_year` (`ensure_not_pat` → pré-check 404 → validation motif vide/≤500 → `reopen` via `map_reopen_error`) ; nouveau variant `AppError::IllegalState(String)` → 409 `ILLEGAL_STATE_TRANSITION` (message déjà localisé) ; `map_reopen_error` (2 clés → 2 messages distincts) ; DTO `ReopenFiscalYearRequest`. Route montée dans `admin_routes` (scellé `require_admin_role`).
+- **T6/T7 (frontend + i18n)** : `reopenFiscalYear` (api) + `ReopenFiscalYearRequest` (types) ; page `+page.svelte` — `isAdmin` derived, bouton Réouvrir (`Closed && isAdmin`, désactivé + tooltip `nearestLaterClosed` pour la garde LIFO client), `submitReopen` (clone `submitClose`, reload hors try/catch), dialogue motif (textarea `maxlength=500` + `reopenClientError` vide/trop-long → `disabled`). **Les 2 fallbacks svelte du dialogue de clôture corrigés** (`:405` body + action « Clôturer »). 11 nouvelles clés i18n × 4 locales + **2 clés close éditées** (`-body` / `-action`, retrait de l'irréversibilité absolue / « définitivement ») × 4 locales.
+- **T8 (tests)** : 9 tests repo (`fiscal_years_repository.rs` : audit+motif, déjà-ouvert sans audit, NotFound cross-tenant, LIFO bloqué+ordonné, LIFO permissif, LIFO 3-exercices intercalés, immutabilité ré-activée par le flip, message close reformulé, **course concurrente `reopen`/`close` sérialisée**) + 10 tests e2e (`fiscal_years_e2e.rs` : Admin 200+audit, Comptable 403, Consultation 403, sans-auth 401, PAT 403, motif vide 400, motif >500 400, cross-tenant 404, **déjà-ouvert 409 message distinct**, **LIFO 409 message distinct**) + 5 tests Vitest (`fiscal-years-page.test.ts` : visibilité Admin/Comptable, désactivation+tooltip LIFO, modal désactivé/activé + submit appelle `reopenFiscalYear`, **dialogue clôture sans « définitivement »/« ne pourra plus être enregistré »**).
+- **T9 (doc-sync)** : CHANGELOG `[Non publié]` (réouverture + reformulation clôture) ; `README.md` v0.8.0 (« à suivre » → livrée) ; `admin-manual.tex` §exercices (paragraphe réouverture Admin-only + motif + LIFO + audit) ; `user-manual.tex` (clôture = verrou virtuel, plus d'« écritures de clôture générées » ; réouverture réécrite : UI Admin + motif, plus de fausse « procédure CLI ») ; docs modules. Issue GitHub **#270** (snapshot) complétée : label `v0.2-milestone` + commentaire L3 (`fiscal_year.reopened` devra invalider le futur snapshot).
+
+### Completion Notes
+
+- **Gate** : `cargo fmt --all --check` ✅, `cargo clippy --workspace --all-targets -D warnings` ✅, `cargo build` ✅ ; tests reopen ciblés verts (repo 9/9, e2e 10/10) ; frontend `npm run check` (0 err), `lint-i18n-ownership` PASS, `test:unit` 436/436, `build` ✅. Gate complet serial `cargo test --workspace` lancé sur une DB de gate fraîchement seedée `kesh_gate` (la DB dev `kesh` de dogfooding n'est pas dans l'état seed_demo attendu par les tests `test_pool()`).
+- **Pas de migration** (P3/P5 sans objet).
+- **Aucune modification de `journal_entries.rs`** : l'immutabilité ré-activée par le flip est prouvée par test (AC-C), pas par modification — le statut vivant pilote la garde.
+
+### File List
+
+**Backend (kesh-db)**
+- `crates/kesh-db/src/repositories/fiscal_years.rs` (modifié — `reopen`, `find_later_closed_in_tx`, constantes, message close reformulé, doc module)
+- `crates/kesh-db/src/errors.rs` (modifié — doc `IllegalStateTransition`)
+- `crates/kesh-db/tests/fiscal_years_repository.rs` (modifié — 9 tests reopen)
+
+**Backend (kesh-api)**
+- `crates/kesh-api/src/errors.rs` (modifié — variant `AppError::IllegalState` + mapping 409)
+- `crates/kesh-api/src/routes/fiscal_years.rs` (modifié — DTO, `map_reopen_error`, handler `reopen_fiscal_year`, doc)
+- `crates/kesh-api/src/lib.rs` (modifié — route `/reopen` dans `admin_routes`)
+- `crates/kesh-api/tests/fiscal_years_e2e.rs` (modifié — 10 tests reopen + helpers Comptable/create-close)
+
+**i18n**
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` (modifiés — 11 clés reopen + 2 clés close éditées)
+
+**Frontend**
+- `frontend/src/lib/features/fiscal-years/fiscal-years.types.ts` (modifié — `ReopenFiscalYearRequest`)
+- `frontend/src/lib/features/fiscal-years/fiscal-years.api.ts` (modifié — `reopenFiscalYear`)
+- `frontend/src/routes/(app)/settings/fiscal-years/+page.svelte` (modifié — bouton + modal + fallbacks close)
+- `frontend/src/routes/(app)/settings/fiscal-years/fiscal-years-page.test.ts` (créé — 5 tests Vitest)
+
+**Docs**
+- `CHANGELOG.md`, `README.md`, `docs/manual/fr/admin-manual.tex`, `docs/manual/fr/user-manual.tex` (modifiés)
+- GitHub issue #270 (label `v0.2-milestone` + commentaire L3)

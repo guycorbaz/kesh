@@ -266,6 +266,13 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/companies/current/email",
             put(routes::companies::update_company_email),
         )
+        // Story 14-2 : réouverture d'un exercice clôturé (Admin uniquement +
+        // motif obligatoire + audit + garde LIFO). Plus strict que la clôture
+        // (Comptable+, comptable_routes) — opération réglementaire sensible.
+        .route(
+            "/api/v1/fiscal-years/{id}/reopen",
+            post(routes::fiscal_years::reopen_fiscal_year),
+        )
         .route_layer(axum::middleware::from_fn(
             crate::middleware::rbac::require_admin_role,
         ));

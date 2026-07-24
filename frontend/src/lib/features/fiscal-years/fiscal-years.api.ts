@@ -6,6 +6,7 @@ import { apiClient } from '$lib/shared/utils/api-client';
 import type {
 	CreateFiscalYearRequest,
 	FiscalYearResponse,
+	ReopenFiscalYearRequest,
 	UpdateFiscalYearRequest
 } from './fiscal-years.types';
 
@@ -32,4 +33,12 @@ export async function updateFiscalYear(
 
 export async function closeFiscalYear(id: number): Promise<FiscalYearResponse> {
 	return apiClient.post<FiscalYearResponse>(`/api/v1/fiscal-years/${id}/close`, {});
+}
+
+/** Story 14-2 — rouvre un exercice clôturé (Admin, motif obligatoire). */
+export async function reopenFiscalYear(
+	id: number,
+	req: ReopenFiscalYearRequest
+): Promise<FiscalYearResponse> {
+	return apiClient.post<FiscalYearResponse>(`/api/v1/fiscal-years/${id}/reopen`, req);
 }

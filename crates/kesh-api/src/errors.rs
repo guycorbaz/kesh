@@ -82,6 +82,21 @@ pub enum AppError {
     #[error("Accès interdit")]
     Forbidden,
 
+    // --- Story 14-2 ---
+    /// Transition d'état métier interdite avec **message client distinct** (409
+    /// `ILLEGAL_STATE_TRANSITION`). Contrairement à
+    /// `AppError::Database(DbError::IllegalStateTransition)` — dont le `Display`
+    /// est log-only et produit un message générique figé —, le `String` porté
+    /// ici est **déjà localisé** (construit via `t(...)` au mapper) et rendu
+    /// tel quel au client. Cohérent avec le précédent `AppError::Validation`
+    /// (que `map_create_error` construit déjà via `Validation(t(...))`).
+    ///
+    /// Utilisé par `map_reopen_error` (Story 14-2, D7) pour distinguer les deux
+    /// conflits de réouverture (« déjà ouvert » vs garde LIFO) qui partagent le
+    /// code machine mais ont des messages utilisateur distincts.
+    #[error("Transition d'état interdite : {0}")]
+    IllegalState(String),
+
     // --- Story 17-2a — API externe à clé PAT (#100) ---
     /// Une clé API `scope='read'` tente une méthode HTTP mutante
     /// (POST/PUT/PATCH/DELETE) → `403` code `API_KEY_READ_ONLY` (DC3/AC6).
@@ -891,6 +906,12 @@ impl IntoResponse for AppError {
                 "FORBIDDEN",
                 &t("error-forbidden", "Accès interdit"),
             ),
+
+            // Story 14-2 (D7) — 409 avec message déjà localisé (distinct du
+            // générique DbError::IllegalStateTransition, log-only).
+            AppError::IllegalState(msg) => {
+                build_response(StatusCode::CONFLICT, "ILLEGAL_STATE_TRANSITION", &msg)
+            }
 
             // Story 17-2a — clé API en lecture seule (DC3/AC6).
             AppError::ApiKeyReadOnly => build_response(

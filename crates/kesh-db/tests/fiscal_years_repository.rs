@@ -7,7 +7,8 @@ use kesh_db::entities::{
 };
 use kesh_db::errors::DbError;
 use kesh_db::repositories::fiscal_years::{
-    FY_NAME_DUPLICATE_KEY, FY_NAME_EMPTY_KEY, FY_NAME_MAX_LEN, FY_NAME_TOO_LONG_KEY, FY_OVERLAP_KEY,
+    FY_NAME_DUPLICATE_KEY, FY_NAME_EMPTY_KEY, FY_NAME_MAX_LEN, FY_NAME_TOO_LONG_KEY,
+    FY_OVERLAP_KEY, FY_REOPEN_ALREADY_OPEN_KEY, FY_REOPEN_LIFO_BLOCKED_KEY,
 };
 use kesh_db::repositories::{audit_log, companies, fiscal_years, users};
 use sqlx::MySqlPool;
@@ -709,4 +710,393 @@ async fn test_create_if_absent_in_tx_idempotent_on_unique_violation(pool: MySqlP
         result.is_none(),
         "idempotent: company has fiscal_year, return None"
     );
+}
+
+// ===========================================================================
+// Story 14-2 — reopen() : flip guardé Closed → Open + audit motif + garde LIFO
+// ===========================================================================
+
+/// AC-A — reopen d'un `Closed` → `Open` + audit `fiscal_year.reopened` avec
+/// `details_json.motif` et `before/after` corrects.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn reopen_closed_writes_audit_with_motif(pool: MySqlPool) {
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+
+    let mut new = ny("Exercice 2026", 2026);
+    new.company_id = company_id;
+    let created = fiscal_years::create(&pool, user_id, new).await.unwrap();
+    fiscal_years::close(&pool, user_id, company_id, created.id)
+        .await
+        .unwrap();
+
+    let motif = "Correction TVA Q3 oubliée";
+    let reopened = fiscal_years::reopen(&pool, user_id, company_id, created.id, motif.to_string())
+        .await
+        .unwrap();
+    assert_eq!(reopened.status, FiscalYearStatus::Open);
+
+    let entries = audit_log::find_by_entity(&pool, "fiscal_year", created.id, 10)
+        .await
+        .unwrap();
+    let entry = entries
+        .iter()
+        .find(|e| e.action == "fiscal_year.reopened")
+        .expect("audit entry fiscal_year.reopened should exist");
+    assert_eq!(entry.user_id, user_id);
+    let details = entry.details_json.as_ref().expect("details");
+    assert_eq!(details["motif"], motif);
+    assert_eq!(details["before"]["status"], "Closed");
+    assert_eq!(details["after"]["status"], "Open");
+}
+
+/// AC-A — reopen d'un `Open` → `Invariant(FY_REOPEN_ALREADY_OPEN_KEY)` ; AUCUNE
+/// écriture d'audit ajoutée (désambiguïsation « déjà ouvert » avant garde LIFO).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn reopen_already_open_returns_invariant_no_audit(pool: MySqlPool) {
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+
+    let mut new = ny("Exercice 2026", 2026);
+    new.company_id = company_id;
+    let created = fiscal_years::create(&pool, user_id, new).await.unwrap();
+
+    let result =
+        fiscal_years::reopen(&pool, user_id, company_id, created.id, "motif".to_string()).await;
+    assert!(
+        matches!(result, Err(DbError::Invariant(ref k)) if k == FY_REOPEN_ALREADY_OPEN_KEY),
+        "expected FY_REOPEN_ALREADY_OPEN_KEY, got {result:?}"
+    );
+
+    let entries = audit_log::find_by_entity(&pool, "fiscal_year", created.id, 10)
+        .await
+        .unwrap();
+    assert!(
+        entries.iter().all(|e| e.action != "fiscal_year.reopened"),
+        "no reopened audit entry should be written on a no-op reopen"
+    );
+}
+
+/// AC-A — reopen d'un id inexistant / d'une autre société → `NotFound`.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn reopen_missing_and_cross_tenant_return_notfound(pool: MySqlPool) {
+    let company_a = create_company(&pool).await;
+    let user_a = create_admin_user(&pool, company_a).await;
+    let company_b = create_company(&pool).await;
+    let user_b = create_admin_user(&pool, company_b).await;
+
+    // Inexistant.
+    let missing =
+        fiscal_years::reopen(&pool, user_a, company_a, 999_999, "motif".to_string()).await;
+    assert!(matches!(missing, Err(DbError::NotFound)));
+
+    // Cross-tenant : exercice de B clos, réouverture tentée par A → NotFound.
+    let mut new = ny("Exercice B 2026", 2026);
+    new.company_id = company_b;
+    let fy_b = fiscal_years::create(&pool, user_b, new).await.unwrap();
+    fiscal_years::close(&pool, user_b, company_b, fy_b.id)
+        .await
+        .unwrap();
+
+    let cross = fiscal_years::reopen(&pool, user_a, company_a, fy_b.id, "motif".to_string()).await;
+    assert!(matches!(cross, Err(DbError::NotFound)));
+}
+
+/// AC-B — garde LIFO : FY_N clos + FY_{N+1} clos → reopen FY_N bloqué ; reopen
+/// FY_{N+1} d'abord → OK, puis FY_N → OK.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn reopen_lifo_blocked_then_ordered_ok(pool: MySqlPool) {
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+
+    let mut y2025 = ny("Exercice 2025", 2025);
+    y2025.company_id = company_id;
+    let fy2025 = fiscal_years::create(&pool, user_id, y2025).await.unwrap();
+    let mut y2026 = ny("Exercice 2026", 2026);
+    y2026.company_id = company_id;
+    let fy2026 = fiscal_years::create(&pool, user_id, y2026).await.unwrap();
+
+    fiscal_years::close(&pool, user_id, company_id, fy2025.id)
+        .await
+        .unwrap();
+    fiscal_years::close(&pool, user_id, company_id, fy2026.id)
+        .await
+        .unwrap();
+
+    // Rouvrir le plus ancien alors que le plus récent est clos → bloqué.
+    let blocked =
+        fiscal_years::reopen(&pool, user_id, company_id, fy2025.id, "motif".to_string()).await;
+    assert!(
+        matches!(blocked, Err(DbError::Invariant(ref k)) if k == FY_REOPEN_LIFO_BLOCKED_KEY),
+        "expected FY_REOPEN_LIFO_BLOCKED_KEY, got {blocked:?}"
+    );
+
+    // Rouvrir le plus récent d'abord → OK, puis le plus ancien → OK.
+    fiscal_years::reopen(&pool, user_id, company_id, fy2026.id, "motif".to_string())
+        .await
+        .unwrap();
+    fiscal_years::reopen(&pool, user_id, company_id, fy2025.id, "motif".to_string())
+        .await
+        .unwrap();
+}
+
+/// AC-B — LIFO permissif : FY_N clos + FY_{N+1} OUVERT → reopen FY_N OK.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn reopen_lifo_permissive_when_later_open(pool: MySqlPool) {
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+
+    let mut y2025 = ny("Exercice 2025", 2025);
+    y2025.company_id = company_id;
+    let fy2025 = fiscal_years::create(&pool, user_id, y2025).await.unwrap();
+    let mut y2026 = ny("Exercice 2026", 2026);
+    y2026.company_id = company_id;
+    let _fy2026 = fiscal_years::create(&pool, user_id, y2026).await.unwrap();
+
+    // Seul le plus ancien est clos ; le plus récent reste ouvert → réouverture OK.
+    fiscal_years::close(&pool, user_id, company_id, fy2025.id)
+        .await
+        .unwrap();
+    fiscal_years::reopen(&pool, user_id, company_id, fy2025.id, "motif".to_string())
+        .await
+        .unwrap();
+}
+
+/// P4-LOW — LIFO 3 exercices intercalés (Closed-Open-Closed) : reopen FY1 bloqué
+/// en citant FY3 (le plus proche postérieur clos via ORDER BY start_date ASC
+/// LIMIT 1 — prouve que la query n'a pas besoin de notion d'adjacence).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn reopen_lifo_three_years_intercalated(pool: MySqlPool) {
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+
+    let mut y1 = ny("Exercice 2024", 2024);
+    y1.company_id = company_id;
+    let fy1 = fiscal_years::create(&pool, user_id, y1).await.unwrap();
+    let mut y2 = ny("Exercice 2025", 2025);
+    y2.company_id = company_id;
+    let _fy2 = fiscal_years::create(&pool, user_id, y2).await.unwrap();
+    let mut y3 = ny("Exercice 2026", 2026);
+    y3.company_id = company_id;
+    let fy3 = fiscal_years::create(&pool, user_id, y3).await.unwrap();
+
+    // FY1 clos, FY2 ouvert, FY3 clos.
+    fiscal_years::close(&pool, user_id, company_id, fy1.id)
+        .await
+        .unwrap();
+    fiscal_years::close(&pool, user_id, company_id, fy3.id)
+        .await
+        .unwrap();
+
+    // Rouvrir FY1 est bloqué : FY3 (postérieur, clos) existe — même avec FY2
+    // ouvert intercalé, la garde ne dépend pas de l'adjacence.
+    let blocked =
+        fiscal_years::reopen(&pool, user_id, company_id, fy1.id, "motif".to_string()).await;
+    assert!(
+        matches!(blocked, Err(DbError::Invariant(ref k)) if k == FY_REOPEN_LIFO_BLOCKED_KEY),
+        "expected FY_REOPEN_LIFO_BLOCKED_KEY (FY3 postérieur clos), got {blocked:?}"
+    );
+}
+
+/// AC-C — le flip Closed → Open ré-active l'immutabilité SANS toucher
+/// `journal_entries` : après reopen, une écriture peut être créée dans
+/// l'exercice ; puis re-close → re-bloqué (`FiscalYearClosed`). Fix structurel :
+/// le statut vivant pilote l'immutabilité, pas de flag dupliqué.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn reopen_reactivates_entry_editability(pool: MySqlPool) {
+    use kesh_db::entities::account::AccountType;
+    use kesh_db::entities::journal_entry::Journal;
+    use kesh_db::entities::{NewAccount, NewJournalEntry, NewJournalEntryLine};
+    use kesh_db::repositories::{accounts, journal_entries};
+    use rust_decimal::Decimal;
+
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+
+    let mut new = ny("Exercice 2026", 2026);
+    new.company_id = company_id;
+    let fy = fiscal_years::create(&pool, user_id, new).await.unwrap();
+
+    // Deux comptes postables pour une écriture équilibrée.
+    let cash = accounts::create(
+        &pool,
+        user_id,
+        NewAccount {
+            company_id,
+            number: "1000".into(),
+            name: "Caisse".into(),
+            account_type: AccountType::Asset,
+            parent_id: None,
+            role: None,
+            postable: true,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+    let sales = accounts::create(
+        &pool,
+        user_id,
+        NewAccount {
+            company_id,
+            number: "3000".into(),
+            name: "Ventes".into(),
+            account_type: AccountType::Revenue,
+            parent_id: None,
+            role: None,
+            postable: true,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+
+    let make_entry = |date: NaiveDate| NewJournalEntry {
+        company_id,
+        entry_date: date,
+        journal: Journal::OD,
+        description: "test".into(),
+        project_id: None,
+        lines: vec![
+            NewJournalEntryLine {
+                account_id: cash,
+                debit: Decimal::new(100, 0),
+                credit: Decimal::ZERO,
+                project_id: None,
+            },
+            NewJournalEntryLine {
+                account_id: sales,
+                debit: Decimal::ZERO,
+                credit: Decimal::new(100, 0),
+                project_id: None,
+            },
+        ],
+    };
+
+    let d = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
+
+    // Ouvert : création OK.
+    journal_entries::create(&pool, fy.id, user_id, make_entry(d))
+        .await
+        .expect("create while open should succeed");
+
+    // Clos : création bloquée.
+    fiscal_years::close(&pool, user_id, company_id, fy.id)
+        .await
+        .unwrap();
+    let blocked = journal_entries::create(&pool, fy.id, user_id, make_entry(d)).await;
+    assert!(
+        matches!(blocked, Err(DbError::FiscalYearClosed)),
+        "closed year should block entry creation, got {blocked:?}"
+    );
+
+    // Rouvert : création de nouveau OK (statut vivant Open — aucune modif de
+    // journal_entries.rs requise).
+    fiscal_years::reopen(&pool, user_id, company_id, fy.id, "motif".to_string())
+        .await
+        .unwrap();
+    journal_entries::create(&pool, fy.id, user_id, make_entry(d))
+        .await
+        .expect("create after reopen should succeed");
+
+    // Re-clos : re-bloqué.
+    fiscal_years::close(&pool, user_id, company_id, fy.id)
+        .await
+        .unwrap();
+    let reblocked = journal_entries::create(&pool, fy.id, user_id, make_entry(d)).await;
+    assert!(
+        matches!(reblocked, Err(DbError::FiscalYearClosed)),
+        "re-closed year should block again, got {reblocked:?}"
+    );
+}
+
+/// AC-J test (a) — le message (log-only) de re-clôture d'un exercice déjà clos
+/// ne prétend PLUS que la réouverture est interdite (reformulé « déjà clos »).
+/// Le `Display` n'est jamais exposé au client — assertion doc/log-only.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn close_already_closed_message_no_longer_claims_reopen_forbidden(pool: MySqlPool) {
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+
+    let mut new = ny("Exercice 2026", 2026);
+    new.company_id = company_id;
+    let created = fiscal_years::create(&pool, user_id, new).await.unwrap();
+    fiscal_years::close(&pool, user_id, company_id, created.id)
+        .await
+        .unwrap();
+
+    let result = fiscal_years::close(&pool, user_id, company_id, created.id).await;
+    match result {
+        Err(DbError::IllegalStateTransition(msg)) => {
+            assert!(
+                !msg.contains("réouverture interdite"),
+                "close message must no longer claim reopening is forbidden: {msg}"
+            );
+        }
+        other => panic!("expected IllegalStateTransition, got {other:?}"),
+    }
+}
+
+/// P1-M6 — course concurrente `reopen(FY_N)` vs `close(FY_{N+1})` sérialisée par
+/// le `FOR UPDATE` : l'issue est déterministe (pas de deadlock, pas de panic) et
+/// l'état final est cohérent. Documente l'hypothèse next-key locking de la
+/// garde LIFO (filtre `status` non indexé).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn reopen_close_concurrent_is_serialized(pool: MySqlPool) {
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+
+    // FY_N clos, FY_{N+1} ouvert.
+    let mut y2025 = ny("Exercice 2025", 2025);
+    y2025.company_id = company_id;
+    let fy2025 = fiscal_years::create(&pool, user_id, y2025).await.unwrap();
+    let mut y2026 = ny("Exercice 2026", 2026);
+    y2026.company_id = company_id;
+    let fy2026 = fiscal_years::create(&pool, user_id, y2026).await.unwrap();
+    fiscal_years::close(&pool, user_id, company_id, fy2025.id)
+        .await
+        .unwrap();
+
+    // reopen(FY2025) [garde LIFO lit FY2026] vs close(FY2026) [Open→Closed],
+    // concurrents. Le FOR UPDATE sérialise → pas de deadlock, chaque future
+    // résout en Ok ou en une DbError définie.
+    let p1 = pool.clone();
+    let p2 = pool.clone();
+    let reopen_fut = tokio::spawn(async move {
+        fiscal_years::reopen(&p1, user_id, company_id, fy2025.id, "motif".to_string()).await
+    });
+    let close_fut =
+        tokio::spawn(async move { fiscal_years::close(&p2, user_id, company_id, fy2026.id).await });
+
+    let (reopen_res, close_res) = tokio::join!(reopen_fut, close_fut);
+    let reopen_res = reopen_res.expect("reopen task should not panic");
+    let close_res = close_res.expect("close task should not panic");
+
+    // Aucune des deux ne doit produire une erreur inattendue (Sqlx/deadlock).
+    // reopen : soit Ok (a gagné la course avant close), soit LIFO blocked (close
+    // a commit d'abord). close : Ok (FY2026 était Open).
+    assert!(
+        reopen_res.is_ok()
+            || matches!(&reopen_res, Err(DbError::Invariant(k)) if k == FY_REOPEN_LIFO_BLOCKED_KEY),
+        "reopen outcome must be Ok or LIFO-blocked, got {reopen_res:?}"
+    );
+    assert!(
+        close_res.is_ok(),
+        "close(FY2026 Open) should succeed, got {close_res:?}"
+    );
+
+    // État final : chaque exercice a un statut valide (pas de corruption).
+    let fy2025_final = fiscal_years::find_by_id(&pool, fy2025.id)
+        .await
+        .unwrap()
+        .unwrap();
+    let fy2026_final = fiscal_years::find_by_id(&pool, fy2026.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(fy2026_final.status, FiscalYearStatus::Closed);
+    assert!(matches!(
+        fy2025_final.status,
+        FiscalYearStatus::Open | FiscalYearStatus::Closed
+    ));
 }
