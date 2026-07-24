@@ -193,7 +193,12 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each equityGroups as group, i (i)}
+						<!-- Clé = `group.role` : identité intrinsèque et STABLE du groupe. Le
+					     backend garantit un seul groupe contigu par rôle (tri par rang) → clé
+					     unique ; `is_equity_role` garantit un rôle non-null dans `equity` → pas
+					     de collision de clé null. Ni l'index (réutilisation de nœud DOM si un
+					     groupe disparaît, ECH pass 2) ni un fallback `?? 'none'` ne conviennent. -->
+					{#each equityGroups as group (group.role)}
 							{#if group.role}
 								<tr class="bg-gray-100 text-sm font-semibold">
 									<td colspan="3" class="px-2 py-1"
