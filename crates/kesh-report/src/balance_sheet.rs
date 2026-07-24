@@ -17,7 +17,7 @@
 //!
 //! # Équation comptable
 //!
-//! `total_assets == total_liabilities + retained_earnings + equity_result`
+//! `total_assets == total_liabilities + total_equity + retained_earnings + equity_result`
 //!
 //! Cette égalité tient **par construction** (identité de la partie double) : sur
 //! l'ensemble des écritures `entry_date ≤ date d'arrêté`, Σ(débit − crédit) = 0, d'où
@@ -27,18 +27,29 @@
 //! son `entry_date` **dans** les bornes de son `fiscal_year_id` (imposé par
 //! `journal_entries::update` ; `equation_holds` sert de filet — cf. Dev Notes 14-1).
 //!
+//! # Présentation par rôle des fonds propres (Story 14-3c)
+//!
+//! Les comptes de passif dont le `role` est un **rôle de fonds propres**
+//! (`EquityCapital`, `EquityOther`, `RetainedEarnings`, `CurrentYearResult`) sont
+//! **partitionnés** — par rôle, **jamais par numéro** — de la section `liabilities`
+//! (dettes réelles) vers une section `equity` dédiée (conforme CO art. 959a, distinction
+//! capitaux étrangers / capitaux propres). `total_liabilities` ne compte donc plus que
+//! les **dettes réelles** ; `total_equity` somme les comptes physiques de fonds propres.
+//! Le déplacement est **mathématiquement neutre** (`total_liabilities + total_equity` =
+//! ancien `total_liabilities`), donc l'équation restructurée tient trivialement. Les
+//! deux **lignes calculées virtuelles** 14-1 (`retained_earnings`, `equity_result`)
+//! restent **disjointes** des comptes physiques et ne sont **jamais** fusionnées avec un
+//! compte physique de même rôle (collision D1 : un compte physique `RetainedEarnings` =
+//! report d'ouverture d'un migrant ≠ la ligne calculée « Résultat reporté (calculé) »).
+//!
 //! # Pas de hardcode de numéros (décision Story 14-1)
 //!
-//! `total_liabilities` compte **tous** les comptes de passif cumulés, **sans aucune
-//! exclusion par numéro** (capital, réserves, report à nouveau inclus). L'ancien
-//! hardcode `EQUITY_RESULT_ACCOUNT_NUMBERS = ["2979","2800"]` est **retiré** : il
-//! excluait `2800` (le capital, vraie equity) et faisait disparaître les capitaux
-//! propres d'un utilisateur migrant. Le rôle d'un compte n'est **jamais** déduit de son
-//! numéro. Le durcissement (compte de résultat non-postable, présentation par rôle) est
-//! traité en Story 14-3 (rôles configurables sur `accounts`).
+//! Aucune classification n'est déduite d'un **numéro** de compte : la partition
+//! fonds propres / dettes se fait exclusivement sur `accounts.role` (Story 14-3a).
+//! L'ancien hardcode `EQUITY_RESULT_ACCOUNT_NUMBERS = ["2979","2800"]` est **retiré**.
 
 use chrono::NaiveDate;
-use kesh_db::entities::AccountType;
+use kesh_db::entities::{AccountRole, AccountType};
 use kesh_db::errors::map_db_error;
 use kesh_db::repositories::fiscal_years;
 use rust_decimal::Decimal;
@@ -55,16 +66,72 @@ use crate::period::ReportPeriod;
 pub struct BalanceSheet {
     pub period: ReportPeriod,
     pub assets: Vec<AccountBalance>,
+    /// Dettes réelles seulement — les comptes de fonds propres sont partitionnés
+    /// vers `equity` (Story 14-3c). **Ne contient plus** les comptes de rôle equity.
     pub liabilities: Vec<AccountBalance>,
+    /// Comptes physiques de **fonds propres** (rôle equity), triés par rang de rôle
+    /// (`EquityCapital` → `EquityOther` → `RetainedEarnings` → `CurrentYearResult`,
+    /// tie-break numéro de compte) — ordre CO 959a al. 2 garanti **en backend**,
+    /// source unique (Story 14-3c). N'inclut **pas** les lignes calculées virtuelles.
+    pub equity: Vec<AccountBalance>,
     pub total_assets: Decimal,
     pub total_liabilities: Decimal,
+    /// Σ des soldes des comptes physiques de `equity` (**hors** lignes calculées
+    /// `retained_earnings` / `equity_result`). Story 14-3c.
+    pub total_equity: Decimal,
     /// Résultat reporté = cumul des résultats nets des exercices **strictement
     /// antérieurs** à `fy_start` (P&L `entry_date < fy_start`). Négatif = pertes
-    /// cumulées (« Perte reportée »).
+    /// cumulées (« Perte reportée »). **Ligne calculée virtuelle** — disjointe des
+    /// comptes physiques de rôle `RetainedEarnings` (collision D1, Story 14-3c).
     pub retained_earnings: Decimal,
     /// Résultat de l'exercice courant = P&L sur `[fy_start, date d'arrêté]`.
+    /// **Ligne calculée virtuelle** — disjointe d'un compte physique `CurrentYearResult`.
     pub equity_result: Decimal,
     pub equation_holds: bool,
+}
+
+impl BalanceSheet {
+    /// Un bilan est **vide** seulement si **toutes** ses composantes sont nulles :
+    /// aucun compte d'actif, de passif, **de fonds propres**, ET report/résultat
+    /// calculés nuls.
+    ///
+    /// Story 14-3c (validate P1-F1, CRITICAL) : **source unique** de la garde « rapport
+    /// vide », jadis dupliquée en ligne dans `csv.rs` et `pdf.rs` — et jamais étendue à
+    /// `equity`. Un reclassement pur entre deux comptes de fonds propres (débit
+    /// `EquityOther` / crédit `EquityCapital`, somme nette 0, actifs/passifs/virtuels
+    /// nuls) laisse `equity` **non vide** → le bilan n'est **pas** vide, sinon la section
+    /// Capitaux propres réellement peuplée serait masquée. Le pendant frontend
+    /// (`isReportEmpty`) est maintenu en parallèle (assumé, cf. Dev Notes 14-3c).
+    pub fn is_empty(&self) -> bool {
+        self.assets.is_empty()
+            && self.liabilities.is_empty()
+            && self.equity.is_empty()
+            && self.retained_earnings.is_zero()
+            && self.equity_result.is_zero()
+    }
+}
+
+/// Rang d'affichage d'un **rôle de fonds propres** (ordre CO art. 959a al. 2, du
+/// capital vers le résultat), ou `None` si le rôle n'est **pas** un rôle equity.
+///
+/// **Source de vérité unique** (Story 14-3c, Piège #2) de la liste des 4 rôles de
+/// fonds propres ET de leur ordre : la partition (`is_equity_role`), le tri backend
+/// et l'ordre d'affichage en dérivent tous. Ne **jamais** dupliquer cette liste.
+fn equity_role_rank(role: AccountRole) -> Option<u8> {
+    match role {
+        AccountRole::EquityCapital => Some(0),
+        AccountRole::EquityOther => Some(1),
+        AccountRole::RetainedEarnings => Some(2),
+        AccountRole::CurrentYearResult => Some(3),
+        _ => None,
+    }
+}
+
+/// `true` si le compte porte un **rôle de fonds propres** (→ section `equity`).
+/// Un compte de `role` NULL **ou** de rôle non-equity (dette réelle : `Payable`,
+/// `VatPayable`, …) reste dans `liabilities`. Dérive de [`equity_role_rank`].
+fn is_equity_role(role: Option<AccountRole>) -> bool {
+    role.and_then(equity_role_rank).is_some()
 }
 
 /// Solde d'un compte au bilan ou au compte de résultat.
@@ -83,6 +150,10 @@ pub struct AccountBalance {
     pub account_type: AccountType,
     pub active: bool,
     pub balance: Decimal,
+    /// Rôle métier explicite du compte (`accounts.role`, Story 14-3a), `None` si
+    /// aucun. Story 14-3c : porte la partition fonds propres / dettes au bilan et
+    /// le regroupement par rôle — **jamais** déduit du numéro de compte.
+    pub role: Option<AccountRole>,
 }
 
 /// Génère le bilan pour la période donnée (modèle temps réel virtuel — Story 14-1).
@@ -96,11 +167,35 @@ pub async fn generate(
     let as_of = period.end_date;
 
     let assets = fetch_cumulative_section(pool, company_id, as_of, AccountType::Asset).await?;
-    let liabilities =
+    let liabilities_all =
         fetch_cumulative_section(pool, company_id, as_of, AccountType::Liability).await?;
+
+    // Partition fonds propres / dettes (Story 14-3c, D2) — **par rôle, jamais par
+    // numéro**. Les comptes de rôle equity quittent `liabilities` (dettes réelles)
+    // pour la section `equity`. On filtre en mémoire le résultat de la requête
+    // existante (pas de nouveau `WHERE role = ?` runtime → l'invariant `AND active`
+    // de 14-3a est sans objet ici ; on préserve l'affichage d'un compte equity
+    // archivé à solde non-nul, cohérent avec les passifs — AC-A).
+    let (mut equity, liabilities): (Vec<AccountBalance>, Vec<AccountBalance>) = liabilities_all
+        .into_iter()
+        .partition(|a| is_equity_role(a.role));
+
+    // Tri de la section equity par **rang de rôle** (CO 959a al. 2), tie-break numéro.
+    // Garanti en backend (source unique) : le SQL trie par numéro, ce qui coïncide avec
+    // l'ordre rôle par hasard sur un plan standard mais casserait sur un plan renuméroté
+    // (validate P1-F2). Les 3 renderers itèrent `equity` dans l'ordre reçu, sans re-trier.
+    // Tous les éléments de `equity` ont un rôle equity (`is_equity_role`), donc
+    // `equity_role_rank` retourne toujours `Some` ici — `unwrap_or(u8::MAX)` par sûreté.
+    equity.sort_by(|a, b| {
+        let ra = a.role.and_then(equity_role_rank).unwrap_or(u8::MAX);
+        let rb = b.role.and_then(equity_role_rank).unwrap_or(u8::MAX);
+        ra.cmp(&rb)
+            .then_with(|| a.account_number.cmp(&b.account_number))
+    });
 
     let total_assets: Decimal = assets.iter().map(|a| a.balance).sum();
     let total_liabilities: Decimal = liabilities.iter().map(|a| a.balance).sum();
+    let total_equity: Decimal = equity.iter().map(|a| a.balance).sum();
 
     // Ancrage à `fy_start` = début de l'exercice courant (Dev Note 4). Résolu par le
     // `fiscal_year_id` de la requête, PAS par itération des lignes `fiscal_years`
@@ -127,11 +222,17 @@ pub async fn generate(
     // Résultat reporté = cumul P&L des exercices strictement antérieurs.
     let retained_earnings = fetch_retained_earnings(pool, company_id, fy_start).await?;
 
-    let equation_holds = total_assets == total_liabilities + retained_earnings + equity_result;
+    // Équation restructurée (Story 14-3c, D2) : les comptes equity sont sortis de
+    // `total_liabilities` vers `total_equity`. La somme totale passif + fonds propres
+    // est inchangée (`total_liabilities + total_equity` = ancien `total_liabilities`),
+    // donc l'égalité tient trivialement — la garde reste le filet defense-in-depth.
+    let equation_holds =
+        total_assets == total_liabilities + total_equity + retained_earnings + equity_result;
     if !equation_holds {
         tracing::warn!(
             total_assets = %total_assets,
             total_liabilities = %total_liabilities,
+            total_equity = %total_equity,
             retained_earnings = %retained_earnings,
             equity_result = %equity_result,
             "balance_sheet : équation non vérifiée (defense in depth — écriture de clôture \
@@ -143,8 +244,10 @@ pub async fn generate(
         period: period.clone(),
         assets,
         liabilities,
+        equity,
         total_assets,
         total_liabilities,
+        total_equity,
         retained_earnings,
         equity_result,
         equation_holds,
@@ -183,7 +286,7 @@ async fn fetch_cumulative_section(
     };
 
     let sql = format!(
-        "SELECT a.id AS account_id, a.number, a.name, a.account_type, a.active, \
+        "SELECT a.id AS account_id, a.number, a.name, a.account_type, a.active, a.role, \
                 {sign_expr} AS balance \
          FROM accounts a \
          INNER JOIN journal_entry_lines jel ON jel.account_id = a.id \
@@ -192,7 +295,7 @@ async fn fetch_cumulative_section(
            AND a.account_type = ? \
            AND je.company_id = ? \
            AND je.entry_date <= ? \
-         GROUP BY a.id, a.number, a.name, a.account_type, a.active \
+         GROUP BY a.id, a.number, a.name, a.account_type, a.active, a.role \
          HAVING balance != 0 \
          ORDER BY a.number ASC"
     );
@@ -249,8 +352,123 @@ async fn fetch_retained_earnings(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::period::ReportPeriod;
+    use chrono::NaiveDate;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
+
+    fn period() -> ReportPeriod {
+        ReportPeriod {
+            fiscal_year_id: 1,
+            start_date: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+            end_date: NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+        }
+    }
+
+    fn equity_acc(number: &str, balance: Decimal, role: AccountRole) -> AccountBalance {
+        AccountBalance {
+            account_id: 1,
+            account_number: number.into(),
+            account_name: "eq".into(),
+            account_type: AccountType::Liability,
+            active: true,
+            balance,
+            role: Some(role),
+        }
+    }
+
+    fn bs_with(equity: Vec<AccountBalance>, retained: Decimal, result: Decimal) -> BalanceSheet {
+        let total_equity: Decimal = equity.iter().map(|a| a.balance).sum();
+        BalanceSheet {
+            period: period(),
+            assets: vec![],
+            liabilities: vec![],
+            equity,
+            total_assets: Decimal::ZERO,
+            total_liabilities: Decimal::ZERO,
+            total_equity,
+            retained_earnings: retained,
+            equity_result: result,
+            equation_holds: true,
+        }
+    }
+
+    // --- Story 14-3c : classification par rôle (source unique) ---
+
+    #[test]
+    fn is_equity_role_covers_the_four_equity_roles_and_nothing_else() {
+        for r in [
+            AccountRole::EquityCapital,
+            AccountRole::EquityOther,
+            AccountRole::RetainedEarnings,
+            AccountRole::CurrentYearResult,
+        ] {
+            assert!(is_equity_role(Some(r)), "{r:?} doit être un rôle equity");
+            assert!(equity_role_rank(r).is_some());
+        }
+        // Rôles NON-equity (dettes réelles / autres) + absence de rôle.
+        for r in [
+            AccountRole::Payable,
+            AccountRole::VatPayable,
+            AccountRole::VatSettlement,
+            AccountRole::Receivable,
+            AccountRole::DefaultRevenue,
+            AccountRole::VatRecoverable,
+        ] {
+            assert!(!is_equity_role(Some(r)), "{r:?} ne doit PAS être equity");
+            assert!(equity_role_rank(r).is_none());
+        }
+        assert!(!is_equity_role(None), "role NULL reste dans les dettes");
+    }
+
+    /// Ordre CO 959a al. 2 : capital → autres FP → report → résultat.
+    #[test]
+    fn equity_role_rank_orders_per_co_959a() {
+        assert!(
+            equity_role_rank(AccountRole::EquityCapital)
+                < equity_role_rank(AccountRole::EquityOther)
+        );
+        assert!(
+            equity_role_rank(AccountRole::EquityOther)
+                < equity_role_rank(AccountRole::RetainedEarnings)
+        );
+        assert!(
+            equity_role_rank(AccountRole::RetainedEarnings)
+                < equity_role_rank(AccountRole::CurrentYearResult)
+        );
+    }
+
+    // --- Story 14-3c : garde « rapport vide » centralisée (P1-F1) ---
+
+    #[test]
+    fn is_empty_true_when_everything_null() {
+        let bs = bs_with(vec![], Decimal::ZERO, Decimal::ZERO);
+        assert!(bs.is_empty());
+    }
+
+    /// Reclassement pur entre deux comptes de fonds propres qui s'annulent
+    /// (`total_equity` net 0 mais `equity` peuplé) → le bilan n'est **pas** vide,
+    /// sinon la section Capitaux propres réellement peuplée serait masquée.
+    #[test]
+    fn is_empty_false_on_pure_equity_reclass() {
+        let bs = bs_with(
+            vec![
+                equity_acc("2800", dec!(1000), AccountRole::EquityCapital),
+                equity_acc("2900", dec!(-1000), AccountRole::EquityOther),
+            ],
+            Decimal::ZERO,
+            Decimal::ZERO,
+        );
+        assert_eq!(bs.total_equity, Decimal::ZERO);
+        assert!(!bs.is_empty(), "equity peuplé ⇒ rapport non vide");
+    }
+
+    #[test]
+    fn is_empty_false_when_only_calculated_lines_nonzero() {
+        let bs = bs_with(vec![], dec!(1000), dec!(-1000));
+        assert!(!bs.is_empty());
+    }
 
     /// Équation cross-exercice (Story 14-1) : `assets == liabilities + retained + result`.
     ///

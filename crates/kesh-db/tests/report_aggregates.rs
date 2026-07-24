@@ -15,8 +15,8 @@ use kesh_db::entities::account::AccountType;
 use kesh_db::entities::address::StructuredAddress;
 use kesh_db::entities::journal_entry::Journal;
 use kesh_db::entities::{
-    Language, NewAccount, NewCompany, NewFiscalYear, NewJournalEntry, NewJournalEntryLine, NewUser,
-    OrgType, Role,
+    AccountRole, Language, NewAccount, NewCompany, NewFiscalYear, NewJournalEntry,
+    NewJournalEntryLine, NewUser, OrgType, Role,
 };
 use kesh_db::repositories::{accounts, companies, fiscal_years, journal_entries, users};
 use kesh_report::ReportPeriod;
@@ -101,6 +101,21 @@ async fn create_acc(
     name: &str,
     account_type: AccountType,
 ) -> i64 {
+    create_acc_with_role(pool, user_id, company_id, number, name, account_type, None).await
+}
+
+/// Variante de [`create_acc`] posant un **rôle** explicite (Story 14-3c) — nécessaire
+/// pour piloter la partition fonds propres / dettes du bilan par rôle. `create_acc`
+/// délègue ici avec `role: None` (les ~21 sites d'appel existants restent inchangés).
+async fn create_acc_with_role(
+    pool: &MySqlPool,
+    user_id: i64,
+    company_id: i64,
+    number: &str,
+    name: &str,
+    account_type: AccountType,
+    role: Option<AccountRole>,
+) -> i64 {
     accounts::create(
         pool,
         user_id,
@@ -110,13 +125,27 @@ async fn create_acc(
             name: name.into(),
             account_type,
             parent_id: None,
-            role: None,
+            role,
             postable: true,
         },
     )
     .await
     .unwrap()
     .id
+}
+
+/// Force le `role` d'un compte **après** coup, en contournant la garde de postabilité
+/// (Story 14-3b) qui bloquerait une écriture sur un rôle non-postable. Modélise le
+/// scénario legacy : un solde a été posté quand le compte était postable, PUIS 14-3a a
+/// assigné un rôle non-postable (`CurrentYearResult`). Le rapport lit `accounts.role`
+/// au moment du calcul, donc la partition par rôle s'applique au solde legacy.
+async fn set_account_role(pool: &MySqlPool, account_id: i64, role: AccountRole) {
+    sqlx::query("UPDATE accounts SET role = ?, postable = FALSE WHERE id = ?")
+        .bind(role.as_str())
+        .bind(account_id)
+        .execute(pool)
+        .await
+        .unwrap();
 }
 
 async fn post_entry(
@@ -401,15 +430,18 @@ async fn partial_period_excludes_outside_entries(pool: MySqlPool) {
     assert_eq!(tb.total_debit, Decimal::ZERO);
 }
 
-/// Test 6 : balance_sheet **inclut** compte 2979 dans les passifs (Story 14-1).
+/// Test 6 : balance_sheet **partitionne** le compte 2979 (rôle `CurrentYearResult`)
+/// dans la section **Capitaux propres**, pas dans les Passifs (Story 14-3c).
 ///
-/// Inverse l'ancien `balance_sheet_excludes_2979_from_liabilities` (Pass 3 ECH3-01) :
-/// le hardcode `EQUITY_RESULT_ACCOUNT_NUMBERS` est retiré, plus AUCUNE exclusion par
-/// numéro. Un compte de passif réel posté (2979 ou 2800) est compté une fois, et
-/// l'equity reste juste via le split calculé (retained / equity_result). Le rôle d'un
-/// compte n'est jamais déduit de son numéro.
+/// Historique : l'ancien `balance_sheet_excludes_2979_from_liabilities` (hardcode
+/// numéro, retiré 14-1) comptait 2979 dans `liabilities` ; 14-1
+/// (`balance_sheet_counts_2979_in_liabilities`) l'y laissait faute de rôle. Depuis
+/// 14-3c la classification se fait **par rôle** : un compte de rôle equity va dans
+/// `equity`, jamais dans `liabilities`. La partition reste indépendante du numéro
+/// (le fixture pose `role: Some(CurrentYearResult)`, sinon `role: None` le laisserait
+/// en dettes et le test échouerait pour la mauvaise raison — Piège #6).
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
-async fn balance_sheet_counts_2979_in_liabilities(pool: MySqlPool) {
+async fn balance_sheet_counts_2979_in_equity(pool: MySqlPool) {
     let cid = create_company(&pool, "co6").await;
     let uid = create_user(&pool, "u6", cid).await;
     let fy = create_fy(
@@ -422,7 +454,9 @@ async fn balance_sheet_counts_2979_in_liabilities(pool: MySqlPool) {
     )
     .await;
     let asset = create_acc(&pool, uid, cid, "1000", "Banque", AccountType::Asset).await;
-    // Compte 2979 stocké Liability (report à nouveau / capitaux propres migrés)
+    // Solde legacy non-nul : posté quand 2979 était postable (rôle None), PUIS 14-3a a
+    // assigné le rôle non-postable CurrentYearResult (garde postabilité 14-3b bloquerait
+    // un posting direct sur ce rôle — cf. `set_account_role`).
     let acc_2979 = create_acc(
         &pool,
         uid,
@@ -444,6 +478,7 @@ async fn balance_sheet_counts_2979_in_liabilities(pool: MySqlPool) {
         dec!(500),
     )
     .await;
+    set_account_role(&pool, acc_2979, AccountRole::CurrentYearResult).await;
 
     let period = ReportPeriod::resolve(&pool, cid, fy, None, None)
         .await
@@ -451,13 +486,17 @@ async fn balance_sheet_counts_2979_in_liabilities(pool: MySqlPool) {
     let bs = kesh_report::generate_balance_sheet(&pool, cid, &period)
         .await
         .unwrap();
-    // Le compte 2979 DOIT apparaître dans liabilities et être compté (plus d'exclusion)
-    let found_2979 = bs.liabilities.iter().any(|a| a.account_number == "2979");
+    // Le compte 2979 DOIT apparaître dans `equity` (rôle equity), PAS dans `liabilities`.
     assert!(
-        found_2979,
-        "Compte 2979 doit être compté dans total_liabilities (hardcode retiré — Story 14-1)"
+        bs.equity.iter().any(|a| a.account_number == "2979"),
+        "Compte 2979 (rôle CurrentYearResult) doit être partitionné dans equity (14-3c)"
     );
-    assert_eq!(bs.total_liabilities, dec!(500));
+    assert!(
+        !bs.liabilities.iter().any(|a| a.account_number == "2979"),
+        "Compte 2979 ne doit PLUS figurer dans liabilities (partition par rôle 14-3c)"
+    );
+    assert_eq!(bs.total_liabilities, Decimal::ZERO);
+    assert_eq!(bs.total_equity, dec!(500));
     assert_eq!(bs.total_assets, dec!(500));
     assert_eq!(bs.retained_earnings, Decimal::ZERO);
     assert_eq!(bs.equity_result, Decimal::ZERO);
@@ -825,4 +864,415 @@ async fn report_period_resolve_cross_tenant_returns_fy_not_found(pool: MySqlPool
         matches!(err, kesh_report::ReportError::FiscalYearNotFound { .. }),
         "expected FiscalYearNotFound on cross-tenant fy lookup, got: {err:?}"
     );
+}
+
+// ============================================================
+// Story 14-3c — présentation des fonds propres PAR RÔLE au bilan
+// ============================================================
+
+/// AC-A/G : la partition fonds propres / dettes se fait **par rôle**. Un compte de
+/// rôle equity va dans `equity`, un compte de rôle non-equity (`Payable`) OU de rôle
+/// NULL reste dans `liabilities`. `total_liabilities + total_equity` = ancien total.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn balance_sheet_partitions_equity_by_role(pool: MySqlPool) {
+    let cid = create_company(&pool, "co143c1").await;
+    let uid = create_user(&pool, "u143c1", cid).await;
+    let fy = create_fy(
+        &pool,
+        uid,
+        cid,
+        "FY",
+        NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+    )
+    .await;
+    let asset = create_acc(&pool, uid, cid, "1000", "Banque", AccountType::Asset).await;
+    let payable = create_acc_with_role(
+        &pool,
+        uid,
+        cid,
+        "2000",
+        "Fournisseurs",
+        AccountType::Liability,
+        Some(AccountRole::Payable),
+    )
+    .await;
+    let capital = create_acc_with_role(
+        &pool,
+        uid,
+        cid,
+        "2800",
+        "Capital",
+        AccountType::Liability,
+        Some(AccountRole::EquityCapital),
+    )
+    .await;
+    // Compte de passif de rôle NULL → reste dans les dettes (invariant : jamais equity).
+    let other_liab = create_acc(&pool, uid, cid, "2100", "Emprunt", AccountType::Liability).await;
+
+    let d = |m, dd| NaiveDate::from_ymd_opt(2026, m, dd).unwrap();
+    post_entry(
+        &pool,
+        uid,
+        fy,
+        cid,
+        d(5, 1),
+        Journal::OD,
+        asset,
+        payable,
+        dec!(300),
+    )
+    .await;
+    post_entry(
+        &pool,
+        uid,
+        fy,
+        cid,
+        d(5, 2),
+        Journal::OD,
+        asset,
+        capital,
+        dec!(1000),
+    )
+    .await;
+    post_entry(
+        &pool,
+        uid,
+        fy,
+        cid,
+        d(5, 3),
+        Journal::OD,
+        asset,
+        other_liab,
+        dec!(200),
+    )
+    .await;
+
+    let period = ReportPeriod::resolve(&pool, cid, fy, None, None)
+        .await
+        .unwrap();
+    let bs = kesh_report::generate_balance_sheet(&pool, cid, &period)
+        .await
+        .unwrap();
+
+    // equity : seulement le capital (rôle equity).
+    assert!(bs.equity.iter().any(|a| a.account_number == "2800"));
+    assert!(!bs.equity.iter().any(|a| a.account_number == "2000"));
+    assert!(!bs.equity.iter().any(|a| a.account_number == "2100"));
+    // liabilities : la dette Payable ET la dette de rôle NULL — PAS le capital.
+    assert!(bs.liabilities.iter().any(|a| a.account_number == "2000"));
+    assert!(bs.liabilities.iter().any(|a| a.account_number == "2100"));
+    assert!(!bs.liabilities.iter().any(|a| a.account_number == "2800"));
+
+    assert_eq!(bs.total_equity, dec!(1000));
+    assert_eq!(bs.total_liabilities, dec!(500));
+    // Le déplacement est neutre : liabilities + equity = ancien total des passifs.
+    assert_eq!(bs.total_liabilities + bs.total_equity, dec!(1500));
+    assert_eq!(bs.total_assets, dec!(1500));
+    assert!(bs.equation_holds);
+}
+
+/// P1-F2 : l'ordre de la section equity suit le **rang de rôle** (CO 959a al. 2),
+/// pas le numéro de compte. Plan renuméroté : `EquityOther` sur un numéro INFÉRIEUR
+/// à `EquityCapital` → le capital doit quand même sortir en premier.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn balance_sheet_equity_order_by_role_on_renumbered_plan(pool: MySqlPool) {
+    let cid = create_company(&pool, "co143c2").await;
+    let uid = create_user(&pool, "u143c2", cid).await;
+    let fy = create_fy(
+        &pool,
+        uid,
+        cid,
+        "FY",
+        NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+    )
+    .await;
+    let asset = create_acc(&pool, uid, cid, "1000", "Banque", AccountType::Asset).await;
+    // EquityOther sur 2100 (numéro INFÉRIEUR au capital 2800) — plan non standard.
+    let other = create_acc_with_role(
+        &pool,
+        uid,
+        cid,
+        "2100",
+        "Réserves",
+        AccountType::Liability,
+        Some(AccountRole::EquityOther),
+    )
+    .await;
+    let capital = create_acc_with_role(
+        &pool,
+        uid,
+        cid,
+        "2800",
+        "Capital",
+        AccountType::Liability,
+        Some(AccountRole::EquityCapital),
+    )
+    .await;
+    let d = |dd| NaiveDate::from_ymd_opt(2026, 5, dd).unwrap();
+    post_entry(
+        &pool,
+        uid,
+        fy,
+        cid,
+        d(1),
+        Journal::OD,
+        asset,
+        other,
+        dec!(500),
+    )
+    .await;
+    post_entry(
+        &pool,
+        uid,
+        fy,
+        cid,
+        d(2),
+        Journal::OD,
+        asset,
+        capital,
+        dec!(1000),
+    )
+    .await;
+
+    let period = ReportPeriod::resolve(&pool, cid, fy, None, None)
+        .await
+        .unwrap();
+    let bs = kesh_report::generate_balance_sheet(&pool, cid, &period)
+        .await
+        .unwrap();
+
+    assert_eq!(bs.equity.len(), 2);
+    // Malgré le numéro 2800 > 2100, le CAPITAL (rang 0) sort AVANT les autres FP (rang 1).
+    assert_eq!(bs.equity[0].role, Some(AccountRole::EquityCapital));
+    assert_eq!(bs.equity[0].account_number, "2800");
+    assert_eq!(bs.equity[1].role, Some(AccountRole::EquityOther));
+    assert_eq!(bs.equity[1].account_number, "2100");
+}
+
+/// D1 : un compte physique de rôle `RetainedEarnings` (report d'ouverture d'un migrant)
+/// et la ligne CALCULÉE `retained_earnings` (cumul P&L antérieur) sont **deux grandeurs
+/// distinctes**, jamais fusionnées.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn balance_sheet_distinguishes_physical_and_calculated_retained(pool: MySqlPool) {
+    let cid = create_company(&pool, "co143c3").await;
+    let uid = create_user(&pool, "u143c3", cid).await;
+    let fy2025 = create_fy(
+        &pool,
+        uid,
+        cid,
+        "FY2025",
+        NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2025, 12, 31).unwrap(),
+    )
+    .await;
+    let fy2026 = create_fy(
+        &pool,
+        uid,
+        cid,
+        "FY2026",
+        NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+    )
+    .await;
+    let asset = create_acc(&pool, uid, cid, "1000", "Banque", AccountType::Asset).await;
+    let revenue = create_acc(&pool, uid, cid, "3000", "Ventes", AccountType::Revenue).await;
+    let retained_acc = create_acc_with_role(
+        &pool,
+        uid,
+        cid,
+        "2970",
+        "Bénéfice reporté (compte)",
+        AccountType::Liability,
+        Some(AccountRole::RetainedEarnings),
+    )
+    .await;
+
+    // FY2025 : résultat net 5 000 (reste vivant dans Revenue — pas de clôture) → devient
+    // le report CALCULÉ pour FY2026.
+    post_entry(
+        &pool,
+        uid,
+        fy2025,
+        cid,
+        NaiveDate::from_ymd_opt(2025, 6, 1).unwrap(),
+        Journal::Ventes,
+        asset,
+        revenue,
+        dec!(5000),
+    )
+    .await;
+    // Report d'ouverture PHYSIQUE de 50 000 sur le compte 2970 (migration d'un migrant).
+    post_entry(
+        &pool,
+        uid,
+        fy2025,
+        cid,
+        NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+        Journal::OD,
+        asset,
+        retained_acc,
+        dec!(50000),
+    )
+    .await;
+
+    let period = ReportPeriod::resolve(&pool, cid, fy2026, None, None)
+        .await
+        .unwrap();
+    let bs = kesh_report::generate_balance_sheet(&pool, cid, &period)
+        .await
+        .unwrap();
+
+    // Ligne PHYSIQUE : compte 2970 itemisé dans equity à 50 000.
+    let physical = bs
+        .equity
+        .iter()
+        .find(|a| a.account_number == "2970")
+        .expect("compte physique 2970 dans equity");
+    assert_eq!(physical.balance, dec!(50000));
+    assert_eq!(physical.role, Some(AccountRole::RetainedEarnings));
+    // Ligne CALCULÉE : distincte, valeur 5 000 (≠ 50 000 → aucune fusion).
+    assert_eq!(bs.retained_earnings, dec!(5000));
+    assert_ne!(bs.retained_earnings, physical.balance);
+    assert_eq!(bs.total_equity, dec!(50000));
+    assert!(bs.equation_holds);
+}
+
+/// AC-G : un compte de rôle `CurrentYearResult` à **solde nul** (postings s'annulant)
+/// est absent de la section (via `HAVING balance != 0`) — pas de garde spéciale par rôle.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn balance_sheet_current_year_result_zero_balance_absent(pool: MySqlPool) {
+    let cid = create_company(&pool, "co143c4").await;
+    let uid = create_user(&pool, "u143c4", cid).await;
+    let fy = create_fy(
+        &pool,
+        uid,
+        cid,
+        "FY",
+        NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+    )
+    .await;
+    let asset = create_acc(&pool, uid, cid, "1000", "Banque", AccountType::Asset).await;
+    // Créé postable (rôle None) le temps de poster les écritures qui s'annulent, puis
+    // basculé en rôle non-postable CurrentYearResult (scénario legacy — cf. 2979_in_equity).
+    let cyr = create_acc(
+        &pool,
+        uid,
+        cid,
+        "2979",
+        "Résultat exercice",
+        AccountType::Liability,
+    )
+    .await;
+    let d = |dd| NaiveDate::from_ymd_opt(2026, 5, dd).unwrap();
+    // Deux écritures opposées → solde net 0 sur 2979.
+    post_entry(
+        &pool,
+        uid,
+        fy,
+        cid,
+        d(1),
+        Journal::OD,
+        asset,
+        cyr,
+        dec!(300),
+    )
+    .await;
+    post_entry(
+        &pool,
+        uid,
+        fy,
+        cid,
+        d(2),
+        Journal::OD,
+        cyr,
+        asset,
+        dec!(300),
+    )
+    .await;
+    set_account_role(&pool, cyr, AccountRole::CurrentYearResult).await;
+
+    let period = ReportPeriod::resolve(&pool, cid, fy, None, None)
+        .await
+        .unwrap();
+    let bs = kesh_report::generate_balance_sheet(&pool, cid, &period)
+        .await
+        .unwrap();
+    assert!(
+        !bs.equity.iter().any(|a| a.account_number == "2979"),
+        "2979 à solde nul doit être exclu (HAVING balance != 0)"
+    );
+    assert!(!bs.liabilities.iter().any(|a| a.account_number == "2979"));
+    assert_eq!(bs.total_equity, Decimal::ZERO);
+}
+
+/// P1-F1 (intégration) : un reclassement pur entre deux comptes de fonds propres
+/// (aucun actif/passif, virtuels nuls, `total_equity` net 0 mais `equity` peuplé) →
+/// le bilan n'est PAS vide et l'équation tient.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn balance_sheet_pure_equity_reclass_is_not_empty(pool: MySqlPool) {
+    let cid = create_company(&pool, "co143c5").await;
+    let uid = create_user(&pool, "u143c5", cid).await;
+    let fy = create_fy(
+        &pool,
+        uid,
+        cid,
+        "FY",
+        NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+    )
+    .await;
+    let capital = create_acc_with_role(
+        &pool,
+        uid,
+        cid,
+        "2800",
+        "Capital",
+        AccountType::Liability,
+        Some(AccountRole::EquityCapital),
+    )
+    .await;
+    let reserves = create_acc_with_role(
+        &pool,
+        uid,
+        cid,
+        "2900",
+        "Réserves",
+        AccountType::Liability,
+        Some(AccountRole::EquityOther),
+    )
+    .await;
+    // Reclassement : débit Réserves / crédit Capital 1 000 (aucun actif/passif touché).
+    // Capital (crédit−débit) = +1000 ; Réserves = −1000 ; somme nette 0.
+    post_entry(
+        &pool,
+        uid,
+        fy,
+        cid,
+        NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
+        Journal::OD,
+        reserves,
+        capital,
+        dec!(1000),
+    )
+    .await;
+
+    let period = ReportPeriod::resolve(&pool, cid, fy, None, None)
+        .await
+        .unwrap();
+    let bs = kesh_report::generate_balance_sheet(&pool, cid, &period)
+        .await
+        .unwrap();
+
+    assert_eq!(bs.equity.len(), 2, "les 2 comptes non nuls doivent figurer");
+    assert_eq!(bs.total_equity, Decimal::ZERO);
+    assert!(bs.assets.is_empty());
+    assert!(bs.liabilities.is_empty());
+    assert!(
+        !bs.is_empty(),
+        "equity peuplé ⇒ rapport NON vide (garde P1-F1) — ne pas masquer la section"
+    );
+    assert!(bs.equation_holds);
 }

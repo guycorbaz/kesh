@@ -325,8 +325,10 @@ describe('reports.api — Story 9-2a', () => {
 				period: { fiscalYearId: 1, startDate: '2026-01-01', endDate: '2026-12-31' },
 				assets: [],
 				liabilities: [],
+				equity: [],
 				totalAssets: '0',
 				totalLiabilities: '0',
+				totalEquity: '0',
 				retainedEarnings: '0',
 				equityResult: '0',
 				equationHolds: true,
@@ -353,9 +355,39 @@ describe('reports.api — Story 9-2a', () => {
 						accountType: 'Asset',
 						active: true,
 						balance: '500',
+						role: null,
 					},
 				],
 				totalAssets: '500',
+			});
+			expect(isReportEmpty('balance-sheet', dto)).toBe(false);
+		});
+
+		it('PAS vide quand seuls des comptes de fonds propres sont presents (reclassement pur equity, Story 14-3c)', () => {
+			// Reclassement pur entre 2 comptes de fonds propres qui s'annulent (net 0)
+			// mais la section equity est peuplee -> NON vide (garde P1-F1).
+			const dto = bs({
+				equity: [
+					{
+						accountId: 10,
+						accountNumber: '2800',
+						accountName: 'Capital',
+						accountType: 'Liability',
+						active: true,
+						balance: '1000',
+						role: 'EquityCapital',
+					},
+					{
+						accountId: 11,
+						accountNumber: '2900',
+						accountName: 'Reserves',
+						accountType: 'Liability',
+						active: true,
+						balance: '-1000',
+						role: 'EquityOther',
+					},
+				],
+				totalEquity: '0',
 			});
 			expect(isReportEmpty('balance-sheet', dto)).toBe(false);
 		});

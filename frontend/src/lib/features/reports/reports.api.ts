@@ -153,6 +153,9 @@ export function isReportEmpty(
 			return (
 				bs.assets.length === 0 &&
 				bs.liabilities.length === 0 &&
+				// Story 14-3c : + equity (3e site de la garde vide, P1-F1) — sinon un
+				// reclassement pur entre comptes de fonds propres masquerait la section.
+				bs.equity.length === 0 &&
 				Number(bs.retainedEarnings) === 0 &&
 				Number(bs.equityResult) === 0
 			);

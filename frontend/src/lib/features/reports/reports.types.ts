@@ -1,6 +1,8 @@
 // Story 9-1 — DTOs miroir des structures Rust kesh-report sérialisées en JSON camelCase.
 // Tous les montants en `string` (rust_decimal serde-str), dates en `string` ISO 8601.
 
+import type { AccountRole } from '$lib/features/accounts/accounts.types';
+
 export interface ReportPeriod {
 	fiscalYearId: number;
 	startDate: string; // ISO 8601 YYYY-MM-DD
@@ -16,15 +18,24 @@ export interface AccountBalance {
 	accountType: AccountType;
 	active: boolean;
 	balance: string; // Decimal string
+	/** Rôle métier explicite du compte (Story 14-3a), `null` si aucun. Porte le
+	 *  regroupement par rôle de la section Capitaux propres au bilan (Story 14-3c). */
+	role: AccountRole | null;
 }
 
 export interface BalanceSheetDto {
 	period: ReportPeriod;
 	assets: AccountBalance[];
+	/** Dettes réelles seulement — les comptes de fonds propres sont dans `equity` (Story 14-3c). */
 	liabilities: AccountBalance[];
+	/** Comptes physiques de fonds propres, triés par rang de rôle en backend (Story 14-3c). */
+	equity: AccountBalance[];
 	totalAssets: string;
 	totalLiabilities: string;
-	/** Résultat reporté = cumul P&L des exercices antérieurs (Story 14-1). Négatif = perte reportée. */
+	/** Σ des comptes physiques de `equity` (hors lignes calculées virtuelles), Story 14-3c. */
+	totalEquity: string;
+	/** Résultat reporté = cumul P&L des exercices antérieurs (Story 14-1). Négatif = perte reportée.
+	 *  Ligne **calculée** — disjointe d'un compte physique de rôle RetainedEarnings (collision D1). */
 	retainedEarnings: string;
 	equityResult: string;
 	equationHolds: boolean;

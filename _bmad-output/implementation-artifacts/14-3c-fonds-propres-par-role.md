@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev
+review
 
 ## Story
 
@@ -123,14 +123,14 @@ Conforme CO art. 959a (distinction capitaux étrangers / capitaux propres).
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Backend : `AccountBalance.role` + SELECT `a.role`** (`balance_sheet.rs:75-86`, `:186-198`). Import `AccountRole` (`kesh_db::entities`). `role: Option<AccountRole>`, `#[sqlx]` decode.
-- [ ] **T2 — Backend : partition equity/dettes** dans `generate` (`balance_sheet.rs:89-152`). Après `fetch_cumulative_section(Liability)`, partitionner par rôle equity ({EquityCapital, EquityOther, RetainedEarnings, CurrentYearResult}) → `equity` vs `liabilities`. Helper `is_equity_role(role) -> bool` (source de vérité unique de la liste des 4 rôles equity — pas de duplication).
-- [ ] **T3 — Backend : struct `BalanceSheet` + équation + `is_empty` centralisé** (`balance_sheet.rs:53-68`). Ajouter `equity: Vec<AccountBalance>`, `total_equity: Decimal`. Recalculer `equation_holds` sur l'équation restructurée. **Centraliser** `BalanceSheet::is_empty(&self) -> bool` (incluant `self.equity.is_empty()`) et l'appeler depuis `csv.rs:74-78` + `pdf.rs:461-464` (remplace les 2 copies en ligne). **⚠️ Mettre à jour TOUS les littéraux `BalanceSheet { … }` existants** (l'ajout de champs casse la compilation, détecté par `cargo build --workspace --all-targets` de la règle Test Locally First) : `csv.rs` (~5 littéraux de test), `pdf.rs` (~3 littéraux de test + `AccountBalance` littéraux), **et `crates/kesh-report/benches/export.rs:65-74` (`make_balance_sheet`, oublié validate P1-F5 — mettre `equity: vec![], total_equity: Decimal::ZERO`)**. De même, l'ajout de `role` à `AccountBalance` casse tous ses littéraux (ajouter `role: None` ou `role: Some(...)` selon le test).
-- [ ] **T4 — CSV** (`csv.rs:60-150`) : section `CapitauxPropres` par rôle + 2 lignes calculées distinctes + `Total capitaux propres` ; retirer equity de `Passifs` ; labels FR-CH inline.
-- [ ] **T5 — PDF** (`pdf.rs:72-137` + `:445-538`) : nouveaux champs `SectionLabels` (sous-titres de rôles + libellé calculé) hardcodés FR-CH ; rendre la section equity par rôle via `draw_account_row` ; retirer equity des Passifs ; pied équation ajusté. Défauts `fr_ch_defaults` (`pdf.rs:107-137`).
-- [ ] **T6 — Frontend** (`BalanceSheetView.svelte`, `reports.types.ts`, `reports.api.ts`) : `role` sur `AccountBalance` TS, `equity`/`totalEquity` sur `BalanceSheetDto`, section « Capitaux propres » dédiée groupée par rôle (clés `account-role-*` via `accountRoleKey`, ordre reçu du backend — pas de re-tri), retrait equity de la table Passifs. **Ajouter `&& dto.equity.length === 0` à `isReportEmpty` (`reports.api.ts:148-158`)** (3e site de la garde vide, P1-F1). Mettre à jour le builder de test `bs()` (`reports.api.test.ts:323-329`).
-- [ ] **T7 — i18n** (décision tranchée, remédiation validate P1-F6) : titre section equity = `reports-section-equity` **déjà présente** (l'utiliser, elle était inutilisée). Ligne calculée « Résultat reporté » : la clé `reports-retained-earnings` existe déjà **et est déjà utilisée** pour cette ligne (`BalanceSheetView.svelte:68`) avec la valeur « Résultat reporté » — SANS le mot « calculé ». D1 exige un libellé **explicitement marqué calculé**. → **Ajouter une NOUVELLE clé `reports-retained-earnings-calculated`** (ex. FR « Résultat reporté (calculé) », + perte reportée calculée si signe négatif géré comme aujourd'hui via `reports-retained-earnings-loss`) **aux 4 locales**, et l'utiliser pour la ligne calculée du frontend — pour rester cohérent avec le « (calculé) » hardcodé du PDF/CSV (D1). **Ne PAS réutiliser `reports-retained-earnings` telle quelle** (sinon frontend affiche « Résultat reporté » sans « calculé » → viole D1, diverge du PDF/CSV). **4 locales** synchronisées.
-- [ ] **T8 — Tests** (cf. AC-G). **⚠️ Infra de test préalable (remédiation validate P1-F3/F4, HIGH)** : les helpers `create_acc` de `report_aggregates.rs:96-120` **et** `reports_e2e.rs:213-229` hardcodent `role: None` — **aucun** helper de `kesh-db/tests/` ne pose de rôle (`grep "role: Some" crates/kesh-db/tests/` → 0). Avant d'écrire les tests AC-G, ajouter un helper `create_acc_with_role(…, role: Option<AccountRole>)` (ou paramétrer `create_acc`) **sans casser les ~21 sites d'appel existants**. Puis :
+- [x] **T1 — Backend : `AccountBalance.role` + SELECT `a.role`** (`balance_sheet.rs:75-86`, `:186-198`). Import `AccountRole` (`kesh_db::entities`). `role: Option<AccountRole>`, `#[sqlx]` decode.
+- [x] **T2 — Backend : partition equity/dettes** dans `generate` (`balance_sheet.rs:89-152`). Après `fetch_cumulative_section(Liability)`, partitionner par rôle equity ({EquityCapital, EquityOther, RetainedEarnings, CurrentYearResult}) → `equity` vs `liabilities`. Helper `is_equity_role(role) -> bool` (source de vérité unique de la liste des 4 rôles equity — pas de duplication).
+- [x] **T3 — Backend : struct `BalanceSheet` + équation + `is_empty` centralisé** (`balance_sheet.rs:53-68`). Ajouter `equity: Vec<AccountBalance>`, `total_equity: Decimal`. Recalculer `equation_holds` sur l'équation restructurée. **Centraliser** `BalanceSheet::is_empty(&self) -> bool` (incluant `self.equity.is_empty()`) et l'appeler depuis `csv.rs:74-78` + `pdf.rs:461-464` (remplace les 2 copies en ligne). **⚠️ Mettre à jour TOUS les littéraux `BalanceSheet { … }` existants** (l'ajout de champs casse la compilation, détecté par `cargo build --workspace --all-targets` de la règle Test Locally First) : `csv.rs` (~5 littéraux de test), `pdf.rs` (~3 littéraux de test + `AccountBalance` littéraux), **et `crates/kesh-report/benches/export.rs:65-74` (`make_balance_sheet`, oublié validate P1-F5 — mettre `equity: vec![], total_equity: Decimal::ZERO`)**. De même, l'ajout de `role` à `AccountBalance` casse tous ses littéraux (ajouter `role: None` ou `role: Some(...)` selon le test).
+- [x] **T4 — CSV** (`csv.rs:60-150`) : section `CapitauxPropres` par rôle + 2 lignes calculées distinctes + `Total capitaux propres` ; retirer equity de `Passifs` ; labels FR-CH inline.
+- [x] **T5 — PDF** (`pdf.rs:72-137` + `:445-538`) : nouveaux champs `SectionLabels` (sous-titres de rôles + libellé calculé) hardcodés FR-CH ; rendre la section equity par rôle via `draw_account_row` ; retirer equity des Passifs ; pied équation ajusté. Défauts `fr_ch_defaults` (`pdf.rs:107-137`).
+- [x] **T6 — Frontend** (`BalanceSheetView.svelte`, `reports.types.ts`, `reports.api.ts`) : `role` sur `AccountBalance` TS, `equity`/`totalEquity` sur `BalanceSheetDto`, section « Capitaux propres » dédiée groupée par rôle (clés `account-role-*` via `accountRoleKey`, ordre reçu du backend — pas de re-tri), retrait equity de la table Passifs. **Ajouter `&& dto.equity.length === 0` à `isReportEmpty` (`reports.api.ts:148-158`)** (3e site de la garde vide, P1-F1). Mettre à jour le builder de test `bs()` (`reports.api.test.ts:323-329`).
+- [x] **T7 — i18n** (décision tranchée, remédiation validate P1-F6) : titre section equity = `reports-section-equity` **déjà présente** (l'utiliser, elle était inutilisée). Ligne calculée « Résultat reporté » : la clé `reports-retained-earnings` existe déjà **et est déjà utilisée** pour cette ligne (`BalanceSheetView.svelte:68`) avec la valeur « Résultat reporté » — SANS le mot « calculé ». D1 exige un libellé **explicitement marqué calculé**. → **Ajouter une NOUVELLE clé `reports-retained-earnings-calculated`** (ex. FR « Résultat reporté (calculé) », + perte reportée calculée si signe négatif géré comme aujourd'hui via `reports-retained-earnings-loss`) **aux 4 locales**, et l'utiliser pour la ligne calculée du frontend — pour rester cohérent avec le « (calculé) » hardcodé du PDF/CSV (D1). **Ne PAS réutiliser `reports-retained-earnings` telle quelle** (sinon frontend affiche « Résultat reporté » sans « calculé » → viole D1, diverge du PDF/CSV). **4 locales** synchronisées.
+- [x] **T8 — Tests** (cf. AC-G). **⚠️ Infra de test préalable (remédiation validate P1-F3/F4, HIGH)** : les helpers `create_acc` de `report_aggregates.rs:96-120` **et** `reports_e2e.rs:213-229` hardcodent `role: None` — **aucun** helper de `kesh-db/tests/` ne pose de rôle (`grep "role: Some" crates/kesh-db/tests/` → 0). Avant d'écrire les tests AC-G, ajouter un helper `create_acc_with_role(…, role: Option<AccountRole>)` (ou paramétrer `create_acc`) **sans casser les ~21 sites d'appel existants**. Puis :
   - partition : compte de rôle equity → `equity`, dette (role NULL / Payable) → `liabilities` ; `total_liabilities + total_equity` = ancien `total_liabilities`.
   - équation restructurée tient.
   - **ordre par rôle sur plan renuméroté** (P1-F2) : poser `EquityOther` sur un numéro **inférieur** à `EquityCapital` → vérifier que `bs.equity` sort quand même dans l'ordre rôle (Capital avant Other), pas l'ordre numéro.
@@ -140,7 +140,7 @@ Conforme CO art. 959a (distinction capitaux étrangers / capitaux propres).
   - **`CurrentYearResult` avec solde legacy NON-nul** (remédiation validate P2, MEDIUM) : un posting antérieur à 14-3a (avant que le rôle devienne non-postable) laisse un solde ≠ 0 → le compte **s'affiche dans `equity`** (même chemin de partition par rôle, `HAVING` l'inclut). Test discriminant inverse du cas nul.
   - **`balance_sheet_counts_2979_in_liabilities` (`report_aggregates.rs:412-465`)** : **modifier le fixture pour poser `role: Some(AccountRole::CurrentYearResult)` sur 2979** (le helper actuel met `role: None` → sinon le compte resterait en `liabilities` et le test échouerait pour la mauvaise raison), renommer le test (ex. `balance_sheet_counts_2979_in_equity`), **mettre à jour son commentaire de doc** (`report_aggregates.rs:404-410`, actuellement « inclut 2979 dans les passifs » → « partitionne 2979 rôle CurrentYearResult dans equity »), et retourner l'assertion `liabilities`→`equity`.
   - **Vitest frontend** : section Capitaux propres groupée par rôle, distinction physique/calculé visible, comptes equity absents de la table Passifs, `isReportEmpty` false sur reclassement pur equity.
-- [ ] **T9 — Doc-sync** : CHANGELOG (nouvelle présentation fonds propres par rôle au bilan) ; manuel utilisateur si section bilan documentée ; pas de nouvelle limitation attendue hors L (voir Limitations).
+- [x] **T9 — Doc-sync** : CHANGELOG (nouvelle présentation fonds propres par rôle au bilan) ; manuel utilisateur si section bilan documentée ; pas de nouvelle limitation attendue hors L (voir Limitations).
 
 ## Dev Notes
 
@@ -198,13 +198,44 @@ Conforme CO art. 959a (distinction capitaux étrangers / capitaux propres).
 ## Dev Agent Record
 
 ### Agent Model Used
-(à remplir par dev-story)
+Opus 4.8 (1M context) — `bmad-dev-story`, 2026-07-24.
 
 ### Completion Notes List
-(à remplir)
+
+- **T1** — `AccountBalance` gagne `role: Option<AccountRole>` ; le SELECT du bilan (`balance_sheet.rs`) ET du compte de résultat (`income_statement.rs`) ajoutent `a.role` + `GROUP BY a.role`. **Découverte non-anticipée par la spec** : `AccountBalance` est une struct **partagée** décodée par `query_as` dans `income_statement.rs` aussi — sans `a.role` dans son SELECT, le `FromRow` échouerait au runtime (colonne absente). Corrigé dans les deux requêtes.
+- **T2/T3** — Helper source-unique `equity_role_rank(AccountRole) -> Option<u8>` (+ `is_equity_role` dérivé). Partition `liabilities_all` → `(equity, liabilities)` par `partition()`, tri de `equity` par rang de rôle puis numéro (garanti backend, P1-F2). Struct `BalanceSheet` + `equity`/`total_equity`, équation restructurée, `is_empty()` centralisé appelé par csv/pdf. Tous littéraux mis à jour (csv 6, pdf 4, benches 1 + income statement fixtures).
+- **T4 CSV / T5 PDF** — Section CapitauxPropres itemisée par rôle + 2 lignes calculées « (calculé) » distinctes + `Total capitaux propres`. PDF : nouveaux champs `SectionLabels` FR-CH (`total_equity`, `equity_capital_label`, `equity_other_label`, `retained_earnings_account_label`, `current_year_result_account_label`) + `retained_result_label` → « Résultat reporté (calculé) » ; rendu groupé par rôle via sous-titres + `draw_account_row` ; pied équation ajusté.
+- **T6/T7 Frontend** — `AccountBalance.role`, `BalanceSheetDto.equity/totalEquity` ; section « Capitaux propres » dédiée groupée par rôle (`accountRoleKey`, ordre backend, pas de re-tri) ; equity retiré du `<tfoot>` Passifs ; `isReportEmpty` + `equity.length === 0` (3e site P1-F1). 2 clés i18n ×4 locales : `reports-retained-earnings-calculated` + `reports-total-equity` (nécessaire au total de la section dédiée frontend, symétrique des totaux existants).
+- **T8 Tests** — Unit (kesh-report) : classification `is_equity_role`/rank, ordre CO 959a, `is_empty` (reclassement pur equity), CSV section par rôle. Intégration (kesh-db `report_aggregates`) : partition par rôle, ordre sur plan renuméroté, collision D1, `CurrentYearResult` solde nul absent + legacy non-nul en equity, reclassement pur equity `is_empty=false`. **Test `balance_sheet_counts_2979_in_liabilities` renommé `_in_equity`** + assertion retournée + fixture `role: Some(CurrentYearResult)` (Piège #6). **Piège découvert** : poser un rôle non-postable (`CurrentYearResult`) via `create_acc_with_role` puis poster → bloqué par la garde postabilité 14-3b (`InactiveOrInvalidAccounts`). Résolu par `set_account_role` (UPDATE SQL post-posting) modélisant fidèlement le scénario legacy « solde posté quand postable, rôle non-postable assigné ensuite ». Vitest (`BalanceSheetView.test.ts`, 4 tests) : section groupée, distinction D1, equity absent des Passifs, reclassement pur non-vide.
+- **T9 Doc-sync** — CHANGELOG `[Non publié]` (entrée fonds propres par rôle) + `docs/manual/fr/user-manual.tex` §Bilan (paragraphe distinction physique/calculé). PDF manuels **non régénérés** (gate release 4-bis, pas per-story ; branche non poussée). **Pas de migration.**
+- **Gate** : `cargo fmt --check` ✅, `cargo build --workspace --all-targets` ✅, `cargo clippy --workspace --all-targets -D warnings` ✅, kesh-report lib 76+1 ✅, kesh-db `report_aggregates` balance_sheet 10/10 ✅, kesh-api `reports_export_e2e` 20/20 ✅ + `reports_e2e` (JSON shape non-régressé — role None → totalLiabilities inchangé). Frontend : `npm run check` 0 erreur ✅, `lint-i18n-ownership` ✅, `test:unit` 431 ✅, `build` ✅.
 
 ### File List
-(à remplir)
+
+**Backend (kesh-report)**
+- `crates/kesh-report/src/balance_sheet.rs` — struct `BalanceSheet` (equity/total_equity) + `AccountBalance.role` + `is_empty()` + `equity_role_rank`/`is_equity_role` + partition/tri dans `generate` + SELECT `a.role` + doc module + unit tests.
+- `crates/kesh-report/src/income_statement.rs` — SELECT `a.role` + `GROUP BY` (struct partagée).
+- `crates/kesh-report/src/csv.rs` — section CapitauxPropres par rôle + `is_empty()` + littéraux tests + test `balance_sheet_csv_equity_section_by_role`.
+- `crates/kesh-report/src/pdf.rs` — `SectionLabels` nouveaux champs + `equity_role_label` + rendu equity par rôle + `is_empty()` + littéraux tests.
+- `crates/kesh-report/benches/export.rs` — `make_balance_sheet`/`make_account_balance` (equity/total_equity/role).
+
+**Backend (kesh-db tests)**
+- `crates/kesh-db/tests/report_aggregates.rs` — `create_acc_with_role`/`set_account_role` helpers + test 2979 renommé `_in_equity` + 5 nouveaux tests 14-3c.
+
+**Frontend**
+- `frontend/src/lib/features/reports/reports.types.ts` — `AccountBalance.role`, `BalanceSheetDto.equity/totalEquity`, import `AccountRole`.
+- `frontend/src/lib/features/reports/BalanceSheetView.svelte` — section Capitaux propres par rôle + distinction calculé + retrait equity des Passifs.
+- `frontend/src/lib/features/reports/reports.api.ts` — `isReportEmpty` + `equity.length === 0`.
+- `frontend/src/lib/features/reports/reports.api.test.ts` — builder `bs()` + test reclassement pur equity.
+- `frontend/src/lib/features/reports/BalanceSheetView.test.ts` — **nouveau** (4 tests).
+
+**i18n**
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` — `reports-retained-earnings-calculated` + `reports-total-equity`.
+
+**Docs**
+- `CHANGELOG.md` — entrée `[Non publié]`.
+- `docs/manual/fr/user-manual.tex` — §Bilan (présentation par rôle).
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — statut `in-progress` → `review`.
 
 ## Change Log — create-story
 
@@ -234,3 +265,16 @@ Vérification exhaustive de la cohérence mutuelle des patches P1/P2 + reconfirm
 ### Décision — validate
 
 **Trend** : Pass 1 Sonnet ×2 (1 CRIT + 4 HIGH + 2 MED) → Pass 2 Haiku ×2 (1 MED + 2 LOW) → Pass 3 Opus (**0**). **CONVERGÉ en 3 passes**, cycle Sonnet→Haiku→Opus, contexte frais, patchs appliqués avant chaque passe suivante, grep ground-truth sur la passe Haiku. Critère d'arrêt Review Iteration Rule atteint. 3 décisions de conception tranchées par Guy (D1 distinguer, D2 section dédiée + équation restructurée, D3 hardcode FR-CH PDF/CSV + i18n frontend) ; 3 limitations documentées (L1 i18n export FR-CH, L2 distinction textuelle, L3 rôle equity sur compte Asset hors section). **Spec scellée — ready-for-dev.** Prochaine : `bmad-dev-story`.
+
+## Change Log — dev-story
+
+### Implémentation (Opus 4.8, 2026-07-24)
+
+Implémentation complète des tâches T1→T9. Tous les patches de spec (P1-F1..F6, P2) appliqués tels que scellés. Deux découvertes non anticipées par la spec, résolues :
+
+1. **`AccountBalance` est une struct partagée** décodée par `query_as` dans `income_statement.rs` aussi (pas seulement `balance_sheet.rs`). L'ajout de `role: Option<AccountRole>` sur la struct impose d'ajouter `a.role` au SELECT + `GROUP BY` du **compte de résultat** également, sinon `FromRow` échoue au runtime (colonne absente). Corrigé.
+2. **Poser un rôle non-postable (`CurrentYearResult`) puis poster est bloqué** par la garde postabilité 14-3b (`InactiveOrInvalidAccounts`). Les tests du scénario legacy (compte à solde non-nul de rôle `CurrentYearResult`) posent donc l'écriture pendant que le compte est postable (`role: None`) puis basculent le rôle via un `UPDATE SQL` (`set_account_role`) — modélisation fidèle de la réalité (« solde posté quand postable, rôle non-postable assigné ensuite par 14-3a »).
+
+Ajout mineur au-delà de la spec T7 : clé i18n `reports-total-equity` (×4 locales) pour le libellé du **total** de la section Capitaux propres dédiée côté frontend, symétrique de `reports-total-assets`/`reports-total-liabilities` existants (la spec ne listait que `reports-retained-earnings-calculated`).
+
+**Gate Test Locally First** — Backend : `cargo fmt --check` ✅ · `cargo build --workspace --all-targets` ✅ · `cargo clippy --workspace --all-targets -- -D warnings` ✅ · kesh-report lib 77 ✅ · kesh-db `report_aggregates` (balance_sheet) 10/10 ✅ · kesh-api `reports_e2e` 35/35 + `reports_export_e2e` 20/20 ✅ (JSON shape non-régressé — seeds role None → `totalLiabilities` inchangé, cohérent Piège #1). Frontend : `npm run check` 0 erreur ✅ · `lint-i18n-ownership` ✅ · `test:unit` 431/431 ✅ · `build` ✅. **Pas de migration** (P3/P5 sans objet). Statut → `review`.

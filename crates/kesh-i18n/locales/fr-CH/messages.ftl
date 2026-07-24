@@ -955,6 +955,7 @@ reports-section-expenses = Charges
 # Totaux (8)
 reports-total-assets = Total actifs
 reports-total-liabilities = Total passifs
+reports-total-equity = Total capitaux propres
 reports-total-revenues = Total produits
 reports-total-expenses = Total charges
 reports-total-debit = Total débit
@@ -987,6 +988,7 @@ reports-equity-result-section-title = Résultat de l'exercice (avant clôture)
 reports-equity-result-profit = Bénéfice de l'exercice
 reports-equity-result-loss = Perte de l'exercice
 reports-retained-earnings = Résultat reporté
+reports-retained-earnings-calculated = Résultat reporté (calculé)
 reports-retained-earnings-loss = Perte reportée
 reports-trial-balance-period-note = La balance de vérification affiche le mouvement de la période (par exercice). Le total par compte n'est pas comparable au solde cumulé du même compte au bilan (report à-nouveau depuis l'origine).
 

@@ -907,6 +907,7 @@ reports-section-expenses = Costi
 
 reports-total-assets = Totale attivi
 reports-total-liabilities = Totale passivi
+reports-total-equity = Totale patrimonio netto
 reports-total-revenues = Totale ricavi
 reports-total-expenses = Totale costi
 reports-total-debit = Totale dare
@@ -936,6 +937,7 @@ reports-equity-result-section-title = Risultato del periodo (prima della chiusur
 reports-equity-result-profit = Utile del periodo
 reports-equity-result-loss = Perdita del periodo
 reports-retained-earnings = Risultato riportato
+reports-retained-earnings-calculated = Risultato riportato (calcolato)
 reports-retained-earnings-loss = Perdita riportata
 reports-trial-balance-period-note = Il bilancio di verifica mostra il movimento del periodo (per esercizio). Il totale per conto non è comparabile con il saldo cumulato dello stesso conto nel bilancio (riporto a nuovo dall'origine).
 

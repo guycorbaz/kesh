@@ -907,6 +907,7 @@ reports-section-expenses = Expenses
 
 reports-total-assets = Total Assets
 reports-total-liabilities = Total Liabilities
+reports-total-equity = Total equity
 reports-total-revenues = Total Revenues
 reports-total-expenses = Total Expenses
 reports-total-debit = Total Debit
@@ -936,6 +937,7 @@ reports-equity-result-section-title = Period result (before closing entries)
 reports-equity-result-profit = Period profit
 reports-equity-result-loss = Period loss
 reports-retained-earnings = Retained earnings
+reports-retained-earnings-calculated = Retained earnings (calculated)
 reports-retained-earnings-loss = Accumulated loss
 reports-trial-balance-period-note = The trial balance shows the movement of the period (per fiscal year). The per-account total is not comparable to the cumulative balance of the same account in the balance sheet (carry-forward from inception).
 
