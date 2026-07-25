@@ -368,18 +368,23 @@ where
 /// pour le re-check « company vierge » sous le lock — la garde anti-course
 /// serait irréalisable (finding P1-C1).
 ///
-/// Algorithme (chaque garde **sous** le `SELECT fiscal_years FOR UPDATE`) :
+/// Algorithme (chaque garde **sous** les verrous — priorité des gardes alignée
+/// sur `GET /status`, amendement ECH3-2 propagé au chemin d'écriture en Pass 4) :
 ///
-/// 1. `tx = pool.begin()`.
+/// 1. `tx = pool.begin()` puis sentinel `SELECT id FROM companies WHERE id=?
+///    FOR UPDATE` (`None` → `NotFound`).
 /// 2. `SELECT id, status FROM fiscal_years WHERE id=? AND company_id=? FOR UPDATE`
-///    → `None` → `NotFound` ; `Closed` → `Invariant(FY_OPENING_FIRST_YEAR_CLOSED_KEY)`.
+///    → `None` → `NotFound` (le statut est examiné à l'étape 3-bis).
 /// 3. [`count_by_company`] `(&mut *tx)` **sous le lock** → `> 0` →
 ///    `Invariant(FY_OPENING_ALREADY_HAS_ENTRIES_KEY)` (garde double-ouverture
-///    company-wide, P3-BH3-1).
-/// 4. [`create_in_tx`] (`enforce_postable = true` — la grille n'offre que des
+///    company-wide, P3-BH3-1 — évaluée AVANT le statut clos : sur
+///    « clos + écritures », le verdict doit être `ALREADY_HAS_ENTRIES`, pas le
+///    conseil trompeur « rouvrez l'exercice »).
+/// 4. Statut `Closed` → `Invariant(FY_OPENING_FIRST_YEAR_CLOSED_KEY)`.
+/// 5. [`create_in_tx`] (`enforce_postable = true` — la grille n'offre que des
 ///    comptes postables, saisie manuelle assistée) : re-lock ré-entrant même tx,
 ///    validation comptes/équilibre/date, INSERT, audit `journal_entry.created`.
-/// 5. `commit`.
+/// 6. `commit`.
 ///
 /// **Note atomicité** : l'écriture d'ouverture n'a aucun `project_id` (DTO sans
 /// champ projet) → `create_in_tx` court-circuite l'Étape 0 (validation projets)
@@ -452,22 +457,19 @@ pub async fn create_opening_entry(
     .await
     .map_err(map_db_error)?;
 
-    match fy_row {
+    let fy_status = match fy_row {
         None => {
             let _ = tx.rollback().await;
             return Err(DbError::NotFound);
         }
-        Some((_, status)) if status == "Closed" => {
-            let _ = tx.rollback().await;
-            return Err(DbError::Invariant(
-                FY_OPENING_FIRST_YEAR_CLOSED_KEY.to_string(),
-            ));
-        }
-        Some(_) => {}
-    }
+        Some((_, status)) => status,
+    };
 
-    // Étape 3 : garde « company vierge » SOUS le lock (P3-BH3-1) — ferme la
-    // fenêtre de course avec une autre génération ou toute saisie concurrente.
+    // Étape 3 : garde « company vierge » SOUS le lock (P3-BH3-1), évaluée
+    // AVANT le statut clos (priorité amendée ECH3-2, propagée au chemin
+    // d'écriture en Pass 4 — BH4/ECH4 convergés) : sur « clos + écritures »,
+    // le POST doit rendre le même verdict que GET /status
+    // (`ALREADY_HAS_ENTRIES`), pas le conseil trompeur « rouvrez l'exercice ».
     let count = count_by_company(&mut *tx, company_id).await?;
     if count > 0 {
         let _ = tx.rollback().await;
@@ -476,7 +478,16 @@ pub async fn create_opening_entry(
         ));
     }
 
-    // Étape 4 : création atomique dans la même tx (re-lock ré-entrant).
+    // Étape 4 : statut vivant du premier exercice (après la garde
+    // company-vierge — même ordre que le GET /status et le pré-check handler).
+    if fy_status == "Closed" {
+        let _ = tx.rollback().await;
+        return Err(DbError::Invariant(
+            FY_OPENING_FIRST_YEAR_CLOSED_KEY.to_string(),
+        ));
+    }
+
+    // Étape 5 : création atomique dans la même tx (re-lock ré-entrant).
     match create_in_tx(&mut tx, fiscal_year_id, user_id, new, true).await {
         Ok(result) => {
             tx.commit().await.map_err(map_db_error)?;

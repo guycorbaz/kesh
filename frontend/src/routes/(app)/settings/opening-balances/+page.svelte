@@ -192,11 +192,16 @@
 			<p class="text-sm text-destructive">
 				{i18nMsg('opening-balances-status-error', 'Impossible de charger l’état des soldes de départ.')}
 			</p>
+			<!-- Anti double-clic (Pass 4 BH4-LOW) : la protection vient du
+			     DÉMONTAGE synchrone de cette branche (`loading = true` → Svelte 5
+			     flushe → le bouton disparaît avant qu'un 2e clic ne porte), pas
+			     d'un attribut disabled — inerte ici car la branche d'erreur est
+			     mutuellement exclusive avec l'état loading. `loadGen` reste la
+			     défense en profondeur pour tout futur appelant concurrent. -->
 			<Button
 				variant="outline"
 				size="sm"
 				class="mt-3"
-				disabled={loading}
 				onclick={() => void load()}
 				data-testid="opening-balances-retry"
 			>

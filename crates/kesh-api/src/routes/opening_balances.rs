@@ -215,18 +215,22 @@ pub async fn opening_balances_status(
 /// P1-H1 — champ persistant immuable, PAS la locale serveur globale de
 /// `errors::t()`).
 ///
-/// Gardes (dans l'ordre) :
+/// Gardes (dans l'ordre — priorité alignée sur `GET /status`, amendement
+/// ECH3-2 propagé au POST en Pass 4) :
 /// 1. Pré-checks handler lock-free : premier exercice existe (`400
-///    no-fiscal-year`) + statut `Open` (`400 first-year-closed`, même outcome
-///    que le re-check sous lock, P3-AA-2) ;
+///    no-fiscal-year`), PUIS company vierge (`409 already-has-entries` — prime
+///    sur le statut clos, même verdict que `GET /status`), PUIS statut `Open`
+///    (`400 first-year-closed`, même outcome que le re-check sous lock,
+///    P3-AA-2) ;
 /// 2. Garde « comptes de bilan » (D4, défense en profondeur) : toute ligne dont
 ///    le type **retourné** est `Revenue`/`Expense` → `400
 ///    non-balance-account` ; un id absent (inexistant / autre company) retombe
 ///    dans `create_in_tx` → `INACTIVE_OR_INVALID_ACCOUNTS` (P3-AA-1/BH3-6) ;
 /// 3. `accounting::validate` (équilibre / ≥2 lignes / montants ≥ 0 /
 ///    débit⊕crédit) via `map_core_error` (DRY) ;
-/// 4. `create_opening_entry` : statut + garde « company vierge » **sous** le
-///    `fiscal_years FOR UPDATE` (autorité anti-course, P1-C1/P3-BH3-1).
+/// 4. `create_opening_entry` : sentinel `companies` + garde « company vierge »
+///    puis statut, **sous** les `FOR UPDATE` (autorité anti-course,
+///    P1-C1/P3-BH3-1/P4).
 pub async fn generate_opening_balances(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -269,7 +273,21 @@ pub async fn generate_opening_balances(
         )));
     };
 
-    // Pré-check 2 : statut Open — MÊME outcome que le chemin sous-lock
+    // Pré-check 2 (lock-free, priorité amendée ECH3-2 propagée au POST en
+    // Pass 4 — BH4/ECH4 convergés) : company non-vierge PRIME sur exercice
+    // clos, même ordre que `GET /status` et que le re-check sous lock du repo.
+    // Sans ce pré-check, un POST direct sur « clos + écritures » rendait le
+    // conseil trompeur « rouvrez l'exercice » (qui ne débloquerait rien).
+    // MÊME outcome que le chemin sous-lock : 409 `IllegalState`, même clé.
+    let count = journal_entries::count_by_company(&state.pool, company.id).await?;
+    if count > 0 {
+        return Err(AppError::IllegalState(t(
+            "error-opening-balances-already-has-entries",
+            "La société contient déjà des écritures : le bilan d'ouverture ne peut plus être généré. Corrigez l'écriture d'ouverture via le journal.",
+        )));
+    }
+
+    // Pré-check 3 : statut Open — MÊME outcome que le chemin sous-lock
     // (`AppError::Validation`, même clé — P3-AA-2, PAS `AppError::FiscalYearClosed`).
     if fiscal_year.status == FiscalYearStatus::Closed {
         return Err(AppError::Validation(t(

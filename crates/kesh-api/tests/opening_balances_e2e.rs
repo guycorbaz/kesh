@@ -1098,3 +1098,48 @@ async fn post_description_uses_company_accounting_language(pool: MySqlPool) {
         "description en de-CH (langue comptable de la company), pas fr-CH (locale serveur)"
     );
 }
+
+/// Pass 4 (BH4/ECH4 convergés) : le POST rend le MÊME verdict que
+/// `GET /status` sur « premier exercice clos + écritures » — 409
+/// `ALREADY_HAS_ENTRIES` (message distinct), PAS le 400 `first-year-closed`
+/// dont le conseil « rouvrez » ne débloquerait rien. Verrouille la priorité
+/// amendée ECH3-2 sur le chemin d'écriture (pré-check handler ET repo).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn post_closed_with_entries_409_already_has_entries(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+    let seed = seed_ready(&pool).await;
+    post_normal_entry(
+        &pool,
+        &seed,
+        seed.fy_id,
+        NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
+    )
+    .await;
+    fiscal_years::close(&pool, seed.user_id, seed.company_id, seed.fy_id)
+        .await
+        .unwrap();
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/opening-balances"))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "lines": [
+            line(seed.asset, "100.00", "0"),
+            line(seed.retained, "0", "100.00"),
+        ]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        409,
+        "ALREADY_HAS_ENTRIES prime sur first-year-closed"
+    );
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ILLEGAL_STATE_TRANSITION");
+    let msg = body["error"]["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("contient déjà des écritures"),
+        "message already-has-entries attendu (pas « rouvrez »), obtenu: {msg}"
+    );
+}

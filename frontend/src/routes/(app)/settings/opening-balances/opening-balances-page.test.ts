@@ -150,10 +150,12 @@ describe('états chargement / erreur (P3-BH3-2)', () => {
 		render(Page);
 		const retry = await screen.findByTestId('opening-balances-retry');
 		// Double-clic rapide (pas d'await entre les deux) : `loading = true` est
-		// posé synchroniquement par le 1er load() et `disabled={loading}` avale
-		// le 2e clic — la course last-writer-wins (un load périmé qui écraserait
-		// l'état d'un load plus récent) est fermée à la source ; le jeton
-		// `loadGen` du composant reste la défense en profondeur.
+		// posé synchroniquement par le 1er load() et Svelte 5 flushe le
+		// re-render AVANT le 2e clic — la branche d'erreur (et son bouton) est
+		// DÉMONTÉE, le 2e clic tombe dans le vide (Pass 4 BH4-LOW : c'est le
+		// démontage qui protège, pas un attribut disabled). La course
+		// last-writer-wins est fermée à la source ; le jeton `loadGen` du
+		// composant reste la défense en profondeur.
 		fireEvent.click(retry);
 		fireEvent.click(retry);
 
