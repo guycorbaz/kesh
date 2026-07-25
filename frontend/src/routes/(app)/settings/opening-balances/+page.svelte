@@ -232,6 +232,17 @@
 			)}
 		</p>
 
+		{#if rows.length === 0}
+			<!-- Plan comptable atypique : aucun compte de bilan actif+postable —
+			     sans ce message, la grille serait un en-tête nu avec un bouton
+			     durablement désactivé, sans explication (Pass 1 review, ECH-LOW). -->
+			<p class="text-sm text-text-muted" data-testid="opening-balances-empty-grid">
+				{i18nMsg(
+					'opening-balances-empty-grid',
+					'Aucun compte de bilan actif et postable dans votre plan comptable — créez ou réactivez vos comptes d’actifs et de passifs (Plan comptable) avant de saisir les soldes de départ.'
+				)}
+			</p>
+		{:else}
 		<table class="w-full border-collapse text-sm" data-testid="opening-balances-grid">
 			<thead>
 				<tr class="border-b border-border text-left text-xs uppercase tracking-wider text-text-muted">
@@ -338,5 +349,6 @@
 					: i18nMsg('opening-balances-generate', 'Générer l’écriture d’ouverture')}
 			</Button>
 		</div>
+		{/if}
 	{/if}
 </div>

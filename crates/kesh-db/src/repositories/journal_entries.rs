@@ -368,9 +368,7 @@ where
 /// pour le re-check « company vierge » sous le lock — la garde anti-course
 /// serait irréalisable (finding P1-C1).
 ///
-/// Algorithme (chaque garde **sous** le `SELECT fiscal_years FOR UPDATE`, qui
-/// sérialise avec toute création d'écriture concurrente — `create_in_tx`
-/// verrouille la même ligne) :
+/// Algorithme (chaque garde **sous** le `SELECT fiscal_years FOR UPDATE`) :
 ///
 /// 1. `tx = pool.begin()`.
 /// 2. `SELECT id, status FROM fiscal_years WHERE id=? AND company_id=? FOR UPDATE`
@@ -388,6 +386,20 @@ where
 /// et ne verrouille QUE `fiscal_years` — pas d'inversion de l'ordre de verrou
 /// global `companies → projects → fiscal_years` (P3-ECH confirmé).
 ///
+/// **Portée exacte de la sérialisation** (Pass 1 code review, BH-1) : le
+/// `FOR UPDATE` porte sur **la ligne du premier exercice** — il sérialise donc
+/// (a) deux générations d'ouverture concurrentes (même ligne → un seul 201,
+/// l'autre `ALREADY_HAS_ENTRIES` ; c'est l'invariant anti-double-ouverture,
+/// testé par les tests de course), et (b) toute création d'écriture concurrente
+/// **dans ce même exercice** (`create_in_tx` prend le même lock). Une écriture
+/// normale postée concurremment dans un **autre** exercice ne se sérialise pas
+/// avec la génération — mais l'entrelacement est **bénin** : l'état final
+/// (ouverture + écriture normale) est identique à l'ordre séquentiel légal
+/// « génération puis écriture » ; et toute écriture **commitée avant** le lock
+/// est vue par le `count_by_company` sous le lock (→ refus). Le seul résidu est
+/// la création concurrente d'un exercice *antérieur* (mauvais millésime, pas de
+/// doublon) — limitation L4 documentée du story file, remédiation = marqueur L3.
+///
 /// Les conflits métier sont émis en `DbError::Invariant(<KEY>)` namespacés
 /// (pattern D7 de 14-2), re-mappés en messages distincts localisés par
 /// `map_opening_balances_error` côté route.
@@ -404,8 +416,9 @@ pub async fn create_opening_entry(
 
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
-    // Étape 2 : lock de l'exercice — sérialise avec toute création d'écriture
-    // concurrente (même `FOR UPDATE` dans `create_in_tx`) et toute clôture.
+    // Étape 2 : lock de la ligne du premier exercice — sérialise les
+    // générations concurrentes entre elles, les écritures concurrentes de CE
+    // même exercice, et toute clôture (portée exacte : cf. doc de la fn).
     let fy_row: Option<(i64, String)> = sqlx::query_as(
         "SELECT id, status FROM fiscal_years WHERE id = ? AND company_id = ? FOR UPDATE",
     )

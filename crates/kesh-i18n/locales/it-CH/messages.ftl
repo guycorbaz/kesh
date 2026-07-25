@@ -687,6 +687,7 @@ opening-balances-goto-journal = Apri il giornale
 opening-balances-goto-balance-sheet = Vedi il bilancio
 opening-balances-status-error = Impossibile caricare lo stato dei saldi iniziali.
 opening-balances-retry = Riprova
+opening-balances-empty-grid = Nessun conto di bilancio attivo e registrabile nel piano dei conti — crea o riattiva prima i tuoi conti attivi e passivi (Piano dei conti) prima di inserire i saldi iniziali.
 error-opening-balances-no-fiscal-year = Nessun esercizio contabile: crea prima un esercizio prima di inserire i saldi iniziali.
 error-opening-balances-first-year-closed = Il primo esercizio è chiuso: riaprilo prima di inserire i saldi iniziali.
 error-opening-balances-already-has-entries = L’azienda contiene già delle registrazioni: il bilancio di apertura non può più essere generato. Correggi la registrazione di apertura tramite il giornale.

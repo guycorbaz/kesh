@@ -687,6 +687,7 @@ opening-balances-goto-journal = Open the journal
 opening-balances-goto-balance-sheet = View the balance sheet
 opening-balances-status-error = Could not load the opening balances status.
 opening-balances-retry = Retry
+opening-balances-empty-grid = No active, postable balance-sheet account in your chart of accounts — create or reactivate your asset and liability accounts (Chart of accounts) before entering opening balances.
 error-opening-balances-no-fiscal-year = No fiscal year yet: create a fiscal year before entering opening balances.
 error-opening-balances-first-year-closed = The first fiscal year is closed: reopen it before entering opening balances.
 error-opening-balances-already-has-entries = The company already contains journal entries: the opening balance sheet can no longer be generated. Correct the opening entry via the journal.

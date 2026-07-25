@@ -718,6 +718,7 @@ opening-balances-goto-journal = Ouvrir le journal
 opening-balances-goto-balance-sheet = Voir le bilan
 opening-balances-status-error = Impossible de charger l’état des soldes de départ.
 opening-balances-retry = Réessayer
+opening-balances-empty-grid = Aucun compte de bilan actif et postable dans votre plan comptable — créez ou réactivez vos comptes d’actifs et de passifs (Plan comptable) avant de saisir les soldes de départ.
 error-opening-balances-no-fiscal-year = Aucun exercice comptable : créez d’abord un exercice avant de saisir les soldes de départ.
 error-opening-balances-first-year-closed = Le premier exercice est clôturé : rouvrez-le avant de saisir les soldes de départ.
 error-opening-balances-already-has-entries = La société contient déjà des écritures : le bilan d’ouverture ne peut plus être généré. Corrigez l’écriture d’ouverture via le journal.

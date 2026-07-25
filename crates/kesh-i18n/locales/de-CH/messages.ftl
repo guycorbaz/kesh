@@ -687,6 +687,7 @@ opening-balances-goto-journal = Journal öffnen
 opening-balances-goto-balance-sheet = Bilanz anzeigen
 opening-balances-status-error = Der Status der Anfangssaldi konnte nicht geladen werden.
 opening-balances-retry = Erneut versuchen
+opening-balances-empty-grid = Kein aktives, bebuchbares Bilanzkonto im Kontenplan — erstellen oder reaktivieren Sie zuerst Ihre Aktiv- und Passivkonten (Kontenplan), bevor Sie die Anfangssaldi erfassen.
 error-opening-balances-no-fiscal-year = Kein Geschäftsjahr vorhanden: Erstellen Sie zuerst ein Geschäftsjahr, bevor Sie die Anfangssaldi erfassen.
 error-opening-balances-first-year-closed = Das erste Geschäftsjahr ist abgeschlossen: Öffnen Sie es wieder, bevor Sie die Anfangssaldi erfassen.
 error-opening-balances-already-has-entries = Das Unternehmen enthält bereits Buchungen: Die Eröffnungsbilanz kann nicht mehr erstellt werden. Korrigieren Sie die Eröffnungsbuchung im Journal.

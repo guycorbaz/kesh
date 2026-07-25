@@ -213,6 +213,18 @@ describe('grille — filtre des comptes (D4)', () => {
 		expect(screen.queryByTestId('opening-balances-row-1090')).toBeNull();
 	});
 
+	it('0 compte éligible → message empty-grid explicite, pas de table ni de bouton (Pass 1 ECH-LOW)', async () => {
+		getStatusMock.mockResolvedValue(readyStatus());
+		// Plan atypique : seulement des comptes inéligibles (Revenue, non-postable, archivé).
+		fetchAccountsMock.mockResolvedValue([REVENUE, NON_POSTABLE, ARCHIVED]);
+
+		render(Page);
+
+		expect(await screen.findByTestId('opening-balances-empty-grid')).toBeTruthy();
+		expect(screen.queryByTestId('opening-balances-grid')).toBeNull();
+		expect(screen.queryByTestId('opening-balances-generate')).toBeNull();
+	});
+
 	it('affiche le badge de rôle quand le compte en a un', async () => {
 		getStatusMock.mockResolvedValue(readyStatus());
 
