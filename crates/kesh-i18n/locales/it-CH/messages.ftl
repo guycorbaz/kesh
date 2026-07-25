@@ -74,6 +74,7 @@ nav-mensuel = Mensile
 nav-administration = Amministrazione
 nav-accounts = Piano dei conti
 nav-fiscal-years = Esercizi contabili
+nav-opening-balances = Saldi iniziali
 nav-bank-accounts = Conti bancari
 nav-bank-profiles = Profili bancari
 nav-reconciliation-rules = Regole di assegnazione
@@ -665,6 +666,31 @@ error-fiscal-year-missing = Crea prima un esercizio contabile in Impostazioni �
 error-fiscal-year-closed-for-date = L’esercizio che copre questa data è chiuso. Verifica la data inserita o consulta i tuoi esercizi.
 go-to-settings = Apri impostazioni
 settings-fiscal-years-link = Crea, rinomina o chiudi gli esercizi contabili della tua azienda.
+
+# Story 14-4 — bilancio di apertura (saldi iniziali, ripresa della contabilità)
+opening-balances-title = Saldi iniziali
+opening-balances-intro = Inserisci i saldi dei tuoi conti di bilancio ripresi dalla contabilità precedente. Una registrazione di apertura equilibrata sarà generata al { $date } (primo giorno dell’esercizio « { $name } »). Registra il riporto a nuovo accumulato sul tuo conto di riporto per equilibrare la registrazione.
+opening-balances-account = Conto
+opening-balances-debit = Dare
+opening-balances-credit = Avere
+opening-balances-total-debit = Totale dare
+opening-balances-total-credit = Totale avere
+opening-balances-diff = Differenza
+opening-balances-generate = Genera la registrazione di apertura
+opening-balances-generating = Generazione…
+opening-balances-success = Registrazione di apertura generata.
+opening-balances-entry-description = Bilancio di apertura — saldi iniziali
+opening-balances-locked-no-fiscal-year = Nessun esercizio contabile: crea prima un esercizio (Impostazioni → Esercizi) per inserire i saldi iniziali.
+opening-balances-locked-first-year-closed = Il primo esercizio « { $name } » è chiuso: un amministratore deve riaprirlo prima dell’inserimento dei saldi iniziali.
+opening-balances-locked-already-has-entries = L’azienda contiene già delle registrazioni: il bilancio di apertura è bloccato. Correggi la registrazione di apertura direttamente nel giornale, oppure elimina tutte le registrazioni per ricominciare.
+opening-balances-goto-journal = Apri il giornale
+opening-balances-goto-balance-sheet = Vedi il bilancio
+opening-balances-status-error = Impossibile caricare lo stato dei saldi iniziali.
+opening-balances-retry = Riprova
+error-opening-balances-no-fiscal-year = Nessun esercizio contabile: crea prima un esercizio prima di inserire i saldi iniziali.
+error-opening-balances-first-year-closed = Il primo esercizio è chiuso: riaprilo prima di inserire i saldi iniziali.
+error-opening-balances-already-has-entries = L’azienda contiene già delle registrazioni: il bilancio di apertura non può più essere generato. Correggi la registrazione di apertura tramite il giornale.
+error-opening-balances-non-balance-account = Il bilancio di apertura può toccare solo conti di bilancio (attivi e passivi) — rimuovi i conti di ricavo e di costo.
 
 
 # --- Story 8-1b — Importazione bancaria CAMT.053 ---

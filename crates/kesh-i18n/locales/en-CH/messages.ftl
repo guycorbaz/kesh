@@ -74,6 +74,7 @@ nav-mensuel = Monthly
 nav-administration = Administration
 nav-accounts = Chart of accounts
 nav-fiscal-years = Fiscal years
+nav-opening-balances = Opening balances
 nav-bank-accounts = Bank accounts
 nav-bank-profiles = Bank profiles
 nav-reconciliation-rules = Reconciliation rules
@@ -665,6 +666,31 @@ error-fiscal-year-missing = First create a fiscal year in Settings → Fiscal Ye
 error-fiscal-year-closed-for-date = The fiscal year covering this date is closed. Check the entered date or your fiscal years.
 go-to-settings = Open Settings
 settings-fiscal-years-link = Create, rename, or close your company fiscal years.
+
+# Story 14-4 — opening balance sheet (starting balances, accounting migration)
+opening-balances-title = Opening balances
+opening-balances-intro = Enter the balances of your balance-sheet accounts carried over from your previous accounting system. A balanced opening entry will be generated as of { $date } (first day of fiscal year "{ $name }"). Post your accumulated retained earnings to your retained-earnings account to balance the entry.
+opening-balances-account = Account
+opening-balances-debit = Debit
+opening-balances-credit = Credit
+opening-balances-total-debit = Total debits
+opening-balances-total-credit = Total credits
+opening-balances-diff = Difference
+opening-balances-generate = Generate opening entry
+opening-balances-generating = Generating…
+opening-balances-success = Opening entry generated.
+opening-balances-entry-description = Opening balance sheet — starting balances
+opening-balances-locked-no-fiscal-year = No fiscal year yet: first create a fiscal year (Settings → Fiscal Years) to enter your opening balances.
+opening-balances-locked-first-year-closed = The first fiscal year "{ $name }" is closed: an administrator must reopen it before opening balances can be entered.
+opening-balances-locked-already-has-entries = The company already contains journal entries: the opening balance sheet is locked. Correct the opening entry directly in the journal, or delete all entries to start over.
+opening-balances-goto-journal = Open the journal
+opening-balances-goto-balance-sheet = View the balance sheet
+opening-balances-status-error = Could not load the opening balances status.
+opening-balances-retry = Retry
+error-opening-balances-no-fiscal-year = No fiscal year yet: create a fiscal year before entering opening balances.
+error-opening-balances-first-year-closed = The first fiscal year is closed: reopen it before entering opening balances.
+error-opening-balances-already-has-entries = The company already contains journal entries: the opening balance sheet can no longer be generated. Correct the opening entry via the journal.
+error-opening-balances-non-balance-account = The opening balance sheet may only touch balance-sheet accounts (assets and liabilities) — remove income and expense accounts.
 
 
 # --- Story 8-1b — CAMT.053 bank import ---

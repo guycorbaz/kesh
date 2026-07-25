@@ -303,6 +303,17 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             put(routes::journal_entries::update_journal_entry)
                 .delete(routes::journal_entries::delete_journal_entry),
         )
+        // Story 14-4 : bilan d'ouverture (soldes de départ) — Comptable+.
+        // Le GET /status est ici aussi (PAS authenticated_routes qui
+        // laisserait passer Consultation, P1-M2-ECH).
+        .route(
+            "/api/v1/opening-balances",
+            post(routes::opening_balances::generate_opening_balances),
+        )
+        .route(
+            "/api/v1/opening-balances/status",
+            get(routes::opening_balances::opening_balances_status),
+        )
         // Story 4.1 : mutations carnet d'adresses
         .route("/api/v1/contacts", post(routes::contacts::create_contact))
         .route(

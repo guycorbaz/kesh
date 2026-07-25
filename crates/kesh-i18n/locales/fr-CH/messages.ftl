@@ -74,6 +74,7 @@ nav-mensuel = Mensuel
 nav-administration = Administration
 nav-accounts = Plan comptable
 nav-fiscal-years = Exercices comptables
+nav-opening-balances = Soldes de départ
 nav-bank-accounts = Comptes bancaires
 nav-bank-profiles = Profils bancaires
 nav-reconciliation-rules = Règles d'affectation
@@ -696,6 +697,31 @@ error-fiscal-year-missing = Créez d’abord un exercice comptable dans Paramèt
 error-fiscal-year-closed-for-date = L’exercice qui couvre cette date est clôturé. Vérifiez la date saisie ou consultez vos exercices.
 go-to-settings = Ouvrir Paramètres
 settings-fiscal-years-link = Créez, renommez ou clôturez les exercices comptables de votre entreprise.
+
+# Story 14-4 — bilan d'ouverture (soldes de départ, reprise de comptabilité)
+opening-balances-title = Soldes de départ
+opening-balances-intro = Saisissez les soldes de vos comptes de bilan repris de votre ancienne comptabilité. Une écriture d’ouverture équilibrée sera générée au { $date } (premier jour de l’exercice « { $name } »). Posez votre report à-nouveau accumulé sur votre compte de report pour équilibrer l’écriture.
+opening-balances-account = Compte
+opening-balances-debit = Débit
+opening-balances-credit = Crédit
+opening-balances-total-debit = Total débits
+opening-balances-total-credit = Total crédits
+opening-balances-diff = Différence
+opening-balances-generate = Générer l’écriture d’ouverture
+opening-balances-generating = Génération…
+opening-balances-success = Écriture d’ouverture générée.
+opening-balances-entry-description = Bilan d’ouverture — soldes de départ
+opening-balances-locked-no-fiscal-year = Aucun exercice comptable : créez d’abord un exercice (Paramètres → Exercices) pour saisir vos soldes de départ.
+opening-balances-locked-first-year-closed = Le premier exercice « { $name } » est clôturé : un administrateur doit le rouvrir avant la saisie des soldes de départ.
+opening-balances-locked-already-has-entries = La société contient déjà des écritures : le bilan d’ouverture est verrouillé. Corrigez l’écriture d’ouverture directement dans le journal, ou supprimez toutes les écritures pour recommencer.
+opening-balances-goto-journal = Ouvrir le journal
+opening-balances-goto-balance-sheet = Voir le bilan
+opening-balances-status-error = Impossible de charger l’état des soldes de départ.
+opening-balances-retry = Réessayer
+error-opening-balances-no-fiscal-year = Aucun exercice comptable : créez d’abord un exercice avant de saisir les soldes de départ.
+error-opening-balances-first-year-closed = Le premier exercice est clôturé : rouvrez-le avant de saisir les soldes de départ.
+error-opening-balances-already-has-entries = La société contient déjà des écritures : le bilan d’ouverture ne peut plus être généré. Corrigez l’écriture d’ouverture via le journal.
+error-opening-balances-non-balance-account = Le bilan d’ouverture ne peut toucher que des comptes de bilan (actifs et passifs) — retirez les comptes de produits et de charges.
 
 
 # --- Story 8-1b — Import bancaire CAMT.053 ---

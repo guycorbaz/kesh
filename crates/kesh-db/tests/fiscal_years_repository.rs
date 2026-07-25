@@ -1106,3 +1106,84 @@ async fn reopen_close_concurrent_is_serialized(pool: MySqlPool) {
         FiscalYearStatus::Open | FiscalYearStatus::Closed
     ));
 }
+
+// ---------------------------------------------------------------------------
+// find_first_by_company() — Story 14-4 (bilan d'ouverture)
+// ---------------------------------------------------------------------------
+
+/// Plusieurs exercices → celui de `start_date` la plus ancienne (tri ASC,
+/// l'inverse de `list_by_company` qui trie DESC — Piège 8).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn find_first_by_company_returns_oldest_start_date(pool: MySqlPool) {
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+
+    // Création volontairement dans le désordre chronologique.
+    for year in [2026, 2024, 2025] {
+        let mut new = ny(&format!("Exercice {year}"), year);
+        new.company_id = company_id;
+        fiscal_years::create(&pool, user_id, new).await.unwrap();
+    }
+
+    let first = fiscal_years::find_first_by_company(&pool, company_id)
+        .await
+        .unwrap()
+        .expect("premier exercice");
+    assert_eq!(first.name, "Exercice 2024");
+    assert_eq!(
+        first.start_date,
+        NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()
+    );
+}
+
+/// Aucun exercice → `None` (le handler mappe en `NO_FISCAL_YEAR`).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn find_first_by_company_none_when_empty(pool: MySqlPool) {
+    let company_id = create_company(&pool).await;
+    let result = fiscal_years::find_first_by_company(&pool, company_id)
+        .await
+        .unwrap();
+    assert!(result.is_none());
+}
+
+/// Scope multi-tenant : les exercices d'une autre company ne fuient pas.
+///
+/// Note tie-break (P1-L-3) : le `ORDER BY start_date ASC, id ASC` porte un
+/// tie-break `id ASC` défensif, mais l'état « deux exercices de même
+/// `start_date` dans une company » est INATTEIGNABLE sous la contrainte
+/// `uq_fiscal_years_company_start_date UNIQUE (company_id, start_date)` —
+/// aucune fixture légitime ne peut l'exercer. Ce test vérifie à la place que
+/// le scoping company isole bien deux exercices de même `start_date` posés
+/// dans deux companies distinctes.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn find_first_by_company_is_tenant_scoped(pool: MySqlPool) {
+    let company_a = create_company(&pool).await;
+    let user_a = create_admin_user(&pool, company_a).await;
+    let company_b = companies::create(
+        &pool,
+        NewCompany {
+            name: "Autre SA".into(),
+            ..sample_new_company()
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+    let user_b = create_admin_user(&pool, company_b).await;
+
+    // Company B possède un exercice PLUS ANCIEN (2020) que le premier de A (2025).
+    let mut new_b = ny("Exercice B 2020", 2020);
+    new_b.company_id = company_b;
+    fiscal_years::create(&pool, user_b, new_b).await.unwrap();
+
+    let mut new_a = ny("Exercice A 2025", 2025);
+    new_a.company_id = company_a;
+    fiscal_years::create(&pool, user_a, new_a).await.unwrap();
+
+    let first_a = fiscal_years::find_first_by_company(&pool, company_a)
+        .await
+        .unwrap()
+        .expect("premier exercice de A");
+    assert_eq!(first_a.name, "Exercice A 2025");
+    assert_eq!(first_a.company_id, company_a);
+}

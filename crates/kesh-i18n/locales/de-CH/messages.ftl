@@ -74,6 +74,7 @@ nav-mensuel = Monatlich
 nav-administration = Administration
 nav-accounts = Kontenrahmen
 nav-fiscal-years = Geschäftsjahre
+nav-opening-balances = Anfangssaldi
 nav-bank-accounts = Bankkonten
 nav-bank-profiles = Bankprofile
 nav-reconciliation-rules = Zuordnungsregeln
@@ -665,6 +666,31 @@ error-fiscal-year-missing = Erstellen Sie zuerst ein Geschäftsjahr unter Einste
 error-fiscal-year-closed-for-date = Das Geschäftsjahr, das dieses Datum abdeckt, ist geschlossen. Überprüfen Sie das Datum oder Ihre Geschäftsjahre.
 go-to-settings = Einstellungen öffnen
 settings-fiscal-years-link = Erstellen, umbenennen oder schliessen Sie die Geschäftsjahre Ihres Unternehmens.
+
+# Story 14-4 — Eröffnungsbilanz (Anfangssaldi, Übernahme der Buchhaltung)
+opening-balances-title = Anfangssaldi
+opening-balances-intro = Erfassen Sie die Saldi Ihrer Bilanzkonten aus Ihrer bisherigen Buchhaltung. Eine ausgeglichene Eröffnungsbuchung wird per { $date } (erster Tag des Geschäftsjahres „{ $name }“) erstellt. Buchen Sie Ihren kumulierten Gewinnvortrag auf Ihr Vortragskonto, um die Buchung auszugleichen.
+opening-balances-account = Konto
+opening-balances-debit = Soll
+opening-balances-credit = Haben
+opening-balances-total-debit = Total Soll
+opening-balances-total-credit = Total Haben
+opening-balances-diff = Differenz
+opening-balances-generate = Eröffnungsbuchung erstellen
+opening-balances-generating = Wird erstellt…
+opening-balances-success = Eröffnungsbuchung erstellt.
+opening-balances-entry-description = Eröffnungsbilanz — Anfangssaldi
+opening-balances-locked-no-fiscal-year = Kein Geschäftsjahr vorhanden: Erstellen Sie zuerst ein Geschäftsjahr (Einstellungen → Geschäftsjahre), um Ihre Anfangssaldi zu erfassen.
+opening-balances-locked-first-year-closed = Das erste Geschäftsjahr „{ $name }“ ist abgeschlossen: Ein Administrator muss es wieder öffnen, bevor die Anfangssaldi erfasst werden können.
+opening-balances-locked-already-has-entries = Das Unternehmen enthält bereits Buchungen: Die Eröffnungsbilanz ist gesperrt. Korrigieren Sie die Eröffnungsbuchung direkt im Journal oder löschen Sie alle Buchungen, um neu zu beginnen.
+opening-balances-goto-journal = Journal öffnen
+opening-balances-goto-balance-sheet = Bilanz anzeigen
+opening-balances-status-error = Der Status der Anfangssaldi konnte nicht geladen werden.
+opening-balances-retry = Erneut versuchen
+error-opening-balances-no-fiscal-year = Kein Geschäftsjahr vorhanden: Erstellen Sie zuerst ein Geschäftsjahr, bevor Sie die Anfangssaldi erfassen.
+error-opening-balances-first-year-closed = Das erste Geschäftsjahr ist abgeschlossen: Öffnen Sie es wieder, bevor Sie die Anfangssaldi erfassen.
+error-opening-balances-already-has-entries = Das Unternehmen enthält bereits Buchungen: Die Eröffnungsbilanz kann nicht mehr erstellt werden. Korrigieren Sie die Eröffnungsbuchung im Journal.
+error-opening-balances-non-balance-account = Die Eröffnungsbilanz darf nur Bilanzkonten (Aktiven und Passiven) betreffen — entfernen Sie Ertrags- und Aufwandskonten.
 
 
 # --- Story 8-1b — CAMT.053 Bankimport ---

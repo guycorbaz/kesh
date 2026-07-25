@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev
+review
 
 ## Story
 
@@ -162,14 +162,14 @@ Nouvel endpoint **`GET /api/v1/opening-balances/status`** monté dans **`comptab
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Helpers & fn repo** : `fiscal_years::find_first_by_company` (`ORDER BY start_date ASC, id ASC LIMIT 1`) ; `journal_entries::count_by_company<E: Executor>` (générique tx+pool, P3-BH3-1/ECH-LOW-2) ; `accounts::find_types_by_ids_in_tx` (garde `ids.is_empty()` → `Ok(vec![])` + `IN(...)` par placeholders bindés, pattern `reconciliation.rs:196-205`, P1-M1-ECH/P3-ECH-LOW-1) ; **fn `journal_entries::create_opening_entry`** (own tx + `SELECT fiscal_years FOR UPDATE` status guard `Closed`→`FY_OPENING_FIRST_YEAR_CLOSED_KEY` + `count_by_company(&mut tx)` guard `>0`→`FY_OPENING_ALREADY_HAS_ENTRIES_KEY` + `create_in_tx(&mut tx, …, true)` + commit ; constantes naméspacées, P1-C1/P3-BH3-1). Tests repo. — AC-C.
-- [ ] **T2 — Endpoint statut** `GET /api/v1/opening-balances/status` : nouveau module `routes/opening_balances.rs` (déclaré `routes/mod.rs`), handler résolvant `find_first_by_company` + statut FY + `count_by_company` → `{ fiscalYear, canEnter, reason }` (READY / NO_FISCAL_YEAR / FIRST_YEAR_CLOSED / ALREADY_HAS_ENTRIES). Monté `comptable_routes`. — AC-D/D6.
-- [ ] **T3 — Endpoint génération** `POST /api/v1/opening-balances` (`routes/opening_balances.rs`) : DTO `OpeningBalancesRequest { lines }` ; parse `Decimal` (miroir `create_journal_entry`) ; résout 1er exercice via `find_first_by_company` (absent → `AppError::Validation(t("error-opening-balances-no-fiscal-year"))` 400 ; pré-check statut Closed → **`AppError::Validation(t("error-opening-balances-first-year-closed"))`** 400, **PAS** `AppError::FiscalYearClosed`, pour ne pas diverger du chemin sous-lock, P3-AA-2) ; **garde comptes de bilan** (`find_types_by_ids_in_tx` → rejet Revenue/Expense → `error-opening-balances-non-balance-account`) ; force `journal=OD` + `entry_date=fy_start` + **`description` via `Locale::from(company.accounting_language)` + `state.i18n.format`** (P1-H1, PAS `errors::t()`) ; `accounting::validate` (au handler) ; **`journal_entries::create_opening_entry`** (fn dédiée atomique — status+count sous `FOR UPDATE`, P1-C1 ; **PAS** `create()`). **Promouvoir `map_core_error` en `pub(crate)`** + le réutiliser (DRY) ; nouveau `map_opening_balances_error` (miroir `map_reopen_error` 14-2) : `FY_OPENING_ALREADY_HAS_ENTRIES_KEY` → `AppError::IllegalState(t("error-opening-balances-already-has-entries"))` (409 code partagé + message distinct) ; `FY_OPENING_FIRST_YEAR_CLOSED_KEY` → `AppError::Validation(t("error-opening-balances-first-year-closed"))` (400). Monté `comptable_routes`. — AC-A/B/D5.
-- [ ] **T4 — Frontend types + API** : `opening-balances.types.ts` + `opening-balances.api.ts` (`getOpeningBalancesStatus`, `generateOpeningBalances`). — AC-F.
-- [ ] **T5 — Écran + navigation** : page `settings/opening-balances/+page.svelte` (statut → grille OU verrou ; grille comptes Asset/Liability postables, colonnes Débit/Crédit, bandeau total `balance.ts`, bouton désactivé si non équilibré ; submit lignes non vides ; gestion `err.code`) + entrée de menu gatée Comptable+. — AC-E/F.
-- [ ] **T6 — i18n** : clés `opening-balances-*` / `error-opening-balances-*` × 4 locales (AC-G), dont `-entry-description` (libellé serveur) et les 4 messages d'erreur.
-- [ ] **T7 — Tests** : repo (T1, dont `create_opening_entry` + tie-break `find_first`) + e2e `opening_balances_e2e.rs` (happy path + toutes gardes AC-H : déséquilibré / <2 lignes / négatif / non-balance-account / already-has-entries / closed / no-fy / RBAC POST+GET / cross-tenant / **`GET /status` les 4 `reason`** / **course concurrente** ; **assertions de `message`** sur already-has-entries & non-balance-account) + Vitest `opening-balances-page.test.ts` (verrou 4 reasons/grille/équilibre/submit→verrou in-place) + **Playwright `opening-balances.spec.ts`** (parcours migrant bout-en-bout, P1-M3-AA). — AC-H.
-- [ ] **T8 — Doc-sync** : CHANGELOG + user-manual (section reprise de compta) + README (retirer « bilan d'ouverture à suivre »). **Pas de migration.** — AC-I.
+- [x] **T1 — Helpers & fn repo** : `fiscal_years::find_first_by_company` (`ORDER BY start_date ASC, id ASC LIMIT 1`) ; `journal_entries::count_by_company<E: Executor>` (générique tx+pool, P3-BH3-1/ECH-LOW-2) ; `accounts::find_types_by_ids_in_tx` (garde `ids.is_empty()` → `Ok(vec![])` + `IN(...)` par placeholders bindés, pattern `reconciliation.rs:196-205`, P1-M1-ECH/P3-ECH-LOW-1) ; **fn `journal_entries::create_opening_entry`** (own tx + `SELECT fiscal_years FOR UPDATE` status guard `Closed`→`FY_OPENING_FIRST_YEAR_CLOSED_KEY` + `count_by_company(&mut tx)` guard `>0`→`FY_OPENING_ALREADY_HAS_ENTRIES_KEY` + `create_in_tx(&mut tx, …, true)` + commit ; constantes naméspacées, P1-C1/P3-BH3-1). Tests repo. — AC-C.
+- [x] **T2 — Endpoint statut** `GET /api/v1/opening-balances/status` : nouveau module `routes/opening_balances.rs` (déclaré `routes/mod.rs`), handler résolvant `find_first_by_company` + statut FY + `count_by_company` → `{ fiscalYear, canEnter, reason }` (READY / NO_FISCAL_YEAR / FIRST_YEAR_CLOSED / ALREADY_HAS_ENTRIES). Monté `comptable_routes`. — AC-D/D6.
+- [x] **T3 — Endpoint génération** `POST /api/v1/opening-balances` (`routes/opening_balances.rs`) : DTO `OpeningBalancesRequest { lines }` ; parse `Decimal` (miroir `create_journal_entry`) ; résout 1er exercice via `find_first_by_company` (absent → `AppError::Validation(t("error-opening-balances-no-fiscal-year"))` 400 ; pré-check statut Closed → **`AppError::Validation(t("error-opening-balances-first-year-closed"))`** 400, **PAS** `AppError::FiscalYearClosed`, pour ne pas diverger du chemin sous-lock, P3-AA-2) ; **garde comptes de bilan** (`find_types_by_ids_in_tx` → rejet Revenue/Expense → `error-opening-balances-non-balance-account`) ; force `journal=OD` + `entry_date=fy_start` + **`description` via `Locale::from(company.accounting_language)` + `state.i18n.format`** (P1-H1, PAS `errors::t()`) ; `accounting::validate` (au handler) ; **`journal_entries::create_opening_entry`** (fn dédiée atomique — status+count sous `FOR UPDATE`, P1-C1 ; **PAS** `create()`). **Promouvoir `map_core_error` en `pub(crate)`** + le réutiliser (DRY) ; nouveau `map_opening_balances_error` (miroir `map_reopen_error` 14-2) : `FY_OPENING_ALREADY_HAS_ENTRIES_KEY` → `AppError::IllegalState(t("error-opening-balances-already-has-entries"))` (409 code partagé + message distinct) ; `FY_OPENING_FIRST_YEAR_CLOSED_KEY` → `AppError::Validation(t("error-opening-balances-first-year-closed"))` (400). Monté `comptable_routes`. — AC-A/B/D5.
+- [x] **T4 — Frontend types + API** : `opening-balances.types.ts` + `opening-balances.api.ts` (`getOpeningBalancesStatus`, `generateOpeningBalances`). — AC-F.
+- [x] **T5 — Écran + navigation** : page `settings/opening-balances/+page.svelte` (statut → grille OU verrou ; grille comptes Asset/Liability postables, colonnes Débit/Crédit, bandeau total `balance.ts`, bouton désactivé si non équilibré ; submit lignes non vides ; gestion `err.code`) + entrée de menu gatée Comptable+. — AC-E/F.
+- [x] **T6 — i18n** : clés `opening-balances-*` / `error-opening-balances-*` × 4 locales (AC-G), dont `-entry-description` (libellé serveur) et les 4 messages d'erreur.
+- [x] **T7 — Tests** : repo (T1, dont `create_opening_entry` + tie-break `find_first`) + e2e `opening_balances_e2e.rs` (happy path + toutes gardes AC-H : déséquilibré / <2 lignes / négatif / non-balance-account / already-has-entries / closed / no-fy / RBAC POST+GET / cross-tenant / **`GET /status` les 4 `reason`** / **course concurrente** ; **assertions de `message`** sur already-has-entries & non-balance-account) + Vitest `opening-balances-page.test.ts` (verrou 4 reasons/grille/équilibre/submit→verrou in-place) + **Playwright `opening-balances.spec.ts`** (parcours migrant bout-en-bout, P1-M3-AA). — AC-H.
+- [x] **T8 — Doc-sync** : CHANGELOG + user-manual (section reprise de compta) + README (retirer « bilan d'ouverture à suivre »). **Pas de migration.** — AC-I.
 
 ## Dev Notes
 
@@ -300,3 +300,70 @@ Trend : **P1 1CRIT/2HIGH/6MED → P2 0 → P3 3MED → P4 (Sonnet×3) 1 MED (com
 **Cœur confirmé sain (15 revues)** : fix C1 atomique (`create_opening_entry` own tx + `FOR UPDATE` status+count sous lock + `create_in_tx` direct ; sans `project_id` → verrouille QUE `fiscal_years` → pas d'inversion ABBA) ; garde double-ouverture fermée par `count_by_company==0` (company vierge) ; contrat d'erreur D7 (409 code partagé + message distinct) + pré-check épinglé ; description en langue company ; comptabilité juste (bilan d'ouverture équilibré, report négatif = débit equity, distinction physique/calculé 14-3c, aucune modif `balance_sheet.rs`) ; **pas de migration**.
 
 **Prochaine étape** : `bmad-dev-story` 14-4 (sur la branche `story/14-4-bilan-ouverture-soldes-depart`).
+
+## Dev Agent Record
+
+### Implementation Plan
+
+Exécution T1→T8 en un passage (2026-07-25, Fable 5). Ordre effectif : T1 (helpers + fn repo + tests repo) → T2/T3 (module `routes/opening_balances.rs`) → **T6 avancé avant T4/T5** (les clés i18n serveur — `-entry-description`, `error-opening-balances-*` — sont consommées par le backend et requises par les tests e2e ; déviation d'ordre documentée, sans impact) → T4/T5 (frontend) → T7 (e2e backend + Vitest + Playwright) → T8 (doc-sync + gate).
+
+### Debug Log
+
+- **Tie-break `find_first_by_company` (P1-L-3) non-fixturable** : la contrainte `uq_fiscal_years_company_start_date UNIQUE (company_id, start_date)` (schéma initial) rend l'état « deux exercices de même `start_date` dans une company » **inatteignable** — le tie-break `id ASC` reste dans le SQL (déterminisme défensif) mais le test d'égalité prescrit par AC-H ne peut pas créer sa fixture. Remplacé par un test de scoping multi-tenant (deux companies partageant une même `start_date`), qui exerce le même ORDER BY. 
+- **`find_types_by_ids_in_tx` appelée depuis le handler** : le handler ouvre une tx courte en lecture seule (`pool.begin()` → SELECT → rollback best-effort), signature `&mut Transaction` conforme à AC-C. 
+- **Test Vitest AC-E (err.message inline)** : premier run rouge — `isApiError` exige aussi `status: number` ; mock corrigé (`status: 409`). 14/15 → 15/15.
+- **Playwright — preset `with-company` sans rôles** : la fixture partagée `seed_accounting_company` seed 5 comptes SANS rôle (compteurs absolus assertés par d'autres suites → non modifiée). Le spec résout la contrepartie par rôle `RetainedEarnings` **si présent**, sinon n'importe quel passif postable (`2000 Capital CI`) — résolution par rôle/type, jamais par numéro (principe 14-3).
+- **Backend E2E local** : `KESH_ADMIN_PASSWORD` exige ≥ 12 chars même en test-mode (piège 17-4e confirmé) ; le login Playwright `admin/admin123` vient du seed `_test/seed`, pas de l'env.
+- **Régression sidebar vérifiée** : le layout modifié (`comptableOnly`) passe `sidebar-navigation.spec.ts` 4/4.
+- **PDF manuels FR non régénérés** — convention Epic 14 (gate release 4-bis, pas per-story) ; la section LaTeX est écrite, la régénération se fera au tag v0.8.0.
+
+### Completion Notes
+
+- **T1** : `fiscal_years::find_first_by_company` (ASC + tie-break `id ASC`) ; `journal_entries::count_by_company<E: Executor>` (générique tx+pool) ; `accounts::find_types_by_ids_in_tx` (garde `ids.is_empty()` + `IN` par placeholders bindés) ; **`journal_entries::create_opening_entry`** (own tx + `SELECT fiscal_years FOR UPDATE` → `Closed`→`Invariant(FY_OPENING_FIRST_YEAR_CLOSED_KEY)` → `count_by_company` sous le lock →`>0`→`Invariant(FY_OPENING_ALREADY_HAS_ENTRIES_KEY)` → `create_in_tx(…, true)` → commit) ; constantes namespacées dans `fiscal_years.rs` à côté des `FY_REOPEN_*`. **12 tests repo verts** (3 `find_first` + 9 `opening_balances_repository.rs`, dont la course concurrente `tokio::join!` sérialisée : 1 succès / 1 `ALREADY_HAS_ENTRIES` / 1 seule écriture).
+- **T2/T3** : module `routes/opening_balances.rs` — `GET /opening-balances/status` (priorité `NO_FISCAL_YEAR` > `FIRST_YEAR_CLOSED` > `ALREADY_HAS_ENTRIES` > `READY`) + `POST /opening-balances` (borne `MAX_LINES_PER_ENTRY` promue `pub(crate)` en miroir défensif ; parse `Decimal` miroir `create_journal_entry` ; pré-checks épinglés P3-AA-2 — `AppError::Validation`, même clé que le chemin sous-lock ; garde comptes de bilan D4 rejet **uniquement** sur type retourné Revenue/Expense ; description via `Locale::from(company.accounting_language)` + `state.i18n.format` P1-H1 ; `accounting::validate` via `map_core_error` promu `pub(crate)` DRY ; `map_opening_balances_error` miroir `map_reopen_error` D7 — 409 code partagé + message distinct). Montés dans `comptable_routes` (GET **et** POST). 3 tests unitaires mapper inline.
+- **T4/T5** : `opening-balances.types.ts` + `opening-balances.api.ts` ; page `settings/opening-balances/+page.svelte` (états chargement/erreur+Réessayer/verrou par reason/grille ; filtre `active && postable && (Asset|Liability)` ; badge rôle ; colonnes Débit/Crédit **mutuellement exclusives** (saisir l'un vide l'autre) ; bandeau totaux big.js `computeBalance`/`formatSwissAmount` miroir `JournalEntryForm` ; bouton désactivé si `!isBalanced` ; submit lignes non vides ; succès → toast + rechargement statut → verrou in-place P1-M2-BH ; échec → `err.message` inline tel quel). Navigation : nouvelle catégorie `comptableOnly` dans le groupe Administration du layout (miroir `adminOnly`) — Consultation ne voit pas l'entrée (403 backend = filet). Nuance AC-E : si le fetch des **comptes** échoue alors que le statut est `READY`, la grille serait vide et inutilisable → traité comme échec de chargement global (même bouton Réessayer) — tolérance asymétrique documentée.
+- **T6** : 23 clés `opening-balances-*`/`error-opening-balances-*` + `nav-opening-balances` × 4 locales (fr/de/it/en-CH), apostrophes typographiques, tutoiement it-CH, „…“ de-CH — conventions par locale respectées.
+- **T7** : `opening_balances_e2e.rs` **18/18 verts** (happy ×2 dont perte reportée avec equity débiteur au bilan, gardes AC-B complètes avec assertions de **message** sur already-has-entries/non-balance-account/no-fy/first-year-closed, cross-tenant → `INACTIVE_OR_INVALID_ACCOUNTS`, RBAC POST+GET 403/401, 4 `reason` du GET /status, course concurrente HTTP 201+409) ; Vitest `opening-balances-page.test.ts` **15/15** ; Playwright `opening-balances.spec.ts` **2/2 RÉELS** (backend 8181, DB `kesh_e2e`, parcours migrant complet jusqu'au bilan) + `sidebar-navigation.spec.ts` 4/4 non-régression.
+- **T8** : CHANGELOG `[Non publié]` (entrée « Soldes de départ ») ; `user-manual.tex` sous-section « Reprise de comptabilité — soldes de départ » sous `\section{Exercices comptables}` ; README v0.8.0 « bilan d'ouverture à suivre » → livré. **Pas de migration** (P3/P5 sans objet, pas d'entrée idempotence).
+- **Gate Test Locally First** : backend `cargo fmt --check` ✅ / `cargo build --workspace --all-targets` ✅ / `cargo clippy -D warnings` ✅ / suite complète nextest sur DB gate `kesh_gate` : **2014/2014 verts** (4 skipped pré-existants, 52 min) — 0 régression ; frontend `check` 0 err ✅ / `lint-i18n-ownership` PASS ✅ / `test:unit` 452 ✅ / `build` ✅ ; Playwright ciblé ✅.
+
+## File List
+
+**Backend (modifiés)**
+- `crates/kesh-db/src/repositories/fiscal_years.rs` — `find_first_by_company` + constantes `FY_OPENING_FIRST_YEAR_CLOSED_KEY`/`FY_OPENING_ALREADY_HAS_ENTRIES_KEY`
+- `crates/kesh-db/src/repositories/journal_entries.rs` — `count_by_company<E>` + `create_opening_entry`
+- `crates/kesh-db/src/repositories/accounts.rs` — `find_types_by_ids_in_tx`
+- `crates/kesh-api/src/routes/journal_entries.rs` — `map_core_error` + `MAX_LINES_PER_ENTRY` promus `pub(crate)`
+- `crates/kesh-api/src/routes/mod.rs` — `pub mod opening_balances;`
+- `crates/kesh-api/src/lib.rs` — montage GET/POST `/api/v1/opening-balances*` dans `comptable_routes`
+
+**Backend (nouveaux)**
+- `crates/kesh-api/src/routes/opening_balances.rs` — endpoints statut + génération, DTOs, `map_opening_balances_error` + tests mapper
+- `crates/kesh-db/tests/opening_balances_repository.rs` — 9 tests repo (count/types/create_opening_entry/course)
+- `crates/kesh-api/tests/opening_balances_e2e.rs` — 18 tests e2e HTTP
+
+**Tests (modifiés)**
+- `crates/kesh-db/tests/fiscal_years_repository.rs` — 3 tests `find_first_by_company`
+
+**i18n**
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` — bloc `opening-balances-*` + `error-opening-balances-*` + `nav-opening-balances`
+
+**Frontend (nouveaux)**
+- `frontend/src/lib/features/opening-balances/opening-balances.types.ts`
+- `frontend/src/lib/features/opening-balances/opening-balances.api.ts`
+- `frontend/src/routes/(app)/settings/opening-balances/+page.svelte`
+- `frontend/src/routes/(app)/settings/opening-balances/opening-balances-page.test.ts` — 15 tests Vitest
+- `frontend/tests/e2e/opening-balances.spec.ts` — 2 tests Playwright
+
+**Frontend (modifiés)**
+- `frontend/src/routes/(app)/+layout.svelte` — catégorie `comptableOnly` + entrée « Soldes de départ »
+
+**Doc & pilotage**
+- `CHANGELOG.md`, `README.md`, `docs/manual/fr/user-manual.tex`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`, ce story file
+
+## Change Log — dev-story
+
+**Gate final** : backend fmt/build/clippy ✅ + nextest `kesh_gate` **2014/2014** (0 régression) ; frontend check 0 err / lint-i18n PASS / 452 vitest / build ✅ ; Playwright `opening-balances` 2/2 + `sidebar-navigation` 4/4 réels. Status → **review**. Prochaine étape : `bmad-code-review` (LLM différent, contexte frais).
+
+**2026-07-25 (Fable 5, run autonome T1→T8)** : implémentation complète — helpers repo + fn atomique `create_opening_entry` (statut + garde company-vierge **sous** `fiscal_years FOR UPDATE`, P1-C1/P3-BH3-1), endpoints `GET /opening-balances/status` + `POST /opening-balances` (Comptable+, `journal=OD`/`entry_date=fy_start`/description langue company forcés serveur), écran « Soldes de départ » (verrou piloté par statut, grille comptes de bilan postables, équilibre big.js, verrou in-place post-génération), navigation `comptableOnly`, i18n ×4, doc-sync. **Pas de migration.** Tests : 12 repo + 3 unit mapper + 18 e2e HTTP + 15 Vitest + 2 Playwright réels (+ 4 non-régression sidebar) — tous verts. Déviations documentées (Debug Log) : ordre T6 avancé ; tie-break P1-L-3 non-fixturable (UNIQUE start_date) remplacé par test de scoping ; fallback contrepartie Playwright (fixture sans rôles) ; PDF manuels différés au gate release 4-bis.

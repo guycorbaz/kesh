@@ -468,6 +468,26 @@ En cas d'erreur découverte après clôture, un \textbf{administrateur} peut rou
 On rouvre les exercices \textbf{du plus récent vers l'ancien} : si un exercice postérieur est encore clôturé, Kesh refuse la réouverture et indique lequel rouvrir d'abord. Effectuer cette opération avec parcimonie pour préserver l'intégrité légale.
 \end{keshtip}
 
+\subsection{Reprise de comptabilité — soldes de départ}
+
+Si vous migrez vers Kesh depuis un autre logiciel comptable, l'écran \emph{Administration} → \emph{Soldes de départ} (réservé aux rôles Comptable et Administrateur) vous permet de reprendre le bilan de clôture de votre ancienne comptabilité en une seule saisie :
+
+\begin{enumerate}
+    \item \textbf{Préparez le bilan de clôture} de votre ancien logiciel (actifs, passifs, capitaux propres, report à-nouveau accumulé).
+    \item \textbf{Ouvrez l'écran} : la grille liste vos comptes de bilan actifs et postables (actifs et passifs — jamais les comptes de produits ou de charges, qui fausseraient le résultat de l'exercice).
+    \item \textbf{Saisissez les soldes} colonne Débit ou Crédit, ligne par ligne. Le total débit, le total crédit et la différence s'affichent en direct.
+    \item \textbf{Équilibrez via le report à-nouveau} : posez votre report accumulé sur le compte de rôle \emph{Bénéfice reporté} (2970 dans les plans standards) — au crédit pour un bénéfice cumulé, au \textbf{débit} pour une perte reportée.
+    \item \textbf{Générez} : le bouton \emph{Générer l'écriture d'ouverture} (actif seulement une fois la saisie équilibrée) crée \textbf{une écriture OD équilibrée datée au 1\textsuperscript{er} jour de votre premier exercice}. Votre bilan est juste dès le premier jour.
+\end{enumerate}
+
+\begin{keshnote}
+L'écran n'est disponible que tant que la société ne contient \textbf{aucune écriture} (dans aucun exercice). Une fois l'écriture d'ouverture générée, il se verrouille : pour corriger un solde, modifiez l'écriture d'ouverture directement dans le journal (c'est une écriture OD normale, modifiable tant que l'exercice reste ouvert). Pour re-saisir intégralement les soldes, supprimez toutes les écritures de la société puis revenez sur l'écran.
+\end{keshnote}
+
+\begin{keshtip}
+Si votre premier exercice Kesh ne doit pas commencer au 1\textsuperscript{er} janvier de l'année courante (exercice décalé ou reprise antérieure), créez d'abord l'exercice voulu via \emph{Administration} → \emph{Exercices comptables} — l'écriture d'ouverture est datée au premier jour du \textbf{premier} exercice existant.
+\end{keshtip}
+
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Carnet d'adresses}
 

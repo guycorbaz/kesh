@@ -267,6 +267,40 @@ pub async fn count_by_company(pool: &MySqlPool, company_id: i64) -> Result<i64, 
     Ok(row.0)
 }
 
+/// Retourne les paires `(id, account_type)` des comptes demandés, **scopées
+/// company** (Story 14-4, P1-M1-ECH).
+///
+/// Sert la garde « comptes de bilan » de `POST /opening-balances` : le handler
+/// rejette toute ligne dont le type retourné est `Revenue`/`Expense`. Un id
+/// **absent** du résultat (compte inexistant ou d'une autre company) n'est PAS
+/// une erreur ici — il retombe dans la garde `InactiveOrInvalidAccounts` de
+/// `journal_entries::create_in_tx` (contrat AC-B, findings P3-AA-1/BH3-6).
+///
+/// `ids` vide → `Ok(vec![])` sans requête : un `IN ()` vide est une erreur de
+/// syntaxe MariaDB qui remonterait en 500 (P3-ECH-LOW-1). Clause `IN`
+/// construite par placeholders bindés manuellement (pattern
+/// `reconciliation::find_contacts_by_ids`) — pas de N+1.
+pub async fn find_types_by_ids_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    ids: &[i64],
+) -> Result<Vec<(i64, String)>, DbError> {
+    if ids.is_empty() {
+        return Ok(vec![]);
+    }
+    let placeholders = std::iter::repeat_n("?", ids.len())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "SELECT id, account_type FROM accounts WHERE company_id = ? AND id IN ({placeholders})"
+    );
+    let mut q = sqlx::query_as::<_, (i64, String)>(&sql).bind(company_id);
+    for id in ids {
+        q = q.bind(id);
+    }
+    q.fetch_all(&mut **tx).await.map_err(map_db_error)
+}
+
 /// `include_archived` : si `false`, seuls les comptes actifs sont retournés.
 /// Pas de pagination — un plan comptable est borné à ~200-400 comptes.
 pub async fn list_by_company(

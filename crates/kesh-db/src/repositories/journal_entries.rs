@@ -341,6 +341,118 @@ pub async fn create_in_tx(
     Ok(JournalEntryWithLines { entry, lines })
 }
 
+/// Compte les écritures d'une company, **tous exercices confondus**.
+///
+/// Story 14-4 — garde « company vierge » du bilan d'ouverture (P3-BH3-1) :
+/// la génération de l'écriture d'ouverture n'est autorisée que si ce compte
+/// vaut `0`. Générique sur `Executor` (idiome projet, cf.
+/// `reconciliation::find_contacts_by_ids`) : appelée sur `&mut *tx` **sous le
+/// lock** dans [`create_opening_entry`], et sur `&pool` pour le
+/// `GET /opening-balances/status` (P3-ECH-LOW-2 — pas deux fns dupliquées).
+pub async fn count_by_company<'e, E>(executor: E, company_id: i64) -> Result<i64, DbError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::MySql>,
+{
+    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM journal_entries WHERE company_id = ?")
+        .bind(company_id)
+        .fetch_one(executor)
+        .await
+        .map_err(map_db_error)
+}
+
+/// Crée l'**écriture d'ouverture** du bilan de départ (Story 14-4, D5/P1-C1).
+///
+/// Fn repo dédiée — miroir du pattern `invoices::validate_invoice` (own tx +
+/// [`create_in_tx`] direct). **NE PAS** réutiliser [`create`] : le wrapper est
+/// auto-contenu (ouvre/commit sa propre tx) et n'offre aucun point d'injection
+/// pour le re-check « company vierge » sous le lock — la garde anti-course
+/// serait irréalisable (finding P1-C1).
+///
+/// Algorithme (chaque garde **sous** le `SELECT fiscal_years FOR UPDATE`, qui
+/// sérialise avec toute création d'écriture concurrente — `create_in_tx`
+/// verrouille la même ligne) :
+///
+/// 1. `tx = pool.begin()`.
+/// 2. `SELECT id, status FROM fiscal_years WHERE id=? AND company_id=? FOR UPDATE`
+///    → `None` → `NotFound` ; `Closed` → `Invariant(FY_OPENING_FIRST_YEAR_CLOSED_KEY)`.
+/// 3. [`count_by_company`] `(&mut *tx)` **sous le lock** → `> 0` →
+///    `Invariant(FY_OPENING_ALREADY_HAS_ENTRIES_KEY)` (garde double-ouverture
+///    company-wide, P3-BH3-1).
+/// 4. [`create_in_tx`] (`enforce_postable = true` — la grille n'offre que des
+///    comptes postables, saisie manuelle assistée) : re-lock ré-entrant même tx,
+///    validation comptes/équilibre/date, INSERT, audit `journal_entry.created`.
+/// 5. `commit`.
+///
+/// **Note atomicité** : l'écriture d'ouverture n'a aucun `project_id` (DTO sans
+/// champ projet) → `create_in_tx` court-circuite l'Étape 0 (validation projets)
+/// et ne verrouille QUE `fiscal_years` — pas d'inversion de l'ordre de verrou
+/// global `companies → projects → fiscal_years` (P3-ECH confirmé).
+///
+/// Les conflits métier sont émis en `DbError::Invariant(<KEY>)` namespacés
+/// (pattern D7 de 14-2), re-mappés en messages distincts localisés par
+/// `map_opening_balances_error` côté route.
+pub async fn create_opening_entry(
+    pool: &MySqlPool,
+    company_id: i64,
+    fiscal_year_id: i64,
+    user_id: i64,
+    new: NewJournalEntry,
+) -> Result<JournalEntryWithLines, DbError> {
+    use super::fiscal_years::{
+        FY_OPENING_ALREADY_HAS_ENTRIES_KEY, FY_OPENING_FIRST_YEAR_CLOSED_KEY,
+    };
+
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    // Étape 2 : lock de l'exercice — sérialise avec toute création d'écriture
+    // concurrente (même `FOR UPDATE` dans `create_in_tx`) et toute clôture.
+    let fy_row: Option<(i64, String)> = sqlx::query_as(
+        "SELECT id, status FROM fiscal_years WHERE id = ? AND company_id = ? FOR UPDATE",
+    )
+    .bind(fiscal_year_id)
+    .bind(company_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(map_db_error)?;
+
+    match fy_row {
+        None => {
+            let _ = tx.rollback().await;
+            return Err(DbError::NotFound);
+        }
+        Some((_, status)) if status == "Closed" => {
+            let _ = tx.rollback().await;
+            return Err(DbError::Invariant(
+                FY_OPENING_FIRST_YEAR_CLOSED_KEY.to_string(),
+            ));
+        }
+        Some(_) => {}
+    }
+
+    // Étape 3 : garde « company vierge » SOUS le lock (P3-BH3-1) — ferme la
+    // fenêtre de course avec une autre génération ou toute saisie concurrente.
+    let count = count_by_company(&mut *tx, company_id).await?;
+    if count > 0 {
+        let _ = tx.rollback().await;
+        return Err(DbError::Invariant(
+            FY_OPENING_ALREADY_HAS_ENTRIES_KEY.to_string(),
+        ));
+    }
+
+    // Étape 4 : création atomique dans la même tx (re-lock ré-entrant).
+    match create_in_tx(&mut tx, fiscal_year_id, user_id, new, true).await {
+        Ok(result) => {
+            tx.commit().await.map_err(map_db_error)?;
+            Ok(result)
+        }
+        Err(e) => {
+            // Best-effort rollback, miroir `create` (l'erreur métier prime).
+            let _ = tx.rollback().await;
+            Err(e)
+        }
+    }
+}
+
 /// Retourne une écriture avec ses lignes, scopée à une company pour
 /// éviter toute fuite cross-tenant.
 ///

@@ -89,6 +89,24 @@ pub const FY_REOPEN_UNEXPECTED_KEY: &str = "fiscal_year:reopen-unexpected";
 /// qu'un motif de plusieurs Mo grossisse le journal d'audit.
 pub const REOPEN_MOTIF_MAX: usize = 500;
 
+// --- Story 14-4 — clés Invariant namespacées pour l'écriture d'ouverture ---
+//
+// Émises par `journal_entries::create_opening_entry` (bilan d'ouverture, D5) :
+// même pattern D7 que `reopen` — `DbError::Invariant(<KEY>)` re-mappé côté
+// route par `map_opening_balances_error`, jamais le générique
+// `IllegalStateTransition` (Display log-only).
+
+/// `create_opening_entry` a trouvé le premier exercice `Closed` (re-check sous
+/// le `FOR UPDATE` — le pré-check handler hors-lock émet le même outcome,
+/// finding P3-AA-2).
+pub const FY_OPENING_FIRST_YEAR_CLOSED_KEY: &str = "fiscal_year:opening-first-year-closed";
+
+/// `create_opening_entry` a trouvé une company non-vierge
+/// (`journal_entries::count_by_company > 0` sous le lock) : l'écriture
+/// d'ouverture n'est autorisée que si la company n'a AUCUNE écriture, dans
+/// AUCUN exercice (garde double-ouverture, finding P3-BH3-1).
+pub const FY_OPENING_ALREADY_HAS_ENTRIES_KEY: &str = "fiscal_year:opening-already-has-entries";
+
 /// Construit le snapshot JSON utilisé par les entrées d'audit log.
 fn snapshot_json(fy: &FiscalYear) -> serde_json::Value {
     json!({
@@ -595,6 +613,32 @@ pub async fn find_by_name(
     .bind(company_id)
     .bind(name)
     .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)
+}
+
+/// Retourne le **premier exercice** de la company (le plus ancien par
+/// `start_date`), ou `None` si la company n'a aucun exercice.
+///
+/// Story 14-4 (bilan d'ouverture) : l'écriture d'ouverture est datée au
+/// `start_date` de cet exercice. Ne PAS dériver le premier exercice de
+/// [`list_by_company`] (tri **DESC**, le plus récent en tête — Piège 8).
+///
+/// Tie-break `id ASC` (P1-L-3) : déterminisme défensif si deux exercices
+/// partageaient une même `start_date`. État inatteignable sous la contrainte
+/// `uq_fiscal_years_company_start_date UNIQUE (company_id, start_date)` — le
+/// tie-break est une défense en profondeur cheap, pas un chemin exerçable.
+pub async fn find_first_by_company(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<Option<FiscalYear>, DbError> {
+    sqlx::query_as::<_, FiscalYear>(
+        "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+         FROM fiscal_years WHERE company_id = ? \
+         ORDER BY start_date ASC, id ASC LIMIT 1",
+    )
+    .bind(company_id)
+    .fetch_optional(pool)
     .await
     .map_err(map_db_error)
 }

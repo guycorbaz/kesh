@@ -41,6 +41,11 @@
 	}
 
 	let isAdmin = $derived(authState.currentUser?.role === 'Admin');
+	// Story 14-4 — entrées Comptable+ (miroir RBAC local `canModify()` du plan
+	// comptable) : Consultation ne voit pas l'entrée (403 backend = filet).
+	let isComptablePlus = $derived(
+		authState.currentUser?.role === 'Admin' || authState.currentUser?.role === 'Comptable'
+	);
 
 	// Story v014-1 : sidebar restructurée en 3 groupes (Quotidien / Mensuel / Administration).
 	// 4 pages orphelines pré-v014-1 ajoutées à Administration (Plan comptable, Exercices,
@@ -49,7 +54,7 @@
 	// « Comptes bancaires » sous Administration. Items « Export global » et « Paramètres »
 	// déplacés de leur ancien groupe sans label vers Administration. Items admin-only
 	// (Utilisateurs, Facturation) fusionnés dans Administration via {#if isAdmin}.
-	const navGroups: Array<{ key: string; label: string; defaultExpanded: boolean; items: NavItem[]; adminOnly?: NavItem[] }> = [
+	const navGroups: Array<{ key: string; label: string; defaultExpanded: boolean; items: NavItem[]; comptableOnly?: NavItem[]; adminOnly?: NavItem[] }> = [
 		{
 			key: 'quotidien',
 			label: 'Quotidien',
@@ -105,6 +110,15 @@
 				{ i18nKey: 'nav-projects', fallback: 'Projets analytiques', href: '/settings/projects' },
 				{ i18nKey: 'nav-export-global', fallback: 'Export global', href: '/export' },
 				{ i18nKey: 'nav-settings', fallback: 'Paramètres', href: '/settings' },
+			],
+			// Story 14-4 — écran « Soldes de départ » (bilan d'ouverture),
+			// réservé Comptable+ (Consultation ne voit pas l'entrée, AC-E).
+			comptableOnly: [
+				{
+					i18nKey: 'nav-opening-balances',
+					fallback: 'Soldes de départ',
+					href: '/settings/opening-balances',
+				},
 			],
 			// Note FINDING-7 Pass 1 : admin-only items conservés en `label:` hardcodé FR
 			// (i18n complète reportée v0.2 — hors scope du hotfix UX v0.1.4).
@@ -170,7 +184,7 @@
 	// ne peut plus jamais cacher le groupe contenant sa route fréquente).
 	function findGroupKeyForPath(pathname: string): string | null {
 		for (const g of navGroups) {
-			const allItems = [...g.items, ...(g.adminOnly ?? [])];
+			const allItems = [...g.items, ...(g.comptableOnly ?? []), ...(g.adminOnly ?? [])];
 			if (allItems.some((it) => it.href === pathname)) {
 				return g.key;
 			}
@@ -339,6 +353,20 @@
 								</a>
 							</li>
 						{/each}
+						{#if group.comptableOnly && isComptablePlus}
+							{#each group.comptableOnly as item}
+								<li>
+									<a
+										href={item.href}
+										data-testid={navTestid(item.href)}
+										class="flex items-center rounded-md px-3 text-sm text-text hover:bg-primary-light/10 hover:text-primary transition-colors"
+										style="min-height: var(--kesh-target-min-height);"
+									>
+										{getItemLabel(item)}
+									</a>
+								</li>
+							{/each}
+						{/if}
 						{#if group.adminOnly && isAdmin}
 							{#each group.adminOnly as item}
 								<li>
