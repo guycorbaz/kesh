@@ -74,6 +74,7 @@ const RETAINED = acc({
 	accountType: 'Liability',
 	role: 'RetainedEarnings',
 });
+const LIABILITY = acc({ id: 6, number: '2000', name: 'Dettes', accountType: 'Liability' });
 const REVENUE = acc({ id: 3, number: '3000', name: 'Ventes', accountType: 'Revenue' });
 const NON_POSTABLE = acc({
 	id: 4,
@@ -97,7 +98,14 @@ beforeEach(() => {
 	generateMock.mockReset();
 	fetchAccountsMock.mockReset();
 	notifySuccessMock.mockReset();
-	fetchAccountsMock.mockResolvedValue([ASSET, RETAINED, REVENUE, NON_POSTABLE, ARCHIVED]);
+	fetchAccountsMock.mockResolvedValue([
+		ASSET,
+		RETAINED,
+		LIABILITY,
+		REVENUE,
+		NON_POSTABLE,
+		ARCHIVED,
+	]);
 });
 
 describe('états chargement / erreur (P3-BH3-2)', () => {
@@ -275,6 +283,36 @@ describe('équilibre et génération (D3)', () => {
 		await fireEvent.click(btn);
 
 		await waitFor(() => expect(generateMock).toHaveBeenCalledTimes(1));
+		expect(generateMock).toHaveBeenCalledWith({
+			lines: [
+				{ accountId: 1, debit: '100', credit: '0' },
+				{ accountId: 2, debit: '0', credit: '100' },
+			],
+		});
+	});
+
+	it('une ligne « 0 » explicite est traitée comme vide : non envoyée au POST (Pass 2 ECH2-2)', async () => {
+		generateMock.mockResolvedValue({ id: 1 });
+		await renderReadyGrid();
+
+		await fireEvent.input(screen.getByTestId('opening-balances-debit-1000'), {
+			target: { value: '100' },
+		});
+		await fireEvent.input(screen.getByTestId('opening-balances-credit-2970'), {
+			target: { value: '100' },
+		});
+		// « 0 » tapé explicitement dans une ligne inutilisée — le serveur
+		// rejetterait cette ligne (EntryLineDebitCreditExclusive) si envoyée.
+		await fireEvent.input(screen.getByTestId('opening-balances-debit-2000'), {
+			target: { value: '0' },
+		});
+
+		const btn = screen.getByTestId('opening-balances-generate') as HTMLButtonElement;
+		await waitFor(() => expect(btn.disabled).toBe(false));
+		await fireEvent.click(btn);
+
+		await waitFor(() => expect(generateMock).toHaveBeenCalledTimes(1));
+		// SEULES les 2 lignes à montant > 0 partent — la ligne « 0 » est filtrée.
 		expect(generateMock).toHaveBeenCalledWith({
 			lines: [
 				{ accountId: 1, debit: '100', credit: '0' },

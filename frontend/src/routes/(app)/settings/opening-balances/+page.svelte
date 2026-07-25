@@ -15,7 +15,8 @@
 	import {
 		computeBalance,
 		formatSwissAmount,
-		isValidAmount
+		isValidAmount,
+		parseAmount
 	} from '$lib/features/journal-entries/balance';
 
 	// ------------------------------------------------------------------
@@ -88,8 +89,20 @@
 	// Bandeau de total en direct (D3) — big.js via balance.ts, jamais parseFloat.
 	const balance = $derived(computeBalance(rows));
 
-	// Lignes non vides envoyées au POST (les autres sont ignorées).
-	const nonEmptyRows = $derived(rows.filter((r) => r.debit !== '' || r.credit !== ''));
+	// Lignes non vides envoyées au POST (les autres sont ignorées). Une ligne
+	// dont les deux côtés valent 0 — vide OU « 0 »/« 0.00 » tapé explicitement —
+	// est traitée comme vide et N'EST PAS envoyée (Pass 2 review, ECH2-2) :
+	// le serveur la rejetterait en `EntryLineDebitCreditExclusive` (XOR strict),
+	// miroir de la classification « partial » de `JournalEntryForm` qui bloque ce
+	// même cas côté saisie d'écriture. Les montants invalides restent inclus par
+	// prudence — `balance.hasInvalidAmount` désactive déjà le bouton en amont.
+	const nonEmptyRows = $derived(
+		rows.filter((r) => {
+			if (r.debit === '' && r.credit === '') return false;
+			if (!isValidAmount(r.debit) || !isValidAmount(r.credit)) return true;
+			return parseAmount(r.debit).gt(0) || parseAmount(r.credit).gt(0);
+		})
+	);
 
 	const canGenerate = $derived(!submitting && balance.isBalanced);
 
