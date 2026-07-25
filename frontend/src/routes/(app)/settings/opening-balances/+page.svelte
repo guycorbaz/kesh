@@ -18,6 +18,7 @@
 		isValidAmount,
 		parseAmount
 	} from '$lib/features/journal-entries/balance';
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
 
 	// ------------------------------------------------------------------
 	// État de chargement (P3-BH3-2) : le statut pilote grille-vs-verrou,
@@ -40,13 +41,23 @@
 	let submitting = $state(false);
 	let submitError = $state<string | null>(null);
 
+	// Jeton de génération (Pass 3 review, ECH3-1) : rend la course
+	// last-writer-wins impossible PAR CONSTRUCTION — un load() périmé (lancé
+	// avant, résolu après) ne peut plus écraser l'état posé par un load() plus
+	// récent (patron leçon 21-6b : fermer la fenêtre, pas ajouter un garde).
+	let loadGen = 0;
+
 	async function load() {
+		const gen = ++loadGen;
 		loading = true;
 		statusError = false;
 		const [statusResult, accountsResult] = await Promise.allSettled([
 			getOpeningBalancesStatus(),
 			fetchAccounts(false)
 		]);
+		// Réponse périmée : un load() plus récent a pris la main — aucune
+		// écriture d'état.
+		if (gen !== loadGen) return;
 
 		// Tolérance de panne asymétrique : le statut est obligatoire (il
 		// décide quoi afficher), les comptes seulement si la grille s'ouvre.
@@ -92,10 +103,13 @@
 	// Lignes non vides envoyées au POST (les autres sont ignorées). Une ligne
 	// dont les deux côtés valent 0 — vide OU « 0 »/« 0.00 » tapé explicitement —
 	// est traitée comme vide et N'EST PAS envoyée (Pass 2 review, ECH2-2) :
-	// le serveur la rejetterait en `EntryLineDebitCreditExclusive` (XOR strict),
-	// miroir de la classification « partial » de `JournalEntryForm` qui bloque ce
-	// même cas côté saisie d'écriture. Les montants invalides restent inclus par
-	// prudence — `balance.hasInvalidAmount` désactive déjà le bouton en amont.
+	// le serveur la rejetterait en `EntryLineDebitCreditExclusive` (XOR strict).
+	// Même cas que la classification « partial » de `JournalEntryForm`, mais
+	// remède différent (Pass 3 AA-LOW-3) : le formulaire d'écriture BLOQUE le
+	// submit, ici la ligne nulle est simplement retirée du payload — plus doux,
+	// sans risque (elle n'apporte rien à l'écriture). Les montants invalides
+	// restent inclus par prudence — `balance.hasInvalidAmount` fait retomber
+	// `isBalanced` (balance.ts:65) et désactive le bouton en amont.
 	const nonEmptyRows = $derived(
 		rows.filter((r) => {
 			if (r.debit === '' && r.credit === '') return false;
@@ -142,6 +156,13 @@
 			submitError = isApiError(err)
 				? err.message
 				: i18nMsg('opening-balances-status-error', 'Impossible de charger l’état des soldes de départ.');
+			// Course perdue (409 : un concurrent a rendu la company non-vierge) :
+			// recharger le statut pour verrouiller l'écran in-place, comme le
+			// chemin succès — sinon la grille reste active et chaque nouvel
+			// essai re-échoue à l'identique (Pass 3 review, BH3-LOW).
+			if (isApiError(err) && err.code === 'ILLEGAL_STATE_TRANSITION') {
+				await load();
+			}
 		} finally {
 			submitting = false;
 		}
@@ -175,6 +196,7 @@
 				variant="outline"
 				size="sm"
 				class="mt-3"
+				disabled={loading}
 				onclick={() => void load()}
 				data-testid="opening-balances-retry"
 			>
@@ -200,11 +222,17 @@
 						'Le premier exercice « { $name } » est clôturé : un administrateur doit le rouvrir avant la saisie des soldes de départ.',
 						{ name: status.fiscalYear?.name ?? '' }
 					)}
-				{:else}
+				{:else if status.reason === 'ALREADY_HAS_ENTRIES'}
 					{i18nMsg(
 						'opening-balances-locked-already-has-entries',
 						'La société contient déjà des écritures : le bilan d’ouverture est verrouillé. Corrigez l’écriture d’ouverture directement dans le journal, ou supprimez toutes les écritures pour recommencer.'
 					)}
+				{:else}
+					<!-- reason inconnue (skew de version, évolution future) : pas de
+					     message trompeur — état neutre invitant à recharger (Pass 3
+					     review, ECH3-LOW : l'ancien fourre-tout affichait le message
+					     ALREADY_HAS_ENTRIES pour toute reason inconnue). -->
+					{i18nMsg('opening-balances-status-error', 'Impossible de charger l’état des soldes de départ.')}
 				{/if}
 			</p>
 			<div class="mt-4 flex gap-3">
@@ -239,7 +267,8 @@
 				'opening-balances-intro',
 				'Saisissez les soldes de vos comptes de bilan repris de votre ancienne comptabilité. Une écriture d’ouverture équilibrée sera générée au { $date } (premier jour de l’exercice « { $name } »). Posez votre report à-nouveau accumulé sur votre compte de report pour équilibrer l’écriture.',
 				{
-					date: status.fiscalYear?.startDate ?? '',
+					// Format suisse dd.mm.yyyy (Pass 3 review, BH3-LOW) — pas l'ISO brut.
+					date: formatSwissDate(status.fiscalYear?.startDate ?? ''),
 					name: status.fiscalYear?.name ?? ''
 				}
 			)}
@@ -286,6 +315,7 @@
 							<Input
 								type="text"
 								inputmode="decimal"
+								placeholder="0.00"
 								class="text-right tabular-nums"
 								bind:value={row.debit}
 								oninput={() => onDebitInput(row)}
@@ -297,6 +327,7 @@
 							<Input
 								type="text"
 								inputmode="decimal"
+								placeholder="0.00"
 								class="text-right tabular-nums"
 								bind:value={row.credit}
 								oninput={() => onCreditInput(row)}

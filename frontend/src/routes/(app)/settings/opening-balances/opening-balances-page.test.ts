@@ -142,6 +142,27 @@ describe('états chargement / erreur (P3-BH3-2)', () => {
 		expect(await screen.findByTestId('opening-balances-grid')).toBeTruthy();
 	});
 
+	it('double-clic sur Réessayer → UN SEUL load() (bouton désactivé pendant le chargement, Pass 3 ECH3-1)', async () => {
+		// Mount : échec immédiat → écran d'erreur avec Réessayer.
+		getStatusMock.mockRejectedValueOnce({ code: 'NETWORK_ERROR', message: 'boom', status: 0 });
+		getStatusMock.mockResolvedValue(readyStatus());
+
+		render(Page);
+		const retry = await screen.findByTestId('opening-balances-retry');
+		// Double-clic rapide (pas d'await entre les deux) : `loading = true` est
+		// posé synchroniquement par le 1er load() et `disabled={loading}` avale
+		// le 2e clic — la course last-writer-wins (un load périmé qui écraserait
+		// l'état d'un load plus récent) est fermée à la source ; le jeton
+		// `loadGen` du composant reste la défense en profondeur.
+		fireEvent.click(retry);
+		fireEvent.click(retry);
+
+		expect(await screen.findByTestId('opening-balances-grid')).toBeTruthy();
+		// mount (échec) + UN retry — pas deux.
+		expect(getStatusMock).toHaveBeenCalledTimes(2);
+		expect(screen.queryByTestId('opening-balances-status-error')).toBeNull();
+	});
+
 	it('Consultation (403 backend) → état erreur, pas de grille', async () => {
 		getStatusMock.mockRejectedValue({ code: 'FORBIDDEN', message: 'Accès refusé' });
 
@@ -361,6 +382,39 @@ describe('équilibre et génération (D3)', () => {
 		expect(locked.getAttribute('data-reason')).toBe('ALREADY_HAS_ENTRIES');
 		expect(notifySuccessMock).toHaveBeenCalledTimes(1);
 		expect(screen.getByTestId('opening-balances-goto-balance-sheet')).toBeTruthy();
+		expect(screen.queryByTestId('opening-balances-grid')).toBeNull();
+	});
+
+	it('échec 409 (course perdue) → rechargement du statut → verrou in-place (Pass 3 BH3-LOW)', async () => {
+		generateMock.mockRejectedValue({
+			code: 'ILLEGAL_STATE_TRANSITION',
+			message: 'La société contient déjà des écritures.',
+			status: 409,
+		});
+		getStatusMock.mockResolvedValueOnce(readyStatus());
+		getStatusMock.mockResolvedValue({
+			fiscalYear: { id: 12, name: 'Exercice 2026', startDate: '2026-01-01', status: 'Open' },
+			canEnter: false,
+			reason: 'ALREADY_HAS_ENTRIES',
+		});
+
+		render(Page);
+		await screen.findByTestId('opening-balances-grid');
+
+		await fireEvent.input(screen.getByTestId('opening-balances-debit-1000'), {
+			target: { value: '100' },
+		});
+		await fireEvent.input(screen.getByTestId('opening-balances-credit-2970'), {
+			target: { value: '100' },
+		});
+		const btn = screen.getByTestId('opening-balances-generate') as HTMLButtonElement;
+		await waitFor(() => expect(btn.disabled).toBe(false));
+		await fireEvent.click(btn);
+
+		// L'écran se verrouille in-place comme le chemin succès — la grille ne
+		// reste pas active à rejouer un POST voué au même 409.
+		const locked = await screen.findByTestId('opening-balances-locked');
+		expect(locked.getAttribute('data-reason')).toBe('ALREADY_HAS_ENTRIES');
 		expect(screen.queryByTestId('opening-balances-grid')).toBeNull();
 	});
 

@@ -142,8 +142,19 @@ fn map_opening_balances_error(err: DbError) -> AppError {
 /// départ » (D6). Comptable+ (monté `comptable_routes` — PAS
 /// `authenticated_routes`, qui laisserait passer Consultation, P1-M2-ECH).
 ///
-/// Priorité d'évaluation : `NO_FISCAL_YEAR` > `FIRST_YEAR_CLOSED` >
-/// `ALREADY_HAS_ENTRIES` > `READY`.
+/// Priorité d'évaluation : `NO_FISCAL_YEAR` > `ALREADY_HAS_ENTRIES` >
+/// `FIRST_YEAR_CLOSED` > `READY`.
+///
+/// **Amendement D6 (Pass 3 code review, ECH3-2)** : `ALREADY_HAS_ENTRIES`
+/// prime désormais sur `FIRST_YEAR_CLOSED`. Avec l'ordre initial de la spec,
+/// une société au premier exercice clos ET contenant des écritures (le cas
+/// réel typique) lisait « un administrateur doit rouvrir l'exercice » —
+/// prescription d'une opération réglementaire (Admin + motif + audit + garde
+/// LIFO) qui ne pouvait PAS débloquer l'écran (le statut retombait ensuite sur
+/// `ALREADY_HAS_ENTRIES`). Avec cet ordre, `FIRST_YEAR_CLOSED` ne s'affiche
+/// que quand la réouverture mène réellement à `READY` (company vierge) — le
+/// message reste vrai dans toutes les configurations. Testé par
+/// `status_closed_with_entries_reports_already_has_entries`.
 ///
 /// Lock-free (pré-check UX) : l'autorité reste `create_opening_entry` qui
 /// re-vérifie statut + count **sous** le `FOR UPDATE` au POST.
@@ -161,7 +172,6 @@ pub async fn opening_balances_status(
         }));
     };
 
-    let closed = fy.status == FiscalYearStatus::Closed;
     let summary = OpeningBalancesFiscalYear {
         id: fy.id,
         name: fy.name,
@@ -169,22 +179,24 @@ pub async fn opening_balances_status(
         status: fy.status,
     };
 
-    if closed {
-        return Ok(Json(OpeningBalancesStatusResponse {
-            fiscal_year: Some(summary),
-            can_enter: false,
-            reason: "FIRST_YEAR_CLOSED",
-        }));
-    }
-
-    // Garde « company vierge » (P3-BH3-1) : ≥1 écriture dans N'IMPORTE QUEL
-    // exercice verrouille l'écran.
+    // Garde « company vierge » (P3-BH3-1) ÉVALUÉE AVANT le statut clos
+    // (amendement D6, ECH3-2) : ≥1 écriture dans N'IMPORTE QUEL exercice
+    // verrouille l'écran — rouvrir l'exercice n'y changerait rien, le message
+    // `first-year-closed` serait un mauvais conseil.
     let count = journal_entries::count_by_company(&state.pool, current_user.company_id).await?;
     if count > 0 {
         return Ok(Json(OpeningBalancesStatusResponse {
             fiscal_year: Some(summary),
             can_enter: false,
             reason: "ALREADY_HAS_ENTRIES",
+        }));
+    }
+
+    if summary.status == FiscalYearStatus::Closed {
+        return Ok(Json(OpeningBalancesStatusResponse {
+            fiscal_year: Some(summary),
+            can_enter: false,
+            reason: "FIRST_YEAR_CLOSED",
         }));
     }
 

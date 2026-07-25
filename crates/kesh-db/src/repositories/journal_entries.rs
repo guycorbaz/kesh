@@ -386,19 +386,27 @@ where
 /// et ne verrouille QUE `fiscal_years` — pas d'inversion de l'ordre de verrou
 /// global `companies → projects → fiscal_years` (P3-ECH confirmé).
 ///
-/// **Portée exacte de la sérialisation** (Pass 1 code review, BH-1) : le
-/// `FOR UPDATE` porte sur **la ligne du premier exercice** — il sérialise donc
-/// (a) deux générations d'ouverture concurrentes (même ligne → un seul 201,
-/// l'autre `ALREADY_HAS_ENTRIES` ; c'est l'invariant anti-double-ouverture,
-/// testé par les tests de course), et (b) toute création d'écriture concurrente
-/// **dans ce même exercice** (`create_in_tx` prend le même lock). Une écriture
-/// normale postée concurremment dans un **autre** exercice ne se sérialise pas
-/// avec la génération — mais l'entrelacement est **bénin** : l'état final
-/// (ouverture + écriture normale) est identique à l'ordre séquentiel légal
-/// « génération puis écriture » ; et toute écriture **commitée avant** le lock
-/// est vue par le `count_by_company` sous le lock (→ refus). Le seul résidu est
-/// la création concurrente d'un exercice *antérieur* (mauvais millésime, pas de
-/// doublon) — limitation L4 documentée du story file, remédiation = marqueur L3.
+/// **Portée exacte de la sérialisation** (Pass 1 BH-1 + Pass 3 BH3-1 code
+/// review) : la garde « company vierge » est **company-wide**, donc le verrou
+/// qui la protège l'est aussi — **sentinel `companies FOR UPDATE`** en tête de
+/// transaction (Pattern 5, idiome projet : `bank_accounts`, `projects`,
+/// `invoices`). Ce sentinel sérialise **toutes** les générations d'ouverture
+/// concurrentes de la company entre elles, *y compris* quand deux requêtes ont
+/// résolu des « premiers exercices » **différents** (un exercice antérieur créé
+/// entre les deux pré-checks hors-lock) — sans lui, chacune verrouillerait une
+/// ligne `fiscal_years` distincte, les deux liraient `count == 0` et
+/// commiteraient un **doublon d'ouverture** (bilan doublé, Pass 3 BH3-1).
+/// L'ordre `companies → fiscal_years` respecte l'ordre de verrou global
+/// (`companies → projects → fiscal_years`) — pas d'inversion ABBA.
+///
+/// Une écriture normale postée concurremment dans un **autre** exercice ne se
+/// sérialise pas avec la génération (elle ne prend pas le sentinel) — mais
+/// l'entrelacement est **bénin** : l'état final (ouverture + écriture normale)
+/// est identique à l'ordre séquentiel légal « génération puis écriture » ; et
+/// toute écriture **commitée avant** le lock est vue par le `count_by_company`
+/// sous le lock (→ refus). Résidu restant (une seule génération concurrente à
+/// la création d'un exercice antérieur) : **mauvais millésime, pas de doublon**
+/// — limitation L4 documentée du story file, remédiation = marqueur L3.
 ///
 /// Les conflits métier sont émis en `DbError::Invariant(<KEY>)` namespacés
 /// (pattern D7 de 14-2), re-mappés en messages distincts localisés par
@@ -416,9 +424,25 @@ pub async fn create_opening_entry(
 
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
-    // Étape 2 : lock de la ligne du premier exercice — sérialise les
-    // générations concurrentes entre elles, les écritures concurrentes de CE
-    // même exercice, et toute clôture (portée exacte : cf. doc de la fn).
+    // Étape 1 (Pass 3 BH3-1) : sentinel company-wide — la garde « company
+    // vierge » porte sur TOUTE la company, le verrou qui la protège aussi.
+    // Sans lui, deux générations ayant résolu des premiers exercices
+    // DIFFÉRENTS verrouilleraient des lignes distinctes et commiteraient un
+    // doublon d'ouverture (portée exacte : cf. doc de la fn).
+    let company_row: Option<(i64,)> =
+        sqlx::query_as("SELECT id FROM companies WHERE id = ? FOR UPDATE")
+            .bind(company_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(map_db_error)?;
+    if company_row.is_none() {
+        let _ = tx.rollback().await;
+        return Err(DbError::NotFound);
+    }
+
+    // Étape 2 : lock de la ligne du premier exercice — statut vivant + borne
+    // de dates, et sérialisation avec les écritures concurrentes de CE même
+    // exercice ainsi que toute clôture.
     let fy_row: Option<(i64, String)> = sqlx::query_as(
         "SELECT id, status FROM fiscal_years WHERE id = ? AND company_id = ? FOR UPDATE",
     )

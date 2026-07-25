@@ -554,3 +554,73 @@ async fn create_opening_entry_concurrent_generation_is_serialized(pool: MySqlPoo
         1
     );
 }
+
+/// Pass 3 code review (BH3-1) : deux générations concurrentes ayant résolu des
+/// PREMIERS EXERCICES DIFFÉRENTS (cas : un exercice antérieur créé entre les
+/// deux pré-checks hors-lock du handler). Sans le sentinel
+/// `companies FOR UPDATE`, chacune verrouillerait une ligne `fiscal_years`
+/// distincte, les deux liraient `count == 0` et commiteraient → bilan DOUBLÉ.
+/// Le sentinel company-wide les sérialise : exactement UN succès, l'autre
+/// `ALREADY_HAS_ENTRIES`, une seule écriture en base.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn create_opening_entry_concurrent_different_first_fys_serialized(pool: MySqlPool) {
+    let cid = create_company(&pool, "co-open-race2").await;
+    let uid = create_user(&pool, "u-open-race2", cid).await;
+    // Deux exercices : la requête A a résolu FY2026, la requête B (après
+    // création de l'exercice antérieur) a résolu FY2025.
+    let fy2026 = create_fy(&pool, uid, cid, "FY2026", 2026).await;
+    let fy2025 = create_fy(&pool, uid, cid, "FY2025", 2025).await;
+    let asset = create_acc(&pool, uid, cid, "1000", "Banque", AccountType::Asset, None).await;
+    let retained = create_acc(
+        &pool,
+        uid,
+        cid,
+        "2970",
+        "Report",
+        AccountType::Liability,
+        Some(AccountRole::RetainedEarnings),
+    )
+    .await;
+
+    let p1 = pool.clone();
+    let p2 = pool.clone();
+    let new_a = opening_entry(
+        cid,
+        NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+        asset,
+        retained,
+    );
+    let new_b = opening_entry(
+        cid,
+        NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+        asset,
+        retained,
+    );
+
+    let ta = tokio::spawn(async move {
+        journal_entries::create_opening_entry(&p1, cid, fy2026, uid, new_a).await
+    });
+    let tb = tokio::spawn(async move {
+        journal_entries::create_opening_entry(&p2, cid, fy2025, uid, new_b).await
+    });
+
+    let (ra, rb) = tokio::join!(ta, tb);
+    let ra = ra.expect("task A should not panic");
+    let rb = rb.expect("task B should not panic");
+
+    let ok_count = [&ra, &rb].iter().filter(|r| r.is_ok()).count();
+    assert_eq!(
+        ok_count, 1,
+        "exactement une génération doit réussir (sentinel company) : {ra:?} / {rb:?}"
+    );
+    let loser = if ra.is_err() { ra } else { rb };
+    assert!(
+        matches!(&loser, Err(DbError::Invariant(k)) if k == FY_OPENING_ALREADY_HAS_ENTRIES_KEY),
+        "le perdant doit recevoir ALREADY_HAS_ENTRIES, obtenu {loser:?}"
+    );
+    assert_eq!(
+        journal_entries::count_by_company(&pool, cid).await.unwrap(),
+        1,
+        "PAS de doublon d'ouverture"
+    );
+}

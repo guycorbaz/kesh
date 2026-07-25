@@ -961,3 +961,140 @@ async fn post_concurrent_generation_only_one_succeeds(pool: MySqlPool) {
         .unwrap();
     assert_eq!(count, 1);
 }
+
+// ===========================================================================
+// Pass 3 code review — tests ajoutés
+// ===========================================================================
+
+/// Amendement D6 (ECH3-2) : premier exercice CLOS **et** company avec
+/// écritures → `ALREADY_HAS_ENTRIES` (pas `FIRST_YEAR_CLOSED`) — rouvrir
+/// l'exercice (opération Admin réglementaire) ne débloquerait pas l'écran, le
+/// message `first-year-closed` serait un mauvais conseil. Verrouille la
+/// précédence `ALREADY_HAS_ENTRIES` > `FIRST_YEAR_CLOSED`.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn status_closed_with_entries_reports_already_has_entries(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+    let seed = seed_ready(&pool).await;
+    post_normal_entry(
+        &pool,
+        &seed,
+        seed.fy_id,
+        NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
+    )
+    .await;
+    fiscal_years::close(&pool, seed.user_id, seed.company_id, seed.fy_id)
+        .await
+        .unwrap();
+
+    let body = get_status(&app, &token).await;
+    assert_eq!(
+        body["reason"], "ALREADY_HAS_ENTRIES",
+        "clos + écritures → ALREADY_HAS_ENTRIES prime (amendement D6, ECH3-2)"
+    );
+    assert_eq!(body["canEnter"], false);
+    assert_eq!(body["fiscalYear"]["status"], "Closed");
+}
+
+/// P1-H1 discriminant (BH3-2) : une company de langue comptable ALLEMANDE
+/// reçoit une description en de-CH — PAS la locale serveur globale (fr-CH en
+/// test). Toutes les autres fixtures étant `Language::Fr` (identique à la
+/// locale serveur), seul ce test distingue `Locale::from(accounting_language)`
+/// d'un fallback silencieux sur la locale serveur.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn post_description_uses_company_accounting_language(pool: MySqlPool) {
+    use kesh_db::entities::{Language, NewCompany, NewUser, OrgType, Role};
+
+    let app = spawn_app(pool.clone()).await;
+
+    // Company ALLEMANDE + comptable dédié (login réel).
+    let de_company = kesh_db::repositories::companies::create(
+        &pool,
+        NewCompany {
+            name: "Deutsche AG".into(),
+            first_name: None,
+            last_name: None,
+            address_structured: kesh_db::entities::address::StructuredAddress {
+                street: "X".into(),
+                building: String::new(),
+                postal_code: "8000".into(),
+                city: "Zürich".into(),
+                country: "CH".into(),
+            },
+            ide_number: None,
+            org_type: OrgType::Pme,
+            accounting_language: Language::De,
+            instance_language: Language::De,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+
+    let password_plain = "de-comptable-pw-12345";
+    let hash = kesh_api::auth::password::hash_password(password_plain).expect("hash");
+    let de_user = kesh_db::repositories::users::create(
+        &pool,
+        NewUser {
+            username: "de-comptable".into(),
+            password_hash: hash,
+            role: Role::Comptable,
+            active: true,
+            company_id: de_company,
+            email: None,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+
+    let _fy = create_fy(&pool, de_user, de_company, 2026).await;
+    let asset = create_acc(
+        &pool,
+        de_user,
+        de_company,
+        "1000",
+        "Bank",
+        AccountType::Asset,
+        None,
+    )
+    .await;
+    let retained = create_acc(
+        &pool,
+        de_user,
+        de_company,
+        "2970",
+        "Gewinnvortrag",
+        AccountType::Liability,
+        Some(AccountRole::RetainedEarnings),
+    )
+    .await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/auth/login"))
+        .json(&json!({ "username": "de-comptable", "password": password_plain }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let token = body["accessToken"].as_str().unwrap().to_string();
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/opening-balances"))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "lines": [
+            line(asset, "1000.00", "0"),
+            line(retained, "0", "1000.00"),
+        ]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["description"], "Eröffnungsbilanz — Anfangssaldi",
+        "description en de-CH (langue comptable de la company), pas fr-CH (locale serveur)"
+    );
+}
