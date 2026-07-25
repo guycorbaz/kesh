@@ -2,7 +2,7 @@
 
 ## Status
 
-review
+done
 
 ## Story
 
@@ -169,6 +169,11 @@ Nouvel endpoint **`GET /api/v1/opening-balances/status`** monté dans **`comptab
 - [x] **T5 — Écran + navigation** : page `settings/opening-balances/+page.svelte` (statut → grille OU verrou ; grille comptes Asset/Liability postables, colonnes Débit/Crédit, bandeau total `balance.ts`, bouton désactivé si non équilibré ; submit lignes non vides ; gestion `err.code`) + entrée de menu gatée Comptable+. — AC-E/F.
 - [x] **T6 — i18n** : clés `opening-balances-*` / `error-opening-balances-*` × 4 locales (AC-G), dont `-entry-description` (libellé serveur) et les 4 messages d'erreur.
 - [x] **T7 — Tests** : repo (T1, dont `create_opening_entry` + tie-break `find_first`) + e2e `opening_balances_e2e.rs` (happy path + toutes gardes AC-H : déséquilibré / <2 lignes / négatif / non-balance-account / already-has-entries / closed / no-fy / RBAC POST+GET / cross-tenant / **`GET /status` les 4 `reason`** / **course concurrente** ; **assertions de `message`** sur already-has-entries & non-balance-account) + Vitest `opening-balances-page.test.ts` (verrou 4 reasons/grille/équilibre/submit→verrou in-place) + **Playwright `opening-balances.spec.ts`** (parcours migrant bout-en-bout, P1-M3-AA). — AC-H.
+### Review Findings (code review 2026-07-25, 5 passes convergées)
+
+- [x] [Review][Patch] Les 11 findings `patch` des passes 1-4 ont tous été **appliqués et testés au fil de la boucle automatique** (Review Iteration Rule) — détail complet au `## Change Log — code-review` (sentinel anti-doublon, priorité de statut amendée ×3 étages, course load(), test De discriminant, filtre ligne « 0 », empty-grid, verrou in-place 409, etc.).
+- [x] [Review][Defer] TOCTOU garde D4 — retypage d'un compte à historique reclassifie silencieusement bilan/P&L [`crates/kesh-db/src/repositories/accounts.rs` (`update`)] — deferred, pre-existing → issue #274 (`known-failure` + `technical-debt`), consigné dans `deferred-work.md`.
+
 - [x] **T8 — Doc-sync** : CHANGELOG + user-manual (section reprise de compta) + README (retirer « bilan d'ouverture à suivre »). **Pas de migration.** — AC-I.
 
 ## Dev Notes
@@ -415,5 +420,31 @@ Vérifs post-patch : repo 10/10 + `fiscal_years` 3/3, e2e 20/20, Vitest 19/19, `
 - **Confirmations Pass 4** : sentinel sans ABBA vérifié **exhaustivement** (aucun flux ne prend `fiscal_years` puis `companies` ; Étape 0 projets court-circuitée confirmée par lecture de `validate_taggable_in_tx`) ; `loadGen` correct multi-générations ; reload 409 sans fenêtre de double-soumission ; les 4 tests Pass 3 vérifiés non-dégénérés ; matrice AC 100 % ; compteurs Completion Notes recomptés exacts.
 
 Vérifs post-patch : repo 10/10, e2e **21/21**, Vitest 19/19, `svelte-check` 0 err, clippy/fmt ✅. **1 MED code patché → Pass 5 de confirmation (Haiku ×3) requise.**
+
+### Pass 5 (Haiku ×3 — confirmation de convergence, contexte frais, diff aplati `1b410d4e..26b261b5`)
+
+**0 CRITICAL / 0 HIGH / 0 MEDIUM / 0 LOW net — convergé sur les 3 lentilles.** BH : ordres des gardes vérifiés alignés aux 3 étages (GET/pré-check POST/repo), messages D7 distincts, patches Pass 4 tous en place (0 hallucination). ECH : contrat P3-AA-2 tenu pour les DEUX gardes, sentinel sans ABBA, cas limites montants/multi-tenant/vec-vide balayés propres. AA : propagation Pass 4 complète (spec ↔ code ↔ doc-comments ↔ tests), compteurs exacts, matrice AC A→I 100 %, dérogations (L4, #274) confirmées justifiées.
+
+---
+
+### ✅ CONVERGENCE — code review scellée (2026-07-25)
+
+**Trend numérique (Review Iteration Rule)** :
+
+| Passe | Modèles (×3, contexte frais) | Findings > LOW (après triage ground-truth) | Détail |
+|-------|------------------------------|--------------------------------------------|--------|
+| 1 | **Sonnet** ×3 | **0** (2 MED bruts triagés : 1→LOW-doc patché, 1→defer #274 ; 1 dismiss L4 ; 1 LOW patché+test) | AA 0>LOW d'emblée, matrice AC 100 % |
+| 2 | **Haiku** ×3 | **0** (3 MED bruts : 2 hallucinations réfutées par grep [DECIMAL(19,4) ; Language non-Option], 1→LOW réel patché+test filtre ligne « 0 ») | BH/AA 0>LOW |
+| 3 | **Opus** ×3 | **4 MED réels patchés** | **BH3-1 doublon multi-FY → sentinel `companies FOR UPDATE` (fix structurel) + test course** ; ECH3-2 priorité D6 amendée (ALREADY > CLOSED) + test ; ECH3-1 course load() → démontage + `loadGen` + test ; BH3-2 test langue discriminant (company De) ; 6 LOW patchés, 5 dismiss |
+| 4 | **Sonnet** ×3 | **2 MED patchés** (résidus de propagation P3) | P4R-1 priorité propagée au POST (pré-check + repo) + test « clos+écritures → 409 » ; P4R-2 spec AC-C/Piège 4/T1 alignées ; disabled mort retiré |
+| 5 | **Haiku** ×3 | **0** | Convergé ✓ sur les 3 lentilles |
+
+**Cycle LLM** : Sonnet → Haiku → Opus → Sonnet → Haiku (5 passes × 3 agents = **15 revues** adversariales, diff aplati unique par passe, grep ground-truth systématique). Critère d'arrêt atteint : 0 > LOW en passe 5 (< 8 passes max). Implémenteur : Fable 5 (orthogonal aux 3 reviewers).
+
+**Reclassements & dérogations** : ECH-1 (TOCTOU retypage de compte) → **defer, issue #274** (`known-failure` + `technical-debt` + `triage` — cause racine pré-existante : `accounts::update` retype librement un compte à historique) ; ECH-2 → dismiss (= résidu **L4 documenté**, catégorie B, remédiation marqueur L3) ; 2 hallucinations Haiku P2 réfutées par grep (garde CLAUDE.md) ; 1 hallucination processus évitée (prompts P5 pré-armés) ; nit DRY sentinel inline conservé (NotFound défensif > helper silencieux).
+
+**Apports matériels de la review** (au-delà du dev) : (1) **sentinel company-wide** — le doublon d'ouverture multi-FY (composition à 2 requêtes manquée par les 5 passes validate) est désormais impossible par construction ; (2) **priorité de statut amendée et propagée aux 3 étages** — le conseil « rouvrez l'exercice » ne s'affiche plus que quand il mène réellement à READY ; (3) 8 tests ajoutés (2 repo-course, 3 e2e, 3 Vitest) + 1 test De discriminant ; (4) UX : empty-grid, verrou in-place sur 409, date suisse, placeholders.
+
+**Gate final post-review** : backend nextest `kesh_gate` complet **2018/2018** (4 skipped pré-existants, 49 min) — 0 régression ; frontend **456/456** vitest + check 0 err + lint-i18n PASS + build ✅ ; e2e ciblés 21/21 + repo 13/13 ; **Playwright 6/6 réels** (opening-balances 2/2 + sidebar 4/4, frontend rebuilt). **Status → done.**
 
 **2026-07-25 (Fable 5, run autonome T1→T8)** : implémentation complète — helpers repo + fn atomique `create_opening_entry` (statut + garde company-vierge **sous** `fiscal_years FOR UPDATE`, P1-C1/P3-BH3-1), endpoints `GET /opening-balances/status` + `POST /opening-balances` (Comptable+, `journal=OD`/`entry_date=fy_start`/description langue company forcés serveur), écran « Soldes de départ » (verrou piloté par statut, grille comptes de bilan postables, équilibre big.js, verrou in-place post-génération), navigation `comptableOnly`, i18n ×4, doc-sync. **Pas de migration.** Tests : 12 repo + 3 unit mapper + 18 e2e HTTP + 15 Vitest + 2 Playwright réels (+ 4 non-régression sidebar) — tous verts. Déviations documentées (Debug Log) : ordre T6 avancé ; tie-break P1-L-3 non-fixturable (UNIQUE start_date) remplacé par test de scoping ; fallback contrepartie Playwright (fixture sans rôles) ; PDF manuels différés au gate release 4-bis.
