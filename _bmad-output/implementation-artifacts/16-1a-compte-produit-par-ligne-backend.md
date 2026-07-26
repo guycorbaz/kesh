@@ -21,7 +21,9 @@ La story 16-1 initiale touchait **8 modules distincts** (seuil de la § « Règl
 - **16-1a** (cette story) — backend : `kesh-db/migrations`, `kesh-db/repositories/invoices`, `kesh-db/repositories/credit_notes`, `kesh-api/routes/invoices`, `kesh-api/exports` = **5 modules**.
 - **16-1b** — frontend : `frontend/components/invoices`, `frontend/features/journal-entries`, `frontend/features/reconciliation`, i18n, doc-sync = **5 modules**.
 
-**Le split n'ouvre aucune fenêtre de corruption comptable** : toute la correction du moteur (facture **et** avoir, décision D5) est dans 16-1a. 16-1a est livrable seule — colonne nullable + champ API rétro-compatible, sans UI, donc sans effet observable tant que 16-1b n'est pas là.
+**Le split n'ouvre aucune fenêtre de corruption comptable** : toute la correction du moteur (facture **et** avoir, décision D5) est dans 16-1a.
+
+**16-1a est livrable seule** — colonne nullable + champ API rétro-compatible, sans UI. **Nuance à ne pas perdre : « sans UI » ne signifie pas « sans effet ».** Le champ est **écrivable par API** dès 16-1a, et `InvoiceForm.svelte` reconstruit ses lignes à partir de 4 champs en dur (`initLines()`, `:107-113`) avant de les renvoyer telles quelles en `UpdateInvoiceRequest` (`:365-368`) : combiné au `#[serde(default)]` d'AC6, un enregistrement depuis l'UI **remet silencieusement à `NULL`** tout compte posé par API. Effacement borné et acceptable tant qu'aucun sélecteur n'existe, mais c'est une **dépendance dure de 16-1b**, pas un détail d'UI.
 
 ---
 
@@ -67,6 +69,8 @@ Ne pas chercher de spec d'epic ailleurs, et ne pas se fier à la numérotation d
 - Le **compte de charge** par ligne de facture **fournisseur** → hors périmètre (#265 second volet).
 - Aucun changement du **calcul de TVA** ni de la **présentation du PDF**.
 
+**Reporté en 16-1b, mais obligatoire** : `InvoiceForm.svelte` construit ses `LineState` en **deux** endroits — `initLines()` (`:107-113`) et `reloadFromServer()` (`:418-424`) — qui doivent tous deux propager `revenueAccountId` depuis la réponse serveur. Sinon toute édition (ou tout rechargement après conflit de version) efface le compte de chaque ligne **sans message**. Tracé ici parce que la dépendance naît de 16-1a.
+
 ---
 
 ## Décisions de conception
@@ -79,11 +83,36 @@ Une ligne sans compte se poste sur `settings.default_revenue_account_id`, exacte
 
 **Garde-fou de test obligatoire (AC25)** : par défaut post-onboarding, `settings.default_revenue_account_id` **et** le compte portant le rôle `DefaultRevenue` sont le **même** compte — un test qui ne les dissocie pas passerait aussi bien avec une résolution par rôle. Le test doit donc les configurer sur **deux comptes différents**.
 
-### D2 — `revenue_account_id` NULLABLE, liaison tardive (NULL n'est jamais matérialisé à la création)
+### D2 — Liaison tardive : `NULL` n'est jamais matérialisé **à la création**, mais il l'est **à la validation**
 
-La colonne est `BIGINT NULL`. `NULL` signifie « utiliser le défaut société **au moment de la validation** ». On ne copie pas le défaut dans la ligne à la création du brouillon.
+La colonne est `BIGINT NULL`. Sur un **brouillon**, `NULL` signifie « utiliser le défaut société **au moment de la validation** » — on ne copie pas le défaut à la création.
 
-**Motif** : conserve le comportement actuel à l'identique pour toute facture existante ou créée sans préciser de compte (un brouillon suit le défaut en vigueur au posting). Matérialiser le défaut à la création introduirait une divergence de comportement pour les brouillons de longue durée, non demandée par l'issue. Le compte effectivement utilisé est de toute façon tracé dans l'**écriture comptable** générée, qui est la pièce probante.
+**À la validation**, en revanche, `validate_invoice` **matérialise** le compte effectif : après résolution et **avant** `journal_entries::create_in_tx`, dans la même transaction :
+
+```sql
+UPDATE invoice_lines SET revenue_account_id = ?  -- settings.default_revenue_account_id
+WHERE invoice_id = ? AND revenue_account_id IS NULL
+```
+
+Après validation, **aucune ligne d'une facture validée ne porte `NULL`**. C'est stable : une facture validée est immuable (`update` rejette tout statut ≠ `draft`).
+
+**Motif de la partie « pas à la création »** : conserve le comportement actuel à l'identique pour toute facture existante ou créée sans préciser de compte. Matérialiser à la création ferait suivre au brouillon un défaut périmé.
+
+**Motif de la partie « matérialisé à la validation »** — c'est le correctif du finding CRITICAL de la passe 3, et il ferme un **bug pré-existant** :
+
+`settings.default_revenue_account_id` est **mutable** par l'utilisateur dans les Réglages (`company_invoice_settings.rs:173`). Sans matérialisation, la chaîne pour une ligne `NULL` est : ligne `NULL` → snapshot d'avoir `NULL` (D5 copie la valeur de la ligne) → repli résolu **au moment de l'avoir**, sur `get_or_create_default_in_tx` relu à T2 (`credit_notes.rs:275-282`). D'où :
+
+| T | Événement | Écriture |
+|---|---|---|
+| T1 | Facture validée, ligne `NULL`, défaut = 3000 | **crédit 3000** = HT |
+| T1+ | L'administrateur change le défaut → 3200 | — |
+| T2 | Avoir total émis | **débit 3200** = HT |
+
+Résidu permanent au crédit de 3000 et au débit de 3200. Bilan équilibré, **compte de résultat faux, aucun signal** — mot pour mot le mode de défaillance que D5 qualifie de « point le plus grave de la story ». La spec le fermait pour les comptes explicites et le laissait ouvert pour `NULL`, c'est-à-dire **le seul cas qui existe en production aujourd'hui** (aucune facture existante ne porte de compte de ligne).
+
+La matérialisation rend la facture validée **auto-descriptive** et réduit le système à **un seul instant de résolution**. Elle simplifie aussi D5-bis : la re-validation `active` côté avoir porte alors sur un ensemble complet, sans compte implicite.
+
+Le bug est **antérieur à la story** (aujourd'hui déjà, facture = `défaut(T1)`, avoir = `défaut(T2)`), mais la story réécrit exactement ces deux helpers et érige l'invariant en décision — même logique que D4-bis.
 
 ### D3 — Double validation : à la saisie ET au posting — sur ce que la garde existante ne couvre PAS
 
@@ -111,6 +140,18 @@ D'où :
 **Décision** : la validation `postable` (saisie **et** posting) exempte le compte dont l'id est égal à `settings.default_revenue_account_id` **courant**. C'est le pattern `exempt_ids` déjà utilisé par `validate_lines_accounts_in_tx` (`journal_entries.rs:70-93`). Les trois autres critères (société, `active`, `account_type = Revenue`) restent appliqués sans exception.
 
 **Invariant à tester** : `revenue_account_id = NULL` et `revenue_account_id = settings.default_revenue_account_id` produisent **le même verdict de validation** et **la même écriture**.
+
+**Comment obtenir le défaut à la saisie — piège de régression.** `invoices::create` et `invoices::update` ne lisent **pas** `company_invoice_settings` aujourd'hui (vérifié : aucune occurrence dans `invoices.rs:438-500`). Le helper de T4 le lit par un `SELECT` **nu**, sans verrou ni lazy-create :
+
+```sql
+SELECT default_revenue_account_id FROM company_invoice_settings WHERE company_id = ?
+```
+
+**Ne PAS utiliser `company_invoice_settings::get_or_create_default_in_tx` sur le chemin de saisie.** Cette fonction fait un `INSERT IGNORE` puis un JOIN `accounts.active = TRUE` (`company_invoice_settings.rs:480-494`) et échoue en `InactiveOrInvalidAccounts` si le défaut société est archivé : **créer ou modifier un simple brouillon régresserait en `400`** pour une société dans cet état, sur une facture qui ne référence peut-être aucun compte. Elle prendrait en outre un verrou supplémentaire dans une transaction dont l'ordre est déjà contraint (`invoices.rs:806-812`, « ordre de verrous global companies → projects → invoices »). Ligne absente ou colonne `NULL` → `exempt_ids` vide, la contrainte `postable` s'applique alors sans exception.
+
+Au **posting**, en revanche, `settings` est déjà chargé (`invoices.rs:1310-1312`) : le réutiliser, ne pas relire.
+
+**Fenêtre assumée (dette LOW documentée).** L'exemption est indexée sur `settings.default_revenue_account_id` **au moment de chaque contrôle**. Si l'administrateur change le défaut entre la saisie et le posting, une ligne pointant explicitement l'**ancien** défaut non-postable est acceptée à la saisie puis rejetée au posting — même donnée, verdicts opposés. Comportement assumé : l'alternative (figer l'exemption dans la ligne à la saisie) rendrait le brouillon dépendant d'un état de configuration périmé, ce que D2 refuse par ailleurs. Le message du posting doit **le rendre lisible** : « Ligne {n} : le compte {numéro} n'est pas imputable et n'est plus le compte de produit par défaut de la société — choisissez un autre compte ». Hors périmètre des tests d'AC18 (fenêtre de configuration, aucune correction comptable en jeu).
 
 ### D4 — Ventilation : `BTreeMap<i64, Decimal>` par compte effectif, montants `> 0`, tri par `account_id`
 
@@ -198,16 +239,21 @@ Les erreurs de validation de ligne suivent la convention déjà en place dans `r
 - **AC7** — Validation à la saisie (création `invoices.rs:459` **et** modification `:816`) : société, `active`, `account_type = Revenue`, `postable` (avec l'exemption D3-bis). Batchée en une requête (D6), message nommant toutes les lignes en défaut, style `AppError::Validation` (D7).
 - **AC8** — Re-validation au posting dans `validate_invoice`, `SELECT` sans verrou sur le modèle 19-4 (`invoices.rs:1290-1310`), couvrant les **quatre** critères — dont `account_type`, que `create_in_tx` ne vérifie **jamais** (D3). L'échec nomme la ou les lignes concernées. Le commentaire reprend l'accepted risk ABBA / race d'archivage de 19-3/19-4.
 - **AC8-bis** — **L'ensemble re-validé est celui des comptes EFFECTIVEMENT postés**, pas seulement celui des comptes explicites : `{ comptes de ligne non-NULL } ∪ { settings.default_revenue_account_id, si au moins une ligne est NULL }`. Une facture dont **toutes** les lignes sont `NULL` doit donc quand même voir son compte par défaut re-validé — sinon le seul cas qui existe aujourd'hui en production échappe entièrement à AC8, et un défaut archivé retombe sur le `400 INACTIVE_OR_INVALID_ACCOUNTS` générique que cette story existe pour éliminer.
-  - Critères appliqués au compte par défaut : `active` et `account_type = Revenue`. **Pas** `postable` — c'est le même arbitrage que D3-bis, et le rendre obligatoire ici casserait la validation de factures qui passent aujourd'hui.
+  - Critère appliqué au compte par défaut : **`account_type = Revenue` uniquement.**
+    - **`active` est déjà garanti en amont, hors du contrôle de cette story** — ne pas le re-tester, le cas est **inatteignable** depuis `validate_invoice`. Preuve : la config est chargée par `get_or_create_default_in_tx` (`invoices.rs:1310-1312`) dont le chemin « ligne existante » JOINe `accounts av ON av.id = cis.default_revenue_account_id AND av.active = TRUE` (`company_invoice_settings.rs:482`) et retourne `InactiveOrInvalidAccounts` si le défaut est archivé — **avant** tout point d'accroche possible pour AC8-bis.
+    - **`postable` reste exempté** (même arbitrage que D3-bis).
+    - `account_type` est en revanche un **vrai** trou : la route de configuration le vérifie à la pose (`routes/company_invoice_settings.rs:117-120`) mais rien ne le revérifie après un retypage par `accounts::update`.
   - Le message d'erreur le désigne explicitement comme « le compte de produit par défaut de la société », **pas** par un numéro de ligne — aucune ligne ne le porte.
 
 ### D. Backend — moteur comptable
 
 - **AC9** — `generate_invoice_journal_lines` ventile le crédit produit : une ligne de crédit **par compte effectif**, montants `> 0`, tri `account_id` ASC (D4). La ligne `[0]` débit créance et les lignes TVA par taux sont **inchangées**. Lignes `NULL` et lignes pointant explicitement le défaut société fusionnent en une seule ligne.
+- **AC9-bis** — **Matérialisation à la validation (D2)** : `validate_invoice` écrit le compte effectif dans `invoice_lines.revenue_account_id` pour toute ligne `NULL`, dans la **même transaction** que la création de l'écriture, **avant** l'appel à `create_in_tx`. Post-condition vérifiable : aucune ligne d'une facture de statut `validated` n'a `revenue_account_id IS NULL`. `invoice_snapshot_json` reflète l'état **post**-matérialisation.
 - **AC10** — La section `# Équilibre par construction` de la docstring (`invoices.rs:1137-1142`) est **réécrite** — pas seulement complétée — pour couvrir la ventilation par compte en plus du filtre par taux, en reprenant l'argument de D4. L'hypothèse `F-OPUS-2` et la section `# Erreurs` restent à jour.
 - **AC11** — `generate_credit_note_journal_lines` (`credit_notes.rs:139`) débite par compte, en miroir exact (D5) ; sa signature passe à `lines: &[(Decimal, Decimal, Option<i64>)]`. Sa docstring « inverse exact » reste vraie et est mise à jour. **Le site d'appel est mis à jour en conséquence** : `create_credit_note` (`credit_notes.rs:320-328`) construit aujourd'hui des paires via `.map(|l| (l.line_total, l.vat_rate))` — il doit produire des **triplets** `(l.line_total, l.vat_rate, l.revenue_account_id)`. Le paramètre scalaire `revenue_account_id` du helper devient le **repli** appliqué aux triplets dont le 3ᵉ membre est `None`, exactement comme côté facture.
 - **AC11-bis** — Comportement D5-bis implémenté : compte du snapshot devenu `active = FALSE` → échec de l'émission de l'avoir avec message nommant ligne et compte. `postable` et `account_type` **ne sont pas** re-vérifiés côté avoir.
 - **AC12** — **Non-régression, ancrée sur l'existant** : les tests unitaires actuels de `generate_invoice_journal_lines` (`invoices.rs:1996-2165`, 8 sites d'appel) passent **sans modification de leurs assertions** après la ventilation (leurs fixtures ont toutes `revenue_account_id = None`). Seule l'adaptation de signature est tolérée.
+- **AC12-bis** — **Non-régression de la saisie** (corollaire du piège de D3-bis) : la **création** et la **modification** d'un brouillon réussissent pour une société dont `settings.default_revenue_account_id` est **archivé** ou `NULL`, tant qu'aucune ligne ne référence explicitement un compte invalide. Test d'intégration explicite — c'est le chemin le plus fréquent de l'application, et le seul AC qui attrape l'usage accidentel de `get_or_create_default_in_tx` à la saisie.
 - **AC13** — Le rapport TVA n'est **pas** affecté : `kesh-report/src/vat_report.rs` ne lit que `default_vat_payable_account_id` / `default_vat_recoverable_account_id`, jamais un compte de produit. Un test d'intégration sur une facture **multi-comptes × multi-taux** vérifie que `reconciliation_status` reste `ok` (fichier `crates/kesh-report/tests/vat_report_reconciliation.rs`, nouveau cas).
 - **AC13-bis** — D4-bis : `validate_invoice` (et l'émission d'avoir) rejettent une pièce dont `total_ht + total_vat == 0` avec une erreur métier `400` actionnable, au lieu du `500` SQL actuel sur `chk_jel_debit_credit_exclusive`.
 
@@ -220,13 +266,17 @@ Les erreurs de validation de ligne suivent la convention déjà en place dans `r
 
 - **AC15** — Tests unitaires du helper facture : mono-compte (non-régression AC12), multi-comptes, multi-comptes × multi-taux, ligne à montant nul filtrée, lignes `NULL` + explicite-même-compte fusionnées, ordre déterministe par `account_id`.
 - **AC16** — Tests unitaires du helper avoir : miroir strict de AC15.
-- **AC17** — Test d'intégration **pivot de D5** : facture ventilée sur ≥ 2 comptes puis avoir total → **les deux écritures s'annulent compte par compte** (agrégat par `account_id` de l'écriture facture + celle de l'avoir = 0 sur chaque compte).
+- **AC17** — Test d'intégration **pivot de D5**, en **deux** cas :
+  1. facture ventilée sur ≥ 2 comptes puis avoir total → **les deux écritures s'annulent compte par compte** (agrégat par `account_id` de l'écriture facture + celle de l'avoir = 0 sur chaque compte) ;
+  2. **facture à lignes toutes `NULL`, puis `settings.default_revenue_account_id` MODIFIÉ, puis avoir** → l'avoir débite le compte **effectivement crédité par la facture**, pas le nouveau défaut. Ce second cas **doit échouer** si la matérialisation d'AC9-bis n'est pas implémentée — c'est sa raison d'être. Un test qui ne change pas le défaut entre les deux passe systématiquement et ne prouve rien.
 - **AC18** — Tests d'intégration : compte invalide à la saisie (création **et** modification) ; compte devenu non-`postable` au posting ; compte **retypé** au posting (le trou que `create_in_tx` ne couvre pas) ; compte archivé au posting ; compte archivé entre validation et avoir (AC11-bis) ; plusieurs lignes invalides simultanément (le message les nomme toutes).
-- **AC18-bis** — Test d'AC8-bis : facture dont **toutes** les lignes sont `NULL`, avec `settings.default_revenue_account_id` **archivé** entre le brouillon et la validation → échec nommant « le compte de produit par défaut de la société », pas un `400` générique. Second cas : même défaut rendu **non-postable** → la validation **passe** (exemption D3-bis), l'écriture est générée normalement.
+- **AC18-bis** — Test d'AC8-bis, **deux** cas :
+  1. facture dont **toutes** les lignes sont `NULL`, `settings.default_revenue_account_id` **retypé** `Revenue → Expense` entre le brouillon et la validation → échec nommant « le compte de produit par défaut de la société ». C'est le seul critère que la story ajoute réellement sur le défaut ;
+  2. même défaut rendu **non-postable** → la validation **passe** (exemption D3-bis), l'écriture est générée normalement.
+  *(Le cas « défaut archivé » n'est volontairement PAS testé ici : il est déjà rejeté en amont par `get_or_create_default_in_tx`. L'ajouter produirait un test qui documente le comportement d'une autre couche, et — risque réel — pousserait le dev à retoucher l'assertion pour accepter le `400` générique, ce qui enterrerait AC8-bis au lieu de le satisfaire.)*
 - **AC19** — Test D3-bis : `default_revenue_account_id` pointant sur un compte **non-postable** ; une ligne `NULL` et une ligne le désignant explicitement produisent le même verdict et la même écriture.
 - **AC20** — Test D1 : `settings.default_revenue_account_id` **≠** compte portant le rôle `DefaultRevenue` (deux comptes distincts) ; une ligne sans compte se poste sur `settings.default_revenue_account_id`.
 - **AC21** — Test D4-bis : facture entièrement à zéro → `400` métier, pas `500`.
-- **AC22** — Test AC6 : payload sans la clé `revenueAccountId`, et payload avec `null` explicite.
 - **AC23** — Gate « Test Locally First » backend complet vert (`cargo fmt --all -- --check`, `cargo build --workspace --all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`). Le gate **runtime complet** est requis si le doute subsiste sur `min_required` (P2-bis) — ici la migration est non-breaking, mais les suites `migrations_fresh_install` et `admin_backup_e2e` doivent passer.
 - **AC24** — CHANGELOG `[Non publié]` : entrée orientée utilisateur. Le README et les manuels LaTeX sont traités en **16-1b** (le comportement n'est pas visible utilisateur tant que l'UI n'est pas livrée).
 
@@ -236,15 +286,15 @@ Les erreurs de validation de ligne suivent la convention déjà en place dans `r
 
 - [ ] **T1** — Migration `invoice_lines.revenue_account_id` + `credit_note_lines.revenue_account_id` + index + FK `ON DELETE RESTRICT` ; ligne du tableau **et** compteurs agrégés de `docs/migrations-idempotence-audit.md` (AC1-AC4).
 - [ ] **T2** — Entités `InvoiceLine` / `CreditNoteLine` + **les 8 sites** listés en AC5 / AC5-bis (6 listes de colonnes SQL + 2 snapshots d'audit), décompte de référence en AC5-ter (AC5, AC5-bis, AC5-ter).
-- [ ] **T3** — API : DTOs création/modification avec `#[serde(default)]` + réponse de lecture (AC6, AC22).
+- [ ] **T3** — API : DTOs création/modification avec `#[serde(default)]` + réponse de lecture (AC6 — la clause de test des deux formes de payload y est déjà portée).
 - [ ] **T4** — Helper de validation batchée des comptes de ligne, réutilisable saisie + posting, avec exemption D3-bis et message multi-lignes (D6, D3-bis).
-- [ ] **T5** — Branchement de T4 à la saisie (`invoices.rs:459` création, `:816` modification) (AC7).
+- [ ] **T5** — Branchement de T4 à la saisie (`invoices.rs:459` création, `:816` modification), en lisant le défaut par un `SELECT` nu — **jamais** `get_or_create_default_in_tx` (D3-bis) (AC7, AC12-bis).
 - [ ] **T6** — `generate_invoice_journal_lines` : ventilation `BTreeMap` + docstring réécrite (AC9, AC10).
-- [ ] **T7** — Branchement de T4 au posting dans `validate_invoice`, `SELECT` sans verrou, commentaire ABBA (AC8).
+- [ ] **T7** — Branchement de T4 au posting dans `validate_invoice`, `SELECT` sans verrou, commentaire ABBA ; ensemble re-validé = comptes de ligne ∪ défaut si ≥ 1 ligne `NULL` ; **matérialisation du compte effectif** avant `create_in_tx` (D2) (AC8, AC8-bis, AC9-bis).
 - [ ] **T8** — `generate_credit_note_journal_lines` en miroir + copie du compte à la création de l'avoir + garde D5-bis (AC11, AC11-bis).
 - [ ] **T9** — Rejet des pièces à montant total nul (AC13-bis, AC21).
 - [ ] **T10** — Export CSV `invoice_lines` + extension du test `exports_global_e2e` (AC14).
-- [ ] **T11** — Tests unitaires (AC15, AC16) et d'intégration (AC17-AC22), dont le cas TVA multi-comptes × multi-taux (AC13).
+- [ ] **T11** — Tests unitaires (AC15, AC16) et d'intégration (AC12-bis, AC17 **les deux cas**, AC18, AC18-bis, AC19, AC20, AC21), dont le cas TVA multi-comptes × multi-taux (AC13).
 - [ ] **T12** — CHANGELOG (AC24) + gate backend complet (AC23).
 
 **Ordre conseillé** : T1 → T2 → T6 (le helper d'abord, testable en isolation) → T4 → T5 → T7 → T8 → T9 → T3 → T10 → T11 → T12.
@@ -354,6 +404,25 @@ Le pattern `FailedProposal` / `{ accepted, failed }` de `CLAUDE.md` **ne s'appli
 | AC11 change la signature du helper d'avoir sans nommer le **site d'appel** `credit_notes.rs:320-328` | Réel mais **sévérité surévaluée par le reviewer** (annoncée HIGH avec un scénario « compile mais échoue au runtime » — faux, un désaccord de types est une erreur de **compilation** en Rust) | Reclassé LOW, patché quand même : AC11 nomme le site d'appel et précise la transformation paires → triplets |
 
 **Trend** : passe 1 = 28 findings (dont plusieurs CRITICAL/HIGH) → passe 2 = 4 findings (1 MEDIUM réel, 3 clarté). Convergence monotone conforme à la § « Règle de splitting préventif » amendée (la sévérité décroît, pas de stagnation) — pas de nouveau split requis.
+
+### Passe 3 de `validate` — 2026-07-26 (Opus, contexte frais)
+
+**6 findings : 1 CRITICAL, 1 HIGH, 4 MEDIUM.** Tous vérifiés en ground-truth avant application. **La sévérité remonte** par rapport à la passe 2 (1 MEDIUM) — cf. arbitrage de convergence en fin de section.
+
+Les quatre findings sérieux ont **le même parent** : la spec traitait le compte de ligne comme une donnée locale, alors que `NULL` est une **référence tardive à un état de configuration mutable**. Le correctif d'un seul d'entre eux les ferme tous.
+
+| Finding | Verdict | Traitement |
+|---|---|---|
+| **CRITICAL — l'invariant « inverse exact » de D5 est rompu pour les lignes `NULL`** dès que le défaut société change entre la facture et l'avoir. La chaîne prescrite était : ligne `NULL` → snapshot d'avoir `NULL` → repli résolu à T2. Facture créditée sur `défaut(T1)`, avoir débité sur `défaut(T2)` → résidu permanent, bilan équilibré, compte de résultat faux, aucun signal. **C'est exactement le mode de défaillance que D5 qualifie de « point le plus grave »** — fermé pour les comptes explicites, laissé ouvert pour `NULL`, c'est-à-dire le **seul cas existant en production**. Aggravant : AC17 donnait une fausse assurance (un test qui ne change pas le défaut passe systématiquement) | **Réel**. Bug **pré-existant** (aujourd'hui déjà facture = `défaut(T1)`, avoir = `défaut(T2)`), mais la story réécrit ces deux helpers et érige l'invariant en décision — même logique que D4-bis | **D2 amendée** : matérialisation du compte effectif dans `invoice_lines` à la validation (`UPDATE … WHERE revenue_account_id IS NULL`), dans la transaction, avant `create_in_tx`. **AC9-bis** ajouté. **AC17 doté d'un 2ᵉ cas** qui échoue si la matérialisation manque. Le système n'a plus qu'**un seul instant de résolution** |
+| **HIGH — AC18-bis (passe 2) était inatteignable** : `get_or_create_default_in_tx` (`invoices.rs:1310-1312`) JOINe `av.active = TRUE` (`company_invoice_settings.rs:482`) et rejette un défaut archivé **avant** tout point d'accroche d'AC8-bis. Le dev aurait écrit un test qui échoue, puis retouché l'assertion pour accepter le `400` générique — **enterrant** AC8-bis | Réel, vérifié `sed -n '470,500p'`. Le seul critère qu'AC8-bis apporte réellement sur le défaut est `account_type` | **AC8-bis** : critère ramené à `account_type = Revenue` seul, avec la preuve que `active` est garanti en amont. **AC18-bis** : 1ᵉʳ cas passe de « archivé » à « **retypé** » |
+| MEDIUM — l'exemption D3-bis exige le défaut à la saisie, or `create`/`update` ne lisent **jamais** `company_invoice_settings`. Le dev appliquant la convention locale utiliserait `get_or_create_default_in_tx` → **création de brouillon régressée en `400`** pour une société au défaut archivé, plus un verrou dans une transaction à l'ordre contraint | Réel, vérifié (aucune occurrence dans `invoices.rs:438-500`) | D3-bis : clause « comment obtenir le défaut à la saisie » — `SELECT` nu, interdiction explicite de `get_or_create_default_in_tx`. **AC12-bis** (non-régression) ajouté |
+| MEDIUM — l'exemption D3-bis est indexée sur une valeur mutable évaluée à deux instants : une ligne acceptée à la saisie devient non-validable sans que rien n'ait changé d'elle | Réel | D3-bis : « fenêtre assumée », dette LOW documentée + message d'erreur qui la rend lisible |
+| MEDIUM — « 16-1a livrable seule, sans effet observable » est incomplet : `initLines()` reconstruit les lignes à partir de 4 champs et `#[serde(default)]` rend l'omission silencieuse → une intégration PAT pose un compte, l'utilisateur enregistre depuis l'UI, le compte est effacé sans message | Réel | Paragraphe « Provenance du split » nuancé + dépendance dure tracée en « Ce qui n'est PAS dans 16-1a » (2 sites de mapping, dont `reloadFromServer`) |
+| MEDIUM — sur-spécification : la section F dupliquait un par un les AC comportementaux ; AC22 et AC6 portaient **la même phrase** | Réel | **AC22 supprimé** (sa clause est déjà dans AC6). La restructuration complète proposée (fusionner toute la section F dans les AC comportementaux) est **déclinée** : churn important sur 30 AC juste avant une passe de revue, risque d'introduire des incohérences supérieur au bénéfice de lisibilité. À reconsidérer si une passe ultérieure le re-signale |
+
+**Vérifié négatif (utile à conserver)** : aucun consommateur des lignes d'écriture ne suppose « exactement une ligne de crédit produit ». `income_statement.rs:75`, `balance_sheet.rs:292/:335`, `trial_balance.rs:79`, `project_report.rs:266/:294` agrègent tous par `account_id` (`INNER JOIN … ON jel.account_id = a.id`) ; `vat_report.rs:220-226` filtre sur le seul compte de TVA due ; `journal_report.rs:113/:137` et `csv.rs:302` trient sans attendre de cardinalité. Les seuls `lines[1]` du dépôt sont des assertions de tests sur des écritures manuelles à 2 lignes. La clôture d'exercice (Epic 14) calcule par compte. **La ventilation traverse tous ces chemins sans effet — c'est précisément l'objectif de la story.**
+
+**Trend et arbitrage de convergence** : passe 1 = 28 → passe 2 = 4 → passe 3 = 6 dont 1 CRITICAL + 1 HIGH. La sévérité **remonte**, ce qui coche formellement le second critère de la § « Règle de splitting préventif » (amendement 2026-07-26). **Re-split décliné pour 16-1a**, motivé : la remontée ne traduit pas une story trop large — les 32 findings des passes 1 et 2 tiennent tous, aucun n'est remis en cause — mais **un angle que deux passes orientées détail ne pouvaient pas atteindre** (l'invariant temporel de la référence `NULL`). Le correctif est **une décision amendée et trois AC**, pas une redécoupe ; et le finding de sur-spécification pousse dans le sens inverse (le document est trop long, pas le scope trop large). Une passe 4, modèle différent, doit confirmer la convergence.
 
 ---
 
