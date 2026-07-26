@@ -10,6 +10,10 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [Non publié]
 
+_Rien pour l'instant._
+
+## [0.8.0] — 2026-07-26
+
 ### Ajouté
 
 - **Report à-nouveau automatique — votre bilan reste juste d'une année à l'autre** : les soldes du **bilan** (actifs, passifs, capitaux propres) se **reportent automatiquement d'un exercice à l'autre**, calculés en temps réel depuis l'origine — comme dans un logiciel comptable moderne (Odoo/Flectra). Ouvrir un nouvel exercice n'affiche plus « zéro à l'actif » : les soldes de clôture de l'exercice précédent apparaissent d'emblée, **sans aucune écriture de clôture ni de report à passer à la main**. Le bilan expose désormais deux lignes de fonds propres distinctes : **« Résultat reporté »** (cumul des résultats des exercices antérieurs ; « Perte reportée » s'il est négatif) et **« Résultat de l'exercice »** (résultat de l'exercice courant, en cours d'année comme en fin d'exercice). L'équation du bilan reste équilibrée à tout instant. Le **compte de résultat** et la **balance de vérification** restent, eux, calculés **par exercice** (mouvement de la période) — un rappel l'indique sur l'écran de la balance de vérification pour éviter toute confusion avec le solde cumulé du bilan. Les exports **CSV** et **PDF** du bilan incluent le résultat reporté. La clôture d'un exercice reste un simple **verrou** (immutabilité + audit, CO art. 957-964), sans écriture générée.
