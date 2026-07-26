@@ -81,7 +81,7 @@ Une ligne sans compte se poste sur `settings.default_revenue_account_id`, exacte
 
 **Motif** : la colonne est la source de vérité au runtime et reste **configurable par l'utilisateur** dans les Réglages ; le rôle `DefaultRevenue` ne sert qu'à **pré-remplir cette colonne à l'onboarding** (14-3b, cf. docstring `company_invoice_settings.rs:236`). Résoudre par rôle au posting serait un **changement de comportement non demandé** : il écraserait silencieusement le choix d'un utilisateur qui a délibérément pointé un autre compte dans les Réglages. Le message d'erreur `ConfigurationRequired("default_revenue_account_id")` reste inchangé.
 
-**Garde-fou de test obligatoire (AC25)** : par défaut post-onboarding, `settings.default_revenue_account_id` **et** le compte portant le rôle `DefaultRevenue` sont le **même** compte — un test qui ne les dissocie pas passerait aussi bien avec une résolution par rôle. Le test doit donc les configurer sur **deux comptes différents**.
+**Garde-fou de test obligatoire (cf. AC20)** : par défaut post-onboarding, `settings.default_revenue_account_id` **et** le compte portant le rôle `DefaultRevenue` sont le **même** compte — un test qui ne les dissocie pas passerait aussi bien avec une résolution par rôle. Le test doit donc les configurer sur **deux comptes différents**.
 
 ### D2 — Liaison tardive : `NULL` n'est jamais matérialisé **à la création**, mais il l'est **à la validation**
 
@@ -113,6 +113,22 @@ Résidu permanent au crédit de 3000 et au débit de 3200. Bilan équilibré, **
 La matérialisation rend la facture validée **auto-descriptive** et réduit le système à **un seul instant de résolution**. Elle simplifie aussi D5-bis : la re-validation `active` côté avoir porte alors sur un ensemble complet, sans compte implicite.
 
 Le bug est **antérieur à la story** (aujourd'hui déjà, facture = `défaut(T1)`, avoir = `défaut(T2)`), mais la story réécrit exactement ces deux helpers et érige l'invariant en décision — même logique que D4-bis.
+
+### D2-bis — La matérialisation ne suffit pas : il faut un BACKFILL du parc existant
+
+**Trou du patch de la passe 3, trouvé en passe 4.** D2 ne se déclenche que dans `validate_invoice`, c'est-à-dire à la seule transition `draft → validated`. Une facture **déjà validée** avant le déploiement n'y repassera **jamais** — `update` rejette tout statut ≠ `draft` (`invoices.rs:841`, `:1271`) et aucune autre écriture ne touche `invoice_lines` après validation. Après l'`ADD COLUMN` d'AC1, ces lignes portent `NULL` **définitivement**.
+
+Or la spec l'écrit elle-même : le cas `NULL` est « le seul qui existe en production aujourd'hui ». Donc **100 % des factures déjà validées** — dont celles de l'instance de production en fonction — restent exposées au résidu que D2 vient de fermer pour les factures futures. Le patch de la passe 3 protégeait un ensemble **vide** à l'instant du déploiement.
+
+**Décision** : la migration d'AC1 comporte un **backfill**, dont la source de vérité est l'**écriture comptable réellement générée**, pas le défaut courant.
+
+**Pourquoi pas le défaut courant** : si l'administrateur a déjà changé `default_revenue_account_id` par le passé, backfiller avec la valeur d'aujourd'hui écrirait un compte que la facture n'a **jamais** crédité — on fabriquerait la corruption au lieu de la fermer. L'écriture générée est la **pièce probante** (c'est l'argument même de D2), et pour toute facture pré-existante elle contient **exactement une** ligne de crédit produit (structure `[0]` créance / `[1]` produit / `[2..]` TVA, docstring `invoices.rs:1120-1155`).
+
+**Portée** : `invoice_lines` des factures `status = 'validated'` **et** `journal_entry_id IS NOT NULL`, plus le miroir sur `credit_note_lines` depuis l'écriture de contre-passation. Les factures `draft` restent `NULL` (D2), les `cancelled` sans écriture sont hors périmètre.
+
+**Points à trancher en `dev-story`, à documenter dans le Change Log** : l'identification de la ligne de crédit produit dans l'écriture (par `line_order` positionnel — ordre canonique garanti par `create_in_tx` — ou par élimination des comptes créance et TVA), et le comportement pour une facture validée dont l'écriture aurait été supprimée par une voie directe (laisser `NULL` et le **compter**, pas échouer la migration).
+
+**Alternative écartée** : documenter le parc existant en dette catégorie B. Refusée — la § « Tech debt management » l'autoriserait, mais il s'agit d'une **corruption comptable silencieuse sur des données réelles déjà en production**, pas d'une limitation fonctionnelle. Le coût du backfill est une requête ; le coût de l'omission est un compte de résultat faux sans signal.
 
 ### D3 — Double validation : à la saisie ET au posting — sur ce que la garde existante ne couvre PAS
 
@@ -217,6 +233,7 @@ Les erreurs de validation de ligne suivent la convention déjà en place dans `r
 
 - **AC1** — Migration ajoutant `revenue_account_id BIGINT NULL` à `invoice_lines`, `CONSTRAINT fk_invoice_lines_revenue_account FOREIGN KEY (revenue_account_id) REFERENCES accounts(id) ON DELETE RESTRICT` (convention **unanime** du dépôt : les 11 FK vers `accounts` sont toutes `ON DELETE RESTRICT`), + index sur la colonne.
 - **AC2** — Même ajout sur `credit_note_lines` (D5).
+- **AC2-bis** — **Backfill du parc existant (D2-bis)**, dans la même migration : `invoice_lines` des factures `status = 'validated' AND journal_entry_id IS NOT NULL` reçoivent le compte **effectivement crédité par leur écriture générée** ; miroir sur `credit_note_lines` depuis l'écriture de contre-passation. **Ne PAS** backfiller depuis `settings.default_revenue_account_id` courant (fabriquerait la corruption si le défaut a changé par le passé). Les lignes non backfillables (écriture absente) restent `NULL` et sont **comptées**, la migration ne doit pas échouer. Post-condition testée par `migrations_fresh_install` **et** par un test sur base pré-remplie : aucune ligne de facture validée avec écriture ne reste `NULL`.
 - **AC3** — Migration **non-breaking** (`ADD COLUMN` nullable + index + FK) → **pas** de bump `kesh_version_min_required` (politique P1/P2), donc **pas** de bump de version Cargo (P2-bis). Le vérifier explicitement.
 - **AC4** — `docs/migrations-idempotence-audit.md` : ligne ajoutée au tableau détaillé avec verdict et justification, **ET** récapitulatif agrégé de bas de fichier mis à jour en cohérence — `Total` (`:68`, actuellement 55) et `Idempotence tracked-by-sqlx` (`:70`, actuellement 44) passent chacun à +1 (verdict attendu `tracked-by-sqlx`, la migration n'utilisant pas `IF NOT EXISTS`). Garde-fou **P5**.
 
@@ -248,7 +265,11 @@ Les erreurs de validation de ligne suivent la convention déjà en place dans `r
 ### D. Backend — moteur comptable
 
 - **AC9** — `generate_invoice_journal_lines` ventile le crédit produit : une ligne de crédit **par compte effectif**, montants `> 0`, tri `account_id` ASC (D4). La ligne `[0]` débit créance et les lignes TVA par taux sont **inchangées**. Lignes `NULL` et lignes pointant explicitement le défaut société fusionnent en une seule ligne.
-- **AC9-bis** — **Matérialisation à la validation (D2)** : `validate_invoice` écrit le compte effectif dans `invoice_lines.revenue_account_id` pour toute ligne `NULL`, dans la **même transaction** que la création de l'écriture, **avant** l'appel à `create_in_tx`. Post-condition vérifiable : aucune ligne d'une facture de statut `validated` n'a `revenue_account_id IS NULL`. `invoice_snapshot_json` reflète l'état **post**-matérialisation.
+- **AC9-bis** — **Matérialisation à la validation (D2)** : `validate_invoice` écrit le compte effectif dans `invoice_lines.revenue_account_id` pour toute ligne `NULL`, dans la **même transaction** que la création de l'écriture, **avant** l'appel à `create_in_tx`. Post-condition vérifiable : aucune ligne d'une facture de statut `validated` n'a `revenue_account_id IS NULL`.
+  **La copie en mémoire doit être mutée aussi — l'`UPDATE` SQL seul ne suffit pas.** `lines_before` est chargé par `fetch_lines` à l'étape (1), donc **avant** la matérialisation, et il est réutilisé deux fois après elle :
+  - `invoice_snapshot_json(&invoice_after, &lines_before)` pour le snapshot d'audit `"after"` (`invoices.rs:1448`) — qu'AC9-bis exige **post**-matérialisation ;
+  - `ValidatedInvoice.lines` (`invoices.rs:1478`), **délibérément non re-fetché** post-commit (décision antérieure documentée `invoices.rs:1114`, « évite une fenêtre de race sur les lignes ») et rendu tel quel dans la réponse HTTP.
+  Sans mutation en mémoire, l'audit et la réponse de l'endpoint de validation afficheraient `revenueAccountId: null` pour des lignes que la base vient de matérialiser — contredisant l'invariant même que la story introduit. **Muter les entrées de `lines_before` dont `revenue_account_id` était `NULL`** juste après l'`UPDATE`, **sans** réintroduire de re-fetch DB (la garantie anti-race de `invoices.rs:1114` doit être préservée).
 - **AC10** — La section `# Équilibre par construction` de la docstring (`invoices.rs:1137-1142`) est **réécrite** — pas seulement complétée — pour couvrir la ventilation par compte en plus du filtre par taux, en reprenant l'argument de D4. L'hypothèse `F-OPUS-2` et la section `# Erreurs` restent à jour.
 - **AC11** — `generate_credit_note_journal_lines` (`credit_notes.rs:139`) débite par compte, en miroir exact (D5) ; sa signature passe à `lines: &[(Decimal, Decimal, Option<i64>)]`. Sa docstring « inverse exact » reste vraie et est mise à jour. **Le site d'appel est mis à jour en conséquence** : `create_credit_note` (`credit_notes.rs:320-328`) construit aujourd'hui des paires via `.map(|l| (l.line_total, l.vat_rate))` — il doit produire des **triplets** `(l.line_total, l.vat_rate, l.revenue_account_id)`. Le paramètre scalaire `revenue_account_id` du helper devient le **repli** appliqué aux triplets dont le 3ᵉ membre est `None`, exactement comme côté facture.
 - **AC11-bis** — Comportement D5-bis implémenté : compte du snapshot devenu `active = FALSE` → échec de l'émission de l'avoir avec message nommant ligne et compte. `postable` et `account_type` **ne sont pas** re-vérifiés côté avoir.
@@ -284,7 +305,7 @@ Les erreurs de validation de ligne suivent la convention déjà en place dans `r
 
 ## Tasks / Subtasks
 
-- [ ] **T1** — Migration `invoice_lines.revenue_account_id` + `credit_note_lines.revenue_account_id` + index + FK `ON DELETE RESTRICT` ; ligne du tableau **et** compteurs agrégés de `docs/migrations-idempotence-audit.md` (AC1-AC4).
+- [ ] **T1** — Migration `invoice_lines.revenue_account_id` + `credit_note_lines.revenue_account_id` + index + FK `ON DELETE RESTRICT` + **backfill du parc existant depuis les écritures générées** (D2-bis) ; ligne du tableau **et** compteurs agrégés de `docs/migrations-idempotence-audit.md` — noter que le backfill rend la migration **non idempotente au sens strict** et le justifier (AC1-AC4, AC2-bis).
 - [ ] **T2** — Entités `InvoiceLine` / `CreditNoteLine` + **les 8 sites** listés en AC5 / AC5-bis (6 listes de colonnes SQL + 2 snapshots d'audit), décompte de référence en AC5-ter (AC5, AC5-bis, AC5-ter).
 - [ ] **T3** — API : DTOs création/modification avec `#[serde(default)]` + réponse de lecture (AC6 — la clause de test des deux formes de payload y est déjà portée).
 - [ ] **T4** — Helper de validation batchée des comptes de ligne, réutilisable saisie + posting, avec exemption D3-bis et message multi-lignes (D6, D3-bis).
@@ -343,6 +364,7 @@ Les erreurs de validation de ligne suivent la convention déjà en place dans `r
 
 ### Pièges, par ordre de coût
 
+0. **Le backfill (D2-bis)** — sans lui, tout le travail de D2 ne protège que les factures **futures**, et le parc en production reste exposé au résidu. Invisible en test sur base vierge : `migrations_fresh_install` passe, parce qu'il n'y a rien à backfiller. Exige un test sur base pré-remplie.
 1. **L'avoir (D5)** — le plus coûteux si oublié : corruption comptable silencieuse, équation du bilan toujours équilibrée, donc **aucun signal**. Le test AC17 « les deux écritures s'annulent compte par compte » est le garde-fou.
 2. **Les 8 sites (AC5 / AC5-bis / AC5-ter)** — 6 listes de colonnes SQL + 2 snapshots d'audit, dont 4 listes **écrites en dur** hors `LINE_COLUMNS`. Un oubli ne casse pas la compilation : `sqlx::query_as` échoue au **runtime**, potentiellement seulement sur le chemin d'export ou d'avoir, donc pas forcément dans les tests rapides. (Le 9ᵉ site, l'appel de `generate_credit_note_journal_lines` en AC11, est lui attrapé par le compilateur.)
 3. **`account_type` au posting (D3)** — `create_in_tx` ne le vérifie **jamais**. Si AC8 est implémenté en copiant seulement « archivé + non-postable », un compte retypé passe et le produit atterrit sur un compte de charge. Faux sans bruit.
@@ -423,6 +445,20 @@ Les quatre findings sérieux ont **le même parent** : la spec traitait le compt
 **Vérifié négatif (utile à conserver)** : aucun consommateur des lignes d'écriture ne suppose « exactement une ligne de crédit produit ». `income_statement.rs:75`, `balance_sheet.rs:292/:335`, `trial_balance.rs:79`, `project_report.rs:266/:294` agrègent tous par `account_id` (`INNER JOIN … ON jel.account_id = a.id`) ; `vat_report.rs:220-226` filtre sur le seul compte de TVA due ; `journal_report.rs:113/:137` et `csv.rs:302` trient sans attendre de cardinalité. Les seuls `lines[1]` du dépôt sont des assertions de tests sur des écritures manuelles à 2 lignes. La clôture d'exercice (Epic 14) calcule par compte. **La ventilation traverse tous ces chemins sans effet — c'est précisément l'objectif de la story.**
 
 **Trend et arbitrage de convergence** : passe 1 = 28 → passe 2 = 4 → passe 3 = 6 dont 1 CRITICAL + 1 HIGH. La sévérité **remonte**, ce qui coche formellement le second critère de la § « Règle de splitting préventif » (amendement 2026-07-26). **Re-split décliné pour 16-1a**, motivé : la remontée ne traduit pas une story trop large — les 32 findings des passes 1 et 2 tiennent tous, aucun n'est remis en cause — mais **un angle que deux passes orientées détail ne pouvaient pas atteindre** (l'invariant temporel de la référence `NULL`). Le correctif est **une décision amendée et trois AC**, pas une redécoupe ; et le finding de sur-spécification pousse dans le sens inverse (le document est trop long, pas le scope trop large). Une passe 4, modèle différent, doit confirmer la convergence.
+
+### Passe 4 de `validate` — 2026-07-26 (Sonnet, contexte frais)
+
+**3 findings : 1 CRITICAL, 1 HIGH, 1 MEDIUM.** Les deux premiers sont des **conséquences directes du patch de la passe 3** — illustration du mode d'échec que `feedback_review_patch_needs_test` documente : la remédiation devient la source des findings suivants.
+
+| Finding | Verdict | Traitement |
+|---|---|---|
+| **CRITICAL — la matérialisation de D2 ne couvre PAS les factures déjà validées.** Elle ne se déclenche qu'à la transition `draft → validated` ; une facture déjà `validated` n'y repasse jamais (`update` rejette tout statut ≠ `draft`, `invoices.rs:841`/`:1271`) et aucune autre écriture ne touche `invoice_lines` après validation. Après l'`ADD COLUMN`, ces lignes portent `NULL` définitivement. Or la spec écrit elle-même que `NULL` est « le seul cas qui existe en production aujourd'hui » : le patch de la passe 3 protégeait un ensemble **vide** à l'instant du déploiement, et **100 % du parc validé** — dont l'instance de production en fonction — restait exposé au résidu | **Réel et sérieux** | **D2-bis** ajoutée : backfill dans la migration, **source = l'écriture comptable générée**, pas le défaut courant (backfiller depuis le défaut d'aujourd'hui fabriquerait la corruption si le défaut a changé par le passé). **AC2-bis** ajouté, **T1** étendu, nouveau piège n°0. Alternative « documenter en dette cat. B » explicitement écartée : corruption sur données réelles, pas limitation fonctionnelle |
+| **HIGH — l'`UPDATE` SQL de D2 ne met pas à jour la copie en mémoire.** `lines_before` est chargé à l'étape (1), avant la matérialisation, et réutilisé après elle pour le snapshot d'audit `"after"` (`invoices.rs:1448`) et pour `ValidatedInvoice.lines` (`:1478`), **délibérément non re-fetché** post-commit (`:1114`, garantie anti-race). L'audit et la réponse HTTP auraient affiché `null` pour des lignes que la base venait de matérialiser | Réel — AC9-bis exigeait « post-matérialisation » sans dire comment l'obtenir | **AC9-bis** complété : muter `lines_before` en mémoire juste après l'`UPDATE`, **sans** re-fetch DB |
+| MEDIUM — « AC25 » cité dans la prose de D1 n'existait dans aucune section formelle ni dans aucune tâche ; son contenu est déjà entièrement porté par AC20 | Réel — même classe que l'AC22 nettoyé en passe 3 | Renvoi corrigé vers AC20 |
+
+**Vérifié négatif** : toutes les ancres ajoutées ou modifiées en passe 3 (`company_invoice_settings.rs:173`/`:480-494`/`:482`, `routes/company_invoice_settings.rs:117-120`, `invoices.rs:1310-1312`/`:806-812`, `InvoiceForm.svelte:107-113`/`:365-368`/`:418-424`) pointent exactement sur le code décrit. La cohérence D1 → D7 tient et le décompte d'AC5-ter (8 sites + 1 site d'appel) est exact.
+
+**Trend** : 28 → 4 → 6 → 3. Volume décroissant, mais la sévérité reste au-dessus de LOW → **passe 5 requise** (contexte frais, modèle différent). Cible prioritaire de la passe 5 : le backfill de D2-bis, patch tout neuf et non revu — en particulier l'identification de la ligne de crédit produit dans les écritures existantes.
 
 ---
 
