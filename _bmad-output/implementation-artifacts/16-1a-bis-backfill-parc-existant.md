@@ -151,6 +151,25 @@ Les factures `cancelled` sont exclues **délibérément**, et **non** « parce q
 
 **Conséquence assumée** : sur une facture créditée, `credit_note_lines.revenue_account_id` sera renseigné alors que `invoice_lines.revenue_account_id` restera `NULL`. C'est visible dans l'export CSV (16-1a AC14) et **sans effet comptable**.
 
+### D-B7 — Le backfill ENREGISTRE le résidu historique, il ne le RÉPARE pas
+
+**Décision, et clarification cardinale du périmètre.** Pour un couple facture / avoir **antérieur au déploiement**, les deux comptes backfillés peuvent légitimement **différer** — et le backfill doit les écrire tels quels.
+
+**Preuve du mécanisme** : `create_credit_note` relit la configuration **au moment de l'émission de l'avoir** — `company_invoice_settings::get_or_create_default_in_tx` puis `settings.default_revenue_account_id` (`credit_notes.rs:275-282`) — indépendamment de ce que la facture a réellement crédité. C'est **le bug décrit dans le § Contexte** : facture créditée sur 3000 à T1, avoir débité sur 3200 à T2 après changement du défaut.
+
+Les avoirs déjà en base ont été produits par ce code. Leur écriture de contre-passation porte donc, dans ce cas, un compte **différent** de celui de la facture. Le backfill, dont la source de vérité est l'écriture réelle (D-B1), écrira fidèlement `3000` côté facture et `3200` côté avoir.
+
+**C'est le comportement voulu.** Le résidu comptable **existe déjà dans les écritures** — il est passé, il est irréversible, et les pièces le documentent. Le rôle du backfill est de le rendre **explicite et lisible**, pas de le maquiller : réécrire l'un des deux pour forcer l'égalité falsifierait les pièces sans corriger la moindre écriture.
+
+**Ce que la story corrige, et ce qu'elle ne corrige pas** :
+
+- pour les avoirs **futurs**, 16-1a D5 supprime la relecture des `settings` et copie le compte depuis `invoice_lines` — le résidu ne se reproduira plus ;
+- pour les avoirs **passés**, rien ne peut être corrigé sans passer une écriture de reclassement, ce qui est un **acte comptable** relevant de l'utilisateur, pas d'une migration.
+
+**Conséquence pour 16-1b** : l'écran de détail peut afficher, pour une facture et son avoir, **deux comptes de produit différents**. Ce n'est pas une anomalie du backfill et l'UI ne doit ni le signaler comme une erreur, ni tenter de l'harmoniser.
+
+**Ne PAS** écrire d'AC affirmant l'égalité des deux comptes : elle est fausse dans le seul scénario qui motive l'existence de cette story.
+
 ### D-B6 — Migration non-breaking et backfill intrinsèquement idempotent
 
 Le backfill est un `UPDATE` gardé par `revenue_account_id IS NULL` et fondé sur un critère **déterministe** : un re-jeu recalcule le même résultat et n'a aucun effet. Il est donc **intrinsèquement idempotent**, exactement comme les backfills de `20260628000001_supplier_invoices.sql` et `20260722000001_accounts_role_postable.sql` (« **12 UPDATE de backfill** en revanche intrinsèquement idempotents »), tous deux classés `tracked-by-sqlx`.
@@ -173,7 +192,8 @@ Aucune opération `DROP` / `RENAME` / `MODIFY COLUMN` → migration **non-breaki
   2. facture validée dont l'écriture a été **éditée** de sorte qu'aucune ligne ne crédite exactement `total_amount` → la ligne reste `NULL`, la migration **réussit**, et la requête de diagnostic de D-B4 retourne le compte attendu ;
   3. **société dont `default_vat_payable_account_id` est `NULL`** — c'est-à-dire **toute** société non configurée manuellement, le cas par défaut — facture validée à écriture canonique → la ligne **est** backfillée. **C'est le seul test qui attrape la propagation `NULL` de D-B3** ; sans lui, un backfill qui no-ope intégralement est indiscernable d'un backfill conservateur ;
   4. facture `draft` → reste `NULL` ; facture `cancelled` → reste `NULL` (D-B5) ;
-  5. miroir avoir : avoir `issued` à écriture canonique → ligne backfillée ; le compte backfillé de l'avoir **égale** celui de la facture d'origine quand les deux sont identifiables.
+  5. miroir avoir : avoir `issued` à écriture canonique → ligne backfillée avec le compte **réellement débité par l'écriture de l'avoir** (D-B1), déterminé **indépendamment** de la facture d'origine ;
+  6. **couple facture / avoir DIVERGENT — le cas qui compte (D-B7)** : facture validée à T1 sur défaut = 3000, défaut changé en 3200, avoir émis à T2 → le backfill écrit **3000 sur la facture et 3200 sur l'avoir**. Les deux valeurs **diffèrent, et c'est le résultat correct**. Un test qui affirmerait l'égalité échouerait ici — et un test construit sans changer le défaut entre les deux passerait trivialement sans rien prouver, exactement l'écueil signalé au cas 1.
   *(Le cas « facture validée **sans écriture** » n'est **PAS** testé : il est **inconstructible** — `chk_invoices_validated_has_je` l'interdit en base et `fk_invoices_journal_entry … ON DELETE RESTRICT` empêche de supprimer l'écriture après coup. Tenter la fixture ne produit qu'une violation de CHECK.)*
 - **AC-B4** — **Idempotence** : rejouer le backfill sur une base déjà backfillée ne change **aucune** ligne (garde `IS NULL` + critère déterministe). Testé.
 - **AC-B5** — `docs/migrations-idempotence-audit.md` : ligne ajoutée au tableau détaillé avec verdict **`tracked-by-sqlx`** (justifié par l'absence d'`IF NOT EXISTS`, **pas** par le backfill, qui est idempotent — D-B6), **ET** récapitulatif agrégé de bas de fichier mis à jour en cohérence (`Total` et `Idempotence tracked-by-sqlx` chacun +1). L'invariant « Idempotence `no` : 0 » est **préservé**. Garde-fou **P5** de `CLAUDE.md`.
@@ -186,13 +206,14 @@ Aucune opération `DROP` / `RENAME` / `MODIFY COLUMN` → migration **non-breaki
 
 ## Tasks / Subtasks
 
+- [ ] **T-B0** — **Ordonnancement de la migration.** Le fichier de migration de cette story DOIT porter un timestamp **strictement postérieur** à celui de l'`ADD COLUMN` de 16-1a : `sqlx::migrate!("./migrations")` (`crates/kesh-db/src/lib.rs:23`) exécute dans l'**ordre lexicographique du nom de fichier**, et un backfill jouant avant la création de la colonne échoue en `Unknown column 'revenue_account_id'`. Vérifier l'état de 16-1a **avant** de choisir le timestamp. Si les deux stories sont développées en parallèle sur des branches distinctes, **merger 16-1a en premier** ou regrouper les deux dans la même PR (cohérent `feedback_pr_grouping` : les deux stories touchent le même répertoire de migrations). L'échec est bruyant et attrapé en CI, pas silencieux — mais il coûte un cycle.
 - [ ] **T-B1** — Migration de backfill `invoice_lines` : `UPDATE … JOIN (SELECT … GROUP BY … HAVING COUNT(*) = 1) c`, critère de D-B2, condition (2) en `<=>` NULL-safe (D-B3).
 - [ ] **T-B2** — Miroir `credit_note_lines` (`debit`, `credit_notes.total_amount`), même critère.
 - [ ] **T-B3** — Ligne du tableau **et** compteurs agrégés de `docs/migrations-idempotence-audit.md`, verdict `tracked-by-sqlx` + justification d'idempotence (AC-B5, D-B6).
 - [ ] **T-B4** — Tests sur base pré-remplie : les 5 cas d'AC-B3 + l'idempotence d'AC-B4.
 - [ ] **T-B5** — CHANGELOG avec requêtes de diagnostic (AC-B8) + gate backend complet (AC-B9).
 
-**Ordre conseillé** : T-B1 → T-B4 (partiel, cas facture) → T-B2 → T-B4 (complet) → T-B3 → T-B5.
+**Ordre conseillé** : T-B0 → T-B1 → T-B4 (partiel, cas facture) → T-B2 → T-B4 (complet) → T-B3 → T-B5.
 
 ---
 
@@ -233,7 +254,9 @@ Aucune opération `DROP` / `RENAME` / `MODIFY COLUMN` → migration **non-breaki
 2. **La post-condition « plus aucun `NULL` »** — elle est **fausse** (AC-B2) et un dev qui cherche à la faire passer ira mécaniquement écrire un compte arbitraire. Ne jamais tester par un `COUNT(*) = 0` global.
 3. **`total_ht` n'est pas une colonne** — c'est `invoices.total_amount` (et `credit_notes.total_amount` côté avoir).
 4. **Le verdict d'idempotence (D-B6)** — écrire « non idempotente » casse l'invariant `no : 0` du fichier d'audit et fait diverger les compteurs d'AC-B5. Le backfill **est** idempotent ; c'est l'absence d'`IF NOT EXISTS` qui justifie `tracked-by-sqlx`.
-5. **Base vierge** — `migrations_fresh_install` ne prouve **rien** ici. Tous les tests d'AC-B3 exigent une base pré-remplie.
+5. **Base vierge** — `migrations_fresh_install` ne prouve **rien** ici. Tous les tests d'AC-B3 exigent une base pré-remplie. Précédent direct et fonctionnel du pattern « appliquer n-1 migrations, insérer en SQL brut, appliquer la dernière » : `crates/kesh-db/tests/accounts_role_backfill.rs`.
+6. **Vouloir « réparer » le couple facture / avoir divergent (D-B7)** — le réflexe naturel est d'affirmer que les deux comptes doivent être égaux. C'est **faux** pour tout couple antérieur au déploiement dont le défaut société a changé entre-temps : l'avoir a été généré en relisant `settings` à T2 (`credit_notes.rs:275-282`). Le backfill **enregistre** ce résidu, il ne le corrige pas — le corriger serait un acte comptable, pas une migration.
+7. **Ordre des migrations (T-B0)** — un timestamp antérieur à l'`ADD COLUMN` de 16-1a fait échouer la migration. Bruyant, mais coûte un cycle CI.
 
 ### Faisabilité SQL (vérifiée)
 
@@ -284,4 +307,17 @@ Story issue de l'extraction de la décision **D2-bis** de 16-1a et de tout son c
 | P6 (MEDIUM) | Cas de test « facture validée sans écriture » retiré — **inconstructible** (`chk_invoices_validated_has_je`) |
 | P6 (LOW) | `total_ht` → `invoices.total_amount` ; motif d'exclusion des `cancelled` corrigé (D-B5) ; verdict d'idempotence redressé (D-B6) |
 
-**Statut de revue** : le corpus a été revu en passes 5 (Haiku + orchestrateur) et 6 (Opus) **au sein de 16-1a**. En tant que story autonome, il n'a **jamais** été revu comme un tout cohérent — notamment son en-tête, sa portée, ses AC renumérotés et le miroir avoir, désormais traité au même rang que la facture et non comme un corollaire. **Passe 1 de `validate` requise sur cette story**, contexte frais.
+**Statut de revue à la création** : le corpus avait été revu en passes 5 (Haiku + orchestrateur) et 6 (Opus) **au sein de 16-1a**, mais jamais comme un tout autonome — d'où la passe 1 ci-dessous.
+
+### Passe 1 de `validate` — 2026-07-26 (Sonnet, contexte frais)
+
+**2 findings : 1 HIGH, 1 MEDIUM.** Tous deux vérifiés en ground-truth avant application. Le HIGH est né **du split lui-même** : le miroir avoir, simple corollaire dans 16-1a, est traité ici au même rang que la facture — et ce changement de statut a révélé une affirmation fausse que personne n'avait interrogée en 4 passes.
+
+| Finding | Verdict | Traitement |
+|---|---|---|
+| **HIGH — AC-B3 cas 5 affirmait que le compte backfillé de l'avoir « égale celui de la facture d'origine ».** C'est **faux précisément dans le scénario qui motive la story**. `create_credit_note` relit la configuration au moment de l'émission (`credit_notes.rs:275-282`, `get_or_create_default_in_tx` puis `settings.default_revenue_account_id`), indépendamment de ce que la facture a crédité — c'est le bug du tableau T1/T1+/T2 du § Contexte. Les avoirs déjà en base ont été produits par ce code : leur écriture débite légitimement un **autre** compte que la facture | **Réel.** L'AC ne laissait que deux issues, toutes deux mauvaises : un test sans changement de défaut, qui passe trivialement et **ne prouve rien** (l'écueil que le cas 1 signale explicitement, jamais repris au cas 5) ; ou un test fidèle au scénario réel, qui **échoue** — non parce que le backfill est bugué, mais parce que l'AC affirme une invariance inexistante | **D-B7 ajoutée** — « le backfill ENREGISTRE le résidu historique, il ne le RÉPARE pas » : le résidu existe déjà dans les écritures, il est passé et irréversible ; forcer l'égalité falsifierait les pièces sans corriger la moindre écriture. Ce que la story corrige (avoirs futurs, via 16-1a D5) et ce qu'elle ne corrige pas (avoirs passés, qui relèveraient d'une écriture de reclassement — acte comptable, pas migration) est explicité. **AC-B3 cas 5 réécrit** (compte déterminé indépendamment de la facture) et **cas 6 ajouté** : le couple divergent est le cas qui compte, avec les deux valeurs attendues. Piège n°6 ajouté. **Conséquence répercutée sur 16-1b** : l'écran de détail peut légitimement afficher deux comptes différents pour une facture et son avoir ; ne pas le signaler comme une anomalie, ne pas tenter de l'harmoniser |
+| MEDIUM — la dépendance d'ordre avec la migration `ADD COLUMN` de 16-1a est affirmée en prose (« dépend strictement de 16-1a ») mais **jamais opérationnalisée**. `sqlx::migrate!` exécute dans l'ordre **lexicographique du nom de fichier** (`kesh-db/src/lib.rs:23`) : un timestamp mal choisi, ou un merge de PR séparées dans le mauvais ordre, fait jouer le backfill avant la création de la colonne | Réel. Échec **bruyant** (`Unknown column`), attrapé en CI — donc pas de corruption silencieuse, mais un cycle perdu, et un gap de complétude réel pour une story qui documente par ailleurs tous ses autres risques d'ordonnancement | **T-B0 ajoutée** : contrainte de timestamp explicite, vérification de l'état de 16-1a avant de choisir, et consigne de merger 16-1a en premier ou de regrouper les deux dans la même PR (cohérent `feedback_pr_grouping` — les deux touchent le même répertoire de migrations). Piège n°7 ajouté |
+
+**Vérifié négatif (substantiel — ne pas ré-instruire)** : (1) **le compte de produit ne peut jamais collisionner avec le compte de créance** dans l'ensemble d'exclusion `E` — `validate_account` (`routes/company_invoice_settings.rs:94-120`) impose `account_type == expected` (`Asset` pour la créance, `Revenue` pour le produit) et `chk_accounts_type` (`20260411000001_accounts.sql:20`) ferme la liste : un même compte ne peut satisfaire les deux types. (2) **`credit_notes.total_amount` est bien du HT**, miroir strict d'`invoices.total_amount` (commentaire de schéma `20260627000001_credit_notes.sql:19` + code `total_ht = Σ line_total` inséré tel quel). (3) **Les avoirs partiels n'existent pas** : `create_credit_note` est la seule fonction publique de création et snapshot **toutes** les `invoice_lines` sans filtre — chaque avoir est nécessairement total. (4) Faisabilité MariaDB confirmée (ER 1093 inapplicable, aucune CTE dans le dépôt, précédent multi-table `20260628000001:115`). (5) **Pas de risque de scan complet** : `idx_jel_entry` sur `journal_entry_lines(entry_id)` (`20260412000001:47`). (6) **Aucune contrainte DB ne bloque un `UPDATE` sur une facture d'exercice clos** — la garde est purement applicative, hors périmètre d'une migration SQL. (7) Traçabilité D-B1..D-B7 → AC-B1..AC-B9 → T-B0..T-B5 complète, aucun orphelin. (8) **Précédent de test sur base pré-remplie** : `crates/kesh-db/tests/accounts_role_backfill.rs` valide le pattern exigé par T-B4.
+
+**Trend** : passe 1 = 2 findings (1 HIGH, 1 MEDIUM). Sévérité au-dessus de LOW → **passe 2 requise** (contexte frais, modèle différent). Cible prioritaire : **D-B7 et les cas 5-6 d'AC-B3**, patch tout neuf — en particulier la cohérence du récit « enregistrer sans réparer » avec D-B1 et avec le § Contexte, et sa répercussion sur 16-1b.

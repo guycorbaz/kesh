@@ -517,6 +517,19 @@ Motif retenu : sur les passes 5 et 6, **7 findings sur 10 — dont les 3 HIGH �
 
 **Effet sur la boucle de revue** : la passe 7 de 16-1a porte sur un périmètre **allégé et stable**. Si elle converge, 16-1a est scellée indépendamment de la maturité du backfill.
 
+### Passe 7 de `validate` — 2026-07-26 (Sonnet, contexte frais, périmètre allégé)
+
+**0 finding.** Passe entièrement dédiée aux **cicatrices du split** et aux patches non revus.
+
+- **Résidus du split — aucun.** Grep exhaustif de `backfill`, `D2-bis`, `AC2-bis`, `parc`, `total_amount`, `<=>`, `diagnostic` : hors Change Log historique, toutes les occurrences sont dans le pointeur D2-bis, dans AC2-bis (« aucun backfill dans cette story ») ou dans le piège n°0 réécrit. **Aucun mécanisme de backfill n'a fui** — critère d'unicité, `<=>` NULL-safe et requête de diagnostic sont partis en entier vers `16-1a-bis`. T1 et les ancres ground-truth sont cohérents.
+- **Le patch HIGH de la passe 6 sur AC8-bis tient, démonstration refaite indépendamment** : `get_or_create_default_in_tx` occupe bien `:87-107` et se réduit à `INSERT IGNORE` + `SELECT … FOR UPDATE`, **sans JOIN ni contrôle d'`active`** ; le JOIN est bien dans `insert_with_defaults_in_tx` (`:403-506`, JOIN réel à `:483` — 1 ligne de dérive sur l'ancre `:482`, négligeable), dont `routes/onboarding.rs:720` est le **seul** site d'appel du dépôt. Le patch est cohérent partout où il devait se propager (AC8-bis, AC18-bis 3 cas, D3-bis, AC12-bis), et le 3ᵉ cas d'AC18-bis est **constructible** : `accounts::archive` (`accounts.rs:472`) ne contrôle que les enfants actifs, jamais le référencement par `company_invoice_settings.default_revenue_account_id`.
+- **Testabilité** : AC12 satisfiable (fixture `make_line` sans le champ, signature du helper inchangée à 4 arguments, le scalaire servant de repli) ; AC17, AC18, AC18-bis, AC19, AC20, AC21 reposent tous sur des chemins réels et atteignables.
+- **Traçabilité** D1→D7 → AC → T1-T12 complète, aucun orphelin, saut `AC21 → AC23` cohérent avec la suppression d'AC22 en passe 3, plus aucun renvoi fantôme hors Change Log.
+- **Aucune contradiction interne** : D2 vs AC9-bis (bornage « par ce chemin » cohérent des deux côtés), D3 vs D3-bis vs AC8-bis (4 critères sur les comptes explicites, 2 sur le défaut implicite), D4 vs D4-bis (niveaux différents et compatibles), D5 vs D5-bis.
+- **Large échantillon d'ancres re-vérifié** sans divergence, dont les 8 sites d'AC5-ter, les points d'accroche de saisie (`:459` / `:816`), `validate_lines_accounts_in_tx` (confirmé **sans** `account_type`), et les compteurs de `migrations-idempotence-audit.md` (Total 55, `tracked-by-sqlx` 44).
+
+**Trend** : 28 → 4 → 6 → 3 → 2 → 8 → **0**. **Critère d'arrêt de la § « Review Iteration Rule » atteint** : plus aucun finding, a fortiori aucun au-dessus de LOW. **16-1a est convergée et scellée**, en 7 passes (plafond de 8 non atteint), indépendamment de la maturité de `16-1a-bis`. Le split de la passe 6 a produit exactement l'effet recherché.
+
 ---
 
 ## Dev Agent Record
