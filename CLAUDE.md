@@ -149,6 +149,24 @@ Cette règle s'applique à :
 
 **Exception** : si un finding `MEDIUM+` est explicitement reclassé en **dette technique documentée** (dans une section `Security debt` / `Performance debt` / équivalente du story file ou des Dev Notes) avec un propriétaire et une story de remédiation planifiée, il compte comme « résolu » pour cette itération.
 
+### Propagation post-patch — grep du symptôme avant la passe suivante
+
+**Règle** : après avoir appliqué un patch de remédiation (revue de spec ou de code), et **avant** de relancer la passe suivante, `grep` le **symptôme corrigé** — pas seulement le site corrigé — sur **tout le dépôt** : code, spec/story file, doc-comments, tests, i18n (les 4 locales), fallbacks Svelte, manuels LaTeX. Lister les sites atteints et les traiter dans le **même** patch.
+
+Concrètement, la question n'est pas *« ai-je corrigé la ligne signalée ? »* mais *« où ailleurs cette même formulation / ce même calcul / cette même priorité est-il écrit ? »*.
+
+Pourquoi : c'est le mode d'échec le plus récurrent du processus. Il est signalé à chaque rétrospective depuis l'Epic 21 et **la codification « un patch vient AVEC son test » n'a pas suffi** — un test couvre le site corrigé, pas les copies du symptôme ailleurs. Récidives mesurées sur l'Epic 14 (5 findings de passe `N+1` qui sont tous des résidus d'un patch de passe `N`) :
+
+| Occurrence | Résidu laissé par le patch |
+|---|---|
+| 14-2 validate P3→P4 | le patch corrige le fallback svelte `+page.svelte:405`, oublie `:428` → 2 MED en P4 |
+| 14-4 validate P3→P4 | le fix `count_by_company` laisse 3 reformulations contradictoires dans la spec → 1 MED en P4 |
+| 14-4 review P3→P4 | l'amendement de priorité n'est propagé qu'au `GET /status`, ni au `POST` ni au repo → 1 MED (convergé BlindHunter + EdgeCaseHunter) en P4 |
+
+Les 5 occurrences auraient été attrapées par ce seul geste. Un patch dont le symptôme n'a **pas** été grepé sur le dépôt n'est pas terminé.
+
+*(codifié 2026-07-26, rétrospective Epic 14 action A8 — complète, ne remplace pas, `feedback_review_patch_needs_test`)*
+
 ### Haiku-specific guardrails — grep ground-truth obligatoire
 
 **Symptôme observé** : les reviewers Haiku 4.5 (`BlindHunter` / `EdgeCaseHunter` typiquement) peuvent affirmer **CRITICAL** ou **HIGH** « REGRESSION-P1 — patch X n'a pas été appliqué » sur un diff combiné multi-commit, alors que le patch **est** présent dans le fichier.
@@ -202,9 +220,11 @@ Toute erreur **qui dépend de la proposal individuelle** (validation `amount > 0
 **Si une story qui n'est pas encore en spec validate satisfait l'un de ces deux critères, la splitter en sous-stories avant de lancer `bmad-create-story`** :
 
 - **Scope cross-cutting** : la story touche **plus de 5 modules** distincts (crates Rust, packages npm, ou modules métier de premier niveau type `kesh-core/accounting`, `kesh-api/routes/invoices`, `frontend/src/features/invoices`).
-- **Profondeur d'incertitude** : `bmad-create-story validate` boucle au-delà de **4 passes adversariales** sans converger sur 0 finding > LOW.
+- **Non-convergence réelle** : une passe `N+1` de `bmad-create-story validate` remonte une sévérité **égale ou supérieure** à la passe `N` (e.g. `MED → MED`, ou pire `MED → HIGH`). C'est le signal que la remédiation n'entame pas le problème.
 
 Pourquoi : dans les deux cas, la story est trop large pour être tenue dans un seul mental-model adversarial fiable. Les régressions introduites par les patches d'une passe N deviennent invisibles aux passes N+1 (saturation contextuelle) et finissent par être détectées seulement post-merge en code review ou pire, en prod.
+
+**Amendement 2026-07-26 (rétro Epic 14, décision D-C)** — le second critère était auparavant un **compteur de passes** (« validate boucle au-delà de 4 passes »). Il a été remplacé par un critère de **sévérité** parce qu'il produisait des faux positifs : les stories **14-2** (5 passes) et **14-4** (5 passes) ont franchi le seuil de 4 sans être splittées, et les deux ont **convergé proprement** (14-2 : `1 CRIT/2 HIGH/5 MED → 0 → 1 MED → 2 MED → 0` ; 14-4 : `1 CRIT/2 HIGH/6 MED → 0 → 3 MED → 1 MED → 0`). Une convergence **lente mais monotone** (`CRIT → MED → MED → 0`) est le signe d'une revue qui travaille, pas d'une story trop large — les passes tardives y trouvent des défauts *réels et décroissants* (c'est Opus en P3 de 14-4 qui a attrapé le doublon d'écriture d'ouverture). Ce qui doit déclencher le split, c'est la **stagnation ou la régression de sévérité**, pas la durée. Le plafond de 8 passes de la §"Review Iteration Rule" reste le garde-fou de budget.
 
 **Précédent : Story 7-1** (KF-002 audit + multi-tenant scoping refactor) — 4 passes spec validate Opus/Sonnet/Haiku/Opus avant convergence, scope étalé sur 7+ modules (`kesh-core`, `kesh-db`, `kesh-api/routes/{invoices,journal_entries,companies,...}`). Lesson rétro Epic 7 : avec un split en 7-1a (audit/baseline) + 7-1b (scoping pattern) + 7-1c (rollout par module), chaque sous-story aurait pu converger en ≤ 2 passes.
 

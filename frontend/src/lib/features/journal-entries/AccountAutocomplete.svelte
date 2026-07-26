@@ -29,7 +29,9 @@
 		}
 	});
 
-	const active = $derived(accounts.filter((a) => a.active));
+	// Story 14-3b : sélecteur de SAISIE d'écriture → seuls les comptes postables
+	// (le backend rejette désormais une ligne manuelle vers un compte non-postable).
+	const active = $derived(accounts.filter((a) => a.active && a.postable));
 
 	const filtered = $derived.by(() => {
 		if (loadError) return [];

@@ -66,7 +66,10 @@ async fn fetch_section(
     };
 
     let sql = format!(
-        "SELECT a.id AS account_id, a.number, a.name, a.account_type, a.active, \
+        // `a.role` inclus car `AccountBalance` (struct partagée avec le bilan) porte le
+        // champ `role` depuis Story 14-3c ; son `FromRow` exige la colonne dans le
+        // result-set (le compte de résultat ne l'exploite pas, mais doit la décoder).
+        "SELECT a.id AS account_id, a.number, a.name, a.account_type, a.active, a.role, \
                 {sign_expr} AS balance \
          FROM accounts a \
          INNER JOIN journal_entry_lines jel ON jel.account_id = a.id \
@@ -76,7 +79,7 @@ async fn fetch_section(
            AND je.company_id = ? \
            AND je.fiscal_year_id = ? \
            AND je.entry_date BETWEEN ? AND ? \
-         GROUP BY a.id, a.number, a.name, a.account_type, a.active \
+         GROUP BY a.id, a.number, a.name, a.account_type, a.active, a.role \
          HAVING balance != 0 \
          ORDER BY a.number ASC"
     );

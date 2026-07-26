@@ -55,7 +55,14 @@ fn write_bom<W: Write>(writer: &mut W) -> Result<(), ReportError> {
 ///
 /// Colonnes : `Section;NumeroCompte;NomCompte;Solde` où
 /// `Section ∈ {Actifs, Passifs, CapitauxPropres}`. La section `CapitauxPropres`
-/// ne contient qu'**une seule ligne** (Pass 3 BH3-H2) : `equity_result` scalaire.
+/// (Story 14-3c) liste d'abord les **comptes physiques de fonds propres**, dans
+/// l'ordre par rôle fixé en backend (**sans en-têtes de groupe** — le format linéaire
+/// une-ligne-par-compte porte le regroupement par l'ordre), puis **deux lignes
+/// calculées** distinctes (Story 14-1) : « Résultat reporté (calculé) »
+/// (`retained_earnings`) + « Résultat de l'exercice » (`equity_result`), enfin
+/// `Total capitaux propres`. Les comptes de rôle equity **ne figurent plus** dans
+/// `Passifs` (partition D2) — `Total passifs` = dettes réelles seules. Libellés
+/// **hardcodés FR-CH** (i18n sérialiseurs déférée, limitation L1/L4/L11 — D3).
 pub fn render_balance_sheet_csv<W: Write>(
     bs: &BalanceSheet,
     mut writer: W,
@@ -66,8 +73,12 @@ pub fn render_balance_sheet_csv<W: Write>(
     wtr.write_record(["Section", "NumeroCompte", "NomCompte", "Solde"])
         .map_err(map_csv_err)?;
 
-    // Cas rapport vide : header seul, pas de data rows (Pass 1 ECH-M1)
-    if bs.assets.is_empty() && bs.liabilities.is_empty() {
+    // Cas rapport vide : header seul, pas de data rows (Pass 1 ECH-M1). Garde
+    // centralisée `BalanceSheet::is_empty()` (Story 14-3c P1-F1) — inclut `equity` :
+    // un reclassement pur entre comptes de fonds propres (section equity non vide,
+    // actifs/passifs/virtuels nuls) n'est PAS vide, sinon on masquerait la section
+    // Capitaux propres réellement peuplée.
+    if bs.is_empty() {
         wtr.flush().map_err(map_io_err)?;
         return Ok(());
     }
@@ -109,7 +120,29 @@ pub fn render_balance_sheet_csv<W: Write>(
         .map_err(map_csv_err)?;
     }
 
-    // Section Capitaux propres — UNE seule ligne synthétique (Pass 3 BH3-H2)
+    // Section Capitaux propres — présentation par rôle (Story 14-3c). D'abord les
+    // comptes physiques de fonds propres, dans l'ordre par rôle fixé en backend
+    // (une ligne par compte, l'ordre porte le regroupement — pas d'en-tête de groupe
+    // dans le format linéaire CSV, AC-C). Puis les deux lignes **calculées** distinctes
+    // (« Résultat reporté (calculé) » marquée calculée pour la distinguer d'un compte
+    // physique de rôle RetainedEarnings — collision D1). Le report à-nouveau DOIT figurer
+    // sinon le bilan exporté est déséquilibré.
+    for ab in &bs.equity {
+        wtr.write_record([
+            "CapitauxPropres",
+            &ab.account_number,
+            &ab.account_name,
+            &format_amount_iso(ab.balance),
+        ])
+        .map_err(map_csv_err)?;
+    }
+    wtr.write_record([
+        "CapitauxPropres",
+        "",
+        "Résultat reporté (calculé)",
+        &format_amount_iso(bs.retained_earnings),
+    ])
+    .map_err(map_csv_err)?;
     wtr.write_record([
         "CapitauxPropres",
         "",
@@ -118,8 +151,20 @@ pub fn render_balance_sheet_csv<W: Write>(
     ])
     .map_err(map_csv_err)?;
 
-    // Ligne finale : somme passifs + capitaux propres (invariant implicite ECH-M4)
-    let total_liab_eq = bs.total_liabilities + bs.equity_result;
+    // Total capitaux propres = comptes physiques + 2 lignes calculées.
+    let total_equity_all = bs.total_equity + bs.retained_earnings + bs.equity_result;
+    wtr.write_record([
+        "Total capitaux propres",
+        "",
+        "",
+        &format_amount_iso(total_equity_all),
+    ])
+    .map_err(map_csv_err)?;
+
+    // Ligne finale : somme passifs (dettes) + capitaux propres — invariant restructuré
+    // (14-3c) : `total_liabilities + total_equity + retained_earnings + equity_result`
+    // = ancien total passifs + fonds propres.
+    let total_liab_eq = bs.total_liabilities + total_equity_all;
     wtr.write_record([
         "Total passifs + capitaux propres",
         "",
@@ -599,8 +644,11 @@ mod tests {
             period: period(),
             assets: vec![],
             liabilities: vec![],
+            equity: vec![],
             total_assets: Decimal::ZERO,
             total_liabilities: Decimal::ZERO,
+            total_equity: Decimal::ZERO,
+            retained_earnings: Decimal::ZERO,
             equity_result: Decimal::ZERO,
             equation_holds: true,
         };
@@ -620,10 +668,14 @@ mod tests {
                 account_type: AccountType::Asset,
                 active: true,
                 balance: dec!(100),
+                role: None,
             }],
             liabilities: vec![],
+            equity: vec![],
             total_assets: dec!(100),
             total_liabilities: Decimal::ZERO,
+            total_equity: Decimal::ZERO,
+            retained_earnings: Decimal::ZERO,
             equity_result: dec!(100),
             equation_holds: true,
         };
@@ -696,6 +748,7 @@ mod tests {
                     account_type: AccountType::Asset,
                     active: true,
                     balance: dec!(100),
+                    role: None,
                 },
                 AccountBalance {
                     account_id: 2,
@@ -704,6 +757,7 @@ mod tests {
                     account_type: AccountType::Asset,
                     active: true,
                     balance: dec!(50),
+                    role: None,
                 },
                 AccountBalance {
                     account_id: 3,
@@ -712,11 +766,15 @@ mod tests {
                     account_type: AccountType::Asset,
                     active: true,
                     balance: dec!(25),
+                    role: None,
                 },
             ],
             liabilities: vec![],
+            equity: vec![],
             total_assets: dec!(175),
             total_liabilities: Decimal::ZERO,
+            total_equity: Decimal::ZERO,
+            retained_earnings: Decimal::ZERO,
             equity_result: dec!(175),
             equation_holds: true,
         };
@@ -748,8 +806,11 @@ mod tests {
             period: period(),
             assets: vec![],
             liabilities: vec![],
+            equity: vec![],
             total_assets: Decimal::ZERO,
             total_liabilities: Decimal::ZERO,
+            total_equity: Decimal::ZERO,
+            retained_earnings: Decimal::ZERO,
             equity_result: Decimal::ZERO,
             equation_holds: true,
         };
@@ -764,6 +825,121 @@ mod tests {
             "empty CSV must have only header line, got: {lines:?}"
         );
         assert_eq!(lines[0], "Section;NumeroCompte;NomCompte;Solde");
+    }
+
+    /// Review Pass 1 — actif/passif vides mais report/résultat non nuls et opposés
+    /// (bénéfice N entièrement dépensé en N+1) : la section fonds propres NE DOIT PAS
+    /// être masquée (sinon bilan exporté déséquilibré). Régression du finding HIGH.
+    #[test]
+    fn balance_sheet_csv_shows_equity_when_assets_liabilities_net_to_zero() {
+        let bs = BalanceSheet {
+            period: period(),
+            assets: vec![],
+            liabilities: vec![],
+            equity: vec![],
+            total_assets: Decimal::ZERO,
+            total_liabilities: Decimal::ZERO,
+            total_equity: Decimal::ZERO,
+            retained_earnings: dec!(1000),
+            equity_result: dec!(-1000),
+            equation_holds: true,
+        };
+        let mut buf = Vec::new();
+        render_balance_sheet_csv(&bs, &mut buf).unwrap();
+        let body = String::from_utf8(buf[3..].to_vec()).unwrap();
+        assert!(
+            body.contains("Résultat reporté"),
+            "la ligne « Résultat reporté » doit figurer, body:\n{body}"
+        );
+        assert!(
+            body.contains("Résultat de l'exercice"),
+            "la ligne « Résultat de l'exercice » doit figurer, body:\n{body}"
+        );
+        // Total passifs + capitaux propres = 0 + 1000 + (-1000) = 0 (équilibré, présent)
+        assert!(
+            body.contains("Total passifs + capitaux propres"),
+            "le total fonds propres doit figurer, body:\n{body}"
+        );
+    }
+
+    /// Story 14-3c — la section CapitauxPropres itemise les comptes physiques de fonds
+    /// propres (dans l'ordre reçu), la ligne calculée est marquée « (calculé) » (D1), et
+    /// les comptes de fonds propres ne figurent PAS dans les lignes Passifs (partition D2).
+    #[test]
+    fn balance_sheet_csv_equity_section_by_role() {
+        let equity = |number: &str, name: &str, bal, role| AccountBalance {
+            account_id: 1,
+            account_number: number.into(),
+            account_name: name.into(),
+            account_type: AccountType::Liability,
+            active: true,
+            balance: bal,
+            role: Some(role),
+        };
+        let bs = BalanceSheet {
+            period: period(),
+            assets: vec![AccountBalance {
+                account_id: 9,
+                account_number: "1000".into(),
+                account_name: "Banque".into(),
+                account_type: AccountType::Asset,
+                active: true,
+                balance: dec!(3000),
+                role: None,
+            }],
+            liabilities: vec![AccountBalance {
+                account_id: 8,
+                account_number: "2000".into(),
+                account_name: "Fournisseurs".into(),
+                account_type: AccountType::Liability,
+                active: true,
+                balance: dec!(500),
+                role: Some(kesh_db::entities::AccountRole::Payable),
+            }],
+            equity: vec![
+                equity(
+                    "2800",
+                    "Capital",
+                    dec!(2000),
+                    kesh_db::entities::AccountRole::EquityCapital,
+                ),
+                equity(
+                    "2970",
+                    "Bénéfice reporté",
+                    dec!(500),
+                    kesh_db::entities::AccountRole::RetainedEarnings,
+                ),
+            ],
+            total_assets: dec!(3000),
+            total_liabilities: dec!(500),
+            total_equity: dec!(2500),
+            retained_earnings: dec!(0),
+            equity_result: dec!(0),
+            equation_holds: true,
+        };
+        let mut buf = Vec::new();
+        render_balance_sheet_csv(&bs, &mut buf).unwrap();
+        let body = String::from_utf8(buf[3..].to_vec()).unwrap();
+        // Comptes physiques itemisés dans la section CapitauxPropres.
+        assert!(
+            body.contains("CapitauxPropres;2800;Capital;2000.00"),
+            "{body}"
+        );
+        assert!(
+            body.contains("CapitauxPropres;2970;Bénéfice reporté;500.00"),
+            "{body}"
+        );
+        // Ligne calculée explicitement marquée « (calculé) » (D1).
+        assert!(body.contains("Résultat reporté (calculé)"), "{body}");
+        assert!(body.contains("Total capitaux propres"), "{body}");
+        // Le capital NE figure PAS dans une ligne Passifs (partition D2).
+        assert!(
+            !body.contains("Passifs;2800"),
+            "capital absent des passifs\n{body}"
+        );
+        // La dette réelle reste bien dans Passifs.
+        assert!(body.contains("Passifs;2000;Fournisseurs;500.00"), "{body}");
+        assert!(body.contains("Total passifs;;;500.00"), "{body}");
     }
 
     #[test]

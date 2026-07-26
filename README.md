@@ -2,6 +2,9 @@
 
 [![CI](https://github.com/guycorbaz/kesh/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/guycorbaz/kesh/actions/workflows/ci.yml)
 [![Release](https://github.com/guycorbaz/kesh/actions/workflows/release.yml/badge.svg)](https://github.com/guycorbaz/kesh/actions/workflows/release.yml)
+[![Docker Pulls](https://img.shields.io/docker/pulls/gcorbaz/kesh)](https://hub.docker.com/r/gcorbaz/kesh)
+[![Docker Image Version](https://img.shields.io/docker/v/gcorbaz/kesh?sort=semver&label=docker)](https://hub.docker.com/r/gcorbaz/kesh/tags)
+[![Docker Image Size](https://img.shields.io/docker/image-size/gcorbaz/kesh?sort=semver)](https://hub.docker.com/r/gcorbaz/kesh/tags)
 [![License: EUPL 1.2](https://img.shields.io/badge/license-EUPL--1.2-blue.svg)](https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12)
 [![Rust](https://img.shields.io/badge/rust-1.96-orange.svg)](https://www.rust-lang.org/)
 [![SvelteKit](https://img.shields.io/badge/svelte-5-ff3e00.svg)](https://svelte.dev/)
@@ -202,7 +205,8 @@ Le projet suit une approche **BMAD** (Breakthrough Method of Agile AI-driven Dev
 | v0.5.0 | **Adresses structurées (QR-facture type S)** (#213) — conformité SIX : adresses société & contacts en champs séparés (rue/n°/NPA/localité/pays), génération QR type S ; **contacts Personne/Entreprise** (prénom/nom séparés) + **personnes de contact** d'une entreprise (CRM informatif) | ✅ Done |
 | v0.6.0 | **E20 Envoi de factures par e-mail** (#224) — modèles d'e-mail multilingues FR/DE/IT/EN éditables (Réglages, Admin), envoi de la facture PDF QR au contact (langue & civilité du contact, destinataire verrouillé, Reply-To société) | ✅ Done |
 | v0.7.0 | **E21 Échéances & relances débiteurs** (#245, #231, #246) — conditions de paiement structurées sur le contact (échéance pré-calculée), correction des montants TTC (QR/PDF/e-mail/échéancier), rappels de paiement multi-niveaux configurables (frais, envoi manuel par e-mail via les modèles), historique de relance, balance âgée, suspension de relance, doc admin/user | ✅ Done |
-| v0.6+ | **E16 Facturation avancée** (compte produit par ligne, PDF complet), E14 Clôture d'exercice, E15 Justificatifs, Lettrage & Compléments (inc. journaux personnalisables) | 📋 Backlog |
+| v0.8.0 (en cours) | **E14 Clôture d'exercice** (#232) — **report à-nouveau automatique** : soldes de bilan cumulés en temps réel d'un exercice à l'autre (modèle virtuel Odoo/Flectra), lignes « Résultat reporté » + « Résultat de l'exercice » au bilan, exports CSV/PDF, clôture = verrou (immutabilité CO 957-964) ; **rôles de comptes explicites** (le rôle d'un compte ne se déduit plus de son numéro) + réactivation d'un compte archivé (#269) ; **réouverture d'un exercice clôturé** (Admin, motif obligatoire, audit, garde LIFO) ; **bilan d'ouverture** (écran « Soldes de départ » : reprise de comptabilité, écriture d'ouverture équilibrée datée au 1er jour du premier exercice) | 🚧 En cours |
+| v0.6+ | **E16 Facturation avancée** (compte produit par ligne, PDF complet), E15 Justificatifs, Lettrage & Compléments (inc. journaux personnalisables) | 📋 Backlog |
 | v0.5+ (prévu) | **Tableau de bord & Comptabilité personnelle** — widgets configurables sur la page d'accueil (évolution du patrimoine fortune & dettes mois par mois [#164], donut de répartition des dépenses par compte/sous-compte [#165], comparatif recettes/dépenses mensuel [#166]) ; **Budgets** (E13 [#196]) + comparatif budget validé vs réalité [#197] | 📋 Backlog |
 
 Détails : [PRD complet](_bmad-output/planning-artifacts/prd.md).

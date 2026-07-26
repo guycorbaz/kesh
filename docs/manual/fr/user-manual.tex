@@ -274,17 +274,35 @@ Le plan comptable est la colonne vertébrale de votre comptabilité. Kesh fourni
     \item \textbf{Libellé} : par exemple « CCP 12-345-6 ».
     \item \textbf{Compte parent} : compte de niveau supérieur (1020 dans l'exemple).
     \item \textbf{Type} : Actif / Passif / Produit / Charge / Bilan / Résultat.
+    \item \textbf{Rôle} : fonction du compte dans l'application (\emph{Créances clients}, \emph{TVA due}, \emph{Capital}, \emph{Résultat de l'exercice}\ldots) ou \emph{Aucun}. Voir la section \emph{Rôles des comptes} ci-dessous.
+    \item \textbf{Postable} : décocher pour un compte de regroupement (compte titre) sur lequel on ne saisit pas d'écriture.
     \item \textbf{Devise} : CHF par défaut.
     \item \textbf{Compte de banque} : cocher si ce compte représente un compte bancaire (active la liaison avec l'import CAMT.053).
 \end{itemize}
 
 \subsection{Modification d'un compte}
 
-Cliquer sur un compte ouvre son détail. Vous pouvez modifier le libellé, le compte parent, le type. Le numéro n'est pas modifiable une fois des écritures saisies (pour préserver l'audit-trail).
+Cliquer sur un compte ouvre son détail. Vous pouvez modifier le libellé, le compte parent, le type, le \textbf{rôle} et l'indicateur \textbf{postable}. Le numéro n'est pas modifiable une fois des écritures saisies (pour préserver l'audit-trail).
 
 \subsection{Suppression d'un compte}
 
 Un compte ne peut être supprimé que s'il n'a aucune écriture ni sous-compte. Sinon, vous pouvez l'\textbf{archiver} (le compte reste visible dans les écritures historiques mais n'est plus proposé à la saisie).
+
+Pour retrouver un compte archivé, cocher \emph{Afficher les archivés} en haut de la page. Un bouton \textbf{Réactiver} permet de le remettre en service. La réactivation est refusée dans deux cas : si son \textbf{compte parent} est lui-même archivé (il faut le réactiver d'abord), ou si son \textbf{rôle} a été attribué à un autre compte pendant son archivage — le message d'erreur nomme alors le compte concerné, dont il faut retirer le rôle au préalable.
+
+\subsection{Rôles des comptes}
+
+Chaque compte peut porter un \textbf{rôle} qui indique à Kesh à quoi il sert : compte de créances clients, de TVA due, de capital, de résultat de l'exercice, etc. Ce rôle est \textbf{explicite et modifiable} : Kesh ne devine jamais la fonction d'un compte à partir de son \emph{numéro}. C'est ce qui vous permet de renuméroter ou de restructurer votre plan comptable sans rien casser — le plan comptable suisse est un usage, pas une obligation légale.
+
+Certains rôles sont \textbf{uniques} : un seul compte actif à la fois peut être le compte de créances clients, de TVA due, de résultat de l'exercice, etc. D'autres peuvent être portés par plusieurs comptes (capital, autres fonds propres). Si vous attribuez un rôle unique déjà pris, Kesh refuse la modification et vous indique quel compte le détient.
+
+\begin{keshwarning}
+Lors de la mise à jour vers cette version, Kesh a \textbf{pré-attribué les rôles} d'après les numéros du plan comptable standard (1100 → créances clients, 2200 → TVA due, etc.). Si vous aviez \textbf{renuméroté} vos comptes, vérifiez la colonne \emph{Rôle} de votre plan comptable et corrigez les attributions le cas échéant.
+\end{keshwarning}
+
+\begin{keshnote}
+Dans cette version, l'indicateur \emph{postable} \textbf{bloque la saisie manuelle} : Kesh refuse une écriture saisie à la main (création ou modification) dont une ligne vise un compte non-postable — typiquement un compte de regroupement ou le compte de résultat. Les écritures \textbf{déjà enregistrées} sur un tel compte restent modifiables (seule une ligne vers un compte non-postable \emph{qui n'était pas déjà utilisé par cette écriture} est refusée), et les flux automatiques (factures, avoirs, réconciliation) ne sont pas concernés.
+\end{keshnote}
 
 \subsection{Import d'un plan personnalisé}
 
@@ -430,22 +448,45 @@ Le nouvel exercice s'ouvre vide. Les comptes du bilan sont automatiquement repor
 
 \emph{Administration} → \emph{Exercices comptables} → sélectionner l'exercice → \emph{Clôturer}.
 
-La clôture :
+La clôture est un simple \textbf{verrou} : elle ne génère aucune écriture. Le report des soldes de bilan d'un exercice à l'autre est \textbf{calculé en temps réel} depuis l'origine (report à-nouveau automatique), sans écriture de clôture ni de report à passer. La clôture :
 
 \begin{itemize}
-    \item Verrouille toutes les écritures de l'exercice (modification impossible, contre-passation toujours possible si nécessaire).
-    \item Génère les écritures de clôture (transfert des comptes de résultat vers le bilan).
-    \item Reporte les soldes des comptes de bilan vers le nouvel exercice.
-    \item Génère les rapports finaux (bilan de clôture, compte de résultat, balance).
+    \item Verrouille toutes les écritures de l'exercice : plus aucune écriture ne peut y être saisie, modifiée ou supprimée tant qu'il reste clôturé (immutabilité, CO art. 957-964).
+    \item Inscrit l'opération dans le journal d'audit (\texttt{audit\_log}).
+    \item N'affecte pas le report à-nouveau, qui reste calculé automatiquement — les rapports finaux (bilan, compte de résultat, balance) demeurent consultables et exportables (CSV/PDF).
 \end{itemize}
 
 \begin{keshwarning}
-La clôture d'un exercice est une opération critique. Effectuez d'abord une sauvegarde complète. Une fois clôturé, l'exercice ne peut plus être modifié sans intervention administrateur exceptionnelle.
+La clôture d'un exercice est une opération critique. Effectuez d'abord une sauvegarde complète. Une fois clôturé, l'exercice ne peut plus être modifié tant qu'il reste clôturé ; seul un administrateur peut le rouvrir (voir ci-dessous).
 \end{keshwarning}
 
 \subsection{Réouverture d'un exercice clôturé}
 
-En cas d'erreur découverte après clôture, un administrateur peut rouvrir un exercice via une procédure CLI (cf. Manuel administrateur, section Dépannage). L'opération est tracée dans l'\texttt{audit\_log}. Effectuer cette opération avec parcimonie pour préserver l'intégrité légale.
+En cas d'erreur découverte après clôture, un \textbf{administrateur} peut rouvrir l'exercice directement depuis l'interface : \emph{Paramètres} → \emph{Exercices comptables} → bouton \emph{Réouvrir} (visible uniquement pour les administrateurs sur un exercice clôturé). Un \textbf{motif est obligatoire} ; il est conservé, avec l'auteur et l'horodatage, dans le journal d'audit (\texttt{audit\_log}, conservation 10 ans). L'exercice rouvert redevient modifiable, puis pourra être re-clôturé.
+
+\begin{keshtip}
+On rouvre les exercices \textbf{du plus récent vers l'ancien} : si un exercice postérieur est encore clôturé, Kesh refuse la réouverture et indique lequel rouvrir d'abord. Effectuer cette opération avec parcimonie pour préserver l'intégrité légale.
+\end{keshtip}
+
+\subsection{Reprise de comptabilité — soldes de départ}
+
+Si vous migrez vers Kesh depuis un autre logiciel comptable, l'écran \emph{Administration} → \emph{Soldes de départ} (réservé aux rôles Comptable et Administrateur) vous permet de reprendre le bilan de clôture de votre ancienne comptabilité en une seule saisie :
+
+\begin{enumerate}
+    \item \textbf{Préparez le bilan de clôture} de votre ancien logiciel (actifs, passifs, capitaux propres, report à-nouveau accumulé).
+    \item \textbf{Ouvrez l'écran} : la grille liste vos comptes de bilan actifs et postables (actifs et passifs — jamais les comptes de produits ou de charges, qui fausseraient le résultat de l'exercice).
+    \item \textbf{Saisissez les soldes} colonne Débit ou Crédit, ligne par ligne. Le total débit, le total crédit et la différence s'affichent en direct.
+    \item \textbf{Équilibrez via le report à-nouveau} : posez votre report accumulé sur le compte de rôle \emph{Bénéfice reporté} (2970 dans les plans standards) — au crédit pour un bénéfice cumulé, au \textbf{débit} pour une perte reportée.
+    \item \textbf{Générez} : le bouton \emph{Générer l'écriture d'ouverture} (actif seulement une fois la saisie équilibrée) crée \textbf{une écriture OD équilibrée datée au 1\textsuperscript{er} jour de votre premier exercice}. Votre bilan est juste dès le premier jour.
+\end{enumerate}
+
+\begin{keshnote}
+L'écran n'est disponible que tant que la société ne contient \textbf{aucune écriture} (dans aucun exercice). Une fois l'écriture d'ouverture générée, il se verrouille : pour corriger un solde, modifiez l'écriture d'ouverture directement dans le journal (c'est une écriture OD normale, modifiable tant que l'exercice reste ouvert). Pour re-saisir intégralement les soldes, supprimez toutes les écritures de la société puis revenez sur l'écran.
+\end{keshnote}
+
+\begin{keshtip}
+Si votre premier exercice Kesh ne doit pas commencer au 1\textsuperscript{er} janvier de l'année courante (exercice décalé ou reprise antérieure), créez d'abord l'exercice voulu via \emph{Administration} → \emph{Exercices comptables} — l'écriture d'ouverture est datée au premier jour du \textbf{premier} exercice existant.
+\end{keshtip}
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Carnet d'adresses}
@@ -1011,6 +1052,15 @@ Si plusieurs écritures sont en brouillon issues des règles d'affectation, coch
     \item Capitaux étrangers long terme.
     \item Capitaux propres : capital, réserves, bénéfice / perte de l'exercice.
 \end{itemize}
+
+La section \emph{Capitaux propres} est présentée \textbf{séparément des dettes} et \textbf{regroupée par rôle} de compte (capital, autres fonds propres, bénéfice / perte reporté), dans l'ordre légal de l'Art. 959a CO. Kesh distingue nettement deux grandeurs qu'il ne faut jamais confondre :
+
+\begin{itemize}
+    \item le \textbf{report d'ouverture physique} que vous avez saisi sur un compte (typiquement lors d'une reprise de comptabilité depuis un autre logiciel) — il apparaît sous son propre numéro de compte ;
+    \item le \textbf{« Résultat reporté (calculé) »} que Kesh calcule automatiquement à partir des résultats de vos exercices antérieurs — ligne distincte, explicitement marquée \emph{calculé}, sans numéro de compte.
+\end{itemize}
+
+Ces deux lignes ne sont jamais additionnées ni fusionnées. Cette présentation se retrouve à l'identique dans les exports PDF et CSV du bilan.
 
 Filtres : date de référence (par défaut fin d'exercice en cours), exercice à comparer (N-1).
 

@@ -74,6 +74,7 @@ nav-mensuel = Monatlich
 nav-administration = Administration
 nav-accounts = Kontenrahmen
 nav-fiscal-years = Geschäftsjahre
+nav-opening-balances = Anfangssaldi
 nav-bank-accounts = Bankkonten
 nav-bank-profiles = Bankprofile
 nav-reconciliation-rules = Zuordnungsregeln
@@ -157,6 +158,54 @@ account-type-liability = Passiv
 account-type-revenue = Ertrag
 account-type-expense = Aufwand
 account-archived-label = Archiviert
+# --- Story 14-3a: Kontenrollen & Buchbarkeit ---
+account-field-role = Rolle
+account-role-none = Keine
+account-role-receivable = Forderungen aus Lieferungen und Leistungen
+account-role-default-revenue = Standard-Ertragskonto
+account-role-payable = Verbindlichkeiten aus Lieferungen und Leistungen
+account-role-vat-recoverable = Vorsteuer
+account-role-vat-payable = Geschuldete MWST
+account-role-vat-settlement = MWST-Abrechnung
+account-role-equity-capital = Kapital
+account-role-equity-other = Übriges Eigenkapital
+account-role-retained-earnings = Gewinn-/Verlustvortrag
+account-role-current-year-result = Jahresergebnis
+account-role-archived-hint = Rolle inaktiv — dieses Konto ist archiviert
+account-field-postable = Buchbar
+account-postable-no = Nicht buchbar
+account-postable-hint = Ein nicht bebuchbares Konto nimmt keine manuelle Buchungserfassung an
+accounts-reactivate-aria = Konto { $number } reaktivieren
+accounts-reactivated = Konto { $number } reaktiviert
+accounts-role-conflict = Die Rolle ist bereits dem Konto { $number } — { $name } zugewiesen. Entfernen Sie sie zuerst dort.
+accounts-error-number-required = Die Nummer ist erforderlich.
+accounts-error-name-required = Der Name ist erforderlich.
+accounts-error-number-exists = Diese Kontonummer existiert bereits.
+accounts-error-stale = Die Seite ist nicht mehr aktuell. Laden Sie sie neu und versuchen Sie es erneut.
+accounts-created = Konto { $number } erstellt
+accounts-updated = Konto { $number } geändert
+accounts-archived = Konto { $number } archiviert
+accounts-count = { $count } Konten
+accounts-show-archived = Archivierte Konten anzeigen
+# Story 14-3a — Code-Review: Dialog-Beschriftungen und Rollenfehler
+accounts-create-description = Fügen Sie dem Kontenplan ein Konto hinzu.
+accounts-edit-title = Konto { $number } bearbeiten
+accounts-edit-description = Die Nummer kann nach der Erstellung nicht mehr geändert werden.
+accounts-archive-title = Konto { $number } archivieren?
+accounts-archiving = Archivierung…
+account-field-parent-optional = Übergeordnetes Konto (optional)
+accounts-parent-none = Keines
+accounts-parent-archived = Das übergeordnete Konto { $number } ist archiviert. Reaktivieren Sie es zuerst.
+accounts-role-invalid-for-type = Die Rolle { $role } kann keinem Konto vom Typ { $type } zugewiesen werden.
+accounts-role-conflict-generic = Diese Rolle wurde soeben einem anderen Konto zugewiesen. Bitte laden Sie die Seite neu.
+accounts-reactivate-without-role = Ohne Rolle reaktivieren
+accounts-reactivate-without-role-description = Die Rolle dieses Kontos wurde von einem anderen Konto übernommen. Sie können es ohne seine Rolle reaktivieren — sie lässt sich danach jederzeit ändern.
+accounts-reactivating = Reaktivierung…
+common-empty = Keine Einträge gefunden.
+common-create = Erstellen
+common-creating = Erstellung…
+common-saving = Speicherung…
+
 
 # Mode Geführt/Experte (Story 2.5)
 mode-guided-label = Geführt
@@ -589,11 +638,23 @@ fiscal-year-status-closed = Geschlossen
 fiscal-year-rename-button = Umbenennen
 fiscal-year-close-button = Schliessen
 fiscal-year-close-confirmation-title = Geschäftsjahr schliessen?
-fiscal-year-close-confirmation-body = Sie sind dabei, das Geschäftsjahr „{ $name }“ zu schliessen. Diese Aktion ist unwiderruflich: keine Buchung, Rechnung oder Zahlung kann mehr in diesem Zeitraum erfasst werden. Bestätigen?
-fiscal-year-close-confirmation-action = Endgültig schliessen
+fiscal-year-close-confirmation-body = Sie sind dabei, das Geschäftsjahr „{ $name }“ zu schliessen. Solange es geschlossen bleibt, kann keine Buchung, Rechnung oder Zahlung mehr in diesem Zeitraum erfasst werden; nur eine Administratorin oder ein Administrator kann es wieder öffnen (mit protokolliertem Grund). Bestätigen?
+fiscal-year-close-confirmation-action = Schliessen
 fiscal-year-created = Geschäftsjahr erfolgreich erstellt.
 fiscal-year-renamed = Geschäftsjahr umbenannt.
 fiscal-year-closed = Geschäftsjahr geschlossen.
+# Story 14-2 — Wiedereröffnung eines abgeschlossenen Geschäftsjahres (Admin, Grund, Audit, LIFO-Regel)
+fiscal-year-reopen-button = Wieder öffnen
+fiscal-year-reopen-confirmation-title = Dieses Geschäftsjahr wieder öffnen?
+fiscal-year-reopen-confirmation-body = Sie sind dabei, das Geschäftsjahr „{ $name }“ wieder zu öffnen. Es wird bis zu einer erneuten Schliessung wieder bearbeitbar (Buchungserfassung). Ein Grund ist erforderlich und wird im Audit-Protokoll festgehalten.
+fiscal-year-reopen-motif-label = Grund der Wiedereröffnung
+fiscal-year-reopen-confirmation-action = Geschäftsjahr wieder öffnen
+fiscal-year-reopened = Geschäftsjahr wieder geöffnet.
+fiscal-year-reopen-blocked-later-closed = Öffnen Sie zuerst das Geschäftsjahr „{ $name }“, das neuer und noch geschlossen ist.
+error-fiscal-year-reopen-motif-empty = Der Grund der Wiedereröffnung ist erforderlich.
+error-fiscal-year-reopen-motif-too-long = Der Grund der Wiedereröffnung ist zu lang (max. 500 Zeichen).
+error-fiscal-year-already-open = Dieses Geschäftsjahr ist bereits offen.
+error-fiscal-year-reopen-blocked = Wiedereröffnung nicht möglich: ein späteres Geschäftsjahr ist geschlossen; öffnen Sie dieses zuerst.
 error-fiscal-year-overlap = Dieses Geschäftsjahr überschneidet sich mit einem bestehenden Jahr.
 error-fiscal-year-name-duplicate = Ein Geschäftsjahr mit diesem Namen existiert bereits.
 error-fiscal-year-name-empty = Der Name des Geschäftsjahres ist erforderlich.
@@ -605,6 +666,32 @@ error-fiscal-year-missing = Erstellen Sie zuerst ein Geschäftsjahr unter Einste
 error-fiscal-year-closed-for-date = Das Geschäftsjahr, das dieses Datum abdeckt, ist geschlossen. Überprüfen Sie das Datum oder Ihre Geschäftsjahre.
 go-to-settings = Einstellungen öffnen
 settings-fiscal-years-link = Erstellen, umbenennen oder schliessen Sie die Geschäftsjahre Ihres Unternehmens.
+
+# Story 14-4 — Eröffnungsbilanz (Anfangssaldi, Übernahme der Buchhaltung)
+opening-balances-title = Anfangssaldi
+opening-balances-intro = Erfassen Sie die Saldi Ihrer Bilanzkonten aus Ihrer bisherigen Buchhaltung. Eine ausgeglichene Eröffnungsbuchung wird per { $date } (erster Tag des Geschäftsjahres „{ $name }“) erstellt. Buchen Sie Ihren kumulierten Gewinnvortrag auf Ihr Vortragskonto, um die Buchung auszugleichen.
+opening-balances-account = Konto
+opening-balances-debit = Soll
+opening-balances-credit = Haben
+opening-balances-total-debit = Total Soll
+opening-balances-total-credit = Total Haben
+opening-balances-diff = Differenz
+opening-balances-generate = Eröffnungsbuchung erstellen
+opening-balances-generating = Wird erstellt…
+opening-balances-success = Eröffnungsbuchung erstellt.
+opening-balances-entry-description = Eröffnungsbilanz — Anfangssaldi
+opening-balances-locked-no-fiscal-year = Kein Geschäftsjahr vorhanden: Erstellen Sie zuerst ein Geschäftsjahr (Einstellungen → Geschäftsjahre), um Ihre Anfangssaldi zu erfassen.
+opening-balances-locked-first-year-closed = Das erste Geschäftsjahr „{ $name }“ ist abgeschlossen: Ein Administrator muss es wieder öffnen, bevor die Anfangssaldi erfasst werden können.
+opening-balances-locked-already-has-entries = Das Unternehmen enthält bereits Buchungen: Die Eröffnungsbilanz ist gesperrt. Korrigieren Sie die Eröffnungsbuchung direkt im Journal oder löschen Sie alle Buchungen, um neu zu beginnen.
+opening-balances-goto-journal = Journal öffnen
+opening-balances-goto-balance-sheet = Bilanz anzeigen
+opening-balances-status-error = Der Status der Anfangssaldi konnte nicht geladen werden.
+opening-balances-retry = Erneut versuchen
+opening-balances-empty-grid = Kein aktives, bebuchbares Bilanzkonto im Kontenplan — erstellen oder reaktivieren Sie zuerst Ihre Aktiv- und Passivkonten (Kontenplan), bevor Sie die Anfangssaldi erfassen.
+error-opening-balances-no-fiscal-year = Kein Geschäftsjahr vorhanden: Erstellen Sie zuerst ein Geschäftsjahr, bevor Sie die Anfangssaldi erfassen.
+error-opening-balances-first-year-closed = Das erste Geschäftsjahr ist abgeschlossen: Öffnen Sie es wieder, bevor Sie die Anfangssaldi erfassen.
+error-opening-balances-already-has-entries = Das Unternehmen enthält bereits Buchungen: Die Eröffnungsbilanz kann nicht mehr erstellt werden. Korrigieren Sie die Eröffnungsbuchung im Journal.
+error-opening-balances-non-balance-account = Die Eröffnungsbilanz darf nur Bilanzkonten (Aktiven und Passiven) betreffen — entfernen Sie Ertrags- und Aufwandskonten.
 
 
 # --- Story 8-1b — CAMT.053 Bankimport ---
@@ -859,6 +946,7 @@ reports-section-expenses = Aufwand
 
 reports-total-assets = Total Aktiven
 reports-total-liabilities = Total Passiven
+reports-total-equity = Total Eigenkapital
 reports-total-revenues = Total Ertrag
 reports-total-expenses = Total Aufwand
 reports-total-debit = Total Soll
@@ -887,6 +975,10 @@ reports-error-no-fiscal-year-available = Kein Geschäftsjahr verfügbar. Erstell
 reports-equity-result-section-title = Periodenergebnis (vor Abschlussbuchung)
 reports-equity-result-profit = Gewinn der Periode
 reports-equity-result-loss = Verlust der Periode
+reports-retained-earnings = Gewinnvortrag
+reports-retained-earnings-calculated = Gewinnvortrag (berechnet)
+reports-retained-earnings-loss = Verlustvortrag
+reports-trial-balance-period-note = Die Rohbilanz zeigt die Bewegung der Periode (pro Geschäftsjahr). Die Summe pro Konto ist nicht mit dem kumulierten Saldo desselben Kontos in der Bilanz vergleichbar (Saldovortrag seit Beginn).
 
 # Alerts + badges UI (2 — code review Pass 1 i18n leaks)
 reports-equation-warning = ⚠️ Bilanzgleichung ungültig (Quelldaten prüfen).

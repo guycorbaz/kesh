@@ -21,6 +21,8 @@ use printpdf::{
 };
 use rust_decimal::Decimal;
 
+use kesh_db::entities::AccountRole;
+
 use crate::balance_sheet::{AccountBalance, BalanceSheet};
 use crate::errors::ReportError;
 use crate::income_statement::IncomeStatement;
@@ -76,6 +78,24 @@ pub struct SectionLabels {
     pub liabilities: String,
     pub equity: String,
     pub equity_result_label: String,
+    /// Libellé de la **ligne calculée** « Résultat reporté (calculé) » (report
+    /// à-nouveau virtuel — Story 14-1). Marqué « (calculé) » depuis 14-3c pour le
+    /// distinguer d'un compte physique de rôle `RetainedEarnings` (collision D1).
+    pub retained_result_label: String,
+    /// Total de la section Capitaux propres (comptes physiques + 2 lignes calculées) — 14-3c.
+    pub total_equity: String,
+    // Sous-titres de groupes de rôle de fonds propres (Story 14-3c, hardcode FR-CH D3).
+    /// Sous-titre du groupe de rôle `EquityCapital`.
+    pub equity_capital_label: String,
+    /// Sous-titre du groupe de rôle `EquityOther`.
+    pub equity_other_label: String,
+    /// Sous-titre du groupe des comptes **physiques** de rôle `RetainedEarnings`
+    /// (report d'ouverture / ajustements manuels d'un migrant) — distinct de la
+    /// ligne calculée `retained_result_label` (collision D1).
+    pub retained_earnings_account_label: String,
+    /// Sous-titre du groupe des comptes **physiques** de rôle `CurrentYearResult`
+    /// (cas legacy : compte non-postable ayant un solde antérieur à 14-3a).
+    pub current_year_result_account_label: String,
     // Sections compte de résultat
     pub revenues: String,
     pub expenses: String,
@@ -110,6 +130,12 @@ impl SectionLabels {
             liabilities: "Passifs".into(),
             equity: "Capitaux propres".into(),
             equity_result_label: "Résultat de l'exercice".into(),
+            retained_result_label: "Résultat reporté (calculé)".into(),
+            total_equity: "Total capitaux propres".into(),
+            equity_capital_label: "Capital".into(),
+            equity_other_label: "Autres fonds propres".into(),
+            retained_earnings_account_label: "Bénéfice/perte reporté".into(),
+            current_year_result_account_label: "Résultat de l'exercice (compte)".into(),
             revenues: "Produits".into(),
             expenses: "Charges".into(),
             net_result: "Résultat net".into(),
@@ -129,6 +155,19 @@ impl SectionLabels {
             col_description: "Libellé".into(),
             header_period: "Période".into(),
             journal_filter_prefix: "Journal".into(),
+        }
+    }
+
+    /// Sous-titre du groupe de rôle de fonds propres au bilan (Story 14-3c), ou
+    /// `None` si le rôle n'est **pas** un rôle equity (ne devrait jamais survenir
+    /// dans la section `equity`, filtrée par `is_equity_role` en amont).
+    fn equity_role_label(&self, role: Option<AccountRole>) -> Option<&str> {
+        match role {
+            Some(AccountRole::EquityCapital) => Some(&self.equity_capital_label),
+            Some(AccountRole::EquityOther) => Some(&self.equity_other_label),
+            Some(AccountRole::RetainedEarnings) => Some(&self.retained_earnings_account_label),
+            Some(AccountRole::CurrentYearResult) => Some(&self.current_year_result_account_label),
+            _ => None,
         }
     }
 }
@@ -269,6 +308,16 @@ impl PdfBuilder {
     /// une page (sans redraw du header — caller décide).
     fn ensure_space_for_row(&mut self) {
         if self.cursor_y - LINE_HEIGHT_MM < MARGIN_BOTTOM_MM {
+            self.new_page();
+        }
+    }
+
+    /// Réserve la place de `n` lignes consécutives sur la page courante ; sinon
+    /// saute de page. Sert au **keep-with-next** : dessiner un sous-titre de groupe
+    /// (ex. rôle de fonds propres, Story 14-3c) seulement s'il tient AVEC au moins
+    /// sa première ligne de contenu — évite un sous-titre orphelin en bas de page.
+    fn ensure_space_for_rows(&mut self, n: f32) {
+        if self.cursor_y - n * LINE_HEIGHT_MM < MARGIN_BOTTOM_MM {
             self.new_page();
         }
     }
@@ -452,8 +501,10 @@ pub fn render_balance_sheet_pdf(
         bs.period.end_date,
     );
 
-    let is_empty = bs.assets.is_empty() && bs.liabilities.is_empty();
-    if is_empty {
+    // Garde « rapport vide » centralisée `BalanceSheet::is_empty()` (Story 14-3c P1-F1)
+    // — inclut `equity` : un reclassement pur entre comptes de fonds propres (section
+    // equity non vide, actifs/passifs/virtuels nuls) n'est PAS vide.
+    if bs.is_empty() {
         draw_empty_message(&mut builder, ctx);
         return builder.finalize();
     }
@@ -480,28 +531,70 @@ pub fn render_balance_sheet_pdf(
         bs.total_liabilities,
     );
 
-    // Section Capitaux propres (1 seule ligne synthétique — Pass 3 BH3-H2)
+    // Section Capitaux propres — présentation par rôle (Story 14-3c). D'abord les
+    // comptes physiques de fonds propres, groupés par rôle sous des sous-titres FR-CH
+    // (ordre par rôle fixé en backend — on itère `bs.equity` sans re-trier). Puis les
+    // deux lignes **calculées** distinctes (« Résultat reporté (calculé) » marquée
+    // calculée pour la distinguer d'un compte physique RetainedEarnings — collision D1).
     builder.write_line(&ctx.section_labels.equity, FONT_SIZE_PT, true, 0.0);
-    builder.ensure_space_for_row();
-    {
+    let mut current_role: Option<Option<AccountRole>> = None;
+    for ab in &bs.equity {
+        if current_role != Some(ab.role) {
+            // Nouveau groupe de rôle → sous-titre gras indenté.
+            match ctx.section_labels.equity_role_label(ab.role) {
+                Some(label) => {
+                    // Keep-with-next (ECH-1) : réserver le sous-titre + sa 1re ligne
+                    // ensemble, pour ne pas laisser le sous-titre orphelin en bas de page.
+                    builder.ensure_space_for_rows(2.0);
+                    builder.write_line(label, FONT_SIZE_PT, true, 5.0);
+                }
+                // Défense en profondeur (BH-1) : `is_equity_role` garantit en amont que
+                // tout compte de `bs.equity` porte un rôle equity ; un `None` ici signale
+                // une régression de la partition — on la journalise sans crasher le rendu.
+                None => tracing::warn!(
+                    account_number = %ab.account_number,
+                    role = ?ab.role,
+                    "balance_sheet PDF : compte sans rôle de fonds propres dans la section \
+                     equity (partition incohérente ? cf. is_equity_role)"
+                ),
+            }
+            current_role = Some(ab.role);
+        }
+        draw_account_row(&mut builder, ab);
+    }
+    for (label, amount) in [
+        (
+            &ctx.section_labels.retained_result_label,
+            bs.retained_earnings,
+        ),
+        (&ctx.section_labels.equity_result_label, bs.equity_result),
+    ] {
+        builder.ensure_space_for_row();
         let y = builder.cursor_y;
         let layer = builder.current_layer();
         layer.use_text(
-            &ctx.section_labels.equity_result_label,
+            label,
             FONT_SIZE_PT,
             Mm(MARGIN_LEFT_MM + 25.0),
             Mm(y),
             &builder.font,
         );
         layer.use_text(
-            format_swiss_amount(bs.equity_result),
+            format_swiss_amount(amount),
             FONT_SIZE_PT,
             Mm(PAGE_WIDTH_MM - 45.0),
             Mm(y),
             &builder.font,
         );
+        builder.cursor_y -= LINE_HEIGHT_MM;
     }
-    builder.cursor_y -= LINE_HEIGHT_MM * 1.5;
+    // Total capitaux propres = comptes physiques + 2 lignes calculées.
+    let total_equity_all = bs.total_equity + bs.retained_earnings + bs.equity_result;
+    draw_totals_footer(
+        &mut builder,
+        &ctx.section_labels.total_equity,
+        total_equity_all,
+    );
 
     // Pied de page : équation bilan (AC #3).
     //
@@ -509,8 +602,9 @@ pub fn render_balance_sheet_pdf(
     // sous-total après la section Actifs ci-dessus. Le réafficher ici
     // dupliquait visuellement le montant. L'équation bilan se vérifie par
     // comparaison Total actifs (haut) vs Total passifs + Capitaux propres
-    // (bas) — pas besoin de redraw.
-    let total_liab_eq = bs.total_liabilities + bs.equity_result;
+    // (bas) — pas besoin de redraw. Équation restructurée 14-3c :
+    // `total_liabilities` (dettes seules) + total capitaux propres.
+    let total_liab_eq = bs.total_liabilities + total_equity_all;
     draw_totals_footer(
         &mut builder,
         &format!(
@@ -1355,6 +1449,7 @@ mod tests {
                     account_type: AccountType::Asset,
                     active: true,
                     balance: dec!(1234.56),
+                    role: None,
                 }]
             },
             liabilities: if empty {
@@ -1367,10 +1462,14 @@ mod tests {
                     account_type: AccountType::Liability,
                     active: true,
                     balance: dec!(500.00),
+                    role: None,
                 }]
             },
+            equity: vec![],
             total_assets: if empty { Decimal::ZERO } else { dec!(1234.56) },
             total_liabilities: if empty { Decimal::ZERO } else { dec!(500.00) },
+            total_equity: Decimal::ZERO,
+            retained_earnings: Decimal::ZERO,
             equity_result: if empty { Decimal::ZERO } else { dec!(734.56) },
             equation_holds: true,
         }
@@ -1389,6 +1488,7 @@ mod tests {
                     account_type: AccountType::Revenue,
                     active: true,
                     balance: dec!(2000),
+                    role: None,
                 }]
             },
             expenses: if empty {
@@ -1401,6 +1501,7 @@ mod tests {
                     account_type: AccountType::Expense,
                     active: true,
                     balance: dec!(1265.44),
+                    role: None,
                 }]
             },
             total_revenues: if empty { Decimal::ZERO } else { dec!(2000) },
@@ -1543,6 +1644,44 @@ mod tests {
         assert!(bytes.starts_with(b"%PDF-1."));
     }
 
+    /// Story 14-3c (ECH-1) : une section Capitaux propres avec de nombreux comptes de
+    /// fonds propres, groupés par rôle, force plusieurs pages — le rendu par rôle (avec
+    /// sous-titres keep-with-next `ensure_space_for_rows`) ne doit pas paniquer et produit
+    /// un PDF valide multi-pages. Exerce le chemin de pagination des sous-titres de groupe.
+    #[test]
+    fn balance_sheet_pdf_multi_role_equity_paginates_without_panic() {
+        use kesh_db::entities::AccountRole;
+        let eq = |i: usize, role: AccountRole| AccountBalance {
+            account_id: 5000 + i as i64,
+            account_number: format!("29{i:02}"),
+            account_name: format!("Fonds propres #{i}"),
+            account_type: AccountType::Liability,
+            active: true,
+            balance: dec!(100),
+            role: Some(role),
+        };
+        // 120 comptes EquityOther + 1 EquityCapital → 2 groupes de rôle, > 1 page A4.
+        let mut equity: Vec<AccountBalance> = vec![eq(0, AccountRole::EquityCapital)];
+        equity.extend((1..120).map(|i| eq(i, AccountRole::EquityOther)));
+        let total_equity: Decimal = equity.iter().map(|a| a.balance).sum();
+        let bs = BalanceSheet {
+            period: period(),
+            assets: vec![],
+            liabilities: vec![],
+            equity,
+            total_assets: total_equity,
+            total_liabilities: Decimal::ZERO,
+            total_equity,
+            retained_earnings: Decimal::ZERO,
+            equity_result: Decimal::ZERO,
+            equation_holds: true,
+        };
+        let ctx = PdfContext::fr_ch_default("CI Test Company");
+        let bytes = render_balance_sheet_pdf(&bs, &ctx).unwrap();
+        assert!(bytes.starts_with(b"%PDF-1."), "PDF multi-pages valide");
+        assert!(bytes.len() > 3000, "contenu multi-pages non trivial");
+    }
+
     #[test]
     fn trial_balance_pdf_starts_with_pdf_signature() {
         let ctx = PdfContext::fr_ch_default("CI Test Company");
@@ -1639,6 +1778,30 @@ mod tests {
         );
     }
 
+    /// Review Pass 1 — actif/passif vides mais report/résultat non nuls et opposés :
+    /// le PDF NE DOIT PAS afficher le message « vide » ; il doit dessiner la section
+    /// fonds propres. On le prouve en comparant à un bilan RÉELLEMENT vide (tout à 0) :
+    /// le rendu non-vide (2 sections + 2 lignes fonds propres) est plus volumineux.
+    #[test]
+    fn balance_sheet_pdf_shows_equity_when_assets_liabilities_net_to_zero() {
+        let ctx = PdfContext::fr_ch_default("CI Test Company");
+        let truly_empty = render_balance_sheet_pdf(&fixture_bs(true), &ctx).unwrap();
+
+        let mut bs = fixture_bs(true);
+        bs.retained_earnings = dec!(1000);
+        bs.equity_result = dec!(-1000);
+        let with_equity = render_balance_sheet_pdf(&bs, &ctx).unwrap();
+
+        assert!(with_equity.starts_with(b"%PDF-1."));
+        assert!(
+            with_equity.len() > truly_empty.len(),
+            "un bilan actif/passif nuls mais report/résultat non nuls doit dessiner la \
+             section fonds propres (rendu > message vide) : {} vs {}",
+            with_equity.len(),
+            truly_empty.len()
+        );
+    }
+
     #[test]
     fn trial_balance_pdf_empty_does_not_crash() {
         let ctx = PdfContext::fr_ch_default("CI Test Company");
@@ -1719,6 +1882,7 @@ mod tests {
                 account_type: AccountType::Asset,
                 active: true,
                 balance: dec!(100),
+                role: None,
             });
             liabilities.push(AccountBalance {
                 account_id: 500 + i as i64,
@@ -1727,14 +1891,18 @@ mod tests {
                 account_type: AccountType::Liability,
                 active: true,
                 balance: dec!(100),
+                role: None,
             });
         }
         let bs = BalanceSheet {
             period: period(),
             assets,
             liabilities,
+            equity: vec![],
             total_assets: dec!(50000),
             total_liabilities: dec!(50000),
+            total_equity: Decimal::ZERO,
+            retained_earnings: Decimal::ZERO,
             equity_result: dec!(0),
             equation_holds: true,
         };

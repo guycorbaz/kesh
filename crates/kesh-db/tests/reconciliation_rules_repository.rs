@@ -74,6 +74,8 @@ async fn create_test_account(
             name: name.into(),
             account_type: AccountType::Expense,
             parent_id: None,
+            role: None,
+            postable: true,
         },
     )
     .await

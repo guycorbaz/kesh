@@ -370,6 +370,9 @@ pub async fn create_in_tx(
             project_id,
             lines: entry_lines,
         },
+        // Flux automatique (facture fournisseur) : garde de postabilité
+        // désactivée (Story 14-3b, D-A0).
+        false,
     )
     .await?;
 
@@ -658,6 +661,9 @@ pub async fn pay_in_tx(
             project_id: inv.project_id,
             lines: entry_lines,
         },
+        // Flux automatique (règlement fournisseur) : garde de postabilité
+        // désactivée (Story 14-3b, D-A0).
+        false,
     )
     .await?;
 
@@ -794,6 +800,9 @@ pub async fn cancel(
                 project_id: inv.project_id,
                 lines: reversal_lines,
             },
+            // Flux automatique (annulation facture fournisseur) : garde de
+            // postabilité désactivée (Story 14-3b, D-A0).
+            false,
         )
         .await?;
 

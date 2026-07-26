@@ -74,6 +74,7 @@ nav-mensuel = Monthly
 nav-administration = Administration
 nav-accounts = Chart of accounts
 nav-fiscal-years = Fiscal years
+nav-opening-balances = Opening balances
 nav-bank-accounts = Bank accounts
 nav-bank-profiles = Bank profiles
 nav-reconciliation-rules = Reconciliation rules
@@ -157,6 +158,54 @@ account-type-liability = Liability
 account-type-revenue = Revenue
 account-type-expense = Expense
 account-archived-label = Archived
+# --- Story 14-3a: account roles & postability ---
+account-field-role = Role
+account-role-none = None
+account-role-receivable = Trade receivables
+account-role-default-revenue = Default revenue
+account-role-payable = Trade payables
+account-role-vat-recoverable = Input VAT
+account-role-vat-payable = VAT payable
+account-role-vat-settlement = VAT settlement
+account-role-equity-capital = Capital
+account-role-equity-other = Other equity
+account-role-retained-earnings = Retained earnings
+account-role-current-year-result = Current year result
+account-role-archived-hint = Role inactive — this account is archived
+account-field-postable = Postable
+account-postable-no = Not postable
+account-postable-hint = A non-postable account does not accept manual journal entry input
+accounts-reactivate-aria = Reactivate account { $number }
+accounts-reactivated = Account { $number } reactivated
+accounts-role-conflict = The role is already assigned to account { $number } — { $name }. Remove it from that account first.
+accounts-error-number-required = Number is required.
+accounts-error-name-required = Name is required.
+accounts-error-number-exists = This account number already exists.
+accounts-error-stale = This page is out of date. Reload it and try again.
+accounts-created = Account { $number } created
+accounts-updated = Account { $number } updated
+accounts-archived = Account { $number } archived
+accounts-count = { $count } accounts
+accounts-show-archived = Show archived accounts
+# Story 14-3a — code review: dialog labels and role errors
+accounts-create-description = Add an account to the chart of accounts.
+accounts-edit-title = Edit account { $number }
+accounts-edit-description = The number cannot be changed after creation.
+accounts-archive-title = Archive account { $number }?
+accounts-archiving = Archiving…
+account-field-parent-optional = Parent account (optional)
+accounts-parent-none = None
+accounts-parent-archived = Parent account { $number } is archived. Reactivate it first.
+accounts-role-invalid-for-type = The { $role } role cannot be assigned to a { $type } account.
+accounts-role-conflict-generic = This role has just been assigned to another account. Please reload the page.
+accounts-reactivate-without-role = Reactivate without the role
+accounts-reactivate-without-role-description = This account's role has been taken over by another account. You can reactivate it without its role — it stays editable afterwards.
+accounts-reactivating = Reactivating…
+common-empty = No items found.
+common-create = Create
+common-creating = Creating…
+common-saving = Saving…
+
 
 # Mode Guided/Expert (Story 2.5)
 mode-guided-label = Guided
@@ -589,11 +638,23 @@ fiscal-year-status-closed = Closed
 fiscal-year-rename-button = Rename
 fiscal-year-close-button = Close
 fiscal-year-close-confirmation-title = Close this fiscal year?
-fiscal-year-close-confirmation-body = You are about to close fiscal year "{ $name }". This action is irreversible: no entry, invoice, or payment can be recorded for this period anymore. Confirm?
-fiscal-year-close-confirmation-action = Close permanently
+fiscal-year-close-confirmation-body = You are about to close fiscal year "{ $name }". While it stays closed, no entry, invoice, or payment can be recorded for this period; only an administrator can reopen it (with a logged reason). Confirm?
+fiscal-year-close-confirmation-action = Close
 fiscal-year-created = Fiscal year created successfully.
 fiscal-year-renamed = Fiscal year renamed.
 fiscal-year-closed = Fiscal year closed.
+# Story 14-2 — reopening a closed fiscal year (Admin, reason, audit, LIFO guard)
+fiscal-year-reopen-button = Reopen
+fiscal-year-reopen-confirmation-title = Reopen this fiscal year?
+fiscal-year-reopen-confirmation-body = You are about to reopen fiscal year "{ $name }". It will become editable again (entry posting) until it is closed anew. A reason is required and will be kept in the audit trail.
+fiscal-year-reopen-motif-label = Reason for reopening
+fiscal-year-reopen-confirmation-action = Reopen fiscal year
+fiscal-year-reopened = Fiscal year reopened.
+fiscal-year-reopen-blocked-later-closed = First reopen fiscal year "{ $name }", which is more recent and still closed.
+error-fiscal-year-reopen-motif-empty = The reason for reopening is required.
+error-fiscal-year-reopen-motif-too-long = The reason for reopening is too long (500 characters maximum).
+error-fiscal-year-already-open = This fiscal year is already open.
+error-fiscal-year-reopen-blocked = Cannot reopen: a later fiscal year is closed; reopen it first.
 error-fiscal-year-overlap = This fiscal year overlaps with an existing one.
 error-fiscal-year-name-duplicate = A fiscal year with this name already exists.
 error-fiscal-year-name-empty = The fiscal year name is required.
@@ -605,6 +666,32 @@ error-fiscal-year-missing = First create a fiscal year in Settings → Fiscal Ye
 error-fiscal-year-closed-for-date = The fiscal year covering this date is closed. Check the entered date or your fiscal years.
 go-to-settings = Open Settings
 settings-fiscal-years-link = Create, rename, or close your company fiscal years.
+
+# Story 14-4 — opening balance sheet (starting balances, accounting migration)
+opening-balances-title = Opening balances
+opening-balances-intro = Enter the balances of your balance-sheet accounts carried over from your previous accounting system. A balanced opening entry will be generated as of { $date } (first day of fiscal year "{ $name }"). Post your accumulated retained earnings to your retained-earnings account to balance the entry.
+opening-balances-account = Account
+opening-balances-debit = Debit
+opening-balances-credit = Credit
+opening-balances-total-debit = Total debits
+opening-balances-total-credit = Total credits
+opening-balances-diff = Difference
+opening-balances-generate = Generate opening entry
+opening-balances-generating = Generating…
+opening-balances-success = Opening entry generated.
+opening-balances-entry-description = Opening balance sheet — starting balances
+opening-balances-locked-no-fiscal-year = No fiscal year yet: first create a fiscal year (Settings → Fiscal Years) to enter your opening balances.
+opening-balances-locked-first-year-closed = The first fiscal year "{ $name }" is closed: an administrator must reopen it before opening balances can be entered.
+opening-balances-locked-already-has-entries = The company already contains journal entries: the opening balance sheet is locked. Correct the opening entry directly in the journal, or delete all entries to start over.
+opening-balances-goto-journal = Open the journal
+opening-balances-goto-balance-sheet = View the balance sheet
+opening-balances-status-error = Could not load the opening balances status.
+opening-balances-retry = Retry
+opening-balances-empty-grid = No active, postable balance-sheet account in your chart of accounts — create or reactivate your asset and liability accounts (Chart of accounts) before entering opening balances.
+error-opening-balances-no-fiscal-year = No fiscal year yet: create a fiscal year before entering opening balances.
+error-opening-balances-first-year-closed = The first fiscal year is closed: reopen it before entering opening balances.
+error-opening-balances-already-has-entries = The company already contains journal entries: the opening balance sheet can no longer be generated. Correct the opening entry via the journal.
+error-opening-balances-non-balance-account = The opening balance sheet may only touch balance-sheet accounts (assets and liabilities) — remove income and expense accounts.
 
 
 # --- Story 8-1b — CAMT.053 bank import ---
@@ -859,6 +946,7 @@ reports-section-expenses = Expenses
 
 reports-total-assets = Total Assets
 reports-total-liabilities = Total Liabilities
+reports-total-equity = Total equity
 reports-total-revenues = Total Revenues
 reports-total-expenses = Total Expenses
 reports-total-debit = Total Debit
@@ -887,6 +975,10 @@ reports-error-no-fiscal-year-available = No fiscal year available. Create a fisc
 reports-equity-result-section-title = Period result (before closing entries)
 reports-equity-result-profit = Period profit
 reports-equity-result-loss = Period loss
+reports-retained-earnings = Retained earnings
+reports-retained-earnings-calculated = Retained earnings (calculated)
+reports-retained-earnings-loss = Accumulated loss
+reports-trial-balance-period-note = The trial balance shows the movement of the period (per fiscal year). The per-account total is not comparable to the cumulative balance of the same account in the balance sheet (carry-forward from inception).
 
 # Alerts + badges UI (2 — code review Pass 1 i18n leaks)
 reports-equation-warning = ⚠️ Balance sheet equation unbalanced (verify source data).

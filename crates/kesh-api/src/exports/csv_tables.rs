@@ -207,6 +207,10 @@ pub fn serialize_accounts_csv<W: Write>(rows: &[Account], writer: W) -> Result<(
         "account_type",
         "parent_id",
         "active",
+        // Story 14-3a — l'en-tête est écrit à la main : tout champ ajouté à
+        // `Account` doit être répercuté ici ET dans le write_record ci-dessous.
+        "role",
+        "postable",
         "version",
         "created_at",
         "updated_at",
@@ -221,6 +225,8 @@ pub fn serialize_accounts_csv<W: Write>(rows: &[Account], writer: W) -> Result<(
             a.account_type.as_str().to_string(),
             fmt_opt_i64(a.parent_id),
             fmt_bool(a.active),
+            a.role.map(|r| r.as_str().to_string()).unwrap_or_default(),
+            fmt_bool(a.postable),
             a.version.to_string(),
             fmt_dt(a.created_at),
             fmt_dt(a.updated_at),
@@ -932,7 +938,7 @@ pub fn serialize_bank_profiles_csv<W: Write>(
 mod tests {
     use super::*;
     use chrono::NaiveTime;
-    use kesh_db::entities::{AccountType, Journal as JournalEnum};
+    use kesh_db::entities::{AccountRole, AccountType, Journal as JournalEnum};
     use rust_decimal_macros::dec;
 
     fn naive_dt(y: i32, m: u32, d: u32, h: u32, mi: u32, s: u32) -> NaiveDateTime {
@@ -950,6 +956,8 @@ mod tests {
             account_type: AccountType::Asset,
             parent_id: None,
             active: true,
+            role: Some(AccountRole::Receivable),
+            postable: true,
             version: 1,
             created_at: naive_dt(2026, 1, 1, 0, 0, 0),
             updated_at: naive_dt(2026, 1, 2, 12, 30, 45),
@@ -1076,6 +1084,49 @@ mod tests {
         assert!(
             text.contains("2026-01-02T12:30:45Z"),
             "missing ISO 8601 UTC, got: {text}"
+        );
+    }
+
+    /// Story 14-3a — l'en-tête du CSV est écrit **à la main** : l'oubli d'une
+    /// colonne y est silencieux (aucune erreur, juste une donnée qui disparaît
+    /// de l'export global). Ce test fige donc l'en-tête complet.
+    #[test]
+    fn serialize_accounts_csv_includes_role_and_postable() {
+        let mut buf = Vec::new();
+        serialize_accounts_csv(&[sample_account()], &mut buf).expect("serialize ok");
+        let text = std::str::from_utf8(&buf[3..]).unwrap();
+        let mut lines = text.split("\r\n");
+
+        assert_eq!(
+            lines.next().unwrap(),
+            "id;company_id;number;name;account_type;parent_id;active;role;postable;version;created_at;updated_at",
+            "en-tête CSV des comptes (12 colonnes depuis la Story 14-3a)"
+        );
+
+        let row = lines.next().unwrap();
+        assert!(
+            row.contains(";Receivable;true;"),
+            "le rôle et la postabilité doivent figurer dans la ligne : {row}"
+        );
+    }
+
+    /// Un compte sans rôle exporte une cellule **vide**, pas la chaîne "null".
+    #[test]
+    fn serialize_accounts_csv_renders_absent_role_as_empty_cell() {
+        let mut account = sample_account();
+        account.role = None;
+        account.postable = false;
+        let mut buf = Vec::new();
+        serialize_accounts_csv(&[account], &mut buf).expect("serialize ok");
+        let text = std::str::from_utf8(&buf[3..]).unwrap();
+        let row = text.split("\r\n").nth(1).unwrap();
+        assert!(
+            row.contains(";;false;"),
+            "rôle absent → cellule vide, postable=false : {row}"
+        );
+        assert!(
+            !row.contains("null"),
+            "ne jamais écrire la chaîne 'null' : {row}"
         );
     }
 

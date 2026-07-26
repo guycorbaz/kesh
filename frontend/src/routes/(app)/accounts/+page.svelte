@@ -6,23 +6,64 @@
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { toast } from 'svelte-sonner';
-	import { Plus, Pencil, Archive } from '@lucide/svelte';
+	import { Plus, Pencil, Archive, RotateCcw } from '@lucide/svelte';
+	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import {
 		fetchAccounts,
 		createAccount,
 		updateAccount,
 		archiveAccount,
+		reactivateAccount,
 	} from '$lib/features/accounts/accounts.api';
-	import type { AccountResponse, AccountType } from '$lib/features/accounts/accounts.types';
+	import {
+		ACCOUNT_ROLES,
+		accountRoleKey,
+		type AccountResponse,
+		type AccountRole,
+		type AccountType,
+	} from '$lib/features/accounts/accounts.types';
 
 	const ACCOUNT_TYPES: AccountType[] = ['Asset', 'Liability', 'Revenue', 'Expense'];
 
-	const TYPE_LABELS: Record<AccountType, string> = {
+	const TYPE_FALLBACK: Record<AccountType, string> = {
 		Asset: 'Actif',
 		Liability: 'Passif',
 		Revenue: 'Produit',
 		Expense: 'Charge',
 	};
+
+	/** Libellé traduit d'un type de compte (les clés FTL existaient déjà, inutilisées). */
+	function typeLabel(t: AccountType): string {
+		return i18nMsg(`account-type-${t.toLowerCase()}`, TYPE_FALLBACK[t]);
+	}
+
+	const ROLE_FALLBACK: Record<AccountRole, string> = {
+		Receivable: 'Créances clients',
+		DefaultRevenue: 'Produit par défaut',
+		Payable: 'Dettes fournisseurs',
+		VatRecoverable: 'Impôt préalable (TVA récupérable)',
+		VatPayable: 'TVA due',
+		VatSettlement: 'Décompte TVA',
+		EquityCapital: 'Capital',
+		EquityOther: 'Autres fonds propres',
+		RetainedEarnings: 'Bénéfice/perte reporté',
+		CurrentYearResult: "Résultat de l'exercice",
+	};
+
+	/** Libellé traduit d'un rôle ; `null` → « Aucun ».
+	 *
+	 * Le repli sur `String(r)` couvre le déploiement mixte : un backend plus
+	 * récent peut renvoyer un rôle que ce bundle ne connaît pas, et
+	 * `ROLE_FALLBACK[r]` vaudrait alors `undefined` — la cellule afficherait
+	 * littéralement « undefined ». Mieux vaut montrer la valeur brute.
+	 */
+	function roleLabel(r: AccountRole | null): string {
+		if (!r) return i18nMsg('account-role-none', 'Aucun');
+		return i18nMsg(accountRoleKey(r), ROLE_FALLBACK[r] ?? String(r));
+	}
+
+	/** Valeur sentinelle du sélecteur pour « aucun rôle » (Select n'aime pas null). */
+	const NO_ROLE = '';
 
 	// --- State ---
 	let accounts = $state<AccountResponse[]>([]);
@@ -35,6 +76,8 @@
 	let createName = $state('');
 	let createType = $state<AccountType>('Asset');
 	let createParentId = $state('');
+	let createRole = $state<string>(NO_ROLE);
+	let createPostable = $state(true);
 	let createSubmitting = $state(false);
 	let createError = $state('');
 
@@ -43,6 +86,8 @@
 	let editAccount = $state<AccountResponse | null>(null);
 	let editName = $state('');
 	let editType = $state<AccountType>('Asset');
+	let editRole = $state<string>(NO_ROLE);
+	let editPostable = $state(true);
 	let editSubmitting = $state(false);
 	let editError = $state('');
 
@@ -50,6 +95,20 @@
 	let archiveOpen = $state(false);
 	let archiveTarget = $state<AccountResponse | null>(null);
 	let archiveSubmitting = $state(false);
+
+	// Réactivation (Story 14-3a, #269) — action directe idempotente.
+	//
+	// Un `Set` et non un id unique : avec un scalaire, la réponse d'une première
+	// réactivation remettait l'état à `null` alors qu'une seconde était encore en
+	// vol, réarmant son bouton et autorisant un double envoi (code review 14-3a).
+	let reactivatingIds = $state<Set<number>>(new Set());
+
+	// Confirmation « réactiver sans le rôle » (code review 14-3a, D4) : proposée
+	// seulement après un refus pour rôle repris, pour sortir l'utilisateur du
+	// cul-de-sac sans lui faire perdre le rôle par inadvertance.
+	let clearRoleOpen = $state(false);
+	let clearRoleTarget = $state<AccountResponse | null>(null);
+	let clearRoleSubmitting = $state(false);
 
 	// --- Computed: tree structure ---
 	interface TreeAccount extends AccountResponse {
@@ -97,7 +156,7 @@
 			if (isApiError(err)) {
 				toast.error(err.message);
 			} else {
-				toast.error('Erreur inattendue.');
+				toast.error(i18nMsg('error-unexpected', 'Erreur inattendue.'));
 			}
 		} finally {
 			loading = false;
@@ -110,13 +169,15 @@
 		createName = '';
 		createType = 'Asset';
 		createParentId = '';
+		createRole = NO_ROLE;
+		createPostable = true;
 		createError = '';
 		createOpen = true;
 	}
 
 	let createValidation = $derived.by(() => {
-		if (!createNumber.trim()) return 'Le numéro est requis.';
-		if (!createName.trim()) return 'Le nom est requis.';
+		if (!createNumber.trim()) return i18nMsg('accounts-error-number-required', 'Le numéro est requis.');
+		if (!createName.trim()) return i18nMsg('accounts-error-name-required', 'Le nom est requis.');
 		return '';
 	});
 
@@ -133,19 +194,25 @@
 				name: createName.trim(),
 				accountType: createType,
 				parentId: createParentId !== '' ? Number(createParentId) : null,
+				role: createRole === NO_ROLE ? null : (createRole as AccountRole),
+				postable: createPostable,
 			});
-			toast.success(`Compte ${createNumber.trim()} créé.`);
+			toast.success(
+				i18nMsg('accounts-created', 'Compte { $number } créé', { number: createNumber.trim() })
+			);
 			createOpen = false;
 			await loadAccounts();
 		} catch (err) {
 			if (isApiError(err)) {
 				if (err.code === 'RESOURCE_CONFLICT') {
-					createError = 'Ce numéro de compte existe déjà.';
+					createError = i18nMsg('accounts-error-number-exists', 'Ce numéro de compte existe déjà.');
 				} else {
+					// ACCOUNT_ROLE_ALREADY_ASSIGNED : le backend nomme déjà le compte
+					// en conflit dans `message` (+ `details`), on l'affiche tel quel.
 					createError = err.message;
 				}
 			} else {
-				createError = 'Erreur inattendue.';
+				createError = i18nMsg('error-unexpected', 'Erreur inattendue.');
 			}
 		} finally {
 			createSubmitting = false;
@@ -157,12 +224,14 @@
 		editAccount = account;
 		editName = account.name;
 		editType = account.accountType;
+		editRole = account.role ?? NO_ROLE;
+		editPostable = account.postable;
 		editError = '';
 		editOpen = true;
 	}
 
 	let editValidation = $derived.by(() => {
-		if (!editName.trim()) return 'Le nom est requis.';
+		if (!editName.trim()) return i18nMsg('accounts-error-name-required', 'Le nom est requis.');
 		return '';
 	});
 
@@ -178,20 +247,25 @@
 			await updateAccount(editAccount.id, {
 				name: editName.trim(),
 				accountType: editType,
+				// full-replace : role/postable sont obligatoires côté API.
+				role: editRole === NO_ROLE ? null : (editRole as AccountRole),
+				postable: editPostable,
 				version: editAccount.version,
 			});
-			toast.success(`Compte ${editAccount.number} modifié.`);
+			toast.success(
+				i18nMsg('accounts-updated', 'Compte { $number } modifié', { number: editAccount.number })
+			);
 			editOpen = false;
 			await loadAccounts();
 		} catch (err) {
 			if (isApiError(err)) {
 				if (err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
-					editError = 'Les données ont été modifiées. Rechargez la page.';
+					editError = i18nMsg('accounts-error-stale', 'Les données ont été modifiées. Rechargez la page.');
 				} else {
 					editError = err.message;
 				}
 			} else {
-				editError = 'Erreur inattendue.';
+				editError = i18nMsg('error-unexpected', 'Erreur inattendue.');
 			}
 		} finally {
 			editSubmitting = false;
@@ -209,21 +283,70 @@
 		archiveSubmitting = true;
 		try {
 			await archiveAccount(archiveTarget.id, { version: archiveTarget.version });
-			toast.success(`Compte ${archiveTarget.number} archivé.`);
+			toast.success(
+				i18nMsg('accounts-archived', 'Compte { $number } archivé', { number: archiveTarget.number })
+			);
 			archiveOpen = false;
 			await loadAccounts();
 		} catch (err) {
 			if (isApiError(err)) {
 				if (err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
-					toast.error('Les données ont été modifiées. Rechargez la page.');
+					toast.error(i18nMsg('accounts-error-stale', 'Les données ont été modifiées. Rechargez la page.'));
 				} else {
 					toast.error(err.message);
 				}
 			} else {
-				toast.error('Erreur inattendue.');
+				toast.error(i18nMsg('error-unexpected', 'Erreur inattendue.'));
 			}
 		} finally {
 			archiveSubmitting = false;
+		}
+	}
+
+	// --- Réactivation (Story 14-3a, #269) ---
+	async function submitReactivate(account: AccountResponse, clearRole = false) {
+		// Réassignation et non mutation : Svelte 5 ne suit pas `Set.add()` in place.
+		reactivatingIds = new Set(reactivatingIds).add(account.id);
+		try {
+			await reactivateAccount(account.id, { version: account.version, clearRole });
+			toast.success(
+				i18nMsg('accounts-reactivated', 'Compte { $number } réactivé', { number: account.number })
+			);
+			clearRoleOpen = false;
+			await loadAccounts();
+		} catch (err) {
+			if (isApiError(err)) {
+				if (err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
+					toast.error(i18nMsg('accounts-error-stale', 'Les données ont été modifiées. Rechargez la page.'));
+				} else if (err.code === 'ACCOUNT_ROLE_ALREADY_ASSIGNED' && !clearRole) {
+					// Le rôle a été repris pendant l'archivage. Plutôt que de laisser
+					// l'utilisateur devant un cul-de-sac (l'édition d'un compte archivé
+					// est refusée), on lui propose de réactiver sans le rôle.
+					toast.error(err.message);
+					clearRoleTarget = account;
+					clearRoleOpen = true;
+				} else {
+					// ACCOUNT_PARENT_ARCHIVED et le reste portent déjà un message
+					// traduit et actionnable.
+					toast.error(err.message);
+				}
+			} else {
+				toast.error(i18nMsg('error-unexpected', 'Erreur inattendue.'));
+			}
+		} finally {
+			const next = new Set(reactivatingIds);
+			next.delete(account.id);
+			reactivatingIds = next;
+		}
+	}
+
+	async function submitReactivateWithoutRole() {
+		if (!clearRoleTarget) return;
+		clearRoleSubmitting = true;
+		try {
+			await submitReactivate(clearRoleTarget, true);
+		} finally {
+			clearRoleSubmitting = false;
 		}
 	}
 
@@ -242,20 +365,20 @@
 </script>
 
 <svelte:head>
-	<title>Plan comptable - Kesh</title>
+	<title>{i18nMsg('accounts-title', 'Plan comptable')} - Kesh</title>
 </svelte:head>
 
 <div class="flex items-center justify-between mb-6">
-	<h1 class="text-2xl font-semibold text-text">Plan comptable</h1>
+	<h1 class="text-2xl font-semibold text-text">{i18nMsg('accounts-title', 'Plan comptable')}</h1>
 	<div class="flex items-center gap-3">
 		<label class="flex items-center gap-2 text-sm text-text-muted">
 			<input type="checkbox" data-testid="account-show-archived-toggle" bind:checked={showArchived} onchange={() => loadAccounts()} class="h-4 w-4 rounded border-border" />
-			Afficher les archivés
+			{i18nMsg('accounts-show-archived', 'Afficher les archivés')}
 		</label>
 		{#if canModify()}
 			<Button onclick={openCreate} data-testid="account-create-button">
 				<Plus class="mr-2 h-4 w-4" aria-hidden="true" />
-				Nouveau compte
+				{i18nMsg('accounts-add', 'Nouveau compte')}
 			</Button>
 		{/if}
 	</div>
@@ -263,9 +386,9 @@
 
 <!-- Arborescence des comptes -->
 {#if loading && accounts.length === 0}
-	<p class="text-sm text-text-muted">Chargement…</p>
+	<p class="text-sm text-text-muted">{i18nMsg('common-loading', 'Chargement…')}</p>
 {:else if treeAccounts.length === 0}
-	<p class="text-sm text-text-muted">Aucun compte trouvé.</p>
+	<p class="text-sm text-text-muted">{i18nMsg('common-empty', 'Aucun élément trouvé.')}</p>
 {:else}
 	<div class="border border-border rounded-lg overflow-hidden" data-testid="account-table">
 		{#each treeAccounts as account (account.id)}
@@ -278,80 +401,146 @@
 					<span class="font-mono text-sm text-text-muted whitespace-nowrap" data-testid="account-row-{account.number}-number">{account.number}</span>
 					<span class="text-sm text-text truncate" data-testid="account-row-{account.number}-name">{account.name}</span>
 					<span class="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary whitespace-nowrap" data-testid="account-row-{account.number}-type-badge">
-						{TYPE_LABELS[account.accountType]}
+						{typeLabel(account.accountType)}
 					</span>
+					<!-- Story 14-3a : rôle explicite. Sur une ligne archivée il est
+					     affiché barré + explicité, sinon l'utilisateur qui coche
+					     « afficher les archivés » voit deux comptes porter le même
+					     rôle sans comprendre pourquoi. -->
+					{#if account.role}
+						<span
+							class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap {account.active
+								? 'bg-surface-alt text-text-muted'
+								: 'bg-surface-alt text-text-muted line-through'}"
+							title={account.active ? undefined : i18nMsg('account-role-archived-hint', 'Rôle inactif — ce compte est archivé')}
+							data-testid="account-row-{account.number}-role-badge"
+						>
+							{roleLabel(account.role)}
+						</span>
+					{/if}
+					{#if !account.postable}
+						<span
+							class="inline-flex items-center rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400 whitespace-nowrap"
+							title={i18nMsg('account-postable-hint', 'Un compte non postable n’accepte pas de saisie d’écriture manuelle')}
+							data-testid="account-row-{account.number}-postable-badge"
+						>
+							{i18nMsg('account-postable-no', 'Non postable')}
+						</span>
+					{/if}
 					{#if !account.active}
-						<span class="text-xs text-text-muted">(Archivé)</span>
+						<span class="text-xs text-text-muted">({i18nMsg('account-archived-label', 'Archivé')})</span>
 					{/if}
 				</div>
-				{#if canModify() && account.active}
+				{#if canModify()}
 					<div class="flex items-center gap-1 shrink-0">
-						<Button variant="ghost" size="icon-xs" onclick={() => openEdit(account)} aria-label="Modifier {account.number}" data-testid="account-row-{account.number}-edit-button">
-							<Pencil class="h-4 w-4" aria-hidden="true" />
-						</Button>
-						<Button variant="ghost" size="icon-xs" onclick={() => openArchive(account)} aria-label="Archiver {account.number}" data-testid="account-row-{account.number}-archive-button">
-							<Archive class="h-4 w-4" aria-hidden="true" />
-						</Button>
+						{#if account.active}
+							<Button variant="ghost" size="icon-xs" onclick={() => openEdit(account)} aria-label="{i18nMsg('accounts-edit', 'Modifier le compte')} {account.number}" data-testid="account-row-{account.number}-edit-button">
+								<Pencil class="h-4 w-4" aria-hidden="true" />
+							</Button>
+							<Button variant="ghost" size="icon-xs" onclick={() => openArchive(account)} aria-label="{i18nMsg('accounts-archive', 'Archiver')} {account.number}" data-testid="account-row-{account.number}-archive-button">
+								<Archive class="h-4 w-4" aria-hidden="true" />
+							</Button>
+						{:else}
+							<!-- #269 : jusqu'ici une ligne archivée n'offrait AUCUNE action. -->
+							<Button
+								variant="ghost"
+								size="icon-xs"
+								disabled={reactivatingIds.has(account.id)}
+								onclick={() => submitReactivate(account)}
+								aria-label={i18nMsg('accounts-reactivate-aria', 'Réactiver le compte { $number }', { number: account.number })}
+								data-testid="account-row-{account.number}-reactivate-button"
+							>
+								<RotateCcw class="h-4 w-4" aria-hidden="true" />
+							</Button>
+						{/if}
 					</div>
 				{/if}
 			</div>
 		{/each}
 	</div>
-	<p class="mt-3 text-xs text-text-muted">{accounts.length} comptes</p>
+	<p class="mt-3 text-xs text-text-muted">{i18nMsg('accounts-count', '{ $count } comptes', { count: accounts.length })}</p>
 {/if}
 
 <!-- Dialog : Créer un compte -->
 <Dialog.Root bind:open={createOpen}>
 	<Dialog.Content>
 		<Dialog.Header>
-			<Dialog.Title>Nouveau compte</Dialog.Title>
-			<Dialog.Description>Ajoutez un compte au plan comptable.</Dialog.Description>
+			<Dialog.Title>{i18nMsg('accounts-add', 'Nouveau compte')}</Dialog.Title>
+			<Dialog.Description>{i18nMsg('accounts-create-description', 'Ajoutez un compte au plan comptable.')}</Dialog.Description>
 		</Dialog.Header>
 		<form onsubmit={(e) => { e.preventDefault(); submitCreate(); }} class="flex flex-col gap-4 mt-4">
 			<div>
-				<label for="create-number" class="text-sm font-medium text-text">Numéro</label>
+				<label for="create-number" class="text-sm font-medium text-text">{i18nMsg('account-field-number', 'Numéro')}</label>
 				<Input id="create-number" bind:value={createNumber} placeholder="1000" autocomplete="off" />
 			</div>
 			<div>
-				<label for="create-name" class="text-sm font-medium text-text">Nom</label>
+				<label for="create-name" class="text-sm font-medium text-text">{i18nMsg('account-field-name', 'Nom')}</label>
 				<Input id="create-name" bind:value={createName} placeholder="Caisse" autocomplete="off" />
 			</div>
 			<div>
-				<label for="create-type" class="text-sm font-medium text-text">Type</label>
+				<label for="create-type" class="text-sm font-medium text-text">{i18nMsg('account-field-type', 'Type')}</label>
 				<Select.Root type="single" bind:value={createType}>
 					<Select.Trigger id="create-type" class="w-full mt-1">
-						{TYPE_LABELS[createType]}
+						{typeLabel(createType)}
 					</Select.Trigger>
 					<Select.Content>
 						{#each ACCOUNT_TYPES as t}
-							<Select.Item value={t} label={TYPE_LABELS[t]}>{TYPE_LABELS[t]}</Select.Item>
+							<Select.Item value={t} label={typeLabel(t)}>{typeLabel(t)}</Select.Item>
 						{/each}
 					</Select.Content>
 				</Select.Root>
 			</div>
 			<div>
-				<label for="create-parent" class="text-sm font-medium text-text">Compte parent (optionnel)</label>
+				<label for="create-parent" class="text-sm font-medium text-text">{i18nMsg('account-field-parent-optional', 'Compte parent (optionnel)')}</label>
 				<Select.Root type="single" bind:value={createParentId}>
 					<Select.Trigger id="create-parent" class="w-full mt-1">
-						{createParentId ? parentOptions.find(p => p.value === createParentId)?.label ?? '—' : 'Aucun'}
+						{createParentId ? parentOptions.find(p => p.value === createParentId)?.label ?? '—' : i18nMsg('accounts-parent-none', 'Aucun')}
 					</Select.Trigger>
 					<Select.Content>
-						<Select.Item value="" label="Aucun">Aucun</Select.Item>
+						<Select.Item value="" label={i18nMsg('accounts-parent-none', 'Aucun')}>{i18nMsg('accounts-parent-none', 'Aucun')}</Select.Item>
 						{#each parentOptions as opt}
 							<Select.Item value={opt.value} label={opt.label}>{opt.label}</Select.Item>
 						{/each}
 					</Select.Content>
 				</Select.Root>
 			</div>
+			<div>
+				<label for="create-role" class="text-sm font-medium text-text">{i18nMsg('account-field-role', 'Rôle')}</label>
+				<Select.Root type="single" bind:value={createRole}>
+					<Select.Trigger id="create-role" class="w-full mt-1" data-testid="account-create-dialog-role">
+						{roleLabel(createRole === NO_ROLE ? null : (createRole as AccountRole))}
+					</Select.Trigger>
+					<Select.Content>
+						<Select.Item value={NO_ROLE} label={roleLabel(null)}>{roleLabel(null)}</Select.Item>
+						{#each ACCOUNT_ROLES as r}
+							<Select.Item value={r} label={roleLabel(r)}>{roleLabel(r)}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			</div>
+			<div>
+				<label class="flex items-center gap-2 text-sm font-medium text-text">
+					<input
+						type="checkbox"
+						bind:checked={createPostable}
+						class="h-4 w-4 rounded border-border"
+						data-testid="account-create-dialog-postable"
+					/>
+					{i18nMsg('account-field-postable', 'Postable')}
+				</label>
+				<p class="mt-1 text-xs text-text-muted">
+					{i18nMsg('account-postable-hint', 'Un compte non postable n’accepte pas de saisie d’écriture manuelle')}
+				</p>
+			</div>
 			{#if createError}
 				<p class="text-sm text-red-600" role="alert">{createError}</p>
 			{/if}
 			<Dialog.Footer>
 				<Dialog.Close>
-					<Button variant="outline" type="button" data-testid="account-create-dialog-cancel">Annuler</Button>
+					<Button variant="outline" type="button" data-testid="account-create-dialog-cancel">{i18nMsg('common-cancel', 'Annuler')}</Button>
 				</Dialog.Close>
 				<Button type="submit" disabled={createSubmitting} data-testid="account-create-dialog-submit">
-					{createSubmitting ? 'Création…' : 'Créer'}
+					{createSubmitting ? i18nMsg('common-creating', 'Création…') : i18nMsg('common-create', 'Créer')}
 				</Button>
 			</Dialog.Footer>
 		</form>
@@ -362,40 +551,68 @@
 <Dialog.Root bind:open={editOpen}>
 	<Dialog.Content>
 		<Dialog.Header>
-			<Dialog.Title>Modifier le compte {editAccount?.number}</Dialog.Title>
-			<Dialog.Description>Le numéro n'est pas modifiable après création.</Dialog.Description>
+			<Dialog.Title>{i18nMsg('accounts-edit-title', 'Modifier le compte { $number }', { number: editAccount?.number ?? '' })}</Dialog.Title>
+			<Dialog.Description>{i18nMsg('accounts-edit-description', "Le numéro n'est pas modifiable après création.")}</Dialog.Description>
 		</Dialog.Header>
 		<form onsubmit={(e) => { e.preventDefault(); submitEdit(); }} class="flex flex-col gap-4 mt-4">
 			<div>
-				<label for="edit-number" class="text-sm font-medium text-text">Numéro</label>
+				<label for="edit-number" class="text-sm font-medium text-text">{i18nMsg('account-field-number', 'Numéro')}</label>
 				<Input id="edit-number" value={editAccount?.number ?? ''} disabled class="bg-surface-alt" />
 			</div>
 			<div>
-				<label for="edit-name" class="text-sm font-medium text-text">Nom</label>
+				<label for="edit-name" class="text-sm font-medium text-text">{i18nMsg('account-field-name', 'Nom')}</label>
 				<Input id="edit-name" bind:value={editName} autocomplete="off" />
 			</div>
 			<div>
-				<label for="edit-type" class="text-sm font-medium text-text">Type</label>
+				<label for="edit-type" class="text-sm font-medium text-text">{i18nMsg('account-field-type', 'Type')}</label>
 				<Select.Root type="single" bind:value={editType}>
 					<Select.Trigger id="edit-type" class="w-full mt-1">
-						{TYPE_LABELS[editType]}
+						{typeLabel(editType)}
 					</Select.Trigger>
 					<Select.Content>
 						{#each ACCOUNT_TYPES as t}
-							<Select.Item value={t} label={TYPE_LABELS[t]}>{TYPE_LABELS[t]}</Select.Item>
+							<Select.Item value={t} label={typeLabel(t)}>{typeLabel(t)}</Select.Item>
 						{/each}
 					</Select.Content>
 				</Select.Root>
+			</div>
+			<div>
+				<label for="edit-role" class="text-sm font-medium text-text">{i18nMsg('account-field-role', 'Rôle')}</label>
+				<Select.Root type="single" bind:value={editRole}>
+					<Select.Trigger id="edit-role" class="w-full mt-1" data-testid="account-edit-dialog-role">
+						{roleLabel(editRole === NO_ROLE ? null : (editRole as AccountRole))}
+					</Select.Trigger>
+					<Select.Content>
+						<Select.Item value={NO_ROLE} label={roleLabel(null)}>{roleLabel(null)}</Select.Item>
+						{#each ACCOUNT_ROLES as r}
+							<Select.Item value={r} label={roleLabel(r)}>{roleLabel(r)}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			</div>
+			<div>
+				<label class="flex items-center gap-2 text-sm font-medium text-text">
+					<input
+						type="checkbox"
+						bind:checked={editPostable}
+						class="h-4 w-4 rounded border-border"
+						data-testid="account-edit-dialog-postable"
+					/>
+					{i18nMsg('account-field-postable', 'Postable')}
+				</label>
+				<p class="mt-1 text-xs text-text-muted">
+					{i18nMsg('account-postable-hint', 'Un compte non postable n’accepte pas de saisie d’écriture manuelle')}
+				</p>
 			</div>
 			{#if editError}
 				<p class="text-sm text-red-600" role="alert">{editError}</p>
 			{/if}
 			<Dialog.Footer>
 				<Dialog.Close>
-					<Button variant="outline" type="button" data-testid="account-edit-dialog-cancel">Annuler</Button>
+					<Button variant="outline" type="button" data-testid="account-edit-dialog-cancel">{i18nMsg('common-cancel', 'Annuler')}</Button>
 				</Dialog.Close>
 				<Button type="submit" disabled={editSubmitting} data-testid="account-edit-dialog-submit">
-					{editSubmitting ? 'Enregistrement…' : 'Enregistrer'}
+					{editSubmitting ? i18nMsg('common-saving', 'Enregistrement…') : i18nMsg('common-save', 'Enregistrer')}
 				</Button>
 			</Dialog.Footer>
 		</form>
@@ -406,17 +623,37 @@
 <Dialog.Root bind:open={archiveOpen}>
 	<Dialog.Content>
 		<Dialog.Header>
-			<Dialog.Title>Archiver le compte {archiveTarget?.number} ?</Dialog.Title>
+			<Dialog.Title>{i18nMsg('accounts-archive-title', 'Archiver le compte { $number } ?', { number: archiveTarget?.number ?? '' })}</Dialog.Title>
 			<Dialog.Description>
-				Le compte ne sera plus disponible dans les sélections futures, mais restera visible dans les écritures existantes et dans cette liste.
+				{i18nMsg('accounts-archive-confirm', 'Le compte ne sera plus disponible dans les sélections futures, mais restera visible dans les écritures existantes.')}
 			</Dialog.Description>
 		</Dialog.Header>
 		<Dialog.Footer class="mt-4">
 			<Dialog.Close>
-				<Button variant="outline" type="button" autofocus data-testid="account-archive-dialog-cancel">Annuler</Button>
+				<Button variant="outline" type="button" autofocus data-testid="account-archive-dialog-cancel">{i18nMsg('common-cancel', 'Annuler')}</Button>
 			</Dialog.Close>
 			<Button variant="destructive" disabled={archiveSubmitting} onclick={submitArchive} data-testid="account-archive-dialog-confirm">
-				{archiveSubmitting ? 'Archivage…' : 'Archiver'}
+				{archiveSubmitting ? i18nMsg('accounts-archiving', 'Archivage…') : i18nMsg('accounts-archive', 'Archiver')}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<!-- Dialog : Réactiver sans le rôle (code review 14-3a, D4) -->
+<Dialog.Root bind:open={clearRoleOpen}>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title>{i18nMsg('accounts-reactivate-without-role', 'Réactiver sans le rôle')}</Dialog.Title>
+			<Dialog.Description>
+				{i18nMsg('accounts-reactivate-without-role-description', 'Le rôle de ce compte a été repris par un autre compte. Vous pouvez le réactiver sans son rôle — il restera modifiable ensuite.')}
+			</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer class="mt-4">
+			<Dialog.Close>
+				<Button variant="outline" type="button" data-testid="account-clear-role-dialog-cancel">{i18nMsg('common-cancel', 'Annuler')}</Button>
+			</Dialog.Close>
+			<Button disabled={clearRoleSubmitting} onclick={submitReactivateWithoutRole} data-testid="account-clear-role-dialog-confirm">
+				{clearRoleSubmitting ? i18nMsg('accounts-reactivating', 'Réactivation…') : i18nMsg('accounts-reactivate-without-role', 'Réactiver sans le rôle')}
 			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>

@@ -168,7 +168,10 @@ impl From<JournalEntryWithLines> for JournalEntryResponse {
 // CoreError → AppError mapping
 // ---------------------------------------------------------------------------
 
-fn map_core_error(err: CoreError) -> AppError {
+/// Promu `pub(crate)` (Story 14-4, P1-L1-ECH) : réutilisé par
+/// `routes::opening_balances` pour mapper les erreurs `accounting::validate`
+/// sans dupliquer les arms (`ENTRY_UNBALANCED`, `EntryNeedsTwoLines`, …).
+pub(crate) fn map_core_error(err: CoreError) -> AppError {
     match err {
         CoreError::EntryUnbalanced { debit, credit } => AppError::EntryUnbalanced {
             debit: debit.to_string(),
@@ -367,7 +370,9 @@ pub async fn list_journal_entries(
 /// Largement au-dessus des usages réels (une écriture standard a 2-10
 /// lignes) mais empêche un client abusif de soumettre 100k lignes dans
 /// une seule transaction.
-const MAX_LINES_PER_ENTRY: usize = 500;
+/// `pub(crate)` : borne réutilisée par `routes::opening_balances`
+/// (défense en profondeur miroir, Story 14-4).
+pub(crate) const MAX_LINES_PER_ENTRY: usize = 500;
 
 /// Longueur maximale du libellé (alignée sur la colonne `description VARCHAR(500)`).
 const MAX_DESCRIPTION_LEN: usize = 500;

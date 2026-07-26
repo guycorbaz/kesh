@@ -82,6 +82,21 @@ pub enum AppError {
     #[error("Accès interdit")]
     Forbidden,
 
+    // --- Story 14-2 ---
+    /// Transition d'état métier interdite avec **message client distinct** (409
+    /// `ILLEGAL_STATE_TRANSITION`). Contrairement à
+    /// `AppError::Database(DbError::IllegalStateTransition)` — dont le `Display`
+    /// est log-only et produit un message générique figé —, le `String` porté
+    /// ici est **déjà localisé** (construit via `t(...)` au mapper) et rendu
+    /// tel quel au client. Cohérent avec le précédent `AppError::Validation`
+    /// (que `map_create_error` construit déjà via `Validation(t(...))`).
+    ///
+    /// Utilisé par `map_reopen_error` (Story 14-2, D7) pour distinguer les deux
+    /// conflits de réouverture (« déjà ouvert » vs garde LIFO) qui partagent le
+    /// code machine mais ont des messages utilisateur distincts.
+    #[error("Transition d'état interdite : {0}")]
+    IllegalState(String),
+
     // --- Story 17-2a — API externe à clé PAT (#100) ---
     /// Une clé API `scope='read'` tente une méthode HTTP mutante
     /// (POST/PUT/PATCH/DELETE) → `403` code `API_KEY_READ_ONLY` (DC3/AC6).
@@ -891,6 +906,12 @@ impl IntoResponse for AppError {
                 "FORBIDDEN",
                 &t("error-forbidden", "Accès interdit"),
             ),
+
+            // Story 14-2 (D7) — 409 avec message déjà localisé (distinct du
+            // générique DbError::IllegalStateTransition, log-only).
+            AppError::IllegalState(msg) => {
+                build_response(StatusCode::CONFLICT, "ILLEGAL_STATE_TRANSITION", &msg)
+            }
 
             // Story 17-2a — clé API en lecture seule (DC3/AC6).
             AppError::ApiKeyReadOnly => build_response(
@@ -2000,10 +2021,90 @@ impl IntoResponse for AppError {
                 ),
                 DbError::UniqueConstraintViolation(m) => {
                     tracing::warn!("unique violation: {m}");
+                    // Course perdue sur un rôle singleton : deux requêtes
+                    // concurrentes passent le pré-SELECT du repository, la
+                    // seconde heurte la contrainte. Le message MariaDB porte le
+                    // nom de la contrainte → on renvoie le code métier plutôt
+                    // que « Ressource déjà existante », qui ferait afficher au
+                    // formulaire « ce numéro existe déjà ». On ne peut pas
+                    // nommer le compte détenteur ici (l'info n'est pas dans
+                    // l'erreur), d'où le message sans argument.
+                    if m.contains("uq_accounts_company_singleton_role") {
+                        build_response(
+                            StatusCode::CONFLICT,
+                            "ACCOUNT_ROLE_ALREADY_ASSIGNED",
+                            &t(
+                                "accounts-role-conflict-generic",
+                                "Ce rôle vient d'être attribué à un autre compte. Rechargez la page.",
+                            ),
+                        )
+                    } else {
+                        build_response(
+                            StatusCode::CONFLICT,
+                            "RESOURCE_CONFLICT",
+                            &t("error-conflict", "Ressource déjà existante"),
+                        )
+                    }
+                }
+                // Story 14-3a : code client dédié, distinct du générique
+                // RESOURCE_CONFLICT, pour que le formulaire puisse NOMMER le
+                // compte qui porte déjà le rôle (le mapping 1062 générique
+                // renvoie un message fixe et jette le détail). Même motivation
+                // que `IdeAlreadyExists`.
+                DbError::AccountRoleAlreadyAssigned {
+                    role,
+                    account_id,
+                    account_number,
+                    account_name,
+                } => {
+                    let fallback = format!(
+                        "Le rôle est déjà attribué au compte {account_number} — {account_name}. Retirez-le d'abord de ce compte."
+                    );
+                    let mut args = FluentArgs::new();
+                    args.set("number", account_number.clone());
+                    args.set("name", account_name.clone());
+                    let msg = t_args("accounts-role-conflict", &fallback, &args);
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "ACCOUNT_ROLE_ALREADY_ASSIGNED",
+                            "message": msg,
+                            "details": {
+                                "role": role,
+                                "accountId": account_id,
+                                "accountNumber": account_number,
+                                "accountName": account_name,
+                            },
+                        }
+                    });
+                    (StatusCode::CONFLICT, Json(body)).into_response()
+                }
+                // Story 14-3a / code review : ces deux cas passaient par des
+                // variantes génériques (`ILLEGAL_STATE_TRANSITION` → « Transition
+                // d'état interdite », `CHECK_CONSTRAINT_VIOLATION` → « Valeur
+                // invalide »), qui ne disent pas à l'utilisateur quoi corriger.
+                DbError::AccountParentArchived { parent_number } => {
+                    let fallback = format!(
+                        "Le compte parent {parent_number} est archivé. Réactivez-le d'abord."
+                    );
+                    let mut args = FluentArgs::new();
+                    args.set("number", parent_number.clone());
                     build_response(
                         StatusCode::CONFLICT,
-                        "RESOURCE_CONFLICT",
-                        &t("error-conflict", "Ressource déjà existante"),
+                        "ACCOUNT_PARENT_ARCHIVED",
+                        &t_args("accounts-parent-archived", &fallback, &args),
+                    )
+                }
+                DbError::AccountRoleInvalidForType { role, account_type } => {
+                    let fallback = format!(
+                        "Le rôle {role} ne peut pas être attribué à un compte de type {account_type}."
+                    );
+                    let mut args = FluentArgs::new();
+                    args.set("role", role.clone());
+                    args.set("type", account_type.clone());
+                    build_response(
+                        StatusCode::BAD_REQUEST,
+                        "ACCOUNT_ROLE_INVALID_FOR_TYPE",
+                        &t_args("accounts-role-invalid-for-type", &fallback, &args),
                     )
                 }
                 DbError::ForeignKeyViolation(m) => {

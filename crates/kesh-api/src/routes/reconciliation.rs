@@ -1579,7 +1579,8 @@ async fn accept_one_split(
         je_description,
         entry_date,
     );
-    let je = match journal_entries::create_in_tx(tx, fiscal_year.id, user_id, new_je).await {
+    // Flux automatique (réconciliation) : garde de postabilité désactivée (14-3b, D-A0).
+    let je = match journal_entries::create_in_tx(tx, fiscal_year.id, user_id, new_je, false).await {
         Ok(j) => j,
         Err(e) => {
             // Split : la validation projet per-ligne se fait DANS create_in_tx,
@@ -1927,7 +1928,8 @@ async fn accept_one_rule(
         entry_date,
         default_project_id,
     );
-    let je = match journal_entries::create_in_tx(tx, fiscal_year.id, user_id, new_je).await {
+    // Flux automatique (réconciliation) : garde de postabilité désactivée (14-3b, D-A0).
+    let je = match journal_entries::create_in_tx(tx, fiscal_year.id, user_id, new_je, false).await {
         Ok(j) => j,
         Err(e) => {
             // Le projet par défaut (document-level) a déjà été validé au step
@@ -2628,7 +2630,9 @@ pub async fn post_manual(
                 body.project_id,
             );
             let je =
-                journal_entries::create_in_tx(tx_inner, fiscal_year.id, user_id, new_je).await?;
+                // Flux automatique (réconciliation) : garde postabilité off (14-3b, D-A0).
+                journal_entries::create_in_tx(tx_inner, fiscal_year.id, user_id, new_je, false)
+                    .await?;
             let journal_entry_id = je.entry.id;
 
             // Step 8 — UPDATE bank_transactions optimistic lock + status
@@ -3088,7 +3092,9 @@ pub async fn post_split(
 
             // Step 11 — create_in_tx atomique.
             let je =
-                journal_entries::create_in_tx(tx_inner, fiscal_year.id, user_id, new_je).await?;
+                // Flux automatique (réconciliation) : garde postabilité off (14-3b, D-A0).
+                journal_entries::create_in_tx(tx_inner, fiscal_year.id, user_id, new_je, false)
+                    .await?;
             let journal_entry_id = je.entry.id;
 
             // Step 12 — UPDATE bank_transactions optimistic lock + status guard

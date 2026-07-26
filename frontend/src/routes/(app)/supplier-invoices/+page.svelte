@@ -125,7 +125,9 @@
 				listProjects(), // actifs uniquement (includeArchived=false)
 			]);
 			suppliers = contactsRes.items;
-			expenseAccounts = accountsRes.filter((a) => a.accountType === 'Expense' && a.active);
+			expenseAccounts = accountsRes.filter(
+				(a) => a.accountType === 'Expense' && a.active && a.postable,
+			); // 14-3b : compte de charge posté à la validation de facture fournisseur
 			vatRates = ratesRes;
 			projects = projectsRes;
 		} catch (err) {

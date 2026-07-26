@@ -1011,23 +1011,29 @@ async fn run_path_b_until_finalize(app: &TestApp, token: &str) {
         .unwrap();
 }
 
-/// Pré-requis Path B finalize : `insert_with_defaults_in_tx` exige les
-/// comptes 1100 et 3000 pour pré-remplir les `company_invoice_settings`.
+/// Pré-requis Path B finalize : `insert_with_defaults_in_tx` exige des comptes
+/// actifs portant les rôles `Receivable`/`DefaultRevenue` (Story 14-3b, résolution
+/// par rôle) pour pré-remplir les `company_invoice_settings`.
 /// On les insère directement en SQL pour éviter de dépendre du chart loader
 /// (la route `accounts::create` requiert un user_id et passe par audit log
 /// — superflu pour un setup de test).
 async fn seed_minimal_chart(pool: &MySqlPool, company_id: i64) {
+    // Story 14-3b (Chantier C) : `company_invoice_settings::insert_with_defaults_in_tx`
+    // résout désormais les comptes de facturation par `role` (et non plus par
+    // `number = '1100'/'3000'`). Un vrai plan Kesh porte ces rôles (backfill 14-3a
+    // ou charts JSON annotés) ; ce fixture minimal doit donc les poser explicitement,
+    // sinon le fail-fast `InactiveOrInvalidAccounts` fait échouer `finalize` en 400.
     sqlx::query(
-        "INSERT INTO accounts (company_id, number, name, account_type, active) \
-         VALUES (?, '1100', 'Créances clients', 'Asset', TRUE)",
+        "INSERT INTO accounts (company_id, number, name, account_type, role, active) \
+         VALUES (?, '1100', 'Créances clients', 'Asset', 'Receivable', TRUE)",
     )
     .bind(company_id)
     .execute(pool)
     .await
     .expect("seed account 1100");
     sqlx::query(
-        "INSERT INTO accounts (company_id, number, name, account_type, active) \
-         VALUES (?, '3000', 'Ventes', 'Revenue', TRUE)",
+        "INSERT INTO accounts (company_id, number, name, account_type, role, active) \
+         VALUES (?, '3000', 'Ventes', 'Revenue', 'DefaultRevenue', TRUE)",
     )
     .bind(company_id)
     .execute(pool)
@@ -1437,4 +1443,387 @@ async fn close_repo_rejects_cross_tenant(pool: MySqlPool) {
         .unwrap()
         .unwrap();
     assert_eq!(unchanged.status, FiscalYearStatus::Open);
+}
+
+// ===========================================================================
+// Story 14-2 — reopen : POST /api/v1/fiscal-years/{id}/reopen (Admin-only)
+// ===========================================================================
+
+/// Crée un user `Comptable` (Comptable+ mais PAS Admin) pour les tests RBAC de
+/// la réouverture (Admin-only, plus strict que la clôture).
+async fn create_comptable_user_and_login(app: &TestApp, pool: &MySqlPool) -> String {
+    use kesh_db::entities::{NewUser, Role};
+
+    let company_id: i64 = sqlx::query_scalar("SELECT id FROM companies ORDER BY id LIMIT 1")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+
+    let password_plain = "comptable-test-pw-12345";
+    let hash = kesh_api::auth::password::hash_password(password_plain).expect("hash");
+    kesh_db::repositories::users::create(
+        pool,
+        NewUser {
+            username: "comptable".into(),
+            password_hash: hash,
+            role: Role::Comptable,
+            active: true,
+            company_id,
+            email: None,
+        },
+    )
+    .await
+    .expect("create comptable user");
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/auth/login"))
+        .json(&json!({ "username": "comptable", "password": password_plain }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "comptable login should succeed");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    body["accessToken"].as_str().unwrap().to_string()
+}
+
+/// Crée un exercice via l'API puis le clôture ; retourne son id.
+async fn create_and_close_fy(app: &TestApp, token: &str, name: &str, year: i32) -> i64 {
+    let create: serde_json::Value = app
+        .client
+        .post(app.url("/api/v1/fiscal-years"))
+        .header("Authorization", auth(token))
+        .json(&json!({
+            "name": name,
+            "startDate": format!("{year}-01-01"),
+            "endDate": format!("{year}-12-31"),
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let id = create["id"].as_i64().unwrap();
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/fiscal-years/{id}/close")))
+        .header("Authorization", auth(token))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "close should succeed for {name}");
+    id
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn reopen_admin_happy_path(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+    let id = create_and_close_fy(&app, &token, "Exercice 2027", 2027).await;
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/fiscal-years/{id}/reopen")))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "motif": "Correction TVA Q3 oubliée" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["status"], "Open");
+
+    // Audit : entrée fiscal_year.reopened avec motif.
+    let entries = audit_log::find_by_entity(&pool, "fiscal_year", id, 10)
+        .await
+        .unwrap();
+    let entry = entries
+        .iter()
+        .find(|e| e.action == "fiscal_year.reopened")
+        .expect("reopened audit entry");
+    assert_eq!(
+        entry.details_json.as_ref().unwrap()["motif"],
+        "Correction TVA Q3 oubliée"
+    );
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn reopen_comptable_returns_403(pool: MySqlPool) {
+    let (app, admin_token) = bootstrap_admin(&pool).await;
+    let id = create_and_close_fy(&app, &admin_token, "Exercice 2027", 2027).await;
+    let comptable_token = create_comptable_user_and_login(&app, &pool).await;
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/fiscal-years/{id}/reopen")))
+        .header("Authorization", auth(&comptable_token))
+        .json(&json!({ "motif": "tentative" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        403,
+        "Comptable → 403 (réouverture Admin-only)"
+    );
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn reopen_consultation_returns_403(pool: MySqlPool) {
+    let (app, admin_token) = bootstrap_admin(&pool).await;
+    let id = create_and_close_fy(&app, &admin_token, "Exercice 2027", 2027).await;
+    let consultation_token = create_consultation_user_and_login(&app, &pool).await;
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/fiscal-years/{id}/reopen")))
+        .header("Authorization", auth(&consultation_token))
+        .json(&json!({ "motif": "tentative" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 403);
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn reopen_without_auth_returns_401(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+    let id = create_and_close_fy(&app, &token, "Exercice 2027", 2027).await;
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/fiscal-years/{id}/reopen")))
+        .json(&json!({ "motif": "tentative" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 401);
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn reopen_via_pat_returns_403(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+    let id = create_and_close_fy(&app, &token, "Exercice 2027", 2027).await;
+
+    // Crée une clé PAT read-write via l'endpoint HTTP (JWT admin).
+    let create = app
+        .client
+        .post(app.url("/api/v1/settings/api-keys"))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "name": "ci-pat", "scope": "read-write" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(create.status(), 201);
+    let key = create.json::<serde_json::Value>().await.unwrap()["key"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Réouverture via PAT → 403 (opération privilégiée, ensure_not_pat, D5).
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/fiscal-years/{id}/reopen")))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&json!({ "motif": "tentative" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 403, "réouverture via PAT → 403");
+    // Code-review Pass 3 (F3) — asserter le CODE prouve que le 403 vient bien de
+    // `ensure_not_pat` (D5) et non du middleware RBAC : la clé PAT porte le rôle
+    // Admin de son créateur, donc `require_admin_role` passe et c'est le handler
+    // qui refuse. Miroir de `full_export_via_pat_returns_403`.
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "API_KEY_MANAGEMENT_FORBIDDEN");
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn reopen_empty_motif_returns_400(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+    let id = create_and_close_fy(&app, &token, "Exercice 2027", 2027).await;
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/fiscal-years/{id}/reopen")))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "motif": "   " }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn reopen_motif_too_long_returns_400(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+    let id = create_and_close_fy(&app, &token, "Exercice 2027", 2027).await;
+
+    let long_motif = "x".repeat(501);
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/fiscal-years/{id}/reopen")))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "motif": long_motif }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+}
+
+/// M2 (code-review Pass 1) — borne EXACTE : un motif de 500 caractères (==
+/// `REOPEN_MOTIF_MAX`) est **accepté** (200). Caractérise la stricte inégalité
+/// `> REOPEN_MOTIF_MAX` : une régression `>` → `>=` casserait ce test.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn reopen_motif_exactly_max_is_accepted(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+    let id = create_and_close_fy(&app, &token, "Exercice 2027", 2027).await;
+
+    let motif = "x".repeat(500);
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/fiscal-years/{id}/reopen")))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "motif": motif }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        200,
+        "motif de 500 caractères doit être accepté"
+    );
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["status"], "Open");
+}
+
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn reopen_other_company_returns_404(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+
+    use kesh_db::entities::{Language, NewCompany, NewFiscalYear, OrgType};
+    let other_company = kesh_db::repositories::companies::create(
+        &pool,
+        NewCompany {
+            name: "Other SA".into(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
+            ide_number: None,
+            org_type: OrgType::Pme,
+            accounting_language: Language::Fr,
+            instance_language: Language::Fr,
+        },
+    )
+    .await
+    .unwrap();
+    let other_fy = kesh_db::repositories::fiscal_years::create_for_seed(
+        &pool,
+        NewFiscalYear {
+            company_id: other_company.id,
+            name: "Other FY 2027".into(),
+            start_date: chrono::NaiveDate::from_ymd_opt(2027, 1, 1).unwrap(),
+            end_date: chrono::NaiveDate::from_ymd_opt(2027, 12, 31).unwrap(),
+        },
+    )
+    .await
+    .unwrap();
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/fiscal-years/{}/reopen", other_fy.id)))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "motif": "tentative" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404, "anti-énumération cross-tenant → 404");
+}
+
+/// P1-C1 — exercice déjà ouvert → 409 ILLEGAL_STATE_TRANSITION avec message
+/// DISTINCT (error-fiscal-year-already-open), pas le générique.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn reopen_already_open_returns_409_distinct_message(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+
+    // Exercice ouvert (jamais clos).
+    let create: serde_json::Value = app
+        .client
+        .post(app.url("/api/v1/fiscal-years"))
+        .header("Authorization", auth(&token))
+        .json(
+            &json!({ "name": "Exercice 2027", "startDate": "2027-01-01", "endDate": "2027-12-31" }),
+        )
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let id = create["id"].as_i64().unwrap();
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/fiscal-years/{id}/reopen")))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "motif": "tentative" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 409);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ILLEGAL_STATE_TRANSITION");
+    let msg = body["error"]["message"].as_str().unwrap();
+    // fr-CH localisé DISTINCT — PAS le générique « Transition d'état interdite ».
+    assert!(
+        msg.contains("déjà ouvert"),
+        "expected distinct already-open message, got: {msg}"
+    );
+    assert!(
+        !msg.contains("Transition d'état interdite"),
+        "must not be the generic log-only message, got: {msg}"
+    );
+}
+
+/// P1-C1 — garde LIFO violée → 409 avec message DISTINCT
+/// (error-fiscal-year-reopen-blocked), différent du message already-open.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn reopen_lifo_blocked_returns_409_distinct_message(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+
+    // Deux exercices clos ; rouvrir le plus ancien alors que le plus récent
+    // reste clos → LIFO bloqué.
+    let id2025 = create_and_close_fy(&app, &token, "Exercice 2025", 2025).await;
+    let _id2026 = create_and_close_fy(&app, &token, "Exercice 2026", 2026).await;
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/fiscal-years/{id2025}/reopen")))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "motif": "tentative" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 409);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ILLEGAL_STATE_TRANSITION");
+    let msg = body["error"]["message"].as_str().unwrap();
+    assert!(
+        msg.contains("postérieur"),
+        "expected distinct LIFO-blocked message, got: {msg}"
+    );
+    assert!(
+        !msg.contains("déjà ouvert") && !msg.contains("Transition d'état interdite"),
+        "LIFO message must differ from already-open and generic, got: {msg}"
+    );
 }

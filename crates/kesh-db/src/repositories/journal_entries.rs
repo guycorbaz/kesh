@@ -43,6 +43,76 @@ const ENTRY_COLUMNS: &str = "id, company_id, fiscal_year_id, entry_number, entry
 
 const LINE_COLUMNS: &str = "id, entry_id, account_id, line_order, debit, credit, project_id";
 
+/// Valide que chaque compte référencé par les lignes d'une écriture existe,
+/// appartient à `company_id` et est actif. Facteur commun de [`create_in_tx`]
+/// et [`update`] (validation historiquement dupliquée aux deux endroits).
+///
+/// Garde de postabilité (Story 14-3b, D-A0) — **saisie manuelle uniquement** :
+/// si `enforce_postable`, un compte `postable = FALSE` est rejeté, SAUF s'il
+/// figure dans `exempt_ids` (grandfather PAR COMPTE à l'update, D-A1 : un compte
+/// déjà référencé par l'écriture reste éditable même devenu non-postable après
+/// coup). Les flux automatiques (facture/avoir/réconciliation) passent
+/// `enforce_postable = false` : ils postent sur des comptes de config approuvés,
+/// dont l'un pourrait légitimement être devenu non-postable (14-3a) — leur
+/// imposer la garde casserait le moteur comptable.
+///
+/// **Rollback-agnostique** : retourne `Err(DbError::InactiveOrInvalidAccounts)`
+/// sans toucher à la transaction — le caller décide du rollback (`create_in_tx`
+/// délègue au caller, `update` rollback autour de l'appel).
+///
+/// Précondition : `account_ids` non vide (garanti par les callers, qui rejettent
+/// une écriture sans lignes en amont — un `IN ()` serait du SQL invalide).
+async fn validate_lines_accounts_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    account_ids: &[i64],
+    enforce_postable: bool,
+    exempt_ids: &[i64],
+) -> Result<(), DbError> {
+    let placeholders = account_ids
+        .iter()
+        .map(|_| "?")
+        .collect::<Vec<_>>()
+        .join(",");
+    let mut accounts_sql = format!(
+        "SELECT id FROM accounts \
+         WHERE company_id = ? AND active = TRUE AND id IN ({placeholders})"
+    );
+    // Garde de postabilité conditionnelle (D-A0) : la clause n'est ajoutée qu'en
+    // saisie manuelle. Les comptes de `exempt_ids` (déjà référencés, D-A1) sont
+    // tolérés même non-postables.
+    if enforce_postable {
+        if exempt_ids.is_empty() {
+            accounts_sql.push_str(" AND postable = TRUE");
+        } else {
+            let exempt_placeholders = exempt_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            accounts_sql.push_str(&format!(
+                " AND (postable = TRUE OR id IN ({exempt_placeholders}))"
+            ));
+        }
+    }
+
+    let mut q = sqlx::query_scalar::<_, i64>(&accounts_sql).bind(company_id);
+    for id in account_ids {
+        q = q.bind(id);
+    }
+    if enforce_postable {
+        for id in exempt_ids {
+            q = q.bind(id);
+        }
+    }
+    let valid_ids: Vec<i64> = q.fetch_all(&mut **tx).await.map_err(map_db_error)?;
+
+    let mut unique_requested: Vec<i64> = account_ids.to_vec();
+    unique_requested.sort_unstable();
+    unique_requested.dedup();
+
+    if valid_ids.len() != unique_requested.len() {
+        return Err(DbError::InactiveOrInvalidAccounts);
+    }
+    Ok(())
+}
+
 /// Crée une écriture comptable (en-tête + lignes) dans une transaction
 /// atomique. Wrapper pool-level : ouvre sa propre transaction et la
 /// valide/rollback selon le résultat. Délègue à [`create_in_tx`] pour
@@ -59,7 +129,9 @@ pub async fn create(
     new: NewJournalEntry,
 ) -> Result<JournalEntryWithLines, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
-    match create_in_tx(&mut tx, fiscal_year_id, user_id, new).await {
+    // Point d'entrée MANUEL (unique appelant `routes/journal_entries.rs`) :
+    // la garde de postabilité s'applique (Story 14-3b, D-A0).
+    match create_in_tx(&mut tx, fiscal_year_id, user_id, new, true).await {
         Ok(result) => {
             tx.commit().await.map_err(map_db_error)?;
             Ok(result)
@@ -87,11 +159,18 @@ pub async fn create(
 /// Contrat : en cas de succès, retourne `Ok(JournalEntryWithLines)` et
 /// la tx contient les inserts. En cas d'erreur, bubble-up sans toucher
 /// à la tx — le caller doit rollback ou laisser le drop-guard agir.
+///
+/// `enforce_postable` (Story 14-3b, D-A0) : `true` uniquement pour la SAISIE
+/// MANUELLE (`create` pool-level). Les flux automatiques appelants directs
+/// (invoices, credit_notes, supplier_invoices, reconciliation) passent `false` —
+/// ils postent sur des comptes de config approuvés, potentiellement devenus
+/// non-postables (14-3a), qu'on ne doit pas rejeter.
 pub async fn create_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     fiscal_year_id: i64,
     user_id: i64,
     new: NewJournalEntry,
+    enforce_postable: bool,
 ) -> Result<JournalEntryWithLines, DbError> {
     // Étape 0 : validation des projets analytiques par-ligne (Story 19-2).
     // AVANT le lock fiscal_years pour respecter l'ordre de verrouillage global
@@ -106,9 +185,9 @@ pub async fn create_in_tx(
     let line_project_ids: Vec<i64> = new.lines.iter().filter_map(|l| l.project_id).collect();
     super::projects::validate_taggable_in_tx(tx, new.company_id, &line_project_ids).await?;
 
-    // Étape 1 : re-lock de l'exercice contre une clôture concurrente.
-    let fy_row: Option<(i64, String)> = sqlx::query_as(
-        "SELECT id, status FROM fiscal_years \
+    // Étape 1 : re-lock de l'exercice contre une clôture concurrente + bornes de dates.
+    let fy_row: Option<(i64, String, NaiveDate, NaiveDate)> = sqlx::query_as(
+        "SELECT id, status, start_date, end_date FROM fiscal_years \
          WHERE id = ? AND company_id = ? FOR UPDATE",
     )
     .bind(fiscal_year_id)
@@ -119,12 +198,24 @@ pub async fn create_in_tx(
 
     match fy_row {
         None => return Err(DbError::NotFound),
-        Some((_, status)) if status == "Closed" => return Err(DbError::FiscalYearClosed),
-        Some(_) => {}
+        Some((_, status, _, _)) if status == "Closed" => return Err(DbError::FiscalYearClosed),
+        Some((_, _, fy_start, fy_end)) => {
+            // Garde défensive symétrique à `update` (:671) — l'invariant
+            // `entry_date ∈ [fy_start, fy_end]` est ce dont dépend l'équation du
+            // bilan cumulatif (Story 14-1 Dev Note 4) : l'actif/passif cumulés
+            // ignorent `fiscal_year_id`, mais `equity_result` (via income_statement)
+            // le garde → l'égalité ne tient que si chaque écriture tombe dans les
+            // bornes de son exercice. Le handler HTTP le garantit déjà via
+            // `find_covering_date`, mais on l'impose ici pour tout caller de
+            // `create_in_tx` (fix structurel : équation vraie par construction).
+            if new.entry_date < fy_start || new.entry_date > fy_end {
+                return Err(DbError::DateOutsideFiscalYear);
+            }
+        }
     }
 
     // Étape 2 : vérifier que tous les comptes existent, appartiennent
-    // à la company et sont actifs.
+    // à la company, sont actifs et (saisie manuelle seulement) postables.
     if new.lines.is_empty() {
         return Err(DbError::Invariant(
             "NewJournalEntry sans lignes — devait être rejeté en amont".into(),
@@ -132,28 +223,10 @@ pub async fn create_in_tx(
     }
 
     let account_ids: Vec<i64> = new.lines.iter().map(|l| l.account_id).collect();
-    let placeholders = account_ids
-        .iter()
-        .map(|_| "?")
-        .collect::<Vec<_>>()
-        .join(",");
-    let accounts_sql = format!(
-        "SELECT id FROM accounts \
-         WHERE company_id = ? AND active = TRUE AND id IN ({placeholders})"
-    );
-    let mut q = sqlx::query_scalar::<_, i64>(&accounts_sql).bind(new.company_id);
-    for id in &account_ids {
-        q = q.bind(id);
-    }
-    let active_ids: Vec<i64> = q.fetch_all(&mut **tx).await.map_err(map_db_error)?;
-
-    let mut unique_requested: Vec<i64> = account_ids.clone();
-    unique_requested.sort_unstable();
-    unique_requested.dedup();
-
-    if active_ids.len() != unique_requested.len() {
-        return Err(DbError::InactiveOrInvalidAccounts);
-    }
+    // Validation factorisée (helper rollback-agnostique). En création, aucun
+    // compte n'est encore référencé → `exempt_ids` vide ; la garde de
+    // postabilité dépend de `enforce_postable` (D-A0).
+    validate_lines_accounts_in_tx(tx, new.company_id, &account_ids, enforce_postable, &[]).await?;
 
     // Étape 3 : calculer le prochain entry_number (sérialisé par gap lock).
     let next_number: i64 = sqlx::query_scalar(
@@ -266,6 +339,166 @@ pub async fn create_in_tx(
     .await?;
 
     Ok(JournalEntryWithLines { entry, lines })
+}
+
+/// Compte les écritures d'une company, **tous exercices confondus**.
+///
+/// Story 14-4 — garde « company vierge » du bilan d'ouverture (P3-BH3-1) :
+/// la génération de l'écriture d'ouverture n'est autorisée que si ce compte
+/// vaut `0`. Générique sur `Executor` (idiome projet, cf.
+/// `reconciliation::find_contacts_by_ids`) : appelée sur `&mut *tx` **sous le
+/// lock** dans [`create_opening_entry`], et sur `&pool` pour le
+/// `GET /opening-balances/status` (P3-ECH-LOW-2 — pas deux fns dupliquées).
+pub async fn count_by_company<'e, E>(executor: E, company_id: i64) -> Result<i64, DbError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::MySql>,
+{
+    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM journal_entries WHERE company_id = ?")
+        .bind(company_id)
+        .fetch_one(executor)
+        .await
+        .map_err(map_db_error)
+}
+
+/// Crée l'**écriture d'ouverture** du bilan de départ (Story 14-4, D5/P1-C1).
+///
+/// Fn repo dédiée — miroir du pattern `invoices::validate_invoice` (own tx +
+/// [`create_in_tx`] direct). **NE PAS** réutiliser [`create`] : le wrapper est
+/// auto-contenu (ouvre/commit sa propre tx) et n'offre aucun point d'injection
+/// pour le re-check « company vierge » sous le lock — la garde anti-course
+/// serait irréalisable (finding P1-C1).
+///
+/// Algorithme (chaque garde **sous** les verrous — priorité des gardes alignée
+/// sur `GET /status`, amendement ECH3-2 propagé au chemin d'écriture en Pass 4) :
+///
+/// 1. `tx = pool.begin()` puis sentinel `SELECT id FROM companies WHERE id=?
+///    FOR UPDATE` (`None` → `NotFound`).
+/// 2. `SELECT id, status FROM fiscal_years WHERE id=? AND company_id=? FOR UPDATE`
+///    → `None` → `NotFound` (le statut est examiné à l'étape 3-bis).
+/// 3. [`count_by_company`] `(&mut *tx)` **sous le lock** → `> 0` →
+///    `Invariant(FY_OPENING_ALREADY_HAS_ENTRIES_KEY)` (garde double-ouverture
+///    company-wide, P3-BH3-1 — évaluée AVANT le statut clos : sur
+///    « clos + écritures », le verdict doit être `ALREADY_HAS_ENTRIES`, pas le
+///    conseil trompeur « rouvrez l'exercice »).
+/// 4. Statut `Closed` → `Invariant(FY_OPENING_FIRST_YEAR_CLOSED_KEY)`.
+/// 5. [`create_in_tx`] (`enforce_postable = true` — la grille n'offre que des
+///    comptes postables, saisie manuelle assistée) : re-lock ré-entrant même tx,
+///    validation comptes/équilibre/date, INSERT, audit `journal_entry.created`.
+/// 6. `commit`.
+///
+/// **Note atomicité** : l'écriture d'ouverture n'a aucun `project_id` (DTO sans
+/// champ projet) → `create_in_tx` court-circuite l'Étape 0 (validation projets)
+/// et ne verrouille QUE `fiscal_years` — pas d'inversion de l'ordre de verrou
+/// global `companies → projects → fiscal_years` (P3-ECH confirmé).
+///
+/// **Portée exacte de la sérialisation** (Pass 1 BH-1 + Pass 3 BH3-1 code
+/// review) : la garde « company vierge » est **company-wide**, donc le verrou
+/// qui la protège l'est aussi — **sentinel `companies FOR UPDATE`** en tête de
+/// transaction (Pattern 5, idiome projet : `bank_accounts`, `projects`,
+/// `invoices`). Ce sentinel sérialise **toutes** les générations d'ouverture
+/// concurrentes de la company entre elles, *y compris* quand deux requêtes ont
+/// résolu des « premiers exercices » **différents** (un exercice antérieur créé
+/// entre les deux pré-checks hors-lock) — sans lui, chacune verrouillerait une
+/// ligne `fiscal_years` distincte, les deux liraient `count == 0` et
+/// commiteraient un **doublon d'ouverture** (bilan doublé, Pass 3 BH3-1).
+/// L'ordre `companies → fiscal_years` respecte l'ordre de verrou global
+/// (`companies → projects → fiscal_years`) — pas d'inversion ABBA.
+///
+/// Une écriture normale postée concurremment dans un **autre** exercice ne se
+/// sérialise pas avec la génération (elle ne prend pas le sentinel) — mais
+/// l'entrelacement est **bénin** : l'état final (ouverture + écriture normale)
+/// est identique à l'ordre séquentiel légal « génération puis écriture » ; et
+/// toute écriture **commitée avant** le lock est vue par le `count_by_company`
+/// sous le lock (→ refus). Résidu restant (une seule génération concurrente à
+/// la création d'un exercice antérieur) : **mauvais millésime, pas de doublon**
+/// — limitation L4 documentée du story file, remédiation = marqueur L3.
+///
+/// Les conflits métier sont émis en `DbError::Invariant(<KEY>)` namespacés
+/// (pattern D7 de 14-2), re-mappés en messages distincts localisés par
+/// `map_opening_balances_error` côté route.
+pub async fn create_opening_entry(
+    pool: &MySqlPool,
+    company_id: i64,
+    fiscal_year_id: i64,
+    user_id: i64,
+    new: NewJournalEntry,
+) -> Result<JournalEntryWithLines, DbError> {
+    use super::fiscal_years::{
+        FY_OPENING_ALREADY_HAS_ENTRIES_KEY, FY_OPENING_FIRST_YEAR_CLOSED_KEY,
+    };
+
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    // Étape 1 (Pass 3 BH3-1) : sentinel company-wide — la garde « company
+    // vierge » porte sur TOUTE la company, le verrou qui la protège aussi.
+    // Sans lui, deux générations ayant résolu des premiers exercices
+    // DIFFÉRENTS verrouilleraient des lignes distinctes et commiteraient un
+    // doublon d'ouverture (portée exacte : cf. doc de la fn).
+    let company_row: Option<(i64,)> =
+        sqlx::query_as("SELECT id FROM companies WHERE id = ? FOR UPDATE")
+            .bind(company_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(map_db_error)?;
+    if company_row.is_none() {
+        let _ = tx.rollback().await;
+        return Err(DbError::NotFound);
+    }
+
+    // Étape 2 : lock de la ligne du premier exercice — statut vivant + borne
+    // de dates, et sérialisation avec les écritures concurrentes de CE même
+    // exercice ainsi que toute clôture.
+    let fy_row: Option<(i64, String)> = sqlx::query_as(
+        "SELECT id, status FROM fiscal_years WHERE id = ? AND company_id = ? FOR UPDATE",
+    )
+    .bind(fiscal_year_id)
+    .bind(company_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(map_db_error)?;
+
+    let fy_status = match fy_row {
+        None => {
+            let _ = tx.rollback().await;
+            return Err(DbError::NotFound);
+        }
+        Some((_, status)) => status,
+    };
+
+    // Étape 3 : garde « company vierge » SOUS le lock (P3-BH3-1), évaluée
+    // AVANT le statut clos (priorité amendée ECH3-2, propagée au chemin
+    // d'écriture en Pass 4 — BH4/ECH4 convergés) : sur « clos + écritures »,
+    // le POST doit rendre le même verdict que GET /status
+    // (`ALREADY_HAS_ENTRIES`), pas le conseil trompeur « rouvrez l'exercice ».
+    let count = count_by_company(&mut *tx, company_id).await?;
+    if count > 0 {
+        let _ = tx.rollback().await;
+        return Err(DbError::Invariant(
+            FY_OPENING_ALREADY_HAS_ENTRIES_KEY.to_string(),
+        ));
+    }
+
+    // Étape 4 : statut vivant du premier exercice (après la garde
+    // company-vierge — même ordre que le GET /status et le pré-check handler).
+    if fy_status == "Closed" {
+        let _ = tx.rollback().await;
+        return Err(DbError::Invariant(
+            FY_OPENING_FIRST_YEAR_CLOSED_KEY.to_string(),
+        ));
+    }
+
+    // Étape 5 : création atomique dans la même tx (re-lock ré-entrant).
+    match create_in_tx(&mut tx, fiscal_year_id, user_id, new, true).await {
+        Ok(result) => {
+            tx.commit().await.map_err(map_db_error)?;
+            Ok(result)
+        }
+        Err(e) => {
+            // Best-effort rollback, miroir `create` (l'erreur métier prime).
+            let _ = tx.rollback().await;
+            Err(e)
+        }
+    }
 }
 
 /// Retourne une écriture avec ses lignes, scopée à une company pour
@@ -673,7 +906,9 @@ pub async fn update(
         return Err(DbError::DateOutsideFiscalYear);
     }
 
-    // Étape 5 : comptes actifs appartenant à la company.
+    // Étape 5 : comptes actifs appartenant à la company + garde de postabilité
+    // en saisie manuelle (Story 14-3b). L'update est toujours un flux MANUEL
+    // (`enforce_postable = true`).
     if updated.lines.is_empty() {
         tx.rollback().await.map_err(map_db_error)?;
         return Err(DbError::Invariant(
@@ -681,29 +916,28 @@ pub async fn update(
         ));
     }
 
+    // Grandfather PAR COMPTE (D-A1) : les comptes DÉJÀ référencés par les lignes
+    // persistées sont exemptés de la garde de postabilité — sinon un compte
+    // devenu non-postable APRÈS création (14-3a : ajouter un sous-compte bascule
+    // le parent `postable = FALSE`) rendrait l'écriture historique inéditable
+    // (même pour corriger sa seule date). Récupéré AVANT la validation (l'ancien
+    // `before_lines` de l'« Étape 6 » était fetché trop tard, cf. spec T1). Le
+    // verrou `FOR UPDATE` sur l'en-tête (Étape 1) garantit un snapshot cohérent.
+    let exempt_account_ids: Vec<i64> = sqlx::query_scalar(
+        "SELECT DISTINCT account_id FROM journal_entry_lines WHERE entry_id = ?",
+    )
+    .bind(id)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(map_db_error)?;
+
     let account_ids: Vec<i64> = updated.lines.iter().map(|l| l.account_id).collect();
-    let placeholders = account_ids
-        .iter()
-        .map(|_| "?")
-        .collect::<Vec<_>>()
-        .join(",");
-    let accounts_sql = format!(
-        "SELECT id FROM accounts \
-         WHERE company_id = ? AND active = TRUE AND id IN ({placeholders})"
-    );
-    let mut q = sqlx::query_scalar::<_, i64>(&accounts_sql).bind(company_id);
-    for aid in &account_ids {
-        q = q.bind(aid);
-    }
-    let active_ids: Vec<i64> = q.fetch_all(&mut *tx).await.map_err(map_db_error)?;
-
-    let mut unique_requested: Vec<i64> = account_ids.clone();
-    unique_requested.sort_unstable();
-    unique_requested.dedup();
-
-    if active_ids.len() != unique_requested.len() {
+    if let Err(e) =
+        validate_lines_accounts_in_tx(&mut tx, company_id, &account_ids, true, &exempt_account_ids)
+            .await
+    {
         tx.rollback().await.map_err(map_db_error)?;
-        return Err(DbError::InactiveOrInvalidAccounts);
+        return Err(e);
     }
 
     // Étape 6 : snapshot "before" (SELECTs inline dans la tx — M2 tranché).
@@ -2819,5 +3053,244 @@ mod tests {
         .expect("déplacer un tag archivé au sein de la même écriture doit passer");
         assert_eq!(updated.lines[0].project_id, None);
         assert_eq!(updated.lines[1].project_id, Some(p));
+    }
+
+    // ─── Story 14-3b : garde de postabilité à la saisie manuelle (chantier A) ───
+
+    /// Bascule `postable` d'un compte directement en SQL — plus simple que de
+    /// créer un sous-compte pour déclencher la règle `is_postable`. Restauré par
+    /// le caller (base de test partagée entre `#[tokio::test]`).
+    async fn set_postable(pool: &MySqlPool, account_id: i64, postable: bool) {
+        sqlx::query("UPDATE accounts SET postable = ? WHERE id = ?")
+            .bind(postable)
+            .bind(account_id)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    /// Trois comptes actifs distincts issus du seed.
+    async fn three_accounts(pool: &MySqlPool, company_id: i64) -> (i64, i64, i64) {
+        let accs = accounts::list_by_company(pool, company_id, false)
+            .await
+            .unwrap();
+        assert!(accs.len() >= 3, "need ≥ 3 active accounts (run seed-demo)");
+        (accs[0].id, accs[1].id, accs[2].id)
+    }
+
+    /// AC-A / D-A0 — `create` pool-level (SAISIE MANUELLE, `enforce_postable =
+    /// true`) : accepte une écriture sur des comptes postables, refuse une ligne
+    /// visant un compte non-postable en `InactiveOrInvalidAccounts`.
+    #[tokio::test]
+    async fn test_create_manual_rejects_non_postable_line() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        let today = chrono::Utc::now().naive_utc().date();
+
+        // Cas OK — comptes postables (état seed).
+        let ok = mk_entry(
+            company_id,
+            today,
+            vec![line(a1, dec!(10), dec!(0)), line(a2, dec!(0), dec!(10))],
+        );
+        create(&pool, fy_id, admin_user_id, ok)
+            .await
+            .expect("écriture manuelle sur comptes postables acceptée");
+        delete_all_by_company(&pool, company_id).await.unwrap();
+
+        // Cas KO — a2 devient non-postable.
+        set_postable(&pool, a2, false).await;
+        let ko = mk_entry(
+            company_id,
+            today,
+            vec![line(a1, dec!(10), dec!(0)), line(a2, dec!(0), dec!(10))],
+        );
+        let result = create(&pool, fy_id, admin_user_id, ko).await;
+        set_postable(&pool, a2, true).await; // restaurer AVANT l'assert (base partagée)
+        assert!(
+            matches!(result, Err(DbError::InactiveOrInvalidAccounts)),
+            "compte non-postable en saisie manuelle → InactiveOrInvalidAccounts, obtenu {:?}",
+            result
+        );
+        delete_all_by_company(&pool, company_id).await.unwrap();
+    }
+
+    /// AC-A / D-A0 (non-régression) — un flux automatique (`create_in_tx` avec
+    /// `enforce_postable = false`) poste SANS erreur sur un compte non-postable.
+    /// Reproduit le cas « facture dont le compte produit est devenu non-postable ».
+    #[tokio::test]
+    async fn test_create_in_tx_auto_flow_allows_non_postable() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        let today = chrono::Utc::now().naive_utc().date();
+
+        set_postable(&pool, a2, false).await;
+        let new = mk_entry(
+            company_id,
+            today,
+            vec![line(a1, dec!(10), dec!(0)), line(a2, dec!(0), dec!(10))],
+        );
+        let mut tx = pool.begin().await.unwrap();
+        let committed = create_in_tx(&mut tx, fy_id, admin_user_id, new, false)
+            .await
+            .is_ok();
+        if committed {
+            tx.commit().await.unwrap();
+        } else {
+            let _ = tx.rollback().await;
+        }
+        set_postable(&pool, a2, true).await;
+        assert!(
+            committed,
+            "flux automatique (enforce_postable=false) doit accepter un compte non-postable"
+        );
+        delete_all_by_company(&pool, company_id).await.unwrap();
+    }
+
+    /// AC-A / D-A1 (grandfather PAR COMPTE + brèche L3) — une écriture manuelle
+    /// sur un compte X qui devient non-postable APRÈS coup reste éditable tant
+    /// qu'on ne référence pas un NOUVEAU compte non-postable :
+    /// - éditer sans changer les comptes → OK (grandfather) ;
+    /// - ajouter une 2e ligne sur X (déjà référencé, non-postable) → TOLÉRÉ (L3) ;
+    /// - ajouter une ligne vers Y (non-postable, jamais référencé) → REJET.
+    #[tokio::test]
+    async fn test_update_grandfathers_non_postable_by_account() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (a1, a2, a3) = three_accounts(&pool, company_id).await;
+        let today = chrono::Utc::now().naive_utc().date();
+
+        // Écriture initiale (a1 débit / a2 crédit), tous postables.
+        let created = create(
+            &pool,
+            fy_id,
+            admin_user_id,
+            mk_entry(
+                company_id,
+                today,
+                vec![line(a1, dec!(50), dec!(0)), line(a2, dec!(0), dec!(50))],
+            ),
+        )
+        .await
+        .unwrap();
+
+        // a1 devient non-postable APRÈS coup.
+        set_postable(&pool, a1, false).await;
+
+        // (a) Éditer le seul libellé (mêmes comptes) → OK, a1 grandfathered.
+        let mut edit = mk_entry(
+            company_id,
+            today,
+            vec![line(a1, dec!(50), dec!(0)), line(a2, dec!(0), dec!(50))],
+        );
+        edit.description = "Édition libellé".to_string();
+        let edited = update(
+            &pool,
+            company_id,
+            created.entry.id,
+            created.entry.version,
+            admin_user_id,
+            edit,
+        )
+        .await
+        .expect("grandfather : édition sans toucher au compte non-postable doit passer");
+
+        // (b) L3 TOLÉRÉ : ajouter une 2e ligne sur a1 (déjà référencé) → OK.
+        let tolerated = mk_entry(
+            company_id,
+            today,
+            vec![
+                line(a1, dec!(30), dec!(0)),
+                line(a1, dec!(20), dec!(0)),
+                line(a2, dec!(0), dec!(50)),
+            ],
+        );
+        let after_tol = update(
+            &pool,
+            company_id,
+            edited.entry.id,
+            edited.entry.version,
+            admin_user_id,
+            tolerated,
+        )
+        .await
+        .expect("L3 : ajout d'une ligne sur un compte non-postable DÉJÀ référencé est toléré");
+
+        // (c) REJET : ajouter une ligne vers a3 (non-postable) jamais référencé.
+        set_postable(&pool, a3, false).await;
+        let bad = mk_entry(
+            company_id,
+            today,
+            vec![
+                line(a1, dec!(50), dec!(0)),
+                line(a2, dec!(0), dec!(30)),
+                line(a3, dec!(0), dec!(20)),
+            ],
+        );
+        let result = update(
+            &pool,
+            company_id,
+            after_tol.entry.id,
+            after_tol.entry.version,
+            admin_user_id,
+            bad,
+        )
+        .await;
+        set_postable(&pool, a1, true).await; // restaurer avant asserts
+        set_postable(&pool, a3, true).await;
+        assert!(
+            matches!(result, Err(DbError::InactiveOrInvalidAccounts)),
+            "ajout d'une ligne vers un compte non-postable jamais référencé → rejet, obtenu {:?}",
+            result
+        );
+        delete_all_by_company(&pool, company_id).await.unwrap();
+    }
+
+    /// AC-E — le compte de résultat (`CurrentYearResult`, non-postable par
+    /// construction `is_postable`) est refusé à la saisie manuelle.
+    #[tokio::test]
+    async fn test_create_manual_rejects_result_account() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (a1, _a2) = two_accounts(&pool, company_id).await;
+        let today = chrono::Utc::now().naive_utc().date();
+
+        let result_account_id: Option<i64> = sqlx::query_scalar(
+            "SELECT id FROM accounts \
+             WHERE company_id = ? AND role = 'CurrentYearResult' AND active = TRUE LIMIT 1",
+        )
+        .bind(company_id)
+        .fetch_optional(&pool)
+        .await
+        .unwrap();
+        let Some(rid) = result_account_id else {
+            // Plan sans compte de résultat annoté → rien à vérifier (les 3 charts
+            // standards en portent un, cf. 2979).
+            return;
+        };
+        let postable: bool = sqlx::query_scalar("SELECT postable FROM accounts WHERE id = ?")
+            .bind(rid)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert!(
+            !postable,
+            "le compte de résultat doit être non-postable (14-3a)"
+        );
+
+        let new = mk_entry(
+            company_id,
+            today,
+            vec![line(a1, dec!(10), dec!(0)), line(rid, dec!(0), dec!(10))],
+        );
+        let res = create(&pool, fy_id, admin_user_id, new).await;
+        assert!(
+            matches!(res, Err(DbError::InactiveOrInvalidAccounts)),
+            "saisie manuelle sur le compte de résultat doit être rejetée, obtenu {:?}",
+            res
+        );
+        delete_all_by_company(&pool, company_id).await.unwrap();
     }
 }

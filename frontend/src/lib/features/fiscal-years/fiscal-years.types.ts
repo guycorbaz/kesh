@@ -31,3 +31,8 @@ export interface CreateFiscalYearRequest {
 export interface UpdateFiscalYearRequest {
 	name: string;
 }
+
+/** Story 14-2 — réouverture d'un exercice clôturé (motif obligatoire, tracé en audit). */
+export interface ReopenFiscalYearRequest {
+	motif: string;
+}

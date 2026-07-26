@@ -49,6 +49,7 @@ fn make_account_balance(i: usize, ty: AccountType) -> AccountBalance {
         account_type: ty,
         active: true,
         balance: Decimal::from_str(&format!("{}.{:02}", i, (i * 17) % 100)).unwrap(),
+        role: None,
     }
 }
 
@@ -66,8 +67,11 @@ fn make_balance_sheet(n: usize) -> BalanceSheet {
         period: period(),
         assets,
         liabilities,
+        equity: vec![],
         total_assets,
         total_liabilities,
+        total_equity: Decimal::ZERO,
+        retained_earnings: Decimal::ZERO,
         equity_result: total_assets - total_liabilities,
         equation_holds: true,
     }

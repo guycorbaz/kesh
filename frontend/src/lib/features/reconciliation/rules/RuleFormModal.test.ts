@@ -33,6 +33,8 @@ function makeAccounts(): AccountResponse[] {
 			name: 'Télécom',
 			accountType: 'Expense',
 			active: true,
+			role: null,
+			postable: true,
 		} as AccountResponse,
 	];
 }

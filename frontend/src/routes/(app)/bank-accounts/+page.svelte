@@ -77,7 +77,10 @@
 	// Filtrer accounts dropdown : classes 1 (Asset) + 2 (Liability) actifs.
 	let linkableAccounts = $derived(
 		accounts.filter(
-			(a) => a.active && (a.accountType === 'Asset' || a.accountType === 'Liability'),
+			(a) =>
+				a.active &&
+				a.postable && // 14-3b : compte lié posté à la réconciliation
+				(a.accountType === 'Asset' || a.accountType === 'Liability'),
 		),
 	);
 

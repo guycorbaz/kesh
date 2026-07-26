@@ -33,8 +33,14 @@ pub enum DbError {
     #[error("Contrainte CHECK violée : {0}")]
     CheckConstraintViolation(String),
 
-    /// Transition d'état métier interdite (ex: clôturer un exercice déjà clos,
-    /// réouvrir un exercice clos). Mappé vers HTTP 409 Conflict côté API.
+    /// Transition d'état métier interdite (ex: re-clôturer un exercice déjà
+    /// clos — idempotence de `close`). Mappé vers HTTP 409 Conflict côté API.
+    ///
+    /// **Note (Story 14-2)** : la réouverture d'un exercice clos est désormais
+    /// **autorisée** (via `fiscal_years::reopen`, Admin + motif + audit). Ses
+    /// conflits métier (déjà ouvert, garde LIFO) sont émis en
+    /// [`DbError::Invariant`] namespacés (message distinct localisé au mapper),
+    /// **pas** via cette variante dont le `Display` est log-only.
     #[error("Transition d'état interdite : {0}")]
     IllegalStateTransition(String),
 
@@ -56,6 +62,54 @@ pub enum DbError {
     /// un autre exercice via un simple changement de date.
     #[error("La date n'est pas dans l'exercice courant de cette écriture")]
     DateOutsideFiscalYear,
+
+    /// Un rôle de compte **singleton** est déjà porté par un autre compte actif
+    /// de la même société (Story 14-3a).
+    ///
+    /// Variante dédiée — et non le générique [`DbError::UniqueConstraintViolation`]
+    /// — pour que l'API puisse **nommer le compte en conflit** : le mapping
+    /// générique du code MariaDB 1062 produit un message fixe et jette le détail.
+    /// Les champs viennent d'un `SELECT` fait dans la même transaction, avant
+    /// l'écriture ; la contrainte `uq_accounts_company_singleton_role` reste la
+    /// source de vérité (elle rattrape les courses perdues en 1062).
+    #[error("Le rôle {role} est déjà attribué au compte {account_number}")]
+    AccountRoleAlreadyAssigned {
+        /// Rôle en conflit, en PascalCase (ex. `"Receivable"`).
+        role: String,
+        /// ID du compte qui porte déjà le rôle.
+        account_id: i64,
+        /// Numéro du compte qui porte déjà le rôle.
+        account_number: String,
+        /// Libellé du compte qui porte déjà le rôle.
+        account_name: String,
+    },
+
+    /// Réactivation refusée : le compte parent est archivé (Story 14-3a, #269).
+    ///
+    /// Variante dédiée — et non le générique [`DbError::IllegalStateTransition`]
+    /// — parce que ce dernier est mappé sur un message fixe (« Transition d'état
+    /// interdite ») qui ne dit **pas** à l'utilisateur ce qu'il doit faire. Le
+    /// code review Pass 1 a montré que le message explicatif écrit côté
+    /// repository n'atteignait jamais le client. Le numéro du parent permet à
+    /// l'API de produire un message actionnable et traduit.
+    #[error("Le compte parent {parent_number} est archivé")]
+    AccountParentArchived {
+        /// Numéro du compte parent archivé.
+        parent_number: String,
+    },
+
+    /// Le rôle demandé est incompatible avec le type du compte (Story 14-3a).
+    ///
+    /// Contrainte volontairement **minimale** : seule la frontière bilan /
+    /// résultat est vérifiée (cf. `AccountRole::accepts_account_type`). Mappée
+    /// vers HTTP 400 côté API.
+    #[error("Le rôle {role} est incompatible avec un compte de type {account_type}")]
+    AccountRoleInvalidForType {
+        /// Rôle demandé, en PascalCase (ex. `"Payable"`).
+        role: String,
+        /// Type du compte, en PascalCase (ex. `"Expense"`).
+        account_type: String,
+    },
 
     /// Aucun exercice ouvert ne couvre la date fournie (Story 5.2).
     /// Distinct de `FiscalYearClosed` — l'exercice est peut-être
@@ -119,6 +173,9 @@ impl DbError {
             Self::FiscalYearClosed => "FISCAL_YEAR_CLOSED",
             Self::InactiveOrInvalidAccounts => "INACTIVE_OR_INVALID_ACCOUNTS",
             Self::DateOutsideFiscalYear => "DATE_OUTSIDE_FISCAL_YEAR",
+            Self::AccountRoleAlreadyAssigned { .. } => "ACCOUNT_ROLE_ALREADY_ASSIGNED",
+            Self::AccountParentArchived { .. } => "ACCOUNT_PARENT_ARCHIVED",
+            Self::AccountRoleInvalidForType { .. } => "ACCOUNT_ROLE_INVALID_FOR_TYPE",
             Self::FiscalYearInvalid => "FISCAL_YEAR_INVALID",
             Self::ConfigurationRequired(_) => "CONFIGURATION_REQUIRED",
             Self::ConnectionUnavailable(_) => "CONNECTION_UNAVAILABLE",

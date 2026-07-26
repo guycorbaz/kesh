@@ -114,3 +114,109 @@ test.describe('Page plan comptable — CRUD', () => {
 		await expect(page.locator('[data-testid="account-show-archived-toggle"]')).toBeVisible();
 	});
 });
+
+test.describe('Plan comptable — rôles & réactivation (Story 14-3a, #269)', () => {
+	test("affecte un rôle à un compte via le dialog Modifier", async ({ page }) => {
+		await loginAndGoToAccounts(page);
+
+		const editButton = page.locator('[data-testid="account-row-1000-edit-button"]');
+		await expect(editButton).toHaveCount(1);
+		await editButton.click();
+
+		const editDialog = page.getByRole('dialog');
+		await expect(editDialog).toBeVisible();
+
+		// Le sélecteur de rôle et la case Postable sont exposés.
+		const roleSelect = page.locator('[data-testid="account-edit-dialog-role"]');
+		await expect(roleSelect).toBeVisible();
+		await expect(page.locator('[data-testid="account-edit-dialog-postable"]')).toBeVisible();
+
+		// Choisir « Capital » (rôle multi-valué : jamais en conflit avec le seed).
+		await roleSelect.click();
+		await page.getByRole('option', { name: 'Capital', exact: true }).click();
+		await page.locator('[data-testid="account-edit-dialog-submit"]').click();
+
+		// Le badge de rôle apparaît sur la ligne.
+		await expect(page.locator('[data-testid="account-row-1000-role-badge"]')).toContainText(
+			'Capital',
+		);
+	});
+
+	test('cycle archiver → afficher les archivés → réactiver', async ({ page }) => {
+		await loginAndGoToAccounts(page);
+
+		// Créer un compte dédié pour ne pas perturber les autres tests.
+		const number = `T${Date.now().toString().slice(-5)}`;
+		await page.locator('[data-testid="account-create-button"]').click();
+		await page.fill('#create-number', number);
+		await page.fill('#create-name', 'Compte à réactiver');
+		await page.locator('[data-testid="account-create-dialog-submit"]').click();
+		await expect(page.locator(`[data-testid="account-row-${number}"]`)).toBeVisible();
+
+		// Archiver.
+		await page.locator(`[data-testid="account-row-${number}-archive-button"]`).click();
+		await page.locator('[data-testid="account-archive-dialog-confirm"]').click();
+
+		// Par défaut la liste masque les archivés → la ligne disparaît.
+		await expect(page.locator(`[data-testid="account-row-${number}"]`)).toHaveCount(0);
+
+		// Cocher « afficher les archivés » → la ligne revient, avec un bouton
+		// Réactiver et SANS bouton Modifier/Archiver.
+		await page.locator('[data-testid="account-show-archived-toggle"]').check();
+		await expect(page.locator(`[data-testid="account-row-${number}"]`)).toBeVisible();
+		await expect(
+			page.locator(`[data-testid="account-row-${number}-reactivate-button"]`),
+		).toHaveCount(1);
+		await expect(page.locator(`[data-testid="account-row-${number}-edit-button"]`)).toHaveCount(0);
+		await expect(page.locator(`[data-testid="account-row-${number}-archive-button"]`)).toHaveCount(
+			0,
+		);
+
+		// Réactiver → le compte redevient modifiable.
+		await page.locator(`[data-testid="account-row-${number}-reactivate-button"]`).click();
+		await expect(page.getByLabel(/Notifications/)).toContainText('réactivé');
+		await expect(page.locator(`[data-testid="account-row-${number}-edit-button"]`)).toHaveCount(1);
+
+		// Et il réapparaît dans la liste par défaut (archivés masqués).
+		await page.locator('[data-testid="account-show-archived-toggle"]').uncheck();
+		await expect(page.locator(`[data-testid="account-row-${number}"]`)).toBeVisible();
+	});
+
+	test("un compte non postable porte un badge explicitement indicatif", async ({ page }) => {
+		await loginAndGoToAccounts(page);
+
+		// Code review 14-3a : ne PAS dépendre d'un compte titre du seed (le seed CI
+		// est plat, `badge.count()` valait toujours 0 et le test ne vérifiait
+		// rien). On CONSTRUIT l'état : un compte parent devient non-postable dès
+		// qu'on lui crée un sous-compte (invariant normalisé à l'écriture).
+		const parent = `T${Date.now().toString().slice(-5)}`;
+		await page.locator('[data-testid="account-create-button"]').click();
+		await page.fill('#create-number', parent);
+		await page.fill('#create-name', 'Compte parent E2E');
+		await page.locator('[data-testid="account-create-dialog-submit"]').click();
+		await expect(page.locator(`[data-testid="account-row-${parent}"]`)).toBeVisible();
+
+		// Tant qu'il est une feuille, aucun badge « Non postable ».
+		await expect(
+			page.locator(`[data-testid="account-row-${parent}-postable-badge"]`),
+		).toHaveCount(0);
+
+		// Créer un enfant rattaché à ce parent.
+		const child = `${parent}1`;
+		await page.locator('[data-testid="account-create-button"]').click();
+		await page.fill('#create-number', child);
+		await page.fill('#create-name', 'Sous-compte E2E');
+		await page.locator('[data-testid="account-create-dialog-role"]').scrollIntoViewIfNeeded();
+		// Sélectionner le parent dans le Select « Compte parent ».
+		await page.locator('#create-parent').click();
+		await page.getByRole('option', { name: new RegExp(`^${parent} `) }).click();
+		await page.locator('[data-testid="account-create-dialog-submit"]').click();
+		await expect(page.locator(`[data-testid="account-row-${child}"]`)).toBeVisible();
+
+		// Le parent porte désormais le badge « Non postable », avec le title indicatif.
+		const badge = page.locator(`[data-testid="account-row-${parent}-postable-badge"]`);
+		await expect(badge).toHaveCount(1);
+		await expect(badge).toContainText('Non postable');
+		await expect(badge).toHaveAttribute('title', /[Ii]ndicatif/);
+	});
+});

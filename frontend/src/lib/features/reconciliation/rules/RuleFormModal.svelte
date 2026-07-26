@@ -43,6 +43,7 @@
 		accounts.filter(
 			(a) =>
 				a.active &&
+				a.postable && // 14-3b : le compte de la règle sera effectivement posté
 				(a.accountType === 'Expense' || a.accountType === 'Revenue'),
 		),
 	);

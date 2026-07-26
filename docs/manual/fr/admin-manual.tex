@@ -1325,6 +1325,9 @@ Le plan comptable peut être modifié après création (ajout de comptes auxilia
 
 Chaque company doit définir au moins un exercice comptable (\emph{fiscal year}). Par défaut, l'exercice civil 1\textsuperscript{er} janvier -- 31 décembre est créé automatiquement à la création de la company. Pour d'autres exercices (décalés, courts, longs), aller dans \emph{Paramètres} → \emph{Exercices}.
 
+\paragraph{Réouverture d'un exercice clôturé (Admin uniquement).}
+La clôture d'un exercice est un verrou réversible et tracé. La \textbf{réouverture} est réservée aux \textbf{administrateurs} — plus strict que la clôture, accessible aux comptables — et n'est \textbf{pas} disponible via une clé API (opération privilégiée). Elle se fait depuis \emph{Paramètres} → \emph{Exercices comptables}, bouton \emph{Réouvrir}, et exige un \textbf{motif obligatoire} conservé dans le journal d'audit (\texttt{audit\_log}, action \texttt{fiscal\_year.reopened}, avec l'état avant/après et l'auteur ; conservation 10 ans). Une \textbf{garde d'ordre} impose de rouvrir du plus récent vers l'ancien : si un exercice de date de début postérieure est encore clôturé, la réouverture est refusée jusqu'à ce que celui-ci soit rouvert d'abord. Un exercice rouvert redevient éditable et pourra être re-clôturé. Aucune procédure en ligne de commande n'est nécessaire ni disponible pour cette opération.
+
 \subsection{Création des utilisateurs et rôles}
 
 Kesh utilise un système de contrôle d'accès basé sur les rôles (RBAC) :

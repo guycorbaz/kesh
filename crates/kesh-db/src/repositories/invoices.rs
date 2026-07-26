@@ -1402,6 +1402,9 @@ pub async fn validate_invoice(
                 project_id: invoice_before.project_id,
                 lines: entry_lines,
             },
+            // Flux automatique (validation de facture) : garde de postabilité
+            // désactivée (Story 14-3b, D-A0) — poste sur des comptes de config.
+            false,
         )
         .await?;
 

@@ -4,12 +4,13 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import { Plus, Pencil, Lock } from '@lucide/svelte';
+	import { Plus, Pencil, Lock, LockOpen } from '@lucide/svelte';
 
 	import {
 		closeFiscalYear,
 		createFiscalYear,
 		listFiscalYears,
+		reopenFiscalYear,
 		updateFiscalYear
 	} from '$lib/features/fiscal-years/fiscal-years.api';
 	import {
@@ -52,10 +53,58 @@
 	let closeSubmitting = $state(false);
 	let closeError = $state('');
 
+	// Reopen dialog (Story 14-2 — Admin only, motif obligatoire)
+	/** Borne serveur `REOPEN_MOTIF_MAX` (audit_log.details_json, rétention 10 ans). */
+	const REOPEN_MOTIF_MAX = 500;
+	let reopenOpen = $state(false);
+	let reopenTarget = $state<FiscalYearResponse | null>(null);
+	let reopenMotif = $state('');
+	let reopenSubmitting = $state(false);
+	let reopenError = $state('');
+
 	// Derived — RBAC frontend (le backend reste source de vérité avec 403)
 	let canMutate = $derived(
 		authState.currentUser?.role === 'Admin' || authState.currentUser?.role === 'Comptable'
 	);
+	// La réouverture est Admin uniquement (plus strict que la clôture Comptable+).
+	let isAdmin = $derived(authState.currentUser?.role === 'Admin');
+
+	// Erreur client du motif (vide OU trop long) — désactive le bouton de
+	// confirmation ; le serveur reste l'autorité (400 si dépassement).
+	let reopenClientError = $derived.by(() => {
+		const trimmed = reopenMotif.trim();
+		if (!trimmed) {
+			return msg('error-fiscal-year-reopen-motif-empty', 'Le motif de réouverture est obligatoire.');
+		}
+		// Miroir exact du serveur : il valide `motif.trim()` PUIS `chars().count()`
+		// (scalaires Unicode). On compte donc les code points du motif **trimmé**
+		// (`[...trimmed].length`, pas `.length` qui compte les unités UTF-16) pour
+		// ne pas bloquer côté client un motif que le serveur accepterait
+		// (espaces de fin, emoji hors-BMP). Le serveur reste l'autorité (400).
+		if ([...trimmed].length > REOPEN_MOTIF_MAX) {
+			return msg(
+				'error-fiscal-year-reopen-motif-too-long',
+				'Le motif de réouverture est trop long (500 caractères maximum).'
+			);
+		}
+		return '';
+	});
+
+	// Garde LIFO côté client : le plus proche exercice postérieur encore clos
+	// (min startDate parmi les postérieurs clos), aligné sur le serveur
+	// `find_later_closed_in_tx ORDER BY start_date ASC LIMIT 1`. Si non-null,
+	// la réouverture de `fy` est bloquée (le serveur reste le filet 409).
+	function nearestLaterClosed(fy: FiscalYearResponse): FiscalYearResponse | null {
+		let best: FiscalYearResponse | null = null;
+		for (const other of fiscalYears) {
+			if (other.status === 'Closed' && other.startDate > fy.startDate) {
+				if (best === null || other.startDate < best.startDate) {
+					best = other;
+				}
+			}
+		}
+		return best;
+	}
 
 	// --- Loading ---
 	async function loadFiscalYears(): Promise<void> {
@@ -199,6 +248,45 @@
 		// Le reload échoué affiche son propre toast via `loadFiscalYears`.
 		await loadFiscalYears();
 	}
+
+	// --- Reopen (Story 14-2) ---
+	function openReopen(fy: FiscalYearResponse): void {
+		reopenTarget = fy;
+		reopenMotif = '';
+		reopenError = '';
+		reopenOpen = true;
+	}
+
+	async function submitReopen(): Promise<void> {
+		if (!reopenTarget) return;
+		// Garde-fou client (le bouton est déjà `disabled`, mais défense en profondeur).
+		if (reopenClientError) {
+			reopenError = reopenClientError;
+			return;
+		}
+		reopenSubmitting = true;
+		reopenError = '';
+		try {
+			await reopenFiscalYear(reopenTarget.id, { motif: reopenMotif.trim() });
+			notifySuccess(msg('fiscal-year-reopened', 'Exercice rouvert.'));
+			reopenOpen = false;
+			reopenTarget = null;
+		} catch (err) {
+			// Erreur inline (modale reste ouverte). Le serveur renvoie un message
+			// localisé distinct pour « déjà ouvert » / garde LIFO (D7).
+			if (isApiError(err)) {
+				reopenError = err.message;
+				notifyError(err.message);
+			} else {
+				reopenError = msg('error-unexpected', 'Erreur inattendue.');
+				notifyError(reopenError);
+			}
+		} finally {
+			reopenSubmitting = false;
+		}
+		// Refresh hors try/catch (miroir submitClose) — libère toujours le flag.
+		await loadFiscalYears();
+	}
 </script>
 
 <svelte:head>
@@ -268,6 +356,26 @@
 										aria-label="{msg('fiscal-year-close-button', 'Clôturer')} {fy.name}"
 									>
 										<Lock class="h-4 w-4" aria-hidden="true" />
+									</Button>
+								{/if}
+								{#if fy.status === 'Closed' && isAdmin}
+									{@const blocker = nearestLaterClosed(fy)}
+									<Button
+										variant="ghost"
+										size="icon-xs"
+										data-testid="fiscal-year-reopen-{fy.id}"
+										disabled={blocker !== null}
+										title={blocker
+											? i18nMsg(
+													'fiscal-year-reopen-blocked-later-closed',
+													`Rouvrez d'abord l'exercice « ${blocker.name} », plus récent et encore clôturé.`,
+													{ name: blocker.name }
+												)
+											: undefined}
+										onclick={() => openReopen(fy)}
+										aria-label="{msg('fiscal-year-reopen-button', 'Réouvrir')} {fy.name}"
+									>
+										<LockOpen class="h-4 w-4" aria-hidden="true" />
 									</Button>
 								{/if}
 							</div>
@@ -402,7 +510,7 @@
 				{#if closeTarget}
 					{i18nMsg(
 						'fiscal-year-close-confirmation-body',
-						`Vous êtes sur le point de clôturer l'exercice « ${closeTarget.name} ». Cette action est irréversible : aucune écriture, facture ou paiement ne pourra plus être enregistré sur cette période. Confirmer ?`,
+						`Vous êtes sur le point de clôturer l'exercice « ${closeTarget.name} ». Aucune écriture, facture ou paiement ne pourra plus y être enregistré tant qu'il reste clôturé ; seul un administrateur peut le rouvrir (avec un motif tracé). Confirmer ?`,
 						{ name: closeTarget.name }
 					)}
 				{/if}
@@ -425,8 +533,68 @@
 			>
 				{closeSubmitting
 					? msg('closing', 'Clôture…')
-					: msg('fiscal-year-close-confirmation-action', 'Clôturer définitivement')}
+					: msg('fiscal-year-close-confirmation-action', 'Clôturer')}
 			</Button>
 		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<!-- Dialog : confirmer réouverture (Story 14-2 — Admin, motif obligatoire) -->
+<Dialog.Root bind:open={reopenOpen}>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title>
+				{msg('fiscal-year-reopen-confirmation-title', 'Rouvrir cet exercice ?')}
+			</Dialog.Title>
+			<Dialog.Description>
+				{#if reopenTarget}
+					{i18nMsg(
+						'fiscal-year-reopen-confirmation-body',
+						`Vous êtes sur le point de rouvrir l'exercice « ${reopenTarget.name} ». Il redeviendra modifiable (saisie d'écritures) jusqu'à une nouvelle clôture. Un motif est obligatoire et sera conservé dans la piste d'audit.`,
+						{ name: reopenTarget.name }
+					)}
+				{/if}
+			</Dialog.Description>
+		</Dialog.Header>
+		<form
+			onsubmit={(e) => {
+				e.preventDefault();
+				void submitReopen();
+			}}
+			class="mt-2 flex flex-col gap-3"
+		>
+			<div>
+				<label for="fy-reopen-motif" class="mb-1 block text-sm font-medium text-text">
+					{msg('fiscal-year-reopen-motif-label', 'Motif de la réouverture')}
+				</label>
+				<textarea
+					id="fy-reopen-motif"
+					data-testid="fiscal-year-reopen-motif"
+					bind:value={reopenMotif}
+					rows="3"
+					maxlength={REOPEN_MOTIF_MAX}
+					class="w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
+				></textarea>
+			</div>
+			{#if reopenError}
+				<p class="text-sm text-red-600" role="alert">{reopenError}</p>
+			{/if}
+			<Dialog.Footer>
+				<Dialog.Close>
+					<Button variant="outline" type="button">
+						{msg('cancel', 'Annuler')}
+					</Button>
+				</Dialog.Close>
+				<Button
+					type="submit"
+					data-testid="fiscal-year-reopen-confirm"
+					disabled={reopenSubmitting || !!reopenClientError}
+				>
+					{reopenSubmitting
+						? msg('saving', 'Enregistrement…')
+						: msg('fiscal-year-reopen-confirmation-action', "Rouvrir l'exercice")}
+				</Button>
+			</Dialog.Footer>
+		</form>
 	</Dialog.Content>
 </Dialog.Root>

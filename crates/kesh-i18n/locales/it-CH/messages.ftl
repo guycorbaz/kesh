@@ -74,6 +74,7 @@ nav-mensuel = Mensile
 nav-administration = Amministrazione
 nav-accounts = Piano dei conti
 nav-fiscal-years = Esercizi contabili
+nav-opening-balances = Saldi iniziali
 nav-bank-accounts = Conti bancari
 nav-bank-profiles = Profili bancari
 nav-reconciliation-rules = Regole di assegnazione
@@ -157,6 +158,54 @@ account-type-liability = Passivo
 account-type-revenue = Ricavo
 account-type-expense = Costo
 account-archived-label = Archiviato
+# --- Story 14-3a: ruoli dei conti e registrabilità ---
+account-field-role = Ruolo
+account-role-none = Nessuno
+account-role-receivable = Crediti verso clienti
+account-role-default-revenue = Ricavo predefinito
+account-role-payable = Debiti verso fornitori
+account-role-vat-recoverable = Imposta precedente (IVA recuperabile)
+account-role-vat-payable = IVA dovuta
+account-role-vat-settlement = Rendiconto IVA
+account-role-equity-capital = Capitale
+account-role-equity-other = Altri fondi propri
+account-role-retained-earnings = Utile/perdita riportato
+account-role-current-year-result = Risultato dell'esercizio
+account-role-archived-hint = Ruolo inattivo — questo conto è archiviato
+account-field-postable = Registrabile
+account-postable-no = Non registrabile
+account-postable-hint = Un conto non registrabile non accetta la registrazione manuale
+accounts-reactivate-aria = Riattivare il conto { $number }
+accounts-reactivated = Conto { $number } riattivato
+accounts-role-conflict = Il ruolo è già assegnato al conto { $number } — { $name }. Rimuovetelo prima da quel conto.
+accounts-error-number-required = Il numero è obbligatorio.
+accounts-error-name-required = Il nome è obbligatorio.
+accounts-error-number-exists = Questo numero di conto esiste già.
+accounts-error-stale = La pagina non è più aggiornata. Ricaricatela e riprovate.
+accounts-created = Conto { $number } creato
+accounts-updated = Conto { $number } modificato
+accounts-archived = Conto { $number } archiviato
+accounts-count = { $count } conti
+accounts-show-archived = Mostrare i conti archiviati
+# Story 14-3a — code review: etichette dei dialoghi ed errori di ruolo
+accounts-create-description = Aggiungete un conto al piano dei conti.
+accounts-edit-title = Modificare il conto { $number }
+accounts-edit-description = Il numero non è modificabile dopo la creazione.
+accounts-archive-title = Archiviare il conto { $number }?
+accounts-archiving = Archiviazione…
+account-field-parent-optional = Conto padre (facoltativo)
+accounts-parent-none = Nessuno
+accounts-parent-archived = Il conto padre { $number } è archiviato. Riattivatelo prima.
+accounts-role-invalid-for-type = Il ruolo { $role } non può essere attribuito a un conto di tipo { $type }.
+accounts-role-conflict-generic = Questo ruolo è appena stato attribuito a un altro conto. Ricaricate la pagina.
+accounts-reactivate-without-role = Riattivare senza il ruolo
+accounts-reactivate-without-role-description = Il ruolo di questo conto è stato ripreso da un altro conto. Potete riattivarlo senza il suo ruolo — resterà modificabile in seguito.
+accounts-reactivating = Riattivazione…
+common-empty = Nessun elemento trovato.
+common-create = Creare
+common-creating = Creazione…
+common-saving = Salvataggio…
+
 
 # Modalità Guidato/Esperto (Story 2.5)
 mode-guided-label = Guidato
@@ -589,11 +638,23 @@ fiscal-year-status-closed = Chiuso
 fiscal-year-rename-button = Rinomina
 fiscal-year-close-button = Chiudi
 fiscal-year-close-confirmation-title = Chiudere questo esercizio?
-fiscal-year-close-confirmation-body = Stai per chiudere l’esercizio « { $name } ». Questa azione è irreversibile: nessuna registrazione, fattura o pagamento potrà più essere registrato su questo periodo. Confermare?
-fiscal-year-close-confirmation-action = Chiudi definitivamente
+fiscal-year-close-confirmation-body = Stai per chiudere l’esercizio « { $name } ». Finché resta chiuso, nessuna registrazione, fattura o pagamento potrà più essere registrato su questo periodo; solo un amministratore può riaprirlo (con un motivo tracciato). Confermare?
+fiscal-year-close-confirmation-action = Chiudi
 fiscal-year-created = Esercizio creato con successo.
 fiscal-year-renamed = Esercizio rinominato.
 fiscal-year-closed = Esercizio chiuso.
+# Story 14-2 — riapertura di un esercizio chiuso (Admin, motivo, audit, regola LIFO)
+fiscal-year-reopen-button = Riapri
+fiscal-year-reopen-confirmation-title = Riaprire questo esercizio?
+fiscal-year-reopen-confirmation-body = Stai per riaprire l’esercizio « { $name } ». Tornerà modificabile (registrazione di scritture) fino a una nuova chiusura. Un motivo è obbligatorio e sarà conservato nella pista di audit.
+fiscal-year-reopen-motif-label = Motivo della riapertura
+fiscal-year-reopen-confirmation-action = Riapri l’esercizio
+fiscal-year-reopened = Esercizio riaperto.
+fiscal-year-reopen-blocked-later-closed = Riapri prima l’esercizio « { $name } », più recente e ancora chiuso.
+error-fiscal-year-reopen-motif-empty = Il motivo della riapertura è obbligatorio.
+error-fiscal-year-reopen-motif-too-long = Il motivo della riapertura è troppo lungo (massimo 500 caratteri).
+error-fiscal-year-already-open = Questo esercizio è già aperto.
+error-fiscal-year-reopen-blocked = Riapertura impossibile: un esercizio successivo è chiuso; riaprilo prima.
 error-fiscal-year-overlap = Questo esercizio si sovrappone a un esercizio esistente.
 error-fiscal-year-name-duplicate = Un esercizio con questo nome esiste già.
 error-fiscal-year-name-empty = Il nome dell’esercizio è obbligatorio.
@@ -605,6 +666,32 @@ error-fiscal-year-missing = Crea prima un esercizio contabile in Impostazioni �
 error-fiscal-year-closed-for-date = L’esercizio che copre questa data è chiuso. Verifica la data inserita o consulta i tuoi esercizi.
 go-to-settings = Apri impostazioni
 settings-fiscal-years-link = Crea, rinomina o chiudi gli esercizi contabili della tua azienda.
+
+# Story 14-4 — bilancio di apertura (saldi iniziali, ripresa della contabilità)
+opening-balances-title = Saldi iniziali
+opening-balances-intro = Inserisci i saldi dei tuoi conti di bilancio ripresi dalla contabilità precedente. Una registrazione di apertura equilibrata sarà generata al { $date } (primo giorno dell’esercizio « { $name } »). Registra il riporto a nuovo accumulato sul tuo conto di riporto per equilibrare la registrazione.
+opening-balances-account = Conto
+opening-balances-debit = Dare
+opening-balances-credit = Avere
+opening-balances-total-debit = Totale dare
+opening-balances-total-credit = Totale avere
+opening-balances-diff = Differenza
+opening-balances-generate = Genera la registrazione di apertura
+opening-balances-generating = Generazione…
+opening-balances-success = Registrazione di apertura generata.
+opening-balances-entry-description = Bilancio di apertura — saldi iniziali
+opening-balances-locked-no-fiscal-year = Nessun esercizio contabile: crea prima un esercizio (Impostazioni → Esercizi) per inserire i saldi iniziali.
+opening-balances-locked-first-year-closed = Il primo esercizio « { $name } » è chiuso: un amministratore deve riaprirlo prima dell’inserimento dei saldi iniziali.
+opening-balances-locked-already-has-entries = L’azienda contiene già delle registrazioni: il bilancio di apertura è bloccato. Correggi la registrazione di apertura direttamente nel giornale, oppure elimina tutte le registrazioni per ricominciare.
+opening-balances-goto-journal = Apri il giornale
+opening-balances-goto-balance-sheet = Vedi il bilancio
+opening-balances-status-error = Impossibile caricare lo stato dei saldi iniziali.
+opening-balances-retry = Riprova
+opening-balances-empty-grid = Nessun conto di bilancio attivo e registrabile nel piano dei conti — crea o riattiva prima i tuoi conti attivi e passivi (Piano dei conti) prima di inserire i saldi iniziali.
+error-opening-balances-no-fiscal-year = Nessun esercizio contabile: crea prima un esercizio prima di inserire i saldi iniziali.
+error-opening-balances-first-year-closed = Il primo esercizio è chiuso: riaprilo prima di inserire i saldi iniziali.
+error-opening-balances-already-has-entries = L’azienda contiene già delle registrazioni: il bilancio di apertura non può più essere generato. Correggi la registrazione di apertura tramite il giornale.
+error-opening-balances-non-balance-account = Il bilancio di apertura può toccare solo conti di bilancio (attivi e passivi) — rimuovi i conti di ricavo e di costo.
 
 
 # --- Story 8-1b — Importazione bancaria CAMT.053 ---
@@ -859,6 +946,7 @@ reports-section-expenses = Costi
 
 reports-total-assets = Totale attivi
 reports-total-liabilities = Totale passivi
+reports-total-equity = Totale patrimonio netto
 reports-total-revenues = Totale ricavi
 reports-total-expenses = Totale costi
 reports-total-debit = Totale dare
@@ -887,6 +975,10 @@ reports-error-no-fiscal-year-available = Nessun esercizio contabile disponibile.
 reports-equity-result-section-title = Risultato del periodo (prima della chiusura contabile)
 reports-equity-result-profit = Utile del periodo
 reports-equity-result-loss = Perdita del periodo
+reports-retained-earnings = Risultato riportato
+reports-retained-earnings-calculated = Risultato riportato (calcolato)
+reports-retained-earnings-loss = Perdita riportata
+reports-trial-balance-period-note = Il bilancio di verifica mostra il movimento del periodo (per esercizio). Il totale per conto non è comparabile con il saldo cumulato dello stesso conto nel bilancio (riporto a nuovo dall'origine).
 
 # Alerts + badges UI (2 — code review Pass 1 i18n leaks)
 reports-equation-warning = ⚠️ Equazione di bilancio non bilanciata (verificare i dati sorgente).

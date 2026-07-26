@@ -266,6 +266,13 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/companies/current/email",
             put(routes::companies::update_company_email),
         )
+        // Story 14-2 : réouverture d'un exercice clôturé (Admin uniquement +
+        // motif obligatoire + audit + garde LIFO). Plus strict que la clôture
+        // (Comptable+, comptable_routes) — opération réglementaire sensible.
+        .route(
+            "/api/v1/fiscal-years/{id}/reopen",
+            post(routes::fiscal_years::reopen_fiscal_year),
+        )
         .route_layer(axum::middleware::from_fn(
             crate::middleware::rbac::require_admin_role,
         ));
@@ -282,6 +289,11 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/accounts/{id}/archive",
             put(routes::accounts::archive_account),
         )
+        // Story 14-3a (#269) — réactivation d'un compte archivé.
+        .route(
+            "/api/v1/accounts/{id}/reactivate",
+            put(routes::accounts::reactivate_account),
+        )
         .route(
             "/api/v1/journal-entries",
             post(routes::journal_entries::create_journal_entry),
@@ -290,6 +302,17 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/journal-entries/{id}",
             put(routes::journal_entries::update_journal_entry)
                 .delete(routes::journal_entries::delete_journal_entry),
+        )
+        // Story 14-4 : bilan d'ouverture (soldes de départ) — Comptable+.
+        // Le GET /status est ici aussi (PAS authenticated_routes qui
+        // laisserait passer Consultation, P1-M2-ECH).
+        .route(
+            "/api/v1/opening-balances",
+            post(routes::opening_balances::generate_opening_balances),
+        )
+        .route(
+            "/api/v1/opening-balances/status",
+            get(routes::opening_balances::opening_balances_status),
         )
         // Story 4.1 : mutations carnet d'adresses
         .route("/api/v1/contacts", post(routes::contacts::create_contact))
