@@ -106,6 +106,22 @@ Quand une ligne n'a pas de compte, le champ affiche un placeholder nommant expli
 
 **Décision** : l'échec du chargement de la liste **ne bloque pas** la saisie de facture. Le composant a déjà un mode dégradé (`loadError` → saisie de l'ID numérique, `:52-60`) — le réutiliser. Une facture doit rester saisissable même si l'endpoint comptes est momentanément indisponible ; le champ est optionnel, son indisponibilité fait simplement retomber toutes les lignes sur le défaut société.
 
+### D11 — La liste des comptes DOIT être chargée avec `fetchAccounts(true)` — sans quoi D7 s'effondre
+
+**C'est la dépendance technique porteuse de toute la décision D7**, et elle est invisible si on ne la nomme pas.
+
+`fetchAccounts(includeArchived = false)` (`frontend/src/lib/features/accounts/accounts.api.ts:10-14`) **exclut les comptes archivés par défaut**. Or D7 repose entièrement sur le fait que le `$effect` d'`AccountAutocomplete` (`:22-30`) résolve le libellé via `accounts.find((a) => a.id === value)`. Si le compte archivé **n'est pas dans le tableau `accounts`**, `find` renvoie `undefined`, `query` reste vide — et **le champ s'affiche vide**. C'est-à-dire exactement le symptôme #271 que D7 (révisée) affirme ne pas s'appliquer ici.
+
+Autrement dit : la révision de D7 en passe 1 est correcte sur le **composant**, mais elle n'est vraie qu'à la condition que l'appelant fournisse la liste **complète**.
+
+**Décision** : `InvoiceForm` appelle `fetchAccounts(true)`.
+
+**Précédent dans le dépôt** — le projet a déjà rencontré et résolu exactement ce cas : `frontend/src/routes/(app)/journal-entries/[id]/+page.svelte:33-43` appelle `fetchAccounts(true)` avec un commentaire qui en donne le motif (une écriture existante peut référencer un compte archivé), alors que l'écran de **création** `journal-entries/+page.svelte:100` appelle `fetchAccounts(false)`. Le formulaire de facture édite des brouillons porteurs de valeurs persistées : il est du côté « détail », pas du côté « création vierge ».
+
+**Le filtre du dropdown reste inchangé** : `accounts.filter((a) => a.active && a.postable)` (`:32-34`) continue d'exclure les comptes archivés des propositions. Charger la liste complète sert **uniquement** à résoudre le libellé d'une valeur persistée — pas à la rendre sélectionnable.
+
+**Définition opérationnelle du marqueur d'invalidité (AC2)** : la valeur est présente dans `accounts` mais **absente** de la liste filtrée `active && postable`, ou son `account_type` n'est pas `Revenue`.
+
 ---
 
 ## Acceptance Criteria
@@ -113,13 +129,14 @@ Quand une ligne n'a pas de compte, le champ affiche un placeholder nommant expli
 ### A. Composant
 
 - **AC1** — `AccountAutocomplete` accepte `allowClear?: boolean` (défaut `false`) : quand `true`, un bouton d'effacement accessible (`aria-label` traduit) appelle `onSelect(null)` et vide le champ (D8).
-- **AC2** — `AccountAutocomplete` accepte de quoi signaler une valeur invalide (D7) : quand la valeur liée n'est pas dans la liste des comptes sélectionnables, le libellé reste affiché **et** un marqueur d'invalidité textuel apparaît. Rendu accessible : pas de signal porté par la seule couleur.
+- **AC2** — `AccountAutocomplete` accepte de quoi signaler une valeur invalide (D7) : quand la valeur liée est **présente dans `accounts` mais absente de la liste filtrée `active && postable`** (ou d'un `account_type` ≠ `Revenue`), le libellé reste affiché **et** un marqueur d'invalidité textuel apparaît. Rendu accessible : pas de signal porté par la seule couleur. Prérequis : la liste complète est fournie par l'appelant (D11 / AC5).
 - **AC3** — L'import `i18nMsg` du composant passe de `$lib/features/onboarding/onboarding.svelte` (`:3`) à l'emplacement canonique `$lib/shared/utils/i18n.svelte`, conformément à la doc-comment de `shared/utils/i18n.svelte.ts:1-7`. Comportement inchangé.
 - **AC4** — Le composant **n'est pas déplacé** (D6). Les 4 importeurs (`JournalEntryForm.svelte:22`, `VatPurchaseAssistant.svelte:14`, `TransactionSplitModal.svelte:22`, `ManualMatchModal.svelte:24`) et `AccountAutocomplete.test.ts` gardent leur chemin d'import actuel.
 
 ### B. Formulaire de facture
 
-- **AC5** — `InvoiceForm.svelte` charge la liste des comptes de la société (plomberie nette — aucun chargement de comptes n'existe aujourd'hui) et expose un sélecteur de compte **par ligne**, optionnel.
+- **AC5** — `InvoiceForm.svelte` charge la liste des comptes de la société via **`fetchAccounts(true)`** (`accounts.api.ts:10`) — le flag `includeArchived` est **obligatoire**, cf. D11 : sans lui, un compte archivé persisté n'est pas dans le tableau, le `$effect` ne résout pas son libellé et le champ s'affiche vide, ce qui invalide toute la décision D7. Plomberie nette : aucun chargement de comptes n'existe dans ce formulaire aujourd'hui. Le formulaire expose ensuite un sélecteur de compte **par ligne**, optionnel.
+- **AC5-bis** — Test de non-régression de D11 : un compte **archivé** référencé par une ligne de brouillon s'affiche avec son libellé (et son marqueur d'invalidité), et **n'apparaît pas** dans les propositions du dropdown. C'est le test qui échoue si quelqu'un « simplifie » `fetchAccounts(true)` en `fetchAccounts()`.
 - **AC6** — D9 : une ligne sans compte affiche en placeholder le **compte par défaut de la société** (numéro + libellé), issu des réglages déjà chargés par `getInvoiceSettings`. La ligne reste à `NULL` — le placeholder n'est jamais persisté.
 - **AC7** — D10 : l'échec du chargement de la liste des comptes ne bloque pas la saisie ; le mode dégradé `loadError` existant est utilisé.
 - **AC8** — D7 : une ligne dont le compte persisté est invalide affiche le libellé **et** le marqueur d'invalidité ; l'enregistrement du formulaire est **bloqué** tant que cette ligne n'a pas reçu un choix explicite (compte valide ou retour à « défaut société ») ; les autres lignes ne sont pas bloquées.
@@ -128,7 +145,8 @@ Quand une ligne n'a pas de compte, le champ affiche un placeholder nommant expli
 
 ### C. i18n
 
-- **AC11** — Toutes les chaînes nouvelles sont ajoutées aux **4 catalogues** `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl`. Aucun libellé codé en dur dans le composant ou le formulaire — tout passe par `i18nMsg(key, fallback)`.
+- **AC11** — Toutes les chaînes **nouvelles de cette story** sont ajoutées aux **4 catalogues** `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl`. Aucun libellé codé en dur dans le composant ou le formulaire — tout passe par `i18nMsg(key, fallback)`.
+- **AC11-bis** — **Parité pré-existante hors périmètre.** Mesuré en passe 2 : `fr-CH` compte **1225** clés, `de-CH` / `en-CH` / `it-CH` en comptent **1168** — **57 clés absentes** des trois locales non-françaises, dont plusieurs de facturation (`invoice-error-configuration-required`, `invoice-validate-button`, `invoice-status-validated-label`, `error-fiscal-year-invalid`…). C'est une **dette antérieure**, sans lien avec cette story. AC11 porte sur les clés **nouvelles** uniquement ; ne pas transformer 16-1b en chantier de traduction. Conformément à la § « Issue Tracking Rule », ouvrir une **issue GitHub** (`known_failure.yml`, labels `known-failure` + `technical-debt`) pour l'écart de parité, et la référencer ici. Ne pas la corriger dans cette story.
 - **AC12** — `npm run lint-i18n-ownership` **PASS**. Les nouvelles clés consommées depuis `lib/components/invoices/` sont **hors périmètre du lint** (il ne parcourt que `src/lib/features`) ; celles ajoutées à `AccountAutocomplete`, qui reste dans `features/journal-entries/`, doivent soit utiliser un namespace global (`common-*`, `error-*`, cf. `GLOBAL_NAMESPACES` `:16`), soit être ajoutées à `KNOWN_VIOLATIONS`. **Préférer le namespace global** — ne pas allonger la liste de dette #30.
 
 ### D. Tests
@@ -149,7 +167,7 @@ Quand une ligne n'a pas de compte, le champ affiche un placeholder nommant expli
 
 - [ ] **T1** — `AccountAutocomplete` : prop `allowClear` + bouton d'effacement accessible (AC1) ; marqueur d'invalidité (AC2) ; import `i18nMsg` canonique (AC3). Aucun déplacement de fichier (AC4).
 - [ ] **T2** — Types TS + client API `revenueAccountId` (AC10).
-- [ ] **T3** — `InvoiceForm` : chargement de la liste des comptes + mode dégradé (AC5, AC7).
+- [ ] **T3** — `InvoiceForm` : chargement de la liste des comptes via `fetchAccounts(true)` (D11) + mode dégradé (AC5, AC5-bis, AC7).
 - [ ] **T4** — `InvoiceForm` : sélecteur par ligne + placeholder « défaut société » (AC5, AC6, AC9).
 - [ ] **T5** — Blocage d'enregistrement sur ligne invalide, ligne par ligne (AC8).
 - [ ] **T6** — i18n : nouvelles clés dans les 4 `.ftl`, namespace global de préférence (AC11, AC12).
@@ -177,6 +195,10 @@ Quand une ligne n'a pas de compte, le champ affiche un placeholder nommant expli
 | Importeurs (4) | `JournalEntryForm.svelte:22`, `VatPurchaseAssistant.svelte:14`, `TransactionSplitModal.svelte:22`, `ManualMatchModal.svelte:24` |
 | Test du composant | `frontend/src/lib/features/journal-entries/AccountAutocomplete.test.ts:14` |
 | `InvoiceForm` — imports et chargements existants | `frontend/src/lib/components/invoices/InvoiceForm.svelte:14-37`, `:203` |
+| **`fetchAccounts(includeArchived = false)` — défaut EXCLUANT les archivés** | `frontend/src/lib/features/accounts/accounts.api.ts:10-14` |
+| **Précédent `fetchAccounts(true)` + son motif commenté** | `frontend/src/routes/(app)/journal-entries/[id]/+page.svelte:33-43` |
+| … contre-exemple : écran de création | `frontend/src/routes/(app)/journal-entries/+page.svelte:100` |
+| `InvoiceSettingsResponse.defaultRevenueAccountId` (pour D9) | `frontend/src/lib/features/invoices/invoices.types.ts:80-84` |
 | Catalogues i18n (4 locales, **crate Rust**) | `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl` |
 | Clés existantes du composant | `fr-CH/messages.ftl:233`, `:246` |
 | `lint-i18n-ownership` — périmètre et namespaces globaux | `frontend/scripts/lint-i18n-ownership.js:16-17`, `:225-226` |
@@ -186,6 +208,7 @@ Quand une ligne n'a pas de compte, le champ affiche un placeholder nommant expli
 
 ### Pièges, par ordre de coût
 
+0. **`fetchAccounts(true)` (D11)** — le piège n°1, parce qu'il est **silencieux** : `fetchAccounts()` compile, s'exécute, et marche parfaitement tant qu'aucun compte n'a été archivé. Le jour où un compte l'est, le champ de la ligne concernée s'affiche vide. AC5-bis est le seul garde-fou.
 1. **Régression sur les 4 consommateurs existants (D6/AC4)** — toute extension du composant doit avoir un **défaut qui préserve le comportement actuel**. `JournalEntryForm`, `VatPurchaseAssistant`, `ManualMatchModal` et `TransactionSplitModal` ne doivent voir aucune différence. AC13 est le garde-fou.
 2. **L'affordance de remise à `null` (D8)** — sans elle, le champ optionnel devient un aller simple. Facile à oublier parce que ça ne casse aucun test existant.
 3. **i18n dans un crate Rust** — les `.ftl` sont côté backend. Un ajout de clé exige `cargo test --workspace`, pas seulement le gate frontend (AC16).
@@ -224,6 +247,18 @@ Issue du split de la story 16-1 (§ « Règle de splitting préventif », 8 modu
 **Corrections d'ancrage** : les catalogues i18n sont dans un **crate Rust** (`crates/kesh-i18n/locales/*/messages.ftl`), pas côté frontend — le gate d'AC16 inclut donc `cargo test --workspace`. `InvoiceForm` ne charge **aucune** liste de comptes aujourd'hui : AC5 est de la plomberie nette, pas un simple ajout de champ. AC12 reformulé : le lint ne couvre pas `lib/components/`, seules les clés ajoutées au composant (resté dans `features/`) sont concernées.
 
 **Question ouverte n°3 levée par hypothèse** : le compte de la fiche produit (16-2) ne fera que **pré-remplir** la ligne côté frontend, sans reprise rétroactive sur les factures existantes.
+
+### Passe 2 de `validate` — 2026-07-26 (Haiku 4.5, contexte frais)
+
+**2 findings**, dont un trouvé par l'orchestrateur en vérifiant le travail du reviewer.
+
+**[Orchestrateur] `fetchAccounts(true)` — la dépendance qui porte toute la décision D7.** Le reviewer avait conclu que « la disponibilité de la liste des comptes est acquise, `fetchAccounts()` existe déjà ». Vérification : `fetchAccounts(includeArchived = false)` (`accounts.api.ts:10`) **exclut les archivés par défaut**. Or D7 (révisée en passe 1) repose entièrement sur la résolution du libellé par `accounts.find((a) => a.id === value)` — si le compte archivé n'est pas dans le tableau, le champ **s'affiche vide**, exactement le symptôme #271 que D7 affirme ne pas s'appliquer. La révision de D7 est correcte sur le **composant**, mais n'est vraie qu'à la condition que l'appelant fournisse la liste complète. Le dépôt a déjà rencontré et résolu ce cas : `journal-entries/[id]/+page.svelte:33-43` utilise `fetchAccounts(true)` avec le motif en commentaire, alors que l'écran de création (`:100`) utilise `fetchAccounts(false)`. → **D11** ajoutée, **AC5** amendé, **AC5-bis** (test de non-régression) ajouté, **AC2** doté d'une définition opérationnelle du marqueur d'invalidité, piège n°0 des Dev Notes.
+
+**[Haiku] Parité des catalogues i18n.** Mesure confirmée : `fr-CH` = **1225** clés, `de-CH` / `en-CH` / `it-CH` = **1168** → **57 clés manquantes**, dont plusieurs de facturation. Le reviewer en concluait que AC11 ne peut pas passer — **surévalué** : AC11 porte sur les chaînes **nouvelles**, qu'il suffit d'ajouter aux 4 fichiers. L'écart est une dette antérieure sans lien avec la story. → **AC11-bis** ajouté : périmètre clarifié + ouverture d'une issue GitHub (Issue Tracking Rule), sans corriger dans cette story.
+
+**Confirmations utiles du reviewer** (pas des findings, mais elles valident la faisabilité) : `fetchAccounts` existe ; `InvoiceSettingsResponse.defaultRevenueAccountId` existe déjà (`invoices.types.ts:84`), donc D9 est réalisable sans appel supplémentaire ; le `$effect` remet bien `query` à `''` quand `value` devient `null`, donc le bouton d'effacement de D8 ne sera pas écrasé.
+
+**Trend** : passe 1 (dans la story 16-1 unifiée) = 28 findings → passe 2 = 2 findings, aucun CRITICAL/HIGH. Convergence monotone.
 
 ---
 
