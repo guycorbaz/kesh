@@ -8,7 +8,7 @@ ready-for-dev
 
 **As a** utilisateur de Kesh dont l'instance contient déjà des factures validées (dont l'instance de production en fonction),
 **I want** que la colonne `revenue_account_id` introduite par 16-1a soit **renseignée rétroactivement** sur mes factures et avoirs déjà validés, à partir de l'écriture comptable qu'ils ont réellement produite,
-**so that** un avoir émis plus tard **extourne le compte effectivement crédité** par la facture d'origine, et non le compte de produit par défaut tel qu'il se trouve être configuré ce jour-là — ce qui laisserait un résidu permanent, invisible au bilan et faux au compte de résultat.
+**so that** un avoir **émis à partir de maintenant** sur une facture ancienne **extourne le compte effectivement crédité** par cette facture, et non le compte de produit par défaut tel qu'il se trouve être configuré ce jour-là — ce qui laisserait un résidu permanent, invisible au bilan et faux au compte de résultat.
 
 Issue : **#152**. Rattaché au CR **#265**. Sous-story de l'Epic 16 « Facturation avancée ».
 
@@ -37,6 +37,15 @@ Le backfill était initialement la décision **D2-bis** de 16-1a, née d'un find
 | T2 | Avoir total émis | **débit 3200** = HT |
 
 Résidu permanent au crédit de 3000 et au débit de 3200. **Bilan équilibré, compte de résultat faux, aucun signal.**
+
+**Quelle population cette story protège exactement — à lire avec D-B7.** Le tableau ci-dessus se lit dans **deux temps distincts**, et la story n'agit que sur l'un des deux :
+
+| Situation au moment du déploiement | Ce que fait cette story |
+|---|---|
+| Facture validée, **avoir pas encore émis** (T2 dans le futur) — **le cas de l'immense majorité des factures** | **Le bug est fermé.** La ligne est backfillée à 3000 ; l'avoir futur, qui copiera le compte depuis `invoice_lines` (16-1a D5) au lieu de relire la configuration, débitera 3000. Aucun résidu. |
+| Facture validée **et avoir déjà émis** (T2 déjà passé) | **Rien n'est réparé** — l'écriture d'avoir existe, elle a débité 3200, c'est irréversible. Le backfill se contente d'**enregistrer fidèlement** les deux comptes réellement mouvementés (3000 et 3200), qui **diffèrent légitimement**. Cf. **D-B7**. |
+
+Autrement dit, le backfill est **préventif**, pas curatif : il arme les factures passées pour que leurs avoirs **à venir** soient corrects. Corriger un couple déjà soldé exigerait une écriture de reclassement — un **acte comptable de l'utilisateur**, hors de portée d'une migration.
 
 16-1a ferme ce trou pour les factures **futures**, en matérialisant le compte effectif dans `invoice_lines` à la validation (sa décision D2). Mais cette matérialisation ne se déclenche qu'à la transition `draft → validated` : une facture **déjà validée** n'y repasse **jamais** (`update` rejette tout statut ≠ `draft`, `invoices.rs:841`, `:1271`) et aucune autre écriture ne touche `invoice_lines` après validation. Après l'`ADD COLUMN` de 16-1a, ces lignes portent `NULL` **définitivement**.
 
@@ -321,3 +330,15 @@ Story issue de l'extraction de la décision **D2-bis** de 16-1a et de tout son c
 **Vérifié négatif (substantiel — ne pas ré-instruire)** : (1) **le compte de produit ne peut jamais collisionner avec le compte de créance** dans l'ensemble d'exclusion `E` — `validate_account` (`routes/company_invoice_settings.rs:94-120`) impose `account_type == expected` (`Asset` pour la créance, `Revenue` pour le produit) et `chk_accounts_type` (`20260411000001_accounts.sql:20`) ferme la liste : un même compte ne peut satisfaire les deux types. (2) **`credit_notes.total_amount` est bien du HT**, miroir strict d'`invoices.total_amount` (commentaire de schéma `20260627000001_credit_notes.sql:19` + code `total_ht = Σ line_total` inséré tel quel). (3) **Les avoirs partiels n'existent pas** : `create_credit_note` est la seule fonction publique de création et snapshot **toutes** les `invoice_lines` sans filtre — chaque avoir est nécessairement total. (4) Faisabilité MariaDB confirmée (ER 1093 inapplicable, aucune CTE dans le dépôt, précédent multi-table `20260628000001:115`). (5) **Pas de risque de scan complet** : `idx_jel_entry` sur `journal_entry_lines(entry_id)` (`20260412000001:47`). (6) **Aucune contrainte DB ne bloque un `UPDATE` sur une facture d'exercice clos** — la garde est purement applicative, hors périmètre d'une migration SQL. (7) Traçabilité D-B1..D-B7 → AC-B1..AC-B9 → T-B0..T-B5 complète, aucun orphelin. (8) **Précédent de test sur base pré-remplie** : `crates/kesh-db/tests/accounts_role_backfill.rs` valide le pattern exigé par T-B4.
 
 **Trend** : passe 1 = 2 findings (1 HIGH, 1 MEDIUM). Sévérité au-dessus de LOW → **passe 2 requise** (contexte frais, modèle différent). Cible prioritaire : **D-B7 et les cas 5-6 d'AC-B3**, patch tout neuf — en particulier la cohérence du récit « enregistrer sans réparer » avec D-B1 et avec le § Contexte, et sa répercussion sur 16-1b.
+
+### Passe 2 de `validate` — 2026-07-26 (Haiku 4.5, contexte frais + vérification orchestrateur)
+
+**1 finding LOW.** Le reviewer a rendu « 0 finding » après avoir instruit les 6 angles imposés ; le LOW vient de la vérification d'orchestrateur — conformément à la leçon consignée en passe 5 de 16-1a (« un *rien trouvé* de Haiku n'est pas une preuve de convergence »).
+
+| Finding | Verdict | Traitement |
+|---|---|---|
+| LOW — le § « **Le bug fermé par cette story** » présente le scénario T1/T1+/T2 dont **T2 est déjà passé** (« Avoir total émis »), c'est-à-dire exactement le cas que **D-B7 dit ne PAS réparer**. Le titre et le tableau promettent donc une fermeture que la décision structurante retire trois sections plus loin. La clause `so that` de l'en-tête portait la même imprécision (« un avoir émis plus tard », sans dire *plus tard que quoi*) | Réel, et **même racine que le HIGH de la passe 1** : le symptôme n'avait pas été entièrement grepé après le patch (§ « Propagation post-patch » de `CLAUDE.md`). Sévérité LOW et non HIGH parce qu'aucun AC ni aucune tâche n'en dépend — c'est du récit, pas une prescription | Tableau des **deux populations** ajouté au § Contexte : *avoir pas encore émis* (immense majorité) → **le bug est fermé** ; *avoir déjà émis* → **rien n'est réparé**, les deux comptes diffèrent légitimement (D-B7). Formule de synthèse : le backfill est **préventif, pas curatif** — il arme les factures passées pour que leurs avoirs **à venir** soient corrects. Clause `so that` de l'en-tête précisée (« un avoir **émis à partir de maintenant** sur une facture ancienne ») |
+
+**Vérifié négatif (confirmations du reviewer, contrôlées)** : (1) **cohérence D-B7 ↔ D-B1 ↔ 16-1a D5/AC11** — 16-1a D5 fait bien copier le compte depuis la ligne de facture à la création de l'avoir, et AC11 impose la transformation du site d'appel `credit_notes.rs:320-328` en triplets ; les avoirs futurs ne reliront donc plus `settings`, ce qui rend le récit de D-B7 exact. (2) **Le cas 6 d'AC-B3 est constructible** : la configuration est mutable, `create_credit_note` relit bien à l'émission (`credit_notes.rs:276`), `uq_credit_notes_invoice` n'entrave pas le scénario, et le pattern de test sur base pré-remplie a son précédent (`accounts_role_backfill.rs`). (3) **T-B0 correcte** : `sqlx::migrate!` trie lexicographiquement, le nommage `YYYYMMDDNNNNNN_*.sql` du dépôt rend la contrainte de timestamp triviale à respecter. (4) Traçabilité D-B1..D-B7 → AC-B1..AC-B9 → T-B0..T-B5 complète, aucun orphelin. (5) Conformité `CLAUDE.md` : P1/P2/P2-bis (AC-B6), P5 audit d'idempotence (AC-B5), Test Locally First (AC-B9).
+
+**Trend** : passe 1 = 2 findings (1 HIGH, 1 MEDIUM) → passe 2 = **1 LOW**. **Critère d'arrêt de la § « Review Iteration Rule » atteint** : plus aucun finding au-dessus de LOW. **16-1a-bis est convergée** en 2 passes.
