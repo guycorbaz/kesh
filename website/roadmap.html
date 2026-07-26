@@ -4,7 +4,7 @@
 	<meta charset="utf-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
 	<title>Roadmap — Kesh</title>
-	<meta name="description" content="Kesh release roadmap — v0.1 foundations, v0.2 sovereignty, v0.3 Swiss VAT, v0.4 supplier invoices & project analytics, v0.5 structured QR addresses, v0.6 invoice emailing, v0.7 receivables & dunning, planned epics and current status." />
+	<meta name="description" content="Kesh release roadmap — v0.1 foundations, v0.2 sovereignty, v0.3 Swiss VAT, v0.4 supplier invoices & project analytics, v0.5 structured QR addresses, v0.6 invoice emailing, v0.7 receivables & dunning, v0.8 year-end closing, planned epics and current status." />
 	<meta name="theme-color" content="#0f172a" />
 	<link rel="icon" type="image/svg+xml" href="img/logo.svg" />
 	<link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -40,7 +40,7 @@
 		<div class="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
 			<p class="text-emerald-400 text-sm font-mono mb-3">// Roadmap</p>
 			<h1 class="text-4xl sm:text-5xl font-extrabold tracking-tight mb-6">From foundations to Swiss VAT.</h1>
-			<p class="text-lg text-slate-300 leading-relaxed">Kesh is delivered as a sequence of <strong class="text-white">epics</strong>, each composed of small, independently reviewable stories. The release plan below tracks the path from MVP (v0.1) through sovereignty tooling (v0.2), Swiss VAT (v0.3), supplier invoices, payments & project analytics (v0.4), structured QR-bill addresses (v0.5), invoice emailing with multilingual templates (v0.6), and receivables &amp; multi-level dunning (v0.7, current release) — toward a feature-complete production release.</p>
+			<p class="text-lg text-slate-300 leading-relaxed">Kesh is delivered as a sequence of <strong class="text-white">epics</strong>, each composed of small, independently reviewable stories. The release plan below tracks the path from MVP (v0.1) through sovereignty tooling (v0.2), Swiss VAT (v0.3), supplier invoices, payments & project analytics (v0.4), structured QR-bill addresses (v0.5), invoice emailing with multilingual templates (v0.6), receivables &amp; multi-level dunning (v0.7), and year-end closing with automatic balance carry-forward (v0.8, current release) — toward a feature-complete production release.</p>
 			<div class="flex gap-4 mt-8 text-sm">
 				<div class="flex items-center gap-2">
 					<span class="w-3 h-3 rounded-full bg-emerald-400"></span>
@@ -220,7 +220,7 @@
 				<h2 class="text-3xl font-bold tracking-tight">v0.2 – v0.3 — Sovereignty & Swiss VAT</h2>
 				<span class="text-sm text-slate-500 font-mono">and beyond</span>
 			</div>
-			<p class="text-slate-400 mb-10">Growing from a working ledger toward everything an SME needs to run a full fiscal year: sovereignty tooling (v0.2), Swiss VAT (v0.3), supplier invoices, payments & project analytics (v0.4), structured addresses (v0.5), invoice emailing (v0.6), receivables &amp; dunning (v0.7, current release), then budgets and year-end closing.</p>
+			<p class="text-slate-400 mb-10">Growing from a working ledger toward everything an SME needs to run a full fiscal year: sovereignty tooling (v0.2), Swiss VAT (v0.3), supplier invoices, payments & project analytics (v0.4), structured addresses (v0.5), invoice emailing (v0.6), receivables &amp; dunning (v0.7), year-end closing &amp; balance carry-forward (v0.8, current release), then budgets.</p>
 
 			<div class="grid sm:grid-cols-2 gap-4">
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
@@ -265,13 +265,16 @@
 					</div>
 					<p class="text-sm text-slate-400">The full debtor follow-up cycle: <strong class="text-slate-200">structured payment terms</strong> on the contact (auto-calculated invoice due dates), correct <strong class="text-slate-200">VAT-inclusive amounts</strong> everywhere a total is shown (QR-Bill, PDF, email, receivables list), an <strong class="text-slate-200">aged-receivables</strong> balance of open items, and <strong class="text-slate-200">multi-level payment reminders</strong> — configurable levels &amp; fees, an auto-populated list of invoices to chase, manual sending by email through the multilingual templates (E20), and a per-invoice reminder history.</p>
 				</div>
+				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
+					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
+						<h3 class="font-semibold">E14 — Year-end closing &amp; balance carry-forward <span class="text-slate-500 font-mono text-xs">v0.8.0</span></h3>
+						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
+					</div>
+					<p class="text-sm text-slate-400">Balance-sheet figures now <strong class="text-slate-200">carry forward automatically</strong> from one fiscal year to the next, computed in real time from inception — <strong class="text-slate-200">no closing or carry-forward entries to post by hand</strong>. The balance sheet shows <strong class="text-slate-200">retained earnings</strong> and <strong class="text-slate-200">result for the year</strong> as distinct lines inside a dedicated <strong class="text-slate-200">equity section</strong> (CO art. 959a). Closing a year is a <strong class="text-slate-200">lock</strong> (immutability + audit, CO art. 957-964), and an administrator can <strong class="text-slate-200">reopen</strong> it against a recorded justification. Every account carries an <strong class="text-slate-200">explicit role</strong> — Kesh never infers an account’s purpose from its number, so you can renumber your chart of accounts freely. <strong class="text-slate-200">Opening balances</strong> let you migrate an existing set of books in one balanced entry.</p>
+				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-slate-800">
 					<h3 class="font-semibold mb-1">E13 — Budgets</h3>
 					<p class="text-sm text-slate-400">Annual budgets per account, variance reports, cash-flow forecasting.</p>
-				</div>
-				<div class="p-5 rounded-xl bg-slate-900 border border-slate-800">
-					<h3 class="font-semibold mb-1">E14 — Year-end Closing</h3>
-					<p class="text-sm text-slate-400">Period locking, opening balance carry-forward, closing entries automation.</p>
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-slate-800 sm:col-span-2">
 					<h3 class="font-semibold mb-1">E15 — Receipts, Payment Matching &amp; Custom Journals</h3>
