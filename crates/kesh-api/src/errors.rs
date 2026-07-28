@@ -2286,10 +2286,17 @@ impl IntoResponse for AppError {
                             "code": "CREDIT_NOTE_REVENUE_ACCOUNT_ARCHIVED",
                             "message": msg,
                             "details": {
+                                // `reason` est exposé ici comme sur le chemin
+                                // facture : la structure transportée est la même
+                                // (`RejectedRevenueAccount`), et un client qui
+                                // écrit un gestionnaire générique sur
+                                // `details.rejected[]` doit trouver le même jeu
+                                // de clés des deux côtés (revue 16-1a passe 2).
                                 "rejected": rejected.iter().map(|r| serde_json::json!({
                                     "lineNumber": r.line_number,
                                     "accountId": r.account_id,
                                     "accountNumber": r.account_number,
+                                    "reason": revenue_account_rejection_code(r.reason),
                                 })).collect::<Vec<_>>(),
                             },
                         }
@@ -2631,8 +2638,18 @@ mod tests {
         );
 
         let msg = body["error"]["message"].as_str().unwrap();
-        assert!(msg.contains("2"), "la ligne 2 doit être nommée : {msg}");
-        assert!(msg.contains("5"), "la ligne 5 doit être nommée : {msg}");
+        // « Ligne N » et pas seulement « N » : le compte de la ligne 2 est
+        // `3200`, qui contient déjà un `2`. Un `msg.contains("2")` passerait
+        // donc même si le sujet disparaissait entièrement du message — le test
+        // ne prouverait plus rien (revue de code 16-1a passe 2).
+        assert!(
+            msg.contains("Ligne 2"),
+            "la ligne 2 doit être nommée : {msg}"
+        );
+        assert!(
+            msg.contains("Ligne 5"),
+            "la ligne 5 doit être nommée : {msg}"
+        );
         assert!(
             msg.contains("3200"),
             "le compte 3200 doit être nommé : {msg}"

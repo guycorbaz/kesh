@@ -89,25 +89,33 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // vat_rates_crud ajoutée Story 11-1, vat_accounts_config ajoutée Story 18-1a,
     // et credit_notes ajoutée Story 12-1).
     //
-    // Note `total - N` : expression relative à la longueur totale, mais
-    // l'assertion `total == 39` ci-dessus est INTENTIONNELLEMENT hardcode
-    // pour fail-loud sur toute évolution non-revue. À chaque ajout d'une
-    // migration future, le mainteneur doit (1) bumper le compte à la nouvelle
-    // longueur (2) revoir si `total - N` cible toujours la bonne fenêtre.
-    // La frontière reste à 23 (état pré-10-2) : les migrations ajoutées APRÈS
-    // la fenêtre Story 10-2 (companies_is_stub v011-2, bank_accounts_archived
-    // v014-1, api_keys + audit_log_actor 17-2a, users_email + password_reset_tokens
-    // 17-4a, vat_rates_crud 11-1, vat_accounts_config 18-1a, credit_notes 12-1,
-    // supplier_invoices 12-2, payment_batches 12-3, imported_supplier_invoices 12-5b,
-    // projects_analytics 19-1, supplier_invoices_project 19-3, invoices_project 19-4,
-    // reconciliation_rules_default_project 19-5)
-    // élargissent la fenêtre d'upgrade et incrémentent donc le `N` soustrait
-    // (de 4 à 6 à 8 à 10 à 11 à 12 à 13 à 14 à 15 à 16 à 17 à 18 à 19 à 20 à 21),
-    // sans déplacer la frontière des 23 migrations historiques.
-    // ⚠️ Ce N DOIT être incrémenté en même temps que `total`. Le laisser à 21
-    // avec total=56 déplacerait la frontière à 24 migrations historiques — le
-    // test continuerait de passer en testant autre chose.
-    // Story 16-1a : 21 → 22, la frontière reste donc à 34 (56 - 22 = 55 - 21).
+    // Note `total - N` : expression relative à la longueur totale, tandis que
+    // l'assertion `total == 56` ci-dessus est INTENTIONNELLEMENT codée en dur
+    // pour fail-loud sur toute évolution non revue. À chaque migration ajoutée,
+    // le mainteneur doit (1) bumper ce compte (2) incrémenter `N` du même pas,
+    // de sorte que `total - N` — la frontière — reste **constant**.
+    //
+    // Frontière actuelle : **34**. Le test applique donc les 34 premières
+    // migrations (jusqu'à `20260613000001_vat_rates_crud` incluse), seede des
+    // données, puis joue les 22 restantes comme « fenêtre d'upgrade ».
+    //
+    // ⚠️ `N` DOIT être incrémenté en même temps que `total`. Le laisser à 21
+    // avec `total = 56` porterait la frontière à 35 : le test continuerait de
+    // passer en testant une fenêtre plus étroite d'une migration.
+    // Story 16-1a : 21 → 22, frontière inchangée (56 - 22 = 55 - 21 = 34).
+    //
+    // ⚠️ DÉRIVE DOCUMENTAIRE CONSTATÉE (revue de code 16-1a, 2026-07-28, non
+    // corrigée ici). Ce commentaire affirmait simuler « l'état pré-Story-10-2 »
+    // et parlait d'une « frontière de 23 migrations historiques », avec une
+    // assertion citée à `total == 39`. Ces trois nombres sont faux et le sont
+    // depuis plusieurs Epics : la migration de la Story 10-2
+    // (`20260522000001_kesh_version`) est la **27ᵉ**, or la frontière est à 34
+    // — la fenêtre d'upgrade ne couvre donc PAS la Story 10-2, elle démarre à
+    // `20260614000001_vat_accounts_config` (Story 18-1a). Le test reste valide
+    // (il exerce bien un upgrade sur 22 migrations avec préservation des
+    // données), mais il n'exerce pas la fenêtre que son commentaire décrivait.
+    // Restaurer l'intention d'origine supposerait de ramener la frontière à 26
+    // — décision de périmètre, hors revue de la 16-1a.
     let n_before_upgrade_window = total - 22;
     apply_migrations_up_to(&pool, n_before_upgrade_window)
         .await

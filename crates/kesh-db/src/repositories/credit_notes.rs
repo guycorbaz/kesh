@@ -154,8 +154,14 @@ pub async fn list(
 /// mais le compte de résultat est faux. La correction doit vivre dans la même
 /// story que sa cause.
 ///
-/// Le troisième membre du triplet vient du **snapshot** `credit_note_lines`, pas
-/// d'une relecture de la facture : l'avoir reste auto-descriptif. `None`
+/// Le troisième membre du triplet est lu sur les **lignes de la facture**
+/// (`invoice_lines`), verrouillées et relues dans la même transaction que la
+/// copie vers `credit_note_lines` — les deux valeurs sont donc identiques par
+/// construction, mais la source est bien la facture. *(Revue 16-1a passe 2 : la
+/// doc affirmait auparavant que le triplet venait du snapshot
+/// `credit_note_lines` ; c'est faux, et une story ultérieure qui modifierait la
+/// constitution du snapshot en se fiant à cette phrase verrait l'écriture ne
+/// pas suivre.)* `None`
 /// (facture validée avant 16-1a et non traitée par 16-1a-bis) se replie sur
 /// `default_revenue_account_id`, exactement comme le faisait tout l'avoir avant
 /// la story.

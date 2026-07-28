@@ -1082,9 +1082,20 @@ pub async fn update(
     // gardes 404 / statut / version pour que celles-ci gardent la priorité :
     // une facture inexistante ou en conflit de version doit répondre 404/409,
     // pas « compte de ligne invalide ». Placé APRÈS le court-circuit no-op pour
-    // ne pas rejeter un enregistrement qui ne change rien (le compte inchangé
-    // d'une ligne existante n'a pas à être re-validé — grandfathering, même
-    // logique que le tag projet ci-dessus).
+    // ne pas rejeter un enregistrement qui ne change **rien du tout**.
+    //
+    // ⚠️ Il n'y a **AUCUN grandfathering par ligne**, contrairement au tag
+    // projet ci-dessus qui, lui, compare `changes.project_id` à sa valeur
+    // antérieure. Ici tous les comptes explicites de `changes.lines` sont
+    // re-validés, sans comparaison avec `before_lines`, dès que l'enregistrement
+    // n'est pas un no-op intégral. Conséquence assumée : un brouillon dont une
+    // ligne pointe un compte archivé entre-temps devient inéditable — corriger
+    // sa date exige d'abord de réactiver le compte ou de retirer la ligne.
+    // C'est ce qu'AC7 prescrit (« création **et** modification », sans clause de
+    // grandfathering) et c'est défendable — le brouillon ne serait de toute
+    // façon pas validable — mais c'est un choix, pas une évidence.
+    // (Revue de code 16-1a passe 2 : le commentaire d'origine annonçait
+    // l'inverse de ce que fait le code.)
     {
         let sites = explicit_line_account_sites(&changes.lines, |l| l.revenue_account_id);
         if !sites.is_empty() {

@@ -1113,3 +1113,128 @@ async fn audit_before_snapshot_predates_materialization(pool: MySqlPool) {
         "after.lines[1] doit être inchangé"
     );
 }
+
+/// **AC12-bis** (revue de code passe 2) — ligne de configuration **présente**
+/// mais colonne `default_revenue_account_id` à `NULL`.
+///
+/// Distinct de `draft_creation_neither_reads_nor_creates_settings_row`, qui
+/// supprime la ligne entière : c'est ici la branche que le `Option<Option<i64>>`
+/// + `.flatten()` de `read_default_revenue_account_id` existe pour absorber.
+/// Aucun test ne la couvrait.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn draft_crud_survives_null_company_default_column(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+    let services = add_account(&pool, seeded.company_id, "3200", "Prestations", "Revenue").await;
+
+    // La ligne existe, la colonne est vidée.
+    set_default_revenue(&pool, seeded.company_id, None).await;
+
+    let invoice_id = create_draft(
+        &pool,
+        &seeded,
+        contact,
+        &[(dec!(100.00), dec!(0), Some(services))],
+    )
+    .await
+    .expect("la saisie ne doit pas dépendre du défaut société");
+
+    let persisted: Vec<Option<i64>> = sqlx::query_scalar(
+        "SELECT revenue_account_id FROM invoice_lines WHERE invoice_id = ? ORDER BY position",
+    )
+    .bind(invoice_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        persisted,
+        vec![Some(services)],
+        "le compte explicite doit être persisté malgré l'absence de défaut"
+    );
+}
+
+/// **Frontière du parc antérieur à 16-1a** (revue de code passe 2, décision Guy
+/// du 2026-07-28) — ce test **ne corrige rien**, il fixe la limite connue.
+///
+/// Une facture validée AVANT le déploiement de 16-1a n'est jamais repassée par
+/// la matérialisation (D2) : ses lignes restent `NULL`. L'avoir se replie donc
+/// sur le compte par défaut **au moment de l'avoir**. Si l'administrateur a
+/// changé ce défaut entre-temps, la contre-passation débite un autre compte que
+/// celui que la facture a crédité — résidu permanent, bilan équilibré, compte de
+/// résultat faux, **et aucune erreur** puisque le nouveau compte est actif.
+///
+/// C'est exactement le résidu que la Story **16-1a-bis** (backfill du parc)
+/// existe pour supprimer. Ce test verrouille l'état de départ afin que 16-1a-bis
+/// parte d'une limite **vérifiée** et non supposée : le jour où le backfill est
+/// livré, ce test DOIT changer de verdict.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn legacy_invoice_credit_note_falls_back_to_current_default_known_limitation(
+    pool: MySqlPool,
+) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+    let original_default = seeded.accounts["3000"];
+    let new_default = add_account(&pool, seeded.company_id, "3200", "Prestations", "Revenue").await;
+
+    let invoice_id = create_draft(&pool, &seeded, contact, &[(dec!(1000.00), dec!(0), None)])
+        .await
+        .expect("create draft");
+    let validated =
+        invoices::validate_invoice(&pool, seeded.company_id, invoice_id, seeded.admin_user_id)
+            .await
+            .expect("validate");
+    assert_eq!(
+        credit_on(&validated.journal_entry, original_default),
+        dec!(1000.00),
+        "la facture crédite le défaut en vigueur à sa validation"
+    );
+
+    // Simule le parc antérieur : on efface la matérialisation que 16-1a vient
+    // de poser, pour retrouver l'état d'une facture validée sous v0.8.0.
+    sqlx::query("UPDATE invoice_lines SET revenue_account_id = NULL WHERE invoice_id = ?")
+        .bind(invoice_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // L'administrateur change le compte de produit par défaut.
+    set_default_revenue(&pool, seeded.company_id, Some(new_default)).await;
+
+    let credit_note = credit_notes::create_credit_note(
+        &pool,
+        NewCreditNote {
+            company_id: seeded.company_id,
+            invoice_id,
+            date: invoice_date(),
+        },
+        seeded.admin_user_id,
+    )
+    .await
+    .expect("l'avoir est émis sans erreur — c'est précisément le problème");
+
+    assert_eq!(
+        debit_on(&credit_note.journal_entry, new_default),
+        dec!(1000.00),
+        "LIMITATION CONNUE : l'avoir débite le défaut COURANT (3200), pas le \
+         compte que la facture a réellement crédité (3000). À corriger par 16-1a-bis."
+    );
+    assert_eq!(
+        debit_on(&credit_note.journal_entry, original_default),
+        Decimal::ZERO,
+        "le compte historiquement crédité n'est PAS extourné — résidu permanent"
+    );
+
+    // Le résidu, chiffré : 3000 reste créditeur de 1000, 3200 débiteur de 1000.
+    let net = net_by_account(&[&validated.journal_entry, &credit_note.journal_entry]);
+    assert_eq!(
+        net.get(&original_default).copied().unwrap_or(Decimal::ZERO),
+        dec!(-1000.00),
+        "résidu créditeur sur le compte d'origine"
+    );
+    assert_eq!(
+        net.get(&new_default).copied().unwrap_or(Decimal::ZERO),
+        dec!(1000.00),
+        "résidu débiteur sur le nouveau défaut — les deux s'annulent au bilan, \
+         d'où l'invisibilité du défaut"
+    );
+}

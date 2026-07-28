@@ -64,7 +64,8 @@ Ne pas chercher de spec d'epic ailleurs, et ne pas se fier à la numérotation d
 
 ### Ce qui n'est PAS dans 16-1a
 
-- Le **sélecteur dans le formulaire de facture**, le déplacement d'`AccountAutocomplete`, l'i18n et le doc-sync utilisateur → **16-1b**.
+- Le **sélecteur dans le formulaire de facture**, le déplacement d'`AccountAutocomplete` et le **doc-sync utilisateur (manuels LaTeX)** → **16-1b**.
+  - ⚠️ **Amendé en revue passe 2** : l'**i18n backend** figurait dans cette exclusion, mais elle est **livrée par 16-1a** et devait l'être — les messages d'erreur d'AC7/AC8/AC11-bis sont composés côté `kesh-api` et exigent leurs clés dans `crates/kesh-i18n/locales/*/messages.ftl` (10 clés × 4 locales). L'exclusion visait l'i18n **frontend**. De même, le **README** est mis à jour ici, la § « Synchroniser le planning du README » de `CLAUDE.md` l'imposant à chaque commit. Les **manuels LaTeX** restent bien en 16-1b : documenter un sélecteur que l'utilisateur ne peut pas encore atteindre serait prématuré.
 - Le compte porté par la **fiche produit** du catalogue → **16-2 (#144)**. 16-1a ne touche pas `products`.
 - Le **compte de charge** par ligne de facture **fournisseur** → hors périmètre (#265 second volet).
 - Aucun changement du **calcul de TVA** ni de la **présentation du PDF**.
@@ -82,6 +83,20 @@ Une ligne sans compte se poste sur `settings.default_revenue_account_id`, exacte
 **Motif** : la colonne est la source de vérité au runtime et reste **configurable par l'utilisateur** dans les Réglages ; le rôle `DefaultRevenue` ne sert qu'à **pré-remplir cette colonne à l'onboarding** (14-3b, cf. docstring `company_invoice_settings.rs:236`). Résoudre par rôle au posting serait un **changement de comportement non demandé** : il écraserait silencieusement le choix d'un utilisateur qui a délibérément pointé un autre compte dans les Réglages. Le message d'erreur `ConfigurationRequired("default_revenue_account_id")` reste inchangé.
 
 **Garde-fou de test obligatoire (cf. AC20)** : par défaut post-onboarding, `settings.default_revenue_account_id` **et** le compte portant le rôle `DefaultRevenue` sont le **même** compte — un test qui ne les dissocie pas passerait aussi bien avec une résolution par rôle. Le test doit donc les configurer sur **deux comptes différents**.
+
+#### D1-bis — Le défaut société reste un **prérequis de configuration**, même si aucune ligne ne s'y replie
+
+*(Limitation assumée, arbitrée par Guy le 2026-07-28 en revue de code passe 2 — remontée indépendamment par deux lentilles.)*
+
+`validate_invoice` déballe `settings.default_revenue_account_id` par `.ok_or_else(|| ConfigurationRequired(…))` **inconditionnellement** (`invoices.rs:1593-1595`), avant tout calcul par ligne. Une société dont la colonne est `NULL` et dont **toutes** les lignes portent un compte explicite — le cas d'usage nominal du CR #265 — est donc refusée à la validation, pour un compte dont la ventilation n'a aucun besoin.
+
+**Pourquoi c'est conservé tel quel** :
+
+- L'erreur est **bruyante et nommée** (`CONFIGURATION_REQUIRED`, champ `default_revenue_account_id`), pas une perte silencieuse. Le contournement est immédiat : renseigner un défaut, même jamais utilisé.
+- Le traitement est **identique à `default_receivable_account_id`**, déballé deux lignes plus haut. Rendre l'un paresseux sans l'autre créerait une asymétrie non justifiée.
+- Le rendre paresseux exigerait de passer **les deux générateurs d'écritures** de `i64` à `Option<i64>` (`invoices.rs:1415`, `credit_notes.rs:165`), leurs sites d'appel et ~23 tests unitaires, plus une branche d'erreur nouvelle (« ligne `NULL` mais aucun défaut »). C'est un refactor du cœur comptable pour un cas de configuration que l'onboarding rend rare — mauvais rapport risque/bénéfice immédiatement après une revue.
+
+**Portée** : atteignable uniquement si la colonne est **délibérément vidée** ; l'onboarding la renseigne. Le cas « ligne de configuration présente, colonne `NULL` » est désormais couvert par `draft_crud_survives_null_company_default_column` (la **saisie** passe ; c'est la **validation** qui exige le défaut).
 
 ### D2 — Liaison tardive : `NULL` n'est jamais matérialisé **à la création**, mais il l'est **à la validation**
 
@@ -250,7 +265,9 @@ Les erreurs de validation de ligne suivent la convention déjà en place dans `r
 
   **Nature exacte du changement, site par site** — chaque `SELECT` ajoute `revenue_account_id` à sa liste de colonnes ; l'`INSERT` (`:376-390`) l'ajoute **à la fois** à la liste de colonnes **et** à la chaîne de `.bind()` (`.bind(line.revenue_account_id)`), et son `VALUES` gagne un `?` ; les deux `*_snapshot_json` ajoutent la clé au JSON. Un `SELECT` mis à jour sans son `INSERT`, ou l'inverse, ne casse pas la compilation.
 
-- **AC5-ter** — **Décompte de référence : 8 sites au total** — 6 listes de colonnes SQL (`invoices.rs:39` / `:1937` / `credit_notes.rs:266` / `:63` / `:90` / `:376`) + 2 snapshots d'audit (`invoices.rs:51` / `credit_notes.rs:36`). S'y ajoute **1 site d'appel** (`credit_notes.rs:320-328`, cf. AC11) qui, lui, est attrapé par le compilateur. Si le décompte ne tombe pas sur 8 + 1, il manque quelque chose.
+- **AC5-ter** — ~~**Décompte de référence : 8 sites au total** — 6 listes de colonnes SQL (`invoices.rs:39` / `:1937` / `credit_notes.rs:266` / `:63` / `:90` / `:376`) + 2 snapshots d'audit (`invoices.rs:51` / `credit_notes.rs:36`). S'y ajoute **1 site d'appel** (`credit_notes.rs:320-328`, cf. AC11) qui, lui, est attrapé par le compilateur. Si le décompte ne tombe pas sur 8 + 1, il manque quelque chose.~~
+
+  ⚠️ **SUPERSEDED — ne pas utiliser comme checklist.** Le décompte « 8 + 1 » a été démenti à l'implémentation, puis une seconde fois en revue. Il a bougé dans **les deux sens** : `insert_lines` (`invoices.rs`), `is_no_op_change` et `InvoiceLineResponse` n'étaient pas comptés ; à l'inverse le `SELECT` en dur de `credit_notes.rs:266` a **disparu** (il emprunte désormais `invoices::LINE_COLUMNS`, cf. Dev Agent Record) ; et la revue de passe 1 a **ajouté** `CreditNoteLineResponse` (`routes/credit_notes.rs`). Un critère numérique figé sur une cible mouvante ne peut pas servir de garde-fou — c'est le `grep` du symptôme sur le dépôt qui fait foi, pas le compte. Le livrable, lui, couvre tous les sites réels (vérifié indépendamment en passes 1 et 2).
 
 ### C. Backend — API
 
@@ -329,7 +346,9 @@ Les erreurs de validation de ligne suivent la convention déjà en place dans `r
 
 **Passe 1 de `bmad-code-review`** — 2026-07-28, 3 lentilles Sonnet (BlindHunter / EdgeCaseHunter / AcceptanceAuditor) + vérification d'orchestrateur (Opus 5). Tous les findings CRITICAL/HIGH/MEDIUM ont été vérifiés ground-truth (`grep -nF` + bornage de la fonction englobante) avant rétention. 0 faux positif retenu.
 
-**Gate backend rejoué hors sandbox sur la DB `kesh_gate`** : `fmt` ✅ / `build` ✅ / `clippy -D warnings` ✅ 0 warning / `nextest` ❌ **exit 100** — AC23 **NON satisfait**, contrairement à ce qu'affirme T12.
+**Gate backend rejoué hors sandbox sur la DB `kesh_gate`** — *état constaté à l'**ouverture** de la passe 1* : `fmt` ✅ / `build` ✅ / `clippy -D warnings` ✅ 0 warning / `nextest` ❌ **exit 100** — AC23 **NON satisfait à ce moment-là**, contrairement à ce qu'affirmait T12.
+
+> ✅ **Refermé en fin de passe 1** — après application des patches, le gate complet ressort **exit 0, 2059/2059**. Voir « Gate final — VERT » dans le Change Log ci-dessous. **AC23 est satisfait**, T12 peut rester coché. Cette ligne-ci décrit le point de départ, pas l'état livré.
 
 - [x] [Review][Patch] **`CreditNoteLineResponse` n'expose pas `revenue_account_id`** — asymétrie avec `InvoiceLineResponse` (`routes/invoices.rs:159,174`), qui l'expose. Le client HTTP ne peut pas savoir quel compte chaque ligne d'avoir a débité, alors que le CHANGELOG annonce une ventilation « en miroir ». *Arbitrage Guy 2026-07-28 : le champ est ajouté dans 16-1a* — cohérent avec le périmètre annoncé (« API + moteur comptable facture ET avoir », D5). [`crates/kesh-api/src/routes/credit_notes.rs:32-52`]
 - [x] [Review][Patch] **Le test AC14 échoue — la fixture ne produit aucune ligne de facture, le gate est rouge** [`crates/kesh-api/tests/exports_global_e2e.rs:472-493`]
@@ -340,6 +359,25 @@ Les erreurs de validation de ligne suivent la convention déjà en place dans `r
 - [x] [Review][Defer] **AC5-ter — le décompte « 8 + 1 » de la spec est faux**, 3 sites réels non comptés [spec AC5-ter] — deferred, défaut de spec sans conséquence sur le livrable (le code couvre bien les 3 sites)
 - [x] [Review][Defer] **Chemin avoir : un compte introuvable est étiqueté `Inactive` et son numéro sort vide** [`crates/kesh-db/src/repositories/credit_notes.rs:432-444`] — deferred, chemin inatteignable (FK `ON DELETE RESTRICT`)
 - [x] [Review][Defer] **Duplication de la collecte des sites** — sentinelle `0: i32` côté avoir vs `Option<i32>` côté facture [`crates/kesh-db/src/repositories/credit_notes.rs:387-394`] — deferred, dette de lisibilité LOW
+
+**Passe 2** — 2026-07-28, 3 lentilles **Opus** (rotation : Sonnet en passe 1) sur **diff aplati `main..HEAD`**. 25 findings bruts → 21 après déduplication. **0 CRITICAL, 0 HIGH survivant** — les 2 HIGH remontés ont été réfutés en ground-truth. 3 convergences entre lentilles indépendantes.
+
+- [x] [Review][Patch] **Le commentaire de `update()` promet un grandfathering par ligne qui n'existe pas** — le code re-valide tous les comptes de `changes.lines` sans comparer à `before_lines` ; le tag projet, lui, compare réellement. *Convergence EdgeCaseHunter + AcceptanceAuditor.* [`crates/kesh-db/src/repositories/invoices.rs:1081-1087`]
+- [x] [Review][Patch] **La spec déclarait « AC23 NON satisfait » sans pointer vers sa clôture**, 261 lignes plus loin [spec `:332`]
+- [x] [Review][Patch] **`assert!(msg.contains("2"))` satisfait par le compte `"3200"`** — l'assertion passerait même si le sujet disparaissait du message [`crates/kesh-api/src/errors.rs:2634`]
+- [x] [Review][Patch] **Doc de `generate_credit_note_journal_lines` : dit « snapshot `credit_note_lines` », le code lit `invoice_lines`** [`crates/kesh-db/src/repositories/credit_notes.rs:157`]
+- [x] [Review][Patch] **`reason` absent du body d'erreur avoir**, présent côté facture pour la même structure [`crates/kesh-api/src/errors.rs:2289`]
+- [x] [Review][Patch] **AC5-ter marqué SUPERSEDED** — le décompte a bougé dans les deux sens, dont un site **ajouté par la revue de passe 1** [spec `:253`]
+- [x] [Review][Patch] **Le périmètre excluait i18n et README que la branche livre** — exclusion amendée (visait l'i18n *frontend* ; les manuels restent en 16-1b) [spec `:67`]
+- [x] [Review][Patch] **AC12-bis : branche « colonne `NULL` » non testée** (seuls « archivé » et « ligne absente » l'étaient) → `draft_crud_survives_null_company_default_column`
+- [x] [Review][Decision] **`PUT` sans `revenueAccountId` efface le compte** — *convergence BlindHunter + EdgeCaseHunter.* **Arbitrage Guy : CR dédié plutôt que correctif ici** → **issue #278** « Durcir le contrat des API en écriture ». Mesure provisoire : avertissement clients API au CHANGELOG. Motif : une sémantique « conserver » est impossible tant que les lignes n'ont pas d'identité stable (`update` fait `DELETE`+`INSERT`), et réapparier par position rouvrirait le piège que la passe 5 de `validate` a réfuté.
+- [x] [Review][Decision] **Défaut société exigé même si toutes les lignes sont explicites** — *convergence BlindHunter + EdgeCaseHunter.* **Arbitrage Guy : garder + documenter** → nouvelle décision **D1-bis**. Erreur bruyante, contournement trivial, cohérence avec `default_receivable_account_id`.
+- [x] [Review][Decision] **Avoir sur facture antérieure à 16-1a : contrôle du défaut COURANT, résidu silencieux** — **Arbitrage Guy : test de frontière** → `legacy_invoice_credit_note_falls_back_to_current_default_known_limitation`, qui chiffre le résidu et **devra changer de verdict** quand 16-1a-bis livrera le backfill.
+- [x] [Review][Defer] **Double isolation BiDi Fluent** dans `error.message` — deferred, motif préexistant dans tout le dépôt
+- [x] [Review][Defer] **`creditNoteTotalZero` sans test car inatteignable** par ce binaire — deferred
+- [x] [Review][Defer] **Positions 1-based et `unwrap()` fragiles** dans le test d'export — deferred
+- [x] [Review][Defer] **Manuels LaTeX** → 16-1b, documenter un sélecteur inatteignable serait prématuré
+- [x] [Review][Defer] **`migrations_upgrade_path` : la fenêtre ne couvre pas l'état pré-10-2 annoncé** (frontière 34, migration 10-2 = 27ᵉ) — commentaire rendu factuel, correction de la frontière = décision de périmètre
 
 ---
 
@@ -732,3 +770,27 @@ brouillon ne serait de toute façon pas validable — mais c'est un choix, pas u
 **Tests adaptés (fixtures uniquement)** — `crates/kesh-db/tests/{credit_notes_repository,invoice_ttc_parity,invoices_validate_vat,kf005_fulltext_index_e2e}.rs`, `crates/kesh-api/tests/{contact_payment_terms,invoice_delete,invoice_echeancier,invoice_pdf,invoice_send_email,reports,vat_report}_e2e.rs`, `crates/kesh-report/tests/aged_receivables.rs`
 
 **Tests étendus** — `crates/kesh-api/tests/exports_global_e2e.rs` (AC14), `crates/kesh-report/tests/vat_report_reconciliation.rs` (AC13)
+
+### File List — complément des passes de revue
+
+*(Ajouté le 2026-07-28 : la liste ci-dessus datait de `bmad-dev-story` et ne couvrait donc pas les fichiers touchés ensuite par les passes 1 et 2 de `bmad-code-review`. Écart relevé en audit de documentation.)*
+
+**Passe 1 — correctifs**
+
+- `crates/kesh-api/src/routes/credit_notes.rs` — champ `revenue_account_id` ajouté à `CreditNoteLineResponse` + son `impl From` (arbitrage Guy)
+- `crates/kesh-db/tests/accounts_role_backfill.rs` — helper `migrations_before_role_backfill()` (résolution **par version**), 2 sites d'appel, doc de module ; ferme la régression qui rendait `backfill_skips_archived_accounts` muet
+- `crates/kesh-db/tests/migrations_upgrade_path.rs` — `total` 55 → 56, fenêtre 21 → 22 (frontière 34 préservée), inventaire commenté
+
+**Passe 1 — codification de politique**
+
+- `CLAUDE.md` — garde-fou **P6** (couplage positionnel des migrations) + complément à **P5** (recompter les compteurs depuis le tableau). Commit isolé `0da698db`.
+
+**Passe 2 — correctifs**
+
+- `crates/kesh-db/src/repositories/invoices.rs` — commentaire « grandfathering » de `update()` corrigé
+- `crates/kesh-db/src/repositories/credit_notes.rs` — doc de `generate_credit_note_journal_lines` (source réelle du triplet)
+- `crates/kesh-api/src/errors.rs` — assertion `"Ligne 2"`, champ `reason` sur le body d'erreur avoir
+- `crates/kesh-db/tests/invoices_line_revenue_account.rs` — 2 tests ajoutés (AC12-bis colonne `NULL`, frontière du parc antérieur)
+- `crates/kesh-db/tests/migrations_upgrade_path.rs` — commentaire garde-fou rendu factuel + dérive documentaire consignée
+
+**Hors story, sur la branche** — `README.md` (feuille de route Epic 16, commit `6f7ccec2` antérieur au dev).
