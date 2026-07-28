@@ -83,6 +83,7 @@ async fn mk_validated(
             payment_terms: None,
             project_id: None,
             lines: vec![NewInvoiceLine {
+                revenue_account_id: None,
                 description: "Prestation".into(),
                 quantity: dec!(1),
                 unit_price: amount,
@@ -166,6 +167,7 @@ async fn aged_buckets_reconciliation_and_parity(pool: MySqlPool) {
             payment_terms: None,
             project_id: None,
             lines: vec![NewInvoiceLine {
+                revenue_account_id: None,
                 description: "Brouillon".into(),
                 quantity: dec!(1),
                 unit_price: dec!(888),

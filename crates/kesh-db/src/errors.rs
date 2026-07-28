@@ -2,6 +2,50 @@
 
 use thiserror::Error;
 
+/// Raison du refus d'un compte de produit référencé par une ligne de facture
+/// (Story 16-1a, #152 — décision D3).
+///
+/// Les quatre critères sont contrôlés à la **saisie** (création / modification
+/// du brouillon) et **re-contrôlés au posting** (validation). Deux d'entre eux
+/// ne sont couverts par aucune garde existante : `validate_lines_accounts_in_tx`
+/// vérifie `active` inconditionnellement mais laisse passer `postable` (le flux
+/// facture appelle `create_in_tx` avec `enforce_postable = false`) et ne
+/// consulte **jamais** `account_type`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RevenueAccountRejection {
+    /// Compte inexistant, ou appartenant à une autre société (anti-IDOR — on
+    /// ne distingue pas les deux cas, pour ne pas révéler l'existence d'un id).
+    UnknownOrCrossCompany,
+    /// Compte archivé (`active = FALSE`).
+    Inactive,
+    /// `account_type` différent de `Revenue` — un compte peut avoir été retypé
+    /// par `accounts::update` après avoir été choisi sur une ligne.
+    NotRevenue,
+    /// Compte non imputable (`postable = FALSE`) **et** différent du compte de
+    /// produit par défaut de la société, qui bénéficie de l'exemption D3-bis.
+    NotPostable,
+}
+
+/// Un site en défaut lors du contrôle des comptes de produit (Story 16-1a).
+///
+/// Le contrôle est batché (une requête pour toute la facture, décision D6) et
+/// remonte **tous** les sites en défaut à la fois : un compte partagé archivé
+/// invalide plusieurs lignes d'un coup, et l'utilisateur doit toutes les voir.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RejectedRevenueAccount {
+    /// Numéro de ligne **1-based**, tel qu'affiché à l'utilisateur.
+    ///
+    /// `None` désigne le **compte de produit par défaut de la société** :
+    /// aucune ligne ne le porte, il ne peut donc pas être nommé par un numéro
+    /// (AC8-bis). L'API le nomme explicitement dans le message.
+    pub line_number: Option<i32>,
+    pub account_id: i64,
+    /// Numéro du compte au plan comptable. `None` quand le compte est inconnu
+    /// de la société — il n'y a alors rien à afficher.
+    pub account_number: Option<String>,
+    pub reason: RevenueAccountRejection,
+}
+
 /// Erreurs des opérations de persistance MariaDB.
 ///
 /// Les messages `Display` sont destinés au logging serveur uniquement.
@@ -111,6 +155,37 @@ pub enum DbError {
         account_type: String,
     },
 
+    /// Un ou plusieurs comptes de produit de ligne de facture sont refusés
+    /// (Story 16-1a, #152 — D3, D3-bis, D6, AC8-bis).
+    ///
+    /// Variante dédiée — et non le générique [`DbError::InactiveOrInvalidAccounts`]
+    /// — parce que ce dernier est mappé sur « Un ou plusieurs comptes sont
+    /// archivés ou invalides », qui **ne nomme aucune ligne**. Sur une facture
+    /// pouvant porter 200 lignes, ce message n'est pas actionnable. Les sites
+    /// en défaut sont donc transportés en structuré jusqu'à `kesh-api`, qui
+    /// compose un message traduit les nommant tous.
+    ///
+    /// Mappé vers HTTP 400 `INVOICE_LINE_REVENUE_ACCOUNT_INVALID`.
+    #[error("Comptes de produit de ligne invalides ({} site(s) en défaut)", .0.len())]
+    InvalidRevenueAccounts(Vec<RejectedRevenueAccount>),
+
+    /// Émission d'avoir bloquée : au moins un compte de produit du snapshot de
+    /// la facture est archivé (Story 16-1a, décision D5-bis).
+    ///
+    /// La contre-passation doit viser **les mêmes comptes** que l'écriture
+    /// d'origine — se replier sur le défaut société recréerait exactement le
+    /// résidu que D5 combat. Poster sur un compte archivé est impossible (la
+    /// garde `active` de `create_in_tx` est inconditionnelle). L'avoir échoue
+    /// donc, en nommant la ligne et le compte à réactiver : un avoir bloqué
+    /// est préférable à un avoir sur le mauvais compte.
+    ///
+    /// Seul `active` est concerné — ni `postable` ni `account_type` ne sont
+    /// re-vérifiés côté avoir (D5-bis).
+    ///
+    /// Mappé vers HTTP 400 `CREDIT_NOTE_REVENUE_ACCOUNT_ARCHIVED`.
+    #[error("Comptes de produit archivés sur l'avoir ({} ligne(s))", .0.len())]
+    CreditNoteRevenueAccountsArchived(Vec<RejectedRevenueAccount>),
+
     /// Aucun exercice ouvert ne couvre la date fournie (Story 5.2).
     /// Distinct de `FiscalYearClosed` — l'exercice est peut-être
     /// inexistant (date hors de tous les exercices connus) OU clôturé.
@@ -176,6 +251,8 @@ impl DbError {
             Self::AccountRoleAlreadyAssigned { .. } => "ACCOUNT_ROLE_ALREADY_ASSIGNED",
             Self::AccountParentArchived { .. } => "ACCOUNT_PARENT_ARCHIVED",
             Self::AccountRoleInvalidForType { .. } => "ACCOUNT_ROLE_INVALID_FOR_TYPE",
+            Self::InvalidRevenueAccounts(_) => "INVOICE_LINE_REVENUE_ACCOUNT_INVALID",
+            Self::CreditNoteRevenueAccountsArchived(_) => "CREDIT_NOTE_REVENUE_ACCOUNT_ARCHIVED",
             Self::FiscalYearInvalid => "FISCAL_YEAR_INVALID",
             Self::ConfigurationRequired(_) => "CONFIGURATION_REQUIRED",
             Self::ConnectionUnavailable(_) => "CONNECTION_UNAVAILABLE",

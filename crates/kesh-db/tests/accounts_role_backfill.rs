@@ -24,11 +24,13 @@
 //! `accounts` vide et ne rencontrerait jamais un plan comptable : le test ne
 //! prouverait rien.
 //!
-//! On applique donc `total - 1` migrations, on insère le plan **en SQL brut**
-//! (surtout pas via `bulk_create_from_chart`, qui binderait `role`/`postable` —
-//! colonnes qui n'existent pas encore à ce stade → `ERROR 1054`), puis on
-//! applique la dernière migration pour que le backfill travaille sur des données
-//! réelles.
+//! On applique donc les migrations **situées avant celle de la 14-3a** (index
+//! résolu par version, cf. [`migrations_before_role_backfill`] — surtout pas
+//! `total - 1`, qui supposerait qu'elle est la dernière du dépôt), on insère le
+//! plan **en SQL brut** (surtout pas via `bulk_create_from_chart`, qui binderait
+//! `role`/`postable` — colonnes qui n'existent pas encore à ce stade →
+//! `ERROR 1054`), puis on applique le reste des migrations pour que le backfill
+//! travaille sur des données réelles.
 
 use std::borrow::Cow;
 
@@ -50,6 +52,32 @@ async fn apply_migrations_up_to(
         no_tx: kesh_db::MIGRATOR.no_tx,
     };
     sub.run(pool).await
+}
+
+/// Index de la migration 14-3a (`20260722000001_accounts_role_postable`) dans
+/// le `MIGRATOR`, c'est-à-dire le nombre de migrations à appliquer pour se
+/// placer **juste avant** elle.
+///
+/// Résolu **par version**, jamais par position. Le `total - 1` d'origine
+/// supposait que cette migration était la dernière du dépôt — hypothèse fausse
+/// dès qu'une story ultérieure en ajoute une (Story 16-1a,
+/// `20260727000001_invoice_lines_revenue_account`). Le montage appliquait alors
+/// le backfill **avant** l'insertion des comptes de test :
+/// `backfill_matches_seed_for_every_chart` tombait sur son assertion de
+/// montage, et `backfill_skips_archived_accounts` — qui n'en a pas — **passait
+/// à vide**, ses rôles restant `NULL` non pas parce que le backfill les avait
+/// correctement écartés, mais parce qu'il n'avait jamais tourné sur eux.
+fn migrations_before_role_backfill() -> usize {
+    const ROLE_MIGRATION: i64 = 20260722000001;
+    kesh_db::MIGRATOR
+        .migrations
+        .iter()
+        .position(|m| m.version == ROLE_MIGRATION)
+        .unwrap_or_else(|| {
+            panic!(
+                "migration accounts_role_postable ({ROLE_MIGRATION}) introuvable dans le MIGRATOR"
+            )
+        })
 }
 
 /// Insère une société minimale et retourne son id.
@@ -107,12 +135,10 @@ async fn seed_chart_raw(pool: &MySqlPool, company_id: i64, entries: &[ChartEntry
 /// être identique, compte par compte, à celui qu'aurait produit le **seed**.
 #[sqlx::test(migrations = false)]
 async fn backfill_matches_seed_for_every_chart(pool: MySqlPool) {
-    let total = kesh_db::MIGRATOR.migrations.len();
-
-    // Toutes les migrations SAUF la dernière (celle de la Story 14-3a).
-    apply_migrations_up_to(&pool, total - 1)
+    // Toutes les migrations situées AVANT celle de la Story 14-3a.
+    apply_migrations_up_to(&pool, migrations_before_role_backfill())
         .await
-        .expect("apply_migrations_up_to(total - 1)");
+        .expect("apply_migrations_up_to(migrations_before_role_backfill())");
 
     // Une société par plan, chacune avec son plan comptable inséré en SQL brut.
     let mut companies = Vec::new();
@@ -186,10 +212,9 @@ async fn backfill_matches_seed_for_every_chart(pool: MySqlPool) {
 /// `uq_accounts_company_singleton_role`.
 #[sqlx::test(migrations = false)]
 async fn backfill_skips_archived_accounts(pool: MySqlPool) {
-    let total = kesh_db::MIGRATOR.migrations.len();
-    apply_migrations_up_to(&pool, total - 1)
+    apply_migrations_up_to(&pool, migrations_before_role_backfill())
         .await
-        .expect("apply_migrations_up_to(total - 1)");
+        .expect("apply_migrations_up_to(migrations_before_role_backfill())");
 
     let company_id = seed_company(&pool, "Pme").await;
 

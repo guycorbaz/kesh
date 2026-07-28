@@ -472,6 +472,10 @@ pub fn serialize_invoice_lines_csv<W: Write>(
         "unit_price",
         "vat_rate",
         "line_total",
+        // Story 16-1a : compte de produit de la ligne. Vide = la ligne suit le
+        // compte par défaut de la société (brouillon, ou facture validée avant
+        // 16-1a et non traitée par 16-1a-bis).
+        "revenue_account_id",
         "created_at",
     ])
     .map_err(|e| map_csv_err("invoice_lines", e))?;
@@ -485,6 +489,7 @@ pub fn serialize_invoice_lines_csv<W: Write>(
             fmt_decimal(il.unit_price),
             fmt_decimal(il.vat_rate),
             fmt_decimal(il.line_total),
+            fmt_opt_i64(il.revenue_account_id),
             fmt_dt(il.created_at),
         ])
         .map_err(|e| map_csv_err("invoice_lines", e))?;

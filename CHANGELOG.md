@@ -10,7 +10,17 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [Non publié]
 
-_Rien pour l'instant._
+### Ajouté
+
+- **Un compte de produit par ligne de facture** : chaque ligne d'une facture peut désormais porter **son propre compte de produit**, au lieu que tout le chiffre d'affaires atterrisse sur un compte unique. Une facture mêlant honoraires, prestations de services et marchandises ventile son produit **sur les bons comptes dès la validation**, ce qui rend le compte de résultat exploitable sans reclassement manuel a posteriori. Une ligne qui ne précise rien continue de suivre le **compte de produit par défaut de la société** configuré dans les *Réglages* — le comportement actuel est donc strictement conservé pour toutes les factures existantes. Les **avoirs** ventilent en miroir : la contre-passation extourne exactement les comptes que la facture a crédités, y compris si le compte par défaut de la société a changé entre-temps. La colonne apparaît dans l'export CSV des lignes de facture. (#152, CR #265)
+  - **Le sélecteur dans le formulaire de facture arrive à la prochaine étape** — pour l'instant le compte n'est modifiable que par l'API. En attendant, enregistrer une facture depuis l'interface remet les lignes sur le compte par défaut.
+  - **Factures déjà validées** : elles conservent le comportement actuel (repli sur le compte par défaut au moment d'un éventuel avoir). Leur reprise fait l'objet d'une mise à jour dédiée.
+
+### Corrigé
+
+- **Message clair quand un compte de produit ne convient pas** : lorsqu'une ligne de facture désigne un compte archivé, qui n'est pas un compte de produit, ou qui n'est pas imputable, Kesh **nomme la ligne et le compte concernés** — et **toutes** les lignes fautives d'un coup, pas seulement la première. Auparavant le message se réduisait à « un ou plusieurs comptes sont archivés ou invalides », sans dire lequel : sur une facture de plusieurs dizaines de lignes, il fallait chercher. Le contrôle a lieu à la saisie **et** à la validation, ce dernier fermant deux angles morts : un compte **changé de type** (par exemple passé de produit à charge) ou **rendu non imputable** entre le brouillon et la validation n'était détecté par rien.
+- **Avoir sur une facture dont le compte a été archivé** : l'émission est refusée avec un message indiquant **quelle ligne et quel compte réactiver**, au lieu d'une erreur générique. Poster la contre-passation sur un autre compte laisserait un résidu permanent, invisible au bilan mais faux au compte de résultat — un avoir bloqué vaut mieux qu'un avoir sur le mauvais compte.
+- **Facture d'un montant total nul** : sa validation renvoie désormais un message explicite (« renseignez au moins une ligne avec un prix unitaire supérieur à zéro ») au lieu d'échouer sur une erreur technique. Idem pour l'émission d'un avoir sur une telle facture.
 
 ## [0.8.0] — 2026-07-26
 

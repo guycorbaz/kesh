@@ -80,6 +80,7 @@ async fn ttc_four_way_parity_mixed_rates_and_rounding_edges(pool: MySqlPool) {
         lines: line_specs
             .iter()
             .map(|(rate, price)| NewInvoiceLine {
+                revenue_account_id: None,
                 description: "Ligne parité".into(),
                 quantity: dec!(1),
                 unit_price: *price,
@@ -187,6 +188,7 @@ async fn list_items_total_ttc_matches_helper(pool: MySqlPool) {
             payment_terms: None,
             project_id: None,
             lines: vec![NewInvoiceLine {
+                revenue_account_id: None,
                 description: "Ligne".into(),
                 quantity: dec!(1),
                 unit_price: price,

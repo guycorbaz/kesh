@@ -70,6 +70,7 @@ async fn create_and_validate(
         lines: lines
             .iter()
             .map(|(rate, price)| NewInvoiceLine {
+                revenue_account_id: None,
                 description: "Ligne".into(),
                 quantity: dec!(1),
                 unit_price: *price,
@@ -236,6 +237,7 @@ async fn credit_note_refused_on_draft_invoice(pool: MySqlPool) {
             due_date: None,
             payment_terms: None,
             lines: vec![NewInvoiceLine {
+                revenue_account_id: None,
                 description: "L".into(),
                 quantity: dec!(1),
                 unit_price: dec!(100.00),
@@ -360,6 +362,7 @@ async fn credit_note_inherits_project_and_nets_to_zero(pool: MySqlPool) {
         payment_terms: None,
         project_id: Some(project),
         lines: vec![NewInvoiceLine {
+            revenue_account_id: None,
             description: "Ligne".into(),
             quantity: dec!(1),
             unit_price: dec!(1000.00),

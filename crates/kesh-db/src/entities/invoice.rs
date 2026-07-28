@@ -64,6 +64,18 @@ pub struct InvoiceLine {
     pub unit_price: Decimal,
     pub vat_rate: Decimal,
     pub line_total: Decimal,
+    /// Compte de produit de la ligne (Story 16-1a, #152 / CR #265).
+    ///
+    /// `None` sur un **brouillon** signifie « utiliser le compte de produit
+    /// par défaut de la société au moment de la validation » (liaison tardive,
+    /// décision D2) — on ne fige pas le défaut à la création, sinon le
+    /// brouillon suivrait une configuration périmée.
+    ///
+    /// À la **validation**, `validate_invoice` matérialise le compte effectif
+    /// ici : une facture validée par ce binaire ne porte donc plus `None`. Les
+    /// factures validées **avant** le déploiement de 16-1a le conservent — leur
+    /// traitement relève de la Story 16-1a-bis.
+    pub revenue_account_id: Option<i64>,
     pub created_at: NaiveDateTime,
 }
 
@@ -76,6 +88,9 @@ pub struct NewInvoiceLine {
     pub quantity: Decimal,
     pub unit_price: Decimal,
     pub vat_rate: Decimal,
+    /// Compte de produit choisi pour cette ligne. `None` = repli sur le compte
+    /// de produit par défaut de la société (Story 16-1a, D1/D2).
+    pub revenue_account_id: Option<i64>,
 }
 
 /// Données de création d'une facture. Le caller a déjà validé/normalisé.

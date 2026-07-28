@@ -35,8 +35,13 @@ use crate::repositories::audit_log;
 use crate::repositories::journal_entries;
 use crate::util::search::{escape_boolean_ft, escape_like};
 
-const LINE_COLUMNS: &str = "id, invoice_id, position, description, quantity, unit_price, \
-    vat_rate, line_total, created_at";
+/// Colonnes de `invoice_lines`, dans l'ordre des champs de [`InvoiceLine`].
+// pub(crate) : réutilisé par `repositories::credit_notes` (snapshot des lignes
+// de la facture d'origine) — une seule liste de colonnes à maintenir. Story
+// 16-1a : la duplication précédente est ce qui rendait l'ajout d'une colonne
+// silencieusement incomplet (échec `query_as` au runtime, pas à la compilation).
+pub(crate) const LINE_COLUMNS: &str = "id, invoice_id, position, description, quantity, \
+    unit_price, vat_rate, line_total, revenue_account_id, created_at";
 
 /// Toujours scopé par `company_id` (anti-IDOR multi-tenant).
 // pub(crate) : réutilisé par `repositories::credit_notes` (lock de la
@@ -60,6 +65,11 @@ fn invoice_snapshot_json(inv: &Invoice, lines: &[InvoiceLine]) -> serde_json::Va
                 "unitPrice": l.unit_price.to_string(),
                 "vatRate": l.vat_rate.to_string(),
                 "lineTotal": l.line_total.to_string(),
+                // Story 16-1a : compte de produit de la ligne. `null` sur un
+                // brouillon (repli sur le défaut société) ; toujours renseigné
+                // dans le snapshot « after » d'une validation, la
+                // matérialisation de D2 précédant l'audit.
+                "revenueAccountId": l.revenue_account_id,
             })
         })
         .collect();
@@ -393,7 +403,8 @@ async fn insert_lines(
         let line_total = compute_line_total(l.quantity, l.unit_price);
         let res = sqlx::query(
             "INSERT INTO invoice_lines (invoice_id, position, description, quantity, \
-             unit_price, vat_rate, line_total) VALUES (?, ?, ?, ?, ?, ?, ?)",
+             unit_price, vat_rate, line_total, revenue_account_id) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(invoice_id)
         .bind(idx as i32)
@@ -402,6 +413,9 @@ async fn insert_lines(
         .bind(l.unit_price)
         .bind(l.vat_rate)
         .bind(line_total)
+        // Story 16-1a : `None` est persisté tel quel (liaison tardive D2) —
+        // la matérialisation du compte effectif a lieu à la validation, pas ici.
+        .bind(l.revenue_account_id)
         .execute(&mut **tx)
         .await
         .map_err(map_db_error)?;
@@ -435,6 +449,161 @@ async fn fetch_lines(
     .map_err(map_db_error)
 }
 
+/// Lit le compte de produit par défaut de la société, **sans verrou ni
+/// création paresseuse** (Story 16-1a, D3-bis).
+///
+/// `create` / `update` ne lisaient jusqu'ici jamais `company_invoice_settings`.
+/// L'exemption de postabilité de D3-bis en a besoin — mais **surtout pas** via
+/// [`company_invoice_settings::get_or_create_default_in_tx`], qui **écrit**
+/// (`INSERT IGNORE`) et prend un `SELECT … FOR UPDATE` : ce serait un verrou
+/// supplémentaire dans une transaction dont l'ordre est déjà contraint
+/// (`companies → projects → invoices`).
+///
+/// Ligne absente ou colonne `NULL` → `None` : l'exemption ne s'applique alors à
+/// aucun compte, et la contrainte `postable` joue sans exception.
+async fn read_default_revenue_account_id(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+) -> Result<Option<i64>, DbError> {
+    let found: Option<Option<i64>> = sqlx::query_scalar(
+        "SELECT default_revenue_account_id FROM company_invoice_settings WHERE company_id = ?",
+    )
+    .bind(company_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    Ok(found.flatten())
+}
+
+/// Contrôle **batché** les comptes de produit référencés par les lignes d'une
+/// facture (Story 16-1a — D3, D3-bis, D6). Réutilisé à la **saisie** et au
+/// **posting** : un seul jeu de règles, donc pas de dérive entre les deux.
+///
+/// `sites` associe à chaque compte à contrôler le numéro de ligne **1-based**
+/// qui le porte ; `None` désigne le compte de produit par défaut de la société
+/// (AC8-bis), qu'aucune ligne ne porte.
+///
+/// # Pourquoi batché
+///
+/// Une facture peut porter jusqu'à `MAX_LINES = 200` lignes sur autant de
+/// comptes distincts. Une boucle ferait jusqu'à 200 allers-retours DB par
+/// création, modification **et** validation. Une seule requête `IN (…)` sur
+/// les ids dédupliqués suffit — patron de [`projects::validate_taggable_in_tx`].
+///
+/// # Pourquoi tous les défauts d'un coup
+///
+/// Le message nomme **toutes** les lignes fautives, pas seulement la première :
+/// quand un compte partagé est archivé, plusieurs lignes tombent ensemble, et
+/// un message qui n'en nomme qu'une impose autant d'allers-retours que de
+/// lignes.
+///
+/// # Critères
+///
+/// Société, `active`, `account_type = Revenue`, et `postable` — ce dernier
+/// **exempté** pour le compte égal à `default_revenue_account_id` (D3-bis).
+/// Sans cette exemption, une ligne qui ne précise rien se poste sans problème
+/// sur un défaut non-imputable, tandis que la même ligne désignant
+/// explicitement ce même compte serait rejetée : résultat comptable identique,
+/// verdict opposé.
+///
+/// # Verrouillage
+///
+/// `SELECT` **sans `FOR UPDATE`**, délibérément — cf. les commentaires des sites
+/// d'appel. La race d'archivage résiduelle (fenêtre de quelques ms) est la même
+/// dette LOW acceptée qu'en 19-3 / 19-4.
+async fn validate_line_revenue_accounts_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    sites: &[(Option<i32>, i64)],
+    default_revenue_account_id: Option<i64>,
+) -> Result<(), DbError> {
+    use crate::entities::account::AccountType;
+    use crate::errors::{RejectedRevenueAccount, RevenueAccountRejection};
+
+    if sites.is_empty() {
+        return Ok(());
+    }
+
+    let mut ids: Vec<i64> = sites.iter().map(|(_, id)| *id).collect();
+    ids.sort_unstable();
+    ids.dedup();
+
+    let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let sql = format!(
+        "SELECT id, number, active, account_type, postable FROM accounts \
+         WHERE company_id = ? AND id IN ({placeholders})"
+    );
+    let mut q = sqlx::query_as::<_, (i64, String, bool, AccountType, bool)>(&sql).bind(company_id);
+    for id in &ids {
+        q = q.bind(id);
+    }
+    let rows = q.fetch_all(&mut **tx).await.map_err(map_db_error)?;
+
+    let by_id: std::collections::HashMap<i64, (String, bool, AccountType, bool)> = rows
+        .into_iter()
+        .map(|(id, number, active, account_type, postable)| {
+            (id, (number, active, account_type, postable))
+        })
+        .collect();
+
+    let mut rejected: Vec<RejectedRevenueAccount> = Vec::new();
+    for (line_number, account_id) in sites {
+        let Some((number, active, account_type, postable)) = by_id.get(account_id) else {
+            rejected.push(RejectedRevenueAccount {
+                line_number: *line_number,
+                account_id: *account_id,
+                account_number: None,
+                reason: RevenueAccountRejection::UnknownOrCrossCompany,
+            });
+            continue;
+        };
+        // Une seule raison par site — la plus bloquante d'abord. Empiler les
+        // quatre n'aiderait pas : l'utilisateur corrige en choisissant un autre
+        // compte, quel que soit le nombre de critères violés.
+        let reason = if !*active {
+            Some(RevenueAccountRejection::Inactive)
+        } else if *account_type != AccountType::Revenue {
+            Some(RevenueAccountRejection::NotRevenue)
+        } else if !*postable && Some(*account_id) != default_revenue_account_id {
+            Some(RevenueAccountRejection::NotPostable)
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
+            rejected.push(RejectedRevenueAccount {
+                line_number: *line_number,
+                account_id: *account_id,
+                account_number: Some(number.clone()),
+                reason,
+            });
+        }
+    }
+
+    if rejected.is_empty() {
+        Ok(())
+    } else {
+        // Ordre stable pour des messages déterministes : le compte par défaut
+        // de la société (`None`) en tête, puis les lignes par numéro croissant.
+        rejected.sort_by_key(|r| (r.line_number.is_some(), r.line_number, r.account_id));
+        Err(DbError::InvalidRevenueAccounts(rejected))
+    }
+}
+
+/// Construit la liste des sites à contrôler à partir des comptes explicitement
+/// choisis sur les lignes (Story 16-1a). Les lignes sans compte (`None`) ne
+/// produisent aucun site — leur compte effectif est le défaut société, dont le
+/// contrôle relève d'AC8-bis et n'a lieu qu'au posting.
+fn explicit_line_account_sites<T, F>(lines: &[T], account_of: F) -> Vec<(Option<i32>, i64)>
+where
+    F: Fn(&T) -> Option<i64>,
+{
+    lines
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, l)| account_of(l).map(|account_id| (Some(idx as i32 + 1), account_id)))
+        .collect()
+}
+
 /// Crée une facture brouillon + ses lignes + audit log, atomiquement.
 pub async fn create(
     pool: &MySqlPool,
@@ -460,6 +629,36 @@ pub async fn create(
     {
         tx.rollback().await.map_err(map_db_error)?;
         return Err(e);
+    }
+
+    // Story 16-1a (AC7) — comptes de produit explicitement choisis sur les
+    // lignes : société, actif, type `Revenue`, imputable (exemption D3-bis pour
+    // le compte égal au défaut société). Contrôle batché en une requête (D6).
+    // Les lignes sans compte ne sont PAS contrôlées ici : leur compte effectif
+    // est le défaut société, résolu et re-validé seulement au posting (AC8-bis).
+    {
+        let sites = explicit_line_account_sites(&new.lines, |l| l.revenue_account_id);
+        if !sites.is_empty() {
+            let default_revenue =
+                match read_default_revenue_account_id(&mut tx, new.company_id).await {
+                    Ok(d) => d,
+                    Err(e) => {
+                        tx.rollback().await.map_err(map_db_error)?;
+                        return Err(e);
+                    }
+                };
+            if let Err(e) = validate_line_revenue_accounts_in_tx(
+                &mut tx,
+                new.company_id,
+                &sites,
+                default_revenue,
+            )
+            .await
+            {
+                tx.rollback().await.map_err(map_db_error)?;
+                return Err(e);
+            }
+        }
     }
 
     let result = sqlx::query(
@@ -758,6 +957,10 @@ fn is_no_op_change(
             && b.quantity == c.quantity
             && b.unit_price == c.unit_price
             && b.vat_rate == c.vat_rate
+            // Story 16-1a : sans cette comparaison, changer UNIQUEMENT le
+            // compte de produit d'une ligne serait vu comme un no-op — la
+            // modification serait silencieusement perdue avec un `200 OK`.
+            && b.revenue_account_id == c.revenue_account_id
     })
 }
 
@@ -873,6 +1076,33 @@ pub async fn update(
     if is_no_op_change(&before_invoice, &before_lines, &changes) {
         tx.rollback().await.map_err(map_db_error)?;
         return Ok((before_invoice, before_lines));
+    }
+
+    // Story 16-1a (AC7) — mêmes critères qu'à la création. Placé APRÈS les
+    // gardes 404 / statut / version pour que celles-ci gardent la priorité :
+    // une facture inexistante ou en conflit de version doit répondre 404/409,
+    // pas « compte de ligne invalide ». Placé APRÈS le court-circuit no-op pour
+    // ne pas rejeter un enregistrement qui ne change rien (le compte inchangé
+    // d'une ligne existante n'a pas à être re-validé — grandfathering, même
+    // logique que le tag projet ci-dessus).
+    {
+        let sites = explicit_line_account_sites(&changes.lines, |l| l.revenue_account_id);
+        if !sites.is_empty() {
+            let default_revenue = match read_default_revenue_account_id(&mut tx, company_id).await {
+                Ok(d) => d,
+                Err(e) => {
+                    tx.rollback().await.map_err(map_db_error)?;
+                    return Err(e);
+                }
+            };
+            if let Err(e) =
+                validate_line_revenue_accounts_in_tx(&mut tx, company_id, &sites, default_revenue)
+                    .await
+            {
+                tx.rollback().await.map_err(map_db_error)?;
+                return Err(e);
+            }
+        }
     }
 
     // Replace-all : DELETE anciennes lignes puis INSERT nouvelles.
@@ -1125,21 +1355,42 @@ pub struct ValidatedInvoice {
 /// Produit, dans cet **ordre canonique** (le `line_order` est posé séquentiellement
 /// par [`journal_entries::create_in_tx`]) :
 /// - (0) **débit créance** (compte `receivable`) = `total_ht + total_vat` (TTC) ;
-/// - (1) **crédit produit** (compte `revenue`) = `total_ht` (HT, = `invoices.total_amount`, DC9) ;
-/// - (2..N) **crédit TVA due** (compte `vat_payable`), **une ligne par taux** dont le
+/// - (1..M) **crédit produit**, **une ligne par compte de produit effectif** dont le
+///   montant agrégé est strictement `> 0`, triées par `account_id` croissant (itération
+///   `BTreeMap` ASC) — Story 16-1a, décision D4. La somme de ces lignes vaut `total_ht`
+///   (= `invoices.total_amount`, DC9) ;
+/// - (M+1..N) **crédit TVA due** (compte `vat_payable`), **une ligne par taux** dont le
 ///   montant agrégé est strictement `> 0` (DC2 + F-OPUS-1), triées par taux croissant
 ///   (itération `BTreeMap` ASC).
+///
+/// Le **compte de produit effectif** d'une ligne est `line.revenue_account_id`, ou
+/// `default_revenue_account_id` quand la ligne ne précise rien (`None`). Conséquence
+/// voulue : les lignes `None` et celles qui désignent **explicitement** le compte par
+/// défaut de la société fusionnent en une **seule** ligne de crédit — elles produisent
+/// le même résultat comptable, elles doivent produire la même écriture (invariant D3-bis).
 ///
 /// `total_vat = Σ_taux Σ_lignes line_vat_amount(line_total, vat_rate)`, où chaque montant
 /// est arrondi half-up **par ligne** (DC7, cf. [`kesh_core::accounting::vat::line_vat_amount`]).
 ///
 /// # Équilibre par construction
 ///
-/// `total_vat` est calculé sur **tous** les taux (avant le filtre `> 0`). Comme
-/// `line_total >= 0` (hypothèse F-OPUS-2), chaque montant agrégé par taux est `>= 0`, donc
-/// un taux filtré (montant `== 0`) contribue 0 au débit créance ET 0 aux crédits. Le débit
-/// créance somme exactement les **mêmes** montants arrondis par ligne que la somme des
-/// crédits (produit + lignes TVA) → `Σ debit == Σ credit` (vérifié par `create_in_tx`).
+/// Deux répartitions indépendantes, chacune neutre pour l'équilibre :
+///
+/// 1. **Le HT, ventilé par compte** (16-1a). `Σ_comptes (Σ_lignes line_total) = Σ_lignes
+///    line_total = total_ht` **exactement** : la ventilation ne fait que partitionner les
+///    mêmes `line_total`, et **aucun arrondi n'intervient sur le HT** (l'arrondi half-up
+///    par ligne ne concerne que la TVA). Un compte dont l'agrégat vaut `0` est filtré et
+///    contribue `0` — le filtre ne peut donc pas faire diverger la somme. Comme
+///    `line_total >= 0` (F-OPUS-2), un agrégat nul implique que toutes ses lignes sont
+///    nulles.
+/// 2. **La TVA, ventilée par taux** (18-1b). `total_vat` est calculé sur **tous** les taux
+///    (avant le filtre `> 0`). Chaque montant agrégé par taux est `>= 0`, donc un taux
+///    filtré (montant `== 0`) contribue 0 au débit créance ET 0 aux crédits.
+///
+/// Le débit créance vaut `total_ht + total_vat` et somme exactement les **mêmes** montants
+/// que l'ensemble des crédits (produits + TVA) → `Σ debit == Σ credit`, vérifié par
+/// `create_in_tx`. Passer de une à M lignes de crédit produit ne change que la
+/// **cardinalité** de l'écriture, jamais ses totaux.
 ///
 /// # Erreurs
 ///
@@ -1153,10 +1404,15 @@ pub struct ValidatedInvoice {
 /// (Epic 12) devront passer par une **contre-passation** (swap débit↔crédit), PAS par un
 /// montant négatif (les contraintes `chk_jel_*_nonneg` l'interdisent) — **ne pas réutiliser
 /// ce helper tel quel** pour les avoirs.
-fn generate_invoice_journal_lines(
+// pub(crate) : `repositories::credit_notes` en a besoin pour le test qui
+// vérifie que l'écriture de facture et sa contre-passation s'annulent **compte
+// par compte** (Story 16-1a, D5). Ce test doit voir les deux générateurs à la
+// fois, et c'est le garde-fou du mode de défaillance le plus grave de la story.
+// Aucun appel de production hors de ce module.
+pub(crate) fn generate_invoice_journal_lines(
     lines: &[InvoiceLine],
     receivable_account_id: i64,
-    revenue_account_id: i64,
+    default_revenue_account_id: i64,
     vat_payable_account_id: Option<i64>,
 ) -> Result<Vec<crate::entities::NewJournalEntryLine>, DbError> {
     use crate::entities::NewJournalEntryLine;
@@ -1164,6 +1420,10 @@ fn generate_invoice_journal_lines(
     use std::collections::BTreeMap;
 
     let mut total_ht = Decimal::ZERO;
+    // Montant HT agrégé par compte de produit effectif (Story 16-1a, D4).
+    // `BTreeMap` : itération ASC native sur `account_id` → écritures
+    // déterministes, donc tests stables. Même patron que `vat_by_rate`.
+    let mut ht_by_account: BTreeMap<i64, Decimal> = BTreeMap::new();
     // Montant TVA agrégé par taux. `BTreeMap` : itération ASC native (ordre AC6) +
     // `Decimal` Eq/Hash insensible à l'échelle (`8.1` et `8.10` = même clé).
     let mut vat_by_rate: BTreeMap<Decimal, Decimal> = BTreeMap::new();
@@ -1176,6 +1436,15 @@ fn generate_invoice_journal_lines(
             line.id
         );
         total_ht += line.line_total;
+        // Repli sur le compte par défaut de la société : une ligne `None` et une
+        // ligne désignant explicitement ce même compte tombent sur la MÊME clé,
+        // donc fusionnent (invariant D3-bis).
+        let effective_account = line
+            .revenue_account_id
+            .unwrap_or(default_revenue_account_id);
+        *ht_by_account
+            .entry(effective_account)
+            .or_insert(Decimal::ZERO) += line.line_total;
         let vat = line_vat_amount(line.line_total, line.vat_rate);
         *vat_by_rate.entry(line.vat_rate).or_insert(Decimal::ZERO) += vat;
     }
@@ -1183,7 +1452,7 @@ fn generate_invoice_journal_lines(
     // Somme des montants déjà arrondis par ligne (DC7) — NE PAS réarrondir.
     let total_vat: Decimal = vat_by_rate.values().copied().sum();
 
-    let mut entry_lines = Vec::with_capacity(2 + vat_by_rate.len());
+    let mut entry_lines = Vec::with_capacity(1 + ht_by_account.len() + vat_by_rate.len());
     // (0) Débit créance TTC = HT + TVA.
     entry_lines.push(NewJournalEntryLine {
         account_id: receivable_account_id,
@@ -1191,13 +1460,19 @@ fn generate_invoice_journal_lines(
         credit: Decimal::ZERO,
         project_id: None,
     });
-    // (1) Crédit produit HT.
-    entry_lines.push(NewJournalEntryLine {
-        account_id: revenue_account_id,
-        debit: Decimal::ZERO,
-        credit: total_ht,
-        project_id: None,
-    });
+    // (1..M) Crédit produit HT, une ligne par compte effectif, montant > 0,
+    // `account_id` croissant. Σ de ces lignes == total_ht (aucun arrondi sur le
+    // HT — cf. « Équilibre par construction » ci-dessus).
+    for (account_id, amount) in &ht_by_account {
+        if *amount > Decimal::ZERO {
+            entry_lines.push(NewJournalEntryLine {
+                account_id: *account_id,
+                debit: Decimal::ZERO,
+                credit: *amount,
+                project_id: None,
+            });
+        }
+    }
 
     // (2..N) Crédit TVA due par taux > 0. La config du compte TVA due n'est requise
     // QUE si une ligne doit réellement être émise (F-OPUS-1 + AC5).
@@ -1277,7 +1552,7 @@ pub async fn validate_invoice(
             Some(inv) => inv,
         };
 
-        let lines_before = fetch_lines(&mut tx, invoice_id).await?;
+        let mut lines_before = fetch_lines(&mut tx, invoice_id).await?;
 
         // (1 bis) Story 19-4 — re-validation du projet analytique AU POSTING :
         // le projet peut avoir été archivé entre le brouillon et la validation,
@@ -1318,6 +1593,120 @@ pub async fn validate_invoice(
         let revenue_account_id = settings
             .default_revenue_account_id
             .ok_or_else(|| DbError::ConfigurationRequired("default_revenue_account_id".into()))?;
+
+        // (2 bis) Story 16-1a (D4-bis / AC13-bis) — pièce entièrement à zéro.
+        //
+        // `validate_line` autorise `unit_price = 0`, donc une facture dont
+        // toutes les lignes sont à zéro est constructible. Elle produisait
+        // jusqu'ici une ligne d'écriture `debit = 0, credit = 0` qui viole
+        // `chk_jel_debit_credit_exclusive` → **500 SQL**. Le filtre `> 0` de la
+        // ventilation change la forme du défaut sans le corriger (il ne reste
+        // plus qu'une ligne de créance à zéro). On ferme donc le trou ici, avec
+        // une erreur métier actionnable, avant toute construction d'écriture.
+        //
+        // `total_ht == 0` suffit à caractériser le cas : `line_total >= 0`
+        // (CHECK DB), donc une somme nulle implique que **toutes** les lignes
+        // sont nulles, donc que la TVA l'est aussi.
+        let total_ht: Decimal = lines_before.iter().map(|l| l.line_total).sum();
+        if total_ht == Decimal::ZERO {
+            return Err(DbError::InvalidInput("invoiceTotalZero".into()));
+        }
+
+        // (2 ter) Story 16-1a (AC8, AC8-bis) — re-validation AU POSTING des
+        // comptes de produit effectivement postés.
+        //
+        // Nécessaire même si la saisie a déjà contrôlé : entre le brouillon et
+        // la validation, un compte a pu être archivé, retypé (`Revenue →
+        // Expense`, jamais vérifié par `create_in_tx`) ou rendu non-imputable.
+        //
+        // L'ensemble contrôlé est celui des comptes **effectivement postés** :
+        // les comptes explicites des lignes, PLUS le compte par défaut de la
+        // société dès qu'au moins une ligne est `NULL`. Sans ce second terme,
+        // le seul cas qui existe en production aujourd'hui — toutes les lignes
+        // à `NULL` — échapperait entièrement au contrôle, et un défaut archivé
+        // ou retypé retomberait sur le `400 INACTIVE_OR_INVALID_ACCOUNTS`
+        // générique et anonyme que cette re-validation existe pour éliminer.
+        //
+        // `SELECT` **sans `FOR UPDATE`**, volontairement : on détient déjà la
+        // ligne facture (FOR UPDATE en (1)) — prendre le sentinel `companies`
+        // ici créerait l'inversion ABBA que documente la re-validation du
+        // projet analytique ci-dessus. La race d'archivage résiduelle (fenêtre
+        // ms) est la même dette LOW acceptée qu'en 19-3 / 19-4.
+        //
+        // `settings` est déjà chargé : on le réutilise, on ne relit pas.
+        {
+            let mut sites = explicit_line_account_sites(&lines_before, |l| l.revenue_account_id);
+            if lines_before.iter().any(|l| l.revenue_account_id.is_none()) {
+                // `None` en numéro de ligne : aucune ligne ne porte ce compte,
+                // le message le nomme « le compte de produit par défaut de la
+                // société ».
+                sites.push((None, revenue_account_id));
+            }
+            validate_line_revenue_accounts_in_tx(
+                &mut tx,
+                company_id,
+                &sites,
+                settings.default_revenue_account_id,
+            )
+            .await?;
+        }
+
+        // (2 quater) Story 16-1a (D2 / AC9-bis) — MATÉRIALISATION du compte
+        // effectif, dans la même transaction, AVANT la création de l'écriture.
+        //
+        // Sans elle, une ligne `NULL` resterait une **référence tardive à un
+        // état de configuration mutable** : la facture crédite le défaut tel
+        // qu'il est à T1, puis l'avoir — qui recopie `NULL` dans son snapshot —
+        // débite le défaut tel qu'il est à T2. Si l'administrateur a changé le
+        // défaut entre-temps, les deux écritures ne s'annulent plus et laissent
+        // un résidu permanent : bilan équilibré, compte de résultat faux,
+        // aucun signal.
+        //
+        // Après ce point, la facture est **auto-descriptive** et le système n'a
+        // plus qu'un seul instant de résolution. Portée exacte : les factures
+        // validées **par ce chemin**. Celles validées avant le déploiement n'y
+        // repassent jamais (`update` rejette tout statut ≠ `draft`) et gardent
+        // `NULL` — leur traitement relève de la Story 16-1a-bis. Ne JAMAIS
+        // écrire de post-condition globale du type `COUNT(*) = 0` sur
+        // `invoice_lines` : elle serait fausse.
+        // État des lignes AVANT matérialisation, figé pour le seul snapshot
+        // d'audit « before » (bloc 9). `lines_before` est mutée juste en
+        // dessous et ne peut donc plus témoigner de l'état d'origine : sans
+        // cette copie, `before` et `after` afficheraient tous deux le compte
+        // matérialisé, et la transition `NULL` → compte effectif — la seule
+        // que cette story introduit — deviendrait irrécupérable depuis le
+        // journal d'audit.
+        let lines_pre_materialization = lines_before.clone();
+
+        if lines_before.iter().any(|l| l.revenue_account_id.is_none()) {
+            sqlx::query(
+                "UPDATE invoice_lines SET revenue_account_id = ? \
+                 WHERE invoice_id = ? AND revenue_account_id IS NULL",
+            )
+            .bind(revenue_account_id)
+            .bind(invoice_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_db_error)?;
+
+            // La copie en mémoire doit suivre : `lines_before` a été chargée
+            // AVANT cet UPDATE et sert ensuite deux fois — pour le snapshot
+            // d'audit « after », et comme `ValidatedInvoice.lines` rendu tel
+            // quel dans la réponse HTTP, délibérément non re-fetché post-commit
+            // (garantie anti-race documentée sur `ValidatedInvoice`). Sans
+            // cette mutation, l'audit et la réponse afficheraient `null` pour
+            // des lignes que la base vient de matérialiser — contredisant
+            // l'invariant que la story introduit. Mutation en mémoire, donc,
+            // et surtout PAS de re-fetch DB.
+            //
+            // Le snapshot « before » n'est PAS concerné : il lit
+            // `lines_pre_materialization`, figée juste au-dessus.
+            for line in &mut lines_before {
+                if line.revenue_account_id.is_none() {
+                    line.revenue_account_id = Some(revenue_account_id);
+                }
+            }
+        }
 
         // (3) Fiscal year ouvert couvrant invoice.date.
         let fy = fiscal_years::find_open_covering_date(&mut tx, company_id, invoice_before.date)
@@ -1444,7 +1833,7 @@ pub async fn validate_invoice(
 
         // (9) Audit log.
         let audit_details = serde_json::json!({
-            "before": invoice_snapshot_json(&invoice_before, &lines_before),
+            "before": invoice_snapshot_json(&invoice_before, &lines_pre_materialization),
             "after": invoice_snapshot_json(&invoice_after, &lines_before),
             "journalEntry": {
                 "id": je.entry.id,
@@ -1936,7 +2325,7 @@ pub async fn list_all_lines_by_company(
 ) -> Result<Vec<InvoiceLine>, DbError> {
     sqlx::query_as::<_, InvoiceLine>(
         "SELECT il.id, il.invoice_id, il.position, il.description, il.quantity, \
-         il.unit_price, il.vat_rate, il.line_total, il.created_at \
+         il.unit_price, il.vat_rate, il.line_total, il.revenue_account_id, il.created_at \
          FROM invoice_lines il \
          JOIN invoices i ON il.invoice_id = i.id \
          WHERE i.company_id = ? \
@@ -2000,7 +2389,18 @@ mod tests {
     /// Construit une `InvoiceLine` minimale pour les tests du helper TVA
     /// (seuls `line_total` et `vat_rate` importent).
     fn make_line(line_total: Decimal, vat_rate: Decimal) -> InvoiceLine {
+        make_line_on(line_total, vat_rate, None)
+    }
+
+    /// Variante de [`make_line`] portant un compte de produit explicite
+    /// (Story 16-1a). `None` = repli sur le défaut société.
+    fn make_line_on(
+        line_total: Decimal,
+        vat_rate: Decimal,
+        revenue_account_id: Option<i64>,
+    ) -> InvoiceLine {
         InvoiceLine {
+            revenue_account_id,
             id: 1,
             invoice_id: 1,
             position: 1,
@@ -2167,6 +2567,145 @@ mod tests {
         assert_eq!(sum_debit(&je), sum_credit(&je));
     }
 
+    // -----------------------------------------------------------------------
+    // Story 16-1a (AC15) — ventilation du crédit produit par compte effectif.
+    //
+    // Les huit tests ci-dessus sont la NON-RÉGRESSION mono-compte d'AC12 :
+    // leurs fixtures ont toutes `revenue_account_id: None`, donc un seul compte
+    // effectif, donc la même cardinalité et les mêmes montants qu'avant la
+    // story — aucune de leurs assertions n'a été retouchée.
+    // -----------------------------------------------------------------------
+
+    const REVENUE_SERVICES: i64 = 3200;
+    const REVENUE_GOODS: i64 = 3400;
+
+    /// Somme des crédits portés par un compte donné.
+    fn credit_on(lines: &[NewJournalEntryLine], account_id: i64) -> Decimal {
+        lines
+            .iter()
+            .filter(|l| l.account_id == account_id)
+            .map(|l| l.credit)
+            .sum()
+    }
+
+    /// (g) Deux comptes explicites → deux lignes de crédit distinctes, et le
+    /// compte par défaut n'apparaît pas (aucune ligne ne s'y replie).
+    #[test]
+    fn gen_lines_ventilates_two_explicit_accounts() {
+        let lines = [
+            make_line_on(dec!(1000.00), dec!(0), Some(REVENUE_SERVICES)),
+            make_line_on(dec!(400.00), dec!(0), Some(REVENUE_GOODS)),
+        ];
+        let je =
+            generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE)).unwrap();
+        assert_eq!(je.len(), 3, "créance + 2 crédits produit, pas de TVA");
+        assert_eq!(je[0].debit, dec!(1400.00), "créance = HT total");
+        assert_eq!(credit_on(&je, REVENUE_SERVICES), dec!(1000.00));
+        assert_eq!(credit_on(&je, REVENUE_GOODS), dec!(400.00));
+        assert_eq!(
+            credit_on(&je, REVENUE),
+            Decimal::ZERO,
+            "aucune ligne ne se replie sur le défaut société"
+        );
+        assert_eq!(sum_debit(&je), sum_credit(&je), "équilibre");
+    }
+
+    /// (h) Multi-comptes × multi-taux : les deux ventilations sont
+    /// **indépendantes** — 2 comptes et 2 taux donnent 1 + 2 + 2 lignes, pas un
+    /// produit cartésien.
+    #[test]
+    fn gen_lines_ventilates_accounts_and_rates_independently() {
+        let lines = [
+            make_line_on(dec!(1000.00), dec!(8.10), Some(REVENUE_SERVICES)),
+            make_line_on(dec!(500.00), dec!(2.60), Some(REVENUE_SERVICES)),
+            make_line_on(dec!(400.00), dec!(8.10), Some(REVENUE_GOODS)),
+        ];
+        let je =
+            generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE)).unwrap();
+        assert_eq!(je.len(), 5, "créance + 2 comptes produit + 2 taux de TVA");
+        // HT ventilé : 1500 sur 3200, 400 sur 3400.
+        assert_eq!(credit_on(&je, REVENUE_SERVICES), dec!(1500.00));
+        assert_eq!(credit_on(&je, REVENUE_GOODS), dec!(400.00));
+        // TVA agrégée par TAUX, sans considération de compte de produit :
+        // 8.1 % sur 1400 = 81.00 + 32.40 ; 2.6 % sur 500 = 13.00.
+        assert_eq!(credit_on(&je, VAT_DUE), dec!(126.40));
+        assert_eq!(je[0].debit, dec!(2026.40), "créance = 1900 HT + 126.40 TVA");
+        assert_eq!(sum_debit(&je), sum_credit(&je), "équilibre");
+    }
+
+    /// (i) Un compte dont l'agrégat vaut zéro est filtré — sans quoi la ligne
+    /// violerait `chk_jel_debit_credit_exclusive` (debit = 0 ET credit = 0).
+    #[test]
+    fn gen_lines_filters_zero_amount_account() {
+        let lines = [
+            make_line_on(dec!(1000.00), dec!(0), Some(REVENUE_SERVICES)),
+            make_line_on(dec!(0.00), dec!(0), Some(REVENUE_GOODS)),
+        ];
+        let je =
+            generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE)).unwrap();
+        assert_eq!(je.len(), 2, "le compte à montant nul est filtré");
+        assert!(
+            je.iter().all(|l| l.account_id != REVENUE_GOODS),
+            "aucune ligne sur le compte à zéro"
+        );
+        assert_eq!(sum_debit(&je), sum_credit(&je), "équilibre");
+    }
+
+    /// (j) **Invariant D3-bis** : une ligne `None` et une ligne désignant
+    /// explicitement le compte par défaut de la société tombent sur la même
+    /// clé, donc **fusionnent en une seule** ligne de crédit. Résultat
+    /// comptable identique ⇒ écriture identique.
+    #[test]
+    fn gen_lines_merges_null_and_explicit_default_account() {
+        let merged = [
+            make_line_on(dec!(600.00), dec!(0), None),
+            make_line_on(dec!(400.00), dec!(0), Some(REVENUE)),
+        ];
+        let je =
+            generate_invoice_journal_lines(&merged, RECEIVABLE, REVENUE, Some(VAT_DUE)).unwrap();
+        assert_eq!(je.len(), 2, "une SEULE ligne de crédit produit");
+        assert_eq!(credit_on(&je, REVENUE), dec!(1000.00));
+
+        // Et l'écriture est bit-à-bit celle d'une facture dont les deux lignes
+        // seraient `None` : c'est l'invariant, pas seulement la cardinalité.
+        let all_null = [
+            make_line_on(dec!(600.00), dec!(0), None),
+            make_line_on(dec!(400.00), dec!(0), None),
+        ];
+        let je_null =
+            generate_invoice_journal_lines(&all_null, RECEIVABLE, REVENUE, Some(VAT_DUE)).unwrap();
+        assert_eq!(je.len(), je_null.len());
+        for (a, b) in je.iter().zip(je_null.iter()) {
+            assert_eq!(
+                (a.account_id, a.debit, a.credit),
+                (b.account_id, b.debit, b.credit)
+            );
+        }
+    }
+
+    /// (k) Ordre déterministe : les lignes de crédit produit sortent par
+    /// `account_id` **croissant**, quel que soit l'ordre de saisie. Sans quoi
+    /// les écritures ne seraient pas reproductibles et les tests instables.
+    #[test]
+    fn gen_lines_revenue_accounts_sorted_ascending() {
+        // Ordre d'entrée volontairement décroissant.
+        let lines = [
+            make_line_on(dec!(100.00), dec!(0), Some(REVENUE_GOODS)),
+            make_line_on(dec!(200.00), dec!(0), Some(REVENUE_SERVICES)),
+            make_line_on(dec!(300.00), dec!(0), Some(REVENUE)),
+        ];
+        let je =
+            generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE)).unwrap();
+        assert_eq!(je.len(), 4, "créance + 3 comptes produit");
+        let accounts: Vec<i64> = je[1..].iter().map(|l| l.account_id).collect();
+        assert_eq!(
+            accounts,
+            vec![REVENUE, REVENUE_SERVICES, REVENUE_GOODS],
+            "3000 < 3200 < 3400"
+        );
+        assert_eq!(sum_debit(&je), sum_credit(&je), "équilibre");
+    }
+
     async fn test_pool() -> MySqlPool {
         dotenvy::dotenv().ok();
         let url = std::env::var("DATABASE_URL").expect("DATABASE_URL required for DB tests");
@@ -2256,6 +2795,7 @@ mod tests {
 
     fn sample_line(desc: &str, qty: Decimal, price: Decimal) -> NewInvoiceLine {
         NewInvoiceLine {
+            revenue_account_id: None,
             description: desc.to_string(),
             quantity: qty,
             unit_price: price,
@@ -4240,6 +4780,7 @@ mod tests {
 
     fn line_to_new(l: &InvoiceLine) -> NewInvoiceLine {
         NewInvoiceLine {
+            revenue_account_id: None,
             description: l.description.clone(),
             quantity: l.quantity,
             unit_price: l.unit_price,

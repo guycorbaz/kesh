@@ -253,6 +253,18 @@ journal-entry-saved = Scrittura salvata
 error-fiscal-year-closed-generic = L'esercizio contabile è chiuso — nessuna scrittura può essere aggiunta o modificata (CO art. 957-964).
 error-inactive-accounts = Uno o più conti sono archiviati o non validi.
 
+# Conto di ricavo per riga di fattura (Story 16-1a, #152)
+invoice-line-account-subject-line = Riga { $line }
+invoice-line-account-subject-default = il conto di ricavo predefinito della società
+invoice-line-account-unknown = { $subject }: il conto selezionato non esiste o non appartiene a questa società
+invoice-line-account-inactive = { $subject }: il conto { $number } è archiviato
+invoice-line-account-not-revenue = { $subject }: il conto { $number } non è un conto di ricavo
+invoice-line-account-not-postable = { $subject }: il conto { $number } non è imputabile — scegliete un altro conto
+invoice-line-revenue-account-invalid = Conto di ricavo non valido — { $detail }
+credit-note-revenue-account-archived = Impossibile emettere la nota di credito — { $detail }. Riattivate i conti interessati.
+invoice-error-total-zero = Questa fattura ha un importo totale nullo: non può essere convalidata. Inserite almeno una riga con un prezzo unitario superiore a zero.
+credit-note-error-total-zero = Questa fattura ha un importo totale nullo: non è possibile emettere alcuna nota di credito.
+
 # Modifica & eliminazione scritture (Story 3.3)
 journal-entry-edit = Modifica
 journal-entry-delete = Elimina

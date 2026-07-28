@@ -180,6 +180,7 @@ async fn seed_validated_invoice(
 ) -> i64 {
     let lines: Vec<NewInvoiceLine> = (0..n_lines)
         .map(|i| NewInvoiceLine {
+            revenue_account_id: None,
             description: format!("Ligne {}", i + 1),
             quantity: dec!(1),
             unit_price: dec!(100.00),
@@ -262,6 +263,7 @@ async fn pdf_draft_invoice_returns_400_not_validated(pool: MySqlPool) {
             due_date: None,
             payment_terms: None,
             lines: vec![NewInvoiceLine {
+                revenue_account_id: None,
                 description: "Item".into(),
                 quantity: dec!(1),
                 unit_price: dec!(100.0),

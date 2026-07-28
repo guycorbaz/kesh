@@ -253,6 +253,18 @@ journal-entry-saved = Buchung gespeichert
 error-fiscal-year-closed-generic = Das Geschäftsjahr ist abgeschlossen — keine Buchungen können hinzugefügt oder geändert werden (OR Art. 957-964).
 error-inactive-accounts = Ein oder mehrere Konten sind archiviert oder ungültig.
 
+# Ertragskonto pro Rechnungsposition (Story 16-1a, #152)
+invoice-line-account-subject-line = Position { $line }
+invoice-line-account-subject-default = das Standard-Ertragskonto der Firma
+invoice-line-account-unknown = { $subject }: Das gewählte Konto existiert nicht oder gehört nicht zu dieser Firma
+invoice-line-account-inactive = { $subject }: Konto { $number } ist archiviert
+invoice-line-account-not-revenue = { $subject }: Konto { $number } ist kein Ertragskonto
+invoice-line-account-not-postable = { $subject }: Konto { $number } ist nicht bebuchbar — wählen Sie ein anderes Konto
+invoice-line-revenue-account-invalid = Ungültiges Ertragskonto — { $detail }
+credit-note-revenue-account-archived = Gutschrift kann nicht ausgestellt werden — { $detail }. Reaktivieren Sie die betroffenen Konten.
+invoice-error-total-zero = Diese Rechnung hat einen Gesamtbetrag von null und kann nicht validiert werden. Erfassen Sie mindestens eine Position mit einem Einzelpreis grösser als null.
+credit-note-error-total-zero = Diese Rechnung hat einen Gesamtbetrag von null: Es kann keine Gutschrift ausgestellt werden.
+
 # Buchung bearbeiten & löschen (Story 3.3)
 journal-entry-edit = Bearbeiten
 journal-entry-delete = Löschen

@@ -169,6 +169,7 @@ async fn create_validated_invoice(
         lines: lines
             .iter()
             .map(|(rate, price)| NewInvoiceLine {
+                revenue_account_id: None,
                 description: "Ligne".into(),
                 quantity: dec!(1),
                 unit_price: *price,
@@ -201,6 +202,7 @@ async fn create_draft_invoice(
         due_date: Some(date),
         payment_terms: None,
         lines: vec![NewInvoiceLine {
+            revenue_account_id: None,
             description: "Brouillon".into(),
             quantity: dec!(1),
             unit_price: price,

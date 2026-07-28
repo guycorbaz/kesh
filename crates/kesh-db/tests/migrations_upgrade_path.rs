@@ -73,10 +73,11 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // + dunning_config + email_templates_reminder (Story 21-3, #231) = 53.
     // + invoice_reminders (Story 21-5a, #231) = 54.
     // + accounts_role_postable (Story 14-3a, #269) = 55.
+    // + invoice_lines_revenue_account (Story 16-1a, #152) = 56.
     let total = kesh_db::MIGRATOR.migrations.len();
     assert_eq!(
-        total, 55,
-        "55 migrations attendues (54 précédentes + Story 14-3a : accounts_role_postable)"
+        total, 56,
+        "56 migrations attendues (55 précédentes + Story 16-1a : invoice_lines_revenue_account)"
     );
 
     // Étape 1 : simule l'état pré-Story-10-2 en appliquant toutes les
@@ -103,13 +104,14 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // élargissent la fenêtre d'upgrade et incrémentent donc le `N` soustrait
     // (de 4 à 6 à 8 à 10 à 11 à 12 à 13 à 14 à 15 à 16 à 17 à 18 à 19 à 20 à 21),
     // sans déplacer la frontière des 23 migrations historiques.
-    // ⚠️ Story 14-3a : ce N DOIT être incrémenté en même temps que `total`.
-    // Le laisser à 20 avec total=55 déplacerait la frontière à 24 migrations
-    // historiques — le test continuerait de passer en testant autre chose.
-    let n_before_upgrade_window = total - 21;
+    // ⚠️ Ce N DOIT être incrémenté en même temps que `total`. Le laisser à 21
+    // avec total=56 déplacerait la frontière à 24 migrations historiques — le
+    // test continuerait de passer en testant autre chose.
+    // Story 16-1a : 21 → 22, la frontière reste donc à 34 (56 - 22 = 55 - 21).
+    let n_before_upgrade_window = total - 22;
     apply_migrations_up_to(&pool, n_before_upgrade_window)
         .await
-        .expect("apply_migrations_up_to(total - 21) failed");
+        .expect("apply_migrations_up_to(total - 22) failed");
 
     // Étape 2 : seed 1 company + 1 user + 2 accounts + 1 invoice + 1 contact.
     let company_id: i64 = sqlx::query_scalar(

@@ -36,6 +36,15 @@ pub struct CreditNoteLineResponse {
     pub unit_price: Decimal,
     pub vat_rate: Decimal,
     pub line_total: Decimal,
+    /// Compte de produit **débité** par cette ligne d'avoir (Story 16-1a).
+    ///
+    /// Snapshot recopié de la ligne de facture au moment de l'émission, donc
+    /// toujours renseigné pour un avoir émis après la matérialisation (D2) —
+    /// `Option` uniquement pour refléter fidèlement la colonne nullable.
+    /// Symétrique de `InvoiceLineResponse.revenue_account_id` : sans lui, un
+    /// client ne peut pas vérifier que l'avoir contre-passe bien compte par
+    /// compte, alors que c'est précisément ce que la story garantit.
+    pub revenue_account_id: Option<i64>,
 }
 
 impl From<CreditNoteLine> for CreditNoteLineResponse {
@@ -47,6 +56,7 @@ impl From<CreditNoteLine> for CreditNoteLineResponse {
             unit_price: l.unit_price,
             vat_rate: l.vat_rate,
             line_total: l.line_total,
+            revenue_account_id: l.revenue_account_id,
         }
     }
 }
