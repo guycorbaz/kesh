@@ -328,6 +328,21 @@ Toute nouvelle KF/CR/bug → GitHub uniquement. Ne **pas** rouvrir ces fichiers 
 
 **(P5) Garde-fou audit idempotence** : Toute PR introduisant un nouveau fichier `crates/kesh-db/migrations/*.sql` DOIT ajouter une ligne correspondante au tableau `docs/migrations-idempotence-audit.md` avec verdict (`yes` / `no` / `tracked-by-sqlx`) + justification. Si une PR ajoute un `.sql` migration sans modifier `docs/migrations-idempotence-audit.md`, c'est un finding **MEDIUM** à remonter en passe `bmad-code-review`. Rationale : éviter que l'audit doc dérive silencieusement au fil des Epics suivants — symétrique de la discipline P3.
 
+**Vérifier la ligne ET les compteurs, en recomptant la source.** Les « Statistiques » du fichier (Total / `yes` / `tracked-by-sqlx` / `no`) doivent être **recomptées depuis le tableau**, jamais incrémentées de confiance. Précédent : au moment de la Story 16-1a, le compteur `tracked-by-sqlx` annonçait 45 pour **52** réelles — dérive de 7 accumulée sur les Epics 20/21, parce que 11 lignes de migration avaient été ajoutées **sous** la section « Maintenance future » au lieu du tableau, et que les statistiques ne comptaient que le premier bloc. La passe 7 de `validate` de la 16-1a déclare pourtant avoir « re-vérifié les compteurs » : **sept passes adversariales ont confirmé un nombre faux**, parce que relire une valeur n'est pas recompter sa source.
+
+**(P6) Garde-fou couplage positionnel des migrations** : Toute PR introduisant un nouveau fichier `crates/kesh-db/migrations/*.sql` DOIT exécuter `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` et **inspecter chaque site**. Un test qui indexe les migrations **par position** (`total - N`, `&all[..n]`) change silencieusement de sens à chaque migration ajoutée : la fenêtre qu'il croit appliquer se décale d'un cran.
+
+Chaque site doit satisfaire l'un des deux critères :
+
+- **résolution par version** — l'index est obtenu par `.position(|m| m.version == <version>)`, ce qui rend le montage insensible aux ajouts futurs (**à préférer**) ; OU
+- **couplage positionnel assumé** — il matérialise une frontière historique voulue, et porte alors **obligatoirement** un garde-fou fail-loud : `assert_eq!(total, <N>)` codé en dur, ou une assertion de montage vérifiant l'état attendu du schéma avant la migration cible.
+
+Un site positionnel **sans** garde-fou est un finding **MEDIUM** en `bmad-code-review`.
+
+Rationale — ce mode d'échec est **invisible en revue de diff** : il ne naît ni du code écrit ni de la spec, mais de l'**interaction** entre la migration ajoutée et des tests que la PR ne touche pas. Seul le gate réellement exécuté le révèle. Précédent Story 16-1a : 3 tests touchés, dont `upgrade_path_preserves_data` (échec net grâce à son `assert_eq!(total, 55)` volontaire), `backfill_matches_seed_for_every_chart` (échec grâce à son assertion de montage) et surtout **`backfill_skips_archived_accounts`, qui s'est mis à passer À VIDE** — ses rôles ressortaient `NULL` non pas parce que le backfill écartait correctement un compte archivé, mais parce qu'il ne tournait plus du tout sur ces lignes. Un test muet ne détecte plus aucune régression, et rien ne le signale. C'est la raison d'être du critère « assertion de montage obligatoire ».
+
+*(codifié 2026-07-28, passe 1 de `bmad-code-review` de la Story 16-1a)*
+
 ## Règle de commit et push
 
 **Règle de branchement avant commit** :
