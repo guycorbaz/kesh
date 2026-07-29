@@ -20,11 +20,13 @@
 //! | [`backfills_from_journal_entry_not_from_current_default`] | D-B1 | un backfill lisant `settings` écrirait un compte que la facture n'a jamais crédité |
 //! | [`leaves_null_when_no_line_matches_total`] | D-B2 / AC-B2 | un backfill « par élimination » écrirait un compte faux sur une écriture éditée |
 //! | [`leaves_null_when_several_lines_match_total`] | D-B2 | idem, cas à plusieurs candidats |
-//! | [`backfills_when_vat_config_is_null`] | **D-B3** | **le backfill no-ope sur 100 % du parc, de façon indiscernable du succès** |
+//! | [`backfills_when_vat_config_is_null`] | **D-B3** | **le backfill no-ope, côté FACTURE, sur toute installation exonérée de TVA — indiscernable du succès** |
+//! | [`backfills_credit_note_when_vat_config_is_null`] | **D-B3 miroir** | **idem côté AVOIR : muter le seul `<=>` du 2ᵉ `UPDATE` laissait toute la suite verte** |
 //! | [`skips_draft_and_cancelled_invoices`] | D-B5 | la liaison tardive des brouillons serait figée à tort |
+//! | [`leaves_null_when_credited_account_is_not_postable`] | **cond. (4)** | un compte collectif atterrirait dans `invoice_lines`, donnée que la saisie elle-même refuse |
 //! | [`backfills_credit_note_from_its_own_entry`] | D-B1 miroir | l'avoir hériterait du compte de la facture au lieu du sien |
 //! | [`divergent_invoice_and_credit_note_are_recorded_as_is`] | **D-B7** | on « réparerait » un résidu historique en falsifiant les pièces |
-//! | [`backfill_is_idempotent`] | D-B6 / AC-B4 | un re-jeu écraserait des comptes déjà posés — **sur les deux `UPDATE`**, factures ET avoirs |
+//! | [`backfill_is_idempotent`] | D-B6 / AC-B4 | un re-jeu écraserait un compte déjà posé — la ligne `F-PRE`, dont la valeur stockée DIFFÈRE du candidat, est la seule qui exerce la garde |
 //! | [`validated_invoice_from_the_real_engine_is_recovered_by_the_backfill`] | **D-B2 cond. (3)** | le critère no-operait sur 100 % du parc si `total_amount` cessait d'égaler le crédit posé par le moteur |
 //!
 //! # Montage : chaque test doit prouver que le backfill a TOURNÉ
@@ -190,6 +192,28 @@ async fn insert_credit_note_with_lines(
     }
 
     credit_note_id
+}
+
+/// Crée un compte de produit **non imputable** (collectif). Atteignable dans un
+/// parc réel : la validation d'écriture tourne avec `enforce_postable = false`,
+/// donc une écriture ancienne a pu créditer un compte de regroupement.
+async fn insert_non_postable_account(pool: &MySqlPool, company_id: i64, number: &str) -> i64 {
+    sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type, postable) \
+         VALUES (?, ?, 'Groupe produits', 'Revenue', FALSE)",
+    )
+    .bind(company_id)
+    .bind(number)
+    .execute(pool)
+    .await
+    .expect("insert compte non imputable");
+
+    sqlx::query_scalar("SELECT id FROM accounts WHERE company_id = ? AND number = ?")
+        .bind(company_id)
+        .bind(number)
+        .fetch_one(pool)
+        .await
+        .expect("select account id")
 }
 
 /// Crée un second compte de produit (le plan de la fixture n'en a qu'un).
@@ -503,11 +527,20 @@ async fn leaves_null_when_several_lines_match_total(pool: MySqlPool) {
 
 /// **LE test de D-B3— le plus important du fichier.**
 ///
-/// `default_vat_payable_account_id` est `NULL` sur **toute** installation non
-/// configurée manuellement (ni l'onboarding, ni le lazy-create, ni aucune
-/// migration ne la renseigne). Écrite `<>` au lieu de `<=>`, la condition (2)
-/// propage `NULL` en logique ternaire, aucune ligne n'est candidate et le
-/// backfill **no-ope sur 100 % du parc**.
+/// `default_vat_payable_account_id` est `NULL` par **défaut** (ni l'onboarding,
+/// ni le lazy-create, ni aucune migration ne la renseigne). Écrite `<>` au lieu
+/// de `<=>`, la condition (2) propage `NULL` en logique ternaire, aucune ligne
+/// n'est candidate et le backfill **no-ope intégralement sur toute installation
+/// concernée**.
+///
+/// Portée exacte, à ne pas surestimer : une société dont cette colonne est
+/// `NULL` n'a pu valider **que** des factures sans TVA — `validate_invoice`
+/// passe la colonne à `generate_invoice_journal_lines` (`invoices.rs:1794`),
+/// qui échoue en `ConfigurationRequired` dès que `total_vat > 0`
+/// (`invoices.rs:1497-1500`). La population n'est donc pas « 100 % du parc »
+/// mais les installations **exonérées de TVA**, cas parfaitement réel en Suisse
+/// sous le seuil de CHF 100'000 et cœur de cible de Kesh.
+/// *(Portée corrigée en passe 2 de `bmad-code-review`.)*
 ///
 /// Ce mode de défaillance est **indiscernable du succès** sans ce test : la
 /// migration réussit, et la story pré-autorise explicitement un reliquat élevé
@@ -565,7 +598,7 @@ async fn backfills_when_vat_config_is_null(pool: MySqlPool) {
         vec![Some(revenue), Some(revenue)],
         "société sans compte de TVA configuré (le cas par DÉFAUT) : la ligne DOIT être \
          backfillée. Si elle est NULL, la condition (2) a été écrite avec `<>` au lieu de \
-         `<=>` et le backfill no-ope sur 100 % du parc — D-B3"
+         `<=>` et le backfill no-ope intégralement sur toute installation exonérée — D-B3"
     );
     assert_eq!(
         remaining_null_invoice_lines(&pool).await,
@@ -861,6 +894,28 @@ async fn divergent_invoice_and_credit_note_are_recorded_as_is(pool: MySqlPool) {
         "la facture créditée est `cancelled`, donc hors périmètre — conséquence explicitement \
          assumée par D-B5"
     );
+
+    // AC-B3 cas 6 affirme que le compte historique reste « lisible dans
+    // `journal_entry_lines`, jamais recopié dans `invoice_lines` ». La fixture
+    // le CONSTRUIT ; sans cette assertion elle ne l'OBSERVE pas, et la moitié
+    // de l'AC ne serait verrouillée par rien.
+    // *(Ajouté en passe 2 de `bmad-code-review`, finding Acceptance Auditor.)*
+    let historical: Vec<i64> = sqlx::query_scalar(
+        "SELECT jel.account_id FROM journal_entry_lines jel \
+         JOIN invoices i ON i.journal_entry_id = jel.entry_id \
+         WHERE i.id = ? AND jel.credit > 0 AND jel.credit = i.total_amount",
+    )
+    .bind(invoice_id)
+    .fetch_all(&pool)
+    .await
+    .expect("lecture du compte historiquement crédité");
+    assert_eq!(
+        historical,
+        vec![revenue],
+        "le compte que la facture a RÉELLEMENT crédité ({revenue}) doit rester lisible dans \
+         `journal_entry_lines` — c'est la seconde moitié d'AC-B3 cas 6, et la seule trace du \
+         compte d'origine puisque `invoice_lines` reste `NULL`"
+    );
 }
 
 /// AC-B4 : rejouer le backfill ne change **aucune** ligne — ni celles qu'il a
@@ -987,17 +1042,79 @@ async fn backfill_is_idempotent(pool: MySqlPool) {
     )
     .await;
 
+    // LE MONTAGE QUI REND CE TEST DISCRIMINANT — sans lui, la garde `IS NULL`
+    // n'est exercée nulle part.
+    //
+    // Les trois pièces ci-dessus portent toutes une valeur qui est le POINT
+    // FIXE du critère : ce que le backfill recalculerait est exactement ce qui
+    // est déjà stocké. Retirer les deux gardes `IS NULL` les réécrirait donc à
+    // l'identique, et un test qui ne compare qu'« avant re-jeu » à « après
+    // re-jeu » resterait VERT. C'est le défaut qu'ont convergé les trois
+    // lentilles de la passe 2.
+    //
+    // Il faut une ligne dont la valeur stockée DIFFÈRE du candidat : facture
+    // dont l'écriture a été éditée après validation (`PUT /journal-entries` n'a
+    // aucune garde de provenance) pour créditer un AUTRE compte du même
+    // montant. La ligne porte `other_revenue`, l'écriture crédite `revenue`.
+    //   - avec la garde   -> la ligne reste `other_revenue` ;
+    //   - sans la garde   -> elle devient `revenue`, DÈS LE PREMIER PASSAGE.
+    // D'où l'assertion sur la valeur ABSOLUE plus bas, et pas seulement sur la
+    // stabilité : c'est elle qui tombe si la garde disparaît.
+    let diverging_entry = insert_entry(
+        &pool,
+        seeded.company_id,
+        seeded.fiscal_year_id,
+        5,
+        &[
+            (receivable, TTC, ZERO),
+            (revenue, ZERO, HT),
+            (vat, ZERO, VAT),
+        ],
+    )
+    .await;
+    let prematerialized = insert_invoice_with_lines(
+        &pool,
+        seeded.company_id,
+        contact_id,
+        "F-PRE",
+        "validated",
+        Some(diverging_entry),
+    )
+    .await;
+    sqlx::query("UPDATE invoice_lines SET revenue_account_id = ? WHERE invoice_id = ?")
+        .bind(other_revenue)
+        .bind(prematerialized)
+        .execute(&pool)
+        .await
+        .expect("pré-matérialisation divergente");
+
     kesh_db::MIGRATOR.run(&pool).await.expect("MIGRATOR.run()");
+
+    assert_eq!(
+        invoice_line_accounts(&pool, prematerialized).await,
+        vec![Some(other_revenue), Some(other_revenue)],
+        "LA GARDE `IS NULL` : une ligne DÉJÀ renseignée ne doit jamais être réécrite, même \
+         quand le critère désignerait un autre compte ({revenue}) que celui posé \
+         ({other_revenue}). Sans la garde, cette assertion tombe dès le premier passage — \
+         c'est le seul montage de ce test qui l'exerce."
+    );
 
     let after_first = (
         invoice_line_accounts(&pool, backfilled).await,
         invoice_line_accounts(&pool, untouched).await,
         credit_note_line_accounts(&pool, credit_note).await,
+        invoice_line_accounts(&pool, prematerialized).await,
     );
     assert_eq!(
         after_first.0,
         vec![Some(revenue), Some(revenue)],
         "pré-condition du test d'idempotence : le premier passage doit avoir backfillé"
+    );
+    assert_eq!(
+        after_first.1,
+        vec![None, None],
+        "pré-condition : la facture à écriture ventilée doit rester `NULL` — sinon le rôle que \
+         lui assigne ce test (le re-jeu ne doit pas « finir le travail ») n'est pas tenu"
     );
     assert_eq!(
         after_first.2,
@@ -1025,6 +1142,7 @@ async fn backfill_is_idempotent(pool: MySqlPool) {
             invoice_line_accounts(&pool, backfilled).await,
             invoice_line_accounts(&pool, untouched).await,
             credit_note_line_accounts(&pool, credit_note).await,
+            invoice_line_accounts(&pool, prematerialized).await,
         ),
         after_first,
         "le backfill est intrinsèquement idempotent (garde `IS NULL` + critère déterministe) : \
@@ -1190,5 +1308,187 @@ async fn validated_invoice_from_the_real_engine_is_recovered_by_the_backfill(poo
         remaining_null_invoice_lines(&pool).await,
         0,
         "aucun reliquat sur ce montage : la facture vient du chemin nominal"
+    );
+}
+
+/// **Le pendant avoir du piège D-B3** — sans lui, la moitié du filet manque.
+///
+/// `backfills_when_vat_config_is_null` ne couvre que le volet facture : les
+/// trois autres tests qui manipulent des avoirs tournent avec la config TVA
+/// **posée par la fixture**. Muter le seul `<=>` du SECOND `UPDATE` en `<>`
+/// laissait donc l'intégralité de la suite verte, alors qu'en exploitation le
+/// backfill des avoirs no-operait sur toutes les installations concernées.
+///
+/// # Portée réelle, et pourquoi la fixture n'a PAS de ligne de TVA
+///
+/// Une société dont `default_vat_payable_account_id` est `NULL` n'a pu émettre
+/// que des pièces **sans TVA** : `validate_invoice` passe cette colonne à
+/// `generate_invoice_journal_lines` (`invoices.rs:1794`), qui échoue en
+/// `ConfigurationRequired` dès que `total_vat > 0` (`invoices.rs:1497-1500`).
+/// L'écriture montée ici est donc volontairement **exonérée** — c'est l'état
+/// réellement atteignable, celui d'une PME suisse sous le seuil de CHF 100'000.
+///
+/// *(Ajouté en passe 2 de `bmad-code-review`, finding Blind Hunter.)*
+#[sqlx::test(migrations = false)]
+async fn backfills_credit_note_when_vat_config_is_null(pool: MySqlPool) {
+    apply_migrations_up_to(&pool, migrations_before_backfill())
+        .await
+        .expect("migrations jusqu'au backfill");
+
+    let seeded = seed_accounting_company(&pool).await.expect("seed");
+    let contact_id = insert_contact(&pool, seeded.company_id).await;
+    let revenue = seeded.accounts["3000"];
+    let receivable = seeded.accounts["1100"];
+
+    // L'état par défaut de toute installation non configurée manuellement.
+    sqlx::query(
+        "UPDATE company_invoice_settings \
+         SET default_vat_payable_account_id = NULL, default_vat_recoverable_account_id = NULL, \
+             default_vat_decompte_account_id = NULL \
+         WHERE company_id = ?",
+    )
+    .bind(seeded.company_id)
+    .execute(&pool)
+    .await
+    .expect("remise à NULL de la config TVA");
+
+    // Facture exonérée : ni ligne de TVA, ni TTC — HT des deux côtés.
+    let invoice_entry = insert_entry(
+        &pool,
+        seeded.company_id,
+        seeded.fiscal_year_id,
+        1,
+        &[(receivable, HT, ZERO), (revenue, ZERO, HT)],
+    )
+    .await;
+    let invoice_id = insert_invoice_with_lines(
+        &pool,
+        seeded.company_id,
+        contact_id,
+        "F-EX",
+        "cancelled",
+        Some(invoice_entry),
+    )
+    .await;
+
+    // Contre-passation exonérée, miroir strict.
+    let cn_entry = insert_entry(
+        &pool,
+        seeded.company_id,
+        seeded.fiscal_year_id,
+        2,
+        &[(revenue, HT, ZERO), (receivable, ZERO, HT)],
+    )
+    .await;
+    let credit_note_id = insert_credit_note_with_lines(
+        &pool,
+        seeded.company_id,
+        contact_id,
+        invoice_id,
+        "A-EX",
+        cn_entry,
+    )
+    .await;
+
+    kesh_db::MIGRATOR.run(&pool).await.expect("MIGRATOR.run()");
+
+    assert_eq!(
+        credit_note_line_accounts(&pool, credit_note_id).await,
+        vec![Some(revenue), Some(revenue)],
+        "config TVA `NULL` : le volet AVOIR doit backfiller malgré tout. Un `<>` au lieu du \
+         `<=>` NULL-safe rendrait le prédicat NULL, aucune ligne ne serait candidate, et le \
+         backfill des avoirs no-operait en silence sur toute installation exonérée (D-B3)"
+    );
+    assert_eq!(
+        remaining_null_credit_note_lines(&pool).await,
+        0,
+        "aucun reliquat côté avoirs sur ce montage"
+    );
+}
+
+/// **La garde `postable` du volet facture (condition 4).**
+///
+/// `invoice_lines.revenue_account_id` n'est pas un instantané du passé : c'est
+/// la source de vérité que 16-1a D5 recopie dans tout avoir futur. Y écrire un
+/// compte **collectif** produirait une donnée que l'application refuse
+/// elle-même à la saisie (`RevenueAccountRejection::NotPostable`).
+///
+/// La facture témoin est indispensable : sans elle, le test passerait à vide si
+/// le montage de fenêtre se décalait.
+///
+/// *(Ajouté en passe 2 de `bmad-code-review`, arbitrage Guy du 2026-07-29.)*
+#[sqlx::test(migrations = false)]
+async fn leaves_null_when_credited_account_is_not_postable(pool: MySqlPool) {
+    apply_migrations_up_to(&pool, migrations_before_backfill())
+        .await
+        .expect("migrations jusqu'au backfill");
+
+    let seeded = seed_accounting_company(&pool).await.expect("seed");
+    let contact_id = insert_contact(&pool, seeded.company_id).await;
+    let revenue = seeded.accounts["3000"];
+    let receivable = seeded.accounts["1100"];
+    let vat = seeded.accounts["2000"];
+    let collective = insert_non_postable_account(&pool, seeded.company_id, "3900").await;
+
+    // Écriture ancienne créditant un compte de regroupement — possible parce
+    // que la validation d'écriture ne contrôle pas `postable`.
+    let collective_entry = insert_entry(
+        &pool,
+        seeded.company_id,
+        seeded.fiscal_year_id,
+        1,
+        &[
+            (receivable, TTC, ZERO),
+            (collective, ZERO, HT),
+            (vat, ZERO, VAT),
+        ],
+    )
+    .await;
+    let not_postable = insert_invoice_with_lines(
+        &pool,
+        seeded.company_id,
+        contact_id,
+        "F-COLL",
+        "validated",
+        Some(collective_entry),
+    )
+    .await;
+
+    // Témoin : prouve que le backfill a bien tourné sur ce montage.
+    let canonical = insert_entry(
+        &pool,
+        seeded.company_id,
+        seeded.fiscal_year_id,
+        2,
+        &[
+            (receivable, TTC, ZERO),
+            (revenue, ZERO, HT),
+            (vat, ZERO, VAT),
+        ],
+    )
+    .await;
+    let witness = insert_invoice_with_lines(
+        &pool,
+        seeded.company_id,
+        contact_id,
+        "F-OK",
+        "validated",
+        Some(canonical),
+    )
+    .await;
+
+    kesh_db::MIGRATOR.run(&pool).await.expect("MIGRATOR.run()");
+
+    assert_eq!(
+        invoice_line_accounts(&pool, not_postable).await,
+        vec![None, None],
+        "un compte NON IMPUTABLE ne doit jamais atterrir dans `invoice_lines.revenue_account_id` \
+         ({collective}) : le backfill fabriquerait une donnée que la saisie refuse. Écarté avant \
+         le `HAVING`, donc zéro candidat, donc `NULL` — conservateur, comme le veut AC-B2"
+    );
+    assert_eq!(
+        invoice_line_accounts(&pool, witness).await,
+        vec![Some(revenue), Some(revenue)],
+        "TÉMOIN : le backfill a bien tourné — sans cette assertion le test passerait à vide"
     );
 }

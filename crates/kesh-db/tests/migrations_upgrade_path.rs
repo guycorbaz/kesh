@@ -92,7 +92,7 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     );
 
     // Étape 1 : simule l'état pré-Story-10-2 en appliquant toutes les
-    // migrations sauf les 13 dernières (reconciliation_8_4,
+    // migrations sauf les 23 dernières (reconciliation_8_4,
     // bank_account_journal_link, reconciliation_rules, _kesh_version,
     // companies_is_stub ajoutée Story v011-2, bank_accounts_archived
     // ajoutée Story v014-1, api_keys + audit_log_actor ajoutées Story 17-2a,
@@ -209,7 +209,7 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     .await
     .expect("INSERT invoice failed");
 
-    // Étape 3 : appliquer les 10 migrations restantes via MIGRATOR.run().
+    // Étape 3 : appliquer les 23 migrations restantes via MIGRATOR.run().
     kesh_db::MIGRATOR
         .run(&pool)
         .await

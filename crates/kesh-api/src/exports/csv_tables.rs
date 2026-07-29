@@ -473,9 +473,12 @@ pub fn serialize_invoice_lines_csv<W: Write>(
         "vat_rate",
         "line_total",
         // Story 16-1a : compte de produit de la ligne. Vide = la ligne suit le
-        // compte par défaut de la société : brouillon, ou facture dont
-        // l'écriture a été retouchée à la main, que le backfill de 16-1a-bis
-        // refuse délibérément de reprendre (D-B2).
+        // compte par défaut de la société. Trois causes, et la troisième est de
+        // loin la plus fréquente : brouillon ; facture dont l'écriture a été
+        // retouchée à la main, que le backfill de 16-1a-bis refuse
+        // délibérément de reprendre (D-B2) ; facture `cancelled`, que le même
+        // backfill exclut par construction (D-B5) — donc TOUTE facture ayant
+        // reçu un avoir.
         "revenue_account_id",
         "created_at",
     ])
