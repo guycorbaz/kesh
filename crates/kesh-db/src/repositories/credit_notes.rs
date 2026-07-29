@@ -155,13 +155,31 @@ pub async fn list(
 /// story que sa cause.
 ///
 /// Le troisième membre du triplet est lu sur les **lignes de la facture**
-/// (`invoice_lines`), verrouillées et relues dans la même transaction que la
-/// copie vers `credit_note_lines` — les deux valeurs sont donc identiques par
-/// construction, mais la source est bien la facture. *(Revue 16-1a passe 2 : la
-/// doc affirmait auparavant que le triplet venait du snapshot
-/// `credit_note_lines` ; c'est faux, et une story ultérieure qui modifierait la
-/// constitution du snapshot en se fiant à cette phrase verrait l'écriture ne
-/// pas suivre.)* `None`
+/// (`invoice_lines`), dans la même transaction que la copie vers
+/// `credit_note_lines` — les deux valeurs sont donc identiques par construction,
+/// mais la source est bien la facture.
+///
+/// **Nature exacte de la protection** : la transaction verrouille la ligne
+/// `invoices` (`SELECT … FOR UPDATE`, cf. étape (1) de [`create_credit_note`]),
+/// **pas** les `invoice_lines` elles-mêmes — leur `SELECT` est nu. La cohérence
+/// tient donc *indirectement* : le seul écrivain de
+/// `invoice_lines.revenue_account_id` après validation est la matérialisation D2
+/// de `validate_invoice`, qui détient ce même verrou sur `invoices`. Quiconque
+/// ajouterait une **seconde** voie de mutation de cette colonne devrait donc
+/// prendre le verrou sur `invoices`, ou poser un verrou dédié : il n'y a rien
+/// ici qui l'en empêche.
+///
+/// *Une exception à cette énumération, relevée en passe 5 et jugée sans effet* :
+/// la restauration d'une sauvegarde ([`crate::backup::restore_tables_in_tx`])
+/// réécrit `invoice_lines` — colonnes introspectées, `revenue_account_id`
+/// comprise — sans prendre ce verrou. Elle ne rompt pas l'invariant pour autant,
+/// puisqu'elle remplace `invoice_lines` **et** `credit_note_lines` depuis un même
+/// instantané : le miroir facture/avoir reste cohérent, et son `DELETE FROM
+/// invoices` se heurterait de toute façon au verrou d'un avoir en vol.
+///
+/// *(Revue 16-1a : la doc affirmait en passe 1 que le triplet venait du snapshot
+/// `credit_note_lines` — faux ; la correction de passe 2 a écrit « verrouillées »
+/// — imprécis, aucun `FOR UPDATE` ne porte sur `invoice_lines`. Passe 3.)* `None`
 /// (facture validée avant 16-1a et non traitée par 16-1a-bis) se replie sur
 /// `default_revenue_account_id`, exactement comme le faisait tout l'avoir avant
 /// la story.

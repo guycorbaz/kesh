@@ -1121,6 +1121,34 @@ async fn audit_before_snapshot_predates_materialization(pool: MySqlPool) {
 /// supprime la ligne entière : c'est ici la branche que le `Option<Option<i64>>`
 /// + `.flatten()` de `read_default_revenue_account_id` existe pour absorber.
 /// Aucun test ne la couvrait.
+///
+/// **Ce qui est propre à ce test, c'est son montage** — ligne de configuration
+/// **présente** et colonne à `NULL` — et non l'une ou l'autre de ses assertions.
+/// La lecture du défaut est déclenchée par la seule présence d'un compte
+/// explicite sur une ligne (`invoices.rs:641`, `if !sites.is_empty()`), donc
+/// **les deux** assertions traversent `read_default_revenue_account_id` et
+/// décodent ce `NULL` en `Option<Option<i64>>`. Un refactor qui ramènerait ce
+/// type à un `Option<i64>` nu ferait échouer les deux.
+///
+/// Les deux assertions vérifient des choses différentes ; aucune n'est
+/// redondante :
+///
+/// 1. un compte explicite **imputable** est accepté et persisté — la saisie ne
+///    dépend pas du défaut société ;
+/// 2. un compte explicite **non imputable** est **rejeté** : l'exemption D3-bis
+///    exige un défaut auquel se comparer, et il n'y en a pas. Cette assertion
+///    épingle l'**équivalence voulue** avec « ligne absente » — `.flatten()`
+///    existe précisément pour faire converger les deux branches sur le même
+///    `None` — et attraperait un refactor qui accorderait l'exemption au seul
+///    motif que la ligne de configuration existe. Miroir de
+///    `missing_settings_row_disables_postable_exemption`.
+///
+/// *(Historique de ce commentaire, instructif en soi : la passe 3 de revue a
+/// écrit que l'assertion 2 était « discriminante » — inversé ; la passe 4 a
+/// répondu que l'assertion 1 était « la seule » à exercer le décodage —
+/// sur-exclusif, et faux pour la même raison. Deux rédactions successives
+/// affirmant une propriété que personne n'avait vérifiée contre le code. Celle-ci
+/// l'a été, en passe 5.)*
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn draft_crud_survives_null_company_default_column(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
@@ -1130,6 +1158,7 @@ async fn draft_crud_survives_null_company_default_column(pool: MySqlPool) {
     // La ligne existe, la colonne est vidée.
     set_default_revenue(&pool, seeded.company_id, None).await;
 
+    // (1) Compte imputable → accepté et persisté.
     let invoice_id = create_draft(
         &pool,
         &seeded,
@@ -1151,6 +1180,27 @@ async fn draft_crud_survives_null_company_default_column(pool: MySqlPool) {
         vec![Some(services)],
         "le compte explicite doit être persisté malgré l'absence de défaut"
     );
+
+    // (2) L'équivalence voulue : colonne `NULL` ⇒ aucune exemption D3-bis
+    // possible, exactement comme « ligne absente ».
+    let marchandises =
+        add_account(&pool, seeded.company_id, "3400", "Marchandises", "Revenue").await;
+    set_account_postable(&pool, marchandises, false).await;
+
+    let err = create_draft(
+        &pool,
+        &seeded,
+        contact,
+        &[(dec!(100.00), dec!(0), Some(marchandises))],
+    )
+    .await
+    .expect_err(
+        "un compte non imputable doit être refusé : sans défaut société, \
+                 il n'existe aucun compte auquel l'exemption D3-bis puisse s'appliquer",
+    );
+    let rejected = expect_invalid_accounts(err);
+    assert_eq!(rejected.len(), 1);
+    assert_eq!(rejected[0].reason, RevenueAccountRejection::NotPostable);
 }
 
 /// **Frontière du parc antérieur à 16-1a** (revue de code passe 2, décision Guy

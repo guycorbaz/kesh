@@ -36,14 +36,24 @@ pub struct CreditNoteLineResponse {
     pub unit_price: Decimal,
     pub vat_rate: Decimal,
     pub line_total: Decimal,
-    /// Compte de produit **débité** par cette ligne d'avoir (Story 16-1a).
+    /// Compte de produit débité par cette ligne d'avoir — **lorsqu'il est
+    /// renseigné** (Story 16-1a). Symétrique de
+    /// `InvoiceLineResponse.revenue_account_id`.
     ///
-    /// Snapshot recopié de la ligne de facture au moment de l'émission, donc
-    /// toujours renseigné pour un avoir émis après la matérialisation (D2) —
-    /// `Option` uniquement pour refléter fidèlement la colonne nullable.
-    /// Symétrique de `InvoiceLineResponse.revenue_account_id` : sans lui, un
-    /// client ne peut pas vérifier que l'avoir contre-passe bien compte par
-    /// compte, alors que c'est précisément ce que la story garantit.
+    /// Recopié tel quel depuis la ligne de facture au moment de l'émission. Il
+    /// vaut donc `null` pour tout avoir émis sur une facture **validée avant
+    /// 16-1a** — la matérialisation D2 ne les a pas touchées et le backfill
+    /// (16-1a-bis) n'est pas livré, ce qui couvre aujourd'hui l'essentiel du
+    /// parc en exploitation.
+    ///
+    /// ⚠️ `null` ne signifie **pas** « aucune imputation » : l'écriture débite
+    /// alors le compte de produit **par défaut de la société tel qu'il est au
+    /// moment de l'avoir** (`credit_notes::generate_credit_note_journal_lines`,
+    /// `unwrap_or(default_revenue_account_id)`), lequel peut différer du compte
+    /// réellement crédité par la facture. Un client qui contrôle la
+    /// contre-passation compte par compte doit traiter ce cas explicitement —
+    /// cf. le test `legacy_invoice_credit_note_falls_back_to_current_default_known_limitation`
+    /// et l'avertissement correspondant du CHANGELOG.
     pub revenue_account_id: Option<i64>,
 }
 

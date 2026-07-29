@@ -35,11 +35,13 @@ async fn apply_migrations_up_to(
     assert!(
         n <= all.len(),
         "apply_migrations_up_to: n={} > total={} — vérifier que le calcul \
-         `total - 8` (fenêtre d'upgrade Story 10-2 + companies_is_stub v011-2 \
-         + bank_accounts_archived v014-1 + api_keys/audit_log_actor 17-2a) reste \
+         `total - 22` (taille de la fenêtre d'upgrade, frontière à 34) reste \
          cohérent avec l'ajout de migrations futures. Si une migration a été ajoutée à \
-         la branche, l'assertion `total == 39` du test upgrade_path_preserves_data \
-         devrait également fail pour signaler le besoin de mise à jour.",
+         la branche, l'assertion `total == 56` du test upgrade_path_preserves_data \
+         doit également échouer, c'est son rôle : elle signale qu'il faut décider \
+         explicitement si la fenêtre s'élargit (bumper `total` seul) ou si la \
+         frontière doit rester à 34 (bumper `total` ET la fenêtre). Cf. garde-fou \
+         P6 de CLAUDE.md.",
         n,
         all.len()
     );
@@ -52,10 +54,17 @@ async fn apply_migrations_up_to(
     sub.run(pool).await
 }
 
-/// AC #15a — cas générique upgrade path : 23 migrations appliquées + seed
-/// + MIGRATOR.run() final (qui applique les 5 dernières : 4 de la fenêtre
-/// Story 10-2 jusqu'à `20260522000001_kesh_version.sql` + `20260528000001_companies_is_stub.sql`
-/// de Story v011-2). Assertion : seed préservé.
+/// AC #15a — cas générique upgrade path : `total - 22` migrations appliquées
+/// (**34** à ce jour) + seed + `MIGRATOR.run()` final, qui applique les **22**
+/// dernières. Assertion : seed préservé à travers la fenêtre d'upgrade.
+///
+/// ⚠️ Les nombres ci-dessus se recomptent, ils ne se relisent pas — cf. le
+/// commentaire de la frontière dans le corps de la fonction, qui explique
+/// pourquoi la fenêtre ne couvre **pas** la Story 10-2 malgré ce que ce
+/// doc-comment a longtemps affirmé (il annonçait « 23 appliquées » et « les 5
+/// dernières », trois nombres faux depuis plusieurs Epics ; corrigés ici en
+/// revue de code 16-1a passe 5, la passe 2 n'ayant amendé que le commentaire
+/// inline, 47 lignes plus bas, en laissant celui-ci le contredire).
 #[sqlx::test(migrations = false)]
 async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // Total migrations attendues : 26 historiques + _kesh_version (Story 10-2)
@@ -104,10 +113,10 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // passer en testant une fenêtre plus étroite d'une migration.
     // Story 16-1a : 21 → 22, frontière inchangée (56 - 22 = 55 - 21 = 34).
     //
-    // ⚠️ DÉRIVE DOCUMENTAIRE CONSTATÉE (revue de code 16-1a, 2026-07-28, non
-    // corrigée ici). Ce commentaire affirmait simuler « l'état pré-Story-10-2 »
-    // et parlait d'une « frontière de 23 migrations historiques », avec une
-    // assertion citée à `total == 39`. Ces trois nombres sont faux et le sont
+    // ⚠️ DÉRIVE DOCUMENTAIRE CONSTATÉE (revue de code 16-1a). Ce commentaire
+    // affirmait simuler « l'état pré-Story-10-2 » et parlait d'une « frontière
+    // de 23 migrations historiques », avec une assertion citée à `total == 39`.
+    // Ces trois nombres sont faux et le sont
     // depuis plusieurs Epics : la migration de la Story 10-2
     // (`20260522000001_kesh_version`) est la **27ᵉ**, or la frontière est à 34
     // — la fenêtre d'upgrade ne couvre donc PAS la Story 10-2, elle démarre à
@@ -116,6 +125,15 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // données), mais il n'exerce pas la fenêtre que son commentaire décrivait.
     // Restaurer l'intention d'origine supposerait de ramener la frontière à 26
     // — décision de périmètre, hors revue de la 16-1a.
+    //
+    // Chronologie des correctifs, parce que la dérive a survécu à ses propres
+    // corrections : passe 2 rend CE commentaire factuel ; passe 5 corrige le
+    // doc-comment de la fonction, resté 47 lignes plus haut à « 23 appliquées /
+    // 5 dernières » ; passe 6 corrige le message d'assertion de
+    // `apply_migrations_up_to`, resté à `total - 8` / `total == 39`. Trois sites
+    // du même symptôme dans le même fichier, découverts un par passe. Ce qui
+    // reste ouvert n'est plus documentaire, c'est la décision de périmètre
+    // ci-dessus.
     let n_before_upgrade_window = total - 22;
     apply_migrations_up_to(&pool, n_before_upgrade_window)
         .await

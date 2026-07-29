@@ -18,7 +18,7 @@ Issue : **#152**. Rattaché au CR **#265**. Socle de l'Epic 16 « Facturation av
 
 La story 16-1 initiale touchait **8 modules distincts** (seuil de la § « Règle de splitting préventif » de `CLAUDE.md` : 5). Split acté par Guy le 2026-07-26 en :
 
-- **16-1a** (cette story) — backend : `kesh-db/migrations`, `kesh-db/repositories/invoices`, `kesh-db/repositories/credit_notes`, `kesh-api/routes/invoices`, `kesh-api/exports` = **5 modules**.
+- **16-1a** (cette story) — backend : `kesh-db/migrations`, `kesh-db/repositories/invoices`, `kesh-db/repositories/credit_notes`, `kesh-api/routes/invoices`, `kesh-api/exports` = **5 modules** *au moment du split*. **Le livré en compte 7** (recompté en passe 5) : deux décisions ultérieures l'ont élargi sans que ce décompte suive — `kesh-api/routes/credit_notes` (arbitrage Guy en revue passe 1, exposition de `revenue_account_id` sur la réponse d'avoir) et `crates/kesh-i18n` (amendement de périmètre en revue passe 2). Sans conséquence rétroactive — le split a eu lieu et la revue converge — mais l'énoncé qui le justifiait n'était plus à jour.
 - **16-1b** — frontend : `frontend/components/invoices`, `frontend/features/journal-entries`, `frontend/features/reconciliation`, i18n, doc-sync = **5 modules**.
 
 **Le split n'ouvre aucune fenêtre de corruption comptable** : toute la correction du moteur (facture **et** avoir, décision D5) est dans 16-1a.
@@ -97,6 +97,8 @@ Une ligne sans compte se poste sur `settings.default_revenue_account_id`, exacte
 - Le rendre paresseux exigerait de passer **les deux générateurs d'écritures** de `i64` à `Option<i64>` (`invoices.rs:1415`, `credit_notes.rs:165`), leurs sites d'appel et ~23 tests unitaires, plus une branche d'erreur nouvelle (« ligne `NULL` mais aucun défaut »). C'est un refactor du cœur comptable pour un cas de configuration que l'onboarding rend rare — mauvais rapport risque/bénéfice immédiatement après une revue.
 
 **Portée** : atteignable uniquement si la colonne est **délibérément vidée** ; l'onboarding la renseigne. Le cas « ligne de configuration présente, colonne `NULL` » est désormais couvert par `draft_crud_survives_null_company_default_column` (la **saisie** passe ; c'est la **validation** qui exige le défaut).
+
+**Argument versé en passe 3 (la décision ne change pas, mais il éclaire la dette).** Le finding est remonté par une lentille différente à chacune des passes 2 et 3 — trois fois au total. La passe 3 apporte un angle que l'arbitrage initial n'avait pas : ce n'est pas seulement une fonctionnalité manquante, c'est une **incohérence interne entre trois chemins du même repository**. `create()` (`:640`) et `update()` (`:1102`) lisent le défaut en `Option<i64>` et **tolèrent** son absence — l'exemption D3-bis ne s'applique alors simplement à aucun compte ; seul `validate_invoice` (`:1593`) le déballe par `.ok_or_else(…)` et refuse. Concrètement : **on accepte d'enregistrer le brouillon, puis on refuse de le valider**, sur une configuration inchangée. Si la dette est un jour reprise, c'est cette asymétrie — et non le cas d'usage « je ventile tout explicitement » — qui en constitue le meilleur argument.
 
 ### D2 — Liaison tardive : `NULL` n'est jamais matérialisé **à la création**, mais il l'est **à la validation**
 
@@ -252,14 +254,14 @@ Les erreurs de validation de ligne suivent la convention déjà en place dans `r
 - **AC2** — Même ajout sur `credit_note_lines` (D5).
 - **AC2-bis** — **Aucun backfill dans cette story.** La migration se limite à `ADD COLUMN` + index + FK. Le traitement du parc existant est **entièrement** porté par `16-1a-bis` (cf. D2-bis). Corollaire à respecter : **ne pas** écrire de post-condition globale « aucune ligne de facture validée n'a `revenue_account_id IS NULL` » — elle est fausse tant que 16-1a-bis n'est pas livrée, et partiellement fausse après (son backfill est délibérément conservateur). Les post-conditions de cette story se testent **sur la facture que le test vient de valider**, jamais par un `COUNT(*)` global.
 - **AC3** — Migration **non-breaking** (`ADD COLUMN` nullable + index + FK) → **pas** de bump `kesh_version_min_required` (politique P1/P2), donc **pas** de bump de version Cargo (P2-bis). Le vérifier explicitement.
-- **AC4** — `docs/migrations-idempotence-audit.md` : ligne ajoutée au tableau détaillé avec verdict et justification, **ET** récapitulatif agrégé de bas de fichier mis à jour en cohérence — `Total` (`:68`, actuellement 55) et `Idempotence tracked-by-sqlx` (`:70`, actuellement 44) passent chacun à +1 (verdict attendu `tracked-by-sqlx`, la migration n'utilisant pas `IF NOT EXISTS`). Garde-fou **P5**.
+- **AC4** — `docs/migrations-idempotence-audit.md` : ligne ajoutée au tableau détaillé avec verdict et justification, **ET** récapitulatif agrégé de bas de fichier mis à jour en cohérence (verdict attendu `tracked-by-sqlx`, la migration n'utilisant pas `IF NOT EXISTS`). Garde-fou **P5**. ⚠️ **Les compteurs se RECOMPTENT depuis le tableau, ils ne s'incrémentent pas** — cet AC prescrivait « `Total` actuellement 55, `tracked-by-sqlx` actuellement 44, +1 chacun », et le `44` était **faux de 7** : la revue de code passe 1 a établi 52 réels, corrigé le fichier, et cet AC n'avait pas suivi (rectifié en passe 5). Valeurs vraies après la story, recomptées : **56 = 52 `tracked-by-sqlx` + 4 `yes` + 0 `no`**. Ré-incrémenter depuis les anciens nombres à la prochaine migration ré-armerait exactement la dérive que P5 existe pour empêcher.
 
 ### B. Backend — entité et tous les sites de colonnes
 
 - **AC5** — L'entité `InvoiceLine` porte `revenue_account_id: Option<i64>`, et **les 3 sites qui listent les colonnes `invoice_lines`** sont mis à jour — sans quoi `sqlx::query_as` échoue au runtime :
-  1. `LINE_COLUMNS` (`invoices.rs:39`) — utilisé par `insert_lines` (`:386`) et `fetch_lines` (`:425`) ;
+  1. `LINE_COLUMNS` (`invoices.rs:43`) — utilisé par `insert_lines` (`:386`) et `fetch_lines` (`:425`) ;
   2. `list_all_lines_by_company` (`invoices.rs:1937-1944`) — **liste en dur avec préfixes `il.`**, alimente l'export ZIP global ;
-  3. `create_credit_note` (`credit_notes.rs:266-268`) — **liste en dur**, lit `invoice_lines` pour le snapshot d'avoir.
+  3. `create_credit_note` (`credit_notes.rs:328`) — lit `invoice_lines` pour le snapshot d'avoir. ⚠️ **Ancre et qualification rectifiées en passe 6** : cet AC désignait `:266-268` comme une **liste en dur**, mais l'implémentation a remplacé cette duplication par un **emprunt de `invoices::LINE_COLUMNS`** (écart assumé, documenté au Dev Agent Record). L'ancienne ancre pointe aujourd'hui sur un bloc `use` sans rapport. Ce site n'est donc plus à maintenir à la main — il suit `LINE_COLUMNS`.
   `invoice_snapshot_json` (`invoices.rs:51-60`) inclut le compte dans le snapshot d'audit.
 - **AC5-bis** — Côté avoir, l'entité `CreditNoteLine` (`crates/kesh-db/src/entities/credit_note.rs:45`) porte le champ, et **les 4 sites** suivants sont mis à jour : `credit_note_snapshot_json` (`credit_notes.rs:36-56`), `fetch_credit_note_lines` (`:63-64`), le second `SELECT` de `get()` (`:90-91`), et l'`INSERT credit_note_lines` (`:376-390`). Il n'existe **pas** de constante `LINE_COLUMNS` côté avoir — soit en introduire une, soit traiter les 3 `SELECT` un par un ; ne pas en oublier.
 
@@ -302,7 +304,7 @@ Les erreurs de validation de ligne suivent la convention déjà en place dans `r
 ### E. Exports
 
 - **AC14** — `serialize_invoice_lines_csv` (`csv_tables.rs:459`) expose `revenue_account_id` dans l'en-tête et les enregistrements. Le test `crates/kesh-api/tests/exports_global_e2e.rs` est étendu pour vérifier la nouvelle colonne d'`invoice_lines.csv`.
-- **AC14-bis** — **Aucun export CSV des lignes d'avoir n'existe** : `grep -n "credit_note" crates/kesh-api/src/exports/` revient vide, et les 20 entrées du ZIP (`exports_global_e2e.rs:621-634`) n'en contiennent pas. Aucune action requise de ce côté. Les compteurs existants ne sont **pas** affectés par un `ADD COLUMN` : ni `assert_eq!(entries.len(), 20)` (nombre de **fichiers**), ni `TABLES_TO_TRUNCATE` (23 **tables**) dans `admin_backup_e2e.rs`. La sauvegarde générique (`crates/kesh-db/src/backup.rs`) lit les colonnes dynamiquement via `non_generated_columns` — **auto-adaptée**, aucune modification.
+- **AC14-bis** — **Aucun export CSV des lignes d'avoir n'existe** : `grep -n "credit_note" crates/kesh-api/src/exports/` revient vide, et les 20 entrées du ZIP (`exports_global_e2e.rs:621-634`) n'en contiennent pas. Aucune action requise de ce côté. Les compteurs existants ne sont **pas** affectés par un `ADD COLUMN` : ni `assert_eq!(entries.len(), 20)` (nombre de **fichiers**), ni `TABLES_TO_TRUNCATE` (**37** tables — recompté en passe 5 ; le « 23 » écrit ici recopiait un commentaire périmé d'`admin_backup_e2e.rs:126`, sans conséquence sur la conclusion). La sauvegarde générique (`crates/kesh-db/src/backup.rs`) lit les colonnes dynamiquement via `non_generated_columns` — **auto-adaptée**, aucune modification.
   **Condition de validité de cette clause (passe 6)** : elle tient parce que **cette story ne crée aucune table**. Si une passe ultérieure introduisait une table, cette clause et le périmètre de l'export/import d'installation devraient être révisés ensemble — `backup_inventory_matches_schema` (`backup.rs:577-606`) tomberait et imposerait de modifier `TABLES_TO_TRUNCATE`. La même garde vaut pour `16-1a-bis`, qui a explicitement écarté la table de rapport pour ce motif.
 
 ### F. Tests & gate
@@ -321,14 +323,14 @@ Les erreurs de validation de ligne suivent la convention déjà en place dans `r
 - **AC20** — Test D1 : `settings.default_revenue_account_id` **≠** compte portant le rôle `DefaultRevenue` (deux comptes distincts) ; une ligne sans compte se poste sur `settings.default_revenue_account_id`.
 - **AC21** — Test D4-bis : facture entièrement à zéro → `400` métier, pas `500`.
 - **AC23** — Gate « Test Locally First » backend complet vert (`cargo fmt --all -- --check`, `cargo build --workspace --all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`). Le gate **runtime complet** est requis si le doute subsiste sur `min_required` (P2-bis) — ici la migration est non-breaking, mais les suites `migrations_fresh_install` et `admin_backup_e2e` doivent passer.
-- **AC24** — CHANGELOG `[Non publié]` : entrée orientée utilisateur. Le README et les manuels LaTeX sont traités en **16-1b** (le comportement n'est pas visible utilisateur tant que l'UI n'est pas livrée).
+- **AC24** — CHANGELOG `[Non publié]` : entrée orientée utilisateur. Les **manuels LaTeX** sont traités en **16-1b** (documenter un sélecteur que l'utilisateur ne peut pas encore atteindre serait prématuré). ⚠️ **Le README, lui, est mis à jour ICI** — rectifié en passe 5 : cet AC disait « le README et les manuels sont traités en 16-1b », en contradiction frontale avec l'amendement de périmètre de la passe 2 (§ « Ce qui n'est PAS dans 16-1a ») **et** avec la branche, qui modifie bien `README.md`. La § « Synchroniser le planning du README » de `CLAUDE.md` l'impose à chaque commit.
 
 ---
 
 ## Tasks / Subtasks
 
-- [x] **T1** — Migration `invoice_lines.revenue_account_id` + `credit_note_lines.revenue_account_id` + index + FK `ON DELETE RESTRICT`. **Aucun backfill** (extrait en `16-1a-bis`). Ligne du tableau **et** compteurs agrégés de `docs/migrations-idempotence-audit.md`, verdict `tracked-by-sqlx` justifié par les `ADD COLUMN` **sans** `IF NOT EXISTS` (erreur 1060 au re-jeu hors sqlx). **Ne pas** écrire « non idempotente » : le fichier maintient l'invariant « Idempotence `no` : 0 » (`migrations-idempotence-audit.md:71`) et un verdict `no` ferait diverger les compteurs d'AC4 (AC1-AC4).
-- [x] **T2** — Entités `InvoiceLine` / `CreditNoteLine` + **les 8 sites** listés en AC5 / AC5-bis (6 listes de colonnes SQL + 2 snapshots d'audit), décompte de référence en AC5-ter (AC5, AC5-bis, AC5-ter).
+- [x] **T1** — Migration `invoice_lines.revenue_account_id` + `credit_note_lines.revenue_account_id` + index + FK `ON DELETE RESTRICT`. **Aucun backfill** (extrait en `16-1a-bis`). Ligne du tableau **et** compteurs agrégés de `docs/migrations-idempotence-audit.md`, verdict `tracked-by-sqlx` justifié par les `ADD COLUMN` **sans** `IF NOT EXISTS` (erreur 1060 au re-jeu hors sqlx). **Ne pas** écrire « non idempotente » : le fichier maintient l'invariant « Idempotence `no` : 0 » (`migrations-idempotence-audit.md:85` — ancre rectifiée en passe 6 : la réparation du fichier par la **passe 1 de cette même story** a décalé la section « Statistiques » de 14 lignes, sans que ce renvoi suive) et un verdict `no` ferait diverger les compteurs d'AC4 (AC1-AC4).
+- [x] **T2** — Entités `InvoiceLine` / `CreditNoteLine` + **les 8 sites** listés en AC5 / AC5-bis (6 listes de colonnes SQL + 2 snapshots d'audit), décompte de référence en AC5-ter (AC5, AC5-bis). ⚠️ **AC5-ter est SUPERSEDED** (revue passe 2) — ne pas s'en servir comme checklist, cf. sa mention.
 - [x] **T3** — API : DTOs création/modification avec `#[serde(default)]` + réponse de lecture (AC6 — la clause de test des deux formes de payload y est déjà portée).
 - [x] **T4** — Helper de validation batchée des comptes de ligne, réutilisable saisie + posting, avec exemption D3-bis et message multi-lignes (D6, D3-bis).
 - [x] **T5** — Branchement de T4 à la saisie (`invoices.rs:459` création, `:816` modification), en lisant le défaut par un `SELECT` nu — **jamais** `get_or_create_default_in_tx` (D3-bis) (AC7, AC12-bis).
@@ -337,7 +339,7 @@ Les erreurs de validation de ligne suivent la convention déjà en place dans `r
 - [x] **T8** — `generate_credit_note_journal_lines` en miroir + copie du compte à la création de l'avoir + garde D5-bis (AC11, AC11-bis).
 - [x] **T9** — Rejet des pièces à montant total nul (AC13-bis, AC21).
 - [x] **T10** — Export CSV `invoice_lines` + extension du test `exports_global_e2e` (AC14).
-- [x] **T11** — Tests unitaires (AC15, AC16) et d'intégration (AC12-bis, AC17 **les deux cas**, AC18, AC18-bis, AC19, AC20, AC21), dont le cas TVA multi-comptes × multi-taux (AC13).
+- [x] **T11** — Tests unitaires (AC15, AC16) et d'intégration (**AC12**, AC12-bis, AC17 **les deux cas**, AC18, AC18-bis, AC19, AC20, AC21), dont le cas TVA multi-comptes × multi-taux (AC13). *(AC12 rattaché en passe 5 : il n'était cité par aucune tâche — orphelin de traçabilité, alors que la passe 7 de `validate` déclarait « aucun orphelin ». Il est tenu en fait, les 8 tests `gen_lines_*` pré-existants passant sans retouche d'assertion.)*
 - [x] **T12** — CHANGELOG (AC24) + gate backend complet (AC23).
 
 **Ordre conseillé** : T1 → T2 → T6 (le helper d'abord, testable en isolation) → T4 → T5 → T7 → T8 → T9 → T3 → T10 → T11 → T12.
@@ -379,6 +381,50 @@ Les erreurs de validation de ligne suivent la convention déjà en place dans `r
 - [x] [Review][Defer] **Manuels LaTeX** → 16-1b, documenter un sélecteur inatteignable serait prématuré
 - [x] [Review][Defer] **`migrations_upgrade_path` : la fenêtre ne couvre pas l'état pré-10-2 annoncé** (frontière 34, migration 10-2 = 27ᵉ) — commentaire rendu factuel, correction de la frontière = décision de périmètre
 
+**Passe 3** — 2026-07-28, 3 lentilles **Sonnet** (rotation : Opus en passe 2) sur **diff aplati `main..HEAD`** (4048 lignes). **6 findings : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 3 LOW.** Aucune convergence inter-lentilles cette fois — chaque finding vient d'une seule lentille, ce qui est cohérent avec un diff déjà passé deux fois au filtre.
+
+- [x] [Review][Patch] **La doc de `generate_credit_note_journal_lines` affirme un verrou qui n'existe pas** — le correctif de passe 2 avait écrit que les `invoice_lines` sont « verrouillées » ; **aucun `FOR UPDATE` ne porte sur cette table**, son `SELECT` est nu. Les seuls `FOR UPDATE` du diff visent `accounts` (D5-bis) et `company_invoice_settings` (D3-bis). *BlindHunter, MEDIUM, avec incertitude explicite levée en ground-truth : le verrou réel est sur `invoices`.* Doc réécrite pour nommer la protection **indirecte** et signaler qu'une seconde voie de mutation la casserait. [`crates/kesh-db/src/repositories/credit_notes.rs:157-177`]
+- [x] [Review][Patch] **`draft_crud_survives_null_company_default_column` ne couvre pas la branche qu'il annonce** — le test de passe 2 n'utilisait qu'un compte **déjà imputable** et n'assertait que la persistance ; il serait passé même si `.flatten()` avait confondu « colonne `NULL` » et « ligne absente », c'est-à-dire même si la branche qu'il prétend protéger avait disparu. *EdgeCaseHunter, MEDIUM.* Seconde assertion ajoutée : compte explicite **non imputable** → rejet `NotPostable`, miroir exact de `missing_settings_row_disables_postable_exemption`. ⚠️ **Le commentaire accompagnant ce patch a lui-même été corrigé en passe 4** — il présentait cette seconde assertion comme « discriminante », ce qu'elle n'est pas. [`crates/kesh-db/tests/invoices_line_revenue_account.rs:1117-1200`]
+- [x] [Review][Decision] **Défaut société exigé même si toutes les lignes sont explicites** — **troisième remontée du même finding**, par une lentille différente à chaque passe. *EdgeCaseHunter, MEDIUM.* **L'arbitrage Guy de passe 2 (garder + documenter, D1-bis) n'est pas rouvert**, mais la passe 3 apporte un angle neuf que l'arbitrage initial n'avait pas : ce n'est pas une fonctionnalité manquante, c'est une **incohérence interne entre trois chemins du même repository** — `create()` et `update()` tolèrent le défaut absent (`Option<i64>`), seul `validate_invoice` le déballe et refuse. Argument versé à D1-bis pour le jour où la dette sera reprise. [`crates/kesh-db/src/repositories/invoices.rs:1604-1606` vs `:640`, `:1102`]
+- [x] [Review][Patch] **`generate_invoice_journal_lines` promu `pub(crate)` — portée plus large que l'intention documentée.** *BlindHunter, LOW.* Le commentaire « aucun appel de production hors de ce module » était une convention, pas une garantie ; un appel futur depuis n'importe où dans `kesh-db` court-circuiterait la re-validation D3/D3-bis et la matérialisation D2 **sans que le compilateur ne dise rien**. → `pub(in crate::repositories)`, qui couvre exactement le besoin (module frère `credit_notes`). [`crates/kesh-db/src/repositories/invoices.rs:1423`]
+- [x] [Review][Patch] **Décompte de tests de la File List faux : « 22 » déclaré pour 25 réels.** *AcceptanceAuditor, LOW.* Même symptôme que la dérive d'AC5-ter et celle de `migrations-idempotence-audit.md` — un nombre écrit une fois n'est jamais recompté. Corrigé **en recomptant la source** (`grep -c '#\[sqlx::test'`) : 23 au dev, +2 en passe 2 = **25**. Le « 22 » d'origine était déjà faux d'une unité.
+- [x] [Review][Patch] **T2 renvoie encore à AC5-ter comme « décompte de référence »** sans note de statut, alors que la passe 2 l'a marqué SUPERSEDED. *AcceptanceAuditor, LOW.* Avertissement ajouté à T2.
+
+**Passe 4** — 2026-07-29, 3 lentilles **Haiku 4.5** (rotation : Sonnet en passes 1 et 3, Opus en passe 2) sur **diff aplati mono-commit** de 35 fichiers, conformément à la mitigation § « Haiku-specific guardrails » de `CLAUDE.md`. **1 finding : 0 CRITICAL, 0 HIGH, 1 MEDIUM.** Aucun finding affirmant une absence de code — la vérification `grep -nF` obligatoire n'a donc eu aucun candidat à réfuter, et **aucune hallucination n'a été observée sur cette passe**.
+
+- [x] [Review][Patch] **La seconde assertion ajoutée en passe 3 ne discrimine pas la branche qu'elle prétend distinguer.** *BlindHunter, MEDIUM — vérifié en ground-truth par l'orchestrateur avant rétention.* Le rejet `NotPostable` découle de la condition `!postable && Some(account_id) != default_revenue_account_id` avec `default = None` : il vaut **quelle que soit** la branche qui a produit ce `None`. Or `.flatten()` fait converger « colonne `NULL` » et « ligne absente » sur exactement ce `None` — c'est sa raison d'être. L'assertion épingle donc une **équivalence**, pas un discriminant, et le commentaire de passe 3 affirmait l'inverse. **Le remède proposé par la lentille est en revanche incohérent** (« tester un compte qui *est* le défaut société, rendu non imputable ») : dans ce test le défaut est `NULL` par construction, il n'existe aucun compte par défaut à rendre non imputable — diagnostic retenu, remède écarté. ⚠️ **La correction rédigée en réponse à ce finding était elle-même fautive et a été reprise en passe 5** : elle attribuait à l'assertion (1) le monopole du *décodage* d'un `NULL` en `Option<Option<i64>>`, ce que le code contredit. [`crates/kesh-db/tests/invoices_line_revenue_account.rs:1117-1200`]
+
+**Passe 5** — 2026-07-29, 3 lentilles **Opus** (rotation : Haiku en passe 4) sur diff aplati mono-commit. Lentilles recentrées là où les défauts se logent réellement à ce stade : (a) les **correctifs des passes 1 à 4** eux-mêmes, (b) les **frontières** non explorées du code, (c) la **cohérence interne du document** après 11 passes d'amendement. **14 findings : 0 CRITICAL, 0 HIGH, 6 MEDIUM, 8 LOW.** La lentille « frontières » rend **0 finding** avec une trace vérifiable. **Aucun finding ne porte sur le code livré** : 13 portent sur de la documentation, 1 sur une omission du CHANGELOG.
+
+- [x] [Review][Patch] **Le correctif de passe 4 affirmait une exclusivité fausse** : « l'assertion (1) est la seule à exercer le décodage d'un `NULL` en `Option<Option<i64>>` ». Faux — la lecture du défaut est déclenchée par la seule présence d'un compte explicite sur une ligne (`invoices.rs:640`, `if !sites.is_empty()`), et l'assertion (2) porte elle aussi un compte explicite : **les deux** décodent. Sur un refactor vers `Option<i64>` nu, l'assertion (2) échouerait également (`expect_invalid_accounts` panique sur tout variant ≠ `InvalidRevenueAccounts`). **MEDIUM.** Réécrit sans aucune claim d'exclusivité : ce qui est propre à ce test est son **montage**, pas l'une de ses assertions. [`invoices_line_revenue_account.rs:1117-1200`]
+- [x] [Review][Patch] **Le patch de passe 2 sur `migrations_upgrade_path.rs` n'était pas propagé** : le doc-comment de la fonction (`:55-58`) portait encore « 23 migrations appliquées + les 5 dernières », contredit 47 lignes plus bas par le commentaire inline corrigé (34 / 22) — et c'est le doc-comment qu'un survol de signature expose en premier. **MEDIUM.** Risque concret : ré-armer exactement la régression que le garde-fou **P6** vient d'être codifié pour empêcher. [`migrations_upgrade_path.rs:55-58`]
+- [x] [Review][Patch] **Le doc-comment de `CreditNoteLineResponse.revenue_account_id` décrivait un contrat que le parc dément.** Il affirmait « toujours renseigné » et « `Option` uniquement pour refléter la colonne nullable » : les deux sont faux pour toute facture validée avant 16-1a — soit l'essentiel du parc en exploitation, 16-1a-bis n'étant pas livrée. `null` n'y signifie pas « aucune imputation » mais « défaut société au moment de l'avoir ». **MEDIUM.** Doc réécrite avec renvoi au test de frontière et au CHANGELOG. [`routes/credit_notes.rs:39-47`]
+- [x] [Review][Patch] **AC4 et la File List prescrivaient encore le compteur faux** (`44→45`) que la passe 1 avait établi comme dérivé de 7 et corrigé dans `docs/`. Le patch n'avait pas été grepé sur la spec — **dont un AC formel**. **MEDIUM.** Un dev ré-appliquant AC4 littéralement à la prochaine migration ré-armait la dérive. [spec AC4, File List]
+- [x] [Review][Patch] **Contradiction frontale AC24 ↔ § « Ce qui n'est PAS dans 16-1a » sur le README** : l'amendement de passe 2 disait « le README est mis à jour ici », AC24 disait « traité en 16-1b ». La branche modifie bien `README.md` — c'est AC24 qui était faux. **MEDIUM.** [spec AC24]
+- [x] [Review][Patch] **Le « piège n° 2 » restait une checklist active bâtie sur AC5-ter, marqué SUPERSEDED** — la passe 3 avait propagé l'avertissement à T2 et pas à lui — **et** son décompte « 4 listes en dur » était démenti par le livré (`create_credit_note` emprunte désormais `LINE_COLUMNS`, il en reste 3). **MEDIUM.** Piège rendu qualitatif. [spec, Dev Notes]
+- [x] [Review][Patch] **Compteur de clés i18n : 10 réelles, « 6 » déclaré** en Dev Agent Record et en File List. **LOW.**
+- [x] [Review][Patch] **Compteur de tests unitaires `invoices.rs` : 5 réels, « 6 » déclaré** (le pendant avoir, lui, est juste). **LOW.**
+- [x] [Review][Patch] **`TABLES_TO_TRUNCATE` : 37 tables, « 23 » déclaré** en AC14-bis, recopié d'un commentaire périmé hors story. La conclusion d'AC14-bis reste vraie. **LOW.**
+- [x] [Review][Patch] **Le décompte de modules qui justifie le split (« 5 ») était démenti par deux amendements ultérieurs de la même spec** — `kesh-api/routes/credit_notes` (passe 1) et `crates/kesh-i18n` (passe 2) portent le livré à 7. Sans conséquence rétroactive. **LOW.**
+- [x] [Review][Patch] **AC12 était orphelin de traçabilité** — cité par aucune tâche, alors que la passe 7 de `validate` déclarait « aucun orphelin ». Tenu en fait. Rattaché à T11. **LOW.**
+- [x] [Review][Patch] **CHANGELOG : la limitation D1-bis n'était signalée nulle part côté utilisateur**, alors qu'elle vise exactement le cas d'usage nominal du CR #265 (toutes les lignes explicitement ventilées) et le seul atteignable aujourd'hui, le champ n'étant écrivable que par API. **LOW.** Puce ajoutée.
+- [x] [Review][Patch] **Étiquette de commentaire périmée** : le bloc de `generate_invoice_journal_lines` s'ouvrait encore sur `// pub(crate) :` que le patch de passe 3 avait précisément retiré. **LOW.** [`invoices.rs:1418`]
+- [x] [Review][Patch] **Résidus rédactionnels** : ancre interne « ligne 172 » glissée à `:189` ; `list_all_lines_by_component` (fonction inexistante) → `list_all_lines_by_company`. **LOW.**
+
+**Passe 6** — 2026-07-29, 3 lentilles **Sonnet** (rotation : Opus en passe 5), recentrées sur le seul terrain encore actif : vérité des commentaires contre le code, recomptage intégral de la spec, fidélité de la documentation utilisateur. **5 findings : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 2 LOW.** La lentille « documentation utilisateur » rend **0 finding**, trace à l'appui. **Les trois MEDIUM ont une cause commune inédite : ce sont des renvois cassés par les réparations que cette story a elle-même effectuées.**
+
+- [x] [Review][Patch] **Le message d'assertion de `apply_migrations_up_to` portait encore `total - 8` et `total == 39`.** **MEDIUM.** **Troisième site du même symptôme dans le même fichier**, après le commentaire de frontière (passe 2) et le doc-comment de la fonction (passe 5) — un par passe. Mon patch de passe 5 avait grepé le symptôme sur le dépôt mais **pas dans le fichier qu'il patchait**. Le message est lu au moment exact où un dev ajoute une migration, c'est-à-dire au point de décision que le garde-fou **P6** existe pour protéger. Corrigé, et la chronologie des trois correctifs inscrite dans le code pour que le motif soit visible. [`migrations_upgrade_path.rs:37-44`]
+- [x] [Review][Patch] **AC5 point 3 pointait sur `credit_notes.rs:266-268` comme « liste en dur »** — site disparu : l'implémentation a remplacé la duplication par un emprunt de `invoices::LINE_COLUMNS` (`:328`), et l'ancienne ancre désigne aujourd'hui un bloc `use`. **MEDIUM** : c'est un **AC formel actif**, et la correction n'existait que dans le Dev Agent Record et dans AC5-ter, lequel est explicitement marqué SUPERSEDED — donc dans les deux seuls endroits qu'un reviewer est fondé à ne pas suivre. Ancre et qualification rectifiées, ici et dans la table d'ancres des Dev Notes. [spec AC5, Dev Notes]
+- [x] [Review][Patch] **T1 et la table d'ancres citaient `migrations-idempotence-audit.md:71` / `:68-71`** pour l'invariant « Idempotence `no` : 0 » et les compteurs — ancres exactes **au moment où elles ont été écrites**, décalées de 14 lignes par la **réparation du fichier effectuée en passe 1 de cette même story**. L'invariant est à `:85`, les compteurs à `:82-85`. **MEDIUM.** Corriger un fichier sans greper les renvois qui pointent dessus, y compris depuis le document qui applique le correctif. [spec T1, Dev Notes]
+- [x] [Review][Patch] **Ancre décalée d'un cran** : le commentaire de passe 5 citait `invoices.rs:640, if !sites.is_empty()` — `:640` porte `explicit_line_account_sites`, le `if` est à `:641`. Affirmation de fond exacte. **LOW.** [`invoices_line_revenue_account.rs`]
+- [x] [Review][Patch] **« 5 sites de colonnes » pour `credit_notes.rs` sans base de comptage explicite**, irréconciliable avec les « 4 sites » d'AC5-bis sans convention écrite. **LOW.** Base explicitée : 4 listes tenues à la main + 1 `SELECT` passé à l'emprunt.
+
+**Passe 7** — 2026-07-29, 2 lentilles **Haiku 4.5** (rotation : Sonnet en passe 6), à mandat **strictement mécanique** — validation exhaustive des ancres `fichier:ligne`, et des renvois croisés `AC`/`D`/`T` + noms de tests et de fonctions cités. Registre choisi délibérément : c'est celui où Haiku est fiable, et il vise exactement le mode d'échec démontré par la passe 6. **2 findings : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW.** **Critère d'arrêt de la § « Review Iteration Rule » atteint.**
+
+- [x] [Review][Patch] **Ancre `LINE_COLUMNS` décalée** : `invoices.rs:39` désigne le doc-comment, la constante est à `:43`. **LOW.** Corrigée aux 2 sites actifs (AC5 point 1, table d'ancres) ; l'occurrence d'AC5-ter est laissée telle quelle, l'élément étant barré et SUPERSEDED.
+- [x] [Review][Patch] **Une citation d'AC5-ter ne signalait pas son statut SUPERSEDED** — dans le Change Log de la passe 7 de `validate`, section historique. **LOW.** Annotée plutôt que réécrite : c'est une trace d'époque. L'annotation relève que **les deux** vérifications revendiquées par cette ligne ont été réfutées depuis (le décompte « 8 sites » et les compteurs « 55 / 44 »), ce qui en fait l'illustration la plus nette de la leçon du lot — relire une valeur n'est pas la vérifier.
+- **2 faux positifs réfutés en ground-truth** : la lentille d'ancres signalait `crates/kesh-api/src/tests/exports_global_e2e.rs` comme chemin inexistant. Il l'est — mais `grep -n "exports_global_e2e"` sur le document montre que **toutes** ses occurrences portent déjà le chemin correct `crates/kesh-api/tests/`. Écartés conformément à la § « Haiku-specific guardrails ».
+
 ---
 
 ## Dev Notes
@@ -391,7 +437,7 @@ Les erreurs de validation de ligne suivent la convention déjà en place dans `r
 | Schéma `credit_note_lines` | `crates/kesh-db/migrations/20260627000001_credit_notes.sql:63` |
 | Contrainte `chk_jel_debit_credit_exclusive` | `crates/kesh-db/migrations/20260412000001_journal_entries.sql:46` |
 | Convention FK vers `accounts` (11 sites, toutes RESTRICT) | `grep -rn "REFERENCES accounts" crates/kesh-db/migrations/` |
-| `LINE_COLUMNS` | `crates/kesh-db/src/repositories/invoices.rs:39` |
+| `LINE_COLUMNS` | `crates/kesh-db/src/repositories/invoices.rs:43` (ancre rectifiée en passe 7 : `:39` désignait le doc-comment, la constante est à `:43`) |
 | `invoice_snapshot_json` | `invoices.rs:51` |
 | `insert_lines` / `fetch_lines` | `invoices.rs:386` / `:425` |
 | **`list_all_lines_by_company` (colonnes EN DUR, export ZIP)** | `invoices.rs:1937-1944` |
@@ -407,7 +453,7 @@ Les erreurs de validation de ligne suivent la convention déjà en place dans `r
 | **Avoir : snapshot `credit_note_snapshot_json`** | `credit_notes.rs:36-56` |
 | **Avoir : `fetch_credit_note_lines` (EN DUR)** | `credit_notes.rs:63-64` |
 | **Avoir : 2e `SELECT` de `get()` (EN DUR)** | `credit_notes.rs:90-91` |
-| **Avoir : `SELECT invoice_lines` du snapshot (EN DUR)** | `credit_notes.rs:266-268` |
+| **Avoir : `SELECT invoice_lines` du snapshot** (emprunte `LINE_COLUMNS` depuis l'implémentation — ancre rectifiée en passe 6, l'ancienne `:266-268` pointait sur un bloc `use`) | `credit_notes.rs:328` |
 | Avoir : lecture du défaut à remplacer | `credit_notes.rs:280-282` ; passage `:320-328` |
 | Avoir : `INSERT credit_note_lines` | `credit_notes.rs:376-390` |
 | Entité `CreditNoteLine` | `crates/kesh-db/src/entities/credit_note.rs:45` |
@@ -419,7 +465,7 @@ Les erreurs de validation de ligne suivent la convention déjà en place dans `r
 | Résolution par rôle = prefill onboarding | `crates/kesh-db/src/repositories/company_invoice_settings.rs:236` |
 | Export CSV des lignes (en-tête 9 colonnes) | `crates/kesh-api/src/exports/csv_tables.rs:459` |
 | Compteurs export (**non affectés** par ADD COLUMN) | `crates/kesh-api/tests/exports_global_e2e.rs:621` (20 entrées), `:633` |
-| Compteurs audit idempotence (**à incrémenter**) | `docs/migrations-idempotence-audit.md:68-71` |
+| Compteurs audit idempotence (**à RECOMPTER depuis le tableau**, jamais à incrémenter) | `docs/migrations-idempotence-audit.md:82-85` (ancre rectifiée en passe 6) |
 | **`journal_entries` — AUCUNE colonne `source`/`origin`** (schéma complet) | `crates/kesh-db/migrations/20260412000001_journal_entries.sql:17-36` |
 | **`line_order` réattribué à chaque `update`** (`(idx as i32) + 1`) | `crates/kesh-db/src/repositories/journal_entries.rs:1005` ; création `:272` |
 | **`PUT /journal-entries/{id}` — aucune garde de provenance** | `crates/kesh-api/src/lib.rs:303` → `routes/journal_entries.rs:517` → `repositories/journal_entries.rs:805` |
@@ -429,7 +475,7 @@ Les erreurs de validation de ligne suivent la convention déjà en place dans `r
 
 0. **Croire que cette story protège le parc existant (D2-bis)** — elle ne le fait **pas**. La matérialisation de D2 ne touche que les transitions `draft → validated` : à l'instant du déploiement, elle protège un ensemble **vide**. C'est `16-1a-bis` qui traite le passé. Conséquence pratique ici : **ne pas** écrire de post-condition ni de test global sur `invoice_lines`, et **ne pas** ajouter d'`UPDATE` de backfill à la migration d'AC1 « pour bien faire » — le backfill correct est nettement plus subtil qu'il n'y paraît (l'écriture d'une facture validée est éditable par l'utilisateur), et un backfill approximatif **fabrique** la corruption qu'il prétend fermer. Cf. `16-1a-bis` D-B2 et D-B3.
 1. **L'avoir (D5)** — le plus coûteux si oublié : corruption comptable silencieuse, équation du bilan toujours équilibrée, donc **aucun signal**. Le test AC17 « les deux écritures s'annulent compte par compte » est le garde-fou.
-2. **Les 8 sites (AC5 / AC5-bis / AC5-ter)** — 6 listes de colonnes SQL + 2 snapshots d'audit, dont 4 listes **écrites en dur** hors `LINE_COLUMNS`. Un oubli ne casse pas la compilation : `sqlx::query_as` échoue au **runtime**, potentiellement seulement sur le chemin d'export ou d'avoir, donc pas forcément dans les tests rapides. (Le 9ᵉ site, l'appel de `generate_credit_note_journal_lines` en AC11, est lui attrapé par le compilateur.)
+2. **Les listes de colonnes SQL écrites en dur** — un oubli ne casse pas la compilation : `sqlx::query_as` échoue au **runtime**, potentiellement seulement sur le chemin d'export ou d'avoir, donc pas forcément dans les tests rapides. C'est le vrai piège ; il est **qualitatif**. ⚠️ **Ne pas s'en servir comme d'un décompte** (rectifié en passe 5) : cette entrée disait « les 8 sites (AC5 / AC5-bis / AC5-ter), dont 4 listes en dur », or **AC5-ter est marqué SUPERSEDED** et dit lui-même de ne pas l'utiliser comme checklist, et le « 4 » est démenti par le livré — `create_credit_note` emprunte désormais `invoices::LINE_COLUMNS` (`credit_notes.rs:328`), il reste **3** listes en dur (`credit_notes.rs:67`, `:95`, `:532`) plus 2 côté `invoice_lines` (`list_all_lines_by_company`, préfixes `il.` obligatoires à cause du JOIN, et l'`INSERT`). Un critère numérique sur cible mouvante est un mauvais garde-fou : c'est la leçon qui a fait marquer AC5-ter SUPERSEDED en passe 2, et elle vaut aussi ici.
 3. **`account_type` au posting (D3)** — `create_in_tx` ne le vérifie **jamais**. Si AC8 est implémenté en copiant seulement « archivé + non-postable », un compte retypé passe et le produit atterrit sur un compte de charge. Faux sans bruit.
 4. **La non-régression mono-compte (AC12)** — les 8 tests existants doivent passer sans retoucher leurs assertions. C'est ce qui rend la migration sûre pour les bases existantes, dont l'instance de production de Guy.
 5. **`#[serde(default)]` (AC6)** — son absence casse **toutes** les intégrations PAT existantes au déploiement, silencieusement à la revue puisque le code compile.
@@ -581,6 +627,7 @@ Motif retenu : sur les passes 5 et 6, **7 findings sur 10 — dont les 3 HIGH �
 - **Traçabilité** D1→D7 → AC → T1-T12 complète, aucun orphelin, saut `AC21 → AC23` cohérent avec la suppression d'AC22 en passe 3, plus aucun renvoi fantôme hors Change Log.
 - **Aucune contradiction interne** : D2 vs AC9-bis (bornage « par ce chemin » cohérent des deux côtés), D3 vs D3-bis vs AC8-bis (4 critères sur les comptes explicites, 2 sur le défaut implicite), D4 vs D4-bis (niveaux différents et compatibles), D5 vs D5-bis.
 - **Large échantillon d'ancres re-vérifié** sans divergence, dont les 8 sites d'AC5-ter, les points d'accroche de saisie (`:459` / `:816`), `validate_lines_accounts_in_tx` (confirmé **sans** `account_type`), et les compteurs de `migrations-idempotence-audit.md` (Total 55, `tracked-by-sqlx` 44).
+  > ⚠️ **Annotation de la passe 7 de `bmad-code-review` — les DEUX vérifications de cette ligne ont depuis été réfutées.** Conservée telle quelle : c'est une trace d'époque, pas un énoncé courant. (a) Le décompte « 8 sites » d'AC5-ter est **SUPERSEDED** depuis la passe 2 de revue de code — il avait bougé dans les deux sens, et AC5-ter porte désormais la consigne de ne pas s'en servir comme checklist ; le décompte courant est en AC5 / AC5-bis. (b) Les compteurs « Total 55 / `tracked-by-sqlx` 44 » étaient **faux de 7** — cf. la « Leçon de méthode » de la passe 1 de revue de code, ci-dessous. Une vérification qui relit une valeur au lieu de recompter sa source ne vérifie rien : cette ligne en est l'illustration la plus nette du lot, puisqu'elle revendique explicitement d'avoir vérifié les deux choses qui étaient fausses.
 
 **Trend** : 28 → 4 → 6 → 3 → 2 → 8 → **0**. **Critère d'arrêt de la § « Review Iteration Rule » atteint** : plus aucun finding, a fortiori aucun au-dessus de LOW. **16-1a est convergée et scellée**, en 7 passes (plafond de 8 non atteint), indépendamment de la maturité de `16-1a-bis`. Le split de la passe 6 a produit exactement l'effet recherché.
 
@@ -592,7 +639,7 @@ Motif retenu : sur les passes 5 et 6, **7 findings sur 10 — dont les 3 HIGH �
 
 **HIGH — le snapshot d'audit `before` était corrompu.** `validate_invoice` charge `lines_before` (`:1555`), la **mute en place** (`:1692`) pour matérialiser le compte, puis la sert aux **deux** clés `before` et `after` du snapshot (`:1824-1825`). Le commentaire du code trahit l'angle mort : il justifie la mutation par le besoin du snapshot « after » et de la réponse HTTP, sans voir la troisième utilisation. Conséquence : la transition `NULL` → compte effectif — **la seule que cette story introduit** — devenait irrécupérable depuis le journal d'audit. Corrigé par une copie `lines_pre_materialization` figée avant la mutation. Le test `audit_before_snapshot_predates_materialization` a été **vérifié par mutation** : sans le correctif il échoue avec `obtenu Number(4)`, l'id du compte matérialisé.
 
-**MEDIUM — le message `NotPostable` mentait, et la spec en était la source.** Le variant se déclenche sur « non imputable **et** différent du compte par défaut », mais le message affirmait « n'est **plus** le compte de produit par défaut », présupposant un état antérieur faux dans le cas courant. La formulation venait de la spec elle-même (§ « Fenêtre assumée », ligne 172), où elle était **vraie pour le seul cas décrit** — l'admin change le défaut entre saisie et posting. Corrigé dans les 4 locales, le fallback Rust, **la spec** et le CHANGELOG (qui portait la même tournure « n'est plus imputable »).
+**MEDIUM — le message `NotPostable` mentait, et la spec en était la source.** Le variant se déclenche sur « non imputable **et** différent du compte par défaut », mais le message affirmait « n'est **plus** le compte de produit par défaut », présupposant un état antérieur faux dans le cas courant. La formulation venait de la spec elle-même (§ « Fenêtre assumée », aujourd'hui `:189` — l'ancre « ligne 172 » de cette phrase avait glissé, rectifiée en passe 5), où elle était **vraie pour le seul cas décrit** — l'admin change le défaut entre saisie et posting. Corrigé dans les 4 locales, le fallback Rust, **la spec** et le CHANGELOG (qui portait la même tournure « n'est plus imputable »).
 
 **MEDIUM — `CreditNoteLineResponse` n'exposait pas `revenue_account_id`** là où `InvoiceLineResponse` le fait. Arbitrage Guy : ajouté dans 16-1a, cohérent avec le périmètre annoncé (« API + moteur comptable facture ET avoir »).
 
@@ -635,6 +682,125 @@ Le tableau était **scindé en deux blocs** : 11 lignes des Epics 20/21 (`202607
 Rappel : avant cette passe, le même gate sortait **exit 100 avec 2 échecs** (+1 test devenu muet), alors que T12 le cochait comme vert. **AC23 est satisfait à partir d'ici, pas avant.**
 
 **Bilan de la passe 1** : 2 HIGH + 4 MEDIUM patchés, 3 LOW reportés, 3 régressions de couplage aux migrations corrigées, 1 document d'audit réparé, 2 garde-fous codifiés dans `CLAUDE.md`. **Une passe 2 est requise** par la § « Review Iteration Rule » (findings > LOW en passe 1) : contexte frais, LLM différent, et **diff aplati `HEAD vs main`** plutôt que la séquence de commits — le diff a bougé de 9 correctifs dont 3 hors périmètre initial de la story.
+
+### Passe 2 de `bmad-code-review` — 2026-07-28 (Opus ×3 lentilles)
+
+Consignée en détail dans la § « Review Findings » ci-dessus (11 entrées) et dans la File List, sans entrée narrative ici. **25 findings bruts → 21 dédupliqués, 0 CRITICAL, 0 HIGH survivant** — les 2 HIGH remontés ont été **réfutés en ground-truth** (il n'existe aucun export CSV des lignes d'avoir ; le chemin backup/restore mappe par **nom** de colonne, introspecté depuis `information_schema`, donc insensible à l'ajout). 3 convergences inter-lentilles, dont les 2 arbitrages de Guy (issue **#278** pour le `PUT` effaçant ; **D1-bis** pour le défaut société exigé). Gate : `nextest` exit 0, **2061/2061**. Commit `6deca569`.
+
+### Passe 3 de `bmad-code-review` — 2026-07-28 (Sonnet ×3 lentilles, diff aplati)
+
+**6 findings : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 3 LOW.** Trois patchés, un arbitré sans correctif, deux corrections documentaires. Détail par finding en § « Review Findings ».
+
+**Le fil conducteur de cette passe est la remédiation elle-même** : trois des six findings portent sur du texte ou du code **écrit par les passes 1 et 2**, pas par le dev.
+
+- La doc de `generate_credit_note_journal_lines` a été **fausse en passe 1** (« le triplet vient du snapshot `credit_note_lines` »), **imprécise après le correctif de passe 2** (« lignes verrouillées » — aucun `FOR UPDATE` ne porte sur `invoice_lines`), et n'est exacte qu'à partir d'ici. Deux passes pour une phrase de doc-comment : c'est le mode d'échec `feedback_review_patch_needs_test` appliqué à de la documentation, où aucun test ne peut mordre.
+- Le test `draft_crud_survives_null_company_default_column`, **créé par la passe 2** pour couvrir AC12-bis, ne couvrait pas la branche qu'il annonçait : son compte explicite était déjà imputable, donc il serait passé même si `.flatten()` avait cessé de distinguer « colonne `NULL` » de « ligne absente ». Un test qui ne peut pas échouer pour la raison qu'il invoque n'est pas une couverture. Réparé par une seconde assertion (compte non imputable → rejet `NotPostable`) — même geste que le test de mutation de la 21-6a. *(Le commentaire décrivant ce patch a été rectifié en passe 4 : voir ci-dessous.)*
+- Le décompte « 22 tests » de la File List était faux de 3 (25 réels). **Troisième occurrence du même symptôme sur cette seule story**, après AC5-ter et les compteurs de `migrations-idempotence-audit.md`. Recompté à la source cette fois.
+
+**Le seul finding de fond** — `generate_invoice_journal_lines` exposé en `pub(crate)` — est une **borne de portée**, pas un bug : la phrase « aucun appel de production hors de ce module » était une convention que rien ne faisait respecter. `pub(in crate::repositories)` la transforme en garantie du compilateur. Fix structurel, cohérent avec la leçon de la 21-6b : fermer la classe plutôt que colmater le cas.
+
+**Le MEDIUM non patché** est la **troisième remontée** du défaut société exigé même quand toutes les lignes sont explicites — par une lentille différente à chaque passe. L'arbitrage de Guy (garder + documenter, D1-bis) tient ; la passe 3 y verse l'argument qui manquait : l'incohérence n'est pas « une fonctionnalité absente », c'est que **`create()` et `update()` tolèrent le défaut absent quand `validate_invoice` le refuse** — on enregistre le brouillon puis on refuse de le valider, à configuration inchangée.
+
+**Note de traçabilité — passe interrompue puis reconstituée.** La session qui menait cette passe est morte pendant son gate ; les 4 correctifs étaient sur disque, le rapport de findings ne l'était pas. Il a été **récupéré intégralement** depuis les transcripts des trois sous-agents (`~/.claude/projects/…/subagents/agent-*.jsonl`, conservés hors `/tmp`), et non reconstruit par déduction depuis le diff. Les sévérités, les lentilles d'origine et les points explicitement jugés sains ci-dessus sont donc ceux réellement produits par les reviewers. **Enseignement d'outillage** : un rapport de revue doit être **écrit sur disque dès sa production**, pas gardé en contexte — ici le filet de sécurité a tenu par chance, pas par conception.
+
+**Ce que la passe 3 a explicitement jugé sain** (utile pour ne pas re-litiger en passe 4) : équilibre débit/crédit dans les deux sens de ventilation ; les 4 locales portent exactement les 10 mêmes clés ; `is_no_op_change` inclut bien `revenue_account_id` (sans quoi un changement de compte seul serait silencieusement perdu — KF-004) ; `migrations_before_role_backfill()` résout bien **par version** et l'arithmétique `total - 22 = 34` reste cohérente ; les 4 compteurs de `migrations-idempotence-audit.md` (56 / 52 / 4 / 0) **recomptés indépendamment par deux lentilles** ; le test `..._known_limitation` chiffre un résidu réel et échouerait sur une correction prématurée. L'AcceptanceAuditor a par ailleurs **ré-exécuté** le gate sur le périmètre du diff (25/25 sur le fichier de test central, 302/302 `kesh-api --lib`, 137/137 sur 8 suites e2e) plutôt que de le lire dans la spec.
+
+**Bilan de la passe 3** : 4 correctifs, 1 arbitrage confirmé et argumenté. **Une passe 4 est requise** par la § « Review Iteration Rule » (3 MEDIUM en passe 3). Rotation : passes 1 et 3 en Sonnet, passe 2 en Opus → **la passe 4 tourne en Haiku 4.5**, sur diff aplati mono-commit, avec vérification ground-truth `grep -nF` obligatoire sur tout CRITICAL/HIGH affirmant une absence (§ « Haiku-specific guardrails »).
+
+### Passe 4 de `bmad-code-review` — 2026-07-29 (Haiku 4.5 ×3 lentilles, diff aplati mono-commit)
+
+**1 finding : 0 CRITICAL, 0 HIGH, 1 MEDIUM.** Détail en § « Review Findings ».
+
+**Le finding poursuit la chaîne des trois passes précédentes** : la passe 3 avait corrigé un test créé par la passe 2 ; la passe 4 corrige le **commentaire** de ce correctif de passe 3. Le patch disait de sa nouvelle assertion qu'elle était « discriminante » et qu'elle portait « le comportement qui distingue réellement cette branche ». C'est faux, et à contresens : `.flatten()` existe précisément pour faire **converger** « colonne `NULL` » et « ligne absente » sur un même `None`, de sorte qu'**aucune** assertion placée en aval ne peut les distinguer. Le commentaire inversait donc les rôles des deux assertions. Les deux sont conservées. ⚠️ **La rédaction de remplacement était à son tour fautive** — elle attribuait à la première assertion le monopole du décodage — et a été reprise en passe 5 ; voir ci-dessous.
+
+**Ce que cette passe dit de la rotation des modèles.** Les trois lentilles ont tracé le même chemin de code. L'EdgeCaseHunter a explicitement déroulé la condition `!postable && Some(account_id) != default_revenue_account_id` avec `default = None`, conclu « ✓ » et rendu **0 finding** ; l'AcceptanceAuditor a ratifié l'assertion comme forçant « le chemin colonne NULL » et rendu **0 finding**. Seul le BlindHunter — le seul à ne rien lire d'autre que le diff, donc le seul à ne pas pouvoir se raccrocher à l'intention affichée — a vu que la conclusion ne découlait pas de la prémisse. **Deux « 0 finding » sur trois auraient déclaré la convergence à tort.** C'est la quatrième confirmation sur ce lot que le « 0 finding » de Haiku n'est pas un résultat mais une absence de résultat.
+
+**Le remède de la lentille était faux, son diagnostic juste.** Le BlindHunter proposait de tester « un compte qui *est* le défaut société, rendu non imputable » — impossible ici, le défaut vaut `NULL` par construction dans ce test. Un finding correct peut arriver avec une correction incorrecte : appliquer le remède sans vérifier le diagnostic aurait produit un test incohérent. Retenu : le diagnostic. Écarté : le remède.
+
+**Imprécision de rapport relevée, sans conséquence** : l'AcceptanceAuditor décrit les compteurs de `docs/migrations-idempotence-audit.md` comme passant de « 44→45 » — c'est la valeur **erronée** que la passe 1 avait précisément corrigée (dérive de 7 : 45 déclaré pour 52 réels). Les compteurs du fichier ont été **recomptés à la source** par l'orchestrateur : 56 lignes de tableau = 52 `tracked-by-sqlx` + 4 `yes` + 0 `no`, identiques aux « Statistiques » déclarées. Défaut du rapport, pas du dépôt.
+
+**Bilan de la passe 4** : 1 correctif documentaire propagé aux 5 sites du symptôme (2 dans le test, 3 dans la spec), conformément à la § « Propagation post-patch » de `CLAUDE.md`. **Une passe 5 est requise** par la § « Review Iteration Rule » — le finding est MEDIUM. La sévérité décroît de façon monotone depuis la passe 1 (2 HIGH + 4 MEDIUM → 0 HIGH → 3 MEDIUM → 1 MEDIUM), ce qui est le profil d'une revue qui travaille et non d'une story trop large : la § « Règle de splitting préventif » n'est pas déclenchée. Rotation : **la passe 5 tourne en Opus** (passe 4 en Haiku), sur le seul périmètre restant utile.
+
+### Passe 5 de `bmad-code-review` — 2026-07-29 (Opus ×3 lentilles recentrées)
+
+**14 findings : 0 CRITICAL, 0 HIGH, 6 MEDIUM, 8 LOW. Aucun ne porte sur le code livré.** Treize sont des défauts de documentation, un est une omission du CHANGELOG. Détail en § « Review Findings ».
+
+**Les lentilles ont été recentrées plutôt que répétées.** Après quatre passes, reposer « le code satisfait-il la spec ? » à l'identique ne rapportait plus rien — les passes 3 et 4 y avaient répondu AC par AC, tests exécutés à l'appui. Les trois lentilles de la passe 5 ont donc porté sur (a) les **correctifs des passes 1 à 4 eux-mêmes**, (b) les **frontières du code** que les passes précédentes avaient le moins explorées, (c) la **cohérence interne du document** après onze passes d'amendement cumulées. **Le rendement valide le recentrage** : la lentille (b), la seule à chercher des défauts de code, rend **0 finding** — avec une trace vérifiable, ce qui en fait un résultat et non un silence. Les 14 findings viennent des lentilles (a) et (c).
+
+**Le mode d'échec dominant est nommé, et il n'a pas changé : la remédiation appliquée à son site signalé et pas à son symptôme.** Trois des six MEDIUM sont **un résidu par patch de revue antérieur** — le compteur d'idempotence corrigé en passe 1 mais laissé faux dans AC4 et la File List ; le périmètre README amendé en passe 2 mais laissé contredit par AC24 ; l'avertissement « AC5-ter est SUPERSEDED » propagé en passe 3 à T2 mais pas au piège n° 2, qui continuait d'offrir un décompte comme garde-fou de complétude. C'est littéralement la § « Propagation post-patch » de `CLAUDE.md`, appliquée cette fois à la **spec** plutôt qu'au code. Le geste manquant est toujours le même : greper le **symptôme**, pas le site.
+
+**Le second axe est le défaut chronique de ce document : cinq compteurs faux subsistaient**, tous démentis par un recomptage à la source de moins d'une minute — clés i18n (10, pas 6), tests unitaires facture (5, pas 6), `TABLES_TO_TRUNCATE` (37, pas 23), modules du split (7 livrés, pas 5), et le `44→45` d'AC4 déjà cité. Aucun n'avait de conséquence sur le livrable, **et c'est précisément ce qui les rend durables** : rien ne casse, donc personne ne recompte. À noter que `docs/migrations-idempotence-audit.md`, réparé en passe 1, est aujourd'hui le seul artefact du lot dont tous les compteurs sont vrais — parce qu'il porte désormais la consigne de les recompter.
+
+**Le finding le plus instructif est celui qui me vise.** La passe 4 avait corrigé le commentaire de passe 3 (« assertion discriminante ») en écrivant que l'assertion (1) était **la seule** à exercer le décodage du `NULL`. Faux pour la même raison exactement : la lecture du défaut est déclenchée par la seule présence d'un compte explicite sur une ligne, et l'assertion (2) en porte un. **Deux rédactions successives ont donc affirmé, sur le même bloc de dix lignes, une propriété que personne n'avait vérifiée contre le code** — la seconde en corrigeant la première. La leçon n'est pas « mieux relire » : c'est qu'un commentaire qui attribue un **rôle exclusif** à un fragment de test est une affirmation testable, et qu'il faut la traiter comme telle ou ne pas l'écrire. La rédaction retenue ne revendique plus aucune exclusivité et décrit le **montage** du test, qui est ce qui lui est réellement propre.
+
+**Une réserve levée sans être promue en finding.** La lentille (a) a relevé que la docstring de `generate_credit_note_journal_lines`, réécrite en passe 3, énumère « le seul écrivain de `invoice_lines.revenue_account_id` après validation » sans compter `backup::restore_tables_in_tx`, qui réécrit la table — colonnes introspectées, `revenue_account_id` comprise — sans prendre le verrou sur `invoices`. Elle ne l'a pas retenue comme finding : la restauration remplace `invoice_lines` **et** `credit_note_lines` depuis un même instantané, donc le miroir facture/avoir reste cohérent. L'énumération était « incomplète à la lettre, pas fausse en effet » — la précision a néanmoins été ajoutée, parce que c'est exactement le genre d'énumération approximative qui a déjà coûté trois passes sur cette même docstring.
+
+**Bilan de la passe 5** : 14 correctifs, dont 3 dans le code (tous des commentaires ou doc-comments), 10 dans la spec, 1 dans le CHANGELOG. **La § « Review Iteration Rule » impose une passe 6** — 6 MEDIUM, même si aucun ne touche le livrable. Rotation : **passe 6 en Sonnet** (passe 5 en Opus), sur le périmètre où tout se joue désormais, la documentation. La § « Règle de splitting préventif » reste non déclenchée : le maximum de sévérité décroît sans discontinuer depuis la passe 1 (2 HIGH → 0 HIGH → MEDIUM → MEDIUM → MEDIUM) et **aucun finding ne remet en cause l'implémentation depuis la passe 2**.
+
+### Passe 6 de `bmad-code-review` — 2026-07-29 (Sonnet ×3 lentilles)
+
+**5 findings : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 2 LOW.** La lentille « documentation utilisateur » rend **0 finding**, avec une trace vérifiable point par point — elle a notamment confirmé la puce D1-bis ajoutée au CHANGELOG en passe 5, et établi deux faits que la story n'avait pas écrits : le **frontend ne connaît pas encore le champ** (`invoices.types.ts`), donc toute sauvegarde depuis l'interface omet la clé et remet les lignes sur le défaut — ce qui rend l'issue **#278** nettement plus concrète ; et l'avoir n'est bloqué que sur compte **archivé**, jamais sur un compte devenu non imputable ou retypé, ce que le CHANGELOG ne sur-promet pas.
+
+**Les trois MEDIUM ont une cause commune que les passes précédentes n'avaient pas isolée : ce sont des renvois cassés par les réparations que cette story a elle-même effectuées.** Le motif est nouveau et il est ironique — chacune des trois réparations était **bonne** ; c'est le fait de ne pas avoir grepé ce qui *pointait dessus* qui a créé le défaut suivant.
+
+| Réparation faite par la story | Renvoi qu'elle a cassé, découvert en passe 6 |
+|---|---|
+| Passe 1 — `migrations-idempotence-audit.md` réparé, 11 lignes remontées dans le tableau | **T1** et la table d'ancres citaient `:71` et `:68-71` ; la section « Statistiques » a glissé de 14 lignes, l'invariant est à `:85` |
+| Implémentation — `create_credit_note` cesse de dupliquer une liste de colonnes et emprunte `LINE_COLUMNS` | **AC5 point 3** désignait toujours `credit_notes.rs:266-268` comme « liste en dur » ; l'ancre pointe désormais sur un bloc `use` |
+| Passe 5 — doc-comment de `upgrade_path_preserves_data` corrigé | le **message d'assertion** de `apply_migrations_up_to`, 60 lignes plus bas dans le même fichier, portait encore `total - 8` / `total == 39` |
+
+**Le troisième est le plus sévère pour la méthode, parce qu'il est le mien.** J'ai grepé le symptôme sur le dépôt en passe 5 — ce qui a bien écarté les story files historiques — mais **pas à l'intérieur du fichier que j'étais en train de patcher**. `migrations_upgrade_path.rs` portait donc trois copies du même symptôme, découvertes une par passe : commentaire de frontière (passe 2), doc-comment (passe 5), message d'assertion (passe 6). Et ce message est lu au moment exact où un développeur ajoute une migration — le point de décision que le garde-fou **P6** existe pour protéger. La chronologie des trois correctifs est désormais inscrite dans le fichier, pour que le prochain lecteur voie le motif au lieu de le redécouvrir.
+
+**Enseignement, à verser à la rétrospective Epic 16** : la § « Propagation post-patch » de `CLAUDE.md` demande de greper le **symptôme** plutôt que le **site**. Cette passe montre qu'il manque une seconde moitié à la règle — greper aussi ce qui **pointe vers** ce qu'on vient de corriger. Un compteur réparé, une fonction déplacée, une duplication supprimée : chacun laisse derrière lui des ancres `fichier:ligne` et des renvois devenus faux, et **le document qui applique le correctif est le premier à les porter**. Les trois MEDIUM de cette passe sont exactement cela, et aucun n'aurait été trouvé par le grep du symptôme seul.
+
+**Bilan de la passe 6** : 5 correctifs — 2 dans le code (message d'assertion, ancre), 3 dans la spec. **Une passe 7 est requise** par la § « Review Iteration Rule » (3 MEDIUM). Rotation : **passe 7 en Haiku 4.5** (garde-fous § « Haiku-specific guardrails » : diff aplati mono-commit, `grep -nF` obligatoire sur tout CRITICAL/HIGH affirmant une absence). Trend : 14 findings en passe 5 → 5 en passe 6, sévérité maximale stable à MEDIUM depuis la passe 3, **aucun finding sur le code livré depuis la passe 2**.
+
+### Passe 7 de `bmad-code-review` — 2026-07-29 (Haiku 4.5 ×2 lentilles mécaniques) — **CONVERGÉE**
+
+**2 findings : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW.** Le critère d'arrêt de la § « Review Iteration Rule » est atteint : plus rien au-dessus de LOW. Plafond de 8 passes non atteint.
+
+**Le mandat a été rendu mécanique à dessein.** Les passes 5 et 6 ayant montré que les défauts restants étaient des **renvois** (ancres décalées, citations d'éléments SUPERSEDED, compteurs relus), la passe 7 ne demande plus de jugement mais de la vérification exhaustive : les ~150 ancres `fichier:ligne` du document, une par une ; tous les identifiants `AC`/`D`/`T` définis et cités ; tous les noms de tests et de fonctions cités comme preuve. C'est le registre où Haiku 4.5 est fiable — son mode d'échec documenté sur ce projet est le jugement sur diff multi-commit, pas le `grep`.
+
+**Résultat de la validation d'ancres** : **150 testées, 0 cassée.** Toutes les ancres des sections formelles — critères d'acceptation et décisions — sont exactes. Un seul décalage réel (`LINE_COLUMNS` annoncé à `:39`, constante à `:43` : l'ancre tombait sur son doc-comment). Les 13 autres écarts signalés sont des **chemins abrégés** (`vat_report.rs:220` pour `crates/kesh-report/src/vat_report.rs:220`), convention constante du document et non un défaut.
+
+**Résultat de la validation des renvois croisés** : 12 décisions, 30 critères d'acceptation, 12 tâches — **tous définis, tous cités, aucun orphelin**. AC12, orphelin jusqu'à la passe 5, est bien rattaché à T11. Les 25 tests d'intégration et les 13 fonctions cités comme preuve **existent tous** avec l'orthographe annoncée. Une seule citation d'AC5-ter ne signalait pas son statut SUPERSEDED, dans une section historique.
+
+**2 faux positifs Haiku, réfutés par `grep`** — la lentille d'ancres annonçait le chemin `crates/kesh-api/src/tests/exports_global_e2e.rs` comme inexistant. Il l'est bien, mais aucune occurrence du document ne le porte : toutes écrivent déjà `crates/kesh-api/tests/`. Écartés conformément à la § « Haiku-specific guardrails ». Sur ce lot, la discipline de vérification ground-truth aura écarté **6 affirmations fausses de reviewers** (2 HIGH en passe 2, 2 ici, plus le remède incohérent de la passe 4 et le classement « hors mandat » d'un vrai résidu en passe 6).
+
+#### Bilan de la boucle de revue — 7 passes
+
+| Passe | Modèle | Findings | Max sévérité |
+|---|---|---|---|
+| 1 | Sonnet ×3 | 9 (+3 régressions de couplage révélées par le gate) | **HIGH** ×2 |
+| 2 | Opus ×3 | 21 (25 bruts) | MEDIUM |
+| 3 | Sonnet ×3 | 6 | MEDIUM |
+| 4 | Haiku ×3 | 1 | MEDIUM |
+| 5 | Opus ×3 | 14 | MEDIUM |
+| 6 | Sonnet ×3 | 5 | MEDIUM |
+| 7 | Haiku ×2 | **2** | **LOW** |
+
+**Aucun finding ne porte sur le code livré depuis la passe 2.** Les passes 3 à 7 n'ont trouvé que de la documentation — et, de façon écrasante, **de la documentation écrite par les passes de revue elles-mêmes**. Le compte final est éloquent : sur les 28 findings des passes 3 à 7, **au moins 12 corrigent un artefact produit par une passe antérieure**, dont trois séries où un même bloc a été repris trois ou quatre fois d'affilée.
+
+**Les trois enseignements du lot, à verser à la rétrospective Epic 16** :
+
+1. **La remédiation est la première source de défauts, et le rester.** Ce n'est plus une hypothèse : c'est mesuré sur sept passes. La contre-mesure connue — « un patch vient AVEC son test » — ne couvre pas la documentation, où aucun test ne mord. Ce qui protège, c'est de traiter toute affirmation d'un commentaire comme **testable** : « X est le seul à… », « toujours renseigné », « ce test échouerait si… » sont des assertions à vérifier ou à ne pas écrire.
+2. **La § « Propagation post-patch » a une seconde moitié manquante.** Elle demande de greper le **symptôme**. Il faut aussi greper **ce qui pointe vers ce qu'on vient de corriger** — un compteur réparé, une fonction déplacée, une duplication supprimée laissent derrière eux des ancres et des renvois faux, et le document qui applique le correctif est le premier à les porter. Les trois MEDIUM de la passe 6 sont exactement cela, et le grep du symptôme seul n'en aurait trouvé aucun.
+3. **Un « 0 finding » n'a de valeur que s'il est tracé.** Quatre rapports vides sur ce lot n'ont rien prouvé ; à l'inverse, les trois « 0 finding » des passes 5 à 7 énumèrent ce qui a été contrôlé et comment, ce qui en fait des résultats opposables. La demande explicite d'une section « vérifié et jugé sain » dans le mandat suffit à produire cette différence.
+
+#### Gate final de la boucle de revue — VERT, sur l'état réellement livré
+
+**Deux gates complets, pas un.** La distinction n'est pas cosmétique : c'est exactement le piège relevé en passe 1, où T12 cochait un gate qui était rouge.
+
+| Run | État validé | Verdict |
+|---|---|---|
+| 1 | patches de la passe 3 | `exit 0` — **2061/2061**, 4 skipped, 51 min |
+| 2 | + tous les correctifs des passes 4 à 7 | `exit 0` — **2061/2061**, 4 skipped, 51 min |
+
+`cargo fmt --all -- --check` ✅ · `cargo clippy --workspace --all-targets -- -D warnings` ✅ 0 warning · `cargo nextest run` ✅ sur DB `kesh_gate` migrée, dans les deux runs.
+
+Le second run était nécessaire et **n'a pas été présumé** à partir du premier : les correctifs des passes 4 à 7 sont certes des commentaires et doc-comments, mais l'un d'eux modifie une **chaîne de message d'assertion** (`apply_migrations_up_to`), donc du code. Reporter le vert du premier run sur un état qu'il n'a pas vu aurait reproduit, à l'échelle de la boucle, le défaut que la passe 1 a documenté.
+
+**AC23 est satisfait sur l'état livré.**
 
 ---
 
@@ -689,7 +855,7 @@ dupliquée en dur dans `credit_notes.rs:266` a été remplacée par un emprunt d
 `pub(crate)` et déjà partagé entre ces deux modules. Motif : c'est la
 duplication elle-même qui produit le piège n°2 de la story (échec runtime, pas
 compilation) ; la supprimer vaut mieux que la documenter. Il reste **deux**
-listes en dur pour `invoice_lines` (`list_all_lines_by_component` — préfixes
+listes en dur pour `invoice_lines` (`list_all_lines_by_company` — préfixes
 `il.` obligatoires à cause du JOIN — et l'`INSERT`), toutes deux inévitables.
 
 **Erreurs typées plutôt que `AppError::Validation(format!(…))`.** D7 prescrivait
@@ -704,8 +870,10 @@ le client »). Deux variantes structurées ont donc été ajoutées —
 `InvalidRevenueAccounts` et `CreditNoteRevenueAccountsArchived`, portant
 `Vec<RejectedRevenueAccount>` — et `kesh-api` compose le message localisé. **Le
 résultat visible respecte D7** (« Ligne 3 : le compte 3200 est archivé »), et le
-`details.rejected[]` du body reste exploitable par 16-1b. 6 clés i18n ajoutées
-aux **4** locales.
+`details.rejected[]` du body reste exploitable par 16-1b. **10** clés i18n
+ajoutées aux **4** locales (recompté en passe 5 : 8 pour les erreurs typées de ce
+paragraphe, 2 pour le rejet à montant nul de T9 ; le « 6 » écrit ici et en File
+List était faux des deux côtés).
 
 **AC8-bis, ensemble re-validé.** `{ comptes de ligne explicites } ∪ { défaut
 société si ≥ 1 ligne NULL }`. Sur le défaut : `account_type` **et** `active`
@@ -743,7 +911,7 @@ brouillon ne serait de toute façon pas validable — mais c'est un choix, pas u
 **Nouveaux fichiers**
 
 - `crates/kesh-db/migrations/20260727000001_invoice_lines_revenue_account.sql`
-- `crates/kesh-db/tests/invoices_line_revenue_account.rs` (22 tests d'intégration)
+- `crates/kesh-db/tests/invoices_line_revenue_account.rs` (**25** tests d'intégration — 23 au dev, +2 en passe 2 de revue ; le « 22 » d'origine était déjà faux d'une unité, même symptôme que les compteurs d'AC5-ter et de l'audit d'idempotence : un nombre écrit une fois n'est jamais recompté)
 
 **Schéma, entités, erreurs**
 
@@ -753,8 +921,8 @@ brouillon ne serait de toute façon pas validable — mais c'est un choix, pas u
 
 **Repositories**
 
-- `crates/kesh-db/src/repositories/invoices.rs` — `LINE_COLUMNS` (+`pub(crate)`), `invoice_snapshot_json`, `insert_lines`, `list_all_lines_by_company`, `is_no_op_change`, `read_default_revenue_account_id`, `validate_line_revenue_accounts_in_tx`, `explicit_line_account_sites`, branchements `create`/`update`, `generate_invoice_journal_lines` (ventilation + docstring), `validate_invoice` (rejet à zéro, re-validation, matérialisation), 6 tests unitaires
-- `crates/kesh-db/src/repositories/credit_notes.rs` — 5 sites de colonnes, `generate_credit_note_journal_lines` (triplets + ventilation), garde D5-bis, rejet à zéro, 6 tests unitaires
+- `crates/kesh-db/src/repositories/invoices.rs` — `LINE_COLUMNS` (+`pub(crate)`), `invoice_snapshot_json`, `insert_lines`, `list_all_lines_by_company`, `is_no_op_change`, `read_default_revenue_account_id`, `validate_line_revenue_accounts_in_tx`, `explicit_line_account_sites`, branchements `create`/`update`, `generate_invoice_journal_lines` (ventilation + docstring), `validate_invoice` (rejet à zéro, re-validation, matérialisation), **5** tests unitaires ajoutés (recompté en passe 5 ; le pendant avoir, lui, en compte bien 6)
+- `crates/kesh-db/src/repositories/credit_notes.rs` — **4** listes de colonnes `credit_note_lines` tenues à la main (snapshot `:56`, deux `SELECT` `:67` et `:95`, `INSERT` `:540`) **+ 1** `SELECT invoice_lines` (`:328`) passé à l'emprunt de `invoices::LINE_COLUMNS`, donc plus à maintenir — d'où le « 5 » de ce décompte, base explicitée en passe 6 ; `generate_credit_note_journal_lines` (triplets + ventilation), garde D5-bis, rejet à zéro, 6 tests unitaires
 
 **API**
 
@@ -763,9 +931,9 @@ brouillon ne serait de toute façon pas validable — mais c'est un choix, pas u
 - `crates/kesh-api/src/exports/csv_tables.rs` — colonne CSV
 - `crates/kesh-api/src/routes/invoice_email.rs` — fixture
 
-**i18n** — `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` (6 clés × 4 locales)
+**i18n** — `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` (**10** clés × 4 locales, recomptées en passe 5)
 
-**Documentation** — `docs/migrations-idempotence-audit.md` (ligne + compteurs 55→56 / 44→45), `CHANGELOG.md`
+**Documentation** — `docs/migrations-idempotence-audit.md` (ligne ajoutée ; compteurs **recomptés** et non incrémentés — 56 = 52 `tracked-by-sqlx` + 4 `yes` + 0 `no` ; l'ancien « 44→45 » relayait la dérive de 7 corrigée en passe 1), `CHANGELOG.md`
 
 **Tests adaptés (fixtures uniquement)** — `crates/kesh-db/tests/{credit_notes_repository,invoice_ttc_parity,invoices_validate_vat,kf005_fulltext_index_e2e}.rs`, `crates/kesh-api/tests/{contact_payment_terms,invoice_delete,invoice_echeancier,invoice_pdf,invoice_send_email,reports,vat_report}_e2e.rs`, `crates/kesh-report/tests/aged_receivables.rs`
 
@@ -792,5 +960,37 @@ brouillon ne serait de toute façon pas validable — mais c'est un choix, pas u
 - `crates/kesh-api/src/errors.rs` — assertion `"Ligne 2"`, champ `reason` sur le body d'erreur avoir
 - `crates/kesh-db/tests/invoices_line_revenue_account.rs` — 2 tests ajoutés (AC12-bis colonne `NULL`, frontière du parc antérieur)
 - `crates/kesh-db/tests/migrations_upgrade_path.rs` — commentaire garde-fou rendu factuel + dérive documentaire consignée
+
+**Passe 3 — correctifs**
+
+- `crates/kesh-db/src/repositories/credit_notes.rs` — doc de `generate_credit_note_journal_lines` : nature **exacte** de la protection (verrou sur `invoices`, pas sur `invoice_lines`) + avertissement pour toute seconde voie de mutation
+- `crates/kesh-db/src/repositories/invoices.rs` — `generate_invoice_journal_lines` : `pub(crate)` → **`pub(in crate::repositories)`**, la convention devient une garantie du compilateur
+- `crates/kesh-db/tests/invoices_line_revenue_account.rs` — `draft_crud_survives_null_company_default_column` : 2ᵉ assertion ajoutée (compte non imputable → `NotPostable`), l'exemption D3-bis désactivée est enfin assertée
+- *(spec)* argument D1-bis versé en passe 3 ; T2 renvoie vers AC5-ter marqué SUPERSEDED ; décompte de tests **22 → 25**, recompté à la source
+
+**Passe 4 — correctifs**
+
+- `crates/kesh-db/tests/invoices_line_revenue_account.rs` — doc-comment et commentaire inline de `draft_crud_survives_null_company_default_column` : la mention « discriminante » retirée *(rédaction reprise en passe 5 — cf. son bloc)*
+- *(spec)* les 3 renvois à une « assertion discriminante » rectifiés — § « Review Findings » passe 3, Change Log passe 3, File List passe 3
+
+**Passe 5 — correctifs**
+
+- `crates/kesh-db/tests/invoices_line_revenue_account.rs` — doc-comment de `draft_crud_survives_null_company_default_column` réécrit **sans claim d'exclusivité** : les deux assertions décodent le `NULL`, ce qui est propre au test est son montage
+- `crates/kesh-db/tests/migrations_upgrade_path.rs` — doc-comment de `upgrade_path_preserves_data` : « 23 appliquées / 5 dernières » → `total - 22` (**34**) / **22**, avec renvoi au commentaire de frontière qu'il contredisait
+- `crates/kesh-api/src/routes/credit_notes.rs` — doc de `CreditNoteLineResponse.revenue_account_id` : `null` signifie « défaut société au moment de l'avoir », pas « aucune imputation » ; renvoi au test de frontière et au CHANGELOG
+- `crates/kesh-db/src/repositories/credit_notes.rs` — docstring de `generate_credit_note_journal_lines` : réserve sur `backup::restore_tables_in_tx`, seul autre écrivain de la colonne, et pourquoi elle ne rompt pas l'invariant
+- `crates/kesh-db/src/repositories/invoices.rs` — étiquette `// pub(crate) :` périmée → `// Visibilité :`
+- `CHANGELOG.md` — puce ajoutée sur la limitation **D1-bis** (défaut société obligatoire même quand toutes les lignes sont explicites), absente jusque-là de toute doc utilisateur
+- *(spec)* 10 correctifs : AC4 et File List (compteur d'idempotence), AC24 (README), piège n° 2 (AC5-ter SUPERSEDED + décompte), AC14-bis (`TABLES_TO_TRUNCATE` 37), décompte de modules du split (7), clés i18n (10), tests unitaires facture (5), AC12 rattaché à T11, ancre `:189`, `list_all_lines_by_company`
+
+**Passe 6 — correctifs**
+
+- `crates/kesh-db/tests/migrations_upgrade_path.rs` — message d'assertion de `apply_migrations_up_to` : `total - 8` / `total == 39` → `total - 22` / `total == 56`, avec la décision explicite à prendre (élargir la fenêtre ou tenir la frontière) et le renvoi au garde-fou P6 ; chronologie des trois correctifs du fichier inscrite au commentaire de frontière
+- `crates/kesh-db/tests/invoices_line_revenue_account.rs` — ancre `invoices.rs:640` → `:641`
+- *(spec)* AC5 point 3 (ancre `credit_notes.rs:328` + qualification « emprunt » et non « liste en dur »), T1 et table d'ancres (`migrations-idempotence-audit.md:85` / `:82-85`), base de comptage des sites de `credit_notes.rs` explicitée
+
+**Passe 7 — correctifs**
+
+- *(spec)* ancre `LINE_COLUMNS` `:39` → `:43` aux 2 sites actifs ; annotation du bulletin de la passe 7 de `validate`, dont les deux vérifications revendiquées ont été réfutées depuis
 
 **Hors story, sur la branche** — `README.md` (feuille de route Epic 16, commit `6f7ccec2` antérieur au dev).

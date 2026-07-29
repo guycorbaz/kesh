@@ -1415,12 +1415,19 @@ pub struct ValidatedInvoice {
 /// (Epic 12) devront passer par une **contre-passation** (swap débit↔crédit), PAS par un
 /// montant négatif (les contraintes `chk_jel_*_nonneg` l'interdisent) — **ne pas réutiliser
 /// ce helper tel quel** pour les avoirs.
-// pub(crate) : `repositories::credit_notes` en a besoin pour le test qui
+// Visibilité : `repositories::credit_notes` en a besoin pour le test qui
 // vérifie que l'écriture de facture et sa contre-passation s'annulent **compte
 // par compte** (Story 16-1a, D5). Ce test doit voir les deux générateurs à la
 // fois, et c'est le garde-fou du mode de défaillance le plus grave de la story.
 // Aucun appel de production hors de ce module.
-pub(crate) fn generate_invoice_journal_lines(
+//
+// `pub(in crate::repositories)` et non `pub(crate)` (revue passe 3) : la portée
+// couvre exactement le besoin — le module frère `credit_notes` — sans exposer à
+// tout `kesh-db` un générateur qui court-circuiterait, s'il était appelé
+// ailleurs, la re-validation D3/D3-bis et la matérialisation D2 de
+// `validate_invoice`. La phrase ci-dessus devient une garantie du compilateur
+// plutôt qu'une convention.
+pub(in crate::repositories) fn generate_invoice_journal_lines(
     lines: &[InvoiceLine],
     receivable_account_id: i64,
     default_revenue_account_id: i64,
