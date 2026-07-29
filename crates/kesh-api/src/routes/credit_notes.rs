@@ -41,10 +41,14 @@ pub struct CreditNoteLineResponse {
     /// `InvoiceLineResponse.revenue_account_id`.
     ///
     /// Recopié tel quel depuis la ligne de facture au moment de l'émission. Il
-    /// vaut donc `null` pour tout avoir émis sur une facture **validée avant
-    /// 16-1a** — la matérialisation D2 ne les a pas touchées et le backfill
-    /// (16-1a-bis) n'est pas livré, ce qui couvre aujourd'hui l'essentiel du
-    /// parc en exploitation.
+    /// vaut donc `null` quand la ligne de facture d'origine est elle-même
+    /// `null`. Depuis la Story 16-1a-bis, le parc validé avant 16-1a a été
+    /// **backfillé** : le cas résiduel se limite aux pièces dont l'écriture
+    /// comptable a été retouchée à la main, que le backfill refuse
+    /// délibérément de reprendre faute de pouvoir identifier le compte sans
+    /// ambiguïté (décision D-B2). Un avoir émis **avant** ce backfill conserve
+    /// par ailleurs le compte que son écriture avait réellement débité, qui
+    /// peut légitimement différer de celui de sa facture (D-B7).
     ///
     /// ⚠️ `null` ne signifie **pas** « aucune imputation » : l'écriture débite
     /// alors le compte de produit **par défaut de la société tel qu'il est au
@@ -52,7 +56,7 @@ pub struct CreditNoteLineResponse {
     /// `unwrap_or(default_revenue_account_id)`), lequel peut différer du compte
     /// réellement crédité par la facture. Un client qui contrôle la
     /// contre-passation compte par compte doit traiter ce cas explicitement —
-    /// cf. le test `legacy_invoice_credit_note_falls_back_to_current_default_known_limitation`
+    /// cf. le test `null_line_credit_note_falls_back_to_current_default_known_limitation`
     /// et l'avertissement correspondant du CHANGELOG.
     pub revenue_account_id: Option<i64>,
 }

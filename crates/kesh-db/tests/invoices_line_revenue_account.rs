@@ -1203,24 +1203,35 @@ async fn draft_crud_survives_null_company_default_column(pool: MySqlPool) {
     assert_eq!(rejected[0].reason, RevenueAccountRejection::NotPostable);
 }
 
-/// **Frontière du parc antérieur à 16-1a** (revue de code passe 2, décision Guy
-/// du 2026-07-28) — ce test **ne corrige rien**, il fixe la limite connue.
+/// **Frontière du résidu non reprenable** (revue de code passe 2, décision Guy
+/// du 2026-07-28 ; **recadré à la livraison de 16-1a-bis**) — ce test **ne
+/// corrige rien**, il fixe la limite connue.
 ///
-/// Une facture validée AVANT le déploiement de 16-1a n'est jamais repassée par
-/// la matérialisation (D2) : ses lignes restent `NULL`. L'avoir se replie donc
-/// sur le compte par défaut **au moment de l'avoir**. Si l'administrateur a
-/// changé ce défaut entre-temps, la contre-passation débite un autre compte que
-/// celui que la facture a crédité — résidu permanent, bilan équilibré, compte de
-/// résultat faux, **et aucune erreur** puisque le nouveau compte est actif.
+/// Une ligne dont `revenue_account_id` est `NULL` fait se replier l'avoir sur le
+/// compte par défaut **au moment de l'avoir**. Si l'administrateur a changé ce
+/// défaut entre-temps, la contre-passation débite un autre compte que celui que
+/// la facture a crédité — résidu permanent, bilan équilibré, compte de résultat
+/// faux, **et aucune erreur** puisque le nouveau compte est actif.
 ///
-/// C'est exactement le résidu que la Story **16-1a-bis** (backfill du parc)
-/// existe pour supprimer. Ce test verrouille l'état de départ afin que 16-1a-bis
-/// parte d'une limite **vérifiée** et non supposée : le jour où le backfill est
-/// livré, ce test DOIT changer de verdict.
+/// # Ce que la livraison de 16-1a-bis a changé, et ce qu'elle n'a pas changé
+///
+/// La rédaction d'origine annonçait « le jour où le backfill est livré, ce test
+/// DOIT changer de verdict ». **Ce n'est pas ce qui se produit, et c'est
+/// correct** : le test remet la ligne à `NULL` *après* que les migrations ont
+/// tourné, donc le backfill ne la voit jamais. Le comportement décrit ici n'est
+/// pas celui du parc antérieur — c'est celui d'**une ligne `NULL`, quelle qu'en
+/// soit la raison**.
+///
+/// Ce qui a changé, c'est la **population** concernée. Avant 16-1a-bis :
+/// l'intégralité du parc validé. Depuis : uniquement les lignes que le backfill
+/// a **délibérément** laissées `NULL`, faute de pouvoir identifier le compte
+/// sans ambiguïté — écriture retouchée à la main, zéro ou plusieurs candidats
+/// (cf. `invoice_lines_revenue_account_backfill.rs`, décision D-B2). Sur ces
+/// lignes-là, le repli sur le défaut courant reste le comportement, et reste
+/// une limitation assumée : la seule alternative serait de deviner un compte
+/// sur une pièce comptable réelle.
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
-async fn legacy_invoice_credit_note_falls_back_to_current_default_known_limitation(
-    pool: MySqlPool,
-) {
+async fn null_line_credit_note_falls_back_to_current_default_known_limitation(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
     let original_default = seeded.accounts["3000"];
@@ -1239,8 +1250,10 @@ async fn legacy_invoice_credit_note_falls_back_to_current_default_known_limitati
         "la facture crédite le défaut en vigueur à sa validation"
     );
 
-    // Simule le parc antérieur : on efface la matérialisation que 16-1a vient
-    // de poser, pour retrouver l'état d'une facture validée sous v0.8.0.
+    // Simule une ligne que le backfill de 16-1a-bis ne peut pas reprendre : on
+    // efface la matérialisation que 16-1a vient de poser. Noter que le backfill
+    // a déjà tourné (à la création de la base éphémère), donc cet effacement
+    // n'est jamais rattrapé — c'est bien l'état résiduel qui est testé ici.
     sqlx::query("UPDATE invoice_lines SET revenue_account_id = NULL WHERE invoice_id = ?")
         .bind(invoice_id)
         .execute(&pool)
@@ -1265,8 +1278,11 @@ async fn legacy_invoice_credit_note_falls_back_to_current_default_known_limitati
     assert_eq!(
         debit_on(&credit_note.journal_entry, new_default),
         dec!(1000.00),
-        "LIMITATION CONNUE : l'avoir débite le défaut COURANT (3200), pas le \
-         compte que la facture a réellement crédité (3000). À corriger par 16-1a-bis."
+        "LIMITATION CONNUE (résiduelle depuis 16-1a-bis) : sur une ligne restée \
+         `NULL`, l'avoir débite le défaut COURANT (3200), pas le compte que la \
+         facture a réellement crédité (3000). Ne concerne plus que les pièces \
+         dont l'écriture a été retouchée à la main, que le backfill refuse \
+         délibérément de reprendre (D-B2)."
     );
     assert_eq!(
         debit_on(&credit_note.journal_entry, original_default),

@@ -32,52 +32,21 @@
 //! `ERROR 1054`), puis on applique le reste des migrations pour que le backfill
 //! travaille sur des données réelles.
 
-use std::borrow::Cow;
-
 use kesh_core::chart_of_accounts::{ChartEntry, is_postable, load_chart, parent_numbers};
 use sqlx::MySqlPool;
-use sqlx::migrate::Migrator;
 
-/// Applique les `n` premières migrations (checksums réels préservés).
-async fn apply_migrations_up_to(
-    pool: &MySqlPool,
-    n: usize,
-) -> Result<(), sqlx::migrate::MigrateError> {
-    let all = &kesh_db::MIGRATOR.migrations;
-    assert!(n <= all.len());
-    let sub = Migrator {
-        migrations: Cow::Borrowed(&all[..n]),
-        ignore_missing: kesh_db::MIGRATOR.ignore_missing,
-        locking: kesh_db::MIGRATOR.locking,
-        no_tx: kesh_db::MIGRATOR.no_tx,
-    };
-    sub.run(pool).await
-}
+mod common;
 
-/// Index de la migration 14-3a (`20260722000001_accounts_role_postable`) dans
-/// le `MIGRATOR`, c'est-à-dire le nombre de migrations à appliquer pour se
-/// placer **juste avant** elle.
+use common::{apply_migrations_up_to, migrations_before};
+
+/// Nombre de migrations à appliquer pour se placer **juste avant** celle de la
+/// Story 14-3a (`20260722000001_accounts_role_postable`).
 ///
-/// Résolu **par version**, jamais par position. Le `total - 1` d'origine
-/// supposait que cette migration était la dernière du dépôt — hypothèse fausse
-/// dès qu'une story ultérieure en ajoute une (Story 16-1a,
-/// `20260727000001_invoice_lines_revenue_account`). Le montage appliquait alors
-/// le backfill **avant** l'insertion des comptes de test :
-/// `backfill_matches_seed_for_every_chart` tombait sur son assertion de
-/// montage, et `backfill_skips_archived_accounts` — qui n'en a pas — **passait
-/// à vide**, ses rôles restant `NULL` non pas parce que le backfill les avait
-/// correctement écartés, mais parce qu'il n'avait jamais tourné sur eux.
+/// Résolu **par version** via [`migrations_before`], jamais par position — cf.
+/// le § « garde-fou P6 » de `tests/common/mod.rs`, dont le précédent est
+/// précisément la régression subie par ce fichier.
 fn migrations_before_role_backfill() -> usize {
-    const ROLE_MIGRATION: i64 = 20260722000001;
-    kesh_db::MIGRATOR
-        .migrations
-        .iter()
-        .position(|m| m.version == ROLE_MIGRATION)
-        .unwrap_or_else(|| {
-            panic!(
-                "migration accounts_role_postable ({ROLE_MIGRATION}) introuvable dans le MIGRATOR"
-            )
-        })
+    migrations_before(20260722000001, "accounts_role_postable")
 }
 
 /// Insère une société minimale et retourne son id.

@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev
+review
 
 ## Story
 
@@ -215,12 +215,12 @@ Aucune opération `DROP` / `RENAME` / `MODIFY COLUMN` → migration **non-breaki
 
 ## Tasks / Subtasks
 
-- [ ] **T-B0** — **Ordonnancement de la migration.** Le fichier de migration de cette story DOIT porter un timestamp **strictement postérieur** à celui de l'`ADD COLUMN` de 16-1a : `sqlx::migrate!("./migrations")` (`crates/kesh-db/src/lib.rs:23`) exécute dans l'**ordre lexicographique du nom de fichier**, et un backfill jouant avant la création de la colonne échoue en `Unknown column 'revenue_account_id'`. Vérifier l'état de 16-1a **avant** de choisir le timestamp. Si les deux stories sont développées en parallèle sur des branches distinctes, **merger 16-1a en premier** ou regrouper les deux dans la même PR (cohérent `feedback_pr_grouping` : les deux stories touchent le même répertoire de migrations). L'échec est bruyant et attrapé en CI, pas silencieux — mais il coûte un cycle.
-- [ ] **T-B1** — Migration de backfill `invoice_lines` : `UPDATE … JOIN (SELECT … GROUP BY … HAVING COUNT(*) = 1) c`, critère de D-B2, condition (2) en `<=>` NULL-safe (D-B3).
-- [ ] **T-B2** — Miroir `credit_note_lines` (`debit`, `credit_notes.total_amount`), même critère.
-- [ ] **T-B3** — Ligne du tableau **et** compteurs agrégés de `docs/migrations-idempotence-audit.md`, verdict `tracked-by-sqlx` + justification d'idempotence (AC-B5, D-B6).
-- [ ] **T-B4** — Tests sur base pré-remplie : les 5 cas d'AC-B3 + l'idempotence d'AC-B4.
-- [ ] **T-B5** — CHANGELOG avec requêtes de diagnostic (AC-B8) + gate backend complet (AC-B9).
+- [x] **T-B0** — **Ordonnancement de la migration.** Le fichier de migration de cette story DOIT porter un timestamp **strictement postérieur** à celui de l'`ADD COLUMN` de 16-1a : `sqlx::migrate!("./migrations")` (`crates/kesh-db/src/lib.rs:23`) exécute dans l'**ordre lexicographique du nom de fichier**, et un backfill jouant avant la création de la colonne échoue en `Unknown column 'revenue_account_id'`. Vérifier l'état de 16-1a **avant** de choisir le timestamp. Si les deux stories sont développées en parallèle sur des branches distinctes, **merger 16-1a en premier** ou regrouper les deux dans la même PR (cohérent `feedback_pr_grouping` : les deux stories touchent le même répertoire de migrations). L'échec est bruyant et attrapé en CI, pas silencieux — mais il coûte un cycle.
+- [x] **T-B1** — Migration de backfill `invoice_lines` : `UPDATE … JOIN (SELECT … GROUP BY … HAVING COUNT(*) = 1) c`, critère de D-B2, condition (2) en `<=>` NULL-safe (D-B3).
+- [x] **T-B2** — Miroir `credit_note_lines` (`debit`, `credit_notes.total_amount`), même critère.
+- [x] **T-B3** — Ligne du tableau **et** compteurs agrégés de `docs/migrations-idempotence-audit.md`, verdict `tracked-by-sqlx` + justification d'idempotence (AC-B5, D-B6).
+- [x] **T-B4** — Tests sur base pré-remplie : les 5 cas d'AC-B3 + l'idempotence d'AC-B4.
+- [x] **T-B5** — CHANGELOG avec requêtes de diagnostic (AC-B8) + gate backend complet (AC-B9).
 
 **Ordre conseillé** : T-B0 → T-B1 → T-B4 (partiel, cas facture) → T-B2 → T-B4 (complet) → T-B3 → T-B5.
 
@@ -295,7 +295,116 @@ Après chaque patch de remédiation, **grep le symptôme sur tout le dépôt** a
 
 ---
 
+## Dev Agent Record
+
+### Implementation Plan
+
+Ordre suivi, conforme à l'ordre conseillé de la section Tasks : **T-B0 → T-B1 + T-B2 → T-B4 → T-B3 → T-B5**. T-B1 et T-B2 ont été écrites d'un seul tenant : ce sont deux `UPDATE` du même fichier de migration, et le miroir avoir n'est que la transposition `credit`/`debit` du critère de la facture — les séparer aurait produit deux fichiers de migration là où le dépôt en attend un.
+
+**T-B0 (ordonnancement) — tranché en ground-truth avant toute écriture.** La migration de 16-1a est `20260727000001_invoice_lines_revenue_account.sql`, **dernière du dépôt** au moment du dev. Le backfill porte donc `20260729000001`, strictement postérieur en ordre lexicographique. Les deux stories vivant sur la même branche, la question du merge dans le mauvais ordre ne se pose pas.
+
+### Debug Log
+
+**Vérification de discrimination des tests (mutation testing) — le seul contrôle qui prouve que D-B3 est verrouillée.**
+
+Les 8 tests passaient du premier coup, ce qui ne prouve rien : un test vert peut l'être parce que le code est correct **ou** parce qu'il n'observe rien. La spec affirme que la condition (2) écrite `<>` au lieu de `<=>` ferait no-oper le backfill *de façon indiscernable du succès*. J'ai donc muté la migration livrée (`<=>` → `<>`, les 2 occurrences des `UPDATE`) et rejoué la suite :
+
+| | Résultat |
+|---|---|
+| Migration livrée (`<=>`) | **8/8 verts** |
+| Migration mutée (`<>`) | **7 verts, 1 rouge** — `backfills_when_vat_config_is_null` seul |
+
+Message de l'échec du mutant : `left: [None, None]` / `right: [Some(4), Some(4)]`.
+
+Deux enseignements, tous deux conformes à ce que la spec annonçait sans l'avoir démontré :
+
+1. `backfills_when_vat_config_is_null` est bien le **seul** filet contre le piège n° 0. Sans lui, la régression passerait les 7 autres tests.
+2. Le mode de défaillance est donc **empiriquement** indiscernable du succès, et non seulement en théorie.
+
+Migration restaurée depuis sauvegarde après la mutation, `<=>` re-vérifié présent.
+
+### Completion Notes
+
+**Ce qui a été livré** — une migration de 2 `UPDATE`, 8 tests sur base pré-remplie, un module de test partagé, la ligne d'audit d'idempotence, l'entrée CHANGELOG, et la propagation sur 5 sites que la story rendait faux.
+
+**Écart de conception assumé vs la spec — `LEFT JOIN` sur `company_invoice_settings`.** La spec ne se prononce pas sur le type de jointure. J'ai retenu `LEFT JOIN` : un `INNER JOIN` écarterait en silence toutes les factures d'une société **sans ligne de configuration**, reproduisant un cran plus haut exactement le mode de défaillance que D-B3 ferme (no-op indiscernable du succès). En pratique la ligne existe toujours pour une facture validée (`get_or_create_default_in_tx` fait `INSERT IGNORE` sur le chemin de validation), mais faire dépendre le backfill de cette propriété serait fragile. Absence de config = ensemble d'exclusion vide, exactement comme une colonne `NULL`.
+
+**`MIN(jel.account_id)` n'est pas un arbitrage.** Le `HAVING COUNT(*) = 1` garantit un groupe d'une seule ligne : `MIN` **est** cette ligne. L'agrégat n'est là que parce que SQL l'exige sur une colonne non groupée.
+
+**Extraction DRY — `tests/common/mod.rs`.** Le montage « appliquer N migrations, insérer en SQL brut, appliquer le reste » existait déjà dans `accounts_role_backfill.rs` (Story 14-3a). Plutôt que d'en faire une seconde copie, `apply_migrations_up_to` et la résolution **par version** ont été extraites dans `tests/common/mod.rs`, et le test 14-3a bascule dessus. Bénéfice au-delà du style : la résolution par version devient le **chemin unique et évident**, ce qui sert directement le garde-fou **P6**. La duplication résiduelle dans `migrations_upgrade_path.rs` est **laissée volontairement** — son helper porte un message d'assertion fail-loud propre à sa frontière positionnelle assumée, contrat différent de la résolution par version ; le fusionner diluerait précisément le garde-fou qu'il incarne.
+
+**Garde-fou P6 appliqué (`grep -rn "migrations.len()\|apply_migrations_up_to" crates/`).** 3 sites inspectés. `migrations_upgrade_path.rs` est un site positionnel **assumé avec garde-fou fail-loud** : son `assert_eq!(total, 56)` a été porté à **57** et la fenêtre `total - 22` à `total - 23`, de sorte que la frontière reste **constante à 34** — c'est ce que son propre commentaire prescrit. Les 5 sites de nombres de ce fichier ont été mis à jour ensemble (assertion, message d'assertion du helper, doc-comment de la fonction, commentaire de frontière, prose historique) : le fichier documente lui-même qu'en 16-1a *trois copies du même symptôme y ont été découvertes une par passe*, faute d'avoir grepé à l'intérieur du fichier patché.
+
+**Garde-fou P5 appliqué.** La ligne d'audit a été ajoutée **et** les compteurs **recomptés depuis le tableau** par script (57 lignes / `yes` 4 / `tracked-by-sqlx` 53 / `no` 0), avec contrôle croisé tableau ↔ fichiers `.sql` sur disque : **aucun écart**. Les compteurs annoncés avant modification étaient exacts (redressés en 16-1a).
+
+**AC-B6 vérifié explicitement** : aucun `UPDATE _kesh_version` dans la migration, aucune opération `DROP`/`RENAME`/`MODIFY COLUMN`, aucune table créée → pas de bump `kesh_version_min_required`, donc pas de bump Cargo (workspace inchangé à **0.8.0**).
+
+**Propagation post-patch — 5 sites que cette story rendait faux.** Le grep de `16-1a-bis` sur le dépôt a rendu 8 sites. Trois disent « validée avant 16-1a **et non traitée par 16-1a-bis** » et restent **exacts** (une ligne peut toujours ne pas être reprise). Ont été corrigés :
+
+| Site | Ce qui devenait faux |
+|---|---|
+| `CHANGELOG.md` — puce « Factures validées avant cette version » | annonçait la limitation et « une mise à jour dédiée » : **remplacée** par la puce de reprise, sinon deux puces se contredisaient dans la même version |
+| `CHANGELOG.md` — puce 16-1a, « pour toute facture validée **à partir de cette version** » | la ventilation miroir des avoirs couvre désormais aussi le parc antérieur backfillé |
+| `routes/credit_notes.rs` — doc de `revenue_account_id` | affirmait « le backfill (16-1a-bis) **n'est pas livré**, ce qui couvre aujourd'hui l'essentiel du parc » |
+| `routes/credit_notes.rs` — renvoi de test | pointait le nom d'avant renommage |
+| `invoices_line_revenue_account.rs` — test de frontière 16-1a | cf. ci-dessous |
+
+**Le test de frontière de 16-1a ne « change pas de verdict », et c'est correct.** Son doc-comment annonçait « le jour où le backfill est livré, ce test DOIT changer de verdict ». Il n'en est rien : le test remet la ligne à `NULL` **après** que les migrations ont tourné, donc le backfill ne la voit jamais. Ce qu'il décrit n'a jamais été le comportement du *parc antérieur* mais celui d'**une ligne `NULL`, quelle qu'en soit la raison** — ce qui reste vrai. Ce qui a changé est la **population** : de « tout le parc validé » à « les seules pièces dont l'écriture a été retouchée à la main ». Le test est donc conservé, **renommé** `legacy_invoice_…` → `null_line_credit_note_falls_back_to_current_default_known_limitation`, et son doc-comment ainsi que ses messages d'assertion recadrés. Le supprimer aurait perdu la seule caractérisation exécutable du résidu subsistant.
+
+### ⚠️ Contradiction interne de la spec — AC-B3 cas 6 vs D-B5
+
+**Constatée en écrivant le test, arbitrée en faveur de D-B5, non corrigée dans les AC** (le workflow interdit au dev de modifier les Acceptance Criteria).
+
+- **AC-B3 cas 6** annonce : « facture validée à T1 sur défaut = 3000, défaut changé en 3200, avoir émis à T2 → le backfill écrit **3000 sur la facture** et 3200 sur l'avoir ».
+- **D-B5** énonce l'inverse : « sur une facture créditée, `credit_note_lines.revenue_account_id` sera renseigné alors que `invoice_lines.revenue_account_id` **restera `NULL`** ».
+
+**Ground-truth** : l'émission d'un avoir bascule **toujours** la facture d'origine en `cancelled` (`credit_notes.rs`, `UPDATE invoices SET status = 'cancelled' … AND status = 'validated'`, et un `rows == 0` fait échouer la transaction). Une facture créditée n'est donc **jamais** `validated`, et le backfill — qui ne traite que `validated` — ne la touche pas. **La première moitié d'AC-B3 cas 6 est inatteignable ; D-B5 dit vrai.**
+
+Un test écrit littéralement d'après l'AC aurait échoué, et le réflexe naturel aurait été d'élargir le périmètre du backfill aux `cancelled` pour le faire passer — c'est-à-dire de casser D-B5 pour satisfaire une AC fausse.
+
+La **substance** de D-B7 est intacte et reste verrouillée par `divergent_invoice_and_credit_note_are_recorded_as_is` : chaque pièce enregistre ce que **son** écriture a mouvementé, aucune harmonisation n'est tentée, et les deux comptes diffèrent. Le test assert les trois faits, dont `invoice_line_accounts == [None, None]` avec renvoi explicite à D-B5. **Décision de Guy attendue** : corriger l'énoncé d'AC-B3 cas 6, ou consigner l'écart.
+
+## File List
+
+**Ajoutés**
+
+- `crates/kesh-db/migrations/20260729000001_invoice_lines_revenue_account_backfill.sql` — les 2 `UPDATE` de backfill (T-B1, T-B2).
+- `crates/kesh-db/tests/invoice_lines_revenue_account_backfill.rs` — 8 tests sur base pré-remplie (T-B4).
+- `crates/kesh-db/tests/common/mod.rs` — montage de fenêtre de migrations partagé, résolution par version (garde-fou P6).
+
+**Modifiés**
+
+- `crates/kesh-db/tests/accounts_role_backfill.rs` — bascule sur `tests/common` (extraction DRY).
+- `crates/kesh-db/tests/migrations_upgrade_path.rs` — `total` 56 → 57, fenêtre `total - 22` → `total - 23` (frontière constante à 34), 5 sites de nombres alignés.
+- `crates/kesh-db/tests/invoices_line_revenue_account.rs` — test de frontière renommé et recadré sur le résidu non reprenable.
+- `crates/kesh-api/src/routes/credit_notes.rs` — doc de `revenue_account_id` (le backfill est livré) + renvoi de test renommé.
+- `docs/migrations-idempotence-audit.md` — ligne d'audit + compteurs recomptés (T-B3, garde-fou P5).
+- `CHANGELOG.md` — puce de reprise automatique avec les requêtes de diagnostic D-B4 (T-B5, AC-B8) ; puce de limitation 16-1a remplacée ; ventilation miroir des avoirs élargie au parc antérieur.
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — statut de la story.
+
+---
+
 ## Change Log
+
+### `bmad-dev-story` — 2026-07-29 (Opus 5)
+
+**Story implémentée bout-en-bout, 6/6 tâches.** Migration `20260729000001_invoice_lines_revenue_account_backfill.sql` (2 `UPDATE`, aucun DDL), 8 tests sur base pré-remplie, extraction DRY du montage de fenêtre de migrations, audit d'idempotence, CHANGELOG, propagation sur 5 sites.
+
+**Le fait marquant : la discrimination des tests a été prouvée, pas supposée.** Les 8 tests passaient du premier coup. Pour vérifier que le filet de D-B3 mord réellement, la migration livrée a été **mutée** (`<=>` → `<>`) et la suite rejouée : **7 verts, 1 rouge — `backfills_when_vat_config_is_null` seul**. La spec annonçait que le mode de défaillance serait « indiscernable du succès » ; c'est désormais **mesuré**, pas argumenté. Migration restaurée, `<=>` re-vérifié.
+
+**Contradiction interne de la spec constatée** — AC-B3 cas 6 (« le backfill écrit 3000 **sur la facture** ») est **inatteignable** : l'émission d'un avoir bascule toujours la facture en `cancelled`, statut que D-B5 exclut délibérément. **D-B5 dit vrai.** Arbitré en faveur de D-B5, AC non modifiée (hors mandat du dev), test écrit sur le comportement atteignable — la substance de D-B7 reste entièrement verrouillée. Détail et ground-truth en Dev Agent Record. **En attente d'arbitrage de Guy.**
+
+**Deux écarts de conception assumés vs la spec**, tous deux documentés en Dev Agent Record : `LEFT JOIN` sur `company_invoice_settings` (un `INNER JOIN` reproduirait le no-op silencieux de D-B3 un cran plus haut, pour les sociétés sans ligne de config) ; extraction de `tests/common/mod.rs` plutôt qu'une seconde copie du montage de 14-3a — la duplication résiduelle de `migrations_upgrade_path.rs` est laissée volontairement, son helper portant un garde-fou fail-loud propre à sa frontière positionnelle.
+
+**Garde-fous de `CLAUDE.md` appliqués** : **P6** — 3 sites de couplage positionnel inspectés, `migrations_upgrade_path.rs` porté à `total == 57` / fenêtre `total - 23` (frontière constante à 34), ses **5** sites de nombres alignés d'un seul patch ; **P5** — ligne d'audit ajoutée et compteurs **recomptés depuis le tableau** par script avec contrôle croisé sur les `.sql` du disque, aucun écart (57 / 4 / 53 / 0) ; **P1-P2-P2-bis** — aucun `DROP`/`RENAME`/`MODIFY COLUMN`, pas de bump `min_required`, workspace inchangé à 0.8.0 (AC-B6).
+
+**Propagation post-patch** : le grep de `16-1a-bis` a rendu 8 sites, dont **5 rendus faux par cette story** et corrigés dans le même patch — notamment le test de frontière de 16-1a, dont l'annonce « ce test DOIT changer de verdict » s'est révélée inexacte (il remet la ligne à `NULL` **après** les migrations, donc le backfill ne la voit jamais). Test conservé, renommé et recadré : ce qui a changé n'est pas son verdict mais la **population** qu'il décrit.
+
+**Gate (AC-B9) — VERT sur l'état final** : `cargo fmt --all -- --check` ✅, `cargo build --workspace --all-targets` ✅, `cargo clippy --workspace --all-targets -- -D warnings` ✅ (0 warning, notamment aucun `dead_code` sur le module `tests/common`), suite workspace complète **2069/2069 passés, 4 skipped, exit 0** (2899 s sur DB `kesh_gate`). Les suites que la story met en risque sont toutes vertes : `migrations_fresh_install` (3), `migrations_upgrade_path` (8, dont `upgrade_path_preserves_data` et son `assert_eq!(total, 57)`), `accounts_role_backfill` (3), `admin_backup_e2e` / `backup_inventory_matches_schema` et `exports_global_e2e` (AC-B7 : aucune table créée, compteurs d'export inchangés), plus les **8 nouveaux** de `invoice_lines_revenue_account_backfill`.
+
+**Le gate a été rejoué intégralement sur l'état final, il n'a pas été présumé.** Un premier gate avait été lancé puis **abandonné à 574/2069** : l'ajout tardif de l'assertion sur la seconde requête de diagnostic (celle des avoirs) rendait son binaire de test périmé pour cette suite. Composer « le gate d'avant + un `cargo test` ciblé » aurait été exactement le raccourci que la 16-1a s'était interdit. `kesh_gate` a été contrôlée après l'arrêt en vol (piège connu `postable = 0` sur le compte 1000 → 26 faux échecs) : **intacte**.
+
+**Prochaine étape** : `bmad-code-review` (LLM ≠ Opus, contexte frais).
 
 ### Création par split de 16-1a — 2026-07-26 (passe 6 de `validate`)
 
