@@ -180,7 +180,8 @@ pub async fn list(
 /// *(Revue 16-1a : la doc affirmait en passe 1 que le triplet venait du snapshot
 /// `credit_note_lines` — faux ; la correction de passe 2 a écrit « verrouillées »
 /// — imprécis, aucun `FOR UPDATE` ne porte sur `invoice_lines`. Passe 3.)* `None`
-/// (facture validée avant 16-1a et non traitée par 16-1a-bis) se replie sur
+/// (depuis le backfill de 16-1a-bis, une facture dont l'écriture a été
+/// retouchée à la main — cf. D-B2) se replie sur
 /// `default_revenue_account_id`, exactement comme le faisait tout l'avoir avant
 /// la story.
 fn generate_credit_note_journal_lines(

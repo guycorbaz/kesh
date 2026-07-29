@@ -1683,10 +1683,11 @@ pub async fn validate_invoice(
         // Après ce point, la facture est **auto-descriptive** et le système n'a
         // plus qu'un seul instant de résolution. Portée exacte : les factures
         // validées **par ce chemin**. Celles validées avant le déploiement n'y
-        // repassent jamais (`update` rejette tout statut ≠ `draft`) et gardent
-        // `NULL` — leur traitement relève de la Story 16-1a-bis. Ne JAMAIS
-        // écrire de post-condition globale du type `COUNT(*) = 0` sur
-        // `invoice_lines` : elle serait fausse.
+        // repassent jamais (`update` rejette tout statut ≠ `draft`) : c'est le
+        // backfill de la Story 16-1a-bis qui les a reprises, hors de ce chemin.
+        // Il en reste `NULL` (écriture retouchée à la main, facture
+        // `cancelled`), donc ne JAMAIS écrire de post-condition globale du type
+        // `COUNT(*) = 0` sur `invoice_lines` : elle serait fausse.
         // État des lignes AVANT matérialisation, figé pour le seul snapshot
         // d'audit « before » (bloc 9). `lines_before` est mutée juste en
         // dessous et ne peut donc plus témoigner de l'état d'origine : sans

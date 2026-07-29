@@ -473,8 +473,9 @@ pub fn serialize_invoice_lines_csv<W: Write>(
         "vat_rate",
         "line_total",
         // Story 16-1a : compte de produit de la ligne. Vide = la ligne suit le
-        // compte par défaut de la société (brouillon, ou facture validée avant
-        // 16-1a et non traitée par 16-1a-bis).
+        // compte par défaut de la société : brouillon, ou facture dont
+        // l'écriture a été retouchée à la main, que le backfill de 16-1a-bis
+        // refuse délibérément de reprendre (D-B2).
         "revenue_account_id",
         "created_at",
     ])

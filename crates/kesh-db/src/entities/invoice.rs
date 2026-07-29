@@ -73,8 +73,12 @@ pub struct InvoiceLine {
     ///
     /// À la **validation**, `validate_invoice` matérialise le compte effectif
     /// ici : une facture validée par ce binaire ne porte donc plus `None`. Les
-    /// factures validées **avant** le déploiement de 16-1a le conservent — leur
-    /// traitement relève de la Story 16-1a-bis.
+    /// factures validées **avant** le déploiement de 16-1a ont été reprises par
+    /// le backfill de la Story 16-1a-bis, qui leur a posé le compte que leur
+    /// écriture avait réellement crédité. Il ne subsiste `None` que sur les
+    /// pièces dont l'écriture a été retouchée à la main — que le backfill
+    /// refuse délibérément d'interpréter (D-B2) — et sur les factures
+    /// `cancelled`, qu'il exclut (D-B5).
     pub revenue_account_id: Option<i64>,
     pub created_at: NaiveDateTime,
 }

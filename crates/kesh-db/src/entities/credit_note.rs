@@ -63,8 +63,11 @@ pub struct CreditNoteLine {
     /// laissent un résidu permanent, invisible au bilan mais faux au compte de
     /// résultat.
     ///
-    /// `None` seulement pour un avoir émis sur une facture validée **avant**
-    /// 16-1a et non traitée par 16-1a-bis : le repli sur le défaut société
+    /// `None` seulement quand la ligne de facture d'origine est elle-même
+    /// `None` — cas devenu résiduel depuis le backfill de 16-1a-bis, qui a
+    /// repris le parc validé avant 16-1a : il ne reste que les pièces dont
+    /// l'écriture a été retouchée à la main, que le backfill refuse
+    /// délibérément d'interpréter (D-B2). Le repli sur le défaut société
     /// s'applique alors, exactement comme avant la story.
     pub revenue_account_id: Option<i64>,
     pub created_at: NaiveDateTime,

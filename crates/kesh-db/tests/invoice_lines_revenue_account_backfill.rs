@@ -24,7 +24,8 @@
 //! | [`skips_draft_and_cancelled_invoices`] | D-B5 | la liaison tardive des brouillons serait figée à tort |
 //! | [`backfills_credit_note_from_its_own_entry`] | D-B1 miroir | l'avoir hériterait du compte de la facture au lieu du sien |
 //! | [`divergent_invoice_and_credit_note_are_recorded_as_is`] | **D-B7** | on « réparerait » un résidu historique en falsifiant les pièces |
-//! | [`backfill_is_idempotent`] | D-B6 / AC-B4 | un re-jeu écraserait des comptes déjà posés |
+//! | [`backfill_is_idempotent`] | D-B6 / AC-B4 | un re-jeu écraserait des comptes déjà posés — **sur les deux `UPDATE`**, factures ET avoirs |
+//! | [`validated_invoice_from_the_real_engine_is_recovered_by_the_backfill`] | **D-B2 cond. (3)** | le critère no-operait sur 100 % du parc si `total_amount` cessait d'égaler le crédit posé par le moteur |
 //!
 //! # Montage : chaque test doit prouver que le backfill a TOURNÉ
 //!
@@ -749,21 +750,26 @@ async fn backfills_credit_note_from_its_own_entry(pool: MySqlPool) {
 /// dans les écritures, il est passé et irréversible ; le maquiller falsifierait
 /// les pièces sans corriger la moindre écriture.
 ///
-/// # Écart constaté avec l'énoncé littéral d'AC-B3 cas 6
+/// # Pourquoi la facture reste `NULL`, et pourquoi c'est correct
 ///
-/// L'AC annonce « le backfill écrit **3000 sur la facture** et 3200 sur
-/// l'avoir ». La première moitié est **inatteignable** : l'émission d'un avoir
-/// bascule toujours la facture d'origine en `cancelled`
-/// (`credit_notes.rs`, DC6, `UPDATE … WHERE … AND status = 'validated'`, et un
-/// `rows == 0` fait échouer la transaction). Or D-B5 exclut délibérément les
-/// `cancelled` et énonce lui-même la conséquence : « sur une facture créditée,
-/// `credit_note_lines.revenue_account_id` sera renseigné alors que
-/// `invoice_lines.revenue_account_id` restera `NULL` ».
+/// L'émission d'un avoir bascule **toujours** la facture d'origine en
+/// `cancelled` (`credit_notes.rs`, DC6, `UPDATE … WHERE … AND status =
+/// 'validated'`, et un `rows == 0` fait échouer la transaction). Or D-B5 exclut
+/// délibérément les `cancelled` et énonce lui-même la conséquence : « sur une
+/// facture créditée, `credit_note_lines.revenue_account_id` sera renseigné
+/// alors que `invoice_lines.revenue_account_id` restera `NULL` ».
 ///
-/// AC-B3 cas 6 et D-B5 se contredisent donc, et c'est **D-B5 qui dit vrai** —
-/// il décrit ce que la base permet. Ce test verrouille la **substance** de
-/// D-B7, qui est intacte : les deux pièces sont enregistrées telles quelles,
+/// Ce qui **diverge** — la substance de D-B7 — n'est donc pas « le compte de la
+/// facture vs celui de l'avoir » mais **le compte que l'écriture de la facture
+/// a réellement crédité (3000, lisible dans `journal_entry_lines`) vs celui que
+/// l'avoir a débité (3200)**. Les deux pièces sont enregistrées telles quelles,
 /// aucune harmonisation n'est tentée.
+///
+/// *(La rédaction d'AC-B3 cas 6 annonçait « le backfill écrit **3000 sur la
+/// facture** ». Cette moitié était **inatteignable** ; l'AC a été corrigée en
+/// passe 1 de `bmad-code-review`, arbitrage Guy du 2026-07-29. Il n'y a donc
+/// plus de contradiction spec ↔ code à consigner ici : ce test décrit
+/// désormais exactement ce que l'AC énonce.)*
 #[sqlx::test(migrations = false)]
 async fn divergent_invoice_and_credit_note_are_recorded_as_is(pool: MySqlPool) {
     apply_migrations_up_to(&pool, migrations_before_backfill())
@@ -859,6 +865,20 @@ async fn divergent_invoice_and_credit_note_are_recorded_as_is(pool: MySqlPool) {
 
 /// AC-B4 : rejouer le backfill ne change **aucune** ligne — ni celles qu'il a
 /// posées (garde `IS NULL`), ni celles qu'il a laissées (critère déterministe).
+///
+/// # Le montage porte un avoir, et ce n'est pas décoratif
+///
+/// La migration contient **deux** `UPDATE`, chacun avec sa propre garde
+/// `IS NULL` : `invoice_lines` et `credit_note_lines`. Un test d'idempotence
+/// qui n'insère aucun avoir rejoue bien le second `UPDATE`, mais **sur un
+/// ensemble vide** — ce qui est vrai de n'importe quel SQL et ne démontre
+/// rien. Si la garde `WHERE cnl.revenue_account_id IS NULL` du volet avoir
+/// disparaissait dans un refactor, un tel test resterait vert.
+///
+/// *(Volet avoir ajouté en passe 1 de `bmad-code-review` — convergence Blind
+/// Hunter + Edge Case Hunter. `docs/migrations-idempotence-audit.md` affirme
+/// l'idempotence de la migration sans distinguer les deux `UPDATE` : le test
+/// doit couvrir ce que la doc affirme.)*
 #[sqlx::test(migrations = false)]
 async fn backfill_is_idempotent(pool: MySqlPool) {
     apply_migrations_up_to(&pool, migrations_before_backfill())
@@ -919,16 +939,71 @@ async fn backfill_is_idempotent(pool: MySqlPool) {
     )
     .await;
 
+    // Volet avoir — sans lui le second `UPDATE` se rejoue sur zéro ligne.
+    // La facture porteuse est `cancelled` : c'est l'état réel de toute facture
+    // créditée, et le backfill l'exclut (D-B5), ce qui rend l'avoir seul
+    // responsable de ce qu'on observe côté `credit_note_lines`.
+    let credited_entry = insert_entry(
+        &pool,
+        seeded.company_id,
+        seeded.fiscal_year_id,
+        3,
+        &[
+            (receivable, TTC, ZERO),
+            (revenue, ZERO, HT),
+            (vat, ZERO, VAT),
+        ],
+    )
+    .await;
+    let credited_invoice = insert_invoice_with_lines(
+        &pool,
+        seeded.company_id,
+        contact_id,
+        "F-CRED",
+        "cancelled",
+        Some(credited_entry),
+    )
+    .await;
+    // Contre-passation canonique : swap débit/crédit, montants positifs.
+    let cn_entry = insert_entry(
+        &pool,
+        seeded.company_id,
+        seeded.fiscal_year_id,
+        4,
+        &[
+            (revenue, HT, ZERO),
+            (vat, VAT, ZERO),
+            (receivable, ZERO, TTC),
+        ],
+    )
+    .await;
+    let credit_note = insert_credit_note_with_lines(
+        &pool,
+        seeded.company_id,
+        contact_id,
+        credited_invoice,
+        "A-IDEM",
+        cn_entry,
+    )
+    .await;
+
     kesh_db::MIGRATOR.run(&pool).await.expect("MIGRATOR.run()");
 
     let after_first = (
         invoice_line_accounts(&pool, backfilled).await,
         invoice_line_accounts(&pool, untouched).await,
+        credit_note_line_accounts(&pool, credit_note).await,
     );
     assert_eq!(
         after_first.0,
         vec![Some(revenue), Some(revenue)],
         "pré-condition du test d'idempotence : le premier passage doit avoir backfillé"
+    );
+    assert_eq!(
+        after_first.2,
+        vec![Some(revenue), Some(revenue)],
+        "pré-condition du VOLET AVOIR : sans lui, le second `UPDATE` se rejouerait sur un \
+         ensemble vide et l'idempotence de `credit_note_lines` ne serait pas mesurée"
     );
 
     // Re-jeu du SQL RÉELLEMENT EMBARQUÉ dans le binaire — pas d'une copie
@@ -949,9 +1024,171 @@ async fn backfill_is_idempotent(pool: MySqlPool) {
         (
             invoice_line_accounts(&pool, backfilled).await,
             invoice_line_accounts(&pool, untouched).await,
+            credit_note_line_accounts(&pool, credit_note).await,
         ),
         after_first,
         "le backfill est intrinsèquement idempotent (garde `IS NULL` + critère déterministe) : \
-         un re-jeu doit être un no-op strict — AC-B4 / D-B6"
+         un re-jeu doit être un no-op strict sur les DEUX `UPDATE` — AC-B4 / D-B6"
+    );
+}
+
+/// **Le test de jonction — le seul qui relie le moteur réel au backfill.**
+///
+/// Toute la puissance discriminante du critère de D-B2 tient à sa condition
+/// (3) : `jel.credit = invoices.total_amount`. Le commentaire de la migration
+/// affirme que les deux valeurs sont égales **par construction**, parce que
+/// `generate_invoice_journal_lines` pousse `credit = Σ line_total` et que
+/// `compute_total` calcule `total_amount` avec la même fonction.
+///
+/// Or les huit autres tests de ce fichier montent leurs écritures en **SQL
+/// brut**, avec le *même littéral* des deux côtés : ils **supposent** l'égalité
+/// au lieu de l'**observer**. Si le moteur cessait un jour de la respecter — un
+/// centime d'écart sur une ventilation TVA multi-taux, un arrondi introduit sur
+/// le HT, une remise appliquée après `compute_total` — la condition (3) ne
+/// matcherait plus **rien** : le backfill no-operait sur 100 % du parc,
+/// silencieusement, et **aucun** de ces huit tests ne bougerait. C'est le même
+/// mode de défaillance que celui de D-B3, indiscernable du succès puisque la
+/// spec pré-autorise un reliquat élevé.
+///
+/// Le recours au SQL brut ailleurs est **légitime** : le code actuel ne sait
+/// plus produire l'état pré-16-1a (`validate_invoice` matérialise le compte).
+/// Ce qui manquait est le test de jonction, pas un abandon du SQL brut.
+///
+/// Ici la facture est créée et validée par le **vrai chemin applicatif**
+/// (`invoices::create` + `invoices::validate_invoice`) : `total_amount` sort de
+/// `compute_total`, et l'écriture de `generate_invoice_journal_lines`. On
+/// efface ensuite la matérialisation que 16-1a vient de poser — reconstituant
+/// l'état exact du parc antérieur — et on laisse le backfill la retrouver.
+///
+/// Les montants ne sont **pas ronds** et les taux de TVA **diffèrent d'une
+/// ligne à l'autre** : l'écriture porte donc plusieurs crédits de TVA, et c'est
+/// bien la condition (3) qui isole le crédit de produit.
+///
+/// *(Ajouté en passe 1 de `bmad-code-review`, finding Blind Hunter.)*
+#[sqlx::test(migrations = false)]
+async fn validated_invoice_from_the_real_engine_is_recovered_by_the_backfill(pool: MySqlPool) {
+    use kesh_db::entities::{NewInvoice, NewInvoiceLine};
+    use kesh_db::repositories::invoices;
+    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
+
+    apply_migrations_up_to(&pool, migrations_before_backfill())
+        .await
+        .expect("migrations jusqu'au backfill");
+
+    let seeded = seed_accounting_company(&pool).await.expect("seed");
+    let contact_id = insert_contact(&pool, seeded.company_id).await;
+    let revenue = seeded.accounts["3000"];
+    let other_revenue = insert_revenue_account(&pool, seeded.company_id, "3200").await;
+
+    // 3 × 33.35 = 100.05 et 7 × 12.55 = 87.85 → HT = 187.90. Quantités ≠ 1 et
+    // prix non ronds : `compute_line_total` fait un vrai produit arrondi, et
+    // les deux taux distincts forcent DEUX lignes de crédit de TVA.
+    let invoice_id = invoices::create(
+        &pool,
+        seeded.admin_user_id,
+        NewInvoice {
+            company_id: seeded.company_id,
+            contact_id,
+            date: chrono::NaiveDate::from_ymd_opt(2026, 3, 1).unwrap(),
+            due_date: None,
+            payment_terms: None,
+            project_id: None,
+            lines: vec![
+                NewInvoiceLine {
+                    description: "Prestation".into(),
+                    quantity: dec!(3),
+                    unit_price: dec!(33.35),
+                    vat_rate: dec!(8.10),
+                    revenue_account_id: None,
+                },
+                NewInvoiceLine {
+                    description: "Marchandise".into(),
+                    quantity: dec!(7),
+                    unit_price: dec!(12.55),
+                    vat_rate: dec!(2.60),
+                    revenue_account_id: None,
+                },
+            ],
+        },
+    )
+    .await
+    .map(|(inv, _)| inv.id)
+    .expect("création de la facture par le vrai chemin applicatif");
+
+    invoices::validate_invoice(&pool, seeded.company_id, invoice_id, seeded.admin_user_id)
+        .await
+        .expect("validation par le vrai chemin applicatif");
+
+    // L'invariant de la condition (3), MESURÉ sur la sortie du moteur et non
+    // supposé : l'écriture porte exactement UNE ligne de crédit égale à
+    // `total_amount`, et c'est celle du compte de produit. Si le moteur venait
+    // à décorréler les deux, c'est CETTE assertion qui tomberait — avant que le
+    // backfill ne devienne muet en production.
+    let candidates: Vec<(i64, Decimal)> = sqlx::query_as(
+        "SELECT jel.account_id, jel.credit \
+         FROM journal_entry_lines jel \
+         JOIN invoices i ON i.journal_entry_id = jel.entry_id \
+         WHERE i.id = ? AND jel.credit > 0 AND jel.credit = i.total_amount",
+    )
+    .bind(invoice_id)
+    .fetch_all(&pool)
+    .await
+    .expect("candidats de la condition (3) sur l'écriture réelle");
+    assert_eq!(
+        candidates.len(),
+        1,
+        "la condition (3) doit désigner EXACTEMENT un candidat sur une écriture produite par \
+         `generate_invoice_journal_lines` — obtenu : {candidates:?}. Un 0 ici signifie que \
+         `total_amount` a cessé d'égaler le crédit de produit posé par le moteur, et donc que \
+         le backfill no-opère sur 100 % du parc sans qu'aucun autre test ne le voie."
+    );
+    assert_eq!(
+        candidates[0].0, revenue,
+        "le candidat unique doit être le compte de produit, pas une ligne de TVA ni la créance"
+    );
+    assert_eq!(
+        candidates[0].1,
+        dec!(187.90),
+        "HT attendu = 3 × 33.35 + 7 × 12.55"
+    );
+
+    // Reconstitution de l'état du parc antérieur : on efface la matérialisation
+    // que 16-1a vient de poser. Le backfill n'a pas encore tourné (montage en
+    // trois temps), il verra donc bien ces lignes.
+    assert_eq!(
+        invoice_line_accounts(&pool, invoice_id).await,
+        vec![Some(revenue), Some(revenue)],
+        "pré-condition : 16-1a matérialise le compte à la validation"
+    );
+    sqlx::query("UPDATE invoice_lines SET revenue_account_id = NULL WHERE invoice_id = ?")
+        .bind(invoice_id)
+        .execute(&pool)
+        .await
+        .expect("retour à l'état pré-16-1a");
+
+    // Et le défaut société change, comme dans le scénario réel : un backfill
+    // qui lirait la configuration courante écrirait 3200 et serait démasqué.
+    sqlx::query(
+        "UPDATE company_invoice_settings SET default_revenue_account_id = ? WHERE company_id = ?",
+    )
+    .bind(other_revenue)
+    .bind(seeded.company_id)
+    .execute(&pool)
+    .await
+    .expect("changement du défaut société");
+
+    kesh_db::MIGRATOR.run(&pool).await.expect("MIGRATOR.run()");
+
+    assert_eq!(
+        invoice_line_accounts(&pool, invoice_id).await,
+        vec![Some(revenue), Some(revenue)],
+        "le backfill doit retrouver, sur une écriture produite par le MOTEUR RÉEL, le compte \
+         que celui-ci a crédité ({revenue}) — et non le défaut société courant ({other_revenue})"
+    );
+    assert_eq!(
+        remaining_null_invoice_lines(&pool).await,
+        0,
+        "aucun reliquat sur ce montage : la facture vient du chemin nominal"
     );
 }
