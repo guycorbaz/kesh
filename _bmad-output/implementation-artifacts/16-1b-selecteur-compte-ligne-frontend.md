@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev
+review
 
 ## Story
 
@@ -190,9 +190,9 @@ Autrement dit : la révision de D7 en passe 1 est correcte sur le **composant**,
 - [x] **T5-bis** — Écrans de détail facture **et** avoir : chargement de `fetchAccounts(true)` + `getInvoiceSettings()` (facture seule), puis colonne compte de produit en lecture seule (AC6-bis, AC10 volet avoir).
 - [x] **T6** — i18n : nouvelles clés dans les 4 `.ftl`, namespace global de préférence (AC11, AC12).
 - [x] **T7** — Tests composant, formulaire et écrans de détail (AC13, AC14, AC14-bis).
-- [ ] **T8** — Test E2E Playwright (AC15).
+- [x] **T8** — Test E2E Playwright (AC15).
 - [x] **T9** — Doc-sync : manuel utilisateur + PDF, README, CHANGELOG (AC17, AC18).
-- [ ] **T10** — Gate complet frontend + backend (AC16).
+- [x] **T10** — Gate complet frontend + backend (AC16).
 
 **Ordre conseillé** : T2 → T1 → T3 → T4 → T5 → T6 → T7 → T8 → T9 → T10.
 
@@ -337,14 +337,81 @@ Claude Opus 5 (1M context) — `bmad-dev-story`, démarrée le 2026-07-30.
 
 ### Implementation Plan
 
-Ordre suivi : **T2 → T1** (+ tests AC13 et les 2 clés globales de T6) → T3 → T4 → T5 → T5-bis → T6 → T7 → T8 → T9 → T10.
+Ordre suivi : **T2 → T1** (+ tests AC13 et les 2 clés globales de T6) → T3/T4/T5 (même fichier, un seul passage) → T5-bis → T6 → T7 → T9 → T8 → T10.
 
-`T2` d'abord parce qu'il ne dépend de rien et débloque tout le reste ; `T1` ensuite parce que c'est le seul fichier partagé par 4 écrans étrangers à la story — le faire tôt laisse le maximum de gate en aval pour attraper une régression.
-
-_(à compléter par `dev-story`)_
+`T2` d'abord parce qu'il ne dépend de rien et débloque tout le reste ; `T1` ensuite parce que c'est le seul fichier partagé par 4 écrans étrangers à la story — le faire tôt laisse le maximum de gate en aval pour attraper une régression. **T9 avant T8** : le doc-sync est déterministe, l'E2E dépend d'un backend + d'une DB à orchestrer — faire le certain d'abord.
 
 ### Debug Log References
 
+**Discrimination des tests prouvée par mutation — 9 mutations, aucune supposition.** Un test vert du premier coup ne prouve rien : il peut l'être parce que le code est correct, ou parce qu'il n'observe rien. Chaque garde de la story a donc été mutée dans le code livré, la suite rejouée, et le fichier restauré.
+
+| Mutation appliquée | Test(s) rouge(s) |
+|---|---|
+| garde `allowClear` retirée de `commitOnBlur` | « sans `allowClear` ne nullifie RIEN » **seul** |
+| garde `markInvalid` retirée d'`isInvalid` | « sans `markInvalid` AUCUN marqueur » **seul** |
+| exemption `postable` du défaut société retirée | « SAUF s'il est le défaut société » **seul** |
+| `fetchAccounts(true)` → `fetchAccounts()` | le test de D11 **seul** |
+| `revenueAccountId` retiré de `reloadFromServer` (site 4/4) | AC9-bis **seul** |
+| blocage retiré du `disabled` du bouton | les **3** tests d'AC8 |
+| `postableExemptAccountId` non transmis par le formulaire | le test d'exemption **seul** |
+| mention « (défaut) » ajoutée côté avoir | le test du tiret **seul** |
+| mention « (défaut) » retirée côté facture | **2** tests |
+| `revenueAccountId` retiré du payload HTTP (`stripUiKey`) | **l'E2E**, avec `Received: "3000 — Ventes CI (défaut)"` |
+
+La dernière est la plus parlante : le message d'échec **est** le scénario de l'issue #278 rendu visible.
+
+**Trois pièges de méthode rencontrés, tous silencieux :**
+
+1. **`git checkout` ne restaure pas un fichier non suivi.** `account-label.ts` étant neuf, la « restauration » après mutation a échoué **sans rien casser d'apparent** — les deux mutations sont restées en place. Détecté par le message d'erreur git, réparé à la main, re-vérifié. Sur un fichier non commité, la sauvegarde explicite (`cp`) est obligatoire.
+2. **Deux mocks de test défectueux, invisibles.** Le mock i18n idiomatique du dépôt, `(_key, fallback) => fallback`, **ignore le 3ᵉ argument** : les assertions sur « lignes 2, 4 » auraient porté sur le littéral `{ $lines }` et seraient passées en n'observant rien. Et `toBeDisabled` est un matcher `jest-dom` que le projet n'installe pas — il lève « Invalid Chai property », pas un échec d'assertion, ce qui se lit facilement de travers.
+3. **`pkill -f "target/debug/kesh-api"` a matché sa propre ligne de commande** et tué le shell qui l'exécutait, empêchant l'écriture du fichier suivant. Sans conséquence, mais à ne pas refaire.
+
+**Environnement E2E** — backend `KESH_TEST_MODE=true`, `KESH_HOST=127.0.0.1` (le `KESH_HOST=0.0.0.0` du `.env` est **incompatible** avec le mode test), `KESH_PORT=3000`, DB dédiée `kesh_e2e`, `KESH_STATIC_DIR=frontend/build`, `KESH_BACKEND_URL` pour Playwright. Le `KESH_ADMIN_PASSWORD` du `.env` (5 chars) fait **échouer le boot** (minimum 12) : à surcharger, sa valeur n'important pas puisque `POST /_test/seed` crée son propre admin.
+
 ### Completion Notes List
 
+**Story implémentée bout-en-bout, 11/11 tâches.** Gate complet vert des deux côtés : frontend (`check` 0 erreur, `lint-i18n-ownership` PASS, `test:unit` **488/488** sur 62 fichiers, `build` OK) et backend (**2074/2074**, 4 skipped, exit 0 — les catalogues `.ftl` vivent dans le crate `kesh-i18n`, donc AC16 impose `cargo test --workspace`).
+
+**Deux règles extraites plutôt que dupliquées.** La spec décrit chacune à deux endroits sans dire qu'elle doit être unique — écrites deux fois, elles auraient divergé, ce qui est la classe de défaut que les trois passes de revue de la 16-1a-bis ont trouvée :
+
+- `account-validity.ts` — le prédicat d'invalidité, partagé par le **marqueur** du composant (AC2) et le **blocage** du formulaire (AC8). Un champ marqué sans blocage (l'utilisateur croit pouvoir enregistrer) ou un blocage sans marqueur (il ne sait pas quelle ligne corriger) seraient pires que l'absence de fonctionnalité.
+- `account-label.ts` — la résolution « numéro — libellé », partagée par les deux écrans de détail, dont la **seule** différence est le traitement de `null`. Isolée, cette différence se lit comme une décision ; noyée dans deux copies, elle passerait pour un oubli.
+
+**Une prop non prévue par la spec : `postableExemptAccountId`.** D11 exige que le compte par défaut de la société ne soit jamais marqué invalide au seul motif `postable` (miroir de 16-1a D3-bis), sans nommer le vecteur. Le composant devant connaître cet id, c'est une quatrième prop opt-in. Choix de nommage à l'intérieur du comportement spécifié.
+
+**Un écart mesuré avec la spec, à verser à la revue.** AC5-bis se présente comme *le* garde-fou du piège `fetchAccounts(true)` (« C'est le test qui échoue si quelqu'un simplifie l'appel »). **C'est faux en test unitaire** : le mock renvoie la liste complète quel que soit l'argument, donc AC5-bis ne voit pas la mutation. Seule l'assertion `toHaveBeenCalledWith(true)` l'attrape. Les deux tests sont donc nécessaires et non redondants — la spec surestimait la portée d'AC5-bis.
+
+**Un mock mort révélé par AC3.** Le test du composant mockait `features/onboarding/onboarding.svelte` ; déplacer l'import vers l'emplacement canonique a rendu ce mock inopérant — et il passait quand même, `i18nMsg` retombant sur son `fallback`. Corrigé plutôt que laissé.
+
+**Une puce du CHANGELOG rendue fausse par la livraison même de la story** (« le sélecteur arrive à la prochaine étape, pour l'instant le compte n'est modifiable que par l'API ») — remplacée. Contenu des manuels vérifié **dans le PDF** via `pdftotext`, pas seulement dans le `.tex` : la convention de versionner les PDF rend le `.tex` juste avec un PDF périmé silencieusement possible.
+
+**AC11-bis non traité, comme la spec l'exige** — la parité i18n préexistante (57 clés absentes des 3 locales non-françaises) est une dette antérieure. Les 5 clés **nouvelles** de cette story sont dans les 4 catalogues, parité vérifiée par comptage.
+
+**Hors périmètre découvert en exécutant l'E2E → issue #282** : deux specs de rappels échouent tous les jours **entre 00:00 et 12:00 UTC** (`sentAt` codé en dur à `T12:00:00` contre une garde backend `sent_at > Utc::now()`). Sans lien avec cette story — l'appel fautif ne passe pas par le frontend, et aucun commit de 16-1b ne touche les rappels. Jamais signalé parce que la CI n'exécute pas Playwright.
+
+**PROCHAINE = `bmad-code-review`** (LLM différent d'Opus, contexte frais).
+
 ### File List
+
+**Ajoutés**
+
+- `frontend/src/lib/features/accounts/account-validity.ts` — prédicat d'invalidité partagé (T1/T5).
+- `frontend/src/lib/features/accounts/account-label.ts` — libellé d'affichage partagé par les 2 écrans de détail (T5-bis).
+- `frontend/src/lib/features/accounts/account-label.test.ts` — 9 tests (AC14-bis).
+- `frontend/src/lib/components/invoices/InvoiceForm.test.ts` — 12 tests (AC14). **Premier test de ce composant**, qui n'en avait aucun.
+- `frontend/tests/e2e/invoice-revenue-account.spec.ts` — E2E de bout en bout (AC15).
+
+**Modifiés**
+
+- `frontend/src/lib/features/journal-entries/AccountAutocomplete.svelte` — 4 props opt-in + `placeholder`, import i18n canonique (T1 ; AC1, AC1-bis, AC2, AC3, AC4).
+- `frontend/src/lib/features/journal-entries/AccountAutocomplete.test.ts` — 12 tests (AC13) + mock i18n reciblé.
+- `frontend/src/lib/features/invoices/invoices.types.ts` — `revenueAccountId` en lecture et en écriture (T2/AC10).
+- `frontend/src/lib/features/credit-notes/credit-notes.types.ts` — `revenueAccountId` en lecture seule (T2/AC10).
+- `frontend/src/lib/components/invoices/InvoiceForm.svelte` — chargement des comptes, sélecteur par ligne, placeholder, blocage global, 4 sites de `LineState` (T3, T4, T5).
+- `frontend/src/routes/(app)/invoices/[id]/+page.svelte` — colonne compte de produit, avec mention « (défaut) » (T5-bis).
+- `frontend/src/routes/(app)/credit-notes/[id]/+page.svelte` — colonne compte de produit, **sans** mention « (défaut) » (T5-bis).
+- `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl` — 5 clés × 4 locales (T6).
+- `docs/manual/fr/user-manual.tex` + les **3** PDF régénérés — lignes de facture, exemple ventilé, section validation (T9/AC17).
+- `README.md` — ventilation par ligne dans « Fonctionnalités » (T9/AC18).
+- `CHANGELOG.md` — 3 puces 16-1b, dont le remplacement d'une puce devenue fausse (T9/AC18).
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — statut de la story.
