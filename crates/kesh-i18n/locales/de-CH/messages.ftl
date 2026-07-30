@@ -1341,3 +1341,6 @@ reminders-link-aged = Altersstruktur anzeigen
 # Story 16-1b (#152) — selecteur de compte de produit par ligne.
 common-account-clear = Ausgewähltes Konto löschen
 common-account-invalid = Ungültiges Konto — nicht buchbar, archiviert oder unerwarteter Typ
+invoice-line-col-revenue-account = Ertragskonto
+invoice-line-revenue-account-default = { $account } (Standard der Firma)
+invoice-lines-revenue-account-invalid = Ungültiges Ertragskonto auf den folgenden Zeilen: { $lines }

@@ -5,6 +5,7 @@
 	// `shared/utils/i18n.svelte.ts:1-7` proscrit explicitement.
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import type { AccountResponse, AccountType } from '$lib/features/accounts/accounts.types';
+	import { isAccountUnusable } from '$lib/features/accounts/account-validity';
 
 	interface Props {
 		accounts: AccountResponse[];
@@ -44,6 +45,14 @@
 		 * appliqués à ce compte.
 		 */
 		postableExemptAccountId?: number | null;
+		/**
+		 * Remplace le placeholder par défaut (« Compte »). `undefined` = inchangé.
+		 *
+		 * Story 16-1b D9 : le formulaire de facture y nomme le **compte par défaut
+		 * de la société**, parce que le sens de `null` est « suivre le défaut », pas
+		 * « aucun compte ». Un champ vide laisserait croire à un oubli.
+		 */
+		placeholder?: string;
 	}
 
 	let {
@@ -55,7 +64,8 @@
 		allowClear = false,
 		markInvalid = false,
 		requiredAccountType = undefined,
-		postableExemptAccountId = null
+		postableExemptAccountId = null,
+		placeholder = undefined
 	}: Props = $props();
 
 	let query = $state('');
@@ -93,13 +103,11 @@
 	 * ne se produit pas).
 	 */
 	const isInvalid = $derived.by(() => {
-		if (!markInvalid || loadError || !selected) return false;
-		if (!selected.active) return true;
-		if (requiredAccountType !== undefined && selected.accountType !== requiredAccountType) {
-			return true;
-		}
-		// Exemption `postable` du défaut société uniquement (16-1a D3-bis).
-		return !selected.postable && selected.id !== postableExemptAccountId;
+		if (!markInvalid || loadError) return false;
+		// Règle déléguée à `account-validity` : `InvoiceForm` applique EXACTEMENT la
+		// même pour décider du blocage d'enregistrement. Un champ marqué sans
+		// blocage, ou l'inverse, serait pire que l'absence de fonctionnalité.
+		return isAccountUnusable(selected, { requiredAccountType, postableExemptAccountId });
 	});
 
 	const filtered = $derived.by(() => {
@@ -209,7 +217,7 @@
 		{disabled}
 		placeholder={loadError
 			? i18nMsg('account-autocomplete-unavailable', 'Autocomplétion indisponible — saisir l\'ID du compte')
-			: i18nMsg('journal-entry-form-col-account', 'Compte')}
+			: (placeholder ?? i18nMsg('journal-entry-form-col-account', 'Compte'))}
 		aria-autocomplete="list"
 		aria-expanded={open}
 		aria-invalid={isInvalid ? 'true' : undefined}

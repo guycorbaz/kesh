@@ -1341,3 +1341,6 @@ reminders-link-aged = Vedi scadenziario per età
 # Story 16-1b (#152) — selecteur de compte de produit par ligne.
 common-account-clear = Cancella il conto selezionato
 common-account-invalid = Conto non valido — non imputabile, archiviato o di tipo inatteso
+invoice-line-col-revenue-account = Conto di ricavo
+invoice-line-revenue-account-default = { $account } (predefinito della società)
+invoice-lines-revenue-account-invalid = Conto di ricavo non valido nelle righe seguenti: { $lines }

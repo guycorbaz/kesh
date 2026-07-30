@@ -1433,3 +1433,6 @@ reminders-link-aged = Voir la balance âgée
 # Story 16-1b (#152) — selecteur de compte de produit par ligne.
 common-account-clear = Effacer le compte sélectionné
 common-account-invalid = Compte invalide — non imputable, archivé ou de type inattendu
+invoice-line-col-revenue-account = Compte de produit
+invoice-line-revenue-account-default = { $account } (défaut société)
+invoice-lines-revenue-account-invalid = Compte de produit invalide sur les lignes suivantes : { $lines }

@@ -33,6 +33,10 @@
 	import ContactPicker from './ContactPicker.svelte';
 	import ProductPicker from './ProductPicker.svelte';
 	import { getVatRates } from '$lib/features/vat-rates';
+	import AccountAutocomplete from '$lib/features/journal-entries/AccountAutocomplete.svelte';
+	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
+	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+	import { isAccountUnusable } from '$lib/features/accounts/account-validity';
 	import { listProjects } from '$lib/features/projects/projects.api';
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 
@@ -109,6 +113,9 @@
 				quantity: l.quantity,
 				unitPrice: l.unitPrice,
 				vatRate: l.vatRate,
+				// AC9-bis — site 1/4. Recopier depuis la réponse serveur, sinon toute
+				// ouverture d'un brouillon perdrait sa ventilation au ré-enregistrement.
+				revenueAccountId: l.revenueAccountId,
 				_uiKey: nextUiKey(),
 			}));
 		}
@@ -155,6 +162,38 @@
 			cancelled = true;
 		};
 	});
+	// Story 16-1b (T3, AC5 / D11) — liste des comptes pour le sélecteur par ligne.
+	//
+	// `fetchAccounts(true)` : le flag `includeArchived` est **OBLIGATOIRE**, et
+	// c'est le piège n°1 de la story parce qu'il est SILENCIEUX. `fetchAccounts()`
+	// compile, s'exécute, et marche parfaitement — jusqu'au jour où un compte est
+	// archivé : il n'est alors plus dans le tableau, `AccountAutocomplete` ne
+	// résout plus son libellé, et le champ de la ligne concernée s'affiche VIDE.
+	// L'utilisateur croit la ligne sans compte alors qu'elle en porte un.
+	// Précédent identique déjà résolu dans le dépôt :
+	// `routes/(app)/journal-entries/[id]/+page.svelte:33-43`.
+	//
+	// Le dropdown continue de ne proposer que `active && postable` — charger la
+	// liste complète sert uniquement à résoudre un libellé persisté.
+	let accounts = $state<AccountResponse[]>([]);
+	// AC7 / D10 : l'échec ne bloque PAS la saisie. Le champ est optionnel ; son
+	// indisponibilité fait simplement retomber les lignes sur le défaut société.
+	let accountsLoadError = $state(false);
+	$effect(() => {
+		let cancelled = false;
+		(async () => {
+			try {
+				const list = await fetchAccounts(true);
+				if (!cancelled) accounts = list;
+			} catch {
+				if (!cancelled) accountsLoadError = true;
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	});
+
 	// Sélecteur affiché si des projets actifs existent OU si un tag historique
 	// est présent (projet archivé depuis — leçon 19-2 BH-L2 : visible/détaguable).
 	const showProjectField = $derived(projects.length > 0 || projectId !== null);
@@ -179,6 +218,55 @@
 	let loadingSettings = $state(true);
 	let settingsError = $state<string>('');
 	let settingsSeq = 0;
+
+	/** Le compte de produit par défaut de la société, résolu pour l'affichage (D9). */
+	const defaultRevenueAccount = $derived(
+		invoiceSettings?.defaultRevenueAccountId == null
+			? undefined
+			: accounts.find((a) => a.id === invoiceSettings!.defaultRevenueAccountId)
+	);
+
+	/**
+	 * Placeholder d'une ligne sans compte (D9/AC6) : nomme le compte cible.
+	 *
+	 * `null` veut dire « suivre le défaut société », pas « aucun compte ». Un
+	 * champ vide laisserait croire à un oubli, et pousserait l'utilisateur à
+	 * sélectionner explicitement le défaut « pour être sûr » — cas que 16-1a
+	 * D3-bis existe précisément pour absorber. **Affichage seulement : la ligne
+	 * reste à `NULL` en base.**
+	 */
+	const defaultAccountPlaceholder = $derived(
+		defaultRevenueAccount
+			? i18nMsg('invoice-line-revenue-account-default', '{ $account } (défaut société)', {
+					account: `${defaultRevenueAccount.number} — ${defaultRevenueAccount.name}`
+				})
+			: undefined
+	);
+
+	/**
+	 * Numéros (1-based) des lignes dont le compte persisté n'est plus utilisable.
+	 *
+	 * Règle déléguée à `account-validity`, la MÊME que celle du marqueur affiché
+	 * par `AccountAutocomplete` — un blocage sans marqueur, ou l'inverse, serait
+	 * pire que rien.
+	 */
+	const invalidRevenueAccountLines = $derived.by(() => {
+		if (accountsLoadError || accounts.length === 0) return [];
+		const out: number[] = [];
+		lines.forEach((l, i) => {
+			if (l.revenueAccountId == null) return;
+			const acc = accounts.find((a) => a.id === l.revenueAccountId);
+			if (
+				isAccountUnusable(acc, {
+					requiredAccountType: 'Revenue',
+					postableExemptAccountId: invoiceSettings?.defaultRevenueAccountId ?? null
+				})
+			) {
+				out.push(i + 1);
+			}
+		});
+		return out;
+	});
 
 	// Charge le contact initial en mode édition, une seule fois par facture.
 	// `reloadFromServer` prend le relais pour les recharges ultérieures.
@@ -253,6 +341,9 @@
 			quantity: '1',
 			unitPrice: '0.00',
 			vatRate: DEFAULT_VAT,
+			// AC9-bis — site 2/4. `null` = suivre le défaut société ; la Story 16-2
+			// y branchera le pré-remplissage depuis la fiche produit.
+			revenueAccountId: null,
 			_uiKey: nextUiKey(),
 		});
 	}
@@ -263,6 +354,8 @@
 			quantity: '1',
 			unitPrice: p.unitPrice,
 			vatRate: p.vatRate,
+			// AC9-bis — site 3/4. Idem : 16-2 y branchera le compte du produit.
+			revenueAccountId: null,
 			_uiKey: nextUiKey(),
 		});
 	}
@@ -291,6 +384,22 @@
 		if (lines.length === 0) return 'Une facture doit contenir au moins une ligne';
 		if (lines.length > MAX_LINES) {
 			return `Une facture doit contenir au plus ${MAX_LINES} lignes`;
+		}
+		// Story 16-1b (T5/AC8) — blocage GLOBAL nommant TOUTES les lignes fautives.
+		//
+		// Volontairement placé AVANT la boucle par ligne : celle-ci `return` à la
+		// première erreur, ce qui obligerait l'utilisateur à corriger ligne par
+		// ligne en re-soumettant à chaque fois. La persistance est un
+		// `createInvoice`/`updateInvoice` UNIQUE portant toutes les lignes — le
+		// grain « enregistrer les lignes saines et pas les autres » n'existe pas,
+		// donc le message doit donner l'état complet d'un seul coup (même geste que
+		// 16-1a D6).
+		if (invalidRevenueAccountLines.length > 0) {
+			return i18nMsg(
+				'invoice-lines-revenue-account-invalid',
+				'Compte de produit invalide sur les lignes suivantes : { $lines }',
+				{ lines: invalidRevenueAccountLines.join(', ') }
+			);
 		}
 		for (let i = 0; i < lines.length; i++) {
 			const l = lines[i];
@@ -420,6 +529,13 @@
 				quantity: l.quantity,
 				unitPrice: l.unitPrice,
 				vatRate: l.vatRate,
+				// AC9-bis — site 4/4, LE PLUS DANGEREUX. Un oubli ici n'est visible
+				// qu'APRÈS un conflit de version : conflit optimiste → modale →
+				// « Recharger » → les lignes sont remappées sans compte → toutes les
+				// ventilations retombent à `NULL` EN SILENCE → le ré-enregistrement
+				// les efface en base. `stripUiKey` étant un spread, rien ne signale
+				// l'absence du champ.
+				revenueAccountId: l.revenueAccountId,
 				_uiKey: nextUiKey(),
 			}));
 			// Await explicite + fallback UI si le contact devient indisponible.
@@ -540,6 +656,15 @@
 					<th class="py-2 pr-2 w-24">Quantité</th>
 					<th class="py-2 pr-2 w-32">Prix unitaire</th>
 					<th class="py-2 pr-2 w-28">TVA %</th>
+					<!--
+						AC11 : les chaînes NOUVELLES passent par `i18nMsg`. Les 5 en-têtes
+						existants restent en français codé en dur — les mettre en i18n
+						imposerait de les ajouter aux 4 catalogues, hors périmètre (même
+						arbitrage qu'AC6-bis côté écran de détail).
+					-->
+					<th class="py-2 pr-2 w-56">
+						{i18nMsg('invoice-line-col-revenue-account', 'Compte de produit')}
+					</th>
 					<th class="py-2 pr-2 w-32 text-right">Total</th>
 					<th class="py-2 w-12"></th>
 				</tr>
@@ -569,6 +694,19 @@
 								{/each}
 							</select>
 						</td>
+						<td class="py-2 pr-2">
+							<AccountAutocomplete
+								{accounts}
+								value={line.revenueAccountId ?? null}
+								loadError={accountsLoadError}
+								allowClear
+								markInvalid
+								requiredAccountType="Revenue"
+								postableExemptAccountId={invoiceSettings?.defaultRevenueAccountId ?? null}
+								placeholder={defaultAccountPlaceholder}
+								onSelect={(id) => (line.revenueAccountId = id)}
+							/>
+						</td>
 						<td class="py-2 pr-2 text-right font-mono">
 							{formatInvoiceTotal(lineTotal(line))}
 						</td>
@@ -589,7 +727,7 @@
 			</tbody>
 			<tfoot>
 				<tr>
-					<td colspan="4" class="py-3 text-right font-semibold">Total</td>
+					<td colspan="5" class="py-3 text-right font-semibold">Total</td>
 					<td class="py-3 text-right font-mono text-lg font-semibold">
 						{formatInvoiceTotal(totalAmount)}
 					</td>
@@ -614,8 +752,8 @@
 		<Button type="button" variant="outline" onclick={() => goto('/invoices')}>Annuler</Button>
 		<Button data-testid="create-invoice-button"
 			type="submit"
-			disabled={submitting || conflictOpen || loadingSettings || (invoiceSettings && !invoiceSettings.defaultReceivableAccountId) || (invoiceSettings && !invoiceSettings.defaultRevenueAccountId)}
-			title={loadingSettings ? i18nMsg('common-loading', 'Chargement...') : (invoiceSettings && (!invoiceSettings.defaultReceivableAccountId || !invoiceSettings.defaultRevenueAccountId) ? i18nMsg('invoice-settings-required', "Configurez d'abord les comptes de facturation dans les paramètres") : undefined)}
+			disabled={submitting || conflictOpen || loadingSettings || (invoiceSettings && !invoiceSettings.defaultReceivableAccountId) || (invoiceSettings && !invoiceSettings.defaultRevenueAccountId) || invalidRevenueAccountLines.length > 0}
+			title={loadingSettings ? i18nMsg('common-loading', 'Chargement...') : (invoiceSettings && (!invoiceSettings.defaultReceivableAccountId || !invoiceSettings.defaultRevenueAccountId) ? i18nMsg('invoice-settings-required', "Configurez d'abord les comptes de facturation dans les paramètres") : (invalidRevenueAccountLines.length > 0 ? i18nMsg('invoice-lines-revenue-account-invalid', 'Compte de produit invalide sur les lignes suivantes : { $lines }', { lines: invalidRevenueAccountLines.join(', ') }) : undefined))}
 		>
 			{invoice ? 'Enregistrer' : 'Créer la facture'}
 		</Button>
