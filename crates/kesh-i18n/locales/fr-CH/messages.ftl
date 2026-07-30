@@ -1429,3 +1429,7 @@ reminders-resume-success = Rappels repris
 reminders-error-not-paused = Cette facture n'est plus suspendue.
 reminders-link-due-dates = Voir l'échéancier
 reminders-link-aged = Voir la balance âgée
+
+# Story 16-1b (#152) — selecteur de compte de produit par ligne.
+common-account-clear = Effacer le compte sélectionné
+common-account-invalid = Compte invalide — non imputable, archivé ou de type inattendu

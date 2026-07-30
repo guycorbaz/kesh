@@ -1337,3 +1337,7 @@ reminders-resume-success = Solleciti ripresi
 reminders-error-not-paused = Questa fattura non è più sospesa.
 reminders-link-due-dates = Vedi scadenziario
 reminders-link-aged = Vedi scadenziario per età
+
+# Story 16-1b (#152) — selecteur de compte de produit par ligne.
+common-account-clear = Cancella il conto selezionato
+common-account-invalid = Conto non valido — non imputabile, archiviato o di tipo inatteso

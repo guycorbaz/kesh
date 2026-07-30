@@ -182,8 +182,8 @@ Autrement dit : la révision de D7 en passe 1 est correcte sur le **composant**,
 
 ## Tasks / Subtasks
 
-- [ ] **T1** — `AccountAutocomplete` : props opt-in `allowClear` / `markInvalid` / `requiredAccountType` (AC1, AC2) + bouton d'effacement + sémantique du champ vidé au clavier (AC1-bis) ; import `i18nMsg` canonique (AC3). Aucun déplacement de fichier (AC4).
-- [ ] **T2** — Types TS + client API `revenueAccountId` (AC10).
+- [x] **T1** — `AccountAutocomplete` : props opt-in `allowClear` / `markInvalid` / `requiredAccountType` (AC1, AC2) + bouton d'effacement + sémantique du champ vidé au clavier (AC1-bis) ; import `i18nMsg` canonique (AC3). Aucun déplacement de fichier (AC4).
+- [x] **T2** — Types TS + client API `revenueAccountId` (AC10).
 - [ ] **T3** — `InvoiceForm` : chargement de la liste des comptes via `fetchAccounts(true)` (D11) + mode dégradé (AC5, AC5-bis, AC7).
 - [ ] **T4** — `InvoiceForm` : sélecteur par ligne + placeholder « défaut société » + propagation de `revenueAccountId` sur les **4** sites de construction de `LineState` (AC5, AC6, AC9, AC9-bis).
 - [ ] **T5** — Blocage global d'enregistrement dès qu'une ligne est invalide, message nommant toutes les lignes fautives (AC8).
@@ -332,6 +332,14 @@ Issue du split de la story 16-1 (§ « Règle de splitting préventif », 8 modu
 ## Dev Agent Record
 
 ### Agent Model Used
+
+Claude Opus 5 (1M context) — `bmad-dev-story`, démarrée le 2026-07-30.
+
+### Implementation Plan
+
+Ordre suivi : **T2 → T1** (+ tests AC13 et les 2 clés globales de T6) → T3 → T4 → T5 → T5-bis → T6 → T7 → T8 → T9 → T10.
+
+`T2` d'abord parce qu'il ne dépend de rien et débloque tout le reste ; `T1` ensuite parce que c'est le seul fichier partagé par 4 écrans étrangers à la story — le faire tôt laisse le maximum de gate en aval pour attraper une régression.
 
 _(à compléter par `dev-story`)_
 

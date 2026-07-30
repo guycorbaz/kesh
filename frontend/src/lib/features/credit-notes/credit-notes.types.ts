@@ -12,6 +12,19 @@ export interface CreditNoteLineResponse {
 	unitPrice: string;
 	vatRate: string;
 	lineTotal: string;
+	/**
+	 * Compte de produit extourné par cette ligne d'avoir (Story 16-1a D5).
+	 *
+	 * **Lecture seule** : recopié depuis la ligne de facture au moment de
+	 * l'émission, jamais choisi par le client — `CreateCreditNoteRequest` ne le
+	 * porte pas.
+	 *
+	 * `null` quand la ligne de facture d'origine l'était elle-même. Depuis le
+	 * backfill de 16-1a-bis, ce cas se limite aux pièces dont l'écriture a été
+	 * retouchée à la main. ⚠️ Ne PAS afficher « (défaut) » sur un avoir : aucun
+	 * repli n'aura lieu, l'écriture est déjà passée — afficher un tiret.
+	 */
+	revenueAccountId: number | null;
 }
 
 export interface CreditNoteResponse {

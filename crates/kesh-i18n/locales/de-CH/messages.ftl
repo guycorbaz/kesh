@@ -1337,3 +1337,7 @@ reminders-resume-success = Mahnungen fortgesetzt
 reminders-error-not-paused = Diese Rechnung ist nicht mehr ausgesetzt.
 reminders-link-due-dates = Fälligkeitsplan anzeigen
 reminders-link-aged = Altersstruktur anzeigen
+
+# Story 16-1b (#152) — selecteur de compte de produit par ligne.
+common-account-clear = Ausgewähltes Konto löschen
+common-account-invalid = Ungültiges Konto — nicht buchbar, archiviert oder unerwarteter Typ

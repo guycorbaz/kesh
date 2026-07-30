@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { Input } from '$lib/components/ui/input';
-	import { i18nMsg } from '$lib/features/onboarding/onboarding.svelte';
-	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+	// AC3 (Story 16-1b) : emplacement canonique du runtime i18n. L'import
+	// passait par `features/onboarding`, couplage transverse que
+	// `shared/utils/i18n.svelte.ts:1-7` proscrit explicitement.
+	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	import type { AccountResponse, AccountType } from '$lib/features/accounts/accounts.types';
 
 	interface Props {
 		accounts: AccountResponse[];
@@ -9,9 +12,51 @@
 		loadError?: boolean;
 		disabled?: boolean;
 		onSelect: (id: number | null) => void;
+		/**
+		 * Story 16-1b (D8/AC1) — affiche un bouton d'effacement et active la
+		 * sémantique « champ vidé au clavier = effacement explicite » (AC1-bis).
+		 *
+		 * **Défaut `false` : les 4 consommateurs existants sont stricts inchangés.**
+		 * Ne PAS l'activer sur un champ obligatoire — `JournalEntryForm` se
+		 * mettrait à nullifier ses lignes au `blur`, soit la dette #271.
+		 */
+		allowClear?: boolean;
+		/**
+		 * Story 16-1b (D7/AC2) — marque textuellement une valeur persistée qui
+		 * n'est plus sélectionnable (compte archivé, non imputable, ou de type
+		 * inattendu), **sans** effacer son libellé.
+		 *
+		 * **Défaut `false`** : `JournalEntryForm` et les modales de rapprochement
+		 * sélectionnent massivement des comptes `Expense` / `Asset` / `Liability` —
+		 * un marqueur inconditionnel s'afficherait sur presque toutes leurs lignes.
+		 */
+		markInvalid?: boolean;
+		/** Type de compte attendu ; `undefined` = aucun contrôle de type (AC2). */
+		requiredAccountType?: AccountType;
+		/**
+		 * Compte exempté du seul critère `postable` (miroir de 16-1a D3-bis).
+		 *
+		 * Le compte de produit **par défaut de la société** peut devenir
+		 * non-imputable sans intention. Le backend l'accepte quand même ; si le
+		 * frontend le marquait invalide et bloquait l'enregistrement, l'utilisateur
+		 * serait enfermé — **le frontend ne doit jamais bloquer ce que 16-1a
+		 * accepte**. Les critères `active` et `requiredAccountType` restent, eux,
+		 * appliqués à ce compte.
+		 */
+		postableExemptAccountId?: number | null;
 	}
 
-	let { accounts, value, loadError = false, disabled = false, onSelect }: Props = $props();
+	let {
+		accounts,
+		value,
+		loadError = false,
+		disabled = false,
+		onSelect,
+		allowClear = false,
+		markInvalid = false,
+		requiredAccountType = undefined,
+		postableExemptAccountId = null
+	}: Props = $props();
 
 	let query = $state('');
 	let open = $state(false);
@@ -32,6 +77,30 @@
 	// Story 14-3b : sélecteur de SAISIE d'écriture → seuls les comptes postables
 	// (le backend rejette désormais une ligne manuelle vers un compte non-postable).
 	const active = $derived(accounts.filter((a) => a.active && a.postable));
+
+	/** Le compte désigné par `value`, résolu sur la liste COMPLÈTE (cf. D11). */
+	const selected = $derived(value === null ? undefined : accounts.find((a) => a.id === value));
+
+	/** Libellé canonique d'une valeur — source unique de la mise en forme. */
+	function labelOf(acc: AccountResponse | undefined): string {
+		return acc ? `${acc.number} — ${acc.name}` : '';
+	}
+
+	/**
+	 * Story 16-1b (AC2) — la valeur persistée est-elle hors de ce que le champ
+	 * accepterait aujourd'hui ? Vrai seulement si le compte est **résolu** : une
+	 * valeur non résoluble n'a rien à qualifier (et, avec `fetchAccounts(true)`,
+	 * ne se produit pas).
+	 */
+	const isInvalid = $derived.by(() => {
+		if (!markInvalid || loadError || !selected) return false;
+		if (!selected.active) return true;
+		if (requiredAccountType !== undefined && selected.accountType !== requiredAccountType) {
+			return true;
+		}
+		// Exemption `postable` du défaut société uniquement (16-1a D3-bis).
+		return !selected.postable && selected.id !== postableExemptAccountId;
+	});
 
 	const filtered = $derived.by(() => {
 		if (loadError) return [];
@@ -85,10 +154,46 @@
 		}
 	}
 
+	/**
+	 * Story 16-1b (AC1-bis) — réconcilie le texte affiché avec la valeur liée.
+	 *
+	 * **Le champ ne peut jamais afficher un texte qui contredit `value`.** Sans
+	 * cela, sur un champ optionnel, le geste naturel pour revenir au défaut
+	 * société (tout sélectionner + `Suppr`) laissait `value` inchangée : le champ
+	 * vide déclenchait le placeholder « … (défaut société) » et l'utilisateur
+	 * enregistrait convaincu d'avoir remis la ligne au défaut, alors que la
+	 * facture se postait sur l'ancien compte. Écriture fausse en silence, avec
+	 * l'UI qui affirmait le contraire.
+	 *
+	 * Inactif quand `allowClear` est `false` : un champ obligatoire ne doit pas
+	 * se nullifier au `blur` (dette #271).
+	 */
+	function commitOnBlur() {
+		if (!allowClear || loadError) return;
+
+		if (query.trim() === '') {
+			// Champ vidé par l'utilisateur = effacement explicite.
+			if (value !== null) onSelect(null);
+			return;
+		}
+
+		// Texte libre jamais validé par une sélection → restaurer la vérité.
+		if (value === null) {
+			query = '';
+		} else {
+			const label = labelOf(selected);
+			if (label !== '' && query !== label) query = label;
+		}
+	}
+
 	function handleBlur() {
-		// Délai pour permettre un clic sur un item du dropdown.
+		// Délai pour permettre un clic sur un item du dropdown. La réconciliation
+		// est faite DANS le délai, donc après une éventuelle sélection : si
+		// l'utilisateur a cliqué un item, `query` et `value` concordent déjà et
+		// `commitOnBlur` est un no-op — d'où « `onSelect(null)` une seule fois ».
 		setTimeout(() => {
 			open = false;
+			commitOnBlur();
 		}, 150);
 	}
 </script>
@@ -107,7 +212,37 @@
 			: i18nMsg('journal-entry-form-col-account', 'Compte')}
 		aria-autocomplete="list"
 		aria-expanded={open}
+		aria-invalid={isInvalid ? 'true' : undefined}
 	/>
+
+	{#if allowClear && !disabled && (value !== null || query !== '')}
+		<!--
+			AC1 : le bouton appelle `onSelect(null)` et NE touche PAS `query` —
+			c'est le `$effect` (`value === null` → `query = ''`) qui en est la
+			source unique. Une double écriture divergerait si le parent refusait
+			la mise à jour.
+
+			`onmousedown` + `preventDefault` empêche la perte de focus (même idiome
+			que les items du dropdown), ce qui évite la course avec `handleBlur` ;
+			`onclick` porte l'action pour que le clavier fonctionne aussi.
+		-->
+		<button
+			type="button"
+			class="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+			aria-label={i18nMsg('common-account-clear', 'Effacer le compte sélectionné')}
+			onmousedown={(e) => e.preventDefault()}
+			onclick={() => onSelect(null)}
+		>
+			<span aria-hidden="true">×</span>
+		</button>
+	{/if}
+
+	{#if isInvalid}
+		<!-- Marqueur TEXTUEL : le signal ne doit pas reposer sur la seule couleur. -->
+		<p class="mt-1 text-xs text-destructive">
+			{i18nMsg('common-account-invalid', 'Compte invalide — non imputable, archivé ou de type inattendu')}
+		</p>
+	{/if}
 
 	{#if open && !loadError && filtered.length > 0}
 		<ul

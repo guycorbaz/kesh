@@ -1337,3 +1337,7 @@ reminders-resume-success = Reminders resumed
 reminders-error-not-paused = This invoice is no longer paused.
 reminders-link-due-dates = View due dates
 reminders-link-aged = View aged balance
+
+# Story 16-1b (#152) — selecteur de compte de produit par ligne.
+common-account-clear = Clear selected account
+common-account-invalid = Invalid account — not postable, archived, or unexpected type
