@@ -15,7 +15,12 @@
 		unmarkInvoicePaid,
 		getInvoiceEmailPreview,
 		sendInvoiceEmail,
+		getInvoiceSettings,
 	} from '$lib/features/invoices/invoices.api';
+	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
+	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+	import type { InvoiceSettingsResponse } from '$lib/features/invoices/invoices.types';
+	import { invoiceRevenueAccountLabel } from '$lib/features/accounts/account-label';
 	import PaymentStatusBadge from '$lib/features/invoices/PaymentStatusBadge.svelte';
 	import MarkPaidDialog from '$lib/features/invoices/MarkPaidDialog.svelte';
 	import SendEmailDialog from '$lib/features/invoices/SendEmailDialog.svelte';
@@ -131,7 +136,53 @@
 		} catch {
 			// Fallback #id via projectLabel.
 		}
+		// Story 16-1b (T5-bis/AC6-bis) : référentiel comptes + réglages, pour
+		// afficher le compte de produit de chaque ligne.
+		//
+		// `fetchAccounts(true)` — archivés INCLUS, même motif que D11 côté
+		// formulaire : une facture validée peut parfaitement référencer un compte
+		// archivé depuis, et son libellé doit rester lisible. Sans le flag, la
+		// colonne afficherait `#3900` au lieu du nom du compte.
+		//
+		// Échecs tolérés (l'écran de détail doit rester consultable) : la colonne
+		// retombe alors sur `#id`, ou sur un tiret si le défaut est inconnu.
+		try {
+			accounts = await fetchAccounts(true);
+		} catch {
+			// Fallback `#id` via `revenueAccountCell`.
+		}
+		try {
+			invoiceSettings = await getInvoiceSettings();
+		} catch {
+			// Fallback tiret pour les lignes sans compte.
+		}
 	});
+
+	let accounts = $state<AccountResponse[]>([]);
+	let invoiceSettings = $state<InvoiceSettingsResponse | null>(null);
+
+	/**
+	 * Libellé du compte de produit d'une ligne (Story 16-1b, AC6-bis).
+	 *
+	 * # Pourquoi cette colonne existe
+	 *
+	 * L'édition n'est offerte qu'aux brouillons. Dès qu'une facture est validée —
+	 * c'est-à-dire dès l'instant où la ventilation produit son effet comptable —
+	 * l'utilisateur n'avait plus AUCUN moyen de voir sur quels comptes ses lignes
+	 * avaient été ventilées, sinon d'ouvrir l'écriture et de la lire à l'envers.
+	 * La donnée était write-once, et c'est le geste de contrôle n°1 d'une
+	 * fiduciaire qui reprend un dossier.
+	 *
+	 * Règle déléguée à `account-label` — l'écran d'AVOIR utilise la fonction
+	 * jumelle, dont la seule différence est le traitement de `null`.
+	 */
+	function revenueAccountCell(revenueAccountId: number | null): string {
+		return invoiceRevenueAccountLabel(
+			accounts,
+			revenueAccountId,
+			invoiceSettings?.defaultRevenueAccountId ?? null
+		);
+	}
 
 	let projects = $state<ProjectResponse[]>([]);
 	const projectLabel = $derived.by(() => {
@@ -756,6 +807,14 @@
 					<th class="py-2 pr-2">Quantité</th>
 					<th class="py-2 pr-2">Prix unitaire</th>
 					<th class="py-2 pr-2">TVA %</th>
+					<!--
+						AC6-bis : la colonne suit la convention du fichier qu'elle modifie.
+						Les 5 en-têtes existants sont en français codé en dur ; les mettre
+						en i18n imposerait de les ajouter aux 4 catalogues, hors périmètre.
+						L'écran d'AVOIR, lui, utilise `i18nMsg` — et la colonne y suit
+						cette convention-là.
+					-->
+					<th class="py-2 pr-2">Compte de produit</th>
 					<th class="py-2 pr-2 text-right">Total</th>
 				</tr>
 			</thead>
@@ -766,6 +825,9 @@
 						<td class="py-2 pr-2">{l.quantity}</td>
 						<td class="py-2 pr-2 font-mono">{formatInvoiceTotal(l.unitPrice)}</td>
 						<td class="py-2 pr-2">{l.vatRate}%</td>
+						<td class="py-2 pr-2" data-testid="invoice-line-revenue-account">
+							{revenueAccountCell(l.revenueAccountId)}
+						</td>
 						<td class="py-2 pr-2 text-right font-mono">
 							{formatInvoiceTotal(l.lineTotal)}
 						</td>
@@ -778,24 +840,24 @@
 				     (aucune TVA) un simple « Total » = TTC (== HT). -->
 				{#if invoice.vatBreakdown.length > 0}
 					<tr>
-						<td colspan="4" class="py-1 text-right">Sous-total HT</td>
+						<td colspan="5" class="py-1 text-right">Sous-total HT</td>
 						<td class="py-1 text-right font-mono">{formatInvoiceTotal(invoice.totalAmount)}</td>
 					</tr>
 					{#each invoice.vatBreakdown as vb (vb.ratePercent)}
 						<tr>
-							<td colspan="4" class="py-1 text-right">TVA {Number(vb.ratePercent)}%</td>
+							<td colspan="5" class="py-1 text-right">TVA {Number(vb.ratePercent)}%</td>
 							<td class="py-1 text-right font-mono">{formatInvoiceTotal(vb.vatAmount)}</td>
 						</tr>
 					{/each}
 					<tr>
-						<td colspan="4" class="py-3 text-right font-semibold">Total TTC</td>
+						<td colspan="5" class="py-3 text-right font-semibold">Total TTC</td>
 						<td class="py-3 text-right font-mono text-lg font-semibold">
 							{formatInvoiceTotal(invoice.totalTtc)}
 						</td>
 					</tr>
 				{:else}
 					<tr>
-						<td colspan="4" class="py-3 text-right font-semibold">Total</td>
+						<td colspan="5" class="py-3 text-right font-semibold">Total</td>
 						<td class="py-3 text-right font-mono text-lg font-semibold">
 							{formatInvoiceTotal(invoice.totalTtc)}
 						</td>

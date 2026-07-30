@@ -187,9 +187,9 @@ Autrement dit : la révision de D7 en passe 1 est correcte sur le **composant**,
 - [x] **T3** — `InvoiceForm` : chargement de la liste des comptes via `fetchAccounts(true)` (D11) + mode dégradé (AC5, AC5-bis, AC7).
 - [x] **T4** — `InvoiceForm` : sélecteur par ligne + placeholder « défaut société » + propagation de `revenueAccountId` sur les **4** sites de construction de `LineState` (AC5, AC6, AC9, AC9-bis).
 - [x] **T5** — Blocage global d'enregistrement dès qu'une ligne est invalide, message nommant toutes les lignes fautives (AC8).
-- [ ] **T5-bis** — Écrans de détail facture **et** avoir : chargement de `fetchAccounts(true)` + `getInvoiceSettings()` (facture seule), puis colonne compte de produit en lecture seule (AC6-bis, AC10 volet avoir).
+- [x] **T5-bis** — Écrans de détail facture **et** avoir : chargement de `fetchAccounts(true)` + `getInvoiceSettings()` (facture seule), puis colonne compte de produit en lecture seule (AC6-bis, AC10 volet avoir).
 - [x] **T6** — i18n : nouvelles clés dans les 4 `.ftl`, namespace global de préférence (AC11, AC12).
-- [ ] **T7** — Tests composant, formulaire et écrans de détail (AC13, AC14, AC14-bis).
+- [x] **T7** — Tests composant, formulaire et écrans de détail (AC13, AC14, AC14-bis).
 - [ ] **T8** — Test E2E Playwright (AC15).
 - [ ] **T9** — Doc-sync : manuel utilisateur + PDF, README, CHANGELOG (AC17, AC18).
 - [ ] **T10** — Gate complet frontend + backend (AC16).
