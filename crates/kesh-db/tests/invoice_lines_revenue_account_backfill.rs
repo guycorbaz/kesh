@@ -28,6 +28,8 @@
 //! | [`divergent_invoice_and_credit_note_are_recorded_as_is`] | **D-B7** | on « réparerait » un résidu historique en falsifiant les pièces |
 //! | [`backfill_is_idempotent`] | D-B6 / AC-B4 | un re-jeu écraserait un compte déjà posé — la ligne `F-PRE`, dont la valeur stockée DIFFÈRE du candidat, est la seule qui exerce la garde |
 //! | [`validated_invoice_from_the_real_engine_is_recovered_by_the_backfill`] | **D-B2 cond. (3)** | le critère no-operait sur 100 % du parc si `total_amount` cessait d'égaler le crédit posé par le moteur |
+//! | [`backfills_when_company_has_no_invoice_settings_row`] | **`LEFT JOIN` cis** | un `INNER JOIN` écarterait SANS TRACE les factures d'une société sans ligne de configuration |
+//! | [`backfills_credit_note_when_company_has_no_invoice_settings_row`] | **`LEFT JOIN` cis, miroir** | idem côté AVOIR : muter le seul `LEFT` du 2ᵉ `UPDATE` laissait les 12 autres tests verts |
 //!
 //! # Montage : chaque test doit prouver que le backfill a TOURNÉ
 //!
@@ -1495,5 +1497,186 @@ async fn leaves_null_when_credited_account_is_not_postable(pool: MySqlPool) {
         invoice_line_accounts(&pool, witness).await,
         vec![Some(revenue), Some(revenue)],
         "TÉMOIN : le backfill a bien tourné — sans cette assertion le test passerait à vide"
+    );
+}
+
+/// **Le test du `LEFT JOIN` sur `company_invoice_settings`** — sans lui, repasser
+/// la jointure en `INNER JOIN` laisse toute la suite verte.
+///
+/// Les autres tests appellent tous `seed_accounting_company`, qui **crée** la
+/// ligne de configuration. Aucun n'exerce donc le choix `LEFT` : une société
+/// sans ligne de `company_invoice_settings` doit voir ses factures backfillées
+/// quand même, l'absence de config valant **ensemble d'exclusion vide** —
+/// exactement comme une colonne `NULL` (D-B3, un cran plus haut).
+///
+/// # Pourquoi ce garde-fou existe alors que le cas est inatteignable
+///
+/// En exploitation la ligne existe toujours pour une facture validée :
+/// `get_or_create_default_in_tx` fait un `INSERT IGNORE` sur le chemin de
+/// validation. Un `INNER JOIN` serait donc *probablement* sans conséquence — et
+/// c'est précisément l'argument que la story refuse, parce qu'il fait dépendre
+/// la correction du backfill d'une propriété d'un autre module. Le mode de
+/// défaillance d'un `INNER JOIN` ici serait **le no-op silencieux de D-B3, un
+/// cran plus haut** : des factures écartées sans trace, indiscernables d'un
+/// reliquat conservateur légitime.
+///
+/// Ce test verrouille donc une décision de conception, pas un cas d'usage. Il
+/// n'a pas besoin de facture témoin : il attend un backfill **positif**, donc
+/// il tombe aussi si le montage se décale et que le backfill ne tourne pas.
+///
+/// *(Ajouté à la demande de Guy après la convergence de la boucle de revue ;
+/// signalé LOW et reporté en passe 2, finding Edge Case Hunter.)*
+#[sqlx::test(migrations = false)]
+async fn backfills_when_company_has_no_invoice_settings_row(pool: MySqlPool) {
+    apply_migrations_up_to(&pool, migrations_before_backfill())
+        .await
+        .expect("migrations jusqu'au backfill");
+
+    let seeded = seed_accounting_company(&pool).await.expect("seed");
+    let contact_id = insert_contact(&pool, seeded.company_id).await;
+    let revenue = seeded.accounts["3000"];
+    let receivable = seeded.accounts["1100"];
+    let vat = seeded.accounts["2000"];
+
+    let entry = insert_entry(
+        &pool,
+        seeded.company_id,
+        seeded.fiscal_year_id,
+        1,
+        &[
+            (receivable, TTC, ZERO),
+            (revenue, ZERO, HT),
+            (vat, ZERO, VAT),
+        ],
+    )
+    .await;
+    let invoice_id = insert_invoice_with_lines(
+        &pool,
+        seeded.company_id,
+        contact_id,
+        "F-NOCFG",
+        "validated",
+        Some(entry),
+    )
+    .await;
+
+    // Reconstitution du cas : société SANS ligne de configuration. La fixture en
+    // crée une, on la retire — aucune FK ne pointe vers cette table, la
+    // suppression est donc sans effet de bord.
+    let deleted = sqlx::query("DELETE FROM company_invoice_settings WHERE company_id = ?")
+        .bind(seeded.company_id)
+        .execute(&pool)
+        .await
+        .expect("suppression de la ligne de config")
+        .rows_affected();
+    assert_eq!(
+        deleted, 1,
+        "pré-condition : la fixture DOIT avoir créé une ligne de configuration, sinon ce test \
+         ne reconstitue pas le cas qu'il prétend éprouver et devient tautologique"
+    );
+
+    kesh_db::MIGRATOR.run(&pool).await.expect("MIGRATOR.run()");
+
+    assert_eq!(
+        invoice_line_accounts(&pool, invoice_id).await,
+        vec![Some(revenue), Some(revenue)],
+        "société SANS ligne de `company_invoice_settings` : la ligne DOIT être backfillée. Si \
+         elle est `NULL`, la jointure a été écrite `INNER JOIN` — les factures de cette société \
+         sont alors écartées SANS TRACE, mode de défaillance identique au no-op silencieux de \
+         D-B3 mais un cran plus haut"
+    );
+    assert_eq!(
+        remaining_null_invoice_lines(&pool).await,
+        0,
+        "aucun reliquat : l'absence de configuration vaut ensemble d'exclusion VIDE, pas exclusion"
+    );
+}
+
+/// **Le miroir avoir du test précédent** — et il n'est pas décoratif.
+///
+/// Mesuré : muter le `LEFT JOIN` du **seul** volet avoir en `INNER JOIN`
+/// laissait les 12 autres tests **verts**. C'est la même classe d'asymétrie que
+/// celle découverte en passe 2 sur le `<=>` — un garde-fou fileté d'un côté
+/// seulement, et l'absence de filet de l'autre indiscernable du succès.
+///
+/// La fixture est montée **exonérée de TVA** (ni ligne de TVA, ni TTC) : c'est
+/// l'état réellement atteignable pour une société sans configuration, pour la
+/// même raison que dans `backfills_credit_note_when_vat_config_is_null`.
+///
+/// *(Ajouté dans le même geste que son pendant facture : corriger le site
+/// signalé sans greper son symétrique est le mode d'échec que la § Propagation
+/// post-patch de `CLAUDE.md` existe pour empêcher.)*
+#[sqlx::test(migrations = false)]
+async fn backfills_credit_note_when_company_has_no_invoice_settings_row(pool: MySqlPool) {
+    apply_migrations_up_to(&pool, migrations_before_backfill())
+        .await
+        .expect("migrations jusqu'au backfill");
+
+    let seeded = seed_accounting_company(&pool).await.expect("seed");
+    let contact_id = insert_contact(&pool, seeded.company_id).await;
+    let revenue = seeded.accounts["3000"];
+    let receivable = seeded.accounts["1100"];
+
+    let invoice_entry = insert_entry(
+        &pool,
+        seeded.company_id,
+        seeded.fiscal_year_id,
+        1,
+        &[(receivable, HT, ZERO), (revenue, ZERO, HT)],
+    )
+    .await;
+    let invoice_id = insert_invoice_with_lines(
+        &pool,
+        seeded.company_id,
+        contact_id,
+        "F-NOCFG-CN",
+        "cancelled",
+        Some(invoice_entry),
+    )
+    .await;
+
+    let cn_entry = insert_entry(
+        &pool,
+        seeded.company_id,
+        seeded.fiscal_year_id,
+        2,
+        &[(revenue, HT, ZERO), (receivable, ZERO, HT)],
+    )
+    .await;
+    let credit_note_id = insert_credit_note_with_lines(
+        &pool,
+        seeded.company_id,
+        contact_id,
+        invoice_id,
+        "A-NOCFG",
+        cn_entry,
+    )
+    .await;
+
+    let deleted = sqlx::query("DELETE FROM company_invoice_settings WHERE company_id = ?")
+        .bind(seeded.company_id)
+        .execute(&pool)
+        .await
+        .expect("suppression de la ligne de config")
+        .rows_affected();
+    assert_eq!(
+        deleted, 1,
+        "pré-condition : la fixture DOIT avoir créé une ligne de configuration, sinon ce test \
+         ne reconstitue pas le cas qu'il prétend éprouver"
+    );
+
+    kesh_db::MIGRATOR.run(&pool).await.expect("MIGRATOR.run()");
+
+    assert_eq!(
+        credit_note_line_accounts(&pool, credit_note_id).await,
+        vec![Some(revenue), Some(revenue)],
+        "société SANS ligne de `company_invoice_settings` : le volet AVOIR doit backfiller lui \
+         aussi. Si la ligne est `NULL`, la jointure du second `UPDATE` a été écrite `INNER JOIN` \
+         — et aucun autre test du fichier ne le verrait"
+    );
+    assert_eq!(
+        remaining_null_credit_note_lines(&pool).await,
+        0,
+        "aucun reliquat côté avoirs"
     );
 }

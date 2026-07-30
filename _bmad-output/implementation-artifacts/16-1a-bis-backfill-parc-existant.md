@@ -268,7 +268,7 @@ Aucune opération `DROP` / `RENAME` / `MODIFY COLUMN` → migration **non-breaki
 **Reportés (2)** — tracés, non bloquants :
 
 - *`backfill_skips_archived_accounts` reste muet* (Edge Case Hunter, LOW) — sa seule assertion positive passe aussi bien si le backfill de rôles 14-3a écarte correctement le compte archivé que s'il ne tourne pas. Le passage à la résolution **par version** ferme le mode d'échec *positionnel* (l'objet du garde-fou P6), pas la muettitude intrinsèque du test. Dette **14-3a**, hors périmètre de cette story ; à traiter au triage de la rétrospective Epic 16.
-- *Aucun test ne couvre le `LEFT JOIN` sur `company_invoice_settings`* (Edge Case Hunter, LOW) — le repasser en `INNER JOIN` laisserait les 11 tests verts. Le cas (société sans ligne de config) est **inatteignable en production** (`get_or_create_default_in_tx` fait `INSERT IGNORE` sur le chemin de validation), ce qui est précisément l'argument que la story écarte comme fragile. Coût du test faible, valeur faible ; reporté sans issue dédiée.
+- ~~*Aucun test ne couvre le `LEFT JOIN` sur `company_invoice_settings`*~~ (Edge Case Hunter, LOW) — **REPORT LEVÉ, test livré le 2026-07-30 sur demande de Guy.** Et le report était une erreur d'appréciation : en écrivant le test signalé, la mutation a révélé que le **volet avoir n'avait aucun filet non plus** — muter son seul `LEFT` en `INNER` laissait les 12 autres tests verts. Ajouter le seul test demandé aurait reproduit exactement l'asymétrie facture/avoir que la passe 2 avait dû corriger sur le `<=>`. Deux tests livrés, chacun tuant sa mutation.
 
 **Écartés en ground-truth (2)** :
 
@@ -424,7 +424,7 @@ La **substance** de D-B7 est intacte et reste verrouillée par `divergent_invoic
 **Ajoutés**
 
 - `crates/kesh-db/migrations/20260729000001_invoice_lines_revenue_account_backfill.sql` — les 2 `UPDATE` de backfill (T-B1, T-B2).
-- `crates/kesh-db/tests/invoice_lines_revenue_account_backfill.rs` — **11** tests sur base pré-remplie (T-B4 ; 8 en `dev-story`, +1 en passe 1 de revue, +2 en passe 2).
+- `crates/kesh-db/tests/invoice_lines_revenue_account_backfill.rs` — **13** tests sur base pré-remplie (T-B4 ; 8 en `dev-story`, +1 en passe 1 de revue, +2 en passe 2, +2 après convergence sur demande de Guy).
 - `crates/kesh-db/tests/common/mod.rs` — montage de fenêtre de migrations partagé, résolution par version (garde-fou P6).
 
 **Modifiés**
@@ -449,6 +449,27 @@ La **substance** de D-B7 est intacte et reste verrouillée par `divergent_invoic
 ---
 
 ## Change Log
+
+### Post-convergence — 2026-07-30 : les deux tests du `LEFT JOIN` (demande de Guy)
+
+**Le report de la passe 2 était une erreur d'appréciation, et la mutation l'a montré.**
+
+La passe 2 avait signalé qu'aucun test ne couvrait le `LEFT JOIN` sur `company_invoice_settings` — « le repasser en `INNER JOIN` laisserait les 11 tests verts » — et je l'avais **reporté** au motif que le cas (société sans ligne de configuration) est inatteignable en production, `get_or_create_default_in_tx` faisant un `INSERT IGNORE` sur le chemin de validation. Argument doublement faible : c'est précisément celui que la story refuse (faire dépendre la correction du backfill d'une propriété d'un autre module), et surtout il portait sur la *valeur* du test sans rien dire de ce que son écriture allait révéler.
+
+**Ce que la mutation a révélé** — en écrivant le test demandé, j'ai muté les **deux** `LEFT JOIN`, pas seulement celui signalé :
+
+| Mutation | Résultat |
+|---|---|
+| `LEFT` → `INNER`, volet **facture** | `backfills_when_company_has_no_invoice_settings_row` **seul** rouge |
+| `LEFT` → `INNER`, volet **avoir** | **les 12 tests verts** |
+
+Le volet avoir n'avait **aucun filet non plus** — et personne ne l'avait signalé, ni les trois lentilles de la passe 2 qui ont trouvé le finding, ni les trois de la passe 3. C'est **la même classe d'asymétrie facture/avoir** que celle découverte en passe 2 sur le `<=>` NULL-safe : un garde-fou fileté d'un seul côté, l'absence de filet de l'autre indiscernable du succès.
+
+**N'ajouter que le test demandé aurait donc reproduit la faute que cette boucle venait de corriger.** Deux tests livrés, chacun tuant sa mutation et rien d'autre. Le miroir est monté **exonéré de TVA**, seul état atteignable pour une société sans configuration.
+
+**Enseignement, à verser à la rétro Epic 16** : un finding reporté au motif que « le cas est inatteignable » devrait quand même être **écrit** avant d'être reporté — c'est l'écriture du test, pas son analyse, qui a trouvé le second trou. Le coût du report n'était pas nul : il était de rater un garde-fou non fileté.
+
+Gate complet vert : **2074/2074**, 4 skipped, exit 0.
 
 ### Passe 3 de `bmad-code-review` — 2026-07-30 (Haiku 4.5 ×3 lentilles) — **BOUCLE CONVERGÉE**
 
