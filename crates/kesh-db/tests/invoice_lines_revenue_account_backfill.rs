@@ -1256,8 +1256,13 @@ async fn validated_invoice_from_the_real_engine_is_recovered_by_the_backfill(poo
     assert_eq!(
         candidates.len(),
         1,
-        "la condition (3) doit désigner EXACTEMENT un candidat sur une écriture produite par \
-         `generate_invoice_journal_lines` — obtenu : {candidates:?}. Un 0 ici signifie que \
+        "la condition (3) doit désigner EXACTEMENT un candidat sur une écriture MONO-COMPTE \
+         produite par `generate_invoice_journal_lines` — c'est le cas de tout le parc \
+         pré-16-1a, où aucune ligne ne porte de compte explicite. (Une facture ventilée sur \
+         plusieurs comptes produit plusieurs crédits dont aucun n'égale `total_amount` : 0 \
+         candidat, ligne laissée `NULL`, ce qui est le comportement voulu — ne pas lire cette \
+         assertion comme une propriété de TOUTE facture.) Obtenu : {candidates:?}. Un 0 ici \
+         signifie que \
          `total_amount` a cessé d'égaler le crédit de produit posé par le moteur, et donc que \
          le backfill no-opère sur 100 % du parc sans qu'aucun autre test ne le voie."
     );

@@ -365,6 +365,8 @@ Les 8 tests passaient du premier coup, ce qui ne prouve rien : un test vert peut
 | Migration livrée (`<=>`) | **8/8 verts** |
 | Migration mutée (`<>`) | **7 verts, 1 rouge** — `backfills_when_vat_config_is_null` seul |
 
+> **⚠️ Renvoi ajouté en passe 3 de `bmad-code-review` — ne pas surinterpréter ce tableau.** Les deux occurrences ont bien été mutées, et un seul test est tombé. Mais l'unique test rouge ne couvrait que le volet **facture** : le volet **avoir** n'avait, à cet instant, **aucun** filet — muter son seul `<=>` aurait laissé toute la suite verte. La passe 2 l'a démasqué et a ajouté `backfills_credit_note_when_vat_config_is_null`. Le tableau ci-dessus mesure donc **un** volet sur deux, pas les deux. *(Entrée datée conservée telle quelle ; c'est le renvoi qui porte ce qu'on a appris depuis.)*
+
 Message de l'échec du mutant : `left: [None, None]` / `right: [Some(4), Some(4)]`.
 
 Deux enseignements, tous deux conformes à ce que la spec annonçait sans l'avoir démontré :
@@ -448,6 +450,36 @@ La **substance** de D-B7 est intacte et reste verrouillée par `divergent_invoic
 
 ## Change Log
 
+### Passe 3 de `bmad-code-review` — 2026-07-30 (Haiku 4.5 ×3 lentilles) — **BOUCLE CONVERGÉE**
+
+**13 findings bruts → 4 LOW retenus, 9 écartés dont 5 réfutés en ground-truth. Aucun finding au-dessus de LOW : le critère d'arrêt de la § Review Iteration Rule est atteint.**
+
+**Trend : 6 → 24 → 0 au-dessus de LOW.** Rotation Sonnet → Opus → Haiku, contexte frais à chaque passe, diff unique aplati aux passes 2 et 3. Le pic de la passe 2 était bien un **effet de modèle**, pas une divergence de la story : la passe 3, sur un code stabilisé, ne trouve plus que de la documentation.
+
+**Le profil Haiku est exactement celui que `CLAUDE.md` décrit, et la discipline de grep l'a contenu.** Cinq affirmations réfutées :
+
+| Affirmation Haiku | Vérification | Verdict |
+|---|---|---|
+| « le verdict `yes` n'est pas dans le diff » (MEDIUM) | `grep -cF` = **1** dans le fichier **et** dans le diff | réfuté |
+| « la mutation retirant la garde `IS NULL` n'a pas été exécutée » (MEDIUM) | présente au tableau de mutation de la passe 2, et rejouée | réfuté |
+| « `migrations_upgrade_path.rs` n'est pas dans le diff » | **13** occurrences, dont les deux lignes `+` corrigées | réfuté |
+| « condition (4) absente du volet avoir » (MEDIUM) | dissymétrie **voulue**, documentée — la lentille l'écrit elle-même deux lignes plus bas | non-finding |
+| clause créance (**CRITICAL**) | re-litigation d'un arbitrage **déjà rendu** en passe 2, citant le Change Log de cette passe comme preuve | hors sujet |
+
+Le rapport du Blind Hunter se contredit par ailleurs lui-même : sa section « sain » affirme que les deux volets sont couverts par mutation, ce que son propre finding n°2 nie.
+
+**Un finding Haiku a néanmoins un vrai noyau, et il est bon.** Le Debug Log de `dev-story` annonce avoir muté « les 2 occurrences des `UPDATE` » pour « 7 verts, 1 rouge ». C'est factuellement exact, mais un lecteur en conclut que **les deux volets** sont filetés — or le seul test rouge ne couvrait que les factures, et le volet avoir n'avait alors **aucun** filet, ce que la passe 2 a démasqué. Renvoi ajouté sous le tableau daté, sans le réécrire.
+
+**Le MEDIUM de l'Edge Case Hunter a été réfuté par lecture du code, pas écarté par argument.** Il signalait que le refus d'avoir sur compte archivé — arbitré en passe 1, tracé en #280 — n'était verrouillé par aucun test. Or `credit_note_fails_when_snapshot_account_archived` (`invoices_line_revenue_account.rs:568`) le teste **au niveau ligne** : ligne portant `revenue_account_id = 3200`, compte archivé après validation, avoir refusé, avec assertions sur `line_number`, `account_id` et `account_number`. La garde lit la colonne sans se soucier de son origine, et le backfill qui la remplit est verrouillé par ses propres tests ; composer les deux ne testerait que la composition de deux unités déjà couvertes.
+
+**L'Acceptance Auditor rend CONFORME avec 0 finding**, et son rapport est **opposable** : matrice de couverture complète sur les 9 AC, les 7 décisions et les 11 tests, recompte P5 exécuté (57 fichiers, 57 lignes de tableau, 5 + 52 + 0), P6 vérifié site par site. C'est l'inverse des quatre rapports Haiku vides de la 16-1a — la contre-mesure « exiger une section *vérifié et jugé sain* » a produit l'effet attendu.
+
+**4 LOW appliqués**, dont **deux trouvés par l'orchestrateur sur ses propres patches de passe 2** avant l'arrivée des rapports : le CHANGELOG n'énumérait pas l'exclusion du compte non-imputable alors que le critère venait de l'y ajouter ; et le message d'assertion du test de jonction énonçait une propriété de *toute* facture là où elle ne vaut que pour une facture mono-compte (résidu d'un finding informationnel de la passe 2 que j'avais laissé passer). Les deux autres : le renvoi du Debug Log ci-dessus, et le retrait d'un **nombre non sourcé** de mon Change Log de passe 2 (« l'Edge Case Hunter a recompté 7 sites ») — une affirmation chiffrée attribuée à une lentille n'est pas une vérification.
+
+**Deux vérifications de mes patches de passe 2, faites avant les rapports** : le `JOIN` de la condition (4) ne peut pas fan-outer (`accounts.id` est `AUTO_INCREMENT PRIMARY KEY`, `20260411000001_accounts.sql:7`), donc `HAVING COUNT(*) = 1` reste sain ; et « seule migration du dépôt sans DDL » est vraie, **vérifiée par énumération des 57 fichiers** et non par affirmation.
+
+**Enseignement pour la rétro Epic 16** — sur trois passes, **la remédiation a été la première source de défauts, deux fois sur trois**. La passe 2 a montré que le patch central de la passe 1 ne corrigeait rien *tout en documentant son succès* ; la passe 3 a trouvé deux résidus de la passe 2, et l'orchestrateur les avait devancés en auditant ses propres patches avant de lire les rapports. Ce geste — **auditer sa propre remédiation avant la passe suivante** — est ce qui manque encore à la § « Propagation post-patch » : elle demande de greper le symptôme, pas de rejouer l'argument du patch contre lui-même.
+
 ### Passe 2 de `bmad-code-review` — 2026-07-29 (Opus ×3 lentilles, contexte frais, diff aplati)
 
 **~24 findings bruts, 12 MEDIUM → 4 arbitrages + 17 patches, 2 reports, 2 écartés.** Diff aplati `4od…` → `4db9003e..HEAD` en **un seul** diff, pour écarter le piège d'indexation multi-commit. Axe imposé aux trois lentilles : **traiter la remédiation de la passe 1 comme le matériau le plus suspect.** Le résultat justifie l'axe — la majorité des findings portent sur des artefacts produits en passe 1, y compris son patch central.
@@ -476,7 +508,7 @@ La **substance** de D-B7 est intacte et reste verrouillée par `divergent_invoic
 
 **Le verdict d'idempotence passe à `yes`** (arbitrage Guy) : sans DDL, la re-exécution manuelle **réussit**, et c'était la seule ligne `tracked-by-sqlx` du tableau sans code d'erreur MariaDB. Légende étendue, compteurs recomptés depuis la source → **57 = 5 `yes` + 52 `tracked-by-sqlx` + 0 `no`**.
 
-**Sixième et septième sites de nombre périmés** dans `migrations_upgrade_path.rs` (`:95` « 13 dernières », `:212` « 10 restantes » pour une fenêtre de **23**) — dans le fichier même où la story revendiquait avoir aligné « les 5 sites », et dont un commentaire documente que « trois copies du même symptôme y ont été découvertes une par passe ». L'Edge Case Hunter en a recompté **7**.
+**Sixième et septième sites de nombre périmés** dans `migrations_upgrade_path.rs` (`:95` « 13 dernières », `:212` « 10 restantes » pour une fenêtre de **23**) — dans le fichier même où la story revendiquait avoir aligné « les 5 sites », et dont un commentaire documente que « trois copies du même symptôme y ont été découvertes une par passe ». L'Edge Case Hunter annonçait en avoir recompté davantage que les 5 revendiquées ; son décompte exact n'a pas été reproduit et n'est donc pas repris ici — seuls les deux sites effectivement faux (`:95`, `:212`) sont corrigés. *(Nombre non sourcé retiré en passe 3 : une affirmation chiffrée attribuée à une lentille n'est pas une vérification.)*
 
 **Checksum de migration — vérifié, sans risque.** Modifier un `.sql` déjà appliqué provoque `MigrateError::VersionMismatch`. Contrôle exécuté sur les trois bases locales : `kesh` et `kesh_e2e` n'ont **aucune** ligne pour `20260729000001`, `kesh_gate` n'a pas de table `_sqlx_migrations`. La migration n'étant par ailleurs pas publiée, la modifier est légitime.
 
