@@ -191,7 +191,7 @@ Autrement dit : la révision de D7 en passe 1 est correcte sur le **composant**,
 - [x] **T6** — i18n : nouvelles clés dans les 4 `.ftl`, namespace global de préférence (AC11, AC12).
 - [x] **T7** — Tests composant, formulaire et écrans de détail (AC13, AC14, AC14-bis).
 - [ ] **T8** — Test E2E Playwright (AC15).
-- [ ] **T9** — Doc-sync : manuel utilisateur + PDF, README, CHANGELOG (AC17, AC18).
+- [x] **T9** — Doc-sync : manuel utilisateur + PDF, README, CHANGELOG (AC17, AC18).
 - [ ] **T10** — Gate complet frontend + backend (AC16).
 
 **Ordre conseillé** : T2 → T1 → T3 → T4 → T5 → T6 → T7 → T8 → T9 → T10.

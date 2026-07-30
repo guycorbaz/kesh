@@ -571,7 +571,8 @@ La barre de recherche utilise l'index FULLTEXT MariaDB. Recherchez par nom, IDE,
     \item \textbf{Date de facture} : par défaut aujourd'hui.
     \item \textbf{Date d'échéance} : calculée automatiquement selon les conditions de paiement du client (modifiable).
     \item \textbf{Numéro} : généré automatiquement selon le pattern configuré (cf. \emph{Numérotation}).
-    \item \textbf{Lignes de facture} : un ou plusieurs produits avec quantité, prix, TVA.
+    \item \textbf{Lignes de facture} : un ou plusieurs produits avec quantité, prix, TVA, et \textbf{compte de produit}.
+    \item \textbf{Compte de produit (par ligne)} : le compte du plan comptable sur lequel le chiffre d'affaires de cette ligne sera crédité. Laissé vide, il suit le \textbf{compte de produit par défaut de la société} (\emph{Réglages} → facturation) — le champ affiche alors ce compte entre parenthèses, pour que vous voyiez d'un coup d'œil où ira le produit. Renseigné, il permet de \textbf{ventiler une même facture sur plusieurs comptes} : honoraires, marchandises, prestations, etc. Le compte reste \textbf{modifiable tant que la facture est un brouillon} ; il est figé à la validation.
     \item \textbf{Remarques} : texte libre apparaissant en bas de facture (mention de remerciement, conditions particulières, etc.).
     \item \textbf{Compte bancaire de réception} : le compte sur lequel vous attendez le paiement (utilisé pour générer la référence QR Bill).
 \end{itemize}
@@ -588,7 +589,10 @@ La barre de recherche utilise l'index FULLTEXT MariaDB. Recherchez par nom, IDE,
     \item Compte de réception : le compte bancaire QR-IBAN de l'agence.
 \end{itemize}
 
-À la validation, Kesh attribue le numéro \texttt{F-2026-0042}, génère le PDF QR Bill, et crée l'écriture comptable automatique (Débit 1100 Débiteurs / Crédit 3200 Honoraires). Si les lignes de la facture portent un taux de TVA, Kesh comptabilise aussi automatiquement la TVA due au compte de TVA (p.~ex. 2200) ; ici l'agence n'est pas assujettie, l'écriture se limite donc à CHF 4'950.00 (cf. \emph{Décompte TVA}).
+À la validation, Kesh attribue le numéro \texttt{F-2026-0042}, génère le PDF QR Bill, et crée l'écriture comptable automatique (Débit 1100 Débiteurs / Crédit 3200 Honoraires).
+
+\medskip
+\noindent\emph{Variante ventilée.} Si l'agence souhaite distinguer ses activités, elle affecte la ligne 1 au compte \texttt{3200 Honoraires} et la ligne 2 au compte \texttt{3400 Maintenance}. L'écriture générée porte alors \textbf{deux lignes de crédit distinctes} — Crédit 3200 pour CHF 4'500.00 et Crédit 3400 pour CHF 450.00 — au lieu d'un crédit unique. Le compte de résultat devient exploitable sans reclassement manuel a posteriori. Les lignes laissées vides continuent de suivre le compte par défaut de la société, et se regroupent sur ce compte. Si les lignes de la facture portent un taux de TVA, Kesh comptabilise aussi automatiquement la TVA due au compte de TVA (p.~ex. 2200) ; ici l'agence n'est pas assujettie, l'écriture se limite donc à CHF 4'950.00 (cf. \emph{Décompte TVA}).
 
 \subsection{Validation d'une facture}
 
@@ -596,7 +600,7 @@ Une facture passe par trois états :
 
 \begin{enumerate}
     \item \textbf{Brouillon} : modification libre, pas de numéro définitif, n'apparaît pas dans les rapports.
-    \item \textbf{Validée} : numéro définitif attribué, PDF QR Bill généré, écriture comptable créée automatiquement (Débit 1100 Débiteurs / Crédit 3000 Ventes + 2200 TVA).
+    \item \textbf{Validée} : numéro définitif attribué, PDF QR Bill généré, écriture comptable créée automatiquement (Débit 1100 Débiteurs / Crédit 3000 Ventes + 2200 TVA), et \textbf{comptes de produit figés}. Une facture validée n'est plus modifiable : le compte de chaque ligne reste néanmoins \textbf{consultable} dans la colonne « Compte de produit » de l'écran de détail, où les lignes suivant le compte par défaut de la société l'affichent avec la mention \emph{(défaut)}. C'est le moyen de contrôler la ventilation sans avoir à ouvrir l'écriture comptable et à la relire à l'envers.
     \item \textbf{Payée} : marquée comme payée après réconciliation avec une transaction bancaire entrante.
 \end{enumerate}
 
