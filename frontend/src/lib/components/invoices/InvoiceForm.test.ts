@@ -224,6 +224,14 @@ describe('InvoiceForm — blocage global (Story 16-1b, AC8)', () => {
 		expect(isDisabled(btn)).toBe(true);
 		expect(btn.getAttribute('title')).toMatch(BLOCK_MSG);
 		expect(btn.getAttribute('title')).toContain('2, 4');
+
+		// AC8 exige que le message soit ATTEIGNABLE. Un bouton `disabled` porte
+		// `pointer-events-none` : son `title` ne s'affiche jamais et l'élément
+		// n'est pas focusable. Le message doit donc être rendu. (Passe 2 de revue.)
+		const rendered = getByTestId('invoice-lines-invalid-error');
+		expect(rendered.textContent).toMatch(BLOCK_MSG);
+		expect(rendered.textContent).toContain('2, 4');
+		expect(rendered.getAttribute('role')).toBe('alert');
 	});
 
 	it("corriger UNE ligne laisse bloqué, avec un message ne nommant plus que l'autre", async () => {
@@ -272,6 +280,20 @@ describe('InvoiceForm — exemption du défaut société (Story 16-1b, D11 / mir
 		expect(isDisabled(getByTestId('create-invoice-button'))).toBe(false);
 	});
 
+	it("…et le BANDEAU global ne s'affiche pas non plus pour ce défaut non-postable", async () => {
+		// Le backend accepte ce compte (16-1a D3-bis). Annoncer « ne pourront pas
+		// être validées » serait FAUX — et contredirait la ligne qui désigne le
+		// même compte sans marqueur. C'est l'incohérence que la passe 1 a créée en
+		// oubliant l'exemption sur le bandeau. (Passe 2 de revue.)
+		getInvoiceSettingsMock.mockResolvedValue({
+			defaultReceivableAccountId: 1100,
+			defaultRevenueAccountId: COLLECTIVE.id,
+		});
+		const { queryByTestId } = render(InvoiceForm, { invoice: invoiceWith([COLLECTIVE.id]) });
+		await settle();
+		expect(queryByTestId('invoice-default-account-warning')).toBeNull();
+	});
+
 	it("l'exemption ne couvre QUE `postable` : un défaut archivé reste bloquant", async () => {
 		getInvoiceSettingsMock.mockResolvedValue({
 			defaultReceivableAccountId: 1100,
@@ -284,6 +306,37 @@ describe('InvoiceForm — exemption du défaut société (Story 16-1b, D11 / mir
 
 		expect(queryByText(MARKER)).not.toBeNull();
 		expect(isDisabled(getByTestId('create-invoice-button'))).toBe(true);
+	});
+});
+
+describe('InvoiceForm — le CRITICAL de la passe 2 : vider puis enregistrer', () => {
+	it("vider un compte puis enregistrer IMMÉDIATEMENT persiste `null`, pas l'ancien compte", async () => {
+		// L'ancienne conception différait la réconciliation de 150 ms. Séquence
+		// réelle : `blur` (timer armé) -> `click` -> `onSubmit` lit les lignes DANS
+		// LA MÊME TÂCHE, où le compte valait encore l'ancien. Le `PUT` partait avec
+		// l'ancienne valeur pendant que l'écran affichait « suit le défaut
+		// société », et la redirection démontait le composant avant l'échéance du
+		// timer. Écriture comptable fausse, en silence.
+		updateInvoiceMock.mockResolvedValue({ id: 7 });
+		const { container, getByTestId } = render(InvoiceForm, {
+			invoice: invoiceWith([SERVICES.id]),
+		});
+		await settle();
+
+		const field = accountInputs(container)[0];
+		expect(field.value).toBe('3200 — Honoraires');
+
+		// Pas de `settle()` entre le blur et le clic : c'est tout l'enjeu.
+		await fireEvent.input(field, { target: { value: '' } });
+		await fireEvent.blur(field);
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+
+		expect(updateInvoiceMock).toHaveBeenCalled();
+		const payload = updateInvoiceMock.mock.calls[0][1] as {
+			lines: { revenueAccountId: number | null }[];
+		};
+		expect(payload.lines[0].revenueAccountId).toBeNull();
 	});
 });
 
@@ -302,6 +355,42 @@ describe('InvoiceForm — réglages indisponibles (Story 16-1b, passe 1 de revue
 		expect(isDisabled(getByTestId('create-invoice-button'))).toBe(false);
 		// Et l'échec est VISIBLE : il était affecté mais rendu nulle part.
 		expect(getByTestId('invoice-settings-error')).toBeTruthy();
+	});
+
+	it('marqueur et blocage se taisent ENSEMBLE quand les réglages manquent', async () => {
+		// La passe 1 n'avait désarmé que le blocage : le champ criait « Compte
+		// invalide » pendant que le bouton restait actif — l'incohérence que
+		// `account-validity.ts` déclare pire que l'absence de fonctionnalité.
+		getInvoiceSettingsMock.mockRejectedValue(new Error('réseau'));
+		const { queryByText, getByTestId } = render(InvoiceForm, {
+			invoice: invoiceWith([COLLECTIVE.id]),
+		});
+		await settle();
+
+		expect(queryByText(MARKER)).toBeNull();
+		expect(isDisabled(getByTestId('create-invoice-button'))).toBe(false);
+	});
+
+	it("après un échec de réglages, un clic sur Enregistrer ABOUTIT", async () => {
+		// La garde de la passe 1 débloquait le bouton mais l'enfermement survivait
+		// dans `onSubmit` : `freshSettings.X !== invoiceSettings?.X` avec
+		// `invoiceSettings` à `null` compare à `undefined`, donc TOUJOURS vrai —
+		// tout submit retournait « Rechargez la page ». Le test de la passe 1
+		// s'arrêtait au bouton cliquable, sans jamais vérifier qu'un clic aboutit.
+		getInvoiceSettingsMock.mockRejectedValue(new Error('réseau'));
+		updateInvoiceMock.mockResolvedValue({ id: 7 });
+		const { getByTestId } = render(InvoiceForm, { invoice: invoiceWith([null]) });
+		await settle();
+
+		// Le rafraîchissement des réglages dans `onSubmit` réussit cette fois.
+		getInvoiceSettingsMock.mockResolvedValue({
+			defaultReceivableAccountId: 1100,
+			defaultRevenueAccountId: DEFAULT_REVENUE.id,
+		});
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+
+		expect(updateInvoiceMock).toHaveBeenCalled();
 	});
 });
 

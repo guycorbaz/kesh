@@ -53,6 +53,13 @@
 		 * « aucun compte ». Un champ vide laisserait croire à un oubli.
 		 */
 		placeholder?: string;
+		/**
+		 * Nom accessible du champ. Sans lui, le calcul du nom retombe sur le
+		 * `placeholder` — lequel vaut ici « … (défaut société) » sur **toutes** les
+		 * lignes : les 200 champs d'une facture s'annonçaient tous du même nom, y
+		 * compris ceux portant un compte explicite différent. (Passe 2 de revue.)
+		 */
+		ariaLabel?: string;
 	}
 
 	let {
@@ -65,7 +72,8 @@
 		markInvalid = false,
 		requiredAccountType = undefined,
 		postableExemptAccountId = null,
-		placeholder = undefined
+		placeholder = undefined,
+		ariaLabel = undefined
 	}: Props = $props();
 
 	// Identifiant stable pour lier le message d'invalidité au champ. `$props.id()`
@@ -74,25 +82,37 @@
 	const uid = $props.id();
 	const invalidMsgId = `account-invalid-${uid}`;
 
-	let query = $state('');
-	let open = $state(false);
-	let highlightIndex = $state(0);
-
-	// Lorsqu'une valeur arrive depuis l'extérieur, afficher le compte correspondant.
-	$effect(() => {
-		if (value !== null && !loadError) {
-			const acc = accounts.find((a) => a.id === value);
-			if (acc) {
-				query = `${acc.number} — ${acc.name}`;
-			}
-		} else if (value === null) {
-			query = '';
-		}
-	});
-
-	// Story 14-3b : sélecteur de SAISIE d'écriture → seuls les comptes postables
-	// (le backend rejette désormais une ligne manuelle vers un compte non-postable).
-	const active = $derived(accounts.filter((a) => a.active && a.postable));
+	// ── LE TEXTE AFFICHÉ EST DÉRIVÉ DE LA VALEUR, PLUS UN ÉTAT MUTABLE ────────
+	//
+	// Refonte de la passe 2 de revue (arbitrage Guy). La conception antérieure
+	// gardait le texte en `$state`, écrit à la fois par un `$effect` (depuis
+	// `value`) et par la frappe, puis « réconcilié » au `blur` avec 150 ms de
+	// retard. Elle a produit DEUX pertes de données silencieuses que trois tours
+	// de patch n'ont pas fermées :
+	//
+	//   1. vider le champ puis cliquer « Enregistrer » — le formulaire lisait la
+	//      ligne AVANT que la réconciliation différée ne s'exécute, et persistait
+	//      l'ANCIEN compte pendant que l'écran affichait « suit le défaut
+	//      société ». Écriture comptable fausse, avec l'UI qui affirmait
+	//      activement le contraire ;
+	//   2. un `blur` AVANT l'arrivée de la liste des comptes — le champ était
+	//      vide faute d'avoir pu résoudre le libellé, ce que la réconciliation
+	//      prenait pour un effacement volontaire : le compte disparaissait sans
+	//      aucun geste destructif de l'utilisateur.
+	//
+	// La conception actuelle SUPPRIME la fenêtre au lieu de la garder :
+	//
+	//   - `displayLabel` est **dérivé** de `value` : il ne peut pas la contredire ;
+	//   - `draft` porte le texte transitoire pendant la frappe, `null` hors
+	//     édition ;
+	//   - le `blur` est **immédiat** (plus de `setTimeout`) et ne peut agir que si
+	//     `draft !== null`, c'est-à-dire si l'utilisateur a réellement tapé. Un
+	//     simple passage de focus ne touche plus rien.
+	//
+	// Ce qui rend le commit immédiat sûr : un clic sur un item du dropdown ne
+	// déclenche PAS de `blur`, son `onmousedown` appelant `preventDefault()`.
+	// Le délai de 150 ms n'avait d'autre rôle que de contourner cette course —
+	// il devient inutile, et avec lui le timer jamais nettoyé.
 
 	/** Le compte désigné par `value`, résolu sur la liste COMPLÈTE (cf. D11). */
 	const selected = $derived(value === null ? undefined : accounts.find((a) => a.id === value));
@@ -103,16 +123,64 @@
 	}
 
 	/**
+	 * Texte que le champ doit afficher pour la valeur liée.
+	 *
+	 * En mode dégradé, l'identifiant persisté plutôt que du vide : sans lui, une
+	 * ligne DÉJÀ ventilée paraissait vierge, et l'utilisateur écrasait un compte
+	 * sans savoir qu'il en écrasait un.
+	 */
+	const displayLabel = $derived.by(() => {
+		if (value === null) return '';
+		if (loadError) return String(value);
+		return labelOf(selected);
+	});
+
+	/** Texte en cours de frappe. `null` = aucune édition en cours. */
+	let draft = $state<string | null>(null);
+	let open = $state(false);
+	let highlightIndex = $state(0);
+
+	/** Ce que l'input montre : le brouillon s'il existe, sinon la vérité. */
+	const query = $derived(draft ?? displayLabel);
+
+	// Une valeur venue de l'extérieur annule le brouillon : le champ ne peut pas
+	// continuer d'afficher une saisie qui ne correspond plus à rien. Reproduit le
+	// comportement de l'ancien `$effect` pour les 4 consommateurs existants.
+	let lastValue = $state<number | null | undefined>(undefined);
+	$effect(() => {
+		if (lastValue !== value) {
+			lastValue = value;
+			draft = null;
+		}
+	});
+
+	// Story 14-3b : sélecteur de SAISIE d'écriture → seuls les comptes postables
+	// (le backend rejette désormais une ligne manuelle vers un compte non-postable).
+	// `requiredAccountType` filtre AUSSI les propositions, pas seulement le
+	// marqueur : sans cela, le sélecteur de compte de PRODUIT proposait « 4000 —
+	// Achats », et le sélectionner marquait aussitôt la ligne invalide en
+	// désactivant l'enregistrement. L'interface conduisait l'utilisateur dans
+	// l'état bloquant qu'elle venait de créer. (Passe 2 de revue.)
+	// `undefined` par défaut : les 4 consommateurs existants sont inchangés.
+	const active = $derived(
+		accounts.filter(
+			(a) =>
+				a.active &&
+				a.postable &&
+				(requiredAccountType === undefined || a.accountType === requiredAccountType)
+		)
+	);
+
+	/**
 	 * Story 16-1b (AC2) — la valeur persistée est-elle hors de ce que le champ
 	 * accepterait aujourd'hui ? Vrai seulement si le compte est **résolu** : une
-	 * valeur non résoluble n'a rien à qualifier (et, avec `fetchAccounts(true)`,
-	 * ne se produit pas).
+	 * valeur non résoluble n'a rien à qualifier.
 	 */
 	const isInvalid = $derived.by(() => {
 		if (!markInvalid || loadError) return false;
-		// Règle déléguée à `account-validity` : `InvoiceForm` applique EXACTEMENT la
-		// même pour décider du blocage d'enregistrement. Un champ marqué sans
-		// blocage, ou l'inverse, serait pire que l'absence de fonctionnalité.
+		// Règle déléguée à `account-validity` : `InvoiceForm` applique EXACTEMENT
+		// la même pour décider du blocage. Un champ marqué sans blocage, ou
+		// l'inverse, serait pire que l'absence de fonctionnalité.
 		return isAccountUnusable(selected, { requiredAccountType, postableExemptAccountId });
 	});
 
@@ -131,11 +199,11 @@
 
 	function handleInput(e: Event) {
 		const target = e.target as HTMLInputElement;
-		query = target.value;
+		draft = target.value;
 		open = true;
 		highlightIndex = 0;
 
-		// En mode fallback (loadError), l'utilisateur saisit un ID numérique directement.
+		// Mode dégradé (14-3b) : l'utilisateur saisit un ID numérique directement.
 		if (loadError) {
 			const n = Number(target.value);
 			onSelect(Number.isFinite(n) && n > 0 ? n : null);
@@ -143,7 +211,7 @@
 	}
 
 	function handleSelect(acc: AccountResponse) {
-		query = `${acc.number} — ${acc.name}`;
+		draft = null; // le libellé retombe sur `displayLabel`
 		open = false;
 		onSelect(acc.id);
 	}
@@ -169,46 +237,34 @@
 	}
 
 	/**
-	 * Story 16-1b (AC1-bis) — réconcilie le texte affiché avec la valeur liée.
+	 * Commit du brouillon au `blur` — **immédiat**, et seulement s'il y a eu
+	 * édition (AC1-bis).
 	 *
-	 * **Le champ ne peut jamais afficher un texte qui contredit `value`.** Sans
-	 * cela, sur un champ optionnel, le geste naturel pour revenir au défaut
-	 * société (tout sélectionner + `Suppr`) laissait `value` inchangée : le champ
-	 * vide déclenchait le placeholder « … (défaut société) » et l'utilisateur
-	 * enregistrait convaincu d'avoir remis la ligne au défaut, alors que la
-	 * facture se postait sur l'ancien compte. Écriture fausse en silence, avec
-	 * l'UI qui affirmait le contraire.
-	 *
-	 * Inactif quand `allowClear` est `false` : un champ obligatoire ne doit pas
-	 * se nullifier au `blur` (dette #271).
+	 * `draft === null` signifie « l'utilisateur n'a rien tapé » : un simple
+	 * passage de focus ne peut donc plus rien effacer. C'est ce qui ferme le
+	 * chemin n°2 décrit en tête de fichier.
 	 */
-	function commitOnBlur() {
-		if (!allowClear || loadError) return;
+	function handleBlur() {
+		open = false;
 
-		if (query.trim() === '') {
-			// Champ vidé par l'utilisateur = effacement explicite.
-			if (value !== null) onSelect(null);
+		// Champ obligatoire : on ne nullifie JAMAIS au blur (dette #271), et le
+		// brouillon est conservé tel quel — comportement des 4 consommateurs
+		// existants strictement inchangé.
+		if (!allowClear || loadError) return;
+		if (draft === null) return;
+
+		if (draft.trim() === '') {
+			// Effacement explicite — mais SEULEMENT si le champ montrait
+			// réellement quelque chose. Un champ vide parce que la liste des
+			// comptes n'est pas encore arrivée n'est pas une intention.
+			if (value !== null && selected !== undefined) onSelect(null);
+			draft = null;
 			return;
 		}
 
-		// Texte libre jamais validé par une sélection → restaurer la vérité.
-		if (value === null) {
-			query = '';
-		} else {
-			const label = labelOf(selected);
-			if (label !== '' && query !== label) query = label;
-		}
-	}
-
-	function handleBlur() {
-		// Délai pour permettre un clic sur un item du dropdown. La réconciliation
-		// est faite DANS le délai, donc après une éventuelle sélection : si
-		// l'utilisateur a cliqué un item, `query` et `value` concordent déjà et
-		// `commitOnBlur` est un no-op — d'où « `onSelect(null)` une seule fois ».
-		setTimeout(() => {
-			open = false;
-			commitOnBlur();
-		}, 150);
+		// Texte libre jamais validé : on le jette, l'affichage retombe sur la
+		// vérité dérivée. Le champ ne peut donc jamais contredire `value`.
+		draft = null;
 	}
 </script>
 
@@ -224,6 +280,7 @@
 		placeholder={loadError
 			? i18nMsg('account-autocomplete-unavailable', 'Autocomplétion indisponible — saisir l\'ID du compte')
 			: (placeholder ?? i18nMsg('journal-entry-form-col-account', 'Compte'))}
+		aria-label={ariaLabel ?? i18nMsg('journal-entry-form-col-account', 'Compte')}
 		aria-autocomplete="list"
 		aria-expanded={open}
 		aria-invalid={isInvalid ? 'true' : undefined}
@@ -247,15 +304,11 @@
 			aria-label={i18nMsg('common-account-clear', 'Effacer le compte sélectionné')}
 			onmousedown={(e) => e.preventDefault()}
 			onclick={() => {
-				// `value` est la source de vérité : on la remet à `null` et le
-				// `$effect` s'occupe de `query`. MAIS si elle vaut DÉJÀ `null`, le
-				// parent ne change rien, le `$effect` ne se redéclenche pas, et le
-				// `preventDefault` ci-dessus a supprimé le `blur` qui aurait
-				// réconcilié le texte : le champ resterait sur une saisie libre
-				// contredisant la valeur liée. On vide alors explicitement.
-				// (Convergence Blind Hunter + Edge Case Hunter, passe 1 de revue.)
-				if (value === null) query = '';
-				else onSelect(null);
+				// Jeter le brouillon suffit : l'affichage retombe sur `displayLabel`,
+				// qui vaut `''` quand la valeur est nulle. Le bouton ne écrit donc
+				// jamais le texte canonique — il n'y en a plus qu'un, dérivé.
+				draft = null;
+				if (value !== null) onSelect(null);
 			}}
 		>
 			<span aria-hidden="true">×</span>

@@ -267,8 +267,16 @@
 		const id = invoiceSettings.defaultRevenueAccountId;
 		if (id == null) return false;
 		const acc = accounts.find((a) => a.id === id);
-		// Pas d'exemption ici : c'est précisément CE compte qu'on évalue.
-		return isAccountUnusable(acc, { requiredAccountType: 'Revenue' });
+		// **L'exemption `postable` s'applique AUSSI ici.** Le backend accepte un
+		// compte par défaut non-postable (16-1a D3-bis / AC8-bis) : l'annoncer
+		// « non validable » serait faux. Sans cette exemption, le bandeau
+		// contredisait la ligne qui désigne le MÊME compte explicitement, et
+		// recréait à l'échelle du formulaire l'incohérence qu'il devait lever.
+		// (Passe 2 de revue, Acceptance Auditor.)
+		return isAccountUnusable(acc, {
+			requiredAccountType: 'Revenue',
+			postableExemptAccountId: id
+		});
 	});
 
 	/**
@@ -492,8 +500,15 @@
 			const freshSettings = await getInvoiceSettings();
 			// Only check account IDs (the two fields that gate invoice creation).
 			// String fields (format, journal, template) can be normalized server-side without affecting functionality.
-			if (freshSettings.defaultReceivableAccountId !== invoiceSettings?.defaultReceivableAccountId ||
-			    freshSettings.defaultRevenueAccountId !== invoiceSettings?.defaultRevenueAccountId) {
+			// Si les réglages n'ont jamais pu être chargés, il n'y a rien à comparer :
+			// `invoiceSettings?.X` vaut `undefined`, et `number !== undefined` est
+			// TOUJOURS vrai — tout submit retournait donc « Rechargez la page »,
+			// quel que soit le contenu réel. L'enfermement que la passe 1 croyait
+			// avoir levé survivait ici, simplement plus bruyant.
+			// (Passe 2 de revue, Acceptance Auditor.)
+			if (invoiceSettings !== null &&
+			   (freshSettings.defaultReceivableAccountId !== invoiceSettings.defaultReceivableAccountId ||
+			    freshSettings.defaultRevenueAccountId !== invoiceSettings.defaultRevenueAccountId)) {
 				errorMsg = 'Les paramètres de facturation ont changé. Rechargez la page et réessayez.';
 				submitting = false;
 				return;
@@ -704,6 +719,23 @@
 			</p>
 		{/if}
 
+		{#if invalidRevenueAccountLines.length > 0}
+			<!--
+				AC8 exige que le message NOMME toutes les lignes fautives. Il ne
+				vivait que dans le `title` du bouton — or un bouton `disabled` porte
+				`pointer-events-none` : le tooltip natif ne s'affiche jamais, et
+				l'élément n'est pas focusable. Le seul porteur du message était donc
+				inatteignable au clavier comme au lecteur d'écran. (Passe 2 de revue.)
+			-->
+			<p class="mb-2 text-sm text-destructive" role="alert" data-testid="invoice-lines-invalid-error">
+				{i18nMsg(
+					'invoice-lines-revenue-account-invalid',
+					'Compte de produit invalide sur les lignes suivantes : { $lines }',
+					{ lines: invalidRevenueAccountLines.join(', ') }
+				)}
+			</p>
+		{/if}
+
 		{#if defaultRevenueAccountUnusable}
 			<!--
 				Signaler sans bloquer : le brouillon reste enregistrable (le backend
@@ -765,15 +797,26 @@
 							</select>
 						</td>
 						<td class="py-2 pr-2">
+							<!--
+								`markInvalid` suit la même condition que le blocage : tant que
+								les réglages sont inconnus, l'exemption `postable` du défaut
+								société l'est aussi, donc ni le marqueur ni le blocage ne
+								peuvent se prononcer. La passe 1 n'avait désarmé que le
+								blocage — le champ criait « Compte invalide » pendant que le
+								bouton restait actif, soit l'incohérence que
+								`account-validity.ts` déclare pire que l'absence de
+								fonctionnalité. (Passe 2 de revue, convergence 2 lentilles.)
+							-->
 							<AccountAutocomplete
 								{accounts}
 								value={line.revenueAccountId ?? null}
 								loadError={accountsLoadError}
 								allowClear
-								markInvalid
+								markInvalid={invoiceSettings !== null}
 								requiredAccountType="Revenue"
 								postableExemptAccountId={invoiceSettings?.defaultRevenueAccountId ?? null}
 								placeholder={defaultAccountPlaceholder}
+								ariaLabel={i18nMsg('invoice-line-col-revenue-account', 'Compte de produit')}
 								onSelect={(id) => (line.revenueAccountId = id)}
 							/>
 						</td>

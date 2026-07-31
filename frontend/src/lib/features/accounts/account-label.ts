@@ -12,6 +12,7 @@
  */
 
 import type { AccountResponse } from './accounts.types';
+import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 
 /** `3200 — Honoraires`, ou `#3200` si le compte n'est pas résoluble. */
 function label(accounts: AccountResponse[], id: number): string {
@@ -27,17 +28,26 @@ function label(accounts: AccountResponse[], id: number): string {
  * défaut ». Sans elle, un vide laisserait croire à un oubli — or `null` veut dire
  * « suivre le défaut », pas « aucune imputation ».
  *
- * Tiret si le défaut société n'est pas configuré : il n'y a alors rien de vrai à
- * afficher.
+ * Tiret si le défaut société n'est pas configuré, **et** sur toute pièce qui
+ * n'est plus un brouillon : l'écriture y est déjà passée, il n'y a plus de repli
+ * à annoncer.
  */
 export function invoiceRevenueAccountLabel(
 	accounts: AccountResponse[],
 	revenueAccountId: number | null,
-	defaultRevenueAccountId: number | null
+	defaultRevenueAccountId: number | null,
+	isDraft: boolean
 ): string {
 	if (revenueAccountId !== null) return label(accounts, revenueAccountId);
+	// Passe 2 de revue : la mention n'a de sens qu'au FUTUR. Sur une facture
+	// validée ou annulée, l'écriture est déjà passée — annoncer un repli qui
+	// n'aura pas lieu serait le même mensonge que celui qu'on refuse côté avoir.
+	// La population existe : le backfill de 16-1a-bis laisse délibérément à
+	// `NULL` les pièces dont l'écriture a été retouchée, et exclut les
+	// `cancelled`.
+	if (!isDraft) return '—';
 	if (defaultRevenueAccountId === null) return '—';
-	return `${label(accounts, defaultRevenueAccountId)} (défaut)`;
+	return `${label(accounts, defaultRevenueAccountId)} ${i18nMsg('account-label-default-suffix', '(défaut)')}`;
 }
 
 /**

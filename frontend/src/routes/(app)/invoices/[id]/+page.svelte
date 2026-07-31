@@ -180,7 +180,8 @@
 		return invoiceRevenueAccountLabel(
 			accounts,
 			revenueAccountId,
-			invoiceSettings?.defaultRevenueAccountId ?? null
+			invoiceSettings?.defaultRevenueAccountId ?? null,
+			invoice?.status === 'draft'
 		);
 	}
 

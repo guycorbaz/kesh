@@ -68,8 +68,11 @@ test('une facture ventilée sur 2 comptes produit 2 lignes de crédit distinctes
 				version: number;
 			};
 		};
-		// Numéros dérivés du suffixe : la DB est partagée entre specs.
-		const base = 3200 + (Number(suffix.slice(-3)) % 300);
+		// Numéros hors du plan comptable seedé (qui occupe 3000/3200/3400/…), et
+		// dérivés du SEUL tirage aléatoire : `suffix.slice(-3)` pouvait chevaucher
+		// le séparateur `-` et produire `NaN` (numéro de compte « NaN »), ou
+		// retomber dans une plage déjà occupée. (Passe 2 de revue, 3 lentilles.)
+		const base = 39000 + Math.floor(Math.random() * 900);
 		honoraires = await mkAccount(String(base), `Honoraires ${suffix}`);
 		marchandises = await mkAccount(String(base + 1), `Marchandises ${suffix}`);
 
@@ -163,6 +166,23 @@ test('une facture ventilée sur 2 comptes produit 2 lignes de crédit distinctes
 			credits.find((l) => l.accountId === marchandises!.id)?.credit
 		).toMatch(/^400\.0*$/);
 
+		// --- LE MÊME PIÈGE, CÔTÉ AVOIR (passe 2 de revue) ---
+		//
+		// ⚠️ L'avoir est émis AVANT l'archivage : 16-1a D5-bis refuse l'émission
+		// si une ligne référence un compte archivé (comportement arbitré, #280).
+		// L'ordre inverse fait échouer le POST — vérifié en conditions réelles.
+		//
+		// La passe 1 avait fermé ce finding en ne couvrant QU'UN des deux écrans :
+		// muter `fetchAccounts(true)` dans `credit-notes/[id]` ne cassait toujours
+		// rien. Le volet avoir est pourtant le plus exposé — un avoir porte par
+		// construction des comptes hérités d'une facture ancienne, donc les plus
+		// susceptibles d'avoir été archivés depuis.
+		const cnRes = await ctx2.post('/api/v1/credit-notes', {
+			data: { invoiceId, date: new Date().toISOString().slice(0, 10) },
+		});
+		expect(cnRes.ok(), `émission de l'avoir échouée: ${cnRes.status()}`).toBeTruthy();
+		const creditNoteId = (await cnRes.json()).id as number;
+
 		// --- Non-régression de D11 CÔTÉ LECTURE (AC14-bis) ---
 		//
 		// Le piège de D11 se rejoue à l'identique sur l'écran de détail : sans
@@ -181,6 +201,11 @@ test('une facture ventilée sur 2 comptes produit 2 lignes de crédit distinctes
 
 		await page.goto(`/invoices/${invoiceId}`);
 		await expect(page.getByTestId('invoice-line-revenue-account').nth(1)).toContainText(
+			marchandises!.name
+		);
+
+		await page.goto(`/credit-notes/${creditNoteId}`);
+		await expect(page.getByTestId('credit-note-line-revenue-account').nth(1)).toContainText(
 			marchandises!.name
 		);
 	} finally {

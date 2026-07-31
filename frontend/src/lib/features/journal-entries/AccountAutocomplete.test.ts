@@ -167,6 +167,72 @@ describe('AccountAutocomplete — `allowClear` (Story 16-1b, AC1 / AC1-bis)', ()
 		expect(onSelect).not.toHaveBeenCalled();
 	});
 
+	it("tabuler à travers un champ RENSEIGNÉ sans rien taper n'efface rien", async () => {
+		// Le geste le plus banal d'un formulaire — et le plus dangereux si le
+		// `blur` agit sans distinguer « l'utilisateur a édité » de « l'utilisateur
+		// est passé ». Ce cas n'était couvert par AUCUN test : découvert en passe 2
+		// par mutation (traiter un brouillon `null` comme une chaîne vide laissait
+		// toute la suite verte).
+		const onSelect = vi.fn();
+		const { getByRole } = render(AccountAutocomplete, {
+			accounts,
+			value: 1,
+			allowClear: true,
+			onSelect,
+		});
+
+		const input = getByRole('textbox') as HTMLInputElement;
+		expect(input.value).toBe('3000 — Ventes');
+
+		await fireEvent.focus(input);
+		await fireEvent.blur(input);
+		await afterBlurDelay();
+
+		expect(onSelect).not.toHaveBeenCalled();
+		expect(input.value).toBe('3000 — Ventes');
+	});
+
+	it("un `blur` SANS frappe n'efface rien, même si le compte n'est pas résoluble", async () => {
+		// LE SECOND CHEMIN DE PERTE SILENCIEUSE (passe 2 de revue, Edge Case
+		// Hunter). Tant que `fetchAccounts` n'a pas répondu, `accounts` est vide :
+		// le libellé ne se résout pas et le champ paraît vide. L'ancienne
+		// réconciliation y voyait un effacement volontaire et nullifiait la ligne
+		// — sans le moindre geste destructif de l'utilisateur.
+		const onSelect = vi.fn();
+		const { getByRole } = render(AccountAutocomplete, {
+			accounts: [], // liste pas encore arrivée
+			value: 42,
+			allowClear: true,
+			onSelect,
+		});
+
+		const input = getByRole('textbox');
+		await fireEvent.focus(input);
+		await fireEvent.blur(input);
+		await afterBlurDelay();
+
+		expect(onSelect).not.toHaveBeenCalled();
+	});
+
+	it("un champ vidé alors que le compte n'est PAS résoluble ne nullifie pas non plus", async () => {
+		const onSelect = vi.fn();
+		const { getByRole } = render(AccountAutocomplete, {
+			accounts: [],
+			value: 42,
+			allowClear: true,
+			onSelect,
+		});
+
+		const input = getByRole('textbox');
+		// L'utilisateur « efface » un champ qui était déjà vide à l'écran : ce
+		// n'est pas une intention d'effacer un compte qu'il ne voit pas.
+		await fireEvent.input(input, { target: { value: '' } });
+		await fireEvent.blur(input);
+		await afterBlurDelay();
+
+		expect(onSelect).not.toHaveBeenCalled();
+	});
+
 	it("un texte libre jamais validé est restauré au `blur`, sans nullifier la valeur", async () => {
 		const onSelect = vi.fn();
 		const { getByRole } = render(AccountAutocomplete, {
@@ -184,6 +250,39 @@ describe('AccountAutocomplete — `allowClear` (Story 16-1b, AC1 / AC1-bis)', ()
 		// Le champ ne peut jamais afficher un texte qui contredit `value`.
 		expect(input.value).toBe('3000 — Ventes');
 		expect(onSelect).not.toHaveBeenCalled();
+	});
+});
+
+describe('AccountAutocomplete — `requiredAccountType` filtre le dropdown (passe 2)', () => {
+	const accounts = [
+		acc({ id: 1, number: '3000', name: 'Ventes', accountType: 'Revenue' }),
+		acc({ id: 2, number: '4000', name: 'Achats', accountType: 'Expense' }),
+	];
+
+	it('sans `requiredAccountType` : tous les comptes imputables sont proposés', async () => {
+		const { getByRole, queryByText } = render(AccountAutocomplete, {
+			accounts,
+			value: null,
+			onSelect: () => {},
+		});
+		await fireEvent.focus(getByRole('textbox'));
+		// Comportement des 4 consommateurs : inchangé.
+		expect(queryByText('Achats')).not.toBeNull();
+	});
+
+	it("avec `requiredAccountType` : un compte du mauvais type n'est PAS proposé", async () => {
+		// Sinon l'interface conduit l'utilisateur dans l'état bloquant qu'elle
+		// vient de créer : il sélectionne « 4000 — Achats », la ligne est
+		// aussitôt marquée invalide et l'enregistrement se désactive.
+		const { getByRole, queryByText } = render(AccountAutocomplete, {
+			accounts,
+			value: null,
+			requiredAccountType: 'Revenue',
+			onSelect: () => {},
+		});
+		await fireEvent.focus(getByRole('textbox'));
+		expect(queryByText('Ventes')).not.toBeNull();
+		expect(queryByText('Achats')).toBeNull();
 	});
 });
 
@@ -217,6 +316,37 @@ describe('AccountAutocomplete — `markInvalid` (Story 16-1b, AC2)', () => {
 		// Le libellé est résolu sur la liste COMPLÈTE (D11) : il s'affiche.
 		expect((getByRole('textbox') as HTMLInputElement).value).toBe('3900 — Ventes closes');
 		expect(queryByText(MARKER)).not.toBeNull();
+	});
+
+	it("le message d'invalidité est LIÉ au champ (aria-describedby)", () => {
+		// Sans le lien, un lecteur d'écran annonce « champ invalide » sans jamais
+		// énoncer POURQUOI (WCAG 3.3.1). Le patch de la passe 1 était livré SANS
+		// test — il était retirable sans qu'aucune assertion ne rougisse.
+		const { getByRole, getByText } = render(AccountAutocomplete, {
+			accounts,
+			value: 9,
+			markInvalid: true,
+			requiredAccountType: 'Revenue',
+			onSelect: () => {},
+		});
+
+		const input = getByRole('textbox');
+		const describedBy = input.getAttribute('aria-describedby');
+		expect(input.getAttribute('aria-invalid')).toBe('true');
+		expect(describedBy).toBeTruthy();
+		expect(getByText(MARKER).getAttribute('id')).toBe(describedBy);
+	});
+
+	it("sans invalidité, aucun `aria-describedby` pendant", () => {
+		const { getByRole } = render(AccountAutocomplete, {
+			accounts,
+			value: 8,
+			markInvalid: true,
+			requiredAccountType: 'Revenue',
+			postableExemptAccountId: 8,
+			onSelect: () => {},
+		});
+		expect(getByRole('textbox').getAttribute('aria-describedby')).toBeNull();
 	});
 
 	it("un compte du mauvais type reçoit le marqueur", () => {

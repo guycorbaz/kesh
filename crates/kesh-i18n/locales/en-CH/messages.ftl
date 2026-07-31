@@ -1345,3 +1345,4 @@ invoice-line-col-revenue-account = Revenue account
 invoice-line-revenue-account-default = { $account } (company default)
 invoice-lines-revenue-account-invalid = Invalid revenue account on the following lines: { $lines }
 invoice-default-revenue-account-unusable = The company default revenue account is no longer usable (archived, not postable, or unexpected type). Lines following it cannot be validated — fix it in Settings, or pick an account on each line.
+account-label-default-suffix = (default)
