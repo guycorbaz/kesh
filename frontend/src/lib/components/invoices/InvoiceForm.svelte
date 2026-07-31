@@ -113,7 +113,7 @@
 				quantity: l.quantity,
 				unitPrice: l.unitPrice,
 				vatRate: l.vatRate,
-				// AC9-bis — site 1/4. Recopier depuis la réponse serveur, sinon toute
+				// AC9-bis — site 1/5. Recopier depuis la réponse serveur, sinon toute
 				// ouverture d'un brouillon perdrait sa ventilation au ré-enregistrement.
 				revenueAccountId: l.revenueAccountId,
 				_uiKey: nextUiKey(),
@@ -125,6 +125,12 @@
 				quantity: '1',
 				unitPrice: '0.00',
 				vatRate: DEFAULT_VAT,
+				// AC9-bis — site 5/5, celui de la facture NEUVE (aucune ligne
+				// serveur). Il manquait au décompte « 4 sites » de la passe
+				// d'implémentation : `undefined` se comporte comme `null` partout où
+				// le champ est lu, donc l'omission était inoffensive — mais elle
+				// reposait sur cette coïncidence plutôt que sur une intention.
+				revenueAccountId: null,
 				_uiKey: nextUiKey(),
 			},
 		];
@@ -244,6 +250,28 @@
 	);
 
 	/**
+	 * Le compte par défaut de la société est-il lui-même inutilisable ?
+	 *
+	 * Les lignes à `null` le suivent sans le nommer, donc elles échappent au
+	 * contrôle par ligne : le même compte donnait un verdict opposé selon qu'il
+	 * était désigné explicitement (marqué) ou implicitement (rien). L'utilisateur
+	 * ne découvrait le problème qu'à la **validation**, rejetée par le backend.
+	 *
+	 * **On signale, on ne bloque pas** (arbitrage Guy, passe 1 de revue) :
+	 * enregistrer un brouillon reste permis puisque le backend l'accepte — c'est
+	 * la validation qui échouera. Bloquer ici enfermerait l'utilisateur pour un
+	 * réglage qui n'est pas forcément de son ressort.
+	 */
+	const defaultRevenueAccountUnusable = $derived.by(() => {
+		if (accountsLoadError || accounts.length === 0 || invoiceSettings === null) return false;
+		const id = invoiceSettings.defaultRevenueAccountId;
+		if (id == null) return false;
+		const acc = accounts.find((a) => a.id === id);
+		// Pas d'exemption ici : c'est précisément CE compte qu'on évalue.
+		return isAccountUnusable(acc, { requiredAccountType: 'Revenue' });
+	});
+
+	/**
 	 * Numéros (1-based) des lignes dont le compte persisté n'est plus utilisable.
 	 *
 	 * Règle déléguée à `account-validity`, la MÊME que celle du marqueur affiché
@@ -252,6 +280,21 @@
 	 */
 	const invalidRevenueAccountLines = $derived.by(() => {
 		if (accountsLoadError || accounts.length === 0) return [];
+		// **NE JAMAIS BLOQUER TANT QUE LES RÉGLAGES SONT INCONNUS.**
+		//
+		// L'exemption `postable` du compte par défaut (D11) dépend de
+		// `invoiceSettings`. Tant qu'il vaut `null` — chargement en cours, ou fetch
+		// échoué — l'exemption est absente : une ligne désignant explicitement un
+		// défaut société non-postable serait marquée invalide, le bouton
+		// désactivé… et `onSubmit`, qui est le seul chemin rafraîchissant les
+		// réglages, ne peut plus s'exécuter. L'utilisateur est ENFERMÉ sans
+		// message, jusqu'à rechargement de la page.
+		//
+		// Régression introduite par la passe d'implémentation et attrapée en
+		// passe 1 de revue : avant cette story, un échec de réglages ne bloquait
+		// rien. Elle violait la règle que ce fichier énonce lui-même — le frontend
+		// ne doit jamais bloquer ce que le backend accepte.
+		if (invoiceSettings === null) return [];
 		const out: number[] = [];
 		lines.forEach((l, i) => {
 			if (l.revenueAccountId == null) return;
@@ -341,7 +384,7 @@
 			quantity: '1',
 			unitPrice: '0.00',
 			vatRate: DEFAULT_VAT,
-			// AC9-bis — site 2/4. `null` = suivre le défaut société ; la Story 16-2
+			// AC9-bis — site 2/5. `null` = suivre le défaut société ; la Story 16-2
 			// y branchera le pré-remplissage depuis la fiche produit.
 			revenueAccountId: null,
 			_uiKey: nextUiKey(),
@@ -354,7 +397,7 @@
 			quantity: '1',
 			unitPrice: p.unitPrice,
 			vatRate: p.vatRate,
-			// AC9-bis — site 3/4. Idem : 16-2 y branchera le compte du produit.
+			// AC9-bis — site 3/5. Idem : 16-2 y branchera le compte du produit.
 			revenueAccountId: null,
 			_uiKey: nextUiKey(),
 		});
@@ -529,7 +572,7 @@
 				quantity: l.quantity,
 				unitPrice: l.unitPrice,
 				vatRate: l.vatRate,
-				// AC9-bis — site 4/4, LE PLUS DANGEREUX. Un oubli ici n'est visible
+				// AC9-bis — site 4/5, LE PLUS DANGEREUX. Un oubli ici n'est visible
 				// qu'APRÈS un conflit de version : conflit optimiste → modale →
 				// « Recharger » → les lignes sont remappées sans compte → toutes les
 				// ventilations retombent à `NULL` EN SILENCE → le ré-enregistrement
@@ -648,6 +691,33 @@
 
 	<div>
 		<h3 class="mb-2 text-lg font-semibold">Lignes</h3>
+
+		{#if settingsError}
+			<!--
+				`settingsError` était affecté mais rendu NULLE PART : un échec de
+				chargement des réglages restait entièrement muet. Inoffensif avant
+				cette story ; depuis, il conditionne l'exemption `postable` du compte
+				par défaut, donc il doit être visible. (Passe 1 de revue.)
+			-->
+			<p class="mb-2 text-sm text-destructive" role="alert" data-testid="invoice-settings-error">
+				{settingsError}
+			</p>
+		{/if}
+
+		{#if defaultRevenueAccountUnusable}
+			<!--
+				Signaler sans bloquer : le brouillon reste enregistrable (le backend
+				l'accepte), c'est la VALIDATION qui échouera. Sans cet avertissement,
+				les lignes suivant le défaut société n'affichaient rien et l'erreur
+				n'apparaissait qu'à la validation.
+			-->
+			<p class="mb-2 text-sm text-destructive" role="alert" data-testid="invoice-default-account-warning">
+				{i18nMsg(
+					'invoice-default-revenue-account-unusable',
+					"Le compte de produit par défaut de la société n'est plus utilisable (archivé, non imputable ou de type inattendu). Les lignes qui le suivent ne pourront pas être validées — corrigez-le dans les Réglages, ou choisissez un compte sur chaque ligne."
+				)}
+			</p>
+		{/if}
 
 		<table class="w-full border-collapse text-sm" data-testid="invoice-lines-table">
 			<thead>

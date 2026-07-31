@@ -161,8 +161,21 @@ describe('InvoiceForm — chargement des comptes (Story 16-1b, AC5 / D11)', () =
 		await settle();
 
 		expect(accountInputs(container).map((b) => b.value)).toContain('3900 — Ventes closes');
-		// Résolu sur la liste complète, mais jamais re-sélectionnable.
-		expect(queryByText('Ventes closes')).toBeNull();
+
+		// Résolu sur la liste complète, mais jamais re-sélectionnable — il faut
+		// OUVRIR le dropdown pour l'éprouver. Sans ce `focus`, l'assertion serait
+		// vraie même si le compte archivé y était proposé à tort : les items ne
+		// sont simplement pas rendus tant que la liste est fermée.
+		// (Assertion morte relevée en passe 1 de revue, Blind Hunter.)
+		// Vider la requête pour que le dropdown propose la liste complète : le
+		// filtre porte sur le texte du champ, qui vaut ici « 3900 — Ventes closes »
+		// et ne matcherait aucun compte proposable.
+		const field = accountInputs(container)[0];
+		await fireEvent.focus(field);
+		await fireEvent.input(field, { target: { value: '' } });
+
+		expect(queryByText('Honoraires')).not.toBeNull(); // proposable
+		expect(queryByText('Ventes closes')).toBeNull(); // archivé -> jamais proposé
 	});
 
 	it('AC7 : un échec de chargement des comptes ne bloque pas la saisie', async () => {
@@ -274,6 +287,48 @@ describe('InvoiceForm — exemption du défaut société (Story 16-1b, D11 / mir
 	});
 });
 
+describe('InvoiceForm — réglages indisponibles (Story 16-1b, passe 1 de revue)', () => {
+	it("un échec de chargement des réglages ne bloque PAS l'enregistrement", async () => {
+		// Régression introduite par la passe d'implémentation : sans réglages,
+		// l'exemption `postable` du défaut société est absente, la ligne était
+		// marquée invalide, le bouton désactivé — et `onSubmit`, seul chemin qui
+		// rafraîchit les réglages, ne pouvait plus s'exécuter. Utilisateur ENFERMÉ.
+		getInvoiceSettingsMock.mockRejectedValue(new Error('réseau'));
+		const { getByTestId } = render(InvoiceForm, {
+			invoice: invoiceWith([COLLECTIVE.id]),
+		});
+		await settle();
+
+		expect(isDisabled(getByTestId('create-invoice-button'))).toBe(false);
+		// Et l'échec est VISIBLE : il était affecté mais rendu nulle part.
+		expect(getByTestId('invoice-settings-error')).toBeTruthy();
+	});
+});
+
+describe('InvoiceForm — défaut société inutilisable (Story 16-1b, passe 1 de revue)', () => {
+	it('un défaut société archivé est SIGNALÉ, sans bloquer', async () => {
+		// Les lignes à `null` le suivent sans le nommer : elles échappaient au
+		// contrôle par ligne, et l'utilisateur ne découvrait le problème qu'à la
+		// validation, rejetée par le backend. On signale ; on ne bloque pas, car
+		// le backend accepte l'enregistrement du brouillon.
+		getInvoiceSettingsMock.mockResolvedValue({
+			defaultReceivableAccountId: 1100,
+			defaultRevenueAccountId: ARCHIVED.id,
+		});
+		const { getByTestId } = render(InvoiceForm, { invoice: invoiceWith([null]) });
+		await settle();
+
+		expect(getByTestId('invoice-default-account-warning')).toBeTruthy();
+		expect(isDisabled(getByTestId('create-invoice-button'))).toBe(false);
+	});
+
+	it('un défaut société sain ne déclenche aucun avertissement', async () => {
+		const { queryByTestId } = render(InvoiceForm, { invoice: invoiceWith([null]) });
+		await settle();
+		expect(queryByTestId('invoice-default-account-warning')).toBeNull();
+	});
+});
+
 describe('InvoiceForm — cycle de vie des lignes (Story 16-1b, AC9 / AC9-bis)', () => {
 	it("ajouter une ligne libre n'altère pas le compte des lignes existantes", async () => {
 		const { getByText, container } = render(InvoiceForm, {
@@ -288,6 +343,21 @@ describe('InvoiceForm — cycle de vie des lignes (Story 16-1b, AC9 / AC9-bis)',
 		// Le compte de la ligne d'origine survit, la nouvelle ligne naît à `null`.
 		expect(values).toContain('3200 — Honoraires');
 		expect(values.filter((v) => v === '3200 — Honoraires')).toHaveLength(1);
+	});
+
+	it("supprimer une ligne n'altère pas le compte des lignes restantes (AC9)", async () => {
+		const { getAllByLabelText, container } = render(InvoiceForm, {
+			invoice: invoiceWith([SERVICES.id, null, ARCHIVED.id]),
+		});
+		await settle();
+
+		// Supprimer la ligne du MILIEU : c'est le cas où un keying par index
+		// ferait glisser les comptes d'un cran.
+		await fireEvent.click(getAllByLabelText('Supprimer la ligne')[1]);
+		await settle();
+
+		const values = accountInputs(container).map((b) => b.value);
+		expect(values).toEqual(['3200 — Honoraires', '3900 — Ventes closes']);
 	});
 
 	it('AC9-bis : après « Recharger », les comptes viennent du SERVEUR', async () => {

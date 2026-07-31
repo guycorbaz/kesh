@@ -68,6 +68,12 @@
 		placeholder = undefined
 	}: Props = $props();
 
+	// Identifiant stable pour lier le message d'invalidité au champ. `$props.id()`
+	// et non `crypto.randomUUID()` : ce dernier est `undefined` hors contexte
+	// sécurisé, donc sur un déploiement LAN en HTTP (cf. NAS Synology).
+	const uid = $props.id();
+	const invalidMsgId = `account-invalid-${uid}`;
+
 	let query = $state('');
 	let open = $state(false);
 	let highlightIndex = $state(0);
@@ -221,6 +227,7 @@
 		aria-autocomplete="list"
 		aria-expanded={open}
 		aria-invalid={isInvalid ? 'true' : undefined}
+		aria-describedby={isInvalid ? invalidMsgId : undefined}
 	/>
 
 	{#if allowClear && !disabled && (value !== null || query !== '')}
@@ -239,15 +246,29 @@
 			class="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
 			aria-label={i18nMsg('common-account-clear', 'Effacer le compte sélectionné')}
 			onmousedown={(e) => e.preventDefault()}
-			onclick={() => onSelect(null)}
+			onclick={() => {
+				// `value` est la source de vérité : on la remet à `null` et le
+				// `$effect` s'occupe de `query`. MAIS si elle vaut DÉJÀ `null`, le
+				// parent ne change rien, le `$effect` ne se redéclenche pas, et le
+				// `preventDefault` ci-dessus a supprimé le `blur` qui aurait
+				// réconcilié le texte : le champ resterait sur une saisie libre
+				// contredisant la valeur liée. On vide alors explicitement.
+				// (Convergence Blind Hunter + Edge Case Hunter, passe 1 de revue.)
+				if (value === null) query = '';
+				else onSelect(null);
+			}}
 		>
 			<span aria-hidden="true">×</span>
 		</button>
 	{/if}
 
 	{#if isInvalid}
-		<!-- Marqueur TEXTUEL : le signal ne doit pas reposer sur la seule couleur. -->
-		<p class="mt-1 text-xs text-destructive">
+		<!--
+			Marqueur TEXTUEL : le signal ne doit pas reposer sur la seule couleur.
+			`id` + `aria-describedby` sur le champ : sans ce lien, un lecteur d'écran
+			annonce « champ invalide » sans jamais énoncer POURQUOI (WCAG 3.3.1).
+		-->
+		<p id={invalidMsgId} class="mt-1 text-xs text-destructive">
 			{i18nMsg('common-account-invalid', 'Compte invalide — non imputable, archivé ou de type inattendu')}
 		</p>
 	{/if}

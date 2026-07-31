@@ -145,6 +145,28 @@ describe('AccountAutocomplete — `allowClear` (Story 16-1b, AC1 / AC1-bis)', ()
 		expect(onSelect).toHaveBeenCalledWith(null);
 	});
 
+	it("le bouton vide le champ même quand `value` est DÉJÀ null", async () => {
+		// Sans ce cas : `onSelect(null)` ne change rien pour le parent, le `$effect`
+		// ne se redéclenche pas, et le `preventDefault` du bouton a supprimé le
+		// `blur` — le champ garderait un texte libre contredisant la valeur liée.
+		// (Convergence Blind Hunter + Edge Case Hunter, passe 1 de revue.)
+		const onSelect = vi.fn();
+		const { getByRole, getByLabelText } = render(AccountAutocomplete, {
+			accounts,
+			value: null,
+			allowClear: true,
+			onSelect,
+		});
+
+		const input = getByRole('textbox') as HTMLInputElement;
+		await fireEvent.input(input, { target: { value: 'zzz introuvable' } });
+		await fireEvent.click(getByLabelText(/Effacer le compte/));
+
+		expect(input.value).toBe('');
+		// Rien à notifier au parent : la valeur était déjà `null`.
+		expect(onSelect).not.toHaveBeenCalled();
+	});
+
 	it("un texte libre jamais validé est restauré au `blur`, sans nullifier la valeur", async () => {
 		const onSelect = vi.fn();
 		const { getByRole } = render(AccountAutocomplete, {

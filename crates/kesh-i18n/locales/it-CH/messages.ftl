@@ -1344,3 +1344,4 @@ common-account-invalid = Conto non valido — non imputabile, archiviato o di ti
 invoice-line-col-revenue-account = Conto di ricavo
 invoice-line-revenue-account-default = { $account } (predefinito della società)
 invoice-lines-revenue-account-invalid = Conto di ricavo non valido nelle righe seguenti: { $lines }
+invoice-default-revenue-account-unusable = Il conto di ricavo predefinito della società non è più utilizzabile (archiviato, non imputabile o di tipo inatteso). Le righe che lo seguono non potranno essere validate — correggilo nelle Impostazioni oppure scegli un conto per ogni riga.

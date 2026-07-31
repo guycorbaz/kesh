@@ -52,7 +52,7 @@ test('une facture ventilée sur 2 comptes produit 2 lignes de crédit distinctes
 
 	let invoiceId: number;
 	let honoraires: { id: number; number: string; name: string };
-	let marchandises: { id: number; number: string; name: string };
+	let marchandises: { id: number; number: string; name: string; version: number };
 
 	try {
 		// --- Deux comptes de produit distincts, imputables ---
@@ -61,7 +61,12 @@ test('une facture ventilée sur 2 comptes produit 2 lignes de crédit distinctes
 				data: { number, name, accountType: 'Revenue', postable: true, role: null },
 			});
 			expect(res.ok(), `création compte ${number} échouée: ${res.status()}`).toBeTruthy();
-			return (await res.json()) as { id: number; number: string; name: string };
+			return (await res.json()) as {
+				id: number;
+				number: string;
+				name: string;
+				version: number;
+			};
 		};
 		// Numéros dérivés du suffixe : la DB est partagée entre specs.
 		const base = 3200 + (Number(suffix.slice(-3)) % 300);
@@ -157,6 +162,27 @@ test('une facture ventilée sur 2 comptes produit 2 lignes de crédit distinctes
 		expect(
 			credits.find((l) => l.accountId === marchandises!.id)?.credit
 		).toMatch(/^400\.0*$/);
+
+		// --- Non-régression de D11 CÔTÉ LECTURE (AC14-bis) ---
+		//
+		// Le piège de D11 se rejoue à l'identique sur l'écran de détail : sans
+		// `fetchAccounts(true)`, un compte archivé DEPUIS la validation n'est plus
+		// dans la liste, et la colonne retombe sur `#3327` au lieu du nom du compte.
+		// C'est le seul garde-fou automatisé de ce câblage : les tests Vitest ne
+		// couvrent que la fonction pure `account-label`, jamais la page.
+		// (Trou relevé en passe 1 de revue, Acceptance Auditor.)
+		// `version` vient de la réponse de création : aucune route `GET
+		// /accounts/{id}` n'existe (seulement le listing), et rien n'a modifié le
+		// compte entre-temps.
+		const archiveRes = await ctx2.put(`/api/v1/accounts/${marchandises!.id}/archive`, {
+			data: { version: marchandises!.version },
+		});
+		expect(archiveRes.ok(), `archivage échoué: ${archiveRes.status()}`).toBeTruthy();
+
+		await page.goto(`/invoices/${invoiceId}`);
+		await expect(page.getByTestId('invoice-line-revenue-account').nth(1)).toContainText(
+			marchandises!.name
+		);
 	} finally {
 		await disposeContextSafe(ctx2);
 	}
