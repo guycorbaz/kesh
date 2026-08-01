@@ -178,7 +178,9 @@ appelée depuis `run_backup_and_restore` (`routes/admin.rs`) **après la garde d
 
 ### D-C5 — Le rapport de rejeu : logs + audit, rien d'autre
 
-Chaque entrée produit un `ReplayedBackfill { version, label, trigger, rows_affected }`, où `trigger` distingue « classe A, inconditionnel » de « classe B, sentinelles absentes : … » et de « sauté ».
+Chaque entrée du registre — **rejouée comme sautée** — produit un `ReplayedBackfill { version, label, outcome, rows_affected }`. Le champ `outcome` porte **trois** états : rejeu inconditionnel (classe A), rejeu sur sentinelles absentes (classe B, avec la liste des sentinelles manquantes), et **sauté** (classe B, sentinelles toutes présentes).
+
+⚠️ **Ne pas réutiliser le type `BackfillTrigger` du registre pour ce champ.** Le `trigger` déclare *ce qui doit déclencher* l'entrée et n'a que deux variants ; l'`outcome` rapporte *ce qui s'est passé* et en a trois. Les confondre sous un même nom — ce que faisait une rédaction antérieure — rend le variant « sauté » inencodable et laisse le `tracing::debug!` du skip sans état correspondant.
 
 - **`tracing::info!` par backfill rejoué**, `tracing::debug!` par backfill sauté.
 - **`audit_log`** : le détail JSON de l'entrée `admin.full_import` existante (`routes/admin.rs:298-304`) reçoit une clé supplémentaire `backfills_replayed`. Pas de nouvelle action d'audit, pas de nouvelle table.
@@ -247,7 +249,7 @@ Le rejeu **n'est pas** un mécanisme général de « migration de données à l'
   4. toute entrée de **classe A** est **non vacue** : sur une base montée en amont de sa migration, le premier passage touche **> 0** ligne ;
   5. le registre est **strictement croissant** en version ;
   6. chaque entrée du registre est **postérieure à la dernière migration créatrice de table applicative**, fenêtre recalculée depuis le `MIGRATOR`.
-- **AC-C7 — Restitution** : chaque rejeu émet un `tracing::info!` portant la version, le déclencheur et le nombre de lignes touchées ; chaque skip émet un `tracing::debug!`. Le `trigger` et le `rows_affected` de chaque `ReplayedBackfill` sont **assertés sur la valeur de retour** de `replay_post_restore_backfills` dans au moins un cas de AC-C10 — capter `tracing` en test est fragile, verrouiller le contenu du rapport ne l'est pas. Le détail JSON de l'audit `admin.full_import` porte une clé `backfills_replayed`, **assertée** en relisant `audit_log` après import.
+- **AC-C7 — Restitution** : chaque rejeu émet un `tracing::info!` portant la version, l'issue et le nombre de lignes touchées ; chaque skip émet un `tracing::debug!`. L'`outcome` et le `rows_affected` de chaque `ReplayedBackfill` sont **assertés sur la valeur de retour** de `replay_post_restore_backfills` dans au moins un cas de AC-C10 — dont **un cas où l'`outcome` vaut `Skipped`** (C3), sans quoi le troisième état ne serait vérifié nulle part — capter `tracing` en test est fragile, verrouiller le contenu du rapport ne l'est pas. Le détail JSON de l'audit `admin.full_import` porte une clé `backfills_replayed`, **assertée** en relisant `audit_log` après import.
 - **AC-C8 — Contrat HTTP inchangé** : le corps de réponse de `POST /api/v1/admin/full-import` conserve exactement ses cinq clés. Aucun fichier de `frontend/` n'est modifié — **contrôle de revue** (`git diff --stat -- frontend/` vide), pas un test.
 - **AC-C9 — Aucune migration nouvelle, aucune migration modifiée.** Donc aucun bump de `kesh_version_min_required` ni de version Cargo (P1/P2/P2-bis), et **aucune ligne ajoutée** à `docs/migrations-idempotence-audit.md`. Ses compteurs, **recomptés le 2026-08-01**, valent **57 / 5 / 52 / 0** (total / `yes` / `tracked-by-sqlx` / `no`) et ne doivent pas bouger. *(Le garde-fou P5 impose une ligne d'audit par migration **ajoutée** ; cette story n'en ajoute aucune. Ne pas « mettre à jour les compteurs par précaution » : ce serait les casser. **Recompter à l'implémentation** — la première rédaction de cette spec avait écrit 57/4/53/0, valeur *relue* dans un état de session périmé.)*
 - **AC-C11 — Documentation, critères opposables** :
@@ -274,7 +276,7 @@ Le test de bout en bout est **indispensable et non substituable** : le défaut n
 **Notes de montage obligatoires** — chaque test porte une section « ce que ce test discrimine ». Trois montages ont un piège nommé :
 
 - **C4** : le patron existant `full_import_rolls_back_on_insert_failure` (`:543`) injecte l'échec dans l'`INSERT` du restore, donc **avant** le point d'insertion du rejeu — le réutiliser tel quel produit un test vert qui n'atteint jamais le rejeu. Prévoir un point d'injection propre (entrée de registre supplémentaire compilée en `#[cfg(test)]` portant un SQL fautif), **plus une assertion de montage** prouvant que le rejeu a démarré.
-- **C5** : retirer `postable` est **indispensable**. Présent dans le backup, il vaut déjà `FALSE` sur `2979` et le test passe dans les deux ordres. Le candidat doit de plus être obtenu en **rééditant l'écriture** de la facture validée via `PUT /api/v1/journal-entries/{id}` pour porter le crédit sur `2979` en conservant `credit = invoices.total_amount` — `POST /invoices` refuserait `2979` directement, la validation d'écriture tournant avec `enforce_postable = false`.
+- **C5** : retirer `postable` est **indispensable**. S'il était laissé dans le manifeste, il vaudrait déjà `FALSE` sur `2979` — le restore reposerait la valeur telle quelle et le test passerait **dans les deux ordres**, donc sans rien discriminer. Le candidat doit de plus être obtenu en **rééditant l'écriture** de la facture validée via `PUT /api/v1/journal-entries/{id}` pour porter le crédit sur `2979` en conservant `credit = invoices.total_amount` — `POST /invoices` refuserait `2979` directement, la validation d'écriture tournant avec `enforce_postable = false`.
 - **C1** : sans facture validée dans la source, l'assertion porte sur un ensemble vide et le **cas nominal de l'issue passe à vide**. D'où la mutation dédiée en T6.
 
 ---
@@ -284,7 +286,7 @@ Le test de bout en bout est **indispensable et non substituable** : le défaut n
 - [ ] **T1 — Registre et mécanique de rejeu** (AC-C1, AC-C2, AC-C3)
   - [ ] Créer `crates/kesh-db/src/post_restore.rs` ; le déclarer dans `lib.rs` (les `pub mod` y sont en ordre alphabétique — `post_restore` s'insère entre `pool` et `repositories`).
   - [ ] Doc-comment de module : la **fenêtre d'importabilité** et pourquoi elle borne le registre, les **deux classes** de D-C1 et pourquoi aucune ne suffit seule, l'invariant d'ordre D-C2, et **ce que le rejeu n'est pas** (D-C8).
-  - [ ] Types : `BackfillTrigger { Unconditional, Sentinels(&[(&str, &str)]) }`, `PostRestoreBackfill { version, label, trigger, sql }`, `ReplayedBackfill { version, label, trigger, rows_affected }`.
+  - [ ] Types — **la déclaration et l'issue sont deux choses distinctes, ne pas les confondre sous un même nom** : `BackfillTrigger { Unconditional, Sentinels(&[(&str, &str)]) }` déclare **ce qui doit déclencher** l'entrée (2 variants, propriété du registre) ; `ReplayOutcome { ReplayedUnconditional, ReplayedSentinelsAbsent(Vec<String>), Skipped }` rapporte **ce qui s'est passé** (3 variants, propriété de l'exécution). D'où `PostRestoreBackfill { version, label, trigger, sql }` et `ReplayedBackfill { version, label, outcome, rows_affected }`.
   - [ ] Registre `POST_RESTORE_BACKFILLS: &[PostRestoreBackfill]`, **2** entrées, triées par version croissante, chacune commentée avec la justification écrite de sa classe (celle de D-C1, pas une paraphrase).
   - [ ] `replay_post_restore_backfills(tx, tables)` : évaluation du déclencheur, exécution `sqlx::raw_sql`, collecte du rapport.
 - [ ] **T2 — Extrait SQL** (AC-C5)
@@ -298,13 +300,14 @@ Le test de bout en bout est **indispensable et non substituable** : le défaut n
 - [ ] **T4 — Garde-fous** (AC-C3, AC-C5, AC-C6)
   - [ ] Retrait des commentaires SQL + découpage **multi-ligne** en statements, unitairement testés sur les pièges réels : `ON UPDATE CURRENT_TIMESTAMP`, le mot `UPDATE` en prose, un `INSERT … SELECT` à cheval sur deux lignes, un `INSERT IGNORE INTO`.
   - [ ] Liste d'exemption, **7** entrées avec justification écrite (§ Contexte).
-  - [ ] Les 6 tests d'AC-C6.
+  - [ ] Les **6** tests d'AC-C6 (triage, DDL même fichier, no-op nominal, non-vacuité, ordre croissant, fenêtre).
+  - [ ] **Plus le test d'AC-C5**, qui n'est pas dans AC-C6 et n'appartient à aucune autre tâche : `extract_statements_are_verbatim_substrings_of_source_migration` — chaque statement de l'extrait `20260722000001` est un sous-texte du SQL de la migration tel qu'embarqué dans le `MIGRATOR`. **7 tests au total pour cette tâche.**
 - [ ] **T5 — Tests de bout en bout** (AC-C10)
   - [ ] **Fixture métier** — `admin_full_import_e2e.rs` ne sait aujourd'hui créer qu'une société et un utilisateur (`seed_role:139`) : aucun plan comptable, aucune facture, aucune écriture. Écrire le montage : semer le plan via `bulk_create_from_chart`, créer contact et produit, créer puis **valider** une facture pour produire son écriture. Patron disponible dans `crates/kesh-db/tests/invoice_lines_revenue_account_backfill.rs`.
   - [ ] Helper `strip_column(manifest, data, table, column)` sur le couple `(Value, BTreeMap<String, Vec<u8>>)` rendu par `unzip` — geste partagé par C1, C2, C2-bis, C5.
   - [ ] Les 7 cas C1, C1-bis, C2, C2-bis, C3, C4, C5, en réutilisant `spawn_app` / `export_backup` / `unzip` / `rezip` / `post_import`.
   - [ ] Note de montage « ce que ce test discrimine » sur **tous** les cas ; les pièges nommés de C1, C4 et C5.
-  - [ ] Assertions `backfills_replayed` (audit) et `trigger` / `rows_affected` (valeur de retour) — AC-C7.
+  - [ ] Assertions `backfills_replayed` (audit) et `outcome` / `rows_affected` (valeur de retour), dont **un cas `Skipped`** sur C3 — AC-C7.
 - [ ] **T6 — Preuve par mutation** (AC-C10)
   - [ ] Classe A rendue conditionnelle (sentinelle `(invoice_lines, revenue_account_id)`) → **C1-bis** doit rougir, **C1** rester vert.
   - [ ] Sentinelles en ET au lieu de OU → **C2-bis** doit rougir.
@@ -438,3 +441,17 @@ LOW appliqués : décompte de sévérité de la passe 1 corrigé (2/2/**3**/**1*
 **Sur la règle de splitting** : le second critère (sévérité non décroissante) est formellement coché, `CRITICAL → CRITICAL`. Il n'est **pas** retenu comme déclencheur de split, pour deux raisons — le changement de modèle (Sonnet → Opus) rend les passes non comparables, précédent explicitement constaté en 16-1a-bis ; et surtout la story **rétrécit** à chaque passe (5 entrées → 2, 4 extraits → 1), ce qui est l'inverse du symptôme que la règle vise. À rouvrir si la passe 3 ne redescend pas nettement.
 
 **Prochaine** : passe 3, LLM ≠ Opus, contexte frais.
+
+### Passe 3 de `bmad-create-story validate`
+
+**2026-08-01 — Haiku, 3 lentilles, contexte frais. 3 findings retenus : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 1 LOW** — plus **1 HIGH réfuté en ground-truth**.
+
+La sévérité redescend nettement (`CRIT → CRIT → MED`), et **les deux MEDIUM sont l'un et l'autre des résidus de ma refonte de passe 2** — la remédiation reste la première source de défauts, troisième passe consécutive sur cette story.
+
+- **AA3-1 (MEDIUM)** — le test de sous-texte verbatim avait **perdu sa tâche**. T4 se terminait par « les 6 tests d'AC-C6 », or ce test relève d'**AC-C5** ; l'en-tête de T4 citait bien AC-C5, aucune de ses puces ne l'implémentait. La rédaction d'avant la refonte le nommait explicitement. AC-C5 était donc un critère sans exécutant.
+- **AA3-2 (MEDIUM)** — `trigger` désignait **deux choses différentes** sous un même nom : la **déclaration** du registre (`BackfillTrigger`, 2 variants) et l'**issue** d'exécution rapportée par `ReplayedBackfill`, que D-C5 décrit avec **trois** états dont « sauté ». Le troisième état était inencodable, et le `tracing::debug!` du skip n'avait aucun état correspondant. Séparé en `BackfillTrigger` (déclaration) et `ReplayOutcome` (issue) ; assertion `Skipped` exigée sur C3, sans quoi cet état ne serait vérifié nulle part. **Propagation** : le renommage avait laissé un site en arrière dans T5, attrapé par le grep post-patch et non par les lentilles.
+- **BH3-1 (LOW, reclassé depuis HIGH)** — annoncé comme une contradiction entre la ligne C5 du tableau (« backup **sans** `postable` ») et sa note de montage (« **Présent** dans le backup, il vaut déjà `FALSE` »). **Réfuté** : le tableau décrit le backup *tel qu'il est importé*, après `strip_column`, et la note énonce un **contrefactuel** expliquant pourquoi le retrait est obligatoire — elle commence d'ailleurs par « retirer `postable` est indispensable ». Aucun développeur lisant les deux phrases ensemble ne construirait le mauvais backup. Conservé en LOW parce que la tournure participiale française est authentiquement ambiguë : reformulée en « s'il était laissé dans le manifeste, il vaudrait déjà `FALSE` ».
+
+**L'EdgeCaseHunter rend 0 finding, et son rapport est opposable** : sa section « vérifié et jugé sain » énumère **12** contrôles avec leur commande — fenêtre d'importabilité, absence de `DROP TABLE`, décomptes, absence de garde `IS NULL` sur les deux `postable`, `NOT EXISTS` structurel du premier, création de `revenue_account_id` dans une migration distincte, séquence rôle → `postable` interne à `20260722000001`, exemption `users.company_id` démontrée sans cas rattrapable. C'est l'inverse des rapports Haiku vides de la 16-1a : la contre-mesure « exiger une section énumérée » produit l'effet attendu.
+
+**Prochaine** : passe 4, LLM ≠ Haiku, contexte frais.
