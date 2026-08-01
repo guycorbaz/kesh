@@ -1597,6 +1597,24 @@ L'import \textbf{refuse} le fichier et préserve l'installation si :
     \item la sauvegarde \textbf{exige une version minimale de Kesh supérieure} à celle de l'installation cible (protection anti-downgrade : ce seuil n'est relevé que par les migrations qui changent le schéma de façon incompatible) — mettez à jour Kesh avant de réimporter.
 \end{itemize}
 
+\paragraph{Reprises de données rejouées à l'import}
+
+Certaines mises à jour de Kesh ne font pas qu'ajouter des colonnes : elles \textbf{renseignent rétroactivement} des données existantes — par exemple les \textbf{rôles des comptes} du plan comptable (créances clients, TVA due, résultat de l'exercice…), ou le \textbf{compte de produit} des lignes de facture déjà validées.
+
+Une sauvegarde produite \textbf{avant} l'une de ces mises à jour ne contient évidemment pas ces données. Or Kesh sait que la reprise a déjà tourné sur l'installation courante, et ne la relancerait donc pas : sans précaution, importer une telle sauvegarde ferait \textbf{disparaître ces données définitivement et sans aucun message}.
+
+Kesh \textbf{rejoue donc ces reprises à la fin de chaque import}, dans la même opération que la restauration : soit tout réussit, soit rien n'est modifié. Trois propriétés à connaître :
+
+\begin{itemize}
+    \item \textbf{Vos données ne sont jamais écrasées.} Si la sauvegarde contenait déjà l'information, elle fait foi : un rôle de compte ou un réglage que vous aviez ajusté à la main est conservé tel quel.
+    \item \textbf{L'ordre est celui des mises à jour successives}, afin que le résultat soit identique à celui d'une installation qui aurait suivi le chemin normal des versions.
+    \item \textbf{Le détail est tracé} dans le journal d'audit (opération \keshcommand{admin.full\_import}) et dans le journal du serveur, qui indiquent quelles reprises ont été rejouées et combien de lignes elles ont touchées.
+\end{itemize}
+
+\begin{keshtip}
+Si vous avez restauré une sauvegarde \textbf{avant} la version qui introduit ce rejeu, il suffit de \textbf{relancer le même import} : la reprise s'appliquera cette fois.
+\end{keshtip}
+
 \paragraph{Variables d'environnement}
 
 \begin{itemize}

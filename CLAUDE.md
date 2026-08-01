@@ -350,6 +350,18 @@ Rationale — ce mode d'échec est **invisible en revue de diff** : il ne naît 
 
 *(codifié 2026-07-28, passe 1 de `bmad-code-review` de la Story 16-1a)*
 
+**(P7) Garde-fou triage des backfills de données** : Toute PR introduisant une migration qui **écrit des données** DOIT la trier — soit au registre `POST_RESTORE_BACKFILLS`, soit à la liste `EXEMPT_MIGRATIONS` **avec une justification écrite** (`crates/kesh-db/src/post_restore.rs`). Le test `every_data_backfill_migration_is_triaged` l'impose et échoue en nommant le fichier ; un manquement laissé passer est un finding **MEDIUM** en `bmad-code-review`.
+
+Rationale : `_sqlx_migrations` n'est pas restaurée par l'import d'installation. Sans rejeu, restaurer un `.keshbackup` antérieur à une migration de backfill **rouvre définitivement** le bug qu'elle fermait — la migration reste marquée appliquée et ne repassera jamais. Et le contrôle de schéma ne voit rien : `is_required()` est faux dès qu'une colonne porte un `DEFAULT`, pas seulement quand elle est nullable, si bien qu'une colonne `NOT NULL DEFAULT …` est silencieusement **réinitialisée à son défaut**.
+
+**Détecter, c'est chercher LARGE.** Le détecteur couvre `UPDATE`, `INSERT` **toutes formes** (`INTO … SELECT`, `INTO … VALUES`, `IGNORE`, `ON DUPLICATE KEY UPDATE`), `REPLACE` et `DELETE`, sur du SQL **décommenté** et découpé en statements **multi-lignes**. Le coût d'une forme en trop est une exemption d'une ligne ; le coût d'une forme manquante est un garde-fou **muet**. C'est arrivé **deux fois** pendant la seule spécification de la Story 16-1c : d'abord un `grep "INSERT INTO.*SELECT"` **mono-ligne** (le `SELECT` était à la ligne suivante), puis un motif `INSERT\s+INTO` qui ratait les quatre `INSERT **IGNORE** INTO` d'une autre migration. Attention aussi à `ON UPDATE CURRENT_TIMESTAMP`, présent dans une vingtaine de migrations : c'est du **DDL**.
+
+**Trier, ce n'est pas forcément inscrire au registre.** Un backup n'est importable que si son inventaire de tables est **identique** au nôtre (`parse_and_verify` compare dans les deux sens), et les tables ne font que s'ajouter : une migration **antérieure à la dernière création de table applicative** est donc hors d'atteinte, son cas de déclenchement étant refusé en 400 bien avant le rejeu. L'y inscrire produirait du code mort **qui paraît fonctionner** — et, s'il est en classe A, exécuté à chaque import. Le test `registry_entries_are_within_import_window` recalcule cette fenêtre depuis le `MIGRATOR` et échoue si une entrée en sort.
+
+**Classer, ça se déclare, ça ne se devine pas.** Classe **A** (rejeu inconditionnel) uniquement si **tous** les statements sont gardés contre l'écrasement d'une valeur posée par l'utilisateur ; classe **B** (rejeu conditionné à l'absence d'une colonne sentinelle) sinon — et la classe B n'est valide que si le **DDL et le backfill sont dans le même fichier**. Ne **jamais** classer par détection textuelle de `IS NULL` / `NOT EXISTS` : un `NOT EXISTS` peut être un prédicat **structurel** de ciblage et non une garde d'idempotence. Et ne pas réutiliser le critère « un `NULL` n'est l'expression d'aucun choix » : il est **faux** dès qu'une route écrit le champ en *full-replace*.
+
+*(codifié 2026-08-01, Story 16-1c / issue #281)*
+
 ## Règle de commit et push
 
 **Règle de branchement avant commit** :
