@@ -105,7 +105,7 @@ Le test de bout en bout est **indispensable et non substituable** : le défaut n
 
   ⚠️ **Deux prérequis durs de `validate_invoice` que ni `seed_role` ni les patrons ci-dessus ne fournissent** — les oublier fait échouer la validation, donc ne produit **aucune écriture**, donc rend C1 vert sur un ensemble vide :
   - un **exercice ouvert couvrant la date de facture** (`invoices.rs:1730-1733`, `DbError::FiscalYearInvalid` sinon) ;
-  - la ligne `company_invoice_settings` **avec `default_vat_payable_account_id`** dès que la facture porte de la TVA (`invoices.rs:1497-1500`, `ConfigurationRequired`). `insert_with_defaults` ne renseigne **pas** cette colonne. Alternative acceptable : monter la facture **sans TVA** — cas suisse légitime sous le seuil de CHF 100 000, et c'est le montage qu'utilise 16-1a-bis.
+  - la ligne `company_invoice_settings` **avec `default_vat_payable_account_id`** dès que la facture porte de la TVA (`invoices.rs:1497-1500`, `ConfigurationRequired`). `insert_with_defaults` ne renseigne **pas** cette colonne. Alternative acceptable : monter la facture **sans TVA** (`vat_rate = 0` sur chaque ligne, `total_vat` restant nul évite `ConfigurationRequired`) — cas suisse légitime sous le seuil de CHF 100 000. ⚠️ **C'est une combinaison inédite, à ne pas chercher toute faite dans 16-1a-bis** : ses tests montés exonérés (`backfills_when_vat_config_is_null`) construisent leurs écritures en **SQL brut**, et son seul test passant par le vrai moteur (`validated_invoice_from_the_real_engine_is_recovered_by_the_backfill`) utilise **deux taux non nuls** et une fixture qui configure le compte de TVA. Il faut reproduire l'exonération **par le vrai moteur**.
 
   ⚠️ **Deux patrons distincts, ne pas confondre.** Pour le **plan comptable** : `crates/kesh-db/tests/company_invoice_settings_repository.rs:33-37`.
 
@@ -220,5 +220,18 @@ LOW : « aucun des **sept** cas » (décompte pré-split), et la puce `strip_col
 
 **Ce que la lentille a validé positivement, avec commandes** : les 10 ancres du harnais E2E, la sûreté du retrait de colonne établie sur `parse_ndjson_rows:286-305` (et non par analogie), la fenêtre d'importabilité, l'atteignabilité du montage de C3 par l'API (`update` ne garde le retrait de rôle par aucun contrôle), les trois interdits du montage de C5, la présence de `1100` et `2979` dans le plan cité, et **les cinq mutations tracées une par une contre le SQL — aucune muette**. La contradiction de la passe 2 est confirmée close sans résidu.
 
-**Prochaine** : passe 4, LLM ≠ Opus, contexte frais.
+### Passe 4 de `bmad-create-story validate`
+
+**2026-08-01 — Sonnet, une lentille cumulant les trois regards, contexte frais. 4 findings : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 1 LOW.**
+
+**Fait notable : les trois MEDIUM portent sur 16-1c, pas sur cette story.** La lentille conclut explicitement que « la story elle-même est prête pour dev, mais 16-1c porte encore trois résidus de fork non propagés ». Le gisement s'est déplacé du contenu vers la **jointure entre les deux documents**.
+
+- La note de montage de **C5** — le repointage de `2979`, les deux interdits, les trois puces d'inatteignabilité API — était dupliquée **verbatim** dans les deux stories. Ce montage a déjà été réécrit **trois fois** ; une quatrième correction appliquée à une seule copie les aurait fait diverger en silence. Retirée de 16-1c au profit d'un renvoi.
+- « aucun des **sept** cas » subsistait dans 16-1c — le décompte pré-split. La passe 3 avait corrigé la copie de 16-1d **sans greper le symptôme** dans la story sœur : le mode d'échec exact que la § « Propagation post-patch » de `CLAUDE.md` codifie, commis sur le patch qui corrigeait un autre renvoi mort.
+- `AC-C7` de 16-1c exigeait l'assertion `Skipped` « dans au moins un cas de **AC-C10** » alors que la passe 3 venait d'écrire, 28 lignes plus bas, qu'`AC-C10` ne porte plus que C4 — un document qui se contredit lui-même sur le point que le split était censé clarifier. Redirigé vers `16-1d, AC-D1`.
+- LOW : « c'est le montage qu'utilise 16-1a-bis » était imprécis pour la facture sans TVA. Ses tests exonérés montent leurs écritures en **SQL brut**, et son seul test passant par le vrai moteur utilise **deux taux non nuls**. La combinaison « exonéré **et** par le vrai moteur » est inédite et doit être construite — c'est dit désormais.
+
+**Validé positivement** : les six cas, les dix ancres du harnais, les deux prérequis de `validate_invoice`, la couverture AC ↔ tâches sans orphelin ni doublon, et les **cinq mutations** re-tracées contre le SQL — aucune muette, et leurs effets de bord inter-cas correctement neutralisés par la règle de bornage des assertions posée en passe 3. Le recompte indépendant du « 3 sur 6 » de la passe 4 de 16-1c est confirmé exact.
+
+**Prochaine** : passe 5, LLM ≠ Sonnet, contexte frais.
 
