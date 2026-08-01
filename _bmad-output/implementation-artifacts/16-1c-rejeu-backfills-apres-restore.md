@@ -477,7 +477,7 @@ Le `enforce_postable = false` invoqué existe bien, mais sur le chemin **automat
 
 **BH4-2 (MEDIUM)** : l'en-tête de T3 omettait `AC-C8`, alors qu'une de ses puces le vérifie — un audit de couverture mené sur les seuls en-têtes aurait conclu à un AC orphelin.
 
-LOW appliqués : le décompte de tests de T4 était ambigu (« unitairement testés » sur 4 pièges vs « 7 tests au total ») — tranché en **un test paramétré** ; AC-C6.6 ne définissait pas « table applicative », alors que le calcul de la fenêtre doit **exclure les tables système** ; la mutation 5 de T6 fait rougir **C1 et C1-bis**, pas C1 seul.
+LOW appliqués : le décompte de tests de T4 était ambigu (« unitairement testés » sur 4 pièges vs « 7 tests au total ») — tranché en **un test paramétré** ; AC-C6.6 ne définissait pas « table applicative », alors que le calcul de la fenêtre doit **exclure les tables système** ; la mutation 5 (registre vidé — devenue **16-1d T-D3**) fait rougir **C1 et C1-bis**, pas C1 seul.
 
 **Sur la règle de splitting — le second critère est coché pour la seconde fois, et cette fois par une hausse (`MEDIUM → HIGH`).** Il n'est toujours pas retenu, et voici pourquoi, à charge pour la passe 5 de le confirmer :
 

@@ -233,5 +233,19 @@ LOW : « aucun des **sept** cas » (décompte pré-split), et la puce `strip_col
 
 **Validé positivement** : les six cas, les dix ancres du harnais, les deux prérequis de `validate_invoice`, la couverture AC ↔ tâches sans orphelin ni doublon, et les **cinq mutations** re-tracées contre le SQL — aucune muette, et leurs effets de bord inter-cas correctement neutralisés par la règle de bornage des assertions posée en passe 3. Le recompte indépendant du « 3 sur 6 » de la passe 4 de 16-1c est confirmé exact.
 
-**Prochaine** : passe 5, LLM ≠ Sonnet, contexte frais.
+### Passe 5 de `bmad-create-story validate` — **BOUCLE CONVERGÉE**
+
+**2026-08-01 — Haiku, une lentille dédiée à la JOINTURE des deux documents, contexte frais. 1 finding : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW.**
+
+**Critère d'arrêt de la § « Review Iteration Rule » atteint** : plus rien au-dessus de `LOW`. Plafond de 8 passes non atteint.
+
+L'unique LOW est un renvoi historique : le Change Log de 16-1c citait encore « la mutation 5 de **T6** » — tâche supprimée par le split, dont la note explicative se trouve 161 lignes plus haut. Reformulé en renvoi explicite vers `16-1d T-D3`.
+
+**Ce que la passe a établi, et qui était l'enjeu réel** : la **table de jointure** des 18 éléments du périmètre montre que chacun est couvert exactement une fois — mécanisme, deux classes, ordre, registre, extrait, câblage, six garde-fous, les sept cas, les cinq mutations, la documentation, le gate. **Aucun élément perdu au split, aucun dupliqué.** Les 9 renvois de 16-1c vers 16-1d et les 13 renvois inverses résolvent tous. Le retrait de la note de montage de C5 hors de 16-1c est confirmé effectif (`grep REPOINTANT` → 1 occurrence en 16-1d, 0 en 16-1c), et la chaîne `AC-C7 → 16-1d AC-D1 → C3 → outcome Skipped` est vérifiée de bout en bout.
+
+**Trend de la boucle** : `1 HIGH / 4 MED / 1 LOW` → `1 MED` → `6 MED / 2 LOW` → `3 MED / 1 LOW` → **`1 LOW`**. Rotation Sonnet → Haiku → Opus → Sonnet → Haiku.
+
+**Fil rouge des cinq passes** : le gisement s'est déplacé de manière lisible — le **contenu** de la story aux passes 1-3, la **jointure avec 16-1c** aux passes 4-5. Et à chaque passe sauf la dernière, la majorité des findings corrigeait un artefact d'une passe antérieure. Le cas le plus net : pour corriger un patron de fixture erroné, la passe 1 a cité un fichier dont le doc-module **interdit explicitement** le geste prescrit — un contre-exemple présenté comme exemple, découvert deux passes plus tard.
+
+**Statut : `ready-for-dev`, spec convergée.**
 
