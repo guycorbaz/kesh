@@ -85,6 +85,7 @@ La perte de `accounts.role` est la plus lourde : elle casse la présentation des
 - **Toute modification d'un fichier de migration existant.** Les checksums SHA-384 de sqlx rendent les `.sql` déjà appliqués **immuables** (cf. l'avertissement en tête de `docs/migrations-idempotence-audit.md`). Le rejeu se fait à côté, jamais en réécrivant l'histoire.
 - **Le frontend.** Cf. D-C7.
 - **La réparation d'un parc déjà restauré avant cette version.** Un exploitant dans ce cas relance l'import du même backup une fois à jour ; le rejeu s'appliquera alors. À dire au CHANGELOG, pas à outiller.
+- **La couverture de bout en bout** — six cas E2E et leurs preuves par mutation → **16-1d**, qui doit partir dans la même PR.
 - **Le durcissement de `check_schema_compat`.** Écarté : cela transformerait un cas rattrapable en refus d'import.
 - **Les 7 migrations exemptes.** Elles ne sont pas « à faire plus tard » : leur backfill est **inatteignable** par le chemin d'import, définitivement tant que la fenêtre reste où elle est. L'exemption est un résultat, pas un report.
 
@@ -265,23 +266,17 @@ Le rejeu **n'est pas** un mécanisme général de « migration de données à l'
   2. `docs/manual/fr/admin-manual.tex` décrit le rejeu en section restore, PDF régénéré et commité, macros de `kesh-style.sty` **non** touchées (gate 4-bis) ;
   3. `CLAUDE.md` porte un garde-fou **P7** sous « Migration breaking policy ».
 
-### AC-C10 — Post-conditions testées de bout en bout
+### AC-C10 — Transactionnalité prouvée, au seul niveau où l'échec est observable
 
-Le test de bout en bout est **indispensable et non substituable** : le défaut naît de l'**interaction** entre l'import et des migrations que la PR ne touche pas.
+**La couverture de bout en bout est en 16-1d** (`16-1d-couverture-e2e-rejeu-backfills.md`) : six cas E2E et leurs preuves par mutation. Elle **doit partir dans la même PR** — un mécanisme sans preuve d'interaction ne vaut pas.
 
-**Montage — la voie praticable est de muter la base AVANT l'export**, pas de forger le backup. Retirer une entrée de `columnNames` du manifeste est sûr (les octets NDJSON ne bougent pas, le SHA-256 et le `rowCount` restent valides — c'est ce que font déjà `full_import_refuses_schema_mismatch_400:474` et `full_import_refuses_missing_required_column_400:504`). **Supprimer** des lignes NDJSON casse le `rowCount`, que `rezip` ne recalcule pas (`parse_and_verify` le vérifie, `import.rs:163-166`). **Modifier** une ligne est en revanche praticable — à condition de réécrire `manifest["tables"][t]["sha256"]` avec le helper local `sha256_hex` (`admin_full_import_e2e.rs:186`), ce que fait déjà `full_import_rolls_back_on_insert_failure` (`:561-566`). La mutation de la base **avant** l'export reste néanmoins préférée quand l'état visé est atteignable : pour C1-bis, faire `UPDATE invoice_lines SET revenue_account_id = NULL` sur la base source **puis** `export_backup`.
+Reste ici le seul cas qui ne relève pas de l'E2E :
 
 | Cas | Attendu | Ce qu'il discrimine |
 |---|---|---|
-| **C1** — backup **sans** `invoice_lines.revenue_account_id`, facture validée canonique | les lignes portent le compte crédité par leur écriture | cas nominal de l'issue #281 |
-| **C1-bis** — base source mutée à `revenue_account_id = NULL` **puis** exportée, colonne donc **présente et vide** | les lignes sont **quand même** backfillées | **classe A / rejeu inconditionnel** — tombe si l'entrée est traitée en classe B |
-| **C2** — backup sans `accounts.role` **ni** `postable` | rôles réattribués, `postable` recalculé | classe B, déclenchement |
-| **C2-bis** — backup portant `accounts.role` mais **pas** `postable` | le rejeu se déclenche **quand même** | **sémantique OU des sentinelles** — tombe si le dev implémente un ET. **Discriminant synthétique assumé** : les deux colonnes sont ajoutées par le même `ALTER`, donc co-présentes en réalité ; le cas se construit par `strip_column` et ne teste aucun état atteignable — il verrouille la règle pour les entrées futures |
-| **C3** — backup complet, `role` / `postable` posés **à la main** sur des valeurs non standard | la donnée du backup est **intacte** | **classe B / conditionnement** |
-| **C4** *(test d'intégration `kesh-db`, pas E2E — cf. note de montage)* — échec injecté **pendant le rejeu** via `replay_with_registry` et un registre fautif | l'appel rend `Err`, et après rollback la destination est **inchangée** | transactionnalité |
-| **C5** — backup sans `accounts.role`, **sans `accounts.postable`** et sans `revenue_account_id` ; le candidat unique du backfill est le compte de résultat n° `2979` | la ligne reste `NULL` | **ordre croissant** — tombe si le registre est parcouru à l'envers |
+| **C4** — test d'intégration `kesh-db` : échec injecté **pendant le rejeu** via `replay_with_registry` et un registre fautif | l'appel rend `Err`, et après rollback la destination est **inchangée** | transactionnalité (AC-C4) |
 
-**Notes de montage obligatoires** — chaque test porte une section « ce que ce test discrimine ». **Quatre** montages ont un piège nommé :
+**Note de montage obligatoire — « ce que ce test discrimine ».**
 
 - **C4** : le patron existant `full_import_rolls_back_on_insert_failure` (`:543`) injecte l'échec dans l'`INSERT` du restore, donc **avant** le point d'insertion du rejeu — le réutiliser tel quel produit un test vert qui n'atteint jamais le rejeu. Prévoir un point d'injection propre, **plus une assertion de montage** prouvant que le rejeu a démarré.
 
@@ -307,11 +302,6 @@ Le test de bout en bout est **indispensable et non substituable** : le défaut n
   - et `2979` **naît** non imputable : `effective_postable` (`repositories/accounts.rs:126-131`) force `postable = false` dès que `role = CurrentYearResult`, à la création comme à la mise à jour, et le seed applique la **même** règle via la fonction pure jumelle `kesh_core::chart_of_accounts::is_postable` (`bulk_create_from_chart`, `:839`) — c'est l'invariant « seed ≡ backfill ». Aucun `PUT /accounts` ne peut l'inverser.
 
   ⚠️ **Ne PAS attribuer `enforce_postable = false` au `PUT`** — ce `false` est sur le chemin **automatique** de validation de facture (`crates/kesh-db/src/repositories/invoices.rs:1813-1815`, argument de l'appel ouvert en `:1798`). Une rédaction antérieure de cette note faisait cette confusion et prescrivait un montage que l'API aurait refusé en 4xx.
-- **C3** : « poser `role` / `postable` à la main sur des valeurs non standard » **ne suffit pas** — le montage littéral produirait un test **muet**. Les 10 `UPDATE` de rôle sont gardés `role IS NULL` donc no-op sur des rôles renseignés ; et les 2 `UPDATE` de `postable` visent des états que l'API **ne peut pas** produire, `effective_postable` (`accounts.rs:126-131`) forçant `postable = false` sur un compte à rôle `CurrentYearResult` ou à enfants actifs, **à la création comme à la mise à jour**. Le rejeu inconditionnel serait donc entièrement no-op et la **mutation 3 ne rougirait pas**.
-
-  Le montage discriminant, et il est atteignable par l'API : **un rôle délibérément effacé**. `PUT /api/v1/accounts/{id}` documente `role: null` comme l'acte de retrait (`routes/accounts.rs:70`). Effacer le rôle du compte `1100` dans la base source ; un rejeu inconditionnel le réécrit en `'Receivable'`, ce qui fait tomber « la donnée du backup est intacte ». *(Ce piège est le même fait que celui de C5 — `postable` inatteignable par l'API — non propagé au moment où C5 a été corrigé.)*
-- **C1** : sans facture validée dans la source, l'assertion porte sur un ensemble vide et le **cas nominal de l'issue passe à vide**. D'où la mutation dédiée en T6.
-
 ---
 
 ## Tasks / Subtasks
@@ -335,20 +325,13 @@ Le test de bout en bout est **indispensable et non substituable** : le défaut n
   - [ ] Liste d'exemption, **7** entrées avec justification écrite (§ Contexte).
   - [ ] Les **6** tests d'AC-C6 (triage, DDL même fichier, no-op nominal, non-vacuité, ordre croissant, fenêtre).
   - [ ] **Plus le test d'AC-C5**, qui n'est pas dans AC-C6 et n'appartient à aucune autre tâche : `extract_statements_are_verbatim_substrings_of_source_migration` — chaque statement de l'extrait `20260722000001` est un sous-texte du SQL de la migration tel qu'embarqué dans le `MIGRATOR`. **8 tests au total pour cette tâche** : 1 (parsing paramétré) + 6 (AC-C6) + 1 (AC-C5).
-- [ ] **T5 — Tests de bout en bout** (AC-C10)
-  - [ ] **Fixture métier** — `admin_full_import_e2e.rs` ne sait aujourd'hui créer qu'une société et un utilisateur (`seed_role:139`) : aucun plan comptable, aucune facture, aucune écriture. Écrire le montage : semer le plan via `bulk_create_from_chart`, créer contact et produit, créer puis **valider** une facture pour produire son écriture. Patron disponible dans `crates/kesh-db/tests/invoice_lines_revenue_account_backfill.rs`.
-  - [ ] Helper `strip_column(manifest, data, table, column)` sur le couple `(Value, BTreeMap<String, Vec<u8>>)` rendu par `unzip` — geste partagé par C1, C2, C2-bis, C5.
-  - [ ] Les **6** cas E2E C1, C1-bis, C2, C2-bis, C3, C5, en réutilisant `spawn_app` / `export_backup` / `unzip` / `rezip` / `post_import`.
-  - [ ] **C4 en test d'intégration `kesh-db`** (`crates/kesh-db/tests/`), pas en E2E : `replay_with_registry` avec un registre fautif → `Err`, puis rollback → destination intacte. Seul niveau où l'échec est observable (D-C4).
-  - [ ] Note de montage « ce que ce test discrimine » sur **tous** les cas ; les pièges nommés de C1, C3, C4 et C5.
-  - [ ] Assertions `backfills_replayed` (audit) et `outcome` / `rows_affected` (valeur de retour), dont **un cas `Skipped`** sur C3 — AC-C7.
-- [ ] **T6 — Preuve par mutation** (AC-C10)
-  - [ ] Classe A rendue conditionnelle (sentinelle `(invoice_lines, revenue_account_id)`) → **C1-bis** doit rougir, **C1** rester vert.
-  - [ ] Sentinelles en ET au lieu de OU → **C2-bis** doit rougir.
-  - [ ] Classe B rendue inconditionnelle → **C3** doit rougir.
-  - [ ] Registre parcouru en ordre décroissant → **C5** doit rougir.
-  - [ ] Registre vidé de l'entrée `20260729000001` → **C1 et C1-bis** doivent rougir *(prouve la non-vacuité du cas nominal, qui sans cela pourrait passer sur un ensemble vide — les deux tombent, l'entrée retirée étant la seule à toucher `invoice_lines`)*.
-  - [ ] Consigner les cinq résultats dans le Dev Agent Record. **Un test attendu qui ne rougit pas invalide le montage** : le corriger avant d'aller plus loin.
+- [ ] **T5 — Test de transactionnalité** (AC-C4, AC-C10)
+  - [ ] Cas **C4** en test d'intégration `kesh-db` (`crates/kesh-db/tests/`) : restaurer, appeler `replay_with_registry` avec un registre fautif, vérifier l'`Err`, puis après rollback que la destination est intacte.
+  - [ ] Note de montage « ce que ce test discrimine », reprenant le piège nommé en AC-C10.
+  - [ ] **La couverture E2E (six cas + cinq mutations) est en 16-1d** — ne pas la dupliquer ici.
+
+*(**T6 — preuve par mutation** est partie en 16-1d avec les cas qu'elle vise. Numérotation conservée pour que les renvois des passes 1 à 5 restent lisibles.)*
+
 - [ ] **T7 — Documentation** (AC-C9, AC-C11)
   - [ ] **CHANGELOG** : la phrase actuelle *« si vous avez restauré une sauvegarde antérieure à cette version, le chiffre remonté n'a pas la cause annoncée ici : la reprise ne se rejoue pas après un import »* devient **fausse** avec cette story, et elle partirait telle quelle en v0.9.0 puisque les deux stories sont dans la même PR. La remplacer : la reprise **se rejoue** après un import, et un parc restauré avant cette version se répare en relançant le même import.
   - [ ] `docs/manual/fr/admin-manual.tex` — section restore : le rejeu, son ordre, et le fait qu'il ne touche pas une donnée que le backup portait. Régénérer le PDF (`make fr` dans `docs/manual/`) et le commiter. **Ne PAS** toucher `kesh-style.sty` (gate 4-bis, réservé au tag de release).
@@ -536,4 +519,8 @@ LOW appliqués : trois ancres dérivées dans ma note de passe 4 (`:913` → `:9
 
 **Sur la règle de splitting — troisième déclenchement consécutif (`HIGH → HIGH`), et cette fois le signal est net mais il ne désigne pas ce que la règle vise.** Sur les passes 4 et 5, **100 % des findings sont dans la section des montages de test**, et **aucune décision `D-C` n'a bougé depuis la passe 2**. Le symptôme n'est pas une story trop large pour un mental-model — c'est une **section** qui ne converge pas pendant que le reste est stable. Le découpage qui en découlerait est donc « mécanisme + garde-fous » d'un côté, « suite de tests de bout en bout » de l'autre. **Arbitrage remonté à Guy**, conformément au précédent des deux splits de l'Epic 16.
 
-**Prochaine** : selon l'arbitrage — passe 6 (LLM ≠ Opus) sur la story entière, ou split puis reprise de la boucle sur chaque moitié.
+**Arbitrage de Guy, 2026-08-01 : SPLIT.** La couverture de bout en bout — six cas E2E, leurs notes de montage et les cinq mutations — part en **16-1d**, dans son état convergé de la passe 5. 16-1c conserve la conception, les six garde-fous et le cas de transactionnalité C4, qui vit au niveau `kesh-db` et non en E2E.
+
+**16-1c est considérée convergée** : aucune décision `D-C` n'a bougé depuis la passe 2, et les deux lentilles Opus de la passe 5 ont déclaré la conception saine avec vérification énumérée. La totalité des findings des passes 4 et 5 est partie avec la section extraite. **16-1d n'ayant jamais été revue comme un tout autonome, elle reprend la boucle à sa passe 1.**
+
+**Les deux stories doivent partir dans la même PR et la même v0.9.0**, avec 16-1a-bis.
