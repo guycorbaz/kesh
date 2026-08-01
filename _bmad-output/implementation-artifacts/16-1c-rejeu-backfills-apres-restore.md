@@ -248,7 +248,7 @@ Le rejeu **n'est pas** un mécanisme général de « migration de données à l'
   3. toute entrée de **classe A** est un **no-op sur une base nominale à jour** (`MIGRATOR` complet + fixture d'usage courant) : `rows_affected == 0` ;
   4. toute entrée de **classe A** est **non vacue** : sur une base montée en amont de sa migration, le premier passage touche **> 0** ligne ;
   5. le registre est **strictement croissant** en version ;
-  6. chaque entrée du registre est **postérieure à la dernière migration créatrice de table applicative**, fenêtre recalculée depuis le `MIGRATOR`.
+  6. chaque entrée du registre est **postérieure à la dernière migration créatrice de table applicative**, fenêtre recalculée depuis le `MIGRATOR`. **« Applicative » = figurant dans `TABLES_TO_TRUNCATE`** : une future migration créant une table **système** (comme `20260522000001` l'a fait pour `_kesh_version`) ne déplace pas la fenêtre, puisque `parse_and_verify` ne compare que l'inventaire applicatif. Ne pas se contenter de chercher `CREATE TABLE`.
 - **AC-C7 — Restitution** : chaque rejeu émet un `tracing::info!` portant la version, l'issue et le nombre de lignes touchées ; chaque skip émet un `tracing::debug!`. L'`outcome` et le `rows_affected` de chaque `ReplayedBackfill` sont **assertés sur la valeur de retour** de `replay_post_restore_backfills` dans au moins un cas de AC-C10 — dont **un cas où l'`outcome` vaut `Skipped`** (C3), sans quoi le troisième état ne serait vérifié nulle part — capter `tracing` en test est fragile, verrouiller le contenu du rapport ne l'est pas. Le détail JSON de l'audit `admin.full_import` porte une clé `backfills_replayed`, **assertée** en relisant `audit_log` après import.
 - **AC-C8 — Contrat HTTP inchangé** : le corps de réponse de `POST /api/v1/admin/full-import` conserve exactement ses cinq clés. Aucun fichier de `frontend/` n'est modifié — **contrôle de revue** (`git diff --stat -- frontend/` vide), pas un test.
 - **AC-C9 — Aucune migration nouvelle, aucune migration modifiée.** Donc aucun bump de `kesh_version_min_required` ni de version Cargo (P1/P2/P2-bis), et **aucune ligne ajoutée** à `docs/migrations-idempotence-audit.md`. Ses compteurs, **recomptés le 2026-08-01**, valent **57 / 5 / 52 / 0** (total / `yes` / `tracked-by-sqlx` / `no`) et ne doivent pas bouger. *(Le garde-fou P5 impose une ligne d'audit par migration **ajoutée** ; cette story n'en ajoute aucune. Ne pas « mettre à jour les compteurs par précaution » : ce serait les casser. **Recompter à l'implémentation** — la première rédaction de cette spec avait écrit 57/4/53/0, valeur *relue* dans un état de session périmé.)*
@@ -275,8 +275,16 @@ Le test de bout en bout est **indispensable et non substituable** : le défaut n
 
 **Notes de montage obligatoires** — chaque test porte une section « ce que ce test discrimine ». Trois montages ont un piège nommé :
 
-- **C4** : le patron existant `full_import_rolls_back_on_insert_failure` (`:543`) injecte l'échec dans l'`INSERT` du restore, donc **avant** le point d'insertion du rejeu — le réutiliser tel quel produit un test vert qui n'atteint jamais le rejeu. Prévoir un point d'injection propre (entrée de registre supplémentaire compilée en `#[cfg(test)]` portant un SQL fautif), **plus une assertion de montage** prouvant que le rejeu a démarré.
-- **C5** : retirer `postable` est **indispensable**. S'il était laissé dans le manifeste, il vaudrait déjà `FALSE` sur `2979` — le restore reposerait la valeur telle quelle et le test passerait **dans les deux ordres**, donc sans rien discriminer. Le candidat doit de plus être obtenu en **rééditant l'écriture** de la facture validée via `PUT /api/v1/journal-entries/{id}` pour porter le crédit sur `2979` en conservant `credit = invoices.total_amount` — `POST /invoices` refuserait `2979` directement, la validation d'écriture tournant avec `enforce_postable = false`.
+- **C4** : le patron existant `full_import_rolls_back_on_insert_failure` (`:543`) injecte l'échec dans l'`INSERT` du restore, donc **avant** le point d'insertion du rejeu — le réutiliser tel quel produit un test vert qui n'atteint jamais le rejeu. Prévoir un point d'injection propre, **plus une assertion de montage** prouvant que le rejeu a démarré.
+
+  ⚠️ **L'entrée fautive doit être ISOLÉE, sinon elle casse les six autres cas.** `replay_post_restore_backfills(tx, tables)` ne prend pas le registre en paramètre (D-C4) et lit le `const` global : une entrée fautive ajoutée en `#[cfg(test)]` serait vue par **tous** les appels du binaire de test, et C1, C1-bis, C2, C2-bis, C3 et C5 échoueraient collatéralement. C4 étant un test **HTTP de bout en bout**, il ne peut pas non plus se voir injecter un registre par paramètre. L'isolation passe donc par le mécanisme déjà en place : déclarer l'entrée fautive en **classe B**, avec une sentinelle sur une colonne **présente dans tout backup normal** et que **seul C4** retire par `strip_column`. Les autres cas ne la déclenchent jamais. Prévoir l'exemption correspondante dans les garde-fous d'AC-C6, qui n'ont pas de migration à laquelle rattacher cette entrée.
+- **C5** : retirer `postable` est **indispensable**. S'il était laissé dans le manifeste, il vaudrait déjà `FALSE` sur `2979` — le restore reposerait la valeur telle quelle et le test passerait **dans les deux ordres**, donc sans rien discriminer. Le candidat — une ligne d'écriture créditant `2979` de `invoices.total_amount` — doit être posé par **`sqlx::query` directement sur le pool de la base source**, jamais par l'API. **Aucun chemin applicatif ne peut produire cet état** :
+
+  - `POST /invoices` refuse un compte de produit non imputable à la saisie ;
+  - `PUT /api/v1/journal-entries/{id}` non plus : `journal_entries::update` passe `enforce_postable = **true**` en dur (`repositories/journal_entries.rs:936`, commentaire `:913` « L'update est toujours un flux MANUEL »), et son *grandfather* D-A1 n'exempte que les comptes **déjà référencés par cette écriture** (`SELECT DISTINCT account_id FROM journal_entry_lines WHERE entry_id = ?`, `:921`) — or l'écriture générée par la validation n'a jamais touché `2979` ;
+  - et `2979` **naît** non imputable : `effective_postable` (`repositories/accounts.rs:126-131`) force `postable = false` dès que `role = CurrentYearResult`, à la création comme à la mise à jour, et `bulk_create_from_chart` (`:836-852`) applique la règle au seed. Aucun `PUT /accounts` ne peut l'inverser.
+
+  ⚠️ **Ne PAS attribuer `enforce_postable = false` au `PUT`** — ce `false` est sur le chemin **automatique** de validation de facture (`invoices.rs:1798`). Une rédaction antérieure de cette note faisait cette confusion et prescrivait un montage que l'API aurait refusé en 4xx.
 - **C1** : sans facture validée dans la source, l'assertion porte sur un ensemble vide et le **cas nominal de l'issue passe à vide**. D'où la mutation dédiée en T6.
 
 ---
@@ -293,12 +301,12 @@ Le test de bout en bout est **indispensable et non substituable** : le défaut n
   - [ ] `crates/kesh-db/src/post_restore/20260722000001_accounts_role_postable.sql` — les **12** `UPDATE` (10 rôles + 2 `postable`), verbatim, **dans l'ordre du fichier source**.
   - [ ] En-tête de l'extrait : de quelle migration il provient, pourquoi un extrait plutôt que le fichier entier (DDL), sa classe, et l'interdiction de le reformater ou d'en juger l'utilité clause par clause.
   - [ ] `20260729000001` : `include_str!` de la migration, **aucun extrait**.
-- [ ] **T3 — Câblage dans le restore** (AC-C4, AC-C7)
+- [ ] **T3 — Câblage dans le restore** (AC-C4, AC-C7, AC-C8)
   - [ ] Appeler `replay_post_restore_backfills` dans `run_backup_and_restore`, **après** la garde de comptage et **avant** l'audit ; mapper l'erreur en `AppError::AdminFullImportFailed`.
   - [ ] `tracing::info!` / `debug!` par entrée ; clé `backfills_replayed` dans le détail de l'audit.
   - [ ] Vérifier que le corps de réponse HTTP est **inchangé** (AC-C8).
 - [ ] **T4 — Garde-fous** (AC-C3, AC-C5, AC-C6)
-  - [ ] Retrait des commentaires SQL + découpage **multi-ligne** en statements, unitairement testés sur les pièges réels : `ON UPDATE CURRENT_TIMESTAMP`, le mot `UPDATE` en prose, un `INSERT … SELECT` à cheval sur deux lignes, un `INSERT IGNORE INTO`.
+  - [ ] Retrait des commentaires SQL + découpage **multi-ligne** en statements, couverts par **un seul test paramétré** sur les quatre pièges réels : `ON UPDATE CURRENT_TIMESTAMP`, le mot `UPDATE` en prose de commentaire, un `INSERT … SELECT` à cheval sur deux lignes, un `INSERT IGNORE INTO`. *(Un test paramétré, pas quatre tests — c'est ce que compte le total de 7 ci-dessous.)*
   - [ ] Liste d'exemption, **7** entrées avec justification écrite (§ Contexte).
   - [ ] Les **6** tests d'AC-C6 (triage, DDL même fichier, no-op nominal, non-vacuité, ordre croissant, fenêtre).
   - [ ] **Plus le test d'AC-C5**, qui n'est pas dans AC-C6 et n'appartient à aucune autre tâche : `extract_statements_are_verbatim_substrings_of_source_migration` — chaque statement de l'extrait `20260722000001` est un sous-texte du SQL de la migration tel qu'embarqué dans le `MIGRATOR`. **7 tests au total pour cette tâche.**
@@ -313,7 +321,7 @@ Le test de bout en bout est **indispensable et non substituable** : le défaut n
   - [ ] Sentinelles en ET au lieu de OU → **C2-bis** doit rougir.
   - [ ] Classe B rendue inconditionnelle → **C3** doit rougir.
   - [ ] Registre parcouru en ordre décroissant → **C5** doit rougir.
-  - [ ] Registre vidé de l'entrée `20260729000001` → **C1** doit rougir *(prouve la non-vacuité du cas nominal, qui sans cela pourrait passer sur un ensemble vide)*.
+  - [ ] Registre vidé de l'entrée `20260729000001` → **C1 et C1-bis** doivent rougir *(prouve la non-vacuité du cas nominal, qui sans cela pourrait passer sur un ensemble vide — les deux tombent, l'entrée retirée étant la seule à toucher `invoice_lines`)*.
   - [ ] Consigner les cinq résultats dans le Dev Agent Record. **Un test attendu qui ne rougit pas invalide le montage** : le corriger avant d'aller plus loin.
 - [ ] **T7 — Documentation** (AC-C9, AC-C11)
   - [ ] **CHANGELOG** : la phrase actuelle *« si vous avez restauré une sauvegarde antérieure à cette version, le chiffre remonté n'a pas la cause annoncée ici : la reprise ne se rejoue pas après un import »* devient **fausse** avec cette story, et elle partirait telle quelle en v0.9.0 puisque les deux stories sont dans la même PR. La remplacer : la reprise **se rejoue** après un import, et un parc restauré avant cette version se répare en relançant le même import.
@@ -455,3 +463,31 @@ La sévérité redescend nettement (`CRIT → CRIT → MED`), et **les deux MEDI
 **L'EdgeCaseHunter rend 0 finding, et son rapport est opposable** : sa section « vérifié et jugé sain » énumère **12** contrôles avec leur commande — fenêtre d'importabilité, absence de `DROP TABLE`, décomptes, absence de garde `IS NULL` sur les deux `postable`, `NOT EXISTS` structurel du premier, création de `revenue_account_id` dans une migration distincte, séquence rôle → `postable` interne à `20260722000001`, exemption `users.company_id` démontrée sans cas rattrapable. C'est l'inverse des rapports Haiku vides de la 16-1a : la contre-mesure « exiger une section énumérée » produit l'effet attendu.
 
 **Prochaine** : passe 4, LLM ≠ Haiku, contexte frais.
+
+### Passe 4 de `bmad-create-story validate`
+
+**2026-08-01 — Sonnet, 2 lentilles (BlindHunter, AcceptanceAuditor), contexte frais. 6 findings : 0 CRITICAL, 1 HIGH, 2 MEDIUM, 3 LOW.**
+
+**Deux lentilles et non trois, délibérément** : l'EdgeCaseHunter de la passe 3 a rendu 0 finding avec 12 contrôles énumérés, après deux passes dont les matrices d'états couvraient chacune ~25 lignes. Le gisement résiduel n'était plus l'exploration d'états mais les résidus de refonte. *(Si une passe ultérieure remonte un état non traité, remettre la troisième lentille.)*
+
+**Le HIGH, convergé sur les deux lentilles, tue le montage du seul test qui verrouille l'invariant d'ordre.** La note de C5 prescrivait de rééditer l'écriture de la facture via `PUT /api/v1/journal-entries/{id}` pour porter le crédit sur `2979`, en invoquant `enforce_postable = false`. **Trois faits indépendants le réfutent** :
+
+- `journal_entries::update` passe `enforce_postable = **true**` en dur (`:936`), et le commentaire du fichier l'énonce lui-même : « L'update est toujours un flux MANUEL » (`:913`) ;
+- son *grandfather* D-A1 n'exempte que les comptes **déjà référencés par l'écriture** (`:921`) — `2979` n'y est jamais, l'écriture de validation créditant le compte de produit ;
+- et `2979` **naît** non imputable : `effective_postable` (`accounts.rs:126-131`) force `postable = false` dès que `role = CurrentYearResult`, à la création comme à l'update, et `bulk_create_from_chart` (`:836-852`) l'applique au seed. **Aucun chemin API ne peut le rendre imputable.**
+
+Le `enforce_postable = false` invoqué existe bien, mais sur le chemin **automatique** de validation de facture (`invoices.rs:1798`) — la note l'avait attribué au mauvais site. Montage corrigé : la ligne d'écriture est posée par `sqlx::query` **directement sur le pool de la base source**, cohérent avec le principe déjà établi « muter la base avant l'export ».
+
+**AA4-2 (MEDIUM) — l'injection de faute de C4 aurait cassé les six autres cas.** `replay_post_restore_backfills` ne prend pas le registre en paramètre et lit le `const` global : une entrée fautive en `#[cfg(test)]` serait vue par **tous** les appels du binaire de test. Et C4 étant un test HTTP de bout en bout, on ne peut pas lui injecter un registre. L'isolation passe par le mécanisme déjà en place — entrée fautive en **classe B**, sentinelle sur une colonne que **seul C4** retire.
+
+**BH4-2 (MEDIUM)** : l'en-tête de T3 omettait `AC-C8`, alors qu'une de ses puces le vérifie — un audit de couverture mené sur les seuls en-têtes aurait conclu à un AC orphelin.
+
+LOW appliqués : le décompte de tests de T4 était ambigu (« unitairement testés » sur 4 pièges vs « 7 tests au total ») — tranché en **un test paramétré** ; AC-C6.6 ne définissait pas « table applicative », alors que le calcul de la fenêtre doit **exclure les tables système** ; la mutation 5 de T6 fait rougir **C1 et C1-bis**, pas C1 seul.
+
+**Sur la règle de splitting — le second critère est coché pour la seconde fois, et cette fois par une hausse (`MEDIUM → HIGH`).** Il n'est toujours pas retenu, et voici pourquoi, à charge pour la passe 5 de le confirmer :
+
+- **À modèle comparable, la sévérité décroît.** P1 Sonnet : 2 CRITICAL / 2 HIGH. P4 Sonnet : 0 CRITICAL / 1 HIGH. Le creux de la P3 est un artefact de modèle — Haiku n'a pas vu ce que Sonnet trouve, ce qui est le comportement attendu et documenté sur ce projet, pas un signe de convergence acquise.
+- **Le HIGH ne porte pas sur la conception**, stable depuis la passe 2, mais sur le **montage d'un test**. Aucune décision D-C n'a bougé en passe 4.
+- **La story est petite** : 2 entrées de registre, 1 extrait, 3 modules. Le symptôme que la règle vise — une story trop large pour tenir dans un mental-model adversarial — n'est pas celui qu'on observe.
+
+**Prochaine** : passe 5, LLM ≠ Sonnet, contexte frais.
