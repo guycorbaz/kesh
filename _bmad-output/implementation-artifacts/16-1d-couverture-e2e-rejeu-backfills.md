@@ -23,10 +23,12 @@ Issue : **#281**. Sous-story de l'Epic 16, **dépend strictement de 16-1c**, qui
 | 1 (Sonnet) | 2 CRIT / 2 HIGH / 3 MED / 1 LOW | conception |
 | 2 (Opus) | 1 CRIT / 4 HIGH / 6 MED / 8 LOW | conception — périmètre divisé par 2 |
 | 3 (Haiku) | 0 / 0 / 2 MED / 1 LOW | résidus de refonte |
-| 4 (Sonnet) | 0 / 1 HIGH / 2 MED / 3 LOW | **montages de test — 100 %** |
-| 5 (Opus) | 0 / 3 HIGH / 4 MED / 4 LOW | **montages de test — 100 %** |
+| 4 (Sonnet) | 0 / 1 HIGH / 2 MED / 3 LOW | montages de test : **3 sur 6** — dont les deux plus graves |
+| 5 (Opus) | 0 / 3 HIGH / 4 MED / 4 LOW | montages de test : **7 sur 11** — dont les trois HIGH |
 
-**Aucune décision de conception n'a bougé depuis la passe 2**, et les deux lentilles Opus de la passe 5 la déclarent saine avec vérification énumérée. Ce qui ne convergeait pas était une **section**, pas une story trop large — d'où un split par **nature de contenu** et non par module.
+Aucune décision `D-C` n'a bougé depuis la passe 2 — **hors la requalification, en passe 5, de la garde des 10 `UPDATE` de rôle** — et les deux lentilles Opus de la passe 5 déclarent la conception saine avec vérification énumérée. Ce qui ne convergeait pas était une **section**, pas une story trop large : d'où un split par **nature de contenu** et non par module.
+
+*(Le tableau ci-dessus a été recompté en passe 3 de cette story. Une rédaction antérieure y annonçait « montages de test — 100 % » pour les passes 4 et 5 : c'était un nombre **relu et non recompté**, dans la section même qui justifiait un arbitrage de process. Les proportions réelles — 3/6 et 7/11 — soutiennent la même conclusion, mais il fallait le dire juste.)*
 
 **Le split est sûr** : 16-1c conserve tous ses garde-fous de niveau unitaire et d'intégration `kesh-db` (dont le test de transactionnalité), donc elle reste vérifiable seule. Cette story ajoute la couche qu'aucun test unitaire ne peut donner.
 
@@ -72,7 +74,7 @@ Le test de bout en bout est **indispensable et non substituable** : le défaut n
 
 - **C4** : le patron existant `full_import_rolls_back_on_insert_failure` (`:543`) injecte l'échec dans l'`INSERT` du restore, donc **avant** le point d'insertion du rejeu — le réutiliser tel quel produit un test vert qui n'atteint jamais le rejeu. Prévoir un point d'injection propre, **plus une assertion de montage** prouvant que le rejeu a démarré.
 
-  ⚠️ **`#[cfg(test)]` NE TRAVERSE PAS la frontière de crate — ne pas chercher à injecter par là.** `kesh-db` est une dépendance **ordinaire** de `kesh-api` (`crates/kesh-api/Cargo.toml:9`) : depuis un test d'intégration de `kesh-api`, `cfg(test)` de `kesh-db` vaut **faux**. Une entrée fautive `#[cfg(test)]` ne serait donc vue par **aucun** des sept cas — et non par tous, comme l'affirmait une rédaction antérieure de cette note. C'est le même piège que celui documenté trois sections plus bas pour `build_test_backup`.
+  ⚠️ **`#[cfg(test)]` NE TRAVERSE PAS la frontière de crate — ne pas chercher à injecter par là.** `kesh-db` est une dépendance **ordinaire** de `kesh-api` (`crates/kesh-api/Cargo.toml:9`) : depuis un test d'intégration de `kesh-api`, `cfg(test)` de `kesh-db` vaut **faux**. Une entrée fautive `#[cfg(test)]` ne serait donc vue par **aucun** des six cas de cette story, ni par C4 en 16-1c — et non par tous, comme l'affirmait une rédaction antérieure de cette note. C'est le même piège que celui documenté trois sections plus bas pour `build_test_backup`.
 
   Et la déclarer inconditionnellement est **exclu** : le registre de production compterait 3 entrées au lieu de 2 (**16-1c**, AC-C1), dont une dont le seul rôle est de faire échouer tout restore dès que sa sentinelle manque — la mine même que cette story désamorce.
 
@@ -101,7 +103,13 @@ Le test de bout en bout est **indispensable et non substituable** : le défaut n
 
 - **AC-D2 — Fixture métier.** `admin_full_import_e2e.rs` ne sait aujourd'hui créer qu'une **société et un utilisateur** (`seed_role:139`) : aucun plan comptable, aucune facture, aucune écriture. La fixture est donc à écrire, et son absence rendrait **C1 — le cas nominal de l'issue #281 — vert sur un ensemble vide**. Semer le plan via `kesh_core::chart_of_accounts::load_chart("Pme")` + `accounts::bulk_create_from_chart`, créer contact et produit, créer puis **valider** une facture pour produire son écriture.
 
-  ⚠️ **Deux patrons distincts, ne pas confondre.** Pour le **plan comptable** : `crates/kesh-db/tests/company_invoice_settings_repository.rs:39-40` ou `accounts_role_backfill.rs`. **PAS** `seed_accounting_company` (`test_fixtures.rs`), qui insère **5 comptes en dur** (`1000`, `1100`, `2000`, `3000`, `4000`) **sans jamais renseigner `role`** et **sans le compte `2979`** — C5 serait alors inconstructible, son candidat n'existant pas. Pour la **facture validée par le vrai moteur** : `crates/kesh-db/tests/invoice_lines_revenue_account_backfill.rs`, test `validated_invoice_from_the_real_engine_is_recovered_by_the_backfill`.
+  ⚠️ **Deux prérequis durs de `validate_invoice` que ni `seed_role` ni les patrons ci-dessus ne fournissent** — les oublier fait échouer la validation, donc ne produit **aucune écriture**, donc rend C1 vert sur un ensemble vide :
+  - un **exercice ouvert couvrant la date de facture** (`invoices.rs:1730-1733`, `DbError::FiscalYearInvalid` sinon) ;
+  - la ligne `company_invoice_settings` **avec `default_vat_payable_account_id`** dès que la facture porte de la TVA (`invoices.rs:1497-1500`, `ConfigurationRequired`). `insert_with_defaults` ne renseigne **pas** cette colonne. Alternative acceptable : monter la facture **sans TVA** — cas suisse légitime sous le seuil de CHF 100 000, et c'est le montage qu'utilise 16-1a-bis.
+
+  ⚠️ **Deux patrons distincts, ne pas confondre.** Pour le **plan comptable** : `crates/kesh-db/tests/company_invoice_settings_repository.rs:33-37`.
+
+  ⚠️ **NE PAS s'inspirer d'`accounts_role_backfill.rs`** — son doc-module (`:28-32`) dit littéralement « insère le plan **en SQL brut** (surtout pas via `bulk_create_from_chart`, qui binderait `role`/`postable` — colonnes qui n'existent pas encore à ce stade → `ERROR 1054`) ». Sa technique repose sur un **montage partiel des migrations**, structurellement impossible ici : `admin_full_import_e2e.rs` monte `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]`, donc **toutes** les migrations. Transposé, il produirait un plan à `role = NULL` partout — exactement le défaut que cette mise en garde existe pour empêcher. *(Cité à tort comme patron en passe 1 de cette story ; c'est un contre-exemple.)* **PAS** `seed_accounting_company` (`test_fixtures.rs`), qui insère **5 comptes en dur** (`1000`, `1100`, `2000`, `3000`, `4000`) **sans jamais renseigner `role`** et **sans le compte `2979`** — C5 serait alors inconstructible, son candidat n'existant pas. Pour la **facture validée par le vrai moteur** : `crates/kesh-db/tests/invoice_lines_revenue_account_backfill.rs`, test `validated_invoice_from_the_real_engine_is_recovered_by_the_backfill`.
 - **AC-D3 — Discrimination prouvée par mutation, pas constatée.** Les cinq mutations de `T-D3` sont **exécutées**, et leurs résultats consignés au Dev Agent Record. **Un test attendu qui ne rougit pas invalide le montage** : le corriger avant d'aller plus loin. Un test vert ne prouve rien par lui-même — c'est l'enseignement mesuré des stories 16-1a et 16-1a-bis.
 - **AC-D4 — Aucun fichier de production modifié.** Cette story n'ajoute que des tests. `git diff --stat` ne touche ni `crates/kesh-db/src/`, ni `crates/kesh-api/src/`, ni `frontend/`, ni aucune migration.
 
@@ -109,7 +117,7 @@ Le test de bout en bout est **indispensable et non substituable** : le défaut n
 
 ## Tasks / Subtasks
 
-- [ ] **T-D1 — Fixture métier** (AC-D2)
+- [ ] **T-D1 — Fixture métier et helpers de montage** (AC-D1, AC-D2)
   - [ ] Helper de montage d'une société complète : plan comptable via `bulk_create_from_chart`, contact, produit.
   - [ ] Helper de création puis **validation** d'une facture, produisant son écriture comptable.
   - [ ] Helper `strip_column(manifest, data, table, column)` sur le couple `(Value, BTreeMap<String, Vec<u8>>)` rendu par `unzip` — geste partagé par C1, C2, C2-bis, C5.
@@ -117,7 +125,9 @@ Le test de bout en bout est **indispensable et non substituable** : le défaut n
   - [ ] Les **6** cas E2E C1, C1-bis, C2, C2-bis, C3, C5, en réutilisant les helpers de **T-D1** et le harnais existant `spawn_app` / `export_backup` / `unzip` / `rezip` / `post_import`. **Ne pas réécrire les helpers de T-D1.**
   - [ ] *(**C4 n'est PAS à écrire ici** — le test de transactionnalité appartient à **16-1c, T5**. Sa ligne au tableau d'AC-D1 et sa note de montage ne sont conservées que pour expliquer pourquoi cette story porte **six** cas et non sept.)*
   - [ ] Note de montage « ce que ce test discrimine » sur **tous** les cas ; en particulier les pièges nommés de C1, C3 et C5 *(celui de C4 est informatif, cf. ci-dessus)*.
-  - [ ] Assertions sur le rapport de rejeu : `backfills_replayed` relu dans `audit_log`, et `outcome` / `rows_affected` de la valeur de retour — dont **un cas où `outcome` vaut `Skipped`** (C3), sans quoi ce troisième état ne serait vérifié nulle part. *(Le contrat du rapport est posé par 16-1c, AC-C7 ; cette story l'exerce.)*
+  - [ ] Assertions sur le rapport de rejeu : `backfills_replayed` relu dans `audit_log`, et `outcome` / `rows_affected` de la valeur de retour — dont **un cas où `outcome` vaut `Skipped`** (C3), sans quoi ce troisième état ne serait vérifié nulle part.
+
+  ⚠️ **Chaque cas asserte l'entrée QU'IL discrimine, retrouvée par sa `version`** — jamais la longueur du vecteur, jamais son ordre. Sans cette borne, deux mutations font varier le rapport de cas annoncés **verts** : la mutation 1 bascule l'entrée `20260729000001` en `Skipped` dans C3, et la mutation 5 réduit le vecteur à un élément, observé par C2, C2-bis, C3 et C5. *(Le contrat du rapport est posé par 16-1c, AC-C7 ; cette story l'exerce.)*
 - [ ] **T-D3 — Preuve par mutation** (AC-D3)
   - [ ] Classe A rendue conditionnelle (sentinelle `(invoice_lines, revenue_account_id)`) → **C1-bis** doit rougir, **C1** rester vert.
   - [ ] Sentinelles en ET au lieu de OU → **C2-bis** doit rougir.
@@ -192,5 +202,23 @@ Les notes de montage de **C1, C3, C4 et C5** énoncent chacune un piège qui ren
 
 **L'EdgeCaseHunter rend 0 finding, à créditer avec réserve.** Sa section « vérifié et jugé sain » est bien énumérée et ses conclusions tiennent, mais son **détail contient des inexactitudes** : elle cite un « T-D5 » et un « AC-D7 » qui n'existent pas (`grep -c` → 0 pour les deux ; le document ne déclare que `T-D1..T-D4` et `AC-D1..AC-D4`). Conformément à l'enseignement du dépôt, un « 0 finding » n'est opposable que sur **ce qu'il énumère exactement** : les vérifications d'ancres SQL et de décomptes de ce rapport sont recevables, son inventaire des tâches ne l'est pas.
 
-**Prochaine** : passe 3, LLM ≠ Haiku, contexte frais.
+### Passe 3 de `bmad-create-story validate`
+
+**2026-08-01 — Opus, une lentille cumulant les trois regards, contexte frais. 8 findings : 0 CRITICAL, 0 HIGH, 6 MEDIUM, 2 LOW.**
+
+**Le finding le plus instructif : ma remédiation de passe 1 citait un CONTRE-EXEMPLE comme patron.** Pour corriger le patron de fixture, la passe 1 avait nommé `accounts_role_backfill.rs` — dont le doc-module dit littéralement « insère le plan **en SQL brut** (surtout pas via `bulk_create_from_chart`, qui binderait `role`/`postable` — colonnes qui n'existent pas encore à ce stade → `ERROR 1054`) ». Sa technique repose sur un **montage partiel des migrations**, structurellement impossible dans un fichier qui monte `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]`. Transposée, elle aurait reproduit exactement le défaut que la passe 1 corrigeait : un plan à `role = NULL` partout. L'autre ancre de la même puce était décalée de cinq lignes et pointait sur `insert_with_defaults`. **Les deux citations de la seule puce qui comptait étaient donc fausses.**
+
+**Le finding le plus utile au dev : la fixture omettait deux prérequis durs de `validate_invoice`.** Un **exercice ouvert** couvrant la date de facture (`invoices.rs:1730-1733`, `FiscalYearInvalid` sinon), et `default_vat_payable_account_id` dès qu'il y a de la TVA (`:1497-1500`, `ConfigurationRequired`) — que `insert_with_defaults` ne renseigne pas. Le patron d'origine les tirait tous deux de `seed_accounting_company` ; en scindant en « deux patrons distincts », la passe 1 les a laissés dans **aucun** des deux. Un dev suivant AC-D2 à la lettre obtenait un échec de validation, donc aucune écriture, donc **C1 vert sur un ensemble vide** — le mode d'échec que cette story existe pour empêcher.
+
+**Une affirmation que j'avais servie à l'appui du split était fausse.** Le tableau de provenance annonçait « montages de test — **100 %** » pour les passes 4 et 5. Recompté contre le Change Log de 16-1c : **3 sur 6** et **7 sur 11**. Trois findings de la passe 4 et quatre de la passe 5 portaient sur des éléments **restés en 16-1c** (en-tête de T3, décompte de T4, AC-C6.4, AC-C6.6, et la requalification de la garde des 10 `UPDATE` de rôle — qui **est** un amendement de D-C1). La conclusion tient, les proportions la soutiennent, mais c'était un nombre relu et non recompté, dans la section même qui justifiait un arbitrage de process. Corrigé, et l'exception à « aucune décision `D-C` n'a bougé » est désormais énoncée.
+
+**Deux mutations faisaient varier le rapport de cas annoncés verts** (P3-6) : la mutation 1 bascule l'entrée `20260729000001` en `Skipped` dans C3, la mutation 5 réduit le vecteur à un élément observé par quatre cas. La portée des assertions est désormais bornée — chaque cas asserte **l'entrée qu'il discrimine, retrouvée par sa `version`**, jamais la longueur ni l'ordre du vecteur.
+
+**Résidus de split corrigés côté 16-1c** (P3-4) : un paragraphe y affirmait encore que son AC-C10 porte les six cas partis en 16-1d, et deux renvois pointaient sur la tâche `T6` supprimée.
+
+LOW : « aucun des **sept** cas » (décompte pré-split), et la puce `strip_column` rattachée à un AC qui ne la couvre pas.
+
+**Ce que la lentille a validé positivement, avec commandes** : les 10 ancres du harnais E2E, la sûreté du retrait de colonne établie sur `parse_ndjson_rows:286-305` (et non par analogie), la fenêtre d'importabilité, l'atteignabilité du montage de C3 par l'API (`update` ne garde le retrait de rôle par aucun contrôle), les trois interdits du montage de C5, la présence de `1100` et `2979` dans le plan cité, et **les cinq mutations tracées une par une contre le SQL — aucune muette**. La contradiction de la passe 2 est confirmée close sans résidu.
+
+**Prochaine** : passe 4, LLM ≠ Opus, contexte frais.
 

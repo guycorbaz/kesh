@@ -194,7 +194,7 @@ Chaque entrée du registre — **rejouée comme sautée** — produit un `Replay
 - **`tracing::info!` par backfill rejoué**, `tracing::debug!` par backfill sauté.
 - **`audit_log`** : le détail JSON de l'entrée `admin.full_import` existante (`routes/admin.rs:298-304`) reçoit une clé supplémentaire `backfills_replayed`. Pas de nouvelle action d'audit, pas de nouvelle table.
 
-**`rows_affected` est informatif et ne fonde AUCUNE assertion de succès.** Zéro ligne touchée est un résultat parfaitement normal : le backfill 16-1a-bis est délibérément incomplet (son AC-B2). Ne **pas** écrire de garde « le rejeu doit avoir touché au moins une ligne » — ce serait la post-condition fausse contre laquelle 16-1a-bis met explicitement en garde. *(La non-vacuité est prouvée là où elle doit l'être : sur les **fixtures de test**, cf. AC-C6.4 et T6, jamais sur la donnée de production.)*
+**`rows_affected` est informatif et ne fonde AUCUNE assertion de succès.** Zéro ligne touchée est un résultat parfaitement normal : le backfill 16-1a-bis est délibérément incomplet (son AC-B2). Ne **pas** écrire de garde « le rejeu doit avoir touché au moins une ligne » — ce serait la post-condition fausse contre laquelle 16-1a-bis met explicitement en garde. *(La non-vacuité est prouvée là où elle doit l'être : sur les **fixtures de test**, cf. AC-C6.4, et **16-1d T-D3** pour les mutations, jamais sur la donnée de production.)*
 
 ### D-C6 — Le garde-fou fail-loud : toute future migration écrivant des données DOIT être triée
 
@@ -286,7 +286,7 @@ Reste ici le seul cas qui ne relève pas de l'E2E :
 
   **Décision** : rendre le registre **injectable**. `replay_post_restore_backfills(tx, tables)` délègue à une fonction `pub` `replay_with_registry(tx, tables, registry)`, appelée avec `POST_RESTORE_BACKFILLS`. **C4 devient alors un test d'intégration de `kesh-db`**, non un cas HTTP : ouvrir une transaction, restaurer, appeler `replay_with_registry` avec un registre fautif, vérifier l'`Err` puis, après rollback, que la destination est intacte. C'est le seul niveau où l'échec est **observable** — par le chemin HTTP, `AppError::AdminFullImportFailed` rend un `500` générique dont le détail est **loggé et jamais exposé** (`errors.rs`), donc indiscernable d'un échec d'`INSERT` du restore.
 
-  **Conséquence sur le décompte** : AC-C10 porte **6** cas E2E (C1, C1-bis, C2, C2-bis, C3, C5) ; C4 vit en test d'intégration `kesh-db`. Aucune exemption n'est alors nécessaire dans les garde-fous d'AC-C6, puisqu'aucune entrée fautive n'entre dans le `const`.
+  **Conséquence sur le décompte** : **AC-C10 ne porte plus que C4** ; les six cas E2E sont partis en **16-1d, AC-D1**. Aucune exemption n'est alors nécessaire dans les garde-fous d'AC-C6, puisqu'aucune entrée fautive n'entre dans le `const`.
 - **C5** : retirer `postable` est **indispensable**. S'il était laissé dans le manifeste, il vaudrait déjà `FALSE` sur `2979` — le restore reposerait la valeur telle quelle et le test passerait **dans les deux ordres**, donc sans rien discriminer. Le candidat s'obtient en **REPOINTANT** l'unique ligne de crédit de produit de l'écriture — `UPDATE journal_entry_lines SET account_id = <id de 2979> WHERE entry_id = <je> AND credit = <total_amount>` — par **`sqlx::query` directement sur le pool de la base source**, jamais par l'API.
 
   ⚠️ **NE PAS AJOUTER de ligne : cela INVERSE le test.** `HAVING COUNT(*) = 1` (`20260729000001:264`) compte les candidats de l'écriture **entière**, et une facture canonique en produit déjà exactement un (`invoices.rs:1481-1484`, une ligne de crédit par compte effectif). Avec une ligne de plus : en **ordre correct**, `2979` est écarté par `a.postable = TRUE` et il reste **un** candidat → la ligne reçoit `3000`, l'attendu « reste `NULL` » **échoue** ; en **ordre inversé**, les deux sont candidats → `HAVING` échoue → la ligne reste `NULL` et le test **passe**. Rouge sur l'implémentation correcte, vert sur la fautive.
@@ -391,7 +391,7 @@ Le restore **remplace intégralement** les tables de `TABLES_TO_TRUNCATE` (`DELE
 
 ### Ce qui rend ce défaut invisible en revue de diff
 
-Le mode d'échec ne naît ni du code écrit ni de la spec, mais de l'**interaction** entre une migration ajoutée par une story et un chemin de restore que cette story ne touche pas. C'est le profil du garde-fou **P6** (couplage positionnel des migrations), codifié en 16-1a après que trois tests ont changé de sens sans qu'aucune ligne de leur fichier ne bouge — dont un **passé à vide**. D'où T6 : prouver par **mutation** que les cas discriminants discriminent.
+Le mode d'échec ne naît ni du code écrit ni de la spec, mais de l'**interaction** entre une migration ajoutée par une story et un chemin de restore que cette story ne touche pas. C'est le profil du garde-fou **P6** (couplage positionnel des migrations), codifié en 16-1a après que trois tests ont changé de sens sans qu'aucune ligne de leur fichier ne bouge — dont un **passé à vide**. D'où **16-1d T-D3** : prouver par **mutation** que les cas discriminants discriminent.
 
 ### Project Structure Notes
 
