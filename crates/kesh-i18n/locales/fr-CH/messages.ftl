@@ -1437,4 +1437,5 @@ invoice-line-col-revenue-account = Compte de produit
 invoice-line-revenue-account-default = { $account } (défaut société)
 invoice-lines-revenue-account-invalid = Compte de produit invalide sur les lignes suivantes : { $lines }
 invoice-default-revenue-account-unusable = Le compte de produit par défaut de la société n'est plus utilisable (archivé, non imputable ou de type inattendu). Les lignes qui le suivent ne pourront pas être validées — corrigez-le dans les Réglages, ou choisissez un compte sur chaque ligne.
-account-label-default-suffix = (défaut)
+common-account-default-suffix = (défaut)
+invoice-line-aria-line = ligne { $n }

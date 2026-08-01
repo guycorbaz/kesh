@@ -47,7 +47,7 @@ export function invoiceRevenueAccountLabel(
 	// `cancelled`.
 	if (!isDraft) return '—';
 	if (defaultRevenueAccountId === null) return '—';
-	return `${label(accounts, defaultRevenueAccountId)} ${i18nMsg('account-label-default-suffix', '(défaut)')}`;
+	return `${label(accounts, defaultRevenueAccountId)} ${i18nMsg('common-account-default-suffix', '(défaut)')}`;
 }
 
 /**

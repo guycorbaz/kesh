@@ -198,6 +198,24 @@ Autrement dit : la révision de D7 en passe 1 est correcte sur le **composant**,
 
 ### Review Findings
 
+**Passe 3 de `bmad-code-review`** — 2026-08-01, Haiku 4.5 ×3 lentilles, diff aplati. **0 finding au-dessus de LOW — BOUCLE CONVERGÉE.** Critère d'arrêt de la § Review Iteration Rule atteint en 3 passes.
+
+**Trend : 3 HIGH (Sonnet) → 1 CRITICAL + 4 HIGH (Opus) → 0 (Haiku).** La refonte structurelle de la passe 2 a bien assaini la base : ce qui reste est de la documentation et de l'accessibilité, plus aucune perte de données.
+
+**Réserve d'honnêteté sur ce verdict** : la passe 3 tournait sur le modèle le plus faible, et elle a produit un `HIGH` réfuté en ground-truth (« les écrans de détail ne sont pas dans le diff » — ils y sont, 4 occurrences du chemin et le statut transmis en ligne `+`). Un « 0 au-dessus de LOW » venant de Haiku pèse moins qu'il ne pèserait venant d'Opus. Ce qui rend le verdict crédible tient plutôt à la **nature** de ce qui reste, et à la matrice de couverture de l'Acceptance Auditor, qui a **recompté indépendamment** les six décomptes corrigés en passe 2 et les confirme (7 clés, 20/20/10 tests, 5 sites, 10 mutations).
+
+Les 4 LOW retenus sont **tous des résidus de la passe 2** — la remédiation reste la première source de défauts, à la troisième passe consécutive :
+
+- [x] [Review][Patch] **Le doc-comment d'`afterBlurDelay` décrivait l'ancien code** — « `handleBlur` diffère de 150 ms » est devenu faux à la refonte, le `blur` étant désormais synchrone. Le helper est vestigial et **masque** tout défaut de timing : une opération asynchrone réintroduite dans `handleBlur` ne serait plus détectée. Commentaire corrigé, avec l'instruction de ne pas l'utiliser sur les séquences serrées. *(Blind Hunter.)*
+- [x] [Review][Patch] **Le message d'AC8 était écrit trois fois** (validation, bandeau rendu, `title` du bouton) — duplication que j'ai introduite en passe 2 en ajoutant le bandeau sans factoriser. Un changement de clé ou d'interpolation en désynchronisait deux sur trois. Extrait en un `$derived` unique. *(Blind Hunter.)*
+- [x] [Review][Patch] **Le nom accessible était identique sur toutes les lignes** — mon correctif de passe 2 ajoutait le nom manquant sans le rendre distinctif : sur une facture de 200 lignes, un lecteur d'écran annonce « Compte de produit » 200 fois, sans indiquer laquelle (WCAG 2.4.3). Numéro de ligne ajouté, avec sa clé i18n dans les 4 catalogues. *(Edge Case Hunter — son unique finding, et il est juste.)*
+- [x] [Review][Patch] **L'asymétrie bouton d'effacement / `blur` n'était ni documentée ni testée** — le `blur` exige que le compte soit résoluble, le bouton non. C'est **voulu** (un champ vide au `blur` est ambigu, il peut l'être parce que la liste n'est pas arrivée ; un clic sur « Effacer » ne l'est pas), mais c'était une protection tacite. Documentée. *(Blind Hunter.)*
+
+**⚠️ CORRECTION DU RAPPORT DE LA PASSE 2** — le gate que j'y ai annoncé vert **ne l'était pas**. Le lint `lint-i18n-ownership` échouait déjà au commit `027b7d04` : la clé `account-label-default-suffix`, ajoutée en passe 2, est consommée depuis `features/accounts/` alors que son préfixe n'est pas un namespace global. Vérifié en remisant les changements de passe 3. **Cause de l'erreur de rapport** : j'avais lancé le lint dans un pipeline dont le `grep` n'a rien remonté, et j'ai conclu au PASS **sans lire la sortie**. Clé renommée `common-account-default-suffix`, lint PASS. Impact runtime nul, mais le rapport était faux — et un « vert » non lu vaut moins que pas de vert du tout.
+
+**Gate complet vert, chaque étape lue explicitement** : `check` 0 erreur, `lint-i18n-ownership` PASS, `test:unit` **505/505** sur 62 fichiers, `build` OK, backend **2074/2074** exit 0.
+
+
 **Passe 2 de `bmad-code-review`** — 2026-07-31, Opus ×3 lentilles, diff aplati des 5 commits. **1 CRITICAL, 4 HIGH, ~11 MEDIUM.** Le constat central n'est pas le nombre : **deux des trois patches de la passe 1 étaient eux-mêmes défectueux**, et le CRITICAL vient d'une conception que j'avais déjà patchée deux fois.
 
 **ARBITRAGE GUY : refonte structurelle du champ**, plutôt qu'un troisième tour de gardes ponctuelles.

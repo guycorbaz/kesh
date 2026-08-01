@@ -1345,4 +1345,5 @@ invoice-line-col-revenue-account = Ertragskonto
 invoice-line-revenue-account-default = { $account } (Standard der Firma)
 invoice-lines-revenue-account-invalid = Ungültiges Ertragskonto auf den folgenden Zeilen: { $lines }
 invoice-default-revenue-account-unusable = Das Standard-Ertragskonto der Firma ist nicht mehr verwendbar (archiviert, nicht buchbar oder unerwarteter Typ). Zeilen, die ihm folgen, können nicht validiert werden — korrigieren Sie es in den Einstellungen oder wählen Sie pro Zeile ein Konto.
-account-label-default-suffix = (Standard)
+common-account-default-suffix = (Standard)
+invoice-line-aria-line = Zeile { $n }

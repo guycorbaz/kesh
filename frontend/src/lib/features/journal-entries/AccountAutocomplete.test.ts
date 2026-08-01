@@ -37,7 +37,17 @@ function acc(
 	} as AccountResponse;
 }
 
-/** `handleBlur` diffère de 150 ms pour laisser passer un clic sur le dropdown. */
+/**
+ * Laisse les effets Svelte se propager après une interaction.
+ *
+ * ⚠️ Ce helper décrivait « `handleBlur` diffère de 150 ms » — **devenu faux** à la
+ * refonte de la passe 2 : le `blur` est désormais **synchrone**. Le délai ne sert
+ * plus qu'à laisser tourner les `$effect`, et il **masque** tout défaut de
+ * timing : une opération asynchrone réintroduite dans `handleBlur` ne serait
+ * plus détectée. Les tests qui éprouvent une séquence serrée (vider puis
+ * enregistrer) ne doivent donc PAS l'utiliser.
+ * (Commentaire périmé relevé en passe 3 de revue.)
+ */
 async function afterBlurDelay() {
 	await new Promise((r) => setTimeout(r, 200));
 }

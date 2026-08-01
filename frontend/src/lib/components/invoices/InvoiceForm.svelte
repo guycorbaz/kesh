@@ -319,6 +319,24 @@
 		return out;
 	});
 
+	/**
+	 * Le message d'AC8, écrit UNE fois.
+	 *
+	 * Il vivait à trois endroits (validation, bandeau rendu, `title` du bouton) :
+	 * un changement de clé ou d'interpolation en désynchronisait deux sur trois.
+	 * (DRY relevé en passe 3 de revue — duplication introduite en passe 2 en
+	 * ajoutant le bandeau sans factoriser.)
+	 */
+	const invalidLinesMessage = $derived(
+		invalidRevenueAccountLines.length === 0
+			? ''
+			: i18nMsg(
+					'invoice-lines-revenue-account-invalid',
+					'Compte de produit invalide sur les lignes suivantes : { $lines }',
+					{ lines: invalidRevenueAccountLines.join(', ') }
+				)
+	);
+
 	// Charge le contact initial en mode édition, une seule fois par facture.
 	// `reloadFromServer` prend le relais pour les recharges ultérieures.
 	$effect(() => {
@@ -446,11 +464,7 @@
 		// donc le message doit donner l'état complet d'un seul coup (même geste que
 		// 16-1a D6).
 		if (invalidRevenueAccountLines.length > 0) {
-			return i18nMsg(
-				'invoice-lines-revenue-account-invalid',
-				'Compte de produit invalide sur les lignes suivantes : { $lines }',
-				{ lines: invalidRevenueAccountLines.join(', ') }
-			);
+			return invalidLinesMessage;
 		}
 		for (let i = 0; i < lines.length; i++) {
 			const l = lines[i];
@@ -728,11 +742,7 @@
 				inatteignable au clavier comme au lecteur d'écran. (Passe 2 de revue.)
 			-->
 			<p class="mb-2 text-sm text-destructive" role="alert" data-testid="invoice-lines-invalid-error">
-				{i18nMsg(
-					'invoice-lines-revenue-account-invalid',
-					'Compte de produit invalide sur les lignes suivantes : { $lines }',
-					{ lines: invalidRevenueAccountLines.join(', ') }
-				)}
+				{invalidLinesMessage}
 			</p>
 		{/if}
 
@@ -816,7 +826,7 @@
 								requiredAccountType="Revenue"
 								postableExemptAccountId={invoiceSettings?.defaultRevenueAccountId ?? null}
 								placeholder={defaultAccountPlaceholder}
-								ariaLabel={i18nMsg('invoice-line-col-revenue-account', 'Compte de produit')}
+								ariaLabel={`${i18nMsg('invoice-line-col-revenue-account', 'Compte de produit')} — ${i18nMsg('invoice-line-aria-line', 'ligne { $n }', { n: i + 1 })}`}
 								onSelect={(id) => (line.revenueAccountId = id)}
 							/>
 						</td>
@@ -866,7 +876,7 @@
 		<Button data-testid="create-invoice-button"
 			type="submit"
 			disabled={submitting || conflictOpen || loadingSettings || (invoiceSettings && !invoiceSettings.defaultReceivableAccountId) || (invoiceSettings && !invoiceSettings.defaultRevenueAccountId) || invalidRevenueAccountLines.length > 0}
-			title={loadingSettings ? i18nMsg('common-loading', 'Chargement...') : (invoiceSettings && (!invoiceSettings.defaultReceivableAccountId || !invoiceSettings.defaultRevenueAccountId) ? i18nMsg('invoice-settings-required', "Configurez d'abord les comptes de facturation dans les paramètres") : (invalidRevenueAccountLines.length > 0 ? i18nMsg('invoice-lines-revenue-account-invalid', 'Compte de produit invalide sur les lignes suivantes : { $lines }', { lines: invalidRevenueAccountLines.join(', ') }) : undefined))}
+			title={loadingSettings ? i18nMsg('common-loading', 'Chargement...') : (invoiceSettings && (!invoiceSettings.defaultReceivableAccountId || !invoiceSettings.defaultRevenueAccountId) ? i18nMsg('invoice-settings-required', "Configurez d'abord les comptes de facturation dans les paramètres") : (invalidRevenueAccountLines.length > 0 ? invalidLinesMessage : undefined))}
 		>
 			{invoice ? 'Enregistrer' : 'Créer la facture'}
 		</Button>

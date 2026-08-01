@@ -305,8 +305,16 @@
 			onmousedown={(e) => e.preventDefault()}
 			onclick={() => {
 				// Jeter le brouillon suffit : l'affichage retombe sur `displayLabel`,
-				// qui vaut `''` quand la valeur est nulle. Le bouton ne écrit donc
+				// qui vaut `''` quand la valeur est nulle. Le bouton n'écrit donc
 				// jamais le texte canonique — il n'y en a plus qu'un, dérivé.
+				//
+				// ASYMÉTRIE VOULUE avec le `blur` : celui-ci exige en plus que le
+				// compte soit RÉSOLUBLE (`selected !== undefined`), le bouton non.
+				// Un champ vide au `blur` est ambigu — il peut l'être parce que la
+				// liste des comptes n'est pas arrivée. Un clic sur « Effacer » ne
+				// l'est pas : c'est un geste explicite, il doit aboutir même sur un
+				// compte que l'on ne sait pas nommer.
+				// (Asymétrie relevée non documentée en passe 3 de revue.)
 				draft = null;
 				if (value !== null) onSelect(null);
 			}}
