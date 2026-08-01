@@ -64,7 +64,7 @@ Le test de bout en bout est **indispensable et non substituable** : le défaut n
 | **C1-bis** — base source mutée à `revenue_account_id = NULL` **puis** exportée, colonne donc **présente et vide** | les lignes sont **quand même** backfillées | **classe A / rejeu inconditionnel** — tombe si l'entrée est traitée en classe B |
 | **C2** — backup sans `accounts.role` **ni** `postable` | rôles réattribués, `postable` recalculé | classe B, déclenchement |
 | **C2-bis** — backup portant `accounts.role` mais **pas** `postable` | le rejeu se déclenche **quand même** | **sémantique OU des sentinelles** — tombe si le dev implémente un ET. **Discriminant synthétique assumé** : les deux colonnes sont ajoutées par le même `ALTER`, donc co-présentes en réalité ; le cas se construit par `strip_column` et ne teste aucun état atteignable — il verrouille la règle pour les entrées futures |
-| **C3** — backup complet, `role` / `postable` posés **à la main** sur des valeurs non standard | la donnée du backup est **intacte** | **classe B / conditionnement** |
+| **C3** — backup complet, avec le **rôle du compte `1100` délibérément effacé** (`role: null`) ; `postable` reste à sa valeur nominale | la donnée du backup est **intacte**, le rôle effacé le **reste** ; `outcome` vaut `Skipped` | **classe B / conditionnement** — cf. la note de montage, « poser des valeurs non standard » ne suffirait **pas** |
 | **C4** *(test d'intégration `kesh-db`, pas E2E — cf. note de montage)* — échec injecté **pendant le rejeu** via `replay_with_registry` et un registre fautif | l'appel rend `Err`, et après rollback la destination est **inchangée** | transactionnalité |
 | **C5** — backup sans `accounts.role`, **sans `accounts.postable`** et sans `revenue_account_id` ; le candidat unique du backfill est le compte de résultat n° `2979` | la ligne reste `NULL` | **ordre croissant** — tombe si le registre est parcouru à l'envers |
 
@@ -184,5 +184,13 @@ Les notes de montage de **C1, C3, C4 et C5** énoncent chacune un piège qui ren
 
 **Ce que les deux lentilles ont validé positivement** : les **cinq mutations** tracées une par une contre le SQL des deux migrations — chacune rougit exactement, et seulement, le cas annoncé, aucune n'est muette. Les décomptes propres à la story (six cas, cinq mutations, quatre faits, quatre pièges) recomptés exacts, ainsi que le tableau de sévérités des passes 1-5 repris de 16-1c. Toutes les ancres de code vérifiées.
 
-**Prochaine** : passe 2, LLM ≠ Sonnet, contexte frais.
+### Passe 2 de `bmad-create-story validate`
+
+**2026-08-01 — Haiku, 2 lentilles, contexte frais. 1 finding : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 0 LOW.**
+
+**BHD2-1 (MEDIUM) — contradiction interne, et encore un résidu de propagation.** La ligne du tableau d'AC-D1 décrivait le montage de C3 comme « `role` / `postable` posés **à la main** sur des valeurs non standard », alors que sa propre note de montage — ajoutée en passe 5 de 16-1c — dit que **ce montage-là produit un test muet** et prescrit un **rôle délibérément effacé**. J'avais écrit la note sans corriger la ligne qu'elle contredit. Un dev concevant C3 d'après le tableau seul aurait construit le test muet que la note existe pour empêcher. Ligne du tableau réalignée.
+
+**L'EdgeCaseHunter rend 0 finding, à créditer avec réserve.** Sa section « vérifié et jugé sain » est bien énumérée et ses conclusions tiennent, mais son **détail contient des inexactitudes** : elle cite un « T-D5 » et un « AC-D7 » qui n'existent pas (`grep -c` → 0 pour les deux ; le document ne déclare que `T-D1..T-D4` et `AC-D1..AC-D4`). Conformément à l'enseignement du dépôt, un « 0 finding » n'est opposable que sur **ce qu'il énumère exactement** : les vérifications d'ancres SQL et de décomptes de ce rapport sont recevables, son inventaire des tâches ne l'est pas.
+
+**Prochaine** : passe 3, LLM ≠ Haiku, contexte frais.
 
