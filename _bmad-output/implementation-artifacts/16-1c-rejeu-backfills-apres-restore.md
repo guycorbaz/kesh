@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev
+review
 
 ## Story
 
@@ -292,38 +292,38 @@ Reste ici le seul cas qui ne relève pas de l'E2E :
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Registre et mécanique de rejeu** (AC-C1, AC-C2, AC-C3)
-  - [ ] Créer `crates/kesh-db/src/post_restore.rs` ; le déclarer dans `lib.rs` (les `pub mod` y sont en ordre alphabétique — `post_restore` s'insère entre `pool` et `repositories`).
-  - [ ] Doc-comment de module : la **fenêtre d'importabilité** et pourquoi elle borne le registre, les **deux classes** de D-C1 et pourquoi aucune ne suffit seule, l'invariant d'ordre D-C2, et **ce que le rejeu n'est pas** (D-C8).
-  - [ ] Types — **la déclaration et l'issue sont deux choses distinctes, ne pas les confondre sous un même nom** : `BackfillTrigger { Unconditional, Sentinels(&[(&str, &str)]) }` déclare **ce qui doit déclencher** l'entrée (2 variants, propriété du registre) ; `ReplayOutcome { ReplayedUnconditional, ReplayedSentinelsAbsent(Vec<String>), Skipped }` rapporte **ce qui s'est passé** (3 variants, propriété de l'exécution). D'où `PostRestoreBackfill { version, label, trigger, sql }` et `ReplayedBackfill { version, label, outcome, rows_affected }`.
-  - [ ] Registre `POST_RESTORE_BACKFILLS: &[PostRestoreBackfill]`, **2** entrées, triées par version croissante, chacune commentée avec la justification écrite de sa classe (celle de D-C1, pas une paraphrase).
-  - [ ] `replay_with_registry(tx, tables, registry)` **`pub`** : évaluation du déclencheur, exécution `sqlx::raw_sql`, collecte du rapport. `replay_post_restore_backfills(tx, tables)` n'en est que l'appel avec `POST_RESTORE_BACKFILLS` — c'est la porte d'injection qui rend AC-C4 testable (D-C4).
-- [ ] **T2 — Extrait SQL** (AC-C5)
-  - [ ] `crates/kesh-db/src/post_restore/20260722000001_accounts_role_postable.sql` — les **12** `UPDATE` (10 rôles + 2 `postable`), verbatim, **dans l'ordre du fichier source**.
-  - [ ] En-tête de l'extrait : de quelle migration il provient, pourquoi un extrait plutôt que le fichier entier (DDL), sa classe, et l'interdiction de le reformater ou d'en juger l'utilité clause par clause.
-  - [ ] `20260729000001` : `include_str!` de la migration, **aucun extrait**.
-- [ ] **T3 — Câblage dans le restore** (AC-C4, AC-C7, AC-C8)
-  - [ ] Appeler `replay_post_restore_backfills` dans `run_backup_and_restore`, **après** la garde de comptage et **avant** l'audit ; mapper l'erreur en `AppError::AdminFullImportFailed`.
-  - [ ] `tracing::info!` / `debug!` par entrée ; clé `backfills_replayed` dans le détail de l'audit.
-  - [ ] Vérifier que le corps de réponse HTTP est **inchangé** (AC-C8).
-- [ ] **T4 — Garde-fous** (AC-C3, AC-C5, AC-C6)
-  - [ ] Retrait des commentaires SQL + découpage **multi-ligne** en statements, couverts par **un seul test paramétré** sur les quatre pièges réels : `ON UPDATE CURRENT_TIMESTAMP`, le mot `UPDATE` en prose de commentaire, un `INSERT … SELECT` à cheval sur deux lignes, un `INSERT IGNORE INTO`. *(Un test paramétré, pas quatre tests — il compte pour **un** dans le total de 8 ci-dessous.)*
-  - [ ] Liste d'exemption, **7** entrées avec justification écrite (§ Contexte).
-  - [ ] Les **6** tests d'AC-C6 (triage, DDL même fichier, no-op nominal, non-vacuité, ordre croissant, fenêtre).
-  - [ ] **Plus le test d'AC-C5**, qui n'est pas dans AC-C6 et n'appartient à aucune autre tâche : `extract_statements_are_verbatim_substrings_of_source_migration` — chaque statement de l'extrait `20260722000001` est un sous-texte du SQL de la migration tel qu'embarqué dans le `MIGRATOR`. **8 tests au total pour cette tâche** : 1 (parsing paramétré) + 6 (AC-C6) + 1 (AC-C5).
-- [ ] **T5 — Test de transactionnalité** (AC-C4, AC-C10)
-  - [ ] Cas **C4** en test d'intégration `kesh-db` (`crates/kesh-db/tests/`) : restaurer, appeler `replay_with_registry` avec un registre fautif, vérifier l'`Err`, puis après rollback que la destination est intacte.
-  - [ ] Note de montage « ce que ce test discrimine », reprenant le piège nommé en AC-C10.
-  - [ ] **La couverture E2E (six cas + cinq mutations) est en 16-1d** — ne pas la dupliquer ici.
+- [x] **T1 — Registre et mécanique de rejeu** (AC-C1, AC-C2, AC-C3)
+  - [x] Créer `crates/kesh-db/src/post_restore.rs` ; le déclarer dans `lib.rs` (les `pub mod` y sont en ordre alphabétique — `post_restore` s'insère entre `pool` et `repositories`).
+  - [x] Doc-comment de module : la **fenêtre d'importabilité** et pourquoi elle borne le registre, les **deux classes** de D-C1 et pourquoi aucune ne suffit seule, l'invariant d'ordre D-C2, et **ce que le rejeu n'est pas** (D-C8).
+  - [x] Types — **la déclaration et l'issue sont deux choses distinctes, ne pas les confondre sous un même nom** : `BackfillTrigger { Unconditional, Sentinels(&[(&str, &str)]) }` déclare **ce qui doit déclencher** l'entrée (2 variants, propriété du registre) ; `ReplayOutcome { ReplayedUnconditional, ReplayedSentinelsAbsent(Vec<String>), Skipped }` rapporte **ce qui s'est passé** (3 variants, propriété de l'exécution). D'où `PostRestoreBackfill { version, label, trigger, sql }` et `ReplayedBackfill { version, label, outcome, rows_affected }`.
+  - [x] Registre `POST_RESTORE_BACKFILLS: &[PostRestoreBackfill]`, **2** entrées, triées par version croissante, chacune commentée avec la justification écrite de sa classe (celle de D-C1, pas une paraphrase).
+  - [x] `replay_with_registry(tx, tables, registry)` **`pub`** : évaluation du déclencheur, exécution `sqlx::raw_sql`, collecte du rapport. `replay_post_restore_backfills(tx, tables)` n'en est que l'appel avec `POST_RESTORE_BACKFILLS` — c'est la porte d'injection qui rend AC-C4 testable (D-C4).
+- [x] **T2 — Extrait SQL** (AC-C5)
+  - [x] `crates/kesh-db/src/post_restore/20260722000001_accounts_role_postable.sql` — les **12** `UPDATE` (10 rôles + 2 `postable`), verbatim, **dans l'ordre du fichier source**.
+  - [x] En-tête de l'extrait : de quelle migration il provient, pourquoi un extrait plutôt que le fichier entier (DDL), sa classe, et l'interdiction de le reformater ou d'en juger l'utilité clause par clause.
+  - [x] `20260729000001` : `include_str!` de la migration, **aucun extrait**.
+- [x] **T3 — Câblage dans le restore** (AC-C4, AC-C7, AC-C8)
+  - [x] Appeler `replay_post_restore_backfills` dans `run_backup_and_restore`, **après** la garde de comptage et **avant** l'audit ; mapper l'erreur en `AppError::AdminFullImportFailed`.
+  - [x] `tracing::info!` / `debug!` par entrée ; clé `backfills_replayed` dans le détail de l'audit.
+  - [x] Vérifier que le corps de réponse HTTP est **inchangé** (AC-C8).
+- [x] **T4 — Garde-fous** (AC-C3, AC-C5, AC-C6)
+  - [x] Retrait des commentaires SQL + découpage **multi-ligne** en statements, couverts par **un seul test paramétré** sur les quatre pièges réels : `ON UPDATE CURRENT_TIMESTAMP`, le mot `UPDATE` en prose de commentaire, un `INSERT … SELECT` à cheval sur deux lignes, un `INSERT IGNORE INTO`. *(Un test paramétré, pas quatre tests — il compte pour **un** dans le total de 8 ci-dessous.)*
+  - [x] Liste d'exemption, **7** entrées avec justification écrite (§ Contexte).
+  - [x] Les **6** tests d'AC-C6 (triage, DDL même fichier, no-op nominal, non-vacuité, ordre croissant, fenêtre).
+  - [x] **Plus le test d'AC-C5**, qui n'est pas dans AC-C6 et n'appartient à aucune autre tâche : `extract_statements_are_verbatim_substrings_of_source_migration` — chaque statement de l'extrait `20260722000001` est un sous-texte du SQL de la migration tel qu'embarqué dans le `MIGRATOR`. **8 tests au total pour cette tâche** : 1 (parsing paramétré) + 6 (AC-C6) + 1 (AC-C5).
+- [x] **T5 — Test de transactionnalité** (AC-C4, AC-C10)
+  - [x] Cas **C4** en test d'intégration `kesh-db` (`crates/kesh-db/tests/`) : restaurer, appeler `replay_with_registry` avec un registre fautif, vérifier l'`Err`, puis après rollback que la destination est intacte.
+  - [x] Note de montage « ce que ce test discrimine », reprenant le piège nommé en AC-C10.
+  - [x] **La couverture E2E (six cas + cinq mutations) est en 16-1d** — ne pas la dupliquer ici.
 
 *(**T6 — preuve par mutation** est partie en 16-1d avec les cas qu'elle vise. Numérotation conservée pour que les renvois des passes 1 à 5 restent lisibles.)*
 
-- [ ] **T7 — Documentation** (AC-C9, AC-C11)
-  - [ ] **CHANGELOG** : la phrase actuelle *« si vous avez restauré une sauvegarde antérieure à cette version, le chiffre remonté n'a pas la cause annoncée ici : la reprise ne se rejoue pas après un import »* devient **fausse** avec cette story, et elle partirait telle quelle en v0.9.0 puisque les deux stories sont dans la même PR. La remplacer : la reprise **se rejoue** après un import, et un parc restauré avant cette version se répare en relançant le même import.
-  - [ ] `docs/manual/fr/admin-manual.tex` — section restore : le rejeu, son ordre, et le fait qu'il ne touche pas une donnée que le backup portait. Régénérer le PDF (`make fr` dans `docs/manual/`) et le commiter. **Ne PAS** toucher `kesh-style.sty` (gate 4-bis, réservé au tag de release).
-  - [ ] `CLAUDE.md` — garde-fou **P7** : toute PR ajoutant une migration écrivant des données doit la trier (registre ou exemption justifiée) ; manquement = finding **MEDIUM** en `bmad-code-review`. Mentionner que la détection couvre `UPDATE` / `INSERT` toutes formes / `REPLACE` / `DELETE`, en **multi-ligne**, et renvoyer aux tests qui l'outillent.
-  - [ ] **Ne PAS** ajouter de ligne ni toucher aux compteurs de `docs/migrations-idempotence-audit.md`.
-- [ ] **T8 — Gate** : `scripts/test-fast.sh` complet (fmt + clippy `-D warnings` + nextest workspace) sur l'**état final**, exit 0 exigé, non présumé d'un run antérieur. `npm run check` inutile — aucun fichier frontend touché.
+- [x] **T7 — Documentation** (AC-C9, AC-C11)
+  - [x] **CHANGELOG** : la phrase actuelle *« si vous avez restauré une sauvegarde antérieure à cette version, le chiffre remonté n'a pas la cause annoncée ici : la reprise ne se rejoue pas après un import »* devient **fausse** avec cette story, et elle partirait telle quelle en v0.9.0 puisque les deux stories sont dans la même PR. La remplacer : la reprise **se rejoue** après un import, et un parc restauré avant cette version se répare en relançant le même import.
+  - [x] `docs/manual/fr/admin-manual.tex` — section restore : le rejeu, son ordre, et le fait qu'il ne touche pas une donnée que le backup portait. Régénérer le PDF (`make fr` dans `docs/manual/`) et le commiter. **Ne PAS** toucher `kesh-style.sty` (gate 4-bis, réservé au tag de release).
+  - [x] `CLAUDE.md` — garde-fou **P7** : toute PR ajoutant une migration écrivant des données doit la trier (registre ou exemption justifiée) ; manquement = finding **MEDIUM** en `bmad-code-review`. Mentionner que la détection couvre `UPDATE` / `INSERT` toutes formes / `REPLACE` / `DELETE`, en **multi-ligne**, et renvoyer aux tests qui l'outillent.
+  - [x] **Ne PAS** ajouter de ligne ni toucher aux compteurs de `docs/migrations-idempotence-audit.md`.
+- [x] **T8 — Gate** : `scripts/test-fast.sh` complet (fmt + clippy `-D warnings` + nextest workspace) sur l'**état final**, exit 0 exigé, non présumé d'un run antérieur. `npm run check` inutile — aucun fichier frontend touché.
 
 ---
 
@@ -399,11 +399,59 @@ Le mode d'échec ne naît ni du code écrit ni de la spec, mais de l'**interacti
 
 ### Agent Model Used
 
+**Claude Opus 5 (1M context)** — `bmad-dev-story`, 2026-08-01.
+
+Deux commits, un par lot de tâches :
+
+| Commit | Date | Tâches |
+|---|---|---|
+| `586bcd46` | 2026-08-01 15:53 | T1 — T4 (registre, extrait SQL, câblage, garde-fous) |
+| `0387b9a0` | 2026-08-01 16:18 | T5 + T7 (transactionnalité, documentation) |
+
+*(T6 — preuve par mutation — est partie en **16-1d** avec les cas qu'elle vise, au split arbitré en passe 5. T8 ci-dessous.)*
+
+**La session de dev a été interrompue par un crash après `0387b9a0`.** Le Dev Agent Record, les cases de tâches, le `Status` et `sprint-status.yaml` ont été rattrapés le 2026-08-02 après vérification d'intégrité : `git fsck` 0 erreur, arbre propre, `fmt` / `build` / `clippy -D warnings` verts, 9/9 garde-fous `post_restore` verts. **Aucun travail n'a été perdu** — les deux commits contiennent l'intégralité du code livré.
+
 ### Debug Log References
+
+**Gate T8 — `scripts/test-fast.sh` sur l'état final, 2026-08-02, DB `kesh_gate` : VERT.** `exit 0`, **2086/2086**, 4 skipped, 9 slow, 3484 s (58 min). `fmt` + `clippy -D warnings` verts dans le même run. Verdict pris sur l'**état final**, non présumé d'un run antérieur.
+
+⚠️ **Un premier run a rendu `exit 100` et n'est PAS une régression** : 6 échecs, tous `PoolTimedOut` à 30,0 s sur *« failed to connect to setup test database »*, aucun sur une assertion. Le run tournait dans le bac à sable de l'outillage, qui bloque `127.0.0.1:3306` — vérifié directement (`/dev/tcp/127.0.0.1/3306` → connexion refusée). **Aucun test touchant la base n'avait démarré** ; les 14 tests verts qui précèdent sont des tests unitaires purs. Relancé hors bac à sable.
+
+**Deux pièges d'exécution du gate, tous deux rencontrés ici :**
+
+1. **L'exit code d'un `script > log ; echo "EXIT=$?"` est celui du `echo`.** La notification de fin annonçait `exit 0` alors que le gate valait **100**. Le verdict se lit dans le log, jamais dans le code de retour du bloc englobant. *(Même famille que [[feedback_cargo_test_pipe_masks_exit]] : ne pas laisser une commande de confort masquer le statut réel.)*
+2. **`kesh_gate` contrôlée AVANT le run** (5 comptes `active=1, postable=1`) — un run nextest tué en vol y laisse le compte `1000` non imputable et produit 26 faux échecs dans `journal_entries::tests`. Le crash de la veille n'avait rien laissé.
 
 ### Completion Notes List
 
+- **Le registre compte 2 entrées, et son contenu n'est pas fixé par le nombre de backfills.** Il l'est par la **fenêtre d'importabilité** : `parse_and_verify` exige l'égalité exacte, dans les deux sens, entre les tables du manifeste et `TABLES_TO_TRUNCATE`, et aucune migration ne supprimant jamais de table, un backup n'est importable que depuis un binaire ≥ à la dernière migration créatrice de table applicative. Sur les **9** migrations qui écrivent des données, **7 sont exemptées** avec justification écrite (`EXEMPT_MIGRATIONS`), dont une **autoréfutante** : `20260628000001` crée elle-même les tables dont l'absence accompagnerait celle de sa colonne.
+- **Écart de conception assumé — exécution statement par statement plutôt que `sqlx::raw_sql`.** Le futur de `raw_sql` n'est pas `Send`, ce qui casse la contrainte `Handler` d'Axum sur le handler d'import. Le découpage a de surcroît l'avantage de faire remonter l'erreur **avec le statement fautif**, ce dont dépend l'assertion de `replay_stops_at_the_first_failing_entry`.
+- **La classe est déclarée, jamais devinée** (D-C1). Une détection textuelle par présence de `IS NULL` / `NOT EXISTS` classerait à tort le premier `UPDATE` de `postable` de `20260722000001` : son `NOT EXISTS` est un prédicat **structurel de ciblage**, pas une garde d'idempotence.
+- **`20260729000001` est en classe A et non B**, bien qu'elle porte une garde `IS NULL` : sa colonne est créée par une migration **distincte** (`20260727000001`, DDL pur), donc une sentinelle mentirait sur un backup pris entre les deux, qui porte la colonne entièrement `NULL`. L'invariant est verrouillé par `class_b_sentinel_column_is_added_by_its_own_migration`.
+- **`replay_with_registry` est `pub` pour une raison testable, pas par confort.** `#[cfg(test)]` ne traverse pas la frontière de crate : une entrée fautive déclarée ainsi dans `kesh-db` ne serait vue par **aucun** test d'intégration de `kesh-api`, et la déclarer inconditionnellement livrerait en production une entrée dont le seul rôle est de faire échouer tout restore. C'est la porte d'injection qui rend AC-C4 testable.
+- **Le corps de réponse HTTP est inchangé** (AC-C8, D-C7) : le rapport de rejeu vit dans la clé `backfills_replayed` du détail d'audit et dans le journal serveur.
+- **`rows_affected` est informatif et ne fonde aucune assertion de succès** — zéro est un résultat nominal, le backfill de `20260729000001` étant délibérément incomplet (AC-B2). C'est documenté au champ pour qu'aucun appelant n'en fasse un indicateur de santé.
+- **Discrimination prouvée par mutation, non constatée** (geste hérité de la 16-1a-bis). Chaque mutation tue son test **et lui seul** : retirer une exemption → `every_data_backfill_migration_is_triaged` ; inverser l'ordre du registre → `registry_versions_are_strictly_increasing` ; altérer un caractère de l'extrait → `extract_statements_are_verbatim_substrings_of_source_migration` ; passer l'entrée de classe A en classe B → `class_b_sentinel_column_is_added_by_its_own_migration` ; une entrée hors fenêtre → `registry_entries_are_within_import_window`. Côté T5, faire avaler l'erreur par le rejeu tue les deux tests qui assertent sa propagation **et laisse la pré-condition verte** — c'est précisément le rôle de cette pré-condition.
+- **La pré-condition de C4 n'est pas décorative.** Sans `replay_touches_the_observed_row_when_it_succeeds`, l'assertion « la destination est inchangée » serait vraie **à vide** : elle passerait aussi bien si le rejeu n'avait jamais démarré.
+- **AC-C9 vérifié négativement** : aucune migration n'étant ajoutée, `docs/migrations-idempotence-audit.md` n'est **pas** touché — 57 lignes, compteurs `57 / 5 / 52 / 0` **recomptés** depuis le disque et le tableau, zéro écart.
+- **Macros de version des manuels NON touchées** (`kesh-style.sty`) : elles ne bougent qu'au tag de release, gate 4-bis.
+
 ### File List
+
+**Créés**
+
+- `crates/kesh-db/src/post_restore.rs` (685 l.) — registre `POST_RESTORE_BACKFILLS` (2 entrées), `EXEMPT_MIGRATIONS` (7 entrées justifiées), types `BackfillTrigger` / `ReplayOutcome` / `PostRestoreBackfill` / `ReplayedBackfill`, `replay_post_restore_backfills`, `replay_with_registry`, `missing_sentinels`, `split_statements`, `writes_data`, et les **9 tests** de garde-fou.
+- `crates/kesh-db/src/post_restore/20260722000001_accounts_role_postable.sql` (48 l.) — extrait verbatim des 12 `UPDATE` (10 rôles + 2 `postable`), dans l'ordre du fichier source.
+- `crates/kesh-db/tests/post_restore_transactionality.rs` (142 l.) — cas **C4** + sa pré-condition + la borne d'arrêt au premier statement fautif.
+
+**Modifiés**
+
+- `crates/kesh-db/src/lib.rs` — déclaration du module (`pub mod post_restore;`, inséré entre `pool` et `repositories`).
+- `crates/kesh-api/src/routes/admin.rs` — étape **5-bis** de `run_backup_and_restore` (après la garde de comptage, avant l'audit) + clé `backfills_replayed` du détail d'audit.
+- `CHANGELOG.md` — la phrase « la reprise ne se rejoue pas après un import » devenait fausse ; remplacée, et une puce dédiée décrit le correctif côté utilisateur.
+- `CLAUDE.md` — garde-fou **P7** (§ Migration breaking policy).
+- `docs/manual/fr/admin-manual.tex` + `.pdf` — paragraphe sur le rejeu dans la section import, PDF régénéré.
 
 ## Change Log
 
