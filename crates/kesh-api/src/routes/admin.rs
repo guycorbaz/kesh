@@ -320,13 +320,19 @@ async fn run_backup_and_restore(
         // INCHANGÉ (D-C7) : cette information de diagnostic vit dans l'audit et
         // le journal serveur, que l'exploitant d'un restore consulte de toute
         // façon depuis la machine.
+        //
+        // `outcome` porte le CODE STABLE de `ReplayOutcome::code()`, et non un
+        // `format!("{:?}")` de l'enum : l'audit est une archive relue longtemps
+        // après, un renommage de variant y ferait dériver silencieusement le
+        // contenu d'enregistrements déjà écrits.
         "backfills_replayed": backfills_replayed
             .iter()
             .map(|r| {
                 serde_json::json!({
                     "version": r.version,
                     "label": r.label,
-                    "outcome": format!("{:?}", r.outcome),
+                    "outcome": r.outcome.code(),
+                    "missing_sentinels": r.outcome.missing_sentinels(),
                     "rows_affected": r.rows_affected,
                 })
             })

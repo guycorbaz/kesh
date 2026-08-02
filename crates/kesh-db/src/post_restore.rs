@@ -77,6 +77,19 @@
 //! (refusé en amont). Un mainteneur qui le croirait plus général y verserait des
 //! rattrapages qui n'y ont pas leur place.
 //!
+//! ⚠️ **Il ne rattrape pas non plus un backup pris DEPUIS un parc déjà cassé par
+//! un restore antérieur** — la limite structurelle de la classe B. Un exploitant
+//! passé en v0.8.0 puis ayant importé un backup v0.7.0 (avant l'existence de ce
+//! mécanisme) a un parc sans rôles. Un backup pris *depuis cet état* **porte** les
+//! colonnes `role` / `postable` — ce sont des colonnes du schéma, pas des
+//! données — mais pas leur contenu : la sentinelle le déclare à jour et l'entrée
+//! est `Skipped`. Le mécanisme ne **cause** pas ce dommage, il ne le **répare**
+//! pas ; le remède reste de réimporter le backup **ancien**, qui déclenche bien
+//! le rejeu. Fermer ce cas supposerait de décider sur la **donnée** plutôt que sur
+//! le manifeste, ce que la classe B ne fait délibérément pas — un `role IS NULL`
+//! n'est pas une garde d'intention (cf. D-C1 : `role: null` est un acte de retrait
+//! délibéré, et les comptes hors plan standard portent `NULL` nominalement).
+//!
 //! # Note d'organisation
 //!
 //! Le sous-répertoire `src/post_restore/` ne contient que des `.sql` embarqués
@@ -130,6 +143,33 @@ pub enum ReplayOutcome {
     ReplayedSentinelsAbsent(Vec<String>),
     /// Classe B : sauté, toutes les sentinelles étant présentes au manifeste.
     Skipped,
+}
+
+impl ReplayOutcome {
+    /// Code d'archive **stable**, destiné au détail JSON de l'audit.
+    ///
+    /// Il existe parce que l'audit est une **archive**, pas un log : ses
+    /// enregistrements sont relus des mois plus tard, et un `format!("{self:?}")`
+    /// y aurait écrit une chaîne de debug Rust — donc un format non
+    /// contractualisé, que le simple renommage d'un variant ferait dériver, avec
+    /// des enregistrements anciens devenus illisibles par toute exploitation
+    /// automatique. Ces codes-ci ne changent pas ; les noms de variants, si.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::ReplayedUnconditional => "REPLAYED_UNCONDITIONAL",
+            Self::ReplayedSentinelsAbsent(_) => "REPLAYED_SENTINELS_ABSENT",
+            Self::Skipped => "SKIPPED",
+        }
+    }
+
+    /// Sentinelles manquantes ayant déclenché le rejeu (`"table.colonne"`).
+    /// Vide pour les deux autres issues.
+    pub fn missing_sentinels(&self) -> &[String] {
+        match self {
+            Self::ReplayedSentinelsAbsent(missing) => missing,
+            Self::ReplayedUnconditional | Self::Skipped => &[],
+        }
+    }
 }
 
 /// Rapport de rejeu d'une entrée — produit pour **toutes** les entrées, rejouées
@@ -206,6 +246,14 @@ pub const POST_RESTORE_BACKFILLS: &[PostRestoreBackfill] = &[
 /// rattraper, chacune avec sa justification. Le test
 /// `every_data_backfill_migration_is_triaged` exige que toute migration porteuse
 /// d'un statement d'écriture figure ici ou au registre.
+///
+/// ⚠️ **Une justification qui invoque la fenêtre d'importabilité DOIT commencer
+/// par la chaîne `Hors fenêtre`.** Ce n'est pas une convention de style : c'est
+/// le marqueur sur lequel `exemptions_claiming_out_of_window_really_are_out_of_window`
+/// recalcule la fenêtre depuis le `MIGRATOR` et vérifie l'affirmation. Une
+/// justification « hors fenêtre » rédigée autrement échappe au contrôle et
+/// redevient une affirmation crue sur parole — laquelle, si elle est fausse,
+/// désactive **définitivement et en silence** le rejeu du backfill concerné.
 pub const EXEMPT_MIGRATIONS: &[(i64, &str)] = &[
     (
         20260419000002,
@@ -214,8 +262,8 @@ pub const EXEMPT_MIGRATIONS: &[(i64, &str)] = &[
     ),
     (
         20260428000001,
-        "Crée la table vat_rates. Un backup dépourvu de ses 4 lignes de taux est un backup \
-         dépourvu de la table => refusé au contrôle de couverture. Hors fenêtre.",
+        "Hors fenêtre : la migration crée elle-même vat_rates, donc un backup dépourvu de ses 4 \
+         lignes de taux est un backup dépourvu de la table => refusé au contrôle de couverture.",
     ),
     (
         20260522000001,
@@ -229,13 +277,16 @@ pub const EXEMPT_MIGRATIONS: &[(i64, &str)] = &[
     ),
     (
         20260614000001,
-        "Hors fenêtre, même raisonnement : un backup dépourvu des comptes 1171/2206 est \
-         antérieur aux tables créées depuis.",
+        "Hors fenêtre : un backup dépourvu des comptes 1171/2206 précède 20260628000001, donc \
+         n'a pas les tables supplier_invoices => refusé au contrôle de couverture. (Version de \
+         référence citée EXPLICITEMENT — un « antérieur aux tables créées depuis » ne se vérifie \
+         pas.)",
     ),
     (
         20260628000001,
-        "Autoréfutante : la migration crée elle-même supplier_invoices et supplier_invoice_lines, \
-         donc un backup dépourvu de default_payable_account_id est dépourvu de ces tables.",
+        "Hors fenêtre, et autoréfutante : la migration crée elle-même supplier_invoices et \
+         supplier_invoice_lines, donc un backup dépourvu de default_payable_account_id est \
+         dépourvu de ces tables.",
     ),
     (
         20260714000002,
@@ -266,6 +317,13 @@ pub async fn replay_post_restore_backfills(
 /// réduit à un `500` générique dont le détail est loggé et jamais exposé.
 /// Injecter un registre fautif ici est le seul niveau où le rollback est
 /// observable.
+///
+/// ⚠️ **Porte de test, pas d'API de production.** `#[doc(hidden)]` la retire de la
+/// documentation publique : le code applicatif doit passer par
+/// [`replay_post_restore_backfills`], seule entrée qui garantit le registre
+/// canonique. L'appeler directement depuis un handler contournerait tout le
+/// dispositif de triage inscrit au garde-fou P7 de `CLAUDE.md`.
+#[doc(hidden)]
 pub async fn replay_with_registry(
     tx: &mut Transaction<'_, MySql>,
     tables: &BTreeMap<String, TableRestore>,
@@ -296,14 +354,37 @@ pub async fn replay_with_registry(
         } else {
             // Exécution **statement par statement**, et non par `sqlx::raw_sql` :
             // le futur de ce dernier n'est pas `Send`, ce qui casse la contrainte
-            // `Handler` d'Axum sur le handler d'import. Le découpage a en outre
-            // l'avantage de faire remonter l'erreur avec le statement fautif.
+            // `Handler` d'Axum sur le handler d'import.
+            //
+            // Le découpage n'a d'intérêt diagnostique que si l'erreur PORTE le
+            // statement fautif. Remontée nue, elle arrive à l'exploitant sous la
+            // forme d'un `AppError::AdminFullImportFailed("rejeu des backfills :
+            // <erreur DB>")` qui ne dit ni quelle reprise ni quel statement a
+            // échoué — un code MariaDB nu ne nomme rien.
             let mut rows = 0u64;
-            for statement in split_statements(entry.sql) {
+            for (index, statement) in split_statements(entry.sql).into_iter().enumerate() {
+                let position = index + 1;
                 rows += sqlx::query(&statement)
                     .execute(&mut **tx)
                     .await
-                    .map_err(map_db_error)?
+                    .map_err(|e| {
+                        let cause = map_db_error(e);
+                        tracing::error!(
+                            version = entry.version,
+                            label = entry.label,
+                            statement_position = position,
+                            error = %cause,
+                            "échec d'un statement de backfill post-restore — le restore entier \
+                             est annulé"
+                        );
+                        DbError::Invariant(format!(
+                            "backfill post-restore {} (version {}), statement #{position} : \
+                             {cause} — statement : {}",
+                            entry.label,
+                            entry.version,
+                            elide(&statement),
+                        ))
+                    })?
                     .rows_affected();
             }
             tracing::info!(
@@ -362,7 +443,27 @@ fn missing_sentinels(
 /// prose. Attention en particulier à `ON UPDATE CURRENT_TIMESTAMP`, présent dans
 /// une vingtaine de migrations — c'est du DDL, pas un statement `UPDATE`.
 ///
-/// Aucune migration du dépôt n'utilise `/* */` ; ce cas n'est donc pas traité.
+/// # Deux limites, et elles sont OUTILLÉES et non simplement déclarées
+///
+/// Cet analyseur est **volontairement naïf** : il ne connaît ni les commentaires
+/// de bloc `/* */`, ni les littéraux entre apostrophes. Les deux limites étaient
+/// jusqu'ici de la prose ; elles sont désormais tenues par un test chacune,
+/// parce qu'une hypothèse sur le contenu du dépôt qui n'échoue pas bruyamment
+/// quand elle cesse d'être vraie est exactement le « garde-fou muet » que ce
+/// module existe pour empêcher.
+///
+/// 1. **`/* */` — risque de FAUX NÉGATIF au triage.** Un `UPDATE` enfermé dans un
+///    commentaire de bloc, ou un `;` à l'intérieur d'un tel bloc, décale le
+///    découpage et peut faire rendre `false` à [`writes_data`] : la migration
+///    échapperait alors au triage **en silence**. Tenu par
+///    `migrations_contain_no_block_comment`.
+/// 2. **`--` ou `;` dans un littéral — risque de SQL CORROMPU à l'exécution.** La
+///    troncature au premier `--` et la découpe au premier `;` ignorent les
+///    apostrophes ; un `SET label = 'poste -- 4000'` partirait tronqué à MariaDB.
+///    Le dépôt contient **déjà** un `;` littéral (`20260505000001_bank_profiles`,
+///    `IN (',', ';', '\t')`), inoffensif parce que ce fichier n'est pas rejoué —
+///    ce qui montre que le risque n'est pas théorique. Tenu, **sur le SQL
+///    réellement exécuté** et lui seul, par `registry_sql_has_no_literal_hazard`.
 fn split_statements(sql: &str) -> Vec<String> {
     let stripped: String = sql
         .lines()
@@ -378,6 +479,71 @@ fn split_statements(sql: &str) -> Vec<String> {
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect()
+}
+
+/// Abrège un statement pour un message d'erreur : blancs normalisés, tronqué à
+/// 200 caractères sur une **frontière de caractère** (`char_indices`, jamais un
+/// slice d'octets — les migrations portent des accents).
+fn elide(statement: &str) -> String {
+    const MAX: usize = 200;
+    let flat = statement.split_whitespace().collect::<Vec<_>>().join(" ");
+    match flat.char_indices().nth(MAX) {
+        Some((byte_idx, _)) => format!("{}…", &flat[..byte_idx]),
+        None => flat,
+    }
+}
+
+/// Positions (1-based) des `--` et `;` situés **à l'intérieur d'un littéral**
+/// entre apostrophes, que [`split_statements`] traiterait à tort comme un
+/// commentaire ou une fin de statement.
+///
+/// Scanner minimal : bascule sur `'`, gère l'échappement doublé `''` et
+/// l'échappement antislash `\'` de MariaDB. Il n'a pas à couvrir les chaînes
+/// entre guillemets doubles ni les identifiants entre accents graves — aucun
+/// n'apparaît dans le SQL rejoué, et le test qui l'emploie ne porte que sur
+/// celui-là.
+#[cfg(test)]
+fn literal_hazards(sql: &str) -> Vec<String> {
+    let chars: Vec<char> = sql.chars().collect();
+    let mut hazards = Vec::new();
+    let mut in_literal = false;
+    let mut i = 0usize;
+
+    while i < chars.len() {
+        let c = chars[i];
+        if in_literal {
+            if c == '\\' {
+                i += 2; // séquence échappée : `\'` ne ferme pas le littéral
+                continue;
+            }
+            if c == '\'' {
+                // `''` est une apostrophe littérale, pas une fermeture.
+                if chars.get(i + 1) == Some(&'\'') {
+                    i += 2;
+                    continue;
+                }
+                in_literal = false;
+            } else if c == ';' {
+                hazards.push(format!("`;` littéral au caractère {}", i + 1));
+            } else if c == '-' && chars.get(i + 1) == Some(&'-') {
+                hazards.push(format!("`--` littéral au caractère {}", i + 1));
+                i += 1;
+            }
+        } else if c == '\'' {
+            in_literal = true;
+        } else if c == '-' && chars.get(i + 1) == Some(&'-') {
+            // Commentaire de fin de ligne : sauter jusqu'au saut de ligne, sinon
+            // une apostrophe en prose de commentaire ouvrirait un faux littéral
+            // (« l'exercice », « n'est ») et décalerait tout le scan.
+            while i < chars.len() && chars[i] != '\n' {
+                i += 1;
+            }
+            continue;
+        }
+        i += 1;
+    }
+
+    hazards
 }
 
 /// Vrai si le statement **écrit des données** : premier mot-clé `UPDATE`,
@@ -433,7 +599,7 @@ mod tests {
                         entry.version
                     )
                 });
-            let expected = format!("{}_{}.sql", m.version, m.description.replace(' ', "_"));
+            let expected = migration_file_name(m);
             assert_eq!(
                 entry.label, expected,
                 "label de l'entrée {} désynchronisé du nom de fichier réel",
@@ -475,26 +641,51 @@ mod tests {
     /// ne compare que ces tables, donc une migration créant une table **système**
     /// (comme `_kesh_version`) ne déplace pas la fenêtre. Le SQL est décommenté
     /// avant analyse — plusieurs migrations contiennent `CREATE TABLE` en prose.
+    ///
+    /// ⚠️ **La reconnaissance doit être LARGE, pour la raison inverse de
+    /// [`writes_data`].** Ici, une graphie ratée ne produit pas un faux positif
+    /// mais une fenêtre qui **recule** : `registry_entries_are_within_import_window`
+    /// resterait vert sur des entrées devenues injoignables, c'est-à-dire du code
+    /// mort qui *paraît* fonctionner — le mode d'échec que l'AC-C6.6 existe pour
+    /// interdire. D'où la normalisation des blancs (`CREATE  TABLE`, nom rejeté à
+    /// la ligne suivante) et le retrait des accents graves (`` CREATE TABLE `x` ``,
+    /// graphie absente du dépôt aujourd'hui mais que rien n'interdit).
     fn last_table_creating_migration() -> i64 {
         crate::MIGRATOR
             .migrations
             .iter()
             .filter(|m| {
-                split_statements(&m.sql).iter().any(|st| {
-                    let up = st.to_ascii_uppercase();
-                    up.starts_with("CREATE TABLE")
-                        && crate::backup::TABLES_TO_TRUNCATE.iter().any(|t| {
-                            up.contains(&format!("CREATE TABLE {}", t.to_ascii_uppercase()))
-                                || up.contains(&format!(
-                                    "CREATE TABLE IF NOT EXISTS {}",
-                                    t.to_ascii_uppercase()
-                                ))
-                        })
-                })
+                split_statements(&m.sql)
+                    .iter()
+                    .any(|st| creates_application_table(st))
             })
             .map(|m| m.version)
             .max()
             .expect("aucune migration créatrice de table applicative — schéma vide ?")
+    }
+
+    /// Vrai si le statement crée une table figurant dans
+    /// [`crate::backup::TABLES_TO_TRUNCATE`].
+    ///
+    /// La comparaison porte sur le nom **isolé** (et non sur un `contains`) : un
+    /// `CREATE TABLE supplier_invoice_lines` ne doit pas être compté comme créant
+    /// `supplier_invoices`, ni l'inverse.
+    fn creates_application_table(statement: &str) -> bool {
+        let up = normalize(statement).to_ascii_uppercase().replace('`', "");
+        let Some(rest) = up.strip_prefix("CREATE TABLE ") else {
+            return false;
+        };
+        let rest = rest.strip_prefix("IF NOT EXISTS ").unwrap_or(rest);
+        // Le nom s'arrête au premier blanc ou à la parenthèse ouvrante, qui peut
+        // être collée au nom (`CREATE TABLE accounts(`).
+        let name = rest
+            .split([' ', '('])
+            .next()
+            .unwrap_or_default()
+            .trim_end_matches(';');
+        crate::backup::TABLES_TO_TRUNCATE
+            .iter()
+            .any(|t| t.to_ascii_uppercase() == name)
     }
 
     /// **Garde-fou fail-loud du triage.**
@@ -515,7 +706,12 @@ mod tests {
                 .any(|e| e.version == m.version)
                 || EXEMPT_MIGRATIONS.iter().any(|(v, _)| *v == m.version);
             if !known {
-                untriaged.push(format!("{}_{}", m.version, m.description));
+                // `m.description` porte des ESPACES là où le fichier porte des
+                // `_` (sqlx dérive la description du nom de fichier). Rendre la
+                // description telle quelle donnerait « 20260722000001_accounts
+                // role postable », qui n'est le nom d'aucun fichier et ne se
+                // grep pas. AC-C6.1 exige de nommer LE FICHIER.
+                untriaged.push(migration_file_name(m));
             }
         }
         assert!(
@@ -524,8 +720,18 @@ mod tests {
              → soit l'ajouter à POST_RESTORE_BACKFILLS (son backfill doit être rejoué après un \
              restore), soit à EXEMPT_MIGRATIONS avec une justification écrite (elle est hors de la \
              fenêtre d'importabilité, ou porte sur une table système).\n\
+             Contexte : issue #281 (pourquoi ce rejeu existe) et issue #152 (Epic 16, qui l'a \
+             introduit).\n\
              Cf. `crates/kesh-db/src/post_restore.rs` et le garde-fou P7 de CLAUDE.md."
         );
+    }
+
+    /// Nom de fichier réel d'une migration, reconstruit depuis le `MIGRATOR`.
+    ///
+    /// Point unique de vérité de cette reconstruction : elle était auparavant
+    /// écrite deux fois, et l'un des deux sites l'avait oubliée.
+    fn migration_file_name(m: &sqlx::migrate::Migration) -> String {
+        format!("{}_{}.sql", m.version, m.description.replace(' ', "_"))
     }
 
     /// Les exemptions désignent des migrations réelles, et ne font pas double
@@ -549,6 +755,57 @@ mod tests {
                 "migration {version} présente À LA FOIS au registre et aux exemptions"
             );
         }
+    }
+
+    /// **Le symétrique de `registry_entries_are_within_import_window`, et il
+    /// manquait.**
+    ///
+    /// Le garde-fou de triage n'offre que deux issues, et la moins coûteuse est
+    /// l'exemption : `every_data_backfill_migration_is_triaged` échoue en
+    /// proposant lui-même « soit l'ajouter à EXEMPT_MIGRATIONS avec une
+    /// justification écrite ». Rien ne vérifiait cette justification. Un
+    /// développeur pressé par un test rouge y recopie la voisine — « hors
+    /// fenêtre » — et le backfill n'est **jamais** rejoué après un restore, sans
+    /// qu'aucun test ne le dise. C'est la même classe de défaut que l'entrée de
+    /// registre hors fenêtre, prise par l'autre bout.
+    ///
+    /// Le contrôle ne porte QUE sur les exemptions invoquant la fenêtre : les
+    /// autres (table système, colonne `is_required()`) reposent sur des
+    /// raisonnements que la version seule ne décide pas. Le marqueur est la
+    /// chaîne `Hors fenêtre` en tête de justification — d'où l'exigence, dans le
+    /// message d'échec, de l'écrire ainsi.
+    #[test]
+    fn exemptions_claiming_out_of_window_really_are_out_of_window() {
+        let window = last_table_creating_migration();
+        let mut checked = 0usize;
+
+        for (version, justification) in EXEMPT_MIGRATIONS {
+            if !justification.starts_with("Hors fenêtre") {
+                continue;
+            }
+            checked += 1;
+            assert!(
+                *version < window,
+                "exemption {version} : la justification invoque « Hors fenêtre », mais la version \
+                 est POSTÉRIEURE à la dernière migration créatrice de table applicative \
+                 ({window}). Un backup assez ancien pour la déclencher est donc IMPORTABLE, et son \
+                 backfill ne sera jamais rejoué. → l'inscrire à POST_RESTORE_BACKFILLS, ou motiver \
+                 l'exemption autrement."
+            );
+        }
+
+        // Garde de non-vacuité : sans elle, une dérive du marqueur textuel rendrait
+        // ce test vert en ne vérifiant plus rien. Le nombre est codé en dur À
+        // DESSEIN — l'ajouter à ce compteur est le geste qui force à relire la
+        // justification qu'on vient d'écrire.
+        assert_eq!(
+            checked,
+            4,
+            "attendu 4 exemptions marquées « Hors fenêtre » sur {}, trouvé {checked} — soit une \
+             justification a été ajoutée sans le marqueur (et échappe alors au contrôle), soit le \
+             marqueur a dérivé et ce test est devenu MUET.",
+            EXEMPT_MIGRATIONS.len()
+        );
     }
 
     /// **Fidélité de l'extrait.** Chaque statement de l'extrait de classe B doit
@@ -579,6 +836,198 @@ mod tests {
         }
     }
 
+    /// **Le sens INVERSE, et c'est lui qui manquait.**
+    ///
+    /// « Chaque statement de l'extrait est dans la source » est vrai d'un extrait
+    /// auquel on a **retiré** un statement — et vrai *a fortiori* d'un extrait
+    /// **vide**, qui ne fait alors tourner aucune assertion. Or un extrait amputé
+    /// est exactement ce que produit un rebase malheureux, et l'en-tête du
+    /// fichier de classe B annonce lui-même une chaîne « ORDRE À PRÉSERVER » où
+    /// le dernier statement lit ce que le neuvième vient de poser : en retirer un
+    /// casse la chaîne **en silence**, `rows_affected` restant un compteur
+    /// informatif dont zéro est légitime.
+    ///
+    /// Ce test compte donc les statements d'écriture des deux côtés et exige
+    /// l'égalité. Il ferme du même coup la tautologie de la classe A : quand
+    /// `entry.sql` **est** la migration source (`include_str!` du fichier
+    /// lui-même), le test précédent compare la source à elle-même et ne peut pas
+    /// échouer ; celui-ci reste, lui, une contrainte réelle sur la cardinalité.
+    #[test]
+    fn extract_carries_every_write_statement_of_its_source_migration() {
+        for entry in POST_RESTORE_BACKFILLS {
+            let source = &crate::MIGRATOR
+                .migrations
+                .iter()
+                .find(|m| m.version == entry.version)
+                .expect("migration du registre présente dans le MIGRATOR")
+                .sql;
+
+            let in_source = split_statements(source)
+                .iter()
+                .filter(|s| writes_data(s))
+                .count();
+            let in_extract = split_statements(entry.sql)
+                .iter()
+                .filter(|s| writes_data(s))
+                .count();
+
+            assert!(
+                in_extract > 0,
+                "l'extrait de {} ne porte AUCUN statement d'écriture. Un extrait vide se rejoue \
+                 sans erreur, rapporte `rows_affected = 0` — valeur légitime par ailleurs — et \
+                 rend un `info!` « backfill post-restore rejoué » indiscernable du succès. \
+                 `include_str!` repointé, ou fichier vidé ?",
+                entry.label
+            );
+            assert_eq!(
+                in_extract, in_source,
+                "l'extrait de {} porte {in_extract} statement(s) d'écriture pour {in_source} dans \
+                 la migration source. Un extrait AMPUTÉ passe le test de sous-texte verbatim (les \
+                 statements restants sont toujours des sous-textes) : seule cette cardinalité le \
+                 rattrape.",
+                entry.label
+            );
+        }
+    }
+
+    /// **Le verrou anti-DDL de la classe A, symétrique de celui de la classe B.**
+    ///
+    /// « Backfill pur, aucun DDL » était une affirmation de prose, alors que
+    /// l'en-tête du fichier de classe B documente précisément que c'est ce qui
+    /// casse un rejeu : une migration mixte rejouée en bloc échoue dès son premier
+    /// `ALTER TABLE` (MariaDB 1060, colonne déjà présente) — et comme le rejeu vit
+    /// dans la transaction de restore, elle ferait échouer **tous** les imports.
+    ///
+    /// Le contrôle vaut pour les deux classes : un extrait de classe B n'a pas
+    /// davantage à porter de DDL.
+    #[test]
+    fn registry_sql_contains_no_ddl() {
+        const DDL: &[&str] = &[
+            "ALTER TABLE",
+            "CREATE TABLE",
+            "DROP TABLE",
+            "CREATE INDEX",
+            "DROP INDEX",
+            "RENAME TABLE",
+            "TRUNCATE",
+        ];
+        for entry in POST_RESTORE_BACKFILLS {
+            for statement in split_statements(entry.sql) {
+                let up = normalize(&statement).to_ascii_uppercase();
+                for keyword in DDL {
+                    assert!(
+                        !up.starts_with(keyword),
+                        "l'entrée {} porte du DDL (`{keyword}`) dans son SQL rejoué. Rejoué sur \
+                         une base à jour, il échouerait et ferait échouer TOUT import. Une \
+                         migration mixte DDL + données exige un EXTRAIT de ses seuls statements \
+                         de données. Statement :\n{statement}",
+                        entry.label
+                    );
+                }
+            }
+        }
+    }
+
+    /// **Les deux limites déclarées de [`split_statements`], tenues.**
+    ///
+    /// Voir son doc-comment : la prose annonçait « aucune migration du dépôt
+    /// n'utilise `/* */` », sans rien pour le vérifier le jour où ce serait faux.
+    /// Un `UPDATE` enfermé dans un commentaire de bloc échappe à
+    /// [`writes_data`] — donc au triage — **en silence**.
+    #[test]
+    fn migrations_contain_no_block_comment() {
+        let offenders: Vec<String> = crate::MIGRATOR
+            .migrations
+            .iter()
+            .filter(|m| m.sql.contains("/*"))
+            .map(migration_file_name)
+            .collect();
+        assert!(
+            offenders.is_empty(),
+            "migration(s) contenant un commentaire de bloc `/* */` : {offenders:?}\n\
+             `split_statements` ne les connaît pas : un statement d'écriture enfermé dans un tel \
+             bloc, ou un `;` à l'intérieur, échappe au triage SANS que rien ne le signale.\n\
+             → soit réécrire le commentaire en `--`, soit enseigner les blocs à \
+             `split_statements` (et étendre ce test)."
+        );
+    }
+
+    /// Second volet : le SQL **réellement exécuté** ne doit pas contenir de `--`
+    /// ni de `;` à l'intérieur d'un littéral, que le découpage tronquerait.
+    ///
+    /// Le contrôle est délibérément borné au registre, et non étendu à toutes les
+    /// migrations : le dépôt contient **déjà** un `;` littéral
+    /// (`20260505000001_bank_profiles`, `IN (',', ';', '\t')`), parfaitement
+    /// inoffensif puisque ce fichier n'est jamais rejoué. Élargir le test le
+    /// rendrait rouge sans qu'aucun défaut n'existe — et le vrai risque n'est pas
+    /// l'analyse, c'est l'**exécution**.
+    #[test]
+    fn registry_sql_has_no_literal_hazard() {
+        for entry in POST_RESTORE_BACKFILLS {
+            let hazards = literal_hazards(entry.sql);
+            assert!(
+                hazards.is_empty(),
+                "l'entrée {} porte un `--` ou un `;` DANS un littéral : {hazards:?}. \
+                 `split_statements` tronque au premier `--` et découpe au premier `;` sans \
+                 connaître les apostrophes — ce SQL partirait TRONQUÉ à MariaDB.",
+                entry.label
+            );
+        }
+    }
+
+    /// **Le contrat d'archive de l'audit.**
+    ///
+    /// Ces trois chaînes partent dans le détail JSON d'`admin.full_import` et y
+    /// restent des années. Les figer dans un test, c'est faire de leur
+    /// modification un geste **délibéré** : sans lui, renommer un variant de
+    /// [`ReplayOutcome`] suffirait à changer le contenu d'enregistrements
+    /// d'audit déjà écrits, en silence.
+    #[test]
+    fn replay_outcome_codes_are_stable() {
+        assert_eq!(
+            ReplayOutcome::ReplayedUnconditional.code(),
+            "REPLAYED_UNCONDITIONAL"
+        );
+        assert_eq!(ReplayOutcome::Skipped.code(), "SKIPPED");
+        let sentinels = ReplayOutcome::ReplayedSentinelsAbsent(vec!["accounts.role".into()]);
+        assert_eq!(sentinels.code(), "REPLAYED_SENTINELS_ABSENT");
+
+        assert_eq!(sentinels.missing_sentinels(), ["accounts.role"]);
+        assert!(ReplayOutcome::Skipped.missing_sentinels().is_empty());
+        assert!(
+            ReplayOutcome::ReplayedUnconditional
+                .missing_sentinels()
+                .is_empty()
+        );
+    }
+
+    /// Le détecteur de littéraux dangereux doit lui-même discriminer : sans ce
+    /// test, `literal_hazards` pourrait rendre `vec![]` sur tout et
+    /// `registry_sql_has_no_literal_hazard` serait vert à vide.
+    #[test]
+    fn literal_hazards_discriminates() {
+        assert!(literal_hazards("UPDATE t SET a = 'x' WHERE b = 1;").is_empty());
+        assert!(
+            literal_hazards("-- commentaire avec l'apostrophe et un ; dedans\nUPDATE t SET a = 1;")
+                .is_empty(),
+            "un `;` en prose de commentaire n'est pas un littéral"
+        );
+        assert_eq!(
+            literal_hazards("UPDATE t SET a = 'x;y';").len(),
+            1,
+            "un `;` dans un littéral doit être signalé"
+        );
+        assert_eq!(
+            literal_hazards("UPDATE t SET a = 'poste -- 4000';").len(),
+            1,
+            "un `--` dans un littéral doit être signalé"
+        );
+        assert!(
+            literal_hazards("UPDATE t SET a = 'l''apostrophe doublée' WHERE b = 1;").is_empty(),
+            "`''` est une apostrophe littérale, pas une fermeture de littéral"
+        );
+    }
+
     /// Normalise les blancs pour comparer un statement à son fichier source sans
     /// dépendre de l'indentation résiduelle du découpage.
     fn normalize(s: &str) -> String {
@@ -588,29 +1037,86 @@ mod tests {
     /// **Condition de validité de la classe B** : la colonne sentinelle doit être
     /// créée par la migration elle-même, sans quoi « colonne présente » n'implique
     /// pas « backfill appliqué » et la sentinelle ment.
+    ///
+    /// Le contrôle porte sur le couple **(table, colonne)** et sur le nom
+    /// **entier**. Un simple `contains("ADD COLUMN ROLE")` vérifiait moins que ce
+    /// qu'il annonçait : il ignorait le nom de table — une sentinelle
+    /// `("invoice_lines", "role")` serait passée au seul motif que la migration
+    /// fait `ALTER TABLE accounts ADD COLUMN role` — et matchait par préfixe, donc
+    /// `ADD COLUMN role_label` validait une sentinelle `role`.
     #[test]
     fn class_b_sentinel_column_is_added_by_its_own_migration() {
         for entry in POST_RESTORE_BACKFILLS {
             let BackfillTrigger::Sentinels(sentinels) = entry.trigger else {
                 continue;
             };
-            let source = crate::MIGRATOR
+            let source = &crate::MIGRATOR
                 .migrations
                 .iter()
                 .find(|m| m.version == entry.version)
                 .expect("migration du registre présente dans le MIGRATOR")
-                .sql
-                .to_ascii_uppercase();
+                .sql;
             for (table, column) in sentinels {
                 assert!(
-                    source.contains(&format!("ADD COLUMN {}", column.to_ascii_uppercase())),
+                    adds_column(source, table, column),
                     "sentinelle {table}.{column} de l'entrée {} : la colonne n'est PAS créée par \
-                     cette migration. « Colonne présente » n'implique alors pas « backfill \
-                     appliqué » — l'entrée doit passer en classe A.",
+                     cette migration SUR CETTE TABLE. « Colonne présente » n'implique alors pas \
+                     « backfill appliqué » — l'entrée doit passer en classe A.",
                     entry.version
                 );
             }
         }
+    }
+
+    /// Vrai si le SQL contient un `ALTER TABLE <table> … ADD COLUMN <column>` où
+    /// `column` est le nom **entier** (pas un préfixe).
+    fn adds_column(sql: &str, table: &str, column: &str) -> bool {
+        let up = normalize(sql).to_ascii_uppercase().replace('`', "");
+        let table_up = table.to_ascii_uppercase();
+        let column_up = column.to_ascii_uppercase();
+
+        // Chaque `ALTER TABLE` ouvre une portée qui court jusqu'au suivant : c'est
+        // dans CETTE portée que le `ADD COLUMN` doit tomber.
+        up.split("ALTER TABLE ")
+            .skip(1) // avant le premier `ALTER TABLE`, rien ne nous concerne
+            .filter(|scope| {
+                scope
+                    .split([' ', '('])
+                    .next()
+                    .is_some_and(|name| name == table_up)
+            })
+            .any(|scope| {
+                scope.match_indices("ADD COLUMN ").any(|(idx, marker)| {
+                    let rest = &scope[idx + marker.len()..];
+                    rest.split([' ', '(', ',', ';'])
+                        .next()
+                        .is_some_and(|name| name == column_up)
+                })
+            })
+    }
+
+    /// `adds_column` doit discriminer, sans quoi le verrou de la classe B
+    /// redeviendrait un `contains` déguisé.
+    #[test]
+    fn adds_column_discriminates() {
+        let sql = "ALTER TABLE accounts\n  ADD COLUMN role VARCHAR(32) NULL,\n  \
+                   ADD COLUMN postable BOOLEAN NOT NULL DEFAULT TRUE;\n\
+                   ALTER TABLE invoice_lines ADD COLUMN role_label VARCHAR(8) NULL;";
+
+        assert!(adds_column(sql, "accounts", "role"));
+        assert!(adds_column(sql, "accounts", "postable"));
+        assert!(
+            !adds_column(sql, "invoice_lines", "role"),
+            "`role_label` ne doit PAS valider une sentinelle `role` (match par préfixe)"
+        );
+        assert!(
+            !adds_column(sql, "invoice_lines", "postable"),
+            "la colonne doit être ajoutée SUR LA TABLE de la sentinelle"
+        );
+        assert!(
+            !adds_column(sql, "accounts", "role_label"),
+            "`role_label` est ajoutée sur invoice_lines, pas sur accounts"
+        );
     }
 
     /// Le découpage doit survivre aux pièges réels du dépôt : `UPDATE` en prose de
