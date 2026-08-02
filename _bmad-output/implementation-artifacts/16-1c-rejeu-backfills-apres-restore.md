@@ -355,6 +355,18 @@ Reste ici le seul cas qui ne relève pas de l'E2E :
 
 **Écarté avec justification (1)** — *aucun test n'exécute le registre réel combiné* (EdgeCaseHunter, MEDIUM). Le fait est **exact et vérifié** : `replay_post_restore_backfills` n'a aucun appelant de test (`grep -rn` → la déclaration et l'unique appel de production), `post_restore_class_a.rs:65` filtre sur `BackfillTrigger::Unconditional` donc exclut l'entrée de classe B, et `post_restore_transactionality.rs` n'utilise que des entrées fictives. Mais c'est le **périmètre du split arbitré en passe 5 de `validate`** : AC-C3 verrouille l'ordre en déclaration (AC-C6.5) **et en exécution par C5**, parti en **16-1d, AC-D1**, avec sa mutation dédiée « registre parcouru en ordre décroissant → C5 doit rougir ». Les deux stories partent dans la **même PR** — le trou se ferme avant son ouverture. *(Il resterait réel si 16-1d ne partait pas avec : c'est une raison de plus de ne pas les séparer.)*
 
+*Passe 3 de `bmad-code-review`, 2026-08-02, Haiku 4.5, 3 lentilles, contexte frais, diff aplati `f699eda5 → a24cd383`. **0 finding au-dessus de LOW — critère d'arrêt de la § Review Iteration Rule atteint.** 6 findings bruts, tous écartés : 5 réfutés en ground-truth, 1 LOW écarté avec justification.*
+
+- [x] [Review][Dismiss] **LOW — le `tracing::info!` du rejeu sérialise l'`outcome` en `Debug`** là où l'audit utilise le code d'archive stable (BlindHunter). **Écarté** : le contrat d'archive posé en passe 1 vise `audit_log`, relu des années après un renommage de variant ; un événement `tracing` est un journal **opérationnel**, où `?` est l'idiome Rust. Surtout, le `Debug` de `ReplayedSentinelsAbsent(Vec<String>)` **porte la liste des sentinelles manquantes**, que `code()` seul perdrait — le « correctif » appauvrirait le log. AC-C7 n'exige que version, issue et lignes touchées. [`crates/kesh-db/src/post_restore.rs:394-400`]
+
+**Réfutés en ground-truth (5) — profil d'hallucination Haiku documenté.** ⚠️ *Les trois findings `CRITICAL`/`HIGH` de cette passe étaient faux, ce qui est exactement le cas de figure que la § « Haiku-specific guardrails » de `CLAUDE.md` prescrit de vérifier avant de patcher.*
+
+1. **CRITICAL — « l'erreur du rejeu ne porte pas le statement fautif ».** Réfuté : le message porte le label, la version, la position **et** le statement, assertés en propre par `replay_stops_at_the_first_failing_entry` (`post_restore_transactionality.rs:224-235` : `fixture:fautif`, `statement #1`, `colonne_inexistante`). Le grief se réduit à ce qu'`elide` borne le statement à 200 caractères — une troncature délibérée, pas une omission. Le rapport se contredit d'ailleurs lui-même : « le label y est, le statement position aussi ».
+2. **HIGH — « les deux tests de transactionnalité sont muets, ils lisent depuis le pool ».** Réfuté : `account_name_in_tx` existe (`:80`) et est **utilisé** aux lignes `165` et `212`, dans les deux tests, avec des messages d'assertion qui énoncent pourquoi. Haiku cite « lines 92-142 » et « 134-180 » pour un fichier de **236** lignes : il décrit l'état **d'avant la passe 1**, c'est-à-dire précisément le patch qui a corrigé ce défaut.
+3. **HIGH — « les tests de classe A ne détecteraient pas un compte arbitraire ».** Réfuté : `class_a_entries_are_not_vacuous_on_a_pre_migration_base` n'asserte pas que la non-vacuité, il compare la **valeur** posée (`post_restore_class_a.rs:281-285`, `vec![Some(revenue), Some(revenue)]`). La mutation proposée par le rapport (`SELECT id FROM accounts LIMIT 1`) rendrait le compte `1000` et ferait rougir cette assertion.
+4. **MEDIUM — « une sentinelle `postab` validerait `postable` ».** Réfuté par lecture : la comparaison est une **égalité** (`== Some(column_up.as_str())`), pas un test de préfixe — c'est le patch de la passe 1, qui a justement remplacé un `contains`.
+5. **MEDIUM — « le compteur `checked == 4` est un crime, le remplacer par `> 0` ».** Écarté, et le remède serait une **régression** : c'est ce compteur qui force la relecture, une 5ᵉ exemption « Hors fenêtre » faisant passer `checked` à 5 et rougir le test. Avec `> 0`, plus rien ne signalerait le changement. Le trou résiduel décrit (une exemption qui *devrait* invoquer la fenêtre mais omet le marqueur) est la contrepartie **explicitement documentée** au garde-fou P7 de `CLAUDE.md`.
+
 **Réfuté (1)** — *le remède documenté ne répare pas un parc cassé* (BlindHunter, MEDIUM). L'affirmation centrale est fausse : la phrase s'adresse à qui « a restauré une sauvegarde **avant** cette version », donc « le même import » désigne la sauvegarde **ancienne**, dont les colonnes manquent — sentinelle absente, rejeu effectué. Le doc-module dit d'ailleurs la même chose (`:87`). Le scénario du rapport (backup pris *depuis* le parc cassé) n'est pas celui que le texte vise. Restait un résidu réel — la formule « un parc restauré se retrouve dans le même état qu'un parc mis à jour » est absolue et admet le contre-exemple du restore chaîné — **repris dans le patch du HIGH**, qui touche les mêmes phrases.
 
 ---
@@ -495,6 +507,28 @@ Deux commits, un par lot de tâches :
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` — entrée datée de la boucle de revue, préfixée plutôt que substituée à l'ancienne.
 
 ## Change Log
+
+### Passe 3 de `bmad-code-review` — **BOUCLE CONVERGÉE**
+
+**2026-08-02 — Haiku 4.5, 3 lentilles, contexte frais, diff APLATI `f699eda5 → a24cd383`. 6 findings bruts, 0 retenu : 5 réfutés en ground-truth, 1 LOW écarté avec justification. Critère d'arrêt de la § *Review Iteration Rule* atteint** (plus rien au-dessus de LOW ; plafond de 8 passes jamais approché).
+
+**Trend des trois passes** : `1 CRITICAL / 1 HIGH / 8 MEDIUM / 5 LOW` (Opus) → `0 / 1 HIGH / 1 MEDIUM / 1 LOW` (Sonnet) → `0 / 0 / 0 / 0` (Haiku). Décroissance monotone, rotation complète Opus → Sonnet → Haiku.
+
+**Le fait marquant : les trois findings `CRITICAL`/`HIGH` de cette passe étaient FAUX, et deux d'entre eux visaient les patches de la passe 1.** C'est le cas de figure exact que la § « Haiku-specific guardrails » de `CLAUDE.md` prescrit de vérifier avant de patcher — appliquée ici, elle a évité trois remédiations sur du code sain, dont deux qui auraient **défait** des correctifs.
+
+Le plus instructif est le HIGH sur la transactionnalité : Haiku affirme que les deux tests lisent depuis le pool une transaction jamais committée — c'était vrai **avant** la passe 1, et c'est précisément ce qu'elle a corrigé. Il cite « lines 92-142 » et « 134-180 » pour un fichier qui en compte **236**, et `account_name_in_tx` est utilisé aux lignes **165** et **212**. Le modèle a reconstruit un état antérieur du fichier et l'a décrit comme actuel. **Un diff aplati n'a donc pas suffi à supprimer le mode d'échec** — la mitigation réduit la confusion d'indexation entre commits, elle ne protège pas d'une reconstruction de mémoire. Seul le `grep -nF` l'attrape.
+
+⚠️ **Le CRITICAL se contredisait dans son propre corps** — titre : « l'erreur ne porte ni l'entrée ni le statement » ; texte : « le label y est, le statement position aussi ». Un rapport dont le corps réfute le titre est un signal à part entière.
+
+**Le seul MEDIUM dont le diagnostic tenait proposait un remède régressif.** Haiku qualifie l'`assert_eq!(checked, 4)` de « crime » et demande un `checked > 0`. Or ce compteur est ce qui **force la relecture** : une 5ᵉ exemption « Hors fenêtre » le fait passer à 5 et rougir le test. Le remède aurait rendu muet un garde-fou qui ne l'est pas. *(Retenir le diagnostic et écarter le remède est un geste déjà consigné en passe 4 de la revue de 16-1a.)*
+
+**Deux lentilles sur trois rendent 0 finding, et leurs rapports sont opposables.** L'AcceptanceAuditor énumère les **onze** AC avec leur preuve et redonne la table des 8 tests exigés par T4 avec leur fichier — le contrôle de composition refait une troisième fois, par un troisième modèle. L'EdgeCaseHunter énumère **sept** axes de bord (déclencheur, découpage SQL, transactionnalité, registre, classe A, classe B, fidélité de l'extrait) avec les ancres de leurs tests. C'est l'inverse des rapports Haiku vides de la 16-1a : la contre-mesure « exiger une section énumérée » continue de produire son effet.
+
+*(Inexactitude sans conséquence dans le rapport de l'AcceptanceAuditor : il compte le coût du remède énoncé à **trois** sites là où le patch en a traité **quatre** — il omet le doc-comment du module, hors de son mandat.)*
+
+**Aucun patch appliqué, donc aucun gate à rejouer** : le dernier verdict vaut pour l'état livré (`a24cd383`, gate complet vert `2096/2096`, exit 0, 3372 s, DB `kesh_gate`, `fmt` + `clippy -D warnings` inclus). Cette passe est un commit **doc-only**, cas explicitement prévu par la § « Test Locally First ».
+
+**Statut** : story maintenue à `review` — le passage à `done` suit le merge de la PR groupée, comme pour 16-1a, 16-1a-bis et 16-1b. **Reste `bmad-dev-story` 16-1d**, sans laquelle cette story ne doit pas partir : c'est elle qui porte le verrou d'exécution de l'ordre (C5) et la couverture de bout en bout.
 
 ### Passe 2 de `bmad-code-review`
 
