@@ -1611,9 +1611,11 @@ Kesh \textbf{rejoue donc ces reprises à la fin de chaque import}, dans la même
     \item \textbf{Le détail est tracé} dans le journal d'audit (opération \keshcommand{admin.full\_import}) et dans le journal du serveur, qui indiquent quelles reprises ont été rejouées et combien de lignes elles ont touchées.
 \end{itemize}
 
-\begin{keshtip}
-Si vous avez restauré une sauvegarde \textbf{avant} la version qui introduit ce rejeu, il suffit de \textbf{relancer le même import} : la reprise s'appliquera cette fois.
-\end{keshtip}
+\begin{keshwarning}
+Si vous avez restauré une sauvegarde \textbf{avant} la version qui introduit ce rejeu, réimporter \textbf{cette même sauvegarde} appliquera cette fois la reprise --- mais \textbf{pesez-en le coût} : comme tout import, l'opération \textbf{remplace l'intégralité de l'installation} par le contenu du fichier. \textbf{Tout ce que vous avez saisi depuis ce restore serait perdu} (factures, écritures, contacts, paiements\ldots). Ne relancez cet import que si \textbf{rien n'a été saisi entre-temps}. Dans le cas contraire, corrigez directement ce qui manque : les \textbf{rôles} depuis le plan comptable, le \textbf{compte de produit} d'une ligne depuis la facture concernée.
+
+Il n'existe pas de commande qui rejouerait les reprises \textbf{sans} restaurer : le rejeu est une étape de l'import, pas une opération autonome.
+\end{keshwarning}
 
 \paragraph{Variables d'environnement}
 

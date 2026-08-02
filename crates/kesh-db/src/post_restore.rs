@@ -85,7 +85,11 @@
 //! données — mais pas leur contenu : la sentinelle le déclare à jour et l'entrée
 //! est `Skipped`. Le mécanisme ne **cause** pas ce dommage, il ne le **répare**
 //! pas ; le remède reste de réimporter le backup **ancien**, qui déclenche bien
-//! le rejeu. Fermer ce cas supposerait de décider sur la **donnée** plutôt que sur
+//! le rejeu — **au prix d'un import complet**, donc de la perte de tout ce qui a
+//! été saisi depuis le restore fautif. Ce coût doit être énoncé partout où le
+//! remède l'est (CHANGELOG, manuel d'administration) : le rejeu n'existe qu'en
+//! tant qu'étape de l'import, il n'y a aucune voie qui rejouerait sans
+//! restaurer. Fermer ce cas supposerait de décider sur la **donnée** plutôt que sur
 //! le manifeste, ce que la classe B ne fait délibérément pas — un `role IS NULL`
 //! n'est pas une garde d'intention (cf. D-C1 : `role: null` est un acte de retrait
 //! délibéré, et les comptes hors plan standard portent `NULL` nominalement).
@@ -1070,29 +1074,42 @@ mod tests {
 
     /// Vrai si le SQL contient un `ALTER TABLE <table> … ADD COLUMN <column>` où
     /// `column` est le nom **entier** (pas un préfixe).
+    ///
+    /// L'analyse porte sur le SQL **décommenté et découpé en statements**
+    /// (`split_statements`), jamais sur le texte brut. Les migrations du dépôt
+    /// citent abondamment `ALTER TABLE` et `ADD COLUMN` **en prose de
+    /// commentaire** — `20260722000001`, précisément la migration de la seule
+    /// entrée de classe B, le fait elle-même deux fois (`:61`, `:67`). Analyser
+    /// le texte brut faisait reposer ce verrou sur un **accident
+    /// d'ordonnancement** : ces deux commentaires-là précèdent le premier
+    /// `ALTER TABLE` littéral, donc le `.skip(1)` d'une rédaction antérieure les
+    /// écartait par chance. Un commentaire placé **après** aurait validé une
+    /// sentinelle qu'aucune colonne ne porte. C'est la troisième occurrence de
+    /// la classe de défaut que le doc-module recense (le mono-ligne, puis
+    /// `INSERT IGNORE`), et la première introduite par une remédiation.
+    ///
+    /// Le découpage borne en outre la portée d'un `ALTER TABLE` au `;` qui le
+    /// termine — la version antérieure la bornait au prochain `ALTER TABLE`
+    /// **textuel**, donc à la fin du fichier lorsqu'il n'y en avait pas d'autre.
     fn adds_column(sql: &str, table: &str, column: &str) -> bool {
-        let up = normalize(sql).to_ascii_uppercase().replace('`', "");
         let table_up = table.to_ascii_uppercase();
         let column_up = column.to_ascii_uppercase();
 
-        // Chaque `ALTER TABLE` ouvre une portée qui court jusqu'au suivant : c'est
-        // dans CETTE portée que le `ADD COLUMN` doit tomber.
-        up.split("ALTER TABLE ")
-            .skip(1) // avant le premier `ALTER TABLE`, rien ne nous concerne
-            .filter(|scope| {
-                scope
-                    .split([' ', '('])
+        split_statements(sql).iter().any(|statement| {
+            let up = normalize(statement).to_ascii_uppercase().replace('`', "");
+            let Some(scope) = up.strip_prefix("ALTER TABLE ") else {
+                return false;
+            };
+            if scope.split([' ', '(']).next() != Some(table_up.as_str()) {
+                return false;
+            }
+            scope.match_indices("ADD COLUMN ").any(|(idx, marker)| {
+                scope[idx + marker.len()..]
+                    .split([' ', '(', ',', ';'])
                     .next()
-                    .is_some_and(|name| name == table_up)
+                    == Some(column_up.as_str())
             })
-            .any(|scope| {
-                scope.match_indices("ADD COLUMN ").any(|(idx, marker)| {
-                    let rest = &scope[idx + marker.len()..];
-                    rest.split([' ', '(', ',', ';'])
-                        .next()
-                        .is_some_and(|name| name == column_up)
-                })
-            })
+        })
     }
 
     /// `adds_column` doit discriminer, sans quoi le verrou de la classe B
@@ -1116,6 +1133,25 @@ mod tests {
         assert!(
             !adds_column(sql, "accounts", "role_label"),
             "`role_label` est ajoutée sur invoice_lines, pas sur accounts"
+        );
+
+        // Un `ADD COLUMN` en PROSE DE COMMENTAIRE ne crée aucune colonne.
+        // Le commentaire est placé APRÈS le DDL, délibérément : c'est la
+        // position que l'analyse du texte brut ne protégeait pas. Les
+        // commentaires de ce genre sont nombreux dans le dépôt (une vingtaine
+        // de migrations écrivent « ADD COLUMN nullable » en prose), et
+        // `20260722000001` en porte deux — mais avant son `ALTER TABLE`, ce qui
+        // masquait le défaut.
+        let prose = "ALTER TABLE accounts ADD COLUMN role VARCHAR(32) NULL;\n\
+                     -- Non-breaking : ALTER TABLE invoice_lines ADD COLUMN project_id BIGINT.\n";
+        assert!(
+            adds_column(prose, "accounts", "role"),
+            "le DDL réel doit rester reconnu une fois les commentaires retirés"
+        );
+        assert!(
+            !adds_column(prose, "invoice_lines", "project_id"),
+            "un `ADD COLUMN` en PROSE DE COMMENTAIRE ne crée aucune colonne : la \
+             sentinelle mentirait et la classe B perdrait sa condition de validité"
         );
     }
 
