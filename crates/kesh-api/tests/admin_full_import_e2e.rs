@@ -670,6 +670,32 @@ use rust_decimal_macros::dec;
 const REVENUE_BACKFILL: i64 = 20260729000001;
 const ROLE_POSTABLE: i64 = 20260722000001;
 
+/// Un compte **titre** du plan PME — parent d'entrées du plan, donc jamais
+/// imputable, et jamais mouvementé par la fixture.
+///
+/// Il est la sonde du backfill **structurel** de `postable` (`20260722000001:161`),
+/// que le compte `2979` ne couvre pas : ce dernier n'exerce que le backfill par
+/// numéro (`role = 'CurrentYearResult'`, `:177`).
+const TITLE_ACCOUNT: &str = "10";
+
+// ⚠️ **C4 n'est pas dans ce fichier, et c'est délibéré** — la numérotation des
+// cas saute de C3 à C5. Le cas de transactionnalité (échec injecté *pendant* le
+// rejeu) vit en test d'intégration `kesh-db` : cf. 16-1c et `replay_with_registry`.
+// Par le chemin HTTP, `AppError::AdminFullImportFailed` rend un `500` générique
+// dont le détail est loggé et jamais exposé — l'échec y serait indiscernable de
+// celui d'un `INSERT` du restore. D'où **six** cas ici, et non sept.
+
+/// Rejoue l'import du backup forgé et exige un `200`.
+///
+/// Le geste est identique dans les six cas — seul le manifeste diffère — d'où
+/// la factorisation, qui évite six copies de la paire `rezip` + assertion de
+/// statut. Les tests **antérieurs** du fichier gardent leur `post_import` nu :
+/// ils attendent des `4xx`, pas un succès.
+async fn import_ok(app: &TestApp, jwt: &str, manifest: &Value, data: &BTreeMap<String, Vec<u8>>) {
+    let resp = post_import(app, jwt, rezip(manifest, data)).await;
+    assert_eq!(resp.status(), 200, "l'import doit réussir");
+}
+
 /// Une société **complète** : plan comptable réel, exercice ouvert, réglages de
 /// facturation, contact.
 ///
@@ -775,8 +801,7 @@ async fn seed_business(pool: &MySqlPool, label: &str) -> Business {
 /// **inédite dans le dépôt** : les tests exonérés de 16-1a-bis montent leurs
 /// écritures en SQL brut, et son seul test passant par le moteur utilise deux
 /// taux non nuls. Ne pas la chercher toute faite.
-async fn validated_invoice(pool: &MySqlPool, biz: &Business, number_hint: &str) -> i64 {
-    let _ = number_hint;
+async fn validated_invoice(pool: &MySqlPool, biz: &Business) -> i64 {
     let invoice_id = invoices::create(
         pool,
         biz.ctx.user_id,
@@ -912,7 +937,7 @@ async fn account_postable(pool: &MySqlPool, number: &str) -> bool {
 async fn full_import_replays_revenue_account_backfill(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let biz = seed_business(&pool, "C1").await;
-    let invoice_id = validated_invoice(&pool, &biz, "F-C1").await;
+    let invoice_id = validated_invoice(&pool, &biz).await;
     let revenue = biz.accounts["3000"];
 
     assert_eq!(
@@ -925,10 +950,7 @@ async fn full_import_replays_revenue_account_backfill(pool: MySqlPool) {
     let backup = export_backup(&app, &biz.ctx.jwt).await;
     let (mut manifest, data) = unzip(&backup);
     strip_column(&mut manifest, "invoice_lines", "revenue_account_id");
-    let forged = rezip(&manifest, &data);
-
-    let resp = post_import(&app, &biz.ctx.jwt, forged).await;
-    assert_eq!(resp.status(), 200, "l'import doit réussir");
+    import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
 
     assert_eq!(
         line_accounts(&pool, invoice_id).await,
@@ -952,9 +974,15 @@ async fn full_import_replays_revenue_account_backfill(pool: MySqlPool) {
         e["outcome"] == "REPLAYED_UNCONDITIONAL" || e["outcome"] == "REPLAYED_SENTINELS_ABSENT",
         "l'entrée doit avoir été REJOUÉE (et non sautée), got {e:?}"
     );
-    assert!(
-        e["rows_affected"].as_u64().unwrap() >= 2,
-        "les deux lignes de la facture doivent avoir été touchées, got {e:?}"
+    // Décompte **exact**, et non `>= 2` : la base est fraîche, la facture porte
+    // exactement deux lignes, et l'entrée somme ses DEUX `UPDATE` — celui des
+    // `invoice_lines` et son miroir `credit_note_lines`, qui ne trouve rien ici
+    // faute d'avoir. Une borne lâche laisserait passer un `WHERE` élargi qui
+    // toucherait des lignes hors périmètre.
+    assert_eq!(
+        e["rows_affected"].as_u64().unwrap(),
+        2,
+        "exactement les deux lignes de la facture, et rien d'autre, got {e:?}"
     );
 }
 
@@ -976,7 +1004,7 @@ async fn full_import_replays_revenue_account_backfill(pool: MySqlPool) {
 async fn full_import_replays_class_a_even_when_column_is_present(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let biz = seed_business(&pool, "C1bis").await;
-    let invoice_id = validated_invoice(&pool, &biz, "F-C1bis").await;
+    let invoice_id = validated_invoice(&pool, &biz).await;
     let revenue = biz.accounts["3000"];
 
     // L'état visé est atteignable : on mute la base source PUIS on exporte.
@@ -1001,10 +1029,7 @@ async fn full_import_replays_class_a_even_when_column_is_present(pool: MySqlPool
             .any(|c| c == "revenue_account_id"),
         "montage : la colonne doit être PRÉSENTE au manifeste — c'est tout l'enjeu du cas"
     );
-    let forged = rezip(&manifest, &data);
-
-    let resp = post_import(&app, &biz.ctx.jwt, forged).await;
-    assert_eq!(resp.status(), 200, "l'import doit réussir");
+    import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
 
     assert_eq!(
         line_accounts(&pool, invoice_id).await,
@@ -1036,15 +1061,17 @@ async fn full_import_replays_role_and_postable_when_both_columns_absent(pool: My
         Some("Receivable"),
         "pré-condition : le plan semé porte bien les rôles"
     );
+    assert!(
+        !account_postable(&pool, TITLE_ACCOUNT).await,
+        "pré-condition : un compte titre naît NON imputable ({TITLE_ACCOUNT}) — \
+         `is_postable` écarte tout numéro parent d'une entrée du plan"
+    );
 
     let backup = export_backup(&app, &biz.ctx.jwt).await;
     let (mut manifest, data) = unzip(&backup);
     strip_column(&mut manifest, "accounts", "role");
     strip_column(&mut manifest, "accounts", "postable");
-    let forged = rezip(&manifest, &data);
-
-    let resp = post_import(&app, &biz.ctx.jwt, forged).await;
-    assert_eq!(resp.status(), 200, "l'import doit réussir");
+    import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
 
     assert_eq!(
         account_role(&pool, "1100").await.as_deref(),
@@ -1055,10 +1082,28 @@ async fn full_import_replays_role_and_postable_when_both_columns_absent(pool: My
         !account_postable(&pool, "2979").await,
         "le compte de résultat de l'exercice doit être rendu NON imputable par le rejeu"
     );
+    // ⚠️ **Le second `UPDATE` de `postable` ne suffit pas à couvrir l'entrée.**
+    // `20260722000001` en porte DEUX : le backfill #2, par numéro via
+    // `role = 'CurrentYearResult'` (le `2979` ci-dessus), et le backfill #1,
+    // **purement structurel** (`:161`), qui rend non imputable tout compte à
+    // enfants actifs jamais mouvementé. La colonne est `NOT NULL DEFAULT TRUE`
+    // (`:77`) : retirée du manifeste, elle revient donc à `TRUE` sur TOUT le
+    // plan, comptes titres compris. Sans cette assertion, une régression du
+    // backfill #1 — ou sa disparition au découpage en statements — laisserait un
+    // compte de regroupement imputable après restore sans qu'aucun cas ne rougisse.
+    assert!(
+        !account_postable(&pool, TITLE_ACCOUNT).await,
+        "le backfill STRUCTUREL de `postable` doit aussi avoir été rejoué : \
+         {TITLE_ACCOUNT} a des enfants actifs et aucune écriture"
+    );
 
     let report = backfill_report(&pool).await;
     let e = entry(&report, ROLE_POSTABLE);
     assert_eq!(e["outcome"], "REPLAYED_SENTINELS_ABSENT");
+    assert!(
+        e["rows_affected"].as_u64().unwrap() > 0,
+        "un rejeu déclenché qui ne touche AUCUNE ligne serait muet, got {e:?}"
+    );
     let missing: Vec<&str> = e["missing_sentinels"]
         .as_array()
         .unwrap()
@@ -1104,10 +1149,7 @@ async fn full_import_replays_when_only_one_sentinel_is_absent(pool: MySqlPool) {
             .any(|c| c == "role"),
         "montage : `role` doit RESTER au manifeste — sans quoi le cas testerait C2"
     );
-    let forged = rezip(&manifest, &data);
-
-    let resp = post_import(&app, &biz.ctx.jwt, forged).await;
-    assert_eq!(resp.status(), 200, "l'import doit réussir");
+    import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
 
     let report = backfill_report(&pool).await;
     let e = entry(&report, ROLE_POSTABLE);
@@ -1170,10 +1212,7 @@ async fn full_import_skips_role_backfill_when_sentinels_are_present(pool: MySqlP
 
     let backup = export_backup(&app, &biz.ctx.jwt).await;
     let (manifest, data) = unzip(&backup);
-    let forged = rezip(&manifest, &data);
-
-    let resp = post_import(&app, &biz.ctx.jwt, forged).await;
-    assert_eq!(resp.status(), 200, "l'import doit réussir");
+    import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
 
     assert_eq!(
         account_role(&pool, "1100").await,
@@ -1240,7 +1279,7 @@ async fn full_import_skips_role_backfill_when_sentinels_are_present(pool: MySqlP
 async fn full_import_replays_backfills_in_increasing_version_order(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let biz = seed_business(&pool, "C5").await;
-    let invoice_id = validated_invoice(&pool, &biz, "F-C5").await;
+    let invoice_id = validated_invoice(&pool, &biz).await;
     let result_account = biz.accounts["2979"];
 
     // Repointage de l'unique ligne de crédit de produit vers `2979`.
@@ -1276,21 +1315,16 @@ async fn full_import_replays_backfills_in_increasing_version_order(pool: MySqlPo
         "montage : UN seul candidat, et c'est le compte de résultat de l'exercice"
     );
 
-    sqlx::query("UPDATE invoice_lines SET revenue_account_id = NULL WHERE invoice_id = ?")
-        .bind(invoice_id)
-        .execute(&pool)
-        .await
-        .expect("état pré-16-1a sur les lignes");
-
+    // L'état « pré-16-1a » des lignes s'obtient par le seul `strip_column` :
+    // retirée des `columnNames`, la colonne n'est pas citée par l'`INSERT` du
+    // restore et reprend son défaut, `NULL`. Un `UPDATE … SET NULL` sur la base
+    // source avant export serait redondant — c'est déjà ainsi que procède C1.
     let backup = export_backup(&app, &biz.ctx.jwt).await;
     let (mut manifest, data) = unzip(&backup);
     strip_column(&mut manifest, "accounts", "role");
     strip_column(&mut manifest, "accounts", "postable");
     strip_column(&mut manifest, "invoice_lines", "revenue_account_id");
-    let forged = rezip(&manifest, &data);
-
-    let resp = post_import(&app, &biz.ctx.jwt, forged).await;
-    assert_eq!(resp.status(), 200, "l'import doit réussir");
+    import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
 
     assert!(
         !account_postable(&pool, "2979").await,

@@ -64,7 +64,7 @@ Le test de bout en bout est **indispensable et non substituable** : le défaut n
 |---|---|---|
 | **C1** — backup **sans** `invoice_lines.revenue_account_id`, facture validée canonique | les lignes portent le compte crédité par leur écriture | cas nominal de l'issue #281 |
 | **C1-bis** — base source mutée à `revenue_account_id = NULL` **puis** exportée, colonne donc **présente et vide** | les lignes sont **quand même** backfillées | **classe A / rejeu inconditionnel** — tombe si l'entrée est traitée en classe B |
-| **C2** — backup sans `accounts.role` **ni** `postable` | rôles réattribués, `postable` recalculé | classe B, déclenchement |
+| **C2** — backup sans `accounts.role` **ni** `postable` | rôles réattribués, `postable` recalculé — **les DEUX backfills de `postable`**, cf. la note ci-dessous | classe B, déclenchement |
 | **C2-bis** — backup portant `accounts.role` mais **pas** `postable` | le rejeu se déclenche **quand même** | **sémantique OU des sentinelles** — tombe si le dev implémente un ET. **Discriminant synthétique assumé** : les deux colonnes sont ajoutées par le même `ALTER`, donc co-présentes en réalité ; le cas se construit par `strip_column` et ne teste aucun état atteignable — il verrouille la règle pour les entrées futures |
 | **C3** — backup complet, avec le **rôle du compte `1100` délibérément effacé** (`role: null`) ; `postable` reste à sa valeur nominale | la donnée du backup est **intacte**, le rôle effacé le **reste** ; `outcome` vaut `Skipped` | **classe B / conditionnement** — cf. la note de montage, « poser des valeurs non standard » ne suffirait **pas** |
 | **C4** *(test d'intégration `kesh-db`, pas E2E — cf. note de montage)* — échec injecté **pendant le rejeu** via `replay_with_registry` et un registre fautif | l'appel rend `Err`, et après rollback la destination est **inchangée** | transactionnalité |
@@ -99,9 +99,12 @@ Le test de bout en bout est **indispensable et non substituable** : le défaut n
 - **C3** : « poser `role` / `postable` à la main sur des valeurs non standard » **ne suffit pas** — le montage littéral produirait un test **muet**. Les 10 `UPDATE` de rôle sont gardés `role IS NULL` donc no-op sur des rôles renseignés ; et les 2 `UPDATE` de `postable` visent des états que l'API **ne peut pas** produire, `effective_postable` (`accounts.rs:126-131`) forçant `postable = false` sur un compte à rôle `CurrentYearResult` ou à enfants actifs, **à la création comme à la mise à jour**. Le rejeu inconditionnel serait donc entièrement no-op et la **mutation 3 ne rougirait pas**.
 
   Le montage discriminant, et il est atteignable par l'API : **un rôle délibérément effacé**. `PUT /api/v1/accounts/{id}` documente `role: null` comme l'acte de retrait (`routes/accounts.rs:70`). Effacer le rôle du compte `1100` dans la base source ; un rejeu inconditionnel le réécrit en `'Receivable'`, ce qui fait tomber « la donnée du backup est intacte ». *(Ce piège est le même fait que celui de C5 — `postable` inatteignable par l'API — non propagé au moment où C5 a été corrigé.)*
+- **C2** : `20260722000001` porte **DEUX** `UPDATE` de `postable`, et le compte `2979` n'en couvre qu'un. Le backfill **#2** (`:177`) agit par rôle, `WHERE role = 'CurrentYearResult'` — c'est celui que `2979` exerce. Le backfill **#1** (`:161`) est **purement structurel** : il rend non imputable tout compte à **enfants actifs** jamais mouvementé, sans citer aucun numéro. Or la colonne est `NOT NULL DEFAULT TRUE` (`:77`) : retirée du manifeste, elle revient à `TRUE` sur **tout le plan**, comptes titres compris. N'asserter que `2979` laisse donc le backfill #1 entièrement invérifié — une régression de sa sous-requête `EXISTS` / `NOT EXISTS`, ou sa disparition au découpage en statements, rendrait un compte de regroupement imputable après restore sans qu'aucun cas ne rougisse. **Asserter aussi un compte titre** (le `10` du plan PME : parent de `1000`/`1010`/`1020`, non mouvementé par la fixture, donc non imputable au seed par `is_postable` comme au rejeu par le backfill #1). *(Ajouté en passe 1 de `bmad-code-review`.)*
 - **C1** : sans facture validée dans la source, l'assertion porte sur un ensemble vide et le **cas nominal de l'issue passe à vide**. D'où la mutation dédiée en **T-D3** (mutation 5).
 
-- **AC-D2 — Fixture métier.** `admin_full_import_e2e.rs` ne sait aujourd'hui créer qu'une **société et un utilisateur** (`seed_role:139`) : aucun plan comptable, aucune facture, aucune écriture. La fixture est donc à écrire, et son absence rendrait **C1 — le cas nominal de l'issue #281 — vert sur un ensemble vide**. Semer le plan via `kesh_core::chart_of_accounts::load_chart("Pme")` + `accounts::bulk_create_from_chart`, créer contact et produit, créer puis **valider** une facture pour produire son écriture.
+- **AC-D2 — Fixture métier.** `admin_full_import_e2e.rs` ne sait aujourd'hui créer qu'une **société et un utilisateur** (`seed_role:139`) : aucun plan comptable, aucune facture, aucune écriture. La fixture est donc à écrire, et son absence rendrait **C1 — le cas nominal de l'issue #281 — vert sur un ensemble vide**. Semer le plan via `kesh_core::chart_of_accounts::load_chart("Pme")` + `accounts::bulk_create_from_chart`, créer un contact, créer puis **valider** une facture pour produire son écriture.
+
+  ⚠️ **Pas de produit — la rédaction d'origine en demandait un, à tort.** `NewInvoiceLine` ne porte **aucun** `product_id` (`entities/invoice.rs:90-98`) : le modèle de facturation ne lie pas les lignes à un catalogue, et le compte de produit d'une ligne vient de `revenue_account_id`, pas d'un article. Un `products::create` dans la fixture serait une ligne sans lecteur — du montage qui n'influence aucune assertion, donc du bruit qui laisse croire à une dépendance inexistante. *(Écart relevé en passe 1 de `bmad-code-review` : la tâche était cochée pour un geste non fait. C'est l'AC qui avait tort, pas l'implémentation.)*
 
   ⚠️ **Deux prérequis durs de `validate_invoice` que ni `seed_role` ni les patrons ci-dessus ne fournissent** — les oublier fait échouer la validation, donc ne produit **aucune écriture**, donc rend C1 vert sur un ensemble vide :
   - un **exercice ouvert couvrant la date de facture** (`invoices.rs:1730-1733`, `DbError::FiscalYearInvalid` sinon) ;
@@ -110,7 +113,7 @@ Le test de bout en bout est **indispensable et non substituable** : le défaut n
   ⚠️ **Deux patrons distincts, ne pas confondre.** Pour le **plan comptable** : `crates/kesh-db/tests/company_invoice_settings_repository.rs:33-37`.
 
   ⚠️ **NE PAS s'inspirer d'`accounts_role_backfill.rs`** — son doc-module (`:28-32`) dit littéralement « insère le plan **en SQL brut** (surtout pas via `bulk_create_from_chart`, qui binderait `role`/`postable` — colonnes qui n'existent pas encore à ce stade → `ERROR 1054`) ». Sa technique repose sur un **montage partiel des migrations**, structurellement impossible ici : `admin_full_import_e2e.rs` monte `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]`, donc **toutes** les migrations. Transposé, il produirait un plan à `role = NULL` partout — exactement le défaut que cette mise en garde existe pour empêcher. *(Cité à tort comme patron en passe 1 de cette story ; c'est un contre-exemple.)* **PAS** `seed_accounting_company` (`test_fixtures.rs`), qui insère **5 comptes en dur** (`1000`, `1100`, `2000`, `3000`, `4000`) **sans jamais renseigner `role`** et **sans le compte `2979`** — C5 serait alors inconstructible, son candidat n'existant pas. Pour la **facture validée par le vrai moteur** : `crates/kesh-db/tests/invoice_lines_revenue_account_backfill.rs`, test `validated_invoice_from_the_real_engine_is_recovered_by_the_backfill`.
-- **AC-D3 — Discrimination prouvée par mutation, pas constatée.** Les cinq mutations de `T-D3` sont **exécutées**, et leurs résultats consignés au Dev Agent Record. **Un test attendu qui ne rougit pas invalide le montage** : le corriger avant d'aller plus loin. Un test vert ne prouve rien par lui-même — c'est l'enseignement mesuré des stories 16-1a et 16-1a-bis.
+- **AC-D3 — Discrimination prouvée par mutation, pas constatée.** Les **six** mutations de `T-D3` sont **exécutées**, et leurs résultats consignés au Dev Agent Record. *(Cinq à l'implémentation ; la sixième ajoutée en passe 1 de `bmad-code-review`, avec l'assertion qu'elle prouve.)* **Un test attendu qui ne rougit pas invalide le montage** : le corriger avant d'aller plus loin. Un test vert ne prouve rien par lui-même — c'est l'enseignement mesuré des stories 16-1a et 16-1a-bis.
 - **AC-D4 — Aucun fichier de production modifié.** Cette story n'ajoute que des tests. `git diff --stat` ne touche ni `crates/kesh-db/src/`, ni `crates/kesh-api/src/`, ni `frontend/`, ni aucune migration.
 
 ---
@@ -118,7 +121,7 @@ Le test de bout en bout est **indispensable et non substituable** : le défaut n
 ## Tasks / Subtasks
 
 - [x] **T-D1 — Fixture métier et helpers de montage** (AC-D1, AC-D2)
-  - [x] Helper de montage d'une société complète : plan comptable via `bulk_create_from_chart`, contact, produit.
+  - [x] Helper de montage d'une société complète : plan comptable via `bulk_create_from_chart`, contact. *(« produit » retiré en passe 1 de `bmad-code-review` — cf. AC-D2 : les lignes de facture ne référencent aucun article.)*
   - [x] Helper de création puis **validation** d'une facture, produisant son écriture comptable.
   - [x] Helper `strip_column(manifest, data, table, column)` sur le couple `(Value, BTreeMap<String, Vec<u8>>)` rendu par `unzip` — geste partagé par C1, C2, C2-bis, C5.
 - [x] **T-D2 — Tests de bout en bout** (AC-D1)
@@ -136,7 +139,8 @@ Le test de bout en bout est **indispensable et non substituable** : le défaut n
   - [x] Classe B rendue inconditionnelle → **C3** doit rougir.
   - [x] Registre parcouru en ordre décroissant → **C5** doit rougir.
   - [x] Registre vidé de l'entrée `20260729000001` → **C1 et C1-bis** doivent rougir *(prouve la non-vacuité du cas nominal, qui sans cela pourrait passer sur un ensemble vide — les deux tombent, l'entrée retirée étant la seule à toucher `invoice_lines`)*.
-  - [x] Consigner les cinq résultats dans le Dev Agent Record. **Un test attendu qui ne rougit pas invalide le montage** : le corriger avant d'aller plus loin.
+  - [x] **Backfill `postable` #1 (structurel) retiré de l'extrait de classe B → C2 doit rougir, les cinq autres cas rester verts.** *(Mutation ajoutée en passe 1 de `bmad-code-review`, avec l'assertion qu'elle prouve — un patch de revue vient avec son test.)*
+  - [x] Consigner les **six** résultats dans le Dev Agent Record. **Un test attendu qui ne rougit pas invalide le montage** : le corriger avant d'aller plus loin.
 - [x] **T-D4 — Gate et contrôle de périmètre** (AC-D3, AC-D4)
   - [x] **AC-D4** : `git diff --stat` ne montre **aucun** fichier sous `crates/kesh-db/src/`, `crates/kesh-api/src/`, `frontend/` ni `crates/kesh-db/migrations/`. Si l'écriture d'un test exige une modification de production, c'est que 16-1c est incomplète — **la corriger là-bas**, pas ici.
   - [x] `scripts/test-fast.sh` complet (fmt + clippy `-D warnings` + nextest workspace) sur l'**état final**, exit 0 exigé, non présumé d'un run antérieur. `npm run check` inutile — aucun fichier frontend touché.
@@ -148,6 +152,20 @@ Le test de bout en bout est **indispensable et non substituable** : le défaut n
 ### Les pièges de montage sont dans les AC, pas ici — les lire
 
 Les notes de montage de **C1, C3, C4 et C5** énoncent chacune un piège qui rend le test muet ou inversé. Ils ont coûté trois passes de revue à 16-1c et **aucun n'est détectable à la lecture du test écrit** : ils ne se voient qu'en confrontant le montage au SQL de la migration et aux règles métier du dépôt. Ne pas les paraphraser, ne pas les abréger.
+
+### Limitation assumée — le miroir « avoir » n'est pas exercé de bout en bout
+
+*(Relevé en passe 1 de `bmad-code-review`, EdgeCaseHunter. Reclassé en limitation documentée, pas en patch.)*
+
+L'entrée de classe A rejoue le fichier `20260729000001` **en entier**, et ce fichier porte **deux** `UPDATE` : celui des `invoice_lines` (`:250`) et son miroir `credit_note_lines` (`:285`, structurellement distinct — `debit` au lieu de `credit`, `credit_notes.total_amount`, statut `issued`, jointure sur `cn.journal_entry_id`). **Aucun des six cas ne monte d'avoir** : le second statement tourne donc toujours sur un ensemble vide et n'est jamais vérifié fonctionnellement par un import réel.
+
+Ce n'est pas un test vert pour la mauvaise raison, et la couverture n'est pas absente — elle est **ailleurs, et complète** :
+
+- la **justesse SQL** du miroir est tenue par `crates/kesh-db/tests/invoice_lines_revenue_account_backfill.rs`, dont le doc-module recense nommément deux tests écrits parce que muter le seul `<=>` puis le seul `LEFT` du **2ᵉ** `UPDATE` laissait toute la suite verte ;
+- le **découpage en statements** — le seul risque propre au chemin de rejeu, qui pourrait faire disparaître silencieusement le 2ᵉ `UPDATE` — est tenu par `statement_splitting_survives_the_real_traps` et `extract_carries_every_write_statement_of_its_source_migration` (16-1c) ;
+- et C1 asserte désormais `rows_affected` **au décompte exact** (`== 2`), ce qui épingle la contribution nulle du miroir plutôt que de la laisser sous une borne lâche.
+
+Ce qui resterait à gagner par un septième cas — monter un avoir émis dans la fixture — est la preuve de bout en bout que le miroir traverse *aussi* le restore. Le coût (fixture d'avoir émis, avec son écriture) est réel ; le gain marginal est faible, la couche d'interaction étant identique pour les deux statements, dans la même transaction et le même découpage. **AC-D1 énumère six cas, et n'a jamais porté les avoirs.** À reconsidérer si une entrée de classe A future portait un statement dont le chemin de rejeu diffère réellement.
 
 ### Le harnais existant, et ce qu'il ne fait pas
 
@@ -180,7 +198,7 @@ Les notes de montage de **C1, C3, C4 et C5** énoncent chacune un piège qui ren
 
 **Gate complet VERT sur l'état final, DB `kesh_gate` : `exit 0`, 2102/2102, 4 skipped, 3530 s (59 min)** — `fmt` + `clippy -D warnings` dans le même run. Verdict lu **dans le log**, jamais dans le code de retour du bloc englobant. Le total passe de 2096 à 2102, soit **exactement +6** : le décompte concorde avec les six cas exigés par T-D2. *(Un compte de tests n'est un indicateur de couverture que si sa composition est vérifiée — l'enseignement du CRITICAL de la passe 1 de revue de 16-1c.)*
 
-**Les cinq mutations de T-D3, exécutées, avec leur sortie.** Chaque mutation porte sur `crates/kesh-db/src/post_restore.rs` (fichier de production **restauré à l'identique** après chaque essai — `git diff` vide, vérifié).
+**Les six mutations de T-D3, exécutées, avec leur sortie.** Les cinq premières portent sur `crates/kesh-db/src/post_restore.rs`, la sixième sur l'extrait SQL de classe B `crates/kesh-db/src/post_restore/20260722000001_accounts_role_postable.sql`. Fichier de production **restauré à l'identique** après chaque essai — `git diff` vide, vérifié.
 
 | # | Mutation | Attendu | Obtenu |
 |---|---|---|---|
@@ -189,6 +207,18 @@ Les notes de montage de **C1, C3, C4 et C5** énoncent chacune un piège qui ren
 | 3 | classe B rendue **inconditionnelle** | C3 rouge | ✅ C3 `FAILED` |
 | 4 | registre parcouru **à l'envers** | C5 rouge | ✅ C5 `FAILED` |
 | 5 | registre **vidé** de `20260729000001` | C1 **et** C1-bis rouges | ✅ les deux `FAILED`, et C3 reste `ok` (contrôle négatif) |
+| **6** | backfill `postable` **#1** (structurel) retiré de l'extrait de classe B | **C2 rouge** | ✅ `FAILED` sur `:1094` — l'assertion du compte titre ; **15/16 `ok`**, seul C2 tombe |
+
+**La mutation 6 est ajoutée en passe 1 de `bmad-code-review`** : elle prouve l'assertion que cette passe a ajoutée, plutôt que de la constater verte. Sans elle, le patch se serait contenté d'une ligne qui passe — et la story enseigne précisément qu'un test vert ne prouve rien par lui-même. Sortie retenue :
+
+```
+thread 'full_import_replays_role_and_postable_when_both_columns_absent' panicked at
+crates/kesh-api/tests/admin_full_import_e2e.rs:1094:5:
+le backfill STRUCTUREL de `postable` doit aussi avoir été rejoué : 10 a des enfants actifs et aucune écriture
+     Summary [45.696s] 16 tests run: 15 passed, 1 failed, 0 skipped
+```
+
+Le **contrôle négatif** est ce qui donne sa valeur à la mesure : C1, C1-bis, C2-bis, C3 et C5 restent verts. La mutation ne tue que le cas qu'elle vise, ce qui établit que la nouvelle assertion discrimine le backfill #1 **et lui seul** — elle ne recouvre pas l'assertion sur `2979` qui la précède. Fichier de production restauré à l'identique après l'essai (`git diff` vide sous `crates/kesh-db/`).
 
 ⚠️ **La mutation 1 a corrigé un montage, elle n'a pas seulement constaté une couleur — et c'est le fait marquant de cette story.** Au premier essai, elle faisait rougir **C1 et C1-bis**, là où la spec prédit « C1-bis rouge, C1 vert ». La cause n'était pas dans le code de production mais dans **C1**, qui assertait `outcome == "REPLAYED_UNCONDITIONAL"` : il épinglait donc la **classe déclarée**, rôle que la spec assigne à **C1-bis** et à lui seul. Les deux cas se recouvraient, et la mutation ne pouvait plus mesurer ce qu'elle vise — distinguer *« le mécanisme fonctionne »* de *« l'entrée est bien en classe A »*.
 
@@ -204,14 +234,14 @@ Assertion de C1 ramenée à « l'entrée a été **rejouée** », sans épingler
 - **Le plan vient de `bulk_create_from_chart`, jamais de `seed_accounting_company`** : ce dernier insère 5 comptes en dur **sans `role`** et **sans le compte `2979`** — C5 y serait inconstructible, son candidat n'existant pas, et C2 n'aurait aucun rôle à réattribuer.
 - **Facture sans TVA, validée par le vrai moteur.** `insert_with_defaults` ne renseigne pas `default_vat_payable_account_id`, que `validate_invoice` exige dès qu'il y a de la TVA. L'exonération est un cas suisse légitime, et cette combinaison — exonéré **et** par le moteur — n'existait nulle part dans le dépôt : les tests exonérés de 16-1a-bis montent leurs écritures en SQL brut, et son seul test passant par le moteur utilise deux taux non nuls.
 - **Écart assumé sur la signature de `strip_column`.** La tâche T-D1 la prescrit à quatre arguments, `(manifest, data, table, column)`. Elle en porte **trois** : les octets NDJSON ne sont volontairement pas touchés — c'est précisément ce qui garde `sha256` et `rowCount` valides — et passer `data` laisserait croire qu'il est modifié. La substance de la tâche est tenue ; seule la signature diffère.
-- **Aucun fichier de production modifié** (AC-D4) : `git diff --stat` ne montre que `crates/kesh-api/tests/admin_full_import_e2e.rs`.
+- **Aucun fichier de production modifié** (AC-D4) : `git show --stat` liste **trois** fichiers — `crates/kesh-api/tests/admin_full_import_e2e.rs`, ce story file et `sprint-status.yaml`. Un seul est du code, et il est sous `tests/`. Aucun fichier sous `crates/kesh-db/src/`, `crates/kesh-api/src/`, `frontend/`, ni aucune migration. *(La rédaction d'origine disait « ne montre **que** le `.rs` » — faux au pied de la lettre, dans une story dont le thème est justement de recompter plutôt que de relire. Corrigé en passe 1 de `bmad-code-review`.)*
 - **C4 n'est pas ici** : le test de transactionnalité vit en test d'intégration `kesh-db` et relève de 16-1c. Cette story porte **six** cas, pas sept.
 
 ### File List
 
 **Modifiés**
 
-- `crates/kesh-api/tests/admin_full_import_e2e.rs` — fixture métier `seed_business` (plan comptable réel, exercice ouvert, réglages, contact), helper `validated_invoice` (facture exonérée validée par le vrai moteur), helpers `strip_column` / `backfill_report` / `entry` / `line_accounts` / `account_role` / `account_postable`, et les **six** cas E2E C1, C1-bis, C2, C2-bis, C3, C5 avec leur note « ce que ce test discrimine ».
+- `crates/kesh-api/tests/admin_full_import_e2e.rs` — fixture métier `seed_business` (plan comptable réel, exercice ouvert, réglages, contact), helper `validated_invoice` (facture exonérée validée par le vrai moteur), helpers `strip_column` / `backfill_report` / `entry` / `line_accounts` / `account_role` / `account_postable` / `import_ok`, la constante `TITLE_ACCOUNT`, et les **six** cas E2E C1, C1-bis, C2, C2-bis, C3, C5 avec leur note « ce que ce test discrimine ». *(`import_ok` et `TITLE_ACCOUNT` ajoutés en passe 1 de `bmad-code-review`.)*
 
 ## Change Log
 
@@ -284,3 +314,48 @@ L'unique LOW est un renvoi historique : le Change Log de 16-1c citait encore « 
 
 **Statut : `ready-for-dev`, spec convergée.**
 
+
+### Passe 1 de `bmad-code-review`
+
+**2026-08-03 — Sonnet, trois lentilles (BlindHunter, EdgeCaseHunter, AcceptanceAuditor), contexte frais. 12 findings bruts → 3 MEDIUM, 6 LOW, 3 écartés dont 1 réfuté en ground-truth.** Modèle différent de celui qui a spécifié et implémenté la story (Opus), conformément à la § « Review Iteration Rule ».
+
+**Le finding qui compte : un `UPDATE` entier de l'entrée de classe B n'était vérifié par aucun cas** (EdgeCaseHunter, MEDIUM). `20260722000001` porte **deux** backfills de `postable` — le #2 par rôle (`role = 'CurrentYearResult'`, `:177`) et le #1 **purement structurel** (`:161`, tout compte à enfants actifs jamais mouvementé). Les trois assertions d'imputabilité des six cas portaient **toutes sur le seul compte `2979`**, donc sur le seul backfill #2 :
+
+```
+$ grep -n "account_postable" crates/kesh-api/tests/admin_full_import_e2e.rs
+496:        !account_postable(&pool, "2979").await,
+568:        !account_postable(&pool, "2979").await,
+737:        !account_postable(&pool, "2979").await,
+```
+
+Et la colonne est `NOT NULL DEFAULT TRUE` (`:77`) : retirée du manifeste, elle **revient à `TRUE` sur tout le plan**, comptes titres compris. Une régression de la sous-requête `EXISTS`/`NOT EXISTS` du backfill #1 — ou sa disparition au découpage en statements — aurait donc rendu un compte de regroupement imputable après restore **sans qu'aucun cas ne rougisse**. C2 asserte désormais aussi le compte titre `10` (parent de `1000`/`1010`/`1020`, jamais mouvementé), en pré-condition **et** après import, plus `rows_affected > 0` pour interdire un rejeu déclenché mais muet.
+
+**L'AcceptanceAuditor a trouvé une tâche cochée pour un geste non fait** (MEDIUM) : AC-D2 et T-D1 exigeaient de « créer contact **et produit** », et `products::create` n'est appelé nulle part. Vérification faite, **c'est l'AC qui avait tort** : `NewInvoiceLine` ne porte aucun `product_id` (`entities/invoice.rs:90-98`), le modèle ne lie pas les lignes à un catalogue. Un produit dans la fixture aurait été du montage sans lecteur. AC et tâche corrigées plutôt que le code.
+
+**Un troisième MEDIUM est reclassé en limitation documentée** (EdgeCaseHunter) : le miroir `credit_note_lines` du backfill de classe A n'est exercé par aucun des six cas, faute d'avoir dans la fixture. La justesse SQL du miroir est tenue par quatre tests dédiés de `invoice_lines_revenue_account_backfill.rs` — dont deux existent précisément parce que muter le 2ᵉ `UPDATE` laissait le reste vert — et le seul risque propre au chemin de rejeu (un statement perdu au découpage) est tenu par `statement_splitting_survives_the_real_traps`. Rationale complète en Dev Notes ; C1 asserte en compensation `rows_affected` au **décompte exact** (`== 2` au lieu de `>= 2`), ce qui épingle la contribution nulle du miroir au lieu de la cacher sous une borne lâche.
+
+**Un finding réfuté par grep ground-truth.** Le BlindHunter donnait MEDIUM sur `assert_eq!(missing, vec!["accounts.role", "accounts.postable"])`, soupçonnant un ordre non garanti (itération de `HashSet` côté production) et donc un test *flaky*. Faux : `missing_sentinels` (`post_restore.rs:420-432`) itère sur le **slice de sentinelles du registre**, dans son ordre de déclaration, et `filter`/`map` le préservent. L'ordre est déterministe et contractuel. Écarté.
+
+**Deux autres écartés** : le non-scoping par `company_id` de `account_role`/`account_postable` (`fetch_one` échoue **bruyamment** sur multi-lignes — aucun verdict faux possible, et chaque `#[sqlx::test]` du fichier n'instancie qu'une société) ; et les codes d'issue en littéraux plutôt qu'en constantes (une faute de frappe rend le test **rouge**, jamais faussement vert, et `replay_outcome_codes_are_stable` verrouille déjà les chaînes côté `kesh-db`).
+
+**LOW appliqués** — cinq nettoyages sans effet sur la discrimination des cas :
+
+| # | Finding | Correction |
+|---|---|---|
+| 1 | `rows_affected >= 2` en C1, borne lâche sur une base fraîche | `== 2`, avec la raison du décompte |
+| 2 | paramètre `number_hint` de `validated_invoice` accepté puis jeté (`let _ = number_hint;`) | supprimé, 3 sites d'appel mis à jour |
+| 3 | C5 forçait `revenue_account_id = NULL` par `UPDATE` **et** par `strip_column` | `UPDATE` retiré — le `strip_column` seul produit l'état, comme en C1 ; la raison est écrite sur place |
+| 4 | `rezip` + `post_import` + `assert 200` copiés **six** fois (DRY, § « Code Quality Rules ») | helper `import_ok` ; les tests antérieurs gardent leur `post_import` nu, ils attendent des `4xx` |
+| 5 | la numérotation saute C3 → C5 sans explication lisible dans le fichier | note en tête expliquant que C4 vit en test d'intégration `kesh-db` |
+
+**Un LOW sur le Dev Agent Record lui-même** : il affirmait que `git diff --stat` « ne montre **que** le `.rs` », alors que le commit touche **trois** fichiers (le `.rs`, ce story file, `sprint-status.yaml`). L'exigence d'AC-D4 — aucun fichier de production — est bien tenue ; c'est la formulation qui était un nombre relu et non recompté, dans une story dont c'est le thème. Corrigée.
+
+**Ce que les trois lentilles ont validé positivement**, chacune avec ses commandes : les six cas présents et discriminants, l'absence de C4, les quatre pièges de montage nommés (C1 non-vacuité, C3 rôle effacé, C5 repointage sans ajout de ligne ni écriture séparée) tous évités, la résolution des entrées du rapport **par `version`** sans aucun index ni longueur, les trois codes d'issue conformes à `ReplayOutcome::code()` et les trois variants exercés, l'intégrité du backup forgé contre `parse_and_verify` (`sha256`, `rowCount`, inventaire des tables), la fenêtre d'importabilité, la non-vacuité de la fixture établie en remontant jusqu'à `generate_invoice_journal_lines`, et AC-D4 par `git show --stat`.
+
+**Une sixième mutation est née de cette passe, et c'est son résultat le plus utile.** Le patch du MEDIUM #1 ajoutait une assertion — qui passait. Elle aurait pu passer pour de mauvaises raisons (compte titre déjà non imputable pour un autre motif, ou assertion recouvrant celle sur `2979` qui la précède de dix lignes). Le backfill `postable` #1 a donc été retiré de l'extrait de classe B et C2 relancé : `FAILED` sur `:1094`, la ligne exacte, et **15/16 verts** — C1, C1-bis, C2-bis, C3 et C5 intacts. C'est le contrôle négatif qui donne sa valeur à la mesure : la mutation ne tue que le cas visé, donc la nouvelle assertion discrimine le backfill #1 **et lui seul**. Consignée en `T-D3` et au tableau du Dev Agent Record ; fichier de production restauré. *(§ « un patch de review vient AVEC son test » — ici le test est une mutation, la story n'ayant pas d'autre monnaie de preuve.)*
+
+**Gate.** Complet et vert **sur l'état patché**, DB `kesh_gate` : `2102 tests run: 2102 passed, 4 skipped`, 3023 s (50 min), `exit 0` — verdict lu dans le log, jamais dans le code de retour du bloc englobant. Le total reste **2102** : les patches de cette passe ajoutent des **assertions**, pas des tests, et le décompte le confirme. Contrôle de composition, pas seulement de total.
+
+**Décision de process prise pendant cette passe** (arbitrage de Guy, codifié dans `CLAUDE.md` § « Test Locally First » → « Pendant une boucle de revue ») : entre les passes d'une boucle de revue, gate **ciblé** (`fmt` + `clippy` workspace + `nextest -E 'binary(...)'`) ; gate **complet** au push, à la déclaration `done` et au dernier commit de la boucle. Deux réserves : ne jamais écrire « gate vert, N/N » pour un run ciblé, et gate complet obligatoire dès qu'un patch touche `kesh-db`. Le gate complet ci-dessus a été lancé avant cet arbitrage ; la mutation 6 est le premier run ciblé de la nouvelle règle — 50 s au lieu de 50 min.
+
+**Verdict de la boucle : NON CONVERGÉE.** 3 MEDIUM > `LOW` → une passe 2 est requise par la § « Review Iteration Rule », avec un modèle différent (Haiku), contexte frais, sur un diff **aplati** — la § « Haiku-specific guardrails » l'exige dès la passe 2, et tout `CRITICAL`/`HIGH` affirmant l'absence d'un code attendu devra être vérifié par `grep -nF` avant d'être traité comme réel.

@@ -314,7 +314,7 @@ Reste ici le seul cas qui ne relève pas de l'E2E :
 - [x] **T5 — Test de transactionnalité** (AC-C4, AC-C10)
   - [x] Cas **C4** en test d'intégration `kesh-db` (`crates/kesh-db/tests/`) : restaurer, appeler `replay_with_registry` avec un registre fautif, vérifier l'`Err`, puis après rollback que la destination est intacte.
   - [x] Note de montage « ce que ce test discrimine », reprenant le piège nommé en AC-C10.
-  - [x] **La couverture E2E (six cas + cinq mutations) est en 16-1d** — ne pas la dupliquer ici.
+  - [x] **La couverture E2E (six cas + six mutations) est en 16-1d** — ne pas la dupliquer ici. *(Cinq mutations à l'implémentation, une sixième ajoutée en passe 1 de sa revue de code.)*
 
 *(**T6 — preuve par mutation** est partie en 16-1d avec les cas qu'elle vise. Numérotation conservée pour que les renvois des passes 1 à 5 restent lisibles.)*
 

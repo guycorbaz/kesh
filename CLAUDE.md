@@ -119,6 +119,27 @@ npm run test:e2e
 
 Pré-requis : MariaDB démarré + seed CI appliqué + Playwright browsers installés (cf. `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` sur Ubuntu 26.04+ — limitation upstream Playwright ≤ 1.49).
 
+### Pendant une boucle de revue — gate ciblé, gate complet au push
+
+**Le déclencheur du gate complet est le `push`, pas le commit.** Une boucle `bmad-code-review` produit 2 à 4 commits de patches, chacun local et invisible de l'extérieur ; y attacher un gate complet coûte **~1 h par passe** (mesuré : 59 min, 2102 tests) pour des patches qui touchent souvent un seul fichier. Entre les passes, lancer un **gate ciblé** :
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo nextest run -E 'binary(<le binaire de test touché>)'   # le rayon d'impact
+```
+
+`fmt` et `clippy` restent sur le **workspace entier** — ils coûtent ~1 min et c'est précisément ce qui, sur la Story 16-1d, a fait échouer un gate complet en `exit 101` (`clippy::cmp_owned`) **au bout des 59 minutes**. Les passer en pré-vol est le geste le moins cher du dépôt.
+
+Le gate **complet** reste obligatoire : avant tout `git push`, avant de déclarer une story `done`, et au dernier commit d'une boucle de revue.
+
+**Deux réserves, sans lesquelles la règle se retourne contre nous** :
+
+- **Le story file ne doit affirmer que ce qui a tourné.** Pas de « gate vert, N/N » dans un Dev Agent Record ou un Change Log si seul le binaire ciblé a été exécuté — écrire alors « gate ciblé `binary(x)` vert, gate complet au push ». C'est la contrepartie non négociable : les passes de revue suivantes **lisent ce record et le prennent pour argent comptant**, et une passe adversariale menée sur une base faussement déclarée verte ne mesure plus rien.
+- **Exception `kesh-db` : gate complet même en cours de boucle.** Dès qu'un patch touche `crates/kesh-db/migrations/`, `post_restore.rs` ou un repository, le ciblage est interdit. C'est exactement ce que codifient les garde-fous **P6** et **P7** de la § « Migration breaking policy » : ces modes d'échec ne naissent ni du code écrit ni de la spec, mais de l'**interaction** avec des tests que la PR ne touche pas, et **seul le gate réellement exécuté les révèle**. Précédent Story 16-1a : `backfill_skips_archived_accounts` s'est mis à **passer à vide** — un test muet ne signale rien, et aucun gate ciblé ne l'aurait vu.
+
+*(codifié 2026-08-03, arbitrage de Guy pendant la boucle de revue de la Story 16-1d.)*
+
 ### Quand sauter
 
 Cette règle ne s'applique pas aux **commits doc-only** (markdown, yaml de planning, README, CLAUDE.md lui-même) qui ne touchent pas de code exécutable. Pour ces commits, la CI elle-même est généralement no-op (pas de Rust ni de TypeScript modifié → cache hit instantané).
