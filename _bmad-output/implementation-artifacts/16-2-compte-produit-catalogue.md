@@ -2,7 +2,9 @@
 
 ## Status
 
-in-progress-validate
+superseded-by-split
+
+⚠️ **Cette story a été SPLITTÉE le 2026-08-03 en [`16-2a`](16-2a-compte-produit-catalogue-backend.md) (socle backend) et [`16-2b`](16-2b-selecteur-et-prefill-frontend.md) (sélecteur et pré-remplissage). Ne pas l'implémenter.** Elle est conservée pour son historique : quatre passes de `bmad-create-story validate`, deux déclenchements du garde-fou de la dérogation au splitting, et le détail des 30+ findings dont les deux filles héritent à l'état corrigé.
 
 *(La boucle `bmad-create-story validate` est en cours — 3 passes, non convergée. Ce statut passera à `ready-for-dev` quand plus rien ne dépassera `LOW`. Le champ disait `ready-for-dev` pendant que le Change Log se déclarait non convergé : trois états contradictoires au même instant, relevé en passe 3.)*
 
@@ -463,3 +465,17 @@ La page catalogue vit dans `src/routes/(app)/products/`, **hors du périmètre d
 **Trend** : `1 CRIT / 3 HIGH / 4 MED / 4 LOW` → `0 / 1 HIGH / 3 MED / 2 LOW` → `0 / 5-6 HIGH / 6 MED / 5 LOW` → **`0 / 5 HIGH / 4 MED / 4 LOW`**. Rotation Sonnet → Haiku → Opus → Sonnet, cycle complet.
 
 **Statut : findings consignés, patches suspendus. Le garde-fou s'est déclenché deux fois de suite et a déjà été reconduit une fois — le split est l'issue par défaut, et la décision revient au Project Lead.**
+
+
+### Split — arbitrage final
+
+**Guy, 2026-08-03 : SPLIT.** Le garde-fou de la dérogation s'est déclenché **deux fois de suite** (passes 3 et 4, sévérité maximale `HIGH` maintenue) et avait déjà été reconduit une fois. Conformément à ce que la reconduction inscrivait — « si la passe 4 remonte encore, le split devient l'issue par défaut » — la story est scindée :
+
+- **[16-2a](16-2a-compte-produit-catalogue-backend.md)** — migration et ses quatre garde-fous, colonne, les deux listes de colonnes, les deux helpers silencieux, validation D3 conditionnée par D4 avec son placement tranché, API et troisième sujet i18n, export CSV et son test. **Quatre** mutations.
+- **[16-2b](16-2b-selecteur-et-prefill-frontend.md)** — sélecteur de fiche, pré-remplissage, types, i18n, doc-sync et manuels. **Trois** mutations.
+
+**Les deux partent dans la même PR** : seule, 16-2a livre une colonne que rien ne lit — l'objection qui avait fait refuser le split deux fois, levée par la contrainte de PR et non par le split.
+
+**Ce que le split corrige, et ce qu'il ne corrige pas.** Aucun défaut de conception : les quatre passes ont validé la conception, et les six critères de #144 sont couverts ou explicitement exclus. Ce qui ne convergeait pas était la **tenue du document** — ~460 lignes, cinq Change Logs, dix décisions, une comptabilité qui dérivait à chaque remédiation. **Huit des treize findings de la passe 4 portaient sur les décomptes de mes propres Change Logs**, pas sur la story : un en-tête annonçant 5 HIGH pour six énumérés, une liste de « cinq LOW » en contenant six dont un repris du bloc MEDIUM, deux corrections sans finding source, et une affirmation carrément fausse (« les seeds ne créent aucun produit », réfutée par `test_fixtures.rs:482`).
+
+**Les 30+ findings des quatre passes sont tous reportés à l'état corrigé** dans l'une ou l'autre des filles — y compris les cinq HIGH de la passe 4, dont le placement de **D4** (irréalisable à la couche où la parente le mettait) et la propagation de cette décision aux critères et aux tâches, qui était la quatrième récidive du même mode d'échec.
