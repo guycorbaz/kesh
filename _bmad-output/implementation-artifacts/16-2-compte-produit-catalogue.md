@@ -2,7 +2,9 @@
 
 ## Status
 
-ready-for-dev
+in-progress-validate
+
+*(La boucle `bmad-create-story validate` est en cours — 3 passes, non convergée. Ce statut passera à `ready-for-dev` quand plus rien ne dépassera `LOW`. Le champ disait `ready-for-dev` pendant que le Change Log se déclarait non convergé : trois états contradictoires au même instant, relevé en passe 3.)*
 
 ## Story
 
@@ -63,7 +65,7 @@ Ce n'est pas un manque à combler ici : c'est la sémantique voulue, énoncée p
 
 - **D1 — Aucun `product_id`, aucune relation persistante.** Le compte est recopié dans la ligne au moment du choix de l'article, au site `onProductSelect` que 16-1 a préparé. **Motif** : c'est le geste que #144 demande (*« servirait de valeur par défaut lors de la création de lignes »*), c'est l'arbitrage de kickoff de Guy (pré-remplissage **sans reprise rétroactive**), et c'est la sémantique de snapshot déjà appliquée aux trois autres champs recopiés. Introduire `product_id` serait une story distincte, bien plus large (sémantique du `ON DELETE`, rapports « produits vendus », cascade d'édition) et **non demandée**.
 
-- **D2 — `products.default_revenue_account_id BIGINT NULL`**, FK `ON DELETE RESTRICT`, index dédié. Miroir strict de `company_invoice_settings.default_revenue_account_id`. `NULL` signifie « cet article n'impose rien » — la ligne retombe alors sur le comportement livré par 16-1, c'est-à-dire `revenueAccountId: null`, donc le compte par défaut **de la société**, résolu à la validation.
+- **D2 — `products.default_revenue_account_id BIGINT NULL`**, FK `ON DELETE RESTRICT`, index dédié. Jumeau de `company_invoice_settings.default_revenue_account_id` pour la colonne et la FK. ⚠️ **Pas un miroir strict** : ce réglage société ne porte **aucun** index (`grep -nF "idx_company_invoice_settings"` → aucune sortie). L'index vient du patron 16-1a, et sa justification est qu'**InnoDB l'exige sur la colonne enfant d'une FK** — pas un besoin de requête, aucune ne filtre `products` par compte. *(Formulation corrigée en passe 3.)* `NULL` signifie « cet article n'impose rien » — la ligne retombe alors sur le comportement livré par 16-1, c'est-à-dire `revenueAccountId: null`, donc le compte par défaut **de la société**, résolu à la validation.
 
 - **D3 — Le compte de l'article est validé sur TROIS critères, `postable` EXCLU — miroir exact du réglage société.** À l'enregistrement de la fiche (`create` **et** `update`) :
 
@@ -75,9 +77,21 @@ Ce n'est pas un manque à combler ici : c'est la sémantique voulue, énoncée p
 
   **Motif, et il est établi par le code jumeau, pas par analogie** : `company_invoice_settings::validate_account` (`crates/kesh-api/src/routes/company_invoice_settings.rs:94-121`) ne vérifie **jamais** `postable` — `grep -n "postable" crates/kesh-api/src/routes/company_invoice_settings.rs` ne rend **aucune ligne**. Le réglage société, qui est le patron dont cette story se réclame, laisse donc délibérément passer un compte non imputable au moment du *réglage*, et ne le sanctionne qu'à la *validation de facture* — c'est là que D3-bis intervient.
 
+  📎 **Ce qu'est D3-bis, puisque ce document s'y appuie trois fois** *(décision de la story **16-1a**, rappelée ici pour que la spec se lise seule)* : à la validation d'une facture, le critère `postable` est **exempté** pour le compte égal au `default_revenue_account_id` de la société. Motif : un réglage société posé avant que le compte ne devienne non imputable ne doit pas bloquer toute validation de facture. C'est une clause de **grand-père**, pas une autorisation générale — d'où son non-report ici.
+
   ⚠️ **Une rédaction antérieure de cette décision imposait les quatre critères, `postable` compris. Elle créait un blocage silencieux sur un champ que l'utilisateur ne touche pas**, et le scénario est concret : un article porte un compte valide ; plus tard un administrateur rend ce compte non imputable par un flux sans aucun rapport (`accounts::update`) ; l'utilisateur renomme l'article ou change son prix ; `is_no_op_change` rend `false` puisque le nom a changé, l'`UPDATE` est tenté, et la validation **rejette en 400 à cause du compte** — que l'utilisateur n'a pas touché et qu'il ne peut débloquer qu'en vidant le champ au passage. C'est le symétrique exact du problème que D3-bis a été inventée pour résoudre côté société, réintroduit un cran plus tôt dans le cycle de vie. *(Relevé en passe 1 de `validate`.)*
 
   **Où le signal est-il rendu, alors ?** Là où 16-1 l'a déjà construit : au niveau de la ligne de facture, par le marqueur d'invalidité et le blocage (cf. **D4**). Un compte devenu inutilisable ne se découvre pas en éditant le catalogue — il se découvre au moment où l'on s'en sert.
+
+- **D9 — La validation ne se déclenche QUE si le compte CHANGE.** Sur l'`update`, les trois critères de **D3** ne s'appliquent que lorsque `changes.default_revenue_account_id != before.default_revenue_account_id`. Une valeur **inchangée** est laissée passer, quel que soit l'état devenu du compte.
+
+  ⚠️ **Sans cette décision, D3 ne fermait le piège qu'à moitié — et sur le déclencheur le moins fréquent.** Le scénario qui a fait retirer `postable` en passe 1 s'applique **mot pour mot** aux deux critères que D3 conserve, `active` et `account_type` : archiver un compte est une action d'administration **bien plus courante** que basculer `postable`, et rien n'inspecte les référents à l'archivage (`PUT /api/v1/accounts/{id}/archive`). L'utilisateur renomme un article, `is_no_op_change` rend `false`, l'`UPDATE` part, et la validation rejette sur un champ qu'il n'a pas touché.
+
+  **Et l'issue y est pire que pour `postable`** : un compte archivé est **absent des propositions** du sélecteur (`AccountAutocomplete.svelte:165-172` filtre sur `a.active`), donc l'utilisateur ne peut **ni conserver ni remplacer** la valeur. Seul `allowClear` le sort de l'impasse — en perdant l'imputation qu'il avait choisie. Renommer un article deviendrait impossible dès qu'un compte a été archivé ailleurs.
+
+  **Aggravant, et c'est ce qui rend la décision urgente** : le test E2E qu'exige **T6** (assigner un compte, l'archiver, monter une facture) **crée délibérément cet état**. Sans D9, ce test rendrait l'article non éditable, et le montage échouerait pour une raison sans rapport avec ce qu'il vise.
+
+  **Le critère est décidable et local** : comparer deux `Option<i64>`. Il ne demande aucune exemption, aucune liste, aucun cas particulier. *(Décision ajoutée en passe 3 de `validate`.)*
 
 - **D4 — Un compte devenu inutilisable est pré-rempli quand même, puis signalé par le marqueur de 16-1.** Si l'article référence un compte archivé, retypé ou devenu non imputable, `onProductSelect` recopie la valeur telle quelle ; le sélecteur de ligne l'affiche, le marque `markInvalid` et bloque l'enregistrement en nommant la ligne. **Motif** : c'est l'arbitrage rendu par Guy en 16-1b — *afficher + signaler + bloquer* — et la machinerie existe déjà (`isAccountUnusable`, `AccountAutocomplete markInvalid`, `allowClear`). L'alternative (ne pas pré-remplir, retomber en silence sur le défaut société) **cacherait** à l'utilisateur que la fiche produit est à corriger.
 
@@ -87,17 +101,19 @@ Ce n'est pas un manque à combler ici : c'est la sémantique voulue, énoncée p
 
 - **D7 — Aucune reprise rétroactive.** Arbitrage de kickoff. La migration est du **DDL pur** : aucun `UPDATE`, aucun `INSERT`. Les articles existants naissent à `NULL`, ce qui préserve strictement le comportement actuel.
 
-- **D8 — La frontière de la fenêtre d'upgrade RESTE à 34 : bumper `total` ET la fenêtre.** La nouvelle migration casse volontairement `upgrade_path_preserves_data` (`crates/kesh-db/tests/migrations_upgrade_path.rs:88-92`), dont l'assertion `assert_eq!(total, 57)` passe à **58**. La fenêtre s'écrit `total - 23`, ce qui donne aujourd'hui 34 migrations montées. **Laisser `- 23` avec `total = 58` déplacerait la frontière à 35** — le test cesserait de vérifier l'upgrade depuis l'état historique qu'il a été écrit pour couvrir, et ce glissement se répéterait à chaque migration. Elle passe donc à **`total - 24`**.
+- **D10 — Les écritures de journal sont HORS PÉRIMÈTRE, et c'est une exclusion, pas un oubli.** #144 demande le compte « proposé par défaut lors de l'ajout du produit sur **une facture/écriture** ». Cette story ne couvre que la facture. **Motif, identique à D6** : `JournalEntryForm.svelte` ne porte **aucun** sélecteur d'article — `ProductPicker` n'est importé que par `InvoiceForm` — donc il n'existe aucun geste « ajouter un produit à une écriture » à pré-remplir. Brancher le champ là où rien ne le déclenche produirait du code mort. **À rouvrir en story dédiée si un sélecteur d'article arrive un jour sur la saisie d'écriture.** *(Exclusion écrite en passe 3 : les deux Change Logs antérieurs affirmaient « les six critères de #144 sont couverts » alors que le troisième l'est à moitié.)*
+
+- **D8 — La frontière de la fenêtre d'upgrade RESTE à 34 : bumper `total` ET la fenêtre.** La nouvelle migration casse volontairement `upgrade_path_preserves_data` (`crates/kesh-db/tests/migrations_upgrade_path.rs:88-92`, l'assertion elle-même étant à `:89`), dont `assert_eq!(total, 57)` passe à **58**. La fenêtre s'écrit `total - 23`, ce qui donne aujourd'hui 34 migrations montées. **Laisser `- 23` avec `total = 58` déplacerait la frontière à 35** — le test cesserait de vérifier l'upgrade depuis l'état historique qu'il a été écrit pour couvrir, et ce glissement se répéterait à chaque migration. Elle passe donc à **`total - 24`**.
 
   **Motif** : la frontière 34 matérialise un état historique du schéma, pas une distance au présent. Une fenêtre qui rétrécit d'un cran à chaque migration finit par ne plus tester aucun upgrade réel — c'est la version lente du mode d'échec que le garde-fou **P6** existe pour attraper. L'assertion de montage (`:35-46`) énonce elle-même les deux branches de l'arbitrage ; celle-ci est tranchée ici plutôt que laissée au développeur. *(Décision ajoutée en passe 1 de `validate`, qui a relevé que l'AC exigeait un choix sans fournir de critère.)*
 
 ---
 
-## Règle de splitting préventif — évaluation, et arbitrage en attente
+## Règle de splitting préventif — évaluation et arbitrages
 
 *(Section ajoutée en passe 1 de `validate`, qui a relevé que le seuil n'avait jamais été évalué. Il aurait dû l'être **avant** de lancer `bmad-create-story`.)*
 
-Le premier critère de la § « Règle de splitting préventif » est **plus de 5 modules distincts**. Recompté à la granularité que 16-1a et 16-1b ont elles-mêmes utilisée pour justifier leur split, cette story en touche **sept** :
+Le premier critère de la § « Règle de splitting préventif » est **plus de 5 modules distincts**. Recompté à la granularité que 16-1a et 16-1b ont elles-mêmes utilisée pour justifier leur split, cette story en touche **huit** *(sept dans la rédaction d'origine : la passe 3 a établi que doc-sync compte comme module chez 16-1b, qui l'inscrit dans ses cinq)* :
 
 | # | Module | Nature de la touche |
 |---|---|---|
@@ -108,11 +124,12 @@ Le premier critère de la § « Règle de splitting préventif » est **plus de 
 | 5 | `crates/kesh-i18n/locales` | quelques clés × 4 locales |
 | 6 | `frontend` page catalogue + `features/products` | sélecteur + types + client API |
 | 7 | `frontend/components/invoices/InvoiceForm.svelte` | **une ligne** de pré-remplissage |
+| 8 | doc-sync — CHANGELOG, README, manuel LaTeX | compté comme module chez 16-1b |
 
-**Le seuil est franchi. Deux lectures s'opposent, et l'arbitrage appartient au Project Lead.**
+**Le seuil est franchi. Deux lectures s'opposaient, et l'arbitrage appartenait au Project Lead — il est rendu ci-dessous, puis reconduit en passe 3.**
 
 - **En faveur du split** : la règle est un seuil, pas une appréciation, et elle existe précisément parce que l'estimation « c'est petit » est le biais qu'elle corrige. 16-1 a été splittée sur ce même critère et s'en est bien portée.
-- **En faveur d'une dérogation** : le décompte est gonflé par des modules touchés d'**une seule ligne** (#4 et #7). Surtout, un split naturel « backend / frontend » séparerait la colonne de son **unique consommateur** — le pré-remplissage — et livrerait une sous-story dont rien ne lit la donnée, c'est-à-dire exactement le « code mort qui paraît fonctionner » que **D6** invoque pour exclure le compte de charge. La substance est ici : une colonne, un sélecteur, une ligne de recopie.
+- **En faveur d'une dérogation** : le décompte est gonflé par des modules touchés d'**une seule ligne** (#4 et #7) — **deux sur huit**, et non deux sur sept comme l'annonçait la rédaction d'origine. Surtout, un split naturel « backend / frontend » séparerait la colonne de son **unique consommateur** — le pré-remplissage — et livrerait une sous-story dont rien ne lit la donnée, c'est-à-dire exactement le « code mort qui paraît fonctionner » que **D6** invoque pour exclure le compte de charge. La substance est ici : une colonne, un sélecteur, une ligne de recopie.
 
 ### Dérogation règle de splitting — arbitrage rendu
 
@@ -122,13 +139,25 @@ Le premier critère de la § « Règle de splitting préventif » est **plus de 
 
 **Risque accepté** : si une passe `N+1` de `validate` remonte une sévérité **égale ou supérieure** à la passe `N`, le second critère de la règle se déclenche et l'arbitrage est **rouvert** — sans discussion. C'est le garde-fou qui rend cette dérogation tenable.
 
+#### Garde-fou déclenché en passe 3 — arbitrage reconduit
+
+**Le garde-fou a fonctionné : la passe 3 est remontée de `1 HIGH / 3 MED` à `5 HIGH / 6 MED`, et l'arbitrage a été rouvert.**
+
+**Guy, 2026-08-03 : DÉROGATION RECONDUITE.** La story reste unique.
+
+**Motif** : la passe 3 diagnostique elle-même ses findings comme des **résidus de remédiation** et des **preuves manquantes**, non comme des défauts de périmètre. Le finding le plus lourd — T6 comptant trois mutations quand AC10 en exige cinq — est un symptôme non propagé, que scinder le document ne corrigerait pas ; il le dupliquerait. Les trois HIGH sur la preuve (export CSV, `fetchAccounts(true)`, `#[serde(default)]`) désignent des **tests absents**, pas une story trop large.
+
+⚠️ **Cette reconduction consomme le garde-fou : il ne joue plus.** Si une passe 4 remonte encore, le signal ne sera plus écartable et le split devient l'issue par défaut. C'est le prix de la reconduction, et il est inscrit ici pour que la passe suivante n'ait pas à le redécouvrir.
+
+*(Le décompte de modules est par ailleurs corrigé de sept à **huit** ci-dessus : la passe 3 a établi que doc-sync compte comme module à la granularité de 16-1b. L'arithmétique qui portait la première dérogation — « deux sur sept » — devient « deux sur huit », et l'argument s'en trouve affaibli sans être renversé.)*
+
 ---
 
 ## Acceptance Criteria
 
 - **AC1 — Schéma** (D2). Migration ajoutant `products.default_revenue_account_id BIGINT NULL`, contrainte `fk_products_default_revenue_account` vers `accounts(id)` `ON DELETE RESTRICT`, et `INDEX idx_products_default_revenue_account`. **DDL pur** — la migration ne contient aucun statement d'écriture de données.
 
-- **AC2 — Entité et repository.** `Product`, `NewProduct` et `ProductUpdate` portent le champ `default_revenue_account_id: Option<i64>`. La constante `COLUMNS` (`repositories/products.rs:22-23`) l'inclut, ainsi que les `INSERT` et l'`UPDATE`.
+- **AC2 — Entité et repository.** `Product`, `NewProduct` et `ProductUpdate` portent le champ `default_revenue_account_id: Option<i64>`. **DEUX listes de colonnes écrites à la main, qui ne dérivent pas l'une de l'autre** : la constante `COLUMNS` (`repositories/products.rs:22-23`) **et** `FIND_BY_ID_SCOPED_SQL` (`:26`), seconde chaîne littérale indépendante alimentant **six** `query_as::<_, Product>` (`:168`, `:202`, `:275`, `:332`, `:374`, `:416`). Les deux l'incluent, ainsi que l'`INSERT` (`:146`) et l'`UPDATE` (`:311`). ⚠️ `Product` dérive `sqlx::FromRow` : un champ absent du `SELECT` produit un `ColumnNotFound` **à l'exécution**, pas à la compilation — donc **toutes** les routes produits en 500. *(La seconde liste manquait à la rédaction d'origine, qui se présentait pourtant comme l'inventaire exhaustif : relevé en passe 3.)*
 
   ⚠️ **DEUX helpers écrits À LA MAIN doivent être étendus, et les oublier produit deux défauts SILENCIEUX distincts.** Aucun des deux ne dérive de la struct : ils énumèrent les champs un par un, donc le compilateur ne dira rien.
 
@@ -137,17 +166,27 @@ Le premier critère de la § « Règle de splitting préventif » est **plus de 
 
   Chacun des deux vient avec son test : modifier le seul compte doit bumper la `version`, écrire l'audit, et l'audit doit montrer `before ≠ after` sur ce champ.
 
-- **AC3 — API.** `CreateProductRequest` et `UpdateProductRequest` acceptent `defaultRevenueAccountId` (camelCase, `Option<i64>`, `#[serde(default)]`) ; `ProductResponse` le restitue. Le compte est validé selon **D3** — **trois** critères, `postable` exclu ; un compte invalide rend **400** avec un code applicatif dédié et le motif du rejet, en réutilisant l'enum `RevenueAccountRejection` (`crates/kesh-db/src/errors.rs:14-27`) plutôt qu'en dupliquant ses variantes.
+- **AC3 — API.** `CreateProductRequest` et `UpdateProductRequest` acceptent `defaultRevenueAccountId` (camelCase, `Option<i64>`, `#[serde(default)]`) ; `ProductResponse` le restitue. Le compte est validé selon **D3** — **trois** critères, `postable` exclu ; un compte invalide rend **400** avec le code applicatif **`PRODUCT_REVENUE_ACCOUNT_INVALID`** — nommé ici pour qu'un test l'asserte au lieu de constater ce que l'implémentation vient d'inventer — et le motif du rejet, en réutilisant l'enum `RevenueAccountRejection` (`crates/kesh-db/src/errors.rs:14-27`) plutôt qu'en dupliquant ses variantes.
+
+  ⚠️ **Le message rendu exige un TROISIÈME sujet.** Le formateur de `crates/kesh-api/src/errors.rs:75-86` ne connaît que deux sujets : une **ligne de facture** (`Some(n)`) ou **« le compte de produit par défaut de la société »** (`None`). Une fiche produit n'est ni l'un ni l'autre : réutiliser tel quel ferait lire, à qui édite un article, *« le compte de produit par défaut de la société : le compte 3400 est archivé »* — un message qui désigne **un autre objet** et envoie corriger un réglage non touché. Ajouter une clé Fluent + fallback dans la famille `invoice-line-account-subject-*`, **côté `kesh-api`**, dans les 4 locales.
+
+  ⚠️ **`#[serde(default)]` n'est pas cosmétique** : sans lui, un `Option<T>` reste **obligatoire dans le JSON** en serde, et l'omission de la clé fait échouer la désérialisation — cassant **toute intégration API existante**, y compris celles qui ignorent le nouveau champ. Deux tests l'exigent en T6.
 
 - **AC4 — Fiche produit (frontend).** Le formulaire de `products/+page.svelte` porte un sélecteur de compte, alimenté par **`fetchAccounts(true)`** — le flag `includeArchived` est **obligatoire** : sans lui un compte archivé n'est plus résoluble et le champ **paraît vide** au lieu d'être signalé, piège qui a coûté une passe de revue à 16-1b et qui ne se manifeste que le jour où un compte est archivé. Props `requiredAccountType="Revenue"` et `allowClear`. À l'édition le champ est hydraté depuis la réponse serveur ; à la soumission il est **toujours** envoyé (valeur ou `null`), jamais omis — cf. **D5**. Le champ est **facultatif** : une fiche sans compte s'enregistre sans friction.
 
-- **AC5 — Pré-remplissage.** `onProductSelect` (`InvoiceForm.svelte:420-430`) pose `revenueAccountId: p.defaultRevenueAccountId ?? null`. **Le commentaire d'ancrage « la Story 16-2 y branchera » est remplacé** par la description du comportement livré. Le site `addFreeLine` (`:407-418`) **reste à `null`** — une ligne libre ne vient d'aucun article ; son commentaire d'ancrage est corrigé lui aussi, faute de quoi il annoncerait un travail déjà fait.
+- **AC5 — Pré-remplissage.** `onProductSelect` (`InvoiceForm.svelte:420-430`) pose `revenueAccountId: p.defaultRevenueAccountId ?? null`. **Le commentaire d'ancrage — littéralement `// AC9-bis — site 3/5. Idem : 16-2 y branchera le compte du produit.` — est remplacé** par la description du comportement livré. Le site `addFreeLine` (`:407-418`) **reste à `null`** — une ligne libre ne vient d'aucun article ; son commentaire d'ancrage est corrigé lui aussi, faute de quoi il annoncerait un travail déjà fait.
 
 - **AC6 — Un compte devenu inutilisable est signalé, pas caché** (D4). Une facture montée depuis un article dont le compte est archivé affiche le libellé, le marqueur d'invalidité, et refuse l'enregistrement en nommant la ligne. **Aucun code nouveau n'est attendu ici** : l'AC vérifie que le pré-remplissage passe bien par la machinerie de 16-1, et le test qui le prouve est le livrable.
 
 - **AC7 — Export CSV.** `serialize_products_csv` (`crates/kesh-api/src/exports/csv_tables.rs:364-397`) porte une liste de colonnes **codée en dur** ; elle inclut la nouvelle colonne, à sa position dans `COLUMNS`.
 
-- **AC8 — i18n.** Les libellés nouveaux existent dans les **4** locales (`crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl`), sous le préfixe `product-` **tant qu'ils sont consommés depuis la page catalogue**, qui vit hors du périmètre du lint. ⚠️ **Tout libellé qui finirait consommé depuis un composant partagé sous `src/lib/features/` doit porter un préfixe global** (`error`, `tooltip`, `common`, `mode`, `shortcut`, `demo`) — sans quoi `lint-i18n-ownership` échoue. Le passer **en prop** depuis la page évite la question ; c'est l'erreur exacte commise en 16-1b, où une clé a dû être renommée après un lint rouge. Détail en Dev Notes. ⚠️ Les locales vivent dans un **crate Rust** : le gate inclut donc `cargo test --workspace` même pour un changement perçu comme frontend.
+- **AC8 — i18n.** Les libellés **énumérés ici** existent dans les **4** locales — un critère portant sur un ensemble non énuméré n'est ni cochable ni réfutable :
+
+  1. l'**étiquette** du sélecteur sur la fiche produit (`product-form-…`) ;
+  2. son **texte d'aide** disant que laisser vide fait suivre le compte par défaut de la société ;
+  3. le **troisième sujet** du message de rejet exigé par AC3 (`invoice-line-account-subject-…`, côté `kesh-api`).
+
+  Tous (`crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl`), sous le préfixe `product-` **tant qu'ils sont consommés depuis la page catalogue**, qui vit hors du périmètre du lint. ⚠️ **Tout libellé qui finirait consommé depuis un composant partagé sous `src/lib/features/` doit porter un préfixe global** (`error`, `tooltip`, `common`, `mode`, `shortcut`, `demo`) — sans quoi `lint-i18n-ownership` échoue. Le passer **en prop** depuis la page évite la question ; c'est l'erreur exacte commise en 16-1b, où une clé a dû être renommée après un lint rouge. Détail en Dev Notes. ⚠️ Les locales vivent dans un **crate Rust** : le gate inclut donc `cargo test --workspace` même pour un changement perçu comme frontend.
 
 - **AC9 — Garde-fous de migration.** Les **quatre** obligations de la § « Migration breaking policy » sont tenues, chacune **recomptée à la source** :
   - **P5** — `docs/migrations-idempotence-audit.md` porte une ligne pour la nouvelle migration, et les compteurs sont **recomptés** : l'en-tête `## Table d'audit (N migrations)` **et** la ligne `Total` passent de **57** à **58**, la somme des trois compteurs de partition — `yes`, `tracked-by-sqlx`, `no` — égale ce total. *(Les trois compteurs de partition ne valent pas le total — les aligner dessus casserait l'invariant qu'ils servent à tenir.)*
@@ -156,7 +195,7 @@ Le premier critère de la § « Règle de splitting préventif » est **plus de 
   - **P1/P2** — `ADD COLUMN` nullable ⇒ **non-breaking** ⇒ **aucun** bump de `kesh_version_min_required`, donc aucun bump de version Cargo (P2-bis).
 
 - **AC10 — Discrimination prouvée par mutation.** Au moins **cinq** mutations exécutées et consignées au Dev Agent Record :
-  1. `onProductSelect` repose `revenueAccountId: null` au lieu du compte de l'article → le test de bout en bout du pré-remplissage doit rougir, **et lui seul**.
+  1. `onProductSelect` repose `revenueAccountId: null` au lieu du compte de l'article → **les tests du pré-remplissage** doivent rougir — l'unitaire **et** l'E2E, T6 exigeant les deux sur ce comportement — **et aucun autre cas**. *(Une rédaction antérieure exigeait « un seul test rouge », insatisfiable par construction : relevé en passe 3.)*
   2. La validation D3 est retirée du `create`/`update` produit → le test du compte invalide doit rougir.
   3. Le champ est retiré du **payload HTTP** envoyé par la fiche produit → seul un test qui traverse réellement HTTP peut l'attraper. *(C'est la mutation la plus instructive de 16-1b : ni Vitest ni les tests Rust ne voient une clé qui disparaît entre les deux.)*
   4. Le champ est retiré de **`is_no_op_change`** → le test « modifier le seul compte bumpe la `version` » doit rougir. Sans cette mutation, rien ne prouve que le court-circuit no-op a été étendu — et son échec est **muet** : l'API répond succès.
@@ -166,11 +205,15 @@ Le premier critère de la § « Règle de splitting préventif » est **plus de 
 
   **Un test attendu qui ne rougit pas invalide le montage** : le corriger avant d'aller plus loin.
 
-- **AC11 — Gate.** `scripts/test-fast.sh` complet **et** le gate frontend (`npm run check`, `lint-i18n-ownership`, `test:unit`, `build`) **et** l'E2E Playwright, sur l'**état final**, exit 0 exigé, non présumé d'un run antérieur.
+- **AC11 — Gate.** `scripts/test-fast.sh` complet **et** le gate frontend (`npm run check`, `lint-i18n-ownership`, `test:unit`, `build`) **et** l'E2E Playwright (`cd frontend && npm run test:e2e` ; **pré-requis** : MariaDB démarré, seed CI appliqué, et `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` sur Ubuntu 26.04+ — sans lui l'installation échoue en donnant l'impression que l'E2E n'est pas exécutable), sur l'**état final**, exit 0 exigé, non présumé d'un run antérieur.
 
   ⚠️ **Cette story touche `kesh-db`** (migration + repository) : la § « Test Locally First » → « Pendant une boucle de revue » **interdit le gate ciblé** ici, y compris entre deux passes de revue. Gate complet à chaque fois.
 
-- **AC12 — Documentation synchronisée.** Le **CHANGELOG** porte la fonctionnalité **et** l'avertissement aux clients d'API de **D5** (le `PUT` full-replace efface un `defaultRevenueAccountId` omis). La **feuille de route du `README`** est vérifiée : l'Epic 16 reste « 🚧 En cours » tant que #144 et #151 ne sont pas tous deux livrés, et la section « Fonctionnalités » ne doit pas annoncer comme acquis ce qui ne l'est pas. *(Critère ajouté en passe 1 de `validate` : l'obligation CHANGELOG ne découlait que d'une décision et d'une tâche mal étiquetée, donc d'aucun critère cochable — et la vérification README, que la story sœur 16-1b portait en AC18, avait disparu.)*
+- **AC12 — Documentation synchronisée.** Le **CHANGELOG** porte la fonctionnalité **et** l'avertissement aux clients d'API de **D5** (le `PUT` full-replace efface un `defaultRevenueAccountId` omis).
+
+  ⚠️ **Le manuel utilisateur promet DÉJÀ ce champ, et décrit un repli que cette story change.** `docs/manual/fr/user-manual.tex:553` documente « **Compte produit par défaut** : par exemple 3000 » **depuis la Story 11-0**, pour un code où il n'existe pas ; et `:583` décrit la chaîne de repli à **deux** maillons (ligne → société), que **AC5** fait passer à **trois** (ligne → **article** → société). Le manuel est donc à **corriger**, pas à compléter : dire que le champ est **facultatif**, décrire le pré-remplissage, et dire ce que signifie le laisser vide. **PDF régénéré (`make fr`) et commité.** *(Obligation reprise de 16-1b **AC17**, où elle était un critère cochable ; la reléguer en tâche conditionnelle « si le geste est visible » invite à répondre non sur un geste qui l'est par construction.)*
+
+  La **feuille de route du `README`** est vérifiée : l'Epic 16 reste « 🚧 En cours » tant que #144 et #151 ne sont pas tous deux livrés, et la section « Fonctionnalités » ne doit pas annoncer comme acquis ce qui ne l'est pas. *(Critère ajouté en passe 1 de `validate` : l'obligation CHANGELOG ne découlait que d'une décision et d'une tâche mal étiquetée, donc d'aucun critère cochable — et la vérification README, que la story sœur 16-1b portait en AC18, avait disparu.)*
 
 ---
 
@@ -179,7 +222,7 @@ Le premier critère de la § « Règle de splitting préventif » est **plus de 
 - [ ] **T1 — Migration et garde-fous** (AC1, AC9)
   - [ ] `crates/kesh-db/migrations/<timestamp>_products_default_revenue_account.sql` — `ADD COLUMN` + FK `ON DELETE RESTRICT` + index. DDL pur.
   - [ ] Ligne au tableau de `docs/migrations-idempotence-audit.md`, **compteurs recomptés** (57 → 58 aux deux sites, partition cohérente).
-  - [ ] `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` — inspecter **chaque** site ; porter `assert_eq!(total, 57)` à 58 et **écrire** l'arbitrage de fenêtre.
+  - [ ] `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` — inspecter **chaque** site ; porter `assert_eq!(total, 57)` à **58** **ET** la fenêtre `total - 23` à **`total - 24`**, conformément à **D8**. ⚠️ Bumper `total` seul déplacerait la frontière de 34 à 35, **silencieusement** : le test repasse au vert et la couverture d'upgrade rétrécit d'un cran.
   - [ ] Exécuter `every_data_backfill_migration_is_triaged` pour **constater** que le DDL pur ne déclenche rien.
 - [ ] **T2 — Backend : entité, repository, API** (AC2, AC3)
   - [ ] Champ dans `Product` / `NewProduct` / `ProductUpdate`, `COLUMNS`, `INSERT`, `UPDATE`.
@@ -188,23 +231,29 @@ Le premier critère de la § « Règle de splitting préventif » est **plus de 
   - [ ] Validation D3 sur `create` et `update`, en **réutilisant** `RevenueAccountRejection` — ne pas dupliquer l'enum.
   - [ ] DTO d'API + `ProductResponse`, contrat camelCase.
 - [ ] **T3 — Frontend : fiche produit** (AC4, AC8)
-  - [ ] Sélecteur de compte dans le formulaire, hydraté à l'édition, **toujours** envoyé à la soumission.
+  - [ ] Sélecteur de compte dans le formulaire, hydraté à l'édition, **toujours** envoyé à la soumission, avec un `<label for>` et sa clé i18n — **les quatre champs existants en portent un** (`+page.svelte:586`, `:598`, `:609`, `:622`), ce serait le seul sans.
+  - [ ] ⚠️ **Prouver le flag `includeArchived`, ne pas se contenter de l'écrire.** 16-1b a **mesuré** que l'AC qui se présentait comme le garde-fou de ce piège n'en était pas un : le mock rend la liste complète quel que soit l'argument. **Seule** une assertion `expect(fetchAccounts).toHaveBeenCalledWith(true)` attrape la mutation `fetchAccounts(true)` → `fetchAccounts()`. Le piège s'est **rejoué** en revue de code de 16-1b, fermé seulement par un E2E archivant un compte après coup.
   - [ ] Types TS, client API, clés i18n dans les **4** locales.
 - [ ] **T4 — Frontend : pré-remplissage** (AC5)
   - [ ] `onProductSelect` pose le compte de l'article ; `addFreeLine` reste à `null`.
-  - [ ] **Remplacer les deux commentaires d'ancrage** « la Story 16-2 y branchera » (`:413-414` et `:426`) par la description du comportement livré.
+  - [ ] **Mettre à jour le doc-comment de `ProductPicker.svelte:1-4`**, qui énumère le snapshot recopié (« name/unitPrice/vatRate ») et devient faux dès que le compte s'y ajoute. *(Site trouvé par le grep de propagation, pas par les lentilles.)*
+  - [ ] **Remplacer les deux commentaires d'ancrage** — les chercher sur `16-2 y branchera`, et non sur « la Story 16-2 y branchera » qui n'existe pas tel quel (`:413-414` et `:426`) par la description du comportement livré.
 - [ ] **T5 — Export CSV** (AC7)
-  - [ ] Étendre `serialize_products_csv`, en-tête **et** valeurs.
+  - [ ] Étendre `serialize_products_csv`, en-tête **et** valeurs — **deux listes écrites à la main que rien ne relie** (`:368-379` et `:381-392`) : un décalage entre elles rend le CSV **silencieusement faux sur toutes les colonnes suivantes**.
+  - [ ] **Étendre le test d'export** `crates/kesh-api/tests/exports_global_e2e.rs` : sa fixture porte aujourd'hui `("products.csv", 0)` — **zéro ligne de produit**, donc l'en-tête n'est observé par rien (`grep -rnF "unit_price,vat_rate" crates/` → aucune sortie). Semer au moins un produit **avec** un compte, et asserter en-tête **et** valeur. *(Complément qu'exigeait 16-1a en AC14.)*
 - [ ] **T6 — Tests et preuve** (AC6, AC10)
-  - [ ] Tests d'intégration `kesh-db` : le champ persiste, la validation rejette, le no-op reste no-op.
+  - [ ] Tests d'intégration `kesh-db` : le champ **persiste et se relit** ; **modifier le SEUL compte bumpe la `version` et écrit l'audit** (test de la mutation 4) ; **l'audit montre `before ≠ after` sur le compte** (test de la mutation 5) ; une modification qui ne change rien reste un no-op.
+  - [ ] **Tests au niveau de la ROUTE, pas du repository** : la validation **D3** vit dans `crates/kesh-api/src/routes/products.rs` et rend un **400**. Un test d'intégration `kesh-db` ne l'exerce pas — et la **mutation 2 ne rougirait pas**. Y placer le rejet d'un compte inactif, d'un compte non-`Revenue`, et le scoping multi-tenant.
+  - [ ] **Non-régression du contrat HTTP** (AC3) : deux tests — payload **sans la clé** `defaultRevenueAccountId`, et payload avec `"defaultRevenueAccountId": null` — les deux valent `NULL` et n'échouent jamais en 400. Sans `#[serde(default)]`, l'omission casse **toute intégration API existante**, y compris celles qui ignorent le nouveau champ. *(Exigence reprise de 16-1a AC6.)*
+  - [ ] **D9** : modifier le nom d'un article dont le compte a été **archivé entre-temps** doit réussir. C'est le test qui prouve que la validation ne se déclenche que sur changement.
   - [ ] Test unitaire frontend du pré-remplissage.
   - [ ] **E2E** (suffixe `.spec.ts` **obligatoire**) : parcours « fiche produit avec compte → facture depuis catalogue → la ligne porte le compte », **plus** le cas AC6 — assigner un compte, l'**archiver ensuite**, monter une facture depuis l'article, constater le marqueur et le refus d'enregistrement.
   - [ ] **Scoping multi-tenant** : un test refuse un compte appartenant à une **autre** société (`UnknownOrCrossCompany`). L'enum le couvre, mais rien ne le prouve tant qu'aucun test ne l'exerce.
-  - [ ] Les **trois mutations** d'AC10, exécutées, consignées avec leur sortie, fichiers restaurés à l'identique.
+  - [ ] Les **cinq** mutations d'AC10, exécutées, consignées avec leur sortie, fichiers restaurés à l'identique.
 - [ ] **T7 — Documentation** (AC12)
   - [ ] CHANGELOG : la fonctionnalité **et** l'avertissement `PUT` full-replace de D5.
   - [ ] `README.md` — feuille de route et section « Fonctionnalités » vérifiées (même si la conclusion est « rien à changer »).
-  - [ ] Manuel utilisateur si le geste est visible côté fiduciaire.
+  - [ ] **Manuel utilisateur** (`docs/manual/fr/user-manual.tex`) : corriger `:553` (champ **facultatif**) et `:583` (repli à trois maillons), décrire le pré-remplissage. **`make fr` puis commiter les PDF.** Ce n'est pas conditionnel — cf. AC12.
 - [ ] **T8 — Gate complet** (AC11) — backend + frontend + E2E, état final, exit 0, **verdict lu dans le log**.
 
 ---
@@ -283,7 +332,7 @@ La page catalogue vit dans `src/routes/(app)/products/`, **hors du périmètre d
 
 **Deux affirmations d'un rapport d'exploration ont été réfutées avant d'entrer dans la spec** : un garde-fou `assert_eq!(total, 55)` cité dans `migrations_upgrade_path.rs` — inexistant (`grep` sans sortie), la valeur réelle étant **57** à `:88-89` ; et le décompte de migrations, recompté à **57** — sur les **deux** sites qui portent le total (l'en-tête `## Table d'audit (N migrations)` et la ligne `Total`), la somme des **trois** compteurs de partition valant ce total sans qu'aucun ne l'égale individuellement. *(Une rédaction antérieure disait « recompté aux trois sites », ce qui rejouait mot pour mot la règle fausse que la § P5 de `CLAUDE.md` raconte avoir dû corriger deux fois. Relevé en passe 1 de `validate`.)* La discipline de la § « Propagation post-patch » s'applique aux rapports d'agents comme au reste : une ancre fausse coûte une passe de revue entière.
 
-**Statut : `ready-for-dev`, non validée.** La boucle `bmad-create-story validate` n'a pas encore tourné.
+**Statut à la création : `ready-for-dev`, non validée** — la boucle `validate` n'avait pas encore tourné. *(Elle a tourné depuis : voir les passes ci-dessous. Le statut courant est en tête de document.)*
 
 ### Passe 1 de `bmad-create-story validate`
 
@@ -359,4 +408,26 @@ La page catalogue vit dans `src/routes/(app)/products/`, **hors du périmètre d
 
 **Trend** : `1 CRIT / 3 HIGH / 4 MED / 4 LOW` → `0 / 1 HIGH / 3 MED / 2 LOW` → **`0 / 5 HIGH / 6 MED / 5 LOW`**.
 
-**Statut : findings consignés, patches SUSPENDUS, arbitrage de splitting ROUVERT.**
+**Statut : arbitrage rouvert puis reconduit ; les 16 findings sont appliqués — cf. la section de remédiation ci-dessous.**
+
+#### Remédiation de la passe 3 — arbitrage reconduit, 16 findings appliqués
+
+**Guy, 2026-08-03 : DÉROGATION RECONDUITE, patches appliqués.** Les 16 findings de la passe 3 sont traités ; le détail des décisions nouvelles est ci-dessous, celui des corrections ponctuelles dans le corps du document.
+
+**Deux décisions nouvelles, et la première est la plus importante de la story.**
+
+**D9 — la validation ne se déclenche que si le compte CHANGE.** C'était le trou que D3 laissait ouvert : le raisonnement qui avait fait retirer `postable` en passe 1 valait **mot pour mot** pour `active` et `account_type`, et l'archivage d'un compte est bien plus fréquent qu'un basculement de `postable`. Sans D9, renommer un article devenait impossible dès qu'un compte avait été archivé ailleurs — et sans issue, le compte archivé étant absent des propositions du sélecteur. Le critère retenu est local et décidable : comparer deux `Option<i64>`.
+
+**D10 — les écritures de journal sont exclues, explicitement.** #144 demande le pré-remplissage « sur une facture **/ écriture** » ; les deux Change Logs antérieurs affirmaient « les six critères sont couverts » alors que le troisième l'était à moitié. Le motif d'exclusion est celui de D6 — `ProductPicker` n'est importé que par `InvoiceForm`, il n'existe aucun geste à pré-remplir sur la saisie d'écriture — mais il n'était pas écrit. Une exclusion tacite n'est pas une décision.
+
+**Trois manques de preuve comblés**, chacun appuyé sur un précédent que le dépôt a payé : le test d'export CSV est étendu avec un produit **portant** un compte (sa fixture porte `("products.csv", 0)`, donc l'en-tête n'était observé par rien) ; le flag `includeArchived` exige désormais l'assertion `toHaveBeenCalledWith(true)`, seule à attraper la mutation — 16-1b l'a **mesuré**, son AC qui s'en disait le garde-fou n'en était pas un ; et `#[serde(default)]` vient avec ses deux tests de non-régression du contrat HTTP.
+
+**Le manuel utilisateur passe de puce conditionnelle à obligation d'AC12.** Il promet ce champ **depuis la Story 11-0** pour un code où il n'existe pas, et décrit un repli à deux maillons que AC5 fait passer à trois. Il est donc à **corriger**, pas à compléter.
+
+**Les corrections de propagation** : T6 comptait trois mutations quand AC10 en exige cinq — la récidive littérale du CRITICAL de la passe 1 — et nomme désormais les deux tests des helpers ; les tests de validation passent au niveau de la **route**, faute de quoi la mutation 2 ne rougirait pas ; T1 porte la valeur `total - 24` tranchée par D8, au lieu de laisser le développeur bumper `total` seul et déplacer la frontière **en silence** ; AC2 déclare la **seconde** liste de colonnes écrite à la main, `FIND_BY_ID_SCOPED_SQL`, dont l'oubli met toutes les routes produits en 500 ; AC3 nomme le code applicatif et exige un **troisième sujet** i18n, sans quoi l'utilisateur d'une fiche produit lirait un message désignant le réglage société ; AC8 énumère enfin les trois libellés à traduire ; AC10.1 n'exige plus « un seul test rouge », insatisfiable puisque T6 en demande deux sur ce comportement ; et AC11 porte le pré-requis `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE`.
+
+**Les LOW** : le décompte de modules passe de sept à **huit** — doc-sync compte comme module chez 16-1b — ce qui fait de l'argument « deux touchés d'une ligne » un **deux sur huit** et l'affaiblit sans le renverser ; `D3-bis` est désormais énoncée dans le document plutôt qu'invoquée trois fois sans être définie ; « miroir strict » est corrigé — le réglage société n'a **aucun** index, celui-ci est exigé par InnoDB sur la colonne enfant d'une FK ; le commentaire d'ancrage est cité au caractère près, un `grep -F` sur l'ancienne formulation ne rendant rien ; le doc-comment de `ProductPicker` entre au périmètre de T4 ; et le `Status` du document dit enfin l'état réel — il annonçait `ready-for-dev` pendant que le Change Log se déclarait non convergé.
+
+⚠️ **Le garde-fou de la dérogation est consommé.** Il s'est déclenché une fois et a été reconduit une fois. Si la **passe 4** remonte encore en sévérité, le signal ne sera plus écartable et le split devient l'issue par défaut.
+
+**Prochaine : passe 4**, modèle différent d'Opus (rotation → Sonnet), contexte frais.
