@@ -1078,6 +1078,17 @@ async fn full_import_replays_role_and_postable_when_both_columns_absent(pool: My
         Some("Receivable"),
         "le rejeu doit réattribuer le rôle de créance au compte 1100"
     );
+    // Second rôle asserté, et ce n'est pas de la redondance : `2979` est le
+    // maillon d'une CHAÎNE. Le dernier statement de l'extrait rend non imputable
+    // « tout compte portant le rôle `CurrentYearResult` » — rôle que le neuvième
+    // `UPDATE` vient de poser. Si ce neuvième régressait, le dernier ne trouverait
+    // plus rien et l'assertion sur `2979` non imputable tomberait sans dire
+    // pourquoi. L'asserter ici nomme le maillon rompu.
+    assert_eq!(
+        account_role(&pool, "2979").await.as_deref(),
+        Some("CurrentYearResult"),
+        "le rôle dont dépend le dernier statement de l'extrait doit être reposé"
+    );
     assert!(
         !account_postable(&pool, "2979").await,
         "le compte de résultat de l'exercice doit être rendu NON imputable par le rejeu"
@@ -1163,7 +1174,11 @@ async fn full_import_replays_when_only_one_sentinel_is_absent(pool: MySqlPool) {
         .iter()
         .map(|v| v.as_str().unwrap())
         .collect();
-    assert_eq!(missing, vec!["accounts.postable"]);
+    assert_eq!(
+        missing,
+        vec!["accounts.postable"],
+        "UNE seule sentinelle manque — c'est tout l'enjeu du OU"
+    );
 
     assert!(
         !account_postable(&pool, "2979").await,

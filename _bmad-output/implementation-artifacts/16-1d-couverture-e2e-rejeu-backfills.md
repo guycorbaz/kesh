@@ -359,3 +359,31 @@ Et la colonne est `NOT NULL DEFAULT TRUE` (`:77`) : retirée du manifeste, elle 
 **Décision de process prise pendant cette passe** (arbitrage de Guy, codifié dans `CLAUDE.md` § « Test Locally First » → « Pendant une boucle de revue ») : entre les passes d'une boucle de revue, gate **ciblé** (`fmt` + `clippy` workspace + `nextest -E 'binary(...)'`) ; gate **complet** au push, à la déclaration `done` et au dernier commit de la boucle. Deux réserves : ne jamais écrire « gate vert, N/N » pour un run ciblé, et gate complet obligatoire dès qu'un patch touche `kesh-db`. Le gate complet ci-dessus a été lancé avant cet arbitrage ; la mutation 6 est le premier run ciblé de la nouvelle règle — 50 s au lieu de 50 min.
 
 **Verdict de la boucle : NON CONVERGÉE.** 3 MEDIUM > `LOW` → une passe 2 est requise par la § « Review Iteration Rule », avec un modèle différent (Haiku), contexte frais, sur un diff **aplati** — la § « Haiku-specific guardrails » l'exige dès la passe 2, et tout `CRITICAL`/`HIGH` affirmant l'absence d'un code attendu devra être vérifié par `grep -nF` avant d'être traité comme réel.
+
+### Passe 2 de `bmad-code-review` — **BOUCLE CONVERGÉE**
+
+**2026-08-03 — Haiku, trois lentilles, contexte frais, sur un diff APLATI** (`f2b2fe0d..HEAD`) comme l'exige la § « Haiku-specific guardrails » de `CLAUDE.md` dès la passe 2. **8 findings bruts → 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW.** Critère d'arrêt de la § « Review Iteration Rule » atteint ; plafond de 8 passes non approché.
+
+**EdgeCaseHunter et AcceptanceAuditor rendent chacun 0 finding**, avec vérification énumérée. L'AcceptanceAuditor produit une table de couverture des 23 exigences d'AC-D1 à AC-D4, toutes conformes, et confirme que la mutation 6 de la passe 1 prouve bien l'assertion qu'elle prétend prouver — l'ancre `:1094` correspond au code livré.
+
+**Le BlindHunter annonçait 1 HIGH et 4 MEDIUM. Quatre sont réfutés par grep ground-truth**, et c'est exactement le cas pathologique que la § « Haiku-specific guardrails » décrit :
+
+| Finding annoncé | Vérification | Verdict |
+|---|---|---|
+| **HIGH** — `.unwrap()` sur `missing_sentinels` « panique avec un message vide » | `Option::unwrap()` panique avec son message standard **et** le `file:line`. Un test qui panique **échoue** — c'est le comportement voulu, pas un signal avalé | **réfuté**, et sévérité inflationniste |
+| **MED** — C1 n'asserte pas que `strip_column` a bien retiré la colonne | `grep -n -A18 "fn strip_column"` → `assert_eq!(cols.len(), before - 1, …)` : **le helper l'asserte lui-même**. Le demander à chaque site d'appel serait redondant | **réfuté** |
+| **MED** — idem pour les trois `strip_column` de C5 | même helper, même assertion | **réfuté** |
+| **MED** — `rows_affected > 0` en C2 trop lâche : « le backfill dégénère et oublie les comptes titres » | `grep -nF "account_postable(&pool, TITLE_ACCOUNT)"` → **deux occurrences, `:1065` et `:1095`**. Le scénario décrit est **précisément** celui que l'assertion ajoutée en passe 1 attrape, et que la mutation 6 a prouvé discriminant. La lentille a de plus attribué la détection à C2-bis et au compte `2979` — deux erreurs | **réfuté** |
+| **MED** — l'assertion `\|\|` de C1 est trop lâche | Décision délibérée, établie **par la mutation 1**, documentée sur huit lignes à l'endroit même du code, et re-validée par deux lentilles de la passe 1 | **écarté** — re-signalement d'une décision documentée |
+
+**Les deux LOW sont réels et appliqués.** Le premier est cosmétique : `assert_eq!(missing, vec!["accounts.postable"])` en C2-bis était la seule assertion du motif sans message d'échec.
+
+**Le second a plus de valeur que sa sévérité ne le dit** : la lentille observait que C2 n'assertait qu'un seul rôle (`1100`) sur la dizaine que le backfill repose. L'objection générale ne justifiait pas d'asserter les dix — mais elle en désignait un qui compte. `2979` est le **maillon d'une chaîne** : le dernier statement de l'extrait rend non imputable « tout compte portant le rôle `CurrentYearResult` », rôle que le neuvième `UPDATE` vient de poser, et le fichier d'extrait porte l'avertissement « ORDRE À PRÉSERVER » pour cette raison précise. Si le neuvième régressait, le dernier ne trouverait plus rien et l'assertion sur `2979` non imputable tomberait **sans dire pourquoi**. Le rôle est désormais asserté explicitement : le maillon rompu est nommé.
+
+**Gate ciblé** — premier usage de la règle codifiée cette session : `fmt --check` OK, `clippy --workspace --all-targets -D warnings` OK, `nextest -E 'binary(admin_full_import_e2e)'` → **16/16 passed**, 70 s. Aucun fichier `kesh-db` touché, le ciblage est donc autorisé ; le gate **complet** sera repassé avant le push, conformément à la réserve de la règle.
+
+**Trend de la boucle** : `3 MED / 6 LOW` → **`0 / 0 / 0 / 2 LOW`**. Rotation Sonnet → Haiku (Opus ayant spécifié et implémenté la story, il est exclu des deux passes).
+
+**Fil rouge des deux passes** : la passe 1 a trouvé un défaut de couverture réel — un `UPDATE` entier invérifié — et l'a corrigé **avec la mutation qui le prouve**. La passe 2 n'a rien trouvé au-dessus de `LOW`, et ses quatre findings les plus graves étaient des artefacts d'indexation ou des re-signalements de décisions documentées. Le seul apport substantiel de la passe 2 est venu d'une objection **mal étayée mais bien dirigée** : « un seul rôle asserté » était trop général pour être un finding, mais désignait un maillon qui méritait de l'être.
+
+**Statut : revue convergée.**
