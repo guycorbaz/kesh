@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev
+review
 
 ## Story
 
@@ -117,29 +117,29 @@ Le test de bout en bout est **indispensable et non substituable** : le défaut n
 
 ## Tasks / Subtasks
 
-- [ ] **T-D1 — Fixture métier et helpers de montage** (AC-D1, AC-D2)
-  - [ ] Helper de montage d'une société complète : plan comptable via `bulk_create_from_chart`, contact, produit.
-  - [ ] Helper de création puis **validation** d'une facture, produisant son écriture comptable.
-  - [ ] Helper `strip_column(manifest, data, table, column)` sur le couple `(Value, BTreeMap<String, Vec<u8>>)` rendu par `unzip` — geste partagé par C1, C2, C2-bis, C5.
-- [ ] **T-D2 — Tests de bout en bout** (AC-D1)
-  - [ ] Les **6** cas E2E C1, C1-bis, C2, C2-bis, C3, C5, en réutilisant les helpers de **T-D1** et le harnais existant `spawn_app` / `export_backup` / `unzip` / `rezip` / `post_import`. **Ne pas réécrire les helpers de T-D1.**
-  - [ ] *(**C4 n'est PAS à écrire ici** — le test de transactionnalité appartient à **16-1c, T5**. Sa ligne au tableau d'AC-D1 et sa note de montage ne sont conservées que pour expliquer pourquoi cette story porte **six** cas et non sept.)*
-  - [ ] Note de montage « ce que ce test discrimine » sur **tous** les cas ; en particulier les pièges nommés de C1, C3 et C5 *(celui de C4 est informatif, cf. ci-dessus)*.
-  - [ ] Assertions sur le rapport de rejeu : `backfills_replayed` relu dans `audit_log`, et `outcome` / `rows_affected` de la valeur de retour — dont **un cas où `outcome` vaut `Skipped`** (C3), sans quoi ce troisième état ne serait vérifié nulle part.
+- [x] **T-D1 — Fixture métier et helpers de montage** (AC-D1, AC-D2)
+  - [x] Helper de montage d'une société complète : plan comptable via `bulk_create_from_chart`, contact, produit.
+  - [x] Helper de création puis **validation** d'une facture, produisant son écriture comptable.
+  - [x] Helper `strip_column(manifest, data, table, column)` sur le couple `(Value, BTreeMap<String, Vec<u8>>)` rendu par `unzip` — geste partagé par C1, C2, C2-bis, C5.
+- [x] **T-D2 — Tests de bout en bout** (AC-D1)
+  - [x] Les **6** cas E2E C1, C1-bis, C2, C2-bis, C3, C5, en réutilisant les helpers de **T-D1** et le harnais existant `spawn_app` / `export_backup` / `unzip` / `rezip` / `post_import`. **Ne pas réécrire les helpers de T-D1.**
+  - [x] *(**C4 n'est PAS à écrire ici** — le test de transactionnalité appartient à **16-1c, T5**. Sa ligne au tableau d'AC-D1 et sa note de montage ne sont conservées que pour expliquer pourquoi cette story porte **six** cas et non sept.)*
+  - [x] Note de montage « ce que ce test discrimine » sur **tous** les cas ; en particulier les pièges nommés de C1, C3 et C5 *(celui de C4 est informatif, cf. ci-dessus)*.
+  - [x] Assertions sur le rapport de rejeu : `backfills_replayed` relu dans `audit_log`, et `outcome` / `rows_affected` de la valeur de retour — dont **un cas où `outcome` vaut `Skipped`** (C3), sans quoi ce troisième état ne serait vérifié nulle part.
 
     ⚠️ **Les deux côtés n'ont pas la même représentation, et c'est délibéré.** Côté **valeur de retour**, `outcome` est l'enum `ReplayOutcome` — comparer à `ReplayOutcome::Skipped`. Côté **`audit_log`**, le JSON porte le **code d'archive stable** rendu par `ReplayOutcome::code()` : `"SKIPPED"`, `"REPLAYED_UNCONDITIONAL"`, `"REPLAYED_SENTINELS_ABSENT"`, plus une clé `missing_sentinels` (tableau, vide hors classe B déclenchée). Ne **pas** asserter un `format!("{:?}")` de l'enum : c'était la rédaction d'origine de 16-1c, corrigée en passe 1 de sa revue de code — une chaîne de debug Rust dans une archive relue des années plus tard dérive au premier renommage de variant. Les codes sont figés par le test `replay_outcome_codes_are_stable` de `kesh-db`.
 
   ⚠️ **Chaque cas asserte l'entrée QU'IL discrimine, retrouvée par sa `version`** — jamais la longueur du vecteur, jamais son ordre. Sans cette borne, deux mutations font varier le rapport de cas annoncés **verts** : la mutation 1 bascule l'entrée `20260729000001` en `Skipped` dans C3, et la mutation 5 réduit le vecteur à un élément, observé par C2, C2-bis, C3 et C5. *(Le contrat du rapport est posé par 16-1c, AC-C7 ; cette story l'exerce.)*
-- [ ] **T-D3 — Preuve par mutation** (AC-D3)
-  - [ ] Classe A rendue conditionnelle (sentinelle `(invoice_lines, revenue_account_id)`) → **C1-bis** doit rougir, **C1** rester vert.
-  - [ ] Sentinelles en ET au lieu de OU → **C2-bis** doit rougir.
-  - [ ] Classe B rendue inconditionnelle → **C3** doit rougir.
-  - [ ] Registre parcouru en ordre décroissant → **C5** doit rougir.
-  - [ ] Registre vidé de l'entrée `20260729000001` → **C1 et C1-bis** doivent rougir *(prouve la non-vacuité du cas nominal, qui sans cela pourrait passer sur un ensemble vide — les deux tombent, l'entrée retirée étant la seule à toucher `invoice_lines`)*.
-  - [ ] Consigner les cinq résultats dans le Dev Agent Record. **Un test attendu qui ne rougit pas invalide le montage** : le corriger avant d'aller plus loin.
-- [ ] **T-D4 — Gate et contrôle de périmètre** (AC-D3, AC-D4)
-  - [ ] **AC-D4** : `git diff --stat` ne montre **aucun** fichier sous `crates/kesh-db/src/`, `crates/kesh-api/src/`, `frontend/` ni `crates/kesh-db/migrations/`. Si l'écriture d'un test exige une modification de production, c'est que 16-1c est incomplète — **la corriger là-bas**, pas ici.
-  - [ ] `scripts/test-fast.sh` complet (fmt + clippy `-D warnings` + nextest workspace) sur l'**état final**, exit 0 exigé, non présumé d'un run antérieur. `npm run check` inutile — aucun fichier frontend touché.
+- [x] **T-D3 — Preuve par mutation** (AC-D3)
+  - [x] Classe A rendue conditionnelle (sentinelle `(invoice_lines, revenue_account_id)`) → **C1-bis** doit rougir, **C1** rester vert.
+  - [x] Sentinelles en ET au lieu de OU → **C2-bis** doit rougir.
+  - [x] Classe B rendue inconditionnelle → **C3** doit rougir.
+  - [x] Registre parcouru en ordre décroissant → **C5** doit rougir.
+  - [x] Registre vidé de l'entrée `20260729000001` → **C1 et C1-bis** doivent rougir *(prouve la non-vacuité du cas nominal, qui sans cela pourrait passer sur un ensemble vide — les deux tombent, l'entrée retirée étant la seule à toucher `invoice_lines`)*.
+  - [x] Consigner les cinq résultats dans le Dev Agent Record. **Un test attendu qui ne rougit pas invalide le montage** : le corriger avant d'aller plus loin.
+- [x] **T-D4 — Gate et contrôle de périmètre** (AC-D3, AC-D4)
+  - [x] **AC-D4** : `git diff --stat` ne montre **aucun** fichier sous `crates/kesh-db/src/`, `crates/kesh-api/src/`, `frontend/` ni `crates/kesh-db/migrations/`. Si l'écriture d'un test exige une modification de production, c'est que 16-1c est incomplète — **la corriger là-bas**, pas ici.
+  - [x] `scripts/test-fast.sh` complet (fmt + clippy `-D warnings` + nextest workspace) sur l'**état final**, exit 0 exigé, non présumé d'un run antérieur. `npm run check` inutile — aucun fichier frontend touché.
 
 ---
 
@@ -174,11 +174,44 @@ Les notes de montage de **C1, C3, C4 et C5** énoncent chacune un piège qui ren
 
 ### Agent Model Used
 
+**Claude Opus 5 (1M context)** — `bmad-dev-story`, 2026-08-02.
+
 ### Debug Log References
+
+**Gate complet VERT sur l'état final, DB `kesh_gate` : `exit 0`, 2102/2102, 4 skipped, 3530 s (59 min)** — `fmt` + `clippy -D warnings` dans le même run. Verdict lu **dans le log**, jamais dans le code de retour du bloc englobant. Le total passe de 2096 à 2102, soit **exactement +6** : le décompte concorde avec les six cas exigés par T-D2. *(Un compte de tests n'est un indicateur de couverture que si sa composition est vérifiée — l'enseignement du CRITICAL de la passe 1 de revue de 16-1c.)*
+
+**Les cinq mutations de T-D3, exécutées, avec leur sortie.** Chaque mutation porte sur `crates/kesh-db/src/post_restore.rs` (fichier de production **restauré à l'identique** après chaque essai — `git diff` vide, vérifié).
+
+| # | Mutation | Attendu | Obtenu |
+|---|---|---|---|
+| 1 | classe A rendue **conditionnelle** (sentinelle `(invoice_lines, revenue_account_id)`) | C1-bis rouge, **C1 vert** | ✅ après correction du montage de C1 — cf. ci-dessous |
+| 2 | sentinelles en **ET** au lieu de OU | C2-bis rouge, C2 vert | ✅ C2-bis `FAILED`, C2 `ok` |
+| 3 | classe B rendue **inconditionnelle** | C3 rouge | ✅ C3 `FAILED` |
+| 4 | registre parcouru **à l'envers** | C5 rouge | ✅ C5 `FAILED` |
+| 5 | registre **vidé** de `20260729000001` | C1 **et** C1-bis rouges | ✅ les deux `FAILED`, et C3 reste `ok` (contrôle négatif) |
+
+⚠️ **La mutation 1 a corrigé un montage, elle n'a pas seulement constaté une couleur — et c'est le fait marquant de cette story.** Au premier essai, elle faisait rougir **C1 et C1-bis**, là où la spec prédit « C1-bis rouge, C1 vert ». La cause n'était pas dans le code de production mais dans **C1**, qui assertait `outcome == "REPLAYED_UNCONDITIONAL"` : il épinglait donc la **classe déclarée**, rôle que la spec assigne à **C1-bis** et à lui seul. Les deux cas se recouvraient, et la mutation ne pouvait plus mesurer ce qu'elle vise — distinguer *« le mécanisme fonctionne »* de *« l'entrée est bien en classe A »*.
+
+Assertion de C1 ramenée à « l'entrée a été **rejouée** », sans épingler à quel titre. Après correction : C1 `ok`, C1-bis `FAILED`. **Une divergence entre prédiction et mesure est un résultat, pas un incident** : c'est elle qui a révélé le recouvrement.
+
+**Gate.** Un premier run a échoué en `exit 101` — `clippy::cmp_owned` sur `e["version"] == Value::from(version)` (comparaison qui alloue). Corrigé en `e["version"] == version`. **Ce cycle était évitable** : `fmt` + `clippy` auraient dû être passés *avant* de lancer le gate complet, pas découverts au bout du run. C'est le pré-vol de la § « Test Locally First », appliqué à l'envers.
+
+**Un échec de décodage a coûté un aller-retour, et il est réutilisable** : `audit_log.details_json` est de type `JSON`, que MariaDB expose en **`BLOB`** — le lire en `String` échoue au niveau du protocole (`ColumnDecode … not compatible with SQL type BLOB`). Le décoder en `Vec<u8>` puis `serde_json::from_slice`.
 
 ### Completion Notes List
 
+- **La fixture métier est le livrable le moins visible et le plus déterminant.** `seed_role` ne crée qu'une société et un utilisateur : sans plan comptable, sans exercice, sans facture validée, **C1 — le cas nominal de l'issue #281 — aurait porté sur un ensemble vide et serait vert pour rien**. C'est exactement ce que la mutation 5 mesure, et c'est pourquoi elle fait partie du jeu.
+- **Le plan vient de `bulk_create_from_chart`, jamais de `seed_accounting_company`** : ce dernier insère 5 comptes en dur **sans `role`** et **sans le compte `2979`** — C5 y serait inconstructible, son candidat n'existant pas, et C2 n'aurait aucun rôle à réattribuer.
+- **Facture sans TVA, validée par le vrai moteur.** `insert_with_defaults` ne renseigne pas `default_vat_payable_account_id`, que `validate_invoice` exige dès qu'il y a de la TVA. L'exonération est un cas suisse légitime, et cette combinaison — exonéré **et** par le moteur — n'existait nulle part dans le dépôt : les tests exonérés de 16-1a-bis montent leurs écritures en SQL brut, et son seul test passant par le moteur utilise deux taux non nuls.
+- **Écart assumé sur la signature de `strip_column`.** La tâche T-D1 la prescrit à quatre arguments, `(manifest, data, table, column)`. Elle en porte **trois** : les octets NDJSON ne sont volontairement pas touchés — c'est précisément ce qui garde `sha256` et `rowCount` valides — et passer `data` laisserait croire qu'il est modifié. La substance de la tâche est tenue ; seule la signature diffère.
+- **Aucun fichier de production modifié** (AC-D4) : `git diff --stat` ne montre que `crates/kesh-api/tests/admin_full_import_e2e.rs`.
+- **C4 n'est pas ici** : le test de transactionnalité vit en test d'intégration `kesh-db` et relève de 16-1c. Cette story porte **six** cas, pas sept.
+
 ### File List
+
+**Modifiés**
+
+- `crates/kesh-api/tests/admin_full_import_e2e.rs` — fixture métier `seed_business` (plan comptable réel, exercice ouvert, réglages, contact), helper `validated_invoice` (facture exonérée validée par le vrai moteur), helpers `strip_column` / `backfill_report` / `entry` / `line_accounts` / `account_role` / `account_postable`, et les **six** cas E2E C1, C1-bis, C2, C2-bis, C3, C5 avec leur note « ce que ce test discrimine ».
 
 ## Change Log
 
