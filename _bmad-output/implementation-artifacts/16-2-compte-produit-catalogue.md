@@ -431,3 +431,35 @@ La page catalogue vit dans `src/routes/(app)/products/`, **hors du périmètre d
 ⚠️ **Le garde-fou de la dérogation est consommé.** Il s'est déclenché une fois et a été reconduit une fois. Si la **passe 4** remonte encore en sévérité, le signal ne sera plus écartable et le split devient l'issue par défaut.
 
 **Prochaine : passe 4**, modèle différent d'Opus (rotation → Sonnet), contexte frais.
+
+### Passe 4 de `bmad-create-story validate` — **GARDE-FOU DÉCLENCHÉ UNE SECONDE FOIS**
+
+**2026-08-03 — Sonnet, trois lentilles, contexte frais. 0 CRITICAL, 5 HIGH, 4 MEDIUM, 4 LOW.**
+
+⚠️ **La sévérité maximale reste à `HIGH` : le critère « passe `N+1` **égale ou supérieure** à `N` » se déclenche de nouveau.** La reconduction de la passe 3 avait explicitement consommé le garde-fou — « si la passe 4 remonte encore, le split devient l'issue par défaut ». C'est le cas.
+
+**Le diagnostic de cette passe est différent des précédents, et il est plus dur pour le processus que pour la story.** Sur les 13 findings, **huit portent sur la comptabilité de mes propres Change Logs** :
+
+- l'en-tête de la passe 3 déclare **5 HIGH** et en énumère **six** (T6-récidive, D3-`active`, AC7-CSV, `fetchAccounts`, `serde(default)`, AC12-manuels) — le sixième étant introduit sous le libellé « le cinquième HIGH » ;
+- la liste « les cinq LOW » en contient **six**, dont un **repris du bloc MEDIUM** (le décompte de modules) et un (`ProductPicker`) qui ne figure dans **aucune** des trois listes ;
+- **D10 et le pré-requis Playwright** sont présentés comme des corrections de la passe 3 sans qu'aucun finding déclaré ne les motive ;
+- et le total « 16 findings appliqués » est donc construit sur ces chiffres.
+
+**Une affirmation de mon Change Log est carrément fausse.** La passe 3 listait, parmi ses vérifications positives, « les seeds ne créent aucun produit ». Réfuté : `crates/kesh-db/src/test_fixtures.rs:482` fait `INSERT INTO products (…) VALUES (…, 'CI Product', …)`, et `seed_contact_and_product` est appelée par le preset E2E `with-data` (`routes/test_endpoints.rs:203`). **Tout scénario E2E de T6 utilisant ce preset trouvera donc un `'CI Product'` préexistant, au compte `NULL`** — exactement ce que le document affirme ne pas exister.
+
+**Deux HIGH portent sur le fond, et ils convergent :**
+
+- **D9 n'est propagée ni à AC3 ni à T2.** La décision « la validation ne se déclenche que si le compte change » n'existe que dans D9 et dans un *test* de T6. Le critère qui décrit la validation et la tâche qui l'implémente disent tous deux « validation D3 sur `create` et `update` », sans condition. **C'est le patron du CRITICAL de la passe 1, rejoué sur la décision que la passe 3 qualifiait elle-même de plus importante de la story** — quatrième récidive du même mode d'échec.
+- **D9 n'est pas implémentable là où la spec la place, et le document ne le dit pas.** La comparaison exige l'état antérieur ; or `update_product` (`routes/products.rs:295-322`) ne lit aucun `before` — le seul existe **dans la transaction** du repository (`products.rs:275-298`). L'EdgeCaseHunter a trouvé le précédent qui rend la chose faisable (`company_invoice_settings.rs:148` fetche son état courant à la route, hors transaction, le verrou optimiste couvrant la fenêtre), mais **rien dans T2 ne l'indique**. Le placement naturel — le repository, où `before` est gratuit — contredirait T6, qui exige les tests au niveau route.
+
+**Le troisième HIGH est un résidu de patch classique** : le décompte de modules corrigé « sept → huit » a été appliqué à la ligne 132 et **pas** à la ligne 138, celle qui porte la *justification retenue* de la dérogation. Le document affirme trois lignes plus bas que la correction est faite. C'est le nombre exact que ce document reproche par ailleurs à un commentaire de migration d'avoir laissé dériver.
+
+**Les MEDIUM** : le **troisième sujet i18n** exigé par AC3 n'est discriminé par aucune mutation ni aucun test — un développeur peut réutiliser le formateur tel quel et rien ne rougirait, alors que le document traite ce même mode d'échec en HIGH quand il touche `fetchAccounts(true)` ; **D10 manque à la checklist « ce que cette story ne doit PAS faire »**, où figure pourtant sa jumelle D6 ; et le nom de l'enum est inversé dans un récit (`RejectedRevenueAccount` au lieu de `RevenueAccountRejection`).
+
+**Les LOW**, tous ironiques : l'ancre de la seconde liste CSV est décalée (`:382-393`, pas `:381-392`) — une ancre **neuve** de la passe 3, pas un résidu ; et le motif de recherche que la passe 3 avait « corrigé » pour T4 (`16-2 y branchera`) ne trouve **qu'une** des deux ancres, la seconde étant scindée sur deux lignes (`grep -cF` → **1**).
+
+**Ce que la passe a validé** : les **huit** modules, l'arithmétique de D8, les 13 FK, les 6 `query_as`, l'absence de `postable` dans le réglage société, le point de fork, `user-manual.tex:553`/`:583`, les quatre `<label for>`, la fixture `("products.csv", 0)`, le doc-comment de `ProductPicker`, et **la couverture complète de #144** — plus aucun engagement n'est ni couvert ni explicitement exclu, D10 ayant fermé le dernier. Les obligations de `CLAUDE.md` sont toutes portées.
+
+**Trend** : `1 CRIT / 3 HIGH / 4 MED / 4 LOW` → `0 / 1 HIGH / 3 MED / 2 LOW` → `0 / 5-6 HIGH / 6 MED / 5 LOW` → **`0 / 5 HIGH / 4 MED / 4 LOW`**. Rotation Sonnet → Haiku → Opus → Sonnet, cycle complet.
+
+**Statut : findings consignés, patches suspendus. Le garde-fou s'est déclenché deux fois de suite et a déjà été reconduit une fois — le split est l'issue par défaut, et la décision revient au Project Lead.**
