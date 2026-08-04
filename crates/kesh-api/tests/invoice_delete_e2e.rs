@@ -156,6 +156,7 @@ async fn create_validated_invoice(
         due_date: None,
         payment_terms: None,
         lines: vec![NewInvoiceLine {
+            revenue_account_id: None,
             description: "Stub".into(),
             quantity: dec!(1),
             unit_price: dec!(100.00),

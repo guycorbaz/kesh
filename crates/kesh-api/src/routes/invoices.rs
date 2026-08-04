@@ -68,6 +68,18 @@ pub struct CreateInvoiceLineRequest {
     pub quantity: Decimal,
     pub unit_price: Decimal,
     pub vat_rate: Decimal,
+    /// Compte de produit de la ligne (Story 16-1a, #152 / CR #265). Absent ou
+    /// `null` = repli sur le compte de produit par défaut de la société.
+    ///
+    /// **`#[serde(default)]` est obligatoire** : en serde, un `Option<T>` sans
+    /// cet attribut reste un champ **requis** dans le JSON. Sans lui,
+    /// l'omission de la clé ferait échouer la désérialisation et casserait
+    /// toute intégration PAT existante à chaque création de facture — un
+    /// défaut invisible à la revue, puisque le code compile. On suit donc le
+    /// style de `CreateInvoiceRequest`, et non celui des quatre champs voisins,
+    /// tous obligatoires par construction.
+    #[serde(default)]
+    pub revenue_account_id: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -141,6 +153,10 @@ pub struct InvoiceLineResponse {
     pub unit_price: Decimal,
     pub vat_rate: Decimal,
     pub line_total: Decimal,
+    /// Compte de produit de la ligne (Story 16-1a). `null` sur un brouillon qui
+    /// suit le compte par défaut de la société ; toujours renseigné sur une
+    /// facture validée par ce binaire (matérialisation D2).
+    pub revenue_account_id: Option<i64>,
     pub created_at: NaiveDateTime,
 }
 
@@ -155,6 +171,7 @@ impl From<InvoiceLine> for InvoiceLineResponse {
             unit_price: l.unit_price,
             vat_rate: l.vat_rate,
             line_total: l.line_total,
+            revenue_account_id: l.revenue_account_id,
             created_at: l.created_at,
         }
     }
@@ -424,6 +441,11 @@ fn validate_line(req: CreateInvoiceLineRequest, index: usize) -> Result<NewInvoi
         quantity: req.quantity,
         unit_price: req.unit_price,
         vat_rate: req.vat_rate,
+        // Story 16-1a : aucune validation ici — la conformité du compte
+        // (société, actif, type `Revenue`, imputable) exige un aller-retour DB
+        // et se fait en une seule requête batchée côté repository, dans la
+        // transaction. Valider ligne par ligne ici ferait jusqu'à 200 requêtes.
+        revenue_account_id: req.revenue_account_id,
     })
 }
 
@@ -1260,6 +1282,7 @@ mod tests {
 
     fn line(desc: &str, qty: Decimal, price: Decimal, vat: Decimal) -> CreateInvoiceLineRequest {
         CreateInvoiceLineRequest {
+            revenue_account_id: None,
             description: desc.into(),
             quantity: qty,
             unit_price: price,
@@ -1353,5 +1376,34 @@ mod tests {
         let long = "a".repeat(256);
         let err = validate_payment_terms(Some(long)).unwrap_err();
         assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    /// **AC6** — les deux formes de payload valent `NULL`.
+    ///
+    /// Le cas « clé absente » est le plus important : sans `#[serde(default)]`,
+    /// serde traite un `Option<T>` comme un champ **requis** et l'omission
+    /// ferait échouer la désérialisation — cassant toute intégration PAT
+    /// existante, sans que le code cesse pour autant de compiler. Ce test est
+    /// donc le seul garde-fou contre le retrait accidentel de l'attribut.
+    #[test]
+    fn revenue_account_id_absent_and_explicit_null_both_deserialize_to_none() {
+        let sans_cle: CreateInvoiceLineRequest = serde_json::from_str(
+            r#"{"description":"Conseil","quantity":"1","unitPrice":"100.00","vatRate":"8.10"}"#,
+        )
+        .expect("la clé revenueAccountId doit être facultative");
+        assert_eq!(sans_cle.revenue_account_id, None);
+
+        let null_explicite: CreateInvoiceLineRequest = serde_json::from_str(
+            r#"{"description":"Conseil","quantity":"1","unitPrice":"100.00","vatRate":"8.10","revenueAccountId":null}"#,
+        )
+        .expect("un null explicite doit être accepté");
+        assert_eq!(null_explicite.revenue_account_id, None);
+
+        // Témoin : une valeur renseignée est bien lue, et en camelCase.
+        let renseigne: CreateInvoiceLineRequest = serde_json::from_str(
+            r#"{"description":"Conseil","quantity":"1","unitPrice":"100.00","vatRate":"8.10","revenueAccountId":42}"#,
+        )
+        .expect("une valeur explicite doit être lue");
+        assert_eq!(renseigne.revenue_account_id, Some(42));
     }
 }

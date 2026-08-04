@@ -10,7 +10,7 @@ use std::sync::RwLock;
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use kesh_db::errors::DbError;
+use kesh_db::errors::{DbError, RejectedRevenueAccount, RevenueAccountRejection};
 use kesh_i18n::{FluentArgs, I18nBundle, Locale};
 use serde::Serialize;
 use thiserror::Error;
@@ -45,6 +45,81 @@ fn t_args(key: &str, default: &str, args: &FluentArgs<'_>) -> String {
         Some((bundle, locale)) => bundle.format(locale, key, Some(args)),
         None => default.to_string(),
     }
+}
+
+/// Code stable d'une raison de refus de compte de produit, exposé dans
+/// `details.rejected[].reason` (Story 16-1a). Non traduit — c'est un
+/// discriminant machine, le texte lisible est dans `message`.
+fn revenue_account_rejection_code(reason: RevenueAccountRejection) -> &'static str {
+    match reason {
+        RevenueAccountRejection::UnknownOrCrossCompany => "UNKNOWN_OR_CROSS_COMPANY",
+        RevenueAccountRejection::Inactive => "INACTIVE",
+        RevenueAccountRejection::NotRevenue => "NOT_REVENUE",
+        RevenueAccountRejection::NotPostable => "NOT_POSTABLE",
+    }
+}
+
+/// Compose la partie variable du message d'erreur des comptes de produit de
+/// ligne (Story 16-1a, D6) : un fragment localisé **par site en défaut**,
+/// joints par « ; ».
+///
+/// Chaque fragment nomme son sujet — « Ligne 3 », ou « le compte de produit par
+/// défaut de la société » quand aucune ligne ne porte le compte (AC8-bis) —
+/// puis la raison. Tous les sites sont listés : quand un compte partagé est
+/// archivé, plusieurs lignes tombent ensemble, et n'en nommer qu'une imposerait
+/// autant d'allers-retours que de lignes fautives.
+fn format_rejected_revenue_accounts(rejected: &[RejectedRevenueAccount]) -> String {
+    rejected
+        .iter()
+        .map(|r| {
+            let subject = match r.line_number {
+                Some(n) => {
+                    let fallback = format!("Ligne {n}");
+                    let mut args = FluentArgs::new();
+                    args.set("line", n);
+                    t_args("invoice-line-account-subject-line", &fallback, &args)
+                }
+                None => t(
+                    "invoice-line-account-subject-default",
+                    "le compte de produit par défaut de la société",
+                ),
+            };
+            let number = r.account_number.clone().unwrap_or_default();
+            let (key, fallback) = match r.reason {
+                RevenueAccountRejection::UnknownOrCrossCompany => (
+                    "invoice-line-account-unknown",
+                    format!(
+                        "{subject} : le compte sélectionné est introuvable ou n'appartient pas à cette société"
+                    ),
+                ),
+                RevenueAccountRejection::Inactive => (
+                    "invoice-line-account-inactive",
+                    format!("{subject} : le compte {number} est archivé"),
+                ),
+                RevenueAccountRejection::NotRevenue => (
+                    "invoice-line-account-not-revenue",
+                    format!("{subject} : le compte {number} n'est pas un compte de produit"),
+                ),
+                // La condition du variant est « non imputable **et** différent
+                // du compte par défaut » (exemption D3-bis). Ne PAS mentionner
+                // le défaut dans le message : « n'est plus le défaut »
+                // présupposerait qu'il l'a été, ce qui est faux dans le cas
+                // courant — un compte que l'utilisateur vient de choisir et qui
+                // n'a jamais été le défaut de la société.
+                RevenueAccountRejection::NotPostable => (
+                    "invoice-line-account-not-postable",
+                    format!(
+                        "{subject} : le compte {number} n'est pas imputable — choisissez un autre compte"
+                    ),
+                ),
+            };
+            let mut args = FluentArgs::new();
+            args.set("subject", subject.clone());
+            args.set("number", number);
+            t_args(key, &fallback, &args)
+        })
+        .collect::<Vec<_>>()
+        .join(" ; ")
 }
 
 /// Erreurs applicatives de kesh-api.
@@ -2166,6 +2241,68 @@ impl IntoResponse for AppError {
                         "Un ou plusieurs comptes sont archivés ou invalides.",
                     ),
                 ),
+                // Story 16-1a (#152) — comptes de produit de ligne de facture.
+                // Le générique `INACTIVE_OR_INVALID_ACCOUNTS` ci-dessus ne nomme
+                // aucune ligne ; sur une facture pouvant en porter 200, ce
+                // n'est pas actionnable. On compose ici un message qui les
+                // nomme toutes, à partir du détail structuré remonté par le
+                // repository.
+                DbError::InvalidRevenueAccounts(rejected) => {
+                    let detail = format_rejected_revenue_accounts(&rejected);
+                    let fallback = format!("Compte de produit invalide — {detail}");
+                    let mut args = FluentArgs::new();
+                    args.set("detail", detail.clone());
+                    let msg = t_args("invoice-line-revenue-account-invalid", &fallback, &args);
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "INVOICE_LINE_REVENUE_ACCOUNT_INVALID",
+                            "message": msg,
+                            "details": {
+                                "rejected": rejected.iter().map(|r| serde_json::json!({
+                                    "lineNumber": r.line_number,
+                                    "accountId": r.account_id,
+                                    "accountNumber": r.account_number,
+                                    "reason": revenue_account_rejection_code(r.reason),
+                                })).collect::<Vec<_>>(),
+                            },
+                        }
+                    });
+                    (StatusCode::BAD_REQUEST, Json(body)).into_response()
+                }
+                // Story 16-1a (D5-bis) — l'avoir ne peut pas contre-passer sur
+                // un compte archivé. Message nommant ligne et compte : la
+                // correction est de réactiver le compte, l'utilisateur doit
+                // savoir lequel.
+                DbError::CreditNoteRevenueAccountsArchived(rejected) => {
+                    let detail = format_rejected_revenue_accounts(&rejected);
+                    let fallback = format!(
+                        "Impossible d'émettre l'avoir — {detail}. Réactivez le ou les comptes concernés."
+                    );
+                    let mut args = FluentArgs::new();
+                    args.set("detail", detail.clone());
+                    let msg = t_args("credit-note-revenue-account-archived", &fallback, &args);
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "CREDIT_NOTE_REVENUE_ACCOUNT_ARCHIVED",
+                            "message": msg,
+                            "details": {
+                                // `reason` est exposé ici comme sur le chemin
+                                // facture : la structure transportée est la même
+                                // (`RejectedRevenueAccount`), et un client qui
+                                // écrit un gestionnaire générique sur
+                                // `details.rejected[]` doit trouver le même jeu
+                                // de clés des deux côtés (revue 16-1a passe 2).
+                                "rejected": rejected.iter().map(|r| serde_json::json!({
+                                    "lineNumber": r.line_number,
+                                    "accountId": r.account_id,
+                                    "accountNumber": r.account_number,
+                                    "reason": revenue_account_rejection_code(r.reason),
+                                })).collect::<Vec<_>>(),
+                            },
+                        }
+                    });
+                    (StatusCode::BAD_REQUEST, Json(body)).into_response()
+                }
                 DbError::DateOutsideFiscalYear => build_response(
                     StatusCode::BAD_REQUEST,
                     "DATE_OUTSIDE_FISCAL_YEAR",
@@ -2209,6 +2346,17 @@ impl IntoResponse for AppError {
                         "alreadyUnpaid" => (
                             "invoice-error-already-unpaid".to_string(),
                             "Cette facture n'est pas marquée payée.",
+                        ),
+                        // Story 16-1a (D4-bis) — pièce entièrement à zéro.
+                        // Avant cette story, le cas produisait un 500 SQL sur
+                        // `chk_jel_debit_credit_exclusive`.
+                        "invoiceTotalZero" => (
+                            "invoice-error-total-zero".to_string(),
+                            "Cette facture est d'un montant total nul : elle ne peut pas être validée. Renseignez au moins une ligne avec un prix unitaire supérieur à zéro.",
+                        ),
+                        "creditNoteTotalZero" => (
+                            "credit-note-error-total-zero".to_string(),
+                            "Cette facture est d'un montant total nul : aucun avoir ne peut être émis.",
                         ),
                         // B13 (review pass 1 G2 B) : whitelist stricte —
                         // un code non listé ne doit PAS construire dynamiquement
@@ -2449,5 +2597,131 @@ mod tests {
         assert_eq!(body["error"]["code"], "GLOBAL_EXPORT_FAILED");
         let msg = body["error"]["message"].as_str().unwrap();
         assert!(!msg.contains("0xfeedface"), "detail leaked: {msg}");
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 16-1a (#152) — comptes de produit de ligne.
+    //
+    // Ces tests existent parce que le mapping par défaut de `DbError` remplace
+    // tout message venu du repository par un texte fixe. Sans variante dédiée,
+    // le détail nommant les lignes n'atteindrait jamais le client — c'est la
+    // leçon déjà tirée sur `AccountParentArchived` (14-3a).
+    // -----------------------------------------------------------------------
+
+    fn rejected(
+        line_number: Option<i32>,
+        number: &str,
+        reason: RevenueAccountRejection,
+    ) -> RejectedRevenueAccount {
+        RejectedRevenueAccount {
+            line_number,
+            account_id: 42,
+            account_number: Some(number.into()),
+            reason,
+        }
+    }
+
+    /// Le message nomme **toutes** les lignes en défaut, pas seulement la
+    /// première, et le body porte le détail structuré.
+    #[tokio::test]
+    async fn invalid_revenue_accounts_names_every_offending_line() {
+        let resp = AppError::from(DbError::InvalidRevenueAccounts(vec![
+            rejected(Some(2), "3200", RevenueAccountRejection::Inactive),
+            rejected(Some(5), "4000", RevenueAccountRejection::NotRevenue),
+        ]))
+        .into_response();
+        let (status, body) = response_body(resp).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(
+            body["error"]["code"],
+            "INVOICE_LINE_REVENUE_ACCOUNT_INVALID"
+        );
+
+        let msg = body["error"]["message"].as_str().unwrap();
+        // « Ligne N » et pas seulement « N » : le compte de la ligne 2 est
+        // `3200`, qui contient déjà un `2`. Un `msg.contains("2")` passerait
+        // donc même si le sujet disparaissait entièrement du message — le test
+        // ne prouverait plus rien (revue de code 16-1a passe 2).
+        assert!(
+            msg.contains("Ligne 2"),
+            "la ligne 2 doit être nommée : {msg}"
+        );
+        assert!(
+            msg.contains("Ligne 5"),
+            "la ligne 5 doit être nommée : {msg}"
+        );
+        assert!(
+            msg.contains("3200"),
+            "le compte 3200 doit être nommé : {msg}"
+        );
+        assert!(
+            msg.contains("4000"),
+            "le compte 4000 doit être nommé : {msg}"
+        );
+
+        let rejected = body["error"]["details"]["rejected"].as_array().unwrap();
+        assert_eq!(rejected.len(), 2);
+        assert_eq!(rejected[0]["lineNumber"], 2);
+        assert_eq!(rejected[0]["reason"], "INACTIVE");
+        assert_eq!(rejected[1]["reason"], "NOT_REVENUE");
+    }
+
+    /// AC8-bis — le compte par défaut de la société est désigné **en toutes
+    /// lettres**, jamais par un numéro de ligne : aucune ligne ne le porte.
+    #[tokio::test]
+    async fn invalid_revenue_accounts_names_company_default_explicitly() {
+        let resp = AppError::from(DbError::InvalidRevenueAccounts(vec![rejected(
+            None,
+            "3000",
+            RevenueAccountRejection::Inactive,
+        )]))
+        .into_response();
+        let (_, body) = response_body(resp).await;
+        let msg = body["error"]["message"].as_str().unwrap();
+        assert!(
+            msg.contains("défaut"),
+            "le message doit désigner le compte par défaut de la société : {msg}"
+        );
+        assert!(
+            !msg.contains("Ligne"),
+            "aucun numéro de ligne ne doit apparaître : {msg}"
+        );
+        assert!(body["error"]["details"]["rejected"][0]["lineNumber"].is_null());
+    }
+
+    /// D5-bis — l'avoir bloqué a son propre code et nomme le compte à
+    /// réactiver.
+    #[tokio::test]
+    async fn credit_note_archived_account_has_dedicated_code() {
+        let resp = AppError::from(DbError::CreditNoteRevenueAccountsArchived(vec![rejected(
+            Some(1),
+            "3200",
+            RevenueAccountRejection::Inactive,
+        )]))
+        .into_response();
+        let (status, body) = response_body(resp).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(
+            body["error"]["code"],
+            "CREDIT_NOTE_REVENUE_ACCOUNT_ARCHIVED"
+        );
+        let msg = body["error"]["message"].as_str().unwrap();
+        assert!(msg.contains("3200"), "le compte doit être nommé : {msg}");
+    }
+
+    /// D4-bis — la facture à montant nul répond en **400 métier**, plus en 500
+    /// SQL. Le code non listé retomberait sur « Entrée invalide », donc ce test
+    /// vérifie aussi que le dispatch de la whitelist connaît le code.
+    #[tokio::test]
+    async fn zero_total_invoice_maps_to_business_400() {
+        let resp = AppError::from(DbError::InvalidInput("invoiceTotalZero".into())).into_response();
+        let (status, body) = response_body(resp).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"]["code"], "INVALID_INPUT");
+        let msg = body["error"]["message"].as_str().unwrap();
+        assert_ne!(
+            msg, "Entrée invalide",
+            "le code doit être dans la whitelist de dispatch, sinon message générique"
+        );
     }
 }

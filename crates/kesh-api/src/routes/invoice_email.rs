@@ -1402,6 +1402,7 @@ mod tests {
     /// (arrondi centime), TTC = 1334.56.
     fn sample_lines() -> Vec<kesh_db::entities::InvoiceLine> {
         vec![kesh_db::entities::InvoiceLine {
+            revenue_account_id: None,
             id: 1,
             invoice_id: 7,
             position: 1,

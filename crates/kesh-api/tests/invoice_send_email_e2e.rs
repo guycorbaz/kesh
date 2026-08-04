@@ -226,6 +226,7 @@ async fn seed_validated_invoice(
         due_date: Some(NaiveDate::from_ymd_opt(2026, 5, 14).unwrap()),
         payment_terms: Some("30 jours net".into()),
         lines: vec![NewInvoiceLine {
+            revenue_account_id: None,
             description: "Prestation".into(),
             quantity: dec!(1),
             unit_price: dec!(100.00),
@@ -562,6 +563,7 @@ async fn draft_invoice_returns_400_not_validated(pool: MySqlPool) {
             due_date: None,
             payment_terms: None,
             lines: vec![NewInvoiceLine {
+                revenue_account_id: None,
                 description: "Draft".into(),
                 quantity: dec!(1),
                 unit_price: dec!(50.00),

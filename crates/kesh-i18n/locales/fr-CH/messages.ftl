@@ -253,6 +253,18 @@ journal-entry-saved = Écriture enregistrée
 error-fiscal-year-closed-generic = L'exercice comptable est clôturé — aucune écriture ne peut y être ajoutée ou modifiée (CO art. 957-964).
 error-inactive-accounts = Un ou plusieurs comptes sont archivés ou invalides.
 
+# Compte de produit par ligne de facture (Story 16-1a, #152)
+invoice-line-account-subject-line = Ligne { $line }
+invoice-line-account-subject-default = le compte de produit par défaut de la société
+invoice-line-account-unknown = { $subject } : le compte sélectionné est introuvable ou n'appartient pas à cette société
+invoice-line-account-inactive = { $subject } : le compte { $number } est archivé
+invoice-line-account-not-revenue = { $subject } : le compte { $number } n'est pas un compte de produit
+invoice-line-account-not-postable = { $subject } : le compte { $number } n'est pas imputable — choisissez un autre compte
+invoice-line-revenue-account-invalid = Compte de produit invalide — { $detail }
+credit-note-revenue-account-archived = Impossible d'émettre l'avoir — { $detail }. Réactivez le ou les comptes concernés.
+invoice-error-total-zero = Cette facture est d'un montant total nul : elle ne peut pas être validée. Renseignez au moins une ligne avec un prix unitaire supérieur à zéro.
+credit-note-error-total-zero = Cette facture est d'un montant total nul : aucun avoir ne peut être émis.
+
 # Modification & suppression d'écritures (Story 3.3)
 journal-entry-edit = Modifier
 journal-entry-delete = Supprimer
@@ -1417,3 +1429,13 @@ reminders-resume-success = Rappels repris
 reminders-error-not-paused = Cette facture n'est plus suspendue.
 reminders-link-due-dates = Voir l'échéancier
 reminders-link-aged = Voir la balance âgée
+
+# Story 16-1b (#152) — selecteur de compte de produit par ligne.
+common-account-clear = Effacer le compte sélectionné
+common-account-invalid = Compte invalide — non imputable, archivé ou de type inattendu
+invoice-line-col-revenue-account = Compte de produit
+invoice-line-revenue-account-default = { $account } (défaut société)
+invoice-lines-revenue-account-invalid = Compte de produit invalide sur les lignes suivantes : { $lines }
+invoice-default-revenue-account-unusable = Le compte de produit par défaut de la société n'est plus utilisable (archivé, non imputable ou de type inattendu). Les lignes qui le suivent ne pourront pas être validées — corrigez-le dans les Réglages, ou choisissez un compte sur chaque ligne.
+common-account-default-suffix = (défaut)
+invoice-line-aria-line = ligne { $n }

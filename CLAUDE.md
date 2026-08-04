@@ -119,6 +119,27 @@ npm run test:e2e
 
 Pré-requis : MariaDB démarré + seed CI appliqué + Playwright browsers installés (cf. `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` sur Ubuntu 26.04+ — limitation upstream Playwright ≤ 1.49).
 
+### Pendant une boucle de revue — gate ciblé, gate complet au push
+
+**Le déclencheur du gate complet est le `push`, pas le commit.** Une boucle `bmad-code-review` produit 2 à 4 commits de patches, chacun local et invisible de l'extérieur ; y attacher un gate complet coûte **~1 h par passe** (mesuré : 59 min, 2102 tests) pour des patches qui touchent souvent un seul fichier. Entre les passes, lancer un **gate ciblé** :
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo nextest run -E 'binary(<le binaire de test touché>)'   # le rayon d'impact
+```
+
+`fmt` et `clippy` restent sur le **workspace entier** — ils coûtent ~1 min et c'est précisément ce qui, sur la Story 16-1d, a fait échouer un gate complet en `exit 101` (`clippy::cmp_owned`) **au bout des 59 minutes**. Les passer en pré-vol est le geste le moins cher du dépôt.
+
+Le gate **complet** reste obligatoire : avant tout `git push`, avant de déclarer une story `done`, et au dernier commit d'une boucle de revue.
+
+**Deux réserves, sans lesquelles la règle se retourne contre nous** :
+
+- **Le story file ne doit affirmer que ce qui a tourné.** Pas de « gate vert, N/N » dans un Dev Agent Record ou un Change Log si seul le binaire ciblé a été exécuté — écrire alors « gate ciblé `binary(x)` vert, gate complet au push ». C'est la contrepartie non négociable : les passes de revue suivantes **lisent ce record et le prennent pour argent comptant**, et une passe adversariale menée sur une base faussement déclarée verte ne mesure plus rien.
+- **Exception `kesh-db` : gate complet même en cours de boucle.** Dès qu'un patch touche `crates/kesh-db/migrations/`, `post_restore.rs` ou un repository, le ciblage est interdit. C'est exactement ce que codifient les garde-fous **P6** et **P7** de la § « Migration breaking policy » : ces modes d'échec ne naissent ni du code écrit ni de la spec, mais de l'**interaction** avec des tests que la PR ne touche pas, et **seul le gate réellement exécuté les révèle**. Précédent Story 16-1a : `backfill_skips_archived_accounts` s'est mis à **passer à vide** — un test muet ne signale rien, et aucun gate ciblé ne l'aurait vu.
+
+*(codifié 2026-08-03, arbitrage de Guy pendant la boucle de revue de la Story 16-1d.)*
+
 ### Quand sauter
 
 Cette règle ne s'applique pas aux **commits doc-only** (markdown, yaml de planning, README, CLAUDE.md lui-même) qui ne touchent pas de code exécutable. Pour ces commits, la CI elle-même est généralement no-op (pas de Rust ni de TypeScript modifié → cache hit instantané).
@@ -327,6 +348,42 @@ Toute nouvelle KF/CR/bug → GitHub uniquement. Ne **pas** rouvrir ces fichiers 
 **(P4) Exception documentée** : Si une migration utilise une de ces opérations mais reste **techniquement compatible** avec un binaire antérieur (rare — typiquement `DROP` d'une colonne jamais lue), l'auteur de la PR doit ajouter un commentaire SQL `-- breaking-skip-bump: <justification>` dans la migration, et un Pass code-review devra confirmer la justification. Sinon par défaut → bump obligatoire.
 
 **(P5) Garde-fou audit idempotence** : Toute PR introduisant un nouveau fichier `crates/kesh-db/migrations/*.sql` DOIT ajouter une ligne correspondante au tableau `docs/migrations-idempotence-audit.md` avec verdict (`yes` / `no` / `tracked-by-sqlx`) + justification. Si une PR ajoute un `.sql` migration sans modifier `docs/migrations-idempotence-audit.md`, c'est un finding **MEDIUM** à remonter en passe `bmad-code-review`. Rationale : éviter que l'audit doc dérive silencieusement au fil des Epics suivants — symétrique de la discipline P3.
+
+**Vérifier la ligne ET les compteurs, en recomptant la source.** Le **total** de migrations apparaît à **deux** endroits du fichier — l'**en-tête de section** `## Table d'audit (N migrations)` et la ligne `Total` des « Statistiques ». S'y ajoutent **trois compteurs de partition** (`yes`, `tracked-by-sqlx`, `no`) dont la **somme** doit égaler ce total. Tous se **recomptent depuis le tableau**, jamais ne s'incrémentent de confiance. Recompte de contrôle :
+
+```sh
+ls crates/kesh-db/migrations/*.sql | wc -l                 # doit égaler les DEUX sites du total…
+grep -c '^| `20' docs/migrations-idempotence-audit.md      # …et le nombre de lignes du tableau
+```
+
+⚠️ Les compteurs de partition ne valent **pas** le total — les aligner dessus casserait l'invariant qu'ils servent à tenir. *(Cette précision a dû être écrite deux fois : la passe 1 de revue de la 16-1a-bis, en corrigeant un compteur faux, avait énoncé une règle fausse — « les trois sites doivent donner le même nombre » — que la passe 2 a rattrapée. Corriger un compteur et écrire la règle de son contrôle sont deux gestes distincts.)* Précédent : au moment de la Story 16-1a, le compteur `tracked-by-sqlx` annonçait 45 pour **52** réelles — dérive de 7 accumulée sur les Epics 20/21, parce que 11 lignes de migration avaient été ajoutées **sous** la section « Maintenance future » au lieu du tableau, et que les statistiques ne comptaient que le premier bloc. La passe 7 de `validate` de la 16-1a déclare pourtant avoir « re-vérifié les compteurs » : **sept passes adversariales ont confirmé un nombre faux**, parce que relire une valeur n'est pas recompter sa source.
+
+**(P6) Garde-fou couplage positionnel des migrations** : Toute PR introduisant un nouveau fichier `crates/kesh-db/migrations/*.sql` DOIT exécuter `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` et **inspecter chaque site**. Un test qui indexe les migrations **par position** (`total - N`, `&all[..n]`) change silencieusement de sens à chaque migration ajoutée : la fenêtre qu'il croit appliquer se décale d'un cran.
+
+Chaque site doit satisfaire l'un des deux critères :
+
+- **résolution par version** — l'index est obtenu par `.position(|m| m.version == <version>)`, ce qui rend le montage insensible aux ajouts futurs (**à préférer**) ; OU
+- **couplage positionnel assumé** — il matérialise une frontière historique voulue, et porte alors **obligatoirement** un garde-fou fail-loud : `assert_eq!(total, <N>)` codé en dur, ou une assertion de montage vérifiant l'état attendu du schéma avant la migration cible.
+
+Un site positionnel **sans** garde-fou est un finding **MEDIUM** en `bmad-code-review`.
+
+Rationale — ce mode d'échec est **invisible en revue de diff** : il ne naît ni du code écrit ni de la spec, mais de l'**interaction** entre la migration ajoutée et des tests que la PR ne touche pas. Seul le gate réellement exécuté le révèle. Précédent Story 16-1a : 3 tests touchés, dont `upgrade_path_preserves_data` (échec net grâce à son `assert_eq!(total, 55)` volontaire), `backfill_matches_seed_for_every_chart` (échec grâce à son assertion de montage) et surtout **`backfill_skips_archived_accounts`, qui s'est mis à passer À VIDE** — ses rôles ressortaient `NULL` non pas parce que le backfill écartait correctement un compte archivé, mais parce qu'il ne tournait plus du tout sur ces lignes. Un test muet ne détecte plus aucune régression, et rien ne le signale. C'est la raison d'être du critère « assertion de montage obligatoire ».
+
+*(codifié 2026-07-28, passe 1 de `bmad-code-review` de la Story 16-1a)*
+
+**(P7) Garde-fou triage des backfills de données** : Toute PR introduisant une migration qui **écrit des données** DOIT la trier — soit au registre `POST_RESTORE_BACKFILLS`, soit à la liste `EXEMPT_MIGRATIONS` **avec une justification écrite** (`crates/kesh-db/src/post_restore.rs`). Le test `every_data_backfill_migration_is_triaged` l'impose et échoue en nommant le fichier ; un manquement laissé passer est un finding **MEDIUM** en `bmad-code-review`.
+
+Rationale : `_sqlx_migrations` n'est pas restaurée par l'import d'installation. Sans rejeu, restaurer un `.keshbackup` antérieur à une migration de backfill **rouvre définitivement** le bug qu'elle fermait — la migration reste marquée appliquée et ne repassera jamais. Et le contrôle de schéma ne voit rien : `is_required()` est faux dès qu'une colonne porte un `DEFAULT`, pas seulement quand elle est nullable, si bien qu'une colonne `NOT NULL DEFAULT …` est silencieusement **réinitialisée à son défaut**.
+
+**Détecter, c'est chercher LARGE.** Le détecteur couvre `UPDATE`, `INSERT` **toutes formes** (`INTO … SELECT`, `INTO … VALUES`, `IGNORE`, `LOW_PRIORITY`, `HIGH_PRIORITY`, `ON DUPLICATE KEY UPDATE`), `REPLACE` et `DELETE`, sur du SQL **décommenté** et découpé en statements **multi-lignes**. Il classe sur le **premier mot-clé** du statement, et c'est ce qui lui donne cette largeur sans énumération à maintenir. Le coût d'une forme en trop est une exemption d'une ligne ; le coût d'une forme manquante est un garde-fou **muet**. C'est arrivé **deux fois** pendant la seule spécification de la Story 16-1c : d'abord un `grep "INSERT INTO.*SELECT"` **mono-ligne** (le `SELECT` était à la ligne suivante), puis un motif `INSERT\s+INTO` qui ratait les quatre `INSERT **IGNORE** INTO` d'une autre migration. Attention aussi à `ON UPDATE CURRENT_TIMESTAMP`, présent dans une vingtaine de migrations : c'est du **DDL**.
+
+**Trier, ce n'est pas forcément inscrire au registre.** Un backup n'est importable que si son inventaire de tables est **identique** au nôtre (`parse_and_verify` compare dans les deux sens), et les tables ne font que s'ajouter : une migration **antérieure à la dernière création de table applicative** est donc hors d'atteinte, son cas de déclenchement étant refusé en 400 bien avant le rejeu. L'y inscrire produirait du code mort **qui paraît fonctionner** — et, s'il est en classe A, exécuté à chaque import. Le test `registry_entries_are_within_import_window` recalcule cette fenêtre depuis le `MIGRATOR` et échoue si une entrée en sort.
+
+**L'exemption est l'issue la moins coûteuse, donc celle qu'il faut contrôler.** Le garde-fou de triage propose lui-même « soit l'ajouter à `EXEMPT_MIGRATIONS` avec une justification écrite » : rédiger une justification est plus rapide qu'inscrire une entrée au registre, et une justification fausse désactive le rejeu **définitivement et en silence**. D'où le symétrique `exemptions_claiming_out_of_window_really_are_out_of_window`, qui recalcule la fenêtre pour toute justification invoquant l'argument. Il la reconnaît à un **marqueur textuel** : une justification « hors fenêtre » DOIT commencer par la chaîne `Hors fenêtre`, faute de quoi elle échappe au contrôle et redevient une affirmation crue sur parole.
+
+**Classer, ça se déclare, ça ne se devine pas.** Classe **A** (rejeu inconditionnel) uniquement si **tous** les statements sont gardés contre l'écrasement d'une valeur posée par l'utilisateur ; classe **B** (rejeu conditionné à l'absence d'une colonne sentinelle) sinon — et la classe B n'est valide que si le **DDL et le backfill sont dans le même fichier**. Ne **jamais** classer par détection textuelle de `IS NULL` / `NOT EXISTS` : un `NOT EXISTS` peut être un prédicat **structurel** de ciblage et non une garde d'idempotence. Et ne pas réutiliser le critère « un `NULL` n'est l'expression d'aucun choix » : il est **faux** dès qu'une route écrit le champ en *full-replace*.
+
+*(codifié 2026-08-01, Story 16-1c / issue #281)*
 
 ## Règle de commit et push
 

@@ -462,6 +462,119 @@ fn entry_bytes<'a>(entries: &'a [(String, Vec<u8>)], name: &str) -> &'a [u8] {
         .1
 }
 
+/// Story 16-1a (AC14) — l'export CSV des lignes de facture expose le compte de
+/// produit par ligne, en en-tête **et** en valeur.
+///
+/// Une ligne sans compte doit sortir vide (elle suit le compte par défaut de la
+/// société) : c'est ce qui distingue « colonne exportée » de « colonne exportée
+/// avec la bonne valeur ».
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn export_global_zip_invoice_lines_expose_revenue_account(pool: MySqlPool) {
+    let ctx = seed_with_full_data(&pool, "co_rev_acct", Role::Comptable).await;
+
+    let revenue_id: i64 =
+        sqlx::query_scalar("SELECT id FROM accounts WHERE company_id = ? AND number = '3000'")
+            .bind(ctx.company_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    // `seed_with_full_data` ne crée AUCUNE facture (comptes, écritures,
+    // contacts, produit, comptes bancaires seulement) — la facture de ce test
+    // est donc montée ici. L'étendre à la place casserait les autres tests du
+    // fichier, qui assertent des décomptes de lignes exacts sur cette fixture.
+    let contact_id: i64 =
+        sqlx::query_scalar("SELECT id FROM contacts WHERE company_id = ? ORDER BY id LIMIT 1")
+            .bind(ctx.company_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let invoice_id: i64 = sqlx::query_scalar(
+        "INSERT INTO invoices (company_id, contact_id, status, date, total_amount, version) \
+         VALUES (?, ?, 'draft', '2026-05-01', 300.00, 1) RETURNING id",
+    )
+    .bind(ctx.company_id)
+    .bind(contact_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    // Deux lignes, et deux seulement : la première porte un compte explicite,
+    // la seconde reste à NULL. C'est ce couple qui distingue « colonne
+    // exportée » de « colonne exportée avec la bonne valeur ».
+    let mut line_ids: Vec<i64> = Vec::with_capacity(2);
+    for (position, account) in [(1_i32, Some(revenue_id)), (2, None)] {
+        let id: i64 = sqlx::query_scalar(
+            "INSERT INTO invoice_lines \
+             (invoice_id, position, description, quantity, unit_price, vat_rate, line_total, revenue_account_id) \
+             VALUES (?, ?, 'Prestation', 1.00, 150.00, 8.10, 150.00, ?) RETURNING id",
+        )
+        .bind(invoice_id)
+        .bind(position)
+        .bind(account)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        line_ids.push(id);
+    }
+
+    let app = spawn_app(pool).await;
+    let resp = app
+        .client
+        .get(app.url("/api/v1/exports/global.zip"))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body = resp.bytes().await.unwrap();
+    let entries = assert_zip_response(&body);
+
+    let raw = entry_bytes(&entries, "invoice_lines.csv");
+    let text = std::str::from_utf8(&raw[3..]).unwrap(); // strip BOM
+    let mut lines = text.split("\r\n").filter(|l| !l.is_empty());
+    let header = lines.next().expect("header present");
+    let cols: Vec<&str> = header.split(';').collect();
+    let pos = cols
+        .iter()
+        .position(|c| c.trim_matches('"') == "revenue_account_id")
+        .expect("colonne revenue_account_id présente dans invoice_lines.csv");
+    let id_pos = cols
+        .iter()
+        .position(|c| c.trim_matches('"') == "id")
+        .expect("colonne id présente");
+
+    let mut seen_explicit = false;
+    let mut seen_empty = false;
+    for row in lines {
+        let cells: Vec<&str> = row.split(';').collect();
+        let id: i64 = cells[id_pos].trim_matches('"').parse().unwrap();
+        let value = cells[pos].trim_matches('"');
+        if id == line_ids[0] {
+            assert_eq!(
+                value,
+                revenue_id.to_string(),
+                "la ligne au compte explicite doit l'exporter"
+            );
+            seen_explicit = true;
+        } else {
+            assert!(
+                value.is_empty(),
+                "une ligne sans compte doit sortir vide, reçu {value:?}"
+            );
+            seen_empty = true;
+        }
+    }
+    assert!(
+        seen_explicit,
+        "la ligne au compte explicite doit être exportée"
+    );
+    assert!(
+        seen_empty,
+        "au moins une ligne sans compte, sinon le cas vide n'est pas couvert"
+    );
+}
+
 // ============================================================
 // AC #29(a) — Success path
 // ============================================================

@@ -472,6 +472,14 @@ pub fn serialize_invoice_lines_csv<W: Write>(
         "unit_price",
         "vat_rate",
         "line_total",
+        // Story 16-1a : compte de produit de la ligne. Vide = la ligne suit le
+        // compte par défaut de la société. Trois causes, et la troisième est de
+        // loin la plus fréquente : brouillon ; facture dont l'écriture a été
+        // retouchée à la main, que le backfill de 16-1a-bis refuse
+        // délibérément de reprendre (D-B2) ; facture `cancelled`, que le même
+        // backfill exclut par construction (D-B5) — donc TOUTE facture ayant
+        // reçu un avoir.
+        "revenue_account_id",
         "created_at",
     ])
     .map_err(|e| map_csv_err("invoice_lines", e))?;
@@ -485,6 +493,7 @@ pub fn serialize_invoice_lines_csv<W: Write>(
             fmt_decimal(il.unit_price),
             fmt_decimal(il.vat_rate),
             fmt_decimal(il.line_total),
+            fmt_opt_i64(il.revenue_account_id),
             fmt_dt(il.created_at),
         ])
         .map_err(|e| map_csv_err("invoice_lines", e))?;

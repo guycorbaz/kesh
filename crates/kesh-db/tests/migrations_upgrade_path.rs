@@ -35,11 +35,13 @@ async fn apply_migrations_up_to(
     assert!(
         n <= all.len(),
         "apply_migrations_up_to: n={} > total={} — vérifier que le calcul \
-         `total - 8` (fenêtre d'upgrade Story 10-2 + companies_is_stub v011-2 \
-         + bank_accounts_archived v014-1 + api_keys/audit_log_actor 17-2a) reste \
+         `total - 23` (taille de la fenêtre d'upgrade, frontière à 34) reste \
          cohérent avec l'ajout de migrations futures. Si une migration a été ajoutée à \
-         la branche, l'assertion `total == 39` du test upgrade_path_preserves_data \
-         devrait également fail pour signaler le besoin de mise à jour.",
+         la branche, l'assertion `total == 57` du test upgrade_path_preserves_data \
+         doit également échouer, c'est son rôle : elle signale qu'il faut décider \
+         explicitement si la fenêtre s'élargit (bumper `total` seul) ou si la \
+         frontière doit rester à 34 (bumper `total` ET la fenêtre). Cf. garde-fou \
+         P6 de CLAUDE.md.",
         n,
         all.len()
     );
@@ -52,10 +54,17 @@ async fn apply_migrations_up_to(
     sub.run(pool).await
 }
 
-/// AC #15a — cas générique upgrade path : 23 migrations appliquées + seed
-/// + MIGRATOR.run() final (qui applique les 5 dernières : 4 de la fenêtre
-/// Story 10-2 jusqu'à `20260522000001_kesh_version.sql` + `20260528000001_companies_is_stub.sql`
-/// de Story v011-2). Assertion : seed préservé.
+/// AC #15a — cas générique upgrade path : `total - 23` migrations appliquées
+/// (**34** à ce jour) + seed + `MIGRATOR.run()` final, qui applique les **23**
+/// dernières. Assertion : seed préservé à travers la fenêtre d'upgrade.
+///
+/// ⚠️ Les nombres ci-dessus se recomptent, ils ne se relisent pas — cf. le
+/// commentaire de la frontière dans le corps de la fonction, qui explique
+/// pourquoi la fenêtre ne couvre **pas** la Story 10-2 malgré ce que ce
+/// doc-comment a longtemps affirmé (il annonçait « 23 appliquées » et « les 5
+/// dernières », trois nombres faux depuis plusieurs Epics ; corrigés ici en
+/// revue de code 16-1a passe 5, la passe 2 n'ayant amendé que le commentaire
+/// inline, 47 lignes plus bas, en laissant celui-ci le contredire).
 #[sqlx::test(migrations = false)]
 async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // Total migrations attendues : 26 historiques + _kesh_version (Story 10-2)
@@ -73,14 +82,17 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // + dunning_config + email_templates_reminder (Story 21-3, #231) = 53.
     // + invoice_reminders (Story 21-5a, #231) = 54.
     // + accounts_role_postable (Story 14-3a, #269) = 55.
+    // + invoice_lines_revenue_account (Story 16-1a, #152) = 56.
+    // + invoice_lines_revenue_account_backfill (Story 16-1a-bis, #152) = 57.
     let total = kesh_db::MIGRATOR.migrations.len();
     assert_eq!(
-        total, 55,
-        "55 migrations attendues (54 précédentes + Story 14-3a : accounts_role_postable)"
+        total, 57,
+        "57 migrations attendues (56 précédentes + Story 16-1a-bis : \
+         invoice_lines_revenue_account_backfill)"
     );
 
     // Étape 1 : simule l'état pré-Story-10-2 en appliquant toutes les
-    // migrations sauf les 13 dernières (reconciliation_8_4,
+    // migrations sauf les 23 dernières (reconciliation_8_4,
     // bank_account_journal_link, reconciliation_rules, _kesh_version,
     // companies_is_stub ajoutée Story v011-2, bank_accounts_archived
     // ajoutée Story v014-1, api_keys + audit_log_actor ajoutées Story 17-2a,
@@ -88,28 +100,47 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // vat_rates_crud ajoutée Story 11-1, vat_accounts_config ajoutée Story 18-1a,
     // et credit_notes ajoutée Story 12-1).
     //
-    // Note `total - N` : expression relative à la longueur totale, mais
-    // l'assertion `total == 39` ci-dessus est INTENTIONNELLEMENT hardcode
-    // pour fail-loud sur toute évolution non-revue. À chaque ajout d'une
-    // migration future, le mainteneur doit (1) bumper le compte à la nouvelle
-    // longueur (2) revoir si `total - N` cible toujours la bonne fenêtre.
-    // La frontière reste à 23 (état pré-10-2) : les migrations ajoutées APRÈS
-    // la fenêtre Story 10-2 (companies_is_stub v011-2, bank_accounts_archived
-    // v014-1, api_keys + audit_log_actor 17-2a, users_email + password_reset_tokens
-    // 17-4a, vat_rates_crud 11-1, vat_accounts_config 18-1a, credit_notes 12-1,
-    // supplier_invoices 12-2, payment_batches 12-3, imported_supplier_invoices 12-5b,
-    // projects_analytics 19-1, supplier_invoices_project 19-3, invoices_project 19-4,
-    // reconciliation_rules_default_project 19-5)
-    // élargissent la fenêtre d'upgrade et incrémentent donc le `N` soustrait
-    // (de 4 à 6 à 8 à 10 à 11 à 12 à 13 à 14 à 15 à 16 à 17 à 18 à 19 à 20 à 21),
-    // sans déplacer la frontière des 23 migrations historiques.
-    // ⚠️ Story 14-3a : ce N DOIT être incrémenté en même temps que `total`.
-    // Le laisser à 20 avec total=55 déplacerait la frontière à 24 migrations
-    // historiques — le test continuerait de passer en testant autre chose.
-    let n_before_upgrade_window = total - 21;
+    // Note `total - N` : expression relative à la longueur totale, tandis que
+    // l'assertion `total == 57` ci-dessus est INTENTIONNELLEMENT codée en dur
+    // pour fail-loud sur toute évolution non revue. À chaque migration ajoutée,
+    // le mainteneur doit (1) bumper ce compte (2) incrémenter `N` du même pas,
+    // de sorte que `total - N` — la frontière — reste **constant**.
+    //
+    // Frontière actuelle : **34**. Le test applique donc les 34 premières
+    // migrations (jusqu'à `20260613000001_vat_rates_crud` incluse), seede des
+    // données, puis joue les 23 restantes comme « fenêtre d'upgrade ».
+    //
+    // ⚠️ `N` DOIT être incrémenté en même temps que `total`. Le laisser à 22
+    // avec `total = 57` porterait la frontière à 35 : le test continuerait de
+    // passer en testant une fenêtre plus étroite d'une migration.
+    // Story 16-1a : 21 → 22, frontière inchangée (56 - 22 = 55 - 21 = 34).
+    // Story 16-1a-bis : 22 → 23, frontière inchangée (57 - 23 = 34).
+    //
+    // ⚠️ DÉRIVE DOCUMENTAIRE CONSTATÉE (revue de code 16-1a). Ce commentaire
+    // affirmait simuler « l'état pré-Story-10-2 » et parlait d'une « frontière
+    // de 23 migrations historiques », avec une assertion citée à `total == 39`.
+    // Ces trois nombres sont faux et le sont
+    // depuis plusieurs Epics : la migration de la Story 10-2
+    // (`20260522000001_kesh_version`) est la **27ᵉ**, or la frontière est à 34
+    // — la fenêtre d'upgrade ne couvre donc PAS la Story 10-2, elle démarre à
+    // `20260614000001_vat_accounts_config` (Story 18-1a). Le test reste valide
+    // (il exerce bien un upgrade sur 23 migrations avec préservation des
+    // données), mais il n'exerce pas la fenêtre que son commentaire décrivait.
+    // Restaurer l'intention d'origine supposerait de ramener la frontière à 26
+    // — décision de périmètre, hors revue de la 16-1a.
+    //
+    // Chronologie des correctifs, parce que la dérive a survécu à ses propres
+    // corrections : passe 2 rend CE commentaire factuel ; passe 5 corrige le
+    // doc-comment de la fonction, resté 47 lignes plus haut à « 23 appliquées /
+    // 5 dernières » ; passe 6 corrige le message d'assertion de
+    // `apply_migrations_up_to`, resté à `total - 8` / `total == 39`. Trois sites
+    // du même symptôme dans le même fichier, découverts un par passe. Ce qui
+    // reste ouvert n'est plus documentaire, c'est la décision de périmètre
+    // ci-dessus.
+    let n_before_upgrade_window = total - 23;
     apply_migrations_up_to(&pool, n_before_upgrade_window)
         .await
-        .expect("apply_migrations_up_to(total - 21) failed");
+        .expect("apply_migrations_up_to(total - 23) failed");
 
     // Étape 2 : seed 1 company + 1 user + 2 accounts + 1 invoice + 1 contact.
     let company_id: i64 = sqlx::query_scalar(
@@ -178,7 +209,7 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     .await
     .expect("INSERT invoice failed");
 
-    // Étape 3 : appliquer les 10 migrations restantes via MIGRATOR.run().
+    // Étape 3 : appliquer les 23 migrations restantes via MIGRATOR.run().
     kesh_db::MIGRATOR
         .run(&pool)
         .await

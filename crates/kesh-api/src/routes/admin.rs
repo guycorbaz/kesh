@@ -281,6 +281,21 @@ async fn run_backup_and_restore(
         )));
     }
 
+    // 5-bis. Rejeu des backfills de données (Story 16-1c, #281). **Après** la
+    //    garde de comptage — inutile de rejouer par-dessus un restore déjà
+    //    incohérent, qui va être annulé — et **avant** l'audit, dont le détail
+    //    porte le rapport. Tourne avec `FOREIGN_KEY_CHECKS = 1` :
+    //    `restore_tables_in_tx` rétablit systématiquement le flag avant de rendre
+    //    la main, y compris sur erreur.
+    //
+    //    Sans ce rejeu, restaurer un backup antérieur à une migration de backfill
+    //    rouvrait DÉFINITIVEMENT le bug qu'elle fermait : `_sqlx_migrations`
+    //    n'étant pas restaurée, la migration reste marquée appliquée.
+    let backfills_replayed =
+        kesh_db::post_restore::replay_post_restore_backfills(&mut tx, &parsed.tables)
+            .await
+            .map_err(|e| AppError::AdminFullImportFailed(format!("rejeu des backfills : {e}")))?;
+
     // Audit in-tx, user_id = MIN(admin) **du dataset restauré** (O-1, FK
     // audit_log.user_id → users). PAS current_user (peut ne pas exister dans
     // la source).
@@ -301,6 +316,27 @@ async fn run_backup_and_restore(
         "triggered_by_user": current_user.user_id,
         "tables_restored": tables_restored,
         "rows_restored": rows_restored,
+        // Story 16-1c — rapport de rejeu. Le corps de réponse HTTP reste
+        // INCHANGÉ (D-C7) : cette information de diagnostic vit dans l'audit et
+        // le journal serveur, que l'exploitant d'un restore consulte de toute
+        // façon depuis la machine.
+        //
+        // `outcome` porte le CODE STABLE de `ReplayOutcome::code()`, et non un
+        // `format!("{:?}")` de l'enum : l'audit est une archive relue longtemps
+        // après, un renommage de variant y ferait dériver silencieusement le
+        // contenu d'enregistrements déjà écrits.
+        "backfills_replayed": backfills_replayed
+            .iter()
+            .map(|r| {
+                serde_json::json!({
+                    "version": r.version,
+                    "label": r.label,
+                    "outcome": r.outcome.code(),
+                    "missing_sentinels": r.outcome.missing_sentinels(),
+                    "rows_affected": r.rows_affected,
+                })
+            })
+            .collect::<Vec<_>>(),
     });
     kesh_db::repositories::audit_log::insert_in_tx(
         &mut tx,

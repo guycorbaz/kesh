@@ -290,6 +290,14 @@ Un compte ne peut être supprimé que s'il n'a aucune écriture ni sous-compte. 
 
 Pour retrouver un compte archivé, cocher \emph{Afficher les archivés} en haut de la page. Un bouton \textbf{Réactiver} permet de le remettre en service. La réactivation est refusée dans deux cas : si son \textbf{compte parent} est lui-même archivé (il faut le réactiver d'abord), ou si son \textbf{rôle} a été attribué à un autre compte pendant son archivage — le message d'erreur nomme alors le compte concerné, dont il faut retirer le rôle au préalable.
 
+\label{sec:plan-comptable-archivage}
+
+\begin{keshwarning}
+\textbf{Avant d'archiver un compte de produit, pensez aux avoirs.} Un compte de produit imputé par des factures \textbf{déjà validées} reste nécessaire tant qu'un avoir peut être émis sur ces factures — ce qui n'a pas de limite de temps. Une fois le compte archivé, l'émission d'un avoir sur ces factures est \textbf{refusée} (le motif est expliqué au \S\ref{sec:avoirs}).
+
+Ce n'est pas bloquant : la marche à suivre est de \textbf{réactiver} le compte, d'émettre l'avoir, puis de le \textbf{ré-archiver}. Les deux mouvements étant journalisés, la manœuvre reste traçable.
+\end{keshwarning}
+
 \subsection{Rôles des comptes}
 
 Chaque compte peut porter un \textbf{rôle} qui indique à Kesh à quoi il sert : compte de créances clients, de TVA due, de capital, de résultat de l'exercice, etc. Ce rôle est \textbf{explicite et modifiable} : Kesh ne devine jamais la fonction d'un compte à partir de son \emph{numéro}. C'est ce qui vous permet de renuméroter ou de restructurer votre plan comptable sans rien casser — le plan comptable suisse est un usage, pas une obligation légale.
@@ -571,7 +579,8 @@ La barre de recherche utilise l'index FULLTEXT MariaDB. Recherchez par nom, IDE,
     \item \textbf{Date de facture} : par défaut aujourd'hui.
     \item \textbf{Date d'échéance} : calculée automatiquement selon les conditions de paiement du client (modifiable).
     \item \textbf{Numéro} : généré automatiquement selon le pattern configuré (cf. \emph{Numérotation}).
-    \item \textbf{Lignes de facture} : un ou plusieurs produits avec quantité, prix, TVA.
+    \item \textbf{Lignes de facture} : un ou plusieurs produits avec quantité, prix, TVA, et \textbf{compte de produit}.
+    \item \textbf{Compte de produit (par ligne)} : le compte du plan comptable sur lequel le chiffre d'affaires de cette ligne sera crédité. Laissé vide, il suit le \textbf{compte de produit par défaut de la société} (\emph{Réglages} → facturation) — le champ affiche alors ce compte entre parenthèses, pour que vous voyiez d'un coup d'œil où ira le produit. Renseigné, il permet de \textbf{ventiler une même facture sur plusieurs comptes} : honoraires, marchandises, prestations, etc. Le compte reste \textbf{modifiable tant que la facture est un brouillon} ; il est figé à la validation.
     \item \textbf{Remarques} : texte libre apparaissant en bas de facture (mention de remerciement, conditions particulières, etc.).
     \item \textbf{Compte bancaire de réception} : le compte sur lequel vous attendez le paiement (utilisé pour générer la référence QR Bill).
 \end{itemize}
@@ -588,7 +597,10 @@ La barre de recherche utilise l'index FULLTEXT MariaDB. Recherchez par nom, IDE,
     \item Compte de réception : le compte bancaire QR-IBAN de l'agence.
 \end{itemize}
 
-À la validation, Kesh attribue le numéro \texttt{F-2026-0042}, génère le PDF QR Bill, et crée l'écriture comptable automatique (Débit 1100 Débiteurs / Crédit 3200 Honoraires). Si les lignes de la facture portent un taux de TVA, Kesh comptabilise aussi automatiquement la TVA due au compte de TVA (p.~ex. 2200) ; ici l'agence n'est pas assujettie, l'écriture se limite donc à CHF 4'950.00 (cf. \emph{Décompte TVA}).
+À la validation, Kesh attribue le numéro \texttt{F-2026-0042}, génère le PDF QR Bill, et crée l'écriture comptable automatique (Débit 1100 Débiteurs / Crédit 3200 Honoraires).
+
+\medskip
+\noindent\emph{Variante ventilée.} Si l'agence souhaite distinguer ses activités, elle affecte la ligne 1 au compte \texttt{3200 Honoraires} et la ligne 2 au compte \texttt{3400 Maintenance}. L'écriture générée porte alors \textbf{deux lignes de crédit distinctes} — Crédit 3200 pour CHF 4'500.00 et Crédit 3400 pour CHF 450.00 — au lieu d'un crédit unique. Le compte de résultat devient exploitable sans reclassement manuel a posteriori. Les lignes laissées vides continuent de suivre le compte par défaut de la société, et se regroupent sur ce compte. Si les lignes de la facture portent un taux de TVA, Kesh comptabilise aussi automatiquement la TVA due au compte de TVA (p.~ex. 2200) ; ici l'agence n'est pas assujettie, l'écriture se limite donc à CHF 4'950.00 (cf. \emph{Décompte TVA}).
 
 \subsection{Validation d'une facture}
 
@@ -596,7 +608,7 @@ Une facture passe par trois états :
 
 \begin{enumerate}
     \item \textbf{Brouillon} : modification libre, pas de numéro définitif, n'apparaît pas dans les rapports.
-    \item \textbf{Validée} : numéro définitif attribué, PDF QR Bill généré, écriture comptable créée automatiquement (Débit 1100 Débiteurs / Crédit 3000 Ventes + 2200 TVA).
+    \item \textbf{Validée} : numéro définitif attribué, PDF QR Bill généré, écriture comptable créée automatiquement (Débit 1100 Débiteurs / Crédit 3000 Ventes + 2200 TVA), et \textbf{comptes de produit figés}. Une facture validée n'est plus modifiable : le compte de chaque ligne reste néanmoins \textbf{consultable} dans la colonne « Compte de produit » de l'écran de détail, où les lignes suivant le compte par défaut de la société l'affichent avec la mention \emph{(défaut)}. C'est le moyen de contrôler la ventilation sans avoir à ouvrir l'écriture comptable et à la relire à l'envers.
     \item \textbf{Payée} : marquée comme payée après réconciliation avec une transaction bancaire entrante.
 \end{enumerate}
 
@@ -748,6 +760,26 @@ Un avoir (note de crédit) annule une facture validée : c'est le moyen \textbf{
 \end{itemize}
 
 L'avoir est consultable dans \emph{Avoirs} (menu \emph{Quotidien}), avec un \textbf{PDF « Avoir »} téléchargeable (mention « Avoir », référence à la facture d'origine, sans section QR de paiement). Le \emph{Décompte TVA} de la période tient compte de l'annulation (la TVA de la facture annulée est exclue).
+
+\begin{keshwarning}
+\textbf{Avoir refusé : « compte de produit archivé ».} Si une ligne de la facture impute un compte de produit qui a été \textbf{archivé depuis la validation}, Kesh refuse d'émettre l'avoir et nomme la ligne et le compte concernés.
+
+Ce refus est \textbf{volontaire}. Se replier sur le compte de produit par défaut du jour ferait extourner un compte que la facture n'a jamais crédité : le total resterait juste et le bilan équilibré, mais deux comptes de produit garderaient un solde résiduel se compensant, sans qu'aucun message ne le signale. Mieux vaut vous demander un geste explicite que fausser silencieusement votre compte de résultat.
+
+\medskip
+\noindent\textbf{Procédure quand l'avoir est néanmoins nécessaire} — trois étapes, à enchaîner \textbf{sans interruption} :
+
+\begin{enumerate}
+    \item \textbf{Réactiver} le compte dans le plan comptable (\S\ref{sec:plan-comptable-archivage}) ;
+    \item \textbf{Émettre} l'avoir depuis la facture ;
+    \item \textbf{Ré-archiver} le compte.
+\end{enumerate}
+
+Deux précisions utiles. D'abord, la réactivation peut elle-même être refusée dans deux cas (compte parent archivé, ou rôle repris entre-temps) : voir \S\ref{sec:plan-comptable-archivage}, qui explique quoi faire. Ensuite, tant que le compte est réactivé, il \textbf{réapparaît dans tous les sélecteurs de compte} de l'application — en cabinet, une écriture pourrait y être imputée par un collègue. D'où la recommandation d'enchaîner les trois étapes d'affilée plutôt que de laisser le compte ouvert le temps de finir la journée.
+
+\medskip
+\noindent Cette manœuvre n'a rien d'officieux : la réactivation \emph{et} le ré-archivage sont tous deux inscrits au \textbf{journal d'audit}. Un réviseur voit donc exactement pourquoi le compte a été rouvert quelques minutes, et dans quel ordre — ce qui préserve la valeur probatoire de votre comptabilité (CO art. 957a).
+\end{keshwarning}
 
 \begin{keshnote}
 En version actuelle, l'avoir est \textbf{total} (il annule la facture entière). L'avoir \emph{partiel} et le remboursement d'une facture \emph{déjà encaissée} (un avoir est refusé sur une facture marquée payée) sont prévus pour une version ultérieure. Les paiements sortants par fichier \texttt{pain.001.001.09} sont, eux, \textbf{disponibles} (cf. \S\ref{sec:paiements-fournisseurs}).

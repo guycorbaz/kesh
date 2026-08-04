@@ -533,6 +533,7 @@ async fn t7_3_invoices_search_does_not_leak_cross_company(pool: MySqlPool) {
 
     let day = NaiveDate::from_ymd_opt(2026, 1, 15).unwrap();
     let line = NewInvoiceLine {
+        revenue_account_id: None,
         description: "Conseil".into(),
         quantity: dec!(1),
         unit_price: dec!(100.00),

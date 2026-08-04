@@ -91,6 +91,7 @@ async fn create_validated_invoice(
         lines: lines
             .iter()
             .map(|(rate, price)| NewInvoiceLine {
+                revenue_account_id: None,
                 description: "Ligne".into(),
                 quantity: dec!(1),
                 unit_price: *price,
@@ -157,6 +158,103 @@ async fn reconciliation_nominal_delta_zero(pool: MySqlPool) {
         report.reconciliation_delta,
         dec!(0),
         "due == solde 2200 ventes"
+    );
+    assert_eq!(report.reconciliation_status, "ok");
+}
+
+/// (a-bis) **Story 16-1a (AC13)** — facture **multi-comptes de produit ×
+/// multi-taux** : la ventilation du crédit produit par compte ne perturbe pas
+/// le rapport TVA.
+///
+/// Le rapport ne lit que `default_vat_payable_account_id` et
+/// `invoice_lines.(vat_rate, line_total)` — jamais un compte de produit. Ce
+/// test l'ancre : trois comptes de produit distincts et deux taux, et la
+/// réconciliation doit rester `ok` avec un delta nul. La ventilation multiplie
+/// les lignes de crédit produit de l'écriture, pas les lignes de TVA due.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn reconciliation_unaffected_by_multi_account_ventilation(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = seed_contact(&pool, &seeded).await;
+
+    let mut extra = Vec::new();
+    for (number, name) in [("3200", "Prestations"), ("3400", "Marchandises")] {
+        let id =
+            sqlx::query("INSERT INTO accounts (company_id, number, name, account_type) VALUES (?, ?, ?, 'Revenue')")
+                .bind(seeded.company_id)
+                .bind(number)
+                .bind(name)
+                .execute(&pool)
+                .await
+                .unwrap()
+                .last_insert_id() as i64;
+        extra.push(id);
+    }
+
+    // 3 comptes (défaut 3000 + 3200 + 3400) × 2 taux (8.1 % et 2.6 %).
+    let new = NewInvoice {
+        company_id: seeded.company_id,
+        contact_id: contact,
+        date: ymd(2026, 6, 15),
+        due_date: None,
+        payment_terms: None,
+        lines: vec![
+            NewInvoiceLine {
+                description: "Honoraires".into(),
+                quantity: dec!(1),
+                unit_price: dec!(1000),
+                vat_rate: dec!(8.10),
+                revenue_account_id: None,
+            },
+            NewInvoiceLine {
+                description: "Prestations".into(),
+                quantity: dec!(1),
+                unit_price: dec!(500),
+                vat_rate: dec!(2.60),
+                revenue_account_id: Some(extra[0]),
+            },
+            NewInvoiceLine {
+                description: "Marchandises".into(),
+                quantity: dec!(1),
+                unit_price: dec!(400),
+                vat_rate: dec!(8.10),
+                revenue_account_id: Some(extra[1]),
+            },
+        ],
+        project_id: None,
+    };
+    let (inv, _) = invoices::create(&pool, seeded.admin_user_id, new)
+        .await
+        .unwrap();
+    let validated =
+        invoices::validate_invoice(&pool, seeded.company_id, inv.id, seeded.admin_user_id)
+            .await
+            .expect("validate");
+
+    // L'écriture porte bien 3 crédits produit et 2 lignes de TVA due.
+    let vat_account = seeded.accounts["2000"];
+    let vat_lines = validated
+        .journal_entry
+        .lines
+        .iter()
+        .filter(|l| l.account_id == vat_account)
+        .count();
+    assert_eq!(
+        vat_lines, 2,
+        "une ligne de TVA due PAR TAUX, pas par compte"
+    );
+    assert_eq!(
+        validated.journal_entry.lines.len(),
+        1 + 3 + 2,
+        "créance + 3 comptes produit + 2 taux"
+    );
+
+    let report = gen_report(&pool, &seeded).await;
+    // 8.1 % sur 1400 = 81.00 + 32.40 ; 2.6 % sur 500 = 13.00.
+    assert_eq!(report.total_vat_due, dec!(126.40));
+    assert_eq!(
+        report.reconciliation_delta,
+        dec!(0),
+        "la ventilation par compte de produit n'affecte pas la TVA due"
     );
     assert_eq!(report.reconciliation_status, "ok");
 }

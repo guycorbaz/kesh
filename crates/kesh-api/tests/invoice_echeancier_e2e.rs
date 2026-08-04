@@ -171,6 +171,7 @@ async fn create_validated_invoice(
         due_date: Some(due_date),
         payment_terms: None,
         lines: vec![NewInvoiceLine {
+            revenue_account_id: None,
             description: "Stub".into(),
             quantity: dec!(1),
             unit_price: amount,
@@ -228,6 +229,7 @@ async fn list_due_dates_default_returns_only_unpaid_validated(pool: MySqlPool) {
             due_date: Some(NaiveDate::from_ymd_opt(2026, 4, 30).unwrap()),
             payment_terms: None,
             lines: vec![NewInvoiceLine {
+                revenue_account_id: None,
                 description: "Draft".into(),
                 quantity: dec!(1),
                 unit_price: dec!(50.00),
@@ -310,6 +312,7 @@ async fn mark_paid_on_draft_invoice_returns_409(pool: MySqlPool) {
             due_date: Some(NaiveDate::from_ymd_opt(2026, 4, 30).unwrap()),
             payment_terms: None,
             lines: vec![NewInvoiceLine {
+                revenue_account_id: None,
                 description: "X".into(),
                 quantity: dec!(1),
                 unit_price: dec!(10.00),

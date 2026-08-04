@@ -9,6 +9,7 @@ pub mod backup;
 pub mod entities;
 pub mod errors;
 pub mod pool;
+pub mod post_restore;
 pub mod repositories;
 pub mod retry;
 pub mod test_fixtures;

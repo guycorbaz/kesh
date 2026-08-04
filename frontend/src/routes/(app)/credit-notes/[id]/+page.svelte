@@ -13,6 +13,9 @@
 	import { apiClient, isApiError } from '$lib/shared/utils/api-client';
 	import { notifyError } from '$lib/shared/utils/notify';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
+	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+	import { creditNoteRevenueAccountLabel } from '$lib/features/accounts/account-label';
 
 	let creditNote = $state<CreditNoteResponse | null>(null);
 	let loading = $state(true);
@@ -34,7 +37,43 @@
 		} finally {
 			loading = false;
 		}
+		// Story 16-1b (T5-bis/AC6-bis) : référentiel comptes pour nommer le compte
+		// extourné par chaque ligne. `fetchAccounts(true)` — archivés INCLUS, un
+		// avoir pouvant parfaitement référencer un compte archivé depuis son
+		// émission. Échec toléré : la colonne retombe sur `#id`.
+		//
+		// PAS de `getInvoiceSettings()` ici, contrairement à l'écran facture : il
+		// n'y a aucun repli à afficher côté avoir (cf. `revenueAccountCell`).
+		try {
+			accounts = await fetchAccounts(true);
+		} catch {
+			// Fallback `#id`.
+		}
 	});
+
+	let accounts = $state<AccountResponse[]>([]);
+
+	/**
+	 * Libellé du compte de produit extourné par une ligne d'avoir (AC6-bis).
+	 *
+	 * # Aucune mention « (défaut) », jamais — et ce n'est pas un oubli
+	 *
+	 * Côté facture, `null` se lit au futur : l'écriture n'est pas passée, nommer le
+	 * compte cible est juste. Côté avoir, **l'écriture est déjà passée** — afficher
+	 * « 3000 (défaut) » affirmerait un repli qui n'aura pas lieu, soit un mensonge
+	 * sur une pièce comptable. D'où le tiret, porté par `account-label`.
+	 *
+	 * # Une facture et son avoir peuvent montrer DEUX comptes différents
+	 *
+	 * Pour un couple antérieur au déploiement dont le compte par défaut a changé
+	 * entre la validation et l'émission, les deux pièces ont réellement mouvementé
+	 * des comptes distincts (16-1a-bis D-B7). Le backfill enregistre ce résidu
+	 * **fidèlement**, il ne le répare pas. L'UI affiche donc les deux valeurs
+	 * telles quelles, **sans** marqueur d'incohérence et **sans** avertissement.
+	 */
+	function revenueAccountCell(revenueAccountId: number | null): string {
+		return creditNoteRevenueAccountLabel(accounts, revenueAccountId);
+	}
 
 	async function downloadPdf() {
 		if (!creditNote) return;
@@ -117,6 +156,10 @@
 				<th class="py-2 text-right">{i18nMsg('credit-notes-col-qty', 'Qté')}</th>
 				<th class="py-2 text-right">{i18nMsg('credit-notes-col-unit-price', 'Prix unitaire')}</th>
 				<th class="py-2 text-right">{i18nMsg('credit-notes-col-vat', 'TVA %')}</th>
+				<!-- AC6-bis : ce fichier est i18n — la colonne suit sa convention. -->
+				<th class="py-2">
+					{i18nMsg('invoice-line-col-revenue-account', 'Compte de produit')}
+				</th>
 				<th class="py-2 text-right">{i18nMsg('credit-notes-col-line-total', 'Total HT')}</th>
 			</tr>
 		</thead>
@@ -127,13 +170,16 @@
 					<td class="py-2 text-right">{line.quantity}</td>
 					<td class="py-2 text-right">{formatCreditNoteTotal(line.unitPrice)}</td>
 					<td class="py-2 text-right">{line.vatRate}</td>
+					<td class="py-2" data-testid="credit-note-line-revenue-account">
+						{revenueAccountCell(line.revenueAccountId)}
+					</td>
 					<td class="py-2 text-right">{formatCreditNoteTotal(line.lineTotal)}</td>
 				</tr>
 			{/each}
 		</tbody>
 		<tfoot>
 			<tr class="font-semibold">
-				<td class="py-2" colspan="4">{i18nMsg('credit-notes-col-total', 'Total HT')}</td>
+				<td class="py-2" colspan="5">{i18nMsg('credit-notes-col-total', 'Total HT')}</td>
 				<td class="py-2 text-right" data-testid="credit-note-total">
 					{formatCreditNoteTotal(creditNote.totalAmount)}
 				</td>

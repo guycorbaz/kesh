@@ -51,6 +51,25 @@ pub struct CreditNoteLine {
     pub unit_price: Decimal,
     pub vat_rate: Decimal,
     pub line_total: Decimal,
+    /// Compte de produit **recopié depuis la ligne de facture** à la création
+    /// de l'avoir (Story 16-1a, décision D5).
+    ///
+    /// Porté par le snapshot plutôt que relu depuis la facture d'origine pour
+    /// que l'avoir reste auto-descriptif, comme toutes les autres colonnes de
+    /// `credit_note_lines`. C'est ce qui garantit que la contre-passation
+    /// débite **le compte effectivement crédité par la facture**, et non le
+    /// compte de produit par défaut tel qu'il se trouve être configuré le jour
+    /// de l'avoir — sans quoi les deux écritures ne s'annulent plus et
+    /// laissent un résidu permanent, invisible au bilan mais faux au compte de
+    /// résultat.
+    ///
+    /// `None` seulement quand la ligne de facture d'origine est elle-même
+    /// `None` — cas devenu résiduel depuis le backfill de 16-1a-bis, qui a
+    /// repris le parc validé avant 16-1a : il ne reste que les pièces dont
+    /// l'écriture a été retouchée à la main, que le backfill refuse
+    /// délibérément d'interpréter (D-B2). Le repli sur le défaut société
+    /// s'applique alors, exactement comme avant la story.
+    pub revenue_account_id: Option<i64>,
     pub created_at: NaiveDateTime,
 }
 

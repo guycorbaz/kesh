@@ -68,6 +68,7 @@ async fn create_and_validate(
         lines: lines
             .iter()
             .map(|(rate, price)| NewInvoiceLine {
+                revenue_account_id: None,
                 description: "Ligne".into(),
                 quantity: dec!(1),
                 unit_price: *price,
@@ -313,6 +314,7 @@ async fn validate_uses_line_rate_snapshot_immune_to_vat_rates_change(pool: MySql
         due_date: None,
         payment_terms: None,
         lines: vec![NewInvoiceLine {
+            revenue_account_id: None,
             description: "Ligne".into(),
             quantity: dec!(1),
             unit_price: dec!(1000.00),
@@ -392,6 +394,7 @@ fn draft_with_project(
         payment_terms: None,
         project_id,
         lines: vec![NewInvoiceLine {
+            revenue_account_id: None,
             description: "Ligne".into(),
             quantity: dec!(1),
             unit_price: dec!(1000.00),
@@ -506,6 +509,7 @@ async fn update_grandfathers_unchanged_project(pool: MySqlPool) {
         payment_terms: Some("60".into()),
         project_id,
         lines: vec![NewInvoiceLine {
+            revenue_account_id: None,
             description: "Ligne".into(),
             quantity: dec!(1),
             unit_price: dec!(1000.00),

@@ -20,6 +20,19 @@ export interface InvoiceLineResponse {
 	unitPrice: string;
 	vatRate: string;
 	lineTotal: string;
+	/**
+	 * Compte de produit effectif de la ligne (Story 16-1a, #152 / CR #265).
+	 *
+	 * `null` = la ligne suit le **compte de produit par défaut de la société**
+	 * (réglages de facturation). Ce n'est PAS « aucune imputation » : l'écriture
+	 * crédite alors le défaut tel qu'il est au moment de la validation.
+	 *
+	 * Sur une facture **validée**, la valeur est matérialisée (16-1a D2) : elle
+	 * ne bouge plus, même si le défaut société change ensuite. Restent à `null`
+	 * les brouillons, et les pièces dont l'écriture a été retouchée à la main
+	 * que le backfill de 16-1a-bis refuse délibérément de reprendre.
+	 */
+	revenueAccountId: number | null;
 	createdAt: string;
 }
 
@@ -179,6 +192,17 @@ export interface CreateInvoiceLineRequest {
 	quantity: string;
 	unitPrice: string;
 	vatRate: string;
+	/**
+	 * Compte de produit de la ligne (Story 16-1a, #152). Optionnel : omettre la
+	 * clé ou envoyer `null` fait suivre le compte par défaut de la société — le
+	 * backend traite les deux de façon identique.
+	 *
+	 * ⚠️ `PUT` **remplace** l'intégralité des lignes : un client qui relit une
+	 * facture puis la réécrit SANS cette clé remet les lignes concernées sur le
+	 * défaut, sans erreur. Toujours renvoyer le champ tel qu'il a été lu
+	 * (durcissement du contrat suivi dans l'issue #278).
+	 */
+	revenueAccountId?: number | null;
 }
 
 export interface CreateInvoiceRequest {
