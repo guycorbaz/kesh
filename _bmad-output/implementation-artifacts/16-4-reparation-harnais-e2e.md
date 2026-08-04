@@ -2,7 +2,22 @@
 
 ## Status
 
-draft
+superseded-by-diagnostic-error
+
+> ## ⛔ CETTE STORY REPOSE SUR UN DIAGNOSTIC FAUX — NE PAS L'IMPLÉMENTER
+>
+> **Il n'y a aucun bug dans le harnais E2E.** Réfuté le 2026-08-04 par la passe 1 de sa propre boucle `validate`, dont la lentille adversariale est allée lire le code source de Playwright 1.59.1 installé :
+>
+> - `cookieStore.js:36` — `matches()` filtre sur **`secure`, `domain`, `path`**, **jamais sur `sameSite`** ;
+> - `network.js:62` — `isLocalHostname()` ne reconnaît que `"localhost"` et `"*.localhost"`, **pas `127.0.0.1`**.
+>
+> La cause réelle est donc un cookie **`Secure`** rejeté sur `http://127.0.0.1` — exactement ce que `docs/testing.md` documente **depuis juillet**, et que `playwright.config.ts:20` référence. **Le montage employé au diagnostic ne suivait pas cette recette.** Avec `KESH_COOKIE_SECURE=false`, `invoice-revenue-account.spec.ts` **passe en 5,7 s**.
+>
+> **Ma faute, nommément** : le tableau des hypothèses déclare « cookie `Secure` sur du HTTP » **écartée** alors que Playwright n'a **jamais** été relancé avec `KESH_COOKIE_SECURE=false` — seule la forme de l'en-tête avait été vérifiée au `curl`. *Une hypothèse éliminée par raisonnement n'est pas une hypothèse testée.*
+>
+> **Ce qui a été conservé de ce travail** : le montage correct, la cause à la ligne de code près, et la règle de méthode sont écrits au **`CLAUDE.md`** § *Test Locally First* → E2E. L'issue **#285** porte la rectification.
+>
+> **Ce qui reste éventuellement à faire**, et qui n'est plus une réparation : la suite n'avait pas tourné depuis longtemps, et rien ne le signalait. Une story « rendre l'exécution de la suite E2E observable » (smoke en CI) garderait du sens — mais elle doit être **réécrite à partir de faits justes**, pas amendée depuis celle-ci.
 
 ## Story
 
