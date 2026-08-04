@@ -6,7 +6,7 @@ superseded-by-split
 
 ⚠️ **Cette story a été SPLITTÉE le 2026-08-03 en [`16-2a`](16-2a-compte-produit-catalogue-backend.md) (socle backend) et [`16-2b`](16-2b-selecteur-et-prefill-frontend.md) (sélecteur et pré-remplissage). Ne pas l'implémenter.** Elle est conservée pour son historique : quatre passes de `bmad-create-story validate`, deux déclenchements du garde-fou de la dérogation au splitting, et le détail des 30+ findings dont les deux filles héritent à l'état corrigé.
 
-*(La boucle `bmad-create-story validate` est en cours — 3 passes, non convergée. Ce statut passera à `ready-for-dev` quand plus rien ne dépassera `LOW`. Le champ disait `ready-for-dev` pendant que le Change Log se déclarait non convergé : trois états contradictoires au même instant, relevé en passe 3.)*
+*(Résidu de rédaction corrigé le 2026-08-04 : ce bloc annonçait encore « boucle en cours, 3 passes, non convergée » et un passage prochain à `ready-for-dev`, sous un statut `superseded-by-split` — la contradiction d'états que la passe 3 avait précisément relevée sur cette story, laissée en place par le patch du split. La boucle n'est pas « en cours » : elle est close par le split, et c'est aux deux filles de converger.)*
 
 ## Story
 

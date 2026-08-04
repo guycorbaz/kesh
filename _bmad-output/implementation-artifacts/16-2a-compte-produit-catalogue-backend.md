@@ -14,7 +14,7 @@ Issue : **#144**. Sous-story de l'Epic 16, cible **v0.9.0**. **Née du split de 
 
 ⚠️ **Doit partir dans la MÊME PR que 16-2b.** Seule, cette story livre une colonne que **rien ne lit** — le « code mort qui paraît fonctionner » que **D6** invoque par ailleurs. C'est l'objection qui a fait refuser le split deux fois ; elle est levée par la contrainte de PR, pas par le split.
 
-**Dépend de 16-1** (PR #284, ouverte, CI verte). La branche est issue de `story/16-1-…` et non de `main` — cf. Dev Notes pour le rebase.
+**Dépend de 16-1** — dépendance **levée le 2026-08-04** : la PR #284 est mergée en squash (`b499eee4`), et la branche a été rebasée sur ce `main`. Les ancres de 16-1 sont désormais vérifiables sur `main`. Cf. Dev Notes pour la trace de la mécanique.
 
 ---
 
@@ -143,18 +143,18 @@ Trois faits, tous établis par relevé et **vérifiés à quatre reprises** par 
 - **Ne pas corriger le contrat `PUT`** (D5) — c'est #278, arbitré ailleurs.
 - **Ne pas dupliquer** `RevenueAccountRejection`.
 
-### La branche ne part pas de `main` — mécanique du rebase
+### La branche partait de 16-1 — rebase **fait** le 2026-08-04
 
-Branche issue de `story/16-1-compte-produit-par-ligne` : les ancres sont invérifiables sur `main` tant que la **PR #284** n'est pas mergée.
+*(Section conservée pour sa trace : la manœuvre est exécutée, il n'y a plus rien à faire ici.)*
 
-⚠️ **#284 sera mergée en *squash*** (convention du dépôt : PR #275 → un seul commit `dc3ece04`). Un `git rebase main` naïf rejouerait les 53 commits de 16-1 contre un `main` qui les contient déjà squashés. Forme correcte :
+Branche issue de `story/16-1-compte-produit-par-ligne`, dont les ancres étaient invérifiables sur `main` tant que la **PR #284** n'était pas mergée. Elle l'a été **en squash** (`b499eee4`), comme prévu — un `git rebase main` naïf aurait rejoué les 53 commits de 16-1 contre un `main` qui les contient déjà. Forme employée :
 
 ```sh
-git checkout main && git pull --ff-only
-git rebase --onto main 0ce6e13a story/16-2-...
+git checkout main && git pull --ff-only          # ef6cdf52 → b499eee4
+git rebase --onto main 0ce6e13a story/16-2-compte-produit-catalogue
 ```
 
-`0ce6e13a` est le point de fork — **le relever maintenant**, un squash le rend introuvable par `git merge-base`.
+`0ce6e13a` — le point de fork — avait été **relevé avant le merge**, un squash le rendant introuvable par `git merge-base`. Résultat : 7 commits rejoués, zéro conflit, `main..HEAD` ne contient bien que ces 7 commits. Les story files de 16-2 sont bit-à-bit inchangés (`git diff` de l'ancien au nouveau sommet, restreint à `16-2*` : vide) et la fusion de `sprint-status.yaml`, seul fichier écrit des deux côtés, a préservé les huit entrées.
 
 ### Conventions de test
 
