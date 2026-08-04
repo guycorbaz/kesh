@@ -60,9 +60,27 @@
 		 * compris ceux portant un compte explicite différent. (Passe 2 de revue.)
 		 */
 		ariaLabel?: string;
+		/**
+		 * `id` rendu sur le champ de saisie, pour qu'un `<label for>` extérieur
+		 * puisse s'y lier (Story 16-2b, #144).
+		 *
+		 * **Prop opt-in dont le défaut préserve le comportement** : `undefined`
+		 * ⇒ aucun attribut `id`, les cinq écrans consommateurs sont inchangés.
+		 *
+		 * ⚠️ Sans elle, un `<label for="…">` écrit dans la page ne se lie **à
+		 * rien** — et le nom accessible du champ retombe alors sur `ariaLabel`,
+		 * voire sur le repli `journal-entry-form-col-account`, ce qui donnerait
+		 * un libellé « Compte » venu d'une clé *journal-entry* sur une fiche
+		 * produit. Le patron de `VatPurchaseAssistant.svelte:156-158` porte
+		 * exactement ce défaut, et `svelte-check` ne le voit pas : la règle
+		 * `a11y_label_has_associated_control` se satisfait de la présence de
+		 * l'attribut `for`, elle ne résout pas les `id` à travers un composant.
+		 */
+		id?: string;
 	}
 
 	let {
+		id = undefined,
 		accounts,
 		value,
 		loadError = false,
@@ -270,6 +288,7 @@
 
 <div class="relative">
 	<Input
+		{id}
 		type="text"
 		value={query}
 		oninput={handleInput}

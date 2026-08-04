@@ -1,6 +1,11 @@
 <!--
   ProductPicker (Story 5.1) : dialog simple pour sélectionner un produit
-  actif du catalogue et renvoyer un snapshot (name/unitPrice/vatRate).
+  actif du catalogue et renvoyer un snapshot
+  (name/unitPrice/vatRate/defaultRevenueAccountId).
+
+  Le compte de produit a rejoint le snapshot en Story 16-2b (#144) : la ligne
+  de facture le recopie tel quel, y compris quand il est devenu inutilisable —
+  c'est le sélecteur de ligne qui le signale alors, une fois, au bon endroit.
 -->
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog';

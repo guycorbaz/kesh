@@ -48,6 +48,12 @@ vi.mock('$lib/features/projects/projects.api', () => ({
 	listProjects: vi.fn(async () => []),
 }));
 
+// Story 16-2b (#144) — le catalogue, consommé par `ProductPicker`.
+const listProductsMock = vi.fn();
+vi.mock('$lib/features/products/products.api', () => ({
+	listProducts: (q?: unknown) => listProductsMock(q),
+}));
+
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$lib/shared/utils/notify', () => ({ notifyError: vi.fn(), notifySuccess: vi.fn() }));
 
@@ -141,6 +147,7 @@ beforeEach(() => {
 		defaultReceivableAccountId: 1100,
 		defaultRevenueAccountId: DEFAULT_REVENUE.id,
 	});
+	listProductsMock.mockResolvedValue({ items: [], total: 0, limit: 20, offset: 0 });
 });
 
 describe('InvoiceForm — chargement des comptes (Story 16-1b, AC5 / D11)', () => {
@@ -484,5 +491,75 @@ describe('InvoiceForm — cycle de vie des lignes (Story 16-1b, AC9 / AC9-bis)',
 		expect(values).toContain('3200 — Honoraires');
 		// Et le compte archivé rechargé est bien signalé.
 		expect(getAllByText(MARKER)).toHaveLength(1);
+	});
+});
+
+describe('InvoiceForm — pré-remplissage depuis le catalogue (Story 16-2b, AC-B3)', () => {
+	/** Article du catalogue, avec ou sans compte de produit. */
+	function product(id: number, name: string, account: number | null) {
+		return {
+			id,
+			companyId: 1,
+			name,
+			description: null,
+			unitPrice: '250.00',
+			vatRate: '8.10',
+			defaultRevenueAccountId: account,
+			active: true,
+			version: 1,
+			createdAt: '2026-01-01T00:00:00',
+			updatedAt: '2026-01-01T00:00:00',
+		};
+	}
+
+	/** Ouvre le picker et choisit le premier article proposé. */
+	async function pickFirstProduct(container: HTMLElement, getByText: (t: string) => HTMLElement) {
+		await fireEvent.click(getByText('Depuis catalogue'));
+		await settle();
+		// Le dialog du picker est rendu en PORTAL, hors du conteneur du
+		// composant : le chercher dans `container` ne rendrait jamais rien.
+		const entry = document.querySelector('ul li button') as HTMLElement | null;
+		expect(entry, 'le picker doit proposer au moins un article').toBeTruthy();
+		await fireEvent.click(entry!);
+		await settle();
+	}
+
+	it("la ligne créée porte le compte de l'article", async () => {
+		listProductsMock.mockResolvedValue({
+			items: [product(1, 'Prestation conseil', SERVICES.id)],
+			total: 1,
+			limit: 20,
+			offset: 0,
+		});
+		const { container, getByText } = render(InvoiceForm, { invoice: invoiceWith([]) });
+		await settle();
+
+		const before = accountInputs(container).length;
+		await pickFirstProduct(container, getByText);
+
+		const inputs = accountInputs(container);
+		expect(inputs.length).toBe(before + 1);
+		// C'est la valeur du compte de l'ARTICLE qui doit apparaître, pas un
+		// champ vide retombé en silence sur le défaut société.
+		expect(inputs[inputs.length - 1].value).toContain(SERVICES.number);
+	});
+
+	it("un article SANS compte laisse la ligne au défaut société, sans rien inventer", async () => {
+		listProductsMock.mockResolvedValue({
+			items: [product(2, 'Article neutre', null)],
+			total: 1,
+			limit: 20,
+			offset: 0,
+		});
+		const { container, getByText } = render(InvoiceForm, { invoice: invoiceWith([]) });
+		await settle();
+
+		await pickFirstProduct(container, getByText);
+
+		const inputs = accountInputs(container);
+		const last = inputs[inputs.length - 1];
+		// `null` = suivre le défaut société : le champ reste vide de valeur, et
+		// c'est le placeholder qui nomme le compte par défaut (D9 de 16-1b).
+		expect(last.value).toBe('');
 	});
 });
