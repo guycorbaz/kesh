@@ -69,11 +69,15 @@ revenueAccountId: null,
   1. l'**étiquette** du sélecteur de la fiche produit ;
   2. son **texte d'aide** disant que laisser vide fait suivre le compte par défaut de la société.
 
-  Préfixe `product-` : la page catalogue vit dans `src/routes/(app)/products/`, **hors du périmètre** de `lint-i18n-ownership` (qui ne parcourt que `src/lib/features`, `:17`). ⚠️ Tout libellé qui finirait consommé depuis un composant partagé sous `features/` doit porter l'un des **six** préfixes globaux (`error`, `tooltip`, `common`, `mode`, `shortcut`, `demo`) — le passer **en prop** depuis la page évite la question. C'est l'erreur exacte de 16-1b, où une clé a dû être renommée après un lint rouge.
+  **Les deux clés sont nommées ici**, faute de quoi l'AC n'est pas cochable : **`product-revenue-account-label`** et **`product-revenue-account-help`**.
+
+  Préfixe `product-` : la page catalogue vit dans `src/routes/(app)/products/`, **hors du périmètre** de `lint-i18n-ownership` (qui ne parcourt que `src/lib/features`, `:17`). ⚠️ **Mais le piège est concret, pas théorique** : `AccountAutocomplete` vit sous **`src/lib/features/journal-entries/`** — donc **DANS** le périmètre du lint. Une clé `product-*` qu'il résoudrait lui-même ferait rougir `npm run lint-i18n-ownership`, puisque `product` n'est pas l'un des **six** préfixes globaux (`error`, `tooltip`, `common`, `mode`, `shortcut`, `demo`).
+
+  **D'où une obligation, pas une suggestion : les deux libellés sont résolus DANS `+page.svelte` et passés en PROP** au sélecteur. Aucune clé `product-*` ne doit être lue depuis un composant de `features/`. C'est l'erreur exacte de 16-1b, où une clé a dû être renommée après un lint rouge.
 
 - **AC-B7 — Documentation synchronisée.**
   - **CHANGELOG** : la fonctionnalité **et** l'avertissement aux clients d'API de **D5** de 16-2a (le `PUT` full-replace efface un `defaultRevenueAccountId` omis). Un avertissement analogue existe pour les factures — s'y accorder, ne pas le dupliquer.
-  - **Manuel utilisateur** — ⚠️ **il promet DÉJÀ ce champ.** `docs/manual/fr/user-manual.tex:553` documente « **Compte produit par défaut** : par exemple 3000 » **depuis la Story 11-0**, pour un code où il n'existe pas ; et `:583` décrit la chaîne de repli à **deux** maillons (ligne → société), que **AC-B3** fait passer à **trois** (ligne → **article** → société). Le manuel est donc à **corriger**, pas à compléter : dire que le champ est **facultatif**, décrire le pré-remplissage, dire ce que signifie le laisser vide. **`make fr` puis commiter les PDF.** *(Obligation reprise de 16-1b AC17.)*
+  - **Manuel utilisateur** — ⚠️ **il promet DÉJÀ ce champ.** `docs/manual/fr/user-manual.tex:553` documente « **Compte produit par défaut** : par exemple 3000 » **depuis la Story 11-0**, pour un code où il n'existe pas ; et **deux** sites décrivent la chaîne de repli à **deux** maillons (ligne → société), que **AC-B3** fait passer à **trois** (ligne → **article** → société) : `:583` et **`:603`** — ce dernier affirmant que « les lignes laissées vides continuent de suivre le compte par défaut de la société ». Le manuel est donc à **corriger**, pas à compléter : dire que le champ est **facultatif**, décrire le pré-remplissage, dire ce que signifie le laisser vide. **`make fr` puis commiter les PDF.** *(Obligation reprise de 16-1b AC17.)*
   - **README** : vérifier la feuille de route — l'Epic 16 reste « 🚧 En cours » tant que #144 et #151 ne sont pas tous deux livrés — et la section « Fonctionnalités ». Tracer la vérification même si la conclusion est « rien à changer ».
 
 - **AC-B8 — Discrimination prouvée par mutation.** **Quatre** mutations exécutées et consignées, avec **le rayon d'effet réellement attendu** — pas une liste minorée :
@@ -97,14 +101,15 @@ revenueAccountId: null,
   - [ ] Sélecteur, `<label for>` + clé i18n, hydratation à l'édition, envoi systématique. **Pas de `markInvalid`** (D-B2).
   - [ ] **`openCreate()` (`:249-258`) remet le compte à `null`**, comme il le fait déjà pour les quatre autres champs — les `$state` vivent au niveau de la page (`:94-98`) et survivent à la fermeture du dialogue.
   - [ ] `fetchAccounts(true)` — **et son assertion** `toHaveBeenCalledWith(true)`.
-  - [ ] Clés i18n dans les **4** locales.
+  - [ ] Clés **`product-revenue-account-label`** et **`product-revenue-account-help`** dans les **4** locales, **résolues dans `+page.svelte` et passées en prop** — jamais lues depuis `AccountAutocomplete`, qui vit sous `features/` et ferait rougir le lint (AC-B6).
 - [ ] **T-B3 — Pré-remplissage** (AC-B3, AC-B4)
   - [ ] `onProductSelect` pose le compte de l'article ; `addFreeLine` reste à `null`.
   - [ ] Remplacer les **deux** commentaires d'ancrage, repérés par leurs numéros de ligne.
 - [ ] **T-B4 — Tests et preuve** (AC-B4, AC-B8)
-  - [ ] Unitaire : le pré-remplissage pose bien le compte de l'article ; l'assertion `toHaveBeenCalledWith(true)` ; **« éditer un article avec compte → Nouveau produit → le sélecteur est vide »** (mutation 3).
+  - [ ] Unitaire : le pré-remplissage pose bien le compte de l'article ; l'assertion `toHaveBeenCalledWith(true)`.
+  - [ ] **« éditer un article avec compte → Nouveau produit → le sélecteur est vide »** (mutation 3) — **en E2E, pas en unitaire** : le scénario enchaîne deux ouvertures du dialogue sur une page SvelteKit complète, ce qu'un test de composant isolé ne monte pas.
   - [ ] **E2E** (suffixe `.spec.ts` **obligatoire**), **TROIS** scénarios :
-    1. « fiche produit avec compte → facture depuis catalogue → la ligne porte le compte » ;
+    1. « fiche produit avec compte → facture depuis catalogue → la ligne porte le compte ». ⚠️ **Le produit doit être créé PAR L'INTERFACE**, pas semé par fixture : c'est ce scénario, et lui seul, qui exerce le **payload HTTP** de la fiche et discrimine donc la **mutation 4**. Un produit semé directement en base contournerait le payload, et la mutation passerait sans qu'aucun test ne bouge ;
     2. cas **AC-B4** — assigner un compte, l'**archiver ensuite**, monter la facture, constater marqueur et refus ;
     3. **« assigner un compte → l'archiver → ROUVRIR la fiche produit en édition → le libellé du compte s'affiche encore »**. ⚠️ **Sans ce scénario, la mutation 2 n'est attrapée par aucun E2E** : les deux premiers passent par le formulaire de facture, dont le `fetchAccounts(true)` est un appel **distinct** de celui du catalogue. Patron à reprendre : `frontend/tests/e2e/invoice-revenue-account.spec.ts:197-207` — archiver par l'API, puis `page.goto` vers l'écran, puis asserter le libellé. C'est lui qui a fermé ce piège en 16-1b.
   - [ ] ⚠️ Le preset E2E `with-data` crée **déjà** un produit `'CI Product'` au compte `NULL` (`test_fixtures.rs:482-483`, appelé par `routes/test_endpoints.rs:203`) — en tenir compte dans les montages.
@@ -112,7 +117,9 @@ revenueAccountId: null,
 - [ ] **T-B5 — Documentation** (AC-B7)
   - [ ] CHANGELOG (fonctionnalité + avertissement `PUT`).
   - [ ] `user-manual.tex` : corriger `:553` (champ **facultatif**) et `:583` (repli à trois maillons), décrire le pré-remplissage. **`make fr`**, commiter les PDF.
-  - [ ] **Greper le SYMPTÔME, pas seulement les deux sites nommés** (§ *Propagation post-patch*) : `grep -n "par défaut de la société\|compte par défaut" docs/manual/fr/*.tex` rend **trois** sites — `:583`, mais aussi **`:603`** (« Variante ventilée ») et **`:611`** (mention « (défaut) » sur la facture validée). Les lire et **tracer le verdict** dans le Dev Agent Record, même si la conclusion est « inchangé » — c'est ce qu'AC-B7 exige déjà du README, et qui manquait ici.
+  - [ ] **`:603` est à CORRIGER lui aussi, pas seulement à relire.** Le grep du symptôme (`grep -on "compte par défaut de la société" docs/manual/fr/user-manual.tex`) rend **trois** sites : `:583`, **`:603`**, `:611`. Or `:603` (« Variante ventilée ») affirme que **« les lignes laissées vides continuent de suivre le compte par défaut de la société »** — phrase qui devient **fausse** avec cette story : une ligne montée depuis un article suit d'abord le compte de l'**article**. `:611` en revanche reste **exact** (la mention « (défaut) » désigne toujours une ligne à `revenueAccountId = null`) : le lire, et **tracer le verdict « inchangé »** au Dev Agent Record — c'est ce qu'AC-B7 exige déjà du README.
+
+    *(La passe 1 avait rangé `:603` parmi les sites « à tracer ». C'était insuffisant : greper le symptôme ne suffit pas si l'on ne lit pas ce que le site dit vraiment.)*
   - [ ] README — feuille de route et « Fonctionnalités » vérifiées.
 - [ ] **T-B6 — Gate** (AC-B9) — frontend + E2E + `cargo test --workspace`, état final, exit 0.
 
@@ -160,4 +167,15 @@ revenueAccountId: null,
 
 Les LOW : ancre `ProductPicker.svelte:59` → **`:59-60`** (la ligne citée est la signature, l'appel est à la suivante) ; et le **grep du symptôme** sur le manuel, qui rend **trois** sites (`:583`, `:603`, `:611`) là où la story n'en nommait que deux — les deux autres sont à lire et leur verdict à tracer, comme AC-B7 l'exige déjà du README.
 
-**Statut : `ready-for-dev`. Boucle NON convergée** — 2 HIGH imposent une **passe 2** (§ *Review Iteration Rule*), sur un LLM autre que Sonnet et en contexte frais.
+**2026-08-04 — Passe 2 de `validate`** (Haiku 4.5, deux lentilles, contexte frais, **diff aplati** conformément à la § *Haiku-specific guardrails*). **0 CRITICAL, 0 HIGH, 3 MEDIUM, 1 LOW** — après réfutation. Une lentille a rendu **0 finding** avec son énumération de contrôles.
+
+⚠️ **Le CRITICAL et le HIGH annoncés ont tous deux été RÉFUTÉS comme tels — et ont tous deux conduit à un défaut réel.** C'est le cas de figure que la § *Haiku-specific guardrails* existe pour traiter, avec une nuance qui mérite d'être notée : **la vérification ne s'arrête pas à écarter le finding, elle regarde ce qu'il visait.**
+
+- **Le « CRITICAL » (clés i18n non nommées)** s'appuyait sur un `grep` montrant qu'une clé n'existe pas encore — ce qui est vrai de *toute* clé d'une story non implémentée, donc ne prouve rien —, et il se contredisait avec son propre MEDIUM (l'un disait « risque de lint rouge », l'autre « le lint ne verra jamais cette clé »). **Mais la vérification a établi un fait que ni lui ni la passe 1 n'avaient : `AccountAutocomplete` vit sous `src/lib/features/journal-entries/`, donc DANS le périmètre du lint.** Le piège d'AC-B6 était donc concret, et la story se contentait de le *suggérer* (« le passer en prop évite la question »). C'est désormais une **obligation**, et les deux clés sont **nommées**.
+- **Le « HIGH » (mutation 4 sans tueur)** est faux : le scénario E2E n°1 traverse HTTP de bout en bout. **Mais il désignait une ambiguïté réelle** — « fiche produit avec compte » ne disait pas si le produit est créé *par l'interface* ou semé par fixture. Semé, le payload n'est jamais exercé et la mutation 4 passe sans qu'aucun test ne bouge. Le scénario 1 précise maintenant **« créé par l'interface »**.
+
+**Le MEDIUM exact, et il corrige la passe 1 :** `user-manual.tex:603` affirme que « **les lignes laissées vides continuent de suivre le compte par défaut de la société** » — phrase qui devient **fausse** avec cette story. La passe 1 avait rangé ce site parmi ceux « à lire et tracer ». C'était insuffisant : **greper le symptôme ne suffit pas si l'on ne lit pas ce que le site dit vraiment.** `:603` passe en correction obligatoire ; `:611`, vérifié, reste exact et son verdict « inchangé » est à tracer.
+
+Dernier point : le test de la mutation 3 est requalifié en **E2E** — il enchaîne deux ouvertures du dialogue sur une page SvelteKit complète, ce qu'un test de composant isolé ne monte pas.
+
+**Trend : `2H/2M/2L` → `0H/3M/1L`.** Sévérité décroissante, garde-fou de splitting non déclenché. **Boucle NON convergée** — 3 MEDIUM imposent une **passe 3**, sur le seul modèle pas encore employé ici : **Opus**, contexte frais.
