@@ -165,7 +165,7 @@ Trois faits, tous établis par relevé et **vérifiés à quatre reprises** par 
   - [x] **Non-régression du contrat HTTP** : payload **sans la clé**, et payload avec `"defaultRevenueAccountId": null` — les deux valent `NULL`, jamais 400.
   - [x] **Forme de l'erreur (D10)** : le corps du 400 porte `error.code == "PRODUCT_REVENUE_ACCOUNT_INVALID"` — **asserter le code, pas seulement le statut** — et son message désigne **l'article**, jamais le réglage société.
   - [x] Les **cinq** mutations d'AC-A6, exécutées, consignées avec leur sortie, fichiers restaurés à l'identique.
-- [ ] **T-A6 — Gate** (AC-A7) — complet, état final, exit 0, verdict lu dans le log.
+- [x] **T-A6 — Gate** (AC-A7) — complet, état final, exit 0, verdict lu dans le log.
 
 ---
 
@@ -261,6 +261,17 @@ Fichiers restaurés à l'identique après chaque essai, `git diff` vide vérifi�
 ⚠️ **UNE ERREUR DE MÉTHODE, ET SON SYMPTÔME MUET.** Entre les mutations 3 et 4, `git checkout` a été employé pour restaurer un fichier dont les **quatre tests n'étaient pas encore commités** : ils ont été **effacés**. Le symptôme fut rassurant et faux — la mutation 4 a rendu « **16 passed, 0 failed** », un vert parfait, alors que quatre tests avaient **disparu au lieu d'échouer**. C'est exactement le mode d'échec du test muet que le dépôt a payé sur `backfill_skips_archived_accounts`. **Seul le décompte l'a attrapé** : 16 au lieu de 20. Tests réécrits, **commités** (`af02d966`), puis mutations 3 et 4 rejouées.
 
 ➡️ **Règle à verser à la rétro Epic 16 : commiter AVANT toute campagne de mutation.** `git checkout` ne restaure que ce que l'index connaît ; sur du travail non commité, il détruit. Et un test supprimé ne rougit pas — il disparaît, ce que seul un contrôle de **composition** révèle, jamais un « 0 failed ».
+
+**T-A6 — GATE COMPLET VERT, VERDICT LU DANS LE LOG.**
+
+```
+FMT_EXIT=0     CLIPPY_EXIT=0     NEXTEST_EXIT=0
+Summary [3862.986s] 2114 tests run: 2114 passed, 4 skipped
+```
+
+DB `kesh_gate2`, 64 minutes, sur l'**état final**. Aucun ciblage : la story touche `crates/kesh-db/migrations/` et un repository, ce que la § *Test Locally First* interdit de cibler, y compris entre deux passes.
+
+**Le contrôle qui compte est celui de la COMPOSITION, pas du total.** 2102 → **2114**, soit **+12** — et 12 est exactement ce que la story ajoute : **8** tests de route (`#[sqlx::test]` de `products_revenue_account_e2e.rs`) et **4** tests de repository. Recompté à la source, pas relu. C'est le contrôle que la passe 1 de revue de 16-1c avait pris en défaut, où *neuf* tests livrés pour huit exigés masquaient deux manques : un total qui monte pendant que la couverture baisse ne se voit qu'en recomptant la composition.
 
 ### File List
 
