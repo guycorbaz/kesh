@@ -1447,3 +1447,11 @@ product-revenue-account-unknown = Le compte de produit de cet article est introu
 product-revenue-account-inactive = Le compte de produit de cet article est archivé.
 product-revenue-account-not-revenue = Le compte de produit de cet article n'est pas un compte de produit.
 product-revenue-account-not-postable = Le compte de produit de cet article n'est pas imputable.
+
+# Story 16-2b (#144) — sélecteur de compte de produit sur la fiche article.
+# Préfixe `product-form-` : aligné sur les six clés voisines du même formulaire
+# (-name, -description, -price, -vat-rate, -create-title, -edit-title). NE PAS
+# employer `product-revenue-account-*`, famille que 16-2a occupe pour le message
+# de rejet backend, dans ces mêmes fichiers et la même PR.
+product-form-revenue-account = Compte de produit
+product-form-revenue-account-help = Facultatif. Laissé vide, les lignes de facture créées depuis cet article suivent le compte de produit par défaut de la société.
