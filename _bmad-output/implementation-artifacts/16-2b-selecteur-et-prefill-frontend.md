@@ -139,6 +139,18 @@ revenueAccountId: null,
 
 ## Dev Notes
 
+### Dérogation à la règle de splitting préventif
+
+**Le second critère de la § *Règle de splitting préventif* est formellement déclenché** : entre la passe 2 et la passe 3 de `validate`, la sévérité maximale reste `MEDIUM` et le compteur stagne à **3**. **Dérogation accordée par Guy le 2026-08-04**, boucle poursuivie en passe 4 sans split.
+
+**Justification.** Le critère vise la *non-convergence réelle* — le signe qu'une story est trop large pour tenir dans un mental-model adversarial fiable. Ce n'est pas ce qui se passe ici :
+
+- **La conception n'a jamais été prise en défaut.** Sur les trois passes, aucun finding n'a porté sur les décisions `D-B1`–`D-B3`, ni sur le cadrage, ni sur la frontière avec 16-2a — vérifiée nette dans les deux sens par deux lentilles indépendantes.
+- **Les trois MEDIUM de la passe 3 sont des défauts de REMÉDIATION**, tous introduits par les patches des passes 1 et 2 : une prescription inapplicable (« passés en prop »), un motif de grep sous-inclusif, et un rayon de mutation mal borné. Splitter ne les aurait pas évités — ils naissent du geste de correction, pas de la taille du document.
+- **Le document reste petit** : ~200 lignes, 3 décisions, 9 critères, 6 tâches. Le précédent qui a motivé la règle (7-1) étalait 7 modules ; celui qui a motivé son amendement (14-2, 14-4) a convergé en 5 passes sans split.
+
+**Risque accepté.** Le mode d'échec mesuré sur la Story 16-1a — *la remédiation devient la première source des findings suivants*, 12 sur 28 aux passes 3-7 — est **exactement** ce qui s'observe ici. La passe 4 peut donc produire de nouveaux MEDIUM portant sur les patches de la passe 3. **Critère d'arrêt maintenu** : plafond de 8 passes de la § *Review Iteration Rule*, et arbitrage à reprendre si la passe 4 stagne à son tour.
+
 ### Ce que cette story ne doit PAS faire
 
 - **Ne pas toucher au backend** — colonne, DTO, validation, export CSV et migration sont en **16-2a**.
