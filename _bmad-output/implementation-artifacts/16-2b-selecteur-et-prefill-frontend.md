@@ -98,7 +98,7 @@ revenueAccountId: null,
 - [ ] **T-B4 — Tests et preuve** (AC-B4, AC-B8)
   - [ ] Unitaire : le pré-remplissage pose bien le compte de l'article ; l'assertion `toHaveBeenCalledWith(true)`.
   - [ ] **E2E** (suffixe `.spec.ts` **obligatoire**) : « fiche produit avec compte → facture depuis catalogue → la ligne porte le compte » ; **plus** le cas AC-B4 — assigner un compte, l'**archiver ensuite**, monter la facture, constater marqueur et refus.
-  - [ ] ⚠️ Le preset E2E `with-data` crée **déjà** un produit `'CI Product'` au compte `NULL` (`test_fixtures.rs:482`, appelé par `routes/test_endpoints.rs:203`) — en tenir compte dans les montages.
+  - [ ] ⚠️ Le preset E2E `with-data` crée **déjà** un produit `'CI Product'` au compte `NULL` (`test_fixtures.rs:482-483`, appelé par `routes/test_endpoints.rs:203`) — en tenir compte dans les montages.
   - [ ] Les **trois** mutations d'AC-B8, exécutées, consignées avec leur sortie, fichiers restaurés à l'identique.
 - [ ] **T-B5 — Documentation** (AC-B7)
   - [ ] CHANGELOG (fonctionnalité + avertissement `PUT`).
