@@ -128,43 +128,43 @@ Trois faits, tous établis par relevé et **vérifiés à quatre reprises** par 
 
 ## Tasks / Subtasks
 
-- [ ] **T-A1 — Migration et garde-fous** (AC-A1, AC-A5)
-  - [ ] `crates/kesh-db/migrations/<timestamp>_products_default_revenue_account.sql` — `ADD COLUMN` + FK + index, DDL pur.
-  - [ ] Ligne au tableau de `docs/migrations-idempotence-audit.md`, verdict **`tracked-by-sqlx`** avec ses codes **1060 / 1061** (AC-A5) ; compteurs **recomptés** : 57 → 58 aux **deux** sites du total, et `tracked-by-sqlx` 52 → 53.
-  - [ ] `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` ; `assert_eq!(total, 57)` → **58** **ET** fenêtre `total - 23` → **`total - 24`** (D8). ⚠️ Bumper `total` seul déplace la frontière à 35, **silencieusement**.
-  - [ ] Exécuter `every_data_backfill_migration_is_triaged` pour **constater** que le DDL pur ne déclenche rien.
-- [ ] **T-A2 — Entité et repository** (AC-A2)
-  - [ ] Champ dans `Product` / `NewProduct` / `ProductUpdate`.
-  - [ ] **Les DEUX listes de colonnes** : `COLUMNS` **et** `FIND_BY_ID_SCOPED_SQL`, plus `INSERT` et `UPDATE`.
-  - [ ] **Les DEUX helpers** : `is_no_op_change` **et** `product_snapshot_json`.
-  - [ ] Sites de construction en littéral — `NewProduct` / `ProductUpdate` ne dérivent **pas** `Default`, donc **la compilation casse** à chacun. **`cargo build` fait foi : c'est lui l'énumération, pas cette ligne.** Un seul site mérite d'être nommé, parce qu'il est **hors périmètre thématique** et que rien d'autre n'y renvoie : `crates/kesh-db/tests/kf005_fulltext_index_e2e.rs:123`. *(Passe 2 : une énumération partielle figurait ici — elle omettait `repositories/products.rs:753` et `:1150`, et comptait « deux sites » dans `routes/products.rs` là où il y en a un de chaque type. Lister à moitié donne l'impression d'avoir listé.)*
-- [ ] **T-A3 — API, validation, message** (AC-A3)
-  - [ ] DTO + `ProductResponse`, contrat camelCase, `#[serde(default)]` sur les **entrées**. En **sortie**, suivre le patron du fichier : `ProductResponse` ne porte **aucun** `skip_serializing_if` (`grep -c` → 0), donc le champ est **toujours présent**, à `null` quand il est absent — comme `description`. ⚠️ Ne pas l'omettre conditionnellement : ce serait le seul champ du DTO à se comporter ainsi.
-  - [ ] Validation **D3** à la route, **conditionnée par D4** — ajouter le `products::find_by_id(&state.pool, company.id, id)` avant l'appel au repository, sur le patron de `company_invoice_settings.rs:151`. Les trois critères sont **réimplémentés**, `validate_account` étant privée (D3). Si le `find_by_id` rend `None`, **court-circuiter en 404** plutôt que de poursuivre sans `before` — le repository rendrait de toute façon un 404, mais l'écrire ici évite un chemin implicite.
-  - [ ] **Variante d'erreur dédiée (D10)** : `AppError::ProductRevenueAccountInvalid(RevenueAccountRejection)` + son bras `IntoResponse` rendant le code **`PRODUCT_REVENUE_ACCOUNT_INVALID`** et un `details.reason` issu de **`revenue_account_rejection_code`** (`errors.rs:53-60`) — **réutilisé, jamais réécrit**. ⚠️ **Ne pas** passer par `AppError::Validation` (code figé à `VALIDATION_ERROR`), **ni** par `DbError` (interdit par D4).
-  - [ ] **Message désignant l'article** : famille **`product-revenue-account-*`** — fallback Rust au bras `IntoResponse`, entrées Fluent dans les **4** locales de `crates/kesh-i18n/locales/*/messages.ftl`. ⚠️ **Ne pas** étendre `invoice-line-account-subject-*` ni toucher `format_rejected_revenue_accounts`.
-- [ ] **T-A4 — Export CSV** (AC-A4)
-  - [ ] Étendre `serialize_products_csv`, en-tête **et** valeurs.
-  - [ ] **Renforcer le BON test d'export** — `export_global_zip_includes_archived_products` (`crates/kesh-api/tests/exports_global_e2e.rs:1271`). Il sème **déjà deux produits** par `INSERT` direct et n'asserte qu'un `rowCount == 2` (`:1296`) : le **contenu** n'est vérifié nulle part, et l'en-tête non plus (`grep -rnF "unit_price,vat_rate" crates/` → aucune sortie). Donner un compte à **l'un des deux seulement** — sa liste de colonnes est écrite à la main (`:1273-1276`), l'y ajouter — puis asserter **l'en-tête, la valeur du produit qui porte un compte, ET la cellule VIDE de celui qui n'en porte pas**. *(Complément qu'exigeait 16-1a en AC14.)*
+- [x] **T-A1 — Migration et garde-fous** (AC-A1, AC-A5)
+  - [x] `crates/kesh-db/migrations/<timestamp>_products_default_revenue_account.sql` — `ADD COLUMN` + FK + index, DDL pur.
+  - [x] Ligne au tableau de `docs/migrations-idempotence-audit.md`, verdict **`tracked-by-sqlx`** avec ses codes **1060 / 1061** (AC-A5) ; compteurs **recomptés** : 57 → 58 aux **deux** sites du total, et `tracked-by-sqlx` 52 → 53.
+  - [x] `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` ; `assert_eq!(total, 57)` → **58** **ET** fenêtre `total - 23` → **`total - 24`** (D8). ⚠️ Bumper `total` seul déplace la frontière à 35, **silencieusement**.
+  - [x] Exécuter `every_data_backfill_migration_is_triaged` pour **constater** que le DDL pur ne déclenche rien.
+- [x] **T-A2 — Entité et repository** (AC-A2)
+  - [x] Champ dans `Product` / `NewProduct` / `ProductUpdate`.
+  - [x] **Les DEUX listes de colonnes** : `COLUMNS` **et** `FIND_BY_ID_SCOPED_SQL`, plus `INSERT` et `UPDATE`.
+  - [x] **Les DEUX helpers** : `is_no_op_change` **et** `product_snapshot_json`.
+  - [x] Sites de construction en littéral — `NewProduct` / `ProductUpdate` ne dérivent **pas** `Default`, donc **la compilation casse** à chacun. **`cargo build` fait foi : c'est lui l'énumération, pas cette ligne.** Un seul site mérite d'être nommé, parce qu'il est **hors périmètre thématique** et que rien d'autre n'y renvoie : `crates/kesh-db/tests/kf005_fulltext_index_e2e.rs:123`. *(Passe 2 : une énumération partielle figurait ici — elle omettait `repositories/products.rs:753` et `:1150`, et comptait « deux sites » dans `routes/products.rs` là où il y en a un de chaque type. Lister à moitié donne l'impression d'avoir listé.)*
+- [x] **T-A3 — API, validation, message** (AC-A3)
+  - [x] DTO + `ProductResponse`, contrat camelCase, `#[serde(default)]` sur les **entrées**. En **sortie**, suivre le patron du fichier : `ProductResponse` ne porte **aucun** `skip_serializing_if` (`grep -c` → 0), donc le champ est **toujours présent**, à `null` quand il est absent — comme `description`. ⚠️ Ne pas l'omettre conditionnellement : ce serait le seul champ du DTO à se comporter ainsi.
+  - [x] Validation **D3** à la route, **conditionnée par D4** — ajouter le `products::find_by_id(&state.pool, company.id, id)` avant l'appel au repository, sur le patron de `company_invoice_settings.rs:151`. Les trois critères sont **réimplémentés**, `validate_account` étant privée (D3). Si le `find_by_id` rend `None`, **court-circuiter en 404** plutôt que de poursuivre sans `before` — le repository rendrait de toute façon un 404, mais l'écrire ici évite un chemin implicite.
+  - [x] **Variante d'erreur dédiée (D10)** : `AppError::ProductRevenueAccountInvalid(RevenueAccountRejection)` + son bras `IntoResponse` rendant le code **`PRODUCT_REVENUE_ACCOUNT_INVALID`** et un `details.reason` issu de **`revenue_account_rejection_code`** (`errors.rs:53-60`) — **réutilisé, jamais réécrit**. ⚠️ **Ne pas** passer par `AppError::Validation` (code figé à `VALIDATION_ERROR`), **ni** par `DbError` (interdit par D4).
+  - [x] **Message désignant l'article** : famille **`product-revenue-account-*`** — fallback Rust au bras `IntoResponse`, entrées Fluent dans les **4** locales de `crates/kesh-i18n/locales/*/messages.ftl`. ⚠️ **Ne pas** étendre `invoice-line-account-subject-*` ni toucher `format_rejected_revenue_accounts`.
+- [x] **T-A4 — Export CSV** (AC-A4)
+  - [x] Étendre `serialize_products_csv`, en-tête **et** valeurs.
+  - [x] **Renforcer le BON test d'export** — `export_global_zip_includes_archived_products` (`crates/kesh-api/tests/exports_global_e2e.rs:1271`). Il sème **déjà deux produits** par `INSERT` direct et n'asserte qu'un `rowCount == 2` (`:1296`) : le **contenu** n'est vérifié nulle part, et l'en-tête non plus (`grep -rnF "unit_price,vat_rate" crates/` → aucune sortie). Donner un compte à **l'un des deux seulement** — sa liste de colonnes est écrite à la main (`:1273-1276`), l'y ajouter — puis asserter **l'en-tête, la valeur du produit qui porte un compte, ET la cellule VIDE de celui qui n'en porte pas**. *(Complément qu'exigeait 16-1a en AC14.)*
 
     ⚠️ **La cellule vide n'est pas un détail décoratif : c'est l'assertion qui attrape le décalage de colonnes.** Un en-tête et une valeur pris sur la **même** ligne peuvent être décalés du même cran et concorder entre eux. `fmt_opt_i64` (`csv_tables.rs:108-110`) rend bien la chaîne vide sur `None` et sert déjà 13 colonnes — mais rien ne le vérifie pour celle-ci, et c'est la ligne à `NULL` qui révèle un décalage, pas celle qui est remplie.
 
     ⚠️ **NE PAS semer de produit dans `export_global_zip_empty_company_explicit_row_count_map`** (`:854`), dont la fixture porte `("products.csv", 0)` à `:906`. Son nom énonce son invariant : y ajouter une ligne casse son assertion et contredit son contrat. C'est la fixture **vide** qui rend ce test discriminant — la confondre avec « le test des produits » coûte une assertion juste.
-- [ ] **T-A5 — Tests et preuve** (AC-A3, AC-A6)
-  - [ ] Intégration `kesh-db` : le champ persiste et se relit ; une modification sans changement reste un no-op.
-  - [ ] **DEUX tests distincts, surtout pas un seul** — ils sont les cibles respectives des mutations 3 et 4, et fusionnés ils cesseraient de discriminer :
+- [x] **T-A5 — Tests et preuve** (AC-A3, AC-A6)
+  - [x] Intégration `kesh-db` : le champ persiste et se relit ; une modification sans changement reste un no-op.
+  - [x] **DEUX tests distincts, surtout pas un seul** — ils sont les cibles respectives des mutations 3 et 4, et fusionnés ils cesseraient de discriminer :
     - **(a) bump de `version`** — modifier le SEUL compte fait passer `version` de N à N+1 et écrit une entrée d'audit ;
     - **(b) contenu de l'audit** — `before["defaultRevenueAccountId"] != after["defaultRevenueAccountId"]`, les deux clés étant **présentes**. ⚠️ **Jamais `before != after` globalement** (AC-A2 : `"version"` diffère toujours).
 
     ⚠️ **Pourquoi deux tests.** Sous la mutation 3 — champ retiré d'`is_no_op_change` —, « modifier le seul compte » devient un **no-op** : `products::update` rollback et retourne avant d'écrire l'audit (`:300-308`, audit à `:339-343`). Un test unique portant les deux assertions rougirait donc sous les mutations **3 et 4**, ce qui contredirait « chacune tue le test visé **et lui seul** ». (b) doit exercer un `UPDATE` qui aboutit **quelle que soit** la mutation 3 — donc modifier **aussi** un autre champ.
-  - [ ] **Au niveau ROUTE, pas repository** — la validation vit dans `routes/products.rs` et rend un **400**, **à la création comme à la modification** : rejet d'un compte inactif, d'un compte non-`Revenue`, et **scoping multi-tenant** (compte d'une autre société).
-  - [ ] **D4, les DEUX sens** — la condition doit être exercée dans ses deux directions, faute de quoi une condition **inversée** passerait :
+  - [x] **Au niveau ROUTE, pas repository** — la validation vit dans `routes/products.rs` et rend un **400**, **à la création comme à la modification** : rejet d'un compte inactif, d'un compte non-`Revenue`, et **scoping multi-tenant** (compte d'une autre société).
+  - [x] **D4, les DEUX sens** — la condition doit être exercée dans ses deux directions, faute de quoi une condition **inversée** passerait :
     - compte **inchangé** et devenu invalide (archivé entre-temps) → renommer l'article **réussit** ;
     - compte **changé** vers une valeur invalide (active mais non-`Revenue`, p. ex.) → **400**. ⚠️ La mutation 2 ne couvre que le premier sens : elle rend la validation *inconditionnelle*, elle ne teste pas l'inversion du prédicat.
-  - [ ] **Retirer un compte déjà posé** — `Some(n) → null` est un **changement** au sens de D4, mais il n'y a **rien à valider** : la garde doit sauter D3 quand la nouvelle valeur est `None`. Sans ce test, une implémentation qui valide dès que « le compte change » rendrait un compte **impossible à retirer une fois posé**.
-  - [ ] **Non-régression du contrat HTTP** : payload **sans la clé**, et payload avec `"defaultRevenueAccountId": null` — les deux valent `NULL`, jamais 400.
-  - [ ] **Forme de l'erreur (D10)** : le corps du 400 porte `error.code == "PRODUCT_REVENUE_ACCOUNT_INVALID"` — **asserter le code, pas seulement le statut** — et son message désigne **l'article**, jamais le réglage société.
-  - [ ] Les **cinq** mutations d'AC-A6, exécutées, consignées avec leur sortie, fichiers restaurés à l'identique.
+  - [x] **Retirer un compte déjà posé** — `Some(n) → null` est un **changement** au sens de D4, mais il n'y a **rien à valider** : la garde doit sauter D3 quand la nouvelle valeur est `None`. Sans ce test, une implémentation qui valide dès que « le compte change » rendrait un compte **impossible à retirer une fois posé**.
+  - [x] **Non-régression du contrat HTTP** : payload **sans la clé**, et payload avec `"defaultRevenueAccountId": null` — les deux valent `NULL`, jamais 400.
+  - [x] **Forme de l'erreur (D10)** : le corps du 400 porte `error.code == "PRODUCT_REVENUE_ACCOUNT_INVALID"` — **asserter le code, pas seulement le statut** — et son message désigne **l'article**, jamais le réglage société.
+  - [x] Les **cinq** mutations d'AC-A6, exécutées, consignées avec leur sortie, fichiers restaurés à l'identique.
 - [ ] **T-A6 — Gate** (AC-A7) — complet, état final, exit 0, verdict lu dans le log.
 
 ---
@@ -222,11 +222,60 @@ git rebase --onto main 0ce6e13a story/16-2-compte-produit-catalogue
 
 ### Agent Model Used
 
+Opus 5 (`bmad-dev-story`, 2026-08-04).
+
 ### Debug Log References
+
+**Trois pièges d'environnement, tous rencontrés et consignés.**
+
+1. **La base de dev `kesh` porte la pollution documentée** — compte `1000` à `postable = 0`, celle qui produit 26 faux échecs `journal_entries`. Le gate ne peut pas y tourner.
+2. **`kesh_gate` s'est révélée DÉSYNCHRONISÉE** : `_sqlx_migrations` ne contenait qu'**une** ligne (`20260404000001`) alors que le schéma était complet — `sqlx migrate run` y échoue en `1050 Table 'companies' already exists`. Plutôt que de supprimer une base, une base **neuve `kesh_gate2`** a été créée, migrée aux **58** migrations et seedée au minimum (1 société, 1 utilisateur `Admin`, 5 comptes tous `active` **et** `postable`). C'est elle qui porte le gate.
+3. **Le séparateur CSV du dépôt est `;`**, pas `,` (convention suisse), et la colonne du plan comptable s'appelle **`number`**, pas `code`. Deux montages de test corrigés à ce titre.
 
 ### Completion Notes List
 
+**T-A1 — migration et les quatre garde-fous.** `20260804000001`, DDL pur. P5 : ligne d'audit avec verdict **`tracked-by-sqlx`** et ses codes **1060 / 1061**, sur le patron du jumeau littéral `20260727000001` ; compteurs **recomptés à la source** — 57 → 58 aux **deux** sites du total, `tracked-by-sqlx` 52 → 53, partition `53 + 5 + 0 = 58`. P6 : bump **conjoint** de `total` **et** de la fenêtre (`total - 23` → `total - 24`), frontière maintenue à **34** comme l'impose **D8**. P7 : **constaté** en exécutant `every_data_backfill_migration_is_triaged`, pas supposé — vert. P1/P2 : non-breaking, aucun bump.
+
+⚠️ **Le grep de propagation a rapporté trois résidus que le bump seul aurait laissés** : le message d'assertion d'`apply_migrations_up_to` et le doc-comment de la fonction citaient encore `total - 23` / `total == 57`. C'est le symptôme que ce fichier documente **sur lui-même** — « trois sites du même symptôme dans le même fichier, découverts un par passe » lors de la revue de 16-1a. Cette fois ils sont tombés d'un coup.
+
+**T-A2** — les **deux** listes de colonnes, les **deux** helpers, l'`INSERT` et l'`UPDATE`. Le compilateur a énuméré les **huit** sites de construction littérale, dont `kf005_fulltext_index_e2e.rs:123`, le seul hors périmètre thématique — la spec avait raison de ne nommer que celui-là et de laisser `cargo build` faire le reste.
+
+**T-A3** — validation **D3** à la route (trois critères, `postable` exclu), conditionnée par **D4**, avec le `find_by_id` ajouté. Variante **D10** dédiée, code `PRODUCT_REVENUE_ACCOUNT_INVALID`, `details.reason` via `revenue_account_rejection_code` **réutilisé**, et la famille `product-revenue-account-*` dans les **4** locales. Le formateur de 16-1a n'est pas touché.
+
+**T-A4** — export CSV, en-tête **et** valeurs à la même position ; le test d'export asserte désormais l'en-tête, la valeur **et la cellule vide** du produit sans compte, plus l'alignement de la colonne suivante.
+
+**T-A5 — LES CINQ MUTATIONS SONT EXÉCUTÉES, ET LEUR RAYON EST CONSIGNÉ.**
+
+| Mutation | Rouges | Verts |
+|---|---|---|
+| 1 — D3 neutralisée (`active`, `account_type`) | **3** : `create_rejects_inactive_account`, `create_rejects_non_revenue_account`, `changing_account_to_invalid_is_rejected` | 5 |
+| 2 — condition D4 retirée | **1** : `renaming_succeeds_when_unchanged_account_became_invalid` | 7 |
+| 3 — champ retiré d'`is_no_op_change` | **1** : `changing_only_the_account_bumps_version_and_writes_audit` **(a)** | 19, dont **(b)** |
+| 4 — champ retiré de `product_snapshot_json` | **1** : `audit_shows_the_account_change_key_by_key` **(b)** | 19, dont **(a)** |
+| 5 — variante D10 → `AppError::Validation` | **4** : tous ceux qui assertent le code | 4 |
+
+**Les mutations 3 et 4 se tuent en miroir, et c'est le résultat qui valide la scission** imposée en passe 3 de `validate` : (a) rouge / (b) vert, puis (b) rouge / (a) vert. Le test (b) modifie **aussi** le nom pour que son `UPDATE` aboutisse malgré la mutation 3 ; fusionnés, les deux auraient rougi ensemble et les mutations auraient cessé de discriminer.
+
+Fichiers restaurés à l'identique après chaque essai, `git diff` vide vérifié.
+
+⚠️ **UNE ERREUR DE MÉTHODE, ET SON SYMPTÔME MUET.** Entre les mutations 3 et 4, `git checkout` a été employé pour restaurer un fichier dont les **quatre tests n'étaient pas encore commités** : ils ont été **effacés**. Le symptôme fut rassurant et faux — la mutation 4 a rendu « **16 passed, 0 failed** », un vert parfait, alors que quatre tests avaient **disparu au lieu d'échouer**. C'est exactement le mode d'échec du test muet que le dépôt a payé sur `backfill_skips_archived_accounts`. **Seul le décompte l'a attrapé** : 16 au lieu de 20. Tests réécrits, **commités** (`af02d966`), puis mutations 3 et 4 rejouées.
+
+➡️ **Règle à verser à la rétro Epic 16 : commiter AVANT toute campagne de mutation.** `git checkout` ne restaure que ce que l'index connaît ; sur du travail non commité, il détruit. Et un test supprimé ne rougit pas — il disparaît, ce que seul un contrôle de **composition** révèle, jamais un « 0 failed ».
+
 ### File List
+
+- `crates/kesh-db/migrations/20260804000001_products_default_revenue_account.sql` *(nouveau)*
+- `crates/kesh-db/src/entities/product.rs`
+- `crates/kesh-db/src/repositories/products.rs`
+- `crates/kesh-db/tests/kf005_fulltext_index_e2e.rs`
+- `crates/kesh-db/tests/migrations_upgrade_path.rs`
+- `crates/kesh-api/src/errors.rs`
+- `crates/kesh-api/src/routes/products.rs`
+- `crates/kesh-api/src/exports/csv_tables.rs`
+- `crates/kesh-api/tests/products_revenue_account_e2e.rs` *(nouveau)*
+- `crates/kesh-api/tests/exports_global_e2e.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl`
+- `docs/migrations-idempotence-audit.md`
 
 ## Change Log
 
