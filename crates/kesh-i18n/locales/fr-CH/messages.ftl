@@ -1439,3 +1439,11 @@ invoice-lines-revenue-account-invalid = Compte de produit invalide sur les ligne
 invoice-default-revenue-account-unusable = Le compte de produit par défaut de la société n'est plus utilisable (archivé, non imputable ou de type inattendu). Les lignes qui le suivent ne pourront pas être validées — corrigez-le dans les Réglages, ou choisissez un compte sur chaque ligne.
 common-account-default-suffix = (défaut)
 invoice-line-aria-line = ligne { $n }
+
+# Story 16-2a (#144) — compte de produit sur la fiche produit.
+# Le sujet désigne L'ARTICLE, jamais le réglage société : famille distincte de
+# `invoice-line-account-*`, qui nomme des lignes de facture.
+product-revenue-account-unknown = Le compte de produit de cet article est introuvable ou n'appartient pas à cette société.
+product-revenue-account-inactive = Le compte de produit de cet article est archivé.
+product-revenue-account-not-revenue = Le compte de produit de cet article n'est pas un compte de produit.
+product-revenue-account-not-postable = Le compte de produit de cet article n'est pas imputable.

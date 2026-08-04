@@ -21,6 +21,12 @@ pub struct Product {
     pub description: Option<String>,
     pub unit_price: Decimal,
     pub vat_rate: Decimal,
+    /// Compte de produit de l'article (Story 16-2a, #144).
+    ///
+    /// `NULL` signifie « cet article n'impose rien » : la ligne de facture
+    /// montée depuis lui reste à `NULL` et suit le compte de produit par
+    /// défaut de la société, résolu à la validation.
+    pub default_revenue_account_id: Option<i64>,
     pub active: bool,
     pub version: i32,
     pub created_at: NaiveDateTime,
@@ -36,6 +42,8 @@ pub struct NewProduct {
     pub description: Option<String>,
     pub unit_price: Decimal,
     pub vat_rate: Decimal,
+    /// Compte de produit de l'article, `None` = suivre le défaut société.
+    pub default_revenue_account_id: Option<i64>,
 }
 
 /// Données de modification d'un produit.
@@ -50,4 +58,9 @@ pub struct ProductUpdate {
     pub description: Option<String>,
     pub unit_price: Decimal,
     pub vat_rate: Decimal,
+    /// Compte de produit de l'article, `None` = suivre le défaut société.
+    ///
+    /// ⚠️ Le `PUT` est **full-replace** (décision D5) : ce champ est toujours
+    /// écrit, jamais préservé. Un client qui l'omet efface le compte.
+    pub default_revenue_account_id: Option<i64>,
 }

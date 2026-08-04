@@ -20,11 +20,17 @@ use crate::repositories::audit_log;
 use crate::util::search::escape_boolean_ft;
 
 const COLUMNS: &str = "id, company_id, name, description, unit_price, vat_rate, \
-    active, version, created_at, updated_at";
+    default_revenue_account_id, active, version, created_at, updated_at";
 
 /// Toujours scopé par `company_id` (anti-IDOR multi-tenant).
+///
+/// ⚠️ **Seconde liste de colonnes écrite à la main**, qui ne dérive pas de
+/// [`COLUMNS`] : elle alimente six `query_as::<_, Product>`. `Product` dérive
+/// `sqlx::FromRow`, donc une colonne absente ici produit un `ColumnNotFound`
+/// **à l'exécution** — et met toutes les routes produits en 500. Toute
+/// évolution du schéma doit toucher **les deux** constantes.
 const FIND_BY_ID_SCOPED_SQL: &str = "SELECT id, company_id, name, description, unit_price, \
-    vat_rate, active, version, created_at, updated_at FROM products \
+    vat_rate, default_revenue_account_id, active, version, created_at, updated_at FROM products \
     WHERE id = ? AND company_id = ?";
 
 /// Snapshot JSON d'un produit pour l'audit log.
@@ -37,6 +43,7 @@ fn product_snapshot_json(p: &Product) -> serde_json::Value {
         "description": p.description,
         "unitPrice": p.unit_price.to_string(),
         "vatRate": p.vat_rate.to_string(),
+        "defaultRevenueAccountId": p.default_revenue_account_id,
         "active": p.active,
         "version": p.version,
     })
@@ -143,14 +150,16 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewProduct) -> Result<P
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
     let result = sqlx::query(
-        "INSERT INTO products (company_id, name, description, unit_price, vat_rate) \
-         VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO products (company_id, name, description, unit_price, vat_rate, \
+         default_revenue_account_id) \
+         VALUES (?, ?, ?, ?, ?, ?)",
     )
     .bind(new.company_id)
     .bind(&new.name)
     .bind(&new.description)
     .bind(new.unit_price)
     .bind(new.vat_rate)
+    .bind(new.default_revenue_account_id)
     .execute(&mut *tx)
     .await
     .map_err(map_db_error)?;
@@ -258,6 +267,7 @@ fn is_no_op_change(before: &Product, changes: &ProductUpdate) -> bool {
         && before.description == changes.description
         && before.unit_price == changes.unit_price
         && before.vat_rate == changes.vat_rate
+        && before.default_revenue_account_id == changes.default_revenue_account_id
 }
 
 /// Met à jour un produit actif. Verrouillage optimiste + audit {before, after}.
@@ -309,13 +319,14 @@ pub async fn update(
 
     let rows = sqlx::query(
         "UPDATE products SET name = ?, description = ?, unit_price = ?, vat_rate = ?, \
-         version = version + 1 \
+         default_revenue_account_id = ?, version = version + 1 \
          WHERE id = ? AND company_id = ? AND version = ? AND active = TRUE",
     )
     .bind(&changes.name)
     .bind(&changes.description)
     .bind(changes.unit_price)
     .bind(changes.vat_rate)
+    .bind(changes.default_revenue_account_id)
     .bind(id)
     .bind(company_id)
     .bind(version)
@@ -507,6 +518,7 @@ mod tests {
             description: None,
             unit_price: dec!(100.00),
             vat_rate: dec!(8.10),
+            default_revenue_account_id: None,
         }
     }
 
@@ -634,6 +646,7 @@ mod tests {
                 description: Some("desc".into()),
                 unit_price: dec!(250.5000),
                 vat_rate: dec!(2.60),
+                default_revenue_account_id: None,
             },
         )
         .await
@@ -653,6 +666,7 @@ mod tests {
                 description: None,
                 unit_price: dec!(0),
                 vat_rate: dec!(0),
+                default_revenue_account_id: None,
             },
         )
         .await
@@ -688,6 +702,7 @@ mod tests {
                 description: None,
                 unit_price: dec!(200.0000),
                 vat_rate: dec!(8.10),
+                default_revenue_account_id: None,
             },
         )
         .await
@@ -755,6 +770,7 @@ mod tests {
                 description: None,
                 unit_price: dec!(1),
                 vat_rate: dec!(0),
+                default_revenue_account_id: None,
             },
         )
         .await
@@ -1152,6 +1168,7 @@ mod tests {
             description: p.description.clone(),
             unit_price: p.unit_price,
             vat_rate: p.vat_rate,
+            default_revenue_account_id: p.default_revenue_account_id,
         }
     }
 

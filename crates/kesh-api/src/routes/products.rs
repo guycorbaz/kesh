@@ -14,8 +14,10 @@ use serde::{Deserialize, Serialize};
 use unicode_normalization::UnicodeNormalization;
 
 use kesh_core::listing::SortDirection;
+use kesh_db::entities::account::AccountType;
 use kesh_db::entities::product::{NewProduct, Product, ProductUpdate};
-use kesh_db::errors::DbError;
+use kesh_db::errors::{DbError, RevenueAccountRejection};
+use kesh_db::repositories::accounts;
 use kesh_db::repositories::products::{self, ProductListQuery, ProductSortBy};
 
 use crate::AppState;
@@ -66,6 +68,14 @@ pub struct CreateProductRequest {
     pub description: Option<String>,
     pub unit_price: Decimal,
     pub vat_rate: Decimal,
+    /// Compte de produit de l'article (Story 16-2a, #144).
+    ///
+    /// ⚠️ `#[serde(default)]` n'est PAS cosmétique : sans lui, un `Option<T>`
+    /// reste **obligatoire dans le JSON** en serde, et l'omission de la clé
+    /// casserait toute intégration API existante, y compris celles qui
+    /// ignorent ce nouveau champ.
+    #[serde(default)]
+    pub default_revenue_account_id: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -76,6 +86,12 @@ pub struct UpdateProductRequest {
     pub description: Option<String>,
     pub unit_price: Decimal,
     pub vat_rate: Decimal,
+    /// Cf. `CreateProductRequest` — `#[serde(default)]` obligatoire.
+    ///
+    /// ⚠️ Le `PUT` est **full-replace** (décision D5) : omettre la clé
+    /// **efface** le compte, sans erreur. C'est le CR #278, différé.
+    #[serde(default)]
+    pub default_revenue_account_id: Option<i64>,
     pub version: i32,
 }
 
@@ -95,6 +111,9 @@ pub struct ProductResponse {
     /// Sérialisé en string via la feature `serde-str` de `rust_decimal`.
     pub unit_price: Decimal,
     pub vat_rate: Decimal,
+    /// Toujours présent, `null` quand l'article n'impose aucun compte — le
+    /// patron du fichier, aucun champ ne porte `skip_serializing_if`.
+    pub default_revenue_account_id: Option<i64>,
     pub active: bool,
     pub version: i32,
     pub created_at: NaiveDateTime,
@@ -110,6 +129,7 @@ impl From<Product> for ProductResponse {
             description: p.description,
             unit_price: p.unit_price,
             vat_rate: p.vat_rate,
+            default_revenue_account_id: p.default_revenue_account_id,
             active: p.active,
             version: p.version,
             created_at: p.created_at,
@@ -269,6 +289,59 @@ pub async fn get_product(
     Ok(Json(ProductResponse::from(product)))
 }
 
+/// Valide le compte de produit choisi sur une fiche article — décision **D3**.
+///
+/// Trois critères, et **`postable` en est délibérément exclu** : le code jumeau
+/// `company_invoice_settings::validate_account` ne le contrôle pas davantage,
+/// et le sanctionner ici bloquerait l'édition d'un article sur un champ que
+/// l'utilisateur n'a pas touché.
+///
+/// ⚠️ Les trois critères sont **calqués** sur ce jumeau, jamais appelés : il
+/// est privé à son module, et son retour (`AppError::Validation`) porte un code
+/// figé à `VALIDATION_ERROR`, incompatible avec la décision **D10**.
+///
+/// `None` est toujours valide : l'article n'impose alors aucun compte et la
+/// ligne suit le défaut société.
+async fn validate_revenue_account(
+    state: &AppState,
+    company_id: i64,
+    account_id: Option<i64>,
+) -> Result<(), AppError> {
+    let Some(id) = account_id else {
+        return Ok(());
+    };
+
+    // Critère 1 — exister ET appartenir à la société. Un seul verdict pour les
+    // deux cas : un compte d'une autre société doit rester indiscernable d'un
+    // compte inexistant (garde anti-IDOR).
+    let Some(account) = accounts::find_by_id(&state.pool, id).await? else {
+        return Err(AppError::ProductRevenueAccountInvalid(
+            RevenueAccountRejection::UnknownOrCrossCompany,
+        ));
+    };
+    if account.company_id != company_id {
+        return Err(AppError::ProductRevenueAccountInvalid(
+            RevenueAccountRejection::UnknownOrCrossCompany,
+        ));
+    }
+
+    // Critère 2 — actif.
+    if !account.active {
+        return Err(AppError::ProductRevenueAccountInvalid(
+            RevenueAccountRejection::Inactive,
+        ));
+    }
+
+    // Critère 3 — de type Revenue.
+    if account.account_type != AccountType::Revenue {
+        return Err(AppError::ProductRevenueAccountInvalid(
+            RevenueAccountRejection::NotRevenue,
+        ));
+    }
+
+    Ok(())
+}
+
 /// Story 6.2: Scoped by current_user.company_id.
 pub async fn create_product(
     State(state): State<AppState>,
@@ -280,12 +353,18 @@ pub async fn create_product(
     let v = validate_common(req.name, req.description, req.unit_price, req.vat_rate)?;
     vat::verify_vat_rates_against_db(&state.pool, current_user.company_id, &[v.vat_rate]).await?;
 
+    // D3 s'applique **inconditionnellement** à la création : il n'existe aucun
+    // état antérieur auquel comparer, donc rien à exempter (D4 ne concerne que
+    // l'`update`).
+    validate_revenue_account(&state, company.id, req.default_revenue_account_id).await?;
+
     let new = NewProduct {
         company_id: company.id,
         name: v.name,
         description: v.description,
         unit_price: v.unit_price,
         vat_rate: v.vat_rate,
+        default_revenue_account_id: req.default_revenue_account_id,
     };
 
     let product = products::create(&state.pool, current_user.user_id, new).await?;
@@ -302,11 +381,37 @@ pub async fn update_product(
     let v = validate_common(req.name, req.description, req.unit_price, req.vat_rate)?;
     vat::verify_vat_rates_against_db(&state.pool, current_user.company_id, &[v.vat_rate]).await?;
 
+    // --- Décision D4 : la validation ne se déclenche QUE si le compte CHANGE.
+    //
+    // Le raisonnement qui écarte `postable` de D3 vaut mot pour mot pour
+    // `active` : archiver un compte est bien plus fréquent que basculer
+    // `postable`, et rien n'inspecte les référents à l'archivage. Sans cette
+    // condition, renommer un article dont le compte a été archivé ailleurs
+    // serait rejeté sur un champ non touché — et l'utilisateur ne pourrait
+    // **ni conserver ni remplacer** la valeur, le compte archivé étant absent
+    // des propositions du sélecteur.
+    //
+    // La comparaison exige l'état antérieur, que ce handler ne lisait pas : on
+    // ajoute un `find_by_id` hors transaction, sur le patron déjà accepté de
+    // `company_invoice_settings::update_invoice_settings`. Le verrou optimiste
+    // couvre la fenêtre — une modification concurrente du **produit** fait
+    // diverger `version` et rend `OptimisticLockConflict` ; une modification
+    // concurrente du **compte référencé** ne touche pas `products.version`, et
+    // c'est précisément le cas que D4 veut laisser passer.
+    let before = products::find_by_id(&state.pool, company.id, id)
+        .await?
+        .ok_or(DbError::NotFound)?;
+
+    if req.default_revenue_account_id != before.default_revenue_account_id {
+        validate_revenue_account(&state, company.id, req.default_revenue_account_id).await?;
+    }
+
     let changes = ProductUpdate {
         name: v.name,
         description: v.description,
         unit_price: v.unit_price,
         vat_rate: v.vat_rate,
+        default_revenue_account_id: req.default_revenue_account_id,
     };
 
     let product = products::update(

@@ -214,6 +214,27 @@ pub enum AppError {
     #[error("Compte administrateur déjà créé")]
     SetupAlreadyComplete,
 
+    // --- Story 16-2a (#144) ---
+    /// Compte de produit invalide sur une **fiche produit** du catalogue.
+    ///
+    /// Variante dédiée, et non `AppError::Validation` — décision **D10**.
+    /// Deux raisons, chacune suffisante :
+    ///
+    /// 1. `Validation` rend un code **figé** à `VALIDATION_ERROR`
+    ///    (cf. son bras d'`IntoResponse`), il n'y a nulle part où glisser
+    ///    `PRODUCT_REVENUE_ACCOUNT_INVALID` qu'exige l'AC-A3 ;
+    /// 2. la seule autre voie du dépôt vers un code spécifique sur ce sujet
+    ///    passe par `DbError::InvalidRevenueAccounts` — c'est-à-dire la couche
+    ///    repository, que **D4** interdit puisque la validation doit rester à
+    ///    la route pour disposer de l'état antérieur.
+    ///
+    /// Le motif réutilise [`RevenueAccountRejection`] : l'enum n'est jamais
+    /// dupliquée. Le sujet, lui, est propre à cette variante — le formateur
+    /// `format_rejected_revenue_accounts` choisit le sien par `match` sur un
+    /// `Option<i32>`, structure qui n'admet pas de troisième cas.
+    #[error("Compte de produit invalide sur la fiche produit")]
+    ProductRevenueAccountInvalid(RevenueAccountRejection),
+
     // --- Story 1.6 ---
     /// Rate limiting déclenché : trop de tentatives de login depuis cette IP.
     /// `retry_after` = secondes avant déblocage, transmis dans le header `Retry-After`.
@@ -955,6 +976,42 @@ impl IntoResponse for AppError {
 
             AppError::Validation(msg) => {
                 build_response(StatusCode::BAD_REQUEST, "VALIDATION_ERROR", &msg)
+            }
+
+            // Story 16-2a (#144) — D10. Le sujet désigne **l'article**, jamais
+            // le réglage société : réutiliser le formateur de 16-1a ferait lire,
+            // à qui édite une fiche produit, un message pointant un autre objet.
+            AppError::ProductRevenueAccountInvalid(reason) => {
+                let (key, fallback) = match reason {
+                    RevenueAccountRejection::UnknownOrCrossCompany => (
+                        "product-revenue-account-unknown",
+                        "Le compte de produit de cet article est introuvable ou n'appartient pas à cette société.",
+                    ),
+                    RevenueAccountRejection::Inactive => (
+                        "product-revenue-account-inactive",
+                        "Le compte de produit de cet article est archivé.",
+                    ),
+                    RevenueAccountRejection::NotRevenue => (
+                        "product-revenue-account-not-revenue",
+                        "Le compte de produit de cet article n'est pas un compte de produit.",
+                    ),
+                    RevenueAccountRejection::NotPostable => (
+                        "product-revenue-account-not-postable",
+                        "Le compte de produit de cet article n'est pas imputable.",
+                    ),
+                };
+                let msg = t(key, fallback);
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "PRODUCT_REVENUE_ACCOUNT_INVALID",
+                        "message": msg,
+                        // `revenue_account_rejection_code` est RÉUTILISÉ, jamais
+                        // réécrit : un second `match` sur le même enum
+                        // divergerait au premier variant ajouté.
+                        "details": { "reason": revenue_account_rejection_code(reason) },
+                    }
+                });
+                (StatusCode::BAD_REQUEST, Json(body)).into_response()
             }
 
             // Story v011-5 — onboarding self-service.

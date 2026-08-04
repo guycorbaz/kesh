@@ -1270,12 +1270,30 @@ async fn export_global_zip_excluded_tables_absent(pool: MySqlPool) {
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn export_global_zip_includes_archived_products(pool: MySqlPool) {
     let ctx = seed_company(&pool, "co_r", Role::Comptable).await;
-    sqlx::query(
-        "INSERT INTO products (company_id, name, description, unit_price, vat_rate, active, version) \
-         VALUES (?, 'Actif', NULL, 100.00, 8.10, TRUE, 1), \
-                (?, 'Archivé', NULL, 50.00, 8.10, FALSE, 1)",
+
+    // Story 16-2a (#144) — un compte de produit pour l'article ACTIF, et
+    // aucun pour l'archivé. Les deux cas sont nécessaires : c'est la cellule
+    // VIDE qui révèle un décalage de colonnes, pas celle qui est remplie —
+    // un en-tête et une valeur pris sur la même ligne peuvent être décalés
+    // du même cran et concorder entre eux.
+    let revenue_account_id: i64 = sqlx::query_scalar(
+        "INSERT INTO accounts (company_id, number, name, account_type, active, postable, version) \
+         VALUES (?, '3210', 'Ventes export CI', 'Revenue', TRUE, TRUE, 1) \
+         RETURNING id",
     )
     .bind(ctx.company_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        "INSERT INTO products (company_id, name, description, unit_price, vat_rate, \
+         default_revenue_account_id, active, version) \
+         VALUES (?, 'Actif', NULL, 100.00, 8.10, ?, TRUE, 1), \
+                (?, 'Archivé', NULL, 50.00, 8.10, NULL, FALSE, 1)",
+    )
+    .bind(ctx.company_id)
+    .bind(revenue_account_id)
     .bind(ctx.company_id)
     .execute(&pool)
     .await
@@ -1296,6 +1314,63 @@ async fn export_global_zip_includes_archived_products(pool: MySqlPool) {
         meta["tables"]["products.csv"]["rowCount"].as_u64().unwrap(),
         2,
         "both active and archived products must be exported"
+    );
+
+    // Story 16-2a (#144) — AC-A4. Jusqu'ici ce fichier n'observait AUCUN
+    // contenu de `products.csv` : `serialize_products_csv` écrit deux listes
+    // indépendantes (en-tête et enregistrement) que rien ne relie, et un
+    // décalage entre elles rendrait le CSV silencieusement faux sur toutes
+    // les colonnes suivantes, gate vert.
+    let csv = String::from_utf8(
+        entries
+            .iter()
+            .find(|(name, _)| name == "products.csv")
+            .expect("products.csv present in ZIP")
+            .1
+            .clone(),
+    )
+    .expect("products.csv is valid UTF-8");
+
+    let mut lines = csv.lines();
+    let header = lines
+        .next()
+        .expect("header line")
+        .trim_start_matches('\u{feff}');
+    assert_eq!(
+        header,
+        "id;company_id;name;description;unit_price;vat_rate;default_revenue_account_id;active;version;created_at;updated_at",
+        "en-tête CSV des produits — la nouvelle colonne est à sa position dans COLUMNS"
+    );
+
+    let rows: Vec<&str> = lines.filter(|l| !l.trim().is_empty()).collect();
+    assert_eq!(rows.len(), 2, "deux lignes de produit attendues");
+
+    let actif = rows
+        .iter()
+        .find(|l| l.contains(";Actif;"))
+        .expect("ligne du produit actif");
+    let archive = rows
+        .iter()
+        .find(|l| l.contains(";Archivé;"))
+        .expect("ligne du produit archivé");
+
+    // Le produit qui PORTE un compte : la valeur est rendue.
+    assert_eq!(
+        actif.split(';').nth(6).unwrap(),
+        revenue_account_id.to_string(),
+        "le compte de produit doit être en 7e colonne de la ligne, comme dans l'en-tête"
+    );
+    // Celui qui n'en porte pas : cellule VIDE, et les colonnes suivantes
+    // restent alignées — c'est cette assertion qui attrape un décalage.
+    assert_eq!(
+        archive.split(';').nth(6).unwrap(),
+        "",
+        "compte absent => cellule vide, jamais 'None' ni une colonne décalée"
+    );
+    assert_eq!(
+        archive.split(';').nth(7).unwrap(),
+        "false",
+        "la colonne suivante (active) doit rester alignée malgré la cellule vide"
     );
 }
 
