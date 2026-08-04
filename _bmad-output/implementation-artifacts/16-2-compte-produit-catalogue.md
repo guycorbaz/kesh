@@ -6,6 +6,8 @@ superseded-by-split
 
 ⚠️ **Cette story a été SPLITTÉE le 2026-08-03 en [`16-2a`](16-2a-compte-produit-catalogue-backend.md) (socle backend) et [`16-2b`](16-2b-selecteur-et-prefill-frontend.md) (sélecteur et pré-remplissage). Ne pas l'implémenter.** Elle est conservée pour son historique : quatre passes de `bmad-create-story validate`, deux déclenchements du garde-fou de la dérogation au splitting, et le détail des 30+ findings dont les deux filles héritent à l'état corrigé.
 
+⚠️ **Deux affirmations de ce document sont FAUSSES, et corrigées dans [`16-2a`](16-2a-compte-produit-catalogue-backend.md)** — relevées à sa passe 1 de `validate` le 2026-08-04. Elles sont laissées ici telles quelles, ce document étant une trace : (1) **D2 (ligne 70)** invoque `grep -nF "idx_company_invoice_settings"` comme rendant « aucune sortie » — il en rend **une** (`20260419000003:11`, index sur `created_at`) ; seule la formulation restreinte « aucun index **sur sa colonne** », employée plus bas au récit de la passe 3, est exacte. (2) **D2 encore** : « InnoDB l'exige sur la colonne enfant d'une FK » — InnoDB **crée** cet index lui-même, il n'exige rien de l'auteur du DDL ; le motif réel est le patron 16-1a. Voir **D2** et **D10** de 16-2a pour les formulations qui font foi.
+
 *(Résidu de rédaction corrigé le 2026-08-04 : ce bloc annonçait encore « boucle en cours, 3 passes, non convergée » et un passage prochain à `ready-for-dev`, sous un statut `superseded-by-split` — la contradiction d'états que la passe 3 avait précisément relevée sur cette story, laissée en place par le patch du split. La boucle n'est pas « en cours » : elle est close par le split, et c'est aux deux filles de converger.)*
 
 ## Story
