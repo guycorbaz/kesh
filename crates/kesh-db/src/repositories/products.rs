@@ -1162,6 +1162,231 @@ mod tests {
         cleanup_test_products(&pool, company_id).await;
     }
 
+    // ======================================================================
+    // Story 16-2a (#144) — compte de produit sur la fiche produit.
+    // ======================================================================
+
+    /// Crée un compte de produit utilisable pour les tests, et rend son id.
+    ///
+    /// Numéro dérivé du suffixe pour éviter la collision sur
+    /// `uq_accounts_company_number` entre tests.
+    async fn seed_revenue_account(pool: &MySqlPool, company_id: i64, suffix: &str) -> i64 {
+        let number = format!("39{suffix}");
+        sqlx::query("DELETE FROM accounts WHERE company_id = ? AND number = ?")
+            .bind(company_id)
+            .bind(&number)
+            .execute(pool)
+            .await
+            .ok();
+        let row: (i64,) = sqlx::query_as(
+            "INSERT INTO accounts (company_id, number, name, account_type, active, version) \
+             VALUES (?, ?, 'TestProduct compte', 'Revenue', TRUE, 1) RETURNING id",
+        )
+        .bind(company_id)
+        .bind(&number)
+        .fetch_one(pool)
+        .await
+        .expect("seed du compte de produit");
+        row.0
+    }
+
+    /// Le champ persiste à la création et se relit à l'identique.
+    #[tokio::test]
+    async fn revenue_account_persists_and_reads_back() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        cleanup_test_products(&pool, company_id).await;
+        let account_id = seed_revenue_account(&pool, company_id, "01").await;
+
+        let mut new = new_product(company_id, "TestProduct Persist");
+        new.default_revenue_account_id = Some(account_id);
+        let created = create(&pool, admin_user_id, new).await.unwrap();
+        assert_eq!(created.default_revenue_account_id, Some(account_id));
+
+        let found = find_by_id(&pool, company_id, created.id)
+            .await
+            .unwrap()
+            .expect("produit relu");
+        assert_eq!(
+            found.default_revenue_account_id,
+            Some(account_id),
+            "le compte doit être relu par FIND_BY_ID_SCOPED_SQL — une colonne absente \
+             de cette SECONDE liste écrite à la main donnerait un ColumnNotFound"
+        );
+
+        cleanup_test_products(&pool, company_id).await;
+    }
+
+    /// **(a)** Modifier le SEUL compte n'est PAS un no-op : `version` est bumpée
+    /// et l'audit écrit.
+    ///
+    /// Cible de la **mutation 3** (retrait du champ d'`is_no_op_change`).
+    /// Distinct du test (b) ci-dessous, et c'est délibéré : sous la mutation 3
+    /// ce scénario devient un no-op, `update` rollback et rend `before` **avant
+    /// d'écrire l'audit**. Fusionner les deux ferait rougir (b) sous la
+    /// mutation 3 aussi, contredisant « chaque mutation tue le test visé ET LUI
+    /// SEUL ».
+    #[tokio::test]
+    async fn changing_only_the_account_bumps_version_and_writes_audit() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        cleanup_test_products(&pool, company_id).await;
+        let account_id = seed_revenue_account(&pool, company_id, "02").await;
+
+        let created = create(
+            &pool,
+            admin_user_id,
+            new_product(company_id, "TestProduct OnlyAccount"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(created.default_revenue_account_id, None);
+
+        let mut changes = product_to_update(&created);
+        changes.default_revenue_account_id = Some(account_id);
+        let updated = update(
+            &pool,
+            company_id,
+            created.id,
+            created.version,
+            admin_user_id,
+            changes,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            updated.version,
+            created.version + 1,
+            "modifier le seul compte doit bumper la version — non étendu, \
+             `is_no_op_change` prendrait ce changement pour un no-op et l'API \
+             répondrait succès sans rien écrire"
+        );
+        assert_eq!(updated.default_revenue_account_id, Some(account_id));
+
+        let entries = audit_log::find_by_entity(&pool, "product", updated.id, 10)
+            .await
+            .unwrap();
+        assert!(
+            entries.iter().any(|e| e.action == "product.updated"),
+            "une entrée d'audit product.updated doit exister"
+        );
+
+        cleanup_test_products(&pool, company_id).await;
+    }
+
+    /// **(b)** L'audit montre le changement DE COMPTE, clé par clé.
+    ///
+    /// Cible de la **mutation 4** (retrait du champ de
+    /// `product_snapshot_json`). L'assertion porte sur **la clé**, jamais sur
+    /// l'égalité globale des deux objets : `version` fait partie du snapshot et
+    /// l'`UPDATE` la bumpe, donc `before != after` serait vrai **à tout coup**
+    /// et le test resterait vert sous sa propre mutation.
+    ///
+    /// Le scénario modifie AUSSI le nom, pour que l'`UPDATE` aboutisse même
+    /// sous la mutation 3 — sans quoi ce test rougirait pour la mauvaise raison.
+    #[tokio::test]
+    async fn audit_shows_the_account_change_key_by_key() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        cleanup_test_products(&pool, company_id).await;
+        let account_id = seed_revenue_account(&pool, company_id, "03").await;
+
+        let created = create(
+            &pool,
+            admin_user_id,
+            new_product(company_id, "TestProduct AuditKey"),
+        )
+        .await
+        .unwrap();
+
+        let mut changes = product_to_update(&created);
+        changes.name = "TestProduct AuditKey Renamed".into();
+        changes.default_revenue_account_id = Some(account_id);
+        let updated = update(
+            &pool,
+            company_id,
+            created.id,
+            created.version,
+            admin_user_id,
+            changes,
+        )
+        .await
+        .unwrap();
+
+        let entries = audit_log::find_by_entity(&pool, "product", updated.id, 10)
+            .await
+            .unwrap();
+        let upd = entries
+            .iter()
+            .find(|e| e.action == "product.updated")
+            .expect("audit entry product.updated must exist");
+        let details = upd.details_json.as_ref().unwrap();
+        let before = details.get("before").expect("wrapper must have 'before'");
+        let after = details.get("after").expect("wrapper must have 'after'");
+
+        // La clé doit être PRÉSENTE des deux côtés : absente, `get` rendrait
+        // `None` des deux côtés et une comparaison naïve les croirait égaux.
+        assert!(
+            before.get("defaultRevenueAccountId").is_some(),
+            "la clé doit figurer dans le snapshot `before`"
+        );
+        assert!(
+            after.get("defaultRevenueAccountId").is_some(),
+            "la clé doit figurer dans le snapshot `after`"
+        );
+        assert!(
+            before.get("defaultRevenueAccountId").unwrap().is_null(),
+            "avant : aucun compte"
+        );
+        assert_eq!(
+            after
+                .get("defaultRevenueAccountId")
+                .and_then(|v| v.as_i64()),
+            Some(account_id),
+            "après : le compte posé — sans cette clé au snapshot, l'audit tairait \
+             la seule chose qui a changé"
+        );
+
+        cleanup_test_products(&pool, company_id).await;
+    }
+
+    /// Une modification sans aucun changement reste un no-op, même avec un
+    /// compte posé — la garde d'`is_no_op_change` ne se déclenche pas à tort.
+    #[tokio::test]
+    async fn identical_payload_with_account_stays_no_op() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        cleanup_test_products(&pool, company_id).await;
+        let account_id = seed_revenue_account(&pool, company_id, "04").await;
+
+        let mut new = new_product(company_id, "TestProduct NoOp");
+        new.default_revenue_account_id = Some(account_id);
+        let created = create(&pool, admin_user_id, new).await.unwrap();
+
+        let unchanged = update(
+            &pool,
+            company_id,
+            created.id,
+            created.version,
+            admin_user_id,
+            product_to_update(&created),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            unchanged.version, created.version,
+            "payload identique => no-op, version inchangée"
+        );
+
+        cleanup_test_products(&pool, company_id).await;
+    }
+
     fn product_to_update(p: &Product) -> ProductUpdate {
         ProductUpdate {
             name: p.name.clone(),
