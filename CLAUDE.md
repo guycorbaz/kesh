@@ -110,7 +110,7 @@ npm run build
 
 ### E2E (Playwright)
 
-**Pas exécuté par la CI principale** (cf. `ci.yml`) — donc d'autant plus critique en local si la modif touche le frontend ou les routes API consommées par les pages.
+**La suite complète tourne EN LOCAL, avant tout `git push`** — au même titre que les gates backend et frontend. Elle n'est pas exécutée pendant l'itération : la doctrine reste le gate ciblé entre les passes, le gate complet au push.
 
 ```sh
 cd frontend
@@ -118,6 +118,16 @@ npm run test:e2e
 ```
 
 Pré-requis : MariaDB démarré + seed CI appliqué + Playwright browsers installés (cf. `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` sur Ubuntu 26.04+ — limitation upstream Playwright ≤ 1.49).
+
+**La CI n'exécute PAS la suite complète** (coût récurrent : MariaDB, seed, navigateurs, durée) — **mais elle exécute un SMOKE** : une seule spec, login puis un appel API authentifié, 2-3 minutes.
+
+⚠️ **Le smoke ne teste aucune fonctionnalité, et c'est délibéré : il vérifie que le HARNAIS EST VIVANT.** Les fonctionnalités restent couvertes par le gate local avant push.
+
+**Pourquoi les deux niveaux, et pas seulement le local.** Une règle qui repose sur la seule discipline de qui pousse a la même faiblesse que celle qui impose de « ne déclarer que ce qui a tourné » : on peut l'affirmer sans l'avoir fait. Et une story qui ne touche pas le frontend fait **légitimement** sauter les E2E — si le harnais casse à ce moment-là, personne ne le saura.
+
+**Précédent qui a motivé la règle (issue #285, 2026-08-04)** : `authedApiContext()` rendait un contexte **non authentifié** — le login pose des cookies `SameSite=Strict` qu'un contexte API, sans site initiateur, ne joint pas. **Toute la suite** était inopérante, et la panne n'a été découverte qu'à l'occasion d'une story sans rapport, parce que trois circonstances se cumulaient : la CI ne lançait pas les E2E, les tests manuels de Guy passent par un navigateur, et **rien ne signale une suite qui cesse de tourner**. Un test jamais lancé ne rougit pas — **il se tait**. C'est le mode d'échec du test muet, déjà payé sur `backfill_skips_archived_accounts` (16-1a) et reproduit sur les mutations de 16-2a, où quatre tests supprimés par mégarde ont rendu un impeccable « 16 passed, 0 failed ».
+
+⚠️ **Un E2E n'est pas un test comme un autre.** C'est le **seul** qui vérifie qu'une valeur traverse réellement la frontière HTTP : Vitest teste la construction du payload, les tests Rust la validation, et **ni l'un ni l'autre ne voit une clé qui disparaît entre les deux**. Le sauter n'a pas le même coût que sauter un test unitaire.
 
 ### Pendant une boucle de revue — gate ciblé, gate complet au push
 

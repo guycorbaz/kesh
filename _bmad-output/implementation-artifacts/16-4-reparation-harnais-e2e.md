@@ -65,7 +65,16 @@ C'est le mode d'échec du **test muet**, celui qui a coûté `backfill_skips_arc
 
 - **D2 — La réparation n'est acquise QUE si un test échoue avant et passe après.** Le critère d'acceptation n'est pas « le helper compile » ni « une spec passe », mais la **suite complète exécutée**, avec son décompte. Un helper corrigé dont on n'aurait relancé qu'une spec ne prouverait rien de la suite.
 
-- **D3 — Fermer la troisième circonstance, sinon la story ne sert qu'une fois.** La suite doit devenir **observable** : soit exécutée par la CI, soit dotée d'un garde-fou qui rend visible qu'elle ne tourne plus. **Le choix entre les deux revient à Guy** — faire tourner les E2E en CI a un coût (MariaDB, seed, navigateurs, durée) qui n'a pas été chiffré ici, et c'est un arbitrage de politique, pas de code.
+- **D3 — Deux niveaux : la suite complète EN LOCAL avant push, un SMOKE en CI.** *(Arbitrage de Guy, 2026-08-04.)*
+
+  1. **Suite complète, en local, avant tout `git push`** — au même titre que les gates backend et frontend de la § *Test Locally First*. Elle n'est **pas** exécutée systématiquement pendant l'itération : la doctrine du dépôt reste le gate ciblé entre les passes, le gate complet au push.
+  2. **Un SMOKE E2E en CI** : **une seule** spec — login, puis **un** appel API authentifié. Deux à trois minutes.
+
+  ⚠️ **Le smoke ne teste AUCUNE fonctionnalité, et c'est délibéré.** Il vérifie que **le harnais est vivant**. C'est exactement le point où la panne de #285 se manifeste : le login réussit, l'appel API suivant rend 401. Un smoke de cette forme l'aurait attrapée le jour même.
+
+  **Pourquoi les deux, et pas seulement le premier.** Une règle « les E2E tournent en local avant push » repose sur la discipline de qui pousse — or le `CLAUDE.md` porte déjà, sur ce point précis, la réserve « ne JAMAIS écrire *gate vert* pour un run qui n'a pas tourné ». Elle existe parce qu'on peut l'affirmer sans l'avoir fait. Et une story qui ne touche pas le frontend fait légitimement sauter les E2E : si le harnais recasse à ce moment-là, **personne ne le saura**. Le smoke est ce qui rend la panne visible sans imposer le coût de la suite entière.
+
+  **Pourquoi pas toute la suite en CI.** MariaDB, seed, navigateurs, durée : le coût est réel et récurrent, pour une couverture que le gate local avant push assure déjà.
 
   ⚠️ **Sans D3, cette story répare une panne et laisse en place ce qui l'a rendue invisible.**
 
@@ -83,9 +92,13 @@ C'est le mode d'échec du **test muet**, celui qui a coûté `backfill_skips_arc
 
   ⚠️ **Des échecs SANS RAPPORT avec le cookie sont attendus** : la suite n'a pas tourné depuis longtemps, d'autres dérives ont pu s'accumuler. Les **trier** : ce qui relève du cookie (fermé par cette story), ce qui relève d'autre chose (à tracer en issue, pas à absorber ici).
 
-- **AC-4 — La suite devient observable** (D3), selon l'arbitrage rendu : exécution par la CI, **ou** garde-fou signalant qu'elle ne s'exécute plus. Dans les deux cas, **le mécanisme est éprouvé** — on le met en défaut volontairement et l'on constate qu'il parle.
+- **AC-4 — La suite devient observable, aux DEUX niveaux de D3.**
+  - **Smoke en CI** : un job dédié, **une** spec (login + un appel API authentifié), ajouté à `.github/workflows/ci.yml`. Il doit rester **court** — son intérêt tient à ce qu'il coûte peu ; l'élargir le ferait dériver vers la suite complète que D3 écarte de la CI.
+  - **Gate local avant push** : la suite complète, écrite comme obligation au `CLAUDE.md` § *Test Locally First* (AC-5).
 
-- **AC-5 — Le montage local est documenté** (D4) : commande complète, variables d'environnement, base de données, pré-requis (MariaDB, seed, navigateurs, `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` sur Ubuntu 26.04+). Emplacement à décider — `CLAUDE.md` § *Test Locally First* ou un README dédié.
+  ⚠️ **Le smoke est ÉPROUVÉ** : on le met en défaut volontairement — en rétablissant le défaut d'origine du helper — et l'on constate **qu'il rougit**. Un garde-fou qu'on n'a pas vu parler n'est pas un garde-fou ; c'est toute la leçon de #285.
+
+- **AC-5 — Le montage local est documenté au `CLAUDE.md`** (D4), § *Test Locally First* : commande complète, variables d'environnement, base de données, pré-requis (MariaDB, seed, navigateurs, `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` sur Ubuntu 26.04+), **et l'obligation de lancer la suite avant tout push**. C'est là qu'on relit les règles du dépôt — une recette rangée ailleurs ne serait pas retrouvée.
 
 - **AC-6 — Discrimination prouvée par mutation.** Rétablir le défaut d'origine dans le helper (retirer la transmission du cookie) → **la suite rougit**. Consigné avec sa sortie, fichier restauré à l'identique ensuite. ⚠️ **Sans cette mutation, rien ne distingue « la suite passe » de « la suite ne teste plus rien ».**
 
@@ -102,8 +115,9 @@ C'est le mode d'échec du **test muet**, celui qui a coûté `backfill_skips_arc
 - [ ] **T-2 — Exécuter la suite entière et TRIER** (AC-3)
   - [ ] Décompte : fichiers présents, specs exécutées, passées, échouées, ignorées.
   - [ ] Trier les échecs résiduels : cookie / autre chose. Ouvrir une issue pour chaque cause distincte, ne rien absorber en silence.
-- [ ] **T-3 — Rendre la suite observable** (AC-4) — après arbitrage de Guy sur CI *vs* garde-fou.
-  - [ ] Mettre le mécanisme en défaut volontairement, constater qu'il parle.
+- [ ] **T-3 — Rendre la suite observable** (AC-4)
+  - [ ] Job **smoke** dans `.github/workflows/ci.yml` : une spec, login + un appel API authentifié. Le garder court.
+  - [ ] **L'éprouver** : rétablir le défaut du helper, constater que le smoke rougit, restaurer.
 - [ ] **T-4 — Documenter le montage** (AC-5)
 - [ ] **T-5 — Mutation** (AC-6) — retirer la transmission du cookie, constater que la suite rougit, restaurer.
 - [ ] **T-6 — Gate** (AC-7) — frontend + E2E, état final, verdict lu dans le log.
@@ -162,4 +176,6 @@ npx playwright test
 
 **2026-08-04 — Story créée** à la demande de Guy, après le diagnostic conduit pendant l'implémentation de 16-2b et tracé en issue **#285**.
 
-**Statut : `draft`, NON VALIDÉE.** Une boucle `bmad-create-story validate` reste à lancer. Deux points y appellent une attention particulière : le **périmètre de D3** (l'exécution en CI a un coût qui n'est pas chiffré ici), et le fait que **AC-3 anticipe des échecs résiduels sans pouvoir les nommer** — la suite n'ayant pas tourné depuis longtemps, on ignore ce qu'elle contient d'autre.
+**2026-08-04 — D3 tranchée par Guy** : suite complète **en local avant push**, plus un **smoke** en CI (une spec, login + un appel API authentifié, 2-3 min). Toute la suite en CI est écartée pour son coût récurrent ; le smoke seul ne suffirait pas à couvrir les fonctionnalités, mais ce n'est pas son rôle — il vérifie que **le harnais est vivant**, ce qui est précisément le point où #285 se manifeste. AC-4 et AC-5 amendés en conséquence.
+
+**Statut : `draft`, NON VALIDÉE.** Une boucle `bmad-create-story validate` reste à lancer. Le point qui y appelle le plus d'attention : **AC-3 anticipe des échecs résiduels sans pouvoir les nommer** — la suite n'ayant pas tourné depuis longtemps, on ignore ce qu'elle contient d'autre que le défaut du cookie.
