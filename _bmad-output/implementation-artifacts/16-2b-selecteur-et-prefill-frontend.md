@@ -104,36 +104,36 @@ revenueAccountId: null,
 
 ## Tasks / Subtasks
 
-- [ ] **T-B1 — Types et client API** (AC-B5)
-  - [ ] Champ dans les trois interfaces de `products.types.ts`.
-  - [ ] Mettre à jour le doc-comment de `ProductPicker.svelte:1-4`. *(Site trouvé par le grep de propagation, pas par les lentilles.)*
-- [ ] **T-B2 — Fiche produit** (AC-B1, AC-B2, AC-B6)
-  - [ ] Sélecteur, `<label for>` + clé i18n, hydratation à l'édition, envoi systématique. **Pas de `markInvalid`** (D-B2).
-  - [ ] **`openCreate()` (`:249-258`) remet le compte à `null`**, comme il le fait déjà pour les quatre autres champs — les `$state` vivent au niveau de la page (`:94-98`) et survivent à la fermeture du dialogue.
-  - [ ] `fetchAccounts(true)` — **et son assertion** `toHaveBeenCalledWith(true)`.
-  - [ ] **Prop `id?: string` opt-in** sur `AccountAutocomplete`, rendue sur son `<Input>` — défaut `undefined`, les cinq écrans inchangés (AC-B1).
-  - [ ] Clés **`product-form-revenue-account`** et **`product-form-revenue-account-help`** dans les **4** locales, **résolues dans `+page.svelte`** (étiquette dans le `<label for>`, aide dans un `<p>` sous le champ) — jamais lues depuis `AccountAutocomplete`, qui vit sous `features/` et ferait rougir le lint (AC-B6).
-  - [ ] Passer **`loadError`**, comme le font `InvoiceForm.svelte:823` et `VatPurchaseAssistant.svelte:162`. Sans lui, un `fetchAccounts` en échec laisse le champ **vide et muet** — le symptôme même qu'AC-B2 prévient, par une autre cause, et que **D-B2** garantit de ne pas signaler.
-- [ ] **T-B3 — Pré-remplissage** (AC-B3, AC-B4)
-  - [ ] `onProductSelect` pose le compte de l'article ; `addFreeLine` reste à `null`.
-  - [ ] Remplacer les **deux** commentaires d'ancrage, repérés par leurs numéros de ligne.
-- [ ] **T-B4 — Tests et preuve** (AC-B4, AC-B8)
-  - [ ] Unitaire : le pré-remplissage pose bien le compte de l'article ; l'assertion `toHaveBeenCalledWith(true)`.
-  - [ ] **« éditer un article avec compte → Nouveau produit → le sélecteur est vide »** (mutation 3) — **en E2E, pas en unitaire** : le scénario enchaîne deux ouvertures du dialogue sur une page SvelteKit complète, ce qu'un test de composant isolé ne monte pas.
-  - [ ] **E2E** (suffixe `.spec.ts` **obligatoire**) — **quatre exécutions Playwright au total** : les trois scénarios numérotés ci-dessous, **plus** le test de reset d'`openCreate()` de la puce précédente. La numérotation « scénario N » à laquelle renvoie AC-B8 désigne cette liste-ci.
+- [x] **T-B1 — Types et client API** (AC-B5)
+  - [x] Champ dans les trois interfaces de `products.types.ts`.
+  - [x] Mettre à jour le doc-comment de `ProductPicker.svelte:1-4`. *(Site trouvé par le grep de propagation, pas par les lentilles.)*
+- [x] **T-B2 — Fiche produit** (AC-B1, AC-B2, AC-B6)
+  - [x] Sélecteur, `<label for>` + clé i18n, hydratation à l'édition, envoi systématique. **Pas de `markInvalid`** (D-B2).
+  - [x] **`openCreate()` (`:249-258`) remet le compte à `null`**, comme il le fait déjà pour les quatre autres champs — les `$state` vivent au niveau de la page (`:94-98`) et survivent à la fermeture du dialogue.
+  - [x] `fetchAccounts(true)` — **et son assertion** `toHaveBeenCalledWith(true)`.
+  - [x] **Prop `id?: string` opt-in** sur `AccountAutocomplete`, rendue sur son `<Input>` — défaut `undefined`, les cinq écrans inchangés (AC-B1).
+  - [x] Clés **`product-form-revenue-account`** et **`product-form-revenue-account-help`** dans les **4** locales, **résolues dans `+page.svelte`** (étiquette dans le `<label for>`, aide dans un `<p>` sous le champ) — jamais lues depuis `AccountAutocomplete`, qui vit sous `features/` et ferait rougir le lint (AC-B6).
+  - [x] Passer **`loadError`**, comme le font `InvoiceForm.svelte:823` et `VatPurchaseAssistant.svelte:162`. Sans lui, un `fetchAccounts` en échec laisse le champ **vide et muet** — le symptôme même qu'AC-B2 prévient, par une autre cause, et que **D-B2** garantit de ne pas signaler.
+- [x] **T-B3 — Pré-remplissage** (AC-B3, AC-B4)
+  - [x] `onProductSelect` pose le compte de l'article ; `addFreeLine` reste à `null`.
+  - [x] Remplacer les **deux** commentaires d'ancrage, repérés par leurs numéros de ligne.
+- [x] **T-B4 — Tests et preuve** (AC-B4, AC-B8)
+  - [x] Unitaire : le pré-remplissage pose bien le compte de l'article ; l'assertion `toHaveBeenCalledWith(true)`.
+  - [x] **« éditer un article avec compte → Nouveau produit → le sélecteur est vide »** (mutation 3) — **en E2E, pas en unitaire** : le scénario enchaîne deux ouvertures du dialogue sur une page SvelteKit complète, ce qu'un test de composant isolé ne monte pas.
+  - [x] **E2E** (suffixe `.spec.ts` **obligatoire**) — **quatre exécutions Playwright au total** : les trois scénarios numérotés ci-dessous, **plus** le test de reset d'`openCreate()` de la puce précédente. La numérotation « scénario N » à laquelle renvoie AC-B8 désigne cette liste-ci.
     1. « fiche produit avec compte → facture depuis catalogue → la ligne porte le compte ». ⚠️ **Le produit doit être créé PAR L'INTERFACE**, pas semé par fixture : c'est ce scénario, et lui seul, qui exerce le **payload HTTP** de la fiche et discrimine donc la **mutation 4**. Un produit semé directement en base contournerait le payload, et la mutation passerait sans qu'aucun test ne bouge ;
     2. cas **AC-B4** — assigner un compte **par l'API** (pas par l'interface), l'**archiver ensuite**, monter la facture, constater marqueur et refus ;
     3. **« assigner un compte PAR L'API → l'archiver → ROUVRIR la fiche produit en édition → le libellé du compte s'affiche encore »**. ⚠️ **Sans ce scénario, la mutation 2 n'est attrapée par aucun E2E** : les deux premiers passent par le formulaire de facture, dont le `fetchAccounts(true)` est un appel **distinct** de celui du catalogue. Patron à reprendre : `frontend/tests/e2e/invoice-revenue-account.spec.ts:197-207` — archiver par l'API, puis `page.goto` vers l'écran, puis asserter le libellé. C'est lui qui a fermé ce piège en 16-1b.
-  - [ ] ⚠️ Le preset E2E `with-data` crée **déjà** un produit `'CI Product'` au compte `NULL` (`test_fixtures.rs:482-483`, appelé par `routes/test_endpoints.rs:203`) — en tenir compte dans les montages.
-  - [ ] Les **quatre** mutations d'AC-B8, exécutées, consignées avec leur sortie, fichiers restaurés à l'identique.
-- [ ] **T-B5 — Documentation** (AC-B7)
-  - [ ] CHANGELOG (fonctionnalité + avertissement `PUT`).
-  - [ ] `user-manual.tex` : corriger `:553` (champ **facultatif**) et `:583` (repli à trois maillons), décrire le pré-remplissage. **`make fr`**, commiter les PDF.
-  - [ ] **`:603` est à CORRIGER lui aussi, pas seulement à relire.** Le grep du symptôme — **`grep -on "par défaut de la société" docs/manual/fr/user-manual.tex`** — rend **trois** sites : `:583`, **`:603`**, `:611`. ⚠️ **Ne pas restreindre le motif à « compte par défaut de la société »** : il n'en rend que **deux** et rate précisément `:583`, rédigé « compte **de produit** par défaut de la société » — l'un des deux sites à corriger. *(Motif corrigé en passe 3 : c'est le mode d'échec que la § « Propagation post-patch » et le garde-fou P7 documentent déjà deux fois — un motif sous-inclusif rend le garde-fou muet.)* Or `:603` (« Variante ventilée ») affirme que **« les lignes laissées vides continuent de suivre le compte par défaut de la société »** — phrase qui devient **fausse** avec cette story : une ligne montée depuis un article suit d'abord le compte de l'**article**. `:611` en revanche reste **exact** (la mention « (défaut) » désigne toujours une ligne à `revenueAccountId = null`) : le lire, et **tracer le verdict « inchangé »** au Dev Agent Record — c'est ce qu'AC-B7 exige déjà du README.
+  - [x] ⚠️ Le preset E2E `with-data` crée **déjà** un produit `'CI Product'` au compte `NULL` (`test_fixtures.rs:482-483`, appelé par `routes/test_endpoints.rs:203`) — en tenir compte dans les montages.
+  - [x] Les **quatre** mutations d'AC-B8, exécutées, consignées avec leur sortie, fichiers restaurés à l'identique.
+- [x] **T-B5 — Documentation** (AC-B7)
+  - [x] CHANGELOG (fonctionnalité + avertissement `PUT`).
+  - [x] `user-manual.tex` : corriger `:553` (champ **facultatif**) et `:583` (repli à trois maillons), décrire le pré-remplissage. **`make fr`**, commiter les PDF.
+  - [x] **`:603` est à CORRIGER lui aussi, pas seulement à relire.** Le grep du symptôme — **`grep -on "par défaut de la société" docs/manual/fr/user-manual.tex`** — rend **trois** sites : `:583`, **`:603`**, `:611`. ⚠️ **Ne pas restreindre le motif à « compte par défaut de la société »** : il n'en rend que **deux** et rate précisément `:583`, rédigé « compte **de produit** par défaut de la société » — l'un des deux sites à corriger. *(Motif corrigé en passe 3 : c'est le mode d'échec que la § « Propagation post-patch » et le garde-fou P7 documentent déjà deux fois — un motif sous-inclusif rend le garde-fou muet.)* Or `:603` (« Variante ventilée ») affirme que **« les lignes laissées vides continuent de suivre le compte par défaut de la société »** — phrase qui devient **fausse** avec cette story : une ligne montée depuis un article suit d'abord le compte de l'**article**. `:611` en revanche reste **exact** (la mention « (défaut) » désigne toujours une ligne à `revenueAccountId = null`) : le lire, et **tracer le verdict « inchangé »** au Dev Agent Record — c'est ce qu'AC-B7 exige déjà du README.
 
     *(La passe 1 avait rangé `:603` parmi les sites « à tracer ». C'était insuffisant : greper le symptôme ne suffit pas si l'on ne lit pas ce que le site dit vraiment.)*
-  - [ ] README — feuille de route et « Fonctionnalités » vérifiées.
-- [ ] **T-B6 — Gate** (AC-B9) — frontend + E2E + `cargo test --workspace`, état final, exit 0.
+  - [x] README — feuille de route et « Fonctionnalités » vérifiées.
+- [x] **T-B6 — Gate** (AC-B9) — frontend + E2E + `cargo test --workspace`, état final, exit 0.
 
 ---
 
@@ -170,6 +170,31 @@ revenueAccountId: null,
 ## Dev Agent Record
 
 ### Agent Model Used
+
+Opus 5 (`bmad-dev-story`, 2026-08-04).
+
+### Debug Log References
+
+**Trois pièges du montage E2E, tous rencontrés — et deux d'entre eux produisaient des tests qui MENTAIENT.**
+
+1. **`KESH_COOKIE_SECURE=false` est obligatoire en local HTTP.** Playwright rejette un cookie `Secure` sur `http://127.0.0.1` — `isLocalHostname()` (`network.js:62`) ne reconnaît que `"localhost"` et `"*.localhost"`. Sans la variable, **toute** la suite échoue en 401. Documenté au `CLAUDE.md` § *Test Locally First* → E2E, à la ligne de code près. *(Un diagnostic erroné — « SameSite » — avait été produit puis réfuté ; cf. issue #285.)*
+2. **⚠️ LE BACKEND SERT `frontend/build`, PAS LES SOURCES.** Une mutation d'un `.svelte` **n'a aucun effet** sans `npm run build` préalable. Première campagne de mutations menée sans rebuild : **la mutation 1 laissait les 4 tests verts**, ce qui donnait à croire à des tests muets. Ils ne l'étaient pas — c'est le binaire testé qui était périmé. **Toute campagne de mutation E2E rebuild d'abord.**
+3. **Les numéros de compte tirés au hasard rendaient la suite INSTABLE.** `accounts` porte `uq_accounts_company_number` : deux tirages qui se percutent font échouer la création. Observé : `4 passed`, puis `3 failed` sur le **même** code. Numéros rendus **déterministes** (un `slot` par test, 39101..39104). Trois runs consécutifs verts ensuite. *Un test intermittent est pire qu'un test rouge : on finit par le croire sur parole.*
+
+### Completion Notes List
+
+**Les QUATRE mutations d'AC-B8 sont exécutées, sur une ligne de base éprouvée stable (3 runs verts consécutifs).**
+
+| Mutation | Rouges | Conforme au rayon annoncé |
+|---|---|---|
+| 1 — `onProductSelect` repose `null` | **2** : scénarios 1 et 2 | ✅ le test d'AC-B4 rougit bien aussi, comme la passe 1 de revue l'avait exigé |
+| 2 — `fetchAccounts(true)` → `()` | **1** : scénario 3 | ✅ et lui seul — les scénarios 1 et 2 passent par l'appel distinct d'`InvoiceForm` |
+| 3 — `openCreate()` sans reset | **1** : scénario 4 | ✅ |
+| 4 — champ retiré du payload | **1** : scénario 1 | ✅ et lui seul — les scénarios 2 et 3 assignent par l'API, comme la passe 3 l'a imposé |
+
+**Les décisions de la revue de spec sont validées par l'exécution**, et pas seulement par le raisonnement : le canal « par l'API » des scénarios 2 et 3 (passe 3) donne bien à la mutation 4 un tueur **unique** ; et le troisième scénario (passe 1) est bien le **seul** tueur E2E de la mutation 2.
+
+### File List
 
 ### Debug Log References
 

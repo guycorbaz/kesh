@@ -57,12 +57,20 @@ function uniqSuffix(): string {
 	return `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 }
 
-/** Compte de produit imputable, hors des plages du plan seedé. */
+/**
+ * Compte de produit imputable, hors des plages du plan seedé.
+ *
+ * ⚠️ Le numéro est **déterministe et propre à chaque test** (`slot`), jamais
+ * tiré au hasard : `accounts` porte `uq_accounts_company_number`, et deux
+ * tirages aléatoires qui se percutent font échouer la création — un échec
+ * intermittent, donc bien pire qu'un échec franc.
+ */
 async function mkRevenueAccount(
 	ctx: import('@playwright/test').APIRequestContext,
-	suffix: string
+	suffix: string,
+	slot: number
 ): Promise<{ id: number; number: string; name: string; version: number }> {
-	const number = String(39000 + Math.floor(Math.random() * 900));
+	const number = String(39100 + slot);
 	const res = await ctx.post('/api/v1/accounts', {
 		data: { number, name: `Compte produit ${suffix}`, accountType: 'Revenue', postable: true, role: null },
 	});
@@ -70,20 +78,52 @@ async function mkRevenueAccount(
 	return (await res.json()) as { id: number; number: string; name: string; version: number };
 }
 
+/** Ouvre le dialogue de création depuis la liste. */
+async function openCreateDialog(page: import('@playwright/test').Page) {
+	// `getByRole` et non `text=` : « Nouveau produit » apparaît aussi dans le
+	// titre du dialogue et dans le message d'état vide.
+	await page.getByRole('button', { name: 'Nouveau produit' }).click();
+}
+
+/** Ouvre le dialogue d'édition de l'article nommé. */
+async function openEditDialog(page: import('@playwright/test').Page, productName: string) {
+	await page
+		.locator('tr', { hasText: productName })
+		.getByRole('button', { name: 'Modifier' })
+		.click();
+}
+
+/**
+ * Choisit un compte dans l'`AccountAutocomplete` de la fiche produit.
+ *
+ * Même geste que l'E2E de 16-1b : saisir le NUMÉRO puis cliquer l'option — le
+ * dropdown ne se peuple qu'à la saisie, et `fill()` seul ne sélectionne rien.
+ */
+async function pickAccount(
+	page: import('@playwright/test').Page,
+	account: { number: string; name: string }
+) {
+	const field = page.locator('#form-revenue-account');
+	await field.click();
+	await field.fill(account.number);
+	await page.getByRole('option').filter({ hasText: account.name }).first().click();
+	await expect(field).toHaveValue(`${account.number} — ${account.name}`);
+}
+
 /** Remplit le dialogue de la fiche produit et enregistre. */
 async function fillProductForm(
 	page: import('@playwright/test').Page,
 	name: string,
-	accountLabel?: string
+	account?: { number: string; name: string }
 ) {
 	await page.fill('#form-name', name);
 	await page.fill('#form-price', '250.00');
-	if (accountLabel) {
-		await page.fill('#form-revenue-account', accountLabel);
-		// Le dropdown filtre sur la saisie ; la première proposition est la bonne.
-		await page.click(`text=${accountLabel}`);
+	if (account) {
+		await pickAccount(page, account);
 	}
-	await page.click('button[type="submit"]');
+	// ⚠️ Le libellé dépend du mode : « Créer » à la création, « Enregistrer » à
+	// l'édition (`+page.svelte:714-717`). La regex couvre les deux.
+	await page.getByRole('button', { name: /^(Créer|Enregistrer)$/ }).click();
 }
 
 // ===========================================================================
@@ -98,14 +138,14 @@ test('fiche produit avec compte → facture depuis catalogue → la ligne porte 
 	const ctx = await authedApiContext(page);
 
 	try {
-		const account = await mkRevenueAccount(ctx, suffix);
+		const account = await mkRevenueAccount(ctx, suffix, 1);
 		const productName = `Article E2E ${suffix}`;
 
 		// --- Le produit est créé PAR L'INTERFACE : c'est ce geste, et lui seul,
 		// qui fait transiter le champ par le payload HTTP de la fiche.
 		await page.goto('/products');
-		await page.click('text=Nouveau produit');
-		await fillProductForm(page, productName, `${account.number} — ${account.name}`);
+		await openCreateDialog(page);
+		await fillProductForm(page, productName, account);
 
 		// Relu depuis l'API : le champ a bien traversé la frontière HTTP.
 		const list = await ctx.get(`/api/v1/products?search=${encodeURIComponent(productName)}`);
@@ -119,20 +159,35 @@ test('fiche produit avec compte → facture depuis catalogue → la ligne porte 
 
 		// --- La facture montée depuis cet article porte le compte sur sa ligne.
 		const contactRes = await ctx.post('/api/v1/contacts', {
-			data: { contactType: 'Entreprise', name: `Client ${suffix}`, isCustomer: true },
+			data: {
+				contactType: 'Entreprise',
+				name: `Client ${suffix}`,
+				isClient: true,
+				isSupplier: false,
+			},
 		});
 		expect(contactRes.ok()).toBeTruthy();
 		const contact = (await contactRes.json()) as { id: number };
 
 		const invRes = await ctx.post('/api/v1/invoices', {
-			data: { contactId: contact.id, date: '2026-06-15', lines: [] },
+			data: {
+				contactId: contact.id,
+				date: '2026-06-15',
+				// ⚠️ Au moins UNE ligne : le formulaire d'édition d'un brouillon
+				// vide ne monte pas le bloc de lignes, donc pas le bouton
+				// « Depuis catalogue ». La ligne du catalogue sera la DERNIÈRE,
+				// d'où le `.last()` sur les champs de compte.
+				lines: [
+					{ description: 'Ligne initiale', quantity: '1', unitPrice: '100.00', vatRate: '0.00' },
+				],
+			},
 		});
 		expect(invRes.ok()).toBeTruthy();
 		const invoice = (await invRes.json()) as { id: number };
 
 		await page.goto(`/invoices/${invoice.id}/edit`);
-		await page.click('text=Depuis catalogue');
-		await page.click(`text=${productName}`);
+		await page.getByRole('button', { name: 'Depuis catalogue' }).click();
+		await page.getByRole('button', { name: new RegExp(productName) }).click();
 
 		const accountField = page.locator('input[aria-autocomplete="list"]').last();
 		await expect(
@@ -156,7 +211,7 @@ test('article dont le compte a été archivé : la ligne est marquée et l’enr
 	const ctx = await authedApiContext(page);
 
 	try {
-		const account = await mkRevenueAccount(ctx, suffix);
+		const account = await mkRevenueAccount(ctx, suffix, 2);
 
 		// ⚠️ Assigné PAR L'API, pas par l'interface : ce scénario n'a rien à
 		// prouver sur le payload, et y passer le ferait rougir sous la mutation 4.
@@ -178,17 +233,32 @@ test('article dont le compte a été archivé : la ligne est marquée et l’enr
 		expect(archiveRes.ok(), `archivage échoué: ${archiveRes.status()}`).toBeTruthy();
 
 		const contactRes = await ctx.post('/api/v1/contacts', {
-			data: { contactType: 'Entreprise', name: `Client ${suffix}`, isCustomer: true },
+			data: {
+				contactType: 'Entreprise',
+				name: `Client ${suffix}`,
+				isClient: true,
+				isSupplier: false,
+			},
 		});
 		const contact = (await contactRes.json()) as { id: number };
 		const invRes = await ctx.post('/api/v1/invoices', {
-			data: { contactId: contact.id, date: '2026-06-15', lines: [] },
+			data: {
+				contactId: contact.id,
+				date: '2026-06-15',
+				// ⚠️ Au moins UNE ligne : le formulaire d'édition d'un brouillon
+				// vide ne monte pas le bloc de lignes, donc pas le bouton
+				// « Depuis catalogue ». La ligne du catalogue sera la DERNIÈRE,
+				// d'où le `.last()` sur les champs de compte.
+				lines: [
+					{ description: 'Ligne initiale', quantity: '1', unitPrice: '100.00', vatRate: '0.00' },
+				],
+			},
 		});
 		const invoice = (await invRes.json()) as { id: number };
 
 		await page.goto(`/invoices/${invoice.id}/edit`);
-		await page.click('text=Depuis catalogue');
-		await page.click(`text=${product.name}`);
+		await page.getByRole('button', { name: 'Depuis catalogue' }).click();
+		await page.getByRole('button', { name: new RegExp(product.name) }).click();
 
 		// D-B1 : afficher + signaler + bloquer. Le compte est recopié tel quel —
 		// retomber en silence sur le défaut société CACHERAIT que la fiche
@@ -216,7 +286,7 @@ test('rouvrir la fiche d’un article dont le compte a été archivé : le libel
 	const ctx = await authedApiContext(page);
 
 	try {
-		const account = await mkRevenueAccount(ctx, suffix);
+		const account = await mkRevenueAccount(ctx, suffix, 3);
 		const productName = `Article rouvert ${suffix}`;
 
 		const prodRes = await ctx.post('/api/v1/products', {
@@ -241,7 +311,7 @@ test('rouvrir la fiche d’un article dont le compte a été archivé : le libel
 		// et le champ PARAÎT VIDE — et D-B2 garantit qu'aucun marqueur ne
 		// viendrait le nuancer sur cette fiche.
 		await page.goto('/products');
-		await page.click(`tr:has-text("${productName}") button[aria-label*="odifier"], tr:has-text("${productName}") >> text=Modifier`);
+		await openEditDialog(page, productName);
 
 		await expect(
 			page.locator('#form-revenue-account'),
@@ -264,7 +334,7 @@ test('éditer un article avec compte puis « Nouveau produit » : le sélecteur 
 	const ctx = await authedApiContext(page);
 
 	try {
-		const account = await mkRevenueAccount(ctx, suffix);
+		const account = await mkRevenueAccount(ctx, suffix, 4);
 		const productName = `Article source ${suffix}`;
 
 		const prodRes = await ctx.post('/api/v1/products', {
@@ -278,13 +348,13 @@ test('éditer un article avec compte puis « Nouveau produit » : le sélecteur 
 		expect(prodRes.ok()).toBeTruthy();
 
 		await page.goto('/products');
-		await page.click(`tr:has-text("${productName}") button[aria-label*="odifier"], tr:has-text("${productName}") >> text=Modifier`);
+		await openEditDialog(page, productName);
 		await expect(page.locator('#form-revenue-account')).toHaveValue(new RegExp(account.number));
 
 		// Fermer, puis ouvrir la création — les champs sont des `$state` de
 		// niveau PAGE, ils survivent à la fermeture du dialogue.
 		await page.keyboard.press('Escape');
-		await page.click('text=Nouveau produit');
+		await openCreateDialog(page);
 
 		await expect(
 			page.locator('#form-revenue-account'),
