@@ -91,7 +91,7 @@ Les trois champs sont du texte libre affiché sur un document. La validation se 
 
 **AC2 — Garde-fous de migration.** Ligne ajoutée à `docs/migrations-idempotence-audit.md` **à l'intérieur du tableau**, et les compteurs **recomptés depuis la source** — les deux sites du total et les trois compteurs de partition, dont la somme doit égaler le total. Le total passe de **58** à **59**. Garde-fou **P6** : `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` et inspection de chaque site — **DEUX** sites couplés de `migrations_upgrade_path.rs` doivent être bumpés **ensemble** : `assert_eq!(total, 58)` (`:89`) → **59**, ET `let n_before_upgrade_window = total - 24;` (`:142`) → **`- 25`**, de sorte que la **frontière reste à 34**. ⚠️ Bumper le premier seul fait glisser la fenêtre testée de 34 à 35 **sans qu'aucune assertion ne le détecte** — le test continue de passer en mesurant moins. Le fichier documente lui-même cette règle de bump conjoint (`:104-119`), et 16-2a l'a appliquée (23 → 24). Garde-fou **P7** : ⚠️ la migration n'écrivant aucune donnée, elle ne relève **NI du registre `POST_RESTORE_BACKFILLS` NI des exemptions** — `every_data_backfill_migration_is_triaged` (`post_restore.rs:705`) fait `continue` sur toute migration dont aucun statement n'écrit, elle n'est donc **jamais sélectionnée**. **Ne rien y inscrire.** Reprendre mot pour mot la justification du précédent immédiat, la migration de 16-2a (`docs/migrations-idempotence-audit.md:80`). ⚠️ **Ne PAS recopier le marqueur `Hors fenêtre`** des exemptions voisines : il ferait échouer l'`assert_eq!(checked, 4)` d'`exemptions_claiming_out_of_window_really_are_out_of_window`.
 
-**AC3 — API et les cinq listes de colonnes.** Les deux champs sont lus et écrits par une **route dédiée**, sur le patron de `update_company_email` (D4), avec verrou optimiste. `PUT /companies/current/email` **n'est pas modifiée**, `update_company_coordinates` non plus. ⚠️ **Les CINQ listes de colonnes `companies` écrites à la main sont mises à jour** (cf. T2) — une omission produit un `ColumnNotFound` **à l'exécution**, invisible à la compilation et au type-check.
+**AC3 — API et les six listes de colonnes.** Les deux champs sont lus et écrits par une **route dédiée**, sur le patron de `update_company_email` (D4), avec verrou optimiste. `PUT /companies/current/email` **n'est pas modifiée**, `update_company_coordinates` non plus. ⚠️ **Les SIX listes de colonnes `companies` écrites à la main sont mises à jour** (énumérées en T2) — une omission produit un `ColumnNotFound` **à l'exécution**, invisible à la compilation et au type-check.
 
 **AC4 — Rendu PDF, les trois champs.** Téléphone, e-mail et site web sont rendus sous l'IDE dans le bloc émetteur, **chacun précédé de son libellé traduit**, et **uniquement s'ils sont renseignés** (D2). L'e-mail vient de la colonne existante.
 
@@ -111,8 +111,12 @@ Les trois champs sont du texte libre affiché sur un document. La validation se 
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Migration** (AC1, AC2) — deux colonnes nullables ; ligne d'audit **dans le tableau** ; compteurs recomptés `58 → 59` aux deux sites du total ; partition recomptée ; `assert_eq!(total, 58)` de `migrations_upgrade_path.rs` porté à **59** ; triage P7 en exemption avec justification.
-- [ ] **T2 — Entité et les CINQ listes de colonnes** (AC3) — champs sur `Company`, **puis les cinq listes de colonnes écrites à la main**, relevées et vérifiées :
+- [ ] **T1 — Migration** (AC1, AC2) — deux colonnes nullables ; ligne d'audit **dans le tableau** ; compteurs recomptés `58 → 59` aux **deux** sites du total ; partition recomptée.
+
+  ⚠️ **DEUX sites couplés dans `migrations_upgrade_path.rs`, à bumper ENSEMBLE** : `assert_eq!(total, 58)` (`:90`) → **59**, ET `let n_before_upgrade_window = total - 24;` (`:142`) → **`- 25`**. La frontière doit rester à **34** (59 − 25). Bumper le premier seul fait glisser la fenêtre testée à 35 : **le test continue de passer en mesurant moins**, et rien ne le signale.
+
+  ⚠️ **Triage P7 : NE RIEN INSCRIRE**, ni au registre `POST_RESTORE_BACKFILLS` ni aux `EXEMPT_MIGRATIONS`. Une migration DDL pure n'est jamais sélectionnée par le détecteur (`post_restore.rs:705`, `continue` si aucun statement n'écrit). Reprendre la justification du précédent immédiat, `docs/migrations-idempotence-audit.md:80`.
+- [ ] **T2 — Entité et les SIX listes de colonnes** (AC3) — champs sur `Company`, **puis les six listes de colonnes écrites à la main**, relevées et vérifiées :
   1. `crates/kesh-db/src/repositories/companies.rs:17` — `FIND_BY_ID_SQL`
   2. `crates/kesh-db/src/repositories/companies.rs:22` — `LIST_SQL`
   3. `crates/kesh-api/src/routes/onboarding.rs:688` — `SELECT` en ligne
@@ -132,7 +136,7 @@ Les trois champs sont du texte libre affiché sur un document. La validation se 
   *Atténuation* : les 8 sites qui construisent `CompanyUpdate { ... }` sont vérifiés **par le compilateur** — l'omission échoue au build, pas en silence. C'est la seule des listes de cette story qui soit protégée ainsi.
 - [ ] **T4 — Rendu PDF** (AC4, AC5) — champs sur `InvoicePdfData`, rendu conditionnel sur le patron de l'IDE, **aux deux sites de construction** (D3).
 - [ ] **T5 — Garde de capacité haute** (AC6) — garde + test de pire cas. C'est la tâche à risque de la story ; la traiter **avant** le frontend.
-- [ ] **T6 — i18n** (AC7) — 3 clés × 4 locales, déclarées dans `I18N_KEYS`.
+- [ ] **T6 — i18n et son tableau JUMEAU** (AC7) — 3 clés × 4 locales, déclarées dans `I18N_KEYS` (`types.rs:201`) **ET dans `DEFAULT_EN` (`:233`), même ordre, même nombre**. ⚠️ Omettre le second ne dégrade pas le rendu : il le fait **paniquer** (indexation positionnelle sans borne-check, `:187-188`).
 - [ ] **T7 — Frontend** (AC8) — champs et texte d'aide dans les réglages société.
 - [ ] **T8 — Documentation** (AC9) — manuel + PDF régénéré, CHANGELOG, vérification README **tracée**.
 - [ ] **T9 — Gate complet** (AC10) — état final, exit 0, verdict lu dans le log.
@@ -183,6 +187,21 @@ Le dépôt attend qu'une story démontre que ses tests **discriminent**, pas seu
 ### File List
 
 ## Change Log
+
+**2026-08-05 — Passe 2 de `bmad-create-story validate`** (**Haiku 4.5**, contexte frais). **3 CRITICAL, 1 MEDIUM**, tous **confirmés au ground-truth** et remédiés. **Boucle NON convergée — passe 3 due.**
+
+⚠️ **GARDE-FOU DE SPLITTING FORMELLEMENT DÉCLENCHÉ** — la sévérité maximale a **augmenté** (passe 1 `HIGH` → passe 2 `CRITICAL`), ce que la § *Règle de splitting préventif* définit comme une non-convergence réelle. **Arbitrage requis** ; l'analyse est au paragraphe suivant.
+
+**LES QUATRE FINDINGS SONT DES RÉSIDUS DE LA REMÉDIATION DE LA PASSE 1, ET AUCUN NE PORTE SUR LA CONCEPTION.** J'avais corrigé les **critères d'acceptation** sans propager aux **tâches** qui les exécutent, laissant le document se contredire :
+
+1. **T1 prescrivait encore « triage P7 en exemption »** quand AC2, corrigé, disait « ne rien y inscrire ». Un dev suivant T1 aurait créé l'exemption et fait échouer un compteur codé en dur.
+2. **T1 ne nommait qu'un des deux sites couplés au total** — le second, `n_before_upgrade_window`, n'avait été ajouté qu'à AC2. Or c'est T1 qu'on exécute.
+3. **AC3 et le titre de T2 annonçaient « CINQ »** listes de colonnes quand le corps de T2, corrigé, en énumérait **six**.
+4. **T6 ne mentionnait pas `DEFAULT_EN`**, ajouté au seul AC7.
+
+**C'est le mode d'échec que la § *Propagation post-patch* décrit exactement** : un patch appliqué au site signalé, jamais grepé sur le reste du document. La contre-mesure a été appliquée cette fois — `grep -F` de « CINQ », « cinq listes » et « en exemption » sur tout le fichier après correction : **zéro occurrence résiduelle**.
+
+**Analyse pour l'arbitrage.** La régression de sévérité est **réelle mais trompeuse** : ces `CRITICAL` sont des **incohérences internes que j'ai introduites en passe 1**, non des signes que la story serait trop large. Un split ne les aurait ni évitées ni corrigées — la story tient sur un seul mental-model (une entité, une migration, un bloc de PDF), et ses **décisions** n'ont pas bougé depuis la création. Le précédent applicable est **16-2b**, où le garde-fou s'était déclenché et où la dérogation, arbitrée puis **validée par le résultat**, avait vu le compteur tomber à zéro à la passe suivante.
 
 **2026-08-05 — Passe 1 de `bmad-create-story validate`** (**Sonnet**, modèle ≠ celui qui a rédigé la story, contexte frais). **4 HIGH, 1 MEDIUM**, tous **confirmés au ground-truth** avant patch et tous remédiés. **Boucle NON convergée — passe 2 due.**
 
