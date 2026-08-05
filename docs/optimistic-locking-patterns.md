@@ -40,7 +40,7 @@ Story 7-3 a appliqué le pattern aux 9 fonctions `update()` user-form du crate `
 | # | Repository | Fonction | Champs comparés |
 |---|---|---|---|
 | 1 | `contacts.rs` | `update` | `contact_type, name, is_client, is_supplier, address, email, phone, ide_number, default_payment_terms` |
-| 2 | `products.rs` | `update` | `name, description, unit_price, vat_rate` |
+| 2 | `products.rs` | `update` | `name, description, unit_price, vat_rate, default_revenue_account_id` |
 | 3 | `invoices.rs` | `update` | `contact_id, date, due_date, payment_terms` + lignes (replace-all en ordre) |
 | 4 | `accounts.rs` | `update` | `name, account_type` |
 | 5 | `bank_accounts.rs` | `upsert_primary` (branche `Some`) | `bank_name, iban, qr_iban` |

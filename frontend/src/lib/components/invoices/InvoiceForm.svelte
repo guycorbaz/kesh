@@ -410,8 +410,9 @@
 			quantity: '1',
 			unitPrice: '0.00',
 			vatRate: DEFAULT_VAT,
-			// AC9-bis — site 2/5. `null` = suivre le défaut société ; la Story 16-2
-			// y branchera le pré-remplissage depuis la fiche produit.
+			// AC9-bis — site 2/5. `null` = suivre le compte de produit par défaut
+			// de la société. Une ligne libre ne vient d'AUCUN article : elle reste
+			// à `null` par construction (décision D-B3 de la Story 16-2b).
 			revenueAccountId: null,
 			_uiKey: nextUiKey(),
 		});
@@ -423,8 +424,16 @@
 			quantity: '1',
 			unitPrice: p.unitPrice,
 			vatRate: p.vatRate,
-			// AC9-bis — site 3/5. Idem : 16-2 y branchera le compte du produit.
-			revenueAccountId: null,
+			// AC9-bis — site 3/5. Le compte de l'article est recopié tel quel
+			// (Story 16-2b, #144) ; `null` s'il n'en impose aucun, la ligne suit
+			// alors le défaut société.
+			//
+			// ⚠️ Recopié MÊME s'il est devenu inutilisable (archivé, retypé,
+			// non imputable) — décision D-B1. Le sélecteur de ligne l'affiche
+			// alors, le marque invalide et bloque l'enregistrement en nommant la
+			// ligne. Retomber en silence sur le défaut société CACHERAIT que la
+			// fiche produit est à corriger.
+			revenueAccountId: p.defaultRevenueAccountId ?? null,
 			_uiKey: nextUiKey(),
 		});
 	}

@@ -1347,3 +1347,13 @@ invoice-lines-revenue-account-invalid = Conto di ricavo non valido nelle righe s
 invoice-default-revenue-account-unusable = Il conto di ricavo predefinito della società non è più utilizzabile (archiviato, non imputabile o di tipo inatteso). Le righe che lo seguono non potranno essere validate — correggilo nelle Impostazioni oppure scegli un conto per ogni riga.
 common-account-default-suffix = (predefinito)
 invoice-line-aria-line = riga { $n }
+
+# Story 16-2a (#144) — conto di ricavo sulla scheda articolo.
+product-revenue-account-unknown = Il conto di ricavo di questo articolo non è stato trovato o non appartiene a questa società.
+product-revenue-account-inactive = Il conto di ricavo di questo articolo è archiviato.
+product-revenue-account-not-revenue = Il conto di questo articolo non è un conto di ricavo.
+
+# Story 16-2b (#144) — selettore del conto di ricavo sulla scheda articolo.
+product-form-revenue-account = Conto di ricavo
+product-form-revenue-account-help = Facoltativo. Se lasciato vuoto, le righe di fattura create da questo articolo seguono il conto di ricavo predefinito della società.
+product-form-revenue-account-load-error = Impossibile caricare il piano dei conti. Il conto di ricavo dovrà essere inserito tramite il suo identificatore, oppure ricaricare la pagina.

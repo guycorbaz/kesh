@@ -5,6 +5,9 @@
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { notifyError, notifySuccess } from '$lib/shared/utils/notify';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	import AccountAutocomplete from '$lib/features/journal-entries/AccountAutocomplete.svelte';
+	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
+	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { Plus, Pencil, Archive, Search } from '@lucide/svelte';
 	import { onMount, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -96,6 +99,9 @@
 	let formDescription = $state('');
 	let formPrice = $state('');
 	let formVatRate = $state('8.10');
+	let formRevenueAccountId = $state<number | null>(null);
+	let accounts = $state<AccountResponse[]>([]);
+	let accountsLoadError = $state(false);
 	let formSubmitting = $state(false);
 	let formError = $state('');
 	// Évite d'afficher une erreur « champ vide » avant toute interaction utilisateur.
@@ -122,7 +128,34 @@
 	const VALID_SORT_BY: ProductSortBy[] = ['Name', 'UnitPrice', 'VatRate', 'CreatedAt'];
 	const VALID_SORT_DIR: SortDirection[] = ['Asc', 'Desc'];
 
+	// Story 16-2b (#144) — `fetchAccounts(true)` : les comptes ARCHIVÉS sont
+	// inclus délibérément. Sans le flag, un article dont le compte a été archivé
+	// depuis verrait son champ PARAÎTRE VIDE au lieu d'afficher son libellé —
+	// et D-B2 garantit qu'aucun marqueur ne viendrait le nuancer sur cette fiche.
+	async function loadAccounts() {
+		try {
+			accounts = await fetchAccounts(true);
+			accountsLoadError = false;
+		} catch {
+			// `loadError` bascule le sélecteur en saisie d'id brut plutôt qu'en
+			// champ vide et muet — même motif que ci-dessus.
+			accountsLoadError = true;
+			// ⚠️ Le bascule seule ne suffit PAS : elle change la NATURE du champ
+			// sans le dire. L'utilisateur trouve, à la place de l'autocomplétion,
+			// une saisie d'identifiant TECHNIQUE, et peut y taper un numéro de
+			// compte en croyant bien faire — `3200` est alors envoyé comme `id`.
+			// Le signaler coûte une ligne. *(Passe 1 de revue.)*
+			notifyError(
+				i18nMsg(
+					'product-form-revenue-account-load-error',
+					'Impossible de charger le plan comptable. Le compte de produit devra être saisi par son identifiant, ou rechargez la page.'
+				)
+			);
+		}
+	}
+
 	onMount(() => {
+		void loadAccounts();
 		const params = page.url.searchParams;
 		search = params.get('search') ?? '';
 		effectiveSearch = search;
@@ -252,6 +285,12 @@
 		formDescription = '';
 		formPrice = '';
 		formVatRate = vatOptions[0]?.value ?? '8.10';
+		// ⚠️ SANS CE RESET, un nouvel article HÉRITE du compte de celui qu'on
+		// vient d'éditer : les champs sont des `$state` de niveau PAGE, ils
+		// survivent à la fermeture du dialogue. Et rien ne le signalerait —
+		// D-B2 interdit tout marqueur sur cette fiche —, si bien que l'article
+		// partirait avec un compte hérité, propagé à toutes ses factures.
+		formRevenueAccountId = null;
 		formError = '';
 		formTouched = false;
 		formOpen = true;
@@ -274,6 +313,7 @@
 		formVatRate = vatOptions.some((o) => o.value === p.vatRate)
 			? p.vatRate
 			: (vatOptions[0]?.value ?? '8.10');
+		formRevenueAccountId = p.defaultRevenueAccountId;
 		formError = '';
 		// En édition, les champs sont déjà remplis : afficher la validation dès l'ouverture.
 		formTouched = true;
@@ -326,7 +366,11 @@
 				// Normalise la virgule décimale (claviers mobiles suisses) en point
 				// avant envoi au backend qui attend la représentation canonique.
 				unitPrice: normalizePriceInput(formPrice),
-				vatRate: formVatRate
+				vatRate: formVatRate,
+				// TOUJOURS envoyé, valeur ou `null`, jamais omis : le `PUT` est
+				// full-replace (D5 de 16-2a) et une clé absente EFFACERAIT le
+				// compte sans erreur.
+				defaultRevenueAccountId: formRevenueAccountId
 			};
 
 			if (editing) {
@@ -632,6 +676,46 @@
 				</select>
 				<p class="text-xs text-muted-foreground mt-1">
 					{i18nMsg('product-form-vat-help', 'Taux suisses en vigueur depuis le 01.01.2024')}
+				</p>
+			</div>
+
+			<div>
+				<!--
+					Story 16-2b (#144). Les deux libellés sont RÉSOLUS ICI, dans la
+					page : `AccountAutocomplete` vit sous `src/lib/features/`, donc
+					DANS le périmètre de `lint-i18n-ownership` — une clé `product-*`
+					qu'il résoudrait lui-même ferait rougir le lint, `product` ne
+					figurant pas parmi les six préfixes globaux.
+
+					Pas de `markInvalid` : sur cette fiche, un compte devenu
+					inutilisable ne se signale PAS (décision D-B2). Il se découvre au
+					moment où l'on s'en sert, sur la ligne de facture, une seule fois.
+				-->
+				<label for="form-revenue-account">
+					{i18nMsg('product-form-revenue-account', 'Compte de produit')}
+				</label>
+				<AccountAutocomplete
+					id="form-revenue-account"
+					describedBy="form-revenue-account-help"
+					{accounts}
+					value={formRevenueAccountId}
+					loadError={accountsLoadError}
+					allowClear
+					requiredAccountType="Revenue"
+					onSelect={(id) => (formRevenueAccountId = id)}
+				/>
+				<!--
+					⚠️ L'`id` de ce paragraphe n'est pas décoratif : c'est la cible du
+					`describedBy` ci-dessus. Sans lui, un lecteur d'écran annonce
+					« Compte de produit » et RIEN de plus — or c'est cette phrase, et
+					elle seule, qui dit que laisser le champ vide n'est pas un oubli.
+					*(Passe 1 de revue.)*
+				-->
+				<p id="form-revenue-account-help" class="text-xs text-muted-foreground mt-1">
+					{i18nMsg(
+						'product-form-revenue-account-help',
+						'Facultatif. Laissé vide, les lignes de facture créées depuis cet article suivent le compte de produit par défaut de la société.'
+					)}
 				</p>
 			</div>
 

@@ -1,6 +1,21 @@
 <!--
-  ProductPicker (Story 5.1) : dialog simple pour sélectionner un produit
-  actif du catalogue et renvoyer un snapshot (name/unitPrice/vatRate).
+  ProductPicker (Story 5.1) : dialog simple pour sélectionner un produit actif
+  du catalogue.
+
+  ⚠️ Ce composant ne construit PAS de snapshot : `onSelect` transmet le
+  `ProductResponse` COMPLET, tel que l'API l'a rendu (cf. `pick`, plus bas).
+  C'est l'appelant — `InvoiceForm.onProductSelect` — qui choisit les champs
+  qu'il recopie dans la ligne. Ne pas restreindre ce que l'on passe ici : le
+  compte de produit de l'article (`defaultRevenueAccountId`, Story 16-2b #144)
+  n'a eu besoin d'AUCUNE modification de ce fichier pour atteindre la ligne, et
+  un « snapshot » réintroduit ici le ferait disparaître **en silence** — la
+  ligne retomberait sur le défaut société, ce que D-B1 déclare inacceptable.
+  *(L'en-tête précédent annonçait un snapshot qui n'existait pas ; relevé en
+  passe 1 de revue.)*
+
+  Côté ligne, le compte est recopié tel quel, y compris quand il est devenu
+  inutilisable — c'est le sélecteur de ligne qui le signale alors, une fois, au
+  bon endroit.
 -->
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog';

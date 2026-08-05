@@ -1347,3 +1347,13 @@ invoice-lines-revenue-account-invalid = Invalid revenue account on the following
 invoice-default-revenue-account-unusable = The company default revenue account is no longer usable (archived, not postable, or unexpected type). Lines following it cannot be validated — fix it in Settings, or pick an account on each line.
 common-account-default-suffix = (default)
 invoice-line-aria-line = line { $n }
+
+# Story 16-2a (#144) — revenue account on the product record.
+product-revenue-account-unknown = The revenue account of this product was not found or does not belong to this company.
+product-revenue-account-inactive = The revenue account of this product is archived.
+product-revenue-account-not-revenue = The account of this product is not a revenue account.
+
+# Story 16-2b (#144) — revenue account selector on the product record.
+product-form-revenue-account = Revenue account
+product-form-revenue-account-help = Optional. Left empty, invoice lines created from this product follow the company default revenue account.
+product-form-revenue-account-load-error = Could not load the chart of accounts. The revenue account will have to be entered by its identifier, or reload the page.

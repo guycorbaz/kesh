@@ -110,7 +110,7 @@ npm run build
 
 ### E2E (Playwright)
 
-**Pas exécuté par la CI principale** (cf. `ci.yml`) — donc d'autant plus critique en local si la modif touche le frontend ou les routes API consommées par les pages.
+**La suite complète tourne EN LOCAL, avant tout `git push`** — au même titre que les gates backend et frontend. Elle n'est pas exécutée pendant l'itération : la doctrine reste le gate ciblé entre les passes, le gate complet au push.
 
 ```sh
 cd frontend
@@ -118,6 +118,57 @@ npm run test:e2e
 ```
 
 Pré-requis : MariaDB démarré + seed CI appliqué + Playwright browsers installés (cf. `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` sur Ubuntu 26.04+ — limitation upstream Playwright ≤ 1.49).
+
+#### ⚠️ `KESH_COOKIE_SECURE=false` est OBLIGATOIRE en local HTTP — sans lui, TOUTE la suite échoue en 401
+
+**Le montage qui marche**, vérifié le 2026-08-04 :
+
+```sh
+# terminal 1 — backend, servant aussi le frontend buildé
+KESH_TEST_MODE=true KESH_HOST=127.0.0.1 KESH_COOKIE_SECURE=false \
+  DATABASE_URL='mysql://kesh:kesh_dev@127.0.0.1:3306/kesh_e2e' \
+  KESH_JWT_SECRET='<32+ octets>' KESH_ADMIN_PASSWORD='<12+ caractères>' \
+  KESH_PORT=3000 KESH_STATIC_DIR=frontend/build \
+  cargo run -p kesh-api
+
+# terminal 2
+cd frontend
+PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 \
+  KESH_BACKEND_URL=http://127.0.0.1:3000 npm run test:e2e
+```
+
+**Pourquoi**, à la ligne près — pour que personne ne re-diagnostique ce symptôme :
+
+```js
+// node_modules/playwright-core/lib/server/cookieStore.js:36
+matches(url) {
+  if (this._raw.secure && (url.protocol !== "https:" && !isLocalHostname(url.hostname)))
+    return false;                       // ← le cookie n'est PAS joint
+// node_modules/playwright-core/lib/server/network.js:62
+function isLocalHostname(hostname) {
+  return hostname === "localhost" || hostname.endsWith(".localhost");
+}
+```
+
+**`127.0.0.1` n'est PAS un « local hostname » pour Playwright.** Un cookie `Secure` sur `http://127.0.0.1` est donc rejeté par le `APIRequestContext` que crée `authedApiContext()` — alors que Chromium, lui, le tolère sur loopback. Résultat : le navigateur est authentifié, le contexte API ne l'est jamais, et **toute la suite** échoue en `401` avec `unauth: missing or malformed authorization` côté backend.
+
+⚠️ **`SameSite` n'y est pour rien** — `matches()` ne consulte que `secure`, `domain` et `path`. L'attribut `sameSite` est parsé mais jamais relu au filtrage. *(Diagnostic erroné produit puis réfuté le 2026-08-04, cf. plus bas.)*
+
+**La règle de méthode qui a manqué, et qui coûte cher :**
+
+1. **Chercher la doc du dépôt AVANT de diagnostiquer.** `docs/testing.md` § « Prérequis Playwright local » documentait ce piège **depuis juillet**, et `playwright.config.ts:20` y renvoie. Un montage a été reconstitué par tâtonnement à côté d'une recette existante et correcte.
+2. **Ne JAMAIS déclarer une hypothèse « écartée » sans l'avoir exécutée.** L'hypothèse « cookie `Secure` sur du HTTP » a été notée écartée alors que la suite n'avait **jamais** été relancée avec `KESH_COOKIE_SECURE=false` — seule la forme de l'en-tête avait été vérifiée au `curl`. Une issue, une story et un amendement de ce fichier ont été construits sur cette conclusion fausse ; c'est une revue adversariale, lisant le code source de Playwright, qui l'a réfutée.
+3. C'est la même faute que « ne déclarer que ce qui a tourné », appliquée au **diagnostic** au lieu du gate : *une hypothèse éliminée par raisonnement n'est pas une hypothèse testée.*
+
+**La CI n'exécute PAS la suite complète** (coût récurrent : MariaDB, seed, navigateurs, durée) — **mais elle exécute un SMOKE** : une seule spec, login puis un appel API authentifié, 2-3 minutes.
+
+⚠️ **Le smoke ne teste aucune fonctionnalité, et c'est délibéré : il vérifie que le HARNAIS EST VIVANT.** Les fonctionnalités restent couvertes par le gate local avant push.
+
+**Pourquoi les deux niveaux, et pas seulement le local.** Une règle qui repose sur la seule discipline de qui pousse a la même faiblesse que celle qui impose de « ne déclarer que ce qui a tourné » : on peut l'affirmer sans l'avoir fait. Et une story qui ne touche pas le frontend fait **légitimement** sauter les E2E — si le harnais casse à ce moment-là, personne ne le saura.
+
+**Précédent qui a motivé la règle (issue #285, 2026-08-04)** : `authedApiContext()` rendait un contexte **non authentifié** — le login pose des cookies `SameSite=Strict` qu'un contexte API, sans site initiateur, ne joint pas. **Toute la suite** était inopérante, et la panne n'a été découverte qu'à l'occasion d'une story sans rapport, parce que trois circonstances se cumulaient : la CI ne lançait pas les E2E, les tests manuels de Guy passent par un navigateur, et **rien ne signale une suite qui cesse de tourner**. Un test jamais lancé ne rougit pas — **il se tait**. C'est le mode d'échec du test muet, déjà payé sur `backfill_skips_archived_accounts` (16-1a) et reproduit sur les mutations de 16-2a, où quatre tests supprimés par mégarde ont rendu un impeccable « 16 passed, 0 failed ».
+
+⚠️ **Un E2E n'est pas un test comme un autre.** C'est le **seul** qui vérifie qu'une valeur traverse réellement la frontière HTTP : Vitest teste la construction du payload, les tests Rust la validation, et **ni l'un ni l'autre ne voit une clé qui disparaît entre les deux**. Le sauter n'a pas le même coût que sauter un test unitaire.
 
 ### Pendant une boucle de revue — gate ciblé, gate complet au push
 

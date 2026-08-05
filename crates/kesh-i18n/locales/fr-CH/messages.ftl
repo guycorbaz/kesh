@@ -1439,3 +1439,19 @@ invoice-lines-revenue-account-invalid = Compte de produit invalide sur les ligne
 invoice-default-revenue-account-unusable = Le compte de produit par défaut de la société n'est plus utilisable (archivé, non imputable ou de type inattendu). Les lignes qui le suivent ne pourront pas être validées — corrigez-le dans les Réglages, ou choisissez un compte sur chaque ligne.
 common-account-default-suffix = (défaut)
 invoice-line-aria-line = ligne { $n }
+
+# Story 16-2a (#144) — compte de produit sur la fiche produit.
+# Le sujet désigne L'ARTICLE, jamais le réglage société : famille distincte de
+# `invoice-line-account-*`, qui nomme des lignes de facture.
+product-revenue-account-unknown = Le compte de produit de cet article est introuvable ou n'appartient pas à cette société.
+product-revenue-account-inactive = Le compte de produit de cet article est archivé.
+product-revenue-account-not-revenue = Le compte de cet article n'est pas un compte de produit.
+
+# Story 16-2b (#144) — sélecteur de compte de produit sur la fiche article.
+# Préfixe `product-form-` : aligné sur les six clés voisines du même formulaire
+# (-name, -description, -price, -vat-rate, -create-title, -edit-title). NE PAS
+# employer `product-revenue-account-*`, famille que 16-2a occupe pour le message
+# de rejet backend, dans ces mêmes fichiers et la même PR.
+product-form-revenue-account = Compte de produit
+product-form-revenue-account-help = Facultatif. Laissé vide, les lignes de facture créées depuis cet article suivent le compte de produit par défaut de la société.
+product-form-revenue-account-load-error = Impossible de charger le plan comptable. Le compte de produit devra être saisi par son identifiant, ou rechargez la page.

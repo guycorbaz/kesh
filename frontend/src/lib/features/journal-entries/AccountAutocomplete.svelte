@@ -60,9 +60,44 @@
 		 * compris ceux portant un compte explicite différent. (Passe 2 de revue.)
 		 */
 		ariaLabel?: string;
+		/**
+		 * `id` rendu sur le champ de saisie, pour qu'un `<label for>` extérieur
+		 * puisse s'y lier (Story 16-2b, #144).
+		 *
+		 * **Prop opt-in dont le défaut préserve le comportement** : `undefined`
+		 * ⇒ aucun attribut `id`, les cinq écrans consommateurs sont inchangés.
+		 *
+		 * ⚠️ Sans elle, un `<label for="…">` écrit dans la page ne se lie **à
+		 * rien** — et le nom accessible du champ retombe alors sur `ariaLabel`,
+		 * voire sur le repli `journal-entry-form-col-account`, ce qui donnerait
+		 * un libellé « Compte » venu d'une clé *journal-entry* sur une fiche
+		 * produit. Le patron de `VatPurchaseAssistant.svelte:156-158` porte
+		 * exactement ce défaut, et `svelte-check` ne le voit pas : la règle
+		 * `a11y_label_has_associated_control` se satisfait de la présence de
+		 * l'attribut `for`, elle ne résout pas les `id` à travers un composant.
+		 */
+		id?: string;
+		/**
+		 * `id` d'un élément extérieur décrivant le champ, joint au nom accessible
+		 * via `aria-describedby` (Story 16-2b, #144, passe 1 de revue).
+		 *
+		 * **Prop opt-in dont le défaut préserve le comportement** : `undefined`
+		 * ⇒ l'attribut ne porte que le message d'invalidité, comme avant.
+		 *
+		 * ⚠️ Le `<label for>` seul ne suffit pas quand la valeur **vide** a un
+		 * sens : sur la fiche produit, c'est la phrase d'aide — et elle seule —
+		 * qui dit que laisser le champ vide n'est pas un oubli mais « suivre le
+		 * défaut société ». Sans cette prop, ce sens n'existe qu'à la vue.
+		 *
+		 * Se compose avec le message d'invalidité : les deux `id` sont joints par
+		 * une espace quand `markInvalid` est actif, comme la spec ARIA le prévoit.
+		 */
+		describedBy?: string;
 	}
 
 	let {
+		id = undefined,
+		describedBy = undefined,
 		accounts,
 		value,
 		loadError = false,
@@ -270,6 +305,7 @@
 
 <div class="relative">
 	<Input
+		{id}
 		type="text"
 		value={query}
 		oninput={handleInput}
@@ -284,7 +320,9 @@
 		aria-autocomplete="list"
 		aria-expanded={open}
 		aria-invalid={isInvalid ? 'true' : undefined}
-		aria-describedby={isInvalid ? invalidMsgId : undefined}
+		aria-describedby={[describedBy, isInvalid ? invalidMsgId : undefined]
+			.filter(Boolean)
+			.join(' ') || undefined}
 	/>
 
 	{#if allowClear && !disabled && (value !== null || query !== '')}

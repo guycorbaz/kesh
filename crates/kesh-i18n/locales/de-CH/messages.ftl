@@ -1347,3 +1347,13 @@ invoice-lines-revenue-account-invalid = Ungültiges Ertragskonto auf den folgend
 invoice-default-revenue-account-unusable = Das Standard-Ertragskonto der Firma ist nicht mehr verwendbar (archiviert, nicht buchbar oder unerwarteter Typ). Zeilen, die ihm folgen, können nicht validiert werden — korrigieren Sie es in den Einstellungen oder wählen Sie pro Zeile ein Konto.
 common-account-default-suffix = (Standard)
 invoice-line-aria-line = Zeile { $n }
+
+# Story 16-2a (#144) — Ertragskonto auf dem Artikelstammblatt.
+product-revenue-account-unknown = Das Ertragskonto dieses Artikels wurde nicht gefunden oder gehört nicht zu dieser Firma.
+product-revenue-account-inactive = Das Ertragskonto dieses Artikels ist archiviert.
+product-revenue-account-not-revenue = Das Konto dieses Artikels ist kein Ertragskonto.
+
+# Story 16-2b (#144) — Ertragskonto-Auswahl auf dem Artikelstammblatt.
+product-form-revenue-account = Ertragskonto
+product-form-revenue-account-help = Optional. Wird das Feld leer gelassen, folgen die aus diesem Artikel erstellten Rechnungspositionen dem Standard-Ertragskonto der Firma.
+product-form-revenue-account-load-error = Der Kontenplan konnte nicht geladen werden. Das Ertragskonto muss über seine Kennung eingegeben werden, oder laden Sie die Seite neu.

@@ -126,6 +126,7 @@ async fn seed_products(pool: &MySqlPool, user_id: i64, company_id: i64, count: u
                 description: Some(format!("Description article {i} qualité supérieure")),
                 unit_price: dec!(10.00),
                 vat_rate: dec!(8.1),
+                default_revenue_account_id: None,
             },
         )
         .await
