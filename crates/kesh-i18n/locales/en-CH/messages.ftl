@@ -1352,8 +1352,8 @@ invoice-line-aria-line = line { $n }
 product-revenue-account-unknown = The revenue account of this product was not found or does not belong to this company.
 product-revenue-account-inactive = The revenue account of this product is archived.
 product-revenue-account-not-revenue = The account of this product is not a revenue account.
-product-revenue-account-not-postable = The revenue account of this product is not postable.
 
 # Story 16-2b (#144) — revenue account selector on the product record.
 product-form-revenue-account = Revenue account
 product-form-revenue-account-help = Optional. Left empty, invoice lines created from this product follow the company default revenue account.
+product-form-revenue-account-load-error = Could not load the chart of accounts. The revenue account will have to be entered by its identifier, or reload the page.

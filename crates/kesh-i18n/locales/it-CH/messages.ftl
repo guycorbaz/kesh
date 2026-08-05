@@ -1352,8 +1352,8 @@ invoice-line-aria-line = riga { $n }
 product-revenue-account-unknown = Il conto di ricavo di questo articolo non è stato trovato o non appartiene a questa società.
 product-revenue-account-inactive = Il conto di ricavo di questo articolo è archiviato.
 product-revenue-account-not-revenue = Il conto di questo articolo non è un conto di ricavo.
-product-revenue-account-not-postable = Il conto di ricavo di questo articolo non è imputabile.
 
 # Story 16-2b (#144) — selettore del conto di ricavo sulla scheda articolo.
 product-form-revenue-account = Conto di ricavo
 product-form-revenue-account-help = Facoltativo. Se lasciato vuoto, le righe di fattura create da questo articolo seguono il conto di ricavo predefinito della società.
+product-form-revenue-account-load-error = Impossibile caricare il piano dei conti. Il conto di ricavo dovrà essere inserito tramite il suo identificatore, oppure ricaricare la pagina.

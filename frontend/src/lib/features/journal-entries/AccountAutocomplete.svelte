@@ -77,10 +77,27 @@
 		 * l'attribut `for`, elle ne résout pas les `id` à travers un composant.
 		 */
 		id?: string;
+		/**
+		 * `id` d'un élément extérieur décrivant le champ, joint au nom accessible
+		 * via `aria-describedby` (Story 16-2b, #144, passe 1 de revue).
+		 *
+		 * **Prop opt-in dont le défaut préserve le comportement** : `undefined`
+		 * ⇒ l'attribut ne porte que le message d'invalidité, comme avant.
+		 *
+		 * ⚠️ Le `<label for>` seul ne suffit pas quand la valeur **vide** a un
+		 * sens : sur la fiche produit, c'est la phrase d'aide — et elle seule —
+		 * qui dit que laisser le champ vide n'est pas un oubli mais « suivre le
+		 * défaut société ». Sans cette prop, ce sens n'existe qu'à la vue.
+		 *
+		 * Se compose avec le message d'invalidité : les deux `id` sont joints par
+		 * une espace quand `markInvalid` est actif, comme la spec ARIA le prévoit.
+		 */
+		describedBy?: string;
 	}
 
 	let {
 		id = undefined,
+		describedBy = undefined,
 		accounts,
 		value,
 		loadError = false,
@@ -303,7 +320,9 @@
 		aria-autocomplete="list"
 		aria-expanded={open}
 		aria-invalid={isInvalid ? 'true' : undefined}
-		aria-describedby={isInvalid ? invalidMsgId : undefined}
+		aria-describedby={[describedBy, isInvalid ? invalidMsgId : undefined]
+			.filter(Boolean)
+			.join(' ') || undefined}
 	/>
 
 	{#if allowClear && !disabled && (value !== null || query !== '')}

@@ -575,6 +575,85 @@ async fn absent_key_and_explicit_null_both_mean_no_account(pool: MySqlPool) {
     assert!(explicit_body["defaultRevenueAccountId"].is_null());
 }
 
+/// Un `PUT` **sans la clé** sur un article qui porte un compte l'**efface** —
+/// comportement voulu (**D5**), épinglé ici.
+///
+/// ⚠️ Ce test ne *défend* pas ce comportement, il l'**empêche de dériver en
+/// silence**. `PUT /products/{id}` est un **full-replace** : une intégration
+/// tierce qui relit un article, modifie son prix et renvoie les seuls champs
+/// qu'elle connaît efface son compte de produit, en 200, avec bump de `version`
+/// et une entrée d'audit d'apparence normale. C'est écrit au CHANGELOG et suivi
+/// dans l'issue **#278**.
+///
+/// Pourquoi ce test manquait : les trois autres `PUT` du fichier portent
+/// **tous** la clé (`:408`, `:459`, `:507`), et le seul test de clé absente
+/// (`absent_key_and_explicit_null_both_mean_no_account`) ne fait que des `POST`
+/// — sur un article qui n'a **jamais** eu de compte, où l'effacement n'a rien à
+/// effacer. La branche destructrice n'était donc exercée par rien. *(Passe 1 de
+/// revue.)*
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn put_without_the_key_erases_an_existing_account(pool: MySqlPool) {
+    let co = create_seeded_company(&pool, "Full replace").await;
+    create_company_user(&pool, co.id, "u_replace", "e2e-test-password").await;
+    let app = spawn_app(pool).await;
+    let token = login(&app, "u_replace", "e2e-test-password").await;
+
+    let created: serde_json::Value = app
+        .client
+        .post(app.url("/api/v1/products"))
+        .bearer_auth(&token)
+        .json(&product_body(
+            "Article suivi par une intégration",
+            Some(co.accounts["3000"]),
+        ))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let id = created["id"].as_i64().unwrap();
+    assert_eq!(
+        created["defaultRevenueAccountId"], co.accounts["3000"],
+        "montage : l'article DOIT porter un compte, sinon le test ne mesure rien"
+    );
+
+    // Le corps d'un client qui ignore le champ : `product_body(_, None)`
+    // n'émet PAS la clé (cf. `:225-237`), c'est bien l'omission qui est testée.
+    let mut body = product_body("Article suivi par une intégration", None);
+    body["version"] = created["version"].clone();
+    assert!(
+        body.get("defaultRevenueAccountId").is_none(),
+        "montage : la clé doit être ABSENTE, pas à null — c'est tout l'objet du test"
+    );
+
+    let resp = app
+        .client
+        .put(app.url(&format!("/api/v1/products/{id}")))
+        .bearer_auth(&token)
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.status(),
+        200,
+        "l'omission ne rend jamais 400 — c'est justement ce qui la rend silencieuse"
+    );
+    let updated: serde_json::Value = resp.json().await.unwrap();
+    assert!(
+        updated["defaultRevenueAccountId"].is_null(),
+        "D5 : le `PUT` est full-replace, la clé omise EFFACE le compte. Si cette \
+         assertion rougit, c'est que la sémantique a changé — vérifier que le \
+         CHANGELOG et l'issue #278 suivent."
+    );
+    assert!(
+        updated["version"].as_i64().unwrap() > created["version"].as_i64().unwrap(),
+        "l'effacement est un vrai changement : `version` doit être bumpée"
+    );
+}
+
 /// Le chemin nominal : créer avec un compte valide, le relire.
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn valid_account_is_accepted_and_returned(pool: MySqlPool) {

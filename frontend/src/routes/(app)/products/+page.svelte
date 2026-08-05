@@ -140,6 +140,17 @@
 			// `loadError` bascule le sélecteur en saisie d'id brut plutôt qu'en
 			// champ vide et muet — même motif que ci-dessus.
 			accountsLoadError = true;
+			// ⚠️ Le bascule seule ne suffit PAS : elle change la NATURE du champ
+			// sans le dire. L'utilisateur trouve, à la place de l'autocomplétion,
+			// une saisie d'identifiant TECHNIQUE, et peut y taper un numéro de
+			// compte en croyant bien faire — `3200` est alors envoyé comme `id`.
+			// Le signaler coûte une ligne. *(Passe 1 de revue.)*
+			notifyError(
+				i18nMsg(
+					'product-form-revenue-account-load-error',
+					'Impossible de charger le plan comptable. Le compte de produit devra être saisi par son identifiant, ou rechargez la page.'
+				)
+			);
 		}
 	}
 
@@ -685,6 +696,7 @@
 				</label>
 				<AccountAutocomplete
 					id="form-revenue-account"
+					describedBy="form-revenue-account-help"
 					{accounts}
 					value={formRevenueAccountId}
 					loadError={accountsLoadError}
@@ -692,7 +704,14 @@
 					requiredAccountType="Revenue"
 					onSelect={(id) => (formRevenueAccountId = id)}
 				/>
-				<p class="text-xs text-muted-foreground mt-1">
+				<!--
+					⚠️ L'`id` de ce paragraphe n'est pas décoratif : c'est la cible du
+					`describedBy` ci-dessus. Sans lui, un lecteur d'écran annonce
+					« Compte de produit » et RIEN de plus — or c'est cette phrase, et
+					elle seule, qui dit que laisser le champ vide n'est pas un oubli.
+					*(Passe 1 de revue.)*
+				-->
+				<p id="form-revenue-account-help" class="text-xs text-muted-foreground mt-1">
 					{i18nMsg(
 						'product-form-revenue-account-help',
 						'Facultatif. Laissé vide, les lignes de facture créées depuis cet article suivent le compte de produit par défaut de la société.'

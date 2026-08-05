@@ -993,12 +993,36 @@ impl IntoResponse for AppError {
                     ),
                     RevenueAccountRejection::NotRevenue => (
                         "product-revenue-account-not-revenue",
-                        "Le compte de produit de cet article n'est pas un compte de produit.",
+                        // ⚠️ Le sujet est « le compte DE cet article », pas « le
+                        // compte DE PRODUIT de cet article » : la seconde forme
+                        // énonce « X n'est pas X ». Les trois autres locales
+                        // nomment correctement le sujet depuis l'origine ; le FR
+                        // — la langue de service — était le seul à boucler.
+                        "Le compte de cet article n'est pas un compte de produit.",
                     ),
-                    RevenueAccountRejection::NotPostable => (
-                        "product-revenue-account-not-postable",
-                        "Le compte de produit de cet article n'est pas imputable.",
-                    ),
+                    // D3 exclut délibérément `postable` de la validation de la
+                    // fiche article : aucun des quatre sites de construction de
+                    // cette variante (`routes/products.rs:318`, `:323`, `:330`,
+                    // `:337`) ne produit `NotPostable`. Le bras subsiste pour
+                    // l'exhaustivité du `match` — un `unreachable!()` tuerait la
+                    // task sans laisser de trace, ce que le garde-fou défensif
+                    // du CLAUDE.md proscrit — mais il CRIE et retombe sur un
+                    // message générique **déjà traduit ailleurs**.
+                    //
+                    // ⚠️ Ne PAS y remettre une clé `product-revenue-account-not-postable`
+                    // dédiée : ses quatre traductions ont été retirées en passe 1
+                    // de revue précisément parce qu'aucun chemin ne les atteint.
+                    // Si ce bras s'exécute un jour, c'est qu'un quatrième critère
+                    // a été ajouté à `validate_revenue_account` sans son message.
+                    RevenueAccountRejection::NotPostable => {
+                        tracing::error!(
+                            "ProductRevenueAccountInvalid(NotPostable) émis alors que D3 exclut `postable` — un critère a-t-il été ajouté sans son message ?"
+                        );
+                        (
+                            "common-account-invalid",
+                            "Compte invalide — non imputable, archivé ou de type inattendu",
+                        )
+                    }
                 };
                 let msg = t(key, fallback);
                 let body = serde_json::json!({

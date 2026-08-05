@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev
+review
 
 ## Story
 
@@ -167,6 +167,36 @@ Trois faits, tous établis par relevé et **vérifiés à quatre reprises** par 
   - [x] Les **cinq** mutations d'AC-A6, exécutées, consignées avec leur sortie, fichiers restaurés à l'identique.
 - [x] **T-A6 — Gate** (AC-A7) — complet, état final, exit 0, verdict lu dans le log.
 
+### Review Findings
+
+`bmad-code-review` **passe 1** — 2026-08-04, Opus 5, trois couches (Blind Hunter aveugle, Edge Case Hunter, Acceptance Auditor). Diff `main...HEAD` de la branche `story/16-2-compte-produit-catalogue`, 21 fichiers / 2389 lignes, 16-2a **et** 16-2b confondues. Les findings de 16-2b sont dans son propre story file.
+
+**Décisions à rendre**
+
+- [x] [Review][Decision] **(RÉSOLU — arbitrage de Guy, 2026-08-05 : variante (c), garder D3 et retirer le code mort)** **`postable` non validé (D3) — la conséquence n'est pas celle que D3 anticipait, et le bras d'erreur qui la nommerait est mort** — `blind+edge`, **HIGH**. D3 exclut `postable` délibérément, en se calquant sur `company_invoice_settings::validate_account`. Mais le jumeau bénéficie d'une **exemption en aval** que l'article n'a pas : `InvoiceForm.svelte:313` pose `postableExemptAccountId: invoiceSettings?.defaultRevenueAccountId`, et **seulement** lui. Un compte `Revenue` devenu non imputable, porté par un article, est donc accepté par `POST`/`PUT /products` (`routes/products.rs:305-343`, trois critères — vérifié : `grep -nF "postable" crates/kesh-api/src/routes/products.rs` ne rend que trois **commentaires**, lignes 294/386/388, aucun prédicat), puis **bloque chaque ligne de facture qui en découle** (`crates/kesh-db/tests/invoices_line_revenue_account.rs:535`, `account-validity.ts:62`), sans que la fiche produit ne signale quoi que ce soit (D-B2). Corollaire mesuré : `AppError::ProductRevenueAccountInvalid` n'est construit qu'aux quatre sites de `validate_revenue_account` (`:318`, `:323`, `:330`, `:337` — trois rejets distincts, jamais `NotPostable`), donc le bras `RevenueAccountRejection::NotPostable` **ajouté par ce diff** à `errors.rs:998` et les **4** clés `product-revenue-account-not-postable` sont du **code mort**. Trois issues possibles : (a) ajouter le 4e critère — le bras et les 4 clés deviennent atteignables ; (b) garder D3 et étendre l'exemption `postableExemptAccountId` au compte recopié depuis l'article ; (c) garder D3 et **retirer** le bras mort et les 4 clés. Arbitrage de Guy.
+
+  **Arbitrage rendu par Guy le 2026-08-05 — variante (c).** Motif : (a) et (b) changent toutes deux un **comportement**, l'une à la fiche article, l'autre à la facture, hors du périmètre que quatre passes de `validate` ont scellé ; (c) ne change **rien** de ce que l'application fait — elle supprime seulement du code qu'aucun chemin n'atteint, et qui donnait à croire le contraire.
+
+  **Ce que la variante (c) laisse en place, et qu'il faut savoir** : un compte `Revenue` devenu **non imputable** reste accepté par `POST`/`PUT /products`, puis **bloque chaque ligne de facture** qui en découle, sans que la fiche article ne le signale (D-B2). C'est le même enfermement que la limitation **L1** de 16-2b, par un déclencheur différent — l'archivage y devient ici une bascule de `postable`. **Versé à la même issue de remédiation que L1, [#286](https://github.com/guycorbaz/kesh/issues/286)**, dont il partage la sortie : un écran listant les articles au compte devenu inutilisable les couvre tous les deux. L'issue porte explicitement les **deux** déclencheurs.
+
+  **Appliqué** : les 4 clés `product-revenue-account-not-postable` retirées des 4 locales ; le bras `RevenueAccountRejection::NotPostable` **conservé** pour l'exhaustivité du `match` — un `unreachable!()` tuerait la task sans trace, ce que le garde-fou défensif du `CLAUDE.md` proscrit — mais il journalise en `tracing::error!` et retombe sur `common-account-invalid`, clé **déjà traduite dans les 4 locales** (vérifié : `grep -rn "^common-account-invalid" crates/kesh-i18n/locales/*/messages.ftl` → 4 sorties). Un commentaire à `errors.rs:1010` interdit d'y remettre une clé dédiée sans ajouter d'abord le critère qui la rendrait atteignable.
+
+**Patches**
+
+- [x] [Review][Patch] **(CORRIGÉ — gate complet REJOUÉ sur l'état final : `2115 tests run: 2115 passed, 4 skipped`, 3154 s, exit 0, verdict lu dans le log ; détail et contrôle de composition au Dev Agent Record)** **AC-A7 affirme un gate « sur l'état final » qui a précédé une modification d'un crate Rust** — `auditor`, **HIGH**. `512bec37` (18:26:46) déclare le gate complet ; `285c3a4f` (18:31:29) ajoute 20 lignes aux quatre `crates/kesh-i18n/locales/*/messages.ftl`. L'état gaté n'est plus l'état final, et la § *Gate ciblé pendant une boucle de revue* interdit ici le ciblage (la story touche `crates/kesh-db/migrations/` et un repository). Rejouer le gate complet sur `HEAD`, puis n'écrire que ce qui a tourné. [`16-2a-compte-produit-catalogue-backend.md:265`]
+- [x] [Review][Patch] **(CORRIGÉ — clé Fluent et repli Rust, les deux sites)** **Le message FR est tautologique — « n'est pas un compte de produit » pour un compte de produit** — `blind`, **MEDIUM**. Les trois autres locales nomment le sujet (`de` : « Das **Konto** dieses Artikels ist kein Ertragskonto » ; `it` : « Il **conto** di questo articolo » ; `en` : « The **account** of this product ») ; seul le FR — la langue de service — énonce « X n'est pas X ». Le texte est figé **deux fois** : la clé Fluent et le repli Rust. Aucun test ne lit ce message (`create_rejects_non_revenue_account` n'asserte que `code` et `details.reason`). [`crates/kesh-i18n/locales/fr-CH/messages.ftl:1448`, `crates/kesh-api/src/errors.rs:996`]
+- [x] [Review][Patch] **(CORRIGÉ — cinquième champ inscrit à la ligne 43)** **`docs/optimistic-locking-patterns.md` n'enregistre pas le champ ajouté à `is_no_op_change`** — `edge`, **MEDIUM**. Le tableau liste encore quatre champs pour cinq, alors que sa ligne 48 avait bien reçu `default_revenue_account_id` pour le jumeau `company_invoice_settings.rs` en 16-1a. Vérifié : `is_no_op_change` compare bien les cinq (`repositories/products.rs:266-271`), c'est la doc qui est en retard. [`docs/optimistic-locking-patterns.md:43`]
+- [x] [Review][Patch] **(CORRIGÉ — test `put_without_the_key_erases_an_existing_account` ajouté ; deux assertions de MONTAGE le protègent de passer à vide : l'article doit porter un compte au départ, et la clé doit être ABSENTE et non à `null`)** **La branche d'effacement du `PUT` n'est couverte par aucun test** — `edge`, **MEDIUM**. Le comportement full-replace est **assumé** (D5, CHANGELOG, issue #278) et n'est pas remis en cause ici — mais il n'est épinglé par rien : les trois `.put()` de `products_revenue_account_e2e.rs` (`:408`, `:459`, `:507`) portent **tous** la clé, et le seul test de clé absente (`absent_key_and_explicit_null_both_mean_no_account:532`) ne fait que des `POST`. Ajouter un `PUT` sans la clé sur un produit **qui porte un compte**, et asserter que le compte est effacé — pinning d'un comportement documenté, pas un changement. [`crates/kesh-api/tests/products_revenue_account_e2e.rs:532`]
+- [x] [Review][Patch] **(CORRIGÉ — `.ok()` remplacé par un `unwrap_or_else` qui panique en NOMMANT la cause probable)** **`seed_revenue_account` avale l'échec de son propre nettoyage** — `blind`, **LOW**. Le `.ok()` sur le `DELETE FROM accounts` jette le `Result` ; ces tests tournent sur `test_pool()` — base **partagée**, contrairement aux `#[sqlx::test]` du reste du diff — et aucun ne supprime le compte `39xx` en fin de test. Un run interrompu laisse un produit référencer le compte, le `DELETE` viole alors `fk_products_default_revenue_account` en silence, et le test panique sur l'`INSERT` : le diagnostic est envoyé à un endroit qui n'est pas celui du défaut. [`crates/kesh-db/src/repositories/products.rs:1176`]
+- [x] [Review][Patch] **(CORRIGÉ — « conserver » conservé et sourcé sur le filtre `a.active` ; « remplacer » rétabli comme POSSIBLE)** **Le commentaire de D4 affirme « ni conserver ni remplacer » — la seconde moitié est fausse** — `blind`, **LOW**. « Conserver » est exact : `AccountAutocomplete.svelte:183-186` filtre `a.active`, un compte archivé est bien absent des propositions. « Remplacer » ne l'est pas : choisir un compte valide à la place a toujours été possible et déclenche la validation normalement. *(La prémisse plus large du finding d'origine — « le sélecteur propose les comptes archivés » — est **réfutée** par ce même filtre ; seule la formulation du commentaire reste à corriger.)* [`crates/kesh-api/src/routes/products.rs:390`]
+- [x] [Review][Patch] **(CORRIGÉ — `review` aux trois sites ; **pas** `done`, la boucle n'étant pas convergée)** **Statut `ready-for-dev` alors que toutes les tâches sont cochées et le code livré** — `auditor`, **LOW**. Dans le story file (`:5`) **et** dans `sprint-status.yaml:262-263`. Vaut aussi pour 16-2b.
+
+**Réfutés en passe 1** (consignés pour qu'une passe suivante ne les rejoue pas)
+
+- **« La migration crée un second index sur une colonne qui en a déjà un »** — réfuté par **exécution** sur la base de gate, pas par raisonnement : `SELECT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA='kesh_gate' AND COLUMN_NAME='revenue_account_id'` rend **exactement une** entrée par table (`idx_invoice_lines_revenue_account`, `idx_credit_note_lines_revenue_account`) — or `20260727000001` emploie **le même patron à la ligne près** (`ALTER … ADD COLUMN + ADD CONSTRAINT`, puis `CREATE INDEX` séparé) que la migration de cette story. Aucun index doublon n'est produit.
+- **« Le `PUT` full-replace efface le compte d'une intégration tierce »** — comportement réel, mais **décidé** (D5), **documenté** (CHANGELOG, avertissement « Intégrations par API ») et **tracé** (issue #278). Seul son défaut de couverture de test est retenu, ci-dessus.
+- **« L'enveloppe d'erreur devrait passer par `build_response` »** — réfuté à la lecture de la signature : `build_response(status, code, message)` ne porte **aucun** champ `details` (`errors.rs:946-957`), et **une trentaine** de bras du même `match` construisent leur `json!` à la main **pour cette raison précise** (`grep -c '"details"' crates/kesh-api/src/errors.rs` → 30+). Le nouveau bras suit donc le patron du fichier ; c'est `build_response` qui est le cas particulier — celui des erreurs sans détail.
+
 ---
 
 ## Dev Notes
@@ -273,6 +303,22 @@ DB `kesh_gate2`, 64 minutes, sur l'**état final**. Aucun ciblage : la story tou
 
 **Le contrôle qui compte est celui de la COMPOSITION, pas du total.** 2102 → **2114**, soit **+12** — et 12 est exactement ce que la story ajoute : **8** tests de route (`#[sqlx::test]` de `products_revenue_account_e2e.rs`) et **4** tests de repository. Recompté à la source, pas relu. C'est le contrôle que la passe 1 de revue de 16-1c avait pris en défaut, où *neuf* tests livrés pour huit exigés masquaient deux manques : un total qui monte pendant que la couverture baisse ne se voit qu'en recomptant la composition.
 
+#### Gate REJOUÉ en passe 1 de revue — l'état ci-dessus n'était plus l'état final
+
+*(Finding `auditor` HIGH : le gate de `512bec37` [18:26:46] précédait `285c3a4f` [18:31:29], qui ajoutait 20 lignes aux quatre `crates/kesh-i18n/locales/*/messages.ftl`. Un gate qui ne porte pas sur l'état publié ne prouve rien de l'état publié.)*
+
+```
+▶ cargo fmt --check          ▶ cargo clippy --workspace --all-targets -- -D warnings
+Summary [3154.350s] 2115 tests run: 2115 passed, 4 skipped
+✅ Gate backend rapide vert.
+```
+
+**exit 0**, DB `kesh_gate2`, 53 minutes, sur l'état final incluant **tous** les patches de la passe 1. Verdict **lu dans le log**, jamais déduit d'un code de retour — un `script > log ; echo EXIT=$?` rend l'exit du `echo`.
+
+**Composition, à nouveau** : 2114 → **2115**, soit **+1**, et ce 1 est exactement `put_without_the_key_erases_an_existing_account`, le test ajouté par la remédiation du finding `edge` MEDIUM. Le décompte se referme sur lui-même.
+
+⚠️ **Deux pièges d'exécution payés ce jour** — consignés en détail au Dev Agent Record de **16-2b** (§ *Gate d'AC-B9*) : la base de gate est **`kesh_gate2`** et non `kesh_gate`, périmée d'une migration et au `_sqlx_migrations` corrompu — un premier rejeu y est mort à 1479/2115 sur un unique `Unknown column 'default_revenue_account_id'`, invisible des `#[sqlx::test]` ; et `cargo fmt --check` a mordu d'emblée sur le test ajouté en remédiation.
+
 ### File List
 
 - `crates/kesh-db/migrations/20260804000001_products_default_revenue_account.sql` *(nouveau)*
@@ -288,7 +334,27 @@ DB `kesh_gate2`, 64 minutes, sur l'**état final**. Aucun ciblage : la story tou
 - `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl`
 - `docs/migrations-idempotence-audit.md`
 
+**Touchés en passe 1 de `bmad-code-review`** *(l'inventaire d'une story n'est opposable qu'à jour — c'est lui que la passe suivante confrontera au diff)* :
+
+- `crates/kesh-api/src/errors.rs` — message FR détautologisé ; bras `NotPostable` rendu bruyant (`tracing::error!`) et replié sur `common-account-invalid`, variante (c) de l'arbitrage.
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl` — **retrait** des 4 clés `product-revenue-account-not-postable`, inatteignables.
+- `crates/kesh-api/src/routes/products.rs` — commentaire de D4 corrigé (« remplacer » est possible).
+- `crates/kesh-api/tests/products_revenue_account_e2e.rs` — `put_without_the_key_erases_an_existing_account` *(nouveau test)*.
+- `crates/kesh-db/src/repositories/products.rs` — `.ok()` du nettoyage de `seed_revenue_account` remplacé par une panique nommant la cause.
+- `docs/optimistic-locking-patterns.md` — cinquième champ de `is_no_op_change` inscrit.
+- `_bmad-output/implementation-artifacts/16-2-compte-produit-catalogue.md` — errata sur la « chaîne de repli à trois maillons », qui n'existe pas et dont ce document est la source.
+
 ## Change Log
+
+**2026-08-05 — Passe 1 de `bmad-code-review`** (Opus 5, trois lentilles, diff `main...HEAD` couvrant 16-2a **et** 16-2b). **1 HIGH décision + 1 HIGH + 3 MEDIUM + 3 LOW** côté 16-2a, tous clos. **Boucle NON convergée — passe 2 due** (LLM ≠ Opus, contexte frais, diff aplati).
+
+**La décision arbitrée par Guy — variante (c)** : garder D3 et retirer le code mort plutôt que changer un comportement hors du périmètre scellé par quatre passes de `validate`. Les 4 clés `product-revenue-account-not-postable` disparaissent des locales ; le bras du `match` subsiste, journalise et retombe sur une clé déjà traduite. Ce que la variante **laisse en place** — un compte non imputable accepté sur la fiche puis bloquant sur la facture — rejoint la limitation **L1** de 16-2b dans l'**[issue #286](https://github.com/guycorbaz/kesh/issues/286)**, qui porte les deux déclencheurs.
+
+**Le HIGH de gate n'était pas un défaut de code mais de chronologie** : le gate déclaré précédait de cinq minutes une modification de quatre fichiers d'un crate Rust. Rejoué sur l'état final : **2115/2115**, exit 0. Le décompte se referme — 2114 → 2115, et ce +1 est exactement le test ajouté par la remédiation d'un autre finding.
+
+**Le grep de propagation a rapporté ce que les trois lentilles avaient manqué** : le repli « à trois maillons » corrigé dans le manuel, le CHANGELOG et le README subsistait dans la story **parente**, qui en est la **source** — c'est de là qu'il avait contaminé les trois. Errata ajouté sans réécrire un document conservé pour son historique.
+
+**Deux pièges d'exécution, 38 minutes payées** : la base de gate est `kesh_gate2` et non `kesh_gate`, périmée d'une migration — défaut **invisible des `#[sqlx::test]`**, qui rejouent tout le `MIGRATOR` sur une base éphémère, et que seul un test `--lib` sur `test_pool()` pouvait révéler. Note de mémoire corrigée avec le contrôle de cinq secondes qui l'aurait évité.
 
 **2026-08-03 — Story née du split de 16-2**, arbitré par Guy après que le garde-fou de la dérogation se soit déclenché **deux fois** (passes 3 et 4 de `validate`, sévérité maximale `HIGH` maintenue). Le contenu repris est dans son **état corrigé de la passe 4** : il incorpore les findings des quatre passes, dont le placement de **D4** à la route (irréalisable là où la parente le plaçait), la seconde liste de colonnes `FIND_BY_ID_SCOPED_SQL`, le troisième sujet i18n du message de rejet, et le test d'export CSV qui n'observait rien.
 

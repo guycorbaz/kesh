@@ -269,6 +269,26 @@ test('article dont le compte a été archivé : la ligne est marquée et l’enr
 		);
 		await expect(page.locator('text=/Compte invalide/').first()).toBeVisible();
 		await expect(page.getByTestId('create-invoice-button')).toBeDisabled();
+
+		// AC-B4 exige « refuse l'enregistrement **en nommant la ligne** » — trois
+		// volets, pas deux. Le `disabled` ci-dessus ne prouve que le troisième à
+		// moitié : il est la **disjonction de six conditions**
+		// (`InvoiceForm.svelte:887`), donc un bouton grisé pour une tout autre
+		// raison — réglages non chargés, compte débiteur absent — satisferait
+		// l'assertion sans que le compte de produit y soit pour rien.
+		//
+		// C'est le bandeau qui NOMME, et lui seul (`:754`, clé
+		// `invoice-lines-revenue-account-invalid`). La ligne venue du catalogue
+		// est la **seconde** : « Ligne initiale » occupe la première.
+		// *(Volet ajouté en passe 1 de revue.)*
+		await expect(
+			page.locator('text=/Compte de produit invalide sur les lignes suivantes/').first(),
+			"AC-B4 : le refus doit NOMMER la ligne, pas seulement griser le bouton"
+		).toBeVisible();
+		await expect(
+			page.locator('text=/Compte de produit invalide sur les lignes suivantes\\s*:\\s*2/').first(),
+			'la ligne nommée doit être la 2e — celle qui vient du catalogue'
+		).toBeVisible();
 	} finally {
 		await disposeContextSafe(ctx);
 	}

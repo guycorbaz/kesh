@@ -1352,8 +1352,8 @@ invoice-line-aria-line = Zeile { $n }
 product-revenue-account-unknown = Das Ertragskonto dieses Artikels wurde nicht gefunden oder gehört nicht zu dieser Firma.
 product-revenue-account-inactive = Das Ertragskonto dieses Artikels ist archiviert.
 product-revenue-account-not-revenue = Das Konto dieses Artikels ist kein Ertragskonto.
-product-revenue-account-not-postable = Das Ertragskonto dieses Artikels ist nicht bebuchbar.
 
 # Story 16-2b (#144) — Ertragskonto-Auswahl auf dem Artikelstammblatt.
 product-form-revenue-account = Ertragskonto
 product-form-revenue-account-help = Optional. Wird das Feld leer gelassen, folgen die aus diesem Artikel erstellten Rechnungspositionen dem Standard-Ertragskonto der Firma.
+product-form-revenue-account-load-error = Der Kontenplan konnte nicht geladen werden. Das Ertragskonto muss über seine Kennung eingegeben werden, oder laden Sie die Seite neu.

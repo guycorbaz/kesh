@@ -1172,12 +1172,26 @@ mod tests {
     /// `uq_accounts_company_number` entre tests.
     async fn seed_revenue_account(pool: &MySqlPool, company_id: i64, suffix: &str) -> i64 {
         let number = format!("39{suffix}");
+        // ⚠️ Ne PAS jeter l'erreur du nettoyage par un `.ok()`. Ces tests
+        // tournent sur `test_pool()` — base **partagée et persistante**,
+        // contrairement aux `#[sqlx::test]` du reste du crate — et aucun ne
+        // supprime son compte `39xx` en fin de test. Un run interrompu laisse
+        // donc un produit référencer ce compte : le `DELETE` viole alors
+        // `fk_products_default_revenue_account` (`ON DELETE RESTRICT`), et si
+        // l'échec est avalé, c'est l'`INSERT` suivant qui panique sur
+        // `uq_accounts_company_number` — le diagnostic arrive à un endroit qui
+        // n'est pas celui du défaut. *(Passe 1 de revue.)*
         sqlx::query("DELETE FROM accounts WHERE company_id = ? AND number = ?")
             .bind(company_id)
             .bind(&number)
             .execute(pool)
             .await
-            .ok();
+            .unwrap_or_else(|e| {
+                panic!(
+                    "nettoyage du compte {number} impossible — un produit d'un run \
+                     précédent le référence-t-il encore ? ({e})"
+                )
+            });
         let row: (i64,) = sqlx::query_as(
             "INSERT INTO accounts (company_id, number, name, account_type, active, version) \
              VALUES (?, ?, 'TestProduct compte', 'Revenue', TRUE, 1) RETURNING id",

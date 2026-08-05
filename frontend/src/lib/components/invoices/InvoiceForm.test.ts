@@ -512,16 +512,36 @@ describe('InvoiceForm — pré-remplissage depuis le catalogue (Story 16-2b, AC-
 		};
 	}
 
-	/** Ouvre le picker et choisit le premier article proposé. */
+	/**
+	 * Ouvre le picker, choisit le premier article proposé, et **vérifie qu'une
+	 * ligne a bien été ajoutée** — en rendant le décompte avant/après.
+	 *
+	 * ⚠️ Rendre le décompte n'est pas une commodité : c'est ce qui empêche le
+	 * test négatif de passer à vide. Si le picker cesse d'émettre sa sélection,
+	 * aucune ligne n'est ajoutée, la dernière ligne préexistante est vide, et
+	 * une assertion `value === ''` **passe** sur un pré-remplissage qui n'a pas
+	 * eu lieu. *(Passe 1 de revue.)*
+	 */
 	async function pickFirstProduct(container: HTMLElement, getByText: (t: string) => HTMLElement) {
+		const before = accountInputs(container).length;
 		await fireEvent.click(getByText('Depuis catalogue'));
 		await settle();
 		// Le dialog du picker est rendu en PORTAL, hors du conteneur du
 		// composant : le chercher dans `container` ne rendrait jamais rien.
-		const entry = document.querySelector('ul li button') as HTMLElement | null;
+		//
+		// ⚠️ Ancré sur `[role="dialog"]` : un `document.querySelector('ul li
+		// button')` global ramasserait le premier `<ul>` monté n'importe où —
+		// menu, liste de suggestions d'un autre champ — et cliquerait à côté.
+		const picker = document.querySelector('[role="dialog"]');
+		expect(picker, 'le dialog du picker doit être monté').toBeTruthy();
+		const entry = picker!.querySelector('ul li button') as HTMLElement | null;
 		expect(entry, 'le picker doit proposer au moins un article').toBeTruthy();
 		await fireEvent.click(entry!);
 		await settle();
+
+		const after = accountInputs(container).length;
+		expect(after, 'le choix dans le catalogue doit AJOUTER une ligne').toBe(before + 1);
+		return { before, after };
 	}
 
 	it("la ligne créée porte le compte de l'article", async () => {
@@ -534,11 +554,9 @@ describe('InvoiceForm — pré-remplissage depuis le catalogue (Story 16-2b, AC-
 		const { container, getByText } = render(InvoiceForm, { invoice: invoiceWith([]) });
 		await settle();
 
-		const before = accountInputs(container).length;
 		await pickFirstProduct(container, getByText);
 
 		const inputs = accountInputs(container);
-		expect(inputs.length).toBe(before + 1);
 		// C'est la valeur du compte de l'ARTICLE qui doit apparaître, pas un
 		// champ vide retombé en silence sur le défaut société.
 		expect(inputs[inputs.length - 1].value).toContain(SERVICES.number);

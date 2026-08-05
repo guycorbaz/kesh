@@ -387,9 +387,16 @@ pub async fn update_product(
     // `active` : archiver un compte est bien plus fréquent que basculer
     // `postable`, et rien n'inspecte les référents à l'archivage. Sans cette
     // condition, renommer un article dont le compte a été archivé ailleurs
-    // serait rejeté sur un champ non touché — et l'utilisateur ne pourrait
-    // **ni conserver ni remplacer** la valeur, le compte archivé étant absent
-    // des propositions du sélecteur.
+    // serait rejeté sur un champ non touché — et l'utilisateur ne pourrait plus
+    // **conserver** la valeur, le compte archivé étant absent des propositions
+    // du sélecteur (`AccountAutocomplete.svelte:183-186` filtre `a.active`). Il
+    // serait donc contraint d'en choisir un autre pour pouvoir renommer.
+    //
+    // ⚠️ Il pourrait en revanche toujours la **remplacer** : choisir un compte
+    // valide à la place a toujours fonctionné et déclenche la validation
+    // normalement. *(Le commentaire d'origine écrivait « ni conserver ni
+    // remplacer » — la seconde moitié était fausse, corrigée en passe 1 de
+    // revue.)*
     //
     // La comparaison exige l'état antérieur, que ce handler ne lisait pas : on
     // ajoute un `find_by_id` hors transaction, sur le patron déjà accepté de
