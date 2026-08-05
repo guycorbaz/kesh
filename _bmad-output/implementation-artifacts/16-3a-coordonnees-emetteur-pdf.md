@@ -141,6 +141,24 @@ Les trois champs sont du texte libre affiché sur un document. La validation se 
 - [ ] **T8 — Documentation** (AC9) — manuel + PDF régénéré, CHANGELOG, vérification README **tracée**.
 - [ ] **T9 — Gate complet** (AC10) — état final, exit 0, verdict lu dans le log.
 
+## Dérogation à la règle de splitting préventif
+
+*(Garde-fou déclenché en passe 2 de `validate` — **dérogation arbitrée par Guy le 2026-08-05**.)*
+
+**Le critère est formellement rempli** : la sévérité maximale a **augmenté** entre deux passes (passe 1 `HIGH` → passe 2 `CRITICAL`), ce que la § *Règle de splitting préventif* définit comme une non-convergence réelle.
+
+**Justification de la dérogation — ce que les `CRITICAL` étaient réellement.** Les quatre findings de la passe 2 sont **des résidus de la remédiation de la passe 1**, et **aucun ne porte sur une décision de conception** : le document se contredisait parce que j'avais corrigé les **critères d'acceptation** sans propager aux **tâches** qui les exécutent — « ne rien inscrire » contre « inscrire une exemption », « six listes » dans un corps de tâche contre « CINQ » dans son titre. Un découpage n'aurait ni évité ni corrigé ces incohérences : elles naissent d'un geste de patch incomplet, pas d'une surface trop large.
+
+**Ce qui soutient l'analyse, en fait vérifiables :**
+
+- **Les cinq décisions D1–D5 n'ont pas bougé depuis la création de la story.** Les deux passes n'ont contesté aucune d'elles ; elles ont corrigé des **décomptes**, des **ancres** et des **contradictions internes**.
+- **La story tient sur un seul mental-model** : une entité (`companies`), une migration, un bloc du PDF. Le découpage par entité a **déjà eu lieu** — 16-3b porte `contacts` séparément.
+- **Le seul découpage encore possible serait par couche**, et il produirait le défaut que 16-2 a payé : une première moitié livrant des colonnes que rien n'affiche, donc invérifiable seule et contrainte à une PR groupée.
+
+**Risque accepté et sa condition de sortie.** Le risque est qu'une largeur réelle se cache derrière ces résidus et ne se révèle qu'en revue de code. **Condition de sortie explicite** : si la **passe 3** remonte encore un finding `CRITICAL` ou `HIGH`, la dérogation tombe et le split par couche devient la réponse — la démonstration serait alors faite par la mesure, non par le pronostic.
+
+**Précédent** : story **16-2b**, où le garde-fou s'était déclenché sur un compteur `MEDIUM` stagnant, où la dérogation avait été arbitrée de la même façon, et où le **résultat l'a validée** — le compteur est tombé à **zéro** à la passe suivante.
+
 ## Dev Notes
 
 ### Ce que cette story ne doit PAS faire
