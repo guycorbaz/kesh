@@ -203,6 +203,23 @@ Trois faits, tous établis par relevé et **vérifiés à quatre reprises** par 
 - [x] [Review][Patch] **(CORRIGÉ — section « Course acceptée » au doc-comment, disant AUSSI pourquoi elle n'est pas à fermer : la fermer contredirait D4)** **La course entre la validation du compte et l'écriture n'est ni fermée ni documentée** — `blind`, **LOW**. `validate_revenue_account` est un `SELECT` **hors transaction** exécuté avant `products::create` / `products::update`. Entre les deux, un tiers peut archiver le compte : l'écriture réussit (la FK n'exige que l'existence de la ligne, pas `active = TRUE` — `ON DELETE RESTRICT` ne protège que de la suppression), et le client reçoit **200/201** pour un compte déjà inutilisable. L'état résultant est **toléré par conception** (c'est précisément ce que D4 organise), donc la course n'est pas à *fermer* — mais elle est **non dite**, là où le dépôt commente explicitement ses courses acceptées (KF-004 sur `is_no_op_change`). [`crates/kesh-api/src/routes/products.rs:300`]
 - [x] [Review][Patch] **(CORRIGÉ — l'ancre est remplacée par une désignation PAR NOM du `$derived` `active`, insensible aux décalages ; une nouvelle ancre chiffrée aurait vieilli pareil)** **Ancre périmée introduite par la passe 1 elle-même** — `blind`, **LOW**. Le commentaire de D4 corrigé en passe 1 cite `AccountAutocomplete.svelte:183-186` pour le filtre `a.active` — qui est à la ligne **203** dans l'état final. Ce sont les ~20 lignes de props `id`/`describedBy` ajoutées **par le même diff** qui l'ont décalé : l'ancre était donc **fausse à l'instant où elle a été écrite**. Récidive exacte du motif consigné à la rétro — « les 3 LOW de la P4 étaient 3 ancres fausses introduites par la P3 ». [`crates/kesh-api/src/routes/products.rs:374`]
 
+---
+
+`bmad-code-review` **passe 3** — 2026-08-05, **Haiku 4.5** (rotation Opus → Sonnet → Haiku complète), trois lentilles, diff **aplati** `main...HEAD`. **Aucune couche n'a échoué.**
+
+## ✅ BOUCLE CONVERGÉE — critère d'arrêt atteint
+
+**Trend : `2H/3M/3L` → `0H/4M/2L` → `0H/0M/2L`.** Décroissance **monotone**, plafond de 8 passes jamais approché. Plus aucun finding au-dessus de **LOW**, sur les trois lentilles : Acceptance Auditor **0 finding**, Blind Hunter **0 > LOW**, Edge Case Hunter **2 LOW**.
+
+⚠️ **Le mode d'échec connu de Haiku ne s'est PAS manifesté cette fois** — aucun `CRITICAL` de type « le patch X n'a pas été appliqué ». Les trois garde-fous étaient en place : diff **aplati**, obligation de greper **le fichier source et jamais le `.patch`**, interdiction de reconstruire de mémoire un état antérieur. La consigne explicite « un rapport vide est un résultat attendu à la troisième passe » y a probablement contribué autant que les deux autres : sans elle, un modèle sous pression fabrique de la gravité pour paraître utile.
+
+**Les 2 LOW — consignés, non retenus, avec le motif**
+
+- **Asymétrie de couverture `postable` entre création et modification** — `edge`, **LOW**. Le test `create_accepts_non_postable_revenue_account_d3` verrouille D3 sur le chemin de **création** ; aucun test symétrique ne pose un compte non imputable par un `PUT`. **Fortement nuancé par vérification** : `grep -n "validate_revenue_account("` rend **une seule définition** (`:334`) et **deux appels** — `create_product:388` et `update_product:479`. Le test de création verrouille donc **le code même que la modification emprunte** ; un refactor ajoutant le critère à cette fonction partagée ferait rougir le test existant. Le trou résiduel n'existe que si un refactor plaçait le critère **hors** de la fonction, directement dans `update_product` — cas peu vraisemblable, et que la duplication du code rendrait visible en revue.
+- **Pas de test « no-op avec un compte non imputable »** — `edge`, **LOW**, et **la lentille le réfute elle-même** : `is_no_op_change` compare des **valeurs** (`before.default_revenue_account_id == changes.default_revenue_account_id`), jamais l'**état** du compte référencé. Que `postable` bascule ne peut donc pas changer le verdict de no-op. Couverture cosmétique, pas défaut.
+
+**Aucun patch appliqué en passe 3** — la § *Review Iteration Rule* fixe l'arrêt à « uniquement des LOW », et corriger au-delà relancerait un gate complet pour du cosmétique.
+
 **Réfutés en passe 1** (consignés pour qu'une passe suivante ne les rejoue pas)
 
 - **« La migration crée un second index sur une colonne qui en a déjà un »** — réfuté par **exécution** sur la base de gate, pas par raisonnement : `SELECT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA='kesh_gate' AND COLUMN_NAME='revenue_account_id'` rend **exactement une** entrée par table (`idx_invoice_lines_revenue_account`, `idx_credit_note_lines_revenue_account`) — or `20260727000001` emploie **le même patron à la ligne près** (`ALTER … ADD COLUMN + ADD CONSTRAINT`, puis `CREATE INDEX` séparé) que la migration de cette story. Aucun index doublon n'est produit.
@@ -357,6 +374,16 @@ Summary [3154.350s] 2115 tests run: 2115 passed, 4 skipped
 - `_bmad-output/implementation-artifacts/16-2-compte-produit-catalogue.md` — errata sur la « chaîne de repli à trois maillons », qui n'existe pas et dont ce document est la source.
 
 ## Change Log
+
+**2026-08-05 — Passe 3 de `bmad-code-review` — ✅ BOUCLE CONVERGÉE** (**Haiku 4.5**, rotation Opus → Sonnet → Haiku complète, contexte frais, diff aplati). **0 HIGH, 0 MEDIUM, 2 LOW** — critère d'arrêt de la § *Review Iteration Rule* atteint.
+
+**Trend des trois passes : `2H/3M/3L` → `0H/4M/2L` → `0H/0M/2L`.** Décroissance monotone ; le garde-fou de splitting n'a jamais été approché, non plus que le plafond de 8 passes.
+
+**Aucun patch en passe 3.** Les 2 LOW sont consignés avec leur motif de non-retenue : le premier est fortement nuancé par la vérification que `validate_revenue_account` est **une seule fonction partagée** par la création et la modification — le test de création verrouille donc le chemin des deux ; le second est réfuté par la lentille elle-même, `is_no_op_change` comparant des valeurs et jamais l'état du compte.
+
+**Le mode d'échec connu de Haiku ne s'est pas manifesté** — aucun faux `CRITICAL` de type « patch non appliqué », là où les stories 8-5a-bis et 9-2b en avaient produit quatre. Trois garde-fous étaient en place : diff aplati, obligation de greper le **fichier source** et non le `.patch`, interdiction de reconstruire de mémoire un état antérieur. À verser à la rétro Epic 16 : la consigne explicite « un rapport vide est un résultat attendu » compte autant que les garde-fous techniques.
+
+**Aucun gate rejoué** — la passe 3 n'a modifié aucune ligne de code. Le dernier gate vaut donc pour l'état final : **2116/2116**, exit 0.
 
 **2026-08-05 — Passe 2 de `bmad-code-review`** (**Sonnet**, modèle ≠ passe 1, contexte frais, diff **aplati** `main...HEAD`). **0 HIGH, 4 MEDIUM, 2 LOW** — sévérité maximale en **décroissance** (HIGH → MEDIUM), donc le 2ᵉ critère du garde-fou de splitting n'est pas déclenché. **Boucle NON convergée — passe 3 due.** L'**Acceptance Auditor rend zéro finding** après recompte des invariants à la source.
 
