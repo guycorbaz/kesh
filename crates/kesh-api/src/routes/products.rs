@@ -70,10 +70,19 @@ pub struct CreateProductRequest {
     pub vat_rate: Decimal,
     /// Compte de produit de l'article (Story 16-2a, #144).
     ///
-    /// ⚠️ `#[serde(default)]` n'est PAS cosmétique : sans lui, un `Option<T>`
-    /// reste **obligatoire dans le JSON** en serde, et l'omission de la clé
-    /// casserait toute intégration API existante, y compris celles qui
-    /// ignorent ce nouveau champ.
+    /// Le contrat visé : **omettre la clé** vaut `None`, au même titre que
+    /// `null` explicite — sans quoi toute intégration existante qui ignore ce
+    /// champ casserait. Verrouillé par `absent_key_and_explicit_null_both_mean_no_account`.
+    ///
+    /// ⚠️ *(Rectifié en passe 2 de revue.)* Ce commentaire affirmait que
+    /// `#[serde(default)]` était ce qui rend la clé facultative, « sans lui un
+    /// `Option<T>` reste obligatoire dans le JSON ». **C'est faux, et vérifié
+    /// par exécution** : `serde_derive` traite `Option<T>` comme un cas
+    /// spécial, une clé absente donne `None` **sans** l'attribut. L'attribut
+    /// est donc redondant ici — conservé par cohérence avec les champs voisins,
+    /// pas parce qu'il porte le contrat. Ne pas raisonner à partir de l'ancienne
+    /// justification pour un autre champ : `description`, deux lignes plus
+    /// haut, repose sur ce même comportement.
     #[serde(default)]
     pub default_revenue_account_id: Option<i64>,
 }
@@ -86,7 +95,9 @@ pub struct UpdateProductRequest {
     pub description: Option<String>,
     pub unit_price: Decimal,
     pub vat_rate: Decimal,
-    /// Cf. `CreateProductRequest` — `#[serde(default)]` obligatoire.
+    /// Cf. `CreateProductRequest` — même contrat « clé absente vaut `None` »,
+    /// et même rectification de passe 2 : ce n'est pas `#[serde(default)]` qui
+    /// le porte.
     ///
     /// ⚠️ Le `PUT` est **full-replace** (décision D5) : omettre la clé
     /// **efface** le compte, sans erreur. C'est le CR #278, différé.
@@ -302,6 +313,24 @@ pub async fn get_product(
 ///
 /// `None` est toujours valide : l'article n'impose alors aucun compte et la
 /// ligne suit le défaut société.
+///
+/// ## Course acceptée entre cette lecture et l'écriture *(consignée en passe 2)*
+///
+/// Ce `SELECT` est **hors transaction** et précède `products::create` /
+/// `products::update`. Un tiers peut donc archiver le compte dans l'intervalle :
+/// l'écriture réussira — la clé étrangère n'exige que l'**existence** de la
+/// ligne, `ON DELETE RESTRICT` ne protégeant que de la suppression — et le
+/// client recevra **200/201** pour un compte déjà inutilisable.
+///
+/// **Cette course n'est pas à fermer, et c'est délibéré** : l'état qui en
+/// résulte — un article référençant un compte archivé — est exactement celui
+/// que **D4** organise et que la ligne de facture signale en aval. La fermer
+/// exigerait de valider dans la transaction d'écriture, ce qui reviendrait à
+/// rejeter la modification d'un article dont le compte a été archivé ailleurs :
+/// précisément ce que D4 interdit.
+///
+/// Elle est écrite ici parce qu'une course tue est plus dangereuse qu'une
+/// course connue — même raison que la note **KF-004** sur `is_no_op_change`.
 async fn validate_revenue_account(
     state: &AppState,
     company_id: i64,
@@ -389,7 +418,8 @@ pub async fn update_product(
     // condition, renommer un article dont le compte a été archivé ailleurs
     // serait rejeté sur un champ non touché — et l'utilisateur ne pourrait plus
     // **conserver** la valeur, le compte archivé étant absent des propositions
-    // du sélecteur (`AccountAutocomplete.svelte:183-186` filtre `a.active`). Il
+    // du sélecteur (`AccountAutocomplete.svelte`, le `$derived` `active` filtre
+    // `a.active && a.postable`). Il
     // serait donc contraint d'en choisir un autre pour pouvoir renommer.
     //
     // ⚠️ Il pourrait en revanche toujours la **remplacer** : choisir un compte
@@ -400,14 +430,50 @@ pub async fn update_product(
     //
     // La comparaison exige l'état antérieur, que ce handler ne lisait pas : on
     // ajoute un `find_by_id` hors transaction, sur le patron déjà accepté de
-    // `company_invoice_settings::update_invoice_settings`. Le verrou optimiste
-    // couvre la fenêtre — une modification concurrente du **produit** fait
-    // diverger `version` et rend `OptimisticLockConflict` ; une modification
+    // `company_invoice_settings::update_invoice_settings`. Une modification
     // concurrente du **compte référencé** ne touche pas `products.version`, et
     // c'est précisément le cas que D4 veut laisser passer.
+    //
+    // ⚠️ *(Rectifié en passe 2 de revue.)* Ce commentaire affirmait que « le
+    // verrou optimiste couvre la fenêtre ». **C'était faux dans ce chemin** :
+    // le verrou de `products::update()` s'exécute APRÈS la validation du
+    // compte, donc il ne pouvait pas couvrir ce qui le précède. C'est ce que
+    // les deux gardes explicites ci-dessous rétablissent.
     let before = products::find_by_id(&state.pool, company.id, id)
         .await?
         .ok_or(DbError::NotFound)?;
+
+    // ⚠️ ORDRE DES ERREURS — ces deux gardes doivent précéder la validation du
+    // compte, et ce n'est pas une préférence de style.
+    //
+    // `FIND_BY_ID_SCOPED_SQL` ne filtre **ni `active` ni `version`** (son
+    // `WHERE` porte sur `id` et `company_id`, rien d'autre). Sans ces gardes,
+    // `validate_revenue_account` s'exécutait **avant** que `products::update()`
+    // n'atteigne ses propres verrous, et rendait une erreur de compte là où la
+    // cause réelle est ailleurs :
+    //
+    // - article **archivé** → `PRODUCT_REVENUE_ACCOUNT_INVALID` au lieu de
+    //   « impossible de modifier un produit archivé » ;
+    // - **édition concurrente** → le `before` frais diverge de ce que le client
+    //   croit avoir sous les yeux, donc `req != before` est vrai pour un compte
+    //   qu'il n'a **jamais voulu changer** ; il recevait une erreur nommant ce
+    //   compte au lieu d'`OPTIMISTIC_LOCK_CONFLICT`, ce qui **masque le vrai
+    //   conflit** et le laisse corriger un champ qui n'est pas en cause.
+    //
+    // Ces gardes ne **remplacent pas** celles de `products::update()`, qui
+    // restent la source de vérité : elles sont dans la transaction, celles-ci
+    // ne le sont pas. Elles rendent seulement le message juste dans le cas
+    // nominal. Les variantes sont volontairement **les mêmes**, pour qu'un
+    // client ne puisse pas distinguer laquelle a mordu. *(Passe 2 de revue.)*
+    if !before.active {
+        return Err(DbError::IllegalStateTransition(
+            "impossible de modifier un produit archivé".into(),
+        )
+        .into());
+    }
+    if before.version != req.version {
+        return Err(DbError::OptimisticLockConflict.into());
+    }
 
     if req.default_revenue_account_id != before.default_revenue_account_id {
         validate_revenue_account(&state, company.id, req.default_revenue_account_id).await?;

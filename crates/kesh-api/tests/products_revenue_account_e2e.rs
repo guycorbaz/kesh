@@ -244,9 +244,84 @@ async fn archive_account(pool: &MySqlPool, account_id: i64) {
         .expect("archive account");
 }
 
+/// Rend un compte **non imputable** sans le désactiver — l'état exact que
+/// **D3 refuse délibérément de sanctionner** sur une fiche article.
+///
+/// Distinct d'`archive_account` : un compte non imputable reste `active`. Les
+/// deux états sont indépendants, et les confondre viderait le test ci-dessous
+/// de son objet — il rougirait alors par le critère « archivé », pas par
+/// l'absence de critère « imputable ».
+async fn set_account_not_postable(pool: &MySqlPool, account_id: i64) {
+    sqlx::query("UPDATE accounts SET postable = FALSE, version = version + 1 WHERE id = ?")
+        .bind(account_id)
+        .execute(pool)
+        .await
+        .expect("set account not postable");
+}
+
 // ===========================================================================
 // D3 — les trois critères de rejet, au niveau ROUTE, avec le code de D10
 // ===========================================================================
+
+/// **D3 est une décision, et une décision sans test n'est pas gardée.**
+///
+/// `postable` est **délibérément exclu** des critères de rejet : un compte
+/// `Revenue` devenu non imputable reste **acceptable** sur une fiche article.
+/// L'arbitrage de la passe 1 de revue a explicitement *conservé* ce choix
+/// (variante (c)) plutôt que d'ajouter le quatrième critère.
+///
+/// ⚠️ **Ce que ce test empêche, et que rien d'autre n'empêchait.** Le jumeau
+/// des lignes de facture, lui, **contrôle** `postable`. Un refactor qui
+/// « aligne » `validate_revenue_account` sur ce jumeau — geste plausible, et
+/// qui paraîtrait même être une correction — **inverserait D3 en silence** :
+/// avant ce test, la suite entière restait verte. C'est le mode d'échec du
+/// test muet appliqué non pas à du code, mais à une **décision**.
+///
+/// Vérifié par mutation : ajouter un critère `if !account.postable { reject }`
+/// à `validate_revenue_account` fait rougir **ce test et lui seul** — les trois
+/// tests de rejet de D3 restent verts, leurs comptes étant tous imputables.
+///
+/// *(Ajouté en passe 2 de revue — `grep -c "postable"` rendait `0` sur ce
+/// fichier ET sur les tests du repository.)*
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn create_accepts_non_postable_revenue_account_d3(pool: MySqlPool) {
+    let co = create_seeded_company(&pool, "D3 postable exclu").await;
+    create_company_user(&pool, co.id, "u_postable", "e2e-test-password").await;
+
+    // Le compte reste `Revenue` et `active` — seul `postable` bascule.
+    set_account_not_postable(&pool, co.accounts["3000"]).await;
+
+    let app = spawn_app(pool).await;
+    let token = login(&app, "u_postable", "e2e-test-password").await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/products"))
+        .bearer_auth(&token)
+        .json(&product_body(
+            "Article sur compte non imputable",
+            Some(co.accounts["3000"]),
+        ))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.status(),
+        201,
+        "D3 exclut `postable` : ce compte DOIT être accepté. Si cette assertion \
+         rougit, un quatrième critère a été ajouté à `validate_revenue_account` \
+         — c'est un changement de décision, pas une correction : cf. l'arbitrage \
+         de la passe 1 et l'issue #286."
+    );
+
+    let created: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(
+        created["defaultRevenueAccountId"], co.accounts["3000"],
+        "le compte doit être réellement PERSISTÉ, pas seulement non rejeté — \
+         sans cette seconde assertion, un 201 qui ignorerait le champ passerait"
+    );
+}
 
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn create_rejects_inactive_account(pool: MySqlPool) {
