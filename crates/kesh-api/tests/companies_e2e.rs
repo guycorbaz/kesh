@@ -125,3 +125,133 @@ async fn companies_current_requires_auth(pool: MySqlPool) {
 
     assert_eq!(resp.status(), 401);
 }
+
+/// **AC8 — l'ALLER-RETOUR complet** : écrire par la route, relire par `GET`.
+///
+/// ⚠️ **C'est le seul test qui voit un DTO oublié.** `CompanyJson` est un
+/// miroir **écrit à la main** — struct Rust, son `impl From<Company>`, et
+/// l'interface TypeScript — qu'aucun compilateur ne vérifie contre l'entité.
+/// Sans ce test, oublier le `From` laisse la valeur **stockée en base**,
+/// **rendue sur le PDF**, et **invisible dans l'écran de réglages** : tous les
+/// gates passent au vert, et le défaut ne se voit qu'à l'usage.
+///
+/// L'assertion porte donc sur le **corps HTTP relu**, pas sur la réponse du
+/// `PUT` ni sur la base — c'est la seule chose que le frontend consomme.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn contact_details_survive_the_round_trip_to_the_settings_screen(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+
+    let current: serde_json::Value = app
+        .client
+        .get(app.url("/api/v1/companies/current"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let version = current["company"]["version"].as_i64().unwrap();
+    assert!(
+        current["company"]["phone"].is_null(),
+        "montage : la société ne doit porter aucune coordonnée au départ, \
+         sinon le test ne mesure pas l'écriture"
+    );
+
+    let resp = app
+        .client
+        .put(app.url("/api/v1/companies/current/contact-details"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&json!({
+            "phone": "+41 21 123 45 67",
+            "website": "https://demo.ch",
+            "version": version,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "l'écriture doit réussir");
+
+    // Le GET est ce que consomme l'écran de réglages — c'est LUI qui fait foi.
+    let relu: serde_json::Value = app
+        .client
+        .get(app.url("/api/v1/companies/current"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        relu["company"]["phone"], "+41 21 123 45 67",
+        "le téléphone doit revenir dans le GET — s'il est absent, le DTO \
+         `CompanyJson` ou son `impl From<Company>` a été oublié, et l'écran de \
+         réglages affichera « — » pour toujours"
+    );
+    assert_eq!(
+        relu["company"]["website"], "https://demo.ch",
+        "le site web doit revenir dans le GET — même piège que ci-dessus"
+    );
+}
+
+/// Le champ vidé **efface** la valeur : la ligne disparaît du PDF (D2).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn empty_contact_details_clear_the_stored_values(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+
+    let v0 = app
+        .client
+        .get(app.url("/api/v1/companies/current"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap()
+        .json::<serde_json::Value>()
+        .await
+        .unwrap()["company"]["version"]
+        .as_i64()
+        .unwrap();
+
+    let posed: serde_json::Value = app
+        .client
+        .put(app.url("/api/v1/companies/current/contact-details"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&json!({ "phone": "+41 21 123 45 67", "website": null, "version": v0 }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(posed["phone"], "+41 21 123 45 67", "montage : valeur posée");
+
+    let cleared: serde_json::Value = app
+        .client
+        .put(app.url("/api/v1/companies/current/contact-details"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&json!({
+            "phone": "   ",
+            "website": null,
+            "version": posed["version"].as_i64().unwrap(),
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    assert!(
+        cleared["phone"].is_null(),
+        "un champ vide (ou blanc) doit EFFACER la valeur, pas la conserver \
+         ni stocker une chaîne vide : la ligne doit disparaître du PDF"
+    );
+}

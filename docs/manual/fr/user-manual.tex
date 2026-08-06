@@ -612,6 +612,24 @@ Une facture passe par trois états :
     \item \textbf{Payée} : marquée comme payée après réconciliation avec une transaction bancaire entrante.
 \end{enumerate}
 
+\subsection{Vos coordonnées sur la facture}\label{sec:coordonnees-emetteur}
+
+Le bloc en haut à gauche du PDF porte votre \textbf{nom}, votre \textbf{adresse} et votre \textbf{numéro IDE}. Vous pouvez y ajouter vos \textbf{coordonnées de contact} --- téléphone, e-mail et site web --- pour qu'un client qui a une question sur la facture puisse vous joindre depuis le document lui-même.
+
+\textbf{Où les saisir} : \emph{Réglages} $\rightarrow$ section \emph{Organisation}, bouton \textbf{Modifier} en face de « Téléphone · Site web ». La saisie est réservée aux administrateurs, comme celle de l'adresse de réponse.
+
+\begin{keshnote}
+\textbf{Chaque champ est facultatif, et un champ vide ne laisse aucun blanc sur le document} : la ligne correspondante n'est simplement pas imprimée. Si vous ne renseignez rien, votre facture est exactement celle que vous aviez avant --- aucune mise en page ne bouge.
+\end{keshnote}
+
+\textbf{L'e-mail que vous avez peut-être déjà renseigné} comme adresse de réponse des envois apparaît désormais lui aussi sur le PDF. Si vous ne le souhaitez pas, il suffit de le vider --- mais notez qu'il sert aussi de \emph{Reply-To} aux factures envoyées par e-mail (cf. \S\ref{sec:envoi-email}).
+
+Les \textbf{avoirs} portent les mêmes coordonnées, à l'identique.
+
+\begin{keshwarning}
+\textbf{Si vos coordonnées sont très longues, la facture peut être refusée} avec un message vous invitant à les raccourcir dans les réglages. C'est délibéré : l'en-tête et le tableau des lignes se partagent une hauteur fixe, et mieux vaut un refus explicite qu'un document où l'un s'imprime par-dessus l'autre.
+\end{keshwarning}
+
 \subsection{Numérotation des factures}
 
 Le numéro de facture est généré automatiquement selon un pattern configurable dans \emph{Paramètres} → \emph{Facturation} :

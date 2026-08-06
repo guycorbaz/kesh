@@ -12,6 +12,13 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ### Ajouté
 
+- **Vos coordonnées de contact sur le PDF de facture** : téléphone, e-mail et site web apparaissent désormais sous votre adresse, dans le bloc en haut à gauche.
+  - **Où les saisir** : *Réglages* → section *Organisation*, bouton **Modifier** en face de « Téléphone · Site web ». Réservé aux administrateurs, comme l'e-mail.
+  - **Chaque champ est facultatif, et un champ vide ne laisse aucun blanc** : la ligne correspondante n'est simplement pas imprimée. Une société qui ne renseigne rien retrouve exactement le PDF qu'elle avait avant.
+  - **L'e-mail que vous aviez déjà renseigné** (adresse de réponse des envois) apparaît maintenant lui aussi sur le PDF. Si vous ne le souhaitez pas, videz-le — mais sachez qu'il sert aussi de *Reply-To* aux factures envoyées par e-mail.
+  - **Les avoirs les portent également**, à l'identique.
+  - **Si vos coordonnées sont très longues**, la facture peut être refusée avec un message vous invitant à les raccourcir : c'est délibéré. Mieux vaut un refus explicite qu'un document où l'en-tête s'imprime par-dessus le tableau des lignes.
+
 - **Un compte de produit sur la fiche article** : chaque article du catalogue peut désormais porter **son** compte de produit, choisi **une fois** sur sa fiche plutôt que ressaisi à chaque facture.
   - **La ligne de facture le reprend automatiquement** quand vous montez la facture depuis le catalogue (bouton *Depuis catalogue*). Vous pouvez encore le changer sur la ligne — c'est un pré-remplissage, pas un verrou.
   - **Le champ est facultatif.** Laissé vide, l'article n'impose rien : la ligne suit le compte de produit par défaut de la société, exactement comme avant. **Rien ne change pour vos articles existants**, qui naissent tous sans compte.
