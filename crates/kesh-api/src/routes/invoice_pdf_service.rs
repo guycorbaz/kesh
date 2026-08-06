@@ -277,6 +277,13 @@ fn build_qrbill_inputs(
         creditor_name: company.name.clone(),
         creditor_address_lines: split_lines(&company.address),
         creditor_ide: company.ide_number.clone(),
+        // Story 16-3a (#151) — coordonnées de contact, ici pour la facture.
+        // ⚠️ `InvoicePdfData` est construit à DEUX endroits (facture et
+        // avoir) : un site oublié rendrait un document sans coordonnées
+        // alors que l'autre en porte, sans qu'aucun test de l'autre ne le voie.
+        creditor_phone: company.phone.clone(),
+        creditor_email: company.email.clone(),
+        creditor_website: company.website.clone(),
         debtor_name: contact.name.clone(),
         debtor_address_lines: split_lines(contact.address.as_deref().unwrap_or_default()),
         lines: invoice_lines_pdf,
@@ -337,6 +344,16 @@ pub(crate) fn map_qrbill_error(err: QrBillError) -> AppError {
         // #151 code-review : la garde géométrique (lignes + récap TVA débordant)
         // remonte un 400 actionnable, pas un 500 opaque.
         QrBillError::TooManyLines(n) => AppError::InvoiceTooManyLinesForPdf(n),
+        // Story 16-3a (#151) — en-tête débordant sur le tableau : coordonnées
+        // d'émetteur trop longues, souvent combinées à une adresse longue des
+        // deux côtés. Actionnable par l'utilisateur (raccourcir un champ des
+        // réglages), donc 400 et non 500 — même raisonnement que TooManyLines.
+        QrBillError::HeaderOverflow(_) => AppError::Validation(crate::errors::t(
+            "error-invoice-pdf-header-overflow",
+            "Les coordonnées de la société sont trop longues pour tenir en \
+             en-tête du PDF. Raccourcissez le téléphone, l'e-mail ou le site web \
+             dans les réglages.",
+        )),
         // Émis uniquement par le parseur SPC (Story 12-5, chemin import) — n'arrive
         // pas dans la génération PDF. Mappé comme une erreur de validation par défense.
         QrBillError::InvalidPayload(msg) => AppError::InvoiceNotPdfReady(msg),

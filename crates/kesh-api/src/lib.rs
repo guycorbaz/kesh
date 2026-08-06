@@ -266,6 +266,13 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/companies/current/email",
             put(routes::companies::update_company_email),
         )
+        // Story 16-3a (#151) : téléphone et site web de la société, rendus sur
+        // le PDF de facture. Même routeur Admin-only que la route e-mail
+        // ci-dessus — ce sont les mêmes coordonnées d'émetteur.
+        .route(
+            "/api/v1/companies/current/contact-details",
+            put(routes::companies::update_company_contact_details),
+        )
         // Story 14-2 : réouverture d'un exercice clôturé (Admin uniquement +
         // motif obligatoire + audit + garde LIFO). Plus strict que la clôture
         // (Comptable+, comptable_routes) — opération réglementaire sensible.

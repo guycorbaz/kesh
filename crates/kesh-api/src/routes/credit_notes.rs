@@ -275,6 +275,13 @@ pub async fn get_credit_note_pdf(
         creditor_name: company.name.clone(),
         creditor_address_lines: split_lines(&company.address),
         creditor_ide: company.ide_number.clone(),
+        // Story 16-3a (#151) — coordonnées de contact, ici pour l'AVOIR.
+        // ⚠️ `InvoicePdfData` est construit à DEUX endroits (facture et
+        // avoir) : un site oublié rendrait un document sans coordonnées
+        // alors que l'autre en porte, sans qu'aucun test de l'autre ne le voie.
+        creditor_phone: company.phone.clone(),
+        creditor_email: company.email.clone(),
+        creditor_website: company.website.clone(),
         debtor_name: contact.name.clone(),
         debtor_address_lines: split_lines(contact.address.as_deref().unwrap_or("")),
         lines: pdf_lines,

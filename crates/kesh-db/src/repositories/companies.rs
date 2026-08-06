@@ -16,12 +16,12 @@ use crate::repositories::MAX_LIST_LIMIT;
 
 const FIND_BY_ID_SQL: &str = "SELECT id, name, first_name, last_name, address, address_street, address_building, \
             address_postal_code, address_city, address_country, ide_number, org_type, \
-            accounting_language, instance_language, email, is_stub, version, created_at, updated_at \
+            accounting_language, instance_language, email, phone, website, is_stub, version, created_at, updated_at \
      FROM companies WHERE id = ?";
 
 const LIST_SQL: &str = "SELECT id, name, first_name, last_name, address, address_street, address_building, \
             address_postal_code, address_city, address_country, ide_number, org_type, \
-            accounting_language, instance_language, email, is_stub, version, created_at, updated_at \
+            accounting_language, instance_language, email, phone, website, is_stub, version, created_at, updated_at \
      FROM companies ORDER BY id LIMIT ? OFFSET ?";
 
 /// Crée une nouvelle company et retourne l'entité persistée.
@@ -130,6 +130,11 @@ fn is_no_op_change(before: &Company, changes: &CompanyUpdate) -> bool {
         && before.accounting_language == changes.accounting_language
         && before.instance_language == changes.instance_language
         && before.email == changes.email
+        // Story 16-3a (#151) — sans ces deux comparaisons, modifier le seul
+        // téléphone serait vu comme un no-op : la valeur ne partirait pas en
+        // base et `version` ne bougerait pas, en rendant 200.
+        && before.phone == changes.phone
+        && before.website == changes.website
 }
 
 /// Met à jour une company avec verrouillage optimiste.
@@ -182,7 +187,7 @@ pub async fn update(
              address_postal_code = ?, address_city = ?, address_country = ?,
              ide_number = ?, org_type = ?,
              accounting_language = ?, instance_language = ?,
-             email = ?,
+             email = ?, phone = ?, website = ?,
              version = version + 1
          WHERE id = ? AND version = ?",
     )
@@ -200,6 +205,8 @@ pub async fn update(
     .bind(changes.accounting_language)
     .bind(changes.instance_language)
     .bind(&changes.email)
+    .bind(&changes.phone)
+    .bind(&changes.website)
     .bind(id)
     .bind(version)
     .execute(&mut *tx)

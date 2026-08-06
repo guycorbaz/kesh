@@ -127,6 +127,8 @@ mod tests {
             accounting_language: Language::Fr,
             instance_language: Language::Fr,
             email: None,
+            phone: None,
+            website: None,
             is_stub: false,
             version: 1,
             created_at: naive_dt(2026, 1, 1),

@@ -197,15 +197,39 @@ fn draw_invoice_section(
         layer.use_text(line, 9.0, Mm(left), Mm(y), helv);
         y -= 4.0;
     }
-    if let Some(ide) = &inv.creditor_ide {
-        layer.use_text(
-            format!("{}: {}", i18n.get("invoice-pdf-ide"), ide),
-            9.0,
-            Mm(left),
-            Mm(y),
-            helv,
-        );
-        y -= 6.0;
+    // Bloc « identité » de l'émetteur : IDE puis coordonnées de contact
+    // (Story 16-3a, #151). Rendu **conditionnel** ligne par ligne — une valeur
+    // absente ne dessine rien et ne descend pas le curseur.
+    //
+    // ⚠️ Le pas de 4 mm et la respiration de 2 mm sont **séparés à dessein**, et
+    // la respiration n'est posée que si AU MOINS une ligne a été dessinée :
+    // - IDE seul, sans coordonnées → 4 + 2 = **6 mm**, exactement l'ancien pas ;
+    // - ni IDE ni coordonnées → **0 mm**, exactement l'ancien comportement.
+    //
+    // C'est ce qui tient **D2** : une société qui ne renseigne rien produit le
+    // PDF d'avant cette story, à l'octet près sur le bloc haut. Rendre la
+    // respiration inconditionnelle décalerait tout le document de ces sociétés.
+    let mut identity_lines = 0;
+    for (key, value) in [
+        ("invoice-pdf-ide", &inv.creditor_ide),
+        ("invoice-pdf-phone", &inv.creditor_phone),
+        ("invoice-pdf-email", &inv.creditor_email),
+        ("invoice-pdf-website", &inv.creditor_website),
+    ] {
+        if let Some(v) = value {
+            layer.use_text(
+                format!("{}: {}", i18n.get(key), v),
+                9.0,
+                Mm(left),
+                Mm(y),
+                helv,
+            );
+            y -= 4.0;
+            identity_lines += 1;
+        }
+    }
+    if identity_lines > 0 {
+        y -= 2.0;
     }
 
     // Title + metadata (right).
@@ -283,6 +307,24 @@ fn draw_invoice_section(
 
     // Lines table.
     let mut ty = PAGE_H - 130.0;
+
+    // ⚠️ GARDE DE CAPACITÉ HAUTE (Story 16-3a, #151) — symétrique de
+    // `TooManyLines`, qui ne surveille que le plancher QR.
+    //
+    // `ty` est une **constante** : le tableau n'est JAMAIS repoussé par ce qui
+    // le précède. Un en-tête trop haut — adresse émetteur longue, trois
+    // coordonnées renseignées, adresse destinataire longue — descendait donc
+    // sur les en-têtes de colonnes **sans que rien ne le détecte**, produisant
+    // un document illisible rendu en 200.
+    //
+    // Le `y.min(PAGE_H - 55.0)` plus haut est un **plafond**, pas un plancher :
+    // il empêche le destinataire de remonter, jamais de descendre.
+    //
+    // Refuser proprement plutôt que superposer, comme le fait déjà la garde
+    // basse. Marge de 2 mm : sous cette valeur les glyphes se touchent.
+    if y < ty + 2.0 {
+        return Err(QrBillError::HeaderOverflow(y));
+    }
     let col_desc = left;
     let col_qty = left + 90.0;
     let col_unit = left + 110.0;
@@ -914,6 +956,12 @@ mod tests {
             creditor_name: "Robert Schneider SA".into(),
             creditor_address_lines: vec!["Rue du Lac 1268".into(), "2501 Biel".into()],
             creditor_ide: Some("CHE-123.456.789".into()),
+            // Story 16-3a (#151) — la fixture de base ne porte AUCUNE coordonnée :
+            // c'est le cas nominal d'une société qui n'a rien renseigné, et il doit
+            // rendre le PDF d'avant la story. Les tests qui les exercent les posent.
+            creditor_phone: None,
+            creditor_email: None,
+            creditor_website: None,
             debtor_name: "Pia Rutschmann".into(),
             debtor_address_lines: vec!["Marktgasse 28".into(), "9400 Rorschach".into()],
             lines: vec![InvoiceLinePdf {

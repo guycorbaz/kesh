@@ -126,6 +126,12 @@ pub struct InvoicePdfData {
     pub creditor_address_lines: Vec<String>,
     /// Formatted IDE number, e.g. "CHE-123.456.789".
     pub creditor_ide: Option<String>,
+    /// Coordonnées de contact de l'émetteur (Story 16-3a, #151), rendues sous
+    /// l'IDE. `None` ⇒ la ligne n'est pas dessinée et le curseur ne descend
+    /// pas — même patron conditionnel que `creditor_ide`.
+    pub creditor_phone: Option<String>,
+    pub creditor_email: Option<String>,
+    pub creditor_website: Option<String>,
     pub debtor_name: String,
     pub debtor_address_lines: Vec<String>,
     pub lines: Vec<InvoiceLinePdf>,
@@ -227,6 +233,14 @@ pub const I18N_KEYS: &[&str] = &[
     "invoice-pdf-qr-separate-before-paying",
     // Story 12.1 — référence à la facture d'origine (avoirs uniquement).
     "invoice-pdf-origin-reference",
+    // Story 16-3a (#151) — coordonnées de contact de l'émetteur.
+    //
+    // ⚠️ Toute clé ajoutée ici DOIT l'être à la MÊME POSITION dans `DEFAULT_EN` :
+    // `get()` résout son repli par `DEFAULT_EN[idx]`, sans borne-check. Une
+    // longueur divergente fait PANIQUER le rendu, en debug comme en release.
+    "invoice-pdf-phone",
+    "invoice-pdf-email",
+    "invoice-pdf-website",
 ];
 
 /// English fallback for each key (same ordering as `I18N_KEYS`).
@@ -257,6 +271,10 @@ const DEFAULT_EN: &[&str] = &[
     "Acceptance point",
     "Separate before paying in",
     "Original invoice",
+    // Story 16-3a (#151) — MÊME ORDRE que les trois dernières de `I18N_KEYS`.
+    "Phone",
+    "Email",
+    "Web",
 ];
 
 #[derive(Debug, Error)]
@@ -291,6 +309,15 @@ pub enum QrBillError {
     /// de lignes » (actionnable) plutôt qu'un 500 opaque. Le `usize` = nb de lignes.
     #[error("trop de lignes ({0}) pour un PDF A4 mono-page")]
     TooManyLines(usize),
+
+    /// Le bloc d'en-tête (émetteur + destinataire) déborde sur le tableau des
+    /// lignes (Story 16-3a, #151). Le `f32` = ordonnée atteinte, en mm.
+    ///
+    /// ⚠️ Garde **symétrique** de `TooManyLines`, qui ne surveillait que le bas
+    /// de page : le tableau démarre à une ordonnée **constante** que rien ne
+    /// repousse, si bien qu'un en-tête trop haut le chevauchait **en silence**.
+    #[error("l'en-tête déborde sur le tableau des lignes (y = {0} mm)")]
+    HeaderOverflow(f32),
     /// Payload SPC malformé (en-tête absent, type de référence inconnu, structure invalide).
     /// Mappé `INVALID_SPC_PAYLOAD` par la couche d'import (Story 12-5).
     #[error("Payload SPC invalide: {0}")]

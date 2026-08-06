@@ -96,7 +96,7 @@ pub async fn seed_demo(
         let companies_locked = sqlx::query_as::<_, kesh_db::entities::Company>(
             "SELECT id, name, first_name, last_name, address, address_street, address_building, address_postal_code, \
                     address_city, address_country, ide_number, org_type, accounting_language, \
-                    instance_language, email, is_stub, version, created_at, updated_at \
+                    instance_language, email, phone, website, is_stub, version, created_at, updated_at \
              FROM companies ORDER BY id FOR UPDATE",
         )
         .fetch_all(&mut *tx)
@@ -133,6 +133,11 @@ pub async fn seed_demo(
                 accounting_language: lang,
                 instance_language: lang,
                 email: None,
+                // Story 16-3a (#151) — la société de démonstration porte des
+                // coordonnées, pour que le PDF de démo montre le bloc émetteur
+                // complet plutôt qu'un cas dégradé.
+                phone: Some("+41 21 123 45 67".to_string()),
+                website: Some("https://example.ch".to_string()),
             },
         )
         .await?

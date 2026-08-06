@@ -85,11 +85,12 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // + invoice_lines_revenue_account (Story 16-1a, #152) = 56.
     // + invoice_lines_revenue_account_backfill (Story 16-1a-bis, #152) = 57.
     // + products_default_revenue_account (Story 16-2a, #144) = 58.
+    // + companies_phone_website (Story 16-3a, #151) = 59.
     let total = kesh_db::MIGRATOR.migrations.len();
     assert_eq!(
-        total, 58,
-        "58 migrations attendues (57 précédentes + Story 16-2a : \
-         products_default_revenue_account)"
+        total, 59,
+        "59 migrations attendues (58 précédentes + Story 16-3a : \
+         companies_phone_website)"
     );
 
     // Étape 1 : simule l'état pré-Story-10-2 en appliquant toutes les
@@ -117,6 +118,7 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // Story 16-1a : 21 → 22, frontière inchangée (56 - 22 = 55 - 21 = 34).
     // Story 16-1a-bis : 22 → 23, frontière inchangée (57 - 23 = 34).
     // Story 16-2a : 23 → 24, frontière inchangée (58 - 24 = 34).
+    // Story 16-3a : 24 → 25, frontière inchangée (59 - 25 = 34).
     //
     // ⚠️ DÉRIVE DOCUMENTAIRE CONSTATÉE (revue de code 16-1a). Ce commentaire
     // affirmait simuler « l'état pré-Story-10-2 » et parlait d'une « frontière
@@ -139,10 +141,10 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // du même symptôme dans le même fichier, découverts un par passe. Ce qui
     // reste ouvert n'est plus documentaire, c'est la décision de périmètre
     // ci-dessus.
-    let n_before_upgrade_window = total - 24;
+    let n_before_upgrade_window = total - 25;
     apply_migrations_up_to(&pool, n_before_upgrade_window)
         .await
-        .expect("apply_migrations_up_to(total - 24) failed");
+        .expect("apply_migrations_up_to(total - 25) failed");
 
     // Étape 2 : seed 1 company + 1 user + 2 accounts + 1 invoice + 1 contact.
     let company_id: i64 = sqlx::query_scalar(

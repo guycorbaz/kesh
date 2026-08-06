@@ -1390,6 +1390,8 @@ mod tests {
             accounting_language: Language::Fr,
             instance_language: Language::Fr,
             email: Some("info@mapme.ch".to_string()),
+            phone: None,
+            website: None,
             is_stub: false,
             version: 1,
             created_at: chrono::NaiveDateTime::default(),
