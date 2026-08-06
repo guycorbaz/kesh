@@ -178,6 +178,16 @@ Les trois champs sont du texte libre affiché sur un document. La validation se 
 
 **Précédent** : story **16-2b**, où le garde-fou s'était déclenché sur un compteur `MEDIUM` stagnant, où la dérogation avait été arbitrée de la même façon, et où le **résultat l'a validée** — le compteur est tombé à **zéro** à la passe suivante.
 
+### Prolongation d'une passe — arbitrage du 2026-08-06
+
+**La condition de sortie ci-dessus a été ATTEINTE en passe 3** (1 `HIGH` : le septième miroir, `CompanyJson`). La dérogation aurait donc dû tomber. **Guy l'a prolongée d'exactement une passe**, sur trois faits établis par la mesure et non par le pronostic :
+
+1. **La trajectoire est décroissante** — `4H/1M` → `3C/1M` → `1H/4M`.
+2. **Aucun finding ≥ MEDIUM des trois passes n'a contesté une décision D1–D5.** Les cinq ont été reconfrontées au code à chaque passe et tiennent à la ligne près.
+3. **Le `HIGH` n'est pas un symptôme de largeur** : `CompanyJson` est à la **charnière API↔frontend**, qu'un découpage par couche placerait sur la **couture** — l'endroit le moins surveillé des deux moitiés. Le split l'aggraverait au lieu de le fermer.
+
+⚠️ **NOUVELLE CONDITION DE SORTIE, et elle est la dernière** : si la **passe 4** remonte encore un finding `CRITICAL` ou `HIGH`, le split est **démontré nécessaire par deux mesures consécutives** et devient inconditionnel — sans nouvel arbitrage. Si elle converge (rien au-dessus de `LOW`), la dérogation est validée par le résultat, comme elle l'a été pour 16-2b, et la story passe au développement.
+
 ## Dev Notes
 
 ### Ce que cette story ne doit PAS faire
