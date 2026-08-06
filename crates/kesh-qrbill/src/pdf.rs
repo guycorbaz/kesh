@@ -995,6 +995,140 @@ mod tests {
         );
     }
 
+    /// Date de création figée — sans elle, deux générations successives
+    /// diffèrent et un delta de taille ne mesurerait plus rien.
+    fn fixed_date() -> printpdf::OffsetDateTime {
+        use printpdf::OffsetDateTime;
+        OffsetDateTime::from_unix_timestamp(1_767_225_600).expect("timestamp valide")
+    }
+
+    /// **AC4** — chacune des trois coordonnées est rendue, **prise isolément**.
+    ///
+    /// ⚠️ **Une seule assertion « les trois ensemble > aucune » NE DISCRIMINE PAS** :
+    /// avec deux champs rendus sur trois, le document reste plus gros que le
+    /// témoin et l'assertion passe. Mesuré — la mutation « retirer le rendu du
+    /// téléphone » laissait la suite entière verte. D'où **un cas par champ**,
+    /// chacun comparé au même témoin sans coordonnées.
+    ///
+    /// Mesure par **delta de taille d'octets**, pas par recherche de texte : le
+    /// dépôt ne compare jamais le contenu d'un PDF (« Plan C », cf.
+    /// `tests/golden_test.rs`), et le texte y est **hex-encodé** dans les
+    /// opérateurs `Tj` — un `contains` naïf échouerait toujours.
+    #[test]
+    fn each_contact_detail_is_rendered_on_its_own() {
+        let (data, base, i18n) = invoice_fixture();
+        let temoin = generate_qr_bill_pdf_with_date(&data, &base, &i18n, fixed_date())
+            .unwrap()
+            .len();
+
+        for (label, invoice) in [
+            (
+                "téléphone",
+                InvoicePdfData {
+                    creditor_phone: Some("+41 21 123 45 67".into()),
+                    ..base.clone()
+                },
+            ),
+            (
+                "e-mail",
+                InvoicePdfData {
+                    creditor_email: Some("contact@exemple.ch".into()),
+                    ..base.clone()
+                },
+            ),
+            (
+                "site web",
+                InvoicePdfData {
+                    creditor_website: Some("https://exemple.ch".into()),
+                    ..base.clone()
+                },
+            ),
+        ] {
+            let avec = generate_qr_bill_pdf_with_date(&data, &invoice, &i18n, fixed_date())
+                .unwrap()
+                .len();
+            assert!(
+                avec > temoin,
+                "le {label} SEUL doit ajouter du contenu au PDF \
+                 (témoin sans coordonnées = {temoin} octets, avec = {avec}) — \
+                 si cette assertion tombe, ce champ n'est plus rendu"
+            );
+        }
+    }
+
+    /// **D2** — une société sans IDE **ni** coordonnées ne doit subir **aucun**
+    /// décalage : son document reste celui d'avant la story.
+    ///
+    /// ⚠️ **Un delta de taille ne peut PAS mesurer ça** : un décalage vertical
+    /// de 2 mm déplace le texte sans changer sa longueur, donc le PDF pèse le
+    /// même nombre d'octets. Mesuré — une première version de ce test comparait
+    /// deux générations entre elles et restait **verte** sous la mutation.
+    ///
+    /// On mesure donc là où 2 mm changent un **verdict** : au seuil de la garde
+    /// haute. Calibrage (`PAGE_H = 297`, plafond `−55`, tableau à `−130`,
+    /// marge `+2`) avec 8 lignes d'adresse émetteur — assez pour passer sous le
+    /// plafond, sinon le `min()` masquerait l'écart — et 15 lignes côté
+    /// destinataire :
+    ///
+    /// - respiration **conditionnelle** (correcte) → `y = 170.5` ⇒ le document passe ;
+    /// - respiration **inconditionnelle** (buguée) → `y = 168.5` ⇒ refus.
+    ///
+    /// Ce test échoue donc si l'espacement redevient inconditionnel, et **lui
+    /// seul** le voit.
+    #[test]
+    fn no_identity_line_costs_no_vertical_space() {
+        let (data, base, i18n) = invoice_fixture();
+        let invoice = InvoicePdfData {
+            // Aucune ligne d'identité : ni IDE, ni téléphone, ni e-mail, ni site.
+            creditor_ide: None,
+            creditor_phone: None,
+            creditor_email: None,
+            creditor_website: None,
+            creditor_address_lines: (0..8).map(|i| format!("Adresse {i}")).collect(),
+            debtor_address_lines: (0..15).map(|i| format!("Destinataire {i}")).collect(),
+            ..base
+        };
+        let res = generate_qr_bill_pdf_with_date(&data, &invoice, &i18n, fixed_date());
+        assert!(
+            res.is_ok(),
+            "sans AUCUNE ligne d'identité, aucune respiration ne doit être posée : \
+             ce document tient à 2 mm près. S'il est refusé, l'espacement est \
+             redevenu inconditionnel et TOUTES les sociétés sans coordonnées \
+             voient leur PDF décalé — ce que D2 interdit. Erreur : {:?}",
+            res.err()
+        );
+    }
+
+    /// **AC6** — la garde de capacité **haute**. Le cas de test doit
+    /// **FRANCHIR le seuil**, pas s'en approcher : l'issue attendue est le refus.
+    ///
+    /// ⚠️ Un cas généreux mais sous le seuil se rendrait correctement et ne
+    /// mesurerait rien — le budget réel est large (le destinataire démarre au
+    /// plus haut à `PAGE_H - 55`, le tableau à `PAGE_H - 130`, soit 75 mm).
+    /// D'où une adresse émetteur **très** longue, les trois coordonnées, **et**
+    /// une adresse destinataire longue.
+    ///
+    /// Sans la garde, ce document se rendait en `Ok`, avec l'en-tête imprimé
+    /// par-dessus les colonnes du tableau.
+    #[test]
+    fn overlong_header_errors_instead_of_overprinting_the_lines_table() {
+        let (data, base, i18n) = invoice_fixture();
+        let invoice = InvoicePdfData {
+            creditor_address_lines: (0..10).map(|i| format!("Ligne adresse {i}")).collect(),
+            creditor_phone: Some("+41 21 123 45 67".into()),
+            creditor_email: Some("contact@exemple.ch".into()),
+            creditor_website: Some("https://exemple.ch".into()),
+            debtor_address_lines: (0..10).map(|i| format!("Ligne destinataire {i}")).collect(),
+            ..base
+        };
+        let err = generate_qr_bill_pdf_with_date(&data, &invoice, &i18n, fixed_date())
+            .expect_err("un en-tête débordant DOIT être refusé, pas rendu par-dessus le tableau");
+        assert!(
+            matches!(err, QrBillError::HeaderOverflow(_)),
+            "erreur attendue HeaderOverflow, obtenue : {err:?}"
+        );
+    }
+
     /// #151 (code-review HIGH) : une facture dont les lignes **plus** le bloc
     /// récap TVA multi-taux ne tiennent pas au-dessus du séparateur QR
     /// (`SEP_Y`) doit être **refusée** (`Err`) plutôt que rendue avec le récap

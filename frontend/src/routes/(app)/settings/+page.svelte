@@ -4,7 +4,11 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Separator } from '$lib/components/ui/separator';
 	import { i18nMsg } from '$lib/features/onboarding/onboarding.svelte';
-	import { fetchCompanyCurrent, updateCompanyEmail } from '$lib/features/settings/settings.api';
+	import {
+		fetchCompanyCurrent,
+		updateCompanyContactDetails,
+		updateCompanyEmail
+	} from '$lib/features/settings/settings.api';
 	import type { CompanyCurrentResponse } from '$lib/features/settings/settings.types';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
@@ -79,6 +83,63 @@
 			}
 		} finally {
 			emailSubmitting = false;
+		}
+	}
+
+	// Story 16-3a (#151) — téléphone et site web, rendus sur le PDF de facture.
+	// Édition inline sur le patron exact de l'e-mail ci-dessus : c'est le SEUL
+	// chemin de saisie pour une instance déjà installée, l'onboarding ne se
+	// rejouant pas.
+	let contactEditing = $state(false);
+	let phoneValue = $state('');
+	let websiteValue = $state('');
+	let contactSubmitting = $state(false);
+	let contactError = $state('');
+
+	function startContactEdit() {
+		phoneValue = data?.company.phone ?? '';
+		websiteValue = data?.company.website ?? '';
+		contactError = '';
+		contactEditing = true;
+	}
+
+	async function saveContactDetails() {
+		if (!data) return;
+		contactSubmitting = true;
+		contactError = '';
+		try {
+			// Champ vidé = effacement : la ligne disparaît du PDF (D2).
+			const updated = await updateCompanyContactDetails({
+				phone: phoneValue.trim() || null,
+				website: websiteValue.trim() || null,
+				version: data.company.version,
+			});
+			data = { ...data, company: updated };
+			contactEditing = false;
+			notifySuccess(msg('settings-company-contact-saved', 'Coordonnées enregistrées'));
+		} catch (err) {
+			if (isApiError(err)) {
+				if (err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
+					try {
+						data = await fetchCompanyCurrent();
+						contactError = msg(
+							'settings-company-email-conflict',
+							'Conflit de version — les données ont été rechargées, réessayez.',
+						);
+					} catch {
+						contactError = msg(
+							'settings-company-email-conflict-reload-failed',
+							'Conflit de version et rechargement impossible — rechargez la page.',
+						);
+					}
+				} else {
+					contactError = err.message;
+				}
+			} else {
+				contactError = msg('common-error', 'Erreur inattendue');
+			}
+		} finally {
+			contactSubmitting = false;
 		}
 	}
 
@@ -181,6 +242,79 @@
 						{msg(
 							'settings-company-email-help',
 							"Adresse de réponse (Reply-To) des factures envoyées par e-mail. Vide = pas d'adresse de réponse.",
+						)}
+					</p>
+				</div>
+
+				<!-- Story 16-3a (#151) : téléphone et site web, rendus sur le PDF. -->
+				<div class="col-span-2">
+					<dt class="font-medium text-text-muted">
+						{msg('settings-field-company-phone', 'Téléphone')} ·
+						{msg('settings-field-company-website', 'Site web')}
+					</dt>
+					{#if contactEditing}
+						<dd class="mt-1 max-w-md space-y-2">
+							<Input
+								type="text"
+								bind:value={phoneValue}
+								maxlength={50}
+								placeholder={msg('settings-field-company-phone', 'Téléphone')}
+								data-testid="settings-company-phone-input"
+							/>
+							<Input
+								type="text"
+								bind:value={websiteValue}
+								maxlength={255}
+								placeholder={msg('settings-field-company-website', 'Site web')}
+								data-testid="settings-company-website-input"
+							/>
+							{#if contactError}
+								<p class="text-xs text-destructive" data-testid="settings-company-contact-error">
+									{contactError}
+								</p>
+							{/if}
+							<div class="flex gap-2">
+								<Button
+									size="sm"
+									onclick={saveContactDetails}
+									disabled={contactSubmitting}
+									data-testid="settings-company-contact-save"
+								>
+									{msg('common-save', 'Enregistrer')}
+								</Button>
+								<Button
+									size="sm"
+									variant="outline"
+									onclick={() => {
+										contactEditing = false;
+										contactError = '';
+									}}
+									disabled={contactSubmitting}
+								>
+									{msg('common-cancel', 'Annuler')}
+								</Button>
+							</div>
+						</dd>
+					{:else}
+						<dd class="flex items-center gap-3">
+							<span data-testid="settings-company-phone">{data.company.phone ?? '—'}</span>
+							<span data-testid="settings-company-website">{data.company.website ?? '—'}</span>
+							{#if isAdmin}
+								<Button
+									size="sm"
+									variant="outline"
+									onclick={startContactEdit}
+									data-testid="settings-company-contact-edit"
+								>
+									{msg('common-edit', 'Modifier')}
+								</Button>
+							{/if}
+						</dd>
+					{/if}
+					<p class="mt-1 text-xs text-text-muted">
+						{msg(
+							'settings-company-phone-help',
+							'Numéro de téléphone affiché sur vos factures. Vide = ligne omise.',
 						)}
 					</p>
 				</div>
