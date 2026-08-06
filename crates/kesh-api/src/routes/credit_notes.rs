@@ -206,6 +206,53 @@ pub async fn create_credit_note(
 }
 
 /// `GET /api/v1/credit-notes/{id}/pdf` — PDF « Avoir » (sans QR Bill).
+/// Construit les données PDF d'un **avoir** — extraite du handler (Story 16-3a,
+/// #151) pour être **testable sans base de données**, sur le patron de
+/// `build_qrbill_inputs` côté facture.
+///
+/// ⚠️ Cette extraction n'est pas cosmétique : facture et avoir partagent la
+/// **même** fonction de rendu (`draw_invoice_section`), si bien que la seule
+/// divergence possible entre les deux documents est **ici**, au site de
+/// construction. Un test posé dans `kesh-qrbill` ne pourrait donc pas voir un
+/// champ oublié côté avoir — il resterait vert. C'est le seul niveau où la
+/// couverture de l'avoir est réelle.
+#[allow(clippy::too_many_arguments)]
+fn build_credit_note_pdf_data(
+    cn: &CreditNote,
+    pdf_lines: Vec<InvoiceLinePdf>,
+    contact: &kesh_db::entities::Contact,
+    company: &kesh_db::entities::Company,
+    subtotal_ht: Decimal,
+    vat_lines: Vec<kesh_qrbill::InvoiceVatLinePdf>,
+    ttc: Decimal,
+    origin_reference: Option<String>,
+) -> InvoicePdfData {
+    InvoicePdfData {
+        invoice_number: cn
+            .credit_note_number
+            .clone()
+            .unwrap_or_else(|| format!("#{}", cn.id)),
+        invoice_date: cn.date,
+        due_date: None,
+        payment_terms: None,
+        creditor_name: company.name.clone(),
+        creditor_address_lines: split_lines(&company.address),
+        creditor_ide: company.ide_number.clone(),
+        // Story 16-3a (#151) — coordonnées de contact, ici pour l'AVOIR.
+        creditor_phone: company.phone.clone(),
+        creditor_email: company.email.clone(),
+        creditor_website: company.website.clone(),
+        debtor_name: contact.name.clone(),
+        debtor_address_lines: split_lines(contact.address.as_deref().unwrap_or("")),
+        lines: pdf_lines,
+        subtotal_ht,
+        vat_lines,
+        total: ttc,
+        currency: Currency::Chf,
+        origin_reference,
+    }
+}
+
 pub async fn get_credit_note_pdf(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -264,33 +311,16 @@ pub async fn get_credit_note_pdf(
         lines.iter().map(|l| (l.line_total, l.vat_rate)),
     );
 
-    let pdf_data = InvoicePdfData {
-        invoice_number: cn
-            .credit_note_number
-            .clone()
-            .unwrap_or_else(|| format!("#{}", cn.id)),
-        invoice_date: cn.date,
-        due_date: None,
-        payment_terms: None,
-        creditor_name: company.name.clone(),
-        creditor_address_lines: split_lines(&company.address),
-        creditor_ide: company.ide_number.clone(),
-        // Story 16-3a (#151) — coordonnées de contact, ici pour l'AVOIR.
-        // ⚠️ `InvoicePdfData` est construit à DEUX endroits (facture et
-        // avoir) : un site oublié rendrait un document sans coordonnées
-        // alors que l'autre en porte, sans qu'aucun test de l'autre ne le voie.
-        creditor_phone: company.phone.clone(),
-        creditor_email: company.email.clone(),
-        creditor_website: company.website.clone(),
-        debtor_name: contact.name.clone(),
-        debtor_address_lines: split_lines(contact.address.as_deref().unwrap_or("")),
-        lines: pdf_lines,
+    let pdf_data = build_credit_note_pdf_data(
+        &cn,
+        pdf_lines,
+        &contact,
+        &company,
         subtotal_ht,
         vat_lines,
-        total: ttc,
-        currency: Currency::Chf,
-        origin_reference: origin_number,
-    };
+        ttc,
+        origin_number,
+    );
 
     // i18n facture + surcharge titre/numéro « Avoir » (clés credit-note-pdf-*).
     let mut i18n = build_i18n(&state.i18n, state.config.locale);
@@ -323,4 +353,127 @@ pub async fn get_credit_note_pdf(
         HeaderValue::from_str(&disposition).unwrap_or_else(|_| HeaderValue::from_static("inline")),
     );
     Ok(resp)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_decimal_macros::dec;
+
+    fn company_with_contact_details() -> kesh_db::entities::Company {
+        kesh_db::entities::Company {
+            id: 1,
+            name: "Démo SA".into(),
+            first_name: None,
+            last_name: None,
+            address: "Rue du Lac 1\n1000 Lausanne".into(),
+            address_street: "Rue du Lac".into(),
+            address_building: "1".into(),
+            address_postal_code: "1000".into(),
+            address_city: "Lausanne".into(),
+            address_country: "CH".into(),
+            ide_number: Some("CHE-123.456.789".into()),
+            org_type: kesh_db::entities::OrgType::Pme,
+            accounting_language: kesh_db::entities::Language::Fr,
+            instance_language: kesh_db::entities::Language::Fr,
+            email: Some("contact@demo.ch".into()),
+            phone: Some("+41 21 123 45 67".into()),
+            website: Some("https://demo.ch".into()),
+            is_stub: false,
+            version: 1,
+            created_at: chrono::NaiveDateTime::default(),
+            updated_at: chrono::NaiveDateTime::default(),
+        }
+    }
+
+    fn contact() -> kesh_db::entities::Contact {
+        kesh_db::entities::Contact {
+            id: 1,
+            company_id: 1,
+            contact_type: kesh_db::entities::ContactType::Entreprise,
+            name: "Client SA".into(),
+            first_name: None,
+            last_name: None,
+            is_client: true,
+            is_supplier: false,
+            address: Some("Marktgasse 28\n9400 Rorschach".into()),
+            address_street: None,
+            address_building: None,
+            address_postal_code: None,
+            address_city: None,
+            address_country: None,
+            email: None,
+            phone: None,
+            ide_number: None,
+            default_payment_terms: None,
+            default_payment_terms_days: None,
+            language: None,
+            salutation: Default::default(),
+            active: true,
+            version: 1,
+            created_at: chrono::NaiveDateTime::default(),
+            updated_at: chrono::NaiveDateTime::default(),
+        }
+    }
+
+    fn credit_note() -> CreditNote {
+        CreditNote {
+            id: 1,
+            company_id: 1,
+            contact_id: 1,
+            invoice_id: 1,
+            credit_note_number: Some("A-2026-0001".into()),
+            status: "issued".into(),
+            date: chrono::NaiveDate::from_ymd_opt(2026, 8, 6).unwrap(),
+            total_amount: dec!(100.00),
+            journal_entry_id: None,
+            version: 1,
+            created_at: chrono::NaiveDateTime::default(),
+            updated_at: chrono::NaiveDateTime::default(),
+        }
+    }
+
+    /// **AC5** — l'AVOIR porte les coordonnées de l'émetteur, comme la facture.
+    ///
+    /// ⚠️ **Ce test ne peut PAS vivre dans `kesh-qrbill`**, et c'est tout son
+    /// intérêt : facture et avoir partagent la **même** fonction de rendu
+    /// (`draw_invoice_section`, un seul appel par générateur). La seule
+    /// divergence possible entre les deux documents est donc **au site de
+    /// construction** — ici. Un test de rendu resterait vert alors que l'avoir
+    /// sortirait sans coordonnées, ce que D3 qualifie de « piège qui coûterait
+    /// le plus cher ».
+    ///
+    /// ⚠️ Et il ne part **pas** d'une fixture de facture par `..base` : le
+    /// champ serait hérité et le test passerait **sans exercer aucun code
+    /// d'avoir**. La `Company` est construite entière, exprès.
+    #[test]
+    fn credit_note_pdf_carries_the_issuer_contact_details() {
+        let company = company_with_contact_details();
+        let data = build_credit_note_pdf_data(
+            &credit_note(),
+            vec![],
+            &contact(),
+            &company,
+            dec!(100.00),
+            vec![],
+            dec!(100.00),
+            None,
+        );
+
+        assert_eq!(
+            data.creditor_phone.as_deref(),
+            Some("+41 21 123 45 67"),
+            "l'avoir doit porter le téléphone de l'émetteur"
+        );
+        assert_eq!(
+            data.creditor_email.as_deref(),
+            Some("contact@demo.ch"),
+            "l'avoir doit porter l'e-mail de l'émetteur"
+        );
+        assert_eq!(
+            data.creditor_website.as_deref(),
+            Some("https://demo.ch"),
+            "l'avoir doit porter le site web de l'émetteur"
+        );
+    }
 }
