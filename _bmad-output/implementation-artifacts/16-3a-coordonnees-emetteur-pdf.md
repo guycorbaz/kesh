@@ -132,7 +132,7 @@ Les trois champs sont du texte libre affiché sur un document. La validation se 
   3. `crates/kesh-api/src/routes/onboarding.rs:688` — `SELECT` en ligne
   4. `crates/kesh-api/src/routes/onboarding.rs:853` — `SELECT` en ligne
   5. `crates/kesh-api/src/routes/onboarding.rs:908` — `COMPANY_SELECT_FOR_UPDATE`
-  6. `crates/kesh-seed/src/lib.rs:96` — `SELECT` **en ligne**, propre au seed de démonstration
+  6. `crates/kesh-seed/src/lib.rs:96-97` — `SELECT` **en ligne** (l'appel est en `:96`, la liste de colonnes en `:97`), propre au seed de démonstration
 
   ⚠️ **Une omission ne casse pas la compilation : elle produit un `ColumnNotFound` À L'EXÉCUTION**, et met en 500 la route concernée. C'est le piège de `FIND_BY_ID_SCOPED_SQL` de la story 16-2a, ici **multiplié par six**.
 
@@ -147,7 +147,7 @@ Les trois champs sont du texte libre affiché sur un document. La validation se 
 - [ ] **T4 — Rendu PDF** (AC4, AC5) — champs sur `InvoicePdfData`, rendu conditionnel sur le patron de l'IDE, **aux deux sites de construction** (D3).
 - [ ] **T5 — Garde de capacité haute** (AC6) — garde + test de pire cas. C'est la tâche à risque de la story ; la traiter **avant** le frontend.
 - [ ] **T6 — i18n et son tableau JUMEAU** (AC7) — 3 clés × 4 locales, déclarées dans `I18N_KEYS` (`types.rs:202`) **ET dans `DEFAULT_EN` (`:233`), même ordre, même nombre**. ⚠️ Omettre le second ne dégrade pas le rendu : il le fait **paniquer** (indexation positionnelle sans borne-check, `:187-188`).
-- [ ] **T7 — Frontend et les DEUX miroirs de DTO** (AC8) — édition *inline* sur le patron de l'e-mail, texte d'aide, **et clés i18n du frontend** (cf. T6).
+- [ ] **T7 — Frontend et les DEUX miroirs de DTO** (AC8) — édition *inline* sur le patron de l'e-mail, texte d'aide, **et les clés i18n du frontend** — libellé, aide et **message de validation**, ces trois-là étant décrites dans **AC7** et non dans T6, qui ne couvre que le couple `I18N_KEYS`/`DEFAULT_EN` du PDF.
 
   ⚠️ **`CompanyJson` est un miroir écrit à la main, en DEUX exemplaires, qu'AUCUN compilateur ne vérifie contre `Company`** :
   1. `crates/kesh-api/src/routes/companies.rs:28-47` — la struct Rust ;
@@ -203,6 +203,18 @@ Les trois champs sont du texte libre affiché sur un document. La validation se 
 
 **Oublier le second site de construction.** Une revue qui ne regarde que la facture ne verra jamais que l'avoir sort sans coordonnées. Le grep de propagation est `grep -rn "creditor_ide" crates/kesh-api/src/` — il rend **deux** sites, et c'est ce nombre qui doit être retrouvé après le patch.
 
+### Comment tester un PDF dans ce dépôt — lire AVANT d'écrire T4/T5
+
+⚠️ **Le dépôt ne compare JAMAIS le contenu textuel d'un PDF**, et c'est une décision prise avec Guy : *« Plan C : on ne compare pas l'octet exact du PDF »* (`crates/kesh-qrbill/tests/golden_test.rs:1-7`), `printpdf` introduisant un aléa dans le trailer `/ID`. Les tests existants ne vérifient que `bytes.starts_with(b"%PDF-1.")` et la **stabilité de taille**.
+
+⚠️ **Et un `grep` naïf du texte échouerait de toute façon** : le contenu est **hex-encodé** dans les opérateurs `Tj` — « Robert Schneider SA » y apparaît comme `<526F62657274205363686E6569646572205341>`, jamais en ASCII.
+
+**Les trois AC se testent donc à des niveaux différents, et il faut choisir le bon :**
+
+- **AC6** — par le `Result` : `Err(QrBillError::…)`. Aucun contenu à inspecter, c'est le plus simple des trois. *(Bonus vérifié : `map_qrbill_error` est un `match` **exhaustif sans bras `_`** (`invoice_pdf_service.rs:316-344`), réutilisé par l'avoir — un nouveau variant d'erreur serait donc forcé par le compilateur sur les deux générateurs.)*
+- **AC4** — par **delta de taille d'octets**, sur le précédent direct `pdf_size_stable_with_fixed_date`.
+- **AC5** — ⚠️ **exige un petit refactor, et c'est la seule tâche qui en demande un.** La facture a déjà une fonction pure extraite, `build_qrbill_inputs` (`invoice_pdf_service.rs:162`) — privée, non-`async`, prenant des entités par référence, donc **testable sans base**. L'avoir n'a pas d'équivalent : il construit son `InvoicePdfData` **en ligne dans le handler `async`** (`credit_notes.rs:267`). **Reproduire le patron `build_qrbill_inputs` côté avoir** est ce qui rend AC5 testable au niveau `kesh-api`, comme il l'exige.
+
 ### Conventions de test
 
 Le dépôt attend qu'une story démontre que ses tests **discriminent**, pas seulement qu'ils passent : une **campagne de mutation** est la norme (cf. 16-2a et 16-2b). Pour cette story, au minimum :
@@ -234,6 +246,17 @@ Le dépôt attend qu'une story démontre que ses tests **discriminent**, pas seu
 ### File List
 
 ## Change Log
+
+**2026-08-06 — Passe 4 de `bmad-create-story validate` — ✅ BOUCLE CONVERGÉE, DÉROGATION VALIDÉE PAR LE RÉSULTAT** (**Sonnet**, contexte frais). **0 CRITICAL, 0 HIGH, 2 LOW** — critère d'arrêt atteint.
+
+**Trend des quatre passes : `4H/1M` → `3C/1M` → `1H/4M/4L` → `0/0/2L`.** La condition de sortie inscrite en passe 3 est satisfaite **dans le sens favorable** : le split n'a pas lieu d'être, et c'est la **mesure** qui le dit, non le pronostic. Rotation complète Opus → Sonnet → Haiku → Opus → Sonnet ; plafond de 8 passes jamais approché.
+
+**Les 2 LOW ont été intégrés plutôt que seulement consignés**, le premier étant trop actionnable pour être perdu :
+
+- **Aucune technique n'était indiquée pour tester le contenu d'un PDF**, alors que le seul précédent du dépôt les **écarte explicitement** : *« Plan C : on ne compare pas l'octet exact du PDF »*. Et un `grep` du texte échouerait de toute façon — le contenu est **hex-encodé** dans les opérateurs `Tj`. La story porte désormais la technique **par AC** : AC6 par le `Result`, AC4 par delta de taille, et **AC5 par un refactor** — la facture a une fonction pure extraite (`build_qrbill_inputs`), l'avoir construit sa donnée **en ligne dans un handler `async`**, donc intestable en l'état. C'est le seul refactor que la story demande, et il conditionne la testabilité d'AC5.
+- **Deux imprécisions d'ancrage** corrigées : le site 6 de T2 (`:96-97`, l'appel et la liste de colonnes étant sur deux lignes) et le renvoi de T7 vers T6, qui ne couvre que le couple `I18N_KEYS`/`DEFAULT_EN` du PDF — les clés du frontend sont décrites dans AC7.
+
+**Ce que les quatre passes n'ont jamais contesté** : les cinq décisions **D1–D5**. Elles ont été reconfrontées au code à chaque passe et tiennent à la ligne près. Les 20 findings ont porté sur des **décomptes**, des **ancres**, des **clauses de preuve** et des **contradictions internes** — jamais sur la conception. C'est ce qui justifiait la dérogation, et c'est ce que le résultat confirme.
 
 **2026-08-05 — Passe 3 de `bmad-create-story validate`** (**Opus 5**, rotation Opus → Sonnet → Haiku → Opus complète, contexte frais). **1 HIGH, 4 MEDIUM, 4 LOW**, tous confirmés au ground-truth et remédiés. ⚠️ **La condition de sortie de la dérogation est ATTEINTE** — arbitrage requis, analyse ci-dessous.
 
