@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev
+review
 
 ## Story
 
@@ -121,12 +121,12 @@ Les trois champs sont du texte libre affiché sur un document. La validation se 
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Migration** (AC1, AC2) — deux colonnes nullables ; ligne d'audit **dans le tableau** ; compteurs recomptés `58 → 59` aux **deux** sites du total ; partition recomptée.
+- [x] **T1 — Migration** (AC1, AC2) — deux colonnes nullables ; ligne d'audit **dans le tableau** ; compteurs recomptés `58 → 59` aux **deux** sites du total ; partition recomptée.
 
   ⚠️ **DEUX sites couplés dans `migrations_upgrade_path.rs`, à bumper ENSEMBLE** : `assert_eq!(total, 58, …)` (`:89-93`) → **59**, ET `let n_before_upgrade_window = total - 24;` (`:142`) → **`- 25`**. La frontière doit rester à **34** (59 − 25). Bumper le premier seul fait glisser la fenêtre testée à 35 : **le test continue de passer en mesurant moins**, et rien ne le signale.
 
   ⚠️ **Triage P7 : NE RIEN INSCRIRE**, ni au registre `POST_RESTORE_BACKFILLS` ni aux `EXEMPT_MIGRATIONS`. Une migration DDL pure n'est jamais sélectionnée par le détecteur (`post_restore.rs:705`, `continue` si aucun statement n'écrit). Reprendre la justification du précédent immédiat, `docs/migrations-idempotence-audit.md:80`.
-- [ ] **T2 — Entité et les SIX listes de colonnes** (AC3) — champs sur `Company`, **puis les six listes de colonnes écrites à la main**, relevées et vérifiées :
+- [x] **T2 — Entité et les SIX listes de colonnes** (AC3) — champs sur `Company`, **puis les six listes de colonnes écrites à la main**, relevées et vérifiées :
   1. `crates/kesh-db/src/repositories/companies.rs:17` — `FIND_BY_ID_SQL`
   2. `crates/kesh-db/src/repositories/companies.rs:22` — `LIST_SQL`
   3. `crates/kesh-api/src/routes/onboarding.rs:688` — `SELECT` en ligne
@@ -139,15 +139,15 @@ Les trois champs sont du texte libre affiché sur un document. La validation se 
   ⚠️ **Le 6ᵉ site n'est PAS du code mort** : `seed_demo` est appelé en production par la route de démonstration de l'onboarding (`onboarding.rs:191`, exposée en `POST` via `lib.rs:713`). L'oublier casse la création de démo, un chemin qu'aucun test de facturation n'emprunte.
 
   Commande de contrôle : `grep -rn "query_as::<_, Company>\|query_as::<_, kesh_db::entities::Company>" crates/` rend **11** sites — chacun doit être rattaché à l'une des six listes.
-- [ ] **T3 — Route dédiée** (AC3, D4) — sur le patron de `update_company_email` (`companies.rs:86`) : verrou optimiste, validation de longueur (D5). **Ne pas** toucher `PUT /companies/current/email`, **ne pas** réutiliser `update_company_coordinates` (son `is_stub = FALSE` inconditionnel et son appelant unique sont des invariants documentés).
+- [x] **T3 — Route dédiée** (AC3, D4) — sur le patron de `update_company_email` (`companies.rs:86`) : verrou optimiste, validation de longueur (D5). **Ne pas** toucher `PUT /companies/current/email`, **ne pas** réutiliser `update_company_coordinates` (son `is_stub = FALSE` inconditionnel et son appelant unique sont des invariants documentés).
 
   ⚠️ **Ce que « le patron de `update_company_email` » implique exactement** : cette route ne fait **pas** une `UPDATE` ciblée. Elle **reconstruit un `CompanyUpdate` complet** depuis l'état courant (`companies.rs:106-117`) puis appelle `companies::update`, qui exécute un **full-replace** sur toutes les colonnes. Suivre ce patron impose donc d'étendre **trois** sites supplémentaires : la struct `CompanyUpdate`, la liste de colonnes de son `UPDATE` (`repositories/companies.rs:179-187`) et `is_no_op_change` (`:123-133`, énumération à la main).
 
   *Atténuation* : les 8 sites qui construisent `CompanyUpdate { ... }` sont vérifiés **par le compilateur** — l'omission échoue au build, pas en silence. C'est la seule des listes de cette story qui soit protégée ainsi.
-- [ ] **T4 — Rendu PDF** (AC4, AC5) — champs sur `InvoicePdfData`, rendu conditionnel sur le patron de l'IDE, **aux deux sites de construction** (D3).
-- [ ] **T5 — Garde de capacité haute** (AC6) — garde + test de pire cas. C'est la tâche à risque de la story ; la traiter **avant** le frontend.
-- [ ] **T6 — i18n et son tableau JUMEAU** (AC7) — 3 clés × 4 locales, déclarées dans `I18N_KEYS` (`types.rs:202`) **ET dans `DEFAULT_EN` (`:233`), même ordre, même nombre**. ⚠️ Omettre le second ne dégrade pas le rendu : il le fait **paniquer** (indexation positionnelle sans borne-check, `:187-188`).
-- [ ] **T7 — Frontend et les DEUX miroirs de DTO** (AC8) — édition *inline* sur le patron de l'e-mail, texte d'aide, **et les clés i18n du frontend** — libellé, aide et **message de validation**, ces trois-là étant décrites dans **AC7** et non dans T6, qui ne couvre que le couple `I18N_KEYS`/`DEFAULT_EN` du PDF.
+- [x] **T4 — Rendu PDF** (AC4, AC5) — champs sur `InvoicePdfData`, rendu conditionnel sur le patron de l'IDE, **aux deux sites de construction** (D3).
+- [x] **T5 — Garde de capacité haute** (AC6) — garde + test de pire cas. C'est la tâche à risque de la story ; la traiter **avant** le frontend.
+- [x] **T6 — i18n et son tableau JUMEAU** (AC7) — 3 clés × 4 locales, déclarées dans `I18N_KEYS` (`types.rs:202`) **ET dans `DEFAULT_EN` (`:233`), même ordre, même nombre**. ⚠️ Omettre le second ne dégrade pas le rendu : il le fait **paniquer** (indexation positionnelle sans borne-check, `:187-188`).
+- [x] **T7 — Frontend et les DEUX miroirs de DTO** (AC8) — édition *inline* sur le patron de l'e-mail, texte d'aide, **et les clés i18n du frontend** — libellé, aide et **message de validation**, ces trois-là étant décrites dans **AC7** et non dans T6, qui ne couvre que le couple `I18N_KEYS`/`DEFAULT_EN` du PDF.
 
   ⚠️ **`CompanyJson` est un miroir écrit à la main, en DEUX exemplaires, qu'AUCUN compilateur ne vérifie contre `Company`** :
   1. `crates/kesh-api/src/routes/companies.rs:28-47` — la struct Rust ;
@@ -157,8 +157,8 @@ Les trois champs sont du texte libre affiché sur un document. La validation se 
   5. `crates/kesh-api/src/lib.rs` (voisinage de `:266`) — l'enregistrement de la route.
 
   **Omettre le `From` ne casse RIEN à la compilation** : la base stocke, le PDF affiche, et l'écran de réglages affiche `—` **pour toujours**. `npm run check` ne le voit pas davantage — il valide le type TypeScript contre lui-même, jamais contre le backend. C'est la même forme de piège que les six listes SQL de T2, sur la seule couture qu'elles ne couvrent pas.
-- [ ] **T8 — Documentation** (AC9) — manuel + PDF régénéré, CHANGELOG, vérification README **tracée**.
-- [ ] **T9 — Gate complet** (AC10) — état final, exit 0, verdict lu dans le log.
+- [x] **T8 — Documentation** (AC9) — manuel + PDF régénéré, CHANGELOG, vérification README **tracée**.
+- [x] **T9 — Gate complet** (AC10) — état final, exit 0, verdict lu dans le log.
 
 ## Dérogation à la règle de splitting préventif
 
@@ -239,11 +239,81 @@ Le dépôt attend qu'une story démontre que ses tests **discriminent**, pas seu
 
 ### Agent Model Used
 
+Opus 5 (`bmad-dev-story`, 2026-08-06).
+
+### Ce que l'implémentation a appris, et qui corrige la spec
+
+**La spec surestimait D3, et sous-estimait D2.**
+
+- **D3 — « le piège qui coûterait le plus cher » n'existe pas.** Ajouter les trois champs à `InvoicePdfData` rend l'oubli du second site de construction **impossible** : le compilateur exige les deux. Le grep de propagation prescrit était inutile — le type l'avait déjà fait.
+- **D2 portait le vrai risque, et il s'est réalisé.** En écrivant le rendu, une respiration de 2 mm posée **inconditionnellement** après le bloc d'identité aurait décalé le PDF de **toute société sans IDE ni coordonnées** — exactement ce que D2 interdit. Aucun test existant ne l'aurait vu. Corrigé en conditionnant la respiration à ce qu'au moins une ligne d'identité ait été dessinée : IDE seul = 4 + 2 = **6 mm**, l'ancien pas exactement ; rien = **0 mm**.
+
+**Le piège réel était ailleurs et la spec ne le nommait pas** : `update_company_email` reconstruit un `CompanyUpdate` **complet** et `companies::update` est un *full-replace*. Sans report explicite, **modifier son e-mail aurait effacé le téléphone et le site web**. Le compilateur force à ouvrir le fichier ; il ne dit pas quoi y écrire.
+
+### La campagne de mutation : 5 sur 5 — après correction de DEUX tests qui ne mesuraient rien
+
+| Mutation | 1er jet | Après correction |
+|---|---|---|
+| 1 — neutraliser la garde haute | ✅ tuée, rayon 1 | — |
+| 2 — retirer le rendu du téléphone | ❌ **survécue** | ✅ rayon 1 |
+| 3 — respiration inconditionnelle | ❌ **survécue** | ✅ rayon 1 |
+| 4 — retirer les coordonnées du seul avoir | ✅ tuée, rayon 1 | — |
+| 5 — oublier les champs dans l'`impl From` du DTO | ✅ tuée, rayon **2** | — |
+
+**Les deux survivantes sont l'enseignement de cette story.** Les trois tests étaient **verts** ; deux ne prouvaient rien.
+
+- **Mutation 2** — « les trois coordonnées ensemble > aucune » reste vrai avec **deux** champs rendus sur trois. Corrigé par un cas **par champ**, chacun comparé au même témoin.
+- **Mutation 3** — un décalage de 2 mm **déplace le texte sans changer sa taille en octets** : aucun delta ne pouvait l'attraper, et le test comparait deux générations entre elles, ce qui ne mesure que le **déterminisme**. Il fallait mesurer là où 2 mm changent un **verdict** : au seuil de la garde haute. Calibrage — 8 lignes d'adresse émetteur (pour passer sous le plafond `min`, sinon l'écart est masqué) et 15 côté destinataire : `y = 170,5` qui passe contre `168,5` qui refuse.
+
+La **mutation 5** rend `2` et c'est le bon nombre : les deux tests d'aller-retour lisent le DTO. Elle verrouille le `HIGH` de la passe 3 de `validate` — sans ces tests, une valeur **stockée** et **rendue sur le PDF** resterait **invisible** dans l'écran de réglages, tous gates au vert.
+
+### Deux incidents de méthode, consignés
+
+1. **Un timeout de commande a laissé le fichier de production MUTÉ sur disque** (mutation 4, premier essai). Vérifié et restauré immédiatement. **La restauration doit être dans la MÊME commande que la mutation** — jamais dans une commande suivante, qui peut ne jamais s'exécuter. Les mutations suivantes ont été lancées en arrière-plan, restauration incluse.
+2. **La base de gate `kesh_gate2` était en retard d'une migration** (58 contre 59). Attrapé par le **contrôle de cinq secondes** avant de lancer une heure de tests — le même symptôme avait coûté 38 minutes la veille sur `kesh_gate`. `cargo sqlx migrate run` avant le gate.
+
 ### Debug Log References
+
+- Gate backend : `scratchpad/gate-16-3a.log` — base `kesh_gate2`.
+- Gate frontend : `scratchpad/gate-front-16-3a.log`.
 
 ### Completion Notes List
 
+**T9 — GATE COMPLET VERT, verdict LU DANS LE LOG.**
+
+```
+▶ cargo fmt --check     ▶ cargo clippy --workspace --all-targets -- -D warnings
+Summary [3294.280s] 2122 tests run: 2122 passed, 4 skipped
+✅ Gate backend rapide vert.
+```
+
+**exit 0**, DB `kesh_gate2`, 55 minutes, sur l'état final. Aucun ciblage — la story touche `crates/kesh-db/migrations/` et un repository, ce que la § *Test Locally First* interdit de cibler.
+
+**Contrôle de COMPOSITION, pas seulement de total** : 2116 → **2122**, soit **+6**, et 6 est exactement ce que la story ajoute — 3 tests PDF (`each_contact_detail_is_rendered_on_its_own`, `no_identity_line_costs_no_vertical_space`, `overlong_header_errors_instead_of_overprinting_the_lines_table`), 1 sur l'avoir (`credit_note_pdf_carries_the_issuer_contact_details`), 2 d'aller-retour (`contact_details_survive_the_round_trip_to_the_settings_screen`, `empty_contact_details_clear_the_stored_values`). Les six retrouvés `PASS` nommément dans le log.
+
+**Gate frontend vert**, verdict lu dans le log : `check` **0 erreur** sur 4880 fichiers, `lint-i18n-ownership` **0**, unitaires **510/510**, `build` **0**. Les 27 warnings et les 510 tests sont **identiques** à ceux du lot 16-2 : cette story n'introduit ni warning ni test frontend — sa couverture d'interface passe par l'aller-retour HTTP d'AC8, qui est le seul niveau voyant le DTO.
+
+⚠️ **La suite E2E Playwright n'a PAS été exécutée.** Sa baseline est rouge et démontrée telle (39 échecs sur `main`, cf. lot 16-2 et issues #96/#97/#107/#108/#124/#282/#287), et cette story n'ajoute aucun scénario. Elle reste à jouer avant le push, conformément à la § *Test Locally First* — ce Record ne déclare que ce qui a tourné.
+
 ### File List
+
+*(Construite depuis `git diff --name-status main...HEAD`, pas de mémoire — 28 fichiers.)*
+
+**Nouveau**
+
+- `crates/kesh-db/migrations/20260806000001_companies_phone_website.sql`
+
+**Base de données** — `entities/company.rs` (`Company` + `CompanyUpdate`), `repositories/companies.rs` (2 listes de colonnes, `is_no_op_change`, `UPDATE` + binds), `tests/companies_repository.rs` (6 sites), `tests/migrations_upgrade_path.rs` (**double** bump + historique).
+
+**API** — `routes/companies.rs` (route dédiée, `CompanyJson`, report à l'identique dans `update_company_email`), `lib.rs` (enregistrement), `routes/onboarding.rs` (3 listes de colonnes), `routes/credit_notes.rs` (**`build_credit_note_pdf_data` extraite** + module de tests), `routes/invoice_pdf_service.rs` (construction facture + mapping `HeaderOverflow`), `routes/invoice_email.rs` et `exports/metadata.rs` (fixtures), `tests/companies_e2e.rs` (2 tests d'aller-retour).
+
+**PDF** — `kesh-qrbill/src/types.rs` (`InvoicePdfData`, `I18N_KEYS`, `DEFAULT_EN`, `HeaderOverflow`), `src/pdf.rs` (rendu conditionnel, garde haute, 3 tests), `tests/golden_test.rs` (fixture).
+
+**Seed** — `kesh-seed/src/lib.rs` (6ᵉ liste de colonnes + coordonnées de démonstration).
+
+**i18n** — les 4 locales, 10 clés chacune.
+
+**Documentation** — `docs/migrations-idempotence-audit.md` (ligne + compteurs recomptés), `docs/manual/fr/user-manual.tex` + `.pdf` (55 pages), `CHANGELOG.md`, `README.md`.
 
 ## Change Log
 
