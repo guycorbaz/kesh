@@ -172,12 +172,28 @@ fn finalize(doc: PdfDocumentReference) -> Result<Vec<u8>, QrBillError> {
 /// le plancher est `SEP_Y` (le séparateur QR).
 const CONTENT_FLOOR_NO_QR: f32 = 15.0;
 
-/// Largeur utile d'une ligne du bloc identité de l'émetteur, en caractères.
+/// Largeur utile d'une ligne du bloc identité de l'émetteur, **en caractères**.
 ///
-/// Le bloc de droite commence à `meta_x = 120.0` et la marge gauche est à
-/// `20.0` : 100 mm, soit ~50 caractères en Helvetica 9 pt — calibré sur le
-/// patron du fichier (45 caractères pour les 90 mm de la colonne description).
-const IDENTITY_MAX_CHARS: usize = 50;
+/// Le bloc de droite commence à `meta_x = 120.0`, la marge gauche est à `20.0` :
+/// **100 mm** disponibles.
+///
+/// ⚠️ **Helvetica est proportionnelle — ce compte est une approximation, et le
+/// calibrage vise le PIRE CAS RAISONNABLE.** Largeurs AFM Adobe, à 9 pt :
+///
+/// | Contenu | 50 car. | 46 car. |
+/// |---|---|---|
+/// | minuscules (moy. 490/1000 em) | 77,8 mm | 71,6 mm |
+/// | **capitales** (moy. 677/1000 em) | **107,5 mm — déborde** | **98,9 mm** |
+///
+/// D'où 46 et non 50 : une raison sociale ou une URL en capitales dépassait
+/// encore sur le bloc de droite **après** troncature. *(Revue de code, passe 3.)*
+///
+/// ⚠️ **Ce que cette borne ne couvre PAS** : une chaîne de 46 `W` (944/1000 em)
+/// occuperait 124 mm. Il faudrait mesurer la largeur réelle pour le garantir,
+/// ce que `printpdf` n'expose pas pour les polices intégrées. Le cas est jugé
+/// hors de portée d'un champ de coordonnées ; le documenter vaut mieux que
+/// laisser croire à une garantie exacte.
+const IDENTITY_MAX_CHARS: usize = 46;
 
 /// Dessine la section haute (en-tête + lignes + récap TVA + total).
 ///
@@ -223,7 +239,12 @@ fn draw_invoice_section(
         ("invoice-pdf-email", &inv.creditor_email),
         ("invoice-pdf-website", &inv.creditor_website),
     ] {
-        if let Some(v) = value {
+        // ⚠️ Tester la VACUITÉ, pas la nullité : la normalisation qui transforme
+        // `""` en `None` vit dans la route API. Une chaîne vide arrivée
+        // autrement — restauration d'une sauvegarde produite ailleurs,
+        // correction SQL directe — imprimerait « Tél.: » suivi de rien, en
+        // consommant 4 mm du budget de la garde. *(Passe 3 de revue.)*
+        if let Some(v) = value.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
             // ⚠️ Troncature de LARGEUR — la garde de capacité plus bas ne
             // surveille que l'ordonnée `y`, donc l'empilement VERTICAL. Elle ne
             // voit rien d'une ligne unique trop longue.
@@ -344,7 +365,14 @@ fn draw_invoice_section(
     // il empêche le destinataire de remonter, jamais de descendre.
     //
     // Refuser proprement plutôt que superposer, comme le fait déjà la garde
-    // basse. Marge de 2 mm : sous cette valeur les glyphes se touchent.
+    // basse.
+    //
+    // ⚠️ Les `+ 2.0` ne sont PAS l'écart réel entre la dernière ligne et le
+    // tableau : au moment du test, `y` est la position LIBRE suivante, déjà 4 mm
+    // sous la ligne de base du dernier texte dessiné. Au seuil exact, cette
+    // ligne est donc à `ty + 6`, pas `ty + 2`. Le garde est plus conservateur
+    // qu'il n'y paraît — qui recalibre sur ce chiffre se trompe d'un facteur
+    // trois. *(Précision apportée en passe 3 de revue.)*
     if y < ty + 2.0 {
         return Err(QrBillError::HeaderOverflow(y));
     }

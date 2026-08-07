@@ -205,7 +205,6 @@ pub async fn create_credit_note(
     ))
 }
 
-/// `GET /api/v1/credit-notes/{id}/pdf` — PDF « Avoir » (sans QR Bill).
 /// Construit les données PDF d'un **avoir** — extraite du handler (Story 16-3a,
 /// #151) pour être **testable sans base de données**, sur le patron de
 /// `build_qrbill_inputs` côté facture.
@@ -253,6 +252,7 @@ fn build_credit_note_pdf_data(
     }
 }
 
+/// `GET /api/v1/credit-notes/{id}/pdf` — PDF « Avoir » (sans QR Bill).
 pub async fn get_credit_note_pdf(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,

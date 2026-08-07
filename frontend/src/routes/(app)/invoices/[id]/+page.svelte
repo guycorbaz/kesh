@@ -552,6 +552,9 @@
 		INVOICE_NOT_VALIDATED: 'invoice-pdf-error-invoice-not-validated',
 		INVOICE_NOT_PDF_READY: 'invoice-pdf-error-invoice-not-pdf-ready',
 		INVOICE_TOO_MANY_LINES_FOR_PDF: 'error-invoice-too-many-lines-for-pdf',
+		// Story 16-3a (#151) — sans cette entrée, le message retombe sur le
+		// générique et l'utilisateur ne sait pas QUOI raccourcir.
+		INVOICE_PDF_HEADER_OVERFLOW: 'error-invoice-pdf-header-overflow',
 		PDF_GENERATION_FAILED: 'invoice-pdf-error-pdf-generation-failed',
 		NOT_FOUND: 'invoice-pdf-error-not-found',
 	};

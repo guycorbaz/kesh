@@ -46,3 +46,23 @@ test-results/
 
 # Cache vitest créé si une commande npm tourne depuis la racine (cwd errant)
 /node_modules/
+
+# Masques de bind-mount du bac à sable Claude Code / MCP — jamais versionnés.
+#
+# ⚠️ Ces entrées apparaissent dans l'arbre comme des FICHIERS VIDES : ce sont des
+# masques du bac à sable, pas du contenu de projet. Sans cette règle, un
+# `git add` de répertoire les emporte — c'est arrivé en passe 1 de la revue de
+# 16-3a, où 15 d'entre eux ont été commités. Mergés, ils remplaceraient des
+# RÉPERTOIRES attendus par des fichiers de 0 octet sur tout clone frais, et un
+# `settings.json` vide écraserait la configuration.
+#
+# ⚠️ NE PAS écrire `.claude/` nu : sans slash de tête, le motif matche AUSSI la
+# RACINE, où `.claude/skills/` porte les 118 skills BMAD du projet — 1714
+# fichiers légitimement versionnés. Une nouvelle skill installée y deviendrait
+# invisible à `git add`, sans que rien ne l'explique. C'est la régression qu'a
+# introduite le premier correctif, rattrapée en passe 4 de revue : on ne vise
+# donc que les sous-arbres réellement pollués.
+docs/.claude/
+docs/.mcp.json
+docs/manual/.claude/
+docs/manual/.mcp.json

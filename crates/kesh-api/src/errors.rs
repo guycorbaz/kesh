@@ -325,6 +325,19 @@ pub enum AppError {
     #[error("Facture trop de lignes pour PDF : {0}")]
     InvoiceTooManyLinesForPdf(usize),
 
+    /// En-tête du PDF (émetteur + destinataire) débordant sur le tableau des
+    /// lignes — Story 16-3a (#151).
+    ///
+    /// ⚠️ **Variante DÉDIÉE, et non `Validation`.** L'écran de facture résout le
+    /// message par une **liste blanche fermée de codes** (`PDF_ERROR_KEYS`) :
+    /// un `VALIDATION_ERROR` n'y figure pas et retombe sur « Erreur lors du
+    /// téléchargement du PDF », **jetant le message soigné**. C'est le patron
+    /// d'`InvoiceTooManyLinesForPdf` ci-dessus qu'il faut suivre — sans quoi les
+    /// quatre traductions sont mortes sur ce chemin, alors que le manuel promet
+    /// un message explicite. *(Revue de code, passe 3.)*
+    #[error("En-tête du PDF trop haut pour la page")]
+    InvoicePdfHeaderOverflow,
+
     /// Échec interne de la génération PDF (bug crate, I/O). Le détail est
     /// loggé mais jamais exposé au client (500).
     #[error("Échec génération PDF : {0}")]
@@ -1345,6 +1358,15 @@ impl IntoResponse for AppError {
                     "INVOICE_TOO_MANY_LINES_FOR_PDF",
                     &msg,
                 )
+            }
+            AppError::InvoicePdfHeaderOverflow => {
+                let msg = t(
+                    "error-invoice-pdf-header-overflow",
+                    "L'en-tête de la facture ne tient pas sur la page. Raccourcissez le \
+                     téléphone, l'e-mail ou le site web dans les réglages, ou l'adresse \
+                     du destinataire si elle compte beaucoup de lignes.",
+                );
+                build_response(StatusCode::BAD_REQUEST, "INVOICE_PDF_HEADER_OVERFLOW", &msg)
             }
             // Story 5.4 — overflow export CSV.
             AppError::ResultTooLarge(msg) => {

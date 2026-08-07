@@ -207,6 +207,41 @@ Les trois champs sont du texte libre affiché sur un document. La validation se 
 
 - **Aucun test frontend pour l'édition inline** — `blind`, **LOW**. Le flux (édition / annulation / conflit de verrou / visibilité Admin) n'est exercé par aucun test Vitest ni E2E. **Non retenu** : la story ne l'exigeait pas, et AC8 couvre le chemin qui compte — l'aller-retour HTTP, seul niveau qui voit le DTO. À verser à un lot « couverture frontend » (cf. KF #126, déjà ouverte sur ce sujet).
 
+---
+
+`bmad-code-review` **passe 2** — 2026-08-07, **Haiku 4.5** (rotation Opus → Sonnet → Haiku), trois lentilles, diff aplati. **0 HIGH, 3 MEDIUM, 3 LOW.** Sévérité maximale en **décroissance** (HIGH → MEDIUM) : le garde-fou de splitting n'est pas déclenché. **Boucle NON convergée — passe 3 due.**
+
+**Deux lentilles sur trois rendent 0 finding au-dessus de LOW** : l'Acceptance Auditor après avoir vérifié une à une les six corrections de la passe 1 et recompté les invariants ; le Blind Hunter après contrôle des zones patchées.
+
+**Patches**
+
+- [x] [Review][Patch] **(CORRIGÉ — test `each_route_preserves_the_fields_it_does_not_touch`, mutation 7 : rayon 1)** **Le full-replace n'était testé dans AUCUNE des deux directions** — `edge`, **MEDIUM**. Les deux routes `PUT /companies/current/*` reportent les champs qu'elles ne modifient pas, sinon `companies::update` les efface. Le Dev Agent Record **nommait ce piège** — « modifier son e-mail aurait effacé le téléphone » — et le code le fermait, mais **aucun test ne le gardait**. Si le report disparaissait, éditer son téléphone effacerait l'adresse de réponse des factures, en `200`, avec bump de `version` et une entrée d'audit normale. Le test ferme les deux sens.
+- [x] [Review][Patch] **(CORRIGÉ — test `overlong_contact_details_are_rejected_by_the_api`)** **La borne de longueur n'était vérifiée que par le `maxlength` du navigateur** — `edge`, **MEDIUM**. Aucun test n'exerçait le refus côté API. Un appel direct ignore le `maxlength`, et MariaDB tronquerait en silence.
+
+**Reclassé, non retenu**
+
+- **Le budget de troncature est partagé entre le libellé i18n et la valeur** — `edge`, **MEDIUM → LOW, non retenu**. Le libellé fait 3 à 6 caractères selon la locale et le champ (`Web`, `Tél.`, `E-mail`, `Phone`), donc la valeur affichée varie d'autant. **Ce n'est pas un défaut, c'est l'invariant** : ce qui doit tenir dans les ~100 mm est la **ligne rendue**, pas la valeur seule. Un libellé plus long laisse mécaniquement moins de place — le contraire serait le bug. Corriger en réservant un budget fixe à la valeur **casserait** la garantie de largeur.
+- **La clé de conflit optimiste est partagée avec le formulaire e-mail** — `blind`, **LOW**. `settings-company-email-conflict` est réutilisée par le formulaire des coordonnées. Le message est exact et l'utilisateur ne voit aucune incohérence ; créer une clé jumelle au texte identique ajouterait deux traductions par locale sans rien apporter.
+- **Aucun test frontend de l'édition inline** — `edge`, **LOW**, déjà consigné en passe 1. Couvert au niveau qui compte par l'aller-retour HTTP d'AC8. À verser au lot « couverture frontend » (**KF #126**).
+
+---
+
+`bmad-code-review` **passe 3** — 2026-08-07, **Opus 5** (rotation Sonnet → Haiku → Opus complète), trois lentilles, diff aplati. **1 HIGH, 4 MEDIUM, 5 LOW.** **Boucle NON convergée — passe 4 due.**
+
+**Le HIGH est le défaut le plus subtil de la story, et rien ne pouvait le voir sauf une lentille qui suit le chemin jusqu'à l'écran.**
+
+- [x] [Review][Patch] **(CORRIGÉ — variant `AppError::InvoicePdfHeaderOverflow` dédié, code `INVOICE_PDF_HEADER_OVERFLOW` enregistré dans la liste blanche du frontend)** **Le message de refus n'atteignait JAMAIS l'utilisateur sur l'écran facture** — `edge`, **HIGH**. `HeaderOverflow` était mappé sur `AppError::Validation`, dont le code `VALIDATION_ERROR` **ne figure pas** dans `PDF_ERROR_KEYS` (`invoices/[id]/+page.svelte:551-557`) : la clé retombait sur `invoice-pdf-error-generic` — « Erreur lors du téléchargement du PDF. » — et `i18nMsg` privilégiant la valeur FTL, le message soigné était **jeté**. Les **quatre traductions étaient mortes sur ce chemin**, pendant que le manuel **et** le CHANGELOG promettaient « un message explicite ». Asymétrie révélatrice : l'écran **avoir** affiche `err.message` et recevait donc le bon message — la facture non. Le patron correct était à trois lignes : `TooManyLines` a son variant dédié et son code propre.
+- [x] [Review][Patch] **(CORRIGÉ — `git rm --cached` des 15 chemins + règles `.gitignore`)** **Quinze fichiers VIDES d'environnement avaient été commités** — `blind+auditor`, **MEDIUM**. `docs/.claude/*`, `docs/manual/.claude/*`, `.mcp.json` — les masques de bind-mount du bac à sable, entrés par un `git add -- docs/` trop large **au commit de la passe 1**. Mergés, `docs/manual/.claude/skills` et `hooks` deviendraient des **fichiers de 0 octet là où un répertoire est attendu**, et un `settings.json` vide écraserait la configuration sur tout clone frais. ⚠️ Le `.gitignore` ne portait **aucune** règle `.claude` — rien n'empêchait la récidive.
+- [x] [Review][Patch] **(CORRIGÉ — 50 → 46, calculé sur les métriques AFM Helvetica)** **`IDENTITY_MAX_CHARS` compte des CARACTÈRES, pas une largeur — la troncature elle-même débordait** — `edge`, **MEDIUM**. Helvetica est proportionnelle : à 9 pt, 50 caractères font 77,8 mm en minuscules mais **107,5 mm en capitales**, soit 7 mm **au-delà** du bloc de droite — après troncature. Le calibrage d'origine (« 2 mm par caractère ») était une **fausse précision**. 46 tient les capitales moyennes (98,9 mm). ⚠️ Ce que la borne ne couvre pas — 46 `W` feraient 124 mm — est désormais **écrit**, plutôt que laissé croire.
+- [x] [Review][Patch] **(CORRIGÉ — deux tests Vitest sur `settings.api.test.ts`)** **Aucun test ne couvrait le chemin API du frontend** — `edge`, **MEDIUM**. Le seul lien entre l'écran et la route est un littéral de chemin. Une faute de frappe, un renommage côté Rust : `npm run check` valide le TypeScript contre lui-même, les tests Rust construisent leur propre URL — **aucun gate ne le verrait**, et le défaut n'apparaîtrait qu'en 404 sur « Enregistrer ». Le jumeau e-mail avait ce test ; celui-ci ne l'avait pas.
+- [x] [Review][Patch] **(ÉPINGLÉ par `an_omitted_field_clears_it_just_like_null` + doc-comment)** **Une clé ABSENTE du payload efface la valeur, comme `null`** — `edge+blind`, **MEDIUM**. `#[serde(default)]` rend l'absence indistinguable de `null`, et l'écriture est un full-replace : n'envoyer qu'un des deux champs efface l'autre, en `200`. Le frontend envoie toujours les deux, ce qui borne le risque aux clients API — mais le doc-comment ne mentionnait que « `null`/vide ». Comportement **hérité du patron e-mail**, donc épinglé et documenté plutôt que changé.
+- [x] [Review][Patch] **(CORRIGÉ)** **Cinq LOW** — l'invariant `I18N_KEYS.len() == DEFAULT_EN.len()`, documenté comme fatal, n'était tenu par **rien** : désormais une `const _: () = assert!(…)` qui échoue au `cargo build` et non au premier PDF. Le doc-comment de la route de l'avoir avait été capté par le helper extrait en passe 1 — rendu à son handler. Le commentaire « marge de 2 mm » décrivait mal la géométrie (l'écart réel au seuil est de 6 mm, `y` étant la position libre suivante). Une chaîne vide arrivée par un autre chemin qu'à la route produisait une **ligne orpheline** consommant 4 mm — le rendu teste désormais la vacuité, pas la nullité.
+
+**Consigné, non retenu**
+
+- **Le nom et l'adresse de l'émetteur ne sont pas tronqués non plus** — `auditor`, **LOW**. Même axe que le HIGH de la passe 1, mais sur des champs **antérieurs à cette story** : aucune régression introduite, et le manuel ne parle que des coordonnées. À verser à une issue distincte si l'on veut fermer l'axe entièrement.
+- **Les caractères hors Windows-1252 sont supprimés en silence** par `printpdf` sur les polices intégrées — `edge`, **LOW**. Exposition bornée : accents, apostrophes typographiques et le `…` de la troncature sont tous dans cp1252. Effet de bord favorable — la troncature compte **avant** la suppression, donc elle reste conservatrice.
+
 ## Dev Notes
 
 ### Ce que cette story ne doit PAS faire
@@ -298,21 +333,30 @@ La **mutation 5** rend `2` et c'est le bon nombre : les deux tests d'aller-retou
 
 ### Completion Notes List
 
-**T9 — GATE COMPLET VERT, verdict LU DANS LE LOG.**
+**T9 — GATE.** ⚠️ **Cette section a été RECTIFIÉE en passe 4 de revue** : elle affirmait encore les chiffres du gate initial (`2122`, « +6 tests », « aucun test frontend ») alors que trois passes de revue avaient depuis ajouté des tests. C'est exactement ce que la § *Test Locally First* interdit — un record que les passes suivantes lisent pour argent comptant. Le symptôme est celui de la § *Propagation post-patch* : chaque passe a corrigé le site signalé sans regreper le récapitulatif de composition qu'elle rendait faux.
 
-```
-▶ cargo fmt --check     ▶ cargo clippy --workspace --all-targets -- -D warnings
-Summary [3294.280s] 2122 tests run: 2122 passed, 4 skipped
-✅ Gate backend rapide vert.
-```
+**Gate initial (T9, avant la boucle de revue)** : `2122 tests run: 2122 passed`, 4 skipped, exit 0, DB `kesh_gate2`.
 
-**exit 0**, DB `kesh_gate2`, 55 minutes, sur l'état final. Aucun ciblage — la story touche `crates/kesh-db/migrations/` et un repository, ce que la § *Test Locally First* interdit de cibler.
+**Évolution au fil de la boucle**, chaque chiffre lu dans son log :
 
-**Contrôle de COMPOSITION, pas seulement de total** : 2116 → **2122**, soit **+6**, et 6 est exactement ce que la story ajoute — 3 tests PDF (`each_contact_detail_is_rendered_on_its_own`, `no_identity_line_costs_no_vertical_space`, `overlong_header_errors_instead_of_overprinting_the_lines_table`), 1 sur l'avoir (`credit_note_pdf_carries_the_issuer_contact_details`), 2 d'aller-retour (`contact_details_survive_the_round_trip_to_the_settings_screen`, `empty_contact_details_clear_the_stored_values`). Les six retrouvés `PASS` nommément dans le log.
+| Étape | Total | Delta |
+|---|---|---|
+| Gate T9 initial | **2122** | +6 (les tests de l'implémentation) |
+| Après passe 1 | **2123** | +1 — test de troncature |
+| Après passe 2 | **2125** | +2 — full-replace bidirectionnel, borne API |
+| Après passe 3 | **2126** | +1 — clé omise = effacement |
 
-**Gate frontend vert**, verdict lu dans le log : `check` **0 erreur** sur 4880 fichiers, `lint-i18n-ownership` **0**, unitaires **510/510**, `build` **0**. Les 27 warnings et les 510 tests sont **identiques** à ceux du lot 16-2 : cette story n'introduit ni warning ni test frontend — sa couverture d'interface passe par l'aller-retour HTTP d'AC8, qui est le seul niveau voyant le DTO.
+**Composition finale, recomptée depuis la source** (`git diff main | grep -cE "^\+\s*#\[(sqlx::)?test"`) : **10 tests Rust**, non 6 —
 
-⚠️ **La suite E2E Playwright n'a PAS été exécutée.** Sa baseline est rouge et démontrée telle (39 échecs sur `main`, cf. lot 16-2 et issues #96/#97/#107/#108/#124/#282/#287), et cette story n'ajoute aucun scénario. Elle reste à jouer avant le push, conformément à la § *Test Locally First* — ce Record ne déclare que ce qui a tourné.
+- `kesh-qrbill/src/pdf.rs` : **4** (chaque coordonnée rendue isolément, aucune ligne d'identité = aucun espace, en-tête débordant refusé, valeur trop longue tronquée) ;
+- `kesh-api/src/routes/credit_notes.rs` : **1** (l'avoir porte les coordonnées) ;
+- `kesh-api/tests/companies_e2e.rs` : **5** (aller-retour, effacement, full-replace bidirectionnel, borne de longueur, clé omise).
+
+Plus **2 tests frontend** (`settings.api.test.ts`) — le Record affirmait « cette story n'introduit ni warning ni test frontend », ce qui est **faux depuis la passe 3**.
+
+**Gate frontend** : `check` 0 erreur sur 4880 fichiers, `lint-i18n-ownership` PASS, `build` 0, unitaires **512/512** (et non 510 : les 2 tests du client API s'y ajoutent).
+
+⚠️ **La suite E2E Playwright n'a PAS été exécutée.** Sa baseline est rouge et démontrée telle, et cette story n'ajoute aucun scénario. Elle reste à jouer avant le push. Ce Record ne déclare que ce qui a tourné.
 
 ### File List
 
@@ -324,13 +368,13 @@ Summary [3294.280s] 2122 tests run: 2122 passed, 4 skipped
 
 **Base de données** — `entities/company.rs` (`Company` + `CompanyUpdate`), `repositories/companies.rs` (2 listes de colonnes, `is_no_op_change`, `UPDATE` + binds), `tests/companies_repository.rs` (6 sites), `tests/migrations_upgrade_path.rs` (**double** bump + historique).
 
-**API** — `routes/companies.rs` (route dédiée, `CompanyJson`, report à l'identique dans `update_company_email`), `lib.rs` (enregistrement), `routes/onboarding.rs` (3 listes de colonnes), `routes/credit_notes.rs` (**`build_credit_note_pdf_data` extraite** + module de tests), `routes/invoice_pdf_service.rs` (construction facture + mapping `HeaderOverflow`), `routes/invoice_email.rs` et `exports/metadata.rs` (fixtures), `tests/companies_e2e.rs` (2 tests d'aller-retour).
+**API** — `routes/companies.rs` (route dédiée, `CompanyJson`, report à l'identique dans `update_company_email`), `lib.rs` (enregistrement), `routes/onboarding.rs` (3 listes de colonnes), `routes/credit_notes.rs` (**`build_credit_note_pdf_data` extraite** + module de tests), `routes/invoice_pdf_service.rs` (construction facture + mapping `HeaderOverflow`), `routes/invoice_email.rs` et `exports/metadata.rs` (fixtures), `tests/companies_e2e.rs` (**5** tests). Plus, ajoutés en revue : `errors.rs` (variant `InvoicePdfHeaderOverflow`), et côté frontend `settings.api.test.ts` (**2** tests) et `invoices/[id]/+page.svelte` (code d'erreur dans la liste blanche).
 
-**PDF** — `kesh-qrbill/src/types.rs` (`InvoicePdfData`, `I18N_KEYS`, `DEFAULT_EN`, `HeaderOverflow`), `src/pdf.rs` (rendu conditionnel, garde haute, 3 tests), `tests/golden_test.rs` (fixture).
+**PDF** — `kesh-qrbill/src/types.rs` (`InvoicePdfData`, `I18N_KEYS`, `DEFAULT_EN`, `HeaderOverflow`), `src/pdf.rs` (rendu conditionnel, troncature de largeur, garde haute, **4** tests), `tests/golden_test.rs` (fixture).
 
 **Seed** — `kesh-seed/src/lib.rs` (6ᵉ liste de colonnes + coordonnées de démonstration).
 
-**i18n** — les 4 locales, 10 clés chacune.
+**i18n** — les 4 locales, **11** clés chacune (recomptées : les 3 du PDF, les 4 des réglages, le message de succès, et les 3 messages d'erreur).
 
 **Documentation** — `docs/migrations-idempotence-audit.md` (ligne + compteurs recomptés), `docs/manual/fr/user-manual.tex` + `.pdf` (55 pages), `CHANGELOG.md`, `README.md`.
 

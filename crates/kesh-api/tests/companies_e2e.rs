@@ -255,3 +255,211 @@ async fn empty_contact_details_clear_the_stored_values(pool: MySqlPool) {
          ni stocker une chaîne vide : la ligne doit disparaître du PDF"
     );
 }
+
+/// **Le full-replace, dans les DEUX directions** — revue de code, passe 2.
+///
+/// ⚠️ `companies::update` remplace **toutes** les colonnes. Les deux routes
+/// `PUT /companies/current/*` ne modifient qu'un sous-ensemble de champs et
+/// **reportent le reste à l'identique** ; si l'un de ces reports disparaissait,
+/// la valeur non visée serait **effacée en silence**, en `200`, avec bump de
+/// `version` et une entrée d'audit d'apparence normale.
+///
+/// Le Dev Agent Record nommait ce piège sans le tester. Ce test le ferme dans
+/// les deux sens : éditer les coordonnées ne doit pas perdre l'e-mail, et
+/// éditer l'e-mail ne doit pas perdre les coordonnées.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn each_route_preserves_the_fields_it_does_not_touch(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+
+    let read = |token: String| {
+        let app = &app;
+        async move {
+            app.client
+                .get(app.url("/api/v1/companies/current"))
+                .header("Authorization", format!("Bearer {token}"))
+                .send()
+                .await
+                .unwrap()
+                .json::<serde_json::Value>()
+                .await
+                .unwrap()["company"]
+                .clone()
+        }
+    };
+
+    // 1. Poser un e-mail par sa route dédiée.
+    let v0 = read(token.clone()).await["version"].as_i64().unwrap();
+    let after_email: serde_json::Value = app
+        .client
+        .put(app.url("/api/v1/companies/current/email"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&json!({ "email": "reply@demo.ch", "version": v0 }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(after_email["email"], "reply@demo.ch", "montage");
+
+    // 2. Éditer les COORDONNÉES — l'e-mail ne doit pas bouger.
+    let after_contact: serde_json::Value = app
+        .client
+        .put(app.url("/api/v1/companies/current/contact-details"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&json!({
+            "phone": "+41 21 123 45 67",
+            "website": "https://demo.ch",
+            "version": after_email["version"].as_i64().unwrap(),
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        after_contact["email"], "reply@demo.ch",
+        "éditer les coordonnées ne doit PAS effacer l'e-mail — si cette \
+         assertion tombe, le report `email: company.email.clone()` a disparu \
+         de `update_company_contact_details` et l'adresse de réponse des \
+         factures est perdue en silence"
+    );
+
+    // 3. Rééditer l'E-MAIL — les coordonnées ne doivent pas bouger.
+    let after_email2: serde_json::Value = app
+        .client
+        .put(app.url("/api/v1/companies/current/email"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&json!({
+            "email": "autre@demo.ch",
+            "version": after_contact["version"].as_i64().unwrap(),
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        after_email2["phone"], "+41 21 123 45 67",
+        "éditer l'e-mail ne doit PAS effacer le téléphone — c'est le piège que \
+         le Dev Agent Record nommait sans le tester"
+    );
+    assert_eq!(
+        after_email2["website"], "https://demo.ch",
+        "ni le site web, pour la même raison"
+    );
+}
+
+/// La borne de longueur est **refusée par le backend**, pas seulement par le
+/// `maxlength` du navigateur (revue de code, passe 2).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn overlong_contact_details_are_rejected_by_the_api(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+
+    let v0 = app
+        .client
+        .get(app.url("/api/v1/companies/current"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap()
+        .json::<serde_json::Value>()
+        .await
+        .unwrap()["company"]["version"]
+        .as_i64()
+        .unwrap();
+
+    for (champ, valeur) in [("phone", "0".repeat(51)), ("website", "x".repeat(256))] {
+        let resp = app
+            .client
+            .put(app.url("/api/v1/companies/current/contact-details"))
+            .header("Authorization", format!("Bearer {token}"))
+            .json(&json!({ champ: valeur, "version": v0 }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            400,
+            "un `{champ}` d'un caractère au-delà de la borne DOIT être refusé \
+             par l'API — le `maxlength` du navigateur ne protège pas un appel \
+             direct, et MariaDB tronquerait en silence"
+        );
+    }
+}
+
+/// **Un champ OMIS du payload efface la valeur** — comportement épinglé, pas
+/// défendu (revue de code, passe 3).
+///
+/// ⚠️ `#[serde(default)]` rend l'**absence** d'une clé indistinguable de `null`,
+/// et `companies::update` est un full-replace : envoyer `{"phone": …, "version": …}`
+/// **sans** `website` efface le site web, en `200`, avec bump de `version`.
+///
+/// Le frontend envoie toujours les deux champs, ce qui borne le risque aux
+/// clients API — mais le doc-comment du DTO ne disait que « `null`/vide =
+/// effacer », jamais « absent aussi ». Ce test rend le comportement visible :
+/// s'il rougit, la sémantique a changé et le CHANGELOG doit suivre.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn an_omitted_field_clears_it_just_like_null(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+
+    let v0 = app
+        .client
+        .get(app.url("/api/v1/companies/current"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap()
+        .json::<serde_json::Value>()
+        .await
+        .unwrap()["company"]["version"]
+        .as_i64()
+        .unwrap();
+
+    // Poser les DEUX champs.
+    let posed: serde_json::Value = app
+        .client
+        .put(app.url("/api/v1/companies/current/contact-details"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&json!({ "phone": "+41 21 123 45 67", "website": "https://demo.ch", "version": v0 }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(posed["website"], "https://demo.ch", "montage");
+
+    // N'envoyer QUE `phone` — `website` est ABSENT, pas à `null`.
+    let after: serde_json::Value = app
+        .client
+        .put(app.url("/api/v1/companies/current/contact-details"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(
+            &json!({ "phone": "+41 21 999 88 77", "version": posed["version"].as_i64().unwrap() }),
+        )
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    assert!(
+        after["website"].is_null(),
+        "une clé ABSENTE efface la valeur, exactement comme `null` — c'est le \
+         full-replace hérité du patron e-mail. Si cette assertion rougit, la \
+         sémantique a changé : mettre à jour le doc-comment du DTO et le CHANGELOG."
+    );
+}

@@ -243,6 +243,17 @@ pub const I18N_KEYS: &[&str] = &[
     "invoice-pdf-website",
 ];
 
+/// ⚠️ Invariant tenu **à la compilation** : `I18N_KEYS` et `DEFAULT_EN` doivent
+/// avoir exactement la même longueur. `get()` résout son repli par
+/// `DEFAULT_EN[idx]` **sans borne-check** — une divergence ferait paniquer le
+/// rendu, en debug comme en release. Le commentaire l'annonçait sans le tenir ;
+/// cette assertion échoue désormais au `cargo build`, pas au premier PDF.
+/// *(Revue de code, passe 3.)*
+const _: () = assert!(
+    I18N_KEYS.len() == DEFAULT_EN.len(),
+    "I18N_KEYS et DEFAULT_EN doivent avoir la même longueur"
+);
+
 /// English fallback for each key (same ordering as `I18N_KEYS`).
 const DEFAULT_EN: &[&str] = &[
     "Invoice",

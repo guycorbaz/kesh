@@ -146,9 +146,14 @@ const MAX_WEBSITE_LEN: usize = 255;
 #[serde(rename_all = "camelCase")]
 pub struct UpdateCompanyContactDetailsRequest {
     /// Téléphone de contact. `null`/vide = effacer (ligne omise du PDF).
+    ///
+    /// ⚠️ **Une clé ABSENTE efface aussi** : `#[serde(default)]` la rend
+    /// indistinguable de `null`, et `companies::update` est un full-replace.
+    /// Un client qui n'envoie qu'un des deux champs efface l'autre, en `200`.
+    /// Épinglé par `an_omitted_field_clears_it_just_like_null`.
     #[serde(default)]
     pub phone: Option<String>,
-    /// Site web. `null`/vide = effacer.
+    /// Site web. `null`/vide = effacer — et une clé absente aussi, cf. `phone`.
     #[serde(default)]
     pub website: Option<String>,
     pub version: i32,

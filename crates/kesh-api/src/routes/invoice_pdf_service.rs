@@ -347,18 +347,10 @@ pub(crate) fn map_qrbill_error(err: QrBillError) -> AppError {
         // Story 16-3a (#151) — en-tête débordant sur le tableau. Actionnable par
         // l'utilisateur, donc 400 et non 500 — même raisonnement que TooManyLines.
         //
-        // ⚠️ Le message ne peut PAS accuser les seules coordonnées de la société :
-        // la garde réagit à une ordonnée qui cumule l'adresse de l'ÉMETTEUR, ses
-        // coordonnées ET l'adresse du DESTINATAIRE. Une adresse client de vingt
-        // lignes la déclenche à elle seule, sans qu'aucun champ des réglages ne
-        // soit en cause — envoyer l'utilisateur les raccourcir serait le lancer
-        // sur une fausse piste. (Revue de code, passe 1.)
-        QrBillError::HeaderOverflow(_) => AppError::Validation(crate::errors::t(
-            "error-invoice-pdf-header-overflow",
-            "L'en-tête de la facture ne tient pas sur la page. Raccourcissez le \
-             téléphone, l'e-mail ou le site web dans les réglages, ou l'adresse \
-             du destinataire si elle compte beaucoup de lignes.",
-        )),
+        // ⚠️ Variante DÉDIÉE et non `Validation` : l'écran de facture résout le
+        // message par une liste blanche de codes, où `VALIDATION_ERROR` ne figure
+        // pas — le message y serait remplacé par un générique. (Passe 3 de revue.)
+        QrBillError::HeaderOverflow(_) => AppError::InvoicePdfHeaderOverflow,
         // Émis uniquement par le parseur SPC (Story 12-5, chemin import) — n'arrive
         // pas dans la génération PDF. Mappé comme une erreur de validation par défense.
         QrBillError::InvalidPayload(msg) => AppError::InvoiceNotPdfReady(msg),
