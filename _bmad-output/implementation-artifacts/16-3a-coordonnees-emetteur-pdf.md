@@ -242,6 +242,19 @@ Les trois champs sont du texte libre affiché sur un document. La validation se 
 - **Le nom et l'adresse de l'émetteur ne sont pas tronqués non plus** — `auditor`, **LOW**. Même axe que le HIGH de la passe 1, mais sur des champs **antérieurs à cette story** : aucune régression introduite, et le manuel ne parle que des coordonnées. À verser à une issue distincte si l'on veut fermer l'axe entièrement.
 - **Les caractères hors Windows-1252 sont supprimés en silence** par `printpdf` sur les polices intégrées — `edge`, **LOW**. Exposition bornée : accents, apostrophes typographiques et le `…` de la troncature sont tous dans cp1252. Effet de bord favorable — la troncature compte **avant** la suppression, donc elle reste conservatrice.
 
+---
+
+`bmad-code-review` **passe 5** — 2026-08-07, **Haiku 4.5**, trois lentilles, diff aplati. **0 HIGH, 2 MEDIUM, 4 LOW** — dont **un MEDIUM reclassé** et un seul retenu. **Sévérité maximale en DÉCROISSANCE** (HIGH → MEDIUM). Le **Blind Hunter rend 0 finding**.
+
+**Patches**
+
+- [x] [Review][Patch] **(CORRIGÉ — la borne est désormais testée des DEUX CÔTÉS)** **50 et 255 caractères n'étaient testés qu'au-delà (51, 256), jamais à la valeur exacte** — `edge+auditor`, **LOW relevé DEUX fois** (passes 4 et 5). Un `>` changé en `>=` refuserait des valeurs parfaitement légales avec un message « trop long » **faux**, et la suite resterait verte. ⚠️ **Le test a échoué à sa première exécution — et il avait raison** : mon montage réutilisait la même `version` d'une itération à l'autre, alors qu'une acceptation la bumpe ; le second tour rendait `409`, que j'aurais pris pour un rejet de longueur. La version est relue à chaque tour.
+- [x] [Review][Patch] **(CORRIGÉ — recomptée depuis la source : 33 fichiers)** **La File List sous-estimait de 9 fichiers** — `auditor`, **MEDIUM**. Elle annonçait 28 et ignorait tout ce que les passes de revue avaient ajouté : `errors.rs`, `settings.api.test.ts`, `invoices/[id]/+page.svelte`, `.gitignore`. **Troisième occurrence du même symptôme** sur cette story — après le décompte des tests et celui des clés i18n. La § *Propagation post-patch* décrit exactement ce mode d'échec : corriger le site signalé sans regreper le récapitulatif qu'on rend faux.
+
+**Reclassé, non retenu**
+
+- **La troncature n'est testée que sur un champ** (`creditor_website`) — `edge`, **MEDIUM → non retenu**, et la raison est structurelle : `truncate_display` n'est appelé **qu'une seule fois**, dans une **boucle unique** qui traite les quatre champs (`grep -c "truncate_display"` dans la boucle → **1**). Une asymétrie entre champs est donc **impossible par construction** — la produire exigerait de sortir un champ de la boucle, ce qui n'est pas une mutation réaliste. Le même argument vaut pour les trois LOW voisins : l'IDE non testé isolément, la troncature non testée sur l'avoir (dont le rendu est **partagé**, `draw_invoice_section` appelée une fois par générateur), et la couverture multi-locale (le budget partagé libellé/valeur ayant déjà été reclassé en passe 2).
+
 ## Dev Notes
 
 ### Ce que cette story ne doit PAS faire
@@ -360,7 +373,9 @@ Plus **2 tests frontend** (`settings.api.test.ts`) — le Record affirmait « ce
 
 ### File List
 
-*(Construite depuis `git diff --name-status main...HEAD`, pas de mémoire — 28 fichiers.)*
+*(Recomptée depuis `git diff --name-only main`, pas de mémoire — **33 fichiers** hors story files.)*
+
+⚠️ **Ce décompte a été faux deux fois** : annoncé 28 à l'implémentation, il ignorait les fichiers ajoutés par les passes de revue — `errors.rs` (variant dédié, passe 3), `settings.api.test.ts` (2 tests, passe 3), `invoices/[id]/+page.svelte` (liste blanche, passe 3), `.gitignore` (passe 3 puis 4). C'est le symptôme de la § *Propagation post-patch* : chaque passe corrigeait son site sans regreper le récapitulatif qu'elle rendait faux. Recompté depuis la source en passe 5.
 
 **Nouveau**
 

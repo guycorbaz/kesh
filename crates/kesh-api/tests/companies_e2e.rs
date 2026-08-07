@@ -364,6 +364,43 @@ async fn overlong_contact_details_are_rejected_by_the_api(pool: MySqlPool) {
     ensure_admin_user(&pool, &test_config()).await.unwrap();
     let token = login(&app).await;
 
+    // ⚠️ La borne se teste des DEUX CÔTÉS. Ne vérifier que le rejet au-delà
+    // laisse passer un `>` changé en `>=` : des valeurs parfaitement légales
+    // seraient refusées avec un message « trop long » faux, et la suite
+    // resterait verte. *(Relevé aux passes 4 et 5 de revue.)*
+    for (champ, valeur) in [("phone", "0".repeat(50)), ("website", "x".repeat(255))] {
+        // ⚠️ Relire la version À CHAQUE tour : une acceptation la bumpe, et
+        // réutiliser la précédente rend un 409 qu'on prendrait pour un rejet de
+        // longueur. (Première version de ce test : `v0` figé, 409 au 2e tour.)
+        let v = app
+            .client
+            .get(app.url("/api/v1/companies/current"))
+            .header("Authorization", format!("Bearer {token}"))
+            .send()
+            .await
+            .unwrap()
+            .json::<serde_json::Value>()
+            .await
+            .unwrap()["company"]["version"]
+            .as_i64()
+            .unwrap();
+        let resp = app
+            .client
+            .put(app.url("/api/v1/companies/current/contact-details"))
+            .header("Authorization", format!("Bearer {token}"))
+            .json(&json!({ champ: valeur, "version": v }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            200,
+            "un `{champ}` d'exactement la longueur maximale DOIT être accepté — \
+             la colonne l'accepte, le refuser serait un faux positif"
+        );
+    }
+
+    // Relire la version : les acceptations ci-dessus l'ont bumpée.
     let v0 = app
         .client
         .get(app.url("/api/v1/companies/current"))
