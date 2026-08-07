@@ -1369,6 +1369,7 @@ settings-field-company-phone = Phone
 settings-company-phone-help = Phone number shown on your invoices. Empty = line omitted.
 settings-field-company-website = Website
 settings-company-website-help = Your website address, shown on your invoices. Empty = line omitted.
+settings-company-contact-saved = Contact details saved
 error-company-phone-too-long = The company phone number is too long (50 characters maximum).
 error-company-website-too-long = The company website address is too long (255 characters maximum).
-error-invoice-pdf-header-overflow = The company contact details are too long for the PDF header. Shorten the phone, email or website in the settings.
+error-invoice-pdf-header-overflow = The invoice header does not fit on the page. Shorten the phone, email or website in the settings — or the recipient address if it has many lines.

@@ -188,6 +188,25 @@ Les trois champs sont du texte libre affiché sur un document. La validation se 
 
 ⚠️ **NOUVELLE CONDITION DE SORTIE, et elle est la dernière** : si la **passe 4** remonte encore un finding `CRITICAL` ou `HIGH`, le split est **démontré nécessaire par deux mesures consécutives** et devient inconditionnel — sans nouvel arbitrage. Si elle converge (rien au-dessus de `LOW`), la dérogation est validée par le résultat, comme elle l'a été pour 16-2b, et la story passe au développement.
 
+### Review Findings
+
+`bmad-code-review` **passe 1** — 2026-08-07, **Sonnet** (modèle ≠ implémentation), trois lentilles, diff aplati `main...HEAD`. **1 HIGH, 3 MEDIUM, 2 LOW**, tous confirmés au ground-truth. **Boucle NON convergée — passe 2 due.**
+
+⚠️ **Le HIGH et deux MEDIUM sont des CONVERGENCES de plusieurs lentilles**, ce qui leur donne du poids.
+
+**Patches**
+
+- [x] [Review][Patch] **(CORRIGÉ — `truncate_display` appliqué au bloc identité, `IDENTITY_MAX_CHARS = 50`, calibré comme les 45 caractères / 90 mm de la colonne description ; test + mutation 6, rayon 1)** **La garde de capacité ne surveillait que le VERTICAL — une seule ligne trop longue débordait sur le bloc de droite, en silence** — `edge+blind+auditor`, **HIGH**. `grep -cF "text_width" pdf.rs` → **0**. Un site web de 255 caractères — la borne que la story fixe elle-même — ou un e-mail de 320 (`VARCHAR(320)`, **jamais borné à la saisie**) s'imprimait par-dessus « Facture / n° / date » (`meta_x = 120`), voire hors page (`PAGE_W = 210`), **rendu en 200**. Le dépôt possédait déjà `truncate_display` (`:903`), employé pour les descriptions de ligne mais **pas** pour l'identité. ⚠️ **Aucun des trois tests d'origine n'exerçait cet axe** : tous empilaient des *lignes*, aucun n'employait une valeur *unique* longue.
+- [x] [Review][Patch] **(CORRIGÉ aux TROIS sites — repli Rust, CHANGELOG, manuel + PDF régénéré)** **Le message de refus accusait les seules coordonnées de la société, alors que l'adresse du DESTINATAIRE peut être seule en cause** — `edge+auditor`, **MEDIUM**. La garde réagit à une ordonnée qui cumule adresse émetteur, coordonnées **et** adresse destinataire. Une société sans aucune coordonnée déclenche le refus via une adresse client de quinze lignes — et l'utilisateur était renvoyé raccourcir des champs **vides** dans les réglages.
+- [x] [Review][Patch] **(CORRIGÉ — clé ajoutée aux 4 locales)** **`settings-company-contact-saved` n'existait dans AUCUNE locale** — `blind+auditor`, **MEDIUM**. Un admin en DE/IT/EN voyait le message de succès **en français**. C'est exactement le mécanisme que la story cite comme cause de la **KF #283** — le `msg('clé', 'repli français')` rend le manque silencieux — et `lint-i18n-ownership` ne l'attrape pas : il contrôle le **périmètre** des clés, jamais leur **existence**.
+- [x] [Review][Patch] **(CORRIGÉ — second `<p>` d'aide ajouté sous le champ)** **`settings-company-website-help` traduite ×4 mais jamais affichée** — `edge+auditor`, **MEDIUM**. Le champ site web n'avait aucun texte d'aide ; seule l'aide « téléphone » s'affichait, sous les deux champs.
+- [x] [Review][Patch] **(CORRIGÉ — et la migration rejouée sur la base de gate, son checksum ayant changé)** **Le commentaire de la migration affirmait que 255 caractères tiennent sur 100 mm — faux d'un facteur quatre** — `blind`, **LOW**. Et ce n'est pas une coquette : **c'est cette affirmation qui avait laissé passer l'absence de troncature**. Le commentaire distingue désormais longueur de **stockage** et longueur d'**affichage**.
+- [x] [Review][Patch] **(CORRIGÉ — aligné sur le Rust)** **Le commentaire du DTO TypeScript disait encore que `version` ne sert qu'à la route e-mail** — `blind`, **LOW**.
+
+**Consigné, non retenu**
+
+- **Aucun test frontend pour l'édition inline** — `blind`, **LOW**. Le flux (édition / annulation / conflit de verrou / visibilité Admin) n'est exercé par aucun test Vitest ni E2E. **Non retenu** : la story ne l'exigeait pas, et AC8 couvre le chemin qui compte — l'aller-retour HTTP, seul niveau qui voit le DTO. À verser à un lot « couverture frontend » (cf. KF #126, déjà ouverte sur ce sujet).
+
 ## Dev Notes
 
 ### Ce que cette story ne doit PAS faire

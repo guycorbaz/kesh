@@ -317,6 +317,12 @@
 							'Numéro de téléphone affiché sur vos factures. Vide = ligne omise.',
 						)}
 					</p>
+					<p class="mt-1 text-xs text-text-muted">
+						{msg(
+							'settings-company-website-help',
+							'Adresse de votre site, affichée sur vos factures. Vide = ligne omise.',
+						)}
+					</p>
 				</div>
 			</dl>
 		</section>

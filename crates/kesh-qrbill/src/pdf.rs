@@ -172,6 +172,13 @@ fn finalize(doc: PdfDocumentReference) -> Result<Vec<u8>, QrBillError> {
 /// le plancher est `SEP_Y` (le séparateur QR).
 const CONTENT_FLOOR_NO_QR: f32 = 15.0;
 
+/// Largeur utile d'une ligne du bloc identité de l'émetteur, en caractères.
+///
+/// Le bloc de droite commence à `meta_x = 120.0` et la marge gauche est à
+/// `20.0` : 100 mm, soit ~50 caractères en Helvetica 9 pt — calibré sur le
+/// patron du fichier (45 caractères pour les 90 mm de la colonne description).
+const IDENTITY_MAX_CHARS: usize = 50;
+
 /// Dessine la section haute (en-tête + lignes + récap TVA + total).
 ///
 /// `content_floor` = ordonnée (mm) sous laquelle le contenu ne doit PAS
@@ -217,8 +224,24 @@ fn draw_invoice_section(
         ("invoice-pdf-website", &inv.creditor_website),
     ] {
         if let Some(v) = value {
+            // ⚠️ Troncature de LARGEUR — la garde de capacité plus bas ne
+            // surveille que l'ordonnée `y`, donc l'empilement VERTICAL. Elle ne
+            // voit rien d'une ligne unique trop longue.
+            //
+            // Le bloc de droite (« Facture », n°, date) démarre à `meta_x`
+            // (120 mm) et la marge gauche est à 20 mm : 100 mm disponibles, soit
+            // ~50 caractères à 9 pt — même calibrage que la description de ligne
+            // (45 caractères pour 90 mm). Sans cette troncature, un site web de
+            // 255 caractères ou un e-mail de 320 (`VARCHAR(320)`, jamais borné en
+            // longueur à la saisie) s'imprimait par-dessus le bloc de droite,
+            // voire hors page, **rendu en 200**.
+            //
+            // Tronquer plutôt que refuser : la valeur reste lisible dans les
+            // réglages, et refuser une facture pour un champ décoratif serait
+            // disproportionné — à la différence du débordement vertical, qui
+            // rend le tableau des lignes illisible.
             layer.use_text(
-                format!("{}: {}", i18n.get(key), v),
+                truncate_display(&format!("{}: {}", i18n.get(key), v), IDENTITY_MAX_CHARS),
                 9.0,
                 Mm(left),
                 Mm(y),
@@ -1054,6 +1077,52 @@ mod tests {
                  si cette assertion tombe, ce champ n'est plus rendu"
             );
         }
+    }
+
+    /// Une coordonnée **très longue** est TRONQUÉE, elle ne déborde pas sur le
+    /// bloc de droite (revue de code, passe 1).
+    ///
+    /// ⚠️ La garde `HeaderOverflow` ne surveille que l'ordonnée `y` — elle est
+    /// aveugle à une ligne **unique** trop longue. Un site web de 255 caractères
+    /// (borne de saisie) ou un e-mail de 320 (`VARCHAR(320)`, non borné à la
+    /// saisie) s'imprimait par-dessus « Facture »/n°/date, voire hors page, et
+    /// le document était **rendu en 200**.
+    ///
+    /// Le test compare une valeur **au-delà** de la borne d'affichage à une
+    /// valeur **juste en deçà** : si la troncature disparaît, la première
+    /// produit un document plus gros que la seconde. C'est mesurable en octets
+    /// là où une position ne l'est pas.
+    #[test]
+    fn an_overlong_contact_detail_is_truncated_not_overflowed() {
+        let (data, base, i18n) = invoice_fixture();
+
+        // ⚠️ Les DEUX valeurs doivent dépasser le seuil, sinon le test ne
+        // mesure rien : une valeur courte n'est pas tronquée et produit
+        // légitimement un document plus petit. (Première version de ce test :
+        // 40 vs 255 — elle échouait pour cette raison, pas à cause du code.)
+        let long = InvoicePdfData {
+            creditor_website: Some("x".repeat(100)),
+            ..base.clone()
+        };
+        let tres_long = InvoicePdfData {
+            creditor_website: Some("x".repeat(255)),
+            ..base.clone()
+        };
+
+        let a = generate_qr_bill_pdf_with_date(&data, &long, &i18n, fixed_date())
+            .unwrap()
+            .len();
+        let b = generate_qr_bill_pdf_with_date(&data, &tres_long, &i18n, fixed_date())
+            .unwrap()
+            .len();
+
+        assert_eq!(
+            a, b,
+            "deux valeurs au-delà du seuil (100 et 255 caractères) doivent \
+             produire des documents de MÊME taille : toutes deux sont ramenées \
+             à IDENTITY_MAX_CHARS. Si les tailles diffèrent, la troncature a \
+             disparu et la ligne déborde sur le bloc de droite — en silence."
+        );
     }
 
     /// **D2** — une société sans IDE **ni** coordonnées ne doit subir **aucun**

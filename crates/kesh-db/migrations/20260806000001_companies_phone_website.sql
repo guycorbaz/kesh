@@ -5,10 +5,16 @@
 -- `companies.email` existait déjà (Story 20-3b1) mais n'était pas rendue ; ces
 -- deux colonnes la complètent.
 --
--- Longueurs alignées sur le précédent du dépôt plutôt que dérivées de la largeur
--- du bloc : `contacts.phone` est VARCHAR(50) (20260414000001), `companies.email`
--- VARCHAR(320) (20260709000003). `website` prend 255, la longueur usuelle d'une
--- URL courte affichable sur une ligne de 100 mm.
+-- Longueurs alignées sur le précédent du dépôt : `contacts.phone` est
+-- VARCHAR(50) (20260414000001), `companies.email` VARCHAR(320)
+-- (20260709000003). `website` prend 255, longueur usuelle d'une URL.
+--
+-- ⚠️ Ce sont des longueurs de STOCKAGE, PAS d'affichage. Le bloc gauche du PDF
+-- ne dispose que de ~100 mm, soit une cinquantaine de caractères à 9 pt : une
+-- valeur plus longue est TRONQUÉE au rendu (`IDENTITY_MAX_CHARS`, `pdf.rs`),
+-- jamais refusée. Une version antérieure de ce commentaire prétendait que 255
+-- caractères tenaient sur 100 mm — faux d'un facteur quatre, et c'est ce qui
+-- avait laissé passer l'absence de troncature (revue de code, passe 1).
 --
 -- Non-breaking (ADD COLUMN nullable) → PAS de bump `kesh_version_min_required`
 -- ni de version Cargo (garde-fous P1/P2 de CLAUDE.md).

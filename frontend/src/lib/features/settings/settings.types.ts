@@ -18,7 +18,7 @@ export interface CompanyJson {
 	 */
 	phone: string | null;
 	website: string | null;
-	/** Verrou optimiste — requis par `PUT /companies/current/email`. */
+	/** Verrou optimiste — requis par les routes `PUT /companies/current/*`. */
 	version: number;
 }
 

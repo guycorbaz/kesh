@@ -1369,6 +1369,7 @@ settings-field-company-phone = Telefono
 settings-company-phone-help = Numero di telefono visualizzato sulle vostre fatture. Vuoto = riga omessa.
 settings-field-company-website = Sito web
 settings-company-website-help = Indirizzo del vostro sito, visualizzato sulle fatture. Vuoto = riga omessa.
+settings-company-contact-saved = Recapiti salvati
 error-company-phone-too-long = Il numero di telefono della società è troppo lungo (al massimo 50 caratteri).
 error-company-website-too-long = L'indirizzo del sito web della società è troppo lungo (al massimo 255 caratteri).
-error-invoice-pdf-header-overflow = I recapiti della società sono troppo lunghi per l'intestazione del PDF. Accorciate il telefono, l'e-mail o il sito web nelle impostazioni.
+error-invoice-pdf-header-overflow = L'intestazione della fattura non entra nella pagina. Accorciate il telefono, l'e-mail o il sito web nelle impostazioni, oppure l'indirizzo del destinatario se ha molte righe.

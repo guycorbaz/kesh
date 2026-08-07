@@ -17,7 +17,8 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   - **Chaque champ est facultatif, et un champ vide ne laisse aucun blanc** : la ligne correspondante n'est simplement pas imprimée. Une société qui ne renseigne rien retrouve exactement le PDF qu'elle avait avant.
   - **L'e-mail que vous aviez déjà renseigné** (adresse de réponse des envois) apparaît maintenant lui aussi sur le PDF. Si vous ne le souhaitez pas, videz-le — mais sachez qu'il sert aussi de *Reply-To* aux factures envoyées par e-mail.
   - **Les avoirs les portent également**, à l'identique.
-  - **Si vos coordonnées sont très longues**, la facture peut être refusée avec un message vous invitant à les raccourcir : c'est délibéré. Mieux vaut un refus explicite qu'un document où l'en-tête s'imprime par-dessus le tableau des lignes.
+  - **Une coordonnée très longue est raccourcie à l'affichage** (suivie de « … ») pour ne pas empiéter sur le bloc de droite, où figurent le numéro et la date. La valeur complète reste intacte dans vos réglages.
+  - **Si l'en-tête entier ne tient plus sur la page**, la facture est refusée avec un message explicite : c'est délibéré. Mieux vaut un refus qu'un document où l'en-tête s'imprime par-dessus le tableau des lignes. La cause peut être vos coordonnées, mais aussi une adresse de destinataire particulièrement longue.
 
 - **Un compte de produit sur la fiche article** : chaque article du catalogue peut désormais porter **son** compte de produit, choisi **une fois** sur sa fiche plutôt que ressaisi à chaque facture.
   - **La ligne de facture le reprend automatiquement** quand vous montez la facture depuis le catalogue (bouton *Depuis catalogue*). Vous pouvez encore le changer sur la ligne — c'est un pré-remplissage, pas un verrou.

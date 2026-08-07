@@ -1369,6 +1369,7 @@ settings-field-company-phone = Telefon
 settings-company-phone-help = Telefonnummer, die auf Ihren Rechnungen erscheint. Leer = Zeile entfällt.
 settings-field-company-website = Website
 settings-company-website-help = Adresse Ihrer Website, auf Ihren Rechnungen angezeigt. Leer = Zeile entfällt.
+settings-company-contact-saved = Kontaktangaben gespeichert
 error-company-phone-too-long = Die Telefonnummer der Firma ist zu lang (höchstens 50 Zeichen).
 error-company-website-too-long = Die Website-Adresse der Firma ist zu lang (höchstens 255 Zeichen).
-error-invoice-pdf-header-overflow = Die Kontaktangaben der Firma sind zu lang für den PDF-Kopf. Kürzen Sie Telefon, E-Mail oder Website in den Einstellungen.
+error-invoice-pdf-header-overflow = Der Rechnungskopf passt nicht auf die Seite. Kürzen Sie Telefon, E-Mail oder Website in den Einstellungen — oder die Empfängeradresse, wenn sie viele Zeilen umfasst.

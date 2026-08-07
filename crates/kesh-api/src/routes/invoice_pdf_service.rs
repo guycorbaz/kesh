@@ -344,15 +344,20 @@ pub(crate) fn map_qrbill_error(err: QrBillError) -> AppError {
         // #151 code-review : la garde géométrique (lignes + récap TVA débordant)
         // remonte un 400 actionnable, pas un 500 opaque.
         QrBillError::TooManyLines(n) => AppError::InvoiceTooManyLinesForPdf(n),
-        // Story 16-3a (#151) — en-tête débordant sur le tableau : coordonnées
-        // d'émetteur trop longues, souvent combinées à une adresse longue des
-        // deux côtés. Actionnable par l'utilisateur (raccourcir un champ des
-        // réglages), donc 400 et non 500 — même raisonnement que TooManyLines.
+        // Story 16-3a (#151) — en-tête débordant sur le tableau. Actionnable par
+        // l'utilisateur, donc 400 et non 500 — même raisonnement que TooManyLines.
+        //
+        // ⚠️ Le message ne peut PAS accuser les seules coordonnées de la société :
+        // la garde réagit à une ordonnée qui cumule l'adresse de l'ÉMETTEUR, ses
+        // coordonnées ET l'adresse du DESTINATAIRE. Une adresse client de vingt
+        // lignes la déclenche à elle seule, sans qu'aucun champ des réglages ne
+        // soit en cause — envoyer l'utilisateur les raccourcir serait le lancer
+        // sur une fausse piste. (Revue de code, passe 1.)
         QrBillError::HeaderOverflow(_) => AppError::Validation(crate::errors::t(
             "error-invoice-pdf-header-overflow",
-            "Les coordonnées de la société sont trop longues pour tenir en \
-             en-tête du PDF. Raccourcissez le téléphone, l'e-mail ou le site web \
-             dans les réglages.",
+            "L'en-tête de la facture ne tient pas sur la page. Raccourcissez le \
+             téléphone, l'e-mail ou le site web dans les réglages, ou l'adresse \
+             du destinataire si elle compte beaucoup de lignes.",
         )),
         // Émis uniquement par le parseur SPC (Story 12-5, chemin import) — n'arrive
         // pas dans la génération PDF. Mappé comme une erreur de validation par défense.
