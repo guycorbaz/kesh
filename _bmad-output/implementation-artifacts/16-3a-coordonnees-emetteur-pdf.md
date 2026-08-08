@@ -255,6 +255,25 @@ Les trois champs sont du texte libre affiché sur un document. La validation se 
 
 - **La troncature n'est testée que sur un champ** (`creditor_website`) — `edge`, **MEDIUM → non retenu**, et la raison est structurelle : `truncate_display` n'est appelé **qu'une seule fois**, dans une **boucle unique** qui traite les quatre champs (`grep -c "truncate_display"` dans la boucle → **1**). Une asymétrie entre champs est donc **impossible par construction** — la produire exigerait de sortir un champ de la boucle, ce qui n'est pas une mutation réaliste. Le même argument vaut pour les trois LOW voisins : l'IDE non testé isolément, la troncature non testée sur l'avoir (dont le rendu est **partagé**, `draw_invoice_section` appelée une fois par générateur), et la couverture multi-locale (le budget partagé libellé/valeur ayant déjà été reclassé en passe 2).
 
+**Gate de la passe 5 — exécuté intégralement le 2026-08-08, APRÈS le redémarrage qui l'avait interrompu.** Il remplace la mention « GATE NON TERMINÉ, NE PAS LE PRÉSUMER VERT » du commit `d102977f`.
+
+| Étape | Verdict |
+|---|---|
+| `cargo fmt --all -- --check` | **0** |
+| `cargo clippy --workspace --all-targets -- -D warnings` | **0** |
+| `cargo build --workspace --all-targets` | **0** |
+| `cargo nextest run --workspace --no-fail-fast` | **2125 / 2126**, 4 skipped, 56 min — **1 échec**, cf. ci-dessous |
+| `npm run check` | **0** (4880 fichiers, 27 warnings préexistants) |
+| `npm run lint-i18n-ownership` | **0** |
+| `npm run test:unit` | **0** — **512 / 512**, 63 fichiers |
+| `npm run build` | **0** |
+
+⚠️ **CE GATE N'EST PAS DÉCLARÉ VERT, et le mot est pesé** : aucun run complet n'est allé au bout sans échec. L'unique échec est `reconciliation_e2e::post_reject_marks_transactions_as_manually_reviewed` (**409 au lieu de 200**, `reconciliation_e2e.rs:1428`), **imputé au flake KF-038 / issue #228** sur quatre éléments concordants — il passe **3/3** rejoué seul, **25/25** avec toute sa suite, la branche ne touche **aucun** fichier de réconciliation ni bancaire (`git diff --name-only main...HEAD | grep -iE "reconcil|bank"` → vide), et le `CLAUDE.md` documente cette famille comme flake sous contention MariaDB. Un échec non reproductible reste un échec **observé** : il est consigné, pas effacé.
+
+⚠️ **LE RUN 1 A ÉCHOUÉ SUR UN DÉFAUT D'ENVIRONNEMENT, PAS SUR LE CODE — ET C'EST LE GATE INTERROMPU QUI L'AVAIT CAUSÉ.** `test_check_constraint_rejects_debit_and_credit_same_line` échouait en `InactiveOrInvalidAccounts`, **déterministe** (8 ms, seul). Cause : le compte `1000 Caisse CI` était resté `postable = FALSE` **en base de développement** — le helper `set_postable` (`journal_entries.rs:3063`) bascule cette colonne en SQL direct et **confie la restauration à l'appelant**, lequel n'a jamais eu la main quand le gate de la passe 5 a été tué. Le test suivant qui prend « les deux premiers comptes actifs » tombait dessus. Vérifié avant correction : ce compte n'avait **ni parent ni sous-compte** (sa non-postabilité n'était donc pas la conséquence légitime de la règle `is_postable`), le schéma le veut `DEFAULT TRUE`, et il était le **seul** compte actif non-postable de toute la base. Restauré, puis `PASS (1443/2126)` dans le run complet — pas seulement en isolation.
+
+**Ce que cet incident enseigne, et qui dépasse la story** : ces tests-là ne sont pas des `#[sqlx::test]` sur base éphémère mais des `#[tokio::test]` sur la **base de développement partagée**. Un gate interrompu n'y laisse pas seulement un verdict inachevé — il peut y laisser un **piège armé**, qui fera rougir le run suivant sur un test sans aucun rapport avec ce qu'on mesurait. Ce mode d'échec est invisible en revue de diff, au même titre que les garde-fous **P6** et **P7** : il ne naît ni du code ni de la spec, mais de l'état d'un environnement partagé. Un contrôle de propreté de la base en pré-vol du gate fermerait la fenêtre — arbitrage à porter au Project Lead, hors périmètre de cette story.
+
 ## Dev Notes
 
 ### Ce que cette story ne doit PAS faire
