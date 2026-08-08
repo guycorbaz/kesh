@@ -1370,6 +1370,8 @@ settings-company-phone-help = Numero di telefono visualizzato sulle vostre fattu
 settings-field-company-website = Sito web
 settings-company-website-help = Indirizzo del vostro sito, visualizzato sulle fatture. Vuoto = riga omessa.
 settings-company-contact-saved = Recapiti salvati
+settings-company-contact-conflict = Conflitto di versione — i dati sono stati ricaricati, riprovare.
+settings-company-contact-conflict-reload-failed = Conflitto di versione e ricaricamento impossibile — ricaricare la pagina.
 error-company-phone-too-long = Il numero di telefono della società è troppo lungo (al massimo 50 caratteri).
 error-company-website-too-long = L'indirizzo del sito web della società è troppo lungo (al massimo 255 caratteri).
-error-invoice-pdf-header-overflow = L'intestazione della fattura non entra nella pagina. Accorciate il telefono, l'e-mail o il sito web nelle impostazioni, oppure l'indirizzo del destinatario se ha molte righe.
+error-invoice-pdf-header-overflow = L'intestazione del documento non entra nella pagina. Eliminate un recapito — telefono, e-mail o sito web — nelle impostazioni: accorciarlo non libera spazio, ogni recapito occupa una riga intera. Oppure riducete il numero di righe dell'indirizzo del destinatario.

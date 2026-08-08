@@ -1468,6 +1468,8 @@ settings-company-phone-help = Numéro de téléphone affiché sur vos factures. 
 settings-field-company-website = Site web
 settings-company-website-help = Adresse de votre site, affichée sur vos factures. Vide = ligne omise.
 settings-company-contact-saved = Coordonnées enregistrées
+settings-company-contact-conflict = Conflit de version — les données ont été rechargées, réessayez.
+settings-company-contact-conflict-reload-failed = Conflit de version et rechargement impossible — rechargez la page.
 error-company-phone-too-long = Le numéro de téléphone de la société est trop long (50 caractères au plus).
 error-company-website-too-long = L'adresse du site web de la société est trop longue (255 caractères au plus).
-error-invoice-pdf-header-overflow = L'en-tête de la facture ne tient pas sur la page. Raccourcissez le téléphone, l'e-mail ou le site web dans les réglages, ou l'adresse du destinataire si elle compte beaucoup de lignes.
+error-invoice-pdf-header-overflow = L'en-tête du document ne tient pas sur la page. Supprimez une coordonnée — téléphone, e-mail ou site web — dans les réglages : les raccourcir ne libère aucune place, chaque coordonnée occupe une ligne entière. Ou réduisez le nombre de lignes de l'adresse du destinataire.

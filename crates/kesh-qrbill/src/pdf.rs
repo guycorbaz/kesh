@@ -185,11 +185,16 @@ const CONTENT_FLOOR_NO_QR: f32 = 15.0;
 /// | minuscules (moy. 490/1000 em) | 77,8 mm | 71,6 mm |
 /// | **capitales** (moy. 677/1000 em) | **107,5 mm — déborde** | **98,9 mm** |
 ///
-/// D'où 46 et non 50 : une raison sociale ou une URL en capitales dépassait
-/// encore sur le bloc de droite **après** troncature. *(Revue de code, passe 3.)*
+/// D'où 46 et non 50 : une URL ou un e-mail en capitales dépassait encore sur
+/// le bloc de droite **après** troncature. *(Revue de code, passe 3.)*
+///
+/// ⚠️ La **raison sociale** n'entre pas dans ce calibrage : elle est dessinée à
+/// 14 pt, hors du dispositif de troncature. Cette borne ne régit que le bloc
+/// identité — IDE et coordonnées de contact. *(Revue de code, passe 6.)*
 ///
 /// ⚠️ **Ce que cette borne ne couvre PAS** : une chaîne de 46 `W` (944/1000 em)
-/// occuperait 124 mm. Il faudrait mesurer la largeur réelle pour le garantir,
+/// occuperait **137,9 mm** — par la méthode du tableau ci-dessus, qui reproduit
+/// ses quatre valeurs à la décimale. Il faudrait mesurer la largeur réelle pour le garantir,
 /// ce que `printpdf` n'expose pas pour les polices intégrées. Le cas est jugé
 /// hors de portée d'un champ de coordonnées ; le documenter vaut mieux que
 /// laisser croire à une garantie exacte.
@@ -250,9 +255,10 @@ fn draw_invoice_section(
             // voit rien d'une ligne unique trop longue.
             //
             // Le bloc de droite (« Facture », n°, date) démarre à `meta_x`
-            // (120 mm) et la marge gauche est à 20 mm : 100 mm disponibles, soit
-            // ~50 caractères à 9 pt — même calibrage que la description de ligne
-            // (45 caractères pour 90 mm). Sans cette troncature, un site web de
+            // (120 mm) et la marge gauche est à 20 mm : 100 mm disponibles, d'où
+            // `IDENTITY_MAX_CHARS` — **46** caractères à 9 pt, et non 50, cf. le
+            // tableau de calibrage de la constante, qui montre que 50 capitales
+            // débordent encore. Sans cette troncature, un site web de
             // 255 caractères ou un e-mail de 320 (`VARCHAR(320)`, jamais borné en
             // longueur à la saisie) s'imprimait par-dessus le bloc de droite,
             // voire hors page, **rendu en 200**.

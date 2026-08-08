@@ -629,7 +629,9 @@ Les \textbf{avoirs} portent les mêmes coordonnées, à l'identique.
 \begin{keshwarning}
 \textbf{Une coordonnée très longue est raccourcie à l'affichage} (suivie de «~\ldots~») pour ne pas empiéter sur le bloc de droite, qui porte le numéro et la date de la facture. La valeur complète reste intacte dans vos réglages.
 
-\textbf{Et si l'en-tête entier ne tient plus sur la page, la facture est refusée} avec un message explicite. C'est délibéré : l'en-tête et le tableau des lignes se partagent une hauteur fixe, et mieux vaut un refus qu'un document où l'un s'imprime par-dessus l'autre. La cause peut être vos coordonnées --- mais aussi une adresse de destinataire comptant beaucoup de lignes.
+\textbf{Et si l'en-tête entier ne tient plus sur la page, le document est refusé} --- facture comme avoir --- avec un message explicite. C'est délibéré : l'en-tête et le tableau des lignes se partagent une hauteur fixe, et mieux vaut un refus qu'un document où l'un s'imprime par-dessus l'autre. La cause peut être vos coordonnées --- mais aussi une adresse de destinataire comptant beaucoup de lignes.
+
+Le message vous invite à \textbf{supprimer} une coordonnée, et non à la raccourcir : chaque coordonnée occupe une ligne entière quelle que soit sa longueur, si bien que l'abréger ne libère aucune place. Vider le champ, en revanche, fait disparaître la ligne.
 \end{keshwarning}
 
 \subsection{Numérotation des factures}

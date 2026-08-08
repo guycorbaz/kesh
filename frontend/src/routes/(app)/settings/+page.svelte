@@ -120,15 +120,20 @@
 		} catch (err) {
 			if (isApiError(err)) {
 				if (err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
+					// ⚠️ Clés DÉDIÉES au bloc coordonnées, et non celles du bloc
+					// e-mail : les deux libellés sont génériques aujourd'hui, mais
+					// les partager ferait s'afficher ici toute reformulation
+					// destinée au contexte e-mail, sans qu'aucun test ne le voie.
+					// (Passe 6 de revue.)
 					try {
 						data = await fetchCompanyCurrent();
 						contactError = msg(
-							'settings-company-email-conflict',
+							'settings-company-contact-conflict',
 							'Conflit de version — les données ont été rechargées, réessayez.',
 						);
 					} catch {
 						contactError = msg(
-							'settings-company-email-conflict-reload-failed',
+							'settings-company-contact-conflict-reload-failed',
 							'Conflit de version et rechargement impossible — rechargez la page.',
 						);
 					}

@@ -236,19 +236,31 @@ pub const I18N_KEYS: &[&str] = &[
     // Story 16-3a (#151) — coordonnées de contact de l'émetteur.
     //
     // ⚠️ Toute clé ajoutée ici DOIT l'être à la MÊME POSITION dans `DEFAULT_EN` :
-    // `get()` résout son repli par `DEFAULT_EN[idx]`, sans borne-check. Une
-    // longueur divergente fait PANIQUER le rendu, en debug comme en release.
+    // `get()` résout son repli par `DEFAULT_EN[idx]`. L'appariement positionnel
+    // est à la charge du mainteneur — l'assertion de compilation plus bas
+    // n'attrape QUE les longueurs divergentes, pas un décalage à longueurs
+    // égales (cf. son doc-comment).
     "invoice-pdf-phone",
     "invoice-pdf-email",
     "invoice-pdf-website",
 ];
 
-/// ⚠️ Invariant tenu **à la compilation** : `I18N_KEYS` et `DEFAULT_EN` doivent
-/// avoir exactement la même longueur. `get()` résout son repli par
-/// `DEFAULT_EN[idx]` **sans borne-check** — une divergence ferait paniquer le
-/// rendu, en debug comme en release. Le commentaire l'annonçait sans le tenir ;
-/// cette assertion échoue désormais au `cargo build`, pas au premier PDF.
+/// ⚠️ Invariant tenu **à la compilation** : `I18N_KEYS` et `DEFAULT_EN` ont
+/// exactement la même longueur. `get()` résout son repli par `DEFAULT_EN[idx]`
+/// **sans borne-check** — une longueur divergente ferait paniquer le rendu, en
+/// debug comme en release. Le commentaire l'annonçait sans le tenir ; cette
+/// assertion échoue désormais au `cargo build`, pas au premier PDF.
 /// *(Revue de code, passe 3.)*
+///
+/// ⚠️ Ce qu'elle ne tient PAS : l'**appariement** clé ↔ traduction. Insérer une
+/// clé au milieu de l'une et ailleurs dans l'autre laisse les longueurs égales,
+/// passe `cargo build`, et décale silencieusement le repli de toutes les
+/// entrées suivantes. Aucune vérification statique ne peut apparier une clé à
+/// sa traduction ; l'ordre reste à la charge du mainteneur, et le seul filet
+/// est d'ajouter toute nouvelle clé **en fin** des deux tableaux. Aggravé par
+/// les fixtures à `HashMap` vide, qui traversent toutes `DEFAULT_EN`.
+/// *(Revue de code, passe 6 — le doc-comment prêtait à l'assertion une garantie
+/// de position qu'elle n'a jamais eue.)*
 const _: () = assert!(
     I18N_KEYS.len() == DEFAULT_EN.len(),
     "I18N_KEYS et DEFAULT_EN doivent avoir la même longueur"

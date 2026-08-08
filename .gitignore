@@ -66,3 +66,41 @@ docs/.claude/
 docs/.mcp.json
 docs/manual/.claude/
 docs/manual/.mcp.json
+
+# ⚠️ Passe 6 de revue de 16-3a : le correctif ci-dessus n'avait été propagé qu'à
+# `docs/`, alors que la RACINE porte les masques les plus sensibles — dont
+# `.gitmodules`, que git lit lui-même. `git check-ignore` n'en rendait aucun.
+#
+# Entrées ANCRÉES par `/` : elles ne visent que la racine, ce qui préserve
+# `.claude/skills/` (1714 fichiers versionnés) et tout `.claude/` de sous-arbre.
+# Vérifié au moment d'écrire : rien n'est versionné sous `.claude/` hors
+# `skills/`, donc aucune de ces lignes ne masque de contenu de projet.
+#
+# ⚠️ Deux d'entre eux n'étaient couverts que par `.git/info/exclude` et par le
+# gitignore GLOBAL de l'utilisateur — deux protections hors du dépôt, qui ne
+# valent que sur une machine et ne suivent aucun clone. D'où leur reprise ici.
+#
+# Pour versionner délibérément l'un de ces chemins un jour (un `settings.json`
+# d'équipe, par exemple) : `git add -f <chemin>`.
+/.bash_profile
+/.bashrc
+/.gitconfig
+/.gitmodules
+/.mcp.json
+/.profile
+/.ripgreprc
+/.zprofile
+/.zshrc
+/.idea
+/.vscode
+/.claude/agents
+/.claude/commands
+/.claude/hooks
+/.claude/launch.json
+/.claude/loop.md
+/.claude/output-styles
+/.claude/routines
+/.claude/scheduled_tasks.json
+/.claude/settings.json
+/.claude/settings.local.json
+/.claude/workflows

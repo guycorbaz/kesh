@@ -205,13 +205,13 @@ pub async fn update_company_contact_details(
         req.phone.as_deref(),
         MAX_PHONE_LEN,
         "error-company-phone-too-long",
-        "Le numéro de téléphone de la société est trop long.",
+        "Le numéro de téléphone de la société est trop long (50 caractères au plus).",
     )?;
     let website = normalize_contact_field(
         req.website.as_deref(),
         MAX_WEBSITE_LEN,
         "error-company-website-too-long",
-        "L'adresse du site web de la société est trop longue.",
+        "L'adresse du site web de la société est trop longue (255 caractères au plus).",
     )?;
 
     let changes = CompanyUpdate {

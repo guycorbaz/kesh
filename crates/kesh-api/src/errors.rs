@@ -1362,9 +1362,11 @@ impl IntoResponse for AppError {
             AppError::InvoicePdfHeaderOverflow => {
                 let msg = t(
                     "error-invoice-pdf-header-overflow",
-                    "L'en-tête de la facture ne tient pas sur la page. Raccourcissez le \
-                     téléphone, l'e-mail ou le site web dans les réglages, ou l'adresse \
-                     du destinataire si elle compte beaucoup de lignes.",
+                    "L'en-tête du document ne tient pas sur la page. Supprimez une \
+                     coordonnée — téléphone, e-mail ou site web — dans les réglages : \
+                     les raccourcir ne libère aucune place, chaque coordonnée occupe \
+                     une ligne entière. Ou réduisez le nombre de lignes de l'adresse \
+                     du destinataire.",
                 );
                 build_response(StatusCode::BAD_REQUEST, "INVOICE_PDF_HEADER_OVERFLOW", &msg)
             }

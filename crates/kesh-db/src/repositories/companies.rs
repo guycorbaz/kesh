@@ -181,6 +181,33 @@ pub async fn update(
     }
 
     let addr = &changes.address_structured;
+
+    // Story 16-3a, passe 6 de revue — NE JAMAIS écraser `address` par une
+    // chaîne vide.
+    //
+    // `combined()` rend `""` quand les quatre composants structurés sont vides,
+    // ce qui est l'état de **toute société créée avant le 2026-07-05** : la
+    // migration `structured_addresses` (#213, v0.5.0) a ajouté ces colonnes en
+    // `NOT NULL DEFAULT ''` **sans backfill** — vérifié, aucune migration du
+    // dépôt ne fait `UPDATE companies`. Sur ces lignes, l'adresse ne vit que
+    // dans la colonne `address` en texte libre.
+    //
+    // Sans cette garde, toute route qui reconstruit `CompanyUpdate` depuis
+    // l'entité en full-replace — `update_company_email` (20-3b1) comme
+    // `update_company_contact_details` (16-3a) — écrit `address = ''`, que
+    // `chk_companies_address_nonempty` rejette : l'utilisateur reçoit un **500**
+    // en voulant simplement renseigner son téléphone.
+    //
+    // On préserve alors la valeur existante plutôt que d'échouer : elle est
+    // garantie non vide par la contrainte elle-même, et la conserver ne dégrade
+    // rien — elle reste exactement ce qu'elle était.
+    let combined = addr.combined();
+    let address_to_write = if combined.trim().is_empty() {
+        before.address.clone()
+    } else {
+        combined
+    };
+
     let rows_affected = sqlx::query(
         "UPDATE companies
          SET name = ?, first_name = ?, last_name = ?, address = ?, address_street = ?, address_building = ?,
@@ -194,7 +221,7 @@ pub async fn update(
     .bind(&changes.name)
     .bind(&changes.first_name)
     .bind(&changes.last_name)
-    .bind(addr.combined())
+    .bind(&address_to_write)
     .bind(&addr.street)
     .bind(&addr.building)
     .bind(&addr.postal_code)

@@ -350,7 +350,23 @@ pub(crate) fn map_qrbill_error(err: QrBillError) -> AppError {
         // ⚠️ Variante DÉDIÉE et non `Validation` : l'écran de facture résout le
         // message par une liste blanche de codes, où `VALIDATION_ERROR` ne figure
         // pas — le message y serait remplacé par un générique. (Passe 3 de revue.)
-        QrBillError::HeaderOverflow(_) => AppError::InvoicePdfHeaderOverflow,
+        //
+        // ⚠️ L'ordonnée atteinte est la SEULE donnée de diagnostic du refus, et
+        // `AppError::InvoicePdfHeaderOverflow` ne porte aucune charge — à la
+        // différence du jumeau `TooManyLines(n)`, qui conserve son compte. Sans
+        // cette trace, un exploitant ne sait ni de combien le document dépassait,
+        // ni si la cause est l'émetteur ou le destinataire, alors que le message
+        // rendu énumère les deux hypothèses. On journalise donc `y` ici plutôt
+        // que de la faire porter à l'`AppError` : la charge n'a aucun usage côté
+        // client, le message affiché étant traduit et volontairement non
+        // technique. *(Passe 6 de revue.)*
+        QrBillError::HeaderOverflow(y) => {
+            tracing::warn!(
+                reached_y_mm = y,
+                "en-tête de document débordant sur le tableau des lignes — PDF refusé en 400"
+            );
+            AppError::InvoicePdfHeaderOverflow
+        }
         // Émis uniquement par le parseur SPC (Story 12-5, chemin import) — n'arrive
         // pas dans la génération PDF. Mappé comme une erreur de validation par défense.
         QrBillError::InvalidPayload(msg) => AppError::InvoiceNotPdfReady(msg),
@@ -402,11 +418,182 @@ pub(crate) async fn fetch_country(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rust_decimal_macros::dec;
 
     #[test]
     fn sanitize_filename_replaces_non_alphanumeric() {
         assert_eq!(sanitize_filename("F-2026-0042"), "F-2026-0042");
         assert_eq!(sanitize_filename("../../etc/passwd"), ".._.._etc_passwd");
         assert_eq!(sanitize_filename("F 2026 #42"), "F_2026__42");
+    }
+
+    fn company_with_contact_details() -> kesh_db::entities::Company {
+        kesh_db::entities::Company {
+            id: 1,
+            name: "Démo SA".into(),
+            first_name: None,
+            last_name: None,
+            address: "Rue du Lac 1\n1000 Lausanne".into(),
+            address_street: "Rue du Lac".into(),
+            address_building: "1".into(),
+            address_postal_code: "1000".into(),
+            address_city: "Lausanne".into(),
+            address_country: "CH".into(),
+            ide_number: Some("CHE-123.456.789".into()),
+            org_type: kesh_db::entities::OrgType::Pme,
+            accounting_language: kesh_db::entities::Language::Fr,
+            instance_language: kesh_db::entities::Language::Fr,
+            email: Some("contact@demo.ch".into()),
+            phone: Some("+41 21 123 45 67".into()),
+            website: Some("https://demo.ch".into()),
+            is_stub: false,
+            version: 1,
+            created_at: chrono::NaiveDateTime::default(),
+            updated_at: chrono::NaiveDateTime::default(),
+        }
+    }
+
+    /// Contact avec adresse **structurée** — `build_qrbill_inputs` refuse le
+    /// débiteur dont le NPA ou la localité manquent (conformité SIX type S).
+    fn contact_with_structured_address() -> kesh_db::entities::Contact {
+        kesh_db::entities::Contact {
+            id: 1,
+            company_id: 1,
+            contact_type: kesh_db::entities::ContactType::Entreprise,
+            name: "Client SA".into(),
+            first_name: None,
+            last_name: None,
+            is_client: true,
+            is_supplier: false,
+            address: Some("Marktgasse 28\n9400 Rorschach".into()),
+            address_street: Some("Marktgasse".into()),
+            address_building: Some("28".into()),
+            address_postal_code: Some("9400".into()),
+            address_city: Some("Rorschach".into()),
+            address_country: Some("CH".into()),
+            email: None,
+            phone: None,
+            ide_number: None,
+            default_payment_terms: None,
+            default_payment_terms_days: None,
+            language: None,
+            salutation: Default::default(),
+            active: true,
+            version: 1,
+            created_at: chrono::NaiveDateTime::default(),
+            updated_at: chrono::NaiveDateTime::default(),
+        }
+    }
+
+    fn invoice() -> kesh_db::entities::Invoice {
+        kesh_db::entities::Invoice {
+            id: 1,
+            company_id: 1,
+            contact_id: 1,
+            invoice_number: Some("F-2026-0001".into()),
+            status: "validated".into(),
+            date: chrono::NaiveDate::from_ymd_opt(2026, 8, 8).unwrap(),
+            due_date: None,
+            payment_terms: None,
+            total_amount: dec!(100.00),
+            journal_entry_id: None,
+            paid_at: None,
+            emailed_at: None,
+            emailed_to: None,
+            project_id: None,
+            dunning_paused_at: None,
+            dunning_paused_note: None,
+            version: 1,
+            created_at: chrono::NaiveDateTime::default(),
+            updated_at: chrono::NaiveDateTime::default(),
+        }
+    }
+
+    /// `qr_iban: None` → branche IBAN simple, sans génération de QRR.
+    fn primary_bank() -> kesh_db::entities::BankAccount {
+        kesh_db::entities::BankAccount {
+            id: 1,
+            company_id: 1,
+            bank_name: "Banque Démo".into(),
+            iban: "CH9300762011623852957".into(),
+            qr_iban: None,
+            is_primary: true,
+            journal_account_id: None,
+            version: 1,
+            archived: false,
+            created_at: chrono::NaiveDateTime::default(),
+            updated_at: chrono::NaiveDateTime::default(),
+        }
+    }
+
+    /// Story 16-3a (#151) — **le pendant FACTURE** de
+    /// `credit_note_pdf_carries_the_issuer_contact_details`.
+    ///
+    /// ⚠️ Ce test comble le trou relevé en passe 6 de `bmad-code-review` :
+    /// `InvoicePdfData` est construit à **deux** endroits, et seul celui de
+    /// l'avoir était vérifié. Écrire `creditor_phone: None` au site facture ne
+    /// faisait **rougir aucun test** — le struct literal restant complet, le
+    /// compilateur se tait ; les tests de `kesh-qrbill` posent leurs propres
+    /// valeurs sans jamais voir `Company` ; et `invoice_pdf_e2e.rs` ne contrôle
+    /// que le statut, le type MIME, l'en-tête `%PDF-1.` et la taille. Toutes les
+    /// factures seraient sorties sans coordonnées pendant que les avoirs en
+    /// portaient — la dissymétrie exacte que la story nomme « le piège qui
+    /// coûterait le plus cher », et le document principal était le côté nu.
+    #[test]
+    fn invoice_pdf_carries_the_issuer_contact_details() {
+        let company = company_with_contact_details();
+        let (_qr, data) = build_qrbill_inputs(
+            &invoice(),
+            &[],
+            &contact_with_structured_address(),
+            &company,
+            &primary_bank(),
+            "CH",
+            "CH",
+        )
+        .expect("le montage doit produire un PDF exploitable");
+
+        assert_eq!(
+            data.creditor_phone.as_deref(),
+            Some("+41 21 123 45 67"),
+            "la facture doit porter le téléphone de l'émetteur"
+        );
+        assert_eq!(
+            data.creditor_email.as_deref(),
+            Some("contact@demo.ch"),
+            "la facture doit porter l'e-mail de l'émetteur"
+        );
+        assert_eq!(
+            data.creditor_website.as_deref(),
+            Some("https://demo.ch"),
+            "la facture doit porter le site web de l'émetteur"
+        );
+    }
+
+    /// Le pendant négatif : une société sans coordonnées n'en invente aucune.
+    /// Sans lui, remplacer les trois champs par une constante non vide
+    /// passerait le test précédent.
+    #[test]
+    fn invoice_pdf_omits_contact_details_the_company_does_not_have() {
+        let company = kesh_db::entities::Company {
+            email: None,
+            phone: None,
+            website: None,
+            ..company_with_contact_details()
+        };
+        let (_qr, data) = build_qrbill_inputs(
+            &invoice(),
+            &[],
+            &contact_with_structured_address(),
+            &company,
+            &primary_bank(),
+            "CH",
+            "CH",
+        )
+        .expect("le montage doit produire un PDF exploitable");
+
+        assert!(data.creditor_phone.is_none(), "aucun téléphone à inventer");
+        assert!(data.creditor_email.is_none(), "aucun e-mail à inventer");
+        assert!(data.creditor_website.is_none(), "aucun site web à inventer");
     }
 }

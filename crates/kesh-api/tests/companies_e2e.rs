@@ -155,10 +155,20 @@ async fn contact_details_survive_the_round_trip_to_the_settings_screen(pool: MyS
         .await
         .unwrap();
     let version = current["company"]["version"].as_i64().unwrap();
+    // ⚠️ Les DEUX champs sont vérifiés nuls au départ, pas seulement le
+    // téléphone : l'assertion finale porte sur les deux, donc si
+    // `create_test_company` venait à poser un `website`, ce volet-là cesserait
+    // silencieusement de mesurer l'écriture — le risque exact que ce montage
+    // dit vouloir écarter. *(Passe 6 de revue.)*
     assert!(
         current["company"]["phone"].is_null(),
         "montage : la société ne doit porter aucune coordonnée au départ, \
          sinon le test ne mesure pas l'écriture"
+    );
+    assert!(
+        current["company"]["website"].is_null(),
+        "montage : idem pour le site web — sans quoi l'assertion finale sur \
+         `website` passerait sans rien mesurer"
     );
 
     let resp = app
@@ -397,6 +407,19 @@ async fn overlong_contact_details_are_rejected_by_the_api(pool: MySqlPool) {
             200,
             "un `{champ}` d'exactement la longueur maximale DOIT être accepté — \
              la colonne l'accepte, le refuser serait un faux positif"
+        );
+
+        // ⚠️ Le 200 ne suffit PAS. Une régression de `normalize_contact_field`
+        // rendant `Ok(None)` au lieu d'`Err` pour une valeur pile à la borne
+        // laisserait ce test vert : le statut est là, et la valeur est
+        // silencieusement perdue. C'est la valeur relue qui fait foi.
+        // *(Passe 6 de revue.)*
+        let corps: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(
+            corps[champ], valeur,
+            "un `{champ}` d'exactement la longueur maximale doit être STOCKÉ, \
+             pas seulement accepté — un 200 qui perd la valeur est un défaut \
+             muet"
         );
     }
 
