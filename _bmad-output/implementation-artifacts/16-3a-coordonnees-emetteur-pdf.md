@@ -331,7 +331,7 @@ Le périmètre de 16-3a s'étend donc à `update_company_email` (Story 20-3b1), 
 - **« Le `.gitignore` ne désindexe pas les fichiers déjà suivis »** (`blind`, LOW) — **réfuté** : `git ls-files docs | grep -E "\.claude|\.mcp\.json"` rend **vide**. Le `git rm --cached` a bien eu lieu. *(À ne pas confondre avec le MEDIUM sur la **racine**, lui bien réel.)*
 - **« La ligne tronquée dépasse d'un caractère le budget »** (`blind`, LOW) — **réfuté** : `truncate_display` (`pdf.rs:954-962`) fait `take(max_chars - 1)` **puis** pousse l'ellipse — la chaîne rendue fait exactement `max_chars`, pas `max_chars + 1`. L'ellipse est incluse dans la borne.
 
-**Gate de la passe 6 — ⚠️ INCOMPLET, ET LE MOT EST PESÉ.** MariaDB n'était pas démarré au moment d'appliquer les patches (port 3306 non écouté). Ont réellement tourné, et sont verts :
+**Gate de la passe 6 — ⚠️ INCOMPLET, ET LE MOT EST PESÉ.** *(✅ **LEVÉ le 2026-08-09** : le gate complet a été exécuté sur cet état — backend `2131/2131`, frontend `512/512`, suite E2E jouée en entier. Le constat ci-dessous décrit l'état **au moment de la passe 6** et est conservé tel quel ; le verdict qui fait foi est au Change Log du 2026-08-09.)* MariaDB n'était pas démarré au moment d'appliquer les patches (port 3306 non écouté). Ont réellement tourné, et sont verts :
 
 | Ce qui a tourné | Verdict |
 |---|---|
@@ -346,6 +346,8 @@ Le périmètre de 16-3a s'étend donc à `update_company_email` (Story 20-3b1), 
 Les **9 échecs** sont tous `auth::bootstrap::tests::*` et paniquent dans `sqlx-core-0.8.6/src/testing/mod.rs:226` — l'ouverture de la base de test. Aucun fichier `auth`/`bootstrap` n'est touché par la branche (`git diff --name-only main...HEAD` → vide sur ce motif) : c'est l'absence de MariaDB, pas une régression.
 
 **N'ONT PAS TOURNÉ, et ne doivent donc pas être présumés verts** : toutes les suites `#[sqlx::test]` — dont `companies_e2e`, `companies_repository`, `invoice_pdf_e2e` et `migrations_upgrade_path`, c'est-à-dire **précisément celles que cette passe modifie** — ainsi que la suite Playwright, dont la spec `company-contact-details.spec.ts` **écrite à cette passe n'a jamais été exécutée une seule fois**. Un test jamais lancé ne rougit pas, il se tait. ⚠️ La § *Migration breaking policy* (P6/P7) interdit le ciblage dès qu'un patch touche `crates/kesh-db/` — ce qui est le cas ici (`migrations_upgrade_path.rs`) : **le gate complet est dû avant tout commit de clôture de boucle et avant tout push.**
+
+*(✅ **Dette levée le 2026-08-09.** Les suites `#[sqlx::test]` ont toutes tourné — `2131/2131`, 4 skipped — et `company-contact-details.spec.ts` a été exécutée pour la première fois : **5/5**. Elle n'était donc pas muette.)*
 
 **Analyse pour l'arbitrage du garde-fou de splitting.** La sévérité augmente (0 HIGH → 1 HIGH), ce qui déclenche formellement le second critère. **Ce que le HIGH est, et ce qu'il n'est pas** : c'est un **trou de couverture sur un site unique de six lignes** (`invoice_pdf_service.rs:284-286`), symétrique d'un test qui existe déjà et fonctionne pour l'avoir. Le remède tient en un test, sur le modèle exact de `credit_note_pdf_carries_the_issuer_contact_details`. Ce n'est **pas** le symptôme d'une story qui excéderait un mental-model : aucun des trois lentilles n'a pris en défaut une décision **D1–D5**, et l'Acceptance Auditor a reconfronté les cinq au code en les confirmant toutes. Un découpage par couche placerait précisément ce site **sur la couture** API↔PDF, c'est-à-dire à l'endroit le moins surveillé des deux moitiés — le même argument qui avait fondé la dérogation en passe 3 de `validate`. **Ce que la mesure dit aussi**, et qui va dans l'autre sens : cinq des neuf findings ≥ MEDIUM portent sur des **récapitulatifs devenus faux** (nombres de migrations, passes manquantes, `.gitignore` non propagé, commentaires de calibration, File List) — le symptôme de propagation post-patch est ici **structurel et répété**, non résiduel. Il ne se soigne pas par un split mais par un `grep` systématique du symptôme avant chaque passe.
 
@@ -452,6 +454,7 @@ La **mutation 5** rend `2` et c'est le bon nombre : les deux tests d'aller-retou
 | Après passe 1 | **2123** | +1 — test de troncature |
 | Après passe 2 | **2125** | +2 — full-replace bidirectionnel, borne API |
 | Après passe 3 | **2126** | +1 — clé omise = effacement |
+| Après passe 6 — **gate de clôture, complet** | **2131** | +5 — les tests des patches de la passe 6 |
 
 **Composition finale, recomptée depuis la source** (`git diff main | grep -cE "^\+\s*#\[(sqlx::)?test"`) : **10 tests Rust**, non 6 —
 
@@ -463,7 +466,7 @@ Plus **2 tests frontend** (`settings.api.test.ts`) — le Record affirmait « ce
 
 **Gate frontend** : `check` 0 erreur sur 4880 fichiers, `lint-i18n-ownership` PASS, `build` 0, unitaires **512/512** (et non 510 : les 2 tests du client API s'y ajoutent).
 
-⚠️ **La suite E2E Playwright n'a PAS été exécutée.** Sa baseline est rouge et démontrée telle, et cette story n'ajoute aucun scénario. Elle reste à jouer avant le push. Ce Record ne déclare que ce qui a tourné.
+⚠️ **RECTIFIÉ le 2026-08-09 — cette section affirmait deux choses désormais fausses.** Elle disait « la suite E2E Playwright n'a PAS été exécutée » : elle l'a été, intégralement, et le détail est au Change Log du 2026-08-09. Elle disait aussi « cette story n'ajoute aucun scénario » : c'était vrai à l'implémentation, **plus depuis la passe 6**, qui a écrit `company-contact-details.spec.ts` (5 scénarios). Enfin, « sa baseline est rouge et démontrée telle » n'était adossée à **aucun chiffre** — elle en a un maintenant, mesuré sur `main` : **30 échecs** sur les 15 fichiers concernés.
 
 ### File List
 
@@ -496,6 +499,27 @@ Plus **2 tests frontend** (`settings.api.test.ts`) — le Record affirmait « ce
 **Documentation** — `docs/migrations-idempotence-audit.md` (ligne + compteurs recomptés), `docs/manual/fr/user-manual.tex` + `.pdf` (55 pages), `CHANGELOG.md`, `README.md`.
 
 ## Change Log
+
+**2026-08-09 — GATE DE CLÔTURE DE LA PASSE 6 — backend et frontend VERTS, E2E exécutée pour la première fois, aucune régression imputable à la branche.** Le gate de la passe 6 était déclaré « ⚠️ INCOMPLET, ET LE MOT EST PESÉ » ; il est désormais complet, et chaque verdict ci-dessous est **lu dans son log**, jamais dans un code de sortie d'enveloppe — le piège `script ; echo "RC=$?"`, qui rend le code du `echo`, s'est présenté **deux fois** dans cette session et aurait annoncé « exit 0 » sur un run E2E à `rc=1`.
+
+| Gate | Verdict | Mesure |
+|---|---|---|
+| Backend complet | ✅ vert | `fmt`, `build`, `clippy` à `rc=0` ; `Summary [3682.694s] 2131 tests run: 2131 passed, 4 skipped` — 61 min, DB `kesh_gate2` |
+| Frontend | ✅ vert | `check`, `lint-i18n-ownership`, `test:unit`, `build` à `rc=0` ; **512/512** sur 63 fichiers |
+| E2E — run 1, suite complète (49 specs) | `rc=1` | **177 passed / 40 failed / 19 skipped**, 13,7 min |
+| E2E — run 2, montage SMTP | ✅ vert | `invoice-send-email` 4/4, `reminders` 10/10, `dunning-roundtrip` 1/1 |
+| Baseline `main`, 15 fichiers | — | **53 passed / 30 failed / 5 skipped** |
+| Mêmes 15 fichiers, **branche** | — | **53 passed / 30 failed / 5 skipped** — identique *fichier par fichier* |
+
+**`company-contact-details.spec.ts` passe 5/5 à son tout premier passage.** La passe 6 l'avait écrite sans jamais l'exécuter, et le notait : « un test jamais lancé ne rougit pas, il se tait ». Elle a parlé.
+
+**Les 40 échecs du run 1 se décomposent, et aucun n'est imputable au code de la branche.**
+
+- **7 étaient de mon montage, pas du dépôt.** J'avais démarré un backend **sans SMTP** là où `docs/testing.md` prescrit **deux runs séquentiels** avec des configurations opposées ; les specs échouaient sur `GET /_test/sent-emails` en le disant explicitement. Relancées avec le `MockMailer` (`smtpConfigured:true`), les trois specs passent intégralement. **C'est une faute de lecture de la doc du dépôt, exactement celle que le `CLAUDE.md` impute à la story 16-4** — chercher la recette existante *avant* de diagnostiquer.
+- **30 préexistent à la branche**, et c'est **mesuré, non supposé** : la même sélection rejouée sur `main` avec un montage identique rend le même total et la même répartition par fichier. La mention « baseline rouge » du Dev Agent Record n'était jusqu'ici adossée à aucun chiffre.
+- **3 restent non attribués, et le mot est choisi** — `invoices.spec:387`, `invoices.spec:411`, `sidebar-navigation.spec:71`. Ils échouent dans la **suite complète** sur la branche, et **passent** aussi bien sur `main` que **sur la branche** dès qu'on rejoue la même sélection de 15 fichiers. Le code de la branche est donc hors de cause — c'est le **voisinage d'exécution** qui les fait tomber, ce que rend possible la dette documentée `D-6-4-A` (« pas de reset entre tests d'une même DB partagée »). L'hypothèse naturelle est que `company-contact-details.spec.ts`, insérée en position 47-51, pollue des specs jouées bien plus loin (114-115 et 222) — **mais elle n'est pas testée**, et je ne la donne donc pas pour établie. La départager demande de rejouer la **suite complète sur `main`**, seule comparaison réellement à armes égales.
+
+⚠️ **Deux pannes d'environnement rencontrées en chemin, consignées parce qu'elles font prendre une absence d'exécution pour un échec de code.** (a) L'utilisateur MariaDB `kesh` avait perdu tout privilège sur `kesh_gate2` **et** le droit de créer les bases éphémères de `#[sqlx::test]` — le gate ne pouvait pas démarrer, avec un `1044 Access denied` qui ne ressemble à rien de connu. Restauré au plus étroit (`kesh_gate2`, `kesh_gate`, motif `\_sqlx\_test%`), sans toucher aux autres bases du conteneur. (b) `kesh_e2e` était **en retard d'une migration** — la 59ᵉ, celle de cette branche. Même symptôme que celui déjà consigné au Dev Agent Record pour `kesh_gate2` ; le contrôle de cinq secondes avant de lancer une heure de tests reste le meilleur geste du dépôt. Enfin, la baseline `main` a exigé une base **dédiée** (`kesh_e2e_main`) : sqlx refuse de démarrer sur une base portant une migration que le binaire ne résout pas.
 
 **2026-08-06 — Passe 4 de `bmad-create-story validate` — ✅ BOUCLE CONVERGÉE, DÉROGATION VALIDÉE PAR LE RÉSULTAT** (**Sonnet**, contexte frais). **0 CRITICAL, 0 HIGH, 2 LOW** — critère d'arrêt atteint.
 
