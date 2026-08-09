@@ -378,6 +378,26 @@ Les **9 échecs** sont tous `auth::bootstrap::tests::*` et paniquent dans `sqlx-
 
 **Analyse pour l'arbitrage du garde-fou de splitting.** La sévérité n'augmente pas mais **ne décroît pas** — `1 HIGH` en passe 6, `1 HIGH` en passe 7 —, ce qui coche formellement le critère. **Ce que le HIGH est** : un consommateur non prévenu. La story a créé un variant d'erreur en passe 3 et ne l'a propagé qu'aux deux chemins qu'elle regardait ; un troisième, le lot de rappels, l'attrape par son bras `other`. **Ce n'est pas un symptôme de largeur** — c'est le symptôme, encore, de la § *Propagation post-patch* : un patch appliqué au site signalé sans greper le symptôme sur le dépôt. Un découpage par couche n'y changerait rien, `invoice_email.rs` étant dans la même couche que le site corrigé. **Ce que la mesure dit dans l'autre sens** : sur les 5 findings retenus, **3 portent encore sur des récapitulatifs devenus faux** — après que la passe 6 en ait déjà corrigé 5 de la même famille. Le taux ne baisse pas, et aucune des sept passes n'a jamais pris en défaut une décision **D1–D5**.
 
+---
+
+`bmad-code-review` **passe 8** — 2026-08-09, **Haiku 4.5** (rotation Sonnet → Haiku → Opus bouclée une troisième fois), trois lentilles, diff aplati `main...HEAD` (36 fichiers, 3144 lignes). **✅ BOUCLE CONVERGÉE — 0 finding retenu au-dessus de LOW.** Critère d'arrêt de la § *Review Iteration Rule* atteint **par convergence**, non par épuisement du plafond de 8 passes — ce qui n'allait pas de soi, la passe 8 étant la dernière autorisée.
+
+**Deux lentilles sur trois rendent zéro.** L'Acceptance Auditor après avoir **recompté** — et non relu — les tests (16), les fichiers (36), les migrations (59) et les compteurs de partition ; l'Edge Case Hunter après avoir parcouru les chemins un à un, dont les deux correctifs de la passe 7, l'ordre des 18 `bind()` de l'`UPDATE` et les deux sens du *full-replace*.
+
+⚠️ **Le Blind Hunter a rendu 1 CRITICAL et 1 HIGH. Les DEUX sont des hallucinations, réfutées au ground-truth — et leur cause commune mérite d'être écrite.**
+
+- **« Les trois clés manquent à `I18N_KEYS` »** (CRITICAL) — **réfuté** : `types.rs:243` porte `"invoice-pdf-phone"`. Argument dirimant que l'agent n'a pas vu : l'assertion `const _: () = assert!(I18N_KEYS.len() == DEFAULT_EN.len())` (`types.rs:265`) **ferait échouer `cargo build`** en cas d'écart, or le gate est vert.
+- **« Le struct `InvoicePdfData` n'a pas les trois champs »** (HIGH) — **réfuté** : `types.rs:132-134`. Là encore, le manque serait une **erreur de compilation**, pas un défaut runtime.
+- **« Perte d'écriture d'adresse sous concurrence »** (MEDIUM) — **réfuté** : l'`UPDATE` est `WHERE id = ? AND version = ?` (`repositories/companies.rs:218-219`). Une écriture concurrente bump `version`, la seconde ne matche aucune ligne et part en conflit optimiste.
+
+**La cause commune** : l'agent cherchait `DEFAULT_EN` « aux lignes 2371-2386 de `pdf.rs` », alors que ces définitions vivent dans `types.rs` autour de la ligne 265. Il a confondu les **offsets du fichier de patch** avec les **numéros de ligne des fichiers source**. ⚠️ **C'est la pathologie d'indexation documentée pour Haiku au `CLAUDE.md`, mais sous une forme que la mitigation prescrite ne couvre pas** : le diff aplati protège de la confusion multi-commit, **pas** de la confusion patch↔source. Les deux findings les plus graves de la passe naissent de cette seule erreur, et la discipline du `grep -nF` les a arrêtés tous les deux. Le seul LOW rendu — les clés de conflit du bloc coordonnées jugées « génériques » — porte sur des clés **dédiées créées en passe 6** ; non retenu.
+
+**Trend des huit passes : `1H/3M/2L` → `0H/3M/3L` → `1H/4M/5L` → `1H/1M/3L` → `0H/2M/4L` → `1H/8M/8L` → `1H/4M` → `0`.** Rotation Sonnet → Haiku → Opus parcourue **trois fois** entièrement.
+
+**Le garde-fou de splitting, déclenché aux passes 6 et 7, est validé par le résultat — comme il l'avait été pour la 16-2b.** Il s'était déclenché deux fois de suite (sévérité croissante en 6, puis égale en 7), et la dérogation a été maintenue à chaque fois sur le même argument : aucune des huit passes n'a **jamais** pris en défaut une décision **D1–D5**, et les deux HIGH portaient sur des **consommateurs oubliés** (`invoice_pdf_service.rs`, puis `invoice_email.rs`), c'est-à-dire sur le symptôme de la § *Propagation post-patch* — qu'un découpage n'aurait pas soigné, les sites concernés étant dans la même couche que le code corrigé. La passe 8 à zéro confirme l'arbitrage par la mesure, non par le pronostic.
+
+**Ce que ces huit passes auront coûté et appris, en une phrase** : sur 60 findings retenus, la **remédiation elle-même** est la première source de défauts — récapitulatifs devenus faux, variants non propagés, tests qui ne discriminent rien — et c'est le `grep` du symptôme, jamais la relecture du site corrigé, qui les attrape.
+
 ## Dev Notes
 
 ### Ce que cette story ne doit PAS faire
