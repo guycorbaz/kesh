@@ -216,10 +216,12 @@ Clé `invoice-pdf-client-number` ajoutée à `I18N_KEYS` **et à la même positi
 Ligne ajoutée au tableau de `docs/migrations-idempotence-audit.md` **à sa place chronologique dans le tableau**, avec les **deux** sites du total et la partition recomptés **depuis le tableau** (`ls crates/kesh-db/migrations/*.sql | wc -l` doit égaler `grep -c '^| \`20' docs/migrations-idempotence-audit.md`). DDL pur → **ni** registre `POST_RESTORE_BACKFILLS` **ni** `EXEMPT_MIGRATIONS` (P7). `ADD COLUMN` nullable → **pas** de bump `kesh_version_min_required` ni de version Cargo (P1/P2).
 *Preuve* : le test `every_data_backfill_migration_is_triaged` ne doit jamais sélectionner cette migration. **Et** `upgrade_path_preserves_data` doit repasser au vert après le bump de `assert_eq!(total, …)` à **60** et l'arbitrage de la fenêtre — un rouge laissé là masquerait tout ajout ultérieur.
 
-**AC10 — Le numéro est cherchable, et visible dans la liste.**
-La recherche de contacts accepte le numéro de client, et la liste affiche une colonne « N° client ».
+**AC10 — Le numéro est cherchable.**
+La recherche de contacts accepte le numéro de client.
 
-*Pourquoi c'est un critère et non un confort* : le « so that » de cette story promet **deux** bénéfices, et le second est « que je puisse moi-même **retrouver un contact depuis une facture papier** ». Sans recherche ni colonne, un utilisateur tenant une facture portant « N° client : CLI-2026-00042 » n'a **littéralement aucun moyen** de remonter au contact. Livrer une story dont la moitié du bénéfice annoncé n'est ni spécifiée ni testée est le plus mauvais des choix disponibles.
+*Pourquoi c'est un critère et non un confort* : le « so that » de cette story promet **deux** bénéfices, et le second est « que je puisse moi-même **retrouver un contact depuis une facture papier** ». Sans recherche, un utilisateur tenant une facture portant « N° client : CLI-2026-00042 » n'a **littéralement aucun moyen** de remonter au contact. Livrer une story dont la moitié du bénéfice annoncé n'est ni spécifiée ni testée est le plus mauvais des choix disponibles.
+
+*(La **colonne** « N° client » dans la liste des contacts a été **écartée** — arbitrage du Project Lead, passe 6. Voir « Ce que cette story ne doit PAS faire ».)*
 
 *Le coût est faible, et le dépôt donne la bonne technique.* La recherche actuelle (`repositories/contacts.rs:170-186`) couvre `name` par `MATCH … AGAINST` (FULLTEXT) et `email` par `LIKE`. Le commentaire de la l. 162-165 explique **pourquoi** `email` est resté en `LIKE` : ses séparateurs cassent les tokens FULLTEXT. Un `CLI-2026-00042` subirait exactement le même sort — donc une branche `OR client_number LIKE ?` à côté de celle d'`email`, et non un ajout à l'index FULLTEXT.
 
@@ -241,7 +243,7 @@ La recherche de contacts accepte le numéro de client, et la liste affiche une c
 - [ ] **T4 — Tests repository** (AC1, AC2, AC2-bis, AC2-ter). Aller-retour `create`/`find_by_id`/`update`/`find_by_id` ; unicité rejetée **entre contacts actifs** ; **deux `NULL` acceptés** ; **numéro d'un contact archivé réattribuable à un actif** (l'invariant de D2-bis) ; trace d'audit ; et `update` du **seul** `client_number` → nouvelle valeur **et** `version` incrémentée.
 - [ ] **T5 — Route et DTO** (AC3, AC4). `ContactResponse` (`contacts.rs:151`) + `impl From<Contact> for ContactResponse` (l. 186) + **les deux** DTO d'entrée (`CreateContactRequest` l. 70 et `UpdateContactRequest` l. 108), **avec `normalize_optional()`** sur le champ (l. 259) comme pour `email`/`phone`. Pour l'erreur : **étendre `map_contact_error` (`contacts.rs:461`)** d'une branche, ajouter la variante `AppError::ClientNumberAlreadyExists` et sa ligne dans le `match` de `errors.rs` (409 / `CLIENT_NUMBER_ALREADY_EXISTS`). Ne **pas** écrire un second helper : le repository rend déjà `DbError::UniqueConstraintViolation`, tout le chemin existe.
 - [ ] **T6 — Tests API** (AC3, AC4). Aller-retour `POST`/`GET` ; doublon → **409** + code d'erreur asserté ; **non-sur-capture** entre les deux contraintes (calquer `contacts.rs:765`).
-- [ ] **T7 — Frontend** (AC4, AC5, AC8, AC10). Type TS (`contacts.types.ts`, interface `ContactResponse`), champ de la fiche contact, **hydratation dans `openEdit` (l. 240-258) — la ligne dont l'oubli efface le champ à chaque édition**, **colonne « N° client » dans la liste** (+ le `colspan` du tableau, câblé en dur à **deux** endroits — l. **537** état *chargement* et l. **540** état *liste vide* ; n'en corriger qu'un laisserait l'autre à 6 pour 7 colonnes), **placeholder de recherche corrigé** (l. 441), libellés sur les 4 locales. Respecter `lint-i18n-ownership`.
+- [ ] **T7 — Frontend** (AC4, AC5, AC8, AC10). Type TS (`contacts.types.ts`, interface `ContactResponse`), champ de la fiche contact, **hydratation dans `openEdit` (l. 240-258) — la ligne dont l'oubli efface le champ à chaque édition**, **placeholder de recherche corrigé** (l. 441), libellés sur les 4 locales. ⚠️ **Pas de colonne dans le tableau de liste** (écartée en passe 6) — donc **ne pas toucher au `colspan`**, câblé en dur à deux endroits. Respecter `lint-i18n-ownership`.
 - [ ] **T7-ter — Message du 409 à l'écran** (AC4). Le frontend branche les codes **un par un** (`frontend/src/routes/(app)/contacts/+page.svelte:349-358`) : `OPTIMISTIC_LOCK_CONFLICT`, puis `IDE_ALREADY_EXISTS` → `contact-error-ide-duplicate`, **sinon `err.message` brut du backend**. Sans branche dédiée, l'utilisateur qui saisit un doublon reçoit un message non maîtrisé et non traduit, là où le doublon d'IDE a droit au sien. Ajouter la branche `CLIENT_NUMBER_ALREADY_EXISTS` et la clé `contact-error-client-number-duplicate` **dans les 4 locales** — le domaine `contact-*` est aujourd'hui à 59 clés dans chacune, sans dérive : ne pas l'ouvrir.
 - [ ] **T7-bis — Recherche par numéro** (AC10). Branche `OR client_number LIKE ?` dans `repositories/contacts.rs`, **pas** dans l'index FULLTEXT — le commentaire l. 162-165 explique pourquoi les séparateurs cassent les tokens (et `escape_like` préserve les tirets, donc `CLI-2026-00042` fonctionne). ⚠️ **Il y a DEUX sites `email LIKE`, l. 174 et l. 181** — la première branche sert quand le terme échappé est vide, la seconde le cas courant. N'en traiter qu'un compile, passe les tests dont le terme survit à `escape_boolean_ft`, et **cesse silencieusement de chercher le numéro** quand le terme n'est fait que d'opérateurs FULLTEXT. Échec rare et muet : les deux sites, ou aucun.
 - [ ] **T8 — E2E fiche contact** (AC5). Saisie → enregistrement → rechargement → relecture. ⚠️ Le fichier **DOIT** être nommé `*.spec.ts` : `playwright.config.ts:35` filtre sur `testMatch: /(.+\.)?spec\.[jt]s/`, et un `*.test.ts` posé dans `tests/e2e/` est **silencieusement ignoré** — il ne rougit jamais, il se tait.
@@ -266,6 +268,7 @@ La recherche de contacts accepte le numéro de client, et la liste affiche une c
 - **Pas de garde de capacité symétrique** — voir plus bas, ce serait du code mort.
 - **Pas de numéro dans l'échéancier / rapport des débiteurs.** `crates/kesh-report/src/aged_receivables.rs:112` identifie le client par `c.name` seul, et l'export CSV de même (`csv.rs:456`). C'est le rapport où le numéro aurait le plus de sens après la facture — l'omission est **délibérée** et bornée au périmètre de cette story, pas un oubli.
 - **Pas de variable `{clientNumber}` dans les modèles d'e-mail.** La liste blanche est à `entities/email_template.rs:53` et `:65` ; aucun modèle n'évoque de numéro de client. L'y ajouter serait une **feature**, pas une complétion.
+- **Pas de colonne « N° client » dans la liste des contacts** — arbitrage du Project Lead, passe 6. Le bénéfice annoncé par le « so that » est **entièrement servi par la recherche** (AC10) ; une septième colonne au tableau est une décision d'interface que rien n'a demandée, et son coût est réel (le `colspan` câblé en dur à **deux** endroits, `frontend/src/routes/(app)/contacts/+page.svelte:537` et `:540`, plus un E2E et une clé sur 4 locales). Ne pas y toucher.
 - **Pas de numéro dans l'export CSV du carnet d'adresses.** `serialize_contacts_csv` (`exports/csv_tables.rs:314`) a deux listes appariées positionnellement (en-têtes puis valeurs) et est **déjà partielle** : ni `first_name`, ni `address_street`, ni `language` n'y figurent. L'exclusion est donc cohérente avec l'état de cet export, et **tranchée ici** plutôt que laissée à l'appréciation de l'implémentation. Si elle devait être révisée un jour, **les deux** listes devraient être touchées ensemble, sous peine de décaler silencieusement toutes les colonnes suivantes.
 
 ### Les angles déjà explorés et rendus VIDES — ne pas les refaire
@@ -350,6 +353,31 @@ Le seul précédent du dépôt **écarte explicitement** la comparaison octet à
 - **KF #283** — 57 clés i18n absentes des locales non-françaises ; ne pas l'aggraver.
 
 ## Change Log
+
+**2026-08-10 — BOUCLE `validate` ARRÊTÉE À LA PASSE 6 — arbitrage du Project Lead, dérogation motivée au critère d'arrêt.**
+
+Le critère de la § *Review Iteration Rule* (« uniquement des `LOW` ») **n'est pas atteint** : la passe 6 a rendu 1 HIGH et 5 MEDIUM, tous remédiés. Le plafond de 8 passes n'est pas non plus atteint. **L'arrêt est donc une dérogation, et voici ce qui la motive.**
+
+**Le rendement des passes est devenu négatif en information neuve.** Sur les six passes, la source des findings s'est déplacée :
+
+| Passe | Findings > LOW | Dont défauts **introduits par une passe antérieure** |
+|---|---|---|
+| 1 | 3 | — |
+| 2 | 9 | 0 |
+| 3 | 1 | 0 |
+| 4 | 10 | **2** (D2-bis et AC6, tous deux patchés en P2) |
+| 5 | 4 | **2** (propagation P4 non faite, chiffre P5 faux) |
+| 6 | 6 | **1** (borne de troncature posée en P2) |
+
+Les passes 5 et 6 ont surtout réparé les réparations. C'est le constat déjà mesuré sur le lot 16-1 (« au moins 12 findings sur 28 corrigent un artefact produit par une passe antérieure ») et la § *Propagation post-patch* du `CLAUDE.md` le nomme explicitement comme mode d'échec récurrent du processus.
+
+**Trois signaux convergents plaident pour l'arrêt** : (a) la lentille de synthèse de la passe 6, seule à qui un **verdict** ait été demandé, conclut que le socle est exact et recommande de ne pas enchaîner ; (b) toutes les ancres re-contrôlées à la passe 6 tiennent, sur une quarantaine de vérifications indépendantes ; (c) les deux dernières lentilles Haiku ont rendu « 0 finding » — signal faible pris isolément, mais cohérent avec le reste.
+
+**Ce que l'arrêt ne prétend PAS.** Il ne déclare pas la spec exempte de défauts. Il constate que la **prochaine** passe a plus de chances de corriger un patch de la sixième que de trouver un défaut d'origine. Le filet suivant est la boucle `bmad-code-review` après implémentation, qui travaillera sur du **code exécutable** — donc sur des faits que la revue de spec ne peut pas atteindre.
+
+**Trend complet** : `1H/2M/2L` → `4H/5M/2L` → `1M` → `1C/4H/5M/3L` → `2H/2M/3L` → `1H/5M/3L`. Rotation Opus → Sonnet → Haiku → Opus → Sonnet → Haiku+Opus, 11 lentilles en contexte frais. **Deux dérogations arbitrées par Guy** : garde-fou de splitting (passe 4) et critère d'arrêt (passe 6).
+
+**Bilan de la boucle** : 9 critères et 13 tâches au départ, **13 critères et 16 tâches** à l'arrivée — une décision renversée (D2-bis), deux modes d'échec **silencieux** fermés que la spécification initiale ne voyait pas (`is_no_op_change`, qui perdait la donnée ; l'hydratation d'`openEdit`, qui l'effaçait à chaque édition), un critère intestable rendu testable (AC6), et un débordement hors page évité (AC6-bis).
 
 **2026-08-10 — Passe 6 de `bmad-create-story validate`** (**Haiku** — audit mécanique des ajouts récents — et **Opus** — jugement de synthèse, contextes frais). **1 HIGH, 5 MEDIUM, 3 LOW**, tous vérifiés au ground-truth et remédiés. **Boucle NON convergée — passe 7 due.**
 
