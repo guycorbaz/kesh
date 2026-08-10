@@ -2,7 +2,7 @@
 
 ## Status
 
-review
+done
 
 ## Story
 
@@ -552,6 +552,31 @@ Plus **2 tests frontend** (`settings.api.test.ts`) — le Record affirmait « ce
 **Documentation** — `docs/migrations-idempotence-audit.md` (ligne + compteurs recomptés), `docs/manual/fr/user-manual.tex` + `.pdf` (55 pages), `CHANGELOG.md`, `README.md`.
 
 ## Change Log
+
+**2026-08-10 — GATE DE CLÔTURE DE LA BOUCLE (passes 7 et 8) — backend et frontend VERTS, ET LES 3 ÉCHECS E2E LAISSÉS « NON ATTRIBUÉS » LE 2026-08-09 SONT ATTRIBUÉS.** Les patches des passes 7 et 8 touchaient du code exécutable et n'avaient eu qu'un gate ciblé ; ce gate-ci est complet. Chaque verdict est **lu dans son log**, jamais dans un code de sortie d'enveloppe.
+
+| Gate | Verdict | Mesure |
+|---|---|---|
+| `fmt` + `clippy` workspace | ✅ vert | via `scripts/test-fast.sh` |
+| Backend complet (nextest) | ✅ vert | `Summary [3885.743s] 2132 tests run: 2132 passed, 4 skipped` — 64,8 min, DB dev `kesh` |
+| Frontend | ✅ vert | `check` 0 erreur / 27 warnings préexistants, `lint-i18n-ownership` PASS, **512/512** sur 63 fichiers, `build` OK |
+| E2E — **suite complète, branche** | `rc=1` | **178 passed / 39 failed / 19 skipped**, 236 tests, 13,7 min |
+| E2E — **suite complète, `main`** | `rc=1` | **172 passed / 40 failed / 19 skipped**, 231 tests, 14,7 min |
+| **Différentiel branche ↔ `main`** | ✅ **nul** | 39 échecs **strictement communs** ; **0 échec propre à la branche** ; 1 échec propre à `main` |
+
+**La comparaison à armes égales qui manquait au gate du 2026-08-09 a été faite** : suite **complète** des deux côtés, montages identiques, sur deux ports et deux bases distincts (`:3000`/`kesh_e2e` pour la branche, `:3001`/`kesh_e2e_main` pour `main` depuis un worktree sur `ddbea7c1`). C'est ce que la passe précédente désignait comme « seule comparaison réellement à armes égales », et elle tranche.
+
+**L'arithmétique boucle exactement** : `172` (passed sur `main`) `+ 5` (les tests neufs de `company-contact-details.spec.ts`, tous verts) `+ 1` (`sidebar-navigation.spec:71`, qui échoue sur `main` et **passe** sur la branche) `= 178`. Aucun test ne se perd en route.
+
+**Les trois échecs « non attribués » sont désormais attribués, et aucun n'est imputable à la branche.**
+
+- **`invoices.spec:387` et `:411` — KF réelle, dépendante de L'HEURE DE LA JOURNÉE.** Le helper `recordManualReminderViaApi` poste `sentAt = <jour>T12:00:00` construit depuis `new Date().toISOString()`, donc en **UTC** ; et `crates/kesh-api/src/routes/dunning_reminders.rs:261` refuse tout `sent_at` futur (`if body.sent_at > Utc::now().naive_utc()` → 422). **Toute exécution avant 12:00 UTC échoue mécaniquement, toute exécution après passe.** C'est l'explication complète du symptôme qui avait résisté : « échoue en suite complète, passe en rejeu de la sélection » — le rejeu avait simplement lieu plus tard dans la journée. Tracé en issue GitHub.
+- **`sidebar-navigation.spec:71`** échoue **sur `main`** et **passe sur la branche**.
+- ⚠️ **L'hypothèse de la passe précédente est RÉFUTÉE.** Elle supposait que `company-contact-details.spec.ts`, insérée en position 47-51, polluait ses voisines via la DB partagée (dette `D-6-4-A`). Or les trois échouent **aussi sur `main`**, où cette spec **n'existe pas**. Elle avait été explicitement donnée pour « non testée » ; elle l'est désormais, et elle est fausse. La dette `D-6-4-A` reste réelle, mais elle n'explique pas ces trois-là.
+
+⚠️ **CE QUE CE GATE N'ÉTABLIT PAS, et le mot est pesé : la suite E2E locale N'EST PAS VERTE.** 39 échecs subsistent des **deux** côtés. Répartition par cause, relevée sur le log de la branche : **20** de type `localStorage` inaccessible / « JWT introuvable post-login », **5** dus à l'absence de vars SMTP dans ce montage (les specs le disent elles-mêmes : « backend démarré sans SMTP factice ? »), **2** la KF d'heure ci-dessus, **12** timeouts et assertions vraisemblablement en cascade. Ce sont des défauts d'environnement et de dette préexistante, **identiques sur `main`** — mais le story file ne doit affirmer que ce qui a tourné : ce gate établit **l'absence de régression**, pas une suite verte. Le gate du 2026-08-09 employait déjà cette prudence (« E2E jouée, 0 régression »).
+
+**Piège d'environnement rencontré, et écarté en cinq secondes** : la DB dev `kesh` — celle qu'utilisent les tests lib `kesh-db` — était **en retard de la 59ᵉ migration**, celle de cette branche. Contrôlé au `cargo sqlx migrate info` **avant** d'engager l'heure de tests, appliqué, puis gate lancé. C'est le troisième relevé de ce même symptôme sur cette story (après `kesh_gate2` et `kesh_e2e`) ; le contrôle préalable reste le meilleur geste du dépôt.
 
 **2026-08-09 — GATE DE CLÔTURE DE LA PASSE 6 — backend et frontend VERTS, E2E exécutée pour la première fois, aucune régression imputable à la branche.** Le gate de la passe 6 était déclaré « ⚠️ INCOMPLET, ET LE MOT EST PESÉ » ; il est désormais complet, et chaque verdict ci-dessous est **lu dans son log**, jamais dans un code de sortie d'enveloppe — le piège `script ; echo "RC=$?"`, qui rend le code du `echo`, s'est présenté **deux fois** dans cette session et aurait annoncé « exit 0 » sur un run E2E à `rc=1`.
 
