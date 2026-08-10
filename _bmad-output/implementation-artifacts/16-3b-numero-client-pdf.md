@@ -43,7 +43,9 @@ Colonne `client_number VARCHAR(50) NULL` sur `contacts`, remplie à la main depu
 
 *Pourquoi* : l'issue demande « un numéro de client / référence client », pas un système de numérotation. Auto-générer imposerait de trancher un format, une séquence, une politique de reprise pour le parc existant et un comportement en cas de collision — c'est un sujet en soi, et **aucun de ces choix n'est demandé**. `VARCHAR(50)` est aligné sur `contacts.phone` (50) et accueille aussi bien `42` que `CLI-2026-00042` ou une référence imposée par le client.
 
-### D2 — Unicité **par société**, via `UNIQUE (company_id, client_number)`
+### D2 — Unicité **par société**
+
+*(La forme SQL exacte de la contrainte est fixée par **D2-bis** : elle porte sur une colonne générée `client_number_uniq`, pas sur `client_number` directement. D2 pose le principe, D2-bis son périmètre.)*
 
 *Pourquoi* : un numéro de client qui désigne deux contacts ne remplit pas sa fonction — il sert précisément à identifier. MariaDB autorise **plusieurs `NULL`** dans un index `UNIQUE`, donc les contacts sans numéro (la majorité au départ) ne se gênent pas entre eux. Le précédent est dans la **même table** : `uq_contacts_company_ide` (`20260414000001_contacts.sql:23`).
 
@@ -53,13 +55,25 @@ Colonne `client_number VARCHAR(50) NULL` sur `contacts`, remplie à la main depu
 
 ⚠️ **`''` N'EST PAS `NULL`, et c'est le piège de cette décision.** L'invariant ci-dessus vaut pour `NULL` **littéral**. Une chaîne vide est une valeur comme une autre pour un index `UNIQUE` : deux contacts soumis avec `client_number: ""` — le cas **majoritaire** que D2 prétend protéger — se percuteraient. La parade existe déjà dans le dépôt et doit être appliquée : `normalize_optional()` (`crates/kesh-api/src/routes/contacts.rs:259`), qui trime et effondre le vide en `None`, déjà branchée sur `email` (l. 348), `phone` (l. 360) et `default_payment_terms` (l. 369), et testée (l. 773). Voir AC3.
 
-### D2-bis — Un contact archivé **garde** son numéro : verrou assumé
+### D2-bis — Un contact archivé **libère** son numéro : unicité partielle sur les actifs
 
-La contrainte est **plate**, sans filtre sur `active`. Conséquence : le numéro d'un contact archivé reste pris, et ne peut être réattribué qu'en vidant d'abord le champ de l'archive.
+La contrainte porte sur une **colonne générée**, pas sur `client_number` directement :
 
-*Pourquoi ce choix, et pourquoi il est explicite* : le dépôt dispose d'un patron inverse, éprouvé deux fois — colonne `GENERATED ALWAYS AS … VIRTUAL` valant `NULL` quand `active = FALSE`, qui sort les lignes archivées de la contrainte (`20260513000001_reconciliation_rules.sql:19-28` et `20260722000001_accounts_role_postable.sql:20-33`, ce dernier assumant par écrit le corollaire « réactiver un compte dont le rôle a été repris échoue »). Il n'est **pas** retenu ici parce que la valeur est résolue **à la génération du PDF** (D5) : libérer un numéro le ferait désigner deux entités différentes selon l'époque, et c'est très exactement le rapprochement que la story cherche à rendre possible qu'on casserait. Un numéro de client est une **identité historique**, pas une ressource recyclable.
+```sql
+client_number_uniq VARCHAR(50) GENERATED ALWAYS AS (IF(active, client_number, NULL)) VIRTUAL,
+CONSTRAINT uq_contacts_company_client_number UNIQUE (company_id, client_number_uniq)
+```
 
-L'échappatoire reste ouverte et manuelle : vider le champ sur l'archive libère le numéro, délibérément.
+C'est la **troisième application** d'un patron déjà éprouvé deux fois dans ce dépôt — MariaDB n'ayant pas d'`UNIQUE` partiel natif, la convention « `NULL` n'est jamais égal à `NULL` » en tient lieu (`20260513000001_reconciliation_rules.sql:19-28`, `20260722000001_accounts_role_postable.sql:20-33`). Pré-requis MariaDB ≥ 10.6 pour un `UNIQUE` sur colonne `VIRTUAL` : le compose est épinglé sur `mariadb:10.11`.
+
+⚠️ **Une version antérieure de cette story décidait l'inverse — contrainte plate, verrou permanent — et sa justification était doublement fausse.**
+
+1. **L'échappatoire invoquée n'existe pas.** Elle disait « vider le champ sur l'archive libère le numéro ». Or **un contact archivé n'est pas modifiable** : `repositories/contacts.rs:421-426` rend `IllegalStateTransition("impossible de modifier un contact archivé")`, doublé par le `WHERE … AND active = TRUE` de l'`UPDATE` (l. 457) ; et il n'existe **aucune route de désarchivage** (`grep -rniE "unarchive|restore_contact|reactivate"` → 0 ligne). Le numéro aurait donc été perdu **à vie**, déblocable seulement par un `UPDATE` SQL manuel en base — ce qui n'est pas une échappatoire, c'est une intervention hors produit.
+2. **Le dépôt avait déjà rendu ce jugement, par écrit, sur le cas jumeau.** `20260722000001_accounts_role_postable.sql:35-38` : « *Le `active AND` n'est PAS cosmétique : sans lui, un compte archivé squatterait son rôle singleton à vie et son remplaçant actif ne pourrait jamais le recevoir (409 permanent causé par un compte mort).* » La situation des contacts est **strictement plus fermée**, puisqu'ils n'ont même pas de réactivation.
+
+**Et le précédent `uq_contacts_company_ide` ne sauve pas le verrou** : un IDE est un identifiant **attribué par l'État**, jamais réattribuable à une autre entité — le verrou permanent y est sémantiquement juste. Un numéro de client est une **étiquette interne**, recyclable par nature.
+
+**Enfin, le raisonnement par D5 était inversé.** Il prétendait que libérer un numéro le ferait « désigner deux entités selon l'époque ». Le système ne résout **jamais** numéro → contact : une facture désigne son contact par clé étrangère (`entities/invoice.rs`), et le PDF imprime le numéro *courant* de ce contact. Il n'y a donc aucune ambiguïté interne. La seule ambiguïté possible est sur le **papier déjà envoyé** — exactement l'artefact que D5 laisse déjà dériver pour le nom et l'adresse. D5 est un argument **contre** le verrou, pas pour.
 
 ### D3 — Rendu dans le bloc **métadonnées (droite)**, sous le numéro de facture
 
@@ -75,9 +89,16 @@ Résolue à la génération du PDF, comme le nom et l'adresse du débiteur. Pas 
 
 ## Acceptance Criteria
 
-**AC1 — La colonne existe et est unique par société.**
-Migration `crates/kesh-db/migrations/<date>_contacts_client_number.sql` : `ALTER TABLE contacts ADD COLUMN client_number VARCHAR(50) NULL, ADD CONSTRAINT uq_contacts_company_client_number UNIQUE (company_id, client_number);`
-*Preuve* : test repository qui insère deux contacts de la même société avec le même `client_number` et vérifie le rejet, **plus** un test qui insère deux contacts avec `client_number = NULL` et vérifie qu'ils passent tous les deux (l'invariant MariaDB dont dépend D2 — s'il tombait, la moitié du parc deviendrait insaisissable).
+**AC1 — La colonne existe et est unique par société, entre contacts ACTIFS.**
+Migration `crates/kesh-db/migrations/<date>_contacts_client_number.sql` : `ADD COLUMN client_number VARCHAR(50) NULL`, plus la colonne générée et la contrainte de D2-bis (`client_number_uniq` … `UNIQUE (company_id, client_number_uniq)`).
+
+⚠️ **L'unicité est insensible à la casse.** `contacts` ne déclare aucune collation (`20260414000001_contacts.sql:4-30`) et hérite donc du défaut MariaDB, une collation `_ci` : `CLI-1` et `cli-1` sont **identiques** pour la contrainte. C'est souhaitable — un utilisateur ne doit pas créer deux clients qui ne diffèrent que par la casse — mais ce doit être **décidé**, pas subi. Le précédent d'`ide_number` n'éclaire pas ce point : il est normalisé en majuscules avant stockage, donc sa casse ne varie jamais, alors que `client_number` ne passe que par `normalize_optional()` (trim, pas de casse).
+
+*Preuve*, quatre cas :
+1. deux contacts **actifs** de la même société, même numéro → **rejet** ;
+2. deux contacts avec `client_number = NULL` → **tous deux acceptés** (l'invariant MariaDB dont dépend D2 — s'il tombait, la majorité du parc deviendrait insaisissable) ;
+3. `CLI-1` puis `cli-1` sur deux actifs → **rejet** (la casse) ;
+4. **le numéro d'un contact archivé est réattribuable à un contact actif** — c'est l'invariant de D2-bis, et rien d'autre ne le vérifie.
 
 **AC2 — Le champ traverse le repository sans se perdre.**
 Les **quatre** listes de colonnes **SQL** de `crates/kesh-db/src/repositories/contacts.rs` portent le champ : `COLUMNS` (l. 28-31), `FIND_BY_ID_SQL` (l. 33-36), l'`INSERT` (l. 201) **et ses placeholders `VALUES`**, l'`UPDATE` (l. 451).
@@ -88,6 +109,24 @@ Les **quatre** listes de colonnes **SQL** de `crates/kesh-db/src/repositories/co
 *Preuve* : test qui modifie le numéro et vérifie que l'entrée d'audit en porte la trace, avant et après.
 
 ⚠️ Ce snapshot est **partiel par conception** — les champs structurés de #213 (`first_name`, `address_street`, …) n'y figurent pas. L'argument d'inclusion n'est donc pas « il faut tout y mettre », mais « `ideNumber` y est, et ces deux champs sont fonctionnellement jumeaux ».
+
+**AC2-ter — Modifier UNIQUEMENT le numéro enregistre réellement la modification.**
+`is_no_op_change` (`repositories/contacts.rs:377-396`) est une **sixième liste écrite à la main** — 18 comparaisons champ à champ — et c'est la plus dangereuse de toutes.
+
+Son verdict **court-circuite l'écriture** (l. 439-442) :
+
+```rust
+if is_no_op_change(&before, &changes) {
+    tx.rollback().await.map_err(map_db_error)?;
+    return Ok(before);
+}
+```
+
+Si `client_number` n'y est pas ajouté, alors **le geste central de cette story** — ouvrir une fiche existante pour lui attribuer son numéro, sans rien changer d'autre — est classé « aucun changement » : transaction annulée, aucun `UPDATE`, aucune entrée d'audit, et l'API rend **`200 OK` avec l'ancienne valeur**. L'utilisateur voit son numéro disparaître au rechargement, **sans le moindre message d'erreur**.
+
+C'est pire que l'oubli d'AC2-bis : l'audit aveugle perd une *trace*, celui-ci perd la *donnée* — et perd précisément celle que la story existe pour ajouter.
+
+*Preuve* : `update` ne modifiant **que** `client_number` → `find_by_id` rend la nouvelle valeur **et** `version` a été incrémentée. Le contrôle de `version` n'est pas décoratif : il distingue une écriture réelle d'un `Ok(before)` renvoyé par le court-circuit.
 *Preuve* : test d'aller-retour `create` → `find_by_id` → `update` → `find_by_id` qui vérifie la valeur à chaque étape. ⚠️ Un test qui n'utilise que `list` passerait alors même que `FIND_BY_ID_SQL` aurait été oublié — voir Dev Notes, « le piège qui coûterait le plus cher ».
 
 **AC3 — Le champ est saisissable et relisible depuis l'API.**
@@ -121,7 +160,16 @@ Champ dans l'écran contact du frontend, avec libellé traduit.
 
 ⚠️ **Le delta de taille NE PEUT PAS prouver la conditionnalité du décrément, et le dépôt l'a déjà payé.** `pdf.rs:1165-1168` le dit noir sur blanc : « un décalage vertical de 2 mm déplace le texte sans changer sa longueur, donc le PDF pèse le même nombre d'octets. **Mesuré** — une première version de ce test comparait deux générations entre elles et restait **verte** sous la mutation. » La parade de 16-3a fut de mesurer au **seuil de la garde haute**, où 2 mm changent un verdict (`no_identity_line_costs_no_vertical_space`, l. 1182). **Cette parade n'est pas disponible ici** : la garde ne surveille que `y`, la colonne gauche, et les Dev Notes de cette story établissent qu'il ne faut pas en créer une à droite (89,5 mm de marge ⇒ branche inatteignable).
 
-*Preuve (conditionnalité) — le refactor est donc obligatoire*, comme AC5 de 16-3a a imposé le sien : extraire la construction du bloc métadonnées en **fonction pure** rendant la séquence des lignes et leur ordonnée (`Vec<(String, f32)>`), et tester **la position** — l'ordonnée de la ligne « échéance » doit être **identique** entre le cas `Some` et le cas `None`. C'est le seul montage qui tue la mutation « `my -= 4.5` sorti du `if let` ». Sans lui, AC6 est un critère dont aucun test ne peut échouer, c'est-à-dire un test muet — le mode d'échec le plus documenté de ce dépôt.
+*Preuve (conditionnalité) — le refactor est donc obligatoire*, comme AC5 de 16-3a a imposé le sien : extraire la construction du bloc métadonnées en **fonction pure** rendant la séquence des lignes et leur ordonnée (`Vec<(String, f32)>`), et tester **la position**.
+
+⚠️ **L'assertion doit être `y_none − y_some == 4.5`, PAS « les deux ordonnées sont identiques ».** Une version antérieure de cet AC écrivait « identique », et c'était **exactement le verdict du mutant** : avec un code **correct**, la ligne « échéance » est 4,5 mm **plus basse** dans le cas `Some` ; c'est la mutation — `my -= 4.5` sorti du `if let`, donc appliqué dans les deux cas — qui rend les deux ordonnées **égales**. Suivie à la lettre, cette assertion aurait forcé l'implémenteur à écrire un test rouge sur du bon code, puis à sortir le décrément du `if let` pour le verdir : **à implémenter la mutation qu'elle prétendait tuer.**
+
+Deux formulations correctes, au choix — la seconde transpose la vraie parade de 16-3a (`no_identity_line_costs_no_vertical_space`, `pdf.rs:1182`), qui ne compare pas deux générations entre elles mais mesure l'absence contre un **absolu** :
+
+- `assert_eq!(y_none - y_some, 4.5)` — le delta *doit* valoir 4,5 ; la mutation le met à 0 ;
+- ou, en `None`, ordonnée « échéance » **exactement 265,5** (valeur pré-story, codée en dur).
+
+Sans ce montage, AC6 est un critère dont aucun test ne peut échouer, c'est-à-dire un test muet — le mode d'échec le plus documenté de ce dépôt.
 
 **AC6-bis — Un numéro trop long est tronqué, pas débordé.**
 Le bloc droit dispose de **70 mm** (`meta_x = 120.0` à `PAGE_W − 20.0 = 190.0`, cf. `hline` l. 428) — **moins** que les 100 mm du bloc gauche, qui imposent déjà `IDENTITY_MAX_CHARS = 46`. Or `client_number` est un champ **libre de 50 caractères saisi par l'utilisateur**, contrairement à `origin_reference` qui est un numéro système court : le patron de D3 ne couvre donc pas ce risque.
@@ -140,16 +188,29 @@ Clé `invoice-pdf-client-number` ajoutée à `I18N_KEYS` **et à la même positi
 Ligne ajoutée au tableau de `docs/migrations-idempotence-audit.md` **à sa place chronologique dans le tableau**, avec les **deux** sites du total et la partition recomptés **depuis le tableau** (`ls crates/kesh-db/migrations/*.sql | wc -l` doit égaler `grep -c '^| \`20' docs/migrations-idempotence-audit.md`). DDL pur → **ni** registre `POST_RESTORE_BACKFILLS` **ni** `EXEMPT_MIGRATIONS` (P7). `ADD COLUMN` nullable → **pas** de bump `kesh_version_min_required` ni de version Cargo (P1/P2).
 *Preuve* : le test `every_data_backfill_migration_is_triaged` ne doit jamais sélectionner cette migration.
 
+**AC10 — Le numéro est cherchable, et visible dans la liste.**
+La recherche de contacts accepte le numéro de client, et la liste affiche une colonne « N° client ».
+
+*Pourquoi c'est un critère et non un confort* : le « so that » de cette story promet **deux** bénéfices, et le second est « que je puisse moi-même **retrouver un contact depuis une facture papier** ». Sans recherche ni colonne, un utilisateur tenant une facture portant « N° client : CLI-2026-00042 » n'a **littéralement aucun moyen** de remonter au contact. Livrer une story dont la moitié du bénéfice annoncé n'est ni spécifiée ni testée est le plus mauvais des choix disponibles.
+
+*Le coût est faible, et le dépôt donne la bonne technique.* La recherche actuelle (`repositories/contacts.rs:170-186`) couvre `name` par `MATCH … AGAINST` (FULLTEXT) et `email` par `LIKE`. Le commentaire de la l. 162-165 explique **pourquoi** `email` est resté en `LIKE` : ses séparateurs cassent les tokens FULLTEXT. Un `CLI-2026-00042` subirait exactement le même sort — donc une branche `OR client_number LIKE ?` à côté de celle d'`email`, et non un ajout à l'index FULLTEXT.
+
+*Preuve* : test API — recherche par numéro exact rend le contact ; recherche par fragment le rend aussi. Test E2E — la colonne est visible dans la liste.
+
+⚠️ Ne pas oublier le **placeholder** du champ de recherche (`+page.svelte:441`, « Rechercher par nom ou email… ») : le laisser tel quel ferait mentir l'interface sur ce qu'elle sait faire, sur les 4 locales.
+
 ## Tasks / Subtasks
 
-- [ ] **T1 — Migration** (AC1, AC9). Créer le `.sql` (`ADD COLUMN` + `ADD CONSTRAINT UNIQUE`), avec l'en-tête de commentaire du dépôt : rôle, longueur justifiée, statut non-breaking, et la mention explicite « DDL pur, ni registre ni exemption ». Puis `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` et **inspecter chaque site** (P6 — un test qui indexe les migrations par position change de sens à chaque ajout).
+- [ ] **T1 — Migration** (AC1, AC9). Créer le `.sql` : `ADD COLUMN client_number`, **`ADD COLUMN client_number_uniq … GENERATED ALWAYS AS (IF(active, client_number, NULL)) VIRTUAL`**, puis `ADD CONSTRAINT … UNIQUE (company_id, client_number_uniq)`. En-tête de commentaire du dépôt : rôle, longueur justifiée, statut non-breaking, mention « DDL pur, ni registre ni exemption », **et le renvoi aux deux précédents du patron** (`reconciliation_rules`, `accounts_role_postable`) avec le pré-requis MariaDB ≥ 10.6. Puis `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` et **inspecter chaque site** (P6 — un test qui indexe les migrations par position change de sens à chaque ajout).
 - [ ] **T2 — Audit d'idempotence** (AC9). Ligne dans le tableau, **recompter** les deux sites du total et les trois partitions. État de départ mesuré le 2026-08-10 : **59** fichiers `.sql` = 59 lignes de tableau = en-tête = total, partitionnés en `54 tracked-by-sqlx + 5 yes + 0 no`. Cette migration porte l'ensemble à **60** et `tracked-by-sqlx` à **55** — mais **recompter depuis le tableau**, ne pas incrémenter ces chiffres de confiance : c'est exactement le geste qui avait laissé dériver le compteur de 7 unités jusqu'à la Story 16-1a. ⚠️ Les compteurs de partition ne valent pas le total ; les aligner dessus casserait l'invariant qu'ils servent à tenir.
 - [ ] **T3 — Entité et repository** (AC1, AC2). `Contact`, `NewContact` (`entities/contact.rs:213`), `ContactUpdate` (l. 250) — **pas** `ContactChanges`, qui n'existe pas —, puis **les quatre** listes de `repositories/contacts.rs`. Vérifier que le nombre de `?` de l'`INSERT` suit la liste de colonnes. `reconciliation.rs:201` réutilise `COLUMNS` — rien à y faire, mais le vérifier plutôt que le supposer.
 - [ ] **T3-bis — Audit** (AC2-bis). Ajouter le champ à `contact_snapshot_json` (`repositories/contacts.rs:39-58`) — **cinquième liste de champs écrite à la main**, non-SQL, que les quatre listes de T3 ne couvrent pas.
-- [ ] **T4 — Tests repository** (AC1, AC2, AC2-bis). Aller-retour `create`/`find_by_id`/`update`/`find_by_id` ; unicité rejetée ; **deux `NULL` acceptés** ; trace d'audit de la modification du numéro.
+- [ ] **T3-ter — Détection de non-changement** (AC2-ter). Ajouter le champ à `is_no_op_change` (`repositories/contacts.rs:377-396`) — **sixième liste**. Sans elle, modifier le seul numéro est classé no-op : rollback, `200 OK`, donnée perdue en silence.
+- [ ] **T4 — Tests repository** (AC1, AC2, AC2-bis, AC2-ter). Aller-retour `create`/`find_by_id`/`update`/`find_by_id` ; unicité rejetée **entre contacts actifs** ; **deux `NULL` acceptés** ; **numéro d'un contact archivé réattribuable à un actif** (l'invariant de D2-bis) ; trace d'audit ; et `update` du **seul** `client_number` → nouvelle valeur **et** `version` incrémentée.
 - [ ] **T5 — Route et DTO** (AC3, AC4). `ContactResponse` (`contacts.rs:151`) + `impl From<Contact> for ContactResponse` (l. 186) + DTO d'entrée, **avec `normalize_optional()`** sur le champ (l. 259) comme pour `email`/`phone`. Pour l'erreur : **étendre `map_contact_error` (`contacts.rs:461`)** d'une branche, ajouter la variante `AppError::ClientNumberAlreadyExists` et sa ligne dans le `match` de `errors.rs` (409 / `CLIENT_NUMBER_ALREADY_EXISTS`). Ne **pas** écrire un second helper : le repository rend déjà `DbError::UniqueConstraintViolation`, tout le chemin existe.
 - [ ] **T6 — Tests API** (AC3, AC4). Aller-retour `POST`/`GET` ; doublon → **409** + code d'erreur asserté ; **non-sur-capture** entre les deux contraintes (calquer `contacts.rs:765`).
-- [ ] **T7 — Frontend** (AC5, AC8). Type TS, champ de la fiche contact, libellé sur les 4 locales. Respecter `lint-i18n-ownership`.
+- [ ] **T7 — Frontend** (AC5, AC8, AC10). Type TS (`contacts.types.ts`, interface `ContactResponse`), champ de la fiche contact, **colonne « N° client » dans la liste**, **placeholder de recherche corrigé** (`+page.svelte:441`), libellés sur les 4 locales. Respecter `lint-i18n-ownership`.
+- [ ] **T7-bis — Recherche par numéro** (AC10). Branche `OR client_number LIKE ?` dans `repositories/contacts.rs:170-186`, **à côté** de celle d'`email` et **pas** dans l'index FULLTEXT — le commentaire l. 162-165 explique pourquoi les séparateurs cassent les tokens.
 - [ ] **T8 — E2E fiche contact** (AC5). Saisie → enregistrement → rechargement → relecture. ⚠️ Le fichier **DOIT** être nommé `*.spec.ts` : `playwright.config.ts:35` filtre sur `testMatch: /(.+\.)?spec\.[jt]s/`, et un `*.test.ts` posé dans `tests/e2e/` est **silencieusement ignoré** — il ne rougit jamais, il se tait.
 - [ ] **T9 — PDF** (AC6, AC6-bis, AC8). `InvoicePdfData.debtor_client_number`, rendu conditionnel calqué sur `origin_reference` (`pdf.rs:315-324`), **extraction de la fonction pure** de construction du bloc métadonnées (sans elle, AC6 est intestable), **constante de troncature dédiée au bloc droit** (70 mm, donc < `IDENTITY_MAX_CHARS`), clé i18n à la **même position** dans `I18N_KEYS` et `DEFAULT_EN`.
 - [ ] **T10 — Service de génération** (AC6, AC7, D5). Renseigner le champ depuis le contact destinataire dans `invoice_pdf_service.rs` **et** au site de construction de l'avoir. C'est le site que la mutation doit tuer.
@@ -229,6 +290,24 @@ Le seul précédent du dépôt **écarte explicitement** la comparaison octet à
 
 ## Change Log
 
+**2026-08-10 — Passe 4 de `bmad-create-story validate`** (**Opus 5**, contexte frais, lentille « remise en cause des décisions »). **3 HIGH, 2 MEDIUM, 2 LOW**, tous vérifiés au ground-truth et remédiés. **Boucle NON convergée — passe 5 due.**
+
+**C'est la première passe à contester une DÉCISION, et elle en renverse une.** Les passes 1 à 3 avaient corrigé des ancres, des décomptes, des clauses de preuve et des sites oubliés — aucune n'avait interrogé D1-D5. Le mandat de celle-ci était exclusivement là.
+
+**HIGH-1 — D2-bis reposait sur une échappatoire qui n'existe pas, et le dépôt avait déjà jugé ce cas.** La décision « verrou permanent » se justifiait par « vider le champ sur l'archive libère le numéro ». Or **un contact archivé n'est pas modifiable** : `repositories/contacts.rs:421-426` rend `IllegalStateTransition("impossible de modifier un contact archivé")`, doublé du `WHERE … AND active = TRUE` de l'`UPDATE` (l. 457) ; et **aucune route de désarchivage n'existe** (`grep -rniE "unarchive|restore_contact|reactivate"` → 0 ligne). Le numéro était donc perdu **à vie**, déblocable seulement par un `UPDATE` SQL manuel. Surtout, `20260722000001_accounts_role_postable.sql:35-38` avait déjà tranché le cas jumeau **par écrit** : « *le `active AND` n'est PAS cosmétique : sans lui, un compte archivé squatterait son rôle à vie… 409 permanent causé par un compte mort* ». **D2-bis est renversée** : unicité partielle par colonne `GENERATED … VIRTUAL`, troisième application d'un patron éprouvé deux fois.
+
+**HIGH-2 — la clause de preuve d'AC6 assertait la signature du mutant qu'elle prétendait tuer.** La passe 2 avait imposé de tester « l'ordonnée de la ligne échéance **identique** entre `Some` et `None` ». C'est **l'inverse** : avec un code correct, `Some` est 4,5 mm plus bas ; c'est la **mutation** (`my -= 4.5` hors du `if let`) qui rend les deux égales. Suivie à la lettre, l'assertion aurait forcé à écrire un test rouge sur du bon code, puis à **implémenter la mutation** pour le verdir. Remplacée par `y_none − y_some == 4.5`, ou l'ordonnée absolue en `None` — la vraie parade de 16-3a mesure l'absence contre un **absolu**, jamais deux générations l'une contre l'autre. ⚠️ **Ce défaut a été introduit par la remédiation de la passe 2** : la remédiation reste la première source de défauts, comme le lot 16-1 l'avait mesuré sur 7 passes.
+
+**HIGH-3 — une SIXIÈME liste, et c'est la seule qui perde la donnée.** `is_no_op_change` (`repositories/contacts.rs:377-396`) énumère 18 champs à la main et **court-circuite l'écriture** (l. 439-442 : `rollback` + `Ok(before)`). Sans `client_number`, **le geste central de la story** — ouvrir une fiche pour lui attribuer son numéro, sans rien changer d'autre — est classé « aucun changement » : pas d'`UPDATE`, pas d'audit, et l'API rend **`200 OK` avec l'ancienne valeur**. L'utilisateur voit son numéro disparaître au rechargement, sans erreur. Nouvel **AC2-ter** + **T3-ter**, avec le contrôle de `version` pour distinguer une écriture réelle d'un `Ok(before)`.
+
+**MEDIUM-1 — le raisonnement de D2-bis était inversé.** Il invoquait D5 (« la valeur est résolue à la génération ») pour justifier le verrou. Vérifié : le PDF n'est **jamais stocké** (aucun blob dans les migrations) et est régénéré à chaque téléchargement comme à chaque envoi d'e-mail ; une facture désigne son contact par **clé étrangère**, le système ne résout jamais numéro → contact. Libérer un numéro ne crée donc **aucune** ambiguïté interne. D5 était un argument **contre** le verrou.
+
+**MEDIUM-2 — la moitié du « so that » n'avait aucun critère.** La story promet « retrouver un contact depuis une facture papier ». La recherche ne couvre que `name` (FULLTEXT) et `email` (`LIKE`) ; la liste affiche l'IDE mais pas le numéro. Nouvel **AC10** + **T7-bis**, avec la bonne technique donnée par le dépôt lui-même : `OR client_number LIKE ?` **à côté** d'`email`, pas dans l'index FULLTEXT — les séparateurs cassent les tokens (`contacts.rs:162-165`).
+
+**LOW** — l'unicité est **insensible à la casse** (collation `_ci` héritée, aucune déclarée sur `contacts`) : souhaitable, mais à décider et à tester, d'où le 3ᵉ cas d'AC1 ; et le 409 n'était pas diagnosticable quand le détenteur pouvait être un contact archivé donc invisible — **ce point disparaît avec le renversement de D2-bis**.
+
+**Trois décisions confirmées, avec des arguments plus forts que les miens.** **D1** (saisie manuelle) : le dépôt a bien des séquences par société, mais clées `(company_id, fiscal_year_id)` avec garantie « sans trou » consommée en transaction de validation — aucune de ces propriétés n'a de sens ici ; et surtout le « so that » appelle une **référence imposée par le client**, qu'aucune séquence ne peut produire. **D3** (bloc droit) : `pdf.rs:342` pose le bloc destinataire à 55 mm du bord, soit **la fenêtre de l'enveloppe** — y insérer une mention non postale serait fautif, le bloc métadonnées à `meta_x = 120` est hors fenêtre. Motif matériel que la story n'avait pas su nommer. **D5** (pas de dénormalisation) : l'hypothèse d'une incohérence est **réfutée** — `invoice_pdf_service.rs:287-288` résout déjà `debtor_name` et `debtor_address_lines` à la volée, et `entities/invoice.rs` ne porte aucun champ de destinataire hors `contact_id`. Dénormaliser le seul numéro en aurait fait le **seul** attribut figé du destinataire : *c'est cela* qui aurait été l'incohérence.
+
 **2026-08-10 — Passe 3 de `bmad-create-story validate`** (**Haiku 4.5**, contexte frais, 2 lentilles — cohérence interne, faisabilité technique). **0 CRITICAL, 0 HIGH, 1 MEDIUM, 0 LOW**, remédié. **Boucle NON convergée — passe 4 due.**
 
 ⚠️ **Les DEUX lentilles ont rendu « 0 finding ». Le MEDIUM a été trouvé par l'orchestrateur en vérifiant leurs rapports.** C'est très exactement l'avertissement inscrit au sprint-status après le lot 16-1 — *« un 0 finding de Haiku n'est PAS une preuve de convergence »*, constaté alors sur 4 rapports vides. Le cas se reproduit, et sous une forme instructive : la lentille « faisabilité » **avait vu** `contact_snapshot_json` et l'a écarté d'une ligne — « partiel par design, non mentionné dans la story, donc non critique ». C'est le classement qui était faux, pas l'observation.
@@ -249,7 +328,7 @@ Le seul précédent du dépôt **écarte explicitement** la comparaison octet à
 
 **HIGH-3 — `''` n'est pas `NULL`, et D2 protégeait le cas majoritaire sur un invariant qui ne vaut que pour `NULL` littéral.** Deux contacts soumis avec `client_number: ""` se percutent. La parade était déjà dans le dépôt, inutilisée par la story : `normalize_optional()` (`contacts.rs:259`), branchée sur `email`, `phone` et `default_payment_terms`. AC3 l'impose et exige le test des deux `""`.
 
-**HIGH-4 — le sort d'un contact archivé n'était pas tranché** (`grep -ciE "archiv|active"` sur la story → **0**). Le dépôt dispose pourtant d'un patron d'unicité partielle éprouvé **deux fois** (colonne `GENERATED … VIRTUAL` nulle si `active = FALSE`). Nouveau **D2-bis** : verrou permanent **assumé**, avec sa raison — la valeur étant résolue à la génération (D5), libérer un numéro le ferait désigner deux entités selon l'époque, cassant le rapprochement même que la story vise.
+**HIGH-4 — le sort d'un contact archivé n'était pas tranché** (`grep -ciE "archiv|active"` sur la story → **0**). Le dépôt dispose pourtant d'un patron d'unicité partielle éprouvé **deux fois** (colonne `GENERATED … VIRTUAL` nulle si `active = FALSE`). Nouveau **D2-bis** : verrou permanent **assumé**, avec sa raison — la valeur étant résolue à la génération (D5), libérer un numéro le ferait désigner deux entités selon l'époque, cassant le rapprochement même que la story vise. ⚠️ **Cette décision a été RENVERSÉE en passe 4** : son échappatoire n'existait pas (un contact archivé n'est pas modifiable) et son raisonnement était inversé (D5 est un argument *contre* le verrou). Voir l'entrée de la passe 4 — D2-bis prescrit désormais l'unicité **partielle**.
 
 **Les 5 MEDIUM** : les DTO étaient nommés `ContactJson`/`ContactChanges`, vocabulaire recopié de 16-3a alors que `contacts` utilise `ContactResponse`/`ContactUpdate` (**convergence de deux lentilles**) ; AC8 n'avait aucune preuve pour la moitié **frontend** de l'i18n, exactement la zone que la KF #283 documente, le loader repliant **silencieusement** vers le FR ; T3 sous-dimensionnait le rayon — **23** fichiers construisent `NewContact` en littéral sans `derive(Default)`, contre 6 pour `Company` en 16-3a ; et l'énumération du calcul de marge citait « conditions de paiement » dans le bloc droit alors que `payment_terms` est dessiné à **gauche** (`ty -= 8.0`, l. 555).
 
