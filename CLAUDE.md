@@ -347,6 +347,19 @@ Les limitations documentées (style `L1-L18` dans story files) qualifient en cat
 
 *(politique formalisée 2026-05-17 rétrospective Epic 9 — cf. memory `feedback_zero_tech_debt_carryforward` + pattern Epic 7 historique « Technical Debt Closure »)*
 
+## Clôture d'epic — la revue de projet suit la rétrospective
+
+**Règle** : à la fin de chaque `bmad-retrospective`, enchaîner sur la **revue de projet** dans `/home/gcorbaz/travail/Projets actuels/kesh`. La rétrospective ne clôt pas l'epic à elle seule.
+
+Les deux exercices ne regardent pas la même chose, et c'est pourquoi l'un ne remplace pas l'autre :
+
+- La **rétrospective** regarde *vers l'intérieur du dépôt* — ce que l'epic a produit, ce que les passes de revue ont appris, quelle dette il laisse. Son horizon est le code et le processus.
+- La **revue de projet** regarde *le projet comme dossier* — échéances, dépendances avec d'autres dossiers, ressources, engagements pris ailleurs que dans le dépôt. Rien de tout cela n'est visible depuis `git log`, et rien ne le rappelle si on ne va pas le chercher.
+
+Un epic peut donc se clore proprement côté code tout en laissant dériver le dossier de projet : c'est exactement le trou que cette règle ferme.
+
+**Ordre imposé** : `bmad-retrospective` → revue de projet. La rétrospective d'abord, parce que ses conclusions (dette reportée, story de remédiation planifiée, changement de scope) sont des **entrées** de la revue de projet — l'inverse ferait travailler la revue sur un état périmé.
+
 ## Issue Tracking Rule
 
 **Règle de traçage des CR, KF et bug reports** :
