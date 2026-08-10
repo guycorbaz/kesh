@@ -35,7 +35,7 @@ async fn apply_migrations_up_to(
     assert!(
         n <= all.len(),
         "apply_migrations_up_to: n={} > total={} — vérifier que le calcul \
-         `total - 25` (taille de la fenêtre d'upgrade, frontière à 34) reste \
+         `total - 26` (fenêtre d'upgrade, FRONTIÈRE figée à 34) reste \
          cohérent avec l'ajout de migrations futures. Si une migration a été ajoutée à \
          la branche, l'assertion `total == 59` du test upgrade_path_preserves_data \
          doit également échouer, c'est son rôle : elle signale qu'il faut décider \
@@ -54,7 +54,7 @@ async fn apply_migrations_up_to(
     sub.run(pool).await
 }
 
-/// AC #15a — cas générique upgrade path : `total - 25` migrations appliquées
+/// AC #15a — cas générique upgrade path : `total - 26` migrations appliquées
 /// (**34** à ce jour) + seed + `MIGRATOR.run()` final, qui applique les **25**
 /// dernières. Assertion : seed préservé à travers la fenêtre d'upgrade.
 ///
@@ -86,11 +86,12 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // + invoice_lines_revenue_account_backfill (Story 16-1a-bis, #152) = 57.
     // + products_default_revenue_account (Story 16-2a, #144) = 58.
     // + companies_phone_website (Story 16-3a, #151) = 59.
+    // + contacts_client_number (Story 16-3b, #151) = 60.
     let total = kesh_db::MIGRATOR.migrations.len();
     assert_eq!(
-        total, 59,
-        "59 migrations attendues (58 précédentes + Story 16-3a : \
-         companies_phone_website)"
+        total, 60,
+        "60 migrations attendues (59 précédentes + Story 16-3b : \
+         contacts_client_number)"
     );
 
     // Étape 1 : applique toutes les migrations sauf les 25 dernières. La
@@ -139,10 +140,16 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // du même symptôme dans le même fichier, découverts un par passe. Ce qui
     // reste ouvert n'est plus documentaire, c'est la décision de périmètre
     // ci-dessus.
-    let n_before_upgrade_window = total - 25;
+    // ⚠️ `- 26` et non `- 25` depuis la Story 16-3b : c'est la FRONTIÈRE (34) qui
+    // est l'invariant voulu, pas la taille de la fenêtre. Garder `- 25` aurait
+    // déplacé le point de départ à la 36ᵉ migration et changé le chemin
+    // d'upgrade réellement testé — sans que rien ne le signale. La fenêtre
+    // s'élargit donc d'un cran à chaque migration ajoutée, ce qui est le sens
+    // voulu : « depuis un socle figé, jusqu'à la dernière du dépôt ».
+    let n_before_upgrade_window = total - 26;
     apply_migrations_up_to(&pool, n_before_upgrade_window)
         .await
-        .expect("apply_migrations_up_to(total - 25) failed");
+        .expect("apply_migrations_up_to(total - 26) failed");
 
     // Étape 2 : seed 1 company + 1 user + 2 accounts + 1 invoice + 1 contact.
     let company_id: i64 = sqlx::query_scalar(
