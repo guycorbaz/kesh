@@ -47,7 +47,9 @@ Colonne `client_number VARCHAR(50) NULL` sur `contacts`, remplie à la main depu
 
 *Pourquoi* : un numéro de client qui désigne deux contacts ne remplit pas sa fonction — il sert précisément à identifier. MariaDB autorise **plusieurs `NULL`** dans un index `UNIQUE`, donc les contacts sans numéro (la majorité au départ) ne se gênent pas entre eux. Le précédent est dans la **même table** : `uq_contacts_company_ide` (`20260414000001_contacts.sql:23`).
 
-⚠️ La violation d'unicité doit remonter une **erreur métier** (422 avec un code parlant), pas un 500 opaque sur l'erreur SQLx `1062`. Voir AC4.
+⚠️ La violation d'unicité doit remonter une **erreur métier** (**409 CONFLICT**, aligné sur le précédent), pas un 500 opaque sur l'erreur SQLx `1062`. Voir AC4.
+
+**Vérifié empiriquement sur le moteur, pas supposé** (2026-08-10, MariaDB dev) : trois lignes `(company_id = 1, client_number = NULL)` sont acceptées sous cette contrainte, et un doublon non-`NULL` est refusé par `ERROR 1062 (23000) Duplicate entry '1-C-1' for key 'uq'`. C'est l'invariant dont dépend toute la décision — s'il tombait, la majorité du parc, qui n'aura pas de numéro, deviendrait insaisissable.
 
 ### D3 — Rendu dans le bloc **métadonnées (droite)**, sous le numéro de facture
 
@@ -75,9 +77,14 @@ Les **quatre** listes de colonnes de `crates/kesh-db/src/repositories/contacts.r
 `ContactJson` et son `impl From<Contact>` (`crates/kesh-api/src/routes/contacts.rs`), `NewContact`, `ContactChanges` et le DTO d'entrée portent le champ.
 *Preuve* : test E2E API `POST /contacts` avec `clientNumber` → `GET /contacts/{id}` rend la même valeur. **Aucun compilateur ne vérifie cette couture** : omettre la ligne dans `From<Contact>` compile, stocke, et rend `null` pour toujours. C'est le HIGH de la passe 3 de 16-3a, sur la struct jumelle `CompanyJson`.
 
-**AC4 — Un doublon rend une erreur métier, pas un 500.**
-`POST`/`PUT` avec un `client_number` déjà pris dans la même société → **422** avec un code stable (p. ex. `CLIENT_NUMBER_ALREADY_USED`), pas une remontée brute de l'erreur SQLx `1062`.
-*Preuve* : test E2E API qui crée le doublon et assert **le code HTTP et le code d'erreur**. Un test qui n'assert que « ce n'est pas 200 » laisserait passer un 500.
+**AC4 — Un doublon rend une erreur métier alignée sur le précédent, pas un 500 ni un code inventé.**
+`POST`/`PUT` avec un `client_number` déjà pris dans la même société → **409 CONFLICT**, code `CLIENT_NUMBER_ALREADY_EXISTS`.
+
+⚠️ **Le mapping existe déjà — l'étendre, ne pas en écrire un second.** `map_contact_error` (`crates/kesh-api/src/routes/contacts.rs:461`) intercepte déjà `DbError::UniqueConstraintViolation` sur `uq_contacts_company_ide` et le remappe vers `AppError::IdeAlreadyExists`, qui rend **409 / `IDE_ALREADY_EXISTS`** (`crates/kesh-api/src/errors.rs:1208`). La nouvelle contrainte est **de même nature** — unicité par société sur la même table — et doit donc rendre le **même code HTTP**. Travail réel : une branche de plus dans `map_contact_error`, une variante `AppError::ClientNumberAlreadyExists`, sa ligne dans le `match` de `errors.rs`.
+
+⚠️ **Matcher le nom de CONTRAINTE, jamais le nom de colonne** — le helper le fait déjà et son doc-comment en donne la raison : le format du message MariaDB varie entre versions (10.x / 11.x, schéma préfixé ou non).
+
+*Preuve* : test E2E API qui crée le doublon et assert **le code HTTP et le code d'erreur**. Un test qui n'assert que « ce n'est pas 200 » laisserait passer un 500. **Plus** un test de **non-sur-capture** : le helper matche par `contains`, et avec deux contraintes il faut prouver qu'aucune ne capture l'autre. Le dépôt a déjà ce test pour l'IDE (`contacts.rs:765`, « Doit être mappé en `AppError::Database` (pas `IdeAlreadyExists`) ») — le calquer.
 
 **AC5 — La fiche contact permet de le saisir.**
 Champ dans l'écran contact du frontend, avec libellé traduit.
@@ -101,11 +108,11 @@ Ligne ajoutée au tableau de `docs/migrations-idempotence-audit.md` **à sa plac
 ## Tasks / Subtasks
 
 - [ ] **T1 — Migration** (AC1, AC9). Créer le `.sql` (`ADD COLUMN` + `ADD CONSTRAINT UNIQUE`), avec l'en-tête de commentaire du dépôt : rôle, longueur justifiée, statut non-breaking, et la mention explicite « DDL pur, ni registre ni exemption ». Puis `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` et **inspecter chaque site** (P6 — un test qui indexe les migrations par position change de sens à chaque ajout).
-- [ ] **T2 — Audit d'idempotence** (AC9). Ligne dans le tableau, **recompter** les deux sites du total et les trois partitions. ⚠️ Les compteurs de partition ne valent pas le total ; les aligner dessus casserait l'invariant qu'ils servent à tenir.
+- [ ] **T2 — Audit d'idempotence** (AC9). Ligne dans le tableau, **recompter** les deux sites du total et les trois partitions. État de départ mesuré le 2026-08-10 : **59** fichiers `.sql` = 59 lignes de tableau = en-tête = total, partitionnés en `54 tracked-by-sqlx + 5 yes + 0 no`. Cette migration porte l'ensemble à **60** et `tracked-by-sqlx` à **55** — mais **recompter depuis le tableau**, ne pas incrémenter ces chiffres de confiance : c'est exactement le geste qui avait laissé dériver le compteur de 7 unités jusqu'à la Story 16-1a. ⚠️ Les compteurs de partition ne valent pas le total ; les aligner dessus casserait l'invariant qu'ils servent à tenir.
 - [ ] **T3 — Entité et repository** (AC1, AC2). `Contact`, `NewContact`, `ContactChanges` (`crates/kesh-db/src/entities/contact.rs`), puis **les quatre** listes de `repositories/contacts.rs`. Vérifier que le nombre de `?` de l'`INSERT` suit la liste de colonnes. `reconciliation.rs:201` réutilise `COLUMNS` — rien à y faire, mais le vérifier plutôt que le supposer.
 - [ ] **T4 — Tests repository** (AC1, AC2). Aller-retour `create`/`find_by_id`/`update`/`find_by_id` ; unicité rejetée ; **deux `NULL` acceptés**.
-- [ ] **T5 — Route et DTO** (AC3, AC4). `ContactJson` + `impl From<Contact>` + DTO d'entrée ; mapper l'erreur `1062` vers un 422 à code stable. Chercher le patron de mapping déjà utilisé pour `uq_contacts_company_ide` avant d'en écrire un nouveau.
-- [ ] **T6 — Tests API** (AC3, AC4). Aller-retour `POST`/`GET` ; doublon → 422 + code d'erreur asserté.
+- [ ] **T5 — Route et DTO** (AC3, AC4). `ContactJson` + `impl From<Contact>` + DTO d'entrée. Pour l'erreur : **étendre `map_contact_error` (`contacts.rs:461`)** d'une branche, ajouter la variante `AppError::ClientNumberAlreadyExists` et sa ligne dans le `match` de `errors.rs` (409 / `CLIENT_NUMBER_ALREADY_EXISTS`). Ne **pas** écrire un second helper : le repository rend déjà `DbError::UniqueConstraintViolation`, tout le chemin existe.
+- [ ] **T6 — Tests API** (AC3, AC4). Aller-retour `POST`/`GET` ; doublon → **409** + code d'erreur asserté ; **non-sur-capture** entre les deux contraintes (calquer `contacts.rs:765`).
 - [ ] **T7 — Frontend** (AC5, AC8). Type TS, champ de la fiche contact, libellé sur les 4 locales. Respecter `lint-i18n-ownership`.
 - [ ] **T8 — E2E fiche contact** (AC5). Saisie → enregistrement → rechargement → relecture.
 - [ ] **T9 — PDF** (AC6, AC8). `InvoicePdfData.debtor_client_number`, rendu conditionnel calqué sur `origin_reference` (`pdf.rs:315-324`), clé i18n à la **même position** dans `I18N_KEYS` et `DEFAULT_EN`.
@@ -127,6 +134,14 @@ Ligne ajoutée au tableau de `docs/migrations-idempotence-audit.md` **à sa plac
 **`FIND_BY_ID_SQL` (l. 33-36) duplique `COLUMNS` (l. 28-31) mot pour mot.** Les deux listes sont identiques aujourd'hui, mais ce sont **deux chaînes distinctes écrites à la main**. Ajouter le champ à `COLUMNS` seul compile, passe les tests de `list` (qui utilisent `COLUMNS`), et rend `find_by_id` **silencieusement amnésique** : la fiche contact affiche un champ vide alors que la base contient la valeur.
 
 C'est pour cela qu'AC2 exige un aller-retour **par `find_by_id`**, et non par `list`.
+
+### Les sites qui suivent TOUT SEULS — ne pas les « corriger »
+
+- **Le backup et l'import d'installation.** `crates/kesh-db/src/backup.rs` ne liste aucune colonne en dur : `non_generated_columns` (l. 92-110) les lit dans `information_schema`, et le `SELECT` est construit par `format!` à partir de ce résultat (l. 121-145). La nouvelle colonne y entre **sans une ligne de code**. Une passe de revue qui réclamerait une mise à jour de `backup.rs` se tromperait.
+- **`reconciliation.rs:201`** réutilise `super::contacts::COLUMNS` — rien à y faire, mais le **vérifier** plutôt que le supposer.
+- **`draw_invoice_section`** est partagée par la facture et l'avoir : le rendu suit automatiquement **dès lors que le site de construction renseigne le champ**. C'est précisément pourquoi AC7 se teste au site de construction et non dans `pdf.rs`.
+
+À l'inverse, `serialize_contacts_csv` (`exports/csv_tables.rs:314`) liste bien ses colonnes en dur, **deux fois** — voir T12.
 
 ### Ce que j'ai vérifié plutôt que supposé — la garde de capacité haute
 
@@ -161,6 +176,21 @@ Le seul précédent du dépôt **écarte explicitement** la comparaison octet à
 - **KF #283** — 57 clés i18n absentes des locales non-françaises ; ne pas l'aggraver.
 
 ## Change Log
+
+**2026-08-10 — Passe 1 de `bmad-create-story validate`** (**Opus 5**). **1 HIGH, 2 MEDIUM, 2 LOW**, tous remédiés. **Boucle NON convergée — passe 2 due.**
+
+⚠️ **Limite assumée de cette passe, et elle est structurelle** : elle a été conduite dans le **même contexte que la rédaction**, par le **même modèle**. La § *Review Iteration Rule* exige contexte frais et modèle différent, précisément pour contourner le biais d'auteur. Cette passe a donc porté sur ce qu'un auteur peut encore vérifier contre le code — **ancres, décomptes, sites oubliés, incohérences avec les précédents du dépôt** — et **pas** sur les angles morts de conception. La passe 2 doit tourner ailleurs, et ne doit pas traiter celle-ci comme une passe adversariale pleine.
+
+**Le HIGH est une incohérence d'API que le précédent de la MÊME TABLE contredisait.** AC4 annonçait un **422**. Or l'unicité d'IDE — même table, même nature de violation, unicité par société — rend **409 CONFLICT** (`AppError::IdeAlreadyExists` → `errors.rs:1208`, code `IDE_ALREADY_EXISTS`). Deux contraintes jumelles rendant deux codes HTTP différents auraient été une incohérence livrée, et durable. Corrigé en 409 / `CLIENT_NUMBER_ALREADY_EXISTS`.
+
+**Les deux MEDIUM sont des réinventions évitées de justesse** :
+
+1. **Le mapping d'erreur existe déjà.** `map_contact_error` (`contacts.rs:461`) intercepte `DbError::UniqueConstraintViolation` et remappe par **nom de contrainte** — avec la raison documentée : le format du message MariaDB varie entre versions. La story disait « chercher le patron avant d'en écrire un nouveau », ce qui laissait la porte ouverte ; elle **nomme** désormais le helper, le fichier et la ligne, et prescrit une branche de plus.
+2. **La sur-capture n'était pas couverte.** Le helper matche par `contains` : avec deux contraintes, rien ne garantit qu'aucune ne capture l'autre. Le dépôt a **déjà** ce test pour l'IDE (`contacts.rs:765`) — la story le fait calquer.
+
+**Les deux LOW ferment des faux findings futurs** : `backup.rs` construit ses colonnes **dynamiquement** depuis `information_schema` (l. 92-145), donc la colonne y entre sans une ligne de code — une passe qui réclamerait sa mise à jour se tromperait ; et T2 porte désormais l'état de départ mesuré (59 fichiers = 59 lignes, `54 + 5 + 0`) avec le rappel de **recompter** plutôt que d'incrémenter.
+
+**Ce que la passe a vérifié et confirmé** : les quatre ancres citées (`pdf.rs:315-324` conditionnel avec `my -= 4.5` **à l'intérieur** du `if let`, `contacts.sql:23`, `csv_tables.rs:314`, `user-manual.tex:615`) sont exactes. Et **D2 a été éprouvée sur le moteur réel** plutôt que sur la réputation de MariaDB : trois `NULL` acceptés, doublon non-`NULL` refusé en `1062`.
 
 **2026-08-10 — Création de la story** (Opus 5). Spécifiée après le merge de 16-3a (PR #290), conformément à la note de planification du sprint-status (« indépendante de 16-3a : peut partir séparément. À spécifier après 16-3a »).
 
