@@ -51,6 +51,16 @@ Colonne `client_number VARCHAR(50) NULL` sur `contacts`, remplie à la main depu
 
 **Vérifié empiriquement sur le moteur, pas supposé** (2026-08-10, MariaDB dev) : trois lignes `(company_id = 1, client_number = NULL)` sont acceptées sous cette contrainte, et un doublon non-`NULL` est refusé par `ERROR 1062 (23000) Duplicate entry '1-C-1' for key 'uq'`. C'est l'invariant dont dépend toute la décision — s'il tombait, la majorité du parc, qui n'aura pas de numéro, deviendrait insaisissable.
 
+⚠️ **`''` N'EST PAS `NULL`, et c'est le piège de cette décision.** L'invariant ci-dessus vaut pour `NULL` **littéral**. Une chaîne vide est une valeur comme une autre pour un index `UNIQUE` : deux contacts soumis avec `client_number: ""` — le cas **majoritaire** que D2 prétend protéger — se percuteraient. La parade existe déjà dans le dépôt et doit être appliquée : `normalize_optional()` (`crates/kesh-api/src/routes/contacts.rs:259`), qui trime et effondre le vide en `None`, déjà branchée sur `email` (l. 348), `phone` (l. 360) et `default_payment_terms` (l. 369), et testée (l. 773). Voir AC3.
+
+### D2-bis — Un contact archivé **garde** son numéro : verrou assumé
+
+La contrainte est **plate**, sans filtre sur `active`. Conséquence : le numéro d'un contact archivé reste pris, et ne peut être réattribué qu'en vidant d'abord le champ de l'archive.
+
+*Pourquoi ce choix, et pourquoi il est explicite* : le dépôt dispose d'un patron inverse, éprouvé deux fois — colonne `GENERATED ALWAYS AS … VIRTUAL` valant `NULL` quand `active = FALSE`, qui sort les lignes archivées de la contrainte (`20260513000001_reconciliation_rules.sql:19-28` et `20260722000001_accounts_role_postable.sql:20-33`, ce dernier assumant par écrit le corollaire « réactiver un compte dont le rôle a été repris échoue »). Il n'est **pas** retenu ici parce que la valeur est résolue **à la génération du PDF** (D5) : libérer un numéro le ferait désigner deux entités différentes selon l'époque, et c'est très exactement le rapprochement que la story cherche à rendre possible qu'on casserait. Un numéro de client est une **identité historique**, pas une ressource recyclable.
+
+L'échappatoire reste ouverte et manuelle : vider le champ sur l'archive libère le numéro, délibérément.
+
 ### D3 — Rendu dans le bloc **métadonnées (droite)**, sous le numéro de facture
 
 *Pourquoi* : c'est ce que prescrit la note de planification au sprint-status (« bloc métadonnées du PDF »), et c'est la place usuelle sur une facture commerciale — le numéro de client appartient aux références du document, pas à l'adresse du destinataire. Le patron à copier est `origin_reference` (`pdf.rs:315-324`) : ligne conditionnelle qui ne descend le curseur `my` que si elle est dessinée.
@@ -74,8 +84,15 @@ Les **quatre** listes de colonnes de `crates/kesh-db/src/repositories/contacts.r
 *Preuve* : test d'aller-retour `create` → `find_by_id` → `update` → `find_by_id` qui vérifie la valeur à chaque étape. ⚠️ Un test qui n'utilise que `list` passerait alors même que `FIND_BY_ID_SQL` aurait été oublié — voir Dev Notes, « le piège qui coûterait le plus cher ».
 
 **AC3 — Le champ est saisissable et relisible depuis l'API.**
-`ContactJson` et son `impl From<Contact>` (`crates/kesh-api/src/routes/contacts.rs`), `NewContact`, `ContactChanges` et le DTO d'entrée portent le champ.
+`ContactResponse` (`crates/kesh-api/src/routes/contacts.rs:151`) et son `impl From<Contact> for ContactResponse` (l. 186), plus `NewContact` (`crates/kesh-db/src/entities/contact.rs:213`), `ContactUpdate` (l. 250) et le DTO d'entrée portent le champ.
+
+⚠️ **Ces noms sont ceux de `contacts`, pas ceux de `companies`.** Une version antérieure de cette story écrivait `ContactJson` et `ContactChanges` — du vocabulaire recopié de 16-3a, où `CompanyJson` est bien le nom réel. Ni l'un ni l'autre n'existe ici (`grep -nF "struct ContactJson"` → 0 ligne).
+
+⚠️ **Le champ passe par `normalize_optional()`** (`contacts.rs:259`), comme `email`, `phone` et `default_payment_terms`. Sans cela, `""` est stocké tel quel et **percute l'unicité** de D2 dès le deuxième contact sans numéro — le cas majoritaire. Une borne de longueur dédiée (`MAX_CLIENT_NUMBER_LEN = 50`) est souhaitable par cohérence avec ses champs voisins (l. 339-374) ; à défaut, le filet générique absorbe le cas proprement (MariaDB `STRICT_ALL_TABLES` → `1406` → `DbError::DataLengthOrRange` → **400** `DATA_LENGTH_OR_RANGE`), avec un message moins précis.
+
 *Preuve* : test E2E API `POST /contacts` avec `clientNumber` → `GET /contacts/{id}` rend la même valeur. **Aucun compilateur ne vérifie cette couture** : omettre la ligne dans `From<Contact>` compile, stocke, et rend `null` pour toujours. C'est le HIGH de la passe 3 de 16-3a, sur la struct jumelle `CompanyJson`.
+
+*Preuve additionnelle, non négociable* : `POST` avec `clientNumber: ""` → stocké `NULL`, **et deux contacts créés ainsi sont tous les deux acceptés**. Sans ce test, la garde de D2 tient sur une convention de politesse du client.
 
 **AC4 — Un doublon rend une erreur métier alignée sur le précédent, pas un 500 ni un code inventé.**
 `POST`/`PUT` avec un `client_number` déjà pris dans la même société → **409 CONFLICT**, code `CLIENT_NUMBER_ALREADY_EXISTS`.
@@ -91,15 +108,26 @@ Champ dans l'écran contact du frontend, avec libellé traduit.
 *Preuve* : test E2E Playwright qui saisit un numéro, enregistre, recharge la page et le relit. ⚠️ Un E2E est le **seul** test qui vérifie qu'une valeur traverse réellement la frontière HTTP — Vitest teste la construction du payload, les tests Rust la validation, et ni l'un ni l'autre ne voit une clé qui disparaît entre les deux.
 
 **AC6 — Le PDF affiche le numéro quand il existe, et rien quand il n'existe pas.**
-`InvoicePdfData` porte `debtor_client_number: Option<String>` ; `draw_invoice_section` dessine la ligne sous le numéro de facture **uniquement** si `Some`, et ne descend `my` que dans ce cas.
-*Preuve* : **deux** cas de test, `Some` et `None`, comparés par **delta de taille du PDF** — le contenu textuel est hex-encodé dans les opérateurs `Tj`, un `grep` du texte échouerait de toute façon (technique établie par 16-3a, AC4). Le cas `None` doit rendre un PDF **de taille identique** à la baseline sans le champ.
+`InvoicePdfData` porte `debtor_client_number: Option<String>` ; `draw_invoice_section` dessine la ligne sous le numéro de facture **uniquement** si `Some`, et ne descend `my` que dans ce cas — `my -= 4.5` **à l'intérieur** du `if let`, comme `origin_reference` (`pdf.rs:315-324`).
+
+*Preuve (présence)* : deux cas, `Some` et `None`, comparés par **delta de taille du PDF** — le contenu textuel est hex-encodé dans les opérateurs `Tj`, un `grep` du texte échouerait de toute façon.
+
+⚠️ **Le delta de taille NE PEUT PAS prouver la conditionnalité du décrément, et le dépôt l'a déjà payé.** `pdf.rs:1165-1168` le dit noir sur blanc : « un décalage vertical de 2 mm déplace le texte sans changer sa longueur, donc le PDF pèse le même nombre d'octets. **Mesuré** — une première version de ce test comparait deux générations entre elles et restait **verte** sous la mutation. » La parade de 16-3a fut de mesurer au **seuil de la garde haute**, où 2 mm changent un verdict (`no_identity_line_costs_no_vertical_space`, l. 1182). **Cette parade n'est pas disponible ici** : la garde ne surveille que `y`, la colonne gauche, et les Dev Notes de cette story établissent qu'il ne faut pas en créer une à droite (89,5 mm de marge ⇒ branche inatteignable).
+
+*Preuve (conditionnalité) — le refactor est donc obligatoire*, comme AC5 de 16-3a a imposé le sien : extraire la construction du bloc métadonnées en **fonction pure** rendant la séquence des lignes et leur ordonnée (`Vec<(String, f32)>`), et tester **la position** — l'ordonnée de la ligne « échéance » doit être **identique** entre le cas `Some` et le cas `None`. C'est le seul montage qui tue la mutation « `my -= 4.5` sorti du `if let` ». Sans lui, AC6 est un critère dont aucun test ne peut échouer, c'est-à-dire un test muet — le mode d'échec le plus documenté de ce dépôt.
+
+**AC6-bis — Un numéro trop long est tronqué, pas débordé.**
+Le bloc droit dispose de **70 mm** (`meta_x = 120.0` à `PAGE_W − 20.0 = 190.0`, cf. `hline` l. 428) — **moins** que les 100 mm du bloc gauche, qui imposent déjà `IDENTITY_MAX_CHARS = 46`. Or `client_number` est un champ **libre de 50 caractères saisi par l'utilisateur**, contrairement à `origin_reference` qui est un numéro système court : le patron de D3 ne couvre donc pas ce risque.
+*Preuve* : constante de troncature **dédiée au bloc droit**, calibrée sur 70 mm — donc **strictement inférieure** à `IDENTITY_MAX_CHARS` —, et test de calibrage calqué sur celui du bloc gauche. Tronquer, jamais refuser : refuser une facture pour un champ décoratif serait disproportionné (c'est déjà l'arbitrage de 16-3a, `pdf.rs:266-267`).
 
 **AC7 — L'avoir le porte aussi.**
 *Preuve* : test au **site de construction de la donnée**, pas dans `pdf.rs`. Facture et avoir partagent `draw_invoice_section` : un test posé dans `pdf.rs` ne peut **structurellement pas** discriminer les deux, et resterait vert sous la mutation « ne pas renseigner le champ pour l'avoir ». ⚠️ Interdit d'hériter d'une fixture de facture par `..base` — c'est ce qui avait rendu le test d'AC5 de 16-3a muet.
 
 **AC8 — L'i18n est complète sur les 4 locales.**
 Clé `invoice-pdf-client-number` ajoutée à `I18N_KEYS` **et à la même position dans `DEFAULT_EN`** (`crates/kesh-qrbill/src/types.rs`), plus les 4 locales `fr-CH`/`de-CH`/`it-CH`/`en-CH` pour le libellé du PDF **et** celui de la fiche contact.
-*Preuve* : l'assertion de compilation existante couvre les longueurs ; l'**appariement positionnel** ne l'est pas — le vérifier par un test qui résout la clé et compare au libellé attendu. Ne pas aggraver la KF #283 (57 clés déjà absentes des locales non-françaises).
+*Preuve, côté PDF* : l'assertion de compilation existante (`types.rs:264`) couvre les **longueurs** ; l'**appariement positionnel** ne l'est pas — le vérifier par un test qui résout la clé et compare au libellé attendu (mutation à tuer : décaler une entrée de `DEFAULT_EN` d'un cran ; les longueurs restent égales, le test runtime doit rougir).
+
+*Preuve, côté fiche contact — sans quoi AC8 ne couvre que la moitié du sujet* : un test qui résout la clé du libellé **dans les 4 locales** et échoue si l'une retombe sur le repli français. Le loader `kesh-i18n` **replie silencieusement** une clé absente vers le FR (`loader.rs`, `format_missing_key_in_de_falls_back_to_fr`) — c'est un comportement voulu, mais il rend l'absence **invisible** : c'est le mécanisme même de la KF #283 (57 clés déjà manquantes en de-CH / it-CH / en-CH). AC8 avertissait de « ne pas l'aggraver » sans fournir aucune preuve exécutable pour la partie exactement visée ; l'avertissement reposait donc sur la seule discipline manuelle.
 
 **AC9 — Les garde-fous de migration sont honorés.**
 Ligne ajoutée au tableau de `docs/migrations-idempotence-audit.md` **à sa place chronologique dans le tableau**, avec les **deux** sites du total et la partition recomptés **depuis le tableau** (`ls crates/kesh-db/migrations/*.sql | wc -l` doit égaler `grep -c '^| \`20' docs/migrations-idempotence-audit.md`). DDL pur → **ni** registre `POST_RESTORE_BACKFILLS` **ni** `EXEMPT_MIGRATIONS` (P7). `ADD COLUMN` nullable → **pas** de bump `kesh_version_min_required` ni de version Cargo (P1/P2).
@@ -109,15 +137,15 @@ Ligne ajoutée au tableau de `docs/migrations-idempotence-audit.md` **à sa plac
 
 - [ ] **T1 — Migration** (AC1, AC9). Créer le `.sql` (`ADD COLUMN` + `ADD CONSTRAINT UNIQUE`), avec l'en-tête de commentaire du dépôt : rôle, longueur justifiée, statut non-breaking, et la mention explicite « DDL pur, ni registre ni exemption ». Puis `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` et **inspecter chaque site** (P6 — un test qui indexe les migrations par position change de sens à chaque ajout).
 - [ ] **T2 — Audit d'idempotence** (AC9). Ligne dans le tableau, **recompter** les deux sites du total et les trois partitions. État de départ mesuré le 2026-08-10 : **59** fichiers `.sql` = 59 lignes de tableau = en-tête = total, partitionnés en `54 tracked-by-sqlx + 5 yes + 0 no`. Cette migration porte l'ensemble à **60** et `tracked-by-sqlx` à **55** — mais **recompter depuis le tableau**, ne pas incrémenter ces chiffres de confiance : c'est exactement le geste qui avait laissé dériver le compteur de 7 unités jusqu'à la Story 16-1a. ⚠️ Les compteurs de partition ne valent pas le total ; les aligner dessus casserait l'invariant qu'ils servent à tenir.
-- [ ] **T3 — Entité et repository** (AC1, AC2). `Contact`, `NewContact`, `ContactChanges` (`crates/kesh-db/src/entities/contact.rs`), puis **les quatre** listes de `repositories/contacts.rs`. Vérifier que le nombre de `?` de l'`INSERT` suit la liste de colonnes. `reconciliation.rs:201` réutilise `COLUMNS` — rien à y faire, mais le vérifier plutôt que le supposer.
+- [ ] **T3 — Entité et repository** (AC1, AC2). `Contact`, `NewContact` (`entities/contact.rs:213`), `ContactUpdate` (l. 250) — **pas** `ContactChanges`, qui n'existe pas —, puis **les quatre** listes de `repositories/contacts.rs`. Vérifier que le nombre de `?` de l'`INSERT` suit la liste de colonnes. `reconciliation.rs:201` réutilise `COLUMNS` — rien à y faire, mais le vérifier plutôt que le supposer.
 - [ ] **T4 — Tests repository** (AC1, AC2). Aller-retour `create`/`find_by_id`/`update`/`find_by_id` ; unicité rejetée ; **deux `NULL` acceptés**.
-- [ ] **T5 — Route et DTO** (AC3, AC4). `ContactJson` + `impl From<Contact>` + DTO d'entrée. Pour l'erreur : **étendre `map_contact_error` (`contacts.rs:461`)** d'une branche, ajouter la variante `AppError::ClientNumberAlreadyExists` et sa ligne dans le `match` de `errors.rs` (409 / `CLIENT_NUMBER_ALREADY_EXISTS`). Ne **pas** écrire un second helper : le repository rend déjà `DbError::UniqueConstraintViolation`, tout le chemin existe.
+- [ ] **T5 — Route et DTO** (AC3, AC4). `ContactResponse` (`contacts.rs:151`) + `impl From<Contact> for ContactResponse` (l. 186) + DTO d'entrée, **avec `normalize_optional()`** sur le champ (l. 259) comme pour `email`/`phone`. Pour l'erreur : **étendre `map_contact_error` (`contacts.rs:461`)** d'une branche, ajouter la variante `AppError::ClientNumberAlreadyExists` et sa ligne dans le `match` de `errors.rs` (409 / `CLIENT_NUMBER_ALREADY_EXISTS`). Ne **pas** écrire un second helper : le repository rend déjà `DbError::UniqueConstraintViolation`, tout le chemin existe.
 - [ ] **T6 — Tests API** (AC3, AC4). Aller-retour `POST`/`GET` ; doublon → **409** + code d'erreur asserté ; **non-sur-capture** entre les deux contraintes (calquer `contacts.rs:765`).
 - [ ] **T7 — Frontend** (AC5, AC8). Type TS, champ de la fiche contact, libellé sur les 4 locales. Respecter `lint-i18n-ownership`.
-- [ ] **T8 — E2E fiche contact** (AC5). Saisie → enregistrement → rechargement → relecture.
-- [ ] **T9 — PDF** (AC6, AC8). `InvoicePdfData.debtor_client_number`, rendu conditionnel calqué sur `origin_reference` (`pdf.rs:315-324`), clé i18n à la **même position** dans `I18N_KEYS` et `DEFAULT_EN`.
+- [ ] **T8 — E2E fiche contact** (AC5). Saisie → enregistrement → rechargement → relecture. ⚠️ Le fichier **DOIT** être nommé `*.spec.ts` : `playwright.config.ts:35` filtre sur `testMatch: /(.+\.)?spec\.[jt]s/`, et un `*.test.ts` posé dans `tests/e2e/` est **silencieusement ignoré** — il ne rougit jamais, il se tait.
+- [ ] **T9 — PDF** (AC6, AC6-bis, AC8). `InvoicePdfData.debtor_client_number`, rendu conditionnel calqué sur `origin_reference` (`pdf.rs:315-324`), **extraction de la fonction pure** de construction du bloc métadonnées (sans elle, AC6 est intestable), **constante de troncature dédiée au bloc droit** (70 mm, donc < `IDENTITY_MAX_CHARS`), clé i18n à la **même position** dans `I18N_KEYS` et `DEFAULT_EN`.
 - [ ] **T10 — Service de génération** (AC6, AC7, D5). Renseigner le champ depuis le contact destinataire dans `invoice_pdf_service.rs` **et** au site de construction de l'avoir. C'est le site que la mutation doit tuer.
-- [ ] **T11 — Tests PDF** (AC6, AC7). `Some`/`None` par delta de taille ; avoir testé au site de construction, sans `..base` d'une fixture de facture.
+- [ ] **T11 — Tests PDF** (AC6, AC6-bis, AC7). Présence par delta de taille ; **conditionnalité par assertion de position** sur la fonction pure extraite en T9 (l'ordonnée de la ligne « échéance » identique entre `Some` et `None`) ; troncature calibrée ; avoir testé au site de construction, sans `..base` d'une fixture de facture.
 - [ ] **T12 — Export CSV** (optionnel, à trancher). `serialize_contacts_csv` (`crates/kesh-api/src/exports/csv_tables.rs:314`) a **deux listes appariées positionnellement** (en-têtes puis valeurs). Elle est **déjà partielle** — ni `first_name`, ni `address_street`, ni `language` n'y figurent —, donc l'omission est défendable. Si le champ est ajouté, **les deux** listes le sont, sous peine de décalage silencieux de toutes les colonnes suivantes.
 - [ ] **T13 — Documentation** (règle de synchronisation). Manuel utilisateur FR : la section « Vos coordonnées sur la facture » (`docs/manual/fr/user-manual.tex:615`) a un pendant à écrire côté client. Régénérer le PDF. CHANGELOG.
 
@@ -135,22 +163,38 @@ Ligne ajoutée au tableau de `docs/migrations-idempotence-audit.md` **à sa plac
 
 C'est pour cela qu'AC2 exige un aller-retour **par `find_by_id`**, et non par `list`.
 
+### Le rayon d'impact réel — une vingtaine de fichiers cassent à la compilation, et c'est normal
+
+`NewContact` et `ContactUpdate` n'ont **pas** de `#[derive(Default)]` (vérifié : `grep -nF "derive(Default)" crates/kesh-db/src/entities/contact.rs` → rien). Tout site qui les construit en **littéral complet** devra donc lister le nouveau champ :
+
+```sh
+grep -rl "NewContact {" crates/     # 23 fichiers
+grep -rl "ContactUpdate {" crates/  #  3 fichiers
+```
+
+**Ce n'est pas un risque de défaut silencieux** — `cargo build` échoue bruyamment sur chaque site, un à un. Mais c'est un dimensionnement à connaître avant de commencer : le précédent 16-3a n'avait que **6** fichiers construisant `Company` en littéral. `contacts` est bien plus diffusé dans le dépôt (factures, avoirs, réconciliation, rapports, fixtures). Corriger au fil des erreurs du compilateur, sans chercher à les anticiper toutes.
+
 ### Les sites qui suivent TOUT SEULS — ne pas les « corriger »
 
 - **Le backup et l'import d'installation.** `crates/kesh-db/src/backup.rs` ne liste aucune colonne en dur : `non_generated_columns` (l. 92-110) les lit dans `information_schema`, et le `SELECT` est construit par `format!` à partir de ce résultat (l. 121-145). La nouvelle colonne y entre **sans une ligne de code**. Une passe de revue qui réclamerait une mise à jour de `backup.rs` se tromperait.
 - **`reconciliation.rs:201`** réutilise `super::contacts::COLUMNS` — rien à y faire, mais le **vérifier** plutôt que le supposer.
 - **`draw_invoice_section`** est partagée par la facture et l'avoir : le rendu suit automatiquement **dès lors que le site de construction renseigne le champ**. C'est précisément pourquoi AC7 se teste au site de construction et non dans `pdf.rs`.
+- **Le refactor de testabilité de l'avoir est DÉJÀ ACQUIS** — `build_credit_note_pdf_data` (`crates/kesh-api/src/routes/credit_notes.rs:219`) est une fonction pure. 16-3a avait dû l'extraire ; cette story n'a pas à le redemander. Les deux sites de construction de `InvoicePdfData` sont `invoice_pdf_service.rs:269` et `credit_notes.rs:229`, **tous deux avec le `Contact` déjà en portée** — aucun filetage de paramètre supplémentaire n'est nécessaire pour D5.
 
 À l'inverse, `serialize_contacts_csv` (`exports/csv_tables.rs:314`) liste bien ses colonnes en dur, **deux fois** — voir T12.
 
 ### Ce que j'ai vérifié plutôt que supposé — la garde de capacité haute
 
-16-3a a posé une garde `if y < ty + 2.0 { return Err(HeaderOverflow) }` (`pdf.rs:382`). On pourrait croire qu'ajouter une ligne au bloc droit appelle une garde symétrique. **Le calcul dit non** :
+16-3a a posé une garde `if y < ty + 2.0 { return Err(HeaderOverflow) }` (`pdf.rs:382`). On pourrait croire qu'ajouter une ligne au bloc droit appelle une garde symétrique. **Le calcul dit non** — et il a fallu le refaire deux fois pour l'obtenir juste :
 
 - `ty = PAGE_H - 130.0 = 297 - 130 = **167**`
-- `my` part de `PAGE_H - 20.0 = 277`, puis `-7` (titre), puis `-4.5` par ligne. Au **pire cas actuel** — numéro, date, référence d'origine, échéance, conditions de paiement — `my` vaut **252**.
+- `my` part de `PAGE_H - 20.0 = 277`. Le code ne porte que **quatre** décréments de `my`, et les voici tous : `pdf.rs:295` (`-7.0`, après le titre), `:303` (`-4.5`), `:317` (`-4.5`, conditionnel, référence d'origine), `:327` (`-4.5`, conditionnel, échéance). Au **pire cas actuel**, `my` vaut donc `277 − 7 − 3 × 4,5 = ` **256,5**.
 
-La colonne droite dispose donc de **85 mm**, soit **dix-huit lignes** de marge. Une ligne de plus la porte à 247,5. La garde est bien **asymétrique** (elle ne surveille que `y`, la colonne gauche), et c'est un fait à connaître — mais il est **sans conséquence ici**. Ajouter une garde sur `my` produirait une branche que rien ne peut atteindre, donc intestable et non couverte : exactement le genre de code que les passes de revue suivantes signaleront à juste titre.
+La colonne droite dispose donc de **89,5 mm**, soit **une vingtaine de lignes** de marge. Une ligne de plus la porte à 252. La garde est bien **asymétrique** (elle ne surveille que `y`, la colonne gauche), et c'est un fait à connaître — mais il est **sans conséquence pour la hauteur**. Ajouter une garde sur `my` produirait une branche que rien ne peut atteindre, donc intestable : exactement le genre de code qu'une passe de revue signalerait à juste titre.
+
+⚠️ **Deux erreurs ont été commises sur ce calcul, et elles instruisent.** (1) Une version antérieure de ces notes comptait « conditions de paiement » parmi les lignes du bloc droit : c'est faux, `payment_terms` est dessiné dans la colonne **gauche**, près du total, avec un pas différent (`ty -= 8.0`, `pdf.rs:555-556`). (2) Le chiffre **252** qui en résultait a été retrouvé **à l'identique par une passe de revue indépendante**, qui comptait quatre décréments de 4,5 là où le code n'en porte que trois. Deux analyses, le même chiffre, la même erreur — parce qu'aucune des deux n'avait énuméré les décréments **depuis le code**. C'est le mode d'échec que le `CLAUDE.md` décrit pour les compteurs de migrations : *relire une valeur n'est pas recompter sa source*. La conclusion ne change pas ; la marge est même plus large qu'annoncée.
+
+⚠️ **La hauteur n'est pas la largeur.** Ce calcul ne dit rien du débordement **horizontal**, qui est un risque réel et traité par AC6-bis : le bloc droit ne fait que 70 mm.
 
 ### Comment tester un PDF dans ce dépôt — lire AVANT d'écrire T11
 
@@ -177,6 +221,24 @@ Le seul précédent du dépôt **écarte explicitement** la comparaison octet à
 
 ## Change Log
 
+**2026-08-10 — Passe 2 de `bmad-create-story validate`** (**Sonnet**, contexte frais, 3 lentilles indépendantes — BlindHunter, EdgeCaseHunter, AcceptanceAuditor). **4 HIGH, 5 MEDIUM, 2 LOW**, tous vérifiés au ground-truth par l'orchestrateur et tous remédiés. **Boucle NON convergée — passe 3 due.**
+
+**La passe valide son propre coût : aucun des 4 HIGH n'était à portée de l'auteur**, et la passe 1 — conduite dans le contexte de rédaction — n'en avait vu aucun.
+
+**HIGH-1 — AC6 était un critère qu'aucun test ne pouvait faire échouer.** Sa seule preuve était le delta de taille. Or `pdf.rs:1165-1168` documente que cette technique est **aveugle au décalage vertical**, et précise : « **Mesuré** — une première version de ce test comparait deux générations entre elles et restait **verte** sous la mutation ». **16-3a a déjà payé ce test muet.** Sa parade — mesurer au seuil de la garde haute, où 2 mm changent un verdict — n'est **pas disponible à droite** : la garde ne surveille que `y`, et ces mêmes Dev Notes établissent qu'il ne faut pas en créer une. AC6 impose désormais l'**extraction d'une fonction pure** et une assertion de **position** (ordonnée de la ligne « échéance » identique entre `Some` et `None`), seul montage qui tue la mutation « `my -= 4.5` sorti du `if let` ».
+
+**HIGH-2 — la largeur avait été négligée au profit de la hauteur.** Le bloc droit fait **70 mm** (`meta_x = 120` → `PAGE_W − 20 = 190`), soit **moins** que les 100 mm du bloc gauche qui imposent déjà `IDENTITY_MAX_CHARS = 46`. Et `client_number` est un champ **libre de 50 caractères saisi par l'utilisateur**, là où `origin_reference` — le patron invoqué par D3 — est un numéro système court. Nouvel **AC6-bis** : troncature dédiée au bloc droit.
+
+**HIGH-3 — `''` n'est pas `NULL`, et D2 protégeait le cas majoritaire sur un invariant qui ne vaut que pour `NULL` littéral.** Deux contacts soumis avec `client_number: ""` se percutent. La parade était déjà dans le dépôt, inutilisée par la story : `normalize_optional()` (`contacts.rs:259`), branchée sur `email`, `phone` et `default_payment_terms`. AC3 l'impose et exige le test des deux `""`.
+
+**HIGH-4 — le sort d'un contact archivé n'était pas tranché** (`grep -ciE "archiv|active"` sur la story → **0**). Le dépôt dispose pourtant d'un patron d'unicité partielle éprouvé **deux fois** (colonne `GENERATED … VIRTUAL` nulle si `active = FALSE`). Nouveau **D2-bis** : verrou permanent **assumé**, avec sa raison — la valeur étant résolue à la génération (D5), libérer un numéro le ferait désigner deux entités selon l'époque, cassant le rapprochement même que la story vise.
+
+**Les 5 MEDIUM** : les DTO étaient nommés `ContactJson`/`ContactChanges`, vocabulaire recopié de 16-3a alors que `contacts` utilise `ContactResponse`/`ContactUpdate` (**convergence de deux lentilles**) ; AC8 n'avait aucune preuve pour la moitié **frontend** de l'i18n, exactement la zone que la KF #283 documente, le loader repliant **silencieusement** vers le FR ; T3 sous-dimensionnait le rayon — **23** fichiers construisent `NewContact` en littéral sans `derive(Default)`, contre 6 pour `Company` en 16-3a ; et l'énumération du calcul de marge citait « conditions de paiement » dans le bloc droit alors que `payment_terms` est dessiné à **gauche** (`ty -= 8.0`, l. 555).
+
+⚠️ **Le chiffre de ce calcul était faux, et il l'était DEUX FOIS.** Les notes annonçaient `my = 252` au pire cas ; une lentille de revue, en le recalculant indépendamment, **est retombée sur 252** — en comptant quatre décréments de 4,5 là où le code n'en porte que trois. Le relevé exhaustif des décréments (`pdf.rs:295, 303, 317, 327`) donne `277 − 7 − 3 × 4,5 = ` **256,5**. Deux analyses, la même erreur, parce qu'aucune n'avait énuméré **depuis le code**. C'est le mode d'échec que le `CLAUDE.md` décrit pour les compteurs de migrations : *relire une valeur n'est pas recompter sa source*. La conclusion est inchangée et la marge plus large qu'annoncée.
+
+**Ce que la passe a confirmé exact** : les quatre listes de colonnes de `contacts.rs` sont bien **exhaustives** (les autres `SELECT` interpolent `{COLUMNS}`) ; `map_contact_error` est câblé dans **les deux** handlers réels, pas seulement ses tests ; `InvoicePdfData` n'a que **deux** sites de construction, tous deux avec le `Contact` en portée ; **`build_credit_note_pdf_data` est déjà une fonction pure** — le refactor que 16-3a avait dû faire est acquis ; les compteurs de migrations (59 = 54 + 5 + 0) recomptés indépendamment ; le site positionnel P6 porte déjà son `assert_eq!` fail-loud.
+
 **2026-08-10 — Passe 1 de `bmad-create-story validate`** (**Opus 5**). **1 HIGH, 2 MEDIUM, 2 LOW**, tous remédiés. **Boucle NON convergée — passe 2 due.**
 
 ⚠️ **Limite assumée de cette passe, et elle est structurelle** : elle a été conduite dans le **même contexte que la rédaction**, par le **même modèle**. La § *Review Iteration Rule* exige contexte frais et modèle différent, précisément pour contourner le biais d'auteur. Cette passe a donc porté sur ce qu'un auteur peut encore vérifier contre le code — **ancres, décomptes, sites oubliés, incohérences avec les précédents du dépôt** — et **pas** sur les angles morts de conception. La passe 2 doit tourner ailleurs, et ne doit pas traiter celle-ci comme une passe adversariale pleine.
@@ -196,4 +258,6 @@ Le seul précédent du dépôt **écarte explicitement** la comparaison octet à
 
 Relevé effectué sur le code, pas sur la mémoire : le champ n'existe nulle part (`grep` sur `client_number|customer_number|numero_client|reference_client` → zéro occurrence) ; `contacts` porte **quatre** listes de colonnes à maintenir, dont **`FIND_BY_ID_SQL` qui duplique `COLUMNS`** ; l'export CSV des contacts en porte deux de plus, appariées positionnellement, et **déjà partielles**.
 
-⚠️ Une intuition a été **vérifiée puis écartée** : celle d'un besoin de garde de capacité symétrique pour le bloc droit. Le calcul (`ty = 167` contre `my ≥ 252` au pire cas) donne 85 mm de marge, soit dix-huit lignes — la garde de 16-3a est bien asymétrique, mais une ligne de plus ne l'approche pas. La story l'inscrit pour qu'une passe de revue ne réclame pas une branche inatteignable.
+⚠️ Une intuition a été **vérifiée puis écartée** : celle d'un besoin de garde de capacité symétrique pour le bloc droit. Le calcul (`ty = 167` contre `my ≥ ` **256,5** ` ` au pire cas) donne **89,5 mm** de marge, soit une vingtaine de lignes — la garde de 16-3a est bien asymétrique, mais une ligne de plus ne l'approche pas. La story l'inscrit pour qu'une passe de revue ne réclame pas une branche inatteignable.
+
+*(Chiffres rectifiés en passe 2 : cette entrée annonçait `252` et `85 mm`, en comptant une ligne « conditions de paiement » qui appartient à la colonne **gauche**. Voir l'entrée de la passe 2 — l'erreur a été reproduite à l'identique par une lentille de revue indépendante.)*
