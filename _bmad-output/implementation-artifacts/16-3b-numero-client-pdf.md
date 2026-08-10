@@ -151,7 +151,11 @@ C'est pire que l'oubli d'AC2-bis : l'audit aveugle perd une *trace*, celui-ci pe
 
 **AC5 — La fiche contact permet de le saisir.**
 Champ dans l'écran contact du frontend, avec libellé traduit.
-*Preuve* : test E2E Playwright qui saisit un numéro, enregistre, recharge la page et le relit. ⚠️ Un E2E est le **seul** test qui vérifie qu'une valeur traverse réellement la frontière HTTP — Vitest teste la construction du payload, les tests Rust la validation, et ni l'un ni l'autre ne voit une clé qui disparaît entre les deux.
+*Preuve 1 (création)* : test E2E Playwright qui saisit un numéro, enregistre, recharge la page et le relit. ⚠️ Un E2E est le **seul** test qui vérifie qu'une valeur traverse réellement la frontière HTTP — Vitest teste la construction du payload, les tests Rust la validation, et ni l'un ni l'autre ne voit une clé qui disparaît entre les deux.
+
+*Preuve 2 (édition) — non négociable, et la preuve 1 ne la remplace pas* : créer un contact **avec** un numéro, puis **modifier un champ sans rapport** (le téléphone), enregistrer, et vérifier que **le numéro a survécu**.
+
+⚠️ **Le chemin d'édition efface le champ si une seule ligne est oubliée, et rien ne le signale.** `PUT /contacts/{id}` est un **full-replace** : `+page.svelte:336-341` envoie le **même `payload`** pour la création et l'édition, et `openEdit` (l. 240-258) hydrate le formulaire **champ par champ**, sur dix-huit lignes. Ajouter `clientNumber` au payload **sans** ajouter `formClientNumber = c.clientNumber ?? ''` à `openEdit` ne casse **aucune** compilation (le champ TS est optionnel) — et toute modification d'un contact, même sans rapport, **efface son numéro**. La preuve 1 passe au vert sous cette mutation, puisqu'elle ne parcourt que la création.
 
 **AC6 — Le PDF affiche le numéro quand il existe, et rien quand il n'existe pas.**
 `InvoicePdfData` porte `debtor_client_number: Option<String>` ; `draw_invoice_section` dessine la ligne sous le numéro de facture **uniquement** si `Some`, et ne descend `my` que dans ce cas — `my -= 4.5` **à l'intérieur** du `if let`, comme `origin_reference` (`pdf.rs:315-324`).
@@ -209,14 +213,21 @@ La recherche de contacts accepte le numéro de client, et la liste affiche une c
 - [ ] **T4 — Tests repository** (AC1, AC2, AC2-bis, AC2-ter). Aller-retour `create`/`find_by_id`/`update`/`find_by_id` ; unicité rejetée **entre contacts actifs** ; **deux `NULL` acceptés** ; **numéro d'un contact archivé réattribuable à un actif** (l'invariant de D2-bis) ; trace d'audit ; et `update` du **seul** `client_number` → nouvelle valeur **et** `version` incrémentée.
 - [ ] **T5 — Route et DTO** (AC3, AC4). `ContactResponse` (`contacts.rs:151`) + `impl From<Contact> for ContactResponse` (l. 186) + DTO d'entrée, **avec `normalize_optional()`** sur le champ (l. 259) comme pour `email`/`phone`. Pour l'erreur : **étendre `map_contact_error` (`contacts.rs:461`)** d'une branche, ajouter la variante `AppError::ClientNumberAlreadyExists` et sa ligne dans le `match` de `errors.rs` (409 / `CLIENT_NUMBER_ALREADY_EXISTS`). Ne **pas** écrire un second helper : le repository rend déjà `DbError::UniqueConstraintViolation`, tout le chemin existe.
 - [ ] **T6 — Tests API** (AC3, AC4). Aller-retour `POST`/`GET` ; doublon → **409** + code d'erreur asserté ; **non-sur-capture** entre les deux contraintes (calquer `contacts.rs:765`).
-- [ ] **T7 — Frontend** (AC5, AC8, AC10). Type TS (`contacts.types.ts`, interface `ContactResponse`), champ de la fiche contact, **colonne « N° client » dans la liste**, **placeholder de recherche corrigé** (`+page.svelte:441`), libellés sur les 4 locales. Respecter `lint-i18n-ownership`.
+- [ ] **T7 — Frontend** (AC4, AC5, AC8, AC10). Type TS (`contacts.types.ts`, interface `ContactResponse`), champ de la fiche contact, **hydratation dans `openEdit` (l. 240-258) — la ligne dont l'oubli efface le champ à chaque édition**, **colonne « N° client » dans la liste** (+ `colspan` du tableau, câblé en dur l. 540), **placeholder de recherche corrigé** (l. 441), libellés sur les 4 locales. Respecter `lint-i18n-ownership`.
+- [ ] **T7-ter — Message du 409 à l'écran** (AC4). Le frontend branche les codes **un par un** (`+page.svelte:349-358`) : `OPTIMISTIC_LOCK_CONFLICT`, puis `IDE_ALREADY_EXISTS` → `contact-error-ide-duplicate`, **sinon `err.message` brut du backend**. Sans branche dédiée, l'utilisateur qui saisit un doublon reçoit un message non maîtrisé et non traduit, là où le doublon d'IDE a droit au sien. Ajouter la branche `CLIENT_NUMBER_ALREADY_EXISTS` et la clé `contact-error-client-number-duplicate` **dans les 4 locales** — le domaine `contact-*` est aujourd'hui à 59 clés dans chacune, sans dérive : ne pas l'ouvrir.
 - [ ] **T7-bis — Recherche par numéro** (AC10). Branche `OR client_number LIKE ?` dans `repositories/contacts.rs:170-186`, **à côté** de celle d'`email` et **pas** dans l'index FULLTEXT — le commentaire l. 162-165 explique pourquoi les séparateurs cassent les tokens.
 - [ ] **T8 — E2E fiche contact** (AC5). Saisie → enregistrement → rechargement → relecture. ⚠️ Le fichier **DOIT** être nommé `*.spec.ts` : `playwright.config.ts:35` filtre sur `testMatch: /(.+\.)?spec\.[jt]s/`, et un `*.test.ts` posé dans `tests/e2e/` est **silencieusement ignoré** — il ne rougit jamais, il se tait.
 - [ ] **T9 — PDF** (AC6, AC6-bis, AC8). `InvoicePdfData.debtor_client_number`, rendu conditionnel calqué sur `origin_reference` (`pdf.rs:315-324`), **extraction de la fonction pure** de construction du bloc métadonnées (sans elle, AC6 est intestable), **constante de troncature dédiée au bloc droit** (70 mm, donc < `IDENTITY_MAX_CHARS`), clé i18n à la **même position** dans `I18N_KEYS` et `DEFAULT_EN`.
 - [ ] **T10 — Service de génération** (AC6, AC7, D5). Renseigner le champ depuis le contact destinataire dans `invoice_pdf_service.rs` **et** au site de construction de l'avoir. C'est le site que la mutation doit tuer.
 - [ ] **T11 — Tests PDF** (AC6, AC6-bis, AC7). Présence par delta de taille ; **conditionnalité par assertion de position** sur la fonction pure extraite en T9 (l'ordonnée de la ligne « échéance » identique entre `Some` et `None`) ; troncature calibrée ; avoir testé au site de construction, sans `..base` d'une fixture de facture.
 - [ ] **T12 — Export CSV** (optionnel, à trancher). `serialize_contacts_csv` (`crates/kesh-api/src/exports/csv_tables.rs:314`) a **deux listes appariées positionnellement** (en-têtes puis valeurs). Elle est **déjà partielle** — ni `first_name`, ni `address_street`, ni `language` n'y figurent —, donc l'omission est défendable. Si le champ est ajouté, **les deux** listes le sont, sous peine de décalage silencieux de toutes les colonnes suivantes.
-- [ ] **T13 — Documentation** (règle de synchronisation). Manuel utilisateur FR : la section « Vos coordonnées sur la facture » (`docs/manual/fr/user-manual.tex:615`) a un pendant à écrire côté client. Régénérer le PDF. CHANGELOG.
+- [ ] **T13 — Documentation** (règle de synchronisation). Les sites sont **énumérés** plutôt que laissés à l'appréciation :
+  - `docs/manual/fr/user-manual.tex:510-520` — la liste des champs à renseigner à la création d'un contact. **C'est la page que lira l'utilisateur cherchant à quoi sert le nouveau champ.**
+  - `docs/manual/fr/user-manual.tex:615` — « Vos coordonnées sur la facture », qui appelle un pendant côté client.
+  - `docs/manual/fr/user-manual.tex:531` — « Recherchez par nom, IDE, adresse, email, téléphone » (à corriger avec AC10 ; ⚠️ cette phrase **surestime déjà** le code, qui ne cherche que `name` et `email`).
+  - `docs/search-patterns.md:116` — le patron de recherche des contacts, à mettre à jour avec AC10.
+  - `README.md:213` — ligne v0.9.0 de la feuille de route : cette story **ferme #151**, le libellé doit le refléter.
+  - CHANGELOG, et régénération des PDF des manuels.
 
 ## Dev Notes
 
@@ -224,7 +235,22 @@ La recherche de contacts accepte le numéro de client, et la liste affiche une c
 
 - **Pas de numérotation automatique**, pas de séquence, pas de backfill du parc existant (D1). Les contacts existants restent à `NULL`, et c'est l'état normal.
 - **Pas de copie du numéro sur `invoices`** (D5). Le PDF le résout depuis le contact.
-- **Pas de garde de capacité symétrique** — voir ci-dessous, ce serait du code mort.
+- **Pas de garde de capacité symétrique** — voir plus bas, ce serait du code mort.
+- **Pas de numéro dans l'échéancier / rapport des débiteurs.** `crates/kesh-report/src/aged_receivables.rs:112` identifie le client par `c.name` seul, et l'export CSV de même (`csv.rs:456`). C'est le rapport où le numéro aurait le plus de sens après la facture — l'omission est **délibérée** et bornée au périmètre de cette story, pas un oubli.
+- **Pas de variable `{clientNumber}` dans les modèles d'e-mail.** La liste blanche est à `entities/email_template.rs:53` et `:65` ; aucun modèle n'évoque de numéro de client. L'y ajouter serait une **feature**, pas une complétion.
+
+### Les angles déjà explorés et rendus VIDES — ne pas les refaire
+
+Relevé en passe 4. Chacun a été ouvert et n'appelle **aucun travail** :
+
+- **Autres portes d'entrée d'un contact : il n'y en a pas.** Seul `create_contact` en construit en production. Les deux `NewContact { }` de `repositories/invoices.rs` sont **à l'intérieur** d'un `#[cfg(test)] mod tests`. `crates/kesh-seed` ne contient **aucune** occurrence de « contact », et `crates/kesh-import` non plus.
+- **Fixtures CI** : `test_fixtures.rs:468-479` insère son contact par SQL à colonnes explicites — la nouvelle colonne prend `NULL`, rien à maintenir.
+- **Import d'une sauvegarde antérieure à la migration** : sain. `ColumnConstraint::is_required()` (`backup.rs:324-329`) ne déclare obligatoire qu'une colonne `NOT NULL` **sans `DEFAULT`**, et `parse_ndjson_rows` substitue `Null` à toute clé absente.
+- **Rappels / relances** : `routes/dunning_reminders.rs` ne produit **aucun PDF** ; le rappel joint la QR-facture, donc le numéro y voyage déjà.
+- **`docs/api-external.md`** : ses exemples sont des payloads **partiels**, pas un schéma — aucune mise à jour due.
+- **Site web** : aucune page ne décrit le contenu du PDF de facture.
+
+⚠️ **Un défaut de documentation préexistant a été relevé en chemin, hors périmètre** : `user-manual.tex:533-535` annonce un « Contacts → Import CSV » qui **n'existe pas** dans le code. À tracer en issue GitHub, pas à corriger ici.
 
 ### Le piège qui coûterait le plus cher
 
@@ -305,6 +331,14 @@ Le seul précédent du dépôt **écarte explicitement** la comparaison octet à
 **MEDIUM-2 — la moitié du « so that » n'avait aucun critère.** La story promet « retrouver un contact depuis une facture papier ». La recherche ne couvre que `name` (FULLTEXT) et `email` (`LIKE`) ; la liste affiche l'IDE mais pas le numéro. Nouvel **AC10** + **T7-bis**, avec la bonne technique donnée par le dépôt lui-même : `OR client_number LIKE ?` **à côté** d'`email`, pas dans l'index FULLTEXT — les séparateurs cassent les tokens (`contacts.rs:162-165`).
 
 **LOW** — l'unicité est **insensible à la casse** (collation `_ci` héritée, aucune déclarée sur `contacts`) : souhaitable, mais à décider et à tester, d'où le 3ᵉ cas d'AC1 ; et le 409 n'était pas diagnosticable quand le détenteur pouvait être un contact archivé donc invisible — **ce point disparaît avec le renversement de D2-bis**.
+
+**Seconde lentille de la passe 4 (complétude) — 1 CRITICAL, 2 HIGH, 3 MEDIUM, 1 LOW.** Son CRITICAL est **le même que HIGH-1 ci-dessus** : deux lentilles indépendantes ont convergé sur l'échappatoire inexistante de D2-bis, ce qui en confirme la réalité. Trois findings neufs :
+
+- **HIGH — le chemin d'ÉDITION efface le champ, et AC5 ne pouvait pas le voir.** `PUT /contacts/{id}` est un **full-replace** : `+page.svelte:336-341` envoie le même `payload` pour créer et pour modifier, et `openEdit` (l. 240-258) hydrate le formulaire **champ par champ**, sur dix-huit lignes. Ajouter le champ au payload sans ajouter sa ligne d'hydratation ne casse **aucune compilation** — et modifier un simple téléphone **efface le numéro de client**. AC5 ne testait que la création : il serait resté **vert** sous cette mutation. Seconde preuve ajoutée (« modifier un champ sans rapport, le numéro survit »).
+- **MEDIUM — AC4 créait un code d'erreur que personne n'affiche.** Le frontend branche les codes **un par un** (`+page.svelte:349-358`) et **retombe sur `err.message` brut** hors des cas connus. Le doublon d'IDE a son message traduit ; le nôtre n'en avait aucun. **T7-ter** ajoute la branche et la clé sur les 4 locales.
+- **MEDIUM — T13 ne visait qu'une section de manuel sur quatre sites.** Manquaient la liste des champs de création (`user-manual.tex:510-520`, la page que lira l'utilisateur), la phrase sur la recherche (l. 531 — qui **surestime déjà** le code), `docs/search-patterns.md:116` et `README.md:213`, puisque cette story **ferme #151**. T13 les énumère désormais.
+
+**Et une liste d'angles ouverts puis rendus vides** — portes d'entrée d'un contact (il n'y en a qu'une), fixtures CI, import d'une sauvegarde antérieure, rappels, `api-external.md`, site web — consignée dans les Dev Notes pour que les passes suivantes ne refassent pas le trajet. Un défaut de doc **préexistant** a été relevé au passage, hors périmètre : `user-manual.tex:533-535` annonce un import CSV de contacts qui n'existe pas.
 
 **Trois décisions confirmées, avec des arguments plus forts que les miens.** **D1** (saisie manuelle) : le dépôt a bien des séquences par société, mais clées `(company_id, fiscal_year_id)` avec garantie « sans trou » consommée en transaction de validation — aucune de ces propriétés n'a de sens ici ; et surtout le « so that » appelle une **référence imposée par le client**, qu'aucune séquence ne peut produire. **D3** (bloc droit) : `pdf.rs:342` pose le bloc destinataire à 55 mm du bord, soit **la fenêtre de l'enveloppe** — y insérer une mention non postale serait fautif, le bloc métadonnées à `meta_x = 120` est hors fenêtre. Motif matériel que la story n'avait pas su nommer. **D5** (pas de dénormalisation) : l'hypothèse d'une incohérence est **réfutée** — `invoice_pdf_service.rs:287-288` résout déjà `debtor_name` et `debtor_address_lines` à la volée, et `entities/invoice.rs` ne porte aucun champ de destinataire hors `contact_id`. Dénormaliser le seul numéro en aurait fait le **seul** attribut figé du destinataire : *c'est cela* qui aurait été l'incohérence.
 
