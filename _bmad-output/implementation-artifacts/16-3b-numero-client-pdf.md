@@ -80,7 +80,14 @@ Migration `crates/kesh-db/migrations/<date>_contacts_client_number.sql` : `ALTER
 *Preuve* : test repository qui insère deux contacts de la même société avec le même `client_number` et vérifie le rejet, **plus** un test qui insère deux contacts avec `client_number = NULL` et vérifie qu'ils passent tous les deux (l'invariant MariaDB dont dépend D2 — s'il tombait, la moitié du parc deviendrait insaisissable).
 
 **AC2 — Le champ traverse le repository sans se perdre.**
-Les **quatre** listes de colonnes de `crates/kesh-db/src/repositories/contacts.rs` portent le champ : `COLUMNS` (l. 28-31), `FIND_BY_ID_SQL` (l. 33-36), l'`INSERT` (l. ~200) **et ses placeholders `VALUES`**, l'`UPDATE` (l. ~451).
+Les **quatre** listes de colonnes **SQL** de `crates/kesh-db/src/repositories/contacts.rs` portent le champ : `COLUMNS` (l. 28-31), `FIND_BY_ID_SQL` (l. 33-36), l'`INSERT` (l. 201) **et ses placeholders `VALUES`**, l'`UPDATE` (l. 451).
+
+**AC2-bis — L'audit trace la modification du numéro.**
+`contact_snapshot_json` (`repositories/contacts.rs:39-58`) est une **cinquième liste de champs écrite à la main**, non-SQL, qui alimente l'audit log. Elle porte déjà `ideNumber` ; `client_number` est de **même nature** — un identifiant du contact, unique par société — et son omission rendrait l'audit aveugle à sa modification **sans que rien ne casse ni ne compile en erreur**.
+
+*Preuve* : test qui modifie le numéro et vérifie que l'entrée d'audit en porte la trace, avant et après.
+
+⚠️ Ce snapshot est **partiel par conception** — les champs structurés de #213 (`first_name`, `address_street`, …) n'y figurent pas. L'argument d'inclusion n'est donc pas « il faut tout y mettre », mais « `ideNumber` y est, et ces deux champs sont fonctionnellement jumeaux ».
 *Preuve* : test d'aller-retour `create` → `find_by_id` → `update` → `find_by_id` qui vérifie la valeur à chaque étape. ⚠️ Un test qui n'utilise que `list` passerait alors même que `FIND_BY_ID_SQL` aurait été oublié — voir Dev Notes, « le piège qui coûterait le plus cher ».
 
 **AC3 — Le champ est saisissable et relisible depuis l'API.**
@@ -138,7 +145,8 @@ Ligne ajoutée au tableau de `docs/migrations-idempotence-audit.md` **à sa plac
 - [ ] **T1 — Migration** (AC1, AC9). Créer le `.sql` (`ADD COLUMN` + `ADD CONSTRAINT UNIQUE`), avec l'en-tête de commentaire du dépôt : rôle, longueur justifiée, statut non-breaking, et la mention explicite « DDL pur, ni registre ni exemption ». Puis `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` et **inspecter chaque site** (P6 — un test qui indexe les migrations par position change de sens à chaque ajout).
 - [ ] **T2 — Audit d'idempotence** (AC9). Ligne dans le tableau, **recompter** les deux sites du total et les trois partitions. État de départ mesuré le 2026-08-10 : **59** fichiers `.sql` = 59 lignes de tableau = en-tête = total, partitionnés en `54 tracked-by-sqlx + 5 yes + 0 no`. Cette migration porte l'ensemble à **60** et `tracked-by-sqlx` à **55** — mais **recompter depuis le tableau**, ne pas incrémenter ces chiffres de confiance : c'est exactement le geste qui avait laissé dériver le compteur de 7 unités jusqu'à la Story 16-1a. ⚠️ Les compteurs de partition ne valent pas le total ; les aligner dessus casserait l'invariant qu'ils servent à tenir.
 - [ ] **T3 — Entité et repository** (AC1, AC2). `Contact`, `NewContact` (`entities/contact.rs:213`), `ContactUpdate` (l. 250) — **pas** `ContactChanges`, qui n'existe pas —, puis **les quatre** listes de `repositories/contacts.rs`. Vérifier que le nombre de `?` de l'`INSERT` suit la liste de colonnes. `reconciliation.rs:201` réutilise `COLUMNS` — rien à y faire, mais le vérifier plutôt que le supposer.
-- [ ] **T4 — Tests repository** (AC1, AC2). Aller-retour `create`/`find_by_id`/`update`/`find_by_id` ; unicité rejetée ; **deux `NULL` acceptés**.
+- [ ] **T3-bis — Audit** (AC2-bis). Ajouter le champ à `contact_snapshot_json` (`repositories/contacts.rs:39-58`) — **cinquième liste de champs écrite à la main**, non-SQL, que les quatre listes de T3 ne couvrent pas.
+- [ ] **T4 — Tests repository** (AC1, AC2, AC2-bis). Aller-retour `create`/`find_by_id`/`update`/`find_by_id` ; unicité rejetée ; **deux `NULL` acceptés** ; trace d'audit de la modification du numéro.
 - [ ] **T5 — Route et DTO** (AC3, AC4). `ContactResponse` (`contacts.rs:151`) + `impl From<Contact> for ContactResponse` (l. 186) + DTO d'entrée, **avec `normalize_optional()`** sur le champ (l. 259) comme pour `email`/`phone`. Pour l'erreur : **étendre `map_contact_error` (`contacts.rs:461`)** d'une branche, ajouter la variante `AppError::ClientNumberAlreadyExists` et sa ligne dans le `match` de `errors.rs` (409 / `CLIENT_NUMBER_ALREADY_EXISTS`). Ne **pas** écrire un second helper : le repository rend déjà `DbError::UniqueConstraintViolation`, tout le chemin existe.
 - [ ] **T6 — Tests API** (AC3, AC4). Aller-retour `POST`/`GET` ; doublon → **409** + code d'erreur asserté ; **non-sur-capture** entre les deux contraintes (calquer `contacts.rs:765`).
 - [ ] **T7 — Frontend** (AC5, AC8). Type TS, champ de la fiche contact, libellé sur les 4 locales. Respecter `lint-i18n-ownership`.
@@ -220,6 +228,16 @@ Le seul précédent du dépôt **écarte explicitement** la comparaison octet à
 - **KF #283** — 57 clés i18n absentes des locales non-françaises ; ne pas l'aggraver.
 
 ## Change Log
+
+**2026-08-10 — Passe 3 de `bmad-create-story validate`** (**Haiku 4.5**, contexte frais, 2 lentilles — cohérence interne, faisabilité technique). **0 CRITICAL, 0 HIGH, 1 MEDIUM, 0 LOW**, remédié. **Boucle NON convergée — passe 4 due.**
+
+⚠️ **Les DEUX lentilles ont rendu « 0 finding ». Le MEDIUM a été trouvé par l'orchestrateur en vérifiant leurs rapports.** C'est très exactement l'avertissement inscrit au sprint-status après le lot 16-1 — *« un 0 finding de Haiku n'est PAS une preuve de convergence »*, constaté alors sur 4 rapports vides. Le cas se reproduit, et sous une forme instructive : la lentille « faisabilité » **avait vu** `contact_snapshot_json` et l'a écarté d'une ligne — « partiel par design, non mentionné dans la story, donc non critique ». C'est le classement qui était faux, pas l'observation.
+
+**Le MEDIUM — une cinquième liste, non-SQL, que la story ne voyait pas.** `contact_snapshot_json` (`repositories/contacts.rs:39-58`) énumère à la main les champs versés à l'audit log. La story revendiquait l'exhaustivité de « quatre listes de colonnes » — vrai pour le **SQL**, et c'est d'ailleurs ce que la passe 2 avait confirmé. Mais cette cinquième liste porte déjà `ideNumber`, et `client_number` lui est **fonctionnellement jumeau** : un identifiant du contact, unique par société. L'omettre laissait l'audit aveugle à sa modification, **sans rien casser ni faire échouer la compilation** — le mode d'échec silencieux que toute cette story s'emploie à fermer ailleurs. Nouvel **AC2-bis** + **T3-bis**.
+
+**Ce que la passe a confirmé, et qui a de la valeur** : la propagation des patches des passes 1 et 2 est **complète** — les corrections `422 → 409`, `ContactJson → ContactResponse`, `252 → 256,5` et « conditions de paiement » ont été retrouvées à **tous** leurs sites, Change Log compris. La matrice AC ↔ tâches ne présentait aucun trou ni aucune tâche orpheline (avant l'ajout d'AC2-bis, qui en a créé un, comblé par T3-bis). Et le calcul de marge a été **recompté une troisième fois, depuis le code**, par une lentille indépendante : `277 − 7 − 3 × 4,5 = 256,5`, marge 89,5 mm — le chiffre rectifié tient.
+
+⚠️ **Garde-fou de splitting — état.** Sévérité maximale par passe : **P1 HIGH → P2 HIGH → P3 MEDIUM**. Le critère de non-convergence (« passe N+1 de sévérité **égale ou supérieure** ») s'est donc formellement déclenché en **P2**. Il est **résolu en P3**, qui décroît. C'est le profil que l'amendement de la rétro Epic 14 décrit comme « une revue qui travaille » — les passes tardives trouvant des défauts *réels et décroissants* — et non celui d'une story trop large. Aucun split n'est demandé ; le fait est consigné pour que l'arbitrage reste traçable.
 
 **2026-08-10 — Passe 2 de `bmad-create-story validate`** (**Sonnet**, contexte frais, 3 lentilles indépendantes — BlindHunter, EdgeCaseHunter, AcceptanceAuditor). **4 HIGH, 5 MEDIUM, 2 LOW**, tous vérifiés au ground-truth par l'orchestrateur et tous remédiés. **Boucle NON convergée — passe 3 due.**
 
