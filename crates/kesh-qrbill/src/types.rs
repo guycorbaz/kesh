@@ -126,6 +126,12 @@ pub struct InvoicePdfData {
     pub creditor_address_lines: Vec<String>,
     /// Formatted IDE number, e.g. "CHE-123.456.789".
     pub creditor_ide: Option<String>,
+    /// Coordonnées de contact de l'émetteur (Story 16-3a, #151), rendues sous
+    /// l'IDE. `None` ⇒ la ligne n'est pas dessinée et le curseur ne descend
+    /// pas — même patron conditionnel que `creditor_ide`.
+    pub creditor_phone: Option<String>,
+    pub creditor_email: Option<String>,
+    pub creditor_website: Option<String>,
     pub debtor_name: String,
     pub debtor_address_lines: Vec<String>,
     pub lines: Vec<InvoiceLinePdf>,
@@ -227,7 +233,38 @@ pub const I18N_KEYS: &[&str] = &[
     "invoice-pdf-qr-separate-before-paying",
     // Story 12.1 — référence à la facture d'origine (avoirs uniquement).
     "invoice-pdf-origin-reference",
+    // Story 16-3a (#151) — coordonnées de contact de l'émetteur.
+    //
+    // ⚠️ Toute clé ajoutée ici DOIT l'être à la MÊME POSITION dans `DEFAULT_EN` :
+    // `get()` résout son repli par `DEFAULT_EN[idx]`. L'appariement positionnel
+    // est à la charge du mainteneur — l'assertion de compilation plus bas
+    // n'attrape QUE les longueurs divergentes, pas un décalage à longueurs
+    // égales (cf. son doc-comment).
+    "invoice-pdf-phone",
+    "invoice-pdf-email",
+    "invoice-pdf-website",
 ];
+
+/// ⚠️ Invariant tenu **à la compilation** : `I18N_KEYS` et `DEFAULT_EN` ont
+/// exactement la même longueur. `get()` résout son repli par `DEFAULT_EN[idx]`
+/// **sans borne-check** — une longueur divergente ferait paniquer le rendu, en
+/// debug comme en release. Le commentaire l'annonçait sans le tenir ; cette
+/// assertion échoue désormais au `cargo build`, pas au premier PDF.
+/// *(Revue de code, passe 3.)*
+///
+/// ⚠️ Ce qu'elle ne tient PAS : l'**appariement** clé ↔ traduction. Insérer une
+/// clé au milieu de l'une et ailleurs dans l'autre laisse les longueurs égales,
+/// passe `cargo build`, et décale silencieusement le repli de toutes les
+/// entrées suivantes. Aucune vérification statique ne peut apparier une clé à
+/// sa traduction ; l'ordre reste à la charge du mainteneur, et le seul filet
+/// est d'ajouter toute nouvelle clé **en fin** des deux tableaux. Aggravé par
+/// les fixtures à `HashMap` vide, qui traversent toutes `DEFAULT_EN`.
+/// *(Revue de code, passe 6 — le doc-comment prêtait à l'assertion une garantie
+/// de position qu'elle n'a jamais eue.)*
+const _: () = assert!(
+    I18N_KEYS.len() == DEFAULT_EN.len(),
+    "I18N_KEYS et DEFAULT_EN doivent avoir la même longueur"
+);
 
 /// English fallback for each key (same ordering as `I18N_KEYS`).
 const DEFAULT_EN: &[&str] = &[
@@ -257,6 +294,10 @@ const DEFAULT_EN: &[&str] = &[
     "Acceptance point",
     "Separate before paying in",
     "Original invoice",
+    // Story 16-3a (#151) — MÊME ORDRE que les trois dernières de `I18N_KEYS`.
+    "Phone",
+    "Email",
+    "Web",
 ];
 
 #[derive(Debug, Error)]
@@ -291,6 +332,15 @@ pub enum QrBillError {
     /// de lignes » (actionnable) plutôt qu'un 500 opaque. Le `usize` = nb de lignes.
     #[error("trop de lignes ({0}) pour un PDF A4 mono-page")]
     TooManyLines(usize),
+
+    /// Le bloc d'en-tête (émetteur + destinataire) déborde sur le tableau des
+    /// lignes (Story 16-3a, #151). Le `f32` = ordonnée atteinte, en mm.
+    ///
+    /// ⚠️ Garde **symétrique** de `TooManyLines`, qui ne surveillait que le bas
+    /// de page : le tableau démarre à une ordonnée **constante** que rien ne
+    /// repousse, si bien qu'un en-tête trop haut le chevauchait **en silence**.
+    #[error("l'en-tête déborde sur le tableau des lignes (y = {0} mm)")]
+    HeaderOverflow(f32),
     /// Payload SPC malformé (en-tête absent, type de référence inconnu, structure invalide).
     /// Mappé `INVALID_SPC_PAYLOAD` par la couche d'import (Story 12-5).
     #[error("Payload SPC invalide: {0}")]

@@ -58,6 +58,12 @@ fn sample_invoice() -> InvoicePdfData {
         creditor_name: "Robert Schneider SA".into(),
         creditor_address_lines: vec!["Rue du Lac 1268".into(), "2501 Biel".into()],
         creditor_ide: Some("CHE-123.456.789".into()),
+        // Story 16-3a (#151) — la fixture de base ne porte AUCUNE coordonnée :
+        // c'est le cas nominal d'une société qui n'a rien renseigné, et il doit
+        // rendre le PDF d'avant la story. Les tests qui les exercent les posent.
+        creditor_phone: None,
+        creditor_email: None,
+        creditor_website: None,
         debtor_name: "Pia Rutschmann".into(),
         debtor_address_lines: vec!["Marktgasse 28".into(), "9400 Rorschach".into()],
         lines: vec![InvoiceLinePdf {

@@ -477,3 +477,73 @@ async fn pdf_comptable_role_returns_200(pool: MySqlPool) {
 async fn pdf_consultation_role_returns_200(pool: MySqlPool) {
     run_pdf_role_scenario(pool, "observateur_pdf", Role::Consultation).await;
 }
+
+/// Story 16-3a, passe 6 de revue — **la chaîne complète du refus d'en-tête**,
+/// du rendu PDF jusqu'au code d'erreur lu par le frontend.
+///
+/// ⚠️ Ce test comble un trou de garde, pas un défaut d'état : les littéraux
+/// `INVOICE_PDF_HEADER_OVERFLOW` d'`errors.rs` et de la liste blanche de
+/// `invoices/[id]/+page.svelte` coïncident aujourd'hui. Ce qui manquait, c'est
+/// ce qui les **tient ensemble**. Le seul test du débordement haut vivait dans
+/// `kesh-qrbill` et s'arrêtait à `matches!(err, QrBillError::HeaderOverflow(_))`
+/// — sans traverser `map_qrbill_error`, ni `IntoResponse`, ni HTTP. Si la chaîne
+/// dérivait (renommage du variant, faute de frappe, harmonisation), le frontend
+/// retomberait sur `'invoice-pdf-error-generic'`, les quatre traductions
+/// redeviendraient mortes, et **le gate resterait vert** : c'est le HIGH de la
+/// passe 3, rejoué un cran plus bas.
+///
+/// Le jumeau `pdf_too_many_lines_returns_400` couvre la garde **basse** depuis
+/// l'origine ; celui-ci couvre la garde **haute**.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn pdf_header_overflow_returns_400_with_its_own_code(pool: MySqlPool) {
+    let (admin_id, company_id) = seed_base(&pool).await;
+    let contact_id = seed_contact(&pool, company_id, admin_id, true).await;
+    seed_primary_bank(&pool, company_id, true).await;
+    // 2 lignes seulement : la garde BASSE ne doit pas se déclencher à la place
+    // de celle qu'on mesure.
+    let invoice_id = seed_validated_invoice(&pool, company_id, contact_id, admin_id, 2).await;
+
+    // L'émetteur porte ses trois coordonnées ET une adresse à rallonge.
+    sqlx::query(
+        "UPDATE companies SET address = ?, phone = ?, email = ?, website = ? WHERE id = ?",
+    )
+    .bind("Ligne 1\nLigne 2\nLigne 3\nLigne 4\nLigne 5\nLigne 6\nLigne 7\nLigne 8\nLigne 9\nLigne 10")
+    .bind("+41 21 123 45 67")
+    .bind("contact@demo.ch")
+    .bind("https://demo.ch")
+    .bind(company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // Le destinataire aussi : c'est le cumul des deux blocs qui fait déborder.
+    sqlx::query("UPDATE contacts SET address = ? WHERE id = ?")
+        .bind("Dest 1\nDest 2\nDest 3\nDest 4\nDest 5\nDest 6\nDest 7\nDest 8\nDest 9\nDest 10")
+        .bind(contact_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    let resp = app
+        .client
+        .get(app.url(&format!("/api/v1/invoices/{invoice_id}/pdf")))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.status(),
+        400,
+        "un en-tête qui déborde doit être refusé, pas imprimé par-dessus le tableau"
+    );
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["error"]["code"], "INVOICE_PDF_HEADER_OVERFLOW",
+        "le code doit être CELUI de la garde haute — c'est le littéral que la \
+         liste blanche du frontend traduit ; un code générique rendrait les \
+         quatre traductions mortes sans qu'aucun test ne le voie"
+    );
+}

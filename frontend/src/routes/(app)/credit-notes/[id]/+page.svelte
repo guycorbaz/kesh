@@ -75,6 +75,24 @@
 		return creditNoteRevenueAccountLabel(accounts, revenueAccountId);
 	}
 
+	/**
+	 * Whitelist explicite des codes d'erreur PDF, alignée sur celle de la fiche
+	 * facture (`invoices/[id]/+page.svelte`). Explicite et non construite depuis
+	 * `err.code`, pour qu'un code inconnu du backend ne fabrique pas une clé FTL
+	 * inexistante — le mismatch serait silencieux.
+	 *
+	 * Les trois refus ci-dessous sont ceux que `map_qrbill_error` peut produire
+	 * pour un avoir : l'avoir passe par la MÊME fonction de mapping que la
+	 * facture (`credit_notes.rs:341`).
+	 */
+	const PDF_ERROR_KEYS: Record<string, string> = {
+		INVOICE_NOT_PDF_READY: 'invoice-pdf-error-invoice-not-pdf-ready',
+		INVOICE_TOO_MANY_LINES_FOR_PDF: 'error-invoice-too-many-lines-for-pdf',
+		INVOICE_PDF_HEADER_OVERFLOW: 'error-invoice-pdf-header-overflow',
+		PDF_GENERATION_FAILED: 'invoice-pdf-error-pdf-generation-failed',
+		NOT_FOUND: 'invoice-pdf-error-not-found',
+	};
+
 	async function downloadPdf() {
 		if (!creditNote) return;
 		pdfDownloading = true;
@@ -96,8 +114,19 @@
 			document.body.removeChild(a);
 			setTimeout(() => URL.revokeObjectURL(url), 5_000);
 		} catch (err) {
-			if (isApiError(err)) notifyError(err.message);
-			else notifyError(i18nMsg('invoice-pdf-error-generic', 'Échec du téléchargement du PDF.'));
+			if (isApiError(err)) {
+				// Story 16-3a (#151), passe 7 : sans ce remappage, `err.message`
+				// s'affichait tel quel — c'est-à-dire traduit CÔTÉ SERVEUR, dans la
+				// locale d'instance figée au démarrage, et non dans la langue
+				// d'interface de l'utilisateur. La page facture porte la même
+				// whitelist depuis la passe 3 ; le CHANGELOG promet que l'avoir se
+				// comporte « à l'identique ». `i18nMsg` retombe sur `err.message`
+				// pour tout code absent de la table, donc aucun message n'est perdu.
+				const key = PDF_ERROR_KEYS[err.code] ?? 'invoice-pdf-error-generic';
+				notifyError(i18nMsg(key, err.message));
+			} else {
+				notifyError(i18nMsg('invoice-pdf-error-generic', 'Échec du téléchargement du PDF.'));
+			}
 		} finally {
 			pdfDownloading = false;
 		}

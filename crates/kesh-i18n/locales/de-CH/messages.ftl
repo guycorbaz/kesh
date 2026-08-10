@@ -524,6 +524,11 @@ invoice-pdf-origin-reference = Ref. Originalrechnung
 credit-note-pdf-title = Gutschrift
 credit-note-pdf-number = Gutschriftnummer
 invoice-pdf-ide = UID
+# Story 16-3a (#151) — coordonnées de contact de l'émetteur sur le PDF.
+# ⚠️ Ces trois clés vivent AUSSI dans `I18N_KEYS`/`DEFAULT_EN` (kesh-qrbill).
+invoice-pdf-phone = Tel.
+invoice-pdf-email = E-Mail
+invoice-pdf-website = Web
 invoice-pdf-recipient = Empfänger
 invoice-pdf-description = Beschreibung
 invoice-pdf-quantity = Menge
@@ -1357,3 +1362,16 @@ product-revenue-account-not-revenue = Das Konto dieses Artikels ist kein Ertrags
 product-form-revenue-account = Ertragskonto
 product-form-revenue-account-help = Optional. Wird das Feld leer gelassen, folgen die aus diesem Artikel erstellten Rechnungspositionen dem Standard-Ertragskonto der Firma.
 product-form-revenue-account-load-error = Der Kontenplan konnte nicht geladen werden. Das Ertragskonto muss über seine Kennung eingegeben werden, oder laden Sie die Seite neu.
+
+
+# Story 16-3a (#151) — saisie des coordonnées dans les réglages société.
+settings-field-company-phone = Telefon
+settings-company-phone-help = Telefonnummer, die auf Ihren Rechnungen erscheint. Leer = Zeile entfällt.
+settings-field-company-website = Website
+settings-company-website-help = Adresse Ihrer Website, auf Ihren Rechnungen angezeigt. Leer = Zeile entfällt.
+settings-company-contact-saved = Kontaktangaben gespeichert
+settings-company-contact-conflict = Versionskonflikt — die Daten wurden neu geladen, bitte erneut versuchen.
+settings-company-contact-conflict-reload-failed = Versionskonflikt und Neuladen fehlgeschlagen — laden Sie die Seite neu.
+error-company-phone-too-long = Die Telefonnummer der Firma ist zu lang (höchstens 50 Zeichen).
+error-company-website-too-long = Die Website-Adresse der Firma ist zu lang (höchstens 255 Zeichen).
+error-invoice-pdf-header-overflow = Der Dokumentkopf passt nicht auf die Seite. Entfernen Sie eine Kontaktangabe — Telefon, E-Mail oder Website — in den Einstellungen: Kürzen schafft keinen Platz, jede Angabe belegt eine ganze Zeile. Oder verringern Sie die Zeilenzahl der Empfängeradresse.

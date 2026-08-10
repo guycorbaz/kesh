@@ -46,3 +46,61 @@ test-results/
 
 # Cache vitest créé si une commande npm tourne depuis la racine (cwd errant)
 /node_modules/
+
+# Masques de bind-mount du bac à sable Claude Code / MCP — jamais versionnés.
+#
+# ⚠️ Ces entrées apparaissent dans l'arbre comme des FICHIERS VIDES : ce sont des
+# masques du bac à sable, pas du contenu de projet. Sans cette règle, un
+# `git add` de répertoire les emporte — c'est arrivé en passe 1 de la revue de
+# 16-3a, où 15 d'entre eux ont été commités. Mergés, ils remplaceraient des
+# RÉPERTOIRES attendus par des fichiers de 0 octet sur tout clone frais, et un
+# `settings.json` vide écraserait la configuration.
+#
+# ⚠️ NE PAS écrire `.claude/` nu : sans slash de tête, le motif matche AUSSI la
+# RACINE, où `.claude/skills/` porte les 118 skills BMAD du projet — 1714
+# fichiers légitimement versionnés. Une nouvelle skill installée y deviendrait
+# invisible à `git add`, sans que rien ne l'explique. C'est la régression qu'a
+# introduite le premier correctif, rattrapée en passe 4 de revue : on ne vise
+# donc que les sous-arbres réellement pollués.
+docs/.claude/
+docs/.mcp.json
+docs/manual/.claude/
+docs/manual/.mcp.json
+
+# ⚠️ Passe 6 de revue de 16-3a : le correctif ci-dessus n'avait été propagé qu'à
+# `docs/`, alors que la RACINE porte les masques les plus sensibles — dont
+# `.gitmodules`, que git lit lui-même. `git check-ignore` n'en rendait aucun.
+#
+# Entrées ANCRÉES par `/` : elles ne visent que la racine, ce qui préserve
+# `.claude/skills/` (1714 fichiers versionnés) et tout `.claude/` de sous-arbre.
+# Vérifié au moment d'écrire : rien n'est versionné sous `.claude/` hors
+# `skills/`, donc aucune de ces lignes ne masque de contenu de projet.
+#
+# ⚠️ Deux d'entre eux n'étaient couverts que par `.git/info/exclude` et par le
+# gitignore GLOBAL de l'utilisateur — deux protections hors du dépôt, qui ne
+# valent que sur une machine et ne suivent aucun clone. D'où leur reprise ici.
+#
+# Pour versionner délibérément l'un de ces chemins un jour (un `settings.json`
+# d'équipe, par exemple) : `git add -f <chemin>`.
+/.bash_profile
+/.bashrc
+/.gitconfig
+/.gitmodules
+/.mcp.json
+/.profile
+/.ripgreprc
+/.zprofile
+/.zshrc
+/.idea
+/.vscode
+/.claude/agents
+/.claude/commands
+/.claude/hooks
+/.claude/launch.json
+/.claude/loop.md
+/.claude/output-styles
+/.claude/routines
+/.claude/scheduled_tasks.json
+/.claude/settings.json
+/.claude/settings.local.json
+/.claude/workflows

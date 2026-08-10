@@ -70,6 +70,8 @@ async fn update_succeeds_with_current_version(pool: MySqlPool) {
         accounting_language: Language::De,
         instance_language: created.instance_language,
         email: None,
+        phone: None,
+        website: None,
     };
 
     let updated = companies::update(&pool, created.id, created.version, changes)
@@ -98,6 +100,8 @@ async fn update_fails_on_stale_version(pool: MySqlPool) {
         accounting_language: created.accounting_language,
         instance_language: created.instance_language,
         email: None,
+        phone: None,
+        website: None,
     };
     companies::update(&pool, created.id, 1, changes)
         .await
@@ -114,6 +118,8 @@ async fn update_fails_on_stale_version(pool: MySqlPool) {
         accounting_language: created.accounting_language,
         instance_language: created.instance_language,
         email: None,
+        phone: None,
+        website: None,
     };
     let result = companies::update(&pool, created.id, 1, stale_changes).await;
     assert!(matches!(result, Err(DbError::OptimisticLockConflict)));
@@ -137,6 +143,8 @@ async fn update_fails_on_missing_entity(pool: MySqlPool) {
         accounting_language: Language::Fr,
         instance_language: Language::Fr,
         email: None,
+        phone: None,
+        website: None,
     };
     let result = companies::update(&pool, 999_999, 1, changes).await;
     assert!(matches!(result, Err(DbError::NotFound)));
@@ -261,6 +269,8 @@ async fn update_no_op_returns_unchanged_entity(pool: MySqlPool) {
         accounting_language: created.accounting_language,
         instance_language: created.instance_language,
         email: None,
+        phone: None,
+        website: None,
     };
 
     let result = companies::update(&pool, created.id, version_initial, identical)
@@ -295,6 +305,8 @@ async fn update_partial_change_bumps_version(pool: MySqlPool) {
         accounting_language: created.accounting_language,
         instance_language: created.instance_language,
         email: None,
+        phone: None,
+        website: None,
     };
     let result = companies::update(&pool, created.id, version_initial, changes)
         .await
@@ -316,4 +328,120 @@ async fn multiple_companies_without_ide(pool: MySqlPool) {
     c2.ide_number = None;
     c2.name = "Company B".into();
     companies::create(&pool, c2).await.unwrap();
+}
+
+/// Story 16-3a, passe 6 de revue — **une société antérieure à la migration
+/// `structured_addresses` (#213, v0.5.0) doit pouvoir être mise à jour.**
+///
+/// Ces sociétés-là ont leurs quatre colonnes structurées à `''` : la migration
+/// les a ajoutées en `NOT NULL DEFAULT ''` **sans backfill**, et aucune
+/// migration du dépôt ne fait `UPDATE companies`. Leur adresse ne vit que dans
+/// la colonne `address`, en texte libre.
+///
+/// Toute route en full-replace — `update_company_email` (20-3b1) comme
+/// `update_company_contact_details` (16-3a) — reconstruit `CompanyUpdate` par
+/// `company.structured_address()`. Sur ces lignes, `combined()` rend `""`, et
+/// sans garde l'`UPDATE` écrit `address = ''`, que
+/// `chk_companies_address_nonempty` rejette : **500** en voulant simplement
+/// renseigner un téléphone.
+///
+/// ⚠️ Le montage vide les colonnes structurées **en SQL direct** : aucune
+/// fixture du dépôt ne produit cet état — `test_fixtures.rs` les peuple
+/// toujours — et c'est précisément pourquoi aucun gate ne voyait le défaut.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn update_preserves_address_when_structured_columns_are_empty(pool: MySqlPool) {
+    let created = companies::create(&pool, sample_new_company())
+        .await
+        .unwrap();
+
+    // Ramener la ligne à l'état d'une société pré-#213 : adresse en texte
+    // libre, colonnes structurées vides.
+    sqlx::query(
+        "UPDATE companies SET address = ?, address_street = '', address_building = '',
+         address_postal_code = '', address_city = '' WHERE id = ?",
+    )
+    .bind("Ancienne Rue 3\n1200 Genève")
+    .bind(created.id)
+    .execute(&pool)
+    .await
+    .expect("le montage doit pouvoir simuler une société pré-#213");
+
+    let before = companies::find_by_id(&pool, created.id)
+        .await
+        .unwrap()
+        .expect("la société doit exister");
+    assert_eq!(
+        before.structured_address().combined(),
+        "",
+        "montage invalide : les colonnes structurées doivent être vides, \
+         sans quoi ce test ne mesure PAS le cas qu'il prétend couvrir"
+    );
+
+    // Le geste de l'utilisateur : renseigner son téléphone, rien d'autre.
+    let changes = CompanyUpdate {
+        name: before.name.clone(),
+        first_name: before.first_name.clone(),
+        last_name: before.last_name.clone(),
+        address_structured: before.structured_address(),
+        ide_number: before.ide_number.clone(),
+        org_type: before.org_type,
+        accounting_language: before.accounting_language,
+        instance_language: before.instance_language,
+        email: before.email.clone(),
+        phone: Some("+41 21 123 45 67".into()),
+        website: before.website.clone(),
+    };
+
+    let updated = companies::update(&pool, before.id, before.version, changes)
+        .await
+        .expect("renseigner un téléphone ne doit pas échouer sur une société pré-#213");
+
+    assert_eq!(
+        updated.phone.as_deref(),
+        Some("+41 21 123 45 67"),
+        "le téléphone doit avoir été écrit"
+    );
+    assert_eq!(
+        updated.address, "Ancienne Rue 3\n1200 Genève",
+        "l'adresse en texte libre doit être PRÉSERVÉE, ni vidée ni recomposée"
+    );
+}
+
+/// Le pendant : quand les colonnes structurées SONT renseignées, `address`
+/// reste bien dérivée d'elles. Sans ce test, remplacer la garde par un
+/// « ne jamais toucher à `address` » passerait inaperçu.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn update_recomposes_address_when_structured_columns_are_filled(pool: MySqlPool) {
+    let created = companies::create(&pool, sample_new_company())
+        .await
+        .unwrap();
+
+    let changes = CompanyUpdate {
+        name: created.name.clone(),
+        first_name: None,
+        last_name: None,
+        address_structured: StructuredAddress {
+            street: "Avenue Neuve".into(),
+            building: "12".into(),
+            postal_code: "1204".into(),
+            city: "Genève".into(),
+            country: "CH".into(),
+        },
+        ide_number: created.ide_number.clone(),
+        org_type: created.org_type,
+        accounting_language: created.accounting_language,
+        instance_language: created.instance_language,
+        email: None,
+        phone: None,
+        website: None,
+    };
+
+    let updated = companies::update(&pool, created.id, created.version, changes)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        updated.address, "Avenue Neuve 12\n1204 Genève",
+        "adresse structurée renseignée → `address` doit être recomposée depuis elle"
+    );
 }

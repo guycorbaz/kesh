@@ -1,6 +1,17 @@
 # Epic 19 — Comptabilité analytique par projet
 
-> **Statut** : design (à valider par Guy avant kickoff). Rédigé 2026-07-01.
+> ⚠️ **Statut : LIVRÉ — epic clos le 2026-07-05.** 8/8 stories `done` (19-1 à 19-7),
+> rétrospective faite (`_bmad-output/implementation-artifacts/epic-19-retro-2026-07-05.md`),
+> publié en v0.4.0. **Ce document est le design d'origine, conservé comme référence de
+> conception ; il ne décrit pas l'état d'avancement.**
+>
+> *L'en-tête ci-dessous — « à valider par Guy avant kickoff » — est resté en place un
+> mois après la clôture de l'epic et a été lu comme un statut courant, au point de
+> faire porter à la conduite du projet un blocage inexistant. **L'état d'avancement se
+> lit dans `_bmad-output/implementation-artifacts/sprint-status.yaml`, et nulle part
+> ailleurs.*** Corrigé le 2026-08-05.
+
+> ~~**Statut** : design (à valider par Guy avant kickoff). Rédigé 2026-07-01.~~
 > **Type** : feature transversale (touche > 5 modules) → découpée en story-zéro + rollout (règle de splitting préventif, CLAUDE.md).
 
 ## 1. Objectif métier (mots de Guy)

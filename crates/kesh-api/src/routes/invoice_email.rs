@@ -897,6 +897,12 @@ impl BatchItemError {
         }
     }
 
+    /// Le code d'erreur porté, pour les tests.
+    #[cfg(test)]
+    fn code(&self) -> &str {
+        &self.error_code
+    }
+
     /// Erreur d'**infrastructure** survenue en cours de lot (pool mort, IO).
     ///
     /// Reste per-facture pour préserver `accepted` (cf. doc du type), mais loggée
@@ -910,6 +916,35 @@ impl BatchItemError {
             "erreur d'infrastructure en cours de lot — facture écartée, lot poursuivi"
         );
         Self::failed("DATABASE_ERROR")
+    }
+}
+
+/// Classe une erreur de rendu PDF en échec **métier** per-facture ou en panne
+/// d'**infrastructure**, pour la boucle du lot de rappels.
+///
+/// Extraite du handler en passe 7 de revue de la Story 16-3a : tant qu'elle était
+/// écrite en ligne, **aucun test ne pouvait l'atteindre**, et c'est précisément là
+/// qu'un variant d'erreur ajouté par cette story avait été oublié.
+///
+/// La règle qui gouverne cette fonction, et qu'il faut tenir à chaque ajout de
+/// variant : les causes **métier** — celles qui dépendent des seules données de la
+/// facture et que l'utilisateur peut corriger — sont énumérées **explicitement** ;
+/// le bras final est réservé aux **pannes** (pool mort, IO), qu'il journalise en
+/// `error!`. Un refus déterministe tombé dans le bras final ressort en
+/// `DATABASE_ERROR` : le client ne sait pas quoi corriger, et l'exploitant reçoit
+/// une fausse alerte d'infrastructure. C'est aussi ce qu'impose la
+/// § *Pattern batch — FailedProposal per-proposal* du `CLAUDE.md`.
+fn classify_render_error(e: AppError, invoice_id: i64) -> BatchItemError {
+    match e {
+        AppError::InvoiceNotValidated => BatchItemError::failed("INVOICE_NOT_VALIDATED"),
+        AppError::Database(DbError::NotFound) => BatchItemError::failed("INVOICE_NOT_FOUND"),
+        // Données de facturation incomplètes (pas de compte bancaire, adresse QR
+        // invalide, trop de lignes, en-tête débordant) — le PDF ne peut pas être
+        // produit, mais rien n'est cassé.
+        AppError::InvoiceNotPdfReady(_)
+        | AppError::InvoiceTooManyLinesForPdf(_)
+        | AppError::InvoicePdfHeaderOverflow => BatchItemError::failed("INVOICE_NOT_PDF_READY"),
+        other => BatchItemError::infra("render pdf", invoice_id, other),
     }
 }
 
@@ -1105,18 +1140,7 @@ async fn send_one_batch_reminder(
     let rendered =
         invoice_pdf_service::render(&state.pool, &state.i18n, locale, company, invoice_id)
             .await
-            .map_err(|e| match e {
-                AppError::InvoiceNotValidated => BatchItemError::failed("INVOICE_NOT_VALIDATED"),
-                AppError::Database(DbError::NotFound) => {
-                    BatchItemError::failed("INVOICE_NOT_FOUND")
-                }
-                // Données de facturation incomplètes (pas de compte bancaire, adresse
-                // QR invalide, trop de lignes) — le PDF ne peut pas être produit.
-                AppError::InvoiceNotPdfReady(_) | AppError::InvoiceTooManyLinesForPdf(_) => {
-                    BatchItemError::failed("INVOICE_NOT_PDF_READY")
-                }
-                other => BatchItemError::infra("render pdf", invoice_id, other),
-            })?;
+            .map_err(|e| classify_render_error(e, invoice_id))?;
 
     // Rate-limit : consomme 1 slot par e-mail (le pré-check a garanti la capacité, mais un
     // envoi concurrent peut avoir consommé entre-temps → RATE_LIMITED per-facture).
@@ -1390,6 +1414,8 @@ mod tests {
             accounting_language: Language::Fr,
             instance_language: Language::Fr,
             email: Some("info@mapme.ch".to_string()),
+            phone: None,
+            website: None,
             is_stub: false,
             version: 1,
             created_at: chrono::NaiveDateTime::default(),
@@ -1504,5 +1530,56 @@ mod tests {
             "échéance future → 0 (clampé)"
         );
         assert_eq!(days_overdue(None, today), 0, "pas d'échéance → 0");
+    }
+
+    // ------------------------------------------------------------------
+    // classify_render_error — un refus de rendu n'est pas une panne
+    // (Story 16-3a #151, passe 7 de revue)
+    // ------------------------------------------------------------------
+
+    /// Verrouille la frontière métier / infrastructure du lot de rappels.
+    ///
+    /// Le défaut qui a motivé ce test : `InvoicePdfHeaderOverflow`, variante
+    /// ajoutée par la Story 16-3a, n'avait pas été déclarée dans le `match` et
+    /// tombait dans le bras final. Elle ressortait donc en `DATABASE_ERROR`
+    /// **avec un `tracing::error!` « erreur d'infrastructure »**, pour un refus
+    /// entièrement déterministe que l'utilisateur peut corriger lui-même. Le
+    /// client n'avait aucun moyen de savoir quoi corriger, et l'exploitant
+    /// recevait une fausse alerte de panne.
+    ///
+    /// Le test couvre les DEUX sens : les causes métier rendent leur code
+    /// propre, et une vraie panne continue de rendre `DATABASE_ERROR`. Sans ce
+    /// second volet, déclarer tous les variants métier ferait passer le test
+    /// tout en supprimant la détection des pannes.
+    #[test]
+    fn classify_render_error_ne_deguise_pas_un_refus_en_panne() {
+        let metier = [
+            (AppError::InvoiceNotValidated, "INVOICE_NOT_VALIDATED"),
+            (AppError::Database(DbError::NotFound), "INVOICE_NOT_FOUND"),
+            (
+                AppError::InvoiceNotPdfReady("adresse incomplète".into()),
+                "INVOICE_NOT_PDF_READY",
+            ),
+            (
+                AppError::InvoiceTooManyLinesForPdf(42),
+                "INVOICE_NOT_PDF_READY",
+            ),
+            (AppError::InvoicePdfHeaderOverflow, "INVOICE_NOT_PDF_READY"),
+        ];
+        for (err, attendu) in metier {
+            let libelle = format!("{err:?}");
+            assert_eq!(
+                classify_render_error(err, 1).code(),
+                attendu,
+                "{libelle} est une cause MÉTIER — elle ne doit pas ressortir en DATABASE_ERROR"
+            );
+        }
+
+        // Une panne réelle doit continuer d'être signalée comme telle.
+        assert_eq!(
+            classify_render_error(AppError::Internal("pool fermé".into()), 1).code(),
+            "DATABASE_ERROR",
+            "une panne d'infrastructure doit rester détectée comme telle"
+        );
     }
 }

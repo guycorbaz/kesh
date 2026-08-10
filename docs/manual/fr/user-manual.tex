@@ -612,6 +612,28 @@ Une facture passe par trois états :
     \item \textbf{Payée} : marquée comme payée après réconciliation avec une transaction bancaire entrante.
 \end{enumerate}
 
+\subsection{Vos coordonnées sur la facture}\label{sec:coordonnees-emetteur}
+
+Le bloc en haut à gauche du PDF porte votre \textbf{nom}, votre \textbf{adresse} et votre \textbf{numéro IDE}. Vous pouvez y ajouter vos \textbf{coordonnées de contact} --- téléphone, e-mail et site web --- pour qu'un client qui a une question sur la facture puisse vous joindre depuis le document lui-même.
+
+\textbf{Où les saisir} : \emph{Réglages} $\rightarrow$ section \emph{Organisation}, bouton \textbf{Modifier} en face de « Téléphone · Site web ». La saisie est réservée aux administrateurs, comme celle de l'adresse de réponse.
+
+\begin{keshnote}
+\textbf{Chaque champ est facultatif, et un champ vide ne laisse aucun blanc sur le document} : la ligne correspondante n'est simplement pas imprimée. Si vous ne renseignez rien, votre facture est exactement celle que vous aviez avant --- aucune mise en page ne bouge.
+\end{keshnote}
+
+\textbf{L'e-mail que vous avez peut-être déjà renseigné} comme adresse de réponse des envois apparaît désormais lui aussi sur le PDF. Si vous ne le souhaitez pas, il suffit de le vider --- mais notez qu'il sert aussi de \emph{Reply-To} aux factures envoyées par e-mail (cf. \S\ref{sec:envoi-email}).
+
+Les \textbf{avoirs} portent les mêmes coordonnées, à l'identique.
+
+\begin{keshwarning}
+\textbf{Une coordonnée très longue est raccourcie à l'affichage} (suivie de «~\ldots~») pour ne pas empiéter sur le bloc de droite, qui porte le numéro et la date de la facture. La valeur complète reste intacte dans vos réglages.
+
+\textbf{Et si l'en-tête entier ne tient plus sur la page, le document est refusé} --- facture comme avoir --- avec un message explicite. C'est délibéré : l'en-tête et le tableau des lignes se partagent une hauteur fixe, et mieux vaut un refus qu'un document où l'un s'imprime par-dessus l'autre. La cause peut être vos coordonnées --- mais aussi une adresse de destinataire comptant beaucoup de lignes.
+
+Le message vous invite à \textbf{supprimer} une coordonnée, et non à la raccourcir : chaque coordonnée occupe une ligne entière quelle que soit sa longueur, si bien que l'abréger ne libère aucune place. Vider le champ, en revanche, fait disparaître la ligne.
+\end{keshwarning}
+
 \subsection{Numérotation des factures}
 
 Le numéro de facture est généré automatiquement selon un pattern configurable dans \emph{Paramètres} → \emph{Facturation} :

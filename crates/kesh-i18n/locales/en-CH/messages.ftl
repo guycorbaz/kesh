@@ -524,6 +524,11 @@ invoice-pdf-origin-reference = Original invoice ref.
 credit-note-pdf-title = Credit note
 credit-note-pdf-number = Credit note number
 invoice-pdf-ide = VAT ID
+# Story 16-3a (#151) — coordonnées de contact de l'émetteur sur le PDF.
+# ⚠️ Ces trois clés vivent AUSSI dans `I18N_KEYS`/`DEFAULT_EN` (kesh-qrbill).
+invoice-pdf-phone = Phone
+invoice-pdf-email = Email
+invoice-pdf-website = Web
 invoice-pdf-recipient = Recipient
 invoice-pdf-description = Description
 invoice-pdf-quantity = Qty
@@ -1357,3 +1362,16 @@ product-revenue-account-not-revenue = The account of this product is not a reven
 product-form-revenue-account = Revenue account
 product-form-revenue-account-help = Optional. Left empty, invoice lines created from this product follow the company default revenue account.
 product-form-revenue-account-load-error = Could not load the chart of accounts. The revenue account will have to be entered by its identifier, or reload the page.
+
+
+# Story 16-3a (#151) — saisie des coordonnées dans les réglages société.
+settings-field-company-phone = Phone
+settings-company-phone-help = Phone number shown on your invoices. Empty = line omitted.
+settings-field-company-website = Website
+settings-company-website-help = Your website address, shown on your invoices. Empty = line omitted.
+settings-company-contact-saved = Contact details saved
+settings-company-contact-conflict = Version conflict — data reloaded, please try again.
+settings-company-contact-conflict-reload-failed = Version conflict and reload failed — reload the page.
+error-company-phone-too-long = The company phone number is too long (50 characters maximum).
+error-company-website-too-long = The company website address is too long (255 characters maximum).
+error-invoice-pdf-header-overflow = The document header does not fit on the page. Remove one contact detail — phone, email or website — in the settings: shortening it frees no space, each detail takes a whole line. Or reduce the number of lines in the recipient address.

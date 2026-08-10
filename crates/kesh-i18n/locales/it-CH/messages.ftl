@@ -524,6 +524,11 @@ invoice-pdf-origin-reference = Rif. fattura originale
 credit-note-pdf-title = Nota di credito
 credit-note-pdf-number = N° nota di credito
 invoice-pdf-ide = IDI
+# Story 16-3a (#151) — coordonnées de contact de l'émetteur sur le PDF.
+# ⚠️ Ces trois clés vivent AUSSI dans `I18N_KEYS`/`DEFAULT_EN` (kesh-qrbill).
+invoice-pdf-phone = Tel.
+invoice-pdf-email = E-mail
+invoice-pdf-website = Web
 invoice-pdf-recipient = Destinatario
 invoice-pdf-description = Descrizione
 invoice-pdf-quantity = Qtà
@@ -1357,3 +1362,16 @@ product-revenue-account-not-revenue = Il conto di questo articolo non è un cont
 product-form-revenue-account = Conto di ricavo
 product-form-revenue-account-help = Facoltativo. Se lasciato vuoto, le righe di fattura create da questo articolo seguono il conto di ricavo predefinito della società.
 product-form-revenue-account-load-error = Impossibile caricare il piano dei conti. Il conto di ricavo dovrà essere inserito tramite il suo identificatore, oppure ricaricare la pagina.
+
+
+# Story 16-3a (#151) — saisie des coordonnées dans les réglages société.
+settings-field-company-phone = Telefono
+settings-company-phone-help = Numero di telefono visualizzato sulle vostre fatture. Vuoto = riga omessa.
+settings-field-company-website = Sito web
+settings-company-website-help = Indirizzo del vostro sito, visualizzato sulle fatture. Vuoto = riga omessa.
+settings-company-contact-saved = Recapiti salvati
+settings-company-contact-conflict = Conflitto di versione — i dati sono stati ricaricati, riprovare.
+settings-company-contact-conflict-reload-failed = Conflitto di versione e ricaricamento impossibile — ricaricare la pagina.
+error-company-phone-too-long = Il numero di telefono della società è troppo lungo (al massimo 50 caratteri).
+error-company-website-too-long = L'indirizzo del sito web della società è troppo lungo (al massimo 255 caratteri).
+error-invoice-pdf-header-overflow = L'intestazione del documento non entra nella pagina. Eliminate un recapito — telefono, e-mail o sito web — nelle impostazioni: accorciarlo non libera spazio, ogni recapito occupa una riga intera. Oppure riducete il numero di righe dell'indirizzo del destinatario.

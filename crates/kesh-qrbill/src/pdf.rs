@@ -172,6 +172,34 @@ fn finalize(doc: PdfDocumentReference) -> Result<Vec<u8>, QrBillError> {
 /// le plancher est `SEP_Y` (le séparateur QR).
 const CONTENT_FLOOR_NO_QR: f32 = 15.0;
 
+/// Largeur utile d'une ligne du bloc identité de l'émetteur, **en caractères**.
+///
+/// Le bloc de droite commence à `meta_x = 120.0`, la marge gauche est à `20.0` :
+/// **100 mm** disponibles.
+///
+/// ⚠️ **Helvetica est proportionnelle — ce compte est une approximation, et le
+/// calibrage vise le PIRE CAS RAISONNABLE.** Largeurs AFM Adobe, à 9 pt :
+///
+/// | Contenu | 50 car. | 46 car. |
+/// |---|---|---|
+/// | minuscules (moy. 490/1000 em) | 77,8 mm | 71,6 mm |
+/// | **capitales** (moy. 677/1000 em) | **107,5 mm — déborde** | **98,9 mm** |
+///
+/// D'où 46 et non 50 : une URL ou un e-mail en capitales dépassait encore sur
+/// le bloc de droite **après** troncature. *(Revue de code, passe 3.)*
+///
+/// ⚠️ La **raison sociale** n'entre pas dans ce calibrage : elle est dessinée à
+/// 14 pt, hors du dispositif de troncature. Cette borne ne régit que le bloc
+/// identité — IDE et coordonnées de contact. *(Revue de code, passe 6.)*
+///
+/// ⚠️ **Ce que cette borne ne couvre PAS** : une chaîne de 46 `W` (944/1000 em)
+/// occuperait **137,9 mm** — par la méthode du tableau ci-dessus, qui reproduit
+/// ses quatre valeurs à la décimale. Il faudrait mesurer la largeur réelle pour le garantir,
+/// ce que `printpdf` n'expose pas pour les polices intégrées. Le cas est jugé
+/// hors de portée d'un champ de coordonnées ; le documenter vaut mieux que
+/// laisser croire à une garantie exacte.
+const IDENTITY_MAX_CHARS: usize = 46;
+
 /// Dessine la section haute (en-tête + lignes + récap TVA + total).
 ///
 /// `content_floor` = ordonnée (mm) sous laquelle le contenu ne doit PAS
@@ -197,15 +225,61 @@ fn draw_invoice_section(
         layer.use_text(line, 9.0, Mm(left), Mm(y), helv);
         y -= 4.0;
     }
-    if let Some(ide) = &inv.creditor_ide {
-        layer.use_text(
-            format!("{}: {}", i18n.get("invoice-pdf-ide"), ide),
-            9.0,
-            Mm(left),
-            Mm(y),
-            helv,
-        );
-        y -= 6.0;
+    // Bloc « identité » de l'émetteur : IDE puis coordonnées de contact
+    // (Story 16-3a, #151). Rendu **conditionnel** ligne par ligne — une valeur
+    // absente ne dessine rien et ne descend pas le curseur.
+    //
+    // ⚠️ Le pas de 4 mm et la respiration de 2 mm sont **séparés à dessein**, et
+    // la respiration n'est posée que si AU MOINS une ligne a été dessinée :
+    // - IDE seul, sans coordonnées → 4 + 2 = **6 mm**, exactement l'ancien pas ;
+    // - ni IDE ni coordonnées → **0 mm**, exactement l'ancien comportement.
+    //
+    // C'est ce qui tient **D2** : une société qui ne renseigne rien produit le
+    // PDF d'avant cette story, à l'octet près sur le bloc haut. Rendre la
+    // respiration inconditionnelle décalerait tout le document de ces sociétés.
+    let mut identity_lines = 0;
+    for (key, value) in [
+        ("invoice-pdf-ide", &inv.creditor_ide),
+        ("invoice-pdf-phone", &inv.creditor_phone),
+        ("invoice-pdf-email", &inv.creditor_email),
+        ("invoice-pdf-website", &inv.creditor_website),
+    ] {
+        // ⚠️ Tester la VACUITÉ, pas la nullité : la normalisation qui transforme
+        // `""` en `None` vit dans la route API. Une chaîne vide arrivée
+        // autrement — restauration d'une sauvegarde produite ailleurs,
+        // correction SQL directe — imprimerait « Tél.: » suivi de rien, en
+        // consommant 4 mm du budget de la garde. *(Passe 3 de revue.)*
+        if let Some(v) = value.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+            // ⚠️ Troncature de LARGEUR — la garde de capacité plus bas ne
+            // surveille que l'ordonnée `y`, donc l'empilement VERTICAL. Elle ne
+            // voit rien d'une ligne unique trop longue.
+            //
+            // Le bloc de droite (« Facture », n°, date) démarre à `meta_x`
+            // (120 mm) et la marge gauche est à 20 mm : 100 mm disponibles, d'où
+            // `IDENTITY_MAX_CHARS` — **46** caractères à 9 pt, et non 50, cf. le
+            // tableau de calibrage de la constante, qui montre que 50 capitales
+            // débordent encore. Sans cette troncature, un site web de
+            // 255 caractères ou un e-mail de 320 (`VARCHAR(320)`, jamais borné en
+            // longueur à la saisie) s'imprimait par-dessus le bloc de droite,
+            // voire hors page, **rendu en 200**.
+            //
+            // Tronquer plutôt que refuser : la valeur reste lisible dans les
+            // réglages, et refuser une facture pour un champ décoratif serait
+            // disproportionné — à la différence du débordement vertical, qui
+            // rend le tableau des lignes illisible.
+            layer.use_text(
+                truncate_display(&format!("{}: {}", i18n.get(key), v), IDENTITY_MAX_CHARS),
+                9.0,
+                Mm(left),
+                Mm(y),
+                helv,
+            );
+            y -= 4.0;
+            identity_lines += 1;
+        }
+    }
+    if identity_lines > 0 {
+        y -= 2.0;
     }
 
     // Title + metadata (right).
@@ -283,6 +357,31 @@ fn draw_invoice_section(
 
     // Lines table.
     let mut ty = PAGE_H - 130.0;
+
+    // ⚠️ GARDE DE CAPACITÉ HAUTE (Story 16-3a, #151) — symétrique de
+    // `TooManyLines`, qui ne surveille que le plancher QR.
+    //
+    // `ty` est une **constante** : le tableau n'est JAMAIS repoussé par ce qui
+    // le précède. Un en-tête trop haut — adresse émetteur longue, trois
+    // coordonnées renseignées, adresse destinataire longue — descendait donc
+    // sur les en-têtes de colonnes **sans que rien ne le détecte**, produisant
+    // un document illisible rendu en 200.
+    //
+    // Le `y.min(PAGE_H - 55.0)` plus haut est un **plafond**, pas un plancher :
+    // il empêche le destinataire de remonter, jamais de descendre.
+    //
+    // Refuser proprement plutôt que superposer, comme le fait déjà la garde
+    // basse.
+    //
+    // ⚠️ Les `+ 2.0` ne sont PAS l'écart réel entre la dernière ligne et le
+    // tableau : au moment du test, `y` est la position LIBRE suivante, déjà 4 mm
+    // sous la ligne de base du dernier texte dessiné. Au seuil exact, cette
+    // ligne est donc à `ty + 6`, pas `ty + 2`. Le garde est plus conservateur
+    // qu'il n'y paraît — qui recalibre sur ce chiffre se trompe d'un facteur
+    // trois. *(Précision apportée en passe 3 de revue.)*
+    if y < ty + 2.0 {
+        return Err(QrBillError::HeaderOverflow(y));
+    }
     let col_desc = left;
     let col_qty = left + 90.0;
     let col_unit = left + 110.0;
@@ -914,6 +1013,12 @@ mod tests {
             creditor_name: "Robert Schneider SA".into(),
             creditor_address_lines: vec!["Rue du Lac 1268".into(), "2501 Biel".into()],
             creditor_ide: Some("CHE-123.456.789".into()),
+            // Story 16-3a (#151) — la fixture de base ne porte AUCUNE coordonnée :
+            // c'est le cas nominal d'une société qui n'a rien renseigné, et il doit
+            // rendre le PDF d'avant la story. Les tests qui les exercent les posent.
+            creditor_phone: None,
+            creditor_email: None,
+            creditor_website: None,
             debtor_name: "Pia Rutschmann".into(),
             debtor_address_lines: vec!["Marktgasse 28".into(), "9400 Rorschach".into()],
             lines: vec![InvoiceLinePdf {
@@ -944,6 +1049,186 @@ mod tests {
             bytes.len() > 1_000,
             "PDF suspiciously small: {}",
             bytes.len()
+        );
+    }
+
+    /// Date de création figée — sans elle, deux générations successives
+    /// diffèrent et un delta de taille ne mesurerait plus rien.
+    fn fixed_date() -> printpdf::OffsetDateTime {
+        use printpdf::OffsetDateTime;
+        OffsetDateTime::from_unix_timestamp(1_767_225_600).expect("timestamp valide")
+    }
+
+    /// **AC4** — chacune des trois coordonnées est rendue, **prise isolément**.
+    ///
+    /// ⚠️ **Une seule assertion « les trois ensemble > aucune » NE DISCRIMINE PAS** :
+    /// avec deux champs rendus sur trois, le document reste plus gros que le
+    /// témoin et l'assertion passe. Mesuré — la mutation « retirer le rendu du
+    /// téléphone » laissait la suite entière verte. D'où **un cas par champ**,
+    /// chacun comparé au même témoin sans coordonnées.
+    ///
+    /// Mesure par **delta de taille d'octets**, pas par recherche de texte : le
+    /// dépôt ne compare jamais le contenu d'un PDF (« Plan C », cf.
+    /// `tests/golden_test.rs`), et le texte y est **hex-encodé** dans les
+    /// opérateurs `Tj` — un `contains` naïf échouerait toujours.
+    #[test]
+    fn each_contact_detail_is_rendered_on_its_own() {
+        let (data, base, i18n) = invoice_fixture();
+        let temoin = generate_qr_bill_pdf_with_date(&data, &base, &i18n, fixed_date())
+            .unwrap()
+            .len();
+
+        for (label, invoice) in [
+            (
+                "téléphone",
+                InvoicePdfData {
+                    creditor_phone: Some("+41 21 123 45 67".into()),
+                    ..base.clone()
+                },
+            ),
+            (
+                "e-mail",
+                InvoicePdfData {
+                    creditor_email: Some("contact@exemple.ch".into()),
+                    ..base.clone()
+                },
+            ),
+            (
+                "site web",
+                InvoicePdfData {
+                    creditor_website: Some("https://exemple.ch".into()),
+                    ..base.clone()
+                },
+            ),
+        ] {
+            let avec = generate_qr_bill_pdf_with_date(&data, &invoice, &i18n, fixed_date())
+                .unwrap()
+                .len();
+            assert!(
+                avec > temoin,
+                "le {label} SEUL doit ajouter du contenu au PDF \
+                 (témoin sans coordonnées = {temoin} octets, avec = {avec}) — \
+                 si cette assertion tombe, ce champ n'est plus rendu"
+            );
+        }
+    }
+
+    /// Une coordonnée **très longue** est TRONQUÉE, elle ne déborde pas sur le
+    /// bloc de droite (revue de code, passe 1).
+    ///
+    /// ⚠️ La garde `HeaderOverflow` ne surveille que l'ordonnée `y` — elle est
+    /// aveugle à une ligne **unique** trop longue. Un site web de 255 caractères
+    /// (borne de saisie) ou un e-mail de 320 (`VARCHAR(320)`, non borné à la
+    /// saisie) s'imprimait par-dessus « Facture »/n°/date, voire hors page, et
+    /// le document était **rendu en 200**.
+    ///
+    /// Le test compare une valeur **au-delà** de la borne d'affichage à une
+    /// valeur **juste en deçà** : si la troncature disparaît, la première
+    /// produit un document plus gros que la seconde. C'est mesurable en octets
+    /// là où une position ne l'est pas.
+    #[test]
+    fn an_overlong_contact_detail_is_truncated_not_overflowed() {
+        let (data, base, i18n) = invoice_fixture();
+
+        // ⚠️ Les DEUX valeurs doivent dépasser le seuil, sinon le test ne
+        // mesure rien : une valeur courte n'est pas tronquée et produit
+        // légitimement un document plus petit. (Première version de ce test :
+        // 40 vs 255 — elle échouait pour cette raison, pas à cause du code.)
+        let long = InvoicePdfData {
+            creditor_website: Some("x".repeat(100)),
+            ..base.clone()
+        };
+        let tres_long = InvoicePdfData {
+            creditor_website: Some("x".repeat(255)),
+            ..base.clone()
+        };
+
+        let a = generate_qr_bill_pdf_with_date(&data, &long, &i18n, fixed_date())
+            .unwrap()
+            .len();
+        let b = generate_qr_bill_pdf_with_date(&data, &tres_long, &i18n, fixed_date())
+            .unwrap()
+            .len();
+
+        assert_eq!(
+            a, b,
+            "deux valeurs au-delà du seuil (100 et 255 caractères) doivent \
+             produire des documents de MÊME taille : toutes deux sont ramenées \
+             à IDENTITY_MAX_CHARS. Si les tailles diffèrent, la troncature a \
+             disparu et la ligne déborde sur le bloc de droite — en silence."
+        );
+    }
+
+    /// **D2** — une société sans IDE **ni** coordonnées ne doit subir **aucun**
+    /// décalage : son document reste celui d'avant la story.
+    ///
+    /// ⚠️ **Un delta de taille ne peut PAS mesurer ça** : un décalage vertical
+    /// de 2 mm déplace le texte sans changer sa longueur, donc le PDF pèse le
+    /// même nombre d'octets. Mesuré — une première version de ce test comparait
+    /// deux générations entre elles et restait **verte** sous la mutation.
+    ///
+    /// On mesure donc là où 2 mm changent un **verdict** : au seuil de la garde
+    /// haute. Calibrage (`PAGE_H = 297`, plafond `−55`, tableau à `−130`,
+    /// marge `+2`) avec 8 lignes d'adresse émetteur — assez pour passer sous le
+    /// plafond, sinon le `min()` masquerait l'écart — et 15 lignes côté
+    /// destinataire :
+    ///
+    /// - respiration **conditionnelle** (correcte) → `y = 170.5` ⇒ le document passe ;
+    /// - respiration **inconditionnelle** (buguée) → `y = 168.5` ⇒ refus.
+    ///
+    /// Ce test échoue donc si l'espacement redevient inconditionnel, et **lui
+    /// seul** le voit.
+    #[test]
+    fn no_identity_line_costs_no_vertical_space() {
+        let (data, base, i18n) = invoice_fixture();
+        let invoice = InvoicePdfData {
+            // Aucune ligne d'identité : ni IDE, ni téléphone, ni e-mail, ni site.
+            creditor_ide: None,
+            creditor_phone: None,
+            creditor_email: None,
+            creditor_website: None,
+            creditor_address_lines: (0..8).map(|i| format!("Adresse {i}")).collect(),
+            debtor_address_lines: (0..15).map(|i| format!("Destinataire {i}")).collect(),
+            ..base
+        };
+        let res = generate_qr_bill_pdf_with_date(&data, &invoice, &i18n, fixed_date());
+        assert!(
+            res.is_ok(),
+            "sans AUCUNE ligne d'identité, aucune respiration ne doit être posée : \
+             ce document tient à 2 mm près. S'il est refusé, l'espacement est \
+             redevenu inconditionnel et TOUTES les sociétés sans coordonnées \
+             voient leur PDF décalé — ce que D2 interdit. Erreur : {:?}",
+            res.err()
+        );
+    }
+
+    /// **AC6** — la garde de capacité **haute**. Le cas de test doit
+    /// **FRANCHIR le seuil**, pas s'en approcher : l'issue attendue est le refus.
+    ///
+    /// ⚠️ Un cas généreux mais sous le seuil se rendrait correctement et ne
+    /// mesurerait rien — le budget réel est large (le destinataire démarre au
+    /// plus haut à `PAGE_H - 55`, le tableau à `PAGE_H - 130`, soit 75 mm).
+    /// D'où une adresse émetteur **très** longue, les trois coordonnées, **et**
+    /// une adresse destinataire longue.
+    ///
+    /// Sans la garde, ce document se rendait en `Ok`, avec l'en-tête imprimé
+    /// par-dessus les colonnes du tableau.
+    #[test]
+    fn overlong_header_errors_instead_of_overprinting_the_lines_table() {
+        let (data, base, i18n) = invoice_fixture();
+        let invoice = InvoicePdfData {
+            creditor_address_lines: (0..10).map(|i| format!("Ligne adresse {i}")).collect(),
+            creditor_phone: Some("+41 21 123 45 67".into()),
+            creditor_email: Some("contact@exemple.ch".into()),
+            creditor_website: Some("https://exemple.ch".into()),
+            debtor_address_lines: (0..10).map(|i| format!("Ligne destinataire {i}")).collect(),
+            ..base
+        };
+        let err = generate_qr_bill_pdf_with_date(&data, &invoice, &i18n, fixed_date())
+            .expect_err("un en-tête débordant DOIT être refusé, pas rendu par-dessus le tableau");
+        assert!(
+            matches!(err, QrBillError::HeaderOverflow(_)),
+            "erreur attendue HeaderOverflow, obtenue : {err:?}"
         );
     }
 

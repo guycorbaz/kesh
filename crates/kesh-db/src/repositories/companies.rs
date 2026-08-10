@@ -16,12 +16,12 @@ use crate::repositories::MAX_LIST_LIMIT;
 
 const FIND_BY_ID_SQL: &str = "SELECT id, name, first_name, last_name, address, address_street, address_building, \
             address_postal_code, address_city, address_country, ide_number, org_type, \
-            accounting_language, instance_language, email, is_stub, version, created_at, updated_at \
+            accounting_language, instance_language, email, phone, website, is_stub, version, created_at, updated_at \
      FROM companies WHERE id = ?";
 
 const LIST_SQL: &str = "SELECT id, name, first_name, last_name, address, address_street, address_building, \
             address_postal_code, address_city, address_country, ide_number, org_type, \
-            accounting_language, instance_language, email, is_stub, version, created_at, updated_at \
+            accounting_language, instance_language, email, phone, website, is_stub, version, created_at, updated_at \
      FROM companies ORDER BY id LIMIT ? OFFSET ?";
 
 /// Crée une nouvelle company et retourne l'entité persistée.
@@ -130,6 +130,11 @@ fn is_no_op_change(before: &Company, changes: &CompanyUpdate) -> bool {
         && before.accounting_language == changes.accounting_language
         && before.instance_language == changes.instance_language
         && before.email == changes.email
+        // Story 16-3a (#151) — sans ces deux comparaisons, modifier le seul
+        // téléphone serait vu comme un no-op : la valeur ne partirait pas en
+        // base et `version` ne bougerait pas, en rendant 200.
+        && before.phone == changes.phone
+        && before.website == changes.website
 }
 
 /// Met à jour une company avec verrouillage optimiste.
@@ -176,20 +181,47 @@ pub async fn update(
     }
 
     let addr = &changes.address_structured;
+
+    // Story 16-3a, passe 6 de revue — NE JAMAIS écraser `address` par une
+    // chaîne vide.
+    //
+    // `combined()` rend `""` quand les quatre composants structurés sont vides,
+    // ce qui est l'état de **toute société créée avant le 2026-07-05** : la
+    // migration `structured_addresses` (#213, v0.5.0) a ajouté ces colonnes en
+    // `NOT NULL DEFAULT ''` **sans backfill** — vérifié, aucune migration du
+    // dépôt ne fait `UPDATE companies`. Sur ces lignes, l'adresse ne vit que
+    // dans la colonne `address` en texte libre.
+    //
+    // Sans cette garde, toute route qui reconstruit `CompanyUpdate` depuis
+    // l'entité en full-replace — `update_company_email` (20-3b1) comme
+    // `update_company_contact_details` (16-3a) — écrit `address = ''`, que
+    // `chk_companies_address_nonempty` rejette : l'utilisateur reçoit un **500**
+    // en voulant simplement renseigner son téléphone.
+    //
+    // On préserve alors la valeur existante plutôt que d'échouer : elle est
+    // garantie non vide par la contrainte elle-même, et la conserver ne dégrade
+    // rien — elle reste exactement ce qu'elle était.
+    let combined = addr.combined();
+    let address_to_write = if combined.trim().is_empty() {
+        before.address.clone()
+    } else {
+        combined
+    };
+
     let rows_affected = sqlx::query(
         "UPDATE companies
          SET name = ?, first_name = ?, last_name = ?, address = ?, address_street = ?, address_building = ?,
              address_postal_code = ?, address_city = ?, address_country = ?,
              ide_number = ?, org_type = ?,
              accounting_language = ?, instance_language = ?,
-             email = ?,
+             email = ?, phone = ?, website = ?,
              version = version + 1
          WHERE id = ? AND version = ?",
     )
     .bind(&changes.name)
     .bind(&changes.first_name)
     .bind(&changes.last_name)
-    .bind(addr.combined())
+    .bind(&address_to_write)
     .bind(&addr.street)
     .bind(&addr.building)
     .bind(&addr.postal_code)
@@ -200,6 +232,8 @@ pub async fn update(
     .bind(changes.accounting_language)
     .bind(changes.instance_language)
     .bind(&changes.email)
+    .bind(&changes.phone)
+    .bind(&changes.website)
     .bind(id)
     .bind(version)
     .execute(&mut *tx)
