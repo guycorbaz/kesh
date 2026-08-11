@@ -195,6 +195,77 @@ Le gate **complet** reste obligatoire : avant tout `git push`, avant de déclare
 
 Cette règle ne s'applique pas aux **commits doc-only** (markdown, yaml de planning, README, CLAUDE.md lui-même) qui ne touchent pas de code exécutable. Pour ces commits, la CI elle-même est généralement no-op (pas de Rust ni de TypeScript modifié → cache hit instantané).
 
+## Plafonds mémoire — pourquoi une session de travail meurt en plein gate
+
+**Règle** : sur la station de dev, lancer tout travail lourd (gate backend, build workspace, suite vitest, E2E) via `scripts/mem-guard.sh`, qui l'exécute dans un cgroup à mémoire bornée. `scripts/test-fast.sh` le fait déjà tout seul.
+
+```sh
+scripts/mem-guard.sh --protect-shell        # une fois par nouvelle fenêtre/onglet
+scripts/mem-guard.sh cargo build --workspace --all-targets
+scripts/mem-guard.sh npm --prefix frontend run test:unit
+scripts/test-fast.sh                        # déjà sous plafond, rien à faire
+scripts/mem-guard.sh --status               # état, politique oomd, derniers OOM
+```
+
+### Le mode d'échec, qui n'est pas celui qu'on croit
+
+Ce n'est pas « le build consomme trop ». C'est **qui meurt**.
+
+`systemd-oomd` surveille la tranche `user@1000.service` et, dès que sa *pression mémoire* dépasse 50 % pendant 20 s, il tue **le cgroup descendant qui recycle le plus de pages**. Or un onglet de terminal est **un seul cgroup**, qui contient l'agent de travail **et** tous ses enfants : `cargo`, `rustc`, `mold`, `node`, `chromium`. Le gate et la session qui l'a lancé sont donc dans la même boîte : quand oomd frappe, il emporte les deux, et tout le contexte de travail avec.
+
+Trois conséquences qui se déduisent mal :
+
+- **La victime n'est pas forcément la fautive.** Plusieurs fenêtres travaillant en parallèle sur des projets différents additionnent leur pression sur la même tranche utilisateur. Le 2026-08-11, deux OOM en six minutes (12:57, scope à 18,3 Go ; 13:03, scope à 9 Go) : la cause réelle était un `lualatex` emballé — 7 Go puis 16,7 Go en cent secondes — lancé depuis une **autre** fenêtre, sur un **autre** projet. Avant d'incriminer le gate en cours, lire `scripts/mem-guard.sh --status` et `ps -eo pid,rss,args --sort=-rss | head`.
+- **Baisser `jobs` ne borne rien.** C'est une réduction de probabilité, pas une garantie : 4 `rustc` peuvent tenir 12 Go à eux seuls, et un seul processus emballé suffit. Seul un plafond de cgroup est une borne.
+- **Un plafond ne sert pas à faire échouer le build, mais à choisir le mort.** Sous `mem-guard`, le pic tue le gate (code 137) et laisse vivre le terminal. Un gate qu'on relance coûte des minutes ; une session perdue coûte tout son contexte.
+
+### `MemoryHigh` est un piège — mesuré, pas supposé
+
+L'étranglement doux (`MemoryHigh`) semble le réglage souhaitable : recycler dans le scope plutôt que tuer. **Il est nuisible ici.** Mesures du 2026-08-11, allocation de 4 Go sous plafond de 512 Mo :
+
+| Réglage | Résultat |
+|---|---|
+| `MemoryHigh=384M` `MemoryMax=512M` `swap=0` | aucune progression en 120 s — étranglé, jamais tué |
+| `MemoryHigh=448M` `MemoryMax=512M` `swap=256M` | idem (timeout) |
+| `MemoryHigh=infinity` `MemoryMax=512M` `swap=0` | **137 en 2 s**, net |
+| `MemoryHigh=infinity` `MemoryMax=512M` `swap=256M` | **137 à ~768 Mo**, net |
+
+Le noyau pénalise chaque allocation d'un sommeil proportionnel au retard du recyclage : un build qui franchit le seuil ne tombe pas, il **rampe**, en gardant sa mémoire et en continuant d'alimenter la pression qu'oomd mesure. On obtient un gate qui paraît figé **et** une station toujours sous tension. `mem-guard.sh` laisse donc `MemoryHigh` à `infinity` par défaut ; ne pas le réactiver sans refaire la mesure.
+
+### Réglages de parallélisme, et le piège de précédence
+
+| Site | Valeur | Ce qu'elle borne |
+|---|---|---|
+| `.cargo/config.toml` → `[build] jobs` | 4 | processus `rustc` simultanés (~2 Go pièce sur les gros crates) |
+| `.cargo/config.toml` → `--thread-count=4` (mold) | 4 | threads internes de l'éditeur de liens |
+| `Cargo.toml` → `[profile.dev] debug` | `line-tables-only` | volume de DWARF construit puis recopié dans chaque binaire de test |
+| `frontend/vite.config.ts` → `maxWorkers` | 4 | processus Node+jsdom de vitest (défaut : **31** ici) |
+| `.config/nextest.toml` → `test-threads` | 6 | binaires de test simultanés — plafond fixé par la contention MariaDB, pas par la RAM ; ne pas le changer pour des raisons de mémoire |
+
+⚠️ **Le `.cargo/config.toml` du projet ÉCRASE celui de la station** (`~/.cargo/config.toml`). Cargo ne fusionne pas les valeurs scalaires : le fichier le plus proche du projet gagne. Le `jobs = 4` global posé sur la station après le diagnostic du 2026-07-23 était donc **sans effet dans ce dépôt** — seul de tous les projets Rust de la machine, il compilait à 8. C'est un mode d'échec silencieux : le réglage existe, il est correct, et il ne s'applique pas. Toute modification du `jobs` de la station doit être répercutée ici.
+
+⚠️ **`[profile.dev] debug = "line-tables-only"`** conserve fichier et ligne dans les backtraces de panic et d'échec de test — l'usage réel. Ce qu'on perd, c'est l'inspection des variables sous gdb/lldb. Pour une session de débogage pas-à-pas, surcharger ponctuellement sans toucher au fichier : `CARGO_PROFILE_DEV_DEBUG=full cargo test -p kesh-core <test>`.
+
+### Ce qui a été mesuré, et ce qui ne l'a pas été
+
+Sur la station (32 cœurs, 30 Go), après application des réglages ci-dessus :
+
+| Gate | Résultat |
+|---|---|
+| `cargo build --workspace --all-targets` **à froid** sous plafond 8 Go | vert — 414 crates, 129 binaires de test, 0 erreur |
+| `cargo fmt --check` + `cargo clippy --workspace --all-targets -D warnings` | vert, 0 warning — **pic de mémoire anonyme : 1,9 Go** |
+| `npm run test:unit` sous plafond 4 Go | vert — 63 fichiers, 512 tests, 23 s |
+
+⚠️ **Ne pas lire `memory.peak` comme une consommation.** Le relevé brut du cgroup de build affichait 8 Go, soit exactement le plafond — mais `memory.peak` compte **le cache de pages**, et ce build écrit 12 Go dans `target/`. Le cache est recyclable : le noyau l'a simplement rendu, sans jamais tuer. La grandeur qui décrit le besoin réel est `memory.stat/anon`, d'où les 1,9 Go ci-dessus. Confondre les deux fait conclure à une saturation là où il n'y en a pas.
+
+**Non mesuré** : `cargo nextest run` complet et la suite Playwright n'ont pas été rejoués sous plafond (ils exigent MariaDB et le seed). Les plafonds les couvrent par construction, mais aucun chiffre n'est déclaré pour eux.
+
+### En CI, rien de tout ceci ne s'applique
+
+`mem-guard.sh` détecte l'absence de systemd utilisateur et exécute la commande telle quelle, avec un avertissement — il n'échoue jamais pour la seule raison qu'il ne peut pas poser de plafond. Les plafonds de parallélisme (`jobs = 4`, `maxWorkers: 4`), eux, sont versionnés et donc actifs en CI, où ils sont de toute façon adaptés aux runners `ubuntu-latest` à 4 cœurs.
+
+*(codifié 2026-08-11, après deux OOM ayant emporté des sessions Claude Code en cours de story 16-3b.)*
+
 ## Review Iteration Rule
 
 **Règle de remédiation des revues (code review et spec validate)** :

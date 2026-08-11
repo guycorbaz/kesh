@@ -14,9 +14,21 @@
 #
 # Pré-requis : MariaDB dev démarré + `cargo install cargo-nextest` (ou binaire
 # prébuilt https://get.nexte.st). DATABASE_URL par défaut = conteneur dev local.
+#
+# MÉMOIRE : le gate se relance automatiquement dans un cgroup à mémoire bornée
+# (`scripts/mem-guard.sh`), pour qu'un pic tue le gate et non le terminal — donc
+# pas la session de travail qui l'a lancé. Cf. CLAUDE.md §« Plafonds mémoire ».
+# Neutralisable par `KESH_NO_MEMGUARD=1`, et sans effet là où systemd utilisateur
+# n'existe pas (CI, conteneur).
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
+
+# Ré-exécution sous plafond mémoire. Le marqueur évite la récursion infinie.
+if [ -z "${KESH_MEMGUARD_ACTIVE:-}" ] && [ -z "${KESH_NO_MEMGUARD:-}" ]; then
+  export KESH_MEMGUARD_ACTIVE=1
+  exec scripts/mem-guard.sh "$0" "$@"
+fi
 
 : "${DATABASE_URL:=mysql://kesh:kesh_dev@127.0.0.1:3306/kesh}"
 export DATABASE_URL

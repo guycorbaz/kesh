@@ -57,5 +57,15 @@ export default defineConfig({
 	test: {
 		environment: 'jsdom',
 		include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
+		// Mémoire (2026-08-11) — sans ce plafond, vitest ouvre
+		// `availableParallelism() - 1` processus, soit 31 sur la station de dev.
+		// Chacun est un Node complet portant son propre jsdom : le pic dépasse
+		// largement le coût des 63 fichiers de test qu'ils se partagent, et il
+		// s'ajoute à celui du build Rust quand les deux gates s'enchaînent.
+		// 4 suffit à couvrir la suite sans la rallonger sensiblement — elle est
+		// dominée par le démarrage des workers, pas par le calcul.
+		// Aligné sur `jobs = 4` de `.cargo/config.toml`. Cf. CLAUDE.md
+		// §« Plafonds mémoire ».
+		maxWorkers: 4
 	}
 });
