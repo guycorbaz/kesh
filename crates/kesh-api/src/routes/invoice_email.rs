@@ -1386,6 +1386,7 @@ mod tests {
             email: Some("jean@example.ch".to_string()),
             phone: None,
             ide_number: None,
+            client_number: None,
             default_payment_terms: None,
             default_payment_terms_days: None,
             language: Some(Language::De),

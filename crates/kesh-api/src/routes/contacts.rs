@@ -579,6 +579,7 @@ pub async fn create_contact(
         email: v.email,
         phone: v.phone,
         ide_number: v.ide_number,
+        client_number: None,
         default_payment_terms: v.default_payment_terms,
         default_payment_terms_days: v.default_payment_terms_days,
         // Story 20-3b1 : enums typés — serde a déjà rejeté toute valeur
@@ -642,6 +643,7 @@ pub async fn update_contact(
         email: v.email,
         phone: v.phone,
         ide_number: v.ide_number,
+        client_number: None,
         default_payment_terms: v.default_payment_terms,
         default_payment_terms_days: v.default_payment_terms_days,
         // Story 20-3b1 : cf. create_contact — enums typés validés par serde.

@@ -405,6 +405,7 @@ mod tests {
             email: None,
             phone: None,
             ide_number: None,
+            client_number: None,
             default_payment_terms: None,
             default_payment_terms_days: None,
             language: None,

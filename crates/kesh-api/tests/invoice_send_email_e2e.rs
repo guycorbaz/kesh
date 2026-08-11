@@ -187,6 +187,7 @@ async fn seed_contact(
             email: email.map(String::from),
             phone: None,
             ide_number: None,
+            client_number: None,
             default_payment_terms: None,
             default_payment_terms_days: None,
             language,

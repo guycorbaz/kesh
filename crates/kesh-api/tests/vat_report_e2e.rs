@@ -139,6 +139,7 @@ async fn seed_contact(pool: &MySqlPool, company_id: i64, admin_id: i64, name: &s
             email: None,
             phone: None,
             ide_number: None,
+            client_number: None,
             default_payment_terms: None,
             default_payment_terms_days: None,
             language: None,

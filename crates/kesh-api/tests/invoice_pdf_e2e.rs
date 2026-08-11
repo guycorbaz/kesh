@@ -138,6 +138,7 @@ async fn seed_contact(pool: &MySqlPool, company_id: i64, user_id: i64, with_addr
             email: None,
             phone: None,
             ide_number: None,
+            client_number: None,
             default_payment_terms: Some("30 jours net".into()),
             default_payment_terms_days: None,
             language: None,

@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev
+in-progress
 
 ## Story
 
@@ -237,10 +237,10 @@ La recherche de contacts accepte le numéro de client.
 - **Deux définitions distinctes** de `apply_migrations_up_to` coexistent, chacune avec son propre garde-fou `assert!(n <= all.len())` : `tests/common/mod.rs:50` et `tests/migrations_upgrade_path.rs:30`.
 - **Les deux suites de backfill sont insensibles à l'ajout** — `accounts_role_backfill.rs` et `invoice_lines_revenue_account_backfill.rs` (une quinzaine d'appels) passent par `migrations_before(<version>, <nom>)`, c'est-à-dire une **résolution par version**, le critère que P6 prescrit de préférence. Rien à y faire — mais le **vérifier** plutôt que le supposer, c'est précisément ce que la Story 16-1a a payé.
 - [x] **T2 — Audit d'idempotence** (AC9). Ligne dans le tableau, **recompter** les deux sites du total et les trois partitions. État de départ mesuré le 2026-08-10 : **59** fichiers `.sql` = 59 lignes de tableau = en-tête = total, partitionnés en `54 tracked-by-sqlx + 5 yes + 0 no`. Cette migration porte l'ensemble à **60** et `tracked-by-sqlx` à **55** — mais **recompter depuis le tableau**, ne pas incrémenter ces chiffres de confiance : c'est exactement le geste qui avait laissé dériver le compteur de 7 unités jusqu'à la Story 16-1a. ⚠️ Les compteurs de partition ne valent pas le total ; les aligner dessus casserait l'invariant qu'ils servent à tenir.
-- [ ] **T3 — Entité et repository** (AC1, AC2). `Contact`, `NewContact` (`entities/contact.rs:213`), `ContactUpdate` (l. 250) — **pas** `ContactChanges`, qui n'existe pas —, puis **les quatre** listes de `repositories/contacts.rs`. Vérifier que le nombre de `?` de l'`INSERT` suit la liste de colonnes. `reconciliation.rs:201` réutilise `COLUMNS` — rien à y faire, mais le vérifier plutôt que le supposer.
-- [ ] **T3-bis — Audit** (AC2-bis). Ajouter le champ à `contact_snapshot_json` (`repositories/contacts.rs:39-58`) — **cinquième liste de champs écrite à la main**, non-SQL, que les quatre listes de T3 ne couvrent pas.
-- [ ] **T3-ter — Détection de non-changement** (AC2-ter). Ajouter le champ à `is_no_op_change` (`repositories/contacts.rs:377-396`) — **sixième liste**. Sans elle, modifier le seul numéro est classé no-op : rollback, `200 OK`, donnée perdue en silence.
-- [ ] **T4 — Tests repository** (AC1, AC2, AC2-bis, AC2-ter). Aller-retour `create`/`find_by_id`/`update`/`find_by_id` ; unicité rejetée **entre contacts actifs** ; **deux `NULL` acceptés** ; **numéro d'un contact archivé réattribuable à un actif** (l'invariant de D2-bis) ; trace d'audit ; et `update` du **seul** `client_number` → nouvelle valeur **et** `version` incrémentée.
+- [x] **T3 — Entité et repository** (AC1, AC2). `Contact`, `NewContact` (`entities/contact.rs:213`), `ContactUpdate` (l. 250) — **pas** `ContactChanges`, qui n'existe pas —, puis **les quatre** listes de `repositories/contacts.rs`. Vérifier que le nombre de `?` de l'`INSERT` suit la liste de colonnes. `reconciliation.rs:201` réutilise `COLUMNS` — rien à y faire, mais le vérifier plutôt que le supposer.
+- [x] **T3-bis — Audit** (AC2-bis). Ajouter le champ à `contact_snapshot_json` (`repositories/contacts.rs:39-58`) — **cinquième liste de champs écrite à la main**, non-SQL, que les quatre listes de T3 ne couvrent pas.
+- [x] **T3-ter — Détection de non-changement** (AC2-ter). Ajouter le champ à `is_no_op_change` (`repositories/contacts.rs:377-396`) — **sixième liste**. Sans elle, modifier le seul numéro est classé no-op : rollback, `200 OK`, donnée perdue en silence.
+- [x] **T4 — Tests repository** (AC1, AC2, AC2-bis, AC2-ter). Aller-retour `create`/`find_by_id`/`update`/`find_by_id` ; unicité rejetée **entre contacts actifs** ; **deux `NULL` acceptés** ; **numéro d'un contact archivé réattribuable à un actif** (l'invariant de D2-bis) ; trace d'audit ; et `update` du **seul** `client_number` → nouvelle valeur **et** `version` incrémentée.
 - [ ] **T5 — Route et DTO** (AC3, AC4). `ContactResponse` (`contacts.rs:151`) + `impl From<Contact> for ContactResponse` (l. 186) + **les deux** DTO d'entrée (`CreateContactRequest` l. 70 et `UpdateContactRequest` l. 108), **avec `normalize_optional()`** sur le champ (l. 259) comme pour `email`/`phone`. Pour l'erreur : **étendre `map_contact_error` (`contacts.rs:461`)** d'une branche, ajouter la variante `AppError::ClientNumberAlreadyExists` et sa ligne dans le `match` de `errors.rs` (409 / `CLIENT_NUMBER_ALREADY_EXISTS`). Ne **pas** écrire un second helper : le repository rend déjà `DbError::UniqueConstraintViolation`, tout le chemin existe.
 - [ ] **T6 — Tests API** (AC3, AC4). Aller-retour `POST`/`GET` ; doublon → **409** + code d'erreur asserté ; **non-sur-capture** entre les deux contraintes (calquer `contacts.rs:765`).
 - [ ] **T7 — Frontend** (AC4, AC5, AC8, AC10). Type TS (`contacts.types.ts`, interface `ContactResponse`), champ de la fiche contact, **hydratation dans `openEdit` (l. 240-258) — la ligne dont l'oubli efface le champ à chaque édition**, **placeholder de recherche corrigé** (l. 441), libellés sur les 4 locales. ⚠️ **Pas de colonne dans le tableau de liste** (écartée en passe 6) — donc **ne pas toucher au `colspan`**, câblé en dur à deux endroits. Respecter `lint-i18n-ownership`.
@@ -351,6 +351,56 @@ Le seul précédent du dépôt **écarte explicitement** la comparaison octet à
 - `crates/kesh-qrbill/src/pdf.rs:315-324` — patron `origin_reference` à copier.
 - `CLAUDE.md` § *Migration breaking policy* (P1, P2, P5, P6, P7) et § *Review Iteration Rule*.
 - **KF #283** — 57 clés i18n absentes des locales non-françaises ; ne pas l'aggraver.
+
+## Dev Agent Record
+
+### Agent Model Used
+
+`bmad-dev-story` — **Opus 5 (1M)**, 2026-08-10 (T1-T2) et 2026-08-11 (T3 →).
+
+### Debug Log References
+
+- **T1** — les quatre cas d'AC1 éprouvés **sur le moteur** avant d'écrire la moindre ligne de Rust (deux `NULL` acceptés ; doublon actif refusé en `1062` ; casse refusée, collation `_ci` ; numéro d'un contact archivé réattribuable).
+- **T1, garde-fou P6** — arbitrage posé : `total - 25` → `total - 26`. C'est la **frontière (34)** qui est l'invariant voulu, pas la taille de la fenêtre ; garder `-25` aurait déplacé le point de départ du chemin d'upgrade testé **sans que rien ne le signale**. Les deux suites de backfill résolvent par version (`migrations_before`) — vérifié, pas supposé : insensibles à l'ajout.
+- **T2** — les 5 compteurs **recomptés depuis le tableau** : `60` fichiers `.sql` = `60` lignes de tableau = en-tête de section = ligne `Total`, partitionnés en `55 tracked-by-sqlx + 5 yes + 0 no`.
+- **T3** — `21` colonnes à l'`INSERT` pour `21` placeholders, recomptés par script plutôt qu'à l'œil. `reconciliation.rs:203` interpole bien `super::contacts::COLUMNS` (**vérifié**, comme T3 l'exigeait) ; les quatre `SELECT` de `contacts.rs` interpolent `{COLUMNS}` — **`FIND_BY_ID_SQL` est donc bien la seule liste dupliquée à la main**.
+- **T3, rayon d'impact** — `37` insertions dans `26` fichiers, posées par appariement d'accolades sur chaque littéral et **non** par `sed` sur `ide_number:` (d'autres structs portent ce champ : `CreateContactRequest`, `UpdateContactRequest`, `ContactResponse`). `cargo build --workspace --all-targets` propre.
+
+### Ce que l'implémentation a appris, et qui corrige la spec
+
+- **Une SEPTIÈME liste écrite à la main, que la spec ne nommait pas** : le helper de test `contact_to_update` (`repositories/contacts.rs:1500`) reconstitue l'état persisté champ par champ. L'insertion automatique y avait posé `client_number: None` — ce qui aurait fait **perdre le numéro à chaque aller-retour de test**, et rendu vert le test d'AC2-ter pour la mauvaise raison. Corrigé en `c.client_number.clone()`. La spec énumérait six listes ; celle-ci est dans le **module de test**, donc invisible au recensement fait sur le code de production.
+
+### Campagne de mutation — T4
+
+Les trois mutations prescrites par les Conventions de test ont été **exécutées**, pas raisonnées :
+
+| Mutation | Test qui devait mourir | Résultat |
+|---|---|---|
+| `client_number` retiré de `FIND_BY_ID_SQL` | aller-retour d'AC2 | **FAILED** ✅ |
+| `client_number` retiré d'`is_no_op_change` | bump de `version` d'AC2-ter | **FAILED** ✅ |
+| `clientNumber` retiré de `contact_snapshot_json` | trace d'audit d'AC2-bis | **FAILED** ✅ |
+
+Restauration contrôlée derrière : 6/6 verts.
+
+### Completion Notes List
+
+- **T1, T2** (2026-08-10) — migration + audit d'idempotence.
+- **T3, T3-bis, T3-ter, T4** (2026-08-11) — le champ traverse les **sept** listes ; 6 tests repository, gate ciblé `binary(kesh-db lib)` vert, 3/3 mutations tuées. **Gate complet au push.**
+
+### File List
+
+- `crates/kesh-db/migrations/20260810000001_contacts_client_number.sql` *(nouveau)*
+- `docs/migrations-idempotence-audit.md`
+- `crates/kesh-db/tests/migrations_upgrade_path.rs`
+- `crates/kesh-db/src/entities/contact.rs`
+- `crates/kesh-db/src/repositories/contacts.rs`
+- `crates/kesh-db/src/repositories/invoices.rs`
+- `crates/kesh-api/src/routes/contacts.rs`
+- `crates/kesh-api/src/routes/credit_notes.rs`
+- `crates/kesh-api/src/routes/invoice_email.rs`
+- `crates/kesh-api/src/routes/invoice_pdf_service.rs`
+- `crates/kesh-reconciliation/src/matching.rs`
+- Fixtures de test mises à jour (littéraux `NewContact` / `ContactUpdate` / `Contact`) : `crates/kesh-db/tests/{credit_notes_repository,invoice_ttc_parity,invoices_line_revenue_account,invoices_validate_vat,kf005_fulltext_index_e2e,payment_batches_repository,reconciliation_repository,supplier_invoices_repository}.rs`, `crates/kesh-api/tests/{admin_full_import_e2e,inbox_import_e2e,invoice_delete_e2e,invoice_echeancier_e2e,invoice_pdf_e2e,invoice_send_email_e2e,reconciliation_e2e,reports_e2e,vat_report_e2e}.rs`, `crates/kesh-report/tests/{aged_receivables,vat_report_reconciliation}.rs`
 
 ## Change Log
 

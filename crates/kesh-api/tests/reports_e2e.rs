@@ -1592,6 +1592,7 @@ async fn seed_open_invoice_for(pool: &MySqlPool, ctx: &Ctx, contact_name: &str) 
             email: None,
             phone: None,
             ide_number: None,
+            client_number: None,
             default_payment_terms: None,
             default_payment_terms_days: None,
             language: None,

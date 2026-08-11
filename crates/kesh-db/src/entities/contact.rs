@@ -191,6 +191,10 @@ pub struct Contact {
     pub email: Option<String>,
     pub phone: Option<String>,
     pub ide_number: Option<String>,
+    /// Numéro de client attribué par l'émetteur (Story 16-3b, #151). Saisi,
+    /// jamais auto-généré (D1). Unique par société **entre contacts actifs**
+    /// (un contact archivé libère son numéro, cf. migration 20260810000001).
+    pub client_number: Option<String>,
     pub default_payment_terms: Option<String>,
     /// Délai de paiement en jours (#245). `None` = non renseigné (le texte
     /// libre `default_payment_terms` reste la seule source, lecture seule).
@@ -231,6 +235,11 @@ pub struct NewContact {
     pub email: Option<String>,
     pub phone: Option<String>,
     pub ide_number: Option<String>,
+    /// Numéro de client attribué par l'émetteur (Story 16-3b, #151). Déjà
+    /// normalisé par le caller (`normalize_optional` : trim, `""` → `None`) —
+    /// `""` n'est PAS `NULL` pour un index UNIQUE et percuterait le cas
+    /// majoritaire des contacts sans numéro.
+    pub client_number: Option<String>,
     pub default_payment_terms: Option<String>,
     /// Délai de paiement en jours (#245). Prime sur le texte libre.
     pub default_payment_terms_days: Option<i32>,
@@ -267,6 +276,11 @@ pub struct ContactUpdate {
     pub email: Option<String>,
     pub phone: Option<String>,
     pub ide_number: Option<String>,
+    /// Numéro de client attribué par l'émetteur (Story 16-3b, #151). Déjà
+    /// normalisé par le caller (`normalize_optional` : trim, `""` → `None`) —
+    /// `""` n'est PAS `NULL` pour un index UNIQUE et percuterait le cas
+    /// majoritaire des contacts sans numéro.
+    pub client_number: Option<String>,
     pub default_payment_terms: Option<String>,
     /// Délai de paiement en jours (#245). Prime sur le texte libre.
     pub default_payment_terms_days: Option<i32>,
