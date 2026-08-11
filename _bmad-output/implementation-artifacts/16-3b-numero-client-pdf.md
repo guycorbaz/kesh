@@ -466,6 +466,17 @@ Restaurations contrôlées derrière : `kesh-qrbill` 61/61, `kesh-i18n` 22/22.
 - `CLAUDE.md` — deux ajouts de processus portés par cette branche, sans lien avec les AC : la règle « la revue de projet suit la rétrospective » (demande de Guy, commit `de427c62`) et le garde-fou **P8** « une migration appliquée ne se modifie plus » (passe 2 de `bmad-code-review`).
 - Fixtures de test mises à jour (littéraux `NewContact` / `ContactUpdate` / `Contact`) : `crates/kesh-db/tests/{credit_notes_repository,invoice_ttc_parity,invoices_line_revenue_account,invoices_validate_vat,kf005_fulltext_index_e2e,payment_batches_repository,reconciliation_repository,supplier_invoices_repository}.rs`, `crates/kesh-api/tests/{admin_full_import_e2e,inbox_import_e2e,invoice_delete_e2e,invoice_echeancier_e2e,invoice_pdf_e2e,invoice_send_email_e2e,reconciliation_e2e,reports_e2e,vat_report_e2e}.rs`, `crates/kesh-report/tests/{aged_receivables,vat_report_reconciliation}.rs`
 
+## Dette technique — deux MEDIUM reclassés par arbitrage du Project Lead
+
+Les deux findings ci-dessous sont sortis de la boucle de revue par **reclassement en dette documentée**, au titre de l'exception de la § *Review Iteration Rule*. Ils ne sont donc **pas** « résolus » : ils sont tracés, avec un propriétaire et une remédiation planifiée. Tous deux portent sur la couche de **comparaison** d'unicité — la seule des cinq couches touchées par cette story (rendu, normalisation, recherche, `is_no_op_change`, snapshot d'audit) à n'avoir reçu ni garde ni décision explicite.
+
+| | Finding | Trace | Pourquoi hors périmètre |
+|---|---|---|---|
+| **D1** | La table `contacts` ne déclare **aucune collation** — l'une des deux seules du dépôt. La garantie « la casse ne distingue pas », écrite au manuel, dépend donc du défaut de la base à sa création : sous une collation UCA, `CLI-É1` et `CLI-E1` se percutent en 409 ; sous `general_ci`, ils coexistent. Même code, comportements opposés selon l'installation. Et `client_number_uniqueness_is_case_insensitive` passe sous les deux — il donne une confiance qu'il ne mesure pas. | **#295** | L'omission est **antérieure** à la 16-3b (migration d'avril). Fermer demande un `MODIFY COLUMN … COLLATE`, donc le garde-fou **P3** au complet : bump `kesh_version_min_required` **et** bump Cargo de tout le workspace, avec rejeu du gate **runtime** (boot + import de sauvegarde). Hors périmètre d'une story de champ. |
+| **D2** | Un caractère invisible **encastré** traverse jusqu'à l'index d'unicité : `CLI-1` et `CLI‹ZWSP›-1` coexistent, **strictement identiques** à l'écran, dans la liste et sur le PDF. La passe 2 a délibérément conservé les valeurs mixtes — sans quoi la garde mangerait du contenu réel mal collé — et l'a verrouillé par un test. | **#294** *(commentaire)* | Rattaché à l'issue qui porte déjà la normalisation NFC des champs de contact : c'est le même problème — *deux valeurs distinctes pour la base, identiques pour l'œil* — sous une autre forme. Les traiter ensemble vaut mieux que deux correctifs séparés ; la solution propre (forme canonique de comparaison) recouvre aussi **#295**. |
+
+**Propriétaire** : Project Lead. **Remédiation** : story dédiée à planifier, de préférence unique pour D1 et D2 — une colonne de comparaison canonique fermerait d'un coup la casse, les accents et la composition Unicode. À revoir au triage de la rétrospective de l'Epic 16.
+
 ## Change Log
 
 **2026-08-11 — `bmad-code-review`, PASSE 4 (Sonnet, deux lentilles) — BOUCLE CONVERGÉE.**
