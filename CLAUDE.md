@@ -308,7 +308,51 @@ Pourquoi : c'est le mode d'échec le plus récurrent du processus. Il est signal
 
 Les 5 occurrences auraient été attrapées par ce seul geste. Un patch dont le symptôme n'a **pas** été grepé sur le dépôt n'est pas terminé.
 
-*(codifié 2026-07-26, rétrospective Epic 14 action A8 — complète, ne remplace pas, `feedback_review_patch_needs_test`)*
+**Greper la VALEUR, pas la formulation.** Quand le symptôme est un **nombre**, une version ou un identifiant, greper le **jeton** — `\b25\b`, `\b0\.8\.0\b` — et **jamais** la phrase qui l'entoure. Une valeur périmée se réécrit à volonté ; sa graphie, non.
+
+Précédent, et il est net : passe 1 de `bmad-code-review` de la Story 16-3b. Le compteur de fenêtre d'upgrade venait de passer de 25 à 26. Le grep a cherché `25 dernières` — la formulation du site corrigé — et a rendu zéro résultat, d'où un Change Log déclarant « symptôme grepé sur tout le dépôt, **aucun résidu** ». Il en restait **trois**, écrits `25 restantes` (deux fois) et `24 → 25`. Ils ont été trouvés par la passe 3, dans **le fichier même** qui documente que cette dérive y avait déjà été corrigée une fois.
+
+Le geste correct tient en une ligne, et il se relit :
+
+```sh
+grep -rnE "\b(25|59)\b" crates/kesh-db/tests/migrations_upgrade_path.rs
+```
+
+Il rend des occurrences **légitimes** (généalogies historiques, exemples pédagogiques) qu'il faut trier à la main — c'est le prix, et il est bas. Un grep qui rend zéro résultat sur un symptôme qu'on vient de corriger doit éveiller le soupçon, pas la satisfaction.
+
+*(codifié 2026-07-26, rétrospective Epic 14 action A8 — complète, ne remplace pas, `feedback_review_patch_needs_test`. Amendé 2026-08-11, rétrospective Epic 16 : greper la valeur et non la formulation.)*
+
+### Recompter ses propres comptes rendus
+
+**Règle** : tout **décompte** écrit dans un Change Log, un Dev Agent Record ou un rapport de passe — nombre de findings, de tests ajoutés, de fichiers touchés, de clés i18n — se **recompte depuis la source** avant d'être écrit, exactement comme les compteurs de migrations de la § *Migration breaking policy*. Un total doit être cohérent avec sa propre ventilation.
+
+Commandes de contrôle typiques, à exécuter et non à estimer :
+
+```sh
+git show <ref>:<fichier> | grep -c '#\[test\]'     # tests, aux DEUX bornes
+grep -c '^contact-' crates/kesh-i18n/locales/*/messages.ftl
+```
+
+⚠️ **Déclarer le PÉRIMÈTRE de mesure avec le nombre.** « 11 tests neufs » ne veut rien dire seul : de `main` au commit de dev, ou de `main` à `HEAD` revue comprise ? Les passes de revue ajoutent des tests, donc le second chiffre grossit après coup. Un décompte sans périmètre sera relu plus tard contre le mauvais intervalle — c'est arrivé en passe 2 de la 16-3b, où une lentille a rapporté un écart réel comme une erreur.
+
+Pourquoi cette règle existe : sur l'Epic 16, **le compte rendu est devenu le lieu du défaut**, pas le code. La Story **16-2** a vu **8 de ses 13 findings de passe 4** porter sur les décomptes de ses propres Change Logs, ce qui a fini par la faire découper ; la **16-1a-bis** a produit deux artefacts de passe 1 eux-mêmes faux, dont une règle de recompte qui cassait l'invariant qu'elle prétendait tenir ; et les **trois MEDIUM de la passe 3 de la 16-3b** portaient tous sur des déclarations, aucun sur le code livré.
+
+*(codifié 2026-08-11, rétrospective Epic 16)*
+
+### Un gate interrompu laisse la base piégée
+
+**Règle** : après tout gate **tué en vol** (Ctrl-C, timeout, session perdue, OOM), considérer la base de gate comme **contaminée** et la remettre à zéro avant le run suivant. Ne jamais diagnostiquer un rouge de gate sans avoir vérifié qu'un run précédent ne s'est pas interrompu.
+
+Le mode d'échec : un test qui modifie l'état partagé confie sa restauration à son appelant, lequel n'a jamais repris la main. La valeur reste en base et fait rougir le gate **suivant**, de façon **déterministe** et **sans aucun rapport** avec la story en cours.
+
+Deux occurrences dans le seul Epic 16 :
+
+- **16-1a** — un `nextest` tué laisse `kesh_gate` avec `postable=0` sur le compte 1000 → **26 faux échecs** `journal_entries` au run suivant, **indiscernables** du cas « base non seedée » ;
+- **16-3a** — même famille : `1000 Caisse CI` resté `postable=FALSE` par le helper `set_postable`, faisant échouer `test_check_constraint_rejects_debit_and_credit_same_line`, déterministe et hors sujet.
+
+Le coût du diagnostic est chaque fois bien supérieur à celui de la remise à zéro. En cas de rouge inexpliqué sur des tests que la branche ne touche pas, **reconstruire la base avant de chercher plus loin**.
+
+*(codifié 2026-08-11, rétrospective Epic 16)*
 
 ### Haiku-specific guardrails — grep ground-truth obligatoire
 
