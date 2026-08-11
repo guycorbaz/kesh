@@ -239,13 +239,6 @@ const META_LINE_STEP: f32 = 4.5;
 /// passerait sans être vue. La justesse repose sur le calcul ci-dessus.
 const META_MAX_CHARS: usize = 32;
 
-/// Dessine la section haute (en-tête + lignes + récap TVA + total).
-///
-/// `content_floor` = ordonnée (mm) sous laquelle le contenu ne doit PAS
-/// descendre : `SEP_Y` pour une facture (la section QR occupe le bas), une
-/// simple marge basse pour un avoir (aucune section QR → pleine page). La garde
-/// de capacité en tient compte, ce qui évite de pénaliser un avoir pour une
-/// zone QR inexistante (#151 code-review).
 /// Construit les lignes du bloc métadonnées (droite) : texte déjà formaté et
 /// tronqué, avec son ordonnée en mm. **Le titre reste hors extraction** — il est
 /// dessiné à 18 pt et suit un pas différent.
@@ -378,6 +371,19 @@ fn build_meta_lines(
     out
 }
 
+/// Dessine la section haute (en-tête + lignes + récap TVA + total).
+///
+/// `content_floor` = ordonnée (mm) sous laquelle le contenu ne doit PAS
+/// descendre : `SEP_Y` pour une facture (la section QR occupe le bas), une
+/// simple marge basse pour un avoir (aucune section QR → pleine page). La garde
+/// de capacité en tient compte, ce qui évite de pénaliser un avoir pour une
+/// zone QR inexistante (#151 code-review).
+///
+/// *(Ce doc-comment était devenu orphelin : l'extraction de `build_meta_lines`
+/// en T9 s'était insérée ENTRE lui et sa fonction, si bien que rustdoc
+/// l'attribuait au mauvais symbole et décrivait un paramètre `content_floor`
+/// que `build_meta_lines` ne prend pas. Rendu à sa fonction en passe 3 de
+/// `bmad-code-review` ; deux passes avaient lu ce hunk sans le voir.)*
 fn draw_invoice_section(
     layer: &PdfLayerReference,
     inv: &InvoicePdfData,

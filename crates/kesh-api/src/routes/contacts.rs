@@ -291,9 +291,16 @@ pub(crate) fn is_valid_email_simple(s: &str) -> bool {
 ///
 /// *(Jumeau côté rendu : `is_invisible` dans `kesh-qrbill/src/pdf.rs`, qui garde
 /// le PDF contre les valeurs écrites hors API — restauration d'une sauvegarde
-/// produite ailleurs, correction SQL directe. Les deux vivent dans des crates
-/// sans dépendance commune ; ce sont deux couches, pas une duplication de
-/// commodité. Passe 2 de `bmad-code-review`.)*
+/// produite ailleurs, correction SQL directe. Ce sont deux **couches** : l'une
+/// décide ce qui entre en base, l'autre ce qui s'imprime, et le PDF doit tenir
+/// même face à une base qui n'est pas passée par cette route.*
+///
+/// ⚠️ *Le motif d'abord écrit ici — « deux crates sans dépendance commune » —
+/// était **faux** : `kesh-api` dépend directement de `kesh-qrbill`
+/// (`Cargo.toml:12`). Une factorisation est donc techniquement possible, et si
+/// un troisième site en a besoin un jour, c'est cette voie qu'il faut prendre
+/// plutôt que recopier une troisième fois. Réfuté en passe 3 de
+/// `bmad-code-review`.)*
 pub(crate) fn normalize_optional(s: Option<String>) -> Option<String> {
     s.and_then(|v| {
         let t = v.trim();

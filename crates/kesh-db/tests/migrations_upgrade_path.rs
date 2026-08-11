@@ -109,15 +109,16 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     //
     // Frontière actuelle : **34**. Le test applique donc les 34 premières
     // migrations (jusqu'à `20260613000001_vat_rates_crud` incluse), seede des
-    // données, puis joue les 25 restantes comme « fenêtre d'upgrade ».
+    // données, puis joue les 26 restantes comme « fenêtre d'upgrade ».
     //
-    // ⚠️ `N` DOIT être incrémenté en même temps que `total`. Le laisser à 24
-    // avec `total = 59` porterait la frontière à 35 : le test continuerait de
+    // ⚠️ `N` DOIT être incrémenté en même temps que `total`. Le laisser à 25
+    // avec `total = 60` porterait la frontière à 35 : le test continuerait de
     // passer en testant une fenêtre plus étroite d'une migration.
     // Story 16-1a : 21 → 22, frontière inchangée (56 - 22 = 55 - 21 = 34).
     // Story 16-1a-bis : 22 → 23, frontière inchangée (57 - 23 = 34).
     // Story 16-2a : 23 → 24, frontière inchangée (58 - 24 = 34).
     // Story 16-3a : 24 → 25, frontière inchangée (59 - 25 = 34).
+    // Story 16-3b : 25 → 26, frontière inchangée (60 - 26 = 34).
     //
     // ⚠️ DÉRIVE DOCUMENTAIRE CONSTATÉE (revue de code 16-1a). Ce commentaire
     // affirmait simuler « l'état pré-Story-10-2 » et parlait d'une « frontière
@@ -218,7 +219,7 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     .await
     .expect("INSERT invoice failed");
 
-    // Étape 3 : appliquer les 25 migrations restantes via MIGRATOR.run().
+    // Étape 3 : appliquer les 26 migrations restantes via MIGRATOR.run().
     kesh_db::MIGRATOR
         .run(&pool)
         .await
