@@ -468,6 +468,30 @@ Restaurations contrôlées derrière : `kesh-qrbill` 61/61, `kesh-i18n` 22/22.
 
 ## Change Log
 
+**2026-08-11 — `bmad-code-review`, PASSE 4 (Sonnet, deux lentilles) — BOUCLE CONVERGÉE.**
+
+| Lentille | CRIT | HIGH | MED | LOW |
+|---|---|---|---|---|
+| Edge Case Hunter | 0 | 0 | 0 | 0 |
+| Acceptance Auditor | 0 | 0 | 0 | 0 |
+
+Critère d'arrêt de la § *Review Iteration Rule* atteint : plus rien au-dessus de `LOW`, et pas un seul `LOW` neuf. Plafond de 8 passes jamais approché.
+
+**Ce qui rend ce zéro crédible**, et le distingue d'un rapport vide : les deux lentilles ont **re-vérifié une par une** les corrections annoncées par la passe 3, avec la contrepartie dans le code — compteurs recomptés à 60 depuis la source, doc-comment rattaché à `draw_invoice_section`, clarification effectivement présente dans `docs/migrations-idempotence-audit.md`, fichier de migration **non retouché** (conforme à P8), justification d'`is_invisible` corrigée, nom de test réel. C'est précisément ce que la passe 3 avait trouvé faux ; cette fois les déclarations tiennent.
+
+L'Acceptance Auditor a également contrôlé que les deux MEDIUM laissés ouverts **n'avaient pas été refermés furtivement** : la migration ne déclare toujours aucune `COLLATE`, et le test de casse ne couvre toujours pas un caractère accentué sous collation UCA.
+
+**Trend de la boucle** — décroissance monotone, et la **nature** des findings s'est déplacée à chaque passe :
+
+| Passe | Modèles | CRIT | HIGH | MED | Où vivaient les défauts |
+|---|---|---|---|---|---|
+| 1 | Opus ×3 | 0 | 1 *(réfuté au grep)* | 10 | tests muets ou absents |
+| 2 | Sonnet ×3 | 0 | **1** | 1 *(réfuté au recompte)* | symptôme propagé à moitié |
+| 3 | Haiku + Opus ×2 | 0 | 0 | **5** | **les déclarations**, pas le code |
+| 4 | Sonnet ×2 | 0 | 0 | **0** | — |
+
+**Différentiel E2E, suites complètes des deux côtés** : `main` 180 verts / 37 rouges, branche 180 / 39. Les 2 écarts ont été **rejoués** : `product-revenue-account:349` passe au rejeu (son échec était un timeout de `login()`, pas une assertion métier) et `sidebar-navigation:71` est la **KF #287**, documentée comme changeant de camp d'un run à l'autre. Les 2 tests neufs de la story passent. Contrôle d'arithmétique : `180 + 2 neufs + 0 réparés − 2 cassés = 180` — le découpage des logs est fiable, le différentiel est **nul**.
+
 **2026-08-11 — `bmad-code-review`, PASSE 3 (Haiku 4.5 sur la lentille aveugle, Opus 5 sur les deux autres).**
 
 | Lentille | CRIT | HIGH | MED | LOW |
