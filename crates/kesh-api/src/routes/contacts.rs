@@ -32,6 +32,9 @@ const MAX_NAME_LEN: usize = 255;
 const MAX_EMAIL_LEN: usize = 320;
 const MAX_PHONE_LEN: usize = 50;
 const MAX_PAYMENT_TERMS_LEN: usize = 100;
+/// Story 16-3b (#151) — aligné sur la colonne `contacts.client_number`
+/// VARCHAR(50). Longueur de STOCKAGE : le PDF, lui, tronque à l'affichage.
+const MAX_CLIENT_NUMBER_LEN: usize = 50;
 /// Borne haute du délai de paiement en jours (#245) — miroir du CHECK SQL
 /// `chk_contacts_payment_terms_days` (le CHECK n'est que le filet).
 const MAX_PAYMENT_TERMS_DAYS: i32 = 365;
@@ -88,6 +91,11 @@ pub struct CreateContactRequest {
     pub phone: Option<String>,
     #[serde(default)]
     pub ide_number: Option<String>,
+    /// Numéro de client (Story 16-3b, #151). Absent/null/`""` = non renseigné
+    /// — `normalize_optional` effondre le vide en `None`, sans quoi deux
+    /// contacts soumis avec `""` percuteraient l'unicité.
+    #[serde(default)]
+    pub client_number: Option<String>,
     #[serde(default)]
     pub default_payment_terms: Option<String>,
     /// Délai de paiement en jours (#245). Absent/null = non renseigné.
@@ -126,6 +134,11 @@ pub struct UpdateContactRequest {
     pub phone: Option<String>,
     #[serde(default)]
     pub ide_number: Option<String>,
+    /// Numéro de client (Story 16-3b, #151). Absent/null/`""` = non renseigné
+    /// — `normalize_optional` effondre le vide en `None`, sans quoi deux
+    /// contacts soumis avec `""` percuteraient l'unicité.
+    #[serde(default)]
+    pub client_number: Option<String>,
     #[serde(default)]
     pub default_payment_terms: Option<String>,
     /// Délai de paiement en jours (#245). Absent/null = effacé (PUT full-payload).
@@ -166,6 +179,8 @@ pub struct ContactResponse {
     pub phone: Option<String>,
     /// Forme normalisée `"CHE109322551"`. Le frontend la formate pour l'affichage.
     pub ide_number: Option<String>,
+    /// Numéro de client attribué par l'émetteur (Story 16-3b, #151).
+    pub client_number: Option<String>,
     pub default_payment_terms: Option<String>,
     /// Délai de paiement en jours (#245). `null` = non renseigné.
     pub default_payment_terms_days: Option<i32>,
@@ -207,6 +222,7 @@ impl From<Contact> for ContactResponse {
             // Copie directe — déjà normalisée en base via CheNumber::new().as_str()
             // au moment de l'INSERT. Pas de re-parse CheNumber ici.
             ide_number: c.ide_number,
+            client_number: c.client_number,
             default_payment_terms: c.default_payment_terms,
             default_payment_terms_days: c.default_payment_terms_days,
             // Le libellé exige la Company (langue d'instance) + I18nBundle —
@@ -256,15 +272,55 @@ pub(crate) fn is_valid_email_simple(s: &str) -> bool {
 ///
 /// `pub(crate)` (Story 17-4a) : réutilisé pour normaliser l'email optionnel
 /// du compte (vide → `None` = effaçage).
+/// ⚠️ **« Vide » se juge sur ce qui MARQUE, pas sur `trim().is_empty()`.**
+/// `str::trim` suit la propriété Unicode `White_Space`, qui **n'inclut pas** les
+/// caractères de largeur nulle : `U+200B` (ZWSP), `U+FEFF` (BOM) et `U+2060`
+/// (word joiner) traversent `trim()` intacts. Une valeur qui n'en contient que
+/// de ceux-là est vide **pour l'utilisateur** — le champ paraît vide à l'écran —
+/// mais serait stockée comme une valeur ordinaire.
+///
+/// Le coût est concret sur le numéro de client (16-3b), dont l'unicité est
+/// portée par un index : deux fiches où l'utilisateur croit avoir laissé le
+/// champ vide se percutent en **409 `CLIENT_NUMBER_ALREADY_EXISTS`**, sur une
+/// valeur qu'il ne peut ni voir ni effacer. C'est exactement ce que
+/// `empty_client_number_is_stored_as_null_and_never_collides` promet
+/// d'empêcher, et que le seul `trim()` ne tenait pas.
+///
+/// Une valeur qui **mélange** invisible et visible passe inchangée : seule la
+/// valeur intégralement invisible est ramenée à `None`.
+///
+/// *(Jumeau côté rendu : `is_invisible` dans `kesh-qrbill/src/pdf.rs`, qui garde
+/// le PDF contre les valeurs écrites hors API — restauration d'une sauvegarde
+/// produite ailleurs, correction SQL directe. Ce sont deux **couches** : l'une
+/// décide ce qui entre en base, l'autre ce qui s'imprime, et le PDF doit tenir
+/// même face à une base qui n'est pas passée par cette route.*
+///
+/// ⚠️ *Le motif d'abord écrit ici — « deux crates sans dépendance commune » —
+/// était **faux** : `kesh-api` dépend directement de `kesh-qrbill`
+/// (`Cargo.toml:12`). Une factorisation est donc techniquement possible, et si
+/// un troisième site en a besoin un jour, c'est cette voie qu'il faut prendre
+/// plutôt que recopier une troisième fois. Réfuté en passe 3 de
+/// `bmad-code-review`.)*
 pub(crate) fn normalize_optional(s: Option<String>) -> Option<String> {
     s.and_then(|v| {
         let t = v.trim();
-        if t.is_empty() {
+        if t.is_empty() || t.chars().all(is_invisible) {
             None
         } else {
             Some(t.to_string())
         }
     })
+}
+
+/// Vrai si le caractère ne **marque** rien à l'écran ni à l'impression.
+///
+/// `U+00AD` (trait d'union conditionnel) est inclus : il ne se rend pas hors
+/// point de césure.
+fn is_invisible(c: char) -> bool {
+    c.is_whitespace()
+        || c.is_control()
+        || matches!(c,
+            '\u{00AD}' | '\u{200B}'..='\u{200F}' | '\u{2060}'..='\u{2064}' | '\u{FEFF}')
 }
 
 /// Valide + normalise un IDE optionnel via `CheNumber`.
@@ -295,6 +351,7 @@ struct ValidatedFields {
     email: Option<String>,
     phone: Option<String>,
     ide_number: Option<String>,
+    client_number: Option<String>,
     default_payment_terms: Option<String>,
     default_payment_terms_days: Option<i32>,
 }
@@ -311,6 +368,7 @@ fn validate_common(
     email: Option<String>,
     phone: Option<String>,
     ide_number: Option<String>,
+    client_number: Option<String>,
     default_payment_terms: Option<String>,
     default_payment_terms_days: Option<i32>,
 ) -> Result<ValidatedFields, AppError> {
@@ -385,6 +443,18 @@ fn validate_common(
         )));
     }
 
+    // Story 16-3b : `normalize_optional` AVANT toute chose — `""` n'est pas
+    // `NULL` pour un index UNIQUE, et le cas majoritaire (aucun numéro) se
+    // percuterait dès le deuxième contact.
+    let client_number = normalize_optional(client_number);
+    if let Some(ref cn) = client_number
+        && cn.chars().count() > MAX_CLIENT_NUMBER_LEN
+    {
+        return Err(AppError::Validation(format!(
+            "Le numéro de client doit faire au plus {MAX_CLIENT_NUMBER_LEN} caractères"
+        )));
+    }
+
     let ide_number = validate_optional_ide(ide_number)?;
 
     Ok(ValidatedFields {
@@ -398,6 +468,7 @@ fn validate_common(
         email,
         phone,
         ide_number,
+        client_number,
         default_payment_terms,
         default_payment_terms_days,
     })
@@ -451,9 +522,14 @@ fn contact_response_with_label(
     resp
 }
 
-/// Intercepte les `UniqueConstraintViolation` portant sur la contrainte
-/// `uq_contacts_company_ide` et remappe vers le code client dédié
-/// `IDE_ALREADY_EXISTS`. Sinon propage tel quel.
+/// Remappe les `UniqueConstraintViolation` de la table `contacts` vers leur code
+/// client dédié, selon la contrainte violée :
+///
+/// - `uq_contacts_company_ide` → `IDE_ALREADY_EXISTS`
+/// - `uq_contacts_company_client_number` → `CLIENT_NUMBER_ALREADY_EXISTS` (16-3b)
+///
+/// Toute autre violation est propagée telle quelle — c'est ce que vérifie
+/// `map_contact_error_other_unique_maps_to_generic_conflict`.
 ///
 /// **Note** : on ne matche que le **nom de contrainte** (`uq_contacts_company_ide`),
 /// pas le nom de colonne (`ide_number`) — le format du message d'erreur
@@ -463,6 +539,18 @@ fn map_contact_error(err: DbError) -> AppError {
         && m.contains("uq_contacts_company_ide")
     {
         return AppError::IdeAlreadyExists("Un contact avec ce numéro IDE existe déjà".into());
+    }
+    // Story 16-3b : même nature, même table, donc même code HTTP (409). La
+    // contrainte porte sur la colonne GÉNÉRÉE `client_number_uniq`, mais c'est
+    // bien son NOM (`uq_contacts_company_client_number`) qui apparaît dans le
+    // message MariaDB — et c'est le nom de contrainte qu'on matche, jamais
+    // celui de la colonne, pour la raison déjà documentée ci-dessus.
+    if let DbError::UniqueConstraintViolation(ref m) = err
+        && m.contains("uq_contacts_company_client_number")
+    {
+        return AppError::ClientNumberAlreadyExists(
+            "Un contact avec ce numéro de client existe déjà".into(),
+        );
     }
     AppError::from(err)
 }
@@ -556,6 +644,7 @@ pub async fn create_contact(
         req.email,
         req.phone,
         req.ide_number,
+        req.client_number,
         req.default_payment_terms,
         req.default_payment_terms_days,
     )?;
@@ -579,6 +668,7 @@ pub async fn create_contact(
         email: v.email,
         phone: v.phone,
         ide_number: v.ide_number,
+        client_number: v.client_number,
         default_payment_terms: v.default_payment_terms,
         default_payment_terms_days: v.default_payment_terms_days,
         // Story 20-3b1 : enums typés — serde a déjà rejeté toute valeur
@@ -621,6 +711,7 @@ pub async fn update_contact(
         req.email,
         req.phone,
         req.ide_number,
+        req.client_number,
         req.default_payment_terms,
         req.default_payment_terms_days,
     )?;
@@ -642,6 +733,7 @@ pub async fn update_contact(
         email: v.email,
         phone: v.phone,
         ide_number: v.ide_number,
+        client_number: v.client_number,
         default_payment_terms: v.default_payment_terms,
         default_payment_terms_days: v.default_payment_terms_days,
         // Story 20-3b1 : cf. create_contact — enums typés validés par serde.
@@ -693,6 +785,7 @@ pub async fn archive_contact(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::response::IntoResponse;
 
     #[test]
     fn email_valid_cases() {
@@ -758,6 +851,51 @@ mod tests {
         }
     }
 
+    /// Story 16-3b : la contrainte jumelle rend la variante dédiée.
+    #[test]
+    fn map_contact_error_client_number_unique_maps_to_dedicated_variant() {
+        let err = DbError::UniqueConstraintViolation("uq_contacts_company_client_number".into());
+        match map_contact_error(err) {
+            AppError::ClientNumberAlreadyExists(_) => {}
+            other => panic!("expected ClientNumberAlreadyExists, got {other:?}"),
+        }
+    }
+
+    /// Story 16-3b — **non-sur-capture**, dans les DEUX sens.
+    ///
+    /// `map_contact_error` matche par `contains` : avec deux contraintes sur la
+    /// même table, rien ne garantit a priori qu'aucune ne capture l'autre. Une
+    /// sur-capture rendrait le mauvais code d'erreur au frontend, qui branche
+    /// les codes un par un.
+    #[test]
+    fn map_contact_error_does_not_confuse_the_two_contact_constraints() {
+        match map_contact_error(DbError::UniqueConstraintViolation(
+            "Duplicate entry 'CHE109322551' for key 'uq_contacts_company_ide'".into(),
+        )) {
+            AppError::IdeAlreadyExists(_) => {}
+            other => panic!("l'IDE ne doit PAS être capturé par le numéro de client : {other:?}"),
+        }
+        match map_contact_error(DbError::UniqueConstraintViolation(
+            "Duplicate entry '1-CLI-1' for key 'uq_contacts_company_client_number'".into(),
+        )) {
+            AppError::ClientNumberAlreadyExists(_) => {}
+            other => panic!("le numéro de client ne doit PAS être capturé par l'IDE : {other:?}"),
+        }
+    }
+
+    /// Story 16-3b : la variante rend bien un **409**, et non un 500.
+    ///
+    /// Le contrôle de la CHAÎNE `CLIENT_NUMBER_ALREADY_EXISTS` — l'interface
+    /// réelle avec le frontend — est fait par `client_number_conflict_has_its_own_code`
+    /// dans `errors.rs`, seul endroit où le corps de la réponse est lisible
+    /// (helper `response_body`). Ce test-ci ne couvre que le statut : son nom le
+    /// disait autrefois davantage qu'il ne le vérifiait.
+    #[test]
+    fn client_number_conflict_renders_409() {
+        let response = AppError::ClientNumberAlreadyExists("déjà pris".into()).into_response();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+    }
+
     #[test]
     fn map_contact_error_other_unique_maps_to_generic_conflict() {
         let err = DbError::UniqueConstraintViolation("some_other_constraint".into());
@@ -778,5 +916,45 @@ mod tests {
         assert_eq!(normalize_optional(Some("   ".into())), None);
         assert_eq!(normalize_optional(Some("".into())), None);
         assert_eq!(normalize_optional(None), None);
+    }
+
+    /// Une valeur faite **uniquement** de caractères invisibles est vide pour
+    /// l'utilisateur, et doit l'être pour la base.
+    ///
+    /// ⚠️ `trim()` ne suffit pas : la propriété Unicode `White_Space` n'inclut
+    /// pas les caractères de largeur nulle. Sans ce traitement, deux fiches où
+    /// l'utilisateur croit avoir laissé le numéro de client vide se percutent
+    /// en 409 sur une valeur invisible qu'il ne peut ni voir ni effacer.
+    #[test]
+    fn normalize_optional_collapses_invisible_only_values_to_none() {
+        for (label, value) in [
+            ("ZWSP U+200B", "\u{200B}"),
+            ("BOM U+FEFF", "\u{FEFF}"),
+            ("word joiner U+2060", "\u{2060}"),
+            ("soft hyphen U+00AD", "\u{00AD}"),
+            ("ZWSP entouré d'espaces", "  \u{200B}  "),
+            ("plusieurs invisibles", "\u{200B}\u{FEFF}\u{2060}"),
+        ] {
+            assert_eq!(
+                normalize_optional(Some(value.into())),
+                None,
+                "« {label} » doit être ramené à None"
+            );
+        }
+    }
+
+    /// ⚠️ Le pendant du test précédent, et il est indispensable : une garde trop
+    /// large mangerait des valeurs légitimes. Un invisible **entouré de
+    /// visible** doit passer INCHANGÉ — c'est du contenu réel, mal collé.
+    #[test]
+    fn normalize_optional_keeps_values_mixing_visible_and_invisible() {
+        assert_eq!(
+            normalize_optional(Some("CLI\u{200B}-1".into())),
+            Some("CLI\u{200B}-1".into())
+        );
+        assert_eq!(
+            normalize_optional(Some("  CLI-1\u{FEFF}  ".into())),
+            Some("CLI-1\u{FEFF}".into())
+        );
     }
 }

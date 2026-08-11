@@ -418,6 +418,19 @@ Les limitations documentées (style `L1-L18` dans story files) qualifient en cat
 
 *(politique formalisée 2026-05-17 rétrospective Epic 9 — cf. memory `feedback_zero_tech_debt_carryforward` + pattern Epic 7 historique « Technical Debt Closure »)*
 
+## Clôture d'epic — la revue de projet suit la rétrospective
+
+**Règle** : à la fin de chaque `bmad-retrospective`, enchaîner sur la **revue de projet** dans `/home/gcorbaz/travail/Projets actuels/kesh`. La rétrospective ne clôt pas l'epic à elle seule.
+
+Les deux exercices ne regardent pas la même chose, et c'est pourquoi l'un ne remplace pas l'autre :
+
+- La **rétrospective** regarde *vers l'intérieur du dépôt* — ce que l'epic a produit, ce que les passes de revue ont appris, quelle dette il laisse. Son horizon est le code et le processus.
+- La **revue de projet** regarde *le projet comme dossier* — échéances, dépendances avec d'autres dossiers, ressources, engagements pris ailleurs que dans le dépôt. Rien de tout cela n'est visible depuis `git log`, et rien ne le rappelle si on ne va pas le chercher.
+
+Un epic peut donc se clore proprement côté code tout en laissant dériver le dossier de projet : c'est exactement le trou que cette règle ferme.
+
+**Ordre imposé** : `bmad-retrospective` → revue de projet. La rétrospective d'abord, parce que ses conclusions (dette reportée, story de remédiation planifiée, changement de scope) sont des **entrées** de la revue de projet — l'inverse ferait travailler la revue sur un état périmé.
+
 ## Issue Tracking Rule
 
 **Règle de traçage des CR, KF et bug reports** :
@@ -506,6 +519,19 @@ Rationale : `_sqlx_migrations` n'est pas restaurée par l'import d'installation.
 **Classer, ça se déclare, ça ne se devine pas.** Classe **A** (rejeu inconditionnel) uniquement si **tous** les statements sont gardés contre l'écrasement d'une valeur posée par l'utilisateur ; classe **B** (rejeu conditionné à l'absence d'une colonne sentinelle) sinon — et la classe B n'est valide que si le **DDL et le backfill sont dans le même fichier**. Ne **jamais** classer par détection textuelle de `IS NULL` / `NOT EXISTS` : un `NOT EXISTS` peut être un prédicat **structurel** de ciblage et non une garde d'idempotence. Et ne pas réutiliser le critère « un `NULL` n'est l'expression d'aucun choix » : il est **faux** dès qu'une route écrit le champ en *full-replace*.
 
 *(codifié 2026-08-01, Story 16-1c / issue #281)*
+
+**(P8) Une migration appliquée ne se modifie plus — pas même un commentaire.** `sqlx` enregistre le **checksum** de chaque fichier dans `_sqlx_migrations` et refuse de démarrer dès qu'il diffère : `migration <version> was previously applied but has been modified`. Le binaire **ne boote pas**. Cela vaut pour une correction de faute, un renommage de commentaire, une reformulation d'en-tête — le contenu SQL n'a rien à voir dans l'affaire, c'est l'octet qui compte.
+
+La portée du dégât dépend de qui a déjà appliqué le fichier :
+
+- **Migration jamais publiée** (branche non mergée) : seules les bases de dev locales sont touchées — la vôtre, `kesh_e2e`, celles d'un collègue ayant testé la branche. Réparable, mais c'est du temps perdu et un plantage déroutant.
+- **Migration publiée dans une release** : toute installation à jour refuse de démarrer après mise à jour. Il n'y a alors **aucun retour en arrière propre**.
+
+**Conduite à tenir** : ce qu'on veut ajouter à une migration déjà appliquée se met **ailleurs** — la ligne de `docs/migrations-idempotence-audit.md`, les Dev Notes de la story, ou une migration suivante. Et si la modification est réellement nécessaire *avant* toute publication, la rendre **délibérée** : annoncer la reconstruction des bases de dev concernées, et vérifier qu'aucune base persistante du gate ne reste en arrière.
+
+⚠️ **Le gate complet ne voit rien de ce défaut** : les tests `#[sqlx::test]` créent une base éphémère et rejouent les migrations à neuf, donc ils restent verts. Seul un démarrage réel contre une base **persistante** le révèle — c'est-à-dire, en pratique, la suite E2E ou un `cargo run` de dev.
+
+*(codifié 2026-08-11, passe 2 de `bmad-code-review` de la Story 16-3b : un correctif de passe 1 avait reformulé l'en-tête de `20260810000001_contacts_client_number.sql`, ce qui a fait échouer le démarrage du backend E2E sur `kesh_e2e` — après un gate backend pourtant vert à 2158/2158. Le correctif a été annulé, la clarification déplacée hors du fichier de migration.)*
 
 ## Règle de commit et push
 

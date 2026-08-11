@@ -306,6 +306,14 @@ pub enum AppError {
     #[error("{0}")]
     IdeAlreadyExists(String),
 
+    // --- Story 16-3b (#151) ---
+    /// Un contact ACTIF de la même company porte déjà ce numéro de client.
+    /// Même nature que `IdeAlreadyExists` — unicité par société sur la même
+    /// table — donc **même code HTTP (409)**, avec son propre code client pour
+    /// que le formulaire puisse afficher un message dédié.
+    #[error("{0}")]
+    ClientNumberAlreadyExists(String),
+
     // --- Story 5.3 — génération PDF QR Bill ---
     /// La facture n'est pas validée — impossible de générer un PDF (400).
     #[error("Facture non validée")]
@@ -1207,6 +1215,11 @@ impl IntoResponse for AppError {
             // Story 4.1 : code dédié pour l'unicité IDE par company.
             AppError::IdeAlreadyExists(msg) => {
                 build_response(StatusCode::CONFLICT, "IDE_ALREADY_EXISTS", &msg)
+            }
+
+            // Story 16-3b : contrainte jumelle de l'IDE → même 409.
+            AppError::ClientNumberAlreadyExists(msg) => {
+                build_response(StatusCode::CONFLICT, "CLIENT_NUMBER_ALREADY_EXISTS", &msg)
             }
 
             // Story 20-3b1 — envoi de facture par e-mail.
@@ -2812,6 +2825,26 @@ mod tests {
         );
         let msg = body["error"]["message"].as_str().unwrap();
         assert!(msg.contains("3200"), "le compte doit être nommé : {msg}");
+    }
+
+    /// Story 16-3b — le conflit de numéro de client porte **son propre code**,
+    /// et pas celui de l'IDE.
+    ///
+    /// ⚠️ C'est la CHAÎNE qui est l'interface, pas le statut. Le frontend branche
+    /// dessus littéralement (`+page.svelte`, `err.code === 'CLIENT_NUMBER_ALREADY_EXISTS'`)
+    /// pour choisir le message traduit ; un copier-coller de la variante IDE
+    /// voisine — huit lignes plus haut dans le `match` — garderait le 409 et
+    /// afficherait « numéro IDE » sur un conflit de numéro de client. Un test
+    /// qui n'assert que `StatusCode::CONFLICT` ne voit rien de cette confusion.
+    #[tokio::test]
+    async fn client_number_conflict_has_its_own_code() {
+        let resp =
+            AppError::ClientNumberAlreadyExists("CLI-1 est déjà pris".into()).into_response();
+        let (status, body) = response_body(resp).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body["error"]["code"], "CLIENT_NUMBER_ALREADY_EXISTS");
+        let msg = body["error"]["message"].as_str().unwrap();
+        assert!(msg.contains("CLI-1"), "le numéro doit être nommé : {msg}");
     }
 
     /// D4-bis — la facture à montant nul répond en **400 métier**, plus en 500

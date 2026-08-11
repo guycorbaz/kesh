@@ -242,6 +242,40 @@ mod tests {
         );
     }
 
+    /// **AC8** (Story 16-3b, #151) — les deux clés du numéro de client sont
+    /// traduites dans les **quatre** locales, et aucune ne retombe sur le
+    /// français.
+    ///
+    /// ⚠️ **Le repli est SILENCIEUX, et c'est tout le problème.** `load()`
+    /// charge d'abord toutes les clés `fr-CH` comme base de repli des autres
+    /// locales : une clé seulement française rend le libellé **français sur un
+    /// PDF allemand**, sans erreur, sans avertissement, avec tous les autres
+    /// tests au vert. C'est le mécanisme exact de la KF #283 — 57 clés déjà
+    /// manquantes en de-CH / it-CH / en-CH — appliqué ici à l'artefact qui donne
+    /// son titre à la story.
+    ///
+    /// ⚠️ L'assertion de `types.rs` ne couvre pas ce cas : elle apparie
+    /// `I18N_KEYS` et `DEFAULT_EN`, et **`DEFAULT_EN` n'est jamais atteint en
+    /// production** — il ne sert que de repli de dernier recours côté crate.
+    #[test]
+    fn client_number_labels_are_translated_in_all_four_locales() {
+        let bundle = I18nBundle::load(&locales_dir()).unwrap();
+        // Celle du PDF, et celle de la fiche contact — AC8 porte sur les deux.
+        for key in ["invoice-pdf-client-number", "contact-form-client-number"] {
+            let fr = bundle.format(&Locale::FrCh, key, None);
+            assert_ne!(fr, key, "{key} doit exister en fr-CH");
+            for locale in [Locale::DeCh, Locale::ItCh, Locale::EnCh] {
+                let msg = bundle.format(&locale, key, None);
+                assert_ne!(msg, key, "{key} doit exister en {locale:?}");
+                assert_ne!(
+                    msg, fr,
+                    "{key} en {locale:?} vaut le libellé FRANÇAIS — la clé est \
+                     absente de cette locale et le loader replie en silence"
+                );
+            }
+        }
+    }
+
     #[test]
     fn format_unknown_key_returns_key() {
         let bundle = I18nBundle::load(&locales_dir()).unwrap();

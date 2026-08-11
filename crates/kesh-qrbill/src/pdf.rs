@@ -200,6 +200,177 @@ const CONTENT_FLOOR_NO_QR: f32 = 15.0;
 /// laisser croire à une garantie exacte.
 const IDENTITY_MAX_CHARS: usize = 46;
 
+/// Pas vertical entre deux lignes du bloc métadonnées (droite), en mm.
+///
+/// Extrait en constante parce qu'il est l'**invariant testé** par AC6 : le
+/// delta d'ordonnée entre le cas `Some` et le cas `None` du numéro de client
+/// vaut exactement ce pas, et la mutation à tuer (`my -= 4.5` sorti du
+/// conditionnel) le met à zéro.
+const META_LINE_STEP: f32 = 4.5;
+
+/// Borne d'affichage du bloc métadonnées **de droite** (Story 16-3b, #151).
+///
+/// Le bloc démarre à `meta_x = 120.0` et la page fait `PAGE_W = 210.0` avec une
+/// marge droite de 20 : **70 mm** disponibles — *moins* que les 100 mm du bloc
+/// gauche, d'où une constante distincte et non un réemploi d'`IDENTITY_MAX_CHARS`.
+///
+/// Calibrage par la méthode de cette dernière (table AFM Helvetica 9 pt,
+/// largeur moyenne des capitales 677/1000 em, 1 pt = 0,3528 mm) :
+///
+/// ```text
+/// 70 / (9 × 0,677 × 0,3528) ≈ 32,6  →  32 caractères
+/// ```
+///
+/// ⚠️ **LA BORNE PORTE SUR LA LIGNE COMPLÈTE `"{libellé}: {valeur}"`**, comme
+/// au bloc gauche (`truncate_display(&format!(…), IDENTITY_MAX_CHARS)`). Les
+/// 32 caractères sont un budget de **largeur** : ils couvrent nécessairement le
+/// libellé. Tronquer la seule valeur puis formater le libellé autour produirait
+/// une ligne d'environ 43 caractères ≈ 92 mm depuis `x = 120`, soit `x ≈ 212`
+/// sur une page de 210 — du texte **hors feuille**.
+///
+/// ⚠️ **Conséquence à connaître** : « N° client: » (11 caractères) ne laisse que
+/// ~21 caractères à la valeur, « Kundennummer: » (14) ~18. Un champ déclaré
+/// `VARCHAR(50)` s'imprime donc sur une vingtaine de caractères. C'est un repli
+/// d'**affichage** — la valeur reste entière en base et dans la fiche contact.
+///
+/// ⚠️ **Ce que le test de calibrage ne prouve PAS** : il montre la *cohérence*
+/// de la troncature (deux chaînes longues coupées à la même taille), jamais que
+/// la valeur *tient* dans la largeur disponible. Une constante trop généreuse y
+/// passerait sans être vue. La justesse repose sur le calcul ci-dessus.
+const META_MAX_CHARS: usize = 32;
+
+/// Construit les lignes du bloc métadonnées (droite) : texte déjà formaté et
+/// tronqué, avec son ordonnée en mm. **Le titre reste hors extraction** — il est
+/// dessiné à 18 pt et suit un pas différent.
+///
+/// **Fonction pure, et c'est la SEULE façon de tester AC6.** Le delta de taille
+/// du PDF est aveugle au décalage vertical (`pdf.rs` le documente et le dépôt
+/// l'a déjà payé : « **Mesuré** — une première version de ce test comparait
+/// deux générations entre elles et restait **verte** sous la mutation »), et la
+/// parade de la Story 16-3a — mesurer au seuil d'une garde haute — n'existe pas
+/// à droite, la garde ne surveillant que la colonne gauche. Sans cette
+/// extraction, la conditionnalité du décrément serait un critère qu'aucun test
+/// ne peut faire échouer.
+///
+/// `first_line_y` est l'ordonnée de la **première** ligne ; chaque ligne
+/// suivante descend de `META_LINE_STEP`. Une ligne absente ne consomme aucun
+/// espace : c'est exactement l'invariant qu'AC6 vérifie.
+///
+/// ⚠️ **La troncature ne s'applique qu'au numéro de client**, et le motif n'est
+/// PAS que les autres lignes seraient incapables de déborder.
+///
+/// Le motif est qu'une borne à `META_MAX_CHARS` **couperait du contenu
+/// existant** : « Réf. facture d'origine: FA-2026-0001 » fait 35 caractères et
+/// serait tronqué sur tout avoir français. La borne est donc réservée au champ
+/// que cette story introduit, et dont elle répond.
+///
+/// ⚠️ **Le débordement des autres lignes est un problème réel, distinct, et
+/// ANTÉRIEUR à cette story — suivi dans l'issue #293.** Le numéro de facture
+/// n'est pas « borné par le schéma de numérotation » : ce schéma est un champ
+/// libre de l'écran *Paramètres → Facturation*, et `invoice_format` le laisse
+/// rendre jusqu'à `MAX_RENDERED_LEN = 64` caractères — soit plus que les 50 du
+/// numéro de client. `origin_reference` est un numéro de facture, donc de même
+/// classe. Le traiter demande une borne PROPRE à ces lignes, plus haute, et un
+/// arbitrage sur ce qu'on coupe ; ce n'est pas le périmètre de la 16-3b.
+///
+/// *(La rédaction précédente affirmait que ces valeurs étaient « engendrées par
+/// le système, bornées par le schéma de numérotation ». Prémisse réfutée en
+/// passe 1 de `bmad-code-review`, `invoice_format.rs:25-27` à l'appui.)*
+fn build_meta_lines(
+    inv: &InvoicePdfData,
+    i18n: &QrBillI18n,
+    first_line_y: f32,
+) -> Vec<(String, f32)> {
+    let mut out: Vec<(String, f32)> = Vec::new();
+    let mut y = first_line_y;
+    let push = |out: &mut Vec<(String, f32)>,
+                y: &mut f32,
+                key: &'static str,
+                value: &str,
+                bounded: bool| {
+        if !out.is_empty() {
+            *y -= META_LINE_STEP;
+        }
+        // ⚠️ La borne porte sur la LIGNE COMPLÈTE `"{libellé}: {valeur}"`, jamais
+        // sur la seule valeur : les 32 caractères sont un budget de LARGEUR, et
+        // couvrent donc nécessairement le libellé.
+        let line = format!("{}: {}", i18n.get(key), value);
+        out.push((
+            if bounded {
+                truncate_display(&line, META_MAX_CHARS)
+            } else {
+                line
+            },
+            *y,
+        ));
+    };
+
+    push(
+        &mut out,
+        &mut y,
+        "invoice-pdf-number",
+        &inv.invoice_number,
+        false,
+    );
+    // Story 16-3b (#151) : entre le n° de facture et la date — position fixée
+    // par D3, et qu'aucun test de delta ne pourrait rattraper si elle changeait.
+    //
+    // ⚠️ Tester la VACUITÉ, pas la nullité — même raison qu'au bloc gauche de la
+    // Story 16-3a, dont ce site est le jumeau. La normalisation qui transforme
+    // `""` en `None` vit dans la route API ; une valeur vide arrivée autrement
+    // imprimerait « N° client: » suivi de rien, en consommant un
+    // `META_LINE_STEP` qui décalerait vers le bas la date, la référence
+    // d'origine et l'échéance.
+    //
+    // Et le chemin n'est PAS que théorique ici : `str::trim` suit la propriété
+    // Unicode `White_Space`, qui **n'inclut pas** les caractères de largeur
+    // nulle. `U+200B` (ZWSP), `U+FEFF` (BOM) et `U+2060` (WJ) survivent donc à
+    // la normalisation de la route et arrivent jusqu'ici. `trim().is_empty()`
+    // ne les attrape pas non plus — d'où le filtre sur les caractères qui
+    // MARQUENT quelque chose. *(Passe 1 de `bmad-code-review`.)*
+    if let Some(client_number) = inv
+        .debtor_client_number
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| v.chars().any(|c| !is_invisible(c)))
+    {
+        push(
+            &mut out,
+            &mut y,
+            "invoice-pdf-client-number",
+            client_number,
+            true,
+        );
+    }
+    push(
+        &mut out,
+        &mut y,
+        "invoice-pdf-date",
+        &format_date_ch(inv.invoice_date),
+        false,
+    );
+    // Référence à la facture d'origine (avoirs uniquement, Story 12.1).
+    if let Some(origin) = &inv.origin_reference {
+        push(
+            &mut out,
+            &mut y,
+            "invoice-pdf-origin-reference",
+            origin,
+            false,
+        );
+    }
+    if let Some(due) = inv.due_date {
+        push(
+            &mut out,
+            &mut y,
+            "invoice-pdf-due-date",
+            &format_date_ch(due),
+            false,
+        );
+    }
+    out
+}
+
 /// Dessine la section haute (en-tête + lignes + récap TVA + total).
 ///
 /// `content_floor` = ordonnée (mm) sous laquelle le contenu ne doit PAS
@@ -207,6 +378,12 @@ const IDENTITY_MAX_CHARS: usize = 46;
 /// simple marge basse pour un avoir (aucune section QR → pleine page). La garde
 /// de capacité en tient compte, ce qui évite de pénaliser un avoir pour une
 /// zone QR inexistante (#151 code-review).
+///
+/// *(Ce doc-comment était devenu orphelin : l'extraction de `build_meta_lines`
+/// en T9 s'était insérée ENTRE lui et sa fonction, si bien que rustdoc
+/// l'attribuait au mauvais symbole et décrivait un paramètre `content_floor`
+/// que `build_meta_lines` ne prend pas. Rendu à sa fonction en passe 3 de
+/// `bmad-code-review` ; deux passes avaient lu ce hunk sans le voir.)*
 fn draw_invoice_section(
     layer: &PdfLayerReference,
     inv: &InvoicePdfData,
@@ -284,58 +461,25 @@ fn draw_invoice_section(
 
     // Title + metadata (right).
     let meta_x = 120.0;
-    let mut my = PAGE_H - 20.0;
+    let meta_title_y = PAGE_H - 20.0;
     layer.use_text(
         i18n.get("invoice-pdf-title"),
         18.0,
         Mm(meta_x),
-        Mm(my),
+        Mm(meta_title_y),
         helv_bold,
     );
-    my -= 7.0;
-    layer.use_text(
-        format!("{}: {}", i18n.get("invoice-pdf-number"), inv.invoice_number),
-        9.0,
-        Mm(meta_x),
-        Mm(my),
-        helv,
-    );
-    my -= 4.5;
-    layer.use_text(
-        format!(
-            "{}: {}",
-            i18n.get("invoice-pdf-date"),
-            format_date_ch(inv.invoice_date)
-        ),
-        9.0,
-        Mm(meta_x),
-        Mm(my),
-        helv,
-    );
-    // Référence à la facture d'origine (avoirs uniquement, Story 12.1).
-    if let Some(origin) = &inv.origin_reference {
-        my -= 4.5;
-        layer.use_text(
-            format!("{}: {}", i18n.get("invoice-pdf-origin-reference"), origin),
-            9.0,
-            Mm(meta_x),
-            Mm(my),
-            helv,
-        );
-    }
-    if let Some(due) = inv.due_date {
-        my -= 4.5;
-        layer.use_text(
-            format!(
-                "{}: {}",
-                i18n.get("invoice-pdf-due-date"),
-                format_date_ch(due)
-            ),
-            9.0,
-            Mm(meta_x),
-            Mm(my),
-            helv,
-        );
+    // Les lignes du bloc sont construites par une fonction PURE, puis
+    // seulement dessinées : c'est ce qui rend leur position testable.
+    //
+    // Le curseur du bloc droit n'est plus suivi ici : `build_meta_lines` porte
+    // désormais toute la chaîne de décréments, et rien en aval ne s'en sert —
+    // la colonne droite dispose de ~90 mm de marge (le tableau démarre à
+    // `PAGE_H - 130`), et seule la colonne GAUCHE est surveillée par la garde
+    // de capacité haute.
+    let meta_first_line_y = meta_title_y - 7.0;
+    for (text, line_y) in build_meta_lines(inv, i18n, meta_first_line_y) {
+        layer.use_text(text, 9.0, Mm(meta_x), Mm(line_y), helv);
     }
 
     // Recipient (below creditor, left).
@@ -957,6 +1101,24 @@ fn format_date_ch(d: NaiveDate) -> String {
     format!("{:02}.{:02}.{:04}", d.day(), d.month(), d.year())
 }
 
+/// Vrai si le caractère ne **marque** rien sur la page.
+///
+/// `char::is_whitespace` suit la propriété Unicode `White_Space`, qui n'inclut
+/// **pas** les caractères de largeur nulle : `U+200B` (ZWSP), `U+FEFF` (BOM) et
+/// `U+2060` (word joiner) passent donc `trim()` et `is_empty()` sans être
+/// retenus. Une valeur qui n'en contient que de ceux-là est vide *à
+/// l'impression* — c'est ce que ce prédicat permet de détecter, pour ne pas
+/// dessiner une ligne blanche qui consommerait un `META_LINE_STEP`.
+///
+/// `U+00AD` (trait d'union conditionnel) est inclus : il ne se rend pas hors
+/// point de césure.
+fn is_invisible(c: char) -> bool {
+    c.is_whitespace()
+        || c.is_control()
+        || matches!(c,
+            '\u{00AD}' | '\u{200B}'..='\u{200F}' | '\u{2060}'..='\u{2064}' | '\u{FEFF}')
+}
+
 fn truncate_display(s: &str, max_chars: usize) -> String {
     if s.chars().count() <= max_chars {
         s.to_string()
@@ -1021,6 +1183,7 @@ mod tests {
             creditor_website: None,
             debtor_name: "Pia Rutschmann".into(),
             debtor_address_lines: vec!["Marktgasse 28".into(), "9400 Rorschach".into()],
+            debtor_client_number: None,
             lines: vec![InvoiceLinePdf {
                 description: "Conseil stratégique".into(),
                 quantity: dec!(10),
@@ -1189,6 +1352,7 @@ mod tests {
             creditor_website: None,
             creditor_address_lines: (0..8).map(|i| format!("Adresse {i}")).collect(),
             debtor_address_lines: (0..15).map(|i| format!("Destinataire {i}")).collect(),
+            debtor_client_number: None,
             ..base
         };
         let res = generate_qr_bill_pdf_with_date(&data, &invoice, &i18n, fixed_date());
@@ -1222,6 +1386,7 @@ mod tests {
             creditor_email: Some("contact@exemple.ch".into()),
             creditor_website: Some("https://exemple.ch".into()),
             debtor_address_lines: (0..10).map(|i| format!("Ligne destinataire {i}")).collect(),
+            debtor_client_number: None,
             ..base
         };
         let err = generate_qr_bill_pdf_with_date(&data, &invoice, &i18n, fixed_date())
@@ -1386,6 +1551,311 @@ mod tests {
         assert_eq!(
             format_date_ch(NaiveDate::from_ymd_opt(2026, 4, 7).unwrap()),
             "07.04.2026"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 16-3b (#151) — numéro de client dans le bloc métadonnées
+    // -----------------------------------------------------------------------
+
+    /// Ordonnée de la ligne dont le **libellé** est `label`, dans les lignes
+    /// construites par `build_meta_lines`.
+    fn meta_line_y(lines: &[(String, f32)], label: &str) -> f32 {
+        lines
+            .iter()
+            .find(|(text, _)| text.starts_with(label))
+            .unwrap_or_else(|| panic!("ligne « {label} » absente de {lines:?}"))
+            .1
+    }
+
+    /// **AC6, présence** — deux rendus, l'un avec le numéro, l'autre sans ; la
+    /// différence de taille atteste que quelque chose a bien été dessiné.
+    ///
+    /// ⚠️ Ce test ne prouve **que** la présence. Le delta de taille est aveugle
+    /// au décalage vertical — c'est écrit noir sur blanc plus haut dans ce
+    /// fichier, et **mesuré** : une première version d'un test de ce genre
+    /// restait verte sous la mutation. La conditionnalité est prouvée par le
+    /// test suivant, sur la fonction pure.
+    #[test]
+    fn client_number_line_is_drawn_when_present() {
+        let (data, base, i18n) = invoice_fixture();
+        let without = generate_qr_bill_pdf_with_date(
+            &data,
+            &InvoicePdfData {
+                debtor_client_number: None,
+                ..base.clone()
+            },
+            &i18n,
+            fixed_date(),
+        )
+        .expect("rendu sans numéro");
+        let with = generate_qr_bill_pdf_with_date(
+            &data,
+            &InvoicePdfData {
+                debtor_client_number: Some("CLI-2026-00042".into()),
+                ..base
+            },
+            &i18n,
+            fixed_date(),
+        )
+        .expect("rendu avec numéro");
+        assert!(
+            with.len() > without.len(),
+            "le PDF portant le numéro doit être plus lourd : {} vs {}",
+            with.len(),
+            without.len()
+        );
+    }
+
+    /// **AC6, vacuité** — une valeur qui ne marque rien sur la page ne doit
+    /// dessiner aucune ligne, ni consommer de `META_LINE_STEP`.
+    ///
+    /// ⚠️ Les caractères de largeur nulle **survivent à `trim()`** : la propriété
+    /// Unicode `White_Space` ne les couvre pas, si bien que la normalisation de
+    /// la route API rend `Some("\u{200B}")` et non `None`. Sans filtre de
+    /// vacuité ici, le PDF porte un « N° client: » suivi de rien qui décale
+    /// vers le bas la date, la référence d'origine et l'échéance.
+    ///
+    /// La chaîne vide franche couvre l'autre porte d'entrée : une valeur écrite
+    /// hors API — restauration d'une sauvegarde produite ailleurs, correction
+    /// SQL directe — que la route n'a jamais normalisée.
+    ///
+    /// *(Passe 1 de `bmad-code-review` : le site jumeau du bloc gauche, posé par
+    /// la 16-3a, portait déjà ce filtre ; le symptôme n'avait pas été propagé.)*
+    #[test]
+    fn a_blank_or_invisible_client_number_draws_no_line() {
+        let (_, base, i18n) = invoice_fixture();
+        let top = 100.0_f32;
+
+        let reference = build_meta_lines(
+            &InvoicePdfData {
+                debtor_client_number: None,
+                ..base.clone()
+            },
+            &i18n,
+            top,
+        );
+
+        for (label, value) in [
+            ("chaîne vide", ""),
+            ("espaces ASCII", "   "),
+            ("ZWSP U+200B", "\u{200B}"),
+            ("BOM U+FEFF", "\u{FEFF}"),
+            ("word joiner U+2060", "\u{2060}"),
+            ("espace insécable", "\u{00A0}"),
+        ] {
+            let lines = build_meta_lines(
+                &InvoicePdfData {
+                    debtor_client_number: Some(value.into()),
+                    ..base.clone()
+                },
+                &i18n,
+                top,
+            );
+            assert_eq!(
+                lines.len(),
+                reference.len(),
+                "« {label} » ne doit ajouter aucune ligne au bloc"
+            );
+            assert_eq!(
+                lines.last().map(|(_, y)| *y),
+                reference.last().map(|(_, y)| *y),
+                "« {label} » ne doit consommer aucun META_LINE_STEP"
+            );
+        }
+    }
+
+    /// **AC6, conditionnalité** — l'invariant que le delta de taille ne peut PAS
+    /// voir, et la raison d'être de l'extraction de `build_meta_lines`.
+    ///
+    /// ⚠️ **PAS « les deux ordonnées sont identiques » — c'est la signature du
+    /// MUTANT.** Avec un code correct, la ligne « échéance » est
+    /// `META_LINE_STEP` plus **basse** quand le numéro est présent ; c'est la
+    /// mutation (`*y -= META_LINE_STEP` sorti du conditionnel) qui rend les deux
+    /// égales. Une assertion d'égalité échouerait sur du bon code et pousserait
+    /// à implémenter la mutation pour la verdir.
+    ///
+    /// ⚠️ **Ni une ordonnée absolue codée en dur** : elle dépend du fixture,
+    /// alors que le delta est invariant.
+    #[test]
+    fn client_number_line_costs_exactly_one_step_and_nothing_when_absent() {
+        let (_, base, i18n) = invoice_fixture();
+        let top = 100.0_f32;
+
+        let lines_none = build_meta_lines(
+            &InvoicePdfData {
+                debtor_client_number: None,
+                ..base.clone()
+            },
+            &i18n,
+            top,
+        );
+        let lines_some = build_meta_lines(
+            &InvoicePdfData {
+                debtor_client_number: Some("CLI-1".into()),
+                ..base
+            },
+            &i18n,
+            top,
+        );
+
+        let due = i18n.get("invoice-pdf-due-date");
+        let y_none = meta_line_y(&lines_none, due);
+        let y_some = meta_line_y(&lines_some, due);
+        assert_eq!(
+            y_none - y_some,
+            META_LINE_STEP,
+            "la ligne du numéro doit coûter exactement un pas ; un delta nul est \
+             la signature de `*y -= META_LINE_STEP` sorti du conditionnel"
+        );
+
+        assert_eq!(
+            lines_some.len(),
+            lines_none.len() + 1,
+            "une ligne de plus, et une seule"
+        );
+        assert!(
+            !lines_none
+                .iter()
+                .any(|(t, _)| t.starts_with(i18n.get("invoice-pdf-client-number"))),
+            "aucune ligne de numéro ne doit être dessinée quand il est absent"
+        );
+    }
+
+    /// **AC6, position** — entre le n° de facture et la date (D3). Aucun test de
+    /// delta ne pourrait rattraper un mauvais point d'insertion : tout
+    /// emplacement au-dessus de l'échéance donne le même écart.
+    #[test]
+    fn client_number_line_sits_between_invoice_number_and_date() {
+        let (_, base, i18n) = invoice_fixture();
+        let lines = build_meta_lines(
+            &InvoicePdfData {
+                debtor_client_number: Some("CLI-1".into()),
+                ..base
+            },
+            &i18n,
+            100.0,
+        );
+        let labels: Vec<&str> = lines
+            .iter()
+            .map(|(t, _)| t.split(':').next().unwrap())
+            .collect();
+        let pos = |k: &'static str| {
+            labels
+                .iter()
+                .position(|l| *l == i18n.get(k))
+                .unwrap_or_else(|| panic!("clé {k} absente de {labels:?}"))
+        };
+        assert_eq!(
+            pos("invoice-pdf-client-number"),
+            pos("invoice-pdf-number") + 1
+        );
+        assert_eq!(
+            pos("invoice-pdf-date"),
+            pos("invoice-pdf-client-number") + 1
+        );
+    }
+
+    /// **AC6-bis** — un numéro trop long est tronqué, jamais débordé, et la
+    /// borne porte sur la **ligne complète**, libellé compris.
+    ///
+    /// C'est le piège le plus coûteux de la story : tronquer la seule valeur
+    /// puis formater le libellé autour produit une ligne d'environ
+    /// 43 caractères ≈ 92 mm depuis `x = 120`, soit `x ≈ 212` sur une page de
+    /// **210** — du texte hors feuille. Le test le mesure au caractère près.
+    #[test]
+    fn an_overlong_client_number_is_truncated_on_the_whole_line() {
+        let (_, base, i18n) = invoice_fixture();
+        let build = |value: &str| {
+            let lines = build_meta_lines(
+                &InvoicePdfData {
+                    debtor_client_number: Some(value.into()),
+                    ..base.clone()
+                },
+                &i18n,
+                100.0,
+            );
+            meta_line_text(&lines, i18n.get("invoice-pdf-client-number"))
+        };
+
+        let long = build(&"X".repeat(80));
+        assert_eq!(
+            long.chars().count(),
+            META_MAX_CHARS,
+            "la LIGNE COMPLÈTE doit être bornée, pas la seule valeur : « {long} »"
+        );
+        assert!(
+            long.starts_with(i18n.get("invoice-pdf-client-number")),
+            "le libellé doit survivre à la troncature : « {long} »"
+        );
+
+        // Cohérence : deux valeurs longues différentes donnent la même taille.
+        assert_eq!(
+            long.chars().count(),
+            build(&"Y".repeat(120)).chars().count()
+        );
+
+        // Et une valeur courte n'est pas touchée.
+        let short = build("CLI-1");
+        assert!(short.ends_with("CLI-1"), "« {short} »");
+    }
+
+    /// Les autres lignes du bloc ne sont **pas** bornées à `META_MAX_CHARS`, et
+    /// c'est délibéré : borner à 32 couperait « Réf. facture d'origine:
+    /// F-2026-0042 » sur tout avoir français.
+    ///
+    /// ⚠️ Ce test fixe l'absence de borne **à 32**, pas l'absence de toute
+    /// borne. Le numéro de facture peut atteindre 64 caractères via un schéma
+    /// de numérotation configuré, et déborder de la page — problème antérieur à
+    /// cette story, suivi dans l'issue **#293**. Le jour où une borne propre aux
+    /// lignes système sera posée, ce test devra être ajusté, pas supprimé : ce
+    /// qu'il protège, c'est que la borne du numéro de client ne leur soit pas
+    /// appliquée telle quelle.
+    #[test]
+    fn system_generated_meta_lines_are_not_truncated() {
+        let (_, base, i18n) = invoice_fixture();
+        let origin = "Réf. facture d'origine très longue F-2026-0042";
+        let lines = build_meta_lines(
+            &InvoicePdfData {
+                origin_reference: Some(origin.into()),
+                ..base
+            },
+            &i18n,
+            100.0,
+        );
+        let line = meta_line_text(&lines, i18n.get("invoice-pdf-origin-reference"));
+        assert!(
+            line.ends_with(origin),
+            "la référence d'origine ne doit pas être tronquée : « {line} »"
+        );
+    }
+
+    /// Texte de la ligne dont le libellé est `label`.
+    fn meta_line_text(lines: &[(String, f32)], label: &str) -> String {
+        lines
+            .iter()
+            .find(|(text, _)| text.starts_with(label))
+            .unwrap_or_else(|| panic!("ligne « {label} » absente de {lines:?}"))
+            .0
+            .clone()
+    }
+
+    /// **AC8** — appariement **positionnel** de `I18N_KEYS` et `DEFAULT_EN`.
+    ///
+    /// L'assertion de compilation de `types.rs` ne couvre que les **longueurs** :
+    /// décaler une entrée d'un cran les laisse égales, passe `cargo build`, et
+    /// décale silencieusement le repli de toutes les entrées suivantes. Ce test
+    /// résout la clé sur un bundle **vide** (donc via `DEFAULT_EN`) et compare
+    /// au libellé attendu.
+    #[test]
+    fn client_number_key_resolves_to_its_own_english_default() {
+        let empty = QrBillI18n::default();
+        assert_eq!(empty.get("invoice-pdf-client-number"), "Client no.");
+        // Les voisines immédiates, pour attraper un décalage d'un cran.
+        assert_eq!(empty.get("invoice-pdf-website"), "Web");
+        assert_eq!(
+            empty.get("invoice-pdf-origin-reference"),
+            "Original invoice"
         );
     }
 }

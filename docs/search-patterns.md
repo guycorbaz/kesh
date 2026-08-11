@@ -113,7 +113,7 @@ ranking.
 Trois callsites combinent `MATCH AGAINST` (sur la colonne FULLTEXT) avec
 `LIKE` (sur des colonnes structurées préservées) en composition `OR` :
 
-- `contacts::list_by_company_paginated` : `MATCH(name) OR email LIKE`
+- `contacts::list_by_company_paginated` : `MATCH(name) OR email LIKE OR client_number LIKE` *(Story 16-3b, #151 — `client_number` rejoint `email` en `LIKE` et non l'index FULLTEXT : ses séparateurs, `CLI-2026-00042`, cassent les tokens exactement comme le `@` d'un email. ⚠️ La disjonction est présente dans les **deux** branches du callsite — celle du terme échappé vide et celle du cas courant ; n'en traiter qu'une fait cesser silencieusement la recherche par numéro quand le terme n'est fait que d'opérateurs FULLTEXT.)*
 - `invoices::list_by_company_paginated` : `MATCH(c.name) OR invoice_number LIKE OR payment_terms LIKE`
 - `invoices::due_dates_summary` : idem invoices ci-dessus
 

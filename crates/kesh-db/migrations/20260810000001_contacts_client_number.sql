@@ -1,0 +1,67 @@
+-- Story 16-3b (#151) : numéro de client de l'émetteur sur le PDF de facture.
+--
+-- Dernier des trois volets de #151, après le récapitulatif TVA (PR #267) et les
+-- coordonnées de l'émetteur (Story 16-3a). Le bloc métadonnées du PDF ne portait
+-- que le titre, le n° de facture, la date, la référence d'origine et l'échéance :
+-- un client ne pouvait pas rapprocher la facture de son propre dossier
+-- fournisseur, et l'émetteur ne pouvait pas remonter d'une facture papier au
+-- contact.
+--
+-- Le numéro est **saisi**, jamais auto-généré (D1) : une numérotation
+-- automatique imposerait un format, une séquence et une politique de reprise du
+-- parc que personne n'a demandés — et le cas d'usage visé, « que mon client
+-- rapproche de SON dossier fournisseur », appelle une référence imposée par le
+-- client, qu'aucune séquence ne peut produire.
+--
+-- Longueur alignée sur `contacts.phone` (VARCHAR(50), 20260414000001) : accueille
+-- aussi bien `42` que `CLI-2026-00042` ou une référence externe.
+--
+-- ⚠️ C'est une longueur de STOCKAGE, PAS d'affichage. Le bloc métadonnées du PDF
+-- ne dispose que de ~70 mm, soit une trentaine de caractères à 9 pt — LIBELLÉ
+-- COMPRIS, la troncature portant sur la ligne formatée `"{libellé}: {valeur}"`
+-- (`pdf.rs`, patron `IDENTITY_MAX_CHARS`). Une valeur plus longue est TRONQUÉE au
+-- rendu, jamais refusée.
+--
+-- ---------------------------------------------------------------------------
+-- UNICITÉ PARTIELLE — le numéro d'un contact ARCHIVÉ est libéré
+--
+-- MariaDB n'a pas de UNIQUE partiel natif (pas de syntaxe `WHERE active = TRUE`).
+-- On reprend à l'identique le « Workaround Option A » déjà utilisé pour
+-- `reconciliation_rules.active_uniq` (20260513000001) et
+-- `accounts.singleton_role` (20260722000001) : une colonne synthétique
+-- GENERATED ALWAYS AS ... VIRTUAL qui vaut le numéro si le contact est actif et
+-- NULL sinon. Le UNIQUE sur (company_id, client_number_uniq) exploite la
+-- convention SQL « NULL n'est jamais égal à NULL » → les contacts archivés, et
+-- ceux sans numéro, ne participent pas à la contrainte.
+-- Pré-requis : MariaDB >= 10.6 pour un UNIQUE sur colonne VIRTUAL (compose
+-- épinglé sur mariadb:10.11 — OK).
+--
+-- ⚠️ Pourquoi PARTIELLE et non plate, alors que `uq_contacts_company_ide` (même
+-- table) est plate : un IDE est un identifiant attribué par l'État, jamais
+-- réattribué à une autre entité — le verrou permanent y est sémantiquement juste.
+-- Un numéro de client est une étiquette interne, recyclable par nature. Et
+-- surtout, un contact archivé n'est PAS modifiable (`repositories/contacts.rs`,
+-- `IllegalStateTransition`) et aucune route de désarchivage n'existe : une
+-- contrainte plate aurait brûlé le numéro À VIE, sans recours applicatif. C'est
+-- le mode d'échec que 20260722000001 documente déjà — « un compte archivé
+-- squatterait son rôle à vie … 409 permanent causé par un compte mort ».
+--
+-- ⚠️ L'unicité est INSENSIBLE À LA CASSE : `contacts` ne déclare aucune collation
+-- et hérite du défaut MariaDB (`_ci`). `CLI-1` et `cli-1` se percutent donc, ce
+-- qui est voulu — deux clients ne doivent pas différer par la seule casse.
+--
+-- ---------------------------------------------------------------------------
+-- Non-breaking (ADD COLUMN nullable + colonne générée + contrainte sur celle-ci)
+-- → PAS de bump `kesh_version_min_required` ni de version Cargo (P1/P2).
+--
+-- DDL pur : aucun UPDATE, aucun INSERT. Ne relève donc NI du registre
+-- `POST_RESTORE_BACKFILLS` NI des `EXEMPT_MIGRATIONS` (garde-fou P7) — il n'y a
+-- rien à rejouer après un import d'installation, ce que constate
+-- `every_data_backfill_migration_is_triaged` en ne la sélectionnant jamais.
+ALTER TABLE contacts
+    ADD COLUMN client_number VARCHAR(50) NULL
+        COMMENT 'Numéro de client attribué par l''émetteur (Story 16-3b) — NULL = non renseigné',
+    ADD COLUMN client_number_uniq VARCHAR(50) GENERATED ALWAYS AS (
+        CASE WHEN active THEN client_number ELSE NULL END
+    ) VIRTUAL,
+    ADD CONSTRAINT uq_contacts_company_client_number UNIQUE (company_id, client_number_uniq);

@@ -25,14 +25,22 @@ use crate::util::search::{escape_boolean_ft, escape_like};
 
 // pub(crate) : réutilisé par `repositories::reconciliation` (résolution des
 // contacts des propositions) — une seule liste de colonnes à maintenir.
+//
+// ⚠️ `client_number_uniq` (colonne GENERATED VIRTUAL, migration 20260810000001)
+// n'a PAS sa place ici : elle n'existe que pour porter l'unicité partielle et
+// n'est pas un champ de `Contact`.
 pub(crate) const COLUMNS: &str = "id, company_id, contact_type, name, first_name, last_name, is_client, is_supplier, \
     address, address_street, address_building, address_postal_code, address_city, \
-    address_country, email, phone, ide_number, default_payment_terms, default_payment_terms_days, \
+    address_country, email, phone, ide_number, client_number, default_payment_terms, default_payment_terms_days, \
     language, salutation, active, version, created_at, updated_at";
 
+// ⚠️ Duplique `COLUMNS` mot pour mot : deux chaînes distinctes écrites à la
+// main. Toute colonne ajoutée à l'une DOIT l'être à l'autre — l'oublier ici
+// compile, laisse les tests de `list` au vert et rend `find_by_id`
+// silencieusement amnésique sur le champ.
 const FIND_BY_ID_SQL: &str = "SELECT id, company_id, contact_type, name, first_name, last_name, is_client, is_supplier, \
     address, address_street, address_building, address_postal_code, address_city, \
-    address_country, email, phone, ide_number, default_payment_terms, default_payment_terms_days, \
+    address_country, email, phone, ide_number, client_number, default_payment_terms, default_payment_terms_days, \
     language, salutation, active, version, created_at, updated_at FROM contacts WHERE id = ?";
 
 /// Snapshot JSON d'un contact pour l'audit log (Story 3.5 pattern + P8 `companyId`).
@@ -48,6 +56,10 @@ fn contact_snapshot_json(c: &Contact) -> serde_json::Value {
         "email": c.email,
         "phone": c.phone,
         "ideNumber": c.ide_number,
+        // Story 16-3b : jumeau fonctionnel d'`ideNumber` — un identifiant du
+        // contact, unique par société. L'omettre rendrait l'audit aveugle à sa
+        // modification sans rien casser ni faire échouer la compilation.
+        "clientNumber": c.client_number,
         "defaultPaymentTerms": c.default_payment_terms,
         "defaultPaymentTermsDays": c.default_payment_terms_days,
         "language": c.language.map(|l| l.as_str()),
@@ -168,18 +180,31 @@ fn push_where_clauses<'a>(
             // (prefix wildcard auto-append). `email` reste LIKE car format
             // structuré (`@`/`.` séparateurs de tokens FULLTEXT cassent
             // les fragments du type `@gmail`).
+            // Story 16-3b (#151) : `client_number` rejoint `email` en LIKE et
+            // NON l'index FULLTEXT — un `CLI-2026-00042` subirait exactement le
+            // sort décrit ci-dessus, ses séparateurs cassant les tokens.
+            // `escape_like` préserve les tirets, donc le fragment fonctionne.
+            //
+            // ⚠️ LES DEUX BRANCHES, ou aucune. N'en traiter qu'une compile et
+            // passe les tests dont le terme survit à `escape_boolean_ft` — mais
+            // la recherche cesse SILENCIEUSEMENT de chercher le numéro quand le
+            // terme n'est fait que d'opérateurs FULLTEXT.
             let escaped = escape_boolean_ft(trimmed);
-            let email_pattern = format!("%{}%", escape_like(trimmed));
+            let like_pattern = format!("%{}%", escape_like(trimmed));
             if escaped.is_empty() {
-                qb.push(" AND email LIKE ");
-                qb.push_bind(email_pattern);
-                qb.push(" ESCAPE '\\\\'");
+                qb.push(" AND (email LIKE ");
+                qb.push_bind(like_pattern.clone());
+                qb.push(" ESCAPE '\\\\' OR client_number LIKE ");
+                qb.push_bind(like_pattern);
+                qb.push(" ESCAPE '\\\\')");
             } else {
                 let bool_query = format!("{escaped}*");
                 qb.push(" AND (MATCH(name) AGAINST(");
                 qb.push_bind(bool_query);
                 qb.push(" IN BOOLEAN MODE) OR email LIKE ");
-                qb.push_bind(email_pattern);
+                qb.push_bind(like_pattern.clone());
+                qb.push(" ESCAPE '\\\\' OR client_number LIKE ");
+                qb.push_bind(like_pattern);
                 qb.push(" ESCAPE '\\\\')");
             }
         }
@@ -200,9 +225,9 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewContact) -> Result<C
     let result = sqlx::query(
         "INSERT INTO contacts (company_id, contact_type, name, first_name, last_name, is_client, is_supplier, \
          address, address_street, address_building, address_postal_code, address_city, \
-         address_country, email, phone, ide_number, default_payment_terms, \
+         address_country, email, phone, ide_number, client_number, default_payment_terms, \
          default_payment_terms_days, language, salutation) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(new.company_id)
     .bind(new.contact_type)
@@ -220,6 +245,7 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewContact) -> Result<C
     .bind(&new.email)
     .bind(&new.phone)
     .bind(&new.ide_number)
+    .bind(&new.client_number)
     .bind(&new.default_payment_terms)
     .bind(new.default_payment_terms_days)
     .bind(new.language)
@@ -389,6 +415,11 @@ fn is_no_op_change(before: &Contact, changes: &ContactUpdate) -> bool {
         && before.email == changes.email
         && before.phone == changes.phone
         && before.ide_number == changes.ide_number
+        // Story 16-3b : sans cette ligne, attribuer son numéro à une fiche
+        // existante sans rien changer d'autre — le geste central de la story —
+        // est classé no-op : rollback, `200 OK`, et la donnée est perdue en
+        // silence.
+        && before.client_number == changes.client_number
         && before.default_payment_terms == changes.default_payment_terms
         && before.default_payment_terms_days == changes.default_payment_terms_days
         && before.language == changes.language
@@ -451,7 +482,7 @@ pub async fn update(
         "UPDATE contacts SET contact_type = ?, name = ?, first_name = ?, last_name = ?, is_client = ?, is_supplier = ?, \
          address = ?, address_street = ?, address_building = ?, address_postal_code = ?, \
          address_city = ?, address_country = ?, \
-         email = ?, phone = ?, ide_number = ?, default_payment_terms = ?, \
+         email = ?, phone = ?, ide_number = ?, client_number = ?, default_payment_terms = ?, \
          default_payment_terms_days = ?, language = ?, salutation = ?, \
          version = version + 1 \
          WHERE id = ? AND version = ? AND active = TRUE",
@@ -471,6 +502,7 @@ pub async fn update(
     .bind(&changes.email)
     .bind(&changes.phone)
     .bind(&changes.ide_number)
+    .bind(&changes.client_number)
     .bind(&changes.default_payment_terms)
     .bind(changes.default_payment_terms_days)
     .bind(changes.language)
@@ -659,6 +691,7 @@ mod tests {
             email: None,
             phone: None,
             ide_number: None,
+            client_number: None,
             default_payment_terms: None,
             default_payment_terms_days: None,
             language: None,
@@ -833,6 +866,7 @@ mod tests {
                 email: None,
                 phone: None,
                 ide_number: None,
+                client_number: None,
                 default_payment_terms: None,
                 default_payment_terms_days: None,
                 language: None,
@@ -866,6 +900,7 @@ mod tests {
                 email: None,
                 phone: None,
                 ide_number: None,
+                client_number: None,
                 default_payment_terms: None,
                 default_payment_terms_days: None,
                 language: None,
@@ -915,6 +950,7 @@ mod tests {
                 email: None,
                 phone: None,
                 ide_number: None,
+                client_number: None,
                 default_payment_terms: None,
                 default_payment_terms_days: None,
                 language: None,
@@ -994,6 +1030,7 @@ mod tests {
                 email: None,
                 phone: None,
                 ide_number: None,
+                client_number: None,
                 default_payment_terms: None,
                 default_payment_terms_days: None,
                 language: None,
@@ -1490,6 +1527,7 @@ mod tests {
             email: c.email.clone(),
             phone: c.phone.clone(),
             ide_number: c.ide_number.clone(),
+            client_number: c.client_number.clone(),
             default_payment_terms: c.default_payment_terms.clone(),
             default_payment_terms_days: c.default_payment_terms_days,
             language: c.language,
@@ -1633,6 +1671,222 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(count.0, 1);
+
+        cleanup_test_contacts(&pool, company_id).await;
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 16-3b (#151) — numéro de client
+    // -----------------------------------------------------------------------
+
+    /// AC2 + AC2-ter : le champ traverse le repository sans se perdre, et une
+    /// modification portant sur LUI SEUL est réellement écrite.
+    ///
+    /// L'aller-retour passe délibérément par **`find_by_id`** et non par
+    /// `list` : `FIND_BY_ID_SQL` duplique `COLUMNS` mot pour mot, et l'oubli du
+    /// champ dans cette seule chaîne compile, laisse `list` au vert et rend
+    /// `find_by_id` silencieusement amnésique.
+    ///
+    /// Le contrôle de `version` n'est pas décoratif : sans `client_number` dans
+    /// `is_no_op_change`, `update` rollback et retourne `Ok(before)` — un
+    /// `200 OK` sans écriture. Seule la version distingue les deux cas.
+    #[tokio::test]
+    async fn client_number_roundtrip_and_isolated_update_bumps_version() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let user_id = get_admin_user_id(&pool).await;
+        cleanup_test_contacts(&pool, company_id).await;
+
+        let mut new = new_contact(company_id, "TestContact CN Roundtrip");
+        new.client_number = Some("CLI-RT-0001".into());
+        let created = create(&pool, user_id, new).await.unwrap();
+        assert_eq!(created.client_number.as_deref(), Some("CLI-RT-0001"));
+
+        let found = find_by_id(&pool, created.id).await.unwrap().unwrap();
+        assert_eq!(
+            found.client_number.as_deref(),
+            Some("CLI-RT-0001"),
+            "find_by_id doit relire le numéro (FIND_BY_ID_SQL duplique COLUMNS)"
+        );
+
+        // Modification du SEUL numéro — le geste central de la story.
+        let mut changes = contact_to_update(&found);
+        changes.client_number = Some("CLI-RT-0002".into());
+        let updated = update(&pool, found.id, found.version, user_id, changes)
+            .await
+            .unwrap();
+        assert_eq!(updated.client_number.as_deref(), Some("CLI-RT-0002"));
+        assert_eq!(
+            updated.version,
+            found.version + 1,
+            "un changement isolé du numéro doit bumper la version — sinon il a été \
+             classé no-op et l'UPDATE n'a jamais eu lieu"
+        );
+
+        let reread = find_by_id(&pool, updated.id).await.unwrap().unwrap();
+        assert_eq!(reread.client_number.as_deref(), Some("CLI-RT-0002"));
+
+        cleanup_test_contacts(&pool, company_id).await;
+    }
+
+    /// AC1 cas 1 : deux contacts **actifs** de la même société ne peuvent pas
+    /// porter le même numéro.
+    #[tokio::test]
+    async fn client_number_rejects_duplicate_between_active_contacts() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let user_id = get_admin_user_id(&pool).await;
+        cleanup_test_contacts(&pool, company_id).await;
+
+        let mut a = new_contact(company_id, "TestContact CN Dup A");
+        a.client_number = Some("CLI-DUP-1".into());
+        create(&pool, user_id, a).await.unwrap();
+
+        let mut b = new_contact(company_id, "TestContact CN Dup B");
+        b.client_number = Some("CLI-DUP-1".into());
+        let err = create(&pool, user_id, b).await.unwrap_err();
+        assert!(
+            matches!(err, DbError::UniqueConstraintViolation(_)),
+            "attendu UniqueConstraintViolation, obtenu {err:?}"
+        );
+
+        cleanup_test_contacts(&pool, company_id).await;
+    }
+
+    /// AC1 cas 2 : plusieurs `NULL` coexistent. C'est l'invariant dont dépend
+    /// toute la décision D2 — s'il tombait, la majorité du parc, qui n'aura
+    /// jamais de numéro, deviendrait insaisissable.
+    #[tokio::test]
+    async fn client_number_allows_multiple_nulls() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let user_id = get_admin_user_id(&pool).await;
+        cleanup_test_contacts(&pool, company_id).await;
+
+        let a = create(
+            &pool,
+            user_id,
+            new_contact(company_id, "TestContact CN Null A"),
+        )
+        .await
+        .unwrap();
+        let b = create(
+            &pool,
+            user_id,
+            new_contact(company_id, "TestContact CN Null B"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(a.client_number, None);
+        assert_eq!(b.client_number, None);
+
+        cleanup_test_contacts(&pool, company_id).await;
+    }
+
+    /// AC1 cas 3 : l'unicité est **insensible à la casse** — `contacts` ne
+    /// déclare aucune collation et hérite du défaut MariaDB (`_ci`). C'est
+    /// souhaitable (deux clients ne doivent pas différer par la seule casse),
+    /// mais c'est une décision, pas un effet de bord : d'où ce test.
+    #[tokio::test]
+    async fn client_number_uniqueness_is_case_insensitive() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let user_id = get_admin_user_id(&pool).await;
+        cleanup_test_contacts(&pool, company_id).await;
+
+        let mut a = new_contact(company_id, "TestContact CN Case A");
+        a.client_number = Some("CLI-CASE-1".into());
+        create(&pool, user_id, a).await.unwrap();
+
+        let mut b = new_contact(company_id, "TestContact CN Case B");
+        b.client_number = Some("cli-case-1".into());
+        let err = create(&pool, user_id, b).await.unwrap_err();
+        assert!(
+            matches!(err, DbError::UniqueConstraintViolation(_)),
+            "la collation _ci doit rendre CLI-CASE-1 et cli-case-1 identiques, obtenu {err:?}"
+        );
+
+        cleanup_test_contacts(&pool, company_id).await;
+    }
+
+    /// AC1 cas 4 : **l'invariant de D2-bis**, et rien d'autre ne le vérifie.
+    ///
+    /// La contrainte porte sur la colonne générée `client_number_uniq`, nulle
+    /// dès que le contact est archivé : le numéro redevient donc attribuable.
+    /// Sans cette unicité partielle, le numéro serait brûlé À VIE — un contact
+    /// archivé n'étant pas modifiable et aucune route de désarchivage
+    /// n'existant, aucun recours applicatif ne le libérerait.
+    #[tokio::test]
+    async fn archived_contact_releases_its_client_number() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let user_id = get_admin_user_id(&pool).await;
+        cleanup_test_contacts(&pool, company_id).await;
+
+        let mut a = new_contact(company_id, "TestContact CN Archived");
+        a.client_number = Some("CLI-ARCH-1".into());
+        let created = create(&pool, user_id, a).await.unwrap();
+
+        archive(&pool, created.id, created.version, user_id)
+            .await
+            .unwrap();
+
+        let mut b = new_contact(company_id, "TestContact CN Successor");
+        b.client_number = Some("CLI-ARCH-1".into());
+        let successor = create(&pool, user_id, b)
+            .await
+            .expect("le numéro d'un contact archivé doit être réattribuable à un actif");
+        assert_eq!(successor.client_number.as_deref(), Some("CLI-ARCH-1"));
+
+        cleanup_test_contacts(&pool, company_id).await;
+    }
+
+    /// AC2-bis : `contact_snapshot_json` est une liste de champs écrite à la
+    /// main, non-SQL, que les listes de colonnes ne couvrent pas. Son omission
+    /// rendrait l'audit aveugle à la modification du numéro **sans rien casser
+    /// ni faire échouer la compilation**.
+    #[tokio::test]
+    async fn client_number_change_is_written_to_audit_log() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let user_id = get_admin_user_id(&pool).await;
+        cleanup_test_contacts(&pool, company_id).await;
+
+        let mut new = new_contact(company_id, "TestContact CN Audit");
+        new.client_number = Some("CLI-AUD-1".into());
+        let created = create(&pool, user_id, new).await.unwrap();
+
+        let mut changes = contact_to_update(&created);
+        changes.client_number = Some("CLI-AUD-2".into());
+        let updated = update(&pool, created.id, created.version, user_id, changes)
+            .await
+            .unwrap();
+
+        let entries = audit_log::find_by_entity(&pool, "contact", updated.id, 10)
+            .await
+            .unwrap();
+        let update_audit = entries
+            .iter()
+            .find(|e| e.action == "contact.updated")
+            .expect("audit entry contact.updated must exist");
+        let details = update_audit.details_json.as_ref().unwrap();
+
+        assert_eq!(
+            details
+                .get("before")
+                .and_then(|b| b.get("clientNumber"))
+                .and_then(|v| v.as_str()),
+            Some("CLI-AUD-1"),
+            "le snapshot 'before' doit porter l'ancien numéro"
+        );
+        assert_eq!(
+            details
+                .get("after")
+                .and_then(|a| a.get("clientNumber"))
+                .and_then(|v| v.as_str()),
+            Some("CLI-AUD-2"),
+            "le snapshot 'after' doit porter le nouveau numéro"
+        );
 
         cleanup_test_contacts(&pool, company_id).await;
     }

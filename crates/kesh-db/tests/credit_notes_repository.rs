@@ -43,6 +43,7 @@ async fn make_contact(pool: &MySqlPool, company_id: i64, admin_id: i64) -> i64 {
             email: None,
             phone: None,
             ide_number: None,
+            client_number: None,
             default_payment_terms: Some("30".into()),
             default_payment_terms_days: None,
             language: None,
