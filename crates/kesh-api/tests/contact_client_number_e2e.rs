@@ -333,3 +333,51 @@ async fn archiving_a_contact_frees_its_client_number_through_the_api(pool: MySql
         "le numéro d'un contact archivé doit être réattribuable"
     );
 }
+
+/// AC10 — le numéro est cherchable. Sans cela, la moitié du « so that » de la
+/// story (« retrouver un contact depuis une facture papier ») n'a **aucun**
+/// chemin : l'utilisateur tenant une facture portant « N° client :
+/// CLI-2026-00042 » ne peut littéralement pas remonter au contact.
+///
+/// Les trois cas couvrent les **deux** branches de la clause de recherche :
+/// - terme complet et fragment → branche FULLTEXT + `LIKE` ;
+/// - terme fait **uniquement** d'opérateurs FULLTEXT (`escape_boolean_ft` les
+///   retire tous, l'échappé est vide) → branche `LIKE` seule. C'est celle
+///   qu'un traitement partiel laisse muette : elle compile, et cesse
+///   simplement de chercher le numéro.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn contacts_are_searchable_by_client_number(pool: MySqlPool) {
+    let (app, token) = setup(&pool).await;
+
+    post_contact(&app, &token, "CN Searchable SA", Some("CLI-2026-00042")).await;
+    post_contact(&app, &token, "CN Unrelated SA", None).await;
+
+    async fn search(app: &TestApp, token: &str, term: &str) -> serde_json::Value {
+        app.client
+            .get(app.url("/api/v1/contacts"))
+            .query(&[("search", term)])
+            .header("Authorization", format!("Bearer {token}"))
+            .send()
+            .await
+            .expect("list request")
+            .json()
+            .await
+            .expect("json")
+    }
+
+    for (term, why) in [
+        ("CLI-2026-00042", "numéro exact"),
+        ("00042", "fragment du numéro"),
+        ("-", "terme fait uniquement d'opérateurs FULLTEXT"),
+    ] {
+        let body = search(&app, &token, term).await;
+        let items = body["items"].as_array().expect("items");
+        assert_eq!(
+            items.len(),
+            1,
+            "recherche « {term} » ({why}) : 1 contact attendu, obtenu {}",
+            items.len()
+        );
+        assert_eq!(items[0]["name"], "CN Searchable SA");
+    }
+}

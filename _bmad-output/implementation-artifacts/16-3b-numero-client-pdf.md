@@ -243,10 +243,10 @@ La recherche de contacts accepte le numéro de client.
 - [x] **T4 — Tests repository** (AC1, AC2, AC2-bis, AC2-ter). Aller-retour `create`/`find_by_id`/`update`/`find_by_id` ; unicité rejetée **entre contacts actifs** ; **deux `NULL` acceptés** ; **numéro d'un contact archivé réattribuable à un actif** (l'invariant de D2-bis) ; trace d'audit ; et `update` du **seul** `client_number` → nouvelle valeur **et** `version` incrémentée.
 - [x] **T5 — Route et DTO** (AC3, AC4). `ContactResponse` (`contacts.rs:151`) + `impl From<Contact> for ContactResponse` (l. 186) + **les deux** DTO d'entrée (`CreateContactRequest` l. 70 et `UpdateContactRequest` l. 108), **avec `normalize_optional()`** sur le champ (l. 259) comme pour `email`/`phone`. Pour l'erreur : **étendre `map_contact_error` (`contacts.rs:461`)** d'une branche, ajouter la variante `AppError::ClientNumberAlreadyExists` et sa ligne dans le `match` de `errors.rs` (409 / `CLIENT_NUMBER_ALREADY_EXISTS`). Ne **pas** écrire un second helper : le repository rend déjà `DbError::UniqueConstraintViolation`, tout le chemin existe.
 - [x] **T6 — Tests API** (AC3, AC4). Aller-retour `POST`/`GET` ; doublon → **409** + code d'erreur asserté ; **non-sur-capture** entre les deux contraintes (calquer `contacts.rs:765`).
-- [ ] **T7 — Frontend** (AC4, AC5, AC8, AC10). Type TS (`contacts.types.ts`, interface `ContactResponse`), champ de la fiche contact, **hydratation dans `openEdit` (l. 240-258) — la ligne dont l'oubli efface le champ à chaque édition**, **placeholder de recherche corrigé** (l. 441), libellés sur les 4 locales. ⚠️ **Pas de colonne dans le tableau de liste** (écartée en passe 6) — donc **ne pas toucher au `colspan`**, câblé en dur à deux endroits. Respecter `lint-i18n-ownership`.
-- [ ] **T7-ter — Message du 409 à l'écran** (AC4). Le frontend branche les codes **un par un** (`frontend/src/routes/(app)/contacts/+page.svelte:349-358`) : `OPTIMISTIC_LOCK_CONFLICT`, puis `IDE_ALREADY_EXISTS` → `contact-error-ide-duplicate`, **sinon `err.message` brut du backend**. Sans branche dédiée, l'utilisateur qui saisit un doublon reçoit un message non maîtrisé et non traduit, là où le doublon d'IDE a droit au sien. Ajouter la branche `CLIENT_NUMBER_ALREADY_EXISTS` et la clé `contact-error-client-number-duplicate` **dans les 4 locales** — le domaine `contact-*` est aujourd'hui à 59 clés dans chacune, sans dérive : ne pas l'ouvrir.
-- [ ] **T7-bis — Recherche par numéro** (AC10). Branche `OR client_number LIKE ?` dans `repositories/contacts.rs`, **pas** dans l'index FULLTEXT — le commentaire l. 162-165 explique pourquoi les séparateurs cassent les tokens (et `escape_like` préserve les tirets, donc `CLI-2026-00042` fonctionne). ⚠️ **Il y a DEUX sites `email LIKE`, l. 174 et l. 181** — la première branche sert quand le terme échappé est vide, la seconde le cas courant. N'en traiter qu'un compile, passe les tests dont le terme survit à `escape_boolean_ft`, et **cesse silencieusement de chercher le numéro** quand le terme n'est fait que d'opérateurs FULLTEXT. Échec rare et muet : les deux sites, ou aucun.
-- [ ] **T8 — E2E fiche contact** (AC5). Saisie → enregistrement → rechargement → relecture. ⚠️ Le fichier **DOIT** être nommé `*.spec.ts` : `playwright.config.ts:35` filtre sur `testMatch: /(.+\.)?spec\.[jt]s/`, et un `*.test.ts` posé dans `tests/e2e/` est **silencieusement ignoré** — il ne rougit jamais, il se tait.
+- [x] **T7 — Frontend** (AC4, AC5, AC8, AC10). Type TS (`contacts.types.ts`, interface `ContactResponse`), champ de la fiche contact, **hydratation dans `openEdit` (l. 240-258) — la ligne dont l'oubli efface le champ à chaque édition**, **placeholder de recherche corrigé** (l. 441), libellés sur les 4 locales. ⚠️ **Pas de colonne dans le tableau de liste** (écartée en passe 6) — donc **ne pas toucher au `colspan`**, câblé en dur à deux endroits. Respecter `lint-i18n-ownership`.
+- [x] **T7-ter — Message du 409 à l'écran** (AC4). Le frontend branche les codes **un par un** (`frontend/src/routes/(app)/contacts/+page.svelte:349-358`) : `OPTIMISTIC_LOCK_CONFLICT`, puis `IDE_ALREADY_EXISTS` → `contact-error-ide-duplicate`, **sinon `err.message` brut du backend**. Sans branche dédiée, l'utilisateur qui saisit un doublon reçoit un message non maîtrisé et non traduit, là où le doublon d'IDE a droit au sien. Ajouter la branche `CLIENT_NUMBER_ALREADY_EXISTS` et la clé `contact-error-client-number-duplicate` **dans les 4 locales** — le domaine `contact-*` est aujourd'hui à 59 clés dans chacune, sans dérive : ne pas l'ouvrir.
+- [x] **T7-bis — Recherche par numéro** (AC10). Branche `OR client_number LIKE ?` dans `repositories/contacts.rs`, **pas** dans l'index FULLTEXT — le commentaire l. 162-165 explique pourquoi les séparateurs cassent les tokens (et `escape_like` préserve les tirets, donc `CLI-2026-00042` fonctionne). ⚠️ **Il y a DEUX sites `email LIKE`, l. 174 et l. 181** — la première branche sert quand le terme échappé est vide, la seconde le cas courant. N'en traiter qu'un compile, passe les tests dont le terme survit à `escape_boolean_ft`, et **cesse silencieusement de chercher le numéro** quand le terme n'est fait que d'opérateurs FULLTEXT. Échec rare et muet : les deux sites, ou aucun.
+- [x] **T8 — E2E fiche contact** (AC5). Saisie → enregistrement → rechargement → relecture. ⚠️ Le fichier **DOIT** être nommé `*.spec.ts` : `playwright.config.ts:35` filtre sur `testMatch: /(.+\.)?spec\.[jt]s/`, et un `*.test.ts` posé dans `tests/e2e/` est **silencieusement ignoré** — il ne rougit jamais, il se tait.
 - [ ] **T9 — PDF** (AC6, AC6-bis, AC8). `InvoicePdfData.debtor_client_number`, rendu conditionnel calqué sur `origin_reference` (`pdf.rs:315-324`), **extraction de la fonction pure** de construction du bloc métadonnées (sans elle, AC6 est intestable), **constante de troncature dédiée au bloc droit** (70 mm, donc < `IDENTITY_MAX_CHARS`), clé i18n à la **même position** dans `I18N_KEYS` et `DEFAULT_EN`.
 - [ ] **T10 — Service de génération** (AC6, AC7, D5). Renseigner le champ depuis le contact destinataire dans `invoice_pdf_service.rs` **et** au site de construction de l'avoir. C'est le site que la mutation doit tuer.
 - [ ] **T11 — Tests PDF** (AC6, AC6-bis, AC7). Présence par delta de taille ; **conditionnalité par assertion de position** sur la fonction pure extraite en T9 — l'assertion est **`y_none − y_some == 4.5`**, et ⚠️ **surtout PAS « les deux ordonnées sont identiques »** (signature du mutant) **ni une ordonnée absolue codée en dur** (fragile au fixture, et fausse dans la variante retirée) — cf. AC6 ; troncature calibrée ; avoir testé au site de construction, sans `..base` d'une fixture de facture.
@@ -373,6 +373,8 @@ Le seul précédent du dépôt **écarte explicitement** la comparaison octet à
 
 - **Une affirmation de la spec RÉFUTÉE à l'exécution.** AC3 et T5 annonçaient : « omettre la ligne dans `From<Contact>` **compile**, stocke, et rend `null` pour toujours », en s'appuyant sur le HIGH de la passe 3 de 16-3a. C'est **faux pour `ContactResponse`** : le littéral de `From` est complet, sans `..Default::default()`, donc l'omission est un `E0063` — le compilateur *vérifie* bien cette couture. La mutation réellement silencieuse est `client_number: None` à la place du champ ; c'est celle qui a été jouée, et le test la tue. L'AC reste juste dans sa conclusion (il faut un test d'aller-retour HTTP), pas dans son motif.
 
+- **AC5 dessinait une séparation que l'écran ne permet pas.** Il posait que la preuve 1 (création) resterait **verte** sous la mutation « hydratation d'`openEdit` retirée », d'où la nécessité de la preuve 2. Mesuré : **les deux tombent**. Motif — la colonne « N° client » de la liste ayant été écartée en passe 6, la boîte d'édition est le **seul** endroit de l'interface où le numéro se relit ; toute preuve de persistance passe donc par l'hydratation. La preuve 2 reste néanmoins distincte par ce qu'elle *mute* (un champ sans rapport, et le `PUT` full-replace qui perd le numéro), et c'est ce qui justifie de la garder.
+
 ### Campagne de mutation — T4
 
 Les trois mutations prescrites par les Conventions de test ont été **exécutées**, pas raisonnées :
@@ -395,9 +397,19 @@ Restauration contrôlée derrière : 6/6 verts.
 
 Restauration contrôlée derrière : 5/5 verts.
 
+### Campagnes de mutation — T7-bis et T8
+
+| Mutation | Test qui devait mourir | Résultat |
+|---|---|---|
+| une seule des deux branches `LIKE` traitée | recherche par terme fait **uniquement** d'opérateurs FULLTEXT | **FAILED** ✅ (`1 attendu, obtenu 0`) |
+| hydratation retirée d'`openEdit` | survie du numéro à l'édition | **FAILED** ✅ — et le `npm run build` reste **vert**, ce qui est tout le propos |
+
+Restaurations contrôlées derrière : 2/2 et 6/6 verts.
+
 ### Completion Notes List
 
 - **T1, T2** (2026-08-10) — migration + audit d'idempotence.
+- **T7, T7-ter, T7-bis, T8** (2026-08-11) — type TS, champ de la fiche, hydratation d'`openEdit`, payload, branche `CLIENT_NUMBER_ALREADY_EXISTS`, placeholder de recherche corrigé ; recherche `OR client_number LIKE ?` sur les **deux** branches ; 3 clés i18n × 4 locales (`contact-*` passe de 59 à **62 dans chacune**, sans dérive). Gate ciblé : `svelte-check` 0 erreur, `lint-i18n-ownership` PASS, Vitest **512/512**, E2E `contact-client-number.spec.ts` **2/2** et `contacts.spec.ts` **8 passed / 2 skipped** (non-régression).
 - **T5, T6** (2026-08-11) — DTO d'entrée et de sortie, `normalize_optional`, `MAX_CLIENT_NUMBER_LEN`, branche de `map_contact_error` sur le **nom de contrainte**, variante `AppError::ClientNumberAlreadyExists` → **409 `CLIENT_NUMBER_ALREADY_EXISTS`**. 5 tests E2E API (`contact_client_number_e2e.rs`, nouveau) + 3 tests unitaires dont la **non-sur-capture dans les deux sens** entre les deux contraintes de la table.
 - **T3, T3-bis, T3-ter, T4** (2026-08-11) — le champ traverse les **sept** listes ; 6 tests repository, gate ciblé `binary(kesh-db lib)` vert, 3/3 mutations tuées. **Gate complet au push.**
 
@@ -412,6 +424,10 @@ Restauration contrôlée derrière : 5/5 verts.
 - `crates/kesh-api/src/routes/contacts.rs`
 - `crates/kesh-api/src/errors.rs`
 - `crates/kesh-api/tests/contact_client_number_e2e.rs` *(nouveau)*
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `frontend/src/lib/features/contacts/contacts.types.ts`
+- `frontend/src/routes/(app)/contacts/+page.svelte`
+- `frontend/tests/e2e/contact-client-number.spec.ts` *(nouveau)*
 - `crates/kesh-api/src/routes/credit_notes.rs`
 - `crates/kesh-api/src/routes/invoice_email.rs`
 - `crates/kesh-api/src/routes/invoice_pdf_service.rs`

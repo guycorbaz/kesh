@@ -48,6 +48,8 @@ export interface ContactResponse {
 	phone: string | null;
 	/** Forme normalisée `CHE109322551` (12 chars) ou null. Formatée à l'affichage. */
 	ideNumber: string | null;
+	/** Numéro de client attribué par l'émetteur (Story 16-3b, #151). */
+	clientNumber: string | null;
 	defaultPaymentTerms: string | null;
 	/** Délai de paiement en jours (#245). `null` = non renseigné. */
 	defaultPaymentTermsDays: number | null;
@@ -78,6 +80,8 @@ export interface CreateContactRequest {
 	email?: string | null;
 	phone?: string | null;
 	ideNumber?: string | null;
+	/** Numéro de client (Story 16-3b, #151). Absent/`null`/`''` = non renseigné. */
+	clientNumber?: string | null;
 	defaultPaymentTerms?: string | null;
 	/** Délai de paiement en jours 0..365 (#245). Absent/`null` = non renseigné. */
 	defaultPaymentTermsDays?: number | null;
@@ -98,6 +102,8 @@ export interface UpdateContactRequest {
 	email?: string | null;
 	phone?: string | null;
 	ideNumber?: string | null;
+	/** Numéro de client (Story 16-3b, #151). Absent/`null`/`''` = non renseigné. */
+	clientNumber?: string | null;
 	defaultPaymentTerms?: string | null;
 	/** Délai de paiement en jours 0..365 (#245). Absent/`null` = effacé (PUT full-payload). */
 	defaultPaymentTermsDays?: number | null;

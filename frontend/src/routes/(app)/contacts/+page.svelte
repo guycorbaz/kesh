@@ -73,6 +73,8 @@
 	let formCity = $state('');
 	let formCountry = $state('CH');
 	let formIde = $state('');
+	// Story 16-3b (#151) — numéro de client ('' = non renseigné).
+	let formClientNumber = $state('');
 	let formPaymentTerms = $state('');
 	// #245 — délai de paiement en jours ('' = non renseigné). Renseigné →
 	// prime sur le texte libre (libellé auto-généré côté serveur).
@@ -227,6 +229,7 @@
 		formCity = '';
 		formCountry = 'CH';
 		formIde = '';
+		formClientNumber = '';
 		formPaymentTerms = '';
 		formPaymentTermsDays = '';
 		formLanguage = '';
@@ -251,6 +254,10 @@
 		formCity = c.addressStructured?.city ?? '';
 		formCountry = c.addressStructured?.country || 'CH';
 		formIde = formatIdeNumber(c.ideNumber);
+		// ⚠️ `PUT` est un FULL-REPLACE et le même payload sert à créer et à
+		// modifier : sans cette ligne, modifier un simple téléphone EFFACERAIT
+		// le numéro de client, sans qu'aucune compilation ne casse.
+		formClientNumber = c.clientNumber ?? '';
 		formPaymentTerms = c.defaultPaymentTerms ?? '';
 		formPaymentTermsDays = c.defaultPaymentTermsDays != null ? String(c.defaultPaymentTermsDays) : '';
 		formLanguage = c.language ?? '';
@@ -319,6 +326,7 @@
 					country: formCountry.trim() || 'CH'
 				},
 				ideNumber: normalizeIdeForApi(formIde),
+				clientNumber: formClientNumber.trim() || null,
 				// #245 (review BH-2) : quand le délai est renseigné, le texte libre
 				// est REMPLACÉ (null) — sinon un texte legacy invisible (champ
 				// désactivé) ressusciterait à l'effacement ultérieur du délai.
@@ -351,6 +359,12 @@
 					conflictOpen = true;
 				} else if (err.code === 'IDE_ALREADY_EXISTS') {
 					formError = i18nMsg('contact-error-ide-duplicate', 'Un contact avec ce numéro IDE existe déjà');
+					notifyError(formError);
+				} else if (err.code === 'CLIENT_NUMBER_ALREADY_EXISTS') {
+					formError = i18nMsg(
+						'contact-error-client-number-duplicate',
+						'Un contact avec ce numéro de client existe déjà'
+					);
 					notifyError(formError);
 				} else {
 					formError = err.message;
@@ -438,7 +452,7 @@
 	<div class="flex flex-wrap gap-3 mb-4 items-end">
 		<div class="flex-1 min-w-[200px]">
 			<label for="filter-search" class="text-xs mb-1 block">
-				{i18nMsg('contact-filter-search-placeholder', 'Rechercher par nom ou email…')}
+				{i18nMsg('contact-filter-search-placeholder', 'Rechercher par nom, email ou n° client…')}
 			</label>
 			<div class="relative">
 				<Search class="absolute left-2 top-2.5 w-4 h-4 text-muted-foreground" />
@@ -755,6 +769,25 @@
 				<Input id="form-ide" type="text" bind:value={formIde} placeholder="CHE-123.456.789" />
 				<p class="text-xs text-muted-foreground mt-1">
 					{i18nMsg('contact-form-ide-help', 'Format : CHE-123.456.789')}
+				</p>
+			</div>
+
+			<div>
+				<label for="form-client-number">
+					{i18nMsg('contact-form-client-number', 'Numéro de client')}
+				</label>
+				<Input
+					id="form-client-number"
+					type="text"
+					bind:value={formClientNumber}
+					maxlength={50}
+					placeholder="CLI-2026-00042"
+				/>
+				<p class="text-xs text-muted-foreground mt-1">
+					{i18nMsg(
+						'contact-form-client-number-hint',
+						'Figure sur le PDF de facture, pour que votre client rapproche de son dossier fournisseur.'
+					)}
 				</p>
 			</div>
 

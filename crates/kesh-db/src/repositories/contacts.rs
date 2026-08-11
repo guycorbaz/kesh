@@ -180,18 +180,31 @@ fn push_where_clauses<'a>(
             // (prefix wildcard auto-append). `email` reste LIKE car format
             // structuré (`@`/`.` séparateurs de tokens FULLTEXT cassent
             // les fragments du type `@gmail`).
+            // Story 16-3b (#151) : `client_number` rejoint `email` en LIKE et
+            // NON l'index FULLTEXT — un `CLI-2026-00042` subirait exactement le
+            // sort décrit ci-dessus, ses séparateurs cassant les tokens.
+            // `escape_like` préserve les tirets, donc le fragment fonctionne.
+            //
+            // ⚠️ LES DEUX BRANCHES, ou aucune. N'en traiter qu'une compile et
+            // passe les tests dont le terme survit à `escape_boolean_ft` — mais
+            // la recherche cesse SILENCIEUSEMENT de chercher le numéro quand le
+            // terme n'est fait que d'opérateurs FULLTEXT.
             let escaped = escape_boolean_ft(trimmed);
-            let email_pattern = format!("%{}%", escape_like(trimmed));
+            let like_pattern = format!("%{}%", escape_like(trimmed));
             if escaped.is_empty() {
-                qb.push(" AND email LIKE ");
-                qb.push_bind(email_pattern);
-                qb.push(" ESCAPE '\\\\'");
+                qb.push(" AND (email LIKE ");
+                qb.push_bind(like_pattern.clone());
+                qb.push(" ESCAPE '\\\\' OR client_number LIKE ");
+                qb.push_bind(like_pattern);
+                qb.push(" ESCAPE '\\\\')");
             } else {
                 let bool_query = format!("{escaped}*");
                 qb.push(" AND (MATCH(name) AGAINST(");
                 qb.push_bind(bool_query);
                 qb.push(" IN BOOLEAN MODE) OR email LIKE ");
-                qb.push_bind(email_pattern);
+                qb.push_bind(like_pattern.clone());
+                qb.push(" ESCAPE '\\\\' OR client_number LIKE ");
+                qb.push_bind(like_pattern);
                 qb.push(" ESCAPE '\\\\')");
             }
         }
