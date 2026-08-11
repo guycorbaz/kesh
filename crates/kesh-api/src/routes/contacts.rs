@@ -272,15 +272,48 @@ pub(crate) fn is_valid_email_simple(s: &str) -> bool {
 ///
 /// `pub(crate)` (Story 17-4a) : réutilisé pour normaliser l'email optionnel
 /// du compte (vide → `None` = effaçage).
+/// ⚠️ **« Vide » se juge sur ce qui MARQUE, pas sur `trim().is_empty()`.**
+/// `str::trim` suit la propriété Unicode `White_Space`, qui **n'inclut pas** les
+/// caractères de largeur nulle : `U+200B` (ZWSP), `U+FEFF` (BOM) et `U+2060`
+/// (word joiner) traversent `trim()` intacts. Une valeur qui n'en contient que
+/// de ceux-là est vide **pour l'utilisateur** — le champ paraît vide à l'écran —
+/// mais serait stockée comme une valeur ordinaire.
+///
+/// Le coût est concret sur le numéro de client (16-3b), dont l'unicité est
+/// portée par un index : deux fiches où l'utilisateur croit avoir laissé le
+/// champ vide se percutent en **409 `CLIENT_NUMBER_ALREADY_EXISTS`**, sur une
+/// valeur qu'il ne peut ni voir ni effacer. C'est exactement ce que
+/// `empty_client_number_is_stored_as_null_and_never_collides` promet
+/// d'empêcher, et que le seul `trim()` ne tenait pas.
+///
+/// Une valeur qui **mélange** invisible et visible passe inchangée : seule la
+/// valeur intégralement invisible est ramenée à `None`.
+///
+/// *(Jumeau côté rendu : `is_invisible` dans `kesh-qrbill/src/pdf.rs`, qui garde
+/// le PDF contre les valeurs écrites hors API — restauration d'une sauvegarde
+/// produite ailleurs, correction SQL directe. Les deux vivent dans des crates
+/// sans dépendance commune ; ce sont deux couches, pas une duplication de
+/// commodité. Passe 2 de `bmad-code-review`.)*
 pub(crate) fn normalize_optional(s: Option<String>) -> Option<String> {
     s.and_then(|v| {
         let t = v.trim();
-        if t.is_empty() {
+        if t.is_empty() || t.chars().all(is_invisible) {
             None
         } else {
             Some(t.to_string())
         }
     })
+}
+
+/// Vrai si le caractère ne **marque** rien à l'écran ni à l'impression.
+///
+/// `U+00AD` (trait d'union conditionnel) est inclus : il ne se rend pas hors
+/// point de césure.
+fn is_invisible(c: char) -> bool {
+    c.is_whitespace()
+        || c.is_control()
+        || matches!(c,
+            '\u{00AD}' | '\u{200B}'..='\u{200F}' | '\u{2060}'..='\u{2064}' | '\u{FEFF}')
 }
 
 /// Valide + normalise un IDE optionnel via `CheNumber`.
@@ -876,5 +909,45 @@ mod tests {
         assert_eq!(normalize_optional(Some("   ".into())), None);
         assert_eq!(normalize_optional(Some("".into())), None);
         assert_eq!(normalize_optional(None), None);
+    }
+
+    /// Une valeur faite **uniquement** de caractères invisibles est vide pour
+    /// l'utilisateur, et doit l'être pour la base.
+    ///
+    /// ⚠️ `trim()` ne suffit pas : la propriété Unicode `White_Space` n'inclut
+    /// pas les caractères de largeur nulle. Sans ce traitement, deux fiches où
+    /// l'utilisateur croit avoir laissé le numéro de client vide se percutent
+    /// en 409 sur une valeur invisible qu'il ne peut ni voir ni effacer.
+    #[test]
+    fn normalize_optional_collapses_invisible_only_values_to_none() {
+        for (label, value) in [
+            ("ZWSP U+200B", "\u{200B}"),
+            ("BOM U+FEFF", "\u{FEFF}"),
+            ("word joiner U+2060", "\u{2060}"),
+            ("soft hyphen U+00AD", "\u{00AD}"),
+            ("ZWSP entouré d'espaces", "  \u{200B}  "),
+            ("plusieurs invisibles", "\u{200B}\u{FEFF}\u{2060}"),
+        ] {
+            assert_eq!(
+                normalize_optional(Some(value.into())),
+                None,
+                "« {label} » doit être ramené à None"
+            );
+        }
+    }
+
+    /// ⚠️ Le pendant du test précédent, et il est indispensable : une garde trop
+    /// large mangerait des valeurs légitimes. Un invisible **entouré de
+    /// visible** doit passer INCHANGÉ — c'est du contenu réel, mal collé.
+    #[test]
+    fn normalize_optional_keeps_values_mixing_visible_and_invisible() {
+        assert_eq!(
+            normalize_optional(Some("CLI\u{200B}-1".into())),
+            Some("CLI\u{200B}-1".into())
+        );
+        assert_eq!(
+            normalize_optional(Some("  CLI-1\u{FEFF}  ".into())),
+            Some("CLI-1\u{FEFF}".into())
+        );
     }
 }

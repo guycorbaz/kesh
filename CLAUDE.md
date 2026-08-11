@@ -520,6 +520,19 @@ Rationale : `_sqlx_migrations` n'est pas restaurée par l'import d'installation.
 
 *(codifié 2026-08-01, Story 16-1c / issue #281)*
 
+**(P8) Une migration appliquée ne se modifie plus — pas même un commentaire.** `sqlx` enregistre le **checksum** de chaque fichier dans `_sqlx_migrations` et refuse de démarrer dès qu'il diffère : `migration <version> was previously applied but has been modified`. Le binaire **ne boote pas**. Cela vaut pour une correction de faute, un renommage de commentaire, une reformulation d'en-tête — le contenu SQL n'a rien à voir dans l'affaire, c'est l'octet qui compte.
+
+La portée du dégât dépend de qui a déjà appliqué le fichier :
+
+- **Migration jamais publiée** (branche non mergée) : seules les bases de dev locales sont touchées — la vôtre, `kesh_e2e`, celles d'un collègue ayant testé la branche. Réparable, mais c'est du temps perdu et un plantage déroutant.
+- **Migration publiée dans une release** : toute installation à jour refuse de démarrer après mise à jour. Il n'y a alors **aucun retour en arrière propre**.
+
+**Conduite à tenir** : ce qu'on veut ajouter à une migration déjà appliquée se met **ailleurs** — la ligne de `docs/migrations-idempotence-audit.md`, les Dev Notes de la story, ou une migration suivante. Et si la modification est réellement nécessaire *avant* toute publication, la rendre **délibérée** : annoncer la reconstruction des bases de dev concernées, et vérifier qu'aucune base persistante du gate ne reste en arrière.
+
+⚠️ **Le gate complet ne voit rien de ce défaut** : les tests `#[sqlx::test]` créent une base éphémère et rejouent les migrations à neuf, donc ils restent verts. Seul un démarrage réel contre une base **persistante** le révèle — c'est-à-dire, en pratique, la suite E2E ou un `cargo run` de dev.
+
+*(codifié 2026-08-11, passe 2 de `bmad-code-review` de la Story 16-3b : un correctif de passe 1 avait reformulé l'en-tête de `20260810000001_contacts_client_number.sql`, ce qui a fait échouer le démarrage du backend E2E sur `kesh_e2e` — après un gate backend pourtant vert à 2158/2158. Le correctif a été annulé, la clarification déplacée hors du fichier de migration.)*
+
 ## Règle de commit et push
 
 **Règle de branchement avant commit** :
