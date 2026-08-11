@@ -241,8 +241,8 @@ La recherche de contacts accepte le numéro de client.
 - [x] **T3-bis — Audit** (AC2-bis). Ajouter le champ à `contact_snapshot_json` (`repositories/contacts.rs:39-58`) — **cinquième liste de champs écrite à la main**, non-SQL, que les quatre listes de T3 ne couvrent pas.
 - [x] **T3-ter — Détection de non-changement** (AC2-ter). Ajouter le champ à `is_no_op_change` (`repositories/contacts.rs:377-396`) — **sixième liste**. Sans elle, modifier le seul numéro est classé no-op : rollback, `200 OK`, donnée perdue en silence.
 - [x] **T4 — Tests repository** (AC1, AC2, AC2-bis, AC2-ter). Aller-retour `create`/`find_by_id`/`update`/`find_by_id` ; unicité rejetée **entre contacts actifs** ; **deux `NULL` acceptés** ; **numéro d'un contact archivé réattribuable à un actif** (l'invariant de D2-bis) ; trace d'audit ; et `update` du **seul** `client_number` → nouvelle valeur **et** `version` incrémentée.
-- [ ] **T5 — Route et DTO** (AC3, AC4). `ContactResponse` (`contacts.rs:151`) + `impl From<Contact> for ContactResponse` (l. 186) + **les deux** DTO d'entrée (`CreateContactRequest` l. 70 et `UpdateContactRequest` l. 108), **avec `normalize_optional()`** sur le champ (l. 259) comme pour `email`/`phone`. Pour l'erreur : **étendre `map_contact_error` (`contacts.rs:461`)** d'une branche, ajouter la variante `AppError::ClientNumberAlreadyExists` et sa ligne dans le `match` de `errors.rs` (409 / `CLIENT_NUMBER_ALREADY_EXISTS`). Ne **pas** écrire un second helper : le repository rend déjà `DbError::UniqueConstraintViolation`, tout le chemin existe.
-- [ ] **T6 — Tests API** (AC3, AC4). Aller-retour `POST`/`GET` ; doublon → **409** + code d'erreur asserté ; **non-sur-capture** entre les deux contraintes (calquer `contacts.rs:765`).
+- [x] **T5 — Route et DTO** (AC3, AC4). `ContactResponse` (`contacts.rs:151`) + `impl From<Contact> for ContactResponse` (l. 186) + **les deux** DTO d'entrée (`CreateContactRequest` l. 70 et `UpdateContactRequest` l. 108), **avec `normalize_optional()`** sur le champ (l. 259) comme pour `email`/`phone`. Pour l'erreur : **étendre `map_contact_error` (`contacts.rs:461`)** d'une branche, ajouter la variante `AppError::ClientNumberAlreadyExists` et sa ligne dans le `match` de `errors.rs` (409 / `CLIENT_NUMBER_ALREADY_EXISTS`). Ne **pas** écrire un second helper : le repository rend déjà `DbError::UniqueConstraintViolation`, tout le chemin existe.
+- [x] **T6 — Tests API** (AC3, AC4). Aller-retour `POST`/`GET` ; doublon → **409** + code d'erreur asserté ; **non-sur-capture** entre les deux contraintes (calquer `contacts.rs:765`).
 - [ ] **T7 — Frontend** (AC4, AC5, AC8, AC10). Type TS (`contacts.types.ts`, interface `ContactResponse`), champ de la fiche contact, **hydratation dans `openEdit` (l. 240-258) — la ligne dont l'oubli efface le champ à chaque édition**, **placeholder de recherche corrigé** (l. 441), libellés sur les 4 locales. ⚠️ **Pas de colonne dans le tableau de liste** (écartée en passe 6) — donc **ne pas toucher au `colspan`**, câblé en dur à deux endroits. Respecter `lint-i18n-ownership`.
 - [ ] **T7-ter — Message du 409 à l'écran** (AC4). Le frontend branche les codes **un par un** (`frontend/src/routes/(app)/contacts/+page.svelte:349-358`) : `OPTIMISTIC_LOCK_CONFLICT`, puis `IDE_ALREADY_EXISTS` → `contact-error-ide-duplicate`, **sinon `err.message` brut du backend**. Sans branche dédiée, l'utilisateur qui saisit un doublon reçoit un message non maîtrisé et non traduit, là où le doublon d'IDE a droit au sien. Ajouter la branche `CLIENT_NUMBER_ALREADY_EXISTS` et la clé `contact-error-client-number-duplicate` **dans les 4 locales** — le domaine `contact-*` est aujourd'hui à 59 clés dans chacune, sans dérive : ne pas l'ouvrir.
 - [ ] **T7-bis — Recherche par numéro** (AC10). Branche `OR client_number LIKE ?` dans `repositories/contacts.rs`, **pas** dans l'index FULLTEXT — le commentaire l. 162-165 explique pourquoi les séparateurs cassent les tokens (et `escape_like` préserve les tirets, donc `CLI-2026-00042` fonctionne). ⚠️ **Il y a DEUX sites `email LIKE`, l. 174 et l. 181** — la première branche sert quand le terme échappé est vide, la seconde le cas courant. N'en traiter qu'un compile, passe les tests dont le terme survit à `escape_boolean_ft`, et **cesse silencieusement de chercher le numéro** quand le terme n'est fait que d'opérateurs FULLTEXT. Échec rare et muet : les deux sites, ou aucun.
@@ -364,11 +364,14 @@ Le seul précédent du dépôt **écarte explicitement** la comparaison octet à
 - **T1, garde-fou P6** — arbitrage posé : `total - 25` → `total - 26`. C'est la **frontière (34)** qui est l'invariant voulu, pas la taille de la fenêtre ; garder `-25` aurait déplacé le point de départ du chemin d'upgrade testé **sans que rien ne le signale**. Les deux suites de backfill résolvent par version (`migrations_before`) — vérifié, pas supposé : insensibles à l'ajout.
 - **T2** — les 5 compteurs **recomptés depuis le tableau** : `60` fichiers `.sql` = `60` lignes de tableau = en-tête de section = ligne `Total`, partitionnés en `55 tracked-by-sqlx + 5 yes + 0 no`.
 - **T3** — `21` colonnes à l'`INSERT` pour `21` placeholders, recomptés par script plutôt qu'à l'œil. `reconciliation.rs:203` interpole bien `super::contacts::COLUMNS` (**vérifié**, comme T3 l'exigeait) ; les quatre `SELECT` de `contacts.rs` interpolent `{COLUMNS}` — **`FIND_BY_ID_SQL` est donc bien la seule liste dupliquée à la main**.
+- **T5** — mutation `M4a` : omettre `client_number` d'`impl From<Contact> for ContactResponse` **ne compile pas** (`E0063`). Voir ci-dessous — la spec annonçait l'inverse.
 - **T3, rayon d'impact** — `37` insertions dans `26` fichiers, posées par appariement d'accolades sur chaque littéral et **non** par `sed` sur `ide_number:` (d'autres structs portent ce champ : `CreateContactRequest`, `UpdateContactRequest`, `ContactResponse`). `cargo build --workspace --all-targets` propre.
 
 ### Ce que l'implémentation a appris, et qui corrige la spec
 
 - **Une SEPTIÈME liste écrite à la main, que la spec ne nommait pas** : le helper de test `contact_to_update` (`repositories/contacts.rs:1500`) reconstitue l'état persisté champ par champ. L'insertion automatique y avait posé `client_number: None` — ce qui aurait fait **perdre le numéro à chaque aller-retour de test**, et rendu vert le test d'AC2-ter pour la mauvaise raison. Corrigé en `c.client_number.clone()`. La spec énumérait six listes ; celle-ci est dans le **module de test**, donc invisible au recensement fait sur le code de production.
+
+- **Une affirmation de la spec RÉFUTÉE à l'exécution.** AC3 et T5 annonçaient : « omettre la ligne dans `From<Contact>` **compile**, stocke, et rend `null` pour toujours », en s'appuyant sur le HIGH de la passe 3 de 16-3a. C'est **faux pour `ContactResponse`** : le littéral de `From` est complet, sans `..Default::default()`, donc l'omission est un `E0063` — le compilateur *vérifie* bien cette couture. La mutation réellement silencieuse est `client_number: None` à la place du champ ; c'est celle qui a été jouée, et le test la tue. L'AC reste juste dans sa conclusion (il faut un test d'aller-retour HTTP), pas dans son motif.
 
 ### Campagne de mutation — T4
 
@@ -382,9 +385,20 @@ Les trois mutations prescrites par les Conventions de test ont été **exécuté
 
 Restauration contrôlée derrière : 6/6 verts.
 
+### Campagne de mutation — T6
+
+| Mutation | Test qui devait mourir | Résultat |
+|---|---|---|
+| ligne retirée de `From<Contact>` | aller-retour HTTP | **`E0063`** — attrapée par le compilateur, pas par le test |
+| `client_number: None` dans `From<Contact>` | aller-retour HTTP | **FAILED** ✅ *(la mutation réellement silencieuse)* |
+| branche retirée de `map_contact_error` | les deux 409 | **FAILED** ✅ |
+
+Restauration contrôlée derrière : 5/5 verts.
+
 ### Completion Notes List
 
 - **T1, T2** (2026-08-10) — migration + audit d'idempotence.
+- **T5, T6** (2026-08-11) — DTO d'entrée et de sortie, `normalize_optional`, `MAX_CLIENT_NUMBER_LEN`, branche de `map_contact_error` sur le **nom de contrainte**, variante `AppError::ClientNumberAlreadyExists` → **409 `CLIENT_NUMBER_ALREADY_EXISTS`**. 5 tests E2E API (`contact_client_number_e2e.rs`, nouveau) + 3 tests unitaires dont la **non-sur-capture dans les deux sens** entre les deux contraintes de la table.
 - **T3, T3-bis, T3-ter, T4** (2026-08-11) — le champ traverse les **sept** listes ; 6 tests repository, gate ciblé `binary(kesh-db lib)` vert, 3/3 mutations tuées. **Gate complet au push.**
 
 ### File List
@@ -396,6 +410,8 @@ Restauration contrôlée derrière : 6/6 verts.
 - `crates/kesh-db/src/repositories/contacts.rs`
 - `crates/kesh-db/src/repositories/invoices.rs`
 - `crates/kesh-api/src/routes/contacts.rs`
+- `crates/kesh-api/src/errors.rs`
+- `crates/kesh-api/tests/contact_client_number_e2e.rs` *(nouveau)*
 - `crates/kesh-api/src/routes/credit_notes.rs`
 - `crates/kesh-api/src/routes/invoice_email.rs`
 - `crates/kesh-api/src/routes/invoice_pdf_service.rs`

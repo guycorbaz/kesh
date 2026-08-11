@@ -306,6 +306,14 @@ pub enum AppError {
     #[error("{0}")]
     IdeAlreadyExists(String),
 
+    // --- Story 16-3b (#151) ---
+    /// Un contact ACTIF de la même company porte déjà ce numéro de client.
+    /// Même nature que `IdeAlreadyExists` — unicité par société sur la même
+    /// table — donc **même code HTTP (409)**, avec son propre code client pour
+    /// que le formulaire puisse afficher un message dédié.
+    #[error("{0}")]
+    ClientNumberAlreadyExists(String),
+
     // --- Story 5.3 — génération PDF QR Bill ---
     /// La facture n'est pas validée — impossible de générer un PDF (400).
     #[error("Facture non validée")]
@@ -1207,6 +1215,11 @@ impl IntoResponse for AppError {
             // Story 4.1 : code dédié pour l'unicité IDE par company.
             AppError::IdeAlreadyExists(msg) => {
                 build_response(StatusCode::CONFLICT, "IDE_ALREADY_EXISTS", &msg)
+            }
+
+            // Story 16-3b : contrainte jumelle de l'IDE → même 409.
+            AppError::ClientNumberAlreadyExists(msg) => {
+                build_response(StatusCode::CONFLICT, "CLIENT_NUMBER_ALREADY_EXISTS", &msg)
             }
 
             // Story 20-3b1 — envoi de facture par e-mail.

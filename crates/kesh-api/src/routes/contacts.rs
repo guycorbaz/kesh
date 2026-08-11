@@ -32,6 +32,9 @@ const MAX_NAME_LEN: usize = 255;
 const MAX_EMAIL_LEN: usize = 320;
 const MAX_PHONE_LEN: usize = 50;
 const MAX_PAYMENT_TERMS_LEN: usize = 100;
+/// Story 16-3b (#151) — aligné sur la colonne `contacts.client_number`
+/// VARCHAR(50). Longueur de STOCKAGE : le PDF, lui, tronque à l'affichage.
+const MAX_CLIENT_NUMBER_LEN: usize = 50;
 /// Borne haute du délai de paiement en jours (#245) — miroir du CHECK SQL
 /// `chk_contacts_payment_terms_days` (le CHECK n'est que le filet).
 const MAX_PAYMENT_TERMS_DAYS: i32 = 365;
@@ -88,6 +91,11 @@ pub struct CreateContactRequest {
     pub phone: Option<String>,
     #[serde(default)]
     pub ide_number: Option<String>,
+    /// Numéro de client (Story 16-3b, #151). Absent/null/`""` = non renseigné
+    /// — `normalize_optional` effondre le vide en `None`, sans quoi deux
+    /// contacts soumis avec `""` percuteraient l'unicité.
+    #[serde(default)]
+    pub client_number: Option<String>,
     #[serde(default)]
     pub default_payment_terms: Option<String>,
     /// Délai de paiement en jours (#245). Absent/null = non renseigné.
@@ -126,6 +134,11 @@ pub struct UpdateContactRequest {
     pub phone: Option<String>,
     #[serde(default)]
     pub ide_number: Option<String>,
+    /// Numéro de client (Story 16-3b, #151). Absent/null/`""` = non renseigné
+    /// — `normalize_optional` effondre le vide en `None`, sans quoi deux
+    /// contacts soumis avec `""` percuteraient l'unicité.
+    #[serde(default)]
+    pub client_number: Option<String>,
     #[serde(default)]
     pub default_payment_terms: Option<String>,
     /// Délai de paiement en jours (#245). Absent/null = effacé (PUT full-payload).
@@ -166,6 +179,8 @@ pub struct ContactResponse {
     pub phone: Option<String>,
     /// Forme normalisée `"CHE109322551"`. Le frontend la formate pour l'affichage.
     pub ide_number: Option<String>,
+    /// Numéro de client attribué par l'émetteur (Story 16-3b, #151).
+    pub client_number: Option<String>,
     pub default_payment_terms: Option<String>,
     /// Délai de paiement en jours (#245). `null` = non renseigné.
     pub default_payment_terms_days: Option<i32>,
@@ -207,6 +222,7 @@ impl From<Contact> for ContactResponse {
             // Copie directe — déjà normalisée en base via CheNumber::new().as_str()
             // au moment de l'INSERT. Pas de re-parse CheNumber ici.
             ide_number: c.ide_number,
+            client_number: c.client_number,
             default_payment_terms: c.default_payment_terms,
             default_payment_terms_days: c.default_payment_terms_days,
             // Le libellé exige la Company (langue d'instance) + I18nBundle —
@@ -295,6 +311,7 @@ struct ValidatedFields {
     email: Option<String>,
     phone: Option<String>,
     ide_number: Option<String>,
+    client_number: Option<String>,
     default_payment_terms: Option<String>,
     default_payment_terms_days: Option<i32>,
 }
@@ -311,6 +328,7 @@ fn validate_common(
     email: Option<String>,
     phone: Option<String>,
     ide_number: Option<String>,
+    client_number: Option<String>,
     default_payment_terms: Option<String>,
     default_payment_terms_days: Option<i32>,
 ) -> Result<ValidatedFields, AppError> {
@@ -385,6 +403,18 @@ fn validate_common(
         )));
     }
 
+    // Story 16-3b : `normalize_optional` AVANT toute chose — `""` n'est pas
+    // `NULL` pour un index UNIQUE, et le cas majoritaire (aucun numéro) se
+    // percuterait dès le deuxième contact.
+    let client_number = normalize_optional(client_number);
+    if let Some(ref cn) = client_number
+        && cn.chars().count() > MAX_CLIENT_NUMBER_LEN
+    {
+        return Err(AppError::Validation(format!(
+            "Le numéro de client doit faire au plus {MAX_CLIENT_NUMBER_LEN} caractères"
+        )));
+    }
+
     let ide_number = validate_optional_ide(ide_number)?;
 
     Ok(ValidatedFields {
@@ -398,6 +428,7 @@ fn validate_common(
         email,
         phone,
         ide_number,
+        client_number,
         default_payment_terms,
         default_payment_terms_days,
     })
@@ -463,6 +494,18 @@ fn map_contact_error(err: DbError) -> AppError {
         && m.contains("uq_contacts_company_ide")
     {
         return AppError::IdeAlreadyExists("Un contact avec ce numéro IDE existe déjà".into());
+    }
+    // Story 16-3b : même nature, même table, donc même code HTTP (409). La
+    // contrainte porte sur la colonne GÉNÉRÉE `client_number_uniq`, mais c'est
+    // bien son NOM (`uq_contacts_company_client_number`) qui apparaît dans le
+    // message MariaDB — et c'est le nom de contrainte qu'on matche, jamais
+    // celui de la colonne, pour la raison déjà documentée ci-dessus.
+    if let DbError::UniqueConstraintViolation(ref m) = err
+        && m.contains("uq_contacts_company_client_number")
+    {
+        return AppError::ClientNumberAlreadyExists(
+            "Un contact avec ce numéro de client existe déjà".into(),
+        );
     }
     AppError::from(err)
 }
@@ -556,6 +599,7 @@ pub async fn create_contact(
         req.email,
         req.phone,
         req.ide_number,
+        req.client_number,
         req.default_payment_terms,
         req.default_payment_terms_days,
     )?;
@@ -579,7 +623,7 @@ pub async fn create_contact(
         email: v.email,
         phone: v.phone,
         ide_number: v.ide_number,
-        client_number: None,
+        client_number: v.client_number,
         default_payment_terms: v.default_payment_terms,
         default_payment_terms_days: v.default_payment_terms_days,
         // Story 20-3b1 : enums typés — serde a déjà rejeté toute valeur
@@ -622,6 +666,7 @@ pub async fn update_contact(
         req.email,
         req.phone,
         req.ide_number,
+        req.client_number,
         req.default_payment_terms,
         req.default_payment_terms_days,
     )?;
@@ -643,7 +688,7 @@ pub async fn update_contact(
         email: v.email,
         phone: v.phone,
         ide_number: v.ide_number,
-        client_number: None,
+        client_number: v.client_number,
         default_payment_terms: v.default_payment_terms,
         default_payment_terms_days: v.default_payment_terms_days,
         // Story 20-3b1 : cf. create_contact — enums typés validés par serde.
@@ -695,6 +740,7 @@ pub async fn archive_contact(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::response::IntoResponse;
 
     #[test]
     fn email_valid_cases() {
@@ -758,6 +804,46 @@ mod tests {
             AppError::IdeAlreadyExists(_) => {}
             other => panic!("expected IdeAlreadyExists, got {other:?}"),
         }
+    }
+
+    /// Story 16-3b : la contrainte jumelle rend la variante dédiée.
+    #[test]
+    fn map_contact_error_client_number_unique_maps_to_dedicated_variant() {
+        let err = DbError::UniqueConstraintViolation("uq_contacts_company_client_number".into());
+        match map_contact_error(err) {
+            AppError::ClientNumberAlreadyExists(_) => {}
+            other => panic!("expected ClientNumberAlreadyExists, got {other:?}"),
+        }
+    }
+
+    /// Story 16-3b — **non-sur-capture**, dans les DEUX sens.
+    ///
+    /// `map_contact_error` matche par `contains` : avec deux contraintes sur la
+    /// même table, rien ne garantit a priori qu'aucune ne capture l'autre. Une
+    /// sur-capture rendrait le mauvais code d'erreur au frontend, qui branche
+    /// les codes un par un.
+    #[test]
+    fn map_contact_error_does_not_confuse_the_two_contact_constraints() {
+        match map_contact_error(DbError::UniqueConstraintViolation(
+            "Duplicate entry 'CHE109322551' for key 'uq_contacts_company_ide'".into(),
+        )) {
+            AppError::IdeAlreadyExists(_) => {}
+            other => panic!("l'IDE ne doit PAS être capturé par le numéro de client : {other:?}"),
+        }
+        match map_contact_error(DbError::UniqueConstraintViolation(
+            "Duplicate entry '1-CLI-1' for key 'uq_contacts_company_client_number'".into(),
+        )) {
+            AppError::ClientNumberAlreadyExists(_) => {}
+            other => panic!("le numéro de client ne doit PAS être capturé par l'IDE : {other:?}"),
+        }
+    }
+
+    /// Story 16-3b : le 409 doit porter le code client `CLIENT_NUMBER_ALREADY_EXISTS`
+    /// — un test qui n'assert que « ce n'est pas 200 » laisserait passer un 500.
+    #[test]
+    fn client_number_conflict_renders_409_with_its_own_code() {
+        let response = AppError::ClientNumberAlreadyExists("déjà pris".into()).into_response();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
     }
 
     #[test]
