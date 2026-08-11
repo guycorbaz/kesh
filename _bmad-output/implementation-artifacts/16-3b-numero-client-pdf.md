@@ -251,7 +251,7 @@ La recherche de contacts accepte le numéro de client.
 - [x] **T10 — Service de génération** (AC6, AC7, D5). Renseigner le champ depuis le contact destinataire dans `invoice_pdf_service.rs` **et** au site de construction de l'avoir. C'est le site que la mutation doit tuer.
 - [x] **T11 — Tests PDF** (AC6, AC6-bis, AC7). Présence par delta de taille ; **conditionnalité par assertion de position** sur la fonction pure extraite en T9 — l'assertion est **`y_none − y_some == 4.5`**, et ⚠️ **surtout PAS « les deux ordonnées sont identiques »** (signature du mutant) **ni une ordonnée absolue codée en dur** (fragile au fixture, et fausse dans la variante retirée) — cf. AC6 ; troncature calibrée ; avoir testé au site de construction, sans `..base` d'une fixture de facture.
 *(T12 — export CSV du carnet d'adresses : **tranché, exclu**. Voir « Ce que cette story ne doit PAS faire ».)*
-- [ ] **T13 — Documentation** (règle de synchronisation). Les sites sont **énumérés** plutôt que laissés à l'appréciation :
+- [x] **T13 — Documentation** (règle de synchronisation). Les sites sont **énumérés** plutôt que laissés à l'appréciation :
   - `docs/manual/fr/user-manual.tex:510-520` — la liste des champs à renseigner à la création d'un contact. **C'est la page que lira l'utilisateur cherchant à quoi sert le nouveau champ.**
   - `docs/manual/fr/user-manual.tex:615` — « Vos coordonnées sur la facture », qui appelle un pendant côté client.
   - `docs/manual/fr/user-manual.tex:531` — « Recherchez par nom, IDE, adresse, email, téléphone » (à corriger avec AC10 ; ⚠️ cette phrase **surestime déjà** le code, qui ne cherche que `name` et `email`).
@@ -425,6 +425,7 @@ Restaurations contrôlées derrière : `kesh-qrbill` 61/61, `kesh-i18n` 22/22.
 ### Completion Notes List
 
 - **T1, T2** (2026-08-10) — migration + audit d'idempotence.
+- **T13** (2026-08-11) — les **six** sites énumérés par la tâche : liste des champs de création et section dédiée `\label{sec:numero-client}` du manuel utilisateur, phrase sur la recherche (qui **surestimait déjà** le code avant cette story — elle annonçait IDE, adresse et téléphone, que la recherche n'a jamais couverts), `docs/search-patterns.md`, ligne v0.9.0 du README, CHANGELOG, et régénération du PDF (`make fr`, 56 pages). Défaut de doc **préexistant** tracé en **issue #291** plutôt que corrigé au passage : le manuel annonce un « Contacts → Import CSV » qui n'existe ni à l'écran ni en route.
 - **T9, T10, T11** (2026-08-11) — `InvoicePdfData.debtor_client_number`, clé `invoice-pdf-client-number` **en fin** des deux tableaux et sur les 4 locales, extraction de `build_meta_lines` (fonction **pure**, sans quoi AC6 est intestable), `META_LINE_STEP` et `META_MAX_CHARS = 32` avec troncature sur la **ligne complète** ; champ renseigné aux **deux** sites de construction. 7 tests neufs (5 dans `pdf.rs`, 2+2 aux sites, 1 dans `kesh-i18n`), 4/4 mutations tuées.
 - **T7, T7-ter, T7-bis, T8** (2026-08-11) — type TS, champ de la fiche, hydratation d'`openEdit`, payload, branche `CLIENT_NUMBER_ALREADY_EXISTS`, placeholder de recherche corrigé ; recherche `OR client_number LIKE ?` sur les **deux** branches ; 3 clés i18n × 4 locales (`contact-*` passe de 59 à **62 dans chacune**, sans dérive). Gate ciblé : `svelte-check` 0 erreur, `lint-i18n-ownership` PASS, Vitest **512/512**, E2E `contact-client-number.spec.ts` **2/2** et `contacts.spec.ts` **8 passed / 2 skipped** (non-régression).
 - **T5, T6** (2026-08-11) — DTO d'entrée et de sortie, `normalize_optional`, `MAX_CLIENT_NUMBER_LEN`, branche de `map_contact_error` sur le **nom de contrainte**, variante `AppError::ClientNumberAlreadyExists` → **409 `CLIENT_NUMBER_ALREADY_EXISTS`**. 5 tests E2E API (`contact_client_number_e2e.rs`, nouveau) + 3 tests unitaires dont la **non-sur-capture dans les deux sens** entre les deux contraintes de la table.
@@ -446,6 +447,10 @@ Restaurations contrôlées derrière : `kesh-qrbill` 61/61, `kesh-i18n` 22/22.
 - `crates/kesh-qrbill/src/types.rs`
 - `crates/kesh-qrbill/src/pdf.rs`
 - `crates/kesh-qrbill/tests/golden_test.rs`
+- `docs/manual/fr/user-manual.tex` + `docs/manual/fr/user-manual.pdf`
+- `docs/search-patterns.md`
+- `README.md`
+- `CHANGELOG.md`
 - `frontend/src/lib/features/contacts/contacts.types.ts`
 - `frontend/src/routes/(app)/contacts/+page.svelte`
 - `frontend/tests/e2e/contact-client-number.spec.ts` *(nouveau)*

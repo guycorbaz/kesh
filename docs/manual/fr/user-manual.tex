@@ -513,6 +513,7 @@ Si votre premier exercice Kesh ne doit pas commencer au 1\textsuperscript{er} ja
     \item \textbf{Type} : \textbf{Entreprise} (raison sociale) ou \textbf{Personne} (prénom + nom séparés).
     \item \textbf{Nom} : raison sociale pour une entreprise ; \textbf{prénom et nom} pour une personne.
     \item \textbf{IDE} (si société suisse soumise à inscription au RC).
+    \item \textbf{Numéro de client} (optionnel) : la référence sous laquelle \emph{vous} identifiez ce client. Elle est \textbf{libre} --- Kesh ne la génère pas et ne l'impose pas ---, doit être unique dans votre société, et figure sur le PDF de facture (voir \ref{sec:numero-client}).
     \item \textbf{Adresse structurée} : rue, numéro, NPA, localité, pays en \emph{champs séparés}. Ce format « structuré » (type S) est celui exigé par les banques suisses sur les QR-factures — le NPA et la localité sont requis pour générer une facture. Le NPA reste libre (adresses étrangères possibles).
     \item \textbf{Email}, \textbf{Téléphone} (optionnels).
     \item \textbf{Compte comptable par défaut} : par exemple 1100 (Débiteurs) pour un client.
@@ -528,7 +529,9 @@ elles n'apparaissent jamais sur les factures ni les paiements.
 
 \subsubsection{Recherche de contacts}
 
-La barre de recherche utilise l'index FULLTEXT MariaDB. Recherchez par nom, IDE, adresse, email, téléphone. Le wildcard \texttt{*} est supporté en suffixe.
+La barre de recherche utilise l'index FULLTEXT MariaDB sur le \textbf{nom}, complété par une recherche sur l'\textbf{email} et le \textbf{numéro de client} --- y compris sur un fragment. Le wildcard \texttt{*} est supporté en suffixe du nom.
+
+C'est ce qui permet de remonter d'une facture papier au contact : saisissez le numéro de client imprimé sur le document.
 
 \subsubsection{Import en masse}
 
@@ -632,6 +635,28 @@ Les \textbf{avoirs} portent les mêmes coordonnées, à l'identique.
 \textbf{Et si l'en-tête entier ne tient plus sur la page, le document est refusé} --- facture comme avoir --- avec un message explicite. C'est délibéré : l'en-tête et le tableau des lignes se partagent une hauteur fixe, et mieux vaut un refus qu'un document où l'un s'imprime par-dessus l'autre. La cause peut être vos coordonnées --- mais aussi une adresse de destinataire comptant beaucoup de lignes.
 
 Le message vous invite à \textbf{supprimer} une coordonnée, et non à la raccourcir : chaque coordonnée occupe une ligne entière quelle que soit sa longueur, si bien que l'abréger ne libère aucune place. Vider le champ, en revanche, fait disparaître la ligne.
+\end{keshwarning}
+
+\subsection{Le numéro de client sur la facture}\label{sec:numero-client}
+
+Le bloc en haut à \textbf{droite} du PDF porte le titre du document, son numéro et sa date. Vous pouvez y faire figurer le \textbf{numéro de client} --- la référence sous laquelle vous identifiez ce client, ou celle que \emph{lui} vous impose.
+
+Elle rend deux services : votre client rapproche la facture de son propre dossier fournisseur, et vous-même remontez d'une facture papier au contact en saisissant ce numéro dans la \textbf{recherche} du carnet d'adresses.
+
+\textbf{Où le saisir} : sur la \textbf{fiche du contact}, champ \emph{Numéro de client}, sous le numéro IDE. La valeur apparaît ensuite sur toutes les factures adressées à ce contact, \textbf{avoirs compris}.
+
+\begin{keshnote}
+\textbf{Kesh ne génère aucun numéro de client}, et n'impose aucun format : \texttt{42}, \texttt{CLI-2026-00042} ou une référence dictée par votre client conviennent également. Le champ est facultatif ; un contact sans numéro n'affiche simplement aucune ligne sur le PDF, et rien ne bouge dans la mise en page.
+\end{keshnote}
+
+\begin{keshnote}
+Le numéro doit être \textbf{unique parmi vos contacts actifs} --- c'est ce qui lui permet d'identifier. Si vous en saisissez un déjà pris, Kesh vous le signale et refuse l'enregistrement. La \textbf{casse ne distingue pas} : \texttt{CLI-1} et \texttt{cli-1} sont considérés comme le même numéro.
+
+En revanche, \textbf{archiver un contact libère son numéro} : vous pouvez le réattribuer à un nouveau contact.
+\end{keshnote}
+
+\begin{keshwarning}
+\textbf{Un numéro très long est raccourci à l'impression} (suivi de «~\ldots~») : le bloc de droite ne dispose que d'environ 70 mm, soit une trentaine de caractères \emph{libellé compris} --- donc une vingtaine pour la valeur elle-même. La valeur complète reste intacte sur la fiche du contact et dans la recherche. En pratique, une référence de la longueur de \texttt{CLI-2026-00042} s'imprime entière.
 \end{keshwarning}
 
 \subsection{Numérotation des factures}

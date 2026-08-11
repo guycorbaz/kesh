@@ -12,6 +12,15 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ### Ajouté
 
+- **Le numéro de client sur le PDF de facture** : le bloc en haut à droite — celui qui porte le numéro et la date de la facture — peut désormais afficher la référence sous laquelle **vous** identifiez ce client, ou celle que *lui* vous impose. Votre client rapproche ainsi la facture de son propre dossier fournisseur, et vous-même remontez d'une facture papier au contact. (#151)
+  - **Où le saisir** : sur la **fiche du contact**, champ *Numéro de client*, sous le numéro IDE. La valeur apparaît ensuite sur toutes les factures adressées à ce contact, **avoirs compris**.
+  - **Kesh ne génère aucun numéro et n'impose aucun format** : `42`, `CLI-2026-00042` ou une référence dictée par votre client conviennent également. C'est une décision, pas un manque — une numérotation automatique aurait imposé un format et une politique de reprise que personne n'a demandés, et le cas d'usage visé appelle justement une référence venue de l'extérieur.
+  - **Le champ est facultatif, et un contact sans numéro ne laisse aucun blanc** : la ligne n'est simplement pas imprimée, et rien ne bouge dans la mise en page. **Vos contacts existants ne sont pas modifiés** — ils naissent tous sans numéro.
+  - **Le numéro doit être unique parmi vos contacts actifs** — c'est ce qui lui permet d'identifier. Un doublon est signalé et refusé. La **casse ne distingue pas** : `CLI-1` et `cli-1` sont le même numéro.
+  - **Archiver un contact libère son numéro**, qui redevient attribuable à un autre. Un numéro de client est une étiquette interne, recyclable par nature — contrairement au numéro IDE, attribué par l'État, qu'un contact archivé garde définitivement.
+  - **Le carnet d'adresses se cherche par ce numéro**, y compris sur un fragment : c'est ce qui rend praticable le « retrouver un contact depuis une facture papier ».
+  - **Un numéro très long est raccourci à l'impression** (suivi de « … ») : le bloc de droite ne dispose que d'environ 70 mm, soit une trentaine de caractères *libellé compris* — donc une vingtaine pour la valeur. La valeur complète reste intacte sur la fiche du contact et dans la recherche. Une référence de la longueur de `CLI-2026-00042` s'imprime entière.
+
 - **Vos coordonnées de contact sur le PDF de facture** : téléphone, e-mail et site web apparaissent désormais sous votre adresse, dans le bloc en haut à gauche.
   - **Où les saisir** : *Réglages* → section *Organisation*, bouton **Modifier** en face de « Téléphone · Site web ». Réservé aux administrateurs, comme l'e-mail.
   - **Chaque champ est facultatif, et un champ vide ne laisse aucun blanc** : la ligne correspondante n'est simplement pas imprimée. Une société qui ne renseigne rien retrouve exactement le PDF qu'elle avait avant.
