@@ -13,11 +13,34 @@ RUST_TEST_THREADS = "2"
 # Limit parallel compilation jobs to cap peak memory usage during builds.
 # Default is the number of logical CPUs (32 here), which can spike RAM beyond
 # available memory on heavy crates (sqlx-macros, image, pdfium...) and trigger
-# OOM kills. 8 keeps builds fast while bounding the peak.
+# OOM kills. rustc tient ~2 Go par job sur les gros crates.
+#
+# ⚠️ CE FICHIER ÉCRASE LE `~/.cargo/config.toml` DE LA STATION. Cargo ne fusionne
+# pas les valeurs scalaires : le config le plus proche du projet gagne. Le réglage
+# global de la station (`jobs = 4`, posé après le diagnostic des pics RAM du
+# 2026-07-23) était donc SANS EFFET dans ce dépôt, seul de tous les projets Rust
+# de la machine — il y valait 8. Aligné à 4 le 2026-08-11 après deux OOM en six
+# minutes. Toute modification ici doit rester cohérente avec le réglage global :
+# c'est ce fichier qui a le dernier mot, pas lui.
+#
+# 4 vaut aussi pour la CI (runners ubuntu-latest à 4 cœurs), qui lit ce fichier.
 [build]
-jobs = 8
+jobs = 4
 
 # Use mold as the linker instead of GNU ld for faster link times.
 # Requires mold installed (`/usr/bin/mold`) and gcc >= 12.1 (-fuse-ld=mold).
+# La CI l'installe explicitement (cf. `.github/workflows/ci.yml`, étape
+# « Install mold linker »).
+#
+# `--thread-count=4` borne le parallélisme interne de mold. Par défaut il prend
+# tous les cœurs (32 ici) : avec plusieurs éditions de liens simultanées, chacune
+# ouvrant ses propres tampons, le pic est atteint au LINKAGE et non à la
+# compilation — c'était la cause des pics de 2026-07-23.
+#
+# ⚠️ L'option est `--thread-count` au SINGULIER (`--threads=N` est l'alias). Une
+# première rédaction avait écrit `--threads-count`, que mold rejette en
+# « unknown command line option » — et comme l'erreur survient à l'édition de
+# liens, elle casse TOUT le workspace, y compris les build scripts. Vérifier par
+# `mold --help | grep thread` avant de toucher à cette ligne.
 [target.x86_64-unknown-linux-gnu]
-rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+rustflags = ["-C", "link-arg=-fuse-ld=mold", "-C", "link-arg=-Wl,--thread-count=4"]
