@@ -554,6 +554,7 @@ invoice-pdf-ide = IDE
 invoice-pdf-phone = Tél.
 invoice-pdf-email = E-mail
 invoice-pdf-website = Web
+invoice-pdf-client-number = N° client
 invoice-pdf-recipient = Destinataire
 invoice-pdf-description = Description
 invoice-pdf-quantity = Qté

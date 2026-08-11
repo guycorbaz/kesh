@@ -134,6 +134,14 @@ pub struct InvoicePdfData {
     pub creditor_website: Option<String>,
     pub debtor_name: String,
     pub debtor_address_lines: Vec<String>,
+    /// Numéro de client du destinataire (Story 16-3b, #151), rendu dans le bloc
+    /// métadonnées de DROITE, entre le n° de facture et la date. `None` ⇒ la
+    /// ligne n'est pas dessinée et le curseur ne descend pas — même patron
+    /// conditionnel qu'`origin_reference`.
+    ///
+    /// ⚠️ Résolu depuis le CONTACT à la génération (D5), jamais dénormalisé sur
+    /// la facture : un changement doit se refléter sur les PDF régénérés.
+    pub debtor_client_number: Option<String>,
     pub lines: Vec<InvoiceLinePdf>,
     /// Sous-total HT (= Σ des `line_total` HT). Affiché dans le récap TVA (#151).
     pub subtotal_ht: Decimal,
@@ -243,6 +251,10 @@ pub const I18N_KEYS: &[&str] = &[
     "invoice-pdf-phone",
     "invoice-pdf-email",
     "invoice-pdf-website",
+    // Story 16-3b (#151) — numéro de client du destinataire. Ajoutée EN FIN,
+    // seul filet contre le décalage d'appariement (cf. le doc-comment de
+    // l'assertion ci-dessous).
+    "invoice-pdf-client-number",
 ];
 
 /// ⚠️ Invariant tenu **à la compilation** : `I18N_KEYS` et `DEFAULT_EN` ont
@@ -298,6 +310,8 @@ const DEFAULT_EN: &[&str] = &[
     "Phone",
     "Email",
     "Web",
+    // Story 16-3b (#151) — MÊME POSITION que la dernière de `I18N_KEYS`.
+    "Client no.",
 ];
 
 #[derive(Debug, Error)]

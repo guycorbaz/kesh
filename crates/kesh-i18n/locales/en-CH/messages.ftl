@@ -532,6 +532,7 @@ invoice-pdf-ide = VAT ID
 invoice-pdf-phone = Phone
 invoice-pdf-email = Email
 invoice-pdf-website = Web
+invoice-pdf-client-number = Client no.
 invoice-pdf-recipient = Recipient
 invoice-pdf-description = Description
 invoice-pdf-quantity = Qty

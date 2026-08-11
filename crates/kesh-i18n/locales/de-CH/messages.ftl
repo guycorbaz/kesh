@@ -532,6 +532,7 @@ invoice-pdf-ide = UID
 invoice-pdf-phone = Tel.
 invoice-pdf-email = E-Mail
 invoice-pdf-website = Web
+invoice-pdf-client-number = Kundennummer
 invoice-pdf-recipient = Empfänger
 invoice-pdf-description = Beschreibung
 invoice-pdf-quantity = Menge

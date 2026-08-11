@@ -532,6 +532,7 @@ invoice-pdf-ide = IDI
 invoice-pdf-phone = Tel.
 invoice-pdf-email = E-mail
 invoice-pdf-website = Web
+invoice-pdf-client-number = N. cliente
 invoice-pdf-recipient = Destinatario
 invoice-pdf-description = Descrizione
 invoice-pdf-quantity = Qtà

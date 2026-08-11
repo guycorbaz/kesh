@@ -243,6 +243,15 @@ fn build_credit_note_pdf_data(
         creditor_website: company.website.clone(),
         debtor_name: contact.name.clone(),
         debtor_address_lines: split_lines(contact.address.as_deref().unwrap_or("")),
+        // Story 16-3b (#151) — résolu depuis le CONTACT destinataire (D5), au
+        // même titre que le nom et l'adresse : pas de copie dénormalisée sur
+        // `invoices`, un changement doit se refléter sur les PDF régénérés.
+        //
+        // ⚠️ C'EST LE SITE QUE LA MUTATION D'AC7 DOIT TUER. `draw_invoice_section`
+        // est partagée par la facture et l'avoir : un test posé dans `pdf.rs` ne
+        // peut STRUCTURELLEMENT pas discriminer les deux et resterait vert si
+        // l'un des deux sites oubliait de renseigner le champ.
+        debtor_client_number: contact.client_number.clone(),
         lines: pdf_lines,
         subtotal_ht,
         vat_lines,
@@ -476,5 +485,56 @@ mod tests {
             Some("https://demo.ch"),
             "l'avoir doit porter le site web de l'émetteur"
         );
+    }
+
+    /// **AC7** (Story 16-3b, #151) — l'AVOIR porte le numéro de client du
+    /// destinataire, comme la facture.
+    ///
+    /// Même raison d'être que le test ci-dessus, et même précaution : le
+    /// `Contact` est construit **entier** par le helper, jamais hérité d'une
+    /// fixture de facture par `..base` — c'est précisément ce qui avait rendu
+    /// muet le test d'AC5 de la Story 16-3a. La mutation à tuer est « ne pas
+    /// renseigner `debtor_client_number` au site de construction de l'avoir » ;
+    /// aucun test posé dans `pdf.rs` ne peut la voir, `draw_invoice_section`
+    /// étant partagée par les deux documents.
+    #[test]
+    fn credit_note_pdf_carries_the_debtor_client_number() {
+        let mut c = contact();
+        c.client_number = Some("CLI-2026-00042".into());
+
+        let data = build_credit_note_pdf_data(
+            &credit_note(),
+            vec![],
+            &c,
+            &company_with_contact_details(),
+            dec!(100.00),
+            vec![],
+            dec!(100.00),
+            None,
+        );
+
+        assert_eq!(
+            data.debtor_client_number.as_deref(),
+            Some("CLI-2026-00042"),
+            "l'avoir doit porter le numéro de client du destinataire"
+        );
+    }
+
+    /// Symétrique du précédent : un contact sans numéro ne fabrique aucune
+    /// valeur. Sans ce cas, un `Some(String::new())` ou un défaut quelconque
+    /// passerait le test ci-dessus et dessinerait une ligne vide sur le PDF.
+    #[test]
+    fn credit_note_pdf_leaves_client_number_absent_when_the_contact_has_none() {
+        let data = build_credit_note_pdf_data(
+            &credit_note(),
+            vec![],
+            &contact(),
+            &company_with_contact_details(),
+            dec!(100.00),
+            vec![],
+            dec!(100.00),
+            None,
+        );
+        assert_eq!(data.debtor_client_number, None);
     }
 }

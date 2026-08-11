@@ -286,6 +286,15 @@ fn build_qrbill_inputs(
         creditor_website: company.website.clone(),
         debtor_name: contact.name.clone(),
         debtor_address_lines: split_lines(contact.address.as_deref().unwrap_or_default()),
+        // Story 16-3b (#151) — résolu depuis le CONTACT destinataire (D5), au
+        // même titre que le nom et l'adresse : pas de copie dénormalisée sur
+        // `invoices`, un changement doit se refléter sur les PDF régénérés.
+        //
+        // ⚠️ C'EST LE SITE QUE LA MUTATION D'AC7 DOIT TUER. `draw_invoice_section`
+        // est partagée par la facture et l'avoir : un test posé dans `pdf.rs` ne
+        // peut STRUCTURELLEMENT pas discriminer les deux et resterait vert si
+        // l'un des deux sites oubliait de renseigner le champ.
+        debtor_client_number: contact.client_number.clone(),
         lines: invoice_lines_pdf,
         subtotal_ht,
         vat_lines,
@@ -596,5 +605,51 @@ mod tests {
         assert!(data.creditor_phone.is_none(), "aucun téléphone à inventer");
         assert!(data.creditor_email.is_none(), "aucun e-mail à inventer");
         assert!(data.creditor_website.is_none(), "aucun site web à inventer");
+    }
+
+    /// **AC6 / D5** (Story 16-3b, #151) — la FACTURE porte le numéro de client
+    /// du destinataire, résolu depuis le contact.
+    ///
+    /// Pendant exact du test d'AC7 posé dans `credit_notes.rs` : les deux sites
+    /// de construction d'`InvoicePdfData` doivent être couverts séparément, un
+    /// test de rendu ne pouvant pas les discriminer.
+    #[test]
+    fn invoice_pdf_carries_the_debtor_client_number() {
+        let mut contact = contact_with_structured_address();
+        contact.client_number = Some("CLI-2026-00042".into());
+
+        let (_qr, data) = build_qrbill_inputs(
+            &invoice(),
+            &[],
+            &contact,
+            &company_with_contact_details(),
+            &primary_bank(),
+            "CH",
+            "CH",
+        )
+        .expect("le montage doit produire un PDF exploitable");
+
+        assert_eq!(
+            data.debtor_client_number.as_deref(),
+            Some("CLI-2026-00042"),
+            "la facture doit porter le numéro de client du destinataire"
+        );
+    }
+
+    /// Le pendant négatif : un contact sans numéro n'en fait pas apparaître un.
+    #[test]
+    fn invoice_pdf_omits_the_client_number_the_contact_does_not_have() {
+        let (_qr, data) = build_qrbill_inputs(
+            &invoice(),
+            &[],
+            &contact_with_structured_address(),
+            &company_with_contact_details(),
+            &primary_bank(),
+            "CH",
+            "CH",
+        )
+        .expect("le montage doit produire un PDF exploitable");
+
+        assert!(data.debtor_client_number.is_none());
     }
 }

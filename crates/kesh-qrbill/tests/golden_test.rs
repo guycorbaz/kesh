@@ -66,6 +66,7 @@ fn sample_invoice() -> InvoicePdfData {
         creditor_website: None,
         debtor_name: "Pia Rutschmann".into(),
         debtor_address_lines: vec!["Marktgasse 28".into(), "9400 Rorschach".into()],
+        debtor_client_number: None,
         lines: vec![InvoiceLinePdf {
             description: "Conseil".into(),
             quantity: dec!(1),
