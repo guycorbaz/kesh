@@ -2827,6 +2827,26 @@ mod tests {
         assert!(msg.contains("3200"), "le compte doit être nommé : {msg}");
     }
 
+    /// Story 16-3b — le conflit de numéro de client porte **son propre code**,
+    /// et pas celui de l'IDE.
+    ///
+    /// ⚠️ C'est la CHAÎNE qui est l'interface, pas le statut. Le frontend branche
+    /// dessus littéralement (`+page.svelte`, `err.code === 'CLIENT_NUMBER_ALREADY_EXISTS'`)
+    /// pour choisir le message traduit ; un copier-coller de la variante IDE
+    /// voisine — huit lignes plus haut dans le `match` — garderait le 409 et
+    /// afficherait « numéro IDE » sur un conflit de numéro de client. Un test
+    /// qui n'assert que `StatusCode::CONFLICT` ne voit rien de cette confusion.
+    #[tokio::test]
+    async fn client_number_conflict_has_its_own_code() {
+        let resp =
+            AppError::ClientNumberAlreadyExists("CLI-1 est déjà pris".into()).into_response();
+        let (status, body) = response_body(resp).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body["error"]["code"], "CLIENT_NUMBER_ALREADY_EXISTS");
+        let msg = body["error"]["message"].as_str().unwrap();
+        assert!(msg.contains("CLI-1"), "le numéro doit être nommé : {msg}");
+    }
+
     /// D4-bis — la facture à montant nul répond en **400 métier**, plus en 500
     /// SQL. Le code non listé retomberait sur « Entrée invalide », donc ce test
     /// vérifie aussi que le dispatch de la whitelist connaît le code.

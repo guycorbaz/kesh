@@ -376,6 +376,8 @@ Le seul précédent du dépôt **écarte explicitement** la comparaison octet à
 - **AC5 dessinait une séparation que l'écran ne permet pas.** Il posait que la preuve 1 (création) resterait **verte** sous la mutation « hydratation d'`openEdit` retirée », d'où la nécessité de la preuve 2. Mesuré : **les deux tombent**. Motif — la colonne « N° client » de la liste ayant été écartée en passe 6, la boîte d'édition est le **seul** endroit de l'interface où le numéro se relit ; toute preuve de persistance passe donc par l'hydratation. La preuve 2 reste néanmoins distincte par ce qu'elle *mute* (un champ sans rapport, et le `PUT` full-replace qui perd le numéro), et c'est ce qui justifie de la garder.
 
 - **AC6-bis ne tranchait pas le PÉRIMÈTRE de la troncature, et l'étendre aurait été une régression.** Appliquer `META_MAX_CHARS = 32` à **toutes** les lignes du bloc droit couperait « Réf. facture d'origine: F-2026-0042 » (**35** caractères) sur tout avoir français — du contenu existant, en échange d'aucun risque évité : les autres lignes portent des valeurs **engendrées par le système** (n° de facture, date formatée, référence d'origine), bornées par le schéma de numérotation. Le numéro de client est le **seul** champ libre de 50 caractères saisi par l'utilisateur, donc le seul à pouvoir déborder. La borne lui est donc réservée, et un test dédié (`system_generated_meta_lines_are_not_truncated`) fixe ce choix.
+- **AC10 portait une clause de preuve devenue insatisfiable, et son abandon n'était pas écrit.** La partie « Preuve » d'AC10 exigeait un « **Test E2E — la colonne est visible dans la liste** », alors que la même AC et les Dev Notes écartent explicitement toute colonne de liste (arbitrage de la passe 6). Les deux ne peuvent pas tenir ensemble : l'implémentation a suivi l'arbitrage — `colspan` laissé à **6** aux deux sites câblés en dur — et la clause est donc **caduque**, non oubliée. La recherche par numéro reste couverte au niveau API par `client_number_is_searchable` (trois termes, dont celui fait uniquement d'opérateurs FULLTEXT). *(Consigné en passe 1 de `bmad-code-review` : c'était la seule clause d'AC sans traitement écrit.)*
+
 - **Le curseur `my` du bloc droit a disparu de `draw_invoice_section`.** Toute la chaîne de décréments vit désormais dans `build_meta_lines`, et rien en aval ne consommait `my` — `clippy` l'a signalé (`value assigned to \`my\` is never read`). C'est une conséquence heureuse de l'extraction : le bloc droit n'a plus deux sources de vérité sur sa géométrie.
 
 ### Campagne de mutation — T4
@@ -426,7 +428,7 @@ Restaurations contrôlées derrière : `kesh-qrbill` 61/61, `kesh-i18n` 22/22.
 
 - **T1, T2** (2026-08-10) — migration + audit d'idempotence.
 - **T13** (2026-08-11) — les **six** sites énumérés par la tâche : liste des champs de création et section dédiée `\label{sec:numero-client}` du manuel utilisateur, phrase sur la recherche (qui **surestimait déjà** le code avant cette story — elle annonçait IDE, adresse et téléphone, que la recherche n'a jamais couverts), `docs/search-patterns.md`, ligne v0.9.0 du README, CHANGELOG, et régénération du PDF (`make fr`, 56 pages). Défaut de doc **préexistant** tracé en **issue #291** plutôt que corrigé au passage : le manuel annonce un « Contacts → Import CSV » qui n'existe ni à l'écran ni en route.
-- **T9, T10, T11** (2026-08-11) — `InvoicePdfData.debtor_client_number`, clé `invoice-pdf-client-number` **en fin** des deux tableaux et sur les 4 locales, extraction de `build_meta_lines` (fonction **pure**, sans quoi AC6 est intestable), `META_LINE_STEP` et `META_MAX_CHARS = 32` avec troncature sur la **ligne complète** ; champ renseigné aux **deux** sites de construction. 7 tests neufs (5 dans `pdf.rs`, 2+2 aux sites, 1 dans `kesh-i18n`), 4/4 mutations tuées.
+- **T9, T10, T11** (2026-08-11) — `InvoicePdfData.debtor_client_number`, clé `invoice-pdf-client-number` **en fin** des deux tableaux et sur les 4 locales, extraction de `build_meta_lines` (fonction **pure**, sans quoi AC6 est intestable), `META_LINE_STEP` et `META_MAX_CHARS = 32` avec troncature sur la **ligne complète** ; champ renseigné aux **deux** sites de construction. **11** tests neufs (**6** dans `pdf.rs`, 2+2 aux sites, 1 dans `kesh-i18n`), 4/4 mutations tuées. *(Décompte corrigé en passe 1 de `bmad-code-review` : « 7 » contredisait sa propre ventilation, et `pdf.rs` en portait 6 et non 5 — recompté à la source, `grep -c '#\[test\]'`.)*
 - **T7, T7-ter, T7-bis, T8** (2026-08-11) — type TS, champ de la fiche, hydratation d'`openEdit`, payload, branche `CLIENT_NUMBER_ALREADY_EXISTS`, placeholder de recherche corrigé ; recherche `OR client_number LIKE ?` sur les **deux** branches ; 3 clés i18n × 4 locales (`contact-*` passe de 59 à **62 dans chacune**, sans dérive). Gate ciblé : `svelte-check` 0 erreur, `lint-i18n-ownership` PASS, Vitest **512/512**, E2E `contact-client-number.spec.ts` **2/2** et `contacts.spec.ts` **8 passed / 2 skipped** (non-régression).
 - **T5, T6** (2026-08-11) — DTO d'entrée et de sortie, `normalize_optional`, `MAX_CLIENT_NUMBER_LEN`, branche de `map_contact_error` sur le **nom de contrainte**, variante `AppError::ClientNumberAlreadyExists` → **409 `CLIENT_NUMBER_ALREADY_EXISTS`**. 5 tests E2E API (`contact_client_number_e2e.rs`, nouveau) + 3 tests unitaires dont la **non-sur-capture dans les deux sens** entre les deux contraintes de la table.
 - **T3, T3-bis, T3-ter, T4** (2026-08-11) — le champ traverse les **sept** listes ; 6 tests repository, gate ciblé `binary(kesh-db lib)` vert, 3/3 mutations tuées. **Gate complet au push.**
@@ -461,6 +463,37 @@ Restaurations contrôlées derrière : `kesh-qrbill` 61/61, `kesh-i18n` 22/22.
 - Fixtures de test mises à jour (littéraux `NewContact` / `ContactUpdate` / `Contact`) : `crates/kesh-db/tests/{credit_notes_repository,invoice_ttc_parity,invoices_line_revenue_account,invoices_validate_vat,kf005_fulltext_index_e2e,payment_batches_repository,reconciliation_repository,supplier_invoices_repository}.rs`, `crates/kesh-api/tests/{admin_full_import_e2e,inbox_import_e2e,invoice_delete_e2e,invoice_echeancier_e2e,invoice_pdf_e2e,invoice_send_email_e2e,reconciliation_e2e,reports_e2e,vat_report_e2e}.rs`, `crates/kesh-report/tests/{aged_receivables,vat_report_reconciliation}.rs`
 
 ## Change Log
+
+**2026-08-11 — `bmad-code-review`, PASSE 1 (Opus 5, trois lentilles en parallèle).**
+
+Gate backend complet joué **avant** les patches, sur l'état livré : **2158/2158**, 4 ignorés, 0 échec.
+
+| Lentille | CRIT | HIGH | MED | LOW |
+|---|---|---|---|---|
+| Blind Hunter (diff seul, sans spec) | 0 | 1 | 7 | 7 |
+| Edge Case Hunter (diff + dépôt) | 0 | 0 | 2 | 2 |
+| Acceptance Auditor (diff + spec) | 0 | 0 | 1 | 7 |
+
+**Le HIGH est tombé au grep ground-truth.** « Un second appelant de `PUT /contacts/{id}` effacerait le numéro » — la lentille le donnait elle-même pour indécidable à l'aveugle. Vérifié : un seul émetteur (`contacts.api.ts:50`), et surtout `contacts.types.ts:108` documente que **tout** champ absent d'un `PUT` est effacé. C'est le contrat établi de l'endpoint, pour tous ses champs optionnels, pas un défaut introduit ici — et il est déjà tracé en **#278**.
+
+**Un MEDIUM réfuté par une autre lentille.** Le Blind Hunter soupçonnait la colonne générée de casser l'import `.keshbackup` ; l'Acceptance Auditor a vérifié que `non_generated_columns` (`backup.rs:100`) filtre `EXTRA NOT LIKE '%GENERATED%'` — la colonne sort du backup toute seule. C'est l'intérêt d'avoir une lentille aveugle **et** une lentille avec accès au dépôt.
+
+**Les deux MEDIUM de l'Edge Case Hunter sont les trouvailles de la passe**, et toutes deux portent sur un **symptôme non propagé** :
+
+1. **`build_meta_lines` testait la nullité, pas la vacuité** — alors que le site **jumeau** du bloc gauche, posé par la 16-3a, porte ce filtre avec un commentaire décrivant exactement ce mode d'échec. Et le chemin est atteignable par l'API publique : `str::trim` suit la propriété Unicode `White_Space`, qui **n'inclut pas** les caractères de largeur nulle — `U+200B`, `U+FEFF`, `U+2060` traversent `normalize_optional` et arrivent au PDF. Une facture portait alors « N° client: » suivi de rien, en consommant un `META_LINE_STEP` qui décalait la date, la référence d'origine et l'échéance. Corrigé par un prédicat `is_invisible` et un test à six valeurs, **mutation jouée** (`is_invisible` neutralisé → le test tombe sur le cas ZWSP).
+2. **La justification qui exclut les autres lignes de la troncature reposait sur une prémisse fausse.** Le doc-comment affirmait que le numéro de facture était « borné par le schéma de numérotation » ; ce schéma est un champ **libre** de *Paramètres → Facturation*, rendu jusqu'à `MAX_RENDERED_LEN = 64` (`invoice_format.rs:25-27`) — soit **plus** que les 50 du numéro de client. Le débordement est réel mais **antérieur** à cette story, et le borner à 32 couperait « Réf. facture d'origine: … » sur tout avoir français. Justification réécrite avec le vrai motif, test dé-figé de la fausse prémisse, et défaut tracé en **#293**.
+
+**Cinq MEDIUM du Blind Hunter portaient sur des tests absents ou muets**, tous confirmés au grep et corrigés :
+
+- `empty_client_number_…` lisait le corps **sans vérifier le statut** — un `400` de validation aurait rendu le test vert en ayant cessé de mesurer ;
+- `client_number_conflict_renders_409_with_its_own_code` n'assertait **jamais** la chaîne du code, que le frontend consomme littéralement — l'assertion vit désormais dans `errors.rs`, seul endroit où le corps est lisible, et le test d'origine porte un nom honnête ;
+- **aucun test multi-société** ne distinguait `UNIQUE (company_id, client_number_uniq)` d'un `UNIQUE` global — ajouté, avec extraction d'un helper `create_company_with_user` ;
+- **aucun test de longueur** ne couvrait la borne des 50 caractères — ajouté, aux deux bords (51 refusé, 50 accepté) ;
+- **compteurs de migration périmés à quatre endroits** de `migrations_upgrade_path.rs` (59 et 25 au lieu de 60 et 26). C'est le seul MEDIUM que l'Acceptance Auditor avait vu aussi. Ironie utile : ce fichier documente aux lignes 61-67 que la même dérive y a déjà été corrigée en passe 5 de la 16-1a. Symptôme grepé sur tout le dépôt après correction : aucun résidu.
+
+**Deux LOW tracés plutôt que corrigés** : pas de normalisation NFC sur les champs du contact (**#294** — corriger toucherait `email`, `phone` et `ide_number`, hors périmètre), et l'ambiguïté d'un numéro recyclé visible en double quand « Inclure archivés » est coché (documenté dans le manuel utilisateur, comportement voulu).
+
+**Deux LOW de l'Acceptance Auditor étaient déjà consignés** dans « Ce que l'implémentation a appris » (périmètre d'AC6-bis, forme SQL de D2-bis) — dismiss.
 
 **2026-08-10 — BOUCLE `validate` ARRÊTÉE À LA PASSE 6 — arbitrage du Project Lead, dérogation motivée au critère d'arrêt.**
 

@@ -120,12 +120,16 @@ async fn login(app: &TestApp, username: &str, password: &str) -> String {
         .to_string()
 }
 
-/// Société minimale + utilisateur, puis token. Aucun seed de facturation.
-async fn setup(pool: &MySqlPool) -> (TestApp, String) {
+/// Crée une société et son utilisateur. Extrait de `setup` pour que les tests
+/// d'isolation inter-locataires puissent en créer une **seconde** : sans deux
+/// sociétés, rien ne distingue `UNIQUE (company_id, client_number_uniq)` d'un
+/// `UNIQUE (client_number_uniq)` global.
+async fn create_company_with_user(pool: &MySqlPool, company_name: &str, username: &str) {
     let company_result = sqlx::query(
         "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
-         VALUES ('CN Test Co', 'Test Address\n1000 Lausanne', 'Independant', 'FR', 'FR')",
+         VALUES (?, 'Test Address\n1000 Lausanne', 'Independant', 'FR', 'FR')",
     )
+    .bind(company_name)
     .execute(pool)
     .await
     .expect("company insert");
@@ -135,7 +139,7 @@ async fn setup(pool: &MySqlPool) -> (TestApp, String) {
     users::create(
         pool,
         NewUser {
-            username: "cn_user".to_string(),
+            username: username.to_string(),
             password_hash: hash,
             role: Role::Comptable,
             active: true,
@@ -145,7 +149,11 @@ async fn setup(pool: &MySqlPool) -> (TestApp, String) {
     )
     .await
     .expect("user create should succeed");
+}
 
+/// Société minimale + utilisateur, puis token. Aucun seed de facturation.
+async fn setup(pool: &MySqlPool) -> (TestApp, String) {
+    create_company_with_user(pool, "CN Test Co", "cn_user").await;
     let app = spawn_app(pool.clone()).await;
     let token = login(&app, "cn_user", "password-12345").await;
     (app, token)
@@ -225,11 +233,18 @@ async fn client_number_roundtrips_from_post_to_get(pool: MySqlPool) {
 async fn empty_client_number_is_stored_as_null_and_never_collides(pool: MySqlPool) {
     let (app, token) = setup(&pool).await;
 
-    let first: serde_json::Value = post_contact(&app, &token, "CN Empty A", Some("   "))
-        .await
-        .json()
-        .await
-        .expect("json");
+    // ⚠️ Le statut se vérifie AVANT de lire le corps. Sans cette assertion, un
+    // `400` de validation rend un corps d'erreur où `clientNumber` est absent —
+    // donc `Value::Null` — et `is_null()` passe : le test resterait vert en
+    // ayant cessé de mesurer ce qu'il prétend mesurer. C'est le mode d'échec du
+    // test muet, déjà payé deux fois dans ce dépôt.
+    let resp = post_contact(&app, &token, "CN Empty A", Some("   ")).await;
+    assert_eq!(
+        resp.status(),
+        201,
+        "une valeur blanche doit être acceptée à la création"
+    );
+    let first: serde_json::Value = resp.json().await.expect("json");
     assert!(
         first["clientNumber"].is_null(),
         "une valeur blanche doit être stockée NULL, obtenu {}",
@@ -380,4 +395,63 @@ async fn contacts_are_searchable_by_client_number(pool: MySqlPool) {
         );
         assert_eq!(items[0]["name"], "CN Searchable SA");
     }
+}
+
+/// AC1 — l'unicité est **par société**, pas globale.
+///
+/// ⚠️ Sans deux locataires, aucun des autres tests ne distingue
+/// `UNIQUE (company_id, client_number_uniq)` d'un `UNIQUE (client_number_uniq)`
+/// global : ils passent tous dans les deux cas. La régression serait pourtant
+/// grave et **invisible au locataire** — la société B se verrait refuser en 409
+/// un numéro qu'elle ne peut ni voir ni libérer, parce qu'il appartient à A.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn same_client_number_is_allowed_across_two_companies(pool: MySqlPool) {
+    let (app, token_a) = setup(&pool).await;
+    create_company_with_user(&pool, "CN Test Co B", "cn_user_b").await;
+    let token_b = login(&app, "cn_user_b", "password-12345").await;
+
+    assert_eq!(
+        post_contact(&app, &token_a, "Client de A", Some("CLI-1"))
+            .await
+            .status(),
+        201,
+        "la société A doit pouvoir attribuer CLI-1"
+    );
+    assert_eq!(
+        post_contact(&app, &token_b, "Client de B", Some("CLI-1"))
+            .await
+            .status(),
+        201,
+        "la société B doit pouvoir attribuer LE MÊME CLI-1 : l'unicité est \
+         portée par (company_id, client_number_uniq), pas par le numéro seul"
+    );
+}
+
+/// AC3 — la borne de longueur est refusée **par la route**, en 400 métier.
+///
+/// ⚠️ Sans ce test, supprimer le garde de `validate_common` ne casse rien
+/// visiblement : la valeur atteint un `VARCHAR(50)`, et selon le mode SQL
+/// MariaDB rend soit une erreur 1406 remontée en 500 opaque, soit — hors mode
+/// strict — une **troncature silencieuse** qui fabrique en prime un faux
+/// doublon avec tout numéro partageant le même préfixe de 50 caractères.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn client_number_over_max_length_is_rejected_by_the_route(pool: MySqlPool) {
+    let (app, token) = setup(&pool).await;
+
+    let too_long = "C".repeat(51);
+    let resp = post_contact(&app, &token, "CN Too Long", Some(&too_long)).await;
+    assert_eq!(
+        resp.status(),
+        400,
+        "51 caractères doivent être refusés par la route, pas par MariaDB"
+    );
+
+    let at_limit = "D".repeat(50);
+    assert_eq!(
+        post_contact(&app, &token, "CN At Limit", Some(&at_limit))
+            .await
+            .status(),
+        201,
+        "50 caractères — la borne exacte — doivent rester acceptés"
+    );
 }

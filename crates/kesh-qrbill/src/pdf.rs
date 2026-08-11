@@ -263,16 +263,26 @@ const META_MAX_CHARS: usize = 32;
 /// suivante descend de `META_LINE_STEP`. Une ligne absente ne consomme aucun
 /// espace : c'est exactement l'invariant qu'AC6 vérifie.
 ///
-/// ⚠️ **La troncature ne s'applique qu'au numéro de client**, et c'est
-/// délibéré. Les autres lignes portent des valeurs **engendrées par le
-/// système** — un numéro de facture, une date formatée, la référence d'une
-/// facture d'origine —, bornées par le schéma de numérotation. Le numéro de
-/// client est le seul champ **libre de 50 caractères saisi par l'utilisateur**,
-/// et donc le seul à pouvoir déborder de la page. Élargir la borne à toutes les
-/// lignes ne protégerait rien de plus et **couperait du contenu existant** :
-/// « Réf. facture d'origine: FA-2026-0001 » fait 35 caractères et serait tronqué
-/// sur tout avoir français — une régression silencieuse, en échange d'aucun
-/// risque évité. *(Mesuré à l'implémentation ; la spec ne tranchait pas.)*
+/// ⚠️ **La troncature ne s'applique qu'au numéro de client**, et le motif n'est
+/// PAS que les autres lignes seraient incapables de déborder.
+///
+/// Le motif est qu'une borne à `META_MAX_CHARS` **couperait du contenu
+/// existant** : « Réf. facture d'origine: FA-2026-0001 » fait 35 caractères et
+/// serait tronqué sur tout avoir français. La borne est donc réservée au champ
+/// que cette story introduit, et dont elle répond.
+///
+/// ⚠️ **Le débordement des autres lignes est un problème réel, distinct, et
+/// ANTÉRIEUR à cette story — suivi dans l'issue #293.** Le numéro de facture
+/// n'est pas « borné par le schéma de numérotation » : ce schéma est un champ
+/// libre de l'écran *Paramètres → Facturation*, et `invoice_format` le laisse
+/// rendre jusqu'à `MAX_RENDERED_LEN = 64` caractères — soit plus que les 50 du
+/// numéro de client. `origin_reference` est un numéro de facture, donc de même
+/// classe. Le traiter demande une borne PROPRE à ces lignes, plus haute, et un
+/// arbitrage sur ce qu'on coupe ; ce n'est pas le périmètre de la 16-3b.
+///
+/// *(La rédaction précédente affirmait que ces valeurs étaient « engendrées par
+/// le système, bornées par le schéma de numérotation ». Prémisse réfutée en
+/// passe 1 de `bmad-code-review`, `invoice_format.rs:25-27` à l'appui.)*
 fn build_meta_lines(
     inv: &InvoicePdfData,
     i18n: &QrBillI18n,
@@ -311,7 +321,26 @@ fn build_meta_lines(
     );
     // Story 16-3b (#151) : entre le n° de facture et la date — position fixée
     // par D3, et qu'aucun test de delta ne pourrait rattraper si elle changeait.
-    if let Some(client_number) = &inv.debtor_client_number {
+    //
+    // ⚠️ Tester la VACUITÉ, pas la nullité — même raison qu'au bloc gauche de la
+    // Story 16-3a, dont ce site est le jumeau. La normalisation qui transforme
+    // `""` en `None` vit dans la route API ; une valeur vide arrivée autrement
+    // imprimerait « N° client: » suivi de rien, en consommant un
+    // `META_LINE_STEP` qui décalerait vers le bas la date, la référence
+    // d'origine et l'échéance.
+    //
+    // Et le chemin n'est PAS que théorique ici : `str::trim` suit la propriété
+    // Unicode `White_Space`, qui **n'inclut pas** les caractères de largeur
+    // nulle. `U+200B` (ZWSP), `U+FEFF` (BOM) et `U+2060` (WJ) survivent donc à
+    // la normalisation de la route et arrivent jusqu'ici. `trim().is_empty()`
+    // ne les attrape pas non plus — d'où le filtre sur les caractères qui
+    // MARQUENT quelque chose. *(Passe 1 de `bmad-code-review`.)*
+    if let Some(client_number) = inv
+        .debtor_client_number
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| v.chars().any(|c| !is_invisible(c)))
+    {
         push(
             &mut out,
             &mut y,
@@ -1066,6 +1095,24 @@ fn format_date_ch(d: NaiveDate) -> String {
     format!("{:02}.{:02}.{:04}", d.day(), d.month(), d.year())
 }
 
+/// Vrai si le caractère ne **marque** rien sur la page.
+///
+/// `char::is_whitespace` suit la propriété Unicode `White_Space`, qui n'inclut
+/// **pas** les caractères de largeur nulle : `U+200B` (ZWSP), `U+FEFF` (BOM) et
+/// `U+2060` (word joiner) passent donc `trim()` et `is_empty()` sans être
+/// retenus. Une valeur qui n'en contient que de ceux-là est vide *à
+/// l'impression* — c'est ce que ce prédicat permet de détecter, pour ne pas
+/// dessiner une ligne blanche qui consommerait un `META_LINE_STEP`.
+///
+/// `U+00AD` (trait d'union conditionnel) est inclus : il ne se rend pas hors
+/// point de césure.
+fn is_invisible(c: char) -> bool {
+    c.is_whitespace()
+        || c.is_control()
+        || matches!(c,
+            '\u{00AD}' | '\u{200B}'..='\u{200F}' | '\u{2060}'..='\u{2064}' | '\u{FEFF}')
+}
+
 fn truncate_display(s: &str, max_chars: usize) -> String {
     if s.chars().count() <= max_chars {
         s.to_string()
@@ -1554,6 +1601,64 @@ mod tests {
         );
     }
 
+    /// **AC6, vacuité** — une valeur qui ne marque rien sur la page ne doit
+    /// dessiner aucune ligne, ni consommer de `META_LINE_STEP`.
+    ///
+    /// ⚠️ Les caractères de largeur nulle **survivent à `trim()`** : la propriété
+    /// Unicode `White_Space` ne les couvre pas, si bien que la normalisation de
+    /// la route API rend `Some("\u{200B}")` et non `None`. Sans filtre de
+    /// vacuité ici, le PDF porte un « N° client: » suivi de rien qui décale
+    /// vers le bas la date, la référence d'origine et l'échéance.
+    ///
+    /// La chaîne vide franche couvre l'autre porte d'entrée : une valeur écrite
+    /// hors API — restauration d'une sauvegarde produite ailleurs, correction
+    /// SQL directe — que la route n'a jamais normalisée.
+    ///
+    /// *(Passe 1 de `bmad-code-review` : le site jumeau du bloc gauche, posé par
+    /// la 16-3a, portait déjà ce filtre ; le symptôme n'avait pas été propagé.)*
+    #[test]
+    fn a_blank_or_invisible_client_number_draws_no_line() {
+        let (_, base, i18n) = invoice_fixture();
+        let top = 100.0_f32;
+
+        let reference = build_meta_lines(
+            &InvoicePdfData {
+                debtor_client_number: None,
+                ..base.clone()
+            },
+            &i18n,
+            top,
+        );
+
+        for (label, value) in [
+            ("chaîne vide", ""),
+            ("espaces ASCII", "   "),
+            ("ZWSP U+200B", "\u{200B}"),
+            ("BOM U+FEFF", "\u{FEFF}"),
+            ("word joiner U+2060", "\u{2060}"),
+            ("espace insécable", "\u{00A0}"),
+        ] {
+            let lines = build_meta_lines(
+                &InvoicePdfData {
+                    debtor_client_number: Some(value.into()),
+                    ..base.clone()
+                },
+                &i18n,
+                top,
+            );
+            assert_eq!(
+                lines.len(),
+                reference.len(),
+                "« {label} » ne doit ajouter aucune ligne au bloc"
+            );
+            assert_eq!(
+                lines.last().map(|(_, y)| *y),
+                reference.last().map(|(_, y)| *y),
+                "« {label} » ne doit consommer aucun META_LINE_STEP"
+            );
+        }
+    }
+
     /// **AC6, conditionnalité** — l'invariant que le delta de taille ne peut PAS
     /// voir, et la raison d'être de l'extraction de `build_meta_lines`.
     ///
@@ -1689,10 +1794,17 @@ mod tests {
         assert!(short.ends_with("CLI-1"), "« {short} »");
     }
 
-    /// Les autres lignes du bloc ne sont **pas** bornées, et c'est délibéré :
-    /// borner à 32 couperait « Réf. facture d'origine: F-2026-0042 » sur tout
-    /// avoir français, sans écarter aucun risque — ces valeurs sont engendrées
-    /// par le système, pas saisies.
+    /// Les autres lignes du bloc ne sont **pas** bornées à `META_MAX_CHARS`, et
+    /// c'est délibéré : borner à 32 couperait « Réf. facture d'origine:
+    /// F-2026-0042 » sur tout avoir français.
+    ///
+    /// ⚠️ Ce test fixe l'absence de borne **à 32**, pas l'absence de toute
+    /// borne. Le numéro de facture peut atteindre 64 caractères via un schéma
+    /// de numérotation configuré, et déborder de la page — problème antérieur à
+    /// cette story, suivi dans l'issue **#293**. Le jour où une borne propre aux
+    /// lignes système sera posée, ce test devra être ajusté, pas supprimé : ce
+    /// qu'il protège, c'est que la borne du numéro de client ne leur soit pas
+    /// appliquée telle quelle.
     #[test]
     fn system_generated_meta_lines_are_not_truncated() {
         let (_, base, i18n) = invoice_fixture();

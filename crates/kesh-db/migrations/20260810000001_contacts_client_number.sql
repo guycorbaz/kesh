@@ -1,4 +1,8 @@
--- Story 16-3b (#151) : numéro de client de l'émetteur sur le PDF de facture.
+-- Story 16-3b (#151) : numéro du client DESTINATAIRE sur le PDF de facture.
+--
+-- Le numéro est attribué PAR l'émetteur, mais il porte sur le contact
+-- destinataire — ne pas confondre avec la Story 16-3a, qui a posé les
+-- coordonnées de l'émetteur.
 --
 -- Dernier des trois volets de #151, après le récapitulatif TVA (PR #267) et les
 -- coordonnées de l'émetteur (Story 16-3a). Le bloc métadonnées du PDF ne portait

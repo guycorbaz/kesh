@@ -482,9 +482,14 @@ fn contact_response_with_label(
     resp
 }
 
-/// Intercepte les `UniqueConstraintViolation` portant sur la contrainte
-/// `uq_contacts_company_ide` et remappe vers le code client dédié
-/// `IDE_ALREADY_EXISTS`. Sinon propage tel quel.
+/// Remappe les `UniqueConstraintViolation` de la table `contacts` vers leur code
+/// client dédié, selon la contrainte violée :
+///
+/// - `uq_contacts_company_ide` → `IDE_ALREADY_EXISTS`
+/// - `uq_contacts_company_client_number` → `CLIENT_NUMBER_ALREADY_EXISTS` (16-3b)
+///
+/// Toute autre violation est propagée telle quelle — c'est ce que vérifie
+/// `map_contact_error_other_unique_maps_to_generic_conflict`.
 ///
 /// **Note** : on ne matche que le **nom de contrainte** (`uq_contacts_company_ide`),
 /// pas le nom de colonne (`ide_number`) — le format du message d'erreur
@@ -838,10 +843,15 @@ mod tests {
         }
     }
 
-    /// Story 16-3b : le 409 doit porter le code client `CLIENT_NUMBER_ALREADY_EXISTS`
-    /// — un test qui n'assert que « ce n'est pas 200 » laisserait passer un 500.
+    /// Story 16-3b : la variante rend bien un **409**, et non un 500.
+    ///
+    /// Le contrôle de la CHAÎNE `CLIENT_NUMBER_ALREADY_EXISTS` — l'interface
+    /// réelle avec le frontend — est fait par `client_number_conflict_has_its_own_code`
+    /// dans `errors.rs`, seul endroit où le corps de la réponse est lisible
+    /// (helper `response_body`). Ce test-ci ne couvre que le statut : son nom le
+    /// disait autrefois davantage qu'il ne le vérifiait.
     #[test]
-    fn client_number_conflict_renders_409_with_its_own_code() {
+    fn client_number_conflict_renders_409() {
         let response = AppError::ClientNumberAlreadyExists("déjà pris".into()).into_response();
         assert_eq!(response.status(), StatusCode::CONFLICT);
     }

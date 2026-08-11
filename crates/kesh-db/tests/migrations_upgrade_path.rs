@@ -37,7 +37,7 @@ async fn apply_migrations_up_to(
         "apply_migrations_up_to: n={} > total={} — vérifier que le calcul \
          `total - 26` (fenêtre d'upgrade, FRONTIÈRE figée à 34) reste \
          cohérent avec l'ajout de migrations futures. Si une migration a été ajoutée à \
-         la branche, l'assertion `total == 59` du test upgrade_path_preserves_data \
+         la branche, l'assertion `total == 60` du test upgrade_path_preserves_data \
          doit également échouer, c'est son rôle : elle signale qu'il faut décider \
          explicitement si la fenêtre s'élargit (bumper `total` seul) ou si la \
          frontière doit rester à 34 (bumper `total` ET la fenêtre). Cf. garde-fou \
@@ -55,7 +55,7 @@ async fn apply_migrations_up_to(
 }
 
 /// AC #15a — cas générique upgrade path : `total - 26` migrations appliquées
-/// (**34** à ce jour) + seed + `MIGRATOR.run()` final, qui applique les **25**
+/// (**34** à ce jour) + seed + `MIGRATOR.run()` final, qui applique les **26**
 /// dernières. Assertion : seed préservé à travers la fenêtre d'upgrade.
 ///
 /// ⚠️ Les nombres ci-dessus se recomptent, ils ne se relisent pas — cf. le
@@ -94,7 +94,7 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
          contacts_client_number)"
     );
 
-    // Étape 1 : applique toutes les migrations sauf les 25 dernières. La
+    // Étape 1 : applique toutes les migrations sauf les 26 dernières. La
     // fenêtre d'upgrade démarre donc à la 35ᵉ, `20260614000001_vat_accounts_config`
     // (Story 18-1a), et court jusqu'à la dernière du dépôt. Ne pas ré-énumérer
     // ici les migrations de la fenêtre : une liste nominative se périme à chaque
@@ -102,7 +102,7 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // plus bas. Le seul nombre qui fait foi est celui du `total - N` ci-dessous.
     //
     // Note `total - N` : expression relative à la longueur totale, tandis que
-    // l'assertion `total == 59` ci-dessus est INTENTIONNELLEMENT codée en dur
+    // l'assertion `total == 60` ci-dessus est INTENTIONNELLEMENT codée en dur
     // pour fail-loud sur toute évolution non revue. À chaque migration ajoutée,
     // le mainteneur doit (1) bumper ce compte (2) incrémenter `N` du même pas,
     // de sorte que `total - N` — la frontière — reste **constant**.
