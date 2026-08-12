@@ -4,7 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Kesh** is a Swiss personal and small business accounting software. It is currently in the design/planning phase, developed using the BMAD (Breakthrough Method of Agile AI-driven Development) framework. No application code has been written yet — the repository contains BMAD framework assets and design artifacts.
+**Kesh** is a Swiss personal and small business accounting software, **built, released and deployed** — not a design-phase project. It is developed using the BMAD (Breakthrough Method of Agile AI-driven Development) framework, whose assets live alongside the application code.
+
+**Current release: v0.9.0** (2026-08-12), published on Docker Hub as `gcorbaz/kesh` and **deployed on the author's NAS**. Roughly 175 stories delivered across 20 epics, 60 migrations, 2164 backend tests and 512 frontend tests.
+
+⚠️ **Deployed is not the same as keeping the books, and the distinction drives real decisions.** The instance runs and is exercised, but **the real accounts are not yet kept in Kesh** — the project's own milestone for that, *« Première clôture d'exercice tenue dans Kesh »*, is still open, and the fiche states it as the *expected* result, not the current one. Two consequences worth holding: there is **no legacy production data to protect**, which makes prevention cheaper than repair and migrations less risky than they will ever be again; and **when that milestone is reached, this paragraph must change** — along with the reasoning that rests on it.
+
+*(Écrit le 2026-08-12 en remplacement d'un paragraphe qui affirmait qu'aucun code applicatif n'avait été écrit. La première rectification est allée trop loin dans l'autre sens en parlant de « real bookkeeping » : corrigée le jour même, sur remarque de Guy. Une correction n'est pas exempte du défaut qu'elle corrige.)*
+
+> ⚠️ **Ce paragraphe a menti pendant des mois**, en affirmant que le projet était « in the design/planning phase » et qu'« aucun code applicatif n'avait été écrit » — alors que le logiciel tenait déjà une comptabilité réelle. C'est le fichier qui instruit chaque séance de travail : le laisser faux oriente tout ce qui s'appuie dessus. Corrigé le 2026-08-12, à la revue de projet qui a suivi la clôture de l'Epic 16. **Quand l'état du projet change, ce paragraphe change avec lui.**
 
 **Target stack**: Rust backend (Axum), Svelte frontend, MariaDB, web app only (no Tauri). Configuration via environment variables. Deployment via docker-compose.
 
@@ -17,31 +25,40 @@ The user (Guy) works in **French**. All conversation and document output should 
 ## Repository Structure
 
 ```
-_bmad/                  # BMAD framework (agents, workflows, skills, config)
-  bmm/                  # Build Method Methodology — discovery → implementation phases
-  wds/                  # Workflow Design System — UX and design workflows
-  cis/                  # Creative Innovation Strategy — strategic methodologies
-  tea/                  # Test Architecture — QA and testing workflows
-  bmb/                  # Builder — meta-skills for creating agents/workflows
-  core/                 # Universal skills (brainstorming, reviews, editing)
-  _config/              # CSV manifests (agents, skills, workflows, files)
-  _memory/              # Persistent memory for sidecar agents
-_bmad-output/           # Generated artifacts (planning, implementation, test)
-design-artifacts/       # Project deliverables by phase (A through G)
-  A-Product-Brief/      # Product positioning
-  B-Trigger-Map/        # Business goals → user psychology
-  C-UX-Scenarios/       # User interaction scenarios
-  D-Design-System/      # UI components and tokens
-  E-PRD/                # Requirements + design deliveries
-  F-Testing/            # Test plans
-  G-Product-Development/ # Implementation artifacts
-docs/                   # Project documentation
-.claude/skills/         # 118 installed BMAD skills for Claude Code
+crates/                 # Le backend Rust — workspace de 10 crates
+  kesh-core/            # Logique métier pure, ZÉRO I/O
+  kesh-db/              # Persistance MariaDB via SQLx + les migrations
+  kesh-api/             # Serveur HTTP Axum — routes, auth, middleware
+  kesh-qrbill/          # QR-facture SIX 2.2 + génération des PDF
+  kesh-import/          # Parseurs CAMT.053 et CSV (publiable, zéro dépendance interne)
+  kesh-payment/         # Fichiers de paiement ISO 20022 (pain.001)
+  kesh-reconciliation/  # Réconciliation bancaire
+  kesh-report/          # Générateurs de rapports comptables
+  kesh-i18n/            # i18n et formatage suisse (Fluent, 4 locales)
+  kesh-seed/            # Données de démonstration
+frontend/               # SvelteKit — src/lib/features/ par domaine, tests/e2e/ Playwright
+scripts/                # Outillage : test-fast.sh, mem-guard.sh, prepare-release.sh, hooks
+docs/                   # Documentation, dont manual/{fr,de,en,it}/ (LaTeX + PDF versionnés)
+website/                # Site GitHub Pages (HTML statique)
+charts/                 # Plans comptables de référence
+_bmad/                  # Cadre BMAD (agents, workflows, skills, config)
+_bmad-output/           # Artefacts BMAD engendrés
+  planning-artifacts/   # PRD, architecture, epics
+  implementation-artifacts/  # Fichiers de story, sprint-status.yaml, rétrospectives
+.claude/skills/         # Skills BMAD installées pour Claude Code
 ```
+
+⚠️ **Les chemins ci-dessus se vérifient, ils ne se supposent pas.** La version précédente
+de ce bloc documentait un répertoire `design-artifacts/` **qui n'a jamais été versionné**,
+et omettait `crates/` et `frontend/` — c'est-à-dire la totalité du code. Elle décrivait
+une intention, non un dépôt. Les nombres de skills et de workflows ont été retirés pour
+la même raison : ils étaient faux de moitié et se périment à chaque installation.
 
 ## BMAD Architecture
 
-**Agents** are named personas (PM, Developer, Architect, QA, etc.) defined in `.md` files with menus that invoke skills or workflows. **Skills** are self-contained capabilities (52 total). **Workflows** are multi-step stateful processes (51 total) using step-file architecture — each step in a separate file, loaded just-in-time. Progress is tracked in document frontmatter.
+**Agents** are named personas (PM, Developer, Architect, QA, etc.) defined in `.md` files with menus that invoke skills or workflows. **Skills** are self-contained capabilities. **Workflows** are multi-step stateful processes using step-file architecture — each step in a separate file, loaded just-in-time. Progress is tracked in document frontmatter.
+
+*(Les décomptes de skills et de workflows ont été retirés le 2026-08-12 : ils annonçaient 52 et 51 pour 79 et 50 réels. Un nombre qu'aucun test ne contrôle et qu'aucune installation ne met à jour se périme en silence — `wc -l` sur les manifestes de `_bmad/_config/` dit la vérité.)*
 
 Key manifests in `_bmad/_config/`: `agent-manifest.csv`, `skill-manifest.csv`, `workflow-manifest.csv`.
 
@@ -503,6 +520,16 @@ Chaque commit qui adresse partiellement ou totalement une issue doit mentionner 
 - **Fermer l'issue** : `fix(api): close IDOR on contacts (#2)` ou `... (closes #2)` ou `... (fixes #2)` — GitHub ferme automatiquement l'issue au merge sur `main`.
 - **Référencer sans fermer** : `fix: round invoice totals (refs #42)` — lie le commit à l'issue sans la fermer.
 
+**Le mot-clé de fermeture se porte sur la PR, pas sur les commits intermédiaires.** Une story se construit en plusieurs commits, tous en `refs #N` — c'est correct, aucun d'eux ne clôt à lui seul. Mais le dépôt merge en **squash** : le message du commit final est le **titre et le corps de la PR**, et c'est donc là que `closes #N` doit figurer pour que GitHub ferme l'issue au merge.
+
+⚠️ **`refs` partout donne un merge propre et une issue qui reste ouverte, sans le moindre signal.** Rien ne rougit, rien ne prévient : on découvre l'issue ouverte des jours plus tard, ou jamais. Vérifier après merge vaut mieux que supposer :
+
+```sh
+gh issue view <N> --json state --jq .state
+```
+
+*(Précédent : Story 16-3b, 2026-08-11. Les sept commits portaient `refs #151`, la PR #296 disait « Ferme #151 » en toutes lettres — en prose, pas en mot-clé. L'issue est restée ouverte après le merge et a dû être fermée à la main.)*
+
 ### Legacy
 
 Deux fichiers dans `docs/` sont **archivés et ne doivent plus être mis à jour** — ils ne servent que de trace historique :
@@ -511,6 +538,20 @@ Deux fichiers dans `docs/` sont **archivés et ne doivent plus être mis à jour
 - `docs/known-failures.md` — archivé depuis 2026-04-18, 7 KF migrées sur GitHub (KF-001 à KF-007).
 
 Toute nouvelle KF/CR/bug → GitHub uniquement. Ne **pas** rouvrir ces fichiers pour y ajouter des entrées.
+
+## Un appariement automatique propose, il ne crée jamais
+
+**Règle** : quand Kesh rapproche une donnée entrante d'une entité existante — un fournisseur sur une facture scannée, un débiteur sur un virement, un article sur une ligne — il **propose** un rattachement à l'utilisateur. Il ne crée jamais l'entité d'office, et ne tranche jamais seul un rattachement douteux. Ce qui n'est pas certain va dans une file « à rattacher ».
+
+**Pourquoi, et le motif n'est pas celui qu'on croit.** L'objection habituelle est qu'un appariement automatique crée des doublons. C'est vrai, et ce n'est pas le plus grave : **un doublon est bruyant**, on le voit dans la liste et on le corrige. Le vrai danger est le **faux rattachement** — une facture imputée au mauvais fournisseur. Celui-là est **muet** : rien ne le signale, il fausse la comptabilité analytique et les rapports, et on ne le découvre qu'en cherchant autre chose.
+
+Les données entrantes sont bruitées par nature : « Dubarde SàRL », « Dubarde Sarl », « DUBARDE S.à r.l. » désignent la même société ; deux sociétés d'un même groupe portent des noms presque identiques et sont deux débiteurs distincts. **Aucun seuil de similarité ne sépare les deux cas de façon fiable**, et le coût d'une erreur n'est pas symétrique.
+
+⚠️ **C'est le comportement actuel de l'import de factures** — aucun `contacts::create` dans le chemin d'import, la pièce importée attend un rattachement humain. La règle est écrite pour qu'on n'en sorte pas par inadvertance, en croyant améliorer l'ergonomie.
+
+*Corollaire* : la prévention se place **à la saisie** (signaler un contact proche avant l'enregistrement, cf. #301), pas à la réparation. Signaler, jamais bloquer : deux clients peuvent légitimement porter des noms très proches.
+
+*(codifié 2026-08-12, à la suite de la revue de projet — proposition de Guy, étendue de « en cas de doute » à « sans exception » sur l'argument du faux rattachement muet.)*
 
 ## Migration breaking policy
 
