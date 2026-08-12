@@ -66,25 +66,52 @@ L'issue #167 date de plusieurs mois. Deux de ses éléments ont bougé, et un tr
 
 L'issue proposait les deux options. **L'état du code tranche** : l'approche par handler a été appliquée trois fois et **oubliée seize**. Ce n'est pas un défaut de diligence, c'est la propriété d'un dispositif qui doit être rappelé à chaque ajout de route — et rien ne le rappelle. Un `route_layer` sur `admin_routes`, à côté de `require_admin_role` qui vit déjà là, se pose **une fois** et couvre par construction toute route ajoutée ensuite.
 
-**D2 — Un code d'erreur distinct.** `AppError::ApiKeyManagementForbidden` rend aujourd'hui `403 API_KEY_MANAGEMENT_FORBIDDEN`. Le réutiliser pour « vous ne pouvez pas rouvrir un exercice avec un jeton » **mentirait à l'appelant** : son message parle de gestion de clés. Une variante dédiée — `API_KEY_ADMIN_FORBIDDEN` — avec son message propre sur les quatre locales.
+**D2 — Un code d'erreur distinct, ET trois tests existants à mettre à jour.** `AppError::ApiKeyManagementForbidden` rend aujourd'hui `403 API_KEY_MANAGEMENT_FORBIDDEN`. Le réutiliser pour « vous ne pouvez pas rouvrir un exercice avec un jeton » **mentirait à l'appelant** : son message parle de gestion de clés. Une variante dédiée — `API_KEY_ADMIN_FORBIDDEN` — avec son message propre sur les quatre locales.
 
-**D3 — Les trois `ensure_not_pat` existants restent.** La couche les rend redondants sur ces routes, mais ils gardent une valeur : `full-export`, `full-import` et la réouverture d'exercice sont des opérations dont l'interdiction aux jetons est **intrinsèque**, indépendamment du routeur où elles vivent. Un déplacement de route ne doit pas les découvrir. *(Une redondance assumée et écrite vaut mieux qu'une garde retirée « parce que la couche s'en occupe ».)*
+> ⚠️ **Cette décision a une conséquence que la première rédaction avait manquée, et qui contredisait D3.**
+>
+> `route_layer` enveloppe le service : la couche répond **avant** que le handler ne soit appelé — quel que soit son ordre par rapport à `require_admin_role`. Les trois routes déjà gardées répondront donc le **nouveau** code, et non plus celui que leurs tests assertent :
+>
+> | Test | Ligne | Assertion actuelle |
+> |---|---|---|
+> | `full_export_via_pat_returns_403` | `admin_full_export_e2e.rs:409` | `API_KEY_MANAGEMENT_FORBIDDEN` |
+> | `full_import_via_pat_returns_403` | `admin_full_import_e2e.rs:414` | `API_KEY_MANAGEMENT_FORBIDDEN` |
+> | `reopen_via_pat_returns_403` | `fiscal_years_e2e.rs:1638` | `API_KEY_MANAGEMENT_FORBIDDEN` |
+>
+> **Ces trois assertions DOIVENT changer, et c'est la seule modification de test autorisée par cette story.** La première rédaction disait l'inverse — « sans modification » — et avertissait même qu'une modification signalerait « une couche posée trop haut ». **Cet avertissement égarait** : la cause n'est pas le placement, qui est correct, mais l'interaction entre D2 et D3. *(Réfuté en passe 1 de `validate`, preuve d'exécution à l'appui.)*
+>
+> ⚠️ Ne PAS toucher à `api_keys_e2e.rs:425` : cette route-là est bien de la gestion de clés, son code reste le bon.
 
-**D4 — La frontière DC6 est réécrite dans la spec parente.** Elle disait « un PAT ne gère pas les clés » ; elle dira « **un PAT n'atteint aucune route `require_admin_role`** ». C'est cette formulation qui rend le garde-fou vérifiable.
+**D3 — Les trois `ensure_not_pat` existants restent.** La couche les rend redondants sur ces routes, mais ils gardent une valeur : `full-export`, `full-import` et la réouverture d'exercice sont des opérations dont l'interdiction aux jetons est **intrinsèque**, indépendamment du routeur où elles vivent. Un déplacement de route ne doit pas les découvrir. *(Une redondance assumée et écrite vaut mieux qu'une garde retirée « parce que la couche s'en occupe » — mais elle a un prix, celui décrit en D2.)*
+
+**D4 — La frontière DC6 est réécrite dans `17-2a-api-pat-backend.md`, PAS dans `17-2`.** Elle disait « un PAT ne gère pas les clés » ; elle dira « **un PAT n'atteint aucune route `require_admin_role`** ».
+
+⚠️ **La cible importe, et la première rédaction se trompait.** Le texte de DC6 réellement autoritaire vit **verbatim dans `17-2a-api-pat-backend.md`** — la story `done`, avec son Dev Agent Record —, tandis que `17-2-api-pat-integrations.md` est resté en `ready-for-dev`, vestige du découpage. Amender le second seul laisserait **le document que tout le monde lit** avec l'ancienne frontière. *(Relevé en passe 1 de `validate`.)*
+
+**D5 — Le routeur `comptable_routes` reste HORS périmètre, et c'est une décision, non une question.** Vérifié : il ne porte aucune route capable de créer un utilisateur, de réinitialiser un mot de passe ou de changer la configuration de la société — les seuls vecteurs de la propriété de containment que cette story défend. Et le fermer casserait le cas d'usage nominal du PAT (DC4), qui est précisément d'écrire des écritures et des factures. *(Cette décision était rangée en question ouverte ; deux lentilles ont relevé qu'elle était en réalité tranchée, et qu'un « oui » ultérieur casserait AC2 sans garde-fou. Promue ici.)*
 
 ## Acceptance Criteria
 
-**AC1 — Aucune route admin n'est atteignable par un PAT.**
-*Preuve* : un test qui **énumère les routes du routeur `admin_routes`** et vérifie que chacune rend `403` avec un PAT `read-write` dont le créateur est Admin.
-⚠️ **L'énumération est le cœur de l'AC.** Un test qui vérifie trois routes choisies à la main reproduirait exactement le défaut qu'on corrige : il passerait, et la quatrième route ajoutée demain ne serait pas couverte. Si l'énumération dynamique n'est pas praticable avec axum, alors **une liste explicite doublée d'une assertion de comptage** — `assert_eq!(routes_testées, routes_du_routeur)` — qui **rougit** dès qu'une route est ajoutée sans son test.
+**AC1 — Aucune route admin n'est atteignable par un PAT, quel que soit son scope.**
+
+**« Route » signifie ici un couple (méthode, chemin)**, et non un chemin : `/api/v1/users` porte un `GET` et un `POST`, qui sont deux routes. Le « 19 » du tableau ci-dessus compte des **enregistrements `.route(…)`**, dont plusieurs portent deux ou trois méthodes — le nombre de couples à couvrir est donc **supérieur à 19**, et c'est celui-là qui fait foi. *(Ambiguïté relevée en passe 1 : un test calibré sur 19 serait structurellement incomplet.)*
+
+*Preuve* : un test qui couvre **chaque couple (méthode, chemin)** d'`admin_routes` et vérifie qu'il rend `403`, avec un PAT dont le créateur est Admin — **testé aux deux scopes, `read-write` ET `read-only`**. Le discriminant retenu ne regarde que `api_key_id`, jamais le scope ; ne prouver que `read-write` laisserait le second cas sans critère, alors qu'une route admin en lecture reste un vecteur de fuite.
+
+⚠️ **La complétude est le cœur de l'AC, et son mécanisme est arrêté ici.** `axum 0.8` **n'expose aucune énumération** — vérifié dans son source : `Router` n'offre que `has_routes() -> bool`. L'énumération dynamique est donc **impossible**, et le repli d'abord envisagé — comparer à « le nombre de routes du routeur » — était **circulaire** : ce nombre ne pouvait venir que d'une seconde constante entretenue à la main, c'est-à-dire du « quelqu'un doit se souvenir » que cette story existe pour éliminer.
+
+**Le mécanisme retenu dérive le compte de la SOURCE, qui est la seule chose qu'un ajout de route modifie forcément** : le test lit `lib.rs` (`include_str!`) et compte les `.route(` du bloc `admin_routes`. Une route ajoutée sans son test fait donc **rougir** le test, sans que personne n'ait à y penser.
+
+⚠️ **La borne du bloc doit être robuste** — un marqueur de commentaire délimitant `admin_routes`, et non un numéro de ligne, qui se périmerait au premier remaniement.
 
 **AC2 — Le cas nominal n'est pas cassé.**
 Un PAT `read-write` créé par un **Comptable** conserve l'accès à tout ce qu'il pouvait atteindre : écritures, factures, contacts, produits.
-*Preuve* : les tests existants de `17-2a` restent verts **sans modification**. ⚠️ S'il faut en modifier un, c'est le signe que la couche est posée trop haut.
+*Preuve* : `api_keys_e2e.rs` reste vert **sans modification** — vérifié en passe 1 : aucun de ses tests n'exerce une route d'`admin_routes`, et tous ses contextes sont créés en rôle Comptable.
 
 **AC3 — Un Admin devant son navigateur n'est pas affecté.**
 La couche ne regarde que `api_key_id`, jamais le rôle.
 *Preuve* : les suites E2E d'administration — utilisateurs, TVA, relances, modèles d'e-mail — restent vertes.
+⚠️ **À une exception près, prévue et bornée** : les **trois** assertions de code d'erreur listées en D2 changent d'ancien vers nouveau code. Toute autre modification de test est un signal d'alerte, pas celle-là.
 
 **AC4 — L'erreur dit ce qui se passe.**
 `403` avec le code `API_KEY_ADMIN_FORBIDDEN` et un message traduit sur les quatre locales, distinct de celui de la gestion de clés.
@@ -94,16 +121,23 @@ La couche ne regarde que `api_key_id`, jamais le rôle.
 *Preuve* : un test qui rejoue la chaîne complète — PAT Admin → `POST /api/v1/users` → **403**. C'est le test qui dit *pourquoi* la story existe ; son nom doit le porter.
 
 **AC6 — La documentation dit la nouvelle frontière.**
-Manuel administrateur : ce qu'un jeton peut et ne peut pas faire, et que **l'administration en est exclue quel que soit le rôle du créateur**. La spec 17-2 (DC6) est amendée. CHANGELOG dans les mots de l'utilisateur.
+Manuel administrateur : ce qu'un jeton peut et ne peut pas faire, et que **l'administration en est exclue quel que soit le rôle du créateur**.
+Le CHANGELOG dit, dans les mots de l'utilisateur, **qu'un jeton créé par un Admin perd des accès qu'il avait** — sans quoi la première intégration qui tombe en `403` produit un ticket de support.
+*Preuve*, et c'est la seule AC qui en manquait :
+- `grep -nF "require_admin_role" _bmad-output/implementation-artifacts/17-2a-api-pat-backend.md` rend la **nouvelle** formulation de DC6 ;
+- `grep -c "jeton" docs/manual/fr/admin-manual.tex` a augmenté, et la section citée décrit l'exclusion ;
+- l'entrée CHANGELOG existe et mentionne la perte d'accès des jetons Admin existants.
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — La couche** (AC1, AC3). Un `route_layer` sur `admin_routes`, à côté de `require_admin_role`. ⚠️ **Vérifier l'ordre d'application** : dans axum, `route_layer` s'empile — s'assurer que le refus PAT ne dépend pas du passage préalable du RBAC, et documenter l'ordre obtenu plutôt que le supposer.
+- [ ] **T1 — La couche** (AC1, AC3). Un `route_layer` sur `admin_routes`, à côté de `require_admin_role`. ✅ **L'ordre n'a pas à être arbitré** — vérifié en passe 1 dans le source d'axum : `route_layer` **enveloppe le service**, donc la couche s'exécute avant le handler quel que soit son ordre relatif au RBAC. La conséquence est en D2.
 - [ ] **T2 — Le code d'erreur** (AC4). Variante `AppError`, ligne dans le `match` d'`errors.rs`, clé i18n sur les **quatre** locales.
-- [ ] **T3 — Le test d'énumération** (AC1). Le point difficile de la story. Chercher d'abord si axum expose les routes d'un `Router` ; sinon, liste explicite **plus** assertion de comptage qui rougit à tout ajout.
+- [ ] **T3 — Le test de complétude** (AC1). Le point difficile, désormais tranché : `axum 0.8` n'expose **aucune** énumération (`has_routes()` seul). Le test dérive donc le compte de la **source** — `include_str!` sur `lib.rs`, comptage des `.route(` entre deux marqueurs de commentaire bornant `admin_routes`. ⚠️ Borner par **marqueurs**, jamais par numéros de ligne.
+  - [ ] Couvrir chaque couple **(méthode, chemin)**, pas chaque chemin.
+  - [ ] Les deux scopes : `read-write` **et** `read-only`.
 - [ ] **T4 — Le test du chemin d'attaque** (AC5).
-- [ ] **T5 — Non-régression** (AC2, AC3). Les suites `api_pat_*` et les E2E d'administration, **sans modification**.
-- [ ] **T6 — Documentation** (AC6). Manuel admin, amendement de DC6 dans `17-2*`, CHANGELOG.
+- [ ] **T5 — Non-régression** (AC2, AC3). `api_keys_e2e.rs` et les E2E d'administration restent verts. **Trois assertions changent, et trois seulement** — celles listées en D2. ⚠️ Ne pas toucher à `api_keys_e2e.rs:425`.
+- [ ] **T6 — Documentation** (AC6). Manuel admin ; amendement de DC6 dans **`17-2a-api-pat-backend.md`** — le document autoritaire, cf. D4 — ; CHANGELOG mentionnant la perte d'accès des jetons Admin existants.
 
 ## Dev Notes
 
@@ -137,6 +171,40 @@ Les affirmations d'absence se vérifient au `grep -nF` avant d'être écrites.
 
 ## Questions ouvertes
 
-1. **L'énumération des routes** — axum expose-t-il les chemins d'un `Router` construit ? Si non, l'assertion de comptage est le repli, et il faut décider **où** elle vit pour qu'un ajout de route la fasse rougir.
-2. **Les autres routeurs** — cette story ferme `admin_routes`. Le routeur **comptable+** doit-il l'être aussi ? Non par défaut : le cas d'usage nominal du PAT est précisément d'écrire des écritures et des factures. Mais **la question mérite d'être écrite et tranchée**, faute de quoi une passe de revue la rouvrira.
-3. **Les jetons existants** — faut-il alerter l'administrateur qu'un jeton créé par un Admin perd des accès qu'il avait ? Aucune migration n'est nécessaire, mais un mot au CHANGELOG évite un ticket de support.
+**Les trois questions de la première rédaction sont closes** — deux par vérification dans le code, une par arbitrage :
+
+- ~~L'énumération des routes~~ → **tranchée** : axum ne l'expose pas, le compte se dérive de la source (AC1, T3).
+- ~~Le routeur comptable+~~ → **tranchée** et promue en **D5**.
+- ~~Alerter sur les jetons existants~~ → **oui**, et c'est désormais une clause de preuve d'**AC6**.
+
+**Il n'en reste qu'une, et elle est mineure :**
+
+1. **Le marqueur de bornage d'`admin_routes`** dans `lib.rs` — quelle forme exacte, et faut-il un test qui vérifie que les **deux** marqueurs existent encore ? Sans eux, le comptage de T3 porterait sur un bloc vide et le test passerait **à vide** : c'est le mode d'échec du test muet, que ce dépôt a déjà payé deux fois. Une assertion « le compte est > 0 » suffit à le fermer, et devrait sans doute figurer dans T3.
+
+## Change Log
+
+**2026-08-12 — `bmad-create-story validate`, PASSE 1 (Sonnet, trois lentilles en parallèle).**
+
+| Lentille | CRIT | HIGH | MED | LOW |
+|---|---|---|---|---|
+| Blind Hunter (spec seule) | **1** | 2 | 3 | 2 |
+| Edge Case Hunter (spec + code) | 0 | **1** | 1 | 0 |
+| Acceptance Auditor (spec + issue + story parente) | 0 | 0 | 2 | 1 |
+
+**Le défaut central était une contradiction entre deux de mes propres décisions.** D2 crée un code d'erreur distinct ; D3 conserve les trois `ensure_not_pat` existants. Or `route_layer` **enveloppe le service** — vérifié dans le source d'axum — donc la couche répond **avant** le handler, quel que soit son ordre relatif au RBAC. Les trois tests qui assertent `API_KEY_MANAGEMENT_FORBIDDEN` (`admin_full_export_e2e.rs:409`, `admin_full_import_e2e.rs:414`, `fiscal_years_e2e.rs:1638`) recevront donc le **nouveau** code et rougiront.
+
+⚠️ **Et mon avertissement d'AC2 aurait égaré le développeur** : il disait qu'une modification de test signalerait « une couche posée trop haut ». La cause n'était pas le placement — correct — mais ma contradiction. Il aurait conduit à remettre en cause la bonne décision. AC2 dit désormais que **trois** assertions changent, et trois seulement.
+
+**Le CRITICAL portait sur une circularité, et il avait raison.** AC1 exigeait d'énumérer les routes du routeur, avec pour repli une assertion contre « le nombre de routes du routeur ». Mais `axum 0.8` **n'expose aucune énumération** — `Router` n'offre que `has_routes() -> bool`, vérifié dans le source. Ce nombre n'aurait donc pu venir que d'une seconde constante à la main : **exactement le « quelqu'un doit se souvenir » que cette story existe pour éliminer**. Le mécanisme retenu dérive désormais le compte de la **source** (`include_str!` sur `lib.rs`), seule chose qu'un ajout de route modifie forcément.
+
+**Trois autres corrections de fond :**
+
+- **« Route » n'était pas défini.** Le tableau compte des **chemins** (19 enregistrements `.route(…)`), un routeur axum route par **méthode** : `/api/v1/users` porte un `GET` et un `POST`. Un test calibré sur 19 aurait été structurellement incomplet. AC1 parle désormais de couples (méthode, chemin).
+- **AC1 ne prouvait que le scope `read-write`**, alors que le discriminant retenu ne regarde que `api_key_id` et ignore le scope. Le cas `read-only` n'avait aucun critère. Ajouté.
+- **J'amendais la mauvaise cible.** D4 disait d'amender « la spec parente 17-2 » — or le texte de DC6 autoritaire vit **verbatim dans `17-2a`**, la story `done`, tandis que `17-2` est un vestige de découpage resté `ready-for-dev`. Suivie à la lettre, la consigne aurait laissé le document que tout le monde lit avec l'ancienne frontière.
+
+**Deux points de forme corrigés** : AC6 était la seule AC **sans clause de preuve**, donc la seule impossible à cocher objectivement — et c'était précisément celle qui portait l'amendement à la cible fausse. Et la frontière du routeur `comptable_routes`, tranchée en substance mais rangée en question ouverte, est promue en **D5** : sans cela, un « oui » ultérieur aurait cassé AC2 sans qu'aucun garde-fou ne le signale.
+
+**Ce que les lentilles ont confirmé plutôt que réfuté** — et c'est utile de le savoir : le décompte 16/19 est exact, recompté ligne à ligne ; les trois corrections que la spec apportait à l'issue #167 sont vraies, dont la remédiation partielle établie par `git log -S` et non par déduction ; `require_admin_role` n'est appliqué **nulle part ailleurs**, donc la couche couvre bien toute la surface admin présente et future ; et aucune branche résiduelle du chemin d'attaque n'a été trouvée — le changement de mot de passe en self-service, seul candidat, exige la vérification Argon2 du mot de passe courant que l'attaquant n'a pas.
+
+**Trois questions ouvertes sur trois sont closes.** Il n'en reste qu'une, mineure et née de la correction elle-même : la forme du marqueur bornant `admin_routes` dans `lib.rs`, et le garde-fou qui empêche le comptage de porter sur un bloc vide — le mode d'échec du test muet.
