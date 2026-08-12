@@ -4,9 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Kesh** is a Swiss personal and small business accounting software, **in production**. It is developed using the BMAD (Breakthrough Method of Agile AI-driven Development) framework, whose assets live alongside the application code.
+**Kesh** is a Swiss personal and small business accounting software, **built, released and deployed** — not a design-phase project. It is developed using the BMAD (Breakthrough Method of Agile AI-driven Development) framework, whose assets live alongside the application code.
 
-**Current release: v0.9.0** (2026-08-12), published on Docker Hub as `gcorbaz/kesh` and running on the author's NAS for the real bookkeeping of private and company accounts. Roughly 175 stories delivered across 20 epics, 60 migrations, 2164 backend tests and 512 frontend tests.
+**Current release: v0.9.0** (2026-08-12), published on Docker Hub as `gcorbaz/kesh` and **deployed on the author's NAS**. Roughly 175 stories delivered across 20 epics, 60 migrations, 2164 backend tests and 512 frontend tests.
+
+⚠️ **Deployed is not the same as keeping the books, and the distinction drives real decisions.** The instance runs and is exercised, but **the real accounts are not yet kept in Kesh** — the project's own milestone for that, *« Première clôture d'exercice tenue dans Kesh »*, is still open, and the fiche states it as the *expected* result, not the current one. Two consequences worth holding: there is **no legacy production data to protect**, which makes prevention cheaper than repair and migrations less risky than they will ever be again; and **when that milestone is reached, this paragraph must change** — along with the reasoning that rests on it.
+
+*(Écrit le 2026-08-12 en remplacement d'un paragraphe qui affirmait qu'aucun code applicatif n'avait été écrit. La première rectification est allée trop loin dans l'autre sens en parlant de « real bookkeeping » : corrigée le jour même, sur remarque de Guy. Une correction n'est pas exempte du défaut qu'elle corrige.)*
 
 > ⚠️ **Ce paragraphe a menti pendant des mois**, en affirmant que le projet était « in the design/planning phase » et qu'« aucun code applicatif n'avait été écrit » — alors que le logiciel tenait déjà une comptabilité réelle. C'est le fichier qui instruit chaque séance de travail : le laisser faux oriente tout ce qui s'appuie dessus. Corrigé le 2026-08-12, à la revue de projet qui a suivi la clôture de l'Epic 16. **Quand l'état du projet change, ce paragraphe change avec lui.**
 
