@@ -66,6 +66,9 @@ export default defineConfig({
 		// dominée par le démarrage des workers, pas par le calcul.
 		// Aligné sur `jobs = 4` de `.cargo/config.toml`. Cf. CLAUDE.md
 		// §« Plafonds mémoire ».
+		// KF #175 — laisse la minuterie de nettoyage de `bits-ui` (24 ms) se
+		// déclencher AVANT le démontage de jsdom. Cf. `vitest-setup.ts`.
+		setupFiles: ['./vitest-setup.ts'],
 		maxWorkers: 4
 	}
 });
