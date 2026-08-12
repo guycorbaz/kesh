@@ -7,8 +7,8 @@ backlog
 ## Story
 
 **As a** indépendant ou fiduciaire dont le carnet d'adresses porte le même client deux fois,
-**I want** réunir les deux fiches en une seule, sans que mes factures déjà émises changent de destinataire,
-**so that** mon carnet dise la vérité, sans que ma comptabilité soit retouchée.
+**I want** réunir les deux fiches en une seule, historique compris,
+**so that** mon carnet dise la vérité et que tout ce qui concerne ce client se lise au même endroit.
 
 Ferme **#300**. Deuxième story de l'**Epic 22 « Technical Debt Closure »**, à la suite de la **22-1** dont elle est le prolongement.
 
@@ -20,34 +20,45 @@ Le cas devient plus fréquent avec le **numéro de client** livré en 16-3b. Deu
 
 ## Décisions
 
-**D1 — On ne fusionne que le vivant.** *(arbitrage de Guy, 2026-08-12)*
+**D1 — La fusion repointe TOUT, historique compris.** *(arbitrage de Guy, 2026-08-12 — décision **renversée** le même jour, cf. encadré)*
 
-Repointer `contact_id` sur une facture validée modifierait une pièce que Kesh tient pour **immuable** — c'est le sens du verrou de clôture d'exercice et de la conservation dix ans (**CO art. 957-964**). Le document dirait après coup qu'il a été adressé à quelqu'un d'autre.
+Les factures, avoirs, factures fournisseurs et personnes de contact du perdant passent au survivant. Le perdant, vidé, est **archivé**.
 
-| Passe au **survivant** | Reste **où il est** |
-|---|---|
-| Les personnes de contact (`contact_persons`) | Les factures déjà émises (`invoices`) |
-| Le numéro de client, si le survivant n'en a pas | Les avoirs (`credit_notes`) |
-| Toute la facturation **future** | Les factures fournisseurs (`supplier_invoices`) |
-| | Les instantanés d'audit, historiques par nature |
+> ⚠️ **Cette décision a d'abord été prise à l'envers, et le motif de son renversement est le cœur de la story.**
+>
+> La première rédaction posait « on ne fusionne que le vivant », au nom de l'immuabilité comptable : repointer `contact_id` sur une facture validée aurait modifié une pièce que Kesh tient pour figée (CO 957-964).
+>
+> **Cette prémisse est fausse, et le code le dit.** `invoices` ne porte **aucune** colonne de snapshot du débiteur — ni `debtor_name`, ni `debtor_address`. Le PDF résout **tout à la volée** depuis le contact au moment de la génération (`invoice_pdf_service.rs` : `contact.name`, `contact.address`, `contact.client_number`). C'est même une décision explicite de la Story 16-3b : *« pas de copie dénormalisée sur `invoices`, un changement doit se refléter sur les PDF régénérés »*.
+>
+> **Kesh traite donc déjà `contact_id` comme un pointeur vers la fiche courante**, non comme le procès-verbal de qui a été facturé : renommer un contact change **déjà** ce que dit une facture ancienne réimprimée. Repointer un doublon vers sa fiche maîtresse est la même opération, et elle est plus juste — les deux lignes désignent la même entité réelle.
+>
+> Et ce qu'on croyait protéger ne l'était pas : **repointer `contact_id` ne touche aucune écriture comptable.** Le journal enregistre le compte et le montant ; le lien au contact passe par la facture. La partie double reste intacte.
 
-**D2 — Le perdant est archivé, jamais supprimé.** Ses pièces passées restent lisibles et rattachées à lui. Son archivage **libère son numéro de client** — comportement déjà en place depuis la 16-3b, et qui rend justement possible de donner ce numéro au survivant.
+**D1-bis — Le verrou d'exercice clos ne s'y oppose pas, vérifié.** `DbError::FiscalYearClosed` n'est levé que dans `journal_entries.rs` — création et modification d'écritures. **Rien dans `invoices.rs` ne le lève.** Le verrou garde la partie double, pas la métadonnée de rattachement. Une facture d'un exercice clôturé peut donc être repointée sans forcer aucune garde.
+
+**D2 — Le perdant est archivé, jamais supprimé.** Une fois vidé, il ne porte plus rien — mais son archivage garde la trace de son existence et de la fusion, et **libère son numéro de client** (comportement en place depuis la 16-3b), ce qui permet précisément de le donner au survivant s'il n'en a pas.
 
 **D3 — La fusion est irréversible, et l'utilisateur le sait avant.** Défaire une fusion supposerait de mémoriser l'état antérieur de chaque champ fusionné ; le coût est sans rapport avec le service rendu. L'écran le dit **avant** l'action, pas après.
 
 ## Acceptance Criteria
 
-**AC1 — Fusionner réunit ce qui est vivant.**
-Après fusion de A dans B : les personnes de contact de A appartiennent à B ; A est archivé ; A n'apparaît plus dans la liste par défaut ni dans les sélecteurs de facturation.
-*Preuve* : test repository sur les quatre tables du rayon d'impact.
+**AC1 — Après la fusion, plus RIEN ne pointe le perdant.**
+Les factures, avoirs, factures fournisseurs et personnes de contact de A appartiennent à B. A est archivé et n'apparaît plus dans la liste par défaut ni dans les sélecteurs de facturation.
+*Preuve* : un test qui, après fusion, compte les lignes de **chacune des quatre tables** portant `contact_id = A` — le compte doit être **zéro**, et le total de B doit avoir augmenté d'autant.
+⚠️ **C'est l'assertion centrale de la story.** Sa mutation — oublier **une** des quatre tables — doit la faire tomber, et sur la bonne table. C'est le mode d'échec le plus probable : une fusion qui laisse trois pièces orphelines derrière elle est indiscernable d'une fusion réussie tant qu'on ne compte pas.
 
-**AC2 — L'historique comptable n'est pas touché.**
-Les factures, avoirs et factures fournisseurs de A **restent rattachés à A**, avant comme après.
-*Preuve* : le test compte les pièces de A avant et après — le nombre est le même, et leur `contact_id` est inchangé. ⚠️ **C'est l'assertion centrale de la story** : sa mutation — repointer les pièces — doit la faire tomber.
+**AC2 — Aucune écriture comptable n'est touchée.**
+La partie double est intacte : ni `journal_entries`, ni les montants, ni les comptes ne changent. Le total du grand livre et la balance sont identiques avant et après.
+*Preuve* : somme des débits et des crédits comparée avant/après, et `journal_entries` inchangée ligne pour ligne.
+⚠️ **C'est la contrepartie d'AC1** : la fusion déplace un rattachement, elle ne retouche pas la comptabilité. Confondre les deux est exactement l'erreur qui a fait écrire cette story à l'envers la première fois.
 
-**AC3 — Le numéro de client suit, mais ne écrase jamais.**
-Si B n'a pas de numéro, il reçoit celui de A. Si B en a déjà un, **celui de A est perdu avec l'archivage** et l'écran le dit avant.
-*Preuve* : les deux cas testés, et le cas où les deux en ont un vérifie que celui de B est **intact**.
+**AC2-bis — Une pièce d'un exercice CLÔTURÉ se repointe aussi.**
+*Preuve* : le test monte une facture dans un exercice clos, fusionne, et vérifie que le repointage a eu lieu **sans lever `FiscalYearClosed`**.
+⚠️ Ce test fixe la décision D1-bis. S'il devenait rouge un jour, c'est qu'une garde aurait été étendue aux colonnes de `invoices` — et il faudrait alors rouvrir la décision, pas contourner la garde.
+
+**AC3 — Le numéro de client suit, mais n'écrase jamais.**
+Si B n'a pas de numéro, il reçoit celui de A. Si B en a déjà un, celui de A **disparaît avec l'archivage** — et l'écran le dit avant.
+*Preuve* : les deux cas testés ; celui où les deux en ont un vérifie que le numéro de B est **intact**.
 
 **AC4 — On ne fusionne pas n'importe quoi.**
 Refus si les deux contacts n'appartiennent pas à la même société, si l'un est déjà archivé, ou si A et B sont le même contact.
@@ -67,8 +78,8 @@ La détection s'appuie sur la **forme canonique** livrée par la 22-1 : deux con
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Repository** (AC1, AC2, AC4). L'opération de fusion en une transaction : transférer `contact_persons`, transférer le numéro si le survivant n'en a pas, archiver le perdant, incrémenter les `version`. **Ne toucher ni `invoices`, ni `credit_notes`, ni `supplier_invoices`.**
-- [ ] **T2 — Tests repository** (AC1, AC2, AC3, AC4). Dont le test d'AC2 et **sa mutation jouée**.
+- [ ] **T1 — Repository** (AC1, AC2, AC4). L'opération de fusion **en une seule transaction** : repointer `contact_id` sur `invoices`, `credit_notes`, `supplier_invoices` et `contact_persons`, transférer le numéro si le survivant n'en a pas, archiver le perdant, incrémenter les `version`. ⚠️ **Les quatre tables, ou aucune** — une transaction partielle laisserait des pièces orphelines qu'aucun écran ne montrerait.
+- [ ] **T2 — Tests repository** (AC1, AC2, AC2-bis, AC3, AC4). Dont **la mutation jouée** d'AC1 : retirer une table du repointage doit faire tomber le test, sur cette table-là.
 - [ ] **T3 — Audit** (AC5). Entrée dédiée. ⚠️ Le dépôt maintient `contact_snapshot_json` **à la main** — vérifier qu'elle suffit à décrire les deux côtés de la fusion.
 - [ ] **T4 — Route** (AC4). Codes d'erreur propres par cas de refus, sur le patron de `map_contact_error`. L'assertion des **chaînes** de code vit dans `errors.rs`, seul endroit où le corps de la réponse est lisible.
 - [ ] **T5 — Détection des candidats** (AC7). S'appuie sur la canonique de la 22-1 — **cette story dépend donc de la 22-1**.
@@ -89,13 +100,19 @@ La détection s'appuie sur la **forme canonique** livrée par la 22-1 : deux con
 | `20260628000001_supplier_invoices.sql` | `supplier_invoices` |
 | `20260706000001_contact_persons.sql` | `contact_persons` |
 
-**Une seule est transférée** : `contact_persons`. Les trois autres sont précisément ce que D1 protège.
+**Les quatre sont transférées.** C'est peu de plomberie ; toute la difficulté était dans la décision, et elle est tranchée en D1.
 
-L'échéancier et les relances (`dunning_eligibility`) joignent le contact **à travers `invoices`** : ils suivent le rattachement d'origine sans qu'on ait rien à faire — ce qui est le comportement voulu, puisque la facture n'a pas changé de destinataire.
+L'échéancier et les relances (`dunning_eligibility`) joignent le contact **à travers `invoices`** : ils suivent donc automatiquement le repointage, sans code supplémentaire. Vérifié au passage : ni la balance âgée, ni l'éligibilité aux relances, ni la liste des factures ne filtrent sur `contact.active` — un impayé ne disparaît donc jamais de la vue, quelle que soit la branche retenue.
 
 ### Ce qui ne doit pas être « réparé » au passage
 
-⚠️ **Les instantanés d'audit sont historiques.** `contact_snapshot_json` fige l'état d'un contact au moment d'une opération. Une fusion n'est pas une raison de les réécrire — ils décrivent ce qui était vrai alors.
+⚠️ **Les instantanés d'audit sont historiques.** `contact_snapshot_json` fige l'état d'un contact au moment d'une opération. Une fusion n'est pas une raison de les réécrire — ils décrivent ce qui était vrai alors. C'est la **seule** trace qui doit continuer de désigner le perdant.
+
+### Pourquoi le repointage ne falsifie rien
+
+`invoices` ne porte **aucune** colonne de snapshot du débiteur. Le PDF résout `contact.name`, `contact.address` et `contact.client_number` **à la génération** (`invoice_pdf_service.rs`). Renommer un contact change donc déjà ce que dit une facture ancienne réimprimée — c'est la décision D5 de la 16-3b, assumée. Repointer un doublon vers sa fiche maîtresse relève de la même mécanique, et désigne la même entité réelle.
+
+Le verrou d'exercice, lui, garde la **partie double** : `DbError::FiscalYearClosed` n'est levé que dans `journal_entries.rs`. Aucune garde de `invoices.rs` ne le lève.
 
 ### Dépendance
 
