@@ -539,6 +539,20 @@ Deux fichiers dans `docs/` sont **archivés et ne doivent plus être mis à jour
 
 Toute nouvelle KF/CR/bug → GitHub uniquement. Ne **pas** rouvrir ces fichiers pour y ajouter des entrées.
 
+## Un appariement automatique propose, il ne crée jamais
+
+**Règle** : quand Kesh rapproche une donnée entrante d'une entité existante — un fournisseur sur une facture scannée, un débiteur sur un virement, un article sur une ligne — il **propose** un rattachement à l'utilisateur. Il ne crée jamais l'entité d'office, et ne tranche jamais seul un rattachement douteux. Ce qui n'est pas certain va dans une file « à rattacher ».
+
+**Pourquoi, et le motif n'est pas celui qu'on croit.** L'objection habituelle est qu'un appariement automatique crée des doublons. C'est vrai, et ce n'est pas le plus grave : **un doublon est bruyant**, on le voit dans la liste et on le corrige. Le vrai danger est le **faux rattachement** — une facture imputée au mauvais fournisseur. Celui-là est **muet** : rien ne le signale, il fausse la comptabilité analytique et les rapports, et on ne le découvre qu'en cherchant autre chose.
+
+Les données entrantes sont bruitées par nature : « Dubarde SàRL », « Dubarde Sarl », « DUBARDE S.à r.l. » désignent la même société ; deux sociétés d'un même groupe portent des noms presque identiques et sont deux débiteurs distincts. **Aucun seuil de similarité ne sépare les deux cas de façon fiable**, et le coût d'une erreur n'est pas symétrique.
+
+⚠️ **C'est le comportement actuel de l'import de factures** — aucun `contacts::create` dans le chemin d'import, la pièce importée attend un rattachement humain. La règle est écrite pour qu'on n'en sorte pas par inadvertance, en croyant améliorer l'ergonomie.
+
+*Corollaire* : la prévention se place **à la saisie** (signaler un contact proche avant l'enregistrement, cf. #301), pas à la réparation. Signaler, jamais bloquer : deux clients peuvent légitimement porter des noms très proches.
+
+*(codifié 2026-08-12, à la suite de la revue de projet — proposition de Guy, étendue de « en cas de doute » à « sans exception » sur l'argument du faux rattachement muet.)*
+
 ## Migration breaking policy
 
 **Politique introduite Story 10-2** — protège contre les downgrades silencieux corrupteurs.
