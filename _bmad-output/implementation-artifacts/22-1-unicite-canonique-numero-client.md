@@ -60,7 +60,13 @@ Une valeur dont la forme canonique est **vide** est traitée comme absente : `cl
 
 MariaDB ne sait ni normaliser en NFKC, ni retirer un jeu ouvert de caractères invisibles. Le remplissage de la colonne canonique pour le parc existant doit donc être fait **en Rust**, et il relève du garde-fou **P7** : toute migration qui écrit des données doit être triée, soit au registre `POST_RESTORE_BACKFILLS`, soit aux `EXEMPT_MIGRATIONS` avec justification écrite.
 
-⚠️ **Et il faut choisir ce qu'on fait des collisions découvertes au backfill.** Deux contacts actifs de la même société peuvent aujourd'hui porter `CLI-1` et `CLI‹ZWSP›-1` : leur forme canonique est **la même**, et l'index unique refusera le second. Le backfill doit donc décider — laisser le second à `NULL` en le signalant, ou refuser la migration. **Cette décision n'est pas prise ; elle est à trancher avant l'implémentation.**
+⚠️ **Et il faut choisir ce qu'on fait des collisions découvertes au backfill.** Deux contacts actifs de la même société peuvent aujourd'hui porter `CLI-1` et `CLI‹ZWSP›-1` : leur forme canonique est **la même**, et l'index unique refusera le second. Trois issues :
+
+1. laisser le second à `NULL` **en le journalisant** ;
+2. refuser la migration ;
+3. **signaler les doublons et laisser l'utilisateur les fusionner** — c'est l'objet de la **Story 22-2** (#300), arbitrée le même jour.
+
+La troisième est la meilleure, et elle ne dispense pas de trancher : **la migration doit savoir quoi faire le jour où elle tourne**, y compris si la fusion n'est pas encore livrée. La branche 1 est donc le comportement de repli, et la 22-2 lui donne sa suite. **T1 reste à trancher — et il commence par COMPTER les collisions réelles sur la base de production.**
 
 ## Acceptance Criteria
 
@@ -136,6 +142,7 @@ Les décomptes des Change Logs se **recomptent depuis la source**, avec leur **p
 
 - Issues **#294** (normalisation NFC + invisible encastré) et **#295** (collation de `contacts`).
 - Story **16-3b** — `16-3b-numero-client-pdf.md`, § *Dette technique* et Change Log des quatre passes de revue.
+- Story **22-2** (#300) — la fusion de doublons, qui donne sa suite au signalement du backfill.
 - Rétrospective **Epic 16** — `epic-16-retro-2026-08-11.md`, action **A8**.
 - `CLAUDE.md` — § *Migration breaking policy* (P2, P2-bis, P3, P5, P6, P7, P8), § *Propagation post-patch*, § *Recompter ses propres comptes rendus*.
 
