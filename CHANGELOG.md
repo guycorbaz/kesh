@@ -8,7 +8,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
-## [Non publié]
+## [0.9.0] — 2026-08-12
 
 ### Ajouté
 
