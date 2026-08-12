@@ -1,8 +1,16 @@
-# Story 22.2 : Fusionner deux contacts en doublon
+# Story 22.3 : Fusionner deux contacts en doublon
 
 ## Status
 
-backlog
+en-veille
+
+⚠️ **Story NON ENGAGÉE, et le motif tient en une phrase : il n'y a rien à réparer.**
+
+Kesh est déployé mais **ne tient pas encore les comptes réels** — le jalon « Première clôture d'exercice tenue dans Kesh » est ouvert. Il n'existe donc **aucun parc de doublons**. Une fonction de fusion est une **réparation** ; la spécifier maintenant reviendrait à traiter un cas dont on ne connaît ni la fréquence ni la forme.
+
+**L'effort va à la prévention** — Story **22-2** (#301) : signaler un contact proche **avant** l'enregistrement. Elle coûte le même prix aujourd'hui qu'elle coûtera plus tard, mais elle **évite** la dette au lieu de la rembourser.
+
+Cette story est conservée parce que son travail d'analyse est fait et vérifié — le rayon d'impact mesuré, le renversement de D1 argumenté sur le code, le verrou d'exercice vérifié. Le jour où des doublons réels apparaîtront, il n'y aura qu'à reprendre. *(Arbitrage de Guy, 2026-08-12.)*
 
 ## Story
 
@@ -10,7 +18,7 @@ backlog
 **I want** réunir les deux fiches en une seule, historique compris,
 **so that** mon carnet dise la vérité et que tout ce qui concerne ce client se lise au même endroit.
 
-Ferme **#300**. Deuxième story de l'**Epic 22 « Technical Debt Closure »**, à la suite de la **22-1** dont elle est le prolongement.
+Ferme **#300**. Troisième story de l'**Epic 22 « Technical Debt Closure »**, à la suite de la **22-1** dont elle est le prolongement — et **en veille** derrière la **22-2**, qui prévient ce qu'elle répare.
 
 ## Contexte
 

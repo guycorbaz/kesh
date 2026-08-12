@@ -64,9 +64,11 @@ MariaDB ne sait ni normaliser en NFKC, ni retirer un jeu ouvert de caractères i
 
 1. laisser le second à `NULL` **en le journalisant** ;
 2. refuser la migration ;
-3. **signaler les doublons et laisser l'utilisateur les fusionner** — c'est l'objet de la **Story 22-2** (#300), arbitrée le même jour.
+3. **signaler les doublons et laisser l'utilisateur les fusionner** — objet de la **Story 22-3** (#300), aujourd'hui **en veille**.
 
-La troisième est la meilleure, et elle ne dispense pas de trancher : **la migration doit savoir quoi faire le jour où elle tourne**, y compris si la fusion n'est pas encore livrée. La branche 1 est donc le comportement de repli, et la 22-2 lui donne sa suite. **T1 reste à trancher — et il commence par COMPTER les collisions réelles sur la base de production.**
+⚠️ **Et la réponse est probablement plus simple qu'elle n'en a l'air.** Kesh est déployé mais **ne tient pas encore les comptes réels** — il n'y a donc quasi certainement **aucune collision** à traiter. La branche 1 suffit, et la 22-3 reste en veille.
+
+**Mais cela se COMPTE, cela ne se suppose pas.** T1 commence par la requête sur la base réelle. Si elle rend zéro, la question est close et le repli n'aura jamais à s'exécuter. Si elle rend autre chose, c'est une information neuve et il faudra rouvrir.
 
 ## Acceptance Criteria
 
@@ -142,7 +144,8 @@ Les décomptes des Change Logs se **recomptent depuis la source**, avec leur **p
 
 - Issues **#294** (normalisation NFC + invisible encastré) et **#295** (collation de `contacts`).
 - Story **16-3b** — `16-3b-numero-client-pdf.md`, § *Dette technique* et Change Log des quatre passes de revue.
-- Story **22-2** (#300) — la fusion de doublons, qui donne sa suite au signalement du backfill.
+- Story **22-2** (#301) — la prévention à la saisie, prioritaire : ce qui rend la réparation inutile.
+- Story **22-3** (#300) — la fusion de doublons, **en veille**.
 - Rétrospective **Epic 16** — `epic-16-retro-2026-08-11.md`, action **A8**.
 - `CLAUDE.md` — § *Migration breaking policy* (P2, P2-bis, P3, P5, P6, P7, P8), § *Propagation post-patch*, § *Recompter ses propres comptes rendus*.
 
