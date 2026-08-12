@@ -101,24 +101,33 @@ Le défaut applicatif de `KESH_HOST` est passé de `0.0.0.0` à `127.0.0.1` (Sto
 
 ## Prérequis Playwright local
 
-Le `webServer` de `playwright.config.ts` démarre uniquement **le frontend** (`npm run preview` sur `:4173`). Le backend `kesh-api` **n'est pas lancé automatiquement** — il faut le démarrer séparément.
+⚠️ **`playwright.config.ts` n'a PAS de `webServer`** — rien n'est démarré automatiquement, ni le backend ni le frontend. Playwright tape directement le backend, qui sert la SPA buildée via `KESH_STATIC_DIR` ; `baseURL` vaut `process.env.KESH_BACKEND_URL ?? 'http://127.0.0.1'`.
 
-**Recipe minimale** (dans 2 terminaux) :
+*(Cette section décrivait jusqu'au 2026-08-12 un `webServer` lançant `npm run preview` sur `:4173`. Il n'existe pas — `grep -c webServer frontend/playwright.config.ts` rend **0**. Une recette fausse coûte plus cher qu'une recette absente : on la suit, elle échoue, et on cherche la panne ailleurs.)*
+
+**Recette minimale** (deux terminaux) :
 
 ```bash
-# Terminal 1 : DB + backend
+# Terminal 1 : DB + frontend buildé + backend qui sert les deux
 docker compose -f docker-compose.dev.yml up -d mariadb
 cd /path/to/kesh
-KESH_TEST_MODE=true KESH_HOST=127.0.0.1 \
-  DATABASE_URL="mysql://root:kesh_dev_root@127.0.0.1:3306/kesh" \
+(cd frontend && npm run build)          # KESH_STATIC_DIR pointe sur le résultat
+KESH_TEST_MODE=true KESH_HOST=127.0.0.1 KESH_COOKIE_SECURE=false \
+  KESH_PORT=3000 KESH_STATIC_DIR="$PWD/frontend/build" \
+  KESH_ADMIN_USERNAME=admin KESH_ADMIN_PASSWORD=e2e-admin-password-12chars \
+  DATABASE_URL="mysql://kesh:kesh_dev@127.0.0.1:3306/kesh_e2e" \
   KESH_JWT_SECRET="dev-secret-at-least-32-bytes-long-for-testing" \
-  KESH_COOKIE_SECURE=false \
   cargo run -p kesh-api
 
 # Terminal 2 : Playwright
 cd frontend
-npm run test:e2e
+PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 \
+  KESH_BACKEND_URL=http://127.0.0.1:3000 npm run test:e2e
 ```
+
+**Le build du frontend n'est pas facultatif** : sans lui, `KESH_STATIC_DIR` pointe sur un répertoire vide et chaque navigation rend un 404 que rien n'explique.
+
+⚠️ **La suite locale n'est pas verte, et ce n'est pas une régression** : une quarantaine de tests échouent aussi sur `main` (localStorage/JWT, absence de SMTP factice, KF #282, cascades). **Seul le différentiel branche ↔ `main` se lit** — cf. la mémoire projet `comparer-suite-e2e-branche-vs-main` pour le montage à deux ports et deux bases.
 
 > **`KESH_COOKIE_SECURE=false` est obligatoire en local HTTP** : depuis les
 > tokens httpOnly (Story 10-5), les cookies d'auth sont `Secure` par défaut.
