@@ -1,6 +1,6 @@
 [package]
 name = "kesh-import"
-version = "0.8.0"
+version = "0.9.0"
 edition.workspace = true
 license.workspace = true
 description = "Parseurs CAMT.053 ISO 20022 et CSV multi-encodage pour relevés bancaires"
