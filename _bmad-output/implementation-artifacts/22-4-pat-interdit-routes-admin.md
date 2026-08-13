@@ -60,6 +60,20 @@ L'issue #167 date de plusieurs mois. Deux de ses éléments ont bougé, et un tr
 
 **Trois routes gardées sur dix-neuf.** Ce n'est pas seulement la gestion des utilisateurs : ce sont aussi les taux de TVA, les paramètres de relance, les modèles d'e-mail et les coordonnées de la société.
 
+### Dix-neuf enregistrements, VINGT-CINQ routes — et c'est le second nombre qui compte
+
+⚠️ **Le « dix-neuf » ci-dessus compte des enregistrements `.route(…)`, pas des routes.** Un routeur axum route par **méthode** : `/api/v1/users` porte un `GET` **et** un `POST`. Recompté ligne à ligne sur `lib.rs:182-284` :
+
+| Méthode | Couples |
+|---|---|
+| `get` | 5 |
+| `post` | 6 |
+| `put` | 10 |
+| `delete` | 4 |
+| **Total** | **25** |
+
+Six des dix-neuf enregistrements portent deux ou trois méthodes. **Et le motif s'est déjà réalisé** : `/api/v1/admin/email-templates/{template_type}/{language}` est passé d'**une** à **trois** méthodes entre les stories 20-1 et 20-2, sans qu'aucun enregistrement ne soit ajouté. Un compteur calibré sur les `.route(` n'aurait rien vu — c'est exactement le mode d'échec que cette story existe pour fermer, reproduit dans son propre garde-fou. *(Relevé en passe 2 par les trois lentilles indépendamment ; recompté à la main avant d'être écrit ici.)*
+
 ## Décisions
 
 **D1 — Le blocage se pose en COUCHE sur le routeur, pas dans les handlers.**
@@ -82,27 +96,77 @@ L'issue proposait les deux options. **L'état du code tranche** : l'approche par
 >
 > ⚠️ Ne PAS toucher à `api_keys_e2e.rs:425` : cette route-là est bien de la gestion de clés, son code reste le bon.
 
-**D3 — Les trois `ensure_not_pat` existants restent.** La couche les rend redondants sur ces routes, mais ils gardent une valeur : `full-export`, `full-import` et la réouverture d'exercice sont des opérations dont l'interdiction aux jetons est **intrinsèque**, indépendamment du routeur où elles vivent. Un déplacement de route ne doit pas les découvrir. *(Une redondance assumée et écrite vaut mieux qu'une garde retirée « parce que la couche s'en occupe » — mais elle a un prix, celui décrit en D2.)*
+**D3 — Les trois `ensure_not_pat` d'`admin_routes` restent, et leur câblage devient prouvé par la SOURCE.** La couche les rend redondants sur ces routes, mais ils gardent une valeur : `full-export`, `full-import` et la réouverture d'exercice sont des opérations dont l'interdiction aux jetons est **intrinsèque**, indépendamment du routeur où elles vivent. Un déplacement de route ne doit pas les découvrir. *(Une redondance assumée et écrite vaut mieux qu'une garde retirée « parce que la couche s'en occupe » — mais elle a un prix, celui décrit en D2.)*
 
-**D4 — La frontière DC6 est réécrite dans `17-2a-api-pat-backend.md`, PAS dans `17-2`.** Elle disait « un PAT ne gère pas les clés » ; elle dira « **un PAT n'atteint aucune route `require_admin_role`** ».
+> ⚠️ **Et ce prix est plus élevé que D2 ne le disait : après T5, plus aucun test ne prouve que ces trois gardes sont câblées.** Leurs trois tests assertaient le code du handler ; basculés sur le nouveau code par T5, ils prouvent désormais **la couche**. Les retirer toutes les trois ne ferait alors **rougir aucun test** — la valeur que D3 revendique deviendrait invérifiable, et une « simplification » ultérieure les emporterait sans le moindre signal. *(Relevé en passe 2.)*
+>
+> **Un test unitaire sur `ensure_not_pat` n'y répond pas** : la fonction reste couverte par ses **trois autres** sites d'appel, ceux des routes de gestion de clés (`api_keys.rs:108`, `:121`, `:211`), qui vivent dans `comptable_routes` et que cette story ne touche pas. Ce qui perd sa couverture, c'est le **câblage des trois sites d'`admin_routes`** — `admin.rs:37`, `admin.rs:143`, `fiscal_years.rs:317` —, pas le comportement de la fonction.
+>
+> **Mécanisme retenu** : une assertion **de source**, dans le fichier de test de T3 et par le même `include_str!` — les trois fichiers doivent contenir leurs appels à `ensure_not_pat`. C'est la technique que cette story établit déjà pour la complétude, appliquée à une garde dont le seul mode d'échec est la disparition. *Repli si elle s'avère impraticable* : écrire noir sur blanc, dans une ligne de dette du story file, que ces trois gardes sont une défense en profondeur **sans couverture de test** — jamais laisser la revendication de D3 sans l'un des deux.
 
-⚠️ **La cible importe, et la première rédaction se trompait.** Le texte de DC6 réellement autoritaire vit **verbatim dans `17-2a-api-pat-backend.md`** — la story `done`, avec son Dev Agent Record —, tandis que `17-2-api-pat-integrations.md` est resté en `ready-for-dev`, vestige du découpage. Amender le second seul laisserait **le document que tout le monde lit** avec l'ancienne frontière. *(Relevé en passe 1 de `validate`.)*
+**D4 — La frontière DC6 est réécrite dans les QUATRE documents qui l'énoncent.** Elle disait « un PAT ne gère pas les clés » ; elle dira « **un PAT n'atteint aucune route `require_admin_role`** ».
+
+⚠️ **La passe 1 a remplacé une cible fausse par une cible juste mais UNIQUE ; il y en a quatre.** Relevé au `grep -rn "DC6"`, l'énoncé de la frontière vit à :
+
+| Document | Ligne | Statut du document |
+|---|---|---|
+| `17-2a-api-pat-backend.md` | `35` (décision) **et** `58` (tâche) | `done` — le plus lu, avec son Dev Agent Record |
+| `17-2-api-pat-integrations.md` | `57` | `ready-for-dev` — vestige de découpage, **mais** `17-2a:206` le désigne comme « spec parente convergée, **source des DC1-DC6** » |
+| `17-2c-api-pat-doc.md` | `34` | `done` — et c'est **la source des passages de documentation qui deviennent faux** (cf. AC6) |
+
+**Le « PAS dans `17-2` » de la première rédaction était donc à l'envers** : `17-2` n'est pas à éviter, il est à amender **avec** les autres. Un lecteur qui suit la piste `17-2a:206` vers la spec parente y trouverait sinon l'ancienne frontière, avec l'autorité de la « source ». *(Relevé en passe 2.)*
+
+⚠️ **Les entrées de LIMITATION, elles, ne se réécrivent pas — elles se closent.** `17-2a:114`, `17-2a:255` et `17-2c:35` portent la dette L3 / KF-036 dans un Dev Agent Record et des sections de rétrospective : ce sont des **traces historiques**, et les réécrire effacerait la décision de l'époque. Elles reçoivent une mention « **fermé par la story 22-4 (#167)** », pas une réécriture.
 
 **D5 — Le routeur `comptable_routes` reste HORS périmètre, et c'est une décision, non une question.** Vérifié : il ne porte aucune route capable de créer un utilisateur, de réinitialiser un mot de passe ou de changer la configuration de la société — les seuls vecteurs de la propriété de containment que cette story défend. Et le fermer casserait le cas d'usage nominal du PAT (DC4), qui est précisément d'écrire des écritures et des factures. *(Cette décision était rangée en question ouverte ; deux lentilles ont relevé qu'elle était en réalité tranchée, et qu'un « oui » ultérieur casserait AC2 sans garde-fou. Promue ici.)*
+
+⚠️ **Conséquence à ne pas manquer en T2** : les routes de gestion des clés (`/api/v1/settings/api-keys`, `lib.rs:575` et `:579`) vivent dans `comptable_routes`, **pas** dans `admin_routes`. Le code `API_KEY_MANAGEMENT_FORBIDDEN` garde donc un consommateur vivant et testé (`api_keys_e2e.rs:425`) : la nouvelle variante **s'ajoute**, elle ne remplace ni ne renomme rien.
+
+**D6 — Quand les DEUX couches refusent, c'est la couche anti-PAT qui répond.**
+
+Le cas existe et n'était pas spécifié : un PAT créé par un **Comptable**, présenté sur une route d'`admin_routes`. `require_admin_role` le refuse (rôle insuffisant) **et** la nouvelle couche le refuse (c'est un PAT). L'ordre des deux `route_layer` détermine alors le code observable : `API_KEY_ADMIN_FORBIDDEN` ou le `Forbidden` du RBAC.
+
+**Décision : `API_KEY_ADMIN_FORBIDDEN`, sans exception.** Un code unique pour « un PAT a touché une route admin », quel que soit le rôle de son créateur — c'est la seule forme qui rende AC1 assertable **par couple** sans se ramifier sur le rôle, et elle ne divulgue rien : le porteur du jeton sait déjà qu'il porte un jeton.
+
+⚠️ **T1 « l'ordre n'a pas à être arbitré » était vrai pour le handler et faux pour le code de réponse.** La vérification de passe 1 établissait que `route_layer` enveloppe le service — donc que la couche précède le **handler**. Elle ne disait rien de l'ordre entre **deux couches**, qui est une autre question. Un arbitrage réel a été classé « sans objet » sur la foi d'une preuve qui portait ailleurs. *(Relevé en passe 2.)*
+
+**Le test est l'arbitre, pas la lecture du source d'axum.** AC1 asserte le code attendu sur le cas « créateur Comptable » ; si le montage retenu rend l'autre code, le test rougit et T1 déplace la couche. Aucune affirmation sur la sémantique d'empilement d'axum n'est portée ici — elle n'a pas été vérifiée dans le source, et la story n'en a pas besoin.
 
 ## Acceptance Criteria
 
 **AC1 — Aucune route admin n'est atteignable par un PAT, quel que soit son scope.**
 
-**« Route » signifie ici un couple (méthode, chemin)**, et non un chemin : `/api/v1/users` porte un `GET` et un `POST`, qui sont deux routes. Le « 19 » du tableau ci-dessus compte des **enregistrements `.route(…)`**, dont plusieurs portent deux ou trois méthodes — le nombre de couples à couvrir est donc **supérieur à 19**, et c'est celui-là qui fait foi. *(Ambiguïté relevée en passe 1 : un test calibré sur 19 serait structurellement incomplet.)*
+**« Route » signifie ici un couple (méthode, chemin)**, et non un chemin : `/api/v1/users` porte un `GET` et un `POST`, qui sont deux routes. Le « 19 » du tableau ci-dessus compte des **enregistrements `.route(…)`** ; le nombre qui fait foi est **25**, recompté par méthode au § *Dix-neuf enregistrements, vingt-cinq routes*. *(Ambiguïté relevée en passe 1, chiffrée en passe 2 : un test calibré sur 19 serait structurellement incomplet.)*
 
-*Preuve* : un test qui couvre **chaque couple (méthode, chemin)** d'`admin_routes` et vérifie qu'il rend `403`, avec un PAT dont le créateur est Admin — **testé aux deux scopes, `read-write` ET `read-only`**. Le discriminant retenu ne regarde que `api_key_id`, jamais le scope ; ne prouver que `read-write` laisserait le second cas sans critère, alors qu'une route admin en lecture reste un vecteur de fuite.
+*Preuve* : un test qui couvre **les 25 couples (méthode, chemin)** d'`admin_routes` avec un PAT dont le créateur est Admin, **aux deux scopes**, et qui asserte **le code d'erreur** et non le seul statut.
+
+⚠️ **Asserter `403` ne prouve rien ici : TROIS gardes distinctes le produisent** sur ces routes — le RBAC, le gate de portée `read-only`, et la couche neuve. Un test conforme à la lettre « rend 403 » passerait **sans que la couche soit jamais atteinte**. La leçon est déjà écrite dans le dépôt, à `fiscal_years_e2e.rs:1634-1637` : « asserter le CODE prouve que le 403 vient bien de `ensure_not_pat` et non du middleware RBAC ». *(Relevé en passe 2.)*
+
+**L'attente s'écrit PAR COUPLE, parce que le scope `read-only` en change la moitié.** Le gate de portée (`middleware/auth.rs:141-142`) vit dans `require_auth`, appliqué en `route_layer` sur le routeur **extérieur** (`lib.rs:869-877`) : il répond donc **avant** la couche neuve. Avec un PAT `read-only`, une méthode mutante n'atteint jamais `admin_routes`.
+
+| Scope du PAT | Couples | Code attendu | Ce que le couple prouve |
+|---|---|---|---|
+| `read-write` | les **25** | `API_KEY_ADMIN_FORBIDDEN` | la couche |
+| `read-only` | les **5** `get` | `API_KEY_ADMIN_FORBIDDEN` | la couche |
+| `read-only` | les **20** autres | `API_KEY_READ_ONLY` | le gate de portée, **antérieur à cette story** |
+
+⚠️ **La jambe `read-only` ajoutée en passe 1 était un test muet sur 20 couples sur 25** : elle prescrivait `403` partout, et la mutation « retirer la couche doit faire rougir » y est **insatisfaisable** — ces vingt-là rougissent ou verdissent sans que la couche existe. Écrite par couple, elle redevient une preuve : les cinq `get` sont le seul endroit où le scope `read-only` atteint la couche, et c'est justement là que « une route admin en lecture reste un vecteur de fuite » se démontre. *(Relevé en passe 2.)*
+
+**Le cas « créateur Comptable » est asserté aussi** — un couple suffit —, avec le code arrêté en **D6**.
 
 ⚠️ **La complétude est le cœur de l'AC, et son mécanisme est arrêté ici.** `axum 0.8` **n'expose aucune énumération** — vérifié dans son source : `Router` n'offre que `has_routes() -> bool`. L'énumération dynamique est donc **impossible**, et le repli d'abord envisagé — comparer à « le nombre de routes du routeur » — était **circulaire** : ce nombre ne pouvait venir que d'une seconde constante entretenue à la main, c'est-à-dire du « quelqu'un doit se souvenir » que cette story existe pour éliminer.
 
-**Le mécanisme retenu dérive le compte de la SOURCE, qui est la seule chose qu'un ajout de route modifie forcément** : le test lit `lib.rs` (`include_str!`) et compte les `.route(` du bloc `admin_routes`. Une route ajoutée sans son test fait donc **rougir** le test, sans que personne n'ait à y penser.
+**Le mécanisme retenu dérive le compte de la SOURCE, qui est la seule chose qu'un ajout de route modifie forcément** : le test lit `lib.rs` (`include_str!`) et compte, dans le bloc `admin_routes`, **les constructeurs de méthode** — `get(`, `post(`, `put(`, `delete(`, `patch(`, `head(`, `options(` —, et non les `.route(`. Le compte attendu est **25**. Une route ajoutée sans son test fait donc **rougir** le test, sans que personne n'ait à y penser.
 
-⚠️ **La borne du bloc doit être robuste** — un marqueur de commentaire délimitant `admin_routes`, et non un numéro de ligne, qui se périmerait au premier remaniement.
+⚠️ **Compter les `.route(` aurait reproduit le défaut dans le garde-fou lui-même.** Six enregistrements portent déjà plusieurs méthodes, et l'un d'eux est passé d'une à trois entre 20-1 et 20-2 : ajouter une méthode à un enregistrement existant ne change pas le nombre d'enregistrements. Le compteur serait resté vert sur une route neuve non gardée. *(Le CRITICAL de passe 1 portait sur **d'où vient** le nombre ; sa remédiation n'avait pas traité **ce qu'il compte**. Relevé en passe 2 par les trois lentilles.)*
+
+**Trois exigences sur le mécanisme, chacune fermant un mode d'échec réel de `lib.rs`** :
+
+1. **Bornes par marqueurs de commentaire**, jamais par numéros de ligne — ils se périmeraient au premier remaniement.
+2. **Les deux marqueurs sont assertés présents, et une fois chacun.** L'identifiant `admin_routes` apparaît **hors** du bloc, à `lib.rs:356` (dans un commentaire de `comptable_routes`) et à `:871` (au `merge`) : un marqueur bâti sur ce mot seul attraperait la mauvaise borne. **Mesuré** : de l'ouverture du bloc à la fin du fichier, le même comptage rend **176** au lieu de 25 — sept fois trop, et un test qui n'énumère alors plus rien de précis. Un marqueur disparu, lui, donnerait un bloc vide — et un test muet.
+3. **Les lignes de commentaire sont retirées avant comptage.** `lib.rs` porte des `.route(` en commentaire à `:939-940`, dans le bloc `NOTE` de fin de fichier ; et le bloc `admin_routes` lui-même contient des commentaires mentionnant `GET`. Un compteur naïf y prendrait du texte pour du code.
+
+⚠️ Une assertion **exacte** (`== 25`) et non « > 0 » : un plancher laisserait passer un bloc tronqué. *(La passe 2 a relevé que ce garde-fou restait un « sans doute » en question ouverte alors que `lib.rs` porte déjà les deux pièges ; il est arrêté ici.)*
 
 **AC2 — Le cas nominal n'est pas cassé.**
 Un PAT `read-write` créé par un **Comptable** conserve l'accès à tout ce qu'il pouvait atteindre : écritures, factures, contacts, produits.
@@ -115,39 +179,87 @@ La couche ne regarde que `api_key_id`, jamais le rôle.
 
 **AC4 — L'erreur dit ce qui se passe.**
 `403` avec le code `API_KEY_ADMIN_FORBIDDEN` et un message traduit sur les quatre locales, distinct de celui de la gestion de clés.
-*Preuve* : l'assertion de la **chaîne** de code vit dans `errors.rs`, seul endroit où le corps de la réponse est lisible ; et le test d'appariement positionnel de `kesh-i18n`.
+*Preuve* :
+- le bras de `match` d'`errors.rs` rend la chaîne `API_KEY_ADMIN_FORBIDDEN` (calqué sur `ApiKeyManagementForbidden`, `errors.rs:1104-1106`) ;
+- les tests d'AC1 lisent `body["error"]["code"]` et assertent la chaîne **de bout en bout** — c'est là que le contrat se vérifie, pas dans `errors.rs` ;
+- **un test dans `kesh-i18n` calqué sur `client_number_labels_are_translated_in_all_four_locales`** (`crates/kesh-i18n/src/loader.rs:261`) : la clé existe dans les quatre locales, **et** sa traduction diffère du français dans les trois autres.
+
+⚠️ **Aucun test d'appariement de locales n'existe dans `kesh-i18n` — la première rédaction invoquait un test imaginaire.** Vérifié : le crate n'a **pas de répertoire `tests/`**, et ses **22 tests unitaires** (`src/`) ne comportent aucun contrôle de parité globale. Les fichiers sont d'ailleurs déjà désappariés — **1266 clés en `fr-CH` contre 1209** dans les trois autres, soit les **57 clés de la KF #283**. **Ne pas chercher à résoudre cet écart ici** : il a son propre suivi.
+
+⚠️ **Et l'assertion `!= fr` du précédent n'est pas décorative : sans elle, le test passe sur une clé absente.** Une clé manquante **retombe silencieusement sur le français** — c'est le comportement établi, et testé, par `format_missing_key_in_de_falls_back_to_fr` (`loader.rs:227`). Un test qui se contenterait de vérifier « la clé rend autre chose que son nom » serait donc vert sur trois locales vides. C'est pour cela que le calque du précédent est prescrit plutôt qu'un `grep -c` sur les fichiers : il ferme le mode d'échec, le `grep` ne le voit pas. *(Relevé en passe 2 : les Dev Notes imposent de vérifier au `grep -nF` toute affirmation d'absence ; celle-ci était une affirmation de **présence**, et elle était fausse. Le précédent, lui, a été trouvé au grep de propagation qui a suivi le patch.)*
 
 **AC5 — Le chemin d'attaque est fermé, et le test le raconte.**
-*Preuve* : un test qui rejoue la chaîne complète — PAT Admin → `POST /api/v1/users` → **403**. C'est le test qui dit *pourquoi* la story existe ; son nom doit le porter.
+*Preuve* : un test qui rejoue la chaîne complète — PAT Admin → `POST /api/v1/users` → **`403 API_KEY_ADMIN_FORBIDDEN`**. C'est le test qui dit *pourquoi* la story existe ; son nom doit le porter. ⚠️ Le **code**, ici aussi : un `403` seul serait rendu par le RBAC sur un PAT de créateur Comptable, et ne prouverait pas que la chaîne d'escalade est coupée.
 
-**AC6 — La documentation dit la nouvelle frontière.**
+**AC6 — La documentation dit la nouvelle frontière, sur les QUATRE supports qui la portent.**
+
+Quatre supports, quatre chantiers de T6 — manuel, guide d'intégration, spécifications, CHANGELOG :
+
 Manuel administrateur : ce qu'un jeton peut et ne peut pas faire, et que **l'administration en est exclue quel que soit le rôle du créateur**.
+**Guide d'intégration `docs/api-external.md`** : c'est le document que lit celui qui écrit le client API, et le manuel y renvoie explicitement (`admin-manual.tex:1768`).
+Les **quatre spécifications** qui énoncent DC6, selon la répartition arrêtée en **D4**.
 Le CHANGELOG dit, dans les mots de l'utilisateur, **qu'un jeton créé par un Admin perd des accès qu'il avait** — sans quoi la première intégration qui tombe en `403` produit un ticket de support.
-*Preuve*, et c'est la seule AC qui en manquait :
-- `grep -nF "require_admin_role" _bmad-output/implementation-artifacts/17-2a-api-pat-backend.md` rend la **nouvelle** formulation de DC6 ;
-- `grep -c "jeton" docs/manual/fr/admin-manual.tex` a augmenté, et la section citée décrit l'exclusion ;
+
+⚠️ **`docs/api-external.md` manquait entièrement, et c'est le plus grave des oublis documentaires** : la story fermerait la faille dans le code en laissant écrit ailleurs, à l'impératif, comment l'exploiter. Six sites, relevés au `grep` :
+
+| Ligne | Ce qui devient faux |
+|---|---|
+| `:235` | **une instruction d'usage** : « pour changer un mot de passe via l'API, utilisez `PUT /api/v1/users/:id/reset-password` » — rendra `403` |
+| `:222` | l'avertissement « une clé créée par un Administrateur hérite des pouvoirs d'Administrateur », avec renvoi à KF-036 |
+| `:246` | la ligne « Auto-propagation des clés Administrateur » du tableau des limitations |
+| `:229` et `:231` | toute la recommandation de `PUT /api/v1/users/:id` en remplacement complet — passage devenu inatteignable par PAT |
+| `:205` et `:209` | le tableau des ressources donne les mutations `/vat-rates` comme disponibles, la note ¹ ne les réservant qu'au **rôle** Administrateur |
+| `:73` | « la permission effective est l'intersection du rôle du créateur et de la portée » — désormais **incomplet** : les routes admin sont fermées quelle que soit cette intersection |
+
+*Preuve*, et cette AC est celle qui en manquait le plus :
+- `grep -rn "require_admin_role" _bmad-output/implementation-artifacts/17-2{,a,c}-*.md` rend la **nouvelle** formulation de DC6 aux quatre sites de D4 ;
+- **`grep -nF "KF-036" docs/manual/fr/admin-manual.tex docs/api-external.md` ne rend plus aucun avertissement présenté comme une limitation ouverte** — seules des mentions au passé, ou rien ;
+- `admin-manual.tex:1765` (le bloc `keshwarning` « Moindre privilège ») ne décrit plus l'héritage des pouvoirs Admin comme un fait courant, et `:1756` élargit « la gestion des clés est impossible via l'API » à toute l'administration ;
 - l'entrée CHANGELOG existe et mentionne la perte d'accès des jetons Admin existants.
+
+⚠️ **La clause de preuve de la passe 1 mesurait un mot que le manuel n'emploie pas.** `grep -c "jeton" docs/manual/fr/admin-manual.tex` rend **3**, et **aucune** de ces trois occurrences ne concerne un PAT : deux portent sur le jeton de réinitialisation de mot de passe (`:1026`, `:1063`), la troisième sur les jetons de session dans un `.keshbackup` (`:1582`). Le manuel dit « **clé API (PAT)** ». Un critère « le compte a augmenté » était donc satisfaisable **sans toucher** au passage qui devient faux. *(Relevé en passe 2 — c'est la § « greper la valeur, pas la formulation » du `CLAUDE.md`, prise à l'envers : ici la formulation grepée n'existait même pas.)*
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — La couche** (AC1, AC3). Un `route_layer` sur `admin_routes`, à côté de `require_admin_role`. ✅ **L'ordre n'a pas à être arbitré** — vérifié en passe 1 dans le source d'axum : `route_layer` **enveloppe le service**, donc la couche s'exécute avant le handler quel que soit son ordre relatif au RBAC. La conséquence est en D2.
-- [ ] **T2 — Le code d'erreur** (AC4). Variante `AppError`, ligne dans le `match` d'`errors.rs`, clé i18n sur les **quatre** locales.
-- [ ] **T3 — Le test de complétude** (AC1). Le point difficile, désormais tranché : `axum 0.8` n'expose **aucune** énumération (`has_routes()` seul). Le test dérive donc le compte de la **source** — `include_str!` sur `lib.rs`, comptage des `.route(` entre deux marqueurs de commentaire bornant `admin_routes`. ⚠️ Borner par **marqueurs**, jamais par numéros de ligne.
-  - [ ] Couvrir chaque couple **(méthode, chemin)**, pas chaque chemin.
-  - [ ] Les deux scopes : `read-write` **et** `read-only`.
+- [ ] **T1 — La couche** (AC1, AC3). Un `route_layer` sur `admin_routes`, à côté de `require_admin_role`. La couche précède le **handler** quel que soit son ordre relatif au RBAC — vérifié en passe 1 dans le source d'axum, `route_layer` enveloppe le service ; conséquence en D2. ⚠️ **Mais l'ordre entre les deux COUCHES, lui, est à arbitrer** : il décide du code rendu quand toutes deux refusent. La cible est fixée en **D6**, et c'est le test d'AC1 qui tranche — pas une lecture du source.
+- [ ] **T2 — Le code d'erreur** (AC4). Variante `AppError`, bras dans le `match` d'`errors.rs` (calque `ApiKeyManagementForbidden`, `:1104-1106`), clé i18n sur les **quatre** locales. ⚠️ La variante **s'ajoute** : `API_KEY_MANAGEMENT_FORBIDDEN` garde son consommateur (`comptable_routes`, cf. D5).
+- [ ] **T3 — Le test de complétude** (AC1). Le point difficile, désormais tranché : `axum 0.8.9` n'expose **aucune** énumération (`has_routes()` seul). Le test dérive donc le compte de la **source** — `include_str!` sur `lib.rs`, entre deux marqueurs de commentaire bornant `admin_routes`.
+  - [ ] Compter les **constructeurs de méthode** (`get(`, `post(`, `put(`, `delete(`, …), **pas** les `.route(` : 19 enregistrements portent **25** couples. Le mécanisme est vérifié sur la source réelle, ventilation comprise :
+    ```sh
+    sed -n '182,284p' crates/kesh-api/src/lib.rs | grep -v '^\s*//' \
+      | grep -oE '\b(get|post|put|delete|patch|head|options)\(' | sort | uniq -c
+    # 4 delete( · 5 get( · 6 post( · 10 put(  → 25
+    ```
+    ⚠️ Le `sed` de bornes n'est là que pour la vérification à la main — **le test borne par marqueurs**, cf. les deux points suivants.
+  - [ ] Assertion **exacte** `== 25`, jamais un plancher.
+  - [ ] Retirer les lignes de commentaire avant comptage (`lib.rs:939-940` porte des `.route(` commentés).
+  - [ ] Asserter que les **deux** marqueurs existent, **une fois chacun** (`admin_routes` apparaît hors du bloc à `:356` et `:871`).
+  - [ ] Couvrir les 25 couples, et asserter **le code d'erreur**, pas le seul `403`.
+  - [ ] Les deux scopes, avec l'attente **par couple** — cf. le tableau d'AC1 : `read-only` n'atteint la couche que sur les 5 `get`.
+  - [ ] Un couple avec un PAT de créateur **Comptable**, code attendu selon **D6**.
 - [ ] **T4 — Le test du chemin d'attaque** (AC5).
 - [ ] **T5 — Non-régression** (AC2, AC3). `api_keys_e2e.rs` et les E2E d'administration restent verts. **Trois assertions changent, et trois seulement** — celles listées en D2. ⚠️ Ne pas toucher à `api_keys_e2e.rs:425`.
-- [ ] **T6 — Documentation** (AC6). Manuel admin ; amendement de DC6 dans **`17-2a-api-pat-backend.md`** — le document autoritaire, cf. D4 — ; CHANGELOG mentionnant la perte d'accès des jetons Admin existants.
+  - [ ] **La fixture frontend `admin-backup.api.test.ts:112`** porte `API_KEY_MANAGEMENT_FORBIDDEN` et devient un mensonge sur le contrat — **sans rougir**, puisqu'elle n'asserte qu'un rejet. La mettre à jour, et savoir qu'elle ne signalera rien si on l'oublie.
+  - [ ] **L'assertion de source de D3** : les trois appels à `ensure_not_pat` d'`admin.rs` (`:37`, `:143`) et de `fiscal_years.rs` (`:317`) sont vérifiés présents par `include_str!`, dans le même fichier de test que T3.
+- [ ] **T6 — Documentation** (AC6). Quatre chantiers, aucun optionnel :
+  - [ ] **`docs/api-external.md`** — les six sites du tableau d'AC6, dont l'instruction d'usage de `:235`.
+  - [ ] **Manuel admin FR** — `:1765` (le `keshwarning`) et `:1756`. ⚠️ **Régénérer le PDF** (`latexmk -xelatex` dans `docs/manual/fr/`) et le commiter : la convention du dépôt versionne les PDF.
+  - [ ] **Les quatre énoncés de DC6** selon **D4** — `17-2:57`, `17-2a:35` et `:58`, `17-2c:34` — et la mention « fermé par 22-4 » sur les trois entrées de limitation (`17-2a:114`, `17-2a:255`, `17-2c:35`), **sans les réécrire**.
+  - [ ] **CHANGELOG** — la perte d'accès des jetons Admin existants, dans les mots de l'utilisateur.
 
 ## Dev Notes
 
 ### Ce qui est déjà en place
 
-`ensure_not_pat` — `crates/kesh-api/src/routes/api_keys.rs:95` — teste `current_user.api_key_id.is_some()` et rend `AppError::ApiKeyManagementForbidden`, mappé en `403 API_KEY_MANAGEMENT_FORBIDDEN` (`errors.rs:1104`).
+`ensure_not_pat` — `crates/kesh-api/src/routes/api_keys.rs:95` — teste `current_user.api_key_id.is_some()` et rend `AppError::ApiKeyManagementForbidden`, mappé en `403 API_KEY_MANAGEMENT_FORBIDDEN` (bras à `errors.rs:1104`, chaîne à `:1106`).
+
+**Ses six sites d'appel, et la moitié seulement est concernée** : `api_keys.rs:108`, `:121`, `:211` (les routes de gestion de clés, montées dans `comptable_routes` — **hors** périmètre, cf. D5) ; `admin.rs:37`, `admin.rs:143`, `fiscal_years.rs:317` (les trois d'`admin_routes` — c'est de celles-là que parle **D3**).
 
 `CurrentUser.api_key_id: Option<i64>` — `middleware/auth.rs:44`, renseigné à `Some(...)` par le chemin PAT (`auth/api_key.rs:181`) et à `None` par le chemin JWT (`auth.rs:161`). **C'est le seul discriminant nécessaire**, et il est déjà fiable.
 
 `require_admin_role` — `middleware/rbac.rs`, appliqué en `route_layer` sur `admin_routes` (`lib.rs:284`). C'est le voisin auprès duquel la nouvelle couche se pose.
+
+**Le gate de portée est ANTÉRIEUR, et il change ce que le test peut prouver** — `middleware/auth.rs:141-142`, dans `require_auth`, appliqué en `route_layer` sur le routeur extérieur (`lib.rs:869-877`) : un PAT `read` sur une méthode non sûre (`is_safe_method` = `GET`/`HEAD`/`OPTIONS`) reçoit `403 API_KEY_READ_ONLY` **sans jamais atteindre `admin_routes`**. Cf. le tableau par couple d'AC1.
 
 ### Le piège de cette story, et il est du même genre que le défaut
 
@@ -159,8 +271,17 @@ Ne pas retirer les trois `ensure_not_pat` existants au motif que la couche les c
 
 ### Conventions de test
 
-Mutations **jouées, pas raisonnées**. Pour AC1, la mutation est explicite : retirer la couche doit faire tomber le test, **sur toutes les routes** et non sur une seule.
-Les affirmations d'absence se vérifient au `grep -nF` avant d'être écrites.
+Mutations **jouées, pas raisonnées**. Pour AC1, la mutation est explicite : retirer la couche doit faire tomber le test — **sur les 25 couples de la jambe `read-write`, et sur les 5 `get` de la jambe `read-only`**. Sur les 20 couples mutants en `read-only`, elle est **insatisfaisable par construction** : le gate de portée répond avant, et c'est pourquoi AC1 y attend un autre code plutôt que le même `403`.
+
+Les affirmations d'absence se vérifient au `grep -nF` avant d'être écrites — **et les affirmations de présence tout autant**. La première rédaction invoquait un test de parité i18n qui n'a jamais existé (cf. AC4) : une affirmation de présence fausse est plus coûteuse, car elle fait passer une clause de preuve pour couverte.
+
+### i18n — la clé manquante ne rougit pas
+
+⚠️ `kesh-i18n` n'a **aucun** test de parité de locales — pas de répertoire `tests/`, et aucun de ses **22 tests unitaires** ne contrôle la parité globale. Une clé absente d'une locale **retombe silencieusement sur le français** (`loader.rs:227`). Les quatre fichiers sont déjà désappariés : **1266 clés en `fr-CH`, 1209 dans les trois autres** — les 57 de la **KF #283**, hors périmètre de cette story.
+
+**Le contrôle à écrire est un calque, pas une invention** : `client_number_labels_are_translated_in_all_four_locales` (`loader.rs:261`) fait exactement ce qu'AC4 demande, y compris l'assertion `!= fr` sans laquelle le repli silencieux rend le test vert à tort.
+
+⚠️ **Ne pas se fier aux tableaux de gate qui annoncent « `cargo test -p kesh-i18n` 21/21 (parité FTL 4 locales) »** — `21-7:334` et `21-6c:305`. Le chiffre était juste à l'époque (22 aujourd'hui), mais la glose « parité » décrit une couverture qui n'existe pas. Ces lignes sont des **traces de gates exécutés** : on ne les réécrit pas, on ne s'y appuie pas.
 
 ### References
 
@@ -177,9 +298,11 @@ Les affirmations d'absence se vérifient au `grep -nF` avant d'être écrites.
 - ~~Le routeur comptable+~~ → **tranchée** et promue en **D5**.
 - ~~Alerter sur les jetons existants~~ → **oui**, et c'est désormais une clause de preuve d'**AC6**.
 
-**Il n'en reste qu'une, et elle est mineure :**
+**La quatrième, née de la correction elle-même, est close par la passe 2 :**
 
-1. **Le marqueur de bornage d'`admin_routes`** dans `lib.rs` — quelle forme exacte, et faut-il un test qui vérifie que les **deux** marqueurs existent encore ? Sans eux, le comptage de T3 porterait sur un bloc vide et le test passerait **à vide** : c'est le mode d'échec du test muet, que ce dépôt a déjà payé deux fois. Une assertion « le compte est > 0 » suffit à le fermer, et devrait sans doute figurer dans T3.
+- ~~Le marqueur de bornage d'`admin_routes`~~ → **tranchée, et le « > 0 » qu'elle envisageait était insuffisant.** `lib.rs` porte **déjà les deux pièges** : des `.route(` en commentaire (`:939-940`) et l'identifiant `admin_routes` hors du bloc (`:356`, `:871`). Un marqueur mal posé donne 0 (test muet) ou ~90 (test faux) — un plancher ne voit ni l'un ni l'autre. Les trois exigences sont écrites en AC1 et déclinées en T3 : assertion **exacte** à 25, décommentage avant comptage, présence des deux marqueurs vérifiée.
+
+**Aucune question ouverte ne subsiste.**
 
 ## Change Log
 
@@ -193,7 +316,7 @@ Les affirmations d'absence se vérifient au `grep -nF` avant d'être écrites.
 
 **Le défaut central était une contradiction entre deux de mes propres décisions.** D2 crée un code d'erreur distinct ; D3 conserve les trois `ensure_not_pat` existants. Or `route_layer` **enveloppe le service** — vérifié dans le source d'axum — donc la couche répond **avant** le handler, quel que soit son ordre relatif au RBAC. Les trois tests qui assertent `API_KEY_MANAGEMENT_FORBIDDEN` (`admin_full_export_e2e.rs:409`, `admin_full_import_e2e.rs:414`, `fiscal_years_e2e.rs:1638`) recevront donc le **nouveau** code et rougiront.
 
-⚠️ **Et mon avertissement d'AC2 aurait égaré le développeur** : il disait qu'une modification de test signalerait « une couche posée trop haut ». La cause n'était pas le placement — correct — mais ma contradiction. Il aurait conduit à remettre en cause la bonne décision. AC2 dit désormais que **trois** assertions changent, et trois seulement.
+⚠️ **Et mon avertissement aurait égaré le développeur** : il disait qu'une modification de test signalerait « une couche posée trop haut ». La cause n'était pas le placement — correct — mais ma contradiction. Il aurait conduit à remettre en cause la bonne décision. **AC3** dit désormais que **trois** assertions changent, et trois seulement. *(Cette phrase attribuait la correction à AC2 ; elle vit en AC3. Relevé en passe 2.)*
 
 **Le CRITICAL portait sur une circularité, et il avait raison.** AC1 exigeait d'énumérer les routes du routeur, avec pour repli une assertion contre « le nombre de routes du routeur ». Mais `axum 0.8` **n'expose aucune énumération** — `Router` n'offre que `has_routes() -> bool`, vérifié dans le source. Ce nombre n'aurait donc pu venir que d'une seconde constante à la main : **exactement le « quelqu'un doit se souvenir » que cette story existe pour éliminer**. Le mécanisme retenu dérive désormais le compte de la **source** (`include_str!` sur `lib.rs`), seule chose qu'un ajout de route modifie forcément.
 
@@ -213,7 +336,7 @@ Les affirmations d'absence se vérifient au `grep -nF` avant d'être écrites.
 
 **2026-08-13 — `bmad-create-story validate`, PASSE 2 (Haiku sur la lentille aveugle, Opus sur les deux autres).**
 
-⚠️ **FINDINGS RELEVÉS, PATCHES NON APPLIQUÉS.** La séance a été interrompue après la collecte. **Ce qui suit est un relevé, pas une remédiation** : le corps de la story est encore dans son état de passe 1. Reprendre par l'application de ces correctifs, puis par une passe 3.
+**Relevé le 2026-08-13, PATCHES APPLIQUÉS le 2026-08-13** — la séance de collecte avait été interrompue avant remédiation ; les correctifs ont été appliqués à la reprise, et le détail de ce qui a été fait est en fin de section. **Une passe 3 est due.**
 
 | Lentille | CRIT | HIGH | MED | LOW |
 |---|---|---|---|---|
@@ -221,7 +344,18 @@ Les affirmations d'absence se vérifient au `grep -nF` avant d'être écrites.
 | Edge Case Hunter (Opus, spec + code) | 0 | 2 | 2 | 1 |
 | Acceptance Auditor (Opus, + issue + specs parentes) | 0 | 2 | 5 | 3 |
 
-**Convergence** : passe 1 `1 CRIT / 3 HIGH / 6 MED` → passe 2 `0 CRIT / 2 HIGH / 5 MED`. **La sévérité maximale décroît** (`CRITICAL → HIGH`) : le critère de découpage préventif du `CLAUDE.md` n'est **pas** déclenché. Une passe 3 est due.
+**Convergence** : passe 1 `1 CRIT / 3 HIGH / 6 MED` → passe 2 `0 CRIT / 3 HIGH / 7 MED / 3 LOW`. **La sévérité maximale décroît** (`CRITICAL → HIGH`) : le critère de découpage préventif du `CLAUDE.md` n'est **pas** déclenché. Une passe 3 est due.
+
+⚠️ **Ce total est le second qu'ait porté ce Change Log : le premier, `0 CRIT / 2 HIGH / 5 MED`, était faux et contredisait la section qu'il résumait** — laquelle énumère bien trois HIGH et sept MEDIUM. Recompté depuis la ventilation, déduplication écrite :
+
+| | brut (somme des lentilles) | dédupliqué | ce qui se recouvre |
+|---|---|---|---|
+| CRIT | 0 | 0 | — |
+| HIGH | 4 | **3** | **H-A** vu par les trois lentilles, en HIGH par ECH et AA |
+| MED | 8 | **7** | **H-A** encore, classé MEDIUM par le Blind Hunter |
+| LOW | 4 | **3** | un doublon inter-lentilles |
+
+C'est la § *Recompter ses propres comptes rendus* du `CLAUDE.md`, prise en défaut par le compte rendu même de la passe qui la connaît : **un total doit être cohérent avec sa propre ventilation**, et celui-ci ne l'était pas. Corrigé à la remédiation.
 
 **Verdict sur le Change Log de la passe 1 : il ne ment pas.** Les six corrections revendiquées ont chacune une contrepartie réelle, vérifiée. Mais **deux ont figé un périmètre incomplet en lui donnant l'apparence de l'exhaustivité** — une clause qui énumère se lit comme close.
 
@@ -247,8 +381,47 @@ Les affirmations d'absence se vérifient au `grep -nF` avant d'être écrites.
 
 - Le Change Log attribue à **AC2** une correction qui vit en **AC3**.
 - `errors.rs:1104` annoncé pour le mapping ; le bras est en `:1105`, la chaîne en `:1106`. Et « `errors.rs`, seul endroit où le corps de la réponse est lisible » est **faux** : trois tests e2e lisent `body["error"]["code"]`.
+  - ⚠️ **La première moitié de ce finding est fausse, et elle est réfutée.** `grep -n "ApiKeyManagementForbidden =>" crates/kesh-api/src/errors.rs` rend **1104** : le bras est bien là où la story l'annonçait. Seule la chaîne est à `:1106`. La seconde moitié, elle, est juste. *(Réfuté à la remédiation, cf. plus bas.)*
 - `frontend/src/lib/features/admin-backup/admin-backup.api.test.ts:112` porte une fixture `API_KEY_MANAGEMENT_FORBIDDEN` qui **ment sur le contrat** sans faire rougir (elle n'asserte qu'un rejet). À mentionner dans T5 pour qu'elle ne soit ni oubliée ni prise pour un signal.
 
 ### Ce que la passe 2 a vérifié SANS défaut — à ne pas rejouer
 
 `axum 0.8.9` n'expose bien que `has_routes()` · `include_str!("../src/lib.rs")` est réalisable depuis un test d'intégration · les **trois** tests à basculer sont bien trois, et `api_keys_e2e.rs:425` est correctement exclu · `api_keys_e2e.rs` reste vert (contextes tous `Comptable`) · le décompte 16/19 et les références de ligne des Dev Notes sont exacts · **sept frontières saines** : PAT révoqué, expiré, créateur désactivé, créateur rétrogradé, rate-limiting, double montage, routeur `_test` · `POST /api/v1/onboarding/coordinates` écrit bien la config société mais est fermé par une garde d'étape · le changement de mot de passe self-service exige Argon2 · **aucune branche résiduelle du chemin d'attaque**, et le périmètre du **code** n'a pas été rétréci par la passe 1 — le rétrécissement est **documentaire**.
+
+### Remédiation appliquée le 2026-08-13
+
+**Les dix findings sont traités : 3 HIGH, 7 MEDIUM, 3 LOW — dont un LOW réfuté.** Chaque fait avancé par le relevé a été **revérifié depuis la source avant d'être écrit dans le corps de la story**, et deux de ces vérifications ont changé le patch.
+
+| Finding | Où le correctif vit désormais |
+|---|---|
+| **H-A** compteur `.route(` vs couples | nouveau § *Dix-neuf enregistrements, vingt-cinq routes* (ventilation par méthode) + AC1 + T3 : compter les **constructeurs de méthode**, assertion **exacte à 25** |
+| **H-B** jambe `read-only` muette | AC1 : tableau d'attente **par couple** (25 en `read-write` ; 5 `get` + 20 `read-only` en `read-only`) + § *Conventions de test* : la mutation est **insatisfaisable** sur les 20, et c'est écrit |
+| **H-C** `docs/api-external.md` absent | AC6 : tableau des **six sites** + T6 en quatre chantiers |
+| **M-A** DC6 dans quatre documents | **D4** réécrite : tableau des quatre énoncés, et distinction entre **énoncés** (à réécrire) et **traces de limitation** (à clore, pas à réécrire) |
+| **M-B** clause `grep -c "jeton"` | AC6 : remplacée par un `grep -nF "KF-036"` qui doit ne **plus** rien rendre, plus les deux sites nommés (`:1765`, `:1756`) |
+| **M-C** test i18n imaginaire | AC4 + nouveau § *i18n — la clé manquante ne rougit pas* |
+| **M-D** `403` prouvé par trois gardes | AC1 : asserter **le code**, avec le précédent `fiscal_years_e2e.rs:1634-1637` |
+| **M-E** ordre des deux couches | nouveau **D6** : `API_KEY_ADMIN_FORBIDDEN` sans exception, le test est l'arbitre ; T1 corrigée |
+| **M-F** câblage de D3 invérifiable | **D3** amendée : assertion **de source** par le même `include_str!`, avec repli documenté ; sous-tâche T5 |
+| **M-G** garde-fou du bloc vide | AC1 + T3 : **trois** exigences (marqueurs, décommentage, présence assertée) ; question ouverte close |
+| **LOW** AC2 → AC3 | corrigé dans le Change Log de passe 1 |
+| **LOW** fixture frontend | sous-tâche T5, avec la mention qu'elle **ne rougira pas** si on l'oublie |
+| **LOW** `errors.rs:1104` | ⚠️ **réfuté** — cf. ci-dessus |
+
+**Deux vérifications ont modifié le patch, et c'est le grep de propagation qui les a produites.**
+
+- **Le remède de M-C était moins bon que le dépôt.** Le relevé concluait à un `grep -c` sur les fichiers de locale. Or `kesh-i18n` porte déjà `client_number_labels_are_translated_in_all_four_locales` (`loader.rs:261`), qui fait mieux : il asserte que la traduction **diffère du français**, sans quoi le repli silencieux (`loader.rs:227`) rend le test vert sur une locale vide. AC4 prescrit désormais ce calque. **Un `grep -c` aurait été un test muet de plus** — dans la story dont le sujet est le test muet.
+- **`21-7:334` et `21-6c:305` annoncent « parité FTL 4 locales » pour une suite qui ne la contrôle pas.** Laissé tel quel, avec la raison : ce sont des traces de gates réellement exécutés, on ne réécrit pas ce qui a tourné. Signalé en Dev Notes pour que personne ne s'y appuie.
+
+**Les décomptes, recomptés depuis la source** (périmètre : `HEAD` de `spec/22-4-validate-p1`, `lib.rs` inchangé depuis `main`) :
+
+```sh
+# 19 enregistrements, 25 couples — les deux nombres, aux deux bornes
+sed -n '182,284p' crates/kesh-api/src/lib.rs | grep -c '\.route('          # 19
+grep -rn "ensure_not_pat" crates/ --include=*.rs                            # 6 sites d'appel, dont 3 sur admin_routes
+for f in crates/kesh-i18n/locales/*/messages.ftl; do grep -cE '^[a-zA-Z][a-zA-Z0-9_-]* *=' "$f"; done   # 1209 / 1209 / 1266 / 1209
+```
+
+⚠️ **L'écart i18n de 57 clés est corroboré par une mesure indépendante** : `16-1b:165` relevait **1225 contre 1168** à son époque — même delta, 41 clés ajoutées depuis dans les quatre fichiers. Deux mesures séparées de plusieurs mois donnent le même écart, ce qui écarte l'erreur de comptage.
+
+**Ce que la remédiation N'A PAS fait, et le dira à la passe 3** : aucun gate n'a été exécuté — la story n'a pas de code, seul son fichier de spécification a changé. Les tableaux de gate restent vides jusqu'à `dev-story`.
