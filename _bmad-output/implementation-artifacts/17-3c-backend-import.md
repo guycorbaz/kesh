@@ -27,6 +27,8 @@ so that **je puisse migrer ou restaurer une installation complète sans accès S
 
 1. **(AC11)** `POST /api/v1/admin/full-import` accepte un **upload multipart** (champ `file` = `.keshbackup`), **réservé rôle Admin strict** (non-Admin → `403`) et **interdit via PAT** (`403 API_KEY_MANAGEMENT_FORBIDDEN`, réutiliser `ensure_not_pat` promu `pub(crate)` en 17-3a). Limite de taille via `DefaultBodyLimit::max(...)` configurable `KESH_ADMIN_IMPORT_MAX_MB` (**défaut 512**, bornes `[1, 10240]`, pattern parse+borne+warn de `bank_import_max_mib`). **Succès → HTTP 200** + corps JSON camelCase `{ backupCreated: bool, tablesRestored: number, rowsRestored: number, sourceVersion: string, sessionInvalidated: true }`.
 
+**→ Code renommé par la story 22-4 (#167)** : cette route rend désormais `403 API_KEY_ADMIN_FORBIDDEN` — la couche d'`admin_routes` répond avant le handler, dont le `ensure_not_pat` subsiste (D3 de 22-4a). Énoncé d'origine conservé verbatim.
+
 2. **(AC12)** **Validation pré-restore (ordre strict, AVANT tout DELETE)** :
    - **(a) structure ZIP** conforme (`manifest.json` au root + `data/<table>.ndjson` + dossier `files/` présent et **vide**) → sinon `400 INVALID_BACKUP_STRUCTURE` ; `manifest.formatVersion ≤ 1` sinon `400` (code `INVALID_BACKUP_STRUCTURE` ou dédié) ;
    - **(b) intégrité SHA-256** de chaque table re-calculée sur le NDJSON extrait et comparée à `manifest.tables[t].sha256` → refus `400` (tamper) si mismatch, **sans avoir muté la DB** ;
@@ -104,6 +106,8 @@ so that **je puisse migrer ou restaurer une installation complète sans accès S
 | **DC9** | Aucune migration DB. |
 | **DC10** | Audit import **dans la tx**, `user_id = MIN(admin)` source (PAS CurrentUser dest, FK). `refresh_tokens` restaurés ⇒ sessions dest invalidées (`sessionInvalidated: true`). |
 | **DC11** | `onboarding_state` **exclue du restore** ; **forcée « done »** post-restore si ≥1 company non-stub + ≥1 admin (anti catch-22 #120). |
+
+**→ Code renommé par la story 22-4 (#167)** : `DC7` reste vrai dans son principe — ces opérations d'infra restent interdites aux clés API —, mais le code rendu est désormais `403 API_KEY_ADMIN_FORBIDDEN`, la couche d'`admin_routes` répondant avant le handler. Le `ensure_not_pat` du handler subsiste (décision D3 de 22-4a). Tableau conservé verbatim.
 
 ### Format `.keshbackup` (contrat figé par 17-3a — à RELIRE exactement)
 

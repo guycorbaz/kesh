@@ -32,7 +32,11 @@ Reprises de la spec parente convergée + des décisions code-review 17-2a/17-2b.
 - **Scope binaire global** : `read` (GET/HEAD/OPTIONS uniquement) | `read-write` (toutes méthodes, **sous réserve du RBAC rôle du créateur**). Pas de fine-grained per-ressource en v0.2.
 - **1 `company_id` par clé** : toute requête PAT est scopée à la company de la clé. Jamais d'accès cross-company.
 - **DC6 — gestion des clés interdite via PAT** : les routes `/api/v1/settings/api-keys` ne sont accessibles **qu'en session JWT cookie (UI web)**. Un PAT (même `read-write`) → `403 API_KEY_MANAGEMENT_FORBIDDEN`. **Documenter explicitement** : on crée/révoque les clés dans l'UI web, pas via l'API.
+
+  **→ Amendé par la story 22-4 (#167) — DC6 est désormais une CONJONCTION** : un PAT ne gère pas les clés (`ensure_not_pat`, `comptable_routes`, code d'origine) **et** n'atteint aucune route require_admin_role (couche `require_not_pat` sur `admin_routes`, story 22-4a, `403 API_KEY_ADMIN_FORBIDDEN`). Le premier membre reste vrai tel quel — les routes de gestion de clés ne sont pas des routes `require_admin_role` ; un remplacement aurait perdu cette moitié de la frontière.
 - **Limitation L3 / KF-036 ([#167](https://github.com/guycorbaz/kesh/issues/167), v0.3)** : un PAT `read-write` créé par un **Admin** peut atteindre les routes `require_admin_role` (`/api/v1/users` CRUD/reset-password, `/api/v1/company/invoice-settings`) — auto-propagation partielle contournant l'esprit de DC6. **À documenter comme avertissement de sécurité** : « créez des clés avec le rôle minimal nécessaire ; un PAT créé par un Admin hérite des pouvoirs Admin ».
+
+  **→ Fermé par la story 22-4 (#167)** : la couche `require_not_pat` sur `admin_routes` interdit désormais tout accès d'un PAT aux routes `require_admin_role`. Entrée d'origine conservée verbatim comme trace de la décision de l'époque.
 
 ## Acceptance Criteria
 
@@ -127,6 +131,8 @@ Toutes les valeurs techniques de `docs/api-external.md` (routes, méthodes, code
 - Lecture (scope `read` suffit, tout rôle authentifié) : `GET /api/v1/accounts`, `/api/v1/contacts`, `/api/v1/contacts/{id}`, `/api/v1/products`, `/api/v1/products/{id}`, `/api/v1/invoices`, `/api/v1/invoices/{id}`, `/api/v1/journal-entries`, `/api/v1/journal-entries/{id}`, `/api/v1/vat-rates`, `/api/v1/auth/me`.
 - Écriture (scope `read-write` requis + RBAC rôle) : `POST /api/v1/contacts`, `POST /api/v1/products`, `POST /api/v1/invoices`, `POST /api/v1/accounts`, etc. — **choisir un exemple simple et vérifier son payload** dans le handler correspondant avant de l'écrire dans la doc.
 - ⚠️ Routes `require_admin_role` (`/api/v1/users`, `/api/v1/company/invoice-settings`) : atteignables par un PAT **read-write créé par un Admin** (L3/KF-036) — à mentionner comme avertissement, pas comme exemple recommandé.
+
+  **→ Fermé par la story 22-4 (#167)** : la couche `require_not_pat` sur `admin_routes` interdit désormais tout accès d'un PAT aux routes `require_admin_role`. Entrée d'origine conservée verbatim comme trace de la décision de l'époque.
 
 ### Comportement auth (rappel pour la doc)
 

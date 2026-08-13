@@ -47,6 +47,8 @@ Le split **A–F est confirmé**, 6 sous-stories :
 
 1. `GET /api/v1/admin/full-export` retourne un fichier `.keshbackup` (conteneur ZIP) téléchargeable (**GET** — pas de corps de requête, cohérent 9-2b `GET /exports/global.zip` et `apiClient.getBlob` qui est câblé sur GET), `Content-Type: application/octet-stream` (force le download sans réinterprétation d'extension) + `Content-Disposition: attachment; filename="kesh-installation-{YYYY-MM-DD}.keshbackup"`. **Réservé rôle Admin strict** (test : `Comptable` et `Consultation` → `403`).
 2. L'endpoint est **inaccessible via clé PAT** : une requête authentifiée par `Authorization: Bearer kesh_pat_…` (même scope `read-write`) → `403` code `API_KEY_MANAGEMENT_FORBIDDEN` (cohérent Story 17-2a DC6 — opérations d'infra interdites aux PAT ; le backup contient hash de mots de passe + tokens, fuite critique si exposé via API).
+
+**→ Code renommé par la story 22-4 (#167)** : cette route rend désormais `403 API_KEY_ADMIN_FORBIDDEN` — la couche d'`admin_routes` répond avant le handler, dont le `ensure_not_pat` subsiste (D3 de 22-4a). Énoncé d'origine conservé verbatim.
 3. Le `.keshbackup` contient : (a) un fichier de données NDJSON **par table applicative Kesh** (les **22 tables**, voir Dev Notes §Inventaire), (b) un `manifest.json` (métadonnées + intégrité), (c) un dossier `files/` (vide en v0.2, forward-compat). Tables **système exclues** : `_sqlx_migrations`, `_kesh_version`.
 4. `manifest.json` (schéma JSON camelCase, pretty-printed) contient :
    - `formatVersion: 1` (entier **figé** = format NDJSON-per-table introduit par 17-3a ; l'import refuse `400` si `> 1`),
@@ -160,6 +162,8 @@ Le split **A–F est confirmé**, 6 sous-stories :
 | **DC9** | **Aucune migration DB** | Opère sur tables existantes. Pas d'audit idempotence, pas de bump min_required | **figé** |
 | **DC10** | `audit_log` import inséré **dans la transaction restore** (avant COMMIT) avec `user_id = MIN(users.id WHERE role='Admin')` source (PAS `CurrentUser` dest, sinon viol FK) ; `refresh_tokens` restaurés ⇒ **sessions destination invalidées** (`sessionInvalidated:true` → redirection `/login`) | Trace d'import atomique + jamais écrasée (OLICo) + FK `audit_log.user_id` respectée. Invalidation session = conséquence assumée du remplacement, signalée UI | **figé (P1, durci P3 O-1)** |
 | **DC11** | **`onboarding_state` exclue du restore** (conservée côté destination, comme `_kesh_version`) ; **forcée à l'état terminé post-restore** si le dataset restauré contient ≥1 company non-stub + ≥1 admin | `onboarding_state` est un **état d'installation local**, pas une donnée métier. La restaurer depuis une source non-onboardée rouvrirait le **catch-22 #120** (corrigé v011-2). L'exclure + forcer « done » évite la régression dans les deux sens | **figé (P3 O-3)** |
+
+**→ Code renommé par la story 22-4 (#167)** : `DC7` reste vrai dans son principe — ces opérations d'infra restent interdites aux clés API —, mais le code rendu est désormais `403 API_KEY_ADMIN_FORBIDDEN`, la couche d'`admin_routes` répondant avant le handler. Le `ensure_not_pat` du handler subsiste (décision D3 de 22-4a). Tableau conservé verbatim.
 
 ### Format `.keshbackup` (spec normative — figée 17-3a, consommée par tout le reste)
 

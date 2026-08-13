@@ -25,6 +25,8 @@ so that **je dispose d'un artefact de sauvegarde/migration complet, dont le form
 
 1. `GET /api/v1/admin/full-export` retourne un fichier `.keshbackup` (conteneur ZIP) téléchargeable (**GET** — pas de corps de requête, cohérent 9-2b `GET /exports/global.zip` et `apiClient.getBlob` câblé sur GET), `Content-Type: application/octet-stream` (force le download sans réinterprétation d'extension) + `Content-Disposition: attachment; filename="kesh-installation-{YYYY-MM-DD}.keshbackup"` (réutiliser `util::build_content_disposition`). **Réservé rôle Admin strict** (test : `Comptable` et `Consultation` → `403`).
 2. L'endpoint est **inaccessible via clé PAT** : requête `Authorization: Bearer kesh_pat_…` (même scope `read-write`) → `403` code `API_KEY_MANAGEMENT_FORBIDDEN` (le backup contient hash de mots de passe + tokens, fuite critique si exposé via API ; cohérent 17-2a DC6).
+
+**→ Code renommé par la story 22-4 (#167)** : cette route rend désormais `403 API_KEY_ADMIN_FORBIDDEN` — la couche d'`admin_routes` répond avant le handler, dont le `ensure_not_pat` subsiste (D3 de 22-4a). Énoncé d'origine conservé verbatim.
 3. Le `.keshbackup` contient exactement : `manifest.json` (au ROOT), `data/<table>.ndjson` (1 par table applicative = **22 tables**, nom = nom exact de la table), un dossier `files/` (vide). Tables **système exclues** : `_sqlx_migrations`, `_kesh_version`. *(Voir §Format normatif pour la structure exacte.)*
 4. `manifest.json` (camelCase, `serde_json::to_vec_pretty`, trailing `\n`) contient : `formatVersion: 1` (figé), `keshVersion` (= `env!("CARGO_PKG_VERSION")`), `keshVersionMinRequired` (lu de `_kesh_version`), `exportDate` (ISO 8601 UTC précision seconde), `instanceId` (= `MIN(companies.id)`, informatif), et par table : `rowCount`, `sha256` (hash NDJSON décompressé), **`columnNames: string[]`** (ordonné, explicite, **exclut les colonnes générées** type `reconciliation_rules.active_uniq` `GENERATED … VIRTUAL`).
 5. **Intégrité vérifiable** : recalculer le SHA-256 du NDJSON de chaque table redonne exactement `manifest.json[tables][*].sha256` (réutiliser `sha2`/`sha256_hex`). Table vide → NDJSON 0 octet → sha256 de la chaîne vide.
@@ -54,6 +56,8 @@ so that **je dispose d'un artefact de sauvegarde/migration complet, dont le form
 | **DC7** | Admin strict **+ anti-PAT** (`403 API_KEY_MANAGEMENT_FORBIDDEN`). |
 | **DC8** | Export in-memory < `KESH_ADMIN_EXPORT_INMEM_MB` (défaut 50), au-delà fichier temp + `Body::from_stream`. |
 | **DC9** | Aucune migration DB. |
+
+**→ Code renommé par la story 22-4 (#167)** : `DC7` reste vrai dans son principe — ces opérations d'infra restent interdites aux clés API —, mais le code rendu est désormais `403 API_KEY_ADMIN_FORBIDDEN`, la couche d'`admin_routes` répondant avant le handler. Le `ensure_not_pat` du handler subsiste (décision D3 de 22-4a). Tableau conservé verbatim.
 
 ### Format `.keshbackup` (spec NORMATIVE — figée ici, story-zéro)
 

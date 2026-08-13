@@ -2,7 +2,7 @@
 
 ## Status
 
-backlog
+review
 
 ⚠️ **Née du découpage de la story 22-4**, le 2026-08-13, après quatre passes de `bmad-create-story validate`. Elle reçoit **la frontière documentaire** ; la story **22-4a** reçoit le mécanisme. Les deux se mergent dans **une seule PR** — cf. § *Découpage* de 22-4a.
 
@@ -150,13 +150,66 @@ Décider aussi du sort du label `v0.2-milestone` porté par l'issue.
 
 ## Tasks / Subtasks
 
-- [ ] **T-a — Le guide d'intégration** (AC-a). Les huit sites d'`api-external.md`. ⚠️ **Commencer par `:267`**, le tableau des codes : c'est la condition d'entrée d'AC-a et le seul site dont l'omission casse le contrat programmatique.
-- [ ] **T-b — Le manuel administrateur** (AC-a). `:1765`, `:1756`, `:1757`. Puis **régénérer le PDF** et le commiter.
-- [ ] **T-c — Les quatre énoncés de DC6** (AC-b). Réécriture en **conjonction** (D-b), chaîne-pivot sans balisage (D-c).
-- [ ] **T-d — Les traces** (AC-c). Mention de clôture sur les quatre entrées de limitation et les sept énoncés de contrat. **Aucune réécriture** — le `git diff` ne doit montrer que des ajouts sur ces lignes.
-- [ ] **T-e — Le CHANGELOG** (AC-d). Section `## [Unreleased]` à créer, intertitre `### Sécurité` (D-d).
+- [x] **T-a — Le guide d'intégration** (AC-a). Les huit sites d'`api-external.md`. ⚠️ **Commencer par `:267`**, le tableau des codes : c'est la condition d'entrée d'AC-a et le seul site dont l'omission casse le contrat programmatique.
+- [x] **T-b — Le manuel administrateur** (AC-a). `:1765`, `:1756`, `:1757`. Puis **régénérer le PDF** et le commiter.
+- [x] **T-c — Les quatre énoncés de DC6** (AC-b). Réécriture en **conjonction** (D-b), chaîne-pivot sans balisage (D-c).
+- [x] **T-d — Les traces** (AC-c). Mention de clôture sur les quatre entrées de limitation et les sept énoncés de contrat. **Aucune réécriture** — le `git diff` ne doit montrer que des ajouts sur ces lignes.
+- [x] **T-e — Le CHANGELOG** (AC-d). Section `## [Unreleased]` à créer, intertitre `### Sécurité` (D-d).
 - [ ] **T-f — La fermeture de l'issue** (AC-e). `closes #167` dans le message de la PR, contrôle `gh issue view` après merge, et arbitrage du label `v0.2-milestone`.
-- [ ] **T-g — Le grep de propagation, une fois les patches faits.** Rejouer le critère **D-a** sur tout le dépôt et lister ce qu'il atteint encore : `grep -rn "KF-036\|API_KEY_MANAGEMENT_FORBIDDEN\|permission effective\|hérite des pouvoirs"` sur `docs/`, `website/`, `README.md`, `CHANGELOG.md` et `_bmad-output/`. **Trier à la main** — la commande rend des traces légitimes, c'est le prix et il est bas.
+- [x] **T-g — Le grep de propagation, une fois les patches faits.** Rejouer le critère **D-a** sur tout le dépôt et lister ce qu'il atteint encore : `grep -rn "KF-036\|API_KEY_MANAGEMENT_FORBIDDEN\|permission effective\|hérite des pouvoirs"` sur `docs/`, `website/`, `README.md`, `CHANGELOG.md` et `_bmad-output/`. **Trier à la main** — la commande rend des traces légitimes, c'est le prix et il est bas.
+
+## Dev Agent Record
+
+### Ce qui a été fait
+
+**Guide d'intégration** (`docs/api-external.md`) — les huit sites, en commençant par le tableau des codes d'erreur. Deux choix méritent d'être dits :
+
+- **La ligne des limitations a été renversée, pas supprimée.** Elle disait « Auto-propagation des clés Administrateur » ; elle dit désormais « Administration réservée à l'interface web », et le **correctif** est annoncé dans une note **après** le tableau, au passé. Une ligne intitulée « ce n'est pas une limitation » dans un tableau de limitations aurait été confuse — c'était ma première rédaction, corrigée.
+- **La ligne « Taux de TVA » du tableau des ressources passait pour à moitié fausse** : elle donnait `POST`/`PUT`/`DELETE /vat-rates` comme écritures disponibles. La colonne « Écriture » est désormais vide, avec renvoi à la note ¹ réécrite.
+
+**Manuel administrateur** — l'item « Portée » complété, un item « Administration » ajouté, le `keshwarning` « Moindre privilège » renversé, et une **note de version** qui dit ce qu'une intégration existante va constater. **PDF régénéré** (64 pages) et commité.
+
+**Quatre énoncés de DC6** amendés en **conjonction**, chaîne-pivot sans balisage. **Douze traces** annotées d'une mention de clôture — les quatre entrées de limitation, les sept énoncés de contrat de `17-3*`/`14-2`, et `DC3` de `17-2:28`.
+
+**CHANGELOG** — section `## [Unreleased]`, intertitre `### Sécurité`, texte qui nomme la perte d'accès des jetons Admin existants et le code d'erreur qu'une intégration recevra.
+
+### AC-c était insatisfaisable comme je l'avais écrite
+
+⚠️ **La clause disait « le `git diff` ne doit montrer que des ajouts sur ces lignes ». C'est impossible en annotant DANS la ligne** : un diff par ligne présente toute modification comme un couple `-`/`+`. Ma première application ajoutait la mention en fin de ligne et rendait `1 ajout / 1 retrait` par site — l'intention (préserver la trace) était tenue, la clause non.
+
+**Corrigé en insérant des lignes de continuation**, ce qui laisse chaque trace **intacte à l'octet** et rend le diff en ajouts purs : `+2 −0`, `+4 −0`, `+8 −0`… sur les sept fichiers.
+
+⚠️ **Mais trois sites sont des lignes de TABLEAU** (`DC7` de `17-3`, `17-3a`, `17-3c`), où l'on ne peut pas insérer de continuation sans casser le tableau. Pour ceux-là, la mention est placée **après** le tableau — un seul paragraphe couvrant `DC7`, ce qui est de toute façon plus lisible que trois répétitions en cellule.
+
+*La leçon est la même que celle du découpage : une clause de preuve se contrôle en la rejouant, pas en la relisant.*
+
+### Un `git checkout` a emporté un travail déjà fait
+
+⚠️ En annulant les annotations en ligne pour les refaire proprement, le `git checkout --` a **aussi** annulé les quatre amendements de DC6, faits juste avant sur les mêmes fichiers. Détecté par la clause de preuve d'AC-b, qui rendait `0, 0, 0` — **c'est le grep qui l'a vu, pas moi.** Rejoué. *Un `checkout` de fichier ne distingue pas les changements qu'on veut jeter de ceux qu'on veut garder.*
+
+### Le grep de propagation, et ce qu'il a fallu trier
+
+Le critère **D-a** rejoué sur `docs/`, `website/`, `README.md`, `CHANGELOG.md` et `_bmad-output/` rend une vingtaine de sites. Triés à la main, comme la story l'annonçait :
+
+- **traités** : les huit d'`api-external.md`, les trois du manuel, les quatre énoncés de DC6, les douze traces ;
+- **laissés, et c'est le critère qui le dit** : lignes de tâches cochées (`17-2c:85`), tableaux de passes de revue (`17-2a:149`), prose de rétrospective (`17-2a:153`), références de source (`17-2c:173`), notes de findings (`17-2c:200`), et les trois rétrospectives d'epic. Aucun n'affirme au présent ce qu'un jeton peut atteindre.
+
+**Vérifié non impacté** : `website/`, `README.md`, `user-manual.tex`, `marketing-brochure.tex`, les manuels `de/`, `en/`, `it/`.
+
+### Gates
+
+Cette story ne touche **aucun code exécutable** — markdown, LaTeX, PDF. La § *Quand sauter* du `CLAUDE.md` exempte les commits doc-only du gate de test. Les quatre clauses de preuve vérifiables ont été **exécutées** :
+
+| Clause | Résultat |
+|---|---|
+| AC-a — `KF-036` dans la doc utilisateur | **1** occurrence, au **passé** (la note « Corrigé depuis la v0.9.0 ») |
+| AC-a — `API_KEY_ADMIN_FORBIDDEN` dans `api-external.md` | **8** occurrences, dont la ligne du tableau des codes |
+| AC-b — chaîne-pivot | `17-2` → 1, `17-2a` → 2, `17-2c` → 1, **fichier par fichier avec son attendu** |
+| AC-c — ajouts seuls | `+2/-0`, `+4/-0`, `+8/-0`, `+6/-0`, `+4/-0`, `+4/-0`, `+4/-0` — **zéro retrait** |
+| AC-d — CHANGELOG | 1 section `[Unreleased]`, intertitre `### Sécurité` |
+| PDF à jour du `.tex` | contrôlé plus récent |
+
+⚠️ **AC-e reste ouverte, et par construction** : `closes #167` se porte sur le message de la PR, pas sur un fichier. La vérification `gh issue view 167` ne peut se faire **qu'après le merge**. T-f reste donc décochée — c'est le seul état honnête.
 
 ## Dev Notes
 
