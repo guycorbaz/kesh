@@ -363,7 +363,25 @@ Les cinq couples `HEAD` n'assertent que le **statut**, pas le code : une répons
 
 **Périmètre du décompte** : `2177` est le total du workspace au commit de dev de cette story ; **13 tests sont neufs** — 12 dans `admin_pat_denied_e2e`, 1 dans `kesh-i18n` —, recomptés depuis la source (`grep -c` aux deux bornes). `2177 − 13 = 2164`, la ligne de base annoncée pour la v0.9.0 : les deux comptes se recoupent.
 
-⚠️ Les E2E Playwright n'ont **pas** été exécutés : cette story ne touche au frontend qu'une fixture de test unitaire. Ils restent dus avant le `push` de la PR, conformément à la § *Test Locally First*.
+### E2E Playwright — exécutés, et voici ce qu'ils permettent de conclure
+
+**Suite complète lancée le 2026-08-13** sur la branche : **181 passés, 38 échoués, 19 ignorés**, 13,6 min, **0 flaky**. Montage de la recette du dépôt, `KESH_COOKIE_SECURE=false` compris — sans lui, `127.0.0.1` n'étant pas un « local hostname » pour Playwright, le contexte API rejette le cookie `Secure` et **toute** la suite tombe en 401.
+
+⚠️ **Un run rouge ne dit rien à lui seul sur cette suite** : elle rend **~39 rouges pour ~172 verts sur `main`** (issue **#287**). Les 38 échecs se répartissent sur les familles déjà cassées — `bank-import` (6), `bank-csv-import` (4), `reminders`, `onboarding`, `invoice-send-email`, `fiscal-years`, `bank-import-confirms` (3 chacune), etc.
+
+**Ce qui est concluant, en revanche, ce sont les surfaces que cette story touche** :
+
+| Surface | Résultat | Ce qu'elle démontre |
+|---|---|---|
+| `api-keys.spec.ts` | **2 ✓ / 0 ✘** | un PAT `read-write` reste utilisable hors administration (GET `/accounts` 200, POST `/contacts` 201, révocation → 401), et un PAT `read` reçoit toujours `API_KEY_READ_ONLY` — **AC2** |
+| `users.spec.ts` | **7 ✓ / 0 ✘** | **AC3** — un Admin devant son navigateur n'est pas affecté |
+| `email-templates.spec.ts` | **8 ✓ / 0 ✘** | idem |
+| `company-contact-details.spec.ts` | **5 ✓ / 0 ✘** | idem |
+| `vat-rates` · `dunning` | **2 ✓ / 0 ✘** · **4 ✓ / 0 ✘** | idem |
+
+**Les trois échecs de `fiscal-years.spec.ts` ont été inspectés un par un** — c'est la seule famille en échec qui recoupe le périmètre, la réouverture d'exercice étant l'une des trois routes dont le code d'erreur change. Aucun n'y touche : création/renommage/clôture en **timeout à 30 s**, et deux toasts de validation (`FISCAL_YEAR_INVALID`, `NO_FISCAL_YEAR`). Ni réouverture, ni PAT. Et `grep` sur `API_KEY_ADMIN|API_KEY_MANAGEMENT|kesh_pat` dans tout le journal : **aucune occurrence**.
+
+⚠️ **Ce qui N'A PAS été fait, et la conclusion s'en trouve bornée** : aucune **baseline** n'a été jouée sur un worktree `main`. Le différentiel n'est donc pas *mesuré*, il est *argumenté* — décompte cohérent avec #287, familles en échec identiques, et surfaces du périmètre toutes vertes. Le rayon d'impact avait par ailleurs été établi comme nul avant le run : sur 50 specs, une seule manipule un PAT, et elle n'exerce aucune route d'`admin_routes`. **Je ne déclare donc pas « E2E vertes » — cette suite ne l'est pas —, mais « aucune régression décelable, et les surfaces concernées démontrées vertes ».**
 
 ### Le premier gate « complet » n'en était pas un — deux pièges, coup sur coup
 
