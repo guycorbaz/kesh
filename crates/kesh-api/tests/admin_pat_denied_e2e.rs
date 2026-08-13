@@ -127,14 +127,18 @@ fn count_method_constructors(src: &str) -> BTreeMap<&'static str, usize> {
     for name in ["get", "post", "put", "delete", "patch", "head", "options"] {
         let needle = format!("{name}(");
         let mut n = 0usize;
-        let bytes = src.as_bytes();
         let mut from = 0usize;
         while let Some(pos) = src[from..].find(&needle) {
             let abs = from + pos;
             // Frontière de mot à gauche : évite de compter `delete_invoice(`,
             // `restore_email_template_default(` ou `set_endpoint(`.
+            // Frontière lue en CARACTÈRE et non en octet : `bytes[abs - 1] as char`
+            // réinterpréterait un octet de continuation UTF-8 (0x80–0xBF) comme un
+            // point de code Latin-1, dont `is_alphanumeric()` répond au hasard vis-à-vis
+            // du vrai caractère. Inoffensif tant que le bloc est ASCII, faux dès qu'un
+            // identifiant accentué jouxte un constructeur.
             let boundary = abs == 0 || {
-                let prev = bytes[abs - 1] as char;
+                let prev = src[..abs].chars().next_back().expect("abs > 0");
                 !prev.is_alphanumeric() && prev != '_'
             };
             if boundary {
@@ -280,6 +284,51 @@ fn nothing_is_added_after_the_first_route_layer() {
              et ne panique pas. Déplacez-la au-dessus des `.route_layer(...)`."
         );
     }
+}
+
+#[test]
+fn no_route_enters_the_block_by_composition() {
+    // ⚠️ Le trou que ferme ce test a été DÉMONTRÉ, pas supposé : un
+    // `.merge(un_sous_routeur())` placé dans le bloc **avant** les couches est
+    // correctement protégé à l'exécution — `route_layer` enveloppe le routeur
+    // assemblé — mais ses constructeurs `get(`/`post(` vivent dans un AUTRE
+    // fichier, invisibles à `count_method_constructors`, qui ne lit que `lib.rs`.
+    //
+    // Conséquence : le compteur reste à 25, `ADMIN_COUPLES` ne gagne pas le
+    // couple, et **aucun test HTTP n'exerce jamais cette route**. La protection
+    // tient ; c'est le RAPPEL qui tombe — or c'est le rappel qui est l'objet de
+    // cette story, et ce qui avait laissé 16 routes sur 19 sans garde.
+    //
+    // `nothing_is_added_after_the_first_route_layer` ne couvre pas ce cas : il
+    // ne regarde qu'APRÈS la première couche, là où le danger est de contourner
+    // les couches. Ici le danger est de contourner le COMPTEUR, et il vit avant.
+    let block = admin_block();
+    for forbidden in [".merge(", ".nest(", ".nest_service(", ".route_service("] {
+        assert!(
+            !block.contains(forbidden),
+            "`{forbidden}` dans le bloc admin_routes : la route serait protégée \
+             mais INVISIBLE au compteur, ses constructeurs vivant dans un autre \
+             fichier — donc jamais couverte par les tests HTTP d'ADMIN_COUPLES. \
+             Déclarez les routes admin par `.route(...)` direct dans ce bloc ; si \
+             une composition devient nécessaire, elle vient AVEC l'extension du \
+             compteur et des couples."
+        );
+    }
+}
+
+#[test]
+fn the_block_carries_no_block_comment() {
+    // `strip_line_comments` ne connaît que `//`. Un commentaire `/* … */` dont la
+    // prose mentionne `get(` serait compté comme un constructeur — démontré : le
+    // compteur passe alors à 26 et le test rougit sur un texte qui n'ajoute
+    // aucune route. Fail-loud ici, avec le motif, plutôt qu'un décompte faux à
+    // diagnostiquer ailleurs.
+    assert!(
+        !admin_block().contains("/*"),
+        "commentaire de bloc `/* … */` dans admin_routes : le décommentage ne le \
+         retire pas, et sa prose peut fausser le décompte des constructeurs. \
+         Utilisez des commentaires `//` dans ce bloc."
+    );
 }
 
 #[test]

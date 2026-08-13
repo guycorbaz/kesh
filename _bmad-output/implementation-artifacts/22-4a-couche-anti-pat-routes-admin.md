@@ -354,7 +354,9 @@ Les cinq couples `HEAD` n'assertent que le **statut**, pas le code : une répons
 |---|---|
 | `cargo fmt --all -- --check` | vert *(après un `cargo fmt` — l'ordre des `use` du test neuf dérivait)* |
 | `cargo clippy --workspace --all-targets -- -D warnings` | vert, 0 avertissement |
-| `cargo nextest` sur le rayon d'impact — `admin_pat_denied_e2e`, `admin_full_{export,import}_e2e`, `fiscal_years_e2e`, `api_keys_e2e`, `package(kesh-i18n)` | **108/108**, 269 s |
+| `cargo nextest` sur le rayon d'impact — `admin_pat_denied_e2e`, `admin_full_{export,import}_e2e`, `fiscal_years_e2e`, `api_keys_e2e`, `package(kesh-i18n)` | **111/111**, 422 s *(après les patches de la passe 1 de revue)* |
+
+⚠️ **Ce tableau a d'abord annoncé « 108/108 », et c'était trompeur sans être faux.** Ce gate a été lancé **avant** l'ajout du test i18n `admin_forbidden_message_is_translated_and_distinct_from_key_management` : 108 était le compte réel à cet instant, et il est resté écrit alors que le filtre en désignait **109**. La passe 1 de revue l'a recompté depuis la source et relevé l'écart. *C'est la § « déclarer le PÉRIMÈTRE de mesure avec le nombre » prise en défaut : un décompte sans son instant se relit contre le mauvais état.* Le gate a été rejoué après les patches de revue — **111** aujourd'hui, les deux tests neufs de la passe 1 compris. Et le **gate complet** (2177/2177), lui, couvrait déjà tout.
 | `npm run lint-i18n-ownership` | PASS |
 | `npm run check` | 0 erreur (27 avertissements préexistants) |
 | `npm run test:unit` | 512/512, 63 fichiers |
@@ -400,6 +402,36 @@ Les cinq couples `HEAD` n'assertent que le **statut**, pas le code : une répons
 Le gate a donc été rejoué en **profil `ci`** (`fail-fast = false`, `retries = 1`), seul montage qui donne à la fois la couverture complète et l'absorption du flake connu. **Résultat : 2177/2177, sans même un retry** — la KF-038 ne s'est pas reproduite, ce qui confirme la contention comme cause et non le code.
 
 ## Change Log
+
+**2026-08-13 — `bmad-code-review`, PASSE 1 (Sonnet ×3, contextes frais).** Opus ayant implémenté, la rotation impose un autre modèle.
+
+| Lentille | CRIT | HIGH | MED | LOW |
+|---|---|---|---|---|
+| Blind Hunter (diff seul) | 0 | 0 | 1 | 1 |
+| Edge Case Hunter (diff + code) | 0 | 1 | 0 | 1 |
+| Acceptance Auditor (+ stories, issue, `CLAUDE.md`) | 0 | 0 | 2 | 0 |
+| **dédupliqué** | **0** | **1** | **2** | **2** |
+
+Déduplication : le trou de composition, vu par BH (en MEDIUM) et ECH (en HIGH) — retenu en **HIGH**, l'ECH l'ayant **démontré par exécution**.
+
+**Le HIGH — le compteur était aveugle à la composition, et ça ne se déduisait pas.** Un `.merge(sous_routeur())` placé dans le bloc **avant** les couches est correctement **protégé** — `route_layer` enveloppe le routeur assemblé — mais ses constructeurs vivent dans un **autre fichier**, invisibles au compteur qui ne lit que `lib.rs`. Le compteur reste à 25, le couple n'entre pas dans `ADMIN_COUPLES`, et **aucun test HTTP n'exerce la route**. La protection tient ; **c'est le rappel qui tombe** — or le rappel est l'objet de cette story. L'ECH l'a prouvé en ajoutant réellement un sous-routeur : les quatre tests de source sont restés **verts**.
+
+⚠️ **La spec le savait à moitié et l'avait rangé en limitation.** AC1 documentait que `.nest(`/`.route_service(` échappent au compteur, et T3 les interdisait — mais **seulement après la première couche**, là où le danger est de contourner les *couches*. Ici le danger est de contourner le *compteur*, et il vit **avant**. Fermé par `no_route_enters_the_block_by_composition`, qui les interdit **partout** dans le bloc.
+
+**Les deux MEDIUM portent sur le compte rendu, pas sur le code** — c'est le motif récurrent de cette story :
+
+- **« 108/108 » pour un filtre qui en désigne 109** : le gate ciblé avait été lancé avant l'ajout du test i18n. Corrigé, rejoué, et le périmètre est désormais déclaré avec le nombre.
+- **La passe 4 de `validate` n'a pas son commit dédié**, contrairement aux passes 1 à 3 — entorse à la § *Commit systématique après chaque étape BMAD*. Ses findings vivent dans le commit de découpage et dans les deux sous-stories, mais la trace du processus manque. **Constaté et assumé** : reconstituer après coup un commit de passe serait écrire une trace fausse. L'Acceptance Auditor a par ailleurs revérifié indépendamment plusieurs affirmations attribuées à cette passe — toutes exactes.
+
+**Les deux LOW, tous deux réels et tous deux fermés** : la frontière de mot lisait un **octet** (`bytes[abs-1] as char`), ce qui réinterprète un octet de continuation UTF-8 en Latin-1 — désormais lue en caractère ; et un commentaire `/* … */` dont la prose mentionne `get(` faussait le décompte, l'ECH l'ayant démontré (26 au lieu de 25) — désormais interdit dans le bloc, fail-loud avec son motif.
+
+⚠️ **Le correctif UTF-8 a lui-même cassé `clippy`** (`unused variable: bytes`), sans que le gate ciblé s'en aperçoive : un avertissement n'arrête pas la compilation, seul `-D warnings` le fait. Rattrapé par le pré-vol `clippy`, qui est précisément ce que le `CLAUDE.md` appelle le geste le moins cher du dépôt.
+
+**Deux mutations neuves jouées, deux rougissements** : `.merge(` dans le bloc → `no_route_enters_the_block_by_composition` ; commentaire de bloc → `the_block_carries_no_block_comment` *et* le compteur.
+
+**Ce que la passe 1 a vérifié SANS défaut** — et c'est substantiel : l'ordre réel des couches (`require_auth` → `require_not_pat` → `require_admin_role` → handler), confirmé par lecture d'axum **et** par un test HTTP qui rougirait si l'ordre s'inversait · le discriminant `api_key_id` · l'absence de second montage d'`admin_routes` · le décompte des 25, recompté à la main par deux lentilles · les trois `ensure_not_pat` · `HEAD` couvert et l'absence de corps qui justifie de n'asserter que le statut · `OPTIONS` sans court-circuit · la collision de chemin sur `/invoices/{id}` entre trois routeurs · le rejet **avant** tout streaming de corps sur `full-import` · **aucune route d'administration atteignable hors `admin_routes`** · aucune fuite d'information par le code ou le statut · et, pour 22-4b, toutes les clauses de preuve rejouées conformes.
+
+---
 
 **2026-08-13 — créée par découpage de la story 22-4**, après quatre passes de `validate` (Sonnet ×3 → Haiku + Opus ×2 → Sonnet ×3 → Haiku + Opus ×2). Trend de la story mère : `1/3/6` → `0/3/7` → `0/4/6` → `0/4/9`. Deux stagnations consécutives à HIGH, MEDIUM en hausse : critère de non-convergence atteint. Arbitrage de Guy — découper.
 
