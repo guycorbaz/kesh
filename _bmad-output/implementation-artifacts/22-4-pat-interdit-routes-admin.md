@@ -72,13 +72,36 @@ L'issue #167 date de plusieurs mois. Deux de ses éléments ont bougé, et un tr
 | `delete` | 4 |
 | **Total** | **25** |
 
-Six des dix-neuf enregistrements portent deux ou trois méthodes. **Et le motif s'est déjà réalisé** : `/api/v1/admin/email-templates/{template_type}/{language}` est passé d'**une** à **trois** méthodes entre les stories 20-1 et 20-2, sans qu'aucun enregistrement ne soit ajouté. Un compteur calibré sur les `.route(` n'aurait rien vu — c'est exactement le mode d'échec que cette story existe pour fermer, reproduit dans son propre garde-fou. *(Relevé en passe 2 par les trois lentilles indépendamment ; recompté à la main avant d'être écrit ici.)*
+**Cinq** des dix-neuf enregistrements portent deux ou trois méthodes : `/users`, `/users/{id}`, `/vat-rates/{id}`, `/dunning-levels/{id}` et `/admin/email-templates/{template_type}/{language}` (trois à lui seul). Ajouter une méthode à l'un d'eux ne change **pas** le nombre d'enregistrements : un compteur calibré sur les `.route(` n'y verrait rien — c'est le mode d'échec que cette story existe pour fermer, reproduit dans son propre garde-fou.
+
+> ⚠️ **Deux chiffres de ce paragraphe étaient faux, et le second était un précédent inventé.** La passe 2 affirmait « six enregistrements » — il y en a **cinq** — et surtout que `/admin/email-templates/{…}` serait « passé d'une à trois méthodes entre les stories 20-1 et 20-2 ». **C'est faux** : la route est née avec ses trois méthodes, en un seul commit.
+>
+> ```sh
+> git log --all --oneline -S'email-templates/{template_type}/{language}' -- crates/kesh-api/src/lib.rs
+> #   8bca0a1e feat(story-20-1): implémente le socle templates d'e-mail (backend)
+> git show 8bca0a1e^:crates/kesh-api/src/lib.rs | grep -c email-templates   # 0 — la route n'existe pas encore
+> git show 8bca0a1e:crates/kesh-api/src/lib.rs  | sed -n '197,200p'         # get + put + delete, d'emblée
+> ```
+>
+> **L'argument de conception ne dépend pas de ce précédent** — cinq enregistrements multi-méthodes suffisent à établir la classe d'évolution contre laquelle le compteur doit protéger. Mais il était présenté comme un fait advenu, et il ne l'est pas. *(Réfuté en passe 3, `git log -S` à l'appui. Le relevé de passe 2 portait la mention « recompté à la main » et « confirmé par les trois lentilles indépendamment » : ni le recompte ni la confirmation n'avaient eu lieu sur ce point.)*
 
 ## Décisions
 
 **D1 — Le blocage se pose en COUCHE sur le routeur, pas dans les handlers.**
 
-L'issue proposait les deux options. **L'état du code tranche** : l'approche par handler a été appliquée trois fois et **oubliée seize**. Ce n'est pas un défaut de diligence, c'est la propriété d'un dispositif qui doit être rappelé à chaque ajout de route — et rien ne le rappelle. Un `route_layer` sur `admin_routes`, à côté de `require_admin_role` qui vit déjà là, se pose **une fois** et couvre par construction toute route ajoutée ensuite.
+L'issue proposait les deux options. **L'état du code tranche** : l'approche par handler a été appliquée trois fois et **oubliée seize**. Ce n'est pas un défaut de diligence, c'est la propriété d'un dispositif qui doit être rappelé à chaque ajout de route — et rien ne le rappelle. Un `route_layer` sur `admin_routes`, à côté de `require_admin_role` qui vit déjà là, se pose **une fois** et couvre toute route ajoutée ensuite **dans le bloc**.
+
+> ⚠️ **« Par construction » est trop fort, et la nuance est un vrai trou : `route_layer` n'enveloppe que les routes DÉJÀ présentes à l'appel.** Lu dans le source (`axum-0.8.9/src/routing/path_router.rs:311-341`), il itère sur `self.routes` au moment où il est appelé :
+>
+> ```rust
+> let routes = self.routes.into_iter()
+>     .map(|(id, endpoint)| (id, endpoint.layer(layer.clone())))
+>     .collect();
+> ```
+>
+> Une route chaînée **après** les `.route_layer(...)` — un `admin_routes = admin_routes.route(...)` ajouté plus loin, ou un remaniement qui remonte les couches « pour la lisibilité » — **compile, ne panique pas** (le `panic!` ne se déclenche que sur un routeur vide) et échappe **aux deux** couches : ni RBAC, ni anti-PAT. Elle ne garderait que `require_auth`, c'est-à-dire l'authentification sans l'autorisation.
+>
+> **Ce trou préexiste à cette story** — il vaut déjà pour `require_admin_role` seul — mais la story ne le referme pas, et sa promesse de complétude le masquerait. Deux gestes, en T1 : un **commentaire d'avertissement** aux deux `.route_layer(...)` disant que tout ajout se fait au-dessus, et **une assertion de source** dans le test de T3 — aucun `.route(`, `.nest(` ou `.route_service(` après le dernier `.route_layer(` du bloc. *(Relevé en passe 3, source d'axum à l'appui.)*
 
 **D2 — Un code d'erreur distinct, ET trois tests existants à mettre à jour.** `AppError::ApiKeyManagementForbidden` rend aujourd'hui `403 API_KEY_MANAGEMENT_FORBIDDEN`. Le réutiliser pour « vous ne pouvez pas rouvrir un exercice avec un jeton » **mentirait à l'appelant** : son message parle de gestion de clés. Une variante dédiée — `API_KEY_ADMIN_FORBIDDEN` — avec son message propre sur les quatre locales.
 
@@ -104,15 +127,19 @@ L'issue proposait les deux options. **L'état du code tranche** : l'approche par
 >
 > **Mécanisme retenu** : une assertion **de source**, dans le fichier de test de T3 et par le même `include_str!` — les trois fichiers doivent contenir leurs appels à `ensure_not_pat`. C'est la technique que cette story établit déjà pour la complétude, appliquée à une garde dont le seul mode d'échec est la disparition. *Repli si elle s'avère impraticable* : écrire noir sur blanc, dans une ligne de dette du story file, que ces trois gardes sont une défense en profondeur **sans couverture de test** — jamais laisser la revendication de D3 sans l'un des deux.
 
-**D4 — La frontière DC6 est réécrite dans les QUATRE documents qui l'énoncent.** Elle disait « un PAT ne gère pas les clés » ; elle dira « **un PAT n'atteint aucune route `require_admin_role`** ».
+**D4 — La frontière DC6 est réécrite à ses QUATRE ÉNONCÉS, répartis sur TROIS documents.** Elle disait « un PAT ne gère pas les clés » ; elle dira « **un PAT n'atteint aucune route `require_admin_role`** ».
 
-⚠️ **La passe 1 a remplacé une cible fausse par une cible juste mais UNIQUE ; il y en a quatre.** Relevé au `grep -rn "DC6"`, l'énoncé de la frontière vit à :
+⚠️ **Compter les documents et compter les énoncés donne deux nombres différents, et la confusion des deux était un défaut de cette décision.** Relevé au `grep -rn "DC6"`, l'énoncé de la frontière vit à :
 
 | Document | Ligne | Statut du document |
 |---|---|---|
 | `17-2a-api-pat-backend.md` | `35` (décision) **et** `58` (tâche) | `done` — le plus lu, avec son Dev Agent Record |
 | `17-2-api-pat-integrations.md` | `57` | `ready-for-dev` — vestige de découpage, **mais** `17-2a:206` le désigne comme « spec parente convergée, **source des DC1-DC6** » |
 | `17-2c-api-pat-doc.md` | `34` | `done` — et c'est **la source des passages de documentation qui deviennent faux** (cf. AC6) |
+
+**Trois documents, quatre énoncés** — `17-2a` en porte deux. La formulation « quatre documents » a subsisté en D4 et en AC6 après que T6 avait déjà été corrigée en « quatre énoncés » : un correctif appliqué à un site et non propagé aux autres, le mode d'échec même que la § *Propagation post-patch* du `CLAUDE.md` demande de greper. *(Relevé en passe 3 par deux lentilles indépendamment.)*
+
+⚠️ **Un QUATRIÈME document mentionne DC6 et reste hors périmètre — vérifié, pas supposé.** `17-2b-api-pat-frontend.md`, `done`, l'invoque à `:172` et `:220` : « la page est session-JWT-cookie uniquement ; un PAT ne peut pas l'atteindre (DC6 backend = filet) ». Ces deux phrases restent **vraies** après cette story, parce qu'elles portent sur la page de gestion des clés, dont la route vit dans `comptable_routes` et n'est donc pas touchée par la couche (cf. D5). **Rien à amender — mais il fallait l'écrire** : la passe 3 a relevé que l'affirmation « il n'y a rien à y faire » n'avait jamais été formulée ni vérifiée, alors que le document existe et porte le mot.
 
 **Le « PAS dans `17-2` » de la première rédaction était donc à l'envers** : `17-2` n'est pas à éviter, il est à amender **avec** les autres. Un lecteur qui suit la piste `17-2a:206` vers la spec parente y trouverait sinon l'ancienne frontière, avec l'autorité de la « source ». *(Relevé en passe 2.)*
 
@@ -158,15 +185,19 @@ Le cas existe et n'était pas spécifié : un PAT créé par un **Comptable**, p
 
 **Le mécanisme retenu dérive le compte de la SOURCE, qui est la seule chose qu'un ajout de route modifie forcément** : le test lit `lib.rs` (`include_str!`) et compte, dans le bloc `admin_routes`, **les constructeurs de méthode** — `get(`, `post(`, `put(`, `delete(`, `patch(`, `head(`, `options(` —, et non les `.route(`. Le compte attendu est **25**. Une route ajoutée sans son test fait donc **rougir** le test, sans que personne n'ait à y penser.
 
-⚠️ **Compter les `.route(` aurait reproduit le défaut dans le garde-fou lui-même.** Six enregistrements portent déjà plusieurs méthodes, et l'un d'eux est passé d'une à trois entre 20-1 et 20-2 : ajouter une méthode à un enregistrement existant ne change pas le nombre d'enregistrements. Le compteur serait resté vert sur une route neuve non gardée. *(Le CRITICAL de passe 1 portait sur **d'où vient** le nombre ; sa remédiation n'avait pas traité **ce qu'il compte**. Relevé en passe 2 par les trois lentilles.)*
+⚠️ **Compter les `.route(` aurait reproduit le défaut dans le garde-fou lui-même.** **Cinq** enregistrements portent déjà plusieurs méthodes : ajouter une méthode à l'un d'eux ne change pas le nombre d'enregistrements, et le compteur resterait vert sur une route neuve non gardée. *(Le CRITICAL de passe 1 portait sur **d'où vient** le nombre ; sa remédiation n'avait pas traité **ce qu'il compte**. Relevé en passe 2 ; le « six » et le précédent historique de ce relevé sont réfutés en passe 3, cf. le § plus haut.)*
 
-**Trois exigences sur le mécanisme, chacune fermant un mode d'échec réel de `lib.rs`** :
+**Quatre exigences sur le mécanisme, chacune fermant un mode d'échec réel de `lib.rs`** :
 
 1. **Bornes par marqueurs de commentaire**, jamais par numéros de ligne — ils se périmeraient au premier remaniement.
 2. **Les deux marqueurs sont assertés présents, et une fois chacun.** L'identifiant `admin_routes` apparaît **hors** du bloc, à `lib.rs:356` (dans un commentaire de `comptable_routes`) et à `:871` (au `merge`) : un marqueur bâti sur ce mot seul attraperait la mauvaise borne. **Mesuré** : de l'ouverture du bloc à la fin du fichier, le même comptage rend **176** au lieu de 25 — sept fois trop, et un test qui n'énumère alors plus rien de précis. Un marqueur disparu, lui, donnerait un bloc vide — et un test muet.
 3. **Les lignes de commentaire sont retirées avant comptage.** `lib.rs` porte des `.route(` en commentaire à `:939-940`, dans le bloc `NOTE` de fin de fichier ; et le bloc `admin_routes` lui-même contient des commentaires mentionnant `GET`. Un compteur naïf y prendrait du texte pour du code.
 
-⚠️ Une assertion **exacte** (`== 25`) et non « > 0 » : un plancher laisserait passer un bloc tronqué. *(La passe 2 a relevé que ce garde-fou restait un « sans doute » en question ouverte alors que `lib.rs` porte déjà les deux pièges ; il est arrêté ici.)*
+4. **Aucun `.route(`, `.nest(` ni `.route_service(` après le dernier `.route_layer(` du bloc** — cf. le trou d'`route_layer` décrit en **D1**. Sans cette quatrième assertion, une route peut être à la fois **non gardée** et **non comptée**.
+
+⚠️ Une assertion **exacte** (`== 25`) et non « > 0 » : un plancher laisserait passer un bloc tronqué. *(La passe 2 a relevé que ce garde-fou restait un « sans doute » en question ouverte alors que `lib.rs` porte déjà les deux pièges ; il est arrêté ici. La quatrième exigence est venue en passe 3.)*
+
+⚠️ **Ce que le mécanisme ne verra PAS, et il faut le savoir avant de s'y fier** : une sous-route montée par `.nest(` ou `.route_service(` **au-dessus** des couches est correctement **protégée** à l'exécution, mais n'ajoute aucun constructeur de méthode au texte borné — ses `get(`/`post(` vivent dans un autre fichier. Le compteur resterait à 25 et la liste de couples d'AC1 aussi, alors que la surface réelle a grandi. Ce n'est pas un trou de protection, c'est un **trou de preuve**. Conduite à tenir : pour `admin_routes`, les routes s'ajoutent par `.route()` direct — et si un montage par composition devient nécessaire, il vient **avec** l'ajustement du compteur. *(Relevé en passe 3.)*
 
 **AC2 — Le cas nominal n'est pas cassé.**
 Un PAT `read-write` créé par un **Comptable** conserve l'accès à tout ce qu'il pouvait atteindre : écritures, factures, contacts, produits.
@@ -182,7 +213,10 @@ La couche ne regarde que `api_key_id`, jamais le rôle.
 *Preuve* :
 - le bras de `match` d'`errors.rs` rend la chaîne `API_KEY_ADMIN_FORBIDDEN` (calqué sur `ApiKeyManagementForbidden`, `errors.rs:1104-1106`) ;
 - les tests d'AC1 lisent `body["error"]["code"]` et assertent la chaîne **de bout en bout** — c'est là que le contrat se vérifie, pas dans `errors.rs` ;
-- **un test dans `kesh-i18n` calqué sur `client_number_labels_are_translated_in_all_four_locales`** (`crates/kesh-i18n/src/loader.rs:261`) : la clé existe dans les quatre locales, **et** sa traduction diffère du français dans les trois autres.
+- **un test dans `kesh-i18n` calqué sur `client_number_labels_are_translated_in_all_four_locales`** (`crates/kesh-i18n/src/loader.rs:261`) : la clé existe dans les quatre locales, **et** sa traduction diffère du français dans les trois autres ;
+- **le message diffère de celui de la gestion de clés** — `format(locale, "error-api-key-admin-forbidden") != format(locale, "error-api-key-management-forbidden")`, au moins en `fr-CH`.
+
+⚠️ **Sans cette dernière clause, le « distinct » d'AC4 n'est prouvé nulle part** — alors que c'est le motif entier de D2. T2 prescrit de **calquer** le bras existant ; un calque qui copie le code *et* le message satisferait les trois autres clauses à la lettre, et rendrait à l'appelant un message parlant de gestion de clés là où il est question d'administration. C'est précisément le mensonge que D2 refuse. *(Relevé en passe 3.)*
 
 ⚠️ **Aucun test d'appariement de locales n'existe dans `kesh-i18n` — la première rédaction invoquait un test imaginaire.** Vérifié : le crate n'a **pas de répertoire `tests/`**, et ses **22 tests unitaires** (`src/`) ne comportent aucun contrôle de parité globale. Les fichiers sont d'ailleurs déjà désappariés — **1266 clés en `fr-CH` contre 1209** dans les trois autres, soit les **57 clés de la KF #283**. **Ne pas chercher à résoudre cet écart ici** : il a son propre suivi.
 
@@ -191,16 +225,16 @@ La couche ne regarde que `api_key_id`, jamais le rôle.
 **AC5 — Le chemin d'attaque est fermé, et le test le raconte.**
 *Preuve* : un test qui rejoue la chaîne complète — PAT Admin → `POST /api/v1/users` → **`403 API_KEY_ADMIN_FORBIDDEN`**. C'est le test qui dit *pourquoi* la story existe ; son nom doit le porter. ⚠️ Le **code**, ici aussi : un `403` seul serait rendu par le RBAC sur un PAT de créateur Comptable, et ne prouverait pas que la chaîne d'escalade est coupée.
 
-**AC6 — La documentation dit la nouvelle frontière, sur les QUATRE supports qui la portent.**
+**AC6 — La documentation dit la nouvelle frontière, sur les quatre SUPPORTS qui la portent.**
 
 Quatre supports, quatre chantiers de T6 — manuel, guide d'intégration, spécifications, CHANGELOG :
 
 Manuel administrateur : ce qu'un jeton peut et ne peut pas faire, et que **l'administration en est exclue quel que soit le rôle du créateur**.
 **Guide d'intégration `docs/api-external.md`** : c'est le document que lit celui qui écrit le client API, et le manuel y renvoie explicitement (`admin-manual.tex:1768`).
-Les **quatre spécifications** qui énoncent DC6, selon la répartition arrêtée en **D4**.
+Les **quatre énoncés de DC6, sur trois spécifications**, selon la répartition arrêtée en **D4** — qui dit aussi pourquoi `17-2b` n'a rien à corriger.
 Le CHANGELOG dit, dans les mots de l'utilisateur, **qu'un jeton créé par un Admin perd des accès qu'il avait** — sans quoi la première intégration qui tombe en `403` produit un ticket de support.
 
-⚠️ **`docs/api-external.md` manquait entièrement, et c'est le plus grave des oublis documentaires** : la story fermerait la faille dans le code en laissant écrit ailleurs, à l'impératif, comment l'exploiter. Six sites, relevés au `grep` :
+⚠️ **`docs/api-external.md` manquait entièrement des AC et des tâches de cette story, et c'est le plus grave des oublis documentaires** — le fichier existe et est à jour de l'ancien état des choses : la story fermerait la faille dans le code en laissant écrit ailleurs, à l'impératif, comment l'exploiter. Six sites, relevés au `grep` :
 
 | Ligne | Ce qui devient faux |
 |---|---|
@@ -212,7 +246,15 @@ Le CHANGELOG dit, dans les mots de l'utilisateur, **qu'un jeton créé par un Ad
 | `:73` | « la permission effective est l'intersection du rôle du créateur et de la portée » — désormais **incomplet** : les routes admin sont fermées quelle que soit cette intersection |
 
 *Preuve*, et cette AC est celle qui en manquait le plus :
-- `grep -rn "require_admin_role" _bmad-output/implementation-artifacts/17-2{,a,c}-*.md` rend la **nouvelle** formulation de DC6 aux quatre sites de D4 ;
+- **une chaîne discriminante, introduite par T6, présente exactement quatre fois** — `grep -rcF "n'atteint aucune route require_admin_role" _bmad-output/implementation-artifacts/17-2{,a,c}-*.md` rend `1`, `2`, `1`, aux trois fichiers de D4 ; et l'ancienne formulation « ne peut PAS lister/créer/révoquer » ne subsiste à **aucun** des quatre énoncés ;
+
+> ⚠️ **La clause précédente était satisfaisable SANS faire le travail — c'était le défaut d'AC1 reproduit dans AC6.** Elle prescrivait `grep -rn "require_admin_role"` sur les trois specs. Or cette commande rend **déjà 7 résultats aujourd'hui**, avant tout amendement :
+>
+> ```sh
+> grep -rn "require_admin_role" _bmad-output/implementation-artifacts/17-2{,a,c}-*.md | wc -l   # 7
+> ```
+>
+> **Et aucun des sept n'est aux quatre lignes visées** : trois sont les entrées de limitation L3 que D4 interdit précisément de réécrire (`17-2a:114`, `17-2a:255`, `17-2c:35`), les quatre autres sont des Dev Notes hors sujet. La commande ne sait donc pas distinguer « les quatre énoncés ont été amendés » de « rien n'a été fait ». C'est mot pour mot le reproche qu'AC1 adresse à l'assertion `403` : *une preuve que plusieurs causes produisent ne prouve aucune d'elles*. *(Relevé en passe 3.)*
 - **`grep -nF "KF-036" docs/manual/fr/admin-manual.tex docs/api-external.md` ne rend plus aucun avertissement présenté comme une limitation ouverte** — seules des mentions au passé, ou rien ;
 - `admin-manual.tex:1765` (le bloc `keshwarning` « Moindre privilège ») ne décrit plus l'héritage des pouvoirs Admin comme un fait courant, et `:1756` élargit « la gestion des clés est impossible via l'API » à toute l'administration ;
 - l'entrée CHANGELOG existe et mentionne la perte d'accès des jetons Admin existants.
@@ -222,6 +264,7 @@ Le CHANGELOG dit, dans les mots de l'utilisateur, **qu'un jeton créé par un Ad
 ## Tasks / Subtasks
 
 - [ ] **T1 — La couche** (AC1, AC3). Un `route_layer` sur `admin_routes`, à côté de `require_admin_role`. La couche précède le **handler** quel que soit son ordre relatif au RBAC — vérifié en passe 1 dans le source d'axum, `route_layer` enveloppe le service ; conséquence en D2. ⚠️ **Mais l'ordre entre les deux COUCHES, lui, est à arbitrer** : il décide du code rendu quand toutes deux refusent. La cible est fixée en **D6**, et c'est le test d'AC1 qui tranche — pas une lecture du source.
+  - [ ] **Un commentaire d'avertissement aux deux `.route_layer(...)`** : tout ajout de route à `admin_routes` se fait **au-dessus** d'eux, sinon il échappe aux deux couches (cf. **D1** et le source d'axum). C'est un garde-fou de lecture ; l'assertion qui le tient est en T3.
 - [ ] **T2 — Le code d'erreur** (AC4). Variante `AppError`, bras dans le `match` d'`errors.rs` (calque `ApiKeyManagementForbidden`, `:1104-1106`), clé i18n sur les **quatre** locales. ⚠️ La variante **s'ajoute** : `API_KEY_MANAGEMENT_FORBIDDEN` garde son consommateur (`comptable_routes`, cf. D5).
 - [ ] **T3 — Le test de complétude** (AC1). Le point difficile, désormais tranché : `axum 0.8.9` n'expose **aucune** énumération (`has_routes()` seul). Le test dérive donc le compte de la **source** — `include_str!` sur `lib.rs`, entre deux marqueurs de commentaire bornant `admin_routes`.
   - [ ] Compter les **constructeurs de méthode** (`get(`, `post(`, `put(`, `delete(`, …), **pas** les `.route(` : 19 enregistrements portent **25** couples. Le mécanisme est vérifié sur la source réelle, ventilation comprise :
@@ -234,6 +277,7 @@ Le CHANGELOG dit, dans les mots de l'utilisateur, **qu'un jeton créé par un Ad
   - [ ] Assertion **exacte** `== 25`, jamais un plancher.
   - [ ] Retirer les lignes de commentaire avant comptage (`lib.rs:939-940` porte des `.route(` commentés).
   - [ ] Asserter que les **deux** marqueurs existent, **une fois chacun** (`admin_routes` apparaît hors du bloc à `:356` et `:871`).
+  - [ ] Asserter qu'**aucun** `.route(`, `.nest(` ou `.route_service(` ne suit le dernier `.route_layer(` du bloc — cf. **D1**.
   - [ ] Couvrir les 25 couples, et asserter **le code d'erreur**, pas le seul `403`.
   - [ ] Les deux scopes, avec l'attente **par couple** — cf. le tableau d'AC1 : `read-only` n'atteint la couche que sur les 5 `get`.
   - [ ] Un couple avec un PAT de créateur **Comptable**, code attendu selon **D6**.
@@ -300,7 +344,7 @@ Les affirmations d'absence se vérifient au `grep -nF` avant d'être écrites �
 
 **La quatrième, née de la correction elle-même, est close par la passe 2 :**
 
-- ~~Le marqueur de bornage d'`admin_routes`~~ → **tranchée, et le « > 0 » qu'elle envisageait était insuffisant.** `lib.rs` porte **déjà les deux pièges** : des `.route(` en commentaire (`:939-940`) et l'identifiant `admin_routes` hors du bloc (`:356`, `:871`). Un marqueur mal posé donne 0 (test muet) ou ~90 (test faux) — un plancher ne voit ni l'un ni l'autre. Les trois exigences sont écrites en AC1 et déclinées en T3 : assertion **exacte** à 25, décommentage avant comptage, présence des deux marqueurs vérifiée.
+- ~~Le marqueur de bornage d'`admin_routes`~~ → **tranchée, et le « > 0 » qu'elle envisageait était insuffisant.** `lib.rs` porte **déjà les deux pièges** : des `.route(` en commentaire (`:939-940`) et l'identifiant `admin_routes` hors du bloc (`:356`, `:871`). Un marqueur mal posé donne 0 (test muet) ou 176 (test faux) — un plancher ne voit ni l'un ni l'autre. **Les quatre exigences** sont écrites en AC1 et déclinées en T3 : bornes par marqueurs et jamais par numéros de ligne, présence des deux marqueurs assertée, décommentage avant comptage, et rien d'ajouté après le dernier `.route_layer(`. L'assertion **exacte à 25** s'y ajoute comme garde-fou de comptage.
 
 **Aucune question ouverte ne subsiste.**
 
@@ -359,9 +403,10 @@ C'est la § *Recompter ses propres comptes rendus* du `CLAUDE.md`, prise en déf
 
 **Verdict sur le Change Log de la passe 1 : il ne ment pas.** Les six corrections revendiquées ont chacune une contrepartie réelle, vérifiée. Mais **deux ont figé un périmètre incomplet en lui donnant l'apparence de l'exhaustivité** — une clause qui énumère se lit comme close.
 
-### Les deux HIGH
+### Les trois HIGH
 
 **H-A — Le compteur de T3 ne mesure pas ce qu'AC1 déclare autoritaire.** AC1 dit que « le nombre de couples fait foi » ; T3 compte les `.route(`. Recompté : **19 enregistrements pour 25 couples** (4 `delete`, 5 `get`, 6 `post`, 10 `put`). Ajouter une méthode à un enregistrement existant ne change pas le compte — motif déjà présent **six fois** dans le bloc, et réalisé historiquement : `/api/v1/admin/email-templates/{…}` est passé de 1 à 3 couples entre les stories 20-1 et 20-2. *Le CRITICAL de passe 1 portait sur **d'où vient** le nombre ; sa remédiation n'a pas traité **ce qu'il compte**.* (Trouvé indépendamment par les trois lentilles.)
+  - ⚠️ **Deux chiffres de ce finding sont réfutés en passe 3** : le motif est présent **cinq** fois et non six, et le précédent « passé de 1 à 3 entre 20-1 et 20-2 » est **inventé** — la route est née à trois méthodes. Le fond du finding — compter les couples et non les enregistrements — reste juste.
 
 **H-B — La jambe `read-only` d'AC1, ajoutée en passe 1, est un test muet sur 20 couples sur 25.** Le gate de portée (`middleware/auth.rs:141-142`) répond **avant** la couche, `require_auth` étant appliqué en `route_layer` sur le routeur extérieur (`lib.rs:869-877`). Avec un PAT `read-only`, seuls **5** couples atteignent la couche ; les 20 autres reçoivent `403 API_KEY_READ_ONLY`, **qui existait avant la story**. La mutation prescrite — retirer la couche doit faire rougir — est donc **insatisfaisable** sur ces 20. Remède : écrire l'attente **par couple**, `API_KEY_ADMIN_FORBIDDEN` pour les 5 méthodes sûres, `API_KEY_READ_ONLY` pour les 20 autres.
 
@@ -390,13 +435,15 @@ C'est la § *Recompter ses propres comptes rendus* du `CLAUDE.md`, prise en déf
 
 ### Remédiation appliquée le 2026-08-13
 
-**Les dix findings sont traités : 3 HIGH, 7 MEDIUM, 3 LOW — dont un LOW réfuté.** Chaque fait avancé par le relevé a été **revérifié depuis la source avant d'être écrit dans le corps de la story**, et deux de ces vérifications ont changé le patch.
+**Les treize findings sont traités : 3 HIGH, 7 MEDIUM, 3 LOW — dont un LOW réfuté.** Deux vérifications ont changé le patch prévu.
+
+⚠️ **Ce paragraphe annonçait « dix findings » pour une ventilation qui en compte treize, et il affirmait que CHAQUE fait du relevé avait été revérifié depuis la source. Les deux sont faux.** Le total contredisait sa propre ventilation — le défaut que ce même Change Log dénonce deux paragraphes plus haut. Et la vérification n'a pas eu lieu sur le précédent historique de H-A, qui est **inventé** : la route `/admin/email-templates/{…}` est née avec ses trois méthodes (`git log -S`, cf. § *Dix-neuf enregistrements*). **Une affirmation d'exhaustivité de vérification est elle-même une affirmation à vérifier.** *(Les deux relevés en passe 3.)*
 
 | Finding | Où le correctif vit désormais |
 |---|---|
 | **H-A** compteur `.route(` vs couples | nouveau § *Dix-neuf enregistrements, vingt-cinq routes* (ventilation par méthode) + AC1 + T3 : compter les **constructeurs de méthode**, assertion **exacte à 25** |
 | **H-B** jambe `read-only` muette | AC1 : tableau d'attente **par couple** (25 en `read-write` ; 5 `get` + 20 `read-only` en `read-only`) + § *Conventions de test* : la mutation est **insatisfaisable** sur les 20, et c'est écrit |
-| **H-C** `docs/api-external.md` absent | AC6 : tableau des **six sites** + T6 en quatre chantiers |
+| **H-C** `docs/api-external.md` absent | AC6 : tableau des **six sites** + T6 en quatre chantiers. ⚠️ Le relevé disait **cinq** : le grep de remédiation en a trouvé un sixième, `:73` (« la permission effective est l'intersection… »), qui devient **incomplet** sans devenir faux. Cinq énoncés faux, un incomplet. |
 | **M-A** DC6 dans quatre documents | **D4** réécrite : tableau des quatre énoncés, et distinction entre **énoncés** (à réécrire) et **traces de limitation** (à clore, pas à réécrire) |
 | **M-B** clause `grep -c "jeton"` | AC6 : remplacée par un `grep -nF "KF-036"` qui doit ne **plus** rien rendre, plus les deux sites nommés (`:1765`, `:1756`) |
 | **M-C** test i18n imaginaire | AC4 + nouveau § *i18n — la clé manquante ne rougit pas* |
@@ -424,4 +471,53 @@ for f in crates/kesh-i18n/locales/*/messages.ftl; do grep -cE '^[a-zA-Z][a-zA-Z0
 
 ⚠️ **L'écart i18n de 57 clés est corroboré par une mesure indépendante** : `16-1b:165` relevait **1225 contre 1168** à son époque — même delta, 41 clés ajoutées depuis dans les quatre fichiers. Deux mesures séparées de plusieurs mois donnent le même écart, ce qui écarte l'erreur de comptage.
 
-**Ce que la remédiation N'A PAS fait, et le dira à la passe 3** : aucun gate n'a été exécuté — la story n'a pas de code, seul son fichier de spécification a changé. Les tableaux de gate restent vides jusqu'à `dev-story`.
+**Ce que la remédiation N'A PAS fait** : aucun gate n'a été exécuté — la story n'a pas de code, seul son fichier de spécification a changé. Les tableaux de gate restent vides jusqu'à `dev-story`.
+
+---
+
+**2026-08-13 — `bmad-create-story validate`, PASSE 3 (Sonnet sur les trois lentilles, contextes frais).**
+
+Rotation respectée : passe 1 Sonnet, passe 2 Haiku + Opus, passe 3 Sonnet — orthogonale aux deux modèles de la passe précédente.
+
+| Lentille | CRIT | HIGH | MED | LOW |
+|---|---|---|---|---|
+| Blind Hunter (spec seule) | 0 | 2 | 2 | 2 |
+| Edge Case Hunter (spec + code) | 0 | 1 | 3 | 1 |
+| Acceptance Auditor (+ issue, specs parentes, doc, `CLAUDE.md`) | 0 | 2 | 1 | 0 |
+| **brut** | **0** | **5** | **6** | **3** |
+| **dédupliqué** | **0** | **4** | **6** | **2** |
+
+Déduplication : « quatre documents » vu par BH et AA ; le renvoi `1768`/`1770` vu par BH et ECH.
+
+⚠️ **Trend : `1 CRIT / 3 HIGH / 6 MED` → `0 CRIT / 3 HIGH / 7 MED` → `0 CRIT / 4 HIGH / 6 MED`. La sévérité maximale STAGNE à HIGH, et le nombre de HIGH augmente.** Le critère de découpage préventif du `CLAUDE.md` est donc **atteint dans sa lettre** (« une passe N+1 remonte une sévérité égale ou supérieure à la passe N »). **Arbitrage à porter au Project Lead** — l'orchestrateur ne tranche pas seul : voir la note en fin de section.
+
+### Les quatre HIGH
+
+- **Le précédent historique de H-A était inventé** — la route `/admin/email-templates/{…}` est née avec ses trois méthodes en un commit (`8bca0a1e`, story 20-1), elle n'est jamais « passée de 1 à 3 entre 20-1 et 20-2 ». Et « six enregistrements multi-méthodes » en compte **cinq**. Les deux chiffres venaient du relevé de passe 2 et ont été recopiés dans le corps **sous une déclaration de revérification exhaustive**. L'argument de conception, lui, tient sans eux. *(Trouvé par la lentille code, `git log -S` à l'appui.)*
+- **La clause de preuve d'AC6 était satisfaisable sans faire le travail** : `grep -rn "require_admin_role"` sur les specs parentes rend **7 résultats aujourd'hui**, dont aucun aux quatre lignes visées, et trois sont les entrées L3 que D4 interdit de réécrire. C'est le reproche d'AC1 sur l'assertion `403`, reproduit dans AC6.
+- **« Quatre documents » pour trois documents et quatre énoncés** — T6 avait déjà été corrigée en « énoncés », D4 et AC6 non : un correctif non propagé. Et **`17-2b` mentionne DC6 sans avoir jamais été examiné** ; vérifié depuis, ses deux phrases restent vraies, mais l'affirmation manquait.
+- **Le total « dix findings » contredisait sa ventilation** (3 + 7 + 3 = 13).
+
+### Les six MEDIUM
+
+- **`route_layer` n'enveloppe que les routes déjà présentes** (`path_router.rs:311-341`) : une route chaînée après les couches échappe **aux deux**, compile et ne panique pas. Le trou préexiste, la story ne le refermait pas et sa promesse de complétude l'aurait masqué → avertissement en T1 + assertion en T3.
+- **`.nest(` / `.route_service(` échappent au compteur** sans échapper à la protection : trou de preuve, désormais écrit.
+- **AC4 ne prouvait nulle part que le message diffère** de celui de la gestion de clés, alors que T2 prescrit un calque et que c'est le motif entier de D2.
+- Le passage de **cinq à six sites** documentaires n'était pas réconcilié ; il l'est.
+- Deux listes « trois exigences » de composition différente ; elles sont **quatre** et alignées.
+- Le titre **« Les deux HIGH »** coiffait trois findings — corrigé, et il l'était déjà signalé oralement sans avoir été porté au fichier.
+
+### Les deux LOW
+
+- Le renvoi vers le guide est à `admin-manual.tex:**1768**` ; le relevé de passe 2 disait `:1770`. Le corps est juste, la trace du relevé est laissée telle quelle.
+- « `docs/api-external.md` manquait entièrement » se lisait comme « le fichier n'existe pas » — précisé « des AC et des tâches ».
+
+### Ce que la passe 3 a vérifié SANS défaut
+
+**Tous** les numéros de ligne du corps de la spec, un par un, sauf le cas LOW ci-dessus — `errors.rs:1104`/`:1106`, `auth.rs:44`/`:141-142`/`:161`, `api_key.rs:181`, `api_keys.rs:95`/`:108`/`:121`/`:211`, `admin.rs:37`/`:143`, `fiscal_years.rs:317`, `lib.rs:284`/`:356`/`:871`/`:939-940`, les six sites d'`api-external.md`, `admin-manual.tex:1756`/`:1765`, `17-2:57`, `17-2a:35`/`:58`/`:114`/`:206`/`:255`, `17-2c:34`/`:35`, `16-1b:165`, la fixture frontend `:112` · les décomptes 19 / 25 / ventilation par méthode / 176 / 1266-1209 / 22 tests i18n / 6 sites d'`ensure_not_pat` · `HEAD` implicite sur les routes `get` reste couvert (le layer enveloppe le service, pas les constructeurs) · `OPTIONS`, `TRACE` et méthode inconnue : le **405** est engendré à l'intérieur du `MethodRouter`, donc **après** les deux couches · `CurrentUser` est bien disponible quand la couche s'exécute (`require_auth` est la couche la plus externe) · le rôle Consultation ne peut pas créer de PAT · `comptable_routes` ne porte aucun vecteur de containment · `/onboarding/coordinates` reste fermé par sa garde d'étape · `require_admin_role` n'est appliqué nulle part ailleurs · le LOW « réfuté » de la passe 2 est bien réfuté · **et l'ordre d'empilement voulu par D6 s'obtient naturellement** en posant la couche après `require_admin_role` (chaque `.layer()` enveloppe le précédent) — la spec a raison de laisser le test l'arbitrer plutôt que de s'y fier.
+
+### ⚠️ Arbitrage dû au Project Lead avant la passe 4
+
+Le critère de découpage préventif est atteint dans sa lettre (HIGH → HIGH, et 3 → 4). **Mais la nature des findings ne désigne pas une story trop large** : trois des quatre HIGH portent sur les **comptes rendus** de la story — un total faux, un précédent inventé, un mot mal propagé — et un seul sur une clause de preuve du corps. Aucun ne touche au mécanisme de sécurité, dont les vingt-et-une vérifications ci-dessus confirment la description exacte.
+
+C'est le motif de l'Epic 16, que le `CLAUDE.md` nomme : *« le compte rendu est devenu le lieu du défaut, pas le code »* — et là, il avait conduit à découper la 16-2. **Deux conduites possibles, et le choix ne revient pas à l'orchestrateur** : découper selon la lettre de la règle, ou **élaguer le Change Log** — cesser d'y republier des décomptes qui deviennent eux-mêmes objets de revue — et poursuivre en passe 4 sur un document dégraissé.
