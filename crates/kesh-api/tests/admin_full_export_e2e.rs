@@ -405,8 +405,12 @@ async fn full_export_via_pat_returns_403(pool: MySqlPool) {
         .unwrap();
     assert_eq!(resp.status(), 403, "export via PAT → 403");
     let body: Value = resp.json().await.unwrap();
+    // Story 22-4a (#167) — le code a changé, et le refus vient désormais de la
+    // COUCHE posée sur `admin_routes`, non plus du `ensure_not_pat` du handler.
+    // Cette garde-là subsiste (décision D3) mais n'est plus atteinte ; c'est
+    // l'assertion de source de `admin_pat_denied_e2e` qui prouve son câblage.
     assert_eq!(
-        body["error"]["code"], "API_KEY_MANAGEMENT_FORBIDDEN",
+        body["error"]["code"], "API_KEY_ADMIN_FORBIDDEN",
         "code anti-PAT"
     );
 }

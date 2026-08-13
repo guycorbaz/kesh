@@ -109,7 +109,12 @@ describe('admin-backup.api — Story 17-3b', () => {
 				status: 403,
 				json: () =>
 					Promise.resolve({
-						error: { code: 'API_KEY_MANAGEMENT_FORBIDDEN', message: 'Interdit.' },
+						// Story 22-4a (#167) — le backend rend désormais ce code sur les
+						// routes d'administration atteintes par une clé API. ⚠️ Cette
+						// fixture ne fait qu'illustrer : le test n'asserte que le rejet,
+						// donc un code périmé ici ne ferait ROUGIR aucun test. Elle se
+						// met à jour à la main, ou elle ment en silence.
+						error: { code: 'API_KEY_ADMIN_FORBIDDEN', message: 'Interdit.' },
 					}),
 				headers: new Headers({ 'content-type': 'application/json' }),
 			} as unknown as Response);

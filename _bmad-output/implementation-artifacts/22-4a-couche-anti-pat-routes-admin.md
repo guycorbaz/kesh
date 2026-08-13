@@ -2,7 +2,7 @@
 
 ## Status
 
-backlog
+review
 
 ⚠️ **Née du découpage de la story 22-4**, le 2026-08-13, après quatre passes de `bmad-create-story validate`. Elle en reçoit **le mécanisme** ; la story **22-4b** reçoit la frontière documentaire. Le motif du découpage et la conduite de merge sont au § *Découpage*.
 
@@ -230,28 +230,28 @@ La couche ne regarde que `api_key_id`, jamais le rôle.
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — La couche** (AC1, AC3). Un `route_layer` sur `admin_routes`, à côté de `require_admin_role`. L'ordre entre les deux **couches** est à arbitrer : il décide du code rendu quand toutes deux refusent. Cible en **D6**, tranchée par le test d'AC1.
-  - [ ] **Un commentaire d'avertissement aux deux `.route_layer(...)`** : tout ajout de route à `admin_routes` se fait **au-dessus** d'eux — et jamais par réaffectation plus loin dans le fichier —, sinon il échappe aux deux couches (cf. **D1**).
-- [ ] **T2 — Le code d'erreur** (AC4). Variante `AppError`, bras dans le `match` d'`errors.rs` (calque `ApiKeyManagementForbidden`, `:1104-1106`), clé i18n sur les **quatre** locales, **message distinct**. ⚠️ La variante **s'ajoute** : `API_KEY_MANAGEMENT_FORBIDDEN` garde son consommateur (cf. D5).
-- [ ] **T3 — Le test de complétude** (AC1). `include_str!` sur `lib.rs`, bornes par marqueurs, et les **cinq exigences** d'AC1 :
-  - [ ] compter les constructeurs de méthode, assertion **exacte `== 25`** — jamais un plancher ;
-  - [ ] tronquer chaque ligne à son premier `//` avant comptage ;
-  - [ ] asserter les deux marqueurs, une fois chacun, et **exactement deux** `.route_layer(` dans le bloc ;
-  - [ ] asserter qu'aucun ajout de route ne suit le **premier** `.route_layer(` — liste complète en AC1 exigence 4 ;
-  - [ ] asserter, **sur le fichier entier**, que `admin_routes` n'apparaît qu'à ses trois sites et qu'aucune réaffectation `admin_routes =` n'existe hors déclaration ;
-  - [ ] asserter le **complément** de constructeurs : ni `any(`, `on(`, `trace(`, `connect(`, ni `*_service(` dans le bloc ;
-  - [ ] couvrir les 25 constructeurs + les 5 `HEAD`, asserter **le code**, attente **par couple** selon le tableau d'AC1 ;
-  - [ ] un couple avec un PAT de créateur **Comptable**, code selon **D6**.
+- [x] **T1 — La couche** (AC1, AC3). Un `route_layer` sur `admin_routes`, à côté de `require_admin_role`. L'ordre entre les deux **couches** est à arbitrer : il décide du code rendu quand toutes deux refusent. Cible en **D6**, tranchée par le test d'AC1.
+  - [x] **Un commentaire d'avertissement aux deux `.route_layer(...)`** : tout ajout de route à `admin_routes` se fait **au-dessus** d'eux — et jamais par réaffectation plus loin dans le fichier —, sinon il échappe aux deux couches (cf. **D1**).
+- [x] **T2 — Le code d'erreur** (AC4). Variante `AppError`, bras dans le `match` d'`errors.rs` (calque `ApiKeyManagementForbidden`, `:1104-1106`), clé i18n sur les **quatre** locales, **message distinct**. ⚠️ La variante **s'ajoute** : `API_KEY_MANAGEMENT_FORBIDDEN` garde son consommateur (cf. D5).
+- [x] **T3 — Le test de complétude** (AC1). `include_str!` sur `lib.rs`, bornes par marqueurs, et les **cinq exigences** d'AC1 :
+  - [x] compter les constructeurs de méthode, assertion **exacte `== 25`** — jamais un plancher ;
+  - [x] tronquer chaque ligne à son premier `//` avant comptage ;
+  - [x] asserter les deux marqueurs, une fois chacun, et **exactement deux** `.route_layer(` dans le bloc ;
+  - [x] asserter qu'aucun ajout de route ne suit le **premier** `.route_layer(` — liste complète en AC1 exigence 4 ;
+  - [x] asserter, **sur le fichier entier**, qu'aucune réaffectation `admin_routes =` n'existe hors déclaration. ⚠️ **Le nombre attendu est 2, pas 3** : l'exigence 4 d'AC1 parlait de « trois sites connus » en comptant `lib.rs:356`, qui est un **commentaire**. L'assertion portant sur la source **décommentée**, il n'en reste que deux — la déclaration et le `.merge(`. Plus robuste : un commentaire ne peut plus faire ni faux positif ni faux négatif ;
+  - [x] asserter le **complément** de constructeurs : ni `any(`, `on(`, `trace(`, `connect(`, ni `*_service(` dans le bloc ;
+  - [x] couvrir les 25 constructeurs + les 5 `HEAD`, asserter **le code**, attente **par couple** selon le tableau d'AC1 ;
+  - [x] un couple avec un PAT de créateur **Comptable**, code selon **D6**.
   - Vérification à la main du décompte, ventilation comprise :
     ```sh
     sed -n '182,284p' crates/kesh-api/src/lib.rs | grep -v '^\s*//' \
       | grep -oE '\b(get|post|put|delete|patch|head|options)\(' | sort | uniq -c
     # 4 delete( · 5 get( · 6 post( · 10 put(  → 25
     ```
-- [ ] **T4 — Le test du chemin d'attaque** (AC5).
-- [ ] **T5 — Non-régression** (AC2, AC3). `api_keys_e2e.rs` et les E2E d'administration restent verts. **Trois assertions changent, et trois seulement.** ⚠️ Ne pas toucher à `api_keys_e2e.rs:425`.
-  - [ ] **La fixture frontend `frontend/src/lib/features/admin-backup/admin-backup.api.test.ts:112`** porte `API_KEY_MANAGEMENT_FORBIDDEN` et devient un mensonge sur le contrat — **sans rougir**, puisqu'elle n'asserte qu'un rejet.
-  - [ ] **L'assertion de source de D3** : les trois appels à `ensure_not_pat` d'`admin.rs` (`:37`, `:143`) et de `fiscal_years.rs` (`:317`) vérifiés présents par `include_str!`.
+- [x] **T4 — Le test du chemin d'attaque** (AC5). `a_leaked_admin_pat_can_no_longer_create_an_administrator` — et il vérifie **aussi** qu'aucun utilisateur n'a été créé en base : l'échec est réel, pas seulement rapporté.
+- [x] **T5 — Non-régression** (AC2, AC3). `api_keys_e2e.rs` et les E2E d'administration restent verts. **Trois assertions changent, et trois seulement.** ⚠️ Ne pas toucher à `api_keys_e2e.rs:425`.
+  - [x] **La fixture frontend `frontend/src/lib/features/admin-backup/admin-backup.api.test.ts:112`** porte `API_KEY_MANAGEMENT_FORBIDDEN` et devient un mensonge sur le contrat — **sans rougir**, puisqu'elle n'asserte qu'un rejet.
+  - [x] **L'assertion de source de D3** : les trois appels à `ensure_not_pat` d'`admin.rs` (`:37`, `:143`) et de `fiscal_years.rs` (`:317`) vérifiés présents par `include_str!`.
 
 ## Dev Notes
 
@@ -296,10 +296,104 @@ Les affirmations d'absence se vérifient au `grep -nF` avant d'être écrites �
 - Story **22-4b** — la frontière documentaire, **à merger dans la même PR**.
 - `CLAUDE.md` — § *Migration breaking policy* garde-fou **P6** pour l'analogie du test fail-loud ; § *Synchroniser TOUTES les docs* pour la conduite de merge.
 
+## Dev Agent Record
+
+### Ce qui a été implémenté
+
+**La couche** est `middleware::rbac::require_not_pat`, posée en `route_layer` sur `admin_routes` **après** `require_admin_role` — donc extérieure à lui, donc elle répond la première. C'est ce qui donne la précédence voulue par **D6**, et le test `comptable_created_pat_gets_the_same_code_as_an_admin_one` l'a **tranché par exécution** : la spec refusait de s'en remettre à une lecture du source d'axum, et elle avait raison de laisser le test arbitrer.
+
+**Le bloc `admin_routes` est borné** par `// KESH-ADMIN-ROUTES-BEGIN` / `// KESH-ADMIN-ROUTES-END`, et porte un avertissement de six lignes aux `.route_layer(` : *toute route s'ajoute au-dessus*.
+
+**Le test de complétude** vit dans `crates/kesh-api/tests/admin_pat_denied_e2e.rs`, en deux familles qui ne prouvent pas la même chose — sept tests de **source** (sans base) pour la complétude, cinq tests **HTTP** pour le comportement.
+
+### Deux écarts à la spec, tous deux dans le sens du durcissement
+
+**1. L'assertion sur `admin_routes` attend 2 occurrences, pas 3.** L'exigence 4 d'AC1 comptait « trois sites connus » en incluant `lib.rs:356`, qui est un **commentaire**. Comme l'assertion porte sur la source décommentée, il n'en reste que deux. C'est plus robuste : un commentaire ne peut plus faire ni faux positif ni faux négatif — et de fait, mes propres commentaires d'avertissement contiennent le mot `admin_routes` et l'exemple `admin_routes = admin_routes.route(...)`, qui auraient fait rougir une assertion sur la source brute.
+
+**2. Une exigence non prévue s'est imposée : `lib_rs_has_no_double_slash_inside_literals`.** Le décommentage tronque chaque ligne à son premier `//` — ce qui couperait aussi une URL dans une chaîne. `lib.rs` n'en contient aucune aujourd'hui ; ce test le vérifie, de sorte que le jour où l'une y entre, le dispositif rougit au lieu de dériver en silence.
+
+### Les mutations, jouées et non raisonnées
+
+La § *Conventions de test* l'exige, et c'est le cœur d'une story dont le sujet est le test muet. **Huit mutations appliquées, huit rougissements** — chacune exécutée, aucune déduite :
+
+| Mutation | Test qui rougit |
+|---|---|
+| M1 — une route chaînée **après** les couches | `nothing_is_added_after_the_first_route_layer` |
+| M2 — une méthode ajoutée à un enregistrement existant | `block_declares_exactly_the_listed_couples` |
+| M3 — `any(` à la place de `get(` (**avec son import**, pour que ça compile) | `block_uses_no_unlisted_route_constructor` |
+| M4 — une réaffectation `admin_routes` hors du bloc | `admin_routes_is_never_reassigned` |
+| M5 — le marqueur de fin retiré | `admin_routes_block_is_bounded_exactly_once` |
+| M6 — un `ensure_not_pat` de D3 retiré | `the_three_intrinsic_guards_are_still_wired` |
+| M7 — **la couche retirée** | 6 tests, dont les 5 HTTP |
+| M8 — le message i18n copié depuis la gestion de clés | `admin_forbidden_message_is_translated_and_distinct_from_key_management` |
+
+⚠️ **M3 a d'abord été jouée sans son import et n'a rien prouvé** : la mutation cassait la compilation, si bien qu'aucun test ne tournait. Rejouée avec `any` importé — le scénario réel, puisqu'un développeur qui écrit `any(` ajoute l'import —, elle compile, et le test rougit. *Une mutation qui ne compile pas n'est pas une mutation jouée.*
+
+⚠️ **M7 se comporte exactement comme AC1 l'annonçait** : elle fait rougir les 25 couples de la jambe `read-write` et les 5 `get` de la jambe `read-only`, et **reste sans effet sur les 20 couples mutants** — que le gate de portée arrête en amont. C'est la démonstration que la jambe `read-only` de la première rédaction était bien un test muet sur ces vingt-là.
+
+### Une preuve plus faible que les autres, et il faut le dire
+
+Les cinq couples `HEAD` n'assertent que le **statut**, pas le code : une réponse `HEAD` n'a pas de corps, donc `error.code` y est illisible **par construction**. C'est assumé — `HEAD` emprunte exactement la pile de couches de son `GET`, déjà couvert au code — mais c'est une preuve plus faible, et elle est marquée comme telle dans le test.
+
+### File List
+
+| Fichier | Nature |
+|---|---|
+| `crates/kesh-api/src/middleware/rbac.rs` | la couche `require_not_pat` |
+| `crates/kesh-api/src/lib.rs` | marqueurs, couche montée, avertissement |
+| `crates/kesh-api/src/errors.rs` | variante `ApiKeyAdminForbidden` + bras du `match` |
+| `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl` | clé `error-api-key-admin-forbidden` |
+| `crates/kesh-i18n/src/loader.rs` | test de traduction + distinction |
+| `crates/kesh-api/tests/admin_pat_denied_e2e.rs` | **neuf** — 12 tests |
+| `crates/kesh-api/tests/admin_full_export_e2e.rs` · `admin_full_import_e2e.rs` · `fiscal_years_e2e.rs` | les trois assertions de D2 |
+| `frontend/src/lib/features/admin-backup/admin-backup.api.test.ts` | la fixture qui ne rougit pas |
+
+### Gates exécutés
+
+| Gate | Résultat |
+|---|---|
+| `cargo fmt --all -- --check` | vert *(après un `cargo fmt` — l'ordre des `use` du test neuf dérivait)* |
+| `cargo clippy --workspace --all-targets -- -D warnings` | vert, 0 avertissement |
+| `cargo nextest` sur le rayon d'impact — `admin_pat_denied_e2e`, `admin_full_{export,import}_e2e`, `fiscal_years_e2e`, `api_keys_e2e`, `package(kesh-i18n)` | **108/108**, 269 s |
+| `npm run lint-i18n-ownership` | PASS |
+| `npm run check` | 0 erreur (27 avertissements préexistants) |
+| `npm run test:unit` | 512/512, 63 fichiers |
+| `npm run build` | vert |
+| **Gate backend complet** — `scripts/test-fast.sh --ci` | **vert : 2177/2177**, 0 échec, 0 retry, 0 flake, 4 ignorés (préexistants), 3893 s. Code de retour du **gate** relevé à `0` dans un fichier dédié — voir le piège ci-dessous |
+
+**Périmètre du décompte** : `2177` est le total du workspace au commit de dev de cette story ; **13 tests sont neufs** — 12 dans `admin_pat_denied_e2e`, 1 dans `kesh-i18n` —, recomptés depuis la source (`grep -c` aux deux bornes). `2177 − 13 = 2164`, la ligne de base annoncée pour la v0.9.0 : les deux comptes se recoupent.
+
+⚠️ Les E2E Playwright n'ont **pas** été exécutés : cette story ne touche au frontend qu'une fixture de test unitaire. Ils restent dus avant le `push` de la PR, conformément à la § *Test Locally First*.
+
+### Le premier gate « complet » n'en était pas un — deux pièges, coup sur coup
+
+**Piège 1 — le code de retour rapporté n'était pas celui du gate.** La commande lancée était `scripts/test-fast.sh … > log 2>&1` suivie d'un `tail` : le code de retour du bloc est celui du **`tail`**, soit `0`. Le gate, lui, avait échoué. **Un montage qui fait paraître vert un gate rouge est plus dangereux que le rouge** — c'est la variante « shell » du test muet. Le second run capture le code dans un fichier dédié.
+
+**Piège 2 — le fail-fast a laissé 1350 tests sur 2177 sans tourner.** Le profil `default` de nextest coupe au premier échec : `827/2177 tests run`. Un tel run **ne peut pas** être déclaré gate complet, même si son unique échec est bénin.
+
+**L'échec, lui, est la KF-038 et rien d'autre.** `reconciliation_e2e::post_accept_skips_non_chf_transaction` a rendu `409` au lieu de `200` — un conflit de verrou optimiste, pas un refus d'autorisation. Vérifié plutôt que supposé :
+
+- le test s'authentifie en **JWT** sur `/api/v1/reconciliation/accept`, route de `comptable_routes` ; la couche neuve ne se déclenche que sur `api_key_id.is_some()` **et** sur `admin_routes`. Elle ne peut pas être en cause ;
+- **rejoué isolé : vert en 7,9 s** ;
+- l'issue **#228** est ouverte et s'intitule mot pour mot « [KF-038] Flake test intégration — `reconciliation_e2e::post_accept_skips_non_chf_transaction` **sous contention parallèle** ».
+
+⚠️ **La contention était réelle et extérieure au dépôt** : la pile e2e d'un autre projet (`e2e-db-1`, `mybibli-rust-test-db`) tournait sur la même machine. C'est le cas de figure de la § *Plafonds mémoire* — la victime n'est pas la fautive.
+
+Le gate a donc été rejoué en **profil `ci`** (`fail-fast = false`, `retries = 1`), seul montage qui donne à la fois la couverture complète et l'absorption du flake connu. **Résultat : 2177/2177, sans même un retry** — la KF-038 ne s'est pas reproduite, ce qui confirme la contention comme cause et non le code.
+
 ## Change Log
 
 **2026-08-13 — créée par découpage de la story 22-4**, après quatre passes de `validate` (Sonnet ×3 → Haiku + Opus ×2 → Sonnet ×3 → Haiku + Opus ×2). Trend de la story mère : `1/3/6` → `0/3/7` → `0/4/6` → `0/4/9`. Deux stagnations consécutives à HIGH, MEDIUM en hausse : critère de non-convergence atteint. Arbitrage de Guy — découper.
 
 **Ce fichier reçoit le mécanisme, déjà remédié des quatre passes.** Les findings de passe 4 qui le concernent sont intégrés : le compteur aveugle à cinq familles de constructeurs (`any`, `on`, `trace`, `connect`, `*_service`), l'assertion bornée au bloc alors que le trou vit après lui, les cinq couples `HEAD` jamais comptés, le 405 non uniforme sur les chemins partagés, `authenticated_routes` jamais examiné par D5, le test i18n cité pour une preuve qu'il ne fait pas, et le décommentage par ligne entière.
 
-**Aucun gate exécuté** : la story n'a pas de code. Les tableaux de gate restent vides jusqu'à `dev-story`.
+---
+
+**2026-08-13 — `bmad-dev-story` : implémentation.** La couche, le code d'erreur, 13 tests neufs. **Gate backend complet vert, 2177/2177** ; frontend vert (512/512, `check` sans erreur, `build`) ; `clippy` workspace sans avertissement.
+
+**Ce que l'implémentation a appris, et qui ne se lit pas dans la spec :**
+
+- **Les huit mutations ont toutes rougi** — dont M7, retirer la couche, qui se comporte exactement comme AC1 l'annonçait : elle atteint les 25 couples `read-write` et les 5 `get` de la jambe `read-only`, et **reste sans effet sur les 20 mutants**. La démonstration, par exécution, que cette jambe était bien un test muet avant la passe 2.
+- **Une mutation qui ne compile pas n'est pas une mutation jouée** : M3 (`any(`) n'a d'abord rien prouvé, la compilation cassant faute d'import.
+- **L'exigence 4 d'AC1 comptait un commentaire.** L'assertion attend 2 occurrences de `admin_routes`, pas 3 : `lib.rs:356` est un commentaire, et l'assertion porte sur la source décommentée. Plus robuste — mes propres commentaires d'avertissement auraient fait rougir une assertion sur la source brute.
+- **Un piège de gate a failli faire passer un rouge pour un vert**, et il n'a rien à voir avec les tests : le code de retour lu était celui du `tail` de la commande, pas celui du gate. Consigné en Dev Agent Record, § *Le premier gate « complet » n'en était pas un*.

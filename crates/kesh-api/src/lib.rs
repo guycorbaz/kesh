@@ -179,6 +179,13 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
     // Ordre d'exécution (oignon) : require_auth EN PREMIER → require_role EN SECOND → handler
 
     // Admin-only routes : gestion des utilisateurs
+    // KESH-ADMIN-ROUTES-BEGIN
+    // ⚠️ Bloc borné — Story 22-4a (#167). Le test `admin_pat_denied_e2e` lit CE
+    // fichier par `include_str!`, compte les constructeurs de méthode entre les
+    // deux marqueurs, et exige exactement 25. Toute route ajoutée ici sans son
+    // couple dans la liste du test fait ROUGIR le test : c'est le rappel qui
+    // manquait, et qui a laissé 16 routes sur 19 sans garde anti-PAT.
+    // Ne pas déplacer ni reformuler les marqueurs sans ajuster le test.
     let admin_routes = Router::new()
         .route(
             "/api/v1/users",
@@ -280,9 +287,29 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/fiscal-years/{id}/reopen",
             post(routes::fiscal_years::reopen_fiscal_year),
         )
+        // ⚠️⚠️ TOUTE ROUTE S'AJOUTE AU-DESSUS DE CETTE LIGNE. ⚠️⚠️
+        //
+        // `route_layer` n'enveloppe que les routes DÉJÀ enregistrées au moment
+        // où il est appelé (axum `routing/path_router.rs`, `self.routes.into_iter()`).
+        // Une route chaînée après — ici, ou par une réaffectation
+        // `admin_routes = admin_routes.route(...)` écrite plus loin dans ce
+        // fichier — COMPILE, ne panique pas, et échappe aux DEUX couches : ni
+        // RBAC, ni anti-PAT. Elle ne garderait que `require_auth`, c'est-à-dire
+        // l'authentification sans l'autorisation.
+        //
+        // Le test `admin_pat_denied_e2e` l'interdit par deux assertions de
+        // source, dans le bloc et sur le fichier entier (Story 22-4a, #167).
         .route_layer(axum::middleware::from_fn(
             crate::middleware::rbac::require_admin_role,
+        ))
+        // Story 22-4a (#167) — un PAT n'atteint aucune route d'administration.
+        // Posée APRÈS le RBAC, donc extérieure à lui, donc elle répond la
+        // première : le code est `API_KEY_ADMIN_FORBIDDEN` même pour un PAT
+        // créé par un Comptable (décision D6).
+        .route_layer(axum::middleware::from_fn(
+            crate::middleware::rbac::require_not_pat,
         ));
+    // KESH-ADMIN-ROUTES-END
 
     // Routes comptable+ (Admin + Comptable) : modification du plan comptable,
     // saisie d'écritures en partie double
