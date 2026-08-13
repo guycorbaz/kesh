@@ -208,3 +208,47 @@ Les affirmations d'absence se vérifient au `grep -nF` avant d'être écrites.
 **Ce que les lentilles ont confirmé plutôt que réfuté** — et c'est utile de le savoir : le décompte 16/19 est exact, recompté ligne à ligne ; les trois corrections que la spec apportait à l'issue #167 sont vraies, dont la remédiation partielle établie par `git log -S` et non par déduction ; `require_admin_role` n'est appliqué **nulle part ailleurs**, donc la couche couvre bien toute la surface admin présente et future ; et aucune branche résiduelle du chemin d'attaque n'a été trouvée — le changement de mot de passe en self-service, seul candidat, exige la vérification Argon2 du mot de passe courant que l'attaquant n'a pas.
 
 **Trois questions ouvertes sur trois sont closes.** Il n'en reste qu'une, mineure et née de la correction elle-même : la forme du marqueur bornant `admin_routes` dans `lib.rs`, et le garde-fou qui empêche le comptage de porter sur un bloc vide — le mode d'échec du test muet.
+
+---
+
+**2026-08-13 — `bmad-create-story validate`, PASSE 2 (Haiku sur la lentille aveugle, Opus sur les deux autres).**
+
+⚠️ **FINDINGS RELEVÉS, PATCHES NON APPLIQUÉS.** La séance a été interrompue après la collecte. **Ce qui suit est un relevé, pas une remédiation** : le corps de la story est encore dans son état de passe 1. Reprendre par l'application de ces correctifs, puis par une passe 3.
+
+| Lentille | CRIT | HIGH | MED | LOW |
+|---|---|---|---|---|
+| Blind Hunter (Haiku, spec seule) | 0 | 0 | 1 | 0 |
+| Edge Case Hunter (Opus, spec + code) | 0 | 2 | 2 | 1 |
+| Acceptance Auditor (Opus, + issue + specs parentes) | 0 | 2 | 5 | 3 |
+
+**Convergence** : passe 1 `1 CRIT / 3 HIGH / 6 MED` → passe 2 `0 CRIT / 2 HIGH / 5 MED`. **La sévérité maximale décroît** (`CRITICAL → HIGH`) : le critère de découpage préventif du `CLAUDE.md` n'est **pas** déclenché. Une passe 3 est due.
+
+**Verdict sur le Change Log de la passe 1 : il ne ment pas.** Les six corrections revendiquées ont chacune une contrepartie réelle, vérifiée. Mais **deux ont figé un périmètre incomplet en lui donnant l'apparence de l'exhaustivité** — une clause qui énumère se lit comme close.
+
+### Les deux HIGH
+
+**H-A — Le compteur de T3 ne mesure pas ce qu'AC1 déclare autoritaire.** AC1 dit que « le nombre de couples fait foi » ; T3 compte les `.route(`. Recompté : **19 enregistrements pour 25 couples** (4 `delete`, 5 `get`, 6 `post`, 10 `put`). Ajouter une méthode à un enregistrement existant ne change pas le compte — motif déjà présent **six fois** dans le bloc, et réalisé historiquement : `/api/v1/admin/email-templates/{…}` est passé de 1 à 3 couples entre les stories 20-1 et 20-2. *Le CRITICAL de passe 1 portait sur **d'où vient** le nombre ; sa remédiation n'a pas traité **ce qu'il compte**.* (Trouvé indépendamment par les trois lentilles.)
+
+**H-B — La jambe `read-only` d'AC1, ajoutée en passe 1, est un test muet sur 20 couples sur 25.** Le gate de portée (`middleware/auth.rs:141-142`) répond **avant** la couche, `require_auth` étant appliqué en `route_layer` sur le routeur extérieur (`lib.rs:869-877`). Avec un PAT `read-only`, seuls **5** couples atteignent la couche ; les 20 autres reçoivent `403 API_KEY_READ_ONLY`, **qui existait avant la story**. La mutation prescrite — retirer la couche doit faire rougir — est donc **insatisfaisable** sur ces 20. Remède : écrire l'attente **par couple**, `API_KEY_ADMIN_FORBIDDEN` pour les 5 méthodes sûres, `API_KEY_READ_ONLY` pour les 20 autres.
+
+**H-C — `docs/api-external.md` est absent d'AC6 et de T6.** Le guide d'intégration — vers lequel le manuel renvoie (`admin-manual.tex:1770`) — porte **cinq** énoncés qui deviennent faux, dont `:235`, une **instruction d'usage** (« pour changer un mot de passe via l'API, utilisez `PUT /api/v1/users/:id/reset-password` ») qui rendra désormais `403`. La story fermerait la faille dans le code en laissant écrit ailleurs qu'elle est ouverte.
+
+### Les MEDIUM
+
+- **M-A — DC6 vit dans QUATRE documents, pas un.** `17-2:57`, `17-2a:35` **et** `:58`, `17-2c:34-35`. La passe 1 a remplacé une cible fausse par une cible juste mais **unique** ; `17-2c` est justement la source des passages de documentation qui deviennent faux. D4 dit même « **PAS dans `17-2`** », alors que `17-2a:206` désigne `17-2` comme « spec parente convergée, source des DC1-DC6 ».
+- **M-B — La clause de preuve d'AC6 mesure un mot que le manuel n'emploie pas.** `grep -c "jeton" admin-manual.tex` rend **3**, et aucune de ces occurrences ne concerne un PAT — le manuel dit « clé API (PAT) ». Le critère « a augmenté » est satisfaisable **sans toucher** au passage qui devient faux (`admin-manual.tex:1765`, qui avertit encore de la limitation que la story ferme).
+- **M-C — AC4 invoque un test qui n'existe pas.** « le test d'appariement positionnel de `kesh-i18n` » : **il n'y a aucun répertoire `tests/`** dans ce crate, et aucun test de parité. Compteurs à l'appui — **1266 clés en `fr-CH` contre 1209** dans les trois autres, soit les 57 clés manquantes de la **KF #283** — et une clé absente **retombe silencieusement sur le français** (`loader.rs:227`). La spec s'impose en Dev Notes de vérifier toute affirmation d'absence au `grep -nF` ; elle ne l'a pas fait pour une affirmation de **présence**.
+- **M-D — AC1 n'asserte que le statut `403`, que TROIS gardes distinctes produisent** sur ces routes (RBAC, portée `read-only`, la couche). Un test conforme à sa lettre passerait sans que la couche soit atteinte. La leçon avait déjà été payée : `fiscal_years_e2e.rs:1634-1637` dit mot pour mot « asserter le CODE prouve que le 403 vient bien de `ensure_not_pat` et non du middleware RBAC ».
+- **M-E — T1 « l'ordre n'a pas à être arbitré » est vrai pour le handler, faux pour le code observable.** Quand les deux couches refusent — PAT créé par un **Comptable** sur une route admin —, l'ordre détermine lequel répond : `API_KEY_ADMIN_FORBIDDEN` ou le `Forbidden` du RBAC. AC1 ne spécifie que le cas « créateur Admin ». Un arbitrage réel a été classé « n'a pas à être arbitré » sur la foi d'une vérification qui portait sur une autre question.
+- **M-F — Après T5, plus rien ne prouve que les trois `ensure_not_pat` de D3 sont câblés.** Leurs tests assertaient le code du handler ; basculés sur le nouveau code, ils prouvent la **couche**. Les retirer ne ferait alors rougir aucun test — la valeur que D3 revendique devient invérifiable.
+- **M-G — Le garde-fou du bloc vide reste un « sans doute » en question ouverte**, alors que `lib.rs` porte **déjà les deux pièges** : des `.route(` en commentaire (`:939-940`) et l'identifiant `admin_routes` hors du bloc (`:356`, `:871`). Un marqueur mal posé donne 0 (test muet) ou ~90 (test faux).
+
+### Les LOW
+
+- Le Change Log attribue à **AC2** une correction qui vit en **AC3**.
+- `errors.rs:1104` annoncé pour le mapping ; le bras est en `:1105`, la chaîne en `:1106`. Et « `errors.rs`, seul endroit où le corps de la réponse est lisible » est **faux** : trois tests e2e lisent `body["error"]["code"]`.
+- `frontend/src/lib/features/admin-backup/admin-backup.api.test.ts:112` porte une fixture `API_KEY_MANAGEMENT_FORBIDDEN` qui **ment sur le contrat** sans faire rougir (elle n'asserte qu'un rejet). À mentionner dans T5 pour qu'elle ne soit ni oubliée ni prise pour un signal.
+
+### Ce que la passe 2 a vérifié SANS défaut — à ne pas rejouer
+
+`axum 0.8.9` n'expose bien que `has_routes()` · `include_str!("../src/lib.rs")` est réalisable depuis un test d'intégration · les **trois** tests à basculer sont bien trois, et `api_keys_e2e.rs:425` est correctement exclu · `api_keys_e2e.rs` reste vert (contextes tous `Comptable`) · le décompte 16/19 et les références de ligne des Dev Notes sont exacts · **sept frontières saines** : PAT révoqué, expiré, créateur désactivé, créateur rétrogradé, rate-limiting, double montage, routeur `_test` · `POST /api/v1/onboarding/coordinates` écrit bien la config société mais est fermé par une garde d'étape · le changement de mot de passe self-service exige Argon2 · **aucune branche résiduelle du chemin d'attaque**, et le périmètre du **code** n'a pas été rétréci par la passe 1 — le rétrécissement est **documentaire**.
