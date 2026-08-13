@@ -350,174 +350,60 @@ Les affirmations d'absence se vérifient au `grep -nF` avant d'être écrites �
 
 ## Change Log
 
-**2026-08-12 — `bmad-create-story validate`, PASSE 1 (Sonnet, trois lentilles en parallèle).**
+**Ce journal porte la TRACE des passes, pas une seconde description de la story.** Ce que chaque correctif prescrit vit dans le corps — décisions, AC, tâches, Dev Notes —, et le corps est la seule source. Ici : les modèles, le trend, ce que chaque passe a appris **qui ne se déduit pas du corps**, et les réfutations. Rien qui se recompte ailleurs.
 
-| Lentille | CRIT | HIGH | MED | LOW |
-|---|---|---|---|---|
-| Blind Hunter (spec seule) | **1** | 2 | 3 | 2 |
-| Edge Case Hunter (spec + code) | 0 | **1** | 1 | 0 |
-| Acceptance Auditor (spec + issue + story parente) | 0 | 0 | 2 | 1 |
+⚠️ **Cette règle est née d'un défaut mesuré, pas d'un souci d'élégance.** Aux passes 2 et 3, la majorité des findings les plus lourds portaient sur ce journal et non sur la story : un total contredisant sa ventilation (deux fois), un titre annonçant deux HIGH pour trois, un précédent historique inventé, un numéro de ligne dérivé. Le journal avait grossi jusqu'à 38 % du document et redisait le corps en divergeant de lui. **Un compte rendu qui duplique devient un compte rendu qui ment** — élagué le 2026-08-13 sur arbitrage de Guy, en réponse au trend de la passe 3.
 
-**Le défaut central était une contradiction entre deux de mes propres décisions.** D2 crée un code d'erreur distinct ; D3 conserve les trois `ensure_not_pat` existants. Or `route_layer` **enveloppe le service** — vérifié dans le source d'axum — donc la couche répond **avant** le handler, quel que soit son ordre relatif au RBAC. Les trois tests qui assertent `API_KEY_MANAGEMENT_FORBIDDEN` (`admin_full_export_e2e.rs:409`, `admin_full_import_e2e.rs:414`, `fiscal_years_e2e.rs:1638`) recevront donc le **nouveau** code et rougiront.
+### Trend
 
-⚠️ **Et mon avertissement aurait égaré le développeur** : il disait qu'une modification de test signalerait « une couche posée trop haut ». La cause n'était pas le placement — correct — mais ma contradiction. Il aurait conduit à remettre en cause la bonne décision. **AC3** dit désormais que **trois** assertions changent, et trois seulement. *(Cette phrase attribuait la correction à AC2 ; elle vit en AC3. Relevé en passe 2.)*
+| Passe | Modèles | CRIT | HIGH | MED | LOW |
+|---|---|---|---|---|---|
+| 1 | Sonnet ×3 | **1** | 3 | 6 | 3 |
+| 2 | Haiku (aveugle) + Opus ×2 | 0 | 3 | 7 | 3 |
+| 3 | Sonnet ×3 | 0 | **4** | 6 | 2 |
 
-**Le CRITICAL portait sur une circularité, et il avait raison.** AC1 exigeait d'énumérer les routes du routeur, avec pour repli une assertion contre « le nombre de routes du routeur ». Mais `axum 0.8` **n'expose aucune énumération** — `Router` n'offre que `has_routes() -> bool`, vérifié dans le source. Ce nombre n'aurait donc pu venir que d'une seconde constante à la main : **exactement le « quelqu'un doit se souvenir » que cette story existe pour éliminer**. Le mécanisme retenu dérive désormais le compte de la **source** (`include_str!` sur `lib.rs`), seule chose qu'un ajout de route modifie forcément.
+Décomptes **dédupliqués** inter-lentilles. La sévérité maximale décroît une fois (`CRITICAL → HIGH`) puis **stagne** ; le compte de HIGH monte de 3 à 4 en passe 3.
 
-**Trois autres corrections de fond :**
+**Arbitrage du 2026-08-13 (Guy)** : le critère de découpage préventif du `CLAUDE.md` est atteint dans sa lettre, mais trois des quatre HIGH de la passe 3 portent sur les comptes rendus et aucun sur le mécanisme de sécurité — dont la passe 3 a confirmé la description exacte sur vingt-et-une vérifications. **Décision : ne pas découper ; élaguer ce journal et poursuivre en passe 4.**
 
-- **« Route » n'était pas défini.** Le tableau compte des **chemins** (19 enregistrements `.route(…)`), un routeur axum route par **méthode** : `/api/v1/users` porte un `GET` et un `POST`. Un test calibré sur 19 aurait été structurellement incomplet. AC1 parle désormais de couples (méthode, chemin).
-- **AC1 ne prouvait que le scope `read-write`**, alors que le discriminant retenu ne regarde que `api_key_id` et ignore le scope. Le cas `read-only` n'avait aucun critère. Ajouté.
-- **J'amendais la mauvaise cible.** D4 disait d'amender « la spec parente 17-2 » — or le texte de DC6 autoritaire vit **verbatim dans `17-2a`**, la story `done`, tandis que `17-2` est un vestige de découpage resté `ready-for-dev`. Suivie à la lettre, la consigne aurait laissé le document que tout le monde lit avec l'ancienne frontière.
+### Passe 1 — 2026-08-12
 
-**Deux points de forme corrigés** : AC6 était la seule AC **sans clause de preuve**, donc la seule impossible à cocher objectivement — et c'était précisément celle qui portait l'amendement à la cible fausse. Et la frontière du routeur `comptable_routes`, tranchée en substance mais rangée en question ouverte, est promue en **D5** : sans cela, un « oui » ultérieur aurait cassé AC2 sans qu'aucun garde-fou ne le signale.
+**Le défaut central était une contradiction entre deux décisions de la story.** D2 crée un code d'erreur distinct, D3 conserve les trois `ensure_not_pat` : or `route_layer` enveloppe le service, donc la couche répond avant le handler et les trois tests existants reçoivent le **nouveau** code. La première rédaction affirmait l'inverse et avertissait qu'une modification de test signalerait « une couche posée trop haut » — **un avertissement qui aurait fait remettre en cause la bonne décision.**
 
-**Ce que les lentilles ont confirmé plutôt que réfuté** — et c'est utile de le savoir : le décompte 16/19 est exact, recompté ligne à ligne ; les trois corrections que la spec apportait à l'issue #167 sont vraies, dont la remédiation partielle établie par `git log -S` et non par déduction ; `require_admin_role` n'est appliqué **nulle part ailleurs**, donc la couche couvre bien toute la surface admin présente et future ; et aucune branche résiduelle du chemin d'attaque n'a été trouvée — le changement de mot de passe en self-service, seul candidat, exige la vérification Argon2 du mot de passe courant que l'attaquant n'a pas.
+**Le CRITICAL portait sur une circularité, et il avait raison** : AC1 exigeait d'énumérer les routes du routeur, avec pour repli une assertion contre « le nombre de routes du routeur ». `axum` n'expose aucune énumération ; ce nombre n'aurait pu venir que d'une seconde constante à la main — exactement le « quelqu'un doit se souvenir » que la story existe pour éliminer.
 
-**Trois questions ouvertes sur trois sont closes.** Il n'en reste qu'une, mineure et née de la correction elle-même : la forme du marqueur bornant `admin_routes` dans `lib.rs`, et le garde-fou qui empêche le comptage de porter sur un bloc vide — le mode d'échec du test muet.
+Trois autres corrections de fond : « route » n'était pas défini (chemins contre couples méthode-chemin) ; seul le scope `read-write` était prouvé ; et D4 amendait la mauvaise cible.
 
----
+**Ce que les lentilles ont confirmé plutôt que réfuté** : le décompte des routes gardées, les trois corrections apportées à l'issue #167, le fait que `require_admin_role` n'est appliqué nulle part ailleurs, et l'absence de branche résiduelle du chemin d'attaque — le changement de mot de passe self-service, seul candidat, exige la vérification Argon2.
 
-**2026-08-13 — `bmad-create-story validate`, PASSE 2 (Haiku sur la lentille aveugle, Opus sur les deux autres).**
+### Passe 2 — 2026-08-13
 
-**Relevé le 2026-08-13, PATCHES APPLIQUÉS le 2026-08-13** — la séance de collecte avait été interrompue avant remédiation ; les correctifs ont été appliqués à la reprise, et le détail de ce qui a été fait est en fin de section. **Une passe 3 est due.**
+Collecte interrompue avant remédiation ; les correctifs ont été appliqués à la reprise, le même jour.
 
-| Lentille | CRIT | HIGH | MED | LOW |
-|---|---|---|---|---|
-| Blind Hunter (Haiku, spec seule) | 0 | 0 | 1 | 0 |
-| Edge Case Hunter (Opus, spec + code) | 0 | 2 | 2 | 1 |
-| Acceptance Auditor (Opus, + issue + specs parentes) | 0 | 2 | 5 | 3 |
+**Verdict sur la passe 1 : elle n'a pas menti, mais deux de ses corrections ont figé un périmètre incomplet en lui donnant l'apparence de l'exhaustivité.** C'est le mode d'échec propre à ce genre de document : **une clause qui énumère se lit comme close.**
 
-**Convergence** : passe 1 `1 CRIT / 3 HIGH / 6 MED` → passe 2 `0 CRIT / 3 HIGH / 7 MED / 3 LOW`. **La sévérité maximale décroît** (`CRITICAL → HIGH`) : le critère de découpage préventif du `CLAUDE.md` n'est **pas** déclenché. Une passe 3 est due.
+Les trois HIGH, dans le corps désormais : le compteur mesurait les enregistrements quand le critère exige les couples (§ *Dix-neuf enregistrements*, AC1, T3) ; la jambe `read-only` était un test muet sur vingt couples sur vingt-cinq, le gate de portée répondant avant la couche (tableau par couple d'AC1) ; `docs/api-external.md` manquait des AC et des tâches (AC6, T6). Les sept MEDIUM ont produit D6, l'amendement de D3 et de D4, et les exigences du mécanisme de comptage.
 
-⚠️ **Ce total est le second qu'ait porté ce Change Log : le premier, `0 CRIT / 2 HIGH / 5 MED`, était faux et contredisait la section qu'il résumait** — laquelle énumère bien trois HIGH et sept MEDIUM. Recompté depuis la ventilation, déduplication écrite :
+**Deux enseignements que le corps ne porte pas :**
 
-| | brut (somme des lentilles) | dédupliqué | ce qui se recouvre |
-|---|---|---|---|
-| CRIT | 0 | 0 | — |
-| HIGH | 4 | **3** | **H-A** vu par les trois lentilles, en HIGH par ECH et AA |
-| MED | 8 | **7** | **H-A** encore, classé MEDIUM par le Blind Hunter |
-| LOW | 4 | **3** | un doublon inter-lentilles |
+- **Un remède proposé peut être moins bon que ce que le dépôt porte déjà.** Le relevé prescrivait un `grep -c` pour prouver l'i18n ; `kesh-i18n` a `client_number_labels_are_translated_in_all_four_locales`, qui asserte que la traduction diffère du français et ferme donc le repli silencieux. Un `grep -c` aurait été un test muet de plus, dans la story dont le sujet est le test muet. **C'est le grep de propagation post-patch qui l'a trouvé, pas la collecte.**
+- **`21-7` et `21-6c` annoncent « parité FTL 4 locales » pour une suite qui ne la contrôle pas.** Laissé tel quel — ce sont des traces de gates réellement exécutés — et signalé en Dev Notes pour que personne ne s'y appuie.
 
-C'est la § *Recompter ses propres comptes rendus* du `CLAUDE.md`, prise en défaut par le compte rendu même de la passe qui la connaît : **un total doit être cohérent avec sa propre ventilation**, et celui-ci ne l'était pas. Corrigé à la remédiation.
+**Réfuté** : le LOW affirmant que le bras de `match` d'`errors.rs` était en `:1105` — il est en `:1104`, comme la story l'écrivait.
 
-**Verdict sur le Change Log de la passe 1 : il ne ment pas.** Les six corrections revendiquées ont chacune une contrepartie réelle, vérifiée. Mais **deux ont figé un périmètre incomplet en lui donnant l'apparence de l'exhaustivité** — une clause qui énumère se lit comme close.
+### Passe 3 — 2026-08-13
 
-### Les trois HIGH
+**Trois des quatre HIGH portent sur les comptes rendus des passes précédentes, et le quatrième sur une clause de preuve.** Aucun sur le mécanisme.
 
-**H-A — Le compteur de T3 ne mesure pas ce qu'AC1 déclare autoritaire.** AC1 dit que « le nombre de couples fait foi » ; T3 compte les `.route(`. Recompté : **19 enregistrements pour 25 couples** (4 `delete`, 5 `get`, 6 `post`, 10 `put`). Ajouter une méthode à un enregistrement existant ne change pas le compte — motif déjà présent **six fois** dans le bloc, et réalisé historiquement : `/api/v1/admin/email-templates/{…}` est passé de 1 à 3 couples entre les stories 20-1 et 20-2. *Le CRITICAL de passe 1 portait sur **d'où vient** le nombre ; sa remédiation n'a pas traité **ce qu'il compte**.* (Trouvé indépendamment par les trois lentilles.)
-  - ⚠️ **Deux chiffres de ce finding sont réfutés en passe 3** : le motif est présent **cinq** fois et non six, et le précédent « passé de 1 à 3 entre 20-1 et 20-2 » est **inventé** — la route est née à trois méthodes. Le fond du finding — compter les couples et non les enregistrements — reste juste.
+- **Un précédent historique était inventé.** La passe 2 affirmait que `/admin/email-templates/{…}` serait « passée d'une à trois méthodes entre les stories 20-1 et 20-2 » — le fait qui justifiait le mécanisme de comptage. `git log -S` établit qu'elle est **née** avec ses trois méthodes (`8bca0a1e`). Et « six enregistrements multi-méthodes » en compte **cinq**. Les deux avaient été recopiés dans le corps **sous un commit déclarant que chaque fait du relevé avait été revérifié depuis la source**. *L'argument de conception tient sans eux ; il était donné comme un fait advenu.*
+- **La clause de preuve d'AC6 était satisfaisable sans faire le travail** : le `grep -rn "require_admin_role"` qu'elle prescrivait rend **sept** résultats avant tout amendement, aucun aux lignes visées, et trois sont les entrées de limitation que D4 interdit de réécrire. C'est le reproche qu'AC1 adresse à l'assertion `403`, reproduit dans AC6.
+- **« Quatre documents » pour trois documents et quatre énoncés** : T6 avait été corrigée, D4 et AC6 non — un correctif non propagé. Et `17-2b` mentionne DC6 sans avoir jamais été examiné ; vérifié depuis, ses deux phrases restent vraies.
+- **« Les dix findings » pour une ventilation qui en compte treize.**
 
-**H-B — La jambe `read-only` d'AC1, ajoutée en passe 1, est un test muet sur 20 couples sur 25.** Le gate de portée (`middleware/auth.rs:141-142`) répond **avant** la couche, `require_auth` étant appliqué en `route_layer` sur le routeur extérieur (`lib.rs:869-877`). Avec un PAT `read-only`, seuls **5** couples atteignent la couche ; les 20 autres reçoivent `403 API_KEY_READ_ONLY`, **qui existait avant la story**. La mutation prescrite — retirer la couche doit faire rougir — est donc **insatisfaisable** sur ces 20. Remède : écrire l'attente **par couple**, `API_KEY_ADMIN_FORBIDDEN` pour les 5 méthodes sûres, `API_KEY_READ_ONLY` pour les 20 autres.
+**Le MEDIUM le plus utile vient du source d'axum** : `route_layer` n'enveloppe que les routes **déjà présentes à l'appel**. Une route chaînée après les couches échappe **aux deux**, compile et ne panique pas. Le trou préexiste à la story, mais sa promesse de complétude l'aurait masqué → avertissement en T1, quatrième assertion en T3. Les cinq autres : `.nest(`/`.route_service(` échappent au compteur sans échapper à la protection ; AC4 ne prouvait pas que le message diffère de celui de la gestion de clés ; le passage de cinq à six sites documentaires n'était pas réconcilié ; deux listes « trois exigences » divergentes ; un titre annonçant deux HIGH pour trois.
 
-**H-C — `docs/api-external.md` est absent d'AC6 et de T6.** Le guide d'intégration — vers lequel le manuel renvoie (`admin-manual.tex:1770`) — porte **cinq** énoncés qui deviennent faux, dont `:235`, une **instruction d'usage** (« pour changer un mot de passe via l'API, utilisez `PUT /api/v1/users/:id/reset-password` ») qui rendra désormais `403`. La story fermerait la faille dans le code en laissant écrit ailleurs qu'elle est ouverte.
+**Vérifié sans défaut, et à ne pas rejouer** : l'ensemble des références de ligne du corps, une par une, sauf le renvoi vers le guide d'intégration — `:1768`, et non `:1770` comme le disait la passe 2 · tous les décomptes du corps · le `405` d'une méthode non enregistrée est engendré **après** les deux couches, comme `HEAD` implicite sur une route `get` · `CurrentUser` est disponible quand la couche s'exécute · le rôle Consultation ne peut pas créer de PAT · `comptable_routes` ne porte aucun vecteur de containment · `/onboarding/coordinates` reste fermé par sa garde d'étape · **l'ordre d'empilement voulu par D6 s'obtient naturellement** en posant la couche après le RBAC — et la spec a raison de laisser le test l'arbitrer plutôt que de s'y fier.
 
-### Les MEDIUM
+### Ce qui n'a PAS été fait, aux trois passes
 
-- **M-A — DC6 vit dans QUATRE documents, pas un.** `17-2:57`, `17-2a:35` **et** `:58`, `17-2c:34-35`. La passe 1 a remplacé une cible fausse par une cible juste mais **unique** ; `17-2c` est justement la source des passages de documentation qui deviennent faux. D4 dit même « **PAS dans `17-2`** », alors que `17-2a:206` désigne `17-2` comme « spec parente convergée, source des DC1-DC6 ».
-- **M-B — La clause de preuve d'AC6 mesure un mot que le manuel n'emploie pas.** `grep -c "jeton" admin-manual.tex` rend **3**, et aucune de ces occurrences ne concerne un PAT — le manuel dit « clé API (PAT) ». Le critère « a augmenté » est satisfaisable **sans toucher** au passage qui devient faux (`admin-manual.tex:1765`, qui avertit encore de la limitation que la story ferme).
-- **M-C — AC4 invoque un test qui n'existe pas.** « le test d'appariement positionnel de `kesh-i18n` » : **il n'y a aucun répertoire `tests/`** dans ce crate, et aucun test de parité. Compteurs à l'appui — **1266 clés en `fr-CH` contre 1209** dans les trois autres, soit les 57 clés manquantes de la **KF #283** — et une clé absente **retombe silencieusement sur le français** (`loader.rs:227`). La spec s'impose en Dev Notes de vérifier toute affirmation d'absence au `grep -nF` ; elle ne l'a pas fait pour une affirmation de **présence**.
-- **M-D — AC1 n'asserte que le statut `403`, que TROIS gardes distinctes produisent** sur ces routes (RBAC, portée `read-only`, la couche). Un test conforme à sa lettre passerait sans que la couche soit atteinte. La leçon avait déjà été payée : `fiscal_years_e2e.rs:1634-1637` dit mot pour mot « asserter le CODE prouve que le 403 vient bien de `ensure_not_pat` et non du middleware RBAC ».
-- **M-E — T1 « l'ordre n'a pas à être arbitré » est vrai pour le handler, faux pour le code observable.** Quand les deux couches refusent — PAT créé par un **Comptable** sur une route admin —, l'ordre détermine lequel répond : `API_KEY_ADMIN_FORBIDDEN` ou le `Forbidden` du RBAC. AC1 ne spécifie que le cas « créateur Admin ». Un arbitrage réel a été classé « n'a pas à être arbitré » sur la foi d'une vérification qui portait sur une autre question.
-- **M-F — Après T5, plus rien ne prouve que les trois `ensure_not_pat` de D3 sont câblés.** Leurs tests assertaient le code du handler ; basculés sur le nouveau code, ils prouvent la **couche**. Les retirer ne ferait alors rougir aucun test — la valeur que D3 revendique devient invérifiable.
-- **M-G — Le garde-fou du bloc vide reste un « sans doute » en question ouverte**, alors que `lib.rs` porte **déjà les deux pièges** : des `.route(` en commentaire (`:939-940`) et l'identifiant `admin_routes` hors du bloc (`:356`, `:871`). Un marqueur mal posé donne 0 (test muet) ou ~90 (test faux).
-
-### Les LOW
-
-- Le Change Log attribue à **AC2** une correction qui vit en **AC3**.
-- `errors.rs:1104` annoncé pour le mapping ; le bras est en `:1105`, la chaîne en `:1106`. Et « `errors.rs`, seul endroit où le corps de la réponse est lisible » est **faux** : trois tests e2e lisent `body["error"]["code"]`.
-  - ⚠️ **La première moitié de ce finding est fausse, et elle est réfutée.** `grep -n "ApiKeyManagementForbidden =>" crates/kesh-api/src/errors.rs` rend **1104** : le bras est bien là où la story l'annonçait. Seule la chaîne est à `:1106`. La seconde moitié, elle, est juste. *(Réfuté à la remédiation, cf. plus bas.)*
-- `frontend/src/lib/features/admin-backup/admin-backup.api.test.ts:112` porte une fixture `API_KEY_MANAGEMENT_FORBIDDEN` qui **ment sur le contrat** sans faire rougir (elle n'asserte qu'un rejet). À mentionner dans T5 pour qu'elle ne soit ni oubliée ni prise pour un signal.
-
-### Ce que la passe 2 a vérifié SANS défaut — à ne pas rejouer
-
-`axum 0.8.9` n'expose bien que `has_routes()` · `include_str!("../src/lib.rs")` est réalisable depuis un test d'intégration · les **trois** tests à basculer sont bien trois, et `api_keys_e2e.rs:425` est correctement exclu · `api_keys_e2e.rs` reste vert (contextes tous `Comptable`) · le décompte 16/19 et les références de ligne des Dev Notes sont exacts · **sept frontières saines** : PAT révoqué, expiré, créateur désactivé, créateur rétrogradé, rate-limiting, double montage, routeur `_test` · `POST /api/v1/onboarding/coordinates` écrit bien la config société mais est fermé par une garde d'étape · le changement de mot de passe self-service exige Argon2 · **aucune branche résiduelle du chemin d'attaque**, et le périmètre du **code** n'a pas été rétréci par la passe 1 — le rétrécissement est **documentaire**.
-
-### Remédiation appliquée le 2026-08-13
-
-**Les treize findings sont traités : 3 HIGH, 7 MEDIUM, 3 LOW — dont un LOW réfuté.** Deux vérifications ont changé le patch prévu.
-
-⚠️ **Ce paragraphe annonçait « dix findings » pour une ventilation qui en compte treize, et il affirmait que CHAQUE fait du relevé avait été revérifié depuis la source. Les deux sont faux.** Le total contredisait sa propre ventilation — le défaut que ce même Change Log dénonce deux paragraphes plus haut. Et la vérification n'a pas eu lieu sur le précédent historique de H-A, qui est **inventé** : la route `/admin/email-templates/{…}` est née avec ses trois méthodes (`git log -S`, cf. § *Dix-neuf enregistrements*). **Une affirmation d'exhaustivité de vérification est elle-même une affirmation à vérifier.** *(Les deux relevés en passe 3.)*
-
-| Finding | Où le correctif vit désormais |
-|---|---|
-| **H-A** compteur `.route(` vs couples | nouveau § *Dix-neuf enregistrements, vingt-cinq routes* (ventilation par méthode) + AC1 + T3 : compter les **constructeurs de méthode**, assertion **exacte à 25** |
-| **H-B** jambe `read-only` muette | AC1 : tableau d'attente **par couple** (25 en `read-write` ; 5 `get` + 20 `read-only` en `read-only`) + § *Conventions de test* : la mutation est **insatisfaisable** sur les 20, et c'est écrit |
-| **H-C** `docs/api-external.md` absent | AC6 : tableau des **six sites** + T6 en quatre chantiers. ⚠️ Le relevé disait **cinq** : le grep de remédiation en a trouvé un sixième, `:73` (« la permission effective est l'intersection… »), qui devient **incomplet** sans devenir faux. Cinq énoncés faux, un incomplet. |
-| **M-A** DC6 dans quatre documents | **D4** réécrite : tableau des quatre énoncés, et distinction entre **énoncés** (à réécrire) et **traces de limitation** (à clore, pas à réécrire) |
-| **M-B** clause `grep -c "jeton"` | AC6 : remplacée par un `grep -nF "KF-036"` qui doit ne **plus** rien rendre, plus les deux sites nommés (`:1765`, `:1756`) |
-| **M-C** test i18n imaginaire | AC4 + nouveau § *i18n — la clé manquante ne rougit pas* |
-| **M-D** `403` prouvé par trois gardes | AC1 : asserter **le code**, avec le précédent `fiscal_years_e2e.rs:1634-1637` |
-| **M-E** ordre des deux couches | nouveau **D6** : `API_KEY_ADMIN_FORBIDDEN` sans exception, le test est l'arbitre ; T1 corrigée |
-| **M-F** câblage de D3 invérifiable | **D3** amendée : assertion **de source** par le même `include_str!`, avec repli documenté ; sous-tâche T5 |
-| **M-G** garde-fou du bloc vide | AC1 + T3 : **trois** exigences (marqueurs, décommentage, présence assertée) ; question ouverte close |
-| **LOW** AC2 → AC3 | corrigé dans le Change Log de passe 1 |
-| **LOW** fixture frontend | sous-tâche T5, avec la mention qu'elle **ne rougira pas** si on l'oublie |
-| **LOW** `errors.rs:1104` | ⚠️ **réfuté** — cf. ci-dessus |
-
-**Deux vérifications ont modifié le patch, et c'est le grep de propagation qui les a produites.**
-
-- **Le remède de M-C était moins bon que le dépôt.** Le relevé concluait à un `grep -c` sur les fichiers de locale. Or `kesh-i18n` porte déjà `client_number_labels_are_translated_in_all_four_locales` (`loader.rs:261`), qui fait mieux : il asserte que la traduction **diffère du français**, sans quoi le repli silencieux (`loader.rs:227`) rend le test vert sur une locale vide. AC4 prescrit désormais ce calque. **Un `grep -c` aurait été un test muet de plus** — dans la story dont le sujet est le test muet.
-- **`21-7:334` et `21-6c:305` annoncent « parité FTL 4 locales » pour une suite qui ne la contrôle pas.** Laissé tel quel, avec la raison : ce sont des traces de gates réellement exécutés, on ne réécrit pas ce qui a tourné. Signalé en Dev Notes pour que personne ne s'y appuie.
-
-**Les décomptes, recomptés depuis la source** (périmètre : `HEAD` de `spec/22-4-validate-p1`, `lib.rs` inchangé depuis `main`) :
-
-```sh
-# 19 enregistrements, 25 couples — les deux nombres, aux deux bornes
-sed -n '182,284p' crates/kesh-api/src/lib.rs | grep -c '\.route('          # 19
-grep -rn "ensure_not_pat" crates/ --include=*.rs                            # 6 sites d'appel, dont 3 sur admin_routes
-for f in crates/kesh-i18n/locales/*/messages.ftl; do grep -cE '^[a-zA-Z][a-zA-Z0-9_-]* *=' "$f"; done   # 1209 / 1209 / 1266 / 1209
-```
-
-⚠️ **L'écart i18n de 57 clés est corroboré par une mesure indépendante** : `16-1b:165` relevait **1225 contre 1168** à son époque — même delta, 41 clés ajoutées depuis dans les quatre fichiers. Deux mesures séparées de plusieurs mois donnent le même écart, ce qui écarte l'erreur de comptage.
-
-**Ce que la remédiation N'A PAS fait** : aucun gate n'a été exécuté — la story n'a pas de code, seul son fichier de spécification a changé. Les tableaux de gate restent vides jusqu'à `dev-story`.
-
----
-
-**2026-08-13 — `bmad-create-story validate`, PASSE 3 (Sonnet sur les trois lentilles, contextes frais).**
-
-Rotation respectée : passe 1 Sonnet, passe 2 Haiku + Opus, passe 3 Sonnet — orthogonale aux deux modèles de la passe précédente.
-
-| Lentille | CRIT | HIGH | MED | LOW |
-|---|---|---|---|---|
-| Blind Hunter (spec seule) | 0 | 2 | 2 | 2 |
-| Edge Case Hunter (spec + code) | 0 | 1 | 3 | 1 |
-| Acceptance Auditor (+ issue, specs parentes, doc, `CLAUDE.md`) | 0 | 2 | 1 | 0 |
-| **brut** | **0** | **5** | **6** | **3** |
-| **dédupliqué** | **0** | **4** | **6** | **2** |
-
-Déduplication : « quatre documents » vu par BH et AA ; le renvoi `1768`/`1770` vu par BH et ECH.
-
-⚠️ **Trend : `1 CRIT / 3 HIGH / 6 MED` → `0 CRIT / 3 HIGH / 7 MED` → `0 CRIT / 4 HIGH / 6 MED`. La sévérité maximale STAGNE à HIGH, et le nombre de HIGH augmente.** Le critère de découpage préventif du `CLAUDE.md` est donc **atteint dans sa lettre** (« une passe N+1 remonte une sévérité égale ou supérieure à la passe N »). **Arbitrage à porter au Project Lead** — l'orchestrateur ne tranche pas seul : voir la note en fin de section.
-
-### Les quatre HIGH
-
-- **Le précédent historique de H-A était inventé** — la route `/admin/email-templates/{…}` est née avec ses trois méthodes en un commit (`8bca0a1e`, story 20-1), elle n'est jamais « passée de 1 à 3 entre 20-1 et 20-2 ». Et « six enregistrements multi-méthodes » en compte **cinq**. Les deux chiffres venaient du relevé de passe 2 et ont été recopiés dans le corps **sous une déclaration de revérification exhaustive**. L'argument de conception, lui, tient sans eux. *(Trouvé par la lentille code, `git log -S` à l'appui.)*
-- **La clause de preuve d'AC6 était satisfaisable sans faire le travail** : `grep -rn "require_admin_role"` sur les specs parentes rend **7 résultats aujourd'hui**, dont aucun aux quatre lignes visées, et trois sont les entrées L3 que D4 interdit de réécrire. C'est le reproche d'AC1 sur l'assertion `403`, reproduit dans AC6.
-- **« Quatre documents » pour trois documents et quatre énoncés** — T6 avait déjà été corrigée en « énoncés », D4 et AC6 non : un correctif non propagé. Et **`17-2b` mentionne DC6 sans avoir jamais été examiné** ; vérifié depuis, ses deux phrases restent vraies, mais l'affirmation manquait.
-- **Le total « dix findings » contredisait sa ventilation** (3 + 7 + 3 = 13).
-
-### Les six MEDIUM
-
-- **`route_layer` n'enveloppe que les routes déjà présentes** (`path_router.rs:311-341`) : une route chaînée après les couches échappe **aux deux**, compile et ne panique pas. Le trou préexiste, la story ne le refermait pas et sa promesse de complétude l'aurait masqué → avertissement en T1 + assertion en T3.
-- **`.nest(` / `.route_service(` échappent au compteur** sans échapper à la protection : trou de preuve, désormais écrit.
-- **AC4 ne prouvait nulle part que le message diffère** de celui de la gestion de clés, alors que T2 prescrit un calque et que c'est le motif entier de D2.
-- Le passage de **cinq à six sites** documentaires n'était pas réconcilié ; il l'est.
-- Deux listes « trois exigences » de composition différente ; elles sont **quatre** et alignées.
-- Le titre **« Les deux HIGH »** coiffait trois findings — corrigé, et il l'était déjà signalé oralement sans avoir été porté au fichier.
-
-### Les deux LOW
-
-- Le renvoi vers le guide est à `admin-manual.tex:**1768**` ; le relevé de passe 2 disait `:1770`. Le corps est juste, la trace du relevé est laissée telle quelle.
-- « `docs/api-external.md` manquait entièrement » se lisait comme « le fichier n'existe pas » — précisé « des AC et des tâches ».
-
-### Ce que la passe 3 a vérifié SANS défaut
-
-**Tous** les numéros de ligne du corps de la spec, un par un, sauf le cas LOW ci-dessus — `errors.rs:1104`/`:1106`, `auth.rs:44`/`:141-142`/`:161`, `api_key.rs:181`, `api_keys.rs:95`/`:108`/`:121`/`:211`, `admin.rs:37`/`:143`, `fiscal_years.rs:317`, `lib.rs:284`/`:356`/`:871`/`:939-940`, les six sites d'`api-external.md`, `admin-manual.tex:1756`/`:1765`, `17-2:57`, `17-2a:35`/`:58`/`:114`/`:206`/`:255`, `17-2c:34`/`:35`, `16-1b:165`, la fixture frontend `:112` · les décomptes 19 / 25 / ventilation par méthode / 176 / 1266-1209 / 22 tests i18n / 6 sites d'`ensure_not_pat` · `HEAD` implicite sur les routes `get` reste couvert (le layer enveloppe le service, pas les constructeurs) · `OPTIONS`, `TRACE` et méthode inconnue : le **405** est engendré à l'intérieur du `MethodRouter`, donc **après** les deux couches · `CurrentUser` est bien disponible quand la couche s'exécute (`require_auth` est la couche la plus externe) · le rôle Consultation ne peut pas créer de PAT · `comptable_routes` ne porte aucun vecteur de containment · `/onboarding/coordinates` reste fermé par sa garde d'étape · `require_admin_role` n'est appliqué nulle part ailleurs · le LOW « réfuté » de la passe 2 est bien réfuté · **et l'ordre d'empilement voulu par D6 s'obtient naturellement** en posant la couche après `require_admin_role` (chaque `.layer()` enveloppe le précédent) — la spec a raison de laisser le test l'arbitrer plutôt que de s'y fier.
-
-### ⚠️ Arbitrage dû au Project Lead avant la passe 4
-
-Le critère de découpage préventif est atteint dans sa lettre (HIGH → HIGH, et 3 → 4). **Mais la nature des findings ne désigne pas une story trop large** : trois des quatre HIGH portent sur les **comptes rendus** de la story — un total faux, un précédent inventé, un mot mal propagé — et un seul sur une clause de preuve du corps. Aucun ne touche au mécanisme de sécurité, dont les vingt-et-une vérifications ci-dessus confirment la description exacte.
-
-C'est le motif de l'Epic 16, que le `CLAUDE.md` nomme : *« le compte rendu est devenu le lieu du défaut, pas le code »* — et là, il avait conduit à découper la 16-2. **Deux conduites possibles, et le choix ne revient pas à l'orchestrateur** : découper selon la lettre de la règle, ou **élaguer le Change Log** — cesser d'y republier des décomptes qui deviennent eux-mêmes objets de revue — et poursuivre en passe 4 sur un document dégraissé.
+**Aucun gate n'a été exécuté** : la story n'a pas de code, seul son fichier de spécification a changé. Les tableaux de gate restent vides jusqu'à `dev-story`.
