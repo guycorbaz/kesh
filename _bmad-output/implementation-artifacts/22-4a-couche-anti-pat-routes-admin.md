@@ -270,6 +270,10 @@ La couche ne regarde que `api_key_id`, jamais le rôle.
 - [x] [Review][Patch] Apostrophes perdues dans les commentaires `sprint-status.yaml` ajoutés par la branche [`sprint-status.yaml:249-250`]
 - [x] [Review][Defer] Apostrophes perdues préexistantes hors du diff (`sprint-status.yaml:213,343`) — deferred, pre-existing
 
+### Review Findings — passe 4
+
+Aucun finding retenu — **convergence**. 11 findings Blind Hunter écartés après vérification ground-truth (dont 2 CRITICAL et 2 HIGH réfutés au `grep -nF` — faux positifs Haiku de la famille documentée), 3 LOW Edge Case Hunter écartés avec motif, Acceptance Auditor conforme partout. Détail dans le Change Log, entrée passe 4.
+
 ## Dev Notes
 
 ### Ce qui est déjà en place
@@ -419,6 +423,33 @@ Les cinq couples `HEAD` n'assertent que le **statut**, pas le code : une répons
 Le gate a donc été rejoué en **profil `ci`** (`fail-fast = false`, `retries = 1`), seul montage qui donne à la fois la couverture complète et l'absorption du flake connu. **Résultat : 2177/2177, sans même un retry** — la KF-038 ne s'est pas reproduite, ce qui confirme la contention comme cause et non le code.
 
 ## Change Log
+
+**2026-08-14 — `bmad-code-review`, PASSE 4 (Haiku ×3, contextes frais, diff aplati unique — rotation post-Sonnet). CONVERGENCE : 0 finding > LOW retenu, critère d'arrêt de la § Review Iteration Rule ATTEINT.**
+
+| Lentille | CRIT | HIGH | MED | LOW | retenus après ground-truth |
+|---|---|---|---|---|---|
+| Blind Hunter (diff aplati seul) | 2 | 2 | 5 | 2 | **0** — 11 écartés |
+| Edge Case Hunter (diff + code) | 0 | 0 | 0 | 3 | **0** — 3 écartés avec motif |
+| Acceptance Auditor (+ stories, `CLAUDE.md`) | 0 | 0 | 0 | 0 | **0** — conforme partout |
+
+**Trend du cycle : `0/1/2/2` → `0/2/6/8` → `0/1/4/2` → `0/0/0/0` retenu.** Les quatre affirmations CRITICAL/HIGH du Blind Hunter étaient des **faux positifs Haiku de la famille documentée** (§ *Haiku-specific guardrails*), tous réfutés par `grep -nF` avant traitement, conformément à la règle :
+
+- « le test `lib_rs_has_no_double_slash_inside_literals` n'apparaît pas dans le diff » (CRIT) — réfuté : `grep -nF "fn lib_rs_has_no_double_slash_inside_literals" diff-p4.patch` → ligne 1557.
+- « aucune assertion "exactement deux `.route_layer(`" » (HIGH) — réfuté : `block.matches(".route_layer(").count()` assertée, `admin_pat_denied_e2e.rs:327`.
+- « les trois `ensure_not_pat` cités par numéro de ligne seul, jamais vérifiés à la source » (HIGH) — réfuté : l'assertion de source compte la chaîne exacte `ensure_not_pat(&current_user)?` par fichier (`:554-565`), donc **insensible aux numéros de ligne** — le scénario « lignes déplacées, garde orpheline » est impossible par construction.
+- « le pattern du compteur est trop faible, il peut rendre 24 en silence » (CRIT) — écarté : un constructeur coupé `put\n(` fait rougir l'égalité couples ↔ compteur, c'est-à-dire **fail-loud** — la direction d'échec voulue, pas une dérive muette (et `rustfmt` ne produit jamais cette forme).
+
+Les 7 autres findings BH : « la distinction i18n n'est jamais assertée » — réfuté, `assert_ne!` contre le message voisin sur les 4 locales (`loader.rs:297-319`) ; « 17-2c:129 jamais relu » — réfuté, la ligne porte sa mention de clôture **juste en dessous** (critère D-a de 22-4b : trace verbatim + mention) ; « `closes #167` absent du diff » — par construction, le mot-clé va sur le message de PR (AC-e/T-f, documenté) ; les décomptes et références déjà recomptés/qualifiés en passe 3.
+
+Les 3 LOW de l'ECH, écartés avec motif : le plancher `discriminating >= 4` est un **choix scellé en passe 2**, son motif écrit dans le code (`:848-853`) — une égalité exacte serait un compteur de plus à entretenir sans propriété supplémentaire ; l'inversion des marqueurs fait paniquer `split_once(...).expect(...)` — **fail-loud déjà**, seul le style (panic vs assertion) diffère ; un alias d'`ensure_not_pat` n'ouvre **aucun chemin PAT** — la protection repose sur la couche (gardée crate-wide depuis la passe 3), `ensure_not_pat` est la défense en profondeur de D3, et ses trois sites sont épinglés par chaîne exacte.
+
+⚠️ **Ce que la passe 4 a vérifié SANS défaut, ground-truth à l'appui** (AA) : les 25 constructeurs recomptés depuis `lib.rs` décommenté · les 16 tests du fichier (11 + 5) recomptés aux bornes · le variant `ApiKeyAdminForbidden` et sa chaîne (`errors.rs:205`, `:1131`) · les 4 locales et la distinction des messages · les 3 assertions de code d'erreur migrées et le test i18n de non-repli · **tous les patches de la passe 3 présents à HEAD** · T7 reste à exécuter avant le push, et c'est le seul travail restant côté 22-4a.
+
+**Aucun patch appliqué — rien à propager.** Reste avant merge : **T7** (gate complet backend + frontend + E2E au dernier commit) puis la PR unique 22-4a + 22-4b portant `closes #167`.
+
+**Modèles du cycle** : dev Opus → P1 Sonnet ×3 → P2 Haiku/Opus → P3 Sonnet ×3 → P4 Haiku ×3. 15 mutations jouées, 15 rougissements — périmètre : passes 1-2 en ont joué 13, la passe 3 en a joué 2 ; la passe 4 n'a rien patché, donc rien mutée. *(Un décompte de « patches par passe » a failli être écrit ici de mémoire, sans recomptage — retiré : les patches de chaque passe se lisent dans son entrée et dans `git log`, et un nombre non recompté n'a pas sa place dans un Change Log de ce cycle en particulier.)*
+
+---
 
 **2026-08-14 — `bmad-code-review`, PASSE 3 (Sonnet ×3, contextes frais — rotation post-Opus).**
 
