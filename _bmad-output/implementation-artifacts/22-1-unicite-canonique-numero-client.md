@@ -48,7 +48,7 @@ Les deux autres pistes ont été écartées, et il vaut de savoir pourquoi :
 
 Une valeur dont la forme canonique est **vide** est traitée comme absente : `client_number` reste stocké tel quel s'il porte du visible, mais si la canonique est vide, **les deux** colonnes valent `NULL`. C'est le prolongement de la garde de vacuité posée en 16-3b.
 
-**D3 — Le prédicat `is_invisible` est factorisé.** Il existe aujourd'hui en **deux exemplaires identiques** dans deux crates, avec une justification écrite qui a été **réfutée** en passe 3 de revue (`kesh-api` dépend bien de `kesh-qrbill`, `Cargo.toml:12`). Cette story en fait **une seule source**. Le crate d'accueil est à trancher à l'implémentation : `kesh-core` est le candidat naturel (logique pure, zéro I/O), mais `kesh-qrbill` n'en dépend pas encore — l'y ajouter est une arête de plus dans le graphe, à peser.
+**D3 — Le prédicat `is_invisible` est factorisé, et le crate d'accueil est `kesh-core`.** *(arbitrage de Guy, 2026-08-14)* Il existe aujourd'hui en **deux exemplaires identiques** dans deux crates, avec une justification écrite qui a été **réfutée** en passe 3 de revue (`kesh-api` dépend bien de `kesh-qrbill`, `Cargo.toml:12`). Cette story en fait **une seule source** : `canonical_key` et `is_invisible` vivent dans **`kesh-core`** (logique pure, zéro I/O — c'est sa définition), et **`kesh-qrbill` ajoute la dépendance**. Aucun cycle possible : `kesh-core` ne dépend d'aucun crate interne. L'alternative `kesh-db` aurait fait dépendre `kesh-qrbill` de SQLx pour une fonction pure ; la duplication aurait violé la règle DRY du dépôt — deux `is_invisible` à tenir synchrones est précisément l'état que cette story ferme.
 
 **D4 — La migration est BREAKING, et la procédure P3 s'applique en entier.** Elle remplace la colonne générée `client_number_uniq` et sa contrainte. C'est donc :
 
@@ -60,15 +60,11 @@ Une valeur dont la forme canonique est **vide** est traitée comme absente : `cl
 
 MariaDB ne sait ni normaliser en NFKC, ni retirer un jeu ouvert de caractères invisibles. Le remplissage de la colonne canonique pour le parc existant doit donc être fait **en Rust**, et il relève du garde-fou **P7** : toute migration qui écrit des données doit être triée, soit au registre `POST_RESTORE_BACKFILLS`, soit aux `EXEMPT_MIGRATIONS` avec justification écrite.
 
-⚠️ **Et il faut choisir ce qu'on fait des collisions découvertes au backfill.** Deux contacts actifs de la même société peuvent aujourd'hui porter `CLI-1` et `CLI‹ZWSP›-1` : leur forme canonique est **la même**, et l'index unique refusera le second. Trois issues :
+⚠️ **Et il faut choisir ce qu'on fait des collisions découvertes au backfill.** Deux contacts actifs de la même société peuvent aujourd'hui porter `CLI-1` et `CLI‹ZWSP›-1` : leur forme canonique est **la même**, et l'index unique refusera le second.
 
-1. laisser le second à `NULL` **en le journalisant** ;
-2. refuser la migration ;
-3. **signaler les doublons et laisser l'utilisateur les fusionner** — objet de la **Story 22-3** (#300), aujourd'hui **en veille**.
+**Tranché : la migration REFUSE, en nommant les collisions.** *(arbitrage de Guy, 2026-08-14, entre trois branches : laisser le second à `NULL` en journalisant ; refuser ; renvoyer à la fusion 22-3, en veille.)* Le raisonnement tient au calendrier : Kesh est déployé mais **ne tient pas encore les comptes réels** (jalon « Première clôture d'exercice » ouvert) — refuser ne coûte donc rien aujourd'hui, et c'est la seule branche où **aucune déduplication silencieuse ne passe jamais** : une collision réelle arrête l'upgrade en la nommant, au lieu de survivre en `NULL` journalisé que personne ne lit. C'est la préférence constante du dépôt pour le fail-loud, au moment de l'histoire du projet où elle est la moins chère.
 
-⚠️ **Et la réponse est probablement plus simple qu'elle n'en a l'air.** Kesh est déployé mais **ne tient pas encore les comptes réels** — il n'y a donc quasi certainement **aucune collision** à traiter. La branche 1 suffit, et la 22-3 reste en veille.
-
-**Mais cela se COMPTE, cela ne se suppose pas.** T1 commence par la requête sur la base réelle. Si elle rend zéro, la question est close et le repli n'aura jamais à s'exécuter. Si elle rend autre chose, c'est une information neuve et il faudra rouvrir.
+⚠️ **Conséquence assumée** : le jour où une installation porte des collisions, **son binaire à jour refuse de démarrer** jusqu'à correction des données. Le message d'échec DOIT donc nommer les contacts en collision (société, ids, valeurs affichées) — c'est lui, l'outil de réparation. Et le comptage sur la base du NAS **reste un geste de prudence avant l'upgrade de production** — il n'est simplement plus bloquant pour écrire la migration, la branche retenue étant sûre dans les deux cas.
 
 ## Acceptance Criteria
 
@@ -104,7 +100,7 @@ Le manuel utilisateur — § *Le numéro de client sur la facture* — décrit l
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Trancher D5** (AC6). Que fait le backfill quand deux contacts actifs d'une même société ont la même forme canonique ? Laisser le second à `NULL` en le journalisant, ou refuser la migration ? **À trancher avec le Project Lead avant d'écrire la migration.** Compter d'abord les collisions réelles sur la base de production : c'est une requête, et elle change probablement la réponse.
+- [x] **T1 — Trancher D5** (AC6). **Tranché le 2026-08-14, arbitrage de Guy : la migration REFUSE en nommant les collisions** (cf. D5 pour le raisonnement et la conséquence assumée). Le comptage sur la base du NAS reste un geste de prudence **avant l'upgrade de production**, mais n'est plus bloquant pour écrire la migration — la branche retenue est sûre que la base soit propre ou non.
 - [ ] **T2 — La fonction canonique** (AC1, AC2). Choisir le crate d'accueil (cf. D3), y écrire `canonical_key` et `is_invisible`, brancher les deux appelants existants, et écrire les tests de table. **Jouer les mutations** — une étape neutralisée doit faire tomber un test.
 - [ ] **T3 — Migration** (AC3, AC7). Remplacer la colonne générée et la contrainte, ajouter la colonne canonique, bumper `min_required` en dernière instruction, bumper les 10 crates dans le même commit. Ligne d'audit d'idempotence avec les **cinq** compteurs recomptés. Garde-fou **P6** : `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` et inspecter **chaque** site.
 - [ ] **T4 — Backfill** (AC6). En Rust, selon la branche retenue en T1. Triage **P7** : registre `POST_RESTORE_BACKFILLS` ou exemption **avec justification écrite**. Si la justification invoque « hors fenêtre », elle **doit** commencer par la chaîne `Hors fenêtre` — sinon elle échappe au contrôle.
@@ -149,8 +145,8 @@ Les décomptes des Change Logs se **recomptent depuis la source**, avec leur **p
 - Rétrospective **Epic 16** — `epic-16-retro-2026-08-11.md`, action **A8**.
 - `CLAUDE.md` — § *Migration breaking policy* (P2, P2-bis, P3, P5, P6, P7, P8), § *Propagation post-patch*, § *Recompter ses propres comptes rendus*.
 
-## Questions ouvertes
+## Périmètre — écrit pour qu'une passe de revue ne le rouvre pas
 
-1. **T1 / D5** — la branche du backfill face à une collision. Compter d'abord sur la base réelle.
-2. **D3** — le crate d'accueil de la fonction canonique. `kesh-core` est le candidat naturel, mais `kesh-qrbill` n'en dépend pas encore.
-3. **Périmètre** — cette canonicalisation ne concerne ici que `client_number`. Le numéro **IDE** porte sa propre validation et n'en relève pas ; `email` et `phone` n'ont **aucun index unique**, donc aucune urgence. À écrire explicitement dans la story pour qu'une passe de revue ne le rouvre pas.
+La canonicalisation ne concerne que **`client_number`**. Le numéro **IDE** porte sa propre validation (format `CHE-###.###.###`, jeu de caractères fermé — aucun des trois chemins d'attaque ne s'y applique) et n'en relève pas. `email` et `phone` n'ont **aucun index unique** : aucune garantie d'unicité annoncée, donc rien que cette story doive tenir. Étendre la canonique à d'autres champs serait une story neuve, pas un élargissement de celle-ci.
+
+*(Les « Questions ouvertes » qui occupaient cette section ont toutes été résolues le 2026-08-14 : D5 et D3 par arbitrage de Guy — inscrits dans leurs décisions respectives —, le périmètre par le présent paragraphe.)*
