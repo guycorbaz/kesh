@@ -41,14 +41,16 @@ Les deux autres pistes ont été écartées, et il vaut de savoir pourquoi :
 
 **D2 — La forme canonique est définie ici, et une seule fois.** Dans l'ordre :
 
-1. `trim()`
-2. retrait de **tout** caractère invisible — prédicat `is_invisible` déjà écrit deux fois dans le dépôt (`kesh-api/src/routes/contacts.rs`, `kesh-qrbill/src/pdf.rs`)
-3. normalisation **NFKC** *(et non NFC : `NFKC` replie aussi les formes de compatibilité — chiffres pleine chasse, ligatures — qui sont visuellement le même numéro)*
+1. retrait de **tout** caractère invisible — prédicat `is_invisible` déjà écrit deux fois dans le dépôt (`kesh-api/src/routes/contacts.rs`, `kesh-qrbill/src/pdf.rs`)
+2. normalisation **NFKC** *(et non NFC : `NFKC` replie aussi les formes de compatibilité — chiffres pleine chasse, ligatures — qui sont visuellement le même numéro, et replie les espaces exotiques vers l'espace simple)*
+3. `trim()`
 4. repli de casse par `to_lowercase()`
+
+⚠️ **Le `trim()` vient en TROISIÈME, et l'ordre a été réfuté par exécution — pas ajusté par goût.** La première rédaction ouvrait par `trim()` : sur `"CLI-1 ‹U+200B›"` — un espace de queue **masqué** par un invisible collé au copier-coller — `trim()` s'arrête au ZWSP (qui n'a pas la propriété `White_Space`), le retrait des invisibles expose ensuite l'espace, et plus rien ne le retire : canonique `"cli-1 "` ≠ `"cli-1"`, soit **le chemin d'attaque #294 réintroduit par l'algorithme lui-même** — et la formulation d'AC1 (« une valeur mixte visible+invisible ») pouvait être satisfaite par un cas central qui ne touche aucun bord. Démontré en Rust réel en passe 1 de validate. Le `trim()` placé après le retrait des invisibles **et** après NFKC nettoie aussi les blancs que NFKC vient de produire. *(Relevé en passe 1, CRITICAL, confirmé par exécution.)*
 
 Une valeur dont la forme canonique est **vide** est traitée comme absente : `client_number` reste stocké tel quel s'il porte du visible, mais si la canonique est vide, **les deux** colonnes valent `NULL`. C'est le prolongement de la garde de vacuité posée en 16-3b.
 
-**D3 — Le prédicat `is_invisible` est factorisé, et le crate d'accueil est `kesh-core`.** *(arbitrage de Guy, 2026-08-14)* Il existe aujourd'hui en **deux exemplaires identiques** dans deux crates, avec une justification écrite qui a été **réfutée** en passe 3 de revue (`kesh-api` dépend bien de `kesh-qrbill`, `Cargo.toml:12`). Cette story en fait **une seule source** : `canonical_key` et `is_invisible` vivent dans **`kesh-core`** (logique pure, zéro I/O — c'est sa définition), et **`kesh-qrbill` ajoute la dépendance**. Aucun cycle possible : `kesh-core` ne dépend d'aucun crate interne. L'alternative `kesh-db` aurait fait dépendre `kesh-qrbill` de SQLx pour une fonction pure ; la duplication aurait violé la règle DRY du dépôt — deux `is_invisible` à tenir synchrones est précisément l'état que cette story ferme.
+**D3 — Le prédicat `is_invisible` est factorisé, et le crate d'accueil est `kesh-core`.** *(arbitrage de Guy, 2026-08-14)* Il existe aujourd'hui en **deux exemplaires identiques** dans deux crates, avec une justification écrite qui a été **réfutée** en passe 3 de revue (`kesh-api` dépend bien de `kesh-qrbill`, `Cargo.toml:12`). Cette story en fait **une seule source** : `canonical_key` et `is_invisible` vivent dans **`kesh-core`** (logique pure, zéro I/O — c'est sa définition), et **`kesh-qrbill` ajoute la dépendance**. Aucun cycle possible : `kesh-core` ne dépend que de **`kesh-import`** — et d'aucun autre crate interne —, `kesh-import` ne dépend d'aucun crate interne, donc **rien dans la fermeture transitive de `kesh-core` ne revient vers `kesh-qrbill`**. *(La première rédaction affirmait « kesh-core ne dépend d'aucun crate interne » — prémisse FAUSSE, réfutée au `Cargo.toml` en passe 1 ; la conclusion tenait, pas la phrase. Une décision qui corrige une justification fausse ne peut pas en porter une elle-même.)* L'alternative `kesh-db` aurait fait dépendre `kesh-qrbill` de SQLx pour une fonction pure ; la duplication aurait violé la règle DRY du dépôt — deux `is_invisible` à tenir synchrones est précisément l'état que cette story ferme.
 
 **D4 — La migration est BREAKING, et la procédure P3 s'applique en entier.** Elle remplace la colonne générée `client_number_uniq` et sa contrainte. C'est donc :
 
@@ -66,14 +68,29 @@ MariaDB ne sait ni normaliser en NFKC, ni retirer un jeu ouvert de caractères i
 
 ⚠️ **Conséquence assumée** : le jour où une installation porte des collisions, **son binaire à jour refuse de démarrer** jusqu'à correction des données. Le message d'échec DOIT donc nommer les contacts en collision (société, ids, valeurs affichées) — c'est lui, l'outil de réparation. Et le comptage sur la base du NAS **reste un geste de prudence avant l'upgrade de production** — il n'est simplement plus bloquant pour écrire la migration, la branche retenue étant sûre dans les deux cas.
 
+**D6 — Le mécanisme d'exécution du backfill : une fonction Rust idempotente, appelée au BOOT et en fin d'IMPORT.**
+
+⚠️ **Ce mécanisme n'existait nulle part, et la spec le désignait comme « le point dur » sans le résoudre** — démontré en passe 1 : le `MIGRATOR` de sqlx ne rejoue que des fichiers `.sql` (`kesh-db/src/lib.rs:24`), le registre P7 est structurellement SQL (`PostRestoreBackfill { sql: &'static str }`, `post_restore.rs:127-136`), et la séquence de boot (`kesh-api/src/main.rs`, après `MIGRATOR.run`) ne comporte aucune étape Rust. T3 (« migration ») et T4 (« backfill en Rust ») étaient irréconciliables tels qu'écrits.
+
+Le montage retenu, et il découle des décisions déjà prises :
+
+- **La migration SQL est du DDL PUR** : elle ajoute la colonne canonique (nullable, collation explicite, cf. T3), remplace la colonne générée `_uniq` et sa contrainte. Elle n'écrit **aucune donnée** — le détecteur P7 ne la classera même pas, et c'est correct.
+- **Une fonction `backfill_client_number_canonical(pool)` dans `kesh-db`**, idempotente : elle charge les contacts dont `client_number IS NOT NULL AND <canonique> IS NULL`, calcule la canonique en Rust (`kesh-core`), **pré-scanne les collisions sur l'ensemble des contacts actifs de chaque société** et, s'il y en a, rend une erreur qui les **nomme toutes** (société, ids, valeurs affichées) sans rien écrire ; sinon elle remplit. Coût quand tout est rempli : une requête qui rend zéro ligne.
+- **Appelée au boot**, juste après `MIGRATOR.run` : c'est ici que « la migration refuse » (D5) prend sa forme concrète — **le boot refuse**, avec le rapport de collisions pour message. Idempotente, elle ne coûte rien aux boots suivants.
+- **Appelée en fin d'import d'installation** (`admin.rs`, au voisinage de l'appel existant `replay_post_restore_backfills`, `:295`) : un `.keshbackup` antérieur à cette story arrive avec la colonne vide — c'est l'esprit de P7, tenu **sans** entrée au registre SQL. En cas de collision dans le backup, l'import est refusé en `400` avec le même rapport — un backup en collision ne s'installe pas, il se répare d'abord.
+
+⚠️ **Triage P7 formel** : la migration étant DDL pur, ni le registre ni les exemptions ne la concernent — mais la **raison d'être** de P7 (une restauration rouvre le trou que le backfill fermait) est tenue par l'appel dans le chemin d'import. L'écrire dans les Dev Notes de l'implémentation pour que le test de triage n'ait pas à être contourné.
+
+*(Décision de remédiation de la passe 1 de validate — elle matérialise D5 sans rien y changer : « refuser la migration » devient « refuser le boot, et refuser l'import », seuls points où du Rust s'exécute. À confirmer par Guy si la sémantique de refus au boot appelle discussion.)*
+
 ## Acceptance Criteria
 
 **AC1 — La forme canonique est une fonction pure, testée à ses frontières.**
-Une seule fonction, dans un seul crate, appliquant D2 dans l'ordre. Couverte par des tests de table portant au minimum : casse, accents composés et décomposés (`É` NFC vs `E`+U+0301), formes de compatibilité (chiffres pleine chasse), `U+200B`, `U+FEFF`, `U+2060`, `U+00AD`, espaces de tête et de queue, chaîne vide, valeur intégralement invisible, et une valeur **mixte** visible+invisible.
-*Preuve* : `cargo test` sur le crate d'accueil, et **la mutation jouée** — neutraliser chaque étape de D2 doit faire tomber au moins un test.
+Une seule fonction, dans un seul crate, appliquant D2 dans l'ordre. Couverte par des tests de table portant au minimum : casse, accents composés et décomposés (`É` NFC vs `E`+U+0301), formes de compatibilité (chiffres pleine chasse), `U+200B`, `U+FEFF`, `U+2060`, `U+00AD`, espaces de tête et de queue, chaîne vide, valeur intégralement invisible, une valeur **mixte** visible+invisible, **et le cas de BORD qui a réfuté l'ordre initial : un invisible en bord masquant un espace (`"CLI-1 ‹U+200B›"` → `"cli-1"`, pas `"cli-1 "`)**.
+*Preuve* : `cargo test` sur le crate d'accueil, et **la mutation jouée** — neutraliser chaque étape de D2 doit faire tomber au moins un test, **et inverser l'ordre (trim d'abord) doit faire tomber le cas de bord** : c'est lui qui épingle l'ordre, pas seulement les étapes.
 
 **AC2 — `is_invisible` n'existe plus qu'en un seul exemplaire.**
-*Preuve* : `grep -rn "fn is_invisible" crates/` rend **une** ligne. Les deux appelants d'origine — la normalisation de `contacts.rs` et la garde de vacuité de `pdf.rs` — passent par elle, et leurs tests existants restent verts sans modification.
+*Preuve* : `grep -rn "fn is_invisible" crates/` rend **une** ligne. Les deux appelants d'origine — la normalisation de `contacts.rs` et la garde de vacuité de `pdf.rs` — passent par elle, et leurs tests existants restent verts **à comportement et assertions inchangés** — seuls les chemins d'import (`use`) changent, puisque la fonction déménage. *(« Sans modification » à la lettre était insatisfaisable : déplacer une fonction change au minimum l'import de ses appelants. Relevé en passe 1.)*
 
 **AC3 — La colonne canonique existe et porte l'unicité.**
 La contrainte `UNIQUE (company_id, <canonique>_uniq)` remplace celle posée en 16-3b, la colonne `_uniq` restant **générée** sur le patron du dépôt (`CASE WHEN active THEN … ELSE NULL END`), pour que l'archivage continue de **libérer** le numéro.
@@ -82,14 +99,19 @@ La contrainte `UNIQUE (company_id, <canonique>_uniq)` remplace celle posée en 1
 **AC4 — La valeur saisie reste intacte partout où elle est vue.**
 Ce que l'utilisateur a tapé est ce qui revient du `GET`, ce qui s'affiche dans la fiche, ce qui s'imprime sur le PDF et sur l'avoir, et ce que la recherche apparie.
 *Preuve* : aller-retour `POST` → `GET /contacts/{id}` sur une valeur portant des accents décomposés — la réponse rend **la même séquence d'octets** que l'entrée.
+⚠️ **Une exception, et une seule, écrite ici pour qu'AC4 et D2 ne se contredisent pas** : une valeur dont la canonique est **vide** (intégralement invisible, ou vide après retrait) est traitée comme **absente** — les deux colonnes valent `NULL` et le `GET` rend `null`, PAS la séquence saisie. C'est le prolongement délibéré de la garde de vacuité de 16-3b : un « numéro » que personne ne peut voir n'identifie rien. Ce cas reçoit son **test d'intégration** (route ou repository), pas seulement son test de table en AC1. *(Contradiction AC4 ↔ D2 relevée en passe 1.)*
 
 **AC5 — Le comportement ne dépend plus de la collation du serveur.**
-*Preuve* : un test qui pose la collation de la colonne canonique **explicitement** et vérifie que le rejet de `CLI-É1` contre `CLI-E1` **ne dépend pas** d'elle — la canonique ayant déjà replié la casse, l'égalité binaire suffit.
-⚠️ Ce test est la contrepartie de celui qui donnait une fausse confiance ; il doit **échouer** si la canonicalisation est retirée.
+*Preuve* — deux jambes, et le mot juste sur chacune :
+- **coexistence** : `CLI-É1` et `CLI-E1` sont **acceptés tous deux** — leurs canoniques (`cli-é1`, `cli-e1`) diffèrent, D2 ne replie pas les accents, et c'est voulu : deux clients légitimement distincts par un accent ne fusionnent pas. Ce résultat doit être **le même quelle que soit la collation par défaut du serveur** — c'est le bug #295 (fusion accidentelle sous collation UCA accent-insensible) qui disparaît ;
+- **collision** : deux saisies de **même** canonique (`CLI-É1` NFC contre sa forme NFD) sont rejetées `409`, pareillement indépendamment de la collation.
+⚠️ **La première rédaction disait « le REJET de `CLI-É1` contre `CLI-E1` »** — un comportement que D2 ne produit jamais, et qui aurait poussé l'implémenteur soit vers un test insatisfaisable, soit vers un repli d'accents hors-D2 fusionnant des clients distincts. Le mot juste est la **coexistence**. *(Relevé en passe 1 par deux lentilles indépendamment.)*
+⚠️ Ce test est la contrepartie de celui qui donnait une fausse confiance ; la jambe « collision » doit **échouer** si la canonicalisation est retirée.
+**Et la garantie a un support matériel** : la colonne canonique est déclarée avec une **collation binaire explicite** (`utf8mb4_bin`, cf. T3) — l'égalité d'index est l'égalité d'octets, tout ce qui devait être replié l'ayant été en Rust. Sans cette déclaration, une collation UCA du serveur pouvait reproduire #295 **sur la colonne neuve**. *(Relevé en passe 1.)*
 
-**AC6 — Le parc existant est repris, et les collisions sont traitées selon la décision D5.**
-Le backfill remplit la colonne canonique pour tous les contacts existants, et son triage P7 est fait — registre ou exemption justifiée.
-*Preuve* : un test qui seede des contacts **avant** la migration, la joue, et vérifie la canonique de chacun ; plus un test du cas de collision, conforme à la branche retenue en D5.
+**AC6 — Le parc existant est repris, et les collisions sont traitées selon la décision D5, par le mécanisme D6.**
+La fonction de backfill (D6) remplit la colonne canonique pour tous les contacts existants, est appelée au boot et en fin d'import, et l'esprit de P7 est tenu par le chemin d'import — la migration, DDL pur, n'écrit rien.
+*Preuve* : un test qui seede des contacts, joue la migration, **appelle la fonction de backfill**, et vérifie la canonique de chacun *(« jouer la migration » seul ne remplit RIEN — c'est la fonction Rust qui remplit, cf. D6 ; l'ancienne formulation le laissait croire)* ; un test du cas de collision — la fonction rend le rapport **nommant les contacts** et n'écrit **rien** ; un test d'**idempotence** — second appel sur base remplie, zéro écriture ; et un test du chemin d'**import** — un backup sans la colonne remplie ressort backfillé, un backup en collision est refusé en `400` avec le rapport.
 
 **AC7 — La procédure P3 est appliquée en entier.**
 `kesh_version_min_required` bumpé en dernière instruction de la migration, **et** les 10 crates du workspace à la même version dans le même commit, **et** la ligne ajoutée à `docs/migrations-idempotence-audit.md` avec ses cinq compteurs **recomptés depuis le tableau** (P5).
@@ -101,20 +123,20 @@ Le manuel utilisateur — § *Le numéro de client sur la facture* — décrit l
 ## Tasks / Subtasks
 
 - [x] **T1 — Trancher D5** (AC6). **Tranché le 2026-08-14, arbitrage de Guy : la migration REFUSE en nommant les collisions** (cf. D5 pour le raisonnement et la conséquence assumée). Le comptage sur la base du NAS reste un geste de prudence **avant l'upgrade de production**, mais n'est plus bloquant pour écrire la migration — la branche retenue est sûre que la base soit propre ou non.
-- [ ] **T2 — La fonction canonique** (AC1, AC2). Choisir le crate d'accueil (cf. D3), y écrire `canonical_key` et `is_invisible`, brancher les deux appelants existants, et écrire les tests de table. **Jouer les mutations** — une étape neutralisée doit faire tomber un test.
-- [ ] **T3 — Migration** (AC3, AC7). Remplacer la colonne générée et la contrainte, ajouter la colonne canonique, bumper `min_required` en dernière instruction, bumper les 10 crates dans le même commit. Ligne d'audit d'idempotence avec les **cinq** compteurs recomptés. Garde-fou **P6** : `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` et inspecter **chaque** site.
-- [ ] **T4 — Backfill** (AC6). En Rust, selon la branche retenue en T1. Triage **P7** : registre `POST_RESTORE_BACKFILLS` ou exemption **avec justification écrite**. Si la justification invoque « hors fenêtre », elle **doit** commencer par la chaîne `Hors fenêtre` — sinon elle échappe au contrôle.
+- [ ] **T2 — La fonction canonique** (AC1, AC2). Dans `kesh-core` (D3 tranché), écrire `canonical_key` et `is_invisible`, brancher les deux appelants existants, et écrire les tests de table. **Jouer les mutations** — une étape neutralisée doit faire tomber un test, l'ordre inversé aussi (AC1). ⚠️ Réécrire aussi le **doc-comment de `contacts.rs:291-301`** : il documente encore le motif de duplication d'`is_invisible` dont la justification a été **réfutée** en passe 3 de 16-3b — le laisser serait le résidu documentaire type de la § *Propagation post-patch*.
+- [ ] **T3 — Migration, DDL PUR** (AC3, AC5, AC7). Ajouter la colonne canonique **nullable avec `COLLATE utf8mb4_bin` explicite** (le support matériel d'AC5 — sans lui, la collation UCA du serveur reproduit #295 sur la colonne neuve), remplacer la colonne générée `_uniq` et sa contrainte, **aucune écriture de données** (le remplissage est D6). Bumper `min_required` en dernière instruction, bumper les 10 crates dans le même commit. Ligne d'audit d'idempotence avec les **cinq** compteurs recomptés. Garde-fou **P6** : `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` et inspecter **chaque** site.
+- [ ] **T4 — Backfill, mécanisme D6** (AC6). La fonction idempotente `backfill_client_number_canonical` dans `kesh-db`, appelée **au boot** (après `MIGRATOR.run`, `main.rs`) et **en fin d'import** (`admin.rs`, au voisinage de `replay_post_restore_backfills`). Refus fail-loud avec rapport nommant les collisions, aux deux chemins. La migration étant DDL pur, elle échappe au détecteur P7 **et c'est correct** — consigner dans les Dev Notes d'implémentation que l'esprit de P7 est tenu par l'appel du chemin d'import.
 - [ ] **T5 — Repository** (AC3, AC4). Écrire la canonique à la création et à la modification. ⚠️ **Le dépôt maintient SEPT listes de colonnes à la main** dans `repositories/contacts.rs` : `COLUMNS`, `FIND_BY_ID_SQL` (qui **duplique** `COLUMNS` mot pour mot), l'`INSERT`, l'`UPDATE`, `contact_snapshot_json`, `is_no_op_change`, et le helper de test `contact_to_update`. Une seule oubliée produit une perte **silencieuse** — la 16-3b l'a payé sur la septième.
 - [ ] **T6 — Tests repository** (AC3, AC5). Les quatre cas de 16-3b **plus** les trois neufs d'AC3, plus le test d'indépendance à la collation d'AC5.
 - [ ] **T7 — Route et erreur** (AC3). Le `409 CLIENT_NUMBER_ALREADY_EXISTS` doit continuer de porter son code propre — l'assertion de la **chaîne** vit dans `errors.rs`, seul endroit où le corps de la réponse est lisible.
-- [ ] **T8 — Recherche** (AC4). La recherche apparie sur la valeur **affichée**, pas sur la canonique. ⚠️ **Il y a DEUX branches `LIKE`** dans `push_where_clauses` — celle du terme échappé vide et celle du cas courant : **les deux, ou aucune**.
+- [ ] **T8 — Recherche** (AC4). La recherche apparie sur la valeur **affichée**, pas sur la canonique — donc en principe **zéro changement de code**. Le livrable est un **test de non-régression** : un contact au numéro portant des accents décomposés est retrouvé par sa graphie saisie, et la recherche ne consulte pas la colonne canonique. ⚠️ Si un changement s'avérait nécessaire : **il y a DEUX branches `LIKE`** dans `push_where_clauses` (`contacts.rs:197` et `:206`) — les deux, ou aucune. *(La première rédaction était une mise en garde sans livrable — une revue ne pouvait pas juger T8 « fait ». Relevé en passe 1.)*
 - [ ] **T9 — Documentation** (AC8). Manuel utilisateur, CHANGELOG, et fermeture des deux issues **avec mot-clé**.
 
 ## Dev Notes
 
 ### Le rayon d'impact, mesuré et non supposé
 
-`crates/kesh-db/src/repositories/contacts.rs` — les sept listes de T5, la clause de recherche (l. ~195 et ~206), et `repositories/reconciliation.rs` qui **réutilise** `contacts::COLUMNS` sans le savoir.
+`crates/kesh-db/src/repositories/contacts.rs` — les sept listes de T5, la clause de recherche (`client_number LIKE` aux lignes **197** et **206**), et `repositories/reconciliation.rs` qui **réutilise** `contacts::COLUMNS` sans le savoir (`super::contacts::COLUMNS`, l. 203).
 `crates/kesh-api/src/routes/contacts.rs` — `normalize_optional` (partagé avec `email`, `phone`, `default_payment_terms` **et l'e-mail de compte** via `users.rs:116`, donc `POST /setup/admin` : tout changement de son comportement sort du périmètre nominal), `validate_common`, `map_contact_error`.
 `crates/kesh-qrbill/src/pdf.rs` — `is_invisible` et la garde de vacuité de `build_meta_lines`.
 
@@ -149,4 +171,31 @@ Les décomptes des Change Logs se **recomptent depuis la source**, avec leur **p
 
 La canonicalisation ne concerne que **`client_number`**. Le numéro **IDE** porte sa propre validation (format `CHE-###.###.###`, jeu de caractères fermé — aucun des trois chemins d'attaque ne s'y applique) et n'en relève pas. `email` et `phone` n'ont **aucun index unique** : aucune garantie d'unicité annoncée, donc rien que cette story doive tenir. Étendre la canonique à d'autres champs serait une story neuve, pas un élargissement de celle-ci.
 
+**`contact_persons`** — l'issue #295 propose de « pinner la table entière — et `contact_persons` avec elle » : hors périmètre **parce qu'aucune unicité n'y est portée** — pinner sa collation serait de l'hygiène sans garantie à tenir, à reprendre si une contrainte y naît un jour. *(Écrit pour qu'une passe ne le rouvre pas en lisant #295.)*
+
+**Réactivation d'un contact archivé** — le scénario « A archivé libère `CLI-1`, B le prend, on réactive A » est **inatteignable aujourd'hui** : `update` rejette un contact archivé (`repositories/contacts.rs:488`, `AND active = TRUE`, test `test_update_rejects_archived_contact`), et aucune route ne réactive. Si une réactivation naît un jour, elle devra passer par le même mapping `409 CLIENT_NUMBER_ALREADY_EXISTS` — c'est écrit ici pour elle. *(Relevé en passe 1, vérifié au code.)*
+
 *(Les « Questions ouvertes » qui occupaient cette section ont toutes été résolues le 2026-08-14 : D5 et D3 par arbitrage de Guy — inscrits dans leurs décisions respectives —, le périmètre par le présent paragraphe.)*
+
+## Change Log
+
+**2026-08-14 — `bmad-create-story validate`, PASSE 1 (Sonnet ×3, contextes frais : lentille aveugle, ground-truth, audit de conformité).**
+
+| Lentille | CRIT | HIGH | MED | LOW |
+|---|---|---|---|---|
+| Aveugle (spec seule) | 2 | 1 | 3 | 2 |
+| Ground-truth (spec vs code) | 0 | 0 | 1 | 2 |
+| Audit (checklist + CLAUDE.md + issues) | 1 | 1 | 1 | 2 |
+| **dédupliqué** | **2** | **1** | **5** | **4** |
+
+Déduplication : le mécanisme du backfill (aveugle-HIGH + audit-CRIT → **CRIT**) ; AC5 (aveugle-CRIT + audit-HIGH → **HIGH**, la remédiation étant une reformulation). Un écarté : « T1 cochée sous Status backlog » — c'est la convention du dépôt pendant un validate (précédent 22-4).
+
+- **CRIT 1 — l'ordre de D2 réintroduisait #294** : `trim()` en tête laisse un espace de queue masqué par un invisible (`"CLI-1 ‹ZWSP›"` → `"cli-1 "`). **Confirmé par exécution Rust réelle** avant patch. Réordonné (invisibles → NFKC → trim → casse), cas de bord ajouté à AC1 avec mutation d'ordre.
+- **CRIT 2 — le mécanisme du backfill Rust n'existait nulle part** : `MIGRATOR` ne rejoue que du SQL, le registre P7 est `sql: &'static str`, aucun hook de boot — T3 et T4 étaient irréconciliables. **D6 créée** : fonction idempotente, appelée au boot et en fin d'import, refus fail-loud nommant les collisions aux deux chemins ; migration DDL pur ; esprit de P7 tenu par le chemin d'import. *(Matérialise D5 sans le changer — signalé à Guy pour confirmation.)*
+- **HIGH — AC5 prescrivait le « rejet » de `CLI-É1` contre `CLI-E1`**, comportement que D2 ne produit jamais : réécrite en deux jambes (coexistence / collision), toutes deux indépendantes de la collation.
+- **5 MED** : `COLLATE utf8mb4_bin` explicite sur la colonne neuve (sans lui, #295 renaissait sur la colonne canonique — T3) · contradiction AC4 ↔ D2 sur la valeur intégralement invisible (exception écrite + test d'intégration) · « kesh-core ne dépend d'aucun crate interne » réfuté au Cargo.toml (dépend de kesh-import ; conclusion sauve, prémisse corrigée) · AC2 « sans modification » insatisfaisable (reformulée : comportement et assertions inchangés, imports exceptés) · réactivation d'un archivé — vérifiée **inatteignable** (`active = TRUE` dans l'UPDATE, test dédié) → note de périmètre au lieu d'une AC.
+- **4 LOW** : T8 sans livrable (test de non-régression défini) · doc-comment réfuté de `contacts.rs:291-301` nommé en T2 · `contact_persons` écrit au périmètre · lignes `LIKE` exactes (197/206).
+
+**Ce que le ground-truth a vérifié CONFORME, et c'est substantiel** : les sept listes de colonnes (exactement sept, lignes citées) · les deux branches `LIKE` · `contacts`/`contact_persons` seules tables sans COLLATE · les trois seules migrations `GENERATED ALWAYS` du dépôt sont bien les trois citées · `non_generated_columns` à `backup.rs:100` · `normalize_optional` partagé via `users.rs:116` · MariaDB 10.11 partout (≥ 10.6 requis) · les 10 crates à 0.9.0 · la citation du manuel mot pour mot · P2/P2-bis/P5/P6/P8 correctement appliqués · splitting : 4 crates touchés, sous le seuil de 5 · #294/#295 couvertes en entier.
+
+**Patches appliqués, symptômes grepés (zéro résidu), prochaine passe : Haiku, contexte frais.**
