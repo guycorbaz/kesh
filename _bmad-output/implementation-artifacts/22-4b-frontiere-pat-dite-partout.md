@@ -2,7 +2,7 @@
 
 ## Status
 
-review
+done
 
 ⚠️ **Née du découpage de la story 22-4**, le 2026-08-13, après quatre passes de `bmad-create-story validate`. Elle reçoit **la frontière documentaire** ; la story **22-4a** reçoit le mécanisme. Les deux se mergent dans **une seule PR** — cf. § *Découpage* de 22-4a.
 
@@ -155,7 +155,7 @@ Décider aussi du sort du label `v0.2-milestone` porté par l'issue.
 - [x] **T-c — Les quatre énoncés de DC6** (AC-b). Réécriture en **conjonction** (D-b), chaîne-pivot sans balisage (D-c).
 - [x] **T-d — Les traces** (AC-c). Mention de clôture sur les quatre entrées de limitation et les sept énoncés de contrat. **Aucune réécriture** — le `git diff` ne doit montrer que des ajouts sur ces lignes.
 - [x] **T-e — Le CHANGELOG** (AC-d). Section `## [Unreleased]` à créer, intertitre `### Sécurité` (D-d).
-- [ ] **T-f — La fermeture de l'issue** (AC-e). `closes #167` dans le message de la PR, contrôle `gh issue view` après merge, et arbitrage du label `v0.2-milestone`.
+- [x] **T-f — La fermeture de l'issue** (AC-e). `closes #167` dans le message de la PR, contrôle `gh issue view` après merge, et arbitrage du label `v0.2-milestone`. **Exécuté le 2026-08-14 après le merge de la PR #307 (squash `01e59a20`)** : `gh issue view 167 --json state` → `CLOSED` (2026-08-14T15:08:42Z, deux secondes après le merge — le mot-clé a fonctionné). Label `v0.2-milestone` **retiré** : il marque la dette *planifiée*, et une KF fermée n'en est plus ; `known-failure` + `technical-debt` restent comme trace historique.
 - [x] **T-g — Le grep de propagation, une fois les patches faits.** Rejouer le critère **D-a** sur tout le dépôt et lister ce qu'il atteint encore : `grep -rn "KF-036\|API_KEY_MANAGEMENT_FORBIDDEN\|permission effective\|hérite des pouvoirs"` sur `docs/`, `website/`, `README.md`, `CHANGELOG.md` et `_bmad-output/`. **Trier à la main** — la commande rend des traces légitimes, c'est le prix et il est bas.
 
 ## Dev Agent Record
@@ -211,7 +211,7 @@ Cette story ne touche **aucun code exécutable** — markdown, LaTeX, PDF. La §
 
 ⚠️ **Ces deux lignes ont d'abord déclaré « 1 occurrence, au passé (la note « Corrigé depuis la v0.9.0 ») » et « 8 occurrences » — exacts au moment de la rédaction (`487ab64c`), faux à HEAD.** Le finding **H1** de la passe 2 de revue de **22-4a** (`adf7ea68`) a retouché les fichiers mêmes que ces clauses attestent avoir vérifiés : il a **supprimé** la note « Corrigé depuis la v0.9.0 » (qui datait le correctif d'une version publiée qui ne le contient pas), ajouté une occurrence de `KF-036` au manuel LaTeX et une d'`API_KEY_ADMIN_FORBIDDEN` (la note ² factures) — sans que ce tableau soit re-grepé. C'est la § *Propagation post-patch* prise en défaut **entre les deux stories de la même PR** : le patch d'une story sœur touche un fichier que l'autre déclare vérifié, et le compte rendu de celle-ci ment jusqu'au recomptage. *(Relevé en passe 3 par deux lentilles indépendantes, recompté depuis la source aux deux bornes.)*
 
-⚠️ **AC-e reste ouverte, et par construction** : `closes #167` se porte sur le message de la PR, pas sur un fichier. La vérification `gh issue view 167` ne peut se faire **qu'après le merge**. T-f reste donc décochée — c'est le seul état honnête.
+⚠️ **AC-e est restée ouverte jusqu'au merge, et par construction** : `closes #167` se porte sur le message de la PR, pas sur un fichier, et la vérification `gh issue view 167` ne pouvait se faire **qu'après le merge**. T-f est restée décochée jusque-là — c'était le seul état honnête. **Close depuis le 2026-08-14** : PR #307 mergée, issue `CLOSED` vérifiée, label arbitré — cf. T-f.
 
 ## Dev Notes
 
