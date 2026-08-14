@@ -15,7 +15,7 @@
 //! `has_routes() -> bool`), d'où le détour par la source : c'est la seule chose
 //! qu'un ajout de route modifie forcément.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
@@ -78,16 +78,21 @@ const ADMIN_COUPLES: &[(&str, &str)] = &[
     ("POST", "/api/v1/fiscal-years/1/reopen"),
 ];
 
-/// Les chemins `GET` du bloc, que `axum` sert **aussi** en `HEAD` en rejouant le
-/// handler `get` et en tronquant le corps. Ce sont cinq couples réellement
-/// servis, réellement protégés, et qu'aucun décompte de constructeurs ne voit.
-const ADMIN_HEAD_PATHS: &[&str] = &[
-    "/api/v1/users",
-    "/api/v1/users/1",
-    "/api/v1/admin/full-export",
-    "/api/v1/admin/email-templates",
-    "/api/v1/admin/email-templates/invoice/fr",
-];
+/// Les chemins que `axum` sert **aussi** en `HEAD`, en rejouant le handler `get`
+/// et en tronquant le corps — donc exactement les chemins `GET` du bloc.
+///
+/// ⚠️ **Dérivée, et non maintenue à la main.** Une liste écrite en dur était le
+/// dernier morceau du dispositif sans rappel automatique : ajouter un `GET` admin
+/// faisait rougir le compteur puis le tuple de répartition, on corrigeait les
+/// deux, et le couple `HEAD` correspondant — réellement servi, réellement
+/// protégé — n'était exercé par rien.
+fn admin_head_paths() -> Vec<&'static str> {
+    ADMIN_COUPLES
+        .iter()
+        .filter(|(method, _)| *method == "GET")
+        .map(|(_, path)| *path)
+        .collect()
+}
 
 /// Retire les commentaires de ligne en **tronquant** chaque ligne à son premier
 /// `//`, plutôt qu'en écartant les lignes entières.
@@ -121,31 +126,40 @@ fn admin_block() -> String {
     strip_line_comments(block)
 }
 
+/// Vrai si `name(` apparaît dans `src` en **début de mot** — c'est-à-dire comme
+/// un appel et non comme la queue d'un identifiant.
+///
+/// Partagé par le compteur et par la liste des constructeurs interdits : sans
+/// cette frontière, `contains("any(")` est vrai pour tout `…company(`, et
+/// `contains("on(")` pour tout `…reconciliation(`.
+fn contains_word_call(src: &str, name: &str) -> bool {
+    count_word_calls(src, name) > 0
+}
+
+/// Nombre d'occurrences de `name(` en début de mot.
+fn count_word_calls(src: &str, name: &str) -> usize {
+    let needle = format!("{name}(");
+    let mut n = 0usize;
+    let mut from = 0usize;
+    while let Some(pos) = src[from..].find(&needle) {
+        let abs = from + pos;
+        let boundary = abs == 0 || {
+            let prev = src[..abs].chars().next_back().expect("abs > 0");
+            !prev.is_alphanumeric() && prev != '_'
+        };
+        if boundary {
+            n += 1;
+        }
+        from = abs + needle.len();
+    }
+    n
+}
+
 /// Compte les constructeurs de méthode par nom.
 fn count_method_constructors(src: &str) -> BTreeMap<&'static str, usize> {
     let mut counts = BTreeMap::new();
     for name in ["get", "post", "put", "delete", "patch", "head", "options"] {
-        let needle = format!("{name}(");
-        let mut n = 0usize;
-        let mut from = 0usize;
-        while let Some(pos) = src[from..].find(&needle) {
-            let abs = from + pos;
-            // Frontière de mot à gauche : évite de compter `delete_invoice(`,
-            // `restore_email_template_default(` ou `set_endpoint(`.
-            // Frontière lue en CARACTÈRE et non en octet : `bytes[abs - 1] as char`
-            // réinterpréterait un octet de continuation UTF-8 (0x80–0xBF) comme un
-            // point de code Latin-1, dont `is_alphanumeric()` répond au hasard vis-à-vis
-            // du vrai caractère. Inoffensif tant que le bloc est ASCII, faux dès qu'un
-            // identifiant accentué jouxte un constructeur.
-            let boundary = abs == 0 || {
-                let prev = src[..abs].chars().next_back().expect("abs > 0");
-                !prev.is_alphanumeric() && prev != '_'
-            };
-            if boundary {
-                n += 1;
-            }
-            from = abs + needle.len();
-        }
+        let n = count_word_calls(src, name);
         if n > 0 {
             counts.insert(name, n);
         }
@@ -163,8 +177,14 @@ fn lib_rs_has_no_double_slash_inside_literals() {
     // ce test rougit et impose un décommentage plus fin plutôt qu'une dérive
     // silencieuse des comptages.
     for (i, line) in LIB_RS.lines().enumerate() {
+        // Seul un `://` dans du CODE menace la troncature. En commentaire — un
+        // `/// cf. https://docs.rs/axum/…`, geste courant, présent dans huit
+        // autres fichiers du crate — il est inoffensif : la troncature coupe
+        // avant lui. Ne contrôler que la partie décommentée évite de faire
+        // rougir un test de sécurité pour un lien de documentation.
+        let code = line.split("//").next().unwrap_or("");
         assert!(
-            !line.contains("://"),
+            !code.contains("://"),
             "lib.rs:{} contient une URL — la troncature à `//` de \
              `strip_line_comments` n'est plus sûre : {}",
             i + 1,
@@ -219,6 +239,11 @@ fn block_declares_exactly_the_listed_couples() {
             "PUT" => "put",
             "DELETE" => "delete",
             "PATCH" => "patch",
+            // `head` et `options` sont comptés par la source : les rendre
+            // exprimables ici, sinon leur ajout mène à un cul-de-sac — le
+            // compteur rougit, et la liste refuse la méthode qui le corrigerait.
+            "HEAD" => "head",
+            "OPTIONS" => "options",
             other => panic!("méthode inattendue dans ADMIN_COUPLES : {other}"),
         };
         *expected.entry(key).or_default() += 1;
@@ -227,6 +252,37 @@ fn block_declares_exactly_the_listed_couples() {
         counts, expected,
         "la ventilation par méthode de la source ne correspond pas à celle \
          d'ADMIN_COUPLES"
+    );
+
+    // ⚠️ Total et ventilation ne suffisent pas : un couple RECOPIÉ d'une entrée
+    // existante les satisfait tous les deux. Démontré — route neuve dans le bloc
+    // + doublon dans la liste : total 26 des deux côtés, `put` +1 des deux côtés,
+    // tout concorde, et le test HTTP exerce deux fois le même chemin en n'en
+    // exerçant jamais le nouveau. Une faute de recopie dans une liste de 26
+    // lignes est exactement ce qu'un tel contrat doit rattraper.
+    let unique: BTreeSet<&(&str, &str)> = ADMIN_COUPLES.iter().collect();
+    assert_eq!(
+        unique.len(),
+        ADMIN_COUPLES.len(),
+        "ADMIN_COUPLES contient un couple en double — le total et la ventilation \
+         restent justes, mais une route réelle n'est alors couverte par aucun test"
+    );
+
+    // ⚠️ Et le nombre d'ENREGISTREMENTS doit égaler le nombre de CHEMINS
+    // distincts. Sans cela, un `MethodRouter` rendu par un helper local —
+    // `.route("/x", admin_only_put(h))` — reste invisible au compteur : la
+    // frontière de mot qui empêche de compter `delete_invoice(` empêche aussi
+    // de compter `admin_only_put(`. Démontré : les tests restaient verts.
+    let distinct_paths: BTreeSet<&str> = ADMIN_COUPLES.iter().map(|(_, p)| *p).collect();
+    assert_eq!(
+        admin_block().matches(".route(").count(),
+        distinct_paths.len(),
+        "le bloc déclare {} enregistrements `.route(` pour {} chemins distincts \
+         dans ADMIN_COUPLES. Un écart signale une route dont le constructeur de \
+         méthode échappe au comptage — typiquement un `MethodRouter` rendu par \
+         un helper, dont le nom se termine par le nom d'une méthode.",
+        admin_block().matches(".route(").count(),
+        distinct_paths.len()
     );
 }
 
@@ -238,10 +294,10 @@ fn block_uses_no_unlisted_route_constructor() {
     // laissant le compteur à 25 : la route serait protégée, mais absente de la
     // couverture, et rien ne le signalerait.
     let block = admin_block();
-    for forbidden in ["any(", "on(", "trace(", "connect("] {
+    for forbidden in ["any", "on", "trace", "connect"] {
         assert!(
-            !block.contains(forbidden),
-            "constructeur `{forbidden}` dans admin_routes : il enregistre des \
+            !contains_word_call(&block, forbidden),
+            "constructeur `{forbidden}(` dans admin_routes : il enregistre des \
              méthodes que le compteur ne voit pas. Utilisez les constructeurs \
              nommés, ou étendez ADMIN_COUPLES *et* count_method_constructors."
         );
@@ -317,6 +373,40 @@ fn no_route_enters_the_block_by_composition() {
 }
 
 #[test]
+fn the_admin_guards_exist_once_each_and_live_inside_the_block() {
+    // ⚠️ Le trou que ferme ce test a été DÉMONTRÉ : un SECOND routeur admin,
+    // déclaré hors du bloc et mergé dans `protected` avec `require_admin_role`
+    // mais SANS `require_not_pat`, échappe à la totalité du dispositif. Le
+    // compteur reste à 25, `admin_routes` apparaît toujours 2 fois, il y a
+    // toujours 2 `.route_layer(` dans le bloc — et une route d'administration
+    // redevient atteignable par un PAT. C'est **littéralement le mode d'échec
+    // de #167**, rouvert par une autre porte.
+    //
+    // Le reste du fichier ancre la complétude au TEXTE DU BLOC. Ce test ancre
+    // l'autre moitié de la propriété : « toute route gardée par
+    // `require_admin_role` porte aussi `require_not_pat` », en interdisant qu'il
+    // existe un second site d'application.
+    let clean = strip_line_comments(LIB_RS);
+    let block = admin_block();
+    for guard in ["require_admin_role", "require_not_pat"] {
+        assert_eq!(
+            clean.matches(guard).count(),
+            1,
+            "`{guard}` doit être appliqué à UN SEUL endroit du routeur. Une \
+             seconde occurrence signale un autre sous-routeur d'administration \
+             — qui échapperait au compteur, à la liste ADMIN_COUPLES et donc à \
+             tout test anti-PAT. Montez les routes admin dans le bloc borné."
+        );
+        assert!(
+            block.contains(guard),
+            "`{guard}` n'est plus appliqué DANS le bloc borné. L'unicité ne \
+             suffit pas : il faut que l'unique application soit celle que le \
+             compteur surveille."
+        );
+    }
+}
+
+#[test]
 fn the_block_carries_no_block_comment() {
     // `strip_line_comments` ne connaît que `//`. Un commentaire `/* … */` dont la
     // prose mentionne `get(` serait compté comme un constructeur — démontré : le
@@ -345,16 +435,19 @@ fn admin_routes_is_never_reassigned() {
          — sa déclaration et son `.merge(`. Toute autre occurrence est \
          probablement une réaffectation qui contourne les couches."
     );
-    let assignments = clean
-        .lines()
-        .filter(|l| {
-            let t = l.trim_start();
-            t.starts_with("admin_routes") && t.contains('=') || t.contains("mut admin_routes")
-        })
-        .count();
-    assert_eq!(
-        assignments, 0,
-        "réaffectation de `admin_routes` détectée hors de sa déclaration `let`"
+    // Le compte d'occurrences ci-dessus est le garde-fou principal — toute
+    // réaffectation en ajoute une. Ce second contrôle vise la forme `mut`, qui
+    // annonce l'intention de réaffecter avant même qu'elle s'écrive.
+    //
+    // ⚠️ Il ne cherche PAS les lignes « commençant par admin_routes et
+    // contenant = » : cette formulation dépendait d'une précédence d'opérateurs
+    // douteuse et ratait une réaffectation coupée sur deux lignes. Le compte
+    // d'occurrences, lui, la voit quelle que soit sa mise en page.
+    assert!(
+        !clean.contains("mut admin_routes"),
+        "`admin_routes` déclaré `mut` : la seule raison de le rendre mutable est \
+         de le réaffecter plus loin, ce qui ferait échapper les routes ajoutées \
+         aux deux couches ET au compteur."
     );
 }
 
@@ -628,25 +721,46 @@ async fn read_only_pat_is_stopped_by_the_right_guard_on_each_couple(pool: MySqlP
     );
 }
 
-/// Les cinq `HEAD` servis par les handlers `get` sont protégés eux aussi.
+/// Les `HEAD` servis par les handlers `get` sont protégés eux aussi.
 ///
 /// ⚠️ **Seul le statut est assertable ici** : une réponse `HEAD` n'a pas de
-/// corps, donc `error.code` est illisible par construction. C'est une preuve
-/// plus faible que celle des autres couples — assumée, parce que `HEAD` emprunte
+/// corps, donc `error.code` est illisible par construction. C'est une preuve plus
+/// faible que celle des autres couples — assumée, parce que `HEAD` emprunte
 /// exactement la pile de couches de son `GET`, déjà couvert au code.
+///
+/// ⚠️⚠️ **Et sur un chemin, la preuve est NULLE, non pas seulement faible.**
+/// `/api/v1/admin/full-export` porte la garde intrinsèque `ensure_not_pat` de la
+/// décision D3, qui rend elle aussi un `403` : couche retirée, ce couple resterait
+/// **vert**. Les autres chemins n'ont pas de garde dans leur handler et sont donc
+/// bien sensibles. Le fait est nommé ici plutôt que masqué — c'est le prix d'une
+/// redondance assumée, et il faut savoir où elle rend un test aveugle.
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn head_couples_are_denied_too(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let pat = pat_for(&app, &pool, "HEAD", Role::Admin, "read").await;
 
-    for path in ADMIN_HEAD_PATHS {
+    // Les chemins dont le handler porte une garde intrinsèque : leur `403` peut
+    // venir d'ailleurs que de la couche, donc ils ne discriminent pas.
+    const GUARDED_BY_HANDLER: &[&str] = &["/api/v1/admin/full-export"];
+
+    let mut discriminating = 0usize;
+    for path in admin_head_paths() {
         let resp = app.send("HEAD", path, &pat).await;
         assert_eq!(
             resp.status(),
             403,
             "HEAD {path} est servi par le handler GET et doit être refusé"
         );
+        if !GUARDED_BY_HANDLER.contains(&path) {
+            discriminating += 1;
+        }
     }
+    assert!(
+        discriminating >= 4,
+        "moins de quatre couples HEAD discriminants : la preuve de ce test \
+         reposerait presque entièrement sur des chemins dont le handler rend \
+         déjà 403 par lui-même"
+    );
 }
 
 /// D6 — quand les deux couches refusent, c'est l'anti-PAT qui répond.

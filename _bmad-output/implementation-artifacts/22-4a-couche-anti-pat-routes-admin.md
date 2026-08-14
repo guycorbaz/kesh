@@ -204,7 +204,7 @@ Un PAT créé par un **Comptable**, présenté sur une route d'`admin_routes` : 
 
 **AC2 — Le cas nominal n'est pas cassé.**
 Un PAT `read-write` créé par un **Comptable** conserve l'accès à tout ce qu'il pouvait atteindre : écritures, factures, contacts, produits.
-*Preuve* : `api_keys_e2e.rs` reste vert **sans modification** — ses onze contextes sont créés en rôle Comptable et aucun de ses tests n'exerce une route d'`admin_routes`.
+*Preuve* : `api_keys_e2e.rs` reste vert **sans modification** — ses **onze tests**, en **douze contextes** (l'un en crée deux), sont tous en rôle Comptable, et aucun n'exerce une route d'`admin_routes`.
 
 **AC3 — Un Admin devant son navigateur n'est pas affecté.**
 La couche ne regarde que `api_key_id`, jamais le rôle.
@@ -252,6 +252,12 @@ La couche ne regarde que `api_key_id`, jamais le rôle.
 - [x] **T5 — Non-régression** (AC2, AC3). `api_keys_e2e.rs` et les E2E d'administration restent verts. **Trois assertions changent, et trois seulement.** ⚠️ Ne pas toucher à `api_keys_e2e.rs:425`.
   - [x] **La fixture frontend `frontend/src/lib/features/admin-backup/admin-backup.api.test.ts:112`** porte `API_KEY_MANAGEMENT_FORBIDDEN` et devient un mensonge sur le contrat — **sans rougir**, puisqu'elle n'asserte qu'un rejet.
   - [x] **L'assertion de source de D3** : les trois appels à `ensure_not_pat` d'`admin.rs` (`:37`, `:143`) et de `fiscal_years.rs` (`:317`) vérifiés présents par `include_str!`.
+- [ ] **T7 — Le gate complet, rejoué au DERNIER commit de la boucle de revue** (§ *Test Locally First*). Le `2177/2177` a été mesuré au commit de dev ; les passes 1 et 2 de revue ont modifié du code de test **après** lui. La § *Pendant une boucle de revue* autorise le gate ciblé entre les passes — elle impose le gate complet **avant le `git push`** qui ouvrira la PR.
+  - [ ] `cargo fmt --all -- --check` + `cargo clippy --workspace --all-targets -- -D warnings`
+  - [ ] gate backend complet, profil `ci` (`fail-fast = false`, `retries = 1`)
+  - [ ] frontend : `npm run check`, `lint-i18n-ownership`, `test:unit`, `build`
+  - [ ] suite E2E rejouée, et son différentiel relu contre l'issue #287
+  ⚠️ **Cette tâche manquait.** Les deux stories identifiaient soigneusement `closes #167` comme seul travail restant, et rien ne nommait le gate final — alors que la phrase « le gate complet, lui, couvrait déjà tout » se lit hors contexte comme « plus rien à rejouer ». *(Relevé en passe 2 de revue.)*
 
 ## Dev Notes
 
@@ -304,7 +310,7 @@ Les affirmations d'absence se vérifient au `grep -nF` avant d'être écrites �
 
 **Le bloc `admin_routes` est borné** par `// KESH-ADMIN-ROUTES-BEGIN` / `// KESH-ADMIN-ROUTES-END`, et porte un avertissement de six lignes aux `.route_layer(` : *toute route s'ajoute au-dessus*.
 
-**Le test de complétude** vit dans `crates/kesh-api/tests/admin_pat_denied_e2e.rs`, en deux familles qui ne prouvent pas la même chose — sept tests de **source** (sans base) pour la complétude, cinq tests **HTTP** pour le comportement.
+**Le test de complétude** vit dans `crates/kesh-api/tests/admin_pat_denied_e2e.rs`, en deux familles qui ne prouvent pas la même chose — **dix** tests de **source** (sans base) pour la complétude, **cinq** tests **HTTP** pour le comportement. *(Sept et cinq au commit de dev ; trois tests de source se sont ajoutés aux passes 1 et 2 de revue. Recompté au `grep -c` sur `^#[test]` et `^#[sqlx::test`.)*
 
 ### Deux écarts à la spec, tous deux dans le sens du durcissement
 
@@ -344,7 +350,7 @@ Les cinq couples `HEAD` n'assertent que le **statut**, pas le code : une répons
 | `crates/kesh-api/src/errors.rs` | variante `ApiKeyAdminForbidden` + bras du `match` |
 | `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl` | clé `error-api-key-admin-forbidden` |
 | `crates/kesh-i18n/src/loader.rs` | test de traduction + distinction |
-| `crates/kesh-api/tests/admin_pat_denied_e2e.rs` | **neuf** — 12 tests |
+| `crates/kesh-api/tests/admin_pat_denied_e2e.rs` | **neuf** — **15 tests** à HEAD (12 au commit de dev) |
 | `crates/kesh-api/tests/admin_full_export_e2e.rs` · `admin_full_import_e2e.rs` · `fiscal_years_e2e.rs` | les trois assertions de D2 |
 | `frontend/src/lib/features/admin-backup/admin-backup.api.test.ts` | la fixture qui ne rougit pas |
 
@@ -354,7 +360,7 @@ Les cinq couples `HEAD` n'assertent que le **statut**, pas le code : une répons
 |---|---|
 | `cargo fmt --all -- --check` | vert *(après un `cargo fmt` — l'ordre des `use` du test neuf dérivait)* |
 | `cargo clippy --workspace --all-targets -- -D warnings` | vert, 0 avertissement |
-| `cargo nextest` sur le rayon d'impact — `admin_pat_denied_e2e`, `admin_full_{export,import}_e2e`, `fiscal_years_e2e`, `api_keys_e2e`, `package(kesh-i18n)` | **111/111**, 422 s *(après les patches de la passe 1 de revue)* |
+| `cargo nextest` sur le rayon d'impact — `admin_pat_denied_e2e`, `admin_full_{export,import}_e2e`, `fiscal_years_e2e`, `api_keys_e2e`, `package(kesh-i18n)` | **112/112**, 278 s *(après les patches de la passe 2 de revue ; 111 après la passe 1, 108 au commit de dev — chaque passe ajoute des tests, d'où le périmètre déclaré)* |
 
 ⚠️ **Ce tableau a d'abord annoncé « 108/108 », et c'était trompeur sans être faux.** Ce gate a été lancé **avant** l'ajout du test i18n `admin_forbidden_message_is_translated_and_distinct_from_key_management` : 108 était le compte réel à cet instant, et il est resté écrit alors que le filtre en désignait **109**. La passe 1 de revue l'a recompté depuis la source et relevé l'écart. *C'est la § « déclarer le PÉRIMÈTRE de mesure avec le nombre » prise en défaut : un décompte sans son instant se relit contre le mauvais état.* Le gate a été rejoué après les patches de revue — **111** aujourd'hui, les deux tests neufs de la passe 1 compris. Et le **gate complet** (2177/2177), lui, couvrait déjà tout.
 | `npm run lint-i18n-ownership` | PASS |
@@ -363,7 +369,7 @@ Les cinq couples `HEAD` n'assertent que le **statut**, pas le code : une répons
 | `npm run build` | vert |
 | **Gate backend complet** — `scripts/test-fast.sh --ci` | **vert : 2177/2177**, 0 échec, 0 retry, 0 flake, 4 ignorés (préexistants), 3893 s. Code de retour du **gate** relevé à `0` dans un fichier dédié — voir le piège ci-dessous |
 
-**Périmètre du décompte** : `2177` est le total du workspace au commit de dev de cette story ; **13 tests sont neufs** — 12 dans `admin_pat_denied_e2e`, 1 dans `kesh-i18n` —, recomptés depuis la source (`grep -c` aux deux bornes). `2177 − 13 = 2164`, la ligne de base annoncée pour la v0.9.0 : les deux comptes se recoupent.
+**Périmètre du décompte** : `2177` est le total du workspace au commit de dev de cette story ; **13 tests étaient neufs à ce commit** — 12 dans `admin_pat_denied_e2e`, 1 dans `kesh-i18n` ; **16 à HEAD**, les trois tests de source ajoutés en revue compris —, recomptés depuis la source (`grep -c` aux deux bornes). `2177 − 13 = 2164`, la ligne de base annoncée pour la v0.9.0 : les deux comptes se recoupent.
 
 ### E2E Playwright — exécutés, et voici ce qu'ils permettent de conclure
 
@@ -402,6 +408,51 @@ Les cinq couples `HEAD` n'assertent que le **statut**, pas le code : une répons
 Le gate a donc été rejoué en **profil `ci`** (`fail-fast = false`, `retries = 1`), seul montage qui donne à la fois la couverture complète et l'absorption du flake connu. **Résultat : 2177/2177, sans même un retry** — la KF-038 ne s'est pas reproduite, ce qui confirme la contention comme cause et non le code.
 
 ## Change Log
+
+**2026-08-14 — `bmad-code-review`, PASSE 2 (Haiku sur la lentille aveugle, Opus sur les deux autres).**
+
+| Lentille | CRIT | HIGH | MED | LOW |
+|---|---|---|---|---|
+| Blind Hunter (Haiku, diff aplati) | 0 | 0 | 1 | 5 |
+| Edge Case Hunter (Opus) | 0 | 0 | 5 | 5 |
+| Acceptance Auditor (Opus) | 0 | 1 | 2 | 3 |
+| **dédupliqué** | **0** | **2** | **6** | **8** |
+
+Reclassements assumés : la mention de version, vue par ECH (MEDIUM) et AA (HIGH) → **HIGH** ; le second routeur admin, rapporté MEDIUM par l'ECH → **HIGH**, parce que son propre texte le qualifie de « littéralement le mode d'échec de #167, rouvert ». Plusieurs LOW de Haiku se réfutent dans leur propre énoncé (« ce n'est pas une vraie faille », « aucun changement nécessaire ») et ne sont pas comptés comme actionnables.
+
+⚠️ **Trend : passe 1 `0/1/2/2` → passe 2 `0/2/6/8`. Le volume monte franchement**, et il faut dire pourquoi plutôt que de le déplorer : la passe 1 était **Sonnet ×3**, la passe 2 **Opus ×2** sur les lentilles qui lisent le code. Les deux lentilles Opus ont **appliqué de vraies mutations** pour étayer leurs findings, ce que la passe 1 n'avait pas fait. Ce n'est pas une régression du code — c'est une revue plus sévère qui atteint enfin le fond du dispositif.
+
+### Les deux HIGH
+
+**H1 — La documentation datait le correctif de la v0.9.0, qui ne le contient pas.** `api-external.md` disait « Corrigé depuis la v0.9.0 » et le manuel « Jusqu'à la v0.9.0 … Ce défaut est corrigé ». Or v0.9.0 est **taguée, publiée et déployée** :
+
+```sh
+git merge-base --is-ancestor 94e3deb1 v0.9.0   # faux — le correctif est POSTÉRIEUR
+grep -n "^## \[" CHANGELOG.md                  # [Unreleased] … puis [0.9.0] — 2026-08-12
+```
+
+**Un administrateur sur v0.9.0 aurait lu qu'il était protégé alors qu'il ne l'est pas** — et la fausseté était dans le **PDF versionné**. C'est le défaut que 22-4b existe pour fermer, retourné : au lieu d'affirmer la faille ouverte, la doc affirmait sa fermeture là où elle est ouverte. Pire : **cela contredisait D-d de ma propre PR**, qui dit noir sur blanc que `[0.9.0]` est publiée et que le correctif va sous `[Unreleased]`. Et les deux clauses de preuve d'AC-a étaient **satisfaites** par ce texte — elles ne discriminent pas la version. Corrigé aux deux documents, PDF régénéré et vérifié au `pdftotext`.
+
+**H2 — Un SECOND routeur admin, hors du bloc, échappait à tout le dispositif.** Démontré par l'ECH : un routeur portant `require_admin_role` **sans** `require_not_pat`, mergé dans `protected`, laisse les neuf tests de source **verts** — compteur toujours à 25, `admin_routes` toujours deux occurrences, deux `.route_layer(` dans le bloc — et rend une route d'administration atteignable par un PAT. Le dispositif ancrait la complétude au **texte du bloc** ; il n'ancrait rien à la propriété « toute route gardée par `require_admin_role` porte aussi `require_not_pat` ». Fermé par `the_admin_guards_exist_once_each_and_live_inside_the_block` : chaque garde apparaît **une seule fois**, et **dans le bloc** — l'unicité seule ne suffisait pas.
+
+### Les six MEDIUM
+
+- **Un couple RECOPIÉ dans `ADMIN_COUPLES` satisfaisait total ET ventilation** — démontré. Aucune assertion ne portait sur les **chemins**. Fermés par une assertion d'unicité et par l'égalité `.route(` ↔ chemins distincts.
+- **Un `MethodRouter` rendu par un helper était invisible au compteur** : la frontière de mot qui empêche de compter `delete_invoice(` empêche aussi de compter `admin_only_put(`. Démontré. Même remède : `.route(` ↔ chemins distincts.
+- **`ADMIN_HEAD_PATHS` n'était dérivé de rien** — dernier morceau du dispositif sans rappel automatique. Désormais **calculé** depuis `ADMIN_COUPLES`, et la constante supprimée.
+- **Trois décomptes du Dev Agent Record étaient restés à leur valeur d'avant la passe 1.** Le patch de la passe 1 avait corrigé **le site signalé** (`108 → 111`) sans greper le symptôme : « sept tests de source », « 12 tests », « 13 tests neufs / 8 mutations » vivaient encore ailleurs. **C'est la § *Propagation post-patch* prise en défaut sur la story dont c'est le motif déclaré** — et c'est la deuxième fois dans ce cycle.
+- **Rien ne déclarait le gate complet à rejouer avant le push** : les deux stories nommaient soigneusement `closes #167` comme seul reste. Tâche **T7** ajoutée.
+- **Un filtre de réaffectation reposait sur une précédence d'opérateurs douteuse** et ratait une réaffectation coupée en deux lignes. Remplacé par un contrôle de `mut`, le compte d'occurrences restant le garde-fou principal.
+
+### Les huit LOW, tous traités
+
+`HEAD` sur `full-export` **ne discrimine rien** — sa garde intrinsèque de D3 rend elle aussi `403`, donc couche retirée le couple reste vert ; nommé dans le test, avec un plancher de quatre couples discriminants · les constructeurs interdits étaient cherchés en **sous-chaîne** (`any(` matche `company(`) → frontière de mot partagée avec le compteur · `HEAD`/`OPTIONS` étaient **inexprimables** dans `ADMIN_COUPLES` alors que le compteur les compte — cul-de-sac ouvert · le contrôle `://` bannissait les URL **jusque dans les commentaires**, où elles sont inoffensives · le renvoi « (point suivant) » du manuel désignait le mauvais item depuis mon insertion · `api-external.md` prescrivait encore à « un client API » une route fermée, quatre lignes sous l'avertissement qui la corrige · la ligne « Factures » couvrait un `DELETE` désormais fermé, sans la note reçue par la TVA · « onze contextes » pour onze tests en douze contextes.
+
+**Trois mutations neuves jouées, trois rougissements** — second routeur admin, couple recopié, helper de `MethodRouter`. **Treize mutations au total** sur le cycle.
+
+⚠️ **Ce que la passe 2 a vérifié SANS défaut, et qui compte** : le 405 d'une méthode non enregistrée traverse bien la couche (`MethodRouter::layer` mappe **aussi** le `fallback`) · aucun blanchiment de privilège possible depuis un PAT (`/auth/login` exige le mot de passe, `/auth/refresh` le cookie, `/settings/api-keys` garde son `ensure_not_pat`) · le corps JSON vide du helper ne masque rien · pas de 429 possible dans les boucles · un chemin renommé sans mise à jour de la liste est détecté bruyamment · `.fallback(` avant les couches est écrasé par le `fallback_service` terminal · **et toutes les clauses de preuve de 22-4b rejouées conformes**, hors les deux sites documentaires ci-dessus.
+
+---
 
 **2026-08-13 — `bmad-code-review`, PASSE 1 (Sonnet ×3, contextes frais).** Opus ayant implémenté, la rotation impose un autre modèle.
 
