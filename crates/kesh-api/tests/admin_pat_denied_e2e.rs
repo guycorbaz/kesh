@@ -173,23 +173,34 @@ fn count_method_constructors(src: &str) -> BTreeMap<&'static str, usize> {
 
 #[test]
 fn lib_rs_has_no_double_slash_inside_literals() {
-    // Prémisse de `strip_line_comments`. Si un jour une URL entre dans lib.rs,
-    // ce test rougit et impose un décommentage plus fin plutôt qu'une dérive
-    // silencieuse des comptages.
+    // Prémisse de `strip_line_comments` : la troncature au premier `//` n'est
+    // sûre que si ce `//` OUVRE réellement un commentaire. Deux cas le
+    // démentent, et c'est EUX qu'il faut chercher : un `://` d'URL dans du code
+    // (le premier `//` de la ligne est alors précédé de `:`), et un `//` à
+    // l'intérieur d'un littéral de chaîne (nombre impair de `"` avant lui). En
+    // commentaire — `/// cf. https://docs.rs/axum/…`, geste courant, présent
+    // dans huit autres fichiers du crate — il reste inoffensif : le `//` du
+    // marqueur vient avant, et c'est lui qui tronque.
+    //
+    // ⚠️ La première rédaction assertait `!code.contains("://")` APRÈS la
+    // troncature — TAUTOLOGIE : `code` s'arrête au premier `//`, il ne peut par
+    // construction pas en contenir, et le test ne pouvait jamais rougir.
+    // (Réfutée en passe 3 : le garde-fou écrit pour empêcher la dérive du
+    // compteur était lui-même muet.)
     for (i, line) in LIB_RS.lines().enumerate() {
-        // Seul un `://` dans du CODE menace la troncature. En commentaire — un
-        // `/// cf. https://docs.rs/axum/…`, geste courant, présent dans huit
-        // autres fichiers du crate — il est inoffensif : la troncature coupe
-        // avant lui. Ne contrôler que la partie décommentée évite de faire
-        // rougir un test de sécurité pour un lien de documentation.
-        let code = line.split("//").next().unwrap_or("");
-        assert!(
-            !code.contains("://"),
-            "lib.rs:{} contient une URL — la troncature à `//` de \
-             `strip_line_comments` n'est plus sûre : {}",
-            i + 1,
-            line.trim()
-        );
+        if let Some(pos) = line.find("//") {
+            let before = &line[..pos];
+            let inside_literal = before.matches('"').count() % 2 == 1;
+            let part_of_url = before.ends_with(':');
+            assert!(
+                !(inside_literal || part_of_url),
+                "lib.rs:{} : le premier `//` de la ligne n'ouvre pas un \
+                 commentaire — la troncature de `strip_line_comments` couperait \
+                 du CODE et fausserait les comptages : {}",
+                i + 1,
+                line.trim()
+            );
+        }
     }
 }
 
@@ -402,6 +413,85 @@ fn the_admin_guards_exist_once_each_and_live_inside_the_block() {
             "`{guard}` n'est plus appliqué DANS le bloc borné. L'unicité ne \
              suffit pas : il faut que l'unique application soit celle que le \
              compteur surveille."
+        );
+    }
+}
+
+#[test]
+fn the_admin_guards_have_no_alias_and_no_second_consumer_crate_wide() {
+    // Le test précédent compte les occurrences DANS `lib.rs` — un ALIAS déclaré
+    // ailleurs (`pub use require_admin_role as check_admin;` dans `rbac.rs`) le
+    // laisse vert : `lib.rs` consommerait `check_admin`, les compteurs restent
+    // à 1, et un second sous-routeur d'administration échapperait de nouveau à
+    // `require_not_pat` — la classe du second routeur, rouverte par un autre
+    // biais. Même chose pour un wrapper ou un second consommateur dans un autre
+    // module. (Relevé en passe 3.)
+    //
+    // Fermeture : sur le crate ENTIER décommenté, chaque identifiant de garde
+    // apparaît exactement DEUX fois — sa définition dans `middleware/rbac.rs`,
+    // sa consommation dans le bloc de `lib.rs`. Un alias, un ré-export, un
+    // wrapper ou un second consommateur en crée forcément une troisième, où
+    // qu'il vive : l'alias se déclare quelque part, et cette déclaration porte
+    // le nom réel.
+    fn rs_files(dir: &std::path::Path, acc: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(dir).expect("lecture d'un répertoire de src/") {
+            let path = entry.expect("entrée de répertoire lisible").path();
+            if path.is_dir() {
+                rs_files(&path, acc);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                acc.push(path);
+            }
+        }
+    }
+    fn count_word(hay: &str, word: &str) -> usize {
+        let bytes = hay.as_bytes();
+        let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+        hay.match_indices(word)
+            .filter(|(i, _)| {
+                let before_ok = *i == 0 || !is_ident(bytes[i - 1]);
+                let after = i + word.len();
+                let after_ok = after >= bytes.len() || !is_ident(bytes[after]);
+                before_ok && after_ok
+            })
+            .count()
+    }
+
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files = Vec::new();
+    rs_files(&src, &mut files);
+    assert!(
+        files.len() > 10,
+        "balayage suspect : {} fichiers .rs seulement sous src/ — le garde ne \
+         couvre plus le crate",
+        files.len()
+    );
+
+    for guard in ["require_admin_role", "require_not_pat"] {
+        let mut sites: Vec<(String, usize)> = Vec::new();
+        for path in &files {
+            let content = std::fs::read_to_string(path).expect("lecture d'un .rs de src/");
+            let n = count_word(&strip_line_comments(&content), guard);
+            if n > 0 {
+                sites.push((path.display().to_string(), n));
+            }
+        }
+        sites.sort();
+        let total: usize = sites.iter().map(|(_, n)| n).sum();
+        assert!(
+            total == 2
+                && sites.len() == 2
+                && sites
+                    .iter()
+                    .any(|(p, n)| p.ends_with("middleware/rbac.rs") && *n == 1)
+                && sites
+                    .iter()
+                    .any(|(p, n)| p.ends_with("src/lib.rs") && *n == 1),
+            "`{guard}` doit apparaître (hors commentaires) exactement DEUX fois \
+             dans le crate : sa définition dans middleware/rbac.rs et sa \
+             consommation dans le bloc admin_routes de lib.rs. Trouvé : {sites:?}. \
+             Une occurrence de plus signale un alias, un ré-export, un wrapper ou \
+             un second consommateur — autant de portes vers un sous-routeur \
+             d'administration sans `require_not_pat`."
         );
     }
 }

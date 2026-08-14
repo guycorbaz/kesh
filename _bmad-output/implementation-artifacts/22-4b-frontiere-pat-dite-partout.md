@@ -202,12 +202,14 @@ Cette story ne touche **aucun code exécutable** — markdown, LaTeX, PDF. La §
 
 | Clause | Résultat |
 |---|---|
-| AC-a — `KF-036` dans la doc utilisateur | **1** occurrence, au **passé** (la note « Corrigé depuis la v0.9.0 ») |
-| AC-a — `API_KEY_ADMIN_FORBIDDEN` dans `api-external.md` | **8** occurrences, dont la ligne du tableau des codes |
+| AC-a — `KF-036` dans la doc utilisateur | **2** occurrences à HEAD (`api-external.md:262`, `admin-manual.tex:1770`), toutes deux **bornées à la version** : le correctif n'est *pas* dans la v0.9.0 *(1 seule au moment de la rédaction — cf. la note sous ce tableau)* |
+| AC-a — `API_KEY_ADMIN_FORBIDDEN` dans `api-external.md` | **9** occurrences, dont la ligne du tableau des codes *(8 au moment de la rédaction — cf. la note sous ce tableau)* |
 | AC-b — chaîne-pivot | `17-2` → 1, `17-2a` → 2, `17-2c` → 1, **fichier par fichier avec son attendu** |
 | AC-c — ajouts seuls | `+2/-0`, `+4/-0`, `+8/-0`, `+6/-0`, `+4/-0`, `+4/-0`, `+4/-0` — **zéro retrait** |
 | AC-d — CHANGELOG | 1 section `[Unreleased]`, intertitre `### Sécurité` |
 | PDF à jour du `.tex` | contrôlé plus récent |
+
+⚠️ **Ces deux lignes ont d'abord déclaré « 1 occurrence, au passé (la note « Corrigé depuis la v0.9.0 ») » et « 8 occurrences » — exacts au moment de la rédaction (`487ab64c`), faux à HEAD.** Le finding **H1** de la passe 2 de revue de **22-4a** (`adf7ea68`) a retouché les fichiers mêmes que ces clauses attestent avoir vérifiés : il a **supprimé** la note « Corrigé depuis la v0.9.0 » (qui datait le correctif d'une version publiée qui ne le contient pas), ajouté une occurrence de `KF-036` au manuel LaTeX et une d'`API_KEY_ADMIN_FORBIDDEN` (la note ² factures) — sans que ce tableau soit re-grepé. C'est la § *Propagation post-patch* prise en défaut **entre les deux stories de la même PR** : le patch d'une story sœur touche un fichier que l'autre déclare vérifié, et le compte rendu de celle-ci ment jusqu'au recomptage. *(Relevé en passe 3 par deux lentilles indépendantes, recompté depuis la source aux deux bornes.)*
 
 ⚠️ **AC-e reste ouverte, et par construction** : `closes #167` se porte sur le message de la PR, pas sur un fichier. La vérification `gh issue view 167` ne peut se faire **qu'après le merge**. T-f reste donc décochée — c'est le seul état honnête.
 

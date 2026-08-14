@@ -214,7 +214,7 @@ La couche ne regarde que `api_key_id`, jamais le rôle.
 **AC4 — L'erreur dit ce qui se passe.**
 `403` avec le code `API_KEY_ADMIN_FORBIDDEN` et un message traduit sur les quatre locales, **distinct** de celui de la gestion de clés.
 *Preuve* :
-- le bras de `match` d'`errors.rs` rend la chaîne `API_KEY_ADMIN_FORBIDDEN` (calque `ApiKeyManagementForbidden`, `errors.rs:1104-1106`) ;
+- le bras de `match` d'`errors.rs` rend la chaîne `API_KEY_ADMIN_FORBIDDEN` (calque `ApiKeyManagementForbidden`, `errors.rs:1104-1106` **sur `main`** — l'insertion du variant neuf par cette story même le décale à `1119-1126` à HEAD ; c'est la classe de défaut que cette spec reproche à l'issue #167, auto-infligée, relevée en passe 3) ;
 - les tests d'AC1 lisent `body["error"]["code"]` et assertent la chaîne **de bout en bout** ;
 - un test dans **`crates/kesh-i18n/src/loader.rs`**, calqué sur `client_number_labels_are_translated_in_all_four_locales` (`:261`) : la clé existe dans les quatre locales **et** sa traduction diffère du français dans les trois autres ;
 - **le message diffère de celui de la gestion de clés** — `format(locale, "error-api-key-admin-forbidden") != format(locale, "error-api-key-management-forbidden")`, au moins en `fr-CH`.
@@ -232,7 +232,7 @@ La couche ne regarde que `api_key_id`, jamais le rôle.
 
 - [x] **T1 — La couche** (AC1, AC3). Un `route_layer` sur `admin_routes`, à côté de `require_admin_role`. L'ordre entre les deux **couches** est à arbitrer : il décide du code rendu quand toutes deux refusent. Cible en **D6**, tranchée par le test d'AC1.
   - [x] **Un commentaire d'avertissement aux deux `.route_layer(...)`** : tout ajout de route à `admin_routes` se fait **au-dessus** d'eux — et jamais par réaffectation plus loin dans le fichier —, sinon il échappe aux deux couches (cf. **D1**).
-- [x] **T2 — Le code d'erreur** (AC4). Variante `AppError`, bras dans le `match` d'`errors.rs` (calque `ApiKeyManagementForbidden`, `:1104-1106`), clé i18n sur les **quatre** locales, **message distinct**. ⚠️ La variante **s'ajoute** : `API_KEY_MANAGEMENT_FORBIDDEN` garde son consommateur (cf. D5).
+- [x] **T2 — Le code d'erreur** (AC4). Variante `AppError`, bras dans le `match` d'`errors.rs` (calque `ApiKeyManagementForbidden`, `:1104-1106` sur `main` — `1119-1126` à HEAD, cf. AC4), clé i18n sur les **quatre** locales, **message distinct**. ⚠️ La variante **s'ajoute** : `API_KEY_MANAGEMENT_FORBIDDEN` garde son consommateur (cf. D5).
 - [x] **T3 — Le test de complétude** (AC1). `include_str!` sur `lib.rs`, bornes par marqueurs, et les **cinq exigences** d'AC1 :
   - [x] compter les constructeurs de méthode, assertion **exacte `== 25`** — jamais un plancher ;
   - [x] tronquer chaque ligne à son premier `//` avant comptage ;
@@ -259,11 +259,22 @@ La couche ne regarde que `api_key_id`, jamais le rôle.
   - [ ] suite E2E rejouée, et son différentiel relu contre l'issue #287
   ⚠️ **Cette tâche manquait.** Les deux stories identifiaient soigneusement `closes #167` comme seul travail restant, et rien ne nommait le gate final — alors que la phrase « le gate complet, lui, couvrait déjà tout » se lit hors contexte comme « plus rien à rejouer ». *(Relevé en passe 2 de revue.)*
 
+### Review Findings — passe 3
+
+- [x] [Review][Patch] Le test-garde `lib_rs_has_no_double_slash_inside_literals` était tautologique — il ne pouvait jamais rougir [`crates/kesh-api/tests/admin_pat_denied_e2e.rs:175`]
+- [x] [Review][Patch] Le garde d'unicité des deux gardes est contournable par un alias déclaré hors `lib.rs` — classe H2 rouverte [`crates/kesh-api/tests/admin_pat_denied_e2e.rs:409`]
+- [x] [Review][Patch] Le tableau des gates (`112/112`) et sa glose (« 111 aujourd'hui ») se contredisaient [`22-4a:363-365`]
+- [x] [Review][Patch] 22-4b déclarait 8 occurrences d'`API_KEY_ADMIN_FORBIDDEN` dans `api-external.md` — 9 à HEAD depuis H1 [`22-4b:206`]
+- [x] [Review][Patch] 22-4b citait comme preuve la note « Corrigé depuis la v0.9.0 », supprimée par H1 ; `KF-036` compte 2 occurrences, pas 1 [`22-4b:205`]
+- [x] [Review][Patch] Références `errors.rs:1104-1106` périmées — décalées à `1119-1126` par le propre diff de la story [`22-4a:217,235,266`]
+- [x] [Review][Patch] Apostrophes perdues dans les commentaires `sprint-status.yaml` ajoutés par la branche [`sprint-status.yaml:249-250`]
+- [x] [Review][Defer] Apostrophes perdues préexistantes hors du diff (`sprint-status.yaml:213,343`) — deferred, pre-existing
+
 ## Dev Notes
 
 ### Ce qui est déjà en place
 
-`ensure_not_pat` — `crates/kesh-api/src/routes/api_keys.rs:95` — teste `current_user.api_key_id.is_some()` et rend `AppError::ApiKeyManagementForbidden` (bras à `errors.rs:1104`, chaîne à `:1106`).
+`ensure_not_pat` — `crates/kesh-api/src/routes/api_keys.rs:95` — teste `current_user.api_key_id.is_some()` et rend `AppError::ApiKeyManagementForbidden` (bras à `errors.rs:1104`, chaîne à `:1106` — **numéros de `main`** ; à HEAD le bras vit à `1119`, la chaîne à `1121`, décalés par l'insertion du variant de cette story).
 
 **Ses six sites d'appel, dont la moitié seulement est concernée** : `api_keys.rs:108`, `:121`, `:211` (routes de gestion de clés, dans `comptable_routes` — **hors** périmètre) ; `admin.rs:37`, `:143`, `fiscal_years.rs:317` (les trois d'`admin_routes` — ceux de **D3**).
 
@@ -350,7 +361,7 @@ Les cinq couples `HEAD` n'assertent que le **statut**, pas le code : une répons
 | `crates/kesh-api/src/errors.rs` | variante `ApiKeyAdminForbidden` + bras du `match` |
 | `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl` | clé `error-api-key-admin-forbidden` |
 | `crates/kesh-i18n/src/loader.rs` | test de traduction + distinction |
-| `crates/kesh-api/tests/admin_pat_denied_e2e.rs` | **neuf** — **15 tests** à HEAD (12 au commit de dev) |
+| `crates/kesh-api/tests/admin_pat_denied_e2e.rs` | **neuf** — **16 tests** après les patches de la passe 3 (15 avant, 12 au commit de dev) |
 | `crates/kesh-api/tests/admin_full_export_e2e.rs` · `admin_full_import_e2e.rs` · `fiscal_years_e2e.rs` | les trois assertions de D2 |
 | `frontend/src/lib/features/admin-backup/admin-backup.api.test.ts` | la fixture qui ne rougit pas |
 
@@ -360,16 +371,16 @@ Les cinq couples `HEAD` n'assertent que le **statut**, pas le code : une répons
 |---|---|
 | `cargo fmt --all -- --check` | vert *(après un `cargo fmt` — l'ordre des `use` du test neuf dérivait)* |
 | `cargo clippy --workspace --all-targets -- -D warnings` | vert, 0 avertissement |
-| `cargo nextest` sur le rayon d'impact — `admin_pat_denied_e2e`, `admin_full_{export,import}_e2e`, `fiscal_years_e2e`, `api_keys_e2e`, `package(kesh-i18n)` | **112/112**, 278 s *(après les patches de la passe 2 de revue ; 111 après la passe 1, 108 au commit de dev — chaque passe ajoute des tests, d'où le périmètre déclaré)* |
+| `cargo nextest` sur le rayon d'impact — `admin_pat_denied_e2e`, `admin_full_{export,import}_e2e`, `fiscal_years_e2e`, `api_keys_e2e`, `package(kesh-i18n)` | **113/113**, 466 s *(après les patches de la passe 3 de revue ; 112 après la passe 2, 111 après la passe 1, 108 au commit de dev — chaque passe ajoute des tests, d'où le périmètre déclaré)* |
 
-⚠️ **Ce tableau a d'abord annoncé « 108/108 », et c'était trompeur sans être faux.** Ce gate a été lancé **avant** l'ajout du test i18n `admin_forbidden_message_is_translated_and_distinct_from_key_management` : 108 était le compte réel à cet instant, et il est resté écrit alors que le filtre en désignait **109**. La passe 1 de revue l'a recompté depuis la source et relevé l'écart. *C'est la § « déclarer le PÉRIMÈTRE de mesure avec le nombre » prise en défaut : un décompte sans son instant se relit contre le mauvais état.* Le gate a été rejoué après les patches de revue — **111** aujourd'hui, les deux tests neufs de la passe 1 compris. Et le **gate complet** (2177/2177), lui, couvrait déjà tout.
+⚠️ **Ce tableau a d'abord annoncé « 108/108 », et c'était trompeur sans être faux.** Ce gate a été lancé **avant** l'ajout du test i18n `admin_forbidden_message_is_translated_and_distinct_from_key_management` : 108 était le compte réel à cet instant, et il est resté écrit alors que le filtre en désignait **109**. La passe 1 de revue l'a recompté depuis la source et relevé l'écart. *C'est la § « déclarer le PÉRIMÈTRE de mesure avec le nombre » prise en défaut : un décompte sans son instant se relit contre le mauvais état.* Le gate est rejoué après les patches de chaque passe de revue — **113** au dernier run, tests neufs des passes 1 à 3 compris. Et le **gate complet** (2177/2177 **au commit de dev** — à rejouer avant le push, c'est la tâche T7), lui, couvrait déjà tout à son instant. *(Ce paragraphe a lui-même été pris en défaut : écrit « 111 aujourd'hui » à la passe 1, il n'a pas suivi le tableau quand la passe 2 l'a porté à 112 — la contradiction entre le tableau et sa propre glose a été relevée en passe 3. Un « aujourd'hui » dans un compte rendu est une valeur sans périmètre.)*
 | `npm run lint-i18n-ownership` | PASS |
 | `npm run check` | 0 erreur (27 avertissements préexistants) |
 | `npm run test:unit` | 512/512, 63 fichiers |
 | `npm run build` | vert |
 | **Gate backend complet** — `scripts/test-fast.sh --ci` | **vert : 2177/2177**, 0 échec, 0 retry, 0 flake, 4 ignorés (préexistants), 3893 s. Code de retour du **gate** relevé à `0` dans un fichier dédié — voir le piège ci-dessous |
 
-**Périmètre du décompte** : `2177` est le total du workspace au commit de dev de cette story ; **13 tests étaient neufs à ce commit** — 12 dans `admin_pat_denied_e2e`, 1 dans `kesh-i18n` ; **16 à HEAD**, les trois tests de source ajoutés en revue compris —, recomptés depuis la source (`grep -c` aux deux bornes). `2177 − 13 = 2164`, la ligne de base annoncée pour la v0.9.0 : les deux comptes se recoupent.
+**Périmètre du décompte** : `2177` est le total du workspace au commit de dev de cette story ; **13 tests étaient neufs à ce commit** — 12 dans `admin_pat_denied_e2e`, 1 dans `kesh-i18n` ; **17 après les patches de la passe 3** (16 après la passe 2), les quatre tests de source ajoutés en revue compris —, recomptés depuis la source (`grep -cE '^#\[(sqlx::)?test'` à chaque borne). `2177 − 13 = 2164`, la ligne de base annoncée pour la v0.9.0 : les deux comptes se recoupent.
 
 ### E2E Playwright — exécutés, et voici ce qu'ils permettent de conclure
 
@@ -408,6 +419,39 @@ Les cinq couples `HEAD` n'assertent que le **statut**, pas le code : une répons
 Le gate a donc été rejoué en **profil `ci`** (`fail-fast = false`, `retries = 1`), seul montage qui donne à la fois la couverture complète et l'absorption du flake connu. **Résultat : 2177/2177, sans même un retry** — la KF-038 ne s'est pas reproduite, ce qui confirme la contention comme cause et non le code.
 
 ## Change Log
+
+**2026-08-14 — `bmad-code-review`, PASSE 3 (Sonnet ×3, contextes frais — rotation post-Opus).**
+
+| Lentille | CRIT | HIGH | MED | LOW |
+|---|---|---|---|---|
+| Blind Hunter (diff aplati seul) | 0 | 0 | 3 | 0 |
+| Edge Case Hunter (diff + code) | 0 | 1 | 1 | 0 |
+| Acceptance Auditor (+ stories, `CLAUDE.md`) | 0 | 0 | 2 | 2 |
+| **dédupliqué** | **0** | **1** | **4** | **2** |
+
+Déduplication : les deux clauses périmées du tableau de gates de 22-4b, vues chacune par BH **et** AA — recomptées indépendamment aux mêmes valeurs (8→9, 1→2), fusionnées. **Trend : passe 2 `0/2/6/8` → passe 3 `0/1/4/2`.** Le volume redescend, et tous les findings ont été **confirmés au ground-truth** avant traitement (grep/lecture directe) ; aucun faux positif à écarter.
+
+### Le HIGH — le garde-fou de la troncature était TAUTOLOGIQUE, il ne pouvait jamais rougir
+
+`lib_rs_has_no_double_slash_inside_literals` assertait `!code.contains("://")` **après** avoir tronqué `code` au premier `//` — or `://` contient `//` : par construction, `code` ne peut jamais contenir ce qu'on y cherche. Le test écrit pour empêcher la dérive silencieuse du compteur (une URL en code tronque la ligne et rend un constructeur invisible) était lui-même **muet** — la famille de défaut que cette story existe pour fermer, dans le garde qui la ferme. Réécrit : le premier `//` de chaque ligne doit **ouvrir un commentaire** — ni précédé de `:` (URL en code), ni précédé d'un nombre impair de `"` (littéral de chaîne). **Mutation jouée** : `pub fn mutation_url() -> &'static str { "https://example.com" }` inséré dans `lib.rs` — l'ancienne assertion restait verte, la neuve rougit.
+
+### Le MEDIUM de code — l'alias d'import rouvre la classe H2 par un autre biais
+
+Le garde d'unicité de la passe 2 compte les occurrences **dans `lib.rs`** ; un `pub use require_admin_role as check_admin;` déclaré dans `rbac.rs`, consommé dans `lib.rs` sous l'alias, laisse les compteurs à 1 et rouvre le second routeur admin sans `require_not_pat`. Fermé par `the_admin_guards_have_no_alias_and_no_second_consumer_crate_wide` : sur le **crate entier décommenté**, chaque identifiant de garde apparaît exactement **deux** fois — définition dans `rbac.rs`, consommation dans le bloc — un alias, ré-export, wrapper ou second consommateur en crée forcément une troisième. **Mutation jouée** : l'alias inséré dans `rbac.rs` laisse le garde de la passe 2 **vert** (le trou, démontré) et fait rougir le neuf. **15 mutations au total sur le cycle** (13 aux passes 1-2, 2 en passe 3).
+
+### Les trois MEDIUM de comptes rendus — H1 corrigé sans propagation vers les stories
+
+Le patch H1 de la passe 2 a retouché `api-external.md` et le manuel — les fichiers mêmes que les clauses de preuve de **22-4b** attestent avoir vérifiés — sans re-greper ces clauses : « 8 occurrences » (9 à HEAD), « 1 occurrence, au passé, la note *Corrigé depuis la v0.9.0* » (note supprimée par H1, 2 occurrences à HEAD). Et dans **22-4a**, la glose du tableau de gates disait « 111 aujourd'hui » sous un tableau à 112. C'est la § *Propagation post-patch* prise en défaut **entre les deux stories de la même PR** — troisième fois du cycle, et la leçon s'affine : le rayon du grep post-patch inclut **les comptes rendus des stories sœurs qui déclarent avoir vérifié les fichiers touchés**. Corrigés aux valeurs recomptées, avec leur périmètre.
+
+### Les deux LOW
+
+Références `errors.rs:1104-1106` périmées par le propre diff de la story (le variant inséré décale de 15 lignes — la classe de défaut que la spec reproche à l'issue #167, auto-infligée) : trois sites qualifiés `main`/HEAD, le troisième trouvé par le **grep de propagation**, pas par les lentilles. Apostrophes perdues dans les commentaires `sprint-status.yaml` de la branche : restaurées lignes 249-250 ; les deux occurrences préexistantes (213, 343) vont au `deferred-work.md`.
+
+**Gate ciblé rejoué après patches : 113/113** (466 s, 0 flake), fmt et clippy workspace verts. Le rayon reste > LOW : **une passe 4 s'impose** (rotation : Haiku), critère d'arrêt non atteint.
+
+⚠️ **Ce que la passe 3 a vérifié SANS défaut** : l'ordre réel des deux couches et son arbitrage par exécution · l'absence de CORS dans `kesh-api` (pas de contournement preflight) · `OPTIONS` non enregistré passe par les deux `route_layer` · `protected` jamais réaffecté après `require_auth` · les six sites d'`ensure_not_pat` aux lignes attendues · le contrôle croisé `.route(` ↔ chemins distincts contre `service_fn` · l'arithmétique des 25 constructeurs et des couples, recomptée par deux lentilles indépendantes · les 4 locales et le test de distinction · AC-b/AC-c/AC-d de 22-4b rejouées conformes · CHANGELOG `[Unreleased]`/`### Sécurité` avant `[0.9.0]`.
+
+---
 
 **2026-08-14 — `bmad-code-review`, PASSE 2 (Haiku sur la lentille aveugle, Opus sur les deux autres).**
 
