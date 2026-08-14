@@ -1,142 +1,97 @@
-# Story 22.4 : Un jeton PAT ne doit jamais atteindre une route d'administration
+# Story 22.4 : Un jeton PAT ne doit jamais atteindre une route d'administration — DÉCOUPÉE
 
 ## Status
 
-backlog
+split
 
-## Story
+# ⚠️ NE PAS IMPLÉMENTER DEPUIS CE FICHIER
 
-**As a** administrateur d'une instance Kesh exposant une API à jeton,
-**I want** qu'un jeton fuité ne puisse en aucun cas créer un utilisateur, réinitialiser un mot de passe ou modifier la configuration de la société,
-**so that** **révoquer le jeton suffise à arrêter l'incident** — ce qui n'est pas le cas aujourd'hui.
+**Cette story a été découpée le 2026-08-13. Elle n'a plus de corps : ni décisions, ni critères d'acceptation, ni tâches.** Tout ce qu'elle prescrivait vit désormais dans ses deux moitiés, et elles seules font foi :
 
-Ferme **#167** (KF-036). Quatrième story de l'**Epic 22 « Technical Debt Closure »**, et la seule défaillance connue ouverte qui touche à la **sécurité**.
-
-## Contexte
-
-Le middleware `require_auth` accepte un jeton `Bearer kesh_pat_…` sur **toutes** les routes `/api/v1/*`. Le `CurrentUser` qu'il construit porte le **rôle courant du créateur** du jeton, relu en base. Un jeton `read-write` créé par un Admin franchit donc le contrôle de portée, puis le contrôle RBAC — et se retrouve devant les routes d'administration comme s'il était cet Admin devant son navigateur.
-
-### Pourquoi cela dépasse un simple défaut de permission
-
-La décision **DC6** de la story 17-2 interdit déjà à un PAT de **gérer les clés** (`ensure_not_pat` sur `/api/v1/settings/api-keys`), et son motif est explicite : *« une clé fuitée ne peut pas se cloner ni s'escalader »*. Mais le blocage s'arrête là, si bien qu'il existe un contournement :
-
-```
-PAT read-write fuité (créateur Admin)
-  → POST /api/v1/users            (nouvel admin, mot de passe choisi par l'attaquant)
-  → login par l'interface         (en tant que ce nouvel admin)
-  → POST /api/v1/settings/api-keys (nouvelles clés, à volonté)
-⇒ révoquer la clé d'origine n'arrête plus rien
-```
-
-**C'est la propriété de containment qui tombe**, pas seulement une permission. Un incident de fuite de clé se traite normalement par une révocation ; ici la révocation devient inopérante dès qu'un compte a été créé.
-
-### Portée réelle — et elle est étroite
-
-⚠️ **Seuls les jetons créés par un Admin sont concernés.** Un PAT créé par un Comptable est arrêté par `require_admin_role` : aucune escalade possible, et c'est le cas d'usage nominal (DC4, « gérer ses intégrations »). Les clés Admin sont rares, et la révocation reste efficace **tant qu'aucun compte n'a été créé**. Ce n'est pas une régression : la story 17-2a est la première introduction du PAT.
-
-## L'état réel du code, recompté — et il diffère de l'issue
-
-L'issue #167 date de plusieurs mois. Deux de ses éléments ont bougé, et un troisième était sous-estimé.
-
-**Les références de ligne sont périmées** : elle cite `lib.rs:102-126`, le routeur admin est aujourd'hui aux lignes **182 à 284**.
-
-**Une remédiation partielle a eu lieu depuis**, sans que l'issue soit mise à jour : `ensure_not_pat` a été posé sur `admin/full-export`, `admin/full-import` (Story 17-3a/17-3c) et `fiscal-years/{id}/reopen`.
-
-**Et le trou est bien plus large que « les routes user-management »** — recompté sur le routeur `admin_routes` :
-
-| Route sous `require_admin_role` | Gardée contre PAT ? |
+| Story | Ce qu'elle porte |
 |---|---|
-| `/api/v1/users` · `/users/{id}` · `/disable` · `/reset-password` | ❌ |
-| `/api/v1/company/invoice-settings` | ❌ |
-| `/api/v1/vat-rates` · `/vat-rates/{id}` | ❌ |
-| `/api/v1/company/dunning-settings` | ❌ |
-| `/api/v1/dunning-levels` · `/dunning-levels/{id}` | ❌ |
-| `/api/v1/invoices/{id}` (suppression) | ❌ |
-| `/api/v1/invoices/{id}/reminders/{reminderId}/cancel` | ❌ |
-| `/api/v1/admin/email-templates` (×2) | ❌ |
-| `/api/v1/companies/current/email` · `/contact-details` | ❌ |
-| `/api/v1/admin/full-export` · `/full-import` | ✅ |
-| `/api/v1/fiscal-years/{id}/reopen` | ✅ |
+| **[22-4a](22-4a-couche-anti-pat-routes-admin.md)** | Le **mécanisme** — la couche `route_layer` sur `admin_routes`, le code d'erreur `API_KEY_ADMIN_FORBIDDEN`, le test de complétude, la non-régression |
+| **[22-4b](22-4b-frontiere-pat-dite-partout.md)** | La **frontière documentaire** — le guide d'intégration, le manuel, les énoncés de DC6, les traces de limitation, le CHANGELOG, la fermeture de #167 |
 
-**Trois routes gardées sur dix-neuf.** Ce n'est pas seulement la gestion des utilisateurs : ce sont aussi les taux de TVA, les paramètres de relance, les modèles d'e-mail et les coordonnées de la société.
+**Les deux se mergent dans UNE SEULE PR**, qui porte `closes #167` — le motif est au § *Découpage* de 22-4a : livrer le mécanisme sans la documentation publierait un logiciel dont le guide d'intégration **enseigne à exploiter** un trou fermé.
 
-## Décisions
+> ⚠️ **Ce fichier est vidé délibérément, et le précédent est dans ce dépôt.** La story `17-2-api-pat-integrations.md` est restée `ready-for-dev` après son propre découpage, gardant un corps complet — et elle est devenue un « vestige » que la story 22-4 a dû démêler quatre passes durant : sa décision **D4** a d'abord visé la mauvaise cible parce que deux documents portaient la même frontière avec des statuts différents. **Un fichier découpé qui garde son corps devient une seconde source de vérité, et elle dérive.** Ici, il n'en garde aucune : seul le journal des quatre passes, qui est de l'histoire et non de la prescription.
 
-**D1 — Le blocage se pose en COUCHE sur le routeur, pas dans les handlers.**
+## Pourquoi le découpage
 
-L'issue proposait les deux options. **L'état du code tranche** : l'approche par handler a été appliquée trois fois et **oubliée seize**. Ce n'est pas un défaut de diligence, c'est la propriété d'un dispositif qui doit être rappelé à chaque ajout de route — et rien ne le rappelle. Un `route_layer` sur `admin_routes`, à côté de `require_admin_role` qui vit déjà là, se pose **une fois** et couvre par construction toute route ajoutée ensuite.
+Quatre passes de `bmad-create-story validate`, avec rotation de modèles à chaque passe. Le trend :
 
-**D2 — Un code d'erreur distinct.** `AppError::ApiKeyManagementForbidden` rend aujourd'hui `403 API_KEY_MANAGEMENT_FORBIDDEN`. Le réutiliser pour « vous ne pouvez pas rouvrir un exercice avec un jeton » **mentirait à l'appelant** : son message parle de gestion de clés. Une variante dédiée — `API_KEY_ADMIN_FORBIDDEN` — avec son message propre sur les quatre locales.
+| Passe | Modèles | CRIT | HIGH | MED | LOW |
+|---|---|---|---|---|---|
+| 1 | Sonnet ×3 | **1** | 3 | 6 | 3 |
+| 2 | Haiku (aveugle) + Opus ×2 | 0 | 3 | 7 | 3 |
+| 3 | Sonnet ×3 | 0 | **4** | 6 | 2 |
+| 4 | Haiku (aveugle) + Opus ×2 | 0 | **4** | **9** | 8 |
 
-**D3 — Les trois `ensure_not_pat` existants restent.** La couche les rend redondants sur ces routes, mais ils gardent une valeur : `full-export`, `full-import` et la réouverture d'exercice sont des opérations dont l'interdiction aux jetons est **intrinsèque**, indépendamment du routeur où elles vivent. Un déplacement de route ne doit pas les découvrir. *(Une redondance assumée et écrite vaut mieux qu'une garde retirée « parce que la couche s'en occupe ».)*
+Décomptes **dédupliqués** inter-lentilles. La sévérité maximale décroît une fois (`CRITICAL → HIGH`) puis **stagne sur trois passes**, et le volume de MEDIUM remonte en passe 4 : c'est le critère de **non-convergence réelle** de la § *Règle de splitting préventif* du `CLAUDE.md`.
 
-**D4 — La frontière DC6 est réécrite dans la spec parente.** Elle disait « un PAT ne gère pas les clés » ; elle dira « **un PAT n'atteint aucune route `require_admin_role`** ». C'est cette formulation qui rend le garde-fou vérifiable.
+**Le diagnostic est plus précis que le critère.** Ce n'est pas la story entière qui ne convergeait pas, c'est **sa frontière documentaire** : chaque passe, chaque lentille y trouvait un site de plus — d'abord le guide d'intégration entier, puis son tableau des codes d'erreur, puis trois lignes du manuel, puis quatre énoncés de DC6, puis sept énoncés de contrat dans d'autres specs. Le **mécanisme**, lui, a été confirmé exact par toutes les lentilles à chaque passe : références de ligne, décomptes, comportement d'axum, absence de route admin atteignable hors `admin_routes`.
 
-## Acceptance Criteria
+⚠️ **La cause profonde est une forme de critère, et elle est réutilisable : AC6 ÉNUMÉRAIT.** Une clause qui énumère se lit comme close, et une énumération sur un corpus mouvant ne peut jamais l'être. La story **22-4b** renverse la méthode — un **critère décidable** (`D-a`), et l'inventaire n'est plus qu'un instantané que le critère supersède.
 
-**AC1 — Aucune route admin n'est atteignable par un PAT.**
-*Preuve* : un test qui **énumère les routes du routeur `admin_routes`** et vérifie que chacune rend `403` avec un PAT `read-write` dont le créateur est Admin.
-⚠️ **L'énumération est le cœur de l'AC.** Un test qui vérifie trois routes choisies à la main reproduirait exactement le défaut qu'on corrige : il passerait, et la quatrième route ajoutée demain ne serait pas couverte. Si l'énumération dynamique n'est pas praticable avec axum, alors **une liste explicite doublée d'une assertion de comptage** — `assert_eq!(routes_testées, routes_du_routeur)` — qui **rougit** dès qu'une route est ajoutée sans son test.
+**Arbitrages de Guy** : le 2026-08-13 après la passe 3, ne pas découper mais **élaguer le Change Log** (trois des quatre HIGH portaient alors sur les comptes rendus, aucun sur le mécanisme) ; puis, après la passe 4, **découper** — la prémisse avait changé, trois des quatre HIGH touchant cette fois le mécanisme.
 
-**AC2 — Le cas nominal n'est pas cassé.**
-Un PAT `read-write` créé par un **Comptable** conserve l'accès à tout ce qu'il pouvait atteindre : écritures, factures, contacts, produits.
-*Preuve* : les tests existants de `17-2a` restent verts **sans modification**. ⚠️ S'il faut en modifier un, c'est le signe que la couche est posée trop haut.
+## Le journal des quatre passes
 
-**AC3 — Un Admin devant son navigateur n'est pas affecté.**
-La couche ne regarde que `api_key_id`, jamais le rôle.
-*Preuve* : les suites E2E d'administration — utilisateurs, TVA, relances, modèles d'e-mail — restent vertes.
+**Ce journal est de l'HISTOIRE.** Il dit ce que chaque passe a trouvé et où le correctif est parti. Il ne prescrit rien, et il n'est pas une source de vérité sur l'état du code — pour cela, 22-4a et 22-4b.
 
-**AC4 — L'erreur dit ce qui se passe.**
-`403` avec le code `API_KEY_ADMIN_FORBIDDEN` et un message traduit sur les quatre locales, distinct de celui de la gestion de clés.
-*Preuve* : l'assertion de la **chaîne** de code vit dans `errors.rs`, seul endroit où le corps de la réponse est lisible ; et le test d'appariement positionnel de `kesh-i18n`.
+### Passe 1 — 2026-08-12 (Sonnet ×3)
 
-**AC5 — Le chemin d'attaque est fermé, et le test le raconte.**
-*Preuve* : un test qui rejoue la chaîne complète — PAT Admin → `POST /api/v1/users` → **403**. C'est le test qui dit *pourquoi* la story existe ; son nom doit le porter.
+**Le défaut central était une contradiction entre deux décisions de la story.** D2 crée un code d'erreur distinct, D3 conserve les trois `ensure_not_pat` : or `route_layer` enveloppe le service, donc la couche répond avant le handler et les trois tests existants reçoivent le **nouveau** code. La première rédaction affirmait l'inverse et avertissait qu'une modification de test signalerait « une couche posée trop haut » — **un avertissement qui aurait fait remettre en cause la bonne décision.**
 
-**AC6 — La documentation dit la nouvelle frontière.**
-Manuel administrateur : ce qu'un jeton peut et ne peut pas faire, et que **l'administration en est exclue quel que soit le rôle du créateur**. La spec 17-2 (DC6) est amendée. CHANGELOG dans les mots de l'utilisateur.
+**Le CRITICAL portait sur une circularité, et il avait raison** : AC1 exigeait d'énumérer les routes du routeur, avec pour repli une assertion contre « le nombre de routes du routeur ». `axum` n'expose aucune énumération ; ce nombre n'aurait pu venir que d'une seconde constante à la main — exactement le « quelqu'un doit se souvenir » que la story existe pour éliminer.
 
-## Tasks / Subtasks
+Trois autres corrections de fond : « route » n'était pas défini (chemins contre couples méthode-chemin) ; seul le scope `read-write` était prouvé ; et D4 amendait la mauvaise cible.
 
-- [ ] **T1 — La couche** (AC1, AC3). Un `route_layer` sur `admin_routes`, à côté de `require_admin_role`. ⚠️ **Vérifier l'ordre d'application** : dans axum, `route_layer` s'empile — s'assurer que le refus PAT ne dépend pas du passage préalable du RBAC, et documenter l'ordre obtenu plutôt que le supposer.
-- [ ] **T2 — Le code d'erreur** (AC4). Variante `AppError`, ligne dans le `match` d'`errors.rs`, clé i18n sur les **quatre** locales.
-- [ ] **T3 — Le test d'énumération** (AC1). Le point difficile de la story. Chercher d'abord si axum expose les routes d'un `Router` ; sinon, liste explicite **plus** assertion de comptage qui rougit à tout ajout.
-- [ ] **T4 — Le test du chemin d'attaque** (AC5).
-- [ ] **T5 — Non-régression** (AC2, AC3). Les suites `api_pat_*` et les E2E d'administration, **sans modification**.
-- [ ] **T6 — Documentation** (AC6). Manuel admin, amendement de DC6 dans `17-2*`, CHANGELOG.
+### Passe 2 — 2026-08-13 (Haiku sur la lentille aveugle, Opus sur les deux autres)
 
-## Dev Notes
+Collecte interrompue avant remédiation ; les correctifs ont été appliqués à la reprise, le même jour.
 
-### Ce qui est déjà en place
+**Verdict sur la passe 1 : elle n'a pas menti, mais deux de ses corrections ont figé un périmètre incomplet en lui donnant l'apparence de l'exhaustivité.**
 
-`ensure_not_pat` — `crates/kesh-api/src/routes/api_keys.rs:95` — teste `current_user.api_key_id.is_some()` et rend `AppError::ApiKeyManagementForbidden`, mappé en `403 API_KEY_MANAGEMENT_FORBIDDEN` (`errors.rs:1104`).
+Les trois HIGH : le compteur mesurait les enregistrements quand le critère exige les couples ; la jambe `read-only` était un test muet sur vingt couples sur vingt-cinq, le gate de portée répondant avant la couche ; `docs/api-external.md` manquait des AC et des tâches. Les sept MEDIUM ont produit D6, l'amendement de D3 et de D4, et les exigences du mécanisme de comptage.
 
-`CurrentUser.api_key_id: Option<i64>` — `middleware/auth.rs:44`, renseigné à `Some(...)` par le chemin PAT (`auth/api_key.rs:181`) et à `None` par le chemin JWT (`auth.rs:161`). **C'est le seul discriminant nécessaire**, et il est déjà fiable.
+**Un enseignement de méthode** : le remède proposé peut être **moins bon que ce que le dépôt porte déjà**. Le relevé prescrivait un `grep -c` pour prouver l'i18n ; `kesh-i18n` a `client_number_labels_are_translated_in_all_four_locales`, qui asserte que la traduction diffère du français et ferme donc le repli silencieux. **C'est le grep de propagation post-patch qui l'a trouvé, pas la collecte.**
 
-`require_admin_role` — `middleware/rbac.rs`, appliqué en `route_layer` sur `admin_routes` (`lib.rs:284`). C'est le voisin auprès duquel la nouvelle couche se pose.
+**Réfuté** : le LOW affirmant que le bras de `match` d'`errors.rs` était en `:1105` — il est en `:1104`.
 
-### Le piège de cette story, et il est du même genre que le défaut
+### Passe 3 — 2026-08-13 (Sonnet ×3)
 
-⚠️ **Un test écrit à la main sur quelques routes reproduirait le défaut.** Seize routes sur dix-neuf ont été oubliées parce que rien ne rappelait de les traiter ; un test qui n'énumère pas oubliera de la même façon la dix-neuvième. C'est pour cela qu'AC1 exige soit l'énumération, soit une assertion de comptage qui **fail-loud** — le même raisonnement que le garde-fou **P6** du `CLAUDE.md` sur les migrations positionnelles.
+**Trois des quatre HIGH portaient sur les comptes rendus des passes précédentes**, un seul sur une clause de preuve du corps :
 
-### Ce qu'il ne faut pas « simplifier »
+- **un précédent historique était inventé** — la passe 2 affirmait que `/admin/email-templates/{…}` serait « passée d'une à trois méthodes entre 20-1 et 20-2 » ; `git log -S` établit qu'elle est **née** avec ses trois méthodes. Et « six enregistrements multi-méthodes » en compte **cinq**. Les deux avaient été recopiés dans le corps **sous un commit déclarant que chaque fait du relevé avait été revérifié depuis la source** ;
+- **la clause de preuve d'AC6 était satisfaisable sans faire le travail** : le `grep -rn "require_admin_role"` prescrit rend **sept** résultats avant tout amendement, aucun aux lignes visées ;
+- **« quatre documents » pour trois documents et quatre énoncés** — correctif appliqué à T6 et non propagé à D4 ni AC6 ;
+- **« les dix findings » pour une ventilation qui en compte treize.**
 
-Ne pas retirer les trois `ensure_not_pat` existants au motif que la couche les couvre — cf. **D3**.
+**Le MEDIUM le plus utile venait du source d'axum** : `route_layer` n'enveloppe que les routes **déjà présentes à l'appel**. Une route chaînée après les couches échappe **aux deux**, compile et ne panique pas.
 
-### Conventions de test
+### Passe 4 — 2026-08-13 (Haiku sur la lentille aveugle, Opus sur les deux autres)
 
-Mutations **jouées, pas raisonnées**. Pour AC1, la mutation est explicite : retirer la couche doit faire tomber le test, **sur toutes les routes** et non sur une seule.
-Les affirmations d'absence se vérifient au `grep -nF` avant d'être écrites.
+**Cette fois, trois des quatre HIGH touchaient le mécanisme** — c'est ce qui a renversé l'arbitrage :
 
-### References
+- **le compteur de complétude était aveugle à cinq familles de constructeurs.** Il énumérait sept constructeurs ; `axum` en exporte vingt-deux. Une route écrite `any(handler)` enregistre **neuf** méthodes, reste protégée, et **laisse le compteur à 25** : la protection tient, le **rappel** ne tient pas — or c'est le rappel qui est l'objet de la story ;
+- **la quatrième assertion était bornée au bloc, alors que le trou de `route_layer` vit APRÈS lui** : près de six cents lignes de latitude jusqu'au `.merge(`, et `build_router` utilise déjà trois fois l'idiome de réaffectation ;
+- **D4 réécrivait DC6 par remplacement, ce qui lui faisait perdre la gestion des clés** — et rendait fausses deux phrases de `17-2b` que la story déclarait « vérifiées comme restant vraies » ;
+- **le tableau des codes d'erreur d'`api-external.md:267`** — celui dont le guide dit à l'intégrateur de se fier au `code` — n'était ni dans AC6 ni dans T6.
 
-- Issue **#167** (KF-036) — dont les références de ligne sont périmées et la portée sous-estimée, cf. § *L'état réel du code*.
-- Story **17-2a** — `17-2a-api-pat-backend.md`, limitation **L3** et décisions DC2, DC4, DC6.
-- Issue **#100** — la demande d'origine de l'API à jeton.
-- `CLAUDE.md` — § *Migration breaking policy* garde-fou **P6** pour l'analogie du test fail-loud.
+Neuf MEDIUM, dont : les cinq couples `HEAD` servis par les handlers `get` et comptés nulle part ; la chaîne discriminante de la passe 3 devenue **insatisfaisable avec le travail fait**, D4 la prescrivant avec balisage et la preuve la grepant sans ; la formule d'intersection présente à deux sites de plus ; `17-2c:129` rangé « hors sujet » alors qu'il énonce la faille au présent ; sept énoncés de contrat de `17-3*`/`14-2` jamais recensés ; l'absence de `closes #167`.
 
-## Questions ouvertes
+**Et deux findings portaient sur la remédiation de la passe 3 elle-même** : le commit d'élagage du Change Log a introduit « vingt-et-une vérifications », un nombre qui ne se recompte depuis aucune source — et c'était le chiffre qui justifiait de ne pas découper. Et le repli silencieux i18n était attribué à un test qui asserte en réalité l'autre branche.
 
-1. **L'énumération des routes** — axum expose-t-il les chemins d'un `Router` construit ? Si non, l'assertion de comptage est le repli, et il faut décider **où** elle vit pour qu'un ajout de route la fasse rougir.
-2. **Les autres routeurs** — cette story ferme `admin_routes`. Le routeur **comptable+** doit-il l'être aussi ? Non par défaut : le cas d'usage nominal du PAT est précisément d'écrire des écritures et des factures. Mais **la question mérite d'être écrite et tranchée**, faute de quoi une passe de revue la rouvrira.
-3. **Les jetons existants** — faut-il alerter l'administrateur qu'un jeton créé par un Admin perd des accès qu'il avait ? Aucune migration n'est nécessaire, mais un mot au CHANGELOG évite un ticket de support.
+⚠️ **La passe 4 a aussi réfuté une vérification de la passe 3** : « le 405 est engendré après les deux couches » est vrai des chemins exclusifs et **faux des chemins partagés** entre routeurs, où le fallback du dernier routeur mergé subsiste. Conservé en Dev Notes de 22-4a.
+
+## Ce que les quatre passes ont confirmé sans défaut
+
+À reprendre depuis 22-4a et 22-4b, pas depuis ici — mais le fait mérite d'être dit : **aucune route d'administration atteignable par un PAT hors `admin_routes` n'a été trouvée**, par aucune lentille, à aucune passe. `require_admin_role` n'est appliqué qu'à un seul site. Le changement de mot de passe self-service exige la vérification Argon2 ; les mutations d'onboarding sont fermées par leur garde d'étape ; `/api/v1/setup/admin` est fermé par son compteur d'utilisateurs ; le routeur `_test` est conditionné au mode test. **Le chemin d'attaque de #167 n'a pas de branche résiduelle.**
+
+## Change Log
+
+**2026-08-13 — découpée en 22-4a et 22-4b**, sur arbitrage de Guy, après quatre passes de `validate` et deux stagnations consécutives à HIGH. Le corps de ce fichier a été **retiré** — décisions, AC, tâches et Dev Notes vivent dans les deux moitiés — pour ne pas reproduire le vestige `17-2`. Seul le journal des passes subsiste, comme histoire.
+
+**Aucun gate n'a été exécuté aux quatre passes** : la story n'a jamais eu de code.

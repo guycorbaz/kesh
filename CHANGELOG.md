@@ -8,6 +8,18 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [Unreleased]
+
+### Sécurité
+
+- **Les clés API n'accèdent plus à l'administration.** Une clé API (PAT) ne peut plus atteindre aucune fonction réservée au rôle **Administrateur**, quel que soit le rôle de la personne qui l'a créée : gestion des utilisateurs et des mots de passe, paramètres de facturation et de relance, taux de TVA, niveaux de rappel, modèles d'e-mail, coordonnées de l'entreprise, suppression d'une facture, export et import d'installation, réouverture d'un exercice clôturé. Ces opérations se font dans l'interface web.
+
+  ⚠️ **Si vous avez une intégration qui utilise une clé créée par un administrateur, elle peut perdre des accès qu'elle avait.** Les appels concernés reçoivent désormais une erreur `403` avec le code `API_KEY_ADMIN_FORBIDDEN`. Les autres usages — écritures, factures, contacts, produits, lecture des taux de TVA — sont inchangés.
+
+  **Pourquoi ce durcissement.** Jusqu'ici, une clé créée par un administrateur héritait de ses pouvoirs : qui la dérobait pouvait **créer un nouveau compte administrateur**, s'y connecter par l'interface et se forger d'autres clés. Révoquer la clé fuitée n'arrêtait alors plus l'incident. C'est cette propriété qui est rétablie : **révoquer une clé compromise suffit désormais.** ([#167](https://github.com/guycorbaz/kesh/issues/167))
+
+---
+
 ## [0.9.0] — 2026-08-12
 
 ### Ajouté

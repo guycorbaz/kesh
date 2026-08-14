@@ -72,6 +72,12 @@ La liste affiche aussi la date de dernière utilisation et le statut (active / e
 
 **La permission effective est l'intersection du rôle du créateur et de la portée de la clé.** Une clé `read-write` créée par un Comptable ne pourra pas faire ce que seul un Administrateur peut faire : la portée `read-write` ne *promeut* jamais le créateur. Appliquez le **principe du moindre privilège** (voir §8).
 
+> ⚠️ **Et cette intersection ne suffit pas : l'administration est fermée aux clés API, sans exception.** Aucune route réservée au rôle **Administrateur** n'est atteignable avec une clé, **quel que soit le rôle de son créateur** — y compris une clé `read-write` créée par un Administrateur. La réponse est `403 API_KEY_ADMIN_FORBIDDEN`.
+>
+> Concrètement, ces opérations se font **dans l'interface web** : gestion des utilisateurs et réinitialisation de mots de passe, paramètres de facturation et de relance de l'entreprise, création et modification des taux de TVA et des niveaux de rappel, modèles d'e-mail, coordonnées de l'entreprise, suppression d'une facture, export et import d'installation, réouverture d'un exercice clôturé.
+>
+> Le motif est le même que pour la gestion des clés : **une clé compromise ne doit pas pouvoir créer un compte administrateur**, sans quoi la révoquer n'arrêterait plus l'incident.
+
 ---
 
 ## 5. URL de base et périmètre des données
@@ -192,7 +198,7 @@ Pour une IA en lecture seule (analyse de comptes, génération de rapports), cr�
 
 ## 7. Ressources disponibles
 
-Les principales ressources accessibles via l'API (liste non exhaustive — toute route `/api/v1/*` de l'UI est consommable) :
+Les principales ressources accessibles via l'API (liste non exhaustive — toute route `/api/v1/*` de l'UI est consommable, **à l'exception des routes d'administration**, fermées aux clés API : cf. §4) :
 
 | Ressource | Lecture (`read`) | Écriture (`read-write`) |
 |-----------|------------------|--------------------------|
@@ -200,15 +206,20 @@ Les principales ressources accessibles via l'API (liste non exhaustive — toute
 | Plan comptable | `GET /accounts` | `POST /accounts`, … |
 | Contacts | `GET /contacts`, `GET /contacts/{id}` | `POST /contacts`, … |
 | Produits | `GET /products`, `GET /products/{id}` | `POST /products`, … |
-| Factures | `GET /invoices`, `GET /invoices/{id}` | `POST /invoices`, … |
+| Factures | `GET /invoices`, `GET /invoices/{id}` | `POST /invoices`, `PUT /invoices/{id}`, … ² |
 | Écritures comptables | `GET /journal-entries`, `GET /journal-entries/{id}` | `POST /journal-entries`, … |
-| Taux de TVA | `GET /vat-rates` | `POST /vat-rates`, `PUT /vat-rates/{id}`, `DELETE /vat-rates/{id}` ¹ |
+| Taux de TVA | `GET /vat-rates` | — ¹ |
 
 *(Préfixe `…/api/v1` omis dans le tableau. Les corps de requête d'écriture peuvent différer des champs renvoyés en lecture : référez-vous aux formulaires correspondants de l'interface web pour les champs attendus.)*
 
-¹ Réservé au rôle **Administrateur**. Comme la permission effective est
-l'intersection du rôle du créateur de la clé et de sa portée (§4), une clé
-`read-write` créée par un Comptable ne peut pas modifier les taux de TVA.
+² **Deux opérations sur les factures sont réservées à l'interface web** : `DELETE /invoices/{id}` (suppression définitive) et `POST /invoices/{id}/reminders/{reminderId}/cancel` (annulation d'un rappel) sont des routes d'administration, donc fermées aux clés (`403 API_KEY_ADMIN_FORBIDDEN`, cf. §4). Tout le reste du cycle de facturation reste ouvert.
+
+¹ **Les mutations de taux de TVA ne sont pas accessibles via l'API** :
+`POST /vat-rates`, `PUT /vat-rates/{id}` et `DELETE /vat-rates/{id}` sont
+réservées au rôle **Administrateur**, et l'administration est fermée aux clés
+API quel que soit le rôle du créateur (`403 API_KEY_ADMIN_FORBIDDEN`, cf. §4).
+Ces opérations se font dans l'interface web. La **lecture** reste ouverte à
+toute clé.
 
 ---
 
@@ -219,20 +230,22 @@ l'intersection du rôle du créateur de la clé et de sa portée (§4), une clé
 - **Principe du moindre privilège** :
   - utilisez une clé **`read`** dès que la lecture suffit (analyse, reporting, IA d'observation) ;
   - faites créer la clé par un utilisateur au **rôle le plus restreint** possible.
-- ⚠️ **Une clé créée par un Administrateur hérite des pouvoirs d'Administrateur** (création d'utilisateurs, réinitialisation de mots de passe, paramètres de facturation de la company). C'est une limitation connue de la v0.2 (voir §9, [KF-036 / #167](https://github.com/guycorbaz/kesh/issues/167)). **N'utilisez une clé d'origine Administrateur que si l'intégration en a réellement besoin.**
+- ✅ **Une clé créée par un Administrateur n'hérite PAS de ses pouvoirs d'administration.** Aucune route réservée au rôle Administrateur n'est atteignable avec une clé API (`403 API_KEY_ADMIN_FORBIDDEN`, cf. §4) — de sorte que **révoquer une clé compromise suffit à arrêter l'incident**. Appliquez néanmoins le moindre privilège pour ce que la clé peut faire : préférez la portée `read` quand la lecture suffit, et un créateur Comptable quand l'intégration n'a pas besoin d'écrire au-delà.
 - **Révoquez immédiatement** toute clé suspectée compromise : l'effet est instantané. Désactiver le compte créateur invalide également toutes ses clés.
 
 ---
 
 ## 8 bis. Endpoints utilisateurs — sémantique du `PUT`
 
+> ⚠️ **Cette section ne concerne PLUS les clés API.** `PUT /api/v1/users/:id` est une route d'administration, donc fermée aux clés (`403 API_KEY_ADMIN_FORBIDDEN`, cf. §4) : ce qui suit vaut pour l'interface web et pour toute intégration en session, pas pour un client à clé. Conservé ici parce que la sémantique de remplacement, elle, n'a pas changé — et que la même règle s'applique aux factures, qui restent accessibles par clé.
+
 ⚠️ **`PUT /api/v1/users/:id` a une sémantique de REMPLACEMENT, pas de fusion partielle.** Tout champ optionnel absent du corps JSON est **réinitialisé** côté serveur. En particulier le champ `email` (utilisé par la récupération de mot de passe self-service) : un `PUT` qui envoie seulement `{ "role": …, "active": …, "version": … }` **efface l'adresse email** de l'utilisateur — qui ne pourra plus réinitialiser son mot de passe par email.
 
-Bonne pratique pour un client API : lire l'utilisateur (`GET /api/v1/users`), puis renvoyer **tous les champs** dans le `PUT`, y compris `email` (la valeur courante si inchangée, ou `null` pour effacer délibérément).
+Bonne pratique **dans l'interface web ou pour une intégration en session** : lire l'utilisateur (`GET /api/v1/users`), puis renvoyer **tous les champs** dans le `PUT`, y compris `email` (la valeur courante si inchangée, ou `null` pour effacer délibérément).
 
 La même sémantique de remplacement s'applique à **`PUT /api/v1/invoices/:id`** (facture brouillon) : un corps qui omet `projectId` **efface le tag analytique** de la facture (Epic 19). Relisez la facture (`GET /api/v1/invoices/:id`) et renvoyez `projectId` (valeur courante ou `null` pour détaguer délibérément).
 
-> **Note recovery** : les endpoints publics de récupération de mot de passe (`POST /api/v1/auth/forgot-password`, `POST /api/v1/auth/reset-password`) ne sont **pas** des endpoints PAT — ils sont anonymes (pré-connexion). Une clé API ne peut pas déclencher de réinitialisation pour un autre utilisateur ; pour changer un mot de passe via l'API, utilisez `PUT /api/v1/users/:id/reset-password` (réservé Admin).
+> **Note recovery** : les endpoints publics de récupération de mot de passe (`POST /api/v1/auth/forgot-password`, `POST /api/v1/auth/reset-password`) ne sont **pas** des endpoints PAT — ils sont anonymes (pré-connexion). Et **aucune clé API ne peut réinitialiser un mot de passe** : `PUT /api/v1/users/:id/reset-password` est une route d'administration, fermée aux clés (`403 API_KEY_ADMIN_FORBIDDEN`, cf. §4). Cette opération se fait dans l'interface web.
 
 ---
 
@@ -243,8 +256,12 @@ La même sémantique de remplacement s'applique à **`PUT /api/v1/invoices/:id`*
 | **Portée binaire globale** | Pas de permissions fines par ressource (ex. `invoices:read` seul). Une clé est `read` ou `read-write` sur **toute** l'API de sa company. | [#100](https://github.com/guycorbaz/kesh/issues/100) |
 | **Pas de limitation de débit (*rate-limiting*) par clé** | Aucun plafond de requêtes par clé en v0.2. Mitigez via l'expiration et la révocation. | [#100](https://github.com/guycorbaz/kesh/issues/100) |
 | **Gestion des clés réservée à l'UI web** | Lister/créer/révoquer une clé via l'API est interdit (`403 API_KEY_MANAGEMENT_FORBIDDEN`), même en `read-write` — protection anti-auto-propagation. | DC6 |
-| **Auto-propagation des clés Administrateur** | Une clé `read-write` créée par un Admin atteint les routes réservées aux Admins. | [KF-036 / #167](https://github.com/guycorbaz/kesh/issues/167) (v0.3) |
+| **Administration réservée à l'interface web** | Les fonctions du rôle Administrateur ne sont pas exposées aux clés API (`403 API_KEY_ADMIN_FORBIDDEN`, cf. §4) — par conception, cf. la note ci-dessous. | — |
 | **Pas de spécification OpenAPI** | Aucun schéma OpenAPI/Swagger n'est publié en v0.2 (la base de code n'embarque pas `utoipa`). Documentez vos appels à partir de ce guide. | v0.3 |
+
+> ✅ **Corrigé — auto-propagation des clés Administrateur** ([KF-036 / #167](https://github.com/guycorbaz/kesh/issues/167)). Une clé `read-write` créée par un Administrateur atteignait auparavant les routes réservées aux Administrateurs : elle pouvait donc créer un compte administrateur, ce qui rendait la révocation de la clé inopérante. Ce n'est plus le cas. **Si une intégration existante appelait ces routes, elle reçoit désormais `403 API_KEY_ADMIN_FORBIDDEN`.**
+>
+> ⚠️ **Dans quelle version ?** Ce correctif n'est **pas** dans la v0.9.0 : il figure sous **`[Unreleased]`** du [CHANGELOG](../CHANGELOG.md) et sera livré à la prochaine version publiée. Si vous exploitez la v0.9.0, **la faille y est encore ouverte** — traitez une clé d'origine Administrateur comme un secret d'administrateur.
 
 Hors périmètre (non planifié pour v0.2) : OAuth/SSO, webhooks, serveur MCP Kesh-natif (cf. `epic-17.md` — « Hors scope »).
 
@@ -265,6 +282,7 @@ Les erreurs sont renvoyées en JSON avec ce format :
 | `401` | `UNAUTHENTICATED` | Clé absente, invalide, révoquée, expirée — ou créateur désactivé. |
 | `403` | `API_KEY_READ_ONLY` | Méthode d'écriture (`POST`/`PUT`/`PATCH`/`DELETE`) avec une clé `read`. |
 | `403` | `API_KEY_MANAGEMENT_FORBIDDEN` | Tentative de gérer des clés (`/api/v1/settings/api-keys`) via l'API. |
+| `403` | `API_KEY_ADMIN_FORBIDDEN` | Route d'**administration** atteinte avec une clé API — quel que soit le rôle du créateur de la clé. Voir §4. |
 | `400` | `VALIDATION_ERROR` | Corps de requête invalide (champ manquant, valeur hors limites, …). |
 | `404` | `NOT_FOUND` | Ressource absente ou appartenant à une autre company (anti-énumération). Certaines ressources renvoient un code spécifique (ex. `ACCOUNT_NOT_FOUND`). |
 

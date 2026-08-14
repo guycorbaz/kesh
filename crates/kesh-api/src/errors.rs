@@ -189,6 +189,21 @@ pub enum AppError {
     #[error("Gestion des clés API interdite via clé API")]
     ApiKeyManagementForbidden,
 
+    // --- Story 22-4a — un PAT n'atteint aucune route d'administration (#167) ---
+    /// Une requête authentifiée par PAT atteint une route `require_admin_role`
+    /// → `403` code `API_KEY_ADMIN_FORBIDDEN`.
+    ///
+    /// **Distincte de [`AppError::ApiKeyManagementForbidden`] à dessein** (D2) :
+    /// réutiliser celle-ci pour « vous ne pouvez pas rouvrir un exercice avec un
+    /// jeton » mentirait à l'appelant, son message parlant de gestion de clés.
+    /// Les deux coexistent — la gestion des clés vit dans `comptable_routes` et
+    /// garde son propre code (D5).
+    ///
+    /// Rendue par la couche `require_not_pat` posée sur `admin_routes`, donc
+    /// **avant** le handler, quel que soit le rôle du créateur de la clé (D6).
+    #[error("Administration interdite via clé API")]
+    ApiKeyAdminForbidden,
+
     /// L'administrateur tente de désactiver son propre compte (400).
     #[error("Impossible de désactiver son propre compte")]
     CannotDisableSelf,
@@ -1107,6 +1122,16 @@ impl IntoResponse for AppError {
                 &t(
                     "error-api-key-management-forbidden",
                     "La gestion des clés API n'est pas autorisée via une clé API. Utilisez l'interface web.",
+                ),
+            ),
+
+            // Story 22-4a — administration interdite via PAT (#167).
+            AppError::ApiKeyAdminForbidden => build_response(
+                StatusCode::FORBIDDEN,
+                "API_KEY_ADMIN_FORBIDDEN",
+                &t(
+                    "error-api-key-admin-forbidden",
+                    "Les routes d'administration ne sont pas accessibles via une clé API, quel que soit le rôle de son créateur. Utilisez l'interface web.",
                 ),
             ),
 

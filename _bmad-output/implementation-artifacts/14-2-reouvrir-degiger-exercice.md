@@ -401,6 +401,8 @@ Revue adversariale multi-passes (Review Iteration Rule), 3 reviewers ×3 passes 
 
 **Patch Pass 3 (LOW, hors boucle >LOW) :** F3-P3 — test PAT durci pour asserter le code `API_KEY_MANAGEMENT_FORBIDDEN` (prouve que le 403 vient de `ensure_not_pat`/D5, pas du RBAC), miroir `full_export_via_pat_returns_403`.
 
+**→ Code renommé par la story 22-4 (#167)** : cette route rend désormais `403 API_KEY_ADMIN_FORBIDDEN` — la couche d'`admin_routes` répond avant le handler, dont le `ensure_not_pat` subsiste (D3 de 22-4a). Énoncé d'origine conservé verbatim.
+
 **Cœur confirmé sain (9 revues)** : ordre transactionnel `reopen` (FOR UPDATE → déjà-ouvert → LIFO → UPDATE → re-SELECT défensif → audit → commit), rollback sur chaque chemin d'erreur, atomicité flip+audit (rollback-on-drop), sérialisation `reopen`/`close` par next-key locking InnoDB (index `(company_id, start_date)` vérifié au schéma réel, `status` non indexé), mapping D7 bout-en-bout (générique `IllegalStateTransition` jamais émis par reopen), parité client/serveur (validation motif code points + garde LIFO `nearestLaterClosed`), 11 clés i18n × 4 locales, 2 fallbacks svelte du dialogue de clôture corrigés + testés, `journal_entries.rs` intouché (immutabilité pilotée par statut vivant), pas de migration.
 
 **Gate final (DB de gate seedée `kesh_gate`)** : `cargo fmt/clippy/build` ✅ + `cargo test --workspace` (serial) **1985 tests, 0 échec** (dont 12 e2e reopen + 9 repo reopen) + frontend `check`/`lint-i18n`/`test:unit`/`build` ✅ (6 Vitest page fiscal-years).

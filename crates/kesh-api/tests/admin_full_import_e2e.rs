@@ -411,7 +411,9 @@ async fn full_import_via_pat_returns_403(pool: MySqlPool) {
     let resp = post_import(&app, &key, backup).await;
     assert_eq!(resp.status(), 403, "import via PAT → 403");
     let body: Value = resp.json().await.unwrap();
-    assert_eq!(body["error"]["code"], "API_KEY_MANAGEMENT_FORBIDDEN");
+    // Story 22-4a (#167) — code changé : la couche d'`admin_routes` répond avant
+    // le handler. Le `ensure_not_pat` du handler subsiste (D3), non atteint.
+    assert_eq!(body["error"]["code"], "API_KEY_ADMIN_FORBIDDEN");
 }
 
 // ============================================================

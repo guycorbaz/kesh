@@ -276,6 +276,53 @@ mod tests {
         }
     }
 
+    /// **Story 22-4a (#167)** — le message d'« administration interdite via clé
+    /// API » existe dans les quatre locales, et **dit autre chose** que celui de
+    /// la gestion de clés.
+    ///
+    /// ⚠️ Les deux assertions sont indispensables, et pour deux raisons
+    /// distinctes :
+    ///
+    /// - `!= fr` sur les trois autres locales, parce qu'une clé manquante
+    ///   **retombe silencieusement sur le français** — un test qui vérifierait
+    ///   seulement « la clé rend autre chose que son nom » serait vert sur trois
+    ///   locales vides. `kesh-i18n` n'a aucun test de parité globale, et les
+    ///   fichiers sont déjà désappariés (KF #283).
+    /// - `!= management` parce que la décision D2 crée un code distinct **au
+    ///   motif que réutiliser l'ancien message mentirait à l'appelant** : il
+    ///   parle de gestion de clés. Or la tâche prescrit de *calquer* le bras
+    ///   existant, et un calque qui copie le message satisferait toutes les
+    ///   autres clauses de preuve.
+    #[test]
+    fn admin_forbidden_message_is_translated_and_distinct_from_key_management() {
+        let bundle = I18nBundle::load(&locales_dir()).unwrap();
+        const KEY: &str = "error-api-key-admin-forbidden";
+        const NEIGHBOUR: &str = "error-api-key-management-forbidden";
+
+        let fr = bundle.format(&Locale::FrCh, KEY, None);
+        assert_ne!(fr, KEY, "{KEY} doit exister en fr-CH");
+
+        for locale in [Locale::DeCh, Locale::ItCh, Locale::EnCh] {
+            let msg = bundle.format(&locale, KEY, None);
+            assert_ne!(msg, KEY, "{KEY} doit exister en {locale:?}");
+            assert_ne!(
+                msg, fr,
+                "{KEY} en {locale:?} vaut le libellé FRANÇAIS — la clé est \
+                 absente de cette locale et le loader replie en silence"
+            );
+        }
+
+        for locale in [Locale::FrCh, Locale::DeCh, Locale::ItCh, Locale::EnCh] {
+            assert_ne!(
+                bundle.format(&locale, KEY, None),
+                bundle.format(&locale, NEIGHBOUR, None),
+                "en {locale:?}, le message d'administration interdite est \
+                 IDENTIQUE à celui de la gestion de clés — c'est précisément le \
+                 mensonge que la décision D2 refuse"
+            );
+        }
+    }
+
     #[test]
     fn format_unknown_key_returns_key() {
         let bundle = I18nBundle::load(&locales_dir()).unwrap();
