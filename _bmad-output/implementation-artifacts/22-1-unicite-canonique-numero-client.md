@@ -2,7 +2,7 @@
 
 ## Status
 
-backlog
+ready-for-dev
 
 ## Story
 
@@ -199,3 +199,11 @@ Déduplication : le mécanisme du backfill (aveugle-HIGH + audit-CRIT → **CRIT
 **Ce que le ground-truth a vérifié CONFORME, et c'est substantiel** : les sept listes de colonnes (exactement sept, lignes citées) · les deux branches `LIKE` · `contacts`/`contact_persons` seules tables sans COLLATE · les trois seules migrations `GENERATED ALWAYS` du dépôt sont bien les trois citées · `non_generated_columns` à `backup.rs:100` · `normalize_optional` partagé via `users.rs:116` · MariaDB 10.11 partout (≥ 10.6 requis) · les 10 crates à 0.9.0 · la citation du manuel mot pour mot · P2/P2-bis/P5/P6/P8 correctement appliqués · splitting : 4 crates touchés, sous le seuil de 5 · #294/#295 couvertes en entier.
 
 **Patches appliqués, symptômes grepés (zéro résidu), prochaine passe : Haiku, contexte frais.**
+
+**2026-08-14 — `bmad-create-story validate`, PASSE 2 (Haiku ×3, contextes frais). CONVERGENCE : 0 finding > LOW retenu, critère d'arrêt ATTEINT en 2 passes.**
+
+- **Aveugle** : zéro finding — cohérence D2 ↔ AC1 ↔ exception de vacuité, D5 ↔ D6 ↔ T4, AC5 ↔ T3 vérifiée point par point, aucune régression des patches de passe 1.
+- **Ground-truth** : toutes les affirmations neuves des patches confirmées au code réel (MIGRATOR, `PostRestoreBackfill { sql }`, absence de hook au boot, `admin.rs:295`, chaîne de dépendances kesh-core → kesh-import → rien, lignes LIKE, `AND active = TRUE`, les trois migrations `GENERATED ALWAYS`) ; **l'ordre neuf de D2 rejoué en Rust réel, aucun contre-exemple trouvé** (NFD/NFC, invisibles, pleine chasse, cas vides). Deux « CRITICAL » écartés comme auto-réfutés : ils constataient l'absence de `canonical_key` et du hook de boot — le code que la story doit écrire, état normal d'une spec en backlog (la lentille le notait elle-même : « tâche non démarrée »).
+- **Audit** : Change Log de passe 1 **recompté exact** contre sa propre ventilation ; D6 conforme à P7 **vérifié dans le code du test de triage** (`split_statements` + `writes_data` : une migration DDL pur passe sans entrée) ; les 4 suites citées par AC7 existent ; toutes les AC exécutables et fail-loud ; #294/#295 couvertes en entier. Trois notes LOW sans action (assertions P2-bis à détailler au dev, § du manuel à créer en T9, fichier de test d'AC3 au choix du dev).
+
+**Trend : `2/1/5/4` → `0/0/0/0` retenu. Modèles : rédaction Opus (2026-08-12) + arbitrages Guy → P1 Sonnet ×3 → P2 Haiku ×3.** Statut → `ready-for-dev`. Reste ouvert pour Guy : la note de D6 (« refuser la migration » prend la forme « refuser le boot / refuser l'import » — seuls points où du Rust s'exécute) est signalée, à lever d'un mot au lancement du dev.
