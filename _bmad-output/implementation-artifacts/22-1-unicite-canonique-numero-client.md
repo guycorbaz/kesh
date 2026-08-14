@@ -123,14 +123,14 @@ Le manuel utilisateur — § *Le numéro de client sur la facture* — décrit l
 ## Tasks / Subtasks
 
 - [x] **T1 — Trancher D5** (AC6). **Tranché le 2026-08-14, arbitrage de Guy : la migration REFUSE en nommant les collisions** (cf. D5 pour le raisonnement et la conséquence assumée). Le comptage sur la base du NAS reste un geste de prudence **avant l'upgrade de production**, mais n'est plus bloquant pour écrire la migration — la branche retenue est sûre que la base soit propre ou non.
-- [ ] **T2 — La fonction canonique** (AC1, AC2). Dans `kesh-core` (D3 tranché), écrire `canonical_key` et `is_invisible`, brancher les deux appelants existants, et écrire les tests de table. **Jouer les mutations** — une étape neutralisée doit faire tomber un test, l'ordre inversé aussi (AC1). ⚠️ Réécrire aussi le **doc-comment de `contacts.rs:291-301`** : il documente encore le motif de duplication d'`is_invisible` dont la justification a été **réfutée** en passe 3 de 16-3b — le laisser serait le résidu documentaire type de la § *Propagation post-patch*.
-- [ ] **T3 — Migration, DDL PUR** (AC3, AC5, AC7). Ajouter la colonne canonique **nullable avec `COLLATE utf8mb4_bin` explicite** (le support matériel d'AC5 — sans lui, la collation UCA du serveur reproduit #295 sur la colonne neuve), remplacer la colonne générée `_uniq` et sa contrainte, **aucune écriture de données** (le remplissage est D6). Bumper `min_required` en dernière instruction, bumper les 10 crates dans le même commit. Ligne d'audit d'idempotence avec les **cinq** compteurs recomptés. Garde-fou **P6** : `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` et inspecter **chaque** site.
-- [ ] **T4 — Backfill, mécanisme D6** (AC6). La fonction idempotente `backfill_client_number_canonical` dans `kesh-db`, appelée **au boot** (après `MIGRATOR.run`, `main.rs`) et **en fin d'import** (`admin.rs`, au voisinage de `replay_post_restore_backfills`). Refus fail-loud avec rapport nommant les collisions, aux deux chemins. La migration étant DDL pur, elle échappe au détecteur P7 **et c'est correct** — consigner dans les Dev Notes d'implémentation que l'esprit de P7 est tenu par l'appel du chemin d'import.
-- [ ] **T5 — Repository** (AC3, AC4). Écrire la canonique à la création et à la modification. ⚠️ **Le dépôt maintient SEPT listes de colonnes à la main** dans `repositories/contacts.rs` : `COLUMNS`, `FIND_BY_ID_SQL` (qui **duplique** `COLUMNS` mot pour mot), l'`INSERT`, l'`UPDATE`, `contact_snapshot_json`, `is_no_op_change`, et le helper de test `contact_to_update`. Une seule oubliée produit une perte **silencieuse** — la 16-3b l'a payé sur la septième.
-- [ ] **T6 — Tests repository** (AC3, AC5). Les quatre cas de 16-3b **plus** les trois neufs d'AC3, plus le test d'indépendance à la collation d'AC5.
-- [ ] **T7 — Route et erreur** (AC3). Le `409 CLIENT_NUMBER_ALREADY_EXISTS` doit continuer de porter son code propre — l'assertion de la **chaîne** vit dans `errors.rs`, seul endroit où le corps de la réponse est lisible.
-- [ ] **T8 — Recherche** (AC4). La recherche apparie sur la valeur **affichée**, pas sur la canonique — donc en principe **zéro changement de code**. Le livrable est un **test de non-régression** : un contact au numéro portant des accents décomposés est retrouvé par sa graphie saisie, et la recherche ne consulte pas la colonne canonique. ⚠️ Si un changement s'avérait nécessaire : **il y a DEUX branches `LIKE`** dans `push_where_clauses` (`contacts.rs:197` et `:206`) — les deux, ou aucune. *(La première rédaction était une mise en garde sans livrable — une revue ne pouvait pas juger T8 « fait ». Relevé en passe 1.)*
-- [ ] **T9 — Documentation** (AC8). Manuel utilisateur, CHANGELOG, et fermeture des deux issues **avec mot-clé**.
+- [x] **T2 — La fonction canonique** (AC1, AC2). Dans `kesh-core` (D3 tranché), écrire `canonical_key` et `is_invisible`, brancher les deux appelants existants, et écrire les tests de table. **Jouer les mutations** — une étape neutralisée doit faire tomber un test, l'ordre inversé aussi (AC1). ⚠️ Réécrire aussi le **doc-comment de `contacts.rs:291-301`** : il documente encore le motif de duplication d'`is_invisible` dont la justification a été **réfutée** en passe 3 de 16-3b — le laisser serait le résidu documentaire type de la § *Propagation post-patch*.
+- [x] **T3 — Migration, DDL PUR** (AC3, AC5, AC7). Ajouter la colonne canonique **nullable avec `COLLATE utf8mb4_bin` explicite** (le support matériel d'AC5 — sans lui, la collation UCA du serveur reproduit #295 sur la colonne neuve), remplacer la colonne générée `_uniq` et sa contrainte, **aucune écriture de données** (le remplissage est D6). Bumper `min_required` en dernière instruction, bumper les 10 crates dans le même commit. Ligne d'audit d'idempotence avec les **cinq** compteurs recomptés. Garde-fou **P6** : `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` et inspecter **chaque** site.
+- [x] **T4 — Backfill, mécanisme D6** (AC6). La fonction idempotente `backfill_client_number_canonical` dans `kesh-db`, appelée **au boot** (après `MIGRATOR.run`, `main.rs`) et **en fin d'import** (`admin.rs`, au voisinage de `replay_post_restore_backfills`). Refus fail-loud avec rapport nommant les collisions, aux deux chemins. La migration étant DDL pur, elle échappe au détecteur P7 **et c'est correct** — consigner dans les Dev Notes d'implémentation que l'esprit de P7 est tenu par l'appel du chemin d'import.
+- [x] **T5 — Repository** (AC3, AC4). Écrire la canonique à la création et à la modification. ⚠️ **Le dépôt maintient SEPT listes de colonnes à la main** dans `repositories/contacts.rs` : `COLUMNS`, `FIND_BY_ID_SQL` (qui **duplique** `COLUMNS` mot pour mot), l'`INSERT`, l'`UPDATE`, `contact_snapshot_json`, `is_no_op_change`, et le helper de test `contact_to_update`. Une seule oubliée produit une perte **silencieuse** — la 16-3b l'a payé sur la septième.
+- [x] **T6 — Tests repository** (AC3, AC5). Les quatre cas de 16-3b **plus** les trois neufs d'AC3, plus le test d'indépendance à la collation d'AC5.
+- [x] **T7 — Route et erreur** (AC3). Le `409 CLIENT_NUMBER_ALREADY_EXISTS` doit continuer de porter son code propre — l'assertion de la **chaîne** vit dans `errors.rs`, seul endroit où le corps de la réponse est lisible.
+- [x] **T8 — Recherche** (AC4). La recherche apparie sur la valeur **affichée**, pas sur la canonique — donc en principe **zéro changement de code**. Le livrable est un **test de non-régression** : un contact au numéro portant des accents décomposés est retrouvé par sa graphie saisie, et la recherche ne consulte pas la colonne canonique. ⚠️ Si un changement s'avérait nécessaire : **il y a DEUX branches `LIKE`** dans `push_where_clauses` (`contacts.rs:197` et `:206`) — les deux, ou aucune. *(La première rédaction était une mise en garde sans livrable — une revue ne pouvait pas juger T8 « fait ». Relevé en passe 1.)*
+- [x] **T9 — Documentation** (AC8). Manuel utilisateur, CHANGELOG, et fermeture des deux issues **avec mot-clé**.
 
 ## Dev Notes
 
@@ -176,6 +176,62 @@ La canonicalisation ne concerne que **`client_number`**. Le numéro **IDE** port
 **Réactivation d'un contact archivé** — le scénario « A archivé libère `CLI-1`, B le prend, on réactive A » est **inatteignable aujourd'hui** : `update` rejette un contact archivé (`repositories/contacts.rs:488`, `AND active = TRUE`, test `test_update_rejects_archived_contact`), et aucune route ne réactive. Si une réactivation naît un jour, elle devra passer par le même mapping `409 CLIENT_NUMBER_ALREADY_EXISTS` — c'est écrit ici pour elle. *(Relevé en passe 1, vérifié au code.)*
 
 *(Les « Questions ouvertes » qui occupaient cette section ont toutes été résolues le 2026-08-14 : D5 et D3 par arbitrage de Guy — inscrits dans leurs décisions respectives —, le périmètre par le présent paragraphe.)*
+
+## Dev Agent Record
+
+### Ce qui a été implémenté (2026-08-14, dev Fable — D6 confirmée par Guy au lancement)
+
+- **T2** — `kesh_core::text` : `is_invisible` (déménagé, sémantique 16-3b intacte) + `canonical_key` (D2, ordre invisibles → NFKC → trim → casse). Les deux appelants rebranchés (`contacts.rs`, `pdf.rs` — qui perd sa copie et son doc-comment réfuté), `kesh-qrbill` prend la dépendance `kesh-core` (D3, second arbitrage de Guy : la mention « standalone, publishable » du manifest — propriété jamais exercée — est retirée plutôt que de dupliquer). Dépendance `unicode-normalization` ajoutée à `kesh-core` — déjà présente dans l'arbre (kesh-api), pas une dépendance nouvelle au sens du workflow.
+- **T3** — migration `20260814000001`, DDL pur : colonne canonique `VARCHAR(50) COLLATE utf8mb4_bin`, `_uniq` régénérée sur la canonique, contrainte au même nom, bump `min_required = '0.10.0'` en dernière instruction. **P2-bis : les 10 crates à `0.10.0`** dans le même commit. P5 : ligne d'audit + les cinq compteurs recomptés (61 = 61 lignes de tableau, 5+56+0). P6 : les deux sites inspectés — `migrations_upgrade_path.rs` bumpé (61/27, frontière 34 constante, **7 sites de valeurs périmées corrigés au value-grep** dans le même geste), `accounts_role_backfill` version-résolu, rien à faire.
+- **T4** — `kesh_db::backfill::backfill_client_number_canonical` : pré-scan des collisions sur les actifs (rapport nominatif, invisibles **échappés** — on ne répare pas ce qu'on ne voit pas), zéro écriture en cas de refus, remplissage des seuls `NULL` (idempotence), vacuité D2 appliquée au parc. Appelée au **boot** (`main.rs` 4-bis, `process::exit(1)` avec le rapport) et en fin d'**import** (`admin.rs` 5-ter, dans la transaction de restore). P7 : entrée `EXEMPT_MIGRATIONS` pour le bump `_kesh_version` (même triage que `20260714000002`).
+- **T5** — `client_number_columns(raw)` dans le repository : couple (valeur intacte, canonique) calculé au seul endroit qui écrit, vacuité → double `NULL`. INSERT et UPDATE portent la colonne.
+- **T7** — la contrainte garde son nom → `map_contact_error` inchangé, zéro test modifié. L'import gagne un variant dédié **`400 IMPORT_CLIENT_NUMBER_COLLISION`** (`details.report`) + clé i18n sur les 4 locales — le 500 générique `ADMIN_FULL_IMPORT_FAILED` aurait rendu le rapport invisible à l'exploitant, en contradiction avec AC6.
+- **T9** — manuel utilisateur (§ numéro de client réécrit : identiques à l'œil = même numéro, un accent distingue, la saisie reste intacte) + PDF régénéré (vérifié au `pdftotext`) ; CHANGELOG `[Unreleased] / ### Corrigé` avec l'avertissement de refus au boot.
+
+### Écarts à la spec — trois, tous documentés au moment du geste
+
+1. **Le retrait de l'étape 1 de D2 porte sur le sous-ensemble LARGEUR NULLE d'`is_invisible`, pas sur le prédicat entier.** `is_invisible` inclut `is_whitespace()` (sémantique de vacuité 16-3b) : l'utiliser tel quel pour le retrait fusionnerait `"CLI 1"` et `"CLI1"`, visuellement distincts — l'inverse du défaut que la story ferme. D'où `is_zero_width = is_invisible && !is_whitespace`, les blancs restant traités par NFKC (repli des espaces exotiques) et `trim()` (bords). Cas `("CLI 1", "CLI1")` épinglé DISTINCT dans les tests de table.
+2. **Le backfill lit l'EXISTENCE de la canonique, pas sa valeur** (`IS NOT NULL`) : la collation `utf8mb4_bin` fait exposer la colonne comme VARBINARY par sqlx, et seule l'existence compte (idempotence) — la valeur est recalculée en Rust. Les tests qui lisent la valeur passent par `CAST(... AS CHAR)`.
+3. **AC6 « refusé en 400 »** exigeait le variant d'erreur dédié ci-dessus (T7) — le chemin d'erreur générique d'import rend un 500 au corps générique.
+
+### Mutations jouées — 7, 7 rougissements, chacune isolée puis restaurée
+
+M1-M4 (chaque étape de D2 neutralisée) → 1 à 3 tests de table rouges chacune ; M-ordre (trim en tête) → épinglée par `the_old_order_is_really_wrong` ET le cas de bord de la table ; M-AC5 (canonicalisation remplacée par `trim().to_lowercase()`) → les deux tests de collision (composition, ZWSP) rouges. ⚠️ Une première salve de mutations s'était ACCUMULÉE (fichier neuf, `git checkout --` silencieusement sans effet) — détecté, rejouée proprement avec sauvegarde/restauration par copie et `diff` de contrôle final.
+
+### Tests neufs — périmètre : commit de dev, recomptés depuis la source
+
+`kesh-core/src/text.rs` : 4 (table, vacuité, ordre, sémantique du prédicat). `repositories/contacts.rs` : 7 (composition, ZWSP, cross-company, accents distincts, collation binaire des DEUX colonnes via information_schema, vacuité repository, recherche T8). `tests/client_number_canonical_backfill.rs` : 5 (nominal, refus nominatif sans écriture, idempotence, vacuité legacy, archivés hors collision). `admin_full_import_e2e.rs` : 2 (backfill via import, refus 400 + rollback). **Total : 18.** Les 4 cas de 16-3b restent verts sans modification de leurs assertions (le doc-comment du test de casse, dont le MÉCANISME a changé, est mis à jour).
+
+### Gates exécutés
+
+| Gate | Résultat |
+|---|---|
+| fmt + clippy workspace `-D warnings` | verts *(un premier run a attrapé un `explicit_auto_deref` réel — et mon invocation à pipe masquait l'exit code, le piège documenté par la 22-4a : relancé sans pipe, `EXIT=` explicite)* |
+| tests ciblés — text, contacts repo, backfill, import e2e, upgrade_path | verts (4 + 15 + 2, cf. ci-dessus) |
+| frontend `check` / `lint-i18n` / `test:unit` / `build` | 0 erreur / PASS / **512/512** / ok |
+| **gate backend complet profil `ci`** | *(en cours au moment de cette entrée — relancé après le dernier changement de code ; un run intermédiaire, périmé par les patches, a été arrêté en vol : la base persistante des tests `#[tokio::test]` peut porter des résidus `TestContact`, que les cleanups d'entrée de test absorbent)* |
+
+### File List
+
+- `crates/kesh-core/src/text.rs` — **neuf** (module + 4 tests)
+- `crates/kesh-core/src/lib.rs`, `crates/kesh-core/Cargo.toml` — module + dépendance `unicode-normalization`
+- `crates/kesh-qrbill/Cargo.toml` (dépendance kesh-core, description amendée), `crates/kesh-qrbill/src/pdf.rs` (copie supprimée)
+- `crates/kesh-api/src/routes/contacts.rs` — import du prédicat, doc-comment réfuté réécrit
+- `crates/kesh-db/migrations/20260814000001_contacts_client_number_canonical.sql` — **neuve**
+- `crates/kesh-db/src/backfill.rs` — **neuf** ; `crates/kesh-db/src/lib.rs` (module)
+- `crates/kesh-db/src/post_restore.rs` — entrée EXEMPT_MIGRATIONS
+- `crates/kesh-db/src/repositories/contacts.rs` — `client_number_columns`, INSERT/UPDATE, 7 tests, doc-comment du test de casse
+- `crates/kesh-db/tests/migrations_upgrade_path.rs` — 61/27 + 7 sites de valeurs
+- `crates/kesh-db/tests/client_number_canonical_backfill.rs` — **neuf** (5 tests)
+- `crates/kesh-api/src/main.rs` — appel boot 4-bis
+- `crates/kesh-api/src/routes/admin.rs` — appel import 5-ter
+- `crates/kesh-api/src/errors.rs` — variant `ImportClientNumberCollision`
+- `crates/kesh-api/tests/admin_full_import_e2e.rs` — 2 tests
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` — clé `error-import-client-number-collision`
+- `crates/*/Cargo.toml` ×10 — version `0.10.0` (P2-bis)
+- `docs/migrations-idempotence-audit.md` — ligne + 5 compteurs
+- `docs/manual/fr/user-manual.tex` + `.pdf` (+ `admin-manual.pdf`/`marketing-brochure.pdf` régénérés par `make fr`)
+- `CHANGELOG.md` — `[Unreleased] / ### Corrigé`
 
 ## Change Log
 

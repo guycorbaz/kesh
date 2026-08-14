@@ -12,6 +12,7 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
 use kesh_core::listing::SortDirection;
+use kesh_core::text::is_invisible;
 use kesh_core::types::CheNumber;
 use kesh_db::entities::Language;
 use kesh_db::entities::contact::{Contact, ContactType, ContactUpdate, NewContact, Salutation};
@@ -289,18 +290,12 @@ pub(crate) fn is_valid_email_simple(s: &str) -> bool {
 /// Une valeur qui **mélange** invisible et visible passe inchangée : seule la
 /// valeur intégralement invisible est ramenée à `None`.
 ///
-/// *(Jumeau côté rendu : `is_invisible` dans `kesh-qrbill/src/pdf.rs`, qui garde
-/// le PDF contre les valeurs écrites hors API — restauration d'une sauvegarde
-/// produite ailleurs, correction SQL directe. Ce sont deux **couches** : l'une
-/// décide ce qui entre en base, l'autre ce qui s'imprime, et le PDF doit tenir
-/// même face à une base qui n'est pas passée par cette route.*
-///
-/// ⚠️ *Le motif d'abord écrit ici — « deux crates sans dépendance commune » —
-/// était **faux** : `kesh-api` dépend directement de `kesh-qrbill`
-/// (`Cargo.toml:12`). Une factorisation est donc techniquement possible, et si
-/// un troisième site en a besoin un jour, c'est cette voie qu'il faut prendre
-/// plutôt que recopier une troisième fois. Réfuté en passe 3 de
-/// `bmad-code-review`.)*
+/// Le prédicat vit dans `kesh_core::text` depuis la Story 22-1 : il était
+/// écrit **deux fois** (ici et dans `kesh-qrbill/src/pdf.rs`), sur un motif de
+/// non-dépendance réfuté en passe 3 de revue de la 16-3b. Les deux couches
+/// subsistent — l'une décide ce qui entre en base, l'autre ce qui s'imprime,
+/// et le PDF doit tenir même face à une base qui n'est pas passée par cette
+/// route — mais elles consultent désormais **la même source**.
 pub(crate) fn normalize_optional(s: Option<String>) -> Option<String> {
     s.and_then(|v| {
         let t = v.trim();
@@ -310,17 +305,6 @@ pub(crate) fn normalize_optional(s: Option<String>) -> Option<String> {
             Some(t.to_string())
         }
     })
-}
-
-/// Vrai si le caractère ne **marque** rien à l'écran ni à l'impression.
-///
-/// `U+00AD` (trait d'union conditionnel) est inclus : il ne se rend pas hors
-/// point de césure.
-fn is_invisible(c: char) -> bool {
-    c.is_whitespace()
-        || c.is_control()
-        || matches!(c,
-            '\u{00AD}' | '\u{200B}'..='\u{200F}' | '\u{2060}'..='\u{2064}' | '\u{FEFF}')
 }
 
 /// Valide + normalise un IDE optionnel via `CheNumber`.

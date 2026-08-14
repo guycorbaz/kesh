@@ -504,6 +504,16 @@ pub enum AppError {
     #[error("Backup invalide : {0}")]
     InvalidBackupStructure(String),
 
+    /// Story 22-1 (#294/#295) — le backup porte des numéros de client dont les
+    /// formes canoniques se percutent : le backfill D6 refuse, l'import est
+    /// rejeté **avant COMMIT** (l'état précédent est préservé). HTTP 400
+    /// `IMPORT_CLIENT_NUMBER_COLLISION` avec `details.report` — le rapport
+    /// nominatif (société, ids, valeurs affichées, invisibles échappés) est
+    /// l'outil de réparation : un backup en collision ne s'installe pas, il se
+    /// répare d'abord.
+    #[error("Collisions de numéros de client dans le backup")]
+    ImportClientNumberCollision { report: String },
+
     /// Story 17-3c — incompatibilité de schéma source↔destination (AC12c) :
     /// colonne source inconnue de la destination (`unknown_columns`) ou colonne
     /// destination `NOT NULL` sans défaut absente de la source
@@ -1515,6 +1525,21 @@ impl IntoResponse for AppError {
                         "Le fichier de sauvegarde est invalide ou corrompu.",
                     ),
                 )
+            }
+
+            AppError::ImportClientNumberCollision { report } => {
+                tracing::warn!("import refused, client number collisions:\n{report}");
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "IMPORT_CLIENT_NUMBER_COLLISION",
+                        "message": t(
+                            "error-import-client-number-collision",
+                            "Le backup contient des numéros de client en collision. Corrigez les fiches nommées dans le rapport, ré-exportez, puis réessayez.",
+                        ),
+                        "details": { "report": report }
+                    }
+                });
+                (StatusCode::BAD_REQUEST, Json(body)).into_response()
             }
 
             AppError::ImportSchemaMismatch {

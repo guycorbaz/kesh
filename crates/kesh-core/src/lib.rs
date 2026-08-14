@@ -11,4 +11,5 @@ pub mod email_template_engine;
 pub mod errors;
 pub mod invoice_format;
 pub mod listing;
+pub mod text;
 pub mod types;

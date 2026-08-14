@@ -16,6 +16,7 @@ use sqlx::QueryBuilder;
 use sqlx::mysql::MySqlPool;
 
 use kesh_core::listing::SortDirection;
+use kesh_core::text::canonical_key;
 
 use crate::entities::audit_log::NewAuditLogEntry;
 use crate::entities::contact::{Contact, ContactType, ContactUpdate, NewContact};
@@ -212,6 +213,29 @@ fn push_where_clauses<'a>(
 }
 
 /// Crée un contact et retourne l'entité persistée, avec audit log atomique.
+/// Le couple `(client_number stocké, canonique stockée)` — décision **D2** de
+/// la Story 22-1, appliquée au SEUL endroit qui écrit ces colonnes.
+///
+/// La valeur affichée reste **intacte** (AC4) ; la canonique est calculée par
+/// `kesh_core::text::canonical_key`. Une canonique **vide** (valeur
+/// intégralement invisible) signifie « absent » : les DEUX colonnes valent
+/// `NULL` — un « numéro » que personne ne voit n'identifie rien, et il ne doit
+/// pas squatter l'unicité. C'est le prolongement, en défense en profondeur, de
+/// la garde de vacuité que la route applique déjà (`normalize_optional`).
+fn client_number_columns(raw: Option<&str>) -> (Option<String>, Option<String>) {
+    match raw {
+        None => (None, None),
+        Some(v) => {
+            let canonical = canonical_key(v);
+            if canonical.is_empty() {
+                (None, None)
+            } else {
+                (Some(v.to_string()), Some(canonical))
+            }
+        }
+    }
+}
+
 pub async fn create(pool: &MySqlPool, user_id: i64, new: NewContact) -> Result<Contact, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
@@ -222,12 +246,15 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewContact) -> Result<C
         new.address_postal_code.as_deref(),
         new.address_city.as_deref(),
     );
+    // Story 22-1 (D2) : la canonique est écrite AVEC la valeur, jamais après.
+    let (client_number, client_number_canonical) =
+        client_number_columns(new.client_number.as_deref());
     let result = sqlx::query(
         "INSERT INTO contacts (company_id, contact_type, name, first_name, last_name, is_client, is_supplier, \
          address, address_street, address_building, address_postal_code, address_city, \
-         address_country, email, phone, ide_number, client_number, default_payment_terms, \
-         default_payment_terms_days, language, salutation) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         address_country, email, phone, ide_number, client_number, client_number_canonical, \
+         default_payment_terms, default_payment_terms_days, language, salutation) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(new.company_id)
     .bind(new.contact_type)
@@ -245,7 +272,8 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewContact) -> Result<C
     .bind(&new.email)
     .bind(&new.phone)
     .bind(&new.ide_number)
-    .bind(&new.client_number)
+    .bind(&client_number)
+    .bind(&client_number_canonical)
     .bind(&new.default_payment_terms)
     .bind(new.default_payment_terms_days)
     .bind(new.language)
@@ -478,12 +506,15 @@ pub async fn update(
         changes.address_postal_code.as_deref(),
         changes.address_city.as_deref(),
     );
+    // Story 22-1 (D2) : la canonique suit la valeur, dans le même UPDATE.
+    let (client_number, client_number_canonical) =
+        client_number_columns(changes.client_number.as_deref());
     let rows = sqlx::query(
         "UPDATE contacts SET contact_type = ?, name = ?, first_name = ?, last_name = ?, is_client = ?, is_supplier = ?, \
          address = ?, address_street = ?, address_building = ?, address_postal_code = ?, \
          address_city = ?, address_country = ?, \
-         email = ?, phone = ?, ide_number = ?, client_number = ?, default_payment_terms = ?, \
-         default_payment_terms_days = ?, language = ?, salutation = ?, \
+         email = ?, phone = ?, ide_number = ?, client_number = ?, client_number_canonical = ?, \
+         default_payment_terms = ?, default_payment_terms_days = ?, language = ?, salutation = ?, \
          version = version + 1 \
          WHERE id = ? AND version = ? AND active = TRUE",
     )
@@ -502,7 +533,8 @@ pub async fn update(
     .bind(&changes.email)
     .bind(&changes.phone)
     .bind(&changes.ide_number)
-    .bind(&changes.client_number)
+    .bind(&client_number)
+    .bind(&client_number_canonical)
     .bind(&changes.default_payment_terms)
     .bind(changes.default_payment_terms_days)
     .bind(changes.language)
@@ -1783,10 +1815,12 @@ mod tests {
         cleanup_test_contacts(&pool, company_id).await;
     }
 
-    /// AC1 cas 3 : l'unicité est **insensible à la casse** — `contacts` ne
-    /// déclare aucune collation et hérite du défaut MariaDB (`_ci`). C'est
-    /// souhaitable (deux clients ne doivent pas différer par la seule casse),
-    /// mais c'est une décision, pas un effet de bord : d'où ce test.
+    /// AC1 cas 3 : l'unicité est **insensible à la casse**. Depuis la Story
+    /// 22-1, ce n'est plus la collation `_ci` héritée du serveur qui le tient
+    /// — c'était le défaut #295, un comportement qui changeait d'installation
+    /// en installation — mais la **canonique** (`canonical_key` replie la
+    /// casse), comparée en collation binaire explicite. Le comportement
+    /// observable est le même ; le mécanisme, non.
     #[tokio::test]
     async fn client_number_uniqueness_is_case_insensitive() {
         let pool = test_pool().await;
@@ -1804,6 +1838,221 @@ mod tests {
         assert!(
             matches!(err, DbError::UniqueConstraintViolation(_)),
             "la collation _ci doit rendre CLI-CASE-1 et cli-case-1 identiques, obtenu {err:?}"
+        );
+
+        cleanup_test_contacts(&pool, company_id).await;
+    }
+
+    /// Story 22-1, AC3 cas neuf 1 : la **composition Unicode** ne distingue
+    /// plus. `CLÉ-1` saisi en NFC (macOS enverrait la forme NFD) et sa forme
+    /// décomposée `CLE`+U+0301`-1` sont deux séquences d'octets, une seule
+    /// canonique — le chemin d'attaque #294 fermé, celui qu'aucun test ne
+    /// couvrait (le test de casse passait sous TOUTES les collations).
+    #[tokio::test]
+    async fn client_number_uniqueness_folds_unicode_composition() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let user_id = get_admin_user_id(&pool).await;
+        cleanup_test_contacts(&pool, company_id).await;
+
+        let mut a = new_contact(company_id, "TestContact CN NFC");
+        a.client_number = Some("CL\u{00C9}-COMP-1".into()); // É précomposé (NFC)
+        create(&pool, user_id, a).await.unwrap();
+
+        let mut b = new_contact(company_id, "TestContact CN NFD");
+        b.client_number = Some("CLE\u{0301}-COMP-1".into()); // E + combinant (NFD)
+        let err = create(&pool, user_id, b).await.unwrap_err();
+        assert!(
+            matches!(err, DbError::UniqueConstraintViolation(_)),
+            "NFC et NFD du même numéro doivent se percuter, obtenu {err:?}"
+        );
+
+        cleanup_test_contacts(&pool, company_id).await;
+    }
+
+    /// Story 22-1, AC3 cas neuf 2 : le **caractère invisible encastré** ne
+    /// distingue plus. `CLI-1` et `CLI‹U+200B›-1` s'affichent identiques —
+    /// fiche, liste, PDF — et le ZWSP est le résidu type d'un copier-coller
+    /// depuis un courriel HTML, le geste exact que la saisie invite à faire.
+    #[tokio::test]
+    async fn client_number_uniqueness_sees_through_zero_width_characters() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let user_id = get_admin_user_id(&pool).await;
+        cleanup_test_contacts(&pool, company_id).await;
+
+        let mut a = new_contact(company_id, "TestContact CN ZW A");
+        a.client_number = Some("CLI-ZW-1".into());
+        create(&pool, user_id, a).await.unwrap();
+
+        let mut b = new_contact(company_id, "TestContact CN ZW B");
+        b.client_number = Some("CLI\u{200B}-ZW-1".into());
+        let err = create(&pool, user_id, b).await.unwrap_err();
+        assert!(
+            matches!(err, DbError::UniqueConstraintViolation(_)),
+            "un ZWSP encastré ne doit pas fabriquer un numéro distinct, obtenu {err:?}"
+        );
+
+        cleanup_test_contacts(&pool, company_id).await;
+    }
+
+    /// Story 22-1, AC3 cas neuf 3 : **deux sociétés acceptent le même
+    /// numéro** — l'unicité est par société (`company_id` en tête de la
+    /// contrainte), et la canonicalisation ne doit pas l'avoir élargie.
+    #[tokio::test]
+    async fn client_number_same_number_coexists_across_companies() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let user_id = get_admin_user_id(&pool).await;
+        cleanup_test_contacts(&pool, company_id).await;
+
+        let other_company_id: i64 = sqlx::query_scalar(
+            "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+             VALUES ('TestCo CN CrossCompany', 'x', 'Pme', 'FR', 'FR') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let mut a = new_contact(company_id, "TestContact CN Cross A");
+        a.client_number = Some("CLI-CROSS-1".into());
+        create(&pool, user_id, a).await.unwrap();
+
+        let mut b = new_contact(other_company_id, "TestContact CN Cross B");
+        b.client_number = Some("CLI-CROSS-1".into());
+        let created = create(&pool, user_id, b).await;
+        // Nettoyage AVANT l'assertion : la company étrangère ne doit pas
+        // survivre à un échec du test.
+        sqlx::query("DELETE FROM contacts WHERE company_id = ?")
+            .bind(other_company_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM companies WHERE id = ?")
+            .bind(other_company_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        cleanup_test_contacts(&pool, company_id).await;
+        assert!(
+            created.is_ok(),
+            "le même numéro doit coexister entre deux sociétés : {created:?}"
+        );
+    }
+
+    /// Story 22-1, AC5 jambe **coexistence** : un accent DISTINGUE. `CLI-É1`
+    /// et `CLI-E1` sont deux clients légitimes — c'est la fusion accidentelle
+    /// sous collation UCA accent-insensible (#295) qui disparaît, pas la
+    /// distinction. La jambe **collision** est tenue par le test de
+    /// composition ci-dessus ; l'indépendance à la collation du serveur est
+    /// STRUCTURELLE, et vérifiée par le test de collation ci-dessous.
+    #[tokio::test]
+    async fn client_number_accents_distinguish_two_clients() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let user_id = get_admin_user_id(&pool).await;
+        cleanup_test_contacts(&pool, company_id).await;
+
+        let mut a = new_contact(company_id, "TestContact CN Acc A");
+        a.client_number = Some("CLI-\u{00C9}ACC".into());
+        create(&pool, user_id, a).await.unwrap();
+
+        let mut b = new_contact(company_id, "TestContact CN Acc B");
+        b.client_number = Some("CLI-EACC".into());
+        let created = create(&pool, user_id, b).await;
+        assert!(
+            created.is_ok(),
+            "CLI-ÉACC et CLI-EACC sont deux clients distincts : {created:?}"
+        );
+
+        cleanup_test_contacts(&pool, company_id).await;
+    }
+
+    /// Story 22-1, AC5 — le **support matériel** de l'indépendance à la
+    /// collation : les deux colonnes de comparaison portent `utf8mb4_bin`
+    /// EXPLICITE. C'est ce qui rend l'égalité d'index égale à l'égalité
+    /// d'octets, quel que soit le défaut du serveur — sans cette déclaration,
+    /// une collation UCA accent-insensible reproduirait #295 sur la colonne
+    /// neuve en fusionnant `cli-é1` et `cli-e1`. Ce test rougit si la
+    /// déclaration saute d'une migration future.
+    #[tokio::test]
+    async fn client_number_canonical_columns_carry_binary_collation() {
+        let pool = test_pool().await;
+        for column in ["client_number_canonical", "client_number_uniq"] {
+            let collation: Option<String> = sqlx::query_scalar(
+                "SELECT COLLATION_NAME FROM information_schema.COLUMNS \
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'contacts' \
+                 AND COLUMN_NAME = ?",
+            )
+            .bind(column)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(
+                collation.as_deref(),
+                Some("utf8mb4_bin"),
+                "{column} doit porter utf8mb4_bin explicite (AC5), obtenu {collation:?}"
+            );
+        }
+    }
+
+    /// Story 22-1, exception d'AC4 (D2, vacuité) : une valeur INTÉGRALEMENT
+    /// invisible est « absente » — les deux colonnes valent `NULL`, le GET
+    /// rend `null`. Test d'intégration au niveau repository, en DÉFENSE EN
+    /// PROFONDEUR de la garde de route (`normalize_optional`) : ce chemin-ci
+    /// couvre les appelants qui n'y passent pas.
+    #[tokio::test]
+    async fn entirely_invisible_client_number_is_stored_as_null() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let user_id = get_admin_user_id(&pool).await;
+        cleanup_test_contacts(&pool, company_id).await;
+
+        let mut a = new_contact(company_id, "TestContact CN Invisible");
+        a.client_number = Some("\u{200B}\u{FEFF} ".into());
+        let created = create(&pool, user_id, a).await.unwrap();
+        assert_eq!(
+            created.client_number, None,
+            "une valeur intégralement invisible est absente (D2)"
+        );
+
+        cleanup_test_contacts(&pool, company_id).await;
+    }
+
+    /// Story 22-1, T8 — non-régression : la recherche apparie sur la valeur
+    /// AFFICHÉE, pas sur la canonique. Un numéro saisi en forme décomposée est
+    /// retrouvé par la graphie saisie ; la canonicalisation n'a rien changé au
+    /// chemin de lecture.
+    #[tokio::test]
+    async fn search_matches_the_displayed_client_number() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let user_id = get_admin_user_id(&pool).await;
+        cleanup_test_contacts(&pool, company_id).await;
+
+        let mut a = new_contact(company_id, "TestContact CN Search");
+        a.client_number = Some("CLE\u{0301}-SRCH-1".into()); // forme décomposée, stockée telle quelle
+        let created = create(&pool, user_id, a).await.unwrap();
+        assert_eq!(
+            created.client_number.as_deref(),
+            Some("CLE\u{0301}-SRCH-1"),
+            "AC4 : la séquence d'octets saisie est celle qui revient"
+        );
+
+        let found = list_by_company_paginated(
+            &pool,
+            company_id,
+            ContactListQuery {
+                search: Some("CLE\u{0301}-SRCH".into()),
+                limit: 100,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert!(
+            found.items.iter().any(|c| c.id == created.id),
+            "la recherche doit retrouver le numéro par sa graphie saisie"
         );
 
         cleanup_test_contacts(&pool, company_id).await;

@@ -1083,6 +1083,7 @@ error-admin-full-export-failed = Der vollständige Export der Installation konnt
 error-admin-full-import-failed = Der Import der Installation ist fehlgeschlagen. Der vorherige Zustand wurde beibehalten (vor dem Vorgang wurde automatisch ein Backup erstellt). Prüfen Sie die Serverprotokolle und versuchen Sie es erneut.
 error-invalid-backup-structure = Die Sicherungsdatei ist ungültig oder beschädigt (unerwartete Struktur oder fehlgeschlagene Integritätsprüfung). Stellen Sie sicher, dass es sich um eine von Kesh erzeugte .keshbackup-Datei handelt.
 error-import-schema-mismatch = Das Schema dieses Backups ist mit dieser Kesh-Version nicht kompatibel. Aktualisieren Sie Kesh oder verwenden Sie ein kompatibles Backup.
+error-import-client-number-collision = Das Backup enthält kollidierende Kundennummern (identisch nach Angleichung von Gross-/Kleinschreibung, Akzenten und unsichtbaren Zeichen). Korrigieren Sie die im Bericht genannten Kontakte, exportieren Sie erneut und versuchen Sie es nochmals.
 error-import-version-incompatible = Dieses Backup erfordert eine neuere Kesh-Version als die installierte. Aktualisieren Sie Kesh vor dem erneuten Import.
 
 # Story v011-5 — Self-Service Onboarding (12 UI-Schlüssel + 2 Fehlerschlüssel)
