@@ -132,6 +132,13 @@ Le manuel utilisateur — § *Le numéro de client sur la facture* — décrit l
 - [x] **T8 — Recherche** (AC4). La recherche apparie sur la valeur **affichée**, pas sur la canonique — donc en principe **zéro changement de code**. Le livrable est un **test de non-régression** : un contact au numéro portant des accents décomposés est retrouvé par sa graphie saisie, et la recherche ne consulte pas la colonne canonique. ⚠️ Si un changement s'avérait nécessaire : **il y a DEUX branches `LIKE`** dans `push_where_clauses` (`contacts.rs:197` et `:206`) — les deux, ou aucune. *(La première rédaction était une mise en garde sans livrable — une revue ne pouvait pas juger T8 « fait ». Relevé en passe 1.)*
 - [x] **T9 — Documentation** (AC8). Manuel utilisateur, CHANGELOG, et fermeture des deux issues **avec mot-clé**.
 
+### Review Findings — passe 1
+
+- [x] [Review][Patch] CRITICAL — expansion NFKC/casse : canonique > VARCHAR(50), boot en boucle au message brut [`text.rs`, `contacts.rs:445`, `backfill.rs`]
+- [x] [Review][Patch] HIGH — canonique périmée jamais réparée : le backfill devient une réconciliation [`backfill.rs`]
+- [x] [Review][Patch] MEDIUM — décompte « 7 mutations » incohérent avec sa ventilation et le compte exécuté (5) [story, sprint-status]
+- [x] [Review][Patch] LOW — convention d'audit des backfills documentée en tête de `backfill.rs`
+
 ## Dev Notes
 
 ### Le rayon d'impact, mesuré et non supposé
@@ -194,9 +201,9 @@ La canonicalisation ne concerne que **`client_number`**. Le numéro **IDE** port
 2. **Le backfill lit l'EXISTENCE de la canonique, pas sa valeur** (`IS NOT NULL`) : la collation `utf8mb4_bin` fait exposer la colonne comme VARBINARY par sqlx, et seule l'existence compte (idempotence) — la valeur est recalculée en Rust. Les tests qui lisent la valeur passent par `CAST(... AS CHAR)`.
 3. **AC6 « refusé en 400 »** exigeait le variant d'erreur dédié ci-dessus (T7) — le chemin d'erreur générique d'import rend un 500 au corps générique.
 
-### Mutations jouées — 7, 7 rougissements, chacune isolée puis restaurée
+### Mutations jouées — 5 au dev, 5 rougissements, chacune isolée puis restaurée
 
-M1-M4 (chaque étape de D2 neutralisée) → 1 à 3 tests de table rouges chacune ; M-ordre (trim en tête) → épinglée par `the_old_order_is_really_wrong` ET le cas de bord de la table ; M-AC5 (canonicalisation remplacée par `trim().to_lowercase()`) → les deux tests de collision (composition, ZWSP) rouges. ⚠️ Une première salve de mutations s'était ACCUMULÉE (fichier neuf, `git checkout --` silencieusement sans effet) — détecté, rejouée proprement avec sauvegarde/restauration par copie et `diff` de contrôle final.
+M1-M4 (chaque étape de D2 neutralisée) → 1 à 3 tests de table rouges chacune ; M-AC5 (canonicalisation remplacée par `trim().to_lowercase()`) → les deux tests de collision (composition, ZWSP) rouges. **Cinq mutations EXÉCUTÉES** — l'ordre de D2, lui, n'est pas une mutation jouée : il est épinglé EN PERMANENCE par le test dédié `the_old_order_is_really_wrong` et le cas de bord de la table. *(La première rédaction déclarait « 7 » : un total incohérent avec sa propre ventilation ET avec le compte exécuté — la § Recompter prise en défaut sur ce Change Log même, relevée en passe 1 par l'Acceptance Auditor. Périmètre : 5 au commit de dev ; la passe 1 de revue en a joué 2 de plus sur ses propres patches, M-a garde de route et M-b réconciliation.)* ⚠️ Une première salve de mutations s'était ACCUMULÉE (fichier neuf, `git checkout --` silencieusement sans effet) — détecté, rejouée proprement avec sauvegarde/restauration par copie et `diff` de contrôle final.
 
 ### Tests neufs — périmètre : commit de dev, recomptés depuis la source
 
@@ -234,6 +241,41 @@ M1-M4 (chaque étape de D2 neutralisée) → 1 à 3 tests de table rouges chacun
 - `CHANGELOG.md` — `[Unreleased] / ### Corrigé`
 
 ## Change Log
+
+**2026-08-14 — `bmad-code-review`, PASSE 1 (Sonnet ×3, contextes frais — l'implémenteur était Fable).**
+
+| Lentille | CRIT | HIGH | MED | LOW |
+|---|---|---|---|---|
+| Blind Hunter (diff aplati seul) | 0 | 1 | 0 | 1 |
+| Edge Case Hunter (diff + code, exécutions réelles) | 1 | 1 | 0 | 0 |
+| Acceptance Auditor (+ spec, CLAUDE.md, issues) | 0 | 0 | 1 | 1 |
+| **dédupliqué** | **1** | **1** | **1** | **1** |
+
+Déduplication : l'expansion NFKC, vue par les TROIS lentilles (BH-HIGH par raisonnement, ECH-CRIT par exécution Rust + MariaDB réels, AA-LOW) → **CRITICAL**, l'exécution faisant foi.
+
+### Le CRITICAL — la canonique peut être PLUS LONGUE que la colonne qui la reçoit
+
+`canonical_key` ALLONGE : NFKC décompose les ligatures (`ﬁ` → `fi`), `to_lowercase` étend `İ` en `i`+U+0307 — **50 caractères saisis peuvent en canoniser 100**, au-delà du `VARCHAR(50)`. Prouvé par exécution (Rust réel + INSERT MariaDB 10.11 sous le `sql_mode` du pool : `ERROR 1406`). Trois chemins d'échec, tous opaques : `POST /contacts` → 400 générique au message trompeur ; parc legacy au boot → **boot en boucle sur une erreur SQL brute ne nommant AUCUNE fiche**, en contradiction frontale avec la promesse D5 ; import → 500 générique. **Fermé à trois étages** : constante unique `kesh_core::text::CLIENT_NUMBER_MAX_CHARS` (la route s'y aligne) ; garde de route au message qui nomme la cause réelle ; catégorie **`overlong` dans le rapport de refus du backfill** — la fiche est nommée, aux deux chemins (boot et 400 d'import). Propriété d'expansion épinglée par un test dédié dans `text.rs`. **Mutation M-a jouée** : garde retirée → rouge.
+
+### Le HIGH — le backfill ne réparait jamais une canonique périmée
+
+La contrainte d'unicité ne compare que la canonique **stockée** ; un `client_number` modifié par SQL direct (cas explicitement anticipé par le dépôt) laissait une canonique périmée — **#294 rouvrable en silence**, pour des mois sur un NAS sans redémarrage. **Le backfill devient une RÉCONCILIATION** : canonique recalculée pour chaque ligne, divergence réparée, détection des collisions toujours par recalcul (les stockées mensongères sont ignorées). Coût inchangé — la fonction chargeait déjà tout le parc. Trois tests neufs : réparation, idempotence après réparation, collision masquée par des stockées divergentes. **Mutation M-b jouée** : réconciliation ramenée au remplissage → rouge.
+
+### Le MEDIUM — mon propre décompte de mutations, faux des deux côtés
+
+« 7 mutations jouées » : incohérent avec sa ventilation (6 items) ET avec le compte exécuté (**5** — l'ordre de D2 est épinglé par un test permanent, pas par une mutation jouée). La § *Recompter ses propres comptes rendus* prise en défaut sur le Change Log de la story qui la cite en Dev Notes. Corrigé aux deux sites (story, sprint-status), périmètre déclaré.
+
+### Le LOW — l'audit du NULLing de vacuité
+
+Le backfill ramène à `NULL` un `client_number` intégralement invisible sans écrire d'`audit_log` — **conforme à la convention des backfills P7**, qui n'auditent pas (maintenance de schéma, aucun acteur au boot). Documenté en tête de `backfill.rs` pour que la question ne se repose pas.
+
+### Incident d'outillage, consigné parce qu'il a coûté deux fois
+
+Un `git checkout --` de restauration post-mutation a **écrasé les patches non commités** de `contacts.rs` (le fichier étant suivi, la commande a réussi — et le fallback prévu ne s'est donc pas exécuté). Les trois édits ont été réappliqués et re-vérifiés verts. C'est le second incident de restauration du cycle (le premier : mutations accumulées sur fichier non suivi). **Règle tirée : les mutations se jouent avec sauvegarde/restauration PAR COPIE et `diff` de contrôle, jamais via git sur un arbre non commité** — appliquée à M-b.
+
+**Gate ciblé après patches : 12/12** (backfill étendu + canonical + garde de route), fmt et clippy workspace verts. **Gate complet lancé après le commit de cette passe** — l'exception kesh-db de la § *Pendant une boucle de revue* l'impose (le dev touche migrations, post_restore et repository), et le gate complet du dev avait été interrompu deux fois par les patches. Trend : passe 1 = `1/1/1/1` → **passe 2 requise** (rotation : Haiku).
+
+---
 
 **2026-08-14 — `bmad-create-story validate`, PASSE 1 (Sonnet ×3, contextes frais : lentille aveugle, ground-truth, audit de conformité).**
 

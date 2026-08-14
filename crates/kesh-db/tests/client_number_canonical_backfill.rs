@@ -92,11 +92,12 @@ async fn backfill_refuses_and_names_collisions_without_writing(pool: MySqlPool) 
     let err = backfill_client_number_canonical(&mut conn)
         .await
         .expect_err("la collision doit refuser");
-    let BackfillError::Collisions(report) = err else {
-        panic!("attendu Collisions, obtenu {err:?}");
+    let BackfillError::Refused(report) = err else {
+        panic!("attendu Refused, obtenu {err:?}");
     };
-    assert_eq!(report.0.len(), 1, "un seul groupe en collision");
-    let group = &report.0[0];
+    assert_eq!(report.collisions.len(), 1, "un seul groupe en collision");
+    assert!(report.overlong.is_empty());
+    let group = &report.collisions[0];
     assert_eq!(group.company_id, company);
     assert_eq!(group.canonical, "cli-1");
     let ids: Vec<i64> = group.contacts.iter().map(|(id, _)| *id).collect();
@@ -187,4 +188,101 @@ async fn backfill_fills_archived_rows_without_counting_them_as_collisions(pool: 
         canonical_of(&pool, archived).await.as_deref(),
         Some("cli-1")
     );
+}
+
+/// Revue passe 1 (CRITICAL) — une canonique TROP LONGUE est refusée en
+/// NOMMANT la fiche, pas en erreur SQL 1406 brute : 50 ligatures `ﬁ` saisies
+/// (borne brute respectée) canonisent en 100 caractères > VARCHAR(50).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn backfill_refuses_and_names_overlong_canonicals(pool: MySqlPool) {
+    let company = seed_company(&pool).await;
+    let fifty_ligatures = "\u{FB01}".repeat(50);
+    let culprit = seed_contact(&pool, company, "Ligatures", Some(&fifty_ligatures), true).await;
+    let sane = seed_contact(&pool, company, "Sain", Some("CLI-OK"), true).await;
+
+    let mut conn = pool.acquire().await.unwrap();
+    let err = backfill_client_number_canonical(&mut conn)
+        .await
+        .expect_err("la canonique trop longue doit refuser");
+    let BackfillError::Refused(report) = err else {
+        panic!("attendu Refused, obtenu {err:?}");
+    };
+    assert!(report.collisions.is_empty());
+    assert_eq!(report.overlong.len(), 1);
+    let o = &report.overlong[0];
+    assert_eq!(
+        (o.company_id, o.contact_id, o.canonical_chars),
+        (company, culprit, 100)
+    );
+    let message = report.to_string();
+    assert!(
+        message.contains("dépasse 50 caractères") && message.contains(&culprit.to_string()),
+        "le rapport nomme la fiche et la cause : {message}"
+    );
+    // Rien écrit — pas même la ligne saine.
+    for id in [culprit, sane] {
+        assert_eq!(canonical_of(&pool, id).await, None);
+    }
+}
+
+/// Revue passe 1 (HIGH) — le backfill est une RÉCONCILIATION : une canonique
+/// stockée PÉRIMÉE (client_number modifié par SQL direct sans sa canonique)
+/// est réparée. Sans cela, l'index d'unicité — qui ne compare que la valeur
+/// stockée — laisserait renaître #294 en silence.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn backfill_repairs_a_stale_canonical(pool: MySqlPool) {
+    let company = seed_company(&pool).await;
+    let id = seed_contact(&pool, company, "Stale", Some("CLI-NEW"), true).await;
+    // Canonique périmée posée à la main — l'état que laisse un UPDATE SQL
+    // direct de client_number.
+    sqlx::query("UPDATE contacts SET client_number_canonical = 'cli-old' WHERE id = ?")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let mut conn = pool.acquire().await.unwrap();
+    let written = backfill_client_number_canonical(&mut conn).await.unwrap();
+    assert_eq!(written, 1, "la divergence est réparée");
+    assert_eq!(canonical_of(&pool, id).await.as_deref(), Some("cli-new"));
+    // Et l'appel suivant ne réécrit rien : la réconciliation reste idempotente.
+    assert_eq!(
+        backfill_client_number_canonical(&mut conn).await.unwrap(),
+        0
+    );
+}
+
+/// Revue passe 1 (HIGH), second volet — la DÉTECTION recalcule toujours : deux
+/// fiches dont les canoniques STOCKÉES divergent mais dont les numéros
+/// AFFICHÉS collisionnent sont refusées, valeurs stockées ignorées.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn backfill_detects_collisions_hidden_by_stale_canonicals(pool: MySqlPool) {
+    let company = seed_company(&pool).await;
+    let a = seed_contact(&pool, company, "A", Some("CLI-1"), true).await;
+    let b = seed_contact(&pool, company, "B", Some("cli-1"), true).await;
+    // Canoniques stockées artificiellement distinctes : l'index ne voit rien,
+    // seul le recalcul du pré-scan peut attraper la collision réelle.
+    for (id, fake) in [(a, "fake-a"), (b, "fake-b")] {
+        sqlx::query("UPDATE contacts SET client_number_canonical = ? WHERE id = ?")
+            .bind(fake)
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    let mut conn = pool.acquire().await.unwrap();
+    let err = backfill_client_number_canonical(&mut conn)
+        .await
+        .expect_err("la collision réelle doit être vue malgré les stockées");
+    let BackfillError::Refused(report) = err else {
+        panic!("attendu Refused, obtenu {err:?}");
+    };
+    assert_eq!(report.collisions.len(), 1);
+    let ids: Vec<i64> = report.collisions[0]
+        .contacts
+        .iter()
+        .map(|(i, _)| *i)
+        .collect();
+    assert!(ids.contains(&a) && ids.contains(&b));
 }

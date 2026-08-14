@@ -8,6 +8,18 @@
 
 use unicode_normalization::UnicodeNormalization;
 
+/// Longueur maximale du numéro de client, en caractères — la borne que la
+/// colonne `contacts.client_number_canonical` (`VARCHAR(50)`, migration
+/// `20260814000001`) matérialise côté base.
+///
+/// ⚠️ Elle borne la **canonique**, pas seulement la saisie : [`canonical_key`]
+/// peut ALLONGER une chaîne (NFKC décompose `ﬁ` en `fi`, `to_lowercase` étend
+/// `İ` en `i`+U+0307 — 50 caractères saisis peuvent en canoniser 100). Tout
+/// écrivain de la colonne vérifie la canonique contre cette constante — la
+/// route à la saisie, le backfill sur le parc. *(Relevé en passe 1 de revue,
+/// prouvé par exécution.)*
+pub const CLIENT_NUMBER_MAX_CHARS: usize = 50;
+
 /// Vrai si le caractère ne **marque** rien à l'écran ni à l'impression.
 ///
 /// `char::is_whitespace` suit la propriété Unicode `White_Space`, qui n'inclut
@@ -137,6 +149,20 @@ mod tests {
         }
         // mixte visible+invisible : la part visible survit.
         assert_eq!(canonical_key(" \u{200B}CLI\u{00AD}-1 "), "cli-1");
+    }
+
+    /// Revue passe 1 (CRITICAL) : la canonique peut être PLUS LONGUE que la
+    /// saisie — propriété épinglée ici pour que la borne de stockage
+    /// ([`CLIENT_NUMBER_MAX_CHARS`]) ne soit jamais raisonnée depuis la seule
+    /// longueur d'entrée. Prouvé sur les deux chemins d'expansion : NFKC
+    /// (ligature) et repli de casse (İ turc).
+    #[test]
+    fn canonical_key_can_be_longer_than_its_input() {
+        assert_eq!(canonical_key("\u{FB01}"), "fi"); // ﬁ → fi (NFKC)
+        assert_eq!(canonical_key("\u{0130}").chars().count(), 2); // İ → i + U+0307
+        let fifty = "\u{FB01}".repeat(50);
+        assert_eq!(fifty.chars().count(), 50);
+        assert_eq!(canonical_key(&fifty).chars().count(), 100);
     }
 
     /// La mutation d'ordre d'AC1, épinglée par un test et non par un

@@ -35,7 +35,7 @@ const MAX_PHONE_LEN: usize = 50;
 const MAX_PAYMENT_TERMS_LEN: usize = 100;
 /// Story 16-3b (#151) — aligné sur la colonne `contacts.client_number`
 /// VARCHAR(50). Longueur de STOCKAGE : le PDF, lui, tronque à l'affichage.
-const MAX_CLIENT_NUMBER_LEN: usize = 50;
+const MAX_CLIENT_NUMBER_LEN: usize = kesh_core::text::CLIENT_NUMBER_MAX_CHARS;
 /// Borne haute du délai de paiement en jours (#245) — miroir du CHECK SQL
 /// `chk_contacts_payment_terms_days` (le CHECK n'est que le filet).
 const MAX_PAYMENT_TERMS_DAYS: i32 = 365;
@@ -438,6 +438,21 @@ fn validate_common(
             "Le numéro de client doit faire au plus {MAX_CLIENT_NUMBER_LEN} caractères"
         )));
     }
+    // Story 22-1, revue passe 1 (CRITICAL) : la forme CANONIQUE peut être plus
+    // longue que la valeur saisie — NFKC décompose les ligatures (`ﬁ` → `fi`)
+    // et `to_lowercase` étend certains caractères (`İ` → `i` + U+0307) : 50
+    // caractères saisis peuvent en canoniser 100, au-delà du VARCHAR(50) de la
+    // colonne de comparaison. Sans cette garde, l'INSERT échouerait en 1406
+    // (mode strict) → un 400 générique au message trompeur pour une saisie qui
+    // respecte pourtant la limite affichée. Prouvé par exécution en revue.
+    if let Some(ref cn) = client_number
+        && kesh_core::text::canonical_key(cn).chars().count() > MAX_CLIENT_NUMBER_LEN
+    {
+        return Err(AppError::Validation(format!(
+            "La forme normalisée du numéro de client (accents et ligatures décomposés) \
+             dépasse {MAX_CLIENT_NUMBER_LEN} caractères — raccourcissez-le"
+        )));
+    }
 
     let ide_number = validate_optional_ide(ide_number)?;
 
@@ -823,6 +838,47 @@ mod tests {
             None
         );
         assert_eq!(validate_optional_ide(None).unwrap(), None);
+    }
+
+    /// Story 22-1, revue passe 1 (CRITICAL) : une saisie de 50 caractères dont
+    /// la forme CANONIQUE en fait 100 (`ﬁ` NFKC → `fi`) est refusée en 400 au
+    /// message explicite — sans cette garde, l'INSERT échouait en 1406 brut.
+    #[test]
+    fn client_number_whose_canonical_form_overflows_is_rejected_with_a_named_message() {
+        // 50 ligatures = 50 caractères saisis (borne respectée), 100 canonisés.
+        let fifty_ligatures = "\u{FB01}".repeat(50);
+        assert_eq!(fifty_ligatures.chars().count(), 50);
+        assert_eq!(
+            kesh_core::text::canonical_key(&fifty_ligatures)
+                .chars()
+                .count(),
+            100
+        );
+        let result = validate_common(
+            ContactType::Personne,
+            "Test Overflow".into(),
+            Some("A".into()),
+            Some("B".into()),
+            true,
+            false,
+            crate::address_input::StructuredAddressInput::default(),
+            None,
+            None,
+            None,
+            Some(fifty_ligatures),
+            None,
+            None,
+        );
+        let Err(err) = result else {
+            panic!("une canonique de 100 caractères doit être refusée");
+        };
+        match err {
+            AppError::Validation(msg) => assert!(
+                msg.contains("forme normalisée"),
+                "le message doit nommer la cause réelle : {msg}"
+            ),
+            other => panic!("attendu Validation, obtenu {other:?}"),
+        }
     }
 
     #[test]

@@ -306,9 +306,10 @@ async fn run_backup_and_restore(
     kesh_db::backfill::backfill_client_number_canonical(&mut tx)
         .await
         .map_err(|e| match e {
-            kesh_db::backfill::BackfillError::Collisions(report) => {
-                // 400 nominatif : la collision est un problème de DONNÉES du
-                // backup, réparable par l'exploitant — pas une panne du serveur.
+            kesh_db::backfill::BackfillError::Refused(report) => {
+                // 400 nominatif : collisions OU canoniques trop longues sont un
+                // problème de DONNÉES du backup, réparable par l'exploitant —
+                // pas une panne du serveur.
                 AppError::ImportClientNumberCollision {
                     report: report.to_string(),
                 }
