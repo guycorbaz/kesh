@@ -473,13 +473,14 @@ async fn downgrade_protection_rejects_old_binary(pool: MySqlPool) {
 /// quand binary == db_min (cas nominal upgrade-then-boot).
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn downgrade_protection_aligned_when_binary_equals_min(pool: MySqlPool) {
-    // min_required = '0.7.0' depuis le 1er bump breaking (Story 21-3,
-    // email_templates_reminder.sql). Binary == db_min → Aligned.
-    let result = check_downgrade_protection(&pool, "0.7.0").await;
+    // min_required = '0.10.0' depuis le bump breaking de la Story 22-1
+    // (contacts_client_number_canonical.sql — 2e bump du repo, le 1er étant
+    // '0.7.0' en 21-3). Binary == db_min → Aligned.
+    let result = check_downgrade_protection(&pool, "0.10.0").await;
     assert_eq!(
         result.unwrap(),
         DowngradeCheckOutcome::Aligned,
-        "binary 0.7.0 == db_min 0.7.0 → Aligned"
+        "binary 0.10.0 == db_min 0.10.0 → Aligned"
     );
 }
 
@@ -487,13 +488,13 @@ async fn downgrade_protection_aligned_when_binary_equals_min(pool: MySqlPool) {
 /// quand binary > db_min (upgrade legitime).
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn downgrade_protection_binary_ahead_when_binary_greater(pool: MySqlPool) {
-    // min_required = '0.7.0' depuis le 1er bump breaking (Story 21-3),
-    // binary 0.8.0 > 0.7.0 → BinaryAhead (upgrade legitime).
-    let result = check_downgrade_protection(&pool, "0.8.0").await;
+    // min_required = '0.10.0' depuis le bump breaking de la Story 22-1,
+    // binary 0.11.0 > 0.10.0 → BinaryAhead (upgrade légitime).
+    let result = check_downgrade_protection(&pool, "0.11.0").await;
     match result.unwrap() {
         DowngradeCheckOutcome::BinaryAhead { db_min, binary } => {
-            assert_eq!(db_min.to_string(), "0.7.0");
-            assert_eq!(binary.to_string(), "0.8.0");
+            assert_eq!(db_min.to_string(), "0.10.0");
+            assert_eq!(binary.to_string(), "0.11.0");
         }
         other => panic!("Expected BinaryAhead, got {:?}", other),
     }

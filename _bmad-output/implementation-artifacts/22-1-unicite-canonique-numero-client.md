@@ -273,7 +273,7 @@ Le backfill ramène à `NULL` un `client_number` intégralement invisible sans �
 
 Un `git checkout --` de restauration post-mutation a **écrasé les patches non commités** de `contacts.rs` (le fichier étant suivi, la commande a réussi — et le fallback prévu ne s'est donc pas exécuté). Les trois édits ont été réappliqués et re-vérifiés verts. C'est le second incident de restauration du cycle (le premier : mutations accumulées sur fichier non suivi). **Règle tirée : les mutations se jouent avec sauvegarde/restauration PAR COPIE et `diff` de contrôle, jamais via git sur un arbre non commité** — appliquée à M-b.
 
-**Gate ciblé après patches : 12/12** (backfill étendu + canonical + garde de route), fmt et clippy workspace verts. **Gate complet lancé après le commit de cette passe** — l'exception kesh-db de la § *Pendant une boucle de revue* l'impose (le dev touche migrations, post_restore et repository), et le gate complet du dev avait été interrompu deux fois par les patches. Trend : passe 1 = `1/1/1/1` → **passe 2 requise** (rotation : Haiku).
+**Gate ciblé après patches : 12/12** (backfill étendu + canonical + garde de route), fmt et clippy workspace verts. **Gate complet joué ENTIER après le commit de cette passe : 2201/2204** — les 3 seuls échecs étaient les assertions figées à `0.7.0` de `migrations_fresh_install`/`migrations_upgrade_path`, **la famille exacte que P2-bis annonce comme seule à voir un bump `min_required`** (invisible en statique, révélé au runtime). Les 4 sites corrigés au value-grep (`\b0\.7\.0\b`), rejoués verts 3/3. Le gate complet de convergence sera rejoué en fin de boucle, avant le push — c'est lui qui fera foi d'un run entièrement vert. Trend : passe 1 = `1/1/1/1` → **passe 2 requise** (rotation : Haiku).
 
 ---
 
