@@ -132,6 +132,10 @@ Le manuel utilisateur — § *Le numéro de client sur la facture* — décrit l
 - [x] **T8 — Recherche** (AC4). La recherche apparie sur la valeur **affichée**, pas sur la canonique — donc en principe **zéro changement de code**. Le livrable est un **test de non-régression** : un contact au numéro portant des accents décomposés est retrouvé par sa graphie saisie, et la recherche ne consulte pas la colonne canonique. ⚠️ Si un changement s'avérait nécessaire : **il y a DEUX branches `LIKE`** dans `push_where_clauses` (`contacts.rs:197` et `:206`) — les deux, ou aucune. *(La première rédaction était une mise en garde sans livrable — une revue ne pouvait pas juger T8 « fait ». Relevé en passe 1.)*
 - [x] **T9 — Documentation** (AC8). Manuel utilisateur, CHANGELOG, et fermeture des deux issues **avec mot-clé**.
 
+### Review Findings — passe 2
+
+Aucun finding retenu — **convergence en 2 passes**. Les trois lentilles Haiku concluent indépendamment à zéro défaut au-dessus de LOW ; détail au Change Log, entrée passe 2.
+
 ### Review Findings — passe 1
 
 - [x] [Review][Patch] CRITICAL — expansion NFKC/casse : canonique > VARCHAR(50), boot en boucle au message brut [`text.rs`, `contacts.rs:445`, `backfill.rs`]
@@ -241,6 +245,20 @@ M1-M4 (chaque étape de D2 neutralisée) → 1 à 3 tests de table rouges chacun
 - `CHANGELOG.md` — `[Unreleased] / ### Corrigé`
 
 ## Change Log
+
+**2026-08-15 — `bmad-code-review`, PASSE 2 (Haiku ×3, contextes frais, diff aplati unique). CONVERGENCE : 0 finding > LOW retenu, critère d'arrêt ATTEINT en 2 passes.**
+
+| Lentille | retenu après ground-truth |
+|---|---|
+| Blind Hunter (diff seul) | **0** — ses sections « CRITICAL/HIGH » sont des auto-vérifications qui concluent chacune « conforme, présent, testé », y compris sa propre question sur le rejeu des mutations post-incident, qu'il réfute lui-même |
+| Edge Case Hunter (diff + code) | **0** — les six bords ciblés des patches de passe 1 vérifiés sains : pré-scan refuse en bloc avant toute écriture, `canonical_key` unique aux trois sites de calcul, actif/archivé cohérent avec la contrainte, idempotence de la vacuité par le WHERE, versions cohérentes aux trois niveaux |
+| Acceptance Auditor (spec + CLAUDE.md + issues) | **0** — les 4 patches de passe 1 vérifiés présents au grep, compteurs P5 recomptés (61 = 5+56+0), AC1-AC8 rejouées, `\b0.7.0\b` sans assertion résiduelle, périmètre 4 crates sous le seuil de split |
+
+**Trend : passe 1 `1/1/1/1` → passe 2 `0/0/0/0`. Modèles du cycle : dev Fable → P1 Sonnet ×3 → P2 Haiku ×3.** Mutations du cycle : 5 au dev + 2 en passe 1 = 7, 7 rougissements, périmètres déclarés.
+
+**Reste avant la PR** : le gate backend complet de CONVERGENCE (celui qui fera foi d'un run entièrement vert — lancé au commit de cette entrée), la suite E2E rejouée (le code de production a changé : boot, import, route contacts), puis la PR unique portant `closes #294, closes #295`.
+
+---
 
 **2026-08-14 — `bmad-code-review`, PASSE 1 (Sonnet ×3, contextes frais — l'implémenteur était Fable).**
 
