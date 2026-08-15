@@ -220,7 +220,8 @@ M1-M4 (chaque étape de D2 neutralisée) → 1 à 3 tests de table rouges chacun
 | fmt + clippy workspace `-D warnings` | verts *(un premier run a attrapé un `explicit_auto_deref` réel — et mon invocation à pipe masquait l'exit code, le piège documenté par la 22-4a : relancé sans pipe, `EXIT=` explicite)* |
 | tests ciblés — text, contacts repo, backfill, import e2e, upgrade_path | verts (4 + 15 + 2, cf. ci-dessus) |
 | frontend `check` / `lint-i18n` / `test:unit` / `build` | 0 erreur / PASS / **512/512** / ok |
-| **gate backend complet profil `ci`** | *(en cours au moment de cette entrée — relancé après le dernier changement de code ; un run intermédiaire, périmé par les patches, a été arrêté en vol : la base persistante des tests `#[tokio::test]` peut porter des résidus `TestContact`, que les cleanups d'entrée de test absorbent)* |
+| **gate backend complet profil `ci` — RUN DE CONVERGENCE** | **2204/2204, 0 skip-échec, EXIT=0** (69 min), au dernier commit de la boucle de revue |
+| **suite E2E Playwright rejouée** | **180 ✓ / 39 ✘ / 19 ignorés** (13,7 min) — les 39 échecs relèvent TOUS des familles structurelles #287 (mêmes têtes que la référence du 2026-08-13 : bank-import 6, bank-csv 4, reminders/onboarding/invoice-send-email/fiscal-years/bank-import-confirms 3 chacune) ; **les deux specs `contact-client-number` sont VERTES**, dont « le numéro survit à la modification d'un champ sans rapport » — la surface exacte de l'UPDATE modifié ; grep des jetons du périmètre (client_number, canonical, backfill) sur tout le journal : seules ces deux lignes vertes. Différentiel ARGUMENTÉ contre la référence 181/38/19, pas mesuré sur un worktree main — même réserve déclarée que la 22-4a. **Et le boot lui-même est prouvé** : le backend 0.10.0 a migré et backfillé `kesh_e2e` (base persistante réelle) sans refus — le chemin P8 et le chemin D6-boot exercés en vrai |
 
 ### File List
 
