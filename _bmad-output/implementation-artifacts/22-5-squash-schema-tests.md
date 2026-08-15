@@ -2,7 +2,7 @@
 
 ## Status
 
-backlog
+ready-for-dev
 
 ## Story
 
@@ -254,3 +254,9 @@ Retenu : **1 MED, 4 LOW** — le fond (D1-D5, AC0-AC6, T1-T8) n'a produit **aucu
 Retenu : **1 MED** — la « restitution » de passe 6 avait recréé un doublon : l'item 12 (tmpfs/orphelines) recouvrait à 80 % l'item 6, qui avait FUSIONNÉ deux findings sources distincts (le volume dupliqué d'audit-P3, le tmpfs/orphelines du ground-truth-P3). 12 segments, 11 distincts. Le compte juste EST 12 : l'item 6 est **scindé** (il ne garde que volume + destruction déclarée), l'item 12 porte seul tmpfs/orphelines — les deux findings sources retrouvent chacun leur ligne. Tout le reste du mandat vérifié conforme : 4+12+6 aux « · », total 23, rectifications dérivées cohérentes (« 20 dont un doublon » arithmétiquement recoupé), les 4 LOW de passe 6 en place — y compris la précision que le 3ᵉ site `0/0/2/~5` était déjà correct avant la passe 6, son « aux deux sites » étant exact.
 
 **Trend : P5 `0/0/2/1` → P6 `0/0/1/4` → P7 `0/0/1/0`. Passe 8 — LA DERNIÈRE du budget (rotation : Haiku, mandat : l'unique item scindé). Si un MED survit, l'arbitrage de sortie revient à Guy.**
+
+**2026-08-15 — `bmad-create-story validate`, PASSE 8 (Haiku, lentille unique, mandat minimal). CONVERGENCE : 0 CRIT / 0 HIGH / 0 MED — au plafond exact du budget de 8 passes.**
+
+Les 12 items distincts vérifiés un à un, la scission 6/12 en place, « tmpfs dimensionné » à une seule occurrence, l'entrée de passe 7 conforme à l'état du fichier.
+
+**Bilan du cycle** : `4/4/8/5` → `0/0/2/~5` → `1/4/12/6` → `0/0/5/1` → `0/0/2/1` → `0/0/1/4` → `0/0/1/0` → `0/0/0/0`. Modèles : rédaction Fable → Sonnet ×3 → Haiku ×3 → **Opus ×3 (architecture — la passe qui a tout changé : réfutations sur pièces, révision D1 vers le répertoire de l'issue, dérogation de splitting arbitrée par Guy)** → Sonnet ×2 → Haiku ×2 → Opus ×1 → Sonnet ×1 → Haiku ×1. Le FOND est scellé depuis la passe 4 ; les passes 5-8 n'auront corrigé que les comptes rendus du cycle lui-même — la § *Recompter* prise en défaut CINQ fois sur ses propres artefacts, d'où la leçon désormais écrite au corps de la spec : la ventilation s'écrit EN MÊME TEMPS que le total. Statut → `ready-for-dev`.
