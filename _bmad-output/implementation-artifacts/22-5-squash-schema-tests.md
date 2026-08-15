@@ -25,7 +25,7 @@ Chaque test `#[sqlx::test]` crée une base éphémère **vide** puis rejoue le `
 | `migrations = false` | **17** | backfills à fenêtre, upgrade_path | inchangés (gèrent eux-mêmes leurs migrations) |
 | `migrator = "crate::MIGRATOR"` | **12** | `kesh-db/src/{backup,test_fixtures}.rs` (tests internes au crate) | → `crate::TEST_MIGRATOR` (même bascule, graphie interne) |
 | `migrations = "./migrations"` | **9** | `kesh-db/src/repositories/bank_profiles.rs` | → `TEST_MIGRATOR` |
-| attribut **nu** (`InferredPath`) | **1** | `accounts_role_backfill.rs` | fichier d'exclusion D2 — à expliciter en `migrations = false` ou chemin réel, jamais laissé implicite |
+| attribut **nu** (`InferredPath`) | **1** | `accounts_role_backfill.rs` | fichier d'exclusion D2 : **reste exclu**, mais l'attribut s'explicite en `migrations = false` — plus d'implicite |
 | **Total** | **1142** | 718 kesh-api, 393 kesh-db, 31 kesh-report | la ventilation SOMME au total — c'est le contrôle |
 
 *Méthode de recomptage (à rejouer, pas à relire)* : attributs réels seuls, doc-comments exclus —
@@ -38,7 +38,7 @@ print(sum(1 for p in pathlib.Path('crates').rglob('*.rs')
             for l in p.read_text(errors='replace').splitlines() if pat.match(l)))"
 ```
 
-⚠️ **Cinq graphies distinctes atteignent le même chemin de 61 migrations.** La première rédaction n'en voyait qu'une (« 1092 attributs `migrator = "kesh_db::MIGRATOR"` ») — un nombre qui additionnait en réalité deux littéraux sans le dire, et laissait 33 tests hors de la bascule ET hors de l'audit. *(Relevé en passe 1 par deux lentilles ; recompté par l'orchestrateur, ventilation ci-dessus prouvée sommante.)* D'où **AC3 : la complétude est tenue par un TEST, pas par un grep.**
+⚠️ **Cinq graphies distinctes atteignent le même chemin de 61 migrations** — le recensement compte SIX populations, la sixième étant `migrations = false`, qui n'atteint aucun chemin (autogérée). La première rédaction n'en voyait qu'une (« 1092 attributs `migrator = "kesh_db::MIGRATOR"` ») — un nombre qui additionnait en réalité deux littéraux sans le dire, et laissait 33 tests hors de la bascule ET hors de l'audit. *(Relevé en passe 1 par deux lentilles ; recompté par l'orchestrateur, ventilation ci-dessus prouvée sommante.)* D'où **AC3 : la complétude est tenue par un TEST, pas par un grep.**
 
 **Autres compteurs périmés que cette story rafraîchit** : `.config/nextest.toml` (« ~894 tests / 51 migrations », 2026-07-13), le commentaire CI « 84 tests » sur base partagée (réels : 154), **et la § *Plafonds mémoire* du `CLAUDE.md`** qui porte les mêmes « ~894 » et « 51 migrations » (ligne 114) — le site que la § *Propagation post-patch* aurait rendu au grep de `\b894\b`, nommé ici pour ne pas dépendre de la vertu de l'exécutant.
 
@@ -86,11 +86,11 @@ Tout le reste bascule. Un fichier qui voudrait rejoindre cette liste le fera **e
 
 **D4 — Volet vitesse machine : MariaDB dev sur tmpfs, durabilité relâchée — la base JETABLE seulement.**
 
-`docker-compose.dev.yml` gagne `tmpfs: /var/lib/mysql` et `command: --innodb_flush_log_at_trx_commit=0 --sync_binlog=0 --innodb-doublewrite=0`. **Conséquence assumée et documentée** : la base dev `kesh` perd sa persistance au restart du conteneur — le seed se rejoue (`docs/testing.md` le dira ; Guy a déjà pratiqué ce montage à la main pour la 14-3a, port 3307, jamais formalisé). **CI hors périmètre nominal** : `services:` GitHub Actions ne passe pas de `command:` mariadbd ; la piste `options: --tmpfs` (option de `docker create`) est un **spike optionnel non bloquant** — le gain CI vient de D1, qui s'applique partout.
+`docker-compose.dev.yml` gagne `tmpfs: /var/lib/mysql` et `command: --innodb_flush_log_at_trx_commit=0 --sync_binlog=0 --innodb-doublewrite=0`. **Conséquence assumée et documentée** : la base dev `kesh` perd sa persistance au restart du conteneur — le seed se rejoue (`docs/testing.md` le dira ; Guy a déjà pratiqué ce montage à la main pour la 14-3a, port 3307, jamais formalisé). Un oubli de re-seed est **déjà bruyant** : les 154 tests sur base partagée s'ouvrent sur `expect("need at least one company in DB for tests")` — le gate le dit en toutes lettres, pas de faux vert possible. **CI hors périmètre nominal** : `services:` GitHub Actions ne passe pas de `command:` mariadbd ; la piste `options: --tmpfs` (option de `docker create`) est un **spike optionnel non bloquant** — le gain CI vient de D1, qui s'applique partout.
 
 **D5 — Les mesures se PUBLIENT, l'« avant » se REMESURE, et le plafond de threads ne bouge qu'APRÈS.**
 
-Le « ~69 min » cité en ouverture est un **ordre de grandeur emprunté** au gate de convergence de la 22-1, mesuré sur SON commit — il ne vaut pas « avant » pour AC4. La référence AVANT se remesure sur le **commit de base de la bascule T4** (l'état juste avant T4, tout le reste de la story déjà posé), l'APRÈS au commit de T4 — deux runs qui ne diffèrent que par la bascule. Le plafond de 6 threads n'est **pas** touché dans cette story — s'il devient débloquable, c'est une re-mesure dédiée future, consignée.
+Le « ~69 min » cité en ouverture est un **ordre de grandeur emprunté** au gate de convergence de la 22-1, mesuré sur SON commit — il ne vaut pas « avant » pour AC4. **T4 est UN commit, venant après T1-T3/T5 dans l'ordre de la branche** : l'AVANT se mesure sur son **parent direct** (`<sha-T4>~1` — squash, garde-fous et test de complétude déjà posés, bascule pas encore faite), l'APRÈS sur le commit de T4 — deux runs qui ne diffèrent que par la bascule. Et **la bascule D1 vaut PARTOUT, CI comprise** (les attributs sont dans le code, `cargo test` de la CI les lit comme nextest) — seul le volet D4 (tmpfs) est dev-only. Le plafond de 6 threads n'est **pas** touché dans cette story — s'il devient débloquable, c'est une re-mesure dédiée future, consignée.
 
 ## Acceptance Criteria
 
@@ -100,7 +100,7 @@ Le « ~69 min » cité en ouverture est un **ordre de grandeur emprunté** au ga
 **AC2 — Le squash est indiscernable du vrai schéma, STRUCTURE ET AMORÇAGE.** Le garde-fou D3 (deux jambes) est vert.
 *Preuve* : le test lui-même — **et ses mutations jouées, par copie** : une colonne retirée du squash → rouge nominatif ; une migration ajoutée sans régénération → rouge ; la ligne `_kesh_version` altérée dans le squash → rouge (la jambe données).
 
-**AC3 — La complétude de la bascule est un TEST, pas un grep.** Un test de source balaie tous les attributs `#[sqlx::test]` du dépôt (méthode ancrée du recensement) et exige : chaque attribut est soit sur `TEST_MIGRATOR`/`crate::TEST_MIGRATOR`, soit `migrations = false`, soit dans un fichier de la liste D2 **portée en dur par ce test**. Une graphie nouvelle (`migrations = "…"`, attribut nu, alias) ou un fichier hors liste → rouge en nommant le site.
+**AC3 — La complétude de la bascule est un TEST, pas un grep.** Un test de source balaie tous les attributs `#[sqlx::test]` du dépôt (méthode ancrée du recensement) et exige : chaque attribut est sur `TEST_MIGRATOR`/`crate::TEST_MIGRATOR`, **sauf** dans un fichier de la liste D2 **portée en dur par ce test** — et `migrations = false`, comme toute graphie de chemin réel, n'est licite QUE dans ces fichiers-là : un futur fichier ne peut pas s'auto-exempter du squash en silence, ni par un attribut nu, ni par `migrations = false`, ni par une graphie nouvelle — tout hors-liste rougit en nommant fichier et ligne. *(Resserré en passe 2 : la première rédaction autorisait `migrations = false` partout.)*
 *Preuve* : le test, **et sa mutation** : un attribut re-basculé à la main vers `kesh_db::MIGRATOR` hors liste doit rougir. *(La première rédaction prouvait par un grep mono-littéral, aveugle à 4 graphies sur 5 et pollué par les doc-comments — relevé en passe 1 par deux lentilles, CRITICAL.)*
 
 **AC4 — La mesure est publiée, et elle DÉCIDE.** Avant/après selon D5 (même machine, commits ne différant que par T4), gate complet et `nextest` seul.
@@ -116,9 +116,9 @@ Le « ~69 min » cité en ouverture est un **ordre de grandeur emprunté** au ga
 
 - [ ] **T1 — Script de régénération + squash initial** (D3, AC2). `scripts/regen-test-schema.sh` : détection `mariadb-dump`/`mysqldump`, `--no-data`, **exclusion `_sqlx_migrations`**, normalisation (`AUTO_INCREMENT=`, horodatages), en-tête `FOREIGN_KEY_CHECKS=0`, réinjection de la ligne `_kesh_version`. `schema-squash.sql` versionné.
 - [ ] **T2 — `TEST_MIGRATOR` et `crate::TEST_MIGRATOR`** (D1). Migration synthétique unique (`Migration::new`, champs publics — vérifié dans le registry). ⚠️ P8 : la migration synthétique ne vit que dans les bases ÉPHÉMÈRES — l'écrire **dans le doc-comment de `TEST_MIGRATOR`**, avec la règle « se régénère, ne s'édite pas ».
-- [ ] **T3 — Garde-fou anti-dérive à deux jambes** (D3, AC2). Diff `information_schema` complet (vues/triggers/routines/actions FK compris) + comparaison de la ligne `_kesh_version`. Messages actionnables. **Trois mutations jouées, par copie.**
+- [ ] **T3 — Garde-fou anti-dérive à deux jambes** (D3, AC2). Fichier **`crates/kesh-db/tests/test_schema_guard.rs`**, deux fonctions : `squash_matches_real_schema_structure` (diff `information_schema` complet — vues/triggers/routines/actions FK compris) et `squash_seeds_the_kesh_version_row` (la jambe données). Messages actionnables (« régénérez : scripts/regen-test-schema.sh »). **Trois mutations jouées, par copie** (copie de travail dans le scratchpad, restauration, `diff -q` de contrôle).
 - [ ] **T4 — Bascule des CINQ graphies** (D1, D2, AC1, AC3, AC4). Les populations du recensement, selon leur colonne « Sort » ; l'attribut nu d'`accounts_role_backfill.rs` explicité. **La mesure AVANT se prend au commit précédant immédiatement cette bascule, l'APRÈS au commit de la bascule** (D5).
-- [ ] **T5 — Test de complétude d'AC3** (AC3). Balayage de source par attributs ancrés, liste D2 en dur, mutation jouée.
+- [ ] **T5 — Test de complétude d'AC3** (AC3). Même fichier `test_schema_guard.rs`, fonction `every_sqlx_test_attribute_is_accounted_for` : balayage de source par attributs ancrés (le patron du dispositif de la 22-4a, appliqué au harnais), liste D2 en dur, `migrations = false` restreint à cette liste, mutation jouée.
 - [ ] **T6 — tmpfs + durabilité dev** (D4, AC6). Compose + `docs/testing.md`. ⚠️ À faire quand AUCUN gate ne tourne — le restart du conteneur tue tout run en vol.
 - [ ] **T7 — Compteurs rafraîchis aux trois sites** (AC5). `nextest.toml`, commentaire CI, `CLAUDE.md` § Plafonds mémoire — avec dates.
 - [ ] **T8 — Mesures publiées et règle de décision appliquée** (D5, AC4). Tableau avant/après ; verdict fermeture (#251 `closes` ou `refs`) motivé par le seuil d'AC4 ; plafond de threads intouché, renvoi explicite à une re-mesure future.
@@ -151,7 +151,9 @@ Le « ~69 min » cité en ouverture est un **ordre de grandeur emprunté** au ga
 | Aveugle (spec seule) | 2 | 4 | 4 | 3 |
 | Ground-truth (spec vs sources/registry/DB réelle) | 0 | 1 | 2 | 1 |
 | Audit (checklist + CLAUDE.md + issue) | 2 | 0 | 2 | 3 |
-| **dédupliqué** | **4** | **4** | **6** | **5** |
+| **dédupliqué** | **4** | **4** | **8** | **5** |
+
+*(Le tableau a d'abord annoncé « 6 MED » pour une puce qui en énumérait 8 — l'incohérence a été relevée en passe 2 par l'audit, et le recomptage donne bien 8. Le compteur de compteurs n'est pas exempté de la règle.)*
 
 Déduplication notable : les graphies multiples d'attribut, vues par les TROIS lentilles sous trois angles (grep aveugle au grain, 44 tests invisibles, 12 `crate::MIGRATOR` dans le total même) → **un** CRITICAL, fermé par la refonte d'AC3 en test de complétude. Les deux lentilles se CONTREDISAIENT sur les décomptes (audit : « périmés, 1182 » ; ground-truth : « exacts une fois ancrés, 1142 ») — **tranché par recomptage de l'orchestrateur** : 1142 exact, ventilation à six populations qui somme juste ; le grep naïf comptait les doc-comments.
 
@@ -160,9 +162,21 @@ Déduplication notable : les graphies multiples d'attribut, vues par les TROIS l
 - **CRIT 3 — les décomptes étaient recopiés de l'exploration, pas recomptés** — sur une story dont le sujet EST un compteur de tests. Tableau refait au commit de la passe, méthode ancrée ÉCRITE dans la spec, ventilation sommante exigée.
 - **CRIT 4 — cinq graphies atteignent les mêmes 61 migrations** (1080 + 23 + 12 + 9 + 1 nu), la substitution et sa preuve n'en voyaient qu'une. AC3 refondu : la complétude est un TEST fail-loud (liste D2 en dur, toute graphie nouvelle rougit) — la philosophie du dispositif de la 22-4a, appliquée au harnais de test.
 - **4 HIGH** : AC1 « même compte » contradictoire avec T3 (reformulé : aucun test perdu, ajouts nommés) · grain fichier/attribut de D2 (résolu par le test d'AC3) · `migrations_upgrade_path` invisible au grep (idem) · tableau non sommant (recompté).
-- **6 MED** : « le seul INSERT » réfuté (7 INSERT sur 3 migrations — seul `_kesh_version` à réinjecter, dit avec le vrai compte) · « 69 min » était la mesure d'une AUTRE story sur un AUTRE commit (rétrogradé en ordre de grandeur, l'« avant » se remesure — D5/T4) · exception de mutation à « ne s'édite jamais » écrite · périmètre du diff élargi (vues/triggers/routines/actions FK) · script robuste (mariadb-dump/mysqldump, FK_CHECKS=0) · seuil de décision d'AC4 (< 2× sur nextest seul → la PR ne ferme pas #251) · le « vœu P5 » remplacé par le vrai mécanisme (le garde-fou D3 EST l'entretien) · `CLAUDE.md` § Plafonds mémoire ajouté aux sites d'AC5.
+- **8 MED** : « le seul INSERT » réfuté (7 INSERT sur 3 migrations — seul `_kesh_version` à réinjecter, dit avec le vrai compte) · « 69 min » était la mesure d'une AUTRE story sur un AUTRE commit (rétrogradé en ordre de grandeur, l'« avant » se remesure — D5/T4) · exception de mutation à « ne s'édite jamais » écrite · périmètre du diff élargi (vues/triggers/routines/actions FK) · script robuste (mariadb-dump/mysqldump, FK_CHECKS=0) · seuil de décision d'AC4 (< 2× sur nextest seul → la PR ne ferme pas #251) · le « vœu P5 » remplacé par le vrai mécanisme (le garde-fou D3 EST l'entretien) · `CLAUDE.md` § Plafonds mémoire ajouté aux sites d'AC5.
 - **5 LOW** : commande d'inspection d'AC6 explicitée · rationale du plafond de threads dans nextest.toml (renvoi D5) · emplacement de la note P8 (doc-comment de TEST_MIGRATOR) · fallback client de dump vérifié sur pièces · précédent `common/mod.rs` requalifié (sous-ensemble, pas synthétique).
 
 **Vérifié conforme par le ground-truth, et c'est porteur** : `Migration` constructible hors crate (champs publics, `Migration::new`) et chemin d'attribut arbitraire accepté — **D1 est faisable sur pièces** ; le dump réel (client MySQL 8.4 contre MariaDB 10.11) rend fidèlement colonnes générées, CHECK nommés et collations explicites ; la liste D2 est complète (grep exhaustif des patrons de fenêtre) ; compose dev vierge de tout réglage, conforme aux notes.
 
 **Patches appliqués (réécriture complète de la spec), prochaine passe : Haiku, contexte frais.**
+
+**2026-08-15 — `bmad-create-story validate`, PASSE 2 (Haiku ×3, contextes frais).**
+
+| Lentille | retenu après triage |
+|---|---|
+| Aveugle | **2 MED** réels + LOW de formulation — et 1 « CRITICAL » d'arithmétique RÉFUTÉ de tête (sa propre somme oubliait la ligne de l'attribut nu : 1080+23+17+12+9+1 = 1142, exacte) ; 2 « CRITICAL » rétrogradés en points de nommage/formulation |
+| Ground-truth | **0** — le bloc python de la spec exécuté TEL QUEL rend 1142 ; chaque population, chaque fichier, les 7 INSERT (4/1/2), les sites périmés (CLAUDE.md:114, CI ×2) et la commande docker d'AC6 vérifiés exacts ; les éléments « T6 futur » correctement reconnus comme travail à venir |
+| Audit | **0** > LOW — les 4 CRITICAL de passe 1 vérifiés intégrés au grep, AC toutes exécutables, chaînage complet ; 1 LOW réel : le « 6 MED » de passe 1 en énumérait 8 |
+
+**Patchés en passe 2** : `migrations = false` restreint aux fichiers D2 dans le test d'AC3 (un futur fichier ne peut plus s'auto-exempter en silence — le vrai MED de la passe) · les artefacts de test NOMMÉS (`crates/kesh-db/tests/test_schema_guard.rs`, trois fonctions) · le timing d'AC4 rendu littéral (avant = parent direct du commit T4) · la bascule D1 dite valable en CI aussi (seul D4 est dev-only) · « cinq graphies / six populations » désambiguïsé · l'attribut nu dit « reste exclu » · le re-seed oublié dit déjà bruyant (`expect` nominatif des 154 tests partagés) · le tableau de passe 1 corrigé (6→8 MED, avec son aveu).
+
+**Trend : passe 1 `4/4/8/5` → passe 2 `0/0/2/~5`, les 2 MED patchés. Une passe 3 s'impose** (des MED ont été relevés — rotation : Opus).
