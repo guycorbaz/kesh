@@ -141,6 +141,33 @@ async fn main() {
     }
     tracing::info!("Migrations appliquées");
 
+    // 4-bis. Backfill Rust du parc (Story 22-1, D6) — idempotent, une requête
+    // quand tout est rempli. En cas de collision canonique entre numéros de
+    // client, LE BOOT REFUSE : c'est la forme concrète du « la migration
+    // refuse » de D5, la migration elle-même étant du DDL pur. Le rapport
+    // d'erreur nomme chaque fiche en collision — c'est lui, l'outil de
+    // réparation.
+    match pool.acquire().await {
+        Ok(mut conn) => {
+            match kesh_db::backfill::backfill_client_number_canonical(&mut conn).await {
+                Ok(0) => {}
+                Ok(n) => {
+                    tracing::info!("Backfill client_number_canonical : {n} ligne(s) remplie(s)")
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "Backfill client_number_canonical refusé (refus du boot, cf. Story 22-1 D5/D6) :\n{e}"
+                    );
+                    std::process::exit(1);
+                }
+            }
+        }
+        Err(e) => {
+            tracing::error!("Backfill client_number_canonical : connexion impossible : {e}");
+            std::process::exit(1);
+        }
+    }
+
     // 4b. Record boot version (story 10-2) — non-fatal si échec
     if let Err(e) = kesh_db::version::record_boot_version(&pool, env!("CARGO_PKG_VERSION")).await {
         tracing::warn!(

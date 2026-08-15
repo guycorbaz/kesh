@@ -10,6 +10,12 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [Unreleased]
 
+### Corrigé
+
+- **Deux numéros de client identiques à l'œil sont désormais le même numéro.** L'unicité du numéro de client ignorait ce que l'œil ne voit pas : un accent composé différemment selon le système (macOS et Windows n'encodent pas `É` pareil), un caractère invisible collé par un copier-coller depuis un courriel ou un document Word, ou une collation de base de données qui variait d'une installation à l'autre. Deux fiches pouvaient ainsi porter « le même » numéro — ou, à l'inverse, un numéro légitimement neuf être refusé. La comparaison passe par une forme canonique calculée par Kesh, identique sur toutes les installations ; **ce que vous avez tapé reste affiché et imprimé tel quel**, et un accent continue de distinguer deux clients (`CLI-É1` ≠ `CLI-E1`). ([#294](https://github.com/guycorbaz/kesh/issues/294), [#295](https://github.com/guycorbaz/kesh/issues/295))
+
+  ⚠️ **Au premier démarrage après la mise à jour**, Kesh reprend le parc existant. S'il découvre deux contacts actifs dont les numéros ne diffèrent que par la casse, un accent recomposé ou un caractère invisible, **il refuse de démarrer et nomme les fiches en cause** — corrigez-les, puis relancez. Un import d'installation portant de telles collisions est refusé de la même façon.
+
 ### Sécurité
 
 - **Les clés API n'accèdent plus à l'administration.** Une clé API (PAT) ne peut plus atteindre aucune fonction réservée au rôle **Administrateur**, quel que soit le rôle de la personne qui l'a créée : gestion des utilisateurs et des mots de passe, paramètres de facturation et de relance, taux de TVA, niveaux de rappel, modèles d'e-mail, coordonnées de l'entreprise, suppression d'une facture, export et import d'installation, réouverture d'un exercice clôturé. Ces opérations se font dans l'interface web.

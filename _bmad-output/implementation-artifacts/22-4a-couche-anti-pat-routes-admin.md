@@ -2,7 +2,7 @@
 
 ## Status
 
-review
+done
 
 ⚠️ **Née du découpage de la story 22-4**, le 2026-08-13, après quatre passes de `bmad-create-story validate`. Elle en reçoit **le mécanisme** ; la story **22-4b** reçoit la frontière documentaire. Le motif du découpage et la conduite de merge sont au § *Découpage*.
 

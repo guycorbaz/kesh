@@ -297,6 +297,13 @@ pub const EXEMPT_MIGRATIONS: &[(i64, &str)] = &[
         "UPDATE sur _kesh_version (bump kesh_version_min_required), table système jamais \
          restaurée. Ce n'est pas un backfill applicatif.",
     ),
+    (
+        20260814000001,
+        "UPDATE sur _kesh_version (bump kesh_version_min_required), table système jamais \
+         restaurée. Le reste de la migration est du DDL pur ; le remplissage du parc vit HORS \
+         migration (backfill_client_number_canonical, appelée au boot et en fin d'import — D6 \
+         Story 22-1), ce qui tient l'esprit de P7 sans entrée au registre.",
+    ),
 ];
 
 /// Rejoue les backfills du registre canonique dans la transaction de restore.

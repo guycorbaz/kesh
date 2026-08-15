@@ -1,11 +1,15 @@
 [package]
 name = "kesh-qrbill"
-version = "0.9.0"
+version = "0.10.0"
 edition.workspace = true
 license.workspace = true
-description = "Swiss QR Bill SIX 2.2 payload builder and PDF generator (standalone, publishable)"
+description = "Swiss QR Bill SIX 2.2 payload builder and PDF generator"
 
 [dependencies]
+# Story 22-1 (D3, arbitrage Guy 2026-08-14) : le prédicat `is_invisible` est
+# factorisé dans kesh-core — le crate cesse d'être « standalone », propriété
+# théorique (jamais publié) sacrifiée à l'unicité de la définition.
+kesh-core = { path = "../kesh-core" }
 printpdf = "0.7"
 qrcodegen = "1.8"
 rust_decimal = { version = "1.41", features = ["maths"] }

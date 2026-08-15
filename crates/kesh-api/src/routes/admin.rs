@@ -296,6 +296,29 @@ async fn run_backup_and_restore(
             .await
             .map_err(|e| AppError::AdminFullImportFailed(format!("rejeu des backfills : {e}")))?;
 
+    // 5-ter. Backfill Rust de la canonique du numéro de client (Story 22-1,
+    //    D6) — le pendant du 5-bis pour le SEUL backfill qui ne peut pas être
+    //    du SQL (NFKC + invisibles). Un backup antérieur à la story arrive
+    //    avec `client_number_canonical` vide ; un backup en COLLISION est
+    //    refusé ici en 400, rapport nominatif à l'appui — un backup en
+    //    collision ne s'installe pas, il se répare d'abord. Idempotent : sur
+    //    un backup à jour, une requête, zéro écriture.
+    kesh_db::backfill::backfill_client_number_canonical(&mut tx)
+        .await
+        .map_err(|e| match e {
+            kesh_db::backfill::BackfillError::Refused(report) => {
+                // 400 nominatif : collisions OU canoniques trop longues sont un
+                // problème de DONNÉES du backup, réparable par l'exploitant —
+                // pas une panne du serveur.
+                AppError::ImportClientNumberCollision {
+                    report: report.to_string(),
+                }
+            }
+            kesh_db::backfill::BackfillError::Db(db) => {
+                AppError::AdminFullImportFailed(format!("backfill client_number_canonical : {db}"))
+            }
+        })?;
+
     // Audit in-tx, user_id = MIN(admin) **du dataset restauré** (O-1, FK
     // audit_log.user_id → users). PAS current_user (peut ne pas exister dans
     // la source).

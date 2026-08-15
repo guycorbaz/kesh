@@ -1357,3 +1357,94 @@ async fn full_import_replays_backfills_in_increasing_version_order(pool: MySqlPo
          et 2979 serait écrit sur les lignes."
     );
 }
+
+// ============================================================================
+// Story 22-1 (#294/#295) — la jambe IMPORT du mécanisme D6
+// ============================================================================
+
+/// AC6 — un backup antérieur à la Story 22-1 arrive avec
+/// `client_number_canonical` vide : le backfill Rust, appelé en fin d'import,
+/// le remplit. C'est l'esprit du garde-fou P7 tenu SANS entrée au registre
+/// SQL — la migration est du DDL pur, seul ce chemin rejoue.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn full_import_backfills_client_number_canonical(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = seed_admin(&pool, "cn_backfill").await;
+
+    // Contact legacy : numéro posé, canonique volontairement NULL — l'INSERT
+    // brut reproduit l'état d'un backup produit avant la story. Passer par le
+    // repository serait un contresens : il remplit la canonique.
+    sqlx::query(
+        "INSERT INTO contacts (company_id, contact_type, name, is_client, client_number) \
+         VALUES (?, 'Personne', 'Legacy CN', TRUE, 'CL\u{00C9}-IMP-1')",
+    )
+    .bind(ctx.company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let backup = export_backup(&app, &ctx.jwt).await;
+    let resp = post_import(&app, &ctx.jwt, backup).await;
+    assert_eq!(resp.status(), 200, "import d'un backup sain : 200");
+
+    let canonical: Option<String> = sqlx::query_scalar(
+        "SELECT CAST(client_number_canonical AS CHAR) FROM contacts \
+         WHERE client_number = 'CL\u{00C9}-IMP-1'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        canonical.as_deref(),
+        Some("cl\u{00E9}-imp-1"),
+        "le backfill d'import remplit la canonique du parc restauré"
+    );
+}
+
+/// AC6/D5 — un backup en COLLISION est refusé en **400
+/// `IMPORT_CLIENT_NUMBER_COLLISION`**, rapport nominatif dans
+/// `details.report`, et l'état précédent est préservé (rollback). Un backup
+/// en collision ne s'installe pas : il se répare d'abord.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn full_import_refuses_client_number_collision_400(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = seed_admin(&pool, "cn_collision").await;
+
+    for (name, number) in [("Coll A", "CLI-IMP-1"), ("Coll B", "CLI\u{200B}-IMP-1")] {
+        sqlx::query(
+            "INSERT INTO contacts (company_id, contact_type, name, is_client, client_number) \
+             VALUES (?, 'Personne', ?, TRUE, ?)",
+        )
+        .bind(ctx.company_id)
+        .bind(name)
+        .bind(number)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    let backup = export_backup(&app, &ctx.jwt).await;
+    let resp = post_import(&app, &ctx.jwt, backup).await;
+    assert_eq!(resp.status(), 400, "backup en collision : refusé");
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["error"]["code"], "IMPORT_CLIENT_NUMBER_COLLISION",
+        "code dédié — l'intégrateur se fie au champ code : {body}"
+    );
+    let report = body["error"]["details"]["report"].as_str().unwrap_or("");
+    assert!(
+        report.contains("CLI-IMP-1") && report.contains("\\u{200b}"),
+        "le rapport nomme les fiches, invisible ESCAPÉ (outil de réparation) : {report}"
+    );
+
+    // Rollback : les deux fiches d'origine sont intactes, canonique toujours
+    // vide — rien n'a été ni supprimé ni backfillé.
+    let (remaining, filled): (i64, i64) = sqlx::query_as(
+        "SELECT COUNT(*), COUNT(client_number_canonical) FROM contacts \
+         WHERE client_number LIKE '%IMP-1'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!((remaining, filled), (2, 0), "état précédent préservé");
+}

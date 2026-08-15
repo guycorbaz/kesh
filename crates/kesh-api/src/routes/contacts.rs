@@ -12,6 +12,7 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
 use kesh_core::listing::SortDirection;
+use kesh_core::text::is_invisible;
 use kesh_core::types::CheNumber;
 use kesh_db::entities::Language;
 use kesh_db::entities::contact::{Contact, ContactType, ContactUpdate, NewContact, Salutation};
@@ -34,7 +35,7 @@ const MAX_PHONE_LEN: usize = 50;
 const MAX_PAYMENT_TERMS_LEN: usize = 100;
 /// Story 16-3b (#151) — aligné sur la colonne `contacts.client_number`
 /// VARCHAR(50). Longueur de STOCKAGE : le PDF, lui, tronque à l'affichage.
-const MAX_CLIENT_NUMBER_LEN: usize = 50;
+const MAX_CLIENT_NUMBER_LEN: usize = kesh_core::text::CLIENT_NUMBER_MAX_CHARS;
 /// Borne haute du délai de paiement en jours (#245) — miroir du CHECK SQL
 /// `chk_contacts_payment_terms_days` (le CHECK n'est que le filet).
 const MAX_PAYMENT_TERMS_DAYS: i32 = 365;
@@ -289,18 +290,12 @@ pub(crate) fn is_valid_email_simple(s: &str) -> bool {
 /// Une valeur qui **mélange** invisible et visible passe inchangée : seule la
 /// valeur intégralement invisible est ramenée à `None`.
 ///
-/// *(Jumeau côté rendu : `is_invisible` dans `kesh-qrbill/src/pdf.rs`, qui garde
-/// le PDF contre les valeurs écrites hors API — restauration d'une sauvegarde
-/// produite ailleurs, correction SQL directe. Ce sont deux **couches** : l'une
-/// décide ce qui entre en base, l'autre ce qui s'imprime, et le PDF doit tenir
-/// même face à une base qui n'est pas passée par cette route.*
-///
-/// ⚠️ *Le motif d'abord écrit ici — « deux crates sans dépendance commune » —
-/// était **faux** : `kesh-api` dépend directement de `kesh-qrbill`
-/// (`Cargo.toml:12`). Une factorisation est donc techniquement possible, et si
-/// un troisième site en a besoin un jour, c'est cette voie qu'il faut prendre
-/// plutôt que recopier une troisième fois. Réfuté en passe 3 de
-/// `bmad-code-review`.)*
+/// Le prédicat vit dans `kesh_core::text` depuis la Story 22-1 : il était
+/// écrit **deux fois** (ici et dans `kesh-qrbill/src/pdf.rs`), sur un motif de
+/// non-dépendance réfuté en passe 3 de revue de la 16-3b. Les deux couches
+/// subsistent — l'une décide ce qui entre en base, l'autre ce qui s'imprime,
+/// et le PDF doit tenir même face à une base qui n'est pas passée par cette
+/// route — mais elles consultent désormais **la même source**.
 pub(crate) fn normalize_optional(s: Option<String>) -> Option<String> {
     s.and_then(|v| {
         let t = v.trim();
@@ -310,17 +305,6 @@ pub(crate) fn normalize_optional(s: Option<String>) -> Option<String> {
             Some(t.to_string())
         }
     })
-}
-
-/// Vrai si le caractère ne **marque** rien à l'écran ni à l'impression.
-///
-/// `U+00AD` (trait d'union conditionnel) est inclus : il ne se rend pas hors
-/// point de césure.
-fn is_invisible(c: char) -> bool {
-    c.is_whitespace()
-        || c.is_control()
-        || matches!(c,
-            '\u{00AD}' | '\u{200B}'..='\u{200F}' | '\u{2060}'..='\u{2064}' | '\u{FEFF}')
 }
 
 /// Valide + normalise un IDE optionnel via `CheNumber`.
@@ -452,6 +436,21 @@ fn validate_common(
     {
         return Err(AppError::Validation(format!(
             "Le numéro de client doit faire au plus {MAX_CLIENT_NUMBER_LEN} caractères"
+        )));
+    }
+    // Story 22-1, revue passe 1 (CRITICAL) : la forme CANONIQUE peut être plus
+    // longue que la valeur saisie — NFKC décompose les ligatures (`ﬁ` → `fi`)
+    // et `to_lowercase` étend certains caractères (`İ` → `i` + U+0307) : 50
+    // caractères saisis peuvent en canoniser 100, au-delà du VARCHAR(50) de la
+    // colonne de comparaison. Sans cette garde, l'INSERT échouerait en 1406
+    // (mode strict) → un 400 générique au message trompeur pour une saisie qui
+    // respecte pourtant la limite affichée. Prouvé par exécution en revue.
+    if let Some(ref cn) = client_number
+        && kesh_core::text::canonical_key(cn).chars().count() > MAX_CLIENT_NUMBER_LEN
+    {
+        return Err(AppError::Validation(format!(
+            "La forme normalisée du numéro de client (accents et ligatures décomposés) \
+             dépasse {MAX_CLIENT_NUMBER_LEN} caractères — raccourcissez-le"
         )));
     }
 
@@ -839,6 +838,47 @@ mod tests {
             None
         );
         assert_eq!(validate_optional_ide(None).unwrap(), None);
+    }
+
+    /// Story 22-1, revue passe 1 (CRITICAL) : une saisie de 50 caractères dont
+    /// la forme CANONIQUE en fait 100 (`ﬁ` NFKC → `fi`) est refusée en 400 au
+    /// message explicite — sans cette garde, l'INSERT échouait en 1406 brut.
+    #[test]
+    fn client_number_whose_canonical_form_overflows_is_rejected_with_a_named_message() {
+        // 50 ligatures = 50 caractères saisis (borne respectée), 100 canonisés.
+        let fifty_ligatures = "\u{FB01}".repeat(50);
+        assert_eq!(fifty_ligatures.chars().count(), 50);
+        assert_eq!(
+            kesh_core::text::canonical_key(&fifty_ligatures)
+                .chars()
+                .count(),
+            100
+        );
+        let result = validate_common(
+            ContactType::Personne,
+            "Test Overflow".into(),
+            Some("A".into()),
+            Some("B".into()),
+            true,
+            false,
+            crate::address_input::StructuredAddressInput::default(),
+            None,
+            None,
+            None,
+            Some(fifty_ligatures),
+            None,
+            None,
+        );
+        let Err(err) = result else {
+            panic!("une canonique de 100 caractères doit être refusée");
+        };
+        match err {
+            AppError::Validation(msg) => assert!(
+                msg.contains("forme normalisée"),
+                "le message doit nommer la cause réelle : {msg}"
+            ),
+            other => panic!("attendu Validation, obtenu {other:?}"),
+        }
     }
 
     #[test]

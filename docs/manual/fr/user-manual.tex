@@ -650,7 +650,7 @@ Elle rend deux services : votre client rapproche la facture de son propre dossie
 \end{keshnote}
 
 \begin{keshnote}
-Le numéro doit être \textbf{unique parmi vos contacts actifs} --- c'est ce qui lui permet d'identifier. Si vous en saisissez un déjà pris, Kesh vous le signale et refuse l'enregistrement. La \textbf{casse ne distingue pas} : \texttt{CLI-1} et \texttt{cli-1} sont considérés comme le même numéro.
+Le numéro doit être \textbf{unique parmi vos contacts actifs} --- c'est ce qui lui permet d'identifier. Si vous en saisissez un déjà pris, Kesh vous le signale et refuse l'enregistrement. \textbf{Deux numéros identiques à l'œil sont le même numéro} : la casse ne distingue pas (\texttt{CLI-1} et \texttt{cli-1}), la façon dont un accent a été composé par votre système non plus, et les caractères invisibles qu'un copier-coller depuis un courriel ou un document Word peut coller au passage sont ignorés. En revanche, \textbf{un accent distingue} : \texttt{CLI-É1} et \texttt{CLI-E1} restent deux numéros différents --- deux clients peuvent légitimement ne différer que par là. Ce que vous avez tapé est conservé tel quel : c'est ce qui s'affiche sur la fiche et s'imprime sur la facture.
 
 En revanche, \textbf{archiver un contact libère son numéro} : vous pouvez le réattribuer à un nouveau contact. L'ancien contact, lui, \textbf{conserve le sien} --- ses factures passées restent ainsi lisibles. Si vous réattribuez un numéro puis cochez «~\emph{Inclure archivés}~» dans la recherche, ce numéro remonte donc \textbf{deux} contacts : l'actif et l'archivé. C'est voulu, mais gardez-le en tête avant de recycler un numéro encore présent sur des factures récentes.
 \end{keshnote}

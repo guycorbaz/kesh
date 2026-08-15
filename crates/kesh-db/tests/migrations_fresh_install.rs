@@ -227,8 +227,9 @@ async fn migrations_minimal_seed_roundtrips(pool: MySqlPool) {
 
 /// AC #14c — la row initiale `_kesh_version` est créée par la migration
 /// `20260522000001_kesh_version.sql` avec `('0.1.0', '0.1.0')`, puis
-/// `kesh_version_min_required` est bumpé à `'0.7.0'` par le 1er bump breaking
-/// du repo (Story 21-3, `email_templates_reminder.sql`) — `kesh_version_last_applied`
+/// `kesh_version_min_required` vaut le DERNIER bump breaking du repo — `'0.10.0'`
+/// depuis la Story 22-1 (`contacts_client_number_canonical.sql`), après `'0.7.0'`
+/// posé par le 1er bump (Story 21-3) — `kesh_version_last_applied`
 /// reste `'0.1.0'` (non touché par la migration, écrit au boot seulement).
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn migrations_kesh_version_initial_row(pool: MySqlPool) {
@@ -240,7 +241,7 @@ async fn migrations_kesh_version_initial_row(pool: MySqlPool) {
         .await
         .expect("SELECT _kesh_version failed");
 
-    assert_eq!(min_required, "0.7.0");
+    assert_eq!(min_required, "0.10.0");
     assert_eq!(last_applied, "0.1.0");
     // last_boot_at reste NULL tant que record_boot_version() n'a pas été
     // appelé (le test n'invoque pas la boot integration de main.rs).

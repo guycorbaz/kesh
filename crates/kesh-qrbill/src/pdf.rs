@@ -11,6 +11,7 @@
 use crate::generator::{build_payload, render_qr_image};
 use crate::types::{InvoicePdfData, QrBillData, QrBillError, QrBillI18n, Reference};
 use chrono::{Datelike, NaiveDate};
+use kesh_core::text::is_invisible;
 use printpdf::{
     BuiltinFont, Color, IndirectFontRef, Line, Mm, OffsetDateTime, PdfDocument,
     PdfDocumentReference, PdfLayerReference, Point, Rgb,
@@ -1101,23 +1102,14 @@ fn format_date_ch(d: NaiveDate) -> String {
     format!("{:02}.{:02}.{:04}", d.day(), d.month(), d.year())
 }
 
-/// Vrai si le caractère ne **marque** rien sur la page.
-///
-/// `char::is_whitespace` suit la propriété Unicode `White_Space`, qui n'inclut
-/// **pas** les caractères de largeur nulle : `U+200B` (ZWSP), `U+FEFF` (BOM) et
-/// `U+2060` (word joiner) passent donc `trim()` et `is_empty()` sans être
-/// retenus. Une valeur qui n'en contient que de ceux-là est vide *à
-/// l'impression* — c'est ce que ce prédicat permet de détecter, pour ne pas
-/// dessiner une ligne blanche qui consommerait un `META_LINE_STEP`.
-///
-/// `U+00AD` (trait d'union conditionnel) est inclus : il ne se rend pas hors
-/// point de césure.
-fn is_invisible(c: char) -> bool {
-    c.is_whitespace()
-        || c.is_control()
-        || matches!(c,
-            '\u{00AD}' | '\u{200B}'..='\u{200F}' | '\u{2060}'..='\u{2064}' | '\u{FEFF}')
-}
+// `is_invisible` — « vrai si le caractère ne marque rien sur la page » — vit
+// dans `kesh_core::text` depuis la Story 22-1 (import en tête de fichier) : il
+// était écrit deux fois, ici et dans la normalisation d'entrée de `kesh-api`.
+// Cette garde de rendu doit rester LA MÊME CHOSE que la garde de saisie : le
+// PDF tient face à une base qui n'est pas passée par la route (restauration,
+// SQL direct), mais avec la définition unique de « invisible ». Son rôle ici :
+// ne pas dessiner une ligne blanche qui consommerait un `META_LINE_STEP` pour
+// une valeur faite de ZWSP/BOM/word-joiner, vides à l'impression.
 
 fn truncate_display(s: &str, max_chars: usize) -> String {
     if s.chars().count() <= max_chars {
