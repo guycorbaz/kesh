@@ -203,6 +203,43 @@ Diff ciblé sur le cœur logique (1487 lignes) — arbitrage de Guy : la bascule
 
 - `kesh_e2e` créée en `utf8mb4_general_ci` alors que 36 tables sur 38 sont en `utf8mb4_unicode_ci` — écarté : la base `kesh` et le défaut serveur sont eux aussi en `general_ci`, et chaque table porte sa propre collation. S'aligner sur les tables ferait diverger `kesh_e2e` de `kesh`. Un commentaire d'explication est ajouté avec le correctif du GRANT.
 
+### Review Findings — `bmad-code-review` passe 2 (2026-08-16, Sonnet ×3, contextes frais)
+
+Cible : le **diff de remédiation** de la passe 1 (1394 lignes, story file exclu) — c'est là que se logent les régressions d'une passe précédente. Mandats différenciés : régressions introduites (aveugle), mécanismes NEUFS (cas limites), et **vérification que chaque correctif coché est réellement appliqué** (acceptation).
+
+**Le HIGH** — et il vient du mandat « cas limites » :
+
+- [x] [Review][Patch] `seed-dev-db.sql` s'accrochait à **n'importe quelle** société préexistante : la garde testait « existe-t-il une société », pas « existe-t-il LA société de seed ». Sur une base `kesh` où un développeur a créé sa propre société, le seed lui greffait un exercice « CI 2020-2030 » et des comptes « Ventes CI »/« Charges CI » — les numéros 1000/1100/2000/3000/4000 étant ceux du plan comptable suisse, la collision n'est pas improbable. Sans erreur ni avertissement. Garde désormais nominative. **(HIGH)** [`scripts/seed-dev-db.sql:44`]
+
+**Deux correctifs de la passe 1 qui rouvraient le défaut qu'ils fermaient** :
+
+- [x] [Review][Patch] Le garde `//` de `parse_attribute` était **tautologique** : l'appelant garantissant déjà que la ligne ouvre par le jeton, la condition était toujours vraie et le découpage coupait au premier `//` venu, fût-il dans les arguments (`migrations = "./a//b"`). Remplacé par une recherche du `//` **hors chaîne**. [`test_schema_guard.rs`]
+- [x] [Review][Patch] `percent_decode` réinterprétait les backslashes **déjà présents** dans le mot de passe (`printf '%b'` s'applique à toute la chaîne) — le défaut même que la fonction venait fermer, par un autre vecteur. Les backslashes sont désormais doublés avant substitution. [`scripts/regen-test-schema.sh`]
+
+**Deux correctifs de la passe 1 appliqués à MOITIÉ**, cochés comme faits — relevés par l'audit d'acceptation, dont c'était le mandat premier :
+
+- [x] [Review][Patch] `collect_rs` : le volet « suit les symlinks » était corrigé, le volet « avale les erreurs de lecture » non. Un sous-arbre illisible sous-comptait en silence. [`test_schema_guard.rs`]
+- [x] [Review][Patch] Script de régénération : le volet « ordre du glob » était corrigé (`LC_ALL=C`), le volet « chaque fichier ouvre sa propre session » non. Les 61 migrations s'appliquent désormais en **une seule session**, comme le vrai `MIGRATOR` (`run_direct`). [`scripts/regen-test-schema.sh`]
+
+**Le reste** :
+
+- [x] [Review][Patch] Le GRANT `` `_sqlx_test%` `` est plus large que son commentaire ne l'affirme : `_` est un **joker** dans un motif de GRANT, et les backticks n'y changent rien. **Vérifié par une sonde** : un utilisateur ainsi doté voyait une base `Xsqlx_testZZZ`. Échappé en `` `\_sqlx\_test%` ``, re-vérifié. [`scripts/mariadb-init/01-dev-grants.sql`]
+- [x] [Review][Patch] Les commentaires de bloc `/* … */` sont suivis par **profondeur** et non par booléen : Rust les autorise imbriqués, et un `*/` interne rouvrait le scan sur des lignes encore commentées — un attribut fantôme y aurait été compté par les DEUX compteurs, donc **sans déclencher l'invariant sommant**. [`test_schema_guard.rs`]
+- [x] [Review][Patch] Un bloc ouvert **et** refermé sur la même ligne échappait au filtre. [`test_schema_guard.rs`]
+- [x] [Review][Patch] Le registre de checksums : doublon de version détecté (une `BTreeMap` écrasait en silence — et si la seconde ligne portait le checksum du fichier MODIFIÉ, le garde-fou validait ce qu'il existe pour interdire), entrée orpheline détectée, comparaison rendue insensible à la casse. [`test_schema_guard.rs`]
+- [x] [Review][Patch] Les planchers par facette de la passe 1 **remplaçaient** le plancher global au lieu de s'y ajouter : leur somme vaut 401 contre 500, ce qui abaissait la garde contre une érosion diffuse. Les deux coexistent. [`test_schema_guard.rs`]
+- [x] [Review][Patch] `diff_report` compare désormais des **multi-ensembles** : le rattrapage par égalité des longueurs, posé en passe 1, ne couvrait pas les décalages compensés. Compter est plus simple que rattraper. [`test_schema_guard.rs`]
+- [x] [Review][Patch] Un `%` isolé faisait échouer `printf` sans arrêter le script (une substitution de commande en position d'affectation échappe à `set -e`) : le mot de passe partait avec un `\x` littéral, pour un « Access denied » sans rapport apparent. [`scripts/regen-test-schema.sh`]
+- [x] [Review][Patch] Un glob de migrations sans correspondance n'était rattrapé que bien plus loin, par le plancher de tables. Contrôle direct ajouté. [`scripts/regen-test-schema.sh`]
+
+**Traité par la documentation, et non par le code — décision assumée**
+
+- [x] [Review][Decision] Une chaîne littérale s'étendant sur plusieurs lignes **sans** continuation `\` n'est pas suivie par l'analyse, qui est par ligne. Porter la parité des guillemets d'une ligne à l'autre fermerait ce cas, mais **désynchroniserait sur les 25 chaînes brutes `r#"…"#` et les 14 littéraux `'"'` de `crates/`** — un angle mort théorique échangé contre de faux rouges bien réels. Le compromis est écrit dans le doc-comment, avec son coût borné : un jeton logé dans une telle chaîne serait compté par les deux compteurs, donc au pire signalé comme contrevenant, jamais tu sur un vrai test. *(L'Edge Case Hunter avait raison sur un point : cette limite n'était pas reconnue, alors que ses deux voisines l'étaient.)*
+
+**Écarté (1)**
+
+- Le « 42,8× » serait un arrondi faux, 42,9× étant attendu. **Réfuté par recalcul depuis les secondes brutes** : 3863,919 / 90,243 = **42,82**. Le 42,9 du finding vient de la multiplication de deux arrondis intermédiaires (3,25 × 13,2) — précisément ce que la § *Recompter ses propres comptes rendus* proscrit.
+
 ## Dev Notes
 
 ### Références (chaque affirmation sourcée à la ligne)
@@ -434,3 +471,24 @@ Diff **ciblé sur le cœur logique** (1487 lignes) sur arbitrage de Guy : les 22
 **Écarté (1)** : la collation de `kesh_e2e`, alignée sur `kesh` et sur le défaut serveur, les tables portant chacune la leur.
 
 **Gate après correctifs** : `scripts/test-fast.sh --ci` — voir l'entrée de commit pour le résultat déclaré.
+
+**2026-08-16 — `bmad-code-review`, PASSE 2 (Sonnet ×3, contextes frais, sur le DIFF DE REMÉDIATION de la passe 1).**
+
+| Lentille | mandat | retenu |
+|---|---|---|
+| Blind Hunter (diff seul) | les régressions que la remédiation a introduites | 4 MED, 2 LOW-MED, 3 LOW |
+| Edge Case Hunter (diff + dépôt) | les mécanismes NEUFS et leurs bornes | **1 HIGH**, 5 MED, 5 LOW |
+| Acceptance Auditor (diff + spec) | chaque correctif coché est-il RÉELLEMENT appliqué ? | 2 MED |
+| **après fusion** | | **1 HIGH, 8 MED, 6 LOW** → 14 correctifs, 1 décision documentée, 1 écarté |
+
+**Ce que cette passe a démontré, et qui justifie à elle seule la règle d'itération** : trois des quinze findings portent sur des correctifs de la passe 1 qui **rouvraient le défaut qu'ils fermaient** ou ne le fermaient qu'à moitié — un garde tautologique, un décodage qui réinterprétait les backslashes qu'il devait préserver, et deux findings traités sur un seul de leurs deux volets tout en étant cochés « fait ». Aucune relecture par l'auteur n'aurait vu cela : ce sont des défauts d'angle, pas d'attention.
+
+**Le HIGH** : le seed s'accrochait à n'importe quelle société préexistante. Sur une base de dev où quelqu'un a saisi sa propre société, il lui greffait un exercice et des comptes de test — silencieusement, et avec des numéros de compte qui sont ceux du plan comptable suisse.
+
+**L'audit d'acceptation a par ailleurs tout revérifié sur pièces** : 39 des 41 correctifs pleinement appliqués, les 61 checksums du registre **recalculés indépendamment** (0 écart), la ventilation 749 + 354 + 24 + 17 = 1144 recomptée, le commentaire GitHub sur #228 vérifié posté, le grep d'AC5 rejoué.
+
+**Un finding réfuté** : le « 42,8× » serait faux. Recalcul depuis les secondes brutes — 3863,919 / 90,243 = 42,82. Le 42,9 attendu par la lentille venait du produit de deux arrondis.
+
+**Un finding traité par la documentation plutôt que par le code**, et dit comme tel : suivre l'état « dans une chaîne » d'une ligne à l'autre fermerait un angle mort théorique mais désynchroniserait sur les 39 chaînes brutes et littéraux de caractère du workspace. Le compromis et son coût sont écrits dans le doc-comment.
+
+**Trend : passe 1 `0/1/23/36` → passe 2 `0/1/8/6`.** Le HIGH de la passe 2 ne porte pas sur le code de la story mais sur un correctif de la passe 1 : la sévérité ne stagne pas, elle se déplace vers ce qui vient d'être écrit — comportement attendu d'une boucle qui travaille. **Une passe 3 s'impose** (§ Review Iteration Rule) — rotation : Haiku, avec le diff aplati que le `CLAUDE.md` recommande à partir de la passe 2.

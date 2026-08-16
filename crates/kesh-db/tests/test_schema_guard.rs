@@ -309,29 +309,36 @@ async fn schema_facts(conn: &mut MySqlConnection, db: &str) -> Vec<String> {
 
 /// Compare deux relevés et rend le rapport des écarts.
 ///
-/// ⚠️ L'égalité des LONGUEURS est vérifiée par l'appelant en plus des deux
-/// boucles : celles-ci raisonnent par appartenance, donc une facette présente
-/// deux fois d'un côté et une fois de l'autre les traverse sans un mot.
-/// *(Relevé en passe 1 de revue.)*
+/// ⚠️ La comparaison porte sur des **multi-ensembles**, pas des ensembles : elle
+/// compte les occurrences de chaque facette au lieu de tester l'appartenance.
+/// Une comparaison par appartenance laissait passer une facette présente deux
+/// fois d'un côté et une fois de l'autre ; la rattraper par l'égalité des
+/// longueurs totales fermait ce cas-là mais pas les décalages **compensés**
+/// (une facette en trop de chaque côté). Compter est plus simple que de
+/// rattraper. *(Cas relevé en passe 1, rattrapage jugé trop étroit en passe 2.)*
 fn diff_report(real: &[String], squash: &[String]) -> String {
+    fn compter(v: &[String]) -> std::collections::BTreeMap<&str, usize> {
+        let mut m = std::collections::BTreeMap::new();
+        for f in v {
+            *m.entry(f.as_str()).or_insert(0) += 1;
+        }
+        m
+    }
+    let (a, b) = (compter(real), compter(squash));
     let mut out = String::new();
-    for f in real {
-        if !squash.contains(f) {
-            out.push_str(&format!("  MANQUE au squash : {f}\n"));
+    for (f, n) in &a {
+        match b.get(f) {
+            None => out.push_str(&format!("  MANQUE au squash : {f}\n")),
+            Some(m) if m != n => out.push_str(&format!(
+                "  MULTIPLICITÉ : {f} — {n}× côté réel, {m}× côté squash\n"
+            )),
+            _ => {}
         }
     }
-    for f in squash {
-        if !real.contains(f) {
+    for f in b.keys() {
+        if !a.contains_key(f) {
             out.push_str(&format!("  EN TROP au squash : {f}\n"));
         }
-    }
-    if out.is_empty() && real.len() != squash.len() {
-        out.push_str(&format!(
-            "  DOUBLON : mêmes facettes des deux côtés, mais {} lignes côté réel \
-             contre {} côté squash\n",
-            real.len(),
-            squash.len()
-        ));
     }
     out
 }
@@ -363,11 +370,19 @@ async fn squash_matches_real_schema_structure(pool: MySqlPool) {
         report.is_empty(),
         "le squash a DÉRIVÉ du schéma réel — régénérez : scripts/regen-test-schema.sh\n{report}"
     );
-    // Planchers PAR FACETTE, pas un plancher global. Un total de 500 laisserait
-    // disparaître une catégorie entière — les actions FK par exemple, dont le
-    // commentaire du relevé dit pourtant qu'« un `ON DELETE CASCADE` perdu ne se
-    // voit dans aucune autre facette ». Le relevé se tairait en restant gros.
-    // *(Relevé en passe 1 de revue.)*
+    // Plancher GLOBAL **et** planchers par facette : les seconds ferment
+    // l'angle mort du premier (une catégorie entière peut disparaître sans que
+    // le total franchisse 500), mais leur somme vaut 401 — les remplacer aurait
+    // donc ABAISSÉ la garde contre une érosion diffuse répartie sur plusieurs
+    // facettes. Les deux se complètent, ils ne se substituent pas.
+    // *(Planchers par facette : passe 1. Retour du plancher global : passe 2,
+    // qui a relevé le troc.)*
+    assert!(
+        real_facts.len() > 500,
+        "relevé suspect : seulement {} facettes de schéma au total — le relevé \
+         ne mesure plus grand-chose",
+        real_facts.len()
+    );
     for (prefix, floor) in [
         ("table ", 30),
         ("column ", 300),
@@ -555,19 +570,50 @@ fn published_migrations_keep_their_checksums() {
                 n + 1
             )
         });
-        expected.insert(
-            version.parse::<i64>().unwrap_or_else(|_| {
-                panic!("migrations.sha384 ligne {} : version illisible", n + 1)
-            }),
-            hex.trim().to_string(),
-        );
+        let version = version
+            .parse::<i64>()
+            .unwrap_or_else(|_| panic!("migrations.sha384 ligne {} : version illisible", n + 1));
+        // ⚠️ Un doublon ÉCRASE silencieusement sur une `BTreeMap`. Si la seconde
+        // ligne portait le checksum du fichier MODIFIÉ (conflit de fusion mal
+        // résolu, copier-coller), le registre validerait la modification qu'il
+        // existe pour interdire. *(Relevé par deux lentilles en passe 2.)*
+        if expected
+            .insert(version, hex.trim().to_ascii_lowercase())
+            .is_some()
+        {
+            panic!(
+                "migrations.sha384 ligne {} : version {version} EN DOUBLE. Le \
+                 registre est append-only ; une seconde ligne écraserait la \
+                 première sans que rien ne le signale.",
+                n + 1
+            );
+        }
     }
+
+    // Une entrée du registre dont la migration a disparu n'est visitée par
+    // aucune boucle de comparaison : le contrôle se ferait sur un ensemble plus
+    // petit qu'annoncé, sans rien dire. *(Relevé en passe 2.)*
+    let orphelines: Vec<i64> = expected
+        .keys()
+        .copied()
+        .filter(|v| !kesh_db::MIGRATOR.migrations.iter().any(|m| m.version == *v))
+        .collect();
+    assert!(
+        orphelines.is_empty(),
+        "version(s) inscrite(s) au registre de checksums mais absente(s) du \
+         `MIGRATOR` : {orphelines:?}. Une migration a-t-elle été supprimée ou \
+         renumérotée ? Le registre décrirait alors un monde qui n'existe plus."
+    );
 
     let mut modified = Vec::new();
     let mut absents = Vec::new();
     for m in kesh_db::MIGRATOR.migrations.iter() {
         let hex: String = m.checksum.iter().map(|b| format!("{b:02x}")).collect();
         match expected.get(&m.version) {
+            // La comparaison est insensible à la casse (le registre est
+            // normalisé en minuscules à la lecture) : un hexadécimal saisi en
+            // majuscules crierait sinon « MIGRATION MODIFIÉE » sans que rien ne
+            // l'ait été. *(Relevé en passe 2.)*
             Some(known) if *known == hex => {}
             Some(known) => modified.push(format!(
                 "  {} « {} »\n    registre : {known}\n    fichier  : {hex}",
@@ -617,10 +663,23 @@ const TOKEN: &str = "#[sqlx::test";
 ///
 /// La règle est le nombre de guillemets non échappés qui précèdent : impair =
 /// dans une chaîne. Elle suffit ici parce que toutes les mentions littérales du
-/// dépôt vivent sur la ligne qui ouvre leur chaîne. Ses limites connues — chaîne
-/// brute `r#"…"#`, littéral de caractère `'"'` — sont sans occurrence
-/// aujourd'hui, et le pire qu'elles produisent est un rouge à trier, jamais un
-/// silence.
+/// dépôt vivent sur la ligne qui ouvre leur chaîne.
+///
+/// **Trois limites connues, et le choix de ne pas les fermer** :
+/// - chaîne brute `r#"…"#` et littéral de caractère `'"'` faussent la parité —
+///   25 et 14 occurrences dans `crates/`, aucune ne portant le jeton ;
+/// - une chaîne littérale s'étendant sur plusieurs lignes **sans** continuation
+///   `\` n'est pas suivie : l'analyse est par ligne, la parité repart de zéro.
+///   *(Cette troisième limite a été relevée en passe 2 de revue, où elle n'était
+///   pas reconnue.)*
+///
+/// Porter la parité d'une ligne à l'autre fermerait la troisième — mais
+/// **désynchroniserait sur les 39 chaînes brutes et littéraux de caractère du
+/// workspace**, échangeant un angle mort théorique contre de faux rouges bien
+/// réels. Le compromis est donc assumé, et son coût est borné : un jeton logé
+/// dans une telle chaîne serait compté par les DEUX compteurs, donc soit ignoré
+/// (s'il ressemble à une graphie de squash), soit signalé comme contrevenant
+/// avec son fichier et sa ligne. Jamais un silence sur un vrai test.
 fn mentions_outside_strings(line: &str) -> Vec<usize> {
     let bytes = line.as_bytes();
     let mut out = Vec::new();
@@ -639,6 +698,28 @@ fn mentions_outside_strings(line: &str) -> Vec<usize> {
         i += 1;
     }
     out
+}
+
+/// La position du `//` ouvrant un commentaire de fin de ligne, **hors chaîne**.
+fn line_comment_start(line: &str) -> Option<usize> {
+    let bytes = line.as_bytes();
+    let mut quotes = 0usize;
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' => {
+                i += 2;
+                continue;
+            }
+            b'"' => quotes += 1,
+            b'/' if quotes.is_multiple_of(2) && bytes.get(i + 1) == Some(&b'/') => {
+                return Some(i);
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
 }
 
 /// Balaie **tout le workspace** — pas le seul crate de ce test, et pas le seul
@@ -667,17 +748,29 @@ fn scan_attributes() -> (Vec<Attribute>, usize) {
             .unwrap_or(path)
             .to_string_lossy()
             .replace('\\', "/");
-        let mut in_block_comment = false;
+        // Profondeur, et non booléen : Rust autorise les commentaires de bloc
+        // IMBRIQUÉS. Un `/* … /* interne */ … */` refermait le suivi au premier
+        // `*/`, si bien que les lignes suivantes du bloc externe étaient
+        // scannées comme du code — un attribut fantôme y aurait été compté dans
+        // `attrs` ET dans `raw_mentions`, donc SANS déclencher l'invariant
+        // sommant. *(Relevé en passe 2 de revue.)*
+        let mut block_depth = 0usize;
         for (i, line) in content.lines().enumerate() {
             let trimmed = line.trim_start();
-            if in_block_comment {
-                if trimmed.contains("*/") {
-                    in_block_comment = false;
-                }
+            if block_depth > 0 {
+                block_depth = (block_depth + line.matches("/*").count())
+                    .saturating_sub(line.matches("*/").count());
                 continue;
             }
-            if trimmed.starts_with("/*") && !trimmed.contains("*/") {
-                in_block_comment = true;
+            // Un bloc `/* … */` est sauté qu'il se referme sur sa ligne ou non :
+            // ne traiter que le cas non refermé laissait `/* #[sqlx::test] */`
+            // compter comme mention brute sans jamais parser en attribut, donc
+            // un rouge à trier là où il n'y a rien. *(Relevé en passe 2.)*
+            if trimmed.starts_with("/*") {
+                block_depth = line
+                    .matches("/*")
+                    .count()
+                    .saturating_sub(line.matches("*/").count());
                 continue;
             }
             // Les mentions en commentaire de ligne ne sont pas des attributs.
@@ -719,10 +812,17 @@ fn scan_attributes() -> (Vec<Attribute>, usize) {
 /// `#[sqlx::test(migrator = "kesh_db::MIGRATOR")] // cf. "./test-schema"`
 /// produirait des `args` contenant une graphie de squash — donc une exemption
 /// **muette** pour un test resté sur le vrai migrator. *(Relevé en passe 1.)*
+///
+/// ⚠️ Le `//` se cherche **hors chaîne**, via `line_comment_start`. La première
+/// rédaction gardait le découpage derrière une condition qui, l'appelant
+/// garantissant déjà que la ligne OUVRE par `TOKEN`, était toujours vraie : elle
+/// coupait donc au premier `//` rencontré, fût-il à l'intérieur des arguments
+/// (`migrations = "./a//b"`). Un garde tautologique ne garde rien.
+/// *(Relevé en passe 2 de revue.)*
 fn parse_attribute(trimmed: &str) -> Option<String> {
-    let code = match trimmed.find("//") {
-        Some(i) if mentions_outside_strings(&trimmed[..i]).len() == 1 => &trimmed[..i],
-        _ => trimmed,
+    let code = match line_comment_start(trimmed) {
+        Some(i) => &trimmed[..i],
+        None => trimmed,
     };
     let rest = code.trim_end().strip_prefix(TOKEN)?;
     if let Some(inner) = rest.strip_prefix('(') {
@@ -739,9 +839,14 @@ fn parse_attribute(trimmed: &str) -> Option<String> {
 const SKIPPED_DIRS: &[&str] = &["target", ".git", "node_modules", "build", ".svelte-kit"];
 
 fn collect_rs(dir: &std::path::Path, acc: &mut Vec<std::path::PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
+    // ⚠️ Une erreur de lecture ROUGIT, elle ne se saute pas : un sous-arbre
+    // devenu illisible ferait sous-compter le balayage en silence, et le
+    // plancher global pourrait rester franchi malgré le répertoire manqué.
+    // C'est le mode d'échec que tout ce fichier existe pour interdire.
+    // *(Second volet d'un finding de passe 1, resté non traité, relevé en
+    // passe 2 par l'audit d'acceptation.)*
+    let entries = std::fs::read_dir(dir)
+        .unwrap_or_else(|e| panic!("lecture du répertoire {} : {e}", dir.display()));
     for entry in entries.flatten() {
         // Les liens symboliques ne sont pas suivis : un lien vers un ancêtre
         // ferait récurser jusqu'au débordement de pile. *(Relevé en passe 1.)*

@@ -28,7 +28,14 @@
 -- raisonnement écrit dans `scripts/regen-test-schema.sh`, qui justifie son
 -- préfixe réservé par des droits restreints. Deux fichiers de la même story se
 -- contredisaient. *(Relevé par deux lentilles en passe 1 de revue de code.)*
-GRANT ALL PRIVILEGES ON `_sqlx_test%`.* TO 'kesh'@'%';
+-- ⚠️ Les `_` sont ÉCHAPPÉS. Dans un `GRANT … ON base.*`, `_` est un joker
+-- « un caractère quelconque » — et les backticks n'y changent rien, contrairement
+-- à ce qu'on suppose. Vérifié sur le serveur : avec `` `_sqlx_test%` ``, un
+-- utilisateur voyait aussi une base nommée `Xsqlx_testZZZ`. Le motif accordait
+-- donc plus que le commentaire ci-dessus ne le promettait, et le raisonnement du
+-- script de régénération serait resté partiellement faux.
+-- *(Relevé en passe 2 de revue de code, confirmé par une sonde.)*
+GRANT ALL PRIVILEGES ON `\_sqlx\_test%`.* TO 'kesh'@'%';
 GRANT ALL PRIVILEGES ON `kesh%`.* TO 'kesh'@'%';
 FLUSH PRIVILEGES;
 

@@ -71,9 +71,20 @@ DB_PORT="${hostport#*:}"
 # sqlx percent-décode les identifiants d'une URL ; ce script doit en faire
 # autant, sans quoi il s'authentifie avec une chaîne différente de celle de
 # l'application dès qu'un mot de passe contient `@`, `:` ou `/`.
-percent_decode() { printf '%b' "${1//%/\\x}"; }
-DB_USER=$(percent_decode "$DB_USER")
-DB_PASS=$(percent_decode "$DB_PASS")
+# ⚠️ Les backslashes DÉJÀ présents sont doublés AVANT la substitution : sans
+# cela, `printf '%b'` interprète aussi les séquences d'échappement du mot de
+# passe brut (un `\n` littéral y devient un vrai saut de ligne), ce qui
+# réintroduit par un autre vecteur le défaut même que ce décodage ferme.
+# *(Relevé en passe 2 de revue de code.)*
+percent_decode() { local s="${1//\\/\\\\}"; printf '%b' "${s//%/\\x}"; }
+# ⚠️ Le `|| { … exit 1; }` n'est pas décoratif : une substitution de commande en
+# position d'AFFECTATION n'est pas rattrapée par `set -e`. Sans lui, un `%`
+# isolé (non suivi de deux chiffres hexadécimaux) faisait échouer `printf`, dont
+# le message partait sur stderr pendant que le script CONTINUAIT avec un mot de
+# passe contenant `\x` littéral — pour échouer plus loin sur un « Access denied »
+# sans rapport apparent. *(Relevé en passe 2 de revue.)*
+DB_USER=$(percent_decode "$DB_USER") || { echo "✗ décodage du nom d'utilisateur en échec (séquence % invalide dans DATABASE_URL ?)" >&2; exit 1; }
+DB_PASS=$(percent_decode "$DB_PASS") || { echo "✗ décodage du mot de passe en échec (séquence % invalide dans DATABASE_URL ?)" >&2; exit 1; }
 
 # Base JETABLE : jamais la base dev.
 #
@@ -167,12 +178,28 @@ cli -e "DROP DATABASE IF EXISTS \`$SQUASH_DB\`; CREATE DATABASE \`$SQUASH_DB\`;"
 # nécessairement ailleurs. *(Relevé en passe 1.)*
 # ---------------------------------------------------------------------------
 echo "▶ application des migrations réelles…"
-MIGRATION_COUNT=0
-while IFS= read -r f; do
-    "$CLI_BIN" --defaults-extra-file="$CNF" "$SQUASH_DB" < "$f"
-    MIGRATION_COUNT=$((MIGRATION_COUNT + 1))
-done < <(LC_ALL=C ls -1 crates/kesh-db/migrations/*.sql)
-echo "  $MIGRATION_COUNT migrations appliquées"
+MIGRATION_COUNT=$(LC_ALL=C ls -1 crates/kesh-db/migrations/*.sql | wc -l)
+# Un glob sans correspondance (mauvais répertoire courant, migrations déplacées)
+# ne remonte pas jusqu'ici sous `set -e` : sans ce contrôle, le script écrivait
+# « 0 migrations appliquées » puis continuait, et l'erreur n'était rattrapée que
+# bien plus loin, par le plancher de tables. *(Relevé en passe 2.)*
+if [[ "$MIGRATION_COUNT" -eq 0 ]]; then
+    echo "✗ aucune migration trouvée dans crates/kesh-db/migrations/." >&2
+    exit 1
+fi
+# ⚠️ UNE SEULE session pour toutes les migrations, comme le vrai `MIGRATOR` :
+# sqlx les applique sur UNE connexion (`run_direct`). Les appliquer une par une
+# ouvrait une session par fichier, si bien qu'un état de session posé par une
+# migration (`SET @…`, `SET FOREIGN_KEY_CHECKS`) et consommé par la suivante se
+# serait comporté autrement ici que sur le chemin réel — et le garde-fou aurait
+# fini par signaler une divergence de schéma dont la cause serait cherchée du
+# mauvais côté. *(Second volet d'un finding de passe 1, resté non traité, relevé
+# en passe 2.)*
+# Les 61 fichiers se terminent tous par `;` — vérifié — donc la concaténation
+# forme des statements bien séparés.
+LC_ALL=C cat $(LC_ALL=C ls -1 crates/kesh-db/migrations/*.sql) \
+    | "$CLI_BIN" --defaults-extra-file="$CNF" "$SQUASH_DB"
+echo "  $MIGRATION_COUNT migrations appliquées (session unique)"
 
 # ---------------------------------------------------------------------------
 # 4. Garde-fou : le squash ne sait porter que des TABLES

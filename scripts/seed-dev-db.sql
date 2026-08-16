@@ -39,12 +39,25 @@
 
 START TRANSACTION;
 
+-- ⚠️ La garde cible LA société de seed par son NOM, pas « une société
+-- quelconque ». Une garde globale (`WHERE NOT EXISTS (SELECT 1 FROM companies)`)
+-- avait un mode d'échec sérieux : sur une base `kesh` où un développeur a créé
+-- sa propre société, le seed s'y serait ACCROCHÉ — exercice « CI 2020-2030 » et
+-- comptes « Ventes CI »/« Charges CI » greffés sur des données réelles, sans
+-- erreur ni avertissement. Les numéros 1000/1100/2000/3000/4000 étant ceux du
+-- plan comptable suisse, la collision n'est même pas improbable.
+-- *(HIGH de la passe 2 de revue de code.)*
 INSERT INTO companies (name, address, org_type, accounting_language, instance_language)
 SELECT 'CI Seed Company', 'Test Address 1\n1000 Lausanne', 'Independant', 'FR', 'FR'
-WHERE NOT EXISTS (SELECT 1 FROM companies);
+WHERE NOT EXISTS (SELECT 1 FROM companies WHERE name = 'CI Seed Company');
 
-SET @company_id := (SELECT id FROM companies ORDER BY id LIMIT 1);
+SET @company_id := (SELECT id FROM companies WHERE name = 'CI Seed Company' ORDER BY id LIMIT 1);
 
+-- La garde reste sur le nom d'utilisateur, `username` portant une contrainte
+-- d'unicité GLOBALE (`uq_users_username`) : scoper à la société produirait une
+-- violation au lieu d'un saut. Un `admin` préexistant rattaché ailleurs fait
+-- donc sauter cette insertion — état signalé au § d'en-tête comme la limite
+-- assumée de ce script, qui suppose posséder la base.
 INSERT INTO users (username, password_hash, role, active, company_id)
 SELECT 'admin',
        '$argon2id$v=19$m=19456,t=2,p=1$wDaFUbAJuozHKhQshibCHw$T/DeYTKABHDpW7JM5MoiQciUad5Eb81Cfvh0aUvi2Z4',
