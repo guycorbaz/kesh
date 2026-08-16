@@ -1,8 +1,8 @@
 //! Tests d'intégration de la résilience SPA + endpoints DB-indépendants
 //! quand la DB est perdue (Story 10.3, AC #5).
 //!
-//! Stratégie : `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]` fournit une
-//! base éphémère migrée. La perte de DB est simulée via `pool.close()` (méthode
+//! Stratégie : `#[sqlx::test(migrations = "../kesh-db/test-schema")]` fournit
+//! une base éphémère migrée. La perte de DB est simulée via `pool.close()` (méthode
 //! canonique sqlx 0.8). Les deux tests vérifient que :
 //!
 //! - (a) Le fallback `ServeDir` (`lib.rs:54+`) continue de servir `index.html`
@@ -124,7 +124,7 @@ async fn login(app: &TestApp, username: &str, password: &str) -> String {
 
 /// AC #5(a) : pool fermé, le fallback `ServeDir` continue de servir `index.html`
 /// sur `GET /` en pure I/O fichier (200 + Content-Type `text/html`).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn spa_index_served_when_db_down(pool: MySqlPool) {
     let app = spawn_app(pool.clone(), spa_stub_dir()).await;
 
@@ -162,7 +162,7 @@ async fn spa_index_served_when_db_down(pool: MySqlPool) {
 /// Setup obligatoire : créer admin + login pour obtenir un JWT valide AVANT
 /// de fermer le pool. Sinon impossible d'émettre un token (le login fait des
 /// requêtes DB).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn i18n_messages_served_when_db_down(pool: MySqlPool) {
     let app = spawn_app(pool.clone(), spa_stub_dir()).await;
     create_test_company(&pool).await;

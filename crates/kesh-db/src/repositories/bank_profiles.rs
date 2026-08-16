@@ -398,7 +398,7 @@ mod tests {
         .last_insert_id() as i64
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrations = "./test-schema")]
     async fn create_inserts_profile_and_audit_log(pool: MySqlPool) {
         let company_id = seed_company(&pool).await;
         let user_id = seed_user(&pool, company_id).await;
@@ -420,7 +420,7 @@ mod tests {
         assert_eq!(count, 1);
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrations = "./test-schema")]
     async fn find_by_id_for_company_returns_none_for_other_company(pool: MySqlPool) {
         let company_a = seed_company(&pool).await;
         let company_b = seed_company(&pool).await;
@@ -445,7 +445,7 @@ mod tests {
         assert!(result.is_some());
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrations = "./test-schema")]
     async fn list_by_company_only_returns_own(pool: MySqlPool) {
         let company_a = seed_company(&pool).await;
         let company_b = seed_company(&pool).await;
@@ -473,7 +473,7 @@ mod tests {
         assert_eq!(profiles_b[0].bank_name, "PostFinance");
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrations = "./test-schema")]
     async fn duplicate_bank_name_within_company_rejected(pool: MySqlPool) {
         let company_id = seed_company(&pool).await;
         let user_id = seed_user(&pool, company_id).await;
@@ -488,7 +488,7 @@ mod tests {
         assert!(matches!(err, DbError::UniqueConstraintViolation(_)));
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrations = "./test-schema")]
     async fn same_bank_name_allowed_across_companies(pool: MySqlPool) {
         let company_a = seed_company(&pool).await;
         let company_b = seed_company(&pool).await;
@@ -505,7 +505,7 @@ mod tests {
         tx.commit().await.unwrap();
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrations = "./test-schema")]
     async fn update_full_replacement_writes_audit_log_with_fields_changed(pool: MySqlPool) {
         let company_id = seed_company(&pool).await;
         let user_id = seed_user(&pool, company_id).await;
@@ -543,7 +543,7 @@ mod tests {
         assert!(names.contains(&"header_row_count"));
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrations = "./test-schema")]
     async fn delete_with_audit_log_snapshot(pool: MySqlPool) {
         let company_id = seed_company(&pool).await;
         let user_id = seed_user(&pool, company_id).await;
@@ -577,7 +577,7 @@ mod tests {
         assert_eq!(details["bank_name"].as_str().unwrap(), "UBS");
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrations = "./test-schema")]
     async fn find_matching_profiles_filters_by_filename_and_company(pool: MySqlPool) {
         let company_a = seed_company(&pool).await;
         let company_b = seed_company(&pool).await;
@@ -612,7 +612,7 @@ mod tests {
         assert!(no_match.is_empty());
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrations = "./test-schema")]
     async fn parse_column_mapping_returns_typed_struct(pool: MySqlPool) {
         let company_id = seed_company(&pool).await;
         let user_id = seed_user(&pool, company_id).await;

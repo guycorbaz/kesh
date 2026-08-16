@@ -211,7 +211,7 @@ async fn invoice_version(pool: &MySqlPool, id: i64) -> i32 {
         .unwrap()
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn list_grouped_by_contact_with_has_email(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let cid = create_company(&pool, "List Co").await;
@@ -245,7 +245,7 @@ async fn list_grouped_by_contact_with_has_email(pool: MySqlPool) {
 
 /// MEDIUM-1 (code-review) : deux contacts HOMONYMES ne doivent pas fusionner ni
 /// éclater — le groupement est par `contact_id`, pas par nom.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn list_groups_homonym_contacts_separately(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let cid = create_company(&pool, "Homonym Co").await;
@@ -280,7 +280,7 @@ async fn list_groups_homonym_contacts_separately(pool: MySqlPool) {
     assert_eq!(gb["invoices"].as_array().unwrap().len(), 1);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn pause_resume_toggle_and_note_reset(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let cid = create_company(&pool, "Pause Co").await;
@@ -348,7 +348,7 @@ async fn pause_resume_toggle_and_note_reset(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "INVOICE_NOT_PAUSED");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn manual_reminder_level_jump_and_guards(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let cid = create_company(&pool, "Manual Co").await;
@@ -452,7 +452,7 @@ async fn manual_reminder_level_jump_and_guards(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn cancel_reminder_admin_only_and_soft(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let cid = create_company(&pool, "Cancel Co").await;
@@ -514,7 +514,7 @@ async fn cancel_reminder_admin_only_and_soft(pool: MySqlPool) {
     assert!(!res.json::<Value>().await.unwrap()["cancelledAt"].is_null());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn rbac_and_idor(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let cid = create_company(&pool, "Tenant A").await;
@@ -600,7 +600,7 @@ fn item_ids(body: &Value) -> Vec<i64> {
 }
 
 /// AC 24(a) — le détail facture expose l'état de suspension (et la note).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn get_invoice_exposes_dunning_pause_state(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let cid = create_company(&pool, "Detail Co").await;
@@ -648,7 +648,7 @@ async fn get_invoice_exposes_dunning_pause_state(pool: MySqlPool) {
 /// AC 24(b)(c)(d)(e)(g) — la liste expose l'état et le filtre `?paused=` trie
 /// correctement, `total` restant cohérent avec `items` (le COUNT partage le
 /// prédicat de `push_where_clauses`).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn list_invoices_exposes_and_filters_paused(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let cid = create_company(&pool, "List Co").await;
@@ -717,7 +717,7 @@ async fn list_invoices_exposes_and_filters_paused(pool: MySqlPool) {
 /// no-op — ou un `build_due_dates_query` qui cesserait de poser `paused: None`
 /// — la ferait disparaître de l'échéancier : le défaut même que 21-6a ferme,
 /// réintroduit par sa correction.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn paused_invoice_stays_visible_in_due_dates(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let cid = create_company(&pool, "Echeancier Co").await;
@@ -768,7 +768,7 @@ async fn paused_invoice_stays_visible_in_due_dates(pool: MySqlPool) {
 }
 
 /// AC 24(h) — valeur inconnue rejetée par serde, aucune validation handler.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn list_invoices_rejects_unknown_paused_value(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let cid = create_company(&pool, "Bogus Co").await;

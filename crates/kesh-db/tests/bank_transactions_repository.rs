@@ -7,7 +7,7 @@
 //! pour seeder des transactions persistées (l'INSERT direct nécessiterait
 //! de bypasser le FK constraint sur `import_id`).
 //!
-//! Pattern `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]` — DB éphémère.
+//! Pattern `#[sqlx::test(migrations = "./test-schema")]` — DB éphémère.
 
 use chrono::NaiveDate;
 use kesh_db::entities::{
@@ -125,7 +125,7 @@ async fn seed_import_with_txs(
 const HASH_A: &str = "0123456789012345678901234567890123456789012345678901234567890abc";
 const HASH_B: &str = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba98765432ab";
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_in_dedup_window_returns_only_within_period(pool: MySqlPool) {
     // T3.2#1 — 3 transactions : 1 dans la fenêtre, 1 avant, 1 après → 1 retournée.
     let company_id = create_test_company(&pool, "Acme").await;
@@ -178,7 +178,7 @@ async fn find_in_dedup_window_returns_only_within_period(pool: MySqlPool) {
     assert_eq!(result[0].reference.as_deref(), Some("INSIDE"));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_in_dedup_window_scopes_by_company(pool: MySqlPool) {
     // T3.2#2 / AC #25 (KF-002 Pattern 1) — multi-tenant : transactions
     // de company_B non retournées pour company_A.
@@ -249,7 +249,7 @@ async fn find_in_dedup_window_scopes_by_company(pool: MySqlPool) {
     assert_eq!(same_tenant[0].reference.as_deref(), Some("TX-A"));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_in_dedup_window_scopes_by_bank_account(pool: MySqlPool) {
     // T3.2#3 — 2 comptes même company : seul le compte demandé retourne.
     let company_id = create_test_company(&pool, "Acme").await;
@@ -301,7 +301,7 @@ async fn find_in_dedup_window_scopes_by_bank_account(pool: MySqlPool) {
     assert_eq!(result[0].reference.as_deref(), Some("TX-BANK-1"));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_in_dedup_window_returns_empty_when_no_match(pool: MySqlPool) {
     // T3.2#4 — happy path empty result.
     let company_id = create_test_company(&pool, "Acme").await;

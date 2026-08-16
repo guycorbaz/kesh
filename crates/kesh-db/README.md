@@ -17,9 +17,15 @@ tests/               # Tests d'intégration (#[sqlx::test])
 
 ## Tests d'intégration
 
-Les tests utilisent `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]` qui crée
+Les tests utilisent `#[sqlx::test(migrations = "./test-schema")]` qui crée
 une **base de données temporaire par test** (ce n'est pas un rollback de
 transaction). La base est clonée puis détruite automatiquement.
+
+Le répertoire `test-schema/` porte le **squash** du schéma — une seule
+migration DDL au lieu des 61 cycles du vrai `MIGRATOR` (cf. `test-schema/README.md`).
+Seuls les tests qui exercent le chemin des migrations lui-même gardent
+`migrator = "kesh_db::MIGRATOR"` ; la liste est tenue en dur par
+`tests/test_schema_guard.rs`, qui rougit sur tout écart.
 
 ### Prérequis
 

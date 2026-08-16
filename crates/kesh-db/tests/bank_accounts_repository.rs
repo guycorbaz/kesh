@@ -32,7 +32,7 @@ async fn create_test_company(pool: &MySqlPool) -> i64 {
     .id
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_and_find_primary(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
 
@@ -60,7 +60,7 @@ async fn create_and_find_primary(pool: MySqlPool) {
     assert_eq!(found.unwrap().iban, "CH9300762011623852957");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_primary_returns_none_when_empty(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
     let found = bank_accounts::find_primary(&pool, company_id)
@@ -69,7 +69,7 @@ async fn find_primary_returns_none_when_empty(pool: MySqlPool) {
     assert!(found.is_none());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn list_by_company(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
 
@@ -93,7 +93,7 @@ async fn list_by_company(pool: MySqlPool) {
     assert_eq!(list[0].bank_name, "UBS");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn upsert_primary_creates_then_updates(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
 
@@ -138,7 +138,7 @@ async fn upsert_primary_creates_then_updates(pool: MySqlPool) {
 /// KF-004 : second appel `upsert_primary` avec payload identique → pas de bump
 /// version, `updated_at` inchangé. Pas d'assertion audit_log : `bank_accounts`
 /// n'écrit pas d'audit log v0.1.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn upsert_primary_no_op_returns_unchanged_entity(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
 
@@ -182,7 +182,7 @@ async fn upsert_primary_no_op_returns_unchanged_entity(pool: MySqlPool) {
 }
 
 /// KF-004 régression : second appel avec `iban` modifié → bump version.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn upsert_primary_partial_change_bumps_version(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
 
@@ -216,7 +216,7 @@ async fn upsert_primary_partial_change_bumps_version(pool: MySqlPool) {
     assert_eq!(updated.iban, "CH1809000000306547981");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn fk_constraint_rejects_missing_company(pool: MySqlPool) {
     let result = bank_accounts::create(
         &pool,
@@ -304,7 +304,7 @@ async fn create_bank_account(pool: &MySqlPool, company_id: i64) -> i64 {
 
 /// AC #76 — happy path : `set_journal_account_id_for_company` met à jour la
 /// colonne et bumpe la version.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn set_journal_account_id_updates_column_and_bumps_version(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
     let user_id = create_test_user(&pool, company_id, "admin").await;
@@ -357,7 +357,7 @@ async fn set_journal_account_id_updates_column_and_bumps_version(pool: MySqlPool
 
 /// AC #77 — optimistic lock : version mismatch retourne
 /// `OptimisticLockConflict`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn set_journal_account_id_returns_optimistic_lock_conflict_on_version_mismatch(
     pool: MySqlPool,
 ) {
@@ -395,7 +395,7 @@ async fn set_journal_account_id_returns_optimistic_lock_conflict_on_version_mism
 
 /// Multi-tenant safety : un caller `company_B` ne peut PAS modifier un
 /// bank_account de `company_A` — retourne `NotFound`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn set_journal_account_id_does_not_leak_cross_tenant(pool: MySqlPool) {
     let company_a = create_test_company(&pool).await;
     let company_b = companies::create(
@@ -454,7 +454,7 @@ async fn set_journal_account_id_does_not_leak_cross_tenant(pool: MySqlPool) {
 }
 
 /// Délier (set None) un bank_account précédemment lié.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn set_journal_account_id_to_null_unlinks_successfully(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
     let user_id = create_test_user(&pool, company_id, "admin").await;
@@ -507,7 +507,7 @@ async fn set_journal_account_id_to_null_unlinks_successfully(pool: MySqlPool) {
 
 /// Régression entité : `find_by_id_for_company` retourne `journal_account_id`
 /// quand il est posé. Vérifie que l'extension SELECT SQL fonctionne.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_by_id_for_company_returns_journal_account_id_when_set(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
     let user_id = create_test_user(&pool, company_id, "admin").await;
@@ -549,7 +549,7 @@ async fn find_by_id_for_company_returns_journal_account_id_when_set(pool: MySqlP
 
 /// KF-004 court-circuit no-op : si le `journal_account_id` ne change pas,
 /// la fonction retourne l'entité inchangée sans bumper version.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn set_journal_account_id_no_op_short_circuits_without_bump(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
     let user_id = create_test_user(&pool, company_id, "admin").await;
@@ -615,7 +615,7 @@ async fn set_journal_account_id_no_op_short_circuits_without_bump(pool: MySqlPoo
 /// vérifie par INSERT direct avec un id pointant vers une row inexistante
 /// du plan comptable (la défense est applicative, scopée multi-tenant
 /// dans le handler — KF-002).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn migration_creates_journal_account_id_column_nullable(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
 
@@ -680,7 +680,7 @@ async fn migration_creates_journal_account_id_column_nullable(pool: MySqlPool) {
 /// stale sur un no-op (target == existing.journal_account_id) DOIT
 /// recevoir `OptimisticLockConflict`, pas un 200 OK silencieux. La
 /// version est validée AVANT le court-circuit no-op.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn set_journal_account_id_no_op_with_stale_version_returns_conflict(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
     let user_id = create_test_user(&pool, company_id, "admin").await;
@@ -762,7 +762,7 @@ async fn create_archived_bank_account(pool: &MySqlPool, company_id: i64, iban: &
     ba.id
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn archived_invariants_find_primary_excludes_archived(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
 
@@ -805,7 +805,7 @@ async fn archived_invariants_find_primary_excludes_archived(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn archived_invariants_find_by_id_returns_archived(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
     let archived_id =
@@ -825,7 +825,7 @@ async fn archived_invariants_find_by_id_returns_archived(pool: MySqlPool) {
     assert!(found.unwrap().archived);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn archived_invariants_list_by_company_filters_or_includes(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
 
@@ -858,7 +858,7 @@ async fn archived_invariants_list_by_company_filters_or_includes(pool: MySqlPool
     assert_eq!(all.len(), 2);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn archived_invariants_set_journal_account_id_on_archived_returns_not_found(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
     let archived_id =
@@ -883,7 +883,7 @@ async fn archived_invariants_set_journal_account_id_on_archived_returns_not_foun
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn archived_invariants_update_for_company_on_archived_returns_not_found(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
     let archived_id =
@@ -907,7 +907,7 @@ async fn archived_invariants_update_for_company_on_archived_returns_not_found(po
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn archived_invariants_archive_for_company_on_already_archived_returns_not_found(
     pool: MySqlPool,
 ) {

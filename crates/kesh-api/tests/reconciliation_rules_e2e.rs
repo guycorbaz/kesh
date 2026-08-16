@@ -1,7 +1,7 @@
 //! Story 8-5b T4.5 — tests E2E HTTP pour `/api/v1/reconciliation/rules`
 //! + extension `get_proposals` / `post_accept type='rule'`.
 //!
-//! 28 tests `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]`. Pattern
+//! 28 tests `#[sqlx::test(migrations = "../kesh-db/test-schema")]`. Pattern
 //! hérité bank_accounts_e2e.rs / reconciliation_e2e.rs (forge JWT
 //! directement + spawn_app éphémère).
 #![allow(clippy::too_many_arguments)]
@@ -373,7 +373,7 @@ async fn create_rule_ok(app: &TestApp, jwt: &str, body: Value) -> Value {
 // Test 1 — AC #101 : create returns 201 + audit log
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn rule_create_returns_201_with_audit_log(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -410,7 +410,7 @@ async fn rule_create_returns_201_with_audit_log(pool: MySqlPool) {
 // Test 2 — AC #102 : duplicate (active) rejected 409
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn rule_create_rejects_duplicate_match_when_active(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -437,7 +437,7 @@ async fn rule_create_rejects_duplicate_match_when_active(pool: MySqlPool) {
 // Test 3 — AC #103, Q3 : recreate ok après soft-delete
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn rule_create_succeeds_when_existing_rule_is_inactive(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -481,7 +481,7 @@ async fn rule_create_succeeds_when_existing_rule_is_inactive(pool: MySqlPool) {
 // Test 4 — AC #104 : reject when counterparty account archived
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn rule_create_rejects_archived_account(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     archive_account(
@@ -513,7 +513,7 @@ async fn rule_create_rejects_archived_account(pool: MySqlPool) {
 // Test 5 — AC #105 : list paginated
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn rule_list_paginated(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -548,7 +548,7 @@ async fn rule_list_paginated(pool: MySqlPool) {
 // Test 6 — AC #106 : list filters active
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn rule_list_filters_active(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -609,7 +609,7 @@ async fn rule_list_filters_active(pool: MySqlPool) {
 // Test 7 — AC #107 : multi-tenant scoping
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn rule_list_scopes_by_company(pool: MySqlPool) {
     let ctx_a = setup_ctx(&pool, "Alpha", "CH4431999123000889012", Role::Comptable).await;
     let ctx_b = setup_ctx(&pool, "Beta", "CH9300762011623852957", Role::Comptable).await;
@@ -653,7 +653,7 @@ async fn rule_list_scopes_by_company(pool: MySqlPool) {
 // Test 8 — AC #108 : optimistic lock 409 OPTIMISTIC_LOCK_CONFLICT
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn rule_update_uses_optimistic_lock(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -699,7 +699,7 @@ async fn rule_update_uses_optimistic_lock(pool: MySqlPool) {
 // Test 9 — AC #109 : PATCH reactivates inactive rule
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn rule_patch_reactivates_inactive_rule(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -747,7 +747,7 @@ async fn rule_patch_reactivates_inactive_rule(pool: MySqlPool) {
 // Test 10 — AC #109b : reactivation fails when concurrent active rule
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn rule_patch_reactivation_fails_when_concurrent_active_rule_exists(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -805,7 +805,7 @@ async fn rule_patch_reactivation_fails_when_concurrent_active_rule_exists(pool: 
 // Test 11 — AC #110 : delete soft-deletes + preserves audit history
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn rule_delete_soft_deletes_and_preserves_audit_history(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -853,7 +853,7 @@ async fn rule_delete_soft_deletes_and_preserves_audit_history(pool: MySqlPool) {
 // Test 12 — AC #111 : delete idempotent (already inactive)
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn rule_delete_idempotent_when_already_inactive(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -885,7 +885,7 @@ async fn rule_delete_idempotent_when_already_inactive(pool: MySqlPool) {
 // Test 13 — AC #112 : mutations require Comptable role
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn rule_mutations_require_comptable_role(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Consultation).await;
     let app = spawn_app(pool.clone()).await;
@@ -907,7 +907,7 @@ async fn rule_mutations_require_comptable_role(pool: MySqlPool) {
 // Test 14 — AC #113 : rule appears in /proposals when no invoice candidate
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn get_proposals_applies_rule_when_no_invoice_candidate(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -958,7 +958,7 @@ async fn get_proposals_applies_rule_when_no_invoice_candidate(pool: MySqlPool) {
 // Test 15 — AC #114 : strong invoice score override rule
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn get_proposals_invoice_candidate_overrides_rule(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -1008,7 +1008,7 @@ async fn get_proposals_invoice_candidate_overrides_rule(pool: MySqlPool) {
 // Test 16 — AC #115 : highest priority rule wins
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn get_proposals_applies_highest_priority_rule(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -1087,7 +1087,7 @@ async fn get_proposals_applies_highest_priority_rule(pool: MySqlPool) {
 // Test 17 — AC #116 : skip rule sur compte de contrepartie archivé
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn get_proposals_skips_rule_with_archived_account(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -1144,7 +1144,7 @@ async fn get_proposals_skips_rule_with_archived_account(pool: MySqlPool) {
 // Test 18 — AC #117 : skip inactive rule
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn get_proposals_skips_inactive_rule(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -1281,7 +1281,7 @@ async fn post_accept_rule(
 // Test 19 — AC #118 : accept creates JE + increments count
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn accept_with_rule_creates_journal_entry_and_increments_count(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -1323,7 +1323,7 @@ async fn accept_with_rule_creates_journal_entry_and_increments_count(pool: MySql
 // Test 20 — AC #118bis : per-proposal failed when bank_account NOT configured
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn accept_with_rule_returns_failed_when_bank_account_not_configured(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     // Désactiver journal_account_id.
@@ -1364,7 +1364,7 @@ async fn accept_with_rule_returns_failed_when_bank_account_not_configured(pool: 
 // Test 21 — AC #119 : RECONCILIATION_RULE_NO_LONGER_MATCHES race
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn accept_with_rule_rejects_when_no_longer_matches(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -1415,7 +1415,7 @@ async fn accept_with_rule_rejects_when_no_longer_matches(pool: MySqlPool) {
 // Test 22 — AC #120 : counterpartyAccountId mismatch
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn accept_with_rule_validates_counterparty_account_consistency(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -1449,7 +1449,7 @@ async fn accept_with_rule_validates_counterparty_account_consistency(pool: MySql
 // Test 23 — AC #121 : concurrent rule update during accept
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn accept_with_rule_handles_concurrent_rule_update(pool: MySqlPool) {
     // Pour ce test simple, on vérifie juste que l'accept produit pas
     // 500 même quand la rule a été PATCHéee juste avant (race window).
@@ -1491,7 +1491,7 @@ async fn accept_with_rule_handles_concurrent_rule_update(pool: MySqlPool) {
 // Test 24 — AC #122 : audit log triple (accepted + rule.applied)
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn accept_with_rule_emits_triple_audit_log(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -1567,7 +1567,7 @@ async fn accept_with_rule_emits_triple_audit_log(pool: MySqlPool) {
 // Test 25 — Pass 4 ECH4-3 : AcceptBodyExtractor message lists 'rule'
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn accept_with_rule_extractor_error_lists_rule(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -1592,7 +1592,7 @@ async fn accept_with_rule_extractor_error_lists_rule(pool: MySqlPool) {
 // Test 26 — AC #117bis Pass 3 R1 : skip rule for non-CHF tx
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn get_proposals_skips_rule_for_non_chf_transaction(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -1639,7 +1639,7 @@ async fn get_proposals_skips_rule_for_non_chf_transaction(pool: MySqlPool) {
 // Test 27 — Pass 3 R1 : accept rejects non-CHF tx
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn accept_with_rule_rejects_non_chf_transaction(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -1672,7 +1672,7 @@ async fn accept_with_rule_rejects_non_chf_transaction(pool: MySqlPool) {
 // Test 28 — Pass 3 R4 : audit value_date nullable
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn accept_with_rule_emits_audit_with_null_value_date_when_tx_value_date_is_null(
     pool: MySqlPool,
 ) {
@@ -1723,7 +1723,7 @@ async fn accept_with_rule_emits_audit_with_null_value_date_when_tx_value_date_is
 /// AC #21a — accept `type=rule` d'une règle portant `defaultProjectId` :
 /// les **2 lignes** de l'écriture générée portent le projet (propagation
 /// document-level via `line.project_id.or(new.project_id)`).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn accept_with_rule_stamps_default_project_on_all_lines(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -1792,7 +1792,7 @@ async fn accept_with_rule_stamps_default_project_on_all_lines(pool: MySqlPool) {
 /// création de la règle : l'accept re-valide et retourne un `FailedProposal`
 /// `PROJECT_ARCHIVED` (HTTP 200, `accepted` vide), sans casser le batch ni
 /// escalader en AppError globale.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn accept_with_rule_fails_proposal_when_default_project_archived(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -1876,7 +1876,7 @@ async fn accept_with_rule_fails_proposal_when_default_project_archived(pool: MyS
 /// réellement le projet par défaut (colonne → NULL), et non un no-op silencieux.
 /// Verrouille le fix `double_option` (sans lui, serde replierait `null` sur
 /// `None` = inchangé).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn patch_default_project_null_clears_the_column(pool: MySqlPool) {
     let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;

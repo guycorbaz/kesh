@@ -83,7 +83,7 @@ async fn spawn_app(pool: MySqlPool, test_mode: bool) -> TestApp {
 
 // --- AC #6 : routes non exposées si test_mode=false --------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn seed_endpoint_not_available_when_test_mode_off(pool: MySqlPool) {
     let app = spawn_app(pool, false).await;
     let resp = app
@@ -105,7 +105,7 @@ async fn seed_endpoint_not_available_when_test_mode_off(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reset_endpoint_not_available_when_test_mode_off(pool: MySqlPool) {
     let app = spawn_app(pool, false).await;
     let resp = app
@@ -123,7 +123,7 @@ async fn reset_endpoint_not_available_when_test_mode_off(pool: MySqlPool) {
 
 // --- AC #7 : preset `fresh` --------------------------------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn seed_fresh_produces_expected_db_state(pool: MySqlPool) {
     let app = spawn_app(pool.clone(), true).await;
     let resp = app
@@ -180,7 +180,7 @@ async fn seed_fresh_produces_expected_db_state(pool: MySqlPool) {
 
 // --- AC #8 / #9 : preset `post-onboarding` et alias `with-company` ----------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn seed_post_onboarding_produces_expected_db_state(pool: MySqlPool) {
     let app = spawn_app(pool.clone(), true).await;
     let resp = app
@@ -223,7 +223,7 @@ async fn seed_post_onboarding_produces_expected_db_state(pool: MySqlPool) {
     assert_eq!(step, 10, "step_completed must be 10");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn seed_with_company_is_alias_for_post_onboarding(pool: MySqlPool) {
     let app = spawn_app(pool.clone(), true).await;
     let resp = app
@@ -251,7 +251,7 @@ async fn seed_with_company_is_alias_for_post_onboarding(pool: MySqlPool) {
 
 // --- AC #10 : preset `with-data` --------------------------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn seed_with_data_adds_contact_and_product_but_no_invoice(pool: MySqlPool) {
     let app = spawn_app(pool.clone(), true).await;
     let resp = app
@@ -281,7 +281,7 @@ async fn seed_with_data_adds_contact_and_product_but_no_invoice(pool: MySqlPool)
 
 // --- Issue #90 / Story 9-1 AC #34 : preset `with-company-no-fy` --------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn seed_with_company_no_fy_skips_fiscal_year(pool: MySqlPool) {
     let app = spawn_app(pool.clone(), true).await;
     let resp = app
@@ -332,7 +332,7 @@ async fn seed_with_company_no_fy_skips_fiscal_year(pool: MySqlPool) {
 
 // --- AC #11 : preset invalide -----------------------------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn seed_rejects_invalid_preset(pool: MySqlPool) {
     let app = spawn_app(pool, true).await;
     let resp = app
@@ -360,7 +360,7 @@ async fn seed_rejects_invalid_preset(pool: MySqlPool) {
 
 // --- Reset endpoint ---------------------------------------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reset_endpoint_produces_fresh_state(pool: MySqlPool) {
     let app = spawn_app(pool.clone(), true).await;
 
@@ -401,7 +401,7 @@ async fn reset_endpoint_produces_fresh_state(pool: MySqlPool) {
 
 // --- Idempotence : seed × 2 produit le même état ---------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn seed_is_idempotent_on_repeated_calls(pool: MySqlPool) {
     let app = spawn_app(pool.clone(), true).await;
 

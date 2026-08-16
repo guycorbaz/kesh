@@ -140,7 +140,7 @@ async fn gen_report(pool: &MySqlPool, seeded: &SeededCompany) -> vat_report::Vat
 
 /// (a) Cas nominal : une facture validée intacte → la TVA due dérivée == solde
 /// 2200 ventes par construction → delta == 0, status "ok".
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reconciliation_nominal_delta_zero(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = seed_contact(&pool, &seeded).await;
@@ -172,7 +172,7 @@ async fn reconciliation_nominal_delta_zero(pool: MySqlPool) {
 /// test l'ancre : trois comptes de produit distincts et deux taux, et la
 /// réconciliation doit rester `ok` avec un delta nul. La ventilation multiplie
 /// les lignes de crédit produit de l'écriture, pas les lignes de TVA due.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reconciliation_unaffected_by_multi_account_ventilation(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = seed_contact(&pool, &seeded).await;
@@ -262,7 +262,7 @@ async fn reconciliation_unaffected_by_multi_account_ventilation(pool: MySqlPool)
 
 /// (b) Édition manuelle : on réduit le crédit de la ligne TVA due → delta != 0,
 /// status "delta".
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reconciliation_manual_edit_detected(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = seed_contact(&pool, &seeded).await;
@@ -290,7 +290,7 @@ async fn reconciliation_manual_edit_detected(pool: MySqlPool) {
 /// (c) Isolation périmètre ventes (F-OPUS-4) : une écriture MANUELLE sur le compte
 /// TVA due (non liée à une facture) n'entre PAS dans le solde de référence → le
 /// delta reste 0 malgré l'OD.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reconciliation_isolates_non_invoice_entries(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = seed_contact(&pool, &seeded).await;
@@ -347,7 +347,7 @@ async fn reconciliation_isolates_non_invoice_entries(pool: MySqlPool) {
 
 /// (d) Compte TVA due non configuré (NULL, DC5-null) → delta 0, status "ok", même
 /// si une facture validée pré-existante porte de la TVA (rien à réconcilier).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reconciliation_payable_account_null(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = seed_contact(&pool, &seeded).await;
@@ -387,7 +387,7 @@ async fn reconciliation_payable_account_null(pool: MySqlPool) {
 /// fuit jamais dans le rapport d'une AUTRE company. On génère pour une company
 /// inexistante (pattern 18-1d `recoverable_scoped_by_company`) : aucune row
 /// `company_invoice_settings`, aucune facture → delta 0, status "ok", pas d'erreur.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reconciliation_scoped_by_company(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = seed_contact(&pool, &seeded).await;
@@ -421,7 +421,7 @@ async fn reconciliation_scoped_by_company(pool: MySqlPool) {
 }
 
 /// (f) Seuil : un écart sous le centime (0.005) → "ok" ; un écart de 0.01 → "delta".
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reconciliation_threshold_one_centime(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = seed_contact(&pool, &seeded).await;
@@ -449,7 +449,7 @@ async fn reconciliation_threshold_one_centime(pool: MySqlPool) {
 
 /// (g) Non-régression : la TVA due dérivée, la récupérable et le solde restent
 /// corrects quand la réconciliation s'ajoute (cas nominal, delta 0).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reconciliation_preserves_existing_totals(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = seed_contact(&pool, &seeded).await;
@@ -474,7 +474,7 @@ async fn reconciliation_preserves_existing_totals(pool: MySqlPool) {
 }
 
 /// (h) Renderer CSV : l'écart de réconciliation apparaît dans le CSV (cas delta).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reconciliation_rendered_in_csv(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = seed_contact(&pool, &seeded).await;
@@ -503,7 +503,7 @@ async fn reconciliation_rendered_in_csv(pool: MySqlPool) {
 
 /// (i, LOW-1 review) Écart NÉGATIF : la ligne TVA due est GONFLÉE à la main
 /// (91 > 81 facturé) → delta = -10, status "delta" (symétrie de `abs()`).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reconciliation_negative_delta_detected(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = seed_contact(&pool, &seeded).await;
@@ -526,7 +526,7 @@ async fn reconciliation_negative_delta_detected(pool: MySqlPool) {
 /// (DC12) Avoir → la facture annulée sort du décompte : TVA due dérivée tombe à 0
 /// ET le solde 2200 ventes (filtré status='validated') tombe aussi → delta reste 0.
 /// Le décompte TVA de la période exclut la TVA de la facture créditée.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn credit_note_excludes_vat_from_report(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = seed_contact(&pool, &seeded).await;

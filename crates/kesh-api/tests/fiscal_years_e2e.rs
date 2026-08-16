@@ -153,7 +153,7 @@ async fn create_consultation_user_and_login(app: &TestApp, pool: &MySqlPool) -> 
 // CREATE — happy path + multi-tenant defense + erreurs
 // ===========================================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_happy_path(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
 
@@ -179,7 +179,7 @@ async fn create_happy_path(pool: MySqlPool) {
     assert_eq!(body["endDate"], "2027-12-31");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_with_injected_company_id_ignored(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
 
@@ -225,7 +225,7 @@ async fn create_with_injected_company_id_ignored(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_overlap(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
 
@@ -266,7 +266,7 @@ async fn create_overlap(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_duplicate_name(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
 
@@ -305,7 +305,7 @@ async fn create_duplicate_name(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_dates_invalid(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
 
@@ -329,7 +329,7 @@ async fn create_dates_invalid(pool: MySqlPool) {
 // LIST + GET
 // ===========================================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn list_empty(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
 
@@ -347,7 +347,7 @@ async fn list_empty(pool: MySqlPool) {
     assert_eq!(body.as_array().unwrap().len(), 0);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn list_populated_desc_order(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
 
@@ -382,7 +382,7 @@ async fn list_populated_desc_order(pool: MySqlPool) {
     assert_eq!(arr[2]["name"], "Exercice 2025");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn get_by_id_happy(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
 
@@ -414,7 +414,7 @@ async fn get_by_id_happy(pool: MySqlPool) {
     assert_eq!(body["name"], "Exercice 2027");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn get_by_id_missing(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
 
@@ -428,7 +428,7 @@ async fn get_by_id_missing(pool: MySqlPool) {
     assert_eq!(resp.status(), 404);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn get_by_id_other_company_returns_404(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
 
@@ -482,7 +482,7 @@ async fn get_by_id_other_company_returns_404(pool: MySqlPool) {
 // UPDATE NAME
 // ===========================================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn update_name_happy(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
 
@@ -516,7 +516,7 @@ async fn update_name_happy(pool: MySqlPool) {
     assert_eq!(body["name"], "FY 2027");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn update_name_duplicate(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
 
@@ -562,7 +562,7 @@ async fn update_name_duplicate(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn update_name_other_company_returns_404(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
 
@@ -612,7 +612,7 @@ async fn update_name_other_company_returns_404(pool: MySqlPool) {
     assert_eq!(resp.status(), 404);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn update_name_empty(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
 
@@ -648,7 +648,7 @@ async fn update_name_empty(pool: MySqlPool) {
 // CLOSE
 // ===========================================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn close_happy(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
 
@@ -681,7 +681,7 @@ async fn close_happy(pool: MySqlPool) {
     assert_eq!(body["status"], "Closed");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn close_already_closed(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
 
@@ -723,7 +723,7 @@ async fn close_already_closed(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "ILLEGAL_STATE_TRANSITION");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn close_other_company_returns_404(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
 
@@ -776,7 +776,7 @@ async fn close_other_company_returns_404(pool: MySqlPool) {
 // RBAC — Consultation et auth
 // ===========================================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn rbac_post_create_consultation_returns_403(pool: MySqlPool) {
     let (app, _admin_token) = bootstrap_admin(&pool).await;
     let consultation_token = create_consultation_user_and_login(&app, &pool).await;
@@ -796,7 +796,7 @@ async fn rbac_post_create_consultation_returns_403(pool: MySqlPool) {
     assert_eq!(resp.status(), 403);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn rbac_put_update_consultation_returns_403(pool: MySqlPool) {
     let (app, admin_token) = bootstrap_admin(&pool).await;
 
@@ -830,7 +830,7 @@ async fn rbac_put_update_consultation_returns_403(pool: MySqlPool) {
     assert_eq!(resp.status(), 403);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn rbac_post_close_consultation_returns_403(pool: MySqlPool) {
     let (app, admin_token) = bootstrap_admin(&pool).await;
 
@@ -863,7 +863,7 @@ async fn rbac_post_close_consultation_returns_403(pool: MySqlPool) {
     assert_eq!(resp.status(), 403);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn rbac_get_list_no_auth_returns_401(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
@@ -881,7 +881,7 @@ async fn rbac_get_list_no_auth_returns_401(pool: MySqlPool) {
 // AC #23 — DELETE non supporté
 // ===========================================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn delete_fiscal_year_returns_405(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
 
@@ -916,7 +916,7 @@ async fn delete_fiscal_year_returns_405(pool: MySqlPool) {
 // AUDIT LOG — création scopée company
 // ===========================================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_writes_audit_log(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
 
@@ -1041,7 +1041,7 @@ async fn seed_minimal_chart(pool: &MySqlPool, company_id: i64) {
     .expect("seed account 3000");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn path_b_finalize_creates_fiscal_year(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
 
@@ -1093,7 +1093,7 @@ async fn path_b_finalize_creates_fiscal_year(pool: MySqlPool) {
 /// suisses 2024+ pour la nouvelle company, dans la même tx que le reste du
 /// finalize. Test exécute le full Path B + finalize, puis lit `vat_rates`
 /// directement et via `GET /api/v1/vat-rates`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn path_b_finalize_seeds_vat_rates(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
 
@@ -1144,7 +1144,7 @@ async fn path_b_finalize_seeds_vat_rates(pool: MySqlPool) {
     assert_eq!(body.as_array().unwrap().len(), 4);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn path_b_finalize_idempotent_with_existing_fiscal_year(pool: MySqlPool) {
     use kesh_db::entities::NewFiscalYear;
 
@@ -1234,7 +1234,7 @@ async fn path_b_finalize_idempotent_with_existing_fiscal_year(pool: MySqlPool) {
 ///
 /// Pattern aligné sur `onboarding_e2e::full_onboarding_flow_demo_path` :
 /// language → mode=guided → seed-demo (3 calls successifs).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn demo_path_creates_fiscal_year(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
 
@@ -1338,7 +1338,7 @@ async fn create_other_company(pool: &MySqlPool) -> i64 {
 
 /// F2 — `update_name` repo refuse une mutation cross-tenant même si le
 /// pre-check du handler est bypassé (ex. caller direct hors route).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn update_name_repo_rejects_cross_tenant(pool: MySqlPool) {
     use kesh_db::entities::NewFiscalYear;
     use kesh_db::errors::DbError;
@@ -1394,7 +1394,7 @@ async fn update_name_repo_rejects_cross_tenant(pool: MySqlPool) {
 }
 
 /// F2 — `close` repo refuse une mutation cross-tenant.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn close_repo_rejects_cross_tenant(pool: MySqlPool) {
     use kesh_db::entities::{FiscalYearStatus, NewFiscalYear};
     use kesh_db::errors::DbError;
@@ -1516,7 +1516,7 @@ async fn create_and_close_fy(app: &TestApp, token: &str, name: &str, year: i32) 
     id
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reopen_admin_happy_path(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
     let id = create_and_close_fy(&app, &token, "Exercice 2027", 2027).await;
@@ -1547,7 +1547,7 @@ async fn reopen_admin_happy_path(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reopen_comptable_returns_403(pool: MySqlPool) {
     let (app, admin_token) = bootstrap_admin(&pool).await;
     let id = create_and_close_fy(&app, &admin_token, "Exercice 2027", 2027).await;
@@ -1568,7 +1568,7 @@ async fn reopen_comptable_returns_403(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reopen_consultation_returns_403(pool: MySqlPool) {
     let (app, admin_token) = bootstrap_admin(&pool).await;
     let id = create_and_close_fy(&app, &admin_token, "Exercice 2027", 2027).await;
@@ -1585,7 +1585,7 @@ async fn reopen_consultation_returns_403(pool: MySqlPool) {
     assert_eq!(resp.status(), 403);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reopen_without_auth_returns_401(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
     let id = create_and_close_fy(&app, &token, "Exercice 2027", 2027).await;
@@ -1600,7 +1600,7 @@ async fn reopen_without_auth_returns_401(pool: MySqlPool) {
     assert_eq!(resp.status(), 401);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reopen_via_pat_returns_403(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
     let id = create_and_close_fy(&app, &token, "Exercice 2027", 2027).await;
@@ -1643,7 +1643,7 @@ async fn reopen_via_pat_returns_403(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "API_KEY_ADMIN_FORBIDDEN");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reopen_empty_motif_returns_400(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
     let id = create_and_close_fy(&app, &token, "Exercice 2027", 2027).await;
@@ -1661,7 +1661,7 @@ async fn reopen_empty_motif_returns_400(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reopen_motif_too_long_returns_400(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
     let id = create_and_close_fy(&app, &token, "Exercice 2027", 2027).await;
@@ -1683,7 +1683,7 @@ async fn reopen_motif_too_long_returns_400(pool: MySqlPool) {
 /// M2 (code-review Pass 1) — borne EXACTE : un motif de 500 caractères (==
 /// `REOPEN_MOTIF_MAX`) est **accepté** (200). Caractérise la stricte inégalité
 /// `> REOPEN_MOTIF_MAX` : une régression `>` → `>=` casserait ce test.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reopen_motif_exactly_max_is_accepted(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
     let id = create_and_close_fy(&app, &token, "Exercice 2027", 2027).await;
@@ -1706,7 +1706,7 @@ async fn reopen_motif_exactly_max_is_accepted(pool: MySqlPool) {
     assert_eq!(body["status"], "Open");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reopen_other_company_returns_404(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
 
@@ -1757,7 +1757,7 @@ async fn reopen_other_company_returns_404(pool: MySqlPool) {
 
 /// P1-C1 — exercice déjà ouvert → 409 ILLEGAL_STATE_TRANSITION avec message
 /// DISTINCT (error-fiscal-year-already-open), pas le générique.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reopen_already_open_returns_409_distinct_message(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
 
@@ -1802,7 +1802,7 @@ async fn reopen_already_open_returns_409_distinct_message(pool: MySqlPool) {
 
 /// P1-C1 — garde LIFO violée → 409 avec message DISTINCT
 /// (error-fiscal-year-reopen-blocked), différent du message already-open.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reopen_lifo_blocked_returns_409_distinct_message(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
 

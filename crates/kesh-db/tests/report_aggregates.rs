@@ -194,7 +194,7 @@ async fn post_entry(
 // ============================================================
 
 /// Test 1 : balance_sheet sur 0 écriture → COALESCE retourne 0, équation tient
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn balance_sheet_empty_returns_zero_with_equation(pool: MySqlPool) {
     let cid = create_company(&pool, "co1").await;
     let uid = create_user(&pool, "u1", cid).await;
@@ -221,7 +221,7 @@ async fn balance_sheet_empty_returns_zero_with_equation(pool: MySqlPool) {
 }
 
 /// Test 2 : fiscal_year non-calendaire (juillet → juin), isolation correcte
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn fiscal_year_non_calendar_isolation(pool: MySqlPool) {
     let cid = create_company(&pool, "co2").await;
     let uid = create_user(&pool, "u2", cid).await;
@@ -261,7 +261,7 @@ async fn fiscal_year_non_calendar_isolation(pool: MySqlPool) {
 }
 
 /// Test 3 : multi-tenant strict cross-company aggregation = 0
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn cross_tenant_aggregation_returns_zero(pool: MySqlPool) {
     let cid_a = create_company(&pool, "co3a").await;
     let cid_b = create_company(&pool, "co3b").await;
@@ -320,7 +320,7 @@ async fn cross_tenant_aggregation_returns_zero(pool: MySqlPool) {
 }
 
 /// Test 4 : période bounds inclusives (start et end exactement sur fy bornes)
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn period_bounds_inclusive(pool: MySqlPool) {
     let cid = create_company(&pool, "co4").await;
     let uid = create_user(&pool, "u4", cid).await;
@@ -374,7 +374,7 @@ async fn period_bounds_inclusive(pool: MySqlPool) {
 }
 
 /// Test 5 : partial period exclut les écritures hors bornes
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn partial_period_excludes_outside_entries(pool: MySqlPool) {
     let cid = create_company(&pool, "co5").await;
     let uid = create_user(&pool, "u5", cid).await;
@@ -440,7 +440,7 @@ async fn partial_period_excludes_outside_entries(pool: MySqlPool) {
 /// `equity`, jamais dans `liabilities`. La partition reste indépendante du numéro
 /// (le fixture pose `role: Some(CurrentYearResult)`, sinon `role: None` le laisserait
 /// en dettes et le test échouerait pour la mauvaise raison — Piège #6).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn balance_sheet_counts_2979_in_equity(pool: MySqlPool) {
     let cid = create_company(&pool, "co6").await;
     let uid = create_user(&pool, "u6", cid).await;
@@ -510,7 +510,7 @@ async fn balance_sheet_counts_2979_in_equity(pool: MySqlPool) {
 /// produit (débit actif 200 / crédit produit 200). Attendus au bilan FY2026 : actifs
 /// cumulés **15 200**, `retained_earnings` **5 000**, `equity_result` **200**, équation
 /// `15 200 == 10 000 + 5 000 + 200`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn balance_sheet_virtual_carryforward_cross_fiscal_year(pool: MySqlPool) {
     let cid = create_company(&pool, "co8").await;
     let uid = create_user(&pool, "u8", cid).await;
@@ -617,7 +617,7 @@ async fn balance_sheet_virtual_carryforward_cross_fiscal_year(pool: MySqlPool) {
 
 /// Test 9 : résultat reporté **négatif** (pertes cumulées) + exercice N+1 vide qui
 /// équilibre sans écriture (Story 14-1 AC-C + AC-I cas b).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn balance_sheet_negative_retained_and_empty_next_year(pool: MySqlPool) {
     let cid = create_company(&pool, "co9").await;
     let uid = create_user(&pool, "u9", cid).await;
@@ -689,7 +689,7 @@ async fn balance_sheet_negative_retained_and_empty_next_year(pool: MySqlPool) {
 /// Deux appels à la même date d'arrêté (mi-année) mais avec des `period_start`
 /// différents (défaut fy_start vs mi-mars) donnent des soldes et un split fonds propres
 /// **identiques** — l'ancrage est `fy_start`, jamais `period_start` (AC-I cas d).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn balance_sheet_period_start_has_no_effect(pool: MySqlPool) {
     let cid = create_company(&pool, "co10").await;
     let uid = create_user(&pool, "u10", cid).await;
@@ -788,7 +788,7 @@ async fn balance_sheet_period_start_has_no_effect(pool: MySqlPool) {
 
 /// Test 11 : garde défensive `create_in_tx` — une écriture datée hors des bornes de son
 /// exercice est **rejetée** (Story 14-1 Dev Note 4, invariant dont dépend l'équation).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn journal_entry_out_of_fiscal_year_bounds_rejected(pool: MySqlPool) {
     use kesh_db::entities::{NewJournalEntry, NewJournalEntryLine};
     let cid = create_company(&pool, "co11").await;
@@ -841,7 +841,7 @@ async fn journal_entry_out_of_fiscal_year_bounds_rejected(pool: MySqlPool) {
 }
 
 /// Test 7 : ReportPeriod::resolve cross-tenant returns FiscalYearNotFound
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn report_period_resolve_cross_tenant_returns_fy_not_found(pool: MySqlPool) {
     let cid_a = create_company(&pool, "co7a").await;
     let cid_b = create_company(&pool, "co7b").await;
@@ -873,7 +873,7 @@ async fn report_period_resolve_cross_tenant_returns_fy_not_found(pool: MySqlPool
 /// AC-A/G : la partition fonds propres / dettes se fait **par rôle**. Un compte de
 /// rôle equity va dans `equity`, un compte de rôle non-equity (`Payable`) OU de rôle
 /// NULL reste dans `liabilities`. `total_liabilities + total_equity` = ancien total.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn balance_sheet_partitions_equity_by_role(pool: MySqlPool) {
     let cid = create_company(&pool, "co143c1").await;
     let uid = create_user(&pool, "u143c1", cid).await;
@@ -975,7 +975,7 @@ async fn balance_sheet_partitions_equity_by_role(pool: MySqlPool) {
 /// P1-F2 : l'ordre de la section equity suit le **rang de rôle** (CO 959a al. 2),
 /// pas le numéro de compte. Plan renuméroté : `EquityOther` sur un numéro INFÉRIEUR
 /// à `EquityCapital` → le capital doit quand même sortir en premier.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn balance_sheet_equity_order_by_role_on_renumbered_plan(pool: MySqlPool) {
     let cid = create_company(&pool, "co143c2").await;
     let uid = create_user(&pool, "u143c2", cid).await;
@@ -1054,7 +1054,7 @@ async fn balance_sheet_equity_order_by_role_on_renumbered_plan(pool: MySqlPool) 
 /// D1 : un compte physique de rôle `RetainedEarnings` (report d'ouverture d'un migrant)
 /// et la ligne CALCULÉE `retained_earnings` (cumul P&L antérieur) sont **deux grandeurs
 /// distinctes**, jamais fusionnées.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn balance_sheet_distinguishes_physical_and_calculated_retained(pool: MySqlPool) {
     let cid = create_company(&pool, "co143c3").await;
     let uid = create_user(&pool, "u143c3", cid).await;
@@ -1141,7 +1141,7 @@ async fn balance_sheet_distinguishes_physical_and_calculated_retained(pool: MySq
 
 /// AC-G : un compte de rôle `CurrentYearResult` à **solde nul** (postings s'annulant)
 /// est absent de la section (via `HAVING balance != 0`) — pas de garde spéciale par rôle.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn balance_sheet_current_year_result_zero_balance_absent(pool: MySqlPool) {
     let cid = create_company(&pool, "co143c4").await;
     let uid = create_user(&pool, "u143c4", cid).await;
@@ -1211,7 +1211,7 @@ async fn balance_sheet_current_year_result_zero_balance_absent(pool: MySqlPool) 
 /// P1-F1 (intégration) : un reclassement pur entre deux comptes de fonds propres
 /// (aucun actif/passif, virtuels nuls, `total_equity` net 0 mais `equity` peuplé) →
 /// le bilan n'est PAS vide et l'équation tient.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn balance_sheet_pure_equity_reclass_is_not_empty(pool: MySqlPool) {
     let cid = create_company(&pool, "co143c5").await;
     let uid = create_user(&pool, "u143c5", cid).await;
@@ -1284,7 +1284,7 @@ async fn balance_sheet_pure_equity_reclass_is_not_empty(pool: MySqlPool) {
 /// arithmétiquement sain (compté une fois dans `total_assets`), problème de présentation
 /// seul, cas rare. Ce test **documente et verrouille** ce comportement : un futur refactor
 /// de la partition (ex. scan aussi de `assets`) le ferait échouer, signalant la régression.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn balance_sheet_equity_role_on_asset_stays_in_assets(pool: MySqlPool) {
     let cid = create_company(&pool, "co143c6").await;
     let uid = create_user(&pool, "u143c6", cid).await;

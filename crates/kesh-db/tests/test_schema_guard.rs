@@ -29,6 +29,30 @@ use sqlx::{Connection, Executor, MySqlConnection, MySqlPool, Row};
 /// Le squash, monté par le même chemin que les tests basculés.
 static SQUASH: Migrator = sqlx::migrate!("./test-schema");
 
+/// Les fichiers de test autorisés à rester sur le chemin RÉEL des migrations —
+/// parce qu'ils testent ce chemin lui-même. Portée en dur ici, et non dans une
+/// prose de spec : un fichier qui veut rejoindre cette liste doit modifier le
+/// test qui la garde.
+const ALLOWED_REAL_MIGRATOR_FILES: &[&str] = &[
+    // L'installation fraîche EST le sujet.
+    "crates/kesh-db/tests/migrations_fresh_install.rs",
+    // Fenêtre d'upgrade partielle (sub-Migrator sur un préfixe réel).
+    "crates/kesh-db/tests/migrations_upgrade_path.rs",
+    // Backfills à fenêtre : ils appliquent N migrations puis la suivante.
+    "crates/kesh-db/tests/accounts_role_backfill.rs",
+    "crates/kesh-db/tests/invoice_lines_revenue_account_backfill.rs",
+    // Triage P7 — rejeu des backfills après restauration.
+    "crates/kesh-db/tests/post_restore_class_a.rs",
+    "crates/kesh-db/tests/post_restore_transactionality.rs",
+    // Backfill D6 de la Story 22-1, sur schéma réel.
+    "crates/kesh-db/tests/client_number_canonical_backfill.rs",
+    // Le garde-fou lui-même : il compare les deux chemins, il lui faut le vrai.
+    "crates/kesh-db/tests/test_schema_guard.rs",
+];
+
+/// Les deux graphies licites du squash, selon le crate du test.
+const SQUASH_SPELLINGS: &[&str] = &["\"./test-schema\"", "\"../kesh-db/test-schema\""];
+
 // ============================================================================
 // Montage de la base « squash »
 // ============================================================================
@@ -407,5 +431,159 @@ fn the_real_migrator_matches_the_migrations_directory() {
          régénérez le squash : scripts/regen-test-schema.sh",
         on_disk.len(),
         compiled.len()
+    );
+}
+
+// ============================================================================
+// 5. Complétude de la bascule (Story 22-5, AC3)
+// ============================================================================
+
+/// Un attribut `#[sqlx::test]` du workspace, avec sa provenance.
+struct Attribute {
+    file: String,
+    line: usize,
+    args: String,
+}
+
+/// Balaie **tout le workspace** — pas le seul crate de ce test : les attributs
+/// vivent dans trois crates et dans `src/` comme dans `tests/`. Un balayage
+/// mono-crate raterait 749 attributs **en silence**.
+fn scan_attributes() -> (Vec<Attribute>, usize) {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|p| p.parent())
+        .expect("racine du workspace")
+        .to_path_buf();
+
+    let mut files = Vec::new();
+    collect_rs(&root.join("crates"), &mut files);
+
+    let mut attrs = Vec::new();
+    let mut raw_mentions = 0usize;
+    for path in &files {
+        let content = std::fs::read_to_string(path).expect("lecture d'un .rs");
+        let rel = path
+            .strip_prefix(&root)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        for (i, line) in content.lines().enumerate() {
+            let trimmed = line.trim_start();
+            // Les mentions en doc-comment ne sont pas des attributs.
+            if trimmed.starts_with("//") {
+                continue;
+            }
+            // `starts_with`, pas `contains` : une VRAIE mention d'attribut ouvre
+            // la ligne (après indentation), qu'elle soit d'un seul tenant ou
+            // repliée par rustfmt. Le `contains` comptait aussi les chaînes
+            // littérales de CE fichier — le détecteur se détectait lui-même, et
+            // l'invariant sommant rougissait sur six faux positifs.
+            if !trimmed.starts_with("#[sqlx::test") {
+                continue;
+            }
+            raw_mentions += 1;
+            if let Some(a) = parse_attribute(trimmed) {
+                attrs.push(Attribute {
+                    file: rel.clone(),
+                    line: i + 1,
+                    args: a,
+                });
+            }
+        }
+    }
+    (attrs, raw_mentions)
+}
+
+/// Parse un attribut **d'une seule ligne**. Rend `None` si la ligne mentionne
+/// `#[sqlx::test` sans former un attribut complet — c'est le cas d'un attribut
+/// REPLIÉ par rustfmt, que l'invariant sommant de l'appelant transforme en
+/// échec bruyant plutôt qu'en angle mort.
+fn parse_attribute(trimmed: &str) -> Option<String> {
+    let rest = trimmed.strip_prefix("#[sqlx::test")?;
+    if let Some(inner) = rest.strip_prefix('(') {
+        let end = inner.rfind(")]")?;
+        Some(inner[..end].trim().to_string())
+    } else if rest.starts_with(']') {
+        Some(String::new())
+    } else {
+        None
+    }
+}
+
+fn collect_rs(dir: &std::path::Path, acc: &mut Vec<std::path::PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if path.file_name().is_some_and(|n| n == "target") {
+                continue;
+            }
+            collect_rs(&path, acc);
+        } else if path.extension().is_some_and(|e| e == "rs") {
+            acc.push(path);
+        }
+    }
+}
+
+#[test]
+fn every_sqlx_test_attribute_is_accounted_for() {
+    let (attrs, raw_mentions) = scan_attributes();
+
+    // Plancher fail-loud : un balayage qui rate sa cible se TAIT, il ne rougit
+    // pas. Ces deux garde-fous transforment le silence en échec.
+    assert!(
+        attrs.len() > 1100,
+        "balayage suspect : seulement {} attributs #[sqlx::test] vus dans le \
+         workspace (attendu > 1100). Le balayage a-t-il perdu sa racine ?",
+        attrs.len()
+    );
+    for crate_dir in ["crates/kesh-api/", "crates/kesh-db/", "crates/kesh-report/"] {
+        assert!(
+            attrs.iter().any(|a| a.file.starts_with(crate_dir)),
+            "balayage suspect : aucun attribut vu dans {crate_dir} — la frontière \
+             de crate n'est pas franchie"
+        );
+    }
+
+    // Invariant SOMMANT : toute mention de `#[sqlx::test` doit s'être parsée en
+    // attribut. Un attribut REPLIÉ sur plusieurs lignes (rustfmt le fait dès
+    // qu'il s'allonge) casserait sinon le parse en silence — « détecter, c'est
+    // chercher large ».
+    assert_eq!(
+        attrs.len(),
+        raw_mentions,
+        "{} mention(s) de `#[sqlx::test` n'ont pas pu être parsées comme \
+         attribut d'une seule ligne — attribut replié sur plusieurs lignes ? \
+         Le contrôle de complétude serait aveugle dessus : dépliez l'attribut, \
+         ou étendez `parse_attribute`.",
+        raw_mentions - attrs.len()
+    );
+
+    let mut offenders = Vec::new();
+    for a in &attrs {
+        if SQUASH_SPELLINGS.iter().any(|s| a.args.contains(s)) {
+            continue;
+        }
+        if ALLOWED_REAL_MIGRATOR_FILES.contains(&a.file.as_str()) {
+            continue;
+        }
+        offenders.push(format!(
+            "  {}:{} → #[sqlx::test({})]",
+            a.file, a.line, a.args
+        ));
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "ces attributs `#[sqlx::test]` n'utilisent PAS le squash et ne sont pas \
+         dans la liste d'exclusions — ils paieraient les 61 migrations à chaque \
+         test, sans que rien ne le signale (Story 22-5, #251).\n\
+         Utilisez `migrations = \"./test-schema\"` (kesh-db) ou \
+         `migrations = \"../kesh-db/test-schema\"` (kesh-api, kesh-report) ; si le \
+         test exerce VRAIMENT le chemin des migrations, inscrivez son fichier à \
+         `ALLOWED_REAL_MIGRATOR_FILES` de ce test, avec son motif.\n{}",
+        offenders.join("\n")
     );
 }

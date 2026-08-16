@@ -116,7 +116,7 @@ async fn advance_to_step_2(app: &TestApp, token: &str) {
 
 // --- Tests ---
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn start_production_advances_to_step_3(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
@@ -138,7 +138,7 @@ async fn start_production_advances_to_step_3(pool: MySqlPool) {
     assert_eq!(body["isDemo"], false);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn org_type_invalid_returns_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
@@ -167,7 +167,7 @@ async fn org_type_invalid_returns_400(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn coordinates_validates_ide(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
@@ -212,7 +212,7 @@ async fn coordinates_validates_ide(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_path_b_flow(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
@@ -277,7 +277,7 @@ async fn full_path_b_flow(pool: MySqlPool) {
     assert_eq!(body["isDemo"], false);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn skip_bank_advances_to_step_7(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
@@ -327,7 +327,7 @@ async fn skip_bank_advances_to_step_7(pool: MySqlPool) {
     assert_eq!(body["stepCompleted"], 7);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn bank_account_validates_iban(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
@@ -382,7 +382,7 @@ async fn bank_account_validates_iban(pool: MySqlPool) {
 /// bootstrap crée lui-même la company stub (`is_stub=TRUE`). `GET /state` expose
 /// `isStub=true` à step 0 (AC #8-9, #14e), et le flag retombe à `false` une fois
 /// les coordonnées renseignées (AC #10, #15).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn fresh_install_stub_exposed_then_cleared_by_coordinates(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     // PAS de create_test_company : le bootstrap doit créer la company stub.

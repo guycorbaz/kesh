@@ -1,6 +1,6 @@
 //! Story 10-5 — Tests d'intégration auth via cookies HttpOnly (T9).
 //!
-//! 4 tests `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]` couvrant :
+//! 4 tests `#[sqlx::test(migrations = "../kesh-db/test-schema")]` couvrant :
 //!
 //! - `login_sets_two_httponly_cookies` (AC #1) — login émet 2 headers
 //!   Set-Cookie avec flags HttpOnly + SameSite=Strict + paths corrects
@@ -184,7 +184,7 @@ async fn setup_admin(pool: &MySqlPool) -> (String, i64) {
     )
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn login_sets_two_httponly_cookies(pool: MySqlPool) {
     let (admin_username, _company_id) = setup_admin(&pool).await;
     let app = spawn_app_with_cookie_jar(pool).await;
@@ -275,7 +275,7 @@ async fn login_sets_two_httponly_cookies(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn authenticated_request_with_cookie_only(pool: MySqlPool) {
     // AC #6 — cookie seul (sans header Authorization) → 200 OK.
     let (admin_username, _company_id) = setup_admin(&pool).await;
@@ -312,7 +312,7 @@ async fn authenticated_request_with_cookie_only(pool: MySqlPool) {
     assert_eq!(body["role"].as_str().unwrap(), "Admin");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn authenticated_request_with_authorization_only(pool: MySqlPool) {
     // AC #6 fallback — header Bearer seul (sans cookie) → 200 OK.
     let (admin_username, _company_id) = setup_admin(&pool).await;
@@ -350,7 +350,7 @@ async fn authenticated_request_with_authorization_only(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn logout_invalidates_cookie(pool: MySqlPool) {
     // AC #4 / AC #15(d) — logout émet Set-Cookie Max-Age=0 + révoque refresh_token DB.
     // CR Pass 1 H1 : ajout DB revocation check + 401 post-logout (cohérent
@@ -509,7 +509,7 @@ async fn logout_invalidates_cookie(pool: MySqlPool) {
 ///
 /// Vérifie : login → cookie auto-stocké → GET /api/v1/auth/me → 200 + body
 /// `{ userId, username, role, expiresIn }` avec valeurs cohérentes.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn me_endpoint_returns_user_identity_from_cookie(pool: MySqlPool) {
     let (admin_username, _company_id) = setup_admin(&pool).await;
     let app = spawn_app_with_cookie_jar(pool).await;

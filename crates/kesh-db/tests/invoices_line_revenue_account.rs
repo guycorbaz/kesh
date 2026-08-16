@@ -205,7 +205,7 @@ fn expect_invalid_accounts(err: DbError) -> Vec<kesh_db::errors::RejectedRevenue
 /// C'est le garde-fou du mode de défaillance le plus grave de la story. Un
 /// résidu laisserait l'équation du bilan équilibrée (donc aucun signal) et le
 /// compte de résultat faux.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn credit_note_cancels_ventilated_invoice_account_by_account(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -275,7 +275,7 @@ async fn credit_note_cancels_ventilated_invoice_account_by_account(pool: MySqlPo
 /// facture créditée 3000, avoir débité 3200, résidu permanent. Un test qui ne
 /// change pas le défaut entre les deux pièces passe systématiquement et ne
 /// prouve rien.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn credit_note_uses_materialized_account_not_current_default(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -363,7 +363,7 @@ async fn credit_note_uses_materialized_account_not_current_default(pool: MySqlPo
 // ---------------------------------------------------------------------------
 
 /// **AC18** — compte d'une autre société refusé à la **création** (anti-IDOR).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_rejects_cross_company_account(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -397,7 +397,7 @@ async fn create_rejects_cross_company_account(pool: MySqlPool) {
 
 /// **AC18** — compte de type `Expense` refusé à la création : c'est le trou que
 /// `create_in_tx` ne couvre **jamais** (`account_type` n'y est pas vérifié).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_rejects_non_revenue_account(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -416,7 +416,7 @@ async fn create_rejects_non_revenue_account(pool: MySqlPool) {
 }
 
 /// **AC18** — même contrôle à la **modification** du brouillon.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn update_rejects_invalid_account(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -450,7 +450,7 @@ async fn update_rejects_invalid_account(pool: MySqlPool) {
 
 /// **AC18** — plusieurs lignes en défaut simultanément : le message les nomme
 /// **toutes**. Cas courant quand un compte partagé est archivé.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_reports_every_invalid_line(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -482,7 +482,7 @@ async fn create_reports_every_invalid_line(pool: MySqlPool) {
 /// **AC18** — compte **retypé** entre le brouillon et la validation. Le trou que
 /// `create_in_tx` ne couvre jamais : sans re-validation au posting, le produit
 /// atterrirait sur un compte de charge, faux et sans bruit.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn validate_rejects_account_retyped_after_draft(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -511,7 +511,7 @@ async fn validate_rejects_account_retyped_after_draft(pool: MySqlPool) {
 /// **AC18** — compte devenu **non-imputable** entre le brouillon et la
 /// validation. `create_in_tx` laisse passer (`enforce_postable = false` sur le
 /// flux automatique).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn validate_rejects_account_made_non_postable(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -537,7 +537,7 @@ async fn validate_rejects_account_made_non_postable(pool: MySqlPool) {
 }
 
 /// **AC18** — compte archivé entre le brouillon et la validation.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn validate_rejects_account_archived_after_draft(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -565,7 +565,7 @@ async fn validate_rejects_account_archived_after_draft(pool: MySqlPool) {
 /// **AC11-bis / D5-bis** — compte archivé **entre la validation et l'avoir** :
 /// l'émission échoue, en nommant la ligne et le compte à réactiver, au lieu du
 /// `400 INACTIVE_OR_INVALID_ACCOUNTS` générique.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn credit_note_fails_when_snapshot_account_archived(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -611,7 +611,7 @@ async fn credit_note_fails_when_snapshot_account_archived(pool: MySqlPool) {
 /// **D5-bis, portée** : `postable` et `account_type` ne sont **PAS** re-vérifiés
 /// côté avoir. La contre-passation doit viser les mêmes comptes que l'écriture
 /// d'origine, quelle qu'ait été leur évolution de configuration.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn credit_note_ignores_postable_and_type_changes(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -653,7 +653,7 @@ async fn credit_note_ignores_postable_and_type_changes(pool: MySqlPool) {
 /// **AC18-bis cas 1** — facture à lignes **toutes `NULL`** et défaut société
 /// **retypé** entre le brouillon et la validation → échec désignant le compte
 /// par défaut, pas un numéro de ligne (aucune ligne ne le porte).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn validate_rejects_retyped_company_default(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -681,7 +681,7 @@ async fn validate_rejects_retyped_company_default(pool: MySqlPool) {
 
 /// **AC18-bis cas 2** — défaut société rendu **non-imputable** : la validation
 /// **passe** (exemption D3-bis) et l'écriture est générée normalement.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn validate_accepts_non_postable_company_default(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -712,7 +712,7 @@ async fn validate_accepts_non_postable_company_default(pool: MySqlPool) {
 /// `INSERT IGNORE` + `SELECT … FOR UPDATE`), donc le défaut archivé n'est pas
 /// rejeté en amont. C'est l'assertion sur l'identité du site rejeté qui
 /// distingue AC8-bis implémenté d'AC8-bis absent.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn validate_rejects_archived_company_default(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -746,7 +746,7 @@ async fn validate_rejects_archived_company_default(pool: MySqlPool) {
 /// le désignant **explicitement** ont le même verdict et produisent la **même**
 /// écriture. Sans l'exemption, le geste le plus naturel (sélectionner le compte
 /// déjà utilisé par défaut) serait rejeté pour un résultat comptable identique.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn null_and_explicit_default_are_equivalent(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -785,7 +785,7 @@ async fn null_and_explicit_default_are_equivalent(pool: MySqlPool) {
 
 /// **AC19 (suite)** — dans une **même** facture, une ligne `NULL` et une ligne
 /// désignant le défaut **fusionnent** en une seule ligne de crédit.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn null_and_explicit_default_merge_into_one_credit_line(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -830,7 +830,7 @@ async fn null_and_explicit_default_merge_into_one_credit_line(pool: MySqlPool) {
 /// Les deux comptes sont **délibérément distincts** : post-onboarding ils
 /// coïncident, et un test qui ne les dissocie pas passerait tout aussi bien
 /// avec une résolution par rôle — il ne prouverait rien.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn fallback_follows_settings_column_not_role(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -873,7 +873,7 @@ async fn fallback_follows_settings_column_not_role(pool: MySqlPool) {
 /// **AC21 / AC13-bis** — facture entièrement à zéro → erreur **métier**, et non
 /// le 500 SQL sur `chk_jel_debit_credit_exclusive` que produisait le code avant
 /// cette story.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn validate_rejects_zero_total_invoice(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -911,7 +911,7 @@ async fn validate_rejects_zero_total_invoice(pool: MySqlPool) {
 /// de verrou sur `company_invoice_settings` à la saisie » relève de la revue de
 /// code ; ce qui est vérifié ici, c'est l'absence d'écriture (assertion sur la
 /// table, ci-dessous) et la non-régression fonctionnelle.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn draft_crud_survives_archived_company_default(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -943,7 +943,7 @@ async fn draft_crud_survives_archived_company_default(pool: MySqlPool) {
 /// **AC12-bis (suite)** — même chose quand `company_invoice_settings` n'a
 /// **aucune ligne** pour la société : la saisie doit passer, et surtout ne pas
 /// en créer une (le lazy-create appartient au posting, pas à la saisie).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn draft_creation_neither_reads_nor_creates_settings_row(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -979,7 +979,7 @@ async fn draft_creation_neither_reads_nor_creates_settings_row(pool: MySqlPool) 
 
 /// **AC7 (suite)** — sans ligne de configuration, l'exemption D3-bis ne
 /// s'applique à aucun compte : un compte non-imputable est alors refusé.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn missing_settings_row_disables_postable_exemption(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -1011,7 +1011,7 @@ async fn missing_settings_row_disables_postable_exemption(pool: MySqlPool) {
 /// Changer **uniquement** le compte de produit d'une ligne n'est pas un no-op :
 /// sans la prise en compte du champ dans le court-circuit KF-004, la
 /// modification serait silencieusement perdue avec un `200 OK`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn changing_only_the_account_is_not_a_no_op(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -1051,7 +1051,7 @@ async fn changing_only_the_account_is_not_a_no_op(pool: MySqlPool) {
 /// snapshot, `before` et `after` affichaient tous deux le compte matérialisé :
 /// la transition `NULL` → compte effectif — la seule que cette story
 /// introduit — était irrécupérable depuis le journal d'audit.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn audit_before_snapshot_predates_materialization(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -1150,7 +1150,7 @@ async fn audit_before_snapshot_predates_materialization(pool: MySqlPool) {
 /// sur-exclusif, et faux pour la même raison. Deux rédactions successives
 /// affirmant une propriété que personne n'avait vérifiée contre le code. Celle-ci
 /// l'a été, en passe 5.)*
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn draft_crud_survives_null_company_default_column(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -1231,7 +1231,7 @@ async fn draft_crud_survives_null_company_default_column(pool: MySqlPool) {
 /// lignes-là, le repli sur le défaut courant reste le comportement, et reste
 /// une limitation assumée : la seule alternative serait de deviner un compte
 /// sur une pièce comptable réelle.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn null_line_credit_note_falls_back_to_current_default_known_limitation(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;

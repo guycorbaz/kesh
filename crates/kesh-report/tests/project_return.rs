@@ -100,7 +100,7 @@ async fn post(
 
 /// (a) — coût investi = Expense + Asset immobilisé (1500), EXCLUT la banque 1020
 /// (trésorerie 10xx, DC8) ; résultat net = revenus − charges ; rendement % correct.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn return_excludes_treasury_and_computes_rendement(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let proj = mk_project(&pool, seeded.company_id, "INVEST", None).await;
@@ -196,7 +196,7 @@ async fn return_excludes_treasury_and_computes_rendement(pool: MySqlPool) {
 }
 
 /// (b) — rendement null si coût investi = 0 (que des revenus).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn return_rendement_null_when_no_cost(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let proj = mk_project(&pool, seeded.company_id, "REVONLY", None).await;
@@ -232,7 +232,7 @@ async fn return_rendement_null_when_no_cost(pool: MySqlPool) {
 }
 
 /// (c) — rollup racine + sous-projet.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn return_rollup_root_and_child(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let root = mk_project(&pool, seeded.company_id, "ROOT", None).await;
@@ -276,7 +276,7 @@ async fn return_rollup_root_and_child(pool: MySqlPool) {
 }
 
 /// (d) — mode cumulé traverse 2 exercices.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn return_cumulative_crosses_fy(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let proj = mk_project(&pool, seeded.company_id, "CUM", None).await;
@@ -325,7 +325,7 @@ async fn return_cumulative_crosses_fy(pool: MySqlPool) {
 }
 
 /// (e) — scope vide → totaux 0, rendement null, pas d'erreur.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn return_empty_scope(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let proj = mk_project(&pool, seeded.company_id, "VIDE", None).await;

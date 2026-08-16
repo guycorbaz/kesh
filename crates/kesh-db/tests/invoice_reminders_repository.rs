@@ -94,7 +94,7 @@ fn manual_reminder(
 /// « rappel envoyé mais facture disparue » (#219) et « envoyé mais non enregistré ».
 /// Tester `NotFound` seul rendait le premier inatteignable et annonçait un simple
 /// hoquet DB sur une vraie suppression.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn insert_on_deleted_invoice_is_foreign_key_violation(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "FK Test SA").await;
     let invoice_id = create_test_invoice(&pool, company_id).await;
@@ -121,7 +121,7 @@ async fn insert_on_deleted_invoice_is_foreign_key_violation(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn insert_and_current_level_uses_max_non_cancelled(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Reminder Co").await;
     let invoice_id = create_test_invoice(&pool, company_id).await;
@@ -161,7 +161,7 @@ async fn insert_and_current_level_uses_max_non_cancelled(pool: MySqlPool) {
     assert!(r1.cancelled_at.is_none());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn cancel_soft_excludes_from_max_level(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Cancel Co").await;
     let invoice_id = create_test_invoice(&pool, company_id).await;
@@ -221,7 +221,7 @@ async fn cancel_soft_excludes_from_max_level(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn sum_fees_deduped_excludes_level_and_cancelled(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Fees Co").await;
     let invoice_id = create_test_invoice(&pool, company_id).await;
@@ -275,7 +275,7 @@ async fn sum_fees_deduped_excludes_level_and_cancelled(pool: MySqlPool) {
     assert_eq!(sum2, Decimal::new(0, 2), "niveau 2 exclu");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn scoping_is_company_isolated(pool: MySqlPool) {
     let company_a = create_test_company(&pool, "Tenant A").await;
     let company_b = create_test_company(&pool, "Tenant B").await;

@@ -98,7 +98,7 @@ fn sum_credit(je: &kesh_db::entities::JournalEntryWithLines) -> Decimal {
 
 /// (a) Avoir mono-taux 8.1 % → contre-passation 3 lignes (crédit 1100 TTC,
 /// débit 3000 HT, débit 2000 TVA), équilibrée, facture → cancelled, solde 1100 → 0.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn credit_note_single_rate_reverses_invoice(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -180,7 +180,7 @@ async fn credit_note_single_rate_reverses_invoice(pool: MySqlPool) {
 }
 
 /// (b) Avoir multi-taux → une ligne TVA contre-passée par taux (ASC).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn credit_note_multi_rate(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -224,7 +224,7 @@ async fn credit_note_multi_rate(pool: MySqlPool) {
 }
 
 /// (c) Refus : facture brouillon (non validée).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn credit_note_refused_on_draft_invoice(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -265,7 +265,7 @@ async fn credit_note_refused_on_draft_invoice(pool: MySqlPool) {
 }
 
 /// (d) Refus : facture déjà payée (AC2bis).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn credit_note_refused_on_paid_invoice(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -297,7 +297,7 @@ async fn credit_note_refused_on_paid_invoice(pool: MySqlPool) {
 }
 
 /// (e) Refus : un seul avoir par facture (AC3 / DC7).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn credit_note_refused_when_already_credited(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -340,7 +340,7 @@ async fn credit_note_refused_when_already_credited(pool: MySqlPool) {
 /// projet vaut 0. Fonctionne aussi si le projet a été ARCHIVÉ entre la
 /// validation et l'avoir (DC3 : pas de re-check archivé sur l'annulation,
 /// miroir pay/cancel-after-archive 19-3).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn credit_note_inherits_project_and_nets_to_zero(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;

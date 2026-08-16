@@ -165,7 +165,7 @@ async fn create_and_login_as(
 
 // === Unauthenticated access → 401 (not 403) ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn unauthenticated_request_returns_401_not_403(pool: MySqlPool) {
     let app = spawn_app(pool).await;
 
@@ -181,7 +181,7 @@ async fn unauthenticated_request_returns_401_not_403(pool: MySqlPool) {
 
 // === T4.2 : AC#1 — Consultation bloqué sur /users/* ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn consultation_blocked_get_users(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = create_and_login_as(&app, &pool, "reader", "Consultation").await;
@@ -196,7 +196,7 @@ async fn consultation_blocked_get_users(pool: MySqlPool) {
     assert_eq!(resp.status(), 403);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn consultation_blocked_post_users(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = create_and_login_as(&app, &pool, "reader", "Consultation").await;
@@ -212,7 +212,7 @@ async fn consultation_blocked_post_users(pool: MySqlPool) {
     assert_eq!(resp.status(), 403);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn consultation_blocked_put_users(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = create_and_login_as(&app, &pool, "reader", "Consultation").await;
@@ -228,7 +228,7 @@ async fn consultation_blocked_put_users(pool: MySqlPool) {
     assert_eq!(resp.status(), 403);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn consultation_blocked_disable(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = create_and_login_as(&app, &pool, "reader", "Consultation").await;
@@ -245,7 +245,7 @@ async fn consultation_blocked_disable(pool: MySqlPool) {
 
 // === T4.3 : AC#2 — Comptable autorisé sur _test/comptable ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn comptable_allowed_on_comptable_route(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = create_and_login_as(&app, &pool, "accountant", "Comptable").await;
@@ -260,7 +260,7 @@ async fn comptable_allowed_on_comptable_route(pool: MySqlPool) {
     assert_eq!(resp.status(), 200);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn admin_allowed_on_comptable_route(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let config = test_config();
@@ -278,7 +278,7 @@ async fn admin_allowed_on_comptable_route(pool: MySqlPool) {
     assert_eq!(resp.status(), 200);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn consultation_blocked_on_comptable_route(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = create_and_login_as(&app, &pool, "reader", "Consultation").await;
@@ -295,7 +295,7 @@ async fn consultation_blocked_on_comptable_route(pool: MySqlPool) {
 
 // === T4.4 : AC#3 — Comptable bloqué sur /users/* ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn comptable_blocked_post_users(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = create_and_login_as(&app, &pool, "accountant", "Comptable").await;
@@ -311,7 +311,7 @@ async fn comptable_blocked_post_users(pool: MySqlPool) {
     assert_eq!(resp.status(), 403);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn comptable_blocked_get_users(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = create_and_login_as(&app, &pool, "accountant", "Comptable").await;
@@ -326,7 +326,7 @@ async fn comptable_blocked_get_users(pool: MySqlPool) {
     assert_eq!(resp.status(), 403);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn comptable_blocked_reset_password(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = create_and_login_as(&app, &pool, "accountant", "Comptable").await;
@@ -344,7 +344,7 @@ async fn comptable_blocked_reset_password(pool: MySqlPool) {
 
 // === T4.5 : AC#4 — Admin accès complet ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn admin_can_create_and_list_users(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let config = test_config();
@@ -386,7 +386,7 @@ async fn admin_can_create_and_list_users(pool: MySqlPool) {
 
 // === T4.6 : AC#7 — auth/password accessible par tous les rôles ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn change_password_accessible_by_all_roles(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
 
@@ -418,7 +418,7 @@ async fn change_password_accessible_by_all_roles(pool: MySqlPool) {
 
 // === T5.2 : Renforcer assertion optimistic lock 409 ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn optimistic_lock_conflict_returns_correct_error_code(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let config = test_config();

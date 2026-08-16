@@ -6,7 +6,7 @@
 //! company, même hash accepté sur 2 companies), `find_by_company_hash` scopé, et
 //! `list_by_status` filtré + scopé.
 //!
-//! Pattern `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]` — DB éphémère avec
+//! Pattern `#[sqlx::test(migrations = "./test-schema")]` — DB éphémère avec
 //! migrations auto-appliquées.
 
 use kesh_db::entities::imported_supplier_invoice::NewImportedSupplierInvoice;
@@ -59,7 +59,7 @@ fn new_invoice(company_id: i64, file_hash: &str) -> NewImportedSupplierInvoice {
     }
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_then_find_by_id_scoped_roundtrip(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Acme SA").await;
 
@@ -87,7 +87,7 @@ async fn create_then_find_by_id_scoped_roundtrip(pool: MySqlPool) {
     assert_eq!(fetched.creditor_name, "Robert Schneider SA");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_by_id_scoped_is_multitenant(pool: MySqlPool) {
     let company_a = create_test_company(&pool, "Company A").await;
     let company_b = create_test_company(&pool, "Company B").await;
@@ -111,7 +111,7 @@ async fn find_by_id_scoped_is_multitenant(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn duplicate_company_hash_is_rejected(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Acme SA").await;
 
@@ -128,7 +128,7 @@ async fn duplicate_company_hash_is_rejected(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn same_hash_across_companies_is_allowed(pool: MySqlPool) {
     let company_a = create_test_company(&pool, "Company A").await;
     let company_b = create_test_company(&pool, "Company B").await;
@@ -142,7 +142,7 @@ async fn same_hash_across_companies_is_allowed(pool: MySqlPool) {
         .expect("insert B ok (hash partagé inter-company autorisé)");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_by_company_hash_is_scoped(pool: MySqlPool) {
     let company_a = create_test_company(&pool, "Company A").await;
     let company_b = create_test_company(&pool, "Company B").await;
@@ -174,7 +174,7 @@ async fn find_by_company_hash_is_scoped(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn list_by_status_is_scoped_and_filtered(pool: MySqlPool) {
     let company_a = create_test_company(&pool, "Company A").await;
     let company_b = create_test_company(&pool, "Company B").await;

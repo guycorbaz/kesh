@@ -71,7 +71,7 @@ fn ny(name: &str, year: i32) -> NewFiscalYear {
 // create() — happy path + audit + UNIQUE & CHECK constraints
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_and_find_by_id(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -90,7 +90,7 @@ async fn create_and_find_by_id(pool: MySqlPool) {
     assert_eq!(found.id, created.id);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn test_create_writes_audit_log(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -113,13 +113,13 @@ async fn test_create_writes_audit_log(pool: MySqlPool) {
     assert_eq!(details["status"], "Open");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_by_id_returns_none_for_missing(pool: MySqlPool) {
     let result = fiscal_years::find_by_id(&pool, 999_999).await.unwrap();
     assert!(result.is_none());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn fk_violation_on_missing_company(pool: MySqlPool) {
     // user_id valide mais company_id invalide → FK violation à l'INSERT.
     let company_id = create_company(&pool).await;
@@ -135,7 +135,7 @@ async fn fk_violation_on_missing_company(pool: MySqlPool) {
 // Pré-checks overlap & nom (Story 3.7 H-5 + H-6)
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn test_create_rejects_duplicate_name(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -154,7 +154,7 @@ async fn test_create_rejects_duplicate_name(pool: MySqlPool) {
     }
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn test_create_rejects_overlap_with_existing(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -180,7 +180,7 @@ async fn test_create_rejects_overlap_with_existing(pool: MySqlPool) {
     }
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn check_constraint_rejects_equal_dates(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -199,7 +199,7 @@ async fn check_constraint_rejects_equal_dates(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn check_constraint_end_date_must_be_after_start(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -221,7 +221,7 @@ async fn check_constraint_end_date_must_be_after_start(pool: MySqlPool) {
 // list_by_company — Story 3.7 P3-M3 : ORDER BY DESC
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn test_list_by_company_orders_by_start_date_desc(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -247,7 +247,7 @@ async fn test_list_by_company_orders_by_start_date_desc(pool: MySqlPool) {
 // close() — Story 3.7 : signature audit-aware
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn close_open_to_closed(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -263,7 +263,7 @@ async fn close_open_to_closed(pool: MySqlPool) {
     assert_eq!(closed.status, FiscalYearStatus::Closed);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn close_fails_on_missing(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -272,7 +272,7 @@ async fn close_fails_on_missing(pool: MySqlPool) {
     assert!(matches!(result, Err(DbError::NotFound)));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn close_fails_on_already_closed(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -289,7 +289,7 @@ async fn close_fails_on_already_closed(pool: MySqlPool) {
     assert!(matches!(result, Err(DbError::IllegalStateTransition(_))));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn test_close_writes_audit_log(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -316,7 +316,7 @@ async fn test_close_writes_audit_log(pool: MySqlPool) {
 
 // Pass 2 HP2-L4 : close empty fiscal_year (no journal entries) — devrait
 // réussir (il n'y a aucune contrainte applicative qui bloque).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn test_close_fiscal_year_with_no_journal_entries(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -335,7 +335,7 @@ async fn test_close_fiscal_year_with_no_journal_entries(pool: MySqlPool) {
 // update_name() — Story 3.7 T1.3
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn test_update_name_writes_audit_log_with_before_after(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -363,7 +363,7 @@ async fn test_update_name_writes_audit_log_with_before_after(pool: MySqlPool) {
     assert_eq!(details["after"]["name"], "FY 2026");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn test_update_name_rejects_empty(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -380,7 +380,7 @@ async fn test_update_name_rejects_empty(pool: MySqlPool) {
     }
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn test_update_name_rejects_duplicate_name(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -408,7 +408,7 @@ async fn test_update_name_rejects_duplicate_name(pool: MySqlPool) {
     }
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn test_update_name_not_found(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -422,7 +422,7 @@ async fn test_update_name_not_found(pool: MySqlPool) {
 // create_for_seed() — Story 3.7 T1.8
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn test_create_for_seed_does_not_audit(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
 
@@ -443,7 +443,7 @@ async fn test_create_for_seed_does_not_audit(pool: MySqlPool) {
 // create_if_absent_in_tx() — Story 3.7 T1.2
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn test_create_if_absent_in_tx_creates_when_empty(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -466,7 +466,7 @@ async fn test_create_if_absent_in_tx_creates_when_empty(pool: MySqlPool) {
     assert!(entries.iter().any(|e| e.action == "fiscal_year.created"));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn test_create_if_absent_in_tx_skips_when_exists(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -503,7 +503,7 @@ async fn test_create_if_absent_in_tx_skips_when_exists(pool: MySqlPool) {
 // find_by_id_in_company — Story 3.7 H-8 multi-tenant scoping
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn test_find_by_id_in_company_returns_none_for_other_company(pool: MySqlPool) {
     let company_a = create_company(&pool).await;
     let user_a = create_admin_user(&pool, company_a).await;
@@ -578,7 +578,7 @@ async fn create_other_company(pool: &MySqlPool) -> i64 {
     .id
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn test_update_name_rejects_cross_tenant(pool: MySqlPool) {
     let company_a = create_company(&pool).await;
     let user_a = create_admin_user(&pool, company_a).await;
@@ -601,7 +601,7 @@ async fn test_update_name_rejects_cross_tenant(pool: MySqlPool) {
     assert_eq!(unchanged.name, "FY of B");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn test_close_rejects_cross_tenant(pool: MySqlPool) {
     let company_a = create_company(&pool).await;
     let user_a = create_admin_user(&pool, company_a).await;
@@ -626,7 +626,7 @@ async fn test_close_rejects_cross_tenant(pool: MySqlPool) {
 // Code Review Pass 1 F3 — pré-validation longueur nom (VARCHAR(50))
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn test_create_rejects_name_too_long(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -641,7 +641,7 @@ async fn test_create_rejects_name_too_long(pool: MySqlPool) {
     }
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn test_update_name_rejects_name_too_long(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -659,7 +659,7 @@ async fn test_update_name_rejects_name_too_long(pool: MySqlPool) {
     }
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn test_create_accepts_name_at_max_length(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -675,7 +675,7 @@ async fn test_create_accepts_name_at_max_length(pool: MySqlPool) {
 // Code Review Pass 1 F1 — create_if_absent_in_tx idempotent sur UniqueConstraintViolation
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn test_create_if_absent_in_tx_idempotent_on_unique_violation(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -718,7 +718,7 @@ async fn test_create_if_absent_in_tx_idempotent_on_unique_violation(pool: MySqlP
 
 /// AC-A — reopen d'un `Closed` → `Open` + audit `fiscal_year.reopened` avec
 /// `details_json.motif` et `before/after` corrects.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn reopen_closed_writes_audit_with_motif(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -752,7 +752,7 @@ async fn reopen_closed_writes_audit_with_motif(pool: MySqlPool) {
 
 /// AC-A — reopen d'un `Open` → `Invariant(FY_REOPEN_ALREADY_OPEN_KEY)` ; AUCUNE
 /// écriture d'audit ajoutée (désambiguïsation « déjà ouvert » avant garde LIFO).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn reopen_already_open_returns_invariant_no_audit(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -778,7 +778,7 @@ async fn reopen_already_open_returns_invariant_no_audit(pool: MySqlPool) {
 }
 
 /// AC-A — reopen d'un id inexistant / d'une autre société → `NotFound`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn reopen_missing_and_cross_tenant_return_notfound(pool: MySqlPool) {
     let company_a = create_company(&pool).await;
     let user_a = create_admin_user(&pool, company_a).await;
@@ -804,7 +804,7 @@ async fn reopen_missing_and_cross_tenant_return_notfound(pool: MySqlPool) {
 
 /// AC-B — garde LIFO : FY_N clos + FY_{N+1} clos → reopen FY_N bloqué ; reopen
 /// FY_{N+1} d'abord → OK, puis FY_N → OK.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn reopen_lifo_blocked_then_ordered_ok(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -841,7 +841,7 @@ async fn reopen_lifo_blocked_then_ordered_ok(pool: MySqlPool) {
 }
 
 /// AC-B — LIFO permissif : FY_N clos + FY_{N+1} OUVERT → reopen FY_N OK.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn reopen_lifo_permissive_when_later_open(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -865,7 +865,7 @@ async fn reopen_lifo_permissive_when_later_open(pool: MySqlPool) {
 /// P4-LOW — LIFO 3 exercices intercalés (Closed-Open-Closed) : reopen FY1 bloqué
 /// en citant FY3 (le plus proche postérieur clos via ORDER BY start_date ASC
 /// LIMIT 1 — prouve que la query n'a pas besoin de notion d'adjacence).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn reopen_lifo_three_years_intercalated(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -902,7 +902,7 @@ async fn reopen_lifo_three_years_intercalated(pool: MySqlPool) {
 /// `journal_entries` : après reopen, une écriture peut être créée dans
 /// l'exercice ; puis re-close → re-bloqué (`FiscalYearClosed`). Fix structurel :
 /// le statut vivant pilote l'immutabilité, pas de flag dupliqué.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn reopen_reactivates_entry_editability(pool: MySqlPool) {
     use kesh_db::entities::account::AccountType;
     use kesh_db::entities::journal_entry::Journal;
@@ -1013,7 +1013,7 @@ async fn reopen_reactivates_entry_editability(pool: MySqlPool) {
 /// AC-J test (a) — le message (log-only) de re-clôture d'un exercice déjà clos
 /// ne prétend PLUS que la réouverture est interdite (reformulé « déjà clos »).
 /// Le `Display` n'est jamais exposé au client — assertion doc/log-only.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn close_already_closed_message_no_longer_claims_reopen_forbidden(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -1047,7 +1047,7 @@ async fn close_already_closed_message_no_longer_claims_reopen_forbidden(pool: My
 /// le `FOR UPDATE` : l'issue est déterministe (pas de deadlock, pas de panic) et
 /// l'état final est cohérent. Documente l'hypothèse next-key locking de la
 /// garde LIFO (filtre `status` non indexé).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn reopen_close_concurrent_is_serialized(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -1113,7 +1113,7 @@ async fn reopen_close_concurrent_is_serialized(pool: MySqlPool) {
 
 /// Plusieurs exercices → celui de `start_date` la plus ancienne (tri ASC,
 /// l'inverse de `list_by_company` qui trie DESC — Piège 8).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_first_by_company_returns_oldest_start_date(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let user_id = create_admin_user(&pool, company_id).await;
@@ -1137,7 +1137,7 @@ async fn find_first_by_company_returns_oldest_start_date(pool: MySqlPool) {
 }
 
 /// Aucun exercice → `None` (le handler mappe en `NO_FISCAL_YEAR`).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_first_by_company_none_when_empty(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
     let result = fiscal_years::find_first_by_company(&pool, company_id)
@@ -1155,7 +1155,7 @@ async fn find_first_by_company_none_when_empty(pool: MySqlPool) {
 /// aucune fixture légitime ne peut l'exercer. Ce test vérifie à la place que
 /// le scoping company isole bien deux exercices de même `start_date` posés
 /// dans deux companies distinctes.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_first_by_company_is_tenant_scoped(pool: MySqlPool) {
     let company_a = create_company(&pool).await;
     let user_a = create_admin_user(&pool, company_a).await;

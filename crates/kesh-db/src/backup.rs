@@ -578,7 +578,7 @@ mod tests {
     /// Si une future migration ajoute/retire une table applicative, ce test
     /// échoue avec le delta, forçant la mise à jour de la const avant merge.
     /// (Promu de `test_fixtures.rs`, Story 17-3a — la const vit désormais ici.)
-    #[sqlx::test(migrator = "crate::MIGRATOR")]
+    #[sqlx::test(migrations = "./test-schema")]
     async fn backup_inventory_matches_schema(pool: MySqlPool) {
         let db_tables: Vec<String> = sqlx::query_scalar(
             "SELECT TABLE_NAME FROM information_schema.TABLES \
@@ -606,7 +606,7 @@ mod tests {
     }
 
     /// `export_table` exclut les colonnes générées (`active_uniq` VIRTUAL).
-    #[sqlx::test(migrator = "crate::MIGRATOR")]
+    #[sqlx::test(migrations = "./test-schema")]
     async fn export_table_excludes_generated_columns(pool: MySqlPool) {
         let export = export_table(&pool, "reconciliation_rules")
             .await
@@ -623,7 +623,7 @@ mod tests {
 
     /// NDJSON fidèle : 1 ligne JSON par row, ordre des clés = column_names,
     /// types respectés (id entier, date ISO, NULL → null).
-    #[sqlx::test(migrator = "crate::MIGRATOR")]
+    #[sqlx::test(migrations = "./test-schema")]
     async fn export_table_serializes_rows_faithfully(pool: MySqlPool) {
         // Insère une company minimale (ide_number NULL pour tester NULL → null).
         sqlx::query(
@@ -683,7 +683,7 @@ mod tests {
 
     /// `column_constraints` détecte `companies.id` comme auto-increment (donc
     /// non requise) et `companies.name` comme NOT NULL sans défaut (requise).
-    #[sqlx::test(migrator = "crate::MIGRATOR")]
+    #[sqlx::test(migrations = "./test-schema")]
     async fn column_constraints_flags_required_and_optional(pool: MySqlPool) {
         let cols = column_constraints(&pool, "companies")
             .await
@@ -711,7 +711,7 @@ mod tests {
 
     /// `reconciliation_rules.active_uniq` (GENERATED VIRTUAL) est marquée
     /// générée → jamais requise (cohérent avec son exclusion de l'export).
-    #[sqlx::test(migrator = "crate::MIGRATOR")]
+    #[sqlx::test(migrations = "./test-schema")]
     async fn column_constraints_marks_generated_column(pool: MySqlPool) {
         let cols = column_constraints(&pool, "reconciliation_rules")
             .await
@@ -727,7 +727,7 @@ mod tests {
     /// Round-trip restore : insère 2 companies → exporte (export_table) →
     /// restore_tables_in_tx (DELETE+INSERT) → les 2 companies sont rétablies
     /// avec les mêmes valeurs (fidélité de type).
-    #[sqlx::test(migrator = "crate::MIGRATOR")]
+    #[sqlx::test(migrations = "./test-schema")]
     async fn restore_tables_in_tx_round_trips_companies(pool: MySqlPool) {
         for (name, ide) in [("Acme SA", Some("CHE123456789")), ("Beta GmbH", None)] {
             let ide_sql = match ide {

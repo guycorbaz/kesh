@@ -753,7 +753,7 @@ async fn error_code(resp: reqwest::Response) -> String {
 /// ⚠️ On asserte le **code**, pas le statut. Trois gardes distinctes rendent
 /// `403` sur ces routes — le RBAC, le gate de portée, et la couche : un test
 /// qui se contenterait du statut passerait sans que la couche soit atteinte.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn every_admin_couple_denies_a_read_write_pat(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let pat = pat_for(&app, &pool, "RW", Role::Admin, "read-write").await;
@@ -778,7 +778,7 @@ async fn every_admin_couple_denies_a_read_write_pat(pool: MySqlPool) {
 /// amont par `require_auth` avec `API_KEY_READ_ONLY`, **qui existait avant cette
 /// story**. Prescrire `403` partout ferait un test muet sur ces vingt-là : la
 /// mutation « retirer la couche doit faire rougir » y est insatisfaisable.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn read_only_pat_is_stopped_by_the_right_guard_on_each_couple(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let pat = pat_for(&app, &pool, "RO", Role::Admin, "read").await;
@@ -824,7 +824,7 @@ async fn read_only_pat_is_stopped_by_the_right_guard_on_each_couple(pool: MySqlP
 /// **vert**. Les autres chemins n'ont pas de garde dans leur handler et sont donc
 /// bien sensibles. Le fait est nommé ici plutôt que masqué — c'est le prix d'une
 /// redondance assumée, et il faut savoir où elle rend un test aveugle.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn head_couples_are_denied_too(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let pat = pat_for(&app, &pool, "HEAD", Role::Admin, "read").await;
@@ -858,7 +858,7 @@ async fn head_couples_are_denied_too(pool: MySqlPool) {
 /// Un PAT créé par un **Comptable** est refusé par le RBAC (rôle insuffisant)
 /// *et* par la couche (c'est un PAT). Le code observable doit être unique,
 /// quel que soit le rôle du créateur : sinon AC1 devrait se ramifier.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn comptable_created_pat_gets_the_same_code_as_an_admin_one(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let pat = pat_for(&app, &pool, "Comptable", Role::Comptable, "read-write").await;
@@ -879,7 +879,7 @@ async fn comptable_created_pat_gets_the_same_code_as_an_admin_one(pool: MySqlPoo
 /// C'est le test qui dit *pourquoi* la story existe : un jeton fuité créait un
 /// administrateur, s'y connectait par l'interface, et se forgeait de nouvelles
 /// clés — si bien que **révoquer le jeton n'arrêtait plus l'incident**.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn a_leaked_admin_pat_can_no_longer_create_an_administrator(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let pat = pat_for(&app, &pool, "Fuite", Role::Admin, "read-write").await;

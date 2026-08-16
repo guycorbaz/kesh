@@ -1,7 +1,7 @@
 //! Tests d'intégration pour `repositories::reconciliation_rules`
 //! (Story 8-5b T2.4 — AC #101-#112, #118).
 //!
-//! 8 tests `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]` — DB éphémère
+//! 8 tests `#[sqlx::test(migrations = "./test-schema")]` — DB éphémère
 //! avec migrations auto-appliquées. Pattern hérité 8-1b/8-4/8-5a-zero.
 
 use kesh_db::entities::account::AccountType;
@@ -141,7 +141,7 @@ async fn make_project(pool: &MySqlPool, company_id: i64, code: &str, archived: b
 // Test 1 — AC #101 + AC #107 : create + find_by_id scoped multi-tenant.
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_and_find_by_id_scopes_by_company(pool: MySqlPool) {
     let company_a = create_test_company(&pool, "Alpha SA").await;
     let company_b = create_test_company(&pool, "Beta SA").await;
@@ -203,7 +203,7 @@ async fn create_and_find_by_id_scopes_by_company(pool: MySqlPool) {
 // Test 2 — AC #102 : UNIQUE (company_id, match_type, match_value) sur rules actives.
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn unique_match_type_value_per_company_when_active(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Alpha SA").await;
     let user_id = create_test_user(&pool, "alice", company_id).await;
@@ -256,7 +256,7 @@ async fn unique_match_type_value_per_company_when_active(pool: MySqlPool) {
 // Test 3 — AC #103 + Q3 : UNIQUE partiel permet recreate après soft-delete.
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn unique_partial_allows_create_when_existing_inactive(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Alpha SA").await;
     let user_id = create_test_user(&pool, "alice", company_id).await;
@@ -316,7 +316,7 @@ async fn unique_partial_allows_create_when_existing_inactive(pool: MySqlPool) {
 // alors qu'une rule active avec mêmes match existe → UNIQUE conflict.
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn unique_partial_conflicts_on_reactivation(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Alpha SA").await;
     let user_id = create_test_user(&pool, "alice", company_id).await;
@@ -404,7 +404,7 @@ async fn unique_partial_conflicts_on_reactivation(pool: MySqlPool) {
 // Test 5 — AC #105 + #106 : list_by_company_paginated avec active_filter.
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn list_filters_active(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Alpha SA").await;
     let user_id = create_test_user(&pool, "alice", company_id).await;
@@ -497,7 +497,7 @@ async fn list_filters_active(pool: MySqlPool) {
 // Test 6 — AC #108 : optimistic lock sur version.
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn update_uses_optimistic_lock(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Alpha SA").await;
     let user_id = create_test_user(&pool, "alice", company_id).await;
@@ -565,7 +565,7 @@ async fn update_uses_optimistic_lock(pool: MySqlPool) {
 // Test 7 — AC #110 + #111 : soft_delete + idempotence.
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn soft_delete_sets_active_false_idempotent(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Alpha SA").await;
     let user_id = create_test_user(&pool, "alice", company_id).await;
@@ -647,7 +647,7 @@ async fn soft_delete_sets_active_false_idempotent(pool: MySqlPool) {
 // (pas de WHERE version=? clause — différent de l'optimistic lock CRUD).
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn increment_applied_count_atomic(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Alpha SA").await;
     let user_id = create_test_user(&pool, "alice", company_id).await;
@@ -710,7 +710,7 @@ async fn increment_applied_count_atomic(pool: MySqlPool) {
 // ---------------------------------------------------------------------------
 
 /// Create avec `default_project_id` valide → relu correctement.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_with_default_project_persists(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Alpha SA").await;
     let user_id = create_test_user(&pool, "alice", company_id).await;
@@ -745,7 +745,7 @@ async fn create_with_default_project_persists(pool: MySqlPool) {
 }
 
 /// Create avec projet archivé → `IllegalStateTransition` (mappé 409).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_with_archived_project_rejected(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Alpha SA").await;
     let user_id = create_test_user(&pool, "alice", company_id).await;
@@ -776,7 +776,7 @@ async fn create_with_archived_project_rejected(pool: MySqlPool) {
 }
 
 /// Create avec projet inexistant OU cross-company → `NotFound` (mappé 404).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_with_unknown_or_cross_company_project_rejected(pool: MySqlPool) {
     let company_a = create_test_company(&pool, "Alpha SA").await;
     let company_b = create_test_company(&pool, "Beta SA").await;
@@ -835,7 +835,7 @@ async fn create_with_unknown_or_cross_company_project_rejected(pool: MySqlPool) 
 /// Update qui change le projet vers un projet actif → validé et persisté ;
 /// update qui touche un autre champ sans changer le projet dont le projet
 /// stocké a été archivé entre-temps → passe (grandfathering, DC4).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn update_validates_new_project_but_grandfathers_unchanged(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Alpha SA").await;
     let user_id = create_test_user(&pool, "alice", company_id).await;

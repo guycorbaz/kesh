@@ -29,7 +29,7 @@ fn sample_new_company() -> NewCompany {
     }
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_and_find_by_id(pool: MySqlPool) {
     let created = companies::create(&pool, sample_new_company())
         .await
@@ -48,13 +48,13 @@ async fn create_and_find_by_id(pool: MySqlPool) {
     assert_eq!(found.accounting_language, Language::Fr);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_by_id_returns_none_for_missing(pool: MySqlPool) {
     let result = companies::find_by_id(&pool, 999_999).await.unwrap();
     assert!(result.is_none());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn update_succeeds_with_current_version(pool: MySqlPool) {
     let created = companies::create(&pool, sample_new_company())
         .await
@@ -83,7 +83,7 @@ async fn update_succeeds_with_current_version(pool: MySqlPool) {
     assert_eq!(updated.version, created.version + 1);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn update_fails_on_stale_version(pool: MySqlPool) {
     let created = companies::create(&pool, sample_new_company())
         .await
@@ -125,7 +125,7 @@ async fn update_fails_on_stale_version(pool: MySqlPool) {
     assert!(matches!(result, Err(DbError::OptimisticLockConflict)));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn update_fails_on_missing_entity(pool: MySqlPool) {
     let changes = CompanyUpdate {
         name: "Ghost".into(),
@@ -150,7 +150,7 @@ async fn update_fails_on_missing_entity(pool: MySqlPool) {
     assert!(matches!(result, Err(DbError::NotFound)));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn list_with_pagination(pool: MySqlPool) {
     // Créer 5 companies
     for i in 0..5 {
@@ -178,7 +178,7 @@ async fn list_with_pagination(pool: MySqlPool) {
     assert!(page1[0].id < page1[1].id);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn unique_constraint_on_ide_number(pool: MySqlPool) {
     companies::create(&pool, sample_new_company())
         .await
@@ -189,7 +189,7 @@ async fn unique_constraint_on_ide_number(pool: MySqlPool) {
     assert!(matches!(result, Err(DbError::UniqueConstraintViolation(_))));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn empty_name_rejected(pool: MySqlPool) {
     let mut new = sample_new_company();
     new.name = String::new();
@@ -197,7 +197,7 @@ async fn empty_name_rejected(pool: MySqlPool) {
     assert!(matches!(result, Err(DbError::CheckConstraintViolation(_))));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn empty_address_rejected(pool: MySqlPool) {
     let mut new = sample_new_company();
     new.address_structured = StructuredAddress {
@@ -211,7 +211,7 @@ async fn empty_address_rejected(pool: MySqlPool) {
     assert!(matches!(result, Err(DbError::CheckConstraintViolation(_))));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn invalid_ide_format_rejected(pool: MySqlPool) {
     let mut new = sample_new_company();
     new.ide_number = Some("INVALID".into());
@@ -219,7 +219,7 @@ async fn invalid_ide_format_rejected(pool: MySqlPool) {
     assert!(matches!(result, Err(DbError::CheckConstraintViolation(_))));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn list_limit_clamped_to_max(pool: MySqlPool) {
     // Un limit très grand (i64::MAX) doit être clampé à MAX_LIST_LIMIT sans
     // provoquer d'erreur SQL — validation du clamp pre-query.
@@ -234,7 +234,7 @@ async fn list_limit_clamped_to_max(pool: MySqlPool) {
     assert!(list_min.is_empty()); // limit clamped à 0
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn list_negative_values_normalized(pool: MySqlPool) {
     companies::create(&pool, sample_new_company())
         .await
@@ -251,7 +251,7 @@ async fn list_negative_values_normalized(pool: MySqlPool) {
 /// KF-004 : payload identique à l'état persisté → pas de bump version,
 /// `updated_at` inchangé. Pas d'assertion audit_log : `companies::update`
 /// n'écrit pas d'audit log v0.1.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn update_no_op_returns_unchanged_entity(pool: MySqlPool) {
     let created = companies::create(&pool, sample_new_company())
         .await
@@ -288,7 +288,7 @@ async fn update_no_op_returns_unchanged_entity(pool: MySqlPool) {
 }
 
 /// KF-004 régression : modifier `name` → bump version.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn update_partial_change_bumps_version(pool: MySqlPool) {
     let created = companies::create(&pool, sample_new_company())
         .await
@@ -315,7 +315,7 @@ async fn update_partial_change_bumps_version(pool: MySqlPool) {
     assert_eq!(result.name, "Test SA Renommée");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn multiple_companies_without_ide(pool: MySqlPool) {
     // Plusieurs companies sans IDE (NULL) doivent être acceptées
     // — UNIQUE n'applique pas aux NULL en MariaDB.
@@ -348,7 +348,7 @@ async fn multiple_companies_without_ide(pool: MySqlPool) {
 /// ⚠️ Le montage vide les colonnes structurées **en SQL direct** : aucune
 /// fixture du dépôt ne produit cet état — `test_fixtures.rs` les peuple
 /// toujours — et c'est précisément pourquoi aucun gate ne voyait le défaut.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn update_preserves_address_when_structured_columns_are_empty(pool: MySqlPool) {
     let created = companies::create(&pool, sample_new_company())
         .await
@@ -410,7 +410,7 @@ async fn update_preserves_address_when_structured_columns_are_empty(pool: MySqlP
 /// Le pendant : quand les colonnes structurées SONT renseignées, `address`
 /// reste bien dérivée d'elles. Sans ce test, remplacer la garde par un
 /// « ne jamais toucher à `address` » passerait inaperçu.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn update_recomposes_address_when_structured_columns_are_filled(pool: MySqlPool) {
     let created = companies::create(&pool, sample_new_company())
         .await

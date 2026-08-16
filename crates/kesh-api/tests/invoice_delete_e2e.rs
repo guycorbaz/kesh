@@ -180,7 +180,7 @@ async fn create_validated_invoice(
 
 /// Happy path : Admin supprime une facture validée impayée en exercice ouvert
 /// → 204 + la facture ET son écriture comptable liée disparaissent.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn delete_validated_as_admin_returns_204(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (admin_id, company_id) = seed_base(&pool).await;
@@ -217,7 +217,7 @@ async fn delete_validated_as_admin_returns_204(pool: MySqlPool) {
 }
 
 /// Sans token → 401 (couche auth avant RBAC).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn delete_requires_auth_returns_401(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (admin_id, company_id) = seed_base(&pool).await;
@@ -236,7 +236,7 @@ async fn delete_requires_auth_returns_401(pool: MySqlPool) {
 
 /// La suppression est réservée Admin : un Comptable est refusé (403) et la
 /// facture reste intacte.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn delete_as_comptable_returns_403(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (admin_id, company_id) = seed_base(&pool).await;

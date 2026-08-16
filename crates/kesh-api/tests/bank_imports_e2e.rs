@@ -229,7 +229,7 @@ async fn setup(pool: &MySqlPool) -> TestSetup {
 // Tests T6.9 — 14 cas (F1+F3+F4 validate Pass 1 + O3 validate Pass 3)
 // =========================================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_import_creates_rows_atomically(pool: MySqlPool) {
     // AC #1, #3a, #17 — happy path
     let s = setup(&pool).await;
@@ -283,7 +283,7 @@ async fn post_import_creates_rows_atomically(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_preview_returns_ignored_statements_for_multi_stmt_file(pool: MySqlPool) {
     // AC #3b — F1 validate Pass 1
     let s = setup(&pool).await;
@@ -309,7 +309,7 @@ async fn post_preview_returns_ignored_statements_for_multi_stmt_file(pool: MySql
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_import_rejects_when_no_stmt_matches_selected_account(pool: MySqlPool) {
     // AC #3c — F4 validate Pass 1
     let company_id = create_company(&pool, "Acme").await;
@@ -335,7 +335,7 @@ async fn post_import_rejects_when_no_stmt_matches_selected_account(pool: MySqlPo
     assert!(body["error"]["details"]["foundIbans"].is_array());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_import_rejects_when_role_consultation(pool: MySqlPool) {
     // AC #12 — RBAC
     let company_id = create_company(&pool, "Acme").await;
@@ -357,7 +357,7 @@ async fn post_import_rejects_when_role_consultation(pool: MySqlPool) {
     assert_eq!(resp.status(), 403);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_import_rejects_payload_too_large(pool: MySqlPool) {
     // AC #13 — payload limit
     let s = setup(&pool).await;
@@ -377,7 +377,7 @@ async fn post_import_rejects_payload_too_large(pool: MySqlPool) {
     assert_eq!(resp.status(), 413);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_import_rejects_balance_mismatch_without_confirm(pool: MySqlPool) {
     // AC #14
     let s = setup(&pool).await;
@@ -398,7 +398,7 @@ async fn post_import_rejects_balance_mismatch_without_confirm(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "BANK_IMPORT_BALANCE_MISMATCH");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_import_accepts_balance_mismatch_with_confirm(pool: MySqlPool) {
     // AC #14 — confirm bypass + audit log spécial
     let s = setup(&pool).await;
@@ -438,7 +438,7 @@ async fn post_import_accepts_balance_mismatch_with_confirm(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_import_rejects_eur_currency(pool: MySqlPool) {
     // AC #15 — devise v0.1 CHF only
     let s = setup(&pool).await;
@@ -466,7 +466,7 @@ async fn post_import_rejects_eur_currency(pool: MySqlPool) {
 // par `post_import_rejects_duplicate_file_without_confirm` (AC #2) +
 // `post_import_accepts_duplicate_file_with_confirm` (AC #3) ajoutés en T6.5.
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_import_allows_same_file_across_companies(pool: MySqlPool) {
     // AC #16 multi-tenant safety
     let company_a = create_company(&pool, "CompanyA").await;
@@ -494,7 +494,7 @@ async fn post_import_allows_same_file_across_companies(pool: MySqlPool) {
     }
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_import_audit_log_contains_correct_entry(pool: MySqlPool) {
     // AC #18 — F3 validate Pass 1
     let s = setup(&pool).await;
@@ -532,7 +532,7 @@ async fn post_import_audit_log_contains_correct_entry(pool: MySqlPool) {
     assert!(details.get("source_format").is_some());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn get_imports_lists_only_own_company(pool: MySqlPool) {
     // AC #10 — multi-tenant scoping GET
     let company_a = create_company(&pool, "CompanyA").await;
@@ -577,7 +577,7 @@ async fn get_imports_lists_only_own_company(pool: MySqlPool) {
     assert_eq!(items.len(), 1);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn get_import_returns_404_for_other_company_id(pool: MySqlPool) {
     // AC #10 — IDOR cross-tenant 404 (KF-002)
     let company_a = create_company(&pool, "CompanyA").await;
@@ -615,7 +615,7 @@ async fn get_import_returns_404_for_other_company_id(pool: MySqlPool) {
     assert_eq!(resp.status(), 404);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_import_rejects_truncated_xml(pool: MySqlPool) {
     // O3 validate Pass 3 — mapping CamtError::MalformedXml → 400
     let s = setup(&pool).await;
@@ -637,7 +637,7 @@ async fn post_import_rejects_truncated_xml(pool: MySqlPool) {
     assert_eq!(body["error"]["details"]["kind"], "MALFORMED_XML");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_import_rejects_when_bank_account_belongs_to_other_company(pool: MySqlPool) {
     // 14e test : IDOR sur bankAccountId du payload — un user company_A ne
     // peut pas faire passer le bankAccountId d'une company_B (T6.3 / Pass 1 H5).
@@ -730,7 +730,7 @@ fn build_csv_multipart(
     form
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_preview_returns_duplicate_file_warning(pool: MySqlPool) {
     // AC #1 — fichier déjà importé : preview retourne `warnings.duplicateFile`.
     let s = setup(&pool).await;
@@ -767,7 +767,7 @@ async fn post_preview_returns_duplicate_file_warning(pool: MySqlPool) {
     assert_eq!(dup["existingFilename"].as_str().unwrap(), "v04_minimal.xml");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_import_rejects_duplicate_file_without_confirm(pool: MySqlPool) {
     // AC #2 — sans confirmDuplicateFile → 422 BANK_IMPORT_DUPLICATE_FILE.
     let s = setup(&pool).await;
@@ -813,7 +813,7 @@ async fn post_import_rejects_duplicate_file_without_confirm(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_import_accepts_duplicate_file_with_confirm(pool: MySqlPool) {
     // AC #3 — avec confirmDuplicateFile=true → 201 + 2 rows distincts.
     let s = setup(&pool).await;
@@ -872,7 +872,7 @@ async fn post_import_accepts_duplicate_file_with_confirm(pool: MySqlPool) {
     assert!(modifiers.iter().any(|m| m == "duplicate_file"));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_preview_returns_duplicate_lines_warning(pool: MySqlPool) {
     // AC #5 — preview détecte les lignes en doublon (clé composite stable).
     let s = setup(&pool).await;
@@ -912,7 +912,7 @@ async fn post_preview_returns_duplicate_lines_warning(pool: MySqlPool) {
     assert!(new_idx == 0 || new_idx == 1);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_import_skips_duplicate_lines_by_default(pool: MySqlPool) {
     // AC #6 — sans confirmDuplicateLines → skip (default).
     let s = setup(&pool).await;
@@ -968,7 +968,7 @@ async fn post_import_skips_duplicate_lines_by_default(pool: MySqlPool) {
     assert!(modifiers.iter().any(|m| m == "duplicate_lines_skipped"));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_import_force_imports_duplicate_lines(pool: MySqlPool) {
     // AC #7 — confirmDuplicateLines=import → persiste tout.
     let s = setup(&pool).await;
@@ -1023,7 +1023,7 @@ async fn post_import_force_imports_duplicate_lines(pool: MySqlPool) {
     assert!(modifiers.iter().any(|m| m == "duplicate_lines_imported"));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_import_does_not_detect_duplicate_lines_across_tenants(pool: MySqlPool) {
     // AC #10 — multi-tenant safety : transactions cross-company invisibles.
     let company_a = create_company(&pool, "CompanyA").await;
@@ -1088,7 +1088,7 @@ const CSV_PARTIAL_3VALID_3INVALID: &str = "date;amount;ref;details\n\
                                             2026-05-18;400.00;REF-5;V5\n\
                                             BAD_DATE_2;500.00;REF-6;V6\n";
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_preview_csv_returns_invalid_lines_warning(pool: MySqlPool) {
     // AC #12 — CSV avec lignes invalides : warnings.invalidLines retourné.
     let s = setup(&pool).await;
@@ -1122,7 +1122,7 @@ async fn post_preview_csv_returns_invalid_lines_warning(pool: MySqlPool) {
     assert_eq!(txs.len(), 3);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_import_csv_accepts_partial_with_confirm(pool: MySqlPool) {
     // AC #14 — confirmPartialImport=true persiste les lignes valides.
     let s = setup(&pool).await;
@@ -1169,7 +1169,7 @@ async fn post_import_csv_accepts_partial_with_confirm(pool: MySqlPool) {
     assert!(!d["partial_truncated"].as_bool().unwrap());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_import_csv_accepts_partial_with_truncated_errors(pool: MySqlPool) {
     // AC #15 — 50 valides + 150 invalides → cap 100 + truncated=true.
     let s = setup(&pool).await;
@@ -1222,7 +1222,7 @@ async fn post_import_csv_accepts_partial_with_truncated_errors(pool: MySqlPool) 
     assert!(d["partial_truncated"].as_bool().unwrap());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_import_csv_rejects_partial_when_zero_valid_lines(pool: MySqlPool) {
     // AC #16 — 0 valides + N invalides → 422 reason="no_valid_lines_to_commit".
     let s = setup(&pool).await;
@@ -1254,7 +1254,7 @@ async fn post_import_csv_rejects_partial_when_zero_valid_lines(pool: MySqlPool) 
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_import_csv_combines_three_confirm_flags(pool: MySqlPool) {
     // AC #17 — combinaison duplicate_file + duplicate_lines + partial.
     //
@@ -1349,7 +1349,7 @@ async fn post_import_csv_combines_three_confirm_flags(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn dedup_handles_2000_existing_under_3s(pool: MySqlPool) {
     // L10 (Pass 1 review) — AC #29 perf smoke E2E HTTP. **Non-bloquant CI** :
     // émet un warning via `eprintln!` si > 3s sans faire échouer le test
@@ -1453,7 +1453,7 @@ async fn dedup_handles_2000_existing_under_3s(pool: MySqlPool) {
     }
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_import_with_confirm_duplicate_file_on_fresh_file_no_modifier(pool: MySqlPool) {
     // L7 (Pass 1 review) — defensive client envoie confirmDuplicateFile=true
     // sur un fichier frais (pas de duplicate detected) → 201 sans le
@@ -1502,7 +1502,7 @@ async fn post_import_with_confirm_duplicate_file_on_fresh_file_no_modifier(pool:
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_import_returns_duplicate_file_first_when_no_flags(pool: MySqlPool) {
     // AC #18 — fail-fast applicatif : duplicate_file 422 retourné AVANT
     // le parse CSV (donc pas BANK_CSV_PARTIAL_FAILURE même si le CSV

@@ -189,7 +189,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 // AC1 — succès
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_export_success_returns_keshbackup(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = seed(&pool, "Acme", Role::Admin).await;
@@ -233,7 +233,7 @@ async fn full_export_success_returns_keshbackup(pool: MySqlPool) {
 // AC3/AC4/AC5 — structure + manifest + intégrité
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_export_structure_manifest_and_integrity(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = seed(&pool, "Acme", Role::Admin).await;
@@ -335,7 +335,7 @@ async fn full_export_structure_manifest_and_integrity(pool: MySqlPool) {
 // AC1 — RBAC + auth
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_export_non_admin_returns_403(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
 
@@ -356,7 +356,7 @@ async fn full_export_non_admin_returns_403(pool: MySqlPool) {
     }
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_export_unauthenticated_returns_401(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let _ = seed(&pool, "Acme", Role::Admin).await;
@@ -374,7 +374,7 @@ async fn full_export_unauthenticated_returns_401(pool: MySqlPool) {
 // AC2 — anti-PAT
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_export_via_pat_returns_403(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = seed(&pool, "Acme", Role::Admin).await;
@@ -419,7 +419,7 @@ async fn full_export_via_pat_returns_403(pool: MySqlPool) {
 // AC6 — audit
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_export_is_audited(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = seed(&pool, "Acme", Role::Admin).await;
@@ -450,7 +450,7 @@ async fn full_export_is_audited(pool: MySqlPool) {
 // AC7 — chemin streaming (plafond bas force le spill fichier temporaire)
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_export_streaming_path_delivers_valid_zip(pool: MySqlPool) {
     let mut config = test_config();
     config.admin_export_inmem_mib = 0; // tout export > 0 octet → chemin streaming

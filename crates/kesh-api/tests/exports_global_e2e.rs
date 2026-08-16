@@ -468,7 +468,7 @@ fn entry_bytes<'a>(entries: &'a [(String, Vec<u8>)], name: &str) -> &'a [u8] {
 /// Une ligne sans compte doit sortir vide (elle suit le compte par défaut de la
 /// société) : c'est ce qui distingue « colonne exportée » de « colonne exportée
 /// avec la bonne valeur ».
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_global_zip_invoice_lines_expose_revenue_account(pool: MySqlPool) {
     let ctx = seed_with_full_data(&pool, "co_rev_acct", Role::Comptable).await;
 
@@ -579,7 +579,7 @@ async fn export_global_zip_invoice_lines_expose_revenue_account(pool: MySqlPool)
 // AC #29(a) — Success path
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_global_zip_success_path(pool: MySqlPool) {
     let ctx = seed_with_full_data(&pool, "co_a", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -609,7 +609,7 @@ async fn export_global_zip_success_path(pool: MySqlPool) {
 // AC #29(b) — Multi-tenant IDOR scope (7 tables : 5 directes + 2 JOINées)
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_global_zip_multi_tenant_idor_scoping(pool: MySqlPool) {
     let ctx_a = seed_with_full_data(&pool, "co_a_idor", Role::Comptable).await;
     let ctx_b = seed_with_full_data(&pool, "co_b_idor", Role::Comptable).await;
@@ -718,7 +718,7 @@ async fn export_global_zip_multi_tenant_idor_scoping(pool: MySqlPool) {
 // AC #29(c) — ZIP structure : 17 entrées exactes (set complet)
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_global_zip_structure_17_entries_exact_set(pool: MySqlPool) {
     let ctx = seed_with_full_data(&pool, "co_c", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -766,7 +766,7 @@ async fn export_global_zip_structure_17_entries_exact_set(pool: MySqlPool) {
 // AC #29(d) — metadata.json parsing : shape + valeurs exactes
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_global_zip_metadata_shape_and_exact_values(pool: MySqlPool) {
     let ctx = seed_with_full_data(&pool, "co_d", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -817,7 +817,7 @@ async fn export_global_zip_metadata_shape_and_exact_values(pool: MySqlPool) {
 // AC #29(e) — SHA-256 intégrité par CSV
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_global_zip_sha256_integrity(pool: MySqlPool) {
     let ctx = seed_with_full_data(&pool, "co_e", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -850,7 +850,7 @@ async fn export_global_zip_sha256_integrity(pool: MySqlPool) {
 // AC #29(f) — Empty company (with-company-no-fy preset, HashMap explicite)
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_global_zip_empty_company_explicit_row_count_map(pool: MySqlPool) {
     // Pass 1 code-review H4 (C3-AA-HIGH-01) — utilise le PRESET CI réel
     // `seed_accounting_company_no_fy` (ground-truth `test_fixtures.rs:202-275`).
@@ -928,7 +928,7 @@ async fn export_global_zip_empty_company_explicit_row_count_map(pool: MySqlPool)
 // `#[ignore]` par défaut — coût ~30s en CI sandbox. Exécuter manuel via
 // `cargo test --ignored` pré-PR.
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 #[ignore]
 async fn export_global_zip_large_dataset_perf(pool: MySqlPool) {
     let ctx = seed_with_full_data(&pool, "co_perf", Role::Comptable).await;
@@ -1001,7 +1001,7 @@ async fn export_global_zip_large_dataset_perf(pool: MySqlPool) {
 // AC #29(h) — Auth 401 (pas de Bearer token)
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_global_zip_auth_401(pool: MySqlPool) {
     let app = spawn_app(pool).await;
     let resp = app
@@ -1017,7 +1017,7 @@ async fn export_global_zip_auth_401(pool: MySqlPool) {
 // AC #29(i) — RBAC Consultation 200
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_global_zip_rbac_consultation_200(pool: MySqlPool) {
     let ctx = seed_with_full_data(&pool, "co_i", Role::Consultation).await;
     let app = spawn_app(pool).await;
@@ -1035,7 +1035,7 @@ async fn export_global_zip_rbac_consultation_200(pool: MySqlPool) {
 // AC #29(j) — Content-Disposition `attachment` + RFC 5987 lang tag
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_global_zip_content_disposition_rfc5987(pool: MySqlPool) {
     let ctx = seed_with_full_data(&pool, "co_j", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -1062,7 +1062,7 @@ async fn export_global_zip_content_disposition_rfc5987(pool: MySqlPool) {
 // AC #29(k) — Filename pattern `kesh-export-.+-YYYY-MM-DD.zip`
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_global_zip_filename_pattern(pool: MySqlPool) {
     let ctx =
         seed_company_with_name(&pool, "co_k", Role::Comptable, "CI Test Company Pattern").await;
@@ -1101,7 +1101,7 @@ async fn export_global_zip_filename_pattern(pool: MySqlPool) {
 // AC #29(l) — ZIP byte signature isolé (diagnostic régression API zip 2.x)
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_global_zip_byte_signature_pk0304(pool: MySqlPool) {
     let ctx = seed_with_full_data(&pool, "co_l", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -1124,7 +1124,7 @@ async fn export_global_zip_byte_signature_pk0304(pool: MySqlPool) {
 // AC #29(m) — Audit log `exports.global` (filtre par user_id, FK isolation)
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_global_zip_audit_log_inserted(pool: MySqlPool) {
     let ctx = seed_with_full_data(&pool, "co_m", Role::Comptable).await;
     let pool_for_assert = pool.clone();
@@ -1189,7 +1189,7 @@ async fn export_global_zip_audit_log_inserted(pool: MySqlPool) {
 // "non-régression du wiring d'erreur" (le handler retourne bien 500 sur
 // AppError::GlobalExportFailed via les tests unit).
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_global_zip_error_500_sql_wired(_pool: MySqlPool) {
     // Sentinelle "wired" — pas de scénario E2E SQL down trivial en sandbox.
     // Couverture réelle : `errors::tests::global_export_failed_*`.
@@ -1201,7 +1201,7 @@ async fn export_global_zip_error_500_sql_wired(_pool: MySqlPool) {
 // AC #29(o) — Error 500 ZIP packaging (placeholder cohérent T10(j))
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_global_zip_error_500_zip_wired(_pool: MySqlPool) {
     // Idem (n) — couverture via tests unit `exports::global::tests::build_zip_*`.
 }
@@ -1215,7 +1215,7 @@ async fn export_global_zip_error_500_zip_wired(_pool: MySqlPool) {
 // peut forger un JWT avec `company_id = 0` et vérifier que le handler retourne
 // 403 défensif (T5.1 guard).
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_global_zip_403_pathological_company_id(pool: MySqlPool) {
     // On a besoin d'un user_id réel mais le claim porte company_id = 0.
     let real = seed_company(&pool, "co_p_real", Role::Comptable).await;
@@ -1235,7 +1235,7 @@ async fn export_global_zip_403_pathological_company_id(pool: MySqlPool) {
 // AC #29(q) — Tables exclues absentes (set lookup)
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_global_zip_excluded_tables_absent(pool: MySqlPool) {
     let ctx = seed_with_full_data(&pool, "co_q", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -1267,7 +1267,7 @@ async fn export_global_zip_excluded_tables_absent(pool: MySqlPool) {
 // AC #29(r) — Inclusion produits archivés (active=FALSE)
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_global_zip_includes_archived_products(pool: MySqlPool) {
     let ctx = seed_company(&pool, "co_r", Role::Comptable).await;
 
@@ -1378,7 +1378,7 @@ async fn export_global_zip_includes_archived_products(pool: MySqlPool) {
 // AC #29(s) — Inclusion vat_rates historiques (active=FALSE)
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_global_zip_includes_historical_vat_rates(pool: MySqlPool) {
     let ctx = seed_company(&pool, "co_s", Role::Comptable).await;
     sqlx::query(
@@ -1416,7 +1416,7 @@ async fn export_global_zip_includes_historical_vat_rates(pool: MySqlPool) {
 // AC #29(t) — Inclusion reconciliation_rules soft-deleted (active=FALSE)
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_global_zip_includes_soft_deleted_reconciliation_rules(pool: MySqlPool) {
     let ctx = seed_company(&pool, "co_t", Role::Comptable).await;
     // Création d'un compte counterparty FR obligatoire pour la FK.
@@ -1468,7 +1468,7 @@ async fn export_global_zip_includes_soft_deleted_reconciliation_rules(pool: MySq
 // 8 tables couvertes par les nouvelles `list_all_by_company`, puis appel direct
 // du repository A et assert qu'on n'a JAMAIS de row de B.
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_global_zip_repo_scoping_all_list_all_by_company(pool: MySqlPool) {
     use kesh_db::repositories::{
         bank_imports, bank_profiles, bank_transactions, invoices, journal_entries, products,

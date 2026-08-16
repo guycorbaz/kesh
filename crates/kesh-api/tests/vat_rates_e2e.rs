@@ -162,7 +162,7 @@ async fn create_user(pool: &MySqlPool, company_id: i64, username: &str, role: Ro
     user.id
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn list_vat_rates_happy(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_id = create_company(&pool, "CompA").await;
@@ -196,7 +196,7 @@ async fn list_vat_rates_happy(pool: MySqlPool) {
     assert!(arr[0]["id"].is_number());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn list_vat_rates_idor_cross_tenant(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_a = create_company(&pool, "CompA").await;
@@ -242,7 +242,7 @@ async fn list_vat_rates_idor_cross_tenant(pool: MySqlPool) {
     assert_eq!(count_b, 4);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn list_vat_rates_no_auth_returns_401(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
 
@@ -255,7 +255,7 @@ async fn list_vat_rates_no_auth_returns_401(pool: MySqlPool) {
     assert_eq!(resp.status(), 401);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn list_vat_rates_consultation_role_returns_200(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_id = create_company(&pool, "CompA").await;
@@ -275,7 +275,7 @@ async fn list_vat_rates_consultation_role_returns_200(pool: MySqlPool) {
     assert_eq!(body.as_array().unwrap().len(), 4);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn list_vat_rates_query_param_companyid_ignored(pool: MySqlPool) {
     // Défense en profondeur : si quelqu'un ajoute par erreur un `Query<...>`
     // au handler plus tard, ce test détectera la régression de scoping.
@@ -312,7 +312,7 @@ use kesh_api::routes::vat::{VAT_REJECTED_MSG, verify_vat_rates_against_db};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn verify_vat_accepts_all_seeded_rates(pool: MySqlPool) {
     let company_id = create_company(&pool, "CompA").await;
     let rates = vec![dec!(8.10), dec!(3.80), dec!(2.60), dec!(0.00)];
@@ -321,7 +321,7 @@ async fn verify_vat_accepts_all_seeded_rates(pool: MySqlPool) {
         .expect("all 4 seeded rates should pass");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn verify_vat_rejects_unknown_rate(pool: MySqlPool) {
     let company_id = create_company(&pool, "CompA").await;
     // 7.70 = ancien taux 2018-2023, jamais seedé v0.1.
@@ -334,7 +334,7 @@ async fn verify_vat_rejects_unknown_rate(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn verify_vat_rejects_if_any_rate_unknown(pool: MySqlPool) {
     let company_id = create_company(&pool, "CompA").await;
     // 8.10 valide, 7.70 invalide → l'ensemble doit être rejeté.
@@ -344,7 +344,7 @@ async fn verify_vat_rejects_if_any_rate_unknown(pool: MySqlPool) {
     assert!(format!("{err:?}").contains(VAT_REJECTED_MSG));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn verify_vat_dedups_duplicate_rates(pool: MySqlPool) {
     // Pass 1 remediation #4 (T3.4) : input `[8.10, 8.10, 8.10]` doit passer
     // sans erreur via la dédup `BTreeSet<&Decimal>` + IN clause batched.
@@ -354,7 +354,7 @@ async fn verify_vat_dedups_duplicate_rates(pool: MySqlPool) {
         .expect("dedup should reduce to 1 distinct rate, valid");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn verify_vat_scale_invariant_across_inputs(pool: MySqlPool) {
     // `Decimal::cmp` scale-invariant (rust_decimal ≥ 1.30 — projet en 1.41).
     // `8.1` et `8.10` doivent collapser à 1 rate distinct dans le BTreeSet.
@@ -364,7 +364,7 @@ async fn verify_vat_scale_invariant_across_inputs(pool: MySqlPool) {
         .expect("scale-invariant dedup");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn verify_vat_empty_slice_returns_ok(pool: MySqlPool) {
     // Slice vide = no-op (pas de SELECT). Comportement défensif.
     let company_id = create_company(&pool, "CompA").await;
@@ -373,7 +373,7 @@ async fn verify_vat_empty_slice_returns_ok(pool: MySqlPool) {
         .expect("empty slice should be Ok(())");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn verify_vat_isolates_per_tenant(pool: MySqlPool) {
     // CompA n'a que les 4 taux par défaut. CompB pareil. Mais si un dev
     // bypassait `company_id` dans la query, le test attraperait la fuite.
@@ -402,7 +402,7 @@ async fn complete_onboarding(pool: &MySqlPool) {
     .unwrap();
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_vat_rate_admin_happy(pool: MySqlPool) {
     complete_onboarding(&pool).await;
     let app = spawn_app(pool.clone()).await;
@@ -430,7 +430,7 @@ async fn create_vat_rate_admin_happy(pool: MySqlPool) {
     assert!(body["active"].as_bool().unwrap());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_vat_rate_non_admin_forbidden(pool: MySqlPool) {
     complete_onboarding(&pool).await;
     let app = spawn_app(pool.clone()).await;
@@ -451,7 +451,7 @@ async fn create_vat_rate_non_admin_forbidden(pool: MySqlPool) {
     assert_eq!(resp.status(), 403, "Comptable must not create vat rates");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_vat_rate_overlap_rejected(pool: MySqlPool) {
     complete_onboarding(&pool).await;
     let app = spawn_app(pool.clone()).await;
@@ -477,7 +477,7 @@ async fn create_vat_rate_overlap_rejected(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn update_vat_rate_optimistic_conflict(pool: MySqlPool) {
     complete_onboarding(&pool).await;
     let app = spawn_app(pool.clone()).await;
@@ -511,7 +511,7 @@ async fn update_vat_rate_optimistic_conflict(pool: MySqlPool) {
     assert_eq!(resp.status(), 409, "stale version must yield 409");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn deactivate_and_history(pool: MySqlPool) {
     complete_onboarding(&pool).await;
     let app = spawn_app(pool.clone()).await;
@@ -582,7 +582,7 @@ async fn deactivate_and_history(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn update_vat_rate_admin_happy(pool: MySqlPool) {
     complete_onboarding(&pool).await;
     let app = spawn_app(pool.clone()).await;
@@ -624,7 +624,7 @@ async fn update_vat_rate_admin_happy(pool: MySqlPool) {
     assert_eq!(body["label"].as_str().unwrap(), "Libellé modifié");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn mutate_vat_rate_idor_cross_tenant_returns_404(pool: MySqlPool) {
     complete_onboarding(&pool).await;
     let app = spawn_app(pool.clone()).await;

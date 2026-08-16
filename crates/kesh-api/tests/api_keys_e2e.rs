@@ -197,7 +197,7 @@ async fn create_key_via_http(app: &TestApp, jwt: &str, name: &str, scope: &str) 
 // AC2/AC7 — création (secret une fois) + liste (jamais le hash)
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_returns_secret_once_and_list_hides_hash(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup(&pool, "Acme", Role::Comptable).await;
@@ -241,7 +241,7 @@ async fn create_returns_secret_once_and_list_hides_hash(pool: MySqlPool) {
 // AC4/AC5 — auth Bearer PAT happy path
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn read_write_pat_can_call_protected_get(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup(&pool, "Acme", Role::Comptable).await;
@@ -257,7 +257,7 @@ async fn read_write_pat_can_call_protected_get(pool: MySqlPool) {
     assert_eq!(resp.status(), 200, "PAT valide → accès GET protégé");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn unknown_pat_returns_401(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let _ctx = setup(&pool, "Acme", Role::Comptable).await;
@@ -272,7 +272,7 @@ async fn unknown_pat_returns_401(pool: MySqlPool) {
     assert_eq!(resp.status(), 401, "PAT inconnu → 401");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn inactive_creator_pat_returns_401(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup(&pool, "Acme", Role::Comptable).await;
@@ -295,7 +295,7 @@ async fn inactive_creator_pat_returns_401(pool: MySqlPool) {
     assert_eq!(resp.status(), 401, "créateur inactif → PAT 401");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn expired_pat_returns_401(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup(&pool, "Acme", Role::Comptable).await;
@@ -318,7 +318,7 @@ async fn expired_pat_returns_401(pool: MySqlPool) {
     assert_eq!(resp.status(), 401, "clé expirée → 401");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn revoked_pat_returns_401(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup(&pool, "Acme", Role::Comptable).await;
@@ -363,7 +363,7 @@ async fn revoked_pat_returns_401(pool: MySqlPool) {
 // AC6/DC3 — gate de scope
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn read_scope_pat_post_returns_403_read_only(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup(&pool, "Acme", Role::Comptable).await;
@@ -384,7 +384,7 @@ async fn read_scope_pat_post_returns_403_read_only(pool: MySqlPool) {
     assert_eq!(body["error"]["code"].as_str().unwrap(), "API_KEY_READ_ONLY");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn read_scope_pat_get_allowed(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup(&pool, "Acme", Role::Comptable).await;
@@ -404,7 +404,7 @@ async fn read_scope_pat_get_allowed(pool: MySqlPool) {
 // AC7/DC6 — gestion interdite via PAT
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn read_write_pat_cannot_manage_keys(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup(&pool, "Acme", Role::Comptable).await;
@@ -441,7 +441,7 @@ async fn read_write_pat_cannot_manage_keys(pool: MySqlPool) {
 // AC8/DC5 — audit actor_type='api_key' sur mutation via PAT
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn pat_mutation_is_audited_as_api_key(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup(&pool, "Acme", Role::Comptable).await;
@@ -512,7 +512,7 @@ async fn pat_mutation_is_audited_as_api_key(pool: MySqlPool) {
 // AC3 — isolation multi-tenant (cross-company → invisible / 404)
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn keys_are_company_scoped(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let a = setup(&pool, "CompanyA", Role::Comptable).await;

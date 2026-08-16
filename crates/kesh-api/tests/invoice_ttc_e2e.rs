@@ -236,7 +236,7 @@ async fn create_invoice_81(app: &TestApp, token: &str, contact_id: i64) -> serde
     resp.json().await.expect("invoice json")
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn total_ttc_on_detail_list_summary_and_csv(pool: MySqlPool) {
     let company_id = create_seeded_company(&pool).await;
     create_company_user(&pool, company_id, "ttc_user", "password-12345").await;
@@ -312,7 +312,7 @@ async fn total_ttc_on_detail_list_summary_and_csv(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn email_preview_amount_is_ttc(pool: MySqlPool) {
     let company_id = create_seeded_company(&pool).await;
     create_company_user(&pool, company_id, "ttc_mail", "password-12345").await;
@@ -344,7 +344,7 @@ async fn email_preview_amount_is_ttc(pool: MySqlPool) {
 }
 
 /// Parité multi-taux : totalTtc de l'API == débit créance de l'écriture.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn multi_rate_total_ttc_matches_journal_receivable(pool: MySqlPool) {
     let company_id = create_seeded_company(&pool).await;
     create_company_user(&pool, company_id, "ttc_multi", "password-12345").await;

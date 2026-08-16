@@ -283,7 +283,7 @@ async fn set_account_not_postable(pool: &MySqlPool, account_id: i64) {
 ///
 /// *(Ajouté en passe 2 de revue — `grep -c "postable"` rendait `0` sur ce
 /// fichier ET sur les tests du repository.)*
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_accepts_non_postable_revenue_account_d3(pool: MySqlPool) {
     let co = create_seeded_company(&pool, "D3 postable exclu").await;
     create_company_user(&pool, co.id, "u_postable", "e2e-test-password").await;
@@ -323,7 +323,7 @@ async fn create_accepts_non_postable_revenue_account_d3(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_rejects_inactive_account(pool: MySqlPool) {
     let co = create_seeded_company(&pool, "Rejet archivé").await;
     create_company_user(&pool, co.id, "u_inactive", "e2e-test-password").await;
@@ -365,7 +365,7 @@ async fn create_rejects_inactive_account(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_rejects_non_revenue_account(pool: MySqlPool) {
     let co = create_seeded_company(&pool, "Rejet type").await;
     create_company_user(&pool, co.id, "u_type", "e2e-test-password").await;
@@ -392,7 +392,7 @@ async fn create_rejects_non_revenue_account(pool: MySqlPool) {
 
 /// Scoping multi-tenant : le compte d'une AUTRE société est rejeté, et rendu
 /// **indiscernable** d'un compte inexistant — c'est la garde anti-IDOR de D3.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_rejects_cross_company_account_like_unknown(pool: MySqlPool) {
     let mine = create_seeded_company(&pool, "Ma société").await;
     let other = create_seeded_company(&pool, "Autre société").await;
@@ -449,7 +449,7 @@ async fn create_rejects_cross_company_account_like_unknown(pool: MySqlPool) {
 /// archivé ailleurs — **et sans issue**, le compte archivé étant absent des
 /// propositions du sélecteur : l'utilisateur ne pourrait ni conserver, ni
 /// remplacer la valeur.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn renaming_succeeds_when_unchanged_account_became_invalid(pool: MySqlPool) {
     let co = create_seeded_company(&pool, "D4 sens 1").await;
     create_company_user(&pool, co.id, "u_d4a", "e2e-test-password").await;
@@ -503,7 +503,7 @@ async fn renaming_succeeds_when_unchanged_account_became_invalid(pool: MySqlPool
 /// Indispensable en plus du sens 1 : la mutation qui retire la condition D4
 /// rend la validation *inconditionnelle* et ne dit rien d'un prédicat
 /// simplement **inversé**, qui passerait le premier test.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn changing_account_to_invalid_is_rejected(pool: MySqlPool) {
     let co = create_seeded_company(&pool, "D4 sens 2").await;
     create_company_user(&pool, co.id, "u_d4b", "e2e-test-password").await;
@@ -553,7 +553,7 @@ async fn changing_account_to_invalid_is_rejected(pool: MySqlPool) {
 ///
 /// Sans la garde `None`, une implémentation qui valide dès que « le compte
 /// change » rendrait un compte **impossible à retirer une fois posé**.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn clearing_an_existing_account_succeeds(pool: MySqlPool) {
     let co = create_seeded_company(&pool, "Retrait compte").await;
     create_company_user(&pool, co.id, "u_clear", "e2e-test-password").await;
@@ -603,7 +603,7 @@ async fn clearing_an_existing_account_succeeds(pool: MySqlPool) {
 ///
 /// C'est ce que garantit `#[serde(default)]` : sans lui, un `Option<T>` reste
 /// obligatoire en serde et l'omission casserait toute intégration existante.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn absent_key_and_explicit_null_both_mean_no_account(pool: MySqlPool) {
     let co = create_seeded_company(&pool, "Contrat HTTP").await;
     create_company_user(&pool, co.id, "u_http", "e2e-test-password").await;
@@ -666,7 +666,7 @@ async fn absent_key_and_explicit_null_both_mean_no_account(pool: MySqlPool) {
 /// — sur un article qui n'a **jamais** eu de compte, où l'effacement n'a rien à
 /// effacer. La branche destructrice n'était donc exercée par rien. *(Passe 1 de
 /// revue.)*
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn put_without_the_key_erases_an_existing_account(pool: MySqlPool) {
     let co = create_seeded_company(&pool, "Full replace").await;
     create_company_user(&pool, co.id, "u_replace", "e2e-test-password").await;
@@ -730,7 +730,7 @@ async fn put_without_the_key_erases_an_existing_account(pool: MySqlPool) {
 }
 
 /// Le chemin nominal : créer avec un compte valide, le relire.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn valid_account_is_accepted_and_returned(pool: MySqlPool) {
     let co = create_seeded_company(&pool, "Nominal").await;
     create_company_user(&pool, co.id, "u_ok", "e2e-test-password").await;

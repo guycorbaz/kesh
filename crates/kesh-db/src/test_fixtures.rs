@@ -496,7 +496,7 @@ mod tests {
 
     /// Teste que `seed_accounting_company` produit un état complet et
     /// cohérent. Utilise `sqlx::test` pour DB éphémère.
-    #[sqlx::test(migrator = "crate::MIGRATOR")]
+    #[sqlx::test(migrations = "./test-schema")]
     async fn seed_accounting_company_creates_complete_state(pool: MySqlPool) {
         let seeded = seed_accounting_company(&pool).await.expect("seed");
 
@@ -586,7 +586,7 @@ mod tests {
         );
     }
 
-    #[sqlx::test(migrator = "crate::MIGRATOR")]
+    #[sqlx::test(migrations = "./test-schema")]
     async fn truncate_all_clears_all_tables(pool: MySqlPool) {
         // Seed quelque chose, puis truncate, puis vérifie tout vide.
         seed_accounting_company(&pool).await.unwrap();
@@ -635,7 +635,7 @@ mod tests {
         }
     }
 
-    #[sqlx::test(migrator = "crate::MIGRATOR")]
+    #[sqlx::test(migrations = "./test-schema")]
     async fn seed_changeme_user_only_creates_single_user(pool: MySqlPool) {
         let user_id = seed_changeme_user_only(&pool).await.unwrap();
         assert!(user_id > 0);
@@ -654,7 +654,7 @@ mod tests {
         assert_eq!(username, "changeme");
     }
 
-    #[sqlx::test(migrator = "crate::MIGRATOR")]
+    #[sqlx::test(migrations = "./test-schema")]
     async fn mark_onboarding_complete_sets_step_10(pool: MySqlPool) {
         seed_accounting_company(&pool).await.unwrap();
         mark_onboarding_complete(&pool).await.unwrap();
@@ -668,7 +668,7 @@ mod tests {
         assert_eq!(step, 10);
     }
 
-    #[sqlx::test(migrator = "crate::MIGRATOR")]
+    #[sqlx::test(migrations = "./test-schema")]
     async fn seed_contact_and_product_creates_both(pool: MySqlPool) {
         let seeded = seed_accounting_company(&pool).await.unwrap();
         let (contact_id, product_id) = seed_contact_and_product(&pool, seeded.company_id)
@@ -694,7 +694,7 @@ mod tests {
 
     /// Issue #90 — `seed_accounting_company_no_fy` doit produire company +
     /// users + accounts + invoice settings + vat_rates mais **0** fiscal_year.
-    #[sqlx::test(migrator = "crate::MIGRATOR")]
+    #[sqlx::test(migrations = "./test-schema")]
     async fn seed_accounting_company_no_fy_skips_fiscal_year(pool: MySqlPool) {
         seed_accounting_company_no_fy(&pool).await.expect("seed");
 

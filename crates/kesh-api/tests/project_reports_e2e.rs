@@ -152,7 +152,7 @@ async fn post_expense(pool: &MySqlPool, seeded: &SeededCompany, project: i64) {
     .unwrap();
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn project_expenses_json_shape(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let project = mk_project(&pool, seeded.company_id, "RENOV").await;
@@ -178,7 +178,7 @@ async fn project_expenses_json_shape(pool: MySqlPool) {
     assert!(body["sections"].as_array().unwrap().len() == 1);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn project_expenses_export_pdf_and_csv(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let project = mk_project(&pool, seeded.company_id, "RENOV").await;
@@ -218,7 +218,7 @@ async fn project_expenses_export_pdf_and_csv(pool: MySqlPool) {
     assert!(text.contains("Projet;SousProjet;NumeroCompte"));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn project_expenses_cumulative_mode(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let project = mk_project(&pool, seeded.company_id, "RENOV").await;
@@ -242,7 +242,7 @@ async fn project_expenses_cumulative_mode(pool: MySqlPool) {
     assert_eq!(body["grandTotal"], "120.0000");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn project_expenses_validation_and_not_found(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let project = mk_project(&pool, seeded.company_id, "RENOV").await;
@@ -272,7 +272,7 @@ async fn project_expenses_validation_and_not_found(pool: MySqlPool) {
     assert_eq!(r404.status(), 404);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn project_expenses_multi_tenant_isolation(pool: MySqlPool) {
     // Company A seedée + projet ; un JWT d'une autre company ne doit pas y accéder.
     let seeded = seed_accounting_company(&pool).await.unwrap();
@@ -296,7 +296,7 @@ async fn project_expenses_multi_tenant_isolation(pool: MySqlPool) {
 
 // ---- Story 19-6b : Rendement par projet ----
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn project_return_json_and_export(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let project = mk_project(&pool, seeded.company_id, "INVEST").await;
@@ -350,7 +350,7 @@ async fn project_return_json_and_export(pool: MySqlPool) {
     assert!(String::from_utf8_lossy(&csv_bytes[3..]).contains("Projet;SousProjet;CoutInvesti"));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn project_return_unknown_project_404(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let app = spawn_app(pool.clone()).await;

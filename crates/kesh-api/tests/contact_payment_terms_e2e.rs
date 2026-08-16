@@ -244,7 +244,7 @@ fn invoice_payload(contact_id: i64, date: &str) -> serde_json::Value {
 // Contact : days + label localisé dans la réponse
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn contact_with_days_returns_label_fr_and_days(pool: MySqlPool) {
     let company_id = create_seeded_company(&pool).await;
     create_company_user(&pool, company_id, "ptd_user", "password-12345").await;
@@ -334,7 +334,7 @@ async fn contact_with_days_returns_label_fr_and_days(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn contact_language_de_gets_de_label_and_zero_days_immediate(pool: MySqlPool) {
     let company_id = create_seeded_company(&pool).await;
     create_company_user(&pool, company_id, "ptd_de", "password-12345").await;
@@ -361,7 +361,7 @@ async fn contact_language_de_gets_de_label_and_zero_days_immediate(pool: MySqlPo
     assert!(sans["defaultPaymentTermsLabel"].is_null());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn contact_days_out_of_bounds_returns_400(pool: MySqlPool) {
     let company_id = create_seeded_company(&pool).await;
     create_company_user(&pool, company_id, "ptd_bounds", "password-12345").await;
@@ -391,7 +391,7 @@ async fn contact_days_out_of_bounds_returns_400(pool: MySqlPool) {
 // Facture : défauts due_date + payment_terms depuis le contact
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn invoice_defaults_from_contact_days(pool: MySqlPool) {
     let company_id = create_seeded_company(&pool).await;
     create_company_user(&pool, company_id, "ptd_inv", "password-12345").await;
@@ -473,7 +473,7 @@ async fn invoice_defaults_from_contact_days(pool: MySqlPool) {
 
 /// Review Pass 1 BH-1 : `date + délai` proche de `NaiveDate::MAX` ne doit PAS
 /// paniquer (chrono `Add` panique sur overflow) → 400 propre.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn invoice_date_overflow_returns_400_not_panic(pool: MySqlPool) {
     let company_id = create_seeded_company(&pool).await;
     create_company_user(&pool, company_id, "ptd_ovf", "password-12345").await;
@@ -499,7 +499,7 @@ async fn invoice_date_overflow_returns_400_not_panic(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn invoice_defaults_use_contact_language_for_label(pool: MySqlPool) {
     let company_id = create_seeded_company(&pool).await;
     create_company_user(&pool, company_id, "ptd_inv_de", "password-12345").await;
@@ -522,7 +522,7 @@ async fn invoice_defaults_use_contact_language_for_label(pool: MySqlPool) {
     assert_eq!(invoice["paymentTerms"], "Zahlbar innert 30 Tagen");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn invoice_without_contact_days_keeps_historical_default(pool: MySqlPool) {
     let company_id = create_seeded_company(&pool).await;
     create_company_user(&pool, company_id, "ptd_hist", "password-12345").await;
@@ -553,7 +553,7 @@ async fn invoice_without_contact_days_keeps_historical_default(pool: MySqlPool) 
 // Validation due_date >= date
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn invoice_due_date_before_date_rejected_on_create(pool: MySqlPool) {
     let company_id = create_seeded_company(&pool).await;
     create_company_user(&pool, company_id, "ptd_val", "password-12345").await;
@@ -576,7 +576,7 @@ async fn invoice_due_date_before_date_rejected_on_create(pool: MySqlPool) {
     assert_eq!(resp.status(), 400, "due_date < date doit être rejeté");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn invoice_legacy_due_date_pair_unchanged_editable(pool: MySqlPool) {
     let company_id = create_seeded_company(&pool).await;
     let user_id = create_company_user(&pool, company_id, "ptd_leg", "password-12345").await;

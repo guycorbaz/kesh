@@ -5,7 +5,7 @@ use kesh_db::entities::{CompanyInvoiceSettingsUpdate, Journal, Language, NewComp
 use kesh_db::repositories::{accounts, companies, company_invoice_settings};
 use sqlx::MySqlPool;
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn test_insert_with_defaults_finds_accounts_1100_3000(pool: MySqlPool) {
     // Create a company
     let company = companies::create(
@@ -59,7 +59,7 @@ async fn test_insert_with_defaults_finds_accounts_1100_3000(pool: MySqlPool) {
 /// The second call exercises the `rows_affected == 0` branch (DUPLICATE KEY) and the
 /// JOIN-on-active-accounts validation introduced by P16. It must return the existing
 /// settings row, not error and not corrupt state.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn test_insert_with_defaults_is_idempotent_on_existing_row(pool: MySqlPool) {
     let company = companies::create(
         &pool,
@@ -114,7 +114,7 @@ async fn test_insert_with_defaults_is_idempotent_on_existing_row(pool: MySqlPool
 
 /// P8 / P16 — if the FK accounts have been deactivated after the row was inserted,
 /// the idempotent path must fail with InactiveOrInvalidAccounts (FK liveness check).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn test_insert_with_defaults_rejects_when_referenced_accounts_inactive(pool: MySqlPool) {
     let company = companies::create(
         &pool,
@@ -168,7 +168,7 @@ async fn test_insert_with_defaults_rejects_when_referenced_accounts_inactive(poo
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn test_insert_with_defaults_rejects_missing_accounts(pool: MySqlPool) {
     // Create a company without any accounts
     let company = companies::create(
@@ -227,7 +227,7 @@ async fn create_admin_user(pool: &MySqlPool, company_id: i64) -> i64 {
 
 /// KF-004 : payload identique à l'état persisté → pas de bump version,
 /// `updated_at` inchangé, **aucune entrée audit_log `company_invoice_settings.updated`**.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn update_no_op_returns_unchanged_entity_no_audit(pool: MySqlPool) {
     let company = companies::create(
         &pool,
@@ -297,7 +297,7 @@ async fn update_no_op_returns_unchanged_entity_no_audit(pool: MySqlPool) {
 }
 
 /// KF-004 régression : modifier `invoice_number_format` → bump version + audit log.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn update_partial_change_bumps_version(pool: MySqlPool) {
     let company = companies::create(
         &pool,
@@ -379,7 +379,7 @@ async fn account_id_by_number(pool: &MySqlPool, company_id: i64, number: &str) -
 }
 
 /// AC4/AC5 (a) — round-trip des 3 comptes TVA via `update()`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn update_vat_accounts_round_trip(pool: MySqlPool) {
     let company = companies::create(
         &pool,
@@ -478,7 +478,7 @@ async fn update_vat_accounts_round_trip(pool: MySqlPool) {
 /// désigné comme compte TVA (la contrainte FK `fk_cis_vat_*` rejette tout id
 /// hors `accounts`). La validation d'appartenance company stricte vit dans le
 /// handler route (`validate_account`) ; ce test couvre le garde-fou DB FK.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn update_vat_account_foreign_id_rejected_by_fk(pool: MySqlPool) {
     let company_a = companies::create(
         &pool,
@@ -543,7 +543,7 @@ async fn update_vat_account_foreign_id_rejected_by_fk(pool: MySqlPool) {
 
 /// AC1 — les comptes 1171 (Asset, parent 10) et 2206 (Liability, parent 20)
 /// sont seedés par `bulk_create_from_chart` (nouvelle install) dans les 3 plans.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn chart_seed_includes_new_vat_accounts(pool: MySqlPool) {
     for org in ["Pme", "Independant", "Association"] {
         let company = companies::create(
@@ -604,7 +604,7 @@ async fn chart_seed_includes_new_vat_accounts(pool: MySqlPool) {
 /// On simule une install antérieure en insérant manuellement seulement les
 /// comptes parents 10/20 (pas 1171/2206), puis on rejoue **le SQL de backfill**
 /// de la migration `20260614000001_vat_accounts_config.sql`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn migration_backfill_creates_vat_accounts_idempotently(pool: MySqlPool) {
     // Company avec locale comptable DE pour vérifier le CASE de libellé.
     let company = companies::create(
@@ -722,7 +722,7 @@ async fn migration_backfill_creates_vat_accounts_idempotently(pool: MySqlPool) {
 ///   est seedé à `set_accounting_language` AVANT que `set_coordinates` repasse is_stub
 ///   à FALSE) DOIT être backfillée — sinon un upgrade pendant cette fenêtre la priverait
 ///   définitivement des comptes TVA (MEDIUM Pass 4). Tester `is_stub = FALSE` l'aurait raté.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn migration_backfill_keys_on_chart_presence_not_stub_flag(pool: MySqlPool) {
     // Helper : crée une company avec parents 10/20, puis force is_stub à la valeur voulue.
     async fn seed_company(pool: &MySqlPool, name: &str, with_chart: bool, is_stub: bool) -> i64 {
@@ -854,7 +854,7 @@ async fn company_with_pme_chart(pool: &MySqlPool, name: &str) -> i64 {
 /// AC-C / AC-E — plan RENUMÉROTÉ : le compte de créances porte le rôle
 /// `Receivable` sur un numéro ≠ 1100 → la résolution PAR RÔLE le trouve quand
 /// même (contrairement à l'ancien lookup `WHERE number = '1100'`).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn insert_with_defaults_resolves_receivable_by_role_when_renumbered(pool: MySqlPool) {
     let company_id = company_with_pme_chart(&pool, "Renum Co").await;
 
@@ -884,7 +884,7 @@ async fn insert_with_defaults_resolves_receivable_by_role_when_renumbered(pool: 
 /// AC-C / AC-E — fail-fast : un plan sans compte ACTIF portant le rôle
 /// `Receivable` fait échouer l'init de config en `InactiveOrInvalidAccounts`
 /// (logique inchangée par rapport à l'ancien lookup par numéro).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn insert_with_defaults_fails_fast_when_no_receivable_role(pool: MySqlPool) {
     let company_id = company_with_pme_chart(&pool, "No Receivable Co").await;
 
@@ -913,7 +913,7 @@ async fn insert_with_defaults_fails_fast_when_no_receivable_role(pool: MySqlPool
 /// actif portant le rôle `Receivable`, l'init de config échoue en
 /// `InactiveOrInvalidAccounts` sans écrire de ligne. Contrairement à la variante
 /// pool (qui rollback elle-même), le rollback est ici à la charge de l'appelant.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn insert_with_defaults_in_tx_fails_fast_when_no_receivable_role(pool: MySqlPool) {
     let company_id = company_with_pme_chart(&pool, "No Receivable Co (tx)").await;
 

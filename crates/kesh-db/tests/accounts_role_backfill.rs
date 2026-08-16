@@ -226,7 +226,7 @@ async fn backfill_skips_archived_accounts(pool: MySqlPool) {
 /// La colonne générée `singleton_role` ne doit apparaître **ni** dans le
 /// manifeste de backup **ni** dans l'export CSV : elle est non-insérable, un
 /// restore qui tenterait de l'écrire échouerait.
-#[sqlx::test]
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn generated_column_is_excluded_from_backup(pool: MySqlPool) {
     let export = kesh_db::backup::export_table(&pool, "accounts")
         .await

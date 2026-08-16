@@ -61,7 +61,7 @@ async fn audit_count(pool: &MySqlPool, entity_id: i64, action: &str) -> i64 {
 
 /// Zéro-config : aucune ligne en base → `get_effective` retombe sur le
 /// défaut, jamais d'erreur (AC #16).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn get_effective_falls_back_to_default_when_no_row(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Zero Config Co").await;
 
@@ -85,7 +85,7 @@ async fn get_effective_falls_back_to_default_when_no_row(pool: MySqlPool) {
 /// combinaisons type×langue×niveau (zéro-config, Epic 21 : 4 langues ×
 /// [1 invoice_send niveau 0 + 4 invoice_reminder niveaux 0-3]), toutes en
 /// défaut — jamais de tableau vide, jamais de 404.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn list_effective_returns_four_defaults_for_fresh_company(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "List Co").await;
 
@@ -99,7 +99,7 @@ async fn list_effective_returns_four_defaults_for_fresh_company(pool: MySqlPool)
 
 /// Création d'un override (`expected_version = None` sur ligne absente) →
 /// `INSERT`, `version = 1`, audit `email_template.updated` écrit.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn upsert_override_creates_row_with_version_one(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Create Co").await;
     let admin_user_id = create_admin_user(&pool, company_id).await;
@@ -143,7 +143,7 @@ async fn upsert_override_creates_row_with_version_one(pool: MySqlPool) {
 
 /// Race : créer avec `expected_version = None` alors qu'une ligne existe
 /// déjà → `OptimisticLockConflict` (pas de crash sur violation `UNIQUE`).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn upsert_override_create_conflicts_when_row_already_exists(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Race Create Co").await;
     let admin_user_id = create_admin_user(&pool, company_id).await;
@@ -181,7 +181,7 @@ async fn upsert_override_create_conflicts_when_row_already_exists(pool: MySqlPoo
 }
 
 /// Modification à la bonne version → `UPDATE`, `version + 1`, audit écrit.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn upsert_override_updates_at_correct_version(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Update Co").await;
     let admin_user_id = create_admin_user(&pool, company_id).await;
@@ -225,7 +225,7 @@ async fn upsert_override_updates_at_correct_version(pool: MySqlPool) {
 }
 
 /// Version stale (quelqu'un d'autre a déjà modifié) → `OptimisticLockConflict`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn upsert_override_stale_version_conflicts(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Stale Co").await;
     let admin_user_id = create_admin_user(&pool, company_id).await;
@@ -281,7 +281,7 @@ async fn upsert_override_stale_version_conflicts(pool: MySqlPool) {
 
 /// KF-004 : payload identique à l'override persisté → pas de bump version,
 /// **aucune** nouvelle entrée audit.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn upsert_override_no_op_does_not_bump_version_or_audit(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "NoOp Co").await;
     let admin_user_id = create_admin_user(&pool, company_id).await;
@@ -330,7 +330,7 @@ async fn upsert_override_no_op_does_not_bump_version_or_audit(pool: MySqlPool) {
 
 /// `restore_default` supprime l'override ; un `get_effective` suivant
 /// retombe sur le défaut. Audit `email_template.restored_default` écrit.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn restore_default_deletes_override_and_falls_back(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Restore Co").await;
     let admin_user_id = create_admin_user(&pool, company_id).await;
@@ -380,7 +380,7 @@ async fn restore_default_deletes_override_and_falls_back(pool: MySqlPool) {
 
 /// `restore_default` sans override existant : idempotent, pas d'erreur,
 /// pas d'audit.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn restore_default_is_idempotent_when_no_override(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Idempotent Restore Co").await;
     let admin_user_id = create_admin_user(&pool, company_id).await;
@@ -410,7 +410,7 @@ async fn restore_default_is_idempotent_when_no_override(pool: MySqlPool) {
 /// `UNIQUE(company_id, template_type, language)` — un `INSERT` direct en
 /// doublon est rejeté par la contrainte (contrôle schéma, indépendant du
 /// repository qui l'évite déjà via `FOR UPDATE`).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn unique_constraint_rejects_duplicate_row(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Unique Co").await;
 
@@ -436,7 +436,7 @@ async fn unique_constraint_rejects_duplicate_row(pool: MySqlPool) {
 
 /// Cross-tenant : deux companies ont des overrides indépendants pour la
 /// même combinaison type×langue.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn cross_tenant_overrides_are_independent(pool: MySqlPool) {
     let company_a = create_test_company(&pool, "Tenant A").await;
     let company_b = create_test_company(&pool, "Tenant B").await;
@@ -484,7 +484,7 @@ async fn cross_tenant_overrides_are_independent(pool: MySqlPool) {
 /// Code-review Pass 1 (AC #11) : `upsert_override` doit threader le PAT
 /// (`for_actor`) pour que l'audit distingue une action via clé API d'une
 /// action UI web — pas `NewAuditLogEntry::user` seul.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn upsert_override_threads_actor_api_key_id_into_audit(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "PAT Actor Co").await;
     let admin_user_id = create_admin_user(&pool, company_id).await;
@@ -524,7 +524,7 @@ async fn upsert_override_threads_actor_api_key_id_into_audit(pool: MySqlPool) {
 /// le pool éphémère fourni par la macro garantit un schéma à jour (chaîne de
 /// migrations complète rejouée), et son clone partage le même pool de
 /// connexions sous-jacent — suffisant pour deux opérations concurrentes.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn upsert_override_true_concurrent_create_yields_exactly_one_conflict(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "True Concurrency Co").await;
     let admin_user_id = create_admin_user(&pool, company_id).await;
@@ -586,7 +586,7 @@ async fn upsert_override_true_concurrent_create_yields_exactly_one_conflict(pool
 
 /// `get_effective(invoice_reminder, FR, niveau 2)` sans override retombe sur le
 /// défaut Rust niveau 2 ; le `level_number` retourné = le slot demandé (2).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn reminder_get_effective_falls_back_to_rust_default_level(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Cascade Co").await;
     let eff = email_templates::get_effective(
@@ -604,7 +604,7 @@ async fn reminder_get_effective_falls_back_to_rust_default_level(pool: MySqlPool
 }
 
 /// Cascade : un override niveau 2 gagne sur l'override niveau 0 générique.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn reminder_level_override_beats_generic_override(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Beats Co").await;
     let admin = create_admin_user(&pool, company_id).await;
@@ -678,7 +678,7 @@ async fn reminder_level_override_beats_generic_override(pool: MySqlPool) {
 
 /// H4 : un niveau configuré > 3 (avec override) apparaît dans `list_effective`
 /// grâce à la borne dynamique.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn list_effective_exposes_configured_level_above_3(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Above3 Co").await;
     let admin = create_admin_user(&pool, company_id).await;

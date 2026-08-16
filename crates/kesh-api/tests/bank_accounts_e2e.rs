@@ -270,7 +270,7 @@ async fn read_bank_account_version(pool: &MySqlPool, id: i64) -> i32 {
 /// AC #78 — Comptable+ peut lier un bank_account à un compte 1020 Asset
 /// actif. Le PATCH retourne 200 + entité mise à jour avec
 /// `journalAccountId` posé et version bumpée.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn patch_bank_account_links_journal_account_returns_200_with_updated_entity(pool: MySqlPool) {
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let version = read_bank_account_version(&pool, ctx.bank_account_id).await;
@@ -313,7 +313,7 @@ async fn patch_bank_account_links_journal_account_returns_200_with_updated_entit
 // AC #79 — Archived account → 404 ACCOUNT_NOT_FOUND (anti-énumération)
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn patch_bank_account_rejects_archived_account_with_404(pool: MySqlPool) {
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
 
@@ -344,7 +344,7 @@ async fn patch_bank_account_rejects_archived_account_with_404(pool: MySqlPool) {
 // AC #80 — Wrong account type (Revenue) → 400 INVALID_ACCOUNT_TYPE
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn patch_bank_account_rejects_revenue_account_with_400_invalid_type(pool: MySqlPool) {
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let revenue_id = create_account(
@@ -386,7 +386,7 @@ async fn patch_bank_account_rejects_revenue_account_with_400_invalid_type(pool: 
 // AC #81 — Multi-tenant safety : compte d'une autre company → 404
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn patch_bank_account_does_not_leak_cross_tenant_account(pool: MySqlPool) {
     let ctx_a = setup_full(&pool, "AcmeA", "CH4431999123000889012", Role::Comptable).await;
     // Company B avec son propre asset account 1020.
@@ -423,7 +423,7 @@ async fn patch_bank_account_does_not_leak_cross_tenant_account(pool: MySqlPool) 
 // AC #82 — RBAC : Consultation → 403 Forbidden
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn patch_bank_account_requires_comptable_role(pool: MySqlPool) {
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Consultation).await;
     let version = read_bank_account_version(&pool, ctx.bank_account_id).await;
@@ -445,7 +445,7 @@ async fn patch_bank_account_requires_comptable_role(pool: MySqlPool) {
 // GET list — 200 + journalAccountId remonté
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn list_bank_accounts_returns_journal_account_id_when_set(pool: MySqlPool) {
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     // Lie le bank_account au compte.
@@ -500,7 +500,7 @@ async fn ctx_patch(pool: &MySqlPool, ctx: &Ctx, body: Value) -> reqwest::Respons
 // ou créer un variant dédié en v0.2 si le frontend distingue les contextes).
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn patch_bank_account_returns_404_bank_account_not_found_for_unknown_id(pool: MySqlPool) {
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -532,7 +532,7 @@ async fn patch_bank_account_returns_404_bank_account_not_found_for_unknown_id(po
 // retourner 400 VALIDATION_ERROR (standard Kesh) et non le 422 Axum natif.
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn patch_bank_account_malformed_body_returns_400_validation_error(pool: MySqlPool) {
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -578,7 +578,7 @@ async fn patch_bank_account_malformed_body_returns_400_validation_error(pool: My
 // court-circuit no-op.
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn patch_bank_account_idempotent_no_op_does_not_duplicate_audit_log(pool: MySqlPool) {
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let pre_version = read_bank_account_version(&pool, ctx.bank_account_id).await;
@@ -649,7 +649,7 @@ async fn complete_onboarding(pool: &MySqlPool) {
     .unwrap();
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_bank_account_happy_path_returns_201_with_entity(pool: MySqlPool) {
     complete_onboarding(&pool).await;
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
@@ -677,7 +677,7 @@ async fn post_bank_account_happy_path_returns_201_with_entity(pool: MySqlPool) {
     assert_eq!(body["archived"], false);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_bank_account_invalid_iban_returns_400(pool: MySqlPool) {
     complete_onboarding(&pool).await;
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
@@ -700,7 +700,7 @@ async fn post_bank_account_invalid_iban_returns_400(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_bank_account_without_onboarding_complete_returns_412(pool: MySqlPool) {
     // Ne PAS appeler complete_onboarding — step_completed < 7.
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
@@ -723,7 +723,7 @@ async fn post_bank_account_without_onboarding_complete_returns_412(pool: MySqlPo
     assert_eq!(body["error"]["code"], "ONBOARDING_NOT_COMPLETE");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_bank_account_consultation_role_returns_403(pool: MySqlPool) {
     complete_onboarding(&pool).await;
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Consultation).await;
@@ -744,7 +744,7 @@ async fn post_bank_account_consultation_role_returns_403(pool: MySqlPool) {
     assert_eq!(resp.status(), 403);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_bank_account_primary_collision_silently_demotes_old(pool: MySqlPool) {
     complete_onboarding(&pool).await;
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
@@ -806,7 +806,7 @@ async fn post_bank_account_primary_collision_silently_demotes_old(pool: MySqlPoo
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn put_bank_account_happy_path_full_update(pool: MySqlPool) {
     complete_onboarding(&pool).await;
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
@@ -834,7 +834,7 @@ async fn put_bank_account_happy_path_full_update(pool: MySqlPool) {
     assert_eq!(body["version"], version + 1);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn put_bank_account_stale_version_returns_409(pool: MySqlPool) {
     complete_onboarding(&pool).await;
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
@@ -874,7 +874,7 @@ async fn put_bank_account_stale_version_returns_409(pool: MySqlPool) {
     assert_eq!(resp.status(), 409);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn delete_bank_account_happy_path_archive(pool: MySqlPool) {
     complete_onboarding(&pool).await;
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
@@ -906,7 +906,7 @@ async fn delete_bank_account_happy_path_archive(pool: MySqlPool) {
     assert_eq!(audit_count, 1);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn delete_bank_account_with_transactions_returns_412(pool: MySqlPool) {
     complete_onboarding(&pool).await;
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
@@ -954,7 +954,7 @@ async fn delete_bank_account_with_transactions_returns_412(pool: MySqlPool) {
     assert_eq!(body["error"]["details"]["transactionCount"], 1);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn delete_primary_with_other_active_returns_412(pool: MySqlPool) {
     complete_onboarding(&pool).await;
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
@@ -978,7 +978,7 @@ async fn delete_primary_with_other_active_returns_412(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "BANK_ACCOUNT_CANNOT_ARCHIVE_PRIMARY");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn delete_primary_unique_is_allowed_ac10(pool: MySqlPool) {
     complete_onboarding(&pool).await;
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;

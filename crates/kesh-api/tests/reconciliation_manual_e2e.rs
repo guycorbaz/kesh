@@ -434,7 +434,7 @@ async fn setup_full(pool: &MySqlPool, label: &str, iban: &str, role: Role) -> Ma
 /// AC #83 — happy path **débit négatif** (paiement) : tx pending -150
 /// CHF + counterpartyAccountId 6810 → 200 OK + journal_entry à 2 lignes
 /// (1020 crédit 150 + 6810 débit 150) + tx reconciled.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_manual_creates_journal_entry_and_marks_transaction_reconciled(pool: MySqlPool) {
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
@@ -512,7 +512,7 @@ async fn post_manual_creates_journal_entry_and_marks_transaction_reconciled(pool
 /// Story 19-5 — manual match avec `projectId` document-level : les **2
 /// lignes** de l'écriture (banque + contrepartie) portent le projet, via la
 /// propagation `line.project_id.or(new.project_id)`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_manual_tags_project_on_all_lines(pool: MySqlPool) {
     let ctx = setup_full(&pool, "AcmeProj", "CH4431999123000889013", Role::Comptable).await;
     let project_id = create_project(&pool, ctx.company_id, "RENOV-19-5", false).await;
@@ -570,7 +570,7 @@ async fn post_manual_tags_project_on_all_lines(pool: MySqlPool) {
 
 /// Story 19-5 — manual match avec un `projectId` archivé → 409 (mapping
 /// DbError::IllegalStateTransition), pas de 500.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_manual_rejects_archived_project(pool: MySqlPool) {
     let ctx = setup_full(
         &pool,
@@ -622,7 +622,7 @@ async fn post_manual_rejects_archived_project(pool: MySqlPool) {
 ///
 /// P-M11 Pass 1 code review : nom corrigé (le test seede `dec!(200.00)`
 /// donc un crédit positif, pas un négatif — l'ancien nom était inversé).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_manual_creates_journal_entry_for_positive_credit_amount(pool: MySqlPool) {
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     // Compte additionnel 7510 Intérêts (Revenue).
@@ -693,7 +693,7 @@ async fn post_manual_creates_journal_entry_for_positive_credit_amount(pool: MySq
 
 /// AC #87 (multi-tenant bank_account) — bankAccountId inconnu / d'une
 /// autre company → 404 BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_manual_returns_404_for_unknown_bank_account_id(pool: MySqlPool) {
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
@@ -717,7 +717,7 @@ async fn post_manual_returns_404_for_unknown_bank_account_id(pool: MySqlPool) {
 
 /// AC #85 — bank_account.journal_account_id IS NULL → 412
 /// BANK_ACCOUNT_NOT_CONFIGURED.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_manual_returns_412_for_bank_account_not_configured(pool: MySqlPool) {
     let company_id = create_company(&pool, "Acme").await;
     let user_id = create_user(&pool, "alice", Role::Comptable, company_id).await;
@@ -778,7 +778,7 @@ async fn post_manual_returns_412_for_bank_account_not_configured(pool: MySqlPool
 
 /// AC #86 — counterpartyAccountId inconnu / d'une autre company →
 /// 404 ACCOUNT_NOT_FOUND (anti-énumération KF-002).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_manual_returns_404_for_unknown_counterparty_account_id(pool: MySqlPool) {
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
@@ -820,7 +820,7 @@ async fn post_manual_returns_404_for_unknown_counterparty_account_id(pool: MySql
 
 /// AC #86 (variante) — counterpartyAccountId archivé → 404 ACCOUNT_NOT_FOUND
 /// (anti-énumération : pas de leak de l'existence).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_manual_returns_404_for_archived_counterparty_account(pool: MySqlPool) {
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     archive_account(&pool, ctx.counterparty_account_id, ctx.user_id).await;
@@ -862,7 +862,7 @@ async fn post_manual_returns_404_for_archived_counterparty_account(pool: MySqlPo
 }
 
 /// AC #88 — tx déjà reconciled → 404 RECONCILIATION_TRANSACTION_NOT_PENDING.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_manual_returns_404_for_already_reconciled_transaction(pool: MySqlPool) {
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
@@ -914,7 +914,7 @@ async fn post_manual_returns_404_for_already_reconciled_transaction(pool: MySqlP
 /// AC #90 — tx avec `auto_match_rejected_at` non NULL → manual réussit
 /// ET reset `auto_match_rejected_at = NULL` ET audit log
 /// `was_previously_rejected = true` (lève L23 partiellement, F6''' Pass 3 Opus).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_manual_reverses_auto_rejection_when_auto_match_rejected_at_set(pool: MySqlPool) {
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
@@ -994,7 +994,7 @@ async fn post_manual_reverses_auto_rejection_when_auto_match_rejected_at_set(poo
 }
 
 /// AC #89 — fiscal_year `Closed` → 409 RECONCILIATION_FISCAL_YEAR_CLOSED.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_manual_returns_409_for_fiscal_year_closed_pre_flight(pool: MySqlPool) {
     let company_id = create_company(&pool, "Acme").await;
     let user_id = create_user(&pool, "alice", Role::Comptable, company_id).await;
@@ -1064,7 +1064,7 @@ async fn post_manual_returns_409_for_fiscal_year_closed_pre_flight(pool: MySqlPo
 /// RECONCILIATION_TRANSACTION_NOT_PENDING (anti-leak KF-002, le helper
 /// `find_strictly_pending_by_id_for_account` retourne None via filtre
 /// `(company_id, bank_account_id, id)`).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_manual_does_not_leak_cross_tenant_transaction(pool: MySqlPool) {
     let ctx_a = setup_full(&pool, "AcmeA", "CH4431999123000889012", Role::Comptable).await;
     // Company B avec sa propre bank_account + tx + bank_ledger 1020 +
@@ -1114,7 +1114,7 @@ async fn post_manual_does_not_leak_cross_tenant_transaction(pool: MySqlPool) {
 /// VALIDATION_ERROR avec marqueur "zero_amount_transaction" dans
 /// `error.message` (F5'''' Pass 6 Opus shape réelle de
 /// `AppError::Validation`).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_manual_rejects_zero_amount_transaction(pool: MySqlPool) {
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
@@ -1162,7 +1162,7 @@ async fn post_manual_rejects_zero_amount_transaction(pool: MySqlPool) {
 /// P-H2 Pass 1 code review — AC #91 RBAC : un user `Consultation` qui
 /// POST /api/v1/reconciliation/manual reçoit 403 (sub-router
 /// `comptable_routes`).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_manual_requires_comptable_role(pool: MySqlPool) {
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Consultation).await;
     let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
@@ -1213,7 +1213,7 @@ async fn post_manual_requires_comptable_role(pool: MySqlPool) {
 ///    Story 3-2).
 /// Couvre la pair canonique non testée explicitement par les autres
 /// tests (le test #8 reverse rejection ne vérifie pas la pair complète).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_manual_emits_audit_log_pair(pool: MySqlPool) {
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();

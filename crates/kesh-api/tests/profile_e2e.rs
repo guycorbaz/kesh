@@ -91,7 +91,7 @@ async fn login(app: &TestApp) -> String {
     body["accessToken"].as_str().unwrap().to_string()
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn set_mode_updates_onboarding_state(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
@@ -118,7 +118,7 @@ async fn set_mode_updates_onboarding_state(pool: MySqlPool) {
     assert_eq!(state.ui_mode.unwrap().as_str(), "expert");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn set_mode_invalid_returns_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
@@ -140,7 +140,7 @@ async fn set_mode_invalid_returns_400(pool: MySqlPool) {
     assert_eq!(resp.status(), 400);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn set_mode_requires_auth(pool: MySqlPool) {
     let app = spawn_app(pool).await;
 

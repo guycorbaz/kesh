@@ -120,7 +120,7 @@ async fn login(app: &TestApp, username: &str, password: &str) -> String {
 
 // --- Tests ---
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn i18n_messages_endpoint_returns_locale_and_messages(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
@@ -145,7 +145,7 @@ async fn i18n_messages_endpoint_returns_locale_and_messages(pool: MySqlPool) {
     assert!(body["messages"]["error-forbidden"].is_string());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn i18n_messages_requires_auth(pool: MySqlPool) {
     let app = spawn_app(pool).await;
 
@@ -159,7 +159,7 @@ async fn i18n_messages_requires_auth(pool: MySqlPool) {
     assert_eq!(resp.status(), 401);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn error_messages_are_in_french_by_default(pool: MySqlPool) {
     let _guard = get_i18n_lock().await;
     let app = spawn_app(pool.clone()).await;
@@ -180,7 +180,7 @@ async fn error_messages_are_in_french_by_default(pool: MySqlPool) {
     assert_eq!(message, "Identifiants invalides");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn error_messages_in_german_when_locale_de(pool: MySqlPool) {
     let _guard = get_i18n_lock().await;
     let app = spawn_app_with_locale(pool.clone(), kesh_i18n::Locale::DeCh).await;

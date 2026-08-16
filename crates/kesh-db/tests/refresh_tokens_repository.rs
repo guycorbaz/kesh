@@ -1,6 +1,6 @@
 //! Tests d'intégration du repository `refresh_tokens`.
 //!
-//! Chaque test utilise `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]`
+//! Chaque test utilise `#[sqlx::test(migrations = "./test-schema")]`
 //! qui crée/détruit une DB temporaire par test — nécessite
 //! `GRANT ALL PRIVILEGES ON *.*` pour l'utilisateur DB (voir README).
 
@@ -51,7 +51,7 @@ fn make_token_uuid() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_and_find_active_by_token(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
     let user_id = create_test_user(&pool, "alice", company_id).await;
@@ -80,7 +80,7 @@ async fn create_and_find_active_by_token(pool: MySqlPool) {
     assert_eq!(found.unwrap().id, created.id);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_active_by_token_returns_none_for_unknown_token(pool: MySqlPool) {
     let unknown = make_token_uuid();
     let result = refresh_tokens::find_active_by_token(&pool, &unknown)
@@ -89,7 +89,7 @@ async fn find_active_by_token_returns_none_for_unknown_token(pool: MySqlPool) {
     assert!(result.is_none());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_active_by_token_returns_none_for_expired_token(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
     let user_id = create_test_user(&pool, "bob", company_id).await;
@@ -114,7 +114,7 @@ async fn find_active_by_token_returns_none_for_expired_token(pool: MySqlPool) {
     assert!(result.is_none(), "expired token should not be active");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_active_by_token_returns_none_for_revoked_token(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
     let user_id = create_test_user(&pool, "carol", company_id).await;
@@ -143,7 +143,7 @@ async fn find_active_by_token_returns_none_for_revoked_token(pool: MySqlPool) {
     assert!(result.is_none(), "revoked token should not be active");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn revoke_by_token_is_idempotent(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
     let user_id = create_test_user(&pool, "dave", company_id).await;
@@ -172,7 +172,7 @@ async fn revoke_by_token_is_idempotent(pool: MySqlPool) {
     assert!(!second, "second revoke should return false (idempotent)");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn revoke_by_token_unknown_returns_false(pool: MySqlPool) {
     let unknown = make_token_uuid();
     let result = refresh_tokens::revoke_by_token(&pool, &unknown, "logout")
@@ -181,7 +181,7 @@ async fn revoke_by_token_unknown_returns_false(pool: MySqlPool) {
     assert!(!result);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn revoke_all_for_user_revokes_all_active_tokens(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
     let user_id = create_test_user(&pool, "eve", company_id).await;
@@ -213,7 +213,7 @@ async fn revoke_all_for_user_revokes_all_active_tokens(pool: MySqlPool) {
     assert_eq!(second_call, 0);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_with_unknown_user_id_fails_with_fk_violation(pool: MySqlPool) {
     let result = refresh_tokens::create(
         &pool,
@@ -228,7 +228,7 @@ async fn create_with_unknown_user_id_fails_with_fk_violation(pool: MySqlPool) {
     assert!(matches!(result, Err(DbError::ForeignKeyViolation(_))));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_with_invalid_token_format_fails_check_constraint(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
     let user_id = create_test_user(&pool, "frank", company_id).await;
@@ -246,7 +246,7 @@ async fn create_with_invalid_token_format_fails_check_constraint(pool: MySqlPool
     assert!(matches!(result, Err(DbError::CheckConstraintViolation(_))));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn deleting_user_cascades_to_refresh_tokens(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
     let user_id = create_test_user(&pool, "grace", company_id).await;

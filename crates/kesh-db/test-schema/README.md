@@ -3,7 +3,7 @@
 `0001_schema_squash.sql` est l'**unique** migration que rejouent les bases
 éphémères de `#[sqlx::test]` : un batch DDL au lieu des 61 cycles
 INSERT/DDL/UPDATE du vrai `MIGRATOR`. Les tests le visent par
-`migrations = "test-schema"` (dans `kesh-db`) ou `"../kesh-db/test-schema"`
+`migrations = "./test-schema"` (dans `kesh-db`) ou `"../kesh-db/test-schema"`
 (dans `kesh-api`, `kesh-report`).
 
 **Il SE RÉGÉNÈRE, il ne s'édite JAMAIS** : `scripts/regen-test-schema.sh`.

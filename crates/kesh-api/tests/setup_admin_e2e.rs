@@ -123,7 +123,7 @@ async fn spawn_app_with_config(
 
 /// AC #11 — Happy path : DB vide (1 stub company seedée) + users_exist=false →
 /// POST /setup/admin retourne 200 + Set-Cookie HttpOnly + flag bascule true.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn setup_admin_happy_path_returns_200_and_cookies(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
     seed_stub_company_only(&pool).await.expect("seed stub");
@@ -181,7 +181,7 @@ async fn setup_admin_happy_path_returns_200_and_cookies(pool: MySqlPool) {
 }
 
 /// AC #10 — Deuxième appel → 410 SETUP_ALREADY_COMPLETE.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn setup_admin_returns_410_when_user_already_exists(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
     seed_stub_company_only(&pool).await.expect("seed stub");
@@ -226,7 +226,7 @@ async fn setup_admin_returns_410_when_user_already_exists(pool: MySqlPool) {
 }
 
 /// AC #13 — Route protégée + `users_exist=false` → 423 SETUP_REQUIRED.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn protected_route_returns_423_when_users_empty(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
     seed_stub_company_only(&pool).await.expect("seed stub");
@@ -246,7 +246,7 @@ async fn protected_route_returns_423_when_users_empty(pool: MySqlPool) {
 }
 
 /// AC #9 — Validation : password < 12 chars → 400 VALIDATION_ERROR.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn setup_admin_returns_400_on_weak_password(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
     seed_stub_company_only(&pool).await.expect("seed stub");
@@ -277,7 +277,7 @@ async fn setup_admin_returns_400_on_weak_password(pool: MySqlPool) {
 }
 
 /// T-A5 (Story 17-4a) — Validation email : email invalide → 400.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn setup_admin_with_invalid_email_returns_400(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
     seed_stub_company_only(&pool).await.expect("seed stub");
@@ -308,7 +308,7 @@ async fn setup_admin_with_invalid_email_returns_400(pool: MySqlPool) {
 /// T-A5 (Story 17-4a) — Validation email : email valide → succès + email persisté.
 /// La réponse `/setup/admin` (`LoginResponse`) n'expose pas l'email, donc on
 /// l'assert directement en base.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn setup_admin_with_valid_email_succeeds(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
     seed_stub_company_only(&pool).await.expect("seed stub");
@@ -337,7 +337,7 @@ async fn setup_admin_with_valid_email_succeeds(pool: MySqlPool) {
 }
 
 /// AC #9 — Validation : username vide → 400 VALIDATION_ERROR.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn setup_admin_returns_400_on_empty_username(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
     seed_stub_company_only(&pool).await.expect("seed stub");
@@ -359,7 +359,7 @@ async fn setup_admin_returns_400_on_empty_username(pool: MySqlPool) {
 
 /// AC #14 — Routes publiques exemptes du gate 423.
 /// `/health` doit retourner 200 même si `users_exist=false`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn health_endpoint_bypasses_setup_gate(pool: MySqlPool) {
     let app = spawn_app(pool, false).await;
 
@@ -375,7 +375,7 @@ async fn health_endpoint_bypasses_setup_gate(pool: MySqlPool) {
 
 /// AC #22 (CR Pass 1 AUD1-1) — Rate-limit déclenche 429 après N tentatives invalides.
 /// Utilise `max_attempts=2` pour atteindre le bloc en 3 POSTs.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn setup_admin_rate_limit_returns_429(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
     seed_stub_company_only(&pool).await.expect("seed stub");
@@ -423,7 +423,7 @@ async fn setup_admin_rate_limit_returns_429(pool: MySqlPool) {
 /// - exactement **1** utilisateur en base après les deux requêtes ;
 /// - l'ensemble des deux status HTTP == `{200, 410}` (un succès, un auto-disable),
 ///   dans un ordre quelconque (l'ordre alice/bob gagnant reste non déterministe).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn toctou_race_two_distinct_usernames_creates_exactly_one_admin(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
     seed_stub_company_only(&pool).await.expect("seed stub");

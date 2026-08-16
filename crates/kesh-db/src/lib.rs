@@ -19,7 +19,9 @@ pub mod version;
 
 /// Migrator SQLx chargé depuis `crates/kesh-db/migrations/`.
 ///
-/// Utilisé par `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]` pour appliquer
-/// les migrations automatiquement à chaque test d'intégration, et par
-/// l'application au démarrage pour initialiser/mettre à jour le schéma.
+/// Utilisé par l'application au démarrage pour initialiser/mettre à jour le
+/// schéma, et par les seuls tests qui exercent **le chemin des migrations
+/// lui-même** (installation fraîche, fenêtres d'upgrade, backfills, garde-fou
+/// de schéma). Le reste de la suite d'intégration monte le squash
+/// `test-schema/` — cf. Story 22-5 / issue #251.
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");

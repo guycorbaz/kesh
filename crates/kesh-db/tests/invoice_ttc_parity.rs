@@ -28,7 +28,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::MySqlPool;
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn ttc_four_way_parity_mixed_rates_and_rounding_edges(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact_id = contacts::create(
@@ -144,7 +144,7 @@ async fn ttc_four_way_parity_mixed_rates_and_rounding_edges(pool: MySqlPool) {
 
 /// La colonne calculée `total_ttc` des items de liste (forme scalaire dans le
 /// SELECT) coïncide avec le helper — et une facture à taux 0 a TTC = HT.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn list_items_total_ttc_matches_helper(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact_id = contacts::create(

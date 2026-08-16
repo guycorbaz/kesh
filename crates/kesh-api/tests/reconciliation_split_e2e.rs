@@ -472,7 +472,7 @@ async fn setup_split_ctx(pool: &MySqlPool, label: &str, iban: &str) -> SplitCtx 
 /// Story 19-5 — split avec un `projectId` **par ligne de ventilation** :
 /// chaque ligne de contrepartie porte son propre projet, la ligne banque
 /// reste non taguée. Validation projet automatique (create_in_tx per-ligne).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn split_tags_project_per_line(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup_split_ctx(&pool, "split_project", "CH1000000000000000009").await;
@@ -535,7 +535,7 @@ async fn split_tags_project_per_line(pool: MySqlPool) {
 
 /// AC #93 — happy path split débit. Tx -10700 → 3 lignes contreparties
 /// (5000+4500+1200) en N+1 lignes JE (1 banque crédit 10700 + 3 splits débit).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn split_creates_journal_entry_with_n_plus_1_lines(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup_split_ctx(&pool, "split_happy_debit", "CH1000000000000000001").await;
@@ -595,7 +595,7 @@ async fn split_creates_journal_entry_with_n_plus_1_lines(pool: MySqlPool) {
 }
 
 /// AC #94 — happy path split crédit. Tx +5000 → 2 splits crédit (3000+2000).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn split_creates_journal_entry_for_credit_transaction(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup_split_ctx(&pool, "split_happy_credit", "CH1000000000000000002").await;
@@ -658,7 +658,7 @@ async fn split_creates_journal_entry_for_credit_transaction(pool: MySqlPool) {
 
 /// AC #95 — split déséquilibré → 400 RECONCILIATION_SPLIT_IMBALANCE
 /// avec details { expected, actual, difference }.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn split_rejects_imbalanced_payload(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup_split_ctx(&pool, "split_imbalance", "CH1000000000000000003").await;
@@ -690,7 +690,7 @@ async fn split_rejects_imbalanced_payload(pool: MySqlPool) {
 }
 
 /// AC #96 part 1 — splits.len() < 2 → 400 Validation.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn split_rejects_single_line_payload(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup_split_ctx(&pool, "split_single_line", "CH1000000000000000004").await;
@@ -717,7 +717,7 @@ async fn split_rejects_single_line_payload(pool: MySqlPool) {
 }
 
 /// AC #96 part 2 — splits.len() > 50 → 400 Validation.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn split_rejects_too_many_lines(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup_split_ctx(&pool, "split_too_many", "CH1000000000000000005").await;
@@ -751,7 +751,7 @@ async fn split_rejects_too_many_lines(pool: MySqlPool) {
 }
 
 /// AC #97 — bank_account.journal_account_id NULL → 412 BANK_ACCOUNT_NOT_CONFIGURED.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn split_rejects_unconfigured_bank_account_with_412(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     // Setup minimal : pas de lien journal_account_id.
@@ -815,7 +815,7 @@ async fn split_rejects_unconfigured_bank_account_with_412(pool: MySqlPool) {
 
 /// AC #98 part 1 — counterpartyAccountId cross-tenant → 404 ACCOUNT_NOT_FOUND
 /// avec body details.missingAccountIds.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn split_does_not_leak_cross_tenant_account(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup_split_ctx(&pool, "split_xtenant_a", "CH1000000000000000007").await;
@@ -859,7 +859,7 @@ async fn split_does_not_leak_cross_tenant_account(pool: MySqlPool) {
 }
 
 /// AC #98 part 2 — Role Consultation → 403 Forbidden.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn split_requires_comptable_role(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup_split_ctx(&pool, "split_rbac", "CH1000000000000000008").await;
@@ -894,7 +894,7 @@ async fn split_requires_comptable_role(pool: MySqlPool) {
 
 /// AC #99 part 1 — audit log `reconciliation.split_applied` émis +
 /// `journal_entry.created` émis par `journal_entries::create_in_tx`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn split_emits_audit_log(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup_split_ctx(&pool, "split_audit", "CH1000000000000000009").await;
@@ -956,7 +956,7 @@ async fn split_emits_audit_log(pool: MySqlPool) {
 }
 
 /// AC #99 part 2 — Tx déjà reconciled → 404 RECONCILIATION_TRANSACTION_NOT_PENDING.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn split_rejects_already_reconciled(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup_split_ctx(&pool, "split_already_reconciled", "CH1000000000000000010").await;

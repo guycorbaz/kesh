@@ -192,7 +192,7 @@ async fn create_validated_invoice(
 
 // --- Tests -------------------------------------------------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn list_due_dates_requires_auth_returns_401(pool: MySqlPool) {
     let app = spawn_app(pool).await;
     let resp = app
@@ -204,7 +204,7 @@ async fn list_due_dates_requires_auth_returns_401(pool: MySqlPool) {
     assert_eq!(resp.status(), 401);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn list_due_dates_default_returns_only_unpaid_validated(pool: MySqlPool) {
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
@@ -268,7 +268,7 @@ async fn list_due_dates_default_returns_only_unpaid_validated(pool: MySqlPool) {
 /// N2 (review pass 3 B) : test inversé — un `paid_at` futur (date d'exécution
 /// bancaire programmée) doit être accepté. Le test précédent qui asseyait un
 /// rejet 400 reposait sur une AC#8 incorrecte (clarification domaine 2026-04-15).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn mark_paid_accepts_future_paid_at_returns_200(pool: MySqlPool) {
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
@@ -298,7 +298,7 @@ async fn mark_paid_accepts_future_paid_at_returns_200(pool: MySqlPool) {
     assert_eq!(resp.status(), 200);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn mark_paid_on_draft_invoice_returns_409(pool: MySqlPool) {
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
@@ -340,7 +340,7 @@ async fn mark_paid_on_draft_invoice_returns_409(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "ILLEGAL_STATE_TRANSITION");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn mark_paid_then_unmark_paid_round_trip(pool: MySqlPool) {
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
@@ -386,7 +386,7 @@ async fn mark_paid_then_unmark_paid_round_trip(pool: MySqlPool) {
     assert_eq!(body["paidAt"], serde_json::Value::Null);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_csv_has_bom_and_swiss_amounts(pool: MySqlPool) {
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
@@ -442,7 +442,7 @@ async fn export_csv_has_bom_and_swiss_amounts(pool: MySqlPool) {
 // M6 (review pass 1 G2) — tests AC #8 (paidAt < invoice.date → 400)
 // et AC #10 (export CSV > 10'000 lignes → 400 RESULT_TOO_LARGE).
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn mark_paid_rejects_paid_at_before_invoice_date(pool: MySqlPool) {
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
@@ -482,7 +482,7 @@ async fn mark_paid_rejects_paid_at_before_invoice_date(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_csv_over_limit_returns_400_result_too_large(pool: MySqlPool) {
     // MAX_EXPORT_ROWS = 10_000 → créer 10_001 factures serait prohibitif.
     // On utilise un override d'env var pour piloter la limite effective.
@@ -533,7 +533,7 @@ async fn export_csv_over_limit_returns_400_result_too_large(pool: MySqlPool) {
 /// B10 (review pass 1 G2 B) : exerce le path `alreadyUnpaid` — tenter de
 /// dé-marquer une facture jamais marquée payée doit retourner 400
 /// `INVALID_INPUT` avec la clé i18n `invoice-error-already-unpaid`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn unmark_paid_on_never_paid_returns_400_already_unpaid(pool: MySqlPool) {
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;

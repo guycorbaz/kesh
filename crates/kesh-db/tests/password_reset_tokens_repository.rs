@@ -1,7 +1,7 @@
 //! Tests d'intégration du repository `password_reset_tokens` + `find_by_email`
 //! (Story 17-4a, recovery #122).
 //!
-//! Chaque test utilise `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]`
+//! Chaque test utilise `#[sqlx::test(migrations = "./test-schema")]`
 //! qui crée/détruit une DB temporaire par test.
 
 use chrono::{Duration as ChronoDuration, Utc};
@@ -54,7 +54,7 @@ fn hash(s: &str) -> String {
     format!("{:0<64}", s)
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_then_find_valid_then_mark_used(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
     let user_id = create_user(&pool, "alice", company_id, Some("alice@example.com")).await;
@@ -87,7 +87,7 @@ async fn create_then_find_valid_then_mark_used(pool: MySqlPool) {
     assert!(after.is_none(), "token consommé ne doit plus être valide");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn mark_used_twice_second_returns_not_found(pool: MySqlPool) {
     // Défense en profondeur (code-review Pass 2) : la garde `AND used_at IS NULL`
     // ferme la fenêtre TOCTOU. Un 2e mark_used sur un token déjà consommé
@@ -112,7 +112,7 @@ async fn mark_used_twice_second_returns_not_found(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn expired_token_is_not_valid(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
     let user_id = create_user(&pool, "bob", company_id, None).await;
@@ -129,7 +129,7 @@ async fn expired_token_is_not_valid(pool: MySqlPool) {
     assert!(found.is_none(), "token expiré ne doit pas être valide");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn unknown_hash_returns_none(pool: MySqlPool) {
     let found = password_reset_tokens::find_valid_by_hash(&pool, &hash("nope"))
         .await
@@ -137,7 +137,7 @@ async fn unknown_hash_returns_none(pool: MySqlPool) {
     assert!(found.is_none());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn invalidate_all_for_user_consumes_pending(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
     let user_id = create_user(&pool, "carol", company_id, None).await;
@@ -168,7 +168,7 @@ async fn invalidate_all_for_user_consumes_pending(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn cascade_delete_removes_tokens(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
     let user_id = create_user(&pool, "dave", company_id, None).await;
@@ -193,7 +193,7 @@ async fn cascade_delete_removes_tokens(pool: MySqlPool) {
     assert_eq!(count, 0, "CASCADE doit purger les tokens du user supprimé");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_by_email_returns_matches(pool: MySqlPool) {
     let company_id = create_test_company(&pool).await;
     create_user(&pool, "eve", company_id, Some("shared@example.com")).await;

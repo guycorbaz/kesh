@@ -15,13 +15,13 @@ La Story 6.4 a unifié deux patterns disparates (bypass SQL ad-hoc en Rust, abse
 
 ## Pattern Rust : `seed_accounting_company`
 
-Chaque test intégration backend démarre d'une DB éphémère (fournie par `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]`) puis seede l'état comptable via le helper :
+Chaque test intégration backend démarre d'une DB éphémère (fournie par `#[sqlx::test(migrations = "../kesh-db/test-schema")]` — le **squash** du schéma, cf. Story 22-5 / issue #251 ; la graphie est `"./test-schema"` depuis `kesh-db` lui-même) puis seede l'état comptable via le helper :
 
 ```rust
 use kesh_db::test_fixtures::seed_accounting_company;
 use kesh_db::repositories::invoices;
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn my_invoice_flow(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.expect("seed");
     // seeded : company_id, fiscal_year_id, admin_user_id, changeme_user_id,

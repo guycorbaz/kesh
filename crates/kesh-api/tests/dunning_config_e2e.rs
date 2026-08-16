@@ -147,7 +147,7 @@ async fn create_user(pool: &MySqlPool, username: &str, role: Role, company_id: i
 }
 
 /// GET settings sur une company fraîche → seed lazy : 3 niveaux + grâce 5.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn get_settings_seeds_defaults(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let cid = create_company(&pool, "Seed Co").await;
@@ -181,7 +181,7 @@ async fn get_settings_seeds_defaults(pool: MySqlPool) {
 }
 
 /// Créer un niveau : Admin OK, Comptable → 403.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_level_rbac(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let cid = create_company(&pool, "RBAC Co").await;
@@ -212,7 +212,7 @@ async fn create_level_rbac(pool: MySqlPool) {
 }
 
 /// PUT settings avec version périmée → 409.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn update_settings_stale_version_409(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let cid = create_company(&pool, "Conflict Co").await;
@@ -239,7 +239,7 @@ async fn update_settings_stale_version_409(pool: MySqlPool) {
 }
 
 /// IDOR : modifier un niveau d'une autre company → 404 (jamais 403, anti-énumération).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn update_level_cross_tenant_404(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let cid_a = create_company(&pool, "Co A").await;

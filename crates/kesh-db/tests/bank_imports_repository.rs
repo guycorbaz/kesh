@@ -5,7 +5,7 @@
 //! scoping, dedup hash, multi-tenant safety, bulk perf) + 2 IDOR tests sur
 //! `bank_accounts::find_by_id_for_company` (T6.3 / Pass 1 H5).
 //!
-//! Pattern `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]` — DB éphémère
+//! Pattern `#[sqlx::test(migrations = "./test-schema")]` — DB éphémère
 //! avec migrations auto-appliquées.
 
 use chrono::NaiveDate;
@@ -115,7 +115,7 @@ fn make_new_tx(
 const HASH_A: &str = "0123456789012345678901234567890123456789012345678901234567890abc";
 const HASH_B: &str = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba98765432ab";
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_with_transactions_atomic_success(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Acme").await;
     let user_id = create_test_user(&pool, "alice", company_id).await;
@@ -145,7 +145,7 @@ async fn create_with_transactions_atomic_success(pool: MySqlPool) {
     assert_eq!(inserted_txs[0].status.as_str(), "pending");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_with_transactions_rolls_back_on_constraint_violation(pool: MySqlPool) {
     // AC #17 atomicité : simuler une violation FK sur la 2e transaction
     // (bank_account_id inexistant) → tx rollback, aucune ligne en DB.
@@ -180,7 +180,7 @@ async fn create_with_transactions_rolls_back_on_constraint_violation(pool: MySql
     assert_eq!(tx_count, 0, "rollback : aucune transaction en DB");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_by_company_id_only_returns_own_imports(pool: MySqlPool) {
     // AC #11 multi-tenant scoping : 2 companies, find_by_company_id(A)
     // ne retourne pas les imports de B.
@@ -214,7 +214,7 @@ async fn find_by_company_id_only_returns_own_imports(pool: MySqlPool) {
     assert_eq!(imports_a[0].file_hash, HASH_A);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_by_company_and_hash_finds_existing(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Acme").await;
     let user_id = create_test_user(&pool, "alice", company_id).await;
@@ -242,7 +242,7 @@ async fn find_by_company_and_hash_finds_existing(pool: MySqlPool) {
     assert!(not_found.is_none());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn duplicate_company_hash_now_allowed_post_relax(pool: MySqlPool) {
     // Story 8-3 — la migration `20260507000001_bank_imports_relax_hash_unique.sql`
     // a relâché le UNIQUE en INDEX simple. Deux INSERT successifs avec
@@ -278,7 +278,7 @@ async fn duplicate_company_hash_now_allowed_post_relax(pool: MySqlPool) {
     tx2.commit().await.unwrap();
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn unique_company_hash_allows_same_hash_across_companies(pool: MySqlPool) {
     // AC #16 multi-tenant safety : même hash sur companies différentes OK.
     let company_a = create_test_company(&pool, "CompanyA").await;
@@ -309,7 +309,7 @@ async fn unique_company_hash_allows_same_hash_across_companies(pool: MySqlPool) 
     tx_b.commit().await.unwrap();
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn bulk_insert_handles_500_transactions(pool: MySqlPool) {
     // AC #21 perf smoke : 500 transactions doivent passer en bulk INSERT
     // (chunk de 1000 max — un seul chunk ici).
@@ -347,7 +347,7 @@ async fn bulk_insert_handles_500_transactions(pool: MySqlPool) {
 // dans un seul run `#[sqlx::test]`. Le helper testé est dans
 // `repositories::bank_accounts::find_by_id_for_company`.
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_by_id_for_company_rejects_wrong_company(pool: MySqlPool) {
     // T6.3 IDOR : company_B ne peut pas lire un bank_account de company_A.
     let company_a = create_test_company(&pool, "CompanyA").await;
@@ -360,7 +360,7 @@ async fn find_by_id_for_company_rejects_wrong_company(pool: MySqlPool) {
     assert!(result.is_none(), "IDOR : pas de leak cross-tenant");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_by_id_for_company_returns_account_when_owned(pool: MySqlPool) {
     // T6.3 happy path : la company qui possède le compte le récupère.
     let company_id = create_test_company(&pool, "Acme").await;

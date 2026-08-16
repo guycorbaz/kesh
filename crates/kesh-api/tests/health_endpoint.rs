@@ -4,8 +4,8 @@
 //! Story 10.3 — consommée par le frontend `apiHealth.pollHealth()` (banner
 //! dégradé + auto-recovery) et par le smoke test post-build `release.yml`.
 //!
-//! Stratégie : `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]` fournit une
-//! base éphémère migrée. Le cas "DB down" est simulé via `pool.close()` —
+//! Stratégie : `#[sqlx::test(migrations = "../kesh-db/test-schema")]` fournit
+//! une base éphémère migrée. Le cas "DB down" est simulé via `pool.close()` —
 //! la méthode canonique sqlx 0.8 pour fermer les connexions sans intervention
 //! infrastructure (cf. AC #4).
 
@@ -94,7 +94,7 @@ async fn spawn_app(pool: MySqlPool) -> TestApp {
 
 /// AC #4(a) : pool ouvert, `SELECT 1` réussit → 200 + body `{ status: "ok",
 /// db: true, version: <CARGO_PKG_VERSION> }`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn health_endpoint_returns_ok_when_db_up(pool: MySqlPool) {
     let app = spawn_app(pool).await;
 
@@ -117,7 +117,7 @@ async fn health_endpoint_returns_ok_when_db_up(pool: MySqlPool) {
 
 /// AC #4(b) : `pool.close()` simule la perte de DB → `SELECT 1` échoue → 503
 /// + body `{ status: "degraded", db: false, version: <CARGO_PKG_VERSION> }`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn health_endpoint_returns_degraded_when_db_down(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
 
