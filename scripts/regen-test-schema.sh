@@ -66,7 +66,10 @@ fi
 hostport="${hostpart%%/*}"
 DB_HOST="${hostport%%:*}"
 DB_PORT="${hostport#*:}"
-[[ "$DB_PORT" == "$DB_HOST" ]] && DB_PORT=3306
+# Deux formes rendent un port inexploitable : l'absence de `:` (le `#*:` rend
+# alors l'hôte) et un `:` suivi de rien (`…@host:/base`). La seconde laissait
+# `port=` vide dans le fichier d'options. *(Relevé en passe 3.)*
+[[ "$DB_PORT" == "$DB_HOST" || -z "$DB_PORT" ]] && DB_PORT=3306
 
 # sqlx percent-décode les identifiants d'une URL ; ce script doit en faire
 # autant, sans quoi il s'authentifie avec une chaîne différente de celle de
@@ -284,6 +287,18 @@ KV_MIN=$(cli "$SQUASH_DB" -e "SELECT kesh_version_min_required FROM _kesh_versio
 KV_LAST=$(cli "$SQUASH_DB" -e "SELECT kesh_version_last_applied FROM _kesh_version WHERE id = 1;")
 if [[ -z "$KV_ID" || -z "$KV_MIN" || -z "$KV_LAST" ]]; then
     echo "✗ _kesh_version ne porte aucune ligne id=1 exploitable après migration." >&2
+    exit 1
+fi
+# Ces trois valeurs sont réinjectées TELLES QUELLES dans un `INSERT` du fichier
+# généré : une apostrophe y casserait le SQL, et le squash deviendrait
+# inchargeable pour 1102 tests. Elles viennent de la base, donc d'un chemin que
+# ce script ne contrôle pas — on vérifie leur forme plutôt que de l'espérer.
+# *(Relevé en passe 3 de revue.)*
+if [[ ! "$KV_ID" =~ ^[0-9]+$ ]] || [[ ! "$KV_MIN" =~ ^[0-9A-Za-z.+-]+$ ]] \
+   || [[ ! "$KV_LAST" =~ ^[0-9A-Za-z.+-]+$ ]]; then
+    echo "✗ _kesh_version porte des valeurs inattendues : id='$KV_ID'," >&2
+    echo "  min='$KV_MIN', last='$KV_LAST'. Le squash les réinjecte dans un" >&2
+    echo "  INSERT : une apostrophe le rendrait inchargeable." >&2
     exit 1
 fi
 

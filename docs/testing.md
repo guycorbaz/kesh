@@ -33,6 +33,20 @@ Passer par `sqlx migrate run` et non par une boucle de `mariadb <` sur les fichi
 
 **L'oubli du seed est bruyant, pas silencieux** : les tests concernés s'ouvrent sur `expect("need at least one company in DB for tests")`. Aucun faux vert possible — c'est ce qui rend la procédure manuelle acceptable.
 
+⚠️ **La base partagée doit être remise à zéro avant CHAQUE gate complet, pas seulement après un gate interrompu.** Le `CLAUDE.md` § *« Un gate interrompu laisse la base piégée »* décrit le cas d'un run tué en vol ; il en existe un second, plus discret : **un run qui se termine normalement laisse lui aussi la base inutilisable pour le suivant.** Les tests de dépôt y créent des factures liées à des écritures comptables, et le `delete_all_by_company` du montage de `journal_entries::tests` échoue alors sur `fk_invoices_journal_entry` — **34 tests tombent d'un coup**, en 7 ms chacun, sur un module que la branche en cours ne touche pas.
+
+Le geste, avant tout gate complet :
+
+```sh
+docker compose -f docker-compose.dev.yml restart mariadb   # le tmpfs efface tout
+sqlx migrate run --source crates/kesh-db/migrations
+docker exec -i kesh-mariadb-dev mariadb -uroot -pkesh_dev_root kesh < scripts/seed-dev-db.sql
+```
+
+Depuis le passage en tmpfs, ce cycle coûte une quinzaine de secondes — c'est ce qui le rend praticable systématiquement, là où il fallait auparavant vider les tables à la main.
+
+Le seed est **idempotent** et se rejoue sans dommage. Il suppose en revanche qu'il possède la base : il cible sa propre société (« CI Seed Company ») par son nom, et **saute la création de l'`admin` si un utilisateur de ce nom existe déjà** ailleurs — `username` porte une contrainte d'unicité globale. Sur une base où vous avez saisi vos propres données, relisez `scripts/seed-dev-db.sql` avant de le lancer.
+
 **3. Les bases éphémères orphelines s'effacent au redémarrage.** Un run interrompu (Ctrl-C, OOM, timeout) laisse derrière lui des `_sqlx_test_database_*` que sqlx n'a pas nettoyées — **et un test ROUGE aussi** : sqlx ne détruit la base que d'un test vert. Sur disque elles s'accumulaient ; en tmpfs, un `docker compose -f docker-compose.dev.yml restart mariadb` les balaie toutes. Pour les compter sans redémarrer :
 
 ```sh

@@ -123,10 +123,14 @@ Le « ~69 min » cité en ouverture est un **ordre de grandeur emprunté** au ga
 
 ```sh
 docker inspect kesh-mariadb-dev --format '{{json .HostConfig.Tmpfs}}'
-#   {"/var/lib/mysql":"size=4g,mode=1777"}
+#   {"/var/lib/mysql":"size=4g"}
 docker exec kesh-mariadb-dev sh -c 'grep " /var/lib/mysql " /proc/mounts'
-#   tmpfs /var/lib/mysql tmpfs rw,nosuid,nodev,noexec,relatime,size=4194304k,inode64 0 0
+#   tmpfs /var/lib/mysql tmpfs rw,nosuid,nodev,noexec,relatime,size=4194304k,mode=755,inode64 0 0
+docker exec kesh-mariadb-dev stat -c '%a %U:%G %n' /var/lib/mysql
+#   755 mysql:mysql /var/lib/mysql
 ```
+
+⚠️ **Ce bloc a menti pendant une passe** : il montrait encore `size=4g,mode=1777` après que la passe 1 de revue eut RETIRÉ ce `mode` (trop permissif — l'entrypoint pose `755 mysql:mysql` tout seul). Le correctif avait été appliqué au compose sans que la preuve écrite ici soit rejouée — la § *Propagation post-patch* prise en défaut sur mon propre artefact, une fois de plus. Relevé en passe 3, indirectement : la lentille cherchait un `mode=1777` manquant, en ayant inversé le sens du correctif.
 
 et la section `docs/testing.md` § *Base de dev jetable* existe.
 
@@ -239,6 +243,26 @@ Cible : le **diff de remédiation** de la passe 1 (1394 lignes, story file exclu
 **Écarté (1)**
 
 - Le « 42,8× » serait un arrondi faux, 42,9× étant attendu. **Réfuté par recalcul depuis les secondes brutes** : 3863,919 / 90,243 = **42,82**. Le 42,9 du finding vient de la multiplication de deux arrondis intermédiaires (3,25 × 13,2) — précisément ce que la § *Recompter ses propres comptes rendus* proscrit.
+
+### Review Findings — `bmad-code-review` passe 3 (2026-08-16, Haiku ×3, diff APLATI)
+
+**Convergence : 0 CRITICAL / 0 HIGH / 0 MEDIUM, 4 LOW — le critère d'arrêt de la § *Review Iteration Rule* est atteint.** 12 findings bruts, 4 retenus après ground-truth, 6 réfutés, 2 hors sujet.
+
+- [x] [Review][Patch] Port vide sur la forme `mysql://u:p@host:/base` — `${hostport#*:}` rend une chaîne vide, différente de l'hôte, donc le repli ne se déclenchait pas [`scripts/regen-test-schema.sh`]
+- [x] [Review][Patch] Les trois valeurs de `_kesh_version` sont réinjectées telles quelles dans un `INSERT` du fichier généré : leur forme est désormais contrôlée. Elles viennent de la base — un chemin que ce script ne maîtrise pas — et une apostrophe rendrait le squash inchargeable pour 1102 tests [`scripts/regen-test-schema.sh`]
+- [x] [Review][Patch] `docs/testing.md` ne disait pas ce que le SQL du seed documente : il suppose posséder la base, cible sa propre société par son nom, et saute la création de l'`admin` si un utilisateur de ce nom existe ailleurs [`docs/testing.md`]
+- [x] [Review][Patch] **Le bloc de preuve d'AC6 affichait encore `mode=1777`** alors que la passe 1 l'avait retiré du compose — la § *Propagation post-patch* prise en défaut sur mon propre artefact, une fois de plus [story file]
+
+**Réfutés au ground-truth (6)** — la discipline du `grep -nF` avant traitement, et elle a servi :
+
+| Affirmation | Réfutation |
+|---|---|
+| **HIGH** « `mode=1777` manque, correctif coché non appliqué » | **Sens INVERSÉ** : le finding de passe 1 dit que `mode=1777` est trop permissif, le correctif était de le RETIRER. Datadir vérifié `755 mysql:mysql` |
+| « mot de passe non guillemeté dans le fichier d'options » | `grep -nF 'password="$DB_PASS"'` → ligne 149 |
+| « `@company_id` peut être NULL » | La garde et le `SELECT` portent sur le même nom (lignes 52 et 54) |
+| « débordement d'index sur l'échappement en fin de ligne » | Instruit et couvert dès la passe 2 : la condition de boucle est revérifiée |
+| **MED** « écart de 2 attributs au recomptage » | 1144 est ce que le Dev Agent Record annonce APRÈS revue ; la lentille comparait au tableau de spec, antérieur à la bascule — sa propre note le reconnaît |
+| plafond de threads / `start_period` | L'un est l'élément ouvert que le fichier documente ; l'autre propose de relever un nombre **sans mesure** |
 
 ## Dev Notes
 
@@ -492,3 +516,40 @@ Diff **ciblé sur le cœur logique** (1487 lignes) sur arbitrage de Guy : les 22
 **Un finding traité par la documentation plutôt que par le code**, et dit comme tel : suivre l'état « dans une chaîne » d'une ligne à l'autre fermerait un angle mort théorique mais désynchroniserait sur les 39 chaînes brutes et littéraux de caractère du workspace. Le compromis et son coût sont écrits dans le doc-comment.
 
 **Trend : passe 1 `0/1/23/36` → passe 2 `0/1/8/6`.** Le HIGH de la passe 2 ne porte pas sur le code de la story mais sur un correctif de la passe 1 : la sévérité ne stagne pas, elle se déplace vers ce qui vient d'être écrit — comportement attendu d'une boucle qui travaille. **Une passe 3 s'impose** (§ Review Iteration Rule) — rotation : Haiku, avec le diff aplati que le `CLAUDE.md` recommande à partir de la passe 2.
+
+**2026-08-16 — `bmad-code-review`, PASSE 3 (Haiku ×3, contextes frais, DIFF APLATI `HEAD` vs `main`).**
+
+Diff aplati et non suite de commits, conformément au § *Haiku-specific guardrails* du `CLAUDE.md` : quatre commits se repassent sur les mêmes fonctions, ce qui est le cas pathologique connu de l'indexation Haiku. Les trois prompts portaient en outre l'interdiction d'affirmer une absence sans citation.
+
+| Lentille | brut | retenu après ground-truth |
+|---|---|---|
+| Blind Hunter | 0 bug + 3 points mineurs | **1 LOW** (les 2 autres sont les éléments déjà reportés) |
+| Edge Case Hunter | 7 | **2 LOW** (5 écartés) |
+| Acceptance Auditor | 1 HIGH + 1 MED | **1 LOW** (les 2 écartés — mais le HIGH a fait trouver le LOW) |
+| **total** | **12** | **0 CRIT / 0 HIGH / 0 MED / 4 LOW** |
+
+**Le critère d'arrêt de la § Review Iteration Rule est atteint : plus rien au-dessus de LOW.**
+
+**Six findings écartés au ground-truth, et la discipline a payé** :
+- « le mot de passe n'est pas guillemeté dans le fichier d'options » → `grep -nF 'password="$DB_PASS"'` rend la ligne 149. Réfuté ;
+- « `@company_id` peut être NULL » → la garde et le `SELECT` portent sur le même nom (lignes 52 et 54). Jamais NULL. Réfuté ;
+- « l'échappement en fin de ligne peut faire déborder l'index » → instruit et trouvé couvert dès la passe 2 (la condition de boucle est revérifiée). Réfuté ;
+- **« HIGH : le `mode=1777` manque au tmpfs, correctif coché non appliqué »** → **le sens du correctif est INVERSÉ**. Le finding coché (passe 1, ligne 186) dit que `mode=1777` est trop permissif : le correctif était de le RETIRER, et le datadir est bien en `755 mysql:mysql`. Réfuté ;
+- « écart de 2 attributs dans le recomptage » → 1144 est exactement ce que le Dev Agent Record annonce après revue ; la lentille comparait au tableau de la spec, daté d'avant la bascule. Réfuté par sa propre note ;
+- plafond de threads et `start_period` → l'un est l'élément ouvert que le fichier documente lui-même, l'autre une proposition de relever un nombre **sans mesure**, ce que ce même fichier proscrit.
+
+**Quatre LOW retenus, tous corrigés** : port vide sur la forme `…@host:/base` · les trois valeurs de `_kesh_version` contrôlées de forme avant d'être réinjectées dans un `INSERT` généré (elles viennent de la base, une apostrophe rendrait le squash inchargeable pour 1102 tests) · `docs/testing.md` dit désormais ce que seul le SQL disait (le seed suppose posséder la base et saute l'`admin` s'il existe ailleurs) · **et le bloc de preuve d'AC6, qui affichait encore `mode=1777` après que la passe 1 l'eut retiré du compose.**
+
+⚠️ **Ce dernier point mérite d'être retenu.** C'est la § *Propagation post-patch* prise en défaut sur mon propre artefact : j'avais corrigé le compose sans rejouer la preuve écrite dans le story file. Il a été trouvé **par accident**, par une lentille qui cherchait l'inverse — le genre de trouvaille qu'aucune méthode ne garantit, et qui rappelle pourquoi on fait tourner des lentilles orthogonales plutôt qu'une relecture de plus.
+
+**⚠️ LE GATE DE CETTE PASSE EST D'ABORD TOMBÉ ROUGE — 34 échecs sur 2210 — et il faut le dire.**
+
+Aucun des quatre correctifs de la passe 3 ne touche du code de test : le rouge venait d'ailleurs. Les 34 échecs sont tous dans `kesh-db repositories::journal_entries::tests::*`, tombent en **7 ms** chacun (donc au montage, pas sur leur assertion), et le panic est net : `delete_all_by_company` échoue sur `ForeignKeyViolation … fk_invoices_journal_entry`. La base partagée `kesh` portait **10 factures dont 2 liées à des écritures**, laissées par le gate précédent.
+
+Le premier test en échec est `test_check_constraint_rejects_debit_and_credit_same_line` — **nommément celui que le `CLAUDE.md` cite** comme symptôme d'une base de gate piégée (précédent 16-3a). La règle a fait gagner le diagnostic.
+
+**Mais la règle, telle qu'écrite, ne couvre pas ce cas.** Elle vise le gate « tué en vol » ; ici le gate précédent s'est terminé **normalement, en vert**, et a quand même laissé la base inutilisable pour le suivant. Les trois gates verts de ce cycle avaient tous suivi un redémarrage de conteneur, pour des raisons sans rapport (éprouver le `mode`, éprouver le GRANT) — celui-ci est le premier lancé sur une base déjà servie. La condition est **préexistante et latente**, pas introduite par cette story.
+
+Après remise à zéro (restart du conteneur, migrations, seed — une quinzaine de secondes depuis le tmpfs) : **2210/2210, 0 flake, 91,3 s**. Le geste est désormais documenté dans `docs/testing.md`, avec l'argument que le tmpfs rend nouveau : la remise à zéro est assez bon marché pour être faite **avant chaque gate**, et non seulement après un incident.
+
+**Bilan du cycle de revue** : `0/1/23/36` → `0/1/8/6` → `0/0/0/4`. Modèles : Opus ×3 → Sonnet ×3 → Haiku ×3. Les trois passes n'ont trouvé **aucun défaut dans le comportement livré** — le squash, la bascule et les mesures n'ont pas bougé depuis le commit de dev. Tout ce qu'elles ont corrigé tient dans deux familles : **le garde-fou pouvait se taire** (passe 1), et **mes propres correctifs rouvraient leur défaut ou n'étaient appliqués qu'à moitié** (passe 2). La passe 3, elle, ne trouve plus que des résidus de comptes rendus — la signature d'une convergence.
