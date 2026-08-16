@@ -358,6 +358,10 @@ Mutation jouée le 2026-08-16 : un attribut de `crates/kesh-api/tests/accounts_e
 
 La base de dev de Guy et les bases de gate ont été détruites comme prévu ; `steadyinvest_test`, base d'un autre projet présente dans le même volume, a été signalée avant destruction et sacrifiée sur son arbitrage explicite.
 
+**La CI, mesurée pour la première fois après la bascule** (PR #311, 2026-08-16) : le job « Backend (Rust) » complet — build, clippy et `cargo test --workspace -j1 --test-threads=1` en série — a pris **19 min 14 s**, là où il **dépassait 30 minutes et se faisait annuler à 30 min 17** avant le squash. Les deux autres jobs : Frontend 2 min 0 s, Docker build 7 min 37 s.
+
+C'est la première mesure sur des runners à 4 cœurs, sans tmpfs — le gain y est donc celui du squash seul, et il porte. ⚠️ **La marge `timeout-minutes: 120` n'a PAS été baissée** : un timeout se dimensionne sur le pire cas et non sur le cas mesuré ; un seul run ne dit rien de la dispersion sur des runners partagés, et un timeout trop juste transforme un ralentissement passager en rouge qu'on apprend à ignorer. Le chiffre est consigné, la décision de le suivre appartient à une mesure ultérieure.
+
 **Suite E2E — jouée le 2026-08-16, avant le push, selon la recette de `docs/testing.md`**
 
 `181 passed, 38 failed, 19 skipped` en 11,9 min. Le backend a démarré sur `:3000` contre `kesh_e2e`, base **créée par le script d'init de T6** et migrée au boot — ce qui exerce en vrai tout le montage de la story : datadir en RAM, droits resserrés, base recréée à chaque démarrage.

@@ -31,9 +31,17 @@ jobs:
     # 64,4 min → 19,8 min, et 1,5 min en ajoutant le tmpfs de dev (hors CI, où
     # `services:` ne permet pas de passer de `command:` à mariadbd).
     #
-    # La marge reste à 120 min : les runners GitHub sont à 4 cœurs et n'ont pas
-    # été re-mesurés depuis la bascule. La baisser demande une mesure, pas une
-    # extrapolation depuis le poste de dev.
+    # Première mesure sur runner GitHub après la bascule (PR #311, 2026-08-16) :
+    # le job « Backend (Rust) » complet — build + clippy + `cargo test` en série
+    # — a pris **19 min 14 s**, là où il dépassait 30 min et se faisait annuler
+    # à 30 min 17 avant le squash.
+    #
+    # ⚠️ LA MARGE RESTE À 120 MIN, ET C'EST DÉLIBÉRÉ. Un timeout se dimensionne
+    # sur le pire cas, pas sur le cas mesuré : un seul run ne dit rien de la
+    # dispersion, les runners GitHub sont partagés, et un timeout trop juste
+    # transforme un ralentissement passager en échec de CI — c'est-à-dire en
+    # rouge qu'on apprend à ignorer. La baisser demande plusieurs runs, pas
+    # celui-ci.
     timeout-minutes: 120
     services:
       mariadb:
