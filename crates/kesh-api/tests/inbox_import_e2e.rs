@@ -380,7 +380,7 @@ async fn supplier_invoice_count(pool: &MySqlPool, company_id: i64) -> i64 {
 // A. Import inbox
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn import_creates_staging_and_archives(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
@@ -415,7 +415,7 @@ async fn import_creates_staging_and_archives(pool: MySqlPool) {
     assert!(app.documents.join(&items[0].storage_path).exists());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn import_rejects_unsupported_type_and_no_qr(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
@@ -467,7 +467,7 @@ async fn import_rejects_unsupported_type_and_no_qr(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn import_symlink_rejected(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
@@ -493,7 +493,7 @@ async fn import_symlink_rejected(pool: MySqlPool) {
     assert!(target.exists());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn import_duplicate_scoped_and_reactivates_discarded(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
@@ -556,7 +556,7 @@ async fn import_duplicate_scoped_and_reactivates_discarded(pool: MySqlPool) {
     assert_eq!(staging_status(&pool, staging_id).await, "to_complete");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn import_file_too_large_and_directory_ignored(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     // Cap minuscule (10 octets) → tout PNG dépasse.
@@ -586,7 +586,7 @@ async fn import_file_too_large_and_directory_ignored(pool: MySqlPool) {
     assert_eq!(failed[0]["fileName"], "big.png");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn import_field_too_long_returns_failed_not_500(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
@@ -614,7 +614,7 @@ async fn import_field_too_long_returns_failed_not_500(pool: MySqlPool) {
     assert_eq!(body["failed"][0]["errorCode"], "FIELD_TOO_LONG");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn import_already_running_returns_409(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
@@ -677,7 +677,7 @@ fn complete_body(
     })
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn complete_creates_invoice_and_marks_completed(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
@@ -724,7 +724,7 @@ async fn complete_creates_invoice_and_marks_completed(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn complete_closed_fiscal_year_keeps_to_complete(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
@@ -770,7 +770,7 @@ async fn complete_closed_fiscal_year_keeps_to_complete(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn complete_amount_mismatch_and_sub_centime_blocked(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
@@ -838,7 +838,7 @@ async fn complete_amount_mismatch_and_sub_centime_blocked(pool: MySqlPool) {
     assert_eq!(b2["error"]["code"], "AMOUNT_MISMATCH");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn complete_currency_eur_rejected(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
@@ -877,7 +877,7 @@ async fn complete_currency_eur_rejected(pool: MySqlPool) {
     assert_eq!(staging_status(&pool, staging_id).await, "to_complete");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn complete_iban_reference_consistency(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
@@ -949,7 +949,7 @@ async fn complete_iban_reference_consistency(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn complete_not_pending_returns_409(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
@@ -1015,7 +1015,7 @@ async fn complete_not_pending_returns_409(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn discard_marks_discarded(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
@@ -1049,7 +1049,7 @@ async fn discard_marks_discarded(pool: MySqlPool) {
 // C. Liste (validation status D1) + download
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn list_validates_status_d1(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
@@ -1099,7 +1099,7 @@ async fn list_validates_status_d1(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn download_source_document_404_410_and_idor(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;

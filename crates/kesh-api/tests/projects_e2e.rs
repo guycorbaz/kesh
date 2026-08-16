@@ -144,7 +144,7 @@ async fn create_company(pool: &MySqlPool, name: &str) -> i64 {
     res.last_insert_id() as i64
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn crud_tree_2_levels_and_hierarchy_guard(pool: MySqlPool) {
     seed_accounting_company(&pool).await.expect("seed");
     let app = spawn_app(pool).await;
@@ -201,7 +201,7 @@ async fn crud_tree_2_levels_and_hierarchy_guard(pool: MySqlPool) {
     assert_eq!(arr[1]["id"], sub_id);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn duplicate_code_is_rejected(pool: MySqlPool) {
     seed_accounting_company(&pool).await.expect("seed");
     let app = spawn_app(pool).await;
@@ -214,7 +214,7 @@ async fn duplicate_code_is_rejected(pool: MySqlPool) {
     assert_eq!(r2.status(), 409);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn update_uses_optimistic_lock(pool: MySqlPool) {
     seed_accounting_company(&pool).await.expect("seed");
     let app = spawn_app(pool).await;
@@ -252,7 +252,7 @@ async fn update_uses_optimistic_lock(pool: MySqlPool) {
     assert_eq!(stale.status(), 409);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn archive_hides_from_default_list(pool: MySqlPool) {
     seed_accounting_company(&pool).await.expect("seed");
     let app = spawn_app(pool).await;
@@ -308,7 +308,7 @@ async fn archive_hides_from_default_list(pool: MySqlPool) {
     assert_eq!(list_all[0]["archived"], true);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn requires_authentication(pool: MySqlPool) {
     seed_accounting_company(&pool).await.expect("seed");
     let app = spawn_app(pool).await;
@@ -325,7 +325,7 @@ async fn requires_authentication(pool: MySqlPool) {
     assert_eq!(resp.status(), 401);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn mutation_requires_comptable_role(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.expect("seed");
     // Un user Consultation dans la même company.
@@ -348,7 +348,7 @@ async fn mutation_requires_comptable_role(pool: MySqlPool) {
     assert_eq!(create.status(), 403);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn cross_company_project_is_not_found(pool: MySqlPool) {
     // Company A (seed) crée un projet ; company B ne doit pas y accéder (IDOR).
     seed_accounting_company(&pool).await.expect("seed");
@@ -402,7 +402,7 @@ async fn cross_company_project_is_not_found(pool: MySqlPool) {
     assert_eq!(list_b.as_array().unwrap().len(), 0);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn too_long_code_returns_400_not_500(pool: MySqlPool) {
     seed_accounting_company(&pool).await.expect("seed");
     let app = spawn_app(pool).await;
@@ -413,7 +413,7 @@ async fn too_long_code_returns_400_not_500(pool: MySqlPool) {
     assert_eq!(resp.status(), 400, "attendu 400, eu {}", resp.status());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn cannot_archive_root_with_active_children(pool: MySqlPool) {
     seed_accounting_company(&pool).await.expect("seed");
     let app = spawn_app(pool).await;
@@ -444,7 +444,7 @@ async fn cannot_archive_root_with_active_children(pool: MySqlPool) {
     assert_eq!(arch.status(), 400);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn cannot_parent_under_archived_root(pool: MySqlPool) {
     seed_accounting_company(&pool).await.expect("seed");
     let app = spawn_app(pool).await;
@@ -478,7 +478,7 @@ async fn cannot_parent_under_archived_root(pool: MySqlPool) {
     assert_eq!(sub.status(), 400);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn rejects_start_date_after_end_date(pool: MySqlPool) {
     seed_accounting_company(&pool).await.expect("seed");
     let app = spawn_app(pool).await;
@@ -493,7 +493,7 @@ async fn rejects_start_date_after_end_date(pool: MySqlPool) {
     assert_eq!(resp.status(), 400);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn cannot_unarchive_sub_under_archived_parent(pool: MySqlPool) {
     seed_accounting_company(&pool).await.expect("seed");
     let app = spawn_app(pool).await;

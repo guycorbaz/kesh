@@ -132,7 +132,7 @@ async fn account_balance(pool: &MySqlPool, company_id: i64, account_id: i64) -> 
     .unwrap()
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_posts_purchase_entry_open(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let created = supplier_invoices::create(
@@ -157,7 +157,7 @@ async fn create_posts_purchase_entry_open(pool: MySqlPool) {
     assert_eq!(payable, dec!(-1081.00)); // crédité.
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn pay_internal_account_settles_payable_to_zero(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let created = supplier_invoices::create(
@@ -196,7 +196,7 @@ async fn pay_internal_account_settles_payable_to_zero(pool: MySqlPool) {
     assert_eq!(cash, dec!(-1081.00));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn pay_bank_transfer_uses_journal_account(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     // Compte bancaire lié au compte grand livre 1100.
@@ -254,7 +254,7 @@ async fn pay_bank_transfer_uses_journal_account(pool: MySqlPool) {
     assert_eq!(bank_bal, dec!(-500.00));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn cancel_reverses_purchase_entry(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let created = supplier_invoices::create(
@@ -284,7 +284,7 @@ async fn cancel_reverses_purchase_entry(pool: MySqlPool) {
     assert_eq!(payable, dec!(0.00));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_without_payable_account_fails_config(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     // Retirer le compte créanciers configuré.
@@ -304,7 +304,7 @@ async fn create_without_payable_account_fails_config(pool: MySqlPool) {
     assert!(matches!(err, DbError::ConfigurationRequired(_)));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn pay_cancelled_invoice_rejected(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let created = supplier_invoices::create(
@@ -338,7 +338,7 @@ async fn pay_cancelled_invoice_rejected(pool: MySqlPool) {
     assert!(matches!(err, DbError::IllegalStateTransition(_)));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn cancel_paid_invoice_rejected(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let created = supplier_invoices::create(
@@ -372,7 +372,7 @@ async fn cancel_paid_invoice_rejected(pool: MySqlPool) {
     assert!(matches!(err, DbError::IllegalStateTransition(_)));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_non_supplier_contact_rejected(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     // Contact client (is_supplier=false).
@@ -415,7 +415,7 @@ async fn create_non_supplier_contact_rejected(pool: MySqlPool) {
     assert!(matches!(err, DbError::IllegalStateTransition(_)));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn pay_foreign_internal_account_rejected(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let created = supplier_invoices::create(
@@ -459,7 +459,7 @@ async fn pay_foreign_internal_account_rejected(pool: MySqlPool) {
     assert!(matches!(err, DbError::InactiveOrInvalidAccounts));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn pay_already_paid_invoice_rejected(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let created = supplier_invoices::create(
@@ -496,7 +496,7 @@ async fn pay_already_paid_invoice_rejected(pool: MySqlPool) {
     assert!(matches!(err, DbError::IllegalStateTransition(_)));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_with_date_outside_fiscal_year_rejected(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let mut new = one_line(&ctx, dec!(100.00), dec!(0));
@@ -507,7 +507,7 @@ async fn create_with_date_outside_fiscal_year_rejected(pool: MySqlPool) {
     assert!(matches!(err, DbError::FiscalYearInvalid));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn pay_with_date_outside_fiscal_year_rejected(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let created = supplier_invoices::create(
@@ -549,7 +549,7 @@ async fn make_project(pool: &MySqlPool, company_id: i64, code: &str, archived: b
 
 /// Story 19-3 — le projet document-level est propagé sur TOUTES les lignes de
 /// l'écriture d'achat.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_with_project_tags_all_purchase_lines(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let project_id = make_project(&pool, ctx.seeded.company_id, "RENOV", false).await;
@@ -576,7 +576,7 @@ async fn create_with_project_tags_all_purchase_lines(pool: MySqlPool) {
 }
 
 /// Story 19-3 — un projet archivé est refusé (dépense sur projet clos interdite).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_with_archived_project_is_rejected(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let project_id = make_project(&pool, ctx.seeded.company_id, "OLD", true).await;
@@ -594,7 +594,7 @@ async fn create_with_archived_project_is_rejected(pool: MySqlPool) {
 
 /// Story 19-3 — le règlement hérite du projet de la facture (toutes les lignes de
 /// l'écriture de règlement portent project_id).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn pay_with_project_tags_settlement_entry(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let project_id = make_project(&pool, ctx.seeded.company_id, "RENOV", false).await;
@@ -636,7 +636,7 @@ async fn pay_with_project_tags_settlement_entry(pool: MySqlPool) {
 
 /// Story 19-3 — après annulation, le net (Σ débit − Σ crédit) des lignes taguées du
 /// projet est **nul** (la contre-passation reprend le projet).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn cancel_nets_project_to_zero(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let project_id = make_project(&pool, ctx.seeded.company_id, "RENOV", false).await;
@@ -672,7 +672,7 @@ async fn cancel_nets_project_to_zero(pool: MySqlPool) {
 
 /// Story 19-3 — un projet inexistant (ou d'une autre company) est rejeté (scoping
 /// `find_by_id_in_tx(tx, company_id, pid)` → None → NotFound).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_with_unknown_project_is_rejected(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let mut new = one_line(&ctx, dec!(100), dec!(8.1));
@@ -688,7 +688,7 @@ async fn create_with_unknown_project_is_rejected(pool: MySqlPool) {
 
 /// Story 19-3 — payer une facture dont le projet a été archivé APRÈS le tag reste
 /// possible (la garde d'archivage n'est qu'à la création ; le règlement propage le tag).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn pay_succeeds_when_project_archived_after_tagging(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let project_id = make_project(&pool, ctx.seeded.company_id, "RENOV", false).await;

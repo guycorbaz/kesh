@@ -361,7 +361,7 @@ mod tests {
 
     /// Cas 1 (NEW v011-5) — DB vide + pas d'env : ne crée QUE la stub company,
     /// pas d'admin.
-    #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+    #[sqlx::test(migrations = "../kesh-db/test-schema")]
     async fn bootstrap_db_empty_no_env_creates_stub_only(pool: MySqlPool) {
         let config = test_config_no_env();
 
@@ -391,7 +391,7 @@ mod tests {
     }
 
     /// Cas 2 — DB vide + env set : stub + admin (v011-2 préservé).
-    #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+    #[sqlx::test(migrations = "../kesh-db/test-schema")]
     async fn bootstrap_db_empty_with_env_creates_stub_and_admin(pool: MySqlPool) {
         let config = test_config_with_env();
 
@@ -420,7 +420,7 @@ mod tests {
     }
 
     /// Cas 2 bis — bootstrap idempotent on empty DB avec env.
-    #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+    #[sqlx::test(migrations = "../kesh-db/test-schema")]
     async fn bootstrap_idempotent_on_empty_db(pool: MySqlPool) {
         let config = test_config_with_env();
 
@@ -446,7 +446,7 @@ mod tests {
 
     /// Cas 2 ter — partial state : une company existe déjà mais aucun user.
     /// Le bootstrap crée l'admin sur la company existante.
-    #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+    #[sqlx::test(migrations = "../kesh-db/test-schema")]
     async fn bootstrap_creates_admin_on_existing_company(pool: MySqlPool) {
         sqlx::query(
             "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
@@ -488,7 +488,7 @@ mod tests {
     }
 
     /// Cas 3 — users > 0 + pas d'env : no-op.
-    #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+    #[sqlx::test(migrations = "../kesh-db/test-schema")]
     async fn bootstrap_users_exist_no_env_noop(pool: MySqlPool) {
         // Seed : 1 company + 1 user pré-existant.
         sqlx::query(
@@ -534,7 +534,7 @@ mod tests {
 
     /// Cas 4 (NEW v011-5) — recovery hash identique : no-op silencieux.
     /// Le user existe, env set, hash matche → pas de modification DB.
-    #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+    #[sqlx::test(migrations = "../kesh-db/test-schema")]
     async fn bootstrap_recovery_same_hash_noop(pool: MySqlPool) {
         // Seed : 1 company + 1 admin avec un hash CONNU.
         sqlx::query(
@@ -601,7 +601,7 @@ mod tests {
     }
 
     /// Cas 5 (NEW v011-5) — recovery hash diff : UPDATE password + audit_log + revoke tokens.
-    #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+    #[sqlx::test(migrations = "../kesh-db/test-schema")]
     async fn bootstrap_recovery_diff_hash_resets(pool: MySqlPool) {
         // Seed : 1 company + 1 admin avec un hash D'UN AUTRE password.
         sqlx::query(
@@ -718,7 +718,7 @@ mod tests {
     }
 
     /// Cas 6 (NEW v011-5) — env set, no match username : no-op + warn.
-    #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+    #[sqlx::test(migrations = "../kesh-db/test-schema")]
     async fn bootstrap_recovery_no_match_username_warns(pool: MySqlPool) {
         sqlx::query(
             "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
@@ -808,7 +808,7 @@ mod tests {
     /// Pour un test rollback réel : il faudrait soit injecter un trait mockable,
     /// soit casser le schéma audit_log temporairement (TRUNCATE puis ré-INSERT
     /// admin avec un id désaligné). Hors scope v011-5 — limitation documentée.
-    #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+    #[sqlx::test(migrations = "../kesh-db/test-schema")]
     async fn bootstrap_recovery_atomicity_smoke(pool: MySqlPool) {
         sqlx::query(
             "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \

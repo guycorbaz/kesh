@@ -13,15 +13,64 @@ Ce document décrit les deux patterns de tests utilisés dans Kesh (Rust intégr
 
 La Story 6.4 a unifié deux patterns disparates (bypass SQL ad-hoc en Rust, absence totale de reset DB en Playwright) en une seule couche de fixtures partagée par les deux.
 
+## Base de dev jetable — MariaDB en RAM
+
+Depuis la Story 22-5 (issue #251), `docker-compose.dev.yml` monte `/var/lib/mysql` en **tmpfs de 4 Go** et relâche la durabilité (`--innodb_flush_log_at_trx_commit=0 --sync_binlog=0 --innodb-doublewrite=0`). Les bases éphémères de `#[sqlx::test]` ne touchent donc plus le disque.
+
+⚠️ **Rien ne survit au redémarrage du conteneur** — ni la base `kesh`, ni `kesh_e2e`, ni les tables système. C'est délibéré, et cela a trois conséquences qu'il vaut mieux connaître avant de les découvrir :
+
+**1. Les droits et `kesh_e2e` se rejouent tout seuls.** `scripts/mariadb-init/01-dev-grants.sql` est monté dans `/docker-entrypoint-initdb.d/`, que l'entrypoint MariaDB exécute dès que le datadir est vide — donc à chaque démarrage ici. Il rend à l'utilisateur `kesh` les droits globaux dont `#[sqlx::test]` a besoin pour créer ses bases éphémères, et recrée `kesh_e2e`. Sans ce fichier, **toute** la suite d'intégration échouerait au premier `CREATE DATABASE`.
+
+**2. Le seed de la base partagée, lui, se rejoue à la main.** Les 154 tests `kesh-db::repositories::*` travaillent sur la base `kesh` et attendent 1 société, 1 admin, 1 exercice ouvert et ≥ 2 comptes. Après un redémarrage :
+
+```sh
+export DATABASE_URL='mysql://kesh:kesh_dev@127.0.0.1:3306/kesh'
+sqlx migrate run --source crates/kesh-db/migrations
+docker exec -i kesh-mariadb-dev mariadb -uroot -pkesh_dev_root kesh < scripts/seed-dev-db.sql
+```
+
+Passer par `sqlx migrate run` et non par une boucle de `mariadb <` sur les fichiers : c'est ce qui remplit `_sqlx_migrations`, sans quoi un `cargo run -p kesh-api` sur cette base tenterait de tout ré-appliquer et refuserait de démarrer.
+
+**L'oubli du seed est bruyant, pas silencieux** : les tests concernés s'ouvrent sur `expect("need at least one company in DB for tests")`. Aucun faux vert possible — c'est ce qui rend la procédure manuelle acceptable.
+
+⚠️ **La base partagée doit être remise à zéro avant CHAQUE gate complet, pas seulement après un gate interrompu** — c'est la **KF-039 ([#310](https://github.com/guycorbaz/kesh/issues/310))**, et le `CLAUDE.md` § *« Un gate laisse la base piégée »* en porte la règle. Le cas du run tué en vol y était déjà décrit ; il en existe un second, plus discret : **un run qui se termine normalement laisse lui aussi la base inutilisable pour le suivant.** Les tests de dépôt y créent des factures liées à des écritures comptables, et le `delete_all_by_company` du montage de `journal_entries::tests` échoue alors sur `fk_invoices_journal_entry` — **34 tests tombent d'un coup**, en 7 ms chacun, sur un module que la branche en cours ne touche pas.
+
+Le geste, avant tout gate complet :
+
+```sh
+docker compose -f docker-compose.dev.yml restart mariadb   # le tmpfs efface tout
+sqlx migrate run --source crates/kesh-db/migrations
+docker exec -i kesh-mariadb-dev mariadb -uroot -pkesh_dev_root kesh < scripts/seed-dev-db.sql
+```
+
+Depuis le passage en tmpfs, ce cycle coûte une quinzaine de secondes — c'est ce qui le rend praticable systématiquement, là où il fallait auparavant vider les tables à la main.
+
+Le seed est **idempotent** et se rejoue sans dommage. Il suppose en revanche qu'il possède la base : il cible sa propre société (« CI Seed Company ») par son nom, et **saute la création de l'`admin` si un utilisateur de ce nom existe déjà** ailleurs — `username` porte une contrainte d'unicité globale. Sur une base où vous avez saisi vos propres données, relisez `scripts/seed-dev-db.sql` avant de le lancer.
+
+**3. Les bases éphémères orphelines s'effacent au redémarrage.** Un run interrompu (Ctrl-C, OOM, timeout) laisse derrière lui des `_sqlx_test_database_*` que sqlx n'a pas nettoyées — **et un test ROUGE aussi** : sqlx ne détruit la base que d'un test vert. Sur disque elles s'accumulaient ; en tmpfs, un `docker compose -f docker-compose.dev.yml restart mariadb` les balaie toutes. Pour les compter sans redémarrer :
+
+```sh
+docker exec kesh-mariadb-dev mariadb -uroot -pkesh_dev_root \
+  -e "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name LIKE '\_sqlx\_test%';"
+```
+
+C'est aussi le geste qui répond à la § *« Un gate laisse la base piégée — et pas seulement quand il est interrompu »* du `CLAUDE.md` : redémarrer le conteneur remet la base de gate à zéro, il ne reste qu'à rejouer migrations et seed.
+
+**4. Un run massivement rouge peut SATURER le tmpfs.** À ~17 Mo la base éphémère et ~3,3 Go libres, il en tient environ **190**. Un squash cassé fait échouer les 1102 tests basculés d'un coup : passé la 190ᵉ base non détruite, MariaDB rend `table is full` sur toutes les suivantes. **Les premiers échecs portent la cause réelle, ceux d'après ne portent que la saturation** — c'est le début du rapport qu'il faut lire, pas la fin. La reprise est un `restart` du conteneur, puis la procédure du point 2.
+
+**5. Le conteneur `kesh` ne survit pas utilement à un redémarrage de MariaDB.** `depends_on` ne gouverne que le démarrage : après un `restart` de `mariadb`, le service `kesh` — toujours vivant sous `restart: unless-stopped` — pointe sur une base repartie **vide**, et il n'applique ses migrations qu'au boot. Chaque requête échoue, et rien ne le rattrape. Redémarrez-le explicitement (`docker compose -f docker-compose.dev.yml restart kesh`) après avoir rejoué migrations et seed. *(En développement quotidien la question ne se pose pas : le backend tourne en `cargo run`, pas dans ce conteneur.)*
+
+**La production n'est pas concernée** : `docker-compose.yml` garde son volume persistant, sa durabilité par défaut, et ne monte pas `scripts/mariadb-init/`. *(`docker-compose.prod.yml`, lui, ne déclare aucun service MariaDB — il pointe une base externe.)*
+
 ## Pattern Rust : `seed_accounting_company`
 
-Chaque test intégration backend démarre d'une DB éphémère (fournie par `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]`) puis seede l'état comptable via le helper :
+Chaque test intégration backend démarre d'une DB éphémère (fournie par `#[sqlx::test(migrations = "../kesh-db/test-schema")]` — le **squash** du schéma, cf. Story 22-5 / issue #251 ; la graphie est `"./test-schema"` depuis `kesh-db` lui-même) puis seede l'état comptable via le helper :
 
 ```rust
 use kesh_db::test_fixtures::seed_accounting_company;
 use kesh_db::repositories::invoices;
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn my_invoice_flow(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.expect("seed");
     // seeded : company_id, fiscal_year_id, admin_user_id, changeme_user_id,

@@ -129,7 +129,7 @@ async fn insert_reminder(
 
 // Seed lazy défaut : grâce 5, niveaux 1/2/3 délais 10/10/10. Niveau 1 dû à échéance+15j.
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn not_yet_overdue_is_absent(pool: MySqlPool) {
     let (company_id, contact_id, fy_id) = setup_company(&pool, "NotDue Co").await;
     // Échéance il y a 5 jours → grâce+délai(1)=15j non atteints.
@@ -143,7 +143,7 @@ async fn not_yet_overdue_is_absent(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn level_one_due_present(pool: MySqlPool) {
     let (company_id, contact_id, fy_id) = setup_company(&pool, "Level1 Co").await;
     let inv = validated_invoice(&pool, company_id, contact_id, fy_id, days_ago(20)).await;
@@ -159,7 +159,7 @@ async fn level_one_due_present(pool: MySqlPool) {
     assert!(c.has_email);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn level_two_due_after_first_reminder(pool: MySqlPool) {
     let (company_id, contact_id, fy_id) = setup_company(&pool, "Level2 Co").await;
     let inv = validated_invoice(&pool, company_id, contact_id, fy_id, days_ago(40)).await;
@@ -174,7 +174,7 @@ async fn level_two_due_after_first_reminder(pool: MySqlPool) {
     assert!(!list[0].terminal);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn paused_and_paid_are_absent(pool: MySqlPool) {
     let (company_id, contact_id, fy_id) = setup_company(&pool, "PausePaid Co").await;
     let paused = validated_invoice(&pool, company_id, contact_id, fy_id, days_ago(30)).await;
@@ -198,7 +198,7 @@ async fn paused_and_paid_are_absent(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn terminal_when_last_level_reached(pool: MySqlPool) {
     let (company_id, contact_id, fy_id) = setup_company(&pool, "Terminal Co").await;
     let inv = validated_invoice(&pool, company_id, contact_id, fy_id, days_ago(60)).await;
@@ -216,7 +216,7 @@ async fn terminal_when_last_level_reached(pool: MySqlPool) {
     assert!(list[0].last_reminder_at.is_some());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn missing_due_date_is_absent(pool: MySqlPool) {
     let (company_id, contact_id, fy_id) = setup_company(&pool, "NoDue Co").await;
     // Facture validée SANS échéance (due_date NULL) → jamais candidate (AC 8/19).
@@ -247,7 +247,7 @@ async fn missing_due_date_is_absent(pool: MySqlPool) {
     assert!(list.is_empty(), "facture sans due_date absente de la liste");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn dunning_disabled_empty_levels_returns_empty(pool: MySqlPool) {
     let (company_id, contact_id, fy_id) = setup_company(&pool, "Disabled Co").await;
     validated_invoice(&pool, company_id, contact_id, fy_id, days_ago(60)).await;

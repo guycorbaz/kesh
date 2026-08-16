@@ -309,7 +309,7 @@ fn extract_possible_keys(plan: &JsonValue) -> Vec<String> {
 /// Vérifie que `ft_contacts_name` est utilisable via FORCE INDEX (le `key`
 /// field dans l'EXPLAIN doit nommer l'index — pas null = pas de fallback
 /// silencieux table scan).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn t7_2_explain_force_index_contacts_name(pool: MySqlPool) {
     let company = create_company(&pool, "Test SA").await;
     let user = create_admin(&pool, company).await;
@@ -331,7 +331,7 @@ async fn t7_2_explain_force_index_contacts_name(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn t7_2_explain_force_index_products_name(pool: MySqlPool) {
     let company = create_company(&pool, "Test SA").await;
     let user = create_admin(&pool, company).await;
@@ -353,7 +353,7 @@ async fn t7_2_explain_force_index_products_name(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn t7_2_explain_force_index_products_description(pool: MySqlPool) {
     let company = create_company(&pool, "Test SA").await;
     let user = create_admin(&pool, company).await;
@@ -375,7 +375,7 @@ async fn t7_2_explain_force_index_products_description(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn t7_2_explain_force_index_journal_entries_description(pool: MySqlPool) {
     let company = create_company(&pool, "Test SA").await;
     let user = create_admin(&pool, company).await;
@@ -402,7 +402,7 @@ async fn t7_2_explain_force_index_journal_entries_description(pool: MySqlPool) {
 // T7.3 — Isolation cross-company (multi-tenant scoping préservé)
 // ===========================================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn t7_3_contacts_search_does_not_leak_cross_company(pool: MySqlPool) {
     let company_a = create_company(&pool, "Company A").await;
     let user_a = create_admin(&pool, company_a).await;
@@ -430,7 +430,7 @@ async fn t7_3_contacts_search_does_not_leak_cross_company(pool: MySqlPool) {
     }
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn t7_3_products_search_does_not_leak_cross_company(pool: MySqlPool) {
     let company_a = create_company(&pool, "Company A").await;
     let user_a = create_admin(&pool, company_a).await;
@@ -464,7 +464,7 @@ async fn t7_3_products_search_does_not_leak_cross_company(pool: MySqlPool) {
 /// correctement même quand le contact name match côté FULLTEXT dans
 /// l'autre company. Sans ce test, une régression qui retirerait le
 /// filtre `i.company_id` ne serait pas détectée.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn t7_3_invoices_search_does_not_leak_cross_company(pool: MySqlPool) {
     let company_a = create_company(&pool, "Company A").await;
     let user_a = create_admin(&pool, company_a).await;
@@ -603,7 +603,7 @@ async fn t7_3_invoices_search_does_not_leak_cross_company(pool: MySqlPool) {
     }
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn t7_3_journal_entries_search_does_not_leak_cross_company(pool: MySqlPool) {
     let company_a = create_company(&pool, "Company A").await;
     let user_a = create_admin(&pool, company_a).await;
@@ -659,7 +659,7 @@ async fn t7_3_journal_entries_search_does_not_leak_cross_company(pool: MySqlPool
 /// Ce test loggue le plan EXPLAIN pour archive (utile en review code
 /// pour confirmer l'observation) mais ne FAIL PAS sur le scenario
 /// optimizer choisi — il sert de tracker descriptif.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn t7_4a_explain_hybrid_match_or_like_contacts(pool: MySqlPool) {
     let company = create_company(&pool, "Test SA").await;
     let user = create_admin(&pool, company).await;

@@ -500,7 +500,7 @@ async fn setup_company(pool: &MySqlPool, label: &str, iban: &str, role: Role) ->
 
 /// AC #44 — GET proposals retourne les candidates avec scores. 3 tx
 /// pending dont 2 ont des invoices candidates et 1 sans.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn get_proposals_returns_candidates_with_scores(pool: MySqlPool) {
     let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
@@ -620,7 +620,7 @@ async fn get_proposals_returns_candidates_with_scores(pool: MySqlPool) {
 /// dans `invoiceAmount`. Facture HT 100 @ 8.1 % (TTC 108.10) : un encaissement
 /// de 108.10 la propose comme candidate, avec `invoiceAmount = 108.1` (TTC,
 /// pas le HT 100). Un encaissement de 100.00 (HT) ne la propose pas.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn get_proposals_matches_and_shows_ttc(pool: MySqlPool) {
     let ctx = setup_company(&pool, "TTC Acme", "CH4431999123000889012", Role::Comptable).await;
     let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
@@ -730,7 +730,7 @@ async fn get_proposals_matches_and_shows_ttc(pool: MySqlPool) {
 
 /// AC #45 — multi-tenant : tx du company_B sur le même IBAN qu'un compte
 /// du company_A n'apparait pas pour user company_A.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn get_proposals_scopes_by_company(pool: MySqlPool) {
     let iban = "CH4431999123000889012";
     let ctx_a = setup_company(&pool, "CompanyA", iban, Role::Comptable).await;
@@ -780,7 +780,7 @@ async fn get_proposals_scopes_by_company(pool: MySqlPool) {
 }
 
 /// AC #47 — tx avec auto_match_rejected_at != NULL est exclue.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn get_proposals_excludes_rejected_transactions(pool: MySqlPool) {
     let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
@@ -854,7 +854,7 @@ async fn get_proposals_excludes_rejected_transactions(pool: MySqlPool) {
 // ============================================================
 
 /// AC #48 — POST accept happy path : reconcile + audit.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_accept_reconciles_transaction_and_invoice(pool: MySqlPool) {
     let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
@@ -946,7 +946,7 @@ async fn post_accept_reconciles_transaction_and_invoice(pool: MySqlPool) {
 
 /// AC #49 — partial success : 3 proposals dont 1 a un état caduc
 /// (déjà reconciled). Les 2 OK passent, le 3e tombe en `failed`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_accept_handles_partial_failure(pool: MySqlPool) {
     let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
@@ -1087,7 +1087,7 @@ async fn post_accept_handles_partial_failure(pool: MySqlPool) {
 
 /// AC #50 — invoice draft → failed avec reason invoice_not_validated.
 /// Symétrique pour invoice déjà payée → invoice_already_paid.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_accept_rejects_unvalidated_or_paid_invoice(pool: MySqlPool) {
     let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
@@ -1200,7 +1200,7 @@ async fn post_accept_rejects_unvalidated_or_paid_invoice(pool: MySqlPool) {
 
 /// AC #51 — pas de leak cross-tenant : invoice du company_B masquée
 /// comme INVOICE_NOT_FOUND quand user company_A POST accept.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_accept_does_not_leak_cross_tenant_invoice(pool: MySqlPool) {
     let ctx_a = setup_company(&pool, "CompanyA", "CH4431999123000889012", Role::Comptable).await;
     let ctx_b = setup_company(&pool, "CompanyB", "CH5604835012345678009", Role::Comptable).await;
@@ -1263,7 +1263,7 @@ async fn post_accept_does_not_leak_cross_tenant_invoice(pool: MySqlPool) {
 
 /// AC #52 — 2 POST accept concurrents sur même `(company, account)` →
 /// le 2e timeout sur GET_LOCK et retourne 409 RECONCILIATION_ACCOUNT_LOCKED.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_accept_returns_409_on_account_lock_contention(pool: MySqlPool) {
     let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
@@ -1376,7 +1376,7 @@ async fn post_accept_returns_409_on_account_lock_contention(pool: MySqlPool) {
 // ============================================================
 
 /// AC #53 — POST reject happy : 2 transactions marquées + 1 audit log.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_reject_marks_transactions_as_manually_reviewed(pool: MySqlPool) {
     let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
@@ -1462,7 +1462,7 @@ async fn post_reject_marks_transactions_as_manually_reviewed(pool: MySqlPool) {
 
 /// AC #54 — POST reject sur tx déjà reconciled → failed +
 /// auto_match_rejected_at intact.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_reject_skips_reconciled_transactions(pool: MySqlPool) {
     let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
@@ -1531,7 +1531,7 @@ async fn post_reject_skips_reconciled_transactions(pool: MySqlPool) {
 // ============================================================
 
 /// AC #60 — `Consultation` rôle est rejeté 403 sur les 3 routes.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reconciliation_routes_require_comptable_role(pool: MySqlPool) {
     let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Consultation).await;
     let app = spawn_app(pool).await;
@@ -1587,7 +1587,7 @@ async fn reconciliation_routes_require_comptable_role(pool: MySqlPool) {
 /// AC #64 — accept+reject race : flow A accepte tx pending puis flow B
 /// POST reject sur la même tx → batch-level 400 (la tx reconciled n'est
 /// plus dans `find_pending_by_ids`). auto_match_rejected_at reste NULL.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_reject_after_accept_returns_already_reconciled_failed(pool: MySqlPool) {
     let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
@@ -1668,7 +1668,7 @@ async fn post_reject_after_accept_returns_already_reconciled_failed(pool: MySqlP
 }
 
 /// AC #65 — pagination : 150 tx pending → 100 retournées + hasMore=true.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn get_proposals_paginates_at_100_default(pool: MySqlPool) {
     let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
@@ -1730,7 +1730,7 @@ async fn get_proposals_paginates_at_100_default(pool: MySqlPool) {
 /// filtre pas par sign et la tx débit traverse jusqu'à `accept_one` qui
 /// score 0.0 → step 7bis P3-H4 min-score guard. Le brief autorise
 /// d'ajuster l'attendu selon le comportement réel.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_accept_filters_signed_amount(pool: MySqlPool) {
     let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
@@ -1795,7 +1795,7 @@ async fn post_accept_filters_signed_amount(pool: MySqlPool) {
 
 /// AC #67 — currency mismatch (v0.1 mono-CHF, see L38 / Story 11).
 #[ignore = "v0.1 mono-CHF, see spec L38 / Story 11 dependency"]
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_accept_filters_currency_mismatch(_pool: MySqlPool) {
     // Body placeholder — à un-`#[ignore]` post Story 11 multi-currency.
     // Le filtre currency au repo `find_unpaid_invoices_for_window` a été
@@ -1806,7 +1806,7 @@ async fn post_accept_filters_currency_mismatch(_pool: MySqlPool) {
 
 /// AC #68 — cross-tenant bank_account → 404 AVANT acquisition lock.
 /// Vérifier timing < 1s pour confirmer l'absence de lock (lock = 5s).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_accept_returns_404_on_cross_tenant_bank_account(pool: MySqlPool) {
     let ctx_a = setup_company(&pool, "CompanyA", "CH4431999123000889012", Role::Comptable).await;
     let ctx_b = setup_company(&pool, "CompanyB", "CH5604835012345678009", Role::Comptable).await;
@@ -1841,7 +1841,7 @@ async fn post_accept_returns_404_on_cross_tenant_bank_account(pool: MySqlPool) {
 
 /// AC #69 — cross-account proposal : bankAccountId=17 mais tx.bank_account_id=18
 /// → 400 Validation AVANT lock acquisition.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_accept_returns_400_on_cross_account_proposal(pool: MySqlPool) {
     let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     // 2e bank_account de la même company.
@@ -1902,7 +1902,7 @@ async fn post_accept_returns_400_on_cross_account_proposal(pool: MySqlPool) {
 
 /// AC #70 — paid_at < invoice.date → failed avec reason
 /// payment_date_before_invoice_date.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_accept_rejects_payment_date_before_invoice_date(pool: MySqlPool) {
     let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     // Tx au 2026-04-15 (avant date invoice 2026-05-01).
@@ -1967,7 +1967,7 @@ async fn post_accept_rejects_payment_date_before_invoice_date(pool: MySqlPool) {
 
 /// AC #71 — dual audit : reconciliation.accepted + invoice.paid avec
 /// shape lightweight + reconciliation_audit_id link bidirectionnel.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_accept_emits_dual_audit_invoice_paid(pool: MySqlPool) {
     let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
@@ -2078,7 +2078,7 @@ async fn post_accept_emits_dual_audit_invoice_paid(pool: MySqlPool) {
 /// pour empêcher une régression future qui changerait silencieusement
 /// la sémantique. Le jour où le guard symétrique POST sera ajouté, ce
 /// test devra être inversé pour vérifier `failed[]` non-vide.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_accept_skips_non_chf_transaction(pool: MySqlPool) {
     let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
@@ -2160,7 +2160,7 @@ async fn post_accept_skips_non_chf_transaction(pool: MySqlPool) {
 /// AC #73 — P3-H4 min-score guard : POST accept avec couple (tx, invoice)
 /// qui scorerait 0.0 (amount mismatch + no reference + no contact match)
 /// → RECONCILIATION_SCORE_TOO_LOW.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_accept_rejects_zero_score_match(pool: MySqlPool) {
     let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
@@ -2226,7 +2226,7 @@ async fn post_accept_rejects_zero_score_match(pool: MySqlPool) {
 
 /// AC #74 — P3-M2 upper bound : tx 2026-12-01 + invoice 2026-05-01
 /// (>30 jours d'écart) → failed avec reason payment_date_outside_window.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_accept_rejects_payment_date_outside_window(pool: MySqlPool) {
     let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     // Tx tardive bien après l'invoice.
@@ -2296,7 +2296,7 @@ async fn post_accept_rejects_payment_date_outside_window(pool: MySqlPool) {
 
 /// AC #100 part 1 — body proposal sans champ `type` → 400 Validation
 /// (custom extractor `AcceptBodyExtractor`, F9 Pass 1).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn accept_rejects_proposal_missing_type_discriminator(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup_company(
@@ -2328,7 +2328,7 @@ async fn accept_rejects_proposal_missing_type_discriminator(pool: MySqlPool) {
 
 /// AC #100 part 2 — body avec `type: "invoice"` explicite exécute le flow
 /// 8-4 standard (audit log `reconciliation.accepted` + `invoice.paid`).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn accept_with_explicit_invoice_type_runs_8_4_flow(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup_company(
@@ -2401,7 +2401,7 @@ async fn accept_with_explicit_invoice_type_runs_8_4_flow(pool: MySqlPool) {
 /// avec `type: "split"` (batch path qui exerce `accept_one_split`).
 /// Vérifie : 200 OK + audit `reconciliation.split_applied` snake_case +
 /// audit `journal_entry.created` + `bank_transactions.status='reconciled'`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn accept_with_explicit_split_type_runs_split_flow(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_id = create_company(&pool, "accept_split_co").await;

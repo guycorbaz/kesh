@@ -220,7 +220,7 @@ async fn create_seeded_company(
 // IDOR TESTS — HTTP 404 for cross-company access
 // =========================================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn idor_contacts_cross_company_returns_404(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
 
@@ -302,7 +302,7 @@ async fn idor_contacts_cross_company_returns_404(pool: MySqlPool) {
     assert_eq!(own_access.status(), 200, "User A can access own contact");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn idor_journal_entries_cross_company_returns_404(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
 
@@ -388,7 +388,7 @@ async fn idor_journal_entries_cross_company_returns_404(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn idor_products_cross_company_returns_404(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
 
@@ -452,7 +452,7 @@ async fn idor_products_cross_company_returns_404(pool: MySqlPool) {
     assert_eq!(own_access.status(), 200, "User A can access own product");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn idor_accounts_cross_company_returns_404(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
 
@@ -502,7 +502,7 @@ async fn idor_accounts_cross_company_returns_404(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn idor_invoices_cross_company_returns_404(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
 
@@ -565,7 +565,7 @@ async fn idor_invoices_cross_company_returns_404(pool: MySqlPool) {
     }
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn idor_users_cross_company_returns_404(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
 
@@ -595,7 +595,7 @@ async fn idor_users_cross_company_returns_404(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn idor_companies_current_returns_own_company_only(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
 
@@ -650,7 +650,7 @@ async fn idor_companies_current_returns_own_company_only(pool: MySqlPool) {
 /// niveau repo (`update_vat_account_foreign_id_rejected_by_fk`) : un compte d'une
 /// autre company existe bien dans `accounts` (la FK passe) mais doit être refusé
 /// par le check `account.company_id != company_id` du handler route.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn idor_invoice_settings_vat_account_cross_company_rejected(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
 
@@ -748,7 +748,7 @@ async fn idor_invoice_settings_vat_account_cross_company_rejected(pool: MySqlPoo
 /// (cas du formulaire frontend actuel) doit renvoyer **200** (pas 422) et **préserver**
 /// le format d'avoir existant. Avant le fix, `credit_note_number_format` était requis
 /// côté DTO → serde échouait → 422 → aucun réglage sauvable depuis l'UI.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn settings_update_without_credit_note_format_preserves_and_returns_200(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
     let (company_id, accounts) = create_seeded_company(&pool).await;

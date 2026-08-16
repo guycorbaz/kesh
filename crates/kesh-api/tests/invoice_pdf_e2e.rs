@@ -208,7 +208,7 @@ async fn seed_validated_invoice(
 
 // --- Tests -------------------------------------------------------------------
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn pdf_happy_path_returns_200_with_content_disposition(pool: MySqlPool) {
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id, true).await;
@@ -236,7 +236,7 @@ async fn pdf_happy_path_returns_200_with_content_disposition(pool: MySqlPool) {
     assert!(bytes.len() > 1_000);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn pdf_requires_auth_returns_401(pool: MySqlPool) {
     let app = spawn_app(pool).await;
     let resp = app
@@ -248,7 +248,7 @@ async fn pdf_requires_auth_returns_401(pool: MySqlPool) {
     assert_eq!(resp.status(), 401);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn pdf_draft_invoice_returns_400_not_validated(pool: MySqlPool) {
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id, true).await;
@@ -290,7 +290,7 @@ async fn pdf_draft_invoice_returns_400_not_validated(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "INVOICE_NOT_VALIDATED");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn pdf_missing_primary_bank_returns_400(pool: MySqlPool) {
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id, true).await;
@@ -311,7 +311,7 @@ async fn pdf_missing_primary_bank_returns_400(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "INVOICE_NOT_PDF_READY");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn pdf_missing_contact_address_returns_400(pool: MySqlPool) {
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id, false).await;
@@ -332,7 +332,7 @@ async fn pdf_missing_contact_address_returns_400(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "INVOICE_NOT_PDF_READY");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn pdf_too_many_lines_returns_400(pool: MySqlPool) {
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id, true).await;
@@ -353,7 +353,7 @@ async fn pdf_too_many_lines_returns_400(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "INVOICE_TOO_MANY_LINES_FOR_PDF");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn pdf_iban_classique_without_qr_iban_works(pool: MySqlPool) {
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id, true).await;
@@ -372,7 +372,7 @@ async fn pdf_iban_classique_without_qr_iban_works(pool: MySqlPool) {
     assert_eq!(resp.status(), 200);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn pdf_unknown_invoice_returns_404(pool: MySqlPool) {
     seed_base(&pool).await;
     let app = spawn_app(pool.clone()).await;
@@ -448,7 +448,7 @@ async fn run_pdf_role_scenario(pool: MySqlPool, username: &str, role: Role) {
     assert_eq!(resp.headers()["content-type"], "application/pdf");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn pdf_admin_role_returns_200(pool: MySqlPool) {
     // Le user seedé via `seed_base` → ensure_admin_user est déjà Admin ; on
     // rejoue simplement le chemin happy-path pour couvrir explicitement AC16.
@@ -469,12 +469,12 @@ async fn pdf_admin_role_returns_200(pool: MySqlPool) {
     assert_eq!(resp.status(), 200);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn pdf_comptable_role_returns_200(pool: MySqlPool) {
     run_pdf_role_scenario(pool, "comptable_pdf", Role::Comptable).await;
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn pdf_consultation_role_returns_200(pool: MySqlPool) {
     run_pdf_role_scenario(pool, "observateur_pdf", Role::Consultation).await;
 }
@@ -495,7 +495,7 @@ async fn pdf_consultation_role_returns_200(pool: MySqlPool) {
 ///
 /// Le jumeau `pdf_too_many_lines_returns_400` couvre la garde **basse** depuis
 /// l'origine ; celui-ci couvre la garde **haute**.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn pdf_header_overflow_returns_400_with_its_own_code(pool: MySqlPool) {
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id, true).await;

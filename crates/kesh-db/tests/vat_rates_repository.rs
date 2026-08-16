@@ -45,7 +45,7 @@ async fn create_company_with_rates(pool: &MySqlPool, name: &str) -> i64 {
     company.id
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn list_active_for_company_returns_seeded_rates_desc(pool: MySqlPool) {
     let company_id = create_company_with_rates(&pool, "CompA").await;
 
@@ -74,7 +74,7 @@ async fn list_active_for_company_returns_seeded_rates_desc(pool: MySqlPool) {
     assert_eq!(rates[3].label, "product-vat-exempt");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn list_active_for_company_excludes_other_company(pool: MySqlPool) {
     let company_a = create_company_with_rates(&pool, "CompA").await;
     let company_b = create_company_with_rates(&pool, "CompB").await;
@@ -98,7 +98,7 @@ async fn list_active_for_company_excludes_other_company(pool: MySqlPool) {
     }
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_active_by_rate_happy(pool: MySqlPool) {
     let company_id = create_company_with_rates(&pool, "CompA").await;
 
@@ -112,7 +112,7 @@ async fn find_active_by_rate_happy(pool: MySqlPool) {
     assert_eq!(row.company_id, company_id);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_active_by_rate_scale_invariant(pool: MySqlPool) {
     let company_id = create_company_with_rates(&pool, "CompA").await;
 
@@ -140,7 +140,7 @@ async fn find_active_by_rate_scale_invariant(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_active_by_rate_unknown_returns_none(pool: MySqlPool) {
     let company_id = create_company_with_rates(&pool, "CompA").await;
 
@@ -151,7 +151,7 @@ async fn find_active_by_rate_unknown_returns_none(pool: MySqlPool) {
     assert!(found.is_none());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_active_by_rate_other_company_returns_none(pool: MySqlPool) {
     let company_a = create_company_with_rates(&pool, "CompA").await;
     let company_b = create_company_with_rates(&pool, "CompB").await;
@@ -165,7 +165,7 @@ async fn find_active_by_rate_other_company_returns_none(pool: MySqlPool) {
     assert_ne!(row.company_id, company_b);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn seed_default_swiss_rates_idempotent(pool: MySqlPool) {
     let company = companies::create(&pool, sample_company("CompA"))
         .await
@@ -199,7 +199,7 @@ async fn seed_default_swiss_rates_idempotent(pool: MySqlPool) {
     assert_eq!(rates.len(), 4);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn migration_backfill_pattern_seeds_existing_companies(pool: MySqlPool) {
     // AC #21 — simule le pattern « companies pré-existantes au moment du
     // backfill ». Comme `#[sqlx::test]` applique le migrator sur une DB vide,
@@ -293,7 +293,7 @@ async fn rate_id_version(
     (r.id, r.version)
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn seed_sets_categories(pool: MySqlPool) {
     let company_id = create_company_with_rates(&pool, "Cat").await;
     let rates = vat_rates::list_active_for_company(&pool, company_id)
@@ -304,7 +304,7 @@ async fn seed_sets_categories(pool: MySqlPool) {
     assert_eq!(cats, vec!["exempt", "normal", "reduced", "special"]);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_for_category_at_date_boundaries(pool: MySqlPool) {
     let company_id = create_company_with_rates(&pool, "Bnd").await;
     // Taux normal seedé : valid_from = 2024-01-01, valid_to = NULL.
@@ -323,7 +323,7 @@ async fn find_for_category_at_date_boundaries(pool: MySqlPool) {
     assert_eq!(on.rate, dec!(8.10));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn year_to_year_rate_change_keeps_continuity(pool: MySqlPool) {
     let company_id = create_company_with_rates(&pool, "Y2Y").await;
     let (normal_id, normal_v) = rate_id_version(&pool, company_id, "normal", d(2024, 6, 1)).await;
@@ -380,7 +380,7 @@ async fn year_to_year_rate_change_keeps_continuity(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn overlap_detected_with_open_ended_rate(pool: MySqlPool) {
     let company_id = create_company_with_rates(&pool, "Ovl").await;
     let mut tx = pool.begin().await.unwrap();
@@ -411,7 +411,7 @@ async fn overlap_detected_with_open_ended_rate(pool: MySqlPool) {
     tx.rollback().await.unwrap();
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn adjacent_ranges_do_not_overlap(pool: MySqlPool) {
     let company_id = create_company_with_rates(&pool, "Adj").await;
     let (normal_id, normal_v) = rate_id_version(&pool, company_id, "normal", d(2024, 6, 1)).await;
@@ -443,7 +443,7 @@ async fn adjacent_ranges_do_not_overlap(pool: MySqlPool) {
     tx.rollback().await.unwrap();
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn update_optimistic_lock_conflict(pool: MySqlPool) {
     let company_id = create_company_with_rates(&pool, "Lock").await;
     let (id, version) = rate_id_version(&pool, company_id, "normal", d(2024, 6, 1)).await;
@@ -465,7 +465,7 @@ async fn update_optimistic_lock_conflict(pool: MySqlPool) {
     tx.rollback().await.unwrap();
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn deactivate_excludes_from_selection(pool: MySqlPool) {
     let company_id = create_company_with_rates(&pool, "Deact").await;
     let (id, version) = rate_id_version(&pool, company_id, "normal", d(2024, 6, 1)).await;
@@ -491,7 +491,7 @@ async fn deactivate_excludes_from_selection(pool: MySqlPool) {
     assert!(all.iter().any(|r| r.id == id && !r.active));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn extensible_category_accepted(pool: MySqlPool) {
     let company_id = create_company_with_rates(&pool, "Ext").await;
     let mut tx = pool.begin().await.unwrap();

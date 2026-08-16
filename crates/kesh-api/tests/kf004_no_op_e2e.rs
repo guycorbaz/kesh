@@ -212,7 +212,7 @@ async fn create_seeded_company(
 
 /// AC #19 — PUT /api/v1/contacts/{id} avec body identique au GET retourné →
 /// 200 OK + `version` inchangée + `updatedAt` inchangé.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn put_contact_no_op_returns_200_unchanged_version(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
     let (company_id, _) = create_seeded_company(&pool).await;
@@ -284,7 +284,7 @@ async fn put_contact_no_op_returns_200_unchanged_version(pool: MySqlPool) {
 }
 
 /// AC #20 — PUT /api/v1/products/{id} avec body identique → 200 + version inchangée.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn put_product_no_op_returns_200_unchanged_version(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
     let (company_id, _) = create_seeded_company(&pool).await;
@@ -339,7 +339,7 @@ async fn put_product_no_op_returns_200_unchanged_version(pool: MySqlPool) {
 /// check doit comparer correctement le header ET les lignes ligne-à-ligne
 /// (description, quantity, unitPrice, vatRate) pour court-circuiter sans
 /// DELETE+INSERT du sous-table `invoice_lines`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn put_invoice_no_op_returns_200_unchanged_version(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
     let (company_id, _) = create_seeded_company(&pool).await;
@@ -482,7 +482,7 @@ async fn put_invoice_no_op_returns_200_unchanged_version(pool: MySqlPool) {
 /// premier avait bumpé la version. Avec le fix KF-004, le premier PUT ne
 /// bump plus la version, donc le second PUT voit la version courante et
 /// reçoit 200 transparent.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn concurrent_no_op_returns_200_200_not_200_409(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
     let (company_id, _) = create_seeded_company(&pool).await;
@@ -573,7 +573,7 @@ async fn concurrent_no_op_returns_200_200_not_200_409(pool: MySqlPool) {
 /// AC #23 — Le fix ne masque PAS les vrais conflits : si user A fait une
 /// vraie modification (bump version) et user B essaie de modifier avec sa
 /// version stale, B reçoit 409.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn no_op_then_real_conflict_returns_409(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
     let (company_id, _) = create_seeded_company(&pool).await;
@@ -715,7 +715,7 @@ async fn no_op_then_real_conflict_returns_409(pool: MySqlPool) {
 /// itérations indépendantes (probabilité « jamais aucune mutation-avant-no-op »
 /// sur 20 itérations ≈ négligeable). On asserte **au moins 1 cas 200/409**
 /// (mutation puis no-op avec X-lock + version-check = 409) sur l'ensemble.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn no_op_with_parallel_mutation_returns_409_under_concurrency(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
     let (company_id, _) = create_seeded_company(&pool).await;

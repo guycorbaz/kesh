@@ -57,14 +57,57 @@ services:
       MARIADB_DATABASE: kesh
       MARIADB_USER: kesh
       MARIADB_PASSWORD: kesh_dev
+    # Story 22-5 (#251) — LA BASE DE DEV EST JETABLE, ET MONTÉE EN RAM.
+    #
+    # ⚠️ Conséquence assumée : /var/lib/mysql ne survit PAS au restart du
+    # conteneur. La base `kesh` repart vide, et son seed doit être rejoué —
+    # procédure dans docs/testing.md § « Base de dev jetable ». L'oubli est
+    # bruyant, pas silencieux : les 154 tests sur base partagée s'ouvrent sur
+    # `expect("need at least one company in DB for tests")`.
+    #
+    # En contrepartie, les bases éphémères de `#[sqlx::test]` ne touchent plus
+    # le disque, et les orphelines qu'un run interrompu laisse derrière lui
+    # sont effacées par le restart au lieu de s'accumuler.
+    #
+    # `size=` est EXPLICITE, et c'est le point important : le défaut d'un tmpfs
+    # est la MOITIÉ de la RAM de l'hôte, ce qui ferait de cette ligne une réserve
+    # de 15 Go sur une station qui a déjà perdu deux sessions à l'OOM (cf.
+    # CLAUDE.md § « Plafonds mémoire »). Les pages d'un tmpfs sont du shmem, donc
+    # NON recyclables : elles pèsent sur cette pression-là, et le conteneur vit
+    # dans `system.slice`, hors de portée de `scripts/mem-guard.sh`.
+    #
+    # ⚠️ 4 Go couvrent un run VERT (≤ 6 bases éphémères vivantes à la fois, plus
+    # la base de dev et celles de gate), pas un run massivement ROUGE : sqlx ne
+    # détruit PAS la base d'un test échoué. À ~17 Mo la base, les ~3,3 Go libres
+    # en tiennent environ 190 — au-delà, MariaDB rend « table is full » sur les
+    # suivants. Les PREMIERS échecs portent la cause réelle ; ceux d'après ne
+    # portent que la saturation. La reprise est un `restart` du conteneur, qui
+    # efface tout (cf. docs/testing.md § « Base de dev jetable »).
+    # *(Chiffres mesurés dans le conteneur par la passe 1 de revue de code, qui
+    # a réfuté l'affirmation « 4 Go couvrent largement un run complet ».)*
+    tmpfs:
+      - /var/lib/mysql:size=4g
+    # Corollaire du tmpfs : les tables système repartent vierges à chaque
+    # démarrage, donc les droits globaux dont `#[sqlx::test]` a besoin pour
+    # créer ses bases éphémères disparaissent avec elles. L'entrypoint MariaDB
+    # rejoue ce répertoire dès que le datadir est vide — ici, à tous les coups.
     volumes:
-      - kesh-mariadb-data:/var/lib/mysql
+      - ./scripts/mariadb-init:/docker-entrypoint-initdb.d:ro
+    # Durabilité relâchée : la donnée ne survit pas au restart de toute façon,
+    # payer les fsync de chaque commit n'achète plus rien.
+    command:
+      - --innodb_flush_log_at_trx_commit=0
+      - --sync_binlog=0
+      - --innodb-doublewrite=0
+    # ⚠️ Le budget d'attente a été élargi avec le tmpfs : CHAQUE démarrage est
+    # désormais un démarrage à froid (`mysql_install_db` + les scripts de
+    # /docker-entrypoint-initdb.d), là où un restart retrouvait auparavant un
+    # datadir initialisé. Sur station chargée, l'ancienne fenêtre (~60 s) rendait
+    # le conteneur `unhealthy` et faisait échouer le `depends_on` du service
+    # `kesh`. *(Relevé en passe 1 de revue de code.)*
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s
       timeout: 5s
-      retries: 3
-      start_period: 30s
-
-volumes:
-  kesh-mariadb-data:
+      retries: 5
+      start_period: 90s

@@ -114,7 +114,7 @@ async fn post_tagged(
 
 /// (a)+(c)+(d) — racine + sous-projet, 2 comptes de charge, lignes de
 /// contrepartie taguées exclues, sous-totaux + total + drill-down.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn expenses_rollup_sections_and_drilldown(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let root = mk_project(&pool, seeded.company_id, "RENOV", None).await;
@@ -215,7 +215,7 @@ async fn expenses_rollup_sections_and_drilldown(pool: MySqlPool) {
 }
 
 /// (b) — mode cumulé traverse deux exercices ; le mode exercice n'en voit qu'un.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn expenses_cumulative_crosses_fiscal_years(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let proj = mk_project(&pool, seeded.company_id, "INVEST", None).await;
@@ -282,7 +282,7 @@ async fn expenses_cumulative_crosses_fiscal_years(pool: MySqlPool) {
 }
 
 /// (e) — projet inconnu / cross-company → ProjectNotFound.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn expenses_unknown_project_is_not_found(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let err = resolve_scope(&pool, seeded.company_id, 999_999)
@@ -292,7 +292,7 @@ async fn expenses_unknown_project_is_not_found(pool: MySqlPool) {
 }
 
 /// (f) — scope sans ligne taguée → rapport vide (sections vides, total 0), pas d'erreur.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn expenses_empty_scope_is_empty_report(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let proj = mk_project(&pool, seeded.company_id, "VIDE", None).await;

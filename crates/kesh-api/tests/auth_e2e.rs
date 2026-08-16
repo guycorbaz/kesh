@@ -1,6 +1,6 @@
 //! Tests d'intégration E2E de l'authentification (story 1.5).
 //!
-//! Chaque test utilise `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]`
+//! Chaque test utilise `#[sqlx::test(migrations = "../kesh-db/test-schema")]`
 //! pour obtenir une DB propre avec les migrations appliquées. Le helper
 //! `spawn_app` construit un routeur Axum via `build_router` puis merge
 //! une route de test protégée `/api/v1/_test/me` pour valider l'injection
@@ -218,7 +218,7 @@ async fn create_user_in_company(
 // === Login tests ===
 // =========================================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn login_success_returns_tokens(pool: MySqlPool) {
     let user_id = create_user(&pool, "alice", "password123", true).await;
     let app = spawn_app(pool).await;
@@ -255,7 +255,7 @@ async fn login_success_returns_tokens(pool: MySqlPool) {
     assert_eq!(decoded.claims.role, "Comptable");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn login_unknown_username_returns_401(pool: MySqlPool) {
     let app = spawn_app(pool).await;
 
@@ -272,7 +272,7 @@ async fn login_unknown_username_returns_401(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "INVALID_CREDENTIALS");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn login_wrong_password_returns_401(pool: MySqlPool) {
     create_user(&pool, "bob", "correct-password", true).await;
     let app = spawn_app(pool).await;
@@ -290,7 +290,7 @@ async fn login_wrong_password_returns_401(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "INVALID_CREDENTIALS");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn login_inactive_user_returns_401(pool: MySqlPool) {
     create_user(&pool, "carol", "password123", false).await;
     let app = spawn_app(pool).await;
@@ -308,7 +308,7 @@ async fn login_inactive_user_returns_401(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "INVALID_CREDENTIALS");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn login_empty_fields_returns_400(pool: MySqlPool) {
     let app = spawn_app(pool).await;
 
@@ -326,7 +326,7 @@ async fn login_empty_fields_returns_400(pool: MySqlPool) {
 }
 
 /// Patch #15 : cas per-field — seul le username vide.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn login_empty_username_returns_400(pool: MySqlPool) {
     let app = spawn_app(pool).await;
 
@@ -344,7 +344,7 @@ async fn login_empty_username_returns_400(pool: MySqlPool) {
 }
 
 /// Patch #15 : cas per-field — seul le password vide.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn login_empty_password_returns_400(pool: MySqlPool) {
     let app = spawn_app(pool).await;
 
@@ -364,7 +364,7 @@ async fn login_empty_password_returns_400(pool: MySqlPool) {
 /// Patch V2 anti-régression : un password composé UNIQUEMENT de whitespace
 /// doit être rejeté avec 400 (symétrie avec le username trim et fermeture
 /// du side-channel d'énumération "password vide" vs "password whitespace").
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn login_whitespace_only_password_returns_400(pool: MySqlPool) {
     create_user(&pool, "alice-v2", "real-password", true).await;
     let app = spawn_app(pool).await;
@@ -389,7 +389,7 @@ async fn login_whitespace_only_password_returns_400(pool: MySqlPool) {
 /// Patch V2 anti-régression : un password qui COMMENCE ou FINIT par un
 /// espace mais contient du contenu non-whitespace doit être accepté
 /// (byte-exact semantics préservées).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn login_password_with_leading_trailing_spaces_is_accepted(pool: MySqlPool) {
     // Créer un user avec un password qui a des espaces autour
     let user_pwd = "  secret  ";
@@ -413,7 +413,7 @@ async fn login_password_with_leading_trailing_spaces_is_accepted(pool: MySqlPool
 
 /// Patch #8 anti-régression : un username avec whitespace autour (`"alice "`)
 /// doit matcher le user `"alice"` en base et fonctionner comme un login normal.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn login_trims_username_whitespace(pool: MySqlPool) {
     create_user(&pool, "alice", "password123", true).await;
     let app = spawn_app(pool).await;
@@ -435,7 +435,7 @@ async fn login_trims_username_whitespace(pool: MySqlPool) {
 
 /// Patch #9 anti-régression : l'en-tête Authorization avec scheme
 /// lowercase (`bearer`) doit être accepté (RFC 7235 §2.1).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn protected_route_accepts_lowercase_bearer_scheme(pool: MySqlPool) {
     let user_id = create_user(&pool, "case-insensitive-user", "password123", true).await;
     let app = spawn_app(pool).await;
@@ -480,7 +480,7 @@ async fn protected_route_accepts_lowercase_bearer_scheme(pool: MySqlPool) {
 /// rejeté par serde avant d'atteindre le handler (422 Unprocessable Entity).
 /// Document le comportement attendu et prévient toute future régression
 /// vers un 500 ou un 204 silencieux.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn logout_with_missing_refresh_token_field_returns_204(pool: MySqlPool) {
     // Story 10-5 (T2.3) : LogoutRequest.refresh_token est maintenant Option<String>
     // pour permettre le logout cookie-only (sans body). Donc un POST /logout
@@ -508,7 +508,7 @@ async fn logout_with_missing_refresh_token_field_returns_204(pool: MySqlPool) {
 /// Mesure N=10 médianes pour 3 scénarios (user absent, inactif, actif +
 /// bad password). Tolérance large 5× pour absorber le jitter CI, mais
 /// suffisante pour détecter une suppression accidentelle de `dummy_verify`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn login_timing_normalized(pool: MySqlPool) {
     create_user(&pool, "active_user", "correct-password", true).await;
     create_user(&pool, "inactive_user", "correct-password", false).await;
@@ -603,7 +603,7 @@ async fn login_timing_normalized(pool: MySqlPool) {
 // === Logout tests ===
 // =========================================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn logout_revokes_refresh_token(pool: MySqlPool) {
     create_user(&pool, "dave", "password123", true).await;
     let app = spawn_app(pool.clone()).await;
@@ -644,7 +644,7 @@ async fn logout_revokes_refresh_token(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn logout_idempotent(pool: MySqlPool) {
     create_user(&pool, "eve", "password123", true).await;
     let app = spawn_app(pool).await;
@@ -674,7 +674,7 @@ async fn logout_idempotent(pool: MySqlPool) {
     }
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn logout_unknown_token_returns_204(pool: MySqlPool) {
     let app = spawn_app(pool).await;
     let random_uuid = uuid::Uuid::new_v4().to_string();
@@ -712,7 +712,7 @@ fn forge_jwt(sub: &str, role: &str, exp_offset_secs: i64, secret: &[u8]) -> Stri
     .expect("forge encode should succeed")
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn protected_route_without_jwt_returns_401(pool: MySqlPool) {
     let app = spawn_app(pool).await;
 
@@ -725,7 +725,7 @@ async fn protected_route_without_jwt_returns_401(pool: MySqlPool) {
     assert_eq!(resp.status(), 401);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn protected_route_with_valid_jwt_returns_200(pool: MySqlPool) {
     let user_id = create_user(&pool, "frank", "password123", true).await;
     let app = spawn_app(pool).await;
@@ -756,7 +756,7 @@ async fn protected_route_with_valid_jwt_returns_200(pool: MySqlPool) {
     assert_eq!(body["role"], "Comptable");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn protected_route_with_expired_jwt_returns_401(pool: MySqlPool) {
     let app = spawn_app(pool).await;
     // exp dans le passé au-delà du leeway 60s
@@ -772,7 +772,7 @@ async fn protected_route_with_expired_jwt_returns_401(pool: MySqlPool) {
     assert_eq!(resp.status(), 401);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn protected_route_with_expired_jwt_within_leeway_returns_200(pool: MySqlPool) {
     let app = spawn_app(pool).await;
     // exp dans le passé MAIS dans le leeway 60s
@@ -788,7 +788,7 @@ async fn protected_route_with_expired_jwt_within_leeway_returns_200(pool: MySqlP
     assert_eq!(resp.status(), 200, "token within leeway should be accepted");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn protected_route_with_wrong_signature_returns_401(pool: MySqlPool) {
     let app = spawn_app(pool).await;
     let wrong_secret = b"wrong-secret-32-bytes-minimum-padding-long-enough";
@@ -804,7 +804,7 @@ async fn protected_route_with_wrong_signature_returns_401(pool: MySqlPool) {
     assert_eq!(resp.status(), 401);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn protected_route_with_malformed_sub_returns_401(pool: MySqlPool) {
     let app = spawn_app(pool).await;
     let token = forge_jwt("not-a-number", "Comptable", 900, TEST_JWT_SECRET);
@@ -827,7 +827,7 @@ async fn protected_route_with_malformed_sub_returns_401(pool: MySqlPool) {
 // E2E : construction d'un AppState + appel à ensure_admin_user + login via
 // HTTP avec les credentials bootstrap.
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn bootstrap_creates_admin_and_login_works_end_to_end(pool: MySqlPool) {
     // Construire un Config de test avec un admin_password connu
     let config = Config::from_fields_for_test(
@@ -897,7 +897,7 @@ async fn bootstrap_creates_admin_and_login_works_end_to_end(pool: MySqlPool) {
     assert_eq!(decoded.claims.role, "Admin");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn bootstrap_is_idempotent_at_e2e_level(pool: MySqlPool) {
     let config = Config::from_fields_for_test(
         "mysql://stub:stub@127.0.0.1:3306/stub".to_string(),
@@ -1014,7 +1014,7 @@ async fn login_and_get_tokens(app: &TestApp, username: &str, password: &str) -> 
 }
 
 // --- 9.1 refresh_success_returns_new_tokens ---
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn refresh_success_returns_new_tokens(pool: MySqlPool) {
     create_user(&pool, "user1", "password123!", true).await;
     let app = spawn_app(pool).await;
@@ -1037,7 +1037,7 @@ async fn refresh_success_returns_new_tokens(pool: MySqlPool) {
 }
 
 // --- 9.2 refresh_rotates_token ---
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn refresh_rotates_token(pool: MySqlPool) {
     create_user(&pool, "user2", "password123!", true).await;
     let app = spawn_app(pool.clone()).await;
@@ -1064,7 +1064,7 @@ async fn refresh_rotates_token(pool: MySqlPool) {
 }
 
 // --- 9.3 refresh_replay_after_rotation_revokes_all ---
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn refresh_replay_after_rotation_revokes_all(pool: MySqlPool) {
     let user_id = create_user(&pool, "user3", "password123!", true).await;
     let app = spawn_app(pool.clone()).await;
@@ -1117,7 +1117,7 @@ async fn refresh_replay_after_rotation_revokes_all(pool: MySqlPool) {
 }
 
 // --- 9.4 refresh_after_logout_does_not_mass_revoke ---
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn refresh_after_logout_does_not_mass_revoke(pool: MySqlPool) {
     let _user_id = create_user(&pool, "user4", "password123!", true).await;
     let app = spawn_app(pool.clone()).await;
@@ -1159,7 +1159,7 @@ async fn refresh_after_logout_does_not_mass_revoke(pool: MySqlPool) {
 }
 
 // --- 9.5 refresh_with_expired_token_returns_401 ---
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn refresh_with_expired_token_returns_401(pool: MySqlPool) {
     let user_id = create_user(&pool, "user5", "password123!", true).await;
     // Insert an already-expired token directly in DB
@@ -1186,7 +1186,7 @@ async fn refresh_with_expired_token_returns_401(pool: MySqlPool) {
 }
 
 // --- 9.6 refresh_with_unknown_token_returns_401 ---
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn refresh_with_unknown_token_returns_401(pool: MySqlPool) {
     let app = spawn_app(pool).await;
     let resp = app
@@ -1202,7 +1202,7 @@ async fn refresh_with_unknown_token_returns_401(pool: MySqlPool) {
 }
 
 // --- 9.7 refresh_with_inactive_user_returns_401 ---
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn refresh_with_inactive_user_returns_401(pool: MySqlPool) {
     create_user(&pool, "user7", "password123!", true).await;
     let app = spawn_app(pool.clone()).await;
@@ -1225,7 +1225,7 @@ async fn refresh_with_inactive_user_returns_401(pool: MySqlPool) {
 }
 
 // --- 9.8 refresh_returns_updated_role ---
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn refresh_returns_updated_role(pool: MySqlPool) {
     create_user(&pool, "user8", "password123!", true).await;
     let app = spawn_app(pool.clone()).await;
@@ -1264,7 +1264,7 @@ async fn refresh_returns_updated_role(pool: MySqlPool) {
 }
 
 // --- 9.9 rate_limit_blocks_after_threshold ---
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn rate_limit_blocks_after_threshold(pool: MySqlPool) {
     create_user(&pool, "user9", "password123!", true).await;
     let config = test_config_rate_limit(5, 1800);
@@ -1301,7 +1301,7 @@ async fn rate_limit_blocks_after_threshold(pool: MySqlPool) {
 }
 
 // --- 9.10 rate_limit_resets_after_block_duration ---
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn rate_limit_resets_after_block_duration(pool: MySqlPool) {
     create_user(&pool, "user10", "password123!", true).await;
     let config = test_config_rate_limit(2, 1); // block for 1 second
@@ -1344,7 +1344,7 @@ async fn rate_limit_resets_after_block_duration(pool: MySqlPool) {
 }
 
 // --- 9.11 rate_limit_resets_on_success ---
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn rate_limit_resets_on_success(pool: MySqlPool) {
     create_user(&pool, "user11", "password123!", true).await;
     let config = test_config_rate_limit(5, 1800);
@@ -1399,7 +1399,7 @@ async fn rate_limit_resets_on_success(pool: MySqlPool) {
 }
 
 // --- 9.12 change_password_revokes_all_tokens ---
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn change_password_revokes_all_tokens(pool: MySqlPool) {
     create_user(&pool, "user12", "old-password12", true).await;
     let app = spawn_app(pool.clone()).await;
@@ -1435,7 +1435,7 @@ async fn change_password_revokes_all_tokens(pool: MySqlPool) {
 }
 
 // --- 9.13 change_password_wrong_current_returns_401 ---
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn change_password_wrong_current_returns_401(pool: MySqlPool) {
     create_user(&pool, "user13", "correct-pwd12", true).await;
     let app = spawn_app(pool).await;
@@ -1455,7 +1455,7 @@ async fn change_password_wrong_current_returns_401(pool: MySqlPool) {
 }
 
 // --- 9.14 change_password_returns_new_tokens ---
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn change_password_returns_new_tokens(pool: MySqlPool) {
     create_user(&pool, "user14", "old-password14", true).await;
     let app = spawn_app(pool).await;
@@ -1489,7 +1489,7 @@ async fn change_password_returns_new_tokens(pool: MySqlPool) {
 }
 
 // --- 9.15 change_password_too_short_returns_400 ---
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn change_password_too_short_returns_400(pool: MySqlPool) {
     create_user(&pool, "user15", "password-15ch!", true).await;
     let app = spawn_app(pool).await;
@@ -1509,7 +1509,7 @@ async fn change_password_too_short_returns_400(pool: MySqlPool) {
 }
 
 // --- 9.16 cleanup_removes_old_tokens ---
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn cleanup_removes_old_tokens(pool: MySqlPool) {
     let user_id = create_user(&pool, "user16", "password123!", true).await;
 
@@ -1565,7 +1565,7 @@ async fn cleanup_removes_old_tokens(pool: MySqlPool) {
 // --- 9.17 login_timing_still_normalized (anti-regression) ---
 // Explicit anti-regression test: verifies that rate limiter integration
 // did not break the timing normalization from story 1.5.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn login_timing_still_normalized(pool: MySqlPool) {
     create_user(&pool, "timing_active", "correct-password", true).await;
     create_user(&pool, "timing_inactive", "correct-password", false).await;
@@ -1644,7 +1644,7 @@ async fn login_timing_still_normalized(pool: MySqlPool) {
 }
 
 // --- 9.18 all_refresh_error_codes_are_identical ---
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn all_refresh_error_codes_are_identical(pool: MySqlPool) {
     let user_id = create_user(&pool, "user18", "password123!", true).await;
     let app = spawn_app(pool.clone()).await;

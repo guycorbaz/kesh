@@ -171,7 +171,7 @@ async fn account_balance(pool: &MySqlPool, company_id: i64, account_id: i64) -> 
     .unwrap()
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_batch_accepts_valid_invoices(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let inv1 = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("Réf 1"), dec!(100.00)).await;
@@ -192,7 +192,7 @@ async fn create_batch_accepts_valid_invoices(pool: MySqlPool) {
     assert!(batch.batch.msg_id.starts_with("KESH-"));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_batch_rejects_invalid_per_invoice(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let ok = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("R"), dec!(100.00)).await;
@@ -216,7 +216,7 @@ async fn create_batch_rejects_invalid_per_invoice(pool: MySqlPool) {
     assert!(codes.contains(&"SUPPLIER_INVOICE_NOT_FOUND"));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn confirm_batch_posts_settlements_no_self_block(pool: MySqlPool) {
     // CŒUR H-FRESH-1 : confirm_batch appelle pay_in_tx pendant que le lot est
     // generated → DOIT aboutir (pas de self-block) et solder 2000.
@@ -261,7 +261,7 @@ async fn confirm_batch_posts_settlements_no_self_block(pool: MySqlPool) {
     assert_eq!(bank, dec!(-300.00));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn cancel_batch_unlocks_invoices(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let inv = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("R"), dec!(100.00)).await;
@@ -313,7 +313,7 @@ async fn cancel_batch_unlocks_invoices(pool: MySqlPool) {
     assert_eq!(paid.invoice.status, "paid");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn invoice_cannot_be_in_two_generated_batches(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let inv = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("R"), dec!(100.00)).await;
@@ -331,7 +331,7 @@ async fn invoice_cannot_be_in_two_generated_batches(pool: MySqlPool) {
     assert_eq!(outcome2.failed[0].error_code, "ALREADY_IN_GENERATED_BATCH");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn confirm_already_confirmed_rejected(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let inv = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("R"), dec!(100.00)).await;
@@ -364,7 +364,7 @@ async fn confirm_already_confirmed_rejected(pool: MySqlPool) {
     assert!(matches!(err, DbError::IllegalStateTransition(_)));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn generate_pain001_xml_is_well_formed(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let inv1 = make_invoice(

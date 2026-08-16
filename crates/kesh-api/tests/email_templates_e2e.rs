@@ -159,7 +159,7 @@ async fn create_user(pool: &MySqlPool, username: &str, role: Role, company_id: i
 // RBAC
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrations = "../kesh-db/migrations")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn rbac_only_admin_can_list(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_id = create_company(&pool, "RBAC Co").await;
@@ -202,7 +202,7 @@ async fn rbac_only_admin_can_list(pool: MySqlPool) {
 
 /// Code-review Pass 1 (Blind Hunter #10 + Acceptance Auditor) : le RBAC
 /// Admin-only doit couvrir les 4 endpoints, pas seulement `GET` liste.
-#[sqlx::test(migrations = "../kesh-db/migrations")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn rbac_covers_get_single_put_and_delete(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_id = create_company(&pool, "RBAC Full Co").await;
@@ -274,7 +274,7 @@ async fn rbac_covers_get_single_put_and_delete(pool: MySqlPool) {
 // Zéro-config (AC #16)
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrations = "../kesh-db/migrations")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn list_returns_four_defaults_for_fresh_company(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_id = create_company(&pool, "Fresh Co").await;
@@ -300,7 +300,7 @@ async fn list_returns_four_defaults_for_fresh_company(pool: MySqlPool) {
 // Round-trip CRUD
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrations = "../kesh-db/migrations")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn crud_round_trip_create_update_restore(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_id = create_company(&pool, "CRUD Co").await;
@@ -411,7 +411,7 @@ async fn crud_round_trip_create_update_restore(pool: MySqlPool) {
 // Validation 422
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrations = "../kesh-db/migrations")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn put_rejects_unknown_variables_with_422(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_id = create_company(&pool, "Validation Co").await;
@@ -447,7 +447,7 @@ async fn put_rejects_unknown_variables_with_422(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrations = "../kesh-db/migrations")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn put_rejects_empty_subject_or_body(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_id = create_company(&pool, "Empty Co").await;
@@ -469,7 +469,7 @@ async fn put_rejects_empty_subject_or_body(pool: MySqlPool) {
 // Conflit 409
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrations = "../kesh-db/migrations")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn put_stale_version_returns_409(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_id = create_company(&pool, "Conflict Co").await;
@@ -512,7 +512,7 @@ async fn put_stale_version_returns_409(pool: MySqlPool) {
 // Path params invalides
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrations = "../kesh-db/migrations")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn invalid_template_type_or_language_returns_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_id = create_company(&pool, "Invalid Path Co").await;
@@ -542,7 +542,7 @@ async fn invalid_template_type_or_language_returns_400(pool: MySqlPool) {
 // Story 21-4 — paramètre de niveau ?level= sur les routes email-templates
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrations = "../kesh-db/migrations")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn level_query_param_crud_and_validation(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_id = create_company(&pool, "Level Co").await;

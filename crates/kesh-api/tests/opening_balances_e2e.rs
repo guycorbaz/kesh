@@ -317,7 +317,7 @@ fn line(account_id: i64, debit: &str, credit: &str) -> Value {
 /// AC-A : 201, écriture OD datée `fy_start`, description dans la langue
 /// comptable de la company (fr-CH), présente au bilan (compte physique 2970
 /// itemisé dans equity, ligne calculée `retainedEarnings` = 0).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_happy_path_od_at_fy_start_appears_in_balance_sheet(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
     let seed = seed_ready(&pool).await;
@@ -384,7 +384,7 @@ async fn post_happy_path_od_at_fy_start_appears_in_balance_sheet(pool: MySqlPool
 /// reportée) = **débit** sur le compte de rôle RetainedEarnings. L'équilibre
 /// tient (100 débit actifs + 20 débit report = 50 crédit dettes + 70 crédit
 /// capital) et l'equity affiche un solde débiteur.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_happy_path_negative_retained_loss(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
     let seed = seed_ready(&pool).await;
@@ -444,7 +444,7 @@ async fn post_happy_path_negative_retained_loss(pool: MySqlPool) {
 // ===========================================================================
 
 /// Body déséquilibré → 400 `ENTRY_UNBALANCED`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_unbalanced_400_entry_unbalanced(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
     let seed = seed_ready(&pool).await;
@@ -468,7 +468,7 @@ async fn post_unbalanced_400_entry_unbalanced(pool: MySqlPool) {
 /// Exactement 1 ligne → 400 `VALIDATION_ERROR` `EntryNeedsTwoLines`
 /// (P3-ECH-LOW-3 : UNE ligne, pas 2 dont une vide qui donnerait
 /// `EntryLineDebitCreditExclusive`). Assert du **message** distinct.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_single_line_400_needs_two_lines(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
     let seed = seed_ready(&pool).await;
@@ -492,7 +492,7 @@ async fn post_single_line_400_needs_two_lines(pool: MySqlPool) {
 }
 
 /// Montant négatif → 400 `VALIDATION_ERROR` `EntryNegativeAmount` (assert message).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_negative_amount_400(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
     let seed = seed_ready(&pool).await;
@@ -520,7 +520,7 @@ async fn post_negative_amount_400(pool: MySqlPool) {
 
 /// `{ lines: [] }` → 400 `VALIDATION_ERROR`, PAS 500 (garde `ids.is_empty()`
 /// dans `find_types_by_ids_in_tx`, P3-ECH-LOW-1).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_empty_lines_400_not_500(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
     let _seed = seed_ready(&pool).await;
@@ -541,7 +541,7 @@ async fn post_empty_lines_400_not_500(pool: MySqlPool) {
 /// Ligne sur un compte Revenue → 400 `VALIDATION_ERROR` avec le **message**
 /// `error-opening-balances-non-balance-account` (garde D4 — le code reste
 /// `VALIDATION_ERROR`, P3-AA-1/BH3-6).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_revenue_account_400_non_balance_account(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
     let seed = seed_ready(&pool).await;
@@ -581,7 +581,7 @@ async fn post_revenue_account_400_non_balance_account(pool: MySqlPool) {
 /// premier — garde company-wide P3-BH3-1) → 409 avec le **message** distinct
 /// `already-has-entries` (le code `ILLEGAL_STATE_TRANSITION` est partagé,
 /// P1-H1-BH — c'est le message qu'on asserte).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_already_has_entries_409_distinct_message(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
     let seed = seed_ready(&pool).await;
@@ -616,7 +616,7 @@ async fn post_already_has_entries_409_distinct_message(pool: MySqlPool) {
 }
 
 /// Aucun exercice → 400 `VALIDATION_ERROR` (assert message no-fiscal-year).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_no_fiscal_year_400(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
     let (user_id, company_id) = admin_ids(&pool).await;
@@ -666,7 +666,7 @@ async fn post_no_fiscal_year_400(pool: MySqlPool) {
 /// Premier exercice Closed → 400 avec le message distinct 14-4
 /// `first-year-closed` — code `VALIDATION_ERROR`, PAS `FISCAL_YEAR_CLOSED`
 /// (P3-AA-2 : pré-check handler et re-check sous-lock épinglés au même outcome).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_first_year_closed_400_distinct_message(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
     let seed = seed_ready(&pool).await;
@@ -701,7 +701,7 @@ async fn post_first_year_closed_400_distinct_message(pool: MySqlPool) {
 /// Cross-tenant : une ligne référence un compte d'une AUTRE company →
 /// l'id absent du résultat de la garde de type retombe dans `create_in_tx` →
 /// 400 `INACTIVE_OR_INVALID_ACCOUNTS` (PAS `non-balance-account`, P3-AA-1).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_cross_tenant_account_inactive_or_invalid(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
     let seed = seed_ready(&pool).await;
@@ -775,7 +775,7 @@ async fn post_cross_tenant_account_inactive_or_invalid(pool: MySqlPool) {
 // ===========================================================================
 
 /// Consultation → 403 ; non-auth → 401.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_rbac_consultation_403_unauth_401(pool: MySqlPool) {
     let (app, _token) = bootstrap_admin(&pool).await;
     let seed = seed_ready(&pool).await;
@@ -823,7 +823,7 @@ async fn get_status(app: &TestApp, token: &str) -> Value {
 }
 
 /// `NO_FISCAL_YEAR` : aucun exercice.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn status_no_fiscal_year(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
     let body = get_status(&app, &token).await;
@@ -833,7 +833,7 @@ async fn status_no_fiscal_year(pool: MySqlPool) {
 }
 
 /// `READY` : premier exercice Open + company vierge.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn status_ready(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
     let seed = seed_ready(&pool).await;
@@ -847,7 +847,7 @@ async fn status_ready(pool: MySqlPool) {
 
 /// `FIRST_YEAR_CLOSED` : premier exercice clos (prioritaire sur
 /// ALREADY_HAS_ENTRIES dans l'ordre d'évaluation).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn status_first_year_closed(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
     let seed = seed_ready(&pool).await;
@@ -862,7 +862,7 @@ async fn status_first_year_closed(pool: MySqlPool) {
 
 /// `ALREADY_HAS_ENTRIES` : une écriture dans un exercice QUELCONQUE (ici un
 /// exercice postérieur, pas le premier — garde company-wide P3-BH3-1).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn status_already_has_entries_any_fiscal_year(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
     let seed = seed_ready(&pool).await;
@@ -884,7 +884,7 @@ async fn status_already_has_entries_any_fiscal_year(pool: MySqlPool) {
 }
 
 /// RBAC `GET /status` (P1-L-4) : Consultation → 403 ; non-auth → 401.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn status_rbac_consultation_403_unauth_401(pool: MySqlPool) {
     let (app, _token) = bootstrap_admin(&pool).await;
     let _seed = seed_ready(&pool).await;
@@ -916,7 +916,7 @@ async fn status_rbac_consultation_403_unauth_401(pool: MySqlPool) {
 /// une réussit (201), l'autre reçoit 409 `ALREADY_HAS_ENTRIES` — état final =
 /// UNE écriture (sérialisation par `fiscal_years FOR UPDATE`, miroir
 /// `reopen_close_concurrent_is_serialized` 14-2).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_concurrent_generation_only_one_succeeds(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
     let seed = seed_ready(&pool).await;
@@ -971,7 +971,7 @@ async fn post_concurrent_generation_only_one_succeeds(pool: MySqlPool) {
 /// l'exercice (opération Admin réglementaire) ne débloquerait pas l'écran, le
 /// message `first-year-closed` serait un mauvais conseil. Verrouille la
 /// précédence `ALREADY_HAS_ENTRIES` > `FIRST_YEAR_CLOSED`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn status_closed_with_entries_reports_already_has_entries(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
     let seed = seed_ready(&pool).await;
@@ -1000,7 +1000,7 @@ async fn status_closed_with_entries_reports_already_has_entries(pool: MySqlPool)
 /// test). Toutes les autres fixtures étant `Language::Fr` (identique à la
 /// locale serveur), seul ce test distingue `Locale::from(accounting_language)`
 /// d'un fallback silencieux sur la locale serveur.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_description_uses_company_accounting_language(pool: MySqlPool) {
     use kesh_db::entities::{Language, NewCompany, NewUser, OrgType, Role};
 
@@ -1104,7 +1104,7 @@ async fn post_description_uses_company_accounting_language(pool: MySqlPool) {
 /// `ALREADY_HAS_ENTRIES` (message distinct), PAS le 400 `first-year-closed`
 /// dont le conseil « rouvrez » ne débloquerait rien. Verrouille la priorité
 /// amendée ECH3-2 sur le chemin d'écriture (pré-check handler ET repo).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_closed_with_entries_409_already_has_entries(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
     let seed = seed_ready(&pool).await;

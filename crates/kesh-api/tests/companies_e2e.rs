@@ -90,7 +90,7 @@ async fn login(app: &TestApp) -> String {
     body["accessToken"].as_str().unwrap().to_string()
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn companies_current_returns_company(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
@@ -112,7 +112,7 @@ async fn companies_current_returns_company(pool: MySqlPool) {
     assert_eq!(body["bankAccounts"].as_array().unwrap().len(), 0);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn companies_current_requires_auth(pool: MySqlPool) {
     let app = spawn_app(pool).await;
 
@@ -137,7 +137,7 @@ async fn companies_current_requires_auth(pool: MySqlPool) {
 ///
 /// L'assertion porte donc sur le **corps HTTP relu**, pas sur la réponse du
 /// `PUT` ni sur la base — c'est la seule chose que le frontend consomme.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn contact_details_survive_the_round_trip_to_the_settings_screen(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
@@ -210,7 +210,7 @@ async fn contact_details_survive_the_round_trip_to_the_settings_screen(pool: MyS
 }
 
 /// Le champ vidé **efface** la valeur : la ligne disparaît du PDF (D2).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn empty_contact_details_clear_the_stored_values(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
@@ -277,7 +277,7 @@ async fn empty_contact_details_clear_the_stored_values(pool: MySqlPool) {
 /// Le Dev Agent Record nommait ce piège sans le tester. Ce test le ferme dans
 /// les deux sens : éditer les coordonnées ne doit pas perdre l'e-mail, et
 /// éditer l'e-mail ne doit pas perdre les coordonnées.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn each_route_preserves_the_fields_it_does_not_touch(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
@@ -367,7 +367,7 @@ async fn each_route_preserves_the_fields_it_does_not_touch(pool: MySqlPool) {
 
 /// La borne de longueur est **refusée par le backend**, pas seulement par le
 /// `maxlength` du navigateur (revue de code, passe 2).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn overlong_contact_details_are_rejected_by_the_api(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
@@ -467,7 +467,7 @@ async fn overlong_contact_details_are_rejected_by_the_api(pool: MySqlPool) {
 /// clients API — mais le doc-comment du DTO ne disait que « `null`/vide =
 /// effacer », jamais « absent aussi ». Ce test rend le comportement visible :
 /// s'il rougit, la sémantique a changé et le CHANGELOG doit suivre.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn an_omitted_field_clears_it_just_like_null(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;

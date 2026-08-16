@@ -17,9 +17,15 @@ tests/               # Tests d'intégration (#[sqlx::test])
 
 ## Tests d'intégration
 
-Les tests utilisent `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]` qui crée
+Les tests utilisent `#[sqlx::test(migrations = "./test-schema")]` qui crée
 une **base de données temporaire par test** (ce n'est pas un rollback de
 transaction). La base est clonée puis détruite automatiquement.
+
+Le répertoire `test-schema/` porte le **squash** du schéma — une seule
+migration DDL au lieu des 61 cycles du vrai `MIGRATOR` (cf. `test-schema/README.md`).
+Seuls les tests qui exercent le chemin des migrations lui-même gardent
+`migrator = "kesh_db::MIGRATOR"` ; la liste est tenue en dur par
+`tests/test_schema_guard.rs`, qui rougit sur tout écart.
 
 ### Prérequis
 
@@ -28,24 +34,29 @@ transaction). La base est clonée puis détruite automatiquement.
    docker compose -f docker-compose.dev.yml up -d mariadb
    ```
 
-2. L'utilisateur configuré dans `DATABASE_URL` doit avoir les droits
-   `CREATE DATABASE` et `DROP DATABASE` (nécessaire pour `#[sqlx::test]`).
-   Dans le container de dev, exécuter une fois :
-   ```bash
-   docker exec kesh-mariadb-dev mariadb -u root -pkesh_dev_root \
-     -e "GRANT ALL PRIVILEGES ON *.* TO 'kesh'@'%' WITH GRANT OPTION; FLUSH PRIVILEGES;"
-   ```
+2. Les droits `CREATE DATABASE` / `DROP DATABASE` de l'utilisateur de
+   `DATABASE_URL` (nécessaires à `#[sqlx::test]`) — **rien à faire à la main** :
+   `scripts/mariadb-init/01-dev-grants.sql` les pose à chaque démarrage du
+   conteneur. Ce n'est pas une commodité mais une nécessité : depuis la Story
+   22-5, le datadir de dev est en tmpfs, donc les tables système — et tout droit
+   accordé une fois — disparaissent à chaque redémarrage.
 
 3. `DATABASE_URL` configurée :
    ```bash
    export DATABASE_URL='mysql://kesh:kesh_dev@127.0.0.1:3306/kesh'
    ```
 
-4. Appliquer la migration initiale (une fois, pour créer le schéma cible) :
+4. Le schéma et le seed de la base partagée, **à rejouer après chaque
+   redémarrage du conteneur** (même raison qu'au point 2) :
    ```bash
-   docker exec -i kesh-mariadb-dev mariadb -u kesh -pkesh_dev kesh \
-     < crates/kesh-db/migrations/20260404000001_initial_schema.sql
+   sqlx migrate run --source crates/kesh-db/migrations
+   docker exec -i kesh-mariadb-dev mariadb -uroot -pkesh_dev_root kesh \
+     < scripts/seed-dev-db.sql
    ```
+   Passer par `sqlx migrate run`, et non par un `mariadb <` sur les fichiers :
+   c'est ce qui remplit `_sqlx_migrations`, sans quoi un `cargo run -p kesh-api`
+   sur cette base tenterait de tout ré-appliquer. Détails et modes d'échec :
+   `docs/testing.md` § « Base de dev jetable ».
 
 ### Lancer les tests
 

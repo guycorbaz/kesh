@@ -298,7 +298,7 @@ async fn wait_for_requested_audit(
 
 // === AC23-a : happy path complet ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn happy_path_forgot_then_reset_revokes_and_audits(pool: MySqlPool) {
     let cid = reset_db(&pool).await;
     let user = create_user(&pool, cid, "alice", Some("alice@example.ch"), true).await;
@@ -382,7 +382,7 @@ async fn happy_path_forgot_then_reset_revokes_and_audits(pool: MySqlPool) {
 
 // === AC23-b : token expiré ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn expired_token_returns_generic_400(pool: MySqlPool) {
     let cid = reset_db(&pool).await;
     let user = create_user(&pool, cid, "bob", Some("bob@example.ch"), true).await;
@@ -407,7 +407,7 @@ async fn expired_token_returns_generic_400(pool: MySqlPool) {
 
 // === AC23-c : double-consume ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reused_token_returns_generic_400(pool: MySqlPool) {
     let cid = reset_db(&pool).await;
     create_user(&pool, cid, "carol", Some("carol@example.ch"), true).await;
@@ -429,7 +429,7 @@ async fn reused_token_returns_generic_400(pool: MySqlPool) {
 
 // === AC23-d : identifiant inexistant — anti-énumération zéro trace ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn unknown_identifier_returns_200_and_leaves_no_trace(pool: MySqlPool) {
     reset_db(&pool).await;
     let mock = MockMailer::new();
@@ -456,7 +456,7 @@ async fn unknown_identifier_returns_200_and_leaves_no_trace(pool: MySqlPool) {
 
 // === AC23-e : user sans email ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn user_without_email_gets_audit_recoverable_false(pool: MySqlPool) {
     let cid = reset_db(&pool).await;
     let user = create_user(&pool, cid, "dave", None, true).await;
@@ -489,7 +489,7 @@ async fn user_without_email_gets_audit_recoverable_false(pool: MySqlPool) {
 
 // === AC23-f : rate-limit partagé forgot + reset ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn rate_limit_applies_to_both_endpoints(pool: MySqlPool) {
     reset_db(&pool).await;
     let app = spawn_app(pool.clone(), recovery_config(), MockMailer::new(), 3).await;
@@ -513,7 +513,7 @@ async fn rate_limit_applies_to_both_endpoints(pool: MySqlPool) {
 
 // === AC23-g : SMTP down → toujours 200, token créé ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn smtp_failure_still_returns_200_and_creates_token(pool: MySqlPool) {
     let cid = reset_db(&pool).await;
     create_user(&pool, cid, "erin", Some("erin@example.ch"), true).await;
@@ -528,7 +528,7 @@ async fn smtp_failure_still_returns_200_and_creates_token(pool: MySqlPool) {
 
 // === AC23-h : compte inactif — émission ET consommation ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn inactive_account_is_not_recoverable(pool: MySqlPool) {
     let cid = reset_db(&pool).await;
     let user = create_user(&pool, cid, "frank", Some("frank@example.ch"), false).await;
@@ -567,7 +567,7 @@ async fn inactive_account_is_not_recoverable(pool: MySqlPool) {
 
 // === AC23-i : email dupliqué ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn duplicate_email_two_actives_is_noop(pool: MySqlPool) {
     let cid = reset_db(&pool).await;
     create_user(&pool, cid, "grace1", Some("shared@example.ch"), true).await;
@@ -586,7 +586,7 @@ async fn duplicate_email_two_actives_is_noop(pool: MySqlPool) {
     assert_eq!(tokens, 0);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn duplicate_email_active_plus_inactive_recovers_the_active(pool: MySqlPool) {
     let cid = reset_db(&pool).await;
     let active = create_user(&pool, cid, "heidi-active", Some("dup@example.ch"), true).await;
@@ -609,7 +609,7 @@ async fn duplicate_email_active_plus_inactive_recovers_the_active(pool: MySqlPoo
 
 // === AC23-j : username avec `@` (legacy) routé vers le lookup email ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn legacy_username_with_at_is_routed_to_email_lookup(pool: MySqlPool) {
     let cid = reset_db(&pool).await;
     // User legacy inséré direct en DB (la garde `@` 17-4c bloque la création
@@ -636,7 +636,7 @@ async fn legacy_username_with_at_is_routed_to_email_lookup(pool: MySqlPool) {
 
 // === AC23-k : trim du token ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reset_token_is_trimmed(pool: MySqlPool) {
     let cid = reset_db(&pool).await;
     create_user(&pool, cid, "ivan", Some("ivan@example.ch"), true).await;
@@ -655,7 +655,7 @@ async fn reset_token_is_trimmed(pool: MySqlPool) {
 
 // === AC23-l : VALIDATION_ERROR ne brûle pas le token ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn validation_error_does_not_consume_token(pool: MySqlPool) {
     let cid = reset_db(&pool).await;
     create_user(&pool, cid, "judy", Some("judy@example.ch"), true).await;
@@ -680,7 +680,7 @@ async fn validation_error_does_not_consume_token(pool: MySqlPool) {
 
 // === AC23-m : feature off → 404 ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn feature_off_routes_are_not_mounted(pool: MySqlPool) {
     let cid = reset_db(&pool).await;
     create_user(&pool, cid, "kim", Some("kim@example.ch"), true).await;

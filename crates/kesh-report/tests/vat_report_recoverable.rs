@@ -78,7 +78,7 @@ async fn post_entry(
 
 /// (a)+(f) Une écriture récupérable → `total_vat_recoverable` = solde 1000 ;
 /// sans vente, `vat_balance` est négatif (crédit d'impôt AFC).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn recoverable_single_entry(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     // D 1000 (impôt préalable) 81 / C 2000 (contrepartie ≠ 1000, garde F3) 81.
@@ -106,7 +106,7 @@ async fn recoverable_single_entry(pool: MySqlPool) {
 }
 
 /// (b) Plusieurs écritures (débits + un crédit de correction) → solde net.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn recoverable_multiple_entries_net(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let recoverable = seeded.accounts["1000"];
@@ -154,7 +154,7 @@ async fn recoverable_multiple_entries_net(pool: MySqlPool) {
 }
 
 /// (c) Filtre période + bornes inclusives : hors-période exclu, bornes incluses.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn recoverable_period_filter_and_borders(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let recoverable = seeded.accounts["1000"];
@@ -219,7 +219,7 @@ async fn recoverable_period_filter_and_borders(pool: MySqlPool) {
 }
 
 /// (d) Compte récupérable non configuré (NULL) → 0.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn recoverable_account_null_returns_zero(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     // Dé-configurer le compte récupérable.
@@ -258,7 +258,7 @@ async fn recoverable_account_null_returns_zero(pool: MySqlPool) {
 /// (chemin `COALESCE(SUM,0)` 100 %-NULL, distinct du cas (d) NULL qui court-circuite
 /// avant le helper). Une écriture hors-période garantit que le helper est bien
 /// appelé mais ne compte rien.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn recoverable_configured_no_entry_in_period_returns_zero(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     // Une seule écriture, HORS période (2025) → le compte est configuré (1000), le
@@ -285,7 +285,7 @@ async fn recoverable_configured_no_entry_in_period_returns_zero(pool: MySqlPool)
 
 /// (e) Anti-IDOR (scoping company) : un `company_id` autre que celui des écritures
 /// retourne 0 (le filtre `je.company_id = ?` isole la company).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn recoverable_scoped_by_company(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     post_entry(
@@ -307,7 +307,7 @@ async fn recoverable_scoped_by_company(pool: MySqlPool) {
 }
 
 /// (h) « Achats seuls » : récupérable sans vente reste rendu au CSV (AC10/T-D2b).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn recoverable_only_rendered_in_csv(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     post_entry(

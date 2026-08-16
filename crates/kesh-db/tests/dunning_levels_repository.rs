@@ -50,7 +50,7 @@ async fn create_level(pool: &MySqlPool, company_id: i64, delay: i32, fee: &str) 
     created.id
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_appends_at_next_level_number(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Append Co").await;
     create_level(&pool, company_id, 10, "0.00").await;
@@ -70,7 +70,7 @@ async fn create_appends_at_next_level_number(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn update_stale_version_conflicts(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Update Co").await;
     let id = create_level(&pool, company_id, 10, "0.00").await;
@@ -92,7 +92,7 @@ async fn update_stale_version_conflicts(pool: MySqlPool) {
 
 /// H1 (validate P1) : la renumérotation à la suppression bumpe `version` — le
 /// verrou optimiste n'est pas contournable pour un niveau déplacé.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn delete_renumbers_and_bumps_version_of_shifted_levels(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Renumber Co").await;
     create_level(&pool, company_id, 10, "0.00").await; // niveau 1
@@ -143,7 +143,7 @@ async fn delete_renumbers_and_bumps_version_of_shifted_levels(pool: MySqlPool) {
     assert!(matches!(stale, Err(DbError::OptimisticLockConflict)));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn fee_over_max_rejected_by_check(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Fee Co").await;
     let mut tx = pool.begin().await.unwrap();
@@ -162,7 +162,7 @@ async fn fee_over_max_rejected_by_check(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn levels_isolated_per_company(pool: MySqlPool) {
     let a = create_test_company(&pool, "Co A").await;
     let b = create_test_company(&pool, "Co B").await;

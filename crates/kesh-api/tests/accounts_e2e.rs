@@ -208,7 +208,7 @@ async fn setup(pool: &MySqlPool) -> (i64, i64, String) {
 // Rôle & postabilité — contrat des 3 verbes
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_and_get_expose_role_and_postable(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (_company_id, _admin_id, token) = setup(&pool).await;
@@ -247,7 +247,7 @@ async fn post_and_get_expose_role_and_postable(pool: MySqlPool) {
     assert_eq!(list[0]["postable"], false);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_defaults_role_null_and_postable_true(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (_c, _a, token) = setup(&pool).await;
@@ -270,7 +270,7 @@ async fn post_defaults_role_null_and_postable_true(pool: MySqlPool) {
 /// Contrat **full-replace** : omettre `role` ou `postable` est un 400, pas un
 /// effacement silencieux. C'est le point de conception le plus discutable de la
 /// story — il est donc testé explicitement dans les deux sens.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn put_requires_role_and_postable_explicitly(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (company_id, admin_id, token) = setup(&pool).await;
@@ -342,7 +342,7 @@ async fn put_requires_role_and_postable_explicitly(pool: MySqlPool) {
 
 /// L'exigence n'est PAS seulement « 409 » : le corps doit **nommer** le compte
 /// qui porte déjà le rôle, sans quoi l'utilisateur ne sait pas quoi corriger.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn singleton_role_conflict_names_the_holding_account(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (company_id, admin_id, token) = setup(&pool).await;
@@ -381,7 +381,7 @@ async fn singleton_role_conflict_names_the_holding_account(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn multi_valued_role_accepted_twice(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (_c, _a, token) = setup(&pool).await;
@@ -406,7 +406,7 @@ async fn multi_valued_role_accepted_twice(pool: MySqlPool) {
 // Réactivation (#269)
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn archive_then_reactivate_round_trip(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (company_id, admin_id, token) = setup(&pool).await;
@@ -450,7 +450,7 @@ async fn archive_then_reactivate_round_trip(pool: MySqlPool) {
     assert_eq!(body["version"], 3, "réactiver un compte actif = no-op");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reactivate_refused_when_parent_archived(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (company_id, admin_id, token) = setup(&pool).await;
@@ -503,7 +503,7 @@ async fn reactivate_refused_when_parent_archived(pool: MySqlPool) {
 /// Code review 14-3a (HIGH) : le conflit de rôle singleton doit être détecté au
 /// `POST`, avec le compte détenteur nommé — pas remonté en `RESOURCE_CONFLICT`
 /// générique que le formulaire traduirait par « ce numéro existe déjà ».
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_names_the_holder_on_singleton_role_conflict(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (company_id, admin_id, token) = setup(&pool).await;
@@ -542,7 +542,7 @@ async fn create_names_the_holder_on_singleton_role_conflict(pool: MySqlPool) {
 
 /// Code review 14-3a (D1) : la frontière bilan / résultat est validée au POST
 /// comme au PUT — un rôle de bilan sur une charge est un 400 typé.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_rejects_role_on_incompatible_type(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (_company_id, _admin_id, token) = setup(&pool).await;
@@ -567,7 +567,7 @@ async fn create_rejects_role_on_incompatible_type(pool: MySqlPool) {
 /// Code review 14-3a (HIGH) : `PUT /accounts/{id}` doit refuser un compte d'une
 /// autre société (IDOR) — la garde existait sur archive/reactivate mais pas ici,
 /// et la story y fait désormais transiter `role`/`postable`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn update_is_scoped_to_company(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (_company_a, _admin_a, token_a) = setup(&pool).await;
@@ -603,7 +603,7 @@ async fn update_is_scoped_to_company(pool: MySqlPool) {
 
 /// Code review 14-3a (D4) : `clearRole: true` réactive un compte dont le rôle a
 /// été repris, en le laissant sans rôle plutôt qu'en échouant.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reactivate_with_clear_role_succeeds_after_conflict(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (company_id, admin_id, token) = setup(&pool).await;
@@ -662,7 +662,7 @@ async fn reactivate_with_clear_role_succeeds_after_conflict(pool: MySqlPool) {
 /// Conséquence directe du `active AND` de la colonne générée : le rôle est
 /// libéré à l'archivage, donc réactiver après reprise doit échouer **proprement**
 /// (409 nommant le repreneur) et jamais en 500 sur le 1062 brut.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reactivate_refused_when_singleton_role_was_taken(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (company_id, admin_id, token) = setup(&pool).await;
@@ -703,7 +703,7 @@ async fn reactivate_refused_when_singleton_role_was_taken(pool: MySqlPool) {
 // RBAC & IDOR
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn consultation_role_cannot_write(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_id = create_company(&pool, "Acme SA").await;
@@ -746,7 +746,7 @@ async fn consultation_role_cannot_write(pool: MySqlPool) {
     }
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reactivate_is_scoped_to_company(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (_c1, _a1, token) = setup(&pool).await;

@@ -101,7 +101,7 @@ Note : la CI utilise `cargo test --workspace -j1 -- --test-threads=1` pour seria
 
 #### Gate rapide — `cargo-nextest` (recommandé si MariaDB démarré)
 
-Alternative **1,40× plus rapide** au `cargo test -j1 --test-threads=1` (mesuré 2026-07-13 : **54 min → 38 min** sur la suite complète, 1802 tests, 0 flake). Un script enveloppe fmt + clippy + nextest :
+Alternative au `cargo test -j1 --test-threads=1`. Un script enveloppe fmt + clippy + nextest :
 
 ```sh
 scripts/test-fast.sh            # fmt + clippy + nextest (défaut)
@@ -111,7 +111,21 @@ scripts/test-fast.sh --ci       # profil ci (retries=1, fail-fast off)
 
 Pré-requis : `cargo install cargo-nextest` (ou binaire prébuilt `https://get.nexte.st`) + MariaDB dev démarré. Config dans `.config/nextest.toml`.
 
-**Pourquoi seulement 1,40× et pas 6× ?** Le goulot n'est pas le CPU mais MariaDB : chaque test `#[sqlx::test]` (~894) crée une base éphémère et y **rejoue les 51 migrations** (DDL sérialisé par les metadata-locks). Au-delà de **6 threads la contention devient contre-productive** (32 threads → 3 flakes `reconciliation_*_e2e` KF-038 #228 + tests « slow », run cassé). Le plafond est donc figé à 6 dans la config. Le vrai levier (squash du schéma de test + durabilité MariaDB relâchée sur la DB jetable) est suivi dans l'**issue #251** — tant qu'il n'est pas livré, nextest = gain modeste + stabilité, pas une révolution.
+**Le goulot n'a jamais été le CPU, mais MariaDB** — et il a été levé. Chaque test `#[sqlx::test]` créait une base éphémère et y **rejouait les migrations une par une** (DDL sérialisé par les metadata-locks) ; c'est cette contention qui a figé le plafond à **6 threads** (32 threads → 3 flakes `reconciliation_*_e2e` KF-038 #228 + tests « slow », run cassé), et qui limitait nextest à un gain modeste de 1,40× (mesuré 2026-07-13 : 54 min → 38 min, 1802 tests).
+
+**Depuis la Story 22-5 (issue #251), 1102 des 1145 attributs `#[sqlx::test]` montent le squash `crates/kesh-db/test-schema/`** — un batch DDL unique au lieu des 61 migrations. Mesuré le 2026-08-16, même machine, profil `ci`, 2209 tests, deux runs par état :
+
+| | run 1 | run 2 | moyenne |
+|---|---|---|---|
+| avant le squash | 3677 s | 4051 s | **64,4 min** |
+| après le squash | 1266 s | 1111 s | **19,8 min** |
+| + tmpfs de dev (T6) | 91 s | 89 s | **1,5 min** |
+
+Soit **3,25×** pour le squash, puis **13,2× de plus** pour le tmpfs — **42,8× au total**, l'heure devenue la minute et demie. Le tmpfs pèse donc plus lourd que le squash lui-même : la création d'une base éphémère était dominée par les `fsync`, et le squash réduisait le *nombre* d'opérations DDL sans toucher à leur coût unitaire. ⚠️ **La troisième ligne ne vaut que pour le poste de dev** — la CI n'a pas de tmpfs (`services:` de GitHub Actions ne permet pas de passer de `command:` à mariadbd).
+
+⚠️ Les 38 min du tableau de 2026-07-13 et les 64,4 min ci-dessus ne se contredisent pas : entre les deux, la suite a gagné 22,6 % de tests (1802 → 2209) et chaque test 19,6 % de migrations (51 → 61) — le produit vaut ×1,47 et explique l'essentiel de l'écart. Les 43 attributs restés sur le vrai `MIGRATOR` sont ceux qui testent **ce chemin lui-même** ; la liste est tenue en dur par `crates/kesh-db/tests/test_schema_guard.rs`, qui rougit dès qu'un test s'en écarte ou que le squash dérive du schéma réel.
+
+⚠️ **Le plafond de 6 threads n'a PAS été re-mesuré depuis.** Sa cause a disparu, donc il est vraisemblablement trop bas — il reste à 6 **faute de mesure, pas par conviction**. Le relever demande de rejouer le tableau ci-dessus, flakes compris.
 
 ### Frontend (Svelte)
 
@@ -257,7 +271,7 @@ Le noyau pénalise chaque allocation d'un sommeil proportionnel au retard du rec
 | `.cargo/config.toml` → `--thread-count=4` (mold) | 4 | threads internes de l'éditeur de liens |
 | `Cargo.toml` → `[profile.dev] debug` | `line-tables-only` | volume de DWARF construit puis recopié dans chaque binaire de test |
 | `frontend/vite.config.ts` → `maxWorkers` | 4 | processus Node+jsdom de vitest (défaut : **31** ici) |
-| `.config/nextest.toml` → `test-threads` | 6 | binaires de test simultanés — plafond fixé par la contention MariaDB, pas par la RAM ; ne pas le changer pour des raisons de mémoire |
+| `.config/nextest.toml` → `test-threads` | 6 | binaires de test simultanés — plafond fixé par la contention MariaDB, pas par la RAM ; ne pas le changer pour des raisons de mémoire (et non re-mesuré depuis le squash — cf. § *Gate rapide*) |
 
 ⚠️ **Le `.cargo/config.toml` du projet ÉCRASE celui de la station** (`~/.cargo/config.toml`). Cargo ne fusionne pas les valeurs scalaires : le fichier le plus proche du projet gagne. Le `jobs = 4` global posé sur la station après le diagnostic du 2026-07-23 était donc **sans effet dans ce dépôt** — seul de tous les projets Rust de la machine, il compilait à 8. C'est un mode d'échec silencieux : le réglage existe, il est correct, et il ne s'applique pas. Toute modification du `jobs` de la station doit être répercutée ici.
 
@@ -356,20 +370,36 @@ Pourquoi cette règle existe : sur l'Epic 16, **le compte rendu est devenu le li
 
 *(codifié 2026-08-11, rétrospective Epic 16)*
 
-### Un gate interrompu laisse la base piégée
+### Un gate laisse la base piégée — et pas seulement quand il est interrompu
 
-**Règle** : après tout gate **tué en vol** (Ctrl-C, timeout, session perdue, OOM), considérer la base de gate comme **contaminée** et la remettre à zéro avant le run suivant. Ne jamais diagnostiquer un rouge de gate sans avoir vérifié qu'un run précédent ne s'est pas interrompu.
+**Règle** : remettre la base de gate à zéro **avant tout gate complet**, sans se demander comment le run précédent s'est terminé. Ne jamais diagnostiquer un rouge de gate sans avoir d'abord reconstruit la base.
 
-Le mode d'échec : un test qui modifie l'état partagé confie sa restauration à son appelant, lequel n'a jamais repris la main. La valeur reste en base et fait rougir le gate **suivant**, de façon **déterministe** et **sans aucun rapport** avec la story en cours.
+Le mode d'échec : un test qui modifie l'état partagé confie sa restauration à son appelant, ou crée des lignes qu'il ne supprime pas. Le résidu reste en base et fait rougir le gate **suivant**, de façon **déterministe** et **sans aucun rapport** avec la story en cours.
 
-Deux occurrences dans le seul Epic 16 :
+**Il se produit dans DEUX circonstances, et la seconde est la plus traître :**
+
+**(a) Le gate tué en vol** (Ctrl-C, timeout, session perdue, OOM) — l'appelant n'a jamais repris la main. Deux occurrences dans le seul Epic 16 :
 
 - **16-1a** — un `nextest` tué laisse `kesh_gate` avec `postable=0` sur le compte 1000 → **26 faux échecs** `journal_entries` au run suivant, **indiscernables** du cas « base non seedée » ;
 - **16-3a** — même famille : `1000 Caisse CI` resté `postable=FALSE` par le helper `set_postable`, faisant échouer `test_check_constraint_rejects_debit_and_credit_same_line`, déterministe et hors sujet.
 
+**(b) Le gate TERMINÉ, et terminé EN VERT.** Un run qui va au bout laisse lui aussi de quoi casser le suivant : les tests de dépôt sur base partagée créent des factures liées à des écritures comptables et les y laissent, si bien que le `delete_all_by_company` du montage de `journal_entries::tests` échoue au run d'après sur `fk_invoices_journal_entry` — **34 faux échecs**, en 7 ms chacun, sur un module que la branche ne touche pas. *(Rencontré le 2026-08-16 en passe 3 de revue de la Story 22-5 ; **KF-039, issue #310**.)*
+
+⚠️ **C'est ce cas (b) qui a fait amender cette règle.** Sa première rédaction ne visait que le gate interrompu — un lecteur constatant que son run précédent s'était bien terminé en concluait, à tort, que la base était saine et allait chercher ailleurs. La question « le run précédent a-t-il été interrompu ? » n'est donc **pas** le bon filtre : **la remise à zéro est inconditionnelle**.
+
+**Le geste, et pourquoi il est devenu bon marché** :
+
+```sh
+docker compose -f docker-compose.dev.yml restart mariadb   # tmpfs : efface tout
+sqlx migrate run --source crates/kesh-db/migrations
+docker exec -i kesh-mariadb-dev mariadb -uroot -pkesh_dev_root kesh < scripts/seed-dev-db.sql
+```
+
+Depuis que le datadir de dev est en tmpfs (Story 22-5, #251), ce cycle coûte **une quinzaine de secondes** — contre un vidage de tables à la main auparavant. C'est ce qui rend praticable une règle inconditionnelle là où l'ancienne devait se contenter d'un déclencheur. Détail et modes d'échec : `docs/testing.md` § « Base de dev jetable ».
+
 Le coût du diagnostic est chaque fois bien supérieur à celui de la remise à zéro. En cas de rouge inexpliqué sur des tests que la branche ne touche pas, **reconstruire la base avant de chercher plus loin**.
 
-*(codifié 2026-08-11, rétrospective Epic 16)*
+*(codifié 2026-08-11, rétrospective Epic 16 — **étendu au gate terminé le 2026-08-16**, passe 3 de revue de la Story 22-5, KF-039 #310.)*
 
 ### Haiku-specific guardrails — grep ground-truth obligatoire
 

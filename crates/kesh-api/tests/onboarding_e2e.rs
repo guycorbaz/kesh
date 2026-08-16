@@ -103,7 +103,7 @@ fn auth(token: &str) -> String {
 
 // --- Tests ---
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn get_state_returns_initial_state(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
@@ -125,7 +125,7 @@ async fn get_state_returns_initial_state(pool: MySqlPool) {
     assert!(body["uiMode"].is_null());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn get_state_requires_auth(pool: MySqlPool) {
     let app = spawn_app(pool).await;
 
@@ -139,7 +139,7 @@ async fn get_state_requires_auth(pool: MySqlPool) {
     assert_eq!(resp.status(), 401);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn set_language_advances_to_step_1(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
@@ -160,7 +160,7 @@ async fn set_language_advances_to_step_1(pool: MySqlPool) {
     assert_eq!(body["stepCompleted"], 1);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn set_language_invalid_returns_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
@@ -181,7 +181,7 @@ async fn set_language_invalid_returns_400(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn set_language_twice_returns_step_already_completed(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
@@ -212,7 +212,7 @@ async fn set_language_twice_returns_step_already_completed(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "ONBOARDING_STEP_ALREADY_COMPLETED");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn set_mode_invalid_returns_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
@@ -243,7 +243,7 @@ async fn set_mode_invalid_returns_400(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_onboarding_flow_demo_path(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
@@ -302,7 +302,7 @@ async fn full_onboarding_flow_demo_path(pool: MySqlPool) {
     assert_eq!(body["isDemo"], true);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reset_clears_demo_data(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
@@ -363,7 +363,7 @@ async fn reset_clears_demo_data(pool: MySqlPool) {
 /// P8 / H4 — even if `is_demo = true` (potentially corrupted flag), `reset()` must
 /// refuse to wipe a finalized onboarding (step >= 7). The secondary step gate is
 /// the security floor; the is_demo flag alone is not sufficient.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reset_blocks_step_7_even_when_is_demo_flag_is_true(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
@@ -412,7 +412,7 @@ async fn reset_blocks_step_7_even_when_is_demo_flag_is_true(pool: MySqlPool) {
 /// or a similar guard if available; here we set + unset around the request and
 /// rely on the test harness running tests sequentially (cargo test --test-threads=1
 /// per `.cargo/config.toml`).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reset_allows_demo_at_step_5_when_env_var_set(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
@@ -469,7 +469,7 @@ async fn reset_allows_demo_at_step_5_when_env_var_set(pool: MySqlPool) {
 /// regardless of KESH_PRODUCTION_RESET. P6-L8: distinct ONBOARDING_RESET_FORBIDDEN
 /// error code (403) so the client can distinguish policy-refusal from a finalized
 /// onboarding (which uses ONBOARDING_STEP_ALREADY_COMPLETED at 400).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reset_blocks_production_past_step_2(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
@@ -494,7 +494,7 @@ async fn reset_blocks_production_past_step_2(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "ONBOARDING_RESET_FORBIDDEN");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn seed_demo_at_wrong_step_returns_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
@@ -517,7 +517,7 @@ async fn seed_demo_at_wrong_step_returns_400(pool: MySqlPool) {
 /// Story v011-2 (Issue #120, AC #10bis) — fresh install : pas de `create_test_company`,
 /// le bootstrap crée la company stub (`is_stub=TRUE`). Le path demo considère la
 /// company comme configurée : `seed_demo` repasse `is_stub=FALSE`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn fresh_install_stub_cleared_by_seed_demo(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     // PAS de create_test_company : le bootstrap crée la company stub.

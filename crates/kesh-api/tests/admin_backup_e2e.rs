@@ -140,7 +140,7 @@ async fn table_counts(pool: &MySqlPool) -> BTreeMap<&'static str, i64> {
 // AC22 — round-trip exhaustif sur données riches
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_roundtrip_rich_dataset_preserves_all_tables(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
 
@@ -321,7 +321,7 @@ async fn full_roundtrip_rich_dataset_preserves_all_tables(pool: MySqlPool) {
 // AC22 — login admin source possible après restore
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_roundtrip_source_admin_can_login_after_import(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let seeded = seed_accounting_company(&pool).await.expect("seed");
@@ -375,7 +375,7 @@ async fn full_roundtrip_source_admin_can_login_after_import(pool: MySqlPool) {
 // AC22 — intégrité FK + audit préservé / entrée import présente
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_roundtrip_fk_integrity_and_audit_after_import(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let seeded = seed_accounting_company(&pool).await.expect("seed");

@@ -274,7 +274,7 @@ fn rezip(manifest: &Value, data: &BTreeMap<String, Vec<u8>>) -> Vec<u8> {
 // AC14/AC16/O-1 — round-trip : remplacement + audit user_id source
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_import_round_trip_replaces_state_and_audits_source_admin(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
 
@@ -371,7 +371,7 @@ async fn full_import_round_trip_replaces_state_and_audits_source_admin(pool: MyS
 // AC11 — RBAC + anti-PAT
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_import_non_admin_returns_403(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let admin = seed_admin(&pool, "Acme").await;
@@ -387,7 +387,7 @@ async fn full_import_non_admin_returns_403(pool: MySqlPool) {
     }
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_import_via_pat_returns_403(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let admin = seed_admin(&pool, "Acme").await;
@@ -420,7 +420,7 @@ async fn full_import_via_pat_returns_403(pool: MySqlPool) {
 // AC12 — refus version / SHA / format / schéma
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_import_refuses_incompatible_version_409(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let admin = seed_admin(&pool, "Acme").await;
@@ -438,7 +438,7 @@ async fn full_import_refuses_incompatible_version_409(pool: MySqlPool) {
     assert_eq!(body["error"]["details"]["sourceMinRequired"], "99.0.0");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_import_refuses_sha_tamper_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let admin = seed_admin(&pool, "Acme").await;
@@ -456,7 +456,7 @@ async fn full_import_refuses_sha_tamper_400(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "INVALID_BACKUP_STRUCTURE");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_import_refuses_unknown_format_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let admin = seed_admin(&pool, "Acme").await;
@@ -472,7 +472,7 @@ async fn full_import_refuses_unknown_format_400(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "INVALID_BACKUP_STRUCTURE");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_import_refuses_schema_mismatch_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let admin = seed_admin(&pool, "Acme").await;
@@ -502,7 +502,7 @@ async fn full_import_refuses_schema_mismatch_400(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_import_refuses_missing_required_column_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let admin = seed_admin(&pool, "Acme").await;
@@ -541,7 +541,7 @@ async fn full_import_refuses_missing_required_column_400(pool: MySqlPool) {
 // AC17 — rollback transactionnel : destination intacte sur échec restore
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_import_rolls_back_on_insert_failure(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let keep = seed_admin(&pool, "KeepMe").await;
@@ -593,7 +593,7 @@ async fn full_import_rolls_back_on_insert_failure(pool: MySqlPool) {
 // DC11 — onboarding forcé « done » post-import (anti catch-22 #120)
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_import_forces_onboarding_done(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let admin = seed_admin(&pool, "Acme").await;
@@ -936,7 +936,7 @@ async fn account_postable(pool: &MySqlPool, number: &str) -> bool {
 /// ensemble vide et ce test serait vert pour rien** — c'est précisément ce que
 /// mesure la mutation 5 de `T-D3` (registre vidé de son entrée `20260729000001` :
 /// C1 **et** C1-bis doivent rougir). D'où la pré-condition explicite ci-dessous.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_import_replays_revenue_account_backfill(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let biz = seed_business(&pool, "C1").await;
@@ -1003,7 +1003,7 @@ async fn full_import_replays_revenue_account_backfill(pool: MySqlPool) {
 /// C'est le cas qui justifie la décision D-C1 de 16-1c : la colonne est créée
 /// par `20260727000001` et remplie par `20260729000001`, deux migrations
 /// distinctes — une sentinelle mentirait sur tout backup pris entre les deux.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_import_replays_class_a_even_when_column_is_present(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let biz = seed_business(&pool, "C1bis").await;
@@ -1054,7 +1054,7 @@ async fn full_import_replays_class_a_even_when_column_is_present(pool: MySqlPool
 /// `role = NULL` partout et `postable` à son `DEFAULT TRUE` — la perte
 /// silencieuse décrite par l'issue, qui casse la présentation des fonds propres
 /// par rôle **et** la condition d'imputabilité du backfill de 16-1a-bis.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_import_replays_role_and_postable_when_both_columns_absent(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let biz = seed_business(&pool, "C2").await;
@@ -1147,7 +1147,7 @@ async fn full_import_replays_role_and_postable_when_both_columns_absent(pool: My
 /// construit par `strip_column`. Le cas ne décrit donc aucun scénario vécu — il
 /// **verrouille la règle** pour les entrées futures, qui pourront porter des
 /// sentinelles sur des colonnes de migrations différentes.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_import_replays_when_only_one_sentinel_is_absent(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let biz = seed_business(&pool, "C2bis").await;
@@ -1211,7 +1211,7 @@ async fn full_import_replays_when_only_one_sentinel_is_absent(pool: MySqlPool) {
 ///
 /// Le montage discriminant est **atteignable par l'API** : `PUT /accounts/{id}`
 /// documente `role: null` comme l'acte de retrait (`routes/accounts.rs:70`).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_import_skips_role_backfill_when_sentinels_are_present(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let biz = seed_business(&pool, "C3").await;
@@ -1293,7 +1293,7 @@ async fn full_import_skips_role_backfill_when_sentinels_are_present(pool: MySqlP
 /// par l'écriture (`:926-928`) ; et `2979` **naît** non imputable, le seed
 /// appliquant `is_postable`, jumelle pure d'`effective_postable`. Le repointage
 /// préserve en outre l'équilibre débit/crédit, qu'aucun `CHECK` ne protège.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_import_replays_backfills_in_increasing_version_order(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let biz = seed_business(&pool, "C5").await;
@@ -1366,7 +1366,7 @@ async fn full_import_replays_backfills_in_increasing_version_order(pool: MySqlPo
 /// `client_number_canonical` vide : le backfill Rust, appelé en fin d'import,
 /// le remplit. C'est l'esprit du garde-fou P7 tenu SANS entrée au registre
 /// SQL — la migration est du DDL pur, seul ce chemin rejoue.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_import_backfills_client_number_canonical(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = seed_admin(&pool, "cn_backfill").await;
@@ -1405,7 +1405,7 @@ async fn full_import_backfills_client_number_canonical(pool: MySqlPool) {
 /// `IMPORT_CLIENT_NUMBER_COLLISION`**, rapport nominatif dans
 /// `details.report`, et l'état précédent est préservé (rollback). Un backup
 /// en collision ne s'installe pas : il se répare d'abord.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_import_refuses_client_number_collision_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = seed_admin(&pool, "cn_collision").await;

@@ -229,7 +229,7 @@ const FY_PERIOD: &str = "periodStart=2026-01-01&periodEnd=2026-12-31";
 // Tests
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn vat_report_requires_auth_returns_401(pool: MySqlPool) {
     let app = spawn_app(pool).await;
     let resp = app
@@ -241,7 +241,7 @@ async fn vat_report_requires_auth_returns_401(pool: MySqlPool) {
     assert_eq!(resp.status(), 401);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn vat_report_aggregates_by_rate_validated_only(pool: MySqlPool) {
     let (admin_id, company_id, fy_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id, "Client A").await;
@@ -327,7 +327,7 @@ async fn vat_report_aggregates_by_rate_validated_only(pool: MySqlPool) {
 }
 
 /// AC#3 — arrondi PAR LIGNE ≠ global : 3 lignes 0.10 @ 8 % → 0.03 (pas 0.02).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn vat_report_rounds_per_line_not_global(pool: MySqlPool) {
     let (admin_id, company_id, fy_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id, "Client A").await;
@@ -365,7 +365,7 @@ async fn vat_report_rounds_per_line_not_global(pool: MySqlPool) {
 }
 
 /// OPUS-5 — une ligne 0 %/exonérée figure dans le rapport (base > 0, TVA = 0).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn vat_report_includes_zero_rate_exempt_row(pool: MySqlPool) {
     let (admin_id, company_id, fy_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id, "Client A").await;
@@ -398,7 +398,7 @@ async fn vat_report_includes_zero_rate_exempt_row(pool: MySqlPool) {
     assert_eq!(dec_field(r0, "vatDue"), dec!(0));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn vat_report_export_pdf(pool: MySqlPool) {
     let (admin_id, company_id, fy_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id, "Client A").await;
@@ -444,7 +444,7 @@ async fn vat_report_export_pdf(pool: MySqlPool) {
     assert!(bytes.starts_with(b"%PDF"), "magic PDF attendu");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn vat_report_export_csv(pool: MySqlPool) {
     let (admin_id, company_id, fy_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id, "Client A").await;
@@ -488,7 +488,7 @@ async fn vat_report_export_csv(pool: MySqlPool) {
 
 /// AC#5 — une facture `cancelled` (insérée en SQL direct, aucun endpoint ne la
 /// crée) est exclue du rapport.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn vat_report_excludes_cancelled_invoices(pool: MySqlPool) {
     let (admin_id, company_id, fy_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id, "Client A").await;
@@ -542,7 +542,7 @@ async fn vat_report_excludes_cancelled_invoices(pool: MySqlPool) {
     assert_eq!(dec_field(&body, "totalBaseHt"), dec!(1000));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn vat_report_export_invalid_format_returns_400(pool: MySqlPool) {
     let (_admin_id, _company_id, fy_id) = seed_base(&pool).await;
     let app = spawn_app(pool).await;
@@ -561,7 +561,7 @@ async fn vat_report_export_invalid_format_returns_400(pool: MySqlPool) {
 
 /// Période hors exercice → 400 (couvre aussi le cas « chevauchant 2 exercices »,
 /// même mécanisme de bornage `PeriodOutOfFiscalYear`).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn vat_report_period_out_of_fiscal_year_returns_400(pool: MySqlPool) {
     let (_admin_id, _company_id, fy_id) = seed_base(&pool).await;
     let app = spawn_app(pool).await;
@@ -581,7 +581,7 @@ async fn vat_report_period_out_of_fiscal_year_returns_400(pool: MySqlPool) {
 
 /// Anti-IDOR : les factures d'une autre entreprise n'apparaissent jamais dans le
 /// rapport de l'entreprise courante.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn vat_report_excludes_cross_tenant_invoices(pool: MySqlPool) {
     let (admin_id, company_id, fy_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id, "Client A").await;

@@ -92,7 +92,7 @@ fn sum_credit(je: &kesh_db::entities::JournalEntryWithLines) -> Decimal {
 }
 
 /// (a) Facture mono-taux 8.1 % → écriture 3 lignes (créance TTC, produit HT, 1×TVA due) + équilibre.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn validate_single_rate_posts_vat_line(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -122,7 +122,7 @@ async fn validate_single_rate_posts_vat_line(pool: MySqlPool) {
 }
 
 /// (b) Facture entièrement à taux 0 → 2 lignes, AUCUNE ligne sur le compte TVA due.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn validate_zero_rate_no_vat_line(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -144,7 +144,7 @@ async fn validate_zero_rate_no_vat_line(pool: MySqlPool) {
 /// `0.00`** (HT minuscule) → AUCUNE ligne sur le compte TVA due (sinon l'INSERT
 /// violerait `chk_jel_debit_credit_exclusive`, `credit = 0` interdit).
 /// `line_vat_amount(0.01, 8.10) = round_half_up(0.01 × 8.10 / 100) = round_half_up(0.00081) = 0.00`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn validate_rounds_to_zero_no_vat_line(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -176,7 +176,7 @@ async fn validate_rounds_to_zero_no_vat_line(pool: MySqlPool) {
 }
 
 /// (d) Facture multi-taux 8.1 % + 0 % → 1 SEULE ligne TVA due (taux > 0 uniquement).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn validate_mixed_positive_and_zero_rate(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -211,7 +211,7 @@ async fn validate_mixed_positive_and_zero_rate(pool: MySqlPool) {
 }
 
 /// (c) Multi-taux 8.1 % + 2.6 % → 2 lignes TVA distinctes + équilibre (1594 = 1500 + 13 + 81).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn validate_multi_rate_two_vat_lines(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -245,7 +245,7 @@ async fn validate_multi_rate_two_vat_lines(pool: MySqlPool) {
 }
 
 /// (f) TVA > 0 mais `default_vat_payable_account_id` NULL → `ConfigurationRequired`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn validate_vat_without_account_returns_config_required(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -276,7 +276,7 @@ async fn validate_vat_without_account_returns_config_required(pool: MySqlPool) {
 }
 
 /// (f2) Compte TVA due configuré mais ARCHIVÉ → `InactiveOrInvalidAccounts` (pas ConfigurationRequired).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn validate_vat_with_archived_account_returns_inactive(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -302,7 +302,7 @@ async fn validate_vat_with_archived_account_returns_inactive(pool: MySqlPool) {
 /// JAMAIS sur un re-lookup de la config `vat_rates`. On mute la config `vat_rates`
 /// **entre la création et la validation** : si le code re-lookupait le taux courant,
 /// l'écriture porterait 90.00 (9 %) ; comme il lit le snapshot ligne, elle porte 81.00.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn validate_uses_line_rate_snapshot_immune_to_vat_rates_change(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -406,7 +406,7 @@ fn draft_with_project(
 
 /// (19-4 a) Le projet de la facture est propagé sur TOUTES les lignes de
 /// l'écriture de vente à la validation (créance, produit, TVA comprises).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn validate_with_project_tags_all_sale_lines(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -440,7 +440,7 @@ async fn validate_with_project_tags_all_sale_lines(pool: MySqlPool) {
 }
 
 /// (19-4 b) Un projet archivé est refusé à la CRÉATION du brouillon.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_with_archived_project_is_rejected(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -461,7 +461,7 @@ async fn create_with_archived_project_is_rejected(pool: MySqlPool) {
 
 /// (19-4 c) Projet inexistant → NotFound (idem cross-company : scoping company
 /// dans validate_taggable_in_tx, couvert par les tests 19-2 du helper).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_with_unknown_project_is_rejected(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
@@ -479,7 +479,7 @@ async fn create_with_unknown_project_is_rejected(pool: MySqlPool) {
 /// (19-4 d) Grandfathering à l'édition du brouillon : un tag INCHANGÉ sur un
 /// projet archivé après coup ne bloque pas l'édition ; un CHANGEMENT de projet
 /// est validé (archivé refusé).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn update_grandfathers_unchanged_project(pool: MySqlPool) {
     use kesh_db::entities::InvoiceUpdate;
 
@@ -550,7 +550,7 @@ async fn update_grandfathers_unchanged_project(pool: MySqlPool) {
 
 /// (19-4 e) Re-validation AU POSTING : un projet archivé entre le brouillon et
 /// la validation est refusé (toute nouvelle entrée au grand livre = projet actif).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn validate_rejects_project_archived_after_draft(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;

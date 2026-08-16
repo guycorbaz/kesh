@@ -434,7 +434,7 @@ async fn setup_full(pool: &MySqlPool, label: &str, role: Role) -> Ctx {
 // AC #1 — Balance sheet equation holds
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn balance_sheet_returns_balanced_assets_liabilities(pool: MySqlPool) {
     let ctx = setup_full(&pool, "co_a", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -488,7 +488,7 @@ async fn balance_sheet_returns_balanced_assets_liabilities(pool: MySqlPool) {
 // AC #2 — Balance sheet ordering by account_number
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn balance_sheet_orders_accounts_by_number(pool: MySqlPool) {
     let ctx = setup_full(&pool, "co_b", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -526,7 +526,7 @@ async fn balance_sheet_orders_accounts_by_number(pool: MySqlPool) {
 // AC #3 — Income statement net_result + ordering
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn income_statement_computes_net_result_and_orders(pool: MySqlPool) {
     let ctx = setup_full(&pool, "co_c", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -572,7 +572,7 @@ async fn income_statement_computes_net_result_and_orders(pool: MySqlPool) {
 // AC #4 — Trial balance debit == credit
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn trial_balance_total_debit_equals_total_credit(pool: MySqlPool) {
     let ctx = setup_full(&pool, "co_d", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -596,7 +596,7 @@ async fn trial_balance_total_debit_equals_total_credit(pool: MySqlPool) {
 // AC #5 — Archived account with entries appears
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn trial_balance_includes_archived_with_entries(pool: MySqlPool) {
     let ctx = setup_full(&pool, "co_e", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -624,7 +624,7 @@ async fn trial_balance_includes_archived_with_entries(pool: MySqlPool) {
 // AC #7 — Journals returns 5 sections in fixed order
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn journals_returns_five_sections_in_fixed_order(pool: MySqlPool) {
     let ctx = setup_full(&pool, "co_f", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -656,7 +656,7 @@ async fn journals_returns_five_sections_in_fixed_order(pool: MySqlPool) {
 // AC #8 — Journal filter Achats returns one section
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn journals_filter_achats_returns_one_section(pool: MySqlPool) {
     let ctx = setup_full(&pool, "co_g", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -681,7 +681,7 @@ async fn journals_filter_achats_returns_one_section(pool: MySqlPool) {
 // AC #11 + #31 — Default period = full fiscal year, period in response
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn default_period_uses_fiscal_year_full_range_all_endpoints(pool: MySqlPool) {
     let ctx = setup_full(&pool, "co_h", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -723,7 +723,7 @@ async fn default_period_uses_fiscal_year_full_range_all_endpoints(pool: MySqlPoo
 // AC #12 — Partial period excludes outside entries
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn partial_period_excludes_outside_entries(pool: MySqlPool) {
     let ctx = setup_full(&pool, "co_i", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -757,7 +757,7 @@ async fn partial_period_excludes_outside_entries(pool: MySqlPool) {
 // AC #13 — Period out of FY returns 400 with 4 fields details
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn period_end_out_of_fy_returns_400_with_four_details_fields(pool: MySqlPool) {
     let ctx = setup_full(&pool, "co_j", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -787,7 +787,7 @@ async fn period_end_out_of_fy_returns_400_with_four_details_fields(pool: MySqlPo
 // AC #15 — Multi-fiscal-years isolation
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn multi_fiscal_years_isolation(pool: MySqlPool) {
     let ctx = setup_full(&pool, "co_k", Role::Comptable).await;
 
@@ -833,7 +833,7 @@ async fn multi_fiscal_years_isolation(pool: MySqlPool) {
 // AC #16 — Cross-tenant fiscal year returns 404
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn cross_tenant_fiscal_year_returns_404(pool: MySqlPool) {
     let ctx_a = setup_full(&pool, "co_l_a", Role::Comptable).await;
     let ctx_b = setup_full(&pool, "co_l_b", Role::Comptable).await;
@@ -859,7 +859,7 @@ async fn cross_tenant_fiscal_year_returns_404(pool: MySqlPool) {
 // AC #19 — fiscalYearId missing returns 400
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn fiscal_year_id_missing_returns_400(pool: MySqlPool) {
     let ctx = setup_full(&pool, "co_m", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -879,7 +879,7 @@ async fn fiscal_year_id_missing_returns_400(pool: MySqlPool) {
 // AC #20-bis — fiscalYearId <= 0 returns 400 JSON VALIDATION_ERROR
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn fiscal_year_id_zero_or_negative_returns_400(pool: MySqlPool) {
     let ctx = setup_full(&pool, "co_n", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -904,7 +904,7 @@ async fn fiscal_year_id_zero_or_negative_returns_400(pool: MySqlPool) {
 // AC #23 + #32 — Consultation role can read reports
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn consultation_role_can_read_reports(pool: MySqlPool) {
     let ctx = setup_full(&pool, "co_o", Role::Consultation).await;
     let app = spawn_app(pool).await;
@@ -926,7 +926,7 @@ async fn consultation_role_can_read_reports(pool: MySqlPool) {
 // AC #24 — Unauthenticated returns 401
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn unauthenticated_returns_401(pool: MySqlPool) {
     let _ctx = setup_full(&pool, "co_p", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -944,7 +944,7 @@ async fn unauthenticated_returns_401(pool: MySqlPool) {
 // AC #25 — Audit emitted on success with sentinel entity_id
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn report_generated_audit_emitted_on_success(pool: MySqlPool) {
     let ctx = setup_full(&pool, "co_q", Role::Comptable).await;
     let pool_clone = pool.clone();
@@ -1016,7 +1016,7 @@ async fn report_generated_audit_emitted_on_success(pool: MySqlPool) {
 // AC #26 — No audit on 400/404
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn report_generated_audit_not_emitted_on_400(pool: MySqlPool) {
     let ctx = setup_full(&pool, "co_r", Role::Comptable).await;
     let pool_clone = pool.clone();
@@ -1049,7 +1049,7 @@ async fn report_generated_audit_not_emitted_on_400(pool: MySqlPool) {
 // AC #18 — Audit scoped via JOIN users
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn audit_log_scoped_to_company_via_user_join(pool: MySqlPool) {
     let ctx_a = setup_full(&pool, "co_s_a", Role::Comptable).await;
     let ctx_b = setup_full(&pool, "co_s_b", Role::Comptable).await;
@@ -1096,7 +1096,7 @@ async fn audit_log_scoped_to_company_via_user_join(pool: MySqlPool) {
 // AC #14 — Period inversed returns 400 VALIDATION_ERROR
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn period_inversed_returns_400_validation_code(pool: MySqlPool) {
     let ctx = setup_full(&pool, "co_t", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -1123,7 +1123,7 @@ async fn period_inversed_returns_400_validation_code(pool: MySqlPool) {
 // Cross-tenant aggregation filter (AC #17 implicite)
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn cross_tenant_aggregation_filtered_by_company(pool: MySqlPool) {
     let ctx_a = setup_full(&pool, "co_u_a", Role::Comptable).await;
     let _ctx_b = setup_full(&pool, "co_u_b", Role::Comptable).await;
@@ -1165,7 +1165,7 @@ async fn cross_tenant_aggregation_filtered_by_company(pool: MySqlPool) {
 // AC #6 — Archived account WITHOUT entries excluded
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn trial_balance_excludes_archived_without_entries(pool: MySqlPool) {
     let ctx = setup_full(&pool, "co_w", Role::Comptable).await;
     // Créer un compte archivé sans écriture
@@ -1204,7 +1204,7 @@ async fn trial_balance_excludes_archived_without_entries(pool: MySqlPool) {
 // AC #9 — Journals orders entries chronologically
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn journals_orders_entries_chronologically(pool: MySqlPool) {
     let ctx = setup_full(&pool, "co_x", Role::Comptable).await;
     // Ajouter 2 écritures Achats avec dates inverses
@@ -1265,7 +1265,7 @@ async fn journals_orders_entries_chronologically(pool: MySqlPool) {
 // AC #20 — fiscalYearId malformé (parse error) returns 400
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn fiscal_year_id_malformed_returns_400(pool: MySqlPool) {
     let ctx = setup_full(&pool, "co_y", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -1285,7 +1285,7 @@ async fn fiscal_year_id_malformed_returns_400(pool: MySqlPool) {
 // AC #21 — Date malformée returns 400
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn date_malformed_returns_400(pool: MySqlPool) {
     let ctx = setup_full(&pool, "co_z", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -1309,7 +1309,7 @@ async fn date_malformed_returns_400(pool: MySqlPool) {
 // AC #22 — Journal enum invalide returns 400
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn journal_enum_invalid_returns_400(pool: MySqlPool) {
     let ctx = setup_full(&pool, "co_aa", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -1336,7 +1336,7 @@ async fn journal_enum_invalid_returns_400(pool: MySqlPool) {
 //  à-nouveau virtuel — cf. AC-A / AC-I)
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn balance_sheet_cumulative_ignores_period_start_equation_holds(pool: MySqlPool) {
     let ctx = setup_full(&pool, "co_bb", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -1403,7 +1403,7 @@ async fn balance_sheet_cumulative_ignores_period_start_equation_holds(pool: MySq
 // non nul + équilibré (report à-nouveau virtuel, AC-C/E)
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn balance_sheet_next_year_reflects_prior_closing_balances(pool: MySqlPool) {
     let company_id = create_company(&pool, "co_cf").await;
     let user_id = create_user(&pool, "co_cf_user", Role::Comptable, company_id).await;
@@ -1515,7 +1515,7 @@ async fn balance_sheet_next_year_reflects_prior_closing_balances(pool: MySqlPool
 // AC #10 — Journal line ordering preserved
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn journals_preserves_line_order(pool: MySqlPool) {
     let ctx = setup_full(&pool, "co_v", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -1633,7 +1633,7 @@ async fn seed_open_invoice_for(pool: &MySqlPool, ctx: &Ctx, contact_name: &str) 
     contact_name.to_string()
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn aged_receivables_view_allowed_for_consultation(pool: MySqlPool) {
     // Vue tous rôles (D-7b) : un Consultation peut consulter la balance âgée.
     let ctx = setup_full(&pool, "aged_consult", Role::Consultation).await;
@@ -1652,7 +1652,7 @@ async fn aged_receivables_view_allowed_for_consultation(pool: MySqlPool) {
     assert!(body["totals"]["total"].is_string());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn aged_receivables_export_forbidden_for_consultation(pool: MySqlPool) {
     // Export CSV = Comptable+ (D24) : un Consultation reçoit 403.
     let ctx = setup_full(&pool, "aged_exp_403", Role::Consultation).await;
@@ -1668,7 +1668,7 @@ async fn aged_receivables_export_forbidden_for_consultation(pool: MySqlPool) {
     assert_eq!(resp.status(), 403, "export réservé Comptable+");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn aged_receivables_export_ok_for_comptable(pool: MySqlPool) {
     let ctx = setup_full(&pool, "aged_exp_ok", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -1694,7 +1694,7 @@ async fn aged_receivables_export_ok_for_comptable(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn aged_receivables_export_ok_for_admin(pool: MySqlPool) {
     // D24 : l'export est Comptable+ → Admin (rôle supérieur) l'obtient aussi.
     let ctx = setup_full(&pool, "aged_exp_admin", Role::Admin).await;
@@ -1721,7 +1721,7 @@ async fn aged_receivables_export_ok_for_admin(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn aged_receivables_export_rejects_pdf(pool: MySqlPool) {
     // 21-7 : CSV only. Un format pdf/autre → 400.
     let ctx = setup_full(&pool, "aged_pdf", Role::Comptable).await;
@@ -1737,7 +1737,7 @@ async fn aged_receivables_export_rejects_pdf(pool: MySqlPool) {
     assert_eq!(resp.status(), 400, "seul csv est supporté");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn aged_receivables_scoped_per_company(pool: MySqlPool) {
     // Isolation cross-tenant : le poste ouvert de A n'apparaît pas dans le
     // rapport de B (company_id vient du JWT — AC19). Réponse 200 + rows scopées.

@@ -161,7 +161,7 @@ async fn login_as(app: &TestApp, username: &str, password: &str) -> reqwest::Res
 
 // === T7.2 : Tests création ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_user_success(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -187,7 +187,7 @@ async fn create_user_success(pool: MySqlPool) {
     assert!(body.get("password_hash").is_none());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_user_invalid_role_returns_422(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -196,7 +196,7 @@ async fn create_user_invalid_role_returns_422(pool: MySqlPool) {
     assert_eq!(resp.status(), 422);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_user_duplicate_username_returns_409(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -222,7 +222,7 @@ async fn create_user_duplicate_username_returns_409(pool: MySqlPool) {
     assert_eq!(resp.status(), 409);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_user_short_password_returns_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -231,7 +231,7 @@ async fn create_user_short_password_returns_400(pool: MySqlPool) {
     assert_eq!(resp.status(), 400);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_user_empty_username_returns_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -240,7 +240,7 @@ async fn create_user_empty_username_returns_400(pool: MySqlPool) {
     assert_eq!(resp.status(), 400);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_user_whitespace_username_returns_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -249,7 +249,7 @@ async fn create_user_whitespace_username_returns_400(pool: MySqlPool) {
     assert_eq!(resp.status(), 400);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_user_non_admin_returns_403(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -285,7 +285,7 @@ async fn create_user_non_admin_returns_403(pool: MySqlPool) {
 
 // === T-A5 (Story 17-4a) : Tests validation email ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_user_with_valid_email_persists_and_returns_it(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -321,7 +321,7 @@ async fn create_user_with_valid_email_persists_and_returns_it(pool: MySqlPool) {
     assert_eq!(body["email"], "newuser@example.com");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_user_with_invalid_email_returns_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -342,7 +342,7 @@ async fn create_user_with_invalid_email_returns_400(pool: MySqlPool) {
     assert_eq!(resp.status(), 400);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_user_without_email_returns_null(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -361,7 +361,7 @@ async fn create_user_without_email_returns_null(pool: MySqlPool) {
     assert!(body["email"].is_null());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_user_with_too_long_email_returns_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -383,7 +383,7 @@ async fn create_user_with_too_long_email_returns_400(pool: MySqlPool) {
     assert_eq!(resp.status(), 400);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn update_user_can_set_email(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -420,7 +420,7 @@ async fn update_user_can_set_email(pool: MySqlPool) {
 
 // === T7.3 : Tests modification ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn update_user_change_role(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -452,7 +452,7 @@ async fn update_user_change_role(pool: MySqlPool) {
     assert!(body["version"].as_i64().unwrap() > version);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn update_user_reactivate(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -494,7 +494,7 @@ async fn update_user_reactivate(pool: MySqlPool) {
     assert_eq!(body["active"], true);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn update_user_version_conflict_returns_409(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -524,7 +524,7 @@ async fn update_user_version_conflict_returns_409(pool: MySqlPool) {
 
 // === P2 : Tests guards update_user (self-disable, last-admin, demotion) ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn update_user_self_disable_returns_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -555,7 +555,7 @@ async fn update_user_self_disable_returns_400(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "CANNOT_DISABLE_SELF");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn update_user_deactivate_last_admin_returns_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -609,7 +609,7 @@ async fn update_user_deactivate_last_admin_returns_400(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "CANNOT_DISABLE_LAST_ADMIN");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn update_user_demote_last_admin_returns_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -664,7 +664,7 @@ async fn update_user_demote_last_admin_returns_400(pool: MySqlPool) {
 
 // === P3 : Test session revocation via update_user deactivation ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn update_user_deactivate_revokes_sessions(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -724,7 +724,7 @@ async fn update_user_deactivate_revokes_sessions(pool: MySqlPool) {
 
 // === T7.4 : Tests liste ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn list_users_paginated(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -763,7 +763,7 @@ async fn list_users_paginated(pool: MySqlPool) {
     assert_eq!(body["limit"], 10);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn list_users_non_admin_returns_403(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -792,7 +792,7 @@ async fn list_users_non_admin_returns_403(pool: MySqlPool) {
 
 // === T7.5 : Tests détail ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn get_user_success(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -821,7 +821,7 @@ async fn get_user_success(pool: MySqlPool) {
     assert!(body.get("passwordHash").is_none());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn get_user_not_found_returns_404(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -838,7 +838,7 @@ async fn get_user_not_found_returns_404(pool: MySqlPool) {
 
 // === T7.6 : Tests désactivation ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn disable_user_success(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -866,7 +866,7 @@ async fn disable_user_success(pool: MySqlPool) {
     assert_eq!(body["active"], false);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn disable_user_self_disable_returns_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -894,7 +894,7 @@ async fn disable_user_self_disable_returns_400(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "CANNOT_DISABLE_SELF");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn disable_last_admin_returns_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let admin1_token = login_admin(&app, &pool).await;
@@ -959,7 +959,7 @@ async fn disable_last_admin_returns_400(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "CANNOT_DISABLE_LAST_ADMIN");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn disable_user_login_impossible_after(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -990,7 +990,7 @@ async fn disable_user_login_impossible_after(pool: MySqlPool) {
 
 // === T7.7 : Tests reset password ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reset_password_success(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -1028,7 +1028,7 @@ async fn reset_password_success(pool: MySqlPool) {
     assert_eq!(resp.status(), 401);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reset_password_short_returns_400(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -1055,7 +1055,7 @@ async fn reset_password_short_returns_400(pool: MySqlPool) {
     assert_eq!(resp.status(), 400);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reset_password_non_admin_returns_403(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -1085,7 +1085,7 @@ async fn reset_password_non_admin_returns_403(pool: MySqlPool) {
 
 // === F6 : Tests 403 manquants (update, disable, get non-admin) ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn update_user_non_admin_returns_403(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -1113,7 +1113,7 @@ async fn update_user_non_admin_returns_403(pool: MySqlPool) {
     assert_eq!(resp.status(), 403);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn disable_user_non_admin_returns_403(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -1140,7 +1140,7 @@ async fn disable_user_non_admin_returns_403(pool: MySqlPool) {
     assert_eq!(resp.status(), 403);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn get_user_non_admin_returns_403(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -1169,7 +1169,7 @@ async fn get_user_non_admin_returns_403(pool: MySqlPool) {
 
 // === F7 : Test sessions invalidées après reset_password ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reset_password_revokes_sessions(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
@@ -1227,7 +1227,7 @@ async fn reset_password_revokes_sessions(pool: MySqlPool) {
 
 // === T7.8 : Test politique configurable ===
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn configurable_password_policy(pool: MySqlPool) {
     let config = test_config_with_min_password(20);
     // Bootstrap with standard config (admin password fits default min_length=12)

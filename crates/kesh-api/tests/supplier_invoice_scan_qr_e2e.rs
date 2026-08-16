@@ -2,7 +2,7 @@
 //!
 //! Endpoint de pré-remplissage : prend un texte SPC (décodé côté navigateur par
 //! jsQR) et retourne les coordonnées de paiement. **Lecture seule** — aucune
-//! écriture DB. Ces tests tournent contre MariaDB réelle (`#[sqlx::test(migrator = "kesh_db::MIGRATOR")]`) car
+//! écriture DB. Ces tests tournent contre MariaDB réelle (`#[sqlx::test(migrations = "../kesh-db/test-schema")]`) car
 //! l'endpoint est derrière le garde `require_comptable_role` (auth + rôle).
 //!
 //! Le SPC valide est produit par le générateur `kesh_qrbill::build_payload`
@@ -132,7 +132,7 @@ fn spc_payload(iban: &str, reference: Reference) -> String {
     build_payload(&data).expect("build_payload")
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn scan_qr_qr_iban_with_qrr_returns_coordinates(pool: MySqlPool) {
     seed_accounting_company(&pool).await.expect("seed");
     let app = spawn_app(pool).await;
@@ -162,7 +162,7 @@ async fn scan_qr_qr_iban_with_qrr_returns_coordinates(pool: MySqlPool) {
     assert_eq!(body["unstructuredMessage"], "Facture F-2026-0042");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn scan_qr_classic_iban_no_reference(pool: MySqlPool) {
     seed_accounting_company(&pool).await.expect("seed");
     let app = spawn_app(pool).await;
@@ -187,7 +187,7 @@ async fn scan_qr_classic_iban_no_reference(pool: MySqlPool) {
     assert!(body["paymentReference"].is_null());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn scan_qr_invalid_payload_returns_400(pool: MySqlPool) {
     seed_accounting_company(&pool).await.expect("seed");
     let app = spawn_app(pool).await;
@@ -207,7 +207,7 @@ async fn scan_qr_invalid_payload_returns_400(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn scan_qr_requires_authentication(pool: MySqlPool) {
     seed_accounting_company(&pool).await.expect("seed");
     let app = spawn_app(pool).await;

@@ -21,11 +21,27 @@ jobs:
   backend:
     name: Backend (Rust)
     runs-on: ubuntu-latest
-    # La suite complète `cargo test --workspace -j1 --test-threads=1` (~1900 tests,
-    # DB sérialisée) dépasse 30 min depuis Epic 21 (CLAUDE.md : ~54 min en local,
-    # mesuré 2026-07-13) + build/clippy all-targets en amont. 30 min timeout-out le job
-    # (annulation à ~30m17s). Marge portée à 120 min. Le vrai levier (squash schéma
-    # test + durabilité relâchée) est suivi dans l'issue #251.
+    # Historique : la suite `cargo test --workspace -j1 --test-threads=1` a
+    # dépassé 30 min à partir de l'Epic 21 (le job était annulé à ~30m17s), d'où
+    # cette marge portée à 120 min.
+    #
+    # Depuis la Story 22-5 (#251), le levier est LIVRÉ : 1102 des 1145 attributs
+    # `#[sqlx::test]` montent le squash `crates/kesh-db/test-schema/` au lieu de
+    # rejouer les 61 migrations. Mesuré le 2026-08-16 en local (2209 tests) :
+    # 64,4 min → 19,8 min, et 1,5 min en ajoutant le tmpfs de dev (hors CI, où
+    # `services:` ne permet pas de passer de `command:` à mariadbd).
+    #
+    # Première mesure sur runner GitHub après la bascule (PR #311, 2026-08-16) :
+    # le job « Backend (Rust) » complet — build + clippy + `cargo test` en série
+    # — a pris **19 min 14 s**, là où il dépassait 30 min et se faisait annuler
+    # à 30 min 17 avant le squash.
+    #
+    # ⚠️ LA MARGE RESTE À 120 MIN, ET C'EST DÉLIBÉRÉ. Un timeout se dimensionne
+    # sur le pire cas, pas sur le cas mesuré : un seul run ne dit rien de la
+    # dispersion, les runners GitHub sont partagés, et un timeout trop juste
+    # transforme un ralentissement passager en échec de CI — c'est-à-dire en
+    # rouge qu'on apprend à ignorer. La baisser demande plusieurs runs, pas
+    # celui-ci.
     timeout-minutes: 120
     services:
       mariadb:
@@ -121,13 +137,22 @@ jobs:
             exit 1
           fi
 
-      # Les tests `kesh-db::repositories::*` (pré-Story-6-4, 84 tests) se
-      # connectent directement à DATABASE_URL au lieu d'utiliser `#[sqlx::test]`.
+      # 154 tests de la lib `kesh-db` (pré-Story-6-4) se connectent directement à
+      # DATABASE_URL au lieu d'utiliser `#[sqlx::test]` : 151 via le helper
+      # `test_pool()` (24 accounts + 3 audit_log + 33 contacts + 37 invoices +
+      # 34 journal_entries + 20 products) et 3 qui ouvrent leur propre connexion
+      # (2 dans `invoices.rs`, 1 dans `retry.rs`).
+      #
+      # ⚠️ Le critère est le MODE DE CONNEXION, pas le chemin de module : dire
+      # « les tests `kesh-db::repositories::*` » serait faux, puisque
+      # `repositories::bank_profiles::tests` utilise bel et bien `#[sqlx::test]`
+      # et n'a donc besoin de rien de tout ceci. *(Relevé en passe 1 de revue.)*
       # Ils exigent donc que la DB `kesh` ait ses migrations appliquées + 1
       # company + 1 admin user seedés. Les tests d'intégration plus récents
       # (*_e2e.rs) utilisent `#[sqlx::test]` → DB éphémère auto-setup, pas
       # impactés par cette step. Remédiation pérenne (hors scope Story 6-4) :
-      # refactorer les 84 tests pour `#[sqlx::test(migrator = "crate::MIGRATOR")]`.
+      # refactorer les 154 tests pour `#[sqlx::test(migrations = "./test-schema")]`
+      # (graphie du squash depuis kesh-db — cf. Story 22-5 / issue #251).
       - name: Install mariadb-client
         run: sudo apt-get install -y mariadb-client
 
@@ -139,42 +164,14 @@ jobs:
           done
 
       - name: Seed CI fixtures (company + admin + fiscal_year + accounts)
-        # Argon2id hashes pré-calculés dans crates/kesh-db/src/test_fixtures.rs
-        # — `admin/admin123` et `changeme/changeme`, validés par le helper
-        # `seed_accounting_company`. Voir ADMIN_PASSWORD_HASH et
-        # CHANGEME_PASSWORD_HASH dans test_fixtures.rs pour la source.
+        # ⚠️ Le SQL vit dans `scripts/seed-dev-db.sql` et n'est PAS recopié ici.
+        # Les deux copies ont coexisté le temps d'une story, sans rien qui
+        # rougisse si l'une dérivait — dans un dépôt dont la même story ajoute un
+        # garde-fou contre exactement ce mode d'échec côté schéma.
+        # *(Duplication relevée par deux lentilles en passe 1 de revue de code.)*
         #
-        # Contenu aligné avec `seed_accounting_company` pour satisfaire TOUS
-        # les tests `kesh-db::repositories::*` qui attendent :
-        # - 1 company (SELECT id FROM companies LIMIT 1)
-        # - ≥1 admin user
-        # - 1 fiscal_year Open couvrant la date du jour
-        # - ≥2 accounts actifs (journal_entries::tests::two_accounts)
-        run: |
-          mariadb -h 127.0.0.1 -u root -pkesh_root kesh <<'SQL'
-          INSERT INTO companies (name, address, org_type, accounting_language, instance_language)
-          VALUES ('CI Seed Company', 'Test Address 1\n1000 Lausanne', 'Independant', 'FR', 'FR');
-          SET @company_id := LAST_INSERT_ID();
-
-          INSERT INTO users (username, password_hash, role, active, company_id)
-          VALUES (
-            'admin',
-            '$argon2id$v=19$m=19456,t=2,p=1$wDaFUbAJuozHKhQshibCHw$T/DeYTKABHDpW7JM5MoiQciUad5Eb81Cfvh0aUvi2Z4',
-            'Admin',
-            TRUE,
-            @company_id
-          );
-
-          INSERT INTO fiscal_years (company_id, name, start_date, end_date, status)
-          VALUES (@company_id, 'Exercice CI 2020-2030', '2020-01-01', '2030-12-31', 'Open');
-
-          INSERT INTO accounts (company_id, number, name, account_type) VALUES
-            (@company_id, '1000', 'Caisse CI', 'Asset'),
-            (@company_id, '1100', 'Banque CI', 'Asset'),
-            (@company_id, '2000', 'Capital CI', 'Liability'),
-            (@company_id, '3000', 'Ventes CI', 'Revenue'),
-            (@company_id, '4000', 'Charges CI', 'Expense');
-          SQL
+        # Le fichier documente son propre contenu et les invariants qu'il tient.
+        run: mariadb -h 127.0.0.1 -u root -pkesh_root kesh < scripts/seed-dev-db.sql
 
       - name: cargo test
         # --test-threads=1 : tests share global state (i18n, error locale) and

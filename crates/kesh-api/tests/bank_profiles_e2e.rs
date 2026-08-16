@@ -177,7 +177,7 @@ fn valid_profile_payload(bank_name: &str) -> Value {
 // Tests
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrations = "../kesh-db/migrations")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_bank_profile_creates_with_audit_log(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_id = create_company(&pool, "C1").await;
@@ -204,7 +204,7 @@ async fn post_bank_profile_creates_with_audit_log(pool: MySqlPool) {
     assert_eq!(audit_count, 1);
 }
 
-#[sqlx::test(migrations = "../kesh-db/migrations")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_bank_profile_rejects_xor_violation(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_id = create_company(&pool, "C1").await;
@@ -231,7 +231,7 @@ async fn post_bank_profile_rejects_xor_violation(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrations = "../kesh-db/migrations")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_bank_profile_rejects_equal_separators(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_id = create_company(&pool, "C1").await;
@@ -253,7 +253,7 @@ async fn post_bank_profile_rejects_equal_separators(pool: MySqlPool) {
     assert_eq!(res.status(), 422);
 }
 
-#[sqlx::test(migrations = "../kesh-db/migrations")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_bank_profile_rejects_column_mapping_collision(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_id = create_company(&pool, "C1").await;
@@ -275,7 +275,7 @@ async fn post_bank_profile_rejects_column_mapping_collision(pool: MySqlPool) {
     assert_eq!(res.status(), 422);
 }
 
-#[sqlx::test(migrations = "../kesh-db/migrations")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_bank_profile_rejects_invalid_chrono_format(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_id = create_company(&pool, "C1").await;
@@ -296,7 +296,7 @@ async fn post_bank_profile_rejects_invalid_chrono_format(pool: MySqlPool) {
     assert_eq!(res.status(), 422);
 }
 
-#[sqlx::test(migrations = "../kesh-db/migrations")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_bank_profile_rejects_invalid_regex(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_id = create_company(&pool, "C1").await;
@@ -317,7 +317,7 @@ async fn post_bank_profile_rejects_invalid_regex(pool: MySqlPool) {
     assert_eq!(res.status(), 422);
 }
 
-#[sqlx::test(migrations = "../kesh-db/migrations")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_bank_profile_rejects_pattern_over_200_chars(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_id = create_company(&pool, "C1").await;
@@ -338,7 +338,7 @@ async fn post_bank_profile_rejects_pattern_over_200_chars(pool: MySqlPool) {
     assert_eq!(res.status(), 422);
 }
 
-#[sqlx::test(migrations = "../kesh-db/migrations")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_bank_profile_rejects_consultation_role(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_id = create_company(&pool, "C1").await;
@@ -356,7 +356,7 @@ async fn post_bank_profile_rejects_consultation_role(pool: MySqlPool) {
     assert_eq!(res.status(), 403);
 }
 
-#[sqlx::test(migrations = "../kesh-db/migrations")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn get_bank_profile_allowed_for_consultation_role(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_id = create_company(&pool, "C1").await;
@@ -388,7 +388,7 @@ async fn get_bank_profile_allowed_for_consultation_role(pool: MySqlPool) {
     assert_eq!(res.status(), 200);
 }
 
-#[sqlx::test(migrations = "../kesh-db/migrations")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn get_bank_profile_returns_404_for_other_company(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_a = create_company(&pool, "A").await;
@@ -421,7 +421,7 @@ async fn get_bank_profile_returns_404_for_other_company(pool: MySqlPool) {
     assert_eq!(res.status(), 404);
 }
 
-#[sqlx::test(migrations = "../kesh-db/migrations")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn list_bank_profiles_only_returns_own_company(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_a = create_company(&pool, "A").await;
@@ -473,7 +473,7 @@ async fn list_bank_profiles_only_returns_own_company(pool: MySqlPool) {
     assert!(!names.contains(&"PostFinance".to_string()));
 }
 
-#[sqlx::test(migrations = "../kesh-db/migrations")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn duplicate_bank_name_within_company_returns_409(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_id = create_company(&pool, "C1").await;
@@ -504,7 +504,7 @@ async fn duplicate_bank_name_within_company_returns_409(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrations = "../kesh-db/migrations")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn put_bank_profile_full_replacement_writes_audit_log(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_id = create_company(&pool, "C1").await;
@@ -549,7 +549,7 @@ async fn put_bank_profile_full_replacement_writes_audit_log(pool: MySqlPool) {
     assert_eq!(audit_count, 1);
 }
 
-#[sqlx::test(migrations = "../kesh-db/migrations")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn delete_bank_profile_writes_audit_log_with_snapshot(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let company_id = create_company(&pool, "C1").await;

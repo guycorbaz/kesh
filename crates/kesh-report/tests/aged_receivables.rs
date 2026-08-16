@@ -99,7 +99,7 @@ async fn mk_validated(
         .expect("validate invoice")
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn aged_buckets_reconciliation_and_parity(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let alpha = mk_contact(&pool, &seeded, "Alpha SA").await;
@@ -253,7 +253,7 @@ async fn aged_buckets_reconciliation_and_parity(pool: MySqlPool) {
 /// E2E backend `aged_receivables_e2e.rs` (AC19) — ici une facture validée exige
 /// une écriture (`chk_invoices_validated_has_je`), on prouve donc le filtre
 /// `WHERE company_id = ?` en interrogeant un autre `company_id`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn aged_scoping_filters_by_company(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let alpha = mk_contact(&pool, &seeded, "Alpha SA").await;
@@ -286,7 +286,7 @@ async fn aged_scoping_filters_by_company(pool: MySqlPool) {
 
 /// Une échéance dans le FUTUR (due_date > as_of, `DATEDIFF` négatif) tombe dans
 /// « Non échu » — au même titre que `due_date = as_of` ou `due_date NULL`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn aged_future_due_date_is_not_due(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let c = mk_contact(&pool, &seeded, "Futur SA").await;
@@ -303,7 +303,7 @@ async fn aged_future_due_date_is_not_due(pool: MySqlPool) {
     assert_eq!(row.buckets.total, dec!(250));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn aged_empty_when_no_open_items(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let report = generate(&pool, seeded.company_id, as_of()).await.unwrap();

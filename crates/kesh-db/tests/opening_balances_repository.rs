@@ -146,7 +146,7 @@ fn opening_entry(
 // journal_entries::count_by_company
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn count_by_company_zero_then_n(pool: MySqlPool) {
     let cid = create_company(&pool, "co-count").await;
     let uid = create_user(&pool, "u-count", cid).await;
@@ -191,7 +191,7 @@ async fn count_by_company_zero_then_n(pool: MySqlPool) {
 
 /// Le comptage est scopé company : les écritures d'une autre company ne
 /// comptent pas.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn count_by_company_is_tenant_scoped(pool: MySqlPool) {
     let cid_a = create_company(&pool, "co-count-a").await;
     let cid_b = create_company(&pool, "co-count-b").await;
@@ -246,7 +246,7 @@ async fn count_by_company_is_tenant_scoped(pool: MySqlPool) {
 // accounts::find_types_by_ids_in_tx
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_types_by_ids_returns_types_scoped_to_company(pool: MySqlPool) {
     let cid = create_company(&pool, "co-types").await;
     let uid = create_user(&pool, "u-types", cid).await;
@@ -307,7 +307,7 @@ async fn find_types_by_ids_returns_types_scoped_to_company(pool: MySqlPool) {
 
 /// `ids` vide → `Ok(vec![])` sans requête SQL (un `IN ()` vide serait une
 /// erreur de syntaxe MariaDB → 500, P3-ECH-LOW-1).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_types_by_ids_empty_ids_ok(pool: MySqlPool) {
     let cid = create_company(&pool, "co-types-empty").await;
     let mut tx = pool.begin().await.unwrap();
@@ -322,7 +322,7 @@ async fn find_types_by_ids_empty_ids_ok(pool: MySqlPool) {
 // journal_entries::create_opening_entry
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_opening_entry_happy_path_od_with_audit(pool: MySqlPool) {
     let cid = create_company(&pool, "co-open").await;
     let uid = create_user(&pool, "u-open", cid).await;
@@ -370,7 +370,7 @@ async fn create_opening_entry_happy_path_od_with_audit(pool: MySqlPool) {
 /// Garde « company vierge » (P3-BH3-1) : une écriture existante dans un
 /// AUTRE exercice bloque aussi la génération (company-wide, pas
 /// premier-exercice-seulement) — aucune écriture ni audit supplémentaire.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_opening_entry_rejected_if_company_has_entries_in_any_fy(pool: MySqlPool) {
     let cid = create_company(&pool, "co-open-busy").await;
     let uid = create_user(&pool, "u-open-busy", cid).await;
@@ -424,7 +424,7 @@ async fn create_opening_entry_rejected_if_company_has_entries_in_any_fy(pool: My
 /// Premier exercice `Closed` → `Invariant(FY_OPENING_FIRST_YEAR_CLOSED_KEY)`
 /// (re-check sous le lock — le code 14-4 distinct, pas le générique
 /// `FiscalYearClosed`, L5).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_opening_entry_rejected_if_first_year_closed(pool: MySqlPool) {
     let cid = create_company(&pool, "co-open-closed").await;
     let uid = create_user(&pool, "u-open-closed", cid).await;
@@ -465,7 +465,7 @@ async fn create_opening_entry_rejected_if_first_year_closed(pool: MySqlPool) {
 }
 
 /// Exercice inexistant (ou d'une autre company) → `NotFound`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_opening_entry_not_found_for_missing_fy(pool: MySqlPool) {
     let cid = create_company(&pool, "co-open-404").await;
     let uid = create_user(&pool, "u-open-404", cid).await;
@@ -503,7 +503,7 @@ async fn create_opening_entry_not_found_for_missing_fy(pool: MySqlPool) {
 /// `fiscal_years FOR UPDATE` + garde `count_by_company` sous le lock
 /// sérialisent : exactement UNE écriture créée, l'autre reçoit
 /// `ALREADY_HAS_ENTRIES`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_opening_entry_concurrent_generation_is_serialized(pool: MySqlPool) {
     let cid = create_company(&pool, "co-open-race").await;
     let uid = create_user(&pool, "u-open-race", cid).await;
@@ -562,7 +562,7 @@ async fn create_opening_entry_concurrent_generation_is_serialized(pool: MySqlPoo
 /// distincte, les deux liraient `count == 0` et commiteraient → bilan DOUBLÉ.
 /// Le sentinel company-wide les sérialise : exactement UN succès, l'autre
 /// `ALREADY_HAS_ENTRIES`, une seule écriture en base.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn create_opening_entry_concurrent_different_first_fys_serialized(pool: MySqlPool) {
     let cid = create_company(&pool, "co-open-race2").await;
     let uid = create_user(&pool, "u-open-race2", cid).await;

@@ -200,7 +200,7 @@ fn error_code(body: &serde_json::Value) -> &str {
 /// Mutation que ce test doit tuer : retirer `client_number: c.client_number`
 /// d'`impl From<Contact> for ContactResponse`. Elle compile, stocke la valeur,
 /// et rend `null` pour toujours.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn client_number_roundtrips_from_post_to_get(pool: MySqlPool) {
     let (app, token) = setup(&pool).await;
 
@@ -229,7 +229,7 @@ async fn client_number_roundtrips_from_post_to_get(pool: MySqlPool) {
 /// AC3 — `""` est normalisé en `NULL`, et **deux** contacts créés ainsi sont
 /// tous deux acceptés. C'est le cas MAJORITAIRE que D2 prétend protéger :
 /// pour un index UNIQUE, `""` est une valeur comme une autre.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn empty_client_number_is_stored_as_null_and_never_collides(pool: MySqlPool) {
     let (app, token) = setup(&pool).await;
 
@@ -262,7 +262,7 @@ async fn empty_client_number_is_stored_as_null_and_never_collides(pool: MySqlPoo
 }
 
 /// AC4 — doublon à la création : **409** et code d'erreur dédié.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn duplicate_client_number_on_create_returns_409_with_dedicated_code(pool: MySqlPool) {
     let (app, token) = setup(&pool).await;
 
@@ -285,7 +285,7 @@ async fn duplicate_client_number_on_create_returns_409_with_dedicated_code(pool:
 
 /// AC4 — doublon à la **modification** : le chemin `PUT` doit rendre le même
 /// 409, et non un 500 opaque sur l'erreur SQLx `1062`.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn duplicate_client_number_on_update_returns_409_with_dedicated_code(pool: MySqlPool) {
     let (app, token) = setup(&pool).await;
 
@@ -319,7 +319,7 @@ async fn duplicate_client_number_on_update_returns_409_with_dedicated_code(pool:
 
 /// AC1 cas 4, vu depuis l'API : archiver libère le numéro. Le test repository
 /// prouve la contrainte SQL ; celui-ci prouve que le chemin HTTP en bénéficie.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn archiving_a_contact_frees_its_client_number_through_the_api(pool: MySqlPool) {
     let (app, token) = setup(&pool).await;
 
@@ -360,7 +360,7 @@ async fn archiving_a_contact_frees_its_client_number_through_the_api(pool: MySql
 ///   retire tous, l'échappé est vide) → branche `LIKE` seule. C'est celle
 ///   qu'un traitement partiel laisse muette : elle compile, et cesse
 ///   simplement de chercher le numéro.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn contacts_are_searchable_by_client_number(pool: MySqlPool) {
     let (app, token) = setup(&pool).await;
 
@@ -404,7 +404,7 @@ async fn contacts_are_searchable_by_client_number(pool: MySqlPool) {
 /// global : ils passent tous dans les deux cas. La régression serait pourtant
 /// grave et **invisible au locataire** — la société B se verrait refuser en 409
 /// un numéro qu'elle ne peut ni voir ni libérer, parce qu'il appartient à A.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn same_client_number_is_allowed_across_two_companies(pool: MySqlPool) {
     let (app, token_a) = setup(&pool).await;
     create_company_with_user(&pool, "CN Test Co B", "cn_user_b").await;
@@ -434,7 +434,7 @@ async fn same_client_number_is_allowed_across_two_companies(pool: MySqlPool) {
 /// MariaDB rend soit une erreur 1406 remontée en 500 opaque, soit — hors mode
 /// strict — une **troncature silencieuse** qui fabrique en prime un faux
 /// doublon avec tout numéro partageant le même préfixe de 50 caractères.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn client_number_over_max_length_is_rejected_by_the_route(pool: MySqlPool) {
     let (app, token) = setup(&pool).await;
 

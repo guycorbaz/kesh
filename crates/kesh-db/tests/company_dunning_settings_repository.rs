@@ -45,7 +45,7 @@ async fn create_admin(pool: &MySqlPool, company_id: i64) -> i64 {
     result.last_insert_id() as i64
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn get_or_create_is_idempotent(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "GOC Co").await;
     let s1 = company_dunning_settings::get_or_create_default(&pool, company_id)
@@ -62,7 +62,7 @@ async fn get_or_create_is_idempotent(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn update_no_op_and_version_and_conflict(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Upd Co").await;
     let admin = create_admin(&pool, company_id).await;
@@ -113,7 +113,7 @@ async fn update_no_op_and_version_and_conflict(pool: MySqlPool) {
     assert!(matches!(stale, Err(DbError::OptimisticLockConflict)));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn seed_creates_three_levels_and_stamps_seeded_at(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Seed Co").await;
 
@@ -133,7 +133,7 @@ async fn seed_creates_three_levels_and_stamps_seeded_at(pool: MySqlPool) {
     assert_eq!(levels[2].fee_amount.to_string(), "40.00");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn seed_is_idempotent(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Idem Co").await;
     for _ in 0..2 {
@@ -154,7 +154,7 @@ async fn seed_is_idempotent(pool: MySqlPool) {
 
 /// D7 : une fois seedé, vider `dunning_levels` = désactivation VOLONTAIRE →
 /// un nouvel appel au seed NE ressuscite PAS les défauts.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn seed_does_not_resurrect_after_manual_empty(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "NoResurrect Co").await;
 
@@ -194,7 +194,7 @@ async fn seed_does_not_resurrect_after_manual_empty(pool: MySqlPool) {
 
 /// H1 (code-review) : si un Admin personnalise la grâce (`update`) AVANT le 1er
 /// seed (PUT avant GET), le seed lazy NE DOIT PAS écraser cette valeur.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn seed_preserves_grace_customized_before_seeding(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "PutFirst Co").await;
     let admin = create_admin(&pool, company_id).await;

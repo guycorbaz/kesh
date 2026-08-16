@@ -411,7 +411,7 @@ fn assert_csv_response(content_type: &str, body: &[u8]) {
 // AC #32(a) — 4 endpoints PDF × 200 binary content
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_balance_sheet_pdf_returns_200(pool: MySqlPool) {
     let ctx = seed_with_entries(&pool, "co_bs_pdf", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -450,7 +450,7 @@ async fn export_balance_sheet_pdf_returns_200(pool: MySqlPool) {
     assert!(cd.contains(".pdf"), "filename must include .pdf");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_income_statement_pdf_returns_200(pool: MySqlPool) {
     let ctx = seed_with_entries(&pool, "co_is_pdf", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -477,7 +477,7 @@ async fn export_income_statement_pdf_returns_200(pool: MySqlPool) {
     assert_pdf_response(&ct, &body);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_trial_balance_pdf_returns_200(pool: MySqlPool) {
     let ctx = seed_with_entries(&pool, "co_tb_pdf", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -504,7 +504,7 @@ async fn export_trial_balance_pdf_returns_200(pool: MySqlPool) {
     assert_pdf_response(&ct, &body);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_journal_report_pdf_returns_200(pool: MySqlPool) {
     let ctx = seed_with_entries(&pool, "co_jr_pdf", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -535,7 +535,7 @@ async fn export_journal_report_pdf_returns_200(pool: MySqlPool) {
 // AC #32(b) — 4 endpoints CSV × 200 text/csv content
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_balance_sheet_csv_returns_200(pool: MySqlPool) {
     let ctx = seed_with_entries(&pool, "co_bs_csv", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -570,7 +570,7 @@ async fn export_balance_sheet_csv_returns_200(pool: MySqlPool) {
     assert!(cd.contains(".csv"));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_income_statement_csv_returns_200(pool: MySqlPool) {
     let ctx = seed_with_entries(&pool, "co_is_csv", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -597,7 +597,7 @@ async fn export_income_statement_csv_returns_200(pool: MySqlPool) {
     assert_csv_response(&ct, &body);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_trial_balance_csv_returns_200(pool: MySqlPool) {
     let ctx = seed_with_entries(&pool, "co_tb_csv", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -624,7 +624,7 @@ async fn export_trial_balance_csv_returns_200(pool: MySqlPool) {
     assert_csv_response(&ct, &body);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_journal_report_csv_returns_200(pool: MySqlPool) {
     let ctx = seed_with_entries(&pool, "co_jr_csv", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -655,7 +655,7 @@ async fn export_journal_report_csv_returns_200(pool: MySqlPool) {
 // AC #32(c) — format invalid 400 (incl. uppercase PDF Pass 2 ECH2-H1)
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_format_invalid_returns_400(pool: MySqlPool) {
     let ctx = seed_with_entries(&pool, "co_invalid", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -713,7 +713,7 @@ async fn export_format_invalid_returns_400(pool: MySqlPool) {
 // AC #32(d) — multi-tenant 404
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_cross_tenant_returns_404(pool: MySqlPool) {
     let ctx_a = seed_with_entries(&pool, "co_x_a", Role::Comptable).await;
     let ctx_b = seed_with_entries(&pool, "co_x_b", Role::Comptable).await;
@@ -740,7 +740,7 @@ async fn export_cross_tenant_returns_404(pool: MySqlPool) {
 // même protection multi-tenant pour éviter une régression silencieuse si une
 // route omet `current_user.company_id` dans `ReportPeriod::resolve`.
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_income_statement_cross_tenant_returns_404(pool: MySqlPool) {
     let ctx_a = seed_with_entries(&pool, "co_x_is_a", Role::Comptable).await;
     let ctx_b = seed_with_entries(&pool, "co_x_is_b", Role::Comptable).await;
@@ -761,7 +761,7 @@ async fn export_income_statement_cross_tenant_returns_404(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "FISCAL_YEAR_NOT_FOUND");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_trial_balance_cross_tenant_returns_404(pool: MySqlPool) {
     let ctx_a = seed_with_entries(&pool, "co_x_tb_a", Role::Comptable).await;
     let ctx_b = seed_with_entries(&pool, "co_x_tb_b", Role::Comptable).await;
@@ -782,7 +782,7 @@ async fn export_trial_balance_cross_tenant_returns_404(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "FISCAL_YEAR_NOT_FOUND");
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_journals_cross_tenant_returns_404(pool: MySqlPool) {
     let ctx_a = seed_with_entries(&pool, "co_x_jr_a", Role::Comptable).await;
     let ctx_b = seed_with_entries(&pool, "co_x_jr_b", Role::Comptable).await;
@@ -807,7 +807,7 @@ async fn export_journals_cross_tenant_returns_404(pool: MySqlPool) {
 // AC #32(e) — FY out of bounds 400 (avant OU après FY 2020-2030)
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_period_out_of_fy_returns_400(pool: MySqlPool) {
     let ctx = seed_with_entries(&pool, "co_oob", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -845,7 +845,7 @@ async fn export_period_out_of_fy_returns_400(pool: MySqlPool) {
 // Stratégie Pass 2 AA2-H2 : seed `with-company` SANS aucune insertion
 // journal_entries + période DANS FY 2026.
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_empty_balance_sheet_pdf_success(pool: MySqlPool) {
     // Seed company + fy mais AUCUNE écriture
     let ctx = seed_company(&pool, "co_empty_pdf", Role::Comptable).await;
@@ -878,7 +878,7 @@ async fn export_empty_balance_sheet_pdf_success(pool: MySqlPool) {
     );
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_empty_journals_csv_success(pool: MySqlPool) {
     let ctx = seed_company(&pool, "co_empty_csv", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -913,7 +913,7 @@ async fn export_empty_journals_csv_success(pool: MySqlPool) {
 // AC #32(g) — Auth 401 (request GET, pas de Bearer)
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_without_auth_returns_401(pool: MySqlPool) {
     let _ctx = seed_with_entries(&pool, "co_unauth", Role::Comptable).await;
     let app = spawn_app(pool).await;
@@ -935,7 +935,7 @@ async fn export_without_auth_returns_401(pool: MySqlPool) {
 // AC #32(h) — RBAC Consultation 200 PDF + 200 CSV
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_pdf_consultation_role_returns_200(pool: MySqlPool) {
     let ctx = seed_with_entries(&pool, "co_cons_pdf", Role::Consultation).await;
     let app = spawn_app(pool).await;
@@ -959,7 +959,7 @@ async fn export_pdf_consultation_role_returns_200(pool: MySqlPool) {
     assert!(body.starts_with(b"%PDF-1."));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_csv_consultation_role_returns_200(pool: MySqlPool) {
     let ctx = seed_with_entries(&pool, "co_cons_csv", Role::Consultation).await;
     let app = spawn_app(pool).await;
@@ -983,7 +983,7 @@ async fn export_csv_consultation_role_returns_200(pool: MySqlPool) {
 // T9.4 — Content-Disposition avec company name non-ASCII (Pass 1 ECH-M2)
 // ============================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_content_disposition_handles_non_ascii_company_name(pool: MySqlPool) {
     let ctx = seed_company_with_name(&pool, "co_uml", Role::Comptable, "Müller AG").await;
     let app = spawn_app(pool).await;

@@ -5,13 +5,13 @@ use kesh_db::errors::DbError;
 use kesh_db::repositories::onboarding;
 use sqlx::MySqlPool;
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn get_state_returns_none_when_empty(pool: MySqlPool) {
     let state = onboarding::get_state(&pool).await.expect("should succeed");
     assert!(state.is_none());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn init_state_creates_row_with_defaults(pool: MySqlPool) {
     let state = onboarding::init_state(&pool)
         .await
@@ -23,7 +23,7 @@ async fn init_state_creates_row_with_defaults(pool: MySqlPool) {
     assert_eq!(state.version, 1);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn get_state_returns_some_after_init(pool: MySqlPool) {
     onboarding::init_state(&pool).await.unwrap();
     let state = onboarding::get_state(&pool).await.unwrap();
@@ -31,7 +31,7 @@ async fn get_state_returns_some_after_init(pool: MySqlPool) {
     assert_eq!(state.unwrap().step_completed, 0);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn update_step_progresses_correctly(pool: MySqlPool) {
     let initial = onboarding::init_state(&pool).await.unwrap();
     assert_eq!(initial.step_completed, 0);
@@ -61,7 +61,7 @@ async fn update_step_progresses_correctly(pool: MySqlPool) {
     assert_eq!(step3.version, 4);
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn update_step_fails_on_stale_version(pool: MySqlPool) {
     let initial = onboarding::init_state(&pool).await.unwrap();
 
@@ -75,7 +75,7 @@ async fn update_step_fails_on_stale_version(pool: MySqlPool) {
     assert!(matches!(result, Err(DbError::OptimisticLockConflict)));
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn delete_state_removes_row(pool: MySqlPool) {
     onboarding::init_state(&pool).await.unwrap();
     assert!(onboarding::get_state(&pool).await.unwrap().is_some());
@@ -84,7 +84,7 @@ async fn delete_state_removes_row(pool: MySqlPool) {
     assert!(onboarding::get_state(&pool).await.unwrap().is_none());
 }
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn update_step_with_expert_mode(pool: MySqlPool) {
     let initial = onboarding::init_state(&pool).await.unwrap();
     let updated = onboarding::update_step(&pool, 2, false, Some(UiMode::Expert), initial.version)

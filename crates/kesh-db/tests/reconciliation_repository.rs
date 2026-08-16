@@ -4,7 +4,7 @@
 //! et AC #47 — fenêtre temporelle, multi-tenant scoping, status filter,
 //! amount tolerance, et exclusion des transactions auto-rejetées.
 //!
-//! Pattern `#[sqlx::test(migrator = "kesh_db::MIGRATOR")]` — DB éphémère
+//! Pattern `#[sqlx::test(migrations = "./test-schema")]` — DB éphémère
 //! avec migrations auto-appliquées. **Pré-requis exécution** : MariaDB
 //! démarré localement (cf. CLAUDE.md « Test Locally First » — la CI
 //! utilise `cargo test --workspace -j1 -- --test-threads=1` pour
@@ -253,7 +253,7 @@ const HASH_X: &str = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123
 /// AC #38 — fenêtre temporelle ± 30 jours autour de la booking_date
 /// de la transaction. Une invoice 31 jours avant ou après la tx
 /// n'est PAS retournée.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_unpaid_invoices_filters_by_30_day_window(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Acme").await;
     let user_id = create_test_user(&pool, "alice", company_id).await;
@@ -328,7 +328,7 @@ async fn find_unpaid_invoices_filters_by_30_day_window(pool: MySqlPool) {
 /// AC #38 + AC #59 — multi-tenant scoping (KF-002 Pattern 1) :
 /// `find_unpaid_invoices_for_window(company_A)` ne doit pas retourner
 /// les invoices de company_B même si elles sont dans la même fenêtre.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_unpaid_invoices_filters_by_company_id(pool: MySqlPool) {
     let company_a = create_test_company(&pool, "CompanyA").await;
     let company_b = create_test_company(&pool, "CompanyB").await;
@@ -399,7 +399,7 @@ async fn find_unpaid_invoices_filters_by_company_id(pool: MySqlPool) {
 /// AC #37 — filtre `status='validated' AND paid_at IS NULL AND
 /// journal_entry_id IS NOT NULL`. Une draft, une cancelled, une déjà
 /// payée, ou une validée sans journal_entry ne sont PAS retournées.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_unpaid_invoices_filters_status_validated_and_unpaid(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Acme").await;
     let user_id = create_test_user(&pool, "alice", company_id).await;
@@ -480,7 +480,7 @@ async fn find_unpaid_invoices_filters_status_validated_and_unpaid(pool: MySqlPoo
 /// AC #39 + AC #40 — tolérance amount ± 0.05 CHF. Une invoice à
 /// 100.04 (delta 0.04) est candidate, mais 100.06 (delta 0.06) ne
 /// l'est pas.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_unpaid_invoices_filters_amount_within_tolerance(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Acme").await;
     let user_id = create_test_user(&pool, "alice", company_id).await;
@@ -534,7 +534,7 @@ async fn find_unpaid_invoices_filters_amount_within_tolerance(pool: MySqlPool) {
 /// AC #47 — `find_pending_transactions_for_account` exclut les
 /// transactions avec `auto_match_rejected_at IS NOT NULL`. Une tx
 /// rejetée manuellement n'est plus exposée via la liste pending.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_pending_transactions_excludes_auto_match_rejected(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Acme").await;
     let user_id = create_test_user(&pool, "alice", company_id).await;
@@ -585,7 +585,7 @@ async fn find_pending_transactions_excludes_auto_match_rejected(pool: MySqlPool)
 
 /// Story 8-5a-base T1.2.1 — happy path : returns Some(tx) si
 /// company_id/bank_account_id/id matchent ET status='pending'.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_strictly_pending_returns_tx_when_all_conditions_match(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Acme").await;
     let user_id = create_test_user(&pool, "alice", company_id).await;
@@ -625,7 +625,7 @@ async fn find_strictly_pending_returns_tx_when_all_conditions_match(pool: MySqlP
 
 /// Story 8-5a-base T1.2.2 — sécurité multi-tenant + scope account :
 /// cross-tenant return None (KF-002 Pattern 1, jamais de leak).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_strictly_pending_returns_none_for_cross_tenant(pool: MySqlPool) {
     let company_a = create_test_company(&pool, "AcmeA").await;
     let user_a = create_test_user(&pool, "alice", company_a).await;
@@ -694,7 +694,7 @@ async fn find_strictly_pending_returns_none_for_cross_tenant(pool: MySqlPool) {
 /// Story 8-5a-base T1.2.3 — filtre status précis : tx déjà
 /// `reconciled` retourne None (le helper distinct de
 /// `find_pending_by_id_for_account` 8-4).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_strictly_pending_returns_none_for_reconciled_status(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Acme").await;
     let user_id = create_test_user(&pool, "alice", company_id).await;
@@ -753,7 +753,7 @@ async fn find_strictly_pending_returns_none_for_reconciled_status(pool: MySqlPoo
 /// #246 (Story 21-2b) — le matching filtre sur le **TTC**, pas le HT.
 /// Régression corrigée : une facture avec TVA (HT 100 @ 8.1 % → TTC 108.10)
 /// doit matcher un encaissement de 108.10 (TTC réel) et NON de 100.00 (HT).
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "./test-schema")]
 async fn find_unpaid_matches_on_ttc_not_ht(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "TTC Co").await;
     let user_id = create_test_user(&pool, "bob", company_id).await;
