@@ -125,7 +125,14 @@ Soit **3,25×** pour le squash, puis **13,2× de plus** pour le tmpfs — **42,8
 
 ⚠️ Les 38 min du tableau de 2026-07-13 et les 64,4 min ci-dessus ne se contredisent pas : entre les deux, la suite a gagné 22,6 % de tests (1802 → 2209) et chaque test 19,6 % de migrations (51 → 61) — le produit vaut ×1,47 et explique l'essentiel de l'écart. Les 43 attributs restés sur le vrai `MIGRATOR` sont ceux qui testent **ce chemin lui-même** ; la liste est tenue en dur par `crates/kesh-db/tests/test_schema_guard.rs`, qui rougit dès qu'un test s'en écarte ou que le squash dérive du schéma réel.
 
-⚠️ **Le plafond de 6 threads n'a PAS été re-mesuré depuis.** Sa cause a disparu, donc il est vraisemblablement trop bas — il reste à 6 **faute de mesure, pas par conviction**. Le relever demande de rejouer le tableau ci-dessus, flakes compris.
+**Le plafond est passé de 6 à 8 threads le 2026-08-16** (décision de Guy), et cette fois **sur mesure** — sa justification d'origine ayant disparu avec le squash, et la vérification étant devenue assez bon marché pour être faite : trois runs de la suite complète, chacun précédé d'une remise à zéro de la base, coûtent dix minutes contre trois heures et demie auparavant.
+
+| threads | runs | moyenne | flakes |
+|---|---|---|---|
+| 6 | 91,1 s · 89,4 s | 90,2 s | KF-038 sur 1 run des 3 observés |
+| **8** | 76,8 s · 83,6 s · 81,2 s | **80,5 s** | 0 sur 3 runs |
+
+⚠️ **Ce que ces trois runs n'établissent PAS.** Zéro flake sur trois runs ne prouve pas l'absence de flake : à 6 threads, KF-038 ne s'était montrée que sur **un run des trois**. Trois runs propres à 8 sont donc compatibles avec un défaut de même fréquence resté silencieux — l'échantillon est du même ordre que le phénomène qu'il devrait détecter. **Le gain (≈ 12 %) est établi ; l'innocuité ne l'est pas.** Si un `reconciliation_*_e2e` rougit, commencer par le plafond de threads et traiter 8 comme la première hypothèse.
 
 ### Frontend (Svelte)
 
@@ -271,7 +278,7 @@ Le noyau pénalise chaque allocation d'un sommeil proportionnel au retard du rec
 | `.cargo/config.toml` → `--thread-count=4` (mold) | 4 | threads internes de l'éditeur de liens |
 | `Cargo.toml` → `[profile.dev] debug` | `line-tables-only` | volume de DWARF construit puis recopié dans chaque binaire de test |
 | `frontend/vite.config.ts` → `maxWorkers` | 4 | processus Node+jsdom de vitest (défaut : **31** ici) |
-| `.config/nextest.toml` → `test-threads` | 6 | binaires de test simultanés — plafond fixé par la contention MariaDB, pas par la RAM ; ne pas le changer pour des raisons de mémoire (et non re-mesuré depuis le squash — cf. § *Gate rapide*) |
+| `.config/nextest.toml` → `test-threads` | 8 | binaires de test simultanés — plafond fixé par la contention MariaDB, pas par la RAM ; ne pas le changer pour des raisons de mémoire (porté de 6 à 8 le 2026-08-16, sur mesure — cf. § *Gate rapide* et sa réserve sur l'innocuité) |
 
 ⚠️ **Le `.cargo/config.toml` du projet ÉCRASE celui de la station** (`~/.cargo/config.toml`). Cargo ne fusionne pas les valeurs scalaires : le fichier le plus proche du projet gagne. Le `jobs = 4` global posé sur la station après le diagnostic du 2026-07-23 était donc **sans effet dans ce dépôt** — seul de tous les projets Rust de la machine, il compilait à 8. C'est un mode d'échec silencieux : le réglage existe, il est correct, et il ne s'applique pas. Toute modification du `jobs` de la station doit être répercutée ici.
 

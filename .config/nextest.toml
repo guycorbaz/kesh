@@ -47,14 +47,30 @@
 # réconciliation, le dénominateur du « 3,25× » resterait discutable.
 # *(Relevé en passe 1 de revue de code.)*
 #
-# ⚠️ LE PLAFOND DE 6 THREADS N'A PAS ÉTÉ RE-MESURÉ depuis le squash. Sa cause
-# — la contention des metadata-locks sur le rejeu des migrations — a largement
-# disparu, donc il est vraisemblablement trop bas aujourd'hui. Il reste tel
-# quel FAUTE DE MESURE, pas par conviction : le relever exige de rejouer le
-# tableau ci-dessus, flakes compris (cf. Story 22-5, T8).
+# LE PLAFOND EST PASSÉ DE 6 À 8 — décision de Guy, 2026-08-16, et cette fois
+# MESURÉE. Sa justification d'origine (la contention des metadata-locks sur le
+# rejeu des migrations) a disparu avec le squash, et la mesure est devenue
+# assez bon marché pour être faite : trois runs de la suite complète, chacun
+# précédé d'une remise à zéro de la base (cf. KF-039 #310), coûtent dix minutes
+# là où la même vérification en demandait trois heures et demie avant la story.
 #
-# ⚠️ Et le relever demande de regarder KF-038 (#228) d'abord : cette famille de
-# flakes, documentée plus haut comme apparaissant À 32 THREADS, est redevenue
+#   6 threads : 91,1 s / 89,4 s                → moyenne 90,2 s
+#   8 threads : 76,8 s / 83,6 s / 81,2 s       → moyenne 80,5 s   (≈ 12 % de gain)
+#
+# 2210/2210 aux cinq runs, et ZÉRO flake sur les trois runs à 8 threads.
+#
+# ⚠️ CE QUE CES TROIS RUNS N'ÉTABLISSENT PAS. Zéro flake sur trois runs ne
+# prouve pas l'absence de flake : à 6 threads, KF-038 (#228) s'était manifestée
+# sur UN run des trois observés. Trois runs propres à 8 sont donc parfaitement
+# compatibles avec un défaut de même fréquence resté silencieux — l'échantillon
+# est du même ordre que le phénomène qu'il devrait détecter. Ce qui est établi,
+# c'est le GAIN (≈ 12 %) ; ce qui ne l'est pas, c'est l'innocuité.
+#
+# Conduite à tenir si un `reconciliation_*_e2e` rougit : commencer par ici, et
+# considérer 8 comme la première hypothèse — pas comme un acquis.
+#
+# Le contexte KF-038 (#228) qui rend cette prudence nécessaire : cette famille
+# de flakes, documentée plus haut comme apparaissant À 32 THREADS, est redevenue
 # atteignable À 6 sous tmpfs. Mesuré le 2026-08-16 : 1 run sur 3, deux tests
 # (`reconciliation_e2e::post_accept_skips_non_chf_transaction` et
 # `post_reject_after_accept_returns_already_reconciled_failed`), échec à ~5,36 s
@@ -63,14 +79,15 @@
 # verrous en supprimant l'attente disque.
 #
 # Ce fichier remplace le `cargo test --workspace -j1 -- --test-threads=1` de la
-# CI (tout en série) par : plafond à 6 threads + tests lib kesh-db (DB dev
+# CI (tout en série) par : plafond à 8 threads + tests lib kesh-db (DB dev
 # partagée) sérialisés. Voir CLAUDE.md §Test Locally First et scripts/test-fast.sh.
 
 [profile.default]
-# Plafond empirique — sweet spot mesuré AVANT le squash (voir l'avertissement
-# de l'en-tête : sa cause a disparu, il n'a pas été re-mesuré depuis).
-# Surchargeable ponctuellement via `cargo nextest run --test-threads=N`.
-test-threads = 6
+# Plafond mesuré APRÈS le squash (cf. le tableau de l'en-tête, 2026-08-16) :
+# ≈ 12 % de gain sur 6, zéro flake sur trois runs — étant entendu que trois
+# runs ne prouvent pas l'absence d'un flake qui s'était montré une fois sur
+# trois. Surchargeable ponctuellement via `cargo nextest run --test-threads=N`.
+test-threads = 8
 
 [test-groups]
 # Un seul test à la fois dans ce groupe : ces tests partagent la DB dev `kesh`
@@ -85,7 +102,7 @@ test-group = 'shared-db-serial'
 # Profil CI : mêmes règles + un retry sur les flakes de contention connus (KF-038
 # #228), fail-fast désactivé pour un rapport complet.
 [profile.ci]
-test-threads = 6
+test-threads = 8
 retries = 1
 fail-fast = false
 
