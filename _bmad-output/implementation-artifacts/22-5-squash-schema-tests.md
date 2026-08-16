@@ -123,14 +123,14 @@ Le « ~69 min » cité en ouverture est un **ordre de grandeur emprunté** au ga
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Script de régénération + squash initial** (D3, AC2). `scripts/regen-test-schema.sh` : détection `mariadb-dump`/`mysqldump`, `--no-data`, **exclusion `_sqlx_migrations`**, normalisation (`AUTO_INCREMENT=`, horodatages), en-tête `FOREIGN_KEY_CHECKS=0`, réinjection de la ligne `_kesh_version`. `crates/kesh-db/test-schema/0001_schema_squash.sql` versionné.
-- [ ] **T2 — Le répertoire `crates/kesh-db/test-schema/`** (D1, AC2, AC3). `0001_schema_squash.sql` (produit par T1) + un `README.md` de trois lignes : « se régénère (`scripts/regen-test-schema.sh`), ne s'édite JAMAIS », la note P8 (la migration synthétique ne vit qu'en bases ÉPHÉMÈRES — toujours recréées à neuf par sqlx, `drop database if exists` avant `create` : aucun checksum persistant ne la rencontre, *vérifié sur pièces en passe 3*), et le renvoi à cette story. *(Le `static TEST_MIGRATOR` de la première rédaction est ABANDONNÉ — cf. D1 révisé.)*
-- [ ] **T3 — Garde-fou anti-dérive** (D3, AC2). Fichier **`crates/kesh-db/tests/test_schema_guard.rs`** — INSCRIT à la liste D2, il monte le vrai chemin, c'est sa fonction —, trois assertions : `squash_matches_real_schema_structure` (diff `information_schema` complet — vues/triggers/routines/actions FK compris), `squash_seeds_the_kesh_version_row` (jambe données, valeurs comparées à la base réelle migrée) et `squash_database_tracks_exactly_one_migration` (jambe SUIVI — le mode d'échec muet de `_sqlx_migrations`). **La seconde base** (vrai `MIGRATOR`) se crée à la main : nom unique (préfixe réservé + pid), `DROP DATABASE IF EXISTS` en tête ET destruction garantie même en panic — sqlx ne nettoie que les tests verts. Messages actionnables (« régénérez : scripts/regen-test-schema.sh »). **Quatre mutations jouées, par copie** (scratchpad, restauration, `diff -q`).
-- [ ] **T4 — Les graphies de chemin réel : quatre basculent, la cinquième s'explicite — MÊME COMMIT que T5** (D1, D2, AC1, AC3, AC4). Les populations du recensement, selon leur colonne « Sort » ; l'attribut nu d'`accounts_role_backfill.rs` explicité en `migrator = "kesh_db::MIGRATOR"` — PAS `migrations = false`, qui viderait sa base (un attribut nu applique TOUT le migrator). **La mesure AVANT se prend au commit précédant immédiatement cette bascule, l'APRÈS au commit de la bascule** (D5).
-- [ ] **T5 — Test de complétude d'AC3 — MÊME COMMIT que T4** (AC3, cf. D5 : posé avant la bascule, il serait rouge par construction). Même fichier `test_schema_guard.rs`, fonction `every_sqlx_test_attribute_is_accounted_for` : balayage de source par attributs ancrés (le patron du dispositif de la 22-4a, appliqué au harnais), liste D2 en dur, `migrations = false` restreint à cette liste, mutation jouée.
+- [x] **T1 — Script de régénération + squash initial** (D3, AC2). `scripts/regen-test-schema.sh` : détection `mariadb-dump`/`mysqldump`, `--no-data`, **exclusion `_sqlx_migrations`**, normalisation (`AUTO_INCREMENT=`, horodatages), en-tête `FOREIGN_KEY_CHECKS=0`, réinjection de la ligne `_kesh_version`. `crates/kesh-db/test-schema/0001_schema_squash.sql` versionné.
+- [x] **T2 — Le répertoire `crates/kesh-db/test-schema/`** (D1, AC2, AC3). `0001_schema_squash.sql` (produit par T1) + un `README.md` de trois lignes : « se régénère (`scripts/regen-test-schema.sh`), ne s'édite JAMAIS », la note P8 (la migration synthétique ne vit qu'en bases ÉPHÉMÈRES — toujours recréées à neuf par sqlx, `drop database if exists` avant `create` : aucun checksum persistant ne la rencontre, *vérifié sur pièces en passe 3*), et le renvoi à cette story. *(Le `static TEST_MIGRATOR` de la première rédaction est ABANDONNÉ — cf. D1 révisé.)*
+- [x] **T3 — Garde-fou anti-dérive** (D3, AC2). Fichier **`crates/kesh-db/tests/test_schema_guard.rs`** — INSCRIT à la liste D2, il monte le vrai chemin, c'est sa fonction —, trois assertions : `squash_matches_real_schema_structure` (diff `information_schema` complet — vues/triggers/routines/actions FK compris), `squash_seeds_the_kesh_version_row` (jambe données, valeurs comparées à la base réelle migrée) et `squash_database_tracks_exactly_one_migration` (jambe SUIVI — le mode d'échec muet de `_sqlx_migrations`). **La seconde base** (vrai `MIGRATOR`) se crée à la main : nom unique (préfixe réservé + pid), `DROP DATABASE IF EXISTS` en tête ET destruction garantie même en panic — sqlx ne nettoie que les tests verts. Messages actionnables (« régénérez : scripts/regen-test-schema.sh »). **Quatre mutations jouées, par copie** (scratchpad, restauration, `diff -q`).
+- [x] **T4 — Les graphies de chemin réel : quatre basculent, la cinquième s'explicite — MÊME COMMIT que T5** (D1, D2, AC1, AC3, AC4). Les populations du recensement, selon leur colonne « Sort » ; l'attribut nu d'`accounts_role_backfill.rs` explicité en `migrator = "kesh_db::MIGRATOR"` — PAS `migrations = false`, qui viderait sa base (un attribut nu applique TOUT le migrator). **La mesure AVANT se prend au commit précédant immédiatement cette bascule, l'APRÈS au commit de la bascule** (D5).
+- [x] **T5 — Test de complétude d'AC3 — MÊME COMMIT que T4** (AC3, cf. D5 : posé avant la bascule, il serait rouge par construction). Même fichier `test_schema_guard.rs`, fonction `every_sqlx_test_attribute_is_accounted_for` : balayage de source par attributs ancrés (le patron du dispositif de la 22-4a, appliqué au harnais), liste D2 en dur, `migrations = false` restreint à cette liste, mutation jouée.
 - [ ] **T6 — tmpfs + durabilité dev** (D4, AC6). Compose : **retirer le volume nommé `kesh-mariadb-data`** (ses DEUX lignes — montage et déclaration ; un `tmpfs:` posé par-dessus donnerait « Duplicate mount point », le conteneur ne démarrerait pas) et poser le `tmpfs` avec **taille explicite** (`size=` — défaut 50 % de la RAM hôte, sur la station aux deux OOM documentés ; les bases éphémères orphelines coûteront de la RAM, et le restart les efface — un avantage à écrire). `docs/testing.md` : non-persistance, re-seed, balayage des orphelines. ⚠️ **Gestes destructeurs et sensibles au moment** : la suppression du volume DÉTRUIT la base dev `kesh` de Guy (le prévenir AU MOMENT de T6) ; le restart tue tout gate en vol ; et **T6 s'exécute APRÈS les deux runs de mesure** — cf. D5. *(Montage dupliqué, taille et ordre relevés en passe 3.)*
-- [ ] **T7 — Compteurs rafraîchis aux trois sites** (AC5). `nextest.toml`, commentaire CI, `CLAUDE.md` § Plafonds mémoire — avec dates.
-- [ ] **T8 — Mesures publiées et règle de décision appliquée** (D5, AC4). Tableau avant/après ; verdict fermeture (#251 `closes` ou `refs`) motivé par le seuil d'AC4 ; plafond de threads intouché, renvoi explicite à une re-mesure future.
+- [x] **T7 — Compteurs rafraîchis aux trois sites** (AC5). `nextest.toml`, commentaire CI, `CLAUDE.md` § Plafonds mémoire — avec dates.
+- [x] **T8 — Mesures publiées et règle de décision appliquée** (D5, AC4). Tableau avant/après ; verdict fermeture (#251 `closes` ou `refs`) motivé par le seuil d'AC4 ; plafond de threads intouché, renvoi explicite à une re-mesure future.
 
 ## Dev Notes
 
@@ -154,6 +154,64 @@ Le « ~69 min » cité en ouverture est un **ordre de grandeur emprunté** au ga
 ## Dérogation règle de splitting
 
 Le critère de non-convergence de la § *Règle de splitting préventif* a été atteint en passe 3 de validate (P2 `0/0/2/~5` → P3 `1/4/12/6`). **Arbitrage de Guy, 2026-08-15 : pas de split, poursuite de la boucle.** Motif : les patches des passes 1-2 ont tous tenu (vérifié au grep par l'audit de passe 3) ; la hausse de sévérité vient de l'escalade DÉLIBÉRÉE vers une lentille d'architecture Opus, pas d'une remédiation qui n'entame pas le problème ; et chaque finding est fermable par amendement concret — rien n'énumère sans fin comme l'AC6 de la 22-4. *(L'exception codifiée de la règle vise les cycles Cargo d'un split forcé — le cas présent est l'arbitrage du Project Lead que l'amendement D-C prévoit ; la règle exigeant une section dédiée, la voici — relevé en passe 4.)*
+
+## Dev Agent Record
+
+**État d'exécution au 2026-08-16** : T1-T5, T7 et T8 faites. **T6 (tmpfs dev) reste ouverte** — geste destructeur pour la base de dev, en attente de l'arbitrage de Guy ; **AC6 n'est donc pas satisfaite**, et c'est la seule.
+
+| Commit | Contenu |
+|---|---|
+| `d5f0cf73` | T1-T3 — `scripts/regen-test-schema.sh`, `test-schema/0001_schema_squash.sql` (38 tables, 67 Ko), garde-fou à 4 assertions, 4 mutations jouées |
+| `76fb8e92` | T4+T5 — 1102 attributs basculés, test de complétude, propagation de 17 sites de doc |
+| celui-ci | T7-T8 — compteurs rafraîchis, mesures publiées, verdict de fermeture |
+
+**AC0 — le transfert de couverture, nommé.** Avant cette story, 1102 tests rejouaient la chaîne réelle des 61 migrations : un filet redondant, et c'était exactement son coût. Depuis la bascule, l'invariant « les 61 migrations s'appliquent proprement, dans l'ordre, sur une base vide » n'est plus tenu que par `migrations_fresh_install.rs`, `migrations_upgrade_path.rs`, les backfills à fenêtre de la liste D2, et le garde-fou `test_schema_guard.rs`, qui monte le vrai `MIGRATOR` à chaque gate. Arbitrage assumé, et dit ici comme l'AC l'exige.
+
+**AC1 — aucun test perdu, l'écart ventilé nominativement.** 2208 → **2209** tests, **0 échec des deux côtés**, 4 skipped inchangés, aucun `SLOW`, aucun retry. La preuve n'est pas le total mais le **diff des listes de tests exécutés**, extraites des deux logs, triées et comparées : **zéro disparu**, **un seul apparu** — `kesh-db::test_schema_guard every_sqlx_test_attribute_is_accounted_for`, précisément le test que T5 ajoute. Les deux runs APRÈS rendent des listes identiques. Les 4 tests du garde-fou de T3 étaient déjà dans le compte AVANT, leur commit étant le parent de la mesure. *(Un +1 net peut masquer une suppression compensée — mode d'échec payé sur 16-1a et 16-2a ; le diff nominatif est ce qui l'exclut.)*
+
+**AC2 — garde-fou vert, 4 assertions.** Structure (`information_schema` complet), ligne d'amorçage `_kesh_version`, suivi `_sqlx_migrations`, et la quatrième née d'une mutation restée verte (le `MIGRATOR` compilé peut ignorer une migration ajoutée — `sqlx::migrate!` est compile-time). 4 mutations jouées, 4 rougissements — déclaré au commit `d5f0cf73`. Les 3 assertions à base réelle ont tourné dans les deux runs de mesure.
+
+**AC3 — la complétude est un test, et sa mutation a été jouée.** Recensement recompté depuis la source au commit de bascule, ventilation qui somme :
+
+| Graphie | Compte |
+|---|---|
+| `migrations = "../kesh-db/test-schema"` | 749 |
+| `migrations = "./test-schema"` | 353 |
+| `migrator = "kesh_db::MIGRATOR"` (liste D2) | 26 |
+| `migrations = false` (liste D2) | 17 |
+| **Total** | **1145** = les 1142 du recensement de spec + les 3 attributs du garde-fou livré en T3 |
+
+Mutation jouée le 2026-08-16 : un attribut de `crates/kesh-api/tests/accounts_e2e.rs` re-basculé à la main vers `migrator = "kesh_db::MIGRATOR"` → le test **rougit en nommant `crates/kesh-api/tests/accounts_e2e.rs:211`**, depuis un binaire de test de `kesh-db` : la frontière de crate est bien franchie. Restauration **par copie**, vérifiée deux fois (`diff -q` contre la référence, puis `git status` propre vis-à-vis de `HEAD`), test re-vert.
+
+**AC4 — la mesure, et le verdict qu'elle dicte.** Protocole D5 : même machine, profil `ci`, compilation hors chronomètre, deux runs par état, `mem-guard` actif, station au repos. L'AVANT sur `d5f0cf73`, l'APRÈS sur son enfant `76fb8e92` — les deux commits ne diffèrent que par la bascule et son test.
+
+| | run 1 | run 2 | moyenne | résultat |
+|---|---|---|---|---|
+| **AVANT** (`d5f0cf73`) | 3677 s | 4051 s | **64,4 min** | 2208 passed, 0 failed, 4 skipped |
+| **APRÈS** (`76fb8e92`) | 1266 s | 1111 s | **19,8 min** | 2209 passed, 0 failed, 4 skipped |
+
+**Gain : 3,25×** sur les moyennes — 3,31× meilleur contre meilleur, 3,20× pire contre pire, et **2,90× dans la lecture la plus défavorable constructible** (l'AVANT le plus rapide contre l'APRÈS le plus lent). Par test : 1,75 s → 0,54 s. Économie : **44,6 min par gate complet**.
+
+**Verdict d'AC4 : le seuil de 2× est franchi même par la lecture la moins favorable → la PR ferme #251** (`closes`, porté sur le message de PR et non sur les commits intermédiaires, cf. § *Issue Tracking Rule*).
+
+⚠️ **Le bruit de mesure est réel et se dit** : 10 % d'écart entre les deux runs AVANT, 14 % entre les deux APRÈS (et le run 1 y est plus lent que le run 2, l'inverse de l'AVANT). Il ne menace pas la conclusion — l'intervalle le plus défavorable reste à 2,90× — mais il interdit d'annoncer « 3,25× » comme une constante.
+
+**Plafond de threads : intouché, et pourquoi.** Le `test-threads = 6` a été fixé par la contention des metadata-locks sur le rejeu des migrations — cause que cette story vient de supprimer. Il est donc vraisemblablement trop bas aujourd'hui. Il **reste à 6 faute de mesure, pas par conviction** : le relever exige de rejouer le tableau flakes compris (KF-038 #228), ce qui est un travail de mesure à part entière. L'avertissement est écrit dans `.config/nextest.toml` et dans le `CLAUDE.md`, aux deux endroits où quelqu'un ira lire le chiffre.
+
+**AC5 — compteurs rafraîchis aux trois sites**, avec dates :
+
+- `.config/nextest.toml` — le tableau de 2026-07-13 est **étiqueté historique** (« AVANT le squash ») au lieu d'être effacé, le paragraphe « ~894 tests / 51 migrations » est remplacé par l'état réel (1102 des 1145 attributs sur le squash, 43 en liste D2) et par les mesures datées du 2026-08-16 ; le commentaire du plafond renvoie à la re-mesure.
+- `.github/workflows/ci.yml:124` et `:130` — « 84 tests » → **154**, recompté depuis la source et ventilé : 151 tests dont le corps appelle `test_pool()` (24 accounts + 3 audit_log + 33 contacts + 37 invoices + 34 journal_entries + 20 products) **+ 3** qui ouvrent leur propre connexion (2 dans `invoices.rs`, 1 dans `retry.rs`). La graphie de remédiation citée y est corrigée en `migrations = "./test-schema"`.
+- `CLAUDE.md` § *Gate rapide* (le site que la spec désignait « § Plafonds mémoire, ligne 114 ») — le « 1,40× / ~894 / 51 migrations » devient l'histoire au passé, suivi du tableau de mesure et de l'avertissement sur le plafond ; la ligne `test-threads` du tableau des parallélismes porte le même renvoi.
+
+*Preuve* : `grep -rnE '\b894\b|\b84 tests\b|51 migrations'` sur le dépôt ne rend plus que des sites **légitimes** — `notes-251-exploration.md`, la spec de cette story qui les nomme, et des stories historiques datées (6-4, 3-4, 7-2) dont les décomptes appartiennent à leur époque. Aucun résidu vivant.
+
+**AC6 — NON satisfaite**, T6 en attente d'arbitrage. Rien n'a été touché à `docker-compose.dev.yml` ni à la section de `docs/testing.md` qui en dépend.
+
+**Gates réellement exécutés** — et rien d'autre n'est déclaré :
+
+- sur `76fb8e92` : `cargo fmt --all -- --check` vert, `cargo clippy --workspace --all-targets -- -D warnings` vert (exit 0), puis **le gate complet deux fois** (`cargo nextest run --profile ci`), 2209/2209.
+- après T7 : les modifications ne portent que sur des **commentaires** (`nextest.toml`, `ci.yml`) et de la documentation (`CLAUDE.md`) — aucun code exécutable, aucun réglage de comportement changé. Le gate complet n'a pas été rejoué pour elles, et ne l'est pas déclaré.
 
 ## Change Log
 

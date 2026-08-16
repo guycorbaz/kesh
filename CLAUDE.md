@@ -101,7 +101,7 @@ Note : la CI utilise `cargo test --workspace -j1 -- --test-threads=1` pour seria
 
 #### Gate rapide — `cargo-nextest` (recommandé si MariaDB démarré)
 
-Alternative **1,40× plus rapide** au `cargo test -j1 --test-threads=1` (mesuré 2026-07-13 : **54 min → 38 min** sur la suite complète, 1802 tests, 0 flake). Un script enveloppe fmt + clippy + nextest :
+Alternative au `cargo test -j1 --test-threads=1`. Un script enveloppe fmt + clippy + nextest :
 
 ```sh
 scripts/test-fast.sh            # fmt + clippy + nextest (défaut)
@@ -111,7 +111,18 @@ scripts/test-fast.sh --ci       # profil ci (retries=1, fail-fast off)
 
 Pré-requis : `cargo install cargo-nextest` (ou binaire prébuilt `https://get.nexte.st`) + MariaDB dev démarré. Config dans `.config/nextest.toml`.
 
-**Pourquoi seulement 1,40× et pas 6× ?** Le goulot n'est pas le CPU mais MariaDB : chaque test `#[sqlx::test]` (~894) crée une base éphémère et y **rejoue les 51 migrations** (DDL sérialisé par les metadata-locks). Au-delà de **6 threads la contention devient contre-productive** (32 threads → 3 flakes `reconciliation_*_e2e` KF-038 #228 + tests « slow », run cassé). Le plafond est donc figé à 6 dans la config. Le vrai levier (squash du schéma de test + durabilité MariaDB relâchée sur la DB jetable) est suivi dans l'**issue #251** — tant qu'il n'est pas livré, nextest = gain modeste + stabilité, pas une révolution.
+**Le goulot n'a jamais été le CPU, mais MariaDB** — et il a été levé. Chaque test `#[sqlx::test]` créait une base éphémère et y **rejouait les migrations une par une** (DDL sérialisé par les metadata-locks) ; c'est cette contention qui a figé le plafond à **6 threads** (32 threads → 3 flakes `reconciliation_*_e2e` KF-038 #228 + tests « slow », run cassé), et qui limitait nextest à un gain modeste de 1,40× (mesuré 2026-07-13 : 54 min → 38 min, 1802 tests).
+
+**Depuis la Story 22-5 (issue #251), 1102 des 1145 attributs `#[sqlx::test]` montent le squash `crates/kesh-db/test-schema/`** — un batch DDL unique au lieu des 61 migrations. Mesuré le 2026-08-16, même machine, profil `ci`, 2209 tests, deux runs par état :
+
+| | run 1 | run 2 | moyenne |
+|---|---|---|---|
+| avant le squash | 3677 s | 4051 s | **64,4 min** |
+| après le squash | 1266 s | 1111 s | **19,8 min** |
+
+Soit **3,25×**, et 44,6 minutes rendues à chaque gate complet. Les 43 attributs restés sur le vrai `MIGRATOR` sont ceux qui testent **ce chemin lui-même** ; la liste est tenue en dur par `crates/kesh-db/tests/test_schema_guard.rs`, qui rougit dès qu'un test s'en écarte ou que le squash dérive du schéma réel.
+
+⚠️ **Le plafond de 6 threads n'a PAS été re-mesuré depuis.** Sa cause a disparu, donc il est vraisemblablement trop bas — il reste à 6 **faute de mesure, pas par conviction**. Le relever demande de rejouer le tableau ci-dessus, flakes compris.
 
 ### Frontend (Svelte)
 
@@ -257,7 +268,7 @@ Le noyau pénalise chaque allocation d'un sommeil proportionnel au retard du rec
 | `.cargo/config.toml` → `--thread-count=4` (mold) | 4 | threads internes de l'éditeur de liens |
 | `Cargo.toml` → `[profile.dev] debug` | `line-tables-only` | volume de DWARF construit puis recopié dans chaque binaire de test |
 | `frontend/vite.config.ts` → `maxWorkers` | 4 | processus Node+jsdom de vitest (défaut : **31** ici) |
-| `.config/nextest.toml` → `test-threads` | 6 | binaires de test simultanés — plafond fixé par la contention MariaDB, pas par la RAM ; ne pas le changer pour des raisons de mémoire |
+| `.config/nextest.toml` → `test-threads` | 6 | binaires de test simultanés — plafond fixé par la contention MariaDB, pas par la RAM ; ne pas le changer pour des raisons de mémoire (et non re-mesuré depuis le squash — cf. § *Gate rapide*) |
 
 ⚠️ **Le `.cargo/config.toml` du projet ÉCRASE celui de la station** (`~/.cargo/config.toml`). Cargo ne fusionne pas les valeurs scalaires : le fichier le plus proche du projet gagne. Le `jobs = 4` global posé sur la station après le diagnostic du 2026-07-23 était donc **sans effet dans ce dépôt** — seul de tous les projets Rust de la machine, il compilait à 8. C'est un mode d'échec silencieux : le réglage existe, il est correct, et il ne s'applique pas. Toute modification du `jobs` de la station doit être répercutée ici.
 

@@ -121,13 +121,15 @@ jobs:
             exit 1
           fi
 
-      # Les tests `kesh-db::repositories::*` (pré-Story-6-4, 84 tests) se
+      # Les tests `kesh-db::repositories::*` (pré-Story-6-4, 154 tests : 151 via
+      # le helper `test_pool()` + 3 qui ouvrent leur propre connexion) se
       # connectent directement à DATABASE_URL au lieu d'utiliser `#[sqlx::test]`.
       # Ils exigent donc que la DB `kesh` ait ses migrations appliquées + 1
       # company + 1 admin user seedés. Les tests d'intégration plus récents
       # (*_e2e.rs) utilisent `#[sqlx::test]` → DB éphémère auto-setup, pas
       # impactés par cette step. Remédiation pérenne (hors scope Story 6-4) :
-      # refactorer les 84 tests pour `#[sqlx::test(migrator = "crate::MIGRATOR")]`.
+      # refactorer les 154 tests pour `#[sqlx::test(migrations = "./test-schema")]`
+      # (graphie du squash depuis kesh-db — cf. Story 22-5 / issue #251).
       - name: Install mariadb-client
         run: sudo apt-get install -y mariadb-client
 

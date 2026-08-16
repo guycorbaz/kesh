@@ -1,25 +1,49 @@
-# Configuration cargo-nextest — gate rapide (Story 21-2b, 2026-07-13).
+# Configuration cargo-nextest — gate rapide (Story 21-2b, 2026-07-13 ;
+# compteurs et mesures rafraîchis par la Story 22-5, 2026-08-16).
 #
-# CONTEXTE / MESURES (machine 32 cœurs, MariaDB dev local `max_connections=100`,
-# durabilité par défaut) — suite backend complète, 1802 tests :
+# CONTEXTE / MESURES HISTORIQUES du 2026-07-13, soit AVANT le squash de schéma
+# (machine 32 cœurs, MariaDB dev local `max_connections=100`, durabilité par
+# défaut) — suite backend d'alors, 1802 tests. Les mesures COURANTES sont plus
+# bas, sous « MESURES 2026-08-16 » :
 #
 #   série      (--test-threads=1)  : 53:57  (3237 s)  1802/0
 #   6 threads  (ce défaut)         : 38:25  (2305 s)  1802/0, 0 flake   → 1,40× plus rapide
 #   32 threads (défaut nextest)    : CASSÉ  — contention MariaDB → 3 flakes
 #                                     reconciliation_*_e2e (KF-038 #228) + tests « slow »
 #
-# Le goulot n'est PAS le CPU mais MariaDB : chaque test `#[sqlx::test]` (~894)
-# rejoue les 51 migrations (DDL sérialisé par les metadata-locks). Au-delà de
-# ~6 threads la contention devient contre-productive. Le vrai levier (squash du
-# schéma de test + durabilité relâchée) est suivi dans l'issue #251.
+# Le goulot n'était PAS le CPU mais MariaDB : chaque test `#[sqlx::test]`
+# rejouait les migrations une par une (DDL sérialisé par les metadata-locks),
+# et c'est cette contention qui a figé le plafond à 6 threads.
+#
+# CE N'EST PLUS LE CAS DEPUIS LA STORY 22-5 (issue #251) : 1102 des 1145
+# attributs `#[sqlx::test]` montent le squash `crates/kesh-db/test-schema/`
+# — un batch DDL unique au lieu des 61 migrations. Les 43 restants gardent le
+# vrai `MIGRATOR` parce qu'ils testent CE chemin (installation fraîche,
+# fenêtres d'upgrade, backfills, garde-fou de schéma) ; la liste est tenue en
+# dur par `crates/kesh-db/tests/test_schema_guard.rs`, qui rougit sur tout
+# écart.
+#
+# MESURES 2026-08-16 (même machine, profil ci, 2209 tests, deux runs par état,
+# compilation hors chronomètre) :
+#
+#   avant le squash (61 migrations/test) : 3677 s / 4051 s  → moyenne 64,4 min
+#   après le squash (1 batch DDL/test)   : 1266 s / 1111 s  → moyenne 19,8 min
+#                                                             = 3,25× plus rapide
+#
+# ⚠️ LE PLAFOND DE 6 THREADS N'A PAS ÉTÉ RE-MESURÉ depuis le squash. Sa cause
+# — la contention des metadata-locks sur le rejeu des migrations — a largement
+# disparu, donc il est vraisemblablement trop bas aujourd'hui. Il reste tel
+# quel FAUTE DE MESURE, pas par conviction : le relever exige de rejouer le
+# tableau ci-dessus, flakes compris (cf. Story 22-5, T8).
 #
 # Ce fichier remplace le `cargo test --workspace -j1 -- --test-threads=1` de la
 # CI (tout en série) par : plafond à 6 threads + tests lib kesh-db (DB dev
 # partagée) sérialisés. Voir CLAUDE.md §Test Locally First et scripts/test-fast.sh.
 
 [profile.default]
-# Plafond empirique — sweet spot mesuré (voir tableau ci-dessus). Surchargeable
-# ponctuellement via `cargo nextest run --test-threads=N`.
+# Plafond empirique — sweet spot mesuré AVANT le squash (voir l'avertissement
+# de l'en-tête : sa cause a disparu, il n'a pas été re-mesuré depuis).
+# Surchargeable ponctuellement via `cargo nextest run --test-threads=N`.
 test-threads = 6
 
 [test-groups]
