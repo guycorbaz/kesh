@@ -358,6 +358,32 @@ Mutation jouée le 2026-08-16 : un attribut de `crates/kesh-api/tests/accounts_e
 
 La base de dev de Guy et les bases de gate ont été détruites comme prévu ; `steadyinvest_test`, base d'un autre projet présente dans le même volume, a été signalée avant destruction et sacrifiée sur son arbitrage explicite.
 
+**Suite E2E — jouée le 2026-08-16, avant le push, selon la recette de `docs/testing.md`**
+
+`181 passed, 38 failed, 19 skipped` en 11,9 min. Le backend a démarré sur `:3000` contre `kesh_e2e`, base **créée par le script d'init de T6** et migrée au boot — ce qui exerce en vrai tout le montage de la story : datadir en RAM, droits resserrés, base recréée à chaque démarrage.
+
+Les 38 échecs se rangent dans les familles documentées, sans reliquat :
+
+| Famille | Échecs | Rattachement |
+|---|---|---|
+| `bank-*` (import, CSV, confirms, crud, journal-link) | **13** | **KF-030**, ouverte, dont le titre annonce précisément « 13 tests fail » |
+| `localStorage` / « JWT introuvable post-login » | 19 | famille documentée dans `docs/testing.md` § *Prérequis Playwright local* |
+| `GET /_test/sent-emails → 400 — backend démarré sans SMTP factice` | 5 | le message se déclare lui-même ; le backend de ce run n'avait pas de SMTP |
+| cascades (timeouts, éléments absents) | le solde | conséquences des trois familles ci-dessus |
+
+⚠️ **Le différentiel branche ↔ `main` n'a PAS été mesuré**, et c'est un choix, pas un oubli. Il est remplacé par une preuve plus forte et vérifiable : **la branche ne modifie aucune ligne de code applicatif.** Cinq fichiers de `crates/*/src/` sont touchés, et chaque ligne changée y est soit un attribut `#[sqlx::test]`, soit un commentaire :
+
+```sh
+for f in $(git diff main...HEAD --name-only -- crates | grep '/src/'); do
+  git diff main...HEAD -- "$f" | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' \
+    | grep -vE '^[+-]\s*#\[(sqlx::test|tokio::test|test)' \
+    | grep -vE '^[+-]\s*(//|///|//!|/\*|\*)' | grep -vE '^[+-]\s*$'
+done
+#   (aucune sortie)
+```
+
+Une régression E2E par le comportement de l'application est donc **structurellement impossible** ici ; ce que la suite avait à prouver, c'est que le **harnais est vivant** et que le montage de T6 tient — les 181 tests verts le montrent. *(Attention à la relecture de cette commande : le chemin `crates/*/src` ne correspond à rien pour git et rend un résultat VIDE, qu'on lirait volontiers comme « rien n'a changé ». Piège rencontré, puis corrigé.)*
+
 **Gates réellement exécutés** — et rien d'autre n'est déclaré :
 
 - sur `76fb8e92` : `cargo fmt --all -- --check` vert, `cargo clippy --workspace --all-targets -- -D warnings` vert (exit 0), puis **le gate complet deux fois** (`cargo nextest run --profile ci`), 2209/2209.
