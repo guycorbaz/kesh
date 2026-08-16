@@ -13,46 +13,87 @@
 #
 # Usage :
 #   scripts/regen-test-schema.sh                 # base jetable auto-nommée
-#   SQUASH_DB=ma_base scripts/regen-test-schema.sh
+#   SQUASH_DB=_sqlx_test_ma_base scripts/regen-test-schema.sh
 #
 # Prérequis : MariaDB dev démarré, `DATABASE_URL` dans `.env` (ou l'environnement).
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-REPO_ROOT="$PWD"
 OUT="crates/kesh-db/test-schema/0001_schema_squash.sql"
 
 # ---------------------------------------------------------------------------
 # 1. Coordonnées de connexion, dérivées de DATABASE_URL
+#
+# ⚠️ Le `|| true` sur le grep n'est pas de la négligence, c'est l'inverse : sous
+# `pipefail`, un `.env` présent mais SANS la clé faisait rendre 1 au pipeline,
+# donc `set -e` tuait le script AVANT le message d'erreur soigné ci-dessous.
+# L'utilisateur recevait un exit 1 muet. *(Relevé en passe 1 de revue.)*
 # ---------------------------------------------------------------------------
 if [[ -z "${DATABASE_URL:-}" && -f .env ]]; then
-    DATABASE_URL=$(grep -E '^DATABASE_URL=' .env | head -1 | cut -d= -f2-)
+    DATABASE_URL=$(grep -E '^DATABASE_URL=' .env | head -1 | cut -d= -f2- || true)
 fi
 if [[ -z "${DATABASE_URL:-}" ]]; then
     echo "✗ DATABASE_URL absent (ni environnement, ni .env)." >&2
     exit 1
 fi
 
-# mysql://user:pass@host:port/base
-proto_stripped="${DATABASE_URL#mysql://}"
-creds="${proto_stripped%%@*}"
-hostpart="${proto_stripped#*@}"
+# Nettoyage de la valeur : retour chariot d'un fichier édité sous Windows, puis
+# guillemets encadrants. Sans cela, `${DATABASE_URL#mysql://}` ne retire RIEN
+# (le préfixe ne matche pas) et l'utilisateur devient `"mysql://kesh`.
+DATABASE_URL="${DATABASE_URL%$'\r'}"
+DATABASE_URL="${DATABASE_URL%\"}"; DATABASE_URL="${DATABASE_URL#\"}"
+DATABASE_URL="${DATABASE_URL%\'}"; DATABASE_URL="${DATABASE_URL#\'}"
+
+if [[ "$DATABASE_URL" != mysql://* && "$DATABASE_URL" != mariadb://* ]]; then
+    echo "✗ DATABASE_URL n'a pas la forme attendue mysql://user:pass@host:port/base" >&2
+    echo "  reçu : $DATABASE_URL" >&2
+    exit 1
+fi
+
+# mysql://user:pass@host:port/base — le découpage coupe au DERNIER `@`, un mot
+# de passe pouvant légitimement en contenir un (encodé ou non).
+proto_stripped="${DATABASE_URL#*://}"
+creds="${proto_stripped%@*}"
+hostpart="${proto_stripped##*@}"
 DB_USER="${creds%%:*}"
-DB_PASS="${creds#*:}"
+if [[ "$creds" == *:* ]]; then
+    DB_PASS="${creds#*:}"
+else
+    # Sans `:`, `${creds#*:}` rendait la chaîne inchangée — donc le NOM
+    # D'UTILISATEUR en guise de mot de passe. *(Relevé en passe 1.)*
+    DB_PASS=""
+fi
 hostport="${hostpart%%/*}"
 DB_HOST="${hostport%%:*}"
 DB_PORT="${hostport#*:}"
 [[ "$DB_PORT" == "$DB_HOST" ]] && DB_PORT=3306
 
-# Base JETABLE : jamais la base dev, que ce script ne touche pas.
+# sqlx percent-décode les identifiants d'une URL ; ce script doit en faire
+# autant, sans quoi il s'authentifie avec une chaîne différente de celle de
+# l'application dès qu'un mot de passe contient `@`, `:` ou `/`.
+percent_decode() { printf '%b' "${1//%/\\x}"; }
+DB_USER=$(percent_decode "$DB_USER")
+DB_PASS=$(percent_decode "$DB_PASS")
+
+# Base JETABLE : jamais la base dev.
 #
-# ⚠️ Le préfixe `_sqlx_test_` n'est pas décoratif : l'utilisateur applicatif n'a
-# de droits de création que sur `kesh`, `kesh_e2e`, les bases de gate… et
-# `_sqlx_test%` — c'est CE grant qui fait vivre `#[sqlx::test]`. S'y ranger rend
-# le script exécutable partout où le harnais de test tourne, sans exiger root.
+# ⚠️ Le préfixe `_sqlx_test_` n'est pas décoratif — il est CONTRÔLÉ ci-dessous.
+# C'est l'espace de noms des bases jetables du harnais : s'y ranger garde le
+# script exécutable là où l'utilisateur n'a de droits de création que sur ce
+# préfixe (le cas dès que le grant de dev est resserré), et surtout il interdit
+# à l'override `SQUASH_DB=` de viser une base réelle — le premier statement
+# exécuté plus bas est un `DROP DATABASE`. *(Garde ajoutée en passe 1 de revue :
+# `SQUASH_DB=kesh` détruisait la base de dev, contre la promesse du commentaire
+# qui occupait ces lignes.)*
 # Cette base n'est pas inscrite au registre `_sqlx_test_databases`, donc le
 # ménage automatique de sqlx ne la voit pas ; le `trap` ci-dessous s'en charge.
 SQUASH_DB="${SQUASH_DB:-_sqlx_test_squashgen_$$}"
+if [[ ! "$SQUASH_DB" =~ ^_sqlx_test_[A-Za-z0-9_]+$ ]]; then
+    echo "✗ SQUASH_DB doit correspondre à ^_sqlx_test_[A-Za-z0-9_]+$ — reçu « $SQUASH_DB »." >&2
+    echo "  Ce script commence par DROP DATABASE : le préfixe est ce qui garantit" >&2
+    echo "  qu'il ne peut viser ni kesh, ni kesh_e2e, ni une base de gate." >&2
+    exit 1
+fi
 
 # ---------------------------------------------------------------------------
 # 2. Client de dump — `mariadb-dump` OU `mysqldump` selon les machines
@@ -74,58 +115,96 @@ else
     exit 1
 fi
 
-# Les identifiants passent par un fichier de config temporaire (mode 600) :
-# ni `-p` en clair dans `ps`, ni warning client à filtrer — donc AUCUNE erreur
-# n'a besoin d'être masquée, et le script échoue bruyamment quand il échoue.
+# Les identifiants passent par un fichier de config temporaire (mode 600) : ni
+# `-p` en clair dans `ps`, ni warning client à filtrer.
+#
+# ⚠️ La valeur est GUILLEMETÉE : le format des fichiers d'options MariaDB traite
+# `#` comme un début de commentaire et interprète `\b \t \n \s \\`. Un mot de
+# passe contenant `#` était tronqué en silence. Un `"` reste impossible à
+# transmettre — on le refuse plutôt que d'échouer plus loin sans motif.
+# *(Relevé en passe 1 de revue.)*
+if [[ "$DB_PASS" == *'"'* ]]; then
+    echo "✗ mot de passe contenant un guillemet double : intransmissible par" >&2
+    echo "  --defaults-extra-file. Utilisez un autre compte pour régénérer." >&2
+    exit 1
+fi
 CNF=$(mktemp)
 chmod 600 "$CNF"
 cat > "$CNF" <<CNF_EOF
 [client]
 host=$DB_HOST
 port=$DB_PORT
-user=$DB_USER
-password=$DB_PASS
+user="$DB_USER"
+password="$DB_PASS"
 CNF_EOF
 
 cli() { "$CLI_BIN" --defaults-extra-file="$CNF" --skip-column-names --batch "$@"; }
 
+# Le ménage est best-effort ET silencieux : à ce stade la sortie est déjà en
+# cours, et un second message d'erreur masquerait le premier. C'est la SEULE
+# chose que ce script tait.
+#
+# `RAW`/`NORM`/`TMP_OUT` y figurent : sous `set -e`, tout échec entre leur
+# création et la fin les laissait dans /tmp. Et le `trap` couvre les signaux,
+# pas seulement EXIT — `$CNF` contient le mot de passe de la base.
+# *(Relevé par deux lentilles en passe 1.)*
+RAW=""; NORM=""; TMP_OUT=""; VERIFY_DB=""
 cleanup() {
     cli -e "DROP DATABASE IF EXISTS \`$SQUASH_DB\`;" >/dev/null 2>&1 || true
-    rm -f "$CNF"
+    [[ -n "$VERIFY_DB" ]] && cli -e "DROP DATABASE IF EXISTS \`$VERIFY_DB\`;" >/dev/null 2>&1 || true
+    rm -f "$CNF" "$RAW" "$NORM" "$TMP_OUT"
 }
-trap cleanup EXIT
+trap cleanup EXIT INT TERM HUP
 
 echo "▶ base jetable : $SQUASH_DB (client : $DUMP_BIN)"
 cli -e "DROP DATABASE IF EXISTS \`$SQUASH_DB\`; CREATE DATABASE \`$SQUASH_DB\`;"
 
 # ---------------------------------------------------------------------------
 # 3. Le VRAI migrator, en entier, sur la base jetable
+#
+# `LC_ALL=C` fige l'ordre du glob : sqlx trie sur la version numérique, et le
+# tri du shell dépend sinon de la locale. Les deux ordres coïncident en C, pas
+# nécessairement ailleurs. *(Relevé en passe 1.)*
 # ---------------------------------------------------------------------------
 echo "▶ application des migrations réelles…"
 MIGRATION_COUNT=0
-for f in crates/kesh-db/migrations/*.sql; do
+while IFS= read -r f; do
     "$CLI_BIN" --defaults-extra-file="$CNF" "$SQUASH_DB" < "$f"
     MIGRATION_COUNT=$((MIGRATION_COUNT + 1))
-done
+done < <(LC_ALL=C ls -1 crates/kesh-db/migrations/*.sql)
 echo "  $MIGRATION_COUNT migrations appliquées"
 
 # ---------------------------------------------------------------------------
-# 4. Garde-fou : le squash ne sait pas porter vues / triggers / routines
+# 4. Garde-fou : le squash ne sait porter que des TABLES
 #
 # Un dump `--routines`/`--triggers` émet des blocs `DELIMITER ;;` — directive
-# CLIENT que le serveur rejette : le squash deviendrait inchargeable. Plutôt
-# qu'émettre un fichier cassé, on échoue ici, en le disant.
+# CLIENT que le serveur rejette : le squash deviendrait inchargeable. Les
+# `EVENTS` seraient, eux, silencieusement OMIS (pas de `--events`), et une
+# `SEQUENCE` échapperait au relevé du garde-fou, qui filtre sur
+# `TABLE_TYPE = 'BASE TABLE'`. Plutôt qu'émettre un fichier incomplet, on
+# échoue ici, en le disant. *(EVENTS et SEQUENCE ajoutés en passe 1 de revue.)*
 # ---------------------------------------------------------------------------
 EXOTIC=$(cli -e "
     SELECT
-      (SELECT COUNT(*) FROM information_schema.VIEWS   WHERE TABLE_SCHEMA = '$SQUASH_DB')
+      (SELECT COUNT(*) FROM information_schema.VIEWS    WHERE TABLE_SCHEMA   = '$SQUASH_DB')
     + (SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = '$SQUASH_DB')
-    + (SELECT COUNT(*) FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = '$SQUASH_DB');")
-if [[ "${EXOTIC:-0}" -ne 0 ]]; then
-    echo "✗ le schéma porte désormais $EXOTIC vue(s)/trigger(s)/routine(s)." >&2
-    echo "  Le squash ne sait pas les porter : un dump --routines/--triggers émet des" >&2
-    echo "  blocs DELIMITER, directive client que le serveur rejette. Étendre CE script" >&2
-    echo "  d'abord (story 22-5, #251), puis régénérer." >&2
+    + (SELECT COUNT(*) FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = '$SQUASH_DB')
+    + (SELECT COUNT(*) FROM information_schema.EVENTS   WHERE EVENT_SCHEMA   = '$SQUASH_DB')
+    + (SELECT COUNT(*) FROM information_schema.TABLES   WHERE TABLE_SCHEMA   = '$SQUASH_DB'
+                                                          AND TABLE_TYPE     = 'SEQUENCE');")
+# Un résultat VIDE n'est pas un zéro : c'est une requête qui n'a pas répondu.
+# Le lire comme « rien d'exotique » rendait ce garde-fou muet dans le seul cas
+# où il compte. *(Relevé en passe 1.)*
+if [[ -z "$EXOTIC" ]]; then
+    echo "✗ le décompte des objets non-table n'a rien rendu — requête en échec ?" >&2
+    exit 1
+fi
+if [[ "$EXOTIC" -ne 0 ]]; then
+    echo "✗ le schéma porte désormais $EXOTIC objet(s) non-table (vue, trigger," >&2
+    echo "  routine, event ou séquence)." >&2
+    echo "  Le squash ne sait pas les porter : --routines/--triggers émet des blocs" >&2
+    echo "  DELIMITER que le serveur rejette, et les events seraient omis en silence." >&2
+    echo "  Étendre CE script d'abord (story 22-5, #251), puis régénérer." >&2
     exit 1
 fi
 
@@ -181,7 +260,12 @@ if [[ -z "$KV_ID" || -z "$KV_MIN" || -z "$KV_LAST" ]]; then
     exit 1
 fi
 
+# ⚠️ On écrit dans un TEMPORAIRE, et `$OUT` n'est remplacé qu'au `mv` final.
+# Une redirection directe tronquait l'artefact VERSIONNÉ dès l'ouverture du
+# bloc : un échec en cours laissait un squash coupé là où le run précédent était
+# bon, sans que rien ne le signale. *(Relevé en passe 1 de revue.)*
 mkdir -p "$(dirname "$OUT")"
+TMP_OUT=$(mktemp)
 {
     echo "-- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER."
     echo "-- Régénérer : scripts/regen-test-schema.sh"
@@ -197,9 +281,39 @@ mkdir -p "$(dirname "$OUT")"
     echo "-- chaque bump P2 de kesh_version_min_required la déplace)."
     echo "INSERT INTO \`_kesh_version\` (\`id\`, \`kesh_version_min_required\`, \`kesh_version_last_applied\`)"
     echo "VALUES ($KV_ID, '$KV_MIN', '$KV_LAST');"
-} > "$OUT"
+} > "$TMP_OUT"
 
-rm -f "$RAW" "$NORM"
+# ---------------------------------------------------------------------------
+# 8. Le fichier produit doit S'APPLIQUER — et rendre le même nombre de tables
+#
+# Sans cette étape, le script affichait « ✓ » sur un squash potentiellement
+# inchargeable, et la découverte était renvoyée au gate suivant… où elle casse
+# 1102 tests d'un coup. Le contrôle coûte une base jetable de plus.
+# *(Relevé par deux lentilles en passe 1 de revue.)*
+# ---------------------------------------------------------------------------
+echo "▶ vérification : rejeu du squash sur une base neuve…"
+EXPECTED_TABLES=$(cli -e "SELECT COUNT(*) FROM information_schema.TABLES \
+    WHERE TABLE_SCHEMA = '$SQUASH_DB' AND TABLE_TYPE = 'BASE TABLE';")
+VERIFY_DB="${SQUASH_DB}_verify"
+cli -e "DROP DATABASE IF EXISTS \`$VERIFY_DB\`; CREATE DATABASE \`$VERIFY_DB\`;"
+if ! "$CLI_BIN" --defaults-extra-file="$CNF" "$VERIFY_DB" < "$TMP_OUT"; then
+    echo "✗ le squash produit ne s'applique PAS. Fichier laissé intact ; rien n'a" >&2
+    echo "  été écrit dans $OUT." >&2
+    exit 1
+fi
+GOT_TABLES=$(cli -e "SELECT COUNT(*) FROM information_schema.TABLES \
+    WHERE TABLE_SCHEMA = '$VERIFY_DB' AND TABLE_TYPE = 'BASE TABLE';")
+if [[ "$GOT_TABLES" -ne "$EXPECTED_TABLES" ]]; then
+    echo "✗ le squash rejoué rend $GOT_TABLES tables au lieu de $EXPECTED_TABLES." >&2
+    echo "  Rien n'a été écrit dans $OUT." >&2
+    exit 1
+fi
+if [[ "$EXPECTED_TABLES" -lt 30 ]]; then
+    echo "✗ plancher : $EXPECTED_TABLES tables seulement — le dump est tronqué." >&2
+    exit 1
+fi
 
-TABLES=$(grep -c '^CREATE TABLE' "$OUT" || true)
-echo "✓ $OUT — $TABLES tables, _kesh_version = ($KV_ID, '$KV_MIN', '$KV_LAST'), $(wc -c < "$OUT") octets"
+mv "$TMP_OUT" "$OUT"
+TMP_OUT=""
+
+echo "✓ $OUT — $GOT_TABLES tables (rejeu vérifié), _kesh_version = ($KV_ID, '$KV_MIN', '$KV_LAST'), $(wc -c < "$OUT") octets"

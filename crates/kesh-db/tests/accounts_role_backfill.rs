@@ -226,7 +226,13 @@ async fn backfill_skips_archived_accounts(pool: MySqlPool) {
 /// La colonne générée `singleton_role` ne doit apparaître **ni** dans le
 /// manifeste de backup **ni** dans l'export CSV : elle est non-insérable, un
 /// restore qui tenterait de l'écrire échouerait.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+// Ce test n'exerce PAS le chemin des migrations — il vérifie qu'une colonne
+// générée est absente du manifeste de backup. Il vit dans un fichier exempté
+// (les deux tests de backfill à fenêtre, eux, gèrent leurs migrations), et
+// l'exemption étant au grain du FICHIER, il payait les 61 migrations à
+// perpétuité sans que rien ne le signale. *(Relevé en passe 1 de revue de
+// code ; la spec avait tranché « reste exclu » sans distinguer ce cas.)*
+#[sqlx::test(migrations = "./test-schema")]
 async fn generated_column_is_excluded_from_backup(pool: MySqlPool) {
     let export = kesh_db::backup::export_table(&pool, "accounts")
         .await

@@ -24,7 +24,9 @@
 //!    structure resterait identique des deux côtés.
 
 use sqlx::migrate::Migrator;
+use sqlx::mysql::MySqlConnectOptions;
 use sqlx::{Connection, Executor, MySqlConnection, MySqlPool, Row};
+use std::str::FromStr;
 
 /// Le squash, monté par le même chemin que les tests basculés.
 static SQUASH: Migrator = sqlx::migrate!("./test-schema");
@@ -59,13 +61,19 @@ const SQUASH_SPELLINGS: &[&str] = &["\"./test-schema\"", "\"../kesh-db/test-sche
 
 /// Crée une base neuve et y monte le SQUASH, puis rend `(connexion, nom)`.
 ///
-/// Nom **déterministe par test** : un orphelin laissé par un rouge est repris
-/// au run suivant (le `DROP … IF EXISTS` d'ouverture), et le préfixe
-/// `_sqlx_test_` est celui que le grant de l'utilisateur applicatif autorise —
-/// le même qui fait vivre `#[sqlx::test]`.
+/// Le nom porte le **PID**, comme T3 l'exigeait. Un nom déterministe rendrait
+/// la reprise des orphelines gratuite, mais au prix d'une collision bien pire :
+/// deux gates concurrents sur le même serveur — cas NORMAL, la § « gate ciblé
+/// entre les passes, gate complet au push » du CLAUDE.md l'organise — verraient
+/// le `DROP … IF EXISTS` de l'un détruire la base que l'autre est en train de
+/// lire, et le symptôme serait un faux « le squash a DÉRIVÉ ». *(Relevé par les
+/// trois lentilles de la passe 1 de revue.)*
+///
+/// Le préfixe `_sqlx_test_` est celui que le grant de l'utilisateur applicatif
+/// autorise — le même qui fait vivre `#[sqlx::test]`.
 async fn mount_squash(label: &str) -> (MySqlConnection, String) {
     let url = std::env::var("DATABASE_URL").expect("DATABASE_URL requis");
-    let db = format!("_sqlx_test_guard_{label}");
+    let db = format!("_sqlx_test_guard_{label}_{}", std::process::id());
 
     let mut admin = MySqlConnection::connect(&url)
         .await
@@ -80,8 +88,7 @@ async fn mount_squash(label: &str) -> (MySqlConnection, String) {
         .expect("create");
     admin.close().await.ok();
 
-    let squash_url = swap_database(&url, &db);
-    let mut conn = MySqlConnection::connect(&squash_url)
+    let mut conn = MySqlConnection::connect_with(&swap_database(&url, &db))
         .await
         .expect("connexion squash");
     SQUASH.run_direct(&mut conn).await.expect(
@@ -90,9 +97,16 @@ async fn mount_squash(label: &str) -> (MySqlConnection, String) {
     (conn, db)
 }
 
-/// Détruit la base de travail. Appelé en fin de test ; un panic antérieur la
-/// laisse en place, et c'est le `DROP … IF EXISTS` du prochain run qui nettoie
-/// (sqlx lui-même ne nettoie que les tests verts).
+/// Détruit la base de travail.
+///
+/// ⚠️ **La destruction n'est PAS garantie en cas de panic** — T3 la demandait,
+/// et l'écart se déclare ici plutôt que de se taire : l'obtenir exigerait de
+/// dérouler le corps du test dans une tâche jointe pour rattraper le panic, ce
+/// qui rendrait ces trois tests nettement moins lisibles. Le coût de l'écart
+/// est borné depuis la Story 22-5 : le datadir de dev est en tmpfs, donc un
+/// redémarrage du conteneur — geste déjà documenté comme le balayage des
+/// orphelines — efface tout. Et sqlx ne nettoie de toute façon que les tests
+/// verts.
 async fn drop_db(db: &str) {
     let url = std::env::var("DATABASE_URL").expect("DATABASE_URL requis");
     if let Ok(mut admin) = MySqlConnection::connect(&url).await {
@@ -103,11 +117,17 @@ async fn drop_db(db: &str) {
     }
 }
 
-fn swap_database(url: &str, db: &str) -> String {
-    match url.rfind('/') {
-        Some(i) => format!("{}/{}", &url[..i], db),
-        None => format!("{url}/{db}"),
-    }
+/// Rend les options de connexion de `url`, la base remplacée par `db`.
+///
+/// ⚠️ **Passe par `MySqlConnectOptions`, jamais par de la chirurgie de chaîne.**
+/// Un `rfind('/')` perdrait la query-string — or la CI documente explicitement
+/// `pool_max_conns=N` dessus, et un `?ssl-mode=…` est licite. Le garde-fou se
+/// connecterait alors autrement que les 1102 tests qu'il valide, sans que rien
+/// ne le dise. *(Relevé par deux lentilles de la passe 1 de revue.)*
+fn swap_database(url: &str, db: &str) -> MySqlConnectOptions {
+    MySqlConnectOptions::from_str(url)
+        .expect("DATABASE_URL analysable comme URL MySQL")
+        .database(db)
 }
 
 // ============================================================================
@@ -235,9 +255,22 @@ async fn schema_facts(conn: &mut MySqlConnection, db: &str) -> Vec<String> {
         ));
     }
 
-    // Vues, triggers, routines : le schéma n'en porte aucun aujourd'hui — le
-    // relevé les couvre pour que leur PREMIER ajout ne passe pas sous le radar
-    // (le script de régénération refuse d'ailleurs de les dumper, cf. son § 4).
+    // Vues, triggers, routines, events, séquences : le schéma n'en porte aucun
+    // aujourd'hui — le relevé les couvre pour que leur PREMIER ajout ne passe
+    // pas sous le radar (le script de régénération refuse d'ailleurs de les
+    // dumper, cf. son § 4).
+    //
+    // ⚠️ `expect`, PAS `unwrap_or_default` : ce dernier transformait une erreur
+    // SQL en « zéro objet », c'est-à-dire en « rien d'anormal », dans le SEUL
+    // relevé dont la raison d'être est de voir apparaître un premier objet. Et
+    // l'aveuglement était symétrique — la même fonction sert les deux côtés,
+    // donc le diff serait resté vide. *(Relevé en passe 1 de revue.)*
+    //
+    // ⚠️ `EVENTS` et les `SEQUENCE` ne sont pas décoratifs non plus :
+    // `mariadb-dump` omet les events faute de `--events`, et une séquence porte
+    // `TABLE_TYPE = 'SEQUENCE'`, donc échappe au relevé des tables ci-dessus.
+    // Sans ces deux lignes, leur ajout serait perdu par le squash ET invisible
+    // au comparateur. *(Relevé par deux lentilles en passe 1.)*
     for (kind, sql) in [
         (
             "view",
@@ -251,12 +284,21 @@ async fn schema_facts(conn: &mut MySqlConnection, db: &str) -> Vec<String> {
             "routine",
             "SELECT ROUTINE_NAME FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = ? ORDER BY ROUTINE_NAME",
         ),
+        (
+            "event",
+            "SELECT EVENT_NAME FROM information_schema.EVENTS WHERE EVENT_SCHEMA = ? ORDER BY EVENT_NAME",
+        ),
+        (
+            "sequence",
+            "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? \
+             AND TABLE_TYPE = 'SEQUENCE' ORDER BY TABLE_NAME",
+        ),
     ] {
         let rows = sqlx::query(sql)
             .bind(db)
             .fetch_all(&mut *conn)
             .await
-            .unwrap_or_default();
+            .unwrap_or_else(|e| panic!("relevé des {kind}s : {e}"));
         for r in rows {
             facts.push(format!("{kind} {}", r.get::<String, _>(0)));
         }
@@ -265,6 +307,12 @@ async fn schema_facts(conn: &mut MySqlConnection, db: &str) -> Vec<String> {
     facts
 }
 
+/// Compare deux relevés et rend le rapport des écarts.
+///
+/// ⚠️ L'égalité des LONGUEURS est vérifiée par l'appelant en plus des deux
+/// boucles : celles-ci raisonnent par appartenance, donc une facette présente
+/// deux fois d'un côté et une fois de l'autre les traverse sans un mot.
+/// *(Relevé en passe 1 de revue.)*
 fn diff_report(real: &[String], squash: &[String]) -> String {
     let mut out = String::new();
     for f in real {
@@ -276,6 +324,14 @@ fn diff_report(real: &[String], squash: &[String]) -> String {
         if !real.contains(f) {
             out.push_str(&format!("  EN TROP au squash : {f}\n"));
         }
+    }
+    if out.is_empty() && real.len() != squash.len() {
+        out.push_str(&format!(
+            "  DOUBLON : mêmes facettes des deux côtés, mais {} lignes côté réel \
+             contre {} côté squash\n",
+            real.len(),
+            squash.len()
+        ));
     }
     out
 }
@@ -307,11 +363,26 @@ async fn squash_matches_real_schema_structure(pool: MySqlPool) {
         report.is_empty(),
         "le squash a DÉRIVÉ du schéma réel — régénérez : scripts/regen-test-schema.sh\n{report}"
     );
-    assert!(
-        real_facts.len() > 500,
-        "relevé suspect : seulement {} facettes de schéma — le relevé ne mesure plus rien",
-        real_facts.len()
-    );
+    // Planchers PAR FACETTE, pas un plancher global. Un total de 500 laisserait
+    // disparaître une catégorie entière — les actions FK par exemple, dont le
+    // commentaire du relevé dit pourtant qu'« un `ON DELETE CASCADE` perdu ne se
+    // voit dans aucune autre facette ». Le relevé se tairait en restant gros.
+    // *(Relevé en passe 1 de revue.)*
+    for (prefix, floor) in [
+        ("table ", 30),
+        ("column ", 300),
+        ("index ", 50),
+        ("fk ", 20),
+        ("check ", 1),
+    ] {
+        let n = real_facts.iter().filter(|f| f.starts_with(prefix)).count();
+        assert!(
+            n >= floor,
+            "relevé suspect : {n} facette(s) « {} » côté réel (plancher {floor}) — \
+             cette catégorie a cessé d'être relevée, et un écart y serait désormais MUET",
+            prefix.trim()
+        );
+    }
 }
 
 // ============================================================================
@@ -353,8 +424,12 @@ async fn squash_seeds_the_kesh_version_row(pool: MySqlPool) {
 // 3. Suivi — le mode d'échec MUET
 // ============================================================================
 
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
-async fn squash_database_tracks_exactly_one_migration(_pool: MySqlPool) {
+/// ⚠️ `#[tokio::test]`, PAS `#[sqlx::test]` : ce test ne lit jamais la base du
+/// vrai `MIGRATOR`, il monte la sienne. L'attribut `sqlx::test` lui faisait
+/// payer les 61 migrations pour un `_pool` inutilisé — dans la story qui existe
+/// pour supprimer ce coût. *(Relevé en passe 1 de revue.)*
+#[tokio::test]
+async fn squash_database_tracks_exactly_one_migration() {
     let (mut squash, squash_db) = mount_squash("tracking").await;
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _sqlx_migrations")
         .fetch_one(&mut squash)
@@ -428,9 +503,100 @@ fn the_real_migrator_matches_the_migrations_directory() {
          déclenche aucune recompilation, donc tout le garde-fou de schéma \
          compare deux mondes périmés SANS RIEN DIRE.\n\
          Forcez la recompilation (`touch crates/kesh-db/src/lib.rs`), puis \
-         régénérez le squash : scripts/regen-test-schema.sh",
+         régénérez le squash : scripts/regen-test-schema.sh\n\
+         Et si vous venez d'AJOUTER une migration : le nombre de migrations est \
+         écrit en toutes lettres dans `.config/nextest.toml`, `CLAUDE.md`, \
+         `crates/kesh-db/README.md`, `crates/kesh-db/test-schema/README.md` et \
+         l'en-tête de CE fichier — aucun test ne les contrôle, ce rappel-ci en \
+         tient lieu.",
         on_disk.len(),
         compiled.len()
+    );
+}
+
+// ============================================================================
+// 4-bis. Les checksums des migrations publiées (garde-fou P8)
+// ============================================================================
+
+/// ⚠️ **Ce test remplace un détecteur que la Story 22-5 a elle-même supprimé.**
+///
+/// Le garde-fou **P8** du `CLAUDE.md` pose qu'une migration déjà appliquée ne se
+/// modifie plus — pas même un commentaire : `sqlx` enregistre son checksum dans
+/// `_sqlx_migrations` et refuse de démarrer si l'octet change. Mais ce contrôle
+/// ne se déclenche que contre une base **persistante** ayant déjà appliqué la
+/// migration, « c'est-à-dire, en pratique, la suite E2E ou un `cargo run` de
+/// dev ». Or T6 met le datadir de dev en tmpfs : `kesh` et `kesh_e2e` sont
+/// reconstruites à chaque démarrage, donc **plus rien en local ne rencontre le
+/// checksum**, et le défaut se déplacerait en aval — chez qui met à jour une
+/// installation réelle, où il n'y a aucun retour en arrière propre.
+///
+/// Ce test ancre les checksums dans le dépôt. Il est plus fort que le détecteur
+/// perdu : il rougit à **chaque gate**, et non le jour où une base persistante
+/// croise par hasard la migration modifiée.
+///
+/// *(Arbitrage de Guy, passe 1 de revue de code — finding du Blind Hunter.)*
+#[test]
+fn published_migrations_keep_their_checksums() {
+    let manifest_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations.sha384");
+    let manifest = std::fs::read_to_string(&manifest_path).expect(
+        "crates/kesh-db/migrations.sha384 est le registre des checksums publiés — \
+         il est versionné, il ne se supprime pas",
+    );
+
+    let mut expected = std::collections::BTreeMap::new();
+    for (n, line) in manifest.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let (version, hex) = line.split_once(char::is_whitespace).unwrap_or_else(|| {
+            panic!(
+                "migrations.sha384 ligne {} : attendu `<version> <sha384>`",
+                n + 1
+            )
+        });
+        expected.insert(
+            version.parse::<i64>().unwrap_or_else(|_| {
+                panic!("migrations.sha384 ligne {} : version illisible", n + 1)
+            }),
+            hex.trim().to_string(),
+        );
+    }
+
+    let mut modified = Vec::new();
+    let mut absents = Vec::new();
+    for m in kesh_db::MIGRATOR.migrations.iter() {
+        let hex: String = m.checksum.iter().map(|b| format!("{b:02x}")).collect();
+        match expected.get(&m.version) {
+            Some(known) if *known == hex => {}
+            Some(known) => modified.push(format!(
+                "  {} « {} »\n    registre : {known}\n    fichier  : {hex}",
+                m.version, m.description
+            )),
+            None => absents.push(format!("{} {hex}", m.version)),
+        }
+    }
+
+    assert!(
+        modified.is_empty(),
+        "UNE MIGRATION PUBLIÉE A ÉTÉ MODIFIÉE — c'est le garde-fou P8 du CLAUDE.md.\n\
+         {}\n\
+         Une migration déjà appliquée quelque part ne se modifie plus, pas même \
+         un commentaire : `sqlx` compare le checksum et REFUSE DE DÉMARRER \
+         (« was previously applied but has been modified »). Si la migration a \
+         été publiée dans une release, il n'existe aucun retour en arrière \
+         propre.\n\
+         Ce qu'on voulait ajouter va AILLEURS : la ligne de \
+         docs/migrations-idempotence-audit.md, les Dev Notes de la story, ou une \
+         migration suivante. Annulez la modification.",
+        modified.join("\n")
+    );
+    assert!(
+        absents.is_empty(),
+        "migration(s) absente(s) du registre de checksums. Si vous venez d'en \
+         ajouter une, inscrivez-la — c'est le geste qui la déclare PUBLIÉE :\n{}\n\
+         (à coller dans crates/kesh-db/migrations.sha384)",
+        absents.join("\n")
     );
 }
 
@@ -445,9 +611,43 @@ struct Attribute {
     args: String,
 }
 
-/// Balaie **tout le workspace** — pas le seul crate de ce test : les attributs
-/// vivent dans trois crates et dans `src/` comme dans `tests/`. Un balayage
-/// mono-crate raterait 749 attributs **en silence**.
+const TOKEN: &str = "#[sqlx::test";
+
+/// Les positions de `TOKEN` sur cette ligne, **hors littéral de chaîne**.
+///
+/// La règle est le nombre de guillemets non échappés qui précèdent : impair =
+/// dans une chaîne. Elle suffit ici parce que toutes les mentions littérales du
+/// dépôt vivent sur la ligne qui ouvre leur chaîne. Ses limites connues — chaîne
+/// brute `r#"…"#`, littéral de caractère `'"'` — sont sans occurrence
+/// aujourd'hui, et le pire qu'elles produisent est un rouge à trier, jamais un
+/// silence.
+fn mentions_outside_strings(line: &str) -> Vec<usize> {
+    let bytes = line.as_bytes();
+    let mut out = Vec::new();
+    let mut quotes = 0usize;
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' => {
+                i += 2;
+                continue;
+            }
+            b'"' => quotes += 1,
+            b'#' if line[i..].starts_with(TOKEN) && quotes.is_multiple_of(2) => out.push(i),
+            _ => {}
+        }
+        i += 1;
+    }
+    out
+}
+
+/// Balaie **tout le workspace** — pas le seul crate de ce test, et pas le seul
+/// répertoire `crates/` : les attributs vivent dans trois crates, dans `src/`
+/// comme dans `tests/`, et un futur membre du workspace posé ailleurs (`xtask/`,
+/// `tools/`) doit être vu. Un balayage mono-crate raterait 749 attributs **en
+/// silence** ; un balayage cloué à `crates/` raterait le membre suivant.
+/// *(Cloué à `crates/` jusqu'à la passe 1 de revue, où deux lentilles l'ont
+/// relevé contre le doc-comment qui promettait déjà « tout le workspace ».)*
 fn scan_attributes() -> (Vec<Attribute>, usize) {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -456,7 +656,7 @@ fn scan_attributes() -> (Vec<Attribute>, usize) {
         .to_path_buf();
 
     let mut files = Vec::new();
-    collect_rs(&root.join("crates"), &mut files);
+    collect_rs(&root, &mut files);
 
     let mut attrs = Vec::new();
     let mut raw_mentions = 0usize;
@@ -467,21 +667,36 @@ fn scan_attributes() -> (Vec<Attribute>, usize) {
             .unwrap_or(path)
             .to_string_lossy()
             .replace('\\', "/");
+        let mut in_block_comment = false;
         for (i, line) in content.lines().enumerate() {
             let trimmed = line.trim_start();
-            // Les mentions en doc-comment ne sont pas des attributs.
+            if in_block_comment {
+                if trimmed.contains("*/") {
+                    in_block_comment = false;
+                }
+                continue;
+            }
+            if trimmed.starts_with("/*") && !trimmed.contains("*/") {
+                in_block_comment = true;
+                continue;
+            }
+            // Les mentions en commentaire de ligne ne sont pas des attributs.
             if trimmed.starts_with("//") {
                 continue;
             }
-            // `starts_with`, pas `contains` : une VRAIE mention d'attribut ouvre
-            // la ligne (après indentation), qu'elle soit d'un seul tenant ou
-            // repliée par rustfmt. Le `contains` comptait aussi les chaînes
-            // littérales de CE fichier — le détecteur se détectait lui-même, et
-            // l'invariant sommant rougissait sur six faux positifs.
-            if !trimmed.starts_with("#[sqlx::test") {
+
+            // ⚠️ Le compte BRUT ne doit PAS repasser par le filtre qui alimente
+            // `attrs`, sans quoi l'invariant sommant devient auto-référentiel :
+            // il ne verrait que ce qu'il a déjà reconnu, tout en promettant dans
+            // son message de couvrir « toute mention ». Un attribut qui n'ouvre
+            // pas sa ligne (`#[ignore] #[sqlx::test(…)]`) échappait alors À LA
+            // FOIS au contrôle de complétude et au garde-fou censé signaler
+            // l'angle mort. *(HIGH de la passe 1 de revue.)*
+            raw_mentions += mentions_outside_strings(line).len();
+
+            if !trimmed.starts_with(TOKEN) {
                 continue;
             }
-            raw_mentions += 1;
             if let Some(a) = parse_attribute(trimmed) {
                 attrs.push(Attribute {
                     file: rel.clone(),
@@ -498,8 +713,18 @@ fn scan_attributes() -> (Vec<Attribute>, usize) {
 /// `#[sqlx::test` sans former un attribut complet — c'est le cas d'un attribut
 /// REPLIÉ par rustfmt, que l'invariant sommant de l'appelant transforme en
 /// échec bruyant plutôt qu'en angle mort.
+///
+/// ⚠️ Le commentaire de fin de ligne est retiré AVANT l'analyse : sinon le
+/// `rfind(")]")` porte sur la ligne entière, et
+/// `#[sqlx::test(migrator = "kesh_db::MIGRATOR")] // cf. "./test-schema"`
+/// produirait des `args` contenant une graphie de squash — donc une exemption
+/// **muette** pour un test resté sur le vrai migrator. *(Relevé en passe 1.)*
 fn parse_attribute(trimmed: &str) -> Option<String> {
-    let rest = trimmed.strip_prefix("#[sqlx::test")?;
+    let code = match trimmed.find("//") {
+        Some(i) if mentions_outside_strings(&trimmed[..i]).len() == 1 => &trimmed[..i],
+        _ => trimmed,
+    };
+    let rest = code.trim_end().strip_prefix(TOKEN)?;
     if let Some(inner) = rest.strip_prefix('(') {
         let end = inner.rfind(")]")?;
         Some(inner[..end].trim().to_string())
@@ -510,14 +735,26 @@ fn parse_attribute(trimmed: &str) -> Option<String> {
     }
 }
 
+/// Répertoires sans code Rust du workspace, et dont la traversée coûte cher.
+const SKIPPED_DIRS: &[&str] = &["target", ".git", "node_modules", "build", ".svelte-kit"];
+
 fn collect_rs(dir: &std::path::Path, acc: &mut Vec<std::path::PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
     for entry in entries.flatten() {
+        // Les liens symboliques ne sont pas suivis : un lien vers un ancêtre
+        // ferait récurser jusqu'au débordement de pile. *(Relevé en passe 1.)*
+        if entry.file_type().is_ok_and(|t| t.is_symlink()) {
+            continue;
+        }
         let path = entry.path();
         if path.is_dir() {
-            if path.file_name().is_some_and(|n| n == "target") {
+            if path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| SKIPPED_DIRS.contains(&n))
+            {
                 continue;
             }
             collect_rs(&path, acc);
@@ -547,18 +784,43 @@ fn every_sqlx_test_attribute_is_accounted_for() {
         );
     }
 
-    // Invariant SOMMANT : toute mention de `#[sqlx::test` doit s'être parsée en
-    // attribut. Un attribut REPLIÉ sur plusieurs lignes (rustfmt le fait dès
-    // qu'il s'allonge) casserait sinon le parse en silence — « détecter, c'est
-    // chercher large ».
+    // La liste d'exclusions doit désigner des fichiers qui EXISTENT. Une entrée
+    // morte n'est pas du bois mort : elle ré-exempte tacitement un futur fichier
+    // recréé à ce chemin, alors que le principe posé plus haut est qu'on ne
+    // rejoint cette liste qu'en modifiant ce test. *(Relevé en passe 1.)*
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|p| p.parent())
+        .expect("racine du workspace");
+    let morts: Vec<&str> = ALLOWED_REAL_MIGRATOR_FILES
+        .iter()
+        .filter(|f| !root.join(f).exists())
+        .copied()
+        .collect();
+    assert!(
+        morts.is_empty(),
+        "entrée(s) morte(s) dans ALLOWED_REAL_MIGRATOR_FILES — supprimées ou \
+         renommées. Retirez-les : telles quelles, elles ré-exempteraient en \
+         silence un futur fichier recréé à ce chemin.\n  {}",
+        morts.join("\n  ")
+    );
+
+    // Invariant SOMMANT : toute mention de `#[sqlx::test` hors commentaire et
+    // hors littéral de chaîne doit s'être parsée en attribut. Il attrape deux
+    // angles morts distincts — l'attribut REPLIÉ sur plusieurs lignes (rustfmt
+    // le fait dès qu'il s'allonge) et l'attribut qui n'ouvre PAS sa ligne
+    // (`#[ignore] #[sqlx::test(…)]`), lequel échappait auparavant au compte brut
+    // lui-même. « Détecter, c'est chercher large » — la leçon 16-1c, appliquée
+    // au détecteur.
     assert_eq!(
         attrs.len(),
         raw_mentions,
-        "{} mention(s) de `#[sqlx::test` n'ont pas pu être parsées comme \
-         attribut d'une seule ligne — attribut replié sur plusieurs lignes ? \
-         Le contrôle de complétude serait aveugle dessus : dépliez l'attribut, \
-         ou étendez `parse_attribute`.",
-        raw_mentions - attrs.len()
+        "{} mention(s) de `#[sqlx::test` n'ont pas été parsées comme attribut \
+         d'une seule ligne ouvrant sa ligne — attribut replié par rustfmt, ou \
+         précédé d'un autre attribut sur la même ligne ? Le contrôle de \
+         complétude serait AVEUGLE dessus : dépliez l'attribut sur sa propre \
+         ligne, ou étendez `parse_attribute`.",
+        raw_mentions.saturating_sub(attrs.len())
     );
 
     let mut offenders = Vec::new();

@@ -141,6 +141,68 @@ et la section `docs/testing.md` § *Base de dev jetable* existe.
 - [x] **T7 — Compteurs rafraîchis aux trois sites** (AC5). `nextest.toml`, commentaire CI, `CLAUDE.md` § Plafonds mémoire — avec dates.
 - [x] **T8 — Mesures publiées et règle de décision appliquée** (D5, AC4). Tableau avant/après ; verdict fermeture (#251 `closes` ou `refs`) motivé par le seuil d'AC4 ; plafond de threads intouché, renvoi explicite à une re-mesure future.
 
+### Review Findings — `bmad-code-review` passe 1 (2026-08-16, Opus ×3 : Blind Hunter, Edge Case Hunter, Acceptance Auditor)
+
+Diff ciblé sur le cœur logique (1487 lignes) — arbitrage de Guy : la bascule mécanique de 2244 lignes et le corps de l'artefact généré sont couverts par échantillonnage, leur complétude étant tenue par un test dont la mutation a été jouée.
+
+**Décisions requises**
+
+- [x] [Review][Decision] **Le tmpfs supprime le dernier détecteur LOCAL du garde-fou P8** — le `CLAUDE.md` (P8) pose que seul un démarrage réel contre une base **persistante** révèle une migration appliquée puis modifiée, « c'est-à-dire, en pratique, la suite E2E ou un `cargo run` de dev ». T6 rend `kesh` ET `kesh_e2e` éphémères : plus rien en local ne rencontre le checksum, et le défaut se déplace en aval, chez qui met à jour une installation réelle. Options : (a) l'assumer et amender P8 ; (b) redonner un volume persistant à la seule `kesh_e2e` ; (c) ancrer les checksums dans un test du dépôt. *(Blind Hunter — le diff consacre un paragraphe au raisonnement P8 quinze lignes plus haut sans voir qu'il se le retire.)*
+- [x] [Review][Decision] **La flakiness KF-038 (#228) redevient atteignable à 6 threads** — mesuré pendant cette revue : `reconciliation_e2e::post_accept_skips_non_chf_transaction` et `post_reject_after_accept_returns_already_reconciled_failed` ont échoué à ~5,36 s puis passé au retry, dans 1 run tmpfs sur 3. `.config/nextest.toml` documente cette famille comme apparaissant **à 32 threads**. Le profil `ci` la masque (`retries = 1`), mais elle rougira un jour sans explication. Options : (a) commenter #228 avec les nouvelles conditions ; (b) baisser le plafond de threads ; (c) traiter la cause (attente de 5 s côté test).
+
+**Correctifs**
+
+- [x] [Review][Patch] L'invariant SOMMANT est auto-référentiel : `raw_mentions` est incrémenté DANS le filtre `starts_with` qui alimente déjà `attrs` — le message promet « toute mention de `#[sqlx::test` », le code ne tient que « toute ligne qui l'ouvre » **(HIGH)** [`crates/kesh-db/tests/test_schema_guard.rs:481`]
+- [x] [Review][Patch] `parse_attribute` fait `rfind(")]")` sur la ligne entière : un commentaire de fin de ligne citant `"./test-schema"` fait passer un attribut sur le vrai migrator pour un attribut de squash — exemption muette [`test_schema_guard.rs:501`]
+- [x] [Review][Patch] Un `/* … */` dont une ligne ouvre par `#[sqlx::test(` est compté comme attribut réel (le filtre ne saute que `//`) [`test_schema_guard.rs:473`]
+- [x] [Review][Patch] `unwrap_or_default()` sur le relevé vues/triggers/routines — seul des six à ne pas `expect` : une erreur SQL y devient « zéro objet », dans le relevé dont le but déclaré est de voir le PREMIER de ces objets [`test_schema_guard.rs:259`]
+- [x] [Review][Patch] Bases du garde-fou déterministes sans PID : deux gates concurrents se détruisent mutuellement (le `DROP … IF EXISTS` de l'un frappe la base de l'autre) — **T3 exigeait « préfixe réservé + pid »**, la dérogation n'est pas déclarée [`test_schema_guard.rs:68`]
+- [x] [Review][Patch] `diff_report` compare des ensembles, pas des multi-ensembles : une facette présente deux fois d'un côté passe [`test_schema_guard.rs:268`]
+- [x] [Review][Patch] Plancher global `> 500` facettes : une catégorie entière (les FK, par exemple) peut disparaître sans le franchir — planchers par facette [`test_schema_guard.rs:311`]
+- [x] [Review][Patch] `swap_database` perd la query-string de `DATABASE_URL` (`?ssl-mode=…`, `pool_max_conns=…` documenté en CI) : le garde-fou se connecte autrement que les 1102 tests qu'il valide [`test_schema_guard.rs:106`]
+- [x] [Review][Patch] `squash_database_tracks_exactly_one_migration` monte un `MIGRATOR` complet dans un `_pool` jamais lu — 61 migrations payées pour rien dans la story qui les supprime [`test_schema_guard.rs:356`]
+- [x] [Review][Patch] Le balayage est cloué à `root.join("crates")` alors que le doc-comment et AC3 disent « tout le workspace » [`test_schema_guard.rs:459`]
+- [x] [Review][Patch] `collect_rs` suit les liens symboliques sans ensemble de visités (récursion infinie possible) et avale les erreurs de lecture [`test_schema_guard.rs:519`]
+- [x] [Review][Patch] Rien ne vérifie que les 8 chemins d'`ALLOWED_REAL_MIGRATOR_FILES` existent encore — une entrée morte ré-exempte tacitement un futur fichier homonyme [`test_schema_guard.rs:36`]
+- [x] [Review][Patch] `information_schema.EVENTS` et les `SEQUENCE` MariaDB ne sont couverts ni par le détecteur du script ni par le relevé — `mariadb-dump` les omet faute de `--events`, divergence silencieuse [`test_schema_guard.rs:241`, `scripts/regen-test-schema.sh:119`]
+- [x] [Review][Patch] `generated_column_is_excluded_from_backup` (ex-attribut nu) paiera les 61 migrations à perpétuité alors qu'il n'exerce pas ce chemin — l'exemption est au grain du FICHIER [`crates/kesh-db/tests/accounts_role_backfill.rs:229`]
+- [x] [Review][Patch] Parsing `.env` du script : sous `pipefail`, un `.env` sans la clé tue le script AVANT son message d'erreur soigné ; ni guillemets, ni `\r`, ni commentaire de fin de ligne ne sont retirés ; `@` dans le mot de passe casse le découpage ; l'absence de `:` met le nom d'utilisateur dans `DB_PASS` ; pas de percent-décodage là où sqlx en fait [`scripts/regen-test-schema.sh:28-45`]
+- [x] [Review][Patch] Le fichier d'options écrit `password=$DB_PASS` sans guillemets — un `#` tronque le mot de passe, un `\` le transforme, en silence [`scripts/regen-test-schema.sh`]
+- [x] [Review][Patch] `SQUASH_DB` est un override documenté sans aucune garde : `SQUASH_DB=kesh` exécute `DROP DATABASE kesh` — le commentaire d'à côté jure « jamais la base dev » [`scripts/regen-test-schema.sh:55,99`]
+- [x] [Review][Patch] `RAW`/`NORM` hors du `trap`, et `trap` posé sur `EXIT` seul (ni INT, ni TERM, ni HUP) — le `$CNF` laissé derrière contient le mot de passe [`scripts/regen-test-schema.sh:143,160`]
+- [x] [Review][Patch] `{ … } > "$OUT"` tronque l'artefact versionné dès l'ouverture du bloc : un échec en cours laisse un squash tronqué là où le run précédent était bon — écrire dans un temporaire puis `mv` [`scripts/regen-test-schema.sh:185`]
+- [x] [Review][Patch] Le script affiche `✓` sans jamais vérifier que le fichier produit s'APPLIQUE (`grep -c '^CREATE TABLE' … || true` rend « 0 tables » en succès) — un squash inchargeable casse 1102 tests au gate suivant [`scripts/regen-test-schema.sh:185-205`]
+- [x] [Review][Patch] Le détecteur d'objets exotiques lit un résultat vide comme `0` (`${EXOTIC:-0}`), et `information_schema` filtre par privilèges [`scripts/regen-test-schema.sh:119`]
+- [x] [Review][Patch] L'ordre d'application des migrations est celui du glob (dépendant de `LC_COLLATE`), pas le tri par version de sqlx ; et chaque fichier ouvre sa propre session [`scripts/regen-test-schema.sh`]
+- [x] [Review][Patch] `REPO_ROOT` calculé puis jamais utilisé ; le commentaire « AUCUNE erreur n'a besoin d'être masquée » est contredit 14 lignes plus bas par `|| true` + double redirection dans `cleanup()` [`scripts/regen-test-schema.sh`]
+- [x] [Review][Patch] Le commentaire du script justifiant le préfixe `_sqlx_test_` par des droits restreints est devenu FAUX : `01-dev-grants.sql`, livré par la même story, donne `ALL ON *.*` [`scripts/regen-test-schema.sh` vs `scripts/mariadb-init/01-dev-grants.sql`]
+- [x] [Review][Patch] `GRANT ALL PRIVILEGES ON *.* … WITH GRANT OPTION` est plus large que le besoin (`_sqlx_test%` + les bases `kesh%`) ; `WITH GRANT OPTION` n'est requis par rien [`scripts/mariadb-init/01-dev-grants.sql`]
+- [x] [Review][Patch] `seed-dev-db.sql` n'est pas idempotent et n'a pas de transaction : rejoué — geste ATTENDU après chaque restart — il crée une seconde société puis casse sur l'unicité de `users`, laissant une société orpheline que le `SELECT … LIMIT 1` des tests peut atteindre [`scripts/seed-dev-db.sql:26`]
+- [x] [Review][Patch] Son commentaire annonce les empreintes de `admin/admin123` **et** `changeme/changeme` alors qu'un seul utilisateur est inséré [`scripts/seed-dev-db.sql`]
+- [x] [Review][Patch] Le seed est un doublon textuel du heredoc de `ci.yml` sans rien qui rougisse si l'un dérive — faire consommer le fichier par la CI [`.github/workflows/ci.yml:155-178`]
+- [x] [Review][Patch] L'en-tête de `ci.yml` annonce toujours « ~1900 tests », « ~54 min mesuré 2026-07-13 » et « le vrai levier … suivi dans l'issue #251 » — trois affirmations fausses depuis `76fb8e92`, dans le fichier que la story a édité 100 lignes plus bas. Invisible au grep d'AC5 : la valeur périmée s'y écrit `~1900` et `~54 min` [`.github/workflows/ci.yml:24-28`]
+- [x] [Review][Patch] Le libellé « les tests `kesh-db::repositories::*` … se connectent directement à DATABASE_URL » recouvre deux familles : `repositories::bank_profiles::tests` utilise bel et bien `#[sqlx::test]` [`.github/workflows/ci.yml:124`]
+- [x] [Review][Patch] Le commentaire du tmpfs affirme que 4 Go « couvrent largement les éphémères d'un run complet » : vrai d'un run vert (≤ 6 bases vivantes), FAUX d'un run rouge — sqlx ne détruit pas la base d'un test échoué, ~17 Mo pièce, ~190 bases tiennent dans les 3,3 Go libres, et un squash cassé fait échouer 1102 tests d'un coup [`docker-compose.dev.yml:75-79`]
+- [x] [Review][Patch] `mode=1777` rend le datadir MariaDB accessible en écriture à tout utilisateur du conteneur, là où l'installation normale est en `0700`/`0750` [`docker-compose.dev.yml:79`]
+- [x] [Review][Patch] Le budget du healthcheck (`start_period: 30s`, 3 × 10 s) n'a pas suivi le passage au démarrage à froid SYSTÉMATIQUE (`mysql_install_db` + scripts d'init à chaque start) [`docker-compose.dev.yml:92`]
+- [x] [Review][Patch] `docs/testing.md` affirme que `docker-compose.prod.yml` « garde son volume persistant » — ce fichier ne déclare aucun service MariaDB [`docs/testing.md`]
+- [x] [Review][Patch] Non documenté : le conteneur `kesh` survit à un redémarrage de MariaDB et pointe alors sur une base vide, sans se remigrer (il ne le fait qu'au boot) [`docs/testing.md`, `docker-compose.dev.yml:39`]
+- [x] [Review][Patch] Le § Prérequis de `crates/kesh-db/README.md` dit toujours « exécuter une fois » le GRANT (désormais automatisé, et « une fois » est faux sur tmpfs) et « appliquer la migration initiale, une fois » [`crates/kesh-db/README.md:37-50`]
+- [x] [Review][Patch] `.config/nextest.toml` et `CLAUDE.md` juxtaposent deux « avant » irréconciliés — 38 min pour 1802 tests / 51 migrations (2026-07-13) et 64 min pour 2208 tests / 61 migrations (2026-08-16) — sans dire que l'écart s'explique par +22,6 % de tests et +19,6 % de migrations par test. Le dénominateur du « 3,25× » mérite d'être réconcilié [`.config/nextest.toml:4-8`]
+- [x] [Review][Patch] Les chiffres du régime tmpfs (90,2 s de moyenne) manquent aux deux sites, dont les « 19,8 min » sont déjà périmés pour le poste de dev — la dérive que cette story corrige, recréée à sa propre échelle [`.config/nextest.toml`, `CLAUDE.md`]
+- [x] [Review][Patch] « 283/283 tests de la base partagée verts » nomme la mauvaise population : 283 est le TOTAL des tests lib de `kesh-db` ; ceux de la base partagée sont 154 — dans la seule phrase qui prouve AC6 [story file, Dev Agent Record]
+- [x] [Review][Patch] La table des commits du Dev Agent Record s'arrête à « celui-ci | T7-T8 » et ne liste pas le commit T6 ; la § « Gates réellement exécutés » ne déclare aucun gate pour lui [story file]
+- [x] [Review][Patch] AC4 exigeait « gate complet **et** `nextest` seul » : seul le second est publié, alors que la mesure du gate complet existe désormais [story file]
+
+**Reportés**
+
+- [x] [Review][Defer] Le grain FICHIER de la liste d'exclusions — tout test ajouté à l'un des 8 fichiers hérite de la dérogation sans signal. Le grain attribut demanderait une annotation par test ; reporté, l'instance connue étant corrigée. [`test_schema_guard.rs:569`]
+- [x] [Review][Defer] Le nombre « 61 » est recopié dans cinq artefacts de prose qu'aucun test ne contrôle. La 62ᵉ migration fera rougir le garde-fou, ce qui déclenchera la relecture — mais les cinq sites resteront faux entre-temps. [`nextest.toml`, `CLAUDE.md`, deux README, `test_schema_guard.rs`]
+
+**Écartés**
+
+- `kesh_e2e` créée en `utf8mb4_general_ci` alors que 36 tables sur 38 sont en `utf8mb4_unicode_ci` — écarté : la base `kesh` et le défaut serveur sont eux aussi en `general_ci`, et chaque table porte sa propre collation. S'aligner sur les tables ferait diverger `kesh_e2e` de `kesh`. Un commentaire d'explication est ajouté avec le correctif du GRANT.
+
 ## Dev Notes
 
 ### Références (chaque affirmation sourcée à la ligne)
@@ -172,7 +234,9 @@ Le critère de non-convergence de la § *Règle de splitting préventif* a été
 |---|---|
 | `d5f0cf73` | T1-T3 — `scripts/regen-test-schema.sh`, `test-schema/0001_schema_squash.sql` (38 tables, 67 Ko), garde-fou à 4 assertions, 4 mutations jouées |
 | `76fb8e92` | T4+T5 — 1102 attributs basculés, test de complétude, propagation de 17 sites de doc |
-| celui-ci | T7-T8 — compteurs rafraîchis, mesures publiées, verdict de fermeture |
+| `a0d13e84` | T7-T8 — compteurs rafraîchis, mesures publiées, verdict de fermeture |
+| `31aaa20a` | T6 — tmpfs de dev, script d'init des droits, seed versionné, doc |
+| passe 1 de revue | 43 correctifs — cf. § *Review Findings* et l'entrée de Change Log |
 
 **AC0 — le transfert de couverture, nommé.** Avant cette story, 1102 tests rejouaient la chaîne réelle des 61 migrations : un filet redondant, et c'était exactement son coût. Depuis la bascule, l'invariant « les 61 migrations s'appliquent proprement, dans l'ordre, sur une base vide » n'est plus tenu que par `migrations_fresh_install.rs`, `migrations_upgrade_path.rs`, les backfills à fenêtre de la liste D2, et le garde-fou `test_schema_guard.rs`, qui monte le vrai `MIGRATOR` à chaque gate. Arbitrage assumé, et dit ici comme l'AC l'exige.
 
@@ -182,13 +246,15 @@ Le critère de non-convergence de la § *Règle de splitting préventif* a été
 
 **AC3 — la complétude est un test, et sa mutation a été jouée.** Recensement recompté depuis la source au commit de bascule, ventilation qui somme :
 
-| Graphie | Compte |
-|---|---|
-| `migrations = "../kesh-db/test-schema"` | 749 |
-| `migrations = "./test-schema"` | 353 |
-| `migrator = "kesh_db::MIGRATOR"` (liste D2) | 26 |
-| `migrations = false` (liste D2) | 17 |
-| **Total** | **1145** = les 1142 du recensement de spec + les 3 attributs du garde-fou livré en T3 |
+| Graphie | Au commit de bascule | Après la passe 1 de revue |
+|---|---|---|
+| `migrations = "../kesh-db/test-schema"` | 749 | 749 |
+| `migrations = "./test-schema"` | 353 | **354** |
+| `migrator = "kesh_db::MIGRATOR"` (liste D2) | 26 | **24** |
+| `migrations = false` (liste D2) | 17 | 17 |
+| **Total** | **1145** | **1144** |
+
+Le total de 1145 était celui des 1142 du recensement de spec plus les 3 attributs du garde-fou livré en T3. Les deux mouvements de la revue : `squash_database_tracks_exactly_one_migration` cesse d'être un `#[sqlx::test]` (il montait un `MIGRATOR` complet pour un `_pool` jamais lu), et `generated_column_is_excluded_from_backup` bascule au squash (il n'exerce pas le chemin des migrations, mais logeait dans un fichier exempté). Les deux ventilations somment.
 
 Mutation jouée le 2026-08-16 : un attribut de `crates/kesh-api/tests/accounts_e2e.rs` re-basculé à la main vers `migrator = "kesh_db::MIGRATOR"` → le test **rougit en nommant `crates/kesh-api/tests/accounts_e2e.rs:211`**, depuis un binaire de test de `kesh-db` : la frontière de crate est bien franchie. Restauration **par copie**, vérifiée deux fois (`diff -q` contre la référence, puis `git status` propre vis-à-vis de `HEAD`), test re-vert.
 
@@ -200,6 +266,12 @@ Mutation jouée le 2026-08-16 : un attribut de `crates/kesh-api/tests/accounts_e
 | **APRÈS** (`76fb8e92`) | 1266 s | 1111 s | **19,8 min** | 2209 passed, 0 failed, 4 skipped |
 
 **Gain : 3,25×** sur les moyennes — 3,31× meilleur contre meilleur, 3,20× pire contre pire, et **2,90× dans la lecture la plus défavorable constructible** (l'AVANT le plus rapide contre l'APRÈS le plus lent). Par test : 1,75 s → 0,54 s. Économie : **44,6 min par gate complet**.
+
+**Le gate complet, chronométré lui aussi** (AC4 en demandait deux mesures, et la première rédaction n'en publiait qu'une) : `scripts/test-fast.sh --ci`, soit `fmt` + `clippy` + `nextest`, **91 s** au total sur workspace chaud dont 89,8 s de `nextest` — les deux gates ne se distinguent donc plus qu'à la marge une fois la compilation en cache.
+
+**Et une troisième mesure, non prévue par AC4, que T6 a rendue nécessaire** : dans le régime tmpfs, deux runs au même protocole donnent **91,1 s et 89,4 s**, soit **1,5 min** de moyenne. Le tmpfs apporte **13,2×** par-dessus le squash — **42,8× depuis le point de départ**. Il pèse donc plus lourd que le squash lui-même : la création d'une base éphémère était dominée par les `fsync`, et le squash réduisait le nombre d'opérations DDL sans toucher à leur coût unitaire. ⚠️ Ce régime est **celui du poste de dev uniquement** ; la CI n'a pas de tmpfs. Sans cette ligne, les « 19,8 min » que la story vient d'écrire dans `nextest.toml` et le `CLAUDE.md` auraient été périmés pour le dev **le jour même** — la dérive que la story corrige, recréée à sa propre échelle.
+
+⚠️ **Un flake est réapparu dans ce régime, et il se dit** : `reconciliation_e2e::post_accept_skips_non_chf_transaction` et `post_reject_after_accept_returns_already_reconciled_failed` ont échoué à ~5,36 s puis passé au retry, dans 1 run sur 3 — la famille **KF-038 (#228)**, que `.config/nextest.toml` documentait comme apparaissant *à 32 threads*. Le régime rapide a densifié la contention sur les verrous en supprimant l'attente disque. Le profil `ci` la masque (`retries = 1`), le profil par défaut non. Consigné dans `nextest.toml` et commenté sur l'issue #228, sur arbitrage de Guy.
 
 **Verdict d'AC4 : le seuil de 2× est franchi même par la lecture la moins favorable → la PR ferme #251** (`closes`, porté sur le message de PR et non sur les commits intermédiaires, cf. § *Issue Tracking Rule*).
 
@@ -215,7 +287,7 @@ Mutation jouée le 2026-08-16 : un attribut de `crates/kesh-api/tests/accounts_e
 
 *Preuve* : `grep -rnE '\b894\b|\b84 tests\b|51 migrations'` sur le dépôt ne rend plus que des sites **légitimes** — `notes-251-exploration.md`, la spec de cette story qui les nomme, et des stories historiques datées (6-4, 3-4, 7-2) dont les décomptes appartiennent à leur époque. Aucun résidu vivant.
 
-**AC6 — satisfaite le 2026-08-16, après arbitrage de Guy.** `docker-compose.dev.yml` monte `/var/lib/mysql` en tmpfs de 4 Go (taille explicite : le défaut est la moitié de la RAM hôte, soit 15 Go sur cette station) et porte les trois flags de D4 ; `docs/testing.md` gagne une section § *Base de dev jetable*. Vérifié en jouant la procédure documentée **telle qu'écrite**, après un `restart` qui a bien remis la base à zéro (0 table dans `kesh`) : 61 migrations rejouées par `sqlx migrate run`, seed appliqué, **283/283 tests de la base partagée verts en 3,1 s**, 0 base éphémère orpheline. Les flags sont confirmés en base (`innodb_flush_log_at_trx_commit=0`, `sync_binlog=0`, `innodb_doublewrite=0`).
+**AC6 — satisfaite le 2026-08-16, après arbitrage de Guy.** `docker-compose.dev.yml` monte `/var/lib/mysql` en tmpfs de 4 Go (taille explicite : le défaut est la moitié de la RAM hôte, soit 15 Go sur cette station) et porte les trois flags de D4 ; `docs/testing.md` gagne une section § *Base de dev jetable*. Vérifié en jouant la procédure documentée **telle qu'écrite**, après un `restart` qui a bien remis la base à zéro (0 table dans `kesh`) : 61 migrations rejouées par `sqlx migrate run`, seed appliqué, **283/283 tests lib de `kesh-db` verts en 3,1 s** — dont les **154** qui travaillent sur la base partagée et qui sont la vraie preuve du re-seed ; les 129 autres sont des tests lib sans base. *(Le périmètre annoncé était faux : « 283 tests de la base partagée » nommait la mauvaise population, dans la seule phrase qui prouve AC6. Relevé en passe 1 de revue.)* 0 base éphémère orpheline. Les flags sont confirmés en base (`innodb_flush_log_at_trx_commit=0`, `sync_binlog=0`, `innodb_doublewrite=0`).
 
 ⚠️ **Trois choses que la spec n'avait pas vues, et qui ont dû être traitées** :
 
@@ -335,3 +407,30 @@ Retenu : **1 MED** — la « restitution » de passe 6 avait recréé un doublon
 Les 12 items distincts vérifiés un à un, la scission 6/12 en place, « tmpfs dimensionné » à une seule occurrence, l'entrée de passe 7 conforme à l'état du fichier.
 
 **Bilan du cycle** : `4/4/8/5` → `0/0/2/~5` → `1/4/12/6` → `0/0/5/1` → `0/0/2/1` → `0/0/1/4` → `0/0/1/0` → `0/0/0/0`. Modèles : rédaction Fable → Sonnet ×3 → Haiku ×3 → **Opus ×3 (architecture — la passe qui a tout changé : réfutations sur pièces, révision D1 vers le répertoire de l'issue, dérogation de splitting arbitrée par Guy)** → Sonnet ×2 → Haiku ×2 → Opus ×1 → Sonnet ×1 → Haiku ×1. Le FOND est scellé depuis la passe 4 ; les passes 5-8 n'auront corrigé que les comptes rendus du cycle lui-même — la § *Recompter* prise en défaut CINQ fois sur ses propres artefacts, d'où la leçon désormais écrite au corps de la spec : la ventilation s'écrit EN MÊME TEMPS que le total. Statut → `ready-for-dev`.
+
+**2026-08-16 — `bmad-code-review`, PASSE 1 (Opus ×3, contextes frais : Blind Hunter à l'aveugle, Edge Case Hunter avec accès dépôt, Acceptance Auditor avec la spec).**
+
+| Lentille | CRIT | HIGH | MED | LOW |
+|---|---|---|---|---|
+| Blind Hunter (diff seul) | 0 | 1 | 13 | 18 |
+| Edge Case Hunter (diff + dépôt) | 0 | 0 | 6 | 12 |
+| Acceptance Auditor (diff + spec) | 0 | 0 | 4 | 6 |
+| **après fusion et triage** | **0** | **1** | **—** | **—** → 2 décisions, 41 correctifs, 2 reportés, 1 écarté |
+
+Diff **ciblé sur le cœur logique** (1487 lignes) sur arbitrage de Guy : les 2244 lignes de bascule mécanique et le corps de l'artefact généré sont couverts par échantillonnage, leur complétude étant tenue par un test dont la mutation a été jouée. Le découpage suit le risque, pas le volume.
+
+**Le HIGH, et ce qu'il enseigne** : dans `scan_attributes`, le compteur `raw_mentions` était incrémenté **à l'intérieur** du filtre `starts_with` qui alimente déjà `attrs`. L'invariant sommant ne pouvait donc pas voir ce que le filtre écartait, tout en promettant dans son message de couvrir « toute mention de `#[sqlx::test` ». Un attribut n'ouvrant pas sa ligne (`#[ignore] #[sqlx::test(…)]`) échappait **simultanément** au contrôle de complétude et au garde-fou censé signaler l'angle mort. Corrigé par un compte des mentions hors commentaires et hors littéraux de chaîne ; **mutation jouée** : le test rougit désormais en nommant l'écart (1143 analysés contre 1144 mentions), là où il restait vert.
+
+**Le fil rouge des trois lentilles** : le garde-fou avait plusieurs façons de se taire. Outre le HIGH — `unwrap_or_default()` sur le seul relevé dont la raison d'être est de voir apparaître un objet ; un commentaire de fin de ligne suffisant à faire passer un attribut du vrai migrator pour un attribut de squash ; un plancher global de 500 facettes tolérant la disparition d'une catégorie entière ; `EVENTS` et `SEQUENCE` couverts par aucun des deux garde-fous ; le script affichant `✓` sans jamais vérifier que le squash produit s'applique. Dans une story dont la thèse est « la complétude est un TEST, pas un grep », c'est le cœur qui était visé.
+
+**Les deux arbitrages de Guy** :
+- **Garde-fou P8** — T6 rendant `kesh` et `kesh_e2e` éphémères, plus aucun démarrage local ne rencontrait le checksum d'une migration modifiée : le défaut se serait déplacé chez qui met à jour une installation réelle. Réponse retenue : **ancrer les checksums dans le dépôt** (`crates/kesh-db/migrations.sha384` + `published_migrations_keep_their_checksums`). Plus fort que le détecteur perdu — il rougit à chaque gate, et non le jour où une base persistante croise par hasard la migration modifiée.
+- **KF-038 (#228)** — la famille de flakes documentée « à 32 threads » redevient atteignable **à 6** sous tmpfs. Commentée sur l'issue avec ses conditions nouvelles, et consignée dans `.config/nextest.toml`.
+
+**Deux affirmations de mes propres artefacts réfutées par les lentilles** : la commande de preuve d'AC6 ne rendait rien (un tmpfs de compose vit dans `.HostConfig.Tmpfs`, pas dans `.Mounts`), et le « 283/283 tests de la base partagée » nommait la mauvaise population — 283 est le total des tests lib de `kesh-db`, ceux de la base partagée sont 154. Les deux corrigées en place. La § *Recompter ses propres comptes rendus* aura donc repris cette story **sept fois** au total, cycle de spec compris.
+
+**Reportés (2)** : le grain FICHIER de la liste d'exclusions (l'instance connue est corrigée, le grain attribut demanderait une annotation par test) ; le nombre « 61 » recopié dans cinq artefacts de prose qu'aucun test ne contrôle — le message du garde-fou les nomme désormais, ce qui déclenchera la relecture à la 62ᵉ migration.
+
+**Écarté (1)** : la collation de `kesh_e2e`, alignée sur `kesh` et sur le défaut serveur, les tables portant chacune la leur.
+
+**Gate après correctifs** : `scripts/test-fast.sh --ci` — voir l'entrée de commit pour le résultat déclaré.

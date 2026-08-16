@@ -119,8 +119,11 @@ Pré-requis : `cargo install cargo-nextest` (ou binaire prébuilt `https://get.n
 |---|---|---|---|
 | avant le squash | 3677 s | 4051 s | **64,4 min** |
 | après le squash | 1266 s | 1111 s | **19,8 min** |
+| + tmpfs de dev (T6) | 91 s | 89 s | **1,5 min** |
 
-Soit **3,25×**, et 44,6 minutes rendues à chaque gate complet. Les 43 attributs restés sur le vrai `MIGRATOR` sont ceux qui testent **ce chemin lui-même** ; la liste est tenue en dur par `crates/kesh-db/tests/test_schema_guard.rs`, qui rougit dès qu'un test s'en écarte ou que le squash dérive du schéma réel.
+Soit **3,25×** pour le squash, puis **13,2× de plus** pour le tmpfs — **42,8× au total**, l'heure devenue la minute et demie. Le tmpfs pèse donc plus lourd que le squash lui-même : la création d'une base éphémère était dominée par les `fsync`, et le squash réduisait le *nombre* d'opérations DDL sans toucher à leur coût unitaire. ⚠️ **La troisième ligne ne vaut que pour le poste de dev** — la CI n'a pas de tmpfs (`services:` de GitHub Actions ne permet pas de passer de `command:` à mariadbd).
+
+⚠️ Les 38 min du tableau de 2026-07-13 et les 64,4 min ci-dessus ne se contredisent pas : entre les deux, la suite a gagné 22,6 % de tests (1802 → 2209) et chaque test 19,6 % de migrations (51 → 61) — le produit vaut ×1,47 et explique l'essentiel de l'écart. Les 43 attributs restés sur le vrai `MIGRATOR` sont ceux qui testent **ce chemin lui-même** ; la liste est tenue en dur par `crates/kesh-db/tests/test_schema_guard.rs`, qui rougit dès qu'un test s'en écarte ou que le squash dérive du schéma réel.
 
 ⚠️ **Le plafond de 6 threads n'a PAS été re-mesuré depuis.** Sa cause a disparu, donc il est vraisemblablement trop bas — il reste à 6 **faute de mesure, pas par conviction**. Le relever demande de rejouer le tableau ci-dessus, flakes compris.
 

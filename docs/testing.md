@@ -33,7 +33,7 @@ Passer par `sqlx migrate run` et non par une boucle de `mariadb <` sur les fichi
 
 **L'oubli du seed est bruyant, pas silencieux** : les tests concernés s'ouvrent sur `expect("need at least one company in DB for tests")`. Aucun faux vert possible — c'est ce qui rend la procédure manuelle acceptable.
 
-**3. Les bases éphémères orphelines s'effacent au redémarrage.** Un run interrompu (Ctrl-C, OOM, timeout) laisse derrière lui des `_sqlx_test_database_*` que sqlx n'a pas nettoyées. Sur disque elles s'accumulaient ; en tmpfs, un `docker compose -f docker-compose.dev.yml restart mariadb` les balaie toutes. Pour les compter sans redémarrer :
+**3. Les bases éphémères orphelines s'effacent au redémarrage.** Un run interrompu (Ctrl-C, OOM, timeout) laisse derrière lui des `_sqlx_test_database_*` que sqlx n'a pas nettoyées — **et un test ROUGE aussi** : sqlx ne détruit la base que d'un test vert. Sur disque elles s'accumulaient ; en tmpfs, un `docker compose -f docker-compose.dev.yml restart mariadb` les balaie toutes. Pour les compter sans redémarrer :
 
 ```sh
 docker exec kesh-mariadb-dev mariadb -uroot -pkesh_dev_root \
@@ -42,7 +42,11 @@ docker exec kesh-mariadb-dev mariadb -uroot -pkesh_dev_root \
 
 C'est aussi le geste qui répond à la § *« Un gate interrompu laisse la base piégée »* du `CLAUDE.md` : redémarrer le conteneur remet la base de gate à zéro, il ne reste qu'à rejouer migrations et seed.
 
-**La production n'est pas concernée** : `docker-compose.yml` et `docker-compose.prod.yml` gardent leur volume persistant, leur durabilité par défaut, et ne montent pas `scripts/mariadb-init/`.
+**4. Un run massivement rouge peut SATURER le tmpfs.** À ~17 Mo la base éphémère et ~3,3 Go libres, il en tient environ **190**. Un squash cassé fait échouer les 1102 tests basculés d'un coup : passé la 190ᵉ base non détruite, MariaDB rend `table is full` sur toutes les suivantes. **Les premiers échecs portent la cause réelle, ceux d'après ne portent que la saturation** — c'est le début du rapport qu'il faut lire, pas la fin. La reprise est un `restart` du conteneur, puis la procédure du point 2.
+
+**5. Le conteneur `kesh` ne survit pas utilement à un redémarrage de MariaDB.** `depends_on` ne gouverne que le démarrage : après un `restart` de `mariadb`, le service `kesh` — toujours vivant sous `restart: unless-stopped` — pointe sur une base repartie **vide**, et il n'applique ses migrations qu'au boot. Chaque requête échoue, et rien ne le rattrape. Redémarrez-le explicitement (`docker compose -f docker-compose.dev.yml restart kesh`) après avoir rejoué migrations et seed. *(En développement quotidien la question ne se pose pas : le backend tourne en `cargo run`, pas dans ce conteneur.)*
+
+**La production n'est pas concernée** : `docker-compose.yml` garde son volume persistant, sa durabilité par défaut, et ne monte pas `scripts/mariadb-init/`. *(`docker-compose.prod.yml`, lui, ne déclare aucun service MariaDB — il pointe une base externe.)*
 
 ## Pattern Rust : `seed_accounting_company`
 

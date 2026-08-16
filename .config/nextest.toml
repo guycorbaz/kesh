@@ -29,12 +29,38 @@
 #   avant le squash (61 migrations/test) : 3677 s / 4051 s  → moyenne 64,4 min
 #   après le squash (1 batch DDL/test)   : 1266 s / 1111 s  → moyenne 19,8 min
 #                                                             = 3,25× plus rapide
+#   + tmpfs de dev (Story 22-5, T6)      :   91 s /   89 s  → moyenne  1,5 min
+#                                                             = 13,2× DE PLUS,
+#                                                               soit 42,8× au total
+#
+# Le tmpfs pèse donc plus lourd que le squash — la création d'une base éphémère
+# était dominée par les fsync, et le squash réduisait le NOMBRE d'opérations DDL
+# sans toucher à leur coût unitaire. ⚠️ Cette troisième ligne ne vaut QUE pour le
+# poste de dev : la CI n'a pas de tmpfs (`services:` GitHub Actions ne permet pas
+# de passer de `command:` à mariadbd).
+#
+# ⚠️ Le tableau HISTORIQUE plus haut et la première ligne ci-dessus ne se
+# contredisent pas, malgré 38 min contre 64 min à configuration égale : entre les
+# deux mesures, la suite a gagné 22,6 % de tests (1802 → 2209) et chaque test
+# 19,6 % de migrations (51 → 61). Le produit (×1,47) explique l'essentiel de
+# l'écart, le reste tenant au profil `ci` et à des tests plus lourds. Sans cette
+# réconciliation, le dénominateur du « 3,25× » resterait discutable.
+# *(Relevé en passe 1 de revue de code.)*
 #
 # ⚠️ LE PLAFOND DE 6 THREADS N'A PAS ÉTÉ RE-MESURÉ depuis le squash. Sa cause
 # — la contention des metadata-locks sur le rejeu des migrations — a largement
 # disparu, donc il est vraisemblablement trop bas aujourd'hui. Il reste tel
 # quel FAUTE DE MESURE, pas par conviction : le relever exige de rejouer le
 # tableau ci-dessus, flakes compris (cf. Story 22-5, T8).
+#
+# ⚠️ Et le relever demande de regarder KF-038 (#228) d'abord : cette famille de
+# flakes, documentée plus haut comme apparaissant À 32 THREADS, est redevenue
+# atteignable À 6 sous tmpfs. Mesuré le 2026-08-16 : 1 run sur 3, deux tests
+# (`reconciliation_e2e::post_accept_skips_non_chf_transaction` et
+# `post_reject_after_accept_returns_already_reconciled_failed`), échec à ~5,36 s
+# puis vert au retry en 0,44 s. Le profil `ci` la masque (`retries = 1`) ; le
+# profil par défaut, non. Le régime rapide a densifié la contention sur les
+# verrous en supprimant l'attente disque.
 #
 # Ce fichier remplace le `cargo test --workspace -j1 -- --test-threads=1` de la
 # CI (tout en série) par : plafond à 6 threads + tests lib kesh-db (DB dev
