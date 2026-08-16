@@ -33,7 +33,7 @@ Passer par `sqlx migrate run` et non par une boucle de `mariadb <` sur les fichi
 
 **L'oubli du seed est bruyant, pas silencieux** : les tests concernés s'ouvrent sur `expect("need at least one company in DB for tests")`. Aucun faux vert possible — c'est ce qui rend la procédure manuelle acceptable.
 
-⚠️ **La base partagée doit être remise à zéro avant CHAQUE gate complet, pas seulement après un gate interrompu.** Le `CLAUDE.md` § *« Un gate interrompu laisse la base piégée »* décrit le cas d'un run tué en vol ; il en existe un second, plus discret : **un run qui se termine normalement laisse lui aussi la base inutilisable pour le suivant.** Les tests de dépôt y créent des factures liées à des écritures comptables, et le `delete_all_by_company` du montage de `journal_entries::tests` échoue alors sur `fk_invoices_journal_entry` — **34 tests tombent d'un coup**, en 7 ms chacun, sur un module que la branche en cours ne touche pas.
+⚠️ **La base partagée doit être remise à zéro avant CHAQUE gate complet, pas seulement après un gate interrompu** — c'est la **KF-039 ([#310](https://github.com/guycorbaz/kesh/issues/310))**, et le `CLAUDE.md` § *« Un gate laisse la base piégée »* en porte la règle. Le cas du run tué en vol y était déjà décrit ; il en existe un second, plus discret : **un run qui se termine normalement laisse lui aussi la base inutilisable pour le suivant.** Les tests de dépôt y créent des factures liées à des écritures comptables, et le `delete_all_by_company` du montage de `journal_entries::tests` échoue alors sur `fk_invoices_journal_entry` — **34 tests tombent d'un coup**, en 7 ms chacun, sur un module que la branche en cours ne touche pas.
 
 Le geste, avant tout gate complet :
 
@@ -54,7 +54,7 @@ docker exec kesh-mariadb-dev mariadb -uroot -pkesh_dev_root \
   -e "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name LIKE '\_sqlx\_test%';"
 ```
 
-C'est aussi le geste qui répond à la § *« Un gate interrompu laisse la base piégée »* du `CLAUDE.md` : redémarrer le conteneur remet la base de gate à zéro, il ne reste qu'à rejouer migrations et seed.
+C'est aussi le geste qui répond à la § *« Un gate laisse la base piégée — et pas seulement quand il est interrompu »* du `CLAUDE.md` : redémarrer le conteneur remet la base de gate à zéro, il ne reste qu'à rejouer migrations et seed.
 
 **4. Un run massivement rouge peut SATURER le tmpfs.** À ~17 Mo la base éphémère et ~3,3 Go libres, il en tient environ **190**. Un squash cassé fait échouer les 1102 tests basculés d'un coup : passé la 190ᵉ base non détruite, MariaDB rend `table is full` sur toutes les suivantes. **Les premiers échecs portent la cause réelle, ceux d'après ne portent que la saturation** — c'est le début du rapport qu'il faut lire, pas la fin. La reprise est un `restart` du conteneur, puis la procédure du point 2.
 

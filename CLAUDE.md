@@ -370,20 +370,36 @@ Pourquoi cette règle existe : sur l'Epic 16, **le compte rendu est devenu le li
 
 *(codifié 2026-08-11, rétrospective Epic 16)*
 
-### Un gate interrompu laisse la base piégée
+### Un gate laisse la base piégée — et pas seulement quand il est interrompu
 
-**Règle** : après tout gate **tué en vol** (Ctrl-C, timeout, session perdue, OOM), considérer la base de gate comme **contaminée** et la remettre à zéro avant le run suivant. Ne jamais diagnostiquer un rouge de gate sans avoir vérifié qu'un run précédent ne s'est pas interrompu.
+**Règle** : remettre la base de gate à zéro **avant tout gate complet**, sans se demander comment le run précédent s'est terminé. Ne jamais diagnostiquer un rouge de gate sans avoir d'abord reconstruit la base.
 
-Le mode d'échec : un test qui modifie l'état partagé confie sa restauration à son appelant, lequel n'a jamais repris la main. La valeur reste en base et fait rougir le gate **suivant**, de façon **déterministe** et **sans aucun rapport** avec la story en cours.
+Le mode d'échec : un test qui modifie l'état partagé confie sa restauration à son appelant, ou crée des lignes qu'il ne supprime pas. Le résidu reste en base et fait rougir le gate **suivant**, de façon **déterministe** et **sans aucun rapport** avec la story en cours.
 
-Deux occurrences dans le seul Epic 16 :
+**Il se produit dans DEUX circonstances, et la seconde est la plus traître :**
+
+**(a) Le gate tué en vol** (Ctrl-C, timeout, session perdue, OOM) — l'appelant n'a jamais repris la main. Deux occurrences dans le seul Epic 16 :
 
 - **16-1a** — un `nextest` tué laisse `kesh_gate` avec `postable=0` sur le compte 1000 → **26 faux échecs** `journal_entries` au run suivant, **indiscernables** du cas « base non seedée » ;
 - **16-3a** — même famille : `1000 Caisse CI` resté `postable=FALSE` par le helper `set_postable`, faisant échouer `test_check_constraint_rejects_debit_and_credit_same_line`, déterministe et hors sujet.
 
+**(b) Le gate TERMINÉ, et terminé EN VERT.** Un run qui va au bout laisse lui aussi de quoi casser le suivant : les tests de dépôt sur base partagée créent des factures liées à des écritures comptables et les y laissent, si bien que le `delete_all_by_company` du montage de `journal_entries::tests` échoue au run d'après sur `fk_invoices_journal_entry` — **34 faux échecs**, en 7 ms chacun, sur un module que la branche ne touche pas. *(Rencontré le 2026-08-16 en passe 3 de revue de la Story 22-5 ; **KF-039, issue #310**.)*
+
+⚠️ **C'est ce cas (b) qui a fait amender cette règle.** Sa première rédaction ne visait que le gate interrompu — un lecteur constatant que son run précédent s'était bien terminé en concluait, à tort, que la base était saine et allait chercher ailleurs. La question « le run précédent a-t-il été interrompu ? » n'est donc **pas** le bon filtre : **la remise à zéro est inconditionnelle**.
+
+**Le geste, et pourquoi il est devenu bon marché** :
+
+```sh
+docker compose -f docker-compose.dev.yml restart mariadb   # tmpfs : efface tout
+sqlx migrate run --source crates/kesh-db/migrations
+docker exec -i kesh-mariadb-dev mariadb -uroot -pkesh_dev_root kesh < scripts/seed-dev-db.sql
+```
+
+Depuis que le datadir de dev est en tmpfs (Story 22-5, #251), ce cycle coûte **une quinzaine de secondes** — contre un vidage de tables à la main auparavant. C'est ce qui rend praticable une règle inconditionnelle là où l'ancienne devait se contenter d'un déclencheur. Détail et modes d'échec : `docs/testing.md` § « Base de dev jetable ».
+
 Le coût du diagnostic est chaque fois bien supérieur à celui de la remise à zéro. En cas de rouge inexpliqué sur des tests que la branche ne touche pas, **reconstruire la base avant de chercher plus loin**.
 
-*(codifié 2026-08-11, rétrospective Epic 16)*
+*(codifié 2026-08-11, rétrospective Epic 16 — **étendu au gate terminé le 2026-08-16**, passe 3 de revue de la Story 22-5, KF-039 #310.)*
 
 ### Haiku-specific guardrails — grep ground-truth obligatoire
 
