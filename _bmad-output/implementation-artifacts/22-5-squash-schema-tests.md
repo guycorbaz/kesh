@@ -119,7 +119,16 @@ Le « ~69 min » cité en ouverture est un **ordre de grandeur emprunté** au ga
 *Preuve* : `grep -rnE '\b894\b|\b84 tests\b'` → zéro résidu hors sites LÉGITIMES (`notes-251-exploration.md`, stories historiques datées) — le grep les rend aussi, ils se trient à la main : c'est le prix, et il est bas.
 
 **AC6 — Le volet tmpfs est actif en dev et DIT.** `docker-compose.dev.yml` porte tmpfs + flags ; `docs/testing.md` documente la non-persistance et le re-seed.
-*Preuve* : `docker inspect kesh-mariadb-dev --format '{{json .Mounts}}' | grep -o '"Type":"tmpfs"'` rend une occurrence pour `/var/lib/mysql`, et la section de doc existe.
+*Preuve* : ~~`docker inspect kesh-mariadb-dev --format '{{json .Mounts}}' | grep -o '"Type":"tmpfs"'`~~ — **cette commande est FAUSSE et rend zéro occurrence** : un tmpfs déclaré par compose atterrit dans `.HostConfig.Tmpfs`, pas dans `.Mounts`, qui ne liste que bind mounts et volumes. Elle avait pourtant été « vérifiée exacte » en passe 2 de validate — contre rien, puisque le tmpfs n'existait pas encore : *une commande relue n'est pas une commande exécutée.* Les preuves réelles, jouées le 2026-08-16 :
+
+```sh
+docker inspect kesh-mariadb-dev --format '{{json .HostConfig.Tmpfs}}'
+#   {"/var/lib/mysql":"size=4g,mode=1777"}
+docker exec kesh-mariadb-dev sh -c 'grep " /var/lib/mysql " /proc/mounts'
+#   tmpfs /var/lib/mysql tmpfs rw,nosuid,nodev,noexec,relatime,size=4194304k,inode64 0 0
+```
+
+et la section `docs/testing.md` § *Base de dev jetable* existe.
 
 ## Tasks / Subtasks
 
@@ -128,7 +137,7 @@ Le « ~69 min » cité en ouverture est un **ordre de grandeur emprunté** au ga
 - [x] **T3 — Garde-fou anti-dérive** (D3, AC2). Fichier **`crates/kesh-db/tests/test_schema_guard.rs`** — INSCRIT à la liste D2, il monte le vrai chemin, c'est sa fonction —, trois assertions : `squash_matches_real_schema_structure` (diff `information_schema` complet — vues/triggers/routines/actions FK compris), `squash_seeds_the_kesh_version_row` (jambe données, valeurs comparées à la base réelle migrée) et `squash_database_tracks_exactly_one_migration` (jambe SUIVI — le mode d'échec muet de `_sqlx_migrations`). **La seconde base** (vrai `MIGRATOR`) se crée à la main : nom unique (préfixe réservé + pid), `DROP DATABASE IF EXISTS` en tête ET destruction garantie même en panic — sqlx ne nettoie que les tests verts. Messages actionnables (« régénérez : scripts/regen-test-schema.sh »). **Quatre mutations jouées, par copie** (scratchpad, restauration, `diff -q`).
 - [x] **T4 — Les graphies de chemin réel : quatre basculent, la cinquième s'explicite — MÊME COMMIT que T5** (D1, D2, AC1, AC3, AC4). Les populations du recensement, selon leur colonne « Sort » ; l'attribut nu d'`accounts_role_backfill.rs` explicité en `migrator = "kesh_db::MIGRATOR"` — PAS `migrations = false`, qui viderait sa base (un attribut nu applique TOUT le migrator). **La mesure AVANT se prend au commit précédant immédiatement cette bascule, l'APRÈS au commit de la bascule** (D5).
 - [x] **T5 — Test de complétude d'AC3 — MÊME COMMIT que T4** (AC3, cf. D5 : posé avant la bascule, il serait rouge par construction). Même fichier `test_schema_guard.rs`, fonction `every_sqlx_test_attribute_is_accounted_for` : balayage de source par attributs ancrés (le patron du dispositif de la 22-4a, appliqué au harnais), liste D2 en dur, `migrations = false` restreint à cette liste, mutation jouée.
-- [ ] **T6 — tmpfs + durabilité dev** (D4, AC6). Compose : **retirer le volume nommé `kesh-mariadb-data`** (ses DEUX lignes — montage et déclaration ; un `tmpfs:` posé par-dessus donnerait « Duplicate mount point », le conteneur ne démarrerait pas) et poser le `tmpfs` avec **taille explicite** (`size=` — défaut 50 % de la RAM hôte, sur la station aux deux OOM documentés ; les bases éphémères orphelines coûteront de la RAM, et le restart les efface — un avantage à écrire). `docs/testing.md` : non-persistance, re-seed, balayage des orphelines. ⚠️ **Gestes destructeurs et sensibles au moment** : la suppression du volume DÉTRUIT la base dev `kesh` de Guy (le prévenir AU MOMENT de T6) ; le restart tue tout gate en vol ; et **T6 s'exécute APRÈS les deux runs de mesure** — cf. D5. *(Montage dupliqué, taille et ordre relevés en passe 3.)*
+- [x] **T6 — tmpfs + durabilité dev** (D4, AC6). Compose : **retirer le volume nommé `kesh-mariadb-data`** (ses DEUX lignes — montage et déclaration ; un `tmpfs:` posé par-dessus donnerait « Duplicate mount point », le conteneur ne démarrerait pas) et poser le `tmpfs` avec **taille explicite** (`size=` — défaut 50 % de la RAM hôte, sur la station aux deux OOM documentés ; les bases éphémères orphelines coûteront de la RAM, et le restart les efface — un avantage à écrire). `docs/testing.md` : non-persistance, re-seed, balayage des orphelines. ⚠️ **Gestes destructeurs et sensibles au moment** : la suppression du volume DÉTRUIT la base dev `kesh` de Guy (le prévenir AU MOMENT de T6) ; le restart tue tout gate en vol ; et **T6 s'exécute APRÈS les deux runs de mesure** — cf. D5. *(Montage dupliqué, taille et ordre relevés en passe 3.)*
 - [x] **T7 — Compteurs rafraîchis aux trois sites** (AC5). `nextest.toml`, commentaire CI, `CLAUDE.md` § Plafonds mémoire — avec dates.
 - [x] **T8 — Mesures publiées et règle de décision appliquée** (D5, AC4). Tableau avant/après ; verdict fermeture (#251 `closes` ou `refs`) motivé par le seuil d'AC4 ; plafond de threads intouché, renvoi explicite à une re-mesure future.
 
@@ -157,7 +166,7 @@ Le critère de non-convergence de la § *Règle de splitting préventif* a été
 
 ## Dev Agent Record
 
-**État d'exécution au 2026-08-16** : T1-T5, T7 et T8 faites. **T6 (tmpfs dev) reste ouverte** — geste destructeur pour la base de dev, en attente de l'arbitrage de Guy ; **AC6 n'est donc pas satisfaite**, et c'est la seule.
+**État d'exécution au 2026-08-16** : **T1 à T8 faites, AC0 à AC6 satisfaites.** T6 a été exécutée en dernier, comme D5 l'impose (après les deux runs de mesure), et sur arbitrage explicite de Guy — c'est un geste destructeur pour les bases de dev.
 
 | Commit | Contenu |
 |---|---|
@@ -206,7 +215,15 @@ Mutation jouée le 2026-08-16 : un attribut de `crates/kesh-api/tests/accounts_e
 
 *Preuve* : `grep -rnE '\b894\b|\b84 tests\b|51 migrations'` sur le dépôt ne rend plus que des sites **légitimes** — `notes-251-exploration.md`, la spec de cette story qui les nomme, et des stories historiques datées (6-4, 3-4, 7-2) dont les décomptes appartiennent à leur époque. Aucun résidu vivant.
 
-**AC6 — NON satisfaite**, T6 en attente d'arbitrage. Rien n'a été touché à `docker-compose.dev.yml` ni à la section de `docs/testing.md` qui en dépend.
+**AC6 — satisfaite le 2026-08-16, après arbitrage de Guy.** `docker-compose.dev.yml` monte `/var/lib/mysql` en tmpfs de 4 Go (taille explicite : le défaut est la moitié de la RAM hôte, soit 15 Go sur cette station) et porte les trois flags de D4 ; `docs/testing.md` gagne une section § *Base de dev jetable*. Vérifié en jouant la procédure documentée **telle qu'écrite**, après un `restart` qui a bien remis la base à zéro (0 table dans `kesh`) : 61 migrations rejouées par `sqlx migrate run`, seed appliqué, **283/283 tests de la base partagée verts en 3,1 s**, 0 base éphémère orpheline. Les flags sont confirmés en base (`innodb_flush_log_at_trx_commit=0`, `sync_binlog=0`, `innodb_doublewrite=0`).
+
+⚠️ **Trois choses que la spec n'avait pas vues, et qui ont dû être traitées** :
+
+1. **La commande de preuve d'AC6 était fausse** — cf. l'AC corrigé plus haut. Un tmpfs de compose vit dans `.HostConfig.Tmpfs`, jamais dans `.Mounts`.
+2. **`docker compose up --force-recreate` a conservé l'ancien volume nommé**, pourtant retiré du fichier : le conteneur recréé le portait encore dans `.Mounts`, le tmpfs monté par-dessus. Inerte sur le moment, mais c'est un piège différé — retirer un jour la ligne tmpfs aurait fait silencieusement réapparaître d'anciennes données. Corrigé par un `down` + `up` complet, puis suppression du volume ; `.Mounts` est désormais `[]`.
+3. **Le tmpfs efface aussi les tables SYSTÈME**, donc les droits globaux de l'utilisateur `kesh` — ceux que le README de `kesh-db` documente comme étape d'installation manuelle. Sans eux, `#[sqlx::test]` ne peut plus créer ses bases éphémères et **toute** la suite d'intégration tombe, à chaque redémarrage. Traité par `scripts/mariadb-init/01-dev-grants.sql`, monté dans `/docker-entrypoint-initdb.d/` : l'entrypoint MariaDB le rejoue dès que le datadir est vide, ce qui ici arrive à tous les coups. Vérifié par un vrai redémarrage, pas par lecture. Le seed applicatif, lui, reste manuel (`scripts/seed-dev-db.sql`) — son oubli est bruyant par construction.
+
+La base de dev de Guy et les bases de gate ont été détruites comme prévu ; `steadyinvest_test`, base d'un autre projet présente dans le même volume, a été signalée avant destruction et sacrifiée sur son arbitrage explicite.
 
 **Gates réellement exécutés** — et rien d'autre n'est déclaré :
 

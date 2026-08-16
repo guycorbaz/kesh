@@ -57,14 +57,41 @@ services:
       MARIADB_DATABASE: kesh
       MARIADB_USER: kesh
       MARIADB_PASSWORD: kesh_dev
+    # Story 22-5 (#251) — LA BASE DE DEV EST JETABLE, ET MONTÉE EN RAM.
+    #
+    # ⚠️ Conséquence assumée : /var/lib/mysql ne survit PAS au restart du
+    # conteneur. La base `kesh` repart vide, et son seed doit être rejoué —
+    # procédure dans docs/testing.md § « Base de dev jetable ». L'oubli est
+    # bruyant, pas silencieux : les 154 tests sur base partagée s'ouvrent sur
+    # `expect("need at least one company in DB for tests")`.
+    #
+    # En contrepartie, les bases éphémères de `#[sqlx::test]` ne touchent plus
+    # le disque, et les orphelines qu'un run interrompu laisse derrière lui
+    # sont effacées par le restart au lieu de s'accumuler.
+    #
+    # `size=` est EXPLICITE : le défaut d'un tmpfs est la moitié de la RAM de
+    # l'hôte, ce qui ferait de cette ligne une réserve de 15 Go sur la station
+    # aux deux OOM documentés (cf. CLAUDE.md § « Plafonds mémoire »). 4 Go
+    # couvrent largement la base de dev, les bases de gate et les éphémères
+    # d'un run complet ; au-delà, MariaDB échoue bruyamment sur disque plein
+    # plutôt que la station en pression mémoire.
+    tmpfs:
+      - /var/lib/mysql:size=4g,mode=1777
+    # Corollaire du tmpfs : les tables système repartent vierges à chaque
+    # démarrage, donc les droits globaux dont `#[sqlx::test]` a besoin pour
+    # créer ses bases éphémères disparaissent avec elles. L'entrypoint MariaDB
+    # rejoue ce répertoire dès que le datadir est vide — ici, à tous les coups.
     volumes:
-      - kesh-mariadb-data:/var/lib/mysql
+      - ./scripts/mariadb-init:/docker-entrypoint-initdb.d:ro
+    # Durabilité relâchée : la donnée ne survit pas au restart de toute façon,
+    # payer les fsync de chaque commit n'achète plus rien.
+    command:
+      - --innodb_flush_log_at_trx_commit=0
+      - --sync_binlog=0
+      - --innodb-doublewrite=0
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 30s
-
-volumes:
-  kesh-mariadb-data:
