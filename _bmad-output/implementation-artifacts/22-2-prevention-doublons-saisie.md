@@ -121,13 +121,21 @@ Retenu : **la logique pure dans un `.ts` sans aucune clé i18n**, le balisage et
 
 La recherche par `search=` est un `LIKE %…%` sur **plusieurs colonnes**. Un contact peut donc remonter parce que la chaîne figure dans son nom ou son email, **sans porter cet IDE**. Émettre le franc avertissement de D2 sur le seul fait qu'un résultat existe produirait un message **faux et péremptoire** — le pire des deux mondes, puisque c'est le signal auquel on demande à l'utilisateur de faire confiance.
 
-Le franc avertissement n'est émis que si un résultat vérifie :
+Le franc avertissement n'est émis que si un résultat vérifie **deux** conditions :
 
 ```ts
-c.ideNumber === normalizeIdeForApi(formIde)
+c.ideNumber === normalizeIdeForApi(formIde) && c.id !== editing?.id
 ```
 
+⚠️ **La seconde n'est pas un raffinement, c'est la condition sans laquelle la sonde crie à faux à CHAQUE édition.** `openEdit` pré-remplit `formIde` avec l'IDE du contact lui-même (`+page.svelte:256`, `formIde = formatIdeNumber(c.ideNumber)`) : à l'ouverture d'une fiche pourvue d'un IDE, le champ est **déjà** `validateIdeFormat`-valide, et la sonde retrouverait **le contact qu'on est en train de modifier**. L'avertissement franc — celui auquel on demande à l'utilisateur de faire confiance (D2) — annoncerait donc « ce numéro IDE existe déjà » en désignant sa propre fiche, sur le chemin le plus banal du formulaire.
+
+C'est le même défaut qu'AC7 écarte pour la sonde nom, et il fallait le dire **deux fois** : les deux sondes ne partagent pas leur code, et le raisonnement ne se propage pas tout seul d'une à l'autre.
+
 Et l'IDE ne se cherche qu'une fois **complet** : `validateIdeFormat` (`contact-helpers.ts:28`, regex `^CHE[0-9]{9}$` après retrait des séparateurs) est la porte d'entrée. Interroger sur `CHE-12` ne sert à rien.
+
+**D13 — Deux sondes, deux minuteries, deux compteurs.** Elles ne partagent **rien** de leur état : chacune porte sa propre paire `(timer, compteur de génération)`. Une paire unique factorisée entre les deux ferait qu'une réponse tardive de l'une **invalide la fraîcheur de l'autre** — l'un des deux avertissements ne s'afficherait jamais, sans erreur, sans test rouge, et sans que rien ne le signale. `ContactPicker.svelte` ne peut pas servir de modèle sur ce point : il n'a qu'**un** flux.
+
+**D14 — L'état des sondes se remet à zéro à l'OUVERTURE du formulaire, pas à sa fermeture.** Le dialogue se ferme depuis **trois** sites (`+page.svelte:352`, `:358`, `:846`) et n'est **jamais démonté** — le nettoyage de `onMount:113` ne joue qu'à la sortie de la page. Poser le nettoyage sur la fermeture obligerait donc à le poser trois fois, et un quatrième site futur le contournerait en silence. `openCreate()` et `openEdit()` (`+page.svelte:216-264`) réinitialisent déjà champ par champ : les minuteries, les compteurs et les propositions affichées s'y ajoutent, au même titre que le reste. Sans quoi une réponse armée avant un « Annuler » vient s'afficher sur la fiche **suivante**.
 
 **D11 — La localité s'affiche, elle ne se cherche pas.** *(Réponse à la question ouverte 1 de la note du 12 août.)* Une correspondance « nom **et** localité » serait un signal plus fort — mais l'obtenir demanderait une dimension de requête supplémentaire dans `push_where_clauses`, alors que le même service est rendu **à coût nul** en affichant la localité dans la proposition : c'est l'utilisateur qui discrimine, et il le fait mieux qu'un seuil. La requête porte donc sur le nom seul ; la localité, le numéro de client et le nom complet sont là **pour reconnaître**.
 
@@ -154,7 +162,10 @@ D'où :
 **AC1 — La frappe du nom fait apparaître les contacts proches.**
 À partir de **trois caractères** saisis dans le champ de nom du formulaire de création (D7), les contacts **actifs** de la société dont le nom est proche sont proposés — archivés exclus (D12) —, avec de quoi les reconnaître : **nom complet, localité, et numéro de client** s'il existe (D11).
 ⚠️ Vaut pour les **deux** types de contact — raison sociale pour `Entreprise`, prénom + nom pour `Personne` (D8).
-*Preuve* : deux tests de composant, **un par type de contact**. Celui sur `Personne` est le seul qui tombe sous la mutation « ne lire que `formName` », et c'est sa raison d'être.
+*Preuve*, trois tests de composant :
+1. un sur `Entreprise` ;
+2. un sur `Personne` — le seul qui tombe sous la mutation « ne lire que `formName` », et c'est sa raison d'être ;
+3. **un contact ARCHIVÉ au nom proche n'apparaît PAS** dans les propositions. Symétrique de la preuve 2 d'AC2, et pour le même motif : les deux sondes ne diffèrent que par un booléen, écrit à deux endroits voisins (§ *Forme exacte des deux appels*). C'est le genre de permutation qu'aucun test ne rattrape si elle se produit dans l'autre sens.
 
 **AC2 — Un numéro IDE déjà pris est signalé franchement, y compris quand le porteur est archivé.**
 La saisie d'un IDE **complet** (`validateIdeFormat` vrai) déjà porté par un contact de la société — **actif ou archivé** (D12) — déclenche un avertissement explicite, **distinct** du signal « nom proche », **avant** l'enregistrement. Il n'est émis que si un contact remonté porte effectivement cet IDE (D10). Quand le porteur est archivé, le message **le dit**.
@@ -163,20 +174,30 @@ La saisie d'un IDE **complet** (`validateIdeFormat` vrai) déjà porté par un c
 1. un test de composant pour l'avertissement sur un porteur **actif** ;
 2. **un test sur un porteur ARCHIVÉ** — c'est celui qui tombe sous la mutation `includeArchived: true → false`, et le seul qui couvre le cas sans recours de D12 ;
 3. un test sur le cas de D10 — un contact qui remonte sans porter cet IDE ne déclenche **pas** le franc avertissement ;
-4. un test qui vérifie que le `409` reste levé si l'avertissement est ignoré.
+4. un test qui vérifie que le `409` reste levé si l'avertissement est ignoré ;
+5. **ouvrir en édition la fiche d'un contact qui porte un IDE ne déclenche AUCUN avertissement franc** — ni à l'ouverture, ni après avoir retapé le même IDE. C'est la preuve de la seconde condition de D10, et elle tombe sous la mutation « retirer `&& c.id !== editing?.id` ».
 
-**AC3 — L'avertissement ne bloque jamais.**
-L'utilisateur peut enregistrer malgré le signal, franc ou nuancé.
-*Preuve* : test E2E — ignorer l'avertissement crée bien le contact. ⚠️ **C'est l'assertion qui protège D1** : sa mutation — désactiver le bouton d'enregistrement — doit la faire tomber.
+**AC3 — L'avertissement ne bloque jamais — l'interface, s'entend.**
+Quel que soit le signal, franc ou nuancé, **l'interface laisse soumettre** : le bouton d'enregistrement reste actif, `formValidation` n'est pas touchée, la requête part.
+⚠️ **Ce que devient la requête ensuite ne relève PAS de cette AC**, et la distinction n'est pas une subtilité de rédaction — sans elle, AC3 et la preuve 4 d'AC2 se contredisent formellement. Sur le signal **franc**, le contact ne peut **pas** être créé : le porteur de l'IDE existe, donc `uq_contacts_company_ide` lève un `409` — c'est précisément ce qu'exige la preuve 4 d'AC2. Écrire « ignorer l'avertissement crée bien le contact » sans distinguer les deux signaux prescrit un test E2E **impossible à écrire** pour le cas franc.
+*Preuve* : test E2E sur le signal **nuancé** (nom proche) — ignorer l'avertissement crée bien le contact. ⚠️ **C'est l'assertion qui protège D1** : sa mutation — désactiver le bouton d'enregistrement — doit la faire tomber. Le cas franc est couvert par la preuve 4 d'AC2, qui documente le refus attendu.
 
 **AC4 — Rien ne part avant que la frappe se calme, et une réponse tardive ne dit plus rien.**
 La recherche est temporisée (300 ms, le pas du dépôt) et gardée par un compteur de génération : taper vingt caractères ne déclenche pas vingt requêtes, et une réponse arrivée en retard n'écrase pas un affichage plus récent.
-*Preuve* : un test unitaire sur le **nombre d'appels** pour une frappe continue, et un test qui résout deux requêtes **dans l'ordre inverse** de leur lancement et vérifie que la première arrivée en dernier est ignorée.
+Les deux sondes ont chacune **leur** minuterie et **leur** compteur (D13), et leur état repart de zéro à chaque ouverture du formulaire (D14).
+*Preuve*, trois tests unitaires :
+1. le **nombre d'appels** pour une frappe continue ;
+2. deux requêtes résolues **dans l'ordre inverse** de leur lancement — la première arrivée en dernier est ignorée ;
+3. **un test croisé** : armer la sonde nom, puis la sonde IDE avant résolution, et vérifier que **les deux** avertissements aboutissent. Il tombe sous la mutation « factoriser une seule paire `(timer, compteur)` », que les deux autres tests laissent verte.
 ⚠️ Ne PAS prouver l'annulation par un `AbortSignal` passé à `apiClient` : il est écrasé en silence (D6), un tel test mesurerait du vide.
 
-**AC5 — Le dispositif est muet quand il n'a rien à dire.**
-Moins de trois caractères, ou aucun contact proche ⇒ aucune requête, aucun encombrement de l'écran, aucun message.
-*Preuve* : test de composant sur un carnet vide, **et** test que la saisie de deux caractères ne déclenche **aucun** appel réseau.
+**AC5 — Le dispositif est muet quand il n'a rien à dire.** Deux clauses **distinctes**, qui n'ont pas la même conséquence :
+
+- **(a) moins de trois caractères ⇒ AUCUNE requête** n'est émise (D7) ;
+- **(b) trois caractères ou plus, aucun contact proche ⇒ aucun encombrement de l'écran, aucun message.**
+
+⚠️ La conséquence « aucune requête » n'appartient qu'à (a). L'attacher aussi à (b) serait **impossible à satisfaire** : constater qu'aucun contact n'est proche suppose précisément d'avoir cherché.
+*Preuve* : pour (a), un test que la saisie de deux caractères ne déclenche **aucun** appel réseau ; pour (b), un test de composant sur un carnet vide vérifiant qu'aucun message n'est rendu.
 
 **AC6 — Les avertissements sont traduits dans les quatre locales.**
 *Preuve* : un test Rust dédié dans `crates/kesh-i18n/src/loader.rs`, sur le patron exact de `client_number_labels_are_translated_in_all_four_locales` (`loader.rs:260-277`) — pour chaque clé neuve, `!= key` **et** `!= fr` sur `de-CH`, `it-CH`, `en-CH`. Plus `npm run lint-i18n-ownership` vert.
@@ -185,22 +206,30 @@ Moins de trois caractères, ou aucun contact proche ⇒ aucune requête, aucun e
 
 **AC7 — L'avertissement vaut aussi à l'édition, sans se signaler lui-même.**
 Renommer un contact existant vers un nom déjà porté déclenche le même signal nuancé. ⚠️ Le contact **en cours d'édition est exclu** de ses propres résultats : sans cette garde, ouvrir une fiche et toucher son nom afficherait « un contact au nom proche existe » en désignant **la fiche elle-même** — un avertissement absurde, qui est la façon la plus rapide d'apprendre à l'utilisateur à ne plus les lire.
+⚠️ **Cette AC ne couvre que la sonde NOM.** L'exclusion de soi sur la sonde **IDE** est portée par D10 et prouvée par la preuve 5 d'AC2 — elle est **plus critique encore**, puisqu'elle touche le signal franc et se déclenche sur la simple ouverture d'une fiche pourvue d'un IDE. Les deux sondes ne partagent pas leur code : la garde doit être écrite **deux fois**, et prouvée **deux fois**.
 *Preuve* : test de composant — ouvrir la fiche d'un contact, modifier son nom d'un caractère, vérifier qu'il ne figure pas dans les propositions.
 
 ## Tasks / Subtasks
 
 - [ ] **T1 — Rendre l'IDE cherchable** (AC2). Ajouter `ide_number` aux **DEUX** branches `LIKE` de `push_where_clauses` (`crates/kesh-db/src/repositories/contacts.rs:195-210`), et **seulement** cela — aucune route neuve (D5).
   - [ ] ⚠️ **Les deux branches, ou aucune** (D3). N'en traiter qu'une compile, passe les tests dont le terme survit à `escape_boolean_ft`, et cesse **silencieusement** de chercher l'IDE quand le terme n'est fait que d'opérateurs FULLTEXT.
-  - [ ] Deux tests `#[sqlx::test]`, **un par branche** : le cas courant (`search=CHE109322551`) et le cas du terme intégralement opérateurs. Le second se construit sur le patron de `test_search_handles_special_chars:1283`.
+  - [ ] Deux tests `#[sqlx::test]`, **un par branche** : le cas courant (`search=CHE109322551`) et le cas où `escaped.is_empty()`, c'est-à-dire un terme **intégralement** composé des 10 opérateurs `+ - > < ( ) ~ * " \` — par exemple `search=***`.
+  - [ ] ⚠️ **Ne PAS se caler sur `test_search_handles_special_chars:1283` pour la seconde branche : il ne l'exerce pas.** Il cherche `"100%"`, et `%` **n'est pas** un opérateur BOOLEAN MODE (`crates/kesh-db/src/util/search.rs:41`) — le terme survit donc intact à `escape_boolean_ft`, et le test emprunte la branche `else`. Vérifié en passe 1 de validate. **Aucun test du dépôt n'exerce aujourd'hui la branche `escaped.is_empty()`** : il n'y a pas de patron à copier, seulement un terme à choisir correctement.
   - [ ] ⚠️ **`push_where_clauses` est un chemin PARTAGÉ** — cf. § *Rayon d'impact de T1*. Relancer `binary(contacts)` **et** les suites qui consomment la liste de contacts, pas seulement le test qu'on vient d'écrire.
   - [ ] **Conditionné à l'arbitrage Q1.** Si Q1 est tranchée « ne pas élargir la recherche du carnet », T1 devient une route dédiée et AC2 change de coût — **demander avant d'implémenter**.
 - [ ] **T2 — Logique pure de proposition** (AC1, AC2, AC5, AC7). Un module `.ts` sans clé i18n ni DOM (D9) : seuil de 3 caractères, choix du terme selon le type (D8), exclusion du contact édité (AC7), vérification de l'IDE sur le champ (D10).
   - [ ] Tests vitest directs, sans `render` — c'est le bénéfice de D9.
-- [ ] **T3 — Temporisation et garde d'ordre** (AC4). Débounce 300 ms + compteur de génération, sur le patron de `ContactPicker.svelte:36-78` (D6).
+- [ ] **T3 — Temporisation et garde d'ordre** (AC4). Débounce 300 ms + compteur de génération, sur le patron de `ContactPicker.svelte:36-78` (D6). **Une paire `(timer, compteur)` PAR SONDE** (D13) — `ContactPicker` n'a qu'un flux et ne peut pas servir de modèle sur ce point.
   - [ ] Réutiliser `debounce` de `$lib/features/journal-entries/debounce.ts` **ou** le `setTimeout` inline déjà présent dans `+page.svelte:185-192` — ne pas écrire un troisième mécanisme. ⚠️ Le helper est mal rangé (dossier `journal-entries` pour un utilitaire général) : le **déplacer** est hors périmètre, s'en servir ne l'est pas.
-  - [ ] Nettoyer le timer au démontage — `+page.svelte:113` le fait déjà pour la recherche de liste, le nouveau timer doit l'être aussi.
+  - [ ] Remise à zéro des deux paires dans `openCreate()` **et** `openEdit()` (D14) — **pas** sur la fermeture du dialogue, qui a trois sites (`:352`, `:358`, `:846`) et n'en aura pas moins demain.
+  - [ ] Nettoyer les timers au démontage — `+page.svelte:113` le fait déjà pour la recherche de liste, les nouveaux doivent l'être aussi.
+  - [ ] **Écrire les 3 tests de la preuve d'AC4** : nombre d'appels, ordre de résolution inversé, et le test croisé des deux sondes.
 - [ ] **T4 — Balisage et signaux** (AC1, AC2, AC3, AC5, AC7). Deux niveaux visuellement distincts (D2), aucun blocage : ne toucher **ni** au `disabled` du bouton d'enregistrement **ni** à `formValidation` (`+page.svelte:275`).
   - [ ] Il n'existe pas de composant `alert` dans `lib/components/ui/` — se caler sur le style d'erreur déjà employé par le formulaire (`formError`), sans créer de primitive nouvelle.
+  - [ ] Encapsuler **chaque** sonde dans un `try/catch` qui se tait, comme `ContactPicker.svelte:64-67`. Une sonde n'est pas une action de l'utilisateur : son échec ne doit produire ni message d'erreur ni exception remontée.
+  - [ ] **Créer `frontend/src/routes/(app)/contacts/+page.test.ts`** — il n'existe **aucun** test de cette page aujourd'hui (seul `contact-helpers.test.ts` existe pour ce domaine). Patron : `products-page.test.ts`, mocks hoistés avant l'import. Décompte des tests de composant, recompté depuis les AC : **AC1 → 3** (Entreprise, Personne, archivé exclu) · **AC2 → 4 des 5** (porteur actif, porteur archivé, faux appariement de D10, édition de soi ; la preuve 4, le `409`, n'est pas un test de composant) · **AC5 → 2** (clauses a et b) · **AC7 → 1**. **Total : 10.**
+  - [ ] Réserve sur ce décompte : la clause (a) d'AC5 (« moins de 3 caractères ⇒ aucune requête ») peut légitimement être prouvée dans le module pur de T2 plutôt qu'ici — auquel cas ce fichier en porte 9 et T2 une de plus. Ce qui n'est **pas** négociable, c'est le total de 10 preuves, où qu'elles vivent.
+  - [ ] ⚠️ **Cette sous-tâche est la raison d'être de T4.** Sans elle, T4 se coche en ayant livré du balisage, et **aucune** des preuves d'AC1, AC2, AC5 et AC7 n'existe — relevé en passe 1 de validate.
 - [ ] **T5 — i18n** (AC6). Les clés neuves dans les **quatre** FTL (`crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl`), domaine `contact-*`, plus le test Rust dédié.
 - [ ] **T6 — E2E** (AC3). ⚠️ Le fichier **DOIT** être nommé `*.spec.ts` : `playwright.config.ts:35` filtre sur `testMatch: /(.+\.)?spec\.[jt]s/`, et un `*.test.ts` posé dans `tests/e2e/` est **silencieusement ignoré** — il ne rougit jamais, il se tait.
   - [ ] Patron : `frontend/tests/e2e/contact-client-number.spec.ts` (Story 22-1) — `seedTestState('with-company')`, login, et **archivage du contact créé** en fin de test pour ne polluer ni l'unicité ni les tests suivants.
@@ -240,13 +269,17 @@ Le geste correct est celui de la § *Pendant une boucle de revue* du `CLAUDE.md`
 Pour qu'aucun paramètre ne se perde entre l'intention et le code :
 
 ```ts
-// AC1 — sonde « nom proche ». Actifs seulement (D12).
-listContacts({ search: term, limit: 5, includeArchived: false });
+// AC1 — sonde « nom proche ». Actifs SEULEMENT (D12), soi-même exclu (AC7).
+const rn = await listContacts({ search: term, limit: 5, includeArchived: false });
+const proches = rn.items.filter((c) => c.id !== editing?.id);
 
-// AC2 — sonde IDE. Archivés COMPRIS (D12), puis filtrage sur le champ (D10).
-const r = await listContacts({ search: normalized, limit: 5, includeArchived: true });
-const holder = r.items.find((c) => c.ideNumber === normalized);
+// AC2 — sonde IDE. Archivés COMPRIS (D12), soi-même exclu (D10),
+// puis vérification SUR LE CHAMP — un résultat n'est pas une preuve (D10).
+const ri = await listContacts({ search: normalized, limit: 5, includeArchived: true });
+const holder = ri.items.find((c) => c.ideNumber === normalized && c.id !== editing?.id);
 ```
+
+⚠️ **Les deux appels ne diffèrent que par un booléen et se lisent côte à côte.** C'est délibérément le passage le plus dangereux de la spec : une inversion de `includeArchived` ne casse rien, ne fait rougir aucun test qui ne la vise pas, et retourne des résultats plausibles dans les deux sens. D'où la preuve 3 d'AC1 **et** la preuve 2 d'AC2 — une par sens.
 
 `limit` est borné à 100 par `MAX_LIST_LIMIT` (`routes/contacts.rs:42`) ; 5 suffit largement et tient l'affichage court, ce qui sert directement le « piège de cette story » ci-dessous. `ContactResponse` porte `ideNumber`, `clientNumber` et `addressStructured` (donc la localité) — **rien à ajouter au DTO**.
 
@@ -254,16 +287,25 @@ const holder = r.items.find((c) => c.ideNumber === normalized);
 
 Un avertissement trop bavard **ne protège plus rien** : on apprend à le fermer sans le lire, et il devient un clic de plus. C'est le vrai risque, plus que le faux négatif. Le seuil doit donc être **serré** — mieux vaut manquer un doublon que crier trois fois par jour à tort. AC7 (ne pas se signaler soi-même) et D10 (ne pas crier « IDE pris » à faux) ne sont pas des raffinements : ce sont les deux façons les plus rapides de rendre le dispositif inaudible dès la première semaine.
 
-### Les quatre pièges muets, nommés
+### Les six pièges muets, nommés
 
-Aucun des quatre ne casse la compilation, ne fait rougir un test, ni ne produit d'erreur au runtime. C'est ce qui les rend coûteux.
+Aucun des six ne casse la compilation, ne fait rougir un test, ni ne produit d'erreur au runtime. C'est ce qui les rend coûteux — et c'est pourquoi chacun a sa preuve dédiée, dont la **mutation** est écrite en face.
 
 | Piège | Symptôme | Garde |
 |---|---|---|
 | `signal` passé à `apiClient` (D6) | l'annulation ne fait rien, on croit l'avoir | AC4 prouvée par ordre de résolution, jamais par `AbortSignal` |
-| déclencheur sur `#form-name` seul (D8) | inopérant pour toutes les personnes physiques | AC1 exige **deux** tests, un par type |
+| déclencheur sur `#form-name` seul (D8) | inopérant pour toutes les personnes physiques | AC1 preuve 2, sur `Personne` |
 | sonde IDE sur les actifs seuls (D12) | silence, puis `409` sans coupable visible | AC2 preuve 2, sur un porteur **archivé** |
+| sonde nom sur les archivés (D12, sens inverse) | propositions polluées par des fiches mortes | AC1 preuve 3 |
+| sonde IDE sans exclusion de soi (D10) | le signal **franc** crie à faux à chaque édition | AC2 preuve 5 |
+| une seule paire `(timer, compteur)` (D13) | l'un des deux avertissements ne s'affiche jamais | AC4 preuve 3, le test croisé |
 | clé i18n absente de 3 locales (AC6) | repli silencieux sur le français | assertion `!= fr`, la seule qui l'attrape |
+
+### Ce que la story ne répare pas, et qu'elle rend plus atteignable
+
+⚠️ **Une session qui expire pendant la composition d'une fiche fait perdre la saisie.** Tout `401` — y compris sur un `GET` de fond — déclenche un refresh, et si le refresh échoue, `api-client.ts:78-79,88-98,157-158` fait `authState.clearSession()` puis `window.location.replace('/login?reason=session_expired')` : une redirection **plein document**, pas une navigation SPA. Le formulaire, non enregistré, disparaît.
+
+C'est un comportement **préexistant** de l'`apiClient`, et cette story ne le corrige pas — mais elle le rend **plus probable d'être atteint** : jusqu'ici il fallait cliquer « Enregistrer » pour émettre une requête depuis ce formulaire, désormais des sondes partent toutes les 300 ms pendant la frappe. Le risque est **accepté explicitement**, pas ignoré ; le `try/catch` de T4 protège du reste (réseau, `500`), mais pas de celui-là, qui se produit dans l'`apiClient` avant que l'appelant ne reprenne la main. Si le sujet doit être traité, c'est une issue à part.
 
 ### Previous story intelligence — Story 22-1
 
@@ -317,6 +359,31 @@ D5(b) écrit une route dédiée, sans toucher à la recherche — au prix d'un s
 
 **Q2 — AC7 (l'édition) est-elle dans le périmètre de cette story ?**
 La note du 12 août posait la question et répondait « probablement oui, et à moindres frais puisque le dispositif sera écrit ». C'est exact — le surcoût est une exclusion par `id` et un test. Elle est donc **écrite comme AC7**, mais elle reste la seule AC détachable si le périmètre doit être resserré. La détacher ne laisse **aucun trou fonctionnel** : le formulaire d'édition se comporterait comme aujourd'hui.
+
+## Change Log
+
+### Passe 1 de `bmad-create-story validate` — 2026-08-17, Sonnet ×3, contexte frais
+
+Trois lentilles orthogonales (BlindHunter, EdgeCaseHunter, AcceptanceAuditor), lancées en parallèle sur contexte frais, ground-truth obligatoire. Bruts : 1 + 5 + 4 = 10 findings. **Après dédoublonnage : 1 CRITICAL / 2 HIGH / 6 MEDIUM / 0 LOW — 9 findings > LOW, 9 correctifs appliqués, 0 écarté, 0 faux positif.**
+
+**Le finding du jour est une CONVERGENCE de deux lentilles indépendantes** : AA-1 (`CRITICAL`) et ECH-1 (`HIGH`) décrivent le même défaut — **la sonde IDE n'excluait pas le contact en cours d'édition**. `openEdit` pré-remplit `formIde` avec l'IDE du contact lui-même (`+page.svelte:256`), si bien que l'avertissement **franc** — celui auquel on demande à l'utilisateur de faire confiance — se serait déclenché sur sa propre fiche, à l'ouverture, sur le chemin le plus banal du formulaire. J'avais écrit la garde pour la sonde nom (AC7) et **je ne l'avais pas propagée à la sonde IDE** : les deux sondes ne partagent pas leur code, et un raisonnement ne se propage pas tout seul. La sévérité `CRITICAL` de l'AcceptanceAuditor est retenue plutôt que le `HIGH` de l'EdgeCaseHunter — pas par prudence, mais parce que le défaut touche le signal fort et se déclenche **sans action de l'utilisateur**.
+
+Les huit autres, par ordre de sévérité :
+
+| # | Sév. | Défaut | Correctif |
+|---|---|---|---|
+| AA-2 | HIGH | AC3 (« ignorer l'avertissement crée bien le contact ») **contredit formellement** la preuve 4 d'AC2 (« le 409 reste levé ») — sur le signal franc, le contact ne PEUT pas être créé. Le test E2E prescrit était impossible à écrire. | AC3 recentrée sur *l'interface ne bloque pas* ; la preuve E2E est restreinte au signal nuancé |
+| AA-3 | HIGH | T3 et T4 **ne portaient aucune sous-tâche de test** alors que T4 seule porte AC1, AC2, AC3, AC5 et AC7. Un dev cochait T4 après le seul balisage, sans qu'aucune preuve existe — et **aucun test de cette page n'existe** dans le dépôt (`find` → seul `contact-helpers.test.ts`). | sous-tâches de test ajoutées à T3 et T4, fichier `+page.test.ts` nommé, 8 tests dénombrés |
+| BH-1 | MED | Le patron cité pour la branche `escaped.is_empty()` **ne l'exerce pas** : `test_search_handles_special_chars` cherche `"100%"`, et `%` n'est pas un opérateur BOOLEAN MODE (`util/search.rs:41`) — le terme survit et prend la branche `else`. **Aucun test du dépôt n'exerce cette branche.** | terme concret prescrit (`***`), et la fausse piste explicitement démontée |
+| ECH-3 | MED | L'état des sondes n'était remis à zéro nulle part : le dialogue se ferme depuis **3 sites** et n'est jamais démonté. Une réponse armée avant « Annuler » s'affichait sur la fiche suivante. | **D14** — remise à zéro dans `openCreate()`/`openEdit()`, pas sur la fermeture |
+| ECH-4 | MED | Rien n'imposait **deux** paires `(timer, compteur)`. Une paire factorisée fait qu'une réponse tardive de l'une invalide la fraîcheur de l'autre — un des deux avertissements ne s'affiche jamais, en silence. | **D13** + preuve 3 d'AC4, le test croisé |
+| ECH-5 | MED | AC1 affirmait « archivés exclus » **sans aucune preuve**, alors que les deux appels ne diffèrent que par ce booléen et se lisent côte à côte. | preuve 3 d'AC1, symétrique de la preuve 2 d'AC2 |
+| AA-4 | MED | AC5 attachait « aucune requête » à **deux** déclencheurs, dont l'un (« aucun contact proche ») ne peut être constaté qu'**après** avoir cherché — indécidable à la lettre. | AC5 scindée en clauses (a) et (b) |
+| ECH-2 | MED | Une session expirée pendant la frappe redirige en **plein document** et efface la saisie ; les sondes rendent ce risque préexistant bien plus atteignable. | `try/catch` prescrit en T4 + risque **accepté explicitement** en Dev Notes |
+
+**Ce que la passe n'a PAS trouvé, et qui compte autant** : aucune des dizaines de citations `fichier:ligne` de la spec n'était fausse — les trois lentilles les ont vérifiées indépendamment, y compris la mesure en direct de `innodb_ft_min_token_size` et l'asymétrie des deux contraintes d'unicité. Le ground-truth de la spec tient ; ce qui a cédé, c'est sa **couverture** — des raisonnements justes appliqués à une sonde et pas à l'autre.
+
+⚠️ **Passe 2 requise** par la § *Review Iteration Rule* (1 CRITICAL + 2 HIGH). Rotation : **Haiku**, contexte frais — avec le garde-fou du `CLAUDE.md` § *Haiku-specific guardrails*, tout `CRITICAL`/`HIGH` affirmant une absence ou une présence sera ground-truthé au `grep -nF` avant d'être traité.
 
 ## Dev Agent Record
 
