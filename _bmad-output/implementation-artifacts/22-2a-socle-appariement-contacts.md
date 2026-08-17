@@ -206,6 +206,7 @@ Elles sont la vraie spécification de cette story. Chacune est un défaut **rée
 - Story **22-2** (umbrella, statut `split`) — les quatre passes de revue et leur Change Log complet. **C'est la source de toutes les décisions reproduites ici.**
 - Story **22-2b** — la surface, qui consomme ce module.
 - Issue **#301** — le besoin.
+- ⚠️ **Issues #314 et #315** — les défauts **à la source** que ce module contourne. `normalizeTerm` (D-a3) atténue #314 ; `rank` (D-a5) atténue #315. **Aucune des deux fonctions ne corrige quoi que ce soit dans la recherche elle-même** — elles compensent au client ce que la base ne sait pas faire, et le doc-comment du module doit le dire, faute de quoi un lecteur futur croira le problème réglé.
 - `CLAUDE.md` — § *Règle de splitting préventif* (le critère qui a déclenché ce découpage), § *Test Locally First*.
 
 ## Dev Agent Record

@@ -273,6 +273,7 @@ C'est **préexistant**, et cette story ne le corrige pas — mais elle le rend *
 - Story **22-2a** — le module pur que cette story consomme. **À implémenter d'abord.**
 - Story **22-2** (umbrella, statut `split`) — les quatre passes de revue et leur Change Log complet, source de toutes les décisions.
 - Issue **#301** — le besoin. **#302** — la succession d'entreprise, à ne pas confondre. **#291** — le manuel et son import CSV inexistant, à ne pas traiter ici.
+- ⚠️ **Issues #314 et #315 — les deux corrections À LA SOURCE que cette story CONTOURNE délibérément.** #314 : `escape_boolean_ft` supprime les opérateurs au lieu de les remplacer (4 repositories, 5 sites d'appel). #315 : la recherche n'a aucun tri par pertinence, et la sémantique est OU inclusif. La 22-2a contourne les deux **côté client** — normalisation du terme et classement local. **Ce sont des atténuations assumées, pas des corrections** : ne pas les traiter ici, et ne pas laisser croire dans le code qu'elles règlent le problème de fond.
 - Story **22-3** (#300) — la fusion, en veille : ce que cette story doit rendre inutile.
 - `CLAUDE.md` — § *Un appariement automatique propose, il ne crée jamais*, § *Test Locally First*, § *Un gate laisse la base piégée*.
 
