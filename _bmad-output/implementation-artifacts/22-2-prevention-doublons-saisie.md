@@ -2,7 +2,9 @@
 
 ## Status
 
-ready-for-dev
+draft
+
+⛔ **La boucle `validate` est SUSPENDUE après la passe 3, en attente d'un arbitrage de Guy.** Deux `CRITICAL` ouverts, dont un défaut de **conception** établi par exécution : avec `limit: 5` et un tri alphabétique, le doublon exact est évincé de la fenêtre — le dispositif est muet sur le seul cas pour lequel il existe. Ne pas lancer `bmad-dev-story` sur cette story. Cf. § *Change Log*, passe 3, et les questions **Q3**, **Q4**, **Q1 amendée**.
 
 ## Story
 
@@ -380,7 +382,22 @@ Les cinq derniers commits de `main` sont l'Epic 22 en cours : `70e6a2d0` (plafon
 
 ## Questions ouvertes
 
+**Q3 — Le mécanisme d'appariement par nom : que fait-on ?** *(bloquante pour toute la story — née de la passe 3)*
+
+Établi par exécution : avec `limit: 5` + `ORDER BY name ASC` + sémantique **OU inclusif**, **le doublon exact est évincé de la fenêtre** dès que cinq contacts partagent un token banal. Trois voies, par coût croissant :
+
+- **(a) Fenêtre large + classement côté client.** Demander `limit: 20` ou `50` (le pas de `ContactPicker`), classer dans le module pur de T2 — priorité au nom qui *commence par* le terme, puis proximité —, n'afficher que les 3 à 5 meilleurs, et mentionner « et N autres » via le `total` que `ListResponse` porte déjà. **Ne touche pas au chemin partagé**, reste dans la doctrine de D10 (« un résultat n'est pas une preuve »). ⚠️ C'est une **atténuation**, pas une correction : le tri reste alphabétique côté base, donc une société de plus de 50 contacts partageant un token tronque encore.
+- **(b) Corriger la recherche à la source.** Découper le terme et préfixer chaque token (`+tok1* +tok2*` — l'évolution que `search.rs:96-98` nomme lui-même), et/ou ajouter un tri par pertinence à `ContactSortBy`. C'est **juste**, et cela améliore aussi la recherche du carnet — mais cela touche un chemin partagé par quatre consommateurs, et déborde très au-delà d'une story de prévention de doublons.
+- **(c) Renoncer à la sonde nom** et ne livrer que la sonde IDE, qui est exacte et qui marche. Ferme #301 à moitié.
+
+**Ma recommandation : (a) maintenant, (b) comme story distincte.** (a) rend le dispositif utile dès cette story sans engager le chemin partagé ; (b) est une vraie amélioration de la recherche, qui mérite sa propre spec et ses propres tests.
+
+**Q4 — Le trait d'union.** Retaper `Coop-Vaud` à l'identique ne remonte **rien** : `escape_boolean_ft` **supprime** le tiret au lieu de le remplacer par une espace. Deux issues : normaliser le terme **côté client** avant l'envoi (local à T2, sans rayon d'impact), ou corriger `escape_boolean_ft` (plus juste, mais quatre repositories concernés — même arbitrage que Q3(b)).
+**Ma recommandation : le côté client dans cette story, la correction du helper en story distincte** — groupée avec Q3(b), les deux touchant la même fonction.
+
 **Q1 — Élargir la recherche du carnet à l'IDE, ou lui réserver un chemin à part ?** *(bloquante pour T1)*
+⚠️ **AMENDÉE en passe 3 : le bénéfice annoncé était FAUX.** `'CHE109322551' LIKE '%CHE-109.322.551%'` rend **0** — l'IDE est stocké normalisé, le `LIKE` porte sur le terme brut. Chercher la forme qu'on lit sur une facture papier ne remonterait donc **rien**, et c'était précisément le cas d'usage invoqué. La symétrie avancée avec la 16-3b est fausse : `client_number`, lui, est stocké **tel que saisi**.
+Le gain réel de D5(a) se réduit donc à : « chercher un IDE **sans séparateurs** remonte son contact ». À arbitrer en connaissance de cause — ou à écarter, la sonde d'AC2 n'en ayant pas besoin (elle envoie déjà la forme normalisée).
 D5(a) ajoute `ide_number` aux deux branches `LIKE` de la recherche existante : un seul chemin, une seule garde de scoping, deux tests. **Conséquence visible** : chercher `CHE-109.322.551` dans le carnet remontera désormais son contact — ce qui paraît un gain, cohérent avec ce que la 16-3b a fait du numéro de client, mais qui change un comportement que personne n'a demandé de changer.
 D5(b) écrit une route dédiée, sans toucher à la recherche — au prix d'un second chemin à scoper, ce que T1 identifie comme le risque principal.
 **Recommandation : (a).** Mais c'est un changement d'UX, donc l'arbitrage revient à Guy.
@@ -433,6 +450,71 @@ Le reste, par famille : le seuil de trois caractères ne jouait qu'à la montée
 **Ce que la passe 2 n'a PAS trouvé** : aucune fausseté factuelle, aucune régression des correctifs de la passe 1, aucune citation `fichier:ligne` erronée — les trois lentilles Haiku ont re-vérifié indépendamment les ancres du code, et **aucune hallucination du mode d'échec documenté au `CLAUDE.md`** n'est survenue. Le mécanisme spécifié n'a été mis en défaut par aucune des six lentilles des deux passes ; ce qui cède, passe après passe, c'est la **tenue du document**.
 
 ⚠️ **Passe 3 requise** par la § *Review Iteration Rule* (1 HIGH > LOW). Rotation : **Opus**, contexte frais.
+
+### Passe 3 de `bmad-create-story validate` — 2026-08-17, Opus ×3, contexte frais
+
+**⛔ AUCUN CORRECTIF N'A ÉTÉ APPLIQUÉ. La boucle est SUSPENDUE et attend un arbitrage de Guy.** Ce qui suit explique pourquoi il serait faux de patcher et de relancer une passe 4.
+
+Bruts : 5 + 11 + 12 = 28. Après dédoublonnage (trois convergences) : **2 CRITICAL / 5 HIGH / 13 MEDIUM / 5 LOW — 20 findings > LOW.**
+
+**Trend : `9` → `11` → `20`, et la sévérité maximale REMONTE : `1 CRIT / 2 HIGH` → `0 CRIT / 1 HIGH` → `2 CRIT / 5 HIGH`.**
+Le second critère de la § *Règle de splitting préventif* est **franchement déclenché** — « une passe `N+1` remonte une sévérité **égale ou supérieure** à la passe `N` ». Ici `HIGH → CRITICAL`.
+
+**Mais le critère décrit mal ce qui s'est passé, et le diagnostic exact importe plus que le critère.** Les passes 1 et 2 ont **lu** la spécification. La passe 3 a **exécuté la requête**. Ce n'est pas une story trop large qui refuse de converger : c'est une revue qui atteint enfin la couche où le défaut habite. Les vingt findings ne sont pas vingt défauts de rédaction — trois d'entre eux disent que **le mécanisme choisi ne fait pas le travail**.
+
+#### Les trois faits d'exécution, reproduits par l'orchestrateur sur une base jetable
+
+Fixture : sept contacts, `MATCH … AGAINST` copié à l'octet depuis `push_where_clauses` (branche `else`), tri et fenêtre copiés depuis `list_by_company_paginated`.
+
+**(1) ⛔ `CRITICAL` — le doublon exact est ÉVINCÉ de la fenêtre.** Carnet contenant `Jean Bernard`, `Jean Dupont`, `Jean Favre`, `Jean Martin`, `Jean Rochat`, `Jean Zwahlen`. L'utilisateur saisit la `Personne` « Jean Zwahlen » :
+
+```
+SELECT id,name FROM contacts WHERE company_id=1 AND active=TRUE
+ AND MATCH(name) AGAINST('Jean Zwahlen*' IN BOOLEAN MODE) ORDER BY name ASC LIMIT 5;
+→ Jean Bernard · Jean Dupont · Jean Favre · Jean Martin · Jean Rochat
+→ total_reel = 6        ⚠️ « Jean Zwahlen » EST ABSENT
+```
+
+Trois faits se composent : `escape_boolean_ft` ne préfixe **aucun** token de `+` (sémantique **OU inclusif** — `search.rs:88-92` le dit en toutes lettres) ; le tri est **alphabétique** et il n'existe **aucun** tri par pertinence (`ContactSortBy` n'offre que `Name | CreatedAt | UpdatedAt`) ; la fenêtre est `limit: 5`, que la spec justifiait d'un « 5 suffit largement ». Résultat : **le dispositif est muet sur le seul cas pour lequel il existe**, et bavard sur cinq contacts sans rapport — c'est-à-dire qu'il réalise simultanément les deux échecs que la story se donnait pour but d'éviter. Les raisons sociales suisses commençant très souvent par un mot générique (`Garage`, `Fiduciaire`, `Sàrl`), ce n'est pas un cas de laboratoire.
+⚠️ **Aucune des 22 preuves ne peut voir ce défaut** : les 12 preuves de composant passent par un `vi.mock` de l'API — la requête réelle n'est jamais exécutée.
+
+**(2) `HIGH` — un nom composé d'un trait d'union rend la sonde totalement muette.**
+
+```
+AGAINST('CoopVaud*')  → 0        AGAINST('Coop*') → 1   (contrôle)
+```
+
+`-` est l'un des 10 opérateurs `BOOLEAN MODE`, et `escape_boolean_ft` le **supprime** au lieu de le remplacer par une espace. Retaper `Coop-Vaud` à l'identique produit `CoopVaud*`, qui ne matche aucun des deux tokens indexés. **Le signal de doublon le plus fort qui existe — le nom retapé au caractère près — ne remonte rien.** En Suisse, les noms de famille composés (`Müller-Weber`) rendent le cas massif.
+
+**(3) `MEDIUM` — D7 est FAUSSE, et de ma main.**
+
+```
+AGAINST('Du*') → 1        AGAINST('Du') → 0
+```
+
+`innodb_ft_min_token_size = 3` gouverne les tokens **exacts** ; il ne gouverne **pas** les recherches par préfixe — or `push_where_clauses:205` appose inconditionnellement `*`. D7 affirmait « en dessous de trois caractères, `MATCH … AGAINST` ne rend **rien** », et en tirait que le seuil est « d'abord une contrainte du moteur ». **C'est renversé** : le seuil de trois caractères est *uniquement* une politique d'ergonomie — défendable, mais révisable, et D7 retirait cette latitude au décideur en la présentant comme forcée.
+⚠️ **C'est exactement le mode d'échec que cette story hérite de la 22-1 et cite dans ses propres Dev Notes** : j'ai **mesuré la variable** puis **déduit** sa conséquence sans l'exécuter. Une mesure juste ne rend pas vraie l'inférence qu'on en tire.
+
+#### Ce que les trois lentilles ont trouvé par ailleurs
+
+Deux familles, et aucune n'est cosmétique :
+
+- **Des preuves qui ne peuvent pas tomber sous la mutation qu'elles nomment.** `AA3-1` (`CRITICAL`) et `AA3-2` : les preuves d'archivage d'AC1 et AC2 sont formulées **fonctionnellement**, alors que `includeArchived` est un paramètre de query-string traité **par le serveur** — sous `vi.mock`, la mutation `includeArchived: true → false` laisse le test **vert**. Seule une assertion **sur l'argument** l'attrape, et la spec cite pourtant le doc-comment de `products-page.test.ts` qui énonce précisément cette leçon. `AA3-3` : **les deux assertions E2E de T6 sont vertes sur `main` aujourd'hui**, avant qu'une ligne de la story soit écrite — créer un contact fonctionne, un IDE dupliqué donne déjà `409` ; la mutation « n'implémenter aucune sonde » les laisse passer. `AA3-4` : les exigences d'**affichage** d'AC1 (nom, localité, numéro de client) et d'AC2 (« le message dit que le porteur est archivé ») n'ont **aucune** preuve — or D11 troque une dimension de requête contre cet affichage, et D12 en fait le seul recours de l'utilisateur.
+- **Des prémisses tenues pour acquises faute d'exécution.** `BH3-4` : la requête réelle **n'utilise pas** l'index FULLTEXT — le `OR` avec les `LIKE` force un `range` sur `idx_contacts_company_name` (mesuré : 1,26 + 2,36 ms contre 0,09 ms en `MATCH` seul, sur 3016 contacts, **quatre** requêtes par pause de frappe, le `COUNT(*)` compris que `limit: 5` n'économise pas). D3 fondait tout sur « le carnet se cherche déjà par index FULLTEXT ». **#301 demandait explicitement d'instruire le coût par frappe** ; la spec y répondait par une prémisse fausse et aucun chiffre. `BH3-5` : **archiver ne libère pas l'IDE** (contrainte plate, D12) — le nettoyage prescrit par T6, copié de la 22-1 où il fonctionne pour le numéro de client, ne fonctionne pas ici ; et un IDE ne se tamponne pas à l'horloge, son dernier chiffre étant un checksum modulo 11. `AA3-8` : D10 et le § *Forme exacte des deux appels* donnent **deux expressions différentes** de la même condition, et celle de D10 relit le champ à l'arrivée de la réponse — `normalizeIdeForApi('')` rendant `null`, `c.ideNumber === null` désignerait **n'importe quel contact sans IDE**.
+
+**Et une convergence qui change la question posée à Guy.** `BH3-3` ≡ `AA3-9`, vérifié par l'orchestrateur : `'CHE109322551' LIKE '%CHE-109.322.551%'` rend **0**. L'IDE est stocké **normalisé** sur 12 caractères ; le `LIKE` porte sur le terme **brut**. La « conséquence visible » que Q1 soumettait à l'arbitrage — « chercher `CHE-109.322.551` remontera son contact » — **est fausse**, et c'est précisément la forme qu'on lit sur une facture papier, le cas d'usage invoqué. La symétrie avancée avec la 16-3b est fausse elle aussi : `client_number` est stocké **tel que saisi**, séparateurs compris, ce qui est la raison pour laquelle le `LIKE` fragmentaire y fonctionne.
+
+#### Ce que la passe 3 n'a PAS mis en défaut
+
+Les ancres `fichier:ligne` — encore une fois, et cette fois re-vérifiées par trois lentilles Opus indépendantes. Le scoping multi-tenant. La garde D6 (compteur de génération plutôt qu'`AbortSignal`). D12, D13, D14. L'asymétrie des deux contraintes d'unicité. L'insensibilité aux accents du FULLTEXT (`Dubarde Sarl*` remonte bien `Dubarde SàRL` — le cas nommé par #301 est traité **par la collation**, pas par le mécanisme). **Ce qui a cédé, c'est ce que deux passes de lecture ne pouvaient pas voir : le comportement effectif de la requête.**
+
+#### Pourquoi la boucle s'arrête ici
+
+Patcher vingt findings et relancer une passe 4 reviendrait à corriger la forme des preuves d'un mécanisme dont on vient d'établir **qu'il ne fait pas le travail**. Les trois faits d'exécution ne s'amendent pas par une reformulation : ils appellent une **décision de conception**, et cette décision n'appartient pas à l'orchestrateur — c'est la lettre de la § *Tech debt management* (« l'arbitrage de sévérité est fait par le Project Lead au moment de la découverte ») et de la § *Règle de splitting préventif*.
+
+⚠️ **Statut ramené à `draft`.** `ready-for-dev` serait une affirmation fausse tant que le mécanisme n'est pas tranché, et un agent de développement ne doit pas prendre cette story en l'état.
+
+**Trois questions sont posées à Guy** — cf. § *Questions ouvertes*, Q1 amendée et Q3/Q4 neuves.
 
 ## Dev Agent Record
 
