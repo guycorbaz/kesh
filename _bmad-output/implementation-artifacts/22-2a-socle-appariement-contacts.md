@@ -2,7 +2,11 @@
 
 ## Status
 
-ready-for-dev
+review
+
+**Implémentée le 2026-08-17.** Le module et sa suite de preuves sont écrits, le gate frontend est vert, et **les 19 mutations ont été JOUÉES** : chacune fait tomber la preuve qu'elle nomme, et elle seule. Cf. § *Dev Agent Record*.
+
+⚠️ **Les preuves de cette story ne sont plus en prose : elles sont du code exécutable.** C'est l'arbitrage de Guy du 2026-08-17, pris après que la passe 3 — la première à *exécuter* plutôt qu'à *lire* — eut montré qu'une implémentation passant les 17 preuves écrites ne rendait pas le service. Une preuve en prose ne peut pas être jouée ; son pouvoir discriminant reste donc inconnu jusqu'à ce que quelqu'un l'implémente.
 
 Story-zéro du découpage de la **22-2** (arbitrage de Guy, 2026-08-17, question **Q5**). Elle ne livre **aucune surface utilisateur** : rien de ce qu'elle contient n'est visible, branché, ni appelé. C'est délibéré, et c'est ce qui la rend relisable.
 
@@ -218,21 +222,26 @@ Rend le contact dont `ideNumber` **égale** la valeur passée et dont l'`id` dif
 - [ ] **T-a3 — Gate.** `npm run check` · `npm run lint-i18n-ownership` · `npm run test:unit` · `npm run build`, depuis `frontend/`.
   - [ ] ⚠️ **Aucun gate backend n'est requis** : cette story ne touche **aucun** fichier Rust, aucune migration, aucun `.svelte`. Le dire dans le Dev Agent Record plutôt que de déclarer un gate qui n'a pas tourné.
 
-## Décompte des preuves — la seule table qui fait foi
+## Décompte des preuves — recompté depuis le code livré
 
-| AC | Preuves | Nature |
-|---|---:|---|
-| AC-a1 — normalisation | 2 | vitest pur |
-| AC-a2 — composition du terme | 2 | vitest pur |
-| AC-a3 — seuil | 1 | vitest pur |
-| AC-a4 — classement | 4 | vitest pur |
-| AC-a5 — exclusion et compteur | 3 | vitest pur |
-| AC-a6 — porteur d'IDE | 3 | vitest pur |
-| AC-a7 — pureté du module | 2 | vitest pur |
+⚠️ **Ce tableau ne décrit plus une intention mais un fichier.** Il se recompte depuis `frontend/src/lib/features/contacts/duplicate-probe.test.ts`, jamais depuis la mémoire.
 
-**Total, sommé depuis la colonne : 17 preuves, toutes unitaires, aucune n'exigeant DOM, base ni réseau.**
+| Groupe (`describe`) | Blocs `it` | Cas exécutés |
+|---|---:|---:|
+| `normalizeTerm` | 2 | 6 |
+| `buildTerm` | 2 | 2 |
+| `isArmed` | 1 | 5 |
+| `probeTerm` — l'ORDRE | 2 | 5 |
+| `fold` — la SYMÉTRIE | 2 | 2 |
+| `rank` | 8 | 8 |
+| `excludeSelf` | 2 | 2 |
+| `countOthers` | 3 | 3 |
+| `findIdeHolder` | 4 | 4 |
+| pureté du module | 2 | 2 |
 
-Aucun autre passage de cette story n'énonce de total.
+**28 blocs, 39 cas exécutés** — mesuré : la suite frontend passe de **512 à 551 tests**, soit exactement +39.
+
+**Et 19 mutations jouées, 0 survivante, 0 non discriminante** (`frontend/scripts/mutants-22-2a.mjs`). C'est ce chiffre-là qui compte : il mesure ce que les preuves *attrapent*, là où un décompte de preuves ne mesure que ce qu'elles *annoncent*.
 
 ## Dev Notes
 
@@ -311,14 +320,71 @@ Les trois `LOW` sont de la précision : l'exemple `ß` était **mal choisi pour 
 
 ⚠️ **Passe 3 due** (3 `MEDIUM`). Rotation : **Opus**, contexte frais.
 
+### Passe 3 de `bmad-create-story validate` — 2026-08-17, Opus ×3, contexte frais
+
+Bruts : 5 + 5 + 6 = 16, deux convergences. **Retenus : 2 CRITICAL / 4 HIGH / 4 MEDIUM / 4 LOW — 14 findings.**
+
+**Trend : `0C/3H` → `0C/0H` → `2C/4H`.** La sévérité **régresse durement**, et pour la même raison qu'à la passe 3 de la story parente : **c'est la première passe qui EXÉCUTE.** Les trois lentilles ont implémenté les sept fonctions en Node et joué les mutations. Ce qu'elles ont trouvé n'est pas rattrapable par relecture :
+
+- **une implémentation passant les 17 preuves ne rend pas le service.** `excludeSelf` supprimée, la garde de soi de `findIdeHolder` retirée, les critères 2 et 3 du classement neutralisés — **17/17 vertes** dans les quatre cas ;
+- **le repli comparait un terme normalisé à des noms qui ne l'étaient pas** (convergence de deux lentilles) : retaper `Jean-Marc Zwahlen` à l'identique ne le remontait pas, il sortait **dernier**. C'est le défaut fondateur de la story, reproduit par la fonction écrite pour le fermer ;
+- **la mutation « mesurer le seuil avant de normaliser » était INJOUABLE** : l'ordre vivait chez l'appelant, la preuve le câblait dans son propre test, et elle traversait les deux moitiés sans faire tomber une seule des 48 preuves.
+
+### Remédiation — 2026-08-17 : les preuves deviennent du CODE
+
+**Arbitrage de Guy** : arrêter les passes en prose sur cette story et l'implémenter, parce qu'un module pur se prouve en secondes.
+
+Les quatorze findings sont traités **dans le code**, pas dans un paragraphe :
+
+| Finding | Traitement |
+|---|---|
+| repli asymétrique (2 lentilles) | `fold` passe par `normalizeTerm` — la symétrie |
+| critères 2 et 3 sans preuve | deux tests dédiés, mutations jouées |
+| `excludeSelf` sans preuve | `describe('excludeSelf')`, 2 tests |
+| garde de soi de `findIdeHolder` | test dédié, mutation jouée |
+| mutation d'ordre injouable | **`probeTerm`** compose les trois étapes → la mutation devient jouable *dans le module* |
+| critère 4 dont la mutation ne tombait pas | preuve reformulée en **ordre attendu**, plus en stabilité |
+| tokens distincts, opérandes du critère 3, type de `editingId`, signatures | écrits dans le code et son doc-comment |
+
+⚠️ **Un enseignement de la remédiation elle-même, et il vaut plus que les quatorze findings.** Ma première fixture du critère 3 — `Dubarde SA` contre `Dumont Bar` — **ne discriminait rien** : le critère 4 donnait déjà le même vainqueur. Je ne l'ai su qu'en **jouant la mutation**, qui a survécu. C'est le piège exact qu'une lentille m'avait signalé pour le critère 1, et je l'ai reproduit deux paragraphes plus loin. *Une fixture se choisit après avoir joué la mutation, jamais avant.*
+
 ## Dev Agent Record
 
 ### Agent Model Used
 
-*(à remplir)*
+Claude Opus 5 (1M context) — implémentation directe, 2026-08-17.
 
 ### Debug Log References
 
+**Gate frontend complet**, depuis `frontend/` :
+
+| Étape | Résultat |
+|---|---|
+| `npm run check` | **0 ERRORS**, 4884 fichiers (27 warnings, tous préexistants et hors de cette story) |
+| `npm run lint-i18n-ownership` | **PASS** — aucune violation |
+| `npm run test:unit` | **64 fichiers, 551 tests**, 21,4 s |
+| `npm run build` | **✔ done** |
+
+⚠️ **Aucun gate backend n'a été exécuté, et c'est correct** : cette story ne touche **aucun** fichier Rust, aucune migration, aucun `.svelte`. Le dire plutôt que de déclarer un gate qui n'a pas tourné.
+
+**Décompte de contrôle** : la suite frontend passe de **512** à **551** tests, soit **+39** — exactement le nombre de cas du fichier livré. Le total et sa ventilation concordent.
+
+**Banc de mutations** — `node scripts/mutants-22-2a.mjs` :
+
+```
+19 mutations jouées · 0 survivante(s) · 0 non discriminante(s)
+```
+
+Chaque mutation fait rougir **entre 1 et 7** preuves, jamais zéro et jamais la suite entière.
+
 ### Completion Notes List
 
+- Le module expose **neuf** symboles : `MIN_TOKEN_LENGTH`, `normalizeTerm`, `fold`, `buildTerm`, `isArmed`, `probeTerm`, `rank`, `excludeSelf`, `countOthers`, `findIdeHolder`. **`probeTerm` et `fold` ne figuraient pas dans la spec** — ils naissent de la passe 3 : le premier rend jouable la mutation d'ordre, le second matérialise la symétrie du repli.
+- `frontend/scripts/mutants-22-2a.mjs` est livré **avec** le code. Il n'est pas branché à la CI : c'est un outil de conception, à relancer quand `rank` ou le repli changent.
+- ⚠️ **Ce qui reste pour la 22-2b** : `editingId` est typé `number | null` et le site d'appel devra écrire `editing?.id ?? null` ; `buildTerm` prend **quatre** paramètres ; `rank` reçoit un terme **déjà normalisé** et **ne tronque pas** — la fenêtre de cinq est découpée par l'appelant.
+
 ### File List
+
+- `frontend/src/lib/features/contacts/duplicate-probe.ts` *(neuf)*
+- `frontend/src/lib/features/contacts/duplicate-probe.test.ts` *(neuf)*
+- `frontend/scripts/mutants-22-2a.mjs` *(neuf)*
