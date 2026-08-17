@@ -62,8 +62,18 @@ Les décisions ci-dessous sont **héritées de la 22-2** et reproduites ici en e
 ⚠️ Le serveur recompose `name` de la même façon (`routes/contacts.rs:362-380`, `format!("{f} {l}")`). Une fonction branchée sur la seule raison sociale serait **entièrement inopérante pour les personnes physiques**, sans rien casser ni faire échouer la compilation.
 ⚠️ Pendant la frappe, l'un des deux champs d'une `Personne` est **presque toujours vide** — le formulaire n'exige les deux qu'à la soumission (`validate_common:362-370`). C'est l'état **normal** de la fonction, pas un cas dégradé.
 
-**D-a3 — Le terme est NORMALISÉ, et la normalisation REMPLACE.**
-Les dix opérateurs `BOOLEAN MODE` (`+ - > < ( ) ~ * " \`, cf. `crates/kesh-db/src/util/search.rs:41`) sont remplacés par une **espace**, puis les espaces multiples sont repliées et les bords rognés.
+**D-a3 — Le terme est NORMALISÉ : Unicode d'abord, opérateurs ensuite.**
+
+**Étape 1 — forme Unicode.** `s.normalize('NFC')`. ⚠️ **Sans elle, le seuil de D-a4 classe le même mot armé ou muet selon le clavier** : `.length` compte des unités UTF-16, donc `aé` vaut **2** en NFC et **3** en NFD (forme que produisent couramment macOS et certains IME). Vérifié par exécution :
+
+```
+NFC "aé" : length 2 → isArmed false
+NFD "aé" : length 3 → isArmed true
+```
+
+Le dépôt a déjà tiré cette leçon côté Rust — `kesh_core::text::canonical_key` applique NFKC en étape 2, pour un motif documenté dans son propre doc-comment. Le module TypeScript ne doit pas la réapprendre.
+
+**Étape 2 — les opérateurs.** Les dix opérateurs `BOOLEAN MODE` (`+ - > < ( ) ~ * " \`, cf. `crates/kesh-db/src/util/search.rs:41`) sont remplacés par une **espace**, puis les espaces multiples sont repliées et les bords rognés.
 ⚠️ **Remplacer, PAS supprimer.** Supprimer est exactement ce que fait `escape_boolean_ft` (`search.rs:124-127`, `.filter(…).collect()`), et c'est la cause du défaut : retaper `Coop-Vaud` à l'identique produit `CoopVaud*`, qui ne matche **ni** `Coop` **ni** `Vaud`, les deux tokens réellement indexés. Vérifié par exécution : `AGAINST('CoopVaud*')` → **0**, `AGAINST('Coop*')` → **1**.
 
 **D-a4 — Le seuil se mesure APRÈS la normalisation, et sur le PLUS LONG TOKEN.**
@@ -82,7 +92,7 @@ const armed = Math.max(0, ...normalized.split(/\s+/).map((t) => t.length)) >= 3;
 
 `split(/\s+/)` ne connaît que l'espace comme frontière de token — or la normalisation en **crée dix autres**. Mesurer avant, c'est mesurer des tokens qui n'existeront plus.
 
-⚠️ **Le seuil de trois est une POLITIQUE D'ERGONOMIE, pas une contrainte du moteur.** La première rédaction de la 22-2 affirmait le contraire et se trompait : `innodb_ft_min_token_size = 3` gouverne les tokens **exacts**, pas les préfixes, et `push_where_clauses:205` appose toujours `*` — `AGAINST('Du*')` rend **1**, `AGAINST('Du')` rend **0**. Le seuil limite le bruit et le nombre de requêtes ; c'est un bon choix, mais un choix.
+⚠️ **Le seuil de trois est une POLITIQUE D'ERGONOMIE, pas une contrainte du moteur.** La première rédaction de la 22-2 affirmait le contraire et se trompait : `innodb_ft_min_token_size = 3` gouverne les tokens **exacts**, pas les préfixes, et `push_where_clauses:202` appose toujours `*` — `AGAINST('Du*')` rend **1**, `AGAINST('Du')` rend **0**. Le seuil limite le bruit et le nombre de requêtes ; c'est un bon choix, mais un choix.
 
 **D-a5 — Le classement, écrit en toutes lettres.**
 Quatre critères, **dans cet ordre**, sur des chaînes repliées en casse et sans accents (cohérent avec `utf8mb4_general_ci`, la collation réelle de la table, vérifiée) :
@@ -90,9 +100,22 @@ Quatre critères, **dans cet ordre**, sur des chaînes repliées en casse et san
 1. le nom **commence par** le terme complet ;
 2. puis le **nombre de tokens du terme présents** dans le nom, décroissant ;
 3. puis la **longueur du plus long préfixe commun**, décroissante ;
-4. puis l'**ordre alphabétique**.
+4. puis l'**ordre alphabétique** ;
+5. puis l'**`id`**, croissant.
 
-⚠️ **Le critère 4 n'est pas un critère de pertinence : c'est ce qui rend le classement DÉTERMINISTE**, donc testable. Sans lui, deux implémentations conformes à la lettre rendent des sous-ensembles différents et aucun relecteur ne peut trancher « conforme / non conforme ».
+**Le repli, écrit — « sans accents » n'est pas un algorithme.** `s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()`.
+⚠️ **Ses limites sont connues et assumées** : `ß` et `œ` ne se replient **pas** vers `ss` et `oe` — vérifié par exécution (`fold("Straße")` → `straße`). Deux implémentations « conformes à la lettre » de « sans accents » divergeraient sur des noms suisses ordinaires ; l'algorithme est donc écrit plutôt que décrit.
+⚠️ **Ce repli fait l'INVERSE de `canonical_key`**, et ce n'est pas une incohérence : `canonical_key` sert l'**unicité** d'un identifiant, où un accent doit distinguer (`text.rs:117-124` le teste). `rank` sert la **ressemblance**, où un accent doit rapprocher. Deux besoins opposés, deux fonctions.
+
+⚠️ **Les critères 4 et 5 ne sont pas des critères de pertinence : ce sont ceux qui rendent le classement DÉTERMINISTE**, donc testable.
+**Le critère 5 a été ajouté après vérification par exécution** : le critère 4 ne suffit pas. Deux contacts **strictement homonymes** — le cas « un père et son fils », que la 22-2b nomme explicitement comme légitime — sont ex æquo sur les quatre premiers critères, et un tri stable rend alors l'ordre d'**entrée** :
+
+```
+entrée [id 101, id 202] → [101, 202]
+entrée [id 202, id 101] → [202, 101]      ⚠️ sorties DIFFÉRENTES
+```
+
+Sans le critère 5, la preuve 3 d'AC-a4 est **littéralement insatisfiable**.
 
 **Pourquoi ce classement existe** — et c'est le défaut le plus grave qu'ait trouvé la revue de la 22-2, établi par exécution :
 
@@ -104,9 +127,14 @@ SELECT id,name FROM contacts WHERE company_id=1 AND active=TRUE
 → total réel = 6            ⚠️ « Jean Zwahlen » EST ABSENT
 ```
 
-`escape_boolean_ft` ne préfixe **aucun** token de `+` — la sémantique est **OU inclusif** (`search.rs:88-92` le dit) — le tri est **alphabétique** et il n'existe **aucun** tri par pertinence à demander (`ContactSortBy` n'offre que `Name | CreatedAt | UpdatedAt`). Le doublon exact était donc **évincé de la fenêtre** : le dispositif était muet sur le seul cas pour lequel il existe, et bavard sur cinq contacts sans rapport.
+`escape_boolean_ft` ne préfixe **aucun** token de `+` — la sémantique est **OU inclusif** (`search.rs:85` le dit en toutes lettres ; le bloc `88-92` porte un AUTRE avertissement, sur le joker collé au seul dernier token) — le tri est **alphabétique** et il n'existe **aucun** tri par pertinence à demander (`ContactSortBy` n'offre que `Name | CreatedAt | UpdatedAt`). Le doublon exact était donc **évincé de la fenêtre** : le dispositif était muet sur le seul cas pour lequel il existe, et bavard sur cinq contacts sans rapport.
 
-**D-a6 — « et N autres » soustrait le contact édité.**
+**D-a6 — « et N autres » soustrait le contact édité, et sa PRÉCONDITION est écrite.**
+
+⚠️ **`countOthers` déduit la présence de soi en cherchant `editingId` dans `items` — donc dans la FENÊTRE, pas dans `total`.** Si le contact édité correspond au terme mais tombe **hors** de la fenêtre (`total = 25`, `limit: 20`, son nom triant en 23ᵉ position alphabétique), il n'est pas dans `items` : `soi` vaut 0, et le compteur sur-compte d'une unité — il compte la fiche qu'on modifie comme « un autre ». Trouvé par **convergence de deux lentilles** en passe 1.
+
+**Précondition, à respecter par l'appelant** : `countOthers` suppose que si le contact édité figure dans `total`, il figure aussi dans `items`. La 22-2b la garantit tant que `total ≤ limit` ; **au-delà, l'écart d'une unité est assumé et documenté** — il n'affecte qu'un compteur indicatif, jamais une proposition affichée ni une décision. La corriger exigerait d'exclure `editingId` côté **serveur**, ce qui ouvrirait un paramètre de requête pour un gain cosmétique.
+
 ⚠️ `total` est le `COUNT(*)` **serveur** (`repositories/contacts.rs:388-419`), qui ne connaît pas la notion de « soi » : l'exclusion du contact en cours d'édition n'a lieu qu'au **client**. Sans la soustraction, corriger un caractère du nom d'une fiche existante affiche **« et 1 autre » au-dessus d'une liste vide**, en désignant la fiche qu'on modifie.
 
 **D-a7 — L'IDE se vérifie sur le CHAMP, contre la valeur ENVOYÉE.**
@@ -117,38 +145,65 @@ Un contact peut remonter parce que la chaîne figure dans son nom ou son email, 
 
 **AC-a1 — `normalizeTerm` remplace les opérateurs par une espace.**
 `Coop-Vaud` → `Coop Vaud` · `C++` → `C` · `Müller-Weber` → `Müller Weber` · `  a--b  ` → `a b` · `***` → `` (chaîne vide).
-*Preuve*, **1** test paramétré couvrant les cinq cas. Mutation : « supprimer au lieu de remplacer », qui rend `CoopVaud`.
+*Preuve*, **2** tests :
+1. un test paramétré couvrant les cinq cas ci-dessus. Mutation : « supprimer au lieu de remplacer », qui rend `CoopVaud` ;
+2. **la forme Unicode** : le même mot saisi en **NFD** (`e` + accent combinant) et en **NFC** rend la **même** chaîne. Mutation : « omettre `normalize('NFC')` », que le test 1 laisse verte — aucun de ses cinq cas ne porte d'accent décomposé.
 
-**AC-a2 — `buildTerm` compose selon le type.**
+**AC-a2 — `buildTerm` compose selon le type (D-a2).**
+⚠️ Les deux paramètres de nom sont typés **`string`**, jamais `string | undefined` : `` `${undefined} ${l}` `` injecterait le mot `"undefined"` dans le terme de recherche. Le typage suffit à éliminer le cas **à la compilation**, ce qui vaut mieux qu'un test.
 `Entreprise` → la raison sociale rognée. `Personne` → `« prénom nom »` rognée, **y compris quand l'un des deux est vide** (`("Jean","")` → `"Jean"`, `("","Dupont")` → `"Dupont"`, `("","")` → `""`).
 *Preuve*, **2** tests : un par type, celui sur `Personne` couvrant les trois cas de vacuité. Mutation : « ne lire que la raison sociale », qui rend le dispositif entièrement mort pour les personnes physiques.
 
-**AC-a3 — `isArmed` mesure le plus long token du terme NORMALISÉ.**
-Armé : `Jean`, `Dubarde Sàrl`. Muet : `Du`, `An Li`, **`Yo-An`**, **`C++`**, `""`.
-*Preuve*, **1** test paramétré couvrant les sept cas. ⚠️ **Mutation nommée : « mesurer le seuil avant de normaliser »** — un simple ordre d'instructions, qui laisse `Du`, `An Li` et `""` corrects et ne fait tomber que `Yo-An` et `C++`. C'est pour eux que ce test existe.
+**AC-a3 — `isArmed` mesure le plus long token d'une chaîne DÉJÀ NORMALISÉE.**
 
-**AC-a4 — `rank` classe selon les quatre critères, et il est DÉTERMINISTE.**
-*Preuve*, **3** tests :
+⚠️ **Le contrat, sans ambiguïté possible : `isArmed` NE normalise PAS.** Elle reçoit la sortie de `normalizeTerm` et se contente de mesurer. C'est ainsi que la 22-2b l'appelle (`isArmed(normalized)`), et c'est ce que son nom de paramètre doit dire.
+
+| Terme tapé | `normalizeTerm` rend | `isArmed` |
+|---|---|---|
+| `Jean` | `Jean` | **armé** |
+| `Dubarde Sàrl` | `Dubarde Sàrl` | **armé** |
+| `Du` | `Du` | muet |
+| `An Li` | `An Li` | muet |
+| `Yo-An` | `Yo An` | muet |
+| `C++` | `C` | muet |
+| `""` | `""` | muet |
+
+*Preuve*, **1** test paramétré sur les sept cas, **écrits `isArmed(normalizeTerm(x))`** — jamais `isArmed(x)` sur la valeur brute.
+⚠️ **Cette précision n'est pas rédactionnelle.** Écrits en brut, `isArmed("Yo-An")` et `isArmed("C++")` rendent **`true`** (5 et 3 caractères d'un seul tenant) — l'inverse de ce que la table attend. Un développeur qui suivrait la lettre en conclurait qu'`isArmed` doit normaliser en interne, ce qui contredirait le site d'appel de la 22-2b. Relevé en passe 1.
+⚠️ **Mutation nommée : « mesurer le seuil avant de normaliser »** — un simple ordre d'instructions dans l'appelant, qui laisse `Du`, `An Li` et `""` corrects et ne fait tomber que `Yo-An` et `C++`. C'est pour eux que ce test existe.
+
+**AC-a4 — `rank` classe selon les cinq critères, et il est DÉTERMINISTE (D-a5).**
+*Preuve*, **4** tests :
 1. **la fixture des six `Jean X`** — terme `Jean Zwahlen`, `Jean Zwahlen` sort **en tête** et figure dans les cinq premiers. ⚠️ **C'est LA preuve du mécanisme.** Mutation : **« `rank` = identité »**, qui rend l'ordre alphabétique du SQL et évince Zwahlen — le défaut exact que cette story existe pour fermer ;
-2. **le critère 1 prime le critère 2** : un nom qui commence par le terme passe devant un nom qui partage davantage de tokens sans commencer par lui ;
-3. **le déterminisme** : deux appels sur la même entrée dans deux ordres d'entrée différents rendent **la même** sortie. Mutation : « retirer le critère 4 », que les deux autres tests laissent verts.
+2. **le critère 1 prime le critère 2**, avec **cette fixture-ci** : terme `Jean` ; `A = "Jeanne Dupont"` (commence par `Jean` mais ne porte **aucun** token `jean` — `jeanne` ≠ `jean`) ; `B = "Marie Jean"` (ne commence pas par le terme mais porte le token exact, donc **strictement plus** de tokens que A). `A` doit sortir devant `B`. Mutation : « intervertir les critères 1 et 2 ».
+   ⚠️ **La fixture naïve ne discrimine RIEN, et c'est pourquoi elle est écrite ici.** Prendre `"Acme Corp"` contre `"Corp Acme Trading"` sur le terme `Acme` laisse la mutation **verte** : un nom qui commence par le terme le contient trivialement, donc sature aussi le critère 2. Il faut la frontière de mot — la même subtilité que D-a4 exploite pour `Yo-An`. Relevé en passe 1 ;
+3. **le déterminisme sur des noms distincts** : deux appels sur la même entrée dans deux ordres différents rendent **la même** sortie. Mutation : « retirer le critère 4 » ;
+4. **le déterminisme sur deux HOMONYMES STRICTS** — deux contacts au nom identique, `id` 101 et 202. Mutation : « retirer le critère 5 », que le test 3 laisse **verte** puisque ses noms diffèrent. ⚠️ C'est le test qui a manqué : sans critère 5, la preuve 3 est littéralement insatisfiable sur ce cas.
 
-**AC-a5 — `excludeSelf` et `countOthers` s'accordent.**
+**AC-a5 — `excludeSelf` et `countOthers` s'accordent (D-a6).**
 `excludeSelf(items, editingId)` retire le contact édité. `countOthers(total, items, retenus, editingId)` rend `max(0, total − soiPrésent − retenus.length)`.
-*Preuve*, **2** tests :
+*Preuve*, **3** tests :
 1. le cas nominal — `total = 12`, 5 retenus, pas d'édition ⇒ **7** ;
-2. ⚠️ **le cas de l'édition solitaire** — `total = 1`, l'unique élément est le contact édité, donc 0 retenu ⇒ **0**, et non 1. Mutation : « `total − retenus.length` », qui rend **1** et fait afficher « et 1 autre » au-dessus d'une liste vide, en désignant la fiche qu'on modifie. Le premier test reste **vert** sous cette mutation.
+2. ⚠️ **le cas de l'édition solitaire** — `total = 1`, l'unique élément est le contact édité, donc 0 retenu ⇒ **0**, et non 1. Mutation : « `total − retenus.length` », qui rend **1** et fait afficher « et 1 autre » au-dessus d'une liste vide, en désignant la fiche qu'on modifie. Le premier test reste **vert** sous cette mutation ;
+3. **le contact édité HORS FENÊTRE** — `total = 25`, `items` en contient 20 **sans** le contact édité, 5 retenus ⇒ le résultat vaut **20**, et l'écart d'une unité avec le compte réel (19) est **assumé**, cf. la précondition de D-a6. ⚠️ Ce test ne prouve pas une correction : il **fige un comportement connu** pour qu'un développeur futur ne le prenne pas pour un bug à réparer au prix d'un paramètre de requête.
 
-**AC-a6 — `findIdeHolder` vérifie sur le champ et exclut soi.**
+**AC-a6 — `findIdeHolder` vérifie sur le champ et exclut soi (D-a7).**
 Rend le contact dont `ideNumber` **égale** la valeur passée et dont l'`id` diffère de `editingId` ; `undefined` sinon.
 *Preuve*, **3** tests :
 1. un porteur réel est trouvé ;
 2. un contact qui remonte **sans porter cet IDE** n'est pas retenu ;
 3. ⚠️ **`null` ne désigne personne** — appelé avec `null`, la fonction rend `undefined` même si le lot contient des contacts dont `ideNumber` est `null`. Mutation : comparer sans garder de garde sur la vacuité, qui fait de `null === null` un appariement.
 
-**AC-a7 — Le module est PUR.**
-Aucun `import` de `$app/*`, de `$lib/shared/utils/api-client`, de `$lib/features/contacts/contacts.api`, ni de quoi que ce soit qui touche au DOM, au réseau ou à l'horloge.
-*Preuve*, **1** test : `grep`-équivalent en assertion — le fichier ne contient aucun de ces imports. ⚠️ Cette AC est ce qui garantit que le gate de la story reste à quelques secondes ; sans elle, la première dépendance introduite la ramène silencieusement au coût d'un test de composant.
+**AC-a7 — Le module est PUR — et « pur » veut dire exactement ceci.**
+
+⚠️ **La formulation catch-all « ni quoi que ce soit qui touche au DOM, au réseau ou à l'horloge » a été RETIRÉE** : elle rendait l'AC indécidable, aucun outillage annoncé ne pouvant trancher pour un import non énuméré. Deux clauses **vérifiables** la remplacent :
+
+- **(a)** le fichier ne contient **aucun `import`** de `$app/*`, `$lib/shared/utils/api-client`, `$lib/features/contacts/contacts.api`, ni d'aucun module de `$lib/components/` ;
+- **(b)** le fichier ne contient **aucun appel** à `fetch(`, `setTimeout(`, `setInterval(`, `Date.now(`, `document.`, `window.`.
+
+⚠️ **(b) est indispensable et (a) ne la couvre pas** : en JavaScript, ces globales s'appellent **sans aucune ligne `import`**. Une preuve qui ne regarderait que les imports serait verte sur un `Date.now()` nu.
+
+*Preuve*, **2** tests : un par clause, lisant le source du module et assertant l'absence des motifs. Cette AC est ce qui garantit que le gate de la story reste à quelques secondes ; sans elle, la première dépendance introduite la ramène silencieusement au coût d'un test de composant.
 
 ## Tasks / Subtasks
 
@@ -165,15 +220,15 @@ Aucun `import` de `$app/*`, de `$lib/shared/utils/api-client`, de `$lib/features
 
 | AC | Preuves | Nature |
 |---|---:|---|
-| AC-a1 — normalisation | 1 | vitest pur |
+| AC-a1 — normalisation | 2 | vitest pur |
 | AC-a2 — composition du terme | 2 | vitest pur |
 | AC-a3 — seuil | 1 | vitest pur |
-| AC-a4 — classement | 3 | vitest pur |
-| AC-a5 — exclusion et compteur | 2 | vitest pur |
+| AC-a4 — classement | 4 | vitest pur |
+| AC-a5 — exclusion et compteur | 3 | vitest pur |
 | AC-a6 — porteur d'IDE | 3 | vitest pur |
-| AC-a7 — pureté du module | 1 | vitest pur |
+| AC-a7 — pureté du module | 2 | vitest pur |
 
-**Total, sommé depuis la colonne : 13 preuves, toutes unitaires, aucune n'exigeant DOM, base ni réseau.**
+**Total, sommé depuis la colonne : 17 preuves, toutes unitaires, aucune n'exigeant DOM, base ni réseau.**
 
 Aucun autre passage de cette story n'énonce de total.
 
@@ -195,7 +250,11 @@ Elles sont la vraie spécification de cette story. Chacune est un défaut **rée
 | **`rank` = identité** | le doublon exact est évincé de la fenêtre | AC-a4 |
 | `total − retenus.length` | « et 1 autre » au-dessus d'une liste vide | AC-a5 |
 | `null === null` sur l'IDE | le signal franc crie sur un champ vide | AC-a6 |
-| introduire un import réseau | le gate quitte le régime de la seconde | AC-a7 |
+| omettre `normalize('NFC')` | le même mot armé ou muet selon le clavier | AC-a1 test 2 |
+| intervertir les critères 1 et 2 | *(et la fixture naïve ne l'attrape pas)* | AC-a4 test 2 |
+| retirer le critère 5 | deux homonymes se classent selon l'ordre d'entrée | AC-a4 test 4 |
+| introduire un import réseau | le gate quitte le régime de la seconde | AC-a7 clause (a) |
+| appeler `Date.now()` sans import | échappe à toute preuve qui ne lit que les imports | AC-a7 clause (b) |
 
 ### Conventions
 
@@ -208,6 +267,30 @@ Elles sont la vraie spécification de cette story. Chacune est un défaut **rée
 - Issue **#301** — le besoin.
 - ⚠️ **Issues #314 et #315** — les défauts **à la source** que ce module contourne. `normalizeTerm` (D-a3) atténue #314 ; `rank` (D-a5) atténue #315. **Aucune des deux fonctions ne corrige quoi que ce soit dans la recherche elle-même** — elles compensent au client ce que la base ne sait pas faire, et le doc-comment du module doit le dire, faute de quoi un lecteur futur croira le problème réglé.
 - `CLAUDE.md` — § *Règle de splitting préventif* (le critère qui a déclenché ce découpage), § *Test Locally First*.
+
+## Change Log
+
+### Passe 1 de `bmad-create-story validate` — 2026-08-17, Sonnet ×3, contexte frais
+
+Bruts : 3 + 6 + 4 = 13. Deux convergences. **Retenus : 0 CRITICAL / 3 HIGH / 4 MEDIUM / 4 LOW — 11 findings, 11 correctifs appliqués.**
+
+⚠️ **Zéro `CRITICAL` — c'est la première fois depuis le début de ce dossier**, et c'est le premier signe que le découpage travaille : les défauts du mécanisme se trouvent désormais dans un module que trois lentilles ont pu **exécuter en Node** plutôt que relire.
+
+**Reclassement assumé.** L'EdgeCaseHunter a rendu **4 `CRITICAL`** ; j'en retiens **2 `HIGH` et 2 `MEDIUM`**, et je le dis plutôt que de le taire — je suis l'auteur de la spec, donc la tentation de minimiser existe. Le barème donné aux lentilles définit `CRITICAL` comme « la spec, suivie à la lettre, produit un logiciel faux ». Un seuil qui s'arme différemment selon la forme Unicode du clavier, ou un repli d'accents non spécifié, dégradent le classement sans produire d'avertissement faux ni de donnée fausse : c'est `MEDIUM`. En revanche, un classement **non déterministe** rend sa propre preuve *littéralement insatisfiable*, et un contrat de fonction contradictoire est **infaisable tel quel** : ce sont bien des `HIGH`.
+
+**Les trois `HIGH`, tous vérifiés par exécution :**
+
+1. **`rank` n'était pas déterministe sur deux homonymes stricts.** Le critère 4 (alphabétique) ne départage pas deux noms identiques — le cas « un père et son fils », que la 22-2b nomme comme légitime. Un tri stable rend alors l'ordre d'**entrée** : `[101,202]` puis `[202,101]` sortent différemment. La preuve 3 d'AC-a4 exigeait exactement le contraire. **Un cinquième critère (`id`) est ajouté**, avec sa preuve dédiée.
+2. **Le contrat d'`isArmed` était contradictoire.** AC-a3 listait `isArmed("Yo-An")` → muet, alors que la 22-2b l'appelle sur une chaîne **déjà normalisée** ; en brut, `"Yo-An"` rend `true`. Un développeur suivant la lettre en aurait conclu qu'`isArmed` doit normaliser en interne — contredisant le site d'appel. **Le contrat est écrit, et les sept cas s'écrivent désormais `isArmed(normalizeTerm(x))`.**
+3. **La preuve 2 d'AC-a4 n'avait pas de fixture, et la fixture naturelle ne discrimine rien.** « Le critère 1 prime le critère 2 » : avec `"Acme Corp"` contre `"Corp Acme Trading"`, la mutation « intervertir les critères » reste **verte** — un nom qui commence par le terme le contient trivialement, donc sature aussi le critère 2. **La fixture qui discrimine est désormais écrite** (`Jean` / `"Jeanne Dupont"` / `"Marie Jean"`), et elle exploite la même frontière de mot que D-a4.
+
+**Les quatre `MEDIUM`** : aucune normalisation Unicode, donc un seuil qui varie selon NFC/NFD (`aé` vaut 2 ou 3) — **`normalize('NFC')` devient l'étape 1 de D-a3** ; le repli « sans accents » de D-a5 n'était **pas un algorithme** — il est écrit, avec ses limites (`ß`, `œ`) et la raison pour laquelle il fait l'**inverse** de `canonical_key` ; `countOthers` sur-compte d'une unité quand le contact édité tombe hors de la fenêtre — **convergence de deux lentilles**, traitée par une **précondition écrite** et un test qui fige le comportement plutôt que par un paramètre de requête ; et `AC-a7` promettait une pureté sémantique que sa preuve ne pouvait pas tenir — la clause catch-all est **retirée** au profit de deux clauses vérifiables, dont une sur les **globales appelées sans import** (`Date.now()`, `fetch(`), qu'aucune preuve sur les imports ne voit.
+
+**Décompte : 13 → 17 preuves**, recompté depuis les AC. Table des mutations : 7 → 12.
+
+⚠️ **Note de méthode, valable pour la suite.** **Deux des six lentilles de cette passe ont rendu un décompte faux** — l'une annonçait un `CRITICAL` que son propre corps ne décrivait pas, l'autre s'est corrigée en note. Interrogée, la première a répondu franchement : *« mon décompte final était faux, je me suis trompé en additionnant »*. C'est le défaut du § *Recompter ses propres comptes rendus*, et il ne touche pas que l'auteur : **il touche aussi les relecteurs**. Un décompte de rapport de revue se recompte comme le reste.
+
+⚠️ **Passe 2 due** par la § *Review Iteration Rule* (3 `HIGH`). Rotation : **Haiku**, contexte frais.
 
 ## Dev Agent Record
 

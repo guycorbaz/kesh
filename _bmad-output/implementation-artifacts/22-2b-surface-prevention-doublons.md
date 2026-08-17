@@ -76,26 +76,40 @@ Le patron éprouvé est le compteur de `ContactPicker.svelte:37,57,61,65,69` : i
 **D-b7 — Deux sondes, deux minuteries, deux compteurs.** Elles ne partagent **rien**. Une paire factorisée ferait qu'une réponse tardive de l'une **invalide la fraîcheur de l'autre** — un des deux avertissements ne s'afficherait jamais, sans erreur ni test rouge. `ContactPicker` ne peut pas servir de modèle : il n'a qu'un flux.
 
 **D-b8 — L'état des sondes repart de zéro à l'OUVERTURE du formulaire, pas à sa fermeture.**
-Le dialogue se ferme depuis **trois** sites (`+page.svelte:352`, `:358`, `:846`) et n'est **jamais démonté** — le nettoyage d'`onMount:113` ne joue qu'à la sortie de la page. Poser le nettoyage sur la fermeture obligerait à le poser trois fois, et un quatrième site futur le contournerait en silence. `openCreate()` et `openEdit()` (`:216-264`) réinitialisent déjà champ par champ : minuteries, compteurs et propositions s'y ajoutent.
+Le dialogue se ferme depuis **trois** sites (`+page.svelte:352`, `:358`, `:846`) et n'est **jamais démonté** — le nettoyage d'`onMount:113` ne joue qu'à la sortie de la page. Poser le nettoyage sur la fermeture obligerait à le poser trois fois, et un quatrième site futur le contournerait en silence. `openCreate()` et `openEdit()` (`:216-266`) réinitialisent déjà champ par champ : minuteries, compteurs et propositions s'y ajoutent.
+
+**D-b8-bis — Le contrat de `editingId` est `number | null`, et le site d'appel s'y conforme.**
+⚠️ `editing` est typé `ContactResponse | null` (`+page.svelte:60`), donc `editing?.id` s'évalue en **`number | undefined`** — jamais `null`. Or la 22-2a documente et teste `null` comme unique convention d'absence (sa preuve 3 d'AC-a6). Les trois appels doivent donc s'écrire **`editing?.id ?? null`**, faute de quoi `npm run check` — gate obligatoire de la § *Test Locally First* — rejette un code que cette story prescrit **littéralement**. Trouvé en passe 1, à la frontière exacte du découpage.
 
 **D-b9 — Une proposition informe ; elle ne navigue pas.**
-`openEdit(c)` réassigne **les dix-neuf champs** du formulaire (`+page.svelte:246-269`) : un clic mal spécifié **effacerait la saisie en cours sans confirmation**. La proposition est **inerte**. C'est la position cohérente avec D-b1, et la moins coûteuse : elle dispense de spécifier la protection de la saisie **et** le sort d'un contact archivé entre l'affichage et le clic.
+`openEdit(c)` réassigne **les dix-neuf champs** du formulaire (`+page.svelte:241-266`) : un clic mal spécifié **effacerait la saisie en cours sans confirmation**. La proposition est **inerte**. C'est la position cohérente avec D-b1, et la moins coûteuse : elle dispense de spécifier la protection de la saisie **et** le sort d'un contact archivé entre l'affichage et le clic.
+
+**D-b11 — La zone d'avertissement « nom proche » vit HORS des deux branches de type, et la bascule de type réarme la sonde.**
+
+⚠️ **Deux contraintes de T-b4 se contredisent si l'on n'y prend pas garde.** Le champ de nom n'est pas un champ : c'est `#form-name` pour une `Entreprise` et `#form-firstname` + `#form-lastname` pour une `Personne`, dans les deux branches d'un `{#if formContactType === 'Personne'}`. Or T-b4 exige que la zone soit rendue **en permanence dans le DOM** pour qu'`aria-live` fonctionne. **Une zone logée dans l'une des deux branches est démontée à chaque bascule** — donc ni permanente, ni annoncée.
+
+La zone unique est donc placée **après** le bloc type-dépendant, hors des deux branches.
+
+⚠️ **Et la bascule de type réarme la sonde.** `openCreate`/`openEdit` ne remettent à zéro qu'à l'**ouverture** (D-b8) ; changer `#form-type` en cours de saisie ne les appelle pas, et **les champs de nom conservent leur valeur**. Sans réarmement, un avertissement calculé sur l'ancien type resterait affiché — orphelin, sous un champ qui n'est plus dans le DOM — jusqu'à la frappe suivante. Le `<select id="form-type">` déclenche donc le même recalcul que les champs de nom.
 
 **D-b10 — La localité s'affiche, elle ne se cherche pas.** Une correspondance « nom **et** localité » serait un signal plus fort, mais l'obtenir demanderait une dimension de requête supplémentaire — alors que le même service est rendu **à coût nul** en affichant la localité : c'est l'utilisateur qui discrimine, et il le fait mieux qu'un seuil.
-⚠️ La localité vaut `""` pour tout contact sans adresse (`routes/contacts.rs:213-219`, `city: c.address_city.unwrap_or_default()`) — c'est le cas de la fiche minimale que cette story vise. Quand ni localité ni numéro de client n'existent, **replier sur l'email** : deux propositions ne doivent jamais être rigoureusement identiques à l'écran.
+⚠️ La localité vaut `""` pour tout contact sans adresse (`routes/contacts.rs:213-219`, `city: c.address_city.unwrap_or_default()`) — c'est le cas de la fiche minimale que cette story vise. Quand ni localité ni numéro de client n'existent, **replier sur l'email** ; et quand l'email manque **aussi**, replier sur **`#<id>`**.
+⚠️ **Le dernier niveau n'est pas décoratif : sans lui, l'invariant que cette décision énonce est FAUX.** `email` est `string | null` et `clientNumber` aussi — rien n'interdit une fiche sans aucun des trois, et c'est justement la « fiche minimale et vite faite » que cette story vise. Deux homonymes minimaux — le père et le fils de D-b1 — s'afficheraient alors **rigoureusement identiques**, et l'utilisateur ne pourrait plus dire laquelle est laquelle. L'`id` est déjà dans `ContactResponse`, ne coûte aucune requête, et est **garanti distinct**.
 
 ## Acceptance Criteria
 
 **AC-b1 — La frappe du nom fait apparaître les contacts proches, le plus proche en premier.**
 Dès que le module de la 22-2a arme la sonde, les contacts **actifs** de la société sont interrogés avec `limit: 20`, classés et coupés à cinq, avec la mention « et N autres » quand il en reste. Chaque proposition porte le **nom complet**, puis la **localité** et le **numéro de client** quand ils sont renseignés, à défaut l'**email** (D-b10). Les propositions sont **inertes** (D-b9).
-*Preuve*, **5** tests de composant plus **1** d'intégration base :
+*Preuve*, **7** tests de composant plus **1** d'intégration base :
 1. `Entreprise` — les trois éléments d'affichage sont rendus. Mutation : « ne rendre que `c.name` », qui supprime le mécanisme de discrimination de la story sans faire rougir rien d'autre ;
 2. `Personne` — la sonde part sur prénom + nom. Mutation : « ne lire que la raison sociale » ;
 3. un contact **sans adresse et sans numéro de client** : l'email est rendu, aucune ligne vide ni tiret orphelin ;
 4. **l'argument de l'appel** : `expect(listContactsMock).toHaveBeenCalledWith(expect.objectContaining({ includeArchived: false, limit: 20 }))`.
    ⚠️ **Une preuve fonctionnelle ne convient PAS.** `includeArchived` est un paramètre de query-string traité **par le serveur** ; sous `vi.mock`, le double rend ce qu'on lui a dit **sans regarder son argument**. « Un archivé n'apparaît pas » reste donc vert sous la mutation `false → true`. C'est ce qu'énonce le doc-comment de `products-page.test.ts` : *seule l'assertion sur l'argument l'attrape* ;
 5. **cliquer sur une proposition ne modifie NI le formulaire NI son état** (D-b9). Mutation : `onclick={() => openEdit(c)}` — un ajout de bonne foi, qui compile et efface dix-neuf champs ;
-6. **`#[sqlx::test]` — la fenêtre SQL est assez large.** Fixture des six `Jean X` ; `limit: 20` doit rendre **les six** lignes et `total = 6`. Mutation : « revenir à `limit: 5` ». ⚠️ Cette preuve porte sur la **requête** — sémantique OU, tri alphabétique, taille de fenêtre — et sur elle seule ; les preuves de composant passent par un `vi.mock` et en sont aveugles. *(Le classement lui-même est prouvé par la 22-2a, en TypeScript : un test Rust ne peut pas appeler `rank()`.)*
+6. **la chaîne de repli épuisée** — deux contacts **homonymes** sans adresse, sans numéro de client **et sans email** : les deux propositions doivent **différer** à l'écran (repli sur `#<id>`, D-b10). Mutation : « s'arrêter à l'email », qui rend deux lignes rigoureusement identiques ;
+7. **la bascule de type en cours de saisie** (D-b11) — taper une raison sociale qui fait apparaître des propositions, puis basculer sur `Personne` sans effacer : la sonde **se réarme** sur le nouveau terme, et aucun avertissement calculé sur l'ancien type ne subsiste. Mutation : « ne recalculer que sur les champs de nom », qui laisse un avertissement orphelin sous un champ retiré du DOM ;
+8. **`#[sqlx::test]` — la fenêtre SQL est assez large.** Fixture des six `Jean X` ; `limit: 20` doit rendre **les six** lignes et `total = 6`. Mutation : « revenir à `limit: 5` ». ⚠️ Cette preuve porte sur la **requête** — sémantique OU, tri alphabétique, taille de fenêtre — et sur elle seule ; les preuves de composant passent par un `vi.mock` et en sont aveugles. *(Le classement lui-même est prouvé par la 22-2a, en TypeScript : un test Rust ne peut pas appeler `rank()`.)*
 
 **AC-b2 — Un IDE déjà pris est signalé franchement, y compris quand le porteur est archivé.**
 La saisie d'un IDE **complet** (`validateIdeFormat`) déjà porté par un contact de la société — **actif ou archivé** (D-b5) — déclenche un avertissement explicite, **distinct** du signal « nom proche », **avant** l'enregistrement. Quand le porteur est archivé, le message **le dit**.
@@ -110,17 +124,22 @@ La saisie d'un IDE **complet** (`validateIdeFormat`) déjà porté par un contac
 
 **AC-b3 — Les sondes ne changent RIEN à l'état du bouton.** *(Propriété différentielle, pas absolue.)*
 L'état du bouton d'enregistrement est **exactement celui qu'il aurait sans les sondes** : ni `disabled` ni `formValidation` ne sont touchés.
-⚠️ **Formuler l'AC en absolu — « le bouton reste actif » — serait FAUX** dans des états que la story couvre par ailleurs : le formulaire désactive **déjà** le bouton, aujourd'hui et sans rapport avec cette story, quand une `Personne` n'a qu'un des deux champs de nom (`:276-279`), quand l'adresse est partielle (`:281-282`), ou quand l'IDE est partiellement tapé (`:286-288`). Un dev qui écrirait la preuve sur l'un de ces états verrait un bouton désactivé et pourrait « corriger » `formValidation` — c'est-à-dire **supprimer une garde préexistante pour satisfaire une AC mal bornée**.
-*Preuve*, **1** assertion E2E, jouée sur un formulaire **par ailleurs valide** (cf. T-b6).
+⚠️ **Formuler l'AC en absolu — « le bouton reste actif » — serait FAUX** dans des états que la story couvre par ailleurs : le formulaire désactive **déjà** le bouton, aujourd'hui et sans rapport avec cette story, quand une `Personne` n'a qu'un des deux champs de nom (`:276-279`), quand l'adresse est partielle (`:284-285`), ou quand l'IDE est partiellement tapé (`:286-288`). Un dev qui écrirait la preuve sur l'un de ces états verrait un bouton désactivé et pourrait « corriger » `formValidation` — c'est-à-dire **supprimer une garde préexistante pour satisfaire une AC mal bornée**.
+*Preuve*, **2** tests :
+1. une assertion E2E, jouée sur un formulaire **par ailleurs valide** (cf. T-b6) ;
+2. **un test de composant sur un état COMPOSÉ** : une garde préexistante désactive le bouton (adresse partielle, par exemple) **pendant** qu'un avertissement de doublon est actif ⇒ le bouton est désactivé **exactement comme il le serait sans la sonde**, et `formValidation` rend le message d'adresse, pas autre chose.
+⚠️ **Sans ce second test, une propriété universelle n'est prouvée qu'en UN point de l'espace d'états** — celui, précisément, où aucune garde préexistante ne joue. Or c'est dans les états composés qu'un développeur est tenté de « corriger » `formValidation` pour faire passer sa preuve. Relevé en passe 1.
 
 **AC-b4 — Rien ne part avant que la frappe se calme, et une réponse tardive ne dit plus rien.**
 Temporisation de 300 ms (le pas du dépôt), compteur de génération, **une paire par sonde** (D-b7), état remis à zéro à l'ouverture (D-b8).
-*Preuve*, **5** tests unitaires :
+*Preuve*, **6** tests unitaires :
 1. **le nombre d'appels** sur une frappe continue de vingt caractères, minuteries factices — **attendu : un seul** ;
 2. deux requêtes résolues **dans l'ordre inverse** — la première arrivée en dernier est ignorée ;
 3. **le test croisé** : armer la sonde nom, puis la sonde IDE avant résolution ⇒ **les deux** avertissements aboutissent. Mutation : « factoriser une seule paire », que les deux autres laissent verte ;
 4. **la sonde IDE sur une suite valide → invalide → valide** ⇒ **deux** appels, un par passage à la validité ;
-5. **la remise à zéro à l'ouverture** : armer une sonde, fermer le formulaire, le rouvrir ⇒ aucune proposition, et la réponse armée avant la fermeture n'en fait pas apparaître. Mutation : « ne rien réinitialiser dans `openCreate()` ».
+5. **la remise à zéro à l'ouverture en CRÉATION** : armer une sonde, fermer le formulaire, le rouvrir ⇒ aucune proposition, et la réponse armée avant la fermeture n'en fait pas apparaître. Mutation : « ne rien réinitialiser dans `openCreate()` » ;
+6. **la remise à zéro à l'ouverture en ÉDITION** : armer une sonde depuis « Créer », fermer sans enregistrer, puis ouvrir **en édition** un contact `B` ⇒ aucune proposition résiduelle.
+   ⚠️ **Mutation : « ne réinitialiser que dans `openCreate()` », que le test 5 laisse VERTE.** D-b8 exige les deux sites ; une seule preuve n'en couvrait qu'un. Le symptôme est concret : les propositions d'une session « créer » restent affichées sur la fiche de `B`, désignant des contacts sans rapport, jusqu'à la frappe suivante. Relevé en passe 1.
 ⚠️ Ne PAS prouver l'annulation par un `AbortSignal` passé à `apiClient` : il est écrasé en silence (D-b6), un tel test mesurerait du vide.
 
 **AC-b5 — Le dispositif est muet quand il n'a rien à dire.**
@@ -130,7 +149,9 @@ Temporisation de 300 ms (le pas du dépôt), compteur de génération, **une pai
 *Preuve*, **3** tests de composant : pour (a), la saisie de deux caractères ne déclenche **aucun** appel ; pour (b), un carnet vide ne rend **aucun texte** — ⚠️ asserter l'absence de **texte**, jamais l'absence de **nœud**, les zones restant en permanence dans le DOM pour qu'`aria-live` fonctionne (T-b4) ; pour (c), la sonde IDE répond `500` pendant que la sonde nom répond `200` ⇒ aucun message d'erreur, et les propositions s'affichent normalement. Mutation : « retirer le `try/catch` d'une sonde ».
 
 **AC-b6 — Les avertissements sont traduits dans les quatre locales.**
-*Preuve*, **1** test Rust dédié dans `crates/kesh-i18n/src/loader.rs`, sur le patron de `client_number_labels_are_translated_in_all_four_locales` (`loader.rs:260-277`) — pour chaque clé neuve, `!= key` **et** `!= fr` sur `de-CH`, `it-CH`, `en-CH`. Plus `npm run lint-i18n-ownership` vert.
+*Preuve*, **2** tests Rust dans `crates/kesh-i18n/src/loader.rs` — le premier sur les clés neuves, le second sur `contact-filter-search-placeholder`, dont les **quatre** valeurs doivent mentionner l'IDE une fois T-b1 livrée.
+⚠️ **Le second est indispensable et le premier ne le couvre pas** : AC-b6 ne teste que les clés **neuves**, or ce libellé **existe déjà** et n'est que *modifié*. Un développeur qui met à jour `fr-CH` en oubliant les trois autres ne fait rougir **rien** — la clé reste présente, différente de son nom, et différente du français (ce sont des traductions distinctes). C'est le seul item de la story dont l'oubli partiel échappe à tous les gates. Relevé en passe 1.
+Le premier test suit le patron de `client_number_labels_are_translated_in_all_four_locales`, sur le patron de `client_number_labels_are_translated_in_all_four_locales` (`loader.rs:260-277`) — pour chaque clé neuve, `!= key` **et** `!= fr` sur `de-CH`, `it-CH`, `en-CH`. Plus `npm run lint-i18n-ownership` vert.
 ⚠️ **Il n'existe AUCUN test de parité globale dans `kesh-i18n`.** Le loader **replie silencieusement sur le français** (`format_missing_key_in_de_falls_back_to_fr`, `loader.rs:227`), et les fichiers sont déjà désappariés de 57 clés (KF #283). Une clé oubliée dans trois locales **ne rougit nulle part** : c'est l'assertion `!= fr` qui l'attrape, et rien d'autre.
 ⚠️ Le domaine `contact-*` compte **62 clés dans chacune** des quatre locales — recompté le 2026-08-17. Le laisser apparié.
 
@@ -147,7 +168,7 @@ Renommer un contact vers un nom déjà porté déclenche le même signal nuancé
   - [ ] ⚠️ **Ne PAS se caler sur `test_search_handles_special_chars:1283` pour la seconde branche : il ne l'exerce pas.** Il cherche `"100%"`, et `%` **n'est pas** un opérateur `BOOLEAN MODE` (`util/search.rs:41`) — le terme survit intact et le test emprunte la branche `else`. **Aucun test du dépôt n'exerce aujourd'hui la branche `escaped.is_empty()`.**
   - [ ] **Le `#[sqlx::test]` de la fenêtre** (preuve 6 d'AC-b1) : fixture des six `Jean X`, `limit: 20` ⇒ six lignes et `total = 6`.
   - [ ] ⚠️ **`push_where_clauses` est un chemin PARTAGÉ** — cf. § *Rayon d'impact de T-b1*. Gate **complet** au dernier commit : la § *Test Locally First* interdit le ciblage dès qu'un patch touche `crates/kesh-db/`.
-- [ ] **T-b2 — Brancher les deux sondes** (AC-b1, AC-b2, AC-b5). Importer le module de la **22-2a** — `normalizeTerm`, `buildTerm`, `isArmed`, `rank`, `excludeSelf`, `countOthers`, `findIdeHolder` — et **ne réimplémenter aucune de ces fonctions**.
+- [ ] **T-b2 — Brancher les deux sondes** (AC-b1, AC-b2, AC-b5, **AC-b7**). Importer le module de la **22-2a** — `normalizeTerm`, `buildTerm`, `isArmed`, `rank`, `excludeSelf`, `countOthers`, `findIdeHolder` — et **ne réimplémenter aucune de ces fonctions**.
   - [ ] Forme exacte des deux appels :
 
 ```ts
@@ -155,17 +176,19 @@ Renommer un contact vers un nom déjà porté déclenche le même signal nuancé
 const normalized = normalizeTerm(buildTerm(formContactType, formName, formFirstName, formLastName));
 if (!isArmed(normalized)) return;                       // 22-2a décide, pas nous
 const rn = await listContacts({ search: normalized, limit: 20, includeArchived: false });
-const retenus = rank(excludeSelf(rn.items, editing?.id), normalized);
+const retenus = rank(excludeSelf(rn.items, editing?.id ?? null), normalized);
 const proches = retenus.slice(0, 5);
-const autres  = countOthers(rn.total, rn.items, proches, editing?.id);
+const autres  = countOthers(rn.total, rn.items, proches, editing?.id ?? null);
 
 // AC-b2 — sonde IDE. Archivés COMPRIS (D-b5), vérification sur le champ.
 const ide = normalizeIdeForApi(formIde);
 if (!ide || !validateIdeFormat(formIde)) return;
 const ri = await listContacts({ search: ide, limit: 5, includeArchived: true });
-const holder = findIdeHolder(ri.items, ide, editing?.id);   // `ide` = la valeur ENVOYÉE
+const holder = findIdeHolder(ri.items, ide, editing?.id ?? null);  // `ide` = la valeur ENVOYÉE
 ```
 
+  - [ ] ⚠️ **`editing?.id ?? null`, jamais `editing?.id` nu** (D-b8-bis) : `editing` est `ContactResponse | null`, donc `editing?.id` rend `number | undefined` — alors que la 22-2a documente `null` comme unique convention d'absence. Le `?? null` est ce qui fait passer `npm run check`.
+  - [ ] ⚠️ **C'est ICI qu'AC-b7 se joue**, pas dans le balisage de T-b4 : ce bloc est **l'unique site** où `editing?.id` atteint `excludeSelf`, `countOthers` et `findIdeHolder`.
   - [ ] ⚠️ **Les deux appels ne diffèrent que par deux paramètres et se lisent côte à côte.** Une inversion d'`includeArchived` ne casse rien, ne fait rougir aucun test **fonctionnel**, et rend des résultats plausibles dans les deux sens — le filtrage étant fait par le serveur et un `vi.mock` ne regardant pas ses arguments. D'où deux preuves **sur l'argument**, une par sens.
 - [ ] **T-b3 — Temporisation et garde d'ordre** (AC-b4). Débounce 300 ms + compteur de génération, patron `ContactPicker.svelte:36-78` (D-b6). **Une paire par sonde** (D-b7).
   - [ ] Réutiliser `debounce` de `$lib/features/journal-entries/debounce.ts` **ou** le `setTimeout` inline de `+page.svelte:185-192` — ne pas écrire un troisième mécanisme. Le helper est mal rangé ; le **déplacer** est hors périmètre, s'en servir ne l'est pas.
@@ -174,6 +197,8 @@ const holder = findIdeHolder(ri.items, ide, editing?.id);   // `ide` = la valeur
   - [ ] Brancher sur **`oninput`** (`ContactPicker.svelte:127`, `+page.svelte:463`), **jamais sur `onkeydown`** : un collage ne produit aucune frappe clavier, et une sonde branchée sur le clavier resterait muette sur le geste le plus courant de tous.
 - [ ] **T-b4 — Balisage et signaux** (AC-b1, AC-b2, AC-b3, AC-b5, AC-b7). Deux niveaux visuellement distincts (D-b2) ; ne toucher **ni** au `disabled` du bouton **ni** à `formValidation` (`:275`).
   - [ ] **Chaque avertissement est rendu IMMÉDIATEMENT SOUS le champ qui le déclenche** — propositions sous le nom, avertissement franc sous `#form-ide` — et **jamais** dans le bloc `formError` du bas : le `Dialog.Content` est en `max-h-[90vh] overflow-y-auto` (`:637`) et **défile en interne**. Un avertissement hors écran est un avertissement muet.
+  - [ ] ⚠️ **La zone « nom proche » est placée HORS des deux branches du `{#if formContactType === 'Personne'}`** (D-b11), après le bloc type-dépendant. Logée dans une branche, elle serait **démontée à chaque bascule de type** — donc ni permanente, ni annoncée, ce qui contredit la sous-tâche suivante.
+  - [ ] **Le `<select id="form-type">` réarme la sonde** au même titre que les champs de nom (D-b11) : les valeurs saisies survivent à la bascule, l'avertissement doit suivre.
   - [ ] **Les deux zones sont rendues EN PERMANENCE dans le DOM**, `aria-live="polite"`, contenu vide quand il n'y a rien à dire. Patron : `ResetPasswordForm.svelte:162-169`, dont le commentaire dit « *toujours dans le DOM pour que aria-live fonctionne* ». ⚠️ **Ne PAS copier le `role="combobox"` de `ContactPicker`** : c'est un patron de **sélection**, inadapté à un avertissement passif (D-b9), et il ne porte aucun `aria-live`.
   - [ ] Encapsuler **chaque** sonde dans un `try/catch` qui se tait, comme `ContactPicker.svelte:64-67`.
   - [ ] **L'avertissement franc s'efface quand `formError` prend le relais** après un `409` (`:361` pose déjà `contact-error-ide-duplicate`), pour que la même phrase ne s'affiche pas deux fois.
@@ -183,9 +208,10 @@ const holder = findIdeHolder(ri.items, ide, editing?.id);   // `ide` = la valeur
   - [ ] **Clés attendues** : l'en-tête des propositions, la mention « et N autres », l'avertissement franc sur porteur **actif**, et celui sur porteur **archivé** — ce dernier **distinct**, c'est la preuve 2 d'AC-b2.
   - [ ] ⚠️ **Ne PAS réutiliser `contact-error-ide-duplicate`** (`fr-CH:374`) : elle sert au message d'échec du `409`, et ne sait ni nommer le porteur ni dire qu'il est archivé.
   - [ ] **Mettre à jour `contact-filter-search-placeholder`** dans les 4 locales **et** son fallback en dur (`+page.svelte:455`) : il **énumère les colonnes cherchées**, et T-b1 en ajoute une.
+  - [ ] **Écrire le second test Rust d'AC-b6**, qui vérifie les **quatre** valeurs de cette clé. ⚠️ C'est une clé **modifiée**, pas neuve : le test des clés neuves ne la voit pas, et sans ce second test, oublier trois locales ne fait rougir aucun gate.
 - [ ] **T-b6 — E2E** (AC-b3, **et preuve 6 d'AC-b2**). ⚠️ Le fichier **DOIT** être nommé `*.spec.ts` : `playwright.config.ts:35` filtre sur `testMatch: /(.+\.)?spec\.[jt]s/`, et un `*.test.ts` posé dans `tests/e2e/` est **silencieusement ignoré**.
   - [ ] Patron : `frontend/tests/e2e/contact-client-number.spec.ts`, `seedTestState('with-company')` puis login.
-  - [ ] ⚠️ **ARCHIVER NE LIBÈRE PAS L'IDE** — contrainte **plate** (D-b5), contrairement au numéro de client dont le patron vient. Chaque assertion emploie un **IDE distinct à checksum valide** (`CHE109322551`, `CHE116281838`, tous deux vérifiés) ; l'isolation entre exécutions repose sur le `truncate_all` de `seedTestState`. Et l'astuce `CLI-${Date.now()}` de la 22-1 est **intransposable** : le dernier chiffre d'un IDE est un checksum modulo 11 (`che_number.rs:102-131`).
+  - [ ] ⚠️ **ARCHIVER NE LIBÈRE PAS L'IDE** — contrainte **plate** (D-b5), contrairement au numéro de client dont le patron vient. Chaque assertion emploie un **IDE distinct à checksum valide** : `CHE109322551` et `CHE123456788`. ⚠️ **Les deux ont été recalculés** — poids `[5,4,3,2,7,6,5,4]`, modulo 11 (`che_number.rs:9,101-129`) : `109322551` attend 1 et porte 1, `123456788` attend 8 et porte 8. *(Une première rédaction proposait `CHE116281838` en le déclarant « vérifié » : son checksum attend **9** et il porte **8** — il est **invalide**, et le test aurait échoué en `400` au lieu du succès ou du `409` attendu, pour une raison sans rapport avec ce qu'il mesure. Relevé en passe 1.)* L'isolation entre exécutions repose sur le `truncate_all` de `seedTestState`. Et l'astuce `CLI-${Date.now()}` de la 22-1 est **intransposable** : le dernier chiffre d'un IDE est un checksum modulo 11 (`che_number.rs:102-131`).
   - [ ] **Test 1 (AC-b3), trois assertions DANS CET ORDRE**, sur une `Entreprise` par ailleurs valide : (i) **le signal nuancé est VISIBLE** ; (ii) le bouton est **activé** ; (iii) soumettre **crée bien le contact**, vérifié après rechargement.
   - [ ] **Test 2 (preuve 6 d'AC-b2), trois assertions DANS CET ORDRE** : (i) **le signal franc est VISIBLE** ; (ii) le bouton est **activé** ; (iii) soumettre **échoue en `409`** et l'interface le dit.
   - [ ] ⚠️ **La première assertion de chaque test n'est PAS décorative : c'est la seule qui prouve quelque chose de cette story.** Les assertions (ii) et (iii) sont **VERTES SUR `main` AUJOURD'HUI** — créer un contact fonctionne déjà, un IDE dupliqué donne déjà `409`. Sans (i), la mutation « **n'implémenter aucune sonde** » laisse les deux tests au vert.
@@ -197,16 +223,16 @@ const holder = findIdeHolder(ri.items, ide, editing?.id);   // `ide` = la valeur
 
 | AC | Preuves | Nature |
 |---|---:|---|
-| AC-b1 — nom proche | 5 + 1 | composant + `#[sqlx::test]` |
+| AC-b1 — nom proche | 7 + 1 | composant + `#[sqlx::test]` |
 | AC-b2 — IDE déjà pris | 5 + 1 | composant + E2E |
-| AC-b3 — l'état du bouton est inchangé | 1 | E2E |
-| AC-b4 — temporisation et ordre | 5 | unitaire front |
+| AC-b3 — l'état du bouton est inchangé | 1 + 1 | E2E + composant |
+| AC-b4 — temporisation et ordre | 6 | unitaire front |
 | AC-b5 — muet quand rien à dire | 3 | composant |
-| AC-b6 — quatre locales | 1 | unitaire Rust |
+| AC-b6 — quatre locales | 2 | unitaire Rust |
 | AC-b7 — édition sans se signaler | 2 | composant |
 | *(T-b1 — l'IDE cherchable)* | 2 | `#[sqlx::test]` |
 
-**Totaux, sommés depuis la colonne** : **15 tests de composant** (5 + 5 + 3 + 2) · **5 tests unitaires front** · **2 assertions E2E** (1 + 1) · **1 test unitaire Rust** · **3 tests d'intégration base** (1 + 2). **Soit 26 preuves.**
+**Totaux, sommés depuis la colonne** : **18 tests de composant** (7 + 5 + 1 + 3 + 2) · **6 tests unitaires front** · **2 assertions E2E** (1 + 1) · **2 tests unitaires Rust** · **3 tests d'intégration base** (1 + 2). **Soit 31 preuves.**
 
 Aucun autre passage de cette story n'énonce de total. *(S'y ajoutent les **13 preuves** de la 22-2a, comptées chez elle.)*
 
@@ -230,7 +256,7 @@ Tests à surveiller nommément : `test_filter_by_search_name:1225`, `test_search
 
 Un avertissement trop bavard **ne protège plus rien** : on apprend à le fermer sans le lire. C'est le vrai risque, plus que le faux négatif. Le seuil doit être **serré** — mieux vaut manquer un doublon que crier trois fois par jour à tort. AC-b7 (ne pas se signaler soi-même) et la vérification sur le champ (D-b5/22-2a) ne sont pas des raffinements : ce sont les deux façons les plus rapides de rendre le dispositif inaudible dès la première semaine.
 
-### Les huit pièges muets, nommés
+### Les dix pièges muets, nommés
 
 Aucun ne casse la compilation, ne fait rougir un test, ni ne produit d'erreur au runtime.
 
@@ -243,6 +269,8 @@ Aucun ne casse la compilation, ne fait rougir un test, ni ne produit d'erreur au
 | assertion E2E sans la visibilité du signal | verte sur `main`, avant qu'une ligne soit écrite | T-b6, la visibilité **en premier** |
 | une seule paire `(timer, compteur)` (D-b7) | l'un des deux avertissements ne s'affiche jamais | AC-b4 preuve 3, le test croisé |
 | une proposition rendue cliquable (D-b9) | efface les 19 champs de la saisie en cours | AC-b1 preuve 5 |
+| remise à zéro dans `openCreate()` seul | les propositions d'une session « créer » survivent sur une fiche éditée | AC-b4 preuve 6 |
+| une clé i18n MODIFIÉE dans une seule locale | le test des clés NEUVES ne la voit pas | AC-b6 preuve 2 |
 | clé i18n absente de 3 locales (AC-b6) | repli silencieux sur le français | assertion `!= fr`, la seule qui l'attrape |
 
 ### Ce que la story ne répare pas, et qu'elle rend plus atteignable
@@ -276,6 +304,27 @@ C'est **préexistant**, et cette story ne le corrige pas — mais elle le rend *
 - ⚠️ **Issues #314 et #315 — les deux corrections À LA SOURCE que cette story CONTOURNE délibérément.** #314 : `escape_boolean_ft` supprime les opérateurs au lieu de les remplacer (4 repositories, 5 sites d'appel). #315 : la recherche n'a aucun tri par pertinence, et la sémantique est OU inclusif. La 22-2a contourne les deux **côté client** — normalisation du terme et classement local. **Ce sont des atténuations assumées, pas des corrections** : ne pas les traiter ici, et ne pas laisser croire dans le code qu'elles règlent le problème de fond.
 - Story **22-3** (#300) — la fusion, en veille : ce que cette story doit rendre inutile.
 - `CLAUDE.md` — § *Un appariement automatique propose, il ne crée jamais*, § *Test Locally First*, § *Un gate laisse la base piégée*.
+
+## Change Log
+
+### Passe 1 de `bmad-create-story validate` — 2026-08-17, Sonnet ×3, contexte frais
+
+Bruts : 1 + 4 + 5 = 10. Une convergence. **Retenus : 0 CRITICAL / 4 HIGH / 4 MEDIUM / 1 LOW — 9 findings, 9 correctifs appliqués.**
+
+⚠️ **Zéro `CRITICAL`, et le BlindHunter a rendu un rapport quasi vide** (1 `LOW`) après avoir contre-vérifié une trentaine d'ancres sur les deux moitiés. C'est le premier rapport de ce dossier qui ne trouve rien de substantiel — le découpage travaille.
+
+**Les quatre `HIGH` :**
+
+1. **`CHE116281838` était FAUX.** La spec l'annonçait « vérifié » ; recalculé au modulo 11 (`che_number.rs:9,101-129`), son checksum attend **9** et il porte **8**. Les deux seules assertions E2E de la story l'auraient employé, et auraient échoué en `400` — pour une raison **sans rapport** avec ce qu'elles mesurent, ce qui est la meilleure façon de faire affaiblir une assertion par un développeur pressé. Remplacé par `CHE123456788`, **recalculé**. ⚠️ *J'avais écrit « tous deux vérifiés » sans l'avoir fait : c'est exactement la faute que ce dossier documente depuis quatre passes.*
+2. **La remise à zéro n'était prouvée que sur `openCreate()`.** D-b8 exige les deux sites ; la mutation « ne réinitialiser que dans `openCreate()` » laissait les 26 preuves vertes. Symptôme concret : ouvrir « Créer », taper, fermer, puis **éditer** un contact `B` — les propositions de la session précédente restent affichées sur la fiche de `B`. **Sixième preuve ajoutée à AC-b4.**
+3. **La zone d'avertissement contredisait `aria-live`.** Le champ de nom vit dans deux branches d'un `{#if}` selon le type de contact ; une zone logée dans l'une d'elles est **démontée à chaque bascule**, donc ni permanente ni annoncée. **D-b11** la place hors des deux branches — et fait **réarmer la sonde par le `<select>` de type**, que rien ne déclenchait alors que les champs de nom **survivent** à la bascule.
+4. **La chaîne de repli d'affichage pouvait s'épuiser.** `email` et `clientNumber` sont tous deux nullables : deux homonymes minimaux — le père et le fils de D-b1 — s'affichaient **rigoureusement identiques**, ce qui contredit l'invariant que D-b10 énonce comme sa propre raison d'être. **Dernier niveau ajouté : `#<id>`**, déjà présent dans le DTO, garanti distinct, sans requête.
+
+**Les quatre `MEDIUM`** : `editing?.id` rend `number | undefined` alors que la 22-2a documente `null` — le code **littéralement prescrit** par cette story aurait été rejeté par `npm run check` (**D-b8-bis**, et c'est le défaut de frontière que le découpage rendait prévisible) ; la mise à jour de `contact-filter-search-placeholder` n'avait **aucune preuve**, la clé étant *modifiée* et non *neuve* — seul item dont l'oubli partiel échappait à tous les gates ; `T-b2` n'était pas taguée `AC-b7` alors qu'elle en porte le mécanisme ; et `AC-b3`, propriété **universelle**, n'était prouvée qu'au seul point de l'espace d'états où aucune garde préexistante ne joue.
+
+**Décompte : 26 → 31 preuves**, recompté depuis les AC. Pièges muets : 8 → 10.
+
+⚠️ **Passe 2 due** par la § *Review Iteration Rule* (4 `HIGH`). Rotation : **Haiku**, contexte frais.
 
 ## Dev Agent Record
 
