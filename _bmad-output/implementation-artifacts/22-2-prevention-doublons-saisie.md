@@ -114,7 +114,21 @@ Une `Personne` prénommée `An`, nommée `Li`, compose le terme `An Li` — **ci
 Math.max(...term.split(/\s+/).map((t) => t.length)) >= 3
 ```
 
-Il laisse `Du` muet et `Jean` actif — inchangé pour tous les cas déjà spécifiés — et supprime la requête inutile d'`An Li`.
+⚠️ **ET IL SE MESURE SUR LE TERME NORMALISÉ (D16), JAMAIS SUR LE TERME BRUT.** L'ordre est `normaliser → mesurer → décider`, et l'inverser casse **dans les deux sens** — les deux vérifiés par exécution en passe 4 :
+
+| Terme tapé | Brut | Normalisé (D16) | Seuil mesuré sur le BRUT | Conséquence |
+|---|---|---|---|---|
+| `Yo-An` (contact `Yo-An SA` en base) | 1 token de 5 | `Yo An` → deux tokens de 2 | **passe** | requête émise, `AGAINST('Yo An*')` → **0 résultat**. **Silence garanti sur un doublon exact** |
+| `C++` | 1 token de 3 | `C` → un token de 1 | **passe** | `AGAINST('C*')` → **tout contact commençant par C**. **Bruit maximal sur un terme-déchet** |
+
+`term.split(/\s+/)` ne connaît que l'espace comme frontière de token — or D16 en **crée dix autres**, qui ne deviennent des frontières qu'**après** normalisation. Mesurer avant, c'est mesurer des tokens qui n'existeront plus.
+
+```ts
+const normalized = normalizeTerm(term);                                   // D16 d'abord
+const armed = Math.max(0, ...normalized.split(/\s+/).map((t) => t.length)) >= 3;   // D7-bis ensuite
+```
+
+Ainsi corrigé, le seuil laisse `Du` muet, `Jean` actif, et rend **muets** `An Li`, `Yo-An` et `C++` — trois requêtes inutiles dont deux produisaient un résultat activement nuisible.
 
 Note : `innodb_ft_enable_stopword = ON`, mais la liste InnoDB par défaut est anglaise et ses entrées font pour l'essentiel moins de trois caractères — sans effet pratique ici. À ne pas confondre avec `ft_min_word_len`, qui est la variable **MyISAM** et ne s'applique à aucune table de Kesh.
 
@@ -205,11 +219,19 @@ Trois faits se composent, et aucun n'est amendable depuis cette story : `escape_
 ```
 BASE (inchangée)              CLIENT (module pur de T2)
 ─────────────────────         ─────────────────────────────────
-OU inclusif                   1. le nom COMMENCE par le terme
-ORDER BY name ASC        →    2. puis proximité
-LIMIT 20                      3. slice(0, 5) pour l'affichage
-                              + « et N autres » via `total`
+OU inclusif                   rank() — quatre critères, dans l'ordre
+ORDER BY name ASC        →    puis slice(0, 5) pour l'affichage
+LIMIT 20                      + « et N autres »
 ```
+
+**L'algorithme de `rank()`, écrit — « puis proximité » n'est pas une spécification.** Quatre critères appliqués **dans cet ordre**, sur des chaînes repliées en casse et sans accents (cohérent avec la collation `utf8mb4_general_ci` de la table, vérifiée) :
+
+1. le nom **commence par** le terme complet ;
+2. puis le **nombre de tokens du terme présents** dans le nom, décroissant ;
+3. puis la **longueur du plus long préfixe commun**, décroissante ;
+4. puis l'**ordre alphabétique** — non pas comme critère de pertinence, mais pour que le classement soit **déterministe** : deux exécutions rendent le même résultat, et un test peut donc l'asserter.
+
+Sur la fixture des six `Jean X` avec le terme `Jean Zwahlen` : `Jean Zwahlen` gagne au critère 1 ; les cinq autres sont à égalité au critère 2 (un token commun) et départagés au critère 4. ⚠️ **Sans le critère 4, le classement n'est pas testable** — deux implémentations conformes à la lettre rendraient des sous-ensembles différents, et aucun relecteur ne pourrait trancher « conforme / non conforme ».
 
 `ListResponse` porte déjà `total` (`contacts.types.ts:133-139`), qui est le **total réel** et non le nombre de lignes rendues : la mention « et N autres » ne coûte aucune requête. `limit: 20` reste très en deçà de `MAX_LIST_LIMIT` (100), et le coût mesuré en D3 le rend indolore sur un carnet local.
 
@@ -240,15 +262,17 @@ C'est la position cohérente avec D1 (« signaler, jamais bloquer ») et la moin
 Dès que le plus long token du terme atteint **trois caractères** (D7-bis), les contacts **actifs** de la société dont le nom est proche sont proposés — archivés exclus (D12) —, **classés** (D15) et coupés à cinq, avec la mention « et N autres » quand `total` dépasse le nombre affiché.
 Chaque proposition porte de quoi reconnaître la fiche : **le nom complet**, puis **la localité et le numéro de client quand ils sont renseignés** (D11). ⚠️ La localité vaut `""` pour tout contact sans adresse (`routes/contacts.rs:213-219`, `city: c.address_city.unwrap_or_default()`) — c'est le cas de la fiche minimale et vite faite que cette story vise. Quand ni localité ni numéro de client n'existent, replier sur l'email : **deux propositions ne doivent jamais être rigoureusement identiques à l'écran**, sans quoi le discriminant sur lequel D11 fait reposer tout son arbitrage est vide.
 ⚠️ Vaut pour les **deux** types de contact — raison sociale pour `Entreprise`, prénom + nom pour `Personne` (D8). Les propositions sont **inertes** (D17).
-*Preuve*, **cinq** tests de composant plus **un** test d'intégration :
+*Preuve*, **huit** tests — six de composant, un unitaire front, un d'intégration base :
 1. un sur `Entreprise`, qui assert aussi **les trois éléments d'affichage** : nom complet, localité, numéro de client. Sa mutation est « ne rendre que `c.name` » — elle laisse toutes les autres preuves vertes tout en supprimant le mécanisme de discrimination de la story ;
 2. un sur `Personne` — le seul qui tombe sous la mutation « ne lire que `formName` », et c'est sa raison d'être ;
 3. un contact **sans adresse et sans numéro de client** : l'email est rendu, et aucune ligne vide ni tiret orphelin n'apparaît ;
 4. **l'argument de l'appel** : `expect(listContactsMock).toHaveBeenCalledWith(expect.objectContaining({ includeArchived: false }))`.
    ⚠️ **Une preuve fonctionnelle ne convient PAS ici, et c'est mesuré.** `includeArchived` n'est qu'un paramètre de query-string : le filtrage est fait **par le serveur** (`push_where_clauses:158-161`). Sous `vi.mock`, le double rend ce qu'on lui a dit de rendre **sans regarder son argument** — donc « un contact archivé n'apparaît pas dans les propositions » reste vert sous la mutation `includeArchived: false → true`. C'est exactement ce qu'énonce le doc-comment de `products-page.test.ts`, que cette story cite par ailleurs : *seule l'assertion sur l'argument l'attrape* ;
 5. **le terme est normalisé** (D16) : un contact `Elektro-Meier AG` existant, saisir `Elektro-Meier` doit le proposer. Sa mutation est « envoyer le terme brut », qui rend `ElektroMeier*` et donc zéro résultat ;
-6. **`#[sqlx::test]` — le doublon exact figure dans la fenêtre.** Fixture : six `Jean X` dont `Jean Zwahlen` ; interroger avec `limit: 20` puis classer selon D15 ; `Jean Zwahlen` doit être **dans les cinq retenus**.
-   ⚠️ **Aucun test de composant ne peut tenir cette assertion** : les preuves de composant passent par un `vi.mock` de l'API, donc la requête réelle — sa sémantique OU, son tri alphabétique, sa fenêtre — n'est jamais exécutée. C'est le seul test de la story qui voie le défaut que D15 répare.
+6. **cliquer sur une proposition ne modifie NI le formulaire NI son état** (D17). Mutation : « ajouter `onclick={() => openEdit(c)}` sur la proposition » — un ajout de bonne foi, qui compile, qu'aucune autre preuve ne fait rougir, et qui **efface les dix-neuf champs de la saisie en cours** ;
+7. **`rank()` sur la fixture des six `Jean X`, en VITEST, sur le module pur de T2** : terme `Jean Zwahlen`, les six contacts en entrée, `Jean Zwahlen` doit sortir **en tête** et figurer dans les cinq retenus. Mutation : **« implémenter `rank()` comme l'identité »**, qui rend l'ordre alphabétique du SQL et évince Zwahlen.
+   ⚠️ **C'est LA preuve décisive du mécanisme, et elle DOIT être écrite en TypeScript.** La rédaction précédente la confiait à un `#[sqlx::test]` en lui faisant « classer selon D15 » — **incohérent** : `rank()` est une fonction TypeScript, qu'un test Rust ne peut pas appeler. La mutation « `rank()` = identité » aurait laissé **toutes** les preuves vertes et fait réapparaître en production le défaut exact qui a motivé D15 ;
+8. **`#[sqlx::test]` — la FENÊTRE SQL est assez large.** Même fixture ; interroger avec `limit: 20` doit rendre **les six** lignes, `Jean Zwahlen` comprise, et `total = 6`. Cette preuve porte sur la **requête** — sémantique OU, tri alphabétique, taille de fenêtre — et sur elle seule : c'est ce que la preuve 7 ne peut pas voir, puisque les tests front passent par un `vi.mock`. Mutation : « revenir à `limit: 5` ».
 
 **AC2 — Un numéro IDE déjà pris est signalé franchement, y compris quand le porteur est archivé.**
 La saisie d'un IDE **complet** (`validateIdeFormat` vrai) déjà porté par un contact de la société — **actif ou archivé** (D12) — déclenche un avertissement explicite, **distinct** du signal « nom proche », **avant** l'enregistrement. Il n'est émis que si un contact remonté porte effectivement cet IDE (D10). Quand le porteur est archivé, le message **le dit**.
@@ -288,8 +312,9 @@ Les deux sondes ont chacune **leur** minuterie et **leur** compteur (D13), et le
 
 ⚠️ La conséquence « aucune requête » n'appartient qu'à (a). L'attacher aussi à (b) serait **impossible à satisfaire** : constater qu'aucun contact n'est proche suppose précisément d'avoir cherché.
 ⚠️ **Le seuil vaut dans les DEUX SENS.** Repasser sous trois caractères — effacer une lettre après en avoir tapé trois — remet le dispositif au silence : les propositions déjà affichées **disparaissent**, et la réponse d'une requête lancée à trois caractères qui arrive après la suppression ne les fait pas revenir (c'est le compteur de génération de D13 qui s'en charge). Un seuil qui ne joue qu'à la montée laisse un affichage figé sur un terme que l'utilisateur a déjà effacé.
-*Preuve*, **cinq** tests :
-- pour (a), **trois** — la saisie de deux caractères ne déclenche aucun appel ; la `Personne` « An Li » n'en déclenche aucun non plus (D7-bis, mutation « mesurer la longueur du terme entier ») ; et le retour de trois à deux caractères **vide** les propositions ;
+*Preuve*, **sept** tests :
+- pour (a), **cinq** — la saisie de deux caractères ne déclenche aucun appel ; la `Personne` « An Li » n'en déclenche aucun non plus (D7-bis, mutation « mesurer la longueur du terme entier ») ; **`Yo-An` n'en déclenche aucun**, alors qu'il fait cinq caractères bruts — il se normalise en deux tokens de deux ; **`C++` n'en déclenche aucun** non plus, alors qu'il en fait trois — il se normalise en un token de un ; et le retour de trois à deux caractères **vide** les propositions.
+  ⚠️ Les deux cas neufs tombent sous **la même** mutation, qui est un simple **ordre d'instructions** : « mesurer le seuil avant de normaliser ». Elle ne casse aucune compilation, laisse verts les trois autres cas, et produit deux défauts **opposés** — silence garanti sur `Yo-An`, bruit maximal sur `C++` ;
 - pour (b), **un** test de composant sur un carnet vide vérifiant qu'**aucun texte** n'est rendu. ⚠️ **Asserter l'absence de TEXTE, jamais l'absence de NŒUD** — les zones d'avertissement restent en permanence dans le DOM pour qu'`aria-live` fonctionne (T4), donc une assertion sur l'absence du nœud contredirait cette sous-tâche ;
 - pour (c), **un** test où la sonde IDE répond `500` pendant que la sonde nom répond `200` — aucun message d'erreur n'est rendu, **et** les propositions de la sonde nom s'affichent normalement. Mutation : « retirer le `try/catch` d'une sonde », qu'aucun autre test n'attrape.
 
@@ -301,12 +326,15 @@ Les deux sondes ont chacune **leur** minuterie et **leur** compteur (D13), et le
 **AC7 — L'avertissement vaut aussi à l'édition, sans se signaler lui-même.**
 Renommer un contact existant vers un nom déjà porté déclenche le même signal nuancé. ⚠️ Le contact **en cours d'édition est exclu** de ses propres résultats : sans cette garde, ouvrir une fiche et toucher son nom afficherait « un contact au nom proche existe » en désignant **la fiche elle-même** — un avertissement absurde, qui est la façon la plus rapide d'apprendre à l'utilisateur à ne plus les lire.
 ⚠️ **Cette AC ne couvre que la sonde NOM.** L'exclusion de soi sur la sonde **IDE** est portée par D10 et prouvée par la preuve 5 d'AC2 — elle est **plus critique encore**, puisqu'elle touche le signal franc et se déclenche sur la simple ouverture d'une fiche pourvue d'un IDE. Les deux sondes ne partagent pas leur code : la garde doit être écrite **deux fois**, et prouvée **deux fois**.
-*Preuve* : test de composant — ouvrir la fiche d'un contact `Entreprise`, modifier sa raison sociale d'un caractère, vérifier qu'il ne figure pas dans les propositions.
+*Preuve*, **deux** tests de composant :
+1. ouvrir la fiche d'un contact `Entreprise`, modifier sa raison sociale d'un caractère, vérifier qu'il **ne figure pas** dans les propositions ;
+2. **et qu'AUCUNE mention « et N autres » n'apparaît** quand il était le seul à correspondre. ⚠️ Sans cette seconde assertion, le cas nominal de l'édition affiche « et 1 autre » **au-dessus d'une liste vide**, en désignant la fiche qu'on est en train de modifier — `rn.total` est le `COUNT(*)` **serveur**, qui ne connaît pas la notion de « soi ». La preuve 1 reste **verte** sous ce défaut, puisqu'elle ne regarde que la liste.
 Un seul type suffit **ici**, et la raison se vérifie : la garde est `c.id !== editing?.id`, qui ne consulte **ni** le type **ni** le terme. Ce qui dépend du type, c'est la **composition** du terme (D8) — couverte par la preuve 2 d'AC1 et les cas limites de T2, pas par une duplication de ce test.
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Rendre l'IDE cherchable** (AC2). Ajouter `ide_number` aux **DEUX** branches `LIKE` de `push_where_clauses` (`crates/kesh-db/src/repositories/contacts.rs:195-210`), et **seulement** cela — aucune route neuve (D5).
+- [ ] **T1 — Rendre l'IDE cherchable, et prouver la fenêtre** (AC2 **et preuve 8 d'AC1**). Ajouter `ide_number` aux **DEUX** branches `LIKE` de `push_where_clauses` (`crates/kesh-db/src/repositories/contacts.rs:195-210`) — aucune route neuve (D5) — **et** écrire le `#[sqlx::test]` de la fenêtre.
+  - [ ] **Le `#[sqlx::test]` de la preuve 8 d'AC1** : fixture des six `Jean X`, terme `Jean Zwahlen`, `limit: 20` ⇒ les **six** lignes reviennent et `total = 6`. ⚠️ **Sans cette sous-tâche, la preuve 8 est ORPHELINE** — le tableau du § *Décompte* la rattache à T1, mais le libellé de T1 disait « et **seulement** cela » : un développeur qui coche T1 selon ses sous-tâches ne l'écrirait jamais. Relevé en passe 4.
   - [ ] ⚠️ **Les deux branches, ou aucune** (D3). N'en traiter qu'une compile, passe les tests dont le terme survit à `escape_boolean_ft`, et cesse **silencieusement** de chercher l'IDE quand le terme n'est fait que d'opérateurs FULLTEXT.
   - [ ] Deux tests `#[sqlx::test]`, **un par branche** : le cas courant (`search=CHE109322551`) et le cas où `escaped.is_empty()`, c'est-à-dire un terme **intégralement** composé des 10 opérateurs `+ - > < ( ) ~ * " \` — par exemple `search=***`.
   - [ ] ⚠️ **Ne PAS se caler sur `test_search_handles_special_chars:1283` pour la seconde branche : il ne l'exerce pas.** Il cherche `"100%"`, et `%` **n'est pas** un opérateur BOOLEAN MODE (`crates/kesh-db/src/util/search.rs:41`) — le terme survit donc intact à `escape_boolean_ft`, et le test emprunte la branche `else`. Vérifié en passe 1 de validate. **Aucun test du dépôt n'exerce aujourd'hui la branche `escaped.is_empty()`** : il n'y a pas de patron à copier, seulement un terme à choisir correctement.
@@ -316,7 +344,9 @@ Un seul type suffit **ici**, et la raison se vérifie : la garde est `c.id !== e
 - [ ] **T2 — Logique pure de proposition** (AC1, AC2, AC5, AC7). Un module `.ts` sans clé i18n ni DOM (D9) : seuil **sur le plus long token**, dans les deux sens (D7-bis, AC5), **normalisation du terme** (D16), choix du terme selon le type (D8), **classement et coupe** (D15), exclusion du contact édité sur **les deux** sondes (AC7 et D10), vérification de l'IDE sur le champ (D10).
   - [ ] **La règle de classement, écrite** (D15) : d'abord les noms qui **commencent par** le terme (comparaison repliée en casse et sans accents, cohérente avec la collation `_ci` de la table), puis les autres par proximité, puis `slice(0, 5)`. La mention « et N autres » se calcule sur le `total` de `ListResponse`, jamais sur `items.length`.
   - [ ] **La normalisation du terme, écrite** (D16) : remplacer les dix opérateurs `+ - > < ( ) ~ * " \\` par une **espace**, puis replier les espaces multiples. `Coop-Vaud` → `Coop Vaud`. ⚠️ Remplacer, **pas** supprimer — supprimer est précisément ce que fait `escape_boolean_ft` et c'est la cause du défaut.
+  - [ ] **L'ordre est `normaliser → mesurer le seuil → décider`** (D16 puis D7-bis), jamais l'inverse — c'est un ordre d'instructions, donc l'erreur la moins visible et la plus coûteuse de cette tâche.
   - [ ] Tests vitest directs, sans `render` — c'est le bénéfice de D9. Ils couvrent le classement, la normalisation, le seuil par token et les cas limites ci-dessous.
+  - [ ] **La preuve 7 d'AC1 vit ICI** : `rank()` sur la fixture des six `Jean X`, en vitest, sur le module pur. C'est **la preuve décisive du mécanisme de D15**, et elle ne peut pas être écrite ailleurs — un `#[sqlx::test]` ne peut pas appeler une fonction TypeScript.
   - [ ] **Cas limites de composition du terme** (D8), à couvrir explicitement : `Personne` avec le nom encore vide (`"Jean"`), avec le prénom encore vide (`"Dupont"`), avec les deux vides (`""` ⇒ sous le seuil, donc muet), et la **bascule de type en cours de frappe** `Entreprise ⇄ Personne`. Le formulaire n'exige prénom **et** nom qu'à la soumission (`validate_common:362-370`) : pendant la frappe, l'un des deux est presque toujours vide, et c'est l'état **normal** de la sonde, pas un cas dégradé.
 - [ ] **T3 — Temporisation et garde d'ordre** (AC4). Débounce 300 ms + compteur de génération, sur le patron de `ContactPicker.svelte:36-78` (D6). **Une paire `(timer, compteur)` PAR SONDE** (D13) — `ContactPicker` n'a qu'un flux et ne peut pas servir de modèle sur ce point.
   - [ ] Réutiliser `debounce` de `$lib/features/journal-entries/debounce.ts` **ou** le `setTimeout` inline déjà présent dans `+page.svelte:185-192` — ne pas écrire un troisième mécanisme. ⚠️ Le helper est mal rangé (dossier `journal-entries` pour un utilitaire général) : le **déplacer** est hors périmètre, s'en servir ne l'est pas.
@@ -354,19 +384,26 @@ Un seul type suffit **ici**, et la raison se vérifie : la garde est `c.id !== e
 
 | AC / tâche | Preuves | Nature | Portées par |
 |---|---:|---|---|
-| AC1 — nom proche | 5 + 1 | composant + `#[sqlx::test]` | T4 · T1 |
+| AC1 — nom proche | 6 + 1 + 1 | composant + unitaire front + `#[sqlx::test]` | T4 · T2 · T1 |
 | AC2 — IDE déjà pris | 6 + 1 | composant + E2E | T4 · T6 |
 | AC3 — l'état du bouton est inchangé | 1 | E2E | T6 |
 | AC4 — temporisation et ordre | 5 | unitaire front | T3 |
-| AC5 — muet quand rien à dire | 5 | composant | T4 |
+| AC5 — muet quand rien à dire | 7 | composant | T4 |
 | AC6 — quatre locales | 1 | unitaire Rust | T5 |
-| AC7 — édition sans se signaler | 1 | composant | T4 |
+| AC7 — édition sans se signaler | 2 | composant | T4 |
 | *(T1 — l'IDE cherchable)* | 2 | `#[sqlx::test]` | T1 |
 | *(T2 — composition du terme)* | 4 | unitaire front (module pur) | T2 |
 
-**Totaux, sommés depuis la colonne** : **17 tests de composant** (5 + 6 + 5 + 1) · **9 tests unitaires front** (5 d'AC4 + 4 de T2) · **2 assertions E2E** (1 + 1) · **1 test unitaire Rust** · **3 tests d'intégration base** (1 d'AC1 + 2 de T1). **Soit 32 preuves.**
+**Totaux, sommés depuis la colonne** : **21 tests de composant** (6 + 6 + 7 + 2) · **10 tests unitaires front** (1 d'AC1 + 5 d'AC4 + 4 de T2) · **2 assertions E2E** (1 + 1) · **1 test unitaire Rust** · **3 tests d'intégration base** (1 d'AC1 + 2 de T1). **Soit 37 preuves.**
 
-⚠️ **La preuve 6 d'AC1 est un `#[sqlx::test]`, et ce n'est pas un détail de rangement.** C'est la **seule** preuve de toute la story qui exécute la requête réelle — sa sémantique OU, son tri alphabétique, sa fenêtre. Les 17 preuves de composant passent par un `vi.mock` de `contacts.api` et sont, par construction, **aveugles** au défaut que D15 répare.
+⚠️ **Deux preuves d'AC1 portent le mécanisme de D15, et elles ne sont PAS interchangeables** — la passe 4 a montré qu'en confondre une pour l'autre ouvre un trou de la taille du défaut d'origine :
+
+| Preuve | Langage | Ce qu'elle voit | Ce qu'elle NE voit PAS |
+|---|---|---|---|
+| **7** — `rank()` sur six `Jean X` | **TypeScript**, vitest | le **classement livré au navigateur** | la requête réelle (mock) |
+| **8** — la fenêtre SQL | **Rust**, `#[sqlx::test]` | sémantique OU, tri, `limit: 20` | `rank()`, qui n'existe pas côté Rust |
+
+Les 21 preuves de composant passent par un `vi.mock` de `contacts.api` et sont, par construction, aveugles à la requête réelle. La preuve 8 la voit. Mais **elle ne peut pas appeler `rank()`** — d'où la preuve 7, en TypeScript, qui est la seule à tomber sous la mutation « `rank()` = identité ».
 
 Réserve honnête : les deux premières preuves de la clause (a) d'AC5 (« aucun appel » sous le seuil) peuvent légitimement vivre dans le module pur de T2 plutôt que dans le fichier de page. Elles restent comptées ici — ce qui n'est pas négociable, c'est **qu'elles existent**, pas l'endroit où elles vivent.
 
@@ -407,9 +444,16 @@ Pour qu'aucun paramètre ne se perde entre l'intention et le code :
 ```ts
 // AC1 — sonde « nom proche ».
 //   Actifs SEULEMENT (D12) · fenêtre LARGE (D15) · terme normalisé (D16) · soi exclu (AC7).
-const rn = await listContacts({ search: normalizeTerm(term), limit: 20, includeArchived: false });
-const proches = rank(rn.items.filter((c) => c.id !== editing?.id), term).slice(0, 5);
-const autres  = rn.total - proches.length;        // « et N autres », jamais items.length
+const normalized = normalizeTerm(term);                    // D16 AVANT le seuil (D7-bis)
+const rn = await listContacts({ search: normalized, limit: 20, includeArchived: false });
+const retenus = rank(rn.items.filter((c) => c.id !== editing?.id), normalized);
+const proches = retenus.slice(0, 5);
+
+// ⚠️ `rn.total` est le COUNT(*) SERVEUR : il compte le contact en cours d'édition,
+//    que seul le CLIENT sait exclure. Sans cette soustraction, corriger un caractère
+//    du nom d'une fiche existante affiche « et 1 autre » — en désignant cette fiche.
+const soi     = rn.items.some((c) => c.id === editing?.id) ? 1 : 0;
+const autres  = Math.max(0, rn.total - soi - proches.length);
 
 // AC2 — sonde IDE.
 //   Archivés COMPRIS (D12) · soi exclu (D10) · vérification SUR LE CHAMP (D10),
@@ -426,9 +470,9 @@ const holder = ri.items.find((c) => c.ideNumber === normalized && c.id !== editi
 
 Un avertissement trop bavard **ne protège plus rien** : on apprend à le fermer sans le lire, et il devient un clic de plus. C'est le vrai risque, plus que le faux négatif. Le seuil doit donc être **serré** — mieux vaut manquer un doublon que crier trois fois par jour à tort. AC7 (ne pas se signaler soi-même) et D10 (ne pas crier « IDE pris » à faux) ne sont pas des raffinements : ce sont les deux façons les plus rapides de rendre le dispositif inaudible dès la première semaine.
 
-### Les neuf pièges muets, nommés
+### Les dix pièges muets, nommés
 
-Aucun des neuf ne casse la compilation, ne fait rougir un test, ni ne produit d'erreur au runtime. C'est ce qui les rend coûteux — et c'est pourquoi chacun a sa preuve dédiée, dont la **mutation** est écrite en face.
+Aucun des dix ne casse la compilation, ne fait rougir un test, ni ne produit d'erreur au runtime. C'est ce qui les rend coûteux — et c'est pourquoi chacun a sa preuve dédiée, dont la **mutation** est écrite en face.
 
 | Piège | Symptôme | Garde |
 |---|---|---|
@@ -440,6 +484,7 @@ Aucun des neuf ne casse la compilation, ne fait rougir un test, ni ne produit d'
 | une seule paire `(timer, compteur)` (D13) | l'un des deux avertissements ne s'affiche jamais | AC4 preuve 3, le test croisé |
 | preuve d'archivage écrite FONCTIONNELLEMENT | le mock ignore ses arguments ⇒ verte sous la mutation | assertion **sur l'argument** : AC1 preuve 4, AC2 preuve 2 |
 | assertion E2E sans la visibilité du signal | verte sur `main`, avant qu'une ligne soit écrite | T6, la visibilité **en premier** dans les deux tests |
+| une proposition rendue cliquable (D17) | efface les 19 champs de la saisie en cours | AC1 preuve 6, mutation `onclick={() => openEdit(c)}` |
 | clé i18n absente de 3 locales (AC6) | repli silencieux sur le français | assertion `!= fr`, la seule qui l'attrape |
 
 ### Ce que la story ne répare pas, et qu'elle rend plus atteignable
@@ -492,6 +537,20 @@ Les cinq derniers commits de `main` sont l'Epic 22 en cours : `70e6a2d0` (plafon
 - `CLAUDE.md` — § *Un appariement automatique propose, il ne crée jamais*, § *Test Locally First*, § *Un gate laisse la base piégée*.
 
 ## Questions ouvertes
+
+**Q5 — Splitter la story, ou lancer une passe 5 ?** *(bloquante — le critère de la § Règle de splitting préventif est déclenché pour la deuxième passe consécutive)*
+
+Les faits, sans arrangement : sévérité maximale `CRITICAL → CRITICAL`, compte de `CRITICAL` `2 → 3`, et les trois de la passe 4 ont été **introduits par le patch de remédiation de la passe 3**. À l'inverse, le nombre total de findings s'effondre (`20 → 6`) et tous se logent dans la section la plus récente — ce qui ressemble à une convergence, pas à une stagnation.
+
+- **(a) Splitter en 22-2a (socle) + 22-2b (surface).** `22-2a` = le **module pur** de T2 et lui seul — normalisation, seuil, classement, exclusion de soi, vérification de l'IDE — avec ses tests unitaires, **sans DOM, sans i18n, invisible à l'utilisateur**. `22-2b` = les sondes, le balisage, l'i18n, l'E2E, la doc. **Les trois `CRITICAL` de la passe 4 vivent tous dans 22-2a**, dont le gate est une suite vitest de quelques secondes. C'est exactement le patron `14-3a/b/c` que le `CLAUDE.md` cite comme référence : un story-zero qui pose le mécanisme, puis une sous-story de surface.
+- **(b) Lancer une passe 5** (rotation Haiku), au motif que le compte s'effondre et que les six findings sont localisés.
+- **(c) Passer en dev** en assumant que la spec est mûre, et laisser `bmad-code-review` attraper le reste.
+
+**Ma recommandation : (a).** Non pas parce que la story est trop large — elle ne touche que quatre modules —, mais parce que **le mécanisme et sa surface ne se relisent pas avec la même lentille**, et que trois passes sur quatre l'ont montré. Isoler le mécanisme dans un module pur, testable sans DOM ni base, met les trois `CRITICAL` de cette passe sous un gate qui coûte quelques secondes au lieu d'une revue adversariale complète.
+
+⚠️ **(c) est la seule que je déconseille franchement** : une spec dont les trois derniers `CRITICAL` datent de la dernière passe n'est pas mûre, et `bmad-code-review` relit du code, pas une conception.
+
+
 
 **Q3 — Le mécanisme d'appariement par nom : que fait-on ?** *(bloquante pour toute la story — née de la passe 3)*
 
@@ -644,6 +703,42 @@ Trois décisions naissent de la remédiation : **D15** et **D16** ci-dessus, plu
 Le tableau des pièges muets passe de sept à **neuf**, avec les deux familles qu'a révélées cette passe : *une preuve d'archivage écrite fonctionnellement* (verte sous la mutation, le mock ignorant ses arguments) et *une assertion E2E sans la visibilité du signal* (verte sur `main`, avant qu'une ligne soit écrite).
 
 ⚠️ **Passe 4 due**, rotation **Sonnet**, contexte frais. Elle porte sur une spécification dont le **mécanisme** vient de changer : ce n'est plus la même story qu'aux passes 1 à 3, et le trend ne se lit pas comme une simple continuation.
+
+### Passe 4 de `bmad-create-story validate` — 2026-08-17, Sonnet ×3, contexte frais
+
+Bruts : 2 + 3 + 3 = 8. **Deux convergences.** Retenus : **3 CRITICAL / 1 HIGH / 2 MEDIUM / 0 LOW — 6 findings, 6 correctifs appliqués, 0 écarté.**
+
+**Trend : `9` → `11` → `20` → `6`. Le NOMBRE s'effondre. La SÉVÉRITÉ, non : `1C` → `0C` → `2C` → `3C`.**
+
+⚠️ **Le critère de non-convergence est donc déclenché pour la DEUXIÈME passe consécutive** — « une passe `N+1` remonte une sévérité **égale** ou supérieure ». `CRITICAL → CRITICAL`, et le compte de `CRITICAL` monte de 2 à 3.
+
+**Et cette fois, l'explication de la passe 3 ne tient plus.** En passe 3 j'ai soutenu — à juste titre — que la remontée de sévérité venait d'un **changement de lentille** : on était passé de la lecture à l'exécution. La passe 4 emploie **exactement les mêmes lentilles que la passe 1** (Sonnet ×3, mêmes trois angles), et trouve **trois `CRITICAL`**. Ce n'est plus un effet d'instrument.
+
+#### Les trois CRITICAL, et ce qu'ils ont en commun
+
+**Ils sont TOUS LES TROIS dans le mécanisme écrit par le patch de remédiation de la passe 3** — un patch volumineux, rédigé d'un seul geste, et que rien n'avait relu avant cette passe.
+
+1. **L'ordre `seuil → normalisation` était inversé** (convergence de deux lentilles, vérifiée par exécution). D7-bis mesurait le seuil sur le terme **brut**, D16 normalisait ensuite : `term.split(/\s+/)` ne connaît que l'espace, or D16 crée **dix autres frontières de token**. Le défaut casse dans **les deux sens** — `Yo-An` (5 caractères bruts) passe le seuil puis devient deux tokens de 2, jamais indexés ⇒ **silence garanti sur un doublon exact** ; `C++` passe le seuil puis devient `C` ⇒ `AGAINST('C*')` remonte **tout contact commençant par C**. Un simple **ordre d'instructions**, invisible en revue de diff.
+2. **« et N autres » comptait le contact exclu** (convergence de deux lentilles). `rn.total` est le `COUNT(*)` **serveur**, qui ne connaît pas la notion de « soi » ; l'exclusion `c.id !== editing?.id` n'a lieu qu'au **client**. Corriger un caractère du nom d'une fiche existante — le scénario même d'AC7 — affichait donc **« et 1 autre » au-dessus d'une liste vide**, en désignant la fiche qu'on modifie. La preuve d'AC7 restait verte : elle ne regardait que la liste.
+3. **La preuve décisive du classement était écrite dans le mauvais langage.** J'avais confié à un `#[sqlx::test]` le soin de « classer selon D15 » — **incohérent** : `rank()` est une fonction TypeScript, qu'un test Rust ne peut pas appeler. La mutation « `rank()` = identité » laissait les **32 preuves vertes** et faisait réapparaître en production le défaut exact qui avait motivé D15. Les deux preuves sont désormais **séparées et non interchangeables** : la 7 (vitest) voit le classement livré au navigateur, la 8 (`#[sqlx::test]`) voit la requête réelle ; aucune ne voit ce que voit l'autre.
+
+Le `HIGH` est du même bois : la preuve de la fenêtre SQL était **orpheline** — rattachée à T1 par le tableau de synthèse, mais exclue par le libellé de T1 (« et **seulement** cela »). Les deux `MEDIUM` : « puis proximité » n'était **pas un algorithme** (deux implémentations conformes à la lettre rendaient des résultats différents, donc rien n'était testable), et **D17 n'avait ni preuve ni mutation** — dixième piège muet.
+
+#### Ce que la passe 4 dit du PROCESSUS, et c'est le vrai enseignement
+
+Le tableau se lit d'un coup d'œil :
+
+| | ce que la passe a trouvé | d'où ça venait |
+|---|---|---|
+| **P2** | dérives de décompte, décisions sans preuve | **les patches de P1** |
+| **P3** | le mécanisme ne fait pas le travail | la spec d'origine *(exécution)* |
+| **P4** | 3 `CRITICAL` | **le patch de remédiation de P3** |
+
+**Chaque tour de correctifs réinjecte des défauts au sommet de l'échelle de sévérité.** Ce n'est pas un accident de rédaction : c'est le mode d'échec que le `CLAUDE.md` nomme deux fois — « un patch vient AVEC son test » et la § *Propagation post-patch* — et le constater une troisième fois sur la même story signifie que **la codification ne suffit pas à le contenir ici**.
+
+Le diagnostic exact n'est **pas** « la story est trop large » au sens du décompte de modules : elle en touche quatre. C'est que **le patch de remédiation est trop large pour être tenu dans un seul mental-model fiable** — celui de la passe 3 réécrivait un mécanisme entier, trois décisions neuves et dix preuves, d'un seul geste.
+
+⚠️ **Arbitrage soumis à Guy** — cf. § *Questions ouvertes*, **Q5**.
 
 ## Dev Agent Record
 
