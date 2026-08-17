@@ -2,9 +2,9 @@
 
 ## Status
 
-draft
+ready-for-dev
 
-⛔ **La boucle `validate` est SUSPENDUE après la passe 3, en attente d'un arbitrage de Guy.** Deux `CRITICAL` ouverts, dont un défaut de **conception** établi par exécution : avec `limit: 5` et un tri alphabétique, le doublon exact est évincé de la fenêtre — le dispositif est muet sur le seul cas pour lequel il existe. Ne pas lancer `bmad-dev-story` sur cette story. Cf. § *Change Log*, passe 3, et les questions **Q3**, **Q4**, **Q1 amendée**.
+Les trois questions ouvertes par la passe 3 ont été **tranchées par Guy le 2026-08-17** : fenêtre d'interrogation large avec classement côté client (**D15**), normalisation du terme côté client (**D16**), et extension de `push_where_clauses` à `ide_number` (**Q1 → D5(a)**, T1 débloquée). Les vingt findings de la passe 3 sont appliqués. Une passe 4 reste due.
 
 ## Story
 
@@ -35,7 +35,18 @@ C'est ce qui rend l'arbitrage net : la prévention coûte le même prix aujourd'
 | **Numéro IDE identique** | Franc : c'est un identifiant d'État, deux entités ne le partagent pas. Presque certainement le même contact. |
 | **Nom proche** | Nuancé : *« un contact au nom proche existe »*, avec de quoi le reconnaître — nom complet, localité, numéro de client. |
 
-**D3 — Réutiliser la recherche existante, ne pas en inventer une seconde.** Le carnet se cherche déjà par index FULLTEXT sur `name`, complété d'un `LIKE` sur l'email et le numéro de client (Story 16-3b). C'est ce chemin qu'il faut réemployer. ⚠️ **Il porte DEUX branches** dans `push_where_clauses` — celle du terme échappé vide et celle du cas courant : **les deux, ou aucune**.
+**D3 — Réutiliser la recherche existante, ne pas en inventer une seconde.** Le carnet se cherche déjà par `MATCH(name) AGAINST(… IN BOOLEAN MODE)`, complété d'un `LIKE` sur l'email et le numéro de client (Story 16-3b). C'est ce chemin qu'il faut réemployer. ⚠️ **Il porte DEUX branches** dans `push_where_clauses` — celle du terme échappé vide et celle du cas courant : **les deux, ou aucune**.
+
+⚠️ **Mais « réutiliser » n'est pas « c'est indexé », et la nuance a été mesurée** (passe 3). Le `OR` entre le `MATCH` et les `LIKE` **interdit** à MariaDB d'employer `ft_contacts_name` :
+
+| Requête | Plan | Lignes examinées |
+|---|---|---|
+| `MATCH` seul | `fulltext`, clé `ft_contacts_name` | 1 |
+| **`MATCH OR LIKE` (la requête réelle)** | **`range`, clé `idx_contacts_company_name`** | **1506** |
+
+Mesuré sur 3016 contacts, `ANALYZE TABLE` fait : **1,26 ms + 2,36 ms** pour la paire `COUNT` + `SELECT` d'une sonde, contre 0,09 ms pour le `MATCH` seul. Et une pause de frappe émet **quatre** requêtes — deux sondes × (un `COUNT(*)` + un `SELECT`), le `COUNT` étant émis par `list_by_company_paginated:389-396` **même** avec un `limit` de 20.
+
+**#301 demandait explicitement d'instruire « le coût de la requête, à chaque frappe, sur un carnet qui grandira ».** Le voici, chiffré : de l'ordre de **4 ms par sonde à 3000 contacts**, ce qui est acceptable et ne remet pas la story en cause. Ce qu'il ne faut pas écrire, c'est « c'est indexé » — un développeur à qui l'on dit cela ne mesurera jamais.
 
 **D4 — Hors périmètre, explicitement.** Trois cas voisins relèvent d'un autre traitement, et les confondre ferait dériver cette story :
 
@@ -82,15 +93,28 @@ async function runSearch(q: string) {
 
 Il **ne coupe pas** la requête réseau — il rend sa réponse inoffensive, ce qui est très exactement ce qu'AC4 demande. Alternative écartée : composer les signaux par `AbortSignal.any([init.signal, controller.signal])` dans `api-client.ts`. Ce serait modifier le chemin HTTP de **toute** l'application pour une seule page — et le gain (quelques requêtes économisées sur un carnet local) ne paie pas ce rayon d'impact.
 
-**D7 — Le seuil de déclenchement est 3 caractères, et ce n'est pas une politique d'ergonomie.**
+**D7 — Le seuil de déclenchement est 3 caractères, et c'est une POLITIQUE D'ERGONOMIE — révisable.**
 
-Mesuré sur la base de dev le 2026-08-17 :
+⚠️ **La première rédaction de cette décision affirmait le contraire, et elle était fausse.** Elle disait : « en dessous de trois caractères, `MATCH(name) AGAINST(…)` ne rend **rien** ; le seuil est donc d'abord une contrainte du moteur ». Réfuté par exécution en passe 3 :
 
 ```
-innodb_ft_min_token_size	3
+AGAINST('Du*') → 1 résultat        AGAINST('Du') → 0 résultat
 ```
 
-En dessous de trois caractères, `MATCH(name) AGAINST(…)` ne rend **rien**. Un dispositif qui se déclencherait à la deuxième frappe serait **muet sans que rien ne le signale** — et un développeur qui teste à la main sur « Du » conclurait que sa recherche est cassée. Le seuil est donc d'abord une **contrainte du moteur**, et accessoirement une bonne politique (moins de bruit).
+`innodb_ft_min_token_size = 3` gouverne les tokens **exacts**. Il ne gouverne **pas** les recherches par préfixe — or `push_where_clauses:205` appose inconditionnellement `*`, si bien que la requête réellement émise pour « Du » est `Du*`, qui **rend des résultats**.
+
+Le seuil de trois caractères est donc retenu pour ce qu'il est : **limiter le bruit et le nombre de requêtes**. C'est un bon choix, mais un choix — et le présenter comme forcé retirait au décideur une latitude qui lui revient.
+
+⚠️ **Comment cette erreur a été produite, parce qu'elle est instructive** : la variable a été **mesurée** (la mesure est juste et figure au Debug Log), puis sa conséquence **déduite** sans être exécutée. C'est mot pour mot le mode d'échec que cette story hérite de la 22-1 et cite dans ses propres Dev Notes. *Une mesure juste ne rend pas vraie l'inférence qu'on en tire.*
+
+**D7-bis — Le seuil porte sur le PLUS LONG TOKEN, pas sur la longueur du terme.**
+Une `Personne` prénommée `An`, nommée `Li`, compose le terme `An Li` — **cinq caractères**, donc au-dessus du seuil : la sonde partirait. Mais les deux tokens font deux caractères, ne sont pas indexés, et `AGAINST('An Li*')` rend **0** alors que le contact est en base. On consommerait une requête pour un silence garanti. Le seuil s'écrit donc :
+
+```ts
+Math.max(...term.split(/\s+/).map((t) => t.length)) >= 3
+```
+
+Il laisse `Du` muet et `Jean` actif — inchangé pour tous les cas déjà spécifiés — et supprime la requête inutile d'`An Li`.
 
 Note : `innodb_ft_enable_stopword = ON`, mais la liste InnoDB par défaut est anglaise et ses entrées font pour l'essentiel moins de trois caractères — sans effet pratique ici. À ne pas confondre avec `ft_min_word_len`, qui est la variable **MyISAM** et ne s'applique à aucune table de Kesh.
 
@@ -115,7 +139,7 @@ const term = formContactType === 'Personne'
 
 ⚠️ `lint-i18n-ownership.js:154-163` compare le **dossier de feature** au **premier segment de la clé**. Le dossier est `contacts` (pluriel), les clés sont `contact-*` (singulier) : `getNamespace('contact-x') === 'contact' !== 'contacts'` ⇒ **toute** clé `contact-*` employée depuis `src/lib/features/contacts/` est une violation. C'est pour cela que `ContactCard.svelte` et `ContactPersonsManager.svelte` sont inscrits en dur dans `KNOWN_VIOLATIONS` (lignes 99-111) — c'est la dette #30, pas un accident.
 
-Retenu : **la logique pure dans un `.ts` sans aucune clé i18n**, le balisage et les clés restant dans `routes/(app)/contacts/+page.svelte`, qui est **hors du champ du lint** (`FEATURES_PATH` ne couvre que `src/lib/features`). Bénéfice double : le lint n'a rien à connaître, et la logique (seuil, tri, exclusion de soi, vérification de l'IDE) devient testable au vitest **sans DOM**.
+Retenu : **la logique pure dans un `.ts` sans aucune clé i18n**, le balisage et les clés restant dans `routes/(app)/contacts/+page.svelte`, qui est **hors du champ du lint** (`FEATURES_PATH` ne couvre que `src/lib/features`). Bénéfice double : le lint n'a rien à connaître, et la logique — seuil (D7-bis), normalisation du terme (D16), **classement** (D15), exclusion de soi, vérification de l'IDE (D10) — devient testable au vitest **sans DOM**.
 
 Écarté : poser un composant `.svelte` dans `features/contacts/` et allonger `KNOWN_VIOLATIONS` — cohérent avec l'existant, mais nourrit une dette que l'Epic 22 est censé refermer.
 
@@ -126,8 +150,10 @@ La recherche par `search=` est un `LIKE %…%` sur **plusieurs colonnes**. Un co
 Le franc avertissement n'est émis que si un résultat vérifie **deux** conditions :
 
 ```ts
-c.ideNumber === normalizeIdeForApi(formIde) && c.id !== editing?.id
+c.ideNumber === normalized && c.id !== editing?.id
 ```
+
+⚠️ **`normalized` est la valeur ENVOYÉE AVEC LA REQUÊTE, capturée à l'émission — jamais une relecture du champ à l'arrivée de la réponse.** La nuance n'est pas stylistique : `normalizeIdeForApi('')` rend **`null`**. Si l'utilisateur vide le champ IDE pendant que la sonde est en vol, une comparaison relue rendrait `c.ideNumber === null`, que **tout contact sans IDE** satisfait — et la recherche en remonte par nom et par email. Le signal **franc**, celui auquel on demande à l'utilisateur de faire confiance, s'afficherait alors sur un champ IDE **vide**.
 
 ⚠️ **La seconde n'est pas un raffinement, c'est la condition sans laquelle la sonde crie à faux à CHAQUE édition.** `openEdit` pré-remplit `formIde` avec l'IDE du contact lui-même (`+page.svelte:256`, `formIde = formatIdeNumber(c.ideNumber)`) : à l'ouverture d'une fiche pourvue d'un IDE, le champ est **déjà** `validateIdeFormat`-valide, et la sonde retrouverait **le contact qu'on est en train de modifier**. L'avertissement franc — celui auquel on demande à l'utilisateur de faire confiance (D2) — annoncerait donc « ce numéro IDE existe déjà » en désignant sa propre fiche, sur le chemin le plus banal du formulaire.
 
@@ -159,36 +185,95 @@ D'où :
 
 Écrire les deux sondes avec le même drapeau — dans un sens ou dans l'autre — casse l'une des deux.
 
+**D15 — La fenêtre d'INTERROGATION n'est pas la fenêtre d'AFFICHAGE.** *(Arbitrage de Guy, 2026-08-17, question Q3.)*
+
+⚠️ **Le défaut que cette décision répare est le plus grave qu'ait trouvé la revue, et il a été établi par exécution.** Avec `limit: 5`, un tri **alphabétique** et une sémantique **OU inclusif**, le doublon exact est **évincé de la fenêtre** :
+
+```sql
+-- carnet : Jean Bernard, Jean Dupont, Jean Favre, Jean Martin, Jean Rochat, Jean Zwahlen
+-- l'utilisateur saisit la Personne « Jean Zwahlen »
+SELECT id,name FROM contacts WHERE company_id=1 AND active=TRUE
+ AND MATCH(name) AGAINST('Jean Zwahlen*' IN BOOLEAN MODE) ORDER BY name ASC LIMIT 5;
+→ Jean Bernard · Jean Dupont · Jean Favre · Jean Martin · Jean Rochat
+→ total réel = 6            ⚠️ « Jean Zwahlen » EST ABSENT
+```
+
+Trois faits se composent, et aucun n'est amendable depuis cette story : `escape_boolean_ft` ne préfixe **aucun** token de `+` — la sémantique est **OU inclusif**, `search.rs:88-92` le dit en toutes lettres ; le tri est **alphabétique** et il n'existe **aucun** tri par pertinence à demander (`ContactSortBy` n'offre que `Name | CreatedAt | UpdatedAt`) ; la fenêtre était de 5. Le dispositif était donc **muet sur le seul cas pour lequel il existe**, et **bavard sur cinq contacts sans rapport** — les deux échecs qu'il devait éviter, réalisés simultanément. Les raisons sociales suisses commençant très souvent par un mot générique (`Garage`, `Fiduciaire`, `Sàrl`), ce n'est pas un cas de laboratoire.
+
+**Ce qui est retenu** : interroger large, classer et couper près.
+
+```
+BASE (inchangée)              CLIENT (module pur de T2)
+─────────────────────         ─────────────────────────────────
+OU inclusif                   1. le nom COMMENCE par le terme
+ORDER BY name ASC        →    2. puis proximité
+LIMIT 20                      3. slice(0, 5) pour l'affichage
+                              + « et N autres » via `total`
+```
+
+`ListResponse` porte déjà `total` (`contacts.types.ts:133-139`), qui est le **total réel** et non le nombre de lignes rendues : la mention « et N autres » ne coûte aucune requête. `limit: 20` reste très en deçà de `MAX_LIST_LIMIT` (100), et le coût mesuré en D3 le rend indolore sur un carnet local.
+
+⚠️ **C'est une ATTÉNUATION, pas une correction, et il faut le dire.** Le tri reste alphabétique côté base : une société de plus de vingt contacts partageant un token tronquerait encore. La correction structurelle — découper le terme en `+tok1* +tok2*`, ou ajouter un tri par pertinence à `ContactSortBy` — touche un chemin partagé par quatre consommateurs et **relève d'une story distincte** (arbitrage de Guy, Q3 option b).
+
+**D16 — Le terme est normalisé côté client avant l'envoi.** *(Arbitrage de Guy, 2026-08-17, question Q4.)*
+
+⚠️ **Retaper un nom à l'identique ne le remontait pas**, ce qui est le comble pour un détecteur de doublons :
+
+```
+AGAINST('CoopVaud*') → 0            AGAINST('Coop*') → 1   (contrôle)
+```
+
+`-` est l'un des dix opérateurs `BOOLEAN MODE`, et `escape_boolean_ft` le **supprime** au lieu de le remplacer par une espace (`search.rs:124-127`, `.filter(…).collect()`). Retaper `Coop-Vaud` produit donc `CoopVaud*`, qui ne matche **ni** `Coop` **ni** `Vaud`, les deux tokens réellement indexés. Le cas est massif en Suisse dès que le nom de famille est composé (`Müller-Weber`) : le terme dégénère alors en recherche sur le seul prénom, ce qui le livre tout droit au défaut que D15 répare.
+
+**Ce qui est retenu** : dans le module pur de T2, remplacer les dix opérateurs par une **espace** avant l'envoi — `Coop-Vaud` → `Coop Vaud` → `Coop Vaud*`, qui matche. Local à la story, aucun rayon d'impact.
+
+⚠️ La correction juste serait dans `escape_boolean_ft` lui-même (remplacer plutôt que supprimer), mais quatre repositories l'appellent : **story distincte**, à grouper avec Q3(b) puisque les deux touchent la même fonction (arbitrage de Guy).
+
+**D17 — Une proposition informe ; elle ne navigue pas.**
+La spec ne disait pas ce que l'utilisateur peut *faire* d'une proposition affichée — or `openEdit(c)` réassigne **les dix-neuf champs** du formulaire (`+page.svelte:246-269`) : un clic mal spécifié **effacerait la saisie en cours sans confirmation**. La proposition est donc **inerte** : elle porte de quoi reconnaître, pas de quoi cliquer. L'utilisateur qui décide de reprendre la fiche existante ferme le formulaire lui-même.
+
+C'est la position cohérente avec D1 (« signaler, jamais bloquer ») et la moins coûteuse : elle dispense de spécifier la protection de la saisie en cours **et** le sort d'un contact proposé qui serait archivé entre l'affichage et le clic.
+
 ## Acceptance Criteria
 
-**AC1 — La frappe du nom fait apparaître les contacts proches.**
-À partir de **trois caractères** saisis dans le champ de nom du formulaire de création (D7), les contacts **actifs** de la société dont le nom est proche sont proposés — archivés exclus (D12) —, avec de quoi les reconnaître : **nom complet, localité, et numéro de client** s'il existe (D11).
-⚠️ Vaut pour les **deux** types de contact — raison sociale pour `Entreprise`, prénom + nom pour `Personne` (D8).
-*Preuve*, trois tests de composant :
-1. un sur `Entreprise` ;
+**AC1 — La frappe du nom fait apparaître les contacts proches, et le PLUS proche en premier.**
+Dès que le plus long token du terme atteint **trois caractères** (D7-bis), les contacts **actifs** de la société dont le nom est proche sont proposés — archivés exclus (D12) —, **classés** (D15) et coupés à cinq, avec la mention « et N autres » quand `total` dépasse le nombre affiché.
+Chaque proposition porte de quoi reconnaître la fiche : **le nom complet**, puis **la localité et le numéro de client quand ils sont renseignés** (D11). ⚠️ La localité vaut `""` pour tout contact sans adresse (`routes/contacts.rs:213-219`, `city: c.address_city.unwrap_or_default()`) — c'est le cas de la fiche minimale et vite faite que cette story vise. Quand ni localité ni numéro de client n'existent, replier sur l'email : **deux propositions ne doivent jamais être rigoureusement identiques à l'écran**, sans quoi le discriminant sur lequel D11 fait reposer tout son arbitrage est vide.
+⚠️ Vaut pour les **deux** types de contact — raison sociale pour `Entreprise`, prénom + nom pour `Personne` (D8). Les propositions sont **inertes** (D17).
+*Preuve*, **cinq** tests de composant plus **un** test d'intégration :
+1. un sur `Entreprise`, qui assert aussi **les trois éléments d'affichage** : nom complet, localité, numéro de client. Sa mutation est « ne rendre que `c.name` » — elle laisse toutes les autres preuves vertes tout en supprimant le mécanisme de discrimination de la story ;
 2. un sur `Personne` — le seul qui tombe sous la mutation « ne lire que `formName` », et c'est sa raison d'être ;
-3. **un contact ARCHIVÉ au nom proche n'apparaît PAS** dans les propositions. Symétrique de la preuve 2 d'AC2, et pour le même motif : les deux sondes ne diffèrent que par un booléen, écrit à deux endroits voisins (§ *Forme exacte des deux appels*). C'est le genre de permutation qu'aucun test ne rattrape si elle se produit dans l'autre sens.
+3. un contact **sans adresse et sans numéro de client** : l'email est rendu, et aucune ligne vide ni tiret orphelin n'apparaît ;
+4. **l'argument de l'appel** : `expect(listContactsMock).toHaveBeenCalledWith(expect.objectContaining({ includeArchived: false }))`.
+   ⚠️ **Une preuve fonctionnelle ne convient PAS ici, et c'est mesuré.** `includeArchived` n'est qu'un paramètre de query-string : le filtrage est fait **par le serveur** (`push_where_clauses:158-161`). Sous `vi.mock`, le double rend ce qu'on lui a dit de rendre **sans regarder son argument** — donc « un contact archivé n'apparaît pas dans les propositions » reste vert sous la mutation `includeArchived: false → true`. C'est exactement ce qu'énonce le doc-comment de `products-page.test.ts`, que cette story cite par ailleurs : *seule l'assertion sur l'argument l'attrape* ;
+5. **le terme est normalisé** (D16) : un contact `Elektro-Meier AG` existant, saisir `Elektro-Meier` doit le proposer. Sa mutation est « envoyer le terme brut », qui rend `ElektroMeier*` et donc zéro résultat ;
+6. **`#[sqlx::test]` — le doublon exact figure dans la fenêtre.** Fixture : six `Jean X` dont `Jean Zwahlen` ; interroger avec `limit: 20` puis classer selon D15 ; `Jean Zwahlen` doit être **dans les cinq retenus**.
+   ⚠️ **Aucun test de composant ne peut tenir cette assertion** : les preuves de composant passent par un `vi.mock` de l'API, donc la requête réelle — sa sémantique OU, son tri alphabétique, sa fenêtre — n'est jamais exécutée. C'est le seul test de la story qui voie le défaut que D15 répare.
 
 **AC2 — Un numéro IDE déjà pris est signalé franchement, y compris quand le porteur est archivé.**
 La saisie d'un IDE **complet** (`validateIdeFormat` vrai) déjà porté par un contact de la société — **actif ou archivé** (D12) — déclenche un avertissement explicite, **distinct** du signal « nom proche », **avant** l'enregistrement. Il n'est émis que si un contact remonté porte effectivement cet IDE (D10). Quand le porteur est archivé, le message **le dit**.
 ⚠️ La contrainte `uq_contacts_company_ide` refuse déjà le doublon **à l'enregistrement**, en `409 IDE_ALREADY_EXISTS` (`map_contact_error:536-541`). Cette AC ne remplace pas la garde : elle évite d'y arriver, et surtout d'y arriver **après** avoir saisi toute la fiche.
-*Preuve*, **cinq** assertions distinctes — quatre tests de composant (portés par T4) et une vérification de bout en bout (la 4, portée par T6) :
-1. un test de composant pour l'avertissement sur un porteur **actif** ;
-2. **un test sur un porteur ARCHIVÉ** — c'est celui qui tombe sous la mutation `includeArchived: true → false`, et le seul qui couvre le cas sans recours de D12 ;
-3. un test sur le cas de D10 — un contact qui remonte sans porter cet IDE ne déclenche **pas** le franc avertissement ;
-4. un test qui vérifie que le `409` reste levé si l'avertissement est ignoré ;
-5. **ouvrir en édition la fiche d'un contact qui porte un IDE ne déclenche AUCUN avertissement franc** — ni à l'ouverture, ni après avoir retapé le même IDE. C'est la preuve de la seconde condition de D10, et elle tombe sous la mutation « retirer `&& c.id !== editing?.id` ».
+*Preuve*, **sept** assertions distinctes — six tests de composant (portés par T4) et une vérification de bout en bout (la 4, portée par T6) :
+1. l'avertissement s'affiche sur un porteur **actif** ;
+2. **l'argument de l'appel** : `expect(listContactsMock).toHaveBeenCalledWith(expect.objectContaining({ includeArchived: true }))`, **et** le message rendu pour un porteur archivé est **distinct** de celui rendu pour un porteur actif — deux clés i18n séparées.
+   ⚠️ Les deux moitiés sont indispensables et pour deux raisons différentes. L'argument, parce qu'une preuve fonctionnelle est **verte sous la mutation** (le filtrage archivés est serveur, cf. preuve 4 d'AC1) — et cette mutation-là rouvre le cas **sans recours** de D12. Le libellé, parce que c'est **lui** le recours : sans la mention « archivé », l'utilisateur reçoit un avertissement sur un contact qu'il ne trouvera pas dans son carnet, ne pourra ni modifier ni désarchiver, et dont il ne comprendra pas le `409` qui suit ;
+3. le cas de D10 — un contact qui remonte **sans porter cet IDE** ne déclenche **pas** le franc avertissement ;
+4. le `409` reste levé si l'avertissement est ignoré ;
+5. **ouvrir en édition la fiche d'un contact qui porte un IDE ne déclenche AUCUN avertissement franc** — ni à l'ouverture, ni après avoir retapé le même IDE. Preuve de la seconde condition de D10, mutation « retirer `&& c.id !== editing?.id` » ;
+6. **vider le champ IDE pendant que la sonde est en vol** puis résoudre la promesse avec un lot contenant un contact **sans IDE** ⇒ **aucun** avertissement franc. Preuve que la comparaison porte sur la valeur envoyée et non sur une relecture du champ (D10) ; mutation « comparer à `normalizeIdeForApi(formIde)` à l'arrivée », qui rend `null === null` ;
+7. **le retrait** : afficher l'avertissement sur un IDE pris, puis corriger un chiffre vers un IDE **libre** ⇒ plus aucun avertissement. Mutation : « n'écrire l'avertissement que dans la branche `if (holder)` », qui laisse l'ancien message à l'écran — désignant un numéro que l'utilisateur ne porte plus. Le signal **franc** deviendrait faux, ce qui est le seul défaut que D2 ne peut pas se permettre.
 
-**AC3 — L'avertissement ne bloque jamais — l'interface, s'entend.**
-Quel que soit le signal, franc ou nuancé, **l'interface laisse soumettre** : le bouton d'enregistrement reste actif, `formValidation` n'est pas touchée, la requête part.
-⚠️ **Ce que devient la requête ensuite ne relève PAS de cette AC**, et la distinction n'est pas une subtilité de rédaction — sans elle, AC3 et la preuve 4 d'AC2 se contredisent formellement. Sur le signal **franc**, le contact ne peut **pas** être créé : le porteur de l'IDE existe, donc `uq_contacts_company_ide` lève un `409` — c'est précisément ce qu'exige la preuve 4 d'AC2. Écrire « ignorer l'avertissement crée bien le contact » sans distinguer les deux signaux prescrit un test E2E **impossible à écrire** pour le cas franc.
-*Preuve* : test E2E sur le signal **nuancé** (nom proche) — ignorer l'avertissement crée bien le contact. ⚠️ **C'est l'assertion qui protège D1** : sa mutation — désactiver le bouton d'enregistrement — doit la faire tomber. Le cas franc est couvert par la preuve 4 d'AC2, qui documente le refus attendu.
+**AC3 — Les sondes ne changent RIEN à l'état du bouton.** *(Propriété différentielle, pas absolue.)*
+L'état du bouton d'enregistrement est **exactement celui qu'il aurait sans les sondes** : ni `disabled` ni `formValidation` ne sont touchés.
+⚠️ **Formuler l'AC en absolu — « le bouton reste actif » — serait FAUX dans des états que la spec couvre par ailleurs.** Le formulaire désactive déjà le bouton, aujourd'hui et sans rapport avec cette story, quand une `Personne` n'a qu'un des deux champs de nom (`+page.svelte:276-279`, et T2 qualifie cet état d'« état **normal** de la sonde »), quand l'adresse est partielle (`:281-282`), ou quand l'IDE est partiellement tapé (`:286-288`). Un développeur qui écrirait la preuve d'AC3 sur l'un de ces états verrait un bouton désactivé et pourrait « corriger » `formValidation` — c'est-à-dire **supprimer une garde préexistante pour satisfaire une AC mal bornée**.
+⚠️ **Ce que devient la requête ensuite ne relève PAS de cette AC.** Sur le signal **franc**, le contact ne peut **pas** être créé : le porteur de l'IDE existe, donc `uq_contacts_company_ide` lève un `409` — c'est ce qu'exige la preuve 4 d'AC2. Sans cette distinction, AC3 et AC2 se contredisent et prescrivent un test E2E impossible à écrire.
+*Preuve* : test E2E sur le signal **nuancé**, joué sur un formulaire **par ailleurs valide** (une `Entreprise` à la raison sociale complète), afin que la preuve ne dépende d'aucune garde étrangère à cette story. **Trois assertions dans l'ordre** — cf. T6, et l'ordre n'est pas décoratif : les deux dernières sont **vertes sur `main` aujourd'hui**, c'est la première qui fait de ce test une preuve de cette story.
 
 **AC4 — Rien ne part avant que la frappe se calme, et une réponse tardive ne dit plus rien.**
 La recherche est temporisée (300 ms, le pas du dépôt) et gardée par un compteur de génération : taper vingt caractères ne déclenche pas vingt requêtes, et une réponse arrivée en retard n'écrase pas un affichage plus récent.
 Les deux sondes ont chacune **leur** minuterie et **leur** compteur (D13), et leur état repart de zéro à chaque ouverture du formulaire (D14).
 *Preuve*, **cinq** tests :
-1. le **nombre d'appels** pour une frappe continue sur le champ de nom ;
+1. le **nombre d'appels** pour une frappe continue de vingt caractères sur le champ de nom, sous minuteries factices — **attendu : un seul**, celui du terme final ;
 2. deux requêtes résolues **dans l'ordre inverse** de leur lancement — la première arrivée en dernier est ignorée ;
 3. **un test croisé** : armer la sonde nom, puis la sonde IDE avant résolution, et vérifier que **les deux** avertissements aboutissent. Il tombe sous la mutation « factoriser une seule paire `(timer, compteur)` », que les deux autres tests laissent verte ;
 4. **le nombre d'appels de la sonde IDE sur une suite valide → invalide → valide** (`CHE109322551` → on efface un chiffre → on le retape). Attendu : **deux** appels, un par passage à la validité — pas un de plus au passage par l'invalidité (D10), pas un de moins au retour. Sans lui, une sonde branchée sur chaque frappe du champ IDE passe les tests 1 à 3 ;
@@ -197,13 +282,16 @@ Les deux sondes ont chacune **leur** minuterie et **leur** compteur (D13), et le
 
 **AC5 — Le dispositif est muet quand il n'a rien à dire.** Deux clauses **distinctes**, qui n'ont pas la même conséquence :
 
-- **(a) moins de trois caractères ⇒ AUCUNE requête** n'est émise (D7) ;
+- **(a) plus long token sous trois caractères ⇒ AUCUNE requête** n'est émise (D7-bis) — ce qui couvre `Du`, mais aussi la `Personne` « An Li », dont le terme fait cinq caractères et dont aucun token n'est indexé ;
 - **(b) trois caractères ou plus, aucun contact proche ⇒ aucun encombrement de l'écran, aucun message ;**
 - **(c) une sonde qui ÉCHOUE est muette elle aussi** — réseau coupé, `500`, réponse illisible : aucun message d'erreur, aucune exception remontée, et **l'autre sonde continue de fonctionner**. Une sonde n'est pas une action de l'utilisateur : il n'a rien demandé, on ne lui doit donc aucun rapport d'échec.
 
 ⚠️ La conséquence « aucune requête » n'appartient qu'à (a). L'attacher aussi à (b) serait **impossible à satisfaire** : constater qu'aucun contact n'est proche suppose précisément d'avoir cherché.
 ⚠️ **Le seuil vaut dans les DEUX SENS.** Repasser sous trois caractères — effacer une lettre après en avoir tapé trois — remet le dispositif au silence : les propositions déjà affichées **disparaissent**, et la réponse d'une requête lancée à trois caractères qui arrive après la suppression ne les fait pas revenir (c'est le compteur de génération de D13 qui s'en charge). Un seuil qui ne joue qu'à la montée laisse un affichage figé sur un terme que l'utilisateur a déjà effacé.
-*Preuve*, **quatre** tests : pour (a), **deux** — la saisie de deux caractères ne déclenche aucun appel réseau, **et** le retour de trois à deux caractères vide les propositions ; pour (b), **un** test de composant sur un carnet vide vérifiant qu'aucun message n'est rendu ; pour (c), **un** test où la sonde IDE répond `500` pendant que la sonde nom répond `200` — aucun message d'erreur n'est rendu, **et** les propositions de la sonde nom s'affichent normalement. Ce dernier tombe sous la mutation « retirer le `try/catch` d'une sonde », qu'aucun autre test n'attrape.
+*Preuve*, **cinq** tests :
+- pour (a), **trois** — la saisie de deux caractères ne déclenche aucun appel ; la `Personne` « An Li » n'en déclenche aucun non plus (D7-bis, mutation « mesurer la longueur du terme entier ») ; et le retour de trois à deux caractères **vide** les propositions ;
+- pour (b), **un** test de composant sur un carnet vide vérifiant qu'**aucun texte** n'est rendu. ⚠️ **Asserter l'absence de TEXTE, jamais l'absence de NŒUD** — les zones d'avertissement restent en permanence dans le DOM pour qu'`aria-live` fonctionne (T4), donc une assertion sur l'absence du nœud contredirait cette sous-tâche ;
+- pour (c), **un** test où la sonde IDE répond `500` pendant que la sonde nom répond `200` — aucun message d'erreur n'est rendu, **et** les propositions de la sonde nom s'affichent normalement. Mutation : « retirer le `try/catch` d'une sonde », qu'aucun autre test n'attrape.
 
 **AC6 — Les avertissements sont traduits dans les quatre locales.**
 *Preuve* : un test Rust dédié dans `crates/kesh-i18n/src/loader.rs`, sur le patron exact de `client_number_labels_are_translated_in_all_four_locales` (`loader.rs:260-277`) — pour chaque clé neuve, `!= key` **et** `!= fr` sur `de-CH`, `it-CH`, `en-CH`. Plus `npm run lint-i18n-ownership` vert.
@@ -223,48 +311,64 @@ Un seul type suffit **ici**, et la raison se vérifie : la garde est `c.id !== e
   - [ ] Deux tests `#[sqlx::test]`, **un par branche** : le cas courant (`search=CHE109322551`) et le cas où `escaped.is_empty()`, c'est-à-dire un terme **intégralement** composé des 10 opérateurs `+ - > < ( ) ~ * " \` — par exemple `search=***`.
   - [ ] ⚠️ **Ne PAS se caler sur `test_search_handles_special_chars:1283` pour la seconde branche : il ne l'exerce pas.** Il cherche `"100%"`, et `%` **n'est pas** un opérateur BOOLEAN MODE (`crates/kesh-db/src/util/search.rs:41`) — le terme survit donc intact à `escape_boolean_ft`, et le test emprunte la branche `else`. Vérifié en passe 1 de validate. **Aucun test du dépôt n'exerce aujourd'hui la branche `escaped.is_empty()`** : il n'y a pas de patron à copier, seulement un terme à choisir correctement.
   - [ ] ⚠️ **`push_where_clauses` est un chemin PARTAGÉ** — cf. § *Rayon d'impact de T1*. Relancer `binary(contacts)` **et** les suites qui consomment la liste de contacts, pas seulement le test qu'on vient d'écrire.
-  - [ ] **Conditionné à l'arbitrage Q1.** Si Q1 est tranchée « ne pas élargir la recherche du carnet », T1 devient une route dédiée et AC2 change de coût — **demander avant d'implémenter**.
-- [ ] **T2 — Logique pure de proposition** (AC1, AC2, AC5, AC7). Un module `.ts` sans clé i18n ni DOM (D9) : seuil de 3 caractères **dans les deux sens** (AC5), choix du terme selon le type (D8), exclusion du contact édité sur **les deux** sondes (AC7 et D10), vérification de l'IDE sur le champ (D10).
-  - [ ] Tests vitest directs, sans `render` — c'est le bénéfice de D9.
+  - [ ] ✅ **Q1 TRANCHÉE par Guy le 2026-08-17 : option (a), étendre `push_where_clauses`.** T1 est débloquée. ⚠️ Le bénéfice de bord est **plus faible qu'annoncé** : `'CHE109322551' LIKE '%CHE-109.322.551%'` rend **0** — l'IDE est stocké normalisé, le `LIKE` porte sur le terme brut, donc seule la saisie **sans séparateurs** remontera le contact. Ne pas réécrire la promesse inverse.
+  - [ ] **Propager aux libellés que T1 périme** (§ *Rayon d'impact de T1*) : `contact-filter-search-placeholder` **énumère les colonnes cherchées** (« Rechercher par nom, email ou n° client… ») dans les **4 FTL**, et son fallback est **écrit en dur** à `+page.svelte:455`. T1 ajoute une colonne : les six sites deviennent faux. Rattaché à **AC6**.
+- [ ] **T2 — Logique pure de proposition** (AC1, AC2, AC5, AC7). Un module `.ts` sans clé i18n ni DOM (D9) : seuil **sur le plus long token**, dans les deux sens (D7-bis, AC5), **normalisation du terme** (D16), choix du terme selon le type (D8), **classement et coupe** (D15), exclusion du contact édité sur **les deux** sondes (AC7 et D10), vérification de l'IDE sur le champ (D10).
+  - [ ] **La règle de classement, écrite** (D15) : d'abord les noms qui **commencent par** le terme (comparaison repliée en casse et sans accents, cohérente avec la collation `_ci` de la table), puis les autres par proximité, puis `slice(0, 5)`. La mention « et N autres » se calcule sur le `total` de `ListResponse`, jamais sur `items.length`.
+  - [ ] **La normalisation du terme, écrite** (D16) : remplacer les dix opérateurs `+ - > < ( ) ~ * " \\` par une **espace**, puis replier les espaces multiples. `Coop-Vaud` → `Coop Vaud`. ⚠️ Remplacer, **pas** supprimer — supprimer est précisément ce que fait `escape_boolean_ft` et c'est la cause du défaut.
+  - [ ] Tests vitest directs, sans `render` — c'est le bénéfice de D9. Ils couvrent le classement, la normalisation, le seuil par token et les cas limites ci-dessous.
   - [ ] **Cas limites de composition du terme** (D8), à couvrir explicitement : `Personne` avec le nom encore vide (`"Jean"`), avec le prénom encore vide (`"Dupont"`), avec les deux vides (`""` ⇒ sous le seuil, donc muet), et la **bascule de type en cours de frappe** `Entreprise ⇄ Personne`. Le formulaire n'exige prénom **et** nom qu'à la soumission (`validate_common:362-370`) : pendant la frappe, l'un des deux est presque toujours vide, et c'est l'état **normal** de la sonde, pas un cas dégradé.
 - [ ] **T3 — Temporisation et garde d'ordre** (AC4). Débounce 300 ms + compteur de génération, sur le patron de `ContactPicker.svelte:36-78` (D6). **Une paire `(timer, compteur)` PAR SONDE** (D13) — `ContactPicker` n'a qu'un flux et ne peut pas servir de modèle sur ce point.
   - [ ] Réutiliser `debounce` de `$lib/features/journal-entries/debounce.ts` **ou** le `setTimeout` inline déjà présent dans `+page.svelte:185-192` — ne pas écrire un troisième mécanisme. ⚠️ Le helper est mal rangé (dossier `journal-entries` pour un utilitaire général) : le **déplacer** est hors périmètre, s'en servir ne l'est pas.
   - [ ] Remise à zéro des deux paires dans `openCreate()` **et** `openEdit()` (D14) — **pas** sur la fermeture du dialogue, qui a trois sites (`:352`, `:358`, `:846`) et n'en aura pas moins demain.
   - [ ] Nettoyer les timers au démontage — `+page.svelte:113` le fait déjà pour la recherche de liste, les nouveaux doivent l'être aussi.
   - [ ] Brancher les sondes sur **`oninput`**, comme `ContactPicker.svelte:127` et `+page.svelte:463`, et **jamais sur `onkeydown`** — un collage ne produit aucune frappe clavier, et une sonde branchée sur le clavier resterait muette sur le geste le plus courant de tous : coller un nom depuis un courriel. (`ContactPicker` a bien un `onkeydown:133`, mais il ne pilote que la navigation au clavier dans la liste.)
-  - [ ] **Écrire les 5 tests de la preuve d'AC4** — cf. le § *Décompte des preuves*.
+  - [ ] **Écrire les tests de la preuve d'AC4** — leur nombre est au § *Décompte des preuves*, qui est le seul site à en porter un.
 - [ ] **T4 — Balisage et signaux** (AC1, AC2, AC3, AC5, AC7). Deux niveaux visuellement distincts (D2), aucun blocage : ne toucher **ni** au `disabled` du bouton d'enregistrement **ni** à `formValidation` (`+page.svelte:275`).
   - [ ] Il n'existe pas de composant `alert` dans `lib/components/ui/` — se caler sur le style d'erreur déjà employé par le formulaire (`formError`), sans créer de primitive nouvelle.
   - [ ] Encapsuler **chaque** sonde dans un `try/catch` qui se tait, comme `ContactPicker.svelte:64-67`. Une sonde n'est pas une action de l'utilisateur : son échec ne doit produire ni message d'erreur ni exception remontée.
-  - [ ] **Créer `frontend/src/routes/(app)/contacts/+page.test.ts`** — il n'existe **aucun** test de cette page aujourd'hui (seul `contact-helpers.test.ts` existe pour ce domaine). Patron : `products-page.test.ts`, mocks hoistés avant l'import. Il porte les **12 tests de composant** du décompte ci-dessous.
+  - [ ] **Rendre chaque avertissement IMMÉDIATEMENT SOUS le champ qui le déclenche** — propositions sous le nom / prénom-nom, avertissement franc sous `#form-ide` — et **jamais** dans le bloc `formError` du bas. Le `Dialog.Content` est en `max-h-[90vh] overflow-y-auto` (`+page.svelte:637`) et **défile en interne** : un avertissement rendu en bas serait hors écran pour qui tape la raison sociale, en haut. Un avertissement hors écran est un avertissement muet.
+  - [ ] **Les deux zones d'avertissement sont rendues EN PERMANENCE dans le DOM**, `aria-live="polite"`, contenu vide quand il n'y a rien à dire. Patron : `ResetPasswordForm.svelte:162-169`, dont le commentaire dit « *toujours dans le DOM pour que aria-live fonctionne* ». ⚠️ **Ne PAS copier le `role="combobox"` de `ContactPicker`** : c'est un patron de **sélection**, inadapté à un avertissement passif (D17), et il ne porte aucun `aria-live`. Sans cela, les propositions apparaissent sans action de l'utilisateur, dans un nœud qui ne reçoit pas le focus — donc **invisibles** pour un lecteur d'écran, c'est-à-dire muettes.
+  - [ ] **L'avertissement franc s'efface quand `formError` prend le relais** après un `409`, pour que la même phrase ne s'affiche pas deux fois à deux endroits (`+page.svelte:361` pose déjà `contact-error-ide-duplicate`).
+  - [ ] **Créer `frontend/src/routes/(app)/contacts/+page.test.ts`** — il n'existe **aucun** test de cette page aujourd'hui (seul `contact-helpers.test.ts` existe pour ce domaine). Patron : `products-page.test.ts`, mocks hoistés avant l'import. Il porte les tests de composant du § *Décompte des preuves*.
   - [ ] ⚠️ **Cette sous-tâche est la raison d'être de T4.** Sans elle, T4 se coche en ayant livré du balisage, et **aucune** des preuves d'AC1, AC2, AC5 et AC7 n'existe — relevé en passe 1 de validate.
 - [ ] **T5 — i18n** (AC6). Les clés neuves dans les **quatre** FTL (`crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl`), domaine `contact-*`, plus le test Rust dédié.
+  - [ ] **Clés neuves attendues** : l'en-tête des propositions, la mention « et N autres », l'avertissement franc sur porteur **actif**, et l'avertissement franc sur porteur **archivé** — ce dernier **distinct**, c'est la preuve 2 d'AC2.
+  - [ ] ⚠️ **Ne PAS réutiliser `contact-error-ide-duplicate`** (`fr-CH:374`) pour l'avertissement préventif : elle sert déjà au message d'échec du `409` (`+page.svelte:361`), et elle ne sait ni nommer le porteur ni dire qu'il est archivé.
+  - [ ] **Mettre à jour `contact-filter-search-placeholder`** dans les 4 locales **et** son fallback en dur (`+page.svelte:455`) si T1 est livrée — cf. la sous-tâche de T1.
 - [ ] **T6 — E2E** (AC3, **et la preuve 4 d'AC2**). ⚠️ Le fichier **DOIT** être nommé `*.spec.ts` : `playwright.config.ts:35` filtre sur `testMatch: /(.+\.)?spec\.[jt]s/`, et un `*.test.ts` posé dans `tests/e2e/` est **silencieusement ignoré** — il ne rougit jamais, il se tait.
-  - [ ] Patron : `frontend/tests/e2e/contact-client-number.spec.ts` (Story 22-1) — `seedTestState('with-company')`, login, et **archivage du contact créé** en fin de test pour ne polluer ni l'unicité ni les tests suivants.
-  - [ ] **Assertion 1 (AC3)** : ignorer le signal **nuancé** (nom proche) et soumettre **crée bien le contact** — vérifié après rechargement.
-  - [ ] **Assertion 2 (preuve 4 d'AC2)** : ignorer le signal **franc** (IDE déjà pris) et soumettre **échoue en `409`**, et l'interface le dit. C'est la seule preuve de la story qui traverse réellement la frontière HTTP jusqu'à la contrainte.
-  - [ ] ⚠️ **Sans ces deux lignes, T6 se coche sur un fichier E2E qui monte le décor et n'assert rien** — un test vide passe, et il se tait exactement comme le ferait un fichier mal nommé. C'est le même mode d'échec que celui contre lequel la ligne du `testMatch` met en garde, un cran plus loin. Relevé en passe 2 de validate.
+  - [ ] Patron : `frontend/tests/e2e/contact-client-number.spec.ts` (Story 22-1) — `seedTestState('with-company')`, puis login.
+  - [ ] ⚠️ **ARCHIVER NE LIBÈRE PAS L'IDE** — contrainte **plate** (D12), contrairement au numéro de client de la 22-1 dont le patron vient. Le nettoyage par archivage que ce patron applique **ne fonctionne pas ici**. Chaque assertion emploie un **IDE distinct et à checksum valide**, pris dans une petite liste en dur (`CHE109322551`, `CHE116281838` — les deux vérifiés) ; l'isolation entre exécutions repose sur le `truncate_all` de `seedTestState`. ⚠️ Et l'astuce `CLI-${Date.now()}` de la 22-1 est **intransposable** : le dernier chiffre d'un IDE est un checksum modulo 11 (`che_number.rs:102-131`) — on ne tamponne pas une horloge dans un IDE.
+  - [ ] **Test 1 (AC3), trois assertions DANS CET ORDRE**, sur une `Entreprise` par ailleurs valide : (i) **le signal nuancé est VISIBLE** ; (ii) le bouton d'enregistrement est **activé** ; (iii) soumettre **crée bien le contact**, vérifié après rechargement.
+  - [ ] **Test 2 (preuve 4 d'AC2), trois assertions DANS CET ORDRE** : (i) **le signal franc est VISIBLE** ; (ii) le bouton est **activé** ; (iii) soumettre **échoue en `409`** et l'interface le dit.
+  - [ ] ⚠️ **La première assertion de chaque test n'est PAS décorative : c'est la seule qui prouve quelque chose de cette story.** Les assertions (ii) et (iii) sont **VERTES SUR `main` AUJOURD'HUI**, avant qu'une ligne soit écrite — créer un contact fonctionne déjà, et un IDE dupliqué donne déjà `409`. Sans (i), la mutation « **n'implémenter aucune sonde** » laisse les deux tests au vert. Relevé en passe 3 de validate.
 - [ ] **T7 — Documentation** (AC1, AC2). `docs/manual/fr/user-manual.tex`, § *Contacts* → *Création d'un contact* (ligne 506) : ce que l'avertissement dit, et **qu'il n'empêche rien**. Régénérer le PDF (`make fr` dans `docs/manual/`) et le commiter — la convention du dépôt est de versionner les PDF.
-  - [ ] ⚠️ Ne PAS toucher à la ligne 538 (« *Contacts → Import CSV* »), qui annonce une fonction inexistante : c'est **#291**, une issue ouverte à part. La corriger ici mélangerait deux sujets dans une PR.
+  - [ ] **Corriger `user-manual.tex:532`** si T1 est livrée : cette phrase **énumère** les colonnes cherchées (« sur le **nom**, complété par une recherche sur l'**email** et le **numéro de client** »), et T1 en ajoute une. C'est la seule phrase du manuel que T1 falsifie.
+  - [ ] ⚠️ Ne PAS toucher à la ligne 538 (« *Contacts → Import CSV* »), qui annonce une fonction inexistante : c'est **#291**, une issue ouverte à part. La corriger ici mélangerait deux sujets dans une PR. **À ne pas confondre avec la 532 ci-dessus.**
 
 ## Décompte des preuves — la seule table qui fait foi
 
-⚠️ **Ce tableau est l'unique compteur de la story.** Aucun autre passage ne doit énoncer un total : trois compteurs épars avaient déjà dérivé en une seule passe de revue (le titre d'AC2 disait « quatre » pour cinq preuves, celui des pièges muets « six » pour sept, un Change Log « 8 tests » pour dix). Un nombre qui n'a qu'un seul site ne peut pas se désynchroniser. Il se **recompte depuis les AC**, jamais ne s'incrémente de confiance.
+⚠️ **Ce tableau est l'unique compteur GLOBAL de la story.** Trois compteurs épars avaient dérivé en une seule passe de revue (le titre d'AC2 disait « quatre » pour cinq preuves, celui des pièges muets « six » pour sept, un Change Log « 8 tests » pour dix). Un total qui n'a qu'un seul site ne peut pas se désynchroniser.
 
-| AC | Preuves | Nature | Portées par |
+**Règle exacte, parce que la formulation précédente était fausse** : les *titres de preuve* des AC énoncent le nombre de **leur propre liste énumérée**, qui est la ventilation dont ce tableau est la somme — ils se recomptent depuis la liste qui les suit, et ce tableau se recompte depuis eux. **Aucun autre site n'est autorisé à énoncer un total.** *(La passe 2 avait écrit « aucun autre passage n'énonce de total » alors que six sites en énonçaient : elle avait corrigé les valeurs sans supprimer les sites, puis déclaré les sites supprimés.)*
+
+| AC / tâche | Preuves | Nature | Portées par |
 |---|---:|---|---|
-| AC1 — nom proche | 3 | composant | T4 |
-| AC2 — IDE déjà pris | 4 + 1 | composant + E2E | T4 · T6 |
-| AC3 — ne bloque jamais | 1 | E2E | T6 |
-| AC4 — temporisation et ordre | 5 | unitaire | T3 |
-| AC5 — muet quand rien à dire | 4 | composant | T4 |
+| AC1 — nom proche | 5 + 1 | composant + `#[sqlx::test]` | T4 · T1 |
+| AC2 — IDE déjà pris | 6 + 1 | composant + E2E | T4 · T6 |
+| AC3 — l'état du bouton est inchangé | 1 | E2E | T6 |
+| AC4 — temporisation et ordre | 5 | unitaire front | T3 |
+| AC5 — muet quand rien à dire | 5 | composant | T4 |
 | AC6 — quatre locales | 1 | unitaire Rust | T5 |
 | AC7 — édition sans se signaler | 1 | composant | T4 |
 | *(T1 — l'IDE cherchable)* | 2 | `#[sqlx::test]` | T1 |
+| *(T2 — composition du terme)* | 4 | unitaire front (module pur) | T2 |
 
-**Totaux, sommés depuis la colonne** : **12 tests de composant** (3 + 4 + 4 + 1) · **5 tests unitaires** front · **2 assertions E2E** · **1 test unitaire Rust** i18n · **2 tests d'intégration** base. **Soit 22 preuves.**
+**Totaux, sommés depuis la colonne** : **17 tests de composant** (5 + 6 + 5 + 1) · **9 tests unitaires front** (5 d'AC4 + 4 de T2) · **2 assertions E2E** (1 + 1) · **1 test unitaire Rust** · **3 tests d'intégration base** (1 d'AC1 + 2 de T1). **Soit 32 preuves.**
 
-Réserve honnête sur une seule ligne : la première preuve de la clause (a) d'AC5 (« moins de trois caractères ⇒ aucun appel ») peut légitimement vivre dans le module pur de T2 plutôt que dans le fichier de page. Elle reste comptée ici — ce qui n'est pas négociable, c'est **qu'elle existe**, pas l'endroit où elle vit.
+⚠️ **La preuve 6 d'AC1 est un `#[sqlx::test]`, et ce n'est pas un détail de rangement.** C'est la **seule** preuve de toute la story qui exécute la requête réelle — sa sémantique OU, son tri alphabétique, sa fenêtre. Les 17 preuves de composant passent par un `vi.mock` de `contacts.api` et sont, par construction, **aveugles** au défaut que D15 répare.
+
+Réserve honnête : les deux premières preuves de la clause (a) d'AC5 (« aucun appel » sous le seuil) peuvent légitimement vivre dans le module pur de T2 plutôt que dans le fichier de page. Elles restent comptées ici — ce qui n'est pas négociable, c'est **qu'elles existent**, pas l'endroit où elles vivent.
 
 ## Dev Notes
 
@@ -289,6 +393,8 @@ Réserve honnête sur une seule ligne : la première preuve de la clause (a) d'A
 | La recherche du carnet (`+page.svelte:462`) | chercher un IDE y remonte désormais son contact — **c'est l'objet de Q1** |
 | `ContactPicker.svelte` (choix du débiteur sur une facture) | même élargissement, non demandé, non nuisible |
 | Tout test existant qui compte des résultats de recherche | un terme qui matche aussi un IDE peut changer un `total` |
+| **Le libellé qui DÉCRIT la recherche** | `contact-filter-search-placeholder` **énumère les colonnes cherchées** dans les 4 FTL, et son fallback est **en dur** à `+page.svelte:455` — six sites deviennent faux |
+| **Le manuel utilisateur** | `user-manual.tex:532` énumère lui aussi nom / email / numéro de client |
 
 Les tests à surveiller nommément : `test_filter_by_search_name:1225`, `test_search_handles_special_chars:1283`, `test_search_no_longer_matches_mid_word:1328`. Aucun ne devrait bouger — les IDE des seeds ne contiennent pas les termes qu'ils cherchent — mais **c'est à vérifier par exécution, pas par lecture**.
 
@@ -299,27 +405,30 @@ Le geste correct est celui de la § *Pendant une boucle de revue* du `CLAUDE.md`
 Pour qu'aucun paramètre ne se perde entre l'intention et le code :
 
 ```ts
-// AC1 — sonde « nom proche ». Actifs SEULEMENT (D12), soi-même exclu (AC7).
-const rn = await listContacts({ search: term, limit: 5, includeArchived: false });
-const proches = rn.items.filter((c) => c.id !== editing?.id);
+// AC1 — sonde « nom proche ».
+//   Actifs SEULEMENT (D12) · fenêtre LARGE (D15) · terme normalisé (D16) · soi exclu (AC7).
+const rn = await listContacts({ search: normalizeTerm(term), limit: 20, includeArchived: false });
+const proches = rank(rn.items.filter((c) => c.id !== editing?.id), term).slice(0, 5);
+const autres  = rn.total - proches.length;        // « et N autres », jamais items.length
 
-// AC2 — sonde IDE. Archivés COMPRIS (D12), soi-même exclu (D10),
-// puis vérification SUR LE CHAMP — un résultat n'est pas une preuve (D10).
+// AC2 — sonde IDE.
+//   Archivés COMPRIS (D12) · soi exclu (D10) · vérification SUR LE CHAMP (D10),
+//   contre `normalized`, la valeur ENVOYÉE — jamais une relecture du champ.
 const ri = await listContacts({ search: normalized, limit: 5, includeArchived: true });
 const holder = ri.items.find((c) => c.ideNumber === normalized && c.id !== editing?.id);
 ```
 
-⚠️ **Les deux appels ne diffèrent que par un booléen et se lisent côte à côte.** C'est délibérément le passage le plus dangereux de la spec : une inversion de `includeArchived` ne casse rien, ne fait rougir aucun test qui ne la vise pas, et retourne des résultats plausibles dans les deux sens. D'où la preuve 3 d'AC1 **et** la preuve 2 d'AC2 — une par sens.
+⚠️ **Les deux appels ne diffèrent que par deux paramètres et se lisent côte à côte.** C'est délibérément le passage le plus dangereux de la spec : une inversion d'`includeArchived` ne casse rien, ne fait rougir aucun test **fonctionnel**, et rend des résultats plausibles dans les deux sens — parce que le filtrage est fait **par le serveur** et qu'un `vi.mock` ne regarde pas ses arguments. D'où deux preuves **sur l'argument**, une par sens : preuve 4 d'AC1 et preuve 2 d'AC2.
 
-`limit` est borné à 100 par `MAX_LIST_LIMIT` (`routes/contacts.rs:42`) ; 5 suffit largement et tient l'affichage court, ce qui sert directement le « piège de cette story » ci-dessous. `ContactResponse` porte `ideNumber`, `clientNumber` et `addressStructured` (donc la localité) — **rien à ajouter au DTO**.
+`ContactResponse` porte `ideNumber`, `clientNumber`, `email` et `addressStructured` (donc la localité) — **rien à ajouter au DTO**. `MAX_LIST_LIMIT` vaut 100 (`routes/contacts.rs:42`), `limit: 20` reste très en deçà.
 
 ### Le piège de cette story
 
 Un avertissement trop bavard **ne protège plus rien** : on apprend à le fermer sans le lire, et il devient un clic de plus. C'est le vrai risque, plus que le faux négatif. Le seuil doit donc être **serré** — mieux vaut manquer un doublon que crier trois fois par jour à tort. AC7 (ne pas se signaler soi-même) et D10 (ne pas crier « IDE pris » à faux) ne sont pas des raffinements : ce sont les deux façons les plus rapides de rendre le dispositif inaudible dès la première semaine.
 
-### Les sept pièges muets, nommés
+### Les neuf pièges muets, nommés
 
-Aucun des sept ne casse la compilation, ne fait rougir un test, ni ne produit d'erreur au runtime. C'est ce qui les rend coûteux — et c'est pourquoi chacun a sa preuve dédiée, dont la **mutation** est écrite en face.
+Aucun des neuf ne casse la compilation, ne fait rougir un test, ni ne produit d'erreur au runtime. C'est ce qui les rend coûteux — et c'est pourquoi chacun a sa preuve dédiée, dont la **mutation** est écrite en face.
 
 | Piège | Symptôme | Garde |
 |---|---|---|
@@ -329,6 +438,8 @@ Aucun des sept ne casse la compilation, ne fait rougir un test, ni ne produit d'
 | sonde nom sur les archivés (D12, sens inverse) | propositions polluées par des fiches mortes | AC1 preuve 3 |
 | sonde IDE sans exclusion de soi (D10) | le signal **franc** crie à faux à chaque édition | AC2 preuve 5 |
 | une seule paire `(timer, compteur)` (D13) | l'un des deux avertissements ne s'affiche jamais | AC4 preuve 3, le test croisé |
+| preuve d'archivage écrite FONCTIONNELLEMENT | le mock ignore ses arguments ⇒ verte sous la mutation | assertion **sur l'argument** : AC1 preuve 4, AC2 preuve 2 |
+| assertion E2E sans la visibilité du signal | verte sur `main`, avant qu'une ligne soit écrite | T6, la visibilité **en premier** dans les deux tests |
 | clé i18n absente de 3 locales (AC6) | repli silencieux sur le français | assertion `!= fr`, la seule qui l'attrape |
 
 ### Ce que la story ne répare pas, et qu'elle rend plus atteignable
@@ -375,8 +486,8 @@ Les cinq derniers commits de `main` sont l'Epic 22 en cours : `70e6a2d0` (plafon
 - Issue **#301** — le besoin, et les trois points à instruire (sur quoi apparier, le seuil, le coût de la requête).
 - Story **22-1** (`22-1-unicite-canonique-numero-client.md`) — `canonical_key`, la colonne canonique, et la leçon de méthode.
 - Story **22-3** (#300) — la fusion, en veille : ce que cette story doit rendre inutile.
-- Issue **#302** — la succession d'entreprise, à ne pas confondre.
-- Issue **#291** — le manuel annonce un import CSV inexistant, dans la section que T7 touche. **À ne pas traiter ici.**
+- Issue **#302** — la succession d'entreprise, à ne pas confondre **(D4)**.
+- Issue **#291** — le manuel annonce un import CSV inexistant, dans la section que T7 touche **(D4)**. **À ne pas traiter ici**, et à ne pas confondre avec la ligne 532 que T1 périme.
 - Story **7-4 / KF-005** (`7-4-kf-005-fulltext-search-index.md`) — l'analyse d'origine du FULLTEXT, dont le § *UX impact tokens courts* et le tableau `innodb_ft_min_token_size` vs `ft_min_word_len`.
 - `CLAUDE.md` — § *Un appariement automatique propose, il ne crée jamais*, § *Test Locally First*, § *Un gate laisse la base piégée*.
 
@@ -438,7 +549,7 @@ Bruts : 3 + 8 + 3 = 14. Un doublon (BH2-2 ≡ AA2-2), une fusion (ECH2-6 + ECH2-
 
 **Le fil rouge de cette passe, et il est à ma charge : ce sont les correctifs de la passe 1 qui ont produit l'essentiel de ses findings.** Deux familles, toutes deux nommées dans le `CLAUDE.md` :
 
-- **Trois décomptes faux, tous introduits par mes propres patches de passe 1** — le titre d'AC2 annonçait « quatre assertions » après que j'y en eus ajouté une cinquième ; celui des pièges muets « six » pour sept lignes ; le Change Log de la passe 1 « 8 tests » quand la tâche en dénombrait dix. C'est mot pour mot la § *Recompter ses propres comptes rendus* : **le compte rendu devient le lieu du défaut**. La réponse n'est pas de corriger trois nombres mais de **supprimer les compteurs épars** : un § *Décompte des preuves* unique fait désormais foi, et aucun autre passage n'énonce de total.
+- **Trois décomptes faux, tous introduits par mes propres patches de passe 1** — le titre d'AC2 annonçait « quatre assertions » après que j'y en eus ajouté une cinquième ; celui des pièges muets « six » pour sept lignes ; le Change Log de la passe 1 « 8 tests » quand la tâche en dénombrait dix. C'est mot pour mot la § *Recompter ses propres comptes rendus* : **le compte rendu devient le lieu du défaut**. La réponse n'est pas de corriger trois nombres mais de **supprimer les compteurs épars** : un § *Décompte des preuves* unique porte désormais le total. ⚠️ **Cette phrase se terminait initialement par « et aucun autre passage n'énonce de total » — c'était FAUX**, six sites en énonçaient encore. La réforme avait corrigé les valeurs sans supprimer les sites, puis déclaré les sites supprimés : le mode d'échec de la § *Recompter ses propres comptes rendus*, appliqué au correctif censé le fermer. Relevé en passe 3, et la règle exacte est désormais écrite au § *Décompte des preuves*.
 - **Quatre décisions ajoutées en passe 1 sans leur preuve** — D14 (remise à zéro à l'ouverture), le `try/catch` des sondes, le seuil dans le sens descendant, les transitions de validité de l'IDE. C'est la § *Propagation post-patch* : un patch qui pose une obligation sans poser le test qui la tient n'est pas terminé. Chacune a maintenant sa preuve **et sa mutation**.
 
 Le seul `HIGH` relève de la même famille : **T6 ne prescrivait aucune assertion** — on pouvait cocher la tâche sur un fichier E2E qui monte le décor et n'affirme rien. C'est le mode d'échec du test muet, un cran au-delà de celui contre lequel la ligne du `testMatch` met en garde. T6 porte désormais ses deux assertions nommées, dont la preuve 4 d'AC2 (le `409`), qui n'était **rattachée à aucune tâche**.
@@ -515,6 +626,24 @@ Patcher vingt findings et relancer une passe 4 reviendrait à corriger la forme 
 ⚠️ **Statut ramené à `draft`.** `ready-for-dev` serait une affirmation fausse tant que le mécanisme n'est pas tranché, et un agent de développement ne doit pas prendre cette story en l'état.
 
 **Trois questions sont posées à Guy** — cf. § *Questions ouvertes*, Q1 amendée et Q3/Q4 neuves.
+
+### Remédiation de la passe 3 — 2026-08-17, après arbitrage de Guy
+
+**Les trois questions ont été tranchées, et les vingt findings appliqués.** Statut rétabli à `ready-for-dev`.
+
+| Question | Arbitrage de Guy | Matérialisé par |
+|---|---|---|
+| **Q3** — l'appariement par nom | **fenêtre large + classement côté client** ; la correction à la source part en story distincte | **D15** — `limit: 20`, classement et coupe dans le module pur de T2, « et N autres » via `total` |
+| **Q4** — le trait d'union | **normaliser le terme côté client** ; corriger `escape_boolean_ft` en story distincte, groupée avec Q3(b) | **D16** — les dix opérateurs remplacés par une espace, jamais supprimés |
+| **Q1** — l'IDE cherchable | **étendre `push_where_clauses`** | T1 débloquée, avec le bénéfice de bord **rectifié** (seule la saisie sans séparateurs remonte) |
+
+Trois décisions naissent de la remédiation : **D15** et **D16** ci-dessus, plus **D17** — *une proposition informe, elle ne navigue pas* : `openEdit` réassigne dix-neuf champs, donc un clic mal spécifié effacerait la saisie en cours sans confirmation. Et **D7 a été RÉÉCRITE** : le seuil de trois caractères est une politique d'ergonomie, pas une contrainte du moteur, avec **D7-bis** qui le porte sur le **plus long token** plutôt que sur la longueur du terme.
+
+**Le décompte des preuves passe de 22 à 32**, recompté depuis les AC. L'ajout le plus important n'est pas le nombre mais **sa nature** : la preuve 6 d'AC1 est un `#[sqlx::test]`, et c'est la **seule preuve de toute la story qui exécute la requête réelle**. Les dix-sept preuves de composant passent par un `vi.mock` de l'API et sont, par construction, aveugles au défaut que D15 répare — c'est précisément pourquoi trois passes de revue ne l'avaient pas vu.
+
+Le tableau des pièges muets passe de sept à **neuf**, avec les deux familles qu'a révélées cette passe : *une preuve d'archivage écrite fonctionnellement* (verte sous la mutation, le mock ignorant ses arguments) et *une assertion E2E sans la visibilité du signal* (verte sur `main`, avant qu'une ligne soit écrite).
+
+⚠️ **Passe 4 due**, rotation **Sonnet**, contexte frais. Elle porte sur une spécification dont le **mécanisme** vient de changer : ce n'est plus la même story qu'aux passes 1 à 3, et le trend ne se lit pas comme une simple continuation.
 
 ## Dev Agent Record
 
