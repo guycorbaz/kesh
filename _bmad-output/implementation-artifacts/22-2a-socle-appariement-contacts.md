@@ -98,13 +98,13 @@ const armed = Math.max(0, ...normalized.split(/\s+/).map((t) => t.length)) >= 3;
 Quatre critères, **dans cet ordre**, sur des chaînes repliées en casse et sans accents (cohérent avec `utf8mb4_general_ci`, la collation réelle de la table, vérifiée) :
 
 1. le nom **commence par** le terme complet ;
-2. puis le **nombre de tokens du terme présents** dans le nom, décroissant ;
+2. puis le **nombre de tokens DISTINCTS du terme** présents dans le nom, décroissant — un terme qui répète un token (`jean jean`) ne compte ce token **qu'une fois**, sans quoi le classement récompenserait une faute de frappe ;
 3. puis la **longueur du plus long préfixe commun**, décroissante ;
 4. puis l'**ordre alphabétique** ;
 5. puis l'**`id`**, croissant.
 
 **Le repli, écrit — « sans accents » n'est pas un algorithme.** `s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()`.
-⚠️ **Ses limites sont connues et assumées** : `ß` et `œ` ne se replient **pas** vers `ss` et `oe` — vérifié par exécution (`fold("Straße")` → `straße`). Deux implémentations « conformes à la lettre » de « sans accents » divergeraient sur des noms suisses ordinaires ; l'algorithme est donc écrit plutôt que décrit.
+⚠️ **Ses limites sont connues et assumées, et elles ne mordent PAS sur le carnet suisse ordinaire** : `ü`, `ä`, `ö`, `é`, `è` se replient tous correctement (`Müller` → `muller`, `Zürich` → `zurich`). Ce qui ne se replie pas, ce sont les **ligatures** — `œ` (français) et `ß`, vérifié par exécution (`fold("Straße")` → `straße`). ⚠️ *La rédaction précédente citait `ß` comme un cas « suisse ordinaire » : c'est faux, l'allemand de Suisse ne l'emploie pas et écrit `ss`.* L'algorithme est écrit plutôt que décrit parce que deux implémentations « conformes à la lettre » de « sans accents » divergeraient sur ces ligatures.
 ⚠️ **Ce repli fait l'INVERSE de `canonical_key`**, et ce n'est pas une incohérence : `canonical_key` sert l'**unicité** d'un identifiant, où un accent doit distinguer (`text.rs:117-124` le teste). `rank` sert la **ressemblance**, où un accent doit rapprocher. Deux besoins opposés, deux fonctions.
 
 ⚠️ **Les critères 4 et 5 ne sont pas des critères de pertinence : ce sont ceux qui rendent le classement DÉTERMINISTE**, donc testable.
@@ -115,7 +115,7 @@ entrée [id 101, id 202] → [101, 202]
 entrée [id 202, id 101] → [202, 101]      ⚠️ sorties DIFFÉRENTES
 ```
 
-Sans le critère 5, la preuve 3 d'AC-a4 est **littéralement insatisfiable**.
+Sans le critère 5, la preuve **4** d'AC-a4 est **littéralement insatisfiable**.
 
 **Pourquoi ce classement existe** — et c'est le défaut le plus grave qu'ait trouvé la revue de la 22-2, établi par exécution :
 
@@ -210,6 +210,8 @@ Rend le contact dont `ideNumber` **égale** la valeur passée et dont l'`id` dif
 - [ ] **T-a1 — Créer `frontend/src/lib/features/contacts/duplicate-probe.ts`** (toutes les AC). Fonctions exportées : `normalizeTerm`, `buildTerm`, `isArmed`, `rank`, `excludeSelf`, `countOthers`, `findIdeHolder`.
   - [ ] **L'ordre `normaliser → mesurer → décider`** (D-a3 puis D-a4) est la partie fragile — l'écrire dans le doc-comment du module, pas seulement dans le code.
   - [ ] Aucune clé i18n dans ce fichier (D-a1). Aucun import réseau ni DOM (AC-a7).
+  - [ ] **Documenter la DOUBLE normalisation dans le doc-comment du module**, faute de quoi elle passera pour du code mort : `normalizeTerm` applique **NFC** (pour stabiliser le `.length` d'`isArmed`, D-a3), puis `rank` applique **NFD + strip** pour le repli d'accents (D-a5). Les deux sont nécessaires et ne font pas doublon — l'une stabilise une **mesure**, l'autre produit une **comparaison**. Un terme NFC re-normalisé en NFD puis strippé donne le même résultat qu'un strip direct : la composition est inoffensive.
+  - [ ] **Noter aussi le cas turc**, pour qu'il ne soit pas « corrigé » plus tard : `İ` (U+0130) se minuscule en `i` + point combinant, que le strip d'accents de `rank` retire ensuite — le résultat final est `i`, ce qui est correct. **Aucune action requise**, mais un lecteur qui découvre ce chemin sans explication le prendra pour un défaut.
 - [ ] **T-a2 — Créer `duplicate-probe.test.ts`** (toutes les AC). Vitest direct, **sans `render`** — c'est tout le bénéfice de la story.
   - [ ] **Chaque test nomme sa mutation en commentaire**, comme le fait `products-page.test.ts`. Une preuve dont la mutation n'est pas écrite se relit mal et se supprime facilement.
   - [ ] La fixture des six `Jean X` d'AC-a4 est la plus importante du lot : la reprendre **telle quelle**, elle est l'énoncé du défaut d'origine.
@@ -252,6 +254,7 @@ Elles sont la vraie spécification de cette story. Chacune est un défaut **rée
 | `null === null` sur l'IDE | le signal franc crie sur un champ vide | AC-a6 |
 | omettre `normalize('NFC')` | le même mot armé ou muet selon le clavier | AC-a1 test 2 |
 | intervertir les critères 1 et 2 | *(et la fixture naïve ne l'attrape pas)* | AC-a4 test 2 |
+| retirer le critère 4 | deux noms distincts se classent selon l'ordre d'entrée | AC-a4 test 3 |
 | retirer le critère 5 | deux homonymes se classent selon l'ordre d'entrée | AC-a4 test 4 |
 | introduire un import réseau | le gate quitte le régime de la seconde | AC-a7 clause (a) |
 | appeler `Date.now()` sans import | échappe à toute preuve qui ne lit que les imports | AC-a7 clause (b) |
@@ -280,7 +283,7 @@ Bruts : 3 + 6 + 4 = 13. Deux convergences. **Retenus : 0 CRITICAL / 3 HIGH / 4 M
 
 **Les trois `HIGH`, tous vérifiés par exécution :**
 
-1. **`rank` n'était pas déterministe sur deux homonymes stricts.** Le critère 4 (alphabétique) ne départage pas deux noms identiques — le cas « un père et son fils », que la 22-2b nomme comme légitime. Un tri stable rend alors l'ordre d'**entrée** : `[101,202]` puis `[202,101]` sortent différemment. La preuve 3 d'AC-a4 exigeait exactement le contraire. **Un cinquième critère (`id`) est ajouté**, avec sa preuve dédiée.
+1. **`rank` n'était pas déterministe sur deux homonymes stricts.** Le critère 4 (alphabétique) ne départage pas deux noms identiques — le cas « un père et son fils », que la 22-2b nomme comme légitime. Un tri stable rend alors l'ordre d'**entrée** : `[101,202]` puis `[202,101]` sortent différemment. La preuve de déterminisme exigeait exactement le contraire. *(Elle portait alors le n° 3 ; le correctif a inséré une preuve 4 dédiée aux homonymes, et c'est elle qui porte désormais cette exigence — les renvois par NUMÉRO se périment à chaque insertion, ce que la passe 2 a dû rattraper deux fois.)* **Un cinquième critère (`id`) est ajouté**, avec sa preuve dédiée.
 2. **Le contrat d'`isArmed` était contradictoire.** AC-a3 listait `isArmed("Yo-An")` → muet, alors que la 22-2b l'appelle sur une chaîne **déjà normalisée** ; en brut, `"Yo-An"` rend `true`. Un développeur suivant la lettre en aurait conclu qu'`isArmed` doit normaliser en interne — contredisant le site d'appel. **Le contrat est écrit, et les sept cas s'écrivent désormais `isArmed(normalizeTerm(x))`.**
 3. **La preuve 2 d'AC-a4 n'avait pas de fixture, et la fixture naturelle ne discrimine rien.** « Le critère 1 prime le critère 2 » : avec `"Acme Corp"` contre `"Corp Acme Trading"`, la mutation « intervertir les critères » reste **verte** — un nom qui commence par le terme le contient trivialement, donc sature aussi le critère 2. **La fixture qui discrimine est désormais écrite** (`Jean` / `"Jeanne Dupont"` / `"Marie Jean"`), et elle exploite la même frontière de mot que D-a4.
 
@@ -291,6 +294,22 @@ Bruts : 3 + 6 + 4 = 13. Deux convergences. **Retenus : 0 CRITICAL / 3 HIGH / 4 M
 ⚠️ **Note de méthode, valable pour la suite.** **Deux des six lentilles de cette passe ont rendu un décompte faux** — l'une annonçait un `CRITICAL` que son propre corps ne décrivait pas, l'autre s'est corrigée en note. Interrogée, la première a répondu franchement : *« mon décompte final était faux, je me suis trompé en additionnant »*. C'est le défaut du § *Recompter ses propres comptes rendus*, et il ne touche pas que l'auteur : **il touche aussi les relecteurs**. Un décompte de rapport de revue se recompte comme le reste.
 
 ⚠️ **Passe 2 due** par la § *Review Iteration Rule* (3 `HIGH`). Rotation : **Haiku**, contexte frais.
+
+### Passe 2 de `bmad-create-story validate` — 2026-08-17, Haiku ×3, contexte frais
+
+Bruts : 2 + 3 + 1 = 6, plus **1 trouvé par l'orchestrateur** en auditant les renvois. Un non-finding écarté. **Retenus : 0 CRITICAL / 0 HIGH / 3 MEDIUM / 3 LOW — 6 findings, 6 correctifs.**
+
+**Trend : `0C/3H/4M/4L` → `0C/0H/3M/3L`.** La sévérité maximale **décroît** (`HIGH → MEDIUM`) et le nombre baisse. Le `BlindHunter` a rendu un rapport **vide de tout défaut substantiel**, avec un recompte indépendant des deux totaux (17 et 31) — confirmés justes.
+
+**Le thème de cette passe est la DÉRIVE DE RENUMÉROTATION**, et elle est entièrement de mon fait. La passe 1 a **inséré** des preuves au milieu de listes numérotées ; tous les renvois « preuve N d'AC-x » situés **après** l'insertion se sont périmés en silence. Ici, D-a5 affirmait que « sans le critère 5, la preuve **3** est insatisfiable » — or l'insertion avait déplacé le cas des homonymes en **4ᵉ** position. Le renvoi pointait la preuve voisine, celle qui n'a pas besoin du critère 5.
+
+⚠️ **Aucune lentille ne l'a vu ; c'est un audit systématique de l'orchestrateur qui l'a trouvé** — et il en a trouvé deux autres dans la 22-2b. Un renvoi par **numéro** dans une liste **insérable** est un piège muet de plus, et il ne se voit qu'en confrontant chaque référence au contenu réel de sa cible.
+
+Les deux autres `MEDIUM` : le critère 2 du classement ne disait pas s'il compte les tokens **distincts** ou **avec multiplicité** — c'est **distinct**, sans quoi le classement récompenserait une faute de frappe (`jean jean`) ; et la **table des mutations listait 11 lignes** quand le Change Log de la passe 1 en annonçait 12 — la mutation « retirer le critère 4 » n'y avait jamais été portée.
+
+Les trois `LOW` sont de la précision : l'exemple `ß` était **mal choisi pour un carnet suisse** — l'allemand de Suisse ne l'emploie pas et écrit `ss`, et les caractères réellement en jeu (`ü`, `ä`, `ö`) se replient correctement ; la **double normalisation** NFC puis NFD demande un doc-comment, faute de quoi elle passera pour du code mort ; et le cas turc `İ` est **correct par construction** mais mérite d'être noté pour ne pas être « corrigé » plus tard.
+
+⚠️ **Passe 3 due** (3 `MEDIUM`). Rotation : **Opus**, contexte frais.
 
 ## Dev Agent Record
 

@@ -163,10 +163,10 @@ Renommer un contact vers un nom déjà porté déclenche le même signal nuancé
 
 ## Tasks / Subtasks
 
-- [ ] **T-b1 — Rendre l'IDE cherchable, et prouver la fenêtre** (AC-b2, **et preuve 6 d'AC-b1**). Ajouter `ide_number` aux **DEUX** branches `LIKE` de `push_where_clauses` (`crates/kesh-db/src/repositories/contacts.rs:195-210`).
+- [ ] **T-b1 — Rendre l'IDE cherchable, et prouver la fenêtre** (AC-b2, **et preuve 8 d'AC-b1**). Ajouter `ide_number` aux **DEUX** branches `LIKE` de `push_where_clauses` (`crates/kesh-db/src/repositories/contacts.rs:195-210`).
   - [ ] Deux tests `#[sqlx::test]`, **un par branche** : le cas courant (`search=CHE109322551`) et le cas où `escaped.is_empty()`, c'est-à-dire un terme **intégralement** composé des dix opérateurs — par exemple `search=***`.
   - [ ] ⚠️ **Ne PAS se caler sur `test_search_handles_special_chars:1283` pour la seconde branche : il ne l'exerce pas.** Il cherche `"100%"`, et `%` **n'est pas** un opérateur `BOOLEAN MODE` (`util/search.rs:41`) — le terme survit intact et le test emprunte la branche `else`. **Aucun test du dépôt n'exerce aujourd'hui la branche `escaped.is_empty()`.**
-  - [ ] **Le `#[sqlx::test]` de la fenêtre** (preuve 6 d'AC-b1) : fixture des six `Jean X`, `limit: 20` ⇒ six lignes et `total = 6`.
+  - [ ] **Le `#[sqlx::test]` de la fenêtre** (preuve 8 d'AC-b1) : fixture des six `Jean X`, `limit: 20` ⇒ six lignes et `total = 6`.
   - [ ] ⚠️ **`push_where_clauses` est un chemin PARTAGÉ** — cf. § *Rayon d'impact de T-b1*. Gate **complet** au dernier commit : la § *Test Locally First* interdit le ciblage dès qu'un patch touche `crates/kesh-db/`.
 - [ ] **T-b2 — Brancher les deux sondes** (AC-b1, AC-b2, AC-b5, **AC-b7**). Importer le module de la **22-2a** — `normalizeTerm`, `buildTerm`, `isArmed`, `rank`, `excludeSelf`, `countOthers`, `findIdeHolder` — et **ne réimplémenter aucune de ces fonctions**.
   - [ ] Forme exacte des deux appels :
@@ -201,6 +201,7 @@ const holder = findIdeHolder(ri.items, ide, editing?.id ?? null);  // `ide` = la
   - [ ] **Le `<select id="form-type">` réarme la sonde** au même titre que les champs de nom (D-b11) : les valeurs saisies survivent à la bascule, l'avertissement doit suivre.
   - [ ] **Les deux zones sont rendues EN PERMANENCE dans le DOM**, `aria-live="polite"`, contenu vide quand il n'y a rien à dire. Patron : `ResetPasswordForm.svelte:162-169`, dont le commentaire dit « *toujours dans le DOM pour que aria-live fonctionne* ». ⚠️ **Ne PAS copier le `role="combobox"` de `ContactPicker`** : c'est un patron de **sélection**, inadapté à un avertissement passif (D-b9), et il ne porte aucun `aria-live`.
   - [ ] Encapsuler **chaque** sonde dans un `try/catch` qui se tait, comme `ContactPicker.svelte:64-67`.
+  - [ ] **Rendre « et N autres » SOUS la liste des cinq propositions**, conditionné à `autres > 0` — clé `contact-duplicate-others-count`, argument `count`. ⚠️ Conditionner sur `autres > 0` et non sur `total > 5` : c'est la soustraction de D-a6 qui fait foi, et elle vaut zéro dans le cas de l'édition solitaire (AC-b7 preuve 2).
   - [ ] **L'avertissement franc s'efface quand `formError` prend le relais** après un `409` (`:361` pose déjà `contact-error-ide-duplicate`), pour que la même phrase ne s'affiche pas deux fois.
   - [ ] Il n'existe pas de composant `alert` dans `lib/components/ui/` — se caler sur le style de `formError`, sans créer de primitive.
   - [ ] **Créer `frontend/src/routes/(app)/contacts/+page.test.ts`** — il n'existe **aucun** test de cette page (seul `contact-helpers.test.ts` existe pour ce domaine). Patron : `products-page.test.ts`, mocks hoistés avant l'import.
@@ -212,6 +213,7 @@ const holder = findIdeHolder(ri.items, ide, editing?.id ?? null);  // `ide` = la
 - [ ] **T-b6 — E2E** (AC-b3, **et preuve 6 d'AC-b2**). ⚠️ Le fichier **DOIT** être nommé `*.spec.ts` : `playwright.config.ts:35` filtre sur `testMatch: /(.+\.)?spec\.[jt]s/`, et un `*.test.ts` posé dans `tests/e2e/` est **silencieusement ignoré**.
   - [ ] Patron : `frontend/tests/e2e/contact-client-number.spec.ts`, `seedTestState('with-company')` puis login.
   - [ ] ⚠️ **ARCHIVER NE LIBÈRE PAS L'IDE** — contrainte **plate** (D-b5), contrairement au numéro de client dont le patron vient. Chaque assertion emploie un **IDE distinct à checksum valide** : `CHE109322551` et `CHE123456788`. ⚠️ **Les deux ont été recalculés** — poids `[5,4,3,2,7,6,5,4]`, modulo 11 (`che_number.rs:9,101-129`) : `109322551` attend 1 et porte 1, `123456788` attend 8 et porte 8. *(Une première rédaction proposait `CHE116281838` en le déclarant « vérifié » : son checksum attend **9** et il porte **8** — il est **invalide**, et le test aurait échoué en `400` au lieu du succès ou du `409` attendu, pour une raison sans rapport avec ce qu'il mesure. Relevé en passe 1.)* L'isolation entre exécutions repose sur le `truncate_all` de `seedTestState`. Et l'astuce `CLI-${Date.now()}` de la 22-1 est **intransposable** : le dernier chiffre d'un IDE est un checksum modulo 11 (`che_number.rs:102-131`).
+  - [ ] ⚠️ **Les deux tests PARTAGENT une base**, comme le patron : un seul `seedTestState('with-company')` en `beforeAll`, aucun `beforeEach` intermédiaire. Le test 1 laisse donc son contact en base pour le test 2. C'est pourquoi **chaque test emploie son propre IDE** — et pourquoi l'archivage ne suffirait pas à les isoler : il libère le numéro de client, **jamais l'IDE** (D-b5). L'isolation entre *exécutions* vient du `truncate_all` de `seedTestState`, pas d'un nettoyage en fin de test.
   - [ ] **Test 1 (AC-b3), trois assertions DANS CET ORDRE**, sur une `Entreprise` par ailleurs valide : (i) **le signal nuancé est VISIBLE** ; (ii) le bouton est **activé** ; (iii) soumettre **crée bien le contact**, vérifié après rechargement.
   - [ ] **Test 2 (preuve 6 d'AC-b2), trois assertions DANS CET ORDRE** : (i) **le signal franc est VISIBLE** ; (ii) le bouton est **activé** ; (iii) soumettre **échoue en `409`** et l'interface le dit.
   - [ ] ⚠️ **La première assertion de chaque test n'est PAS décorative : c'est la seule qui prouve quelque chose de cette story.** Les assertions (ii) et (iii) sont **VERTES SUR `main` AUJOURD'HUI** — créer un contact fonctionne déjà, un IDE dupliqué donne déjà `409`. Sans (i), la mutation « **n'implémenter aucune sonde** » laisse les deux tests au vert.
@@ -234,7 +236,7 @@ const holder = findIdeHolder(ri.items, ide, editing?.id ?? null);  // `ide` = la
 
 **Totaux, sommés depuis la colonne** : **18 tests de composant** (7 + 5 + 1 + 3 + 2) · **6 tests unitaires front** · **2 assertions E2E** (1 + 1) · **2 tests unitaires Rust** · **3 tests d'intégration base** (1 + 2). **Soit 31 preuves.**
 
-Aucun autre passage de cette story n'énonce de total. *(S'y ajoutent les **13 preuves** de la 22-2a, comptées chez elle.)*
+Aucun autre passage de cette story n'énonce de total. *(S'y ajoutent les **17 preuves** de la 22-2a, comptées chez elle.)*
 
 ## Dev Notes
 
@@ -325,6 +327,24 @@ Bruts : 1 + 4 + 5 = 10. Une convergence. **Retenus : 0 CRITICAL / 4 HIGH / 4 MED
 **Décompte : 26 → 31 preuves**, recompté depuis les AC. Pièges muets : 8 → 10.
 
 ⚠️ **Passe 2 due** par la § *Review Iteration Rule* (4 `HIGH`). Rotation : **Haiku**, contexte frais.
+
+### Passe 2 de `bmad-create-story validate` — 2026-08-17, Haiku ×3, contexte frais
+
+Bruts : 1 + 5 + 0 = 6, plus **1 trouvé par l'orchestrateur**. **Un finding RÉFUTÉ**, un fusionné. **Retenus : 0 CRITICAL / 0 HIGH / 4 MEDIUM / 1 LOW — 5 findings, 5 correctifs.**
+
+**Trend : `0C/4H/4M/1L` → `0C/0H/4M/1L`.** La sévérité maximale **décroît** (`HIGH → MEDIUM`). L'`AcceptanceAuditor` a rendu un **rapport intégralement vide**, après avoir recompté les 31 preuves, les 10 pièges, les 62 clés `contact-*` et **recalculé les deux checksums IDE**.
+
+**Le thème est le même que sur la 22-2a : la dérive de renumérotation.** La passe 1 avait inséré deux preuves dans AC-b1, déplaçant le `#[sqlx::test]` de la fenêtre de la 6ᵉ à la **8ᵉ** place — mais T-b1 le désignait toujours comme « preuve 6 », **à deux endroits**. S'y ajoutait un renvoi **croisé** périmé : cette story annonçait « les **13** preuves de la 22-2a », qui en compte **17** depuis sa propre passe 1.
+
+⚠️ **Une lentille a vu l'un des trois ; l'orchestrateur a trouvé les deux autres** en confrontant systématiquement chaque renvoi numéroté au contenu réel de sa cible. Le geste vaut d'être gardé : après toute insertion dans une liste numérotée, **auditer tous les renvois**, y compris ceux qui pointent l'autre moitié du découpage.
+
+Les deux autres `MEDIUM` : les **quatre clés i18n neuves étaient décrites sans être nommées**, ce qui rendait le test d'AC-b6 inécrivable — elles sont désormais dans un tableau ; et **l'état partagé des deux tests E2E** n'était pas dit : un seul `beforeAll`, aucun `beforeEach`, donc le test 1 laisse son contact en base pour le test 2 — c'est **la raison** pour laquelle chacun emploie son propre IDE, et pourquoi l'archivage ne les isolerait pas (il libère le numéro de client, jamais l'IDE). Le `LOW` : le rendu de « et N autres » n'était prescrit nulle part.
+
+**Un finding RÉFUTÉ au grep, et c'est le mode d'échec documenté du modèle.** Un `HIGH` affirmait que T-b1 « n'énonce pas qu'il faut ajouter `ide_number` à la seconde branche » — or la ligne 166 le dit dans le **titre même de la tâche** (« aux **DEUX** branches `LIKE` »), et le finding **cite cette ligne** avant d'affirmer qu'elle manque. Écarté. C'est exactement ce que prévoit la § *Haiku-specific guardrails* du `CLAUDE.md`, et la raison pour laquelle tout `CRITICAL`/`HIGH` affirmant une absence passe au `grep -nF` avant d'être traité.
+
+⚠️ **Troisième décompte faux de la séance** : cette lentille annonçait « 3 CRITICAL » pour un corps portant 1 `HIGH` et 4 findings mineurs. Sur six lentilles de passe 1 et six de passe 2, **trois** ont mal additionné leurs propres findings.
+
+⚠️ **Passe 3 due** (4 `MEDIUM`). Rotation : **Opus**, contexte frais.
 
 ## Dev Agent Record
 
