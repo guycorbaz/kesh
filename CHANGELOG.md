@@ -8,7 +8,19 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
-## [Unreleased]
+## [0.10.0] — 2026-08-19
+
+⚠️ **Cette version ne se désinstalle pas : après la mise à jour, un retour à Kesh 0.9.0 ou antérieur est impossible.** La base de données porte désormais une version minimale requise de `0.10.0`, et un binaire plus ancien **refuse de démarrer** contre elle plutôt que de l'abîmer en silence. Il refuse également d'importer une sauvegarde produite par cette version. **Si vous tenez à pouvoir revenir en arrière, faites une sauvegarde AVANT de mettre à jour** : elle restera lisible par la version dont elle provient. Ce verrou est volontaire — la reprise du numéro de client décrite plus bas change la façon dont les données sont écrites, et une version antérieure les écrirait de nouveau sans forme canonique, hors de la contrainte d'unicité et **sans qu'aucun message ne le signale**.
+
+### Ajouté
+
+- **Kesh vous signale un contact qui existe peut-être déjà, pendant que vous le saisissez.** Le doublon d'un client se paie longtemps : deux fiches pour la même entreprise, des factures réparties entre les deux, un solde qui ne veut plus rien dire. L'avertissement arrive donc **au moment où il ne coûte encore rien** — à la saisie, avant l'enregistrement. ([#301](https://github.com/guycorbaz/kesh/issues/301))
+  - **Deux avertissements, qui n'ont pas la même force.** Un **nom proche** est une *suggestion* : Kesh liste les contacts qui pourraient correspondre, avec de quoi les reconnaître — localité, numéro de client, à défaut l'e-mail. Un **numéro IDE déjà pris** est un avertissement *franc* : l'IDE est attribué par l'État, deux entités ne le partagent jamais.
+  - **La comparaison ignore ce qui ne distingue pas vraiment** : la casse, les accents, les traits d'union, les espaces multiples et les caractères invisibles collés depuis un courriel. « Coop-Vaud », « COOP VAUD » et « coop vaud » se reconnaissent mutuellement.
+  - **Ces avertissements n'empêchent JAMAIS d'enregistrer, et c'est délibéré.** Deux clients peuvent légitimement porter des noms très proches — deux sociétés d'un même groupe, deux homonymes, un père et son fils. Kesh vous informe, il ne décide pas à votre place.
+  - **Le cas qui vous éviterait une impasse : l'IDE d'un contact archivé.** Si l'IDE que vous saisissez appartient à une fiche **archivée**, Kesh vous le dit — car un IDE reste réservé **à vie**, même après archivage, et l'enregistrement sera refusé. Sans cet avertissement, vous verriez un refus sans en voir la cause : la fiche qui bloque n'apparaît pas dans votre carnet. *(Un numéro de client, lui, est bien libéré par l'archivage : c'est une étiquette interne, recyclable par nature.)*
+  - ⚠️ **Ce que l'avertissement ne garantit pas.** Kesh examine les **vingt** premiers contacts que la recherche remonte et vous montre les **cinq** plus proches. Si un très grand nombre de vos contacts partagent un mot du nom que vous saisissez — une vingtaine de sociétés en *Sàrl*, par exemple —, le doublon que vous cherchiez à éviter peut se trouver **au-delà** de ces vingt. **L'absence d'avertissement ne prouve donc pas l'absence de doublon** ; la recherche du carnet, elle, les trouve tous.
+  - **La recherche du carnet accepte désormais le numéro IDE**, y compris sur un fragment. Elle porte sur la forme **sans séparateurs** telle que Kesh la stocke : `CHE109322551` remonte la fiche, la forme imprimée sur une facture — avec ses points et son tiret — non.
 
 ### Corrigé
 

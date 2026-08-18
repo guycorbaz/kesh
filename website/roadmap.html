@@ -279,6 +279,13 @@
 					</div>
 					<p class="text-sm text-slate-400">Each invoice line can now carry <strong class="text-slate-200">its own revenue account</strong>, falling back to the company default — the accounting entry splits the credit across the right accounts, credit notes included. Each catalogue item can hold a <strong class="text-slate-200">default revenue account</strong> that pre-fills the line. The invoice PDF is complete at last: a <strong class="text-slate-200">VAT recap by rate</strong>, your own <strong class="text-slate-200">contact details</strong> under your address, and the <strong class="text-slate-200">customer number</strong> you assign to a contact — unique per company, searchable in the address book, and printed on credit notes too.</p>
 				</div>
+				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
+					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
+						<h3 class="font-semibold">E22 — Duplicate prevention &amp; hardening <span class="text-slate-500 font-mono text-xs">v0.10.0</span></h3>
+						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
+					</div>
+					<p class="text-sm text-slate-400">As you type a new contact, Kesh <strong class="text-slate-200">warns you that a similar one may already exist</strong> — case, accents, hyphens and invisible characters are all ignored when comparing — and flags a <strong class="text-slate-200">VAT number (IDE) already taken</strong>, including by an <strong class="text-slate-200">archived</strong> contact, the one case where saving would be refused by a record you cannot see. It <strong class="text-slate-200">warns, it never blocks</strong>: two clients may legitimately share a near-identical name. Also in this release: <strong class="text-slate-200">canonical customer numbers</strong> — two numbers identical to the eye are now the same number, whatever the Unicode composition or database collation; <strong class="text-slate-200">hardened API keys</strong> — a PAT can no longer reach any administration route, so revoking a compromised key is once again enough; and an integration test suite <strong class="text-slate-200">42× faster</strong>.</p>
+				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-slate-800">
 					<h3 class="font-semibold mb-1">E13 — Budgets</h3>
 					<p class="text-sm text-slate-400">Annual budgets per account, variance reports, cash-flow forecasting.</p>
