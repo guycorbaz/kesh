@@ -276,6 +276,332 @@ mod tests {
         }
     }
 
+    /// **Story 22-2b (#301)** — les quatre libellés des sondes anti-doublon
+    /// existent dans les quatre locales.
+    ///
+    /// ⚠️ L'assertion `!= fr` est la seule qui attrape le défaut réel : une clé
+    /// absente d'une locale **retombe silencieusement sur le français**
+    /// (`format_missing_key_in_de_falls_back_to_fr`), et `kesh-i18n` n'a
+    /// **aucun test de parité globale** — les fichiers sont d'ailleurs déjà
+    /// désappariés (KF #283). Un test qui vérifierait seulement « la clé rend
+    /// autre chose que son nom » serait vert sur trois locales vides.
+    ///
+    /// ⚠️ `contact-duplicate-ide-archived` doit **dire autre chose** que
+    /// `contact-duplicate-ide-active` : c'est ce libellé-là qui est le
+    /// **recours** de l'utilisateur. Sans la mention « archivé », il reçoit un
+    /// avertissement sur un contact introuvable dans son carnet, qu'il ne
+    /// pourra ni modifier ni désarchiver, et dont il ne comprendra pas le `409`
+    /// qui suit.
+    #[test]
+    fn duplicate_probe_labels_are_translated_in_all_four_locales() {
+        let bundle = I18nBundle::load(&locales_dir()).unwrap();
+        for key in [
+            "contact-duplicate-heading",
+            "contact-duplicate-others-count",
+            // ⚠️ Ajoutée en passe 4. Elle était la SEULE des cinq clés du
+            // dispositif à échapper à l'assertion `!= fr` — c'est-à-dire au seul
+            // contrôle qui attrape le repli silencieux sur le français. Le test
+            // du chemin réel ne bouchait pas le trou : « et 1 autre » satisfait
+            // ses assertions aussi bien en allemand qu'en français.
+            "contact-duplicate-others-count-one",
+            "contact-duplicate-ide-active",
+            "contact-duplicate-ide-archived",
+        ] {
+            let fr = bundle.format(&Locale::FrCh, key, None);
+            assert_ne!(fr, key, "{key} doit exister en fr-CH");
+            for locale in [Locale::DeCh, Locale::ItCh, Locale::EnCh] {
+                let msg = bundle.format(&locale, key, None);
+                assert_ne!(msg, key, "{key} doit exister en {locale:?}");
+                assert_ne!(
+                    msg, fr,
+                    "{key} en {locale:?} vaut le libellé FRANÇAIS — la clé est \
+                     absente de cette locale et le loader replie en silence"
+                );
+            }
+        }
+
+        // Le porteur ARCHIVÉ ne dit pas la même chose que le porteur actif :
+        // c'est le libellé qui porte le recours.
+        for locale in [Locale::FrCh, Locale::DeCh, Locale::ItCh, Locale::EnCh] {
+            let actif = bundle.format(&locale, "contact-duplicate-ide-active", None);
+            let archive = bundle.format(&locale, "contact-duplicate-ide-archived", None);
+            assert_ne!(
+                actif, archive,
+                "en {locale:?}, l'avertissement du porteur archivé doit DIRE \
+                 autre chose — c'est lui qui explique le 409 sans recours"
+            );
+        }
+    }
+
+    /// Les clés à **sélecteur Fluent** que le dépôt s'autorise, et pour lesquelles
+    /// quelqu'un a vérifié qu'elles sont résolues **côté serveur, avec arguments**.
+    ///
+    /// `contact-payment-terms-days-label` l'est par `routes/contacts.rs`, via
+    /// `i18n.format(&locale, clé, Some(&args))`.
+    const SELECTEURS_RESOLUS_COTE_SERVEUR: &[&str] = &["contact-payment-terms-days-label"];
+
+    /// Les clés d'un `.ftl` dont la valeur contient une expression **`select`**.
+    ///
+    /// ⚠️ **Trois formes de Fluent sont valides, et la détection doit les couvrir
+    /// TOUTES** — une version antérieure n'en voyait qu'une, celle où le `{`
+    /// suit immédiatement le `=`. Les deux autres passaient au travers :
+    ///
+    /// ```text
+    /// a = { $n -> …        ← la forme canonique, seule détectée alors
+    /// b = et { $n -> …     ← du texte AVANT le sélecteur
+    /// c =
+    ///     { $n -> …        ← la valeur commence à la ligne suivante
+    /// ```
+    ///
+    /// D'où un balayage du **fichier entier** plutôt que ligne à ligne : on
+    /// retient la dernière clé rencontrée, et tout `->` non commenté **précédé
+    /// d'une accolade ouvrante sur la même ligne** la désigne.
+    /// La fonction est **pure** pour que les trois formes s'éprouvent sur des
+    /// chaînes littérales, sans jamais écrire dans le dépôt.
+    fn cles_a_selecteur(ftl: &str) -> Vec<String> {
+        let mut trouves: Vec<String> = Vec::new();
+        let mut courante: Option<String> = None;
+        for ligne in ftl.lines() {
+            let nu = ligne.trim_start();
+            if nu.starts_with('#') {
+                continue;
+            }
+            // Une ligne NON indentée qui porte `=` ouvre un nouveau message.
+            if !ligne.starts_with(char::is_whitespace)
+                && let Some((cle, _)) = ligne.split_once('=')
+                && !cle.trim().is_empty()
+            {
+                courante = Some(cle.trim().to_string());
+            }
+            // ⚠️ Un `->` ne désigne un sélecteur que s'il suit une **accolade
+            // ouvrante sur la même ligne**. Sans cette exigence, une flèche
+            // écrite en toutes lettres dans un libellé — `Cliquez sur -> pour
+            // continuer` — était classée sélecteur, et le garde-fou aurait
+            // rougi sur une clé parfaitement innocente. Le coût de ce faux
+            // positif n'est pas le rouge lui-même : c'est l'ajout réflexe de la
+            // clé à `SELECTEURS_RESOLUS_COTE_SERVEUR` pour faire taire un test
+            // incompris — ce qui désarmerait le garde-fou pour de bon.
+            // Relevé en passe 5 de revue de code.
+            if let Some(pos) = ligne.find("->")
+                && ligne[..pos].contains('{')
+                && let Some(cle) = &courante
+                && !trouves.contains(cle)
+            {
+                trouves.push(cle.clone());
+            }
+        }
+        trouves
+    }
+
+    /// **Les trois formes de sélecteur sont détectées — éprouvé, pas supposé.**
+    ///
+    /// ⚠️ Le garde-fou avait été déclaré « mis en défaut » sur la seule forme
+    /// canonique. C'est la faute que ce dossier collectionne : éprouver un cas,
+    /// et énoncer la règle pour tous.
+    #[test]
+    fn the_select_detector_catches_all_three_fluent_forms() {
+        let canonique = "a = { $n ->\n    [one] x\n   *[other] y\n}\n";
+        let texte_avant = "b = et { $n ->\n    [one] x\n   *[other] y\n}\n";
+        let valeur_a_la_ligne = "c =\n    { $n ->\n        [one] x\n       *[other] y\n    }\n";
+        let sans_selecteur = "d = juste du texte\ne = avec { $var } interpolée\n";
+        // ⚠️ Contre-exemple ajouté en passe 5 : une FLÈCHE ÉCRITE EN TOUTES
+        // LETTRES dans un libellé. Aucune locale n'en contient aujourd'hui —
+        // c'est donc un défaut latent, que le premier traducteur écrivant
+        // « cliquez sur -> » aurait réveillé.
+        let fleche_litterale = "g = Cliquez sur -> pour continuer\n";
+        let commentaire = "# f = { $n -> [one] x *[other] y }\n";
+
+        assert_eq!(cles_a_selecteur(canonique), vec!["a"], "forme canonique");
+        assert_eq!(
+            cles_a_selecteur(texte_avant),
+            vec!["b"],
+            "texte AVANT le sélecteur"
+        );
+        assert_eq!(
+            cles_a_selecteur(valeur_a_la_ligne),
+            vec!["c"],
+            "valeur commençant à la ligne suivante"
+        );
+        assert!(
+            cles_a_selecteur(sans_selecteur).is_empty(),
+            "aucun faux positif"
+        );
+        assert!(
+            cles_a_selecteur(commentaire).is_empty(),
+            "un commentaire ne compte pas"
+        );
+        assert!(
+            cles_a_selecteur(fleche_litterale).is_empty(),
+            "une flèche en toutes lettres n'est pas un sélecteur"
+        );
+    }
+
+    /// **Aucun sélecteur ne doit être servi par le dictionnaire du frontend.**
+    ///
+    /// ⚠️ Ce garde-fou existe parce que le piège s'est refermé une fois, et qu'il
+    /// est **entièrement muet** : `all_messages` formate chaque message une seule
+    /// fois et **sans arguments**, si bien qu'une expression `{ $x -> … }` y est
+    /// résolue à l'aveugle sur sa branche `*[other]`, qui se retrouve figée dans
+    /// le dictionnaire. Rien n'échoue, rien ne prévient — l'interface affiche
+    /// simplement toujours le pluriel.
+    ///
+    /// **Un test qui appelle `format()` avec des arguments ne voit RIEN de tout
+    /// cela** : il emprunte un chemin que le frontend ne prend jamais. C'est
+    /// exactement ce qui s'est produit — un correctif de pluriel déclaré prouvé,
+    /// inerte en production, et vert au gate.
+    ///
+    /// Ajouter un sélecteur oblige donc à l'inscrire ci-dessus, c'est-à-dire à
+    /// dire OÙ il est résolu avec ses arguments.
+    #[test]
+    fn no_new_select_expression_reaches_the_frontend_dictionary() {
+        let mut trouves: Vec<String> = Vec::new();
+        for locale in ["fr-CH", "de-CH", "it-CH", "en-CH"] {
+            let chemin = locales_dir().join(locale).join("messages.ftl");
+            let texte = std::fs::read_to_string(&chemin)
+                .unwrap_or_else(|e| panic!("lecture de {chemin:?} : {e}"));
+            for cle in cles_a_selecteur(&texte) {
+                if !trouves.contains(&cle) {
+                    trouves.push(cle);
+                }
+            }
+        }
+        trouves.sort();
+
+        let mut attendus: Vec<String> = SELECTEURS_RESOLUS_COTE_SERVEUR
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        attendus.sort();
+
+        assert_eq!(
+            trouves, attendus,
+            "\nUn sélecteur Fluent a été ajouté ou retiré.\n\n\
+             Si c'est un AJOUT : le dictionnaire servi au frontend le résoudra \
+             SANS arguments, donc toujours sur sa branche `*[other]`, EN SILENCE. \
+             Ou bien la clé est résolue côté serveur avec ses arguments — et il \
+             faut alors l'inscrire dans SELECTEURS_RESOLUS_COTE_SERVEUR en disant \
+             où —, ou bien il faut la scinder en clés plates.\n"
+        );
+
+        // Et la DÉMONSTRATION du mécanisme, pour que la règle ci-dessus ne soit
+        // pas du folklore : la clé autorisée ressort bien amputée du dictionnaire.
+        let bundle = I18nBundle::load(&locales_dir()).unwrap();
+        let dico = bundle.all_messages(&Locale::FrCh);
+        let servi = dico
+            .get("contact-payment-terms-days-label")
+            .expect("la clé doit exister");
+        assert!(
+            !servi.contains("->"),
+            "le dictionnaire rend une branche unique, pas le sélecteur : {servi}"
+        );
+    }
+
+    /// **Le compteur « et N autres » s'accorde en nombre — par DEUX CLÉS, pas par
+    /// un sélecteur Fluent.**
+    ///
+    /// ⚠️ **Ce test a été réécrit après avoir prouvé quelque chose de faux.** Sa
+    /// première version appelait `bundle.format(clé, Some(args))` sur une clé
+    /// portant un sélecteur `{ $count -> [one] … *[other] … }`, et il passait.
+    /// Mais **le frontend n'emprunte jamais ce chemin** : il reçoit un
+    /// dictionnaire pré-résolu par `all_messages`, qui formate chaque message
+    /// UNE SEULE FOIS et SANS arguments. Sur une expression `select`, Fluent doit
+    /// alors choisir une branche à l'aveugle — il prend `*[other]` et la fige.
+    /// L'application affichait donc « et 1 autres », c'est-à-dire exactement le
+    /// défaut que le correctif prétendait fermer.
+    ///
+    /// D'où deux clés plates, et un test qui interroge **`all_messages`**, la
+    /// seule porte que le frontend franchit réellement.
+    #[test]
+    fn the_others_count_agrees_in_number_through_the_real_path() {
+        let bundle = I18nBundle::load(&locales_dir()).unwrap();
+        const UN: &str = "contact-duplicate-others-count-one";
+        const N: &str = "contact-duplicate-others-count";
+
+        for locale in [Locale::FrCh, Locale::DeCh, Locale::ItCh, Locale::EnCh] {
+            let dico = bundle.all_messages(&locale);
+
+            let un = dico.get(UN).unwrap_or_else(|| {
+                panic!("en {locale:?}, {UN} est absente du DICTIONNAIRE servi au frontend")
+            });
+            let n = dico.get(N).unwrap_or_else(|| {
+                panic!("en {locale:?}, {N} est absente du DICTIONNAIRE servi au frontend")
+            });
+
+            assert_ne!(un, n, "en {locale:?}, les deux formes sont identiques");
+
+            // La forme SINGULIÈRE porte le nombre en toutes lettres et n'attend
+            // aucun argument : c'est ce qui la rend servable par le dictionnaire.
+            assert!(
+                un.contains('1'),
+                "en {locale:?}, la forme singulière perd le nombre : {un}"
+            );
+            assert!(
+                !un.contains("$count"),
+                "en {locale:?}, la forme singulière attend un argument — le \
+                 dictionnaire ne peut pas la résoudre : {un}"
+            );
+
+            // La forme PLURIELLE, elle, garde son placeholder : `i18nMsg` le
+            // substitue côté client.
+            assert!(
+                n.contains("$count"),
+                "en {locale:?}, la forme plurielle a perdu son placeholder : {n}"
+            );
+        }
+
+        // Le cas français, celui qui a motivé le correctif, épinglé nommément.
+        let fr = bundle.all_messages(&Locale::FrCh);
+        assert_eq!(fr.get(UN).map(String::as_str), Some("et 1 autre"));
+    }
+
+    /// **Story 22-2b (#301)** — le libellé de recherche énumère l'IDE, **avec le
+    /// sigle de sa propre locale**.
+    ///
+    /// ⚠️ **C'est le seul item de la story dont l'oubli partiel n'aurait fait
+    /// rougir AUCUN gate.** `contact-filter-search-placeholder` est une clé
+    /// **modifiée**, pas neuve : le test ci-dessus ne la voit pas, et mettre à
+    /// jour `fr-CH` en oubliant les trois autres laisserait une valeur
+    /// présente, différente de son nom, et différente du français — puisque ce
+    /// sont des traductions distinctes.
+    ///
+    /// ⚠️ **Le sigle SUIT LA LOCALE** (`contact-col-ide` : `IDE` / `UID` / `IDI`
+    /// / `UID`). Un test écrivant `contains("IDE")` sur les quatre échouerait
+    /// sur trois — et le « corriger » en poussant `IDE` partout introduirait
+    /// une régression de terminologie que rien d'autre ne rattraperait.
+    ///
+    /// ⚠️ Et le libellé dit **« sans séparateurs »** : la colonne est stockée
+    /// normalisée (`CHE109322551`) tandis que le `LIKE` porte sur le terme
+    /// brut, donc la forme imprimée sur une facture ne remonte **rien**.
+    /// Promettre « ou IDE » tout court serait promettre le geste qui échoue.
+    #[test]
+    fn search_placeholder_lists_the_ide_with_each_locale_own_token() {
+        let bundle = I18nBundle::load(&locales_dir()).unwrap();
+        const KEY: &str = "contact-filter-search-placeholder";
+        for (locale, jeton, reserve) in [
+            (Locale::FrCh, "IDE", "sans séparateurs"),
+            (Locale::DeCh, "UID", "ohne Trennzeichen"),
+            (Locale::ItCh, "IDI", "senza separatori"),
+            (Locale::EnCh, "UID", "without separators"),
+        ] {
+            let v = bundle.format(&locale, KEY, None);
+            assert!(
+                v.contains(jeton),
+                "en {locale:?}, {KEY} n'énumère pas l'IDE sous son sigle local ({jeton}) : {v}"
+            );
+            assert!(
+                v.contains(reserve),
+                "en {locale:?}, {KEY} promet une recherche par IDE SANS dire « {reserve} » — \
+                 or la forme imprimée sur une facture ne remonte rien : {v}"
+            );
+            // Le sigle annoncé est bien celui que le reste de l'interface emploie.
+            assert_eq!(
+                bundle.format(&locale, "contact-col-ide", None),
+                jeton,
+                "le sigle de {locale:?} a changé : ce test et le libellé doivent suivre"
+            );
+        }
+    }
+
     /// **Story 22-4a (#167)** — le message d'« administration interdite via clé
     /// API » existe dans les quatre locales, et **dit autre chose** que celui de
     /// la gestion de clés.
