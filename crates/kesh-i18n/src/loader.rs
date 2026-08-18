@@ -354,7 +354,8 @@ mod tests {
     /// ```
     ///
     /// D'où un balayage du **fichier entier** plutôt que ligne à ligne : on
-    /// retient la dernière clé rencontrée, et tout `->` non commenté la désigne.
+    /// retient la dernière clé rencontrée, et tout `->` non commenté **précédé
+    /// d'une accolade ouvrante sur la même ligne** la désigne.
     /// La fonction est **pure** pour que les trois formes s'éprouvent sur des
     /// chaînes littérales, sans jamais écrire dans le dépôt.
     fn cles_a_selecteur(ftl: &str) -> Vec<String> {
@@ -372,7 +373,17 @@ mod tests {
             {
                 courante = Some(cle.trim().to_string());
             }
-            if ligne.contains("->")
+            // ⚠️ Un `->` ne désigne un sélecteur que s'il suit une **accolade
+            // ouvrante sur la même ligne**. Sans cette exigence, une flèche
+            // écrite en toutes lettres dans un libellé — `Cliquez sur -> pour
+            // continuer` — était classée sélecteur, et le garde-fou aurait
+            // rougi sur une clé parfaitement innocente. Le coût de ce faux
+            // positif n'est pas le rouge lui-même : c'est l'ajout réflexe de la
+            // clé à `SELECTEURS_RESOLUS_COTE_SERVEUR` pour faire taire un test
+            // incompris — ce qui désarmerait le garde-fou pour de bon.
+            // Relevé en passe 5 de revue de code.
+            if let Some(pos) = ligne.find("->")
+                && ligne[..pos].contains('{')
                 && let Some(cle) = &courante
                 && !trouves.contains(cle)
             {
@@ -393,6 +404,11 @@ mod tests {
         let texte_avant = "b = et { $n ->\n    [one] x\n   *[other] y\n}\n";
         let valeur_a_la_ligne = "c =\n    { $n ->\n        [one] x\n       *[other] y\n    }\n";
         let sans_selecteur = "d = juste du texte\ne = avec { $var } interpolée\n";
+        // ⚠️ Contre-exemple ajouté en passe 5 : une FLÈCHE ÉCRITE EN TOUTES
+        // LETTRES dans un libellé. Aucune locale n'en contient aujourd'hui —
+        // c'est donc un défaut latent, que le premier traducteur écrivant
+        // « cliquez sur -> » aurait réveillé.
+        let fleche_litterale = "g = Cliquez sur -> pour continuer\n";
         let commentaire = "# f = { $n -> [one] x *[other] y }\n";
 
         assert_eq!(cles_a_selecteur(canonique), vec!["a"], "forme canonique");
@@ -413,6 +429,10 @@ mod tests {
         assert!(
             cles_a_selecteur(commentaire).is_empty(),
             "un commentaire ne compte pas"
+        );
+        assert!(
+            cles_a_selecteur(fleche_litterale).is_empty(),
+            "une flèche en toutes lettres n'est pas un sélecteur"
         );
     }
 

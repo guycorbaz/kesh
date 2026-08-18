@@ -315,6 +315,23 @@ describe('rank', () => {
 		expect(rank([b, a], t).map((x) => x.id)).toEqual([101, 202]);
 	});
 
+	it('un `name` absent venu du réseau ne fait pas exploser le classement', () => {
+		// MUTATION : « retirer la garde `?? ''` de rank » → `fold(null)` jette,
+		// le `catch` de la sonde le convertit en `proches = []`, et l'utilisateur
+		// lit « aucun doublon ». C'est le mode d'échec MUET, le pire du
+		// dispositif — celui-là même que la passe 4 invoquait en posant la garde.
+		//
+		// ⚠️ **Pourquoi aucune preuve ne l'exerçait, et c'est instructif** :
+		// `ContactResponse.name` est `string`, le serveur rend `pub name: String`
+		// non nullable. Le typage rend donc la garde invisible à toute preuve
+		// écrite dans les types — il faut sortir du typage pour l'atteindre.
+		// Une garde de défense en profondeur ne se prouve pas autrement.
+		// Relevé en passe 5 de revue de code.
+		const nul = null as unknown as string;
+		const out = rank([c(1, nul), c(2, 'Dubarde SA')], normalizeTerm('Dubarde'));
+		expect(names(out)).toEqual(['Dubarde SA', null]);
+	});
+
 	it('classe sans filtrer ni dupliquer', () => {
 		// MUTATION : « faire filtrer rank » → casserait l'arithmétique de
 		// countOthers, qui soustrait d'un total serveur.

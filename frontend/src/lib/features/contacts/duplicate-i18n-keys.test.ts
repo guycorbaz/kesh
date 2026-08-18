@@ -14,7 +14,7 @@
  *
  * ⚠️ **Portée délibérément bornée au domaine `contact-duplicate-*`**, celui que
  * cette story possède. Le contrôle général vaudrait pour tout le frontend, mais
- * il y a **250 clés** aujourd'hui employées sans exister au catalogue — un état
+ * il y a **258 clés** aujourd'hui employées sans exister au catalogue — un état
  * antérieur à cette story, de la famille de la KF #283, qu'il ne revient pas à
  * cette PR de trancher.
  */

@@ -6,7 +6,7 @@ review
 
 **Les sept tâches sont livrées** (2026-08-18) — cf. § *Change Log*, entrée « Implémentation ».
 
-**QUATRE passes de `bmad-code-review` ont tourné**, toutes sur le diff aplati des deux moitiés :
+**CINQ passes de `bmad-code-review` ont tourné**, toutes sur le diff aplati des deux moitiés :
 
 | Passe | Modèles | Sévérité |
 |---|---|---|
@@ -14,8 +14,11 @@ review
 | 2 | Opus ×3 | 0 `CRITICAL` / 1 `HIGH` / 16 `MEDIUM`+`LOW` |
 | 3 | Sonnet ×3 | 1 `CRITICAL` / 0 `HIGH` / 4 `MEDIUM` / 2 `LOW` |
 | 4 | Opus ×3 | 0 `CRITICAL` / 3 `HIGH` / 8 `MEDIUM` / 3 `LOW` |
+| 5 | Sonnet, **lentille unique** | 0 `CRITICAL` / 0 `HIGH` / 3 `MEDIUM` / 1 `LOW` |
 
-**Reste dû : le PUSH**, qui n'a pas eu lieu — et l'arbitrage sur une éventuelle **passe 5** (§ *Review Iteration Rule* : trois `HIGH` en passe 4).
+**Reste dû : le PUSH**, qui n'a pas eu lieu — et l'arbitrage sur une éventuelle **passe 6** (§ *Review Iteration Rule* : trois `MEDIUM` en passe 5).
+
+**La passe 5 était CIBLÉE**, sur arbitrage de Guy : une seule lentille, braquée sur la remédiation de la passe 4 — seule partie du dossier qu'aucune relecture n'avait vue. Elle n'a trouvé **aucun défaut vivant** : trois trous de garde, désormais fermés et éprouvés.
 
 ⚠️ *Ce bloc a été trouvé en arrière d'une passe **trois fois de suite** — après la 1, après la 2, après la 3. Un lecteur s'arrêtant au Status relançait la passe déjà faite. C'est le site le plus lu de la fiche et le plus systématiquement périmé.*
 
@@ -457,6 +460,91 @@ C'est **préexistant**, et cette story ne le corrige pas — mais elle le rend *
 
 ## Change Log
 
+### Passe 5 de `bmad-code-review` — 2026-08-18, Sonnet, lentille UNIQUE, contexte frais
+
+**Passe CIBLÉE, arbitrée par Guy** au lieu du protocole à trois lentilles, et le prompt est versionné
+(`22-2b-review-prompt-regression-hunter-p5.md`). Motif de la cible : sur quatre passes, **chaque passe
+a trouvé un défaut introduit par la remédiation de la précédente** — et la remédiation de la passe 4,
+qui ajoute deux gardes neuves et une fonction pure, n'avait subi aucune relecture. Le périmètre était
+le seul commit `e207ecb7`, code d'abord.
+
+**Trend : `1C/2H/5M/1L` → `0C/1H/16M+L` → `1C/0H/4M/2L` → `0C/3H/8M/3L` → `0C/0H/3M/1L`.**
+Bruts : 1 `HIGH` + 2 `MEDIUM` + 1 `LOW`, **le `HIGH` reclassé `MEDIUM`** — voir plus bas. La sévérité
+maximale **redescend de `HIGH` à `MEDIUM`**, et c'est la première passe sans aucun défaut de prose.
+
+**Le verdict de la lentille est que la remédiation de la passe 4 tient** : ses deux gardes-phares
+mordent — elle les a mutées et chacune fait rougir exactement le test annoncé — et le banc du socle
+rejoue 32/32 sans survivante, comme déclaré. Ce qu'elle a trouvé est plus fin.
+
+**Le finding reclassé — une garde posée en passe 4, et que rien n'exerçait.** La passe 4 avait ajouté
+`fold(a.name ?? '')` dans `rank` en écrivant que c'était « le seul point du module sans garde sur une
+valeur serveur » et que son échec serait « le pire de tous », le `catch` de la sonde le convertissant
+en « aucun doublon », **muet**. La garde est là ; **aucune preuve ne l'exerçait**. Muter les deux `?? ''`
+laisse les 54 preuves du socle vertes, et **aucune des 32 entrées du banc ne visait cette ligne**.
+C'est mot pour mot le reproche que la passe 4 adresse à la passe 3.
+
+⚠️ **Reclassé `HIGH` → `MEDIUM`, et la justification est vérifiée, pas confortable** : le serveur rend
+`pub name: String` (`routes/contacts.rs:76`), **non nullable**, et le commentaire du code dit lui-même
+que le `?? ''` est là « par UNIFORMITÉ, pas par nécessité de typage ». C'est donc une garde de
+**défense en profondeur** contre une réponse non conforme, dont l'absence ne fait mentir aucun critère
+d'acceptation. **Le correctif reste dû** — une garde sans preuve est exactement ce que cette story
+combat — mais la sévérité n'est pas celle d'un défaut vivant.
+
+⚠️ **Et c'est instructif sur POURQUOI aucune preuve ne l'exerçait** : le typage rend la garde
+invisible à toute preuve écrite dans les types. Il faut **sortir du typage** (`null as unknown as string`)
+pour l'atteindre. Une garde de défense en profondeur ne se prouve pas autrement — le test neuf le dit
+dans son propre corps, pour que personne ne le « simplifie » en le retypant.
+
+**Les deux autres `MEDIUM`, tous deux dans le code neuf de la passe 4 :**
+
+1. **La fonction de détection Fluent produisait un faux positif.** `cles_a_selecteur` retenait **tout
+   `->` non commenté**, si bien qu'une flèche écrite en toutes lettres — `g = Cliquez sur -> pour
+   continuer` — était classée « sélecteur ». Aucune locale n'en contient aujourd'hui : **défaut
+   latent**, que le premier traducteur écrivant une flèche en prose aurait réveillé. ⚠️ **Le coût réel
+   n'est pas le rouge** : c'est l'ajout réflexe de la clé innocente à `SELECTEURS_RESOLUS_COTE_SERVEUR`
+   pour faire taire un test incompris — ce qui **désarmerait le garde-fou pour de bon**. Le `->` doit
+   désormais suivre une accolade ouvrante sur la même ligne, et le contre-exemple est dans le test.
+   ⚠️ Le test s'appelle toujours « les trois formes », et il en couvre trois plus **trois**
+   contre-exemples : sans sélecteur, commentaire, flèche littérale.
+2. **Un décompte incohérent dans le commit qui l'introduit** : le docstring de `duplicate-i18n-keys.test.ts`
+   annonçait **250** clés orphelines là où le message de commit, le story file et l'issue #316 disent
+   **258**. La dérive n'a pas eu besoin de deux commits pour naître — elle est **interne à celui-ci**.
+   Grep de la **valeur** `\b250\b` sur tout le dépôt : une seule occurrence, corrigée.
+
+Le `LOW` — le `console.error` du `catch` de la sonde nom n'est couvert par aucun test — est **laissé
+tel quel** : purement diagnostique, aucun impact sur ce que voit l'utilisateur.
+
+**Ce que la lentille a éprouvé SANS rien trouver**, et qui dit ce que la passe couvre réellement :
+le ternaire de pluriel muté en `autres === 2` (rougit, `contacts-i18n-realpath.test.ts`) ; le
+désarmement atomique privé de son `nameSeq++` (rougit) ; `contact-duplicate-others-count-one` retirée
+de `de-CH` (rougit, « vaut le libellé FRANÇAIS ») ; le banc du socle rejoué en entier ; le doc-comment
+KF-005 déplacé, vérifié cohérent avec le test qu'il surplombe désormais **et** avec celui qu'il a
+quitté ; les renvois `D-b15`→`D-b12` et `D-b7`→`D-a7`, confirmés contre leurs cibles réelles.
+
+⚠️ **Une dérive de MA remédiation, rattrapée par le contrôle, et elle mérite d'être écrite.** Pour
+prouver que le contre-exemple de la flèche mord, j'ai muté la détection, constaté le rouge attendu —
+puis restauré au `git checkout -- crates/kesh-i18n/src/loader.rs`, **ce qui a emporté le correctif en
+même temps que la mutation**. Le `git status` qui suit l'a montré, le patch a été réappliqué et
+recontrôlé sur ses quatre ancrages. **Muter un fichier qu'on vient de corriger et le restaurer au
+`checkout` sont incompatibles** : la mutation doit être annulée par son inverse exact, jamais par un
+retour à `HEAD`.
+
+**Correctifs éprouvés, pas seulement écrits** : la détection restreinte mise en défaut (l'ancienne
+condition rétablie ⇒ `the_select_detector_catches_all_three_fluent_forms` **FAILED**), et la garde de
+`rank` inscrite au banc — **33 mutations jouées, 0 survivante, 0 non discriminante, 0 hors cible**, la
+neuve rendant le rouge attendu sur le test attendu.
+
+**Gate CIBLÉ vert** : `cargo test -p kesh-i18n` **28/28**, `duplicate-probe.test.ts` **55/55**,
+`duplicate-i18n-keys.test.ts` **2/2**, banc socle **33/0**, `fmt` + `clippy --workspace` propres.
+⛔ **Le gate COMPLET n'a PAS été rejoué** — il est dû au push, avec remise à zéro inconditionnelle de
+la base, conformément à la § *Test Locally First*. Les chiffres backend 2218 et frontend 608 du
+Change Log ci-dessous sont ceux de la passe 4 et **n'ont pas été revérifiés**.
+
+⚠️ **Passe 6 due** par la lettre de la § *Review Iteration Rule* (3 `MEDIUM`) — **arbitrage de Guy**.
+Éléments : la sévérité décroît pour la première fois de façon monotone sur deux passes
+(`CRITICAL` → `HIGH` → `MEDIUM`), aucun défaut vivant n'a été trouvé, et les trois `MEDIUM` sont des
+trous de garde désormais fermés et éprouvés. Budget : 5 passes sur 8.
+
 ### Passe 4 de `bmad-code-review` — 2026-08-18, Opus ×3, contexte frais
 
 **Trend : `1C/2H/5M/1L` → `0C/1H/16M+L` → `1C/0H/4M/2L` → `0C/3H/8M/3L`.** Bruts : 6 + 11 + 5 = 22, dont plusieurs convergences. **Aucun `CRITICAL`**, et la sévérité maximale redescend de `CRITICAL` à `HIGH`.
@@ -491,7 +579,9 @@ C'est **préexistant**, et cette story ne le corrige pas — mais elle le rend *
 
 **Découverte hors périmètre, tracée** : en écrivant la garde clé↔catalogue, **258 clés demandées par le frontend n'existent dans AUCUNE locale** — repli français servi à tous, et intraduisible. Très antérieur à cette PR, distinct de #283. **[KF-040, issue #316](https://github.com/guycorbaz/kesh/issues/316)**, ouverte à la demande de Guy. La garde de cette story est **bornée au domaine `contact-duplicate-*`**.
 
-⚠️ **Passe 5 due** par la lettre de la § *Review Iteration Rule* (3 `HIGH`) — **mais l'arbitrage revient à Guy**, et les éléments sont au § *Ce que quatre passes ont appris*.
+⚠️ **Passe 5 due** par la lettre de la § *Review Iteration Rule* (3 `HIGH`) — **mais l'arbitrage revient à Guy**, et les éléments sont au § *Status*.
+
+*(Ce renvoi pointait vers un § « Ce que quatre passes ont appris » qui **n'a jamais existé**, ni ici ni dans la 22-2a. Corrigé en passe 5 — c'est le défaut que cette passe 4 dénonce dans son propre corps, « deux renvois de décision pointaient dans le vide », reproduit dans le commit qui le dénonce.)*
 
 ### Passe 3 de `bmad-code-review` — 2026-08-18, Sonnet ×3, contexte frais
 

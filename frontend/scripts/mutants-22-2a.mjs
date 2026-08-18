@@ -133,6 +133,12 @@ const MUTANTS = [
 		expect: 'critère 5 : deux HOMONYMES STRICTS'
 	},
 	{
+		name: "retirer la garde ?? '' de rank",
+		from: "\t\tconst fa = fold(a.name ?? '');\n\t\tconst fb = fold(b.name ?? '');",
+		to: '\t\tconst fa = fold(a.name);\n\t\tconst fb = fold(b.name);',
+		expect: 'ne fait pas exploser le classement'
+	},
+	{
 		name: 'faire filtrer rank',
 		from: '\treturn [...items].sort((a, b) => {',
 		to: '\treturn [...items].filter((x) => fold(x.name).startsWith(term)).sort((a, b) => {',
