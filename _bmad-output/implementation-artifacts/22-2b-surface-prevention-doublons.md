@@ -239,7 +239,7 @@ Renommer un contact vers un nom déjà porté déclenche le même signal nuancé
 
 ## Tasks / Subtasks
 
-- [ ] **T-b1 — Rendre l'IDE cherchable, et prouver la fenêtre** (AC-b2, **et preuve 9 d'AC-b1** ; met en œuvre **D-b3**). Ajouter `ide_number` aux **DEUX** branches `LIKE` de `push_where_clauses` (`crates/kesh-db/src/repositories/contacts.rs:195-210`).
+- [x] **T-b1 — Rendre l'IDE cherchable, et prouver la fenêtre** ✅ *(2026-08-18)* (AC-b2, **et preuve 9 d'AC-b1** ; met en œuvre **D-b3**). Ajouter `ide_number` aux **DEUX** branches `LIKE` de `push_where_clauses` (`crates/kesh-db/src/repositories/contacts.rs:195-210`).
   - [ ] Deux tests `#[sqlx::test]`, **un par branche** : le cas courant (`search=CHE109322551`) et le cas où `escaped.is_empty()`, c'est-à-dire un terme **intégralement** composé des dix opérateurs — par exemple `search=***`.
   - [ ] ⚠️ **Ne PAS se caler sur `test_search_handles_special_chars:1283` pour la seconde branche : il ne l'exerce pas.** Il cherche `"100%"`, et `%` **n'est pas** un opérateur `BOOLEAN MODE` (`util/search.rs:41`) — le terme survit intact et le test emprunte la branche `else`. **Aucun test du dépôt n'exerce aujourd'hui la branche `escaped.is_empty()`.**
   - [ ] **Le `#[sqlx::test]` de la fenêtre** (preuve 9 d'AC-b1) : fixture des six `Jean X`, `limit: 20` ⇒ six lignes et `total = 6`.

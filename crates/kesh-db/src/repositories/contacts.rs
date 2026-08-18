@@ -185,6 +185,15 @@ fn push_where_clauses<'a>(
             // NON l'index FULLTEXT — un `CLI-2026-00042` subirait exactement le
             // sort décrit ci-dessus, ses séparateurs cassant les tokens.
             // `escape_like` préserve les tirets, donc le fragment fonctionne.
+            // Story 22-2b (#301) : `ide_number` rejoint les deux LIKE, pour que
+            // la sonde anti-doublon puisse demander « qui porte cet IDE ? » sans
+            // ouvrir une seconde route à scoper.
+            //
+            // ⚠️ La colonne est stockée NORMALISÉE (`CHE109322551`, 12 chars,
+            // `CheNumber::new`) alors que le LIKE porte sur le terme BRUT : la
+            // forme imprimée sur une facture (`CHE-109.322.551`) ne remonte donc
+            // RIEN. Seule la saisie sans séparateurs matche — c'est ce que le
+            // libellé de recherche et le manuel doivent dire.
             //
             // ⚠️ LES DEUX BRANCHES, ou aucune. N'en traiter qu'une compile et
             // passe les tests dont le terme survit à `escape_boolean_ft` — mais
@@ -196,6 +205,8 @@ fn push_where_clauses<'a>(
                 qb.push(" AND (email LIKE ");
                 qb.push_bind(like_pattern.clone());
                 qb.push(" ESCAPE '\\\\' OR client_number LIKE ");
+                qb.push_bind(like_pattern.clone());
+                qb.push(" ESCAPE '\\\\' OR ide_number LIKE ");
                 qb.push_bind(like_pattern);
                 qb.push(" ESCAPE '\\\\')");
             } else {
@@ -205,6 +216,8 @@ fn push_where_clauses<'a>(
                 qb.push(" IN BOOLEAN MODE) OR email LIKE ");
                 qb.push_bind(like_pattern.clone());
                 qb.push(" ESCAPE '\\\\' OR client_number LIKE ");
+                qb.push_bind(like_pattern.clone());
+                qb.push(" ESCAPE '\\\\' OR ide_number LIKE ");
                 qb.push_bind(like_pattern);
                 qb.push(" ESCAPE '\\\\')");
             }
@@ -1324,6 +1337,169 @@ mod tests {
     /// ou si Kesh migre vers Sphinx/Manticore (v0.3+), OU si la config
     /// `innodb_ft_min_token_size=1` est appliquée, ce test FAILERA et
     /// devra être inversé pour asserter le nouveau comportement (match attendu).
+    /// **Story 22-2b (#301) — l'IDE est cherchable, branche COURANTE.**
+    ///
+    /// Le terme survit à `escape_boolean_ft` : la requête emprunte le bras
+    /// `MATCH … OR LIKE`. C'est le chemin de la sonde anti-doublon.
+    ///
+    /// ⚠️ Le terme est la forme **normalisée** — la colonne stocke
+    /// `CHE109322551` sur 12 caractères et le `LIKE` porte sur le terme brut.
+    /// La forme imprimée sur une facture ne remonte donc **rien**, ce que la
+    /// seconde assertion fige pour qu'on ne promette pas l'inverse au manuel.
+    #[tokio::test]
+    async fn search_finds_contact_by_ide_number() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        cleanup_test_contacts(&pool, company_id).await;
+
+        let mut porteur = new_contact(company_id, "TestContact Porteur IDE");
+        porteur.ide_number = Some("CHE109322551".into());
+        create(&pool, admin_user_id, porteur).await.unwrap();
+
+        let cherche = |terme: &str| ContactListQuery {
+            search: Some(terme.to_string()),
+            limit: 100,
+            ..Default::default()
+        };
+
+        let normalise = list_by_company_paginated(&pool, company_id, cherche("CHE109322551"))
+            .await
+            .unwrap();
+        assert_eq!(
+            normalise.total, 1,
+            "la forme normalisée doit remonter son porteur"
+        );
+
+        let formate = list_by_company_paginated(&pool, company_id, cherche("CHE-109.322.551"))
+            .await
+            .unwrap();
+        assert_eq!(
+            formate.total, 0,
+            "la forme SÉPARÉE ne remonte rien : le libellé de recherche et le manuel doivent dire « sans séparateurs »"
+        );
+
+        cleanup_test_contacts(&pool, company_id).await;
+    }
+
+    /// **Story 22-2b (#301) — l'IDE est cherchable, branche `escaped.is_empty()`.**
+    ///
+    /// ⚠️ **C'est la branche que rien n'exerçait dans ce dépôt.**
+    /// `test_search_handles_special_chars` ne la couvre pas : il cherche
+    /// `100%`, et `%` n'est **pas** un opérateur `BOOLEAN MODE` — le terme
+    /// survit intact et emprunte l'autre bras. Il faut un terme
+    /// **intégralement** composé des dix opérateurs.
+    ///
+    /// Sans `ide_number` dans CETTE branche, la recherche cesserait
+    /// **silencieusement** de chercher l'IDE dès que le terme n'est fait que
+    /// d'opérateurs.
+    #[tokio::test]
+    async fn search_covers_ide_in_the_empty_escaped_branch() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        cleanup_test_contacts(&pool, company_id).await;
+
+        assert!(
+            crate::util::search::escape_boolean_ft("***").is_empty(),
+            "le montage suppose un terme qui s'effondre — sinon ce test exercerait l'autre branche sans le dire"
+        );
+
+        let mut porteur = new_contact(company_id, "TestContact Etoiles");
+        porteur.ide_number = Some("CHE116281838".into());
+        create(&pool, admin_user_id, porteur).await.unwrap();
+
+        // Le fragment `1162` ne survivrait pas seul à cette branche : on vérifie
+        // qu'un terme d'opérateurs n'explose pas et ne remonte rien d'absurde.
+        let result = list_by_company_paginated(
+            &pool,
+            company_id,
+            ContactListQuery {
+                search: Some("***".into()),
+                limit: 100,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.total, 0, "aucun champ ne contient la chaîne `***`");
+
+        // Et la clause `ide_number LIKE` est bien poussée dans CE bras : un
+        // fragment d'IDE, avec un terme qui s'effondre lui aussi, le prouve.
+        let mut second = new_contact(company_id, "TestContact Tilde");
+        // ⚠️ 12 caractères exactement — la colonne est un `VARCHAR(12)`.
+        second.ide_number = Some("CHE~11628183".into());
+        create(&pool, admin_user_id, second).await.unwrap();
+        let par_ide = list_by_company_paginated(
+            &pool,
+            company_id,
+            ContactListQuery {
+                search: Some("~".into()),
+                limit: 100,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            par_ide.total, 1,
+            "la branche `escaped.is_empty()` doit chercher `ide_number` — sans elle, silence total"
+        );
+
+        cleanup_test_contacts(&pool, company_id).await;
+    }
+
+    /// **Story 22-2b (#301) — preuve 9 d'AC-b1 : la fenêtre est assez large.**
+    ///
+    /// La sonde demande `limit: 20` précisément pour que le doublon exact entre
+    /// dans la fenêtre : à `limit: 5`, le tri **alphabétique** du serveur
+    /// évincerait `Jean Zwahlen`, défaut fondateur de la Story 22-2.
+    ///
+    /// ⚠️ Ce test porte sur la **requête** — sémantique OU inclusif, tri, taille
+    /// de fenêtre. Le **classement**, lui, est prouvé côté TypeScript
+    /// (`duplicate-probe.test.ts`) : un test Rust ne peut pas appeler `rank`.
+    #[tokio::test]
+    async fn search_window_is_wide_enough_for_the_exact_duplicate() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        cleanup_test_contacts(&pool, company_id).await;
+
+        for nom in [
+            "TestContact Jean Bernard",
+            "TestContact Jean Dupont",
+            "TestContact Jean Favre",
+            "TestContact Jean Martin",
+            "TestContact Jean Rochat",
+            "TestContact Jean Zwahlen",
+        ] {
+            create(&pool, admin_user_id, new_contact(company_id, nom))
+                .await
+                .unwrap();
+        }
+
+        let result = list_by_company_paginated(
+            &pool,
+            company_id,
+            ContactListQuery {
+                search: Some("Jean Zwahlen".into()),
+                limit: 20,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.total, 6, "OU inclusif — un seul token commun suffit");
+        assert_eq!(result.items.len(), 6, "la fenêtre de 20 les rend tous");
+        assert!(
+            result.items.iter().any(|c| c.name.contains("Zwahlen")),
+            "le doublon exact DOIT être dans la fenêtre : c'est ce que `limit: 20` achète, et ce que `limit: 5` perdrait"
+        );
+
+        cleanup_test_contacts(&pool, company_id).await;
+    }
+
     #[tokio::test]
     async fn test_search_no_longer_matches_mid_word() {
         let pool = test_pool().await;
