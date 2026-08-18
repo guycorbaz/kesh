@@ -168,6 +168,14 @@ const MUTANTS = [
 		from: "\tlet formValidation = $derived.by(() => {",
 		to: "\tlet formValidation = $derived.by(() => {\n\t\tif (proches.length > 0) return 'Un doublon existe déjà';",
 		expect: "ne change pas le `disabled`"
+	},
+	{
+		// BH-2 (passe 3) : le banc mutait l'`includeArchived` de la sonde NOM et
+		// pas celui de la sonde IDE, moitié symétrique de la même exigence D-b5.
+		name: "sonde IDE aveugle aux ARCHIVÉS",
+		from: "search: ide, limit: 20, includeArchived: true",
+		to: "search: ide, limit: 20, includeArchived: false",
+		expect: "l’argument est la forme NORMALISÉE"
 	}
 ];
 

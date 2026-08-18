@@ -199,8 +199,10 @@ La saisie d'un IDE **complet** (`validateIdeFormat`) déjà porté par un contac
    ```
    ⚠️ **Sans l'assertion sur `search`, la mutation `search: formIde` survit aux 31 preuves ET à l'E2E** — et rend la sonde **muette pour tout utilisateur réel** : l'UI affiche `CHE-123.456.789` en placeholder (`+page.svelte:769`) et `openEdit` écrit **inconditionnellement** la forme séparée (`:256`), or D-b3 établit que `'CHE123456788' LIKE '%CHE-123.456.788%'` rend **0**. Le mock, lui, rend le porteur sans regarder son argument, et l'E2E ne l'attrape pas si le test tape la forme déjà normalisée.
    **Et** le message rendu pour un porteur archivé est **distinct** de celui d'un porteur actif — deux clés i18n séparées. ⚠️ Les deux moitiés sont indispensables : l'argument parce qu'une preuve fonctionnelle est verte sous la mutation, le libellé parce que **c'est lui le recours** — sans la mention « archivé », l'utilisateur reçoit un avertissement sur un contact introuvable dans son carnet, qu'il ne pourra ni modifier ni désarchiver ;
-3. **ouvrir en édition** la fiche d'un contact qui porte un IDE ne déclenche **aucun** avertissement franc — ni à l'ouverture, ni après avoir retapé le même IDE ;
-4. **un contact remonté SANS porter cet IDE** — la chaîne figure dans son nom ou son email — ne déclenche **rien**. ⚠️ *Cette preuve existe bien ; la rédaction précédente décrivait à sa place un scénario de « vidage EN VOL » qui n'a jamais été écrit, et numérotait les deux tests livrés à contretemps. Relevé en passe 2 de revue de code : la liste était fausse, le critère restant tenu par les preuves 1, 2 et 3.* *(La garde est structurelle dans la 22-2a ; ce test vérifie que le câblage lui passe bien la valeur **envoyée**, et non une relecture du champ.)* ;
+3. **un contact remonté SANS porter cet IDE** — la chaîne figure dans son nom ou son email — ne déclenche **rien** ;
+4. **ouvrir en édition** la fiche d'un contact qui porte un IDE ne déclenche **aucun** avertissement franc — ni à l'ouverture, ni après avoir retapé le même IDE. ⚠️ *Ce test est physiquement logé dans le bloc `describe` d'`AC-b7`, dont il partage le montage ; la table de décompte le signale.*
+
+   ⚠️ *Les items 3 et 4 étaient INVERSÉS par rapport aux libellés du code — les deux comportements étaient bien couverts, seule la correspondance numéro ↔ contenu était fausse. La story suit désormais le code, qui reste la source de vérité des numéros. Relevé en passe 3.*
 5. **le retrait** : afficher l'avertissement sur un IDE pris, corriger un chiffre vers un IDE **libre** ⇒ plus aucun avertissement. Mutation : « n'écrire l'avertissement que dans la branche `if (holder)` », qui laisse à l'écran un message désignant un numéro que l'utilisateur ne porte plus ;
 6. **E2E** : le `409` est bien levé si l'avertissement est ignoré (cf. T-b6).
 
@@ -219,9 +221,11 @@ Temporisation de 300 ms (le pas du dépôt), compteur de génération, **une pai
 2. deux requêtes résolues **dans l'ordre inverse** — la première arrivée en dernier est ignorée ;
 3. **le test croisé** : armer la sonde nom, puis la sonde IDE avant résolution ⇒ **les deux** avertissements aboutissent. Mutation : « factoriser une seule paire », que les deux autres laissent verte ;
 4. **la sonde IDE sur une suite valide → invalide → valide** ⇒ **deux** appels, un par passage à la validité ;
-5. **la remise à zéro à l'ouverture en CRÉATION** : armer une sonde, fermer le formulaire, le rouvrir ⇒ aucune proposition, et la réponse armée avant la fermeture n'en fait pas apparaître. Mutation : « ne rien réinitialiser dans `openCreate()` » ;
-6. **la remise à zéro à l'ouverture en ÉDITION** : armer une sonde depuis « Créer », fermer sans enregistrer, puis ouvrir **en édition** un contact `B` ⇒ aucune proposition résiduelle.
-   ⚠️ **Mutation : « ne réinitialiser que dans `openCreate()` », que le test 5 laisse VERTE.** D-b8 exige les deux sites ; une seule preuve n'en couvrait qu'un. Le symptôme est concret : les propositions d'une session « créer » restent affichées sur la fiche de `B`, désignant des contacts sans rapport, jusqu'à la frappe suivante. Relevé en passe 1.
+5. **rouvrir en CRÉATION repart d'un écran vierge** : armer une sonde, fermer le formulaire, le rouvrir ⇒ aucune proposition, et la réponse armée avant la fermeture n'en fait pas apparaître ;
+6. **rouvrir en ÉDITION repart d'un écran vierge, lui aussi** : armer une sonde depuis « Créer », fermer sans enregistrer, puis ouvrir **en édition** un contact `B` ⇒ aucune proposition résiduelle. Le symptôme que cela ferme est concret : les propositions d'une session « Créer » restant affichées sur la fiche de `B`, **en le désignant comme un doublon** ;
+7. **FERMER le formulaire fait taire une sonde EN VOL** : taper un terme armé puis fermer avant les 300 ms ⇒ **aucune requête** ne part. C'est ce que la remise à zéro à l'ouverture ne pouvait pas faire.
+
+   ⚠️ **Ces trois preuves partagent leur mutation — « retirer le `$effect` de fermeture » — et c'est voulu** : un seul mécanisme, trois conséquences gardées séparément. *(La rédaction précédente nommait des mutations sur `openCreate()`/`openEdit()`, dont les appels ont été **supprimés** comme redondants au retournement de D-b8 ; elle affirmait même « D-b8 exige les DEUX sites », c'est-à-dire une exigence que le code ne tient plus et qui invitait à réintroduire la redondance qu'on venait de démonter. Et l'énumération s'arrêtait à six items pour sept preuves annoncées. Relevé en passe 3 de revue de code — troisième passe consécutive où la prose reste en arrière d'un correctif de code.)*
 ⚠️ Ne PAS prouver l'annulation par un `AbortSignal` passé à `apiClient` : il est écrasé en silence (D-b6), un tel test mesurerait du vide.
 
 **AC-b5 — Le dispositif est muet quand il n'a rien à dire.**
@@ -296,7 +300,7 @@ holder = findIdeHolder(ri.items, ide, soi);                    // `ide` = la val
   - [ ] ⚠️ **Les deux appels ne diffèrent que par deux paramètres et se lisent côte à côte.** Une inversion d'`includeArchived` ne casse rien et rend des résultats plausibles dans les deux sens — le filtrage étant serveur, et un `vi.mock` ne regardant pas ses arguments. D'où les preuves **sur l'argument**, une par sens.
 - [x] **T-b3 — Temporisation et garde d'ordre** ✅ *(2026-08-18 ; **preuves écrites en passe 1 de revue de code**, cf. AC-b4)* (AC-b4). Débounce 300 ms + compteur de génération, patron `ContactPicker.svelte:36-78` (D-b6). **Une paire par sonde** (D-b7). Remise à zéro **à la fermeture**, par un `$effect` sur `formOpen` (D-b8 retourné en revue).
   - [ ] Réutiliser `debounce` de `$lib/features/journal-entries/debounce.ts` **ou** le `setTimeout` inline de `+page.svelte:185-192` — ne pas écrire un troisième mécanisme. Le helper est mal rangé ; le **déplacer** est hors périmètre, s'en servir ne l'est pas.
-  - [ ] Remise à zéro des deux paires dans `openCreate()` **et** `openEdit()` (D-b8) — **pas** sur la fermeture, qui a trois sites.
+  - [x] Remise à zéro des deux paires **à la FERMETURE**, par un `$effect` sur `formOpen` (D-b8, retournée en passe 2 de revue). ⚠️ *Cette ligne prescrivait exactement l'inverse — « dans `openCreate()` et `openEdit()`, pas sur la fermeture, qui a trois sites » — à deux lignes de sa tâche parente qui, elle, avait été corrigée. L'argument des « trois sites » est réfuté par `bind:open`, qui les ramène à un.*
   - [ ] Nettoyer les timers au démontage — `+page.svelte:113` le fait déjà pour la recherche de liste.
   - [ ] Brancher sur **`oninput`** (`ContactPicker.svelte:127`, `+page.svelte:463`), **jamais sur `onkeydown`** : un collage ne produit aucune frappe clavier, et une sonde branchée sur le clavier resterait muette sur le geste le plus courant de tous.
 - [x] **T-b4 — Balisage et signaux** ✅ *(2026-08-18, code — preuves à venir)* (AC-b1, AC-b2, AC-b3, AC-b5, AC-b7). Deux niveaux visuellement distincts (D-b2) ; ne toucher **ni** au `disabled` du bouton **ni** à `formValidation` (`:275`).
@@ -349,13 +353,13 @@ holder = findIdeHolder(ri.items, ide, soi);                    // `ide` = la val
 | AC-b3 — l'état du bouton est inchangé | 2 + 1 | composant + E2E |
 | AC-b4 — temporisation et ordre | 7 | composant |
 | AC-b5 — muet quand rien à dire | 6 | composant |
-| AC-b6 — quatre locales | 3 | unitaire Rust |
+| AC-b6 — quatre locales | 4 + 5 | unitaire Rust + unitaire front (`i18n.svelte.test.ts`) |
 | AC-b7 — édition sans se signaler | 2 | composant |
 | *(T-b1 — l'IDE cherchable)* | 2 | intégration base |
 
-⚠️ **Les 32 preuves de composant sont écrites et LEURS MUTATIONS JOUÉES** — `frontend/scripts/mutants-22-2b.mjs`, 22 mutations, 0 survivante, 0 hors cible. **CINQ d'entre elles ne prouvaient RIEN avant d'être jouées** : ouvrir une fiche en édition sans retaper l'IDE ne déclenche aucune sonde ; le compteur « et N autres » n'est pas rendu quand la liste est vide ; une promesse rejetée sans `try/catch` ne fait pas rougir vitest ; et **la preuve 2 passait par coïncidence de calendrier** — frappant les deux champs d'une Personne, un seul câblage survivant suffisait à composer le même terme, si bien que retirer l'`oninput` du prénom OU du nom de famille ne faisait rougir personne. Aucune relecture ne les aurait vues, et le Blind Hunter avait précisément conclu l'inverse sur la dernière — c'est le banc qui l'a réfuté.
+⚠️ **Les 32 preuves de composant sont écrites et LEURS MUTATIONS JOUÉES** — `frontend/scripts/mutants-22-2b.mjs`, 23 mutations, 0 survivante, 0 hors cible. **CINQ d'entre elles ne prouvaient RIEN avant d'être jouées** : ouvrir une fiche en édition sans retaper l'IDE ne déclenche aucune sonde ; le compteur « et N autres » n'est pas rendu quand la liste est vide ; une promesse rejetée sans `try/catch` ne fait pas rougir vitest ; et **la preuve 2 passait par coïncidence de calendrier** — frappant les deux champs d'une Personne, un seul câblage survivant suffisait à composer le même terme, si bien que retirer l'`oninput` du prénom OU du nom de famille ne faisait rougir personne. Aucune relecture ne les aurait vues, et le Blind Hunter avait précisément conclu l'inverse sur la dernière — c'est le banc qui l'a réfuté.
 
-**Totaux, sommés depuis la colonne** : **32 tests de composant** (10 + 5 + 2 + 7 + 6 + 2) · **2 assertions E2E** (1 + 1) · **3 tests unitaires Rust** · **3 tests d'intégration base** (1 + 2). **Soit 40 preuves.** Recompté depuis `contacts-page.test.ts` par `describe`, pas de mémoire : `vitest` en exécute **32**, et la ventilation ci-dessus les retrouve un par un.
+**Totaux, sommés depuis la colonne** : **32 tests de composant** (10 + 5 + 2 + 7 + 6 + 2) · **5 tests unitaires front** (i18n, chemin réel) · **2 assertions E2E** (1 + 1) · **4 tests unitaires Rust** · **3 tests d'intégration base** (1 + 2). **Soit 46 preuves.** Recompté depuis les fichiers par `describe`, jamais de mémoire : `vitest` exécute **32** cas de composant et **5** d'i18n, et la ventilation ci-dessus les retrouve un par un.
 
 ⚠️ **La ligne « 6 tests unitaires front » a été retirée : elle n'a JAMAIS correspondu à rien.** Elle comptait les six preuves d'AC-b4 comme livrées alors qu'aucune n'était écrite, et le total de 34 s'appuyait dessus — alors que le tableau « recompté depuis la source » du Change Log, quatre lignes plus haut, ne les mentionnait pas. **Le total et sa propre ventilation se contredisaient dans le même paragraphe.** Relevé par l'`AcceptanceAuditor` en passe 1 de revue de code, classé `CRITICAL`. Les sept preuves d'AC-b4 existent désormais, et ce sont des tests de **composant**, pas unitaires : la temporisation ne s'observe qu'à travers la page qui l'arme.
 
@@ -435,6 +439,45 @@ C'est **préexistant**, et cette story ne le corrige pas — mais elle le rend *
 - `CLAUDE.md` — § *Un appariement automatique propose, il ne crée jamais*, § *Test Locally First*, § *Un gate laisse la base piégée*.
 
 ## Change Log
+
+### Passe 3 de `bmad-code-review` — 2026-08-18, Sonnet ×3, contexte frais
+
+**Trend : `1C/2H/5M/1L` → `0C/1H/16M+L` → `1C/0H/4M/2L`.** Bruts : 3 + 2 + 2 = 7. Un `HIGH` **réfuté et reclassé**. Retenus : **1 CRITICAL / 0 HIGH / 4 MEDIUM / 2 LOW**.
+
+⚠️ **La sévérité REMONTE, et il faut le dire plutôt que le lisser.** La § *Règle de splitting préventif* traite « une passe `N+1` de sévérité égale ou supérieure » comme le signal d'une non-convergence. Ici la lecture est plus précise, et moins inquiétante : **le `CRITICAL` a été INTRODUIT par la remédiation de la passe 2**. Ce n'est pas un défaut que trois passes n'auraient pas su atteindre, c'est une régression de correctif — exactement ce que le `RegressionHunter` existe pour attraper, et il l'a attrapée à son premier tour effectif (il était mort en vol en passe 2).
+
+**Le `CRITICAL` — RH-1 : le correctif de pluriel de la passe 2 était INERTE EN PRODUCTION.**
+
+Le backend sert un dictionnaire **pré-résolu une fois, SANS arguments** (`all_messages` → `format_pattern(pattern, None, …)`). Sur une expression `select`, Fluent doit alors choisir une branche à l'aveugle : il prend `*[other]` et la **fige**. Vérifié :
+
+```
+DICO fr = "et ⁨{$count}⁩ autres"
+DICO de = "und ⁨{$count}⁩ weitere"
+```
+
+Et `i18nMsg` fait `_messages[key] || fallback` : **le dictionnaire gagne toujours**, donc le repli en ternaire posé côté Svelte n'était jamais consulté. L'application affichait « et 1 autres » exactement comme avant le correctif.
+
+⚠️ **Trois niveaux de preuves, AUCUN sur le chemin réel** — c'est le cœur de l'affaire. Le test Rust appelait `bundle.format(clé, Some(args))`, que le frontend n'emprunte jamais pour cette clé ; le test de composant **mocke `i18nMsg`** en réimplémentant sa logique de sélection depuis le *fallback*, donc il ne pouvait pas le voir non plus. Un correctif déclaré prouvé, vert au gate, et sans effet. *(Le bon patron existait pourtant déjà dans le dépôt : `contact-payment-terms-days-label` est résolue **côté serveur avec ses arguments** par `routes/contacts.rs:496`. Il n'a pas été suivi.)*
+
+**La réparation abandonne le sélecteur pour deux clés plates**, que le dictionnaire sait servir — `contact-duplicate-others-count-one` et `contact-duplicate-others-count` — et vient avec trois preuves de nature différente :
+
+| | |
+|---|---|
+| **Rust, chemin réel** | le test interroge `all_messages`, la seule porte que le frontend franchit |
+| **Front, chemin réel** | 5 preuves partant du dictionnaire **tel que le serveur l'envoie** jusqu'à la chaîne affichée, dont une qui **fige le mécanisme du défaut** pour que personne ne rétablisse un sélecteur en croyant régler l'accord |
+| **Garde-fou** | tout sélecteur Fluent doit être inscrit à une liste blanche disant **où** il est résolu avec ses arguments |
+
+Le garde-fou a été **mis en défaut**, pas seulement écrit : en réintroduisant le piège, il rougit et **nomme la clé fautive**.
+
+**Un `HIGH` réfuté, et la réfutation vaut d'être gardée.** Le `BlindHunter` affirmait que le test « aucune requête sous le seuil » comptait l'appel de montage, faute de `mockClear()`. `loadContacts()` écrit `if (effectiveSearch.trim()) query.search = …` : au montage la clé est **absente**, donc le filtre `typeof q.search === 'string'` l'écarte correctement et le test passe pour la bonne raison. Reclassé `MEDIUM` — car la moitié substantielle tient : la branche `q.search === ''` de l'aide `repondre()` portait un commentaire décrivant un cas **qui ne peut pas se produire**, et le filtre a été durci par défense en profondeur.
+
+**Les autres `MEDIUM`, tous de la même famille — la prose restée en arrière du code :** l'énumération d'AC-b4 comptait **six items pour sept preuves annoncées**, la septième n'ayant aucune description ; ses items 5 et 6 nommaient encore des mutations sur `openCreate()`/`openEdit()`, dont les appels ont été supprimés — l'un affirmant même « D-b8 exige les DEUX sites », **une exigence que le code ne tient plus et qui invitait à réintroduire la redondance qu'on venait de démonter** ; la sous-tâche de T-b3 disait littéralement l'inverse de sa tâche parente **à deux lignes d'écart** ; les items 3 et 4 d'AC-b2 étaient inversés par rapport aux libellés du code ; et le banc mutait l'`includeArchived` de la sonde nom sans muter celui de la sonde IDE, moitié symétrique de la même exigence.
+
+**C'est la TROISIÈME passe consécutive où le même geste manque** : le site est corrigé, les copies en prose du monde d'avant survivent. Passe 1 les avait laissées dans les décomptes, passe 2 dans les décisions, passe 3 dans les énumérations. À chaque fois une lentille différente les retrouve — ce qui veut dire qu'aucune relecture de l'auteur ne les voit.
+
+**Après remédiation** : bancs rejoués **socle 32 / 0 survivante**, **surface 23 / 0**. Gates complets, base remise à zéro d'abord : **backend 2217/2217**, **frontend 603/603** (66 fichiers), `check` 0 erreur, `lint-i18n` PASS, build ✔. Parité i18n **67 clés dans chacune des 4 locales**.
+
+⚠️ **Passe 4 due** (1 `CRITICAL`). Rotation : **Opus** ou **Haiku**, contexte frais — et **le `RegressionHunter` reconduit**, puisque c'est lui, et lui seul, qui a trouvé le défaut de cette passe.
 
 ### Passe 2 de `bmad-code-review` — 2026-08-18, Opus ×3, contexte frais
 

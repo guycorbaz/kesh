@@ -345,57 +345,138 @@ mod tests {
     /// ⚠️ Et le libellé dit **« sans séparateurs »** : la colonne est stockée
     /// normalisée (`CHE109322551`) tandis que le `LIKE` porte sur le terme
     /// brut, donc la forme imprimée sur une facture ne remonte **rien**.
-    /// **Le compteur « et N autres » s'accorde en nombre, dans les quatre locales.**
+    /// Les clés à **sélecteur Fluent** que le dépôt s'autorise, et pour lesquelles
+    /// quelqu'un a vérifié qu'elles sont résolues **côté serveur, avec arguments**.
     ///
-    /// ⚠️ Sans sélecteur Fluent, le libellé rendait « et **1 autres** » — et le
-    /// cas est ordinaire, pas limite : six correspondances dont cinq affichées
-    /// suffisent. Le défaut se lisait à découvert dans le dépôt, deux
-    /// doc-comments décrivant le symptôme sous la forme « et 1 autre »,
-    /// c'est-à-dire une chaîne que le code livré était incapable de produire.
+    /// `contact-payment-terms-days-label` l'est par `routes/contacts.rs`, via
+    /// `i18n.format(&locale, clé, Some(&args))`.
+    const SELECTEURS_RESOLUS_COTE_SERVEUR: &[&str] = &["contact-payment-terms-days-label"];
+
+    /// **Aucun sélecteur ne doit être servi par le dictionnaire du frontend.**
     ///
-    /// Ce test **rend les deux formes** plutôt que d'inspecter le `.ftl` : c'est
-    /// la seule façon de prouver que le sélecteur est effectivement consulté.
+    /// ⚠️ Ce garde-fou existe parce que le piège s'est refermé une fois, et qu'il
+    /// est **entièrement muet** : `all_messages` formate chaque message une seule
+    /// fois et **sans arguments**, si bien qu'une expression `{ $x -> … }` y est
+    /// résolue à l'aveugle sur sa branche `*[other]`, qui se retrouve figée dans
+    /// le dictionnaire. Rien n'échoue, rien ne prévient — l'interface affiche
+    /// simplement toujours le pluriel.
+    ///
+    /// **Un test qui appelle `format()` avec des arguments ne voit RIEN de tout
+    /// cela** : il emprunte un chemin que le frontend ne prend jamais. C'est
+    /// exactement ce qui s'est produit — un correctif de pluriel déclaré prouvé,
+    /// inerte en production, et vert au gate.
+    ///
+    /// Ajouter un sélecteur oblige donc à l'inscrire ci-dessus, c'est-à-dire à
+    /// dire OÙ il est résolu avec ses arguments.
     #[test]
-    fn the_others_count_agrees_in_number_in_every_locale() {
+    fn no_new_select_expression_reaches_the_frontend_dictionary() {
+        let mut trouves: Vec<String> = Vec::new();
+        for locale in ["fr-CH", "de-CH", "it-CH", "en-CH"] {
+            let chemin = locales_dir().join(locale).join("messages.ftl");
+            let texte = std::fs::read_to_string(&chemin)
+                .unwrap_or_else(|e| panic!("lecture de {chemin:?} : {e}"));
+            for ligne in texte.lines() {
+                // Une expression `select` s'ouvre par `clé = { $var ->`.
+                if let Some((cle, reste)) = ligne.split_once(" = ")
+                    && reste.trim_start().starts_with('{')
+                    && reste.contains("->")
+                    && !cle.starts_with(' ')
+                    && !cle.starts_with('#')
+                {
+                    let cle = cle.trim().to_string();
+                    if !trouves.contains(&cle) {
+                        trouves.push(cle);
+                    }
+                }
+            }
+        }
+        trouves.sort();
+
+        let mut attendus: Vec<String> = SELECTEURS_RESOLUS_COTE_SERVEUR
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        attendus.sort();
+
+        assert_eq!(
+            trouves, attendus,
+            "\nUn sélecteur Fluent a été ajouté ou retiré.\n\n\
+             Si c'est un AJOUT : le dictionnaire servi au frontend le résoudra \
+             SANS arguments, donc toujours sur sa branche `*[other]`, EN SILENCE. \
+             Ou bien la clé est résolue côté serveur avec ses arguments — et il \
+             faut alors l'inscrire dans SELECTEURS_RESOLUS_COTE_SERVEUR en disant \
+             où —, ou bien il faut la scinder en clés plates.\n"
+        );
+
+        // Et la DÉMONSTRATION du mécanisme, pour que la règle ci-dessus ne soit
+        // pas du folklore : la clé autorisée ressort bien amputée du dictionnaire.
         let bundle = I18nBundle::load(&locales_dir()).unwrap();
-        const KEY: &str = "contact-duplicate-others-count";
+        let dico = bundle.all_messages(&Locale::FrCh);
+        let servi = dico
+            .get("contact-payment-terms-days-label")
+            .expect("la clé doit exister");
+        assert!(
+            !servi.contains("->"),
+            "le dictionnaire rend une branche unique, pas le sélecteur : {servi}"
+        );
+    }
+
+    /// **Le compteur « et N autres » s'accorde en nombre — par DEUX CLÉS, pas par
+    /// un sélecteur Fluent.**
+    ///
+    /// ⚠️ **Ce test a été réécrit après avoir prouvé quelque chose de faux.** Sa
+    /// première version appelait `bundle.format(clé, Some(args))` sur une clé
+    /// portant un sélecteur `{ $count -> [one] … *[other] … }`, et il passait.
+    /// Mais **le frontend n'emprunte jamais ce chemin** : il reçoit un
+    /// dictionnaire pré-résolu par `all_messages`, qui formate chaque message
+    /// UNE SEULE FOIS et SANS arguments. Sur une expression `select`, Fluent doit
+    /// alors choisir une branche à l'aveugle — il prend `*[other]` et la fige.
+    /// L'application affichait donc « et 1 autres », c'est-à-dire exactement le
+    /// défaut que le correctif prétendait fermer.
+    ///
+    /// D'où deux clés plates, et un test qui interroge **`all_messages`**, la
+    /// seule porte que le frontend franchit réellement.
+    #[test]
+    fn the_others_count_agrees_in_number_through_the_real_path() {
+        let bundle = I18nBundle::load(&locales_dir()).unwrap();
+        const UN: &str = "contact-duplicate-others-count-one";
+        const N: &str = "contact-duplicate-others-count";
 
         for locale in [Locale::FrCh, Locale::DeCh, Locale::ItCh, Locale::EnCh] {
-            let mut un = FluentArgs::new();
-            un.set("count", 1);
-            let mut plusieurs = FluentArgs::new();
-            plusieurs.set("count", 3);
+            let dico = bundle.all_messages(&locale);
 
-            let singulier = bundle.format(&locale, KEY, Some(&un));
-            let pluriel = bundle.format(&locale, KEY, Some(&plusieurs));
+            let un = dico.get(UN).unwrap_or_else(|| {
+                panic!("en {locale:?}, {UN} est absente du DICTIONNAIRE servi au frontend")
+            });
+            let n = dico.get(N).unwrap_or_else(|| {
+                panic!("en {locale:?}, {N} est absente du DICTIONNAIRE servi au frontend")
+            });
 
-            assert_ne!(
-                singulier, KEY,
-                "en {locale:?}, {KEY} ne se résout pas avec un argument `count`"
-            );
-            assert_ne!(
-                singulier, pluriel,
-                "en {locale:?}, {KEY} rend la MÊME chaîne pour 1 et pour 3 : le \
-                 sélecteur de pluriel est absent ou n'est pas consulté"
+            assert_ne!(un, n, "en {locale:?}, les deux formes sont identiques");
+
+            // La forme SINGULIÈRE porte le nombre en toutes lettres et n'attend
+            // aucun argument : c'est ce qui la rend servable par le dictionnaire.
+            assert!(
+                un.contains('1'),
+                "en {locale:?}, la forme singulière perd le nombre : {un}"
             );
             assert!(
-                singulier.contains('1'),
-                "en {locale:?}, la forme singulière perd le nombre : {singulier}"
+                !un.contains("$count"),
+                "en {locale:?}, la forme singulière attend un argument — le \
+                 dictionnaire ne peut pas la résoudre : {un}"
             );
+
+            // La forme PLURIELLE, elle, garde son placeholder : `i18nMsg` le
+            // substitue côté client.
             assert!(
-                pluriel.contains('3'),
-                "en {locale:?}, la forme plurielle perd le nombre : {pluriel}"
+                n.contains("$count"),
+                "en {locale:?}, la forme plurielle a perdu son placeholder : {n}"
             );
         }
 
         // Le cas français, celui qui a motivé le correctif, épinglé nommément.
-        let mut un = FluentArgs::new();
-        un.set("count", 1);
-        let fr = bundle.format(&Locale::FrCh, KEY, Some(&un));
-        assert!(
-            !fr.contains("autres"),
-            "le français rend « {fr} » — le pluriel « autres » sur un compte de 1"
-        );
+        let fr = bundle.all_messages(&Locale::FrCh);
+        assert_eq!(fr.get(UN).map(String::as_str), Some("et 1 autre"));
     }
 
     /// Promettre « ou IDE » tout court serait promettre le geste qui échoue.

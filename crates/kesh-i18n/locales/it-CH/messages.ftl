@@ -347,10 +347,8 @@ contact-form-ide = Numero IDI (CHE)
 contact-form-ide-help = Formato: CHE-123.456.789
 # Story 22-2b (#301) — sonde anti-duplicato durante la digitazione.
 contact-duplicate-heading = Contatti già registrati che potrebbero corrispondere
-contact-duplicate-others-count = { $count ->
-    [one] e 1 altro
-   *[other] e altri { $count }
-}
+contact-duplicate-others-count-one = e 1 altro
+contact-duplicate-others-count = e altri { $count }
 contact-duplicate-ide-active = Questo numero IDI appartiene già a { $name }.
 contact-duplicate-ide-archived = Questo numero IDI appartiene già a { $name }, che è archiviato. Un IDI resta riservato anche dopo l'archiviazione: la registrazione sarà rifiutata.
 contact-form-client-number = Numero cliente

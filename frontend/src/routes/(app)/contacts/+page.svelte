@@ -20,7 +20,7 @@
 	} from '$lib/features/contacts/contacts.api';
 	import {
 		countOthers,
-	describeProches,
+		describeProches,
 		excludeSelf,
 		findIdeHolder,
 		probeTerm,
@@ -902,11 +902,11 @@
 						</ul>
 						{#if autres > 0}
 							<p class="mt-1 text-xs text-amber-800">
-								{i18nMsg(
-									'contact-duplicate-others-count',
-									autres === 1 ? 'et 1 autre' : 'et { $count } autres',
-									{ count: autres }
-								)}
+								{autres === 1
+									? i18nMsg('contact-duplicate-others-count-one', 'et 1 autre')
+									: i18nMsg('contact-duplicate-others-count', 'et { $count } autres', {
+											count: autres
+										})}
 							</p>
 						{/if}
 					</div>

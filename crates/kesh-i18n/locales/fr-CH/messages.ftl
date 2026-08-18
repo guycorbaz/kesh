@@ -341,10 +341,8 @@ contact-form-ide = Numéro IDE (CHE)
 contact-form-ide-help = Format : CHE-123.456.789
 # Story 22-2b (#301) — sondes anti-doublon à la saisie.
 contact-duplicate-heading = Contacts déjà enregistrés qui pourraient correspondre
-contact-duplicate-others-count = { $count ->
-    [one] et 1 autre
-   *[other] et { $count } autres
-}
+contact-duplicate-others-count-one = et 1 autre
+contact-duplicate-others-count = et { $count } autres
 contact-duplicate-ide-active = Ce numéro IDE est déjà porté par { $name }.
 contact-duplicate-ide-archived = Ce numéro IDE est déjà porté par { $name }, qui est archivé. Un IDE reste réservé même après archivage : l'enregistrement sera refusé.
 contact-form-client-number = Numéro de client

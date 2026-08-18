@@ -87,7 +87,14 @@ async function settle(ms = 400) {
 function sondes(pred: (q: Record<string, unknown>) => boolean) {
 	return listContactsMock.mock.calls
 		.map(([q]) => q as Record<string, unknown>)
-		.filter((q) => q && typeof q.search === 'string' && pred(q));
+		// ⚠️ `q.search !== ''` est une DÉFENSE EN PROFONDEUR, pas une nécessité
+		// actuelle : `loadContacts()` écrit `if (effectiveSearch.trim())
+		// query.search = …`, donc l'appel de montage OMET la clé. Mais rien ne
+		// garantit qu'il en sera toujours ainsi, et si quelqu'un le fait passer à
+		// un `search: ''` inconditionnel, le test « aucune requête sous le seuil »
+		// rougirait pour une raison SANS RAPPORT avec le seuil qu'il mesure.
+		// Relevé en passe 3 de revue de code.
+		.filter((q) => q && typeof q.search === 'string' && q.search !== '' && pred(q));
 }
 
 /**
@@ -148,7 +155,12 @@ function repondre(
 ) {
 	listContactsMock.mockImplementation((q: Record<string, unknown>) => {
 		if (typeof q?.search !== 'string' || q.search === '') {
-			// L'appel de la LISTE, que la page émet au montage.
+			// L'appel de la LISTE, que la page émet au montage. ⚠️ Il OMET la clé
+			// `search` — `loadContacts()` ne l'écrit que si le terme est non vide —
+			// donc c'est le `typeof … !== 'string'` qui l'attrape, jamais le
+			// `=== ''`. Ce dernier est gardé par symétrie avec `sondes()`, pas
+			// parce qu'il se produirait : la rédaction précédente laissait croire
+			// le contraire (relevé en passe 3 de revue de code).
 			return Promise.resolve({ ...VIDE, items: liste, total: liste.length });
 		}
 		const r = table[q.search];
