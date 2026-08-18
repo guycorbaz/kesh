@@ -228,20 +228,24 @@ Rend le contact dont `ideNumber` **égale** la valeur passée et dont l'`id` dif
 
 | Groupe (`describe`) | Blocs `it` | Cas exécutés |
 |---|---:|---:|
-| `normalizeTerm` | 2 | 6 |
-| `buildTerm` | 2 | 2 |
-| `isArmed` | 1 | 5 |
+| `normalizeTerm` | 3 | 7 |
+| `buildTerm` | 3 | 3 |
+| `isArmed` | 2 | 6 |
 | `probeTerm` — l'ORDRE | 2 | 5 |
-| `fold` — la SYMÉTRIE | 2 | 2 |
+| `fold` — la SYMÉTRIE | 3 | 3 |
 | `rank` | 8 | 8 |
 | `excludeSelf` | 2 | 2 |
-| `countOthers` | 3 | 3 |
+| `countOthers` | 4 | 4 |
 | `findIdeHolder` | 4 | 4 |
 | pureté du module | 2 | 2 |
 
-**28 blocs, 39 cas exécutés** — mesuré : la suite frontend passe de **512 à 551 tests**, soit exactement +39.
+**33 blocs, 44 cas exécutés** — mesuré : la suite frontend passe de **512 à 556**, soit exactement +44.
 
-**Et 19 mutations jouées, 0 survivante, 0 non discriminante** (`frontend/scripts/mutants-22-2a.mjs`). C'est ce chiffre-là qui compte : il mesure ce que les preuves *attrapent*, là où un décompte de preuves ne mesure que ce qu'elles *annoncent*.
+**Et 24 mutations jouées, 0 survivante, 0 non discriminante, 0 hors cible** (`frontend/scripts/mutants-22-2a.mjs`). C'est ce chiffre-là qui compte : il mesure ce que les preuves *attrapent*, là où un décompte de preuves ne mesure que ce qu'elles *annoncent*.
+
+⚠️ **Le banc assert désormais sa CIBLE.** Son champ `expect` était affiché sans être vérifié : une mutation qui fait rougir *quelque chose* n'établit rien si ce n'est pas **la preuve qu'elle annonce**. Les vingt-quatre visent juste.
+
+⚠️ **Et il refuse de conclure quand ses propres motifs se périment.** Deux mutations sont sorties en `MOTIF INTROUVABLE` après les correctifs de revue, au lieu de passer en silence. C'est la garde qui avait manqué à un remplacement scripté de la passe 2 de la 22-2b, lequel avait produit un Change Log attestant un correctif jamais appliqué.
 
 ## Dev Notes
 
@@ -382,6 +386,36 @@ Chaque mutation fait rougir **entre 1 et 7** preuves, jamais zéro et jamais la 
 - Le module expose **neuf** symboles : `MIN_TOKEN_LENGTH`, `normalizeTerm`, `fold`, `buildTerm`, `isArmed`, `probeTerm`, `rank`, `excludeSelf`, `countOthers`, `findIdeHolder`. **`probeTerm` et `fold` ne figuraient pas dans la spec** — ils naissent de la passe 3 : le premier rend jouable la mutation d'ordre, le second matérialise la symétrie du repli.
 - `frontend/scripts/mutants-22-2a.mjs` est livré **avec** le code. Il n'est pas branché à la CI : c'est un outil de conception, à relancer quand `rank` ou le repli changent.
 - ⚠️ **Ce qui reste pour la 22-2b** : `editingId` est typé `number | null` et le site d'appel devra écrire `editing?.id ?? null` ; `buildTerm` prend **quatre** paramètres ; `rank` reçoit un terme **déjà normalisé** et **ne tronque pas** — la fenêtre de cinq est découpée par l'appelant.
+
+### Revue de code — 2026-08-18
+
+⛔ **La revue adversariale n'a PAS pu tourner.** Les trois lentilles ont été lancées puis tuées par une **limite de dépense mensuelle** — cause externe, aucun rapport avec le code. `failed_layers` = *Blind Hunter, Edge Case Hunter, Acceptance Auditor*. **Aucun finding n'a été collecté, et l'absence de findings n'est donc PAS un verdict.**
+
+Repli prescrit par le skill : trois prompts sont écrits dans `_bmad-output/implementation-artifacts/`, à jouer en sessions séparées et idéalement sur un autre LLM —
+`22-2a-review-prompt-blind-hunter.md` · `22-2a-review-prompt-edge-case-hunter.md` · `22-2a-review-prompt-acceptance-auditor.md`.
+
+**Ce qui a pu être fait sans budget de modèle** — des vérifications mécaniques, qui ne remplacent pas une revue :
+
+**Mais l'Edge Case Hunter avait eu le temps d'écrire ses sondes avant d'être tué.** Il devait supprimer son fichier temporaire ; la coupure l'en a empêché, et `__ech_probe.test.ts` est resté dans l'arbre — repéré parce que le gate annonçait **560** tests là où j'en attendais 551. **Neuf sondes exécutables, qui ne coûtent aucun budget de modèle.** Les jouer a rendu **cinq défauts réels** :
+
+| # | Défaut trouvé par la sonde | Sévérité | Correctif |
+|---|---|---|---|
+| 1 | **Les invisibles de largeur nulle ne sont pas retirés** — `fold("Coop‹ZWSP›Vaud")` ≠ `fold("CoopVaud")`. Un collage depuis un courriel ou Word casse tout appariement. | `HIGH` | `ZERO_WIDTH` retiré en tête de `normalizeTerm`, miroir d'`is_zero_width` — **les espaces exclues**, `CLI 1` ne devient pas `CLI1` |
+| 2 | **`buildTerm` fabrique le mot « null »** — `ContactResponse.firstName` est `string \| null` ; une valeur du serveur produisait le terme `"null Dupont"`, **armé**, cherchant « null » | `HIGH` | garde de type dans `buildTerm` |
+| 3 | **`fold` ne replie pas les formes de compatibilité** — `ＤＵＢＡＲＤＥ` ≠ `DUBARDE`, `ﬁrma` ≠ `firma` | `MEDIUM` | `NFKC` avant `NFD`, comme `canonical_key` |
+| 4 | **`Math.max(...spread)` déborde la pile** à 200 000 tokens (`RangeError`) | `LOW` | `some()` — la borne du formulaire n'est pas une propriété de ce module |
+| 5 | **`countOthers(NaN, …)` rend `NaN`** — « et NaN autres » | `LOW` | garde `Number.isFinite` |
+
+⚠️ **Le premier rouvre le combat exact de la Story 22-1** (#294 : « le caractère invisible ENCASTRÉ »), pour laquelle `is_zero_width` avait été écrit côté Rust. Le module l'ignorait.
+
+Chacun a **sa preuve et sa mutation**, jouées : le banc passe de 19 à **24 mutations**, la suite de 39 à **44 cas**.
+
+**Deux améliorations du banc lui-même**, l'une prévue, l'autre découverte :
+
+- son champ `expect` était **affiché sans être asserté** — il l'est désormais, et les 24 mutations rougissent **exactement** la preuve qu'elles nomment (`0 hors cible`) ;
+- il **refuse de conclure quand ses propres motifs se périment**. Deux mutations sont sorties en `MOTIF INTROUVABLE` après les correctifs ci-dessus, au lieu de passer en silence. C'est précisément la garde qui avait manqué au remplacement scripté de la passe 2 de la 22-2b — celui qui a produit un Change Log attestant un correctif jamais appliqué.
+
+⚠️ **Rien de tout cela ne vaut revue.** Les cinq défauts viennent d'**une seule** des trois lentilles, et de ses sondes brutes — pas de son triage, qu'elle n'a jamais rendu. Les angles qui manquent restent entiers : le regard sans contexte du Blind Hunter, et l'audit de la spec par un tiers. **La story reste en `review`.**
 
 ### File List
 

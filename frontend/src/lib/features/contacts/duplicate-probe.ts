@@ -43,6 +43,15 @@ import type { ContactResponse, ContactType } from './contacts.types';
  */
 const BOOLEAN_FT_OPERATORS = /[+\-><()~*"\\]/g;
 
+/**
+ * Caractères invisibles **de largeur nulle** — miroir d'`is_zero_width`
+ * (`crates/kesh-core/src/text.rs`, Story 22-1).
+ *
+ * ⚠️ Les blancs en sont **exclus**, et la distinction est ce qui empêche de
+ * confondre `CLI 1` et `CLI1` : une espace *marque*, un ZWSP ne marque rien.
+ */
+const ZERO_WIDTH = /[\u00AD\u200B-\u200F\u2060-\u2064\uFEFF]/g;
+
 /** Longueur minimale d'un token indexé — `innodb_ft_min_token_size`, mesuré à 3. */
 export const MIN_TOKEN_LENGTH = 3;
 
@@ -56,6 +65,7 @@ export const MIN_TOKEN_LENGTH = 3;
  */
 export function normalizeTerm(raw: string): string {
 	return raw
+		.replace(ZERO_WIDTH, '')
 		.normalize('NFC')
 		.replace(BOOLEAN_FT_OPERATORS, ' ')
 		.replace(/\s+/g, ' ')
@@ -73,6 +83,7 @@ export function normalizeTerm(raw: string): string {
  */
 export function fold(s: string): string {
 	return normalizeTerm(s)
+		.normalize('NFKC')
 		.normalize('NFD')
 		.replace(/[\u0300-\u036f]/g, '')
 		.toLowerCase();
@@ -95,7 +106,10 @@ export function buildTerm(
 	firstName: string,
 	lastName: string
 ): string {
-	return type === 'Personne' ? `${firstName} ${lastName}`.trim() : name.trim();
+	const sain = (v: string) => (typeof v === 'string' ? v : '');
+	return type === 'Personne'
+		? `${sain(firstName)} ${sain(lastName)}`.trim()
+		: sain(name).trim();
 }
 
 /**
@@ -114,7 +128,7 @@ export function buildTerm(
  */
 export function isArmed(normalized: string): boolean {
 	if (normalized === '') return false;
-	return Math.max(...normalized.split(/\s+/).map((t) => t.length)) >= MIN_TOKEN_LENGTH;
+	return normalized.split(/\s+/).some((t) => t.length >= MIN_TOKEN_LENGTH);
 }
 
 /** Résultat de {@link probeTerm} : le terme à envoyer, et s'il faut l'envoyer. */
@@ -237,6 +251,7 @@ export function countOthers(
 	affiches: ContactResponse[],
 	editingId: number | null
 ): number {
+	if (!Number.isFinite(total)) return 0;
 	const self = editingId !== null && items.some((c) => c.id === editingId) ? 1 : 0;
 	return Math.max(0, total - self - affiches.length);
 }

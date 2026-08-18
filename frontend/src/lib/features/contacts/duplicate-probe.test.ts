@@ -47,6 +47,17 @@ describe('normalizeTerm', () => {
 		expect(normalizeTerm(input)).toBe(expected);
 	});
 
+	it('retire les invisibles de LARGEUR NULLE, sans toucher aux espaces', () => {
+		// MUTATION : « ne pas retirer les invisibles de largeur nulle ».
+		// Un ZWSP collé depuis un courriel ou Word casse tout appariement — et
+		// c'est le combat exact de la Story 22-1 (#294), qui a écrit
+		// `is_zero_width` côté Rust pour cette raison.
+		expect(normalizeTerm('Coop\u200BVaud')).toBe('CoopVaud');
+		expect(normalizeTerm('Coop\u00ADVaud')).toBe('CoopVaud');
+		// ⚠️ Une ESPACE marque, elle : `CLI 1` ne doit pas devenir `CLI1`.
+		expect(normalizeTerm('CLI 1')).toBe('CLI 1');
+	});
+
 	it('stabilise la forme Unicode : NFD et NFC rendent la même chaîne', () => {
 		// MUTATION : « omettre normalize('NFC') ». Le test ci-dessus reste vert —
 		// aucun de ses cinq cas ne porte d'accent décomposé.
@@ -67,6 +78,16 @@ describe('buildTerm', () => {
 		expect(buildTerm('Entreprise', '  Dubarde Sàrl  ', '', '')).toBe('Dubarde Sàrl');
 	});
 
+	it('ne fabrique JAMAIS le mot « null » à partir d’un champ absent', () => {
+		// MUTATION : « interpoler sans garde ». `ContactResponse.firstName` est
+		// `string | null` : une valeur venue du serveur produirait le terme
+		// littéral « null Dupont », armé, et chercherait « null ».
+		const nul = null as unknown as string;
+		expect(buildTerm('Personne', '', nul, 'Dupont')).toBe('Dupont');
+		expect(buildTerm('Entreprise', nul, '', '')).toBe('');
+		expect(probeTerm('Personne', 'x', nul, nul).armed).toBe(false);
+	});
+
 	it('Personne : prénom + nom, y compris quand l’un des deux est vide', () => {
 		// MUTATION : « ne lire que la raison sociale » → rend le dispositif
 		// entièrement mort pour les personnes physiques.
@@ -82,6 +103,15 @@ describe('buildTerm', () => {
 // ---------------------------------------------------------------------------
 
 describe('isArmed', () => {
+	it('mesure sans DÉBORDER LA PILE sur un terme à 200 000 tokens', () => {
+		// MUTATION : « Math.max(...tokens.map(t => t.length)) ».
+		// Le spread déborde la pile au-delà d'environ 150 000 arguments. Les
+		// champs du formulaire sont bornés (255 et 70), donc le cas n'est pas
+		// atteignable par l'interface — mais cette borne n'est pas une propriété
+		// de ce module, et `some()` supprime la classe entière pour rien.
+		expect(() => isArmed(normalizeTerm('a '.repeat(200_000)))).not.toThrow();
+	});
+
 	it.each([
 		['Jean', true],
 		['Dubarde Sàrl', true],
@@ -126,6 +156,13 @@ describe('fold', () => {
 	it('replie casse et accents', () => {
 		expect(fold('Müller')).toBe('muller');
 		expect(fold('Café du Marché')).toBe('cafe du marche');
+	});
+
+	it('replie les formes de COMPATIBILITÉ — pleine chasse et ligatures', () => {
+		// MUTATION : « replier en NFD sans passer par NFKC ».
+		// `canonical_key` applique NFKC pour la même raison (Story 22-1).
+		expect(fold('ＤＵＢＡＲＤＥ')).toBe(fold('DUBARDE'));
+		expect(fold('ﬁrma')).toBe(fold('firma'));
 	});
 
 	it('applique AUSSI la normalisation du terme — c’est ce qui rend le repli symétrique', () => {
@@ -258,6 +295,11 @@ describe('countOthers', () => {
 		// « et 1 autre » AU-DESSUS D'UNE LISTE VIDE, en désignant la fiche qu'on
 		// modifie. Le cas nominal reste vert sous cette mutation.
 		expect(countOthers(1, [c(9, 'Moi')], [], 9)).toBe(0);
+	});
+
+	it('un total non fini ne devient pas « et NaN autres »', () => {
+		// MUTATION : « retirer la garde Number.isFinite ».
+		expect(countOthers(NaN, [], [], null)).toBe(0);
 	});
 
 	it('contact édité HORS FENÊTRE : l’écart d’une unité est assumé et figé', () => {
