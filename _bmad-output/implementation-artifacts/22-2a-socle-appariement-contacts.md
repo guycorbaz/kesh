@@ -4,7 +4,7 @@
 
 review
 
-**Implémentée le 2026-08-17.** Le module et sa suite de preuves sont écrits, le gate frontend est vert, et **les 19 mutations ont été JOUÉES** : chacune fait tomber la preuve qu'elle nomme, et elle seule. Cf. § *Dev Agent Record*.
+**Implémentée le 2026-08-17, revue en deux passes les 2026-08-18** (Sonnet ×3 puis Opus ×3). Le module et sa suite de preuves sont écrits, le gate frontend est vert, et **les 32 mutations ont été JOUÉES** : chacune fait tomber la preuve qu'elle nomme, et elle seule. Cf. § *Dev Agent Record*.
 
 ⚠️ **Les preuves de cette story ne sont plus en prose : elles sont du code exécutable.** C'est l'arbitrage de Guy du 2026-08-17, pris après que la passe 3 — la première à *exécuter* plutôt qu'à *lire* — eut montré qu'une implémentation passant les 17 preuves écrites ne rendait pas le service. Une preuve en prose ne peut pas être jouée ; son pouvoir discriminant reste donc inconnu jusqu'à ce que quelqu'un l'implémente.
 
@@ -172,7 +172,8 @@ Un contact peut remonter parce que la chaîne figure dans son nom ou son email, 
 | `C++` | `C` | muet |
 | `""` | `""` | muet |
 
-*Preuve*, **1** test paramétré sur les sept cas, **écrits `isArmed(normalizeTerm(x))`** — jamais `isArmed(x)` sur la valeur brute.
+*Preuve*, **2** tests paramétrés : cinq cas sur `isArmed(normalizeTerm(x))` — jamais `isArmed(x)` sur la valeur brute — et les deux cas d'**ordre** (`Yo-An`, `C++`) sur `probeTerm(...).armed`, **seul site où la mutation d'ordre est jouable**, puisque c'est `probeTerm` qui compose les trois étapes.
+   ⚠️ **Un sixième cas a été ajouté en passe 2 de revue : `UBS` → armé.** Sans lui, le seuil n'était épinglé que PAR LE BAS — tous les cas négatifs mesuraient 2 caractères — et le porter à 4 laissait les deux suites entièrement vertes, en faisant taire la sonde pour `UBS`, `SBB`, `CFF`, `BCV`, `SIG`. Sur un logiciel de comptabilité suisse, ce n'est pas un cas de laboratoire.
 ⚠️ **Cette précision n'est pas rédactionnelle.** Écrits en brut, `isArmed("Yo-An")` et `isArmed("C++")` rendent **`true`** (5 et 3 caractères d'un seul tenant) — l'inverse de ce que la table attend. Un développeur qui suivrait la lettre en conclurait qu'`isArmed` doit normaliser en interne, ce qui contredirait le site d'appel de la 22-2b. Relevé en passe 1.
 ⚠️ **Mutation nommée : « mesurer le seuil avant de normaliser »** — un simple ordre d'instructions dans l'appelant, qui laisse `Du`, `An Li` et `""` corrects et ne fait tomber que `Yo-An` et `C++`. C'est pour eux que ce test existe.
 
@@ -181,7 +182,8 @@ Un contact peut remonter parce que la chaîne figure dans son nom ou son email, 
 1. **la fixture des six `Jean X`** — terme `Jean Zwahlen`, `Jean Zwahlen` sort **en tête** et figure dans les cinq premiers. ⚠️ **C'est LA preuve du mécanisme.** Mutation : **« `rank` = identité »**, qui rend l'ordre alphabétique du SQL et évince Zwahlen — le défaut exact que cette story existe pour fermer ;
 2. **le critère 1 prime le critère 2**, avec **cette fixture-ci** : terme `Jean` ; `A = "Jeanne Dupont"` (commence par `Jean` mais ne porte **aucun** token `jean` — `jeanne` ≠ `jean`) ; `B = "Marie Jean"` (ne commence pas par le terme mais porte le token exact, donc **strictement plus** de tokens que A). `A` doit sortir devant `B`. Mutation : « intervertir les critères 1 et 2 ».
    ⚠️ **La fixture naïve ne discrimine RIEN, et c'est pourquoi elle est écrite ici.** Prendre `"Acme Corp"` contre `"Corp Acme Trading"` sur le terme `Acme` laisse la mutation **verte** : un nom qui commence par le terme le contient trivialement, donc sature aussi le critère 2. Il faut la frontière de mot — la même subtilité que D-a4 exploite pour `Yo-An`. Relevé en passe 1 ;
-3. **le déterminisme sur des noms distincts** : deux appels sur la même entrée dans deux ordres différents rendent **la même** sortie. Mutation : « retirer le critère 4 » ;
+3. **l'alphabétique tranche, et il s'OPPOSE ici à l'ordre des `id`** : `Zoé Services` (id 101) contre `Alpha Services` (id 202) ⇒ l'ordre attendu est `Alpha`, puis `Zoé`. Mutation : « retirer le critère 4 ».
+   ⚠️ **Formulée d'abord en STABILITÉ** — « deux appels rendent la même sortie » — elle laissait cette mutation **verte** : le critère 5 suffit à rendre le comparateur total, donc l'ordre est stable même sans le critère 4. Reformulée en *ordre attendu* à la remédiation de passe 3 de `validate` ; **le corps d'AC-a4 ne l'avait pas suivi**, relevé en passe 2 de revue de code ;
 4. **le déterminisme sur deux HOMONYMES STRICTS** — deux contacts au nom identique, `id` 101 et 202. Mutation : « retirer le critère 5 », que le test 3 laisse **verte** puisque ses noms diffèrent. ⚠️ C'est le test qui a manqué : sans critère 5, la preuve 3 est littéralement insatisfiable sur ce cas.
 
 **AC-a5 — `excludeSelf` et `countOthers` s'accordent (D-a6).**
@@ -211,15 +213,15 @@ Rend le contact dont `ideNumber` **égale** la valeur passée et dont l'`id` dif
 
 ## Tasks / Subtasks
 
-- [ ] **T-a1 — Créer `frontend/src/lib/features/contacts/duplicate-probe.ts`** (toutes les AC). Fonctions exportées : `normalizeTerm`, `buildTerm`, `isArmed`, `rank`, `excludeSelf`, `countOthers`, `findIdeHolder`.
+- [x] **T-a1 — Créer `frontend/src/lib/features/contacts/duplicate-probe.ts`** (toutes les AC). Fonctions exportées : `normalizeTerm`, `buildTerm`, `isArmed`, `rank`, `excludeSelf`, `countOthers`, `findIdeHolder`.
   - [ ] **L'ordre `normaliser → mesurer → décider`** (D-a3 puis D-a4) est la partie fragile — l'écrire dans le doc-comment du module, pas seulement dans le code.
   - [ ] Aucune clé i18n dans ce fichier (D-a1). Aucun import réseau ni DOM (AC-a7).
   - [ ] **Documenter la DOUBLE normalisation dans le doc-comment du module**, faute de quoi elle passera pour du code mort : `normalizeTerm` applique **NFC** (pour stabiliser le `.length` d'`isArmed`, D-a3), puis `rank` applique **NFD + strip** pour le repli d'accents (D-a5). Les deux sont nécessaires et ne font pas doublon — l'une stabilise une **mesure**, l'autre produit une **comparaison**. Un terme NFC re-normalisé en NFD puis strippé donne le même résultat qu'un strip direct : la composition est inoffensive.
   - [ ] **Noter aussi le cas turc**, pour qu'il ne soit pas « corrigé » plus tard : `İ` (U+0130) se minuscule en `i` + point combinant, que le strip d'accents de `rank` retire ensuite — le résultat final est `i`, ce qui est correct. **Aucune action requise**, mais un lecteur qui découvre ce chemin sans explication le prendra pour un défaut.
-- [ ] **T-a2 — Créer `duplicate-probe.test.ts`** (toutes les AC). Vitest direct, **sans `render`** — c'est tout le bénéfice de la story.
+- [x] **T-a2 — Créer `duplicate-probe.test.ts`** (toutes les AC). Vitest direct, **sans `render`** — c'est tout le bénéfice de la story.
   - [ ] **Chaque test nomme sa mutation en commentaire**, comme le fait `products-page.test.ts`. Une preuve dont la mutation n'est pas écrite se relit mal et se supprime facilement.
   - [ ] La fixture des six `Jean X` d'AC-a4 est la plus importante du lot : la reprendre **telle quelle**, elle est l'énoncé du défaut d'origine.
-- [ ] **T-a3 — Gate.** `npm run check` · `npm run lint-i18n-ownership` · `npm run test:unit` · `npm run build`, depuis `frontend/`.
+- [x] **T-a3 — Gate.** `npm run check` · `npm run lint-i18n-ownership` · `npm run test:unit` · `npm run build`, depuis `frontend/`.
   - [ ] ⚠️ **Aucun gate backend n'est requis** : cette story ne touche **aucun** fichier Rust, aucune migration, aucun `.svelte`. Le dire dans le Dev Agent Record plutôt que de déclarer un gate qui n'a pas tourné.
 
 ## Décompte des preuves — recompté depuis le code livré
@@ -230,22 +232,23 @@ Rend le contact dont `ideNumber` **égale** la valeur passée et dont l'`id` dif
 |---|---:|---:|
 | `normalizeTerm` | 3 | 7 |
 | `buildTerm` | 3 | 3 |
-| `isArmed` | 2 | 6 |
+| `isArmed` | 2 | 7 |
 | `probeTerm` — l'ORDRE | 2 | 5 |
-| `fold` — la SYMÉTRIE | 3 | 3 |
-| `rank` | 8 | 8 |
+| `fold` — la SYMÉTRIE | 4 | 4 |
+| `rank` | 9 | 9 |
 | `excludeSelf` | 2 | 2 |
 | `countOthers` | 4 | 4 |
 | `findIdeHolder` | 4 | 4 |
+| `describeProches` | 7 | 7 |
 | pureté du module | 2 | 2 |
 
-**40 blocs, 51 cas exécutés** — dont **7 pour `describeProches`**, ajoutés en passe 1 de revue de code.
+**42 blocs, 54 cas exécutés** — dont **7 pour `describeProches`** (passe 1 de revue) et **3 de plus en passe 2** — le seuil d'armement épinglé PAR LE HAUT, la déduplication des tokens du terme, et le repli de `İ`.
 
 *(Le décompte d'origine — 33 blocs, 44 cas, suite frontend passée de 512 à 556 — reste vrai pour le commit de développement. Il est conservé ici parce qu'un décompte sans son périmètre se relit plus tard contre le mauvais intervalle.)*
 
-**Et 29 mutations jouées, 0 survivante, 0 non discriminante, 0 hors cible** (`frontend/scripts/mutants-22-2a.mjs`) — 24 au commit de développement, plus 5 pour l'invariant de `describeProches`. C'est ce chiffre-là qui compte : il mesure ce que les preuves *attrapent*, là où un décompte de preuves ne mesure que ce qu'elles *annoncent*.
+**Et 32 mutations jouées, 0 survivante, 0 non discriminante, 0 hors cible** (`frontend/scripts/mutants-22-2a.mjs`) — 24 au commit de développement, 5 de plus en passe 1 pour l'invariant de `describeProches`, 3 en passe 2. C'est ce chiffre-là qui compte : il mesure ce que les preuves *attrapent*, là où un décompte de preuves ne mesure que ce qu'elles *annoncent*.
 
-⚠️ **Le banc assert désormais sa CIBLE.** Son champ `expect` était affiché sans être vérifié : une mutation qui fait rougir *quelque chose* n'établit rien si ce n'est pas **la preuve qu'elle annonce**. Les vingt-quatre visent juste.
+⚠️ **Le banc assert désormais sa CIBLE.** Son champ `expect` était affiché sans être vérifié : une mutation qui fait rougir *quelque chose* n'établit rien si ce n'est pas **la preuve qu'elle annonce**. Les trente-deux visent juste.
 
 ⚠️ **Et il refuse de conclure quand ses propres motifs se périment.** Deux mutations sont sorties en `MOTIF INTROUVABLE` après les correctifs de revue, au lieu de passer en silence. C'est la garde qui avait manqué à un remplacement scripté de la passe 2 de la 22-2b, lequel avait produit un Change Log attestant un correctif jamais appliqué.
 
@@ -287,6 +290,22 @@ Elles sont la vraie spécification de cette story. Chacune est un défaut **rée
 - `CLAUDE.md` — § *Règle de splitting préventif* (le critère qui a déclenché ce découpage), § *Test Locally First*.
 
 ## Change Log
+
+### Passe 2 de `bmad-code-review` — 2026-08-18, Opus ×3, contexte frais
+
+Détail des 26 findings au Change Log de la **22-2b** ; trois touchent ce socle, et tous trois sont de la même espèce : **une affirmation écrite que l'exécution dément**.
+
+1. **Le seuil d'armement n'était épinglé QUE PAR LE BAS.** Tous les cas négatifs mesuraient 2 caractères, aucun n'armait sur 3 : porter `MIN_TOKEN_LENGTH` à 4 laissait les deux suites **entièrement vertes**, en faisant taire la sonde pour `UBS`, `SBB`, `CFF`, `BCV`, `SIG`. Sur un logiciel de comptabilité suisse, ce n'est pas un cas de laboratoire. Un cas `UBS → armé` ferme la borne haute, avec sa mutation.
+2. **La déduplication des tokens du terme n'avait aucune preuve.** Le doc-comment justifie le `new Set(...)` en toutes lettres — « un terme qui répète un token ne le compte qu'une fois » — et aucune fixture ne répétait de token : sa suppression survivait à toute la suite. ⚠️ **Ma première fixture ne discriminait pas non plus** : ses deux candidats portaient le token répété, donc le `Set` ne changeait pas leur ordre *relatif*. Il faut que la répétition avantage l'**un** des deux — `bertrand ana ana` contre `Ana Solo` et `Bertrand Zoe`.
+3. **Le doc-comment de `fold` posait un interdit sans fondement** : « l'ordre compte, minusculer avant le strip rendrait deux caractères » pour `İ` (U+0130). **Faux, et le calcul le dit** — `'İ'.toLowerCase()` rend bien `i` + U+0307, mais le strip retire ce U+0307 tout aussi bien : les deux ordres rendent `i`. Le comportement est désormais figé par un **test** plutôt que par une consigne.
+
+⚠️ **La mutation « minusculer avant le strip » a été ÉCARTÉE du banc** : elle est **équivalente**, donc elle survivrait par construction et dévaluerait le verdict. Remplacée par « retirer le strip », qui mord. Un banc ne vaut que si chacune de ses mutations *peut* mordre.
+
+**Le socle passe à 54 cas et 32 mutations, 0 survivante, 0 non discriminante, 0 hors cible.**
+
+Deux corrections de déclaration, relevées par l'`AcceptanceAuditor` : le Status annonçait **19 mutations** — périmé de deux générations, 19 → 24 → 29 → 32 — et les *Completion Notes* annonçaient « **neuf** symboles » avant d'en énumérer dix, pour douze exports. Un total qui contredit sa ventilation **dans la même phrase**.
+
+⚠️ Le banc porte désormais un **garde-fou structurel**, éprouvé en y réinjectant le défaut : une virgule en double (`},,`) crée un élément `undefined` qui plante le banc **à mi-parcours**, en laissant le fichier muté. Le contrôle s'exécute **avant la première copie de sauvegarde**.
 
 ### Passe 1 de `bmad-code-review` — 2026-08-18, Sonnet ×3, contexte frais
 
@@ -397,13 +416,15 @@ Chaque mutation fait rougir **entre 1 et 7** preuves, jamais zéro et jamais la 
 
 ### Completion Notes List
 
-- Le module expose **neuf** symboles : `MIN_TOKEN_LENGTH`, `normalizeTerm`, `fold`, `buildTerm`, `isArmed`, `probeTerm`, `rank`, `excludeSelf`, `countOthers`, `findIdeHolder`. **`probeTerm` et `fold` ne figuraient pas dans la spec** — ils naissent de la passe 3 : le premier rend jouable la mutation d'ordre, le second matérialise la symétrie du repli.
+- Le module expose **douze** symboles : `MIN_TOKEN_LENGTH`, `ProbeTerm`, `normalizeTerm`, `fold`, `buildTerm`, `isArmed`, `probeTerm`, `rank`, `excludeSelf`, `countOthers`, `findIdeHolder`, `describeProches`. *(La rédaction précédente annonçait « neuf » avant d'en énumérer dix — un total qui contredisait sa ventilation dans la même phrase, relevé en passe 2 de revue.)* **`probeTerm` et `fold` ne figuraient pas dans la spec** — ils naissent de la passe 3 : le premier rend jouable la mutation d'ordre, le second matérialise la symétrie du repli.
 - `frontend/scripts/mutants-22-2a.mjs` est livré **avec** le code. Il n'est pas branché à la CI : c'est un outil de conception, à relancer quand `rank` ou le repli changent.
 - ⚠️ **Ce qui reste pour la 22-2b** : `editingId` est typé `number | null` et le site d'appel devra écrire `editing?.id ?? null` ; `buildTerm` prend **quatre** paramètres ; `rank` reçoit un terme **déjà normalisé** et **ne tronque pas** — la fenêtre de cinq est découpée par l'appelant.
 
-### Revue de code — 2026-08-18
+### Revue de code — 2026-08-18 (tentative avortée)
 
-⛔ **La revue adversariale n'a PAS pu tourner.** Les trois lentilles ont été lancées puis tuées par une **limite de dépense mensuelle** — cause externe, aucun rapport avec le code. `failed_layers` = *Blind Hunter, Edge Case Hunter, Acceptance Auditor*. **Aucun finding n'a été collecté, et l'absence de findings n'est donc PAS un verdict.**
+⚠️ **BANDEAU POSÉ EN PASSE 2 : cette section décrit une TENTATIVE, pas l'état du dossier.** La revue a bien tourné depuis — **passe 1 (Sonnet ×3) et passe 2 (Opus ×3)**, sur le diff aplati des deux moitiés, la limite de dépense ayant été levée. Leurs findings sont plus bas dans ce Change Log. Les trois fichiers de prompt évoqués ci-dessous **n'ont plus à être joués** ; ils sont conservés pour mémoire du repli. *(Un lecteur qui s'arrêtait ici concluait qu'aucune revue n'avait eu lieu — relevé par l'AcceptanceAuditor en passe 2.)*
+
+⛔ **La revue adversariale n'avait PAS pu tourner ce jour-là.** Les trois lentilles ont été lancées puis tuées par une **limite de dépense mensuelle** — cause externe, aucun rapport avec le code. `failed_layers` = *Blind Hunter, Edge Case Hunter, Acceptance Auditor*. **Aucun finding n'a été collecté, et l'absence de findings n'est donc PAS un verdict.**
 
 Repli prescrit par le skill : trois prompts sont écrits dans `_bmad-output/implementation-artifacts/`, à jouer en sessions séparées et idéalement sur un autre LLM —
 `22-2a-review-prompt-blind-hunter.md` · `22-2a-review-prompt-edge-case-hunter.md` · `22-2a-review-prompt-acceptance-auditor.md`.

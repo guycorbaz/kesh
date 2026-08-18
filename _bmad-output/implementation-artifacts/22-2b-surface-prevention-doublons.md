@@ -4,7 +4,11 @@
 
 review
 
-**Les sept tâches sont livrées** (2026-08-18) — cf. § *Change Log*, entrée « Implémentation ». Les deux gates complets sont verts, base de dev remise à zéro au préalable. Reste dû : `bmad-code-review`, et le **push** qui n'a pas eu lieu.
+**Les sept tâches sont livrées** (2026-08-18) — cf. § *Change Log*, entrée « Implémentation ».
+
+**Deux passes de `bmad-code-review` ont tourné** : passe 1 (Sonnet ×3) — 1 `CRITICAL` / 2 `HIGH` / 5 `MEDIUM` / 1 `LOW`, 9 correctifs ; passe 2 (Opus ×3) — 0 `CRITICAL` / 1 `HIGH` / 16 `MEDIUM`+`LOW`. La sévérité **décroît**. Reste dû : **une passe 3** (§ *Review Iteration Rule*, un `HIGH` en passe 2) et le **push**, qui n'a pas eu lieu.
+
+⚠️ *La rédaction précédente affirmait « reste dû : `bmad-code-review` » APRÈS que la passe 1 eut tourné et rempli le Change Log — un lecteur s'arrêtant au Status aurait relancé une passe 1 au lieu de la suivante. Relevé en passe 2.*
 
 **Dégelée le 2026-08-18.** Elle avait été mise en attente parce que plusieurs de ses findings portaient sur la **frontière** avec le socle, et les corriger contre un contrat supposé aurait été à refaire. **Le socle est désormais codé et ses contrats sont figés par du code qui tourne** — cf. § *Ce que le socle fournit, et sa signature exacte*.
 
@@ -36,12 +40,12 @@ Le même client finit par exister deux fois : saisi une première fois, ressaisi
 
 ## Ce que le socle fournit, et sa signature exacte
 
-⚠️ **Ceci n'est plus une intention : c'est l'API d'un module qui existe, dont les 44 preuves passent et dont les 24 mutations sont jouées.** Toute divergence entre cette story et ces signatures est un défaut de CETTE story.
+⚠️ **Ceci n'est plus une intention : c'est l'API d'un module qui existe, dont les 54 preuves passent et dont les 32 mutations sont jouées.** Toute divergence entre cette story et ces signatures est un défaut de CETTE story.
 
 ```ts
 import {
   probeTerm, normalizeTerm, fold, buildTerm, isArmed,
-  rank, excludeSelf, countOthers, findIdeHolder
+  rank, excludeSelf, countOthers, findIdeHolder, describeProches
 } from '$lib/features/contacts/duplicate-probe';
 
 probeTerm(type: ContactType, name: string, firstName: string, lastName: string)
@@ -50,6 +54,7 @@ rank(items: ContactResponse[], normalizedTerm: string): ContactResponse[]   // C
 excludeSelf(items: ContactResponse[], editingId: number | null): ContactResponse[]
 countOthers(total: number, items: ContactResponse[], affiches: ContactResponse[], editingId: number | null): number
 findIdeHolder(items: ContactResponse[], normalized: string | null, editingId: number | null): ContactResponse | undefined
+describeProches(items: ContactResponse[]): string[]   // un suffixe par proposition, ALIGNÉ SUR L'INDEX
 ```
 
 Quatre points de frontière, chacun trouvé par une passe de revue et **désormais tranché par le code** :
@@ -110,8 +115,15 @@ Le patron éprouvé est le compteur de `ContactPicker.svelte:37,57,61,65,69` : i
 
 **D-b7 — Deux sondes, deux minuteries, deux compteurs.** Elles ne partagent **rien**. Une paire factorisée ferait qu'une réponse tardive de l'une **invalide la fraîcheur de l'autre** — un des deux avertissements ne s'afficherait jamais, sans erreur ni test rouge. `ContactPicker` ne peut pas servir de modèle : il n'a qu'un flux.
 
-**D-b8 — L'état des sondes repart de zéro à l'OUVERTURE du formulaire, pas à sa fermeture.**
-Le dialogue se ferme depuis **trois** sites (`+page.svelte:352`, `:358`, `:846`) et n'est **jamais démonté** — le nettoyage d'`onMount:113` ne joue qu'à la sortie de la page. Poser le nettoyage sur la fermeture obligerait à le poser trois fois, et un quatrième site futur le contournerait en silence. `openCreate()` et `openEdit()` (`:216-266`) réinitialisent déjà champ par champ : minuteries, compteurs et propositions s'y ajoutent.
+**D-b8 — L'état des sondes repart de zéro à la FERMETURE du formulaire.**
+
+⚠️ **Cette décision a été RETOURNÉE en revue de code, et il faut dire pourquoi.** Elle prescrivait d'abord l'*ouverture*, sur cet argument : « le dialogue se ferme depuis trois sites et n'est jamais démonté ; poser le nettoyage sur la fermeture obligerait à le poser trois fois, et un quatrième site futur le contournerait en silence ».
+
+**L'argument était faux, et c'est `bind:open` qui le réfute.** Le dialogue est lié par `bind:open={formOpen}` : *toutes* les fermetures — le bouton, la touche Échap, le clic hors-cadre — passent par cette seule variable. Un `$effect(() => { if (!formOpen) resetProbes(); })` couvre donc **un** site, pas trois, et il couvre aussi les deux voies que l'énumération d'origine avait manquées.
+
+**Et il est strictement plus général** : il fait taire la sonde **en vol** au moment où l'on quitte, ce que la remise à zéro à l'ouverture ne pouvait pas faire — une requête partait pour un dialogue déjà fermé.
+
+Les appels d'`openCreate()`/`openEdit()` ont donc été **supprimés**. Garder les deux mécanismes n'était pas une sécurité : le banc a montré que retirer l'un OU l'autre ne faisait plus rougir aucune preuve, chacun couvrant la défaillance de son jumeau. **Un mécanisme redondant est un mécanisme dont plus aucune preuve ne garde la moitié.**
 
 **D-b8-bis — Le contrat de `editingId` est `number | null`, et le site d'appel s'y conforme.**
 ⚠️ `editing` est typé `ContactResponse | null` (`+page.svelte:60`), donc `editing?.id` s'évalue en **`number | undefined`** — jamais `null`. Or la 22-2a documente et teste `null` comme unique convention d'absence (sa preuve 3 d'AC-a6). Les trois appels doivent donc s'écrire **`editing?.id ?? null`**, faute de quoi `npm run check` — gate obligatoire de la § *Test Locally First* — rejette un code que cette story prescrit **littéralement**. Trouvé en passe 1, à la frontière exacte du découpage.
@@ -151,7 +163,7 @@ C'est le **résidu de #315**, que D-b3 assume déjà comme une atténuation. Il 
 
 **AC-b1 — La frappe du nom fait apparaître les contacts proches, le plus proche en premier.**
 Dès que le module de la 22-2a arme la sonde, les contacts **actifs** de la société sont interrogés avec `limit: 20`, classés et coupés à cinq, avec la mention « et N autres » quand il en reste. Chaque proposition porte le **nom complet**, puis la **localité** et le **numéro de client** quand ils sont renseignés, à défaut l'**email** (D-b10). Les propositions sont **inertes** (D-b9).
-*Preuve*, **8** tests de composant plus **1** d'intégration base :
+*Preuve*, **10** tests de composant plus **1** d'intégration base :
 1. `Entreprise` — les trois éléments d'affichage sont rendus. Mutation : « ne rendre que `c.name` », qui supprime le mécanisme de discrimination de la story sans faire rougir rien d'autre ;
 2. `Personne` — la sonde part sur prénom + nom. Mutation : « ne lire que la raison sociale » ;
 3. un contact **sans adresse et sans numéro de client** : l'email est rendu, aucune ligne vide ni tiret orphelin ;
@@ -171,7 +183,7 @@ Dès que le module de la 22-2a arme la sonde, les contacts **actifs** de la soci
 7. **la bascule de type en cours de saisie** (D-b11) — taper une raison sociale qui fait apparaître des propositions, puis basculer sur `Personne` sans effacer : la sonde **se réarme** sur le nouveau terme, et aucun avertissement calculé sur l'ancien type ne subsiste. Mutation : « ne recalculer que sur les champs de nom », qui laisse un avertissement orphelin sous un champ retiré du DOM ;
 8. **classé, coupé à cinq, et compté** — une seule fixture pour trois clauses qu'aucune preuve ne couvrait. Huit contacts correspondants, le doublon exact triant **dernier** alphabétiquement ; `total = 8` ⇒ (a) **exactement cinq** propositions rendues, ni quatre ni vingt ; (b) le doublon exact est **le premier** ; (c) « et 3 autres » est **visible**.
    ⚠️ Trois mutations d'un caractère chacune laissaient les 31 preuves vertes : **`retenus = excludeSelf(...)` sans l'enveloppe `rank(...)`** (retour au tri alphabétique du SQL, doublon évincé — la raison d'être du découpage), **`proches = retenus`** sans le `.slice(0, 5)`, et **ne jamais rendre le bloc du compteur** — dont la seule mention dans les preuves assertait son *absence* ;
-9. **`#[sqlx::test]` — la fenêtre SQL est assez large.** Fixture des six `Jean X` ; `limit: 20` doit rendre **les six** lignes et `total = 6`. Mutation : **« préfixer chaque token de `+` »** (sémantique ET) ou « trier par `CreatedAt` » — l'une comme l'autre font tomber le `total = 6` ou la présence des six lignes.
+9. **Test d'intégration base — la fenêtre SQL est assez large.** Fixture des six `Jean X` ; `limit: 20` doit rendre **les six** lignes et `total = 6`. Mutation : **« préfixer chaque token de `+` »** (sémantique ET) ou « trier par `CreatedAt` » — l'une comme l'autre font tomber le `total = 6` ou la présence des six lignes.
    ⚠️ **La mutation annoncée jusqu'ici, « revenir à `limit: 5` », était INJOUABLE ici** : `limit` est un **paramètre d'entrée** du repository (`routes/contacts.rs:571`, `clamp(1, MAX_LIST_LIMIT)`), jamais une constante du backend — la seule occurrence de `limit: 20` dans le produit est une ligne **TypeScript**, qu'aucun test Rust ne peut observer. C'est la preuve 4 d'AC-b1, durcie ci-dessus, qui garde cette valeur. ⚠️ Cette preuve porte sur la **requête** — sémantique OU, tri alphabétique, taille de fenêtre — et sur elle seule ; les preuves de composant passent par un `vi.mock` et en sont aveugles. *(Le classement lui-même est prouvé par la 22-2a, en TypeScript : un test Rust ne peut pas appeler `rank()`.)*
 
 **AC-b2 — Un IDE déjà pris est signalé franchement, y compris quand le porteur est archivé.**
@@ -183,12 +195,12 @@ La saisie d'un IDE **complet** (`validateIdeFormat`) déjà porté par un contac
    ```ts
    // l'utilisateur tape CHE-123.456.788
    const sondes = listContactsMock.mock.calls.filter(([q]) => q.includeArchived === true);
-   expect(sondes[0][0]).toEqual({ search: 'CHE123456788', limit: 5, includeArchived: true });
+   expect(sondes[0][0]).toEqual({ search: 'CHE123456788', limit: 20, includeArchived: true });
    ```
    ⚠️ **Sans l'assertion sur `search`, la mutation `search: formIde` survit aux 31 preuves ET à l'E2E** — et rend la sonde **muette pour tout utilisateur réel** : l'UI affiche `CHE-123.456.789` en placeholder (`+page.svelte:769`) et `openEdit` écrit **inconditionnellement** la forme séparée (`:256`), or D-b3 établit que `'CHE123456788' LIKE '%CHE-123.456.788%'` rend **0**. Le mock, lui, rend le porteur sans regarder son argument, et l'E2E ne l'attrape pas si le test tape la forme déjà normalisée.
    **Et** le message rendu pour un porteur archivé est **distinct** de celui d'un porteur actif — deux clés i18n séparées. ⚠️ Les deux moitiés sont indispensables : l'argument parce qu'une preuve fonctionnelle est verte sous la mutation, le libellé parce que **c'est lui le recours** — sans la mention « archivé », l'utilisateur reçoit un avertissement sur un contact introuvable dans son carnet, qu'il ne pourra ni modifier ni désarchiver ;
 3. **ouvrir en édition** la fiche d'un contact qui porte un IDE ne déclenche **aucun** avertissement franc — ni à l'ouverture, ni après avoir retapé le même IDE ;
-4. **vider le champ IDE pendant que la sonde est en vol**, puis résoudre avec un lot contenant un contact **sans IDE** ⇒ aucun avertissement. *(La garde est structurelle dans la 22-2a ; ce test vérifie que le câblage lui passe bien la valeur **envoyée**, et non une relecture du champ.)* ;
+4. **un contact remonté SANS porter cet IDE** — la chaîne figure dans son nom ou son email — ne déclenche **rien**. ⚠️ *Cette preuve existe bien ; la rédaction précédente décrivait à sa place un scénario de « vidage EN VOL » qui n'a jamais été écrit, et numérotait les deux tests livrés à contretemps. Relevé en passe 2 de revue de code : la liste était fausse, le critère restant tenu par les preuves 1, 2 et 3.* *(La garde est structurelle dans la 22-2a ; ce test vérifie que le câblage lui passe bien la valeur **envoyée**, et non une relecture du champ.)* ;
 5. **le retrait** : afficher l'avertissement sur un IDE pris, corriger un chiffre vers un IDE **libre** ⇒ plus aucun avertissement. Mutation : « n'écrire l'avertissement que dans la branche `if (holder)` », qui laisse à l'écran un message désignant un numéro que l'utilisateur ne porte plus ;
 6. **E2E** : le `409` est bien levé si l'avertissement est ignoré (cf. T-b6).
 
@@ -201,9 +213,9 @@ L'état du bouton d'enregistrement est **exactement celui qu'il aurait sans les 
 ⚠️ **Sans ce second test, une propriété universelle n'est prouvée qu'en UN point de l'espace d'états** — celui, précisément, où aucune garde préexistante ne joue. Or c'est dans les états composés qu'un développeur est tenté de « corriger » `formValidation` pour faire passer sa preuve. Relevé en passe 1.
 
 **AC-b4 — Rien ne part avant que la frappe se calme, et une réponse tardive ne dit plus rien.**
-Temporisation de 300 ms (le pas du dépôt), compteur de génération, **une paire par sonde** (D-b7), état remis à zéro à l'ouverture (D-b8).
-*Preuve*, **6** tests unitaires :
-1. **le nombre d'appels** sur une frappe continue de vingt caractères, minuteries factices — **attendu : un seul** ;
+Temporisation de 300 ms (le pas du dépôt), compteur de génération, **une paire par sonde** (D-b7), état remis à zéro **à la fermeture** (D-b8, retourné en revue de code).
+*Preuve*, **7** tests de composant :
+1. **le nombre d'appels** sur une frappe continue de vingt caractères — **attendu : un seul**. ⚠️ Sur des minuteries **réelles** : la rédaction d'origine annonçait des minuteries factices, et il n'y en a aucune (relevé en passe 2) ;
 2. deux requêtes résolues **dans l'ordre inverse** — la première arrivée en dernier est ignorée ;
 3. **le test croisé** : armer la sonde nom, puis la sonde IDE avant résolution ⇒ **les deux** avertissements aboutissent. Mutation : « factoriser une seule paire », que les deux autres laissent verte ;
 4. **la sonde IDE sur une suite valide → invalide → valide** ⇒ **deux** appels, un par passage à la validité ;
@@ -218,7 +230,8 @@ Temporisation de 300 ms (le pas du dépôt), compteur de génération, **une pai
 - **(b-bis)** **DÉSARMER, C'EST EFFACER** — ramener le terme sous le seuil, vider le champ IDE, ou basculer de type sans rien retaper : les propositions et l'avertissement **disparaissent**, et une réponse partie avant le désarmement ne les repeuple pas ;
 - **(c)** une sonde qui **échoue** est muette elle aussi — réseau coupé, `500`, réponse illisible : aucun message d'erreur **propre à la sonde**, aucune exception remontée, et **l'autre sonde continue**. Une sonde n'est pas une action de l'utilisateur : il n'a rien demandé, on ne lui doit aucun rapport d'échec.
   ⚠️ **La promesse est bornée à ce que cette story maîtrise, et il faut le dire.** Sur réseau coupé, timeout ou `503`, `api-client.ts:316-359` appelle `apiHealth.setDegraded()` **à l'intérieur** de l'`apiClient` : le bandeau global apparaît, et le `GET` est **rejoué jusqu'à cinq fois sur 14,3 s** (`DEGRADED_RETRY_DELAYS_MS`). Aucun `try/catch` de l'appelant ne l'empêche, et une sonde toutes les 300 ms multiplie les occasions de le lever. Risque **accepté**, au même titre que celui du `401` — cf. § *Ce que la story ne répare pas*. La preuve, écrite contre un `vi.mock`, ne traverse jamais l'`apiClient` : elle ne mesure que la moitié qui nous revient.
-*Preuve*, **5** tests de composant : pour (a), la saisie de deux caractères ne déclenche **aucun** appel ; pour (b), un carnet vide ne rend **aucun texte** — ⚠️ asserter l'absence de **texte**, jamais l'absence de **nœud**, les zones restant en permanence dans le DOM pour qu'`aria-live` fonctionne (T-b4) ; pour **(b-bis)**, **deux** tests — ramener le terme de trois à deux caractères **vide** les propositions, et vider le champ IDE **retire** l'avertissement franc, mutation « sortir par un `return` nu sans rien effacer » ; pour (c), la sonde IDE répond `500` pendant que la sonde nom répond `200` ⇒ aucun message d'erreur, et les propositions s'affichent normalement, mutation « retirer le `try/catch` d'une sonde ».
+*Preuve*, **6** tests de composant : pour (a), la saisie de deux caractères ne déclenche **aucun** appel ; pour (b), un carnet vide ne rend **aucun texte** — ⚠️ asserter l'absence de **texte**, jamais l'absence de **nœud**, les zones restant en permanence dans le DOM pour qu'`aria-live` fonctionne (T-b4) ; pour **(b-bis)**, **deux** tests — ramener le terme de trois à deux caractères **vide** les propositions, et vider le champ IDE **retire** l'avertissement franc, mutation « sortir par un `return` nu sans rien effacer » ; pour (c), **DEUX tests symétriques** — la sonde IDE répond `500` pendant que la sonde nom répond `200`, puis l'inverse ⇒ aucun message d'erreur, l'avertissement de la sonde tombée s'efface, et l'autre continue. Mutation : « retirer le `try/catch` » de **chacune** des deux.
+  ⚠️ **Le symétrique a été ajouté en passe 1 de revue** : seule la sonde IDE était éprouvée, et sa jumelle n'était NI testée NI mutée. Deux gardes symétriques dont une seule est éprouvée font une garde et une croyance.
 
 **AC-b6 — Les avertissements sont traduits dans les quatre locales.**
 *Preuve*, **2** tests Rust dans `crates/kesh-i18n/src/loader.rs` — le premier sur les clés neuves, le second sur `contact-filter-search-placeholder`, dont les quatre valeurs doivent mentionner l'IDE **avec le sigle de LEUR locale** une fois T-b1 livrée :
@@ -242,15 +255,15 @@ Renommer un contact vers un nom déjà porté déclenche le même signal nuancé
 ## Tasks / Subtasks
 
 - [x] **T-b1 — Rendre l'IDE cherchable, et prouver la fenêtre** ✅ *(2026-08-18)* (AC-b2, **et preuve 9 d'AC-b1** ; met en œuvre **D-b3**). Ajouter `ide_number` aux **DEUX** branches `LIKE` de `push_where_clauses` (`crates/kesh-db/src/repositories/contacts.rs:195-210`).
-  - [ ] Deux tests `#[sqlx::test]`, **un par branche** : le cas courant (`search=CHE109322551`) et le cas où `escaped.is_empty()`, c'est-à-dire un terme **intégralement** composé des dix opérateurs — par exemple `search=***`.
+  - [x] Deux tests d'intégration base, **un par branche** : le cas courant (`search=CHE109322551`) et le cas où `escaped.is_empty()`, c'est-à-dire un terme **intégralement** composé des dix opérateurs — par exemple `search=***`.
   - [ ] ⚠️ **Ne PAS se caler sur `test_search_handles_special_chars:1283` pour la seconde branche : il ne l'exerce pas.** Il cherche `"100%"`, et `%` **n'est pas** un opérateur `BOOLEAN MODE` (`util/search.rs:41`) — le terme survit intact et le test emprunte la branche `else`. **Aucun test du dépôt n'exerce aujourd'hui la branche `escaped.is_empty()`.**
-  - [ ] **Le `#[sqlx::test]` de la fenêtre** (preuve 9 d'AC-b1) : fixture des six `Jean X`, `limit: 20` ⇒ six lignes et `total = 6`.
+  - [x] **Le test de fenêtre** (preuve 9 d'AC-b1) : fixture des six `Jean X`, `limit: 20` ⇒ six lignes et `total = 6`.
   - [ ] ⚠️ **`push_where_clauses` est un chemin PARTAGÉ** — cf. § *Rayon d'impact de T-b1*. Gate **complet** au dernier commit : la § *Test Locally First* interdit le ciblage dès qu'un patch touche `crates/kesh-db/`.
 - [x] **T-b2 — Brancher les deux sondes** ✅ *(2026-08-18, code — preuves à venir)* (AC-b1, AC-b2, AC-b5, **AC-b7**). Importer le socle de la **22-2a** et **ne réimplémenter aucune de ses fonctions**.
   - [ ] Forme exacte des deux appels :
 
 ```ts
-import { probeTerm, rank, excludeSelf, countOthers, findIdeHolder }
+import { probeTerm, rank, excludeSelf, countOthers, findIdeHolder, describeProches }
   from '$lib/features/contacts/duplicate-probe';
 
 const soi = editing?.id ?? null;                 // `number | null`, jamais `undefined`
@@ -271,7 +284,7 @@ autres  = countOthers(rn.total, rn.items, proches, soi);
 const ide = normalizeIdeForApi(formIde);
 if (!ide || !validateIdeFormat(formIde)) { holder = undefined; ideSeq++; return; }
 const s2 = ++ideSeq;
-const ri = await listContacts({ search: ide, limit: 5, includeArchived: true });
+const ri = await listContacts({ search: ide, limit: 20, includeArchived: true });
 if (s2 !== ideSeq) return;
 holder = findIdeHolder(ri.items, ide, soi);                    // `ide` = la valeur ENVOYÉE
 ```
@@ -281,7 +294,7 @@ holder = findIdeHolder(ri.items, ide, soi);                    // `ide` = la val
   - [ ] ⚠️ **`editing?.id ?? null`, jamais `editing?.id` nu.** `editing` est `ContactResponse | null`, donc `editing?.id` rend `number | undefined`, que la signature `number | null` du socle refuse : `npm run check` rejetterait le code.
   - [ ] ⚠️ **C'est ICI qu'AC-b7 se joue**, pas dans le balisage de T-b4 : ce bloc est l'unique site où `soi` atteint `excludeSelf`, `countOthers` et `findIdeHolder`.
   - [ ] ⚠️ **Les deux appels ne diffèrent que par deux paramètres et se lisent côte à côte.** Une inversion d'`includeArchived` ne casse rien et rend des résultats plausibles dans les deux sens — le filtrage étant serveur, et un `vi.mock` ne regardant pas ses arguments. D'où les preuves **sur l'argument**, une par sens.
-- [x] **T-b3 — Temporisation et garde d'ordre** ✅ *(2026-08-18, code — preuves à venir)* (AC-b4). Débounce 300 ms + compteur de génération, patron `ContactPicker.svelte:36-78` (D-b6). **Une paire par sonde** (D-b7).
+- [x] **T-b3 — Temporisation et garde d'ordre** ✅ *(2026-08-18 ; **preuves écrites en passe 1 de revue de code**, cf. AC-b4)* (AC-b4). Débounce 300 ms + compteur de génération, patron `ContactPicker.svelte:36-78` (D-b6). **Une paire par sonde** (D-b7). Remise à zéro **à la fermeture**, par un `$effect` sur `formOpen` (D-b8 retourné en revue).
   - [ ] Réutiliser `debounce` de `$lib/features/journal-entries/debounce.ts` **ou** le `setTimeout` inline de `+page.svelte:185-192` — ne pas écrire un troisième mécanisme. Le helper est mal rangé ; le **déplacer** est hors périmètre, s'en servir ne l'est pas.
   - [ ] Remise à zéro des deux paires dans `openCreate()` **et** `openEdit()` (D-b8) — **pas** sur la fermeture, qui a trois sites.
   - [ ] Nettoyer les timers au démontage — `+page.svelte:113` le fait déjà pour la recherche de liste.
@@ -330,22 +343,23 @@ holder = findIdeHolder(ri.items, ide, soi);                    // `ide` = la val
 
 | AC | Preuves | Nature |
 |---|---:|---|
-| AC-b1 — nom proche | 10 + 1 | composant + `#[sqlx::test]` |
+| AC-b1 — nom proche | 10 + 1 | composant + intégration base |
 | AC-b2 — IDE déjà pris | 5 + 1 | composant + E2E |
-| AC-b3 — l'état du bouton est inchangé | 1 + 1 | E2E + composant |
+| ⤷ *dont* | *(1)* | *logée dans le bloc `describe` d'AC-b7 — « retaper son propre IDE en édition »* |
+| AC-b3 — l'état du bouton est inchangé | 2 + 1 | composant + E2E |
 | AC-b4 — temporisation et ordre | 7 | composant |
 | AC-b5 — muet quand rien à dire | 6 | composant |
-| AC-b6 — quatre locales | 2 | unitaire Rust |
+| AC-b6 — quatre locales | 3 | unitaire Rust |
 | AC-b7 — édition sans se signaler | 2 | composant |
-| *(T-b1 — l'IDE cherchable)* | 2 | `#[sqlx::test]` |
+| *(T-b1 — l'IDE cherchable)* | 2 | intégration base |
 
-⚠️ **Les 31 preuves de composant sont écrites et LEURS MUTATIONS JOUÉES** — `frontend/scripts/mutants-22-2b.mjs`, 20 mutations, 0 survivante, 0 hors cible. **CINQ d'entre elles ne prouvaient RIEN avant d'être jouées** : ouvrir une fiche en édition sans retaper l'IDE ne déclenche aucune sonde ; le compteur « et N autres » n'est pas rendu quand la liste est vide ; une promesse rejetée sans `try/catch` ne fait pas rougir vitest ; et **la preuve 2 passait par coïncidence de calendrier** — frappant les deux champs d'une Personne, un seul câblage survivant suffisait à composer le même terme, si bien que retirer l'`oninput` du prénom OU du nom de famille ne faisait rougir personne. Aucune relecture ne les aurait vues, et le Blind Hunter avait précisément conclu l'inverse sur la dernière — c'est le banc qui l'a réfuté.
+⚠️ **Les 32 preuves de composant sont écrites et LEURS MUTATIONS JOUÉES** — `frontend/scripts/mutants-22-2b.mjs`, 22 mutations, 0 survivante, 0 hors cible. **CINQ d'entre elles ne prouvaient RIEN avant d'être jouées** : ouvrir une fiche en édition sans retaper l'IDE ne déclenche aucune sonde ; le compteur « et N autres » n'est pas rendu quand la liste est vide ; une promesse rejetée sans `try/catch` ne fait pas rougir vitest ; et **la preuve 2 passait par coïncidence de calendrier** — frappant les deux champs d'une Personne, un seul câblage survivant suffisait à composer le même terme, si bien que retirer l'`oninput` du prénom OU du nom de famille ne faisait rougir personne. Aucune relecture ne les aurait vues, et le Blind Hunter avait précisément conclu l'inverse sur la dernière — c'est le banc qui l'a réfuté.
 
-**Totaux, sommés depuis la colonne** : **31 tests de composant** (10 + 5 + 1 + 7 + 6 + 2) · **2 assertions E2E** (1 + 1) · **2 tests unitaires Rust** · **3 tests d'intégration base** (1 + 2). **Soit 38 preuves.**
+**Totaux, sommés depuis la colonne** : **32 tests de composant** (10 + 5 + 2 + 7 + 6 + 2) · **2 assertions E2E** (1 + 1) · **3 tests unitaires Rust** · **3 tests d'intégration base** (1 + 2). **Soit 40 preuves.** Recompté depuis `contacts-page.test.ts` par `describe`, pas de mémoire : `vitest` en exécute **32**, et la ventilation ci-dessus les retrouve un par un.
 
 ⚠️ **La ligne « 6 tests unitaires front » a été retirée : elle n'a JAMAIS correspondu à rien.** Elle comptait les six preuves d'AC-b4 comme livrées alors qu'aucune n'était écrite, et le total de 34 s'appuyait dessus — alors que le tableau « recompté depuis la source » du Change Log, quatre lignes plus haut, ne les mentionnait pas. **Le total et sa propre ventilation se contredisaient dans le même paragraphe.** Relevé par l'`AcceptanceAuditor` en passe 1 de revue de code, classé `CRITICAL`. Les sept preuves d'AC-b4 existent désormais, et ce sont des tests de **composant**, pas unitaires : la temporisation ne s'observe qu'à travers la page qui l'arme.
 
-Aucun autre passage de cette story n'énonce de total. *(S'y ajoutent les **44 preuves** de la 22-2a — écrites, exécutées, et gardées par 24 mutations jouées.)*
+Aucun autre passage de cette story n'énonce de total. *(S'y ajoutent les **54 preuves** de la 22-2a — écrites, exécutées, et gardées par 32 mutations jouées.)*
 
 ## Dev Notes
 
@@ -407,7 +421,7 @@ C'est **préexistant**, et cette story ne le corrige pas — mais elle le rend *
 
 ### Conventions de test
 
-**Backend** : `#[sqlx::test]` monte le squash `crates/kesh-db/test-schema/` — ne pas ajouter d'attribut sur le vrai `MIGRATOR` sans lire `crates/kesh-db/tests/test_schema_guard.rs`.
+**Backend** : ⚠️ **les trois tests de dépôt de cette story sont des `#[tokio::test]` sur le POOL PARTAGÉ**, avec `cleanup_test_contacts` explicite — c'est la convention de `repositories/contacts.rs`, que la story annonçait à tort comme `#[sqlx::test]` (relevé en passe 2 de revue). Ils ne montent donc **pas** de base éphémère : leur nettoyage relève de la § *Un gate laisse la base piégée* du `CLAUDE.md`. *(La remarque sur le squash `crates/kesh-db/test-schema/` vaut pour les `#[sqlx::test]` du crate, dont aucun n'est ajouté ici.)*
 **Frontend** : `@testing-library/svelte` v5 + Svelte 5, mocks hoistés **avant** l'import du composant. Patron : `products-page.test.ts`.
 **Mutations jouées, pas raisonnées.** Les affirmations d'absence se vérifient au `grep -nF` avant d'être écrites — et le grep porte sur la **valeur**, jamais sur la phrase qui l'entoure.
 
@@ -421,6 +435,37 @@ C'est **préexistant**, et cette story ne le corrige pas — mais elle le rend *
 - `CLAUDE.md` — § *Un appariement automatique propose, il ne crée jamais*, § *Test Locally First*, § *Un gate laisse la base piégée*.
 
 ## Change Log
+
+### Passe 2 de `bmad-code-review` — 2026-08-18, Opus ×3, contexte frais
+
+Diff **aplati** `main...HEAD`. Une lentille repensée pour cette passe — un **Regression Hunter** chargé des régressions *introduites par la remédiation de passe 1*, seul autorisé à exécuter les bancs. Il est **mort en vol sur une erreur d'API serveur** sans rendre de rapport ; l'arbre a été vérifié intact (frontend identique à `HEAD`, aucune sauvegarde résiduelle) avant de poursuivre. Les deux autres ont rendu.
+
+**Trend : `1C/2H/5M/1L` → `0C/1H/16M+L`.** Bruts : 9 + 17 = 26. **Retenus : 0 CRITICAL / 1 HIGH / 16 MEDIUM et LOW.** La sévérité **décroît nettement**.
+
+**Le verdict d'ensemble mérite d'être cité tel quel, parce qu'il est juste** : *le code tient les quatorze critères, à une demi-clause près ; ce sont les DÉCLARATIONS qui ont dérivé.* Huit des neuf `MEDIUM` de l'`AcceptanceAuditor` sont des décomptes, des renvois ou des décisions que **la passe 1 a laissés en arrière après avoir modifié le code** — c'est-à-dire mon résidu, et exactement la § *Propagation post-patch* du `CLAUDE.md` : le site corrigé, pas les copies du symptôme.
+
+**Le seul `HIGH` porte sur du code.** AC-b3 promet que « ni `disabled` **ni `formValidation`** ne sont touchés », et le mot `formValidation` n'apparaissait **pas une seule fois** dans les tests. La preuve n'assertait que `disabled === true` sur un état *déjà* invalide : une mutation écrivant une phrase de doublon dans `formValidation` laissait `disabled` à `true` et la preuve **verte** — le geste même que l'AC dit vouloir empêcher. Deux preuves désormais, une par sens, plus deux mutations.
+
+**Le finding le plus utile de la passe est un `MEDIUM`, et il vaut un `HIGH` en pratique.** Le seuil d'armement `>= 3` n'était épinglé **que par le bas** : tous les cas négatifs mesuraient 2 caractères, aucun n'armait sur 3. Le porter à 4 laissait les deux suites **entièrement vertes** — et faisait taire la sonde pour `UBS`, `SBB`, `CFF`, `BCV`, `SIG`. Sur un logiciel de comptabilité suisse, ce n'est pas un cas de laboratoire.
+
+**Trois affirmations écrites que l'exécution a démenties**, toutes de la même famille — celle que ce dossier collectionne :
+
+1. **le doc-comment de `fold`** interdisait de réordonner le repli en affirmant que « minusculer avant le strip rendrait deux caractères ». **Faux** : les deux ordres rendent `i`. L'interdit n'avait aucun fondement, et le comportement est désormais figé par un test plutôt que par une consigne ;
+2. **le repli Svelte de `contact-duplicate-ide-archived` amputait la phrase qui porte le RECOURS** — « un IDE reste réservé même après archivage : l'enregistrement sera refusé » — alors que le `.ftl`, le manuel et le doc-comment du test Rust la déclarent tous essentielle. Et c'est le repli, pas le `.ftl`, que les tests de composant mesurent : la version amputée était la seule sous preuve ;
+3. **deux doc-comments décrivaient le compteur sous la forme « et 1 autre »**, au singulier — c'est-à-dire une chaîne que le code livré était **incapable de produire**, faute de sélecteur Fluent. Le français rendait « et 1 autres », l'allemand « und 1 weitere ». Les quatre locales passent en sélecteur, et un test Rust **rend les deux formes** plutôt que d'inspecter le `.ftl` : c'est la seule façon de prouver que le sélecteur est consulté.
+
+**Quatre erreurs sont les miennes, et deux ont été trouvées par le banc, pas par une relecture.**
+
+- **Ma fixture de déduplication ne discriminait pas** : mes deux candidats portaient le token répété, donc le `Set` ne changeait pas leur ordre relatif. Il fallait que la répétition avantage l'*un* des deux.
+- **J'ai failli inscrire une mutation ÉQUIVALENTE au banc** — « minuscule avant le strip », qui ne change rien. Elle aurait survécu par construction et dévalué le verdict de tout le banc. Un banc ne vaut que si chacune de ses mutations peut mordre.
+- **J'ai lancé `prettier` sans vérifier que c'était un outil du projet.** Ce n'en est pas un : ni configuration, ni dépendance, ni contrôle de format en CI. Il a reformaté six fichiers avec ses réglages par défaut — guillemets doubles, espaces, l'exact opposé du style du dépôt — soit **2113 insertions et 1641 suppressions de bruit**, et des ancres de mutation cassées. Le finding qui m'y a conduit (`LOW`) recommandait ce geste ; je l'ai exécuté sans en vérifier la prémisse. Réparé en restaurant depuis `HEAD` et en **rejouant les treize correctifs un par un**, chacun sous assertion : le diff est retombé à **200 insertions / 10 suppressions**.
+- **Ma virgule en double s'est reproduite à l'identique** (`},` + `,` = `},,`, un élément `undefined`), plantant un banc à mi-parcours en laissant le fichier **muté**. Un garde-fou structurel est posé sur les deux bancs, **avant la première copie de sauvegarde**, et il a été éprouvé en y réinjectant le défaut. ⚠️ Mon contrôle de trou était lui-même faux : `every()` **saute les trous** d'un tableau creux et rendait « aucun trou » sur un tableau qui en avait un. Il faut `Array.from`. *Une vérification qui ne peut pas échouer ne vérifie rien* — le défaut des preuves vertes qui gardent le vide, appliqué à l'outillage.
+
+⚠️ **Et j'ai refait ma faute d'orchestration de la passe 1** : j'ai modifié les quatre `.ftl` et ajouté un test Rust **pendant** que l'`AcceptanceAuditor` mesurait. Il a compté 594 puis 597 tests à deux minutes d'intervalle et n'a pas pu vérifier les résultats de gate — sa mesure est invalidée par moi, pas par le dépôt, et je ne la porte pas à son crédit.
+
+**Après remédiation** : bancs rejoués **socle 32 / 0 survivante**, **surface 22 / 0**. Gates complets, base remise à zéro d'abord : **backend 2216/2216**, **frontend 598/598**, `check` 0 erreur, `lint-i18n` PASS, build ✔.
+
+⚠️ **Passe 3 due** (1 `HIGH`). Rotation : **Haiku** ou **Sonnet**, contexte frais, diff aplati — et le **Regression Hunter à relancer**, puisqu'il n'a jamais rendu.
 
 ### Passe 1 de `bmad-code-review` — 2026-08-18, Sonnet ×3, contexte frais
 

@@ -508,7 +508,13 @@
 				} else if (err.code === 'IDE_ALREADY_EXISTS') {
 					formError = i18nMsg('contact-error-ide-duplicate', 'Un contact avec ce numéro IDE existe déjà');
 					// L'avertissement PRÉVENTIF s'efface quand `formError` prend le
-					// relais : la même phrase ne doit pas s'afficher à deux endroits.
+					// relais. ⚠️ Ce n'est PAS « la même phrase à deux endroits », comme
+					// le disait la rédaction précédente : les deux libellés sont
+					// distincts (`contact-error-ide-duplicate` contre
+					// `contact-duplicate-ide-active`). C'est une redondance de PROPOS —
+					// le refus du serveur, définitif, remplace l'avertissement
+					// préventif, devenu sans objet. Précision apportée en passe 2 de
+					// revue de code.
 					ideHolder = null;
 					notifyError(formError);
 				} else if (err.code === 'CLIENT_NUMBER_ALREADY_EXISTS') {
@@ -896,9 +902,11 @@
 						</ul>
 						{#if autres > 0}
 							<p class="mt-1 text-xs text-amber-800">
-								{i18nMsg('contact-duplicate-others-count', 'et { $count } autres', {
-									count: autres
-								})}
+								{i18nMsg(
+									'contact-duplicate-others-count',
+									autres === 1 ? 'et 1 autre' : 'et { $count } autres',
+									{ count: autres }
+								)}
 							</p>
 						{/if}
 					</div>
@@ -996,7 +1004,7 @@
 									)
 								: i18nMsg(
 										'contact-duplicate-ide-archived',
-										'Ce numéro IDE est déjà porté par { $name }, qui est archivé.',
+										'Ce numéro IDE est déjà porté par { $name }, qui est archivé. Un IDE reste réservé même après archivage : l’enregistrement sera refusé.',
 										{ name: ideHolder.name }
 									)}
 						</p>

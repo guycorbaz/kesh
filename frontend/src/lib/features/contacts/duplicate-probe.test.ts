@@ -133,6 +133,12 @@ describe('isArmed', () => {
 	it.each([
 		['Jean', true],
 		['Dubarde Sàrl', true],
+		// ⚠️ Un token de longueur EXACTEMENT 3. Sans lui le seuil n'est épinglé que
+		// PAR LE BAS — tous les cas négatifs mesurent 2 — et le porter à 4 laissait
+		// les deux suites entièrement vertes, en faisant taire la sonde pour `UBS`,
+		// `SBB`, `CFF`, `BCV`, `SIG`. Sur un logiciel de comptabilité suisse, ce
+		// n'est pas un cas de laboratoire. Relevé en passe 2 de revue de code.
+		['UBS', true],
 		['Du', false],
 		['An Li', false],
 		['', false]
@@ -183,6 +189,20 @@ describe('fold', () => {
 		expect(fold('ﬁrma')).toBe(fold('firma'));
 	});
 
+	it('replie `İ` (U+0130) sur un seul caractère, quel que soit l’ordre', () => {
+		// MUTATION : « retirer le strip des diacritiques combinants ».
+		//
+		// Ce test FIGE un comportement là où le doc-comment posait un INTERDIT —
+		// « ne pas réordonner » — que l'exécution réfute : les deux ordres rendent
+		// `i`. Une consigne ne se vérifie pas ; un test, si.
+		//
+		// ⚠️ La mutation « minusculer AVANT le strip » a été écartée du banc : elle
+		// est ÉQUIVALENTE, donc elle survivrait par construction et dévaluerait le
+		// verdict. Un banc ne vaut que si chacune de ses mutations peut mordre.
+		expect(fold('İstanbul')).toBe('istanbul');
+		expect([...fold('İ')]).toHaveLength(1);
+	});
+
 	it('applique AUSSI la normalisation du terme — c’est ce qui rend le repli symétrique', () => {
 		// MUTATION : « replier le nom sans lui appliquer normalizeTerm ».
 		// C'est le défaut fondateur de la story : le terme perd son trait
@@ -231,6 +251,25 @@ describe('rank', () => {
 		// la frontière de mot — `jeanne` n'est pas le token `jean`.
 		const out = rank([c(1, 'Marie Jean'), c(2, 'Jeanne Dupont')], normalizeTerm('Jean'));
 		expect(out[0].name).toBe('Jeanne Dupont');
+	});
+
+	it('critère 2 : un token RÉPÉTÉ dans le terme ne compte qu’une fois', () => {
+		// MUTATION : « retirer le `new Set(...)` des tokens du terme ».
+		//
+		// ⚠️ Le doc-comment justifie ce `Set` en toutes lettres, et aucune fixture ne
+		// répétait de token : la mutation survivait à toute la suite.
+		//
+		// ⚠️ **La première fixture écrite ici ne discriminait pas non plus** — ses
+		// deux candidats portaient le token répété, donc le `Set` ne changeait pas
+		// leur ordre RELATIF. Il faut que la répétition avantage l'UN des deux :
+		//   terme replié `bertrand ana ana`
+		//   `ana solo`     → sans Set : 2 tokens partagés · avec Set : 1
+		//   `bertrand zoe` → sans Set : 1               · avec Set : 1
+		// Avec le `Set` les deux marquent 1 et c'est le préfixe commun qui tranche —
+		// 9 contre 0 — donc `Bertrand Zoe`. Sans lui, `Ana Solo` passe devant sur un
+		// score gonflé par une répétition qui n'apporte rien.
+		const out = rank([c(1, 'Ana Solo'), c(2, 'Bertrand Zoe')], normalizeTerm('Bertrand Ana Ana'));
+		expect(out[0].name).toBe('Bertrand Zoe');
 	});
 
 	it('critère 2 : ramène le doublon RÉORDONNÉ, qu’aucun préfixe ne rattrape', () => {
@@ -378,7 +417,11 @@ describe('pureté du module', () => {
 		for (const forbidden of [
 			"from '$app/",
 			"from '$lib/shared/utils/api-client",
+			// ⚠️ Les DEUX formes. L'AC nomme l'ALIAS (`$lib/features/contacts/contacts.api`)
+			// et seule la RELATIVE était éprouvée : un import par alias passait la
+			// preuve sans rien empêcher. Relevé en passe 2 de revue de code.
 			"from './contacts.api",
+			'contacts.api',
 			"from '$lib/components/"
 		]) {
 			expect(source).not.toContain(forbidden);

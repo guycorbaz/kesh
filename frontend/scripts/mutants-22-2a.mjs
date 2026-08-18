@@ -203,6 +203,24 @@ const MUTANTS = [
 		from: "(v): v is string => typeof v === 'string' && v.trim() !== ''",
 		to: "(v): v is string => typeof v === 'string' && v !== ''",
 		expect: 'ESPACES ne compte pas'
+	},
+	{
+		name: 'BH-3 : seuil d’armement porté de 3 à 4',
+		from: 't.length >= MIN_TOKEN_LENGTH',
+		to: 't.length > MIN_TOKEN_LENGTH',
+		expect: 'mesure le plus long token'
+	},
+	{
+		name: 'BH-3 : retirer le Set de déduplication des tokens du terme',
+		from: 'const termTokens = [...new Set(term.split(/\\s+/).filter(Boolean))];',
+		to: 'const termTokens = term.split(/\\s+/).filter(Boolean);',
+		expect: 'un token RÉPÉTÉ'
+	},
+	{
+		name: 'BH-6 : retirer le strip des diacritiques combinants',
+		from: "\t\t.replace(/[\\u0300-\\u036f]/g, '')",
+		to: '',
+		expect: 'quel que soit l’ordre'
 	}
 ];
 
@@ -223,6 +241,18 @@ function runSuite() {
 		}
 	}
 	return { total: report.numTotalTests ?? 0, failed };
+}
+
+// ⚠️ **Un trou dans le tableau plante le banc À MI-PARCOURS**, après avoir laissé
+// le fichier muté — c'est arrivé, par une virgule en double qu'aucune relecture
+// n'attrape (`},,` crée un élément `undefined`). Ce contrôle est le premier geste
+// du script : il échoue AVANT la première copie de sauvegarde, donc sans rien
+// laisser derrière lui.
+for (const [i, m] of MUTANTS.entries()) {
+	if (!m || !m.name || m.from === undefined || m.to === undefined || !m.expect) {
+		console.error(`⛔ Entrée ${i} du tableau MUTANTS malformée ou absente (virgule en double ?).`);
+		process.exit(2);
+	}
 }
 
 copyFileSync(MODULE, BACKUP);

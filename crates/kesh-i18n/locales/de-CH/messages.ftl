@@ -347,7 +347,10 @@ contact-form-ide = UID-Nummer (CHE)
 contact-form-ide-help = Format: CHE-123.456.789
 # Story 22-2b (#301) — Dublettenprüfung bei der Erfassung.
 contact-duplicate-heading = Bereits erfasste Kontakte, die passen könnten
-contact-duplicate-others-count = und { $count } weitere
+contact-duplicate-others-count = { $count ->
+    [one] und 1 weiterer
+   *[other] und { $count } weitere
+}
 contact-duplicate-ide-active = Diese UID-Nummer gehört bereits { $name }.
 contact-duplicate-ide-archived = Diese UID-Nummer gehört bereits { $name }, archiviert. Eine UID bleibt auch nach der Archivierung reserviert: die Erfassung wird abgelehnt.
 contact-form-client-number = Kundennummer

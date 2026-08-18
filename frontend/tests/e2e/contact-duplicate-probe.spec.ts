@@ -92,7 +92,20 @@ test.describe('Sondes anti-doublon — la saisie d’un contact', () => {
 		await expect(enregistrer).toBeEnabled();
 
 		// (iii) et le contact est bien créé — vérifié après rechargement.
+		//
+		// ⚠️ **Attendre la RÉPONSE du POST avant de naviguer.** `click()` n'attend
+		// que la distribution de l'événement, pas la fin de la requête qu'il
+		// déclenche : un `goto` immédiat annule les requêtes en vol, et
+		// l'assertion qui suit — celle qui prouve que le contact est créé malgré
+		// l'avertissement — pouvait échouer par intermittence, pour une raison
+		// sans aucun rapport avec ce qu'elle mesure. C'est le pire mode d'échec
+		// d'un test : il rougit, on cherche ailleurs, et on finit par affaiblir
+		// l'assertion. Relevé en passe 2 de revue de code.
+		const cree = page.waitForResponse(
+			(r) => r.url().includes('/api/v1/contacts') && r.request().method() === 'POST'
+		);
 		await enregistrer.click();
+		await cree;
 		await page.goto('/contacts');
 		await expect(page.getByText('Dubarde Vins Sàrl')).toBeVisible({ timeout: 5000 });
 	});

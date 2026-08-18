@@ -660,6 +660,58 @@ describe('AC-b3 — l’état du bouton est celui qu’il aurait sans les sondes
 		) as HTMLButtonElement;
 		expect(zone('contact-duplicate-nearby').textContent).toContain('Dubarde Sàrl');
 		expect(enregistrer.disabled).toBe(true); // à cause de l'ADRESSE, pas de la sonde
+
+		// ⚠️ **Le MESSAGE rendu est celui de l'adresse**, pas un propos de doublon.
+		// Sans cette assertion, une mutation qui écrirait une phrase de doublon
+		// dans `formValidation` laisserait `disabled` à `true` et cette preuve
+		// VERTE — or c'est exactement le geste que l'AC dit vouloir empêcher.
+		// Le mot `formValidation` n'apparaissait pas une seule fois dans les
+		// tests ; relevé en passe 2 de revue de code.
+		//
+		// ⚠️ `formValidation` n'est PAS rendu tant qu'on n'a pas soumis : il
+		// n'alimente que le `disabled`, et `submitForm` en fait un `formError`.
+		// Il faut donc SOUMETTRE pour le lire — et c'est bien ce qu'on veut
+		// éprouver : ce que l'utilisateur se verra reprocher.
+		const formulaire = document.querySelector('form') as HTMLFormElement;
+		await fireEvent.submit(formulaire);
+		await settle(30);
+
+		// ⚠️ On lit le PARAGRAPHE D'ERREUR, pas `document.body` : la zone
+		// d'avertissement porte le titre « Contacts **déjà enregistrés** qui
+		// pourraient correspondre », qu'une assertion sur le corps entier
+		// confondrait avec une fuite dans `formValidation`. Première rédaction de
+		// cette preuve, corrigée sur son propre échec.
+		const erreur = document.querySelector('p.text-destructive');
+		expect(erreur?.textContent).toBe('NPA et localité obligatoires si une adresse est saisie');
+	});
+
+	it('un avertissement sur un formulaire PAR AILLEURS VALIDE laisse le bouton ACTIF', async () => {
+		// MUTATION : « disabled={… || proches.length > 0} », ou un `if (ideHolder)
+		// return;` en tête de soumission.
+		//
+		// ⚠️ La preuve ci-dessus ne peut détecter qu'UN sens — une sonde qui
+		// RÉACTIVERAIT le bouton — puisqu'elle part d'un état déjà invalide. La
+		// mutation qui détruit la promesse centrale de la story, « il n'empêche
+		// jamais d'enregistrer », la laisse verte. C'est l'autre moitié.
+		const porteur = c({ id: 11, name: 'Porteur SA', ideNumber: 'CHE109322551' });
+		repondre({
+			Dubarde: { items: [c({ id: 10, name: 'Dubarde Sàrl' })], total: 1 },
+			CHE109322551: { items: [porteur], total: 1 }
+		});
+		render(Page);
+		await settle(20);
+		await ouvrirCreation();
+		await saisir('form-name', 'Dubarde');
+		await saisir('form-ide', 'CHE-109.322.551');
+
+		const enregistrer = [...document.querySelectorAll('button')].find(
+			(b) => b.getAttribute('type') === 'submit'
+		) as HTMLButtonElement;
+		// Les DEUX avertissements sont à l'écran…
+		expect(zone('contact-duplicate-nearby').textContent).toContain('Dubarde Sàrl');
+		expect(zone('contact-duplicate-ide').textContent).toContain('Porteur SA');
+		// …et le bouton reste actif. C'est toute la story en une assertion.
+		expect(enregistrer.disabled).toBe(false);
 	});
 });
 
@@ -775,7 +827,14 @@ describe('AC-b4 — rien ne part avant que la frappe se calme', () => {
 	});
 
 	it('preuve 5 : rouvrir en CRÉATION repart d’un écran vierge', async () => {
-		// MUTATION : « ne rien réinitialiser dans openCreate() ».
+		// MUTATION : « retirer le `$effect` de fermeture ».
+		//
+		// ⚠️ Cette preuve annonçait « ne rien réinitialiser dans openCreate() » —
+		// une mutation qui n'a PLUS DE SITE : cet appel a été supprimé comme
+		// redondant, et c'est le `$effect` sur la fermeture qui fait tout le
+		// travail. Un commentaire décrivant du code disparu est pire qu'un
+		// commentaire absent : il envoie chercher une garde là où il n'y en a
+		// plus. Relevé en passe 2 de revue de code.
 		repondre({ Dubarde: { items: [c({ id: 70, name: 'Dubarde SA' })], total: 1 } });
 		render(Page);
 		await settle(20);
@@ -790,8 +849,13 @@ describe('AC-b4 — rien ne part avant que la frappe se calme', () => {
 	});
 
 	it('preuve 6 : rouvrir en ÉDITION repart d’un écran vierge, lui aussi', async () => {
-		// MUTATION : « ne réinitialiser que dans openCreate() », que la preuve 5
-		// laisse VERTE. D-b8 exige les DEUX sites.
+		// MUTATION : « retirer le `$effect` de fermeture » — la même que la preuve
+		// 5, et c'est voulu : un seul mécanisme, trois conséquences gardées
+		// séparément.
+		//
+		// ⚠️ Cette preuve annonçait « D-b8 exige les DEUX sites » — une exigence
+		// que le code ne tient plus, et qui invitait un mainteneur à
+		// RÉINTRODUIRE la redondance qu'on venait de démonter.
 		//
 		// ⚠️ Ce cas avait été identifié en passe 1 de validate, inscrit au tableau
 		// des pièges muets — et la preuve n'avait pas été écrite. Le symptôme est

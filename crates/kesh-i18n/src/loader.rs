@@ -345,6 +345,59 @@ mod tests {
     /// ⚠️ Et le libellé dit **« sans séparateurs »** : la colonne est stockée
     /// normalisée (`CHE109322551`) tandis que le `LIKE` porte sur le terme
     /// brut, donc la forme imprimée sur une facture ne remonte **rien**.
+    /// **Le compteur « et N autres » s'accorde en nombre, dans les quatre locales.**
+    ///
+    /// ⚠️ Sans sélecteur Fluent, le libellé rendait « et **1 autres** » — et le
+    /// cas est ordinaire, pas limite : six correspondances dont cinq affichées
+    /// suffisent. Le défaut se lisait à découvert dans le dépôt, deux
+    /// doc-comments décrivant le symptôme sous la forme « et 1 autre »,
+    /// c'est-à-dire une chaîne que le code livré était incapable de produire.
+    ///
+    /// Ce test **rend les deux formes** plutôt que d'inspecter le `.ftl` : c'est
+    /// la seule façon de prouver que le sélecteur est effectivement consulté.
+    #[test]
+    fn the_others_count_agrees_in_number_in_every_locale() {
+        let bundle = I18nBundle::load(&locales_dir()).unwrap();
+        const KEY: &str = "contact-duplicate-others-count";
+
+        for locale in [Locale::FrCh, Locale::DeCh, Locale::ItCh, Locale::EnCh] {
+            let mut un = FluentArgs::new();
+            un.set("count", 1);
+            let mut plusieurs = FluentArgs::new();
+            plusieurs.set("count", 3);
+
+            let singulier = bundle.format(&locale, KEY, Some(&un));
+            let pluriel = bundle.format(&locale, KEY, Some(&plusieurs));
+
+            assert_ne!(
+                singulier, KEY,
+                "en {locale:?}, {KEY} ne se résout pas avec un argument `count`"
+            );
+            assert_ne!(
+                singulier, pluriel,
+                "en {locale:?}, {KEY} rend la MÊME chaîne pour 1 et pour 3 : le \
+                 sélecteur de pluriel est absent ou n'est pas consulté"
+            );
+            assert!(
+                singulier.contains('1'),
+                "en {locale:?}, la forme singulière perd le nombre : {singulier}"
+            );
+            assert!(
+                pluriel.contains('3'),
+                "en {locale:?}, la forme plurielle perd le nombre : {pluriel}"
+            );
+        }
+
+        // Le cas français, celui qui a motivé le correctif, épinglé nommément.
+        let mut un = FluentArgs::new();
+        un.set("count", 1);
+        let fr = bundle.format(&Locale::FrCh, KEY, Some(&un));
+        assert!(
+            !fr.contains("autres"),
+            "le français rend « {fr} » — le pluriel « autres » sur un compte de 1"
+        );
+    }
+
     /// Promettre « ou IDE » tout court serait promettre le geste qui échoue.
     #[test]
     fn search_placeholder_lists_the_ide_with_each_locale_own_token() {

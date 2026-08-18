@@ -31,8 +31,16 @@
  * défaut fondateur de la story, et il se referme par la **symétrie**.
  *
  * ⚠️ `İ` (U+0130) se décompose en NFD en `I` + point combinant ; le strip
- * retire le point, et le `toLowerCase` final rend `i`. L'ordre compte :
- * minusculer **avant** le strip rendrait deux caractères. Ne pas réordonner.
+ * retire le point, et le `toLowerCase` final rend `i` — un seul caractère.
+ *
+ * Une version antérieure de ce commentaire ajoutait « l'ordre compte :
+ * minusculer **avant** le strip rendrait deux caractères ». **C'est faux**, et
+ * l'exécution le dit : `'İ'.toLowerCase()` rend bien `i` + U+0307, mais le
+ * strip retire ce U+0307 tout aussi bien, et les deux ordres rendent `i`.
+ * L'interdit de réordonner n'avait donc aucun fondement — relevé en passe 2 de
+ * revue de code, sur ce seul motif qu'un commentaire affirmait ce que personne
+ * n'avait éprouvé. Le comportement, lui, est désormais figé par un TEST plutôt
+ * que par une consigne.
  */
 
 import type { ContactResponse, ContactType } from './contacts.types';

@@ -157,6 +157,18 @@ const MUTANTS = [
 		to: "bind:value={formLastName}",
 		expect: "preuve 2-ter : le champ NOM DE FAMILLE"
 	},
+	{
+		name: "AC-b3 : une sonde armée DÉSACTIVE le bouton",
+		from: "disabled={formSubmitting || !!formValidation}",
+		to: "disabled={formSubmitting || !!formValidation || proches.length > 0}",
+		expect: "laisse le bouton ACTIF"
+	},
+	{
+		name: "AC-b3 : un propos de doublon écrit dans formValidation",
+		from: "\tlet formValidation = $derived.by(() => {",
+		to: "\tlet formValidation = $derived.by(() => {\n\t\tif (proches.length > 0) return 'Un doublon existe déjà';",
+		expect: "ne change pas le `disabled`"
+	}
 ];
 
 function runSuite() {
@@ -176,6 +188,18 @@ function runSuite() {
 		}
 	}
 	return { total: report.numTotalTests ?? 0, failed };
+}
+
+// ⚠️ **Un trou dans le tableau plante le banc À MI-PARCOURS**, après avoir laissé
+// le fichier muté — c'est arrivé, par une virgule en double qu'aucune relecture
+// n'attrape (`},,` crée un élément `undefined`). Ce contrôle est le premier geste
+// du script : il échoue AVANT la première copie de sauvegarde, donc sans rien
+// laisser derrière lui.
+for (const [i, m] of MUTANTS.entries()) {
+	if (!m || !m.name || m.from === undefined || m.to === undefined || !m.expect) {
+		console.error(`⛔ Entrée ${i} du tableau MUTANTS malformée ou absente (virgule en double ?).`);
+		process.exit(2);
+	}
 }
 
 copyFileSync(MODULE, BACKUP);

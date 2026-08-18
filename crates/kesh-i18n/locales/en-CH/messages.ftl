@@ -347,7 +347,10 @@ contact-form-ide = UID number (CHE)
 contact-form-ide-help = Format: CHE-123.456.789
 # Story 22-2b (#301) — duplicate probes while typing.
 contact-duplicate-heading = Existing contacts that might match
-contact-duplicate-others-count = and { $count } more
+contact-duplicate-others-count = { $count ->
+    [one] and 1 more
+   *[other] and { $count } more
+}
 contact-duplicate-ide-active = This UID number already belongs to { $name }.
 contact-duplicate-ide-archived = This UID number already belongs to { $name }, which is archived. A UID stays reserved even after archiving: saving will be refused.
 contact-form-client-number = Client number
