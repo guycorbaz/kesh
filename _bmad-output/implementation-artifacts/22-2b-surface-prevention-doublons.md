@@ -293,7 +293,7 @@ holder = findIdeHolder(ri.items, ide, soi);                    // `ide` = la val
   - [ ] **Rendre « et N autres » SOUS la liste des cinq propositions**, conditionné à `autres > 0` — clé `contact-duplicate-others-count`, argument `count`. ⚠️ Conditionner sur `autres > 0` et non sur `total > 5` : c'est la soustraction de D-a6 qui fait foi, et elle vaut zéro dans le cas de l'édition solitaire (AC-b7 preuve 2).
   - [ ] **L'avertissement franc s'efface quand `formError` prend le relais** après un `409` (`:361` pose déjà `contact-error-ide-duplicate`), pour que la même phrase ne s'affiche pas deux fois.
   - [ ] Il n'existe pas de composant `alert` dans `lib/components/ui/` — se caler sur le style de `formError`, sans créer de primitive.
-  - [ ] **Créer `frontend/src/routes/(app)/contacts/+page.test.ts`** — il n'existe **aucun** test de cette page (seul `contact-helpers.test.ts` existe pour ce domaine). Patron : `products-page.test.ts`, mocks hoistés avant l'import.
+  - [ ] **Créer `frontend/src/routes/(app)/contacts/contacts-page.test.ts`** ⚠️ **PAS `+page.test.ts`** : SvelteKit réserve tout nom préfixé `+` dans `src/routes/`, et le `build` échoue en `Files prefixed with + are reserved`. C'est pourquoi le patron s'appelle `products-page.test.ts`. Ni `npm run check` ni `vitest` ne le voient — **seul le `build` l'attrape**. — il n'existe **aucun** test de cette page (seul `contact-helpers.test.ts` existe pour ce domaine). Patron : `products-page.test.ts`, mocks hoistés avant l'import.
 - [~] **T-b5 — i18n** 🔶 *(2026-08-18 : 4 clés × 4 locales + libellé de recherche posés ; les 2 tests Rust restent à écrire)* (AC-b6). Clés neuves dans les **quatre** FTL, domaine `contact-*`, plus le test Rust dédié.
   - [ ] **Clés neuves, NOMMÉES** — les décrire sans les nommer rendait le test d'AC-b6 inécrivable :
 
@@ -336,6 +336,8 @@ holder = findIdeHolder(ri.items, ide, soi);                    // `ide` = la val
 | AC-b6 — quatre locales | 2 | unitaire Rust |
 | AC-b7 — édition sans se signaler | 2 | composant |
 | *(T-b1 — l'IDE cherchable)* | 2 | `#[sqlx::test]` |
+
+⚠️ **Les 21 preuves de composant sont écrites et LEURS MUTATIONS JOUÉES** — `frontend/scripts/mutants-22-2b.mjs`, 12 mutations, 0 survivante, 0 hors cible. **TROIS d'entre elles ne prouvaient RIEN avant d'être jouées** : ouvrir une fiche en édition sans retaper l'IDE ne déclenche aucune sonde ; le compteur « et N autres » n'est pas rendu quand la liste est vide ; et une promesse rejetée sans `try/catch` ne fait pas rougir vitest. Aucune relecture ne les aurait vues.
 
 **Totaux, sommés depuis la colonne** : **21 tests de composant** (8 + 5 + 1 + 5 + 2) · **6 tests unitaires front** · **2 assertions E2E** (1 + 1) · **2 tests unitaires Rust** · **3 tests d'intégration base** (1 + 2). **Soit 34 preuves.**
 
