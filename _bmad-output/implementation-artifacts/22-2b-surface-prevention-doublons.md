@@ -2,7 +2,9 @@
 
 ## Status
 
-ready-for-dev
+review
+
+**Les sept tâches sont livrées** (2026-08-18) — cf. § *Change Log*, entrée « Implémentation ». Les deux gates complets sont verts, base de dev remise à zéro au préalable. Reste dû : `bmad-code-review`, et le **push** qui n'a pas eu lieu.
 
 **Dégelée le 2026-08-18.** Elle avait été mise en attente parce que plusieurs de ses findings portaient sur la **frontière** avec le socle, et les corriger contre un contrat supposé aurait été à refaire. **Le socle est désormais codé et ses contrats sont figés par du code qui tourne** — cf. § *Ce que le socle fournit, et sa signature exacte*.
 
@@ -417,6 +419,48 @@ C'est **préexistant**, et cette story ne le corrige pas — mais elle le rend *
 - `CLAUDE.md` — § *Un appariement automatique propose, il ne crée jamais*, § *Test Locally First*, § *Un gate laisse la base piégée*.
 
 ## Change Log
+
+### Implémentation T-b1 → T-b7 — 2026-08-18
+
+**Sept tâches, 22 fichiers, 3527 insertions.** Ce qui a réellement tourné, et ce qui ne l'a pas encore.
+
+**Les deux gates COMPLETS, base de dev remise à zéro d'abord** (§ *Un gate laisse la base piégée* — inconditionnellement, sans se demander comment le run précédent s'était terminé) :
+
+| Gate | Résultat |
+|---|---|
+| `scripts/test-fast.sh` (fmt + clippy + nextest) | **2215 passés, 0 échec**, 4 ignorés — 75,6 s |
+| `npm run check` | **0 ERRORS** |
+| `npm run lint-i18n-ownership` | PASS |
+| `npm run test:unit` | **577 passés** (65 fichiers) |
+| `npm run build` | ✔ |
+
+**Ce que la branche ajoute, recompté depuis la source :**
+
+| | quantité | où |
+|---|---|---|
+| socle pur (22-2a) | 33 blocs, **44 cas** | `duplicate-probe.test.ts` |
+| mutations du socle **jouées** | **24 · 0 survivante** | `scripts/mutants-22-2a.mjs` |
+| tests de composant | **21** | `contacts-page.test.ts` |
+| mutations de la surface **jouées** | **12 · 0 survivante** | `scripts/mutants-22-2b.mjs` |
+| tests de dépôt | **3** | `repositories/contacts.rs` |
+| tests i18n | **2** | `kesh-i18n/src/loader.rs` |
+| tests E2E | **2** | `contact-duplicate-probe.spec.ts` |
+| clés `contact-*` | **66 par locale**, parité tenue aux 4 | `locales/*/messages.ftl` |
+
+⚠️ **Les deux bancs de mutations ont été REJOUÉS au moment d'écrire ce tableau**, pas cités de mémoire. C'est la contrepartie de la § *Recompter ses propres comptes rendus* appliquée à la seule affirmation qui compte ici : « 0 survivante » n'est pas une propriété du code, c'est le résultat d'un run.
+
+**Trois preuves de composant sur vingt et une ne discriminaient rien, et seul le banc l'a vu.** Ouvrir une fiche en édition ne déclenche aucun `oninput`, donc aucune sonde ne part ; le compteur « et N autres » n'est pas rendu quand la liste est vide ; et une promesse rejetée sans `try/catch` ne fait pas échouer vitest. Les trois ont été réécrites. C'est le même enseignement que sur le socle, où la fixture du critère 3 — `Dubarde SA` contre `Dumont Bar` — donnait le même vainqueur par le préfixe commun **et** par l'alphabétique : une preuve dont la mutation n'a pas été jouée est une preuve dont on ignore le pouvoir.
+
+**Deux pièges d'outillage, tous deux hors de portée des gates qui semblaient les couvrir.** `+page.test.ts` est un **nom réservé** de SvelteKit — tout fichier préfixé `+` dans `src/routes/` casse le build, et **seul `npm run build`** le signale : ni `check`, ni `vitest` ne bronchent. Renommé `contacts-page.test.ts`. Et `CHE~116281839` fait **13 caractères** pour une colonne `VARCHAR(12)` : la fixture échouait à l'exécution, sur une raison sans rapport avec ce qu'elle mesure.
+
+**T-b7 dit ce que la sonde fait ET ce qu'elle ne fait pas.** Le manuel gagne le numéro IDE dans les colonnes cherchées, mais avec sa réserve en encadré : il se cherche **sans ses séparateurs**. La phrase voisine promet de « remonter d'une facture papier au contact » — un lecteur aurait essayé avec la forme imprimée `CHE-109.322.551` et n'aurait rien obtenu. Un test de T-b1 fige ce comportement pour qu'on ne promette jamais l'inverse. PDF régénéré, 57 pages.
+
+**Ce qui reste dû, et il faut le dire ici plutôt que le découvrir plus tard :**
+
+- **`bmad-code-review` sur la 22-2a n'a pas tourné.** Ses trois lentilles ont été tuées par une limite de dépense mensuelle — cause externe. Les trois fichiers de prompt sont écrits et attendent une séance séparée, de préférence sur un autre modèle. La 22-2a reste en `review` pour cette raison.
+- **La 22-2b n'a pas eu de revue de code** non plus.
+- **Rien n'est poussé.** 20 commits locaux.
+- **Issues #314 et #315** restent ouvertes : le socle les **atténue côté client**, il ne les corrige pas. Ne pas laisser croire l'inverse.
 
 ### Passe 1 de `bmad-create-story validate` — 2026-08-17, Sonnet ×3, contexte frais
 
