@@ -521,6 +521,27 @@ Si votre premier exercice Kesh ne doit pas commencer au 1\textsuperscript{er} ja
 \end{itemize}
 
 \begin{keshnote}
+\textbf{Pendant que vous tapez, Kesh vous signale les contacts qui pourraient déjà
+exister.} Deux avertissements distincts, qui n'ont pas la même force :
+
+\begin{itemize}
+    \item \textbf{Un nom proche} --- Kesh liste les contacts déjà enregistrés qui
+    pourraient correspondre, avec de quoi les reconnaître : localité, numéro de
+    client, à défaut l'email. C'est une \emph{suggestion} : deux clients peuvent
+    légitimement porter des noms très proches --- deux sociétés d'un même groupe,
+    deux homonymes, un père et son fils.
+    \item \textbf{Un numéro IDE déjà pris} --- l'avertissement est franc, car un
+    IDE est un identifiant attribué par l'État : deux entités ne le partagent
+    jamais. Si le contact qui le porte est \textbf{archivé}, Kesh le dit : un IDE
+    reste réservé même après archivage, et l'enregistrement sera refusé.
+\end{itemize}
+
+\textbf{Ces avertissements n'empêchent jamais d'enregistrer.} Vous restez juge :
+si vous savez qu'il s'agit bien d'un autre contact, enregistrez. Kesh vous
+informe, il ne décide pas à votre place.
+\end{keshnote}
+
+\begin{keshnote}
 Pour un contact de type \textbf{Entreprise}, vous pouvez ajouter une ou plusieurs
 \textbf{personnes de contact} (interlocuteurs : prénom, nom, fonction, email,
 téléphone) depuis sa fiche. Ces personnes sont \emph{purement informatives} —
@@ -529,9 +550,16 @@ elles n'apparaissent jamais sur les factures ni les paiements.
 
 \subsubsection{Recherche de contacts}
 
-La barre de recherche utilise l'index FULLTEXT MariaDB sur le \textbf{nom}, complété par une recherche sur l'\textbf{email} et le \textbf{numéro de client} --- y compris sur un fragment. Le wildcard \texttt{*} est supporté en suffixe du nom.
+La barre de recherche utilise l'index FULLTEXT MariaDB sur le \textbf{nom}, complété par une recherche sur l'\textbf{email}, le \textbf{numéro de client} et le \textbf{numéro IDE} --- y compris sur un fragment. Le wildcard \texttt{*} est supporté en suffixe du nom.
 
 C'est ce qui permet de remonter d'une facture papier au contact : saisissez le numéro de client imprimé sur le document.
+
+\begin{keshwarning}
+\textbf{Le numéro IDE se cherche sans ses séparateurs.} Kesh le conserve sous sa
+forme compacte, \texttt{CHE109322551} : c'est donc celle-là qu'il faut saisir
+dans la recherche. La forme imprimée sur les documents officiels,
+\texttt{CHE-109.322.551}, ne remonte \emph{rien}.
+\end{keshwarning}
 
 \subsubsection{Import en masse}
 
