@@ -18,6 +18,13 @@
 		listContacts,
 		updateContact
 	} from '$lib/features/contacts/contacts.api';
+	import {
+		countOthers,
+		excludeSelf,
+		findIdeHolder,
+		probeTerm,
+		rank
+	} from '$lib/features/contacts/duplicate-probe';
 	import type {
 		ContactLanguage,
 		ContactResponse,
@@ -54,6 +61,32 @@
 	// Debounce for search (pattern Story 3.4).
 	let searchDebounceHandle: ReturnType<typeof setTimeout> | null = null;
 	let effectiveSearch = $state('');
+
+	// --- Sondes anti-doublon (Story 22-2b, #301) ---
+	// Deux sondes, deux minuteries, DEUX compteurs : une paire factorisée ferait
+	// qu'une réponse tardive de l'une invalide la fraîcheur de l'autre, et l'un
+	// des deux avertissements ne s'afficherait jamais — sans erreur ni test rouge.
+	let proches = $state<ContactResponse[]>([]);
+	let autres = $state(0);
+	let ideHolder = $state<ContactResponse | null>(null);
+	let nameProbeHandle: ReturnType<typeof setTimeout> | null = null;
+	let ideProbeHandle: ReturnType<typeof setTimeout> | null = null;
+	let nameSeq = 0;
+	let ideSeq = 0;
+	const PROBE_DELAY_MS = 300;
+
+	/** Remet les deux sondes au silence — à l'OUVERTURE du formulaire (D-b8). */
+	function resetProbes() {
+		if (nameProbeHandle) clearTimeout(nameProbeHandle);
+		if (ideProbeHandle) clearTimeout(ideProbeHandle);
+		nameProbeHandle = null;
+		ideProbeHandle = null;
+		nameSeq++;
+		ideSeq++;
+		proches = [];
+		autres = 0;
+		ideHolder = null;
+	}
 
 	// --- Create/Edit dialog state ---
 	let formOpen = $state(false);
@@ -113,6 +146,8 @@
 		// Cleanup debounce timer si l'utilisateur quitte avant expiration.
 		return () => {
 			if (searchDebounceHandle) clearTimeout(searchDebounceHandle);
+			if (nameProbeHandle) clearTimeout(nameProbeHandle);
+			if (ideProbeHandle) clearTimeout(ideProbeHandle);
 		};
 	});
 
@@ -213,6 +248,98 @@
 	}
 
 	// --- Form handlers ---
+	/**
+	 * Sonde « nom proche ». Actifs SEULEMENT (D-b5), fenêtre LARGE puis classement
+	 * et coupe côté client (D-b15) — `rank` ne tronque pas.
+	 *
+	 * ⚠️ **DÉSARMER, C'EST EFFACER.** Sortir par un `return` nu laisserait à
+	 * l'écran des propositions calculées sur un terme que l'utilisateur a déjà
+	 * effacé, et laisserait une réponse en vol les repeupler.
+	 */
+	async function runNameProbe() {
+		const { normalized, armed } = probeTerm(
+			formContactType,
+			formName,
+			formFirstName,
+			formLastName
+		);
+		if (!armed) {
+			nameSeq++;
+			proches = [];
+			autres = 0;
+			return;
+		}
+		const seq = ++nameSeq;
+		const soi = editing?.id ?? null;
+		try {
+			const rn = await listContacts({ search: normalized, limit: 20, includeArchived: false });
+			if (seq !== nameSeq) return;
+			const retenus = rank(excludeSelf(rn.items, soi), normalized);
+			proches = retenus.slice(0, 5);
+			autres = countOthers(rn.total, rn.items, proches, soi);
+		} catch {
+			// Une sonde n'est pas une action de l'utilisateur : il n'a rien
+			// demandé, on ne lui doit aucun rapport d'échec (AC-b5 c).
+			if (seq === nameSeq) {
+				proches = [];
+				autres = 0;
+			}
+		}
+	}
+
+	/**
+	 * Sonde IDE. Archivés COMPRIS (D-b5) — la contrainte est PLATE, un contact
+	 * archivé garde son IDE à vie et provoquerait un 409 sans coupable visible.
+	 * Vérification SUR LE CHAMP contre la valeur ENVOYÉE (D-b7).
+	 */
+	async function runIdeProbe() {
+		const ide = normalizeIdeForApi(formIde);
+		if (!ide || !validateIdeFormat(formIde)) {
+			ideSeq++;
+			ideHolder = null;
+			return;
+		}
+		const seq = ++ideSeq;
+		const soi = editing?.id ?? null;
+		try {
+			const ri = await listContacts({ search: ide, limit: 5, includeArchived: true });
+			if (seq !== ideSeq) return;
+			ideHolder = findIdeHolder(ri.items, ide, soi) ?? null;
+		} catch {
+			if (seq === ideSeq) ideHolder = null;
+		}
+	}
+
+	/** Temporise la sonde nom — branché sur `oninput`, JAMAIS sur `onkeydown`. */
+	function scheduleNameProbe() {
+		if (nameProbeHandle) clearTimeout(nameProbeHandle);
+		nameProbeHandle = setTimeout(runNameProbe, PROBE_DELAY_MS);
+	}
+
+	/** Temporise la sonde IDE. */
+	function scheduleIdeProbe() {
+		if (ideProbeHandle) clearTimeout(ideProbeHandle);
+		ideProbeHandle = setTimeout(runIdeProbe, PROBE_DELAY_MS);
+	}
+
+	/**
+	 * Ce qui permet de RECONNAÎTRE une proposition — localité, numéro de client,
+	 * à défaut l'email, à défaut `#id` (D-b10).
+	 *
+	 * ⚠️ L'exigence est un **invariant**, pas une cascade : deux propositions ne
+	 * doivent JAMAIS être identiques à l'écran. Le père et le fils de la même
+	 * localité, sans numéro ni email, ONT une localité — une cascade s'y
+	 * arrêterait et rendrait deux lignes jumelles. D'où le repli final sur
+	 * l'`id`, garanti distinct et déjà présent dans le DTO.
+	 */
+	function describeProche(c: ContactResponse): string {
+		const bouts = [c.addressStructured?.city, c.clientNumber].filter(
+			(v): v is string => !!v && v.trim() !== ''
+		);
+		if (bouts.length === 0 && c.email) bouts.push(c.email);
+		return bouts.length > 0 ? ` — ${bouts.join(' · ')}` : ` — #${c.id}`;
+	}
+
 	function openCreate() {
 		editing = null;
 		formContactType = 'Entreprise';
@@ -235,6 +362,7 @@
 		formLanguage = '';
 		formSalutation = 'Neutre';
 		formError = '';
+		resetProbes();
 		formOpen = true;
 	}
 
@@ -263,6 +391,7 @@
 		formLanguage = c.language ?? '';
 		formSalutation = c.salutation;
 		formError = '';
+		resetProbes();
 		formOpen = true;
 	}
 
@@ -359,6 +488,9 @@
 					conflictOpen = true;
 				} else if (err.code === 'IDE_ALREADY_EXISTS') {
 					formError = i18nMsg('contact-error-ide-duplicate', 'Un contact avec ce numéro IDE existe déjà');
+					// L'avertissement PRÉVENTIF s'efface quand `formError` prend le
+					// relais : la même phrase ne doit pas s'afficher à deux endroits.
+					ideHolder = null;
 					notifyError(formError);
 				} else if (err.code === 'CLIENT_NUMBER_ALREADY_EXISTS') {
 					formError = i18nMsg(
@@ -452,7 +584,10 @@
 	<div class="flex flex-wrap gap-3 mb-4 items-end">
 		<div class="flex-1 min-w-[200px]">
 			<label for="filter-search" class="text-xs mb-1 block">
-				{i18nMsg('contact-filter-search-placeholder', 'Rechercher par nom, email ou n° client…')}
+				{i18nMsg(
+					'contact-filter-search-placeholder',
+					'Rechercher par nom, email, n° client ou IDE sans séparateurs…'
+				)}
 			</label>
 			<div class="relative">
 				<Search class="absolute left-2 top-2.5 w-4 h-4 text-muted-foreground" />
@@ -655,6 +790,7 @@
 				<select
 					id="form-type"
 					bind:value={formContactType}
+					onchange={scheduleNameProbe}
 					class="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
 				>
 					{#each CONTACT_TYPES as t (t)}
@@ -672,11 +808,23 @@
 				<div class="grid grid-cols-2 gap-3">
 					<div>
 						<label for="form-firstname">{i18nMsg('field-first-name', 'Prénom')} *</label>
-						<Input id="form-firstname" type="text" bind:value={formFirstName} maxlength={70} />
+						<Input
+							id="form-firstname"
+							type="text"
+							bind:value={formFirstName}
+							oninput={scheduleNameProbe}
+							maxlength={70}
+						/>
 					</div>
 					<div>
 						<label for="form-lastname">{i18nMsg('field-last-name', 'Nom')} *</label>
-						<Input id="form-lastname" type="text" bind:value={formLastName} maxlength={70} />
+						<Input
+							id="form-lastname"
+							type="text"
+							bind:value={formLastName}
+							oninput={scheduleNameProbe}
+							maxlength={70}
+						/>
 					</div>
 				</div>
 				<div>
@@ -694,9 +842,49 @@
 			{:else}
 				<div>
 					<label for="form-name">{i18nMsg('contact-form-name', 'Raison sociale')} *</label>
-					<Input id="form-name" type="text" bind:value={formName} maxlength={255} />
+					<Input
+						id="form-name"
+						type="text"
+						bind:value={formName}
+						oninput={scheduleNameProbe}
+						maxlength={255}
+					/>
 				</div>
 			{/if}
+
+			<!--
+				Zone « nom proche » (Story 22-2b, D-b11). Elle vit HORS des deux branches
+				du `{#if formContactType === 'Personne'}` : logée dans l'une d'elles, elle
+				serait DÉMONTÉE à chaque bascule de type — donc ni permanente, ni annoncée
+				par `aria-live`. Toujours dans le DOM, contenu vide quand rien à dire.
+			-->
+			<div aria-live="polite" data-testid="contact-duplicate-nearby">
+				{#if proches.length > 0}
+					<div class="rounded-md border border-amber-300 bg-amber-50 p-2 text-sm">
+						<p class="font-medium text-amber-900">
+							{i18nMsg(
+								'contact-duplicate-heading',
+								'Contacts déjà enregistrés qui pourraient correspondre'
+							)}
+						</p>
+						<ul class="mt-1 space-y-0.5">
+							{#each proches as p (p.id)}
+								<li class="text-amber-900">
+									<span class="font-medium">{p.name}</span>
+									<span class="text-xs text-amber-800">{describeProche(p)}</span>
+								</li>
+							{/each}
+						</ul>
+						{#if autres > 0}
+							<p class="mt-1 text-xs text-amber-800">
+								{i18nMsg('contact-duplicate-others-count', 'et { $count } autres', {
+									count: autres
+								})}
+							</p>
+						{/if}
+					</div>
+				{/if}
+			</div>
 
 			<div class="flex gap-4">
 				<label class="flex items-center gap-2">
@@ -766,7 +954,35 @@
 
 			<div>
 				<label for="form-ide">{i18nMsg('contact-form-ide', 'Numéro IDE (CHE)')}</label>
-				<Input id="form-ide" type="text" bind:value={formIde} placeholder="CHE-123.456.789" />
+				<Input
+						id="form-ide"
+						type="text"
+						bind:value={formIde}
+						oninput={scheduleIdeProbe}
+						placeholder="CHE-123.456.789"
+					/>
+				<!--
+					Signal FRANC (D-b2), sous le champ qui le déclenche : le dialogue défile
+					en interne, un avertissement rendu en bas serait hors écran pour qui tape
+					ici. Toujours dans le DOM pour qu'`aria-live` fonctionne.
+				-->
+				<div aria-live="polite" data-testid="contact-duplicate-ide">
+					{#if ideHolder}
+						<p class="mt-1 rounded-md border border-red-300 bg-red-50 p-2 text-sm text-red-900">
+							{ideHolder.active
+								? i18nMsg(
+										'contact-duplicate-ide-active',
+										'Ce numéro IDE est déjà porté par { $name }.',
+										{ name: ideHolder.name }
+									)
+								: i18nMsg(
+										'contact-duplicate-ide-archived',
+										'Ce numéro IDE est déjà porté par { $name }, qui est archivé.',
+										{ name: ideHolder.name }
+									)}
+						</p>
+					{/if}
+				</div>
 				<p class="text-xs text-muted-foreground mt-1">
 					{i18nMsg('contact-form-ide-help', 'Format : CHE-123.456.789')}
 				</p>

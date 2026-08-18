@@ -244,7 +244,7 @@ Renommer un contact vers un nom déjà porté déclenche le même signal nuancé
   - [ ] ⚠️ **Ne PAS se caler sur `test_search_handles_special_chars:1283` pour la seconde branche : il ne l'exerce pas.** Il cherche `"100%"`, et `%` **n'est pas** un opérateur `BOOLEAN MODE` (`util/search.rs:41`) — le terme survit intact et le test emprunte la branche `else`. **Aucun test du dépôt n'exerce aujourd'hui la branche `escaped.is_empty()`.**
   - [ ] **Le `#[sqlx::test]` de la fenêtre** (preuve 9 d'AC-b1) : fixture des six `Jean X`, `limit: 20` ⇒ six lignes et `total = 6`.
   - [ ] ⚠️ **`push_where_clauses` est un chemin PARTAGÉ** — cf. § *Rayon d'impact de T-b1*. Gate **complet** au dernier commit : la § *Test Locally First* interdit le ciblage dès qu'un patch touche `crates/kesh-db/`.
-- [ ] **T-b2 — Brancher les deux sondes** (AC-b1, AC-b2, AC-b5, **AC-b7**). Importer le socle de la **22-2a** et **ne réimplémenter aucune de ses fonctions**.
+- [x] **T-b2 — Brancher les deux sondes** ✅ *(2026-08-18, code — preuves à venir)* (AC-b1, AC-b2, AC-b5, **AC-b7**). Importer le socle de la **22-2a** et **ne réimplémenter aucune de ses fonctions**.
   - [ ] Forme exacte des deux appels :
 
 ```ts
@@ -279,12 +279,12 @@ holder = findIdeHolder(ri.items, ide, soi);                    // `ide` = la val
   - [ ] ⚠️ **`editing?.id ?? null`, jamais `editing?.id` nu.** `editing` est `ContactResponse | null`, donc `editing?.id` rend `number | undefined`, que la signature `number | null` du socle refuse : `npm run check` rejetterait le code.
   - [ ] ⚠️ **C'est ICI qu'AC-b7 se joue**, pas dans le balisage de T-b4 : ce bloc est l'unique site où `soi` atteint `excludeSelf`, `countOthers` et `findIdeHolder`.
   - [ ] ⚠️ **Les deux appels ne diffèrent que par deux paramètres et se lisent côte à côte.** Une inversion d'`includeArchived` ne casse rien et rend des résultats plausibles dans les deux sens — le filtrage étant serveur, et un `vi.mock` ne regardant pas ses arguments. D'où les preuves **sur l'argument**, une par sens.
-- [ ] **T-b3 — Temporisation et garde d'ordre** (AC-b4). Débounce 300 ms + compteur de génération, patron `ContactPicker.svelte:36-78` (D-b6). **Une paire par sonde** (D-b7).
+- [x] **T-b3 — Temporisation et garde d'ordre** ✅ *(2026-08-18, code — preuves à venir)* (AC-b4). Débounce 300 ms + compteur de génération, patron `ContactPicker.svelte:36-78` (D-b6). **Une paire par sonde** (D-b7).
   - [ ] Réutiliser `debounce` de `$lib/features/journal-entries/debounce.ts` **ou** le `setTimeout` inline de `+page.svelte:185-192` — ne pas écrire un troisième mécanisme. Le helper est mal rangé ; le **déplacer** est hors périmètre, s'en servir ne l'est pas.
   - [ ] Remise à zéro des deux paires dans `openCreate()` **et** `openEdit()` (D-b8) — **pas** sur la fermeture, qui a trois sites.
   - [ ] Nettoyer les timers au démontage — `+page.svelte:113` le fait déjà pour la recherche de liste.
   - [ ] Brancher sur **`oninput`** (`ContactPicker.svelte:127`, `+page.svelte:463`), **jamais sur `onkeydown`** : un collage ne produit aucune frappe clavier, et une sonde branchée sur le clavier resterait muette sur le geste le plus courant de tous.
-- [ ] **T-b4 — Balisage et signaux** (AC-b1, AC-b2, AC-b3, AC-b5, AC-b7). Deux niveaux visuellement distincts (D-b2) ; ne toucher **ni** au `disabled` du bouton **ni** à `formValidation` (`:275`).
+- [x] **T-b4 — Balisage et signaux** ✅ *(2026-08-18, code — preuves à venir)* (AC-b1, AC-b2, AC-b3, AC-b5, AC-b7). Deux niveaux visuellement distincts (D-b2) ; ne toucher **ni** au `disabled` du bouton **ni** à `formValidation` (`:275`).
   - [ ] **Chaque avertissement est rendu IMMÉDIATEMENT SOUS le champ qui le déclenche** — propositions sous le nom, avertissement franc sous `#form-ide` — et **jamais** dans le bloc `formError` du bas : le `Dialog.Content` est en `max-h-[90vh] overflow-y-auto` (`:637`) et **défile en interne**. Un avertissement hors écran est un avertissement muet.
   - [ ] ⚠️ **La zone « nom proche » est placée HORS des deux branches du `{#if formContactType === 'Personne'}`** (D-b11), après le bloc type-dépendant. Logée dans une branche, elle serait **démontée à chaque bascule de type** — donc ni permanente, ni annoncée, ce qui contredit la sous-tâche suivante.
   - [ ] **Le `<select id="form-type">` réarme la sonde** au même titre que les champs de nom (D-b11) : les valeurs saisies survivent à la bascule, l'avertissement doit suivre.
@@ -294,7 +294,7 @@ holder = findIdeHolder(ri.items, ide, soi);                    // `ide` = la val
   - [ ] **L'avertissement franc s'efface quand `formError` prend le relais** après un `409` (`:361` pose déjà `contact-error-ide-duplicate`), pour que la même phrase ne s'affiche pas deux fois.
   - [ ] Il n'existe pas de composant `alert` dans `lib/components/ui/` — se caler sur le style de `formError`, sans créer de primitive.
   - [ ] **Créer `frontend/src/routes/(app)/contacts/+page.test.ts`** — il n'existe **aucun** test de cette page (seul `contact-helpers.test.ts` existe pour ce domaine). Patron : `products-page.test.ts`, mocks hoistés avant l'import.
-- [ ] **T-b5 — i18n** (AC-b6). Clés neuves dans les **quatre** FTL, domaine `contact-*`, plus le test Rust dédié.
+- [~] **T-b5 — i18n** 🔶 *(2026-08-18 : 4 clés × 4 locales + libellé de recherche posés ; les 2 tests Rust restent à écrire)* (AC-b6). Clés neuves dans les **quatre** FTL, domaine `contact-*`, plus le test Rust dédié.
   - [ ] **Clés neuves, NOMMÉES** — les décrire sans les nommer rendait le test d'AC-b6 inécrivable :
 
 | Clé | Rôle | Argument |
