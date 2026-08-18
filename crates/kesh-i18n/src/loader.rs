@@ -276,6 +276,105 @@ mod tests {
         }
     }
 
+    /// **Story 22-2b (#301)** — les quatre libellés des sondes anti-doublon
+    /// existent dans les quatre locales.
+    ///
+    /// ⚠️ L'assertion `!= fr` est la seule qui attrape le défaut réel : une clé
+    /// absente d'une locale **retombe silencieusement sur le français**
+    /// (`format_missing_key_in_de_falls_back_to_fr`), et `kesh-i18n` n'a
+    /// **aucun test de parité globale** — les fichiers sont d'ailleurs déjà
+    /// désappariés (KF #283). Un test qui vérifierait seulement « la clé rend
+    /// autre chose que son nom » serait vert sur trois locales vides.
+    ///
+    /// ⚠️ `contact-duplicate-ide-archived` doit **dire autre chose** que
+    /// `contact-duplicate-ide-active` : c'est ce libellé-là qui est le
+    /// **recours** de l'utilisateur. Sans la mention « archivé », il reçoit un
+    /// avertissement sur un contact introuvable dans son carnet, qu'il ne
+    /// pourra ni modifier ni désarchiver, et dont il ne comprendra pas le `409`
+    /// qui suit.
+    #[test]
+    fn duplicate_probe_labels_are_translated_in_all_four_locales() {
+        let bundle = I18nBundle::load(&locales_dir()).unwrap();
+        for key in [
+            "contact-duplicate-heading",
+            "contact-duplicate-others-count",
+            "contact-duplicate-ide-active",
+            "contact-duplicate-ide-archived",
+        ] {
+            let fr = bundle.format(&Locale::FrCh, key, None);
+            assert_ne!(fr, key, "{key} doit exister en fr-CH");
+            for locale in [Locale::DeCh, Locale::ItCh, Locale::EnCh] {
+                let msg = bundle.format(&locale, key, None);
+                assert_ne!(msg, key, "{key} doit exister en {locale:?}");
+                assert_ne!(
+                    msg, fr,
+                    "{key} en {locale:?} vaut le libellé FRANÇAIS — la clé est \
+                     absente de cette locale et le loader replie en silence"
+                );
+            }
+        }
+
+        // Le porteur ARCHIVÉ ne dit pas la même chose que le porteur actif :
+        // c'est le libellé qui porte le recours.
+        for locale in [Locale::FrCh, Locale::DeCh, Locale::ItCh, Locale::EnCh] {
+            let actif = bundle.format(&locale, "contact-duplicate-ide-active", None);
+            let archive = bundle.format(&locale, "contact-duplicate-ide-archived", None);
+            assert_ne!(
+                actif, archive,
+                "en {locale:?}, l'avertissement du porteur archivé doit DIRE \
+                 autre chose — c'est lui qui explique le 409 sans recours"
+            );
+        }
+    }
+
+    /// **Story 22-2b (#301)** — le libellé de recherche énumère l'IDE, **avec le
+    /// sigle de sa propre locale**.
+    ///
+    /// ⚠️ **C'est le seul item de la story dont l'oubli partiel n'aurait fait
+    /// rougir AUCUN gate.** `contact-filter-search-placeholder` est une clé
+    /// **modifiée**, pas neuve : le test ci-dessus ne la voit pas, et mettre à
+    /// jour `fr-CH` en oubliant les trois autres laisserait une valeur
+    /// présente, différente de son nom, et différente du français — puisque ce
+    /// sont des traductions distinctes.
+    ///
+    /// ⚠️ **Le sigle SUIT LA LOCALE** (`contact-col-ide` : `IDE` / `UID` / `IDI`
+    /// / `UID`). Un test écrivant `contains("IDE")` sur les quatre échouerait
+    /// sur trois — et le « corriger » en poussant `IDE` partout introduirait
+    /// une régression de terminologie que rien d'autre ne rattraperait.
+    ///
+    /// ⚠️ Et le libellé dit **« sans séparateurs »** : la colonne est stockée
+    /// normalisée (`CHE109322551`) tandis que le `LIKE` porte sur le terme
+    /// brut, donc la forme imprimée sur une facture ne remonte **rien**.
+    /// Promettre « ou IDE » tout court serait promettre le geste qui échoue.
+    #[test]
+    fn search_placeholder_lists_the_ide_with_each_locale_own_token() {
+        let bundle = I18nBundle::load(&locales_dir()).unwrap();
+        const KEY: &str = "contact-filter-search-placeholder";
+        for (locale, jeton, reserve) in [
+            (Locale::FrCh, "IDE", "sans séparateurs"),
+            (Locale::DeCh, "UID", "ohne Trennzeichen"),
+            (Locale::ItCh, "IDI", "senza separatori"),
+            (Locale::EnCh, "UID", "without separators"),
+        ] {
+            let v = bundle.format(&locale, KEY, None);
+            assert!(
+                v.contains(jeton),
+                "en {locale:?}, {KEY} n'énumère pas l'IDE sous son sigle local ({jeton}) : {v}"
+            );
+            assert!(
+                v.contains(reserve),
+                "en {locale:?}, {KEY} promet une recherche par IDE SANS dire « {reserve} » — \
+                 or la forme imprimée sur une facture ne remonte rien : {v}"
+            );
+            // Le sigle annoncé est bien celui que le reste de l'interface emploie.
+            assert_eq!(
+                bundle.format(&locale, "contact-col-ide", None),
+                jeton,
+                "le sigle de {locale:?} a changé : ce test et le libellé doivent suivre"
+            );
+        }
+    }
+
     /// **Story 22-4a (#167)** — le message d'« administration interdite via clé
     /// API » existe dans les quatre locales, et **dit autre chose** que celui de
     /// la gestion de clés.

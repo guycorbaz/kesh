@@ -294,7 +294,7 @@ holder = findIdeHolder(ri.items, ide, soi);                    // `ide` = la val
   - [ ] **L'avertissement franc s'efface quand `formError` prend le relais** après un `409` (`:361` pose déjà `contact-error-ide-duplicate`), pour que la même phrase ne s'affiche pas deux fois.
   - [ ] Il n'existe pas de composant `alert` dans `lib/components/ui/` — se caler sur le style de `formError`, sans créer de primitive.
   - [ ] **Créer `frontend/src/routes/(app)/contacts/contacts-page.test.ts`** ⚠️ **PAS `+page.test.ts`** : SvelteKit réserve tout nom préfixé `+` dans `src/routes/`, et le `build` échoue en `Files prefixed with + are reserved`. C'est pourquoi le patron s'appelle `products-page.test.ts`. Ni `npm run check` ni `vitest` ne le voient — **seul le `build` l'attrape**. — il n'existe **aucun** test de cette page (seul `contact-helpers.test.ts` existe pour ce domaine). Patron : `products-page.test.ts`, mocks hoistés avant l'import.
-- [~] **T-b5 — i18n** 🔶 *(2026-08-18 : 4 clés × 4 locales + libellé de recherche posés ; les 2 tests Rust restent à écrire)* (AC-b6). Clés neuves dans les **quatre** FTL, domaine `contact-*`, plus le test Rust dédié.
+- [x] **T-b5 — i18n** ✅ *(2026-08-18 — 4 clés × 4 locales, libellé de recherche, et les 2 tests Rust ; 4 mutations jouées)* (AC-b6). Clés neuves dans les **quatre** FTL, domaine `contact-*`, plus le test Rust dédié.
   - [ ] **Clés neuves, NOMMÉES** — les décrire sans les nommer rendait le test d'AC-b6 inécrivable :
 
 | Clé | Rôle | Argument |
