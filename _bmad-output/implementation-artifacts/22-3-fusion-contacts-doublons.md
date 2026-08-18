@@ -2,9 +2,15 @@
 
 ## Status
 
-en-veille
+superseded
 
-⚠️ **Story NON ENGAGÉE, et le motif tient en une phrase : il n'y a rien à réparer.**
+⚠️ **SORTIE DU PÉRIMÈTRE de l'Epic 22 le 2026-08-19**, à la rétrospective, sur arbitrage de Guy — et **supplantée par la 22-2 sur le fond** : la prévention traite la cause, la fusion traiterait des dégâts qui n'existent pas.
+
+⚠️ **Ce n'est PAS une annulation.** L'issue **#300 reste ouverte et jalonnée** ; cette fiche est conservée pour l'analyse qu'elle porte — voir plus bas, en particulier le **renversement de D1** et sa preuve dans le code. Le jour où des doublons réels apparaîtront, il n'y aura qu'à reprendre.
+
+⚠️ **Pourquoi ce statut plutôt que `en-veille`** : l'Epic 22 se clôt, et une story laissée « en veille » dans un epic clos donne à lire un oubli là où il y a une décision. Le dépôt a déjà payé cette ambiguïté — le vestige **`17-2`**, resté `ready-for-dev` avec un corps complet après son découpage, que la **22-4** a dû démêler **quatre passes durant**. Un périmètre se réduit explicitement, daté et motivé, jamais en silence.
+
+**Le motif de fond, inchangé depuis le 2026-08-12 : il n'y a rien à réparer.**
 
 Kesh est déployé mais **ne tient pas encore les comptes réels** — le jalon « Première clôture d'exercice tenue dans Kesh » est ouvert. Il n'existe donc **aucun parc de doublons**. Une fonction de fusion est une **réparation** ; la spécifier maintenant reviendrait à traiter un cas dont on ne connaît ni la fréquence ni la forme.
 
