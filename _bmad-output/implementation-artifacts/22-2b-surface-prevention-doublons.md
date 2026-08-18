@@ -16,7 +16,7 @@ review
 | 4 | Opus ×3 | 0 `CRITICAL` / 3 `HIGH` / 8 `MEDIUM` / 3 `LOW` |
 | 5 | Sonnet, **lentille unique** | 0 `CRITICAL` / 0 `HIGH` / 3 `MEDIUM` / 1 `LOW` |
 
-**Reste dû : le PUSH**, qui n'a pas eu lieu — et l'arbitrage sur une éventuelle **passe 6** (§ *Review Iteration Rule* : trois `MEDIUM` en passe 5).
+**BOUCLE DE REVUE CLOSE** sur arbitrage de Guy, à cinq passes sur huit — cf. § *Change Log*, entrée « Passe 5 ». **Les quatre gates complets sont verts** : backend 2218/2218, frontend 609/609, banc du socle 33/0, et la suite E2E dont les deux specs de cette story passent, sans qu'aucun des 41 échecs de baseline ne touche les contacts. **Reste dû : le PUSH et la PR** qui ferme #301.
 
 **La passe 5 était CIBLÉE**, sur arbitrage de Guy : une seule lentille, braquée sur la remédiation de la passe 4 — seule partie du dossier qu'aucune relecture n'avait vue. Elle n'a trouvé **aucun défaut vivant** : trois trous de garde, désormais fermés et éprouvés.
 
@@ -534,16 +534,36 @@ condition rétablie ⇒ `the_select_detector_catches_all_three_fluent_forms` **F
 `rank` inscrite au banc — **33 mutations jouées, 0 survivante, 0 non discriminante, 0 hors cible**, la
 neuve rendant le rouge attendu sur le test attendu.
 
-**Gate CIBLÉ vert** : `cargo test -p kesh-i18n` **28/28**, `duplicate-probe.test.ts` **55/55**,
-`duplicate-i18n-keys.test.ts` **2/2**, banc socle **33/0**, `fmt` + `clippy --workspace` propres.
-⛔ **Le gate COMPLET n'a PAS été rejoué** — il est dû au push, avec remise à zéro inconditionnelle de
-la base, conformément à la § *Test Locally First*. Les chiffres backend 2218 et frontend 608 du
-Change Log ci-dessous sont ceux de la passe 4 et **n'ont pas été revérifiés**.
+**Gate ciblé pendant la boucle** : `cargo test -p kesh-i18n` **28/28**, `duplicate-probe.test.ts`
+**55/55**, `duplicate-i18n-keys.test.ts` **2/2**, banc socle **33/0**, `fmt` + `clippy --workspace` propres.
 
-⚠️ **Passe 6 due** par la lettre de la § *Review Iteration Rule* (3 `MEDIUM`) — **arbitrage de Guy**.
-Éléments : la sévérité décroît pour la première fois de façon monotone sur deux passes
-(`CRITICAL` → `HIGH` → `MEDIUM`), aucun défaut vivant n'a été trouvé, et les trois `MEDIUM` sont des
-trous de garde désormais fermés et éprouvés. Budget : 5 passes sur 8.
+**GATES COMPLETS, au push — base remise à zéro d'abord**, sans se demander comment le run précédent
+s'était terminé (redémarrage du conteneur, 61 migrations rejouées, seed appliqué) :
+
+| Gate | Résultat |
+|---|---|
+| backend, profil `ci` | **2218 / 2218**, 4 ignorés, 89,5 s |
+| frontend `check` + `lint-i18n-ownership` + `test:unit` + `build` | **609 / 609**, 68 fichiers, 0 erreur, build ✔ |
+| banc de mutations du socle | **33 jouées / 0 survivante / 0 non discriminante** |
+| E2E Playwright, suite complète | **180 passés, 41 échoués, 19 ignorés**, 13,1 min |
+
+⚠️ **Ce que le run E2E établit, et ce qu'il N'établit PAS.** Il établit que **les deux specs de cette
+story passent** (`contact-duplicate-probe.spec.ts`, signal nuancé et signal franc) et qu'**aucun des
+41 échecs ne touche les contacts** : ils se répartissent sur 18 specs — `bank-import` (6),
+`bank-csv-import` (4), `reminders`, `onboarding`, `invoice-send-email`, `fiscal-years`,
+`bank-import-confirms` (3 chacune), etc. — c'est-à-dire les familles de la baseline que
+`docs/testing.md` documente comme **rouges sur `main` aussi** (localStorage/JWT, absence de SMTP
+factice, KF #282, cascades), et le volume tombe dans la « quarantaine » qu'il annonce.
+Il **n'établit PAS un différentiel rigoureux** branche ↔ `main` : c'est **un seul run, sur la
+branche**, et le différentiel exigerait le montage à deux ports et deux bases.
+
+**La boucle de revue est CLOSE sur arbitrage de Guy**, à cinq passes sur les huit du budget. Les trois
+`MEDIUM` de la passe 5 sont fermés et éprouvés ; la sévérité décroît de façon monotone depuis trois
+passes (`CRITICAL` → `HIGH` → `MEDIUM`) ; et le fait qui a emporté la décision est que **la
+remédiation de la passe 5 ne touche AUCUNE ligne de code de production** — `cles_a_selecteur` vit dans
+`mod tests` (`loader.rs:196`), les trois autres fichiers sont deux `.test.ts` et un banc de mutations.
+Le motif qui justifiait de continuer — *la remédiation introduit le défaut suivant* — n'a ici plus de
+prise : il n'y a rien qui puisse casser en production.
 
 ### Passe 4 de `bmad-code-review` — 2026-08-18, Opus ×3, contexte frais
 
