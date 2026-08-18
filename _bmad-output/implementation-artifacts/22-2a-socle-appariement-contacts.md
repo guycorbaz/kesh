@@ -4,7 +4,9 @@
 
 review
 
-**Implémentée le 2026-08-17, revue en deux passes les 2026-08-18** (Sonnet ×3 puis Opus ×3). Le module et sa suite de preuves sont écrits, le gate frontend est vert, et **les 32 mutations ont été JOUÉES** : chacune fait tomber la preuve qu'elle nomme, et elle seule. Cf. § *Dev Agent Record*.
+**Implémentée le 2026-08-17, revue en QUATRE passes le 2026-08-18** (Sonnet ×3, Opus ×3, Sonnet ×3, Opus ×3 — le détail est au Change Log de la **22-2b**, les deux moitiés partant dans la même PR). Le module et sa suite de preuves sont écrits, le gate frontend est vert, et **les 32 mutations ont été JOUÉES** : chacune fait tomber **la preuve qu'elle nomme** — `0 hors cible` — sans jamais faire tomber la suite entière.
+
+⚠️ *La rédaction précédente disait « et elle seule ». Le banc assert `failed.some(t => t.includes(expect))` : il vérifie que la preuve nommée **figure parmi** celles qui rougissent, et rejette seulement le cas où **toutes** rougissent. Le Debug Log de cette même fiche dit d'ailleurs « entre 1 et 7 preuves » — les deux phrases se contredisaient dans le même document. Relevé en passe 4.* Cf. § *Dev Agent Record*.
 
 ⚠️ **Les preuves de cette story ne sont plus en prose : elles sont du code exécutable.** C'est l'arbitrage de Guy du 2026-08-17, pris après que la passe 3 — la première à *exécuter* plutôt qu'à *lire* — eut montré qu'une implémentation passant les 17 preuves écrites ne rendait pas le service. Une preuve en prose ne peut pas être jouée ; son pouvoir discriminant reste donc inconnu jusqu'à ce que quelqu'un l'implémente.
 
@@ -242,7 +244,7 @@ Rend le contact dont `ideNumber` **égale** la valeur passée et dont l'`id` dif
 | `describeProches` | 7 | 7 |
 | pureté du module | 2 | 2 |
 
-**42 blocs, 54 cas exécutés** — dont **7 pour `describeProches`** (passe 1 de revue) et **3 de plus en passe 2** — le seuil d'armement épinglé PAR LE HAUT, la déduplication des tokens du terme, et le repli de `İ`.
+**39 blocs, 54 cas exécutés** — dont **7 pour `describeProches`** (passe 1 de revue) et **3 de plus en passe 2** — le seuil d'armement épinglé PAR LE HAUT, la déduplication des tokens du terme, et le repli de `İ`.
 
 *(Le décompte d'origine — 33 blocs, 44 cas, suite frontend passée de 512 à 556 — reste vrai pour le commit de développement. Il est conservé ici parce qu'un décompte sans son périmètre se relit plus tard contre le mauvais intervalle.)*
 
@@ -290,6 +292,17 @@ Elles sont la vraie spécification de cette story. Chacune est un défaut **rée
 - `CLAUDE.md` — § *Règle de splitting préventif* (le critère qui a déclenché ce découpage), § *Test Locally First*.
 
 ## Change Log
+
+### Passe 4 de `bmad-code-review` — 2026-08-18, Opus ×3, contexte frais
+
+Détail des 22 findings au Change Log de la **22-2b**. Deux touchent ce socle.
+
+1. **`rank` était le SEUL point du module sans garde sur une valeur venue du serveur.** `sain()` garde `buildTerm`, `Number.isFinite` garde `countOthers`, `?? ''` garde `describeProches` — et `fold(a.name)` ne gardait rien. Les deux lectures ne pouvaient pas être justes ensemble. Et l'échec de `rank` est **le pire du dispositif** : le `catch` de la sonde le transforme en `proches = []`, c'est-à-dire en « **aucun doublon** » — la seule chose qu'un dispositif d'avertissement ne doit jamais dire à tort, et il le dit **sans bruit**. Aligné sur la convention du module.
+2. **Le doc-comment de `fold`** avait été rendu à son test en passe 3, mais **un autre bloc était resté orphelin** dans `kesh-i18n` : quatre paragraphes décrivant le test du sigle IDE s'étaient retrouvés collés à une constante, par une insertion mal ancrée. Une affirmation vraie déplacée sur le mauvais item produit **deux** défauts : un mensonge et une perte. Rendu à son test.
+
+**Le socle reste à 54 cas et 32 mutations, 0 survivante.** Les 39 blocs se recomptent depuis le fichier.
+
+⚠️ **Une correction de déclaration** : le Status affirmait que chaque mutation fait tomber « la preuve qu'elle nomme, **et elle seule** ». Le banc assert `failed.some(...)` — la preuve nommée **figure parmi** celles qui rougissent, et seul le cas « toutes rougissent » est rejeté. Le Debug Log de la même fiche disait d'ailleurs « entre 1 et 7 preuves » : les deux phrases se contredisaient dans le même document.
 
 ### Passe 2 de `bmad-code-review` — 2026-08-18, Opus ×3, contexte frais
 

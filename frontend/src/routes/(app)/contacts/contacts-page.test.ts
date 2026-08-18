@@ -534,6 +534,39 @@ describe('AC-b5 — le dispositif est muet quand il n’a rien à dire', () => {
 		expect(zone('contact-duplicate-ide').textContent?.trim()).toBe('');
 	});
 
+	it('(b-ter) DÉSARMER pendant qu’une réponse est EN VOL — elle ne repeuple rien', async () => {
+		// MUTATION ATOMIQUE : « garder l'effacement, retirer le `nameSeq++` » de la
+		// branche de désarmement.
+		//
+		// ⚠️ Le doc-comment annonce DEUX conséquences d'un `return` nu — laisser des
+		// propositions périmées à l'écran, ET laisser une réponse en vol les
+		// repeupler. Seule la première était éprouvée : (b-bis) laisse la réponse
+		// aboutir AVANT de repasser sous le seuil. Le banc ne jouait que la mutation
+		// composite, qui retire les trois lignes d'un coup. Relevé en passe 4.
+		//
+		// Le cas est atteignable sans acrobatie : requête plus lente que 300 ms,
+		// l'utilisateur efface, la réponse périmée revient — et sans le `nameSeq++`,
+		// `seq === nameSeq` tient encore et l'avertissement se rallume sur un terme
+		// que l'utilisateur a supprimé.
+		const lente = differe<{ items: ContactResponse[]; total: number }>();
+		listContactsMock.mockImplementation((q: Record<string, unknown>) => {
+			if (q?.search === 'Dubarde') return lente.promesse;
+			return Promise.resolve(VIDE);
+		});
+		render(Page);
+		await settle(20);
+		await ouvrirCreation();
+
+		await saisir('form-name', 'Dubarde');
+		// La réponse n'est PAS encore arrivée : on désarme en repassant sous le seuil.
+		await saisir('form-name', 'Du');
+		// …et seulement MAINTENANT elle aboutit.
+		lente.resoudre({ items: [c({ id: 95, name: 'Dubarde SA' })], total: 1 });
+		await settle(50);
+
+		expect(zone('contact-duplicate-nearby').textContent?.trim() ?? '').toBe('');
+	});
+
 	it('(c-bis) la sonde NOM qui échoue efface ses propositions, et l’IDE continue', async () => {
 		// MUTATION : « try/catch inopérant sur la sonde NOM ».
 		//

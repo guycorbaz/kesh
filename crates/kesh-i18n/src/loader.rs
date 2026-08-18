@@ -298,6 +298,12 @@ mod tests {
         for key in [
             "contact-duplicate-heading",
             "contact-duplicate-others-count",
+            // ⚠️ Ajoutée en passe 4. Elle était la SEULE des cinq clés du
+            // dispositif à échapper à l'assertion `!= fr` — c'est-à-dire au seul
+            // contrôle qui attrape le repli silencieux sur le français. Le test
+            // du chemin réel ne bouchait pas le trou : « et 1 autre » satisfait
+            // ses assertions aussi bien en allemand qu'en français.
+            "contact-duplicate-others-count-one",
             "contact-duplicate-ide-active",
             "contact-duplicate-ide-archived",
         ] {
@@ -327,30 +333,88 @@ mod tests {
         }
     }
 
-    /// **Story 22-2b (#301)** — le libellé de recherche énumère l'IDE, **avec le
-    /// sigle de sa propre locale**.
-    ///
-    /// ⚠️ **C'est le seul item de la story dont l'oubli partiel n'aurait fait
-    /// rougir AUCUN gate.** `contact-filter-search-placeholder` est une clé
-    /// **modifiée**, pas neuve : le test ci-dessus ne la voit pas, et mettre à
-    /// jour `fr-CH` en oubliant les trois autres laisserait une valeur
-    /// présente, différente de son nom, et différente du français — puisque ce
-    /// sont des traductions distinctes.
-    ///
-    /// ⚠️ **Le sigle SUIT LA LOCALE** (`contact-col-ide` : `IDE` / `UID` / `IDI`
-    /// / `UID`). Un test écrivant `contains("IDE")` sur les quatre échouerait
-    /// sur trois — et le « corriger » en poussant `IDE` partout introduirait
-    /// une régression de terminologie que rien d'autre ne rattraperait.
-    ///
-    /// ⚠️ Et le libellé dit **« sans séparateurs »** : la colonne est stockée
-    /// normalisée (`CHE109322551`) tandis que le `LIKE` porte sur le terme
-    /// brut, donc la forme imprimée sur une facture ne remonte **rien**.
     /// Les clés à **sélecteur Fluent** que le dépôt s'autorise, et pour lesquelles
     /// quelqu'un a vérifié qu'elles sont résolues **côté serveur, avec arguments**.
     ///
     /// `contact-payment-terms-days-label` l'est par `routes/contacts.rs`, via
     /// `i18n.format(&locale, clé, Some(&args))`.
     const SELECTEURS_RESOLUS_COTE_SERVEUR: &[&str] = &["contact-payment-terms-days-label"];
+
+    /// Les clés d'un `.ftl` dont la valeur contient une expression **`select`**.
+    ///
+    /// ⚠️ **Trois formes de Fluent sont valides, et la détection doit les couvrir
+    /// TOUTES** — une version antérieure n'en voyait qu'une, celle où le `{`
+    /// suit immédiatement le `=`. Les deux autres passaient au travers :
+    ///
+    /// ```text
+    /// a = { $n -> …        ← la forme canonique, seule détectée alors
+    /// b = et { $n -> …     ← du texte AVANT le sélecteur
+    /// c =
+    ///     { $n -> …        ← la valeur commence à la ligne suivante
+    /// ```
+    ///
+    /// D'où un balayage du **fichier entier** plutôt que ligne à ligne : on
+    /// retient la dernière clé rencontrée, et tout `->` non commenté la désigne.
+    /// La fonction est **pure** pour que les trois formes s'éprouvent sur des
+    /// chaînes littérales, sans jamais écrire dans le dépôt.
+    fn cles_a_selecteur(ftl: &str) -> Vec<String> {
+        let mut trouves: Vec<String> = Vec::new();
+        let mut courante: Option<String> = None;
+        for ligne in ftl.lines() {
+            let nu = ligne.trim_start();
+            if nu.starts_with('#') {
+                continue;
+            }
+            // Une ligne NON indentée qui porte `=` ouvre un nouveau message.
+            if !ligne.starts_with(char::is_whitespace)
+                && let Some((cle, _)) = ligne.split_once('=')
+                && !cle.trim().is_empty()
+            {
+                courante = Some(cle.trim().to_string());
+            }
+            if ligne.contains("->")
+                && let Some(cle) = &courante
+                && !trouves.contains(cle)
+            {
+                trouves.push(cle.clone());
+            }
+        }
+        trouves
+    }
+
+    /// **Les trois formes de sélecteur sont détectées — éprouvé, pas supposé.**
+    ///
+    /// ⚠️ Le garde-fou avait été déclaré « mis en défaut » sur la seule forme
+    /// canonique. C'est la faute que ce dossier collectionne : éprouver un cas,
+    /// et énoncer la règle pour tous.
+    #[test]
+    fn the_select_detector_catches_all_three_fluent_forms() {
+        let canonique = "a = { $n ->\n    [one] x\n   *[other] y\n}\n";
+        let texte_avant = "b = et { $n ->\n    [one] x\n   *[other] y\n}\n";
+        let valeur_a_la_ligne = "c =\n    { $n ->\n        [one] x\n       *[other] y\n    }\n";
+        let sans_selecteur = "d = juste du texte\ne = avec { $var } interpolée\n";
+        let commentaire = "# f = { $n -> [one] x *[other] y }\n";
+
+        assert_eq!(cles_a_selecteur(canonique), vec!["a"], "forme canonique");
+        assert_eq!(
+            cles_a_selecteur(texte_avant),
+            vec!["b"],
+            "texte AVANT le sélecteur"
+        );
+        assert_eq!(
+            cles_a_selecteur(valeur_a_la_ligne),
+            vec!["c"],
+            "valeur commençant à la ligne suivante"
+        );
+        assert!(
+            cles_a_selecteur(sans_selecteur).is_empty(),
+            "aucun faux positif"
+        );
+        assert!(
+            cles_a_selecteur(commentaire).is_empty(),
+            "un commentaire ne compte pas"
+        );
+    }
 
     /// **Aucun sélecteur ne doit être servi par le dictionnaire du frontend.**
     ///
@@ -375,18 +439,9 @@ mod tests {
             let chemin = locales_dir().join(locale).join("messages.ftl");
             let texte = std::fs::read_to_string(&chemin)
                 .unwrap_or_else(|e| panic!("lecture de {chemin:?} : {e}"));
-            for ligne in texte.lines() {
-                // Une expression `select` s'ouvre par `clé = { $var ->`.
-                if let Some((cle, reste)) = ligne.split_once(" = ")
-                    && reste.trim_start().starts_with('{')
-                    && reste.contains("->")
-                    && !cle.starts_with(' ')
-                    && !cle.starts_with('#')
-                {
-                    let cle = cle.trim().to_string();
-                    if !trouves.contains(&cle) {
-                        trouves.push(cle);
-                    }
+            for cle in cles_a_selecteur(&texte) {
+                if !trouves.contains(&cle) {
+                    trouves.push(cle);
                 }
             }
         }
@@ -479,6 +534,24 @@ mod tests {
         assert_eq!(fr.get(UN).map(String::as_str), Some("et 1 autre"));
     }
 
+    /// **Story 22-2b (#301)** — le libellé de recherche énumère l'IDE, **avec le
+    /// sigle de sa propre locale**.
+    ///
+    /// ⚠️ **C'est le seul item de la story dont l'oubli partiel n'aurait fait
+    /// rougir AUCUN gate.** `contact-filter-search-placeholder` est une clé
+    /// **modifiée**, pas neuve : le test ci-dessus ne la voit pas, et mettre à
+    /// jour `fr-CH` en oubliant les trois autres laisserait une valeur
+    /// présente, différente de son nom, et différente du français — puisque ce
+    /// sont des traductions distinctes.
+    ///
+    /// ⚠️ **Le sigle SUIT LA LOCALE** (`contact-col-ide` : `IDE` / `UID` / `IDI`
+    /// / `UID`). Un test écrivant `contains("IDE")` sur les quatre échouerait
+    /// sur trois — et le « corriger » en poussant `IDE` partout introduirait
+    /// une régression de terminologie que rien d'autre ne rattraperait.
+    ///
+    /// ⚠️ Et le libellé dit **« sans séparateurs »** : la colonne est stockée
+    /// normalisée (`CHE109322551`) tandis que le `LIKE` porte sur le terme
+    /// brut, donc la forme imprimée sur une facture ne remonte **rien**.
     /// Promettre « ou IDE » tout court serait promettre le geste qui échoue.
     #[test]
     fn search_placeholder_lists_the_ide_with_each_locale_own_token() {

@@ -289,7 +289,7 @@
 	// --- Form handlers ---
 	/**
 	 * Sonde « nom proche ». Actifs SEULEMENT (D-b5), fenêtre LARGE puis classement
-	 * et coupe côté client (D-b15) — `rank` ne tronque pas.
+	 * et coupe côté client (D-b12) — `rank` ne tronque pas.
 	 *
 	 * ⚠️ **DÉSARMER, C'EST EFFACER.** Sortir par un `return` nu laisserait à
 	 * l'écran des propositions calculées sur un terme que l'utilisateur a déjà
@@ -316,9 +316,15 @@
 			const retenus = rank(excludeSelf(rn.items, soi), normalized);
 			proches = retenus.slice(0, 5);
 			autres = countOthers(rn.total, rn.items, proches, soi);
-		} catch {
+		} catch (e) {
 			// Une sonde n'est pas une action de l'utilisateur : il n'a rien
 			// demandé, on ne lui doit aucun rapport d'échec (AC-b5 c).
+			//
+			// ⚠️ Mais on JOURNALISE : sans trace, « la sonde a planté » et « aucun
+			// doublon » sont indiscernables, y compris pour qui débogue — et le
+			// second est précisément ce qu'un dispositif d'avertissement ne doit
+			// jamais dire à tort. Relevé en passe 4 de revue de code.
+			console.error('[sonde nom] échec', e);
 			if (seq === nameSeq) {
 				proches = [];
 				autres = 0;
@@ -329,7 +335,7 @@
 	/**
 	 * Sonde IDE. Archivés COMPRIS (D-b5) — la contrainte est PLATE, un contact
 	 * archivé garde son IDE à vie et provoquerait un 409 sans coupable visible.
-	 * Vérification SUR LE CHAMP contre la valeur ENVOYÉE (D-b7).
+	 * Vérification SUR LE CHAMP contre la valeur ENVOYÉE (D-a7 — décision du SOCLE, pas de la surface).
 	 */
 	async function runIdeProbe() {
 		const ide = normalizeIdeForApi(formIde);

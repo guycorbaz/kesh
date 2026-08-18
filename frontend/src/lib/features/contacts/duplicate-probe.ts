@@ -222,8 +222,15 @@ export function rank(items: ContactResponse[], normalizedTerm: string): ContactR
 	};
 
 	return [...items].sort((a, b) => {
-		const fa = fold(a.name);
-		const fb = fold(b.name);
+		// ⚠️ `?? ''` par UNIFORMITÉ avec le reste du module, pas par nécessité de
+		// typage : `ContactResponse.name` est `string`. Mais un type de
+		// compilation ne garantit pas une valeur d'exécution venue du réseau, et
+		// `describeProches` se gardait déjà ainsi. Sans cette ligne, `rank` était
+		// le SEUL point du module sans garde — et son échec est le pire de tous :
+		// le `catch` de la sonde le transforme en `proches = []`, c'est-à-dire en
+		// « aucun doublon », **muet**. Relevé en passe 4 de revue de code.
+		const fa = fold(a.name ?? '');
+		const fb = fold(b.name ?? '');
 		return (
 			startsWith(fa) - startsWith(fb) ||
 			sharedTokens(fb) - sharedTokens(fa) ||

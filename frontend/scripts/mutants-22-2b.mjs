@@ -18,7 +18,12 @@ import { execFileSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 
 const MODULE = 'src/routes/(app)/contacts/+page.svelte';
-const SPEC = 'src/routes/(app)/contacts/contacts-page.test.ts';
+// ⚠️ DEUX fichiers de preuves : le second n'existe que parce qu'il ne mocke
+// PAS `i18nMsg` — sans lui, la mutation de la bascule de pluriel survit.
+const SPEC = [
+	'src/routes/(app)/contacts/contacts-page.test.ts',
+	'src/routes/(app)/contacts/contacts-i18n-realpath.test.ts'
+];
 
 /**
  * ⚠️ La sauvegarde vit **hors de `src/`**, et porte le `pid` dans son nom.
@@ -176,12 +181,30 @@ const MUTANTS = [
 		from: "search: ide, limit: 20, includeArchived: true",
 		to: "search: ide, limit: 20, includeArchived: false",
 		expect: "l’argument est la forme NORMALISÉE"
+	},
+	{
+		// RH-1 / BH-1 / AA-1 (passe 4, TRIPLE convergence) : le ternaire qui choisit
+		// entre les deux clés de pluriel — le correctif de la passe 3 lui-même —
+		// n'était exercé par AUCUNE preuve. Le muter laissait 91 preuves vertes.
+		name: "AC-b6 : la bascule singulier/pluriel décalée d’un",
+		from: "{autres === 1",
+		to: "{autres === 2",
+		expect: "et 1 autre"
+	},
+	{
+		// BH-5 (passe 4) : le banc ne jouait que la mutation COMPOSITE du
+		// désarmement. Celle-ci est atomique — l'effacement reste, le compteur
+		// de génération saute, et une réponse en vol repeuple l'écran.
+		name: "désarmement du nom SANS incrémenter le compteur",
+		from: "\t\t\tnameSeq++;\n\t\t\tproches = [];",
+		to: "\t\t\tproches = [];",
+		expect: "(b-ter) DÉSARMER pendant qu’une réponse est EN VOL"
 	}
 ];
 
 function runSuite() {
 	try {
-		execFileSync('npx', ['vitest', 'run', SPEC, '--reporter=json', `--outputFile=${RAPPORT}`], {
+		execFileSync('npx', ['vitest', 'run', ...SPEC, '--reporter=json', `--outputFile=${RAPPORT}`], {
 			stdio: 'pipe'
 		});
 	} catch {

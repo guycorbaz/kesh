@@ -1331,12 +1331,6 @@ mod tests {
         cleanup_test_contacts(&pool, company_id).await;
     }
 
-    /// Régression detector inversé pour KF-005 v0.1 : asserte que la recherche
-    /// par fragment-mid-word est PERDUE en BOOLEAN MODE + prefix wildcard.
-    /// Si une future migration MariaDB ajoute le suffix wildcard support,
-    /// ou si Kesh migre vers Sphinx/Manticore (v0.3+), OU si la config
-    /// `innodb_ft_min_token_size=1` est appliquée, ce test FAILERA et
-    /// devra être inversé pour asserter le nouveau comportement (match attendu).
     /// **Story 22-2b (#301) — l'IDE est cherchable, branche COURANTE.**
     ///
     /// Le terme survit à `escape_boolean_ft` : la requête emprunte le bras
@@ -1511,6 +1505,12 @@ mod tests {
         cleanup_test_contacts(&pool, company_id).await;
     }
 
+    /// Régression detector inversé pour KF-005 v0.1 : asserte que la recherche
+    /// par fragment-mid-word est PERDUE en BOOLEAN MODE + prefix wildcard.
+    /// Si une future migration MariaDB ajoute le suffix wildcard support,
+    /// ou si Kesh migre vers Sphinx/Manticore (v0.3+), OU si la config
+    /// `innodb_ft_min_token_size=1` est appliquée, ce test FAILERA et
+    /// devra être inversé pour asserter le nouveau comportement (match attendu).
     #[tokio::test]
     async fn test_search_no_longer_matches_mid_word() {
         let pool = test_pool().await;

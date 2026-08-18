@@ -6,9 +6,18 @@ review
 
 **Les sept tâches sont livrées** (2026-08-18) — cf. § *Change Log*, entrée « Implémentation ».
 
-**Deux passes de `bmad-code-review` ont tourné** : passe 1 (Sonnet ×3) — 1 `CRITICAL` / 2 `HIGH` / 5 `MEDIUM` / 1 `LOW`, 9 correctifs ; passe 2 (Opus ×3) — 0 `CRITICAL` / 1 `HIGH` / 16 `MEDIUM`+`LOW`. La sévérité **décroît**. Reste dû : **une passe 3** (§ *Review Iteration Rule*, un `HIGH` en passe 2) et le **push**, qui n'a pas eu lieu.
+**QUATRE passes de `bmad-code-review` ont tourné**, toutes sur le diff aplati des deux moitiés :
 
-⚠️ *La rédaction précédente affirmait « reste dû : `bmad-code-review` » APRÈS que la passe 1 eut tourné et rempli le Change Log — un lecteur s'arrêtant au Status aurait relancé une passe 1 au lieu de la suivante. Relevé en passe 2.*
+| Passe | Modèles | Sévérité |
+|---|---|---|
+| 1 | Sonnet ×3 | 1 `CRITICAL` / 2 `HIGH` / 5 `MEDIUM` / 1 `LOW` |
+| 2 | Opus ×3 | 0 `CRITICAL` / 1 `HIGH` / 16 `MEDIUM`+`LOW` |
+| 3 | Sonnet ×3 | 1 `CRITICAL` / 0 `HIGH` / 4 `MEDIUM` / 2 `LOW` |
+| 4 | Opus ×3 | 0 `CRITICAL` / 3 `HIGH` / 8 `MEDIUM` / 3 `LOW` |
+
+**Reste dû : le PUSH**, qui n'a pas eu lieu — et l'arbitrage sur une éventuelle **passe 5** (§ *Review Iteration Rule* : trois `HIGH` en passe 4).
+
+⚠️ *Ce bloc a été trouvé en arrière d'une passe **trois fois de suite** — après la 1, après la 2, après la 3. Un lecteur s'arrêtant au Status relançait la passe déjà faite. C'est le site le plus lu de la fiche et le plus systématiquement périmé.*
 
 **Dégelée le 2026-08-18.** Elle avait été mise en attente parce que plusieurs de ses findings portaient sur la **frontière** avec le socle, et les corriger contre un contrat supposé aurait été à refaire. **Le socle est désormais codé et ses contrats sont figés par du code qui tourne** — cf. § *Ce que le socle fournit, et sa signature exacte*.
 
@@ -166,6 +175,9 @@ Dès que le module de la 22-2a arme la sonde, les contacts **actifs** de la soci
 *Preuve*, **10** tests de composant plus **1** d'intégration base :
 1. `Entreprise` — les trois éléments d'affichage sont rendus. Mutation : « ne rendre que `c.name` », qui supprime le mécanisme de discrimination de la story sans faire rougir rien d'autre ;
 2. `Personne` — la sonde part sur prénom + nom. Mutation : « ne lire que la raison sociale » ;
+2-bis. **le champ PRÉNOM réarme À LUI SEUL** — un seul champ frappé, pour que le câblage de CE champ soit la seule cause possible du départ. Mutation : « retirer l'`oninput` du prénom » ;
+2-ter. **le champ NOM DE FAMILLE réarme à lui seul** — même angle, même remède. Mutation : « retirer l'`oninput` du nom de famille » ;
+   ⚠️ **La preuve 2 ne les couvre PAS, et c'est le banc qui l'a établi CONTRE la relecture** — le `BlindHunter` avait conclu l'inverse. Elle frappe les deux champs, si bien que le câblage restant compose le même terme, la minuterie n'expirant qu'après la seconde frappe : elle passait par **coïncidence de calendrier**. Preuves ajoutées en passe 1, décrites ici en passe 4 — elles manquaient à cette énumération, qui annonçait dix preuves et n'en décrivait que huit ;
 3. un contact **sans adresse et sans numéro de client** : l'email est rendu, aucune ligne vide ni tiret orphelin ;
 4. **l'argument de l'appel de LA SONDE**, isolé des autres appels de la page :
    ```ts
@@ -183,7 +195,8 @@ Dès que le module de la 22-2a arme la sonde, les contacts **actifs** de la soci
 7. **la bascule de type en cours de saisie** (D-b11) — taper une raison sociale qui fait apparaître des propositions, puis basculer sur `Personne` sans effacer : la sonde **se réarme** sur le nouveau terme, et aucun avertissement calculé sur l'ancien type ne subsiste. Mutation : « ne recalculer que sur les champs de nom », qui laisse un avertissement orphelin sous un champ retiré du DOM ;
 8. **classé, coupé à cinq, et compté** — une seule fixture pour trois clauses qu'aucune preuve ne couvrait. Huit contacts correspondants, le doublon exact triant **dernier** alphabétiquement ; `total = 8` ⇒ (a) **exactement cinq** propositions rendues, ni quatre ni vingt ; (b) le doublon exact est **le premier** ; (c) « et 3 autres » est **visible**.
    ⚠️ Trois mutations d'un caractère chacune laissaient les 31 preuves vertes : **`retenus = excludeSelf(...)` sans l'enveloppe `rank(...)`** (retour au tri alphabétique du SQL, doublon évincé — la raison d'être du découpage), **`proches = retenus`** sans le `.slice(0, 5)`, et **ne jamais rendre le bloc du compteur** — dont la seule mention dans les preuves assertait son *absence* ;
-9. **Test d'intégration base — la fenêtre SQL est assez large.** Fixture des six `Jean X` ; `limit: 20` doit rendre **les six** lignes et `total = 6`. Mutation : **« préfixer chaque token de `+` »** (sémantique ET) ou « trier par `CreatedAt` » — l'une comme l'autre font tomber le `total = 6` ou la présence des six lignes.
+9. **Test d'intégration base — la fenêtre SQL est assez large.** Fixture des six `Jean X` ; `limit: 20` doit rendre **les six** lignes et `total = 6`. Mutation : **« préfixer chaque token de `+` »** (sémantique ET), qui ramène `total` à 1.
+   ⚠️ **La mutation « trier par `CreatedAt` », annoncée jusqu'ici comme équivalente, NE MORD PAS** : avec `limit: 20` et six correspondances, changer le tri ne change ni l'ensemble ni son cardinal, et les trois assertions — `total == 6`, `items.len() == 6`, présence de Zwahlen — restent vertes. **Aucune ne porte sur l'ORDRE.** C'est d'autant moins anodin que le tri est *la moitié du défaut fondateur*. Relevé en passe 4 ; l'annonce est retirée plutôt que l'assertion ajoutée — le tri n'est pas la propriété que cette preuve vise, et le prétendre était une promesse de garde sans garde.
    ⚠️ **La mutation annoncée jusqu'ici, « revenir à `limit: 5` », était INJOUABLE ici** : `limit` est un **paramètre d'entrée** du repository (`routes/contacts.rs:571`, `clamp(1, MAX_LIST_LIMIT)`), jamais une constante du backend — la seule occurrence de `limit: 20` dans le produit est une ligne **TypeScript**, qu'aucun test Rust ne peut observer. C'est la preuve 4 d'AC-b1, durcie ci-dessus, qui garde cette valeur. ⚠️ Cette preuve porte sur la **requête** — sémantique OU, tri alphabétique, taille de fenêtre — et sur elle seule ; les preuves de composant passent par un `vi.mock` et en sont aveugles. *(Le classement lui-même est prouvé par la 22-2a, en TypeScript : un test Rust ne peut pas appeler `rank()`.)*
 
 **AC-b2 — Un IDE déjà pris est signalé franchement, y compris quand le porteur est archivé.**
@@ -238,7 +251,7 @@ Temporisation de 300 ms (le pas du dépôt), compteur de génération, **une pai
   ⚠️ **Le symétrique a été ajouté en passe 1 de revue** : seule la sonde IDE était éprouvée, et sa jumelle n'était NI testée NI mutée. Deux gardes symétriques dont une seule est éprouvée font une garde et une croyance.
 
 **AC-b6 — Les avertissements sont traduits dans les quatre locales.**
-*Preuve*, **2** tests Rust dans `crates/kesh-i18n/src/loader.rs` — le premier sur les clés neuves, le second sur `contact-filter-search-placeholder`, dont les quatre valeurs doivent mentionner l'IDE **avec le sigle de LEUR locale** une fois T-b1 livrée :
+*Preuve*, **4** tests Rust et **5** tests front dans `crates/kesh-i18n/src/loader.rs` — le premier sur les clés neuves, le second sur `contact-filter-search-placeholder`, dont les quatre valeurs doivent mentionner l'IDE **avec le sigle de LEUR locale** une fois T-b1 livrée :
 ```rust
 for (locale, jeton) in [(Locale::FrCh,"IDE"),(Locale::DeCh,"UID"),(Locale::ItCh,"IDI"),(Locale::EnCh,"UID")] {
     let v = bundle.format(&locale, "contact-filter-search-placeholder", None);
@@ -248,7 +261,7 @@ for (locale, jeton) in [(Locale::FrCh,"IDE"),(Locale::DeCh,"UID"),(Locale::ItCh,
 ⚠️ **Le second est indispensable et le premier ne le couvre pas** : AC-b6 ne teste que les clés **neuves**, or ce libellé **existe déjà** et n'est que *modifié*. Un développeur qui met à jour `fr-CH` en oubliant les trois autres ne fait rougir **rien** — la clé reste présente, différente de son nom, et différente du français (ce sont des traductions distinctes). C'est le seul item de la story dont l'oubli partiel échappe à tous les gates. Relevé en passe 1.
 Le premier test suit le patron de `client_number_labels_are_translated_in_all_four_locales`, sur le patron de `client_number_labels_are_translated_in_all_four_locales` (`loader.rs:260-277`) — pour chaque clé neuve, `!= key` **et** `!= fr` sur `de-CH`, `it-CH`, `en-CH`. Plus `npm run lint-i18n-ownership` vert.
 ⚠️ **Il n'existe AUCUN test de parité globale dans `kesh-i18n`.** Le loader **replie silencieusement sur le français** (`format_missing_key_in_de_falls_back_to_fr`, `loader.rs:227`), et les fichiers sont déjà désappariés de 57 clés (KF #283). Une clé oubliée dans trois locales **ne rougit nulle part** : c'est l'assertion `!= fr` qui l'attrape, et rien d'autre.
-⚠️ Le domaine `contact-*` compte **62 clés dans chacune** des quatre locales — recompté le 2026-08-17. Le laisser apparié.
+⚠️ Le domaine `contact-*` compte **67 clés dans chacune** des quatre locales — recompté le 2026-08-18, après les cinq clés de cette story. *(La valeur précédente, 62, était juste à sa date et l'a cessé sans que rien ne le signale : un décompte figé dans une consigne se périme au premier ajout.)* Le laisser apparié.
 
 **AC-b7 — L'avertissement vaut aussi à l'édition, sans se signaler lui-même.**
 Renommer un contact vers un nom déjà porté déclenche le même signal nuancé, le contact édité étant exclu de ses propres résultats.
@@ -313,13 +326,15 @@ holder = findIdeHolder(ri.items, ide, soi);                    // `ide` = la val
   - [ ] **L'avertissement franc s'efface quand `formError` prend le relais** après un `409` (`:361` pose déjà `contact-error-ide-duplicate`), pour que la même phrase ne s'affiche pas deux fois.
   - [ ] Il n'existe pas de composant `alert` dans `lib/components/ui/` — se caler sur le style de `formError`, sans créer de primitive.
   - [ ] **Créer `frontend/src/routes/(app)/contacts/contacts-page.test.ts`** ⚠️ **PAS `+page.test.ts`** : SvelteKit réserve tout nom préfixé `+` dans `src/routes/`, et le `build` échoue en `Files prefixed with + are reserved`. C'est pourquoi le patron s'appelle `products-page.test.ts`. Ni `npm run check` ni `vitest` ne le voient — **seul le `build` l'attrape**. — il n'existe **aucun** test de cette page (seul `contact-helpers.test.ts` existe pour ce domaine). Patron : `products-page.test.ts`, mocks hoistés avant l'import.
-- [x] **T-b5 — i18n** ✅ *(2026-08-18 — 4 clés × 4 locales, libellé de recherche, et les 2 tests Rust ; 4 mutations jouées)* (AC-b6). Clés neuves dans les **quatre** FTL, domaine `contact-*`, plus le test Rust dédié.
+- [x] **T-b5 — i18n** ✅ *(2026-08-18 — **5** clés × 4 locales, libellé de recherche, et **4** tests Rust + **5** tests front du chemin réel ; mutations i18n jouées **à la main**, pas au banc, et il faut le dire : les 25 entrées de `mutants-22-2b.mjs` portent toutes sur `+page.svelte`)* (AC-b6). Clés neuves dans les **quatre** FTL, domaine `contact-*`, plus le test Rust dédié.
   - [ ] **Clés neuves, NOMMÉES** — les décrire sans les nommer rendait le test d'AC-b6 inécrivable :
 
 | Clé | Rôle | Argument |
 |---|---|---|
 | `contact-duplicate-heading` | en-tête du bloc de propositions | — |
-| `contact-duplicate-others-count` | « et {$count} autres » | `count` |
+| `contact-duplicate-others-count` | « et {$count} autres » — **forme plurielle** | `count` |
+| `contact-duplicate-others-count-one` | « et 1 autre » — **forme singulière, clé DISTINCTE** | — |
+| ⚠️ | *Deux clés plates et non un sélecteur Fluent : le dictionnaire servi au frontend est pré-résolu **sans arguments**, donc un `{ $count -> … }` y serait figé sur `*[other]`. Ajoutée en passe 3 ; **absente de ce tableau jusqu'en passe 4**, alors qu'il est présenté comme celui « sans lequel le test d'AC-b6 est inécrivable » — et c'est précisément la clé dont le garde-fou de parité manquait.* | |
 | `contact-duplicate-ide-active` | avertissement franc, porteur **actif** | `name` |
 | `contact-duplicate-ide-archived` | avertissement franc, porteur **archivé** — **distinct**, c'est la preuve 2 d'AC-b2 | `name` |
 
@@ -352,14 +367,16 @@ holder = findIdeHolder(ri.items, ide, soi);                    // `ide` = la val
 | ⤷ *dont* | *(1)* | *logée dans le bloc `describe` d'AC-b7 — « retaper son propre IDE en édition »* |
 | AC-b3 — l'état du bouton est inchangé | 2 + 1 | composant + E2E |
 | AC-b4 — temporisation et ordre | 7 | composant |
-| AC-b5 — muet quand rien à dire | 6 | composant |
-| AC-b6 — quatre locales | 4 + 5 | unitaire Rust + unitaire front (`i18n.svelte.test.ts`) |
+| AC-b5 — muet quand rien à dire | 7 | composant |
+| AC-b6 — quatre locales | 5 + 5 + 2 + 2 | unitaire Rust · i18n front (`i18n.svelte.test.ts`) · **chemin réel jusqu'au DOM** (`contacts-i18n-realpath.test.ts`) · **lien clé↔catalogue** (`duplicate-i18n-keys.test.ts`) |
 | AC-b7 — édition sans se signaler | 2 | composant |
 | *(T-b1 — l'IDE cherchable)* | 2 | intégration base |
 
-⚠️ **Les 32 preuves de composant sont écrites et LEURS MUTATIONS JOUÉES** — `frontend/scripts/mutants-22-2b.mjs`, 23 mutations, 0 survivante, 0 hors cible. **CINQ d'entre elles ne prouvaient RIEN avant d'être jouées** : ouvrir une fiche en édition sans retaper l'IDE ne déclenche aucune sonde ; le compteur « et N autres » n'est pas rendu quand la liste est vide ; une promesse rejetée sans `try/catch` ne fait pas rougir vitest ; et **la preuve 2 passait par coïncidence de calendrier** — frappant les deux champs d'une Personne, un seul câblage survivant suffisait à composer le même terme, si bien que retirer l'`oninput` du prénom OU du nom de famille ne faisait rougir personne. Aucune relecture ne les aurait vues, et le Blind Hunter avait précisément conclu l'inverse sur la dernière — c'est le banc qui l'a réfuté.
+⚠️ **Les 33 preuves de composant sont écrites et LEURS MUTATIONS JOUÉES** — `frontend/scripts/mutants-22-2b.mjs`, 25 mutations, 0 survivante, 0 hors cible. **CINQ d'entre elles ne prouvaient RIEN avant d'être jouées** : ouvrir une fiche en édition sans retaper l'IDE ne déclenche aucune sonde ; le compteur « et N autres » n'est pas rendu quand la liste est vide ; une promesse rejetée sans `try/catch` ne fait pas rougir vitest ; et **la preuve 2 passait par coïncidence de calendrier** — frappant les deux champs d'une Personne, un seul câblage survivant suffisait à composer le même terme, si bien que retirer l'`oninput` du prénom OU du nom de famille ne faisait rougir personne. Aucune relecture ne les aurait vues, et le Blind Hunter avait précisément conclu l'inverse sur la dernière — c'est le banc qui l'a réfuté.
 
-**Totaux, sommés depuis la colonne** : **32 tests de composant** (10 + 5 + 2 + 7 + 6 + 2) · **5 tests unitaires front** (i18n, chemin réel) · **2 assertions E2E** (1 + 1) · **4 tests unitaires Rust** · **3 tests d'intégration base** (1 + 2). **Soit 46 preuves.** Recompté depuis les fichiers par `describe`, jamais de mémoire : `vitest` exécute **32** cas de composant et **5** d'i18n, et la ventilation ci-dessus les retrouve un par un.
+**Totaux, sommés depuis la colonne** : **33 tests de composant** (10 + 5 + 2 + 7 + 7 + 2) · **9 tests unitaires front** (5 i18n + 2 chemin réel + 2 lien clé↔catalogue) · **2 assertions E2E** (1 + 1) · **5 tests unitaires Rust** · **3 tests d'intégration base** (1 + 2). **Soit 52 preuves.**
+
+Recompté depuis les fichiers par `describe`, jamais de mémoire — `vitest` exécute 33 + 2 + 2 + 5 cas, `cargo test -p kesh-i18n` en compte 28 dont 5 pour cette story, et la ventilation ci-dessus les retrouve un par un.
 
 ⚠️ **La ligne « 6 tests unitaires front » a été retirée : elle n'a JAMAIS correspondu à rien.** Elle comptait les six preuves d'AC-b4 comme livrées alors qu'aucune n'était écrite, et le total de 34 s'appuyait dessus — alors que le tableau « recompté depuis la source » du Change Log, quatre lignes plus haut, ne les mentionnait pas. **Le total et sa propre ventilation se contredisaient dans le même paragraphe.** Relevé par l'`AcceptanceAuditor` en passe 1 de revue de code, classé `CRITICAL`. Les sept preuves d'AC-b4 existent désormais, et ce sont des tests de **composant**, pas unitaires : la temporisation ne s'observe qu'à travers la page qui l'arme.
 
@@ -439,6 +456,42 @@ C'est **préexistant**, et cette story ne le corrige pas — mais elle le rend *
 - `CLAUDE.md` — § *Un appariement automatique propose, il ne crée jamais*, § *Test Locally First*, § *Un gate laisse la base piégée*.
 
 ## Change Log
+
+### Passe 4 de `bmad-code-review` — 2026-08-18, Opus ×3, contexte frais
+
+**Trend : `1C/2H/5M/1L` → `0C/1H/16M+L` → `1C/0H/4M/2L` → `0C/3H/8M/3L`.** Bruts : 6 + 11 + 5 = 22, dont plusieurs convergences. **Aucun `CRITICAL`**, et la sévérité maximale redescend de `CRITICAL` à `HIGH`.
+
+⚠️ **Les trois `HIGH` sont des TROUS DE GARDE, pas des défauts vivants** — le `RegressionHunter` l'écrit noir sur blanc après avoir monté la page et lu le DOM : le code livré est **juste en production**. Ce que la passe a trouvé, ce sont des mécanismes corrects que **rien n'empêchait de casser**.
+
+**Deux `HIGH` en TRIPLE convergence** — les trois lentilles, indépendamment :
+
+1. **Le ternaire `autres === 1` n'était prouvé par rien.** C'est le correctif de la passe 3 lui-même. Le muter en `autres === 2` laissait **91 preuves vertes** et réaffichait « et 1 autres » — le `CRITICAL` de la passe 3, mot pour mot. *(BH-1 + AA-1 + RH-1)*
+2. **`contact-duplicate-others-count-one` échappait au contrôle `!= fr`**, seul dispositif qui attrape le repli silencieux sur le français. Retirer la clé de `de-CH` laissait les 27 tests Rust verts, et un germanophone lisait « et 1 autre ». *(BH-2 + AA-2 + RH-3)*
+
+**Le troisième `HIGH` porte sur le garde-fou que la passe 3 venait de poser** : il ne détectait **qu'une des trois formes valides** de sélecteur Fluent. `clé = et { $n -> …` (texte avant) et une valeur commençant à la ligne suivante passaient au travers. J'avais écrit « le garde-fou a été **mis en défaut** » après l'avoir éprouvé sur **un seul** cas — et énoncé la règle pour tous. La détection est désormais une **fonction pure**, éprouvée sur les trois formes plus deux contre-exemples, sans jamais écrire dans le dépôt.
+
+**La leçon de la passe, et elle prolonge celle de la passe 3 d'un cran** : la passe 3 avait montré qu'*une preuve peut emprunter un chemin que la production ne prend jamais*. La passe 4 montre que **prouver chaque maillon ne prouve pas la chaîne**. Le `.ftl` avait sa preuve, le dictionnaire la sienne, `i18nMsg` la sienne — et le point où la page **choisit la clé** n'était couvert par rien. La preuve manquante ne pouvait pas vivre dans `contacts-page.test.ts`, qui **mocke `i18nMsg`** : elle a exigé son propre fichier, sans mock, avec le dictionnaire réel et une lecture du DOM.
+
+**Deux gardes neuves, l'une et l'autre mises en défaut avant d'être déclarées :**
+
+| Garde | Ce qu'elle ferme | Éprouvée en |
+|---|---|---|
+| `contacts-i18n-realpath.test.ts` | le saut clé → écran, sans mock d'`i18nMsg` | mutant `autres === 2` ⇒ rouge |
+| `duplicate-i18n-keys.test.ts` | le lien clé écrite ↔ catalogue, 4 locales | clé renommée ⇒ rouge, **nommée avec son fichier** |
+
+**Les `MEDIUM` de code** : `rank` était le **seul** point du module sans garde sur une valeur serveur — et son échec est le pire, le `catch` de la sonde le transformant en « aucun doublon », **muet** ; le `catch` avale désormais moins, il journalise ; la mutation du désarmement n'était jouée qu'en **composite**, l'atomique « retirer le `nameSeq++` » survivait, et le cas est atteignable — réponse lente, utilisateur qui efface, avertissement qui se rallume sur un terme supprimé.
+
+⚠️ **Une annonce de mutation était fausse** : la preuve 9 d'AC-b1 déclarait que « trier par `CreatedAt` » ferait tomber le test. **Elle ne mord pas** — avec `limit: 20` et six correspondances, changer le tri ne change ni l'ensemble ni son cardinal, et aucune assertion ne porte sur l'ordre. Retirée plutôt que compensée : le tri n'est pas la propriété que cette preuve vise, et le prétendre était **une promesse de garde sans garde**.
+
+**Le reste est de la prose restée en arrière du code — QUATRIÈME passe consécutive.** `AC-b1` annonçait dix preuves et n'en décrivait que huit ; `T-b5` disait « 4 clés » et « 2 tests Rust » pour cinq et quatre, et son tableau — celui « sans lequel le test d'AC-b6 est inécrivable » — **omettait précisément la clé dont le garde-fou manquait** ; deux renvois de décision pointaient dans le vide (`D-b15` n'a jamais existé, `D-b7` désignait une décision du socle) ; le Status était en arrière d'une passe **pour la troisième fois** ; et le `sprint-status.yaml` affirmait encore qu'aucune revue n'avait abouti.
+
+⚠️ **Trois de mes insertions ont raté leur cible dans cette seule séance**, toujours par la même cause : **j'ancre sur un motif générique présent plusieurs fois**. Deux virgules en double (`},` + `,` = `},,`, un élément `undefined` qui plante le banc à mi-parcours), et une entrée de mutation atterrie dans le tableau `SPEC`, qui se termine lui aussi par `];` et vient en premier. Toutes trois rattrapées au recompte — mais aucune ne l'aurait été par relecture.
+
+**Après remédiation** : bancs **socle 32 / 0**, **surface 25 / 0**. Gates complets, base remise à zéro d'abord : **backend 2218/2218**, **frontend 608/608** (68 fichiers), `check` 0 erreur, `lint-i18n` PASS, build ✔.
+
+**Découverte hors périmètre, tracée** : en écrivant la garde clé↔catalogue, **258 clés demandées par le frontend n'existent dans AUCUNE locale** — repli français servi à tous, et intraduisible. Très antérieur à cette PR, distinct de #283. **[KF-040, issue #316](https://github.com/guycorbaz/kesh/issues/316)**, ouverte à la demande de Guy. La garde de cette story est **bornée au domaine `contact-duplicate-*`**.
+
+⚠️ **Passe 5 due** par la lettre de la § *Review Iteration Rule* (3 `HIGH`) — **mais l'arbitrage revient à Guy**, et les éléments sont au § *Ce que quatre passes ont appris*.
 
 ### Passe 3 de `bmad-code-review` — 2026-08-18, Sonnet ×3, contexte frais
 
