@@ -17,11 +17,16 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 
 const MODULE = 'src/lib/features/contacts/duplicate-probe.ts';
 const SPEC = 'src/lib/features/contacts/duplicate-probe.test.ts';
-const BACKUP = `${MODULE}.orig`;
+
+/** Hors de `src/`, et nommée par le `pid` — cf. l'en-tête de `mutants-22-2b.mjs`. */
+const TMP = 'scripts/.tmp';
+const BACKUP = `${TMP}/duplicate-probe.${process.pid}.orig`;
+const RAPPORT = `${TMP}/mutants-22-2a.${process.pid}.json`;
+mkdirSync(TMP, { recursive: true });
 
 /** @type {{name: string, from: string, to: string, expect: string}[]} */
 const MUTANTS = [
@@ -168,19 +173,49 @@ const MUTANTS = [
 		from: 'export function normalizeTerm(raw: string): string {',
 		to: 'export function normalizeTerm(raw: string): string {\n\tvoid Date.now();',
 		expect: 'n’appelle aucune globale'
+	},
+	{
+		name: 'describeProches : cascade au lieu d’invariant (le code LIVRÉ)',
+		from: '\t\treturn (effectif.get(lignes[i]) ?? 0) > 1\n\t\t\t? ` — ${bases[i]} · #${c.id}`\n\t\t\t: ` — ${bases[i]}`;',
+		to: '\t\treturn ` — ${bases[i]}`;',
+		expect: 'partagent une VILLE NON VIDE'
+	},
+	{
+		name: 'describeProches : coller l’id systématiquement',
+		from: '\t\treturn (effectif.get(lignes[i]) ?? 0) > 1\n\t\t\t? ` — ${bases[i]} · #${c.id}`\n\t\t\t: ` — ${bases[i]}`;',
+		to: '\t\treturn ` — ${bases[i]} · #${c.id}`;',
+		expect: 'ne colle PAS d’id'
+	},
+	{
+		name: 'describeProches : ne comparer que le descripteur, sans le nom',
+		from: "JSON.stringify([c.name ?? '', bases[i]])",
+		to: 'bases[i]',
+		expect: 'LIGNE ENTIÈRE'
+	},
+	{
+		name: 'describeProches : pousser l’email même quand la ville est là',
+		from: 'if (bouts.length === 0 && c.email) bouts.push(c.email);',
+		to: 'if (c.email) bouts.push(c.email);',
+		expect: 'la cascade reste celle d’avant'
+	},
+	{
+		name: 'describeProches : juger la vacuité sans rogner les espaces',
+		from: "(v): v is string => typeof v === 'string' && v.trim() !== ''",
+		to: "(v): v is string => typeof v === 'string' && v !== ''",
+		expect: 'ESPACES ne compte pas'
 	}
 ];
 
 function runSuite() {
 	try {
-		execFileSync('npx', ['vitest', 'run', SPEC, '--reporter=json', '--outputFile=.mutants.json'], {
+		execFileSync('npx', ['vitest', 'run', SPEC, '--reporter=json', `--outputFile=${RAPPORT}`], {
 			stdio: 'pipe'
 		});
 	} catch {
 		/* une suite rouge fait sortir vitest en code non nul — c'est attendu */
 	}
-	const report = JSON.parse(readFileSync('.mutants.json', 'utf-8'));
-	unlinkSync('.mutants.json');
+	const report = JSON.parse(readFileSync(RAPPORT, 'utf-8'));
+	unlinkSync(RAPPORT);
 	const failed = [];
 	for (const file of report.testResults ?? []) {
 		for (const t of file.assertionResults ?? []) {

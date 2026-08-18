@@ -15,6 +15,7 @@ import {
 	buildTerm,
 	countOthers,
 	excludeSelf,
+	describeProches,
 	findIdeHolder,
 	fold,
 	isArmed,
@@ -27,6 +28,23 @@ import type { ContactResponse } from './contacts.types';
 /** Fabrique minimale — seuls `id`, `name` et `ideNumber` sont lus par le module. */
 function c(id: number, name: string, ideNumber: string | null = null): ContactResponse {
 	return { id, name, ideNumber } as unknown as ContactResponse;
+}
+
+/** Fabrique pour `describeProches` — ville, numéro de client et email. */
+function d(
+	id: number,
+	name: string,
+	city = '',
+	clientNumber: string | null = null,
+	email: string | null = null
+): ContactResponse {
+	return {
+		id,
+		name,
+		clientNumber,
+		email,
+		addressStructured: { city }
+	} as unknown as ContactResponse;
 }
 
 const names = (list: ContactResponse[]) => list.map((x) => x.name);
@@ -375,5 +393,73 @@ describe('pureté du module', () => {
 		for (const forbidden of ['fetch(', 'setTimeout(', 'setInterval(', 'Date.now(', 'document.', 'window.']) {
 			expect(body).not.toContain(forbidden);
 		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// describeProches — l'INVARIANT, pas la cascade
+// ---------------------------------------------------------------------------
+
+describe('describeProches', () => {
+	it('deux fiches qui partagent une VILLE NON VIDE restent distinctes', () => {
+		// MUTATION : « replier sur l'id seulement quand la cascade est vide »,
+		// c'est-à-dire `bouts.length === 0 ? ... : ...` — la cascade LIVRÉE.
+		//
+		// ⚠️ C'est le défaut que la revue de code a trouvé, et il avait survécu à
+		// son PROPRE doc-comment : celui-ci décrivait exactement ce cas — « le père
+		// et le fils de la même localité ONT une localité » — au-dessus d'un code
+		// qui s'arrêtait à la localité. La preuve d'alors employait une ville VIDE,
+		// donc elle éprouvait la branche où le défaut ne se manifeste pas.
+		const out = describeProches([d(7, 'Jean Dupont', 'Lausanne'), d(9, 'Jean Dupont', 'Lausanne')]);
+		expect(out[0]).not.toBe(out[1]);
+		expect(out).toEqual([' — Lausanne · #7', ' — Lausanne · #9']);
+	});
+
+	it('ne colle PAS d’id quand la ligne entière est déjà distincte', () => {
+		// MUTATION : « ajouter l'id systématiquement ». Elle tiendrait l'invariant
+		// — et noierait chaque proposition sous un numéro qui ne dit rien à
+		// personne. L'invariant est « jamais identiques », pas « toujours numérotées ».
+		expect(describeProches([d(1, 'Alpha SA', 'Lausanne'), d(2, 'Beta SA', 'Lausanne')])).toEqual([
+			' — Lausanne',
+			' — Lausanne'
+		]);
+	});
+
+	it('la collision se juge sur la LIGNE ENTIÈRE, nom compris', () => {
+		// MUTATION : « ne comparer que le descripteur ». Le test ci-dessus la
+		// laisserait verte s'il n'assertait que la distinction ; celui-ci fixe
+		// l'autre moitié, et les deux ensemble bornent le comportement.
+		const out = describeProches([
+			d(1, 'Alpha SA', 'Lausanne'),
+			d(2, 'Alpha SA', 'Lausanne'),
+			d(3, 'Beta SA', 'Lausanne')
+		]);
+		expect(out).toEqual([' — Lausanne · #1', ' — Lausanne · #2', ' — Lausanne']);
+	});
+
+	it('la cascade reste celle d’avant : ville, numéro, puis email en dernier recours', () => {
+		expect(describeProches([d(1, 'A', 'Nyon', 'CLI-4', 'a@b.ch')])).toEqual([' — Nyon · CLI-4']);
+		expect(describeProches([d(2, 'B', '', 'CLI-5', 'b@b.ch')])).toEqual([' — CLI-5']);
+		// MUTATION : « pousser l'email même quand la ville est là » → rendrait
+		// ' — Nyon · CLI-4 · a@b.ch', une ligne illisible.
+		expect(describeProches([d(3, 'C', '', null, 'c@b.ch')])).toEqual([' — c@b.ch']);
+	});
+
+	it('deux homonymes SANS RIEN se replient sur leur id, comme avant', () => {
+		expect(describeProches([d(4, 'Jean Dupont'), d(5, 'Jean Dupont')])).toEqual([
+			' — #4',
+			' — #5'
+		]);
+	});
+
+	it('une ville faite d’ESPACES ne compte pas pour un descripteur', () => {
+		// MUTATION : « filtrer sur la seule vacuité, sans trim ».
+		expect(describeProches([d(6, 'X', '   ')])).toEqual([' — #6']);
+	});
+
+	it('rend UN suffixe par proposition, aligné sur l’index', () => {
+		// MUTATION : « filtrer la liste » — l'alignement par index est le contrat.
+		expect(describeProches([d(1, 'A', 'Nyon'), d(2, 'B'), d(3, 'C', 'Bex')])).toHaveLength(3);
+		expect(describeProches([])).toEqual([]);
 	});
 });

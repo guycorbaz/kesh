@@ -188,6 +188,20 @@ function commonPrefixLength(a: string, b: string): number {
  *
  * @param items candidats, tels que rendus par le serveur
  * @param normalizedTerm terme **déjà** passé par {@link normalizeTerm}
+ *
+ * ⚠️ **`rank` réordonne la fenêtre, il ne l'ÉTEND PAS — et au-delà, le
+ * dispositif redevient muet** (D-b12). Le tri du serveur est alphabétique :
+ * il n'existe aucun `ORDER BY MATCH(…)` de pertinence. Passé `limit` contacts
+ * partageant un token du terme, le doublon exact **n'entre pas dans la
+ * fenêtre**, et aucun classement fait ici ne peut le repêcher : on ne classe
+ * que ce qu'on a reçu. Reproduit sur 25 sociétés en `Sàrl` — terme
+ * `Zurcher Sàrl`, fenêtre arrêtée à `Nicolet Sàrl`, `Zurcher Sàrl` absente.
+ * L'utilisateur voit alors cinq sociétés sans rapport et « et 20 autres ».
+ *
+ * Limite **assumée, non corrigée** : la corriger demande le tri par pertinence
+ * de l'issue #315, qui touche un chemin partagé par quatre repositories.
+ * **L'absence d'avertissement ne prouve donc pas l'absence de doublon**, et le
+ * manuel utilisateur le dit dans ces termes.
  */
 export function rank(items: ContactResponse[], normalizedTerm: string): ContactResponse[] {
 	const term = fold(normalizedTerm);
@@ -274,4 +288,51 @@ export function findIdeHolder(
 ): ContactResponse | undefined {
 	if (normalized === null || normalized === '') return undefined;
 	return items.find((c) => c.ideNumber === normalized && c.id !== editingId);
+}
+
+/**
+ * Ce qui permet de **reconnaître** chaque proposition : localité, numéro de
+ * client, à défaut l'email, à défaut `#id` (D-b10).
+ *
+ * ⚠️ **L'exigence est un INVARIANT, pas une cascade** : deux propositions ne
+ * doivent JAMAIS se lire à l'identique. Une cascade ne le tient pas, et c'est
+ * un piège qui a été écrit noir sur blanc puis livré quand même — le père et le
+ * fils de la même localité, sans numéro ni email, **ONT une localité** : la
+ * cascade s'y arrête, satisfaite, et rend deux lignes jumelles. Le repli sur
+ * l'`id` ne se déclenchait que si la cascade était ENTIÈREMENT vide, c'est-à-dire
+ * précisément dans le cas où le problème ne se pose pas.
+ *
+ * D'où une fonction qui voit **toute la liste** au lieu d'un seul contact : la
+ * distinction est une propriété de l'ENSEMBLE affiché, et aucune fonction
+ * appelée contact par contact ne peut l'établir. C'est la raison pour laquelle
+ * le défaut a survécu à sa propre documentation.
+ *
+ * ⚠️ La collision se juge sur la **ligne entière**, nom compris — c'est elle que
+ * l'utilisateur lit. Deux contacts de noms différents partageant une localité ne
+ * se ressemblent pas à l'écran, et leur coller un `#id` serait du bruit.
+ *
+ * @param items les propositions **déjà coupées** à ce qui sera affiché.
+ * @returns un suffixe par proposition, **aligné sur l'index** de `items`.
+ */
+export function describeProches(items: ContactResponse[]): string[] {
+	const bases = items.map((c) => {
+		const bouts = [c.addressStructured?.city, c.clientNumber].filter(
+			(v): v is string => typeof v === 'string' && v.trim() !== ''
+		);
+		if (bouts.length === 0 && c.email) bouts.push(c.email);
+		return bouts.join(' · ');
+	});
+
+	// `JSON.stringify` d'une paire : aucune concaténation ne peut faire coïncider
+	// deux paires distinctes, là où un séparateur choisi à la main le pourrait.
+	const lignes = items.map((c, i) => JSON.stringify([c.name ?? '', bases[i]]));
+	const effectif = new Map<string, number>();
+	for (const l of lignes) effectif.set(l, (effectif.get(l) ?? 0) + 1);
+
+	return items.map((c, i) => {
+		if (bases[i] === '') return ` — #${c.id}`;
+		return (effectif.get(lignes[i]) ?? 0) > 1
+			? ` — ${bases[i]} · #${c.id}`
+			: ` — ${bases[i]}`;
+	});
 }

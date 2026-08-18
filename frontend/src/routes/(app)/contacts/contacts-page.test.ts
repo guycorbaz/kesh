@@ -158,6 +158,28 @@ function repondre(
 	});
 }
 
+/** Ferme le dialogue de formulaire par « Annuler ». */
+async function fermer() {
+	const bouton = [...document.querySelectorAll('button')].find(
+		(b) => (b.textContent ?? '').trim() === 'Annuler'
+	);
+	if (!bouton) throw new Error('bouton « Annuler » introuvable');
+	await fireEvent.click(bouton);
+	await settle(20);
+}
+
+/** Frappe SANS laisser la temporisation s'écouler — pour compter les départs. */
+async function frapper(id: string, valeur: string) {
+	await fireEvent.input(champ(id), { target: { value: valeur } });
+}
+
+/** Une promesse qu'on résout à la main, pour maîtriser l'ORDRE des réponses. */
+function differe<T>() {
+	let resoudre!: (v: T) => void;
+	const promesse = new Promise<T>((r) => (resoudre = r));
+	return { promesse, resoudre };
+}
+
 const JEAN_X = [
 	c({ id: 1, name: 'Jean Bernard' }),
 	c({ id: 2, name: 'Jean Dupont' }),
@@ -209,6 +231,54 @@ describe('AC-b1 — sonde « nom proche »', () => {
 		await saisir('form-lastname', 'Dupont');
 
 		expect(sondes((q) => q.search === 'Jean Dupont')).toHaveLength(1);
+	});
+
+	it('preuve 2-bis : le champ PRÉNOM réarme à lui seul', async () => {
+		// MUTATION : « retirer `oninput` du champ prénom ».
+		//
+		// ⚠️ La preuve 2 la laisse SURVIVRE, et c'est le banc qui l'a montré —
+		// pas la relecture, qui avait conclu l'inverse. Elle frappe les DEUX
+		// champs : le câblage restant suffit à composer le même terme, parce que
+		// la minuterie n'expire qu'APRÈS la seconde frappe. Elle passe par
+		// coïncidence de calendrier, pas par discrimination.
+		//
+		// Un seul champ frappé, donc, pour que le câblage de CE champ soit la
+		// seule cause possible du départ.
+		render(Page);
+		await settle(20);
+		await ouvrirCreation();
+
+		await fireEvent.change(champ('form-type'), { target: { value: 'Personne' } });
+		// ⚠️ Laisser la sonde du CHANGEMENT DE TYPE partir ET aboutir avant de
+		// compter. Sans cela, elle expire 300 ms plus tard en lisant le champ
+		// qu'on vient de remplir, et c'est ELLE qu'on mesure — le banc a montré
+		// que la mutation survivait, cette preuve tombant dans le piège même
+		// qu'elle était censée fermer.
+		await settle(400);
+		listContactsMock.mockClear();
+		await saisir('form-firstname', 'Jeanne');
+
+		expect(sondes((q) => q.search === 'Jeanne')).toHaveLength(1);
+	});
+
+	it('preuve 2-ter : le champ NOM DE FAMILLE réarme à lui seul', async () => {
+		// MUTATION : « retirer `oninput` du champ nom de famille ». Même angle
+		// mort, même remède : un seul champ frappé.
+		render(Page);
+		await settle(20);
+		await ouvrirCreation();
+
+		await fireEvent.change(champ('form-type'), { target: { value: 'Personne' } });
+		// ⚠️ Laisser la sonde du CHANGEMENT DE TYPE partir ET aboutir avant de
+		// compter. Sans cela, elle expire 300 ms plus tard en lisant le champ
+		// qu'on vient de remplir, et c'est ELLE qu'on mesure — le banc a montré
+		// que la mutation survivait, cette preuve tombant dans le piège même
+		// qu'elle était censée fermer.
+		await settle(400);
+		listContactsMock.mockClear();
+		await saisir('form-lastname', 'Rochat');
+
+		expect(sondes((q) => q.search === 'Rochat')).toHaveLength(1);
 	});
 
 	it('preuve 1 : les trois éléments d’affichage sont rendus', async () => {
@@ -369,7 +439,7 @@ describe('AC-b2 — sonde IDE', () => {
 
 		const appels = sondes((q) => q.includeArchived === true);
 		expect(appels).toHaveLength(1);
-		expect(appels[0]).toEqual({ search: 'CHE109322551', limit: 5, includeArchived: true });
+		expect(appels[0]).toEqual({ search: 'CHE109322551', limit: 20, includeArchived: true });
 
 		// Le libellé du porteur ARCHIVÉ est distinct : c'est lui, le recours.
 		expect(zone('contact-duplicate-ide').textContent).toContain('archivé');
@@ -450,6 +520,38 @@ describe('AC-b5 — le dispositif est muet quand il n’a rien à dire', () => {
 
 		await saisir('form-ide', '');
 		expect(zone('contact-duplicate-ide').textContent?.trim()).toBe('');
+	});
+
+	it('(c-bis) la sonde NOM qui échoue efface ses propositions, et l’IDE continue', async () => {
+		// MUTATION : « try/catch inopérant sur la sonde NOM ».
+		//
+		// ⚠️ Le test (c) ci-dessous ne fait échouer que la sonde IDE : la garde
+		// jumelle, côté nom, n'était NI testée NI mutée — relevé en revue de code.
+		// Deux gardes symétriques dont une seule est éprouvée, c'est une garde et
+		// une croyance.
+		//
+		// Il faut AFFICHER avant d'échouer : une promesse rejetée sur un écran
+		// déjà vide ne distingue pas « effacé » de « jamais rempli ».
+		const porteur = c({ id: 90, name: 'Porteur SA', ideNumber: 'CHE109322551' });
+		repondre({
+			Dubarde: { items: [c({ id: 91, name: 'Dubarde SA' })], total: 1 },
+			Dubardex: 'rejette',
+			CHE109322551: { items: [porteur], total: 1 }
+		});
+		render(Page);
+		await settle(20);
+		await ouvrirCreation();
+
+		await saisir('form-name', 'Dubarde');
+		expect(zone('contact-duplicate-nearby').textContent ?? '').toContain('Dubarde SA');
+
+		await saisir('form-ide', 'CHE-109.322.551');
+		await saisir('form-name', 'Dubardex');
+
+		// La sonde nom a échoué : elle se tait, et n'a laissé aucune trace.
+		expect(zone('contact-duplicate-nearby').textContent?.trim() ?? '').toBe('');
+		// L'autre sonde, elle, continue de dire ce qu'elle sait.
+		expect(zone('contact-duplicate-ide').textContent ?? '').toContain('Porteur SA');
 	});
 
 	it('(c) une sonde qui ÉCHOUE efface son avertissement, et l’autre continue', async () => {
@@ -558,5 +660,154 @@ describe('AC-b3 — l’état du bouton est celui qu’il aurait sans les sondes
 		) as HTMLButtonElement;
 		expect(zone('contact-duplicate-nearby').textContent).toContain('Dubarde Sàrl');
 		expect(enregistrer.disabled).toBe(true); // à cause de l'ADRESSE, pas de la sonde
+	});
+});
+
+// ---------------------------------------------------------------------------
+// AC-b4 — la temporisation, la garde d'ordre, et la remise à zéro
+// ---------------------------------------------------------------------------
+
+describe('AC-b4 — rien ne part avant que la frappe se calme', () => {
+	it('preuve 1 : vingt caractères frappés d’affilée ne partent qu’UNE fois', async () => {
+		// MUTATION : « ne pas annuler la minuterie précédente » (retirer le
+		// `clearTimeout` de `scheduleNameProbe`) ⇒ vingt départs au lieu d'un.
+		repondre({});
+		render(Page);
+		await settle(20);
+		await ouvrirCreation();
+		listContactsMock.mockClear();
+
+		const mot = 'Dubarde Sarl SA XYZW';
+		for (let i = 1; i <= mot.length; i++) await frapper('form-name', mot.slice(0, i));
+		await settle(400);
+
+		expect(sondes((q) => q.includeArchived === false).length).toBe(1);
+	});
+
+	it('preuve 2 : deux réponses résolues DANS L’ORDRE INVERSE — la périmée est ignorée', async () => {
+		// MUTATION : « retirer la garde `if (seq !== nameSeq) return` » ⇒ la
+		// réponse du terme ABANDONNÉ écrase celle du terme courant, et l'écran
+		// affiche des propositions qui ne correspondent plus à ce qui est tapé.
+		const lente = differe<{ items: ContactResponse[]; total: number }>();
+		const rapide = differe<{ items: ContactResponse[]; total: number }>();
+		listContactsMock.mockImplementation((q: Record<string, unknown>) => {
+			if (q?.search === 'Ancien') return lente.promesse;
+			if (q?.search === 'Nouveau') return rapide.promesse;
+			return Promise.resolve(VIDE);
+		});
+		render(Page);
+		await settle(20);
+		await ouvrirCreation();
+
+		await saisir('form-name', 'Ancien');
+		await saisir('form-name', 'Nouveau');
+
+		// La SECONDE aboutit d'abord…
+		rapide.resoudre({ items: [c({ id: 50, name: 'Nouveau Contact' })], total: 1 });
+		await settle(30);
+		// …puis la PREMIÈRE, périmée, revient en retard.
+		lente.resoudre({ items: [c({ id: 99, name: 'Ancien Contact' })], total: 1 });
+		await settle(30);
+
+		const texte = zone('contact-duplicate-nearby').textContent ?? '';
+		expect(texte).toContain('Nouveau Contact');
+		expect(texte).not.toContain('Ancien Contact');
+	});
+
+	it('preuve 3 : le test CROISÉ — les deux sondes aboutissent, chacune la sienne', async () => {
+		// MUTATION : « une seule paire (minuterie, compteur) partagée » (D-b7).
+		// Les preuves 1 et 2 la laissent VERTE : elles n'arment qu'une sonde.
+		// Avec une paire unique, armer la seconde incrémente le compteur commun
+		// et fait jeter la réponse de la première — un des deux avertissements
+		// ne s'affiche jamais.
+		const porteur = c({ id: 60, name: 'Porteur SA', ideNumber: 'CHE109322551' });
+		repondre({
+			'Dubarde SA': { items: [c({ id: 61, name: 'Dubarde SA' })], total: 1 },
+			CHE109322551: { items: [porteur], total: 1 }
+		});
+		render(Page);
+		await settle(20);
+		await ouvrirCreation();
+
+		// Armer la sonde nom, puis la sonde IDE AVANT que la première ait rendu.
+		await frapper('form-name', 'Dubarde SA');
+		await frapper('form-ide', 'CHE-109.322.551');
+		await settle(500);
+
+		expect(zone('contact-duplicate-nearby').textContent ?? '').toContain('Dubarde SA');
+		expect(zone('contact-duplicate-ide').textContent ?? '').toContain('Porteur SA');
+	});
+
+	it('preuve 4 : valide → invalide → valide ⇒ DEUX départs, un par passage à la validité', async () => {
+		// MUTATION : « sonder sans vérifier le format » ⇒ un départ à chaque
+		// frappe intermédiaire, dont celles qui ne forment pas un IDE.
+		repondre({});
+		render(Page);
+		await settle(20);
+		await ouvrirCreation();
+		listContactsMock.mockClear();
+
+		await saisir('form-ide', 'CHE-109.322.551');
+		await saisir('form-ide', 'CHE-109.322.55');
+		await saisir('form-ide', 'CHE-123.456.788');
+
+		expect(sondes((q) => q.includeArchived === true).length).toBe(2);
+	});
+
+	it('preuve 7 : FERMER le formulaire fait taire une sonde en vol', async () => {
+		// MUTATION : « retirer le $effect qui réinitialise à la fermeture ».
+		//
+		// La garde de génération empêchait déjà la réponse de s'afficher, donc
+		// rien de faux n'était montré — mais la requête partait quand même, pour
+		// un dialogue quitté. Une temporisation qui laisse filer sa requête après
+		// la fermeture ne temporise qu'à moitié.
+		repondre({ Dubarde: { items: [c({ id: 75, name: 'Dubarde SA' })], total: 1 } });
+		render(Page);
+		await settle(20);
+		await ouvrirCreation();
+
+		await frapper('form-name', 'Dubarde');
+		listContactsMock.mockClear();
+		await fermer();
+		await settle(500);
+
+		expect(sondes((q) => q.search === 'Dubarde')).toHaveLength(0);
+	});
+
+	it('preuve 5 : rouvrir en CRÉATION repart d’un écran vierge', async () => {
+		// MUTATION : « ne rien réinitialiser dans openCreate() ».
+		repondre({ Dubarde: { items: [c({ id: 70, name: 'Dubarde SA' })], total: 1 } });
+		render(Page);
+		await settle(20);
+		await ouvrirCreation();
+		await saisir('form-name', 'Dubarde');
+		expect(zone('contact-duplicate-nearby').textContent ?? '').toContain('Dubarde SA');
+
+		await fermer();
+		await ouvrirCreation();
+
+		expect(zone('contact-duplicate-nearby').textContent?.trim() ?? '').toBe('');
+	});
+
+	it('preuve 6 : rouvrir en ÉDITION repart d’un écran vierge, lui aussi', async () => {
+		// MUTATION : « ne réinitialiser que dans openCreate() », que la preuve 5
+		// laisse VERTE. D-b8 exige les DEUX sites.
+		//
+		// ⚠️ Ce cas avait été identifié en passe 1 de validate, inscrit au tableau
+		// des pièges muets — et la preuve n'avait pas été écrite. Le symptôme est
+		// concret : les propositions d'une session « Créer » restent affichées sur
+		// la fiche de quelqu'un d'autre, en le désignant comme un doublon.
+		const autre = c({ id: 80, name: 'Autre Société' });
+		repondre({ Dubarde: { items: [c({ id: 70, name: 'Dubarde SA' })], total: 1 } }, [autre]);
+		render(Page);
+		await settle(20);
+		await ouvrirCreation();
+		await saisir('form-name', 'Dubarde');
+		expect(zone('contact-duplicate-nearby').textContent ?? '').toContain('Dubarde SA');
+
+		await fermer();
+		await ouvrirEdition();
+
+		expect(zone('contact-duplicate-nearby').textContent?.trim() ?? '').toBe('');
 	});
 });

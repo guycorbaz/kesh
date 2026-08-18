@@ -239,9 +239,11 @@ Rend le contact dont `ideNumber` **égale** la valeur passée et dont l'`id` dif
 | `findIdeHolder` | 4 | 4 |
 | pureté du module | 2 | 2 |
 
-**33 blocs, 44 cas exécutés** — mesuré : la suite frontend passe de **512 à 556**, soit exactement +44.
+**40 blocs, 51 cas exécutés** — dont **7 pour `describeProches`**, ajoutés en passe 1 de revue de code.
 
-**Et 24 mutations jouées, 0 survivante, 0 non discriminante, 0 hors cible** (`frontend/scripts/mutants-22-2a.mjs`). C'est ce chiffre-là qui compte : il mesure ce que les preuves *attrapent*, là où un décompte de preuves ne mesure que ce qu'elles *annoncent*.
+*(Le décompte d'origine — 33 blocs, 44 cas, suite frontend passée de 512 à 556 — reste vrai pour le commit de développement. Il est conservé ici parce qu'un décompte sans son périmètre se relit plus tard contre le mauvais intervalle.)*
+
+**Et 29 mutations jouées, 0 survivante, 0 non discriminante, 0 hors cible** (`frontend/scripts/mutants-22-2a.mjs`) — 24 au commit de développement, plus 5 pour l'invariant de `describeProches`. C'est ce chiffre-là qui compte : il mesure ce que les preuves *attrapent*, là où un décompte de preuves ne mesure que ce qu'elles *annoncent*.
 
 ⚠️ **Le banc assert désormais sa CIBLE.** Son champ `expect` était affiché sans être vérifié : une mutation qui fait rougir *quelque chose* n'établit rien si ce n'est pas **la preuve qu'elle annonce**. Les vingt-quatre visent juste.
 
@@ -285,6 +287,18 @@ Elles sont la vraie spécification de cette story. Chacune est un défaut **rée
 - `CLAUDE.md` — § *Règle de splitting préventif* (le critère qui a déclenché ce découpage), § *Test Locally First*.
 
 ## Change Log
+
+### Passe 1 de `bmad-code-review` — 2026-08-18, Sonnet ×3, contexte frais
+
+Revue menée sur le diff **aplati** des deux moitiés — elles partent dans la même PR, et les défauts intéressants sont à leur frontière. Le détail des neuf findings est au Change Log de la **22-2b** ; un seul touche ce socle, et il est instructif.
+
+**`describeProche` violait un invariant que son PROPRE doc-comment décrivait.** La fonction vivait dans la page, et son commentaire disait mot pour mot : « le père et le fils de la même localité, sans numéro ni email, **ONT** une localité — une cascade s'y arrêterait et rendrait deux lignes jumelles ». Suivait une cascade qui s'arrêtait à la localité, le repli sur `#id` n'étant atteint que si **rien** n'était renseigné.
+
+**Pourquoi le correctif appartient à ce socle.** « Deux propositions ne sont jamais identiques » est une propriété de l'**ensemble affiché** ; aucune fonction appelée contact par contact ne peut la tenir, quelle que soit sa cascade. La nouvelle `describeProches` reçoit donc la liste entière, juge la collision sur la **ligne complète** — nom compris, puisque c'est elle que l'utilisateur lit — et ne colle un `#id` qu'aux lignes qui se ressemblent réellement. Y coller un numéro systématiquement tiendrait l'invariant, et noierait chaque proposition sous du bruit : l'exigence est « jamais identiques », pas « toujours numérotées », et une mutation garde cette moitié-là.
+
+**Le socle gagne 7 preuves et 5 mutations** : **51 cas** et **29 mutations, 0 survivante, 0 non discriminante, 0 hors cible**. La fixture décisive oppose deux fiches partageant une **ville non vide** — celle qui manquait, l'ancienne preuve employant une ville vide, donc éprouvant la branche où le défaut ne se manifeste pas.
+
+⚠️ Le banc écrit désormais sa sauvegarde **hors de `src/`**, nommée par le `pid` : deux bancs lancés en parallèle sur le même arbre se détruisaient mutuellement leur sauvegarde, ce qui a produit un `ENOENT` faussement imputé au script par une lentille.
 
 ### Passe 1 de `bmad-create-story validate` — 2026-08-17, Sonnet ×3, contexte frais
 

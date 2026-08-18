@@ -20,6 +20,7 @@
 	} from '$lib/features/contacts/contacts.api';
 	import {
 		countOthers,
+	describeProches,
 		excludeSelf,
 		findIdeHolder,
 		probeTerm,
@@ -75,7 +76,45 @@
 	let ideSeq = 0;
 	const PROBE_DELAY_MS = 300;
 
-	/** Remet les deux sondes au silence — à l'OUVERTURE du formulaire (D-b8). */
+	/**
+	 * Les suffixes de reconnaissance, **alignés sur `proches`** (D-b10).
+	 *
+	 * ⚠️ Calculé sur la LISTE, jamais contact par contact : « deux propositions
+	 * ne sont jamais identiques » est une propriété de l'ensemble affiché.
+	 * Une fonction appelée par élément ne peut pas la tenir — c'est le défaut
+	 * qui a été livré, sous un commentaire qui décrivait pourtant le bon cas.
+	 */
+	const descriptions = $derived(describeProches(proches));
+
+	/**
+	 * **Fermer le formulaire fait taire les sondes en vol** (ECH-3).
+	 *
+	 * Sans cela, une minuterie armée juste avant la fermeture part quand même :
+	 * une requête est émise pour un dialogue qui n'est plus à l'écran. La garde
+	 * de génération neutralise bien la réponse, donc rien ne s'affiche de faux —
+	 * mais c'est un appel réseau gratuit à chaque fermeture précoce, ce qui
+	 * contredit la raison d'être de la temporisation.
+	 *
+	 * ⚠️ Un `$effect` et non le seul `onclick` d'« Annuler » : le dialogue se
+	 * ferme AUSSI par Échap et par clic hors-cadre, que `bind:open` répercute
+	 * sans passer par le bouton.
+	 */
+	$effect(() => {
+		if (!formOpen) resetProbes();
+	});
+
+	/**
+	 * Remet les deux sondes au silence — **à la FERMETURE du formulaire**.
+	 *
+	 * ⚠️ D-b8 prescrivait l'ouverture, et les deux sites `openCreate`/`openEdit`
+	 * l'ont d'abord fait. Remettre à zéro à la fermeture est **strictement plus
+	 * général** : cela couvre aussi la sonde EN VOL au moment où l'on quitte, et
+	 * les fermetures par Échap ou clic hors-cadre. Garder les deux revenait à
+	 * doubler le mécanisme — le banc l'a établi en montrant que retirer l'un OU
+	 * l'autre ne faisait rougir personne, chacun couvrant la défaillance de son
+	 * jumeau. Un mécanisme redondant n'est pas une sécurité : c'est un mécanisme
+	 * dont plus aucune preuve ne garde la moitié.
+	 */
 	function resetProbes() {
 		if (nameProbeHandle) clearTimeout(nameProbeHandle);
 		if (ideProbeHandle) clearTimeout(ideProbeHandle);
@@ -302,7 +341,7 @@
 		const seq = ++ideSeq;
 		const soi = editing?.id ?? null;
 		try {
-			const ri = await listContacts({ search: ide, limit: 5, includeArchived: true });
+			const ri = await listContacts({ search: ide, limit: 20, includeArchived: true });
 			if (seq !== ideSeq) return;
 			ideHolder = findIdeHolder(ri.items, ide, soi) ?? null;
 		} catch {
@@ -320,24 +359,6 @@
 	function scheduleIdeProbe() {
 		if (ideProbeHandle) clearTimeout(ideProbeHandle);
 		ideProbeHandle = setTimeout(runIdeProbe, PROBE_DELAY_MS);
-	}
-
-	/**
-	 * Ce qui permet de RECONNAÎTRE une proposition — localité, numéro de client,
-	 * à défaut l'email, à défaut `#id` (D-b10).
-	 *
-	 * ⚠️ L'exigence est un **invariant**, pas une cascade : deux propositions ne
-	 * doivent JAMAIS être identiques à l'écran. Le père et le fils de la même
-	 * localité, sans numéro ni email, ONT une localité — une cascade s'y
-	 * arrêterait et rendrait deux lignes jumelles. D'où le repli final sur
-	 * l'`id`, garanti distinct et déjà présent dans le DTO.
-	 */
-	function describeProche(c: ContactResponse): string {
-		const bouts = [c.addressStructured?.city, c.clientNumber].filter(
-			(v): v is string => !!v && v.trim() !== ''
-		);
-		if (bouts.length === 0 && c.email) bouts.push(c.email);
-		return bouts.length > 0 ? ` — ${bouts.join(' · ')}` : ` — #${c.id}`;
 	}
 
 	function openCreate() {
@@ -362,7 +383,6 @@
 		formLanguage = '';
 		formSalutation = 'Neutre';
 		formError = '';
-		resetProbes();
 		formOpen = true;
 	}
 
@@ -391,7 +411,6 @@
 		formLanguage = c.language ?? '';
 		formSalutation = c.salutation;
 		formError = '';
-		resetProbes();
 		formOpen = true;
 	}
 
@@ -868,10 +887,10 @@
 							)}
 						</p>
 						<ul class="mt-1 space-y-0.5">
-							{#each proches as p (p.id)}
+							{#each proches as p, i (p.id)}
 								<li class="text-amber-900">
 									<span class="font-medium">{p.name}</span>
-									<span class="text-xs text-amber-800">{describeProche(p)}</span>
+									<span class="text-xs text-amber-800">{descriptions[i]}</span>
 								</li>
 							{/each}
 						</ul>

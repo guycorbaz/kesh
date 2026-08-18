@@ -330,18 +330,20 @@ holder = findIdeHolder(ri.items, ide, soi);                    // `ide` = la val
 
 | AC | Preuves | Nature |
 |---|---:|---|
-| AC-b1 — nom proche | 8 + 1 | composant + `#[sqlx::test]` |
+| AC-b1 — nom proche | 10 + 1 | composant + `#[sqlx::test]` |
 | AC-b2 — IDE déjà pris | 5 + 1 | composant + E2E |
 | AC-b3 — l'état du bouton est inchangé | 1 + 1 | E2E + composant |
-| AC-b4 — temporisation et ordre | 6 | unitaire front |
-| AC-b5 — muet quand rien à dire | 5 | composant |
+| AC-b4 — temporisation et ordre | 7 | composant |
+| AC-b5 — muet quand rien à dire | 6 | composant |
 | AC-b6 — quatre locales | 2 | unitaire Rust |
 | AC-b7 — édition sans se signaler | 2 | composant |
 | *(T-b1 — l'IDE cherchable)* | 2 | `#[sqlx::test]` |
 
-⚠️ **Les 21 preuves de composant sont écrites et LEURS MUTATIONS JOUÉES** — `frontend/scripts/mutants-22-2b.mjs`, 12 mutations, 0 survivante, 0 hors cible. **TROIS d'entre elles ne prouvaient RIEN avant d'être jouées** : ouvrir une fiche en édition sans retaper l'IDE ne déclenche aucune sonde ; le compteur « et N autres » n'est pas rendu quand la liste est vide ; et une promesse rejetée sans `try/catch` ne fait pas rougir vitest. Aucune relecture ne les aurait vues.
+⚠️ **Les 31 preuves de composant sont écrites et LEURS MUTATIONS JOUÉES** — `frontend/scripts/mutants-22-2b.mjs`, 20 mutations, 0 survivante, 0 hors cible. **CINQ d'entre elles ne prouvaient RIEN avant d'être jouées** : ouvrir une fiche en édition sans retaper l'IDE ne déclenche aucune sonde ; le compteur « et N autres » n'est pas rendu quand la liste est vide ; une promesse rejetée sans `try/catch` ne fait pas rougir vitest ; et **la preuve 2 passait par coïncidence de calendrier** — frappant les deux champs d'une Personne, un seul câblage survivant suffisait à composer le même terme, si bien que retirer l'`oninput` du prénom OU du nom de famille ne faisait rougir personne. Aucune relecture ne les aurait vues, et le Blind Hunter avait précisément conclu l'inverse sur la dernière — c'est le banc qui l'a réfuté.
 
-**Totaux, sommés depuis la colonne** : **21 tests de composant** (8 + 5 + 1 + 5 + 2) · **6 tests unitaires front** · **2 assertions E2E** (1 + 1) · **2 tests unitaires Rust** · **3 tests d'intégration base** (1 + 2). **Soit 34 preuves.**
+**Totaux, sommés depuis la colonne** : **31 tests de composant** (10 + 5 + 1 + 7 + 6 + 2) · **2 assertions E2E** (1 + 1) · **2 tests unitaires Rust** · **3 tests d'intégration base** (1 + 2). **Soit 38 preuves.**
+
+⚠️ **La ligne « 6 tests unitaires front » a été retirée : elle n'a JAMAIS correspondu à rien.** Elle comptait les six preuves d'AC-b4 comme livrées alors qu'aucune n'était écrite, et le total de 34 s'appuyait dessus — alors que le tableau « recompté depuis la source » du Change Log, quatre lignes plus haut, ne les mentionnait pas. **Le total et sa propre ventilation se contredisaient dans le même paragraphe.** Relevé par l'`AcceptanceAuditor` en passe 1 de revue de code, classé `CRITICAL`. Les sept preuves d'AC-b4 existent désormais, et ce sont des tests de **composant**, pas unitaires : la temporisation ne s'observe qu'à travers la page qui l'arme.
 
 Aucun autre passage de cette story n'énonce de total. *(S'y ajoutent les **44 preuves** de la 22-2a — écrites, exécutées, et gardées par 24 mutations jouées.)*
 
@@ -420,9 +422,35 @@ C'est **préexistant**, et cette story ne le corrige pas — mais elle le rend *
 
 ## Change Log
 
+### Passe 1 de `bmad-code-review` — 2026-08-18, Sonnet ×3, contexte frais
+
+Diff **aplati** `main...HEAD` donné aux trois lentilles, jamais une séquence de commits. Bruts : 4 + 3 + 3 = 10. **Un réfuté, deux requalifiés.** Retenus : **1 CRITICAL / 2 HIGH / 5 MEDIUM / 1 LOW — 9 findings, 9 correctifs.**
+
+**Le `CRITICAL` : AC-b4 était déclaré tenu par six preuves, et n'en avait AUCUNE.** Cinq `describe` — b1, b2, b5, b7, b3 — et pas de b4 ; aucune minuterie factice nulle part. Le mécanisme existait et fonctionnait ; **rien ne le gardait**. Ce qui l'a masqué mérite d'être écrit : le total « 34 preuves » additionnait une ligne « 6 tests unitaires front » **que le tableau situé quatre lignes plus haut — celui explicitement « recompté depuis la source » — ne mentionnait pas**. Le total et sa propre ventilation se contredisaient dans le même paragraphe. Les tâches T-b2/T-b3/T-b4 portaient pourtant l'aveu honnête « code — preuves à venir » ; il n'a jamais été réconcilié avec le décompte.
+
+**Le premier `HIGH` : un invariant qui a survécu à son propre commentaire.** `describeProche` portait en doc-comment la description exacte du défaut — « le père et le fils de la même localité **ONT** une localité : une cascade s'y arrêterait et rendrait deux lignes jumelles » — au-dessus d'une cascade qui s'arrêtait à la localité. Le repli sur `#id` ne se déclenchait que si la cascade était **entièrement** vide, c'est-à-dire dans le cas où le problème ne se pose pas. La preuve 6 d'AC-b1, rédigée « sans adresse, sans numéro **et** sans email », éprouvait cette seule branche et sa fixture portait `city: ''` : **la preuve était plus étroite que l'invariant qu'elle prétendait garder.** Correctif : la fonction passe dans le module pur sous le nom `describeProches` et voit **toute la liste**, parce que « deux propositions ne sont jamais identiques » est une propriété de l'**ensemble affiché** qu'aucune fonction appelée élément par élément ne peut tenir.
+
+**Le second `HIGH`** : le `catch` de la sonde nom n'était ni testé ni muté, alors que son jumeau IDE l'était — deux gardes symétriques dont une seule est éprouvée font une garde et une croyance.
+
+**Les cinq `MEDIUM`** : les câblages *prénom* et *nom de famille* n'étaient jamais mutés ; la sonde IDE interrogeait en `limit: 5` une requête `OR` sur quatre colonnes, où du bruit pouvait évincer le vrai porteur et rendre le signal franc **silencieusement muet** (portée à 20, symétrique de l'autre sonde) ; les **deux contreparties que D-b12 s'était imposées** — porter la limite dans la doc de la fonction *et* dans le manuel — n'avaient pas été livrées, et le doc-comment du test Rust affirmait sans réserve ce que D-b12 signale comme une généralisation fausse ; fermer le formulaire n'annulait pas la sonde en vol ; et le banc n'était pas sûr en exécution concurrente.
+
+⚠️ **Deux fois, le banc a corrigé les relecteurs — et une fois, il m'a corrigé.**
+
+1. Le `BlindHunter` jugeait le câblage prénom/nom « atténué en pratique », couvert par la preuve 2. **Les deux mutations ont survécu.** La preuve frappe les deux champs, donc le câblage restant compose le même terme, la minuterie n'expirant qu'après la seconde frappe : elle passait par **coïncidence de calendrier**. Ce n'était pas un plafond de banc mais un chemin de code **non testé**.
+2. L'`EdgeCaseHunter` déclarait la limite de fenêtre « non documentée comme limitation connue ». **D-b12 l'écrit, la reproduit sur 25 sociétés en `Sàrl`, et anticipe la critique.** Réfuté — mais l'angle a servi : ce sont les *contreparties* de D-b12 qui manquaient.
+3. **Mes deux preuves correctives sont tombées dans le piège qu'elles corrigeaient.** Le `<select>` de type porte `onchange={scheduleNameProbe}` ; ne laisser que 20 ms après la bascule fait partir la sonde du *changement de type* 300 ms plus tard, en lisant le champ qu'on vient de remplir. Le départ mesuré n'était pas causé par le câblage éprouvé. Seul le banc l'a vu.
+
+**Une redondance découverte par le même moyen.** Le correctif de la fermeture a rendu **inutiles** les `resetProbes()` d'`openCreate`/`openEdit` : retirer l'un OU l'autre ne faisait plus rougir personne, chacun couvrant la défaillance de son jumeau. Un mécanisme redondant n'est pas une sécurité — c'est un mécanisme dont plus aucune preuve ne garde la moitié. Les deux appels sont supprimés ; la remise à zéro à la **fermeture** est strictement plus générale (elle couvre Échap, le clic hors-cadre, et la sonde en vol).
+
+⚠️ **Trois lentilles sur trois ont mal additionné leurs propres findings** — l'`EdgeCaseHunter` annonçait « 1 CRITICAL » pour trois findings dont aucun ne l'était, et attestait un `git status` propre alors que son banc interrompu laissait deux artefacts. J'ai vérifié moi-même : le fichier suivi était identique à `HEAD`, la sauvegarde fidèle, rien n'était perdu. Le plantage de banc que l'`AcceptanceAuditor` a diagnostiqué venait de **mon** orchestration — deux lentilles jouant des bancs sur le même arbre de travail, chacune effaçant la sauvegarde de l'autre.
+
+**Après remédiation**, les deux bancs rejoués : **socle 29 mutations / 0 survivante**, **surface 20 / 0**. Gates complets, base remise à zéro d'abord : **backend 2215/2215**, **frontend 594/594** (577 + 17), `check` 0 erreur, build ✔. Manuel régénéré, 57 pages.
+
+⚠️ **Passe 2 due** par la § *Review Iteration Rule* (1 `CRITICAL`, 2 `HIGH`). Rotation : **Haiku** ou **Opus**, contexte frais, diff aplati — et **une seule lentille exécutant un banc à la fois**.
+
 ### Implémentation T-b1 → T-b7 — 2026-08-18
 
-**Sept tâches, 22 fichiers, 3527 insertions.** Ce qui a réellement tourné, et ce qui ne l'a pas encore.
+**Sept tâches, 22 fichiers, 3527 insertions** — *au commit `d946593a`, celui de T-b7.* Ce qui a réellement tourné, et ce qui ne l'a pas encore.
 
 **Les deux gates COMPLETS, base de dev remise à zéro d'abord** (§ *Un gate laisse la base piégée* — inconditionnellement, sans se demander comment le run précédent s'était terminé) :
 

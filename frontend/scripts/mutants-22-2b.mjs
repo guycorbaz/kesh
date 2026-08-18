@@ -15,11 +15,25 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 
 const MODULE = 'src/routes/(app)/contacts/+page.svelte';
 const SPEC = 'src/routes/(app)/contacts/contacts-page.test.ts';
-const BACKUP = `${MODULE}.orig`;
+
+/**
+ * ⚠️ La sauvegarde vit **hors de `src/`**, et porte le `pid` dans son nom.
+ *
+ * Deux raisons, toutes deux payées : un `.orig` déposé dans `src/routes/` est vu
+ * par SvelteKit comme un fichier de route et pollue le graphe de Vite ; et deux
+ * bancs lancés en même temps sur le même arbre — ce qui arrive dès qu'on met
+ * plusieurs relecteurs en parallèle — se détruisaient mutuellement leur
+ * sauvegarde, l'un supprimant le `.orig` que l'autre s'apprêtait à restaurer.
+ * Le symptôme était un `ENOENT` au premier restore, faussement imputé au script.
+ */
+const TMP = 'scripts/.tmp';
+const BACKUP = `${TMP}/page.svelte.${process.pid}.orig`;
+const RAPPORT = `${TMP}/mutants-22-2b.${process.pid}.json`;
+mkdirSync(TMP, { recursive: true });
 
 /** @type {{name: string, from: string, to: string, expect: string}[]} */
 const MUTANTS = [
@@ -94,19 +108,67 @@ const MUTANTS = [
 		from: "\t\t\tif (seq === ideSeq) ideHolder = null;",
 		to: "\t\t\tvoid seq;",
 		expect: "une sonde qui ÉCHOUE efface"
-	}
+	},
+	{
+		name: "AC-b4 : ne pas annuler la minuterie précédente",
+		from: "\t\tif (nameProbeHandle) clearTimeout(nameProbeHandle);\n\t\tnameProbeHandle = setTimeout(runNameProbe, PROBE_DELAY_MS);",
+		to: "\t\tnameProbeHandle = setTimeout(runNameProbe, PROBE_DELAY_MS);",
+		expect: "preuve 1 : vingt caractères"
+	},
+	{
+		name: "AC-b4 : retirer la garde d’ordre de la sonde nom",
+		from: "\t\t\tif (seq !== nameSeq) return;",
+		to: "",
+		expect: "preuve 2 : deux réponses résolues"
+	},
+	{
+		name: "AC-b4 : une seule paire (minuterie, compteur) pour les deux sondes",
+		from: "\t\tconst seq = ++ideSeq;",
+		to: "\t\tconst seq = ++nameSeq;",
+		expect: "preuve 3 : le test CROISÉ"
+	},
+	{
+		name: "AC-b4 : sonder l’IDE sans vérifier son format",
+		from: "if (!ide || !validateIdeFormat(formIde)) {",
+		to: "if (!ide) {",
+		expect: "preuve 4 : valide → invalide → valide"
+	},
+	{
+		name: "ECH-3 : fermer le formulaire ne fait plus taire les sondes",
+		from: "\t$effect(() => {\n\t\tif (!formOpen) resetProbes();\n\t});",
+		to: "",
+		expect: "rouvrir en CRÉATION"
+	},
+	{
+		name: "BH-1 : try/catch inopérant sur la sonde NOM",
+		from: "\t\t\tif (seq === nameSeq) {\n\t\t\t\tproches = [];\n\t\t\t\tautres = 0;\n\t\t\t}",
+		to: "\t\t\tvoid seq;",
+		expect: "la sonde NOM qui échoue"
+	},
+	{
+		name: "BH-2 : le champ PRÉNOM ne réarme plus la sonde",
+		from: "bind:value={formFirstName}\n\t\t\t\t\t\t\toninput={scheduleNameProbe}",
+		to: "bind:value={formFirstName}",
+		expect: "preuve 2-bis : le champ PRÉNOM"
+	},
+	{
+		name: "BH-2 : le champ NOM DE FAMILLE ne réarme plus la sonde",
+		from: "bind:value={formLastName}\n\t\t\t\t\t\t\toninput={scheduleNameProbe}",
+		to: "bind:value={formLastName}",
+		expect: "preuve 2-ter : le champ NOM DE FAMILLE"
+	},
 ];
 
 function runSuite() {
 	try {
-		execFileSync('npx', ['vitest', 'run', SPEC, '--reporter=json', '--outputFile=.mutants.json'], {
+		execFileSync('npx', ['vitest', 'run', SPEC, '--reporter=json', `--outputFile=${RAPPORT}`], {
 			stdio: 'pipe'
 		});
 	} catch {
 		/* une suite rouge fait sortir vitest en code non nul — c'est attendu */
 	}
-	const report = JSON.parse(readFileSync('.mutants.json', 'utf-8'));
-	unlinkSync('.mutants.json');
+	const report = JSON.parse(readFileSync(RAPPORT, 'utf-8'));
+	unlinkSync(RAPPORT);
 	const failed = [];
 	for (const file of report.testResults ?? []) {
 		for (const t of file.assertionResults ?? []) {

@@ -1451,9 +1451,20 @@ mod tests {
 
     /// **Story 22-2b (#301) — preuve 9 d'AC-b1 : la fenêtre est assez large.**
     ///
-    /// La sonde demande `limit: 20` précisément pour que le doublon exact entre
-    /// dans la fenêtre : à `limit: 5`, le tri **alphabétique** du serveur
-    /// évincerait `Jean Zwahlen`, défaut fondateur de la Story 22-2.
+    /// La sonde demande `limit: 20` pour que le doublon exact entre dans la
+    /// fenêtre : à `limit: 5`, le tri **alphabétique** du serveur évincerait
+    /// `Jean Zwahlen`, défaut fondateur de la Story 22-2.
+    ///
+    /// ⚠️ **Ce que ce test N'établit PAS, et la nuance est tout le sujet.**
+    /// Il prouve que 20 suffit *pour sa fixture de six lignes*. Il ne prouve
+    /// pas que la fenêtre est « assez large » en général, et elle ne l'est
+    /// pas : le tri serveur reste alphabétique, sans aucun `ORDER BY MATCH(…)`
+    /// de pertinence. Au-delà de 20 contacts partageant un token du terme, le
+    /// doublon exact **n'entre pas dans la fenêtre**, et aucun classement
+    /// client ne peut le rattraper — `rank` réordonne ce qu'il reçoit, il ne
+    /// l'étend pas. Limite reproduite sur 25 sociétés en `Sàrl` et assumée
+    /// (D-b12), résidu de l'issue #315 dont la correction — le tri par
+    /// pertinence — touche un chemin partagé par quatre repositories.
     ///
     /// ⚠️ Ce test porte sur la **requête** — sémantique OU inclusif, tri, taille
     /// de fenêtre. Le **classement**, lui, est prouvé côté TypeScript
