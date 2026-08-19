@@ -824,6 +824,53 @@ bornes ; 7 tests au commit de dev et 10 à `HEAD` ; `297 → 265` cohérent aux 
 `54/1514 → 33/1493` concordant avec `ATTENDU` ; l'allowlist dont le `diff` rend **exactement** les 20
 clés du pilote, sans entrée étrangère.
 
+### Passe 5 de `bmad-code-review` — 2026-08-19, Haiku ×2, ciblée sur le patch de la passe 4
+
+**0 CRITICAL · 0 HIGH · 0 MEDIUM · 1 LOW.** ⚠️ **Le critère d'arrêt de la § *Review Iteration Rule*
+est atteint** : plus rien au-dessus de LOW, après cinq passes en rotation Sonnet → Haiku → Opus →
+Sonnet → Haiku. Trend : `1H/4M/2L` → `1H/1M/1L` → `3H/7M/5L` → `1H/2M/1L` → `0H/0M/1L`.
+
+**Et pour la première fois, la série s'interrompt** : ce patch-ci n'a pas introduit de régression.
+Les sept passes précédentes en avaient toutes trouvé une.
+
+**Les deux MEDIUM rapportés sont des faux positifs, et leur mécanisme est instructif.** La lentille
+signalait que le glossaire écrit `localité` et `prénom` en minuscule là où les catalogues portent
+`Localité` et `Prénom` — en ayant validé **trente lignes présentant exactement le même écart** dans
+son propre tableau. Vérification faite :
+
+```
+glossaire  →  catalogue          glossaire  →  catalogue
+facture    →  Factures           adresse    →  Adresse
+avoir      →  Avoir              contact    →  Nouveau contact
+```
+
+Le glossaire donne uniformément le terme en **forme de lemme** — minuscule et singulier — là où le
+catalogue porte des **libellés d'interface**. Capitaliser les deux lignes en aurait fait les seules
+majuscules du document.
+
+⚠️ **Mais la vérification a révélé une erreur réelle, de la passe 4 elle-même.** Si la mise au
+singulier est la convention uniforme, alors marquer `personne de contact` comme `DÉRIVÉ` était une
+**sur-correction** : la passe 4 a traité comme une anomalie ce qui est la règle du document. La
+mention est retirée.
+
+**Le LOW est ce que les deux erreurs ont en commun, et il valait cette passe** : la convention était
+**tacite**. Une convention tacite se fait prendre pour un défaut par qui relit — deux passes s'y sont
+trompées, en sens inverse l'une de l'autre — et, plus grave, **elle rend un défaut réel indiscernable
+d'elle-même**. Le seul écart qui comptait sur cette partie A était `city` contre `Town/city` : **un
+autre mot**, pas une casse ni un nombre. La convention est désormais écrite au préambule, avec ses
+deux méprises en exemple.
+
+⚠️ **Deux affirmations de la lentille code étaient fausses, et vérifiées comme telles** : elle
+annonçait « 668 tests du frontend » (il y en a **655**) et « suppression du validateur d'échappement
+→ tous les tests passent », alors que la mutation **fait rougir un test** — rejouée. Sa conclusion
+« zéro finding » se trouve juste ; deux de ses preuves ne tiennent pas. *Un rapport dont les preuves
+sont fausses n'est pas confirmé par une conclusion qui se trouve exacte.*
+
+**Livraison utile au-delà des findings** : les **52 lignes de la partie A** ont été passées au crible
+une à une contre les quatre catalogues — le contrôle que réclamait le statut « non négociable en
+rollout » de ce tableau. Deux lignes s'étaient révélées fausses aux passes 3 et 4 ; **il n'y en a pas
+de troisième**.
+
 ### Gates — exécutés, non déclarés
 
 | gate | résultat |
