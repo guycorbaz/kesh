@@ -46,7 +46,7 @@ que ceux dont cette story se sert.
 | clés à repli moissonnable (tout le dépôt) | **274 des 285** — 245 atteintes directement, +29 via les relais ; les 5 restantes ont un repli **interpolé** (ligne suivante), les 6 dernières viennent de l'inventaire (23-1a § D4-ter). ⚠️ **245 est la sortie d'un moissonneur AVEUGLE AUX RELAIS**, pas une cible |
 | clés sans repli littéral | 5, toutes dans `TransactionSplitModal` — **hors périmètre**, portées par la 23-5 |
 | clés à repli **divergent** | **7** — valeur de contrôle datée, le moissonneur la calcule |
-| partie B du glossaire | **16** entrées, dont **3** promues par cette story → **13** ensuite |
+| partie B du glossaire | **15** entrées, dont **3** promues par cette story → **12** ensuite |
 
 ## Décisions
 
@@ -145,7 +145,7 @@ clés du même composant portent déjà le préfixe `contact-persons-`.
 *(Il n'est pas « figé » au sens absolu : le commit de spécification de cette story y a ajouté `personne de contact`. Il l'est à partir de maintenant — la story n'y touche plus que pour la promotion d'AC11-bis.)*
 `docs/i18n-glossaire.md` existe (kickoff du 2026-08-19). Sa **partie A est contraignante** : 48
 équivalences relevées dans les 1216 clés déjà alignées, chacune nommant la clé qui l'atteste.
-Sa **partie B attend l'arbitrage de Guy** — **16** termes sans précédent.
+Sa **partie B attend l'arbitrage de Guy** — **15** termes sans précédent depuis que « analytique » a été tranché le 2026-08-19 et promu en partie A (`Projekt` / `progetto` / `project` : on ne traduit pas « analytique »).
 
 ⚠️ **Correction d'une affirmation de la première rédaction de cette spec.** Elle disait
 « aucun terme de la partie B n'apparaît dans les 20 clés du pilote (vérifié) ». **C'est faux, et
@@ -167,7 +167,7 @@ non plus neutre terminologiquement, ce qui était l'affirmation d'origine.
 story (`bb24d94c`, `i18n-glossaire.md:122`) — la rédaction précédente ordonnait de l'ajouter, ce
 qui aurait produit un doublon dans un document que cette même décision déclare « INPUT figé ». La
 story ne fait donc **qu'en promouvoir trois de B vers A** (AC11-bis) ; après quoi la partie B
-comptera **13** entrées, et le « douze » de `i18n-glossaire.md` doit suivre. *Relevé en passe 3 :
+comptera **12** entrées, et le « douze » de `i18n-glossaire.md` doit suivre. *Relevé en passe 3 :
 une valeur modifiée par l'édition même de cette spec, dont les compteurs n'avaient pas été
 recomptés.*
 
@@ -253,7 +253,7 @@ de tutoyer survit, son ordre de grandeur non.*
     majuscule ni point — et `field-building` en « N° » : c'est le patron que les 265 clés des
     rollouts recopieraient, et c'est le contraire exact de ce que D6 prescrit.*
 11-quater. **AC11-quater** — `docs/i18n-glossaire.md` est **cohérent après promotion** : partie B à
-    **13** entrées, **son préambule recompté — « 352 clés », « 1056 messages » (`:5-6`), la valeur
+    **12** entrées, **son préambule recompté — « 352 clés », « 1056 messages » (`:5-6`), la valeur
     `317`/`951` datant d'avant le recompte des relais** —, et le paragraphe qui l'accompagne réécrit
     **au passé** (il est aujourd'hui au
     futur : « trois de ces termes sont tranchés… les treize autres resteront ouverts »).

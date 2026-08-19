@@ -96,7 +96,27 @@ passage des rollouts qui touchent ces domaines, pas ici.
 | banque | Bank | banca | bank | `Banque` |
 | devise | Währung | valuta | currency | `Devise non supportée v0.1.` |
 | projet | Projekt | progetto | project | `depenses-par-projet` |
+| **projet analytique** | **Projekt** | **progetto** | **project** | arbitrage de Guy, 2026-08-19 — cf. la note ci-dessous |
 | dépenses | Ausgaben | spese | expenses | `depenses-par-projet` |
+
+⚠️ **« Projet analytique » se rend simplement par `Projekt` / `progetto` / `project`** — arbitrage
+de Guy du 2026-08-19, et il mérite sa justification parce que la proposition initiale de ce
+glossaire était **fausse**.
+
+Elle suggérait `Kostenstelle` / `centro di costo` / *cost center*. Or une **Kostenstelle** répond à
+« **où** le coût est-il né ? » — un service, un atelier, une unité permanente de l'organisation.
+Ce que Kesh appelle projet répond à « **pour quoi ?** » : la table `projects`
+(`20260702000001_projects_analytics.sql`) porte un code, un nom, deux niveaux de hiérarchie et des
+dates de début et de fin. C'est un objet **temporaire porteur de coûts** — un `Kostenträger` en
+allemand, une `commessa` en italien. **Le terme proposé désignait le mauvais concept.**
+
+Le choix retenu n'est pourtant ni l'un ni l'autre : **on ne traduit pas « analytique »**. Motifs —
+`Projekt` est **déjà attesté** au catalogue (`depenses-par-projet`) ; l'utilisateur lit ce que le
+logiciel fait réellement ; et une étiquette de champ n'est pas l'endroit où faire de la terminologie
+comptable. `Kostenträger` et `commessa` ont leur place dans le **manuel**, pas dans l'interface.
+
+Concerne quatre libellés, tous portés par les rollouts 23-3 et 23-5 : « Projet analytique »,
+« Projet analytique (optionnel) », « Projet analytique par défaut », « Projets analytiques ».
 
 ---
 
@@ -114,7 +134,6 @@ contraignantes pour tout le rollout.
 | règlement (d'une facture) | Begleichung / Zahlung | pagamento | settlement | ⚠️ **préférer « Zahlung » / « pagamento » / « payment »** et réserver « règlement » au français — deux mots pour un concept déjà couvert par *paiement* |
 | écarter / écartée (une pièce) | verwerfen / verworfen | scartare / scartata | discard / discarded | s'oppose à « compléter » dans la file d'import |
 | compléter | vervollständigen | completare | complete | idem |
-| analytique (compte, dimension) | **Kostenstelle** | **centro di costo** | cost center | ⚠️ **le vrai arbitrage de cette liste.** Kesh modélise l'analytique **par projet**, pas par centre de coûts. L'alternative est de ne jamais traduire « analytique » et de dire simplement *Projekt / progetto / project* — plus fidèle au modèle, moins conforme au vocabulaire comptable |
 | localité | Ort | località | city | champ d'adresse |
 | immuable | unveränderlich | immutabile | immutable | employé pour une pièce validée |
 | validité | Gültigkeit | validità | validity | |
@@ -129,10 +148,9 @@ contraignantes pour tout le rollout.
 
 ⚠️ **Trois de ces termes sont tranchés par la story 23-1**, dont le domaine pilote `contacts`
 les emploie : **localité**, **prénom** et **personne de contact**. Ils remonteront en partie A
-une fois la story mergée, avec la clé qui les atteste. Les **treize** autres resteront ouverts — dont
-**« analytique »**, le seul dont l'enjeu dépasse le vocabulaire. *(La partie B compte **16**
-entrées ; « douze » a été écrit quand elle en comptait quinze, avant que la spécification de la
-23-1 n'y ajoute `personne de contact`. Recompté en passe 3.)*
+une fois la story mergée, avec la clé qui les atteste. Les **douze** autres resteront ouverts. *(La partie B compte **15** entrées : elle en comptait 16
+jusqu'à l'arbitrage du 2026-08-19 sur « analytique », passé en partie A. Recompté depuis le tableau,
+comme l'exige la § « Recompter ses propres comptes rendus » du `CLAUDE.md`.)*
 
 ## Comment s'en servir
 
