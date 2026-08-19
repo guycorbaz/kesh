@@ -140,7 +140,7 @@
 		} catch {
 			notifyWarning(
 				i18nMsg(
-					'imported-supplier-invoices-reload-failed',
+					'imported-supplier-invoices-completed-reload-failed',
 					'Import effectué, mais la liste n’a pas pu être rechargée — actualisez la page.',
 				),
 			);

@@ -2,7 +2,7 @@
 
 ## Status
 
-draft
+review
 
 Deuxième rollout de l'Epic 23, et le plus gros : **109 clés** sur les 265 restantes de [#316].
 
@@ -129,17 +129,85 @@ donc **langue par langue**, sur le catalogue **complet** de chacune.
 
 ## Tasks
 
-- [ ] **T1 — Arbitrage** des termes de partie B (AC5). **Bloquant.**
-- [ ] **T2 — Scission de `supplier-invoices-col-total`** et son test (AC3), avant toute traduction.
-- [ ] **T3 — Arbitrage des deux autres conflits** (AC4).
-- [ ] **T4 — Relecture des 99 libellés `fr-CH`** moissonnés (AC6), consignée.
-- [ ] **T5 — `fr-CH`** : les 109 clés.
-- [ ] **T6 — `de-CH`, `it-CH`, `en-CH`** : les 109 × 3, avec contrôle d'homonymie langue par langue (AC7).
-- [ ] **T7 — Allowlist** : 275 → 166 (AC2).
+- [x] **T1 — Arbitrage** des termes de partie B (AC5). **Bloquant.**
+- [x] **T2 — Scission de `supplier-invoices-col-total`** et son test (AC3), avant toute traduction.
+- [x] **T3 — Arbitrage des deux autres conflits** (AC4).
+- [x] **T4 — Relecture des 99 libellés `fr-CH`** moissonnés (AC6), consignée.
+- [x] **T5 — `fr-CH`** : les 109 clés.
+- [x] **T6 — `de-CH`, `it-CH`, `en-CH`** : les 109 × 3, avec contrôle d'homonymie langue par langue (AC7).
+- [x] **T7 — Allowlist** : 275 → 166 (AC2).
 - [ ] **T8 — Gates complets, E2E comprise** (AC9), et PR en `refs #316` (AC10).
+
+## Dev Agent Record
+
+### ⚠️ TROIS conflits de repli, non deux — et chacun a demandé un arbitrage différent
+
+La spec en annonçait deux. Le test écrit pour `AC3` en a révélé **trois**, en rougissant :
+
+| clé | les deux replis | nature | arbitrage |
+|---|---|---|---|
+| `supplier-invoices-col-total` | « TTC » / « Total HT » | **défaut** — deux grandeurs | scindée en `-col-total` (TTC) et `-line-total` (HT) |
+| `imported-supplier-invoices-reload-failed` | « La liste n'a pas pu… » / « **Import effectué, mais** la liste… » | **deux sens** — le second affirme un succès | scindée ; le second devient `-completed-reload-failed` |
+| `supplier-invoices-field-reference` | « Référence (optionnel) » / « Référence » | formulaire vs détail | scindée ; le détail reçoit `-detail-reference` |
+| `supplier-invoices-field-project` | « Projet analytique (optionnel) » / « Projet analytique » | idem | scindée ; le détail reçoit `-detail-project` |
+
+⚠️ **Aplatir aurait été le geste facile et le mauvais.** Le `(optionnel)` est une convention du
+dépôt pour les **champs de saisie** (cf. `vat-rates-field-label`, story 23-2) ; l'écran de détail,
+lui, affiche un terme nu. Ce ne sont pas deux formulations d'une même étiquette, ce sont **deux
+étiquettes**.
+
+### La garde « une clé, un repli » — et pourquoi elle ne pouvait PAS s'appuyer sur le moissonneur
+
+`AC3` exigeait un test. Le moissonneur signale déjà les replis divergents — mais il ne voit **que
+les clés absentes des catalogues**. ⚠️ **Une fois la traduction livrée, il aurait cessé de les voir
+et se serait tu.** Une garde qui s'éteint au moment précis où le risque devient réel n'en est pas
+une : c'est le mode d'échec du test muet, déjà payé plusieurs fois sur ce dépôt.
+
+`i18n-un-repli-par-cle.test.ts` lit donc les **sources**, jamais les catalogues, et porte trois
+preuves : aucun repli divergent sur le domaine, les deux totaux restent **deux clés aux deux sens
+attendus**, et une **borne anti-vide** (`>= 90` clés relevées) sans laquelle un lecteur cassé
+rendrait les deux premières vertes à vide.
+
+### Le faux ami `Valider`, troisième rencontre — et le code a tranché
+
+`imported-supplier-invoices-save` porte le libellé « **Valider la facture** ». Or son nom de clé dit
+`-save`, son message de succès dit « Facture **créée** », et la route `complete_import` documente son
+étape (7) : « **Création de la facture réelle** ». Ce bouton **crée**, il ne valide pas au sens
+comptable — celui qui rend une pièce immuable et qu'établit `invoice-status-validated` (story 23-2).
+
+**Le français est conservé VERBATIM** — changer une chaîne visible dépasse le périmètre d'un rollout
+de traduction —, mais les trois cibles suivent **l'acte réel** : `Rechnung erfassen` / `Registra la
+fattura` / `Record the invoice`. ⚠️ **Le libellé français est à revoir**, et c'est écrit ici pour
+qu'on ne le redécouvre pas : propager `validieren` aurait fait dire à trois langues une chose que le
+code ne fait pas.
+
+### Preuves d'exécution
+
+| contrôle | résultat |
+|---|---|
+| couverture des 103 statiques | **103 / 103** dans chacune des trois cibles |
+| parité des 113 clés | `cargo test -p kesh-i18n` **29 / 29**, `parity_between_locales` vert |
+| décompte croisé | la garde a signalé **339 manquantes = 113 × 3** avant écriture des cibles |
+| allowlist | **275 → 166**, ventilation recomptée depuis la source : 160 + 4 + 2 |
+| pas de `ß` en `de-CH` | 0 |
+| garde « une clé, un repli » | 3 preuves vertes |
+
+### Gates — exécutés, non déclarés
+
+| gate | résultat |
+|---|---|
+| `cargo fmt --all -- --check` | OK |
+| `scripts/test-fast.sh --ci` (base remise à zéro) | **2219 / 2219**, 89,4 s |
+| `cargo test -p kesh-i18n` | **29 / 29** |
+| `npm run check` | **0 erreur** (27 warnings préexistants) |
+| `npm run lint-i18n-ownership` | PASS |
+| `npm run test:unit` | **658 / 658** sur 71 fichiers |
+| `npm run build` | vert |
+| `npm run test:e2e` | **183 passés**, 19 skippés, 11,9 min — ⚠️ **exigée ici** : contrairement à la 23-2, cette story touche du code applicatif |
 
 ## Change Log
 
 | date | passe | résultat |
 |---|---|---|
+| 2026-08-19 | implémentation | **113 clés × 4 locales**. Trois conflits de repli tranchés par **scission**, quatre clés neuves. Garde « une clé, un repli » lisant les sources et non les catalogues. Allowlist 275 → 166. Gates complets verts, E2E comprise. |
 | 2026-08-19 | création | spec initiale. ⚠️ **Le moissonneur a révélé un défaut applicatif latent** : `supplier-invoices-col-total` sert deux grandeurs différentes (TTC et HT) sur trois sites, et **c'est l'acte de traduire qui l'activerait**. |
