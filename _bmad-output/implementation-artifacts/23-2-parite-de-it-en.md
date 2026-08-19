@@ -2,7 +2,13 @@
 
 ## Status
 
-review
+done
+
+Clôturée le 2026-08-19 après **deux passes** de `bmad-code-review` (Opus puis Sonnet, contextes
+frais), trend `1H/3M/3L → 0H/0M/1L`. Critère d'arrêt de la § *Review Iteration Rule* atteint.
+
+**L'issue [#283] est fermée** : `dette-parite-connue.txt` ne contient plus aucune clé et la garde
+`parity_between_locales` est devenue **inconditionnelle**.
 
 Premier rollout de l'Epic 23, et le seul qui ferme **une issue entière** : [#283]. À son terme,
 `crates/kesh-i18n/dette-parite-connue.txt` est **vide** et la garde de parité devient
@@ -157,7 +163,7 @@ Pas de `ß` en allemand suisse.
 - [x] **T6 — Vidage de l'allowlist** (AC2, AC3) et vérification que la garde échoue toujours pour
       une clé retirée d'une locale — **mutation, pas raisonnement**.
 - [x] **T7 — Glossaire** (AC5) : promotion des trois termes, double entrée pour `bascule`.
-- [ ] **T8 — Gates complets** (AC9) et PR portant `closes #283` (AC10).
+- [x] **T8 — Gates complets** (AC9) et PR portant `closes #283` (AC10).
 
 ## Dev Agent Record
 
@@ -287,6 +293,48 @@ respectés (aucun `du` en allemand, tutoiement italien constant, **zéro `ß`**)
 échappées ont le **même `md5sum` dans les quatre locales** ; les **33 noms de placeables** sont
 rigoureusement identiques dans les quatre fichiers ; et tous les décomptes se recomptent juste
 (57 × 3, 171 lignes, 3 clés à placeable, partie A **55**, partie B **10**, `fr-CH` absent du diff).
+
+### Passe 2 de `bmad-code-review` — 2026-08-19, Sonnet, balayage systématique des TROIS langues
+
+**0 CRITICAL · 0 HIGH · 0 MEDIUM · 1 LOW.** ⚠️ **Le critère d'arrêt de la § *Review Iteration Rule*
+est atteint.** Trend : `1H/3M/3L → 0H/0M/1L`.
+
+**La consigne était le remède du défaut de la passe 1** : appliquer le contrôle d'homonymie aux
+**trois langues séparément**, chaque mot notable des 171 valeurs passé au `grep` sur le catalogue
+**complet** de sa locale, avec deux questions — *ce mot a-t-il un autre sens ici ?* (faux ami
+interne) et *ce concept est-il déjà rendu par un autre mot ?* (divergence lexicale) —, plus le
+contrôle des **accords** en italien. **Trente-deux mots contrôlés. Aucun faux ami interne restant.**
+
+**Le LOW est une asymétrie que j'ai introduite en passe 1**, et il vaut d'être relevé pour ce qu'il
+dit du geste : ayant remplacé `abgeschlossen` par `beendet` en allemand, j'avais laissé l'italien et
+l'anglais sur `chiusa` / `closed`, c'est-à-dire sur **le verbe de la clôture d'exercice** — terme à
+portée légale (CO art. 957-964, cinq sites par langue). Trois langues, deux traitements : **le même
+rétrécissement du contrôle qui avait produit le défaut de la passe 1**, reproduit par son correctif.
+
+⚠️ **Le français conflue les deux sens** — « clôturé » y vaut pour l'exercice comme pour le taux —,
+si bien que la source ne signale rien. Les trois cibles sont désormais alignées sur un verbe de
+**fin** et non de clôture : `beendet` / `terminerà` / `will end`. Un exercice se clôture, un taux
+prend fin.
+
+**Ce que la passe a CONFIRMÉ, et c'est l'essentiel de son apport** :
+
+- **`Aktiv` en allemand est bien un cas de coïncidence, pas de chance persistante** : vérifié sur
+  **huit** sites, le mot y est légitimement attesté pour les deux sens. Rien à corriger.
+- **`Buchungssatz` contre `Buchungen`** est une distinction **intentionnelle et préexistante** —
+  l'écriture formelle contre le titre de page — que le bloc reprend correctement.
+- **`Beschreibung` / `Bezeichnung`** : les deux clés sont câblées sur le bon champ cible, **et non
+  sur une traduction littérale du français**.
+- **Les accords italiens sont justes partout** — `creata`, `aggiornata`, `disattivata`,
+  `configurata`, `Nuova`, `facoltativa` s'accordent à `aliquota` ; et `Conto … (Attivo)` reste
+  **correctement masculin**, s'accordant à `Conto` et non à `aliquota`.
+- Les huit valeurs patchées en passe 1 vérifiées **une à une** contre leur précédent catalogue :
+  aucune régression. Le décompte des 17 `transaction` **recompté** et confirmé.
+- Placeables : **33 identiques**, même `md5sum` dans les quatre locales.
+
+**Deux divergences préexistantes, relevées et NON corrigées** — elles sont antérieures au bloc et se
+tranchent au glossaire, pas dans une story de rollout : `Verlauf` contre `Historie` en allemand, et
+`storico` contre `Cronologia` en italien, pour « historique ». **`MwSt` résiduel** : confirmé hors
+périmètre, désormais tracé en **issue #321**.
 
 ## Change Log
 
