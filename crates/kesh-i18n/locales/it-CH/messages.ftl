@@ -1415,10 +1415,13 @@ error-invoice-pdf-header-overflow = L'intestazione del documento non entra nella
 # Story 23-2 (#283) — parità it-CH : le 57 chiavi che esistevano solo in fr-CH.
 # Termini RILEVATI nel catalogo, non inventati : scrittura contabile
 # (error-journal-entry-linked-to-invoice), esercizio (error-no-fiscal-year), Convalidata
-# (invoice-status-validated), Attivo/Inattivo (account-type-asset), Ricavo (account-type-revenue),
+# (invoice-status-validated), Ricavo (account-type-revenue),
+# ⚠️ Attiva/Inattiva (reconciliation-rules-labels-active, api-keys-labels-status-active) — le STATUT,
+# et NON Attivo/Inattivo qui est la classe di bilancio (account-type-asset). L'italien fait la même
+# distinction que l'anglais entre Active et Asset, et le sujet « aliquota » est féminin.
 # Descrizione vs Etichetta (journal-entries-col-description / reconciliation-rules-labels-label).
 # ⚠️ « Date de bascule » NON è l'interruttore del glossario : è il cambiamento di aliquota.
-error-configuration-required = Configurazione incompleta: configura i parametri di fatturazione prima di convalidare.
+error-configuration-required = Configurazione incompleta: configura le impostazioni di fatturazione prima di convalidare.
 error-fiscal-year-invalid = Nessun esercizio aperto copre questa data.
 invoice-error-already-validated = Questa fattura è già convalidata.
 invoice-error-configuration-required = Configura i conti predefiniti in Impostazioni > Fatturazione prima di convalidare una fattura.
@@ -1446,7 +1449,7 @@ settings-invoicing-save = Salva
 settings-invoicing-save-success = Configurazione salvata
 settings-invoicing-title = Impostazioni — Fatturazione
 settings-vat-rates-link = Configura le aliquote IVA e le loro date di validità (i cambiamenti di aliquota sono gestiti nel tempo).
-vat-rates-active = Attivo
+vat-rates-active = Attiva
 vat-rates-change = Cambia l'aliquota
 vat-rates-change-error = Il cambiamento di aliquota non è riuscito.
 vat-rates-change-hint = La vecchia aliquota sarà chiusa alla data di cambiamento, e la nuova aliquota avrà effetto da tale data.
@@ -1470,7 +1473,7 @@ vat-rates-field-new-rate = Nuova aliquota (%)
 vat-rates-field-rate = Aliquota (%)
 vat-rates-field-switch-date = Data di cambiamento
 vat-rates-field-to = Fino al (facoltativo)
-vat-rates-inactive = Inattivo
+vat-rates-inactive = Inattiva
 vat-rates-load-error = Impossibile caricare le aliquote IVA.
 vat-rates-new = Nuova aliquota
 vat-rates-subtitle = Configura le aliquote IVA e le loro date di validità. Le vecchie aliquote restano applicate alle operazioni anteriori.

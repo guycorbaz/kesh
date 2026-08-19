@@ -225,6 +225,69 @@ depuis le texte source, et chacun aurait produit une erreur qu'aucun test n'aura
 ⚠️ **La garde NOMME la clé fautive**, elle ne se contente pas de rougir — c'est ce qui la rend
 utilisable par qui ne connaît pas cette story.
 
+### Passe 1 de `bmad-code-review` — 2026-08-19, Opus, lentille terminologique
+
+**0 CRITICAL · 1 HIGH · 3 MEDIUM · 3 LOW.** ⚠️ **Le HIGH est la quatrième homonymie — et c'est celle
+que la story croyait avoir traitée.**
+
+`vat-rates-active` / `vat-rates-inactive` étaient rendus en italien par **`Attivo` / `Inattivo`**,
+c'est-à-dire par la forme de la **classe de bilan**, pour libeller un **statut**. Or l'italien fait
+exactement la distinction que l'anglais fait, et le catalogue l'atteste sans exception :
+
+```
+account-type-asset = Attivo                    ← classe de bilan
+reconciliation-rules-labels-active = Attiva    ← STATUT
+api-keys-labels-status-active   = Attiva       ← STATUT
+```
+
+Mes deux clés étaient **les seules du catalogue** à rendre un statut par la forme de la classe. Le
+défaut se doublait d'une faute d'accord : le sujet est `aliquota`, féminin, et tout le reste du bloc
+le sait (`Nuova aliquota`, `Aliquota disattivata`, `Valida dal`).
+
+⚠️ **Et l'en-tête du bloc l'avouait en toutes lettres** : `# … Attivo/Inattivo (account-type-asset)`.
+Le terme était relevé sur la bonne clé pour le mauvais sens. *La méthode « relever, ne pas inventer »
+ne protège pas si l'on relève au mauvais endroit.*
+
+⚠️ **Le raisonnement était faux dans les trois langues ; deux s'en sont tirées.** L'anglais parce
+que la distinction `Active` / `Asset` est trop voyante pour être manquée — c'est elle que la story
+avait vue. L'allemand **par coïncidence** : `Aktiv` y est attesté pour les *deux* sens. L'italien a
+payé. **La section « trois homonymies » du Dev Agent Record ne raisonnait que sur l'anglais** ;
+c'est ce rétrécissement du contrôle, et non le relevé lui-même, qui a laissé passer le défaut.
+
+**Trois MEDIUM de cohérence lexicale** — aucun ne trompe sur le sens, tous font dire **deux mots au
+produit pour une même chose**, ce que le glossaire existe pour empêcher :
+
+| clé | écrit | attesté ailleurs |
+|---|---|---|
+| `error-configuration-required` | `Rechnungsparameter` / `parametri di fatturazione` | `export-global-content-includes` → `Rechnungseinstellungen` / `impostazioni di fatturazione` |
+| `settings-invoicing-receivable-account` | `Debitorenkonto` / `Accounts receivable` | `account-role-receivable` → `Forderungen aus Lieferungen und Leistungen` / `Trade receivables` |
+| `vat-rates-subtitle` (en) | `earlier transactions` | ⚠️ `transaction` est employé **17 fois** en `en-CH` et **toujours** au sens de ligne bancaire importée — « earlier transactions » se lirait « les transactions bancaires antérieures » |
+
+⚠️ Sur le compte de créances, le correctif suit le **patron attesté** des champs de sélection de
+compte, que la lentille a exhumé : `invoices-settings-vat-recoverable = Konto Vorsteuer (Aktiv)` /
+`Conto IVA recuperabile (Attivo)` / `Recoverable VAT account (Asset)`. La parenthèse de classe de
+bilan, elle, était **déjà juste** et suit ce même précédent.
+
+**LOW corrigés** : `abgeschlossen` → `beendet` (le catalogue réserve `geschlossen` à la clôture
+d'exercice, et un taux ne se clôture pas) ; `Settings saved` → `Configuration saved`, l'anglais
+ayant aplati une distinction que le français, l'allemand et l'italien conservent.
+
+**LOW signalés et NON corrigés, avec leur motif** :
+- `storico` contre `Cronologia` en italien pour « historique » — hésitation **préexistante**, que
+  l'allemand a aussi (`Historie` / `Verlauf`). Se tranche au glossaire, pas dans une story de rollout.
+- ⚠️ **Six chaînes antérieures portent encore `MwSt` au lieu de `MWST`** en `de-CH` (lignes 474, 517,
+  575, 984, 985, 988). **Hors périmètre** : la story n'y touche pas et le bloc 23-2 écrit `MWST`
+  partout. À reprendre par un rollout ultérieur.
+
+**Ce que la revue a CONFIRMÉ, contrôlé sur fichier et non sur le récit** : les trois homonymies
+revendiquées le sont réellement, **dans les trois langues sans exception** ; la terminologie suisse
+tient partout (`MWST` jamais `USt`, `Geschäftsjahr`, `Buchungssatz`, `Vorsteuer`, `aliquota`,
+`Giornale` et non `Diario`) ; le piège `bascule` est traité sans contamination ; les registres sont
+respectés (aucun `du` en allemand, tutoiement italien constant, **zéro `ß`**) ; les accolades
+échappées ont le **même `md5sum` dans les quatre locales** ; les **33 noms de placeables** sont
+rigoureusement identiques dans les quatre fichiers ; et tous les décomptes se recomptent juste
+(57 × 3, 171 lignes, 3 clés à placeable, partie A **55**, partie B **10**, `fr-CH` absent du diff).
+
 ## Change Log
 
 | date | passe | résultat |

@@ -1420,7 +1420,7 @@ error-invoice-pdf-header-overflow = Der Dokumentkopf passt nicht auf die Seite. 
 # (account-type-asset / account-role-archived-hint), Ertrag (account-type-revenue),
 # Beschreibung vs Bezeichnung (journal-entries-col-description / reconciliation-rules-labels-label).
 # ⚠️ « Date de bascule » n'est PAS l'interrupteur du glossaire : c'est le changement de taux.
-error-configuration-required = Unvollständige Konfiguration: Richten Sie die Rechnungsparameter ein, bevor Sie validieren.
+error-configuration-required = Unvollständige Konfiguration: Richten Sie die Rechnungseinstellungen ein, bevor Sie validieren.
 error-fiscal-year-invalid = Kein offenes Geschäftsjahr deckt dieses Datum ab.
 invoice-error-already-validated = Diese Rechnung ist bereits validiert.
 invoice-error-configuration-required = Richten Sie die Standardkonten unter Einstellungen > Fakturierung ein, bevor Sie eine Rechnung validieren.
@@ -1442,7 +1442,7 @@ settings-invoicing-format-label = Nummerierungsformat
 settings-invoicing-format-preview = Vorschau
 settings-invoicing-format-too-long = Das Format ist zu lang
 settings-invoicing-journal = Journal
-settings-invoicing-receivable-account = Debitorenkonto (Aktiv)
+settings-invoicing-receivable-account = Konto Forderungen aus Lieferungen und Leistungen (Aktiv)
 settings-invoicing-revenue-account = Ertragskonto (Ertrag)
 settings-invoicing-save = Speichern
 settings-invoicing-save-success = Konfiguration gespeichert
@@ -1451,7 +1451,7 @@ settings-vat-rates-link = Richten Sie die MWST-Sätze und ihre Gültigkeitsdaten
 vat-rates-active = Aktiv
 vat-rates-change = Satz ändern
 vat-rates-change-error = Die Satzänderung ist fehlgeschlagen.
-vat-rates-change-hint = Der alte Satz wird zum Umstellungsdatum abgeschlossen, und der neue Satz tritt zu diesem Datum in Kraft.
+vat-rates-change-hint = Der alte Satz wird zum Umstellungsdatum beendet, und der neue Satz tritt zu diesem Datum in Kraft.
 vat-rates-changed = Satz aktualisiert.
 vat-rates-col-actions = Aktionen
 vat-rates-col-from = Gültig ab
