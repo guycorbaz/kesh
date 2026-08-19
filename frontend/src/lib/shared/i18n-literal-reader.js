@@ -142,8 +142,21 @@ function ouvreUnLitteral(source, i) {
 	let k = i - 1;
 	while (k >= 0 && ' \t'.includes(source[k])) k -= 1;
 	if (k < 0) return true;
-	return !/[\w\u00C0-\u024F]/.test(source[k]);
+	// `\p{L}` couvre TOUT l'Unicode — pas seulement le latin étendu : une apostrophe
+	// après un emoji ou un idéogramme rouvrait un faux littéral.
+	if (!/[\p{L}\p{N}_$]/u.test(source[k])) return true;
+	// …mais un mot-clé suivi d'une quote SANS espace reste une ouverture valide :
+	// `return'x'`, `typeof'x'`, `case'x'` sont du JavaScript légitime.
+	let d = k;
+	while (d >= 0 && /[\p{L}\p{N}_$]/u.test(source[d])) d -= 1;
+	return MOTS_CLES_AVANT_LITTERAL.has(source.slice(d + 1, k + 1));
 }
+
+/** Mots-clés après lesquels une quote collée ouvre bien une chaîne. */
+const MOTS_CLES_AVANT_LITTERAL = new Set([
+	'return', 'typeof', 'case', 'in', 'of', 'delete', 'void', 'do', 'else',
+	'yield', 'await', 'new', 'throw', 'instanceof'
+]);
 
 /**
  * Vrai si le `/` en position `i` ouvre un littéral de regex plutôt qu'une division.
@@ -172,6 +185,11 @@ function estDebutDeRegex(source, i) {
  * @returns {number | null}
  */
 function finDeRegex(source, i) {
+	// ⚠️ `//` et `/*` ne sont JAMAIS des regex : ce sont des commentaires. Une regex
+	// vide s'écrit `/(?:)/`. Sans ce garde, `//` était lu comme une regex vide et le
+	// commentaire échappait au masquage. (Trouvé en écrivant la preuve du correctif de
+	// la passe 2 — le correctif avait son propre défaut.)
+	if (source[i + 1] === '/' || source[i + 1] === '*') return null;
 	let k = i + 1;
 	let classe = false; // à l'intérieur d'un `[…]`, un `/` n'est pas une fermeture
 	while (k < source.length) {
@@ -218,6 +236,18 @@ export function masquerCommentaires(source) {
 			// Un littéral est recopié tel quel : un `//` dans une URL n'est pas un commentaire.
 			i = lu ? lu.end : i + 1;
 			continue;
+		}
+		// ⚠️ Une regex AVANT le test des commentaires : `href.replace(/^\//, '')` contient
+		// deux `/` consécutifs — un `\/` échappé suivi du délimiteur fermant. Pris pour
+		// un `//`, il faisait blanchir la fin de la ligne, et tout appel qui l'y suivait
+		// disparaissait. Le cas est RÉEL : `routes/(app)/+layout.svelte:241`, le fichier
+		// même qui porte les 22 clés du menu. (Revue de code 23-1a, passe 2.)
+		if (c === '/' && estDebutDeRegex(source, i)) {
+			const fin = finDeRegex(source, i);
+			if (fin !== null) {
+				i = fin;
+				continue;
+			}
 		}
 		if (c === '/' && source[i + 1] === '/') {
 			while (i < source.length && source[i] !== '\n') out[i++] = ' ';
@@ -281,27 +311,57 @@ function skipTrivia(source, i) {
 export function findRelays(source) {
 	/** @type {string[]} */
 	const noms = [];
-	// Deux formes de déclaration — `function nom(…)` et `const nom = (…) =>` — et un
-	// corps qui peut faire autre chose avant de transmettre. ⚠️ La rédaction initiale
-	// n'acceptait que la première forme avec un `return` en PREMIÈRE instruction : un
-	// relais écrit en fléchée, ou précédé d'une garde (`if (!key) return fallback;`),
-	// devenait invisible — et avec lui TOUS ses sites d'appel, en silence.
-	// (Revue de code 23-1a, passe 1.)
+	// Deux formes de déclaration — `function nom(…)` et `const nom = (…) =>`.
 	const decl =
-		/(?:function\s+(\w+)\s*\(|(?:const|let)\s+(\w+)\s*=\s*\()\s*(\w+)\s*:\s*string\s*,\s*(\w+)\s*:\s*string[^)]*\)[^{]*\{([\s\S]{0,400}?)return\s+i18nMsg\(\s*(\w+)\s*,\s*(\w+)/g;
+		/(?:function\s+(\w+)\s*\(|(?:const|let)\s+(\w+)\s*=\s*\()\s*(\w+)\s*:\s*string\s*,\s*(\w+)\s*:\s*string[^)]*\)[^{]*\{/g;
 	let m;
 	while ((m = decl.exec(source)) !== null) {
-		const [, nomFn, nomConst, pKey, pFallback, corpsAvant, aKey, aFallback] = m;
+		const [, nomFn, nomConst, pKey, pFallback] = m;
 		const nom = nomFn ?? nomConst;
-		// Le corps doit TRANSMETTRE les paramètres, pas construire une clé…
-		if (aKey !== pKey || aFallback !== pFallback) continue;
-		// …et le `return i18nMsg` doit appartenir à CETTE fonction : une accolade
-		// fermante avant lui signalerait qu'on a quitté son corps.
-		if (corpsAvant.includes('}')) continue;
-		if (!noms.includes(nom)) noms.push(nom);
+		// ⚠️ Le corps est délimité par APPARIEMENT D'ACCOLADES, jamais par un nombre de
+		// caractères. Une borne `{0,400}` rendait invisible tout relais au corps plus
+		// long — et l'assertion de cardinalité ne l'aurait PAS rattrapé : elle compte les
+		// relais DÉTECTÉS, donc un relais jamais vu laisse le compte inchangé.
+		// (Revue de code 23-1a, passe 2.)
+		const corps = corpsDeFonction(source, m.index + m[0].length - 1);
+		if (corps === null) continue;
+		const transmet = new RegExp(
+			`return\\s+i18nMsg\\(\\s*${pKey}\\s*,\\s*${pFallback}\\s*[,)]`
+		);
+		if (transmet.test(corps) && !noms.includes(nom)) noms.push(nom);
 	}
 	return noms;
 }
+
+/**
+ * Rend le corps de la fonction dont l'accolade ouvrante est en `ouvrante`, en
+ * appariant les accolades et en sautant les littéraux — sans quoi une accolade dans
+ * une chaîne fausserait le compte.
+ *
+ * @param {string} source
+ * @param {number} ouvrante
+ * @returns {string | null}
+ */
+function corpsDeFonction(source, ouvrante) {
+	let profondeur = 0;
+	let j = ouvrante;
+	while (j < source.length) {
+		const c = source[j];
+		if (QUOTES.includes(c) && ouvreUnLitteral(source, j)) {
+			const lu = readLiteral(source, j);
+			j = lu ? lu.end : j + 1;
+			continue;
+		}
+		if (c === '{') profondeur += 1;
+		else if (c === '}') {
+			profondeur -= 1;
+			if (profondeur === 0) return source.slice(ouvrante + 1, j);
+		}
+		j += 1;
+	}
+	return null;
+}
+
 
 /**
  * Recense tous les sites d'appel de `i18nMsg` et des relais du fichier, et lit le

@@ -1091,6 +1091,39 @@ l'inventaire passe de **36 sur 1496** à **33 sur 1493**. Les valeurs de la spec
 **Une observation hors périmètre a été réfutée** : une lentille signalait le retour du fichier
 supprimé dans l'arbre de travail. `git status` est propre et le fichier n'existe pas.
 
+### Passe 2 de `bmad-code-review` — 2026-08-19, Haiku ×3, diff aplati, contextes frais
+
+**0 CRITICAL · 1 HIGH · 2 MEDIUM · 2 LOW** — contre 4 HIGH en passe 1. **L'Acceptance Auditor rend
+0 finding au-dessus de LOW** : il a vérifié au sol, une par une, les remédiations de la passe 1, et
+les neuf chiffres du dossier convergent entre spec, story file et code.
+
+**Le HIGH est un défaut que MON correctif de la passe 1 a introduit.** Le masquage des commentaires
+ne reconnaissait pas les littéraux de regex : `href.replace(/^\//, '')` contient deux `/`
+consécutifs — un `\/` échappé suivi du délimiteur fermant — pris pour un `//`, donc la fin de la
+ligne était blanchie et tout appel qui l'y suivait disparaissait.
+⚠️ **Le cas est RÉEL et vivant** : `routes/(app)/+layout.svelte:241`, c'est-à-dire **le fichier qui
+porte les 22 clés du menu principal**. Aucune clé n'était perdue aujourd'hui — il n'y a pas d'appel
+sur cette ligne — mais le mécanisme était cassé là où il compte le plus. *La lentille a conclu que
+le dépôt n'était pas touché ; il l'était, et c'est en cherchant l'exposition réelle que je l'ai vu.*
+
+**Et le correctif de ce correctif avait lui-même un défaut**, trouvé en écrivant sa preuve : mon
+détecteur de regex prenait `//` pour une **regex vide**, si bien que les commentaires de ligne
+échappaient de nouveau au masquage. Une regex vide s'écrit `/(?:)/` ; `//` est toujours un
+commentaire. *Troisième fois dans ce dossier qu'un correctif porte le défaut qu'il corrige.*
+
+**MEDIUM retenus.** La borne de **400 caractères** de `findRelays` rendait invisible tout relais au
+corps plus long — remplacée par un **appariement d'accolades**, qui saute les littéraux.
+⚠️ **La lentille affirmait que l'assertion de cardinalité rattraperait ce cas ; c'est faux, et cela
+rend le finding plus grave qu'annoncé** : l'assertion compte les relais *détectés*, donc un relais
+jamais vu laisse le compte inchangé et la garde reste verte. Et la règle « une quote précédée d'une
+lettre n'ouvre pas une chaîne » rejetait `return'x'` — du JavaScript valide — et ne couvrait que le
+latin étendu, laissant une apostrophe après un emoji rouvrir un faux littéral. Corrigé par `\p{L}`
+et une liste de mots-clés.
+
+**Les compteurs n'ont pas bougé** — 1493 sites, 33 non résolus, 10 gabarits, 7 relais, 1151
+littéraux, 5 depuis `.ts`. Ces correctifs ferment des défauts **latents** sans rien déplacer
+aujourd'hui : c'est ce qu'on attend d'un patch de robustesse. Quatre preuves neuves les inscrivent.
+
 ### Gates — exécutés, non déclarés
 
 | gate | résultat |
@@ -1100,7 +1133,7 @@ supprimé dans l'arbre de travail. `git status` est propre et le fichier n'exist
 | backend complet (`test-fast.sh`, base **remise à zéro d'abord**) | **2219/2219**, 4 ignorés, 138 s — *+1 test : la garde A* |
 | `npm run check` | **0 erreur** (27 avertissements préexistants) |
 | `npm run lint-i18n-ownership` | PASS |
-| `npm run test:unit` | **633/633** sur 69 fichiers — *+19 tests neufs à l'implémentation, +7 en revue, **−2** par la suppression du prototype : **net +24** depuis `98026213` (609)* |
+| `npm run test:unit` | **637/637** sur 69 fichiers — *+19 tests neufs à l'implémentation, +7 en revue, **−2** par la suppression du prototype : **net +24** depuis `98026213` (609)* |
 | `npm run build` | vert |
 
 ⚠️ **E2E non exécutée** : cette story ne touche aucune surface utilisateur — ni `.svelte` de

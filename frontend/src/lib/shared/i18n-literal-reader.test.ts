@@ -114,6 +114,39 @@ describe('le recensement des relais', () => {
 	});
 });
 
+describe('défauts trouvés en passe 2 de revue', () => {
+	it('une regex contenant `//` ne fait pas passer la suite de la ligne pour un commentaire', () => {
+		// ⚠️ Cas RÉEL : `routes/(app)/+layout.svelte:241` écrit `href.replace(/^\\//, '')`.
+		// Le `\\/` échappé suivi du délimiteur fermant forme deux `/` consécutifs — pris
+		// pour un `//`, ils faisaient blanchir la fin de la ligne, et tout appel qui l'y
+		// suivait disparaissait. C'est le fichier qui porte les 22 clés du menu.
+		const src = "const s = x.replace(/^\\//g, '') + i18nMsg('cle-apres-regex', 'v');";
+		expect(findCallSites(src).map((s) => s.arg?.value)).toEqual(['cle-apres-regex']);
+	});
+
+	it('une chaîne collée à un mot-clé est bien lue', () => {
+		// La règle « une quote précédée d'une lettre n'ouvre pas une chaîne » protège des
+		// apostrophes de prose, mais `return'x'` et `typeof'x'` sont du JavaScript valide.
+		const src = "function f() { return'x'; }\nconst a = i18nMsg('cle-ok', 'v');";
+		expect(findCallSites(src).map((s) => s.arg?.value)).toContain('cle-ok');
+	});
+
+	it('un relais dont le corps dépasse quelques centaines de caractères reste vu', () => {
+		// ⚠️ Une borne de caractères rendait invisible tout relais au corps long — et
+		// l'assertion de cardinalité ne l'aurait PAS rattrapé : elle compte les relais
+		// DÉTECTÉS, donc un relais jamais vu laisse le compte inchangé.
+		const corps = "\tconst x = 'a'.repeat(350);\n".repeat(20);
+		const src = `function msg(key: string, fallback: string): string {\n${corps}\treturn i18nMsg(key, fallback);\n}`;
+		expect(findRelays(src)).toEqual(['msg']);
+	});
+
+	it('une accolade dans une chaîne du corps ne fausse pas la détection du relais', () => {
+		const src =
+			"function msg(key: string, fallback: string): string { const c = '}'; return i18nMsg(key, fallback); }";
+		expect(findRelays(src)).toEqual(['msg']);
+	});
+});
+
 describe('cas limites du lecteur', () => {
 	it('lit un littéral échappé sans se laisser fermer trop tôt', () => {
 		expect(readLiteral(String.raw`'Saisie d\'écriture'`, 0)?.value).toBe("Saisie d'écriture");
