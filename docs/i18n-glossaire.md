@@ -22,14 +22,22 @@ catalogues. Ce qui y est écrit est une proposition, pas un relevé.
 | Locale | Registre | Mesure |
 |---|---|---|
 | `fr-CH` | vouvoiement | 44 messages avec « vous / votre » |
-| `de-CH` | **Sie-Form** | 115 messages avec « Sie » |
+| `de-CH` | **Sie-Form** | 115 **messages** avec « Sie » (117 *lignes* — les messages multi-lignes comptent double) |
 | `it-CH` | **2ᵉ personne du singulier** (« Configura », « Scegli ») | 31 contre **1** au pluriel de courtoisie |
 | `en-CH` | impératif neutre, sans pronom | — |
 
 ⚠️ **L'italien tutoie et l'allemand vouvoie.** Ce n'est pas une incohérence à corriger :
-c'est l'usage courant des interfaces dans ces deux langues. La seule vraie anomalie est
-`Aggiungete un conto al piano dei conti.` — **unique** occurrence du pluriel de courtoisie
-en italien, à aligner au passage du rollout qui touchera ce domaine.
+c'est l'usage courant des interfaces dans ces deux langues.
+
+⚠️ **En revanche l'italien N'EST PAS homogène, et la première rédaction de ce § le sous-estimait.**
+Elle annonçait « **unique** occurrence » du pluriel de courtoisie, à savoir
+`accounts-create-description` (« Aggiungete un conto al piano dei conti. »). Recompté en passe 1 de
+`validate` de la story 23-1 : **2 occurrences de « Aggiungete »** — la seconde est
+`homepage-bank-empty-guided`, qui cumule l'impératif ET le possessif de politesse (« Aggiungete
+**il vostro** conto ») — et **10 lignes** employant `vostro`/`vostra`/`vostri`/`vostre`. *Une
+affirmation portant le titre « mesuré, pas supposé » et qui ne l'était qu'à moitié : qui corrigerait
+sur la foi de la version précédente croirait le défaut borné à une ligne.* L'alignement se fait au
+passage des rollouts qui touchent ces domaines, pas ici.
 
 ---
 

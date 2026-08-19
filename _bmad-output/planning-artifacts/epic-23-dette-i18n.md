@@ -20,7 +20,8 @@ germanophone, avec tous les gates au vert. C'est le **test muet** transposé aux
 |---|---|
 | clés par catalogue | `fr-CH` **1273**, `de-CH` / `en-CH` / `it-CH` **1216** |
 | **[#283]** clés en `fr-CH` absentes ailleurs | **57**, et le **même ensemble** sur les trois locales (union = intersection) ; **0** clé en trop |
-| **[#316]** littéraux demandés par `i18nMsg()` et absents des 4 catalogues | **258**, dont **8 motifs dynamiques** (`journal-${j.toLowerCase()}`, `vat-category-${r.category}`…) → **250 clés statiques** |
+| **[#316]** littéraux demandés par `i18nMsg()` et absents des 4 catalogues | **258**, dont **8 littéraux dynamiques** (`journal-${j.toLowerCase()}`, `vat-category-${r.category}`…) → **250 clés statiques** |
+| préfixes dynamiques réels / sites d'appel | **8** / **10** — ⚠️ les 8 littéraux ci-dessus ne couvrent que **7** préfixes ; le 8ᵉ, `bank-import-info-*`, avait échappé à l'extraction (passe 1 de `validate` de la 23-1) |
 | replis moissonnables mécaniquement | **245** / 250 |
 | clés sans repli littéral | **5**, toutes dans `TransactionSplitModal.svelte` — replis interpolés (`` `Ligne ${i + 1} : compte requis` ``) → entrées Fluent **à variables** |
 | dossiers concernés | **13** pour [#316] |
@@ -31,8 +32,8 @@ Commande de recompte, à rejouer et non à croire :
 
 ```sh
 cd crates/kesh-i18n/locales
-comm -23 <(grep -oE '^[a-z0-9-]+ =' fr-CH/messages.ftl | sort -u) \
-         <(grep -oE '^[a-z0-9-]+ =' de-CH/messages.ftl | sort -u) | wc -l
+LC_ALL=C comm -23 <(grep -oE '^[a-z0-9-]+ =' fr-CH/messages.ftl | LC_ALL=C sort -u) \
+                  <(grep -oE '^[a-z0-9-]+ =' de-CH/messages.ftl | LC_ALL=C sort -u) | wc -l
 ```
 
 ### Répartition de [#316] par dossier — elle donne le découpage
@@ -85,9 +86,15 @@ domaine à chaque fois — `client_number_labels_are_translated_in_all_four_loca
    `i18nMsg()` existe au catalogue. Ferme [#316] pour de bon. Le test existant
    `duplicate-i18n-keys.test.ts` en est la version bornée à `contact-duplicate-*` : il est le
    point de départ, sa portée est à ouvrir.
-3. **Les 8 motifs dynamiques** ne sont pas des clés : ils se traitent par **énumération
-   déclarée** (le motif + la liste close de ses valeurs), sans quoi la garde les ignore en
-   silence — exactement le défaut qu'elle prétend fermer.
+3. **Les 8 préfixes dynamiques** (sur **10 sites d'appel**) ne sont pas des clés : ils se traitent
+   par **énumération déclarée** (le motif + la liste de ses valeurs), sans quoi la garde les ignore
+   en silence — exactement le défaut qu'elle prétend fermer.
+   ⚠️ **Deux réserves établies en passe 1 de `validate` de la 23-1.** (a) Le recensement initial de ces
+   motifs en avait **manqué un** (`bank-import-info-*`), parce qu'une extraction par classe de
+   caractères négative ne traverse pas un gabarit dont l'interpolation contient des apostrophes —
+   la garde doit résister à ce cas. (b) `vat-category-*` n'est **pas** énumérable : sa colonne n'a
+   aucune contrainte `CHECK`, par décision explicite de la Story 11-1, donc les catégories créées
+   par un administrateur restent un **angle mort assumé**.
 
 ⚠️ **Angle mort assumé de la garde, et il porte un numéro : [#255].** Une chaîne écrite **en
 dur** dans un `.svelte`, sans passer par `i18nMsg()` du tout, n'est visible d'aucun des deux
@@ -99,7 +106,7 @@ appelle un contrôle d'une autre nature (détection de littéraux affichés).
 
 | Story | Objet | Clés |
 |---|---|---|
-| **23-1** | **Socle** : les deux gardes, avec allowlist explicite des clés connues, **décroissante seulement** ; moissonneur de replis versionné ; les 8 motifs dynamiques ; glossaire figé ; domaine pilote `contacts` (12 + 8) | 20 |
+| **23-1** | **Socle** : les deux gardes, avec allowlist explicite des clés connues, **décroissante seulement** ; moissonneur de replis versionné ; les 8 préfixes dynamiques (10 sites) ; glossaire figé ; domaine pilote `contacts` (12 + 8) | 20 |
 | **23-2** | **[#283]** — les 57 clés en `de-CH` / `it-CH` / `en-CH`. La garde de **parité** devient inconditionnelle : son allowlist disparaît | 57 |
 | **23-3** | `supplier-invoices` — le gros morceau, seul (99 statiques + **10** de la famille dynamique `imported-supplier-invoices-error-*`) | 109 |
 | **23-4** | `settings` + `payment-batches` | 60 |

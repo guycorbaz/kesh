@@ -53,7 +53,7 @@ généralisé sur ce critère produirait des faux positifs en série.
 
 1. **Garde A — parité inter-locales**, dans `kesh-i18n` (Rust).
 2. **Garde B — existence des clés demandées**, en vitest, portée `frontend/src` **entier**.
-3. **Les 8 motifs dynamiques**, traités par énumération déclarée.
+3. **Les 8 préfixes dynamiques** (10 sites d'appel), traités par énumération déclarée.
 4. **Le moissonneur de replis**, versionné et exécutable.
 5. **Le domaine pilote `contacts`** — 20 clés entrées aux quatre locales.
 
@@ -70,7 +70,9 @@ généralisé sur ce critère produirait des faux positifs en série.
 ## Un constat de la spécification — il y a 10 clés de plus qu'annoncé
 
 L'énumération des motifs dynamiques, exigée par le point 3, a été **faite** pendant la
-spécification plutôt que supposée. Sur les huit motifs, sept se résolvent en clés qui existent :
+spécification plutôt que supposée. ⚠️ **Et elle a d'abord été faite FAUX** — cf. l'encadré qui
+suit le tableau. Le compte exact est de **8 préfixes sur 10 sites d'appel** (`journal-` et
+`vat-category-` sont demandés depuis deux fichiers chacun) :
 
 | motif | valeurs énumérées | présentes au catalogue |
 |---|---|---|
@@ -81,6 +83,7 @@ spécification plutôt que supposée. Sur les huit motifs, sept se résolvent en
 | `vat-category-${category}` / `${r.category}` | données de la table `vat_rates` | ✅ 5 |
 | `reminders-error-${entry[0]}` | 15 + `-unknown` | ✅ 17 |
 | **`imported-supplier-invoices-error-${entry[0]}`** | **10** | ❌ **0** |
+| `bank-import-info-${info.replace(…)}` | 2 (`bank_csv_profile_auto_matched`, `bank_csv_multiple_profile_matches`) | ✅ 2, dans les 4 locales |
 
 **Le dernier motif est entièrement absent des quatre catalogues.** Ses dix valeurs
 (`unsupported-file-type`, `file-too-large`, `symlink-rejected`, `duplicate`, `no-qr-code-found`,
@@ -91,6 +94,33 @@ antérieur, puisqu'elles ne sont jamais écrites comme littéraux.
 **Le total de l'epic passe donc de 307 à 317**, et la story 23-3 de 99 à 109. Le plan d'epic est
 corrigé en conséquence. ⚠️ *C'est exactement ce que le point 3 existe pour empêcher : un motif
 dynamique que la garde ignorerait serait un trou **dans la garde elle-même**.*
+
+### ⚠️ Le motif `bank-import-info-*` avait été manqué — et la cause est instructive
+
+**La première rédaction de cette spec annonçait « 8 motifs » en n'en listant que 7**, `bank-import-info-*`
+(`BankImportUpload.svelte:547`) étant absent du tableau comme du décompte. Relevé en passe 1 de
+`validate`, vérifié : `grep -rnE 'i18nMsg\(\s*`[^$]*\$\{' frontend/src` rend **10 sites, 8 préfixes**.
+
+**La cause n'est pas l'inattention, c'est la méthode d'extraction** — et elle contamine la garde
+que cette story spécifie. Le motif employé pour recenser les clés était :
+
+```
+i18nMsg\(\s*(['"`])([^'"`]*)\1
+```
+
+Le corps de la clé y est défini comme « tout sauf une quote ». Or le site manqué s'écrit
+`` i18nMsg(`bank-import-info-${info.replace(/_/g, '-')}`, info) `` : **l'interpolation contient
+elle-même des apostrophes**, donc la classe `[^'"`]*` s'arrête avant la fin du gabarit et l'appel
+n'est jamais reconnu. Le recensement rendait « 8 littéraux » — coïncidence numérique avec les
+8 préfixes réels — dont deux étaient les deux sites de `vat-category-`, et il manquait une famille
+entière.
+
+**Conséquence pour l'implémentation, et c'est un AC** : l'extraction de la garde B ne doit pas
+reposer sur une classe de caractères négative. Elle doit apparier l'appel `i18nMsg(` puis **lire le
+littéral en respectant l'échappement et l'imbrication** — ou, à défaut, recenser séparément **tous**
+les gabarits `` ` ``…`${`…`}`…`` `` et exiger que chacun soit déclaré dans `MOTIFS_DYNAMIQUES`.
+Une garde qui hérite du défaut de méthode de sa propre spec ne verrait pas le prochain
+`bank-import-info-*`.
 
 ## Décisions
 
@@ -122,8 +152,12 @@ ligne, chacun ouvert par un commentaire qui dit *ce que c'est* et *quelle story 
 ⚠️ **Chaque garde échoue AUSSI quand son allowlist contient une clé désormais présente** — sans
 quoi l'allowlist se fossilise et la garde devient décorative. C'est la moitié qui compte : elle
 force chaque story de rollout à retirer ses lignes.
+⚠️ **Et le contrôle est SYMÉTRIQUE dans l'autre sens aussi** : une entrée qui n'est **plus demandée
+par aucun code** (feature retirée plutôt que traduite) doit faire échouer la garde de la même
+façon. Sans cela, « décroissante par construction » n'est vrai que d'un côté : l'allowlist
+retiendrait indéfiniment des clés mortes, et son décompte cesserait de mesurer la dette réelle.
 
-**D4 — Les motifs dynamiques sont DÉCLARÉS, avec leurs valeurs, et bornés.**
+**D4 — Les motifs dynamiques sont DÉCLARÉS, avec leurs valeurs, et bornés — 8 préfixes, 10 sites.**
 Une table `MOTIFS_DYNAMIQUES` dans la garde B : `{ motif, valeurs[] }`. La garde vérifie chaque
 `motif.replace(valeur)` comme une clé ordinaire.
 ⚠️ **Les valeurs sont écrites EN DUR dans le test, pas lues depuis le code de production.** Lire
@@ -131,20 +165,51 @@ la carte de production ferait qu'une carte vidée par erreur rendrait le test ve
 mode d'échec du **test muet**, déjà payé sur `backfill_skips_archived_accounts` (16-1a). En
 contrepartie, chaque motif porte une assertion de **cardinalité attendue** (`assert_eq!` sur le
 nombre de valeurs) qui rougit dès que la carte de production évolue sans le test.
-⚠️ `vat-category-${category}` est le seul motif dont les valeurs sont des **données**
-(catégories de `vat_rates`) et non un littéral : les cinq catégories seedées sont énumérées,
-avec le commentaire qui le dit.
+⚠️ **`vat-category-*` est un ANGLE MORT ASSUMÉ, et l'appeler autrement serait mentir.** Ses
+valeurs ne sont ni un littéral ni une énumération fermée : c'est une **colonne libre**. La
+migration `20260613000001_vat_rates_crud.sql:12-16` l'écrit noir sur blanc — *« **PAS de contrainte
+`CHECK IN` (liste fermée)** : décision projet (Story 11-1) — les autorités peuvent introduire de
+NOUVELLES catégories officielles sans migration de schéma »* — et `validate_category`
+(`kesh-api/src/routes/vat.rs:243-252`) ne contrôle que « non vide » et « ≤ 32 caractères ». Un
+administrateur qui crée un taux `category = "covid-temporaire"` **étend l'espace des clés sans
+toucher au code**, donc sans qu'aucune assertion de cardinalité ne puisse rougir.
+
+La déclaration porte donc les **cinq catégories seedées**, et la table indique explicitement, en
+commentaire, que **les catégories créées par un administrateur ne sont couvertes par aucune
+garde** — leur libellé retombera sur le repli, qui est ici la catégorie brute. *Prétendre que la
+cardinalité protège ce motif serait exactement le genre d'assurance fausse que les deux gardes
+existent pour supprimer.*
+
+⚠️ **La garde compte aussi les SITES**, pas seulement les préfixes : une assertion
+`assert_eq!(sites_dynamiques, 10)` rougit quand un nouveau gabarit apparaît quelque part — c'est
+le seul contrôle qui aurait attrapé `bank-import-info-*`.
 
 **D5 — Les deux gardes se bornent contre le passage à vide.**
 Chacune assert un **minimum de clés effectivement collectées** (garde B : `>= 900` littéraux
 demandés — 1010 mesurés ; garde A : `>= 1200` clés par locale — 1216 mesurés). Sans cette borne,
-un motif de collecte cassé rend un test vert qui ne teste rien. *Le prototype 22-2b portait déjà
+un motif de collecte cassé rend un test vert qui ne teste rien.
+⚠️ **Une borne globale ne voit pas une perte PARTIELLE, et c'est mesuré** : **997** des 1002 clés
+sont demandées depuis des `.svelte` et **5 seulement** depuis des `.ts`. Un filtre d'extension
+réduit par erreur à `/\.svelte$/` ferait tomber le total de 1002 à 997 — **toujours ≥ 900**, donc
+toujours vert. La garde B porte donc une **seconde borne, par extension** : au moins 3 clés
+collectées depuis des fichiers `.ts`. *Le prototype 22-2b portait déjà
 cette borne (`expect(demandees.size).toBeGreaterThanOrEqual(5)`) — elle est reprise et élargie.*
 
 **D6 — Le moissonneur PROPOSE, il n'écrit jamais dans les catalogues.**
 `frontend/scripts/harvest-i18n-fallbacks.mjs` — il lit `src`, extrait les couples
 (clé, repli littéral), et rend un fragment `.ftl` **trié, sur la sortie standard**. Il ne touche
 à aucun `messages.ftl`.
+⚠️ **Il ne traite QUE les clés absentes des quatre catalogues**, et cette restriction doit être
+écrite dans le script : sans elle, il moissonne les ~1000 clés demandées et sa sortie d'erreur
+annonce **13** replis interpolés au lieu des **5** que cette spec nomme — les 8 autres appartenant
+à des clés déjà traduites (`ManualMatchModal`, `invoices/[id]`, `reports`, `fiscal-years`).
+⚠️ **Il DÉTECTE les conflits de repli plutôt que d'en choisir un.** Six clés manquantes sont
+demandées avec **deux textes de repli différents** selon le site — `credit-notes-title`
+(« Avoirs » / « Avoir »), `payment-batches-col-total` (« Total » / « Montant »),
+`supplier-invoices-col-total` (« TTC » / « Total HT »), `supplier-invoices-field-reference`,
+`supplier-invoices-field-project`, `imported-supplier-invoices-reload-failed`. Un moissonneur qui
+garde le dernier vu fige silencieusement le mauvais libellé ; ces cas vont sur la sortie d'erreur,
+avec leurs variantes, pour arbitrage humain dans la story de rollout concernée.
 ⚠️ **Motif** : un repli est écrit dans le feu de l'action, souvent sans majuscule, sans point
 final, parfois avec la formulation d'un développeur pressé. **Le laisser devenir un libellé de
 catalogue sans relecture, c'est faire entrer 250 approximations dans le produit.** Chaque story
@@ -157,8 +222,22 @@ sont traitées en **23-5**, pas ici.
 **D7 — Le pilote est `contacts`, et il est choisi pour une raison.**
 20 clés (12 sous `lib/features/contacts`, 8 sous `routes/(app)/contacts`). C'est le domaine que
 la 22-2b vient de travailler, dont la garde bornée existe déjà, et dont le vocabulaire est
-entièrement couvert par la **partie A** du glossaire — donc **aucune décision terminologique
-n'est prise dans la story-zéro**.
+**presque** entièrement couvert par la partie A du glossaire — **trois termes exceptés, que cette
+story tranche : cf. D8**.
+⚠️ *La rédaction initiale de D7 concluait « donc aucune décision terminologique n'est prise dans
+la story-zéro ». C'était faux, D8 le disait déjà six lignes plus bas, et les deux phrases ont
+cohabité un temps dans ce document — une correction appliquée au site signalé et pas à sa source.
+Relevé en passe 1 de `validate`.*
+
+**D7-bis — `delete` est renommée `contact-persons-delete` avant d'entrer au catalogue.**
+`ContactPersonsManager.svelte:118` demande `i18nMsg('delete', 'Supprimer')` — une clé **sans
+domaine**, aujourd'hui absente des quatre catalogues et donc inoffensive.
+⚠️ **La faire entrer telle quelle est irréversible en pratique** : une fois `delete` au catalogue,
+n'importe quelle feature pourra l'appeler, la garde B ne signalera jamais rien, et un libellé
+traduit dans le contexte « supprimer une personne de contact » sera silencieusement resservi
+ailleurs — y compris là où l'allemand ou l'italien demanderaient un autre mot. Les neuf autres
+clés du même composant portent déjà le préfixe `contact-persons-`.
+*La clé n'est demandée que depuis ce seul site (vérifié), le renommage tient en une ligne.*
 
 **D8 — Le glossaire est un INPUT figé, et le pilote en tranche TROIS termes.**
 `docs/i18n-glossaire.md` existe (kickoff du 2026-08-19). Sa **partie A est contraignante** : 48
@@ -208,29 +287,57 @@ allowlist `KNOWN_VIOLATIONS` n'est pas touchée.
 2. **AC2** — Ce test compare des **ensembles de clés**, sans jamais appeler `format()` ni
    `all_messages()`. *(Vérifiable : le corps du test ne mentionne ni l'une ni l'autre.)*
 3. **AC3** — Le même test échoue si l'allowlist de parité contient une clé **désormais présente**
-   dans les quatre locales.
+   dans les quatre locales **ou absente de `fr-CH`** (contrôle symétrique, D3).
 4. **AC4** — Un test vitest échoue si une clé littérale passée à `i18nMsg()` **n'existe dans
    aucun** des quatre catalogues, allowlist de dette déduite. Le message nomme la clé **et le
    fichier** qui la demande.
-5. **AC5** — Le même test échoue si l'allowlist de dette contient une clé désormais présente.
+5. **AC5** — Le même test échoue si l'allowlist de dette contient une clé désormais présente
+   **ou une clé que plus aucun fichier ne demande** (contrôle symétrique, D3).
 6. **AC6** — Le test vitest balaie **tout** `frontend/src` — `src/routes/` compris, où vivent
    **197 des 250** clés manquantes.
-7. **AC7** — Les **8 motifs dynamiques** sont déclarés avec leurs valeurs et contrôlés comme des
-   clés ordinaires ; chaque motif porte une assertion de cardinalité.
+7. **AC7** — Les **8 préfixes dynamiques** (sur **10 sites d'appel**) sont déclarés avec leurs
+   valeurs et contrôlés comme des clés ordinaires ; chaque préfixe porte une assertion de
+   cardinalité, et la garde porte une assertion sur le **nombre de sites** (`10`), seule capable
+   d'attraper un gabarit neuf.
+7-bis. **AC7-bis** — L'extraction de la garde B reconnaît un appel `i18nMsg()` dont le gabarit
+   **contient des apostrophes dans son interpolation** — cas réel `bank-import-info-*`
+   (`BankImportUpload.svelte:547`). *(Vérifiable par un test de l'extracteur sur cette chaîne
+   exacte.)* Sans quoi la garde hérite du défaut de méthode qui a fait manquer ce motif à la
+   première rédaction de cette spec.
+7-ter. **AC7-ter** — La déclaration de `vat-category-*` porte, en commentaire, le fait que les
+   catégories créées par un administrateur (colonne libre, sans `CHECK`) **ne sont couvertes par
+   aucune garde**.
 8. **AC8** — Les **10 clés `imported-supplier-invoices-error-*`** révélées par cette énumération
    figurent dans l'allowlist de dette avec le commentaire qui dit **quelle story les videra**
    (23-3).
 9. **AC9** — Chaque garde porte une **borne de collecte minimale** (D5) qui la fait échouer si
-   son motif d'extraction cesse de trouver quoi que ce soit.
+   son motif d'extraction cesse de trouver quoi que ce soit, **et la garde B porte une seconde
+   borne par extension** (≥ 3 clés collectées depuis des `.ts`) — une perte totale de la
+   couverture `.ts` ne coûterait que 5 clés sur 1002 et resterait au-dessus de la borne globale.
 10. **AC10** — `frontend/scripts/harvest-i18n-fallbacks.mjs` existe, rend un fragment `.ftl`
-    trié sur la sortie standard, **ne modifie aucun fichier**, et liste séparément les clés sans
-    repli littéral.
+    trié sur la sortie standard, **ne modifie aucun fichier**, **ne traite que les clés absentes
+    des quatre catalogues**, et liste séparément sur la sortie d'erreur (a) les clés sans repli
+    littéral — **5**, non 13, l'écart venant du périmètre — et (b) les **6 clés dont le repli
+    diffère selon le site d'appel**, avec leurs variantes.
 11. **AC11** — Les **20 clés du domaine `contacts`** existent dans les **quatre** locales, sont
     retirées de l'allowlist de dette, et leurs libellés `de-CH` / `it-CH` / `en-CH` respectent la
-    partie A du glossaire et le registre de D9.
+    partie A du glossaire et le registre de D9. La clé `delete` est entrée sous le nom
+    `contact-persons-delete` (D7-bis), son site d'appel mis à jour.
+11-bis. **AC11-bis** — `docs/i18n-glossaire.md` est mis à jour : **`localité`, `prénom` et
+    `personne de contact` passent de la partie B à la partie A**, chacun avec la clé du pilote qui
+    l'atteste désormais. *Sans cet AC, D8 promet une promotion que rien n'exige et que les 13
+    autres critères laisseraient passer.*
 12. **AC12** — `duplicate-i18n-keys.test.ts` est **supprimé**, sa fonction étant reprise par la
-    garde générale. *(Le contrôle qu'il exerçait ne doit pas disparaître : les quatre clés
-    `contact-duplicate-*` restent couvertes, désormais par la garde B.)*
+    garde générale. *(Le contrôle qu'il exerçait ne doit pas disparaître : les **cinq** clés
+    `contact-duplicate-heading`, `-others-count`, `-others-count-one`, `-ide-active`,
+    `-ide-archived` restent couvertes, désormais par la garde B.)* ⚠️ **Les nommer plutôt que les
+    compter est délibéré** : la première rédaction disait « quatre », valeur juste jusqu'à la
+    passe 4 de la 22-2b qui a ajouté `-others-count-one`. Un nombre se démode en silence, une
+    liste se confronte.
+12-bis. **AC12-bis** — `frontend/src/routes/(app)/contacts/contacts-i18n-realpath.test.ts`
+    **existe toujours et passe**. Il prouve le *chemin de rendu* (D2-bis) et non l'existence des
+    clés ; aucune des deux gardes ne le remplace, et rien d'autre que cet AC n'empêche de le
+    supprimer au passage de T2.
 13. **AC13** — Les deux gates complets passent : backend (`cargo test --workspace`) et frontend
     (`npm run check`, `lint-i18n-ownership`, `test:unit`, `build`).
 
@@ -240,23 +347,28 @@ allowlist `KNOWN_VIOLATIONS` n'est pas touchée.
   - [ ] Accesseur `keys()` sur `I18nBundle` si le test est hors module, sinon usage direct du champ privé
   - [ ] Comparaison des quatre ensembles dans les deux sens, message d'échec nommant clés et locale
   - [ ] `crates/kesh-i18n/dette-parite-connue.txt` — les 57 clés, triées, en-tête explicatif
-  - [ ] Assertion « allowlist obsolète » + borne de collecte (`>= 1200` par locale)
+  - [ ] Assertions « allowlist obsolète » **dans les deux sens** + borne de collecte (`>= 1200` par locale)
 - [ ] **T2 — Garde B, existence des clés demandées** (AC4, AC5, AC6, AC9, AC12)
   - [ ] `frontend/src/lib/shared/i18n-keys.test.ts` — parcours de tout `src`, lecture des 4 `.ftl`
   - [ ] `frontend/src/lib/shared/i18n-dette-connue.ts` — 250 + 10 clés, triées, en-tête qui nomme les stories de résorption
-  - [ ] Assertion « allowlist obsolète » + borne de collecte (`>= 900` littéraux)
-  - [ ] Suppression de `duplicate-i18n-keys.test.ts`
+  - [ ] Assertions « allowlist obsolète » **dans les deux sens** + borne globale (`>= 900`) + borne `.ts` (`>= 3`)
+  - [ ] Suppression de `duplicate-i18n-keys.test.ts` — **et conservation de `contacts-i18n-realpath.test.ts`**
 - [ ] **T3 — Motifs dynamiques** (AC7, AC8)
-  - [ ] Table `MOTIFS_DYNAMIQUES` avec les 8 motifs et leurs valeurs en dur
-  - [ ] Assertion de cardinalité par motif
+  - [ ] Table `MOTIFS_DYNAMIQUES` : **8 préfixes**, valeurs en dur, `bank-import-info-*` compris
+  - [ ] Assertion de cardinalité par préfixe **+ assertion sur le nombre de sites (10)**
+  - [ ] Extracteur robuste aux apostrophes dans l'interpolation, avec son test (AC7-bis)
+  - [ ] Commentaire d'angle mort sur `vat-category-*` (catégories admin non couvertes, AC7-ter)
   - [ ] Les 10 `imported-supplier-invoices-error-*` en allowlist, commentaire « résorbées par 23-3 »
 - [ ] **T4 — Moissonneur** (AC10)
   - [ ] `frontend/scripts/harvest-i18n-fallbacks.mjs`, sortie standard uniquement
-  - [ ] Clés sans repli littéral listées sur la sortie d'erreur
-- [ ] **T5 — Pilote `contacts`** (AC11)
+  - [ ] Périmètre restreint aux clés absentes des 4 catalogues
+  - [ ] Sortie d'erreur : 5 clés sans repli littéral **+ 6 clés à repli divergent**
+- [ ] **T5 — Pilote `contacts`** (AC11, AC11-bis)
+  - [ ] Renommer `delete` → `contact-persons-delete` dans `ContactPersonsManager.svelte:118` (D7-bis)
   - [ ] Moisson des 20 replis, **relecture** des libellés `fr-CH` avant de les figer
   - [ ] Traduction `de-CH` / `it-CH` / `en-CH` sur la partie A du glossaire, registre D9
   - [ ] Retrait des 20 clés de l'allowlist de dette
+  - [ ] **Promouvoir `localité`, `prénom` et `personne de contact` en partie A** de `docs/i18n-glossaire.md`, avec la clé qui les atteste
 - [ ] **T6 — Gates** (AC13)
   - [ ] Gate backend complet, gate frontend complet, avant tout push
 
@@ -292,6 +404,7 @@ allowlist `KNOWN_VIOLATIONS` n'est pas touchée.
 | clés de [#283] | 57, **même ensemble** sur les trois locales, 0 clé en trop |
 | littéraux demandés par `i18nMsg()` | 1010, dont **752 existent** |
 | clés statiques manquantes | **250**, sur 13 dossiers, dont 197 sous `src/routes/` |
+| préfixes dynamiques / sites d'appel | **8** / **10** |
 | clés révélées par les motifs dynamiques | **+10** (`imported-supplier-invoices-error-*`) |
 | **total de l'epic** | **317** |
 | replis moissonnables | 245 ; 5 interpolés |
@@ -300,9 +413,19 @@ Commande de recompte, à exécuter et non à croire :
 
 ```sh
 cd crates/kesh-i18n/locales
-comm -23 <(grep -oE '^[a-z0-9-]+ =' fr-CH/messages.ftl | sort -u) \
-         <(grep -oE '^[a-z0-9-]+ =' de-CH/messages.ftl | sort -u) | wc -l
+LC_ALL=C comm -23 <(grep -oE '^[a-z0-9-]+ =' fr-CH/messages.ftl | LC_ALL=C sort -u) \
+                  <(grep -oE '^[a-z0-9-]+ =' de-CH/messages.ftl | LC_ALL=C sort -u) | wc -l
 ```
+
+⚠️ **`LC_ALL=C` n'est pas cosmétique** : sans lui, `comm` avertit sur stderr que ses entrées ne
+sont pas triées (la collation `fr_FR.UTF-8` ordonne les tirets autrement que `sort` ne le suppose)
+et son résultat n'est plus garanti. Il rend 57 ici **par chance de collation**, ce qui est
+précisément le genre de commande « à exécuter et non à croire » qui trompe sur un autre poste.
+
+⚠️ **Le décompte du registre de D9 porte sur des MESSAGES, pas sur des lignes** : 115 messages
+`de-CH` emploient « Sie » ; un `grep -c` en rend **117**, les messages multi-lignes comptant deux
+fois. *(Écart relevé en passe 1 de `validate` et **réfuté** après recompte : le chiffre de la spec
+était le bon, l'unité manquait.)*
 
 ### References
 
@@ -333,6 +456,46 @@ plutôt que supposées**, et chacune a changé le contenu :
 relecture extérieure : D8 déclarait « aucun terme de la partie B dans le pilote (vérifié) »
 alors que trois y figurent, sur 10 des 20 clés. Corrigé sur place, avec la mention de l'erreur —
 *une correction n'est pas exempte du défaut qu'elle corrige.*
+
+### Passe 1 de `bmad-create-story validate` — 2026-08-19, Sonnet ×3, contextes frais
+
+**Trend : 2 CRITICAL · 1 HIGH · 8 MEDIUM · 3 LOW** (BlindHunter 0/0/2/0 — EdgeCaseHunter 2/0/5/1 —
+AcceptanceAuditor 0/1/3/2 ; l'AC12 a convergé sur les **trois** lentilles).
+
+**Les deux CRITICAL portent sur le même endroit — le § qui se vantait d'avoir énuméré plutôt que
+supposé.**
+
+- **ECH-1** — le motif `bank-import-info-*` manquait, et **la cause était la méthode d'extraction
+  de la spec elle-même** : une classe `[^'"`]*` ne peut pas traverser un gabarit dont
+  l'interpolation contient des apostrophes. Le recensement rendait « 8 littéraux » là où il y a
+  **8 préfixes sur 10 sites**, la coïncidence numérique masquant la famille absente. Corrigé, et
+  transformé en exigence : **AC7-bis** impose que l'extracteur de la garde résiste à ce cas, faute
+  de quoi la garde hériterait du défaut qui l'a fait naître.
+- **ECH-2** — `vat-category-*` était présenté comme borné par ses « cinq catégories seedées ».
+  Vérifié dans la source : la colonne n'a **aucune contrainte `CHECK`**, par décision explicite de
+  la Story 11-1, et `validate_category` n'impose que « non vide, ≤ 32 ». Une catégorie créée par un
+  administrateur échappe donc à toute assertion de cardinalité. Requalifié en **angle mort assumé
+  et écrit** (AC7-ter) plutôt qu'en garantie.
+
+**Le HIGH est une contradiction interne** : D7 concluait « aucune décision terminologique n'est
+prise dans la story-zéro » quand D8, six lignes plus bas, disait le contraire et le disait
+*explicitement à propos de D7*. J'avais corrigé le site signalé sans remonter à sa source — le
+mode d'échec que la § *Propagation post-patch* du `CLAUDE.md` décrit. D7 réécrit.
+
+**MEDIUM retenus** : AC12 disait « quatre » clés `contact-duplicate-*` pour **cinq** (les trois
+lentilles l'ont vu ; désormais **nommées** plutôt que comptées) ; D2-bis et la promotion des trois
+termes au glossaire n'étaient exigés par aucun AC (**AC12-bis** et **AC11-bis** ajoutés) ; la borne
+anti-test-muet ne voyait pas une perte de la seule extension `.ts` (5 clés sur 1002 — seconde
+borne ajoutée) ; les allowlists n'étaient décroissantes que dans un sens (contrôle symétrique
+ajouté) ; le moissonneur n'avait pas de périmètre écrit (13 replis interpolés au lieu de 5) et ne
+disait rien des **6 clés à repli divergent** ; la clé `delete` allait entrer au catalogue **sans
+domaine** (**D7-bis** : renommée `contact-persons-delete`) ; et le glossaire annonçait une
+occurrence « unique » du pluriel de courtoisie italien pour **2 « Aggiungete » et 10 « vostro »**.
+
+**Un LOW réfuté, et dit comme tel** : l'écart « 115 vs 117 » sur le registre allemand n'en est pas
+un — 115 **messages** contiennent « Sie », 117 **lignes**. Le chiffre était juste, l'unité
+manquait ; elle a été ajoutée. L'autre LOW (absence de `LC_ALL=C` dans la commande de recompte) est
+retenu et corrigé.
 
 ## Dev Agent Record
 
