@@ -134,9 +134,10 @@ Pas de `ß` en allemand suisse.
    `AC11-ter` de la 23-1b : terme, clé qui l'atteste, valeur dans les quatre locales.
 9. **AC9** — gates complets verts, **exécutés et non recopiés** : `cargo fmt`, `clippy`,
    `cargo test -p kesh-i18n`, et côté frontend `check` / `lint-i18n-ownership` / `test:unit` /
-   `build`. ⚠️ **Le gate backend complet est requis** — la garde vit dans `kesh-db`… non : dans
-   `kesh-i18n`, mais `all_messages()` est servi par une route de `kesh-api` dont les tests
-   d'intégration lisent les catalogues.
+   `build`. ⚠️ **Le gate backend complet est requis, pas seulement `-p kesh-i18n`** : cinq fichiers
+   de `kesh-api` consomment les catalogues — `lib.rs`, `main.rs`, `errors.rs`, `routes/contacts.rs`
+   et le test d'intégration `admin_full_export_e2e.rs` (relevé au `grep`, non supposé). Un ajout de
+   80 × 3 lignes aux catalogues peut donc faire bouger un test que cette story ne touche pas.
 10. **AC10** — [#283] est **fermée par le mot-clé** dans le corps de la PR (`closes #283`), pas en
     prose. ⚠️ Précédent Story 16-3b : sept commits en `refs`, une PR disant « Ferme #151 » en
     toutes lettres, et l'issue restée ouverte après le merge sans le moindre signal.
