@@ -31,8 +31,8 @@ les allowlists elles-mêmes — cette story ne fait qu'en **retirer 20 lignes**.
 `TransactionSplitModal` (23-5), [#255], [#314], [#242].
 
 ⚠️ **Les identifiants de décisions et de critères sont ceux de la 23-1 d'origine.** Ceux qui
-manquent ici vivent dans la 23-1a — en particulier **D5-bis** (exclusion des `.test.*`) et
-**AC7-bis** (l'extracteur robuste), dont le moissonneur de D6 réutilise le lecteur de littéral.
+manquent ici vivent dans la 23-1a — en particulier **D5-bis** (cf. 23-1a, exclusion des `.test.*`) et
+**AC7-bis** (cf. 23-1a, l'extracteur robuste), dont le moissonneur de D6 réutilise le lecteur de littéral.
 
 ## Chiffres de référence
 
@@ -43,7 +43,7 @@ que ceux dont cette story se sert.
 | | valeur |
 |---|---|
 | clés du pilote `contacts` | **20** — 12 sous `lib/features/contacts`, 8 sous `routes/(app)/contacts` |
-| clés à repli moissonnable (tout le dépôt) | **à recompter avec les relais** — 245 sur 250 avant leur prise en compte, cf. 23-1a § D4-bis |
+| clés à repli moissonnable (tout le dépôt) | **245 des 279** clés manquantes ; les 34 autres viennent des relais et restent à moissonner (cf. 23-1a § D4-bis) |
 | clés sans repli littéral | 5, toutes dans `TransactionSplitModal` — **hors périmètre**, portées par la 23-5 |
 | clés à repli **divergent** | **7** — valeur de contrôle datée, le moissonneur la calcule |
 | partie B du glossaire | **16** entrées, dont **3** promues par cette story → **13** ensuite |
@@ -97,7 +97,7 @@ moissonneur **calcule** la liste et publie son décompte ; si les deux divergent
 qu'on recompte, jamais la sortie qu'on ajuste.
 ⚠️ **Motif** : un repli est écrit dans le feu de l'action, souvent sans majuscule, sans point
 final, parfois avec la formulation d'un développeur pressé. **Le laisser devenir un libellé de
-catalogue sans relecture, c'est faire entrer 250 approximations dans le produit.** Chaque story
+catalogue sans relecture, c'est faire entrer **279** approximations dans le produit.** Chaque story
 de rollout relit ce qu'elle fait entrer.
 ⚠️ **Cinq clés n'ont PAS de repli littéral** — les cinq de `TransactionSplitModal.svelte`, dont
 le repli est interpolé (`` `Ligne ${i + 1} : compte requis` ``). Le moissonneur les **liste à
@@ -141,7 +141,8 @@ ailleurs — y compris là où l'allemand ou l'italien demanderaient un autre mo
 clés du même composant portent déjà le préfixe `contact-persons-`.
 *La clé n'est demandée que depuis ce seul site (vérifié), le renommage tient en une ligne.*
 
-**D8 — Le glossaire est un INPUT figé, et le pilote en tranche TROIS termes.**
+**D8 — Le glossaire est figé POUR LE RESTE DE CETTE STORY, et le pilote en promeut TROIS termes.**
+*(Il n'est pas « figé » au sens absolu : le commit de spécification de cette story y a ajouté `personne de contact`. Il l'est à partir de maintenant — la story n'y touche plus que pour la promotion d'AC11-bis.)*
 `docs/i18n-glossaire.md` existe (kickoff du 2026-08-19). Sa **partie A est contraignante** : 48
 équivalences relevées dans les 1216 clés déjà alignées, chacune nommant la clé qui l'atteste.
 Sa **partie B attend l'arbitrage de Guy** — **16** termes sans précédent.
@@ -171,7 +172,10 @@ une valeur modifiée par l'édition même de cette spec, dont les compteurs n'av
 recomptés.*
 
 **D8-bis — Le découpage par dossier FUIT, et huit clés du pilote sont partagées avec un dossier
-hors périmètre.** *(Constat de cadrage, non exigence : aucun AC ne le contrôle.)*
+hors périmètre.** *(**Décision normative**, contrôlée par AC11-ter. La rédaction précédente la
+disait « constat de cadrage, non exigence » — c'était vrai de la version qui ne comptait que
+deux clés partagées ; elle porte désormais une obligation de relecture, et une obligation
+qu'aucun critère ne contrôle n'est pas tenue.)*
 
 ⚠️ **La rédaction précédente affirmait l'inverse** — « 2 seulement sont partagées, et les deux sont
 à l'intérieur du pilote » — et c'était faux, parce que le recensement ne voyait pas les **relais**
@@ -209,6 +213,22 @@ de tutoyer survit, son ordre de grandeur non.*
     diffère selon le site d'appel**, avec leurs variantes. ⚠️ **Ces deux nombres sont des valeurs
     de contrôle datées, pas des cibles** : le moissonneur les **calcule** et publie son décompte ;
     un écart se recompte, il ne s'ajuste pas.
+    ⚠️ **Deux clauses de D6 sont exigées ICI, faute de quoi elles ne sont pas contrôlées** :
+    (a) le moissonneur **exclut les fichiers `.test.*`** — sans quoi il entre `une-cle` au catalogue
+    et annonce 8 conflits au lieu de 7 ; (b) il emploie **le lecteur de littéral d'AC7-bis** pour la
+    clé **comme pour le repli** — sans quoi il rate `payment-batches-col-date`, dont les deux replis
+    sont entre guillemets doubles, et n'en annonce que 6.
+11-ter. **AC11-ter** — Les **huit libellés `field-*`** ont été relus **dans les deux contextes**
+    (carnet d'adresses et étape « Coordonnées » de l'onboarding, D8-bis), et la relecture est
+    consignée au Dev Agent Record. ⚠️ *Aucun test ne couvre l'écran d'onboarding en langue non
+    française : ses spécifications E2E n'ont que des sélecteurs français. La relecture humaine est
+    le seul contrôle, d'où cet AC.*
+11-quater. **AC11-quater** — `docs/i18n-glossaire.md` est **cohérent après promotion** : partie B à
+    **13** entrées, et le paragraphe qui l'accompagne réécrit **au passé** (il est aujourd'hui au
+    futur : « trois de ces termes sont tranchés… les treize autres resteront ouverts »).
+11-quinquies. **AC11-quinquies** — Le commentaire de `lint-i18n-ownership.js:103` ne cite plus
+    `delete` parmi les « clés génériques » : la clé renommée porte désormais un domaine, elle n'est
+    plus générique. *(Retrait, non remplacement.)*
 
 11. **AC11** — Les **20 clés du domaine `contacts`** existent dans les **quatre** locales, sont
     retirées de l'allowlist de dette, et leurs libellés `de-CH` / `it-CH` / `en-CH` respectent la
@@ -226,12 +246,13 @@ de tutoyer survit, son ordre de grandeur non.*
 ## Tasks / Subtasks
 
 - [ ] **T4 — Moissonneur** (AC10)
+  - [ ] Exclusion des `.test.*` et lecteur de littéral d'AC7-bis pour la clé ET le repli (AC10)
   - [ ] `frontend/scripts/harvest-i18n-fallbacks.mjs`, sortie standard uniquement
   - [ ] Périmètre restreint aux clés absentes des 4 catalogues
   - [ ] Sortie d'erreur : 5 clés sans repli littéral **+ 7 clés à repli divergent** (valeurs de contrôle datées — le script les calcule)
   - [ ] **Même lecteur de littéral que la garde** pour le repli comme pour la clé (AC7-bis)
 
-- [ ] **T5 — Pilote `contacts`** (AC11, AC11-bis)
+- [ ] **T5 — Pilote `contacts`** (AC11, AC11-bis, AC11-ter, AC11-quater, AC11-quinquies)
   - [ ] Renommer `delete` → `contact-persons-delete` dans `ContactPersonsManager.svelte:118` (D7-bis)
   - [ ] **Substituer la ligne correspondante de `KNOWN_VIOLATIONS`** (`lint-i18n-ownership.js:112`) — sans quoi `npm run lint-i18n-ownership` rougit au gate AC13
   - [ ] Moisson des 20 replis, **relecture** des libellés `fr-CH` avant de les figer
@@ -239,7 +260,7 @@ de tutoyer survit, son ordre de grandeur non.*
   - [ ] Retrait des 20 clés de l'allowlist de dette
   - [ ] **Promouvoir `localité`, `prénom` et `personne de contact` en partie A** de `docs/i18n-glossaire.md`, avec la clé qui les atteste
   - [ ] **Recompter la partie B (13 entrées après retrait des 3 promus)** et **réécrire le paragraphe qui l'accompagne** — il est au futur (« trois de ces termes sont tranchés… les treize autres resteront ouverts ») et doit passer au passé, la promotion étant faite. ⚠️ *Ne pas chercher la chaîne « douze autres » : elle a déjà été corrigée en « treize » à la passe 3, et la tâche pointait encore dessus.*
-  - [ ] **Mettre à jour le commentaire de `lint-i18n-ownership.js:103`**, qui cite `delete` parmi les « clés génériques » — la substitution de la ligne `:112` le laisse périmé (§ *Propagation post-patch*)
+  - [ ] **Mettre à jour le commentaire de `lint-i18n-ownership.js:103`**, qui cite `delete` parmi les « clés génériques » — **retirer la mention**, la clé renommée portant désormais un domaine (§ *Propagation post-patch*)
   - [ ] **Relire les huit libellés `field-*` DANS LES DEUX CONTEXTES** — carnet d'adresses et étape « Coordonnées » de l'onboarding (D8-bis)
 
 - [ ] **T6 — Gates** (AC13)
@@ -331,6 +352,46 @@ troisième dossier hors périmètre, qui affichera les libellés choisis pour le
 que la 23-1b sera mergée. T5 doit désormais relire ces huit libellés **dans les deux contextes**.
 
 **Le détail complet des MEDIUM et LOW est au Change Log de la 23-1a**, qui porte l'historique de la boucle.
+
+### Passe 2 de `validate` sur le split — 2026-08-19, Haiku ×6, contextes frais
+
+**23-1a : 0 C · 2 H · 4 M · 3 L. 23-1b : 0 C · 2 H · 6 M · 2 L.** Aucun CRITICAL, et **tous les
+chiffres neufs du recompte des relais ont été confirmés au sol** par plusieurs lentilles
+indépendantes — 7 relais, 1151 littéraux, 279 manquantes, 14 dossiers, 346 au total.
+
+**Les deux HIGH de la 23-1a ont convergé, et c'est encore un défaut de propagation** : les bornes
+révisées en passe 1 du split (`>= 1050` et `.ts >= 5`) n'avaient été portées **que dans le tableau
+de D5**. `AC9` disait toujours `≥ 3`, la sous-tâche de `T2` disait `>= 900` et `>= 3`. **Un
+développeur lit le critère et la case à cocher, pas la décision** — il aurait donc posé exactement
+la borne dont la passe précédente venait de démontrer qu'elle est *verte sur la perte qu'elle doit
+attraper*. Quatrième récidive du même geste dans ce dossier.
+
+**Les deux HIGH de la 23-1b sont le même diagnostic, vu d'un autre angle** : `D6` prescrivait
+l'exclusion des `.test.*` et le lecteur de littéral, `AC10` ne les exigeait pas ; `D8-bis` se
+déclarait « constat, non exigence » tout en imposant une relecture à `T5` ; et trois sous-tâches
+neuves de `T5` n'étaient rattachées à aucun critère. **Mes corrections des passes précédentes ont
+enrichi les décisions et les tâches, jamais les critères d'acceptation.** D'où `AC11-ter`,
+`AC11-quater`, `AC11-quinquies`, et les deux clauses ajoutées à `AC10`.
+
+**MEDIUM et LOW retenus** : `sprint-status.yaml` portait encore « 317 clés » à trois endroits hors
+récit historique ; deux résidus de l'ancien compte (« 245 sur 250 », « 250 approximations ») dans
+la 23-1b ; `D8` s'intitulait « INPUT figé » à propos d'un fichier que le commit de spécification de
+cette story avait modifié ; le Change Log de la 23-1a citait `AC11-bis` sans dire qu'il vit chez la
+sœur ; les premières mentions de `D5-bis` et `AC7-bis` n'étaient pas accompagnées d'un « cf.
+23-1a » ; `AC12-ter` parlait de préfixes « à couverture close, pour commencer » sans nommer la
+liste ni dire comment elle s'étend — elle s'appelle désormais `PREFIXES_A_COUVERTURE_CLOSE` ; et la
+sous-tâche sur le commentaire du lint ne disait pas s'il fallait **retirer** ou **remplacer** la
+mention de `delete` (c'est un retrait).
+
+⚠️ **Trois findings d'une lentille Haiku réfutés au sol, et ils tenaient à DEUX lectures** :
+
+| affirmation | vérification |
+|---|---|
+| « AC8 annonce 10 clés, il y en a 11 » puis, par ricochet, « le total est 347, pas 346 » et « T2 devrait dire 279 + 11 » | `imported-supplier-invoices-error-unknown` est un **littéral statique**, donc **déjà compté** dans les 279. Le « +10 » désigne les dix valeurs de la carte, que seule l'énumération révèle. L'ajouter serait un **double compte** |
+| « D1 affirme faussement qu'il y a 0 clés manquantes, il y en a 57 » | D1 parle des clés présentes **seulement en `de-CH`** — le sens inverse, mesuré à **0** (`comm -13`). Les 57 sont l'autre sens, et D1 ne les nie nulle part |
+
+*C'est le mode d'échec Haiku que le `CLAUDE.md` documente : une lecture rapide d'un énoncé, propagée
+en cascade sur plusieurs findings. Le garde-fou ground-truth l'a écarté en deux commandes.*
 
 ## Dev Agent Record
 

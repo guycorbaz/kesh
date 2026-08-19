@@ -407,8 +407,11 @@ celui annoncé, et il n'aurait pas été trouvé sans lire le script.*
 
 9. **AC9** — Chaque garde porte une **borne de collecte minimale** (D5) qui la fait échouer si
    son motif d'extraction cesse de trouver quoi que ce soit, **et la garde B porte une seconde
-   borne par extension** (≥ 3 clés collectées depuis des `.ts`) — une perte totale de la
-   couverture `.ts` ne coûterait que 5 clés sur 1151 et resterait au-dessus de la borne globale.
+   borne par extension** (**≥ 5** clés collectées depuis des `.ts`, la valeur mesurée) — une perte
+   totale de la couverture `.ts` ne coûterait que 5 clés sur 1151 et resterait au-dessus de la
+   borne globale. ⚠️ **≥ 5 et non ≥ 3** : deux des cinq clés `.ts` viennent d'appels multi-lignes en
+   TypeScript pur, dont la perte ramènerait le compte à 3 — une borne à 3 serait **verte sur la
+   perte même qu'elle existe pour attraper**.
 
 12. **AC12** — `duplicate-i18n-keys.test.ts` est **supprimé**, sa fonction étant reprise par la
     garde générale. *(Le contrôle qu'il exerçait ne doit pas disparaître : les **cinq** clés
@@ -420,7 +423,10 @@ celui annoncé, et il n'aurait pas été trouvé sans lire le script.*
     du domaine que personne ne demande » — est **repris dans la garde B, borné aux préfixes
     déclarés à couverture close** (`contact-duplicate-*` pour commencer, D2). Il ne se généralise
     pas : le catalogue sert aussi les PDF et les rapports, et `reports-filename-*` déclare 7 clés
-    pour 5 valeurs de `ReportType`. ⚠️ **Les nommer plutôt que les
+    pour 5 valeurs de `ReportType`. La liste vit dans le fichier de garde sous le nom
+    **`PREFIXES_A_COUVERTURE_CLOSE`**, avec un commentaire disant ce qu'y inscrire : un préfixe
+    dont **toutes** les clés du catalogue sont demandées par le frontend. Elle s'étend story par
+    story, jamais par défaut. ⚠️ **Les nommer plutôt que les
     compter est délibéré** : la première rédaction disait « quatre », valeur juste jusqu'à la
     passe 4 de la 22-2b qui a ajouté `-others-count-one`. Un nombre se démode en silence, une
     liste se confronte.
@@ -444,7 +450,7 @@ celui annoncé, et il n'aurait pas été trouvé sans lire le script.*
 - [ ] **T2 — Garde B, existence des clés demandées** (AC4, AC5, AC6, AC9, AC12, AC12-bis, AC12-ter)
   - [ ] `frontend/src/lib/shared/i18n-keys.test.ts` — parcours de tout `src` **hors fichiers `.test.*`** (D5-bis), lecture des 4 `.ftl`
   - [ ] `frontend/src/lib/shared/i18n-dette-connue.ts` — **279 + 10** clés, triées, en-tête qui nomme les stories de résorption
-  - [ ] Assertions « allowlist obsolète » **dans les deux sens** + borne globale (`>= 900`) + borne `.ts` (`>= 3`)
+  - [ ] Assertions « allowlist obsolète » **dans les deux sens** + borne globale (`>= 1050`) + borne `.ts` (`>= 5`) — valeurs du tableau de D5, et non celles d'avant le recompte des relais
   - [ ] Suppression de `duplicate-i18n-keys.test.ts` — **ses DEUX contrôles repris** (existence + orphelines bornées, AC12-ter) — **et conservation de `contacts-i18n-realpath.test.ts`**
 
 - [ ] **T3 — Motifs dynamiques et relais** (AC7, AC7-bis, AC7-ter, AC7-quater, AC8)
@@ -494,7 +500,7 @@ celui annoncé, et il n'aurait pas été trouvé sans lire le script.*
 | clés `fr-CH` / `de-CH` / `en-CH` / `it-CH` | 1273 / 1216 / 1216 / 1216 |
 | clés de [#283] | 57, **même ensemble** sur les trois locales, 0 clé en trop |
 | littéraux demandés (`i18nMsg` **+ les 7 relais**) | **1151** statiques distincts, dont **872 existent** et **279 manquent** ; s'y ajoutent **8 gabarits dynamiques** sur 10 sites |
-| clés statiques manquantes | **279**, sur **14** dossiers (relais compris, D4-bis) |
+| clés statiques manquantes | **279**, sur **14** dossiers — au sens `lib/features/<domaine>` et `routes/(app)/<section>`, un niveau sous la racine fonctionnelle (relais compris, D4-bis) |
 | préfixes dynamiques / sites d'appel | **8** / **10** |
 | clés révélées par les motifs dynamiques | **+10** (`imported-supplier-invoices-error-*`) |
 | **total de l'epic** | **346** (279 statiques + 10 de la famille dynamique + 57 de parité) |
@@ -584,7 +590,7 @@ mode d'échec que la § *Propagation post-patch* du `CLAUDE.md` décrit. D7 ré�
 
 **MEDIUM retenus** : AC12 disait « quatre » clés `contact-duplicate-*` pour **cinq** (les trois
 lentilles l'ont vu ; désormais **nommées** plutôt que comptées) ; D2-bis et la promotion des trois
-termes au glossaire n'étaient exigés par aucun AC (**AC12-bis** et **AC11-bis** ajoutés) ; la borne
+termes au glossaire n'étaient exigés par aucun AC (**AC12-bis** ici, **AC11-bis** dans la 23-1b) ; la borne
 anti-test-muet ne voyait pas une perte de la seule extension `.ts` (5 clés sur 1002 — seconde
 borne ajoutée) ; les allowlists n'étaient décroissantes que dans un sens (contrôle symétrique
 ajouté) ; le moissonneur n'avait pas de périmètre écrit (13 replis interpolés au lieu de 5) et ne
@@ -754,6 +760,46 @@ toujours vert. Borne portée à **5**, troisième fixture ajoutée.
 **Un chiffre de MA consigne réfuté par les lentilles** : je leur annonçais « 17 critères », il y en
 a **18** — recomptés depuis la source par deux méthodes convergentes avant de me contredire. Le
 chiffre faux ne vivait que dans mes prompts, aucun artefact versionné n'était touché.
+
+### Passe 2 de `validate` sur le split — 2026-08-19, Haiku ×6, contextes frais
+
+**23-1a : 0 C · 2 H · 4 M · 3 L. 23-1b : 0 C · 2 H · 6 M · 2 L.** Aucun CRITICAL, et **tous les
+chiffres neufs du recompte des relais ont été confirmés au sol** par plusieurs lentilles
+indépendantes — 7 relais, 1151 littéraux, 279 manquantes, 14 dossiers, 346 au total.
+
+**Les deux HIGH de la 23-1a ont convergé, et c'est encore un défaut de propagation** : les bornes
+révisées en passe 1 du split (`>= 1050` et `.ts >= 5`) n'avaient été portées **que dans le tableau
+de D5**. `AC9` disait toujours `≥ 3`, la sous-tâche de `T2` disait `>= 900` et `>= 3`. **Un
+développeur lit le critère et la case à cocher, pas la décision** — il aurait donc posé exactement
+la borne dont la passe précédente venait de démontrer qu'elle est *verte sur la perte qu'elle doit
+attraper*. Quatrième récidive du même geste dans ce dossier.
+
+**Les deux HIGH de la 23-1b sont le même diagnostic, vu d'un autre angle** : `D6` prescrivait
+l'exclusion des `.test.*` et le lecteur de littéral, `AC10` ne les exigeait pas ; `D8-bis` se
+déclarait « constat, non exigence » tout en imposant une relecture à `T5` ; et trois sous-tâches
+neuves de `T5` n'étaient rattachées à aucun critère. **Mes corrections des passes précédentes ont
+enrichi les décisions et les tâches, jamais les critères d'acceptation.** D'où `AC11-ter`,
+`AC11-quater`, `AC11-quinquies`, et les deux clauses ajoutées à `AC10`.
+
+**MEDIUM et LOW retenus** : `sprint-status.yaml` portait encore « 317 clés » à trois endroits hors
+récit historique ; deux résidus de l'ancien compte (« 245 sur 250 », « 250 approximations ») dans
+la 23-1b ; `D8` s'intitulait « INPUT figé » à propos d'un fichier que le commit de spécification de
+cette story avait modifié ; le Change Log de la 23-1a citait `AC11-bis` sans dire qu'il vit chez la
+sœur ; les premières mentions de `D5-bis` et `AC7-bis` n'étaient pas accompagnées d'un « cf.
+23-1a » ; `AC12-ter` parlait de préfixes « à couverture close, pour commencer » sans nommer la
+liste ni dire comment elle s'étend — elle s'appelle désormais `PREFIXES_A_COUVERTURE_CLOSE` ; et la
+sous-tâche sur le commentaire du lint ne disait pas s'il fallait **retirer** ou **remplacer** la
+mention de `delete` (c'est un retrait).
+
+⚠️ **Trois findings d'une lentille Haiku réfutés au sol, et ils tenaient à DEUX lectures** :
+
+| affirmation | vérification |
+|---|---|
+| « AC8 annonce 10 clés, il y en a 11 » puis, par ricochet, « le total est 347, pas 346 » et « T2 devrait dire 279 + 11 » | `imported-supplier-invoices-error-unknown` est un **littéral statique**, donc **déjà compté** dans les 279. Le « +10 » désigne les dix valeurs de la carte, que seule l'énumération révèle. L'ajouter serait un **double compte** |
+| « D1 affirme faussement qu'il y a 0 clés manquantes, il y en a 57 » | D1 parle des clés présentes **seulement en `de-CH`** — le sens inverse, mesuré à **0** (`comm -13`). Les 57 sont l'autre sens, et D1 ne les nie nulle part |
+
+*C'est le mode d'échec Haiku que le `CLAUDE.md` documente : une lecture rapide d'un énoncé, propagée
+en cascade sur plusieurs findings. Le garde-fou ground-truth l'a écarté en deux commandes.*
 
 ## Dev Agent Record
 
