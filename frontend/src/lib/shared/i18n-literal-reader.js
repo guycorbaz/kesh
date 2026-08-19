@@ -139,6 +139,13 @@ export function readLiteral(source, i) {
  * @returns {boolean}
  */
 function ouvreUnLitteral(source, i) {
+	// ⚠️ **Un backtick ouvre TOUJOURS un littéral en JavaScript**, étiqueté ou non
+	// (`String.raw\`…\``). Le refuser quand il suit une lettre ou une parenthèse avait
+	// une conséquence mesurée : dans un commentaire de prose, le backtick **fermant** de
+	// `` - Émet `onConfirm({ paidAt })` ; `` était accepté comme OUVRANT et lançait un
+	// gabarit qui avalait jusqu'à **58 lignes** — cinq fichiers `.svelte` réels, dix-neuf
+	// commentaires qui échappaient au masquage. (Revue de code 23-1a, passe 3.)
+	if (source[i] === '`') return true;
 	let k = i - 1;
 	while (k >= 0 && ' \t'.includes(source[k])) k -= 1;
 	if (k < 0) return true;
@@ -155,7 +162,11 @@ function ouvreUnLitteral(source, i) {
 /** Mots-clés après lesquels une quote collée ouvre bien une chaîne. */
 const MOTS_CLES_AVANT_LITTERAL = new Set([
 	'return', 'typeof', 'case', 'in', 'of', 'delete', 'void', 'do', 'else',
-	'yield', 'await', 'new', 'throw', 'instanceof'
+	'yield', 'await', 'new', 'throw', 'instanceof',
+	// ⚠️ Sans ceux-ci, **1111 littéraux réels du dépôt** étaient refusés — les chemins
+	// d'import (`from '@sveltejs/kit'`) en tête. Sans conséquence mesurée, mais c'est le
+	// mécanisme de F2 : un refus de trop, et un commentaire cesse d'être masqué.
+	'from', 'as', 'import', 'export', 'default', 'satisfies', 'extends'
 ]);
 
 /**
@@ -173,7 +184,14 @@ function estDebutDeRegex(source, i) {
 	let k = i - 1;
 	while (k >= 0 && ' \t\r\n'.includes(source[k])) k -= 1;
 	if (k < 0) return true;
-	return '(,=:[!&|?{;+-*%~^'.includes(source[k]);
+	// ⚠️ `>` couvre la fin d'une flèche `=>`, et les mots-clés sont indispensables :
+	// `return /['"]/.test(s)` était lu comme une division, la quote de la classe ouvrait
+	// une fausse chaîne, et le commentaire suivant échappait au masquage. C'est le même
+	// besoin que `ouvreUnLitteral`, resté sans réponse chez son jumeau une passe durant.
+	if ('(,=:[!&|?{;+-*%~^>}'.includes(source[k])) return true;
+	let d = k;
+	while (d >= 0 && /[\p{L}\p{N}_$]/u.test(source[d])) d -= 1;
+	return MOTS_CLES_AVANT_LITTERAL.has(source.slice(d + 1, k + 1));
 }
 
 /**
@@ -347,6 +365,19 @@ function corpsDeFonction(source, ouvrante) {
 	let j = ouvrante;
 	while (j < source.length) {
 		const c = source[j];
+		// ⚠️ **Troisième consommateur de `ouvreUnLitteral`, et il lui manquait le saut des
+		// regex** que `readLiteral` et `masquerCommentaires` faisaient déjà. Une accolade
+		// dans une regex (`if (/[{]/.test(key))`) déséquilibrait l'appariement, le corps
+		// rendait `null`, et **le relais était jeté avec toutes ses clés** — en silence,
+		// puisque l'assertion de cardinalité compte les relais DÉTECTÉS. Régression
+		// introduite par le correctif de la passe 2. (Revue de code 23-1a, passe 3.)
+		if (c === '/' && estDebutDeRegex(source, j)) {
+			const fin = finDeRegex(source, j);
+			if (fin !== null) {
+				j = fin;
+				continue;
+			}
+		}
 		if (QUOTES.includes(c) && ouvreUnLitteral(source, j)) {
 			const lu = readLiteral(source, j);
 			j = lu ? lu.end : j + 1;

@@ -301,7 +301,14 @@ que l'extracteur ne choisit pas.
 spécification annonçait 54 et 1514 : ces valeurs venaient d'une mesure d'estimation par expression
 régulière, qui comptait aussi les **définitions** des relais et des mentions en commentaire. *La
 spec a été corrigée sur l'outil, et non l'inverse — c'est le sens de la § « Recompter ses propres
-comptes rendus ».* La revue de code les a ensuite affinés une seconde fois — de 36 sur 1496 à
+comptes rendus ».*
+⚠️ **Cette phrase était inexacte sur un point, relevé en passe 3 de revue** : le lecteur compte
+toujours les **déclarations** de fonction — `function msg(key: string, …)` et celle d'`i18nMsg`
+elle-même —, soit **8 des 33** sites de l'inventaire ; avec les 7 corps `return i18nMsg(key,
+fallback)`, **15 des 33 sont du boilerplate de relais**. Ce qui a disparu du compte, ce sont les
+mentions en **commentaire**, pas les déclarations. *Vérifié contre les parseurs TypeScript et
+Svelte : 1485 sites d'appel réels, tous concordants avec le lecteur, aucun perdu ni mal classé.*
+La revue de code les a ensuite affinés une seconde fois — de 36 sur 1496 à
 **33 sur 1493** —, en masquant les commentaires (trois docstrings citaient `i18nMsg` en exemple) et
 en rendant visibles les appels membres.
 
@@ -603,7 +610,7 @@ celui annoncé, et il n'aurait pas été trouvé sans lire le script.*
 |---|---|
 | clés `fr-CH` / `de-CH` / `en-CH` / `it-CH` | 1273 / 1216 / 1216 / 1216 |
 | clés de [#283] | 57, **même ensemble** sur les trois locales, 0 clé en trop |
-| littéraux demandés (`i18nMsg` **+ les 7 relais**) | **1151** statiques distincts, dont **866 existent** et **285 manquent** ; s'y ajoutent **8 gabarits dynamiques** sur 10 sites |
+| littéraux demandés (`i18nMsg` **+ les 7 relais**) | **1151** statiques distincts, dont **872 existent** et **279 manquent** ; s'y ajoutent **6** clés portées par des tables (inventaire) — soit **285 clés statiques manquantes au total** — et **8 gabarits dynamiques** sur 10 sites |
 | clés statiques manquantes | **285**, sur **14** dossiers — au sens `lib/features/<domaine>` et `routes/(app)/<section>`, un niveau sous la racine fonctionnelle (relais compris, D4-bis) |
 | préfixes dynamiques / sites d'appel | **8** / **10** |
 | clés révélées par les motifs dynamiques | **+10** (`imported-supplier-invoices-error-*`) |
@@ -998,7 +1005,7 @@ l'inverse.*
 | garde B — retirer `nav-credit-notes` de la dette | rouge | rouge |
 | garde B — inscrire `error-invalid-credentials`, déjà au catalogue | rouge | rouge |
 | garde B — retirer le préfixe `due-dates-filter-` de `MOTIFS_DYNAMIQUES` | rouge | rouge |
-| garde B — **créer un site d'indirection neuf** (`i18nMsg(k, 'repli')`) | rouge | rouge, **2 tests sur 7** (« collecte » et « inventaire ») |
+| garde B — **créer un site d'indirection neuf** (`i18nMsg(k, 'repli')`) | rouge | rouge, **2 tests sur 10** — « collecte » et « inventaire » (2 sur 7 à l'implémentation) |
 
 ⚠️ **La dernière mutation est celle qui compte** : elle simule la sixième forme d'appel qu'aucune
 énumération n'avait prévue. L'assertion d'inventaire l'attrape sans qu'on lui ait rien appris — c'est
@@ -1016,12 +1023,12 @@ retirer les lignes, mais de déclarer `FAMILLES_RESOLUES` : l'étape 4 de `D4-te
   catalogues via le champ privé `keys`, sans jamais appeler `format()` ni `all_messages()`, qui
   replient sur `fr-CH` et ne peuvent pas distinguer « traduit » de « replié ». Échoue dans les deux
   sens, avec borne anti-test-muet à 1200 clés par locale.
-- **Garde B** (`i18n-keys.test.ts`, 7 tests) — existence des clés demandées, allowlist bidirectionnelle,
+- **Garde B** (`i18n-keys.test.ts`, **10 tests**) — existence des clés demandées, allowlist bidirectionnelle,
   8 préfixes dynamiques avec cardinalité, **liste** des 10 sites de gabarit confrontée à une table de
   référence, **assertion de cardinalité sur les 7 relais**, inventaire des **33** sites non résolus, orphelines bornées à `PREFIXES_A_COUVERTURE_CLOSE`.
 - **Lecteur partagé** (`i18n-literal-reader.js`) — automate caractère par caractère, importable par
   vitest **et** par `node` : c'est ce que la 23-1b consommera pour son moissonneur (D1-bis). Son test
-  (12 cas) inscrit les **trois formes qui ont réellement cassé** pendant les passes de revue.
+  (**26 preuves**) inscrit les **trois formes qui ont réellement cassé** pendant les passes de revue.
 - **Allowlists** — 295 entrées côté frontend (279 littéraux + 6 de l'inventaire + 10 expansions),
   57 côté Rust. Générées **depuis la source**, jamais saisies.
 - `duplicate-i18n-keys.test.ts` supprimé, **ses deux contrôles repris** ; `contacts-i18n-realpath.test.ts`
@@ -1032,8 +1039,8 @@ retirer les lignes, mais de déclarer `FAMILLES_RESOLUES` : l'étape 4 de `D4-te
 | fichier | |
 |---|---|
 | `frontend/src/lib/shared/i18n-literal-reader.js` | **neuf** — lecteur partagé (D1-bis) |
-| `frontend/src/lib/shared/i18n-literal-reader.test.ts` | **neuf** — 12 preuves, dont les 3 formes qui ont cassé |
-| `frontend/src/lib/shared/i18n-keys.test.ts` | **neuf** — garde B, 7 tests |
+| `frontend/src/lib/shared/i18n-literal-reader.test.ts` | **neuf** — **26 preuves**, dont les formes qui ont réellement cassé à chaque passe |
+| `frontend/src/lib/shared/i18n-keys.test.ts` | **neuf** — garde B, **10 tests** |
 | `frontend/src/lib/shared/i18n-dette-connue.ts` | **neuf** — 295 entrées |
 | `frontend/src/lib/features/contacts/duplicate-i18n-keys.test.ts` | **supprimé** — remplacé par la garde B |
 | `crates/kesh-i18n/src/loader.rs` | garde A ajoutée au module `tests` |
@@ -1124,6 +1131,55 @@ et une liste de mots-clés.
 littéraux, 5 depuis `.ts`. Ces correctifs ferment des défauts **latents** sans rien déplacer
 aujourd'hui : c'est ce qu'on attend d'un patch de robustesse. Quatre preuves neuves les inscrivent.
 
+### Passe 3 de `bmad-code-review` — 2026-08-19, Opus ×3, diff aplati, contextes frais
+
+**0 CRITICAL · 3 HIGH · 9 MEDIUM · 11 LOW.** ⚠️ **La sévérité ne descend pas** — `4 HIGH → 1 → 3` —
+mais les trois HIGH sont ailleurs qu'aux passes précédentes, et **la vérification a changé de
+nature** : une lentille a construit **deux oracles indépendants**, le parseur TypeScript et le
+compilateur Svelte, pour confronter le lecteur au dépôt entier.
+
+**Ce que ces oracles établissent, et qui vaut mieux que tout le reste du rapport** :
+**1485 sites d'appel réels, tous concordants** avec le lecteur en (ligne, fonction, nature du
+premier argument) — **aucun site perdu, aucun mal classé** ; **aucune clé perdue** entre les trois
+versions successives du module (1151 → 1151 → 1151, zéro entrée, zéro sortie) ; **41 sauts de regex,
+tous légitimes**, aucune division prise pour une regex.
+
+**HIGH-1 — `corpsDeFonction` était aveugle aux regex : une RÉGRESSION du correctif de la passe 2.**
+Il savait sauter les chaînes, pas les regex. Une accolade dans `/[{]/` déséquilibrait
+l'appariement, le corps rendait `null`, et **le relais était jeté avec toutes ses clés**. Démontré
+au gate réel : une sonde portant quatre clés absentes des catalogues laisse
+« *toute clé demandée existe au catalogue* » et « *les 7 relais* » **vertes**. C'est le mode d'échec
+que le commentaire de ce même correctif prétendait refermer.
+
+**HIGH-2 — le masquage des commentaires était inopérant sur CINQ fichiers `.svelte` réels**,
+dix-neuf commentaires. Un backtick de **prose** — le fermant de `` `onConfirm({ paidAt })` `` —
+était accepté comme ouvrant, et le gabarit avalait jusqu'à **58 lignes**. Une clé fantôme injectée
+dans `MarkPaidDialog.svelte` le prouve au gate ; la même dans un fichier sain ne fait rien. *Un
+backtick ouvre toujours un littéral en JavaScript : le refuser était l'erreur.*
+
+**HIGH-3 — `AC7` n'était pas satisfait** : aucune assertion de cardinalité **par préfixe**, alors
+que `D4` la présente comme la contrepartie des valeurs écrites en dur et que la case `T3` était
+cochée. Mutation : `journal-` réduit de 5 valeurs à 3 → **dix tests verts**. La table pouvait
+rétrécir en silence. ⚠️ *Troisième récidive du même motif — `AC7-quater` en passe 1, `AC7-ter` aux
+deux tiers en passe 1, `AC7` ici — et **ma propre vérification s'est trompée deux fois** avant de
+confirmer : une fois sur un état de fichier non contrôlé, une fois sur un `cd` échoué qui n'avait
+pas appliqué la mutation.*
+
+**MEDIUM retenus** : `estDebutDeRegex` ignorait `=>` et les mots-clés, là où son jumeau
+`ouvreUnLitteral` avait reçu une liste une passe plus tôt — asymétrie qui rouvrait le défaut de la
+passe 2 ; **8 des 33** sites de l'inventaire sont des **déclarations** de fonction, ce que le Debug
+Log niait ; un relais **importé** d'un module partagé serait invisible **sans qu'aucun compteur ne
+bouge** — quatrième angle mort, écrit faute de pouvoir le fermer, et la règle DRY du dépôt pousse
+justement vers cette extraction ; **1111 littéraux réels** étaient refusés par la règle de
+l'apostrophe (les `from '…'` en tête) ; et quatre défauts de comptes rendus — une ventilation qui ne
+faisait pas son total, des Completion Notes périmées de deux passes, les tableaux dérivés du plan
+d'epic restés à 279 et 346 sous des entêtes annonçant 285 et 352, et une partition des 1151
+littéraux qui se contredisait d'un paragraphe à l'autre.
+
+**Les six valeurs de référence sont rigoureusement inchangées** après correctifs — 1493 sites, 33
+non résolus, 10 gabarits, 7 relais, 1151 littéraux, 5 depuis `.ts`. Six preuves neuves inscrivent
+chaque régression.
+
 ### Gates — exécutés, non déclarés
 
 | gate | résultat |
@@ -1133,7 +1189,7 @@ aujourd'hui : c'est ce qu'on attend d'un patch de robustesse. Quatre preuves neu
 | backend complet (`test-fast.sh`, base **remise à zéro d'abord**) | **2219/2219**, 4 ignorés, 138 s — *+1 test : la garde A* |
 | `npm run check` | **0 erreur** (27 avertissements préexistants) |
 | `npm run lint-i18n-ownership` | PASS |
-| `npm run test:unit` | **637/637** sur 69 fichiers — *+19 tests neufs à l'implémentation, +7 en revue, **−2** par la suppression du prototype : **net +24** depuis `98026213` (609)* |
+| `npm run test:unit` | **643/643** sur 69 fichiers — *+19 à l'implémentation, +7 en passe 1, +4 en passe 2, +6 en passe 3, **−2** par la suppression du prototype : **net +34** depuis `98026213` (609). Recompté au `grep -cE "^\tit\("`.* |
 | `npm run build` | vert |
 
 ⚠️ **E2E non exécutée** : cette story ne touche aucune surface utilisateur — ni `.svelte` de

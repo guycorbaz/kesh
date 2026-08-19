@@ -147,6 +147,65 @@ describe('défauts trouvés en passe 2 de revue', () => {
 	});
 });
 
+describe('régressions trouvées en passe 3 de revue', () => {
+	it('un relais dont le corps contient une regex à accolade reste vu', () => {
+		// ⚠️ **Régression introduite par le correctif de la passe 2** : `corpsDeFonction`
+		// savait sauter les chaînes, pas les regex. Une accolade dans `/[{]/` déséquilibrait
+		// l'appariement, le corps rendait `null`, et le relais était jeté AVEC TOUTES SES
+		// CLÉS — en silence, l'assertion de cardinalité ne comptant que les relais détectés.
+		const src =
+			'function msg(key: string, fallback: string): string { if (/[{]/.test(key)) return key; return i18nMsg(key, fallback); }';
+		expect(findRelays(src)).toEqual(['msg']);
+	});
+
+	it('un gabarit étiqueté dans le corps ne fait pas perdre le relais', () => {
+		// Un backtick ouvre TOUJOURS un littéral en JavaScript, étiqueté ou non.
+		const src =
+			'function msg(key: string, fallback: string): string { const r = String.raw`{`; return i18nMsg(key, fallback); }';
+		expect(findRelays(src)).toEqual(['msg']);
+	});
+
+	it('un backtick de prose dans un commentaire ne lance pas un gabarit fugueur', () => {
+		// ⚠️ Ligne RÉELLE de `MarkPaidDialog.svelte`. Le backtick FERMANT, précédé d'une
+		// parenthèse, était accepté comme ouvrant : le gabarit avalait **58 lignes**, et
+		// les commentaires de la zone cessaient d'être masqués. Cinq fichiers `.svelte`
+		// du dépôt étaient dans ce cas, dix-neuf commentaires au total.
+		const src = [
+			'<!--',
+			'  - Émet `onConfirm({ paidAt })` ;',
+			'-->',
+			'// exemple de doc : i18nMsg(\'cle-fantome\', \'Repli\')',
+			"const vrai = i18nMsg('cle-reelle', 'v');"
+		].join('\n');
+		expect(findCallSites(src).map((s) => s.arg?.value)).toEqual(['cle-reelle']);
+	});
+
+	it('une regex après un mot-clé ou une flèche est reconnue comme telle', () => {
+		// `estDebutDeRegex` ne connaissait que des opérateurs ASCII : ni `=>`, ni les
+		// mots-clés. `return /['"]/.test(s)` était lu comme une division, la quote de la
+		// classe ouvrait une fausse chaîne, et le commentaire suivant échappait au masquage.
+		const apresMotCle = [
+			'function f(s) { return /[\'"]/.test(s); }',
+			'// exemple : i18nMsg(\'fantome-a\', \'x\')',
+			"const a = i18nMsg('vraie-a', 'v');"
+		].join('\n');
+		expect(findCallSites(apresMotCle).map((s) => s.arg?.value)).toEqual(['vraie-a']);
+
+		const apresFleche = [
+			'const p = (s) => /^\\//.test(s);',
+			'// exemple : i18nMsg(\'fantome-b\', \'x\')',
+			"const b = i18nMsg('vraie-b', 'v');"
+		].join('\n');
+		expect(findCallSites(apresFleche).map((s) => s.arg?.value)).toEqual(['vraie-b']);
+	});
+
+	it("un chemin d'import n'est pas refusé comme littéral", () => {
+		// 1111 littéraux réels du dépôt étaient refusés, les `from '…'` en tête.
+		const src = "import { x } from '@sveltejs/kit';\nconst a = i18nMsg('vraie-c', 'v');";
+		expect(findCallSites(src).map((s) => s.arg?.value)).toEqual(['vraie-c']);
+	});
+});
+
 describe('cas limites du lecteur', () => {
 	it('lit un littéral échappé sans se laisser fermer trop tôt', () => {
 		expect(readLiteral(String.raw`'Saisie d\'écriture'`, 0)?.value).toBe("Saisie d'écriture");

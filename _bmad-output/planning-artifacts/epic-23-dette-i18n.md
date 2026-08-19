@@ -56,6 +56,7 @@ LC_ALL=C comm -23 <(grep -oE '^[a-zA-Z][A-Za-z0-9_-]* *=' fr-CH/messages.ftl | L
 | 4 | `lib/components` |
 | 3 | `lib/features/journal-entries` |
 | 2 | `routes/(app)/bank-accounts` |
+| **+6** | **tables `i18nKey` / `labelKey`** — `routes/(app)/+layout.svelte` (4, vers 23-4) et `routes/(app)/reports/+page.svelte` (2, vers 23-5) ; révélées par l'inventaire, elles n'appartiennent à aucun dossier au sens du recensement de littéraux |
 
 ## Pourquoi rien ne l'a vu — les trois contrôles regardent ailleurs
 
@@ -114,8 +115,8 @@ appelle un contrôle d'une autre nature (détection de littéraux affichés).
 | **23-1b** | **Pilote** : moissonneur de replis versionné, les 20 clés de `contacts` dans les 4 locales, glossaire. **Dépend du merge de la 23-1a.** | 20 |
 | **23-2** | **[#283]** — les 57 clés en `de-CH` / `it-CH` / `en-CH`. La garde de **parité** devient inconditionnelle : son allowlist disparaît | 57 |
 | **23-3** | `supplier-invoices` — le gros morceau, seul (99 statiques + **10** de la famille dynamique `imported-supplier-invoices-error-*`) | 109 |
-| **23-4** | `settings` + `payment-batches` + `onboarding` | 89 |
-| **23-5** | `reconciliation` (dont les 5 entrées à variables) + `reports` (14 + 7) + `credit-notes` | 56 |
+| **23-4** | `settings` + `payment-batches` + `onboarding` + les 4 `nav-*` de l'inventaire | 93 |
+| **23-5** | `reconciliation` (dont les 5 entrées à variables) + `reports` (14 + 7) + `credit-notes` + les 2 `reports-project-*` de l'inventaire | 58 |
 | **23-6** | Reliquat : `invoices`, `journal-entries`, `lib/components`, `bank-accounts` + **clôture** : allowlist vidée, garde inconditionnelle, [#316] fermée | 15 |
 
 ⚠️ **La 23-1 a été DÉCOUPÉE le 2026-08-19** (arbitrage de Guy) après trois passes de `validate` au

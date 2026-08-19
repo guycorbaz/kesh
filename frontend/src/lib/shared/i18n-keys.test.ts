@@ -97,6 +97,36 @@ const MOTIFS_DYNAMIQUES: Record<string, readonly string[]> = {
 const ANGLE_MORT_CLE_EN_COLONNE = 'routes/(app)/settings/vat-rates/+page.svelte:52';
 
 /**
+ * Cardinalité attendue de chaque préfixe dynamique — **la contrepartie des valeurs
+ * écrites en dur**, et elle manquait.
+ *
+ * ⚠️ Sans elle, `MOTIFS_DYNAMIQUES` peut **rétrécir en silence** : un « nettoyage » qui
+ * retire deux valeurs de `journal-` sort deux clés de couverture sans qu'un seul test
+ * rougisse — mutation exécutée en passe 3 de revue, **neuf tests verts**. Le docstring
+ * de ce fichier promettait pourtant cette protection depuis le premier jet.
+ *
+ * L'invariant est **à deux places** : pour rétrécir une famille sans bruit, il faudrait
+ * éditer la table ET ce compteur. C'est peu, mais c'est exactement ce qui sépare une
+ * garde d'une déclaration d'intention.
+ *
+ * ⚠️ **QUATRIÈME angle mort, écrit ici faute de pouvoir le fermer** : `findRelays`
+ * travaille **par fichier**. Un relais qui serait *importé* d'un module partagé ne
+ * serait recensé nulle part — et, contrairement aux autres trous, **aucun compteur ne
+ * bougerait**. La règle DRY du dépôt pousse vers cette extraction : les sept relais
+ * actuels sont sept copies de la même fonction de trois lignes. À traiter en 23-2.
+ */
+const CARDINALITES: Record<string, number> = {
+	'journal-': 5,
+	'account-type-': 4,
+	'due-dates-filter-': 4,
+	'reports-filename-': 5,
+	'vat-category-': 5,
+	'reminders-error-': 15,
+	'imported-supplier-invoices-error-': 10,
+	'bank-import-info-': 2
+};
+
+/**
  * **Les familles résolues de l'inventaire (D4-ter, étape 4).**
  *
  * Ces clés atteignent `i18nMsg` sans jamais s'écrire comme littéral au site d'appel :
@@ -325,6 +355,15 @@ describe('garde i18n — les clés demandées existent au catalogue', () => {
 		expect(releve.nonResolus).toContain(ANGLE_MORT_CLE_EN_COLONNE);
 	});
 
+	it('chaque préfixe dynamique porte sa cardinalité — la table ne rétrécit pas en silence', () => {
+		expect(Object.keys(CARDINALITES).sort()).toEqual(Object.keys(MOTIFS_DYNAMIQUES).sort());
+		for (const [prefixe, valeurs] of Object.entries(MOTIFS_DYNAMIQUES)) {
+			expect(valeurs.length, `${prefixe} : ${valeurs.length} valeurs déclarées`).toBe(
+				CARDINALITES[prefixe]
+			);
+		}
+	});
+
 	it('les 8 préfixes dynamiques sont déclarés, et leurs 10 sites confrontés', () => {
 		expect([...new Set(releve.gabarits)].sort()).toEqual([...SITES_GABARIT_ATTENDUS].sort());
 		expect(releve.gabarits.length).toBe(ATTENDU.sitesGabarit);
@@ -351,6 +390,11 @@ describe('garde i18n — les clés demandées existent au catalogue', () => {
 			releve.nonResolus.length,
 			`sites dont le premier argument n'est ni littéral ni gabarit :\n  ${releve.nonResolus.join('\n  ')}`
 		).toBe(ATTENDU.sitesNonResolus);
+		// ⚠️ **8 de ces 33 sont des DÉCLARATIONS de fonction**, pas des sites d'appel :
+		// `function msg(key: string, …)` et la déclaration d'`i18nMsg` elle-même sont
+		// capturées par le motif `nom(`. Avec les 7 corps `return i18nMsg(key, fallback)`,
+		// **15 des 33 sont du boilerplate de relais**. Vérifié en passe 3 de revue contre
+		// les parseurs TypeScript et Svelte : 1485 sites d'appel réels, tous concordants.
 	});
 
 	it('aucune clé orpheline sur les préfixes à couverture close', () => {
