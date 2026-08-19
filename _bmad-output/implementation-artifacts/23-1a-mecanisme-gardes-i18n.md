@@ -9,7 +9,7 @@ Première moitié du split de la **23-1**, arbitré par Guy le 2026-08-19 après
 splitting préventif*). La seconde moitié est la **23-1b**, qui consomme ce que celle-ci produit.
 
 ⚠️ **Cette story ne traduit RIEN et ne touche à AUCUN catalogue.** Elle pose les deux gardes, leur
-extracteur et leurs allowlists — les allowlists naissent donc **pleines** : 317 clés, dont les 20
+extracteur et leurs allowlists — les allowlists naissent donc **pleines** : **346** clés, dont les 20
 du pilote que la 23-1b retirera. C'est délibéré, et c'est ce qui la rend relisable : aucun
 arbitrage terminologique, aucun libellé, aucune locale à peser.
 
@@ -29,7 +29,15 @@ anti-test-muet.
 
 **Dehors, et c'est la 23-1b** : le moissonneur de replis, les 20 clés du pilote `contacts`, le
 renommage de `delete`, le glossaire et ses trois termes à promouvoir, le registre d'adresse.
-**Dehors aussi** : les rollouts 23-2 à 23-6, [#255], [#314], le sélecteur de langue [#242].
+**Dehors aussi** : les rollouts 23-2 à 23-6, [#255], [#314], le sélecteur de langue [#242], **et
+toute traduction des manuels LaTeX**.
+
+⚠️ **Dehors également, et il faut le redire parce que le découpage l'avait fait tomber** : le
+backend **`kesh-qrbill`** et sa table `I18N_KEYS` / `DEFAULT_EN` (`crates/kesh-qrbill/src/types.rs:216`)
+sont un **troisième catalogue, apparié par POSITION** — les deux gardes ne le couvrent pas, et
+l'y étendre serait un autre chantier. *(La D2 ci-dessous mentionne `kesh-qrbill` à propos des PDF :
+c'est un fait différent, qui ne dispense pas de cet avertissement. Clause présente dans la spec
+d'origine, perdue par les DEUX moitiés au découpage, restaurée en passe 1 du split.)*
 
 ⚠️ **Les identifiants de décisions et de critères sont ceux de la 23-1 d'origine**, conservés tels
 quels dans les deux moitiés — les renuméroter casserait les renvois internes que trois passes de
@@ -47,7 +55,7 @@ chemins distincts pour un même symptôme visible :
 | | où la clé manque | ce que reçoit le frontend | quel repli s'affiche |
 |---|---|---|---|
 | **[#283]** — 57 clés | en `de-CH` / `it-CH` / `en-CH`, présente en `fr-CH` | **le texte français**, via le repli du loader | celui du **backend** — le 2ᵉ argument d'`i18nMsg` n'est jamais atteint |
-| **[#316]** — 250 clés | **partout** | rien | le **littéral en dur** du `.svelte` |
+| **[#316]** — 279 clés | **partout** | rien | le **littéral en dur** du fichier appelant |
 
 ⚠️ **Conséquence directe sur la conception des gardes** : aucun test passant par `format()` ou
 par `all_messages()` ne peut voir [#283]. Ces deux fonctions rendent du français **exactement
@@ -87,7 +95,9 @@ carte à `supplier-invoices/import/+page.svelte:55-66`) ne figurent dans **aucun
 antérieur, puisqu'elles ne sont jamais écrites comme littéraux.
 
 **Le total de l'epic passe donc de 307 à 317**, et la story 23-3 de 99 à 109. Le plan d'epic est
-corrigé en conséquence. ⚠️ *C'est exactement ce que le point 3 existe pour empêcher : un motif
+corrigé en conséquence. ⚠️ **Et il est passé à 346 en passe 1 du split** : les relais de D4-bis
+ont révélé **29 clés de plus** et un dossier entier. Le présent § garde son récit d'origine, la
+correction ultérieure étant au Change Log. ⚠️ *C'est exactement ce que le point 3 existe pour empêcher : un motif
 dynamique que la garde ignorerait serait un trou **dans la garde elle-même**.*
 
 ### ⚠️ Le motif `bank-import-info-*` avait été manqué — et la cause est instructive
@@ -242,22 +252,54 @@ domaine `contact-duplicate-*` ; la garde générale le reprend à son échelle.*
 | borne | valeur | mesuré |
 |---|---|---|
 | garde A — clés par locale | `>= 1200` | 1216 |
-| garde B — littéraux demandés | `>= 900` | **1002 statiques** |
-| garde B — clés issues de fichiers `.ts` | `>= 3` | 5 |
+| garde B — littéraux demandés | `>= 1050` | **1151 statiques** (relais compris, D4-bis) |
+| garde B — clés issues de fichiers `.ts` | `>= 5` | 5 |
 
-⚠️ **Les deux nombres de la spec ne se contredisent pas, et il faut le dire une fois pour
-toutes** : `i18nMsg()` est appelé avec **1010 littéraux distincts**, dont **8 sont des gabarits
-dynamiques** ; il reste donc **1002 clés statiques**, et c'est cette valeur que borne la garde B.
-*(Écart relevé en passe 2 — les deux chiffres étaient justes, leur relation n'était écrite nulle
-part.)*
+⚠️ **Le compte a changé en passe 1 de la 23-1b, et c'est le chiffre corrigé qui fait foi** :
+**1151 littéraux statiques distincts** sont demandés — `i18nMsg` **et les sept relais de D4-bis**
+réunis —, contre 1010 quand on ignorait les relais. Sur ces 1151, **872 existent** et **279
+manquent**. *(La relation « 1010 = 1002 statiques + 8 gabarits », établie en passe 2, portait sur
+le seul périmètre `i18nMsg(` ; elle était exacte et incomplète.)*
 
-⚠️ **Une borne globale ne voit pas une perte PARTIELLE, et c'est mesuré** : **997** de ces 1002
+⚠️ **Une borne globale ne voit pas une perte PARTIELLE, et c'est mesuré** : **1146** de ces 1151
 clés viennent de `.svelte` et **5 seulement** de `.ts`. Un filtre d'extension réduit par erreur à
-`/\.svelte$/` ferait tomber le total à 997 — **toujours ≥ 900**, donc toujours vert. D'où la
-troisième ligne du tableau.
+`/\.svelte$/` ferait tomber le total de 1151 à 1146 — **toujours au-dessus de la borne globale**.
+D'où la troisième ligne du tableau.
+⚠️ **Et cette borne `.ts` est posée à la valeur MESURÉE (5), non à « mesuré moins une marge ».**
+Motif : deux des cinq clés `.ts` viennent d'appels **multi-lignes en syntaxe TypeScript pure**
+(`notify.ts:103-110`, un ternaire sans balisage Svelte). Un extracteur dont le support multi-ligne
+serait calqué sur la seule forme `.svelte` les perdrait — le compte tomberait à 3, et une borne
+posée à `>= 3` serait **verte sur la perte même qu'elle existe pour attraper**.
 ⚠️ **Cette borne `.ts` compte les fichiers de PRODUCTION**, les `.test.*` étant hors collecte
 (cf. D5-bis) — sans quoi la garde, elle-même écrite dans un `.ts`, pourrait se compter et
 survivre à la perte de tout ce qu'elle doit surveiller.
+
+**D4-bis — L'extracteur reconnaît les RELAIS LOCAUX, sans quoi il rate 29 clés et un dossier entier.**
+Sept fichiers déclarent une fonction qui **transmet** ses arguments à `i18nMsg` :
+
+```ts
+function msg(key: string, fallback: string): string { return i18nMsg(key, fallback); }
+```
+
+Le littéral ne se trouve alors **pas** au site `i18nMsg(`, mais au site `msg(`. Un extracteur qui
+ne cherche que `i18nMsg(` ne voit **rien** de ce que ces fichiers demandent.
+
+⚠️ **Ce n'est pas une hypothèse : c'est ce qui s'est produit.** Le recensement de cette spec —
+et donc les décomptes de trois passes de revue — ignorait **29 clés manquantes**, un **dossier
+entier** (`routes/onboarding`) absent du découpage de l'epic, et **25 clés de plus** pour
+`routes/(app)/settings` (l'écran des modèles d'e-mail à lui seul). Trouvé en passe 1 de la 23-1b,
+par la lentille qui cherchait l'intégrité du découpage.
+
+**La garde procède donc en deux temps** : (1) elle **recense les relais** — une fonction dont le
+corps se réduit à `return i18nMsg(<param>, <param>)` — et (2) elle collecte les littéraux passés
+à `i18nMsg` **et à chacun d'eux**.
+⚠️ **Une assertion de cardinalité porte sur le nombre de relais trouvés (`7`)** : un huitième
+relais ajouté sans que le test le sache rendrait ses clés invisibles, en silence, exactement comme
+aujourd'hui. C'est le même garde-fou que pour les 10 sites dynamiques, et pour la même raison.
+
+⚠️ **C'est le TROISIÈME angle mort de la garde**, après `vat-category-*` et `bank-import-info-*` —
+et le seul des trois qui soit **refermable** : les deux autres tiennent à des valeurs produites
+hors du frontend, celui-ci n'est qu'une forme d'appel.
 
 **D5-bis — Les fichiers `.test.*` sont HORS COLLECTE, et ce n'est pas un détail de commodité.**
 La garde B balaie `frontend/src` **à l'exception des fichiers dont le nom contient `.test.`** —
@@ -270,12 +312,16 @@ absurde, les inscrire à l'allowlist de dette encore plus, puisqu'elles ne sont 
 écrite ici pour qu'un lecteur ne la prenne pas pour un oubli, ni ne l'élargisse aux `.svelte` de
 test.
 
-**D10 — Où les gardes s'exécutent, et pourquoi ça suffit.**
+**D10 — Où les gardes s'exécutent, et pourquoi ça suffit.** *(Constat de cadrage : aucun AC ne
+contrôle « aucun nouveau script npm, aucune nouvelle étape de CI » — AC13 vérifie que les gates
+passent, pas qu'aucun script n'a été ajouté. Déclaré tel plutôt que laissé implicite, comme D8-bis
+dans la moitié sœur.)*
 Garde A dans `cargo test -p kesh-i18n` (donc dans le gate backend et en CI). Garde B dans
 `npm run test:unit` (donc dans le gate frontend et en CI). **Aucun nouveau script npm, aucune
 nouvelle étape de CI** : les deux gates existants les portent. `lint-i18n-ownership` reste tel
 quel — il répond à une autre question (l'appartenance d'un namespace à un dossier).
-⚠️ **UNE exception, et elle est imposée par D7-bis** : renommer `delete` en
+⚠️ **UNE exception, et elle est imposée par la 23-1b (D7-bis, T5) — pas par cette story** :
+renommer `delete` en
 `contact-persons-delete` **crée une violation d'appartenance**. Le lint compare le *namespace* de
 la clé (`getNamespace` → `contact`) au nom du *dossier* (`contacts`) : l'écart singulier/pluriel de
 l'issue #30 fait que **les neuf clés sœurs du même composant sont déjà inscrites** à
@@ -312,9 +358,8 @@ celui annoncé, et il n'aurait pas été trouvé sans lire le script.*
    même allowlist, et le raccourci consisterait à les retirer, effaçant la traçabilité vers 23-3.
 
 6. **AC6** — Le test vitest balaie **tout** `frontend/src` — `src/routes/` compris, d'où
-   **197 des 250** clés manquantes sont demandées **exclusivement** (199 le sont depuis au moins un
-   fichier de `routes/` ; les 2 restantes, `field-first-name` et `field-last-name`, sont partagées
-   avec `lib/features/contacts`, cf. D8-bis) —, à **une seule exception écrite** : les fichiers dont le nom
+   **226 des 279** clés manquantes sont demandées **exclusivement** (228 depuis au moins un fichier
+   de `routes/`) —, à **une seule exception écrite** : les fichiers dont le nom
    contient `.test.` (D5-bis), qui demandent des clés fictives (`compteur`, `une-cle`) devant
    rester absentes des catalogues.
 
@@ -326,13 +371,26 @@ celui annoncé, et il n'aurait pas été trouvé sans lire le script.*
    aucun module de production** : les valeurs et les cardinalités y sont écrites en dur (D4), ce
    qui se vérifie sur ses `import`.
 
+7-quater. **AC7-quater** — La garde **recense les relais locaux** (D4-bis) et collecte les
+   littéraux passés à chacun, en plus de ceux passés à `i18nMsg`. Une assertion de cardinalité
+   porte sur le **nombre de relais trouvés (7)**. *(Sans quoi 29 clés manquantes et le dossier
+   `routes/onboarding` restent invisibles — c'était l'état de cette spec jusqu'à la passe 1 de la
+   23-1b.)*
 7-bis. **AC7-bis** — L'extracteur de la garde B porte **son propre test**, qui le confronte aux
-   deux formes réelles connues pour casser une extraction naïve :
+   **trois** formes réelles connues pour casser une extraction naïve :
    (a) un gabarit dont **l'interpolation contient des apostrophes** —
    `` i18nMsg(`bank-import-info-${info.replace(/_/g, '-')}`, info) ``
    (`BankImportUpload.svelte:547`), que ne traverse aucune classe `[^'"`]*` ;
-   (b) un appel **réparti sur plusieurs lignes** — `supplier-invoices/import/+page.svelte:85-88`,
-   que ne voit aucun balayage ligne à ligne.
+   (b) un appel **réparti sur plusieurs lignes en balisage Svelte** —
+   `supplier-invoices/import/+page.svelte:85-88` — que ne voit aucun balayage ligne à ligne ;
+   (c) un appel **multi-ligne en syntaxe TypeScript pure** — `notify.ts:103-110`, un ternaire —
+   pour que le support multi-ligne ne soit pas calqué sur la seule forme `.svelte`.
+   ⚠️ **La robustesse porte sur le PREMIER argument, la clé.** Le contenu du repli n'est ni lu ni
+   requis par la garde B — c'est le **moissonneur** (23-1b, D6/AC10) qui lit le second argument, et
+   qui doit alors employer le même lecteur de littéral. *(L'entrée « Passe 3 » du Change Log dit
+   « AC7-bis vaut pour les deux arguments d'`i18nMsg` » : c'était vrai de la story unifiée, où le
+   moissonneur vivait dans le même périmètre. Après le split, la clause se lit ici pour la clé, et
+   dans la 23-1b pour le repli.)*
    Sans ce test, la garde hérite du défaut de méthode qui a fait manquer un motif entier à la
    première rédaction de cette spec.
 
@@ -350,7 +408,7 @@ celui annoncé, et il n'aurait pas été trouvé sans lire le script.*
 9. **AC9** — Chaque garde porte une **borne de collecte minimale** (D5) qui la fait échouer si
    son motif d'extraction cesse de trouver quoi que ce soit, **et la garde B porte une seconde
    borne par extension** (≥ 3 clés collectées depuis des `.ts`) — une perte totale de la
-   couverture `.ts` ne coûterait que 5 clés sur 1002 et resterait au-dessus de la borne globale.
+   couverture `.ts` ne coûterait que 5 clés sur 1151 et resterait au-dessus de la borne globale.
 
 12. **AC12** — `duplicate-i18n-keys.test.ts` est **supprimé**, sa fonction étant reprise par la
     garde générale. *(Le contrôle qu'il exerçait ne doit pas disparaître : les **cinq** clés
@@ -385,14 +443,15 @@ celui annoncé, et il n'aurait pas été trouvé sans lire le script.*
 
 - [ ] **T2 — Garde B, existence des clés demandées** (AC4, AC5, AC6, AC9, AC12, AC12-bis, AC12-ter)
   - [ ] `frontend/src/lib/shared/i18n-keys.test.ts` — parcours de tout `src` **hors fichiers `.test.*`** (D5-bis), lecture des 4 `.ftl`
-  - [ ] `frontend/src/lib/shared/i18n-dette-connue.ts` — 250 + 10 clés, triées, en-tête qui nomme les stories de résorption
+  - [ ] `frontend/src/lib/shared/i18n-dette-connue.ts` — **279 + 10** clés, triées, en-tête qui nomme les stories de résorption
   - [ ] Assertions « allowlist obsolète » **dans les deux sens** + borne globale (`>= 900`) + borne `.ts` (`>= 3`)
   - [ ] Suppression de `duplicate-i18n-keys.test.ts` — **ses DEUX contrôles repris** (existence + orphelines bornées, AC12-ter) — **et conservation de `contacts-i18n-realpath.test.ts`**
 
-- [ ] **T3 — Motifs dynamiques** (AC7, AC7-bis, AC7-ter, AC8)
+- [ ] **T3 — Motifs dynamiques et relais** (AC7, AC7-bis, AC7-ter, AC7-quater, AC8)
   - [ ] Table `MOTIFS_DYNAMIQUES` : **8 préfixes**, valeurs en dur, `bank-import-info-*` compris
   - [ ] Assertion de cardinalité par préfixe **+ assertion sur le nombre de sites (10)**
-  - [ ] Extracteur robuste **aux apostrophes dans l'interpolation ET aux appels multi-lignes**, avec son test (AC7-bis)
+  - [ ] Extracteur robuste **aux apostrophes dans l'interpolation, aux appels multi-lignes Svelte ET TypeScript**, avec son test à trois fixtures (AC7-bis)
+  - [ ] **Recensement des 7 relais locaux** et collecte de leurs littéraux, avec assertion de cardinalité (AC7-quater, D4-bis)
   - [ ] Comparaison de la **liste** des 10 sites contre la table de référence de D4
   - [ ] Aucun `import` de module de production dans le fichier de garde (AC7)
   - [ ] Commentaires d'angle mort sur **`vat-category-*` ET `bank-import-info-*`** (AC7-ter), valeurs déclarées **après transformation**
@@ -405,15 +464,14 @@ celui annoncé, et il n'aurait pas été trouvé sans lire le script.*
 
 ### Ce que cette story ne doit PAS faire
 
-- **Ne pas traduire au-delà des 20 clés du pilote.** Une story-zéro qui déborde n'est plus une
-  story-zéro, et les rollouts perdent leur mesure.
-- **Ne pas toucher `KNOWN_VIOLATIONS`** de `lint-i18n-ownership.js` — **à UNE ligne près** : celle
-  de `ContactPersonsManager.svelte:delete`, que le renommage de D7-bis fait devenir
-  `…:contact-persons-delete`. C'est une substitution imposée par D7-bis, pas une dérogation à la
-  règle. *(Cette phrase disait « autre question, autre garde » sans exception : elle contredisait
-  D10 et T5 depuis la passe 2, et n'a été rattrapée que par le grep du symptôme.)*
-- **Ne pas « corriger » les 5 clés interpolées** de `TransactionSplitModal` — elles demandent des
-  entrées Fluent à variables, et c'est la 23-5 qui les porte.
+- **Ne traduire AUCUNE clé.** La borne de cette moitié est zéro, pas vingt : les 20 clés du pilote
+  sont le travail de la 23-1b. *(Cette ligne disait « ne pas traduire au-delà des 20 clés du
+  pilote » — vraie de la story unifiée, fausse ici, et contredisant le bandeau d'ouverture de sa
+  propre page. Relevée en passe 1 du split.)*
+- **Ne pas toucher `KNOWN_VIOLATIONS`** de `lint-i18n-ownership.js` : aucune tâche de cette moitié
+  (T1, T2, T3, T6) n'a de raison d'y toucher. *La substitution de la ligne `…:delete` →
+  `…:contact-persons-delete` est le travail de **T5, dans la 23-1b**, imposée par son D7-bis.*
+- **Ne pas toucher au moissonneur ni aux replis** : ils sont le périmètre de la 23-1b.
 - **Ne pas ajouter de clé au catalogue sans l'ajouter aux QUATRE locales** : ce serait creuser
   [#283] dans la story qui vient la borner, et la garde A le refuserait de toute façon.
 
@@ -435,12 +493,12 @@ celui annoncé, et il n'aurait pas été trouvé sans lire le script.*
 |---|---|
 | clés `fr-CH` / `de-CH` / `en-CH` / `it-CH` | 1273 / 1216 / 1216 / 1216 |
 | clés de [#283] | 57, **même ensemble** sur les trois locales, 0 clé en trop |
-| littéraux demandés par `i18nMsg()` | **1010** distincts = **1002 statiques** + **8 gabarits dynamiques** ; 752 des statiques existent |
-| clés statiques manquantes | **250**, sur 13 dossiers, dont 197 sous `src/routes/` |
+| littéraux demandés (`i18nMsg` **+ les 7 relais**) | **1151** statiques distincts, dont **872 existent** et **279 manquent** ; s'y ajoutent **8 gabarits dynamiques** sur 10 sites |
+| clés statiques manquantes | **279**, sur **14** dossiers (relais compris, D4-bis) |
 | préfixes dynamiques / sites d'appel | **8** / **10** |
 | clés révélées par les motifs dynamiques | **+10** (`imported-supplier-invoices-error-*`) |
-| **total de l'epic** | **317** |
-| replis moissonnables | 245 ; 5 interpolés |
+| **total de l'epic** | **346** (279 statiques + 10 de la famille dynamique + 57 de parité) |
+| replis moissonnables | *hors périmètre — cf. 23-1b, qui les recompte* |
 
 Commande de recompte, à exécuter et non à croire :
 
@@ -463,7 +521,8 @@ sont pas triées (la collation `fr_FR.UTF-8` ordonne les tirets autrement que `s
 et son résultat n'est plus garanti. Il rend 57 ici **par chance de collation**, ce qui est
 précisément le genre de commande « à exécuter et non à croire » qui trompe sur un autre poste.
 
-⚠️ **Le décompte du registre de D9 porte sur des MESSAGES, pas sur des lignes** : 115 messages
+⚠️ **Le décompte du registre de D9 — qui vit dans la 23-1b — porte sur des MESSAGES, pas sur des
+lignes** : 115 messages
 `de-CH` emploient « Sie » ; un `grep -c` en rend **117**, les messages multi-lignes comptant deux
 fois. *(Écart relevé en passe 1 de `validate` et **réfuté** après recompte : le chiffre de la spec
 était le bon, l'unité manquait.)*
@@ -644,6 +703,57 @@ passes 1 et 2.
 C'est exactement le motif du split 22-2a / 22-2b, dont la rétrospective de l'Epic 22 dit qu'il a
 marché pour cette raison. **Cette moitié-ci ne contient aucun libellé, aucune locale, aucun terme de
 glossaire** : ce qui s'y relit est du code et des ensembles.
+
+### Passe 1 de `validate` sur le SPLIT — 2026-08-19, Sonnet ×6, contextes frais
+
+**Trois lentilles par moitié, braquées sur l'intégrité du découpage.**
+23-1a : 0 C · **2 H** · 2 M · 4 L. 23-1b : 0 C · **2 H** · 4 M · 2 L.
+
+⚠️ **UN FINDING CHANGE TOUS LES CHIFFRES DE L'EPIC — et il invalide trois passes de recomptes.**
+Sept fichiers déclarent un **relais** : `function msg(key, fallback) { return i18nMsg(key, fallback) }`.
+Le littéral s'y trouve au site `msg(`, **jamais** au site `i18nMsg(`. Toute extraction cherchant
+`i18nMsg(` — la mienne, celle des trois passes précédentes, et **la garde telle qu'elle était
+spécifiée** — les ignore intégralement.
+
+Recompté depuis la source : **+29 clés manquantes** (250 → **279**), **+1 dossier entier**
+(`routes/onboarding`, qui n'apparaissait dans aucun découpage), et `routes/(app)/settings` qui
+passe de 30 à **55** — l'écran des modèles d'e-mail à lui seul. **Total de l'epic : 317 → 346.**
+D'où la décision **D4-bis** et le critère **AC7-quater**, avec assertion de cardinalité sur les
+7 relais. *C'est le troisième angle mort de la garde, après `vat-category-*` et
+`bank-import-info-*` — et le seul **refermable**, les deux autres tenant à des valeurs produites
+hors du frontend.*
+
+**Le second HIGH de chaque moitié porte sur le découpage lui-même :**
+
+- **23-1b** — la **substance** de `D5-bis` (exclusion des `.test.*`) n'avait pas traversé la
+  frontière : l'identifiant était cité, la règle n'était imposée nulle part au moissonneur, qui
+  est un **script distinct** et non une modification de la garde. Il aurait moissonné
+  `i18n.svelte.test.ts`, entré `une-cle = mon repli` au catalogue et annoncé **8** replis
+  divergents au lieu de 7.
+- **23-1a** — **six renvois orphelins** pointaient vers `D7-bis`, `D8-bis`, `D9` et `T5`, qui
+  vivent chez la sœur ; l'un d'eux **dans le corps normatif d'AC6**, où un relecteur ne pouvait pas
+  savoir que `D8-bis` est un *constat* et non une exigence.
+
+**Et une affirmation de la 23-1b était fausse** : `D8-bis` déclarait « 2 clés partagées entre
+dossiers, toutes deux dans le pilote ». Il y en a **8**, partagées avec `routes/onboarding` — un
+troisième dossier hors périmètre, qui affichera les libellés choisis pour le carnet d'adresses dès
+que la 23-1b sera mergée. T5 doit désormais relire ces huit libellés **dans les deux contextes**.
+
+**MEDIUM et LOW retenus** : la clause « Dehors, explicitement » excluant `kesh-qrbill` et sa table
+`I18N_KEYS` — **appariée par position** — ainsi que les manuels LaTeX avait été perdue par **les
+deux** moitiés, restaurée ici ; deux bullets de Dev Notes contredisaient le bandeau d'ouverture de
+la 23-1a (« ne pas traduire au-delà des 20 clés » alors que sa borne est **zéro**) ; l'exception
+sur `KNOWN_VIOLATIONS` réservait à la 23-1a un travail qui appartient à T5 ; `D10` n'était exigible
+par aucun critère sans se déclarer constat ; les chiffres du moissonneur étaient recopiés dans le
+tableau de la 23-1a sans y servir aucun critère ; T5 pointait vers une chaîne « douze autres »
+**corrigée en « treize » à la passe 3** ; et la borne `.ts >= 3` était défaite par le cas même
+qu'elle vise — deux des cinq clés `.ts` viennent d'appels **multi-lignes en TypeScript pur**
+(`notify.ts:103-110`), forme qu'aucune fixture ne testait : leur perte ramenait le compte à 3,
+toujours vert. Borne portée à **5**, troisième fixture ajoutée.
+
+**Un chiffre de MA consigne réfuté par les lentilles** : je leur annonçais « 17 critères », il y en
+a **18** — recomptés depuis la source par deux méthodes convergentes avant de me contredire. Le
+chiffre faux ne vivait que dans mes prompts, aucun artefact versionné n'était touché.
 
 ## Dev Agent Record
 

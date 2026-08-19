@@ -20,13 +20,14 @@ germanophone, avec tous les gates au vert. C'est le **test muet** transposé aux
 |---|---|
 | clés par catalogue | `fr-CH` **1273**, `de-CH` / `en-CH` / `it-CH` **1216** |
 | **[#283]** clés en `fr-CH` absentes ailleurs | **57**, et le **même ensemble** sur les trois locales (union = intersection) ; **0** clé en trop |
-| **[#316]** littéraux demandés par `i18nMsg()` et absents des 4 catalogues | **258**, dont **8 littéraux dynamiques** (`journal-${j.toLowerCase()}`, `vat-category-${r.category}`…) → **250 clés statiques** |
+| **[#316]** littéraux demandés et absents des 4 catalogues | **279 statiques** (relais compris) ; le recensement initial, borné à `i18nMsg(`, en rendait 258 dont **8 littéraux dynamiques** (`journal-${j.toLowerCase()}`, `vat-category-${r.category}`…) → **250 clés statiques** |
 | préfixes dynamiques réels / sites d'appel | **8** / **10** — ⚠️ les 8 littéraux ci-dessus ne couvrent que **7** préfixes ; le 8ᵉ, `bank-import-info-*`, avait échappé à l'extraction (passe 1 de `validate` de la 23-1) |
 | replis moissonnables mécaniquement | **245** / 250 |
 | clés sans repli littéral | **5**, toutes dans `TransactionSplitModal.svelte` — replis interpolés (`` `Ligne ${i + 1} : compte requis` ``) → entrées Fluent **à variables** |
-| dossiers concernés | **13** pour [#316] |
+| dossiers concernés | **14** pour [#316] (le 14ᵉ, `routes/onboarding`, n'est apparu qu'avec les relais) |
 | clés révélées par l'énumération des motifs dynamiques | **+10** — la famille `imported-supplier-invoices-error-*` est absente des quatre catalogues (*trouvé à la spécification de la 23-1, cf. ci-dessous*) |
-| **total à faire vivre** | **317 clés** → **260** entrées `fr-CH` (moisson + énumération) + **951** messages `de-CH` / `it-CH` / `en-CH` |
+| clés révélées par les **relais locaux** (`msg(key, fallback) → i18nMsg`) | **+29**, et un **dossier entier** (`routes/onboarding`) — invisibles de toute extraction cherchant `i18nMsg(` ; trouvées en passe 1 de revue du split, cf. story 23-1a § D4-bis |
+| **total à faire vivre** | **346 clés** → **289** entrées `fr-CH` + **1038** messages `de-CH` / `it-CH` / `en-CH` |
 
 Commande de recompte, à rejouer et non à croire :
 
@@ -42,7 +43,8 @@ LC_ALL=C comm -23 <(grep -oE '^[a-zA-Z][A-Za-z0-9_-]* *=' fr-CH/messages.ftl | L
 |---:|---|
 | 99 | `routes/(app)/supplier-invoices` (+ 10 clés de la famille dynamique `imported-supplier-invoices-error-*`) |
 | 30 | `routes/(app)/payment-batches` |
-| 30 | `routes/(app)/settings` |
+| 55 | `routes/(app)/settings` (dont 25 via relais — l'écran des modèles d'e-mail) |
+| 4 | `routes/onboarding` (via relais) |
 | 20 | `lib/features/reconciliation` (15 + les 5 sans repli littéral) |
 | 15 | `routes/(app)/credit-notes` |
 | 14 | `lib/features/reports` |
@@ -111,7 +113,7 @@ appelle un contrôle d'une autre nature (détection de littéraux affichés).
 | **23-1b** | **Pilote** : moissonneur de replis versionné, les 20 clés de `contacts` dans les 4 locales, glossaire. **Dépend du merge de la 23-1a.** | 20 |
 | **23-2** | **[#283]** — les 57 clés en `de-CH` / `it-CH` / `en-CH`. La garde de **parité** devient inconditionnelle : son allowlist disparaît | 57 |
 | **23-3** | `supplier-invoices` — le gros morceau, seul (99 statiques + **10** de la famille dynamique `imported-supplier-invoices-error-*`) | 109 |
-| **23-4** | `settings` + `payment-batches` | 60 |
+| **23-4** | `settings` + `payment-batches` + `onboarding` | 89 |
 | **23-5** | `reconciliation` (dont les 5 entrées à variables) + `reports` (14 + 7) + `credit-notes` | 56 |
 | **23-6** | Reliquat : `invoices`, `journal-entries`, `lib/components`, `bank-accounts` + **clôture** : allowlist vidée, garde inconditionnelle, [#316] fermée | 15 |
 

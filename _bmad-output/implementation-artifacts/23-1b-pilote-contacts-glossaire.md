@@ -43,7 +43,7 @@ que ceux dont cette story se sert.
 | | valeur |
 |---|---|
 | clés du pilote `contacts` | **20** — 12 sous `lib/features/contacts`, 8 sous `routes/(app)/contacts` |
-| clés à repli moissonnable (tout le dépôt) | 245 sur 250 |
+| clés à repli moissonnable (tout le dépôt) | **à recompter avec les relais** — 245 sur 250 avant leur prise en compte, cf. 23-1a § D4-bis |
 | clés sans repli littéral | 5, toutes dans `TransactionSplitModal` — **hors périmètre**, portées par la 23-5 |
 | clés à repli **divergent** | **7** — valeur de contrôle datée, le moissonneur la calcule |
 | partie B du glossaire | **16** entrées, dont **3** promues par cette story → **13** ensuite |
@@ -51,6 +51,15 @@ que ceux dont cette story se sert.
 ## Décisions
 
 **D6 — Le moissonneur PROPOSE, il n'écrit jamais dans les catalogues.**
+⚠️ **Il exclut les fichiers dont le nom contient `.test.`**, comme la garde B (23-1a § D5-bis).
+Sans cette clause — citée en renvoi jusqu'ici, mais jamais imposée au script —, il moissonnerait
+`i18n.svelte.test.ts`, qui demande `une-cle` et `compteur` : deux clés **fictives**, absentes des
+quatre catalogues, dont `compteur` porte **deux replis divergents** à lui seul. Il produirait donc
+`une-cle = mon repli` dans le fragment `.ftl` et annoncerait **8** clés à repli divergent au lieu
+de 7. *(L'identifiant `D5-bis` avait traversé le découpage, sa substance non. Relevé en passe 1 du
+split.)*
+⚠️ **Il reconnaît aussi les relais locaux** (23-1a § D4-bis) : sans quoi il ignore les 29 clés
+qu'ils portent, dont 25 de `routes/(app)/settings`.
 `frontend/scripts/harvest-i18n-fallbacks.mjs` — il lit `src`, extrait les couples
 (clé, repli littéral), et rend un fragment `.ftl` **trié, sur la sortie standard**. Il ne touche
 à aucun `messages.ftl`.
@@ -115,8 +124,9 @@ vérifiable sans les rechercher :
 
 **Attestation des trois termes de la partie B** : `localité` → `field-city`,
 `contact-error-address-npa-city` ; `prénom` → `field-first-name`, `contact-persons-name-required`,
-`contact-error-person-name` ; `personne de contact` → les **cinq** `contact-persons-*` dont le libellé porte le mot
-(`-load-error`, `-add-error`, `-delete-error`, `-title`, `-empty`) plus `contact-error-person-name`,
+`contact-error-person-name` ; `personne de contact` → les **cinq** `contact-persons-*` dont le libellé emploie le mot
+« personne » — `-load-error`, `-title` et `-empty` disant « personne(s) **de contact** », `-add-error`
+et `-delete-error` disant seulement « la personne » — plus `contact-error-person-name`,
 soit **6 clés** — le compte du glossaire. L'union des trois groupes fait **10 clés distinctes sur
 20**, `contact-error-person-name` appartenant à deux d'entre eux. *(« Six » avait été écrit sous la
 mention « recompté » en passe 2 : le total restait juste, la ventilation non.)*
@@ -160,13 +170,25 @@ comptera **13** entrées, et le « douze » de `i18n-glossaire.md` doit suivre. 
 une valeur modifiée par l'édition même de cette spec, dont les compteurs n'avaient pas été
 recomptés.*
 
-**D8-bis — Le découpage par dossier ne fuit pas, et c'est mesuré.** *(Constat de cadrage, non
-exigence : aucun AC ne le contrôle, et c'est délibéré — il justifie le découpage de l'epic, il ne
-décrit rien que cette story doive produire.)*
-Sur les 250 clés manquantes, **2 seulement** sont demandées depuis plus d'un dossier —
-`field-first-name` et `field-last-name`, et **les deux sont à l'intérieur du pilote**
-(`features/contacts` et `routes/(app)/contacts`). Aucune clé n'est donc partagée entre deux
-stories de rollout : chaque story peut vider sa part de l'allowlist sans coordination.
+**D8-bis — Le découpage par dossier FUIT, et huit clés du pilote sont partagées avec un dossier
+hors périmètre.** *(Constat de cadrage, non exigence : aucun AC ne le contrôle.)*
+
+⚠️ **La rédaction précédente affirmait l'inverse** — « 2 seulement sont partagées, et les deux sont
+à l'intérieur du pilote » — et c'était faux, parce que le recensement ne voyait pas les **relais**
+(cf. 23-1a § D4-bis). Réfuté en passe 1 du split, au sol.
+
+`frontend/src/routes/onboarding/+page.svelte` déclare `function msg(key, fallback) { return
+i18nMsg(key, fallback) }` puis appelle, à l'étape « Coordonnées de votre organisation », **les huit
+clés `field-*` du pilote** : `field-first-name`, `field-last-name`, `field-address`, `field-street`,
+`field-building`, `field-postal-code`, `field-city`, `field-country`. Un **troisième dossier**,
+absent de cette story comme du découpage de l'epic.
+
+**Ce que cela engage, et qui doit être décidé plutôt que subi** : une fois ces huit clés traduites,
+l'écran d'onboarding — aujourd'hui en français pour tout le monde — se met à afficher **les libellés
+choisis pour le carnet d'adresses**, sans qu'aucune revue ne les ait regardés dans ce contexte. En
+l'espèce ils conviennent (« Localité », « Rue », « NPA », « Prénom » sont des étiquettes de champ
+d'adresse, identiques dans les deux écrans), **mais c'est un constat à vérifier, pas une évidence** :
+T5 doit relire les huit libellés **dans les deux contextes** avant de les figer.
 
 **D9 — Registre d'adresse, mesuré et non supposé.**
 `de-CH` **vouvoie** (Sie-Form, **115 messages** — 117 *lignes*), `en-CH` reste à l'impératif neutre.
@@ -215,7 +237,10 @@ de tutoyer survit, son ordre de grandeur non.*
   - [ ] Moisson des 20 replis, **relecture** des libellés `fr-CH` avant de les figer
   - [ ] Traduction `de-CH` / `it-CH` / `en-CH` sur la partie A du glossaire, registre D9
   - [ ] Retrait des 20 clés de l'allowlist de dette
-  - [ ] **Promouvoir `localité`, `prénom` et `personne de contact` en partie A** de `docs/i18n-glossaire.md`, avec la clé qui les atteste — et **recompter la partie B (13 après promotion)** ainsi que sa ligne « douze autres »
+  - [ ] **Promouvoir `localité`, `prénom` et `personne de contact` en partie A** de `docs/i18n-glossaire.md`, avec la clé qui les atteste
+  - [ ] **Recompter la partie B (13 entrées après retrait des 3 promus)** et **réécrire le paragraphe qui l'accompagne** — il est au futur (« trois de ces termes sont tranchés… les treize autres resteront ouverts ») et doit passer au passé, la promotion étant faite. ⚠️ *Ne pas chercher la chaîne « douze autres » : elle a déjà été corrigée en « treize » à la passe 3, et la tâche pointait encore dessus.*
+  - [ ] **Mettre à jour le commentaire de `lint-i18n-ownership.js:103`**, qui cite `delete` parmi les « clés génériques » — la substitution de la ligne `:112` le laisse périmé (§ *Propagation post-patch*)
+  - [ ] **Relire les huit libellés `field-*` DANS LES DEUX CONTEXTES** — carnet d'adresses et étape « Coordonnées » de l'onboarding (D8-bis)
 
 - [ ] **T6 — Gates** (AC13)
   - [ ] Gate backend complet, gate frontend complet, avant tout push
@@ -226,7 +251,7 @@ de tutoyer survit, son ordre de grandeur non.*
 
 - **Ne pas toucher aux gardes ni à l'extracteur** — ils sont livrés par la 23-1a. Si un patch touche
   `i18n-keys.test.ts` autrement que pour en retirer 20 lignes d'allowlist, c'est qu'il déborde.
-- **Ne pas traduire au-delà des 20 clés du pilote.**
+- **Ne pas traduire au-delà des 20 clés du pilote** — les 29 clés révélées par les relais (23-1a § D4-bis) appartiennent aux rollouts, pas à cette story.
 - **Ne pas « corriger » les 5 clés interpolées** de `TransactionSplitModal` : entrées Fluent à
   variables, portées par la 23-5.
 - **Ne pas ajouter de clé à une seule locale** : la garde A de la 23-1a le refuserait, et ce serait
@@ -240,6 +265,8 @@ de tutoyer survit, son ordre de grandeur non.*
 | `docs/i18n-glossaire.md` | terminologie contraignante (partie A) et registre mesuré |
 | `frontend/scripts/lint-i18n-ownership.js:104-118` | les neuf clés sœurs déjà inscrites, et la ligne `:112` à substituer |
 | `frontend/src/lib/features/contacts/ContactPersonsManager.svelte` | les 12 clés du pilote côté feature, et le site de `delete` |
+| `frontend/src/routes/(app)/contacts/+page.svelte` | les **8 autres** clés du pilote — 40 % des sites porteurs |
+| `frontend/src/routes/onboarding/+page.svelte` | le **troisième consommateur** des huit `field-*`, via son relais `msg()` (D8-bis) |
 
 ### References
 
@@ -267,6 +294,43 @@ de la 23-1a** — les deux moitiés partant de la même spec, le dupliquer le fe
   ajouté par le commit de spécification lui-même : la story **promeut**, elle n'ajoute pas ;
 - l'attestation des trois termes, qui disait « six » `contact-persons-*` pour **cinq** ;
 - le registre italien, à **11 messages** de courtoisie et non un.
+
+### Passe 1 de `validate` sur le SPLIT — 2026-08-19, Sonnet ×6, contextes frais
+
+**Trois lentilles par moitié, braquées sur l'intégrité du découpage.**
+23-1a : 0 C · **2 H** · 2 M · 4 L. 23-1b : 0 C · **2 H** · 4 M · 2 L.
+
+⚠️ **UN FINDING CHANGE TOUS LES CHIFFRES DE L'EPIC — et il invalide trois passes de recomptes.**
+Sept fichiers déclarent un **relais** : `function msg(key, fallback) { return i18nMsg(key, fallback) }`.
+Le littéral s'y trouve au site `msg(`, **jamais** au site `i18nMsg(`. Toute extraction cherchant
+`i18nMsg(` — la mienne, celle des trois passes précédentes, et **la garde telle qu'elle était
+spécifiée** — les ignore intégralement.
+
+Recompté depuis la source : **+29 clés manquantes** (250 → **279**), **+1 dossier entier**
+(`routes/onboarding`, qui n'apparaissait dans aucun découpage), et `routes/(app)/settings` qui
+passe de 30 à **55** — l'écran des modèles d'e-mail à lui seul. **Total de l'epic : 317 → 346.**
+D'où la décision **D4-bis** et le critère **AC7-quater**, avec assertion de cardinalité sur les
+7 relais. *C'est le troisième angle mort de la garde, après `vat-category-*` et
+`bank-import-info-*` — et le seul **refermable**, les deux autres tenant à des valeurs produites
+hors du frontend.*
+
+**Le second HIGH de chaque moitié porte sur le découpage lui-même :**
+
+- **23-1b** — la **substance** de `D5-bis` (exclusion des `.test.*`) n'avait pas traversé la
+  frontière : l'identifiant était cité, la règle n'était imposée nulle part au moissonneur, qui
+  est un **script distinct** et non une modification de la garde. Il aurait moissonné
+  `i18n.svelte.test.ts`, entré `une-cle = mon repli` au catalogue et annoncé **8** replis
+  divergents au lieu de 7.
+- **23-1a** — **six renvois orphelins** pointaient vers `D7-bis`, `D8-bis`, `D9` et `T5`, qui
+  vivent chez la sœur ; l'un d'eux **dans le corps normatif d'AC6**, où un relecteur ne pouvait pas
+  savoir que `D8-bis` est un *constat* et non une exigence.
+
+**Et une affirmation de la 23-1b était fausse** : `D8-bis` déclarait « 2 clés partagées entre
+dossiers, toutes deux dans le pilote ». Il y en a **8**, partagées avec `routes/onboarding` — un
+troisième dossier hors périmètre, qui affichera les libellés choisis pour le carnet d'adresses dès
+que la 23-1b sera mergée. T5 doit désormais relire ces huit libellés **dans les deux contextes**.
+
+**Le détail complet des MEDIUM et LOW est au Change Log de la 23-1a**, qui porte l'historique de la boucle.
 
 ## Dev Agent Record
 
