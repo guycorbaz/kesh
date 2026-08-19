@@ -36,9 +36,17 @@ import { DETTE_CONNUE } from './i18n-dette-connue.js';
 const LOCALES = ['fr-CH', 'de-CH', 'it-CH', 'en-CH'] as const;
 const RACINE_FTL = '../crates/kesh-i18n/locales';
 
-/** Valeurs de contrôle, mesurées le 2026-08-19. Un écart se recompte, il ne s'ajuste pas. */
+/**
+ * Valeurs de contrôle, mesurées le 2026-08-19. Un écart se recompte, il ne s'ajuste pas.
+ *
+ * ⚠️ `sitesTotal` est passé de **1493 à 1497** à la story 23-3, et le changement est DÉLIBÉRÉ :
+ * quatre chaînes françaises étaient **en dur** dans les écrans de factures fournisseurs — deux
+ * « Chargement… », un « Qté », un « TVA » —, invisibles au moissonneur (qui ne lit que les
+ * `i18nMsg`) comme à l'allowlist. Les couvrir crée quatre sites d'appel. C'est une **hausse
+ * assumée**, pas une dérive : la borne exacte a fait exactement son travail en l'exigeant.
+ */
 const ATTENDU = {
-	sitesTotal: 1493,
+	sitesTotal: 1497,
 	sitesNonResolus: 33,
 	relais: 7,
 	sitesGabarit: 10,

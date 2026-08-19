@@ -101,6 +101,12 @@ passage des rollouts qui touchent ces domaines, pas ici.
 | **immuable** | **unveränderlich** | **immutabile** | **immutable** | `invoice-validate-confirm-body` (story 23-2) |
 | **validité** | **Gültigkeit** | **validità** | **validity** | `vat-rates-subtitle` (story 23-2) |
 | **bascule** (*changement de taux*) | **Umstellungsdatum** | **data di cambiamento** | **changeover date** | `vat-rates-field-switch-date` (story 23-2). ⚠️ **HOMONYME** — rien à voir avec la bascule-interrupteur de la partie B |
+| **virement** | **Überweisung** (`Banküberweisung` si le mode de paiement) | **bonifico** | **bank transfer** | `supplier-invoices-pay-transfer` (story 23-3). Usage bancaire suisse standard |
+| **image** | **Bild** | **immagine** | **image** | `supplier-invoices-scan-failed` (story 23-3). Scan de QR-facture |
+| **compléter** | **vervollständigen** | **completare** | **complete** | `imported-supplier-invoices-complete` (story 23-3) |
+| **écarter / écartée** (une pièce) | **verwerfen / verworfen** | **scartare / scartata** | **discard / discarded** | `imported-supplier-invoices-discard` (story 23-3). S'oppose à « compléter » dans la file d'import. ⚠️ En italien, **ne pas employer `scarto` pour un ÉCART de montant** sur le même écran — dire `differenza` |
+| **justificatif** | **Beleg** | **documento giustificativo** | **supporting document** | `imported-supplier-invoices-view-doc` (story 23-3). `Beleg` est le terme du CO art. 957a ; « Buchungsbeleg » si le contexte est l'écriture |
+| **QR-facture** *(fém.)* | **QR-Rechnung** | **fattura QR** | **QR-bill** | `supplier-invoices-scan` (story 23-3). ⚠️ Terminologie **officielle SIX**. ⚠️ **FÉMININ en français** — « une QR-facture », « QR-facture lue » : quatre libellés l'accordaient au masculin, et les trois cibles avaient bon |
 | carnet d'adresses | **Kontakte** | **contatti** | contacts | `Carnet d'adresses` |
 | adresse | Adresse | indirizzo | address | `Adresse` |
 | rappel / relance | **Mahnung** | **sollecito** | reminder | `Rappels` / `Mahnungen` |
@@ -150,35 +156,34 @@ contraignantes pour tout le rollout.
 
 | fr-CH | de-CH proposé | it-CH proposé | en-CH proposé | motif / réserve |
 |---|---|---|---|---|
-| QR-facture | **QR-Rechnung** | **fattura QR** | **QR-bill** | ✅ terminologie **officielle SIX**, pas un choix — à retenir tel quel |
-| justificatif | **Beleg** | documento giustificativo | supporting document | `Beleg` est le terme du CO art. 957a en allemand ; « Buchungsbeleg » si le contexte est l'écriture |
-| virement | Überweisung | bonifico | bank transfer | usage bancaire suisse standard |
 | règlement (d'une facture) | Begleichung / Zahlung | pagamento | settlement | ⚠️ **préférer « Zahlung » / « pagamento » / « payment »** et réserver « règlement » au français — deux mots pour un concept déjà couvert par *paiement* |
-| écarter / écartée (une pièce) | verwerfen / verworfen | scartare / scartata | discard / discarded | s'oppose à « compléter » dans la file d'import |
-| compléter | vervollständigen | completare | complete | idem |
 | personne physique / morale | natürliche / juristische Person | persona fisica / giuridica | individual / legal entity | |
-| image | Bild | immagine | image | scan de QR-facture |
 | bascule (**interrupteur**) | Umschalter | interruttore | toggle | élément d'interface. ⚠️ **NE PAS employer pour « date de bascule »**, qui est un changement de taux et vit en partie A |
 | restauré | wiederhergestellt | ripristinato | restored | import de sauvegarde |
 
 ---
 
-✅ **Cinq de ces termes ONT ÉTÉ tranchés et promus en partie A**, chacun portant désormais la clé
-qui l'atteste : **localité**, **prénom** et **personne de contact** par la story 23-1b (domaine
-pilote `contacts`) ; **immuable** et **validité** par la story 23-2 (les 57 clés de parité).
+✅ **Onze de ces termes ONT ÉTÉ tranchés et promus en partie A**, chacun portant désormais la clé
+qui l'atteste : **localité**, **prénom** et **personne de contact** par la story 23-1b ; **immuable**
+et **validité** par la 23-2 ; **QR-facture**, **justificatif**, **écarter/écartée**, **compléter**,
+**image** et **virement** par la 23-3.
 
-⚠️ **`bascule` reste en partie B, et sa ligne y porte maintenant un avertissement** — parce que la
-23-2 a révélé qu'il s'agit de **deux termes distincts sous un seul mot**. L'entrée de partie B est
-l'**interrupteur** d'interface ; « date de bascule », qui désigne le **changement d'un taux de TVA**,
-est monté en partie A avec une traduction sans rapport (`Umstellungsdatum`, `data di cambiamento`,
-`changeover date`). Traduire la seconde d'après la première aurait donné un contresens plein — et
-c'est le glossaire lui-même qui aurait induit en erreur, ce qui est pire qu'un glossaire muet.
+⚠️ **`bascule` reste en partie B, et sa ligne y porte un avertissement** — la 23-2 a révélé qu'il
+s'agit de **deux termes sous un seul mot**. L'entrée de partie B est l'**interrupteur** d'interface ;
+« date de bascule », qui désigne le **changement d'un taux de TVA**, est monté en partie A avec une
+traduction sans rapport. Traduire la seconde d'après la première aurait donné un contresens plein —
+et c'est le glossaire lui-même qui aurait induit en erreur, ce qui est pire qu'un glossaire muet.
 
-**Dix** termes restent ouverts. *(La partie B comptait 16 entrées, 15 après l'arbitrage du
-2026-08-19 sur « analytique », 12 après la promotion de la 23-1b, et **10** après celle de la 23-2 —
-`bascule` y restant au titre de son sens « interrupteur ». La partie A compte **55** entrées.
-Les deux nombres sont **recomptés depuis les tableaux**, comme l'exige la § « Recompter ses propres
-comptes rendus ».)*
+**Quatre** termes restent ouverts. *(La partie B comptait 16 entrées, 15 après l'arbitrage sur
+« analytique », 12 après la 23-1b, 10 après la 23-2, et **4** après la 23-3. La partie A compte
+**61** entrées. Les deux nombres sont **recomptés depuis les tableaux**, comme l'exige la
+§ « Recompter ses propres comptes rendus ».)*
+
+⚠️ **La 23-3 avait d'abord OUBLIÉ cette promotion, en cochant sa tâche.** Elle a employé et figé six
+de ces termes dans 460 lignes de catalogue **sans les faire monter en partie A** — or la règle
+d'immuabilité ne protège **que** la partie A. Un rollout suivant aurait pu écrire `Buchungsbeleg` ou
+`Quittung` pour « justificatif » sans que rien ne rougisse : le mécanisme anti-dérive que cet epic
+existe pour poser, contourné par la story censée s'en servir. Trouvé en passe 1 de revue.
 
 ## Comment s'en servir
 

@@ -98,7 +98,7 @@
 			fScannedCurrency = p.currency;
 			fScannedCreditorName = p.creditorName;
 			notifySuccess(
-				i18nMsg('supplier-invoices-scan-ok', 'QR-facture lu — coordonnées pré-remplies.'),
+				i18nMsg('supplier-invoices-scan-ok', 'QR-facture lue — coordonnées pré-remplies.'),
 			);
 		} catch (err) {
 			notifyError(
@@ -265,12 +265,12 @@
 			>
 				{scanning
 					? i18nMsg('supplier-invoices-scan-running', 'Lecture…')
-					: i18nMsg('supplier-invoices-scan', 'Scanner un QR-facture')}
+					: i18nMsg('supplier-invoices-scan', 'Scanner une QR-facture')}
 			</button>
 			<span class="text-xs text-text-muted">
 				{i18nMsg(
 					'supplier-invoices-scan-hint',
-					'Chargez une image du QR-facture pour pré-remplir IBAN, référence et montant.',
+					'Chargez une image de la QR-facture pour pré-remplir IBAN, référence et montant.',
 				)}
 			</span>
 			{#if fScannedCreditorName}
@@ -427,7 +427,7 @@
 {/if}
 
 {#if loading}
-	<p class="text-sm text-text-muted">Chargement…</p>
+	<p class="text-sm text-text-muted">{i18nMsg('common-loading', 'Chargement…')}</p>
 {:else if errorMsg}
 	<p class="text-sm text-destructive">{errorMsg}</p>
 {:else if items.length === 0}

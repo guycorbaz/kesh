@@ -142,7 +142,7 @@
 </button>
 
 {#if loading}
-	<p class="text-sm text-text-muted">Chargement…</p>
+	<p class="text-sm text-text-muted">{i18nMsg('common-loading', 'Chargement…')}</p>
 {:else if errorMsg}
 	<p class="text-sm text-destructive">{errorMsg}</p>
 {:else if invoice}
@@ -186,9 +186,9 @@
 		<thead>
 			<tr class="border-b text-left text-text-muted">
 				<th class="py-2">{i18nMsg('supplier-invoices-line-desc', 'Description')}</th>
-				<th class="py-2 text-right">Qté</th>
+				<th class="py-2 text-right">{i18nMsg('supplier-invoices-col-qty', 'Qté')}</th>
 				<th class="py-2 text-right">{i18nMsg('supplier-invoices-line-ht', 'HT')}</th>
-				<th class="py-2 text-right">TVA</th>
+				<th class="py-2 text-right">{i18nMsg('supplier-invoices-col-vat', 'TVA')}</th>
 				<!-- ⚠️ PAS `supplier-invoices-col-total` : cette colonne affiche `line.lineTotal`, qui
 					 vaut `quantity × unit_price` HORS TAXE (`supplier_invoice.rs:89`), tandis que la clé
 					 `-col-total` sert `invoice.totalAmount`, documenté TTC (`supplier_invoice.rs:29`).

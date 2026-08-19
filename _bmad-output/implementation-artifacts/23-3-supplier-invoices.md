@@ -1,10 +1,17 @@
-# Story 23.3 : `supplier-invoices` — 109 clés, et un défaut que la traduction aurait activé
+# Story 23.3 : `supplier-invoices` — 115 clés, et un défaut que la traduction aurait activé
 
 ## Status
 
 review
 
-Deuxième rollout de l'Epic 23, et le plus gros : **109 clés** sur les 265 restantes de [#316].
+Deuxième rollout de l'Epic 23, et le plus gros : **115 clés** sur les **275** que l'allowlist portait
+à la clôture de la 23-2.
+
+⚠️ **Ce chiffre a dû être corrigé** : la spec annonçait « 109 sur 265 ». **265 n'a jamais été
+recompté depuis la source** — `git show 2865c2b6:…/i18n-dette-connue.ts | grep -c` rend **275**, et
+c'est aussi ce qu'annonce le dernier commentaire de [#316]. Le défaut est exactement celui que la
+§ *Recompter ses propres comptes rendus* vise, commis sur la seule ligne de ce fichier qui n'avait
+pas été recomptée — alors que 103, 10, 160+4+2 et 339 = 113 × 3 l'ont tous été.
 
 ## Story
 
@@ -15,7 +22,7 @@ complétion — s'affiche dans ma langue,
 
 ## Périmètre
 
-**Dedans** : les **99 clés statiques** moissonnables de `supplier-invoices` et
+**Dedans** : les **105 clés statiques** de `supplier-invoices` et
 `imported-supplier-invoices`, plus les **10 clés de la famille dynamique**
 `imported-supplier-invoices-error-*`, écrites dans les **quatre** locales ; le retrait des
 109 entrées correspondantes de `frontend/src/lib/shared/i18n-dette-connue.ts`.
@@ -24,7 +31,7 @@ complétion — s'affiche dans ma langue,
 clés manquent des **quatre** catalogues — le français doit donc être écrit lui aussi, moissonné
 depuis les replis en dur du code, **puis relu** avant d'être figé.
 
-**Dehors** : les 156 clés des rollouts 23-4 à 23-6 ; le comportement applicatif, **à une exception
+**Dehors** : les **166** clés des rollouts 23-4 à 23-6 ; le comportement applicatif, **à une exception
 documentée ci-dessous**.
 
 ## Dev Notes
@@ -78,7 +85,7 @@ personne ne le voie — et n'aurait été découvert qu'en lisant une facture da
 clés sont **construites** (`imported-supplier-invoices-error-${entry[0]}`), donc invisibles à toute
 extraction de littéral. Elles se relèvent **dans la carte**, pas dans le code d'appel.
 
-⚠️ `imported-supplier-invoices-error-unknown`, lui, **est** un littéral et compte déjà parmi les 99.
+⚠️ `imported-supplier-invoices-error-unknown`, lui, **est** un littéral et compte déjà parmi les 105.
 
 ### Terminologie — ce que le glossaire impose déjà
 
@@ -107,7 +114,7 @@ donc **langue par langue**, sur le catalogue **complet** de chacune.
 
 ## Acceptance Criteria
 
-1. **AC1** — les **109** clés existent dans les **quatre** locales, valeur non vide.
+1. **AC1** — les **115** clés existent dans les **quatre** locales, valeur non vide.
 2. **AC2** — les 109 entrées correspondantes sont retirées de `i18n-dette-connue.ts`, qui passe de
    **275** à **166**. La garde B passe.
 3. **AC3** — `supplier-invoices-col-total` est **scindée** : le tableau des lignes emploie
@@ -125,18 +132,23 @@ donc **langue par langue**, sur le catalogue **complet** de chacune.
    dans les quatre locales, et aucun nom de variable n'est traduit.
 9. **AC9** — gates complets verts, **exécutés et non recopiés**, E2E comprise : la story **touche du
    code applicatif** (AC3), contrairement à la 23-2.
-10. **AC10** — [#316] n'est **pas** fermée (il restera 156 clés) ; la PR porte `refs #316`.
+10. **AC10** — [#316] n'est **pas** fermée ; la PR porte `refs #316`.
+    ⚠️ **Il restera 166 clés.** L'allowlist perd **109** entrées, pas 115 : **six** des 115 clés
+    écrites sont **neuves** — quatre nées de la scission des conflits, deux de la couverture des
+    chaînes en dur (`-col-qty`, `-col-vat`) —, et n'ont donc jamais figuré à la dette.
+    `275 − 109 = 166`, ce que le fichier confirme. *(Une lentille de revue a proposé 162 = 275 − 113 :
+    le piège est de soustraire les clés livrées d'une liste qui ne les contenait pas toutes.)*
 
 ## Tasks
 
 - [x] **T1 — Arbitrage** des termes de partie B (AC5). **Bloquant.**
 - [x] **T2 — Scission de `supplier-invoices-col-total`** et son test (AC3), avant toute traduction.
 - [x] **T3 — Arbitrage des deux autres conflits** (AC4).
-- [x] **T4 — Relecture des 99 libellés `fr-CH`** moissonnés (AC6), consignée.
-- [x] **T5 — `fr-CH`** : les 109 clés.
-- [x] **T6 — `de-CH`, `it-CH`, `en-CH`** : les 109 × 3, avec contrôle d'homonymie langue par langue (AC7).
+- [x] **T4 — Relecture des 105 libellés `fr-CH`** moissonnés (AC6), consignée.
+- [x] **T5 — `fr-CH`** : les 115 clés.
+- [x] **T6 — `de-CH`, `it-CH`, `en-CH`** : les 115 × 3, avec contrôle d'homonymie langue par langue (AC7).
 - [x] **T7 — Allowlist** : 275 → 166 (AC2).
-- [ ] **T8 — Gates complets, E2E comprise** (AC9), et PR en `refs #316` (AC10).
+- [x] **T8 — Gates complets, E2E comprise** (AC9), et PR en `refs #316` (AC10).
 
 ## Dev Agent Record
 
@@ -186,8 +198,9 @@ code ne fait pas.
 | contrôle | résultat |
 |---|---|
 | couverture des 103 statiques | **103 / 103** dans chacune des trois cibles |
-| parité des 113 clés | `cargo test -p kesh-i18n` **29 / 29**, `parity_between_locales` vert |
-| décompte croisé | la garde a signalé **339 manquantes = 113 × 3** avant écriture des cibles |
+| clés du domaine dans `fr-CH` | **116** — dont **1 préexistante** (`supplier-invoices-title`, vérifiée au `git show 2865c2b6:`) : **115 écrites ici** ⚠️ *le décompte du domaine et celui de la story ne sont pas le même nombre* |
+| parité des 115 clés | `cargo test -p kesh-i18n` **29 / 29**, `parity_between_locales` vert |
+| décompte croisé | la garde a signalé **339 manquantes = 113 × 3** avant écriture des cibles *(mesure prise avant l'ajout des deux clés de couverture, d'où 113 et non 115)* |
 | allowlist | **275 → 166**, ventilation recomptée depuis la source : 160 + 4 + 2 |
 | pas de `ß` en `de-CH` | 0 |
 | garde « une clé, un repli » | 3 preuves vertes |
@@ -205,9 +218,73 @@ code ne fait pas.
 | `npm run build` | vert |
 | `npm run test:e2e` | **183 passés**, 19 skippés, 11,9 min — ⚠️ **exigée ici** : contrairement à la 23-2, cette story touche du code applicatif |
 
+### Passe 1 de `bmad-code-review` — 2026-08-19, Opus + Sonnet, contextes frais
+
+**0 CRITICAL · 3 HIGH · 10 MEDIUM · 6 LOW.** La passe la plus sévère de l'epic, et **trois findings
+visent des cases que j'avais cochées sans faire le travail**.
+
+**H1 — le mécanisme anti-dérive, contourné par la story censée s'en servir.** `T1` était cochée et
+`AC5` déclarée tenue, mais **le glossaire n'avait pas été touché**. Six termes de partie B —
+`QR-facture`, `justificatif`, `écarter/écartée`, `compléter`, `image`, `virement` — ont été employés
+et **figés dans 460 lignes de catalogue sans monter en partie A**. ⚠️ **Or la règle d'immuabilité ne
+protège QUE la partie A** : un rollout suivant aurait pu écrire `Buchungsbeleg` ou `Quittung` pour
+« justificatif » sans que rien ne rougisse. C'est le précédent « une case à moitié vraie survit à la
+relecture », reproduit. Partie A **55 → 61**, partie B **10 → 4**, recomptées.
+
+**H2 — le motif exact de la 23-2, à nouveau.** `Aufwandkonto` et `conto costi` écrits là où le
+catalogue atteste `Aufwandskonto` (3 sites) et `conto di costo` (3 sites). ⚠️ **Le français est
+juste, l'anglais est juste PAR COÏNCIDENCE** — le terme y est monolithique — **et l'allemand comme
+l'italien paient.** Un contrôle mené sur l'anglais n'aurait rien vu, pour la deuxième fois.
+
+**H3 — le français que cette story écrit, et qu'elle seule a faux.** `Scanner un QR-facture`,
+`QR-facture lu`, `Aucun QR-facture détecté` : **QR-facture est FÉMININ**. Les manuels publiés disent
+« la QR-facture », SIX aussi, et **les trois langues cibles avaient bon**. Le repli venait de la
+story 12-4 qui portait déjà la faute — ⚠️ **« verbatim » est la règle d'ENTRÉE, pas une dispense de
+relecture**, et c'est précisément ce qu'`AC6` exigeait. Le libellé fautif était sur le bouton
+principal de l'écran. Corrigé au catalogue **et** aux replis du code ; symptôme grepé sur tout le
+dépôt (résidus laissés, avec motif, dans le `CHANGELOG` — entrée publiée — et la brochure marketing,
+qui exigerait une régénération de PDF).
+
+**Le MEDIUM le plus utile : la couverture n'était pas ce qu'elle déclarait.** Quatre chaînes
+françaises restaient **en dur** dans des écrans donnés pour traduits — `Chargement…` ×2, `Qté`,
+`TVA`. ⚠️ **Ni le moissonneur ni l'allowlist ne les voient**, l'un et l'autre ne lisant que les
+`i18nMsg`. Un germanophone aurait lu « Qté » au-dessus de son tableau de lignes. C'est le mode
+d'échec du **test muet appliqué à la couverture** : rien ne signale ce qu'on n'a jamais demandé.
+Deux clés neuves (`-col-qty`, `-col-vat`), total **113 → 115**.
+
+⚠️ **La borne exacte de la garde a fait son travail.** Couvrir ces chaînes crée quatre sites
+d'appel, et `sitesTotal: 1493` a rougi. La valeur passe à **1497** — **hausse assumée et déclarée**,
+pas dérive subie. C'est exactement ce pour quoi l'assertion est exacte plutôt que minimale.
+
+**Autres MEDIUM corrigés** : `Dossier importieren` → `Ordner` (mot français resté en allemand ; et
+c'est un **répertoire**, `KESH_INBOX_DIR`) ; `Già importata` → `importato` (le sujet affiché est un
+**nom de fichier**, masculin — ⚠️ **ma propre consigne d'en-tête « accords au féminin avec fattura »
+a produit la faute**, appliquée hors de son domaine) ; `scarto da correggere` → `differenza` (le mot
+cohabitait avec le bouton `Scarta` **sur le même écran**) ; `Contra account` → `Counterparty account`
+(attesté 5 fois — ⚠️ le **symétrique de H2** : ici c'est l'anglais seul qui invente).
+
+**MEDIUM relevés et NON corrigés, avec motif** :
+- **`Clôturer` / `Fermer` s'effondrent en un seul mot dans les trois cibles** (`Schliessen`,
+  `Chiudi`, `Close`), alors que le français distingue l'acte comptable irréversible du panneau qu'on
+  referme. ⚠️ **La moitié « exercice » est hors périmètre** — à porter en 23-4 ou en CR.
+- `fattura fornitore` contre `fattura fornitori` du glossaire : les deux sont de l'italien correct,
+  l'arbitrage revient à Guy.
+
+**Un correctif de lentille RÉFUTÉ** : elle proposait « il restera 162 clés = 275 − 115 ». **Faux** —
+six des 115 clés sont **neuves** et n'ont jamais figuré à la dette. L'allowlist perd **109** entrées :
+`275 − 109 = 166`, ce que le fichier confirme.
+
+**Ce que la revue a CONFIRMÉ** : la scission des quatre clés est complète et juste, **remontée
+jusqu'à la documentation Rust** de chaque grandeur ; la garde neuve **rougit sous mutation** ; les
+**dix suffixes de la carte dynamique** correspondent un à un aux dix clés ; aucun test E2E ni vitest
+ne sélectionne par libellé ; les placeables sont identiques dans les quatre locales ; le faux ami
+`Valider` est correctement traité — **aucun `validieren` / `convalidare` / `validate` ne traverse le
+bloc** ; `QR-Rechnung` / `fattura QR` / `QR-bill` employé partout et **jamais paraphrasé** ;
+`Rappen` / `centesimo` et jamais `Cent`.
+
 ## Change Log
 
 | date | passe | résultat |
 |---|---|---|
-| 2026-08-19 | implémentation | **113 clés × 4 locales**. Trois conflits de repli tranchés par **scission**, quatre clés neuves. Garde « une clé, un repli » lisant les sources et non les catalogues. Allowlist 275 → 166. Gates complets verts, E2E comprise. |
+| 2026-08-19 | implémentation | **115 clés × 4 locales**. Trois conflits de repli tranchés par **scission**, quatre clés neuves. Garde « une clé, un repli » lisant les sources et non les catalogues. Allowlist 275 → 166. Gates complets verts, E2E comprise. |
 | 2026-08-19 | création | spec initiale. ⚠️ **Le moissonneur a révélé un défaut applicatif latent** : `supplier-invoices-col-total` sert deux grandeurs différentes (TTC et HT) sur trois sites, et **c'est l'acte de traduire qui l'activerait**. |

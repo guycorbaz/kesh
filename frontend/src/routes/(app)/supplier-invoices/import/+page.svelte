@@ -57,7 +57,7 @@
 			FILE_TOO_LARGE: ['file-too-large', 'Fichier trop volumineux'],
 			SYMLINK_REJECTED: ['symlink-rejected', 'Lien symbolique rejeté'],
 			DUPLICATE: ['duplicate', 'Déjà importé (doublon)'],
-			NO_QR_CODE_FOUND: ['no-qr-code-found', 'Aucun QR-facture détecté'],
+			NO_QR_CODE_FOUND: ['no-qr-code-found', 'Aucune QR-facture détectée'],
 			INVALID_SPC_PAYLOAD: ['invalid-spc-payload', 'QR illisible (format non SPC)'],
 			INVALID_IBAN: ['invalid-iban', 'IBAN créancier invalide'],
 			PDF_RENDER_ERROR: ['pdf-render-error', 'PDF illisible'],
