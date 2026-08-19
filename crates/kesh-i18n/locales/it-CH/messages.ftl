@@ -1411,3 +1411,67 @@ settings-company-contact-conflict-reload-failed = Conflitto di versione e ricari
 error-company-phone-too-long = Il numero di telefono della società è troppo lungo (al massimo 50 caratteri).
 error-company-website-too-long = L'indirizzo del sito web della società è troppo lungo (al massimo 255 caratteri).
 error-invoice-pdf-header-overflow = L'intestazione del documento non entra nella pagina. Eliminate un recapito — telefono, e-mail o sito web — nelle impostazioni: accorciarlo non libera spazio, ogni recapito occupa una riga intera. Oppure riducete il numero di righe dell'indirizzo del destinatario.
+
+# Story 23-2 (#283) — parità it-CH : le 57 chiavi che esistevano solo in fr-CH.
+# Termini RILEVATI nel catalogo, non inventati : scrittura contabile
+# (error-journal-entry-linked-to-invoice), esercizio (error-no-fiscal-year), Convalidata
+# (invoice-status-validated), Attivo/Inattivo (account-type-asset), Ricavo (account-type-revenue),
+# Descrizione vs Etichetta (journal-entries-col-description / reconciliation-rules-labels-label).
+# ⚠️ « Date de bascule » NON è l'interruttore del glossario : è il cambiamento di aliquota.
+error-configuration-required = Configurazione incompleta: configura i parametri di fatturazione prima di convalidare.
+error-fiscal-year-invalid = Nessun esercizio aperto copre questa data.
+invoice-error-already-validated = Questa fattura è già convalidata.
+invoice-error-configuration-required = Configura i conti predefiniti in Impostazioni > Fatturazione prima di convalidare una fattura.
+invoice-error-configuration-required-non-admin = Chiedi al tuo amministratore di configurare i conti predefiniti di fatturazione.
+invoice-error-fiscal-year-invalid = Nessun esercizio aperto copre la data della fattura.
+invoice-journal-entry-description = Fattura { $invoiceNumber } - { $contactName }
+invoice-number-label = Numero
+invoice-status-validated-label = Convalidata
+invoice-validate-button = Convalida
+invoice-validate-confirm-body = Una volta convalidata, questa fattura sarà immutabile, riceverà un numero definitivo e genererà una scrittura contabile. Continuare?
+invoice-validate-confirm-title = Convalida la fattura
+invoice-validate-success = Fattura convalidata — { $invoiceNumber }
+invoice-validate-success-body = La fattura { $invoiceNumber } è ora convalidata e immutabile. La scrittura contabile associata è stata generata.
+invoice-view-journal-entry-link = Visualizza la scrittura contabile
+settings-invoicing-description-template = Descrizione della scrittura contabile
+settings-invoicing-format-help = Segnaposto: {"{"}YEAR{"}"}, {"{"}FY{"}"}, {"{"}SEQ{"}"}, {"{"}SEQ:NN{"}"}
+settings-invoicing-format-invalid = Formato non valido
+settings-invoicing-format-label = Formato di numerazione
+settings-invoicing-format-preview = Anteprima
+settings-invoicing-format-too-long = Il formato è troppo lungo
+settings-invoicing-journal = Giornale
+settings-invoicing-receivable-account = Conto crediti verso clienti (Attivo)
+settings-invoicing-revenue-account = Conto ricavi (Ricavo)
+settings-invoicing-save = Salva
+settings-invoicing-save-success = Configurazione salvata
+settings-invoicing-title = Impostazioni — Fatturazione
+settings-vat-rates-link = Configura le aliquote IVA e le loro date di validità (i cambiamenti di aliquota sono gestiti nel tempo).
+vat-rates-active = Attivo
+vat-rates-change = Cambia l'aliquota
+vat-rates-change-error = Il cambiamento di aliquota non è riuscito.
+vat-rates-change-hint = La vecchia aliquota sarà chiusa alla data di cambiamento, e la nuova aliquota avrà effetto da tale data.
+vat-rates-changed = Aliquota aggiornata.
+vat-rates-col-actions = Azioni
+vat-rates-col-from = Valida dal
+vat-rates-col-rate = Aliquota
+vat-rates-col-status = Stato
+vat-rates-col-to = Fino al
+vat-rates-create-error = La creazione non è riuscita.
+vat-rates-created = Aliquota IVA creata.
+vat-rates-deactivate = Disattiva
+vat-rates-deactivate-confirm = Disattivare questa aliquota? Non sarà più proposta durante l'inserimento ma resterà nello storico.
+vat-rates-deactivate-error = La disattivazione non è riuscita.
+vat-rates-deactivated = Aliquota disattivata.
+vat-rates-empty = Nessuna aliquota configurata.
+vat-rates-field-category = Categoria
+vat-rates-field-from = Valida dal
+vat-rates-field-label = Etichetta (facoltativa)
+vat-rates-field-new-rate = Nuova aliquota (%)
+vat-rates-field-rate = Aliquota (%)
+vat-rates-field-switch-date = Data di cambiamento
+vat-rates-field-to = Fino al (facoltativo)
+vat-rates-inactive = Inattivo
+vat-rates-load-error = Impossibile caricare le aliquote IVA.
+vat-rates-new = Nuova aliquota
+vat-rates-subtitle = Configura le aliquote IVA e le loro date di validità. Le vecchie aliquote restano applicate alle operazioni anteriori.
+vat-rates-title = Aliquote IVA

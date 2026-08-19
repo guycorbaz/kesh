@@ -98,6 +98,9 @@ passage des rollouts qui touchent ces domaines, pas ici.
 | **localité** | **Ort** | **località** | **Town/city** | `field-city` (story 23-1b) |
 | **prénom** | **Vorname** | **nome** | **first name** | `field-first-name` (story 23-1b) |
 | **personne de contact** | **Kontaktperson** | **persona di contatto** | **contact person** | `contact-persons-title` — au pluriel dans les quatre catalogues (`Personnes de contact`, `Kontaktpersonen`, `Persone di contatto`, `Contact persons`), mis au singulier comme partout ailleurs ici (story 23-1b) |
+| **immuable** | **unveränderlich** | **immutabile** | **immutable** | `invoice-validate-confirm-body` (story 23-2) |
+| **validité** | **Gültigkeit** | **validità** | **validity** | `vat-rates-subtitle` (story 23-2) |
+| **bascule** (*changement de taux*) | **Umstellungsdatum** | **data di cambiamento** | **changeover date** | `vat-rates-field-switch-date` (story 23-2). ⚠️ **HOMONYME** — rien à voir avec la bascule-interrupteur de la partie B |
 | carnet d'adresses | **Kontakte** | **contatti** | contacts | `Carnet d'adresses` |
 | adresse | Adresse | indirizzo | address | `Adresse` |
 | rappel / relance | **Mahnung** | **sollecito** | reminder | `Rappels` / `Mahnungen` |
@@ -153,20 +156,29 @@ contraignantes pour tout le rollout.
 | règlement (d'une facture) | Begleichung / Zahlung | pagamento | settlement | ⚠️ **préférer « Zahlung » / « pagamento » / « payment »** et réserver « règlement » au français — deux mots pour un concept déjà couvert par *paiement* |
 | écarter / écartée (une pièce) | verwerfen / verworfen | scartare / scartata | discard / discarded | s'oppose à « compléter » dans la file d'import |
 | compléter | vervollständigen | completare | complete | idem |
-| immuable | unveränderlich | immutabile | immutable | employé pour une pièce validée |
-| validité | Gültigkeit | validità | validity | |
 | personne physique / morale | natürliche / juristische Person | persona fisica / giuridica | individual / legal entity | |
 | image | Bild | immagine | image | scan de QR-facture |
-| bascule (interrupteur) | Umschalter | interruttore | toggle | élément d'interface |
+| bascule (**interrupteur**) | Umschalter | interruttore | toggle | élément d'interface. ⚠️ **NE PAS employer pour « date de bascule »**, qui est un changement de taux et vit en partie A |
 | restauré | wiederhergestellt | ripristinato | restored | import de sauvegarde |
 
 ---
 
-✅ **Trois de ces termes ONT ÉTÉ tranchés et promus en partie A** par la story 23-1b, dont le
-domaine pilote `contacts` les emploie : **localité**, **prénom** et **personne de contact**. Chacun
-y porte désormais la clé qui l'atteste. **Douze** termes restent ouverts. *(La partie B comptait 16
-entrées, 15 après l'arbitrage du 2026-08-19 sur « analytique », et **12** après cette promotion.
-Recompté depuis le tableau, comme l'exige la § « Recompter ses propres comptes rendus ».)*
+✅ **Cinq de ces termes ONT ÉTÉ tranchés et promus en partie A**, chacun portant désormais la clé
+qui l'atteste : **localité**, **prénom** et **personne de contact** par la story 23-1b (domaine
+pilote `contacts`) ; **immuable** et **validité** par la story 23-2 (les 57 clés de parité).
+
+⚠️ **`bascule` reste en partie B, et sa ligne y porte maintenant un avertissement** — parce que la
+23-2 a révélé qu'il s'agit de **deux termes distincts sous un seul mot**. L'entrée de partie B est
+l'**interrupteur** d'interface ; « date de bascule », qui désigne le **changement d'un taux de TVA**,
+est monté en partie A avec une traduction sans rapport (`Umstellungsdatum`, `data di cambiamento`,
+`changeover date`). Traduire la seconde d'après la première aurait donné un contresens plein — et
+c'est le glossaire lui-même qui aurait induit en erreur, ce qui est pire qu'un glossaire muet.
+
+**Dix** termes restent ouverts. *(La partie B comptait 16 entrées, 15 après l'arbitrage du
+2026-08-19 sur « analytique », 12 après la promotion de la 23-1b, et **10** après celle de la 23-2 —
+`bascule` y restant au titre de son sens « interrupteur ». La partie A compte **55** entrées.
+Les deux nombres sont **recomptés depuis les tableaux**, comme l'exige la § « Recompter ses propres
+comptes rendus ».)*
 
 ## Comment s'en servir
 

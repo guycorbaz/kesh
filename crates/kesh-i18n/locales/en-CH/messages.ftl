@@ -1418,3 +1418,69 @@ settings-company-contact-conflict-reload-failed = Version conflict and reload fa
 error-company-phone-too-long = The company phone number is too long (50 characters maximum).
 error-company-website-too-long = The company website address is too long (255 characters maximum).
 error-invoice-pdf-header-overflow = The document header does not fit on the page. Remove one contact detail — phone, email or website — in the settings: shortening it frees no space, each detail takes a whole line. Or reduce the number of lines in the recipient address.
+
+# Story 23-2 (#283) — en-CH parity: the 57 keys that existed only in fr-CH.
+# Terms TAKEN FROM the catalogue, not invented: journal entry
+# (error-journal-entry-linked-to-invoice), fiscal year (error-no-fiscal-year), Validated
+# (invoice-status-validated), Asset vs Active — ⚠️ French writes « Actif » for BOTH, English must
+# not: account-type-asset = Asset is the balance-sheet class, vat-rates-active = Active is a status.
+# Revenue (account-type-revenue), Description vs Label (journal-entries-col-description /
+# reconciliation-rules-labels-label).
+# ⚠️ « Date de bascule » is NOT the glossary's toggle: it is the rate changeover.
+error-configuration-required = Incomplete configuration: set up the invoicing settings before validating.
+error-fiscal-year-invalid = No open fiscal year covers this date.
+invoice-error-already-validated = This invoice is already validated.
+invoice-error-configuration-required = Set up the default accounts under Settings > Invoicing before validating an invoice.
+invoice-error-configuration-required-non-admin = Ask your administrator to set up the default invoicing accounts.
+invoice-error-fiscal-year-invalid = No open fiscal year covers the invoice date.
+invoice-journal-entry-description = Invoice { $invoiceNumber } - { $contactName }
+invoice-number-label = Number
+invoice-status-validated-label = Validated
+invoice-validate-button = Validate
+invoice-validate-confirm-body = Once validated, this invoice will be immutable, will receive a final number and will generate a journal entry. Continue?
+invoice-validate-confirm-title = Validate the invoice
+invoice-validate-success = Invoice validated — { $invoiceNumber }
+invoice-validate-success-body = Invoice { $invoiceNumber } is now validated and immutable. The related journal entry has been generated.
+invoice-view-journal-entry-link = View the journal entry
+settings-invoicing-description-template = Journal entry description
+settings-invoicing-format-help = Placeholders: {"{"}YEAR{"}"}, {"{"}FY{"}"}, {"{"}SEQ{"}"}, {"{"}SEQ:NN{"}"}
+settings-invoicing-format-invalid = Invalid format
+settings-invoicing-format-label = Numbering format
+settings-invoicing-format-preview = Preview
+settings-invoicing-format-too-long = The format is too long
+settings-invoicing-journal = Journal
+settings-invoicing-receivable-account = Accounts receivable (Asset)
+settings-invoicing-revenue-account = Revenue account (Revenue)
+settings-invoicing-save = Save
+settings-invoicing-save-success = Settings saved
+settings-invoicing-title = Settings — Invoicing
+settings-vat-rates-link = Set up the VAT rates and their validity dates (rate changes are handled over time).
+vat-rates-active = Active
+vat-rates-change = Change the rate
+vat-rates-change-error = The rate change failed.
+vat-rates-change-hint = The old rate will be closed on the changeover date, and the new rate will take effect on that date.
+vat-rates-changed = Rate updated.
+vat-rates-col-actions = Actions
+vat-rates-col-from = Valid from
+vat-rates-col-rate = Rate
+vat-rates-col-status = Status
+vat-rates-col-to = Until
+vat-rates-create-error = Creation failed.
+vat-rates-created = VAT rate created.
+vat-rates-deactivate = Deactivate
+vat-rates-deactivate-confirm = Deactivate this rate? It will no longer be offered for entry but will remain in the history.
+vat-rates-deactivate-error = Deactivation failed.
+vat-rates-deactivated = Rate deactivated.
+vat-rates-empty = No rate configured.
+vat-rates-field-category = Category
+vat-rates-field-from = Valid from
+vat-rates-field-label = Label (optional)
+vat-rates-field-new-rate = New rate (%)
+vat-rates-field-rate = Rate (%)
+vat-rates-field-switch-date = Changeover date
+vat-rates-field-to = Until (optional)
+vat-rates-inactive = Inactive
+vat-rates-load-error = Could not load the VAT rates.
+vat-rates-new = New rate
+vat-rates-subtitle = Set up the VAT rates and their validity dates. Old rates still apply to earlier transactions.
+vat-rates-title = VAT rates

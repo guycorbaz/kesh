@@ -2,7 +2,7 @@
 
 ## Status
 
-draft
+review
 
 Premier rollout de l'Epic 23, et le seul qui ferme **une issue entière** : [#283]. À son terme,
 `crates/kesh-i18n/dette-parite-connue.txt` est **vide** et la garde de parité devient
@@ -101,8 +101,9 @@ ne sert **pas** ici — il moissonne des replis de code, or ces 57 clés ont dé
    placeables. Elles doivent être **recopiées à l'identique** dans les trois cibles ; les traduire
    ou les « corriger » casse le parse, et `loader.rs` propageant l'erreur sans tri, **une seule
    ligne cassée empêche le chargement de toute la locale**.
-2. **`invoice-journal-entry-description` et trois autres portent de vrais placeables**
-   (`{ $invoiceNumber }`, `{ $contactName }`). Les noms de variables ne se traduisent **jamais**.
+2. **Trois clés portent de vrais placeables** — `invoice-journal-entry-description`,
+   `invoice-validate-success`, `invoice-validate-success-body` (`{ $invoiceNumber }`,
+   `{ $contactName }`). Les noms de variables ne se traduisent **jamais**.
 
 ### Registre — déjà mesuré, ne pas re-mesurer
 
@@ -127,8 +128,10 @@ Pas de `ß` en allemand suisse.
    — l'interrupteur et le changement de taux —, faute de quoi le piège se retend au rollout suivant.
 6. **AC6** — les littéraux de chaîne Fluent de `settings-invoicing-format-help` sont **identiques
    octet pour octet** dans les quatre locales. Vérifiable au `grep -F`.
-7. **AC7** — aucun nom de variable de placeable n'est traduit : les `{ $… }` des quatre clés
-   concernées sont identiques dans les quatre locales.
+7. **AC7** — aucun nom de variable de placeable n'est traduit : les `{ $… }` des **trois** clés
+   concernées — `invoice-journal-entry-description`, `invoice-validate-success` et
+   `invoice-validate-success-body` — sont identiques dans les quatre locales. *(Le critère annonçait
+   « quatre » à la rédaction ; recompté depuis la source à l'implémentation, il y en a trois.)*
 8. **AC8** — une **relecture consignée en tableau vérifiable au `grep`** des termes comptables
    relevés (exercice, écriture comptable, journal, taux de TVA, statut), sur le modèle du tableau
    `AC11-ter` de la 23-1b : terme, clé qui l'atteste, valeur dans les quatre locales.
@@ -144,20 +147,100 @@ Pas de `ß` en allemand suisse.
 
 ## Tasks
 
-- [ ] **T1 — Arbitrage terminologique** (AC5) : soumettre les trois termes de partie B, dont
+- [x] **T1 — Arbitrage terminologique** (AC5) : soumettre les trois termes de partie B, dont
       `bascule` et sa double entrée. **Bloquant** : ne pas commencer T2 avant.
-- [ ] **T2 — Relevé des termes comptables** (AC8) : pour chacun, la clé qui l'atteste et ses quatre
+- [x] **T2 — Relevé des termes comptables** (AC8) : pour chacun, la clé qui l'atteste et ses quatre
       valeurs, consignés en tableau.
-- [ ] **T3 — `vat-rates-*`** (31 clés) dans les trois cibles.
-- [ ] **T4 — `settings-invoicing-*`** (15 clés), en recopiant à l'identique les littéraux échappés.
-- [ ] **T5 — `invoice-*` / `error-*`** (11 clés), en préservant les placeables.
-- [ ] **T6 — Vidage de l'allowlist** (AC2, AC3) et vérification que la garde échoue toujours pour
+- [x] **T3 — `vat-rates-*`** (31 clés) dans les trois cibles.
+- [x] **T4 — `settings-invoicing-*`** (15 clés), en recopiant à l'identique les littéraux échappés.
+- [x] **T5 — `invoice-*` / `error-*`** (11 clés), en préservant les placeables.
+- [x] **T6 — Vidage de l'allowlist** (AC2, AC3) et vérification que la garde échoue toujours pour
       une clé retirée d'une locale — **mutation, pas raisonnement**.
-- [ ] **T7 — Glossaire** (AC5) : promotion des trois termes, double entrée pour `bascule`.
+- [x] **T7 — Glossaire** (AC5) : promotion des trois termes, double entrée pour `bascule`.
 - [ ] **T8 — Gates complets** (AC9) et PR portant `closes #283` (AC10).
+
+## Dev Agent Record
+
+### AC8 — relevé des termes, vérifiable au `grep`
+
+⚠️ **Aucun de ces termes n'a été traduit : ils ont été RELEVÉS**, chacun à la clé qui l'atteste
+déjà dans les quatre catalogues. La commande de contrôle est la même pour tous :
+`grep -h "^<clé> = " crates/kesh-i18n/locales/<loc>-CH/messages.ftl`.
+
+| terme `fr-CH` | clé qui l'atteste | `de-CH` | `it-CH` | `en-CH` |
+|---|---|---|---|---|
+| écriture comptable | `error-journal-entry-linked-to-invoice` | Buchungssatz | scrittura contabile | journal entry |
+| exercice | `error-no-fiscal-year` | Geschäftsjahr | esercizio | fiscal year |
+| Validée | `invoice-status-validated` | Validiert | Convalidata | Validated |
+| Actif *(classe de bilan)* | `account-type-asset` | Aktiv | Attivo | **Asset** |
+| Produit *(compte)* | `account-type-revenue` | Ertrag | Ricavo | Revenue |
+| Journal | `journal-entries-col-journal` | Journal | Giornale | Journal |
+| Statut | `invoice-form-status` | Status | Stato | Status |
+| Numéro | `account-field-number` | Nummer | Numero | Number |
+| Actions | `contact-col-actions` | Aktionen | Azioni | Actions |
+| Enregistrer | `contact-form-submit-edit` | Speichern | Salva | Save |
+| TVA | `account-role-vat-payable` | MWST | IVA | VAT |
+
+### ⚠️ Le relevé a révélé TROIS homonymies que la traduction directe aurait manquées
+
+Elles ne se voyaient **pas** dans le français : c'est le catalogue existant qui les a mises au jour.
+
+1. **`Actif`** porte **deux sens** dans ces 57 clés mêmes. `vat-rates-active = Actif` est un
+   **statut** ; `settings-invoicing-receivable-account = Compte créance client (Actif)` est la
+   **classe de bilan**. Le français les confond, **l'anglais ne le peut pas** : `Active` contre
+   `Asset`. Traduire le premier par `Asset` aurait produit un non-sens dans une colonne de tableau.
+2. **`Valider`** ne veut pas dire *enregistrer*. Le catalogue porte `journal-entry-form-submit =
+   Valider → Speichern / Save`, où le sens est bien « enregistrer ». Mais
+   `invoice-validate-button = Valider` désigne la **validation comptable** — celle qui rend la pièce
+   immuable et engendre l'écriture. Rendu par `Validieren` / `Convalida` / `Validate`, conformément
+   à `invoice-status-validated`, et **non** par `Speichern`.
+3. **`Libellé`** a **deux attestations divergentes** : `journal-entries-col-description →
+   Beschreibung / Descrizione / Description`, et `reconciliation-rules-labels-label → Bezeichnung /
+   Etichetta / Label`. Le contexte tranche :
+   `settings-invoicing-description-template = Libellé de l'écriture comptable` suit le premier,
+   `vat-rates-field-label = Libellé (optionnel)` suit le second.
+
+*Ces trois cas justifient à eux seuls la règle « relever, ne pas inventer » : aucun n'était visible
+depuis le texte source, et chacun aurait produit une erreur qu'aucun test n'aurait signalée.*
+
+### Preuves d'exécution
+
+| contrôle | commande | résultat |
+|---|---|---|
+| couverture | boucle `grep -q "^$k = "` sur les 57 clés × 3 locales | **57 / 57** dans chacune |
+| `fr-CH` intact (AC4) | `git diff --stat …/fr-CH/messages.ftl` | **aucune ligne** |
+| littéraux échappés (AC6) | les 4 valeurs passées à `sort -u` | **une seule ligne** — donc identiques |
+| placeables (AC7) | extraction `\{ \$[a-zA-Z]+ \}` sur les 4 locales | identiques sur les 3 clés concernées |
+| pas de `ß` en `de-CH` | `grep -c "ß"` | **0** |
+| garde sans allowlist (AC3) | `cargo test -p kesh-i18n` | **29 / 29**, `parity_between_locales` vert |
+| glossaire recompté (AC5) | comptage des deux tableaux | partie A **55**, partie B **10** |
+
+### Mutations — la garde garde-t-elle encore, une fois son allowlist vide ?
+
+| mutation | résultat |
+|---|---|
+| une clé traduite retirée de `de-CH` | **FAILED** — « `vat-rates-title` absente de DeCh » |
+| une clé ajoutée à `it-CH` seule | **FAILED** — « `cle-orpheline-it` présente en ItCh mais absente de fr-CH » |
+
+⚠️ **La garde NOMME la clé fautive**, elle ne se contente pas de rougir — c'est ce qui la rend
+utilisable par qui ne connaît pas cette story.
 
 ## Change Log
 
 | date | passe | résultat |
 |---|---|---|
 | 2026-08-19 | création | spec initiale, terrain vérifié depuis la source (57/0/0/0, trois termes de partie B engagés, piège d'homonymie sur `bascule`) |
+| 2026-08-19 | implémentation | 57 × 3 = **171** lignes écrites, allowlist **vidée**, garde devenue inconditionnelle. **Trois homonymies révélées par le relevé** (`Actif`, `Valider`, `Libellé`) qu'aucun test n'aurait signalées. Gates : backend **2219/2219** (base remise à zéro), `kesh-i18n` 29/29, frontend check 0 erreur / lint PASS / 655 tests / build vert, `fmt` OK. **AC7 recompté** : trois clés à placeable, non quatre. |
+
+### Gates — exécutés, non déclarés
+
+| gate | résultat |
+|---|---|
+| `cargo fmt --all -- --check` | OK |
+| `scripts/test-fast.sh --ci` (clippy + nextest, base remise à zéro) | **2219 / 2219**, 96,9 s |
+| `cargo test -p kesh-i18n` | **29 / 29**, `parity_between_locales` vert **sans allowlist** |
+| `npm run check` | **0 erreur** (27 warnings préexistants) |
+| `npm run lint-i18n-ownership` | PASS |
+| `npm run test:unit` | **655 / 655** |
+| `npm run build` | vert |
+| `npm run test:e2e` | **non exécutée** — la story ne touche aucun code applicatif ni aucun `.svelte` ; seuls trois catalogues, une allowlist et deux documents changent |
