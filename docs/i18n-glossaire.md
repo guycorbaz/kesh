@@ -12,6 +12,13 @@ dans les catalogues existants**, sur les **1216 clés alignées sur les quatre l
 La colonne « précédent » nomme la clé où l'équivalence est attestée.** Les changer, c'est
 désaligner le nouveau du déjà-livré — ce que cet epic vient précisément corriger.
 
+⚠️ **En cas de doute sur une langue cible, suivre le FRANÇAIS.** Arbitrage de Guy, 2026-08-19,
+rendu sur `fattura fornitore` contre `fattura fornitori` : les deux étaient de l'italien correct, donc
+rien ne permettait de trancher sans parler la langue. Le français, lui, est vérifiable — et il tranche
+(`Facture fournisseur` au singulier, `Factures fournisseurs` au pluriel). **La ligne du glossaire
+était bancale** : lemme français au singulier, italien au pluriel, une forme hybride correspondant à
+ni l'un ni l'autre. Les catalogues, eux, étaient déjà justes.
+
 ⚠️ **Les termes sont donnés en forme de LEMME — minuscule et singulier —, les catalogues portant des
 libellés d'interface.** `facture` relève `Factures`, `avoir` relève `Avoir`, `rappel` relève
 `Rappels` : la mise au singulier et en minuscule est **uniforme** et ne constitue pas un écart. Ce
@@ -66,7 +73,7 @@ passage des rollouts qui touchent ces domaines, pas ici.
 | fr-CH | de-CH | it-CH | en-CH | précédent |
 |---|---|---|---|---|
 | facture | Rechnung | fattura | invoice | `Factures` / `Rechnungen` |
-| facture fournisseur | Lieferantenrechnung | fattura fornitori | supplier invoice | `Factures fournisseurs` |
+| facture fournisseur | Lieferantenrechnung | **fattura fornitore** *(pluriel : `fatture fornitori`)* | supplier invoice | `supplier-invoices-detail-title` (sing.) / `supplier-invoices-title` (plur.) |
 | avoir | **Gutschrift** | **nota di credito** | credit note | `Avoir` / `N° d'avoir` |
 | brouillon | Entwurf | bozza | draft | `Brouillon` |
 | ouverte (facture) | offen | aperta | open | `Factures ouvertes` |

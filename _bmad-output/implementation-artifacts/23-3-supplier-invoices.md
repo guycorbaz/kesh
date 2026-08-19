@@ -267,8 +267,14 @@ cohabitait avec le bouton `Scarta` **sur le même écran**) ; `Contra account` �
 - **`Clôturer` / `Fermer` s'effondrent en un seul mot dans les trois cibles** (`Schliessen`,
   `Chiudi`, `Close`), alors que le français distingue l'acte comptable irréversible du panneau qu'on
   referme. ⚠️ **La moitié « exercice » est hors périmètre** — à porter en 23-4 ou en CR.
-- `fattura fornitore` contre `fattura fornitori` du glossaire : les deux sont de l'italien correct,
-  l'arbitrage revient à Guy.
+- ~~`fattura fornitore` contre `fattura fornitori`~~ — **tranché par Guy le 2026-08-19** :
+  *« je ne parle pas italien : dans le doute, laisse le français »*. ⚠️ **Le critère est
+  vérifiable, là où « quel italien est le meilleur » ne l'était pas** — et il tranche net :
+  `Facture fournisseur` → `Fattura fornitore`, `Factures fournisseurs` → `Fatture fornitori`.
+  **Les catalogues étaient déjà justes ; c'est la ligne du GLOSSAIRE qui était bancale**, donnant
+  le lemme français au singulier et l'italien au pluriel — une forme hybride correspondant à ni
+  l'un ni l'autre. Corrigée, et la règle « en cas de doute, suivre le français » est écrite au
+  préambule du glossaire pour les rollouts suivants.
 
 **Un correctif de lentille RÉFUTÉ** : elle proposait « il restera 162 clés = 275 − 115 ». **Faux** —
 six des 115 clés sont **neuves** et n'ont jamais figuré à la dette. L'allowlist perd **109** entrées :
