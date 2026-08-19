@@ -22,8 +22,8 @@ catalogues. Ce qui y est écrit est une proposition, pas un relevé.
 | Locale | Registre | Mesure |
 |---|---|---|
 | `fr-CH` | vouvoiement | 44 messages avec « vous / votre » |
-| `de-CH` | **Sie-Form** | 115 **messages** avec « Sie » (117 *lignes* — les messages multi-lignes comptent double) |
-| `it-CH` | **2ᵉ personne du singulier** (« Configura », « Scegli ») | 31 contre **1** au pluriel de courtoisie |
+| `de-CH` | **Sie-Form** | 115 **messages** avec « Sie » (117 *lignes* — les multi-lignes comptent double) |
+| `it-CH` | **2ᵉ personne du singulier** (« Configura », « Scegli ») | 31 impératifs au singulier contre **11 messages** au registre de courtoisie (2 « Aggiungete » + 10 lignes en `vostro`) |
 | `en-CH` | impératif neutre, sans pronom | — |
 
 ⚠️ **L'italien tutoie et l'allemand vouvoie.** Ce n'est pas une incohérence à corriger :
@@ -32,9 +32,13 @@ c'est l'usage courant des interfaces dans ces deux langues.
 ⚠️ **En revanche l'italien N'EST PAS homogène, et la première rédaction de ce § le sous-estimait.**
 Elle annonçait « **unique** occurrence » du pluriel de courtoisie, à savoir
 `accounts-create-description` (« Aggiungete un conto al piano dei conti. »). Recompté en passe 1 de
-`validate` de la story 23-1 : **2 occurrences de « Aggiungete »** — la seconde est
-`homepage-bank-empty-guided`, qui cumule l'impératif ET le possessif de politesse (« Aggiungete
-**il vostro** conto ») — et **10 lignes** employant `vostro`/`vostra`/`vostri`/`vostre`. *Une
+`validate` de la story 23-1, puis **re-recompté en passe 3** : **2 occurrences de « Aggiungete »** —
+la seconde est `homepage-bank-empty-guided`, qui cumule l'impératif ET le possessif de politesse
+(« Aggiungete **il vostro** conto ») — et **10 lignes** employant `vostro`/`vostra`/`vostri`/`vostre`,
+soit **11 messages distincts** au registre de courtoisie.
+⚠️ *La ligne du tableau ci-dessus a porté « 31 contre 1 » pendant deux passes APRÈS que cet encadré
+l'eut réfutée : la passe 1 avait corrigé la prose et laissé le tableau, à dix lignes de distance.
+Corrigé en passe 3.* *Une
 affirmation portant le titre « mesuré, pas supposé » et qui ne l'était qu'à moitié : qui corrigerait
 sur la foi de la version précédente croirait le défaut borné à une ligne.* L'alignement se fait au
 passage des rollouts qui touchent ces domaines, pas ici.
@@ -125,8 +129,10 @@ contraignantes pour tout le rollout.
 
 ⚠️ **Trois de ces termes sont tranchés par la story 23-1**, dont le domaine pilote `contacts`
 les emploie : **localité**, **prénom** et **personne de contact**. Ils remonteront en partie A
-une fois la story mergée, avec la clé qui les atteste. Les douze autres restent ouverts — dont
-**« analytique »**, le seul dont l'enjeu dépasse le vocabulaire.
+une fois la story mergée, avec la clé qui les atteste. Les **treize** autres resteront ouverts — dont
+**« analytique »**, le seul dont l'enjeu dépasse le vocabulaire. *(La partie B compte **16**
+entrées ; « douze » a été écrit quand elle en comptait quinze, avant que la spécification de la
+23-1 n'y ajoute `personne de contact`. Recompté en passe 3.)*
 
 ## Comment s'en servir
 

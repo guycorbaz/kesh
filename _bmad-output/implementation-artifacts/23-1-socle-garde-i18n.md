@@ -62,7 +62,7 @@ généralisé sur ce critère produirait des faux positifs en série.
 - Les **297 autres clés** — elles sont le travail des stories 23-2 à 23-6.
 - **[#255]** (chaînes en dur sans appel à `i18nMsg`). ⚠️ **C'est l'angle mort assumé des deux
   gardes** : ce qui n'est jamais demandé ne peut pas être trouvé manquant. La page `/invoices`
-  en est le cas — **6 appels** `i18nMsg` pour toute la page.
+  en est le cas — **4 appels** `i18nMsg` pour toute la page (6 mentions du symbole, import compris).
 - **[#314]**, le sélecteur de langue **[#242]**, et toute traduction des manuels LaTeX.
 - **Le backend `kesh-qrbill`** et sa table `I18N_KEYS` / `DEFAULT_EN` (`types.rs:216`) : c'est un
   troisième catalogue, apparié par **position**, hors sujet ici.
@@ -116,7 +116,7 @@ n'est jamais reconnu. Le recensement rendait « 8 littéraux » — coïncidence
 entière.
 
 ⚠️ **Et le gabarit n'est pas la seule forme qui casse une extraction naïve** : l'appel lui-même
-s'écrit parfois **sur plusieurs lignes** — `supplier-invoices/import/+page.svelte:84-89` place
+s'écrit parfois **sur plusieurs lignes** — `supplier-invoices/import/+page.svelte:85-88` place
 `i18nMsg(`, sa clé et son repli sur trois lignes distinctes. Une extraction ligne à ligne les
 manque toutes.
 
@@ -137,11 +137,24 @@ une clé présente seulement en `de-CH` est un défaut au même titre (aujourd'h
 mesuré — la garde le maintient).
 ⚠️ **Ne PAS généraliser `assert_ne!(msg, fr)`** — motif à la § *Contexte*.
 
-**D2 — Garde B généralise `duplicate-i18n-keys.test.ts`, elle ne le double pas.**
+**D2 — Garde B généralise `duplicate-i18n-keys.test.ts`, elle ne le double pas — MAIS le fichier
+porte DEUX contrôles, et le second n'est repris par aucune garde générale.**
+⚠️ Outre l'existence des clés, il vérifie que *« le catalogue n'a pas de clé du domaine que
+PERSONNE ne demande »* — le contrôle des **orphelines**, vert aujourd'hui (5 clés au catalogue,
+5 demandées). **Il ne se généralise PAS** : le catalogue sert aussi `kesh-qrbill`, `kesh-report`
+et les PDF, si bien qu'une clé sans demandeur côté frontend n'est pas orpheline pour autant —
+`reports-filename-*` en donne le contre-exemple immédiat, avec **7** clés déclarées pour **5**
+valeurs de `ReportType`. Le contrôle est donc **conservé, borné à son domaine** : la garde B
+reprend l'assertion pour les préfixes explicitement déclarés « à couverture close »
+(`contact-duplicate-*` pour commencer), et cette liste s'étend story par story.
+⚠️ *Sans cette décision, AC12 promettait « le contrôle qu'il exerçait ne doit pas disparaître » et
+livrait sa suppression. Relevé en passe 3.*
 Le fichier `frontend/src/lib/features/contacts/duplicate-i18n-keys.test.ts` (22-2b) est le
 prototype : même façon de lire les `.ftl`, même parcours de `src`. La story le **remplace** par
 un test de portée générale — `frontend/src/lib/shared/i18n-keys.test.ts` — et supprime l'ancien,
-dont la borne `DOMAINE = /^contact-duplicate-/` n'a plus de raison d'être. **Un seul test, pas deux.**
+dont la borne `DOMAINE = /^contact-duplicate-/` n'a plus de raison d'être **pour son premier
+contrôle**. **Un seul test, pas deux** — mais qui porte les **deux** assertions, la seconde restant
+bornée par domaine (cf. l'encadré ci-dessus).
 
 **D2-bis — `contacts-i18n-realpath.test.ts` N'EST PAS supprimé.**
 Le seul test retiré est `duplicate-i18n-keys.test.ts` (D2). ⚠️ L'autre test i18n de la 22-2b,
@@ -168,8 +181,12 @@ Une table `MOTIFS_DYNAMIQUES` dans la garde B : `{ motif, valeurs[] }`. La garde
 ⚠️ **Les valeurs sont écrites EN DUR dans le test, pas lues depuis le code de production.** Lire
 la carte de production ferait qu'une carte vidée par erreur rendrait le test vert à vide — le
 mode d'échec du **test muet**, déjà payé sur `backfill_skips_archived_accounts` (16-1a). En
-contrepartie, chaque motif porte une assertion de **cardinalité attendue** (`assert_eq!` sur le
-nombre de valeurs) qui rougit dès que la carte de production évolue sans le test.
+contrepartie, chaque motif porte une assertion de **cardinalité attendue** (`expect(...).toBe(...)`,
+la garde B étant en vitest) qui rougit dès que la carte de production évolue sans le test — **sauf
+pour les deux ensembles ouverts signalés plus bas**.
+⚠️ **Cette clause est exigible, pas seulement souhaitée** : AC7 impose que le fichier de garde
+**n'importe aucun module de production**, ce qui se vérifie d'un coup d'œil sur ses `import` — au
+même titre qu'AC2 pour `format()`.
 ⚠️ **`vat-category-*` est un ANGLE MORT ASSUMÉ, et l'appeler autrement serait mentir.** Ses
 valeurs ne sont ni un littéral ni une énumération fermée : c'est une **colonne libre**. La
 migration `20260613000001_vat_rates_crud.sql:12-16` l'écrit noir sur blanc — *« **PAS de contrainte
@@ -185,9 +202,42 @@ garde** — leur libellé retombera sur le repli, qui est ici la catégorie brut
 cardinalité protège ce motif serait exactement le genre d'assurance fausse que les deux gardes
 existent pour supprimer.*
 
-⚠️ **La garde compte aussi les SITES**, pas seulement les préfixes : une assertion
-`assert_eq!(sites_dynamiques, 10)` rougit quand un nouveau gabarit apparaît quelque part — c'est
-le seul contrôle qui aurait attrapé `bank-import-info-*`.
+⚠️ **`bank-import-info-*` est le SECOND angle mort, et il est pire que le premier.** Ses valeurs
+ne sont pas énumérées côté frontend du tout : elles sont poussées par le **backend Rust** —
+`warnings.push("bank_csv_profile_auto_matched")` (`kesh-api/src/routes/bank_imports.rs:1668`) et
+`bank_csv_multiple_profile_matches` (`:693`) —, le type frontend n'étant qu'un `informational:
+string[]` (`bank-import.types.ts:49`). **Il n'y a donc aucune « carte de production » à confronter**,
+et l'assertion de cardinalité y est verte à jamais quoi qu'il arrive côté Rust. Un troisième code
+informationnel s'afficherait en `snake_case` brut, dans les quatre langues, sans qu'aucune garde ne
+bouge — le mode d'échec du **test muet**, sur le préfixe même dont l'oubli était le CRITICAL de la
+passe 1. *La promesse de D4 (« l'assertion rougit dès que la carte évolue ») ne vaut que pour les
+six motifs dont l'énumération vit dans `frontend/src` ; elle est FAUSSE pour ces deux-là.*
+
+⚠️ **Les valeurs se déclarent APRÈS transformation.** Le gabarit est
+`` `bank-import-info-${info.replace(/_/g, '-')}` `` : les valeurs à écrire sont
+`bank-csv-profile-auto-matched` et `bank-csv-multiple-profile-matches`, **en tirets**. Les déclarer
+en `snake_case` ferait chercher une clé inexistante, donc signaler une dette imaginaire — et le
+réflexe de l'inscrire à l'allowlist masquerait durablement deux clés qui sont **traduites dans les
+quatre locales**.
+
+⚠️ **La garde compare la LISTE des sites**, pas leur nombre — cf. AC7 —, contre la liste de
+référence ci-dessous, recomptée le 2026-08-19 :
+
+| fichier | préfixe |
+|---|---|
+| `lib/features/bank-import/BankImportUpload.svelte:547` | `bank-import-info-` |
+| `lib/features/journal-entries/JournalEntryForm.svelte:279` | `journal-` |
+| `lib/features/journal-entries/VatPurchaseAssistant.svelte:62` | `vat-category-` |
+| `lib/features/reminders/reminder-error-label.ts:38` | `reminders-error-` |
+| `lib/features/reports/reports.api.ts:250` | `reports-filename-` |
+| `routes/(app)/accounts/+page.svelte:37` | `account-type-` |
+| `routes/(app)/invoices/due-dates/+page.svelte:344` | `due-dates-filter-` |
+| `routes/(app)/journal-entries/+page.svelte:355` | `journal-` |
+| `routes/(app)/settings/vat-rates/+page.svelte:47` | `vat-category-` |
+| `routes/(app)/supplier-invoices/import/+page.svelte:68` | `imported-supplier-invoices-error-` |
+
+*Un simple compte laisserait passer un ajout compensant un retrait ; et le dev ne doit pas
+**produire** cette liste par l'extraction qui a déjà échoué deux fois, mais la **confronter**.*
 
 **D5 — Les deux gardes se bornent contre le passage à vide.**
 Chacune assert un **minimum de clés effectivement collectées**. *Le principe vient du prototype
@@ -232,14 +282,35 @@ test.
 ⚠️ **Il ne traite QUE les clés absentes des quatre catalogues**, et cette restriction doit être
 écrite dans le script : sans elle, il moissonne les ~1000 clés demandées et sa sortie d'erreur
 annonce **13** replis interpolés au lieu des **5** que cette spec nomme — les 8 autres appartenant
-à des clés déjà traduites (`ManualMatchModal`, `invoices/[id]`, `reports`, `fiscal-years`).
-⚠️ **Il DÉTECTE les conflits de repli plutôt que d'en choisir un.** Six clés manquantes sont
-demandées avec **deux textes de repli différents** selon le site — `credit-notes-title`
-(« Avoirs » / « Avoir »), `payment-batches-col-total` (« Total » / « Montant »),
-`supplier-invoices-col-total` (« TTC » / « Total HT »), `supplier-invoices-field-reference`,
-`supplier-invoices-field-project`, `imported-supplier-invoices-reload-failed`. Un moissonneur qui
-garde le dernier vu fige silencieusement le mauvais libellé ; ces cas vont sur la sortie d'erreur,
-avec leurs variantes, pour arbitrage humain dans la story de rollout concernée.
+à des clés **déjà traduites** : `ManualMatchModal` 1, **`TransactionSplitModal` 2**
+(`reconciliation-split-error-imbalance` et `-balance-indicator` — ce composant en porte donc 7 en
+tout, dont 5 seulement sont manquantes), `invoices/[id]` 1, `reports` 1, `fiscal-years` 3.
+⚠️ **Il DÉTECTE les conflits de repli plutôt que d'en choisir un.** **Sept** clés manquantes sont
+demandées avec **deux textes de repli différents** selon le site :
+
+| clé | variantes |
+|---|---|
+| `credit-notes-title` | « Avoirs » / « Avoir » |
+| `payment-batches-col-total` | « Total » / « Montant » |
+| **`payment-batches-col-date`** | **« Exécution » / « Date d'exécution »** |
+| `supplier-invoices-col-total` | « TTC » / « Total HT » |
+| `supplier-invoices-field-reference` | « Référence » / « Référence (optionnel) » |
+| `supplier-invoices-field-project` | « Projet analytique » / « Projet analytique (optionnel) » |
+| `imported-supplier-invoices-reload-failed` | deux phrases |
+
+Un moissonneur qui garde le dernier vu fige silencieusement le mauvais libellé ; ces cas vont sur
+la sortie d'erreur, avec leurs variantes, pour arbitrage humain dans la story de rollout concernée.
+
+⚠️ **La septième — `payment-batches-col-date` — a manqué à la première rédaction, et pour la
+TROISIÈME fois par la même cause.** C'est le seul conflit dont les **deux replis sont entre
+guillemets doubles**, parce qu'ils contiennent une apostrophe (`"Date d'exécution"`) : une classe
+de caractères négative s'y arrête. Le défaut attrapé en passe 1 sur l'extraction de la **clé** se
+rejoue ici sur l'extraction du **repli**. **AC7-bis vaut donc pour les DEUX arguments d'`i18nMsg`**,
+et le moissonneur emploie le même lecteur de littéral que la garde — pas une expression régulière.
+
+⚠️ **Le nombre « sept » est une valeur de contrôle datée du 2026-08-19, pas une cible.** Le
+moissonneur **calcule** la liste et publie son décompte ; si les deux divergent, c'est la spec
+qu'on recompte, jamais la sortie qu'on ajuste.
 ⚠️ **Motif** : un repli est écrit dans le feu de l'action, souvent sans majuscule, sans point
 final, parfois avec la formulation d'un développeur pressé. **Le laisser devenir un libellé de
 catalogue sans relecture, c'est faire entrer 250 approximations dans le produit.** Chaque story
@@ -269,8 +340,11 @@ vérifiable sans les rechercher :
 
 **Attestation des trois termes de la partie B** : `localité` → `field-city`,
 `contact-error-address-npa-city` ; `prénom` → `field-first-name`, `contact-persons-name-required`,
-`contact-error-person-name` ; `personne de contact` → les six `contact-persons-*` porteurs du mot
-plus `contact-error-person-name`. **10 clés distinctes sur 20**, recompté.
+`contact-error-person-name` ; `personne de contact` → les **cinq** `contact-persons-*` dont le libellé porte le mot
+(`-load-error`, `-add-error`, `-delete-error`, `-title`, `-empty`) plus `contact-error-person-name`,
+soit **6 clés** — le compte du glossaire. L'union des trois groupes fait **10 clés distinctes sur
+20**, `contact-error-person-name` appartenant à deux d'entre eux. *(« Six » avait été écrit sous la
+mention « recompté » en passe 2 : le total restait juste, la ventilation non.)*
 
 **D7-bis — `delete` est renommée `contact-persons-delete` avant d'entrer au catalogue.**
 `ContactPersonsManager.svelte:118` demande `i18nMsg('delete', 'Supprimer')` — une clé **sans
@@ -285,7 +359,7 @@ clés du même composant portent déjà le préfixe `contact-persons-`.
 **D8 — Le glossaire est un INPUT figé, et le pilote en tranche TROIS termes.**
 `docs/i18n-glossaire.md` existe (kickoff du 2026-08-19). Sa **partie A est contraignante** : 48
 équivalences relevées dans les 1216 clés déjà alignées, chacune nommant la clé qui l'atteste.
-Sa **partie B attend l'arbitrage de Guy** — 15 termes sans précédent.
+Sa **partie B attend l'arbitrage de Guy** — **16** termes sans précédent.
 
 ⚠️ **Correction d'une affirmation de la première rédaction de cette spec.** Elle disait
 « aucun terme de la partie B n'apparaît dans les 20 clés du pilote (vérifié) ». **C'est faux, et
@@ -303,7 +377,13 @@ les atteste désormais. **L'arbitrage structurant — « analytique », centres 
 projets — reste intact et hors du pilote** : la story n'est donc pas bloquée, mais elle n'est pas
 non plus neutre terminologiquement, ce qui était l'affirmation d'origine.
 
-**`personne de contact` est à AJOUTER à la partie B** du glossaire dans cette story : il manquait.
+⚠️ **`personne de contact` A DÉJÀ ÉTÉ AJOUTÉ** à la partie B, au commit de spécification de cette
+story (`bb24d94c`, `i18n-glossaire.md:118`) — la rédaction précédente ordonnait de l'ajouter, ce
+qui aurait produit un doublon dans un document que cette même décision déclare « INPUT figé ». La
+story ne fait donc **qu'en promouvoir trois de B vers A** (AC11-bis) ; après quoi la partie B
+comptera **13** entrées, et le « douze » de `i18n-glossaire.md` doit suivre. *Relevé en passe 3 :
+une valeur modifiée par l'édition même de cette spec, dont les compteurs n'avaient pas été
+recomptés.*
 
 **D8-bis — Le découpage par dossier ne fuit pas, et c'est mesuré.** *(Constat de cadrage, non
 exigence : aucun AC ne le contrôle, et c'est délibéré — il justifie le découpage de l'epic, il ne
@@ -314,8 +394,14 @@ Sur les 250 clés manquantes, **2 seulement** sont demandées depuis plus d'un d
 stories de rollout : chaque story peut vider sa part de l'allowlist sans coordination.
 
 **D9 — Registre d'adresse, mesuré et non supposé.**
-`de-CH` **vouvoie** (Sie-Form, 115 messages), `it-CH` **tutoie** (2ᵉ personne du singulier, 31
-contre 1), `en-CH` reste à l'impératif neutre. Les 20 clés du pilote s'y conforment.
+`de-CH` **vouvoie** (Sie-Form, **115 messages** — 117 *lignes*), `en-CH` reste à l'impératif neutre.
+`it-CH` **tutoie** : 31 impératifs à la 2ᵉ personne du singulier contre **11 messages** au registre
+de courtoisie (2 impératifs « Aggiungete » + 10 lignes en `vostro`/`vostra`). Les 20 clés du pilote
+suivent le registre **majoritaire**, soit le tutoiement.
+⚠️ *La rédaction précédente écrivait « 31 contre 1 » — chiffre que la passe 1 avait déjà réfuté
+dans le glossaire, en corrigeant la prose sans toucher ni la ligne de tableau au-dessus, ni cette
+décision qui la cite. Onze messages sur 1216 ne sont plus « une anomalie ponctuelle » ; la décision
+de tutoyer survit, son ordre de grandeur non.*
 
 **D10 — Où les gardes s'exécutent, et pourquoi ça suffit.**
 Garde A dans `cargo test -p kesh-i18n` (donc dans le gate backend et en CI). Garde B dans
@@ -340,34 +426,47 @@ celui annoncé, et il n'aurait pas été trouvé sans lire le script.*
    clés et la locale.
 2. **AC2** — Ce test compare des **ensembles de clés**, sans jamais appeler `format()` ni
    `all_messages()`. *(Vérifiable : le corps du test ne mentionne ni l'une ni l'autre.)*
-3. **AC3** — Le même test échoue si l'allowlist de parité contient une clé **désormais présente**
-   dans les quatre locales **ou absente de `fr-CH`** (contrôle symétrique, D3).
+3. **AC3** — Le même test échoue si l'allowlist de parité contient une clé **présente dans au
+   moins une** des trois locales cibles, **ou absente de `fr-CH`** (contrôle symétrique, D3).
+   ⚠️ **« Au moins une », pas « les quatre »** : une story de rollout qui traduirait en `de-CH` et
+   `it-CH` en oubliant `en-CH`, et laisserait la ligne d'allowlist, resterait invisible des deux
+   contrôles — la garde verte sur le défaut même qu'elle doit rendre bruyant.
 4. **AC4** — Un test vitest échoue si une clé littérale passée à `i18nMsg()` **n'existe dans
    aucun** des quatre catalogues, allowlist de dette déduite. Le message nomme la clé **et le
    fichier** qui la demande.
 5. **AC5** — Le même test échoue si l'allowlist de dette contient une clé désormais présente
-   **ou une clé que plus aucun fichier ne demande** (contrôle symétrique, D3).
-6. **AC6** — Le test vitest balaie **tout** `frontend/src` — `src/routes/` compris, où vivent
-   **197 des 250** clés manquantes —, à **une seule exception écrite** : les fichiers dont le nom
+   **ou une clé que plus rien ne demande** (contrôle symétrique, D3). ⚠️ **« Demandées » est
+   l'union des littéraux statiques ET des expansions de `MOTIFS_DYNAMIQUES`** — sans quoi ce
+   contrôle chasserait les 10 clés `imported-supplier-invoices-error-*` que l'AC8 impose à cette
+   même allowlist, et le raccourci consisterait à les retirer, effaçant la traçabilité vers 23-3.
+6. **AC6** — Le test vitest balaie **tout** `frontend/src` — `src/routes/` compris, d'où
+   **197 des 250** clés manquantes sont demandées **exclusivement** (199 le sont depuis au moins un
+   fichier de `routes/` ; les 2 restantes, `field-first-name` et `field-last-name`, sont partagées
+   avec `lib/features/contacts`, cf. D8-bis) —, à **une seule exception écrite** : les fichiers dont le nom
    contient `.test.` (D5-bis), qui demandent des clés fictives (`compteur`, `une-cle`) devant
    rester absentes des catalogues.
 7. **AC7** — Les **8 préfixes dynamiques** (sur **10 sites d'appel**) sont déclarés avec leurs
    valeurs et contrôlés comme des clés ordinaires ; chaque préfixe porte une assertion de
-   cardinalité, et la garde **compare la LISTE des sites** (fichier + préfixe) à une liste attendue
-   de **10** — et non leur seul nombre : une assertion de cardinalité dit « 9 au lieu de 10 » sans
-   dire lequel, et un ajout compensant un retrait passerait inaperçu.
+   cardinalité, et la garde **compare la LISTE des sites** (fichier + préfixe) à la **liste de
+   référence donnée en D4** — et non leur seul nombre : un compte dit « 9 au lieu de 10 » sans dire
+   lequel, et un ajout compensant un retrait passerait inaperçu. **Le fichier de garde n'importe
+   aucun module de production** : les valeurs et les cardinalités y sont écrites en dur (D4), ce
+   qui se vérifie sur ses `import`.
 7-bis. **AC7-bis** — L'extracteur de la garde B porte **son propre test**, qui le confronte aux
    deux formes réelles connues pour casser une extraction naïve :
    (a) un gabarit dont **l'interpolation contient des apostrophes** —
    `` i18nMsg(`bank-import-info-${info.replace(/_/g, '-')}`, info) ``
    (`BankImportUpload.svelte:547`), que ne traverse aucune classe `[^'"`]*` ;
-   (b) un appel **réparti sur plusieurs lignes** — `supplier-invoices/import/+page.svelte:84-89`,
+   (b) un appel **réparti sur plusieurs lignes** — `supplier-invoices/import/+page.svelte:85-88`,
    que ne voit aucun balayage ligne à ligne.
    Sans ce test, la garde hérite du défaut de méthode qui a fait manquer un motif entier à la
    première rédaction de cette spec.
-7-ter. **AC7-ter** — La déclaration de `vat-category-*` porte, en commentaire, le fait que les
-   catégories créées par un administrateur (colonne libre, sans `CHECK`) **ne sont couvertes par
-   aucune garde**.
+7-ter. **AC7-ter** — Les **deux** ensembles ouverts portent, en commentaire, le fait qu'aucune
+   garde ne les borne : `vat-category-*` (colonne libre, sans `CHECK`, catégories créées par un
+   administrateur) et **`bank-import-info-*`** (valeurs poussées par
+   `crates/kesh-api/src/routes/bank_imports.rs`, aucune carte frontend à confronter — le fichier
+   Rust est nommé comme source de vérité). Leurs valeurs sont déclarées **après transformation**
+   (`bank-csv-profile-auto-matched`, en tirets).
 8. **AC8** — Les **10 clés `imported-supplier-invoices-error-*`** révélées par cette énumération
    figurent dans l'allowlist de dette avec le commentaire qui dit **quelle story les videra**
    (23-3).
@@ -378,8 +477,10 @@ celui annoncé, et il n'aurait pas été trouvé sans lire le script.*
 10. **AC10** — `frontend/scripts/harvest-i18n-fallbacks.mjs` existe, rend un fragment `.ftl`
     trié sur la sortie standard, **ne modifie aucun fichier**, **ne traite que les clés absentes
     des quatre catalogues**, et liste séparément sur la sortie d'erreur (a) les clés sans repli
-    littéral — **5**, non 13, l'écart venant du périmètre — et (b) les **6 clés dont le repli
-    diffère selon le site d'appel**, avec leurs variantes.
+    littéral — **5**, non 13, l'écart venant du périmètre — et (b) les **7 clés dont le repli
+    diffère selon le site d'appel**, avec leurs variantes. ⚠️ **Ces deux nombres sont des valeurs
+    de contrôle datées, pas des cibles** : le moissonneur les **calcule** et publie son décompte ;
+    un écart se recompte, il ne s'ajuste pas.
 11. **AC11** — Les **20 clés du domaine `contacts`** existent dans les **quatre** locales, sont
     retirées de l'allowlist de dette, et leurs libellés `de-CH` / `it-CH` / `en-CH` respectent la
     partie A du glossaire et le registre de D9. La clé `delete` est entrée sous le nom
@@ -391,7 +492,13 @@ celui annoncé, et il n'aurait pas été trouvé sans lire le script.*
 12. **AC12** — `duplicate-i18n-keys.test.ts` est **supprimé**, sa fonction étant reprise par la
     garde générale. *(Le contrôle qu'il exerçait ne doit pas disparaître : les **cinq** clés
     `contact-duplicate-heading`, `-others-count`, `-others-count-one`, `-ide-active`,
-    `-ide-archived` restent couvertes, désormais par la garde B.)* ⚠️ **Les nommer plutôt que les
+    `-ide-archived` restent couvertes — leur **existence** par la garde B, leur **présence dans
+    les quatre locales** par la garde A.)*
+12-ter. **AC12-ter** — Le **second** contrôle du fichier supprimé — « le catalogue n'a pas de clé
+    du domaine que personne ne demande » — est **repris dans la garde B, borné aux préfixes
+    déclarés à couverture close** (`contact-duplicate-*` pour commencer, D2). Il ne se généralise
+    pas : le catalogue sert aussi les PDF et les rapports, et `reports-filename-*` déclare 7 clés
+    pour 5 valeurs de `ReportType`. ⚠️ **Les nommer plutôt que les
     compter est délibéré** : la première rédaction disait « quatre », valeur juste jusqu'à la
     passe 4 de la 22-2b qui a ajouté `-others-count-one`. Un nombre se démode en silence, une
     liste se confronte.
@@ -409,29 +516,31 @@ celui annoncé, et il n'aurait pas été trouvé sans lire le script.*
   - [ ] Comparaison des quatre ensembles dans les deux sens, message d'échec nommant clés et locale
   - [ ] `crates/kesh-i18n/dette-parite-connue.txt` — les 57 clés, triées, en-tête explicatif
   - [ ] Assertions « allowlist obsolète » **dans les deux sens** + borne de collecte (`>= 1200` par locale)
-- [ ] **T2 — Garde B, existence des clés demandées** (AC4, AC5, AC6, AC9, AC12, AC12-bis)
+- [ ] **T2 — Garde B, existence des clés demandées** (AC4, AC5, AC6, AC9, AC12, AC12-bis, AC12-ter)
   - [ ] `frontend/src/lib/shared/i18n-keys.test.ts` — parcours de tout `src` **hors fichiers `.test.*`** (D5-bis), lecture des 4 `.ftl`
   - [ ] `frontend/src/lib/shared/i18n-dette-connue.ts` — 250 + 10 clés, triées, en-tête qui nomme les stories de résorption
   - [ ] Assertions « allowlist obsolète » **dans les deux sens** + borne globale (`>= 900`) + borne `.ts` (`>= 3`)
-  - [ ] Suppression de `duplicate-i18n-keys.test.ts` — **et conservation de `contacts-i18n-realpath.test.ts`**
+  - [ ] Suppression de `duplicate-i18n-keys.test.ts` — **ses DEUX contrôles repris** (existence + orphelines bornées, AC12-ter) — **et conservation de `contacts-i18n-realpath.test.ts`**
 - [ ] **T3 — Motifs dynamiques** (AC7, AC7-bis, AC7-ter, AC8)
   - [ ] Table `MOTIFS_DYNAMIQUES` : **8 préfixes**, valeurs en dur, `bank-import-info-*` compris
   - [ ] Assertion de cardinalité par préfixe **+ assertion sur le nombre de sites (10)**
   - [ ] Extracteur robuste **aux apostrophes dans l'interpolation ET aux appels multi-lignes**, avec son test (AC7-bis)
-  - [ ] Comparaison de la **liste** des 10 sites, pas de leur seul nombre
-  - [ ] Commentaire d'angle mort sur `vat-category-*` (catégories admin non couvertes, AC7-ter)
+  - [ ] Comparaison de la **liste** des 10 sites contre la table de référence de D4
+  - [ ] Aucun `import` de module de production dans le fichier de garde (AC7)
+  - [ ] Commentaires d'angle mort sur **`vat-category-*` ET `bank-import-info-*`** (AC7-ter), valeurs déclarées **après transformation**
   - [ ] Les 10 `imported-supplier-invoices-error-*` en allowlist, commentaire « résorbées par 23-3 »
 - [ ] **T4 — Moissonneur** (AC10)
   - [ ] `frontend/scripts/harvest-i18n-fallbacks.mjs`, sortie standard uniquement
   - [ ] Périmètre restreint aux clés absentes des 4 catalogues
-  - [ ] Sortie d'erreur : 5 clés sans repli littéral **+ 6 clés à repli divergent**
+  - [ ] Sortie d'erreur : 5 clés sans repli littéral **+ 7 clés à repli divergent** (valeurs de contrôle datées — le script les calcule)
+  - [ ] **Même lecteur de littéral que la garde** pour le repli comme pour la clé (AC7-bis)
 - [ ] **T5 — Pilote `contacts`** (AC11, AC11-bis)
   - [ ] Renommer `delete` → `contact-persons-delete` dans `ContactPersonsManager.svelte:118` (D7-bis)
   - [ ] **Substituer la ligne correspondante de `KNOWN_VIOLATIONS`** (`lint-i18n-ownership.js:112`) — sans quoi `npm run lint-i18n-ownership` rougit au gate AC13
   - [ ] Moisson des 20 replis, **relecture** des libellés `fr-CH` avant de les figer
   - [ ] Traduction `de-CH` / `it-CH` / `en-CH` sur la partie A du glossaire, registre D9
   - [ ] Retrait des 20 clés de l'allowlist de dette
-  - [ ] **Promouvoir `localité`, `prénom` et `personne de contact` en partie A** de `docs/i18n-glossaire.md`, avec la clé qui les atteste
+  - [ ] **Promouvoir `localité`, `prénom` et `personne de contact` en partie A** de `docs/i18n-glossaire.md`, avec la clé qui les atteste — et **recompter la partie B (13 après promotion)** ainsi que sa ligne « douze autres »
 - [ ] **T6 — Gates** (AC13)
   - [ ] Gate backend complet, gate frontend complet, avant tout push
 
@@ -480,9 +589,17 @@ Commande de recompte, à exécuter et non à croire :
 
 ```sh
 cd crates/kesh-i18n/locales
-LC_ALL=C comm -23 <(grep -oE '^[a-z0-9-]+ =' fr-CH/messages.ftl | LC_ALL=C sort -u) \
-                  <(grep -oE '^[a-z0-9-]+ =' de-CH/messages.ftl | LC_ALL=C sort -u) | wc -l
+LC_ALL=C comm -23 <(grep -oE '^[a-zA-Z][A-Za-z0-9_-]* *=' fr-CH/messages.ftl | LC_ALL=C sort -u) \
+                  <(grep -oE '^[a-zA-Z][A-Za-z0-9_-]* *=' de-CH/messages.ftl | LC_ALL=C sort -u) | wc -l
 ```
+
+⚠️ **La classe de caractères est celle du parseur, et ce n'est pas un détail de style.** Un
+`[a-z0-9-]` rate `email-templates-type-invoice_send` et `…_reminder` — les deux seules clés à tiret
+bas — et rend **1271** là où le tableau ci-dessus annonce **1273**. Le delta de 57 reste juste par
+accident (les deux clés existent dans les quatre locales), mais une commande « à exécuter et non à
+croire » qui contredit le tableau de sa propre section fait conclure à une dérive inexistante.
+*C'est le jumeau, côté shell, de la classe négative qu'AC7-bis interdit côté extraction : troisième
+famille du même défaut dans ce document.*
 
 ⚠️ **`LC_ALL=C` n'est pas cosmétique** : sans lui, `comm` avertit sur stderr que ses entrées ne
 sont pas triées (la collation `fr_FR.UTF-8` ordonne les tirets autrement que `sort` ne le suppose)
@@ -602,6 +719,57 @@ au titre seul) ; l'assertion sur les motifs comptait les sites au lieu de compar
 (un ajout compensant un retrait passait inaperçu) ; D8 attestait trois termes sans donner les
 **20 clés du pilote**, désormais nommées ; D8-bis est requalifiée en **constat de cadrage** — elle
 justifie le découpage de l'epic, elle n'exige rien de cette story.
+
+### Passe 3 de `bmad-create-story validate` — 2026-08-19, Opus ×3, contextes frais
+
+**Trend : 0 CRITICAL · 2 HIGH · 10 MEDIUM (dédoublonnés) · 6 LOW.** BlindHunter 0/2/4/2,
+EdgeCaseHunter 0/1/6/2, AcceptanceAuditor 0/0/6/6. **Les deux HIGH ont convergé sur les trois
+lentilles.**
+
+**HIGH-1 — sept clés à repli divergent, pas six.** `payment-batches-col-date` manquait
+(« Exécution » sur un en-tête de colonne, « Date d'exécution » sur la fiche). **Et c'est la
+troisième récidive de la même cause** : c'est le seul conflit dont les deux replis sont entre
+**guillemets doubles**, parce qu'ils contiennent une apostrophe — une classe de caractères négative
+s'y arrête. Le défaut attrapé en passe 1 sur l'extraction de la **clé** s'était simplement déplacé
+sur l'extraction du **repli**. AC7-bis vaut désormais pour les deux arguments d'`i18nMsg`.
+⚠️ *La vérification que j'ai écrite pour contrôler ce finding reproduisait elle-même le défaut et
+rendait 6 : il a fallu un vrai lecteur de littéral pour obtenir 7. Quatrième occurrence, dans
+l'outil de contrôle cette fois.*
+
+**HIGH-2 — `bank-import-info-*` est un second angle mort, et pire que le premier.** Ses valeurs
+sont poussées par le **backend Rust** (`bank_imports.rs:693` et `:1668`) ; le frontend n'a qu'un
+`informational: string[]`. **Il n'existe donc aucune carte de production à confronter**, et
+l'assertion de cardinalité que D4 promettait y est verte à jamais. Un troisième code informationnel
+s'afficherait en `snake_case` brut dans les quatre langues sans qu'aucune garde ne bouge — le test
+muet, sur le préfixe même dont l'oubli était le CRITICAL de la passe 1. AC7-ter couvre désormais
+**les deux** ensembles ouverts, et les valeurs se déclarent **après transformation**.
+
+**MEDIUM retenus, par famille.**
+*Mécanisme* : le fichier supprimé portait **deux** contrôles et AC12 n'en reprenait qu'un — celui
+des **orphelines** disparaissait, alors que l'AC promettait sa conservation (D2 amendée, AC12-ter) ;
+AC7 exigeait une « liste attendue de 10 sites » que la spec ne donnait nulle part (table de
+référence ajoutée en D4) ; D4 prescrivait encore le simple comptage qu'AC7 déclarait insuffisant —
+contradiction créée par le patch de passe 2 ; la clause « valeurs en dur, jamais lues depuis la
+production » n'était exigible par aucun AC ; l'allowlist de parité était indexée par clé et non par
+locale, laissant passer une traduction partielle ; et « demandées » n'était pas défini comme
+l'union des littéraux **et** des expansions, si bien qu'AC5 aurait chassé les 10 clés qu'AC8 impose.
+*Comptes rendus* : la partie B du glossaire compte **16** entrées et non 15 — `personne de contact`
+y ayant été ajouté par le commit de création de cette spec, l'instruction « à ajouter » aurait
+produit un doublon ; le « douze autres » devient treize ; l'attestation disait « six »
+`contact-persons-*` pour **cinq** ; et `it-CH` compte **11 messages** au registre de courtoisie, pas
+un — chiffre que la passe 1 avait réfuté dans la prose du glossaire **sans toucher la ligne de
+tableau six lignes plus haut**, ni la décision D9 qui la cite.
+
+**LOW retenus** : la commande de recompte employait `[a-z0-9-]` et rendait **1271** au lieu de 1273,
+ratant les deux seules clés à tiret bas — *jumeau shell de la classe négative qu'AC7-bis interdit* ;
+trois citations imprécises (`:84-89` → `:85-88`, l'attribution des 8 replis interpolés, « 6 appels »
+pour 4) ; et « 197 sous `routes/` » est vrai **exclusivement** (199 au moins partiellement).
+
+⚠️ **Ce que ce trend dit, et qui appelle un arbitrage.** La sévérité maximale fait
+`CRITICAL → HIGH → HIGH` : le plafond **stagne**, ce que la § *Règle de splitting préventif* traite
+comme un signal de non-convergence (`N+1 ≥ N`). Le volume au-dessus de LOW ne décroît pas non plus
+(11 → 10 → 12). **Et le motif est stable sur les trois passes : la majorité des findings portent sur
+ce que la passe précédente vient d'écrire**, pas sur la spec d'origine.
 
 ## Dev Agent Record
 

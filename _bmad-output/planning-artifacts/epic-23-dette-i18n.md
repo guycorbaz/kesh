@@ -32,15 +32,15 @@ Commande de recompte, à rejouer et non à croire :
 
 ```sh
 cd crates/kesh-i18n/locales
-LC_ALL=C comm -23 <(grep -oE '^[a-z0-9-]+ =' fr-CH/messages.ftl | LC_ALL=C sort -u) \
-                  <(grep -oE '^[a-z0-9-]+ =' de-CH/messages.ftl | LC_ALL=C sort -u) | wc -l
+LC_ALL=C comm -23 <(grep -oE '^[a-zA-Z][A-Za-z0-9_-]* *=' fr-CH/messages.ftl | LC_ALL=C sort -u) \
+                  <(grep -oE '^[a-zA-Z][A-Za-z0-9_-]* *=' de-CH/messages.ftl | LC_ALL=C sort -u) | wc -l
 ```
 
 ### Répartition de [#316] par dossier — elle donne le découpage
 
 | clés | dossier |
 |---:|---|
-| 99 | `routes/(app)/supplier-invoices` |
+| 99 | `routes/(app)/supplier-invoices` (+ 10 clés de la famille dynamique `imported-supplier-invoices-error-*`) |
 | 30 | `routes/(app)/payment-batches` |
 | 30 | `routes/(app)/settings` |
 | 20 | `lib/features/reconciliation` (15 + les 5 sans repli littéral) |
@@ -59,7 +59,8 @@ LC_ALL=C comm -23 <(grep -oE '^[a-z0-9-]+ =' fr-CH/messages.ftl | LC_ALL=C sort 
 - **`npm run check`** (svelte-check) ne connaît pas les clés i18n : ce sont des littéraux de chaîne.
 - **`npm run lint-i18n-ownership`** contrôle l'**appartenance** d'un namespace à un dossier
   (`keyBelongsToFeature`), jamais l'**existence** de la clé — et il ne balaie que
-  `src/lib/features/`, alors que **197 des 250** manquantes vivent sous `src/routes/`.
+  `src/lib/features/`, alors que **197 des 250** manquantes sont demandées **exclusivement** depuis `src/routes/`
+  (199 depuis au moins un fichier de `routes/`).
 - **la suite E2E** tourne en **français**, où le repli est rigoureusement indiscernable de la traduction.
 
 ⚠️ **Et le repli a DEUX chemins, ce que la première rédaction de ce plan taisait.** `all_messages`
