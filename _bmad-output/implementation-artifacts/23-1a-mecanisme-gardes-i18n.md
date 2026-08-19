@@ -2,7 +2,19 @@
 
 ## Status
 
-review
+done
+
+**Clôturée le 2026-08-19** après **quatre passes** de `bmad-code-review` — Sonnet, Haiku, Opus, puis
+une passe ciblée à lentille unique. Trend `4 HIGH → 1 → 3 → 1`.
+
+⚠️ **Le motif de cette boucle mérite d'être retenu, parce qu'il est net** : **chacune des quatre
+passes a trouvé une régression du patch précédent, jamais un défaut de la conception initiale.** Le
+code d'origine a tenu ; ce sont les correctifs qui ont cassé, quatre fois de suite. Les trois
+derniers HIGH étaient **dormants** — aucun n'a jamais fait bouger un compteur.
+
+**L'arrêt repose sur une vérification qui ne partage aucune hypothèse avec le code** : deux oracles
+AST — le parseur TypeScript et le compilateur Svelte — confrontés au lecteur sur 277 fichiers,
+**zéro écart** sur les sites d'appel comme sur les commentaires.
 
 Première moitié du split de la **23-1**, arbitré par Guy le 2026-08-19 après trois passes de
 `bmad-create-story validate` (`CRITICAL → HIGH → HIGH` : plafond de sévérité stagnant, § *Règle de
