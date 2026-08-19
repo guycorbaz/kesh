@@ -115,8 +115,13 @@ n'est jamais reconnu. Le recensement rendait « 8 littéraux » — coïncidence
 8 préfixes réels — dont deux étaient les deux sites de `vat-category-`, et il manquait une famille
 entière.
 
+⚠️ **Et le gabarit n'est pas la seule forme qui casse une extraction naïve** : l'appel lui-même
+s'écrit parfois **sur plusieurs lignes** — `supplier-invoices/import/+page.svelte:84-89` place
+`i18nMsg(`, sa clé et son repli sur trois lignes distinctes. Une extraction ligne à ligne les
+manque toutes.
+
 **Conséquence pour l'implémentation, et c'est un AC** : l'extraction de la garde B ne doit pas
-reposer sur une classe de caractères négative. Elle doit apparier l'appel `i18nMsg(` puis **lire le
+reposer sur une classe de caractères négative, ni sur un balayage ligne à ligne. Elle doit apparier l'appel `i18nMsg(` puis **lire le
 littéral en respectant l'échappement et l'imbrication** — ou, à défaut, recenser séparément **tous**
 les gabarits `` ` ``…`${`…`}`…`` `` et exiger que chacun soit déclaré dans `MOTIFS_DYNAMIQUES`.
 Une garde qui hérite du défaut de méthode de sa propre spec ne verrait pas le prochain
@@ -185,15 +190,40 @@ existent pour supprimer.*
 le seul contrôle qui aurait attrapé `bank-import-info-*`.
 
 **D5 — Les deux gardes se bornent contre le passage à vide.**
-Chacune assert un **minimum de clés effectivement collectées** (garde B : `>= 900` littéraux
-demandés — 1010 mesurés ; garde A : `>= 1200` clés par locale — 1216 mesurés). Sans cette borne,
-un motif de collecte cassé rend un test vert qui ne teste rien.
-⚠️ **Une borne globale ne voit pas une perte PARTIELLE, et c'est mesuré** : **997** des 1002 clés
-sont demandées depuis des `.svelte` et **5 seulement** depuis des `.ts`. Un filtre d'extension
-réduit par erreur à `/\.svelte$/` ferait tomber le total de 1002 à 997 — **toujours ≥ 900**, donc
-toujours vert. La garde B porte donc une **seconde borne, par extension** : au moins 3 clés
-collectées depuis des fichiers `.ts`. *Le prototype 22-2b portait déjà
-cette borne (`expect(demandees.size).toBeGreaterThanOrEqual(5)`) — elle est reprise et élargie.*
+Chacune assert un **minimum de clés effectivement collectées**. *Le principe vient du prototype
+22-2b, dont le `expect(demandees.size).toBeGreaterThanOrEqual(5)` bornait la collecte du seul
+domaine `contact-duplicate-*` ; la garde générale le reprend à son échelle.*
+
+| borne | valeur | mesuré |
+|---|---|---|
+| garde A — clés par locale | `>= 1200` | 1216 |
+| garde B — littéraux demandés | `>= 900` | **1002 statiques** |
+| garde B — clés issues de fichiers `.ts` | `>= 3` | 5 |
+
+⚠️ **Les deux nombres de la spec ne se contredisent pas, et il faut le dire une fois pour
+toutes** : `i18nMsg()` est appelé avec **1010 littéraux distincts**, dont **8 sont des gabarits
+dynamiques** ; il reste donc **1002 clés statiques**, et c'est cette valeur que borne la garde B.
+*(Écart relevé en passe 2 — les deux chiffres étaient justes, leur relation n'était écrite nulle
+part.)*
+
+⚠️ **Une borne globale ne voit pas une perte PARTIELLE, et c'est mesuré** : **997** de ces 1002
+clés viennent de `.svelte` et **5 seulement** de `.ts`. Un filtre d'extension réduit par erreur à
+`/\.svelte$/` ferait tomber le total à 997 — **toujours ≥ 900**, donc toujours vert. D'où la
+troisième ligne du tableau.
+⚠️ **Cette borne `.ts` compte les fichiers de PRODUCTION**, les `.test.*` étant hors collecte
+(cf. D5-bis) — sans quoi la garde, elle-même écrite dans un `.ts`, pourrait se compter et
+survivre à la perte de tout ce qu'elle doit surveiller.
+
+**D5-bis — Les fichiers `.test.*` sont HORS COLLECTE, et ce n'est pas un détail de commodité.**
+La garde B balaie `frontend/src` **à l'exception des fichiers dont le nom contient `.test.`** —
+comme le fait déjà le prototype 22-2b.
+⚠️ **Sans cette exclusion, la garde rougirait dès sa première exécution, et pour de mauvaises
+raisons** : `i18n.svelte.test.ts` appelle `i18nMsg('compteur', …)` et `i18nMsg('une-cle', …)`,
+**clés fictives absentes des quatre catalogues** et qui doivent le rester — les traduire serait
+absurde, les inscrire à l'allowlist de dette encore plus, puisqu'elles ne sont pas de la dette.
+⚠️ **AC6 dit « tout `frontend/src` » et cette exclusion en est la seule exception** : elle est
+écrite ici pour qu'un lecteur ne la prenne pas pour un oubli, ni ne l'élargisse aux `.svelte` de
+test.
 
 **D6 — Le moissonneur PROPOSE, il n'écrit jamais dans les catalogues.**
 `frontend/scripts/harvest-i18n-fallbacks.mjs` — il lit `src`, extrait les couples
@@ -229,6 +259,19 @@ la story-zéro ». C'était faux, D8 le disait déjà six lignes plus bas, et le
 cohabité un temps dans ce document — une correction appliquée au site signalé et pas à sa source.
 Relevé en passe 1 de `validate`.*
 
+**Les 20 clés du pilote, nommées** — pour que l'attestation des trois termes de D8 soit
+vérifiable sans les rechercher :
+
+| dossier | clés |
+|---|---|
+| `lib/features/contacts` (12) | `contact-persons-add`, `contact-persons-add-error`, `contact-persons-delete-error`, `contact-persons-empty`, `contact-persons-hint`, `contact-persons-load-error`, `contact-persons-name-required`, `contact-persons-role`, `contact-persons-title`, **`delete`** (cf. D7-bis), `field-first-name`, `field-last-name` |
+| `routes/(app)/contacts` (8) | `contact-error-address-npa-city`, `contact-error-person-name`, `field-address`, `field-building`, `field-city`, `field-country`, `field-postal-code`, `field-street` |
+
+**Attestation des trois termes de la partie B** : `localité` → `field-city`,
+`contact-error-address-npa-city` ; `prénom` → `field-first-name`, `contact-persons-name-required`,
+`contact-error-person-name` ; `personne de contact` → les six `contact-persons-*` porteurs du mot
+plus `contact-error-person-name`. **10 clés distinctes sur 20**, recompté.
+
 **D7-bis — `delete` est renommée `contact-persons-delete` avant d'entrer au catalogue.**
 `ContactPersonsManager.svelte:118` demande `i18nMsg('delete', 'Supprimer')` — une clé **sans
 domaine**, aujourd'hui absente des quatre catalogues et donc inoffensive.
@@ -262,7 +305,9 @@ non plus neutre terminologiquement, ce qui était l'affirmation d'origine.
 
 **`personne de contact` est à AJOUTER à la partie B** du glossaire dans cette story : il manquait.
 
-**D8-bis — Le découpage par dossier ne fuit pas, et c'est mesuré.**
+**D8-bis — Le découpage par dossier ne fuit pas, et c'est mesuré.** *(Constat de cadrage, non
+exigence : aucun AC ne le contrôle, et c'est délibéré — il justifie le découpage de l'epic, il ne
+décrit rien que cette story doive produire.)*
 Sur les 250 clés manquantes, **2 seulement** sont demandées depuis plus d'un dossier —
 `field-first-name` et `field-last-name`, et **les deux sont à l'intérieur du pilote**
 (`features/contacts` et `routes/(app)/contacts`). Aucune clé n'est donc partagée entre deux
@@ -276,8 +321,17 @@ contre 1), `en-CH` reste à l'impératif neutre. Les 20 clés du pilote s'y conf
 Garde A dans `cargo test -p kesh-i18n` (donc dans le gate backend et en CI). Garde B dans
 `npm run test:unit` (donc dans le gate frontend et en CI). **Aucun nouveau script npm, aucune
 nouvelle étape de CI** : les deux gates existants les portent. `lint-i18n-ownership` reste tel
-quel — il répond à une autre question (l'appartenance d'un namespace à un dossier) et son
-allowlist `KNOWN_VIOLATIONS` n'est pas touchée.
+quel — il répond à une autre question (l'appartenance d'un namespace à un dossier).
+⚠️ **UNE exception, et elle est imposée par D7-bis** : renommer `delete` en
+`contact-persons-delete` **crée une violation d'appartenance**. Le lint compare le *namespace* de
+la clé (`getNamespace` → `contact`) au nom du *dossier* (`contacts`) : l'écart singulier/pluriel de
+l'issue #30 fait que **les neuf clés sœurs du même composant sont déjà inscrites** à
+`KNOWN_VIOLATIONS` (`lint-i18n-ownership.js:104-118`). La ligne `…:delete` devient donc
+`…:contact-persons-delete` — **une substitution, pas un ajout**.
+⚠️ *Une lentille de passe 2 avait annoncé l'inverse — que le lint « détecterait une exception
+morte » et échouerait. **Réfuté au sol** : `KNOWN_VIOLATIONS` n'est consulté que par
+`.has(violationKey)` (`:189`), aucune entrée morte n'est détectée. Le défaut réel est symétrique de
+celui annoncé, et il n'aurait pas été trouvé sans lire le script.*
 
 ## Acceptance Criteria
 
@@ -294,15 +348,22 @@ allowlist `KNOWN_VIOLATIONS` n'est pas touchée.
 5. **AC5** — Le même test échoue si l'allowlist de dette contient une clé désormais présente
    **ou une clé que plus aucun fichier ne demande** (contrôle symétrique, D3).
 6. **AC6** — Le test vitest balaie **tout** `frontend/src` — `src/routes/` compris, où vivent
-   **197 des 250** clés manquantes.
+   **197 des 250** clés manquantes —, à **une seule exception écrite** : les fichiers dont le nom
+   contient `.test.` (D5-bis), qui demandent des clés fictives (`compteur`, `une-cle`) devant
+   rester absentes des catalogues.
 7. **AC7** — Les **8 préfixes dynamiques** (sur **10 sites d'appel**) sont déclarés avec leurs
    valeurs et contrôlés comme des clés ordinaires ; chaque préfixe porte une assertion de
-   cardinalité, et la garde porte une assertion sur le **nombre de sites** (`10`), seule capable
-   d'attraper un gabarit neuf.
-7-bis. **AC7-bis** — L'extraction de la garde B reconnaît un appel `i18nMsg()` dont le gabarit
-   **contient des apostrophes dans son interpolation** — cas réel `bank-import-info-*`
-   (`BankImportUpload.svelte:547`). *(Vérifiable par un test de l'extracteur sur cette chaîne
-   exacte.)* Sans quoi la garde hérite du défaut de méthode qui a fait manquer ce motif à la
+   cardinalité, et la garde **compare la LISTE des sites** (fichier + préfixe) à une liste attendue
+   de **10** — et non leur seul nombre : une assertion de cardinalité dit « 9 au lieu de 10 » sans
+   dire lequel, et un ajout compensant un retrait passerait inaperçu.
+7-bis. **AC7-bis** — L'extracteur de la garde B porte **son propre test**, qui le confronte aux
+   deux formes réelles connues pour casser une extraction naïve :
+   (a) un gabarit dont **l'interpolation contient des apostrophes** —
+   `` i18nMsg(`bank-import-info-${info.replace(/_/g, '-')}`, info) ``
+   (`BankImportUpload.svelte:547`), que ne traverse aucune classe `[^'"`]*` ;
+   (b) un appel **réparti sur plusieurs lignes** — `supplier-invoices/import/+page.svelte:84-89`,
+   que ne voit aucun balayage ligne à ligne.
+   Sans ce test, la garde hérite du défaut de méthode qui a fait manquer un motif entier à la
    première rédaction de cette spec.
 7-ter. **AC7-ter** — La déclaration de `vat-category-*` porte, en commentaire, le fait que les
    catégories créées par un administrateur (colonne libre, sans `CHECK`) **ne sont couvertes par
@@ -348,15 +409,16 @@ allowlist `KNOWN_VIOLATIONS` n'est pas touchée.
   - [ ] Comparaison des quatre ensembles dans les deux sens, message d'échec nommant clés et locale
   - [ ] `crates/kesh-i18n/dette-parite-connue.txt` — les 57 clés, triées, en-tête explicatif
   - [ ] Assertions « allowlist obsolète » **dans les deux sens** + borne de collecte (`>= 1200` par locale)
-- [ ] **T2 — Garde B, existence des clés demandées** (AC4, AC5, AC6, AC9, AC12)
-  - [ ] `frontend/src/lib/shared/i18n-keys.test.ts` — parcours de tout `src`, lecture des 4 `.ftl`
+- [ ] **T2 — Garde B, existence des clés demandées** (AC4, AC5, AC6, AC9, AC12, AC12-bis)
+  - [ ] `frontend/src/lib/shared/i18n-keys.test.ts` — parcours de tout `src` **hors fichiers `.test.*`** (D5-bis), lecture des 4 `.ftl`
   - [ ] `frontend/src/lib/shared/i18n-dette-connue.ts` — 250 + 10 clés, triées, en-tête qui nomme les stories de résorption
   - [ ] Assertions « allowlist obsolète » **dans les deux sens** + borne globale (`>= 900`) + borne `.ts` (`>= 3`)
   - [ ] Suppression de `duplicate-i18n-keys.test.ts` — **et conservation de `contacts-i18n-realpath.test.ts`**
-- [ ] **T3 — Motifs dynamiques** (AC7, AC8)
+- [ ] **T3 — Motifs dynamiques** (AC7, AC7-bis, AC7-ter, AC8)
   - [ ] Table `MOTIFS_DYNAMIQUES` : **8 préfixes**, valeurs en dur, `bank-import-info-*` compris
   - [ ] Assertion de cardinalité par préfixe **+ assertion sur le nombre de sites (10)**
-  - [ ] Extracteur robuste aux apostrophes dans l'interpolation, avec son test (AC7-bis)
+  - [ ] Extracteur robuste **aux apostrophes dans l'interpolation ET aux appels multi-lignes**, avec son test (AC7-bis)
+  - [ ] Comparaison de la **liste** des 10 sites, pas de leur seul nombre
   - [ ] Commentaire d'angle mort sur `vat-category-*` (catégories admin non couvertes, AC7-ter)
   - [ ] Les 10 `imported-supplier-invoices-error-*` en allowlist, commentaire « résorbées par 23-3 »
 - [ ] **T4 — Moissonneur** (AC10)
@@ -365,6 +427,7 @@ allowlist `KNOWN_VIOLATIONS` n'est pas touchée.
   - [ ] Sortie d'erreur : 5 clés sans repli littéral **+ 6 clés à repli divergent**
 - [ ] **T5 — Pilote `contacts`** (AC11, AC11-bis)
   - [ ] Renommer `delete` → `contact-persons-delete` dans `ContactPersonsManager.svelte:118` (D7-bis)
+  - [ ] **Substituer la ligne correspondante de `KNOWN_VIOLATIONS`** (`lint-i18n-ownership.js:112`) — sans quoi `npm run lint-i18n-ownership` rougit au gate AC13
   - [ ] Moisson des 20 replis, **relecture** des libellés `fr-CH` avant de les figer
   - [ ] Traduction `de-CH` / `it-CH` / `en-CH` sur la partie A du glossaire, registre D9
   - [ ] Retrait des 20 clés de l'allowlist de dette
@@ -378,7 +441,11 @@ allowlist `KNOWN_VIOLATIONS` n'est pas touchée.
 
 - **Ne pas traduire au-delà des 20 clés du pilote.** Une story-zéro qui déborde n'est plus une
   story-zéro, et les rollouts perdent leur mesure.
-- **Ne pas toucher `KNOWN_VIOLATIONS`** de `lint-i18n-ownership.js` : autre question, autre garde.
+- **Ne pas toucher `KNOWN_VIOLATIONS`** de `lint-i18n-ownership.js` — **à UNE ligne près** : celle
+  de `ContactPersonsManager.svelte:delete`, que le renommage de D7-bis fait devenir
+  `…:contact-persons-delete`. C'est une substitution imposée par D7-bis, pas une dérogation à la
+  règle. *(Cette phrase disait « autre question, autre garde » sans exception : elle contredisait
+  D10 et T5 depuis la passe 2, et n'a été rattrapée que par le grep du symptôme.)*
 - **Ne pas « corriger » les 5 clés interpolées** de `TransactionSplitModal` — elles demandent des
   entrées Fluent à variables, et c'est la 23-5 qui les porte.
 - **Ne pas ajouter de clé au catalogue sans l'ajouter aux QUATRE locales** : ce serait creuser
@@ -402,7 +469,7 @@ allowlist `KNOWN_VIOLATIONS` n'est pas touchée.
 |---|---|
 | clés `fr-CH` / `de-CH` / `en-CH` / `it-CH` | 1273 / 1216 / 1216 / 1216 |
 | clés de [#283] | 57, **même ensemble** sur les trois locales, 0 clé en trop |
-| littéraux demandés par `i18nMsg()` | 1010, dont **752 existent** |
+| littéraux demandés par `i18nMsg()` | **1010** distincts = **1002 statiques** + **8 gabarits dynamiques** ; 752 des statiques existent |
 | clés statiques manquantes | **250**, sur 13 dossiers, dont 197 sous `src/routes/` |
 | préfixes dynamiques / sites d'appel | **8** / **10** |
 | clés révélées par les motifs dynamiques | **+10** (`imported-supplier-invoices-error-*`) |
@@ -496,6 +563,45 @@ occurrence « unique » du pluriel de courtoisie italien pour **2 « Aggiungete 
 un — 115 **messages** contiennent « Sie », 117 **lignes**. Le chiffre était juste, l'unité
 manquait ; elle a été ajoutée. L'autre LOW (absence de `LC_ALL=C` dans la commande de recompte) est
 retenu et corrigé.
+
+### Passe 2 de `bmad-create-story validate` — 2026-08-19, Haiku ×3, contextes frais
+
+**Trend : 0 CRITICAL · 4 HIGH · 6 MEDIUM · 2 LOW**, braquées en priorité sur ce que la passe 1
+venait d'écrire. ⚠️ **La sévérité maximale descend de CRITICAL à HIGH** — la boucle converge au
+sens de la § *Règle de splitting préventif*, qui exige un découpage sur `N+1 ≥ N`, pas sur la durée.
+
+**Trois findings de passe 2 portent sur des patches de passe 1**, ce qui confirme le motif de
+l'Epic 22 : la sévérité se déplace vers ce qu'on vient d'écrire.
+
+- **La borne `.ts` (D5)** : mon insertion avait placé le nouveau paragraphe juste avant la phrase
+  qui parlait du prototype 22-2b, faisant lire « ≥ 3 » et « ≥ 5 » comme deux valeurs d'une même
+  borne. Ce sont deux bornes distinctes ; D5 est désormais un tableau.
+- **1010 contre 1002** : les deux chiffres étaient justes et leur relation n'était écrite nulle
+  part — **1010 littéraux distincts = 1002 statiques + 8 gabarits dynamiques**. Dit une fois, à
+  l'endroit qui borne.
+- **Le renommage de `delete` (D7-bis)** contredisait D10 (« `KNOWN_VIOLATIONS` n'est pas
+  touchée »). Le renommage **crée** une violation d'appartenance, l'écart singulier/pluriel de
+  l'issue #30 mettant déjà les neuf clés sœurs à l'allowlist du lint : la ligne se **substitue**.
+
+**Deux angles morts réels trouvés dans le mécanisme** : les fichiers `.test.*` demandent des clés
+**fictives** (`compteur`, `une-cle`) que la garde aurait signalées comme dette dès sa première
+exécution — d'où **D5-bis**, qui écrit l'exclusion au lieu de la sous-entendre ; et l'appel
+`i18nMsg(` de `supplier-invoices/import` s'étend **sur plusieurs lignes**, forme qu'aucun balayage
+ligne à ligne ne voit — ajoutée au test d'extracteur d'**AC7-bis**.
+
+**Trois affirmations RÉFUTÉES au sol, et c'est le mode d'échec Haiku que le `CLAUDE.md` documente** :
+
+| affirmation | vérification |
+|---|---|
+| « le lint échoue sur une exception morte » | `KNOWN_VIOLATIONS` n'est lu que par `.has()` (`:189`) — aucune détection d'entrée morte. Le vrai défaut est **symétrique** de celui annoncé |
+| « `fr-CH` compte 1271 clés » | **1273**, par `grep -cE` et par parseur |
+| « 846 clés statiques » | **1002** |
+
+**MEDIUM retenus** : les titres de T2 et T3 ne nommaient pas les AC-bis/-ter (traçabilité illisible
+au titre seul) ; l'assertion sur les motifs comptait les sites au lieu de comparer leur **liste**
+(un ajout compensant un retrait passait inaperçu) ; D8 attestait trois termes sans donner les
+**20 clés du pilote**, désormais nommées ; D8-bis est requalifiée en **constat de cadrage** — elle
+justifie le découpage de l'epic, elle n'exige rien de cette story.
 
 ## Dev Agent Record
 
