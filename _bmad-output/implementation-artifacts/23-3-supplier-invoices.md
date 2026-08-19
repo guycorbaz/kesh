@@ -288,6 +288,38 @@ ne sélectionne par libellé ; les placeables sont identiques dans les quatre lo
 bloc** ; `QR-Rechnung` / `fattura QR` / `QR-bill` employé partout et **jamais paraphrasé** ;
 `Rappen` / `centesimo` et jamais `Cent`.
 
+## Reprise — où en est la story, et par quoi commencer
+
+*(Écrit à l'interruption de séance du 2026-08-19 au soir, à la demande de Guy.)*
+
+**La story est implémentée et a passé UNE passe de revue.** Tous les gates sont verts, E2E comprise
+(183 passés). L'arbre est propre, les quatre commits sont poussés.
+
+**Par quoi reprendre, dans l'ordre :**
+
+1. ⚠️ **Passe 2 de `bmad-code-review`** — la règle l'appelle, la passe 1 ayant rendu **3 HIGH**.
+   La braquer sur **les six promotions au glossaire** : c'est la remédiation la plus lourde de la
+   passe 1, donc la plus susceptible d'avoir son propre défaut. Sur ce dossier, **huit passes sur
+   neuf ont trouvé une régression du patch précédent**. Modèle : Sonnet ou Haiku, contexte frais.
+2. **PR de la 23-3**, en `refs #316` et **non** `closes` — il restera 166 clés.
+3. **23-4** (93 clés : `settings`, `payment-batches`, `onboarding`, 4 `nav-*`).
+
+**Ce qui attend un arbitrage de Guy, et que je n'ai pas tranché :**
+
+- ⚠️ **Trois PR empilées.** #320 (socle, 23 commits), #322 (parité, `closes #283`, 29 commits **dont
+  ceux de #320**), et la branche 23-3 par-dessus. Chaque PR contient les précédentes, et cela
+  grossit tant que rien n'est mergé. Recommandation : **merger #320 d'abord**, puis rebaser.
+- **`Clôturer` / `Fermer`** s'effondrent en un seul mot dans les trois cibles (`Schliessen`,
+  `Chiudi`, `Close`) alors que le français distingue l'acte comptable irréversible du panneau qu'on
+  referme. La moitié « exercice » est **hors périmètre** de la 23-3 — à porter en 23-4 ou en CR.
+- **Le libellé français `imported-supplier-invoices-save = « Valider la facture »`** est trompeur :
+  le code **crée** la facture. Conservé verbatim ici (hors périmètre), les trois cibles suivent
+  l'acte réel. À corriger dans une story qui touche légitimement le français.
+
+**Résidus laissés avec motif** (accord de `QR-facture`, corrigé au catalogue et au code) : le
+`CHANGELOG` — entrée **publiée** — et `docs/manual/fr/marketing-brochure.tex`, qui exigerait une
+**régénération de PDF**. Ni l'un ni l'autre n'est un oubli.
+
 ## Change Log
 
 | date | passe | résultat |
