@@ -206,6 +206,26 @@ describe('régressions trouvées en passe 3 de revue', () => {
 	});
 });
 
+describe('régression trouvée en passe 4 de revue', () => {
+	it("une division précédée d'une accolade ne masque pas le commentaire qui la suit", () => {
+		// ⚠️ **Régression introduite par le correctif de la passe 3**, qui avait ajouté `}`
+		// au jeu de caractères annonçant une regex — sans justification ni preuve. Or `}`
+		// est ambigu : `{…} / 2` est une division licite. Prise pour une regex, elle
+		// cherchait un `/` fermant et le trouvait dans le `//` du commentaire suivant, qui
+		// échappait alors au masquage — clé fantôme à la clé.
+		const src = "const r = x} / 2; // exemple : i18nMsg('cle-fantome', 'v')";
+		expect(findCallSites(src).map((s) => s.arg?.value)).toEqual([]);
+	});
+
+	it('une regex non close avant un commentaire est rejetée en cours de balayage', () => {
+		// Défense en profondeur : rencontrer un commentaire en cherchant la fermeture
+		// prouve que ce `/` n'ouvrait pas une regex. Vaut pour tous les caractères du jeu,
+		// pas seulement le `}` qui a révélé le défaut.
+		const src = "const a = (b / c); // i18nMsg('cle-fantome-2', 'v')\nconst d = i18nMsg('vraie', 'v');";
+		expect(findCallSites(src).map((s) => s.arg?.value)).toEqual(['vraie']);
+	});
+});
+
 describe('cas limites du lecteur', () => {
 	it('lit un littéral échappé sans se laisser fermer trop tôt', () => {
 		expect(readLiteral(String.raw`'Saisie d\'écriture'`, 0)?.value).toBe("Saisie d'écriture");

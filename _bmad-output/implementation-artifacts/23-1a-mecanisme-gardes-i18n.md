@@ -1180,6 +1180,34 @@ littéraux qui se contredisait d'un paragraphe à l'autre.
 non résolus, 10 gabarits, 7 relais, 1151 littéraux, 5 depuis `.ts`. Six preuves neuves inscrivent
 chaque régression.
 
+### Passe 4 de `bmad-code-review` — 2026-08-19, Sonnet, lentille UNIQUE et ciblée
+
+**1 HIGH, et rien d'autre.** Passe volontairement étroite, sur arbitrage de Guy : une seule lentille,
+un seul objet — *qu'est-ce que le patch de la passe 3 a cassé ?* — et la méthode imposée plutôt que
+laissée au choix : **deux oracles AST indépendants**, TypeScript et compilateur Svelte.
+
+**Ce que les oracles établissent, sur 277 fichiers** :
+**0 écart** sur les sites d'appel — 1485 appels réels + 8 déclarations = **1493**, identiques
+fichier par fichier ; **0 écart** sur les commentaires — aucun commentaire JS non masqué, aucun
+caractère de code blanchi à tort ; **8 valeurs de référence recomptées, 8 conformes** ; **4
+mutations, 4 qui mordent** (relais, préfixe, cardinalité, entrée d'allowlist), arbre restauré propre.
+
+**Le HIGH — `}` dans le jeu des caractères annonçant une regex, et c'est moi qui l'y avais mis.**
+Ajouté en passe 3 **sans justification et sans preuve**, alors que le commentaire du même patch ne
+motivait que `>`. Or `}` est **ambigu** : il ferme un bloc comme un objet, si bien que `{…} / 2` est
+une division licite. Prise pour une regex, elle faisait chercher un `/` fermant **jusqu'au `//` d'un
+commentaire de la même ligne**, qui échappait alors au masquage — clé fantôme à la clé. Démontré :
+`x} / 2; // i18nMsg('fantome', 'v')` rendait `['fantome']`, là où le témoin avec `)` rendait `[]`.
+
+**Défaut prouvé mais dormant** : `grep` sur le dépôt rend **zéro occurrence** du motif, ce qui
+explique que ni les oracles ni les six compteurs ne bougent. *C'est exactement ce qu'une passe
+ciblée doit produire : rien qui rougisse, et un défaut réel avant que le motif ne le devienne.*
+
+**Corrigé des deux côtés** : `}` retiré du jeu, **et** un garde ajouté **pendant** le balayage de
+`finDeRegex` — rencontrer un commentaire en cherchant la fermeture prouve que ce `/` n'ouvrait pas
+une regex. Le second correctif vaut pour **tous** les caractères du jeu, pas seulement pour celui
+qui a révélé le défaut. Deux preuves neuves. Compteurs inchangés.
+
 ### Gates — exécutés, non déclarés
 
 | gate | résultat |
@@ -1189,7 +1217,7 @@ chaque régression.
 | backend complet (`test-fast.sh`, base **remise à zéro d'abord**) | **2219/2219**, 4 ignorés, 138 s — *+1 test : la garde A* |
 | `npm run check` | **0 erreur** (27 avertissements préexistants) |
 | `npm run lint-i18n-ownership` | PASS |
-| `npm run test:unit` | **643/643** sur 69 fichiers — *+19 à l'implémentation, +7 en passe 1, +4 en passe 2, +6 en passe 3, **−2** par la suppression du prototype : **net +34** depuis `98026213` (609). Recompté au `grep -cE "^\tit\("`.* |
+| `npm run test:unit` | **645/645** sur 69 fichiers — *+19 à l'implémentation, +7 en passe 1, +4 en passe 2, +6 en passe 3, +2 en passe 4, **−2** par la suppression du prototype : **net +36** depuis `98026213` (609). Recompté au `grep -cE "^\tit\("`.* |
 | `npm run build` | vert |
 
 ⚠️ **E2E non exécutée** : cette story ne touche aucune surface utilisateur — ni `.svelte` de

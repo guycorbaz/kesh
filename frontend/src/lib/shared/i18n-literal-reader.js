@@ -188,7 +188,13 @@ function estDebutDeRegex(source, i) {
 	// `return /['"]/.test(s)` était lu comme une division, la quote de la classe ouvrait
 	// une fausse chaîne, et le commentaire suivant échappait au masquage. C'est le même
 	// besoin que `ouvreUnLitteral`, resté sans réponse chez son jumeau une passe durant.
-	if ('(,=:[!&|?{;+-*%~^>}'.includes(source[k])) return true;
+	// ⚠️ **`}` N'EST PAS dans ce jeu, et son retrait est un correctif.** Il y avait été
+	// ajouté en passe 3 sans justification ni preuve, alors qu'il est **ambigu** : il
+	// ferme un bloc comme un objet, si bien que `{…} / 2` est une division licite.
+	// Prise pour une regex, elle faisait chercher un `/` fermant jusqu'au `//` d'un
+	// commentaire de la même ligne — qui échappait alors au masquage.
+	// (Revue de code 23-1a, passe 4.)
+	if ('(,=:[!&|?{;+-*%~^>'.includes(source[k])) return true;
 	let d = k;
 	while (d >= 0 && /[\p{L}\p{N}_$]/u.test(source[d])) d -= 1;
 	return MOTS_CLES_AVANT_LITTERAL.has(source.slice(d + 1, k + 1));
@@ -217,6 +223,11 @@ function finDeRegex(source, i) {
 			k += 2;
 			continue;
 		}
+		// ⚠️ Défense en profondeur : rencontrer un commentaire en cherchant la fermeture
+		// prouve que ce `/` n'ouvrait pas une regex. Le garde de la ligne d'ouverture ne
+		// couvre que le cas `//` en TÊTE ; celui-ci vaut pour tous les caractères du jeu,
+		// pas seulement le `}` qui a révélé le défaut.
+		if (!classe && (source.startsWith('//', k) || source.startsWith('/*', k))) return null;
 		if (c === '[') classe = true;
 		else if (c === ']') classe = false;
 		else if (c === '/' && !classe) {
