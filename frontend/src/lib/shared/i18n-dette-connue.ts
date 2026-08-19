@@ -15,24 +15,13 @@
  * `_bmad-output/planning-artifacts/epic-23-dette-i18n.md`.
  */
 export const DETTE_CONNUE: readonly string[] = [
-	// ── Littéraux directs — résorbés par 23-1b puis 23-3 à 23-6 (279) ──
+	// ── Littéraux directs — résorbés par 23-1b puis 23-3 à 23-6 (259) ──
 	// Demandés par un littéral au site d’appel, ou via un relais local (D4-bis).
 	'bank-accounts-error-qr-iban-not-qr',
 	'bank-accounts-help-qr-iban',
 	'cancel',
 	'closing',
 	'common-back',
-	'contact-error-address-npa-city',
-	'contact-error-person-name',
-	'contact-persons-add',
-	'contact-persons-add-error',
-	'contact-persons-delete-error',
-	'contact-persons-empty',
-	'contact-persons-hint',
-	'contact-persons-load-error',
-	'contact-persons-name-required',
-	'contact-persons-role',
-	'contact-persons-title',
 	'create',
 	'creating',
 	'credit-notes-col-date',
@@ -54,7 +43,6 @@ export const DETTE_CONNUE: readonly string[] = [
 	'credit-notes-view-entry',
 	'credit-notes-view-invoice',
 	'credit-notes-view-list',
-	'delete',
 	'email-templates-admin-only',
 	'email-templates-badge-custom',
 	'email-templates-badge-default',
@@ -75,14 +63,6 @@ export const DETTE_CONNUE: readonly string[] = [
 	'email-templates-unknown-variables-list',
 	'email-templates-variables-hint',
 	'email-templates-variables-title',
-	'field-address',
-	'field-building',
-	'field-city',
-	'field-country',
-	'field-first-name',
-	'field-last-name',
-	'field-postal-code',
-	'field-street',
 	'imported-supplier-invoices-add-line',
 	'imported-supplier-invoices-amount',
 	'imported-supplier-invoices-complete',

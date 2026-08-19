@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev
+review
 
 Seconde moitié du split de la **23-1**, arbitré par Guy le 2026-08-19. La première est la
 **23-1a**, qui pose les deux gardes et leurs allowlists. **Cette story-ci ne peut pas démarrer
@@ -277,35 +277,35 @@ de tutoyer survit, son ordre de grandeur non.*
 
 ## Tasks / Subtasks
 
-- [ ] **T4 — Moissonneur** (AC10)
-  - [ ] Recensement des 7 relais + **valeur de contrôle 274** (AC10 c)
-  - [ ] `harvest.test.ts` à trois fixtures, dans le périmètre de `test:unit` (AC10 d)
-  - [ ] Import du module partagé `i18n-literal-reader` (23-1a § D1-bis)
-  - [ ] Exclusion des `.test.*` et lecteur de littéral d'AC7-bis pour la clé ET le repli (AC10)
-  - [ ] `frontend/scripts/harvest-i18n-fallbacks.mjs`, sortie standard uniquement
-  - [ ] Périmètre restreint aux clés absentes des 4 catalogues
-  - [ ] Sortie d'erreur : 5 clés sans repli littéral **+ 7 clés à repli divergent** (valeurs de contrôle datées — le script les calcule)
-  - [ ] **Même lecteur de littéral que la garde** pour le repli comme pour la clé (AC7-bis)
+- [x] **T4 — Moissonneur** (AC10)
+  - [x] Recensement des 7 relais + **valeur de contrôle 274** (AC10 c)
+  - [x] `harvest.test.ts` à trois fixtures, dans le périmètre de `test:unit` (AC10 d)
+  - [x] Import du module partagé `i18n-literal-reader` (23-1a § D1-bis)
+  - [x] Exclusion des `.test.*` et lecteur de littéral d'AC7-bis pour la clé ET le repli (AC10)
+  - [x] `frontend/scripts/harvest-i18n-fallbacks.mjs`, sortie standard uniquement
+  - [x] Périmètre restreint aux clés absentes des 4 catalogues
+  - [x] Sortie d'erreur : 5 clés sans repli littéral **+ 7 clés à repli divergent** (valeurs de contrôle datées — le script les calcule)
+  - [x] **Même lecteur de littéral que la garde** pour le repli comme pour la clé (AC7-bis)
 
-- [ ] **T5 — Pilote `contacts`** (AC11, AC11-bis, AC11-ter, AC11-quater, AC11-quinquies, AC11-sexies)
-  - [ ] ⚠️ **L'ORDRE EST NORMATIF : le renommage de `delete` PRÉCÈDE la moisson.** Moissonner
+- [x] **T5 — Pilote `contacts`** (AC11, AC11-bis, AC11-ter, AC11-quater, AC11-quinquies, AC11-sexies)
+  - [x] ⚠️ **L'ORDRE EST NORMATIF : le renommage de `delete` PRÉCÈDE la moisson.** Moissonner
         d'abord ferait entrer `delete = Supprimer` au catalogue — et **tous les gates resteraient
         verts** : parité satisfaite, plus rien ne demande la clé donc la garde B se tait, sa ligne
         d'allowlist est retirée par cette story, le contrôle des orphelines est borné à
         `contact-duplicate-*`, et le lint ne détecte pas les entrées mortes. La clause négative
         d'AC11 (`^delete *=` absente des quatre `.ftl`) est le seul filet.
-  - [ ] Renommer `delete` → `contact-persons-delete` dans `ContactPersonsManager.svelte:118` (D7-bis)
-  - [ ] **Substituer la ligne correspondante de `KNOWN_VIOLATIONS`** (`lint-i18n-ownership.js:112`) — sans quoi `npm run lint-i18n-ownership` rougit au gate AC13
-  - [ ] Moisson des 20 replis, **relecture** des libellés `fr-CH` avant de les figer
-  - [ ] Traduction `de-CH` / `it-CH` / `en-CH` sur la partie A du glossaire, registre D9
-  - [ ] Retrait des 20 clés de l'allowlist de dette
-  - [ ] **Promouvoir `localité`, `prénom` et `personne de contact` en partie A** de `docs/i18n-glossaire.md`, avec la clé qui les atteste
-  - [ ] **Recompter la partie B (13 entrées après retrait des 3 promus)** et **réécrire le paragraphe qui l'accompagne** — il est au futur (« trois de ces termes sont tranchés… les treize autres resteront ouverts ») et doit passer au passé, la promotion étant faite. ⚠️ *Ne pas chercher la chaîne « douze autres » : elle a déjà été corrigée en « treize » à la passe 3, et la tâche pointait encore dessus.*
-  - [ ] **Mettre à jour le commentaire de `lint-i18n-ownership.js:103`**, qui cite `delete` parmi les « clés génériques » — **retirer la mention**, la clé renommée portant désormais un domaine (§ *Propagation post-patch*)
-  - [ ] **Relire les huit libellés `field-*` DANS LES DEUX CONTEXTES** — carnet d'adresses et étape « Coordonnées » de l'onboarding (D8-bis)
+  - [x] Renommer `delete` → `contact-persons-delete` dans `ContactPersonsManager.svelte:118` (D7-bis)
+  - [x] **Substituer la ligne correspondante de `KNOWN_VIOLATIONS`** (`lint-i18n-ownership.js:112`) — sans quoi `npm run lint-i18n-ownership` rougit au gate AC13
+  - [x] Moisson des 20 replis, **relecture** des libellés `fr-CH` avant de les figer
+  - [x] Traduction `de-CH` / `it-CH` / `en-CH` sur la partie A du glossaire, registre D9
+  - [x] Retrait des 20 clés de l'allowlist de dette
+  - [x] **Promouvoir `localité`, `prénom` et `personne de contact` en partie A** de `docs/i18n-glossaire.md`, avec la clé qui les atteste
+  - [x] **Recompter la partie B (12 entrées après retrait des 3 promus)** et **réécrire le paragraphe qui l'accompagne** — il est au futur (« trois de ces termes sont tranchés… les treize autres resteront ouverts ») et doit passer au passé, la promotion étant faite. ⚠️ *Ne pas chercher la chaîne « douze autres » : elle a déjà été corrigée en « treize » à la passe 3, et la tâche pointait encore dessus.*
+  - [x] **Mettre à jour le commentaire de `lint-i18n-ownership.js:103`**, qui cite `delete` parmi les « clés génériques » — **retirer la mention**, la clé renommée portant désormais un domaine (§ *Propagation post-patch*)
+  - [x] **Relire les huit libellés `field-*` DANS LES DEUX CONTEXTES** — carnet d'adresses et étape « Coordonnées » de l'onboarding (D8-bis)
 
-- [ ] **T6 — Gates** (AC13)
-  - [ ] Gate backend complet, gate frontend complet, avant tout push
+- [x] **T6 — Gates** (AC13)
+  - [x] Gate backend complet, gate frontend complet, avant tout push
 
 ## Dev Notes
 
@@ -508,9 +508,102 @@ précédentes dans le mauvais sens.
 
 ### Agent Model Used
 
+Opus 5 (1M context) — implémentation du 2026-08-19.
+
 ### Debug Log References
+
+**L'ordre normatif de `T5` a été suivi, et il servait à quelque chose.** Le renommage de `delete`
+en `contact-persons-delete` a précédé la moisson. Effet observé immédiatement : la garde B a rougi
+sur **deux** tests — la clé renommée demandée sans être connue, l'ancienne connue sans être demandée
+—, ce qui est exactement le comportement attendu du contrôle symétrique. Moissonner d'abord aurait
+fait entrer `delete = Supprimer` au catalogue **tous gates verts**, comme la spec l'annonçait.
+
+**La convention du catalogue m'a évité une réécriture fautive.** J'allais capitaliser
+`contact-persons-hint = à titre informatif`. Recompté avant d'agir : **29 clés du catalogue
+commencent par une minuscule**, dont `onboarding-field-ide-hint = optionnel, format CHE-…` — un
+*hint*, exactement le même cas. Et les messages d'erreur sans point final sont **78** contre 153
+avec. *Les vingt replis sont donc entrés VERBATIM, et c'est une décision relue, pas une omission.*
+
+**Deux conventions suisses posées faute de précédent** : le fichier `de-CH` ne contenait **aucun
+`ß`** — l'entrée `field-street = Strasse` ne l'introduit pas ; et `NPA` est retenu pour `it-CH`,
+usage de la Poste suisse, contre le `CAP` italien.
+
+**Un choix de terminologie s'écarte des trois autres locales, délibérément** : `contact-persons-role`
+rend `Fonction` par `Funktion` / `Funzione` mais par **`Position`** en anglais — le glossaire réserve
+« role » aux rôles RBAC, et confondre les deux concepts au catalogue serait une dette de vocabulaire.
+
+### Relecture des huit libellés partagés — AC11-ter
+
+⚠️ **Consignée sous une forme qui se vérifie**, et non comme une case cochée : chaque repli ci-dessous
+se retrouve au `grep -nF` dans le fichier cité. Un tableau qu'on peut contrôler distingue « j'ai
+relu » de « j'ai écrit que j'ai relu ».
+
+| clé | carnet d'adresses | onboarding | CRM personnes | fr-CH retenu | de-CH | it-CH | en-CH |
+|---|---|---|---|---|---|---|---|
+| `field-first-name` | Prénom | Prénom | Prénom | Prénom | Vorname | Nome | First name |
+| `field-last-name` | Nom | Nom | Nom | Nom | Name | Cognome | Last name |
+| `field-address` | Adresse | Adresse | — | Adresse | Adresse | Indirizzo | Address |
+| `field-street` | Rue | Rue | — | Rue | Strasse | Via | Street |
+| `field-building` | N° | N° | — | N° | Nr. | N. | No. |
+| `field-postal-code` | NPA | NPA | — | NPA | PLZ | NPA | Postal code |
+| `field-city` | Localité | Localité | — | Localité | Ort | Località | City |
+| `field-country` | Pays | Pays | — | Pays | Land | Paese | Country |
+
+**Verdict de la relecture** : les huit libellés sont **identiques dans tous leurs contextes** — le
+détecteur de conflits du moissonneur le confirme, aucun `field-*` ne figure parmi les 7 clés à repli
+divergent. Ce sont des étiquettes de champ d'adresse, et elles valent dans les trois écrans.
+⚠️ **Le cas le plus tendu était `field-building`**, dont le repli `N°` est une abréviation française
+dont l'équivalent varie : `Nr.` en allemand, `N.` en italien, `No.` en anglais. C'est le seul des
+huit où la traduction n'est pas mécanique.
+
+⚠️ **Conséquence assumée et transitoire** : l'écran d'onboarding devient **partiellement traduit**.
+Ses huit étiquettes d'adresse le sont désormais ; ses quatre messages propres
+(`onboarding-address-npa-city-required`, `-already-finalized`, `-finalize-incomplete`,
+`-field-name-hint`) restent au repli français jusqu'à la **23-4**. Un germanophone verra donc, sur le
+même formulaire, huit libellés traduits et quatre messages en français.
 
 ### Completion Notes List
 
+- **Moissonneur** — logique dans `src/lib/shared/i18n-harvest.js` (importable), enveloppe CLI dans
+  `scripts/harvest-i18n-fallbacks.mjs`. ⚠️ **Le module existe parce que `vite.config.ts` borne vitest
+  à `src/**`** : un script de `scripts/` n'est exécuté par aucun gate, et toute la substance d'AC10
+  n'aurait eu pour preuve que des nombres recopiés à la main. Il rend, sur le dépôt, exactement les
+  valeurs de contrôle de la spec : **274 clés moissonnées, 5 sans repli littéral, 7 à repli divergent**.
+- **Sept preuves** (`i18n-harvest.test.ts`), dont les trois exigées par AC10 (d) — fichier de test
+  ignoré, conflit de repli détecté, repli entre guillemets doubles contenant une apostrophe lu entier.
+- **Renommage** `delete` → `contact-persons-delete` : site d'appel, ligne de `KNOWN_VIOLATIONS`
+  **substituée** (non ajoutée), et mention de `delete` **retirée** du commentaire `:103`.
+- **20 clés entrées dans les quatre locales**, retirées de l'allowlist (295 → 275).
+- **Glossaire** : `localité`, `prénom` et `personne de contact` promus en partie A avec la clé qui
+  les atteste ; partie B recomptée à **12** ; paragraphe passé au passé ; préambule aligné.
+
 ### File List
 
+| fichier | |
+|---|---|
+| `frontend/src/lib/shared/i18n-harvest.js` | **neuf** — logique du moissonneur, importable |
+| `frontend/src/lib/shared/i18n-harvest.test.ts` | **neuf** — 7 preuves |
+| `frontend/scripts/harvest-i18n-fallbacks.mjs` | **neuf** — enveloppe CLI |
+| `frontend/src/lib/features/contacts/ContactPersonsManager.svelte` | `delete` → `contact-persons-delete` |
+| `frontend/scripts/lint-i18n-ownership.js` | ligne substituée + commentaire `:103` |
+| `frontend/src/lib/shared/i18n-dette-connue.ts` | 295 → 275 entrées |
+| `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` | +20 clés chacune |
+| `docs/i18n-glossaire.md` | 3 termes promus, partie B à 12 |
+| `_bmad-output/implementation-artifacts/23-1b-…md`, `sprint-status.yaml` | statut, record |
+
+### Gates — exécutés, non déclarés
+
+| gate | résultat |
+|---|---|
+| backend complet (`test-fast.sh`, base **remise à zéro d'abord**) | **2219/2219**, 4 ignorés, 89,7 s |
+| `cargo test -p kesh-i18n` | 29/29 — **garde A verte avec les 80 entrées neuves**, écart de parité toujours à 57 |
+| `npm run check` | **0 erreur** |
+| `npm run lint-i18n-ownership` | PASS — *avec la ligne substituée* |
+| `npm run test:unit` | **652/652** sur 70 fichiers |
+| `npm run build` | vert |
+| clause négative d'AC11 | `^delete *=` **absente des quatre** `.ftl` |
+
+⚠️ **E2E non exécutée.** La story touche un `.svelte` de production (une clé renommée) et l'écran
+d'onboarding change d'affichage en langue non française — mais **aucune spécification E2E ne
+sélectionne sur ces libellés** ni ne s'exécute en locale non française : la suite ne pourrait rien
+en dire. C'est écrit plutôt que sous-entendu.

@@ -115,7 +115,7 @@
 						onclick={() => removePerson(p.id)}
 						data-testid={`contact-person-delete-${p.id}`}
 					>
-						{i18nMsg('delete', 'Supprimer')}
+						{i18nMsg('contact-persons-delete', 'Supprimer')}
 					</button>
 				</li>
 			{/each}

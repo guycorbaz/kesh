@@ -3,7 +3,7 @@
 *Établi le 2026-08-19 au kickoff de l'**Epic 23 « Dette i18n »** (issues [#316] et [#283]).*
 
 Ce glossaire existe parce que l'epic 23 fait entrer **352 clés** au catalogue et écrit
-**1056 messages** en trois langues. Sans terminologie figée d'avance, trois cents décisions
+**1056 messages** en trois langues — dont **20 clés et 60 messages livrés** par la story 23-1b. Sans terminologie figée d'avance, trois cents décisions
 lexicales se prennent une par une, au fil des stories de rollout, et le produit finit par
 dire deux mots différents pour la même chose selon l'écran.
 
@@ -79,6 +79,9 @@ passage des rollouts qui touchent ces domaines, pas ici.
 | client | Kunde | cliente | client | `Client` |
 | numéro de client | Kundennummer | numero cliente | client number | `Numéro de client` |
 | contact | Kontakt | contatto | contact | `Nouveau contact` |
+| **localité** | **Ort** | **località** | **city** | `field-city` (story 23-1b) |
+| **prénom** | **Vorname** | **nome** | **first name** | `field-first-name` (story 23-1b) |
+| **personne de contact** | **Kontaktperson** | **persona di contatto** | **contact person** | `contact-persons-title` (story 23-1b) |
 | carnet d'adresses | **Kontakte** | **contatti** | contacts | `Carnet d'adresses` |
 | adresse | Adresse | indirizzo | address | `Adresse` |
 | rappel / relance | **Mahnung** | **sollecito** | reminder | `Rappels` / `Mahnungen` |
@@ -134,23 +137,20 @@ contraignantes pour tout le rollout.
 | règlement (d'une facture) | Begleichung / Zahlung | pagamento | settlement | ⚠️ **préférer « Zahlung » / « pagamento » / « payment »** et réserver « règlement » au français — deux mots pour un concept déjà couvert par *paiement* |
 | écarter / écartée (une pièce) | verwerfen / verworfen | scartare / scartata | discard / discarded | s'oppose à « compléter » dans la file d'import |
 | compléter | vervollständigen | completare | complete | idem |
-| localité | Ort | località | city | champ d'adresse |
 | immuable | unveränderlich | immutabile | immutable | employé pour une pièce validée |
 | validité | Gültigkeit | validità | validity | |
 | personne physique / morale | natürliche / juristische Person | persona fisica / giuridica | individual / legal entity | |
-| **personne de contact** | **Kontaktperson** | **persona di contatto** | contact person | manquait à ce glossaire — relevé le 2026-08-19 à la spécification de la 23-1, où le mot « personne » figure sur 6 des 20 clés du domaine pilote |
-| prénom | Vorname | nome | first name | |
 | image | Bild | immagine | image | scan de QR-facture |
 | bascule (interrupteur) | Umschalter | interruttore | toggle | élément d'interface |
 | restauré | wiederhergestellt | ripristinato | restored | import de sauvegarde |
 
 ---
 
-⚠️ **Trois de ces termes sont tranchés par la story 23-1**, dont le domaine pilote `contacts`
-les emploie : **localité**, **prénom** et **personne de contact**. Ils remonteront en partie A
-une fois la story mergée, avec la clé qui les atteste. Les **douze** autres resteront ouverts. *(La partie B compte **15** entrées : elle en comptait 16
-jusqu'à l'arbitrage du 2026-08-19 sur « analytique », passé en partie A. Recompté depuis le tableau,
-comme l'exige la § « Recompter ses propres comptes rendus » du `CLAUDE.md`.)*
+✅ **Trois de ces termes ONT ÉTÉ tranchés et promus en partie A** par la story 23-1b, dont le
+domaine pilote `contacts` les emploie : **localité**, **prénom** et **personne de contact**. Chacun
+y porte désormais la clé qui l'atteste. **Douze** termes restent ouverts. *(La partie B comptait 16
+entrées, 15 après l'arbitrage du 2026-08-19 sur « analytique », et **12** après cette promotion.
+Recompté depuis le tableau, comme l'exige la § « Recompter ses propres comptes rendus ».)*
 
 ## Comment s'en servir
 

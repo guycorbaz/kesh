@@ -1228,6 +1228,29 @@ contact-form-salutation = Anrede
 contact-salutation-neutre = Neutral
 contact-salutation-monsieur = Herr
 contact-salutation-madame = Frau
+# ── Story 23-1b (#316) — Pilotdomäne « contacts », 20 Schlüssel.
+# Registre : Sie-Form (D9). Orthographe suisse : « Strasse », jamais « Straße » — le
+# fichier ne contient aucun ß, et cette entrée ne l'introduit pas.
+contact-error-address-npa-city = PLZ und Ort sind erforderlich, wenn eine Adresse erfasst wird
+contact-error-person-name = Vorname und Name sind für eine Person erforderlich
+contact-persons-add = Hinzufügen
+contact-persons-add-error = Die Person konnte nicht hinzugefügt werden
+contact-persons-delete = Löschen
+contact-persons-delete-error = Die Person konnte nicht gelöscht werden
+contact-persons-empty = Keine Kontaktperson.
+contact-persons-hint = nur zur Information
+contact-persons-load-error = Die Kontaktpersonen konnten nicht geladen werden
+contact-persons-name-required = Vorname und Name sind erforderlich
+contact-persons-role = Funktion
+contact-persons-title = Kontaktpersonen
+field-address = Adresse
+field-building = Nr.
+field-city = Ort
+field-country = Land
+field-first-name = Vorname
+field-last-name = Name
+field-postal-code = PLZ
+field-street = Strasse
 settings-field-company-email = E-Mail (Antwortadresse)
 settings-company-email-help = Antwortadresse (Reply-To) der per E-Mail gesendeten Rechnungen. Leer = keine Antwortadresse.
 settings-company-email-invalid = Ungültige E-Mail-Adresse.

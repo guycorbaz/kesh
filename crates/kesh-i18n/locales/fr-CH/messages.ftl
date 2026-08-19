@@ -1316,6 +1316,31 @@ contact-form-salutation = Civilité
 contact-salutation-neutre = Neutre
 contact-salutation-monsieur = Monsieur
 contact-salutation-madame = Madame
+# ── Story 23-1b (#316) — domaine pilote « contacts » : 20 clés entrées aux QUATRE locales.
+# Les libellés fr-CH sont les replis moissonnés, RELUS (AC11-sexies) : aucun n'a été
+# réécrit, et c'est une décision — `contact-persons-hint` reste en minuscule parce que le
+# catalogue a un précédent (`onboarding-field-ide-hint = optionnel, format CHE-…`), et les
+# messages d'erreur restent sans point final comme les 78 autres du fichier.
+contact-error-address-npa-city = NPA et localité obligatoires si une adresse est saisie
+contact-error-person-name = Prénom et nom obligatoires pour une personne
+contact-persons-add = Ajouter
+contact-persons-add-error = Impossible d'ajouter la personne
+contact-persons-delete = Supprimer
+contact-persons-delete-error = Impossible de supprimer la personne
+contact-persons-empty = Aucune personne de contact.
+contact-persons-hint = à titre informatif
+contact-persons-load-error = Impossible de charger les personnes de contact
+contact-persons-name-required = Prénom et nom obligatoires
+contact-persons-role = Fonction
+contact-persons-title = Personnes de contact
+field-address = Adresse
+field-building = N°
+field-city = Localité
+field-country = Pays
+field-first-name = Prénom
+field-last-name = Nom
+field-postal-code = NPA
+field-street = Rue
 settings-field-company-email = E-mail (adresse de réponse)
 settings-company-email-help = Adresse de réponse (Reply-To) des factures envoyées par e-mail. Vide = pas d'adresse de réponse.
 settings-company-email-invalid = Adresse e-mail invalide.
