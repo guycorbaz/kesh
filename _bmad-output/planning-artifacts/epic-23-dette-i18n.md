@@ -107,12 +107,19 @@ appelle un contrôle d'une autre nature (détection de littéraux affichés).
 
 | Story | Objet | Clés |
 |---|---|---|
-| **23-1** | **Socle** : les deux gardes, avec allowlist explicite des clés connues, **décroissante seulement** ; moissonneur de replis versionné ; les 8 préfixes dynamiques (10 sites) ; glossaire figé ; domaine pilote `contacts` (12 + 8) | 20 |
+| **23-1a** | **Mécanisme** : les deux gardes, l'extracteur et son test, les 8 préfixes dynamiques (10 sites), les deux allowlists — **décroissantes par construction** et **nées pleines**. Aucune traduction. | 0 |
+| **23-1b** | **Pilote** : moissonneur de replis versionné, les 20 clés de `contacts` dans les 4 locales, glossaire. **Dépend du merge de la 23-1a.** | 20 |
 | **23-2** | **[#283]** — les 57 clés en `de-CH` / `it-CH` / `en-CH`. La garde de **parité** devient inconditionnelle : son allowlist disparaît | 57 |
 | **23-3** | `supplier-invoices` — le gros morceau, seul (99 statiques + **10** de la famille dynamique `imported-supplier-invoices-error-*`) | 109 |
 | **23-4** | `settings` + `payment-batches` | 60 |
 | **23-5** | `reconciliation` (dont les 5 entrées à variables) + `reports` (14 + 7) + `credit-notes` | 56 |
 | **23-6** | Reliquat : `invoices`, `journal-entries`, `lib/components`, `bank-accounts` + **clôture** : allowlist vidée, garde inconditionnelle, [#316] fermée | 15 |
+
+⚠️ **La 23-1 a été DÉCOUPÉE le 2026-08-19** (arbitrage de Guy) après trois passes de `validate` au
+plafond de sévérité stagnant — non pour son nombre de modules, mais parce que ses findings formaient
+deux familles qui ne se relisent pas avec la même lentille : le mécanisme et les comptes rendus.
+Patron 22-2a/22-2b. Les cinq stories de rollout, elles, restent entières : elles n'ont **que** la
+seconde famille.
 
 **Chaque story de rollout est mécanique par construction** : entrer les clés au catalogue dans
 les quatre locales, retirer d'autant l'allowlist, laisser la garde prouver le reste. La revue
