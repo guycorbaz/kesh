@@ -44,6 +44,12 @@ export function readLiteral(source, i) {
 	/** @type {string[]} */
 	const out = [];
 	let depth = 0; // profondeur d'imbrication des `${ … }`
+	// ⚠️ Le TYPE se décide sur ce qui s'est réellement passé pendant la lecture, jamais
+	// en relisant la valeur : `'a${b}c'` entre guillemets SIMPLES n'est pas un gabarit —
+	// une chaîne `'…'` ne peut pas l'être en JS —, et un `\${` ÉCHAPPÉ dans un vrai
+	// gabarit est volontairement inerte. Une recherche de sous-chaîne `${` dans le
+	// résultat classait les deux comme dynamiques. (Revue de code 23-1a, passe 1.)
+	let interpolationVue = false;
 	let j = i + 1;
 
 	while (j < source.length) {
@@ -59,6 +65,7 @@ export function readLiteral(source, i) {
 		// Ouverture d'une interpolation, seulement dans un gabarit.
 		if (quote === '`' && c === '$' && source[j + 1] === '{') {
 			depth += 1;
+			interpolationVue = true;
 			out.push('${');
 			j += 2;
 			continue;
@@ -68,6 +75,19 @@ export function readLiteral(source, i) {
 			// À l'intérieur d'une interpolation : on suit les accolades, et on saute
 			// les littéraux imbriqués — c'est là que `info.replace(/_/g, '-')` piège
 			// une expression régulière naïve.
+			if (c === '/' && estDebutDeRegex(source, j)) {
+				// ⚠️ Une regex peut contenir une accolade NON APPARIÉE (`/{/`) ou une
+				// quote (`/['"]/`). Sans ce saut, la première désynchronise `depth` et la
+				// seconde ouvre un faux littéral : dans les deux cas la lecture du gabarit
+				// part à la dérive. Le commentaire ci-dessus promettait cette protection ;
+				// il ne la décrivait pas. (Revue de code 23-1a, passe 1.)
+				const finRegex = finDeRegex(source, j);
+				if (finRegex !== null) {
+					out.push(source.slice(j, finRegex));
+					j = finRegex;
+					continue;
+				}
+			}
 			if (c === '{') depth += 1;
 			else if (c === '}') depth -= 1;
 			else if (QUOTES.includes(c)) {
@@ -87,7 +107,7 @@ export function readLiteral(source, i) {
 		if (c === quote) {
 			const value = out.join('');
 			return {
-				kind: value.includes('${') ? 'template' : 'literal',
+				kind: interpolationVue ? 'template' : 'literal',
 				value,
 				end: j + 1
 			};
@@ -98,6 +118,123 @@ export function readLiteral(source, i) {
 	}
 
 	return null; // littéral non clos — fichier tronqué ou source invalide
+}
+
+/**
+ * Vrai si la quote en position `i` ouvre réellement un littéral de chaîne.
+ *
+ * ⚠️ **Un fichier `.svelte` n'est pas du JavaScript.** Son balisage contient de la prose,
+ * et le français y met des apostrophes : `l'exercice`, `d'abord`. Traitées comme des
+ * ouvertures de chaîne, elles avalent tout jusqu'à l'apostrophe suivante — plusieurs
+ * dizaines de lignes, commentaires compris, qui cessent alors d'être masqués.
+ * *C'est arrivé : la première rédaction du masquage laissait passer un commentaire sur
+ * trois.* (Revue de code 23-1a, passe 1.)
+ *
+ * Le critère est net : une chaîne JavaScript n'est **jamais** précédée d'une lettre ou
+ * d'un chiffre — elle suit un espace, `(`, `,`, `=`, `[`, `:`, `{`… — tandis qu'une
+ * apostrophe de prose l'est presque toujours.
+ *
+ * @param {string} source
+ * @param {number} i
+ * @returns {boolean}
+ */
+function ouvreUnLitteral(source, i) {
+	let k = i - 1;
+	while (k >= 0 && ' \t'.includes(source[k])) k -= 1;
+	if (k < 0) return true;
+	return !/[\w\u00C0-\u024F]/.test(source[k]);
+}
+
+/**
+ * Vrai si le `/` en position `i` ouvre un littéral de regex plutôt qu'une division.
+ *
+ * Heuristique standard : une regex ne peut suivre qu'un opérateur, une ouverture, une
+ * virgule ou un début d'expression — jamais un identifiant, un nombre ou une fermeture.
+ * Elle suffit ici parce qu'on ne lit que l'intérieur d'une interpolation.
+ *
+ * @param {string} source
+ * @param {number} i
+ * @returns {boolean}
+ */
+function estDebutDeRegex(source, i) {
+	let k = i - 1;
+	while (k >= 0 && ' \t\r\n'.includes(source[k])) k -= 1;
+	if (k < 0) return true;
+	return '(,=:[!&|?{;+-*%~^'.includes(source[k]);
+}
+
+/**
+ * Rend la position juste après la regex ouverte en `i`, ou `null` si elle n'est pas
+ * close sur la même ligne (auquel cas ce n'était pas une regex).
+ *
+ * @param {string} source
+ * @param {number} i
+ * @returns {number | null}
+ */
+function finDeRegex(source, i) {
+	let k = i + 1;
+	let classe = false; // à l'intérieur d'un `[…]`, un `/` n'est pas une fermeture
+	while (k < source.length) {
+		const c = source[k];
+		if (c === '\n') return null;
+		if (c === '\\') {
+			k += 2;
+			continue;
+		}
+		if (c === '[') classe = true;
+		else if (c === ']') classe = false;
+		else if (c === '/' && !classe) {
+			k += 1;
+			while (k < source.length && /[a-z]/.test(source[k])) k += 1; // drapeaux
+			return k;
+		}
+		k += 1;
+	}
+	return null;
+}
+
+/**
+ * Rend une copie de `source` où le CONTENU des commentaires est remplacé par des
+ * espaces — mêmes longueurs, mêmes numéros de ligne, donc mêmes positions.
+ *
+ * ⚠️ **Pourquoi c'est nécessaire.** Trois docstrings du dépôt écrivent `i18nMsg(clé,
+ * repli)` à titre d'exemple. Sans masquage, elles étaient comptées comme des sites
+ * d'appel : trois des trente-six « sites non résolus » étaient de la prose. Deux
+ * conséquences, la seconde étant la vraie : éditer un commentaire faisait rougir le
+ * gate pour une raison sans rapport, et surtout **une régression pouvait se compenser
+ * en silence** — un commentaire qui disparaît pendant qu'un vrai site apparaît laisse
+ * le compte inchangé. (Revue de code 23-1a, passe 1.)
+ *
+ * @param {string} source
+ * @returns {string}
+ */
+export function masquerCommentaires(source) {
+	const out = source.split('');
+	let i = 0;
+	while (i < source.length) {
+		const c = source[i];
+		if (QUOTES.includes(c) && ouvreUnLitteral(source, i)) {
+			const lu = readLiteral(source, i);
+			// Un littéral est recopié tel quel : un `//` dans une URL n'est pas un commentaire.
+			i = lu ? lu.end : i + 1;
+			continue;
+		}
+		if (c === '/' && source[i + 1] === '/') {
+			while (i < source.length && source[i] !== '\n') out[i++] = ' ';
+			continue;
+		}
+		if (c === '/' && source[i + 1] === '*') {
+			const fin = source.indexOf('*/', i + 2);
+			const stop = fin === -1 ? source.length : fin + 2;
+			while (i < stop) {
+				if (source[i] !== '\n') out[i] = ' ';
+				i += 1;
+			}
+			continue;
+		}
+		i += 1;
+	}
+	return out.join('');
 }
 
 /**
@@ -144,13 +281,24 @@ function skipTrivia(source, i) {
 export function findRelays(source) {
 	/** @type {string[]} */
 	const noms = [];
+	// Deux formes de déclaration — `function nom(…)` et `const nom = (…) =>` — et un
+	// corps qui peut faire autre chose avant de transmettre. ⚠️ La rédaction initiale
+	// n'acceptait que la première forme avec un `return` en PREMIÈRE instruction : un
+	// relais écrit en fléchée, ou précédé d'une garde (`if (!key) return fallback;`),
+	// devenait invisible — et avec lui TOUS ses sites d'appel, en silence.
+	// (Revue de code 23-1a, passe 1.)
 	const decl =
-		/function\s+(\w+)\s*\(\s*(\w+)\s*:\s*string\s*,\s*(\w+)\s*:\s*string[^)]*\)[^{]*\{\s*return\s+i18nMsg\(\s*(\w+)\s*,\s*(\w+)/g;
+		/(?:function\s+(\w+)\s*\(|(?:const|let)\s+(\w+)\s*=\s*\()\s*(\w+)\s*:\s*string\s*,\s*(\w+)\s*:\s*string[^)]*\)[^{]*\{([\s\S]{0,400}?)return\s+i18nMsg\(\s*(\w+)\s*,\s*(\w+)/g;
 	let m;
 	while ((m = decl.exec(source)) !== null) {
-		const [, nom, pKey, pFallback, aKey, aFallback] = m;
-		// Le corps doit TRANSMETTRE les paramètres, pas construire une clé.
-		if (aKey === pKey && aFallback === pFallback) noms.push(nom);
+		const [, nomFn, nomConst, pKey, pFallback, corpsAvant, aKey, aFallback] = m;
+		const nom = nomFn ?? nomConst;
+		// Le corps doit TRANSMETTRE les paramètres, pas construire une clé…
+		if (aKey !== pKey || aFallback !== pFallback) continue;
+		// …et le `return i18nMsg` doit appartenir à CETTE fonction : une accolade
+		// fermante avant lui signalerait qu'on a quitté son corps.
+		if (corpsAvant.includes('}')) continue;
+		if (!noms.includes(nom)) noms.push(nom);
 	}
 	return noms;
 }
@@ -168,6 +316,9 @@ export function findRelays(source) {
  *   moissonneur de la 23-1b lit le repli.
  */
 export function findCallSites(source) {
+	// ⚠️ Les commentaires sont masqués AVANT la recherche : sans cela, une docstring
+	// qui écrit `i18nMsg(clé, repli)` en exemple est comptée comme un site d'appel.
+	source = masquerCommentaires(source);
 	const relais = findRelays(source);
 	const noms = ['i18nMsg', ...relais];
 	/** @type {{fn: string, line: number, arg: {kind: 'literal'|'template', value: string} | null,
@@ -175,8 +326,12 @@ export function findCallSites(source) {
 	const sites = [];
 
 	for (const nom of new Set(noms)) {
-		// `(?<![\w.])` évite de confondre `msg(` avec `errorMsg(` ou `x.msg(`.
-		const appel = new RegExp(`(?<![\\w.])${nom}\\(`, 'g');
+		// `(?<![\w$])` évite de confondre `msg(` avec `errorMsg(`.
+		// ⚠️ Le point N'EST PLUS exclu : `obj.i18nMsg(…)` ou `ctx?.msg(…)` doivent rester
+		// VISIBLES. Les exclure les faisait disparaître de l'inventaire sans même
+		// l'alarme d'un `arg === null` — strictement pire que le défaut que cette garde
+		// ferme. (Revue de code 23-1a, passe 1.)
+		const appel = new RegExp(`(?<![\\w$])${nom}\\(`, 'g');
 		let m;
 		while ((m = appel.exec(source)) !== null) {
 			const i = skipTrivia(source, m.index + m[0].length);

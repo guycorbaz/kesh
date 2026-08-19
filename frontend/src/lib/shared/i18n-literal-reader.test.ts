@@ -126,11 +126,64 @@ describe('cas limites du lecteur', () => {
 	it('ne confond pas `msg(` avec un identifiant qui se termine par msg', () => {
 		const src = [
 			'function msg(key: string, fallback: string): string { return i18nMsg(key, fallback); }',
-			"const a = errorMsg('pas-une-cle', 'x');",
-			"const b = obj.msg('pas-une-cle-non-plus', 'y');"
+			"const a = errorMsg('pas-une-cle', 'x');"
+		].join('\n');
+		expect(findCallSites(src).map((s) => s.arg?.value)).not.toContain('pas-une-cle');
+	});
+
+	it('VOIT un appel membre `obj.msg(…)` au lieu de le rendre invisible', () => {
+		// ⚠️ Comportement changé en revue de code : le lookbehind excluait le point, si
+		// bien qu'un appel `obj.i18nMsg(…)` ou `ctx?.msg(…)` disparaissait de l'inventaire
+		// SANS MÊME l'alarme d'un `arg === null` — strictement pire que le défaut que
+		// cette garde ferme. Un tel appel doit être vu, quitte à être classé non résolu.
+		const src = [
+			'function msg(key: string, fallback: string): string { return i18nMsg(key, fallback); }',
+			"const b = obj.msg('une-cle-via-membre', 'y');"
+		].join('\n');
+		expect(findCallSites(src).map((s) => s.arg?.value)).toContain('une-cle-via-membre');
+	});
+
+	it('masque les commentaires : une docstring qui cite i18nMsg n’est pas un site', () => {
+		// Trois docstrings du dépôt écrivent `i18nMsg(clé, repli)` en exemple. Comptées
+		// comme sites, elles polluaient l'inventaire — et permettaient à une régression
+		// de se compenser en silence (un commentaire qui part, un vrai site qui arrive).
+		const src = [
+			'// le caller applique `i18nMsg(key, fallback)`.',
+			'/** résolu via `i18nMsg(label, fallback)`. */',
+			"const vrai = i18nMsg('vraie-cle', 'v');"
+		].join('\n');
+		const sites = findCallSites(src);
+		expect(sites).toHaveLength(1);
+		expect(sites[0].arg?.value).toBe('vraie-cle');
+	});
+
+	it("une apostrophe de prose n'ouvre pas un faux littéral qui avalerait les commentaires", () => {
+		// ⚠️ Un `.svelte` n'est pas du JavaScript : son balisage contient de la prose, et
+		// le français y met des apostrophes. Traitées comme ouvertures de chaîne, elles
+		// avalaient des dizaines de lignes — dont des commentaires qui cessaient d'être
+		// masqués. La première rédaction du masquage laissait ainsi passer un commentaire
+		// sur trois.
+		const src = [
+			"<p>l'exercice comptable d'abord</p>",
+			'// exemple : `i18nMsg(key, fallback)`',
+			"const vrai = i18nMsg('cle-apres-prose', 'v');"
 		].join('\n');
 		const cles = findCallSites(src).map((s) => s.arg?.value);
-		expect(cles).not.toContain('pas-une-cle');
-		expect(cles).not.toContain('pas-une-cle-non-plus');
+		expect(cles).toEqual(['cle-apres-prose']);
+	});
+
+	it('une regex à accolade non appariée ou à quote ne casse plus la lecture', () => {
+		const accolade = 'i18nMsg(`cle-${a.match(/{/)}`, f)';
+		expect(findCallSites(accolade)[0].arg?.kind).toBe('template');
+		const quote = `i18nMsg(\`x-\${s.replace(/['"]/g, '')}\`, 'y')`;
+		expect(findCallSites(quote)[0].arg?.kind).toBe('template');
+	});
+
+	it("le TYPE vient du parsing, jamais d'une relecture de la valeur", () => {
+		// `'a${b}c'` entre guillemets SIMPLES ne peut pas être un gabarit en JS, et un
+		// `\${` échappé dans un vrai gabarit est volontairement inerte. Les classer comme
+		// dynamiques les faisait échapper à la vérification par clé exacte.
+		expect(readLiteral("'a${b}c'", 0)?.kind).toBe('literal');
+		expect(readLiteral('`prix: \\${montant}`', 0)?.kind).toBe('literal');
 	});
 });

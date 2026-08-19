@@ -274,15 +274,15 @@ de formes est ouverte par nature : elle ne peut pas prouver sa propre complétud
 
 **La question robuste est le complément** : non pas « quelles formes la clé prend-elle ? », mais
 **« quels sites d'appel ne résolvent PAS en littéral ? »**. Cet ensemble est **clos, comptable et
-décidable** — mesuré par le lecteur réel : **36 sites sur 1496**.
+décidable** — mesuré par le lecteur réel : **33 sites sur 1493**.
 
 **La garde procède donc ainsi** :
 
-1. elle parcourt **tous** les appels à `i18nMsg` et aux relais — **1496 sites** ;
+1. elle parcourt **tous** les appels à `i18nMsg` et aux relais — **1493 sites** ;
 2. tout site dont le premier argument est un **littéral** ou un **gabarit** est résolu comme
    aujourd'hui (D4, D4-bis) ;
 3. tout site dont le premier argument est **autre chose** entre à l'**inventaire des sites non
-   résolus**, avec une **assertion de cardinalité (`36`)** ;
+   résolus**, avec une **assertion de cardinalité (`33`)** ;
 4. chaque entrée de l'inventaire est **soit résolue** — ses clés déclarées en dur, comme les valeurs
    des motifs dynamiques — **soit écrite comme angle mort**, avec sa raison.
 
@@ -297,11 +297,13 @@ pas contourner.**
 l'assertion était verte par construction. L'inventaire, lui, se compare au nombre total d'appels,
 que l'extracteur ne choisit pas.
 
-⚠️ **Les chiffres `36` et `1496` sont ceux du LECTEUR RÉEL, écrit à l'implémentation.** La
+⚠️ **Les chiffres `33` et `1493` sont ceux du LECTEUR RÉEL, après la passe 1 de revue de code.** La
 spécification annonçait 54 et 1514 : ces valeurs venaient d'une mesure d'estimation par expression
 régulière, qui comptait aussi les **définitions** des relais et des mentions en commentaire. *La
 spec a été corrigée sur l'outil, et non l'inverse — c'est le sens de la § « Recompter ses propres
-comptes rendus ».*
+comptes rendus ».* La revue de code les a ensuite affinés une seconde fois — de 36 sur 1496 à
+**33 sur 1493** —, en masquant les commentaires (trois docstrings citaient `i18nMsg` en exemple) et
+en rendant visibles les appels membres.
 
 **Ce que l'inventaire a rendu à sa première exécution** — sites énumérables, donc **résolus** :
 
@@ -486,8 +488,8 @@ celui annoncé, et il n'aurait pas été trouvé sans lire le script.*
 
 7-quinquies. **AC7-quinquies** — La garde tient l'**inventaire des sites non résolus** (D4-ter) :
    tout appel à `i18nMsg` ou à un relais dont le premier argument n'est ni littéral ni gabarit y
-   figure, avec une **assertion de cardinalité (`36`)** et une **assertion sur le nombre total de
-   sites d'appel (`1496`)**. Chaque entrée est soit **résolue** (clés déclarées en dur), soit
+   figure, avec une **assertion de cardinalité (`33`)** et une **assertion sur le nombre total de
+   sites d'appel (`1493`)**. Chaque entrée est soit **résolue** (clés déclarées en dur), soit
    **commentée comme angle mort**. ⚠️ *C'est la seule assertion du document qu'une forme d'appel
    imprévue ne puisse pas contourner : elle ne repose sur aucune énumération de formes.*
 7-ter. **AC7-ter** — Les **trois** ensembles ouverts portent, en commentaire, le fait qu'aucune
@@ -560,7 +562,7 @@ celui annoncé, et il n'aurait pas été trouvé sans lire le script.*
   - [x] **Recensement des 7 relais locaux** et collecte de leurs littéraux, avec assertion de cardinalité (AC7-quater, D4-bis)
   - [x] Comparaison de la **liste** des 10 sites contre la table de référence de D4
   - [x] Aucun `import` de module de production dans le fichier de garde (AC7) — **hors `i18n-literal-reader` (D1-bis)**
-  - [x] **Inventaire des sites non résolus** : 36 sites, assertion de cardinalité + assertion sur les 1496 sites d'appel (AC7-quinquies)
+  - [x] **Inventaire des sites non résolus** : 33 sites, assertion de cardinalité + assertion sur les 1493 sites d'appel (AC7-quinquies)
   - [x] Résolution des 7 familles énumérables, dont les **6 clés manquantes** (`nav-*` ×4, `reports-project-*` ×2) inscrites à l'allowlist
   - [x] Commentaires d'angle mort sur **`vat-category-*` ET `bank-import-info-*`** (AC7-ter), valeurs déclarées **après transformation**
   - [x] Les 10 `imported-supplier-invoices-error-*` en allowlist, commentaire « résorbées par 23-3 »
@@ -996,7 +998,7 @@ l'inverse.*
 | garde B — retirer `nav-credit-notes` de la dette | rouge | rouge |
 | garde B — inscrire `error-invalid-credentials`, déjà au catalogue | rouge | rouge |
 | garde B — retirer le préfixe `due-dates-filter-` de `MOTIFS_DYNAMIQUES` | rouge | rouge |
-| garde B — **créer un site d'indirection neuf** (`i18nMsg(k, 'repli')`) | rouge | rouge, **3 tests sur 7** |
+| garde B — **créer un site d'indirection neuf** (`i18nMsg(k, 'repli')`) | rouge | rouge, **2 tests sur 7** (« collecte » et « inventaire ») |
 
 ⚠️ **La dernière mutation est celle qui compte** : elle simule la sixième forme d'appel qu'aucune
 énumération n'avait prévue. L'assertion d'inventaire l'attrape sans qu'on lui ait rien appris — c'est
@@ -1016,7 +1018,7 @@ retirer les lignes, mais de déclarer `FAMILLES_RESOLUES` : l'étape 4 de `D4-te
   sens, avec borne anti-test-muet à 1200 clés par locale.
 - **Garde B** (`i18n-keys.test.ts`, 7 tests) — existence des clés demandées, allowlist bidirectionnelle,
   8 préfixes dynamiques avec cardinalité, **liste** des 10 sites de gabarit confrontée à une table de
-  référence, inventaire des 36 sites non résolus, orphelines bornées à `PREFIXES_A_COUVERTURE_CLOSE`.
+  référence, **assertion de cardinalité sur les 7 relais**, inventaire des **33** sites non résolus, orphelines bornées à `PREFIXES_A_COUVERTURE_CLOSE`.
 - **Lecteur partagé** (`i18n-literal-reader.js`) — automate caractère par caractère, importable par
   vitest **et** par `node` : c'est ce que la 23-1b consommera pour son moissonneur (D1-bis). Son test
   (12 cas) inscrit les **trois formes qui ont réellement cassé** pendant les passes de revue.
@@ -1039,6 +1041,56 @@ retirer les lignes, mais de déclarer `FAMILLES_RESOLUES` : l'étape 4 de `D4-te
 | `_bmad-output/implementation-artifacts/23-1a-mecanisme-gardes-i18n.md` | chiffres alignés sur l'outil, tâches, Dev Agent Record |
 | `_bmad-output/implementation-artifacts/sprint-status.yaml` | statut |
 
+### Passe 1 de `bmad-code-review` — 2026-08-19, Sonnet ×3, contextes frais
+
+**0 CRITICAL · 4 HIGH · 5 MEDIUM · 5 LOW.** Les trois lentilles ont trouvé des défauts réels dans
+le livré, et **aucun n'était visible depuis les tests, qui passaient tous**.
+
+**Les deux HIGH d'acceptation me visent directement.**
+
+- **`AC7-quater` n'était pas satisfait** : aucune assertion de cardinalité sur les 7 relais. ⚠️ **Et
+  j'avais coché la case de la tâche correspondante.** La collecte des relais était bien faite —
+  `findCallSites` appelle `findRelays` — mais le garde-fou, lui, n'existait pas. Une case à moitié
+  vraie est pire qu'une case fausse : elle survit à la relecture. *C'est exactement ce que la
+  § « ne déclarer que ce qui a tourné » interdit.* L'assertion existe désormais.
+- **`AC7-ter` n'était satisfait qu'aux deux tiers** : le **troisième** ensemble ouvert —
+  `vat-rates/+page.svelte:52`, où la clé vient de la colonne libre `vat_rates.label` — n'était nommé
+  nulle part. La tâche T3 elle-même n'en citait que deux : l'implémentation a suivi la case, pas le
+  critère.
+
+**Les deux HIGH techniques portent sur le lecteur, et le premier est un défaut de correction.**
+
+- **`kind` était déduit d'une relecture de la valeur** (`value.includes('${')`) au lieu du parsing.
+  Conséquence démontrée : `'a${b}c'` entre guillemets **simples** — qui ne peut pas être un gabarit
+  en JavaScript — était classé dynamique, tout comme un `\${` **échappé**, volontairement inerte.
+  L'automate connaissait pourtant la vérité : il maintient un compteur d'interpolation qu'il
+  n'utilisait pas.
+- **Les commentaires étaient comptés comme sites d'appel** : trois docstrings du dépôt écrivent
+  `i18nMsg(clé, repli)` en exemple. Trois des trente-six « sites non résolus » étaient de la prose.
+  ⚠️ **La conséquence grave n'est pas le bruit, c'est la compensation silencieuse** : un commentaire
+  qui disparaît pendant qu'un vrai site apparaît laisse le compte inchangé. C'est le mode d'échec
+  « un ajout compensant un retrait » que j'avais nommé pour refuser le comptage des sites de
+  gabarit, et reproduit sur l'inventaire.
+
+**Le correctif du masquage a lui-même eu un défaut, trouvé en le vérifiant** : un fichier `.svelte`
+n'est pas du JavaScript. Son balisage contient de la prose, et le français y met des apostrophes —
+`l'exercice`, `d'abord`. Traitées comme ouvertures de chaîne, elles avalaient des dizaines de lignes
+et **un commentaire sur trois restait démasqué**. Le critère retenu est net : une chaîne JavaScript
+n'est jamais précédée d'une lettre.
+
+**MEDIUM retenus** : une regex à accolade non appariée ou à quote (`/['"]/g`, idiome courant)
+désynchronisait la lecture d'un gabarit — le commentaire promettait cette protection, le code ne la
+décrivait pas ; `(?<![\w.])` rendait un appel membre `obj.i18nMsg(…)` **totalement invisible**, pas
+même « non résolu » ; `findRelays` n'acceptait qu'une forme unique, si bien qu'un relais en fonction
+fléchée, ou précédé d'une garde, emportait tous ses sites dans le silence ; et le Dev Agent Record
+annonçait « +19 » là où le net est **+17** (le prototype supprimé en retirait 2).
+
+**Effet sur les chiffres** : après masquage des commentaires et prise en compte des appels membres,
+l'inventaire passe de **36 sur 1496** à **33 sur 1493**. Les valeurs de la spec ont suivi.
+
+**Une observation hors périmètre a été réfutée** : une lentille signalait le retour du fichier
+supprimé dans l'arbre de travail. `git status` est propre et le fichier n'existe pas.
+
 ### Gates — exécutés, non déclarés
 
 | gate | résultat |
@@ -1048,7 +1100,7 @@ retirer les lignes, mais de déclarer `FAMILLES_RESOLUES` : l'étape 4 de `D4-te
 | backend complet (`test-fast.sh`, base **remise à zéro d'abord**) | **2219/2219**, 4 ignorés, 138 s — *+1 test : la garde A* |
 | `npm run check` | **0 erreur** (27 avertissements préexistants) |
 | `npm run lint-i18n-ownership` | PASS |
-| `npm run test:unit` | **626/626** sur 69 fichiers — *+19 : gardes A/B et lecteur* |
+| `npm run test:unit` | **633/633** sur 69 fichiers — *+19 tests neufs à l'implémentation, +7 en revue, **−2** par la suppression du prototype : **net +24** depuis `98026213` (609)* |
 | `npm run build` | vert |
 
 ⚠️ **E2E non exécutée** : cette story ne touche aucune surface utilisateur — ni `.svelte` de

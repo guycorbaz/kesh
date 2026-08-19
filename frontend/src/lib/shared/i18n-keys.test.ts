@@ -26,7 +26,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 // Seul import de production autorisé (AC7 / D1-bis) : un utilitaire de lecture, sans
 // clé ni catalogue, partagé avec le moissonneur de la story 23-1b.
-import { findCallSites } from './i18n-literal-reader.js';
+import { findCallSites, findRelays, masquerCommentaires } from './i18n-literal-reader.js';
 import { DETTE_CONNUE } from './i18n-dette-connue.js';
 
 const LOCALES = ['fr-CH', 'de-CH', 'it-CH', 'en-CH'] as const;
@@ -34,8 +34,9 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
 
 /** Valeurs de contrôle, mesurées le 2026-08-19. Un écart se recompte, il ne s'ajuste pas. */
 const ATTENDU = {
-	sitesTotal: 1496,
-	sitesNonResolus: 36,
+	sitesTotal: 1493,
+	sitesNonResolus: 33,
+	relais: 7,
 	sitesGabarit: 10,
 	litterauxMin: 1050,
 	clesDepuisTsMin: 5
@@ -82,6 +83,18 @@ const MOTIFS_DYNAMIQUES: Record<string, readonly string[]> = {
 	// transformation (`info.replace(/_/g, '-')`), donc en tirets et non en snake_case.
 	'bank-import-info-': ['bank-csv-profile-auto-matched', 'bank-csv-multiple-profile-matches']
 };
+
+/**
+ * ⚠️ **TROISIÈME ensemble ouvert, et il n'a pas de préfixe** : `vat-rates/+page.svelte:52`
+ * écrit `i18nMsg(r.label, r.label)` — **la clé elle-même vient de la colonne
+ * `vat_rates.label`**, un `VARCHAR` libre sans contrainte `CHECK`. Aucune énumération
+ * n'est possible : ce site figure à l'inventaire des non résolus et y restera.
+ *
+ * Les trois ensembles ouverts de cette story sont donc `vat-category-*`,
+ * `bank-import-info-*` et celui-ci. *Aucune garde ne les borne, et c'est écrit plutôt
+ * que découvert.*
+ */
+const ANGLE_MORT_CLE_EN_COLONNE = 'routes/(app)/settings/vat-rates/+page.svelte:52';
 
 /**
  * **Les familles résolues de l'inventaire (D4-ter, étape 4).**
@@ -280,6 +293,36 @@ describe('garde i18n — les clés demandées existent au catalogue', () => {
 				obsoletes.push(`${cle} : plus demandée — feature retirée, OU extracteur cassé`);
 		}
 		expect(obsoletes, `entrées de dette obsolètes :\n  ${obsoletes.join('\n  ')}`).toEqual([]);
+	});
+
+	it('les 7 relais locaux sont recensés — cardinalité assertée', () => {
+		// ⚠️ **Ce garde-fou manquait au premier jet, alors que la tâche le déclarait fait.**
+		// Sans lui, un huitième relais ajouté sans que le test le sache rendrait TOUTES
+		// ses clés invisibles, en silence — le défaut que le recensement des relais avait
+		// été créé pour clore, et qui avait déjà coûté 29 clés et un dossier entier.
+		const trouves = new Set<string>();
+		const parcourir = (rep: string) => {
+			for (const e of readdirSync(rep, { withFileTypes: true })) {
+				const chemin = join(rep, e.name);
+				if (e.isDirectory()) {
+					parcourir(chemin);
+					continue;
+				}
+				if (!/\.(svelte|ts)$/.test(e.name) || e.name.includes('.test.')) continue;
+				for (const nom of findRelays(masquerCommentaires(readFileSync(chemin, 'utf-8')))) {
+					trouves.add(`${chemin}:${nom}`);
+				}
+			}
+		};
+		parcourir('src');
+		expect(trouves.size, `relais recensés :\n  ${[...trouves].join('\n  ')}`).toBe(ATTENDU.relais);
+	});
+
+	it('le troisième ensemble ouvert est nommé, pas seulement compté', () => {
+		// AC7-ter : les trois ensembles ouverts portent un commentaire. Les deux premiers
+		// ont un préfixe et vivent dans MOTIFS_DYNAMIQUES ; le troisième n'en a pas — sa
+		// clé vient d'une colonne libre —, il est donc nommé par son site.
+		expect(releve.nonResolus).toContain(ANGLE_MORT_CLE_EN_COLONNE);
 	});
 
 	it('les 8 préfixes dynamiques sont déclarés, et leurs 10 sites confrontés', () => {
