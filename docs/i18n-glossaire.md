@@ -8,7 +8,7 @@ lexicales se prennent une par une, au fil des stories de rollout, et le produit 
 dire deux mots différents pour la même chose selon l'écran.
 
 ⚠️ **Les équivalences de la partie A ne sont pas des propositions : elles sont RELEVÉES
-dans les catalogues existants**, sur les **1216 clés déjà alignées sur les quatre locales.
+dans les catalogues existants**, sur les **1216 clés alignées sur les quatre locales au kickoff de l'epic** (2026-08-19 ; le pilote en a depuis ajouté 20).
 La colonne « précédent » nomme la clé où l'équivalence est attestée.** Les changer, c'est
 désaligner le nouveau du déjà-livré — ce que cet epic vient précisément corriger.
 
@@ -79,7 +79,7 @@ passage des rollouts qui touchent ces domaines, pas ici.
 | client | Kunde | cliente | client | `Client` |
 | numéro de client | Kundennummer | numero cliente | client number | `Numéro de client` |
 | contact | Kontakt | contatto | contact | `Nouveau contact` |
-| **localité** | **Ort** | **località** | **city** | `field-city` (story 23-1b) |
+| **localité** | **Ort** | **località** | **Town/city** | `field-city` (story 23-1b) |
 | **prénom** | **Vorname** | **nome** | **first name** | `field-first-name` (story 23-1b) |
 | **personne de contact** | **Kontaktperson** | **persona di contatto** | **contact person** | `contact-persons-title` (story 23-1b) |
 | carnet d'adresses | **Kontakte** | **contatti** | contacts | `Carnet d'adresses` |

@@ -54,11 +54,15 @@ describe('le moissonneur', () => {
 			[
 				{ chemin: 'src/lib/x.svelte', source: "i18nMsg('vraie-cle', 'V');" },
 				{ chemin: 'src/lib/i18n.svelte.test.ts', source: "i18nMsg('une-cle', 'mon repli');" },
-				{ chemin: 'src/lib/notes.md', source: "i18nMsg('cle-de-doc', 'D');" }
+				{ chemin: 'src/lib/notes.md', source: "i18nMsg('cle-de-doc', 'D');" },
+				// ⚠️ Cette fixture-ci distingue « filtrer le BASENAME » de « filtrer le chemin
+				// entier » : le dossier contient `.test.`, le fichier non. Sans elle, remplacer
+				// le basename par le chemin complet laissait les 10 tests verts. (Passe 3.)
+				{ chemin: 'src/lib/a.test.helpers/Widget.svelte', source: "i18nMsg('cle-utile', 'U');" }
 			],
 			rienAuCatalogue
 		);
-		expect([...moisson.replis.keys()]).toEqual(['vraie-cle']);
+		expect([...moisson.replis.keys()]).toEqual(['vraie-cle', 'cle-utile']);
 	});
 
 	it("(i-quater) une CLÉ invalide en Fluent est écartée — l'autre moitié du signe `=`", () => {
@@ -84,6 +88,12 @@ describe('le moissonneur', () => {
 		expect(fragment).toContain('bonne-cle = B');
 		expect(fragment).not.toContain('foo.bar');
 		expect(fragment).not.toContain('123 =');
+		// ⚠️ Rien ne doit disparaître EN SILENCE : les clés écartées sont recensées, et
+		// l'en-tête compte les clés ÉMISES. (Passe 3 — le patch de la passe 2 avait rouvert
+		// ce silence en ajoutant un motif d'écartement sans canal de signalement.)
+		expect(moisson.aEchapper.map(([c]) => c).sort()).toEqual(['123', 'foo.bar']);
+		expect(fragment).toContain('# 1 clés émises');
+		expect(fragment).toContain('2 écartées');
 	});
 
 	it("(i-bis) un repli qui casserait le .ftl est ÉCARTÉ du fragment, pas injecté", () => {
@@ -93,6 +103,18 @@ describe('le moissonneur', () => {
 		expect(estFtlSain('Facture #{$id} enregistrée.')).toBe(true);
 		expect(estFtlSain('{$n} facture(s) importée(s).')).toBe(true); // le second du Change Log, placeable LÉGITIME
 		expect(estFtlSain('Ligne un\nLigne deux')).toBe(false); // retour à la ligne
+		// ⚠️ Le VIDE est le tueur que la passe 2 laissait passer : `cle = ` est rejeté par
+		// Fluent, et `loader.rs` emporte alors TOUTE la locale. (Passe 3.)
+		expect(estFtlSain('')).toBe(false);
+		expect(estFtlSain('   ')).toBe(false);
+		// ⚠️ Appariées ne veut pas dire valides — Fluent rejette ces trois-là.
+		expect(estFtlSain('a {} b')).toBe(false);
+		expect(estFtlSain('JSON {"a": 1} rendu')).toBe(false);
+		expect(estFtlSain('code {1,2} ici')).toBe(false);
+		expect(estFtlSain('fermante } seule')).toBe(false);
+		// ⚠️ …mais `{"{"}` est l'échappement Fluent d'une accolade littérale, et `fr-CH` s'en
+		// sert vraiment (`invoice-numbering-format-hint`). Une garde qui le refuse est fausse.
+		expect(estFtlSain('Placeholders : {"{"}YEAR{"}"}')).toBe(true);
 		expect(estFtlSain('Valeur { non fermée')).toBe(false); // accolade non appariée
 		expect(estFtlSain('Fermeture } orpheline')).toBe(false);
 

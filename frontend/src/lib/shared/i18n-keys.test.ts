@@ -27,6 +27,10 @@ import { join } from 'node:path';
 // Seul import de production autorisé (AC7 / D1-bis) : un utilitaire de lecture, sans
 // clé ni catalogue, partagé avec le moissonneur de la story 23-1b.
 import { findCallSites, findRelays, masquerCommentaires } from './i18n-literal-reader.js';
+// ⚠️ La règle de périmètre vivait ici en DEUX copies inline, à côté de la fonction du module
+// partagé — trois exemplaires d'une même règle. Ils coïncidaient au caractère près, ce qui est
+// la situation d'avant la dérive, pas une garantie contre elle. (Revue de code 23-1b, passe 3.)
+import { dansLePerimetreDeFichier } from './i18n-harvest.js';
 import { DETTE_CONNUE } from './i18n-dette-connue.js';
 
 const LOCALES = ['fr-CH', 'de-CH', 'it-CH', 'en-CH'] as const;
@@ -250,7 +254,7 @@ function relever(): Releve {
 			}
 			// ⚠️ Les fichiers `.test.*` sont hors collecte (D5-bis) : `i18n.svelte.test.ts`
 			// demande `une-cle` et `compteur`, clés FICTIVES qui doivent le rester.
-			if (!/\.(svelte|ts)$/.test(e.name) || e.name.includes('.test.')) continue;
+			if (!dansLePerimetreDeFichier(e.name)) continue;
 
 			const texte = readFileSync(chemin, 'utf-8');
 			const relatif = chemin.replace(/^src\//, '');
@@ -338,7 +342,7 @@ describe('garde i18n — les clés demandées existent au catalogue', () => {
 					parcourir(chemin);
 					continue;
 				}
-				if (!/\.(svelte|ts)$/.test(e.name) || e.name.includes('.test.')) continue;
+				if (!dansLePerimetreDeFichier(e.name)) continue;
 				for (const nom of findRelays(masquerCommentaires(readFileSync(chemin, 'utf-8')))) {
 					trouves.add(`${chemin}:${nom}`);
 				}

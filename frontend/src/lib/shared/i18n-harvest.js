@@ -66,7 +66,12 @@ export function moissonner(fichiers, existeAuCatalogue, prefixes = []) {
 	const sansRepli = new Map();
 
 	for (const { chemin, source } of fichiers) {
-		if (!dansLePerimetreDeFichier(chemin.split('/').pop() ?? chemin)) continue;
+		// ⚠️ `split` rend toujours au moins une chaîne, donc le cas `undefined` est inatteignable
+		// à l'EXÉCUTION — mais `.pop()` est typé `string | undefined` et `npm run check` le refuse.
+		// L'indexation par la longueur dit la même chose sans faire croire à une défense qui
+		// n'existe pas. (Le `\\` est là parce que `node:path.join` le produit ailleurs.) Passe 3.
+		const morceaux = chemin.split(/[\\/]/);
+		if (!dansLePerimetreDeFichier(morceaux[morceaux.length - 1])) continue;
 		for (const site of findCallSites(source)) {
 			if (site.arg?.kind !== 'literal') continue;
 			const cle = site.arg.value;
@@ -91,7 +96,13 @@ export function moissonner(fichiers, existeAuCatalogue, prefixes = []) {
 
 	const divergents = [...replis].filter(([, parTexte]) => parTexte.size > 1);
 	// Replis qui ne peuvent pas entrer tels quels dans un `.ftl` — à échapper à la main.
-	const aEchapper = [...replis].filter(([, parTexte]) => !estFtlSain([...parTexte.keys()][0]));
+	// ⚠️ Les DEUX motifs d'écartement de `fragmentFtl`, pas seulement celui de la valeur.
+	// La passe 2 avait ajouté le contrôle de clé sans lui donner de canal de signalement :
+	// une clé mal formée disparaissait du fragment sans figurer NULLE PART — le silence même
+	// que cette story combat, rouvert par le correctif censé le fermer. (Passe 3.)
+	const aEchapper = [...replis].filter(
+		([cle, parTexte]) => !estCleFtlSaine(cle) || !estFtlSain([...parTexte.keys()][0])
+	);
 	return { replis, sansRepli, divergents, aEchapper };
 }
 
@@ -112,16 +123,63 @@ export function moissonner(fichiers, existeAuCatalogue, prefixes = []) {
  * @returns {boolean}
  */
 export function estFtlSain(texte) {
+	// ⚠️ Le VIDE est le tueur que la version d'origine laissait passer : `cle = `, `cle =` et
+	// `cle =    ` sont TOUS rejetés par Fluent (`ExpectedMessageField`). La garde qui existe
+	// pour éviter qu'une ligne emporte la locale laissait donc passer la ligne qui l'emporte.
+	if (texte.trim() === '') return false;
 	if (texte.includes('\n')) return false;
-	let profondeur = 0;
-	for (const c of texte) {
-		if (c === '{') profondeur += 1;
-		else if (c === '}') {
-			profondeur -= 1;
-			if (profondeur < 0) return false;
+	// ⚠️ Compter les accolades ne suffit pas : `a {} b`, `JSON {"a": 1}` et `code {1,2}` sont
+	// APPARIÉS et pourtant rejetés par Fluent. On valide donc le CONTENU ENTIER de chaque
+	// placeable, pas son amorce — première rédaction de ce correctif, qui ne regardait que le
+	// premier caractère et laissait passer les deux derniers exemples. (Passe 3.)
+	//
+	// Le jeu accepté est celui que le moissonneur peut légitimement produire : une variable
+	// (`{$id}`), une référence de message (`{marque}`) ou de terme (`{-produit}`), et le
+	// LITTÉRAL DE CHAÎNE — `{"{"}` est la façon dont Fluent échappe une accolade, et le
+	// catalogue `fr-CH` s'en sert réellement (`invoice-numbering-format-hint`). Une première
+	// rédaction l'omettait et rejetait cette entrée légitime : trouvé en passant les 5001
+	// entrées des quatre catalogues à la garde, pas en raisonnant. Le coût
+	// d'un refus injustifié est un repli à recopier à la main ; celui d'un accord injustifié
+	// est une locale entière qui ne charge plus. L'asymétrie commande la sévérité.
+	// ⚠️ Un `}` peut vivre DANS un littéral (`{"}"}`), donc on balaie caractère par caractère
+	// au lieu de chercher la prochaine fermante — première rédaction qui s'y est laissé prendre.
+	let i = 0;
+	while (i < texte.length) {
+		const c = texte[i];
+		if (c === '}') return false; // fermante orpheline
+		if (c !== '{') {
+			i += 1;
+			continue;
 		}
+		let j = i + 1;
+		let dedans = '';
+		while (j < texte.length && texte[j] !== '}') {
+			if (texte[j] === '"') {
+				// littéral de chaîne : on le traverse en entier, `}` compris
+				dedans += texte[j];
+				j += 1;
+				while (j < texte.length && texte[j] !== '"') {
+					if (texte[j] === '\\') {
+						dedans += texte[j];
+						j += 1;
+					}
+					if (j < texte.length) {
+						dedans += texte[j];
+						j += 1;
+					}
+				}
+				if (j >= texte.length) return false; // guillemet jamais refermé
+			}
+			dedans += texte[j];
+			j += 1;
+		}
+		if (j >= texte.length) return false; // accolade ouvrante jamais refermée
+		const estLitteralChaine = /^\s*"([^"\\]|\\.)*"\s*$/.test(dedans);
+		if (!estLitteralChaine && !/^\s*(\$[a-zA-Z][\w-]*|-?[a-zA-Z][\w-]*)\s*$/.test(dedans))
+			return false;
+		i = j + 1;
 	}
-	return profondeur === 0;
+	return true;
 }
 
 /**
@@ -148,18 +206,30 @@ export function estCleFtlSaine(cle) {
 
 /** Rend le fragment `.ftl` trié — à RELIRE avant d'être collé, jamais écrit d'office. */
 export function fragmentFtl(/** @type {Moisson} */ moisson, /** @type {string} */ date) {
-	const lignes = [
-		`# Fragment moissonné le ${date} — À RELIRE AVANT DE COLLER.`,
-		`# ${moisson.replis.size} clés ; les ${moisson.divergents.length} à repli divergent portent la mention CONFLIT.`
-	];
+	/** @type {string[]} */
+	const corps = [];
+	let emises = 0;
+	let conflitsEmis = 0;
 	for (const [cle, parTexte] of [...moisson.replis].sort(([a], [b]) => a.localeCompare(b))) {
 		const texte = [...parTexte.keys()][0];
 		if (!estCleFtlSaine(cle) || !estFtlSain(texte)) {
-			// Écarté du fragment plutôt qu'injecté tel quel : cf. `aEchapper`.
+			// Écarté du fragment plutôt qu'injecté tel quel — et RECENSÉ dans `aEchapper`,
+			// que le script imprime sur la sortie d'erreur. Rien ne disparaît en silence.
 			continue;
 		}
-		if (parTexte.size > 1) lignes.push(`# CONFLIT — ${parTexte.size} replis, cf. sortie d'erreur`);
-		lignes.push(`${cle} = ${texte}`);
+		if (parTexte.size > 1) {
+			corps.push(`# CONFLIT — ${parTexte.size} replis, cf. sortie d'erreur`);
+			conflitsEmis += 1;
+		}
+		corps.push(`${cle} = ${texte}`);
+		emises += 1;
 	}
-	return lignes.join('\n');
+	// ⚠️ L'en-tête compte les clés RÉELLEMENT ÉMISES, pas les clés moissonnées : compter les
+	// secondes faisait annoncer « 2 clés » à un fragment qui en portait une. (Passe 3.)
+	return [
+		`# Fragment moissonné le ${date} — À RELIRE AVANT DE COLLER.`,
+		`# ${emises} clés émises ; ${conflitsEmis} portent la mention CONFLIT ; ` +
+			`${moisson.replis.size - emises} écartées, cf. sortie d'erreur.`,
+		...corps
+	].join('\n');
 }

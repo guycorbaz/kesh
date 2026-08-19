@@ -27,7 +27,7 @@ en partie A du glossaire, le registre d'adresse.
 
 **Dehors, et c'est la 23-1a** : les deux gardes, l'extracteur, les motifs dynamiques, les bornes,
 les allowlists elles-mêmes — cette story ne fait qu'en **retirer 20 lignes**.
-**Dehors aussi** : les 297 autres clés (rollouts 23-2 à 23-6), les 5 entrées Fluent à variables de
+**Dehors aussi** : les 265 autres clés statiques de [#316] (rollouts 23-2 à 23-6), les 5 entrées Fluent à variables de
 `TransactionSplitModal` (23-5), [#255], [#314], [#242].
 
 ⚠️ **Les identifiants de décisions et de critères sont ceux de la 23-1 d'origine.** Ceux qui
@@ -224,7 +224,7 @@ de tutoyer survit, son ordre de grandeur non.*
     EXACTEMENT les deux valeurs que cet AC contrôlait** : elles ne discriminent pas. Il rendrait
     245 entrées au lieu de **274**, perdant 29 clés dont 21 de `settings/email-templates`.
     **La valeur de contrôle qui discrimine est donc `274`.**
-    **(d) le moissonneur porte SON PROPRE TEST vitest** — `frontend/src/lib/shared/harvest.test.ts`,
+    **(d) le moissonneur porte SON PROPRE TEST vitest** — `frontend/src/lib/shared/i18n-harvest.test.ts`,
     donc dans le périmètre de `test:unit` —, à trois fixtures reprenant les trois défauts déjà payés :
     (i) un fichier `*.test.ts` demandant `une-cle`, absent de la sortie ; (ii) une même clé demandée
     avec deux replis différents, présente dans la liste des conflits ; (iii) un repli entre
@@ -461,7 +461,9 @@ argument, gabarit affecté à une variable, clé fabriquée par une fonction, cl
 libre. *Une énumération de formes est ouverte par nature.*
 
 **D4-ter inverse la méthode** : on n'énumère plus les formes qui marchent, on **inventorie les sites
-qui ne résolvent pas** — **54 sur 1514**, ensemble clos, comptable, décidable. Chaque site y est soit
+qui ne résolvent pas** — **54 sur 1514 à l'estimation, 33 sur 1493 une fois le lecteur réel écrit**
+(cf. 23-1a ; les valeurs vivent dans `ATTENDU` de `i18n-keys.test.ts`) —, ensemble clos, comptable,
+décidable. Chaque site y est soit
 résolu (clés déclarées en dur), soit écrit comme angle mort. **C'est la seule assertion du document
 qu'une forme imprévue ne puisse pas contourner.** L'inventaire, à sa première exécution, a résolu
 sept familles et rendu les six clés manquantes : **279 → 285 clés statiques, 346 → 352 pour l'epic.**
@@ -523,8 +525,11 @@ fait entrer `delete = Supprimer` au catalogue **tous gates verts**, comme la spe
 **La convention du catalogue m'a évité une réécriture fautive.** J'allais capitaliser
 `contact-persons-hint = à titre informatif`. Recompté avant d'agir : **29 clés du catalogue
 commencent par une minuscule**, dont `onboarding-field-ide-hint = optionnel, format CHE-…` — un
-*hint*, exactement le même cas. Et les messages d'erreur sans point final sont **78** contre 153
-avec. *Les vingt replis sont donc entrés VERBATIM, et c'est une décision relue, pas une omission.*
+*hint*, exactement le même cas. Le second chiffre avancé ici — « les messages d'erreur sans point final sont
+78 contre 153 avec » — a été **retiré : il n'était pas remesurable**, aucune définition de « message
+d'erreur » n'étant donnée, et cinq définitions plausibles essayées en passe 3 donnent des totaux
+compris entre 152 et 190, jamais 231. La décision ne repose pas dessus : elle repose sur les **29
+minuscules**, recomptées et exactes. *Les vingt replis sont donc entrés VERBATIM, et c'est une décision relue, pas une omission.*
 
 **Deux conventions suisses posées faute de précédent** : le fichier `de-CH` ne contenait **aucun
 `ß`** — l'entrée `field-street = Strasse` ne l'introduit pas ; et `NPA` est retenu pour `it-CH`,
@@ -548,7 +553,7 @@ relu » de « j'ai écrit que j'ai relu ».
 | `field-street` | Rue | Rue | — | Rue | Strasse | Via | Street |
 | `field-building` | N° | N° | — | N° | Nr. | N. | No. |
 | `field-postal-code` | NPA | NPA | — | NPA | PLZ | NPA | Postal code |
-| `field-city` | Localité | Localité | — | Localité | Ort | Località | City |
+| `field-city` | Localité | Localité | — | Localité | Ort | Località | Town/city |
 | `field-country` | Pays | Pays | — | Pays | Land | Paese | Country |
 
 **Verdict de la relecture** : les huit libellés sont **identiques dans tous leurs contextes** — le
@@ -569,12 +574,14 @@ même formulaire, huit libellés traduits et quatre messages en français.
 - **Moissonneur** — logique dans `src/lib/shared/i18n-harvest.js` (importable), enveloppe CLI dans
   `scripts/harvest-i18n-fallbacks.mjs`. ⚠️ **Le module existe parce que `vite.config.ts` borne vitest
   à `src/**`** : un script de `scripts/` n'est exécuté par aucun gate, et toute la substance d'AC10
-  n'aurait eu pour preuve que des nombres recopiés à la main. Il rend, sur le dépôt, exactement les
+  n'aurait eu pour preuve que des nombres recopiés à la main. Il rend, **contre les catalogues d'AVANT la story**, exactement les
   valeurs de contrôle de la spec : **274 clés moissonnées, 5 sans repli littéral, 7 à repli divergent**.
-- **Sept preuves** (`i18n-harvest.test.ts`), dont les trois exigées par AC10 (d) — fichier de test
+- **Sept preuves au commit de dev** (`i18n-harvest.test.ts`) — **dix à `HEAD`**, les passes de revue
+  en ayant ajouté trois. Dont les trois exigées par AC10 (d) — fichier de test
   ignoré, conflit de repli détecté, repli entre guillemets doubles contenant une apostrophe lu entier.
 - **Renommage** `delete` → `contact-persons-delete` : site d'appel, ligne de `KNOWN_VIOLATIONS`
-  **substituée** (non ajoutée), et mention de `delete` **retirée** du commentaire `:103`.
+  **substituée** (non ajoutée), et `delete` **retiré de la liste des clés génériques** du commentaire
+  `:103` — cinq lignes l'évoquant y ont en revanche été **ajoutées**, pour expliquer le retrait.
 - **20 clés entrées dans les quatre locales**, retirées de l'allowlist (295 → 275).
 - **Glossaire** : `localité`, `prénom` et `personne de contact` promus en partie A avec la clé qui
   les atteste ; partie B recomptée à **12** ; paragraphe passé au passé ; préambule aligné.
@@ -584,7 +591,7 @@ même formulaire, huit libellés traduits et quatre messages en français.
 | fichier | |
 |---|---|
 | `frontend/src/lib/shared/i18n-harvest.js` | **neuf** — logique du moissonneur, importable |
-| `frontend/src/lib/shared/i18n-harvest.test.ts` | **neuf** — 7 preuves |
+| `frontend/src/lib/shared/i18n-harvest.test.ts` | **dix preuves à `HEAD`** (7 au commit de dev) |
 | `frontend/scripts/harvest-i18n-fallbacks.mjs` | **neuf** — enveloppe CLI |
 | `frontend/src/lib/features/contacts/ContactPersonsManager.svelte` | `delete` → `contact-persons-delete` |
 | `frontend/scripts/lint-i18n-ownership.js` | ligne substituée + commentaire `:103` |
@@ -633,7 +640,7 @@ le fichier « ne contient aucun ß » **tout en en introduisant deux**, en citan
 contre-exemple. Reformulé. Le nom du fichier de test (`i18n-harvest.test.ts` contre `harvest.test.ts`
 dans l'AC) est aligné sur le code, plus cohérent avec les autres modules `i18n-*`.
 
-**Ce que la revue a CONFIRMÉ compte autant** : les 7 critères tenus, les deux gates **rejoués et non
+**Ce que la revue a CONFIRMÉ compte autant** : les **8** critères tenus, les deux gates **rejoués et non
 recopiés**, le tableau de relecture d'`AC11-ter` vérifié **ligne à ligne au `grep -nF`**, les vingt
 libellés `fr-CH` confirmés entrés **verbatim**, et le moissonneur qui reproduit **274 / 5 / 7** une
 fois les locales remises à leur état d'avant la story — la contre-preuve que je n'avais pas faite.
@@ -641,7 +648,7 @@ fois les locales remises à leur état d'avant la story — la contre-preuve que
 ### Passe 2 de `bmad-code-review` — 2026-08-19, Haiku ×3, diff aplati
 
 **0 CRITICAL · 1 HIGH · 1 MEDIUM · 1 LOW.** Le trend descend : `1 HIGH / 4 MED / 2 LOW` → `1 HIGH /
-1 MED / 1 LOW`. Et **`AcceptanceAuditor` n'a rien trouvé de neuf** — les 7 critères tenus, les gates
+1 MED / 1 LOW`. Et **`AcceptanceAuditor` n'a rien trouvé de neuf** — les **8** critères tenus, les gates
 rejoués, la terminologie des vingt clés confirmée conforme au glossaire après les deux correctifs de
 la passe 1.
 
@@ -685,8 +692,81 @@ locale**. Exactement le raisonnement qui avait motivé `estFtlSain`, appliqué �
 (`{$n} facture(s) importée(s).`), le premier seul étant couvert.
 
 **Recomptés depuis la source par `EdgeCaseHunter`, et tous justes** : 20 clés × 4 locales = 80
-vérifications, allowlist 295 → 275 (delta exact de 20), glossaire 52 / 12, moissonneur 274 / 5 / 7.
+vérifications, allowlist 295 → 275 (delta exact de 20), glossaire 52 / 12, moissonneur **274 / 5 / 7 contre les catalogues d'avant la story**.
+
+⚠️ **Le périmètre fait partie du nombre.** Lancé sur le dépôt à `HEAD`, le moissonneur rend
+**254 / 5 / 7** — les vingt clés du pilote étant désormais au catalogue, il ne les moissonne plus.
+La règle générale est `274 − (clés déjà résorbées)` : un auteur de rollout obtiendra 234, puis 141,
+et ce n'est **pas** une régression du moissonneur. `AC10` désigne 274 comme valeur de contrôle ; elle
+ne vaut que contre les catalogues du kickoff.
 Les décomptes — lieu du défaut sur les stories précédentes de ce dossier — tiennent cette fois.
+
+### Passe 3 de `bmad-code-review` — 2026-08-19, Opus ×2, contextes frais
+
+**0 CRITICAL · 3 HIGH · 7 MEDIUM · 5 LOW.** ⚠️ **La sévérité REMONTE** (`1H/4M/2L` → `1H/1M/1L` →
+`3H/7M/5L`). Mais il faut voir *ce que* la passe a trouvé : **aucun finding ne porte sur le
+comportement du code livré**. Les deux lentilles n'étaient pas orthogonales aux précédentes par le
+modèle — elles l'étaient par **l'angle** : les deux premières passes regardaient le code et les
+traductions, celle-ci regarde les **comptes rendus** et la **robustesse**. La remontée mesure un
+angle jamais braqué, pas un délitement.
+
+**Le HIGH le plus grave : le glossaire était réfuté par la clé qu'il cite comme preuve.**
+`docs/i18n-glossaire.md:82` donnait `city` pour `en-CH`, en nommant `field-city` comme attestation —
+or le catalogue porte `Town/city` **depuis le correctif de la passe 1**, et le commentaire qui
+l'explique est trois lignes plus haut dans ce même fichier. Le correctif avait été appliqué au
+catalogue et **non propagé** au document.
+
+⚠️ **La conséquence dépasse cette story.** L'epic pose la partie A du glossaire comme **« non
+négociable en story de rollout »**. Un rollout 23-2 à 23-6 suivant le glossaire aurait écrit `city`
+là où le pilote a écrit `Town/city` — **la divergence terminologique que le glossaire existe pour
+empêcher, semée par le pilote lui-même**. C'est la réalisation du risque `R3` de l'epic.
+
+**Le second HIGH explique le premier.** Les passes 1 et 2 déclaraient « les 7 critères tenus » — il y
+en a **8**. Un décompte de couverture d'audit n'est pas décoratif : c'est la **liste de ce qui a été
+regardé**. Le critère non compté était `AC11-quater`, « le glossaire est cohérent après promotion » —
+le seul en défaut. *Compter faux ses critères, c'est en laisser un hors champ sans le savoir.*
+
+**Le troisième HIGH : un nombre juste, un périmètre absent.** « Le moissonneur rend, **sur le dépôt**,
+274 / 5 / 7 » — sur le dépôt il rend **254**. 274 est exact contre les catalogues d'**avant** la
+story ; les vingt clés du pilote y étant désormais entrées, il ne les moissonne plus. `AC10` désigne
+274 comme valeur de contrôle : un auteur de rollout aurait lu une régression du moissonneur là où il
+n'y a que la story qui travaille. La règle `274 − (clés résorbées)` est maintenant écrite.
+
+**Deux MEDIUM sur le code, et le premier est encore une régression de la passe précédente** —
+sixième d'affilée :
+
+- **le silence rouvert.** L'invariant « écarté du fragment ⇒ recensé dans `aEchapper` » tenait
+  exactement avant la passe 2, qui a ajouté un **second motif d'écartement sans canal de
+  signalement**. Une clé mal formée disparaissait de **tous** les canaux, et l'en-tête la comptait
+  encore : « 2 clés » pour un fragment d'une ligne. Le commentaire que la passe 2 avait écrit à cette
+  ligne — *« cf. `aEchapper` »* — était faux pour la moitié des cas qu'il commentait.
+- **le vide passait la garde.** `estFtlSain('')` rendait `true`, alors que Fluent rejette `cle = `
+  (`ExpectedMessageField`). La garde qui existe pour empêcher qu'une ligne emporte la locale
+  laissait passer **exactement la ligne qui l'emporte**.
+
+**Et un LOW qui a coûté trois rédactions**, ce qui en dit long : compter les accolades ne suffit pas —
+`a {} b`, `JSON {"a": 1}`, `code {1,2}` sont **appariés et rejetés** par Fluent. La première
+rédaction ne validait que l'**amorce** du placeable ; la deuxième, qui validait le contenu entier,
+**rejetait une entrée légitime de `fr-CH`** (`{"{"}` est l'échappement Fluent d'une accolade, et le
+catalogue s'en sert) ; la troisième traverse les littéraux de chaîne caractère par caractère.
+⚠️ **Trouvé en passant les 5001 entrées des quatre catalogues à la garde, pas en raisonnant.**
+
+⚠️ **Un correctif de la lentille était à moitié faux, et le gate l'a dit.** Elle qualifiait le
+`?? chemin` du basename de « code mort suggérant une défense qui n'existe pas ». Inatteignable à
+l'exécution : **vrai**. Inutile : **faux** — `.pop()` est typé `string | undefined` et `npm run check`
+refusait sans lui. Le retirer sec faisait rougir le gate. L'indexation par la longueur dit la même
+chose sans mentir sur une défense inexistante.
+
+**Les quatre gardes neuves sont vérifiées par mutation** — chacune tue un test : basename remplacé
+par le chemin entier, vide accepté, placeable non validé, `aEchapper` privé du motif de clé.
+
+**Ce que la passe a CONFIRMÉ, recompté depuis la source** : 655 tests et 29 `kesh-i18n` **rejoués et
+exacts** ; allowlist 295 → 275 dont le `diff` rend **exactement** les 20 clés du pilote ; 20 × 4 = 80
+lignes ajoutées, **0 supprimée** ; 57 clés de parité inchangées ; glossaire 52 / 12 ; les **vingt
+replis comparés octet à octet** et identiques ; les **29 minuscules** exactes ; **aucun `ß`** en
+`de-CH` ; les 8 lignes du tableau `AC11-ter` vérifiées au `grep` ; `individual` **entièrement**
+propagé. Et — le geste que la story fait le mieux — **aucune déclaration d'exécution des E2E nulle
+part**, avec le paragraphe qui dit pourquoi.
 
 ### Gates — exécutés, non déclarés
 
