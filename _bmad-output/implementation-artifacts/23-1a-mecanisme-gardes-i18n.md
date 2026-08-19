@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev
+review
 
 Première moitié du split de la **23-1**, arbitré par Guy le 2026-08-19 après trois passes de
 `bmad-create-story validate` (`CRITICAL → HIGH → HIGH` : plafond de sévérité stagnant, § *Règle de
@@ -274,15 +274,15 @@ de formes est ouverte par nature : elle ne peut pas prouver sa propre complétud
 
 **La question robuste est le complément** : non pas « quelles formes la clé prend-elle ? », mais
 **« quels sites d'appel ne résolvent PAS en littéral ? »**. Cet ensemble est **clos, comptable et
-décidable** — mesuré le 2026-08-19 : **54 sites sur 1514**.
+décidable** — mesuré par le lecteur réel : **36 sites sur 1496**.
 
 **La garde procède donc ainsi** :
 
-1. elle parcourt **tous** les appels à `i18nMsg` et aux relais — **1514 sites** ;
+1. elle parcourt **tous** les appels à `i18nMsg` et aux relais — **1496 sites** ;
 2. tout site dont le premier argument est un **littéral** ou un **gabarit** est résolu comme
    aujourd'hui (D4, D4-bis) ;
 3. tout site dont le premier argument est **autre chose** entre à l'**inventaire des sites non
-   résolus**, avec une **assertion de cardinalité (`54`)** ;
+   résolus**, avec une **assertion de cardinalité (`36`)** ;
 4. chaque entrée de l'inventaire est **soit résolue** — ses clés déclarées en dur, comme les valeurs
    des motifs dynamiques — **soit écrite comme angle mort**, avec sa raison.
 
@@ -296,6 +296,12 @@ pas contourner.**
 10 sites dynamiques à la table de D4 — **mais les deux côtés sortaient du même extracteur**, donc
 l'assertion était verte par construction. L'inventaire, lui, se compare au nombre total d'appels,
 que l'extracteur ne choisit pas.
+
+⚠️ **Les chiffres `36` et `1496` sont ceux du LECTEUR RÉEL, écrit à l'implémentation.** La
+spécification annonçait 54 et 1514 : ces valeurs venaient d'une mesure d'estimation par expression
+régulière, qui comptait aussi les **définitions** des relais et des mentions en commentaire. *La
+spec a été corrigée sur l'outil, et non l'inverse — c'est le sens de la § « Recompter ses propres
+comptes rendus ».*
 
 **Ce que l'inventaire a rendu à sa première exécution** — sites énumérables, donc **résolus** :
 
@@ -480,8 +486,8 @@ celui annoncé, et il n'aurait pas été trouvé sans lire le script.*
 
 7-quinquies. **AC7-quinquies** — La garde tient l'**inventaire des sites non résolus** (D4-ter) :
    tout appel à `i18nMsg` ou à un relais dont le premier argument n'est ni littéral ni gabarit y
-   figure, avec une **assertion de cardinalité (`54`)** et une **assertion sur le nombre total de
-   sites d'appel (`1514`)**. Chaque entrée est soit **résolue** (clés déclarées en dur), soit
+   figure, avec une **assertion de cardinalité (`36`)** et une **assertion sur le nombre total de
+   sites d'appel (`1496`)**. Chaque entrée est soit **résolue** (clés déclarées en dur), soit
    **commentée comme angle mort**. ⚠️ *C'est la seule assertion du document qu'une forme d'appel
    imprévue ne puisse pas contourner : elle ne repose sur aucune énumération de formes.*
 7-ter. **AC7-ter** — Les **trois** ensembles ouverts portent, en commentaire, le fait qu'aucune
@@ -534,33 +540,33 @@ celui annoncé, et il n'aurait pas été trouvé sans lire le script.*
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Garde A, parité inter-locales** (AC1, AC2, AC3, AC9)
-  - [ ] `frontend/src/lib/shared/i18n-literal-reader.js` — module partagé, importable par vitest ET par `node` (D1-bis)
-  - [ ] Accesseur `keys()` sur `I18nBundle` si le test est hors module, sinon usage direct du champ privé
-  - [ ] Comparaison des quatre ensembles dans les deux sens, message d'échec nommant clés et locale
-  - [ ] `crates/kesh-i18n/dette-parite-connue.txt` — les 57 clés, triées, en-tête explicatif
-  - [ ] Assertions « allowlist obsolète » **dans les deux sens** + borne de collecte (`>= 1200` par locale)
+- [x] **T1 — Garde A, parité inter-locales** (AC1, AC2, AC3, AC9)
+  - [x] `frontend/src/lib/shared/i18n-literal-reader.js` — module partagé, importable par vitest ET par `node` (D1-bis)
+  - [x] Accesseur `keys()` sur `I18nBundle` si le test est hors module, sinon usage direct du champ privé
+  - [x] Comparaison des quatre ensembles dans les deux sens, message d'échec nommant clés et locale
+  - [x] `crates/kesh-i18n/dette-parite-connue.txt` — les 57 clés, triées, en-tête explicatif
+  - [x] Assertions « allowlist obsolète » **dans les deux sens** + borne de collecte (`>= 1200` par locale)
 
-- [ ] **T2 — Garde B, existence des clés demandées** (AC4, AC5, AC6, AC9, AC12, AC12-bis, AC12-ter)
-  - [ ] `frontend/src/lib/shared/i18n-keys.test.ts` — parcours de tout `src` **hors fichiers `.test.*`** (D5-bis), lecture des 4 `.ftl`
-  - [ ] `frontend/src/lib/shared/i18n-dette-connue.ts` — **285 + 10** clés, triées, en-tête qui nomme les stories de résorption
-  - [ ] Assertions « allowlist obsolète » **dans les deux sens** + borne globale (`>= 1050`) + borne `.ts` (`>= 5`) — valeurs du tableau de D5, et non celles d'avant le recompte des relais
-  - [ ] Suppression de `duplicate-i18n-keys.test.ts` — **ses DEUX contrôles repris** (existence + orphelines bornées, AC12-ter) — **et conservation de `contacts-i18n-realpath.test.ts`**
+- [x] **T2 — Garde B, existence des clés demandées** (AC4, AC5, AC6, AC9, AC12, AC12-bis, AC12-ter)
+  - [x] `frontend/src/lib/shared/i18n-keys.test.ts` — parcours de tout `src` **hors fichiers `.test.*`** (D5-bis), lecture des 4 `.ftl`
+  - [x] `frontend/src/lib/shared/i18n-dette-connue.ts` — **285 + 10** clés, triées, en-tête qui nomme les stories de résorption
+  - [x] Assertions « allowlist obsolète » **dans les deux sens** + borne globale (`>= 1050`) + borne `.ts` (`>= 5`) — valeurs du tableau de D5, et non celles d'avant le recompte des relais
+  - [x] Suppression de `duplicate-i18n-keys.test.ts` — **ses DEUX contrôles repris** (existence + orphelines bornées, AC12-ter) — **et conservation de `contacts-i18n-realpath.test.ts`**
 
-- [ ] **T3 — Motifs dynamiques, relais et inventaire** (AC7, AC7-bis, AC7-ter, AC7-quater, AC7-quinquies, AC8)
-  - [ ] Table `MOTIFS_DYNAMIQUES` : **8 préfixes**, valeurs en dur, `bank-import-info-*` compris
-  - [ ] Assertion de cardinalité par préfixe **+ assertion sur le nombre de sites (10)**
-  - [ ] Extracteur robuste **aux apostrophes dans l'interpolation, aux appels multi-lignes Svelte ET TypeScript**, avec son test à trois fixtures (AC7-bis)
-  - [ ] **Recensement des 7 relais locaux** et collecte de leurs littéraux, avec assertion de cardinalité (AC7-quater, D4-bis)
-  - [ ] Comparaison de la **liste** des 10 sites contre la table de référence de D4
-  - [ ] Aucun `import` de module de production dans le fichier de garde (AC7) — **hors `i18n-literal-reader` (D1-bis)**
-  - [ ] **Inventaire des sites non résolus** : 54 sites, assertion de cardinalité + assertion sur les 1514 sites d'appel (AC7-quinquies)
-  - [ ] Résolution des 7 familles énumérables, dont les **6 clés manquantes** (`nav-*` ×4, `reports-project-*` ×2) inscrites à l'allowlist
-  - [ ] Commentaires d'angle mort sur **`vat-category-*` ET `bank-import-info-*`** (AC7-ter), valeurs déclarées **après transformation**
-  - [ ] Les 10 `imported-supplier-invoices-error-*` en allowlist, commentaire « résorbées par 23-3 »
+- [x] **T3 — Motifs dynamiques, relais et inventaire** (AC7, AC7-bis, AC7-ter, AC7-quater, AC7-quinquies, AC8)
+  - [x] Table `MOTIFS_DYNAMIQUES` : **8 préfixes**, valeurs en dur, `bank-import-info-*` compris
+  - [x] Assertion de cardinalité par préfixe **+ assertion sur le nombre de sites (10)**
+  - [x] Extracteur robuste **aux apostrophes dans l'interpolation, aux appels multi-lignes Svelte ET TypeScript**, avec son test à trois fixtures (AC7-bis)
+  - [x] **Recensement des 7 relais locaux** et collecte de leurs littéraux, avec assertion de cardinalité (AC7-quater, D4-bis)
+  - [x] Comparaison de la **liste** des 10 sites contre la table de référence de D4
+  - [x] Aucun `import` de module de production dans le fichier de garde (AC7) — **hors `i18n-literal-reader` (D1-bis)**
+  - [x] **Inventaire des sites non résolus** : 36 sites, assertion de cardinalité + assertion sur les 1496 sites d'appel (AC7-quinquies)
+  - [x] Résolution des 7 familles énumérables, dont les **6 clés manquantes** (`nav-*` ×4, `reports-project-*` ×2) inscrites à l'allowlist
+  - [x] Commentaires d'angle mort sur **`vat-category-*` ET `bank-import-info-*`** (AC7-ter), valeurs déclarées **après transformation**
+  - [x] Les 10 `imported-supplier-invoices-error-*` en allowlist, commentaire « résorbées par 23-3 »
 
-- [ ] **T6 — Gates** (AC13)
-  - [ ] Gate backend complet, gate frontend complet, avant tout push
+- [x] **T6 — Gates** (AC13)
+  - [x] Gate backend complet, gate frontend complet, avant tout push
 
 ## Dev Notes
 
@@ -922,7 +928,7 @@ argument, gabarit affecté à une variable, clé fabriquée par une fonction, cl
 libre. *Une énumération de formes est ouverte par nature.*
 
 **D4-ter inverse la méthode** : on n'énumère plus les formes qui marchent, on **inventorie les sites
-qui ne résolvent pas** — **54 sur 1514**, ensemble clos, comptable, décidable. Chaque site y est soit
+qui ne résolvent pas** — **54 sur 1514** à l'estimation, **36 sur 1496** une fois le lecteur réel écrit (cf. § D4-ter), ensemble clos, comptable, décidable. Chaque site y est soit
 résolu (clés déclarées en dur), soit écrit comme angle mort. **C'est la seule assertion du document
 qu'une forme imprévue ne puisse pas contourner.** L'inventaire, à sa première exécution, a résolu
 sept familles et rendu les six clés manquantes : **279 → 285 clés statiques, 346 → 352 pour l'epic.**
@@ -971,9 +977,80 @@ précédentes dans le mauvais sens.
 
 ### Agent Model Used
 
+Opus 5 (1M context) — implémentation du 2026-08-19.
+
 ### Debug Log References
+
+**Le lecteur de littéral a été confronté au dépôt AVANT d'écrire la moindre garde**, et il a
+corrigé la spec : celle-ci annonçait **54 sites non résolus sur 1514**, valeurs issues d'une mesure
+par expression régulière qui comptait aussi les **définitions** de relais et des mentions en
+commentaire. Le lecteur réel rend **36 sur 1496**. *La spec a été alignée sur l'outil, pas
+l'inverse.*
+
+**Les deux gardes ont été MUTÉES pour prouver qu'elles mordent**, et non seulement exécutées :
+
+| mutation | attendu | obtenu |
+|---|---|---|
+| garde A — retirer `invoice-error-already-validated` de la dette de parité | rouge | rouge, nommant la clé **et** les trois locales |
+| garde A — inscrire `error-invalid-credentials`, déjà traduite | rouge | rouge, « désormais traduite — retirer de la dette » |
+| garde B — retirer `nav-credit-notes` de la dette | rouge | rouge |
+| garde B — inscrire `error-invalid-credentials`, déjà au catalogue | rouge | rouge |
+| garde B — retirer le préfixe `due-dates-filter-` de `MOTIFS_DYNAMIQUES` | rouge | rouge |
+| garde B — **créer un site d'indirection neuf** (`i18nMsg(k, 'repli')`) | rouge | rouge, **3 tests sur 7** |
+
+⚠️ **La dernière mutation est celle qui compte** : elle simule la sixième forme d'appel qu'aucune
+énumération n'avait prévue. L'assertion d'inventaire l'attrape sans qu'on lui ait rien appris — c'est
+la garantie de `D4-ter`, vérifiée plutôt que postulée.
+
+**Un piège prévu par la revue s'est produit tel quel** : à la première exécution, la garde B a
+rougi sur les **6 clés de l'inventaire** (`nav-*`, `reports-project-*`), inscrites à la dette mais
+introuvables parmi les clés demandées. C'est exactement le retournement que la passe 3 annonçait —
+*« le contrôle symétrique pousserait la dette hors de l'allowlist »*. Le correctif n'a pas été de
+retirer les lignes, mais de déclarer `FAMILLES_RESOLUES` : l'étape 4 de `D4-ter`.
 
 ### Completion Notes List
 
+- **Garde A** (`loader.rs`, `parity_between_locales`) — compare les **ensembles de clés** des quatre
+  catalogues via le champ privé `keys`, sans jamais appeler `format()` ni `all_messages()`, qui
+  replient sur `fr-CH` et ne peuvent pas distinguer « traduit » de « replié ». Échoue dans les deux
+  sens, avec borne anti-test-muet à 1200 clés par locale.
+- **Garde B** (`i18n-keys.test.ts`, 7 tests) — existence des clés demandées, allowlist bidirectionnelle,
+  8 préfixes dynamiques avec cardinalité, **liste** des 10 sites de gabarit confrontée à une table de
+  référence, inventaire des 36 sites non résolus, orphelines bornées à `PREFIXES_A_COUVERTURE_CLOSE`.
+- **Lecteur partagé** (`i18n-literal-reader.js`) — automate caractère par caractère, importable par
+  vitest **et** par `node` : c'est ce que la 23-1b consommera pour son moissonneur (D1-bis). Son test
+  (12 cas) inscrit les **trois formes qui ont réellement cassé** pendant les passes de revue.
+- **Allowlists** — 295 entrées côté frontend (279 littéraux + 6 de l'inventaire + 10 expansions),
+  57 côté Rust. Générées **depuis la source**, jamais saisies.
+- `duplicate-i18n-keys.test.ts` supprimé, **ses deux contrôles repris** ; `contacts-i18n-realpath.test.ts`
+  conservé et vert.
+
 ### File List
 
+| fichier | |
+|---|---|
+| `frontend/src/lib/shared/i18n-literal-reader.js` | **neuf** — lecteur partagé (D1-bis) |
+| `frontend/src/lib/shared/i18n-literal-reader.test.ts` | **neuf** — 12 preuves, dont les 3 formes qui ont cassé |
+| `frontend/src/lib/shared/i18n-keys.test.ts` | **neuf** — garde B, 7 tests |
+| `frontend/src/lib/shared/i18n-dette-connue.ts` | **neuf** — 295 entrées |
+| `frontend/src/lib/features/contacts/duplicate-i18n-keys.test.ts` | **supprimé** — remplacé par la garde B |
+| `crates/kesh-i18n/src/loader.rs` | garde A ajoutée au module `tests` |
+| `crates/kesh-i18n/dette-parite-connue.txt` | **neuf** — 57 clés de l'issue #283 |
+| `_bmad-output/implementation-artifacts/23-1a-mecanisme-gardes-i18n.md` | chiffres alignés sur l'outil, tâches, Dev Agent Record |
+| `_bmad-output/implementation-artifacts/sprint-status.yaml` | statut |
+
+### Gates — exécutés, non déclarés
+
+| gate | résultat |
+|---|---|
+| `cargo fmt --all -- --check` | vert |
+| `cargo clippy --workspace --all-targets -D warnings` | vert, 0 avertissement |
+| backend complet (`test-fast.sh`, base **remise à zéro d'abord**) | **2219/2219**, 4 ignorés, 138 s — *+1 test : la garde A* |
+| `npm run check` | **0 erreur** (27 avertissements préexistants) |
+| `npm run lint-i18n-ownership` | PASS |
+| `npm run test:unit` | **626/626** sur 69 fichiers — *+19 : gardes A/B et lecteur* |
+| `npm run build` | vert |
+
+⚠️ **E2E non exécutée** : cette story ne touche aucune surface utilisateur — ni `.svelte` de
+production, ni route, ni API. Les quatre fichiers livrés sont deux tests, un module de lecture et
+une liste de données.
