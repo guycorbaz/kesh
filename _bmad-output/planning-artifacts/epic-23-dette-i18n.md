@@ -1,10 +1,10 @@
 # Epic 23 — Dette i18n : le repli silencieux
 
 **Statut** : in-progress (kickoff 2026-08-19)
-**Issues GitHub** : [#316] (KF-040 — 250 clés demandées, absentes des **quatre** catalogues) + [#283] (57 clés présentes en `fr-CH`, absentes des trois autres)
+**Issues GitHub** : [#316] (KF-040 — **285** clés demandées, absentes des **quatre** catalogues ; l'issue en annonce 258, chiffre d'avant les relais et l'inventaire) + [#283] (57 clés présentes en `fr-CH`, absentes des trois autres)
 **Origine** : items de **catégorie A** de la rétrospective Epic 22, actions **A6**. Ils bloquent le kickoff de l'epic suivant au sens de la § *Tech debt management* du `CLAUDE.md`.
 **Cible release** : v0.11 (à confirmer)
-**Arbitrages de Guy (2026-08-19)** : (1) **tout résorber** et poser la garde générale, (2) traductions produites par l'orchestrateur **sur glossaire figé d'avance** (`docs/i18n-glossaire.md`), (3) **epic dédié**, story-zéro + rollouts — la règle de splitting préventif se déclenche (13 dossiers > 5 modules).
+**Arbitrages de Guy (2026-08-19)** : (1) **tout résorber** et poser la garde générale, (2) traductions produites par l'orchestrateur **sur glossaire figé d'avance** (`docs/i18n-glossaire.md`), (3) **epic dédié**, story-zéro + rollouts — la règle de splitting préventif se déclenche (14 dossiers > 5 modules).
 
 ## Le défaut, en une phrase
 
@@ -20,14 +20,15 @@ germanophone, avec tous les gates au vert. C'est le **test muet** transposé aux
 |---|---|
 | clés par catalogue | `fr-CH` **1273**, `de-CH` / `en-CH` / `it-CH` **1216** |
 | **[#283]** clés en `fr-CH` absentes ailleurs | **57**, et le **même ensemble** sur les trois locales (union = intersection) ; **0** clé en trop |
-| **[#316]** littéraux demandés et absents des 4 catalogues | **279 statiques** (relais compris) ; le recensement initial, borné à `i18nMsg(`, en rendait 258 dont **8 littéraux dynamiques** (`journal-${j.toLowerCase()}`, `vat-category-${r.category}`…) → **250 clés statiques** |
+| **[#316]** littéraux demandés et absents des 4 catalogues | **285 statiques** (relais et inventaire compris) ; le recensement initial, borné à `i18nMsg(`, en rendait 258 dont **8 littéraux dynamiques** (`journal-${j.toLowerCase()}`, `vat-category-${r.category}`…) → **250 clés statiques** |
 | préfixes dynamiques réels / sites d'appel | **8** / **10** — ⚠️ les 8 littéraux ci-dessus ne couvrent que **7** préfixes ; le 8ᵉ, `bank-import-info-*`, avait échappé à l'extraction (passe 1 de `validate` de la 23-1) |
-| replis moissonnables mécaniquement | **245** / 250 |
+| replis moissonnables mécaniquement | **274** / 285 |
 | clés sans repli littéral | **5**, toutes dans `TransactionSplitModal.svelte` — replis interpolés (`` `Ligne ${i + 1} : compte requis` ``) → entrées Fluent **à variables** |
 | dossiers concernés | **14** pour [#316] (le 14ᵉ, `routes/onboarding`, n'est apparu qu'avec les relais) |
 | clés révélées par l'énumération des motifs dynamiques | **+10** — la famille `imported-supplier-invoices-error-*` est absente des quatre catalogues (*trouvé à la spécification de la 23-1, cf. ci-dessous*) |
 | clés révélées par les **relais locaux** (`msg(key, fallback) → i18nMsg`) | **+29**, et un **dossier entier** (`routes/onboarding`) — invisibles de toute extraction cherchant `i18nMsg(` ; trouvées en passe 1 de revue du split, cf. story 23-1a § D4-bis |
-| **total à faire vivre** | **346 clés** → **289** entrées `fr-CH` + **1038** messages `de-CH` / `it-CH` / `en-CH` |
+| clés révélées par l'**inventaire des sites non résolus** (D4-ter) | **+6** — 4 entrées du menu principal (`nav-*`) et 2 onglets de rapport, portées par des tables `i18nKey`/`labelKey` |
+| **total à faire vivre** | **352 clés** → **295** entrées `fr-CH` + **1056** messages `de-CH` / `it-CH` / `en-CH` |
 
 Commande de recompte, à rejouer et non à croire :
 
@@ -61,14 +62,14 @@ LC_ALL=C comm -23 <(grep -oE '^[a-zA-Z][A-Za-z0-9_-]* *=' fr-CH/messages.ftl | L
 - **`npm run check`** (svelte-check) ne connaît pas les clés i18n : ce sont des littéraux de chaîne.
 - **`npm run lint-i18n-ownership`** contrôle l'**appartenance** d'un namespace à un dossier
   (`keyBelongsToFeature`), jamais l'**existence** de la clé — et il ne balaie que
-  `src/lib/features/`, alors que **197 des 250** manquantes sont demandées **exclusivement** depuis `src/routes/`
-  (199 depuis au moins un fichier de `routes/`).
+  `src/lib/features/`, alors que **226 des 285** manquantes sont demandées **exclusivement** depuis `src/routes/`
+  (228 depuis au moins un fichier de `routes/`).
 - **la suite E2E** tourne en **français**, où le repli est rigoureusement indiscernable de la traduction.
 
 ⚠️ **Et le repli a DEUX chemins, ce que la première rédaction de ce plan taisait.** `all_messages`
 (`loader.rs:130-143`) charge `fr-CH` comme base avant d'écraser avec la locale demandée : pour les
 57 clés de [#283], le frontend reçoit donc **du français depuis le backend**, et le second argument
-d'`i18nMsg` n'est jamais atteint. Pour les 250 de [#316], c'est le littéral en dur du `.svelte` qui
+d'`i18nMsg` n'est jamais atteint. Pour les 285 de [#316], c'est le littéral en dur du fichier appelant qui
 s'affiche. Même symptôme, deux mécanismes — et **aucun test passant par `format()` ou
 `all_messages()` ne peut voir le premier**. Détail et conséquences : story 23-1, § *Contexte*.
 
@@ -141,8 +142,8 @@ s'y fait au fichier, pas en passes adversariales globales — conformément à l
 
 | # | Risque | Parade |
 |---|---|---|
-| R1 | **La moisson des replis fait entrer 250 formulations françaises non relues.** Un repli écrit à la va-vite devient un libellé de catalogue. | Le moissonneur **propose**, il ne commite pas : chaque story de rollout relit ses entrées `fr-CH` avant de les figer. |
-| R2 | **L'allowlist devient un cimetière.** Une allowlist de 317 lignes qui ne décroît pas rend la garde décorative. | Elle est **décroissante par construction** (un test échoue si elle contient une clé désormais présente) et l'epic se clôt sur son vidage. |
+| R1 | **La moisson des replis fait entrer 285 formulations françaises non relues.** Un repli écrit à la va-vite devient un libellé de catalogue. | Le moissonneur **propose**, il ne commite pas : chaque story de rollout relit ses entrées `fr-CH` avant de les figer. |
+| R2 | **L'allowlist devient un cimetière.** Une allowlist de 352 lignes qui ne décroît pas rend la garde décorative. | Elle est **décroissante par construction** (un test échoue si elle contient une clé désormais présente) et l'epic se clôt sur son vidage. |
 | R3 | **Terminologie divergente entre stories de rollout.** Six stories, six occasions de traduire « justificatif » différemment. | `docs/i18n-glossaire.md`, figé avant la première traduction ; partie A **non négociable** en story de rollout. |
 | R4 | **Les entrées Fluent à variables** (les 5 de `TransactionSplitModal`) sont les seules non mécaniques — une erreur de nom de variable est silencieuse à la compilation. | Traitées dans la 23-5, avec un test qui **formate** chaque entrée avec ses arguments et vérifie qu'aucun placeholder ne survit au rendu. |
 
