@@ -638,6 +638,56 @@ recopiés**, le tableau de relecture d'`AC11-ter` vérifié **ligne à ligne au 
 libellés `fr-CH` confirmés entrés **verbatim**, et le moissonneur qui reproduit **274 / 5 / 7** une
 fois les locales remises à leur état d'avant la story — la contre-preuve que je n'avais pas faite.
 
+### Passe 2 de `bmad-code-review` — 2026-08-19, Haiku ×3, diff aplati
+
+**0 CRITICAL · 1 HIGH · 1 MEDIUM · 1 LOW.** Le trend descend : `1 HIGH / 4 MED / 2 LOW` → `1 HIGH /
+1 MED / 1 LOW`. Et **`AcceptanceAuditor` n'a rien trouvé de neuf** — les 7 critères tenus, les gates
+rejoués, la terminologie des vingt clés confirmée conforme au glossaire après les deux correctifs de
+la passe 1.
+
+⚠️ **Le HIGH est encore une régression du patch de la passe précédente** — cinquième fois de suite
+sur ce dossier, en comptant les quatre passes de la story sœur. Aucune passe n'a jamais trouvé de
+défaut dans la conception d'origine.
+
+**Le HIGH : un maillon prouvé ne prouve pas la chaîne.** La passe 1 avait déplacé le filtre des
+`.test.*` du script vers le module, pour le rendre testable — bon geste, à demi fait : la
+**garantie** reposait toujours sur la politesse de l'appelant. Mesuré, pas supposé :
+
+```
+# le filtre retiré du script, ligne 37
+Tests  8 passed (8)          ← VERT. Le garde-fou ne gardait rien.
+```
+
+C'est le mode d'échec que `contacts-i18n-realpath.test.ts` documente déjà dans ce dépôt, et que
+cette story avait **déjà payé une fois** — `une-cle = mon repli` était entré au catalogue. Corrigé
+en faisant appliquer le périmètre par `moissonner` **lui-même**.
+
+⚠️ **La lentille avait classé cela CRITICAL en affirmant que le moissonneur incluait les `.test.*`.
+C'était faux** : elle l'avait appelé en court-circuitant l'énumération de fichiers, donc en sautant
+l'étape qui filtre. Le grep ground-truth a réfuté l'observation ; c'est en creusant sa piste qu'on
+trouve le vrai défaut, plus grave et ailleurs.
+
+**Le MEDIUM : la passe 1 n'avait gardé qu'un côté du signe `=`.** `estFtlSain` contrôlait la
+**valeur** ; la **clé** entrait telle quelle. Une clé vide, numérique, ou pointée produit une ligne
+que le parseur rejette — et `loader.rs` propageant l'erreur **sans tri**, elle emporte **toute la
+locale**. Exactement le raisonnement qui avait motivé `estFtlSain`, appliqué à sa moitié manquante.
+⚠️ Le `.` n'est pas exclu par étourderie : en Fluent il introduit un **attribut**, si bien que
+`foo.bar = x` serait accepté **et faux**.
+
+**Les deux correctifs sont vérifiés par mutation**, et c'est la seule preuve qui vaille ici :
+
+| mutation | avant | après |
+|---|---|---|
+| périmètre retiré de `moissonner` | — | **1 failed** / 9 passed |
+| contrôle de clé retiré | — | **1 failed** / 9 passed |
+
+**LOW** : ajout de l'assertion sur le second repli à placeable cité par le Change Log de la passe 1
+(`{$n} facture(s) importée(s).`), le premier seul étant couvert.
+
+**Recomptés depuis la source par `EdgeCaseHunter`, et tous justes** : 20 clés × 4 locales = 80
+vérifications, allowlist 295 → 275 (delta exact de 20), glossaire 52 / 12, moissonneur 274 / 5 / 7.
+Les décomptes — lieu du défaut sur les stories précédentes de ce dossier — tiennent cette fois.
+
 ### Gates — exécutés, non déclarés
 
 | gate | résultat |
@@ -646,7 +696,7 @@ fois les locales remises à leur état d'avant la story — la contre-preuve que
 | `cargo test -p kesh-i18n` | 29/29 — **garde A verte avec les 80 entrées neuves**, écart de parité toujours à 57 |
 | `npm run check` | **0 erreur** |
 | `npm run lint-i18n-ownership` | PASS — *avec la ligne substituée* |
-| `npm run test:unit` | **653/653** sur 70 fichiers |
+| `npm run test:unit` | **655/655** sur 70 fichiers |
 | `npm run build` | vert |
 | clause négative d'AC11 | `^delete *=` **absente des quatre** `.ftl` |
 

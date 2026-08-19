@@ -45,8 +45,13 @@ export function dansLePerimetreDeFichier(nom) {
 /**
  * Moissonne les replis des clés **absentes du catalogue**.
  *
- * @param {Fichier[]} fichiers   les fichiers à parcourir (déjà filtrés : ni `.test.`, ni
- *                               autre extension que `.svelte`/`.ts`)
+ * @param {Fichier[]} fichiers   les fichiers à parcourir. ⚠️ **Le périmètre est appliqué
+ *                               ICI**, pas laissé à l'appelant : la passe 1 avait déplacé
+ *                               `dansLePerimetreDeFichier` dans ce module pour le rendre
+ *                               testable, mais la GARANTIE reposait encore sur la politesse
+ *                               du script. Retirer l'appel là-bas laissait les 8 tests VERTS
+ *                               — vérifié par mutation. Un maillon prouvé ne prouve pas la
+ *                               chaîne. (Revue de code 23-1b, passe 2.)
  * @param {(cle: string) => boolean} existeAuCatalogue
  * @param {string[]} [prefixes]  restreint aux clés commençant par l'un d'eux
  * @returns {Moisson}
@@ -61,6 +66,7 @@ export function moissonner(fichiers, existeAuCatalogue, prefixes = []) {
 	const sansRepli = new Map();
 
 	for (const { chemin, source } of fichiers) {
+		if (!dansLePerimetreDeFichier(chemin.split('/').pop() ?? chemin)) continue;
 		for (const site of findCallSites(source)) {
 			if (site.arg?.kind !== 'literal') continue;
 			const cle = site.arg.value;
@@ -118,6 +124,28 @@ export function estFtlSain(texte) {
 	return profondeur === 0;
 }
 
+/**
+ * Vrai si cet identifiant peut servir de CLÉ à une entrée Fluent.
+ *
+ * ⚠️ **La passe 1 n'avait gardé qu'un côté du signe `=`.** `estFtlSain` contrôlait la
+ * valeur ; la clé, elle, entrait telle quelle. Or une clé vide, numérique, ou portant un
+ * `.` produit une ligne que le parseur rejette — et `loader.rs` propageant l'erreur sans
+ * tri, **une seule ligne invalide empêche le chargement de TOUTE la locale**. Exactement le
+ * raisonnement qui avait motivé `estFtlSain`, appliqué à sa moitié manquante.
+ *
+ * ⚠️ Le `.` n'est pas un caractère interdit par étourderie : en Fluent il introduit un
+ * **attribut**, si bien que `foo.bar = x` ne définit pas la clé `foo.bar` mais l'attribut
+ * `bar` d'un message `foo` — le fragment serait donc accepté ET faux.
+ *
+ * @param {string} cle
+ * @returns {boolean}
+ */
+export function estCleFtlSaine(cle) {
+	// Fluent : un identifiant commence par une lettre ASCII, puis lettres, chiffres, `_`, `-`.
+	// Un `.` y introduit un ATTRIBUT, pas une clé — `foo.bar = x` ne définit pas `foo.bar`.
+	return /^[a-zA-Z][a-zA-Z0-9_-]*$/.test(cle);
+}
+
 /** Rend le fragment `.ftl` trié — à RELIRE avant d'être collé, jamais écrit d'office. */
 export function fragmentFtl(/** @type {Moisson} */ moisson, /** @type {string} */ date) {
 	const lignes = [
@@ -126,7 +154,7 @@ export function fragmentFtl(/** @type {Moisson} */ moisson, /** @type {string} *
 	];
 	for (const [cle, parTexte] of [...moisson.replis].sort(([a], [b]) => a.localeCompare(b))) {
 		const texte = [...parTexte.keys()][0];
-		if (!estFtlSain(texte)) {
+		if (!estCleFtlSaine(cle) || !estFtlSain(texte)) {
 			// Écarté du fragment plutôt qu'injecté tel quel : cf. `aEchapper`.
 			continue;
 		}

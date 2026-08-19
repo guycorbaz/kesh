@@ -13,7 +13,13 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { moissonner, fragmentFtl, estFtlSain, dansLePerimetreDeFichier } from './i18n-harvest.js';
+import {
+	moissonner,
+	fragmentFtl,
+	estFtlSain,
+	estCleFtlSaine,
+	dansLePerimetreDeFichier
+} from './i18n-harvest.js';
 
 /** Aucune clé n'existe au catalogue, sauf mention contraire. */
 const rienAuCatalogue = () => false;
@@ -38,11 +44,54 @@ describe('le moissonneur', () => {
 		expect([...moisson.replis.keys()]).toEqual(['vraie-cle']);
 	});
 
+	it("(i-ter) la COUTURE tient : `moissonner` applique le périmètre LUI-MÊME", () => {
+		// ⚠️ La preuve qui manquait, et son absence n'était pas visible. Le test (i) prouve le
+		// filtre, les autres prouvent le moissonneur — et **la chaîne restait non prouvée** :
+		// retirer l'appel à `dansLePerimetreDeFichier` du script laissait les 8 tests VERTS.
+		// Vérifié par mutation en passe 2 de revue. On donne donc ici un `.test.ts` DIRECTEMENT
+		// au moissonneur : sa clé doit rester dehors sans que l'appelant ait rien filtré.
+		const moisson = moissonner(
+			[
+				{ chemin: 'src/lib/x.svelte', source: "i18nMsg('vraie-cle', 'V');" },
+				{ chemin: 'src/lib/i18n.svelte.test.ts', source: "i18nMsg('une-cle', 'mon repli');" },
+				{ chemin: 'src/lib/notes.md', source: "i18nMsg('cle-de-doc', 'D');" }
+			],
+			rienAuCatalogue
+		);
+		expect([...moisson.replis.keys()]).toEqual(['vraie-cle']);
+	});
+
+	it("(i-quater) une CLÉ invalide en Fluent est écartée — l'autre moitié du signe `=`", () => {
+		// ⚠️ La passe 1 ne gardait que la VALEUR. Une clé vide, numérique ou pointée produit
+		// une ligne que le parseur rejette — et `loader.rs` propageant l'erreur sans tri, elle
+		// emporte TOUTE la locale. (Revue de code 23-1b, passe 2.)
+		expect(estCleFtlSaine('contact-persons-delete')).toBe(true);
+		expect(estCleFtlSaine('')).toBe(false);
+		expect(estCleFtlSaine('123')).toBe(false);
+		expect(estCleFtlSaine('foo.bar')).toBe(false); // `.` = ATTRIBUT en Fluent, pas une clé
+		expect(estCleFtlSaine('_x')).toBe(false);
+
+		const moisson = moissonner(
+			[
+				{
+					chemin: 'a.svelte',
+					source: "i18nMsg('bonne-cle', 'B'); i18nMsg('foo.bar', 'M'); i18nMsg('123', 'N');"
+				}
+			],
+			rienAuCatalogue
+		);
+		const fragment = fragmentFtl(moisson, '2026-08-19');
+		expect(fragment).toContain('bonne-cle = B');
+		expect(fragment).not.toContain('foo.bar');
+		expect(fragment).not.toContain('123 =');
+	});
+
 	it("(i-bis) un repli qui casserait le .ftl est ÉCARTÉ du fragment, pas injecté", () => {
 		// ⚠️ Un repli invalide ne casse pas une ligne : `loader.rs` propage l'erreur de
 		// parse sans tri, donc **toute la locale** cesse de charger.
 		expect(estFtlSain('Texte normal.')).toBe(true);
-		expect(estFtlSain('Facture #{$id} enregistrée.')).toBe(true); // placeable LÉGITIME
+		expect(estFtlSain('Facture #{$id} enregistrée.')).toBe(true);
+		expect(estFtlSain('{$n} facture(s) importée(s).')).toBe(true); // le second du Change Log, placeable LÉGITIME
 		expect(estFtlSain('Ligne un\nLigne deux')).toBe(false); // retour à la ligne
 		expect(estFtlSain('Valeur { non fermée')).toBe(false); // accolade non appariée
 		expect(estFtlSain('Fermeture } orpheline')).toBe(false);
