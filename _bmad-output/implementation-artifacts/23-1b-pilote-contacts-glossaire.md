@@ -2,7 +2,16 @@
 
 ## Status
 
-review
+done
+
+Clôturée le 2026-08-19 après **cinq passes** de `bmad-code-review` (Sonnet → Haiku → Opus → Sonnet →
+Haiku, contextes frais), trend `1H/4M/2L → 1H/1M/1L → 3H/7M/5L → 1H/2M/1L → 0H/0M/1L`. Critère
+d'arrêt de la § *Review Iteration Rule* atteint : plus rien au-dessus de LOW.
+
+⚠️ **Le motif de la boucle, et il vaut au-delà de cette story** : sur les huit passes cumulées avec
+la 23-1a, **sept ont trouvé une régression introduite par le patch de la passe précédente**, et
+**aucune n'a jamais trouvé de défaut dans la conception d'origine**. Le code initial a tenu ; ce sont
+les correctifs qui ont cassé. À porter à la rétrospective de l'epic.
 
 Seconde moitié du split de la **23-1**, arbitré par Guy le 2026-08-19. La première est la
 **23-1a**, qui pose les deux gardes et leurs allowlists. **Cette story-ci ne peut pas démarrer
