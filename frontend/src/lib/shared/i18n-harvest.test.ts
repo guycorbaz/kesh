@@ -115,6 +115,14 @@ describe('le moissonneur', () => {
 		// ⚠️ …mais `{"{"}` est l'échappement Fluent d'une accolade littérale, et `fr-CH` s'en
 		// sert vraiment (`invoice-numbering-format-hint`). Une garde qui le refuse est fausse.
 		expect(estFtlSain('Placeholders : {"{"}YEAR{"}"}')).toBe(true);
+		// ⚠️ …et les ÉCHAPPEMENTS du littéral doivent être légaux. Fluent n'en admet que
+		// quatre — `\\`, `\"`, `\uXXXX`, `\UXXXXXX` ; toute autre paire est une
+		// `UnknownEscapeSequence`, donc une locale entière qui ne charge plus. (Passe 4.)
+		expect(estFtlSain('Attention {"a\\nb"} fin')).toBe(false); // \n : ILLÉGAL en Fluent
+		expect(estFtlSain('Attention {"a\\u00zb"} fin')).toBe(false); // \u mal formé
+		expect(estFtlSain('Attention {"a\\\\b"} fin')).toBe(true); // \\ : légal
+		expect(estFtlSain('Attention {"a\\"b"} fin')).toBe(true); // \" : légal
+		expect(estFtlSain('Accent {"a\\u00e9b"} fin')).toBe(true); // \uXXXX : légal
 		expect(estFtlSain('Valeur { non fermée')).toBe(false); // accolade non appariée
 		expect(estFtlSain('Fermeture } orpheline')).toBe(false);
 

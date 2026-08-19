@@ -12,6 +12,12 @@ dans les catalogues existants**, sur les **1216 clés alignées sur les quatre l
 La colonne « précédent » nomme la clé où l'équivalence est attestée.** Les changer, c'est
 désaligner le nouveau du déjà-livré — ce que cet epic vient précisément corriger.
 
+⚠️ **Sauf mention `DÉRIVÉ`**, qui signale une entrée mise au singulier ou reformulée depuis ce que
+les catalogues attestent réellement. Cette réserve a dû être **ajoutée après coup** : une ligne
+annonçait une équivalence au singulier en citant une clé qui ne porte que le pluriel — contredisant
+la règle même de ce préambule. Une équivalence non attestée n'est pas illégitime ; **la faire passer
+pour un relevé, si**. (Revue de code 23-1b, passe 4.)
+
 La partie B, elle, appelle un arbitrage : **ces termes n'ont AUCUN précédent** dans les
 catalogues. Ce qui y est écrit est une proposition, pas un relevé.
 
@@ -81,7 +87,7 @@ passage des rollouts qui touchent ces domaines, pas ici.
 | contact | Kontakt | contatto | contact | `Nouveau contact` |
 | **localité** | **Ort** | **località** | **Town/city** | `field-city` (story 23-1b) |
 | **prénom** | **Vorname** | **nome** | **first name** | `field-first-name` (story 23-1b) |
-| **personne de contact** | **Kontaktperson** | **persona di contatto** | **contact person** | `contact-persons-title` (story 23-1b) |
+| **personne de contact** | **Kontaktperson** | **persona di contatto** | **contact person** | ⚠️ **DÉRIVÉ, non relevé** — `contact-persons-title` atteste le seul **pluriel** (`Kontaktpersonen`, `Persone di contatto`, `Contact persons`), et `contact-persons-add-error` dit « la personne » sans le qualificatif. Le singulier complet n'est attesté par **aucune** clé : il est mis au singulier depuis le pluriel. (story 23-1b) |
 | carnet d'adresses | **Kontakte** | **contatti** | contacts | `Carnet d'adresses` |
 | adresse | Adresse | indirizzo | address | `Adresse` |
 | rappel / relance | **Mahnung** | **sollecito** | reminder | `Rappels` / `Mahnungen` |

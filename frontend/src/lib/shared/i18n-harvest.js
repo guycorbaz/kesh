@@ -128,21 +128,19 @@ export function estFtlSain(texte) {
 	// pour éviter qu'une ligne emporte la locale laissait donc passer la ligne qui l'emporte.
 	if (texte.trim() === '') return false;
 	if (texte.includes('\n')) return false;
+
 	// ⚠️ Compter les accolades ne suffit pas : `a {} b`, `JSON {"a": 1}` et `code {1,2}` sont
 	// APPARIÉS et pourtant rejetés par Fluent. On valide donc le CONTENU ENTIER de chaque
-	// placeable, pas son amorce — première rédaction de ce correctif, qui ne regardait que le
-	// premier caractère et laissait passer les deux derniers exemples. (Passe 3.)
+	// placeable, pas son amorce.
 	//
 	// Le jeu accepté est celui que le moissonneur peut légitimement produire : une variable
 	// (`{$id}`), une référence de message (`{marque}`) ou de terme (`{-produit}`), et le
-	// LITTÉRAL DE CHAÎNE — `{"{"}` est la façon dont Fluent échappe une accolade, et le
-	// catalogue `fr-CH` s'en sert réellement (`invoice-numbering-format-hint`). Une première
-	// rédaction l'omettait et rejetait cette entrée légitime : trouvé en passant les 5001
-	// entrées des quatre catalogues à la garde, pas en raisonnant. Le coût
-	// d'un refus injustifié est un repli à recopier à la main ; celui d'un accord injustifié
-	// est une locale entière qui ne charge plus. L'asymétrie commande la sévérité.
-	// ⚠️ Un `}` peut vivre DANS un littéral (`{"}"}`), donc on balaie caractère par caractère
-	// au lieu de chercher la prochaine fermante — première rédaction qui s'y est laissé prendre.
+	// LITTÉRAL DE CHAÎNE — `{"{"}` est la façon dont Fluent échappe une accolade, et `fr-CH`
+	// s'en sert réellement (`invoice-numbering-format-hint`).
+	//
+	// ⚠️ **L'asymétrie des coûts commande la sévérité.** Un refus injustifié coûte un repli à
+	// recopier à la main ; un accord injustifié coûte une locale entière qui ne charge plus,
+	// `loader.rs` propageant l'erreur de parse sans tri. En cas de doute : refuser.
 	let i = 0;
 	while (i < texte.length) {
 		const c = texte[i];
@@ -151,33 +149,75 @@ export function estFtlSain(texte) {
 			i += 1;
 			continue;
 		}
-		let j = i + 1;
-		let dedans = '';
-		while (j < texte.length && texte[j] !== '}') {
-			if (texte[j] === '"') {
-				// littéral de chaîne : on le traverse en entier, `}` compris
-				dedans += texte[j];
-				j += 1;
-				while (j < texte.length && texte[j] !== '"') {
-					if (texte[j] === '\\') {
-						dedans += texte[j];
-						j += 1;
-					}
-					if (j < texte.length) {
-						dedans += texte[j];
-						j += 1;
-					}
-				}
-				if (j >= texte.length) return false; // guillemet jamais refermé
-			}
-			dedans += texte[j];
+		const fin = finDuPlaceable(texte, i);
+		if (fin === -1) return false;
+		const dedans = texte.slice(i + 1, fin);
+		const estVariableOuReference = /^\s*(\$[a-zA-Z][\w-]*|-?[a-zA-Z][\w-]*)\s*$/.test(dedans);
+		if (!estVariableOuReference && !estLitteralChaineValide(dedans.trim())) return false;
+		i = fin + 1;
+	}
+	return true;
+}
+
+/**
+ * Index de l'accolade fermante du placeable ouvert en `debut`, ou `-1` s'il n'y en a pas.
+ *
+ * ⚠️ Un `}` peut vivre DANS un littéral de chaîne — `{"}"}` est du Fluent valide —, donc on
+ * balaie caractère par caractère au lieu de chercher la prochaine fermante. Une première
+ * rédaction s'y est laissé prendre. (Passe 3.)
+ *
+ * @param {string} texte
+ * @param {number} debut  index de l'accolade ouvrante
+ * @returns {number}
+ */
+function finDuPlaceable(texte, debut) {
+	let j = debut + 1;
+	while (j < texte.length && texte[j] !== '}') {
+		if (texte[j] !== '"') {
 			j += 1;
+			continue;
 		}
-		if (j >= texte.length) return false; // accolade ouvrante jamais refermée
-		const estLitteralChaine = /^\s*"([^"\\]|\\.)*"\s*$/.test(dedans);
-		if (!estLitteralChaine && !/^\s*(\$[a-zA-Z][\w-]*|-?[a-zA-Z][\w-]*)\s*$/.test(dedans))
-			return false;
-		i = j + 1;
+		j += 1; // on entre dans le littéral
+		while (j < texte.length && texte[j] !== '"') j += texte[j] === '\\' ? 2 : 1;
+		if (j >= texte.length) return -1; // guillemet jamais refermé
+		j += 1; // on sort du littéral
+	}
+	return j < texte.length ? j : -1;
+}
+
+/**
+ * Vrai si `dedans` est un littéral de chaîne Fluent **entièrement valide**, échappements compris.
+ *
+ * ⚠️ **C'est le trou que la passe 3 avait laissé béant**, et dans le sens dangereux. Fluent
+ * n'admet dans un littéral que quatre échappements — `\\`, `\"`, `\uXXXX` et `\UXXXXXX`. Toute
+ * autre paire est une `UnknownEscapeSequence`, donc une erreur de parse, donc **une locale
+ * entière qui ne charge plus**. Or le motif `\\.` de la passe 3 acceptait n'importe quel
+ * caractère après la barre : `{"a\nb"}` passait la garde et tuait la locale.
+ *
+ * ⚠️ **Pourquoi l'audit des 5001 entrées ne pouvait PAS le trouver** — et le point vaut au-delà
+ * de cette fonction : ces entrées sont, par construction, des valeurs qui **chargent déjà**.
+ * Elles ne peuvent donc contenir aucun échappement illégal. Un corpus de valeurs valides ne
+ * révèle que les faux REFUS ; il est structurellement aveugle aux faux ACCORDS. Éprouver une
+ * garde contre ce qu'elle doit accepter ne dit rien de ce qu'elle doit refuser.
+ *
+ * @param {string} dedans  le contenu du placeable, déjà détouré
+ * @returns {boolean}
+ */
+function estLitteralChaineValide(dedans) {
+	if (dedans.length < 2 || !dedans.startsWith('"') || !dedans.endsWith('"')) return false;
+	const corps = dedans.slice(1, -1);
+	let k = 0;
+	while (k < corps.length) {
+		if (corps[k] === '"') return false; // guillemet nu au milieu
+		if (corps[k] !== '\\') {
+			k += 1;
+			continue;
+		}
+		const suivant = corps[k + 1];
+		if (suivant === '\\' || suivant === '"') k += 2;
+		else if (suivant === 'u' && /^[0-9a-fA-F]{4}/.test(corps.slice(k + 2))) k += 6;
+		else if (suivant === 'U' && /^[0-9a-fA-F]{6}/.test(corps.slice(k + 2))) k += 8;
+		else return false; // UnknownEscapeSequence / InvalidUnicodeEscapeSequence
 	}
 	return true;
 }

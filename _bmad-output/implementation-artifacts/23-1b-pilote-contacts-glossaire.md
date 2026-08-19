@@ -43,7 +43,7 @@ que ceux dont cette story se sert.
 | | valeur |
 |---|---|
 | clés du pilote `contacts` | **20** — 12 sous `lib/features/contacts`, 8 sous `routes/(app)/contacts` |
-| clés à repli moissonnable (tout le dépôt) | **274 des 285** — 245 atteintes directement, +29 via les relais ; les 5 restantes ont un repli **interpolé** (ligne suivante), les 6 dernières viennent de l'inventaire (23-1a § D4-ter). ⚠️ **245 est la sortie d'un moissonneur AVEUGLE AUX RELAIS**, pas une cible |
+| clés à repli moissonnable (tout le dépôt) | **274 des 285** ⚠️ **valeur de contrôle datée du kickoff** — `274 − (clés résorbées)` ensuite, soit 254 après le pilote. 245 atteintes directement, +29 via les relais ; les 5 restantes ont un repli **interpolé** (ligne suivante), les 6 dernières viennent de l'inventaire (23-1a § D4-ter). ⚠️ **245 est la sortie d'un moissonneur AVEUGLE AUX RELAIS**, pas une cible |
 | clés sans repli littéral | 5, toutes dans `TransactionSplitModal` — **hors périmètre**, portées par la 23-5 |
 | clés à repli **divergent** | **7** — valeur de contrôle datée, le moissonneur la calcule |
 | partie B du glossaire | **15** entrées, dont **3** promues par cette story → **12** ensuite |
@@ -224,6 +224,10 @@ de tutoyer survit, son ordre de grandeur non.*
     EXACTEMENT les deux valeurs que cet AC contrôlait** : elles ne discriminent pas. Il rendrait
     245 entrées au lieu de **274**, perdant 29 clés dont 21 de `settings/email-templates`.
     **La valeur de contrôle qui discrimine est donc `274`.**
+    ⚠️ **`274` est une valeur de contrôle DATÉE, comme les 5 et les 7 ci-dessus** : elle vaut
+    **contre les catalogues du kickoff**. Chaque story de rollout en résorbe une part, donc la
+    sortie décroît — `254` après ce pilote. La règle est `274 − (clés déjà résorbées)`, et une
+    valeur plus basse n'est **pas** une régression du moissonneur.
     **(d) le moissonneur porte SON PROPRE TEST vitest** — `frontend/src/lib/shared/i18n-harvest.test.ts`,
     donc dans le périmètre de `test:unit` —, à trois fixtures reprenant les trois défauts déjà payés :
     (i) un fichier `*.test.ts` demandant `une-cle`, absent de la sortie ; (ii) une même clé demandée
@@ -767,6 +771,58 @@ replis comparés octet à octet** et identiques ; les **29 minuscules** exactes 
 `de-CH` ; les 8 lignes du tableau `AC11-ter` vérifiées au `grep` ; `individual` **entièrement**
 propagé. Et — le geste que la story fait le mieux — **aucune déclaration d'exécution des E2E nulle
 part**, avec le paragraphe qui dit pourquoi.
+
+### Passe 4 de `bmad-code-review` — 2026-08-19, Sonnet ×2, ciblée sur le patch de la passe 3
+
+**0 CRITICAL · 1 HIGH · 2 MEDIUM · 1 LOW.** Le trend redescend (`3H/7M/5L` → `1H/2M/1L`), et les
+trois findings sont **la septième régression d'affilée introduite par le patch de la passe
+précédente**. Aucune passe, sur cette story ni sur sa sœur, n'a jamais trouvé de défaut dans la
+conception d'origine.
+
+**Le HIGH est dans le sens dangereux, et c'est ce qui le distingue de tous les précédents.**
+`estFtlSain` validait l'appariement des guillemets **sans valider les échappements**. Fluent n'admet
+dans un littéral de chaîne que quatre formes — `\\`, `\"`, `\uXXXX`, `\UXXXXXX` ; le motif `\.` de la
+passe 3 acceptait n'importe quel caractère après la barre. `{"a\nb"}` passait la garde, entrait au
+fragment, et **tuait la locale entière** au chargement (`UnknownEscapeSequence`). Les passes 1 à 3
+avaient toutes fermé des trous du côté « refuse une entrée légitime » ; celui-ci est du côté
+« accepte une entrée invalide », que le commentaire de la fonction désigne pourtant lui-même comme
+le coût le plus lourd.
+
+⚠️ **Et l'argument de méthode vaut plus que le défaut.** La passe 3 se prévalait d'avoir « passé les
+5001 entrées des quatre catalogues à la garde ». Ce contrôle ne pouvait **structurellement pas**
+trouver ce défaut : ces entrées sont des valeurs **qui chargent déjà**, donc dépourvues par
+construction de tout échappement illégal. **Un corpus de valeurs valides ne révèle que les faux
+REFUS ; il est aveugle aux faux ACCORDS.** Éprouver une garde contre ce qu'elle doit accepter ne dit
+rien de ce qu'elle doit refuser. La remarque est notée dans le doc-comment de la fonction.
+
+**Le premier MEDIUM : le glossaire récidivait à la ligne VOISINE de celle corrigée en passe 3.**
+L'entrée « personne de contact » citait `contact-persons-title` comme attestation — clé qui porte le
+**pluriel** dans les quatre locales (`Kontaktpersonen`, `Persone di contatto`, `Contact persons`), et
+`contact-persons-add-error` dit « la personne » sans le qualificatif. **Aucune clé n'atteste le
+singulier complet** : le terme est *dérivé*, pas relevé. Corrigé en marquant l'entrée `DÉRIVÉ` et en
+**amendant la règle du préambule**, qui affirmait sans réserve que la colonne « précédent » nomme la
+clé attestante. Une équivalence non attestée n'est pas illégitime ; la faire passer pour un relevé,
+si. ⚠️ **Trouvée parce que la consigne demandait de vérifier CHAQUE ligne de la partie A, pas
+seulement celle qui avait été corrigée** — le geste qui manquait en passe 3.
+
+**Le second MEDIUM : le périmètre du `274` propagé à la prose, pas aux sites normatifs.** La mise en
+garde figurait aux trois endroits narratifs écrits en passe 3, et **pas** dans le corps d'`AC10` ni
+dans la table « Chiffres de référence » — les deux seuls endroits qu'un auteur de rollout
+consulterait. Encore la propagation faite là où le défaut a été trouvé plutôt que là où il compte.
+
+**LOW, signalé et non corrigé** : `estFtlSain` sur-rejette des formes que Fluent accepte —
+`{FONCTION()}`, `{message.attr}`, `{123}`, placeables imbriqués. Sans danger : le coût d'un
+sur-rejet est un repli à recopier à la main, et ces formes ne sortent pas d'un repli JS écrit à la
+main. L'asymétrie des coûts commande de rester strict.
+
+**Vérifié par mutation** : le motif d'échappement permissif restauré fait rougir un test.
+
+**Confirmé par la seconde lentille, recompté depuis la source** : les trois correctifs de la passe 3
+sont exacts ; **zéro résidu de `city`** dans tout le dépôt — `docs/`, manuels LaTeX, `website/`,
+`frontend/` ; `274` et `254` vérifiés **en exécutant** le moissonneur contre les catalogues des deux
+bornes ; 7 tests au commit de dev et 10 à `HEAD` ; `297 → 265` cohérent aux trois sites ;
+`54/1514 → 33/1493` concordant avec `ATTENDU` ; l'allowlist dont le `diff` rend **exactement** les 20
+clés du pilote, sans entrée étrangère.
 
 ### Gates — exécutés, non déclarés
 
