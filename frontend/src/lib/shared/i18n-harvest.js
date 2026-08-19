@@ -18,11 +18,27 @@
 import { findCallSites, readFallback } from './i18n-literal-reader.js';
 
 /**
+ * Vrai si ce nom de fichier entre dans le périmètre de la moisson.
+ *
+ * ⚠️ **Cette règle vivait dans le script, donc hors de tout gate** — et le docstring du
+ * test revendiquait pourtant l'« exclusion des tests » parmi ce qu'il prouvait. Elle est
+ * ici pour être testée : `i18n.svelte.test.ts` demande `une-cle` et `compteur`, clés
+ * fictives qui doivent le rester. (Revue de code 23-1b, passe 1.)
+ *
+ * @param {string} nom
+ * @returns {boolean}
+ */
+export function dansLePerimetreDeFichier(nom) {
+	return /\.(svelte|ts)$/.test(nom) && !nom.includes('.test.');
+}
+
+/**
  * @typedef {{ chemin: string, source: string }} Fichier
  * @typedef {{
  *   replis: Map<string, Map<string, string[]>>,
  *   sansRepli: Map<string, string[]>,
- *   divergents: [string, Map<string, string[]>][]
+ *   divergents: [string, Map<string, string[]>][],
+ *   aEchapper: [string, Map<string, string[]>][]
  * }} Moisson
  */
 
@@ -68,7 +84,38 @@ export function moissonner(fichiers, existeAuCatalogue, prefixes = []) {
 	for (const cle of replis.keys()) sansRepli.delete(cle);
 
 	const divergents = [...replis].filter(([, parTexte]) => parTexte.size > 1);
-	return { replis, sansRepli, divergents };
+	// Replis qui ne peuvent pas entrer tels quels dans un `.ftl` — à échapper à la main.
+	const aEchapper = [...replis].filter(([, parTexte]) => !estFtlSain([...parTexte.keys()][0]));
+	return { replis, sansRepli, divergents, aEchapper };
+}
+
+/**
+ * Vrai si `texte` peut entrer tel quel dans un `.ftl`.
+ *
+ * ⚠️ **Un repli invalide ne casse pas une ligne, il casse TOUTE la locale** :
+ * `loader.rs:71` propage l'erreur de `FluentResource::try_new` sans tri partiel. Deux
+ * formes cassent — un **retour à la ligne** (Fluent y attend une continuation indentée)
+ * et une **accolade non appariée** (Fluent y attend un placeable).
+ *
+ * ⚠️ **Les accolades APPARIÉES, elles, sont légitimes et doivent passer** : six replis du
+ * dépôt portent de vrais placeables — `Facture #{$id} enregistrée.`, `{$n} facture(s)
+ * importée(s).` — que le frontend interpole lui-même. Un correctif qui échapperait toutes
+ * les accolades les casserait. (Revue de code 23-1b, passe 1.)
+ *
+ * @param {string} texte
+ * @returns {boolean}
+ */
+export function estFtlSain(texte) {
+	if (texte.includes('\n')) return false;
+	let profondeur = 0;
+	for (const c of texte) {
+		if (c === '{') profondeur += 1;
+		else if (c === '}') {
+			profondeur -= 1;
+			if (profondeur < 0) return false;
+		}
+	}
+	return profondeur === 0;
 }
 
 /** Rend le fragment `.ftl` trié — à RELIRE avant d'être collé, jamais écrit d'office. */
@@ -78,8 +125,13 @@ export function fragmentFtl(/** @type {Moisson} */ moisson, /** @type {string} *
 		`# ${moisson.replis.size} clés ; les ${moisson.divergents.length} à repli divergent portent la mention CONFLIT.`
 	];
 	for (const [cle, parTexte] of [...moisson.replis].sort(([a], [b]) => a.localeCompare(b))) {
+		const texte = [...parTexte.keys()][0];
+		if (!estFtlSain(texte)) {
+			// Écarté du fragment plutôt qu'injecté tel quel : cf. `aEchapper`.
+			continue;
+		}
 		if (parTexte.size > 1) lignes.push(`# CONFLIT — ${parTexte.size} replis, cf. sortie d'erreur`);
-		lignes.push(`${cle} = ${[...parTexte.keys()][0]}`);
+		lignes.push(`${cle} = ${texte}`);
 	}
 	return lignes.join('\n');
 }

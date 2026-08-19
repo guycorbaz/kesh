@@ -3,7 +3,7 @@
 *Établi le 2026-08-19 au kickoff de l'**Epic 23 « Dette i18n »** (issues [#316] et [#283]).*
 
 Ce glossaire existe parce que l'epic 23 fait entrer **352 clés** au catalogue et écrit
-**1056 messages** en trois langues — dont **20 clés et 60 messages livrés** par la story 23-1b. Sans terminologie figée d'avance, trois cents décisions
+**1056 messages** en trois langues — dont **20 clés livrées** par la story 23-1b (soit 60 messages : le décompte porte sur les **trois langues cibles**, les libellés `fr-CH` étant la source). Sans terminologie figée d'avance, trois cents décisions
 lexicales se prennent une par une, au fil des stories de rollout, et le produit finit par
 dire deux mots différents pour la même chose selon l'écran.
 

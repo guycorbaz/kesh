@@ -1232,8 +1232,15 @@ contact-salutation-madame = Ms
 # Registre : impératif neutre (D9). « Position » et non « Role » pour `-role` : le glossaire
 # réserve « role » aux rôles RBAC, et confondre les deux concepts dans le catalogue serait
 # une dette de terminologie.
+# ⚠️ « contact person » et NON « individual » pour `-person-name` : le glossaire réserve
+# « individual » à la personne PHYSIQUE, par opposition à la personne morale (« legal
+# entity »). L'employer ici lui aurait donné deux sens dans le même catalogue, ambiguïté
+# qu'aucune des trois autres locales n'a. (Revue de code 23-1b, passe 1.)
+# ⚠️ « Town/city » et non « City » : `Ort`, `Localité` et `Località` sont le terme LARGE,
+# choisi contre le cognat étroit `Stadt`/`Ville`/`Città` parce que beaucoup de communes
+# suisses ne sont pas des villes. « City » est précisément ce cognat étroit.
 contact-error-address-npa-city = Postal code and city are required when an address is entered
-contact-error-person-name = First name and last name are required for an individual
+contact-error-person-name = First name and last name are required for a contact person
 contact-persons-add = Add
 contact-persons-add-error = Could not add the contact person
 contact-persons-delete = Delete
@@ -1246,7 +1253,7 @@ contact-persons-role = Position
 contact-persons-title = Contact persons
 field-address = Address
 field-building = No.
-field-city = City
+field-city = Town/city
 field-country = Country
 field-first-name = First name
 field-last-name = Last name

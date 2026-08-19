@@ -143,9 +143,11 @@ clés du même composant portent déjà le préfixe `contact-persons-`.
 
 **D8 — Le glossaire est figé POUR LE RESTE DE CETTE STORY, et le pilote en promeut TROIS termes.**
 *(Il n'est pas « figé » au sens absolu : le commit de spécification de cette story y a ajouté `personne de contact`. Il l'est à partir de maintenant — la story n'y touche plus que pour la promotion d'AC11-bis.)*
-`docs/i18n-glossaire.md` existe (kickoff du 2026-08-19). Sa **partie A est contraignante** : 48
-équivalences relevées dans les 1216 clés déjà alignées, chacune nommant la clé qui l'atteste.
-Sa **partie B attend l'arbitrage de Guy** — **15** termes sans précédent depuis que « analytique » a été tranché le 2026-08-19 et promu en partie A (`Projekt` / `progetto` / `project` : on ne traduit pas « analytique »).
+`docs/i18n-glossaire.md` existe (kickoff du 2026-08-19). Sa **partie A est contraignante** : **52** équivalences,
+chacune nommant la clé qui l'atteste — 48 relevées au kickoff, plus « projet analytique »
+(arbitrage du 2026-08-19) et les **trois** que cette story y promeut.
+Sa **partie B compte désormais **12** termes** sans précédent : 16 au kickoff, 15 après
+l'arbitrage sur « analytique », **12** après la promotion livrée ici.
 
 ⚠️ **Correction d'une affirmation de la première rédaction de cette spec.** Elle disait
 « aucun terme de la partie B n'apparaît dans les 20 clés du pilote (vérifié) ». **C'est faux, et
@@ -279,7 +281,7 @@ de tutoyer survit, son ordre de grandeur non.*
 
 - [x] **T4 — Moissonneur** (AC10)
   - [x] Recensement des 7 relais + **valeur de contrôle 274** (AC10 c)
-  - [x] `harvest.test.ts` à trois fixtures, dans le périmètre de `test:unit` (AC10 d)
+  - [x] `i18n-harvest.test.ts` à trois fixtures, dans le périmètre de `test:unit` (AC10 d)
   - [x] Import du module partagé `i18n-literal-reader` (23-1a § D1-bis)
   - [x] Exclusion des `.test.*` et lecteur de littéral d'AC7-bis pour la clé ET le repli (AC10)
   - [x] `frontend/scripts/harvest-i18n-fallbacks.mjs`, sortie standard uniquement
@@ -591,6 +593,51 @@ même formulaire, huit libellés traduits et quatre messages en français.
 | `docs/i18n-glossaire.md` | 3 termes promus, partie B à 12 |
 | `_bmad-output/implementation-artifacts/23-1b-…md`, `sprint-status.yaml` | statut, record |
 
+### Passe 1 de `bmad-code-review` — 2026-08-19, Sonnet ×3, contextes frais
+
+**0 CRITICAL · 1 HIGH · 4 MEDIUM · 2 LOW.** ⚠️ **Presque tous les findings portent sur le CONTENU
+des traductions**, pas sur le code — ce qui est le juste centre de gravité pour cette moitié, et ce
+que la consigne de revue demandait explicitement de regarder.
+
+**Le HIGH est un faux ami INTERNE.** `contact-error-person-name` rendait « personne » par
+**`individual`** en anglais — or le glossaire réserve ce mot à la personne **physique**, par
+opposition à la personne morale (`legal entity`). Les dix-neuf autres clés du lot disent `person` ou
+`contact person`. Le mot portait donc deux sens dans le même catalogue, ambiguïté qu'aucune des
+trois autres locales n'avait. Corrigé en `contact person`.
+
+**Un MEDIUM que je n'aurais pas trouvé seul** : `field-city = City`. `Ort`, `Localité` et `Località`
+sont le terme **large** — lieu, localité —, choisi contre le cognat étroit `Stadt` / `Ville` /
+`Città` **parce que beaucoup de communes suisses ne sont pas des villes**. `City` est précisément ce
+cognat étroit que les trois autres locales avaient écarté. Rendu par `Town/city`, forme usuelle des
+formulaires d'adresse.
+
+**Deux MEDIUM sur le moissonneur, de la même famille que ceux de la story sœur** :
+- **le filtre d'exclusion des `.test.*` vivait dans le script, donc hors de tout gate**, alors que
+  le docstring du test revendiquait l'« exclusion des tests » parmi ce qu'il prouve. Déplacé dans le
+  module sous `dansLePerimetreDeFichier`, et testé sur six noms.
+- **le fragment `.ftl` ne garantissait pas sa propre syntaxe** : un repli à retour à la ligne ou à
+  accolade non appariée y entrait tel quel. ⚠️ **La conséquence n'est pas locale** — `loader.rs:71`
+  propage l'erreur de `FluentResource::try_new` sans tri, donc **une seule entrée cassée empêche le
+  chargement de TOUTE la locale**. Vérifié par la lentille avec le **vrai parseur Fluent**.
+  ⚠️ **Et le correctif naïf aurait cassé six replis légitimes** : `Facture #{$id} enregistrée.`,
+  `{$n} facture(s) importée(s).` portent de vrais placeables que le frontend interpole. `estFtlSain`
+  n'écarte donc que les accolades **non appariées**, jamais les placeables valides.
+
+**MEDIUM de comptes rendus** : le glossaire annonçait « 60 messages » sans dire que le décompte
+porte sur les **trois langues cibles**, les libellés `fr-CH` étant la source — alors que le même
+diff affirme les avoir *relus*, donc traités comme un travail à part entière. Précisé.
+
+**LOW** : mon commentaire allemand annonçait la Sie-Form, mais **aucune des vingt chaînes ne porte
+de forme d'adresse directe** — ce sont des passifs et des infinitifs de bouton ; et il affirmait que
+le fichier « ne contient aucun ß » **tout en en introduisant deux**, en citant « Straße » comme
+contre-exemple. Reformulé. Le nom du fichier de test (`i18n-harvest.test.ts` contre `harvest.test.ts`
+dans l'AC) est aligné sur le code, plus cohérent avec les autres modules `i18n-*`.
+
+**Ce que la revue a CONFIRMÉ compte autant** : les 7 critères tenus, les deux gates **rejoués et non
+recopiés**, le tableau de relecture d'`AC11-ter` vérifié **ligne à ligne au `grep -nF`**, les vingt
+libellés `fr-CH` confirmés entrés **verbatim**, et le moissonneur qui reproduit **274 / 5 / 7** une
+fois les locales remises à leur état d'avant la story — la contre-preuve que je n'avais pas faite.
+
 ### Gates — exécutés, non déclarés
 
 | gate | résultat |
@@ -599,7 +646,7 @@ même formulaire, huit libellés traduits et quatre messages en français.
 | `cargo test -p kesh-i18n` | 29/29 — **garde A verte avec les 80 entrées neuves**, écart de parité toujours à 57 |
 | `npm run check` | **0 erreur** |
 | `npm run lint-i18n-ownership` | PASS — *avec la ligne substituée* |
-| `npm run test:unit` | **652/652** sur 70 fichiers |
+| `npm run test:unit` | **653/653** sur 70 fichiers |
 | `npm run build` | vert |
 | clause négative d'AC11 | `^delete *=` **absente des quatre** `.ftl` |
 

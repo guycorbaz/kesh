@@ -14,7 +14,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { moissonner, fragmentFtl } from '../src/lib/shared/i18n-harvest.js';
+import { moissonner, fragmentFtl, dansLePerimetreDeFichier } from '../src/lib/shared/i18n-harvest.js';
 
 const RACINE = join(dirname(fileURLToPath(import.meta.url)), '..');
 const LOCALES = ['fr-CH', 'de-CH', 'it-CH', 'en-CH'];
@@ -34,7 +34,7 @@ function fichiers(rep, acc = []) {
 	for (const e of readdirSync(rep, { withFileTypes: true })) {
 		const chemin = join(rep, e.name);
 		if (e.isDirectory()) fichiers(chemin, acc);
-		else if (/\.(svelte|ts)$/.test(e.name) && !e.name.includes('.test.')) {
+		else if (dansLePerimetreDeFichier(e.name)) {
 			acc.push({ chemin: chemin.slice(RACINE.length + 1), source: readFileSync(chemin, 'utf-8') });
 		}
 	}
@@ -62,4 +62,11 @@ for (const [cle, parTexte] of moisson.divergents.sort(([a], [b]) => a.localeComp
 	for (const [texte, sites] of parTexte) err(`      « ${texte} »   ${sites.join(', ')}`);
 }
 err('');
-err(`── total : ${moisson.replis.size} clés moissonnées, ${moisson.sansRepli.size} sans repli, ${moisson.divergents.length} en conflit ──`);
+if (moisson.aEchapper.length > 0) {
+	err('');
+	err(`── ${moisson.aEchapper.length} clés dont le repli NE PEUT PAS entrer tel quel dans un .ftl ──`);
+	err('   (retour à la ligne, ou accolade non appariée — une seule casserait le chargement de TOUTE la locale)');
+	for (const [cle, parTexte] of moisson.aEchapper) err(`  ${cle}   « ${[...parTexte.keys()][0]} »`);
+}
+err('');
+err(`── total : ${moisson.replis.size} clés moissonnées, ${moisson.sansRepli.size} sans repli, ${moisson.divergents.length} en conflit, ${moisson.aEchapper.length} à échapper ──`);

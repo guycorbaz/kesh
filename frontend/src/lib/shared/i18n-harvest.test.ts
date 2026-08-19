@@ -13,21 +13,51 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { moissonner, fragmentFtl } from './i18n-harvest.js';
+import { moissonner, fragmentFtl, estFtlSain, dansLePerimetreDeFichier } from './i18n-harvest.js';
 
 /** Aucune clé n'existe au catalogue, sauf mention contraire. */
 const rienAuCatalogue = () => false;
 
 describe('le moissonneur', () => {
-	it("(i) ne moissonne PAS les fichiers de test — leurs clés sont fictives", () => {
-		// `i18n.svelte.test.ts` demande `une-cle` et `compteur`, qui doivent le rester.
-		// L'exclusion est faite par l'appelant (D5-bis) : ce test vérifie que la fonction
-		// ne collecte QUE ce qu'on lui donne, donc que le filtre est le bon endroit.
+	it("(i) le PÉRIMÈTRE DE FICHIER exclut les tests — et la règle est ici, donc testée", () => {
+		// ⚠️ Cette règle vivait dans le script, hors de tout gate, alors que le docstring
+		// de ce fichier revendiquait l'« exclusion des tests » parmi ce qu'il prouve.
+		// `i18n.svelte.test.ts` demande `une-cle` et `compteur` : des clés FICTIVES, qui
+		// doivent le rester. (Revue de code 23-1b, passe 1.)
+		expect(dansLePerimetreDeFichier('i18n.svelte.test.ts')).toBe(false);
+		expect(dansLePerimetreDeFichier('contacts-page.test.ts')).toBe(false);
+		expect(dansLePerimetreDeFichier('ContactPersonsManager.svelte')).toBe(true);
+		expect(dansLePerimetreDeFichier('notify.ts')).toBe(true);
+		expect(dansLePerimetreDeFichier('README.md')).toBe(false);
+		expect(dansLePerimetreDeFichier('i18n-literal-reader.js')).toBe(false);
+
 		const moisson = moissonner(
 			[{ chemin: 'a.svelte', source: "const x = i18nMsg('vraie-cle', 'V');" }],
 			rienAuCatalogue
 		);
 		expect([...moisson.replis.keys()]).toEqual(['vraie-cle']);
+	});
+
+	it("(i-bis) un repli qui casserait le .ftl est ÉCARTÉ du fragment, pas injecté", () => {
+		// ⚠️ Un repli invalide ne casse pas une ligne : `loader.rs` propage l'erreur de
+		// parse sans tri, donc **toute la locale** cesse de charger.
+		expect(estFtlSain('Texte normal.')).toBe(true);
+		expect(estFtlSain('Facture #{$id} enregistrée.')).toBe(true); // placeable LÉGITIME
+		expect(estFtlSain('Ligne un\nLigne deux')).toBe(false); // retour à la ligne
+		expect(estFtlSain('Valeur { non fermée')).toBe(false); // accolade non appariée
+		expect(estFtlSain('Fermeture } orpheline')).toBe(false);
+
+		const moisson = moissonner(
+			[
+				{ chemin: 'a.svelte', source: "i18nMsg('saine', 'Texte {$n} normal');" },
+				{ chemin: 'b.svelte', source: "i18nMsg('cassee', 'Valeur { non fermée');" }
+			],
+			rienAuCatalogue
+		);
+		expect(moisson.aEchapper.map(([c]) => c)).toEqual(['cassee']);
+		const fragment = fragmentFtl(moisson, '2026-08-19');
+		expect(fragment).toContain('saine = Texte {$n} normal');
+		expect(fragment).not.toContain('cassee');
 	});
 
 	it('(ii) signale une clé demandée avec DEUX replis différents', () => {

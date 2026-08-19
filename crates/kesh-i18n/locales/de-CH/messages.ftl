@@ -1229,8 +1229,11 @@ contact-salutation-neutre = Neutral
 contact-salutation-monsieur = Herr
 contact-salutation-madame = Frau
 # ── Story 23-1b (#316) — Pilotdomäne « contacts », 20 Schlüssel.
-# Registre : Sie-Form (D9). Orthographe suisse : « Strasse », jamais « Straße » — le
-# fichier ne contient aucun ß, et cette entrée ne l'introduit pas.
+# Registre : aucune de ces 20 chaînes ne porte de forme d'adresse directe — ce sont des
+# passifs (« … sind erforderlich ») et des infinitifs de bouton. La Sie-Form de D9 ne s'y
+# illustre donc pas ; elle vaut pour les 115 messages du fichier qui, eux, s'adressent au
+# lecteur. Orthographe suisse : Strasse s'écrit avec deux s, et aucune ligne de DONNEES de
+# ce fichier n'emploie l'eszett. (Revue de code 23-1b, passe 1.)
 contact-error-address-npa-city = PLZ und Ort sind erforderlich, wenn eine Adresse erfasst wird
 contact-error-person-name = Vorname und Name sind für eine Person erforderlich
 contact-persons-add = Hinzufügen
