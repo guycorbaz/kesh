@@ -2,8 +2,8 @@
 
 *Établi le 2026-08-19 au kickoff de l'**Epic 23 « Dette i18n »** (issues [#316] et [#283]).*
 
-Ce glossaire existe parce que l'epic 23 fait entrer **307 clés** au catalogue et écrit
-**921 messages** en trois langues. Sans terminologie figée d'avance, trois cents décisions
+Ce glossaire existe parce que l'epic 23 fait entrer **317 clés** au catalogue et écrit
+**951 messages** en trois langues. Sans terminologie figée d'avance, trois cents décisions
 lexicales se prennent une par une, au fil des stories de rollout, et le produit finit par
 dire deux mots différents pour la même chose selon l'écran.
 
@@ -107,12 +107,18 @@ contraignantes pour tout le rollout.
 | immuable | unveränderlich | immutabile | immutable | employé pour une pièce validée |
 | validité | Gültigkeit | validità | validity | |
 | personne physique / morale | natürliche / juristische Person | persona fisica / giuridica | individual / legal entity | |
+| **personne de contact** | **Kontaktperson** | **persona di contatto** | contact person | manquait à ce glossaire — relevé le 2026-08-19 à la spécification de la 23-1, où le mot « personne » figure sur 6 des 20 clés du domaine pilote |
 | prénom | Vorname | nome | first name | |
 | image | Bild | immagine | image | scan de QR-facture |
 | bascule (interrupteur) | Umschalter | interruttore | toggle | élément d'interface |
 | restauré | wiederhergestellt | ripristinato | restored | import de sauvegarde |
 
 ---
+
+⚠️ **Trois de ces termes sont tranchés par la story 23-1**, dont le domaine pilote `contacts`
+les emploie : **localité**, **prénom** et **personne de contact**. Ils remonteront en partie A
+une fois la story mergée, avec la clé qui les atteste. Les douze autres restent ouverts — dont
+**« analytique »**, le seul dont l'enjeu dépasse le vocabulaire.
 
 ## Comment s'en servir
 

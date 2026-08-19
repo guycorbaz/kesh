@@ -24,7 +24,8 @@ germanophone, avec tous les gates au vert. C'est le **test muet** transposé aux
 | replis moissonnables mécaniquement | **245** / 250 |
 | clés sans repli littéral | **5**, toutes dans `TransactionSplitModal.svelte` — replis interpolés (`` `Ligne ${i + 1} : compte requis` ``) → entrées Fluent **à variables** |
 | dossiers concernés | **13** pour [#316] |
-| **total à faire vivre** | **307 clés** → **250** entrées `fr-CH` (moisson) + **921** messages `de-CH` / `it-CH` / `en-CH` |
+| clés révélées par l'énumération des motifs dynamiques | **+10** — la famille `imported-supplier-invoices-error-*` est absente des quatre catalogues (*trouvé à la spécification de la 23-1, cf. ci-dessous*) |
+| **total à faire vivre** | **317 clés** → **260** entrées `fr-CH` (moisson + énumération) + **951** messages `de-CH` / `it-CH` / `en-CH` |
 
 Commande de recompte, à rejouer et non à croire :
 
@@ -60,6 +61,13 @@ comm -23 <(grep -oE '^[a-z0-9-]+ =' fr-CH/messages.ftl | sort -u) \
   `src/lib/features/`, alors que **197 des 250** manquantes vivent sous `src/routes/`.
 - **la suite E2E** tourne en **français**, où le repli est rigoureusement indiscernable de la traduction.
 
+⚠️ **Et le repli a DEUX chemins, ce que la première rédaction de ce plan taisait.** `all_messages`
+(`loader.rs:130-143`) charge `fr-CH` comme base avant d'écraser avec la locale demandée : pour les
+57 clés de [#283], le frontend reçoit donc **du français depuis le backend**, et le second argument
+d'`i18nMsg` n'est jamais atteint. Pour les 250 de [#316], c'est le littéral en dur du `.svelte` qui
+s'affiche. Même symptôme, deux mécanismes — et **aucun test passant par `format()` ou
+`all_messages()` ne peut voir le premier**. Détail et conséquences : story 23-1, § *Contexte*.
+
 ## La garde — deux niveaux, parce qu'il y a deux défauts
 
 Le patron n'est pas à inventer : il est **déjà écrit deux fois** dans le dépôt, borné à un
@@ -93,7 +101,7 @@ appelle un contrôle d'une autre nature (détection de littéraux affichés).
 |---|---|---|
 | **23-1** | **Socle** : les deux gardes, avec allowlist explicite des clés connues, **décroissante seulement** ; moissonneur de replis versionné ; les 8 motifs dynamiques ; glossaire figé ; domaine pilote `contacts` (12 + 8) | 20 |
 | **23-2** | **[#283]** — les 57 clés en `de-CH` / `it-CH` / `en-CH`. La garde de **parité** devient inconditionnelle : son allowlist disparaît | 57 |
-| **23-3** | `supplier-invoices` — le gros morceau, seul | 99 |
+| **23-3** | `supplier-invoices` — le gros morceau, seul (99 statiques + **10** de la famille dynamique `imported-supplier-invoices-error-*`) | 109 |
 | **23-4** | `settings` + `payment-batches` | 60 |
 | **23-5** | `reconciliation` (dont les 5 entrées à variables) + `reports` (14 + 7) + `credit-notes` | 56 |
 | **23-6** | Reliquat : `invoices`, `journal-entries`, `lib/components`, `bank-accounts` + **clôture** : allowlist vidée, garde inconditionnelle, [#316] fermée | 15 |
@@ -117,7 +125,7 @@ s'y fait au fichier, pas en passes adversariales globales — conformément à l
 | # | Risque | Parade |
 |---|---|---|
 | R1 | **La moisson des replis fait entrer 250 formulations françaises non relues.** Un repli écrit à la va-vite devient un libellé de catalogue. | Le moissonneur **propose**, il ne commite pas : chaque story de rollout relit ses entrées `fr-CH` avant de les figer. |
-| R2 | **L'allowlist devient un cimetière.** Une allowlist de 307 lignes qui ne décroît pas rend la garde décorative. | Elle est **décroissante par construction** (un test échoue si elle contient une clé désormais présente) et l'epic se clôt sur son vidage. |
+| R2 | **L'allowlist devient un cimetière.** Une allowlist de 317 lignes qui ne décroît pas rend la garde décorative. | Elle est **décroissante par construction** (un test échoue si elle contient une clé désormais présente) et l'epic se clôt sur son vidage. |
 | R3 | **Terminologie divergente entre stories de rollout.** Six stories, six occasions de traduire « justificatif » différemment. | `docs/i18n-glossaire.md`, figé avant la première traduction ; partie A **non négociable** en story de rollout. |
 | R4 | **Les entrées Fluent à variables** (les 5 de `TransactionSplitModal`) sont les seules non mécaniques — une erreur de nom de variable est silencieuse à la compilation. | Traitées dans la 23-5, avec un test qui **formate** chaque entrée avec ses arguments et vérifie qu'aucun placeholder ne survit au rendu. |
 
