@@ -321,6 +321,69 @@ plein `src/` au moment de T4**, jamais repris d'ici. Quatre fichiers candidats h
 - Correctif de référence : `frontend/src/lib/features/supplier-invoices/supplier-invoice-helpers.ts`
   et son test, qui emprunte le chemin réel du dictionnaire
 
+## Reprise — où en est le dossier, et par quoi commencer
+
+*(Écrit à la fin de la séance du 2026-08-20, à la demande de Guy.)*
+
+### L'état, en trois lignes
+
+**`main` porte trois stories de l'epic 23** — le socle (23-1a/1b), la parité (23-2, qui a fermé #283),
+et la 23-3 supplier-invoices (#325, `046efa51`). L'allowlist de dette est à **166 clés**. **#316 reste
+ouverte**, et doit le rester jusqu'à la fin de l'epic.
+
+**Cette story (23-3b) est en `ready-for-dev`**, spec passée par **trois passes de `validate`**
+(`2C/6H/6M/3L` → `2C/4H/3M/6L` → `1C/0H/1M/2L`) et **T1 rendue**. ⚠️ **Six commits attendent sur la
+branche, qui n'a JAMAIS été poussée** — le travail est dans `git`, pas sur le distant.
+
+### Par quoi reprendre, dans l'ordre
+
+1. **Décider si une passe 4 de `validate` a lieu.** La règle la prescrit *(il restait 1 CRITICAL en
+   passe 3)*, le cycle appellerait **Opus**. ⚠️ **Mon avis, qui n'est pas une certitude** : la passe 3
+   n'a plus rien trouvé sur les **faits** (42 vérifications, zéro finding) ni sur la **conception**, et
+   son unique CRITICAL portait sur un lien manquant entre une tâche et un AC. Le rendement décroît.
+2. **`bmad-dev-story`** sur cette spec. Rien ne bloque plus.
+3. **Pousser et ouvrir la PR** en `refs #316`.
+4. **Puis seulement la 23-4** — ⚠️ **jamais avant**, sinon elle fige le défaut : `payment-batches` et
+   `credit-notes` sont ses domaines, et leurs valeurs de statut sont encore en français en dur.
+
+### Ce qui a été tranché aujourd'hui, et qui se perdrait
+
+- ⚠️ **Pas de relecture par un locuteur natif** — *« le jour où un germanophone ou un italophone
+  utilisera Kesh, il annoncera les erreurs et nous prendrons les mesures à ce moment-là »*. Consigné
+  au **préambule du glossaire**, avec ce que cela impose en retour : **le relevé devient la seule
+  discipline qui borne la dérive**.
+- **`imported-supplier-invoices-save` = « Créer une facture »** *(usage Bexio)*. Le libellé précédent
+  disait « Valider la facture » alors que le code **crée** la pièce — et `invoice-validate-confirm-title`
+  portait **déjà** ce texte pour la validation comptable, qui rend une facture immuable. **Deux actes
+  distincts, dont un irréversible, sous un seul libellé français.**
+- **Le statut de lot : « Généré » → « Créé »**, et le verbe « créer » devient **uniforme** dans le
+  domaine. Cf. § *Les termes*.
+- **Les six codes d'échec ne montent PAS en partie A** du glossaire : libellés d'erreur, pas termes
+  métier.
+
+### Ce qui reste en suspens
+
+- **Deux décisions mineures sur la 23-3, déjà mergée** : renommer `-col-qty` / `-col-vat` en `-line-*`
+  *(elles titrent des colonnes de LIGNES dans une famille qui sert la LISTE)*, et l'asymétrie
+  « v0.4 » — le français annonce une limitation datée là où les trois cibles la donnent pour
+  définitive.
+- **Quatre bugs applicatifs reportés** par la revue de la 23-3, sans rapport avec la traduction, dont
+  un `catch` sans branche `else` qui fait afficher **« Aucune facture fournisseur enregistrée »**
+  quand le backend est injoignable. Un comptable en conclut que ses pièces ont disparu.
+- **KF-041 (#323)** et **KF-042 (#324)**, ouvertes aujourd'hui : deux homonymies qu'aucune garde ne
+  peut voir, hors périmètre de tout rollout en cours.
+
+### Les pièges à ne pas redécouvrir
+
+- ⚠️ **Le gate E2E exige `KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR`.** Sans eux, des tests échouent
+  d'une façon qui **ne ressemble pas** à un problème de configuration — `docs/testing.md` a été
+  corrigé aujourd'hui, avec la mesure.
+- ⚠️ **`pkill -f "target/debug/kesh-api"` tue le shell qui le porte** — son propre motif figure dans
+  sa ligne de commande. Utiliser `pkill -x kesh-api`.
+- ⚠️ **Sur ce dossier, dix passes sur onze ont trouvé une régression du correctif précédent.** Ce
+  n'est pas une figure de style : c'est le mode d'échec dominant, et il vise désormais les **comptes
+  rendus** plus souvent que le code.
+
 ## Dev Agent Record
 
 ### Agent Model Used
