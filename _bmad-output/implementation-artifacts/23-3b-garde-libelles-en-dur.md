@@ -124,11 +124,10 @@ bloquant.**
 
 ## Tasks
 
-- [ ] **T1 — Arbitrage de Guy** sur les trois statuts non attestés **et** les six codes de
-      `failedItemLabel` — AC6. **BLOQUANT.** ⚠️ **Conduite à tenir** : proposer les valeurs `de`/`it`/`en`
-      dans le Dev Agent Record, puis **S'ARRÊTER et attendre**. Ne **jamais** inventer : ces valeurs
-      seront figées dans quatre catalogues **et** promues en partie A du glossaire, zone déclarée
-      « non négociable en rollout ». Précédents d'arbitrage : `analytique`, `bascule`, `fattura fornitore`.
+- [x] **T1 — Arbitrage de Guy — RENDU le 2026-08-20**, cf. § *Les termes* ci-dessous. AC6.
+      ⚠️ **Il ne reste rien à inventer** : les neuf termes sont soit attestés au catalogue, soit tranchés. ⚠️ **Si un terme NEUF apparaît en cours de route** — un
+      dixième que le relevé ne couvre pas —, le proposer au Dev Agent Record et **S'ARRÊTER**. Ne jamais
+      inventer : ces valeurs sont figées dans quatre catalogues **et** promues en partie A.
 - [ ] **T2 — Exporter `corpsDeFonction`** depuis `i18n-literal-reader.js` (+ son test) — elle existe
       (`:374`) mais **n'est pas exportée**. AC1. ⚠️ **Elle ne suffit PAS à elle seule** : elle prend en
       entrée la position d'une accolade **déjà connue**. Localiser la déclaration (nom + vraie accolade
@@ -215,10 +214,23 @@ partie A.
 | `Annulé(e)` | ✅ **attesté** | `invoice-status-cancelled` → `Storniert` / `Annullata` / `Cancelled`. ⚠️ **Accord** : un *lot* est masculin, une *facture* féminine |
 | `Validée` | ✅ **attesté** | `invoice-status-validated` |
 | `Ouverte` / `Payée` | ✅ **partie A** | `offen`/`aperta`/`open` · `bezahlt`/`pagata`/`paid` |
-| **`Généré`** | ⚠️ **NON attesté** — vérifié : zéro occurrence dans les 4 locales | **arbitrage T1** |
-| **`Confirmé`** | ⚠️ **NON attesté** | **arbitrage T1** |
-| **`Émis`** | ⚠️ **NON attesté**. ⚠️ Ne pas le confondre avec « validé », qui est l'acte d'immuabilité | **arbitrage T1** |
-| **les 6 codes de `failedItemLabel`** | ⚠️ **à relever ET à faire arbitrer** — 6 × 4 = **24 valeurs** | s'inspirer de `reminders-error-*` (15 codes) et `imported-supplier-invoices-error-*` (10), déjà traduits. ⚠️ Ce sont des **messages techniques** : dire au § glossaire s'ils montent en partie A ou non |
+| ~~`Généré`~~ → **`Créé`** | ⚠️ **LE FRANÇAIS CHANGE** — arbitrage de Guy, 2026-08-20 | `Erstellt` / `Creato` / `Created` — **relevé** sur `imported-supplier-invoices-completed` |
+| **`Confirmé`** | tranché | `Bestätigt` / `Confermato` / `Confirmed` — **relevé** sur `demo-reset-confirm-ok` |
+| **`Émis`** *(fém. : une note de crédit)* | tranché. ⚠️ Ne pas le confondre avec « validé », qui est l'acte d'immuabilité | `ausgestellt` / `emessa` / `issued` — **relevé** sur `credit-note-revenue-account-archived` |
+| **les 6 codes de `failedItemLabel`** | tranchés — 4 **relevés**, 2 décidés | `SUPPLIER_INVOICE_NOT_FOUND` ← `reminders-error-invoice-not-found` · `INVALID_IBAN` / `INVALID_QR_IBAN` ← `imported-supplier-invoices-error-invalid-iban`, **sans** « du créancier » · `SUPPLIER_INVOICE_NOT_OPEN` ← *ouverte*, **partie A** · `NO_PAYMENT_COORDINATES` → **`Keine Zahlungsverbindung`** (terme bancaire, **pas** le calque `Zahlungskoordinaten`) · `ALREADY_IN_GENERATED_BATCH` → cf. ⚠️ ci-dessous. ⚠️ **Messages techniques : ils ne montent PAS en partie A** — le glossaire porte des termes métier, pas des libellés d'erreur |
+
+⚠️ **« Généré » → « Créé » entraîne un SECOND changement de français, et il faut le voir venir.**
+`ALREADY_IN_GENERATED_BATCH` dit aujourd'hui « Déjà dans un lot **en cours** » — une troisième
+formulation pour un statut qui s'appelle `generated` dans le code et s'affichera « Créé » à l'écran.
+**L'utilisateur ne peut pas faire le lien entre les deux.** Le message devient donc « Déjà dans un
+lot **créé** », qui reprend le mot exact de la colonne Statut. ⚠️ **Ce n'est pas une extension de
+périmètre** : c'est la conséquence directe de l'arbitrage, et la laisser de côté rendrait le
+correctif incohérent avec lui-même.
+
+⚠️ **Le verbe « créer » devient uniforme dans le domaine** : `Créer une facture` (tranché la veille,
+usage Bexio), `Facture créée.`, et maintenant `Créé` pour un lot. Les trois cibles suivent le même
+verbe — `erstellen`/`erstellt`, `creare`/`creata`, `create`/`created`. C'est le bénéfice caché de
+l'arbitrage : un mot de moins à retenir pour l'utilisateur, et une équivalence de plus au relevé.
 
 ### Sur quoi la garde s'appuie — ce qui existe et ce qui manque
 
