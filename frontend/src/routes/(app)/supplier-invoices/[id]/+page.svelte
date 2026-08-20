@@ -142,7 +142,7 @@
 </button>
 
 {#if loading}
-	<p class="text-sm text-text-muted">Chargement…</p>
+	<p class="text-sm text-text-muted">{i18nMsg('common-loading', 'Chargement…')}</p>
 {:else if errorMsg}
 	<p class="text-sm text-destructive">{errorMsg}</p>
 {:else if invoice}
@@ -161,7 +161,7 @@
 		<dt class="text-text-muted">{i18nMsg('supplier-invoices-col-total', 'TTC')}</dt>
 		<dd>{formatSupplierInvoiceTotal(invoice.totalAmount)}</dd>
 		{#if projectLabel}
-			<dt class="text-text-muted">{i18nMsg('supplier-invoices-field-project', 'Projet analytique')}</dt>
+			<dt class="text-text-muted">{i18nMsg('supplier-invoices-detail-project', 'Projet analytique')}</dt>
 			<dd data-testid="supplier-invoice-project">{projectLabel}</dd>
 		{/if}
 		{#if invoice.creditorIban}
@@ -169,7 +169,7 @@
 			<dd class="font-mono">{invoice.creditorIban}</dd>
 		{/if}
 		{#if invoice.paymentReference}
-			<dt class="text-text-muted">{i18nMsg('supplier-invoices-field-reference', 'Référence')}</dt>
+			<dt class="text-text-muted">{i18nMsg('supplier-invoices-detail-reference', 'Référence')}</dt>
 			<dd class="font-mono">{invoice.paymentReference}</dd>
 		{/if}
 	</dl>
@@ -186,10 +186,17 @@
 		<thead>
 			<tr class="border-b text-left text-text-muted">
 				<th class="py-2">{i18nMsg('supplier-invoices-line-desc', 'Description')}</th>
-				<th class="py-2 text-right">Qté</th>
+				<th class="py-2 text-right">{i18nMsg('supplier-invoices-col-qty', 'Qté')}</th>
 				<th class="py-2 text-right">{i18nMsg('supplier-invoices-line-ht', 'HT')}</th>
-				<th class="py-2 text-right">TVA</th>
-				<th class="py-2 text-right">{i18nMsg('supplier-invoices-col-total', 'Total HT')}</th>
+				<th class="py-2 text-right">{i18nMsg('supplier-invoices-col-vat', 'TVA')}</th>
+				<!-- ⚠️ PAS `supplier-invoices-col-total` : cette colonne affiche `line.lineTotal`, qui
+					 vaut `quantity × unit_price` HORS TAXE (`supplier_invoice.rs:89`), tandis que la clé
+					 `-col-total` sert `invoice.totalAmount`, documenté TTC (`supplier_invoice.rs:29`).
+					 Les deux ont longtemps partagé une clé sans dommage, parce qu'elle manquait des
+					 quatre catalogues et que chaque site retombait sur SON repli. Entrer une valeur
+					 unique au catalogue l'aurait imposée aux trois sites — « TTC » au-dessus de
+					 montants HT. (Story 23-3, révélé par le moissonneur.) -->
+				<th class="py-2 text-right">{i18nMsg('supplier-invoices-line-total', 'Total HT')}</th>
 			</tr>
 		</thead>
 		<tbody>

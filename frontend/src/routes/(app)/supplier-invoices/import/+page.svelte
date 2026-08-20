@@ -16,6 +16,7 @@
 		InboxImportReport,
 		CompleteImportLineRequest,
 	} from '$lib/features/imported-supplier-invoices/imported-supplier-invoices.types';
+	import { importErrorLabel } from '$lib/features/imported-supplier-invoices/error-label';
 	import { listContacts } from '$lib/features/contacts/contacts.api';
 	import type { ContactResponse } from '$lib/features/contacts/contacts.types';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
@@ -49,27 +50,6 @@
 	let fLines = $state<CompleteImportLineRequest[]>([
 		{ description: '', quantity: '1', unitPrice: '', vatRate: '0', expenseAccountId: 0 },
 	]);
-
-	/** Map `errorCode` du rapport batch → libellé FR (clés `imported-supplier-invoices-error-*`). */
-	function importErrorLabel(code: string): string {
-		const map: Record<string, [string, string]> = {
-			UNSUPPORTED_FILE_TYPE: ['unsupported-file-type', 'Type de fichier non supporté'],
-			FILE_TOO_LARGE: ['file-too-large', 'Fichier trop volumineux'],
-			SYMLINK_REJECTED: ['symlink-rejected', 'Lien symbolique rejeté'],
-			DUPLICATE: ['duplicate', 'Déjà importé (doublon)'],
-			NO_QR_CODE_FOUND: ['no-qr-code-found', 'Aucun QR-facture détecté'],
-			INVALID_SPC_PAYLOAD: ['invalid-spc-payload', 'QR illisible (format non SPC)'],
-			INVALID_IBAN: ['invalid-iban', 'IBAN créancier invalide'],
-			PDF_RENDER_ERROR: ['pdf-render-error', 'PDF illisible'],
-			FILE_READ_ERROR: ['file-read-error', 'Lecture du fichier impossible'],
-			FIELD_TOO_LONG: ['field-too-long', 'Un champ du QR dépasse la longueur autorisée'],
-		};
-		const entry = map[code];
-		if (entry) return i18nMsg(`imported-supplier-invoices-error-${entry[0]}`, entry[1]);
-		return i18nMsg('imported-supplier-invoices-error-unknown', 'Échec de l’import ({$code})', {
-			code,
-		});
-	}
 
 	async function reloadList() {
 		toComplete = await listImported('to_complete');
@@ -140,7 +120,7 @@
 		} catch {
 			notifyWarning(
 				i18nMsg(
-					'imported-supplier-invoices-reload-failed',
+					'imported-supplier-invoices-completed-reload-failed',
 					'Import effectué, mais la liste n’a pas pu être rechargée — actualisez la page.',
 				),
 			);
@@ -555,7 +535,7 @@
 									<input
 										class="col-span-1 rounded border px-2 py-1 text-sm"
 										inputmode="decimal"
-										placeholder="Qté"
+										placeholder={i18nMsg('imported-supplier-invoices-line-qty', 'Qté')}
 										bind:value={line.quantity}
 									/>
 									<input
@@ -618,7 +598,7 @@
 								data-testid="imported-complete-submit"
 								disabled={saving || structurallyInvalid()}
 							>
-								{saving ? '…' : i18nMsg('imported-supplier-invoices-save', 'Valider la facture')}
+								{saving ? '…' : i18nMsg('imported-supplier-invoices-save', 'Créer une facture')}
 							</button>
 							<button type="button" class="rounded border px-4 py-2 text-sm" onclick={cancelComplete}>
 								{i18nMsg('common-cancel', 'Annuler')}

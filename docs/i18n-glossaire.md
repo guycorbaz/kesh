@@ -12,6 +12,13 @@ dans les catalogues existants**, sur les **1216 clés alignées sur les quatre l
 La colonne « précédent » nomme la clé où l'équivalence est attestée.** Les changer, c'est
 désaligner le nouveau du déjà-livré — ce que cet epic vient précisément corriger.
 
+⚠️ **En cas de doute sur une langue cible, suivre le FRANÇAIS.** Arbitrage de Guy, 2026-08-19,
+rendu sur `fattura fornitore` contre `fattura fornitori` : les deux étaient de l'italien correct, donc
+rien ne permettait de trancher sans parler la langue. Le français, lui, est vérifiable — et il tranche
+(`Facture fournisseur` au singulier, `Factures fournisseurs` au pluriel). **La ligne du glossaire
+était bancale** : lemme français au singulier, italien au pluriel, une forme hybride correspondant à
+ni l'un ni l'autre. Les catalogues, eux, étaient déjà justes.
+
 ⚠️ **Les termes sont donnés en forme de LEMME — minuscule et singulier —, les catalogues portant des
 libellés d'interface.** `facture` relève `Factures`, `avoir` relève `Avoir`, `rappel` relève
 `Rappels` : la mise au singulier et en minuscule est **uniforme** et ne constitue pas un écart. Ce
@@ -66,7 +73,7 @@ passage des rollouts qui touchent ces domaines, pas ici.
 | fr-CH | de-CH | it-CH | en-CH | précédent |
 |---|---|---|---|---|
 | facture | Rechnung | fattura | invoice | `Factures` / `Rechnungen` |
-| facture fournisseur | Lieferantenrechnung | fattura fornitori | supplier invoice | `Factures fournisseurs` |
+| facture fournisseur | Lieferantenrechnung | **fattura fornitore** *(pluriel : `fatture fornitori`)* | supplier invoice | `supplier-invoices-detail-title` (sing.) / `supplier-invoices-title` (plur.) |
 | avoir | **Gutschrift** | **nota di credito** | credit note | `Avoir` / `N° d'avoir` |
 | brouillon | Entwurf | bozza | draft | `Brouillon` |
 | ouverte (facture) | offen | aperta | open | `Factures ouvertes` |
@@ -80,6 +87,8 @@ passage des rollouts qui touchent ces domaines, pas ici.
 | solde | Saldo | saldo | balance | `Soldes de départ` / `Anfangssaldi` |
 | montant | **Betrag** | **importo** | amount | `Montant trop élevé` |
 | montant HT | Betrag exkl. MWST | importo IVA esclusa | amount excl. VAT | `Montant HT` |
+| **montant TTC** | **Betrag inkl. MWST** | **importo IVA inclusa** | **amount incl. VAT** | `supplier-invoices-field-expected-amount` (story 23-3, passe 4). ⚠️ **Le pendant exact de *montant HT*, et il n'était protégé par rien** alors que celui-ci l'était — asymétrie relevée en passe 4. `credit-notes-col-total` et `-col-line-total`, encore à la dette, porteront la forme opposée |
+| **compte de charge** | **Aufwandskonto** | **conto di costo** | **expense account** | `vat-purchase-charge-account` (story 23-3, passe 4). ⚠️ **Le SEUL terme du domaine dont on ait la PREUVE qu'il dérive** : la passe 1 a dû corriger `Aufwandkonto` et `conto costi`, écrits trois fois chacun. ⚠️ **L'anglais s'en tire par coïncidence** (terme monolithique) — un contrôle mené sur lui seul ne l'aurait pas vu |
 | exercice (comptable) | **Geschäftsjahr** | esercizio contabile | fiscal year | `Exercices comptables` |
 | résultat de l'exercice | Jahresergebnis | risultato dell'esercizio | current year result | `Résultat de l'exercice` |
 | bilan | Bilanz | bilancio | balance sheet | `Bilan` |
@@ -101,6 +110,14 @@ passage des rollouts qui touchent ces domaines, pas ici.
 | **immuable** | **unveränderlich** | **immutabile** | **immutable** | `invoice-validate-confirm-body` (story 23-2) |
 | **validité** | **Gültigkeit** | **validità** | **validity** | `vat-rates-subtitle` (story 23-2) |
 | **bascule** (*changement de taux*) | **Umstellungsdatum** | **data di cambiamento** | **changeover date** | `vat-rates-field-switch-date` (story 23-2). ⚠️ **HOMONYME** — rien à voir avec la bascule-interrupteur de la partie B |
+| **virement** | **Überweisung** (`Banküberweisung` si le mode de paiement) | **bonifico** | **bank transfer** | `supplier-invoices-pay-transfer` (story 23-3). Usage bancaire suisse standard |
+| **image** | **Bild** | **immagine** | **image** | `supplier-invoices-scan-failed` (story 23-3). Scan de QR-facture |
+| **compléter** | **vervollständigen** | **completare** | **complete** | `imported-supplier-invoices-complete` (story 23-3) |
+| **écarter / écartée** (une pièce) | **verwerfen / verworfen** | **scartare / scartata** | **discard / discarded** | `imported-supplier-invoices-discard` (story 23-3). S'oppose à « compléter » dans la file d'import. ⚠️ En italien, **ne pas employer `scarto` pour un ÉCART de montant** sur le même écran — dire `differenza` |
+| **justificatif** | **Beleg** | **documento giustificativo** | **supporting document** | `imported-supplier-invoices-view-doc` (story 23-3). `Beleg` est le terme du CO art. 957a ; « Buchungsbeleg » si le contexte est l'écriture |
+| **QR-facture** *(fém.)* | **QR-Rechnung** | **fattura QR** | **QR-bill** | `supplier-invoices-scan` (story 23-3). ⚠️ Terminologie **officielle SIX**. ⚠️ **FÉMININ en français** — « une QR-facture », « QR-facture lue » : quatre libellés l'accordaient au masculin, et les trois cibles avaient bon |
+| **restauré** | **wiederhergestellt** | **ripristinato** | **restored** | `imported-supplier-invoices-doc-gone` (story 23-3). Le justificatif qu'une restauration de sauvegarde n'a pas ramené |
+| **règlement** (*d'une facture*) | **Zahlung** (`Zahlungsdatum`) | **pagamento** | **payment** | `supplier-invoices-pay-date` (story 23-3). ⚠️ **Le français seul distingue** *règlement* de *paiement* ; les trois cibles n'ont qu'un mot et disent **paiement**. Ne PAS écrire `Begleichung` / `settlement` — deux mots pour un concept déjà couvert |
 | carnet d'adresses | **Kontakte** | **contatti** | contacts | `Carnet d'adresses` |
 | adresse | Adresse | indirizzo | address | `Adresse` |
 | rappel / relance | **Mahnung** | **sollecito** | reminder | `Rappels` / `Mahnungen` |
@@ -117,9 +134,9 @@ passage des rollouts qui touchent ces domaines, pas ici.
 | rapport | Bericht | rapporto | report | `Rapports comptables` |
 | banque | Bank | banca | bank | `Banque` |
 | devise | Währung | valuta | currency | `Devise non supportée v0.1.` |
-| projet | Projekt | progetto | project | `depenses-par-projet` |
+| projet | Projekt | progetto | project | `supplier-invoices-detail-project` |
 | **projet analytique** | **Projekt** | **progetto** | **project** | arbitrage de Guy, 2026-08-19 — cf. la note ci-dessous |
-| dépenses | Ausgaben | spese | expenses | `depenses-par-projet` |
+| dépenses | Ausgaben | spese | expenses | `reports-filename-project-expenses` ⚠️ *slug de nom de fichier, pas un libellé* |
 
 ⚠️ **« Projet analytique » se rend simplement par `Projekt` / `progetto` / `project`** — arbitrage
 de Guy du 2026-08-19, et il mérite sa justification parce que la proposition initiale de ce
@@ -133,7 +150,7 @@ dates de début et de fin. C'est un objet **temporaire porteur de coûts** — u
 allemand, une `commessa` en italien. **Le terme proposé désignait le mauvais concept.**
 
 Le choix retenu n'est pourtant ni l'un ni l'autre : **on ne traduit pas « analytique »**. Motifs —
-`Projekt` est **déjà attesté** au catalogue (`depenses-par-projet`) ; l'utilisateur lit ce que le
+`Projekt` est **déjà attesté** au catalogue (`supplier-invoices-detail-project`, et avant lui le slug `reports-filename-project-expenses`) ; l'utilisateur lit ce que le
 logiciel fait réellement ; et une étiquette de champ n'est pas l'endroit où faire de la terminologie
 comptable. `Kostenträger` et `commessa` ont leur place dans le **manuel**, pas dans l'interface.
 
@@ -150,35 +167,46 @@ contraignantes pour tout le rollout.
 
 | fr-CH | de-CH proposé | it-CH proposé | en-CH proposé | motif / réserve |
 |---|---|---|---|---|
-| QR-facture | **QR-Rechnung** | **fattura QR** | **QR-bill** | ✅ terminologie **officielle SIX**, pas un choix — à retenir tel quel |
-| justificatif | **Beleg** | documento giustificativo | supporting document | `Beleg` est le terme du CO art. 957a en allemand ; « Buchungsbeleg » si le contexte est l'écriture |
-| virement | Überweisung | bonifico | bank transfer | usage bancaire suisse standard |
-| règlement (d'une facture) | Begleichung / Zahlung | pagamento | settlement | ⚠️ **préférer « Zahlung » / « pagamento » / « payment »** et réserver « règlement » au français — deux mots pour un concept déjà couvert par *paiement* |
-| écarter / écartée (une pièce) | verwerfen / verworfen | scartare / scartata | discard / discarded | s'oppose à « compléter » dans la file d'import |
-| compléter | vervollständigen | completare | complete | idem |
 | personne physique / morale | natürliche / juristische Person | persona fisica / giuridica | individual / legal entity | |
-| image | Bild | immagine | image | scan de QR-facture |
 | bascule (**interrupteur**) | Umschalter | interruttore | toggle | élément d'interface. ⚠️ **NE PAS employer pour « date de bascule »**, qui est un changement de taux et vit en partie A |
-| restauré | wiederhergestellt | ripristinato | restored | import de sauvegarde |
 
 ---
 
-✅ **Cinq de ces termes ONT ÉTÉ tranchés et promus en partie A**, chacun portant désormais la clé
-qui l'atteste : **localité**, **prénom** et **personne de contact** par la story 23-1b (domaine
-pilote `contacts`) ; **immuable** et **validité** par la story 23-2 (les 57 clés de parité).
+✅ **Treize de ces termes ONT ÉTÉ tranchés et promus en partie A**, chacun portant désormais la clé
+qui l'atteste : **localité**, **prénom** et **personne de contact** par la story 23-1b ; **immuable**
+et **validité** par la 23-2 ; **QR-facture**, **justificatif**, **écarter/écartée**, **compléter**,
+**image** et **virement** par la 23-3, puis **restauré** et **règlement** par sa passe 2 de revue.
 
-⚠️ **`bascule` reste en partie B, et sa ligne y porte maintenant un avertissement** — parce que la
-23-2 a révélé qu'il s'agit de **deux termes distincts sous un seul mot**. L'entrée de partie B est
-l'**interrupteur** d'interface ; « date de bascule », qui désigne le **changement d'un taux de TVA**,
-est monté en partie A avec une traduction sans rapport (`Umstellungsdatum`, `data di cambiamento`,
-`changeover date`). Traduire la seconde d'après la première aurait donné un contresens plein — et
-c'est le glossaire lui-même qui aurait induit en erreur, ce qui est pire qu'un glossaire muet.
+⚠️ **`bascule` reste en partie B, et sa ligne y porte un avertissement** — la 23-2 a révélé qu'il
+s'agit de **deux termes sous un seul mot**. L'entrée de partie B est l'**interrupteur** d'interface ;
+« date de bascule », qui désigne le **changement d'un taux de TVA**, est monté en partie A avec une
+traduction sans rapport. Traduire la seconde d'après la première aurait donné un contresens plein —
+et c'est le glossaire lui-même qui aurait induit en erreur, ce qui est pire qu'un glossaire muet.
 
-**Dix** termes restent ouverts. *(La partie B comptait 16 entrées, 15 après l'arbitrage du
-2026-08-19 sur « analytique », 12 après la promotion de la 23-1b, et **10** après celle de la 23-2 —
-`bascule` y restant au titre de son sens « interrupteur ». La partie A compte **55** entrées.
-Les deux nombres sont **recomptés depuis les tableaux**, comme l'exige la § « Recompter ses propres
-comptes rendus ».)*
+**Deux** termes restent ouverts. *(La partie B comptait 16 entrées, 15 après l'arbitrage sur
+« analytique », 12 après la 23-1b, 10 après la 23-2, 4 après la 23-3 et **2** après sa passe 2. La
+partie A compte **65** entrées. Les deux nombres sont **recomptés depuis les tableaux**, comme
+l'exige la § « Recompter ses propres comptes rendus ».)*
+
+⚠️ **Les deux dernières entrées de la partie A n'y sont PAS montées depuis la partie B** — `montant TTC`
+et `compte de charge` n'y ont jamais figuré : ils étaient « attestés au catalogue », ce que la spec de
+la 23-3 tenait pour suffisant. **Ça ne l'est pas.** La règle d'immuabilité ne couvre que la partie A,
+si bien qu'un terme attesté mais non promu dérive sans que rien ne rougisse — et `compte de charge`
+en est la **preuve** : la passe 1 a dû corriger `Aufwandkonto` et `conto costi`, trois fois chacun.
+D'où le critère, désormais : **un terme que le rollout emploie et fige va en partie A**, qu'il vienne
+de la partie B ou du catalogue. *(Passe 4 de la 23-3 ; la partie A passe de 63 à 65.)*
+
+⚠️ **La 23-3 avait d'abord OUBLIÉ cette promotion, en cochant sa tâche.** Elle a employé et figé
+**huit** de ces termes dans 460 lignes de catalogue **sans les faire monter en partie A** — or la
+règle d'immuabilité ne protège **que** la partie A. Un rollout suivant aurait pu écrire
+`Buchungsbeleg` ou `Quittung` pour « justificatif » sans que rien ne rougisse : le mécanisme
+anti-dérive que cet epic existe pour poser, contourné par la story censée s'en servir.
+
+⚠️ **Et le correctif de la passe 1 n'en a promu que SIX sur huit** — `restauré` et `règlement`
+étaient employés eux aussi, sur trois clés, et sont restés en partie B une passe de plus. Le défaut
+d'un patch de remédiation est du même genre que celui qu'il corrige : **la question n'était pas
+« ai-je promu les termes que j'ai listés ? » mais « quels termes de partie B ce catalogue
+emploie-t-il ? »** — c'est-à-dire un grep du symptôme, et non du site. Trouvé en passe 2.
 
 ## Comment s'en servir
 

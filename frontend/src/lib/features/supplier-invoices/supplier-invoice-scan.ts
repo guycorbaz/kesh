@@ -11,7 +11,7 @@ import type { ScanQrResponse } from './supplier-invoices.types';
 
 /**
  * Décode le premier QR-code trouvé dans un fichier image. Retourne le texte brut
- * (payload SPC pour un QR-facture) ou `null` si aucun QR n'est détecté.
+ * (payload SPC pour une QR-facture) ou `null` si aucun QR n'est détecté.
  * Ne lève pas sur une image sans QR ; lève uniquement si le fichier n'est pas
  * une image décodable (géré par l'appelant).
  */

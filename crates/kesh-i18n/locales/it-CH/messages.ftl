@@ -1478,3 +1478,136 @@ vat-rates-load-error = Impossibile caricare le aliquote IVA.
 vat-rates-new = Nuova aliquota
 vat-rates-subtitle = Configura le aliquote IVA e le loro date di validità. Le vecchie aliquote restano applicate alle operazioni anteriori.
 vat-rates-title = Aliquote IVA
+
+# Story 23-3 (#316) — fatture fornitori : 119 chiavi.
+# Termini RILEVATI : fattura fornitori, Scadenza (invoice-pdf-due-date), Annullata
+# (invoice-status-cancelled), Costo (account-type-expense), IVA incl./esclusa
+# (invoice-pdf-total-ttc / vat-purchase-ht), esercizio.
+# Termini TRANCIATI dalla parte B del glossario : fattura QR (terminologia ufficiale SIX),
+# documento giustificativo, scartare/scartata, completare, immagine.
+# ⚠️ `imported-supplier-invoices-save` = `Crea una fattura`. Il francese diceva « Valider la
+# facture », errato due volte : il codice CREA la fattura (`complete_import`, passo 7), e
+# `invoice-validate-confirm-title` portava GIÀ quel testo per la convalida contabile. Deciso
+# da Guy il 2026-08-20 : « Créer une facture », l'uso di Bexio. ⚠️ Verbo RILEVATO su
+# `homepage-invoices-action` (`Creare una fattura`), ma reso all'IMPERATIVO come tutti i
+# pulsanti di questo dominio (`Registra`, `Completa`, `Scarta`, `Paga`).
+# ⚠️ Accordi al FEMMINILE con « fattura » : creata, scartata, importata, annullata.
+imported-supplier-invoices-add-line = Aggiungi una riga
+imported-supplier-invoices-amount = Importo
+imported-supplier-invoices-complete = Completa
+imported-supplier-invoices-completed = Fattura creata.
+imported-supplier-invoices-completed-hint = Fattura #{$id} registrata.
+imported-supplier-invoices-completed-reload-failed = Importazione eseguita, ma non è stato possibile ricaricare l'elenco — aggiorna la pagina.
+imported-supplier-invoices-discard = Scarta
+imported-supplier-invoices-discard-confirm = Scartare questa fattura importata? Il documento giustificativo resta conservato.
+imported-supplier-invoices-discard-conflict = Questa fattura è già stata completata o scartata da un'altra sessione.
+imported-supplier-invoices-discard-failed = Impossibile scartare la fattura.
+imported-supplier-invoices-discarded = Fattura scartata.
+imported-supplier-invoices-doc-failed = Download impossibile.
+imported-supplier-invoices-doc-gone = Il documento giustificativo non è stato ripristinato.
+imported-supplier-invoices-empty = Nessuna fattura da completare.
+imported-supplier-invoices-err-amount = Il totale delle righe ({$actual}) non corrisponde all'importo del QR ({$expected}).
+imported-supplier-invoices-err-currency = Valuta non supportata (solo CHF).
+imported-supplier-invoices-err-fiscal-year = Nessun esercizio aperto copre questa data.
+imported-supplier-invoices-err-form = Verifica il fornitore, la data e ogni riga (descrizione, importi, conto di costo).
+imported-supplier-invoices-err-generic = Errore imprevisto.
+imported-supplier-invoices-err-iban-ref = Incoerenza tra l'IBAN e il riferimento QRR.
+imported-supplier-invoices-err-not-found = Fattura importata non trovata.
+imported-supplier-invoices-err-not-pending = Questa fattura è già stata completata o scartata.
+imported-supplier-invoices-error-unknown = Importazione non riuscita ({$code})
+imported-supplier-invoices-field-date = Data della fattura
+imported-supplier-invoices-field-due = Scadenza
+imported-supplier-invoices-field-number = N. fattura fornitore
+imported-supplier-invoices-field-supplier = Fornitore
+imported-supplier-invoices-import = Importa la cartella
+imported-supplier-invoices-import-failed = Errore imprevisto durante l'importazione.
+imported-supplier-invoices-import-running = Un'importazione è già in corso. Riprova tra qualche istante.
+imported-supplier-invoices-importing = Importazione in corso…
+imported-supplier-invoices-line-account = Conto
+imported-supplier-invoices-line-desc = Descrizione
+imported-supplier-invoices-line-qty = Qtà
+imported-supplier-invoices-line-ht = Prezzo unitario IVA esclusa
+imported-supplier-invoices-lines = Righe
+imported-supplier-invoices-mismatch = differenza da correggere
+imported-supplier-invoices-no-source-doc = Per questa fattura non è stato importato alcun documento giustificativo.
+imported-supplier-invoices-reference = Rif.
+imported-supplier-invoices-reload-failed = Non è stato possibile ricaricare l'elenco — aggiorna la pagina.
+imported-supplier-invoices-report-accepted = {$n} fattura/e importata/e.
+imported-supplier-invoices-report-failed = {$n} errore/i:
+imported-supplier-invoices-save = Crea una fattura
+imported-supplier-invoices-source-doc-failed = Download impossibile.
+imported-supplier-invoices-source-doc-gone = Il documento giustificativo non è stato ripristinato.
+imported-supplier-invoices-subcentime = L'importo del QR ({$amount}) contiene frazioni di centesimo — irraggiungibile con righe al centesimo esatto. Raccomandazione: scartare questa fattura.
+imported-supplier-invoices-sum-ttc = Totale delle righe IVA inclusa
+imported-supplier-invoices-target = obiettivo QR
+imported-supplier-invoices-title = Importa fatture
+imported-supplier-invoices-to-complete = Fatture da completare
+imported-supplier-invoices-view-doc = Visualizza il documento giustificativo
+imported-supplier-invoices-view-source = Visualizza la fattura originale
+imported-supplier-invoices-error-unsupported-file-type = Tipo di file non supportato
+imported-supplier-invoices-error-file-too-large = File troppo grande
+imported-supplier-invoices-error-symlink-rejected = Collegamento simbolico rifiutato
+imported-supplier-invoices-error-duplicate = Già importato (duplicato)
+imported-supplier-invoices-error-no-qr-code-found = Nessuna fattura QR rilevata
+imported-supplier-invoices-error-invalid-spc-payload = QR illeggibile (formato non SPC)
+imported-supplier-invoices-error-invalid-iban = IBAN del creditore non valido
+imported-supplier-invoices-error-pdf-render-error = PDF illeggibile
+imported-supplier-invoices-error-file-read-error = Impossibile leggere il file
+imported-supplier-invoices-error-field-too-long = Un campo della fattura QR supera la lunghezza consentita
+supplier-invoices-add-line = Aggiungi una riga
+supplier-invoices-back = Indietro
+supplier-invoices-cancel = Annulla la fattura
+supplier-invoices-cancel-confirm = Annullare questa fattura fornitore?
+supplier-invoices-col-date = Data
+supplier-invoices-col-due = Scadenza
+supplier-invoices-col-number = N.
+supplier-invoices-col-status = Stato
+supplier-invoices-col-qty = Qtà
+supplier-invoices-col-vat = IVA
+supplier-invoices-col-supplier = Fornitore
+supplier-invoices-col-total = IVA incl.
+supplier-invoices-detail-project = Progetto
+supplier-invoices-detail-reference = Riferimento
+supplier-invoices-detail-title = Fattura fornitore
+supplier-invoices-empty = Nessuna fattura fornitore registrata.
+supplier-invoices-err-lines = Ogni riga richiede una descrizione, un importo e un conto di costo.
+supplier-invoices-err-supplier = Seleziona un fornitore.
+supplier-invoices-field-date = Data della fattura
+supplier-invoices-field-due = Scadenza
+supplier-invoices-field-expected-amount = Importo previsto IVA inclusa (facoltativo)
+supplier-invoices-field-iban = IBAN / QR-IBAN (facoltativo)
+supplier-invoices-field-number = N. fattura fornitore
+supplier-invoices-field-project = Progetto (facoltativo)
+supplier-invoices-field-qr-iban = QR-IBAN (facoltativo)
+supplier-invoices-field-reference = Riferimento (facoltativo)
+supplier-invoices-field-supplier = Fornitore
+supplier-invoices-form-close = Chiudi
+supplier-invoices-line-account = Conto
+supplier-invoices-line-desc = Descrizione
+supplier-invoices-line-ht = IVA escl.
+supplier-invoices-line-total = Totale IVA esclusa
+supplier-invoices-lines = Righe
+supplier-invoices-new = Registra una fattura
+supplier-invoices-paid-info = Fattura pagata.
+supplier-invoices-pay-account-ph = Conto di contropartita
+supplier-invoices-pay-bank-ph = Conto bancario di origine
+supplier-invoices-pay-date = Data di pagamento
+supplier-invoices-pay-err-account = Seleziona un conto.
+supplier-invoices-pay-err-bank = Seleziona un conto bancario.
+supplier-invoices-pay-internal = Conto interno (cassa, carta…)
+supplier-invoices-pay-submit = Paga
+supplier-invoices-pay-title = Paga la fattura
+supplier-invoices-pay-transfer = Bonifico bancario
+supplier-invoices-project-none = — Nessuno
+supplier-invoices-save = Salva
+supplier-invoices-scan = Scansiona una fattura QR
+supplier-invoices-scan-detected = Creditore rilevato
+supplier-invoices-scan-failed = Impossibile leggere questa immagine.
+supplier-invoices-scan-hint = Carica un'immagine della fattura QR per precompilare IBAN, riferimento e importo.
+supplier-invoices-scan-no-qr = Nessun codice QR rilevato su questa immagine.
+supplier-invoices-scan-ok = Fattura QR letta — dati precompilati.
+supplier-invoices-scan-running = Lettura…
+supplier-invoices-scan-too-large = Immagine troppo grande (max 15 MB).
+supplier-invoices-status-open = Aperta
+supplier-invoices-status-paid = Pagata
+supplier-invoices-status-cancelled = Annullata

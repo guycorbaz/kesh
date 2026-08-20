@@ -75,7 +75,7 @@ export interface CreateSupplierInvoiceRequest {
 }
 
 /**
- * Coordonnées extraites d'un QR-facture (Story 12.4) — pré-remplissage seul.
+ * Coordonnées extraites d'une QR-facture (Story 12.4) — pré-remplissage seul.
  * Exactement l'un de `creditorIban` / `creditorQrIban` est renseigné.
  * Montant en `string` (parité `serde-str` backend / big.js frontend).
  */
