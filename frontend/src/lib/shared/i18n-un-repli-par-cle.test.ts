@@ -26,7 +26,10 @@
  *   1. **les clés construites par gabarit** — `i18nMsg(`…-error-${code}`, …)` : la clé n'est
  *      pas connue statiquement, donc deux sites bâtissant la MÊME clé dynamique avec des
  *      replis différents passeraient inaperçus. Au 2026-08-20, un seul site construit
- *      `imported-supplier-invoices-error-*` (`import/+page.svelte:68`), vérifié au grep —
+ *      `imported-supplier-invoices-error-*` — `lib/features/imported-supplier-invoices/
+ *      error-label.ts`, vérifié au grep. ⚠️ Cette référence a cité `import/+page.svelte:68`
+ *      jusqu'à la passe 5, alors que la passe 4 avait déplacé le code : un lecteur suivant
+ *      l'invitation à vérifier « au grep » n'aurait rien trouvé là où on l'envoyait —
  *      la divergence est donc impossible aujourd'hui, non parce que la garde l'interdit,
  *      **mais parce qu'il n'y a rien à faire diverger** ;
  *   2. **les replis non littéraux** — un repli calculé (gabarit, ternaire, variable) n'est

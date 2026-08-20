@@ -1484,14 +1484,13 @@ vat-rates-title = MWST-Sätze
 # (invoice-pdf-total-ttc / vat-purchase-ht), Geschäftsjahr.
 # Termes TRANCHÉS de la partie B du glossaire : QR-Rechnung (terminologie officielle SIX),
 # Beleg (CO art. 957a), verwerfen/verworfen, vervollständigen, Bild.
-# ⚠️ `imported-supplier-invoices-save` dit « Valider la facture » en français, mais le code
-# CRÉE la facture (route `complete_import`, étape 7 : « Création de la facture réelle »).
-# Rendu par « übernehmen » et non « validieren » : `validieren` est réservé à la validation
-# comptable qui rend une pièce immuable (cf. invoice-status-validated, story 23-2).
-# ⚠️ Et non « erfassen » non plus, qui est DÉJÀ pris par `supplier-invoices-new` (« Enregistrer
-# une facture ») : le français oppose DEUX VERBES — « Valider » / « Enregistrer » —, l'italien et
-# l'anglais un article. L'allemand suit le français. (Passe 3 ; l'en-tête disait encore
-# « erfassen » après le changement de valeur — corrigé en passe 4.)
+# ⚠️ `imported-supplier-invoices-save` = `Rechnung erstellen`, équivalence RELEVÉE sur
+# `homepage-invoices-action`. Le français disait « Valider la facture », ce qui était faux à
+# deux titres : le code CRÉE la facture (`complete_import`, étape 7, `INSERT … status='open'`),
+# et surtout `invoice-validate-confirm-title` portait DÉJÀ ce libellé pour la validation
+# comptable — deux actes distincts, dont un irréversible, sous un seul libellé français.
+# Tranché par Guy le 2026-08-20 : « Créer une facture », l'usage de Bexio. `erstellen` est
+# attesté dans ce catalogue même (`-completed = Rechnung erstellt.`).
 imported-supplier-invoices-add-line = Zeile hinzufügen
 imported-supplier-invoices-amount = Betrag
 imported-supplier-invoices-complete = Vervollständigen
@@ -1534,7 +1533,7 @@ imported-supplier-invoices-reference = Ref.
 imported-supplier-invoices-reload-failed = Die Liste konnte nicht neu geladen werden — aktualisieren Sie die Seite.
 imported-supplier-invoices-report-accepted = {$n} Rechnung(en) importiert.
 imported-supplier-invoices-report-failed = {$n} Fehlschlag/Fehlschläge:
-imported-supplier-invoices-save = Rechnung übernehmen
+imported-supplier-invoices-save = Rechnung erstellen
 imported-supplier-invoices-source-doc-failed = Download nicht möglich.
 imported-supplier-invoices-source-doc-gone = Der Beleg wurde nicht wiederhergestellt.
 imported-supplier-invoices-subcentime = Der QR-Betrag ({$amount}) enthält Bruchteile von Rappen — mit rappengenauen Zeilen nicht erreichbar. Empfehlung: diese Rechnung verwerfen.

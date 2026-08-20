@@ -598,7 +598,7 @@
 								data-testid="imported-complete-submit"
 								disabled={saving || structurallyInvalid()}
 							>
-								{saving ? '…' : i18nMsg('imported-supplier-invoices-save', 'Valider la facture')}
+								{saving ? '…' : i18nMsg('imported-supplier-invoices-save', 'Créer une facture')}
 							</button>
 							<button type="button" class="rounded border px-4 py-2 text-sm" onclick={cancelComplete}>
 								{i18nMsg('common-cancel', 'Annuler')}

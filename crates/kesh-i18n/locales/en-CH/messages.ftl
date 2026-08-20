@@ -1491,10 +1491,12 @@ vat-rates-title = VAT rates
 # (invoice-pdf-total-ttc / vat-purchase-ht), fiscal year.
 # Terms SETTLED from part B of the glossary: QR-bill (official SIX terminology),
 # supporting document, discard/discarded, complete, image.
-# ⚠️ `imported-supplier-invoices-save` reads « Valider la facture » in French, but the code
-# CREATES the invoice (`complete_import`, step 7: « Création de la facture réelle »). Rendered
-# « Record » and not « Validate »: validation is reserved for the accounting act that makes a
-# document immutable (see invoice-status-validated, story 23-2).
+# ⚠️ `imported-supplier-invoices-save` = `Create an invoice`, equivalence TAKEN FROM
+# `homepage-invoices-action`. The French read « Valider la facture », wrong on two counts: the
+# code CREATES the invoice (`complete_import`, step 7), and `invoice-validate-confirm-title`
+# ALREADY carried that exact label for the accounting validation — two distinct acts, one of
+# them irreversible, under a single French label. Settled by Guy on 2026-08-20: « Créer une
+# facture », the Bexio wording.
 imported-supplier-invoices-add-line = Add a line
 imported-supplier-invoices-amount = Amount
 imported-supplier-invoices-complete = Complete
@@ -1537,7 +1539,7 @@ imported-supplier-invoices-reference = Ref.
 imported-supplier-invoices-reload-failed = The list could not be reloaded — refresh the page.
 imported-supplier-invoices-report-accepted = {$n} invoice(s) imported.
 imported-supplier-invoices-report-failed = {$n} failure(s):
-imported-supplier-invoices-save = Record the invoice
+imported-supplier-invoices-save = Create an invoice
 imported-supplier-invoices-source-doc-failed = Download failed.
 imported-supplier-invoices-source-doc-gone = The supporting document was not restored.
 imported-supplier-invoices-subcentime = The QR amount ({$amount}) contains fractions of a centime — unreachable with centime-exact lines. Recommendation: discard this invoice.

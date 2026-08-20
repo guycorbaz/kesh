@@ -1485,9 +1485,12 @@ vat-rates-title = Aliquote IVA
 # (invoice-pdf-total-ttc / vat-purchase-ht), esercizio.
 # Termini TRANCIATI dalla parte B del glossario : fattura QR (terminologia ufficiale SIX),
 # documento giustificativo, scartare/scartata, completare, immagine.
-# ⚠️ `imported-supplier-invoices-save` dice « Valider la facture » in francese, ma il codice
-# CREA la fattura (`complete_import`, passo 7). Reso con « Registra » e non « Convalida » :
-# convalidare è riservato alla convalida contabile che rende immutabile (cfr. story 23-2).
+# ⚠️ `imported-supplier-invoices-save` = `Crea una fattura`. Il francese diceva « Valider la
+# facture », errato due volte : il codice CREA la fattura (`complete_import`, passo 7), e
+# `invoice-validate-confirm-title` portava GIÀ quel testo per la convalida contabile. Deciso
+# da Guy il 2026-08-20 : « Créer une facture », l'uso di Bexio. ⚠️ Verbo RILEVATO su
+# `homepage-invoices-action` (`Creare una fattura`), ma reso all'IMPERATIVO come tutti i
+# pulsanti di questo dominio (`Registra`, `Completa`, `Scarta`, `Paga`).
 # ⚠️ Accordi al FEMMINILE con « fattura » : creata, scartata, importata, annullata.
 imported-supplier-invoices-add-line = Aggiungi una riga
 imported-supplier-invoices-amount = Importo
@@ -1531,12 +1534,12 @@ imported-supplier-invoices-reference = Rif.
 imported-supplier-invoices-reload-failed = Non è stato possibile ricaricare l'elenco — aggiorna la pagina.
 imported-supplier-invoices-report-accepted = {$n} fattura/e importata/e.
 imported-supplier-invoices-report-failed = {$n} errore/i:
-imported-supplier-invoices-save = Registra la fattura
+imported-supplier-invoices-save = Crea una fattura
 imported-supplier-invoices-source-doc-failed = Download impossibile.
 imported-supplier-invoices-source-doc-gone = Il documento giustificativo non è stato ripristinato.
 imported-supplier-invoices-subcentime = L'importo del QR ({$amount}) contiene frazioni di centesimo — irraggiungibile con righe al centesimo esatto. Raccomandazione: scartare questa fattura.
 imported-supplier-invoices-sum-ttc = Totale delle righe IVA inclusa
-imported-supplier-invoices-target = importo QR previsto
+imported-supplier-invoices-target = obiettivo QR
 imported-supplier-invoices-title = Importa fatture
 imported-supplier-invoices-to-complete = Fatture da completare
 imported-supplier-invoices-view-doc = Visualizza il documento giustificativo
