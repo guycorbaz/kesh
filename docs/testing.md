@@ -161,8 +161,10 @@ Le défaut applicatif de `KESH_HOST` est passé de `0.0.0.0` à `127.0.0.1` (Sto
 docker compose -f docker-compose.dev.yml up -d mariadb
 cd /path/to/kesh
 (cd frontend && npm run build)          # KESH_STATIC_DIR pointe sur le résultat
+mkdir -p /tmp/kesh-e2e/inbox /tmp/kesh-e2e/documents
 KESH_TEST_MODE=true KESH_HOST=127.0.0.1 KESH_COOKIE_SECURE=false \
   KESH_PORT=3000 KESH_STATIC_DIR="$PWD/frontend/build" \
+  KESH_INBOX_DIR=/tmp/kesh-e2e/inbox KESH_DOCUMENTS_DIR=/tmp/kesh-e2e/documents \
   KESH_ADMIN_USERNAME=admin KESH_ADMIN_PASSWORD=e2e-admin-password-12chars \
   DATABASE_URL="mysql://kesh:kesh_dev@127.0.0.1:3306/kesh_e2e" \
   KESH_JWT_SECRET="dev-secret-at-least-32-bytes-long-for-testing" \
@@ -173,6 +175,22 @@ cd frontend
 PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 \
   KESH_BACKEND_URL=http://127.0.0.1:3000 npm run test:e2e
 ```
+
+⚠️ **`KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR` ne sont pas facultatifs non plus, et leur absence
+ne ressemble PAS à un problème de configuration.** Leurs défauts sont `/data/inbox` et
+`/data/documents` — des chemins de volume Docker, inaccessibles sur un poste de dev. Le backend
+démarre quand même, `/health` répond `ok`, et l'échec ne se voit qu'à l'exécution :
+`internal: inbox import: racine inbox: Permission denied (os error 13)` dans le log du backend, et
+côté Playwright un simple `getByTestId('inbox-import-report')` introuvable. On cherche alors la panne
+dans le frontend, qui n'y est pour rien.
+
+Sans ces deux variables, `inbox-import.spec.ts` rend **1 échec et 2 tests skippés** ; avec elles,
+**3 passés** — le round-trip complet de l'import de factures fournisseurs. Les deux se corrigent
+ensemble : `documents` n'apparaît qu'une fois `inbox` réglé, chaque erreur masquant la suivante.
+
+*(Relevé le 2026-08-20 au gate E2E de la story 23-3. La recette ci-dessus était incomplète depuis
+qu'elle existe, et l'écart se lisait comme une régression de branche : 182 passés contre les 183
+déclarés à l'implémentation.)*
 
 **Le build du frontend n'est pas facultatif** : sans lui, `KESH_STATIC_DIR` pointe sur un répertoire vide et chaque navigation rend un 404 que rien n'explique.
 
