@@ -1228,6 +1228,30 @@ contact-form-salutation = Titolo
 contact-salutation-neutre = Neutro
 contact-salutation-monsieur = Signor
 contact-salutation-madame = Signora
+# ── Story 23-1b (#316) — dominio pilota « contacts », 20 chiavi.
+# Registre : 2ᵉ personne du singulier (D9), registre majoritaire du fichier — 31 impératifs
+# au singulier contre 11 messages de courtoisie. « NPA » est l'usage de la Poste suisse en
+# italien, et non « CAP » qui est italien.
+contact-error-address-npa-city = NPA e località sono obbligatori se viene inserito un indirizzo
+contact-error-person-name = Nome e cognome sono obbligatori per una persona
+contact-persons-add = Aggiungi
+contact-persons-add-error = Impossibile aggiungere la persona
+contact-persons-delete = Elimina
+contact-persons-delete-error = Impossibile eliminare la persona
+contact-persons-empty = Nessuna persona di contatto.
+contact-persons-hint = a titolo informativo
+contact-persons-load-error = Impossibile caricare le persone di contatto
+contact-persons-name-required = Nome e cognome sono obbligatori
+contact-persons-role = Funzione
+contact-persons-title = Persone di contatto
+field-address = Indirizzo
+field-building = N.
+field-city = Località
+field-country = Paese
+field-first-name = Nome
+field-last-name = Cognome
+field-postal-code = NPA
+field-street = Via
 settings-field-company-email = E-mail (indirizzo di risposta)
 settings-company-email-help = Indirizzo di risposta (Reply-To) delle fatture inviate per e-mail. Vuoto = nessun indirizzo di risposta.
 settings-company-email-invalid = Indirizzo e-mail non valido.

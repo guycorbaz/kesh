@@ -1,0 +1,70 @@
+# Dette de parité connue — clés présentes en fr-CH et absentes des trois autres locales.
+#
+# Issue #283. Le test `parity_between_locales` (loader.rs) échoue dans les DEUX sens :
+#   - une clé absente d'une locale et absente de cette liste ;
+#   - une entrée de cette liste désormais présente dans AU MOINS UNE des trois locales
+#     cibles, ou absente de fr-CH.
+#
+# ⚠️ « Au moins une », et non « les quatre » : une story de rollout qui traduirait en
+# de-CH et it-CH en oubliant en-CH, et laisserait sa ligne ici, resterait invisible des
+# deux contrôles — la garde verte sur le défaut même qu'elle doit rendre bruyant.
+#
+# Cette liste ne peut que DÉCROÎTRE. Résorption : story 23-2 (les 57 d'un coup).
+# Une ligne par clé, triée. Les lignes vides et celles commençant par # sont ignorées.
+error-configuration-required
+error-fiscal-year-invalid
+invoice-error-already-validated
+invoice-error-configuration-required
+invoice-error-configuration-required-non-admin
+invoice-error-fiscal-year-invalid
+invoice-journal-entry-description
+invoice-number-label
+invoice-status-validated-label
+invoice-validate-button
+invoice-validate-confirm-body
+invoice-validate-confirm-title
+invoice-validate-success
+invoice-validate-success-body
+invoice-view-journal-entry-link
+settings-invoicing-description-template
+settings-invoicing-format-help
+settings-invoicing-format-invalid
+settings-invoicing-format-label
+settings-invoicing-format-preview
+settings-invoicing-format-too-long
+settings-invoicing-journal
+settings-invoicing-receivable-account
+settings-invoicing-revenue-account
+settings-invoicing-save
+settings-invoicing-save-success
+settings-invoicing-title
+settings-vat-rates-link
+vat-rates-active
+vat-rates-change
+vat-rates-change-error
+vat-rates-change-hint
+vat-rates-changed
+vat-rates-col-actions
+vat-rates-col-from
+vat-rates-col-rate
+vat-rates-col-status
+vat-rates-col-to
+vat-rates-create-error
+vat-rates-created
+vat-rates-deactivate
+vat-rates-deactivate-confirm
+vat-rates-deactivate-error
+vat-rates-deactivated
+vat-rates-empty
+vat-rates-field-category
+vat-rates-field-from
+vat-rates-field-label
+vat-rates-field-new-rate
+vat-rates-field-rate
+vat-rates-field-switch-date
+vat-rates-field-to
+vat-rates-inactive
+vat-rates-load-error
+vat-rates-new
+vat-rates-subtitle
+vat-rates-title

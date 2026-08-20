@@ -100,7 +100,12 @@ const KNOWN_VIOLATIONS = new Set([
   'src/lib/features/contacts/ContactCard.svelte:contact-card-archive',
   // #213 — ContactPersonsManager (CRM personnes de contact). Même situation
   // issue #30 : dossier `contacts` pluriel ne matche pas le préfixe `contact-`,
-  // + réutilise des clés génériques (`field-*`, `delete`, `loading`).
+  // + réutilise des clés génériques (`field-*`, `loading`).
+  // ⚠️ `delete` ne figure plus dans cette liste : la story 23-1b l'a renommée
+  // `contact-persons-delete` avant de la faire entrer au catalogue. Une clé SANS
+  // domaine y serait devenue appelable par n'importe quelle feature, et son libellé —
+  // traduit dans le contexte « supprimer une personne de contact » — resservi ailleurs
+  // sans que rien ne rougisse.
   'src/lib/features/contacts/ContactPersonsManager.svelte:contact-persons-load-error',
   'src/lib/features/contacts/ContactPersonsManager.svelte:contact-persons-name-required',
   'src/lib/features/contacts/ContactPersonsManager.svelte:contact-persons-add-error',
@@ -109,7 +114,7 @@ const KNOWN_VIOLATIONS = new Set([
   'src/lib/features/contacts/ContactPersonsManager.svelte:contact-persons-hint',
   'src/lib/features/contacts/ContactPersonsManager.svelte:loading',
   'src/lib/features/contacts/ContactPersonsManager.svelte:contact-persons-empty',
-  'src/lib/features/contacts/ContactPersonsManager.svelte:delete',
+  'src/lib/features/contacts/ContactPersonsManager.svelte:contact-persons-delete',
   'src/lib/features/contacts/ContactPersonsManager.svelte:field-first-name',
   'src/lib/features/contacts/ContactPersonsManager.svelte:field-last-name',
   'src/lib/features/contacts/ContactPersonsManager.svelte:contact-persons-role',

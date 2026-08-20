@@ -672,4 +672,93 @@ mod tests {
         let msg = bundle.format(&Locale::FrCh, "error-username-too-long", Some(&args));
         assert!(msg.contains("64"), "should interpolate max arg: {}", msg);
     }
+
+    /// **Story 23-1a (#283) — GARDE A : les quatre catalogues déclarent le MÊME
+    /// ensemble de clés.**
+    ///
+    /// ⚠️ **Ce test compare des ENSEMBLES DE CLÉS, jamais des textes rendus, et c'est
+    /// la seule façon honnête de le faire.** `format()` et `all_messages()` replient
+    /// sur `fr-CH` (cf. `all_messages`, plus haut) : pour une clé absente d'une locale
+    /// ils rendent **le texte français**, exactement comme si la traduction existait.
+    /// Un test bâti dessus ne peut pas distinguer « traduit » de « replié ».
+    ///
+    /// ⚠️ **Et l'astuce `assert_ne!(msg, fr)` des deux gardes bornées voisines ne se
+    /// généralise pas** : « Total », « CHF », « Journal », « Kesh » sont légitimement
+    /// identiques en quatre langues. Elle vaut pour un domaine choisi, pas pour 1273 clés.
+    ///
+    /// L'allowlist `dette-parite-connue.txt` porte les 57 clés de l'issue #283, et le
+    /// test échoue **dans les deux sens** : clé manquante non listée, ou entrée de la
+    /// liste devenue présente / disparue de `fr-CH`.
+    #[test]
+    fn parity_between_locales() {
+        let bundle = I18nBundle::load(&locales_dir()).unwrap();
+
+        let cles = |l: Locale| -> std::collections::BTreeSet<String> {
+            bundle.keys.get(&l).unwrap().iter().cloned().collect()
+        };
+        let fr = cles(Locale::FrCh);
+        let cibles = [Locale::DeCh, Locale::ItCh, Locale::EnCh];
+
+        // Borne anti-test-muet : un chargement cassé rendrait des ensembles vides, et
+        // toutes les comparaisons ci-dessous seraient vertes.
+        for locale in Locale::ALL {
+            assert!(
+                cles(locale).len() >= 1200,
+                "{locale:?} ne déclare que {} clés — le chargement est cassé, pas le catalogue",
+                cles(locale).len()
+            );
+        }
+
+        let dette: std::collections::BTreeSet<String> = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/dette-parite-connue.txt"
+        ))
+        .expect("dette-parite-connue.txt introuvable")
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(str::to_string)
+        .collect();
+
+        // (1) Toute clé de fr-CH absente d'une locale cible doit être dans la dette.
+        let mut manquantes = Vec::new();
+        for locale in cibles {
+            let ici = cles(locale);
+            for k in fr.difference(&ici) {
+                if !dette.contains(k) {
+                    manquantes.push(format!("{k} absente de {locale:?}"));
+                }
+            }
+        }
+
+        // (2) Une clé présente SEULEMENT dans une locale cible est un défaut symétrique.
+        for locale in cibles {
+            for k in cles(locale).difference(&fr) {
+                manquantes.push(format!("{k} présente en {locale:?} mais absente de fr-CH"));
+            }
+        }
+
+        // (3) L'allowlist ne se fossilise pas : une entrée résolue ou disparue la fait
+        //     échouer. « Au moins une » des trois cibles, et non « les quatre » — sans
+        //     quoi une traduction partielle (de-CH et it-CH mais pas en-CH) resterait
+        //     invisible des deux contrôles.
+        let mut obsoletes = Vec::new();
+        for k in &dette {
+            if !fr.contains(k) {
+                obsoletes.push(format!("{k} : plus dans fr-CH — retirer de la dette"));
+            } else if cibles.iter().any(|l| cles(*l).contains(k)) {
+                obsoletes.push(format!("{k} : désormais traduite — retirer de la dette"));
+            }
+        }
+
+        assert!(
+            manquantes.is_empty() && obsoletes.is_empty(),
+            "parité des catalogues rompue.\n  Clés manquantes hors dette ({}) :\n    {}\n  \
+             Entrées de dette obsolètes ({}) :\n    {}",
+            manquantes.len(),
+            manquantes.join("\n    "),
+            obsoletes.len(),
+            obsoletes.join("\n    ")
+        );
+    }
 }
