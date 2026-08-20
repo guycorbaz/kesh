@@ -12,6 +12,20 @@ dans les catalogues existants**, sur les **1216 clés alignées sur les quatre l
 La colonne « précédent » nomme la clé où l'équivalence est attestée.** Les changer, c'est
 désaligner le nouveau du déjà-livré — ce que cet epic vient précisément corriger.
 
+⚠️ **AUCUNE relecture par un locuteur natif n'est prévue, et c'est un choix.** Arbitrage de Guy,
+2026-08-20 : *« le jour où un germanophone ou un italophone utilisera Kesh, il annoncera les erreurs
+de traduction et nous prendrons les mesures à ce moment-là »*. Le coût d'une relecture
+professionnelle est sans commune mesure avec celui d'une correction signalée, tant que le logiciel
+n'a pas d'utilisateur dans ces langues.
+
+**Ce que cette décision impose en retour, et qui n'est pas facultatif** : puisque rien ne rattrape
+une erreur au moment où elle est écrite, **le relevé devient la seule discipline qui limite la
+dérive**. Un terme déjà présent au catalogue se reprend tel quel ; un terme neuf se cherche d'abord
+ailleurs dans les catalogues avant d'être proposé. ⚠️ **Le relevé n'est pas infaillible** — il
+*propage* une erreur dont la première occurrence était fausse, et deux passes de revue en ont
+attrapé de cette nature (`Aufwandkonto` pour `Aufwandskonto`, `Nr. Lieferantenrechnung` qui juxtapose
+deux substantifs sans composition). Mais il borne le risque là où l'invention le laisse ouvert.
+
 ⚠️ **En cas de doute sur une langue cible, suivre le FRANÇAIS.** Arbitrage de Guy, 2026-08-19,
 rendu sur `fattura fornitore` contre `fattura fornitori` : les deux étaient de l'italien correct, donc
 rien ne permettait de trancher sans parler la langue. Le français, lui, est vérifiable — et il tranche
