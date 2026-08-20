@@ -27,7 +27,8 @@ en-tête de colonne que la story venait de traduire** — un germanophone lisait
 ⚠️ **Ce n'est pas un accident : c'est un patron.** Le doc-comment *« Libellé FR du statut d'un X
 (fallback i18n côté composant) »* est copié **trois fois** — `payment-batch-helpers.ts:19`,
 `credit-note-helpers.ts:22`, `supplier-invoice-helpers.ts:19` *(celui-ci corrigé en 23-3)* — et un
-**quatrième** site porte le même patron **sans commentaire** (`invoices/[id]:602`). ⚠️ **Ce dernier
+**quatrième** occurrence du patron porte le même défaut **sans commentaire** — c'est le **site 5 du
+tableau** (`invoices/[id]:602`). ⚠️ **Ce dernier
 est le plus instructif : un grep du doc-comment ne l'aurait pas trouvé.**
 
 **L'urgence est un problème d'ordonnancement, pas de gravité actuelle.** ⚠️ Sur `payment-batches` et
@@ -59,6 +60,7 @@ sans passer par `i18nMsg`*. Elle le détecte **par le nom** de la fonction (`*La
 | valeur affichée sans aucun appel (`{data.company.orgType}`) | ❌ **non** | il n'y a **ni fonction ni littéral** — le défaut est l'*absence* d'appel |
 | littéraux dans un **tableau de données** (`navGroups`) | ❌ **non** | pas un corps de fonction ; et **indiscernable** d'une table de replis légitime sans analyse de flot |
 | **nœud de texte** de markup (`<Dialog.Title>Valider la facture</Dialog.Title>`) | ❌ **non** | ni fonction, ni littéral JS |
+| `const xLabel = $derived.by(() => …)` | ❌ **non** *(si T4 ne cherche que le mot-clé `function`)* | **3 occurrences aujourd'hui, aucune fautive** — mais un futur `const statusLabel = $derived.by(() => x ? 'Ouvert' : 'Fermé')` passerait. ⚠️ **Élargir le motif de déclaration si le coût est trivial** |
 
 ⚠️ **Les sites 4, 6 et 8 sont donc corrigés À LA MAIN, hors portée de la garde, et le motif est
 écrit ci-dessus.** Ne pas élargir la garde pour les attraper : la mesure ci-dessous dit ce que ça
@@ -82,7 +84,12 @@ bloquant.**
    ⚠️ **Une garde codée en dur sur une liste de chemins ne satisfait PAS cet AC** : elle
    n'empêcherait aucune récidive, qui est l'objet même de la story.
 2. **AC2 — la garde rougit sur les CINQ sites de son patron AVANT tout correctif**, et la sortie du
-   run est collée dans le Dev Agent Record. ⚠️ **C'est la seule preuve qu'elle les voit** ; sans
+   run **brute** est collée dans le Dev Agent Record. ⚠️ **Le balayage rend HUIT hits, pas cinq** —
+   mesuré en passe 2 de `validate`, script exécuté. Les cinq violations réelles, **plus trois
+   candidats à écarter par CRITÈRE** *(jamais par allowlist)* : `account-label.ts:35`
+   `invoiceRevenueAccountLabel` → `'—'`, `account-label.ts:66` `creditNoteRevenueAccountLabel` →
+   `'—'`, et `settings/opening-balances/+page.svelte:131` `roleLabel` → `''`. **Coller les huit, puis
+   la ventilation** — c'est ce que réclame AC3. ⚠️ **C'est la seule preuve qu'elle les voit** ; sans
    elle, une garde vide passe tous les autres AC.
 3. **AC2-bis — elle rougit encore sous mutation APRÈS les correctifs** : remettre en dur l'un des
    sites corrigés fait échouer le test, sortie citée. Une garde non éprouvée par mutation est un
@@ -95,19 +102,25 @@ bloquant.**
 5. **AC4 — allowlist justifiée, motif par entrée.** Les quatre entrées connues d'avance sont données
    au § *Faux amis* ci-dessous. ⚠️ **Aucune entrée ne peut être ajoutée au seul motif qu'un site
    n'était pas prévu** — cf. AC5-bis.
-6. **AC5 — les huit sites du tableau sont corrigés**, chacun avec ses clés dans les quatre locales.
+6. **AC5 — les huit sites du tableau sont corrigés**, chacun avec ses clés dans les quatre locales
+   *(clés neuves OU réutilisées — le site 4 réutilise `onboarding-org-*`, le site 7 des clés déjà
+   traduites : la réutilisation est la bonne réponse quand l'équivalence existe)*.
 7. **AC5-bis — tout site relevé par la garde et absent du tableau est soit corrigé ici, soit
    consigné dans le Dev Agent Record avec sa raison ET une issue GitHub** — jamais inscrit à
    l'allowlist. ⚠️ Le tableau est un **plancher**, pas un inventaire clos : la garde balaie tout
    `src/`, c'est sa raison d'être.
 8. **AC6 — les termes non attestés sont tranchés PAR GUY, puis promus en partie A du glossaire** avec
    leur clé attestante. Portée : les trois statuts **et** les six codes de `failedItemLabel`.
-9. **AC7 — tout test qui verrouille le français est corrigé.** Trois blocs connus au 2026-08-20 —
-   ⚠️ **cette liste n'est pas close**, la balayer au grep donné ci-dessous.
+9. **AC7 — tout test qui verrouille le français est corrigé, unitaire ET E2E.** **Quatre** verrous
+   connus au 2026-08-20 : trois blocs unitaires *(sites 1, 2, 3)* **et** `fiscal-years.spec.ts:270`,
+   qui cible le dialogue du site 8 **par son libellé**. ⚠️ **Un sélecteur E2E se bascule sur
+   `data-testid`, il ne se « répare » PAS en y réécrivant la chaîne française** — ce serait remettre
+   le verrou en place sous couvert de correctif. ⚠️ **Cette liste n'est pas close** : la balayer avec
+   les DEUX greps donnés ci-dessous.
 10. **AC8 — `sitesTotal` d'`i18n-keys.test.ts` est recompté depuis la source et déclaré dans le Dev
     Agent Record**, jamais ajusté en silence. Base au départ : **1502**.
 11. **AC9 — gates complets verts, E2E comprise**, PR en `refs #316`, et le corps de la PR mentionne
-    que le site 6 déborde le périmètre de l'issue #255.
+    que le **site 8** déborde le périmètre de l'issue #255 *(le site 7, lui, la FERME)*.
 
 ## Tasks
 
@@ -117,10 +130,17 @@ bloquant.**
       seront figées dans quatre catalogues **et** promues en partie A du glossaire, zone déclarée
       « non négociable en rollout ». Précédents d'arbitrage : `analytique`, `bascule`, `fattura fornitore`.
 - [ ] **T2 — Exporter `corpsDeFonction`** depuis `i18n-literal-reader.js` (+ son test) — elle existe
-      (`:374`) mais **n'est pas exportée**, et c'est la seule brique manquante. AC1.
+      (`:374`) mais **n'est pas exportée**. AC1. ⚠️ **Elle ne suffit PAS à elle seule** : elle prend en
+      entrée la position d'une accolade **déjà connue**. Localiser la déclaration (nom + vraie accolade
+      de corps) reste à écrire. ⚠️ **Piège** : chercher « le premier `{` après le nom » casse sur un
+      type inline — `function fooLabel(opts: { x: number }): string {` — il faut le `{` qui suit la
+      **fermeture de la signature**. Aucune des 32 déclarations actuelles n'a ce cas ; **le verrouiller
+      par un test** plutôt que compter dessus.
 - [ ] **T3 — Étendre `masquerCommentaires` aux commentaires `<!-- -->`** (+ son test) — elle ne masque
       aujourd'hui que `//` et `/* */`, ce qui laisse **21** blocs de prose française passer pour des
-      littéraux dans les `.svelte`. AC1. ⚠️ Vérifier que l'extension ne déplace pas `sitesTotal`.
+      littéraux dans les `.svelte`. AC1. ⚠️ **Vérifié en passe 2, à recoller au Record** : **zéro** appel `i18nMsg` vit dans un commentaire
+      HTML, et **zéro** commentaire HTML vit dans un bloc `<script>` — l'extension ne peut donc ni
+      retirer un site compté, ni toucher un corps de fonction candidat. `sitesTotal` ne bouge pas.
 - [ ] **T4 — La garde**, sa borne exacte, son allowlist — AC1, AC3, AC4. ⚠️ **Avant les correctifs**,
       et sa sortie rouge sur les cinq sites du patron est collée au Record — AC2.
 - [ ] **T5 — `payment-batches`** : `paymentBatchStatusLabel` (3 cas) et `failedItemLabel` (6 codes) — AC5, AC7.
@@ -130,8 +150,13 @@ bloquant.**
       (site 6), le titre de dialogue (site 8) — AC5.
 - [ ] **T9 — Glossaire** : promotion des termes tranchés — AC6.
 - [ ] **T10 — Recompter et déclarer `sitesTotal`** — AC8.
+- [ ] **T10-bis — Éprouver la garde par MUTATION**, après T5-T8 — AC2-bis. ⚠️ **Muter un des CINQ
+      sites du patron** (1, 2, 3, 5, 7) : muter un site hors portée (4, 6, 8) ne ferait rien rougir
+      **par construction**, et se lirait à tort comme un échec de la garde.
+- [ ] **T10-ter — Confronter le relevé de la garde au tableau** — AC5-bis. Tout site remonté hors
+      des huit est corrigé ou tracé en issue, **jamais exempté**. À faire dès le premier run de T4.
 - [ ] **T11 — Retirer les clés `nav-*` du périmètre de la 23-4** *(l'epic en prévoyait 4 ; cette
-      story en couvre 9)* — sinon double travail ou conflit.
+      story en couvre 9)* — **AC5** : sans ce retrait, la 23-4 refait le travail ou entre en conflit.
 - [ ] **T12 — Gates complets, E2E comprise** — AC9.
 
 ## Dev Notes
@@ -147,9 +172,9 @@ défaut. Les appelants sont donnés — ne pas les redécouvrir.
 | 2 | `payment-batch-helpers.ts:34-51` `failedItemLabel` | `payment-batches/+page.svelte:200` | idem | ⚠️ **`payment-batch-helpers.test.ts:28-29` (`toContain`)** — plus insidieux qu'un `toBe` : il survit à une traduction partielle |
 | 3 | `credit-note-helpers.ts:23-34` `creditNoteStatusLabel` | `credit-notes/+page.svelte:65`, `[id]:178` | ⏳ **non** — `credit-notes-col-status` **à l'allowlist** ; la 23-5 l'activera | ⚠️ `credit-note-helpers.test.ts:22-24` (`toBe`) |
 | 4 | `settings/+page.svelte:184-185` *(motif : `data.company.orgType`)* | la même ligne | ✅ `settings-field-org-type` **existe et est traduit** | non |
-| 5 | `invoices/[id]/+page.svelte:602-605` `statusLabel` | `:755` | — | non |
+| 5 | `invoices/[id]/+page.svelte:602-606` `statusLabel` | `:755` | ❌ **sans objet** — badge de fiche, pas de colonne | non |
 | 6 | `+layout.svelte:57-150` *(motif : `label: '`)* — **3 groupes + 6 entrées = 9 libellés** | `:340` `<span>{group.label}</span>` | — *(chrome permanente)* | non — ⚠️ **mais voir le piège E2E** |
-| 7 | `invoices/+page.svelte:251` `statusLabel` | `:399` | — | non |
+| 7 | `invoices/+page.svelte:251` `statusLabel` | `:399` | ⏳ **non** — c'est l'objet même de #255 | non |
 | 8 | `invoices/[id]/+page.svelte:949` *(motif : `<Dialog.Title>Valider la facture`)* | le dialogue de validation | — | ⚠️ `fiscal-years.spec.ts:270` cible ce dialogue **par son nom** |
 
 **Le site 4 est le plus embarrassant à l'usage, et le seul défaut ACTIF aujourd'hui** : l'utilisateur
@@ -219,7 +244,7 @@ réutiliser est donc sûr. **Montage complet à copier** : `i18n-un-repli-par-cl
 | `LABEL_FALLBACK` | `lib/features/invoices/PaymentStatusBadge.svelte:18` | `:24`, 2ᵉ arg |
 | `FILTER_FALLBACK_FR` | `routes/(app)/invoices/due-dates/+page.svelte:42` | 2ᵉ arg |
 | `TYPE_FALLBACK` | `routes/(app)/accounts/+page.svelte` | `:37`, 2ᵉ arg |
-| `ROLE_FALLBACK` | `routes/(app)/accounts/+page.svelte:40` | `:63`, 2ᵉ arg |
+| `ROLE_FALLBACK` | `routes/(app)/accounts/+page.svelte:40` | `:62` *(motif : `ROLE_FALLBACK[r] ??`)*, 2ᵉ arg |
 
 ⚠️ **`readFallback` rend `null` sur ces quatre-là** (le 2ᵉ argument est `TABLE[clé]`, pas un
 littéral) : l'outillage ne sait pas les reconnaître seul. **Critère de discrimination à tenir** — *un
@@ -227,8 +252,15 @@ littéral) : l'outillage ne sait pas les reconnaître seul. **Critère de discri
 d'`i18nMsg` ou d'un relais.* Sans ce critère écrit, le dev exemptera au nom, et `navGroups` (site 6,
 même forme) deviendrait légitime par accident.
 
-Ajouter aussi la classe des littéraux **non français** (`'—'` de `account-label.ts:66`, `'N/A'`) aux
-**critères**, pas à l'allowlist.
+**Trois classes de littéraux légitimes doivent être des CRITÈRES, jamais des entrées d'allowlist** —
+sinon la liste enfle à chaque cas et perd son sens :
+
+1. **le cadratin et assimilés** — `'—'`, `'N/A'`. ⚠️ **DEUX** occurrences dans `account-label.ts`
+   (`:35` **et** `:66`), pas une : ce sont deux fonctions jumelles à 31 lignes d'écart ;
+2. **la chaîne vide** `''` — `settings/opening-balances/+page.svelte:131`. ⚠️ **Ce cas n'était prévu
+   nulle part** : une chaîne vide n'est ni du français ni un cadratin ;
+3. **les gabarits interpolés** — un `return `${a} — ${b}`` n'est pas un libellé en dur. *(Le lecteur
+   les distingue déjà : `readLiteral` rend `kind: 'template'`.)*
 
 ### Pièges du dépôt qui s'appliquent ici
 
@@ -241,15 +273,22 @@ Ajouter aussi la classe des littéraux **non français** (`'—'` de `account-la
   pour une raison qui ne ressemble pas à un problème de configuration. Cf. `docs/testing.md`.
 - ⚠️ **Le namespace doit correspondre au dossier** pour tout module de `src/lib/features/`.
 - ⚠️ **Ne déclarer que ce qui a tourné.**
-- Grep de contrôle pour AC7 :
+- Greps de contrôle pour AC7 — **les deux** :
   `grep -rnE "toBe\('[A-ZÀ-Ü]|toContain\('[a-zà-ü]" frontend/src/lib/features/*/*helpers.test.ts`
+  `grep -rnE "getByRole\(.*name: '[A-ZÀ-Ü]|getByText\('[A-ZÀ-Ü]" frontend/tests/e2e/`
+  ⚠️ **Le premier rend ~6 fois plus de bruit que de signal** (mesuré : 3 vrais verrous, ~18 faux —
+  formats de n° IDE, paramètres de requête, et les assertions **multi-locales** du site corrigé en
+  23-3, qui sont légitimes). Trier, ne pas se décourager.
 
 ### Ce qui a été balayé et trouvé PROPRE — ne pas re-balayer
 
 `reconciliation`, `reports`, `onboarding`, `contacts`, `accounts`, `vat-rates`, `api-keys`,
 `opening-balances`, `reminders`, `imported-supplier-invoices`, `journal-entries`, `bank-accounts`,
-`fiscal-years`, `products`, `due-dates`. *(Balayage par le nom : 32 déclarations `*Label|*Text|*Display`,
-aucune fautive hors des sites listés.)*
+`fiscal-years`, `products`, `due-dates`. *(⚠️ **Correction de portée, passe 2** : les « 32 déclarations » sont le total **plein-arbre**, sites
+fautifs compris — pas un décompte restreint à ces 15 domaines. **AC3 se recompte par un balayage
+plein `src/` au moment de T4**, jamais repris d'ici. Quatre fichiers candidats hors de cette liste ont
+été vérifiés conformes en passe 2 : `settings/email-templates`, `invoices/reminders`, le dispatcher
+`getItemLabel` du layout, et `supplier-invoices/import`.)*
 
 ### References
 
@@ -276,5 +315,6 @@ aucune fautive hors des sites listés.)*
 
 | date | passe | résultat |
 |---|---|---|
-| 2026-08-20 | **passe 1** de `validate` | **2 CRITICAL · 6 HIGH · 6 MEDIUM · 3 LOW** (Opus ×2). ⚠️ **La spec ne survit pas à sa première passe, et deux findings la refondent.** **CRITICAL-1** : la branche avait été coupée de `main` **avant** le merge de la 23-3 — quatre références pointaient dans le vide et le défaut fondateur était encore dans l'arbre. Corrigé : #325 mergée, branche rebasée sur `046efa51`. **CRITICAL-2, mesuré** : « la garde rougit sur les cinq sites » était **irréalisable** — trois formes du défaut (valeur sans appel, tableau de données, nœud de markup) sont **hors de portée par construction**. La garde est donc **réduite à ce qu'elle peut prouver** et les trois sites restants passent en correctifs manuels **avec motif écrit**. L'élargissement « par le contenu » a été **chiffré** : 175 sites à trier pour rater quand même `Brouillon` et 7 des 9 libellés de nav — proscrit. **HIGH le plus embarrassant** : le tableau cochait ✅ « en-tête traduit » pour deux sites dont **les clés n'existent dans aucune locale** — elles sont à l'allowlist. Le défaut y est **latent**, pas actif ; ma propre prose le disait deux paragraphes plus haut. Autres faits corrigés : `masquerCommentaires` ne masque **pas** les `<!-- -->`, `corpsDeFonction` **n'est pas exportée**, un **3ᵉ** verrou de test (`toContain`), **quatre** tables de replis et non deux, doc-comment copié **trois** fois et non quatre, `NavItem` **déjà correct** (c'est le type de groupe qui manque). Sites 5 → **7**. |
+| 2026-08-20 | **passe 2** de `validate` | **2 CRITICAL · 4 HIGH · 3 MEDIUM · 6 LOW** (Sonnet ×2). ⚠️ **Les deux CRITICAL visent la RÉÉCRITURE de la passe 1** — dixième fois sur ce dossier qu'une passe trouve un défaut du correctif précédent. `AC9` renvoyait au **site 6** (la barre de navigation !) pour ce qui déborde #255, là où les Dev Notes disent **site 8** : l'erreur était **antérieure** à la renumérotation, qui ne l'a pas rattrapée parce que je n'ai corrigé que les renvois que je savais avoir décalés. Et le Change Log annonçait encore « Sites 5 → 7 » après la réinsertion de `credit-notes` — le tableau corrigé, son compte rendu non. ⚠️ **Le finding MESURÉ est le plus utile** : le balayage du patron réduit, **réellement exécuté**, rend **HUIT** hits et non cinq — cinq violations plus **trois candidats à écarter par critère**, dont un cas que rien ne prévoyait (`roleLabel` → **chaîne vide**). AC2 aurait échoué à la lettre. **Trois classes de littéraux légitimes** sont désormais des CRITÈRES et non des entrées d'allowlist, sans quoi la liste enfle et perd son sens. Autres corrections : une 5ᵉ forme hors de portée (`const xLabel = $derived.by`), la portée du « 32 » qui était plein-arbre et non par domaine, `corpsDeFonction` qui **ne suffit pas seule** (localiser la déclaration reste à écrire, avec le piège du type inline), `AC7` qui ignorait un **quatrième** verrou — un sélecteur E2E que ma propre section « Pièges » documentait deux paragraphes plus bas. **Un MEDIUM réfuté** : les deux usages de « 23-4 » désignent bien la même story, l'epic la définissant comme `settings` + `payment-batches` + `onboarding` + 4 `nav-*`. |
+| 2026-08-20 | **passe 1** de `validate` | **2 CRITICAL · 6 HIGH · 6 MEDIUM · 3 LOW** (Opus ×2). ⚠️ **La spec ne survit pas à sa première passe, et deux findings la refondent.** **CRITICAL-1** : la branche avait été coupée de `main` **avant** le merge de la 23-3 — quatre références pointaient dans le vide et le défaut fondateur était encore dans l'arbre. Corrigé : #325 mergée, branche rebasée sur `046efa51`. **CRITICAL-2, mesuré** : « la garde rougit sur les cinq sites » était **irréalisable** — trois formes du défaut (valeur sans appel, tableau de données, nœud de markup) sont **hors de portée par construction**. La garde est donc **réduite à ce qu'elle peut prouver** et les trois sites restants passent en correctifs manuels **avec motif écrit**. L'élargissement « par le contenu » a été **chiffré** : 175 sites à trier pour rater quand même `Brouillon` et 7 des 9 libellés de nav — proscrit. **HIGH le plus embarrassant** : le tableau cochait ✅ « en-tête traduit » pour deux sites dont **les clés n'existent dans aucune locale** — elles sont à l'allowlist. Le défaut y est **latent**, pas actif ; ma propre prose le disait deux paragraphes plus haut. Autres faits corrigés : `masquerCommentaires` ne masque **pas** les `<!-- -->`, `corpsDeFonction` **n'est pas exportée**, un **3ᵉ** verrou de test (`toContain`), **quatre** tables de replis et non deux, doc-comment copié **trois** fois et non quatre, `NavItem` **déjà correct** (c'est le type de groupe qui manque). Sites 5 → **8** *(le tableau réécrit avait d'abord PERDU `credit-notes`, l'un des deux CRITICAL d'origine — réinséré avant la passe 2)*. |
 | 2026-08-20 | création | spec initiale, à partir de la passe 5 de revue de la 23-3. |
