@@ -114,6 +114,8 @@ passage des rollouts qui touchent ces domaines, pas ici.
 | **écarter / écartée** (une pièce) | **verwerfen / verworfen** | **scartare / scartata** | **discard / discarded** | `imported-supplier-invoices-discard` (story 23-3). S'oppose à « compléter » dans la file d'import. ⚠️ En italien, **ne pas employer `scarto` pour un ÉCART de montant** sur le même écran — dire `differenza` |
 | **justificatif** | **Beleg** | **documento giustificativo** | **supporting document** | `imported-supplier-invoices-view-doc` (story 23-3). `Beleg` est le terme du CO art. 957a ; « Buchungsbeleg » si le contexte est l'écriture |
 | **QR-facture** *(fém.)* | **QR-Rechnung** | **fattura QR** | **QR-bill** | `supplier-invoices-scan` (story 23-3). ⚠️ Terminologie **officielle SIX**. ⚠️ **FÉMININ en français** — « une QR-facture », « QR-facture lue » : quatre libellés l'accordaient au masculin, et les trois cibles avaient bon |
+| **restauré** | **wiederhergestellt** | **ripristinato** | **restored** | `imported-supplier-invoices-doc-gone` (story 23-3). Le justificatif qu'une restauration de sauvegarde n'a pas ramené |
+| **règlement** (*d'une facture*) | **Zahlung** (`Zahlungsdatum`) | **pagamento** | **payment** | `supplier-invoices-pay-date` (story 23-3). ⚠️ **Le français seul distingue** *règlement* de *paiement* ; les trois cibles n'ont qu'un mot et disent **paiement**. Ne PAS écrire `Begleichung` / `settlement` — deux mots pour un concept déjà couvert |
 | carnet d'adresses | **Kontakte** | **contatti** | contacts | `Carnet d'adresses` |
 | adresse | Adresse | indirizzo | address | `Adresse` |
 | rappel / relance | **Mahnung** | **sollecito** | reminder | `Rappels` / `Mahnungen` |
@@ -163,17 +165,15 @@ contraignantes pour tout le rollout.
 
 | fr-CH | de-CH proposé | it-CH proposé | en-CH proposé | motif / réserve |
 |---|---|---|---|---|
-| règlement (d'une facture) | Begleichung / Zahlung | pagamento | settlement | ⚠️ **préférer « Zahlung » / « pagamento » / « payment »** et réserver « règlement » au français — deux mots pour un concept déjà couvert par *paiement* |
 | personne physique / morale | natürliche / juristische Person | persona fisica / giuridica | individual / legal entity | |
 | bascule (**interrupteur**) | Umschalter | interruttore | toggle | élément d'interface. ⚠️ **NE PAS employer pour « date de bascule »**, qui est un changement de taux et vit en partie A |
-| restauré | wiederhergestellt | ripristinato | restored | import de sauvegarde |
 
 ---
 
-✅ **Onze de ces termes ONT ÉTÉ tranchés et promus en partie A**, chacun portant désormais la clé
+✅ **Treize de ces termes ONT ÉTÉ tranchés et promus en partie A**, chacun portant désormais la clé
 qui l'atteste : **localité**, **prénom** et **personne de contact** par la story 23-1b ; **immuable**
 et **validité** par la 23-2 ; **QR-facture**, **justificatif**, **écarter/écartée**, **compléter**,
-**image** et **virement** par la 23-3.
+**image** et **virement** par la 23-3, puis **restauré** et **règlement** par sa passe 2 de revue.
 
 ⚠️ **`bascule` reste en partie B, et sa ligne y porte un avertissement** — la 23-2 a révélé qu'il
 s'agit de **deux termes sous un seul mot**. L'entrée de partie B est l'**interrupteur** d'interface ;
@@ -181,16 +181,22 @@ s'agit de **deux termes sous un seul mot**. L'entrée de partie B est l'**interr
 traduction sans rapport. Traduire la seconde d'après la première aurait donné un contresens plein —
 et c'est le glossaire lui-même qui aurait induit en erreur, ce qui est pire qu'un glossaire muet.
 
-**Quatre** termes restent ouverts. *(La partie B comptait 16 entrées, 15 après l'arbitrage sur
-« analytique », 12 après la 23-1b, 10 après la 23-2, et **4** après la 23-3. La partie A compte
-**61** entrées. Les deux nombres sont **recomptés depuis les tableaux**, comme l'exige la
-§ « Recompter ses propres comptes rendus ».)*
+**Deux** termes restent ouverts. *(La partie B comptait 16 entrées, 15 après l'arbitrage sur
+« analytique », 12 après la 23-1b, 10 après la 23-2, 4 après la 23-3 et **2** après sa passe 2. La
+partie A compte **63** entrées. Les deux nombres sont **recomptés depuis les tableaux**, comme
+l'exige la § « Recompter ses propres comptes rendus ».)*
 
-⚠️ **La 23-3 avait d'abord OUBLIÉ cette promotion, en cochant sa tâche.** Elle a employé et figé six
-de ces termes dans 460 lignes de catalogue **sans les faire monter en partie A** — or la règle
-d'immuabilité ne protège **que** la partie A. Un rollout suivant aurait pu écrire `Buchungsbeleg` ou
-`Quittung` pour « justificatif » sans que rien ne rougisse : le mécanisme anti-dérive que cet epic
-existe pour poser, contourné par la story censée s'en servir. Trouvé en passe 1 de revue.
+⚠️ **La 23-3 avait d'abord OUBLIÉ cette promotion, en cochant sa tâche.** Elle a employé et figé
+**huit** de ces termes dans 460 lignes de catalogue **sans les faire monter en partie A** — or la
+règle d'immuabilité ne protège **que** la partie A. Un rollout suivant aurait pu écrire
+`Buchungsbeleg` ou `Quittung` pour « justificatif » sans que rien ne rougisse : le mécanisme
+anti-dérive que cet epic existe pour poser, contourné par la story censée s'en servir.
+
+⚠️ **Et le correctif de la passe 1 n'en a promu que SIX sur huit** — `restauré` et `règlement`
+étaient employés eux aussi, sur trois clés, et sont restés en partie B une passe de plus. Le défaut
+d'un patch de remédiation est du même genre que celui qu'il corrige : **la question n'était pas
+« ai-je promu les termes que j'ai listés ? » mais « quels termes de partie B ce catalogue
+emploie-t-il ? »** — c'est-à-dire un grep du symptôme, et non du site. Trouvé en passe 2.
 
 ## Comment s'en servir
 

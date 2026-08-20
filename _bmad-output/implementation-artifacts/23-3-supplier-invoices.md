@@ -144,17 +144,29 @@ donc **langue par langue**, sur le catalogue **complet** de chacune.
 - [x] **T1 — Arbitrage** des termes de partie B (AC5). **Bloquant.**
 - [x] **T2 — Scission de `supplier-invoices-col-total`** et son test (AC3), avant toute traduction.
 - [x] **T3 — Arbitrage des deux autres conflits** (AC4).
-- [x] **T4 — Relecture des 105 libellés `fr-CH`** moissonnés (AC6), consignée.
+- [x] **T4 — Relecture des 116 libellés `fr-CH`** moissonnés (AC6), consignée — § *AC6* ci-dessous. ⚠️ *Cochée sans consignation à l'implémentation ; le tableau date de la passe 2.*
 - [x] **T5 — `fr-CH`** : les 115 clés.
-- [x] **T6 — `de-CH`, `it-CH`, `en-CH`** : les 115 × 3, avec contrôle d'homonymie langue par langue (AC7).
+- [x] **T6 — `de-CH`, `it-CH`, `en-CH`** : les 115 × 3, avec contrôle d'homonymie langue par langue (AC7) — § *AC7* ci-dessous. ⚠️ *Cochée sans le contrôle à l'implémentation ; exécuté en passe 2, il a trouvé une homonymie en `de-CH`.*
 - [x] **T7 — Allowlist** : 275 → 166 (AC2).
 - [x] **T8 — Gates complets, E2E comprise** (AC9), et PR en `refs #316` (AC10).
 
+### Review Findings — passe 2 de `bmad-code-review` (2026-08-20, Haiku ×3)
+
+- [x] [Review][Patch] **H1 n'a été corrigé qu'aux deux tiers — `restauré` et `règlement` restent en partie B** [`docs/i18n-glossaire.md:158-172`] — la passe 1 a promu six termes ; **deux autres termes de partie B sont employés et figés par cette même story sans monter en partie A** : `restauré` (`imported-supplier-invoices-doc-gone:1531`, `-source-doc-gone:1562`) et `règlement` (`supplier-invoices-pay-date:1607`). ⚠️ Les traductions employées sont **justes** (`wiederhergestellt`/`ripristinato`/`restored` ; `Zahlungsdatum`/`Data di pagamento`/`Payment date`, conformes à la réserve « préférer *paiement* ») — **c'est la protection qui manque, pas la traduction**. La règle d'immuabilité ne couvre que la partie A, et **la 23-4 touche `payment-batches`** : le rollout suivant peut écrire `Begleichung` sans que rien ne rougisse. C'est le mode d'échec de H1, à l'identique.
+- [x] [Review][Patch] **AC6 et AC7 déclarés tenus, mais rien n'est consigné** [`23-3-supplier-invoices.md:147,149`] — `AC7` exige un contrôle d'homonymie langue par langue **« consigné en tableau »** et `AC6` une relecture du `fr-CH` **« consignée »** ; T4 et T6 sont cochées et **le story file ne contient ni l'un ni l'autre tableau**. ⚠️ **La preuve empirique que le contrôle n'a pas eu lieu est dans la passe 1 elle-même** : H2 (`Aufwandkonto`/`conto costi` contre les formes attestées) et H3 (accord de `QR-facture`) sont exactement ce que ces deux contrôles devaient attraper — ils ont été trouvés par la revue, pas par eux. Troisième récidive du motif « case cochée sans le travail » sur cette story.
+- [x] [Review][Patch] **« TROIS conflits de repli » chapeaute un tableau de QUATRE lignes** [`23-3-supplier-invoices.md:155`] — le total contredit sa propre ventilation, et l'écart est propagé à **trois sites** : le titre du §, le Change Log (`:327`) et la ligne 23-3 de `sprint-status.yaml`. Quatre clés portaient deux replis et **quatre** ont été scindées (d'où les « quatre clés neuves » du même Change Log). Trancher : soit « QUATRE conflits », soit dire explicitement que `-field-reference` et `-field-project` comptent pour un seul conflit de même nature.
+- [x] [Review][Patch] **« couverture des 103 statiques » est périmé — il y en a 105** [`23-3-supplier-invoices.md:200`] — les deux clés de couverture ajoutées en passe 1 (`-col-qty`, `-col-vat`, présentes et vérifiées dans les quatre locales) portent les statiques de 103 à 105, ce que le périmètre (`:25`) et T4 (`:147`) disent déjà. ⚠️ **La ligne voisine (`:203`) porte sa réserve de périmètre, celle-ci non** — un tableau intitulé « Preuves d'exécution » sous-déclare donc sa propre couverture. Recompté : 116 clés du domaine dans **chacune** des quatre locales.
+- [x] [Review][Patch] **`conto di costo` (3 sites) — il y en a 2** [`23-3-supplier-invoices.md:235`] — recompté : `Aufwandskonto` compte bien **3** sites attestants hors story en `de-CH` (`vat-purchase-charge-account`, `-same-account`, `-recoverable-conflict`), mais `conto di costo` n'en a que **2** en `it-CH` (pas d'équivalent de `vat-purchase-charge-account`). Le correctif reste juste ; c'est son compte rendu qui est faux.
+- [x] [Review][Patch] **L'angle mort de la garde « une clé, un repli » n'est écrit nulle part** [`frontend/src/lib/shared/i18n-un-repli-par-cle.test.ts:46,50`] — `site.arg?.kind !== 'literal'` et `repli.kind !== 'literal'` écartent **les clés construites par gabarit et les replis non littéraux**, donc toute la famille `imported-supplier-invoices-error-${…}` (`import/+page.svelte:68`). ⚠️ **Aucune divergence n'est possible aujourd'hui** — un seul site construit cette clé, vérifié — mais la garde porte trois preuves écrites et **aucune ne dit ce qu'elle ne voit pas**. Même famille que l'angle mort #255 (chaîne en dur), et le doc-comment est le seul endroit où un rollout suivant le lirait.
+
+**Réfutés par vérification ground-truth — 7 dismiss** *(garde-fou Haiku du `CLAUDE.md`)* : « `652 / 658`, 6 tests skippés » — `652` **n'apparaît nulle part** dans ce fichier ; il est sur la ligne **23-1b** de `sprint-status.yaml`, confusion de ligne classique ; « clé préexistante inexpliquée » — `:201` l'explique et porte déjà un ⚠️, `2865c2b6` étant le tip de la 23-2 ; « replis divergents de `common-loading` » — les **8** sites portent tous `'Chargement…'`, aucune divergence ; « `.d.ts` non gardés » — **aucun** `.d.ts` du dépôt n'appelle `i18nMsg` ; « `readFileSync` échoue silencieusement » — il lève ; et deux LOW de lecture (`:14` lue comme une addition alors qu'elle énumère des décomptes recomptés ; timing des promotions, que `:290` date explicitement de la passe 1).
+
 ## Dev Agent Record
 
-### ⚠️ TROIS conflits de repli, non deux — et chacun a demandé un arbitrage différent
+### ⚠️ QUATRE conflits de repli, non deux — et chacun a demandé un arbitrage différent
 
-La spec en annonçait deux. Le test écrit pour `AC3` en a révélé **trois**, en rougissant :
+La spec en annonçait deux. Le test écrit pour `AC3` en a fait rougir **quatre** — une clé par
+ligne du tableau, chacune portant deux replis :
 
 | clé | les deux replis | nature | arbitrage |
 |---|---|---|---|
@@ -193,11 +205,61 @@ fattura` / `Record the invoice`. ⚠️ **Le libellé français est à revoir**,
 qu'on ne le redécouvre pas : propager `validieren` aurait fait dire à trois langues une chose que le
 code ne fait pas.
 
+### AC6 — relecture des 116 libellés `fr-CH`, consignée
+
+*(Écrite en **passe 2**. T4 était cochée « consignée » et **rien n'était consigné** : le tableau
+ci-dessous est le contrôle réellement mené, pas sa déclaration. Les 116 libellés du domaine ont été
+relus un à un contre le code appelant.)*
+
+| libellé relu | verdict | suite donnée |
+|---|---|---|
+| `-scan-too-large` = « Image trop volumineuse (**max 15 Mo**) » | ✅ **exact** — `+page.svelte:77` teste `file.size > 15 * 1024 * 1024` | aucune |
+| `-err-currency` = « CHF uniquement **en v0.4** » | ⚠️ **FAUX** — le workspace est en **0.10.0** | mention de version **retirée des trois cibles** ; français signalé (cf. ci-dessous) |
+| `-save` = « **Valider** la facture » | ⚠️ trompeur — le code **crée** (`complete_import`, étape 7) | français verbatim ; les trois cibles suivent l'acte réel |
+| `QR-facture` accordée au masculin (4 libellés) | ⚠️ faux — le terme est **féminin** | corrigé au catalogue et aux replis *(passe 1)* |
+| `-mismatch` = « écart à corriger », `-target` = « cible QR » | ✅ minuscule initiale — **convention du dépôt** pour les fragments (29 clés, cf. 23-1b) | aucune |
+| `-report-accepted` = « {$n} facture(s) importée(s) » | ⚠️ pluriel par « (s) » là où Fluent sait sélectionner | **hors périmètre** — le français est verbatim ; les trois cibles reprennent la même forme |
+| `-field-*` avec « (optionnel) » vs libellés de détail nus | ✅ deux étiquettes, pas deux formulations | scindées, pas aplaties |
+| `compte de charge`, `exercice`, `écriture` | ✅ attestés au catalogue (23-2) | relevés, non réinventés |
+
+⚠️ **« v0.4 » — ce que la relecture a coûté, et ce qu'elle a épargné.** Le libellé français annonçait
+une version que le produit a dépassée de six mineures, et **cette story venait de le recopier dans
+trois langues neuves** : un défaut du français multiplié par quatre, ce qui est exactement le mode
+d'échec que l'epic existe pour empêcher. Les trois cibles disent désormais le **fait** (« nur CHF »,
+« solo CHF », « CHF only ») et non une promesse datée. Le français reste **verbatim**, comme pour
+`Valider` — à corriger par une story qui le touche légitimement.
+
+⚠️ **Le symptôme existe HORS périmètre, sur huit libellés, et n'a pas été touché** :
+`bank-import-warnings-unsupported-currency` et `bank-accounts-confirm-archive` annoncent **« v0.1 »**
+dans les quatre locales. Domaines `bank-import` et `bank-accounts` — ni l'un ni l'autre n'est un
+rollout de cette story. **Relevé au grep `\bv0\.[0-9]\b` sur les quatre catalogues**, à porter en
+issue plutôt qu'à corriger ici.
+
+### AC7 — contrôle d'homonymie, langue par langue
+
+*(Écrit en **passe 2**, pour la même raison que ci-dessus. Le contrôle est **mécanique et
+reproductible** : pour chaque cible, on cherche (a) un libellé cible servant **plusieurs** libellés
+`fr-CH` — une distinction que la traduction efface —, et (b) un libellé `fr-CH` rendu de
+**plusieurs** façons — une incohérence interne. ⚠️ **Mené sur les trois cibles séparément** : un
+contrôle sur l'anglais seul n'aurait rien vu, `en-CH` étant précisément la locale saine ici.)*
+
+| cible | (a) une cible ← plusieurs `fr` | (b) un `fr` → plusieurs cibles | verdict |
+|---|---|---|---|
+| `de-CH` | **1** — `Rechnung erfassen` servait *« Valider la facture »* **et** *« Enregistrer une facture »* | 0 | ⚠️ **corrigé** : `imported-supplier-invoices-save` → **`Die Rechnung erfassen`** |
+| `it-CH` | 0 | 0 | ✅ — distingue déjà `Registra **la** fattura` / `Registra **una** fattura` |
+| `en-CH` | 0 | 0 | ✅ — distingue déjà `Record **the** invoice` / `Record **an** invoice` |
+
+⚠️ **L'allemand perdait une distinction que les trois autres langues portent toutes.** Le français
+oppose la pièce en cours de complétion (*la* facture) à la création d'une nouvelle (*une* facture) ;
+l'italien et l'anglais l'ont marqué par l'article, l'allemand l'avait effacé. **C'est l'application
+de la règle « en cas de doute, suivre le français »** — et c'est ce contrôle, réclamé par `AC7` et
+jamais exécuté jusqu'ici, qui l'a fait apparaître.
+
 ### Preuves d'exécution
 
 | contrôle | résultat |
 |---|---|
-| couverture des 103 statiques | **103 / 103** dans chacune des trois cibles |
+| couverture des **105** statiques | **105 / 105** dans chacune des trois cibles *(103 à l'implémentation ; `-col-qty` et `-col-vat`, ajoutées en passe 1, portent le compte à 105)* |
 | clés du domaine dans `fr-CH` | **116** — dont **1 préexistante** (`supplier-invoices-title`, vérifiée au `git show 2865c2b6:`) : **115 écrites ici** ⚠️ *le décompte du domaine et celui de la story ne sont pas le même nombre* |
 | parité des 115 clés | `cargo test -p kesh-i18n` **29 / 29**, `parity_between_locales` vert |
 | décompte croisé | la garde a signalé **339 manquantes = 113 × 3** avant écriture des cibles *(mesure prise avant l'ajout des deux clés de couverture, d'où 113 et non 115)* |
@@ -231,8 +293,16 @@ protège QUE la partie A** : un rollout suivant aurait pu écrire `Buchungsbeleg
 « justificatif » sans que rien ne rougisse. C'est le précédent « une case à moitié vraie survit à la
 relecture », reproduit. Partie A **55 → 61**, partie B **10 → 4**, recomptées.
 
+⚠️ **Et ce correctif était lui-même incomplet — six termes promus sur huit.** `restauré`
+(`-doc-gone`, `-source-doc-gone`) et `règlement` (`-pay-date`) étaient employés eux aussi et sont
+restés en partie B une passe de plus, trouvés en **passe 2**. La cause remonte à la spec : son
+tableau de préalables (§ *Termes à ne pas réinventer*) **énumérait quatre termes** de partie B là
+où le catalogue en emploierait huit — une liste dressée de mémoire, jamais un grep du glossaire
+contre les libellés. Partie A **61 → 63**, partie B **4 → 2**, recomptées depuis les tableaux.
+
 **H2 — le motif exact de la 23-2, à nouveau.** `Aufwandkonto` et `conto costi` écrits là où le
-catalogue atteste `Aufwandskonto` (3 sites) et `conto di costo` (3 sites). ⚠️ **Le français est
+catalogue atteste `Aufwandskonto` (**3** sites) et `conto di costo` (**2** sites — `it-CH` n'a pas
+d'équivalent de `vat-purchase-charge-account` ; recompté en passe 2, où « 3 sites » était écrit pour les deux). ⚠️ **Le français est
 juste, l'anglais est juste PAR COÏNCIDENCE** — le terme y est monolithique — **et l'allemand comme
 l'italien paient.** Un contrôle mené sur l'anglais n'aurait rien vu, pour la deuxième fois.
 
@@ -324,5 +394,6 @@ bloc** ; `QR-Rechnung` / `fattura QR` / `QR-bill` employé partout et **jamais p
 
 | date | passe | résultat |
 |---|---|---|
-| 2026-08-19 | implémentation | **115 clés × 4 locales**. Trois conflits de repli tranchés par **scission**, quatre clés neuves. Garde « une clé, un repli » lisant les sources et non les catalogues. Allowlist 275 → 166. Gates complets verts, E2E comprise. |
+| 2026-08-20 | **passe 2** de `bmad-code-review` | **0 CRITICAL · 2 HIGH · 2 MEDIUM · 2 LOW** (Haiku ×3, diff aplati de la story seule). Trend : 3H/10M/6L → **2H/2M/2L**. ⚠️ **Le HIGH est encore une régression du patch précédent — H1 n'avait promu que SIX termes sur HUIT** : `restauré` et `règlement` étaient employés eux aussi. Partie A **61 → 63**, partie B **4 → 2**, recomptées depuis les tableaux. ⚠️ **Le second HIGH est le motif de H1 appliqué aux contrôles** : `AC6` et `AC7` exigeaient une consignation, T4 et T6 étaient cochées, **rien n'était consigné**. Les deux contrôles ont été **réellement exécutés en passe 2** et **chacun a trouvé un défaut que personne n'avait vu** — `AC7` : `Rechnung erfassen` servait deux libellés français distincts en `de-CH`, là où l'italien et l'anglais distinguaient déjà par l'article (→ `Die Rechnung erfassen`) ; `AC6` : le libellé `-err-currency` annonçait **« v0.4 »** alors que le workspace est en **0.10.0**, et cette story venait de le recopier dans trois langues neuves — mention retirée des cibles, français signalé. **7 findings réfutés au grep** (garde-fou Haiku), dont « 652/658 » qui vient de la ligne **23-1b** du sprint-status. |
+| 2026-08-19 | implémentation | **115 clés × 4 locales**. Quatre conflits de repli tranchés par **scission**, quatre clés neuves. Garde « une clé, un repli » lisant les sources et non les catalogues. Allowlist 275 → 166. Gates complets verts, E2E comprise. |
 | 2026-08-19 | création | spec initiale. ⚠️ **Le moissonneur a révélé un défaut applicatif latent** : `supplier-invoices-col-total` sert deux grandeurs différentes (TTC et HT) sur trois sites, et **c'est l'acte de traduire qui l'activerait**. |

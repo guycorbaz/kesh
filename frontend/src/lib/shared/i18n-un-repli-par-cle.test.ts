@@ -19,6 +19,24 @@
  * traduction livrée, il cesserait de les voir et se tairait. Une garde qui s'éteint au
  * moment où le risque devient réel n'en est pas une — c'est le mode d'échec du test muet,
  * déjà payé plusieurs fois sur ce dépôt. Celle-ci lit les SOURCES, pas les catalogues.
+ *
+ * ⚠️ **CE QU'ELLE NE VOIT PAS, et il faut le savoir avant de s'y fier.** Les deux filtres
+ * `kind !== 'literal'` ci-dessous écartent, par construction, deux familles :
+ *
+ *   1. **les clés construites par gabarit** — `i18nMsg(`…-error-${code}`, …)` : la clé n'est
+ *      pas connue statiquement, donc deux sites bâtissant la MÊME clé dynamique avec des
+ *      replis différents passeraient inaperçus. Au 2026-08-20, un seul site construit
+ *      `imported-supplier-invoices-error-*` (`import/+page.svelte:68`), vérifié au grep —
+ *      la divergence est donc impossible aujourd'hui, non parce que la garde l'interdit,
+ *      **mais parce qu'il n'y a rien à faire diverger** ;
+ *   2. **les replis non littéraux** — un repli calculé (gabarit, ternaire, variable) n'est
+ *      pas comparable textuellement et n'entre pas au relevé.
+ *
+ * C'est la même famille d'angle mort que #255 (chaîne en dur qui n'appelle jamais
+ * `i18nMsg`) : une garde qui ne dit pas ce qu'elle ne couvre pas se fait lire comme si elle
+ * couvrait tout. Un second site sur une clé dynamique du domaine devra être gardé
+ * autrement — par l'énumération explicite des suffixes, comme le fait la carte de
+ * `import/+page.svelte`. *(Écrit en passe 2 de revue, story 23-3.)*
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
