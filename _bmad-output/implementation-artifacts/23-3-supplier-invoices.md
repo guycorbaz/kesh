@@ -355,6 +355,7 @@ elle-même signalé quatre commits plus tôt.
 | `npm run test:unit` | **658 / 658** sur 71 fichiers |
 | `npm run build` | vert |
 | `npm run test:e2e` | **183 passés**, 19 skippés, 11,9 min — ⚠️ **exigée ici** : contrairement à la 23-2, cette story touche du code applicatif |
+| `npm run test:e2e` — **rejeu après la passe 4 et le rebase** | **183 passés**, 40 échoués, 17 skippés, 14,2 min. ⚠️ **Aucun échec sur `supplier-invoices` ni `inbox-import`** ; les trois tests d'import, dont le round-trip complet, sont verts. Les 40 échecs sont le socle préexistant que `docs/testing.md` documente (localStorage/JWT, pas de SMTP factice, KF #282), rouge sur `main` aussi. **Quatre tests basculaient entre les deux runs** (`dunning:59`, `invoices:561`, `sidebar-navigation:48`, `vat-rates:55`) : **rejoués un à un, les quatre passent** — instabilité prouvée par exécution, pas conclue par raisonnement. |
 
 ### Passe 1 de `bmad-code-review` — 2026-08-19, Opus + Sonnet, contextes frais
 
@@ -440,7 +441,7 @@ bloc** ; `QR-Rechnung` / `fattura QR` / `QR-bill` employé partout et **jamais p
 
 *(Écrit à l'interruption de séance du 2026-08-19 au soir, à la demande de Guy.)*
 
-**La story est implémentée et a passé UNE passe de revue.** Tous les gates sont verts, E2E comprise
+**La story est implémentée et a passé QUATRE passes de revue.** *(Cette note date de l'interruption du 2026-08-19, où il n'y en avait qu'une.)* Tous les gates sont verts, E2E comprise
 (183 passés). L'arbre est propre, les quatre commits sont poussés.
 
 **Par quoi reprendre, dans l'ordre :**
