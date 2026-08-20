@@ -1485,10 +1485,10 @@ vat-rates-new = New rate
 vat-rates-subtitle = Set up the VAT rates and their validity dates. Old rates still apply to earlier operations.
 vat-rates-title = VAT rates
 
-# Story 23-3 (#316) — supplier invoices: 113 keys.
+# Story 23-3 (#316) — supplier invoices: 119 keys.
 # Terms TAKEN FROM the catalogue: supplier invoice, Due date (invoice-pdf-due-date),
 # Cancelled (invoice-status-cancelled), Expense (account-type-expense), incl./excl. VAT
-# (invoice-pdf-total-ttc / vat-purchase-ht), journal entry, fiscal year.
+# (invoice-pdf-total-ttc / vat-purchase-ht), fiscal year.
 # Terms SETTLED from part B of the glossary: QR-bill (official SIX terminology),
 # supporting document, discard/discarded, complete, image.
 # ⚠️ `imported-supplier-invoices-save` reads « Valider la facture » in French, but the code
@@ -1528,6 +1528,7 @@ imported-supplier-invoices-import-running = An import is already running. Try ag
 imported-supplier-invoices-importing = Import running…
 imported-supplier-invoices-line-account = Account
 imported-supplier-invoices-line-desc = Description
+imported-supplier-invoices-line-qty = Qty
 imported-supplier-invoices-line-ht = Unit price excl. VAT
 imported-supplier-invoices-lines = Lines
 imported-supplier-invoices-mismatch = difference to correct
@@ -1610,3 +1611,6 @@ supplier-invoices-scan-no-qr = No QR code detected on this image.
 supplier-invoices-scan-ok = QR-bill read — details prefilled.
 supplier-invoices-scan-running = Reading…
 supplier-invoices-scan-too-large = Image too large (max 15 MB).
+supplier-invoices-status-open = Open
+supplier-invoices-status-paid = Paid
+supplier-invoices-status-cancelled = Cancelled

@@ -87,6 +87,8 @@ passage des rollouts qui touchent ces domaines, pas ici.
 | solde | Saldo | saldo | balance | `Soldes de départ` / `Anfangssaldi` |
 | montant | **Betrag** | **importo** | amount | `Montant trop élevé` |
 | montant HT | Betrag exkl. MWST | importo IVA esclusa | amount excl. VAT | `Montant HT` |
+| **montant TTC** | **Betrag inkl. MWST** | **importo IVA inclusa** | **amount incl. VAT** | `supplier-invoices-field-expected-amount` (story 23-3, passe 4). ⚠️ **Le pendant exact de *montant HT*, et il n'était protégé par rien** alors que celui-ci l'était — asymétrie relevée en passe 4. `credit-notes-col-total` et `-col-line-total`, encore à la dette, porteront la forme opposée |
+| **compte de charge** | **Aufwandskonto** | **conto di costo** | **expense account** | `vat-purchase-charge-account` (story 23-3, passe 4). ⚠️ **Le SEUL terme du domaine dont on ait la PREUVE qu'il dérive** : la passe 1 a dû corriger `Aufwandkonto` et `conto costi`, écrits trois fois chacun. ⚠️ **L'anglais s'en tire par coïncidence** (terme monolithique) — un contrôle mené sur lui seul ne l'aurait pas vu |
 | exercice (comptable) | **Geschäftsjahr** | esercizio contabile | fiscal year | `Exercices comptables` |
 | résultat de l'exercice | Jahresergebnis | risultato dell'esercizio | current year result | `Résultat de l'exercice` |
 | bilan | Bilanz | bilancio | balance sheet | `Bilan` |
@@ -132,9 +134,9 @@ passage des rollouts qui touchent ces domaines, pas ici.
 | rapport | Bericht | rapporto | report | `Rapports comptables` |
 | banque | Bank | banca | bank | `Banque` |
 | devise | Währung | valuta | currency | `Devise non supportée v0.1.` |
-| projet | Projekt | progetto | project | `depenses-par-projet` |
+| projet | Projekt | progetto | project | `supplier-invoices-detail-project` |
 | **projet analytique** | **Projekt** | **progetto** | **project** | arbitrage de Guy, 2026-08-19 — cf. la note ci-dessous |
-| dépenses | Ausgaben | spese | expenses | `depenses-par-projet` |
+| dépenses | Ausgaben | spese | expenses | `reports-filename-project-expenses` ⚠️ *slug de nom de fichier, pas un libellé* |
 
 ⚠️ **« Projet analytique » se rend simplement par `Projekt` / `progetto` / `project`** — arbitrage
 de Guy du 2026-08-19, et il mérite sa justification parce que la proposition initiale de ce
@@ -148,7 +150,7 @@ dates de début et de fin. C'est un objet **temporaire porteur de coûts** — u
 allemand, une `commessa` en italien. **Le terme proposé désignait le mauvais concept.**
 
 Le choix retenu n'est pourtant ni l'un ni l'autre : **on ne traduit pas « analytique »**. Motifs —
-`Projekt` est **déjà attesté** au catalogue (`depenses-par-projet`) ; l'utilisateur lit ce que le
+`Projekt` est **déjà attesté** au catalogue (`supplier-invoices-detail-project`, et avant lui le slug `reports-filename-project-expenses`) ; l'utilisateur lit ce que le
 logiciel fait réellement ; et une étiquette de champ n'est pas l'endroit où faire de la terminologie
 comptable. `Kostenträger` et `commessa` ont leur place dans le **manuel**, pas dans l'interface.
 
@@ -183,8 +185,16 @@ et c'est le glossaire lui-même qui aurait induit en erreur, ce qui est pire qu'
 
 **Deux** termes restent ouverts. *(La partie B comptait 16 entrées, 15 après l'arbitrage sur
 « analytique », 12 après la 23-1b, 10 après la 23-2, 4 après la 23-3 et **2** après sa passe 2. La
-partie A compte **63** entrées. Les deux nombres sont **recomptés depuis les tableaux**, comme
+partie A compte **65** entrées. Les deux nombres sont **recomptés depuis les tableaux**, comme
 l'exige la § « Recompter ses propres comptes rendus ».)*
+
+⚠️ **Les deux dernières entrées de la partie A n'y sont PAS montées depuis la partie B** — `montant TTC`
+et `compte de charge` n'y ont jamais figuré : ils étaient « attestés au catalogue », ce que la spec de
+la 23-3 tenait pour suffisant. **Ça ne l'est pas.** La règle d'immuabilité ne couvre que la partie A,
+si bien qu'un terme attesté mais non promu dérive sans que rien ne rougisse — et `compte de charge`
+en est la **preuve** : la passe 1 a dû corriger `Aufwandkonto` et `conto costi`, trois fois chacun.
+D'où le critère, désormais : **un terme que le rollout emploie et fige va en partie A**, qu'il vienne
+de la partie B ou du catalogue. *(Passe 4 de la 23-3 ; la partie A passe de 63 à 65.)*
 
 ⚠️ **La 23-3 avait d'abord OUBLIÉ cette promotion, en cochant sa tâche.** Elle a employé et figé
 **huit** de ces termes dans 460 lignes de catalogue **sans les faire monter en partie A** — or la

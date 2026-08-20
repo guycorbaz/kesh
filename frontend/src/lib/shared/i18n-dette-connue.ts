@@ -190,5 +190,4 @@ export const DETTE_CONNUE: readonly string[] = [
 	'reports-project-expenses',
 	'reports-project-return',
 
-	// Jamais écrites comme littéral : seule l’énumération du motif les révèle (AC8).
 ];

@@ -1478,16 +1478,20 @@ vat-rates-new = Neuer Satz
 vat-rates-subtitle = Richten Sie die MWST-Sätze und ihre Gültigkeitsdaten ein. Alte Sätze gelten weiterhin für frühere Vorgänge.
 vat-rates-title = MWST-Sätze
 
-# Story 23-3 (#316) — Lieferantenrechnungen : 113 Schlüssel.
+# Story 23-3 (#316) — Lieferantenrechnungen : 119 Schlüssel.
 # Termes RELEVÉS : Lieferantenrechnung, Fälligkeit (invoice-pdf-due-date), Storniert
 # (invoice-status-cancelled), Aufwand (account-type-expense), inkl./exkl. MWST
-# (invoice-pdf-total-ttc / vat-purchase-ht), Buchungssatz, Geschäftsjahr.
+# (invoice-pdf-total-ttc / vat-purchase-ht), Geschäftsjahr.
 # Termes TRANCHÉS de la partie B du glossaire : QR-Rechnung (terminologie officielle SIX),
 # Beleg (CO art. 957a), verwerfen/verworfen, vervollständigen, Bild.
 # ⚠️ `imported-supplier-invoices-save` dit « Valider la facture » en français, mais le code
 # CRÉE la facture (route `complete_import`, étape 7 : « Création de la facture réelle »).
-# Rendu par « erfassen » et non « validieren » : `validieren` est réservé à la validation
+# Rendu par « übernehmen » et non « validieren » : `validieren` est réservé à la validation
 # comptable qui rend une pièce immuable (cf. invoice-status-validated, story 23-2).
+# ⚠️ Et non « erfassen » non plus, qui est DÉJÀ pris par `supplier-invoices-new` (« Enregistrer
+# une facture ») : le français oppose DEUX VERBES — « Valider » / « Enregistrer » —, l'italien et
+# l'anglais un article. L'allemand suit le français. (Passe 3 ; l'en-tête disait encore
+# « erfassen » après le changement de valeur — corrigé en passe 4.)
 imported-supplier-invoices-add-line = Zeile hinzufügen
 imported-supplier-invoices-amount = Betrag
 imported-supplier-invoices-complete = Vervollständigen
@@ -1513,7 +1517,7 @@ imported-supplier-invoices-err-not-pending = Diese Rechnung wurde bereits vervol
 imported-supplier-invoices-error-unknown = Import fehlgeschlagen ({$code})
 imported-supplier-invoices-field-date = Rechnungsdatum
 imported-supplier-invoices-field-due = Fälligkeit
-imported-supplier-invoices-field-number = Nr. Lieferantenrechnung
+imported-supplier-invoices-field-number = Lieferantenrechnungs-Nr.
 imported-supplier-invoices-field-supplier = Lieferant
 imported-supplier-invoices-import = Ordner importieren
 imported-supplier-invoices-import-failed = Unerwarteter Fehler beim Import.
@@ -1521,6 +1525,7 @@ imported-supplier-invoices-import-running = Ein Import läuft bereits. Versuchen
 imported-supplier-invoices-importing = Import läuft…
 imported-supplier-invoices-line-account = Konto
 imported-supplier-invoices-line-desc = Beschreibung
+imported-supplier-invoices-line-qty = Menge
 imported-supplier-invoices-line-ht = Stückpreis exkl. MWST
 imported-supplier-invoices-lines = Zeilen
 imported-supplier-invoices-mismatch = Abweichung zu korrigieren
@@ -1571,7 +1576,7 @@ supplier-invoices-field-date = Rechnungsdatum
 supplier-invoices-field-due = Fälligkeit
 supplier-invoices-field-expected-amount = Erwarteter Betrag inkl. MWST (optional)
 supplier-invoices-field-iban = IBAN / QR-IBAN (optional)
-supplier-invoices-field-number = Nr. Lieferantenrechnung
+supplier-invoices-field-number = Lieferantenrechnungs-Nr.
 supplier-invoices-field-project = Projekt (optional)
 supplier-invoices-field-qr-iban = QR-IBAN (optional)
 supplier-invoices-field-reference = Referenz (optional)
@@ -1585,7 +1590,7 @@ supplier-invoices-lines = Zeilen
 supplier-invoices-new = Rechnung erfassen
 supplier-invoices-paid-info = Rechnung bezahlt.
 supplier-invoices-pay-account-ph = Gegenkonto
-supplier-invoices-pay-bank-ph = Quell-Bankkonto
+supplier-invoices-pay-bank-ph = Belastungskonto
 supplier-invoices-pay-date = Zahlungsdatum
 supplier-invoices-pay-err-account = Wählen Sie ein Konto.
 supplier-invoices-pay-err-bank = Wählen Sie ein Bankkonto.
@@ -1603,3 +1608,6 @@ supplier-invoices-scan-no-qr = Auf diesem Bild wurde kein QR-Code erkannt.
 supplier-invoices-scan-ok = QR-Rechnung gelesen — Angaben vorausgefüllt.
 supplier-invoices-scan-running = Wird gelesen…
 supplier-invoices-scan-too-large = Bild zu gross (max. 15 MB).
+supplier-invoices-status-open = Offen
+supplier-invoices-status-paid = Bezahlt
+supplier-invoices-status-cancelled = Storniert

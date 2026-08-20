@@ -1511,9 +1511,12 @@ error-company-phone-too-long = Le numéro de téléphone de la société est tro
 error-company-website-too-long = L'adresse du site web de la société est trop longue (255 caractères au plus).
 error-invoice-pdf-header-overflow = L'en-tête du document ne tient pas sur la page. Supprimez une coordonnée — téléphone, e-mail ou site web — dans les réglages : les raccourcir ne libère aucune place, chaque coordonnée occupe une ligne entière. Ou réduisez le nombre de lignes de l'adresse du destinataire.
 
-# Story 23-3 (#316) — domaine supplier-invoices : 113 clés, absentes des QUATRE catalogues.
-# Les 103 statiques sont les replis MOISSONNÉS du code, entrés VERBATIM (cf. 23-1b, AC11-sexies) ;
+# Story 23-3 (#316) — domaine supplier-invoices : 119 clés, absentes des QUATRE catalogues.
+# Les 109 statiques sont les replis MOISSONNÉS du code, entrés VERBATIM (cf. 23-1b, AC11-sexies) ;
 # les 10 de la famille dynamique viennent de la carte de `import/+page.svelte:55-66`.
+# ⚠️ Le compte a bougé DEUX fois après l'écriture : 113 → 115 (passe 1, `-col-qty`/`-col-vat`),
+# puis → 119 (passe 4, les trois `-status-*` et `-line-qty`). Il annonçait encore 113. Recompté
+# depuis la source : `grep -cE '^(imported-)?supplier-invoices-'` moins la préexistante `-title`.
 # ⚠️ `-col-total` (TTC) et `-line-total` (HT) sont DEUX clés depuis cette story : elles n'en
 # faisaient qu'une, pour deux grandeurs différentes, et c'est la traduction qui l'aurait activé.
 imported-supplier-invoices-add-line = Ajouter une ligne
@@ -1549,6 +1552,7 @@ imported-supplier-invoices-import-running = Un import est déjà en cours. Rées
 imported-supplier-invoices-importing = Import en cours…
 imported-supplier-invoices-line-account = Compte
 imported-supplier-invoices-line-desc = Description
+imported-supplier-invoices-line-qty = Qté
 imported-supplier-invoices-line-ht = PU HT
 imported-supplier-invoices-lines = Lignes
 imported-supplier-invoices-mismatch = écart à corriger
@@ -1567,6 +1571,16 @@ imported-supplier-invoices-title = Importer des factures
 imported-supplier-invoices-to-complete = Factures à compléter
 imported-supplier-invoices-view-doc = Voir le justificatif
 imported-supplier-invoices-view-source = Voir la facture d’origine
+imported-supplier-invoices-error-unsupported-file-type = Type de fichier non supporté
+imported-supplier-invoices-error-file-too-large = Fichier trop volumineux
+imported-supplier-invoices-error-symlink-rejected = Lien symbolique rejeté
+imported-supplier-invoices-error-duplicate = Déjà importé (doublon)
+imported-supplier-invoices-error-no-qr-code-found = Aucune QR-facture détectée
+imported-supplier-invoices-error-invalid-spc-payload = QR illisible (format non SPC)
+imported-supplier-invoices-error-invalid-iban = IBAN créancier invalide
+imported-supplier-invoices-error-pdf-render-error = PDF illisible
+imported-supplier-invoices-error-file-read-error = Lecture du fichier impossible
+imported-supplier-invoices-error-field-too-long = Un champ du QR dépasse la longueur autorisée
 supplier-invoices-add-line = Ajouter une ligne
 supplier-invoices-back = Retour
 supplier-invoices-cancel = Annuler la facture
@@ -1621,13 +1635,6 @@ supplier-invoices-scan-no-qr = Aucun QR-code détecté sur cette image.
 supplier-invoices-scan-ok = QR-facture lue — coordonnées pré-remplies.
 supplier-invoices-scan-running = Lecture…
 supplier-invoices-scan-too-large = Image trop volumineuse (max 15 Mo).
-imported-supplier-invoices-error-unsupported-file-type = Type de fichier non supporté
-imported-supplier-invoices-error-file-too-large = Fichier trop volumineux
-imported-supplier-invoices-error-symlink-rejected = Lien symbolique rejeté
-imported-supplier-invoices-error-duplicate = Déjà importé (doublon)
-imported-supplier-invoices-error-no-qr-code-found = Aucune QR-facture détectée
-imported-supplier-invoices-error-invalid-spc-payload = QR illisible (format non SPC)
-imported-supplier-invoices-error-invalid-iban = IBAN créancier invalide
-imported-supplier-invoices-error-pdf-render-error = PDF illisible
-imported-supplier-invoices-error-file-read-error = Lecture du fichier impossible
-imported-supplier-invoices-error-field-too-long = Un champ du QR dépasse la longueur autorisée
+supplier-invoices-status-open = Ouverte
+supplier-invoices-status-paid = Payée
+supplier-invoices-status-cancelled = Annulée

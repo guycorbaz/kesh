@@ -22,6 +22,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
+
+import { IMPORT_ERROR_LABELS } from '$lib/features/imported-supplier-invoices/error-label';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 // Seul import de production autorisé (AC7 / D1-bis) : un utilitaire de lecture, sans
@@ -39,14 +41,17 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
 /**
  * Valeurs de contrôle, mesurées le 2026-08-19. Un écart se recompte, il ne s'ajuste pas.
  *
- * ⚠️ `sitesTotal` est passé de **1493 à 1497** à la story 23-3, et le changement est DÉLIBÉRÉ :
+ * ⚠️ `sitesTotal` est passé de **1493 à 1497** puis à **1502** à la story 23-3, et chaque
+ * changement est DÉLIBÉRÉ : les cinq derniers sites viennent de la passe 4 — trois pour le
+ * statut de facture, qui s'affichait en français dans les quatre langues, et deux pour les
+ * `placeholder="Qté"` restés en dur. **La borne a rougi la première, avant toute relecture.**
  * quatre chaînes françaises étaient **en dur** dans les écrans de factures fournisseurs — deux
  * « Chargement… », un « Qté », un « TVA » —, invisibles au moissonneur (qui ne lit que les
  * `i18nMsg`) comme à l'allowlist. Les couvrir crée quatre sites d'appel. C'est une **hausse
  * assumée**, pas une dérive : la borne exacte a fait exactement son travail en l'exigeant.
  */
 const ATTENDU = {
-	sitesTotal: 1497,
+	sitesTotal: 1502,
 	sitesNonResolus: 33,
 	relais: 7,
 	sitesGabarit: 10,
@@ -127,6 +132,10 @@ const ANGLE_MORT_CLE_EN_COLONNE = 'routes/(app)/settings/vat-rates/+page.svelte:
  * bougerait**. La règle DRY du dépôt pousse vers cette extraction : les sept relais
  * actuels sont sept copies de la même fonction de trois lignes. À traiter en 23-2.
  */
+// ⚠️ La carte des codes d'erreur d'import est LUE depuis la production, plus recopiée :
+// tant qu'elle vivait dans le composant, une entrée ajoutée passait tous les gates au vert
+// (mutation exécutée en passe 4 de la 23-3 : 111 tests verts sur une 11e entrée fantôme).
+// Les six autres motifs restent énumérés — même dette, à extraire de la même façon.
 const CARDINALITES: Record<string, number> = {
 	'journal-': 5,
 	'account-type-': 4,
@@ -134,7 +143,7 @@ const CARDINALITES: Record<string, number> = {
 	'reports-filename-': 5,
 	'vat-category-': 5,
 	'reminders-error-': 15,
-	'imported-supplier-invoices-error-': 10,
+	'imported-supplier-invoices-error-': Object.keys(IMPORT_ERROR_LABELS).length,
 	'bank-import-info-': 2
 };
 
@@ -210,7 +219,7 @@ const SITES_GABARIT_ATTENDUS: readonly string[] = [
 	'routes/(app)/invoices/due-dates/+page.svelte  due-dates-filter-',
 	'routes/(app)/journal-entries/+page.svelte  journal-',
 	'routes/(app)/settings/vat-rates/+page.svelte  vat-category-',
-	'routes/(app)/supplier-invoices/import/+page.svelte  imported-supplier-invoices-error-'
+	'lib/features/imported-supplier-invoices/error-label.ts  imported-supplier-invoices-error-'
 ];
 
 /**

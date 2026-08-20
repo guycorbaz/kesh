@@ -47,6 +47,10 @@ import { dansLePerimetreDeFichier } from './i18n-harvest.js';
 const RACINE = 'src';
 const PREFIXES = ['supplier-invoices-', 'imported-supplier-invoices-'];
 
+/** Nombre de clés du domaine relevées dans les sources. Recompté, jamais ajusté. */
+const CLES_RELEVEES = 110;
+
+
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */
 function replisParCle(): Map<string, Map<string, string[]>> {
 	/** @type {Map<string, Map<string, string[]>>} */
@@ -97,7 +101,14 @@ describe('une clé, un repli — domaine supplier-invoices', () => {
 
 	// Borne anti-test-muet : si le relevé rendait un ensemble vide — lecteur cassé, arbre
 	// déplacé, préfixes renommés —, les deux preuves ci-dessus seraient vertes à vide.
-	it('le relevé n’est pas vide', () => {
-		expect(replisParCle().size).toBeGreaterThanOrEqual(90);
+	//
+	// ⚠️ **EXACTE, et non « au moins ».** La première rédaction posait `>= 90` pour un relevé
+	// réel d'une centaine : une régression effaçant douze clés serait passée. C'est la doctrine
+	// inverse de `i18n-keys.test.ts`, écrit dans le même commit, qui pose un `sitesTotal` exact
+	// et dit pourquoi : **un écart se recompte, il ne s'ajuste pas.** Deux disciplines opposées
+	// dans un même patch — relevé en passe 4 de revue. Si ce nombre rougit, recompter la cause
+	// avant de le changer : une baisse est une clé qui a cessé d'être traduite.
+	it('le relevé porte exactement les clés attendues du domaine', () => {
+		expect(replisParCle().size).toBe(CLES_RELEVEES);
 	});
 });

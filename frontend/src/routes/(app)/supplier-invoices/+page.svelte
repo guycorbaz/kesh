@@ -375,7 +375,7 @@
 					/>
 					<input
 						class="col-span-1 rounded border px-2 py-1 text-sm"
-						placeholder="Qté"
+						placeholder={i18nMsg('supplier-invoices-col-qty', 'Qté')}
 						bind:value={line.quantity}
 					/>
 					<input

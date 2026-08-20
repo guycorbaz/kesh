@@ -16,6 +16,7 @@
 		InboxImportReport,
 		CompleteImportLineRequest,
 	} from '$lib/features/imported-supplier-invoices/imported-supplier-invoices.types';
+	import { importErrorLabel } from '$lib/features/imported-supplier-invoices/error-label';
 	import { listContacts } from '$lib/features/contacts/contacts.api';
 	import type { ContactResponse } from '$lib/features/contacts/contacts.types';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
@@ -49,27 +50,6 @@
 	let fLines = $state<CompleteImportLineRequest[]>([
 		{ description: '', quantity: '1', unitPrice: '', vatRate: '0', expenseAccountId: 0 },
 	]);
-
-	/** Map `errorCode` du rapport batch → libellé FR (clés `imported-supplier-invoices-error-*`). */
-	function importErrorLabel(code: string): string {
-		const map: Record<string, [string, string]> = {
-			UNSUPPORTED_FILE_TYPE: ['unsupported-file-type', 'Type de fichier non supporté'],
-			FILE_TOO_LARGE: ['file-too-large', 'Fichier trop volumineux'],
-			SYMLINK_REJECTED: ['symlink-rejected', 'Lien symbolique rejeté'],
-			DUPLICATE: ['duplicate', 'Déjà importé (doublon)'],
-			NO_QR_CODE_FOUND: ['no-qr-code-found', 'Aucune QR-facture détectée'],
-			INVALID_SPC_PAYLOAD: ['invalid-spc-payload', 'QR illisible (format non SPC)'],
-			INVALID_IBAN: ['invalid-iban', 'IBAN créancier invalide'],
-			PDF_RENDER_ERROR: ['pdf-render-error', 'PDF illisible'],
-			FILE_READ_ERROR: ['file-read-error', 'Lecture du fichier impossible'],
-			FIELD_TOO_LONG: ['field-too-long', 'Un champ du QR dépasse la longueur autorisée'],
-		};
-		const entry = map[code];
-		if (entry) return i18nMsg(`imported-supplier-invoices-error-${entry[0]}`, entry[1]);
-		return i18nMsg('imported-supplier-invoices-error-unknown', 'Échec de l’import ({$code})', {
-			code,
-		});
-	}
 
 	async function reloadList() {
 		toComplete = await listImported('to_complete');
@@ -555,7 +535,7 @@
 									<input
 										class="col-span-1 rounded border px-2 py-1 text-sm"
 										inputmode="decimal"
-										placeholder="Qté"
+										placeholder={i18nMsg('imported-supplier-invoices-line-qty', 'Qté')}
 										bind:value={line.quantity}
 									/>
 									<input

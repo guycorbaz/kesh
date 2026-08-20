@@ -1479,10 +1479,10 @@ vat-rates-new = Nuova aliquota
 vat-rates-subtitle = Configura le aliquote IVA e le loro date di validità. Le vecchie aliquote restano applicate alle operazioni anteriori.
 vat-rates-title = Aliquote IVA
 
-# Story 23-3 (#316) — fatture fornitori : 113 chiavi.
+# Story 23-3 (#316) — fatture fornitori : 119 chiavi.
 # Termini RILEVATI : fattura fornitori, Scadenza (invoice-pdf-due-date), Annullata
 # (invoice-status-cancelled), Costo (account-type-expense), IVA incl./esclusa
-# (invoice-pdf-total-ttc / vat-purchase-ht), scrittura contabile, esercizio.
+# (invoice-pdf-total-ttc / vat-purchase-ht), esercizio.
 # Termini TRANCIATI dalla parte B del glossario : fattura QR (terminologia ufficiale SIX),
 # documento giustificativo, scartare/scartata, completare, immagine.
 # ⚠️ `imported-supplier-invoices-save` dice « Valider la facture » in francese, ma il codice
@@ -1494,7 +1494,7 @@ imported-supplier-invoices-amount = Importo
 imported-supplier-invoices-complete = Completa
 imported-supplier-invoices-completed = Fattura creata.
 imported-supplier-invoices-completed-hint = Fattura #{$id} registrata.
-imported-supplier-invoices-completed-reload-failed = Importazione eseguita, ma l'elenco non è stato ricaricato — aggiorna la pagina.
+imported-supplier-invoices-completed-reload-failed = Importazione eseguita, ma non è stato possibile ricaricare l'elenco — aggiorna la pagina.
 imported-supplier-invoices-discard = Scarta
 imported-supplier-invoices-discard-confirm = Scartare questa fattura importata? Il documento giustificativo resta conservato.
 imported-supplier-invoices-discard-conflict = Questa fattura è già stata completata o scartata da un'altra sessione.
@@ -1522,12 +1522,13 @@ imported-supplier-invoices-import-running = Un'importazione è già in corso. Ri
 imported-supplier-invoices-importing = Importazione in corso…
 imported-supplier-invoices-line-account = Conto
 imported-supplier-invoices-line-desc = Descrizione
+imported-supplier-invoices-line-qty = Qtà
 imported-supplier-invoices-line-ht = Prezzo unitario IVA esclusa
 imported-supplier-invoices-lines = Righe
 imported-supplier-invoices-mismatch = differenza da correggere
 imported-supplier-invoices-no-source-doc = Per questa fattura non è stato importato alcun documento giustificativo.
 imported-supplier-invoices-reference = Rif.
-imported-supplier-invoices-reload-failed = L'elenco non è stato ricaricato — aggiorna la pagina.
+imported-supplier-invoices-reload-failed = Non è stato possibile ricaricare l'elenco — aggiorna la pagina.
 imported-supplier-invoices-report-accepted = {$n} fattura/e importata/e.
 imported-supplier-invoices-report-failed = {$n} errore/i:
 imported-supplier-invoices-save = Registra la fattura
@@ -1535,7 +1536,7 @@ imported-supplier-invoices-source-doc-failed = Download impossibile.
 imported-supplier-invoices-source-doc-gone = Il documento giustificativo non è stato ripristinato.
 imported-supplier-invoices-subcentime = L'importo del QR ({$amount}) contiene frazioni di centesimo — irraggiungibile con righe al centesimo esatto. Raccomandazione: scartare questa fattura.
 imported-supplier-invoices-sum-ttc = Totale delle righe IVA inclusa
-imported-supplier-invoices-target = valore QR
+imported-supplier-invoices-target = importo QR previsto
 imported-supplier-invoices-title = Importa fatture
 imported-supplier-invoices-to-complete = Fatture da completare
 imported-supplier-invoices-view-doc = Visualizza il documento giustificativo
@@ -1604,3 +1605,6 @@ supplier-invoices-scan-no-qr = Nessun codice QR rilevato su questa immagine.
 supplier-invoices-scan-ok = Fattura QR letta — dati precompilati.
 supplier-invoices-scan-running = Lettura…
 supplier-invoices-scan-too-large = Immagine troppo grande (max 15 MB).
+supplier-invoices-status-open = Aperta
+supplier-invoices-status-paid = Pagata
+supplier-invoices-status-cancelled = Annullata
