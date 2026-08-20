@@ -285,9 +285,14 @@ avant cette story. Deux d'entre elles sont nuisibles :
 | `Menge` ← Qté / Quantité · `Status` ← Statut / État · `Zahlungsdatum` ← Date de paiement / Date de règlement · `Scadenza` ← Échéance / Date d'échéance | | ✅ bénin — synonymes français, et le glossaire a précisément tranché que les cibles disent *paiement* |
 
 ⚠️ **Ces deux collisions nuisibles ne sont PAS créées par la 23-3 et ne sont pas corrigées ici** —
-elles vivent dans `fiscal-year` et `journal-entries`. À porter en **issue GitHub**, l'Issue Tracking
-Rule faisant de GitHub la source de vérité unique : la note « à porter en 23-4 ou en CR » écrite à
-l'implémentation n'a **jamais été suivie d'effet**, et une note de story ne trace rien.
+elles vivent dans `fiscal-year` et `journal-entries`. **Tracées le 2026-08-20** : [KF-041] (#323)
+pour `Clôturer`/`Fermer`, [KF-042] (#324) pour le faux ami `Valider`.
+
+⚠️ **Pourquoi l'issue et pas la note.** `Clôturer`/`Fermer` était **déjà connu à l'implémentation**,
+noté « à porter en 23-4 ou en CR » — et **rien n'a suivi**. Une note de story ne se relit qu'en
+rouvrant la story ; l'Issue Tracking Rule fait de GitHub la source de vérité unique **précisément
+pour ce mode d'échec**. Le contrôle de la passe 3 a redécouvert de zéro un défaut que la story avait
+elle-même signalé quatre commits plus tôt.
 
 ### Preuves d'exécution
 
@@ -415,9 +420,9 @@ bloc** ; `QR-Rechnung` / `fattura QR` / `QR-bill` employé partout et **jamais p
 - ⚠️ **Trois PR empilées.** #320 (socle, 23 commits), #322 (parité, `closes #283`, 29 commits **dont
   ceux de #320**), et la branche 23-3 par-dessus. Chaque PR contient les précédentes, et cela
   grossit tant que rien n'est mergé. Recommandation : **merger #320 d'abord**, puis rebaser.
-- **`Clôturer` / `Fermer`** s'effondrent en un seul mot dans les trois cibles (`Schliessen`,
-  `Chiudi`, `Close`) alors que le français distingue l'acte comptable irréversible du panneau qu'on
-  referme. La moitié « exercice » est **hors périmètre** de la 23-3 — à porter en 23-4 ou en CR.
+- ~~**`Clôturer` / `Fermer`** s'effondrent en un seul mot dans les trois cibles~~ — ✅ **tracé en
+  [KF-041] (#323)** le 2026-08-20, avec [KF-042] (#324) pour le faux ami `Valider` que le contrôle
+  élargi a trouvé en même temps. Hors périmètre de la 23-3 : le membre de son domaine est correct.
 - **Le libellé français `imported-supplier-invoices-save = « Valider la facture »`** est trompeur :
   le code **crée** la facture. Conservé verbatim ici (hors périmètre), les trois cibles suivent
   l'acte réel. À corriger dans une story qui touche légitimement le français.
