@@ -1,29 +1,42 @@
-# Story 23.3b : la garde contre les libellés en dur, et les cinq sites qu'elle révèle
+# Story 23.3b : la garde contre les libellés en dur, et les six sites qu'elle révèle
 
 Status: ready-for-dev
 
-## Pourquoi cette story existe, et pourquoi maintenant
+> **Base** : branchée sur `main` **après le merge de la 23-3** (`046efa51`). Tous les faits, lignes
+> et décomptes de ce document ont été **vérifiés au grep sur cette base** le 2026-08-20.
+> ⚠️ **Les numéros de ligne dateront** : chaque référence porte aussi un **motif de grep** —
+> **le motif fait foi, pas la ligne.**
+>
+> **Catalogues** : les quatre locales `fr-CH` (source), `de-CH`, `it-CH`, `en-CH`, dans
+> `crates/kesh-i18n/locales/<locale>/messages.ftl`.
+
+## Pourquoi cette story existe, et pourquoi avant la 23-4
 
 ⚠️ **Une fonction de libellé qui n'appelle jamais `i18nMsg` est invisible de TOUT l'appareil de
 contrôle de cet epic.** Le moissonneur (`i18n-harvest.js`), l'allowlist (`i18n-dette-connue.ts`) et
-les **deux** gardes (`i18n-keys.test.ts`, `i18n-un-repli-par-cle.test.ts`) ne relèvent que les
-**sites `i18nMsg`**. Ce qui n'appelle pas n'existe pour aucun d'eux — c'est l'angle mort nommé par
-l'issue [#255](https://github.com/guycorbaz/kesh/issues/255), qui le décrit sans le couvrir.
+les trois gardes existantes — `loader.rs::parity_between_locales`, `i18n-keys.test.ts`,
+`i18n-un-repli-par-cle.test.ts` — ne relèvent que les **sites `i18nMsg`**. Ce qui n'appelle pas
+n'existe pour aucune d'elles : c'est l'angle mort que l'issue
+[#255](https://github.com/guycorbaz/kesh/issues/255) décrit sans le couvrir.
 
-Le défaut a été trouvé **en production**, en passe 4 de revue de la story 23-3 :
-`supplierInvoiceStatusLabel()` retournait `'Ouverte'` / `'Payée'` / `'Annulée'` en dur, **sous un
-en-tête de colonne que la story venait de traduire**. Un germanophone lisait « Status » au-dessus de
-« Payée », sur chaque ligne de la liste et en badge sur chaque fiche. Corrigé dans la 23-3.
+Le défaut a été trouvé **en production**, en passe 4 de revue de la 23-3 :
+`supplierInvoiceStatusLabel()` retournait `'Ouverte'` / `'Payée'` / `'Annulée'` en dur **sous un
+en-tête de colonne que la story venait de traduire** — un germanophone lisait « Status » au-dessus de
+« Payée », sur chaque ligne et en badge sur chaque fiche. Corrigé dans la 23-3.
 
-⚠️ **La passe 5 a cherché le PATRON plutôt que la chaîne, et l'a retrouvé quatre fois.** Le même
-doc-comment est copié mot pour mot — *« Libellé FR du statut d'un X (fallback i18n côté composant) »* —
-et **aucun composant ne fait l'i18n**. Deux de ces sites sont dans `payment-batches` et
-`credit-notes`, c'est-à-dire **les deux prochains domaines de la rollout** (23-4 et 23-5), dont 49
-clés sont encore à l'allowlist.
+⚠️ **Ce n'est pas un accident : c'est un patron.** Le doc-comment *« Libellé FR du statut d'un X
+(fallback i18n côté composant) »* est copié **trois fois** — `payment-batch-helpers.ts:19`,
+`credit-note-helpers.ts:22`, `supplier-invoice-helpers.ts:19` *(celui-ci corrigé en 23-3)* — et un
+**quatrième** site porte le même patron **sans commentaire** (`invoices/[id]:602`). ⚠️ **Ce dernier
+est le plus instructif : un grep du doc-comment ne l'aurait pas trouvé.**
 
-**C'est ce qui rend la story urgente** : si la 23-4 traduit `payment-batches` en l'état, elle
-produira le défaut à l'identique — en-tête « Statut » en allemand au-dessus de « Généré / Confirmé /
-Annulé ». La traduction *active* le défaut, exactement comme pour `supplier-invoices-col-total`.
+**L'urgence est un problème d'ordonnancement, pas de gravité actuelle.** ⚠️ Sur `payment-batches` et
+`credit-notes`, le défaut est **LATENT** : leurs en-têtes de colonne ne sont pas encore traduits
+(`payment-batches-col-status` et `credit-notes-col-status` sont **à l'allowlist**, absents des quatre
+catalogues — vérifié). Personne ne voit aujourd'hui « Status » au-dessus de « Généré ». **C'est la
+traduction qui l'activera** — exactement comme pour `supplier-invoices-col-total`. Or ces deux
+domaines sont ceux des stories **23-4 et 23-5**, et 49 de leurs clés attendent à l'allowlist
+(30 + 19, recompté).
 
 ## Story
 
@@ -32,156 +45,221 @@ Annulé ». La traduction *active* le défaut, exactement comme pour `supplier-i
 **afin que** le patron cesse d'être recopié — et que traduire un domaine ne fige plus des valeurs
 françaises sous des en-têtes traduits.
 
+## ⚠️ Ce que la garde couvre, et ce qu'elle NE PEUT PAS couvrir
+
+**Ce paragraphe est le cœur de la story. Il a été établi par mesure, pas par intuition.**
+
+La garde vise **un patron précis** : *une fonction dont la valeur est affichée retourne un littéral
+sans passer par `i18nMsg`*. Elle le détecte **par le nom** de la fonction (`*Label`, `*Text`,
+`*Display`), puis par l'inspection de son corps.
+
+| forme du défaut | la garde la voit ? | pourquoi |
+|---|---|---|
+| fonction `*Label` → `return '<littéral>'` | ✅ **oui** — c'est son objet | sites **1, 2, 4, 6** |
+| valeur affichée sans aucun appel (`{data.company.orgType}`) | ❌ **non** | il n'y a **ni fonction ni littéral** — le défaut est l'*absence* d'appel |
+| littéraux dans un **tableau de données** (`navGroups`) | ❌ **non** | pas un corps de fonction ; et **indiscernable** d'une table de replis légitime sans analyse de flot |
+| **nœud de texte** de markup (`<Dialog.Title>Valider la facture</Dialog.Title>`) | ❌ **non** | ni fonction, ni littéral JS |
+
+⚠️ **Les sites 3, 5 et 7 sont donc corrigés À LA MAIN, hors portée de la garde, et le motif est
+écrit ci-dessus.** Ne pas élargir la garde pour les attraper : la mesure ci-dessous dit ce que ça
+coûterait.
+
+**Mesure de l'élargissement « par le contenu »** *(détecter tout littéral « qui ressemble à du
+français »)* : **1035** littéraux bruts, dont 860 sont des replis légitimes en 2ᵉ argument
+d'`i18nMsg` → **175 restants à trier**, dont ~160 sans rapport avec ce défaut (messages d'erreur,
+prose de commentaire `<!-- -->`). ⚠️ **Et cet angle rate quand même `Brouillon` et 7 des 9 libellés
+de navigation**, qui n'ont ni accent ni mot-outil. **Il coûte 160 exemptions pour ne rien gagner** —
+c'est-à-dire une garde qu'on désactivera au premier gate bruyant. **Proscrit comme critère
+bloquant.**
+
 ## Critères d'acceptation
 
-1. **AC1 — la garde existe et lit les SOURCES.** Un test de `frontend/src/lib/shared/` relève, dans
-   `src/`, les fonctions dont le rôle est de rendre un libellé affiché, et échoue si l'une d'elles
-   retourne un littéral sans passer par `i18nMsg`. ⚠️ **Elle lit les sources, jamais les catalogues** —
-   même raison que `i18n-un-repli-par-cle.test.ts` : une garde qui s'appuie sur les catalogues
+1. **AC1 — la garde existe, s'appelle `frontend/src/lib/shared/i18n-libelle-en-dur.test.ts`, et lit
+   les SOURCES.** Elle relève les **déclarations de fonction** dont le nom finit par `Label`, `Text`
+   ou `Display` dans `src/`, et échoue si l'une retourne un littéral sans `i18nMsg` sur le chemin.
+   ⚠️ **Elle lit les sources, jamais les catalogues** — une garde qui s'appuie sur les catalogues
    s'éteint au moment où la traduction est livrée, c'est-à-dire quand le risque devient réel.
-2. **AC2 — la garde rougit sous mutation, et la mutation est CONSIGNÉE.** Remettre en dur l'un des
-   sites corrigés fait échouer le test ; la preuve est notée dans le Dev Agent Record avec la sortie
-   réelle. Une garde non éprouvée par mutation est un test muet.
-3. **AC3 — borne EXACTE, pas un minimum.** Le décompte des fonctions relevées est une valeur exacte
-   assortie de la consigne « un écart se recompte, il ne s'ajuste pas ». *(La 23-3 a livré une borne
-   `>= 90` là où sa voisine posait un total exact — deux disciplines opposées dans un même commit.)*
-4. **AC4 — allowlist justifiée, pas une échappatoire.** Les cas légitimes (fonction rendant une clé
-   et non un texte, table de replis passée en 2ᵉ argument d'`i18nMsg`, valeur non affichée) sont
-   inscrits dans une liste **avec un motif écrit par entrée**. ⚠️ L'exemption est l'issue la moins
-   coûteuse, donc celle qu'il faut contrôler.
-5. **AC5 — les cinq sites relevés sont corrigés**, chacun avec ses clés dans les **quatre** locales.
-6. **AC6 — les termes non attestés sont tranchés et promus en partie A du glossaire**, avec leur clé
-   attestante. ⚠️ **`Généré`, `Confirmé` et `Émis` ne sont attestés NULLE PART** (vérifié au grep) —
-   ils demandent un arbitrage, comme `analytique` et `bascule` avant eux.
-7. **AC7 — les tests qui VERROUILLENT le français sont corrigés.** Deux tests unitaires assèrent
-   aujourd'hui `toBe('Généré')` / `toBe('Brouillon')` : ils rendent le défaut vert. Chacun reçoit,
-   comme dans la 23-3, une assertion qui emprunte **le chemin réel** (dictionnaire servi par l'API).
-8. **AC8 — l'allowlist et les compteurs ne régressent pas** : `i18n-keys.test.ts` reste vert, son
-   `sitesTotal` recompté et déclaré, jamais ajusté en silence.
-9. **AC9 — gates complets verts, E2E comprise** (la story touche du code applicatif), et PR en
-   `refs #316`.
+   ⚠️ **Une garde codée en dur sur une liste de chemins ne satisfait PAS cet AC** : elle
+   n'empêcherait aucune récidive, qui est l'objet même de la story.
+2. **AC2 — la garde rougit sur les QUATRE sites de son patron AVANT tout correctif**, et la sortie du
+   run est collée dans le Dev Agent Record. ⚠️ **C'est la seule preuve qu'elle les voit** ; sans
+   elle, une garde vide passe tous les autres AC.
+3. **AC2-bis — elle rougit encore sous mutation APRÈS les correctifs** : remettre en dur l'un des
+   sites corrigés fait échouer le test, sortie citée. Une garde non éprouvée par mutation est un
+   test muet.
+4. **AC3 — borne EXACTE sur une grandeur STABLE.** Le nombre déclaré est celui des **fonctions
+   candidates relevées** par le balayage (conformes + allowlistées + en violation), pas celui des
+   violations — un compteur de violations tombe à zéro et n'atteste plus rien. Le Dev Agent Record
+   porte la **ventilation**, et la somme doit égaler le total. Consigne inscrite dans le fichier :
+   « un écart se recompte, il ne s'ajuste pas ».
+5. **AC4 — allowlist justifiée, motif par entrée.** Les quatre entrées connues d'avance sont données
+   au § *Faux amis* ci-dessous. ⚠️ **Aucune entrée ne peut être ajoutée au seul motif qu'un site
+   n'était pas prévu** — cf. AC5-bis.
+6. **AC5 — les sept sites du tableau sont corrigés**, chacun avec ses clés dans les quatre locales.
+7. **AC5-bis — tout site relevé par la garde et absent du tableau est soit corrigé ici, soit
+   consigné dans le Dev Agent Record avec sa raison ET une issue GitHub** — jamais inscrit à
+   l'allowlist. ⚠️ Le tableau est un **plancher**, pas un inventaire clos : la garde balaie tout
+   `src/`, c'est sa raison d'être.
+8. **AC6 — les termes non attestés sont tranchés PAR GUY, puis promus en partie A du glossaire** avec
+   leur clé attestante. Portée : les trois statuts **et** les six codes de `failedItemLabel`.
+9. **AC7 — tout test qui verrouille le français est corrigé.** Trois blocs connus au 2026-08-20 —
+   ⚠️ **cette liste n'est pas close**, la balayer au grep donné ci-dessous.
+10. **AC8 — `sitesTotal` d'`i18n-keys.test.ts` est recompté depuis la source et déclaré dans le Dev
+    Agent Record**, jamais ajusté en silence. Base au départ : **1502**.
+11. **AC9 — gates complets verts, E2E comprise**, PR en `refs #316`, et le corps de la PR mentionne
+    que le site 6 déborde le périmètre de l'issue #255.
 
 ## Tasks
 
-- [ ] **T1 — Arbitrage des trois termes non attestés** (`Généré`, `Confirmé`, `Émis`) — AC6. **Bloquant.**
-- [ ] **T2 — La garde** et sa mutation consignée — AC1, AC2, AC3, AC4. **Avant les correctifs** : elle
-      doit d'abord rougir sur les cinq sites, ce qui prouve qu'elle les voit.
-- [ ] **T3 — `payment-batches`** : `paymentBatchStatusLabel` (3 cas) et `failedItemLabel` (6 codes) — AC5, AC7.
-- [ ] **T4 — `credit-notes`** : `creditNoteStatusLabel` (3 cas) — AC5, AC7.
-- [ ] **T5 — `settings`** : le type d'organisation — AC5.
-- [ ] **T6 — la barre de navigation** : groupes et entrées — AC5.
-- [ ] **T7 — `invoices/[id]`** : `statusLabel` et le titre de dialogue en dur — AC5.
-- [ ] **T8 — Glossaire** : promotion des termes tranchés — AC6.
-- [ ] **T9 — Gates complets, E2E comprise** — AC9.
+- [ ] **T1 — Arbitrage de Guy** sur les trois statuts non attestés **et** les six codes de
+      `failedItemLabel` — AC6. **BLOQUANT.** ⚠️ **Conduite à tenir** : proposer les valeurs `de`/`it`/`en`
+      dans le Dev Agent Record, puis **S'ARRÊTER et attendre**. Ne **jamais** inventer : ces valeurs
+      seront figées dans quatre catalogues **et** promues en partie A du glossaire, zone déclarée
+      « non négociable en rollout ». Précédents d'arbitrage : `analytique`, `bascule`, `fattura fornitore`.
+- [ ] **T2 — Exporter `corpsDeFonction`** depuis `i18n-literal-reader.js` (+ son test) — elle existe
+      (`:374`) mais **n'est pas exportée**, et c'est la seule brique manquante. AC1.
+- [ ] **T3 — Étendre `masquerCommentaires` aux commentaires `<!-- -->`** (+ son test) — elle ne masque
+      aujourd'hui que `//` et `/* */`, ce qui laisse **21** blocs de prose française passer pour des
+      littéraux dans les `.svelte`. AC1. ⚠️ Vérifier que l'extension ne déplace pas `sitesTotal`.
+- [ ] **T4 — La garde**, sa borne exacte, son allowlist — AC1, AC3, AC4. ⚠️ **Avant les correctifs**,
+      et sa sortie rouge sur les quatre sites du patron est collée au Record — AC2.
+- [ ] **T5 — `payment-batches`** : `paymentBatchStatusLabel` (3 cas) et `failedItemLabel` (6 codes) — AC5, AC7.
+- [ ] **T6 — `credit-notes`** : `creditNoteStatusLabel` (3 cas) — AC5, AC7.
+- [ ] **T7 — `invoices`** : `statusLabel` de la liste (site 6, **ferme #255**) et de la fiche (site 4) — AC5.
+- [ ] **T8 — Correctifs hors portée de la garde** : `settings` (site 3), la barre de navigation
+      (site 5), le titre de dialogue (site 7) — AC5.
+- [ ] **T9 — Glossaire** : promotion des termes tranchés — AC6.
+- [ ] **T10 — Recompter et déclarer `sitesTotal`** — AC8.
+- [ ] **T11 — Retirer les clés `nav-*` du périmètre de la 23-4** *(l'epic en prévoyait 4 ; cette
+      story en couvre 9)* — sinon double travail ou conflit.
+- [ ] **T12 — Gates complets, E2E comprise** — AC9.
 
 ## Dev Notes
 
-### Les cinq sites, relevés au grep et vérifiés jusqu'au site de RENDU
+### Les sept sites — vérifiés jusqu'au site de RENDU
 
 ⚠️ **Chaque site a été vérifié jusqu'à l'écran** : une fonction jamais appelée ne serait pas un
 défaut. Les appelants sont donnés — ne pas les redécouvrir.
 
-| # | définition | rendu à l'écran | l'en-tête voisin est-il traduit ? | un test verrouille-t-il le français ? |
+| # | définition *(motif de grep)* | rendu | en-tête voisin traduit ? | verrou de test |
 |---|---|---|---|---|
-| 1 | `lib/features/payment-batches/payment-batch-helpers.ts:20-31` (`paymentBatchStatusLabel`) et `:34-49` (`failedItemLabel`) | `routes/(app)/payment-batches/+page.svelte:200,234` et `[id]/+page.svelte:84` | ✅ `payment-batches-col-status` | ⚠️ **OUI** — `payment-batch-helpers.test.ts:20-22` |
-| 2 | `lib/features/credit-notes/credit-note-helpers.ts:23-31` (`creditNoteStatusLabel`) | `routes/(app)/credit-notes/+page.svelte:65` et `[id]/+page.svelte:178` | ✅ `credit-notes-col-status` | ⚠️ **OUI** — `credit-note-helpers.test.ts:22-24` |
-| 3 | `routes/(app)/settings/+page.svelte:184-185` | la même ligne — `{data.company.orgType}` | ✅ `settings-field-org-type` | non |
-| 4 | `routes/(app)/+layout.svelte:57-131` (groupes + 6 entrées) | `:340` — `<span>{group.label}</span>` | — *(chrome permanente)* | non |
-| 5 | `routes/(app)/invoices/[id]/+page.svelte:602-605` (`statusLabel`) et `:949` (`<Dialog.Title>`) | `:755` et le dialogue de validation | — | non |
+| 1 | `payment-batch-helpers.ts:20-31` `paymentBatchStatusLabel` | `payment-batches/+page.svelte:234`, `[id]:84` | ⏳ **non** — `payment-batches-col-status` **à l'allowlist** ; la 23-4 l'activera | ⚠️ `payment-batch-helpers.test.ts:20-22` (`toBe`) |
+| 2 | `payment-batch-helpers.ts:34-51` `failedItemLabel` | `payment-batches/+page.svelte:200` | idem | ⚠️ **`payment-batch-helpers.test.ts:28-29` (`toContain`)** — plus insidieux qu'un `toBe` : il survit à une traduction partielle |
+| 3 | `settings/+page.svelte:184-185` *(motif : `data.company.orgType`)* | la même ligne | ✅ `settings-field-org-type` **existe et est traduit** | non |
+| 4 | `invoices/[id]/+page.svelte:602-605` `statusLabel` | `:755` | — | non |
+| 5 | `+layout.svelte:57-150` *(motif : `label: '`)* — **3 groupes + 6 entrées = 9 libellés** | `:340` `<span>{group.label}</span>` | — *(chrome permanente)* | non — ⚠️ **mais voir le piège E2E** |
+| 6 | `invoices/+page.svelte:251` `statusLabel` | `:399` | — | non |
+| 7 | `invoices/[id]/+page.svelte:949` *(motif : `<Dialog.Title>Valider la facture`)* | le dialogue de validation | — | ⚠️ `fiscal-years.spec.ts:270` cible ce dialogue **par son nom** |
 
-**Le site 3 est le plus embarrassant à l'usage** : l'utilisateur choisit son type d'organisation en
-langue localisée pendant l'onboarding (« Indépendant », « PME »), puis retrouve dans les réglages le
-**code brut du backend** — `Independant`, `Association`, `Pme` — dans **toutes** les langues, français
-compris. Les clés existent déjà (`onboarding-org-*`) et sont câblées côté onboarding : il s'agit de
-les réutiliser, pas d'en créer.
+**Le site 3 est le plus embarrassant à l'usage, et le seul défaut ACTIF aujourd'hui** : l'utilisateur
+choisit son type d'organisation en langue localisée pendant l'onboarding (« Indépendant », « PME »),
+puis retrouve dans les réglages le **code brut du backend** — `Independant`, `Association`, `Pme` —
+dans **toutes** les langues, français compris. ⚠️ Les clés `onboarding-org-*` existent déjà et sont
+câblées côté onboarding : **les réutiliser, ne pas en créer**. C'est légitime — vocabulaire
+transverse, et `routes/**` est hors du périmètre du lint d'appartenance.
 
-**Le site 4 est le plus visible** : la barre de navigation est sur **chaque page**. ⚠️ Et il porte un
-paradoxe à signaler dans la PR : `/reconciliation` et `/reports` **sont déjà entièrement traduites**,
-mais l'entrée de menu qui y mène reste en français. La dette est partiellement documentée en
-commentaires `FINDING-7` / `FINDING-12` — **mais les libellés de GROUPE (`Quotidien`, `Mensuel`,
-`Administration`) n'y sont pas mentionnés**, ils ne sont donc dans le périmètre d'aucune dette
-déclarée. ⚠️ Le type `NavItem` (`:57`) n'a même pas de variante i18n possible pour un groupe :
-`label: string` seul. **La structure du type devra changer**, ce n'est pas qu'un remplacement de
-valeurs. *(L'epic 23 prévoyait déjà 4 clés `nav-*` en 23-4 — cette story les couvre ; à retirer du
-périmètre de la 23-4 pour éviter le double travail.)*
+**Le site 5 est le plus visible** : la barre de navigation est sur **chaque page**. ⚠️ Paradoxe à
+signaler dans la PR : `/reconciliation` et `/reports` **sont déjà entièrement traduites**, mais
+l'entrée de menu qui y mène reste en français.
+⚠️ **Correction de fait** : c'est le **type de groupe**, déclaré *inline* dans le `Array<{…}>` de
+`:57`, qui ne porte que `label: string`. Le type **`NavItem` (`:17-19`) est déjà correct** — il a la
+variante `{ i18nKey, fallback, href }`, employée par 20 entrées et consommée par `getItemLabel:152`.
+Les 6 entrées en dur n'ont donc **qu'à changer de variante** ; seul le type de groupe doit gagner une
+paire `i18nKey`/`fallback` et un `getGroupLabel` symétrique.
 
-**Le site 5 est un résidu de l'issue #255**, qui ne couvre que `invoices/+page.svelte` (la liste), pas
-`[id]` (la fiche) — vérifié en lisant le corps de l'issue. Soit élargir #255, soit le dire dans la PR.
+**Le site 6 ferme l'issue #255** — trois lignes, et les clés `invoice-status-{draft,validated,cancelled}`
+**existent déjà, traduites dans les quatre locales**. Coût quasi nul. ⚠️ **Il est dans le périmètre
+précisément parce que la garde rougira dessus** : l'exempter reviendrait à inscrire un défaut avéré
+dans une liste réservée aux cas légitimes. Le site 7, lui, déborde #255 (qui ne vise que la liste) —
+le **dire dans la PR**, ne pas modifier l'issue.
 
-### Les termes : ce qui est attesté, et ce qui ne l'est pas
+### Les termes : ce qui est attesté, et ce qui demande ton arbitrage
 
-⚠️ **Relever avant d'inventer** — c'est la règle du glossaire, et elle vaut ici plus qu'ailleurs
-puisque les valeurs vont être **figées dans quatre catalogues**.
+⚠️ **Relever avant d'inventer.** Les valeurs seront figées dans quatre catalogues et promues en
+partie A.
 
 | terme | statut | équivalence |
 |---|---|---|
 | `Brouillon` | ✅ **attesté** | `invoice-status-draft` → `Entwurf` / `Bozza` / `Draft` |
-| `Annulé(e)` | ✅ **attesté** | `invoice-status-cancelled` → `Storniert` / `Annullata` / `Cancelled`. ⚠️ **Accord** : un *lot* est masculin (« Annulé »), une *facture* féminine (« Annulée ») — le français distingue, les cibles moins |
-| `Ouverte` / `Payée` | ✅ **partie A** du glossaire *(23-3)* | `offen`/`aperta`/`open` · `bezahlt`/`pagata`/`paid` |
-| **`Généré`** | ⚠️ **NON attesté** | arbitrage requis → partie A avec sa clé |
-| **`Confirmé`** | ⚠️ **NON attesté** | arbitrage requis |
-| **`Émis`** | ⚠️ **NON attesté** | arbitrage requis. ⚠️ Ne pas le confondre avec « validé », qui est l'acte d'immuabilité |
-| les 6 codes de `failedItemLabel` | à relever | s'inspirer de `reminders-error-*` (15 codes) et `imported-supplier-invoices-error-*` (10), déjà traduits |
+| `Annulé(e)` | ✅ **attesté** | `invoice-status-cancelled` → `Storniert` / `Annullata` / `Cancelled`. ⚠️ **Accord** : un *lot* est masculin, une *facture* féminine |
+| `Validée` | ✅ **attesté** | `invoice-status-validated` |
+| `Ouverte` / `Payée` | ✅ **partie A** | `offen`/`aperta`/`open` · `bezahlt`/`pagata`/`paid` |
+| **`Généré`** | ⚠️ **NON attesté** — vérifié : zéro occurrence dans les 4 locales | **arbitrage T1** |
+| **`Confirmé`** | ⚠️ **NON attesté** | **arbitrage T1** |
+| **`Émis`** | ⚠️ **NON attesté**. ⚠️ Ne pas le confondre avec « validé », qui est l'acte d'immuabilité | **arbitrage T1** |
+| **les 6 codes de `failedItemLabel`** | ⚠️ **à relever ET à faire arbitrer** — 6 × 4 = **24 valeurs** | s'inspirer de `reminders-error-*` (15 codes) et `imported-supplier-invoices-error-*` (10), déjà traduits. ⚠️ Ce sont des **messages techniques** : dire au § glossaire s'ils montent en partie A ou non |
 
-### Sur quoi la garde peut s'appuyer — ne rien réécrire
+### Sur quoi la garde s'appuie — ce qui existe et ce qui manque
 
-`frontend/src/lib/shared/i18n-literal-reader.js` **existe déjà** et expose ce qu'il faut :
-`findCallSites(source)`, `readFallback(source, afterFirstArg)`, `readLiteral(source, i)`,
-`masquerCommentaires(source)`, `findRelays(source)`. Et `i18n-harvest.js` expose
-`dansLePerimetreDeFichier(nom)` — le filtre de balayage, **testé**, qui écarte déjà les `.test.*`.
+`i18n-literal-reader.js` expose `readLiteral:41`, `masquerCommentaires:258`, `findRelays:340`,
+`findCallSites:420`, `readFallback:460` ; `i18n-harvest.js` expose `dansLePerimetreDeFichier:31`.
 
-⚠️ **Ce lecteur a été durci par SEPT passes de revue cumulées** sur les stories 23-1a/23-1b : gabarits
-à apostrophes, échappements Fluent, commentaires, relais. **Ne pas en réécrire un second** — c'est
-exactement le « reinventing wheels » que le processus cherche à éviter. `i18n-un-repli-par-cle.test.ts`
-montre le montage complet en 40 lignes : le reprendre.
+⚠️ **Ce lecteur a été durci par sept passes de revue cumulées** (gabarits à apostrophes, échappements
+Fluent, commentaires, relais). **Ne pas en écrire un second.** Mais deux briques manquent, et c'est
+l'objet de T2 et T3 :
 
-**Piste de détection, à éprouver plutôt qu'à suivre aveuglément** : la signature du défaut est un
-`return '<littéral>'` (ou une valeur de `Record`/`switch`) **atteignable depuis une fonction dont la
-valeur est rendue**, sans `i18nMsg` sur le chemin. Deux angles complémentaires :
-- **par le nom** — `*Label`, `*Text`, `*Display` : ciblé, peu de faux positifs, mais contournable en
-  renommant ;
-- **par le contenu** — un littéral qui « ressemble à du français ». ⚠️ **Bruyant** : commentaires
-  (déjà masqués par `masquerCommentaires`), clés d'API, valeurs d'énumération backend (`'open'`,
-  `'paid'`), messages de test.
+- **`corpsDeFonction` existe (`:374`) mais n'est PAS exportée.** C'est l'appariement d'accolades dont
+  la garde a besoin, et son doc-comment raconte trois passes de durcissement. **L'exporter coûte une
+  ligne ; la réécrire coûte 40 lignes et trois régressions déjà payées.**
+- **`masquerCommentaires` ne masque PAS les `<!-- -->`** — vérifié, elle ne traite que `//` et
+  `/* */`. Sans T3, la garde récolte **21 faux positifs de prose** dans les `.svelte`, c'est-à-dire
+  là où vivent les sites 3, 5 et 7.
 
-⚠️ **Le second angle seul produira des faux positifs, et le premier seul laissera passer.** Le choix
-est un arbitrage à documenter dans le Dev Agent Record, pas à trancher en silence. **Ce qui n'est pas
-négociable, c'est que la garde rougisse sur les cinq sites AVANT qu'ils soient corrigés** (T2 avant
-T3-T7) : c'est la seule preuve qu'elle les voit.
+⚠️ **`dansLePerimetreDeFichier` accepte bien `src/routes/**`** (elle ne filtre que sur l'extension et
+`.test.`) — contrairement à `lint-i18n-ownership`, qui ne balaie que `src/lib/features/`. Le
+réutiliser est donc sûr. **Montage complet à copier** : `i18n-un-repli-par-cle.test.ts` (117 lignes).
+
+### Faux amis : les quatre entrées d'allowlist connues d'avance
+
+⚠️ **Le patron y est CORRECT** — ce sont des tables de replis passées en 2ᵉ argument d'`i18nMsg` :
+
+| entrée | fichier | consommée en |
+|---|---|---|
+| `LABEL_FALLBACK` | `lib/features/invoices/PaymentStatusBadge.svelte:18` | `:24`, 2ᵉ arg |
+| `FILTER_FALLBACK_FR` | `routes/(app)/invoices/due-dates/+page.svelte:42` | 2ᵉ arg |
+| `TYPE_FALLBACK` | `routes/(app)/accounts/+page.svelte` | `:37`, 2ᵉ arg |
+| `ROLE_FALLBACK` | `routes/(app)/accounts/+page.svelte:40` | `:63`, 2ᵉ arg |
+
+⚠️ **`readFallback` rend `null` sur ces quatre-là** (le 2ᵉ argument est `TABLE[clé]`, pas un
+littéral) : l'outillage ne sait pas les reconnaître seul. **Critère de discrimination à tenir** — *un
+`Record` de littéraux est légitime si et seulement si chacun de ses accès apparaît en 2ᵉ argument
+d'`i18nMsg` ou d'un relais.* Sans ce critère écrit, le dev exemptera au nom, et `navGroups` (site 5,
+même forme) deviendrait légitime par accident.
+
+Ajouter aussi la classe des littéraux **non français** (`'—'` de `account-label.ts:66`, `'N/A'`) aux
+**critères**, pas à l'allowlist.
+
+### Pièges du dépôt qui s'appliquent ici
+
+- ⚠️ **T8 change le texte de CHAQUE entrée de menu.** Inventorier les sélecteurs E2E qui s'appuient
+  sur ce texte **avant** d'appliquer T8, et les basculer sur `data-testid`. Ne **jamais** figer un
+  sélecteur sur un libellé traduit.
+- ⚠️ **Le site 7 est ciblé par `fiscal-years.spec.ts:270`** via `getByRole('dialog', { name: 'Valider
+  la facture' })`. Le toucher casse ce test.
+- ⚠️ **Le gate E2E exige `KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR`** — sans eux, des tests échouent
+  pour une raison qui ne ressemble pas à un problème de configuration. Cf. `docs/testing.md`.
+- ⚠️ **Le namespace doit correspondre au dossier** pour tout module de `src/lib/features/`.
+- ⚠️ **Ne déclarer que ce qui a tourné.**
+- Grep de contrôle pour AC7 :
+  `grep -rnE "toBe\('[A-ZÀ-Ü]|toContain\('[a-zà-ü]" frontend/src/lib/features/*/*helpers.test.ts`
 
 ### Ce qui a été balayé et trouvé PROPRE — ne pas re-balayer
 
 `reconciliation`, `reports`, `onboarding`, `contacts`, `accounts`, `vat-rates`, `api-keys`,
 `opening-balances`, `reminders`, `imported-supplier-invoices`, `journal-entries`, `bank-accounts`,
-`fiscal-years`, `products`, `due-dates`.
-
-⚠️ **Deux faux amis relevés au passage, à ne pas « corriger »** : `FILTER_FALLBACK_FR` et
-`LABEL_FALLBACK` (`invoices/due-dates`, `PaymentStatusBadge.svelte`) sont des tables de **replis
-passées en 2ᵉ argument d'`i18nMsg`** — le patron est **correct**. Une garde qui les signale a un faux
-positif ; c'est le cas d'école de l'allowlist justifiée d'AC4.
-
-### Pièges du dépôt qui s'appliquent ici
-
-- ⚠️ **`lint-i18n-ownership` ne balaie que `src/lib/features/`**, jamais `src/routes/**` — les sites 3,
-  4 et 5 y échappent par construction. Ne pas compter dessus.
-- ⚠️ **Le namespace doit correspondre au dossier** : un module posé dans `features/X/` ne peut employer
-  que des clés `X-*`. *(La 23-3 l'a appris en déplaçant un module : le lint a refusé, à raison.)*
-- ⚠️ **Le gate E2E exige `KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR`**, sans quoi des tests échouent pour
-  une raison qui ne ressemble pas à un problème de configuration — cf. `docs/testing.md`, corrigé au
-  gate de la 23-3.
-- ⚠️ **Ne déclarer que ce qui a tourné.** Le Dev Agent Record ne porte « gate vert » que pour un gate
-  réellement exécuté.
+`fiscal-years`, `products`, `due-dates`. *(Balayage par le nom : 32 déclarations `*Label|*Text|*Display`,
+aucune fautive hors des sites listés.)*
 
 ### References
 
-- Angle mort : [issue #255](https://github.com/guycorbaz/kesh/issues/255) — le décrit, ne le couvre pas
-- Précédent complet : `_bmad-output/implementation-artifacts/23-3-supplier-invoices.md`, § *Review
-  Findings — passe 4* (le défaut d'origine) et § *passe 5* (la chasse au patron)
-- Glossaire, contrainte de l'epic : `docs/i18n-glossaire.md` — partie A non négociable en rollout
-- Outillage à réutiliser : `frontend/src/lib/shared/i18n-literal-reader.js`, `i18n-harvest.js`
-- Montage de garde à copier : `frontend/src/lib/shared/i18n-un-repli-par-cle.test.ts`
+- Angle mort : [issue #255](https://github.com/guycorbaz/kesh/issues/255)
+- Précédent : `_bmad-output/implementation-artifacts/23-3-supplier-invoices.md`, § *Review Findings —
+  passe 4* (le défaut d'origine) et § *passe 5* (la chasse au patron)
+- Glossaire : `docs/i18n-glossaire.md` — partie A non négociable en rollout
+- Outillage : `frontend/src/lib/shared/i18n-literal-reader.js`, `i18n-harvest.js`
+- Montage à copier : `frontend/src/lib/shared/i18n-un-repli-par-cle.test.ts`
 - Correctif de référence : `frontend/src/lib/features/supplier-invoices/supplier-invoice-helpers.ts`
-  (story 23-3, passe 4) et son test, qui emprunte le chemin réel du dictionnaire
+  et son test, qui emprunte le chemin réel du dictionnaire
 
 ## Dev Agent Record
 
@@ -197,4 +275,5 @@ positif ; c'est le cas d'école de l'allowlist justifiée d'AC4.
 
 | date | passe | résultat |
 |---|---|---|
-| 2026-08-20 | création | spec initiale. ⚠️ **La story naît d'un défaut trouvé en production** (statut de facture en français dans les quatre langues, story 23-3 passe 4), dont la passe 5 a montré qu'il était **un patron copié quatre fois** et non un accident. Deux des cinq sites sont dans les **prochains domaines de la rollout** : les traduire en l'état figerait le défaut. **Trois termes ne sont attestés nulle part** et demandent un arbitrage. |
+| 2026-08-20 | **passe 1** de `validate` | **2 CRITICAL · 6 HIGH · 6 MEDIUM · 3 LOW** (Opus ×2). ⚠️ **La spec ne survit pas à sa première passe, et deux findings la refondent.** **CRITICAL-1** : la branche avait été coupée de `main` **avant** le merge de la 23-3 — quatre références pointaient dans le vide et le défaut fondateur était encore dans l'arbre. Corrigé : #325 mergée, branche rebasée sur `046efa51`. **CRITICAL-2, mesuré** : « la garde rougit sur les cinq sites » était **irréalisable** — trois formes du défaut (valeur sans appel, tableau de données, nœud de markup) sont **hors de portée par construction**. La garde est donc **réduite à ce qu'elle peut prouver** et les trois sites restants passent en correctifs manuels **avec motif écrit**. L'élargissement « par le contenu » a été **chiffré** : 175 sites à trier pour rater quand même `Brouillon` et 7 des 9 libellés de nav — proscrit. **HIGH le plus embarrassant** : le tableau cochait ✅ « en-tête traduit » pour deux sites dont **les clés n'existent dans aucune locale** — elles sont à l'allowlist. Le défaut y est **latent**, pas actif ; ma propre prose le disait deux paragraphes plus haut. Autres faits corrigés : `masquerCommentaires` ne masque **pas** les `<!-- -->`, `corpsDeFonction` **n'est pas exportée**, un **3ᵉ** verrou de test (`toContain`), **quatre** tables de replis et non deux, doc-comment copié **trois** fois et non quatre, `NavItem` **déjà correct** (c'est le type de groupe qui manque). Sites 5 → **7**. |
+| 2026-08-20 | création | spec initiale, à partir de la passe 5 de revue de la 23-3. |
