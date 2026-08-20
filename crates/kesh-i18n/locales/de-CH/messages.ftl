@@ -1413,3 +1413,67 @@ settings-company-contact-conflict-reload-failed = Versionskonflikt und Neuladen 
 error-company-phone-too-long = Die Telefonnummer der Firma ist zu lang (höchstens 50 Zeichen).
 error-company-website-too-long = Die Website-Adresse der Firma ist zu lang (höchstens 255 Zeichen).
 error-invoice-pdf-header-overflow = Der Dokumentkopf passt nicht auf die Seite. Entfernen Sie eine Kontaktangabe — Telefon, E-Mail oder Website — in den Einstellungen: Kürzen schafft keinen Platz, jede Angabe belegt eine ganze Zeile. Oder verringern Sie die Zeilenzahl der Empfängeradresse.
+
+# Story 23-2 (#283) — parité de-CH : les 57 clés qui n'existaient qu'en fr-CH.
+# Termes RELEVÉS au catalogue, non inventés : Buchungssatz (error-journal-entry-linked-to-invoice),
+# Geschäftsjahr (error-no-fiscal-year), Validiert (invoice-status-validated), Aktiv/Inaktiv
+# (account-type-asset / account-role-archived-hint), Ertrag (account-type-revenue),
+# Beschreibung vs Bezeichnung (journal-entries-col-description / reconciliation-rules-labels-label).
+# ⚠️ « Date de bascule » n'est PAS l'interrupteur du glossaire : c'est le changement de taux.
+error-configuration-required = Unvollständige Konfiguration: Richten Sie die Rechnungseinstellungen ein, bevor Sie validieren.
+error-fiscal-year-invalid = Kein offenes Geschäftsjahr deckt dieses Datum ab.
+invoice-error-already-validated = Diese Rechnung ist bereits validiert.
+invoice-error-configuration-required = Richten Sie die Standardkonten unter Einstellungen > Fakturierung ein, bevor Sie eine Rechnung validieren.
+invoice-error-configuration-required-non-admin = Bitten Sie Ihren Administrator, die Standardkonten für die Fakturierung einzurichten.
+invoice-error-fiscal-year-invalid = Kein offenes Geschäftsjahr deckt das Rechnungsdatum ab.
+invoice-journal-entry-description = Rechnung { $invoiceNumber } - { $contactName }
+invoice-number-label = Nummer
+invoice-status-validated-label = Validiert
+invoice-validate-button = Validieren
+invoice-validate-confirm-body = Nach der Validierung ist diese Rechnung unveränderlich, erhält eine endgültige Nummer und erzeugt einen Buchungssatz. Fortfahren?
+invoice-validate-confirm-title = Rechnung validieren
+invoice-validate-success = Rechnung validiert — { $invoiceNumber }
+invoice-validate-success-body = Die Rechnung { $invoiceNumber } ist nun validiert und unveränderlich. Der zugehörige Buchungssatz wurde erzeugt.
+invoice-view-journal-entry-link = Buchungssatz anzeigen
+settings-invoicing-description-template = Beschreibung des Buchungssatzes
+settings-invoicing-format-help = Platzhalter: {"{"}YEAR{"}"}, {"{"}FY{"}"}, {"{"}SEQ{"}"}, {"{"}SEQ:NN{"}"}
+settings-invoicing-format-invalid = Ungültiges Format
+settings-invoicing-format-label = Nummerierungsformat
+settings-invoicing-format-preview = Vorschau
+settings-invoicing-format-too-long = Das Format ist zu lang
+settings-invoicing-journal = Journal
+settings-invoicing-receivable-account = Konto Forderungen aus Lieferungen und Leistungen (Aktiv)
+settings-invoicing-revenue-account = Ertragskonto (Ertrag)
+settings-invoicing-save = Speichern
+settings-invoicing-save-success = Konfiguration gespeichert
+settings-invoicing-title = Einstellungen — Fakturierung
+settings-vat-rates-link = Richten Sie die MWST-Sätze und ihre Gültigkeitsdaten ein (Satzänderungen werden im Zeitverlauf verwaltet).
+vat-rates-active = Aktiv
+vat-rates-change = Satz ändern
+vat-rates-change-error = Die Satzänderung ist fehlgeschlagen.
+vat-rates-change-hint = Der alte Satz wird zum Umstellungsdatum beendet, und der neue Satz tritt zu diesem Datum in Kraft.
+vat-rates-changed = Satz aktualisiert.
+vat-rates-col-actions = Aktionen
+vat-rates-col-from = Gültig ab
+vat-rates-col-rate = Satz
+vat-rates-col-status = Status
+vat-rates-col-to = Bis
+vat-rates-create-error = Die Erstellung ist fehlgeschlagen.
+vat-rates-created = MWST-Satz erstellt.
+vat-rates-deactivate = Deaktivieren
+vat-rates-deactivate-confirm = Diesen Satz deaktivieren? Er wird bei der Erfassung nicht mehr angeboten, bleibt aber im Verlauf erhalten.
+vat-rates-deactivate-error = Die Deaktivierung ist fehlgeschlagen.
+vat-rates-deactivated = Satz deaktiviert.
+vat-rates-empty = Kein Satz konfiguriert.
+vat-rates-field-category = Kategorie
+vat-rates-field-from = Gültig ab
+vat-rates-field-label = Bezeichnung (optional)
+vat-rates-field-new-rate = Neuer Satz (%)
+vat-rates-field-rate = Satz (%)
+vat-rates-field-switch-date = Umstellungsdatum
+vat-rates-field-to = Bis (optional)
+vat-rates-inactive = Inaktiv
+vat-rates-load-error = Die MWST-Sätze konnten nicht geladen werden.
+vat-rates-new = Neuer Satz
+vat-rates-subtitle = Richten Sie die MWST-Sätze und ihre Gültigkeitsdaten ein. Alte Sätze gelten weiterhin für frühere Vorgänge.
+vat-rates-title = MWST-Sätze
