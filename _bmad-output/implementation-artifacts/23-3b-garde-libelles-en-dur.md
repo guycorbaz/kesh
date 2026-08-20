@@ -1,4 +1,4 @@
-# Story 23.3b : la garde contre les libellés en dur, et les six sites qu'elle révèle
+# Story 23.3b : la garde contre les libellés en dur, et les huit sites qu'elle révèle
 
 Status: ready-for-dev
 
@@ -55,12 +55,12 @@ sans passer par `i18nMsg`*. Elle le détecte **par le nom** de la fonction (`*La
 
 | forme du défaut | la garde la voit ? | pourquoi |
 |---|---|---|
-| fonction `*Label` → `return '<littéral>'` | ✅ **oui** — c'est son objet | sites **1, 2, 4, 6** |
+| fonction `*Label` → `return '<littéral>'` | ✅ **oui** — c'est son objet | sites **1, 2, 3, 5, 7** — **cinq** |
 | valeur affichée sans aucun appel (`{data.company.orgType}`) | ❌ **non** | il n'y a **ni fonction ni littéral** — le défaut est l'*absence* d'appel |
 | littéraux dans un **tableau de données** (`navGroups`) | ❌ **non** | pas un corps de fonction ; et **indiscernable** d'une table de replis légitime sans analyse de flot |
 | **nœud de texte** de markup (`<Dialog.Title>Valider la facture</Dialog.Title>`) | ❌ **non** | ni fonction, ni littéral JS |
 
-⚠️ **Les sites 3, 5 et 7 sont donc corrigés À LA MAIN, hors portée de la garde, et le motif est
+⚠️ **Les sites 4, 6 et 8 sont donc corrigés À LA MAIN, hors portée de la garde, et le motif est
 écrit ci-dessus.** Ne pas élargir la garde pour les attraper : la mesure ci-dessous dit ce que ça
 coûterait.
 
@@ -81,7 +81,7 @@ bloquant.**
    s'éteint au moment où la traduction est livrée, c'est-à-dire quand le risque devient réel.
    ⚠️ **Une garde codée en dur sur une liste de chemins ne satisfait PAS cet AC** : elle
    n'empêcherait aucune récidive, qui est l'objet même de la story.
-2. **AC2 — la garde rougit sur les QUATRE sites de son patron AVANT tout correctif**, et la sortie du
+2. **AC2 — la garde rougit sur les CINQ sites de son patron AVANT tout correctif**, et la sortie du
    run est collée dans le Dev Agent Record. ⚠️ **C'est la seule preuve qu'elle les voit** ; sans
    elle, une garde vide passe tous les autres AC.
 3. **AC2-bis — elle rougit encore sous mutation APRÈS les correctifs** : remettre en dur l'un des
@@ -95,7 +95,7 @@ bloquant.**
 5. **AC4 — allowlist justifiée, motif par entrée.** Les quatre entrées connues d'avance sont données
    au § *Faux amis* ci-dessous. ⚠️ **Aucune entrée ne peut être ajoutée au seul motif qu'un site
    n'était pas prévu** — cf. AC5-bis.
-6. **AC5 — les sept sites du tableau sont corrigés**, chacun avec ses clés dans les quatre locales.
+6. **AC5 — les huit sites du tableau sont corrigés**, chacun avec ses clés dans les quatre locales.
 7. **AC5-bis — tout site relevé par la garde et absent du tableau est soit corrigé ici, soit
    consigné dans le Dev Agent Record avec sa raison ET une issue GitHub** — jamais inscrit à
    l'allowlist. ⚠️ Le tableau est un **plancher**, pas un inventaire clos : la garde balaie tout
@@ -122,12 +122,12 @@ bloquant.**
       aujourd'hui que `//` et `/* */`, ce qui laisse **21** blocs de prose française passer pour des
       littéraux dans les `.svelte`. AC1. ⚠️ Vérifier que l'extension ne déplace pas `sitesTotal`.
 - [ ] **T4 — La garde**, sa borne exacte, son allowlist — AC1, AC3, AC4. ⚠️ **Avant les correctifs**,
-      et sa sortie rouge sur les quatre sites du patron est collée au Record — AC2.
+      et sa sortie rouge sur les cinq sites du patron est collée au Record — AC2.
 - [ ] **T5 — `payment-batches`** : `paymentBatchStatusLabel` (3 cas) et `failedItemLabel` (6 codes) — AC5, AC7.
 - [ ] **T6 — `credit-notes`** : `creditNoteStatusLabel` (3 cas) — AC5, AC7.
-- [ ] **T7 — `invoices`** : `statusLabel` de la liste (site 6, **ferme #255**) et de la fiche (site 4) — AC5.
-- [ ] **T8 — Correctifs hors portée de la garde** : `settings` (site 3), la barre de navigation
-      (site 5), le titre de dialogue (site 7) — AC5.
+- [ ] **T7 — `invoices`** : `statusLabel` de la liste (site 7, **ferme #255**) et de la fiche (site 5) — AC5.
+- [ ] **T8 — Correctifs hors portée de la garde** : `settings` (site 4), la barre de navigation
+      (site 6), le titre de dialogue (site 8) — AC5.
 - [ ] **T9 — Glossaire** : promotion des termes tranchés — AC6.
 - [ ] **T10 — Recompter et déclarer `sitesTotal`** — AC8.
 - [ ] **T11 — Retirer les clés `nav-*` du périmètre de la 23-4** *(l'epic en prévoyait 4 ; cette
@@ -136,7 +136,7 @@ bloquant.**
 
 ## Dev Notes
 
-### Les sept sites — vérifiés jusqu'au site de RENDU
+### Les huit sites — vérifiés jusqu'au site de RENDU
 
 ⚠️ **Chaque site a été vérifié jusqu'à l'écran** : une fonction jamais appelée ne serait pas un
 défaut. Les appelants sont donnés — ne pas les redécouvrir.
@@ -145,20 +145,21 @@ défaut. Les appelants sont donnés — ne pas les redécouvrir.
 |---|---|---|---|---|
 | 1 | `payment-batch-helpers.ts:20-31` `paymentBatchStatusLabel` | `payment-batches/+page.svelte:234`, `[id]:84` | ⏳ **non** — `payment-batches-col-status` **à l'allowlist** ; la 23-4 l'activera | ⚠️ `payment-batch-helpers.test.ts:20-22` (`toBe`) |
 | 2 | `payment-batch-helpers.ts:34-51` `failedItemLabel` | `payment-batches/+page.svelte:200` | idem | ⚠️ **`payment-batch-helpers.test.ts:28-29` (`toContain`)** — plus insidieux qu'un `toBe` : il survit à une traduction partielle |
-| 3 | `settings/+page.svelte:184-185` *(motif : `data.company.orgType`)* | la même ligne | ✅ `settings-field-org-type` **existe et est traduit** | non |
-| 4 | `invoices/[id]/+page.svelte:602-605` `statusLabel` | `:755` | — | non |
-| 5 | `+layout.svelte:57-150` *(motif : `label: '`)* — **3 groupes + 6 entrées = 9 libellés** | `:340` `<span>{group.label}</span>` | — *(chrome permanente)* | non — ⚠️ **mais voir le piège E2E** |
-| 6 | `invoices/+page.svelte:251` `statusLabel` | `:399` | — | non |
-| 7 | `invoices/[id]/+page.svelte:949` *(motif : `<Dialog.Title>Valider la facture`)* | le dialogue de validation | — | ⚠️ `fiscal-years.spec.ts:270` cible ce dialogue **par son nom** |
+| 3 | `credit-note-helpers.ts:23-34` `creditNoteStatusLabel` | `credit-notes/+page.svelte:65`, `[id]:178` | ⏳ **non** — `credit-notes-col-status` **à l'allowlist** ; la 23-5 l'activera | ⚠️ `credit-note-helpers.test.ts:22-24` (`toBe`) |
+| 4 | `settings/+page.svelte:184-185` *(motif : `data.company.orgType`)* | la même ligne | ✅ `settings-field-org-type` **existe et est traduit** | non |
+| 5 | `invoices/[id]/+page.svelte:602-605` `statusLabel` | `:755` | — | non |
+| 6 | `+layout.svelte:57-150` *(motif : `label: '`)* — **3 groupes + 6 entrées = 9 libellés** | `:340` `<span>{group.label}</span>` | — *(chrome permanente)* | non — ⚠️ **mais voir le piège E2E** |
+| 7 | `invoices/+page.svelte:251` `statusLabel` | `:399` | — | non |
+| 8 | `invoices/[id]/+page.svelte:949` *(motif : `<Dialog.Title>Valider la facture`)* | le dialogue de validation | — | ⚠️ `fiscal-years.spec.ts:270` cible ce dialogue **par son nom** |
 
-**Le site 3 est le plus embarrassant à l'usage, et le seul défaut ACTIF aujourd'hui** : l'utilisateur
+**Le site 4 est le plus embarrassant à l'usage, et le seul défaut ACTIF aujourd'hui** : l'utilisateur
 choisit son type d'organisation en langue localisée pendant l'onboarding (« Indépendant », « PME »),
 puis retrouve dans les réglages le **code brut du backend** — `Independant`, `Association`, `Pme` —
 dans **toutes** les langues, français compris. ⚠️ Les clés `onboarding-org-*` existent déjà et sont
 câblées côté onboarding : **les réutiliser, ne pas en créer**. C'est légitime — vocabulaire
 transverse, et `routes/**` est hors du périmètre du lint d'appartenance.
 
-**Le site 5 est le plus visible** : la barre de navigation est sur **chaque page**. ⚠️ Paradoxe à
+**Le site 6 est le plus visible** : la barre de navigation est sur **chaque page**. ⚠️ Paradoxe à
 signaler dans la PR : `/reconciliation` et `/reports` **sont déjà entièrement traduites**, mais
 l'entrée de menu qui y mène reste en français.
 ⚠️ **Correction de fait** : c'est le **type de groupe**, déclaré *inline* dans le `Array<{…}>` de
@@ -167,10 +168,10 @@ variante `{ i18nKey, fallback, href }`, employée par 20 entrées et consommée 
 Les 6 entrées en dur n'ont donc **qu'à changer de variante** ; seul le type de groupe doit gagner une
 paire `i18nKey`/`fallback` et un `getGroupLabel` symétrique.
 
-**Le site 6 ferme l'issue #255** — trois lignes, et les clés `invoice-status-{draft,validated,cancelled}`
+**Le site 7 ferme l'issue #255** — trois lignes, et les clés `invoice-status-{draft,validated,cancelled}`
 **existent déjà, traduites dans les quatre locales**. Coût quasi nul. ⚠️ **Il est dans le périmètre
 précisément parce que la garde rougira dessus** : l'exempter reviendrait à inscrire un défaut avéré
-dans une liste réservée aux cas légitimes. Le site 7, lui, déborde #255 (qui ne vise que la liste) —
+dans une liste réservée aux cas légitimes. Le site 8, lui, déborde #255 (qui ne vise que la liste) —
 le **dire dans la PR**, ne pas modifier l'issue.
 
 ### Les termes : ce qui est attesté, et ce qui demande ton arbitrage
@@ -203,7 +204,7 @@ l'objet de T2 et T3 :
   ligne ; la réécrire coûte 40 lignes et trois régressions déjà payées.**
 - **`masquerCommentaires` ne masque PAS les `<!-- -->`** — vérifié, elle ne traite que `//` et
   `/* */`. Sans T3, la garde récolte **21 faux positifs de prose** dans les `.svelte`, c'est-à-dire
-  là où vivent les sites 3, 5 et 7.
+  là où vivent les sites 4, 6 et 8.
 
 ⚠️ **`dansLePerimetreDeFichier` accepte bien `src/routes/**`** (elle ne filtre que sur l'extension et
 `.test.`) — contrairement à `lint-i18n-ownership`, qui ne balaie que `src/lib/features/`. Le
@@ -223,7 +224,7 @@ réutiliser est donc sûr. **Montage complet à copier** : `i18n-un-repli-par-cl
 ⚠️ **`readFallback` rend `null` sur ces quatre-là** (le 2ᵉ argument est `TABLE[clé]`, pas un
 littéral) : l'outillage ne sait pas les reconnaître seul. **Critère de discrimination à tenir** — *un
 `Record` de littéraux est légitime si et seulement si chacun de ses accès apparaît en 2ᵉ argument
-d'`i18nMsg` ou d'un relais.* Sans ce critère écrit, le dev exemptera au nom, et `navGroups` (site 5,
+d'`i18nMsg` ou d'un relais.* Sans ce critère écrit, le dev exemptera au nom, et `navGroups` (site 6,
 même forme) deviendrait légitime par accident.
 
 Ajouter aussi la classe des littéraux **non français** (`'—'` de `account-label.ts:66`, `'N/A'`) aux
@@ -234,7 +235,7 @@ Ajouter aussi la classe des littéraux **non français** (`'—'` de `account-la
 - ⚠️ **T8 change le texte de CHAQUE entrée de menu.** Inventorier les sélecteurs E2E qui s'appuient
   sur ce texte **avant** d'appliquer T8, et les basculer sur `data-testid`. Ne **jamais** figer un
   sélecteur sur un libellé traduit.
-- ⚠️ **Le site 7 est ciblé par `fiscal-years.spec.ts:270`** via `getByRole('dialog', { name: 'Valider
+- ⚠️ **Le site 8 est ciblé par `fiscal-years.spec.ts:270`** via `getByRole('dialog', { name: 'Valider
   la facture' })`. Le toucher casse ce test.
 - ⚠️ **Le gate E2E exige `KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR`** — sans eux, des tests échouent
   pour une raison qui ne ressemble pas à un problème de configuration. Cf. `docs/testing.md`.
