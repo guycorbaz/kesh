@@ -147,7 +147,12 @@ bloquant.**
 - [ ] **T6 — `credit-notes`** : `creditNoteStatusLabel` (3 cas) — AC5, AC7.
 - [ ] **T7 — `invoices`** : `statusLabel` de la liste (site 7, **ferme #255**) et de la fiche (site 5) — AC5.
 - [ ] **T8 — Correctifs hors portée de la garde** : `settings` (site 4), la barre de navigation
-      (site 6), le titre de dialogue (site 8) — AC5.
+      (site 6), le titre de dialogue (site 8) — **AC5 ET AC7**. ⚠️ **T8 est la SEULE tâche à toucher
+      des libellés que des tests E2E ciblent par leur texte** — le site 6 (entrées de menu) et le
+      site 8 (`fiscal-years.spec.ts:270`, `getByRole('dialog', { name: 'Valider la facture' })`).
+      **Basculer ces sélecteurs sur `data-testid` AVANT de changer les libellés**, jamais après :
+      dans l'autre ordre on découvre un rouge et la réparation la moins coûteuse est d'y réécrire la
+      chaîne traduite — ce qui remet le verrou en place sous couvert de correctif.
 - [ ] **T9 — Glossaire** : promotion des termes tranchés — AC6.
 - [ ] **T10 — Recompter et déclarer `sitesTotal`** — AC8.
 - [ ] **T10-bis — Éprouver la garde par MUTATION**, après T5-T8 — AC2-bis. ⚠️ **Muter un des CINQ
@@ -237,7 +242,10 @@ réutiliser est donc sûr. **Montage complet à copier** : `i18n-un-repli-par-cl
 
 ### Faux amis : les quatre entrées d'allowlist connues d'avance
 
-⚠️ **Le patron y est CORRECT** — ce sont des tables de replis passées en 2ᵉ argument d'`i18nMsg` :
+⚠️ **Le patron y est CORRECT** — ce sont des tables de replis passées en 2ᵉ argument d'`i18nMsg`.
+⚠️ **Ne pas confondre avec les trois classes de littéraux ci-dessous** : ici ce sont des **structures
+nommées**, qui vont à l'allowlist entrée par entrée ; là ce sont des **formes de littéral**, qui
+doivent être des **critères** — une forme ne s'énumère pas, sinon la liste enfle sans fin.
 
 | entrée | fichier | consommée en |
 |---|---|---|
@@ -315,6 +323,7 @@ plein `src/` au moment de T4**, jamais repris d'ici. Quatre fichiers candidats h
 
 | date | passe | résultat |
 |---|---|---|
+| 2026-08-20 | **passe 3** de `validate` | **1 CRITICAL · 0 HIGH · 1 MEDIUM · 2 LOW** (Haiku ×2, tâches délibérément mécaniques). ⚠️ **La lentille des FAITS rend ZÉRO finding** — 42 vérifications au `grep -nF`, tous les faits de la spec confirmés : après deux passes, le document ne ment plus sur le code. Et la lentille de COHÉRENCE rend **14 renvois « site N » sur 14 corrects** et **tous les décomptes cohérents** — la renumérotation tient. **Le CRITICAL est une couverture cassée, pas un fait faux** : `T8` touche le titre de dialogue, seul site dont un test E2E cible le libellé **par son texte**, et ne portait que `AC5` — jamais `AC7`. Un développeur aurait changé le libellé, vu `fiscal-years.spec.ts:270` rougir, et « réparé » en y réécrivant la chaîne : **le verrou remis en place sous couvert de correctif**. `T8` porte désormais les deux AC et impose de basculer le sélecteur sur `data-testid` **avant** de toucher au libellé. ⚠️ **Trois findings reclassés en LOW par la lentille elle-même**, qui conclut à chaque fois que le livrable final est cohérent — de l'archéologie de Change Log, pas des défauts. |
 | 2026-08-20 | **passe 2** de `validate` | **2 CRITICAL · 4 HIGH · 3 MEDIUM · 6 LOW** (Sonnet ×2). ⚠️ **Les deux CRITICAL visent la RÉÉCRITURE de la passe 1** — dixième fois sur ce dossier qu'une passe trouve un défaut du correctif précédent. `AC9` renvoyait au **site 6** (la barre de navigation !) pour ce qui déborde #255, là où les Dev Notes disent **site 8** : l'erreur était **antérieure** à la renumérotation, qui ne l'a pas rattrapée parce que je n'ai corrigé que les renvois que je savais avoir décalés. Et le Change Log annonçait encore « Sites 5 → 7 » après la réinsertion de `credit-notes` — le tableau corrigé, son compte rendu non. ⚠️ **Le finding MESURÉ est le plus utile** : le balayage du patron réduit, **réellement exécuté**, rend **HUIT** hits et non cinq — cinq violations plus **trois candidats à écarter par critère**, dont un cas que rien ne prévoyait (`roleLabel` → **chaîne vide**). AC2 aurait échoué à la lettre. **Trois classes de littéraux légitimes** sont désormais des CRITÈRES et non des entrées d'allowlist, sans quoi la liste enfle et perd son sens. Autres corrections : une 5ᵉ forme hors de portée (`const xLabel = $derived.by`), la portée du « 32 » qui était plein-arbre et non par domaine, `corpsDeFonction` qui **ne suffit pas seule** (localiser la déclaration reste à écrire, avec le piège du type inline), `AC7` qui ignorait un **quatrième** verrou — un sélecteur E2E que ma propre section « Pièges » documentait deux paragraphes plus bas. **Un MEDIUM réfuté** : les deux usages de « 23-4 » désignent bien la même story, l'epic la définissant comme `settings` + `payment-batches` + `onboarding` + 4 `nav-*`. |
 | 2026-08-20 | **passe 1** de `validate` | **2 CRITICAL · 6 HIGH · 6 MEDIUM · 3 LOW** (Opus ×2). ⚠️ **La spec ne survit pas à sa première passe, et deux findings la refondent.** **CRITICAL-1** : la branche avait été coupée de `main` **avant** le merge de la 23-3 — quatre références pointaient dans le vide et le défaut fondateur était encore dans l'arbre. Corrigé : #325 mergée, branche rebasée sur `046efa51`. **CRITICAL-2, mesuré** : « la garde rougit sur les cinq sites » était **irréalisable** — trois formes du défaut (valeur sans appel, tableau de données, nœud de markup) sont **hors de portée par construction**. La garde est donc **réduite à ce qu'elle peut prouver** et les trois sites restants passent en correctifs manuels **avec motif écrit**. L'élargissement « par le contenu » a été **chiffré** : 175 sites à trier pour rater quand même `Brouillon` et 7 des 9 libellés de nav — proscrit. **HIGH le plus embarrassant** : le tableau cochait ✅ « en-tête traduit » pour deux sites dont **les clés n'existent dans aucune locale** — elles sont à l'allowlist. Le défaut y est **latent**, pas actif ; ma propre prose le disait deux paragraphes plus haut. Autres faits corrigés : `masquerCommentaires` ne masque **pas** les `<!-- -->`, `corpsDeFonction` **n'est pas exportée**, un **3ᵉ** verrou de test (`toContain`), **quatre** tables de replis et non deux, doc-comment copié **trois** fois et non quatre, `NavItem` **déjà correct** (c'est le type de groupe qui manque). Sites 5 → **8** *(le tableau réécrit avait d'abord PERDU `credit-notes`, l'un des deux CRITICAL d'origine — réinséré avant la passe 2)*. |
 | 2026-08-20 | création | spec initiale, à partir de la passe 5 de revue de la 23-3. |
