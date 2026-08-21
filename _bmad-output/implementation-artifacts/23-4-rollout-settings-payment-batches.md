@@ -124,6 +124,27 @@ ci-dessus ne la font pas rougir, et c'est le moissonneur qui les a trouvées.
 reproduira le défaut, et la garde restera un dispositif à domaine unique alors qu'elle prétend
 protéger l'epic.
 
+## ⚠️ Dérogation à la règle de splitting préventif — arbitrage de Guy, 2026-08-21
+
+La § *Règle de splitting préventif* de `CLAUDE.md` traite une **remontée de sévérité** entre deux
+passes comme un signal de non-convergence. Le trend de `validate` est
+`1C/2H/3M` → `0C/1H/2M` → **`1C/7H/7M`** : le critère est atteint.
+
+**Arbitrage rendu : pas de split.** Motif, et il est vérifiable : **les quinze findings de la
+passe 3 sont des OMISSIONS PAR RAPPORT À UN PATRON EXISTANT**, pas des défauts nés de la complexité
+de cette story. Leur correctif consiste à recopier des critères déjà rédigés dans la 23-3 et la
+23-3b — assertion anti-fusion, AC de relecture, AC5-bis, contrôle d'homonymie à deux portées, borne
+`sitesTotal`. Une story trop large produit des findings **nouveaux et enchevêtrés** ; celle-ci a
+produit des findings **connus et isolables**.
+
+⚠️ **Le CRITICAL lui-même ne plaide pas pour le split** : il vient d'un angle mort d'outillage
+— le moissonneur aveugle aux domaines déjà traduits — qui aurait frappé la story quelle que soit
+sa taille, et qui frappera les rollouts suivants si la leçon n'est pas écrite. Elle l'est
+désormais, au § *Ce que le relevé a trouvé*.
+
+**Risque accepté** : si une passe de `bmad-code-review` remonte à son tour une sévérité égale ou
+supérieure sur cette story, cette dérogation devra être rouverte.
+
 ## Critères d'acceptation
 
 1. **AC1 — le périmètre est écrit dans les QUATRE catalogues, et DEUX grandeurs distinctes le
