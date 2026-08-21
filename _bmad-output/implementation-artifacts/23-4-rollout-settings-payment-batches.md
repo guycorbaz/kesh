@@ -31,7 +31,9 @@ références dans le vide.
 
 **Le moissonneur a été exécuté sur la base réelle** (`i18n-harvest.js`, même outil que les rollouts
 précédents). Il confirme le périmètre — et il **signale trois conflits**, dont deux dans ce
-périmètre.
+périmètre. ⚠️ **Il en manquait un troisième, que seule la passe 3 a trouvé** : `onboarding-next`,
+invisible du moissonneur parce que **déjà traduit**. Le compte du périmètre est donc de **TROIS**
+divergences, pas deux.
 
 ### ⚠️ `payment-batches-col-total` porte DEUX GRANDEURS — jumeau exact du défaut de la 23-3
 
@@ -63,7 +65,32 @@ puis `field-project` opposaient un libellé de **formulaire** à un libellé de 
 **scindés, pas aplatis**. Même traitement — une colonne étroite ne porte pas la même chaîne qu'une
 étiquette de fiche.
 
-### ⚠️ Le troisième conflit est HORS PÉRIMÈTRE, et il faut le laisser
+### ⚠️⚠️ `onboarding-next` — le TROISIÈME conflit du périmètre, et il est DÉJÀ CONSOMMÉ
+
+| site | repli écrit | ce qui s'affiche |
+|---|---|---|
+| `onboarding/+page.svelte:359` | `'Continuer'` | **Continuer** |
+| `onboarding/+page.svelte:393` — bouton d'enregistrement du compte bancaire | `'Enregistrer'` | ⚠️ **Continuer** |
+
+⚠️ **Ce n'est pas un défaut latent : il est ACTIF aujourd'hui, dans les quatre langues.** La clé est
+déjà au catalogue (`Continuer` / `Weiter` / `Continua` / `Continue`), donc le repli `'Enregistrer'`
+est **mort** : le bouton qui doit enregistrer les coordonnées bancaires dit « Continuer ».
+
+⚠️ **Et voici pourquoi mon relevé ne l'a pas vu — c'est un angle mort de MÉTHODE, pas un oubli.**
+Le moissonneur **ne relève que les clés ABSENTES des catalogues**. La 23-3 l'a écrit noir sur blanc
+dans le docstring de la garde qu'elle a livrée : *« il ne voit QUE les clés absentes des catalogues.
+Une fois la traduction livrée, il cesserait de les voir et se tairait. »* Or **`onboarding` est
+partiellement traduit depuis la 23-1b** — ce que T6 dit en toutes lettres. J'ai fondé le périmètre
+sur un outil dont je citais moi-même la limite deux paragraphes plus loin.
+
+**Conséquence sur la méthode, et elle vaut pour les rollouts suivants** : sur un domaine
+**partiellement traduit**, le relevé de référence n'est pas le moissonneur mais **la garde
+« une clé, un repli »**, qui lit les sources sans filtrer sur le catalogue.
+
+**Scission** : `onboarding-next` (« Continuer ») reste ; le site `:393` prend **`onboarding-save`**
+(« Enregistrer »). ⚠️ **Cette clé est neuve et s'ajoute au décompte** — cf. AC1.
+
+### ⚠️ Le quatrième conflit est HORS PÉRIMÈTRE, et il faut le laisser
 
 `credit-notes-title` → « Avoirs » / « Avoir » (pluriel de liste contre singulier de fiche). Domaine
 de la **23-5**. Le relever ici, ne pas le traiter — et surtout **ne pas entrer la clé au catalogue
@@ -105,8 +132,12 @@ protéger l'epic.
 
    | grandeur | valeur | pourquoi elle diffère |
    |---|---|---|
-   | **clés écrites au catalogue** | **95** | les deux clés scindées par AC2 en produisent **quatre** |
-   | **décrément de l'allowlist** | **93** → **166 − 93 = 73** | les deux clés NEUVES n'y ont jamais figuré |
+   | **clés écrites au catalogue** | **96** | les **trois** clés scindées par AC2 en produisent six |
+   | **décrément de l'allowlist** | **93** → **166 − 93 = 73** | les trois clés NEUVES n'y ont jamais figuré |
+
+   ⚠️ **96 et non 95** : la passe 3 a trouvé une **troisième** divergence (`onboarding-next`), dont
+   la scission ajoute une clé. ⚠️ **`onboarding-save` n'entre PAS dans le décrément d'allowlist** —
+   la clé mère y est, la fille non.
 
    Ventilation des 93 entrées d'allowlist, relevée au moissonneur : `payment-batches` **30**,
    `settings` **55** *(dont **28** pour le seul écran `settings/projects`, et 25 via le relais `msg`
@@ -117,13 +148,32 @@ protéger l'epic.
    avec l'autre : c'est ce qui pousserait à ne scinder qu'à moitié, et à réintroduire le défaut
    qu'AC2 existe pour fermer. *(Une lentille de la passe 1 proposait 71 pour l'allowlist : **c'est
    faux**, et l'erreur est instructive — elle décomptait des clés qui n'y ont jamais été inscrites.)*
-2. **AC2 — `payment-batches-col-total` est SCINDÉE** en une clé de lot et une clé de ligne, et
-   `payment-batches-col-date` en un libellé de colonne et un libellé de fiche. ⚠️ **Aucune valeur
-   unique ne doit être imposée à des sites qui affichent des grandeurs ou des registres différents.**
-3. **AC3 — la garde « une clé, un repli » couvre `payment-batches-`**, et sa borne `CLES_RELEVEES`
-   est **recomptée**, jamais ajustée. ⚠️ **Elle doit rougir sur les deux divergences AVANT leur
-   correction** : la sortie brute du run rouge est collée au Dev Agent Record. Sans cette preuve,
-   une extension vide passe tous les autres AC.
+2. **AC2 — les TROIS clés à double sens sont SCINDÉES**, et **la fusion ne peut pas revenir.**
+   ⚠️ **Un test le couvre**, sur le modèle littéral de la 23-3 (*« les deux totaux restent DEUX
+   clés »*) : la garde générique « aucune clé ne porte deux replis » resterait **verte** si
+   quelqu'un refusionnait — une clé unique à repli unique ne diverge pas. La preuve du run rouge
+   d'AC3 est une preuve *d'aller*, jamais *de retour*. L'assertion porte les **six** sens attendus :
+
+   | clé | repli attendu |
+   |---|---|
+   | `payment-batches-col-total` | `Total` |
+   | `payment-batches-line-amount` | `Montant` |
+   | `payment-batches-col-date` | `Exécution` |
+   | `payment-batches-detail-date` | `Date d'exécution` |
+   | `onboarding-next` | `Continuer` |
+   | `onboarding-save` | `Enregistrer` |
+3. **AC3 — la garde « une clé, un repli » couvre `payment-batches-` ET `onboarding-`**, et sa borne
+   `CLES_RELEVEES` est **recomptée**, jamais ajustée. ⚠️ **Elle doit rougir sur les TROIS divergences
+   AVANT leur correction** : la sortie brute du run rouge est collée au Dev Agent Record. Sans cette
+   preuve, une extension vide passe tous les autres AC.
+   ⚠️ **`onboarding-` n'était pas prévu, et c'est le domaine qui portait le défaut ACTIF** : une
+   garde étendue au seul domaine où l'on savait déjà quoi chercher n'aurait rien appris.
+   ⚠️ **AC5-bis (repris de la 23-3b, mot pour mot)** : *tout site relevé par la garde et absent du
+   tableau est soit corrigé ici, soit consigné au Dev Agent Record avec sa raison ET une issue
+   GitHub — jamais inscrit à une allowlist.* **Le tableau est un plancher, pas un inventaire clos** :
+   la 23-3 annonçait deux conflits et son test en a fait rougir **quatre**. ⚠️ Le relevé de la
+   passe 3 en montre déjà d'autres hors périmètre — `dunning-edit`, `dunning-conflict`,
+   `error-unexpected`, `loading` : les tracer, ne pas les traiter ici.
 4. **AC4 — le verbe « générer » disparaît du domaine** au profit de « créer », sur les trois sites
    du tableau ci-dessus. Contrôle, **exécuté par T4 et sa sortie collée** :
    `grep -rn "[Gg]énér" frontend/src/routes/\(app\)/payment-batches/`.
@@ -132,24 +182,62 @@ protéger l'epic.
    attendait `/Généré/i` — il parle bien de la création d'un lot, **au passé**, et c'est une
    explication qu'une revue antérieure a payée. **Ne pas la réécrire pour faire disparaître le
    bruit.**
-5. **AC5 — le seul terme non attesté est tranché PAR GUY avant écriture** — `Référence message` —,
+5. **AC5-zéro — les replis `fr-CH` sont RELUS AVANT d'être figés, et la relecture est consignée.**
+   ⚠️ **Ils sont écrits par des développeurs dans le feu du code, pas rédigés** — et cette story en
+   fige 96 tout en changeant le français en quatre endroits (AC4, T1). La 23-3 avait cet AC ; il a
+   trouvé qu'un message annonçait une limitation « en v0.4 » sur un produit en 0.10.0, **et que la
+   story venait de le recopier dans trois langues neuves** : un défaut du français multiplié par
+   quatre, ce que l'epic existe pour empêcher. ⚠️ **La relecture vient AVANT l'écriture, pas après**
+   — sinon un français faux part dans quatre langues avant d'être vu.
+   ⚠️ **Greper le SYMPTÔME, pas une liste** : confronter les 96 valeurs aux parties A **et** B du
+   glossaire. La 23-3 avait promu six termes sur huit parce qu'elle relisait sa propre liste au lieu
+   de balayer ce que le catalogue employait.
+6. **AC5 — le seul terme non attesté est tranché PAR GUY avant écriture** — `Référence message` —,
    et les termes **relevés mais non promus** montent en partie A avec leur clé attestante.
    ⚠️ **`lot` en fait partie** : la 23-3b l'a employé et figé (`Bereits in einem erstellten Stapel`)
    **sans le promouvoir** — le défaut que le glossaire documente sur lui-même, ouvert depuis une
    story. ⚠️ **Promouvoir n'est pas arbitrer** : `lot` et `NPA` sont relevés, ils ne demandent
    aucune décision.
-6. **AC6 — la garde des libellés en dur reste verte** (`i18n-libelle-en-dur.test.ts`), et sa borne
-   `CANDIDATES_ATTENDUES` est recomptée si le rollout crée ou supprime une fonction de libellé.
-7. **AC7 — aucun test ne verrouille le français.** Les **deux** greps de contrôle de la 23-3b, plus
+7. **AC6 — les DEUX bornes des gardes sont recomptées et DÉCLARÉES**, jamais ajustées en silence :
+   `CANDIDATES_ATTENDUES` de `i18n-libelle-en-dur.test.ts` *(si le rollout crée ou supprime une
+   fonction de libellé)*, et **`sitesTotal` de `i18n-keys.test.ts`, base actuelle 1525**.
+   ⚠️ **`sitesTotal` VA rougir**, et c'est voulu : router les libellés en dur d'AC6-bis crée autant
+   de sites d'appel. Précédent exact en 23-3 — `1497 → 1502`, « deux *Chargement…*, un *Qté*, un
+   *TVA* ». La borne exacte existe pour qu'un écart se **recompte**, pas s'ajuste.
+8. **AC6-bis — les libellés français EN DUR des écrans du périmètre sont routés vers une clé.**
+   ⚠️ **Aucune garde ne les voit** : le préambule de `i18n-libelle-en-dur.test.ts` le dit lui-même —
+   *« nœud de texte de balisage → ❌ non »*. AC6 exige que cette garde reste verte : **elle le
+   restera sans rien prouver.** Relevé de la passe 3, cinq sites, **et la clé existe déjà dans les
+   quatre locales pour quatre d'entre eux** :
+
+   | site | littéral | clé disponible |
+   |---|---|---|
+   | `payment-batches/+page.svelte:208` | `Chargement…` | `common-loading` |
+   | `payment-batches/[id]/+page.svelte:78` | `Chargement…` | `common-loading` |
+   | `onboarding/+page.svelte:218` | `Chargement...` *(points ASCII)* | `common-loading` |
+   | `onboarding/+page.svelte:384` | ` (optionnel)` | à router |
+   | `settings/+page.svelte:200` | `<title>Paramètres - Kesh</title>` | `settings-title`, **et la ligne 204 l'utilise déjà** |
+
+   ⚠️ **Le dernier est le jumeau exact du `Qté` de la 23-3** : deux sites, un traduit, l'autre en
+   dur, la clé disponible. Un germanophone lit aujourd'hui « Paramètres - Kesh » dans son onglet
+   au-dessus d'un `<h1>` qui dit « Einstellungen ».
+9. **AC7 — aucun test ne verrouille le français.** Les **deux** greps de contrôle de la 23-3b, plus
    celui qu'elle a dû inventer en cours de route :
    `grep -rnE "toBe\('[A-ZÀ-Ü]|toContain\('[a-zà-ü]" frontend/src/lib/features/*/*helpers.test.ts`
    `grep -rnE "getByRole\(.*name: '[A-ZÀ-Ü]|getByText\('[A-ZÀ-Ü]" frontend/tests/e2e/`
    `grep -rnE "toContainText\(/[A-ZÀ-Üa-zà-ü]|has-text\(\"[A-ZÀ-Ü]" frontend/tests/e2e/`
+   `grep -rnE "toHaveText\('[A-ZÀ-Üa-zà-ü]|toContainText\('[A-ZÀ-Üa-zà-ü]|name: /[A-ZÀ-Üa-zà-ü]" frontend/tests/e2e/`
    ⚠️ **Le troisième est né d'un verrou que les deux premiers ne pouvaient pas voir** — une
-   assertion de *contenu* sur un sélecteur déjà stable. ⚠️ **Et cette liste n'est toujours pas
-   close** : cf. [KF-043 (#326)](https://github.com/guycorbaz/kesh/issues/326), la suite E2E ne
-   tourne qu'en français.
-8. **AC8 — gates complets verts, E2E comprise**, PR en `refs #316`. ⚠️ **#316 reste OUVERTE** —
+   assertion de *contenu* sur un sélecteur déjà stable. ⚠️ **Le QUATRIÈME est né en passe 3, et il
+   trouve NEUF verrous réels sur des clés de ce périmètre** : `toHaveText('Défaut')` et
+   `toHaveText('Personnalisé')` dans `email-templates.spec.ts` (7 occurrences), et
+   `toContainText('Projets')` dans `projects.spec.ts:30`. Les trois premiers greps ne connaissaient
+   ni `toHaveText('…')` ni `toContainText('…')` **avec quote** — seulement avec regex.
+   ⚠️ **Conclure du silence d'un grep est le défaut, pas le grep** : T10 confronte son relevé aux
+   93 clés, il ne déduit rien d'une sortie vide. ⚠️ **Et la liste n'est toujours pas close** :
+   cf. [KF-043 (#326)](https://github.com/guycorbaz/kesh/issues/326), la suite E2E ne tourne qu'en
+   français.
+10. **AC8 — gates complets verts, E2E comprise**, PR en `refs #316`. ⚠️ **#316 reste OUVERTE** —
    elle ne se ferme qu'à la 23-6, qui vide l'allowlist.
 
 ## Tasks
@@ -197,7 +285,7 @@ protéger l'epic.
       | préfixe | clés |
       |---|---:|
       | `projects-*` *(écran des projets analytiques)* | **28** |
-      | `email-templates-*` *(les 25 via relais + 3 directes)* | **20** |
+      | `email-templates-*` *(**20 via relais**, 0 directe — recompté en passe 3)* | **20** |
       | `settings-*` | 1 |
       | `saving-*`, `save-*`, `cancel-*`, `creating-*`, `create-*`, `closing-*` | **6** |
 
@@ -230,6 +318,20 @@ protéger l'epic.
           sed 's/^[^=]*= //' | sort | uniq -d
       done
       ```
+
+      ⚠️ **`sav` et non `save` dans la classe ci-dessus** : `^save` n'atteint pas `saving`, et le
+      couple à risque est précisément celui-là (`Speichern` / `Speichern…`). *Un préfixe de contrôle
+      se teste sur les clés qu'il prétend couvrir avant d'être écrit — c'est « greper la valeur, pas
+      la formulation » appliqué au grep lui-même.*
+
+      ⚠️ **DEUX PORTÉES, et c'est la seconde qui trouve quelque chose.** La commande ci-dessus est la
+      portée 1 — les clés du périmètre entre elles. **Elle ne peut pas voir une collision avec les
+      ~1400 autres clés du catalogue**, et c'est exactement la faute que la passe 3 de la 23-3 a
+      classée HIGH : *« la bonne méthode et la MAUVAISE PORTÉE — 116 clés comparées entre elles,
+      aveugles aux 1289 autres »*. **KF-041 et KF-042 sont nées de la seconde portée.** Cas concret
+      ici : cette story écrira `payment-batches-form-close = 'Fermer'`, et `fiscal-year-status-closed`
+      dit déjà « Clôturé » → `Geschlossen` — **KF-041 en personne**, qu'aucun préfixe du périmètre
+      ne peut atteindre. Confronter donc chaque libellé écrit au **catalogue entier** de sa locale.
 
       ⚠️ **Deux clés de sens différents qui aboutissent au même mot cible sont un défaut**, même si
       chaque traduction est correcte isolément — c'est précisément ce que KF-041 (« Clôturer » et
@@ -305,7 +407,29 @@ deux choses elle fait.
   du périmètre de `lint-i18n-ownership`, ce qui **ne dispense pas** de la convention.
 - ⚠️ **Une migration appliquée ne se modifie plus** — sans objet ici, aucune migration.
 
+### Ce qui est HORS PÉRIMÈTRE et TRACÉ — ne pas le traiter ici
+
+⚠️ **`settings/invoicing` est en français en dur, et invisible de tout compteur de l'epic.**
+306 lignes, **5 appels i18n**, **0 clé `invoicing-` à l'allowlist**. Ni le moissonneur, ni
+l'allowlist, ni la garde des libellés en dur ne le voient — la garde le dit elle-même : *« nœud de
+texte de balisage → ❌ non »*. **Conséquence** : la 23-6 clôt l'epic par le **vidage de l'allowlist**,
+ce qui vaudra déclaration que la dette i18n est éteinte — alors que cet écran restera français dans
+les trois autres langues. **[KF-044 (#328)](https://github.com/guycorbaz/kesh/issues/328)** existe
+pour que le sujet survive à cette clôture. ⚠️ **Ne PAS l'ajouter au périmètre de cette story** :
+il a été relevé et validé en trois passes, et l'élargir contredirait la règle de splitting.
+
+⚠️ **Autres divergences de replis relevées hors périmètre**, à tracer et non à traiter :
+`dunning-edit`, `dunning-conflict`, `dunning-form-error`, `dunning-form-error-delay`,
+`error-unexpected` (4 replis distincts), `loading`. Elles confirment qu'AC5-bis est nécessaire :
+**le tableau est un plancher.**
+
 ### Ce qui a été balayé et trouvé PROPRE — ne pas re-balayer
+
+⚠️ **Deux pistes de la passe 3 ont été RÉFUTÉES au sol, et les fermer a de la valeur** :
+**aucune** des 155 clés moissonnées n'a de sites dans plus d'un domaine — les six clés génériques
+sont vérifiées nominativement, leurs 17 sites sont tous dans `settings/` —, et le moissonneur **ne
+filtre pas** par dossier (`filter(([, parTexte]) => parTexte.size > 1)`), contrairement à ce que la
+consigne de la lentille supposait. Le périmètre est étanche.
 
 Les 5 clés **sans repli littéral** relevées au moissonneur sont **toutes** dans
 `lib/features/reconciliation` (`TransactionSplitModal.svelte`) : domaine de la **23-5**, hors
@@ -337,6 +461,7 @@ périmètre. Le moissonneur ne rend **aucun** repli à échapper (`aEchapper` vi
 
 | date | passe | résultat |
 |---|---|---|
+| 2026-08-21 | **passe 3** de `validate` | **1 CRITICAL · 7 HIGH · 7 MEDIUM · 2 LOW** (Opus ×2, 105 vérifications au sol). ⚠️ **La sévérité REMONTE** (`1C/2H/3M` → `0C/1H/2M` → `1C/7H/7M`) — arbitrage porté à Guy, cf. ci-dessous. ⚠️ **Le CRITICAL est un angle mort de MA MÉTHODE, pas un oubli** : `onboarding-next` porte deux replis (« Continuer » / « Enregistrer ») et la clé est **DÉJÀ au catalogue** — le bouton d'enregistrement du compte bancaire affiche « Continuer », **dans les quatre langues, aujourd'hui**. Mon relevé ne pouvait pas le voir : **le moissonneur ne relève que les clés ABSENTES des catalogues**, et la 23-3 l'avait écrit noir sur blanc dans le docstring de la garde que ma spec cite en References. **Sur un domaine partiellement traduit, le relevé de référence est la GARDE, pas le moissonneur.** Trois divergences, pas deux ; 96 clés écrites, pas 95. ⚠️ **Les deux lentilles CONVERGENT sur cet angle mort** par des chemins indépendants. **HIGH retenus** : l'assertion anti-fusion de la 23-3 était perdue (la garde générique reste verte si l'on refusionne — une clé unique à repli unique ne diverge pas) ; la garde n'était étendue qu'à `payment-batches-` alors que **c'est `onboarding-` qui portait le défaut actif** ; **cinq libellés français EN DUR** dans les écrans que la story déclare traduits, dont `<title>Paramètres - Kesh</title>` avec `settings-title` **déjà utilisée quatre lignes plus bas** — jumeau exact du `Qté` de la 23-3 ; la borne **`sitesTotal`** n'était nommée nulle part alors qu'elle **va rougir** ; les trois greps d'AC7 étaient aveugles à `toHaveText('…')` et `toContainText('…')` **avec quote** — **neuf verrous réels** sur des clés du périmètre ; et aucun AC ne portait la **relecture du français**, que la 23-3 avait et qui lui a évité de recopier « en v0.4 » dans trois langues neuves. **MEDIUM** : le contrôle d'homonymie était en **portée 1** — la faute exacte que la passe 3 de la 23-3 a classée HIGH, et `payment-batches-form-close = 'Fermer'` contre `fiscal-year-status-closed = Geschlossen` **étend KF-041** ; le grep de T9-bis ratait `saving`, l'une des clés qu'il désigne ; les décomptes de relais se contredisaient (« 25 + 3 » pour une ligne à 20 — recompté : 20 et 0, 31 sur le périmètre) ; AC5-bis manquait. ⚠️ **DEUX pistes RÉFUTÉES au sol**, et les fermer a de la valeur : aucune clé partagée entre domaines, et le moissonneur ne filtre pas par dossier. **KF-044 (#328) ouverte** : `settings/invoicing`, 306 lignes et 5 appels i18n, **invisible de tout compteur** — la 23-6 déclarerait la dette éteinte alors qu'il resterait français. |
 | 2026-08-21 | **passe 2** de `validate` | **0 CRITICAL retenu · 1 HIGH · 2 MEDIUM** (Haiku ×2). ⚠️ **QUATRE des cinq CRITICAL annoncés sont RÉFUTÉS au sol**, garde-fou Haiku de `CLAUDE.md` appliqué. **Le plus instructif est le dernier** : une lentille affirmait que l'allowlist ne contient que **87** clés du périmètre et non 93, avec une ventilation détaillée à l'appui. **Mesuré : 93, et 0 clé absente** — `payment-batches` 30/30, `settings` 55/55, `onboarding` 4/4, plus 4 `nav-*`. ⚠️ **Son erreur EST le finding** : elle a compté par **préfixe de clé** là où « settings » est un **DOSSIER**, et a raté six clés **génériques** (`save-`, `cancel-`, `create-`, `saving-`, `creating-`, `closing-`, une chacune). 28 + 20 + 1 = 49, plus 6 = 55. La ventilation par préfixe est désormais écrite dans T5, avec le piège — **une lentille s'y est trompée, un développeur s'y trompera**. Les deux autres CRITICAL réfutés visaient des consignes **déjà présentes** : l'ordre T2-avant-T3 est écrit dans T2 même, et AC1 distingue déjà 95 et 93 dans un tableau. ⚠️ **Signal de méthode** : la lentille qui a produit 3 CRITICAL et 7 HIGH n'a fait que **6 appels d'outils** ; celle qui en a fait 47 a produit un seul CRITICAL, faux mais argumenté et fécond. **Le volume de findings n'est pas une mesure de rigueur.** **Retenu** : les deux clés NEUVES du split n'étaient pas nommées — une seule l'était —, et la spec ne demandait **ni relecture des replis, ni contrôle d'homonymie langue par langue**, alors que la 23-3 les avait et que **KF-041 et KF-042 en sont nées**. T9-bis les ajoute, avec la commande et le tableau à consigner. |
 | 2026-08-21 | **passe 1** de `validate` | **1 CRITICAL · 2 HIGH · 3 MEDIUM · 0 LOW** (Sonnet ×2, contextes frais). ⚠️ **La lentille des FAITS rend UN seul écart sur vingt affirmations vérifiées** — tous les décomptes, les trois conflits de replis, la portée de la garde, les trois sites « Générer », le statut de `lot` et les quatre affirmations sur la 23-3b se recomptent exactement comme annoncé. **Le moissonneur exécuté sur la base réelle a donc tenu ses promesses.** ⚠️ **Mais la lentille de COHÉRENCE a trouvé une contradiction INTERNE, et c'est le CRITICAL** : AC1 annonçait 93 clés quand AC2 impose de scinder deux clés en quatre — un développeur recomptant honnêtement aurait trouvé un écart, et la sortie la moins coûteuse aurait été de **ne scinder qu'à moitié**, réintroduisant le défaut qu'AC2 existe pour fermer. Deux grandeurs distinctes sont désormais écrites : **95 clés au catalogue, 93 de décrément d'allowlist**. ⚠️ **Le correctif chiffré de la lentille était FAUX** (elle proposait 71 pour l'allowlist) : elle décomptait des clés neuves qui n'y ont jamais figuré — réfuté au sol. **DEUX HIGH, tous deux sur ma table des termes** : `virement` était **déjà en partie A du glossaire** et `NPA` attesté dans les quatre locales par `field-postal-code`, alors que la spec les envoyait à l'arbitrage. ⚠️ **Cette spec répète « relever avant d'inventer » et ne l'avait pas appliqué à sa propre table de termes** — la liste bloquante passe de QUATRE termes à **UN**. Et l'écran `settings/projects`, **28 des 55 clés de `settings`**, n'était nommé nulle part : son idiome de hiérarchie est attesté et **n'est pas un calque** (`übergeordnetes`, jamais *Eltern-*). **MEDIUM** : la numérotation des tâches contredisait leur ordre d'exécution — T3 devait précéder T2, un développeur suivant les numéros aurait rendu AC3 impossible à prouver ; AC4 et AC6 n'étaient portés par aucune tâche ; et le grep d'AC4 était ambigu sur un commentaire de code qu'une revue antérieure avait payé. |
 | 2026-08-21 | création | Spec écrite après **exécution du moissonneur sur la base réelle**, pas depuis le plan d'epic. Périmètre confirmé à **93** (30 + 55 + 4 + 4). ⚠️ **Trois replis divergents trouvés, deux dans le périmètre** — dont `payment-batches-col-total`, qui porte **deux grandeurs** (total du lot / montant d'une ligne) : jumeau exact du défaut de la 23-3, latent, et **que la traduction activerait**. ⚠️ **La garde « une clé, un repli » ne couvre pas ce domaine** (bornée à `supplier-invoices-`) : son extension entre au livrable. ⚠️ **Conséquence non vue de l'arbitrage de la 23-3b** : trois sites disent encore « Générer un lot » pour un objet dont le statut s'affiche « Créé ». ⚠️ **`lot` est employé et figé depuis la 23-3b sans être en partie A** du glossaire. |
