@@ -743,7 +743,20 @@ backend complet et l'E2E sont rejoués au push.
 | `npm run build` | vert |
 | **E2E branche** | **183 passés · 38 échoués · 19 skippés** |
 | **E2E `main`** *(référence)* | **183 passés · 38 échoués · 19 skippés** |
-| **différentiel** | ⚠️ **NUL** — listes d'échecs identiques |
+| **régressions attribuables à la branche** | ⚠️ **aucune** — détail ci-dessous |
+
+⚠️ **Le différentiel n'est pas littéralement identique, et il faut le dire exactement.** Les
+totaux le sont (38 = 38), mais **deux** échecs diffèrent de chaque côté. Les quatre ont été
+éprouvés :
+
+| échec | côté | verdict |
+|---|---|---|
+| `sidebar-navigation` › persistence localStorage | branche | ⚠️ **fichier TOUCHÉ par la story** — mais l'échec porte sur `localStorage`, pas sur le sélecteur basculé ; **[KF #287](https://github.com/guycorbaz/kesh/issues/287)** est ouverte et nomme précisément ce test (« localStorage :71 ») sur `main`. **Rejoué 3 fois en isolation : 4/4 vert à chaque run** — non déterministe |
+| `products` › conditions de paiement | branche | fichier **non touché** par la branche ; rejoué 2 fois : **1 vert, 1 rouge** — flake avéré |
+| `invoices` › historique des rappels ×2 | `main` | échouaient sur `main` et passent ici — même famille |
+
+**Aucun de ces quatre échecs n'est déterministe, et aucun ne porte sur le code de la story.** Le
+fond de flakes de cette suite est documenté (KF #287, `docs/testing.md`).
 
 ⚠️ **Le différentiel n'était pas une formalité : le premier run rendait 182 contre 183.** Un
 seul test d'écart, et il portait une régression réelle — cf. ci-dessous. Sans la mesure contre

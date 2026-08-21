@@ -208,6 +208,12 @@ par un **grep du symptôme**, pas par la suite — celle-ci en était structurel
 **Règle qui en découle** : un sélecteur E2E ne se fige jamais sur un libellé traduit, `data-testid`
 sans exception. Ne pas compter sur la suite pour le rattraper : elle ne le peut pas.
 
+⚠️ **Cette règle est une DISCIPLINE, donc invérifiable en l'état** — c'est la faiblesse que ce
+dépôt documente sous « on peut l'affirmer sans l'avoir fait ». **[KF-043 (#326)](https://github.com/guycorbaz/kesh/issues/326)**
+tient le sujet ouvert et pose les trois options : ne rien faire, une **garde statique** qui refuse
+un sélecteur français dans `tests/e2e/` (même patron que `i18n-libelle-en-dur.test.ts`, qui lit les
+sources), ou un run dans une seconde locale. L'arbitrage revient au Project Lead.
+
 *(Écrit le 2026-08-21, passe 3 de revue de la story 23-3b. ⚠️ Une passe antérieure avait neutralisé
 ce constat en affirmant que « `CLAUDE.md` le documente comme un angle mort connu » — **il ne le
 documentait pas**, et l'angle mort n'était écrit nulle part. Une réfutation qui s'appuie sur une
