@@ -197,7 +197,7 @@
 </script>
 
 <svelte:head>
-	<title>Paramètres - Kesh</title>
+	<title>{msg('settings-title', 'Paramètres')} - Kesh</title>
 </svelte:head>
 
 <h1 class="mb-6 text-2xl font-semibold text-text">

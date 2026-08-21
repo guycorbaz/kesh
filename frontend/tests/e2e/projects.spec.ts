@@ -27,7 +27,11 @@ test.describe('Projets analytiques', () => {
 		const uniq = `${Date.now()}`;
 		await login(page);
 		await page.goto('/settings/projects');
-		await expect(page.getByRole('heading', { level: 1 })).toContainText('Projets');
+		// ⚠️ L'assertion portait sur « Projets », qui n'est contenu dans le titre qu'EN FRANÇAIS
+		// (`Projekte` en allemand). Elle serait restée verte ici et n'aurait cassé qu'en italien ou
+		// en allemand — que la suite n'exécute pas (KF-043, #326). Le heading suffit à prouver que
+		// la page a chargé ; son libellé est l'affaire du catalogue, pas du test. (Story 23-4.)
+		await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
 		// Projet racine.
 		await page.getByTestId('project-new').click();

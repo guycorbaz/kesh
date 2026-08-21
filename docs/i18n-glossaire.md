@@ -96,6 +96,12 @@ passage des rollouts qui touchent ces domaines, pas ici.
 | **créé(e)** | **erstellt** | **creato / creata** | **created** | `imported-supplier-invoices-completed` (story 23-3b, arbitrage de Guy du 2026-08-20) — ⚠️ **relevé au participe**, contrairement à `confirmé` et `émis` : la clé dit « Facture **créée**. / Rechnung **erstellt**. / Fattura **creata**. / Invoice **created**. » ; seul le masculin `creato` est un accord dérivé. ⚠️ **Le français a CHANGÉ** : le statut de lot disait « Généré ». Le verbe *créer* est désormais uniforme dans le domaine — `Créer une facture`, `Facture créée.`, un lot `Créé` — soit un mot de moins à retenir pour l'utilisateur |
 | **confirmé(e)** | **bestätigt** | **confermato / confermata** | **confirmed** | ⚠️ **DÉRIVÉ, non relevé** (story 23-3b, passe 1 de revue). `demo-reset-confirm-ok` porte l'**infinitif** — `Confirmer` / `Bestätigen` / `Conferma` / `Confirm` —, pas le participe. **Aucune forme participiale n'existait dans les catalogues avant cette story** : ces quatre valeurs sont une transformation grammaticale, pas un relevé. La première rédaction citait cette clé comme *attestante*, ce qui était faux |
 | **émis(e)** | **ausgestellt** | **emesso / emessa** | **issued** | `credit-note-revenue-account-archived` (story 23-3b) — ⚠️ **relevé pour l'ALLEMAND SEUL** : la clé porte bien `ausgestellt` en participe (tournure passive), mais l'italien et l'anglais y sont à l'**infinitif** (`emettere`, `issue`), de même que le français (`émettre`). **`emesso`/`emessa`/`issued`/`Émis` sont donc DÉRIVÉS.** ⚠️ **Ne pas confondre avec *validé***, qui désigne l'acte d'immuabilité d'une facture : émettre un avoir et valider une facture sont deux actes distincts, dont un seul est irréversible |
+| **lot (de paiement)** | **Stapel** | **lotto** | **batch** | `reminders-batch-cap` (story 23-4). ⚠️ **Employé et FIGÉ au catalogue par la 23-3b sans être promu** — `Bereits in einem erstellten Stapel` : exactement le défaut que ce glossaire documente sur lui-même, resté ouvert une story entière |
+| **NPA** | **PLZ** | **NPA** | **Postal code** | `field-postal-code` (story 23-4). ⚠️ Terme suisse ; l'italien de Suisse garde `NPA`, l'allemand dit `PLZ` |
+| **projet parent / racine** | **übergeordnetes Projekt** / **Stammprojekt** | **progetto superiore** / **progetto radice** | **parent project** / **root project** | `accounts-parent-archived` (story 23-4). ⚠️ **L'idiome n'est PAS un calque** : la clé attestante rend « le compte parent » par `das übergeordnete Konto`, jamais *Eltern-Konto* |
+| **clôture (d'exercice)** | **Abschluss** | **chiusura** | **closing** | `closing` (story 23-4). ⚠️⚠️ **NE PAS confondre avec « fermer »** (`Schliessen` / `Chiudi` / `Close`) — c'est **[KF-041 (#323)](https://github.com/guycorbaz/kesh/issues/323)**, et `fiscal-year-close-button` porte encore la confusion |
+| **modèle (d'e-mail)** | **Vorlage** | **modello** | **template** | `email-templates-title` (story 23-4) |
+| **objet (d'un e-mail)** | **Betreff** | **oggetto** | **subject** | `invoice-send-email-subject-label` (story 23-4) |
 | **relevé (bancaire)** | **Kontoauszug** | **estratto conto** | **statement** | `homepage-bank-empty-guided` (story 23-3b). Relevé en cours de route, hors des trois statuts qu'AC6 exigeait : `nav-bank-import` l'emploie et le fige, donc il monte |
 | en retard | **überfällig** | in ritardo | overdue | `En retard` |
 | échéance | **Fälligkeit** | scadenza | due date | `Échéance` |
@@ -204,8 +210,14 @@ et c'est le glossaire lui-même qui aurait induit en erreur, ce qui est pire qu'
 
 **Deux** termes restent ouverts. *(La partie B comptait 16 entrées, 15 après l'arbitrage sur
 « analytique », 12 après la 23-1b, 10 après la 23-2, 4 après la 23-3 et **2** après sa passe 2. La
-partie A compte **70** entrées. Les deux nombres sont **recomptés depuis les tableaux**, comme
+partie A compte **76** entrées. Les deux nombres sont **recomptés depuis les tableaux**, comme
 l'exige la § « Recompter ses propres comptes rendus ».)*
+
+⚠️ **70 → 76 à la story 23-4** : `lot (de paiement)`, `NPA`, `projet parent / racine`,
+`clôture (d'exercice)`, `modèle (d'e-mail)` et `objet (d'un e-mail)`. ⚠️ **Aucun n'est un
+arbitrage** — tous sont RELEVÉS sur une clé attestante ; ils manquaient à la partie A, ce qui les
+laissait libres de dériver. ⚠️ **`lot` était employé et figé au catalogue depuis la 23-3b sans y
+être** : le défaut que ce glossaire décrit sur lui-même, resté ouvert une story entière.
 
 ⚠️ **65 → 70 à la story 23-3b**, et le périmètre de la promotion se déclare avec le nombre :
 **trois** entrées l'étaient par son AC6 — `créé`, `confirmé`, `émis`, les statuts que le relevé

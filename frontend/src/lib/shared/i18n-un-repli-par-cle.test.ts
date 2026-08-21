@@ -75,13 +75,19 @@ const PREFIXES = [
  * | `supplier-invoices-` | 58 |
  * | `imported-supplier-invoices-` | 52 |
  * | `payment-batches-` | 42 |
- * | `onboarding-` | 35 |
- * | **total** | **187** |
+ * | `onboarding-` | 34 |
+ * | **total** | **186** |
+ *
+ * ⚠️ **187 → 186 en cours de story, et la BAISSE se recompte comme une hausse** :
+ * `onboarding-field-qr-iban` n'est plus appelée — le « (optionnel) » qui la suivait en dur a été
+ * remplacé par `bank-accounts-labels-qr-iban`, déjà traduite pour ce champ. Une clé sort du
+ * relevé sans que rien ne se perde. *(Une baisse inexpliquée, elle, serait une clé qui a cessé
+ * d'être traduite — c'est ce que cette borne existe pour distinguer.)*
  *
  * Les deux premiers font les 110 d'origine ; les deux derniers entrent avec le rollout 23-4,
  * **splits compris** (`payment-batches-line-amount`, `-detail-date`, `onboarding-save`).
  */
-const CLES_RELEVEES = 187;
+const CLES_RELEVEES = 186;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

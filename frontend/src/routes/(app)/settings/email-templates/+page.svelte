@@ -290,12 +290,14 @@
 			{#if isDefault}
 				<span
 					class="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600"
-					data-testid="email-template-badge">{msg('email-templates-badge-default', 'Défaut')}</span
+					data-testid="email-template-badge"
+					data-variant="default">{msg('email-templates-badge-default', 'Défaut')}</span
 				>
 			{:else}
 				<span
 					class="rounded-full bg-primary-light px-3 py-1 text-xs font-medium text-primary"
 					data-testid="email-template-badge"
+					data-variant="custom"
 					>{msg('email-templates-badge-custom', 'Personnalisé')}</span
 				>
 			{/if}

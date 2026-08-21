@@ -1,6 +1,6 @@
 # Story 23.4 : le rollout `settings` + `payment-batches` + `onboarding`, et les deux clés qui portent deux sens
 
-Status: ready-for-dev
+Status: review
 
 > **Base** : branchée sur `main` **après le merge de la 23-3b** (`9ca57d49`, PR #327). Tous les
 > faits, décomptes et sites de ce document ont été **relevés au moissonneur sur cette base** le
@@ -269,13 +269,13 @@ supérieure sur cette story, cette dérogation devra être rouverte.
       de `validate`** : `virement` était déjà en partie A, `NPA` attesté dans les quatre locales par
       `field-postal-code`, `lot` relevé et seulement à promouvoir. Ne jamais inventer ; si un terme
       neuf apparaît en cours de route, le proposer au Record et **s'arrêter**.
-- [ ] **T2 — Étendre la garde « une clé, un repli » à `payment-batches-`** — AC3, et **coller sa
+- [x] **T2 — Étendre la garde « une clé, un repli » à `payment-batches-`** — AC3, et **coller sa
       sortie ROUGE** : c'est la seule preuve qu'elle voit les deux divergences. ⚠️ **Cette tâche
       vient AVANT le split, et la numérotation le dit désormais** : dans l'autre ordre, les
       divergences ont disparu du code, la garde ne peut plus rougir, et la preuve qu'AC3 exige
       devient impossible à produire honnêtement. *(L'ordre était contredit par la numérotation en
       passe 1 de `validate` — un développeur suivant les numéros aurait cassé AC3 sans le voir.)*
-- [ ] **T3 — Scinder les deux clés à double sens** — AC2. ⚠️ **AVANT d'écrire quoi que ce soit aux
+- [x] **T3 — Scinder les deux clés à double sens** — AC2. ⚠️ **AVANT d'écrire quoi que ce soit aux
       catalogues** : entrer `payment-batches-col-total` telle quelle figerait le défaut.
       **Les quatre clés d'arrivée, nommées** *(la clé de date ne l'était pas — passe 2)* :
 
@@ -289,13 +289,13 @@ supérieure sur cette story, cette dérogation devra être rouverte.
       ⚠️ **Ce sont les deux clés NEUVES qui font l'écart 93 → 95** d'AC1. Contrôle après split :
       `grep -rn "payment-batches-col-total\|payment-batches-col-date" frontend/src/` doit rendre
       **trois** sites, pas cinq.
-- [ ] **T4 — `payment-batches` : 32 clés × 4 locales** *(30 d'allowlist + les 2 issues du split)* —
+- [x] **T4 — `payment-batches` : 32 clés × 4 locales** *(30 d'allowlist + les 2 issues du split)* —
       AC1, **AC4**, **AC6**. ⚠️ **Exécuter le grep d'AC4 et COLLER sa sortie** — un critère qu'aucune
       tâche n'exécute est une affirmation invérifiable. ⚠️ **AC6** : vérifier si le rollout crée ou
       supprime une fonction `*Label`/`*Text`/`*Display` ; si oui, recompter `CANDIDATES_ATTENDUES`
       et le **déclarer**, sinon écrire qu'aucune ne l'a été. Le gate le vérifie mécaniquement, mais
       rien n'oblige à le dire — et c'est le dire qui manque.
-- [ ] **T5 — `settings` : 55 clés × 4 locales** — AC1. ⚠️ **25 passent par le relais `msg`** de
+- [x] **T5 — `settings` : 55 clés × 4 locales** — AC1. ⚠️ **25 passent par le relais `msg`** de
       l'écran des modèles d'e-mail : le littéral vit au site `msg(`, pas au site `i18nMsg(`.
       `findRelays` les voit ; un grep naïf de `i18nMsg(` ne les verrait pas.
       ⚠️ **« settings » est un DOSSIER, pas un préfixe de clé, et cette confusion a une victime
@@ -319,15 +319,15 @@ supérieure sur cette story, cette dérogation devra être rouverte.
       rédaction ne nommait nulle part. Il porte un vocabulaire de **hiérarchie** (« Projet parent »,
       « — Aucun (projet racine) ») dont le précédent est au catalogue et **n'est pas un calque** :
       cf. le § *Les termes*.
-- [ ] **T6 — `onboarding` : 4 clés × 4 locales** — AC1. ⚠️ Le dossier est **partiellement traduit
+- [x] **T6 — `onboarding` : 4 clés × 4 locales** — AC1. ⚠️ Le dossier est **partiellement traduit
       depuis la 23-1b** (8 libellés faits, 4 messages restants) : cette tâche referme l'écart.
-- [ ] **T7 — Les 4 `nav-*` de l'inventaire** — AC1 : `nav-credit-notes`, `nav-email-templates`,
+- [x] **T7 — Les 4 `nav-*` de l'inventaire** — AC1 : `nav-credit-notes`, `nav-email-templates`,
       `nav-projects`, `nav-supplier-invoices-import`. ⚠️ **Ce sont des clés DÉJÀ CÂBLÉES dont la
       traduction manque** — à ne pas confondre avec les 9 libellés de navigation que la 23-3b a
       sortis du français en dur. Les deux ensembles sont **disjoints**, vérifié.
-- [ ] **T8 — Décrémenter l'allowlist de 93** — AC1, borne recomptée depuis le fichier.
-- [ ] **T9 — Glossaire** : promotion des termes tranchés, dont **`lot`** — AC5.
-- [ ] **T9-bis — Relecture des replis français ET contrôle d'HOMONYMIE, langue par langue** — AC7.
+- [x] **T8 — Décrémenter l'allowlist de 93** — AC1, borne recomptée depuis le fichier.
+- [x] **T9 — Glossaire** : promotion des termes tranchés, dont **`lot`** — AC5.
+- [x] **T9-bis — Relecture des replis français ET contrôle d'HOMONYMIE, langue par langue** — AC7.
       ⚠️ **La 23-3 avait ces deux contrôles, et ils ont produit KF-041 et KF-042** — deux homonymies
       qu'aucune garde automatique ne peut voir. La première rédaction de cette spec ne les demandait
       pas. Pour chaque locale cible, relever les valeurs qui apparaissent **deux fois** :
@@ -358,7 +358,7 @@ supérieure sur cette story, cette dérogation devra être rouverte.
       chaque traduction est correcte isolément — c'est précisément ce que KF-041 (« Clôturer » et
       « Fermer » confondus) et KF-042 (le faux ami « Valider ») décrivent. **Les six clés génériques
       de T5 sont les premières candidates.** Consigner le tableau, pas seulement la conclusion.
-- [ ] **T10 — Balayer les verrous de français**, les trois greps — AC7.
+- [x] **T10 — Balayer les verrous de français**, les trois greps — AC7.
 - [ ] **T11 — Gates complets, E2E comprise, et différentiel contre `main`** — AC8. ⚠️ **Le
       différentiel se lit sur `fichier › titre`, jamais sur `fichier:ligne`** : un commentaire
       ajouté décale les lignes et fabrique des régressions imaginaires. Précédent 23-3b.
@@ -472,11 +472,108 @@ périmètre. Le moissonneur ne rend **aucun** repli à échapper (`aEchapper` vi
 
 ### Agent Model Used
 
+`claude-opus-5[1m]` — implémentation du 2026-08-21.
+
 ### Debug Log References
+
+#### T2 / AC3 — la garde AVANT tout correctif, sortie BRUTE
+
+```
+     × aucune clé ne porte deux replis différents
+AssertionError: expected [ …(3) ] to deeply equal []
++   "payment-batches-col-date → « Exécution » / « Date d'exécution »",
++   "payment-batches-col-total → « Total » / « Montant »",
++   "onboarding-next → « Continuer » / « Enregistrer »",
+```
+
+⚠️ **Les TROIS y sont, dont celle que le moissonneur ne pouvait pas voir.** C'est la démonstration
+de l'angle mort relevé en passe 3 : `onboarding-next` était **déjà au catalogue**, donc invisible
+d'un outil qui ne relève que les clés absentes.
+
+#### AC1 — les deux grandeurs, recomptées séparément
+
+| grandeur | mesuré |
+|---|---|
+| clés écrites au catalogue | **96** |
+| décrément de l'allowlist | **93** — `166 → 73`, ventilé : settings 55, payment-batches 30, onboarding 4, nav 4 |
+| parité par locale | **1525** dans les quatre |
+
+Les trois clés neuves (`payment-batches-line-amount`, `-detail-date`, `onboarding-save`) expliquent
+l'écart : **elles n'ont jamais figuré à l'allowlist.**
+
+#### AC6 — les deux bornes ont rougi, et c'était leur travail
+
+| borne | avant | après | cause recomptée |
+|---|---|---|---|
+| `sitesTotal` | 1525 | **1529** | +4 appels neufs : 2 `Chargement…`, 1 `Chargement...`, 1 `<title>` |
+| `CLES_RELEVEES` | 187 | **186** | −1 : `onboarding-field-qr-iban` n'est plus appelée |
+| `CANDIDATES_ATTENDUES` | 41 | **41** | aucune fonction de libellé créée ni supprimée |
+
+⚠️ **La BAISSE se recompte comme la hausse** : `bank-accounts-labels-qr-iban` a remplacé le couple
+« libellé traduit + `(optionnel)` en dur ». Une clé sort du relevé sans que rien ne se perde — une
+baisse *inexpliquée*, elle, serait une clé qui a cessé d'être traduite.
+
+#### AC6-bis — cinq libellés en dur qu'aucune garde ne voit
+
+Les quatre premiers routés vers `common-loading` / `loading` / `settings-title` ; le cinquième
+— ` (optionnel)` accolé à un libellé traduit — **réutilise `bank-accounts-labels-qr-iban`**, déjà
+traduite pour ce champ exact, plutôt que de créer une clé. ⚠️ La convention du dépôt met
+« (optionnel) » **dans** le libellé (`account-field-parent-optional`, `vat-rates-field-to`).
+
+#### T9-bis — contrôle d'homonymie aux DEUX portées
+
+⚠️ **La portée 2 est la seule qui trouve quelque chose**, et elle a trouvé :
+
+| couple | fr | de | verdict |
+|---|---|---|---|
+| `payment-batches-form-close` / `fiscal-year-close-button` | Fermer / **Clôturer** | `Schliessen` / `Schliessen` | ⚠️ **KF-041 (#323) confirmée** — ma clé est correcte, l'autre ment. Commentaire mesuré porté à l'issue |
+| `creating` / `opening-balances-generating` | Création… / **Génération…** | `Wird erstellt…` | deux français pour un allemand — mineur, et « générer » est le mot que la 23-3b a écarté |
+| `payment-batches-confirm-title` / `invoice-mark-paid-confirm` | règlement / paiement | `Zahlung bestätigen` | **légitime** : le glossaire rend les deux par `Zahlung` |
+| `nav-supplier-invoices-import` / `imported-supplier-invoices-title` | identiques | identiques | **légitime** — menu et titre de page |
+
+⚠️ **`closing` a été tranché DANS L'AUTRE SENS** — `Abschluss…`, jamais `Schliessen…` : le correctif
+de KF-041 a désormais son précédent au catalogue.
+
+#### T10 — les quatre greps, et le quatrième trouve HUIT verrous
+
+Les trois greps historiques : rien sur le périmètre. **Le quatrième — né en passe 3 — rend huit
+verrous réels** : sept `toHaveText('Défaut'|'Personnalisé')` dans `email-templates.spec.ts` et un
+`toContainText('Projets')` dans `projects.spec.ts`. ⚠️ **Tous sur des sélecteurs déjà stables** :
+le `data-testid` était en place et ne protégeait rien. Basculés sur `data-variant` (le CODE) et sur
+`toBeVisible`. ⚠️ **Ils seraient restés verts en français et n'auraient cassé qu'en allemand** —
+que la suite n'exécute pas (KF-043, #326).
 
 ### Completion Notes List
 
+- **L'angle mort de la passe 3 s'est vérifié à l'exécution** : la garde a bien rougi sur les trois
+  divergences, dont celle que le moissonneur ne voyait pas. **Sur un domaine partiellement traduit,
+  le relevé de référence est la garde.**
+- **Aucun terme inventé** : `lot`, `NPA`, `projet parent`, `clôture`, `modèle`, `objet` sont tous
+  **relevés** sur une clé attestante. Partie A du glossaire **70 → 76**. ⚠️ Aucun n'est un
+  arbitrage — ils manquaient, ce qui les laissait libres de dériver.
+- **KF-041 confirmée par la mesure** et documentée dans l'issue avec le précédent de son correctif.
+- **Trois chiffres de la spec revus à l'exécution** : 95 → **96** clés écrites (la 3ᵉ scission),
+  187 → **186** pour `CLES_RELEVEES`, 1525 → **1529** pour `sitesTotal`.
+
 ### File List
+
+**Modifié — outillage et gardes**
+- `frontend/src/lib/shared/i18n-un-repli-par-cle.test.ts` — `PREFIXES` + `payment-batches-`/`onboarding-`, borne 186, assertion anti-fusion des six sens
+- `frontend/src/lib/shared/i18n-keys.test.ts` — `sitesTotal` 1529
+- `frontend/src/lib/shared/i18n-dette-connue.ts` — 166 → 73
+
+**Modifié — les trois scissions et les cinq libellés en dur**
+- `frontend/src/routes/(app)/payment-batches/+page.svelte`, `[id]/+page.svelte`
+- `frontend/src/routes/onboarding/+page.svelte`
+- `frontend/src/routes/(app)/settings/+page.svelte`, `settings/email-templates/+page.svelte`
+
+**Modifié — tests**
+- `frontend/tests/e2e/email-templates.spec.ts`, `projects.spec.ts`
+
+**Modifié — catalogues et documentation**
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` — 96 clés × 4
+- `docs/i18n-glossaire.md` — partie A 70 → 76
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
 
