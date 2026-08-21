@@ -81,7 +81,15 @@
 {:else if batch}
 	<div class="mb-6 flex items-center justify-between">
 		<h1 class="text-2xl font-semibold">{i18nMsg('payment-batches-lot', 'Lot')} #{batch.id}</h1>
-		<span data-testid="payment-batch-status">{paymentBatchStatusLabel(batch.status)}</span>
+		<!-- ⚠️ `data-status` porte le CODE, jamais le libellé : c'est sur lui que les E2E
+		     assertent depuis la story 23-3b. Une assertion sur le texte affiché fige le
+		     français — `payment-batches.spec.ts` attendait `/Généré/i` et s'est cassé au
+		     premier changement de libellé, alors même que le sélecteur était déjà un
+		     `data-testid`. Un identifiant stable ne suffit pas si l'ASSERTION, elle, lit
+		     une chaîne traduite. -->
+		<span data-testid="payment-batch-status" data-status={batch.status}
+			>{paymentBatchStatusLabel(batch.status)}</span
+		>
 	</div>
 
 	<dl class="mb-6 grid grid-cols-2 gap-2 text-sm">
