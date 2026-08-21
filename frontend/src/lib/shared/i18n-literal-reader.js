@@ -297,8 +297,12 @@ export function masquerCommentaires(source) {
 		// ⚠️ **Commentaires de BALISAGE** — `.svelte` uniquement en pratique (story 23-3b).
 		// Sans eux, la prose française du balisage passe pour des littéraux, et c'est
 		// exactement dans les `.svelte` que vivent les sites que la garde doit lire.
-		// Mesuré sur le dépôt au 2026-08-21 : **235 blocs**, dont **49** portent au moins
-		// un littéral lisible (majorant — le critère `ouvreUnLitteral` en écarte une part).
+		// Mesuré sur `main` au 2026-08-21 : **235 blocs**, dont **49** portent au moins un
+		// littéral lisible (majorant — le critère `ouvreUnLitteral` en écarte une part).
+		// ⚠️ **Le dépôt en porte 237 à HEAD** : cette story en a ajouté elle-même, par les
+		// commentaires qui expliquent ses correctifs. Un nombre absolu inscrit dans le code se
+		// périme donc par ses propres commits — d'où la mention de la BORNE de mesure. Ce qui
+		// compte n'est pas le nombre mais le geste : `grep -rho "<!--" src --include=*.svelte`.
 		// ⚠️ **L'extension ne peut ni retirer un site compté ni toucher un corps candidat** :
 		// **zéro** appel `i18nMsg` vit dans un commentaire de balisage, et **zéro**
 		// commentaire de balisage vit dans un bloc `<script>` — les deux vérifiés au dépôt.

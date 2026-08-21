@@ -104,7 +104,7 @@ domaine à chaque fois — `client_number_labels_are_translated_in_all_four_loca
 ⚠️ **Angle mort assumé de la garde, et il porte un numéro : [#255].** Une chaîne écrite **en
 dur** dans un `.svelte`, sans passer par `i18nMsg()` du tout, n'est visible d'aucun des deux
 niveaux — la page `/invoices` en est le cas (**6 appels** `i18nMsg` pour toute la page). [#255]
-est le troisième item de catégorie A ; il n'est **pas** dans le périmètre de cet epic et
+est le troisième item de catégorie A ; il n'est **pas** dans le périmètre de cet epic ⚠️ **Amendé le 2026-08-21 : il l'est devenu**, par la story 23-3b, intercalée après la 23-3. et
 appelle un contrôle d'une autre nature (détection de littéraux affichés).
 
 ## Découpage — story-zéro puis rollouts
@@ -148,7 +148,12 @@ s'y fait au fichier, pas en passes adversariales globales — conformément à l
 
 ## Hors périmètre, explicitement
 
-- **[#255]** (chaînes en dur sans `i18nMsg`) — même famille, autre mécanisme de détection.
+- ~~**[#255]** (chaînes en dur sans `i18nMsg`) — même famille, autre mécanisme de détection.~~
+  ⚠️ **PLUS VRAI depuis le 2026-08-21** : la story **23-3b** l'a traité (garde + 8 sites), et la
+  ligne du tableau de découpage le dit. Cette entrée est restée ici après l'insertion de la 23-3b —
+  **résidu de patch** : le symptôme n'avait pas été grepé sur le document. Un lecteur ouvrant la
+  section la plus autoritaire du plan y lisait l'inverse de ce qui a été livré. *(Relevé en passe 3
+  de revue de la 23-3b.)*
 - **[#314]** (recherche d'un nom à trait d'union) — quatrième item de catégorie A, sans rapport.
 - **Le sélecteur de langue dans l'interface** ([#242]) — cet epic rend les chaînes traduisibles,
   il ne change pas la manière dont la locale est choisie.

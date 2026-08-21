@@ -211,116 +211,139 @@ function accoladeDeCorps(source: string, apresNom: number): number | null {
 }
 
 /**
- * Relève les littéraux retournés par un corps de fonction — ceux qui sont en **position de
- * valeur**, et eux seuls.
+ * Runes Svelte **transparentes** : elles enveloppent une expression sans la traduire, donc les
+ * littéraux qu'elles contiennent restent des valeurs de la déclaration.
+ *
+ * ⚠️ Sans cette liste, `let statusLabel = $derived(s === 'paid' ? 'Payée' : 'Ouverte')` serait
+ * traité comme un appel de fonction et ses libellés écartés — or c'est **la forme d'écriture
+ * Svelte 5 du dépôt**, et la spec avait justement signalé ce risque. (Passe 3 de revue.)
+ */
+const RUNES_TRANSPARENTES = ['$derived', '$derived.by', '$state'];
+
+/**
+ * Relève les littéraux en **position de valeur** dans l'expression qui commence en `depart`.
+ *
+ * ⚠️ **Deux règles, et elles se contredisent en apparence** :
+ *
+ *   1. on ne relève qu'en **position de valeur** — après `return`, `=`, `?`, `:`, `||`, `&&`,
+ *      `??`, ou une parenthèse de **groupement** ;
+ *   2. **rien n'est relevé à l'intérieur d'un APPEL** : les arguments d'une fonction ne sont pas
+ *      des valeurs retournées. C'est ce qui distingue `i18nMsg('cle', 'repli')` d'un libellé nu.
+ *
+ * ⚠️ **La distinction appel / groupement exige une PILE, pas deux compteurs.** Deux compteurs
+ * décrémentaient l'appel en priorité à la fermante, si bien qu'un groupement ouvert *dans* un
+ * appel — `i18nMsg('cle', (n > 1) ? 'jours' : 'jour')` — refermait le mauvais, faisait croire
+ * qu'on était sorti de l'appel, et relevait le repli d'`i18nMsg` **comme une violation**. Un
+ * faux positif sur du code parfaitement conforme. (Passe 3 de revue.)
+ */
+function litterauxEnPositionDeValeur(
+	texte: string,
+	depart: number,
+	ligneDeBase: number
+): { retours: Retour[]; fin: number } {
+	const out: Retour[] = [];
+	/** Chaque ouverture empile sa NATURE ; la fermante dépile celle qui lui correspond. */
+	const pile: ('appel' | 'groupe' | 'structure')[] = [];
+	const dansUnAppel = () => pile.includes('appel');
+	const dansUneStructure = () => pile.includes('structure');
+	let attendValeur = true;
+	let precedent = '';
+	let j = depart;
+	while (j < texte.length) {
+		const c = texte[j];
+		if (c === '\n') {
+			// ⚠️ **Insertion automatique de point-virgule.** Sans cette borne, le balayage
+			// débordait sur l'instruction suivante et poussait `lastIndex` au-delà : le `return`
+			// d'après n'était jamais rebalayé — un faux négatif MUET. (Passe 3 de revue.)
+			if (pile.length === 0 && !attendValeur) break;
+			j += 1;
+			continue;
+		}
+		if (' \t\r'.includes(c)) {
+			j += 1;
+			continue;
+		}
+		if (QUOTES.includes(c)) {
+			const lu = readLiteral(texte, j);
+			if (!lu) break;
+			if (attendValeur && !dansUnAppel() && !dansUneStructure() && lu.kind === 'literal') {
+				out.push({
+					texte: lu.value,
+					ligne: ligneDeBase + texte.slice(0, j).split('\n').length - 1
+				});
+			}
+			j = lu.end;
+			attendValeur = false;
+			precedent = 'x';
+			continue;
+		}
+		if (c === ';' && pile.length === 0) break;
+		if (c === '(') {
+			// Un `(` collé à un identifiant ouvre un APPEL — sauf s'il s'agit d'une rune, qui
+			// enveloppe sans traduire. Sinon c'est un groupement, et `return ('Dur')` reste un
+			// retour de littéral.
+			const avant = texte.slice(0, j).match(/[\w$.]+$/)?.[0] ?? '';
+			const estAppel = /[\w$)\]]/.test(precedent) && !RUNES_TRANSPARENTES.includes(avant);
+			pile.push(estAppel ? 'appel' : 'groupe');
+			if (!estAppel) attendValeur = true;
+			precedent = '(';
+			j += 1;
+			continue;
+		}
+		if (c === '{' || c === '[') {
+			// ⚠️ Une STRUCTURE retournée n'est pas un libellé : `return { open: 'Ouverte' }[s]`
+			// est une table de dispatch, que la doctrine de cette garde écarte déjà.
+			pile.push('structure');
+			attendValeur = false;
+			precedent = c;
+			j += 1;
+			continue;
+		}
+		if (c === ')' || c === '}' || c === ']') {
+			if (pile.length === 0) break;
+			pile.pop();
+			attendValeur = false;
+			precedent = ')';
+			j += 1;
+			continue;
+		}
+		if (c === '?' || c === ':' || c === '|' || c === '&' || c === ',') {
+			// La virgule n'ouvre une position de valeur qu'HORS appel — sinon le 2ᵉ argument
+			// d'`i18nMsg` deviendrait une violation.
+			// ⚠️ **`=` n'est PAS dans cette liste, et c'est délibéré** : l'ajouter fait relever
+			// le code technique d'une comparaison (`s === 'paid'`), c'est-à-dire crier sur toutes
+			// les fonctions conformes. L'initialisateur d'une déclaration n'en a pas besoin —
+			// son balayage DÉMARRE après le `=`. (Régression introduite puis retirée en passe 3.)
+			attendValeur = c !== ',' || !dansUnAppel();
+			precedent = c;
+			j += 1;
+			continue;
+		}
+		attendValeur = false;
+		precedent = c;
+		j += 1;
+	}
+	return { retours: out, fin: j };
+}
+
+/**
+ * Relève les littéraux retournés par un corps de fonction.
  *
  * ⚠️ **La première rédaction n'examinait que le token collé à `return`**, si bien que
  * `return cond ? 'Payée' : 'Ouverte'` — *le patron même du domaine* — passait inaperçu.
  * (Passe 1 de revue.)
- *
- * ⚠️ **Et l'élargissement naïf se retourne contre son objet** : relever TOUT littéral de
- * l'expression ferait de `return i18nMsg('cle', 'repli')` une violation dans **toutes** les
- * fonctions conformes, et de `s === 'paid'` un libellé. D'où deux règles :
- *
- *   1. on ne relève qu'en **position de valeur** — après `return`, `?`, `:`, `||`, `&&`, `??`,
- *      ou une parenthèse de **groupement** ;
- *   2. **rien n'est relevé à l'intérieur d'un appel** : les arguments d'une fonction ne sont
- *      pas des retours. C'est ce qui distingue `i18nMsg('cle', 'repli')` d'un libellé nu.
  */
 function retoursLitteraux(corps: string, ligneDeBase: number): Retour[] {
 	const out: Retour[] = [];
 	const motif = /\breturn\b/g;
 	let m: RegExpExecArray | null;
 	while ((m = motif.exec(corps)) !== null) {
-		let j = m.index + m[0].length;
-		let attendValeur = true;
-		let profondeurAppel = 0;
-		let profondeurGroupe = 0;
-		let profondeurStructure = 0;
-		let precedent = '';
-		while (j < corps.length) {
-			const c = corps[j];
-			if (' \t\r\n'.includes(c)) {
-				j += 1;
-				continue;
-			}
-			if (QUOTES.includes(c)) {
-				const lu = readLiteral(corps, j);
-				if (!lu) break;
-				if (attendValeur && profondeurAppel === 0 && profondeurStructure === 0 && lu.kind === 'literal') {
-					out.push({
-						texte: lu.value,
-						ligne: ligneDeBase + corps.slice(0, j).split('\n').length - 1
-					});
-				}
-				// ⚠️ Reprendre APRÈS le littéral, gabarit compris : un `return` niché dans une
-				// interpolation serait sinon attribué à la fonction englobante.
-				j = lu.end;
-				motif.lastIndex = Math.max(motif.lastIndex, j);
-				attendValeur = false;
-				precedent = 'x';
-				continue;
-			}
-			if (c === ';' && profondeurAppel === 0 && profondeurGroupe === 0 && profondeurStructure === 0)
-				break;
-			// ⚠️ **Une STRUCTURE retournée n'est pas un libellé** — `return { open: 'Ouverte' }[s]`
-			// est une table de dispatch, forme légitime que la doctrine de cette garde écarte déjà
-			// (« indiscernable d'une table de replis légitime sans analyse de flot »). Sans ce
-			// suivi, la rédaction de la passe 1 criait sur du code sain — et un gate bruyant se
-			// fait désactiver. ⚠️ **Le tableau était pire que l'objet** : il ne relevait QUE le
-			// second élément, parce que la virgule rouvrait une position de valeur que le crochet
-			// n'avait jamais fermée. (Passe 2 de revue.)
-			if (c === '{' || c === '[') {
-				profondeurStructure += 1;
-				attendValeur = false;
-				precedent = c;
-				j += 1;
-				continue;
-			}
-			if (c === '}' || c === ']') {
-				if (profondeurStructure > 0) profondeurStructure -= 1;
-				else break;
-				attendValeur = false;
-				// ⚠️ `precedent` devient une FERMETURE : le `[s]` qui suit `{…}` est alors lu comme
-				// un accès, pas comme une nouvelle structure — et le `?? 'Aucun'` qui suivrait
-				// reste, lui, une position de valeur.
-				precedent = ')';
-				j += 1;
-				continue;
-			}
-			if (c === '(') {
-				// Un `(` collé à un identifiant ou à une fermeture ouvre un APPEL ; sinon c'est un
-				// groupement, et `return ('Dur')` reste un retour de littéral.
-				if (/[\w$)\]]/.test(precedent)) profondeurAppel += 1;
-				else {
-					profondeurGroupe += 1;
-					attendValeur = true;
-				}
-				precedent = '(';
-				j += 1;
-				continue;
-			}
-			if (c === ')') {
-				if (profondeurAppel > 0) profondeurAppel -= 1;
-				else if (profondeurGroupe > 0) profondeurGroupe -= 1;
-				else break;
-				attendValeur = false;
-				precedent = ')';
-				j += 1;
-				continue;
-			}
-			if (c === '?' || c === ':' || c === '|' || c === '&' || c === ',') {
-				// La virgule n'ouvre une position de valeur qu'HORS appel — sinon le 2ᵉ argument
-				// d'`i18nMsg` deviendrait une violation.
-				attendValeur = c !== ',' || profondeurAppel === 0;
-				precedent = c;
-				j += 1;
-				continue;
-			}
-			attendValeur = false;
-			precedent = c;
-			j += 1;
-		}
+		const lu = litterauxEnPositionDeValeur(corps, m.index + m[0].length, ligneDeBase);
+		out.push(...lu.retours);
+		// ⚠️ Reprendre APRÈS ce que le balayage a consommé : un `return` niché dans un gabarit
+		// serait sinon attribué une seconde fois à la fonction englobante. La borne d'ASI
+		// ci-dessus garantit qu'on ne saute pas le `return` suivant. (Passes 1 et 3.)
+		motif.lastIndex = Math.max(motif.lastIndex, lu.fin);
 	}
 	return out;
 }
@@ -345,11 +368,16 @@ function retoursLitteraux(corps: string, ligneDeBase: number): Retour[] {
  */
 export function candidatesDe(source: string, chemin = '<mémoire>'): Candidate[] {
 	const out: Candidate[] = [];
-	// ⚠️ `function\s*\*?\s*` capte les génératrices ; `(?::[^;\n]*?)?=(?![=>])` tolère une
+	// ⚠️ `function\s*\*?\s*` capte les génératrices ; `(?::[^;{}]*?)?=(?![=>])` tolère une
 	// annotation de type sans se laisser arrêter par la flèche d'un type fonction
 	// (`const x: () => string = …`). Sans elle, `const statusLabel: string = 'Ouvert'` n'était
 	// même pas COMPTÉE — ni conforme, ni en violation, simplement hors radar.
-	const decl = /(?:function\s*\*?\s*(\w+)|(?:const|let|var)\s+(\w+)\s*(?::[^;\n]*?)?=(?![=>]))/g;
+	// ⚠️ **`[^;{}]` et non `[^;\n]`** : une annotation peut tenir sur plusieurs lignes
+	// (`Record<\n string,\n string\n>`), et `\n` la coupait. Les trois caractères exclus sont
+	// des bornes d'instruction ou de bloc — le motif ne peut donc pas déborder sur la
+	// déclaration suivante, y compris pour un `const x: string;` sans initialisateur.
+	// (Passe 3 de revue.)
+	const decl = /(?:function\s*\*?\s*(\w+)|(?:const|let|var)\s+(\w+)\s*(?::[^;{}]*?)?=(?![=>]))/g;
 	let m: RegExpExecArray | null;
 	while ((m = decl.exec(source)) !== null) {
 		const nom = m[1] ?? m[2];
@@ -377,14 +405,11 @@ export function candidatesDe(source: string, chemin = '<mémoire>'): Candidate[]
 			continue;
 		}
 
-		// (b) `const nom = <littéral>` — le libellé posé directement sur la déclaration.
+		// (b) `const nom = <expression>` — le libellé posé sur la déclaration elle-même.
+		// ⚠️ **La première rédaction ne lisait qu'un littéral COLLÉ au `=`.** Un ternaire ou un
+		// `??` y ressortait `analysee: true` et sans retour — donc CONFORME, en silence, alors
+		// que le préambule promet cette forme. (Passe 3 de revue.)
 		const debut = sauterBlancs(source, apres);
-		if (QUOTES.includes(source[debut])) {
-			const lu = readLiteral(source, debut);
-			if (lu && lu.kind === 'literal') candidate.retours.push({ texte: lu.value, ligne });
-			continue;
-		}
-
 		const fin = finInstruction(source, debut);
 		const region = source.slice(debut, fin);
 
@@ -404,7 +429,12 @@ export function candidatesDe(source: string, chemin = '<mémoire>'): Candidate[]
 		}
 
 		// (d) une flèche de corps — `(…) => {…}` ou `() => <expr>`, ce qui couvre `$derived.by`.
-		if (fleche === -1) continue; // pas de corps de fonction : rien à lire, cf. `analysee`
+		if (fleche === -1) {
+			// Pas de corps de fonction : l'initialisateur EST l'expression. On la balaie en
+			// position de valeur, ce qui couvre `cond ? 'A' : 'B'`, `MAP[s] ?? 'X'` et les runes.
+			candidate.retours = litterauxEnPositionDeValeur(source, debut, ligne).retours;
+			continue;
+		}
 		const apresFleche = sauterBlancs(source, debut + fleche + 2);
 		if (source[apresFleche] === '{') {
 			lireCorps(apresFleche);
@@ -493,6 +523,24 @@ function finInstruction(source: string, i: number): number {
 	return source.length;
 }
 
+/** Rend les fichiers du périmètre, commentaires masqués — la lecture que partagent les gardes. */
+function releverLesFichiers(): { chemin: string; source: string }[] {
+	const out: { chemin: string; source: string }[] = [];
+	const parcourir = (rep: string) => {
+		for (const e of readdirSync(rep, { withFileTypes: true })) {
+			const chemin = join(rep, e.name);
+			if (e.isDirectory()) {
+				parcourir(chemin);
+				continue;
+			}
+			if (!dansLePerimetreDeFichier(e.name)) continue;
+			out.push({ chemin, source: masquerCommentaires(readFileSync(chemin, 'utf-8')) });
+		}
+	};
+	parcourir(RACINE);
+	return out;
+}
+
 /** Parcourt `src/` et rend toutes les déclarations candidates du dépôt. */
 function releverLeDepot(): Candidate[] {
 	const out: Candidate[] = [];
@@ -553,7 +601,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 4, conforme: 37 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 6, conforme: 35 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);
@@ -581,8 +629,19 @@ describe('ce que la garde reconnaît — cas synthétiques', () => {
 		expect(violationsDe(candidatesDe(src))).toEqual([]);
 	});
 
-	it('⚠️ un `case` de code technique n’est PAS un retour — sinon la garde crie sur les conformes', () => {
+	it('un littéral de comparaison placé AVANT le `return` est hors du balayage', () => {
+		// ⚠️ Le titre disait « un `case` » alors que le cas porte un `if`, et que le littéral y
+		// précède le `return` — l'automate ne pouvait structurellement pas le voir, quelle que
+		// soit sa logique. Un titre qui promet une borne que le cas n'éprouve pas est pire qu'un
+		// test absent : il fait croire la borne tenue. (Passe 3 de revue.) Le vrai cas du `case`
+		// est éprouvé ci-dessous, dans un `switch`.
 		const src = "function typeLabel(t) {\n\tif (t === 'open') return i18nMsg('k', 'Ouverte');\n\treturn t;\n}";
+		expect(violationsDe(candidatesDe(src))).toEqual([]);
+	});
+
+	it('⚠️ un `case` de code technique n’est PAS un retour — sinon la garde crie sur les conformes', () => {
+		const src =
+			"function typeLabel(t) {\n\tswitch (t) {\n\t\tcase 'open':\n\t\t\treturn i18nMsg('k', 'Ouverte');\n\t}\n\treturn t;\n}";
 		expect(violationsDe(candidatesDe(src))).toEqual([]);
 	});
 
@@ -659,8 +718,14 @@ describe('régressions trouvées en passe 1 de revue (Sonnet ×3, 2026-08-21)', 
 	});
 
 	it('voit un repli littéral derrière `||` ou `??`', () => {
-		const src = "function aLabel(x) {\n\treturn x ?? 'Aucun';\n}";
-		expect(violationsDe(candidatesDe(src))).toEqual(['<mémoire>:2 aLabel() → « Aucun »']);
+		// ⚠️ Les DEUX opérateurs sont éprouvés : le titre n'en couvrait qu'un, et `|` seul ouvre
+		// aussi une position de valeur dans l'automate. (Passe 3 de revue.)
+		expect(violationsDe(candidatesDe("function aLabel(x) {\n\treturn x ?? 'Aucun';\n}"))).toEqual([
+			'<mémoire>:2 aLabel() → « Aucun »'
+		]);
+		expect(violationsDe(candidatesDe("function bLabel(x) {\n\treturn x || 'Aucun';\n}"))).toEqual([
+			'<mémoire>:2 bLabel() → « Aucun »'
+		]);
 	});
 
 	it('analyse une EXPRESSION DE FONCTION assignée', () => {
@@ -729,6 +794,81 @@ describe('régressions trouvées en passe 1 de revue (Sonnet ×3, 2026-08-21)', 
 	// échangerait un faux négatif contre un faux positif — mauvais marché, cf. le préambule.
 	// Aucune occurrence dans `src/` au 2026-08-21. Si ce test rougit, c'est que la forme est
 	// apparue : la traiter alors pour de bon. (Passe 2 de revue.)
+	// ⚠️ **Passe 3 — les BORDS de l'automate cèdent, et dans les deux sens.**
+	it('⚠️ un GROUPEMENT ouvert dans un appel ne fait pas crier la garde', () => {
+		// `profondeurAppel` et `profondeurGroupe` étaient deux COMPTEURS, non une pile : la
+		// fermante décrémentait l'appel en priorité, quel que soit ce qui avait été ouvert en
+		// dernier. La suite de l'expression était alors lue comme si l'on était HORS appel, et
+		// le repli d'`i18nMsg` — du code parfaitement conforme — ressortait en violation.
+		const src = "function aLabel(n) {\n\treturn i18nMsg('cle', (n > 1) ? 'jours' : 'jour');\n}";
+		expect(violationsDe(candidatesDe(src))).toEqual([]);
+	});
+
+	it('⚠️ un cast parenthésé dans un appel non plus', () => {
+		const src = "function aLabel(v) {\n\treturn i18nMsg('k', (v as string) || 'Aucun');\n}";
+		expect(violationsDe(candidatesDe(src))).toEqual([]);
+	});
+
+	it('⚠️ un ternaire posé sur la DÉCLARATION rougit — le préambule le promettait', () => {
+		// Le cas (b) ne lisait qu'un littéral COLLÉ au `=`. Sans flèche ni `function`, la
+		// candidate ressortait `analysee: true` et sans retour : conforme, en silence.
+		expect(violationsDe(candidatesDe("const statusLabel = cond ? 'Ouverte' : 'Payée';"))).toEqual([
+			'<mémoire>:1 statusLabel() → « Ouverte »',
+			'<mémoire>:1 statusLabel() → « Payée »'
+		]);
+	});
+
+	it('⚠️ `$derived` est TRANSPARENT — une rune n’est pas un appel qui traduit', () => {
+		const src = "let statusLabel = $derived(s === 'paid' ? 'Payée' : 'Ouverte');";
+		expect(violationsDe(candidatesDe(src))).toEqual([
+			'<mémoire>:1 statusLabel() → « Payée »',
+			'<mémoire>:1 statusLabel() → « Ouverte »'
+		]);
+	});
+
+	it('un repli littéral derrière `??` sur la déclaration rougit aussi', () => {
+		expect(violationsDe(candidatesDe("const statusLabel = MAP[s] ?? 'Inconnu';"))).toEqual([
+			'<mémoire>:1 statusLabel() → « Inconnu »'
+		]);
+	});
+
+	it('⚠️ une annotation de type MULTI-LIGNE reste comptée', () => {
+		// `[^;\n]` interdisait le saut de ligne : la déclaration n'était ni conforme, ni en
+		// violation, ni non analysée — hors radar, et même la borne ne la voyait pas passer.
+		const src = "const statusLabel: Record<\n\tstring,\n\tstring\n> = { draft: 'Brouillon' };";
+		expect(candidatesDe(src).length).toBe(1);
+	});
+
+	it('⚠️ sans point-virgule, le `return` SUIVANT reste vu', () => {
+		// Le balayage débordait sur l'instruction suivante et poussait `lastIndex` au-delà : le
+		// `return` d'après n'était jamais rebalayé. Faux négatif MUET — la classe que `analysee`
+		// existe pour rendre impossible.
+		const src = "function aLabel(x) {\n\treturn i18nMsg('k', 'A')\n\treturn 'Dur'\n}";
+		expect(violationsDe(candidatesDe(src))).toEqual(['<mémoire>:3 aLabel() → « Dur »']);
+	});
+
+	// ⚠️ **Limite ASSUMÉE, et le correctif serait pire que le mal.** La règle « rien à
+	// l'intérieur d'un appel » ne regarde pas le NOM de l'appelé : `String('Dur')` blanchit donc
+	// un libellé. Nommer explicitement `i18nMsg` rendrait la garde aveugle à l'alias `msg(`,
+	// réellement employé (`settings/+page.svelte`) et reconnu par `findRelays`. Aucune occurrence
+	// dans `src/` au 2026-08-21. (Passe 3 de revue, trouvé par mutation.)
+	// ⚠️ **La limite « méthodes de classe » reposait sur une prémisse NON TESTÉE.** Le préambule
+	// dit « aucune classe TypeScript dans `src/` à ce jour » — mais rien ne le vérifiait, et une
+	// méthode de classe n'est jamais candidate : elle ne rougit ni ne se compte, contrairement
+	// aux formes couvertes par `analysee`. Ce test rougira le jour où la prémisse tombe, ce qui
+	// est exactement ce que la limite jumelle (2ᵉ déclaration d'une liste) obtient déjà.
+	// (Passe 3 de revue.)
+	it('la prémisse de la limite « méthodes de classe » tient encore — aucune classe dans src/', () => {
+		const avecClasse = releverLesFichiers()
+			.filter(({ source }) => /(^|\n)\s*(export\s+)?(abstract\s+)?class\s+\w/.test(source))
+			.map(({ chemin }) => chemin);
+		expect(avecClasse).toEqual([]);
+	});
+
+	it('limite assumée — un appel quelconque blanchit son littéral', () => {
+		expect(violationsDe(candidatesDe("function aLabel() {\n\treturn String('Dur');\n}"))).toEqual([]);
+	});
+
 	it('limite assumée — la 2ᵉ déclaration d’une liste échappe au relevé', () => {
 		expect(candidatesDe("const a = 1, statusLabel = 'Ouvert';")).toEqual([]);
 	});

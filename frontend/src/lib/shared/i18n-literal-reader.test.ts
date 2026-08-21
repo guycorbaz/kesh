@@ -334,7 +334,11 @@ describe('`corpsDeFonction`, exportée pour la garde des libellés en dur (23-3b
 
 describe('masquage des commentaires de BALISAGE — `<!-- -->` (23-3b)', () => {
 	// ⚠️ Sans cette extension, la prose française des commentaires Svelte passe pour des
-	// littéraux : 21 blocs, précisément là où vivent les sites que la garde doit lire.
+	// littéraux — **235 blocs, dont 49 porteurs d'un littéral lisible** (mesuré le 2026-08-21),
+	// précisément là où vivent les sites que la garde doit lire. ⚠️ Ce commentaire a porté « 21 »
+	// jusqu'à la passe 3 : le chiffre de la spec avait été réfuté et corrigé dans le module ET
+	// dans le compte rendu, mais pas ici — résidu de patch classique, le symptôme n'ayant pas
+	// été grepé sur les fichiers voisins.
 	it('un commentaire de balisage est blanchi, sa prose ne compte plus', () => {
 		const src = "<!-- Statut : 'Ouverte' -->\n<span>{x}</span>";
 		const masque = masquerCommentaires(src);
