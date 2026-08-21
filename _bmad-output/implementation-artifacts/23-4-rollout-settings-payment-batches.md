@@ -168,6 +168,18 @@ protéger l'epic.
       passe 1 de `validate` — un développeur suivant les numéros aurait cassé AC3 sans le voir.)*
 - [ ] **T3 — Scinder les deux clés à double sens** — AC2. ⚠️ **AVANT d'écrire quoi que ce soit aux
       catalogues** : entrer `payment-batches-col-total` telle quelle figerait le défaut.
+      **Les quatre clés d'arrivée, nommées** *(la clé de date ne l'était pas — passe 2)* :
+
+      | clé | sites | repli |
+      |---|---|---|
+      | `payment-batches-col-total` *(inchangée)* | liste `:222`, fiche `:98` | `'Total'` |
+      | **`payment-batches-line-amount`** *(neuve)* | fiche `:122` | `'Montant'` |
+      | `payment-batches-col-date` *(inchangée)* | liste `:220` | `'Exécution'` |
+      | **`payment-batches-detail-date`** *(neuve)* | fiche `:96` | `"Date d'exécution"` |
+
+      ⚠️ **Ce sont les deux clés NEUVES qui font l'écart 93 → 95** d'AC1. Contrôle après split :
+      `grep -rn "payment-batches-col-total\|payment-batches-col-date" frontend/src/` doit rendre
+      **trois** sites, pas cinq.
 - [ ] **T4 — `payment-batches` : 32 clés × 4 locales** *(30 d'allowlist + les 2 issues du split)* —
       AC1, **AC4**, **AC6**. ⚠️ **Exécuter le grep d'AC4 et COLLER sa sortie** — un critère qu'aucune
       tâche n'exécute est une affirmation invérifiable. ⚠️ **AC6** : vérifier si le rollout crée ou
@@ -177,10 +189,27 @@ protéger l'epic.
 - [ ] **T5 — `settings` : 55 clés × 4 locales** — AC1. ⚠️ **25 passent par le relais `msg`** de
       l'écran des modèles d'e-mail : le littéral vit au site `msg(`, pas au site `i18nMsg(`.
       `findRelays` les voit ; un grep naïf de `i18nMsg(` ne les verrait pas.
-      ⚠️ **28 des 55 — plus de la moitié — sont l'écran `settings/projects`** (projets analytiques),
-      que la première rédaction de cette spec ne nommait nulle part. Il porte un vocabulaire de
-      **hiérarchie** (« Projet parent », « — Aucun (projet racine) ») dont le précédent est au
-      catalogue et **n'est pas un calque** : cf. le § *Les termes*.
+      ⚠️ **« settings » est un DOSSIER, pas un préfixe de clé, et cette confusion a une victime
+      documentée** : une lentille de la passe 2 a compté par préfixe, trouvé **87** clés au lieu de
+      93, et conclu à une erreur d'arithmétique de la spec. Elle avait tort — mais elle prouve le
+      piège. **Ventilation réelle des 55, relevée au moissonneur :**
+
+      | préfixe | clés |
+      |---|---:|
+      | `projects-*` *(écran des projets analytiques)* | **28** |
+      | `email-templates-*` *(les 25 via relais + 3 directes)* | **20** |
+      | `settings-*` | 1 |
+      | `saving-*`, `save-*`, `cancel-*`, `creating-*`, `create-*`, `closing-*` | **6** |
+
+      ⚠️ **Les six dernières sont des clés GÉNÉRIQUES**, sans préfixe de domaine — un développeur
+      qui cherche « les 55 clés de settings » par préfixe en ratera exactement six. Elles sont
+      propres à ce dossier aujourd'hui *(vérifié : tous leurs sites y sont)*, mais leur nom ne le
+      dit pas : **candidates naturelles à une homonymie future**, à surveiller au contrôle d'AC7.
+
+      ⚠️ **28 des 55 — plus de la moitié — sont l'écran `settings/projects`**, que la première
+      rédaction ne nommait nulle part. Il porte un vocabulaire de **hiérarchie** (« Projet parent »,
+      « — Aucun (projet racine) ») dont le précédent est au catalogue et **n'est pas un calque** :
+      cf. le § *Les termes*.
 - [ ] **T6 — `onboarding` : 4 clés × 4 locales** — AC1. ⚠️ Le dossier est **partiellement traduit
       depuis la 23-1b** (8 libellés faits, 4 messages restants) : cette tâche referme l'écart.
 - [ ] **T7 — Les 4 `nav-*` de l'inventaire** — AC1 : `nav-credit-notes`, `nav-email-templates`,
@@ -189,6 +218,23 @@ protéger l'epic.
       sortis du français en dur. Les deux ensembles sont **disjoints**, vérifié.
 - [ ] **T8 — Décrémenter l'allowlist de 93** — AC1, borne recomptée depuis le fichier.
 - [ ] **T9 — Glossaire** : promotion des termes tranchés, dont **`lot`** — AC5.
+- [ ] **T9-bis — Relecture des replis français ET contrôle d'HOMONYMIE, langue par langue** — AC7.
+      ⚠️ **La 23-3 avait ces deux contrôles, et ils ont produit KF-041 et KF-042** — deux homonymies
+      qu'aucune garde automatique ne peut voir. La première rédaction de cette spec ne les demandait
+      pas. Pour chaque locale cible, relever les valeurs qui apparaissent **deux fois** :
+
+      ```sh
+      for l in de-CH it-CH en-CH; do
+        grep -hE "^(payment-batches-|projects-|email-templates-|settings-|onboarding-|nav-|save|cancel|creat|clos)" \
+          crates/kesh-i18n/locales/$l/messages.ftl |
+          sed 's/^[^=]*= //' | sort | uniq -d
+      done
+      ```
+
+      ⚠️ **Deux clés de sens différents qui aboutissent au même mot cible sont un défaut**, même si
+      chaque traduction est correcte isolément — c'est précisément ce que KF-041 (« Clôturer » et
+      « Fermer » confondus) et KF-042 (le faux ami « Valider ») décrivent. **Les six clés génériques
+      de T5 sont les premières candidates.** Consigner le tableau, pas seulement la conclusion.
 - [ ] **T10 — Balayer les verrous de français**, les trois greps — AC7.
 - [ ] **T11 — Gates complets, E2E comprise, et différentiel contre `main`** — AC8. ⚠️ **Le
       différentiel se lit sur `fichier › titre`, jamais sur `fichier:ligne`** : un commentaire
@@ -291,5 +337,6 @@ périmètre. Le moissonneur ne rend **aucun** repli à échapper (`aEchapper` vi
 
 | date | passe | résultat |
 |---|---|---|
+| 2026-08-21 | **passe 2** de `validate` | **0 CRITICAL retenu · 1 HIGH · 2 MEDIUM** (Haiku ×2). ⚠️ **QUATRE des cinq CRITICAL annoncés sont RÉFUTÉS au sol**, garde-fou Haiku de `CLAUDE.md` appliqué. **Le plus instructif est le dernier** : une lentille affirmait que l'allowlist ne contient que **87** clés du périmètre et non 93, avec une ventilation détaillée à l'appui. **Mesuré : 93, et 0 clé absente** — `payment-batches` 30/30, `settings` 55/55, `onboarding` 4/4, plus 4 `nav-*`. ⚠️ **Son erreur EST le finding** : elle a compté par **préfixe de clé** là où « settings » est un **DOSSIER**, et a raté six clés **génériques** (`save-`, `cancel-`, `create-`, `saving-`, `creating-`, `closing-`, une chacune). 28 + 20 + 1 = 49, plus 6 = 55. La ventilation par préfixe est désormais écrite dans T5, avec le piège — **une lentille s'y est trompée, un développeur s'y trompera**. Les deux autres CRITICAL réfutés visaient des consignes **déjà présentes** : l'ordre T2-avant-T3 est écrit dans T2 même, et AC1 distingue déjà 95 et 93 dans un tableau. ⚠️ **Signal de méthode** : la lentille qui a produit 3 CRITICAL et 7 HIGH n'a fait que **6 appels d'outils** ; celle qui en a fait 47 a produit un seul CRITICAL, faux mais argumenté et fécond. **Le volume de findings n'est pas une mesure de rigueur.** **Retenu** : les deux clés NEUVES du split n'étaient pas nommées — une seule l'était —, et la spec ne demandait **ni relecture des replis, ni contrôle d'homonymie langue par langue**, alors que la 23-3 les avait et que **KF-041 et KF-042 en sont nées**. T9-bis les ajoute, avec la commande et le tableau à consigner. |
 | 2026-08-21 | **passe 1** de `validate` | **1 CRITICAL · 2 HIGH · 3 MEDIUM · 0 LOW** (Sonnet ×2, contextes frais). ⚠️ **La lentille des FAITS rend UN seul écart sur vingt affirmations vérifiées** — tous les décomptes, les trois conflits de replis, la portée de la garde, les trois sites « Générer », le statut de `lot` et les quatre affirmations sur la 23-3b se recomptent exactement comme annoncé. **Le moissonneur exécuté sur la base réelle a donc tenu ses promesses.** ⚠️ **Mais la lentille de COHÉRENCE a trouvé une contradiction INTERNE, et c'est le CRITICAL** : AC1 annonçait 93 clés quand AC2 impose de scinder deux clés en quatre — un développeur recomptant honnêtement aurait trouvé un écart, et la sortie la moins coûteuse aurait été de **ne scinder qu'à moitié**, réintroduisant le défaut qu'AC2 existe pour fermer. Deux grandeurs distinctes sont désormais écrites : **95 clés au catalogue, 93 de décrément d'allowlist**. ⚠️ **Le correctif chiffré de la lentille était FAUX** (elle proposait 71 pour l'allowlist) : elle décomptait des clés neuves qui n'y ont jamais figuré — réfuté au sol. **DEUX HIGH, tous deux sur ma table des termes** : `virement` était **déjà en partie A du glossaire** et `NPA` attesté dans les quatre locales par `field-postal-code`, alors que la spec les envoyait à l'arbitrage. ⚠️ **Cette spec répète « relever avant d'inventer » et ne l'avait pas appliqué à sa propre table de termes** — la liste bloquante passe de QUATRE termes à **UN**. Et l'écran `settings/projects`, **28 des 55 clés de `settings`**, n'était nommé nulle part : son idiome de hiérarchie est attesté et **n'est pas un calque** (`übergeordnetes`, jamais *Eltern-*). **MEDIUM** : la numérotation des tâches contredisait leur ordre d'exécution — T3 devait précéder T2, un développeur suivant les numéros aurait rendu AC3 impossible à prouver ; AC4 et AC6 n'étaient portés par aucune tâche ; et le grep d'AC4 était ambigu sur un commentaire de code qu'une revue antérieure avait payé. |
 | 2026-08-21 | création | Spec écrite après **exécution du moissonneur sur la base réelle**, pas depuis le plan d'epic. Périmètre confirmé à **93** (30 + 55 + 4 + 4). ⚠️ **Trois replis divergents trouvés, deux dans le périmètre** — dont `payment-batches-col-total`, qui porte **deux grandeurs** (total du lot / montant d'une ligne) : jumeau exact du défaut de la 23-3, latent, et **que la traduction activerait**. ⚠️ **La garde « une clé, un repli » ne couvre pas ce domaine** (bornée à `supplier-invoices-`) : son extension entre au livrable. ⚠️ **Conséquence non vue de l'arbitrage de la 23-3b** : trois sites disent encore « Générer un lot » pour un objet dont le statut s'affiche « Créé ». ⚠️ **`lot` est employé et figé depuis la 23-3b sans être en partie A** du glossaire. |
