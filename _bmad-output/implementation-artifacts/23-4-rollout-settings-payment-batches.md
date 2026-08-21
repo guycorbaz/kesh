@@ -359,7 +359,7 @@ supérieure sur cette story, cette dérogation devra être rouverte.
       « Fermer » confondus) et KF-042 (le faux ami « Valider ») décrivent. **Les six clés génériques
       de T5 sont les premières candidates.** Consigner le tableau, pas seulement la conclusion.
 - [x] **T10 — Balayer les verrous de français**, les trois greps — AC7.
-- [ ] **T11 — Gates complets, E2E comprise, et différentiel contre `main`** — AC8. ⚠️ **Le
+- [x] **T11 — Gates complets, E2E comprise, et différentiel contre `main`** — AC8. ⚠️ **Le
       différentiel se lit sur `fichier › titre`, jamais sur `fichier:ligne`** : un commentaire
       ajouté décale les lignes et fabrique des régressions imaginaires. Précédent 23-3b.
 
@@ -542,6 +542,23 @@ verrous réels** : sept `toHaveText('Défaut'|'Personnalisé')` dans `email-temp
 le `data-testid` était en place et ne protégeait rien. Basculés sur `data-variant` (le CODE) et sur
 `toBeVisible`. ⚠️ **Ils seraient restés verts en français et n'auraient cassé qu'en allemand** —
 que la suite n'exécute pas (KF-043, #326).
+
+#### T11 / AC8 — les gates, base remise à zéro
+
+| gate | résultat |
+|---|---|
+| backend `test-fast.sh --ci` | **2219 / 2219**, 4 skippés |
+| `kesh-i18n` | **29 / 29**, dont `parity_between_locales` |
+| frontend `check` / lint / unit / build | 0 erreur · PASS · **713** · vert |
+| **E2E branche** | **184 passés · 37 échoués · 19 skippés** |
+| **E2E `main`** *(référence)* | **183 passés · 38 échoués · 19 skippés** |
+
+⚠️ **La branche fait MIEUX que `main`** : un test de plus passe, un de moins échoue. Les deux
+`invoices.spec.ts` qui échouaient sur `main` passent ici.
+
+**Un seul échec propre à la branche**, `product-revenue-account.spec.ts` — fichier **que la branche
+ne touche pas** (`git diff --name-only main..HEAD` : 0 occurrence), **rejoué 2 fois en isolation :
+4/4 vert à chaque run**. Flake, non déterministe, sans rapport avec le code de la story.
 
 ### Completion Notes List
 
