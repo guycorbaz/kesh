@@ -128,19 +128,19 @@ bloquant.**
       ⚠️ **Il ne reste rien à inventer** : les neuf termes sont soit attestés au catalogue, soit tranchés. ⚠️ **Si un terme NEUF apparaît en cours de route** — un
       dixième que le relevé ne couvre pas —, le proposer au Dev Agent Record et **S'ARRÊTER**. Ne jamais
       inventer : ces valeurs sont figées dans quatre catalogues **et** promues en partie A.
-- [ ] **T2 — Exporter `corpsDeFonction`** depuis `i18n-literal-reader.js` (+ son test) — elle existe
+- [x] **T2 — Exporter `corpsDeFonction`** depuis `i18n-literal-reader.js` (+ son test) — elle existe
       (`:374`) mais **n'est pas exportée**. AC1. ⚠️ **Elle ne suffit PAS à elle seule** : elle prend en
       entrée la position d'une accolade **déjà connue**. Localiser la déclaration (nom + vraie accolade
       de corps) reste à écrire. ⚠️ **Piège** : chercher « le premier `{` après le nom » casse sur un
       type inline — `function fooLabel(opts: { x: number }): string {` — il faut le `{` qui suit la
       **fermeture de la signature**. Aucune des 32 déclarations actuelles n'a ce cas ; **le verrouiller
       par un test** plutôt que compter dessus.
-- [ ] **T3 — Étendre `masquerCommentaires` aux commentaires `<!-- -->`** (+ son test) — elle ne masque
+- [x] **T3 — Étendre `masquerCommentaires` aux commentaires `<!-- -->`** (+ son test) — elle ne masque
       aujourd'hui que `//` et `/* */`, ce qui laisse **21** blocs de prose française passer pour des
       littéraux dans les `.svelte`. AC1. ⚠️ **Vérifié en passe 2, à recoller au Record** : **zéro** appel `i18nMsg` vit dans un commentaire
       HTML, et **zéro** commentaire HTML vit dans un bloc `<script>` — l'extension ne peut donc ni
       retirer un site compté, ni toucher un corps de fonction candidat. `sitesTotal` ne bouge pas.
-- [ ] **T4 — La garde**, sa borne exacte, son allowlist — AC1, AC3, AC4. ⚠️ **Avant les correctifs**,
+- [x] **T4 — La garde**, sa borne exacte, son allowlist — AC1, AC3, AC4. ⚠️ **Avant les correctifs**,
       et sa sortie rouge sur les cinq sites du patron est collée au Record — AC2.
 - [ ] **T5 — `payment-batches`** : `paymentBatchStatusLabel` (3 cas) et `failedItemLabel` (6 codes) — AC5, AC7.
 - [ ] **T6 — `credit-notes`** : `creditNoteStatusLabel` (3 cas) — AC5, AC7.
@@ -388,7 +388,80 @@ branche, qui n'a JAMAIS été poussée** — le travail est dans `git`, pas sur 
 
 ### Agent Model Used
 
+`claude-opus-5[1m]` (Claude Opus 5, 1M context) — implémentation du 2026-08-21.
+
 ### Debug Log References
+
+#### T4 — la garde AVANT tout correctif : sortie BRUTE du run (AC2)
+
+⚠️ **Premier run : la garde était MUETTE, et le gate VERT.** `accoladeDeCorps` cherchait
+l'accolade du corps juste après la fermeture de la signature — or presque toutes les
+déclarations du dépôt s'écrivent `function xLabel(…)\u200b: string {`, si bien que le
+caractère suivant est `:` et non `{`. Elle rendait `null` sur toutes, le relevé était vide,
+les violations aussi, et les deux tests du dépôt passaient. **Ce sont les cas synthétiques
+qui l'ont attrapée, jamais le relevé** — c'est leur raison d'être : un test muet ne se
+signale pas lui-même, et la § *Test Locally First* du dépôt en compte déjà trois précédents
+(`backfill_skips_archived_accounts`, les mutations de 16-2a, `authedApiContext`).
+
+Second run, après traversée de l'annotation de type de retour — **18 violations sur 5
+fonctions**, qui sont exactement les sites 1, 2, 3, 5 et 7 du tableau :
+
+```
+ FAIL  src/lib/shared/i18n-libelle-en-dur.test.ts > libellés en dur — l'angle mort #255 > aucune fonction de libellé ne retourne un littéral sans passer par i18nMsg
+AssertionError: expected [ …(18) ] to deeply equal []
+
++   "src/lib/features/credit-notes/credit-note-helpers.ts:26 creditNoteStatusLabel() → « Brouillon »",
++   "src/lib/features/credit-notes/credit-note-helpers.ts:28 creditNoteStatusLabel() → « Émis »",
++   "src/lib/features/credit-notes/credit-note-helpers.ts:30 creditNoteStatusLabel() → « Annulé »",
++   "src/lib/features/payment-batches/payment-batch-helpers.ts:23 paymentBatchStatusLabel() → « Généré »",
++   "src/lib/features/payment-batches/payment-batch-helpers.ts:25 paymentBatchStatusLabel() → « Confirmé »",
++   "src/lib/features/payment-batches/payment-batch-helpers.ts:27 paymentBatchStatusLabel() → « Annulé »",
++   "src/lib/features/payment-batches/payment-batch-helpers.ts:37 failedItemLabel() → « Facture introuvable »",
++   "src/lib/features/payment-batches/payment-batch-helpers.ts:39 failedItemLabel() → « Facture non ouverte »",
++   "src/lib/features/payment-batches/payment-batch-helpers.ts:41 failedItemLabel() → « Pas de coordonnées de paiement (IBAN/QR-IBAN) »",
++   "src/lib/features/payment-batches/payment-batch-helpers.ts:43 failedItemLabel() → « Déjà dans un lot en cours »",
++   "src/lib/features/payment-batches/payment-batch-helpers.ts:45 failedItemLabel() → « IBAN invalide »",
++   "src/lib/features/payment-batches/payment-batch-helpers.ts:47 failedItemLabel() → « QR-IBAN invalide »",
++   "src/routes/(app)/invoices/+page.svelte:254 statusLabel() → « Brouillon »",
++   "src/routes/(app)/invoices/+page.svelte:256 statusLabel() → « Validée »",
++   "src/routes/(app)/invoices/+page.svelte:258 statusLabel() → « Annulée »",
++   "src/routes/(app)/invoices/[id]/+page.svelte:603 statusLabel() → « Brouillon »",
++   "src/routes/(app)/invoices/[id]/+page.svelte:604 statusLabel() → « Validée »",
++   "src/routes/(app)/invoices/[id]/+page.svelte:605 statusLabel() → « Annulée »",
+```
+
+#### T4 / AC3 — la ventilation, recomptée depuis le relevé
+
+**39 déclarations candidates**, et la somme égale le total :
+
+| classe | nombre |
+|---|---|
+| conformes — aucun retour littéral | **30** |
+| écartées par CRITÈRE — cadratin ou chaîne vide | **4** |
+| en violation | **5** |
+| **total** | **39** |
+
+Les **23 hits bruts** (littéraux retournés) se ventilent en **18 violations** et **5 écartés**
+— `invoiceRevenueAccountLabel` en porte deux à elle seule.
+
+⚠️ **La spec annonçait HUIT fonctions au balayage ; il y en a NEUF.** Les trois candidats
+à écarter qu'elle nommait sont bien là — `invoiceRevenueAccountLabel` (`—`),
+`creditNoteRevenueAccountLabel` (`—`), `roleLabel` (chaîne vide) —, mais un **quatrième**
+s'y ajoute, de la même classe que le troisième :
+`journal-entries/AccountAutocomplete.svelte:168 displayLabel() → « »`. Il est **écarté par le
+critère de la chaîne vide**, pas par une exemption ; ce n'est donc pas un site fautif hors
+tableau au sens d'AC5-bis, et **aucune issue n'est ouverte** — il n'y a pas de défaut. Le
+chiffre écrit ici est le mesuré, pas celui de la spec.
+
+#### T3 — les deux conditions qui garantissent que `sitesTotal` ne bouge pas
+
+Vérifiées au dépôt, non supposées : **zéro** appel `i18nMsg` vit dans un commentaire de
+balisage, et **zéro** commentaire de balisage vit dans un bloc `<script>`. L'extension ne
+peut donc ni retirer un site compté ni toucher un corps de fonction candidat.
+
+⚠️ **Le « 21 blocs » de la spec ne se retrouve pas** : le dépôt porte **235** commentaires de
+balisage, dont **49** contiennent au moins un littéral lisible. Le nombre inscrit dans le
+code est le mesuré.
 
 ### Completion Notes List
 
