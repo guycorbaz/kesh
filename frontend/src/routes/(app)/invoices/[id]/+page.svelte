@@ -605,7 +605,12 @@
 	function statusLabel(s: string): string {
 		if (s === 'draft') return i18nMsg('invoice-status-draft', 'Brouillon');
 		if (s === 'validated') return i18nMsg('invoice-status-validated', 'Validée');
-		return i18nMsg('invoice-status-cancelled', 'Annulée');
+		// ⚠️ **Le `else` implicite affirmait « Annulée » pour TOUTE valeur inattendue** — un
+		// statut ajouté au backend et pas encore connu de ce bundle s'affichait donc comme
+		// annulé sur une pièce comptable : une affirmation fausse, et silencieuse. Le repli sur
+		// la valeur brute suit le patron des trois fonctions sœurs. (Passe 1 de revue.)
+		if (s === 'cancelled') return i18nMsg('invoice-status-cancelled', 'Annulée');
+		return s;
 	}
 </script>
 

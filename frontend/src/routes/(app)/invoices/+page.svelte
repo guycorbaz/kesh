@@ -261,6 +261,11 @@
 				return i18nMsg('invoice-status-validated', 'Validée');
 			case 'cancelled':
 				return i18nMsg('invoice-status-cancelled', 'Annulée');
+			// ⚠️ Sans ce `default`, une valeur hors énumération faisait tomber la fonction en fin
+			// de corps : `undefined`, affiché tel quel dans la colonne. Les trois fonctions
+			// sœurs portent toutes ce repli. (Passe 1 de revue.)
+			default:
+				return s;
 		}
 	}
 </script>

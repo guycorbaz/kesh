@@ -93,9 +93,9 @@ passage des rollouts qui touchent ces domaines, pas ici.
 | ouverte (facture) | offen | aperta | open | `Factures ouvertes` |
 | payée / impayée | bezahlt / unbezahlt | pagata / non pagata | paid / unpaid | `Payées` / `Impayées` |
 | **annulé(e)** | **storniert** | **annullato / annullata** | **cancelled** | `invoice-status-cancelled` (story 23-3b). ⚠️ **L'ACCORD suit la langue, pas le français** : un *lot* est masculin (`annullato`), une *nota di credito* féminine (`annullata`) ; l'allemand est invariable |
-| **créé** | **erstellt** | **creato / creata** | **created** | `imported-supplier-invoices-completed` (story 23-3b, arbitrage de Guy du 2026-08-20). ⚠️ **Le français a CHANGÉ** : le statut de lot disait « Généré ». Le verbe *créer* est désormais uniforme dans le domaine — `Créer une facture`, `Facture créée.`, un lot `Créé` — soit un mot de moins à retenir pour l'utilisateur |
-| **confirmé** | **bestätigt** | **confermato** | **confirmed** | `demo-reset-confirm-ok` (story 23-3b) |
-| **émis(e)** | **ausgestellt** | **emesso / emessa** | **issued** | `credit-note-revenue-account-archived` (story 23-3b). ⚠️ **Ne pas le confondre avec *validé***, qui désigne l'acte d'immuabilité d'une facture : émettre un avoir et valider une facture sont deux actes distincts, dont un seul est irréversible |
+| **créé(e)** | **erstellt** | **creato / creata** | **created** | `imported-supplier-invoices-completed` (story 23-3b, arbitrage de Guy du 2026-08-20) — ⚠️ **relevé au participe**, contrairement à `confirmé` et `émis` : la clé dit « Facture **créée**. / Rechnung **erstellt**. / Fattura **creata**. / Invoice **created**. » ; seul le masculin `creato` est un accord dérivé. ⚠️ **Le français a CHANGÉ** : le statut de lot disait « Généré ». Le verbe *créer* est désormais uniforme dans le domaine — `Créer une facture`, `Facture créée.`, un lot `Créé` — soit un mot de moins à retenir pour l'utilisateur |
+| **confirmé(e)** | **bestätigt** | **confermato / confermata** | **confirmed** | ⚠️ **DÉRIVÉ, non relevé** (story 23-3b, passe 1 de revue). `demo-reset-confirm-ok` porte l'**infinitif** — `Confirmer` / `Bestätigen` / `Conferma` / `Confirm` —, pas le participe. **Aucune forme participiale n'existait dans les catalogues avant cette story** : ces quatre valeurs sont une transformation grammaticale, pas un relevé. La première rédaction citait cette clé comme *attestante*, ce qui était faux |
+| **émis(e)** | **ausgestellt** | **emesso / emessa** | **issued** | `credit-note-revenue-account-archived` (story 23-3b) — ⚠️ **relevé pour l'ALLEMAND SEUL** : la clé porte bien `ausgestellt` en participe (tournure passive), mais l'italien et l'anglais y sont à l'**infinitif** (`emettere`, `issue`), de même que le français (`émettre`). **`emesso`/`emessa`/`issued`/`Émis` sont donc DÉRIVÉS.** ⚠️ **Ne pas confondre avec *validé***, qui désigne l'acte d'immuabilité d'une facture : émettre un avoir et valider une facture sont deux actes distincts, dont un seul est irréversible |
 | **relevé (bancaire)** | **Kontoauszug** | **estratto conto** | **statement** | `homepage-bank-empty-guided` (story 23-3b). Relevé en cours de route, hors des trois statuts qu'AC6 exigeait : `nav-bank-import` l'emploie et le fige, donc il monte |
 | en retard | **überfällig** | in ritardo | overdue | `En retard` |
 | échéance | **Fälligkeit** | scadenza | due date | `Échéance` |
@@ -214,6 +214,21 @@ ne couvrait pas et que Guy a tranchés le 2026-08-20 — et **deux** ont été r
 décrit : elles étaient **attestées au catalogue et absentes de la partie A**, donc libres de
 dériver. `annulé(e)` est le cas net — la spec de cette story le donnait pour « ✅ attesté » sans
 que personne ne remarque qu'il n'était protégé par rien.
+
+⚠️ **« Relevé » et « dérivé » ne sont PAS la même chose, et la colonne de droite doit le dire.**
+Un terme est **relevé** quand la clé citée porte *exactement* la forme écrite. Il est **dérivé**
+quand il a fallu une transformation — accord de genre, ou passage de l'infinitif au participe.
+La distinction n'est pas cosmétique : le préambule pose le relevé comme **la seule discipline qui
+borne la dérive**, faute de relecture par un locuteur natif. Un terme dérivé présenté comme relevé
+retire ce garde-fou tout en donnant l'apparence de l'avoir appliqué.
+
+⚠️ **Le défaut a été commis puis corrigé DANS CETTE MÊME STORY** : `confirmé` et `émis` citaient
+des clés qui portent l'**infinitif**, et les Completion Notes affirmaient « aucun terme n'a été
+inventé ». Relevé en passe 1 de revue, vérifié au grep — aucune forme participiale n'existait dans
+les catalogues avant. C'est le troisième précédent de cette famille sur ce dossier, après le
+`city`/`Town/city` de la 23-1b et le « personne de contact » de sa passe 4 : **le glossaire se
+fait réfuter par les clés qu'il cite comme preuves**, et seule une vérification au catalogue le
+détecte.
 
 ⚠️ **Les six codes d'échec de `failedItemLabel` ne montent PAS en partie A** — décision de Guy :
 ce sont des libellés d'erreur, pas des termes métier. Le glossaire porte le vocabulaire que

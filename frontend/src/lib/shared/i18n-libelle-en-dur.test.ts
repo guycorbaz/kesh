@@ -103,7 +103,27 @@ const NEUTRES = new Set(['', '—', '–', '-', '…', 'N/A']);
 const EXEMPTEES: { nom: string; chemin: string; motif: string }[] = [];
 
 type Retour = { texte: string; ligne: number };
-type Candidate = { nom: string; chemin: string; ligne: number; retours: Retour[] };
+/**
+ * `analysee: false` ⇒ **la déclaration a un corps que la garde n'a PAS su lire.**
+ *
+ * ⚠️ **C'est le correctif de fond de la passe 1 de revue, et il vaut plus que les formes
+ * syntaxiques qu'il a fallu ajouter par ailleurs.** Auparavant, toute forme non reconnue
+ * ressortait avec `retours: []` — c'est-à-dire **comptée parmi les conformes**. Une fonction
+ * jamais inspectée était donc déclarée saine, ce qui est exactement le mode d'échec que cette
+ * garde existe pour fermer. Désormais elle rougit : mieux vaut un faux positif bruyant qu'un
+ * faux négatif muet.
+ *
+ * ⚠️ **Une déclaration SANS corps de fonction reste `analysee: true`** — `let x = $state('')`,
+ * `$derived(expr)` : il n'y a pas de corps à lire, et l'analyse « littéral en tête » a bien eu
+ * lieu. Les classer « non analysées » ferait rougir la garde sur du code conforme.
+ */
+type Candidate = {
+	nom: string;
+	chemin: string;
+	ligne: number;
+	retours: Retour[];
+	analysee: boolean;
+};
 
 /** Saute espaces et sauts de ligne. Les commentaires sont déjà masqués en amont. */
 function sauterBlancs(source: string, i: number): number {
@@ -190,18 +210,90 @@ function accoladeDeCorps(source: string, apresNom: number): number | null {
 	return null;
 }
 
-/** Relève les littéraux en **tête d'un retour** dans un corps de fonction. */
+/**
+ * Relève les littéraux retournés par un corps de fonction — ceux qui sont en **position de
+ * valeur**, et eux seuls.
+ *
+ * ⚠️ **La première rédaction n'examinait que le token collé à `return`**, si bien que
+ * `return cond ? 'Payée' : 'Ouverte'` — *le patron même du domaine* — passait inaperçu.
+ * (Passe 1 de revue.)
+ *
+ * ⚠️ **Et l'élargissement naïf se retourne contre son objet** : relever TOUT littéral de
+ * l'expression ferait de `return i18nMsg('cle', 'repli')` une violation dans **toutes** les
+ * fonctions conformes, et de `s === 'paid'` un libellé. D'où deux règles :
+ *
+ *   1. on ne relève qu'en **position de valeur** — après `return`, `?`, `:`, `||`, `&&`, `??`,
+ *      ou une parenthèse de **groupement** ;
+ *   2. **rien n'est relevé à l'intérieur d'un appel** : les arguments d'une fonction ne sont
+ *      pas des retours. C'est ce qui distingue `i18nMsg('cle', 'repli')` d'un libellé nu.
+ */
 function retoursLitteraux(corps: string, ligneDeBase: number): Retour[] {
 	const out: Retour[] = [];
 	const motif = /\breturn\b/g;
 	let m: RegExpExecArray | null;
 	while ((m = motif.exec(corps)) !== null) {
-		const i = sauterBlancs(corps, m.index + m[0].length);
-		if (!QUOTES.includes(corps[i])) continue;
-		const lu = readLiteral(corps, i);
-		// ⚠️ Un gabarit interpolé n'est pas un libellé en dur — le lecteur les distingue.
-		if (!lu || lu.kind !== 'literal') continue;
-		out.push({ texte: lu.value, ligne: ligneDeBase + corps.slice(0, i).split('\n').length - 1 });
+		let j = m.index + m[0].length;
+		let attendValeur = true;
+		let profondeurAppel = 0;
+		let profondeurGroupe = 0;
+		let precedent = '';
+		while (j < corps.length) {
+			const c = corps[j];
+			if (' \t\r\n'.includes(c)) {
+				j += 1;
+				continue;
+			}
+			if (QUOTES.includes(c)) {
+				const lu = readLiteral(corps, j);
+				if (!lu) break;
+				if (attendValeur && profondeurAppel === 0 && lu.kind === 'literal') {
+					out.push({
+						texte: lu.value,
+						ligne: ligneDeBase + corps.slice(0, j).split('\n').length - 1
+					});
+				}
+				// ⚠️ Reprendre APRÈS le littéral, gabarit compris : un `return` niché dans une
+				// interpolation serait sinon attribué à la fonction englobante.
+				j = lu.end;
+				motif.lastIndex = Math.max(motif.lastIndex, j);
+				attendValeur = false;
+				precedent = 'x';
+				continue;
+			}
+			if (c === ';' && profondeurAppel === 0 && profondeurGroupe === 0) break;
+			if (c === '(') {
+				// Un `(` collé à un identifiant ou à une fermeture ouvre un APPEL ; sinon c'est un
+				// groupement, et `return ('Dur')` reste un retour de littéral.
+				if (/[\w$)\]]/.test(precedent)) profondeurAppel += 1;
+				else {
+					profondeurGroupe += 1;
+					attendValeur = true;
+				}
+				precedent = '(';
+				j += 1;
+				continue;
+			}
+			if (c === ')') {
+				if (profondeurAppel > 0) profondeurAppel -= 1;
+				else if (profondeurGroupe > 0) profondeurGroupe -= 1;
+				else break;
+				attendValeur = false;
+				precedent = ')';
+				j += 1;
+				continue;
+			}
+			if (c === '?' || c === ':' || c === '|' || c === '&' || c === ',') {
+				// La virgule n'ouvre une position de valeur qu'HORS appel — sinon le 2ᵉ argument
+				// d'`i18nMsg` deviendrait une violation.
+				attendValeur = c !== ',' || profondeurAppel === 0;
+				precedent = c;
+				j += 1;
+				continue;
+			}
+			attendValeur = false;
+			precedent = c;
+			j += 1;
+		}
 	}
 	return out;
 }
@@ -210,30 +302,48 @@ function retoursLitteraux(corps: string, ligneDeBase: number): Retour[] {
  * Relève toutes les déclarations candidates d'une source et, pour chacune, les littéraux
  * qu'elle retourne.
  *
- * Quatre formes de déclaration sont reconnues — `function nom(…) {…}`, `const nom = (…) => {…}`,
- * `const nom = (…) => <expression>` et `const nom = <expression>` (dont `$derived`,
- * `$derived.by(() => {…})`). ⚠️ **La quatrième compte** : `const statusLabel = 'Ouvert'`
- * doit rougir comme le ferait un `return`.
+ * Formes reconnues — `function nom(…) {…}` (génératrice comprise), `const nom = (…) => {…}`,
+ * `const nom = (…) => <expression>`, `const nom = function (…) {…}`, et `const nom = <expression>`
+ * (dont `$derived`, `$derived.by(() => {…})`). L'annotation de type est tolérée entre le nom et
+ * le `=`. ⚠️ **La dernière forme compte** : `const statusLabel = 'Ouvert'` doit rougir comme le
+ * ferait un `return`.
+ *
+ * ⚠️ **Ce qui n'est PAS reconnu doit être BRUYANT, jamais silencieux** — cf. `analysee`. Restent
+ * hors de portée, et c'est écrit plutôt que découvert : les **méthodes de classe**
+ * (`class Foo { statusLabel() {…} }`) — aucune classe TypeScript dans `src/` à ce jour — et les
+ * propriétés d'objet (`{ label: 'x' }`), indiscernables d'une table de replis légitime.
  */
 export function candidatesDe(source: string, chemin = '<mémoire>'): Candidate[] {
 	const out: Candidate[] = [];
-	const decl = /(?:function\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=)/g;
+	// ⚠️ `function\s*\*?\s*` capte les génératrices ; `(?::[^;\n]*?)?=(?![=>])` tolère une
+	// annotation de type sans se laisser arrêter par la flèche d'un type fonction
+	// (`const x: () => string = …`). Sans elle, `const statusLabel: string = 'Ouvert'` n'était
+	// même pas COMPTÉE — ni conforme, ni en violation, simplement hors radar.
+	const decl = /(?:function\s*\*?\s*(\w+)|(?:const|let|var)\s+(\w+)\s*(?::[^;\n]*?)?=(?![=>]))/g;
 	let m: RegExpExecArray | null;
 	while ((m = decl.exec(source)) !== null) {
 		const nom = m[1] ?? m[2];
 		if (!SUFFIXES.some((s) => nom.endsWith(s))) continue;
 		const ligne = source.slice(0, m.index).split('\n').length;
 		const apres = m.index + m[0].length;
-		const candidate: Candidate = { nom, chemin, ligne, retours: [] };
+		const candidate: Candidate = { nom, chemin, ligne, retours: [], analysee: true };
 		out.push(candidate);
+
+		/** Lit le corps ouvert en `ouvrante` ; marque la candidate NON ANALYSÉE si c'est illisible. */
+		const lireCorps = (ouvrante: number) => {
+			const corps = corpsDeFonction(source, ouvrante);
+			if (corps === null) {
+				candidate.analysee = false;
+				return;
+			}
+			candidate.retours = retoursLitteraux(corps, source.slice(0, ouvrante).split('\n').length);
+		};
 
 		// (a) `function nom(…) {…}` — l'accolade du corps, jamais celle d'un type.
 		if (m[1] !== undefined) {
 			const ouvrante = accoladeDeCorps(source, apres);
-			if (ouvrante === null) continue;
-			const corps = corpsDeFonction(source, ouvrante);
-			if (corps === null) continue;
-			candidate.retours = retoursLitteraux(corps, source.slice(0, ouvrante).split('\n').length);
+			if (ouvrante === null) candidate.analysee = false;
+			else lireCorps(ouvrante);
 			continue;
 		}
 
@@ -245,19 +355,29 @@ export function candidatesDe(source: string, chemin = '<mémoire>'): Candidate[]
 			continue;
 		}
 
-		// (c) une flèche dans l'expression d'initialisation — `(…) => {…}` ou `() => <expr>`,
-		// ce qui couvre aussi `$derived.by(() => {…})`.
 		const fin = finInstruction(source, debut);
-		const fleche = source.slice(debut, fin).indexOf('=>');
-		if (fleche === -1) continue;
+		const region = source.slice(debut, fin);
+
+		// (c) `const nom = function (…) {…}` — une expression de fonction, anonyme ou nommée.
+		//     Elle ressortait « conforme » sans que son corps ait jamais été lu.
+		const motFunction = /\bfunction\b/.exec(region);
+		const fleche = flecheDeCorps(region);
+		if (motFunction !== null && (fleche === -1 || motFunction.index < fleche)) {
+			const nomOuParen = sauterBlancs(source, debut + motFunction.index + 'function'.length);
+			// `function (…)` anonyme ou `function inner(…)` : sauter le nom s'il y en a un.
+			let k = nomOuParen;
+			while (k < source.length && /[\w$]/.test(source[k])) k += 1;
+			const ouvrante = accoladeDeCorps(source, k);
+			if (ouvrante === null) candidate.analysee = false;
+			else lireCorps(ouvrante);
+			continue;
+		}
+
+		// (d) une flèche de corps — `(…) => {…}` ou `() => <expr>`, ce qui couvre `$derived.by`.
+		if (fleche === -1) continue; // pas de corps de fonction : rien à lire, cf. `analysee`
 		const apresFleche = sauterBlancs(source, debut + fleche + 2);
 		if (source[apresFleche] === '{') {
-			const corps = corpsDeFonction(source, apresFleche);
-			if (corps === null) continue;
-			candidate.retours = retoursLitteraux(
-				corps,
-				source.slice(0, apresFleche).split('\n').length
-			);
+			lireCorps(apresFleche);
 		} else if (QUOTES.includes(source[apresFleche])) {
 			// Corps d'expression : `const xLabel = (s) => 'Ouvert'`.
 			const lu = readLiteral(source, apresFleche);
@@ -270,6 +390,49 @@ export function candidatesDe(source: string, chemin = '<mémoire>'): Candidate[]
 		}
 	}
 	return out;
+}
+
+/**
+ * Position de la flèche qui ouvre un CORPS de fonction dans `region`, ou `-1`.
+ *
+ * ⚠️ **La première occurrence textuelle de `=>` ne convient pas** : dans
+ * `const xLabel = (cb: () => void) => 'Ouvert'`, c'est la flèche du TYPE de `cb` qu'on trouve
+ * d'abord.
+ *
+ * ⚠️ **Et exiger la profondeur ZÉRO ne convient pas non plus** — première rédaction du correctif,
+ * qui a cassé `$derived.by(() => {…})`, dont la flèche vit à l'intérieur des parenthèses de
+ * l'appel. Le critère juste est la profondeur **MINIMALE** rencontrée : elle vaut 0 pour une
+ * fléchée nue, 1 pour un `$derived.by`, et écarte dans les deux cas la flèche d'un type de
+ * paramètre, qui est toujours plus profonde que le corps qu'elle précède.
+ */
+function flecheDeCorps(region: string): number {
+	let profondeur = 0;
+	let meilleure = -1;
+	let profondeurMeilleure = Infinity;
+	let j = 0;
+	while (j < region.length) {
+		const c = region[j];
+		if (QUOTES.includes(c)) {
+			const lu = readLiteral(region, j);
+			if (lu) {
+				j = lu.end;
+				continue;
+			}
+		}
+		if (c === '(' || c === '[' || c === '{') profondeur += 1;
+		else if (c === ')' || c === ']' || c === '}') profondeur -= 1;
+		else if (c === '=' && region[j + 1] === '>' && profondeur < profondeurMeilleure) {
+			meilleure = j;
+			profondeurMeilleure = profondeur;
+		}
+		j += 1;
+	}
+	return meilleure;
+}
+
+/** Les candidates dont le corps existe mais n'a PAS pu être lu — cf. `Candidate.analysee`. */
+function nonAnalyseesDe(candidates: Candidate[]): string[] {
+	return candidates.filter((c) => !c.analysee).map((c) => `${c.chemin}:${c.ligne} ${c.nom}()`);
 }
 
 /**
@@ -345,30 +508,34 @@ describe('libellés en dur — l’angle mort #255', () => {
 		expect(EXEMPTEES.filter((e) => e.motif.trim().length === 0)).toEqual([]);
 	});
 
-	// ⚠️ **Un total doit être cohérent avec sa propre ventilation.** Sur l'epic 16, le compte
-	// rendu est devenu le lieu du défaut plus souvent que le code ; cet invariant met la
-	// ventilation sous test au lieu de la laisser vivre dans un Change Log que personne ne
-	// recompte. Au 2026-08-21 : **41 = 37 + 4 + 0**.
-	//
-	// ⚠️ Le relevé est passé de 39 à 41 pendant la story elle-même, et l'écart a été RECOMPTÉ,
-	// non ajusté : `orgTypeLabel` (site 4) et `getGroupLabel` (site 6) sont deux fonctions que
-	// les correctifs ont CRÉÉES — un défaut qui n'appelait aucune fonction en gagne une, donc
-	// le relevé monte. Une hausse après correctif est le signe attendu ; c'est une BAISSE qui
-	// devrait inquiéter, car elle signifie qu'un libellé a cessé d'être une fonction.
-	it('la ventilation se somme au total — conformes + écartées par critère + en violation', () => {
+	// ⚠️ **La rédaction précédente de ce test était une TAUTOLOGIE, et elle a été relevée en
+	// passe 1 de revue** : `conformes` et `ecartees` y étaient définis par SOUSTRACTION à partir
+	// du total, si bien que `conformes + ecartees + violations === total` se réduisait à `N = N`.
+	// Elle ne pouvait pas rougir — un test muet, écrit dans le test qui dénonce les tests muets.
+	// Chaque candidate est désormais classée **une seule fois**, et c'est la partition qui est
+	// vérifiée : une régression de la logique de classification la casse pour de bon.
+	it('la ventilation partitionne le relevé — chaque candidate dans une classe et une seule', () => {
 		const candidates = releverLeDepot();
-		const avecRetour = candidates.filter((c) => c.retours.length > 0);
-		const enViolation = avecRetour.filter((c) =>
-			c.retours.some((r) => !NEUTRES.has(r.texte.trim()))
-		);
-		const conformes = candidates.length - avecRetour.length;
-		const ecartees = avecRetour.length - enViolation.length;
-		expect(conformes + ecartees + enViolation.length).toBe(candidates.length);
-		expect({ conformes, ecartees, enViolation: enViolation.length }).toEqual({
-			conformes: 37,
-			ecartees: 4,
-			enViolation: 0
-		});
+		const classes = { nonAnalysee: 0, enViolation: 0, ecartee: 0, conforme: 0 };
+		for (const c of candidates) {
+			if (!c.analysee) classes.nonAnalysee += 1;
+			else if (c.retours.some((r) => !NEUTRES.has(r.texte.trim()))) classes.enViolation += 1;
+			else if (c.retours.length > 0) classes.ecartee += 1;
+			else classes.conforme += 1;
+		}
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 4, conforme: 37 });
+		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
+		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
+		expect(somme).toBe(CANDIDATES_ATTENDUES);
+	});
+
+	// ⚠️ **Le garde-fou le plus important de cette garde, et il est né d'une revue.** Une
+	// déclaration dont le corps existe et n'a pas pu être lu ressortait auparavant « conforme » :
+	// la garde déclarait saine une fonction qu'elle n'avait jamais inspectée. Ce test rend cet
+	// état IMPOSSIBLE à ignorer — si une forme syntaxique nouvelle entre dans le dépôt, elle
+	// rougit ici plutôt que de disparaître dans le compte des conformes.
+	it('aucune déclaration candidate n’échappe à l’analyse de son corps', () => {
+		expect(nonAnalyseesDe(releverLeDepot())).toEqual([]);
 	});
 });
 
@@ -433,5 +600,79 @@ describe('ce que la garde reconnaît — cas synthétiques', () => {
 
 	it('ne relève que les noms qui promettent un libellé', () => {
 		expect(candidatesDe("function total() {\n\treturn 'Dur';\n}")).toEqual([]);
+	});
+});
+
+describe('régressions trouvées en passe 1 de revue (Sonnet ×3, 2026-08-21)', () => {
+	// ⚠️ **Les deux premiers cas disent la même chose** : la garde comptait comme CONFORMES des
+	// fonctions dont elle n'avait jamais lu le corps. C'est le mode d'échec que cette garde
+	// existe pour fermer, reproduit dans la garde elle-même.
+	it('voit un littéral retourné par un TERNAIRE — le patron même du domaine', () => {
+		const src = "function statusLabel(s) {\n\treturn s === 'paid' ? 'Payée' : 'Ouverte';\n}";
+		expect(violationsDe(candidatesDe(src))).toEqual([
+			'<mémoire>:2 statusLabel() → « Payée »',
+			'<mémoire>:2 statusLabel() → « Ouverte »'
+		]);
+	});
+
+	it('⚠️ mais un littéral de COMPARAISON reste un code technique, pas un libellé', () => {
+		// Sans cette borne, `i18nMsg('cle', 'repli')` deviendrait une violation dans TOUTES les
+		// fonctions conformes : le correctif du ternaire se retournerait contre son objet.
+		const src =
+			"function statusLabel(s) {\n\treturn s === 'paid' ? i18nMsg('k-paid', 'Payée') : i18nMsg('k-open', 'Ouverte');\n}";
+		expect(violationsDe(candidatesDe(src))).toEqual([]);
+	});
+
+	it('voit un littéral retourné entre PARENTHÈSES', () => {
+		const src = "function aLabel() {\n\treturn ('Dur');\n}";
+		expect(violationsDe(candidatesDe(src))).toEqual(['<mémoire>:2 aLabel() → « Dur »']);
+	});
+
+	it('voit un repli littéral derrière `||` ou `??`', () => {
+		const src = "function aLabel(x) {\n\treturn x ?? 'Aucun';\n}";
+		expect(violationsDe(candidatesDe(src))).toEqual(['<mémoire>:2 aLabel() → « Aucun »']);
+	});
+
+	it('analyse une EXPRESSION DE FONCTION assignée', () => {
+		const src = "const statusLabel = function (s) {\n\treturn 'Ouvert';\n};";
+		expect(violationsDe(candidatesDe(src))).toEqual(['<mémoire>:2 statusLabel() → « Ouvert »']);
+	});
+
+	it('relève une déclaration portant une ANNOTATION DE TYPE', () => {
+		// Le motif exigeait `=` juste après le nom : `const x: string = …` n'était même pas
+		// comptée — ni conforme, ni en violation, simplement hors radar.
+		expect(candidatesDe("const statusLabel: string = 'Ouvert';").length).toBe(1);
+		expect(violationsDe(candidatesDe("const statusLabel: string = 'Ouvert';"))).toEqual([
+			'<mémoire>:1 statusLabel() → « Ouvert »'
+		]);
+	});
+
+	it('relève une fonction GÉNÉRATRICE', () => {
+		expect(candidatesDe("function* aLabel() {\n\treturn 'Dur';\n}").length).toBe(1);
+	});
+
+	// ⚠️ **Le correctif de FOND, et il vaut plus que les cas ci-dessus** : plutôt que de courir
+	// après chaque forme syntaxique, ce qui n'a pas pu être lu doit être BRUYANT. Une candidate
+	// dont le corps existe et n'a pas été analysé fait rougir la garde au lieu de gonfler le
+	// compte des conformes.
+	it('⚠️ une fonction dont le corps n’a PAS pu être lu fait rougir — jamais « conforme »', () => {
+		const tronque = 'function aLabel(): string {\n\treturn 1;';
+		const c = candidatesDe(tronque);
+		expect(c.length).toBe(1);
+		expect(c[0].analysee).toBe(false);
+		expect(nonAnalyseesDe(c)).toEqual(['<mémoire>:1 aLabel()']);
+	});
+
+	it('une déclaration SANS corps de fonction reste analysée — elle n’a pas de corps à lire', () => {
+		// `let x = $state('')` ou `$derived(expr)` : l'analyse « littéral en tête » a bien eu
+		// lieu. Les classer « non analysées » ferait rougir la garde sur du code conforme.
+		for (const src of ["let fLabel = $state('');", 'let equityLabel = $derived(cond ? a : b);']) {
+			expect(candidatesDe(src)[0].analysee).toBe(true);
+		}
+	});
+
+	it('un `return` imbriqué dans un gabarit n’est pas attribué à la fonction englobante', () => {
+		const src = "function aLabel() {\n\treturn `${(function () { return 'Dur'; })()}`;\n}";
+		expect(violationsDe(candidatesDe(src))).toEqual([]);
 	});
 });

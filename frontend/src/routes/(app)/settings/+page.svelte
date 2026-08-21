@@ -179,7 +179,11 @@
 	 * rien. Les trois valeurs viennent de `chart_of_accounts/mod.rs:215`.
 	 */
 	function orgTypeLabel(orgType: string): string {
-		switch (orgType.toLowerCase()) {
+		// ⚠️ `?? ''` par défense en profondeur : la colonne porte `NOT NULL` et une contrainte
+		// `CHECK`, donc le cas n'est pas atteignable en base saine — mais sans cette garde, un
+		// `null` transformerait un affichage vide en EXCEPTION de rendu. Le correctif ne doit
+		// pas aggraver le mode d'échec qu'il corrige. (Passe 1 de revue.)
+		switch ((orgType ?? '').toLowerCase()) {
 			case 'independant':
 				return msg('onboarding-org-independant', 'Indépendant');
 			case 'association':
