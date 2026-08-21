@@ -163,6 +163,33 @@ bloquant.**
       story en couvre 9)* — **AC5** : sans ce retrait, la 23-4 refait le travail ou entre en conflit.
 - [x] **T12 — Gates complets, E2E comprise** — AC9.
 
+### Review Findings — passe 2 de `bmad-code-review` (Haiku ×3, 2026-08-21)
+
+**0 CRITICAL · 0 HIGH · 5 MEDIUM · 0 LOW retenus** — et **4 findings réfutés au sol**.
+⚠️ **La sévérité DESCEND** (2 HIGH → 0), ce que la § *Règle de splitting préventif* traite comme
+une convergence : les passes trouvent des défauts réels et décroissants.
+
+⚠️ **Le centre de gravité a basculé du FAUX NÉGATIF vers le FAUX POSITIF**, et c'est le bon
+mouvement : la passe 1 avait élargi la détection ; cette passe a mesuré ce que l'élargissement
+faisait crier à tort. **Un faux positif est plus dangereux ici qu'un faux négatif** — il fait
+rougir le gate sur du code sain, et un gate bruyant finit désactivé.
+
+- [x] **[Review][Patch] MEDIUM — une STRUCTURE retournée faisait crier la garde à tort** *(edge, convergé avec vérification directe)* — `return { open: 'Ouverte' }[s]`, une table de dispatch parfaitement légitime, était relevée comme violation. ⚠️ **Le tableau était pire que l'objet** : `return ['A', 'B']` ne relevait QUE le second élément, la virgule rouvrant une position de valeur que le crochet n'avait jamais fermée — un état incohérent, pas seulement un faux positif. Corrigé par un suivi de `profondeurStructure`, et la doctrine y gagne sa cohérence : la garde écartait déjà « les littéraux d'un tableau de données », elle le fait maintenant aussi à l'intérieur d'un retour.
+- [x] **[Review][Patch] MEDIUM — les Completion Notes affirmaient « aucun terme n'a été inventé »** *(blind)* — contredit par le glossaire que la passe 1 venait elle-même de corriger. **Résidu de patch** : le symptôme avait été traité au glossaire et pas à sa source. Corrigé, avec la distinction relevé/dérivé et la liste de ce qui relève de chaque catégorie.
+- [x] **[Review][Patch] MEDIUM — la 2ᵉ déclaration d'une liste échappe au relevé** *(blind)* — `const a = 1, bLabel = '…'`. ⚠️ **Documentée comme limite ASSUMÉE et verrouillée par un test**, plutôt que corrigée : élargir le motif à la virgule ferait entrer les paramètres à valeur par défaut (`function f(x, yLabel = 'a')`) comme candidates — un faux négatif échangé contre un faux positif, et c'est le mauvais sens.
+- [x] **[Review][Patch] MEDIUM — le tableau de ventilation ne portait pas son PÉRIMÈTRE de mesure** *(auditor)* — il décrit l'état AVANT correctifs (39 = 30+4+5), le test l'état après (41 = 37+4+0). ⚠️ **La lentille a conclu à une incohérence CRITICAL des décomptes ; elle avait tort sur le fond et raison sur la forme.** Un nombre sans son périmètre sera relu contre le mauvais intervalle — c'est le précédent 16-3b, et il se reproduisait ici.
+- [x] **[Review][Patch] MEDIUM — deux décomptes étaient DÉCLARÉS, non recomptés** *(edge + auditor)* — la parité 1429 et le `+23` de `sitesTotal`. Les deux **refaits, et les deux tiennent** ; leurs commandes sont désormais écrites dans le Dev Agent Record. ⚠️ Le comptage brut du `+23` rend **+31** : les 8 autres vivent dans des `.test.ts`, exclus du périmètre — un écart qui aurait fait conclure à une erreur sans cette précision.
+
+#### Findings RÉFUTÉS au sol (4)
+
+⚠️ **Un HIGH réfuté, et c'est ma propre règle retournée à l'envers.** *« `credit-notes-status-cancelled = Annulé` devrait dire `Annulée` »* — le raisonnement partait de `nota di credito` et `Gutschrift`, féminins, pour conclure que le français devait l'être. **Mais le français n'emploie pas « note de crédit » : il dit « un AVOIR », masculin.** Preuve : la partie A du glossaire (`avoir | Gutschrift | nota di credito | credit note`) et l'UI elle-même (« l'avoir », « un avoir », `Avoir créé`). `Annulé` et `Émis` sont corrects. La règle écrite au catalogue — *« l'accord suit la langue, pas le français »* — a été lue comme son contraire.
+
+⚠️ **Un CRITICAL réfuté** : *« 39 vs 41 candidates, trois sources trois chiffres »*. Les deux nombres sont justes à leur date, l'écart étant les deux fonctions créées par T8. Le finding est faux ; **la cause de la méprise, elle, était réelle** et a été corrigée (cf. le patch sur le périmètre).
+
+⚠️ **Un HIGH réfuté** : *« le 6ᵉ verrou a été fermé par chance, l'E2E italienne n'ayant pas tourné »*. Exact et déjà écrit — la suite E2E du dépôt tourne **en français**, `CLAUDE.md` le documente comme un angle mort connu. Rien de neuf, et le verrou est corrigé.
+
+**Un LOW écarté** : *« la borne 41 est fragile, elle dépend de l'état du dépôt »*. C'est sa raison d'être — la doctrine du dépôt pose la borne exacte précisément pour qu'un écart se recompte au lieu de passer inaperçu.
+
 ### Review Findings — passe 1 de `bmad-code-review` (Sonnet ×3, 2026-08-21)
 
 **2 HIGH · 6 MEDIUM · 4 LOW · 1 écarté.** ⚠️ **Les deux HIGH visent la GARDE elle-même**, et ils
@@ -486,7 +513,16 @@ AssertionError: expected [ …(18) ] to deeply equal []
 
 #### T4 / AC3 — la ventilation, recomptée depuis le relevé
 
-**39 déclarations candidates**, et la somme égale le total :
+⚠️ **PÉRIMÈTRE DE MESURE : ce tableau décrit l'état AVANT les correctifs T5-T8**, c'est-à-dire le
+relevé qu'AC2 exige de coller. **L'état final est différent et il est plus bas** : `41 = 37 + 4 + 0`.
+Les deux chiffres sont justes à leur date, et l'écart s'explique en une ligne — `orgTypeLabel`
+(site 4) et `getGroupLabel` (site 6) sont **deux fonctions que les correctifs ont créées**.
+*(Précision ajoutée en passe 2 : une lentille a lu ce tableau contre le test final et a conclu à
+une incohérence des décomptes. Elle avait tort sur le fond et raison sur la forme — un nombre sans
+son périmètre de mesure sera relu contre le mauvais intervalle, exactement ce que la § « Recompter
+ses propres comptes rendus » impose de prévenir.)*
+
+**39 déclarations candidates** au moment de T4, et la somme égale le total :
 
 | classe | nombre |
 |---|---|
@@ -506,6 +542,39 @@ s'y ajoute, de la même classe que le troisième :
 critère de la chaîne vide**, pas par une exemption ; ce n'est donc pas un site fautif hors
 tableau au sens d'AC5-bis, et **aucune issue n'est ouverte** — il n'y a pas de défaut. Le
 chiffre écrit ici est le mesuré, pas celui de la spec.
+
+#### Les deux décomptes REFAITS en passe 2, avec leur commande
+
+⚠️ **Deux lentilles ont relevé que ces nombres étaient DÉCLARÉS et non recomptés.** Elles avaient
+raison de le demander ; les deux tiennent. La commande est écrite ici pour qu'une passe suivante
+n'ait pas à la réinventer.
+
+**Parité des catalogues — 1429**, et le motif corrigé est celui qui compte :
+
+```sh
+grep -cE '^[a-zA-Z][a-zA-Z0-9_-]* = ' crates/kesh-i18n/locales/*/messages.ftl
+```
+
+⚠️ **C'est l'élargissement de la classe qui corrige le compte** : `[a-z][a-z0-9-]*` ratait
+`email-templates-type-invoice_send` et `…_reminder`, deux clés à **underscore**. Les quatre
+locales rendent 1429.
+
+**`sitesTotal` +23** — mesuré depuis le diff, et la ventilation tombe juste :
+
+| fichier | sites |
+|---|---|
+| `payment-batches/payment-batch-helpers.ts` | +9 |
+| `invoices/[id]/+page.svelte` | +4 |
+| `credit-notes/credit-note-helpers.ts` | +3 |
+| `invoices/+page.svelte` | +3 |
+| `settings/+page.svelte` | +3 |
+| `(app)/+layout.svelte` | +1 |
+| **total** | **+23** |
+
+⚠️ Le comptage brut du diff rend **+31** : les 8 autres vivent dans des fichiers `.test.ts`, que
+`dansLePerimetreDeFichier` exclut. **Le contrôle qui fait foi reste `i18n-keys.test.ts` lui-même**,
+dont la borne `sitesTotal: 1525` est verte — un nombre recopié dans un compte rendu ne prouve rien,
+un test qui rougit si.
 
 #### T3 — les deux conditions qui garantissent que `sitesTotal` ne bouge pas
 
@@ -629,7 +698,13 @@ traduites **avant** cette story ; les corriger reviendrait à élargir le périm
 
 - **La garde vaut plus que les correctifs**, et c'est elle qui a coûté le plus : son premier run
   était **vert et muet**. Les correctifs, eux, sont mécaniques une fois les termes relevés.
-- **Aucun terme n'a été inventé.** Les valeurs viennent de clés attestantes nommées une à une ;
+- **Aucun terme n'a été inventé de toutes pièces — mais TOUS ne sont pas « relevés ».** ⚠️ **Cette
+  note disait « aucun terme n'a été inventé » et la passe 1 de revue l'a réfutée** : `confirmé` et
+  `émis` ont été obtenus par **transformation grammaticale** (infinitif → participe) de clés qui
+  ne portent pas la forme écrite, et aucune forme participiale n'existait dans les catalogues
+  avant cette story. Ils sont désormais marqués **DÉRIVÉS** au glossaire, et la distinction
+  relevé/dérivé y est devenue une règle. Restent réellement **relevés** : `créé`, `annulé(e)`,
+  `relevé (bancaire)`, et les six codes d'échec. Les valeurs viennent de clés nommées une à une ;
   les deux seules qui ne l'étaient pas — les entrées de menu « Écritures »/« Rapports » et
   « Importer » — ont été portées à Guy, qui a tranché le 2026-08-21. ⚠️ Après coup, « Importer des
   relevés » s'est révélé **entièrement relevé** sur `homepage-bank-empty-guided` dans les quatre
@@ -671,6 +746,7 @@ traduites **avant** cette story ; les corriger reviendrait à élargir le périm
 
 | date | passe | résultat |
 |---|---|---|
+| 2026-08-21 | **passe 2** de `bmad-code-review` | **0 CRITICAL · 0 HIGH · 5 MEDIUM · 0 LOW** (Haiku ×3, diff aplati). ⚠️ **La sévérité DESCEND** (2 HIGH → 0) — convergence au sens de la règle de splitting. ⚠️ **Le centre de gravité bascule du faux NÉGATIF vers le faux POSITIF** : la passe 1 avait élargi la détection, celle-ci mesure ce que l'élargissement fait crier à tort. Une table de dispatch `return { open: 'Ouverte' }[s]` était relevée comme violation, et le tableau `['A','B']` ne relevait que son SECOND élément — un état incohérent. **Un faux positif est plus dangereux qu'un faux négatif ici** : il fait rougir le gate sur du code sain, et un gate bruyant finit désactivé. **QUATRE findings réfutés au sol**, dont un HIGH et un CRITICAL. ⚠️ Le HIGH réfuté est ma propre règle lue à l'envers : « `Annulé` devrait dire `Annulée` » part de `nota di credito` (féminin) alors que **le français dit « un AVOIR »**, masculin — attesté en partie A du glossaire et dans l'UI. Le CRITICAL réfuté (« 39 vs 41 candidates ») confond deux ÉTATS de la même mesure, avant et après correctifs ; **le finding est faux, la cause de la méprise était réelle** — mon tableau ne portait pas son périmètre — et elle est corrigée. **Deux décomptes refaits à la demande des lentilles** (parité 1429, `+23` de `sitesTotal`) : les deux tiennent, leurs commandes sont désormais écrites. Garde : **30 tests** (27 avant la passe). |
 | 2026-08-21 | **implémentation** (`bmad-dev-story`, Opus 5) | **T1-T12 livrées.** ⚠️ **La garde — le livrable central — était VERTE ET MUETTE à son premier run** : `accoladeDeCorps` cherchait l'accolade du corps juste après la signature, alors que presque toutes les déclarations s'écrivent `(…): string {`. Elle rendait `null` sur toutes, relevait zéro fonction et n'avait rien à signaler. **Attrapée par les cas synthétiques, jamais par le relevé du dépôt** — c'est leur raison d'être. Second run : **18 violations sur les 5 sites du patron**, sortie brute collée. Ventilation **41 = 37 + 4 + 0**, invariant sous test. Garde **éprouvée par mutation** : elle tue deux tests. **18 clés × 4 locales**, parité stricte à **1429** par catalogue. ⚠️ **Ce nombre était annoncé à 1427 et il était FAUX** — relevé en passe 1 de revue : mon motif de comptage `^[a-z][a-z0-9-]* = ` ratait deux clés à underscore. La parité, elle, tenait ; c'est le total qui mentait, et c'est exactement la règle « greper la valeur, pas la formulation » retournée contre son auteur. ⚠️ **TROIS chiffres de la spec ne se retrouvent pas au dépôt** et les mesurés ont été retenus : « 21 blocs `<!-- -->` » → **235**, « HUIT hits » → **neuf fonctions**, « QUATRE verrous » → **cinq**, plus un sixième dormant. ⚠️ **T11 reposait sur une prémisse FAUSSE** — aucun recouvrement entre les 9 libellés d'ici et les 4 `nav-*` de la 23-4 ; le geste utile était une inscription au plan d'epic, pas un retrait. ⚠️ **L'allowlist n'a pas bougé (166 → 166)** : cette dette n'était comptée nulle part, l'angle mort #255 en chiffres. **Différentiel E2E branche ↔ `main` NUL** (183/38/19 des deux côtés), après correction d'une régression réelle que le premier différentiel (182 contre 183) avait révélée. Glossaire partie A **65 → 70**. |
 | 2026-08-20 | **passe 3** de `validate` | **1 CRITICAL · 0 HIGH · 1 MEDIUM · 2 LOW** (Haiku ×2, tâches délibérément mécaniques). ⚠️ **La lentille des FAITS rend ZÉRO finding** — 42 vérifications au `grep -nF`, tous les faits de la spec confirmés : après deux passes, le document ne ment plus sur le code. Et la lentille de COHÉRENCE rend **14 renvois « site N » sur 14 corrects** et **tous les décomptes cohérents** — la renumérotation tient. **Le CRITICAL est une couverture cassée, pas un fait faux** : `T8` touche le titre de dialogue, seul site dont un test E2E cible le libellé **par son texte**, et ne portait que `AC5` — jamais `AC7`. Un développeur aurait changé le libellé, vu `fiscal-years.spec.ts:270` rougir, et « réparé » en y réécrivant la chaîne : **le verrou remis en place sous couvert de correctif**. `T8` porte désormais les deux AC et impose de basculer le sélecteur sur `data-testid` **avant** de toucher au libellé. ⚠️ **Trois findings reclassés en LOW par la lentille elle-même**, qui conclut à chaque fois que le livrable final est cohérent — de l'archéologie de Change Log, pas des défauts. |
 | 2026-08-20 | **passe 2** de `validate` | **2 CRITICAL · 4 HIGH · 3 MEDIUM · 6 LOW** (Sonnet ×2). ⚠️ **Les deux CRITICAL visent la RÉÉCRITURE de la passe 1** — dixième fois sur ce dossier qu'une passe trouve un défaut du correctif précédent. `AC9` renvoyait au **site 6** (la barre de navigation !) pour ce qui déborde #255, là où les Dev Notes disent **site 8** : l'erreur était **antérieure** à la renumérotation, qui ne l'a pas rattrapée parce que je n'ai corrigé que les renvois que je savais avoir décalés. Et le Change Log annonçait encore « Sites 5 → 7 » après la réinsertion de `credit-notes` — le tableau corrigé, son compte rendu non. ⚠️ **Le finding MESURÉ est le plus utile** : le balayage du patron réduit, **réellement exécuté**, rend **HUIT** hits et non cinq — cinq violations plus **trois candidats à écarter par critère**, dont un cas que rien ne prévoyait (`roleLabel` → **chaîne vide**). AC2 aurait échoué à la lettre. **Trois classes de littéraux légitimes** sont désormais des CRITÈRES et non des entrées d'allowlist, sans quoi la liste enfle et perd son sens. Autres corrections : une 5ᵉ forme hors de portée (`const xLabel = $derived.by`), la portée du « 32 » qui était plein-arbre et non par domaine, `corpsDeFonction` qui **ne suffit pas seule** (localiser la déclaration reste à écrire, avec le piège du type inline), `AC7` qui ignorait un **quatrième** verrou — un sélecteur E2E que ma propre section « Pièges » documentait deux paragraphes plus bas. **Un MEDIUM réfuté** : les deux usages de « 23-4 » désignent bien la même story, l'epic la définissant comme `settings` + `payment-batches` + `onboarding` + 4 `nav-*`. |

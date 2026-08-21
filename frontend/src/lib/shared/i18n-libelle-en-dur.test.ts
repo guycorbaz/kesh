@@ -236,6 +236,7 @@ function retoursLitteraux(corps: string, ligneDeBase: number): Retour[] {
 		let attendValeur = true;
 		let profondeurAppel = 0;
 		let profondeurGroupe = 0;
+		let profondeurStructure = 0;
 		let precedent = '';
 		while (j < corps.length) {
 			const c = corps[j];
@@ -246,7 +247,7 @@ function retoursLitteraux(corps: string, ligneDeBase: number): Retour[] {
 			if (QUOTES.includes(c)) {
 				const lu = readLiteral(corps, j);
 				if (!lu) break;
-				if (attendValeur && profondeurAppel === 0 && lu.kind === 'literal') {
+				if (attendValeur && profondeurAppel === 0 && profondeurStructure === 0 && lu.kind === 'literal') {
 					out.push({
 						texte: lu.value,
 						ligne: ligneDeBase + corps.slice(0, j).split('\n').length - 1
@@ -260,7 +261,33 @@ function retoursLitteraux(corps: string, ligneDeBase: number): Retour[] {
 				precedent = 'x';
 				continue;
 			}
-			if (c === ';' && profondeurAppel === 0 && profondeurGroupe === 0) break;
+			if (c === ';' && profondeurAppel === 0 && profondeurGroupe === 0 && profondeurStructure === 0)
+				break;
+			// ⚠️ **Une STRUCTURE retournée n'est pas un libellé** — `return { open: 'Ouverte' }[s]`
+			// est une table de dispatch, forme légitime que la doctrine de cette garde écarte déjà
+			// (« indiscernable d'une table de replis légitime sans analyse de flot »). Sans ce
+			// suivi, la rédaction de la passe 1 criait sur du code sain — et un gate bruyant se
+			// fait désactiver. ⚠️ **Le tableau était pire que l'objet** : il ne relevait QUE le
+			// second élément, parce que la virgule rouvrait une position de valeur que le crochet
+			// n'avait jamais fermée. (Passe 2 de revue.)
+			if (c === '{' || c === '[') {
+				profondeurStructure += 1;
+				attendValeur = false;
+				precedent = c;
+				j += 1;
+				continue;
+			}
+			if (c === '}' || c === ']') {
+				if (profondeurStructure > 0) profondeurStructure -= 1;
+				else break;
+				attendValeur = false;
+				// ⚠️ `precedent` devient une FERMETURE : le `[s]` qui suit `{…}` est alors lu comme
+				// un accès, pas comme une nouvelle structure — et le `?? 'Aucun'` qui suivrait
+				// reste, lui, une position de valeur.
+				precedent = ')';
+				j += 1;
+				continue;
+			}
 			if (c === '(') {
 				// Un `(` collé à un identifiant ou à une fermeture ouvre un APPEL ; sinon c'est un
 				// groupement, et `return ('Dur')` reste un retour de littéral.
@@ -310,8 +337,11 @@ function retoursLitteraux(corps: string, ligneDeBase: number): Retour[] {
  *
  * ⚠️ **Ce qui n'est PAS reconnu doit être BRUYANT, jamais silencieux** — cf. `analysee`. Restent
  * hors de portée, et c'est écrit plutôt que découvert : les **méthodes de classe**
- * (`class Foo { statusLabel() {…} }`) — aucune classe TypeScript dans `src/` à ce jour — et les
- * propriétés d'objet (`{ label: 'x' }`), indiscernables d'une table de replis légitime.
+ * (`class Foo { statusLabel() {…} }`) — aucune classe TypeScript dans `src/` à ce jour —, les
+ * propriétés d'objet (`{ label: 'x' }`), indiscernables d'une table de replis légitime, et la
+ * **seconde déclaration d'une liste** (`const a = 1, bLabel = '…'`). ⚠️ Cette dernière n'est pas
+ * un oubli : élargir le motif à la virgule ferait entrer les paramètres à valeur par défaut
+ * comme candidates — un faux négatif échangé contre un faux positif, et c'est le mauvais sens.
  */
 export function candidatesDe(source: string, chemin = '<mémoire>'): Candidate[] {
 	const out: Candidate[] = [];
@@ -669,6 +699,38 @@ describe('régressions trouvées en passe 1 de revue (Sonnet ×3, 2026-08-21)', 
 		for (const src of ["let fLabel = $state('');", 'let equityLabel = $derived(cond ? a : b);']) {
 			expect(candidatesDe(src)[0].analysee).toBe(true);
 		}
+	});
+
+	// ⚠️ **Passe 2 : les FAUX POSITIFS, et ils sont plus dangereux que les faux négatifs.** Un
+	// faux négatif laisse passer un défaut ; un faux positif fait rougir le gate sur du code sain,
+	// et la réaction naturelle devant un gate bruyant est de DÉSACTIVER la garde. Les trois cas
+	// ci-dessous crient à tort dans la rédaction de la passe 1.
+	it('⚠️ une table de dispatch retournée ne crie PAS — c’est un objet, pas un libellé', () => {
+		// Forme réelle et légitime : `return { open: 'Ouverte' }[s]`. La doctrine de cette garde
+		// écarte déjà les tables de littéraux, « indiscernables d'une table de replis légitime ».
+		const src = "function statusLabel(s) {\n\treturn { open: 'Ouverte', paid: 'Payée' }[s];\n}";
+		expect(violationsDe(candidatesDe(src))).toEqual([]);
+	});
+
+	it('⚠️ un tableau retourné ne crie pas non plus', () => {
+		const src = "function aLabel() {\n\treturn ['A', 'B'];\n}";
+		expect(violationsDe(candidatesDe(src))).toEqual([]);
+	});
+
+	it('mais le littéral qui SUIT la structure reste vu', () => {
+		const src = "function aLabel(s) {\n\treturn { a: 'x' }[s] ?? 'Aucun';\n}";
+		expect(violationsDe(candidatesDe(src))).toEqual(['<mémoire>:2 aLabel() → « Aucun »']);
+	});
+
+	// ⚠️ **Limite CONNUE et assumée, verrouillée par ce test plutôt que découverte plus tard.**
+	// `const a = 1, statusLabel = 'Ouvert';` — la seconde déclaration d'une liste n'est pas
+	// relevée : le motif exige `const`/`let`/`var` en tête. L'élargir à la virgule ferait entrer
+	// les paramètres à valeur par défaut (`function f(x, yLabel = 'a')`) comme candidates, donc
+	// échangerait un faux négatif contre un faux positif — mauvais marché, cf. le préambule.
+	// Aucune occurrence dans `src/` au 2026-08-21. Si ce test rougit, c'est que la forme est
+	// apparue : la traiter alors pour de bon. (Passe 2 de revue.)
+	it('limite assumée — la 2ᵉ déclaration d’une liste échappe au relevé', () => {
+		expect(candidatesDe("const a = 1, statusLabel = 'Ouvert';")).toEqual([]);
 	});
 
 	it('un `return` imbriqué dans un gabarit n’est pas attribué à la fonction englobante', () => {
