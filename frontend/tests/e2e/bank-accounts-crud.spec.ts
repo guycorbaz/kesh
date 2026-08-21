@@ -156,7 +156,7 @@ test.describe('Bank accounts CRUD', () => {
 
 		const sidebar = page.locator('nav[aria-label="Navigation principale"]');
 		// Ouvrir le groupe Administration (défaut fermé).
-		await sidebar.locator('details summary:has-text("Administration")').click();
+		await sidebar.locator('[data-testid="nav-group-administration"] summary').click();
 		await sidebar.locator('[data-testid="nav-link-bank-accounts"]').click();
 
 		await expect(page).toHaveURL('/bank-accounts');

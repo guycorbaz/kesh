@@ -143,9 +143,20 @@ test.describe('Lots de paiement pain.001', () => {
 
 		// Détail + confirmation via UI.
 		await page.goto(`/payment-batches/${batchId}`);
-		await expect(page.getByTestId('payment-batch-status')).toContainText(/Généré/i);
+		// ⚠️ L'assertion porte sur le CODE (`data-status`), jamais sur le libellé affiché.
+		// Dans sa rédaction précédente elle attendait `/Généré/i` — un verrou de français que
+		// NI la spec de la 23-3b NI ses deux greps de contrôle n'avaient vu, parce que ce
+		// n'est ni un `getByText` ni un `getByRole({ name })` mais une assertion de CONTENU
+		// sur un sélecteur déjà stable. Seule la suite réellement exécutée l'a révélé.
+		await expect(page.getByTestId('payment-batch-status')).toHaveAttribute(
+			'data-status',
+			'generated'
+		);
 		await page.getByTestId('payment-batch-confirm').click();
-		await expect(page.getByTestId('payment-batch-status')).toContainText(/Confirmé/i);
+		await expect(page.getByTestId('payment-batch-status')).toHaveAttribute(
+			'data-status',
+			'confirmed'
+		);
 
 		// Vérif backend : lot confirmé + facture payée.
 		const ctx2 = await authedApiContext(page);

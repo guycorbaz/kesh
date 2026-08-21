@@ -599,10 +599,18 @@
 		}
 	}
 
+	// ⚠️ **Le même défaut que la liste, sans le doc-comment qui l'y désignait** : un grep du
+	// commentaire copié ne l'aurait pas trouvé — c'est la garde qui le relève. Mêmes clés que
+	// la liste : un statut ne doit pas se dire autrement selon l'écran qui l'affiche.
 	function statusLabel(s: string): string {
-		if (s === 'draft') return 'Brouillon';
-		if (s === 'validated') return 'Validée';
-		return 'Annulée';
+		if (s === 'draft') return i18nMsg('invoice-status-draft', 'Brouillon');
+		if (s === 'validated') return i18nMsg('invoice-status-validated', 'Validée');
+		// ⚠️ **Le `else` implicite affirmait « Annulée » pour TOUTE valeur inattendue** — un
+		// statut ajouté au backend et pas encore connu de ce bundle s'affichait donc comme
+		// annulé sur une pièce comptable : une affirmation fausse, et silencieuse. Le repli sur
+		// la valeur brute suit le patron des trois fonctions sœurs. (Passe 1 de revue.)
+		if (s === 'cancelled') return i18nMsg('invoice-status-cancelled', 'Annulée');
+		return s;
 	}
 </script>
 
@@ -944,9 +952,17 @@
 			if (!o) validateError = '';
 		}}
 	>
-		<Dialog.Content>
+		<Dialog.Content data-testid="invoice-validate-dialog">
 			<Dialog.Header>
-				<Dialog.Title>Valider la facture</Dialog.Title>
+				<!-- ⚠️ Ce titre était un NŒUD DE TEXTE : ni fonction, ni littéral JS, donc hors de
+				     portée de la garde `i18n-libelle-en-dur.test.ts` — corrigé à la main, et le
+				     motif est écrit dans son préambule. La clé existait DÉJÀ, traduite dans les
+				     quatre catalogues ; c'est le câblage qui manquait.
+				     ⚠️ `data-testid` ci-dessus : `fiscal-years.spec.ts` ciblait ce dialogue PAR SON
+				     NOM français. Un sélecteur figé sur un libellé traduit se casse à la première
+				     locale, et la réparation la moins coûteuse — y réécrire la chaîne traduite —
+				     remettrait le verrou en place sous couvert de correctif. -->
+				<Dialog.Title>{i18nMsg('invoice-validate-confirm-title', 'Valider la facture')}</Dialog.Title>
 			</Dialog.Header>
 			<p class="text-sm">
 				Une fois validée, cette facture sera immuable, recevra un numéro définitif et

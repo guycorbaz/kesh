@@ -1638,3 +1638,37 @@ supplier-invoices-scan-too-large = Image trop volumineuse (max 15 Mo).
 supplier-invoices-status-open = Ouverte
 supplier-invoices-status-paid = Payée
 supplier-invoices-status-cancelled = Annulée
+
+# Story 23-3b (#316) — les libellés en dur que la garde `i18n-libelle-en-dur.test.ts` révèle.
+# 18 clés neuves ; 10 autres sites du correctif RÉUTILISENT des clés existantes et déjà
+# traduites (`invoice-status-*`, `onboarding-org-*`, `invoice-validate-confirm-title`,
+# `nav-quotidien` / `nav-mensuel` / `nav-administration` — écrites de longue date et jamais
+# câblées). ⚠️ Les valeurs sont RELEVÉES sur des clés attestantes, pas inventées :
+# « Créé » sur `imported-supplier-invoices-completed`, « Confirmé » sur `demo-reset-confirm-ok`,
+# « Émis » sur `credit-note-revenue-account-archived`, « lot » sur `reminders-batch-cap`.
+# ⚠️ « Généré » est devenu « Créé » (arbitrage de Guy) — le verbe « créer » devient uniforme
+# dans le domaine, et `-failed-already-in-generated-batch` reprend le mot de la colonne Statut.
+# ⚠️ L'ACCORD suit la langue, pas le français : un lot est masculin (`Creato`), une
+# `nota di credito` et une `Gutschrift` sont féminines (`Emessa`, `Annullata`).
+# ⚠️ `nav-journal-entries` et `nav-reports` sont DÉRIVÉS de termes attestés plus longs
+# (« Écritures comptables », « Rapports comptables ») — arbitrage de Guy : une entrée de menu
+# reste courte dans les quatre langues. `nav-bank-import` PRÉCISE le français (« Importer »
+# seul était ambigu à deux lignes de « Importer des factures »).
+credit-notes-status-cancelled = Annulé
+credit-notes-status-draft = Brouillon
+credit-notes-status-issued = Émis
+nav-bank-import = Importer des relevés
+nav-invoicing = Facturation
+nav-journal-entries = Écritures
+nav-reconciliation = Réconciliation
+nav-reports = Rapports
+nav-users = Utilisateurs
+payment-batches-failed-already-in-generated-batch = Déjà dans un lot créé
+payment-batches-failed-invalid-iban = IBAN invalide
+payment-batches-failed-invalid-qr-iban = QR-IBAN invalide
+payment-batches-failed-no-payment-coordinates = Pas de coordonnées de paiement (IBAN/QR-IBAN)
+payment-batches-failed-supplier-invoice-not-found = Facture introuvable
+payment-batches-failed-supplier-invoice-not-open = Facture non ouverte
+payment-batches-status-cancelled = Annulé
+payment-batches-status-confirmed = Confirmé
+payment-batches-status-generated = Créé

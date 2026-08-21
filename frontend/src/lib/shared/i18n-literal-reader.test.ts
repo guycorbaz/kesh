@@ -8,7 +8,14 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { findCallSites, findRelays, readFallback, readLiteral } from './i18n-literal-reader.js';
+import {
+	corpsDeFonction,
+	findCallSites,
+	findRelays,
+	masquerCommentaires,
+	readFallback,
+	readLiteral
+} from './i18n-literal-reader.js';
 
 describe("l'extracteur résiste aux trois formes qui ont cassé", () => {
 	it("(a) gabarit dont l'interpolation contient des apostrophes", () => {
@@ -297,5 +304,64 @@ describe('cas limites du lecteur', () => {
 		// dynamiques les faisait échapper à la vérification par clé exacte.
 		expect(readLiteral("'a${b}c'", 0)?.kind).toBe('literal');
 		expect(readLiteral('`prix: \\${montant}`', 0)?.kind).toBe('literal');
+	});
+});
+
+describe('`corpsDeFonction`, exportée pour la garde des libellés en dur (23-3b)', () => {
+	// ⚠️ Elle prend en entrée la position d'une accolade **déjà connue** : localiser la
+	// déclaration reste à la charge de l'appelant. Ce que ces cas verrouillent, c'est
+	// l'appariement lui-même — trois passes de durcissement y sont déjà investies (relais).
+	it("rend le corps délimité par appariement, pas par la première accolade fermante", () => {
+		const src = 'function f() { if (x) { return 1; } return 2; }';
+		expect(corpsDeFonction(src, src.indexOf('{'))).toBe(' if (x) { return 1; } return 2; ');
+	});
+
+	it('une accolade dans une chaîne du corps ne fausse pas le compte', () => {
+		const src = "function f() { return '}'; }";
+		expect(corpsDeFonction(src, src.indexOf('{'))).toBe(" return '}'; ");
+	});
+
+	it('une accolade dans une regex du corps ne fausse pas le compte', () => {
+		const src = 'function f() { return /[{]/.test(k); }';
+		expect(corpsDeFonction(src, src.indexOf('{'))).toBe(' return /[{]/.test(k); ');
+	});
+
+	it('rend null sur un corps non clos plutôt que de rendre du faux', () => {
+		const src = 'function f() { return 1;';
+		expect(corpsDeFonction(src, src.indexOf('{'))).toBeNull();
+	});
+});
+
+describe('masquage des commentaires de BALISAGE — `<!-- -->` (23-3b)', () => {
+	// ⚠️ Sans cette extension, la prose française des commentaires Svelte passe pour des
+	// littéraux — **235 blocs, dont 49 porteurs d'un littéral lisible** (mesuré le 2026-08-21),
+	// précisément là où vivent les sites que la garde doit lire. ⚠️ Ce commentaire a porté « 21 »
+	// jusqu'à la passe 3 : le chiffre de la spec avait été réfuté et corrigé dans le module ET
+	// dans le compte rendu, mais pas ici — résidu de patch classique, le symptôme n'ayant pas
+	// été grepé sur les fichiers voisins.
+	it('un commentaire de balisage est blanchi, sa prose ne compte plus', () => {
+		const src = "<!-- Statut : 'Ouverte' -->\n<span>{x}</span>";
+		const masque = masquerCommentaires(src);
+		expect(masque).not.toContain('Ouverte');
+		expect(masque).toContain('<span>{x}</span>');
+	});
+
+	it('les positions sont conservées — le masque a la même longueur et garde les sauts de ligne', () => {
+		const src = '<!-- a\nb -->\nX';
+		const masque = masquerCommentaires(src);
+		expect(masque.length).toBe(src.length);
+		expect(masque.split('\n').length).toBe(src.split('\n').length);
+	});
+
+	it("un `<!--` À L'INTÉRIEUR d'une chaîne JS n'est pas pris pour un commentaire", () => {
+		const src = "const s = '<!-- x -->'; i18nMsg('cle', 'Repli');";
+		expect(findCallSites(masquerCommentaires(src)).length).toBe(1);
+	});
+
+	it('un commentaire de balisage non clos blanchit jusqu’à la fin, sans boucler', () => {
+		const src = '<span>{x}</span>\n<!-- fin tronquée';
+		const masque = masquerCommentaires(src);
+		expect(masque).toContain('<span>{x}</span>');
+		expect(masque).not.toContain('tronquée');
 	});
 });

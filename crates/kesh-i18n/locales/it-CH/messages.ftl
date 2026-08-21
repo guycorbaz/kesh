@@ -1611,3 +1611,23 @@ supplier-invoices-scan-too-large = Immagine troppo grande (max 15 MB).
 supplier-invoices-status-open = Aperta
 supplier-invoices-status-paid = Pagata
 supplier-invoices-status-cancelled = Annullata
+
+# Story 23-3b (#316) — etichette hardcoded, cf. fr-CH per la derivazione di ogni termine.
+credit-notes-status-cancelled = Annullata
+credit-notes-status-draft = Bozza
+credit-notes-status-issued = Emessa
+nav-bank-import = Importa estratti conto
+nav-invoicing = Fatturazione
+nav-journal-entries = Scritture
+nav-reconciliation = Riconciliazione
+nav-reports = Rapporti
+nav-users = Utenti
+payment-batches-failed-already-in-generated-batch = Già in un lotto creato
+payment-batches-failed-invalid-iban = IBAN non valido
+payment-batches-failed-invalid-qr-iban = QR-IBAN non valido
+payment-batches-failed-no-payment-coordinates = Nessuna coordinata di pagamento (IBAN/QR-IBAN)
+payment-batches-failed-supplier-invoice-not-found = Fattura non trovata
+payment-batches-failed-supplier-invoice-not-open = Fattura non aperta
+payment-batches-status-cancelled = Annullato
+payment-batches-status-confirmed = Confermato
+payment-batches-status-generated = Creato

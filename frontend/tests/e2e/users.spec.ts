@@ -42,7 +42,7 @@ test.describe('Page utilisateurs — CRUD', () => {
 		// Administration (`<details>` defaultExpanded:false). Le lien est dans
 		// le DOM mais hidden via UA stylesheet si le groupe est fermé →
 		// toBeVisible() échouerait. Ouvrir programmatiquement le groupe.
-		await sidebar.locator('details summary:has-text("Administration")').click();
+		await sidebar.locator('[data-testid="nav-group-administration"] summary').click();
 		await expect(sidebar.locator('[data-testid="nav-link-users"]')).toBeVisible();
 	});
 

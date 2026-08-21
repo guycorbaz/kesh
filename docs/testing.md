@@ -194,6 +194,31 @@ déclarés à l'implémentation.)*
 
 **Le build du frontend n'est pas facultatif** : sans lui, `KESH_STATIC_DIR` pointe sur un répertoire vide et chaque navigation rend un 404 que rien n'explique.
 
+⚠️ **La suite E2E ne s'exécute QU'EN FRANÇAIS, et c'est un angle mort du dispositif.** Le seed
+crée une société en `langues FR/FR` (cf. § *Seed CI* ci-dessus) et rien ne rejoue la suite dans une
+autre locale. **Conséquence directe** : un sélecteur figé sur un libellé traduit reste vert tant
+que le français ne change pas — et ne casse qu'en production, dans la langue de l'utilisateur.
+
+Le cas s'est présenté, et il est instructif : `has-text("Administration")` (5 occurrences dans
+3 fichiers) ciblait le groupe de navigation par son texte. Le libellé est **identique en français,
+en allemand et en anglais** ; il ne diffère qu'en **italien** (`Amministrazione`). Ce sélecteur
+serait donc resté vert dans trois langues sur quatre, et personne n'aurait rien vu. Il a été trouvé
+par un **grep du symptôme**, pas par la suite — celle-ci en était structurellement incapable.
+
+**Règle qui en découle** : un sélecteur E2E ne se fige jamais sur un libellé traduit, `data-testid`
+sans exception. Ne pas compter sur la suite pour le rattraper : elle ne le peut pas.
+
+⚠️ **Cette règle est une DISCIPLINE, donc invérifiable en l'état** — c'est la faiblesse que ce
+dépôt documente sous « on peut l'affirmer sans l'avoir fait ». **[KF-043 (#326)](https://github.com/guycorbaz/kesh/issues/326)**
+tient le sujet ouvert et pose les trois options : ne rien faire, une **garde statique** qui refuse
+un sélecteur français dans `tests/e2e/` (même patron que `i18n-libelle-en-dur.test.ts`, qui lit les
+sources), ou un run dans une seconde locale. L'arbitrage revient au Project Lead.
+
+*(Écrit le 2026-08-21, passe 3 de revue de la story 23-3b. ⚠️ Une passe antérieure avait neutralisé
+ce constat en affirmant que « `CLAUDE.md` le documente comme un angle mort connu » — **il ne le
+documentait pas**, et l'angle mort n'était écrit nulle part. Une réfutation qui s'appuie sur une
+source inexistante enterre le finding qu'elle prétend traiter.)*
+
 ⚠️ **La suite locale n'est pas verte, et ce n'est pas une régression** : une quarantaine de tests échouent aussi sur `main` (localStorage/JWT, absence de SMTP factice, KF #282, cascades). **Seul le différentiel branche ↔ `main` se lit** — cf. la mémoire projet `comparer-suite-e2e-branche-vs-main` pour le montage à deux ports et deux bases.
 
 > **`KESH_COOKIE_SECURE=false` est obligatoire en local HTTP** : depuis les

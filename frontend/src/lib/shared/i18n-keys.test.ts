@@ -49,10 +49,21 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * « Chargement… », un « Qté », un « TVA » —, invisibles au moissonneur (qui ne lit que les
  * `i18nMsg`) comme à l'allowlist. Les couvrir crée quatre sites d'appel. C'est une **hausse
  * assumée**, pas une dérive : la borne exacte a fait exactement son travail en l'exigeant.
+ *
+ * ⚠️ **1502 → 1525 à la story 23-3b (#316), et les 23 se ventilent** — ce sont les libellés
+ * qui n'appelaient AUCUNE fonction i18n, l'angle mort #255 : 9 pour `payment-batch-helpers`
+ * (3 statuts + 6 codes d'échec), 3 pour `credit-note-helpers`, 3 + 4 pour les deux écrans de
+ * factures (dont le titre du dialogue de validation), 3 pour le type d'organisation des
+ * réglages, 1 pour `getGroupLabel`. **Là encore, la borne a rougi la première.**
+ *
+ * ⚠️ **33 → 34 sites non résolus, et c'est LÉGITIME** : `getGroupLabel`
+ * (`routes/(app)/+layout.svelte`) est le symétrique exact de `getItemLabel`, deux lignes plus
+ * haut et déjà de la liste — la clé est portée par la donnée, pas par le site d'appel. Un
+ * dispatcher n'est pas une clé manquante.
  */
 const ATTENDU = {
-	sitesTotal: 1502,
-	sitesNonResolus: 33,
+	sitesTotal: 1525,
+	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,
 	litterauxMin: 1050,

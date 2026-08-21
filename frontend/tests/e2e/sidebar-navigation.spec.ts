@@ -31,6 +31,10 @@ async function loginAsAdmin(page: Page): Promise<void> {
 }
 
 test.describe('Sidebar navigation v014-1', () => {
+	// ⚠️ Le groupe se cible par `data-testid`, jamais par `has-text("Administration")`. Le
+	// libellé est traduit depuis la story 23-3b : identique en français, en allemand et en
+	// anglais — mais `Amministrazione` en italien. Un sélecteur qui passe dans trois langues
+	// sur quatre est plus traître qu'un sélecteur cassé, puisque rien ne le signale.
 	test('groupe Administration fermé par défaut, ouverture au clic', async ({ page }) => {
 		await loginAsAdmin(page);
 
@@ -41,14 +45,14 @@ test.describe('Sidebar navigation v014-1', () => {
 		await expect(adminDetails).not.toHaveAttribute('open', /.*/);
 
 		// Click pour ouvrir.
-		await sidebar.locator('details summary:has-text("Administration")').click();
+		await sidebar.locator('[data-testid="nav-group-administration"] summary').click();
 		await expect(adminDetails).toHaveAttribute('open', '');
 	});
 
 	test('navigue vers les 5 entrées Administration', async ({ page }) => {
 		await loginAsAdmin(page);
 		const sidebar = page.locator('nav[aria-label="Navigation principale"]');
-		await sidebar.locator('details summary:has-text("Administration")').click();
+		await sidebar.locator('[data-testid="nav-group-administration"] summary').click();
 
 		const routes = [
 			{ testid: 'nav-link-accounts', url: '/accounts' },
@@ -74,7 +78,7 @@ test.describe('Sidebar navigation v014-1', () => {
 		const adminDetails = sidebar.locator('[data-testid="nav-group-administration"]');
 
 		// Ouvrir le groupe (persiste via localStorage).
-		await sidebar.locator('details summary:has-text("Administration")').click();
+		await sidebar.locator('[data-testid="nav-group-administration"] summary').click();
 		await expect(adminDetails).toHaveAttribute('open', '');
 
 		// Vérifier la clé localStorage.

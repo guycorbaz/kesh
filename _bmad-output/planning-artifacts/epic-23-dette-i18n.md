@@ -104,7 +104,7 @@ domaine à chaque fois — `client_number_labels_are_translated_in_all_four_loca
 ⚠️ **Angle mort assumé de la garde, et il porte un numéro : [#255].** Une chaîne écrite **en
 dur** dans un `.svelte`, sans passer par `i18nMsg()` du tout, n'est visible d'aucun des deux
 niveaux — la page `/invoices` en est le cas (**6 appels** `i18nMsg` pour toute la page). [#255]
-est le troisième item de catégorie A ; il n'est **pas** dans le périmètre de cet epic et
+est le troisième item de catégorie A ; il n'est **pas** dans le périmètre de cet epic ⚠️ **Amendé le 2026-08-21 : il l'est devenu**, par la story 23-3b, intercalée après la 23-3. et
 appelle un contrôle d'une autre nature (détection de littéraux affichés).
 
 ## Découpage — story-zéro puis rollouts
@@ -115,6 +115,7 @@ appelle un contrôle d'une autre nature (détection de littéraux affichés).
 | **23-1b** | **Pilote** : moissonneur de replis versionné, les 20 clés de `contacts` dans les 4 locales, glossaire. **Dépend du merge de la 23-1a.** | 20 |
 | **23-2** | **[#283]** — les 57 clés en `de-CH` / `it-CH` / `en-CH`. La garde de **parité** devient inconditionnelle : son allowlist disparaît | 57 |
 | **23-3** | `supplier-invoices` — le gros morceau, seul (99 statiques + **10** de la famille dynamique `imported-supplier-invoices-error-*`) | 109 |
+| **23-3b** | **[#255]** — la **garde contre les libellés en dur**, et les 8 sites qu'elle révèle. ⚠️ **Ses clés ne viennent PAS du total ci-dessous** : un libellé qui n'appelle jamais `i18nMsg` n'était compté nulle part | 18 |
 | **23-4** | `settings` + `payment-batches` + `onboarding` + les 4 `nav-*` de l'inventaire | 93 |
 | **23-5** | `reconciliation` (dont les 5 entrées à variables) + `reports` (14 + 7) + `credit-notes` + les 2 `reports-project-*` de l'inventaire | 58 |
 | **23-6** | Reliquat : `invoices`, `journal-entries`, `lib/components`, `bank-accounts` + **clôture** : allowlist vidée, garde inconditionnelle, [#316] fermée | 15 |
@@ -125,13 +126,34 @@ deux familles qui ne se relisent pas avec la même lentille : le mécanisme et l
 Patron 22-2a/22-2b. Les cinq stories de rollout, elles, restent entières : elles n'ont **que** la
 seconde famille.
 
+⚠️ **La 23-3b s'est intercalée le 2026-08-21, et son périmètre ne retire rien à la 23-4.** La
+tâche T11 de sa spec prescrivait de « retirer les clés `nav-*` du périmètre de la 23-4 » en
+supposant un recouvrement — **il n'y en a aucun, vérifié au sol**. Les 4 `nav-*` de la 23-4
+(`nav-credit-notes`, `nav-email-templates`, `nav-projects`, `nav-supplier-invoices-import`) sont
+des clés **déjà câblées** dont la traduction manque ; les **9** libellés de navigation de la 23-3b
+étaient du **français en dur**, jamais routé vers `i18nMsg` — 6 entrées passées en variante
+`i18nKey` et 3 libellés de groupe dont les clés existaient au catalogue depuis longtemps **sans
+avoir jamais été câblées**. Deux défauts distincts, deux ensembles disjoints. **La 23-4 garde ses
+93 clés.**
+
+⚠️ **Les 18 clés de la 23-3b ne s'ajoutent pas au total de l'epic, elles s'ajoutent À CÔTÉ** — et
+c'est le fait le plus instructif de cette story : **l'allowlist de dette n'a pas bougé d'une
+ligne** (166 avant, 166 après). Cette dette-là n'était comptée nulle part, puisque tout
+l'appareil de mesure de l'epic — moissonneur, allowlist, les trois gardes — ne relève que les
+sites `i18nMsg`. C'est l'angle mort #255, exprimé en chiffres.
+
 **Chaque story de rollout est mécanique par construction** : entrer les clés au catalogue dans
 les quatre locales, retirer d'autant l'allowlist, laisser la garde prouver le reste. La revue
 s'y fait au fichier, pas en passes adversariales globales — conformément à la règle de splitting.
 
 ## Hors périmètre, explicitement
 
-- **[#255]** (chaînes en dur sans `i18nMsg`) — même famille, autre mécanisme de détection.
+- ~~**[#255]** (chaînes en dur sans `i18nMsg`) — même famille, autre mécanisme de détection.~~
+  ⚠️ **PLUS VRAI depuis le 2026-08-21** : la story **23-3b** l'a traité (garde + 8 sites), et la
+  ligne du tableau de découpage le dit. Cette entrée est restée ici après l'insertion de la 23-3b —
+  **résidu de patch** : le symptôme n'avait pas été grepé sur le document. Un lecteur ouvrant la
+  section la plus autoritaire du plan y lisait l'inverse de ce qui a été livré. *(Relevé en passe 3
+  de revue de la 23-3b.)*
 - **[#314]** (recherche d'un nom à trait d'union) — quatrième item de catégorie A, sans rapport.
 - **Le sélecteur de langue dans l'interface** ([#242]) — cet epic rend les chaînes traduisibles,
   il ne change pas la manière dont la locale est choisie.

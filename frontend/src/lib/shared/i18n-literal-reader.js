@@ -252,6 +252,9 @@ function finDeRegex(source, i) {
  * en silence** — un commentaire qui disparaît pendant qu'un vrai site apparaît laisse
  * le compte inchangé. (Revue de code 23-1a, passe 1.)
  *
+ * **Trois formes couvertes** : `//`, `/* … *\/` et — depuis la story 23-3b — les
+ * commentaires de balisage `<!-- … -->` des `.svelte`.
+ *
  * @param {string} source
  * @returns {string}
  */
@@ -285,6 +288,29 @@ export function masquerCommentaires(source) {
 		if (c === '/' && source[i + 1] === '*') {
 			const fin = source.indexOf('*/', i + 2);
 			const stop = fin === -1 ? source.length : fin + 2;
+			while (i < stop) {
+				if (source[i] !== '\n') out[i] = ' ';
+				i += 1;
+			}
+			continue;
+		}
+		// ⚠️ **Commentaires de BALISAGE** — `.svelte` uniquement en pratique (story 23-3b).
+		// Sans eux, la prose française du balisage passe pour des littéraux, et c'est
+		// exactement dans les `.svelte` que vivent les sites que la garde doit lire.
+		// Mesuré sur `main` au 2026-08-21 : **235 blocs**, dont **49** portent au moins un
+		// littéral lisible (majorant — le critère `ouvreUnLitteral` en écarte une part).
+		// ⚠️ **Le dépôt en porte 237 à HEAD** : cette story en a ajouté elle-même, par les
+		// commentaires qui expliquent ses correctifs. Un nombre absolu inscrit dans le code se
+		// périme donc par ses propres commits — d'où la mention de la BORNE de mesure. Ce qui
+		// compte n'est pas le nombre mais le geste : `grep -rho "<!--" src --include=*.svelte`.
+		// ⚠️ **L'extension ne peut ni retirer un site compté ni toucher un corps candidat** :
+		// **zéro** appel `i18nMsg` vit dans un commentaire de balisage, et **zéro**
+		// commentaire de balisage vit dans un bloc `<script>` — les deux vérifiés au dépôt.
+		// ⚠️ **L'ordre compte** : le test des littéraux est AU-DESSUS, donc un `'<!-- … -->'`
+		// écrit dans une chaîne JS reste une chaîne — comme un `//` dans une URL.
+		if (c === '<' && source.startsWith('<!--', i)) {
+			const fin = source.indexOf('-->', i + 4);
+			const stop = fin === -1 ? source.length : fin + 3;
 			while (i < stop) {
 				if (source[i] !== '\n') out[i] = ' ';
 				i += 1;
@@ -367,11 +393,19 @@ export function findRelays(source) {
  * appariant les accolades et en sautant les littéraux — sans quoi une accolade dans
  * une chaîne fausserait le compte.
  *
+ * ⚠️ **Exportée pour la garde des libellés en dur** (`i18n-libelle-en-dur.test.ts`,
+ * story 23-3b) : elle a besoin du même appariement, et le doc-comment ci-dessus raconte
+ * trois passes de durcissement — la réécrire, c'est repayer trois régressions.
+ * ⚠️ **Elle ne suffit PAS à elle seule** : elle prend en entrée la position d'une
+ * accolade **déjà connue**. Localiser la déclaration (nom, puis la vraie accolade de
+ * corps — celle qui suit la FERMETURE de la signature, et non le `{` d'un type inline)
+ * reste à la charge de l'appelant.
+ *
  * @param {string} source
  * @param {number} ouvrante
  * @returns {string | null}
  */
-function corpsDeFonction(source, ouvrante) {
+export function corpsDeFonction(source, ouvrante) {
 	let profondeur = 0;
 	let j = ouvrante;
 	while (j < source.length) {

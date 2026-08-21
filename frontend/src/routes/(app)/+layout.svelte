@@ -54,10 +54,16 @@
 	// « Comptes bancaires » sous Administration. Items « Export global » et « Paramètres »
 	// déplacés de leur ancien groupe sans label vers Administration. Items admin-only
 	// (Utilisateurs, Facturation) fusionnés dans Administration via {#if isAdmin}.
-	const navGroups: Array<{ key: string; label: string; defaultExpanded: boolean; items: NavItem[]; comptableOnly?: NavItem[]; adminOnly?: NavItem[] }> = [
+	// ⚠️ **Le type de GROUPE ne portait que `label: string`** — c'est lui qui manquait, pas
+	// `NavItem` (`:17-19`), déjà doté de la variante `{ i18nKey, fallback, href }` employée par
+	// vingt entrées. Les trois clés `nav-quotidien` / `nav-mensuel` / `nav-administration`
+	// **existaient déjà, traduites dans les quatre catalogues** : elles étaient écrites et
+	// jamais câblées. (Story 23-3b, site 6.)
+	const navGroups: Array<{ key: string; i18nKey: string; fallback: string; defaultExpanded: boolean; items: NavItem[]; comptableOnly?: NavItem[]; adminOnly?: NavItem[] }> = [
 		{
 			key: 'quotidien',
-			label: 'Quotidien',
+			i18nKey: 'nav-quotidien',
+			fallback: 'Quotidien',
 			defaultExpanded: true,
 			items: [
 				{ i18nKey: 'nav-home', fallback: 'Accueil', href: '/' },
@@ -82,24 +88,32 @@
 					fallback: 'Paiements fournisseurs',
 					href: '/payment-batches',
 				},
-				{ label: 'Importer', href: '/bank-import' },
+				// ⚠️ Le français PRÉCISE, sur arbitrage de Guy : « Importer » seul était ambigu à
+				// deux lignes de « Importer des factures ». Aucun terme n'était attesté au catalogue.
+				{
+					i18nKey: 'nav-bank-import',
+					fallback: 'Importer des relevés',
+					href: '/bank-import',
+				},
 			],
 		},
 		{
 			key: 'mensuel',
-			label: 'Mensuel',
+			i18nKey: 'nav-mensuel',
+			fallback: 'Mensuel',
 			defaultExpanded: true,
-			// Note FINDING-12 Pass 1 : items Mensuel conservés en `label:` hardcodé FR
-			// (cohérent avec l'existant pré-v014-1). Migration i18n complète reportée v0.2.
+			// (Les trois items étaient les derniers en `label:` français en dur du groupe ;
+			// traduits par la story 23-3b — la note qui reportait l'i18n « à v0.2 » est levée.)
 			items: [
-				{ label: 'Écritures', href: '/journal-entries' },
-				{ label: 'Réconciliation', href: '/reconciliation' },
-				{ label: 'Rapports', href: '/reports' },
+				{ i18nKey: 'nav-journal-entries', fallback: 'Écritures', href: '/journal-entries' },
+				{ i18nKey: 'nav-reconciliation', fallback: 'Réconciliation', href: '/reconciliation' },
+				{ i18nKey: 'nav-reports', fallback: 'Rapports', href: '/reports' },
 			],
 		},
 		{
 			key: 'administration',
-			label: 'Administration',
+			i18nKey: 'nav-administration',
+			fallback: 'Administration',
 			defaultExpanded: false,
 			items: [
 				{ i18nKey: 'nav-accounts', fallback: 'Plan comptable', href: '/accounts' },
@@ -120,11 +134,10 @@
 					href: '/settings/opening-balances',
 				},
 			],
-			// Note FINDING-7 Pass 1 : admin-only items conservés en `label:` hardcodé FR
-			// (i18n complète reportée v0.2 — hors scope du hotfix UX v0.1.4).
+			// (Idem pour les deux items admin-only : traduits par la story 23-3b.)
 			adminOnly: [
-				{ label: 'Utilisateurs', href: '/users' },
-				{ label: 'Facturation', href: '/settings/invoicing' },
+				{ i18nKey: 'nav-users', fallback: 'Utilisateurs', href: '/users' },
+				{ i18nKey: 'nav-invoicing', fallback: 'Facturation', href: '/settings/invoicing' },
 				// Story 20-2 (Epic 20) — section Admin « Modèles d'e-mail ».
 				{
 					i18nKey: 'nav-email-templates',
@@ -154,6 +167,11 @@
 			return i18nMsg(item.i18nKey, item.fallback);
 		}
 		return item.label;
+	}
+
+	/** Symétrique de `getItemLabel` pour le libellé d'un groupe (story 23-3b, site 6). */
+	function getGroupLabel(group: { i18nKey: string; fallback: string }): string {
+		return i18nMsg(group.i18nKey, group.fallback);
 	}
 
 	// Story v014-1 (FINDING-3 Pass 2 Haiku) — Persistence localStorage SSR-safe.
@@ -337,7 +355,7 @@
 					data-testid={`nav-group-${group.key}`}
 				>
 					<summary class="kesh-sidebar-summary flex cursor-pointer items-center justify-between rounded-md px-1 py-1 text-xs font-medium uppercase tracking-wider text-text-muted hover:text-text">
-						<span>{group.label}</span>
+						<span>{getGroupLabel(group)}</span>
 						<ChevronDown class="kesh-sidebar-chevron h-4 w-4 transition-transform" aria-hidden="true" />
 					</summary>
 					<ul class="flex flex-col mt-1" style="gap: 2px;">
