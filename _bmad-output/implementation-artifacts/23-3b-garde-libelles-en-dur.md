@@ -1,6 +1,6 @@
 # Story 23.3b : la garde contre les libellés en dur, et les huit sites qu'elle révèle
 
-Status: ready-for-dev
+Status: review
 
 > **Base** : branchée sur `main` **après le merge de la 23-3** (`046efa51`). Tous les faits, lignes
 > et décomptes de ce document ont été **vérifiés au grep sur cette base** le 2026-08-20.
@@ -161,7 +161,7 @@ bloquant.**
       des huit est corrigé ou tracé en issue, **jamais exempté**. À faire dès le premier run de T4.
 - [x] **T11 — Retirer les clés `nav-*` du périmètre de la 23-4** *(l'epic en prévoyait 4 ; cette
       story en couvre 9)* — **AC5** : sans ce retrait, la 23-4 refait le travail ou entre en conflit.
-- [ ] **T12 — Gates complets, E2E comprise** — AC9.
+- [x] **T12 — Gates complets, E2E comprise** — AC9.
 
 ## Dev Notes
 
@@ -521,6 +521,56 @@ Aucune des 18 clés neuves n'y figurait, et c'est **le fait le plus instructif d
 cette dette-là n'était comptée nulle part. Tout l'appareil de mesure de l'epic — moissonneur,
 allowlist, les trois gardes — ne relève que les sites `i18nMsg`. L'angle mort #255, en chiffres.
 
+#### T12 / AC9 — les gates, et le DIFFÉRENTIEL E2E
+
+Base de gate remise à zéro avant **chaque** run complet, inconditionnellement.
+
+| gate | résultat |
+|---|---|
+| backend `scripts/test-fast.sh --ci` | **2219 tests, 2219 passés**, 4 skippés — fmt et clippy verts |
+| `cargo test -p kesh-i18n` | **29/29**, dont `parity_between_locales` |
+| frontend `npm run check` | **0 erreur** (27 warnings, tous préexistants) |
+| `lint-i18n-ownership` | **PASS** |
+| `npm run test:unit` | **687 tests, 72 fichiers** |
+| `npm run build` | vert |
+| **E2E branche** | **183 passés · 38 échoués · 19 skippés** |
+| **E2E `main`** *(référence)* | **183 passés · 38 échoués · 19 skippés** |
+| **différentiel** | ⚠️ **NUL** — listes d'échecs identiques |
+
+⚠️ **Le différentiel n'était pas une formalité : le premier run rendait 182 contre 183.** Un
+seul test d'écart, et il portait une régression réelle — cf. ci-dessous. Sans la mesure contre
+`main`, l'écart se serait lu comme du bruit d'environnement, ce que la doctrine du dépôt
+(« une quarantaine d'échecs sur `main` aussi ») invitait précisément à croire.
+
+#### ⚠️ AC7 — il y avait CINQ verrous, pas quatre, et un SIXIÈME dormant
+
+La spec en listait quatre en écrivant que sa liste n'était pas close. Elle avait raison.
+
+**Le cinquième** — `payment-batches.spec.ts:146`, `toContainText(/Généré/i)`. ⚠️ **Aucun des
+deux greps de contrôle d'AC7 ne pouvait l'atteindre** : ce n'est ni un `getByText` ni un
+`getByRole({ name })`, mais une assertion de **contenu** posée sur un sélecteur **déjà stable**.
+Le `data-testid` était en place et ne protégeait rien — c'est l'ASSERTION qui lisait la chaîne
+traduite. Corrigé par `data-status={batch.status}` sur le composant, l'assertion portant
+désormais sur le **code** (`generated`, `confirmed`).
+
+**Le sixième** — `has-text("Administration")`, **5 occurrences dans 3 fichiers**, trouvé par le
+grep du **symptôme** après le correctif du cinquième. ⚠️ **Il est vert aujourd'hui, et c'est ce
+qui le rend dangereux** : le libellé est identique en français, en allemand et en anglais, si
+bien qu'il ne casserait **qu'en italien** (`Amministrazione`). Un sélecteur vert dans trois
+langues sur quatre ne se signale jamais. Basculé sur le `data-testid` du groupe, qui existait
+déjà — aucun changement de production.
+
+⚠️ **Un piège de comparaison, à ne pas reproduire** : `fiscal-years.spec.ts:291` contre `:288`
+est **le même test**, décalé de trois lignes par un commentaire ajouté ici. Comparer les échecs
+par `fichier:ligne` fabrique des régressions imaginaires — la comparaison finale est faite sur
+`fichier › titre`.
+
+**Verrous laissés en place, hors périmètre** *(libellés que cette story ne touche pas)* :
+`journal-entries.spec.ts:66` (`/Écritures/` — le TITRE de page, non l'entrée de menu),
+`homepage-settings.spec.ts:56` (`Utilisateurs`, un `<h2>` de `/settings`) et
+`onboarding.spec.ts:161` (`Indépendant`, bouton d'onboarding). Les trois portent sur des clés
+traduites **avant** cette story ; les corriger reviendrait à élargir le périmètre.
+
 ### Completion Notes List
 
 - **La garde vaut plus que les correctifs**, et c'est elle qui a coûté le plus : son premier run
@@ -567,6 +617,7 @@ allowlist, les trois gardes — ne relève que les sites `i18nMsg`. L'angle mort
 
 | date | passe | résultat |
 |---|---|---|
+| 2026-08-21 | **implémentation** (`bmad-dev-story`, Opus 5) | **T1-T12 livrées.** ⚠️ **La garde — le livrable central — était VERTE ET MUETTE à son premier run** : `accoladeDeCorps` cherchait l'accolade du corps juste après la signature, alors que presque toutes les déclarations s'écrivent `(…): string {`. Elle rendait `null` sur toutes, relevait zéro fonction et n'avait rien à signaler. **Attrapée par les cas synthétiques, jamais par le relevé du dépôt** — c'est leur raison d'être. Second run : **18 violations sur les 5 sites du patron**, sortie brute collée. Ventilation **41 = 37 + 4 + 0**, invariant sous test. Garde **éprouvée par mutation** : elle tue deux tests. **18 clés × 4 locales**, parité stricte à 1427. ⚠️ **TROIS chiffres de la spec ne se retrouvent pas au dépôt** et les mesurés ont été retenus : « 21 blocs `<!-- -->` » → **235**, « HUIT hits » → **neuf fonctions**, « QUATRE verrous » → **cinq**, plus un sixième dormant. ⚠️ **T11 reposait sur une prémisse FAUSSE** — aucun recouvrement entre les 9 libellés d'ici et les 4 `nav-*` de la 23-4 ; le geste utile était une inscription au plan d'epic, pas un retrait. ⚠️ **L'allowlist n'a pas bougé (166 → 166)** : cette dette n'était comptée nulle part, l'angle mort #255 en chiffres. **Différentiel E2E branche ↔ `main` NUL** (183/38/19 des deux côtés), après correction d'une régression réelle que le premier différentiel (182 contre 183) avait révélée. Glossaire partie A **65 → 70**. |
 | 2026-08-20 | **passe 3** de `validate` | **1 CRITICAL · 0 HIGH · 1 MEDIUM · 2 LOW** (Haiku ×2, tâches délibérément mécaniques). ⚠️ **La lentille des FAITS rend ZÉRO finding** — 42 vérifications au `grep -nF`, tous les faits de la spec confirmés : après deux passes, le document ne ment plus sur le code. Et la lentille de COHÉRENCE rend **14 renvois « site N » sur 14 corrects** et **tous les décomptes cohérents** — la renumérotation tient. **Le CRITICAL est une couverture cassée, pas un fait faux** : `T8` touche le titre de dialogue, seul site dont un test E2E cible le libellé **par son texte**, et ne portait que `AC5` — jamais `AC7`. Un développeur aurait changé le libellé, vu `fiscal-years.spec.ts:270` rougir, et « réparé » en y réécrivant la chaîne : **le verrou remis en place sous couvert de correctif**. `T8` porte désormais les deux AC et impose de basculer le sélecteur sur `data-testid` **avant** de toucher au libellé. ⚠️ **Trois findings reclassés en LOW par la lentille elle-même**, qui conclut à chaque fois que le livrable final est cohérent — de l'archéologie de Change Log, pas des défauts. |
 | 2026-08-20 | **passe 2** de `validate` | **2 CRITICAL · 4 HIGH · 3 MEDIUM · 6 LOW** (Sonnet ×2). ⚠️ **Les deux CRITICAL visent la RÉÉCRITURE de la passe 1** — dixième fois sur ce dossier qu'une passe trouve un défaut du correctif précédent. `AC9` renvoyait au **site 6** (la barre de navigation !) pour ce qui déborde #255, là où les Dev Notes disent **site 8** : l'erreur était **antérieure** à la renumérotation, qui ne l'a pas rattrapée parce que je n'ai corrigé que les renvois que je savais avoir décalés. Et le Change Log annonçait encore « Sites 5 → 7 » après la réinsertion de `credit-notes` — le tableau corrigé, son compte rendu non. ⚠️ **Le finding MESURÉ est le plus utile** : le balayage du patron réduit, **réellement exécuté**, rend **HUIT** hits et non cinq — cinq violations plus **trois candidats à écarter par critère**, dont un cas que rien ne prévoyait (`roleLabel` → **chaîne vide**). AC2 aurait échoué à la lettre. **Trois classes de littéraux légitimes** sont désormais des CRITÈRES et non des entrées d'allowlist, sans quoi la liste enfle et perd son sens. Autres corrections : une 5ᵉ forme hors de portée (`const xLabel = $derived.by`), la portée du « 32 » qui était plein-arbre et non par domaine, `corpsDeFonction` qui **ne suffit pas seule** (localiser la déclaration reste à écrire, avec le piège du type inline), `AC7` qui ignorait un **quatrième** verrou — un sélecteur E2E que ma propre section « Pièges » documentait deux paragraphes plus bas. **Un MEDIUM réfuté** : les deux usages de « 23-4 » désignent bien la même story, l'epic la définissant comme `settings` + `payment-batches` + `onboarding` + 4 `nav-*`. |
 | 2026-08-20 | **passe 1** de `validate` | **2 CRITICAL · 6 HIGH · 6 MEDIUM · 3 LOW** (Opus ×2). ⚠️ **La spec ne survit pas à sa première passe, et deux findings la refondent.** **CRITICAL-1** : la branche avait été coupée de `main` **avant** le merge de la 23-3 — quatre références pointaient dans le vide et le défaut fondateur était encore dans l'arbre. Corrigé : #325 mergée, branche rebasée sur `046efa51`. **CRITICAL-2, mesuré** : « la garde rougit sur les cinq sites » était **irréalisable** — trois formes du défaut (valeur sans appel, tableau de données, nœud de markup) sont **hors de portée par construction**. La garde est donc **réduite à ce qu'elle peut prouver** et les trois sites restants passent en correctifs manuels **avec motif écrit**. L'élargissement « par le contenu » a été **chiffré** : 175 sites à trier pour rater quand même `Brouillon` et 7 des 9 libellés de nav — proscrit. **HIGH le plus embarrassant** : le tableau cochait ✅ « en-tête traduit » pour deux sites dont **les clés n'existent dans aucune locale** — elles sont à l'allowlist. Le défaut y est **latent**, pas actif ; ma propre prose le disait deux paragraphes plus haut. Autres faits corrigés : `masquerCommentaires` ne masque **pas** les `<!-- -->`, `corpsDeFonction` **n'est pas exportée**, un **3ᵉ** verrou de test (`toContain`), **quatre** tables de replis et non deux, doc-comment copié **trois** fois et non quatre, `NavItem` **déjà correct** (c'est le type de groupe qui manque). Sites 5 → **8** *(le tableau réécrit avait d'abord PERDU `credit-notes`, l'un des deux CRITICAL d'origine — réinséré avant la passe 2)*. |
