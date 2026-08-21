@@ -99,11 +99,24 @@ protéger l'epic.
 
 ## Critères d'acceptation
 
-1. **AC1 — les 93 clés du périmètre existent dans les QUATRE catalogues**, et l'allowlist décroît
-   d'autant : **166 → 73**, recompté depuis le fichier. ⚠️ La ventilation relevée au moissonneur :
-   `payment-batches` **30**, `settings` **55** *(dont 25 via le relais `msg` de l'écran des modèles
-   d'e-mail)*, `onboarding` **4**, plus les **4 `nav-*`** de l'inventaire — que le moissonneur ne
-   voit pas, leurs clés étant portées par une table de données et non par un littéral.
+1. **AC1 — le périmètre est écrit dans les QUATRE catalogues, et DEUX grandeurs distinctes le
+   décrivent.** ⚠️ **Les confondre est le premier piège de cette story, et il vient de sa propre
+   spec** *(relevé en passe 1 de `validate`, où la ventilation contredisait AC2)* :
+
+   | grandeur | valeur | pourquoi elle diffère |
+   |---|---|---|
+   | **clés écrites au catalogue** | **95** | les deux clés scindées par AC2 en produisent **quatre** |
+   | **décrément de l'allowlist** | **93** → **166 − 93 = 73** | les deux clés NEUVES n'y ont jamais figuré |
+
+   Ventilation des 93 entrées d'allowlist, relevée au moissonneur : `payment-batches` **30**,
+   `settings` **55** *(dont **28** pour le seul écran `settings/projects`, et 25 via le relais `msg`
+   de l'écran des modèles d'e-mail)*, `onboarding` **4**, plus les **4 `nav-*`** de l'inventaire —
+   que le moissonneur ne voit pas, leurs clés étant portées par une table de données.
+
+   ⚠️ **Recompter les DEUX depuis la source**, et ne jamais ajuster l'une pour la faire coïncider
+   avec l'autre : c'est ce qui pousserait à ne scinder qu'à moitié, et à réintroduire le défaut
+   qu'AC2 existe pour fermer. *(Une lentille de la passe 1 proposait 71 pour l'allowlist : **c'est
+   faux**, et l'erreur est instructive — elle décomptait des clés qui n'y ont jamais été inscrites.)*
 2. **AC2 — `payment-batches-col-total` est SCINDÉE** en une clé de lot et une clé de ligne, et
    `payment-batches-col-date` en un libellé de colonne et un libellé de fiche. ⚠️ **Aucune valeur
    unique ne doit être imposée à des sites qui affichent des grandeurs ou des registres différents.**
@@ -112,12 +125,19 @@ protéger l'epic.
    correction** : la sortie brute du run rouge est collée au Dev Agent Record. Sans cette preuve,
    une extension vide passe tous les autres AC.
 4. **AC4 — le verbe « générer » disparaît du domaine** au profit de « créer », sur les trois sites
-   du tableau ci-dessus. Contrôle : `grep -rn "[Gg]énér" frontend/src/routes/\(app\)/payment-batches/`
-   ne rend plus que des occurrences sans rapport avec la création d'un lot.
-5. **AC5 — les termes non attestés sont tranchés PAR GUY avant écriture**, puis promus en partie A
-   du glossaire avec leur clé attestante. ⚠️ **`lot` en fait partie** : la 23-3b l'a déjà employé et
-   figé (`Bereits in einem erstellten Stapel`) **sans le promouvoir** — c'est le défaut que le
-   glossaire documente lui-même, et il est ouvert depuis une story.
+   du tableau ci-dessus. Contrôle, **exécuté par T4 et sa sortie collée** :
+   `grep -rn "[Gg]énér" frontend/src/routes/\(app\)/payment-batches/`.
+   ⚠️ **Le critère porte sur les LIBELLÉS AFFICHÉS, pas sur les commentaires de code.** Le grep
+   remonte aujourd'hui un commentaire de `[id]/+page.svelte` qui documente pourquoi un test E2E
+   attendait `/Généré/i` — il parle bien de la création d'un lot, **au passé**, et c'est une
+   explication qu'une revue antérieure a payée. **Ne pas la réécrire pour faire disparaître le
+   bruit.**
+5. **AC5 — le seul terme non attesté est tranché PAR GUY avant écriture** — `Référence message` —,
+   et les termes **relevés mais non promus** montent en partie A avec leur clé attestante.
+   ⚠️ **`lot` en fait partie** : la 23-3b l'a employé et figé (`Bereits in einem erstellten Stapel`)
+   **sans le promouvoir** — le défaut que le glossaire documente sur lui-même, ouvert depuis une
+   story. ⚠️ **Promouvoir n'est pas arbitrer** : `lot` et `NPA` sont relevés, ils ne demandent
+   aucune décision.
 6. **AC6 — la garde des libellés en dur reste verte** (`i18n-libelle-en-dur.test.ts`), et sa borne
    `CANDIDATES_ATTENDUES` est recomptée si le rollout crée ou supprime une fonction de libellé.
 7. **AC7 — aucun test ne verrouille le français.** Les **deux** greps de contrôle de la 23-3b, plus
@@ -134,18 +154,33 @@ protéger l'epic.
 
 ## Tasks
 
-- [ ] **T1 — Arbitrage de Guy sur les termes non attestés** — AC5. ⚠️ **Bloquant, et à faire
-      AVANT toute écriture au catalogue** : ces valeurs seront figées dans quatre catalogues et
-      promues en partie A. Ne jamais inventer ; si un terme neuf apparaît en cours de route, le
-      proposer au Record et **s'arrêter**. Liste de départ au § *Les termes*.
-- [ ] **T2 — Scinder les deux clés à double sens** — AC2. ⚠️ **AVANT d'écrire quoi que ce soit aux
+- [ ] **T1 — Arbitrage de Guy sur `Référence message`, et promotion des termes relevés** — AC5.
+      ⚠️ **Bloquant pour ce seul terme**, et à faire AVANT toute écriture au catalogue : la valeur
+      sera figée dans quatre catalogues. ⚠️ **La liste est passée de QUATRE termes à UN en passe 1
+      de `validate`** : `virement` était déjà en partie A, `NPA` attesté dans les quatre locales par
+      `field-postal-code`, `lot` relevé et seulement à promouvoir. Ne jamais inventer ; si un terme
+      neuf apparaît en cours de route, le proposer au Record et **s'arrêter**.
+- [ ] **T2 — Étendre la garde « une clé, un repli » à `payment-batches-`** — AC3, et **coller sa
+      sortie ROUGE** : c'est la seule preuve qu'elle voit les deux divergences. ⚠️ **Cette tâche
+      vient AVANT le split, et la numérotation le dit désormais** : dans l'autre ordre, les
+      divergences ont disparu du code, la garde ne peut plus rougir, et la preuve qu'AC3 exige
+      devient impossible à produire honnêtement. *(L'ordre était contredit par la numérotation en
+      passe 1 de `validate` — un développeur suivant les numéros aurait cassé AC3 sans le voir.)*
+- [ ] **T3 — Scinder les deux clés à double sens** — AC2. ⚠️ **AVANT d'écrire quoi que ce soit aux
       catalogues** : entrer `payment-batches-col-total` telle quelle figerait le défaut.
-- [ ] **T3 — Étendre la garde « une clé, un repli » à `payment-batches-`** — AC3. ⚠️ **AVANT T2**,
-      et coller sa sortie ROUGE : c'est la seule preuve qu'elle voit les deux divergences.
-- [ ] **T4 — `payment-batches` : 30 clés × 4 locales** — AC1, AC4 *(le verbe « créer »)*.
+- [ ] **T4 — `payment-batches` : 32 clés × 4 locales** *(30 d'allowlist + les 2 issues du split)* —
+      AC1, **AC4**, **AC6**. ⚠️ **Exécuter le grep d'AC4 et COLLER sa sortie** — un critère qu'aucune
+      tâche n'exécute est une affirmation invérifiable. ⚠️ **AC6** : vérifier si le rollout crée ou
+      supprime une fonction `*Label`/`*Text`/`*Display` ; si oui, recompter `CANDIDATES_ATTENDUES`
+      et le **déclarer**, sinon écrire qu'aucune ne l'a été. Le gate le vérifie mécaniquement, mais
+      rien n'oblige à le dire — et c'est le dire qui manque.
 - [ ] **T5 — `settings` : 55 clés × 4 locales** — AC1. ⚠️ **25 passent par le relais `msg`** de
       l'écran des modèles d'e-mail : le littéral vit au site `msg(`, pas au site `i18nMsg(`.
       `findRelays` les voit ; un grep naïf de `i18nMsg(` ne les verrait pas.
+      ⚠️ **28 des 55 — plus de la moitié — sont l'écran `settings/projects`** (projets analytiques),
+      que la première rédaction de cette spec ne nommait nulle part. Il porte un vocabulaire de
+      **hiérarchie** (« Projet parent », « — Aucun (projet racine) ») dont le précédent est au
+      catalogue et **n'est pas un calque** : cf. le § *Les termes*.
 - [ ] **T6 — `onboarding` : 4 clés × 4 locales** — AC1. ⚠️ Le dossier est **partiellement traduit
       depuis la 23-1b** (8 libellés faits, 4 messages restants) : cette tâche referme l'écart.
 - [ ] **T7 — Les 4 `nav-*` de l'inventaire** — AC1 : `nav-credit-notes`, `nav-email-templates`,
@@ -169,9 +204,17 @@ protéger l'epic.
 | `localité` | ✅ **partie A** | `Ort` / `località` / `Town/city` |
 | `créé`, `confirmé`, `annulé` | ✅ **partie A** | promus par la 23-3b |
 | **`lot`** | ⚠️ **employé, figé, JAMAIS promu** | `Stapel` / `lotto` / `batch`, relevé sur `reminders-batch-cap` **et déjà écrit au catalogue par la 23-3b**. À promouvoir — c'est le défaut que le glossaire documente : *un terme que le rollout emploie et fige va en partie A* |
-| **`NPA`** | ⚠️ **à trancher** | Code postal suisse. `PLZ` en allemand, `NPA` en italien suisse, `Postcode`/`ZIP` en anglais — **aucun attesté au catalogue** |
-| **`Référence message`** | ⚠️ **à trancher** | `msgId` de pain.001, terme ISO 20022. Traduire ou garder ? Précédent : `EndToEndId` est laissé **verbatim** dans la même table |
-| **`virement`** | ⚠️ **à vérifier** | employé par `payment-batches-new` ; contrôler s'il est attesté avant de le tenir pour acquis |
+| `NPA` | ✅ **attesté**, corrigé en passe 1 | `field-postal-code` → **`NPA` / `PLZ` / `NPA` / `Postal code`** dans les quatre locales. ⚠️ **La première rédaction le donnait pour « à trancher, aucun attesté au catalogue » : c'était FAUX**, et l'envoyer à l'arbitrage aurait au mieux fait perdre du temps, au pire fait trancher une forme différente de celle déjà en service |
+| `virement` | ✅ **partie A** | `Überweisung` (`Banküberweisung`) / `bonifico` / `bank transfer`, attesté par `supplier-invoices-pay-transfer` (23-3). ⚠️ **La première rédaction le donnait pour « à vérifier »** — il était **déjà en partie A du glossaire**, qu'il suffisait d'ouvrir |
+| **`projet parent` / `projet racine`** | ⚠️ **relevé en passe 1, absent de la première rédaction** | L'écran `settings/projects` fait **28 des 55 clés de `settings`** et n'était nommé nulle part. ⚠️ **Son idiome est attesté et ce n'est PAS un calque** : `accounts-parent-archived` rend « le compte parent » par **`das übergeordnete Konto`**, jamais *Eltern-Konto*. Suivre cet idiome |
+| **`Référence message`** | ⚠️ **LE SEUL ARBITRAGE RESTANT** | `msgId` d'un fichier pain.001, terme ISO 20022. Le traduire, ou le garder verbatim ? ⚠️ **Précédent dans le MÊME tableau** : `EndToEndId` y est laissé verbatim (`[id]/+page.svelte:121`) |
+
+⚠️ **Trois des quatre termes que la première rédaction envoyait à l'arbitrage n'en demandaient
+aucun** — `virement` était en partie A, `NPA` au catalogue dans les quatre locales, `lot` relevé et
+seulement à promouvoir. **Il n'en reste qu'UN.** La leçon vaut plus que la correction : cette spec
+répète « relever avant d'inventer » et ne l'avait pas appliqué à sa propre table de termes. Ouvrir
+le glossaire coûte une commande ; un arbitrage inutile coûte un aller-retour, et un arbitrage rendu
+en ignorant un précédent coûte une incohérence de vocabulaire que rien ne rattrape.
 
 ⚠️ **Relever avant d'inventer**, et **distinguer relevé de dérivé** : la 23-3b a dû corriger deux
 entrées de partie A qui citaient comme *attestantes* des clés portant l'**infinitif** là où la
@@ -231,4 +274,5 @@ périmètre. Le moissonneur ne rend **aucun** repli à échapper (`aEchapper` vi
 
 | date | passe | résultat |
 |---|---|---|
+| 2026-08-21 | **passe 1** de `validate` | **1 CRITICAL · 2 HIGH · 3 MEDIUM · 0 LOW** (Sonnet ×2, contextes frais). ⚠️ **La lentille des FAITS rend UN seul écart sur vingt affirmations vérifiées** — tous les décomptes, les trois conflits de replis, la portée de la garde, les trois sites « Générer », le statut de `lot` et les quatre affirmations sur la 23-3b se recomptent exactement comme annoncé. **Le moissonneur exécuté sur la base réelle a donc tenu ses promesses.** ⚠️ **Mais la lentille de COHÉRENCE a trouvé une contradiction INTERNE, et c'est le CRITICAL** : AC1 annonçait 93 clés quand AC2 impose de scinder deux clés en quatre — un développeur recomptant honnêtement aurait trouvé un écart, et la sortie la moins coûteuse aurait été de **ne scinder qu'à moitié**, réintroduisant le défaut qu'AC2 existe pour fermer. Deux grandeurs distinctes sont désormais écrites : **95 clés au catalogue, 93 de décrément d'allowlist**. ⚠️ **Le correctif chiffré de la lentille était FAUX** (elle proposait 71 pour l'allowlist) : elle décomptait des clés neuves qui n'y ont jamais figuré — réfuté au sol. **DEUX HIGH, tous deux sur ma table des termes** : `virement` était **déjà en partie A du glossaire** et `NPA` attesté dans les quatre locales par `field-postal-code`, alors que la spec les envoyait à l'arbitrage. ⚠️ **Cette spec répète « relever avant d'inventer » et ne l'avait pas appliqué à sa propre table de termes** — la liste bloquante passe de QUATRE termes à **UN**. Et l'écran `settings/projects`, **28 des 55 clés de `settings`**, n'était nommé nulle part : son idiome de hiérarchie est attesté et **n'est pas un calque** (`übergeordnetes`, jamais *Eltern-*). **MEDIUM** : la numérotation des tâches contredisait leur ordre d'exécution — T3 devait précéder T2, un développeur suivant les numéros aurait rendu AC3 impossible à prouver ; AC4 et AC6 n'étaient portés par aucune tâche ; et le grep d'AC4 était ambigu sur un commentaire de code qu'une revue antérieure avait payé. |
 | 2026-08-21 | création | Spec écrite après **exécution du moissonneur sur la base réelle**, pas depuis le plan d'epic. Périmètre confirmé à **93** (30 + 55 + 4 + 4). ⚠️ **Trois replis divergents trouvés, deux dans le périmètre** — dont `payment-batches-col-total`, qui porte **deux grandeurs** (total du lot / montant d'une ligne) : jumeau exact du défaut de la 23-3, latent, et **que la traduction activerait**. ⚠️ **La garde « une clé, un repli » ne couvre pas ce domaine** (bornée à `supplier-invoices-`) : son extension entre au livrable. ⚠️ **Conséquence non vue de l'arbitrage de la 23-3b** : trois sites disent encore « Générer un lot » pour un objet dont le statut s'affiche « Créé ». ⚠️ **`lot` est employé et figé depuis la 23-3b sans être en partie A** du glossaire. |
