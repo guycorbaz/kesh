@@ -1610,3 +1610,23 @@ supplier-invoices-scan-too-large = Bild zu gross (max. 15 MB).
 supplier-invoices-status-open = Offen
 supplier-invoices-status-paid = Bezahlt
 supplier-invoices-status-cancelled = Storniert
+
+# Story 23-3b (#316) — hartcodierte Bezeichnungen, cf. fr-CH für die Herleitung jedes Terms.
+credit-notes-status-cancelled = Storniert
+credit-notes-status-draft = Entwurf
+credit-notes-status-issued = Ausgestellt
+nav-bank-import = Kontoauszüge importieren
+nav-invoicing = Fakturierung
+nav-journal-entries = Buchungen
+nav-reconciliation = Abstimmung
+nav-reports = Berichte
+nav-users = Benutzer
+payment-batches-failed-already-in-generated-batch = Bereits in einem erstellten Stapel
+payment-batches-failed-invalid-iban = IBAN ungültig
+payment-batches-failed-invalid-qr-iban = QR-IBAN ungültig
+payment-batches-failed-no-payment-coordinates = Keine Zahlungsverbindung (IBAN/QR-IBAN)
+payment-batches-failed-supplier-invoice-not-found = Rechnung nicht gefunden
+payment-batches-failed-supplier-invoice-not-open = Rechnung nicht offen
+payment-batches-status-cancelled = Storniert
+payment-batches-status-confirmed = Bestätigt
+payment-batches-status-generated = Erstellt

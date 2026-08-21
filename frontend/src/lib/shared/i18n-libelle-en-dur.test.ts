@@ -84,7 +84,7 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * regarder QUELLES déclarations sont apparues ou ont disparu, et ne changer le chiffre
  * qu'après. Une baisse peut être un libellé qui a cessé d'être une fonction.
  */
-const CANDIDATES_ATTENDUES = 39;
+const CANDIDATES_ATTENDUES = 41;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -348,7 +348,13 @@ describe('libellés en dur — l’angle mort #255', () => {
 	// ⚠️ **Un total doit être cohérent avec sa propre ventilation.** Sur l'epic 16, le compte
 	// rendu est devenu le lieu du défaut plus souvent que le code ; cet invariant met la
 	// ventilation sous test au lieu de la laisser vivre dans un Change Log que personne ne
-	// recompte. Au 2026-08-21 : 39 = 30 + 4 + 5.
+	// recompte. Au 2026-08-21 : **41 = 37 + 4 + 0**.
+	//
+	// ⚠️ Le relevé est passé de 39 à 41 pendant la story elle-même, et l'écart a été RECOMPTÉ,
+	// non ajusté : `orgTypeLabel` (site 4) et `getGroupLabel` (site 6) sont deux fonctions que
+	// les correctifs ont CRÉÉES — un défaut qui n'appelait aucune fonction en gagne une, donc
+	// le relevé monte. Une hausse après correctif est le signe attendu ; c'est une BAISSE qui
+	// devrait inquiéter, car elle signifie qu'un libellé a cessé d'être une fonction.
 	it('la ventilation se somme au total — conformes + écartées par critère + en violation', () => {
 		const candidates = releverLeDepot();
 		const avecRetour = candidates.filter((c) => c.retours.length > 0);
@@ -359,7 +365,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 		const ecartees = avecRetour.length - enViolation.length;
 		expect(conformes + ecartees + enViolation.length).toBe(candidates.length);
 		expect({ conformes, ecartees, enViolation: enViolation.length }).toEqual({
-			conformes: 30,
+			conformes: 37,
 			ecartees: 4,
 			enViolation: 0
 		});

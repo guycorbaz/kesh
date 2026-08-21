@@ -248,14 +248,19 @@
 		}
 	}
 
+	// ⚠️ **Ces trois valeurs FERMENT l'issue #255** : c'est le site qu'elle décrit — un statut
+	// affiché en français dans les quatre langues, sous un en-tête de colonne traduit. Les
+	// clés existaient déjà, traduites dans les quatre catalogues : la réutilisation est la
+	// bonne réponse quand l'équivalence existe, et en créer de neuves aurait semé exactement
+	// la divergence que le glossaire existe pour empêcher.
 	function statusLabel(s: InvoiceStatus): string {
 		switch (s) {
 			case 'draft':
-				return 'Brouillon';
+				return i18nMsg('invoice-status-draft', 'Brouillon');
 			case 'validated':
-				return 'Validée';
+				return i18nMsg('invoice-status-validated', 'Validée');
 			case 'cancelled':
-				return 'Annulée';
+				return i18nMsg('invoice-status-cancelled', 'Annulée');
 		}
 	}
 </script>

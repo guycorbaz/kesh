@@ -267,7 +267,10 @@ test.describe('AC #22 — fallback toast actionnable', () => {
 		// encore monté (Pass 1 code-review BH-3 — Playwright auto-wait empirique
 		// suffit 6/6 mais ce guard rend l'intention explicite et le test robuste
 		// à un futur ralentissement du portal mount).
-		const validateDialog = page.getByRole('dialog', { name: 'Valider la facture' });
+		// ⚠️ Ciblé par `data-testid`, jamais par le libellé : ce titre est traduit depuis la
+		// story 23-3b, et un sélecteur figé sur une chaîne française casse dès qu'une autre
+		// locale est servie. (AC7 — un sélecteur se bascule, il ne se « répare » pas.)
+		const validateDialog = page.getByTestId('invoice-validate-dialog');
 		await expect(validateDialog).toBeVisible({ timeout: 5000 });
 		// Cliquer "Valider" dans la modale → confirmValidate() → backend retourne
 		// FISCAL_YEAR_INVALID (find_open_covering_date renvoie None pour 1900-01-01).

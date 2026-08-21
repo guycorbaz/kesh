@@ -158,6 +158,38 @@
 		}
 	});
 
+
+	/**
+	 * Libellé traduit du type d'organisation.
+	 *
+	 * ⚠️ **C'était le seul défaut ACTIF des huit sites de la story 23-3b, et le plus
+	 * embarrassant à l'usage** : l'utilisateur choisit son type d'organisation en langue
+	 * localisée pendant l'onboarding — « Indépendant », « PME » —, puis retrouvait ici le
+	 * **code brut du backend** (`Independant`, `Association`, `Pme`), dans **toutes** les
+	 * langues, français compris.
+	 *
+	 * ⚠️ **La valeur affichée n'appelait AUCUNE fonction** — `{data.company.orgType}` — ce qui
+	 * la place hors de portée de la garde `i18n-libelle-en-dur.test.ts` : il n'y avait ni
+	 * fonction ni littéral, le défaut était l'*absence* d'appel. Corrigé à la main.
+	 *
+	 * ⚠️ **Les clés `onboarding-org-*` existent déjà et sont câblées côté onboarding : on les
+	 * RÉUTILISE.** En créer de neuves aurait fait dire deux choses au même terme selon
+	 * l'écran. Le repli sur la valeur brute couvre le déploiement mixte — un backend plus
+	 * récent peut renvoyer un type que ce bundle ne connaît pas, et mieux vaut le code que
+	 * rien. Les trois valeurs viennent de `chart_of_accounts/mod.rs:215`.
+	 */
+	function orgTypeLabel(orgType: string): string {
+		switch (orgType.toLowerCase()) {
+			case 'independant':
+				return msg('onboarding-org-independant', 'Indépendant');
+			case 'association':
+				return msg('onboarding-org-association', 'Association');
+			case 'pme':
+				return msg('onboarding-org-pme', 'PME');
+			default:
+				return orgType;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -182,7 +214,7 @@
 				</div>
 				<div>
 					<dt class="font-medium text-text-muted">{msg('settings-field-org-type', 'Type')}</dt>
-					<dd>{data.company.orgType}</dd>
+					<dd>{orgTypeLabel(data.company.orgType)}</dd>
 				</div>
 				<div class="col-span-2">
 					<dt class="font-medium text-text-muted">{msg('settings-field-address', 'Adresse')}</dt>

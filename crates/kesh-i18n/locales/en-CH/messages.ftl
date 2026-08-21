@@ -1616,3 +1616,23 @@ supplier-invoices-scan-too-large = Image too large (max 15 MB).
 supplier-invoices-status-open = Open
 supplier-invoices-status-paid = Paid
 supplier-invoices-status-cancelled = Cancelled
+
+# Story 23-3b (#316) — hard-coded labels, cf. fr-CH for how each term was sourced.
+credit-notes-status-cancelled = Cancelled
+credit-notes-status-draft = Draft
+credit-notes-status-issued = Issued
+nav-bank-import = Import statements
+nav-invoicing = Invoicing
+nav-journal-entries = Entries
+nav-reconciliation = Reconciliation
+nav-reports = Reports
+nav-users = Users
+payment-batches-failed-already-in-generated-batch = Already in a created batch
+payment-batches-failed-invalid-iban = IBAN invalid
+payment-batches-failed-invalid-qr-iban = QR-IBAN invalid
+payment-batches-failed-no-payment-coordinates = No payment details (IBAN/QR-IBAN)
+payment-batches-failed-supplier-invoice-not-found = Invoice not found
+payment-batches-failed-supplier-invoice-not-open = Invoice not open
+payment-batches-status-cancelled = Cancelled
+payment-batches-status-confirmed = Confirmed
+payment-batches-status-generated = Created
