@@ -142,24 +142,24 @@ bloquant.**
       retirer un site compté, ni toucher un corps de fonction candidat. `sitesTotal` ne bouge pas.
 - [x] **T4 — La garde**, sa borne exacte, son allowlist — AC1, AC3, AC4. ⚠️ **Avant les correctifs**,
       et sa sortie rouge sur les cinq sites du patron est collée au Record — AC2.
-- [ ] **T5 — `payment-batches`** : `paymentBatchStatusLabel` (3 cas) et `failedItemLabel` (6 codes) — AC5, AC7.
-- [ ] **T6 — `credit-notes`** : `creditNoteStatusLabel` (3 cas) — AC5, AC7.
-- [ ] **T7 — `invoices`** : `statusLabel` de la liste (site 7, **ferme #255**) et de la fiche (site 5) — AC5.
-- [ ] **T8 — Correctifs hors portée de la garde** : `settings` (site 4), la barre de navigation
+- [x] **T5 — `payment-batches`** : `paymentBatchStatusLabel` (3 cas) et `failedItemLabel` (6 codes) — AC5, AC7.
+- [x] **T6 — `credit-notes`** : `creditNoteStatusLabel` (3 cas) — AC5, AC7.
+- [x] **T7 — `invoices`** : `statusLabel` de la liste (site 7, **ferme #255**) et de la fiche (site 5) — AC5.
+- [x] **T8 — Correctifs hors portée de la garde** : `settings` (site 4), la barre de navigation
       (site 6), le titre de dialogue (site 8) — **AC5 ET AC7**. ⚠️ **T8 est la SEULE tâche à toucher
       des libellés que des tests E2E ciblent par leur texte** — le site 6 (entrées de menu) et le
       site 8 (`fiscal-years.spec.ts:270`, `getByRole('dialog', { name: 'Valider la facture' })`).
       **Basculer ces sélecteurs sur `data-testid` AVANT de changer les libellés**, jamais après :
       dans l'autre ordre on découvre un rouge et la réparation la moins coûteuse est d'y réécrire la
       chaîne traduite — ce qui remet le verrou en place sous couvert de correctif.
-- [ ] **T9 — Glossaire** : promotion des termes tranchés — AC6.
-- [ ] **T10 — Recompter et déclarer `sitesTotal`** — AC8.
-- [ ] **T10-bis — Éprouver la garde par MUTATION**, après T5-T8 — AC2-bis. ⚠️ **Muter un des CINQ
+- [x] **T9 — Glossaire** : promotion des termes tranchés — AC6.
+- [x] **T10 — Recompter et déclarer `sitesTotal`** — AC8.
+- [x] **T10-bis — Éprouver la garde par MUTATION**, après T5-T8 — AC2-bis. ⚠️ **Muter un des CINQ
       sites du patron** (1, 2, 3, 5, 7) : muter un site hors portée (4, 6, 8) ne ferait rien rougir
       **par construction**, et se lirait à tort comme un échec de la garde.
-- [ ] **T10-ter — Confronter le relevé de la garde au tableau** — AC5-bis. Tout site remonté hors
+- [x] **T10-ter — Confronter le relevé de la garde au tableau** — AC5-bis. Tout site remonté hors
       des huit est corrigé ou tracé en issue, **jamais exempté**. À faire dès le premier run de T4.
-- [ ] **T11 — Retirer les clés `nav-*` du périmètre de la 23-4** *(l'epic en prévoyait 4 ; cette
+- [x] **T11 — Retirer les clés `nav-*` du périmètre de la 23-4** *(l'epic en prévoyait 4 ; cette
       story en couvre 9)* — **AC5** : sans ce retrait, la 23-4 refait le travail ou entre en conflit.
 - [ ] **T12 — Gates complets, E2E comprise** — AC9.
 
@@ -463,9 +463,105 @@ peut donc ni retirer un site compté ni toucher un corps de fonction candidat.
 balisage, dont **49** contiennent au moins un littéral lisible. Le nombre inscrit dans le
 code est le mesuré.
 
+#### T10-bis — la garde éprouvée par MUTATION (AC2-bis)
+
+Mutation appliquée sur un des **cinq** sites du patron — `paymentBatchStatusLabel`, dont le
+premier `return` redevient `'Créé'` sans `i18nMsg`. *(Muter un site hors portée — 4, 6 ou 8 —
+n'aurait rien fait rougir **par construction**, et se serait lu à tort comme un échec.)*
+
+```
+     × aucune fonction de libellé ne retourne un littéral sans passer par i18nMsg 87ms
+     × la ventilation se somme au total — conformes + écartées par critère + en violation 31ms
++   "src/lib/features/payment-batches/payment-batch-helpers.ts:42 paymentBatchStatusLabel() → « Créé »",
+```
+
+Elle tue **deux** tests, pas un : la garde elle-même et l'invariant de ventilation. Mutation
+annulée, 16/16 verts.
+
+#### T10-ter — le relevé confronté au tableau (AC5-bis)
+
+Les **5 fonctions en violation** relevées par la garde sont **exactement** les sites 1, 2, 3, 5
+et 7 du tableau — aucun site fautif hors tableau, donc **aucune issue à ouvrir**. Le seul écart
+est le **quatrième candidat écarté par critère** (`displayLabel`, chaîne vide) décrit plus haut :
+il n'est pas un site fautif, et il n'entre pas à l'allowlist — c'est précisément la distinction
+qu'AC5-bis protège.
+
+#### T11 — ⚠️ la tâche reposait sur une prémisse FAUSSE, vérifiée au sol
+
+T11 prescrivait de « retirer les clés `nav-*` du périmètre de la 23-4 », en supposant que les
+**9** libellés de navigation de cette story recouvraient les **4** `nav-*` que l'epic lui
+attribue. **Il n'y a aucun recouvrement** :
+
+| ensemble | clés | nature du défaut |
+|---|---|---|
+| les 4 de la 23-4 | `nav-credit-notes`, `nav-email-templates`, `nav-projects`, `nav-supplier-invoices-import` | clés **déjà câblées**, absentes des catalogues — dette de traduction. **Vérifié : 0/4 catalogues, inchangé par cette story** |
+| les 9 de la 23-3b | 3 groupes + 6 entrées | **français en dur**, jamais routé vers `i18nMsg` |
+
+**La 23-4 garde donc ses 93 clés.** Le geste utile n'était pas un retrait mais une **inscription** :
+le plan d'epic porte désormais une ligne 23-3b et dit pourquoi les deux ensembles sont disjoints,
+faute de quoi une story suivante aurait cherché à reprendre ces neuf libellés.
+
+⚠️ **Trois des neuf étaient DÉJÀ TRADUITS dans les quatre catalogues, et jamais câblés** —
+`nav-quotidien`, `nav-mensuel`, `nav-administration`. La traduction existait ; c'est le fil qui
+manquait.
+
+#### AC8 — `sitesTotal` recompté, et l'écart ventilé
+
+**1502 → 1525**, soit **+23**, et chacun s'explique : 9 pour `payment-batch-helpers` (3 statuts +
+6 codes), 3 pour `credit-note-helpers`, 3 + 4 pour les deux écrans de factures (dont le titre du
+dialogue), 3 pour le type d'organisation, 1 pour `getGroupLabel`. Les sites **non résolus**
+passent de 33 à **34** : `getGroupLabel` est le symétrique exact de `getItemLabel`, déjà de la
+liste — la clé est portée par la donnée, pas par le site d'appel.
+
+⚠️ **La borne a rougi la première, dans les deux cas.** C'est son travail.
+
+#### ⚠️ L'allowlist de dette n'a PAS bougé — 166 avant, 166 après
+
+Aucune des 18 clés neuves n'y figurait, et c'est **le fait le plus instructif de la story** :
+cette dette-là n'était comptée nulle part. Tout l'appareil de mesure de l'epic — moissonneur,
+allowlist, les trois gardes — ne relève que les sites `i18nMsg`. L'angle mort #255, en chiffres.
+
 ### Completion Notes List
 
+- **La garde vaut plus que les correctifs**, et c'est elle qui a coûté le plus : son premier run
+  était **vert et muet**. Les correctifs, eux, sont mécaniques une fois les termes relevés.
+- **Aucun terme n'a été inventé.** Les valeurs viennent de clés attestantes nommées une à une ;
+  les deux seules qui ne l'étaient pas — les entrées de menu « Écritures »/« Rapports » et
+  « Importer » — ont été portées à Guy, qui a tranché le 2026-08-21. ⚠️ Après coup, « Importer des
+  relevés » s'est révélé **entièrement relevé** sur `homepage-bank-empty-guided` dans les quatre
+  locales : la question méritait d'être posée, la réponse était déjà au catalogue.
+- **Glossaire : partie A 65 → 70**, recomptée depuis le tableau. Trois promotions exigées par AC6
+  (`créé`, `confirmé`, `émis`) et **deux relevées en chemin** (`annulé(e)`, `relevé (bancaire)`) —
+  toutes deux attestées au catalogue et pourtant absentes de la partie A, donc libres de dériver.
+  Les **six codes d'échec n'y montent pas** : libellés d'erreur, pas termes métier.
+- **Deux chiffres de la spec ne se retrouvent pas au dépôt**, et les mesurés ont été retenus :
+  « 21 blocs `<!-- -->` » → **235** (dont 49 porteurs d'un littéral), et « le balayage rend HUIT
+  hits » → **neuf fonctions**.
+
 ### File List
+
+**Créé**
+- `frontend/src/lib/shared/i18n-libelle-en-dur.test.ts` — la garde
+
+**Modifié — outillage partagé**
+- `frontend/src/lib/shared/i18n-literal-reader.js` — `corpsDeFonction` exportée (T2), `masquerCommentaires` étendue aux `<!-- -->` (T3)
+- `frontend/src/lib/shared/i18n-literal-reader.test.ts` — 8 cas neufs
+- `frontend/src/lib/shared/i18n-keys.test.ts` — bornes `sitesTotal` 1525 / non résolus 34
+
+**Modifié — les huit sites**
+- `frontend/src/lib/features/payment-batches/payment-batch-helpers.ts` *(+ son test)* — sites 1 et 2
+- `frontend/src/lib/features/credit-notes/credit-note-helpers.ts` *(+ son test)* — site 3
+- `frontend/src/routes/(app)/settings/+page.svelte` — site 4
+- `frontend/src/routes/(app)/invoices/[id]/+page.svelte` — sites 5 et 8
+- `frontend/src/routes/(app)/+layout.svelte` — site 6
+- `frontend/src/routes/(app)/invoices/+page.svelte` — site 7 *(ferme #255)*
+- `frontend/tests/e2e/fiscal-years.spec.ts` — sélecteur basculé sur `data-testid`
+
+**Modifié — catalogues et documentation**
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` — 18 clés × 4 locales
+- `docs/i18n-glossaire.md` — partie A 65 → 70
+- `_bmad-output/planning-artifacts/epic-23-dette-i18n.md` — ligne 23-3b, périmètre de la 23-4 clarifié
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
 

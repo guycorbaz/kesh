@@ -115,6 +115,7 @@ appelle un contrôle d'une autre nature (détection de littéraux affichés).
 | **23-1b** | **Pilote** : moissonneur de replis versionné, les 20 clés de `contacts` dans les 4 locales, glossaire. **Dépend du merge de la 23-1a.** | 20 |
 | **23-2** | **[#283]** — les 57 clés en `de-CH` / `it-CH` / `en-CH`. La garde de **parité** devient inconditionnelle : son allowlist disparaît | 57 |
 | **23-3** | `supplier-invoices` — le gros morceau, seul (99 statiques + **10** de la famille dynamique `imported-supplier-invoices-error-*`) | 109 |
+| **23-3b** | **[#255]** — la **garde contre les libellés en dur**, et les 8 sites qu'elle révèle. ⚠️ **Ses clés ne viennent PAS du total ci-dessous** : un libellé qui n'appelle jamais `i18nMsg` n'était compté nulle part | 18 |
 | **23-4** | `settings` + `payment-batches` + `onboarding` + les 4 `nav-*` de l'inventaire | 93 |
 | **23-5** | `reconciliation` (dont les 5 entrées à variables) + `reports` (14 + 7) + `credit-notes` + les 2 `reports-project-*` de l'inventaire | 58 |
 | **23-6** | Reliquat : `invoices`, `journal-entries`, `lib/components`, `bank-accounts` + **clôture** : allowlist vidée, garde inconditionnelle, [#316] fermée | 15 |
@@ -124,6 +125,22 @@ plafond de sévérité stagnant — non pour son nombre de modules, mais parce q
 deux familles qui ne se relisent pas avec la même lentille : le mécanisme et les comptes rendus.
 Patron 22-2a/22-2b. Les cinq stories de rollout, elles, restent entières : elles n'ont **que** la
 seconde famille.
+
+⚠️ **La 23-3b s'est intercalée le 2026-08-21, et son périmètre ne retire rien à la 23-4.** La
+tâche T11 de sa spec prescrivait de « retirer les clés `nav-*` du périmètre de la 23-4 » en
+supposant un recouvrement — **il n'y en a aucun, vérifié au sol**. Les 4 `nav-*` de la 23-4
+(`nav-credit-notes`, `nav-email-templates`, `nav-projects`, `nav-supplier-invoices-import`) sont
+des clés **déjà câblées** dont la traduction manque ; les **9** libellés de navigation de la 23-3b
+étaient du **français en dur**, jamais routé vers `i18nMsg` — 6 entrées passées en variante
+`i18nKey` et 3 libellés de groupe dont les clés existaient au catalogue depuis longtemps **sans
+avoir jamais été câblées**. Deux défauts distincts, deux ensembles disjoints. **La 23-4 garde ses
+93 clés.**
+
+⚠️ **Les 18 clés de la 23-3b ne s'ajoutent pas au total de l'epic, elles s'ajoutent À CÔTÉ** — et
+c'est le fait le plus instructif de cette story : **l'allowlist de dette n'a pas bougé d'une
+ligne** (166 avant, 166 après). Cette dette-là n'était comptée nulle part, puisque tout
+l'appareil de mesure de l'epic — moissonneur, allowlist, les trois gardes — ne relève que les
+sites `i18nMsg`. C'est l'angle mort #255, exprimé en chiffres.
 
 **Chaque story de rollout est mécanique par construction** : entrer les clés au catalogue dans
 les quatre locales, retirer d'autant l'allowlist, laisser la garde prouver le reste. La revue

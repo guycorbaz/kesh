@@ -92,6 +92,11 @@ passage des rollouts qui touchent ces domaines, pas ici.
 | brouillon | Entwurf | bozza | draft | `Brouillon` |
 | ouverte (facture) | offen | aperta | open | `Factures ouvertes` |
 | payée / impayée | bezahlt / unbezahlt | pagata / non pagata | paid / unpaid | `Payées` / `Impayées` |
+| **annulé(e)** | **storniert** | **annullato / annullata** | **cancelled** | `invoice-status-cancelled` (story 23-3b). ⚠️ **L'ACCORD suit la langue, pas le français** : un *lot* est masculin (`annullato`), une *nota di credito* féminine (`annullata`) ; l'allemand est invariable |
+| **créé** | **erstellt** | **creato / creata** | **created** | `imported-supplier-invoices-completed` (story 23-3b, arbitrage de Guy du 2026-08-20). ⚠️ **Le français a CHANGÉ** : le statut de lot disait « Généré ». Le verbe *créer* est désormais uniforme dans le domaine — `Créer une facture`, `Facture créée.`, un lot `Créé` — soit un mot de moins à retenir pour l'utilisateur |
+| **confirmé** | **bestätigt** | **confermato** | **confirmed** | `demo-reset-confirm-ok` (story 23-3b) |
+| **émis(e)** | **ausgestellt** | **emesso / emessa** | **issued** | `credit-note-revenue-account-archived` (story 23-3b). ⚠️ **Ne pas le confondre avec *validé***, qui désigne l'acte d'immuabilité d'une facture : émettre un avoir et valider une facture sont deux actes distincts, dont un seul est irréversible |
+| **relevé (bancaire)** | **Kontoauszug** | **estratto conto** | **statement** | `homepage-bank-empty-guided` (story 23-3b). Relevé en cours de route, hors des trois statuts qu'AC6 exigeait : `nav-bank-import` l'emploie et le fige, donc il monte |
 | en retard | **überfällig** | in ritardo | overdue | `En retard` |
 | échéance | **Fälligkeit** | scadenza | due date | `Échéance` |
 | conditions de paiement | Zahlungsbedingungen | condizioni di pagamento | payment terms | `Conditions de paiement` |
@@ -199,8 +204,21 @@ et c'est le glossaire lui-même qui aurait induit en erreur, ce qui est pire qu'
 
 **Deux** termes restent ouverts. *(La partie B comptait 16 entrées, 15 après l'arbitrage sur
 « analytique », 12 après la 23-1b, 10 après la 23-2, 4 après la 23-3 et **2** après sa passe 2. La
-partie A compte **65** entrées. Les deux nombres sont **recomptés depuis les tableaux**, comme
+partie A compte **70** entrées. Les deux nombres sont **recomptés depuis les tableaux**, comme
 l'exige la § « Recompter ses propres comptes rendus ».)*
+
+⚠️ **65 → 70 à la story 23-3b**, et le périmètre de la promotion se déclare avec le nombre :
+**trois** entrées l'étaient par son AC6 — `créé`, `confirmé`, `émis`, les statuts que le relevé
+ne couvrait pas et que Guy a tranchés le 2026-08-20 — et **deux** ont été relevées en chemin,
+`annulé(e)` et `relevé (bancaire)`. Ces deux-là illustrent le défaut que le paragraphe suivant
+décrit : elles étaient **attestées au catalogue et absentes de la partie A**, donc libres de
+dériver. `annulé(e)` est le cas net — la spec de cette story le donnait pour « ✅ attesté » sans
+que personne ne remarque qu'il n'était protégé par rien.
+
+⚠️ **Les six codes d'échec de `failedItemLabel` ne montent PAS en partie A** — décision de Guy :
+ce sont des libellés d'erreur, pas des termes métier. Le glossaire porte le vocabulaire que
+l'utilisateur lit et reconnaît d'un écran à l'autre ; y verser des messages techniques le
+diluerait sans rien protéger.
 
 ⚠️ **Les deux dernières entrées de la partie A n'y sont PAS montées depuis la partie B** — `montant TTC`
 et `compte de charge` n'y ont jamais figuré : ils étaient « attestés au catalogue », ce que la spec de
