@@ -48,10 +48,40 @@ import { findCallSites, readFallback, masquerCommentaires } from './i18n-literal
 import { dansLePerimetreDeFichier } from './i18n-harvest.js';
 
 const RACINE = 'src';
-const PREFIXES = ['supplier-invoices-', 'imported-supplier-invoices-'];
+const PREFIXES = [
+	'supplier-invoices-',
+	'imported-supplier-invoices-',
+	// ⚠️ **Story 23-4** — le domaine que cette garde protège s'élargit avec le rollout, sinon elle
+	// reste « un dispositif à domaine unique alors qu'elle prétend protéger l'epic ». Les deux
+	// divergences de `payment-batches` ont été trouvées par le MOISSONNEUR, pas par elle.
+	'payment-batches-',
+	// ⚠️ **`onboarding-` est le domaine qui portait le défaut ACTIF**, et il est le plus instructif :
+	// `onboarding-next` sert deux boutons avec deux replis (« Continuer » / « Enregistrer ») alors
+	// que la clé est DÉJÀ au catalogue — donc le repli « Enregistrer » est mort et le bouton
+	// d'enregistrement affiche « Continuer », dans les quatre langues. ⚠️ **Le moissonneur ne
+	// pouvait PAS le voir** : il ne relève que les clés ABSENTES des catalogues. Sur un domaine
+	// partiellement traduit, c'est CETTE garde le relevé de référence — elle lit les sources sans
+	// filtrer sur le catalogue. (Passe 3 de `validate` de la 23-4.)
+	'onboarding-'
+];
 
-/** Nombre de clés du domaine relevées dans les sources. Recompté, jamais ajusté. */
-const CLES_RELEVEES = 110;
+/**
+ * Nombre de clés des domaines relevées dans les sources. **Recompté, jamais ajusté.**
+ *
+ * ⚠️ **110 → 187 à la story 23-4**, et l'écart se ventile depuis la source :
+ *
+ * | préfixe | clés |
+ * |---|---:|
+ * | `supplier-invoices-` | 58 |
+ * | `imported-supplier-invoices-` | 52 |
+ * | `payment-batches-` | 42 |
+ * | `onboarding-` | 35 |
+ * | **total** | **187** |
+ *
+ * Les deux premiers font les 110 d'origine ; les deux derniers entrent avec le rollout 23-4,
+ * **splits compris** (`payment-batches-line-amount`, `-detail-date`, `onboarding-save`).
+ */
+const CLES_RELEVEES = 187;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */
@@ -100,6 +130,27 @@ describe('une clé, un repli — domaine supplier-invoices', () => {
 		const ligneTotal = releve.get('supplier-invoices-line-total');
 		expect([...(colTotal?.keys() ?? [])]).toEqual(['TTC']);
 		expect([...(ligneTotal?.keys() ?? [])]).toEqual(['Total HT']);
+	});
+
+	// ⚠️ **La fusion ne peut pas revenir — et la garde générique ci-dessus ne suffirait PAS à
+	// l'empêcher** : une clé unique portant un repli unique ne diverge pas, donc « aucune clé ne
+	// porte deux replis » resterait VERTE si quelqu'un refusionnait les trois paires. La preuve du
+	// run rouge exigée par la story est une preuve d'ALLER, jamais de RETOUR. C'est exactement le
+	// raisonnement de la 23-3 (« les deux totaux restent DEUX clés »), étendu aux trois splits de
+	// la 23-4. (Passe 3 de `validate`.)
+	it('les trois paires scindées restent SIX clés — la fusion ne peut pas revenir', () => {
+		const releve = replisParCle();
+		const sens = (cle: string) => [...(releve.get(cle)?.keys() ?? [])];
+		// `payment-batches-col-total` servait le total du LOT et le montant d'une LIGNE.
+		expect(sens('payment-batches-col-total')).toEqual(['Total']);
+		expect(sens('payment-batches-line-amount')).toEqual(['Montant']);
+		// `-col-date` opposait une colonne étroite à une étiquette de fiche.
+		expect(sens('payment-batches-col-date')).toEqual(['Exécution']);
+		expect(sens('payment-batches-detail-date')).toEqual(["Date d'exécution"]);
+		// ⚠️ `onboarding-next` était le cas le plus grave : DÉJÀ au catalogue, donc le repli
+		// « Enregistrer » était mort et le bouton affichait « Continuer » dans les quatre langues.
+		expect(sens('onboarding-next')).toEqual(['Continuer']);
+		expect(sens('onboarding-save')).toEqual(['Enregistrer']);
 	});
 
 	// Borne anti-test-muet : si le relevé rendait un ensemble vide — lecteur cassé, arbre

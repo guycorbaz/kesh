@@ -390,7 +390,7 @@
 				{msg('onboarding-skip-bank', 'Configurer plus tard')}
 			</Button>
 			<Button type="submit" disabled={onboardingState.loading} class="flex-1">
-				{msg('onboarding-next', 'Enregistrer')}
+				{msg('onboarding-save', 'Enregistrer')}
 			</Button>
 		</div>
 	</form>
