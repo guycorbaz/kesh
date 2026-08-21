@@ -154,7 +154,7 @@ protéger l'epic.
 
 ## Tasks
 
-- [ ] **T1 — Arbitrage de Guy sur `Référence message`, et promotion des termes relevés** — AC5.
+- [x] **T1 — Arbitrage de Guy sur `Référence message` — RENDU le 2026-08-21, et promotion des termes relevés** — AC5.
       ⚠️ **Bloquant pour ce seul terme**, et à faire AVANT toute écriture au catalogue : la valeur
       sera figée dans quatre catalogues. ⚠️ **La liste est passée de QUATRE termes à UN en passe 1
       de `validate`** : `virement` était déjà en partie A, `NPA` attesté dans les quatre locales par
@@ -207,7 +207,24 @@ protéger l'epic.
 | `NPA` | ✅ **attesté**, corrigé en passe 1 | `field-postal-code` → **`NPA` / `PLZ` / `NPA` / `Postal code`** dans les quatre locales. ⚠️ **La première rédaction le donnait pour « à trancher, aucun attesté au catalogue » : c'était FAUX**, et l'envoyer à l'arbitrage aurait au mieux fait perdre du temps, au pire fait trancher une forme différente de celle déjà en service |
 | `virement` | ✅ **partie A** | `Überweisung` (`Banküberweisung`) / `bonifico` / `bank transfer`, attesté par `supplier-invoices-pay-transfer` (23-3). ⚠️ **La première rédaction le donnait pour « à vérifier »** — il était **déjà en partie A du glossaire**, qu'il suffisait d'ouvrir |
 | **`projet parent` / `projet racine`** | ⚠️ **relevé en passe 1, absent de la première rédaction** | L'écran `settings/projects` fait **28 des 55 clés de `settings`** et n'était nommé nulle part. ⚠️ **Son idiome est attesté et ce n'est PAS un calque** : `accounts-parent-archived` rend « le compte parent » par **`das übergeordnete Konto`**, jamais *Eltern-Konto*. Suivre cet idiome |
-| **`Référence message`** | ⚠️ **LE SEUL ARBITRAGE RESTANT** | `msgId` d'un fichier pain.001, terme ISO 20022. Le traduire, ou le garder verbatim ? ⚠️ **Précédent dans le MÊME tableau** : `EndToEndId` y est laissé verbatim (`[id]/+page.svelte:121`) |
+| ~~`Référence message`~~ → **`MsgId`** | ⚠️ **TRANCHÉ PAR GUY, 2026-08-21 — le français CHANGE** | *« garde-le verbatim, comme EndToEndId »*. `MsgId` est le nom exact du champ dans pain.001, et `pain001/mod.rs:28` le nomme dans la **même famille** que `EndToEndId` et `PmtInfId` : `const MAX_ID: usize = 35; // MsgId, PmtInfId, EndToEndId`. **Valeur identique dans les quatre locales.** Précédent visible à l'écran : `EndToEndId` est affiché verbatim deux lignes plus bas, dans le même tableau (`[id]/+page.svelte:121`) |
+
+### ⚠️ T1 est RENDUE — `Référence message` devient `MsgId` (arbitrage de Guy, 2026-08-21)
+
+*« Garde-le verbatim, comme EndToEndId. »* Les trois identifiants de pain.001 forment une famille
+que le code nomme ensemble ; l'un d'eux est déjà affiché tel quel à l'écran. Les traduire à moitié —
+`EndToEndId` verbatim et `MsgId` en « Référence message » — reviendrait à faire dire deux choses
+différentes à une même famille de champs, dans le même écran.
+
+**Le français change donc**, comme il a changé pour « Généré » → « Créé » : `payment-batches-msg-id`
+porte **`MsgId`** dans les quatre locales.
+
+⚠️ **La clé i18n est CONSERVÉE**, avec la même valeur partout — elle n'est pas supprimée au profit
+d'un texte en dur. Motif : l'objet même de cet epic est de faire passer les libellés par `i18nMsg`,
+et écrire `MsgId` en dur créerait un libellé de plus hors de tout appareil de contrôle. Le jour où
+une locale voudrait diverger, la clé est là. *(Si l'intention était au contraire de retirer la clé
+et d'écrire `MsgId` en dur comme `EndToEndId`, c'est un mot à dire — le geste est trivial, mais il
+va dans le sens inverse de l'epic.)*
 
 ⚠️ **Trois des quatre termes que la première rédaction envoyait à l'arbitrage n'en demandaient
 aucun** — `virement` était en partie A, `NPA` au catalogue dans les quatre locales, `lot` relevé et
