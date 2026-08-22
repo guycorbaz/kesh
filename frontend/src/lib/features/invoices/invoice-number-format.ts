@@ -5,6 +5,8 @@
  * validation doivent rester strictement alignées (cf. tests de parité).
  */
 
+import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+
 export const MAX_TEMPLATE_LEN = 64;
 export const MAX_RENDERED_LEN = 64;
 export const MAX_SEQ_PADDING = 10;
@@ -54,21 +56,31 @@ const MAX_DESCRIPTION_LEN = 128;
 
 export function validateDescriptionTemplate(template: string): FormatValidationResult {
 	if (!template || template.trim().length === 0) {
-		return { ok: false, error: 'Le libellé est vide' };
+		return { ok: false, error: i18nMsg('invoices-description-error-empty', 'Le libellé est vide') };
 	}
 	// Longueur en caractères (parité P17 UTF-8).
 	const chars = [...template];
 	if (chars.length > MAX_DESCRIPTION_LEN) {
 		return {
 			ok: false,
-			error: `Le libellé dépasse ${MAX_DESCRIPTION_LEN} caractères (actuel : ${chars.length})`,
+			error: i18nMsg(
+				'invoices-description-error-too-long',
+				'Le libellé dépasse { $max } caractères (actuel : { $actual })',
+				{ max: MAX_DESCRIPTION_LEN, actual: chars.length },
+			),
 		};
 	}
 	// Rejeter caractères de contrôle (< 0x20, hors tab) — review P11.
 	for (const ch of chars) {
 		const cp = ch.codePointAt(0) ?? 0;
 		if (cp < 0x20 && cp !== 0x09) {
-			return { ok: false, error: 'Caractère de contrôle non autorisé' };
+			return {
+				ok: false,
+				error: i18nMsg(
+					'invoices-description-error-control-char',
+					'Caractère de contrôle non autorisé',
+				),
+			};
 		}
 	}
 	// Vérifier les placeholders.
@@ -79,13 +91,23 @@ export function validateDescriptionTemplate(template: string): FormatValidationR
 		if (DESCRIPTION_KNOWN.has(match[1])) {
 			hasPlaceholder = true;
 		} else {
-			return { ok: false, error: `Placeholder inconnu : {${match[1]}}` };
+			return {
+				ok: false,
+				error: i18nMsg(
+					'invoices-description-error-unknown-placeholder',
+					'Placeholder inconnu : {{ $name }}',
+					{ name: match[1] },
+				),
+			};
 		}
 	}
 	if (!hasPlaceholder) {
 		return {
 			ok: false,
-			error: 'Le libellé doit contenir au moins un placeholder reconnu ({YEAR}, {INVOICE_NUMBER}, {CONTACT_NAME})',
+			error: i18nMsg(
+				'invoices-description-error-no-placeholder',
+				'Le libellé doit contenir au moins un placeholder reconnu ({YEAR}, {INVOICE_NUMBER}, {CONTACT_NAME})',
+			),
 		};
 	}
 	return { ok: true };
@@ -96,16 +118,29 @@ export function validateDescriptionTemplate(template: string): FormatValidationR
  */
 export function validateFormatTemplate(template: string): FormatValidationResult {
 	if (!template || template.trim().length === 0) {
-		return { ok: false, error: 'Le format de numérotation est vide' };
+		return {
+			ok: false,
+			error: i18nMsg('invoices-format-error-empty', 'Le format de numérotation est vide'),
+		};
 	}
 	if (template.length > MAX_TEMPLATE_LEN) {
 		return {
 			ok: false,
-			error: `Le format dépasse ${MAX_TEMPLATE_LEN} caractères (actuel : ${template.length})`,
+			error: i18nMsg(
+				'invoices-format-error-too-long',
+				'Le format dépasse { $max } caractères (actuel : { $actual })',
+				{ max: MAX_TEMPLATE_LEN, actual: template.length },
+			),
 		};
 	}
 	if (!ALLOWED_CHAR_RE.test(template)) {
-		return { ok: false, error: 'Le format contient des caractères non autorisés' };
+		return {
+			ok: false,
+			error: i18nMsg(
+				'invoices-format-error-bad-chars',
+				'Le format contient des caractères non autorisés',
+			),
+		};
 	}
 
 	// Parse les placeholders.
@@ -134,26 +169,44 @@ export function validateFormatTemplate(template: string): FormatValidationResult
 			if (!Number.isFinite(n) || n < 1 || n > MAX_SEQ_PADDING) {
 				return {
 					ok: false,
-					error: `Padding {SEQ:${inner.slice(4)}} invalide — doit être entre 1 et ${MAX_SEQ_PADDING}`,
+					error: i18nMsg(
+						'invoices-format-error-bad-padding',
+						'Padding {SEQ:{ $n }} invalide — doit être entre 1 et { $max }',
+						{ n: inner.slice(4), max: MAX_SEQ_PADDING },
+					),
 				};
 			}
 			hasPlaceholder = true;
 			worstCaseLen += Math.max(n, 19);
 		} else {
-			return { ok: false, error: `Placeholder inconnu : {${inner}}` };
+			return {
+				ok: false,
+				error: i18nMsg(
+					'invoices-format-error-unknown-placeholder',
+					'Placeholder inconnu : {{ $name }}',
+					{ name: inner },
+				),
+			};
 		}
 	}
 
 	if (!hasPlaceholder) {
 		return {
 			ok: false,
-			error: 'Le format doit contenir au moins un placeholder reconnu ({YEAR}, {FY}, {SEQ}, {SEQ:NN})',
+			error: i18nMsg(
+				'invoices-format-error-no-placeholder',
+				'Le format doit contenir au moins un placeholder reconnu ({YEAR}, {FY}, {SEQ}, {SEQ:NN})',
+			),
 		};
 	}
 	if (worstCaseLen > MAX_RENDERED_LEN) {
 		return {
 			ok: false,
-			error: `Le format générerait un numéro de ${worstCaseLen} caractères (max ${MAX_RENDERED_LEN})`,
+			error: i18nMsg(
+				'invoices-format-error-rendered-too-long',
+				'Le format générerait un numéro de { $len } caractères (max { $max })',
+				{ len: worstCaseLen, max: MAX_RENDERED_LEN },
+			),
 		};
 	}
 	return { ok: true };

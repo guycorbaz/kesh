@@ -80,7 +80,7 @@
 			version = s.version;
 		} catch (err) {
 			if (isApiError(err)) loadError = err.message;
-			else loadError = 'Erreur de chargement';
+			else loadError = i18nMsg('settings-invoicing-load-error', 'Erreur de chargement');
 		} finally {
 			loading = false;
 		}
@@ -88,11 +88,16 @@
 
 	async function save() {
 		if (!formatValidation.ok) {
-			notifyError(formatValidation.error ?? 'Format invalide');
+			notifyError(
+				formatValidation.error ?? i18nMsg('settings-invoicing-format-invalid', 'Format invalide'),
+			);
 			return;
 		}
 		if (!descriptionValidation.ok) {
-			notifyError(descriptionValidation.error ?? 'Libellé invalide');
+			notifyError(
+				descriptionValidation.error ??
+					i18nMsg('settings-invoicing-description-invalid', 'Libellé invalide'),
+			);
 			return;
 		}
 		submitting = true;
@@ -110,7 +115,7 @@
 			});
 			settings = updated;
 			version = updated.version;
-			notifySuccess('Configuration enregistrée');
+			notifySuccess(i18nMsg('settings-invoicing-save-success', 'Configuration enregistrée'));
 		} catch (err) {
 			if (isApiError(err)) {
 				notifyError(err.message);
@@ -133,7 +138,7 @@
 					}
 				}
 			} else {
-				notifyError('Erreur lors de la sauvegarde');
+				notifyError(i18nMsg('settings-invoicing-save-error', 'Erreur lors de la sauvegarde'));
 			}
 		} finally {
 			submitting = false;
@@ -142,17 +147,19 @@
 </script>
 
 <svelte:head>
-	<title>Paramètres — Facturation — Kesh</title>
+	<title>{i18nMsg('settings-invoicing-title', 'Paramètres — Facturation')} — Kesh</title>
 </svelte:head>
 
-<h1 class="mb-6 text-2xl font-semibold">Paramètres — Facturation</h1>
+<h1 class="mb-6 text-2xl font-semibold">
+	{i18nMsg('settings-invoicing-title', 'Paramètres — Facturation')}
+</h1>
 
 {#if !isAdmin}
 	<p class="rounded-md border border-amber-400 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-		Accès réservé aux administrateurs.
+		{i18nMsg('common-admin-only', 'Accès réservé aux administrateurs.')}
 	</p>
 {:else if loading}
-	<p class="text-sm text-text-muted">Chargement…</p>
+	<p class="text-sm text-text-muted">{i18nMsg('common-loading', 'Chargement…')}</p>
 {:else if loadError}
 	<p class="text-sm text-destructive">{loadError}</p>
 {:else if settings}
@@ -164,17 +171,22 @@
 		}}
 	>
 		<section class="space-y-3 rounded-lg border border-border bg-white p-6 shadow-sm">
-			<h2 class="text-lg font-semibold">Numérotation</h2>
+			<h2 class="text-lg font-semibold">
+				{i18nMsg('settings-invoicing-numbering-title', 'Numérotation')}
+			</h2>
 			<div>
-				<label class="mb-1 block text-sm font-medium" for="format">Format</label>
+				<label class="mb-1 block text-sm font-medium" for="format">
+					{i18nMsg('settings-invoicing-format-label', 'Format de numérotation')}
+				</label>
 				<Input id="format" bind:value={format} placeholder="F-{'{YEAR}'}-{'{SEQ:04}'}" />
 				<p class="mt-1 text-xs text-text-muted">
-					Placeholders : <code>{'{YEAR}'}</code>, <code>{'{FY}'}</code>,
-					<code>{'{SEQ}'}</code>, <code>{'{SEQ:NN}'}</code> (NN entre 1 et 10).
+					{i18nMsg('settings-invoicing-format-help', 'Placeholders : {YEAR}, {FY}, {SEQ}, {SEQ:NN}')}
+					{i18nMsg('settings-invoicing-seq-range', '(NN entre 1 et 10)')}
 				</p>
 				{#if formatValidation.ok}
 					<p class="mt-1 text-sm">
-						Aperçu : <span class="font-mono">{formatPreview}</span>
+						{i18nMsg('settings-invoicing-format-preview', 'Aperçu')} :
+						<span class="font-mono">{formatPreview}</span>
 					</p>
 				{:else}
 					<p class="mt-1 text-sm text-destructive">{formatValidation.error}</p>
@@ -182,15 +194,19 @@
 			</div>
 
 			<div>
-				<label class="mb-1 block text-sm font-medium" for="desc">Libellé de l'écriture comptable</label>
+				<label class="mb-1 block text-sm font-medium" for="desc">
+					{i18nMsg('settings-invoicing-description-template', "Libellé de l'écriture comptable")}
+				</label>
 				<Input
 					id="desc"
 					bind:value={descriptionTemplate}
 					placeholder="{'{YEAR}'}-{'{INVOICE_NUMBER}'}"
 				/>
 				<p class="mt-1 text-xs text-text-muted">
-					Placeholders : <code>{'{YEAR}'}</code>, <code>{'{INVOICE_NUMBER}'}</code>,
-					<code>{'{CONTACT_NAME}'}</code>.
+					{i18nMsg(
+						'settings-invoicing-description-help',
+						'Placeholders : {YEAR}, {INVOICE_NUMBER}, {CONTACT_NAME}.',
+					)}
 				</p>
 				{#if !descriptionValidation.ok}
 					<p class="mt-1 text-sm text-destructive">{descriptionValidation.error}</p>
@@ -199,35 +215,41 @@
 		</section>
 
 		<section class="space-y-3 rounded-lg border border-border bg-white p-6 shadow-sm">
-			<h2 class="text-lg font-semibold">Comptes par défaut</h2>
+			<h2 class="text-lg font-semibold">
+				{i18nMsg('settings-invoicing-default-accounts-title', 'Comptes par défaut')}
+			</h2>
 			<div>
-				<label class="mb-1 block text-sm font-medium" for="receivable">Compte créance client (Actif)</label>
+				<label class="mb-1 block text-sm font-medium" for="receivable">
+					{i18nMsg('settings-invoicing-receivable-account', 'Compte créance client (Actif)')}
+				</label>
 				<select
 					id="receivable"
 					class="w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
 					bind:value={receivableId}
 				>
-					<option value={null}>— Sélectionner —</option>
+					<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
 					{#each assetAccounts as a (a.id)}
 						<option value={a.id}>{a.number} — {a.name}</option>
 					{/each}
 				</select>
 			</div>
 			<div>
-				<label class="mb-1 block text-sm font-medium" for="revenue">Compte produit (Revenue)</label>
+				<label class="mb-1 block text-sm font-medium" for="revenue">
+					{i18nMsg('settings-invoicing-revenue-account', 'Compte produit (Revenue)')}
+				</label>
 				<select
 					id="revenue"
 					class="w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
 					bind:value={revenueId}
 				>
-					<option value={null}>— Sélectionner —</option>
+					<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
 					{#each revenueAccounts as a (a.id)}
 						<option value={a.id}>{a.number} — {a.name}</option>
 					{/each}
 				</select>
 			</div>
 			<div>
-				<label class="mb-1 block text-sm font-medium" for="journal">Journal</label>
+				<label class="mb-1 block text-sm font-medium" for="journal">{i18nMsg('settings-invoicing-journal', 'Journal')}</label>
 				<select
 					id="journal"
 					class="w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
@@ -259,7 +281,7 @@
 					class="w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
 					bind:value={vatPayableId}
 				>
-					<option value={null}>— Sélectionner —</option>
+					<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
 					{#each liabilityAccounts as a (a.id)}
 						<option value={a.id}>{a.number} — {a.name}</option>
 					{/each}
@@ -274,7 +296,7 @@
 					class="w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
 					bind:value={vatRecoverableId}
 				>
-					<option value={null}>— Sélectionner —</option>
+					<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
 					{#each assetAccounts as a (a.id)}
 						<option value={a.id}>{a.number} — {a.name}</option>
 					{/each}
@@ -289,7 +311,7 @@
 					class="w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
 					bind:value={vatDecompteId}
 				>
-					<option value={null}>— Sélectionner —</option>
+					<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
 					{#each liabilityAccounts as a (a.id)}
 						<option value={a.id}>{a.number} — {a.name}</option>
 					{/each}
@@ -299,7 +321,9 @@
 
 		<div class="flex justify-end">
 			<Button type="submit" disabled={submitting || !formatValidation.ok || !descriptionValidation.ok}>
-				{submitting ? 'Enregistrement…' : 'Enregistrer'}
+				{submitting
+					? i18nMsg('common-saving', 'Enregistrement…')
+					: i18nMsg('settings-invoicing-save', 'Enregistrer')}
 			</Button>
 		</div>
 	</form>

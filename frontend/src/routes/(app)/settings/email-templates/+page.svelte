@@ -227,7 +227,7 @@
 
 {#if !isAdmin}
 	<p class="rounded-md border border-amber-400 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-		{msg('email-templates-admin-only', 'Accès réservé aux administrateurs.')}
+		{msg('common-admin-only', 'Accès réservé aux administrateurs.')}
 	</p>
 {:else if loading}
 	<p class="text-sm text-text-muted">{msg('common-loading', 'Chargement…')}</p>
