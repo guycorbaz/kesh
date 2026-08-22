@@ -119,12 +119,25 @@ appelle un contrôle d'une autre nature (détection de littéraux affichés).
 | **23-4** | `settings` + `payment-batches` + `onboarding` + les 4 `nav-*` de l'inventaire | 93 |
 | **23-5** | `reconciliation` (dont les 5 entrées à variables) + `reports` (14 + 7) + `credit-notes` + les 2 `reports-project-*` de l'inventaire | 58 |
 | **23-6** | Reliquat : `invoices`, `journal-entries`, `lib/components`, `bank-accounts` + **clôture** : allowlist vidée, garde inconditionnelle, [#316] fermée | 15 |
+| **23-7** | **[KF-044 (#328)]** — `settings/invoicing`, écran entier en français **en dur**. ⚠️ **Invisible de TOUS les compteurs de l'epic** : 306 lignes pour 5 appels `i18nMsg`, aucune clé `invoicing-` à l'allowlist. Ses clés sont à **créer**, pas à traduire | ~50 |
 
 ⚠️ **La 23-1 a été DÉCOUPÉE le 2026-08-19** (arbitrage de Guy) après trois passes de `validate` au
 plafond de sévérité stagnant — non pour son nombre de modules, mais parce que ses findings formaient
 deux familles qui ne se relisent pas avec la même lentille : le mécanisme et les comptes rendus.
 Patron 22-2a/22-2b. Les cinq stories de rollout, elles, restent entières : elles n'ont **que** la
 seconde famille.
+
+⚠️ **La 23-7 a été ajoutée le 2026-08-22, sur arbitrage de Guy, et elle NE PEUT PAS être fondue
+dans la 23-6.** Deux motifs. Le premier tient à la règle de splitting : la 23-6 porte déjà **la
+clôture** de l'epic — vider l'allowlist, rendre les gardes inconditionnelles, fermer [#316] —, et y
+mêler un rollout complet mélange deux natures de travail que le dépôt sépare depuis l'Epic 7. Le
+second est plus grave : **`settings/invoicing` n'est dans aucun compteur**. Ses clés ne sont pas à
+l'allowlist parce que le code ne les demande pas encore — il affiche du français en dur. Le
+décrément d'allowlist de la 23-6 tomberait donc à zéro **sans que cet écran soit traduit**, et la
+clôture déclarerait la dette éteinte sur un écran qui ne l'est pas.
+
+⚠️ **Ordre imposé : la 23-7 avant la 23-6.** Une clôture ne se prononce pas sur un inventaire connu
+pour être incomplet.
 
 ⚠️ **La 23-3b s'est intercalée le 2026-08-21, et son périmètre ne retire rien à la 23-4.** La
 tâche T11 de sa spec prescrivait de « retirer les clés `nav-*` du périmètre de la 23-4 » en
