@@ -87,6 +87,14 @@ const PREFIXES = [
  * Les deux premiers font les 110 d'origine ; les deux derniers entrent avec le rollout 23-4,
  * **splits compris** (`payment-batches-line-amount`, `-detail-date`, `onboarding-save`).
  *
+ * ⚠️ **197 → 195 à la story 23-6, et c'est une BAISSE — donc à justifier nommément.** La
+ * doctrine ci-dessus dit qu'« une baisse est une clé qui a cessé d'être traduite » : ici les
+ * deux clés disparues sont `supplier-invoices-back` et `payment-batches-back`, deux libellés
+ * « Retour » **migrés vers `common-back`** et retirés des quatre catalogues. Elles n'ont pas
+ * cessé d'être traduites — elles ont cessé d'exister, au profit d'une clé unique. Recompté
+ * depuis la source : 57 + 52 + 41 + 45, et les deux préfixes qui perdent une unité sont
+ * exactement ceux dont on a retiré le doublon.
+ *
  * Recompté depuis les sources le 2026-08-22 : 58 + 52 + 42 + 45. Seul `onboarding-` bouge,
  * de 34 à 45 — les onze clés dédiées qui remplacent `error-internal` et `error-validation`
  * dans les `catch` de l'onboarding. ⚠️ **Une hausse ici n'est PAS l'inverse d'une baisse** :
@@ -94,7 +102,7 @@ const PREFIXES = [
  * clés neuves — mais seulement si on peut les nommer. Un +11 dont on ne sait pas dire lesquels
  * se recompte, il ne s'entérine pas.
  */
-const CLES_RELEVEES = 197;
+const CLES_RELEVEES = 195;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

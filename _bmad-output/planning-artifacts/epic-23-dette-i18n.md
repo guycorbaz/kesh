@@ -1,10 +1,66 @@
 # Epic 23 — Dette i18n : le repli silencieux
 
-**Statut** : in-progress, **régime allégé depuis le 2026-08-22** (kickoff 2026-08-19) — cf. § *Régime allégé* ci-dessous
+**Statut** : ✅ **clos le 2026-08-22** (kickoff 2026-08-19) — cf. § *Epic clos* ci-dessous
 **Issues GitHub** : [#316] (KF-040 — **285** clés demandées, absentes des **quatre** catalogues ; l'issue en annonce 258, chiffre d'avant les relais et l'inventaire) + [#283] (57 clés présentes en `fr-CH`, absentes des trois autres)
 **Origine** : items de **catégorie A** de la rétrospective Epic 22, actions **A6**. Ils bloquent le kickoff de l'epic suivant au sens de la § *Tech debt management* du `CLAUDE.md`.
 **Cible release** : v0.11 (à confirmer)
 **Arbitrages de Guy (2026-08-19)** : (1) **tout résorber** et poser la garde générale, (2) traductions produites par l'orchestrateur **sur glossaire figé d'avance** (`docs/i18n-glossaire.md`), (3) **epic dédié**, story-zéro + rollouts — la règle de splitting préventif se déclenche (14 dossiers > 5 modules).
+
+## ✅ Epic clos — 2026-08-22
+
+**L'allowlist est vide, et le moissonneur ne trouve plus rien sur tout le dépôt** :
+`node scripts/harvest-i18n-fallbacks.mjs` sans argument rend *« 0 clés moissonnées, 0 sans
+repli, 0 en conflit »*. Les **317 clés** du kickoff sont traduites dans les quatre locales.
+
+| | Kickoff (2026-08-19) | Clôture (2026-08-22) |
+|---|---|---|
+| Clés à l'allowlist | 317 | **0** |
+| Clés aux catalogues (× 4 locales) | 1 429 | **1 630** |
+| Gardes i18n | 0 | **6** |
+
+⚠️ **Ce qui rend la clôture réelle, ce n'est pas la liste vide — c'est le verrou qui la
+tient vide.** `i18n-keys.test.ts` porte désormais un test dédié : l'allowlist DOIT être
+vide. Sans lui, une clé manquante garderait une issue silencieuse — il suffirait d'y
+ajouter une ligne pour faire passer un gate, et la dette repartirait par où elle était
+venue. La garde est **inconditionnelle** : une clé manquante n'a plus qu'une seule issue,
+écrire sa valeur dans les quatre catalogues.
+
+### Les six gardes, et ce que chacune tient
+
+| Garde | Ce qu'elle empêche |
+|---|---|
+| `loader.rs::parity_between_locales` | une locale qui perd une clé que les trois autres ont |
+| `i18n-keys.test.ts` | une clé demandée par le code et absente d'un catalogue — **inconditionnelle depuis la 23-6** |
+| `i18n-un-repli-par-cle.test.ts` | une clé qui sert deux sens sur les domaines énumérés — défaut **latent** |
+| `i18n-repli-divergent-actif.test.ts` | la même chose sur une clé **déjà traduite** — défaut **actif**, sans filtre de préfixe (KF-045) |
+| `i18n-libelle-en-dur.test.ts` | une fonction de libellé qui retourne un littéral sans passer par `i18nMsg` (#255) |
+| `i18n-entrees-a-variables.test.ts` | un argument Fluent qui ne correspond pas — site, repli et locales (23-5) |
+
+⚠️ **Aucune de ces gardes n'a été livrée sur la foi d'un test vert.** Chacune a été éprouvée
+par mutation : on recrée le défaut qu'elle prétend voir, on vérifie qu'elle rougit, on
+restaure. C'est la seule preuve qu'une garde n'est pas de façade — et la 23-3b en a fait la
+démonstration à ses dépens, sa première version étant **verte et muette** parce que son
+extracteur ne trouvait aucune fonction à analyser.
+
+### Ce que l'epic laisse ouvert, et qui n'est pas de la dette i18n
+
+- **[KF-043 (#326)]** — la suite E2E ne tourne qu'en `fr-CH` : un sélecteur figé sur un
+  libellé français n'y rougit jamais. C'est une **discipline**, donc invérifiable en
+  l'état ; l'arbitrage (garde statique, second run dans une autre locale, ou rien) revient
+  au Project Lead.
+- **[KF-041 (#323)]** et **[#321]**, **[KF-042 (#324)]** — défauts de **contenu** des
+  traductions (collisions de sens, `MwSt` contre `MWST`). Sans objet pour un utilisateur
+  francophone ; à traiter quand les autres locales seront réellement servies.
+
+### Note sur le régime allégé
+
+L'arbitrage du 2026-08-22 — *« on traduit, mais on ne fignole plus »* — a été rendu alors
+qu'il restait trois stories. ⚠️ **Il n'a pas repoussé la fin de l'epic : il l'a permise.**
+Les 23-7, 23-5 et 23-6 ont été livrées le jour même, sans passe adversariale ni arbitrage de
+glossaire, et sans qu'aucun défaut n'échappe aux gardes — deux d'entre elles ayant même
+révélé des défauts **hors périmètre** (le `.replace()` maison de `journal-entry-delete-confirm-title`,
+les six clés à double sens de KF-045). La section ci-dessous reste pour mémoire de la
+décision.
 
 ## ⚠️ Régime allégé — arbitrage du 2026-08-22
 

@@ -71,7 +71,7 @@
 </svelte:head>
 
 <button class="mb-4 text-sm text-primary" onclick={() => goto('/payment-batches')}>
-	← {i18nMsg('payment-batches-back', 'Retour')}
+	← {i18nMsg('common-back', 'Retour')}
 </button>
 
 {#if loading}

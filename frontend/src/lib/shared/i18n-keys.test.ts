@@ -406,6 +406,27 @@ describe('garde i18n — les clés demandées existent au catalogue', () => {
 		expect(obsoletes, `entrées de dette obsolètes :\n  ${obsoletes.join('\n  ')}`).toEqual([]);
 	});
 
+	// ⚠️ **LE VERROU DE CLÔTURE DE L'EPIC 23 (story 23-6, 2026-08-22).** Les deux tests
+	// ci-dessus tiennent la liste *cohérente* ; celui-ci la tient **vide**. Sans lui, rien
+	// n'empêcherait d'y rajouter une ligne pour faire passer un gate — et le seul usage que
+	// cette liste ne doit jamais avoir est précisément celui-là.
+	//
+	// ⚠️ **Ce n'est pas un test de forme : c'est ce qui rend la garde INCONDITIONNELLE.**
+	// Tant que la liste pouvait accueillir une entrée, une clé manquante avait une issue
+	// silencieuse ; désormais elle n'en a plus qu'une, écrire la valeur dans les quatre
+	// catalogues. La liste a compté **317 clés** au kickoff de l'epic.
+	//
+	// ⚠️ **Si ce test rougit, la réparation n'est JAMAIS de le modifier.** Le message
+	// d'échec nomme les clés : elles se traduisent, elles ne se tolèrent pas. Rouvrir
+	// l'allowlist demanderait une décision de projet écrite — pas un patch de gate.
+	it("l'allowlist de dette est VIDE — la garde i18n est inconditionnelle", () => {
+		expect(
+			[...DETTE_CONNUE],
+			`la dette i18n est close depuis la story 23-6 : ces clés se TRADUISENT dans les ` +
+				`quatre catalogues, elles ne se réinscrivent pas ici`,
+		).toEqual([]);
+	});
+
 	it('les 7 relais locaux sont recensés — cardinalité assertée', () => {
 		// ⚠️ **Ce garde-fou manquait au premier jet, alors que la tâche le déclarait fait.**
 		// Sans lui, un huitième relais ajouté sans que le test le sache rendrait TOUTES
