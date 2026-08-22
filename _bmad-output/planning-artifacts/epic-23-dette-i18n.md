@@ -194,6 +194,39 @@ sites `i18nMsg`. C'est l'angle mort #255, exprimé en chiffres.
 les quatre locales, retirer d'autant l'allowlist, laisser la garde prouver le reste. La revue
 s'y fait au fichier, pas en passes adversariales globales — conformément à la règle de splitting.
 
+## Ce que la 23-7 a trouvé, et qu'aucune garde ne voyait
+
+⚠️ **Douze clés `settings-invoicing-*` existaient déjà dans les quatre catalogues,
+traduites, et le code n'en demandait aucune.** L'écran affichait du français en dur pendant
+que ses traductions dormaient au catalogue, depuis la Story 5.2.
+
+**C'est le miroir exact de #316**, et il faut voir pourquoi le dispositif de l'epic ne pouvait
+pas le voir :
+
+| | #316 (le défaut de l'epic) | Ce que la 23-7 a trouvé |
+|---|---|---|
+| Le code | demande une clé | n'appelle rien |
+| Le catalogue | ne l'a pas | l'a, traduite ×4 |
+| Ce que l'utilisateur voit | du français, servi à tous | du français, servi à tous |
+| Le moissonneur | **la voit** (clé demandée, absente) | **aveugle** — il ne relève que les demandes |
+| La parité `loader.rs` | ne la voit pas | **aveugle** — elle ne compare que les catalogues entre eux |
+
+Les deux gardes centrales de l'epic partent donc du **code** ou des **catalogues comparés
+entre eux** ; aucune ne part du catalogue pour demander *« qui appelle ceci ? »*. Le seul
+dispositif du dépôt qui ferme ce sens est `PREFIXES_A_COUVERTURE_CLOSE` de
+`i18n-keys.test.ts` — et il ne vaut **que par préfixe explicitement déclaré**, parce qu'une
+clé sans demandeur côté frontend n'est pas orpheline pour autant : `kesh-qrbill` et
+`kesh-report` lisent le même catalogue pour les PDF.
+
+**`settings-invoicing-` y entre avec cette story.** Le préfixe n'est devenu clos qu'après
+retrait de `settings-invoicing-format-too-long`, dernière orpheline et doublon de la clé
+neuve `invoices-format-error-too-long`.
+
+⚠️ **La leçon pour les stories restantes** : le compteur d'allowlist ne mesure qu'un sens de
+la dette. Un écran peut en sortir sans être traduit — c'était l'argument de la 23-7 — et il
+peut aussi être « traduit » au catalogue sans que rien ne l'affiche. **Les deux sens sont
+muets, et pour des raisons différentes.**
+
 ## Hors périmètre, explicitement
 
 - ~~**[#255]** (chaînes en dur sans `i18nMsg`) — même famille, autre mécanisme de détection.~~

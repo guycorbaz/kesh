@@ -66,13 +66,38 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * ⚠️ Un cinquième site a été corrigé sans créer de site : le « (optionnel) » en dur d'onboarding
  * a été remplacé par `bank-accounts-labels-qr-iban`, déjà traduite pour ce champ exact.
  *
+ * ⚠️ **1529 → 1556 à la story 23-7 (KF-044, #328), soit +27 sur UN seul écran** —
+ * `settings/invoicing`, 306 lignes pour 5 appels `i18nMsg`. Recompté depuis la source aux deux
+ * bornes : `git show HEAD:…invoicing/+page.svelte | grep -c 'i18nMsg('` rend **5**, le fichier
+ * routé en rend **32**. ⚠️ Le décompte des *remplacements* en annonçait 25 : deux d'entre eux
+ * créent **deux** appels chacun (le paragraphe des placeholders, scindé en `format-help` +
+ * `seq-range` ; le bouton, scindé en `common-saving` + `settings-invoicing-save`). Compter les
+ * gestes n'est pas compter les sites — c'est la borne qui l'a montré.
+ *
+ * ⚠️ **1556 → 1568, +12 pour le PROLONGEMENT du même écran** : `invoice-number-format.ts`
+ * portait douze messages de validation en français en dur — « Le format de numérotation est
+ * vide », « Padding {SEQ:11} invalide »… — affichés sous les deux champs de cet écran. Le
+ * fichier est un module `.ts` **pur**, hors de portée de toutes les gardes de balisage ; ses
+ * treize tests n'assertent que sur `.ok`, jamais sur le texte, donc rien ne les tenait.
+ * ⚠️ Sept d'entre eux sont **interpolés** : le repli JS porte lui aussi les `{ $x }`, car
+ * `i18nMsg` interpole `raw` — qui vaut le catalogue OU le repli. Un repli déjà rendu
+ * afficherait « {30} » le jour où la clé manque.
+ *
+ * ⚠️ **Ce que cet écran a révélé, et qui vaut plus que le chiffre.** Ses **douze** clés
+ * `settings-invoicing-*` **existaient déjà dans les quatre catalogues, traduites**, et
+ * **aucune n'était demandée par le code**. C'est le **miroir** de #316 : là, le code réclame
+ * des clés absentes ; ici, les clés attendent un code qui ne les appelle pas. Le symptôme à
+ * l'écran est identique — du français servi à tous — mais **aucune garde ne voit ce sens-là** :
+ * le moissonneur ne relève que les clés *demandées et absentes*, et la parité ne compare que
+ * les catalogues entre eux. Une clé traduite que personne n'appelle est invisible des deux.
+ *
  * ⚠️ **33 → 34 sites non résolus, et c'est LÉGITIME** : `getGroupLabel`
  * (`routes/(app)/+layout.svelte`) est le symétrique exact de `getItemLabel`, deux lignes plus
  * haut et déjà de la liste — la clé est portée par la donnée, pas par le site d'appel. Un
  * dispatcher n'est pas une clé manquante.
  */
 const ATTENDU = {
-	sitesTotal: 1529,
+	sitesTotal: 1568,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,
@@ -253,7 +278,21 @@ const SITES_GABARIT_ATTENDUS: readonly string[] = [
  * autant — `reports-filename-*` en donne le contre-exemple, avec 7 clés déclarées pour
  * 5 valeurs de `ReportType`. La liste s'étend story par story, jamais par défaut.
  */
-const PREFIXES_A_COUVERTURE_CLOSE: readonly string[] = ['contact-duplicate-'];
+const PREFIXES_A_COUVERTURE_CLOSE: readonly string[] = ['contact-duplicate-', 'settings-invoicing-'];
+
+// ⚠️ **`settings-invoicing-` entre ici à la story 23-7 (#328), et son cas est INSTRUCTIF.**
+// Ses douze clés existaient dans les quatre catalogues, **traduites**, et le code n'en
+// demandait aucune : l'écran affichait du français en dur pendant que ses traductions
+// dormaient au catalogue. C'est le **miroir** de #316 — là, le code réclame des clés
+// absentes ; ici, des clés attendent un code qui ne les appelle pas — et **aucune garde ne
+// voyait ce sens-là** : le moissonneur ne relève que les clés *demandées et absentes*, la
+// parité ne compare que les catalogues entre eux. La couverture close est le seul dispositif
+// du dépôt qui ferme ce sens, et elle ne vaut que par préfixe déclaré.
+//
+// ⚠️ Le préfixe n'est devenu clos qu'après retrait de `settings-invoicing-format-too-long`,
+// dernière orpheline : son message est désormais servi par `invoices-format-error-too-long`
+// (le validateur ayant migré dans `features/invoices/`, où le lint d'ownership impose ce
+// préfixe). La garder aurait été garder un doublon **traduit quatre fois** et jamais lu.
 
 // ─────────────────────────────────────────────────────────────────────────────
 

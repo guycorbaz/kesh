@@ -454,6 +454,18 @@ invoices-settings-vat-accounts-hint = Comptes utilisés pour la comptabilisation
 invoices-settings-vat-payable = Compte TVA due (Passif)
 invoices-settings-vat-recoverable = Compte TVA récupérable (Actif)
 invoices-settings-vat-decompte = Compte de décompte TVA (Passif)
+invoices-description-error-empty = Le libellé est vide
+invoices-description-error-too-long = Le libellé dépasse { $max } caractères (actuel : { $actual })
+invoices-description-error-control-char = Caractère de contrôle non autorisé
+invoices-description-error-unknown-placeholder = Placeholder inconnu : {"{"}{ $name }{"}"}
+invoices-description-error-no-placeholder = Le libellé doit contenir au moins un placeholder reconnu ({"{"}YEAR{"}"}, {"{"}INVOICE_NUMBER{"}"}, {"{"}CONTACT_NAME{"}"})
+invoices-format-error-empty = Le format de numérotation est vide
+invoices-format-error-too-long = Le format dépasse { $max } caractères (actuel : { $actual })
+invoices-format-error-bad-chars = Le format contient des caractères non autorisés
+invoices-format-error-bad-padding = Padding {"{"}SEQ:{ $n }{"}"} invalide — doit être entre 1 et { $max }
+invoices-format-error-unknown-placeholder = Placeholder inconnu : {"{"}{ $name }{"}"}
+invoices-format-error-no-placeholder = Le format doit contenir au moins un placeholder reconnu ({"{"}YEAR{"}"}, {"{"}FY{"}"}, {"{"}SEQ{"}"}, {"{"}SEQ:NN{"}"})
+invoices-format-error-rendered-too-long = Le format générerait un numéro de { $len } caractères (max { $max })
 invoice-new-title = Nouvelle facture
 invoice-edit-title = Modifier la facture
 invoice-view-title = Facture
@@ -543,7 +555,14 @@ settings-invoicing-description-template = Libellé de l'écriture comptable
 settings-invoicing-save = Enregistrer
 settings-invoicing-save-success = Configuration enregistrée
 settings-invoicing-format-invalid = Format invalide
-settings-invoicing-format-too-long = Le format est trop long
+settings-invoicing-numbering-title = Numérotation
+settings-invoicing-seq-range = (NN entre 1 et 10)
+settings-invoicing-description-help = Placeholders : {"{"}YEAR{"}"}, {"{"}INVOICE_NUMBER{"}"}, {"{"}CONTACT_NAME{"}"}.
+settings-invoicing-description-invalid = Libellé invalide
+settings-invoicing-default-accounts-title = Comptes par défaut
+settings-invoicing-select-none = — Sélectionner —
+settings-invoicing-load-error = Erreur de chargement
+settings-invoicing-save-error = Erreur lors de la sauvegarde
 invoice-journal-entry-description = Facture { $invoiceNumber } - { $contactName }
 
 # --- Story 5.3 — Génération PDF QR Bill ---
@@ -1297,6 +1316,7 @@ payment-batches-title = Paiements fournisseurs
 
 # Story 20-3b2 — envoi de facture par e-mail (UI)
 common-save = Enregistrer
+common-admin-only = Accès réservé aux administrateurs.
 common-edit = Modifier
 error-unexpected = Erreur inattendue.
 invoice-send-email-button = Envoyer par e-mail
@@ -1692,7 +1712,6 @@ payment-batches-status-generated = Créé
 # « projet analytique » = `Projekt`/`progetto`/`project` (on ne traduit pas « analytique »),
 # et l'idiome de hiérarchie suit `accounts-parent-archived` — `übergeordnet`, jamais *Eltern-*.
 closing = Clôture…
-email-templates-admin-only = Accès réservé aux administrateurs.
 email-templates-badge-custom = Personnalisé
 email-templates-badge-default = Défaut
 email-templates-body-label = Corps du message
