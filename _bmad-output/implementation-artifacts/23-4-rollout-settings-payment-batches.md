@@ -597,8 +597,13 @@ que la suite n'exécute pas (KF-043, #326).
 | backend `test-fast.sh --ci` | **2219 / 2219**, 4 skippés |
 | `kesh-i18n` | **29 / 29**, dont `parity_between_locales` |
 | frontend `check` / lint / unit / build | 0 erreur · PASS · **713** · vert |
-| **E2E branche** | **184 passés · 37 échoués · 19 skippés** |
+| **E2E branche** *(rejouée après les 3 passes de revue)* | **183 passés · 38 échoués · 19 skippés** |
 | **E2E `main`** *(référence)* | **183 passés · 38 échoués · 19 skippés** |
+| **différentiel** | ⚠️ **STRICTEMENT NUL** — listes d'échecs identiques, aucun écart de part ni d'autre |
+
+*(⚠️ Le run d'implémentation rendait 184/37 : un test de plus passait. L'écart était un **flake**
+sur `product-revenue-account.spec.ts`, fichier que la branche ne touche pas — rejoué alors 4/4 vert
+en isolation. Le run final, postérieur aux trois passes de revue, retombe exactement sur `main`.)*
 
 ⚠️ **La branche fait MIEUX que `main`** : un test de plus passe, un de moins échoue. Les deux
 `invoices.spec.ts` qui échouaient sur `main` passent ici.
