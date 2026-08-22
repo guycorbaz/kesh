@@ -1,10 +1,45 @@
 # Epic 23 — Dette i18n : le repli silencieux
 
-**Statut** : in-progress (kickoff 2026-08-19)
+**Statut** : in-progress, **régime allégé depuis le 2026-08-22** (kickoff 2026-08-19) — cf. § *Régime allégé* ci-dessous
 **Issues GitHub** : [#316] (KF-040 — **285** clés demandées, absentes des **quatre** catalogues ; l'issue en annonce 258, chiffre d'avant les relais et l'inventaire) + [#283] (57 clés présentes en `fr-CH`, absentes des trois autres)
 **Origine** : items de **catégorie A** de la rétrospective Epic 22, actions **A6**. Ils bloquent le kickoff de l'epic suivant au sens de la § *Tech debt management* du `CLAUDE.md`.
 **Cible release** : v0.11 (à confirmer)
 **Arbitrages de Guy (2026-08-19)** : (1) **tout résorber** et poser la garde générale, (2) traductions produites par l'orchestrateur **sur glossaire figé d'avance** (`docs/i18n-glossaire.md`), (3) **epic dédié**, story-zéro + rollouts — la règle de splitting préventif se déclenche (14 dossiers > 5 modules).
+
+## ⚠️ Régime allégé — arbitrage du 2026-08-22
+
+**Ce n'est pas un arrêt : on traduit, mais on ne fignole plus.** La priorité passe à ce que Kesh
+**fonctionne en français** pour la première version de production ; les traductions se finiront
+plus tard, quand cette version sera opérationnelle.
+
+Ce qui change, concrètement :
+
+| | Régime du kickoff | Régime allégé |
+|---|---|---|
+| Passes de revue | boucle adversariale jusqu'à 0 finding > LOW, modèle différent à chaque passe | une passe, ou aucune sur un rollout mécanique |
+| Glossaire (`docs/i18n-glossaire.md`) | arbitrage de chaque terme avant traduction | on consulte, on n'arbitre plus |
+| Compteurs exacts | recomptés et tenus à chaque story | tenus là où ils gardent quelque chose, pas par principe |
+| Ordre | 23-7 avant 23-6 | **inchangé** — une clôture ne se prononce pas sur un inventaire incomplet |
+
+⚠️ **Ce que le régime allégé ne touche PAS : les gardes.** Elles restent actives, et c'est le
+point qui rend ce gel réversible. Leur fonction n'est pas de résorber la dette mais d'empêcher
+qu'elle **grossisse** : un écran neuf qui écrit du français en dur rougit au gate, une clé qui
+part servir deux sens rougit au gate. Les désactiver « puisqu'on ne traduit plus » ferait
+exactement l'inverse de ce que l'arbitrage demande — on retrouverait, à la reprise, une dette
+plus grosse qu'au moment de la décision, et sans inventaire.
+
+⚠️ **Le statut du suivi reste `in-progress`, délibérément.** Aucun statut « suspendu » n'existe
+dans `sprint-status.yaml`, et en inventer un casserait la découverte de story des workflows BMAD,
+qui filtrent sur des valeurs connues. C'est le commentaire porté sur `epic-23` qui tient
+l'arbitrage, pas le statut.
+
+**Corollaire immédiat, et il a déjà servi.** La distinction qui décide de la priorité n'est pas
+« traduit / pas traduit » mais **latent / actif** : tant qu'une clé manque des catalogues, chaque
+site affiche son repli français et rien n'est visible ; dès qu'elle y figure, le catalogue gagne
+et une clé servant deux sens **ment en français, aujourd'hui**. C'est ce qu'a montré [KF-045
+(#330)] le jour même de cet arbitrage — six clés, dont dix `catch` de l'onboarding effondrés sur
+« Erreur interne ». **Ce genre de défaut reste prioritaire malgré le régime allégé** : il ne
+relève pas de la traduction, il relève du fonctionnement en français.
 
 ## Le défaut, en une phrase
 
