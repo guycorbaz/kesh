@@ -1632,10 +1632,7 @@ payment-batches-status-confirmed = Bestätigt
 payment-batches-status-generated = Erstellt
 
 # Story 23-4 (#316) — Rollout `settings` + `payment-batches` + `onboarding`, cf. fr-CH.
-cancel = Abbrechen
 closing = Abschluss…
-create = Erstellen
-creating = Wird erstellt…
 email-templates-admin-only = Zugriff nur für Administratoren.
 email-templates-badge-custom = Angepasst
 email-templates-badge-default = Standard
@@ -1663,7 +1660,7 @@ nav-supplier-invoices-import = Rechnungen importieren
 onboarding-address-npa-city-required = PLZ und Ort sind erforderlich
 onboarding-already-finalized = Die Einrichtung ist bereits abgeschlossen. Bitte laden Sie die Seite neu.
 onboarding-field-name-hint = Unternehmen — sonst Vorname + Name ausfüllen
-onboarding-finalize-incomplete = Der Abschluss wurde nicht bestätigt. Bitte laden Sie die Seite neu.
+onboarding-finalize-incomplete = Der Abschluss der Einrichtung wurde nicht bestätigt. Bitte laden Sie die Seite neu.
 onboarding-save = Speichern
 payment-batches-back = Zurück
 payment-batches-cancel = Stapel stornieren
@@ -1725,6 +1722,4 @@ projects-title = Projekte
 projects-unarchive = Dearchivieren
 projects-unarchived = Projekt dearchiviert.
 projects-updated = Projekt aktualisiert.
-save = Speichern
-saving = Wird gespeichert…
 settings-email-templates-link = Passen Sie den Inhalt der an Ihre Kunden gesendeten E-Mails an (Betreff und Text, pro Sprache).

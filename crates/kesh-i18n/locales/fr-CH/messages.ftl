@@ -1687,10 +1687,7 @@ payment-batches-status-generated = Créé
 # ⚠️ Conventions tenues : apostrophe ASCII (187 contre 31 au catalogue), aucun ß en de-CH,
 # « projet analytique » = `Projekt`/`progetto`/`project` (on ne traduit pas « analytique »),
 # et l'idiome de hiérarchie suit `accounts-parent-archived` — `übergeordnet`, jamais *Eltern-*.
-cancel = Annuler
 closing = Clôture…
-create = Créer
-creating = Création…
 email-templates-admin-only = Accès réservé aux administrateurs.
 email-templates-badge-custom = Personnalisé
 email-templates-badge-default = Défaut
@@ -1780,6 +1777,4 @@ projects-title = Projets analytiques
 projects-unarchive = Désarchiver
 projects-unarchived = Projet désarchivé.
 projects-updated = Projet mis à jour.
-save = Enregistrer
-saving = Enregistrement…
 settings-email-templates-link = Personnalisez le contenu des e-mails envoyés à vos clients (objet et corps, par langue).

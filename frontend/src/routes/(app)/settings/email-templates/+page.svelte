@@ -230,7 +230,7 @@
 		{msg('email-templates-admin-only', 'Accès réservé aux administrateurs.')}
 	</p>
 {:else if loading}
-	<p class="text-sm text-text-muted">{msg('loading', 'Chargement…')}</p>
+	<p class="text-sm text-text-muted">{msg('common-loading', 'Chargement…')}</p>
 {:else if loadError}
 	<p class="text-sm text-destructive">{loadError}</p>
 {:else}
@@ -385,7 +385,7 @@
 						disabled={submitting || !canSave}
 						data-testid="email-template-save-button"
 					>
-						{submitting ? msg('saving', 'Enregistrement…') : msg('save', 'Enregistrer')}
+						{submitting ? msg('common-saving', 'Enregistrement…') : msg('common-save', 'Enregistrer')}
 					</Button>
 				</div>
 			</form>
@@ -431,7 +431,7 @@
 		<Dialog.Footer>
 			<Dialog.Close>
 				<Button variant="outline" type="button" disabled={restoreSubmitting}
-					>{msg('cancel', 'Annuler')}</Button
+					>{msg('common-cancel', 'Annuler')}</Button
 				>
 			</Dialog.Close>
 			<Button

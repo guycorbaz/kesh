@@ -1638,10 +1638,7 @@ payment-batches-status-confirmed = Confirmed
 payment-batches-status-generated = Created
 
 # Story 23-4 (#316) — rollout `settings` + `payment-batches` + `onboarding`, cf. fr-CH.
-cancel = Cancel
 closing = Closing…
-create = Create
-creating = Creating…
 email-templates-admin-only = Administrators only.
 email-templates-badge-custom = Custom
 email-templates-badge-default = Default
@@ -1731,6 +1728,4 @@ projects-title = Projects
 projects-unarchive = Unarchive
 projects-unarchived = Project unarchived.
 projects-updated = Project updated.
-save = Save
-saving = Saving…
 settings-email-templates-link = Customise the content of the e-mails sent to your clients (subject and body, per language).

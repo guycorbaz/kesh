@@ -204,7 +204,7 @@
 	</header>
 
 	{#if loading}
-		<p class="text-muted-foreground">{i18nMsg('loading', 'Chargement…')}</p>
+		<p class="text-muted-foreground">{i18nMsg('common-loading', 'Chargement…')}</p>
 	{:else if loadError}
 		<p class="text-destructive" data-testid="vat-rates-load-error">{loadError}</p>
 	{:else}
@@ -302,10 +302,10 @@
 			{/if}
 			<div class="mt-3 flex gap-2">
 				<Button onclick={submitCreate} disabled={submitting} data-testid="vat-form-submit">
-					{i18nMsg('save', 'Enregistrer')}
+					{i18nMsg('common-save', 'Enregistrer')}
 				</Button>
 				<Button variant="ghost" onclick={cancel} disabled={submitting}>
-					{i18nMsg('cancel', 'Annuler')}
+					{i18nMsg('common-cancel', 'Annuler')}
 				</Button>
 			</div>
 		</section>
@@ -342,10 +342,10 @@
 					disabled={submitting}
 					data-testid="vat-change-submit"
 				>
-					{i18nMsg('save', 'Enregistrer')}
+					{i18nMsg('common-save', 'Enregistrer')}
 				</Button>
 				<Button variant="ghost" onclick={cancel} disabled={submitting}>
-					{i18nMsg('cancel', 'Annuler')}
+					{i18nMsg('common-cancel', 'Annuler')}
 				</Button>
 			</div>
 		</section>
@@ -371,7 +371,7 @@
 					{i18nMsg('vat-rates-deactivate', 'Désactiver')}
 				</Button>
 				<Button variant="ghost" onclick={cancel} disabled={submitting}>
-					{i18nMsg('cancel', 'Annuler')}
+					{i18nMsg('common-cancel', 'Annuler')}
 				</Button>
 			</div>
 		</section>
