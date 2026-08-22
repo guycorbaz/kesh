@@ -143,7 +143,7 @@
 			confirmDelete = null;
 			await load();
 		} catch (e) {
-			toast.error(isApiError(e) ? e.message : i18nMsg('dunning-form-error', 'Échec de la suppression.'));
+			toast.error(isApiError(e) ? e.message : i18nMsg('dunning-delete-error', 'Échec de la suppression.'));
 			await load();
 			confirmDelete = null;
 		} finally {
@@ -155,7 +155,7 @@
 		graceError = '';
 		const grace = Number(graceInput);
 		if (!Number.isInteger(grace) || grace < 0) {
-			graceError = i18nMsg('dunning-form-error-delay', 'La période de grâce doit être un entier positif.');
+			graceError = i18nMsg('dunning-grace-error', 'La période de grâce doit être un entier positif.');
 			return;
 		}
 		graceSaving = true;
@@ -167,7 +167,7 @@
 			toast.success(i18nMsg('dunning-grace-saved', 'Période de grâce enregistrée.'));
 		} catch (e) {
 			if (isApiError(e) && e.code === 'OPTIMISTIC_LOCK_CONFLICT') {
-				toast.error(i18nMsg('dunning-conflict', 'Les réglages ont changé entre-temps, rechargés.'));
+				toast.error(i18nMsg('dunning-settings-conflict', 'Les réglages ont changé entre-temps, rechargés.'));
 				await load();
 			} else {
 				graceError = isApiError(e) ? e.message : i18nMsg('dunning-form-error', 'Échec de l’enregistrement.');

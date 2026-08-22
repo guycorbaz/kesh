@@ -121,7 +121,7 @@
 				drafts[key] = { subject: t.subject, body: t.body };
 			}
 		} catch (err) {
-			loadError = isApiError(err) ? err.message : msg('error-unexpected', 'Erreur de chargement');
+			loadError = isApiError(err) ? err.message : msg('email-templates-load-error', 'Erreur de chargement');
 		} finally {
 			loading = false;
 		}
@@ -179,7 +179,7 @@
 					notifyError(err.message);
 				}
 			} else {
-				notifyError(msg('error-unexpected', "Erreur lors de l'enregistrement"));
+				notifyError(msg('email-templates-save-error', "Erreur lors de l'enregistrement"));
 			}
 		} finally {
 			submitting = false;
@@ -198,7 +198,7 @@
 		} catch (err) {
 			restoreError = isApiError(err)
 				? err.message
-				: msg('error-unexpected', 'Erreur lors de la restauration');
+				: msg('email-templates-restore-error', 'Erreur lors de la restauration');
 			restoreSubmitting = false;
 			return;
 		}
