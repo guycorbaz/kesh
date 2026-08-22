@@ -163,6 +163,17 @@ describe('le catalogue fr-CH ne ment sur aucun site', () => {
 		expect(perimees).toEqual([]);
 	});
 
+	// ⚠️ **La garde générique ci-dessus resterait VERTE si l'on refusionnait les deux clés** :
+	// une clé unique portant partout le même repli ne diverge pas — elle ment simplement sur
+	// la moitié de ses sites. C'est pourquoi une scission se verrouille par ses DEUX sens, et
+	// non par la seule existence des clés : un `toBeDefined` passerait alors que `-detail-title`
+	// aurait disparu. Même patron que l'assertion des deux totaux de `supplier-invoices`.
+	it('les deux titres d’avoir restent DEUX clés — la fusion ne peut pas revenir', () => {
+		const releve = replisParCle();
+		expect([...(releve.get('credit-notes-title')?.keys() ?? [])]).toEqual(['Avoirs']);
+		expect([...(releve.get('credit-notes-detail-title')?.keys() ?? [])]).toEqual(['Avoir']);
+	});
+
 	it('chaque tolérance porte un motif écrit', () => {
 		expect(TOLEREES.filter((t) => t.motif.trim().length < 20).map((t) => t.cle)).toEqual([]);
 	});

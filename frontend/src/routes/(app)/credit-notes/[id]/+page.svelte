@@ -134,7 +134,7 @@
 </script>
 
 <svelte:head>
-	<title>{i18nMsg('credit-notes-title', 'Avoir')} — Kesh</title>
+	<title>{i18nMsg('credit-notes-detail-title', 'Avoir')} — Kesh</title>
 </svelte:head>
 
 <div class="mb-6 flex items-center justify-between">
@@ -171,7 +171,7 @@
 	<p class="text-sm text-destructive">{errorMsg}</p>
 {:else if creditNote}
 	<h1 class="mb-1 text-2xl font-semibold" data-testid="credit-note-number">
-		{i18nMsg('credit-notes-title', 'Avoir')}
+		{i18nMsg('credit-notes-detail-title', 'Avoir')}
 		{creditNote.creditNoteNumber ?? `#${creditNote.id}`}
 	</h1>
 	<p class="mb-6 text-sm text-text-muted">
