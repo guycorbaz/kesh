@@ -111,7 +111,7 @@
 	>
 		{showForm
 			? i18nMsg('payment-batches-form-close', 'Fermer')
-			: i18nMsg('payment-batches-new', 'Générer un lot de virements')}
+			: i18nMsg('payment-batches-new', 'Créer un lot de virements')}
 	</button>
 </div>
 
@@ -176,7 +176,7 @@
 			data-testid="payment-batch-submit"
 			disabled={saving}
 		>
-			{saving ? '…' : i18nMsg('payment-batches-generate', 'Générer le lot')}
+			{saving ? '…' : i18nMsg('payment-batches-generate', 'Créer le lot')}
 		</button>
 	</form>
 {/if}
@@ -185,7 +185,7 @@
 	<div class="mb-6 rounded border border-border p-4" data-testid="payment-batch-result">
 		{#if lastResult.batch}
 			<p class="text-sm">
-				{i18nMsg('payment-batches-created', 'Lot généré')} —
+				{i18nMsg('payment-batches-created', 'Lot créé')} —
 				<a class="text-primary underline" href={`/payment-batches/${lastResult.batch.id}`}>
 					{i18nMsg('payment-batches-open', 'ouvrir et télécharger le fichier')}
 				</a>

@@ -215,7 +215,7 @@
 
 {#if onboardingState.loading && !onboardingState.loaded}
 	<div class="flex justify-center p-8">
-		<p class="text-text-muted">{msg('loading', 'Chargement...')}</p>
+		<p class="text-text-muted">{msg('common-loading', 'Chargement…')}</p>
 	</div>
 
 {:else if onboardingState.stepCompleted === 0}

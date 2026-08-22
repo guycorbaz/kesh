@@ -205,7 +205,7 @@
 </h1>
 
 {#if loading}
-	<p class="text-text-muted">{msg('loading', 'Chargement...')}</p>
+	<p class="text-text-muted">{msg('common-loading', 'Chargement…')}</p>
 {:else if data}
 	<div class="flex flex-col gap-6">
 		<!-- Section Organisation -->
