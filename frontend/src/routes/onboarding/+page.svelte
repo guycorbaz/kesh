@@ -35,7 +35,7 @@
 			await onboardingState.setMode(mode);
 			modeState.value = mode;
 		} catch {
-			toast.error(msg('error-internal', 'Erreur lors du choix de mode'));
+			toast.error(msg('onboarding-mode-error', 'Erreur lors du choix de mode'));
 		}
 	}
 
@@ -44,7 +44,7 @@
 			await onboardingState.seedDemo();
 			goto('/');
 		} catch {
-			toast.error(msg('error-internal', 'Erreur lors du chargement des données de démo'));
+			toast.error(msg('onboarding-demo-load-error', 'Erreur lors du chargement des données de démo'));
 		}
 	}
 
@@ -52,7 +52,7 @@
 		try {
 			await onboardingState.startProduction();
 		} catch {
-			toast.error(msg('error-internal', 'Erreur lors du démarrage de la configuration'));
+			toast.error(msg('onboarding-setup-start-error', 'Erreur lors du démarrage de la configuration'));
 		}
 	}
 
@@ -60,7 +60,7 @@
 		try {
 			await onboardingState.setOrgType(orgType);
 		} catch {
-			toast.error(msg('error-internal', 'Erreur lors du choix du type'));
+			toast.error(msg('onboarding-org-type-error', 'Erreur lors du choix du type'));
 		}
 	}
 
@@ -68,7 +68,7 @@
 		try {
 			await onboardingState.setAccountingLanguage(lang);
 		} catch {
-			toast.error(msg('error-internal', 'Erreur lors du choix de la langue comptable'));
+			toast.error(msg('onboarding-accounting-lang-error', 'Erreur lors du choix de la langue comptable'));
 		}
 	}
 
@@ -89,7 +89,7 @@
 			? coordFirstName.trim() !== '' && coordLastName.trim() !== ''
 			: coordName.trim() !== '';
 		if (!hasName) {
-			toast.error(msg('error-validation', 'Nom (ou prénom + nom) obligatoire'));
+			toast.error(msg('onboarding-name-required', 'Nom (ou prénom + nom) obligatoire'));
 			return;
 		}
 		if (!coordPostalCode.trim() || !coordCity.trim()) {
@@ -113,7 +113,7 @@
 				coordIde.trim() || null
 			);
 		} catch {
-			toast.error(msg('error-internal', 'Erreur lors de la sauvegarde des coordonnées'));
+			toast.error(msg('onboarding-address-save-error', 'Erreur lors de la sauvegarde des coordonnées'));
 		}
 	}
 
@@ -127,7 +127,7 @@
 	// bank account already saved.
 	function reportFinalizeError(err: unknown) {
 		if (!isApiError(err)) {
-			toast.error(msg('error-internal', 'Finalisation échouée — réessayez.'));
+			toast.error(msg('onboarding-finalize-error', 'Finalisation échouée — réessayez.'));
 			return;
 		}
 		if (err.code === 'ONBOARDING_STEP_ALREADY_COMPLETED') {
@@ -145,7 +145,7 @@
 			toast.error(err.message);
 			return;
 		}
-		toast.error(msg('error-internal', 'Finalisation échouée — réessayez.'));
+		toast.error(msg('onboarding-finalize-error', 'Finalisation échouée — réessayez.'));
 	}
 
 	// P6-L7: defense-in-depth — never navigate to / unless the backend confirmed
@@ -166,7 +166,7 @@
 
 	async function submitBankAccount() {
 		if (!bankName.trim() || !bankIban.trim()) {
-			toast.error(msg('error-validation', 'Nom de banque et IBAN sont obligatoires'));
+			toast.error(msg('onboarding-bank-required', 'Nom de banque et IBAN sont obligatoires'));
 			return;
 		}
 		try {
@@ -179,7 +179,7 @@
 			toast.error(
 				isApiError(err) && err.message
 					? err.message
-					: msg('error-internal', 'Erreur lors de la sauvegarde du compte bancaire')
+					: msg('onboarding-bank-save-error', 'Erreur lors de la sauvegarde du compte bancaire')
 			);
 			return;
 		}
@@ -198,7 +198,7 @@
 			toast.error(
 				isApiError(err) && err.message
 					? err.message
-					: msg('error-internal', 'Erreur lors du saut du compte bancaire')
+					: msg('onboarding-bank-skip-error', 'Erreur lors du saut du compte bancaire')
 			);
 			return;
 		}

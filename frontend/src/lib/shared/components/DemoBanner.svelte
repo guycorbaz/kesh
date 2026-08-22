@@ -19,7 +19,7 @@
 			showConfirm = false;
 			goto('/onboarding');
 		} catch {
-			toast.error(msg('error-internal', 'Erreur lors de la réinitialisation'));
+			toast.error(msg('demo-reset-error', 'Erreur lors de la réinitialisation'));
 		} finally {
 			resetting = false;
 		}

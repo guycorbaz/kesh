@@ -86,8 +86,15 @@ const PREFIXES = [
  *
  * Les deux premiers font les 110 d'origine ; les deux derniers entrent avec le rollout 23-4,
  * **splits compris** (`payment-batches-line-amount`, `-detail-date`, `onboarding-save`).
+ *
+ * Recompté depuis les sources le 2026-08-22 : 58 + 52 + 42 + 45. Seul `onboarding-` bouge,
+ * de 34 à 45 — les onze clés dédiées qui remplacent `error-internal` et `error-validation`
+ * dans les `catch` de l'onboarding. ⚠️ **Une hausse ici n'est PAS l'inverse d'une baisse** :
+ * la baisse signale une clé qui a cessé d'être demandée (régression), la hausse signale des
+ * clés neuves — mais seulement si on peut les nommer. Un +11 dont on ne sait pas dire lesquels
+ * se recompte, il ne s'entérine pas.
  */
-const CLES_RELEVEES = 186;
+const CLES_RELEVEES = 197;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */
