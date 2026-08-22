@@ -128,13 +128,15 @@
 		if (splits.length < MIN_SPLITS) {
 			return i18nMsg(
 				'reconciliation-split-error-min-lines',
-				`Au moins ${MIN_SPLITS} lignes requises`,
+				'Au moins { $min } lignes requises',
+				{ min: MIN_SPLITS },
 			);
 		}
 		if (splits.length > MAX_SPLITS) {
 			return i18nMsg(
 				'reconciliation-split-error-max-lines',
-				`Maximum ${MAX_SPLITS} lignes`,
+				'Maximum { $max } lignes',
+				{ max: MAX_SPLITS },
 			);
 		}
 		for (let i = 0; i < splits.length; i++) {
@@ -142,20 +144,23 @@
 			if (s.counterpartyAccountId === null) {
 				return i18nMsg(
 					'reconciliation-split-error-account-required',
-					`Ligne ${i + 1} : compte requis`,
+					'Ligne { $line } : compte requis',
+					{ line: i + 1 },
 				);
 			}
 			const n = parseFloat(s.amount);
 			if (!isFinite(n) || n <= 0) {
 				return i18nMsg(
 					'reconciliation-split-error-amount-positive',
-					`Ligne ${i + 1} : montant > 0 requis`,
+					'Ligne { $line } : montant > 0 requis',
+					{ line: i + 1 },
 				);
 			}
 			if (s.description.length > MAX_DESCRIPTION_LEN) {
 				return i18nMsg(
 					'reconciliation-split-error-description-too-long',
-					`Ligne ${i + 1} : description trop longue (max ${MAX_DESCRIPTION_LEN})`,
+					'Ligne { $line } : description trop longue (max { $max })',
+					{ line: i + 1, max: MAX_DESCRIPTION_LEN },
 				);
 			}
 		}

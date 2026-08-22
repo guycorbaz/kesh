@@ -642,10 +642,17 @@
 
 <!-- Dialog de confirmation de suppression (story 3.3) -->
 {#if deleteTarget}
+	<!-- ⚠️ L'interpolation passe par le TROISIÈME argument d'`i18nMsg`, pas par un `.replace()`
+	     maison. Le backend pré-résout Fluent sans arguments : `{ $number }` ressort entouré des
+	     marques d'isolation bidi U+2068/U+2069, qu'`i18nMsg` consomme avec le placeholder. Un
+	     `.replace()` qui ne cherche que `{ $number }` remplace bien la variable mais **laisse les
+	     deux marques dans le DOM** — invisibles à l'œil, fatales à toute assertion E2E portant sur
+	     la valeur. Relevé par `i18n-entrees-a-variables.test.ts` (story 23-5). -->
 	{@const deleteTitle = i18nMsg(
 		'journal-entry-delete-confirm-title',
-		"Supprimer l'écriture N°{ $number } ?"
-	).replace(/\{\s*\$number\s*\}/g, String(deleteTarget.entryNumber))}
+		"Supprimer l'écriture N°{ $number } ?",
+		{ number: deleteTarget.entryNumber }
+	)}
 	<div
 		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
 		role="dialog"
