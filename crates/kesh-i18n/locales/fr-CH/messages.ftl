@@ -1672,3 +1672,109 @@ payment-batches-failed-supplier-invoice-not-open = Facture non ouverte
 payment-batches-status-cancelled = Annulé
 payment-batches-status-confirmed = Confirmé
 payment-batches-status-generated = Créé
+
+# Story 23-4 (#316) — rollout `settings` + `payment-batches` + `onboarding` : 96 clés.
+# ⚠️ 93 viennent de l'allowlist ; les TROIS autres sont NEUVES, nées de scissions de clés qui
+# portaient deux sens : `payment-batches-line-amount` (montant d'une LIGNE, contre le total du LOT),
+# `payment-batches-detail-date` (étiquette de fiche, contre en-tête de colonne) et `onboarding-save`
+# — dont le repli « Enregistrer » était MORT, la clé mère étant déjà au catalogue : le bouton
+# d'enregistrement des coordonnées bancaires affichait « Continuer », dans les quatre langues.
+# ⚠️ « Générer » devient « Créer » (arbitrage 23-3b) : le statut du lot s'affiche « Créé », et
+# demander de « Générer un lot » pour obtenir un lot « Créé » ne se comprend pas.
+# ⚠️ `payment-batches-msg-id` = `MsgId` VERBATIM dans les quatre locales (arbitrage de Guy) —
+# `pain001/mod.rs:28` le nomme avec `PmtInfId` et `EndToEndId`, et ce dernier est déjà affiché tel
+# quel deux lignes plus bas dans le même tableau.
+# ⚠️ Conventions tenues : apostrophe ASCII (187 contre 31 au catalogue), aucun ß en de-CH,
+# « projet analytique » = `Projekt`/`progetto`/`project` (on ne traduit pas « analytique »),
+# et l'idiome de hiérarchie suit `accounts-parent-archived` — `übergeordnet`, jamais *Eltern-*.
+closing = Clôture…
+email-templates-admin-only = Accès réservé aux administrateurs.
+email-templates-badge-custom = Personnalisé
+email-templates-badge-default = Défaut
+email-templates-body-label = Corps du message
+email-templates-conflict = Conflit de version — le modèle a été rechargé
+email-templates-lang-tablist = Langue
+email-templates-restore = Restaurer le défaut
+email-templates-restore-confirm-action = Restaurer le défaut
+email-templates-restore-confirm-body = Votre texte personnalisé pour cette combinaison sera supprimé et remplacé par le modèle par défaut. Cette action est irréversible.
+email-templates-restore-confirm-title = Restaurer le modèle par défaut ?
+email-templates-restored = Modèle par défaut restauré
+email-templates-restoring = Restauration…
+email-templates-saved = Modèle enregistré
+email-templates-subject-label = Objet
+email-templates-subtitle = Personnalisez le contenu des e-mails envoyés à vos clients, par langue. Si vous ne modifiez rien, un modèle par défaut est utilisé automatiquement.
+email-templates-title = Modèles d'e-mail
+email-templates-unknown-variables = Le modèle contient des variables inconnues
+email-templates-unknown-variables-list = Variables inconnues :
+email-templates-variables-hint = Insérez ces variables dans l'objet ou le corps ; elles seront remplacées à l'envoi.
+email-templates-variables-title = Variables disponibles
+nav-credit-notes = Avoirs
+nav-email-templates = Modèles d'e-mail
+nav-projects = Projets analytiques
+nav-supplier-invoices-import = Importer des factures
+onboarding-address-npa-city-required = NPA et localité sont obligatoires
+onboarding-already-finalized = L'onboarding est déjà finalisé. Veuillez recharger la page.
+onboarding-field-name-hint = entreprise — sinon remplir prénom + nom
+onboarding-finalize-incomplete = La finalisation n'a pas été confirmée. Veuillez recharger la page.
+onboarding-save = Enregistrer
+payment-batches-back = Retour
+payment-batches-cancel = Annuler le lot
+payment-batches-cancel-confirm = Annuler ce lot ? Les factures redeviennent réglables.
+payment-batches-col-date = Exécution
+payment-batches-col-id = Lot
+payment-batches-col-status = Statut
+payment-batches-col-total = Total
+payment-batches-confirm = Confirmer le lot
+payment-batches-confirm-hint = Une fois le virement exécuté dans votre e-banking, confirmez pour comptabiliser les règlements.
+payment-batches-confirm-title = Confirmer le règlement
+payment-batches-confirmed-at = Confirmé le
+payment-batches-created = Lot créé
+payment-batches-detail-date = Date d'exécution
+payment-batches-detail-title = Lot de paiement
+payment-batches-download = Télécharger le fichier pain.001
+payment-batches-empty = Aucun lot de paiement.
+payment-batches-err-bank = Sélectionnez un compte bancaire source.
+payment-batches-err-invoices = Sélectionnez au moins une facture.
+payment-batches-field-bank = Compte bancaire source
+payment-batches-field-date = Date d'exécution souhaitée
+payment-batches-form-close = Fermer
+payment-batches-generate = Créer le lot
+payment-batches-item-invoice = Facture
+payment-batches-line-amount = Montant
+payment-batches-lot = Lot
+payment-batches-msg-id = MsgId
+payment-batches-new = Créer un lot de virements
+payment-batches-no-open = Aucune facture fournisseur ouverte.
+payment-batches-open = ouvrir et télécharger le fichier
+payment-batches-payment-date = Date de règlement effective
+payment-batches-rejected = Factures non incluses :
+payment-batches-select-invoices = Factures à régler par virement
+projects-archive = Archiver
+projects-archive-error = Opération impossible.
+projects-archived = Projet archivé.
+projects-archived-tag = archivé
+projects-created = Projet créé.
+projects-edit = Modifier
+projects-empty = Aucun projet. Créez votre premier projet pour commencer.
+projects-err-code = Le code du projet est requis.
+projects-err-name = Le nom du projet est requis.
+projects-field-code = Code
+projects-field-description = Description (optionnel)
+projects-field-end = Fin
+projects-field-name = Nom
+projects-field-parent = Projet parent (optionnel)
+projects-field-start = Début
+projects-form-create = Nouveau projet
+projects-form-edit = Modifier le projet
+projects-load-error = Impossible de charger les projets.
+projects-new = Nouveau projet
+projects-parent-none = — Aucun (projet racine)
+projects-save = Enregistrer
+projects-save-error = Enregistrement impossible.
+projects-show-archived = Afficher les projets archivés
+projects-subtitle = Regroupez vos dépenses et revenus par projet (rénovation, investissement) pour les analyser isolément.
+projects-title = Projets analytiques
+projects-unarchive = Désarchiver
+projects-unarchived = Projet désarchivé.
+projects-updated = Projet mis à jour.
+settings-email-templates-link = Personnalisez le contenu des e-mails envoyés à vos clients (objet et corps, par langue).

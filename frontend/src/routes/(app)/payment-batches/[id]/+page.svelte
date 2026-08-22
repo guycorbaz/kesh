@@ -75,7 +75,7 @@
 </button>
 
 {#if loading}
-	<p class="text-sm text-text-muted">Chargement…</p>
+	<p class="text-sm text-text-muted">{i18nMsg('common-loading', 'Chargement…')}</p>
 {:else if errorMsg}
 	<p class="text-sm text-destructive">{errorMsg}</p>
 {:else if batch}
@@ -93,7 +93,7 @@
 	</div>
 
 	<dl class="mb-6 grid grid-cols-2 gap-2 text-sm">
-		<dt class="text-text-muted">{i18nMsg('payment-batches-col-date', "Date d'exécution")}</dt>
+		<dt class="text-text-muted">{i18nMsg('payment-batches-detail-date', "Date d'exécution")}</dt>
 		<dd>{batch.requestedExecutionDate}</dd>
 		<dt class="text-text-muted">{i18nMsg('payment-batches-col-total', 'Total')}</dt>
 		<dd>{formatBatchTotal(batch.totalAmount)}</dd>
@@ -119,7 +119,7 @@
 			<tr class="border-b text-left text-text-muted">
 				<th class="py-2">{i18nMsg('payment-batches-item-invoice', 'Facture')}</th>
 				<th class="py-2">EndToEndId</th>
-				<th class="py-2 text-right">{i18nMsg('payment-batches-col-total', 'Montant')}</th>
+				<th class="py-2 text-right">{i18nMsg('payment-batches-line-amount', 'Montant')}</th>
 			</tr>
 		</thead>
 		<tbody>

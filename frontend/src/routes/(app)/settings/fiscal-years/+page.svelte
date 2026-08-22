@@ -306,7 +306,7 @@
 </div>
 
 {#if loading}
-	<p class="text-sm text-text-muted">{msg('loading', 'Chargement…')}</p>
+	<p class="text-sm text-text-muted">{msg('common-loading', 'Chargement…')}</p>
 {:else}
 	<Table.Root data-testid="fiscal-year-table">
 		<Table.Header>
@@ -430,13 +430,13 @@
 			<Dialog.Footer>
 				<Dialog.Close>
 					<Button variant="outline" type="button">
-						{msg('cancel', 'Annuler')}
+						{msg('common-cancel', 'Annuler')}
 					</Button>
 				</Dialog.Close>
 				<Button type="submit" disabled={createSubmitting}>
 					{createSubmitting
-						? msg('creating', 'Création…')
-						: msg('create', 'Créer')}
+						? msg('common-creating', 'Création…')
+						: msg('common-create', 'Créer')}
 				</Button>
 			</Dialog.Footer>
 		</form>
@@ -486,13 +486,13 @@
 			<Dialog.Footer>
 				<Dialog.Close>
 					<Button variant="outline" type="button">
-						{msg('cancel', 'Annuler')}
+						{msg('common-cancel', 'Annuler')}
 					</Button>
 				</Dialog.Close>
 				<Button type="submit" disabled={renameSubmitting}>
 					{renameSubmitting
-						? msg('saving', 'Enregistrement…')
-						: msg('save', 'Enregistrer')}
+						? msg('common-saving', 'Enregistrement…')
+						: msg('common-save', 'Enregistrer')}
 				</Button>
 			</Dialog.Footer>
 		</form>
@@ -522,7 +522,7 @@
 		<Dialog.Footer>
 			<Dialog.Close>
 				<Button variant="outline" type="button">
-					{msg('cancel', 'Annuler')}
+					{msg('common-cancel', 'Annuler')}
 				</Button>
 			</Dialog.Close>
 			<Button
@@ -582,7 +582,7 @@
 			<Dialog.Footer>
 				<Dialog.Close>
 					<Button variant="outline" type="button">
-						{msg('cancel', 'Annuler')}
+						{msg('common-cancel', 'Annuler')}
 					</Button>
 				</Dialog.Close>
 				<Button
@@ -591,7 +591,7 @@
 					disabled={reopenSubmitting || !!reopenClientError}
 				>
 					{reopenSubmitting
-						? msg('saving', 'Enregistrement…')
+						? msg('common-saving', 'Enregistrement…')
 						: msg('fiscal-year-reopen-confirmation-action', "Rouvrir l'exercice")}
 				</Button>
 			</Dialog.Footer>

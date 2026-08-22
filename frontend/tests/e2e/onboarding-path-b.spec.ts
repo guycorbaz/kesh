@@ -76,9 +76,13 @@ test.describe('Onboarding Path B', () => {
 		// Step 7: Bank (fill)
 		await page.fill('#bank-name', 'UBS');
 		await page.fill('#bank-iban', 'CH93 0076 2011 6238 5295 7');
-		// Le bouton submit de l'étape banque réutilise la clé i18n `onboarding-next`
-		// (valeur FR « Continuer », pas le fallback « Enregistrer »). Cf. KF-032 (#124).
-		await page.click('button:has-text("Continuer")');
+		// ⚠️ Ce bouton était ciblé par `has-text("Continuer")`, et le commentaire d'origine
+		// expliquait qu'il « réutilise la clé `onboarding-next` (valeur FR « Continuer », pas le
+		// fallback « Enregistrer ») ». C'était le SYMPTÔME de KF-032, pas une propriété à préserver :
+		// une même clé servait deux boutons de sens différents, et le repli « Enregistrer » était
+		// MORT. La story 23-4 l'a scindée en `onboarding-save` — ce bouton dit désormais
+		// « Enregistrer ». Ciblé par son rôle, jamais par son libellé, qui est traduit.
+		await page.locator('form button[type="submit"]').click();
 
 		// Should be in app WITHOUT blue banner
 		await expect(page).toHaveURL('/');

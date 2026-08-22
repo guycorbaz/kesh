@@ -47,7 +47,7 @@ test.describe('Modèles d\'e-mail — section Admin', () => {
 		}
 
 		// Onglet FR (actif par défaut) : badge « Défaut », subject/body non vides.
-		await expect(page.getByTestId('email-template-badge')).toHaveText('Défaut');
+		await expect(page.getByTestId('email-template-badge')).toHaveAttribute('data-variant', 'default');
 		const subject = page.getByTestId('email-template-subject');
 		const body = page.getByTestId('email-template-body');
 		expect((await subject.inputValue()).length).toBeGreaterThan(0);
@@ -61,7 +61,7 @@ test.describe('Modèles d\'e-mail — section Admin', () => {
 		// Chaque langue reste en Défaut avec du contenu.
 		for (const lang of ['DE', 'IT', 'EN']) {
 			await page.getByTestId(`email-template-lang-tab-${lang}`).click();
-			await expect(page.getByTestId('email-template-badge')).toHaveText('Défaut');
+			await expect(page.getByTestId('email-template-badge')).toHaveAttribute('data-variant', 'default');
 			expect((await subject.inputValue()).length).toBeGreaterThan(0);
 		}
 	});
@@ -77,11 +77,11 @@ test.describe('Modèles d\'e-mail — section Admin', () => {
 		await page.getByTestId('email-template-save-button').click();
 
 		// Badge passe à Personnalisé.
-		await expect(page.getByTestId('email-template-badge')).toHaveText('Personnalisé');
+		await expect(page.getByTestId('email-template-badge')).toHaveAttribute('data-variant', 'custom');
 
 		// Persistance : recharger la page, la valeur est conservée.
 		await page.reload();
-		await expect(page.getByTestId('email-template-badge')).toHaveText('Personnalisé');
+		await expect(page.getByTestId('email-template-badge')).toHaveAttribute('data-variant', 'custom');
 		await expect(subject).toHaveValue('Sujet E2E {invoiceNumber}');
 	});
 
@@ -112,7 +112,7 @@ test.describe('Modèles d\'e-mail — section Admin', () => {
 		await page.getByTestId('email-template-subject').fill('À restaurer {invoiceNumber}');
 		await page.getByTestId('email-template-body').fill('Corps {amount}');
 		await page.getByTestId('email-template-save-button').click();
-		await expect(page.getByTestId('email-template-badge')).toHaveText('Personnalisé');
+		await expect(page.getByTestId('email-template-badge')).toHaveAttribute('data-variant', 'custom');
 
 		// Ouvrir la modale + attendre sa visibilité avant de confirmer.
 		await page.getByTestId('email-template-restore-button').click();
@@ -120,7 +120,7 @@ test.describe('Modèles d\'e-mail — section Admin', () => {
 		await expect(confirm).toBeVisible();
 		await confirm.click();
 
-		await expect(page.getByTestId('email-template-badge')).toHaveText('Défaut');
+		await expect(page.getByTestId('email-template-badge')).toHaveAttribute('data-variant', 'default');
 	});
 
 	test('validation : variables inconnues → message d\'erreur listant les tokens', async ({
@@ -137,7 +137,7 @@ test.describe('Modèles d\'e-mail — section Admin', () => {
 		await expect(errBox).toContainText('{tokenInconnu}');
 		await expect(errBox).toContainText('{autreInconnu}');
 		// Le template reste en Défaut (rien persisté).
-		await expect(page.getByTestId('email-template-badge')).toHaveText('Défaut');
+		await expect(page.getByTestId('email-template-badge')).toHaveAttribute('data-variant', 'default');
 	});
 
 	test('navigation : la carte Paramètres mène à la page', async ({ page }) => {

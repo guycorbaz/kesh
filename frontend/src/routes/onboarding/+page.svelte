@@ -215,7 +215,7 @@
 
 {#if onboardingState.loading && !onboardingState.loaded}
 	<div class="flex justify-center p-8">
-		<p class="text-text-muted">Chargement...</p>
+		<p class="text-text-muted">{msg('common-loading', 'Chargement…')}</p>
 	</div>
 
 {:else if onboardingState.stepCompleted === 0}
@@ -380,8 +380,12 @@
 		</div>
 		<div>
 			<label for="bank-qr-iban" class="mb-1 block text-sm font-medium">
-				{msg('onboarding-field-qr-iban', 'QR-IBAN')}
-				<span class="font-normal text-text-muted"> (optionnel)</span>
+				<!-- ⚠️ « (optionnel) » vivait ICI en dur, à côté d'un libellé traduit. La convention du
+				     dépôt le met DANS le libellé (`account-field-parent-optional`,
+				     `vat-rates-field-to`…), et `bank-accounts-labels-qr-iban` porte déjà
+				     « QR-IBAN (optionnel) » traduit dans les quatre locales, pour ce champ exact.
+				     Réutilisée plutôt que dupliquée. (Story 23-4, AC6-bis.) -->
+				{msg('bank-accounts-labels-qr-iban', 'QR-IBAN (optionnel)')}
 			</label>
 			<Input id="bank-qr-iban" bind:value={bankQrIban} placeholder="CH44 3199 9123 0008 8901 2" />
 		</div>
@@ -390,7 +394,7 @@
 				{msg('onboarding-skip-bank', 'Configurer plus tard')}
 			</Button>
 			<Button type="submit" disabled={onboardingState.loading} class="flex-1">
-				{msg('onboarding-next', 'Enregistrer')}
+				{msg('onboarding-save', 'Enregistrer')}
 			</Button>
 		</div>
 	</form>

@@ -197,7 +197,7 @@
 </script>
 
 <svelte:head>
-	<title>Paramètres - Kesh</title>
+	<title>{msg('settings-title', 'Paramètres')} - Kesh</title>
 </svelte:head>
 
 <h1 class="mb-6 text-2xl font-semibold text-text">
@@ -205,7 +205,7 @@
 </h1>
 
 {#if loading}
-	<p class="text-text-muted">{msg('loading', 'Chargement...')}</p>
+	<p class="text-text-muted">{msg('common-loading', 'Chargement…')}</p>
 {:else if data}
 	<div class="flex flex-col gap-6">
 		<!-- Section Organisation -->

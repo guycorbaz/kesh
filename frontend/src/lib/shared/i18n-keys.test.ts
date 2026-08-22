@@ -56,13 +56,23 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * factures (dont le titre du dialogue de validation), 3 pour le type d'organisation des
  * réglages, 1 pour `getGroupLabel`. **Là encore, la borne a rougi la première.**
  *
+ * ⚠️ **1525 → 1529 à la story 23-4 (#316), et les QUATRE se ventilent** : ce sont les libellés
+ * français qui étaient **en dur** dans les écrans que ce rollout achève de traduire — deux
+ * `Chargement…` (`payment-batches` liste et fiche), un `Chargement...` à points ASCII (onboarding)
+ * et le `<title>Paramètres - Kesh</title>` des réglages, dont la clé `settings-title` était
+ * **déjà utilisée quatre lignes plus bas**. ⚠️ **Aucune garde ne pouvait les voir** :
+ * `i18n-libelle-en-dur.test.ts` écarte les nœuds de texte de balisage, et elle le dit dans son
+ * préambule. C'est la borne exacte qui les a fait apparaître — son travail.
+ * ⚠️ Un cinquième site a été corrigé sans créer de site : le « (optionnel) » en dur d'onboarding
+ * a été remplacé par `bank-accounts-labels-qr-iban`, déjà traduite pour ce champ exact.
+ *
  * ⚠️ **33 → 34 sites non résolus, et c'est LÉGITIME** : `getGroupLabel`
  * (`routes/(app)/+layout.svelte`) est le symétrique exact de `getItemLabel`, deux lignes plus
  * haut et déjà de la liste — la clé est portée par la donnée, pas par le site d'appel. Un
  * dispatcher n'est pas une clé manquante.
  */
 const ATTENDU = {
-	sitesTotal: 1525,
+	sitesTotal: 1529,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,
