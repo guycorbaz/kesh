@@ -6,7 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Kesh** is a Swiss personal and small business accounting software, **built, released and deployed** — not a design-phase project. It is developed using the BMAD (Breakthrough Method of Agile AI-driven Development) framework, whose assets live alongside the application code.
 
-**Current release: v0.9.0** (2026-08-12), published on Docker Hub as `gcorbaz/kesh` and **deployed on the author's NAS**. Roughly 175 stories delivered across 20 epics, 60 migrations, 2164 backend tests and 512 frontend tests.
+**Current release: v0.11.0** (2026-08-23), published on Docker Hub as `gcorbaz/kesh` (`:0.11.0` and `:latest`) and **running on the author's NAS**. **156 stories** delivered across **23 closed epics** (2 remain in backlog), **61 migrations**, **2219 backend tests** and **723 frontend tests**.
+
+*(Recomptés depuis la source le 2026-08-23, et non repris du paragraphe précédent, qui annonçait v0.9.0 — **deux versions de retard** — avec « roughly 175 stories », 20 epics, 60 migrations, 2164 et 512 tests. Les décomptes de stories ne comptent que le statut `done` : s'y ajoutent 9 `split`, 4 `superseded`, 4 `archived-split*` et 5 `backlog`, qui ne sont pas des livraisons. Commandes : `ls crates/kesh-db/migrations/*.sql | wc -l`, les totaux de `cargo nextest run` et de `npm run test:unit`, et un décompte par statut de `sprint-status.yaml`.)*
 
 ⚠️ **Deployed is not the same as keeping the books, and the distinction drives real decisions.** The instance runs and is exercised, but **the real accounts are not yet kept in Kesh** — the project's own milestone for that, *« Première clôture d'exercice tenue dans Kesh »*, is still open, and the fiche states it as the *expected* result, not the current one. Two consequences worth holding: there is **no legacy production data to protect**, which makes prevention cheaper than repair and migrations less risky than they will ever be again; and **when that milestone is reached, this paragraph must change** — along with the reasoning that rests on it.
 
