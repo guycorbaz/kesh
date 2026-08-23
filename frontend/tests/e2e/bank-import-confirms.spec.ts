@@ -22,7 +22,12 @@ import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { seedTestState, clearAuthStorage } from './helpers/test-state';
+import {
+	seedTestState,
+	clearAuthStorage,
+	authedApiContext,
+	disposeContextSafe,
+} from './helpers/test-state';
 
 const FIXTURE_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const FIXTURE_MINIMAL = path.join(FIXTURE_DIR, 'camt053_v04_minimal.xml');
@@ -47,32 +52,46 @@ async function login(page: Page): Promise<void> {
 	await expect(page).toHaveURL('/');
 }
 
-async function authHeaders(page: Page): Promise<Record<string, string>> {
-	const token = await page.evaluate(() => localStorage.getItem('kesh:auth:accessToken'));
-	if (!token) throw new Error('JWT introuvable post-login');
-	return { Authorization: `Bearer ${token}` };
-}
-
+/**
+ * Monte le compte bancaire du scénario via l'API.
+ *
+ * ⚠️ Passe par `authedApiContext(page)` et NON par `page.request.*` avec un
+ * bearer lu en `localStorage` : depuis la Story 10-5, le JWT vit dans un
+ * **cookie HttpOnly** inaccessible au JS, et `readAccessTokenFromStorage` est
+ * marqué `@deprecated` — il rend toujours `null` en flux normal. Cette spec
+ * avait gardé son helper maison et échouait donc au MONTAGE, sur
+ * « JWT introuvable post-login », sans jamais atteindre ce qu'elle teste
+ * (issue #107, KF-030).
+ */
 async function ensureBankAccount(page: Page): Promise<number> {
-	const headers = await authHeaders(page);
-	const company = await page.request.get('/api/v1/companies/current', { headers });
-	if (company.ok()) {
-		const json = await company.json();
-		if (Array.isArray(json.bankAccounts) && json.bankAccounts.length > 0) {
-			return json.bankAccounts[0].id as number;
+	const ctx = await authedApiContext(page);
+	try {
+		const company = await ctx.get('/api/v1/companies/current');
+		if (company.ok()) {
+			const json = await company.json();
+			if (Array.isArray(json.bankAccounts) && json.bankAccounts.length > 0) {
+				return json.bankAccounts[0].id as number;
+			}
 		}
+		// ⚠️ Route CRUD, et NON `/api/v1/onboarding/bank-account` : cette dernière
+		// refuse désormais en 400 `ONBOARDING_STEP_ALREADY_COMPLETED` sur le seed
+		// `with-company`, qui marque l'étape franchie SANS créer de compte. Monter
+		// un décor par une route d'onboarding était un abus qui s'est retourné le
+		// jour où elle a gagné sa garde (issue #107, KF-030).
+		const res = await ctx.post('/api/v1/bank-accounts', {
+			data: {
+				bankName: 'UBS Test',
+				iban: TEST_IBAN,
+				qrIban: null,
+				isPrimary: true,
+			},
+		});
+		expect(res.ok(), `bank-account create failed: ${res.status()}`).toBeTruthy();
+		const created = await res.json();
+		return created.id ?? 1;
+	} finally {
+		await disposeContextSafe(ctx);
 	}
-	const res = await page.request.post('/api/v1/onboarding/bank-account', {
-		headers,
-		data: {
-			bankName: 'UBS Test',
-			iban: TEST_IBAN,
-			qrIban: null,
-			isPrimary: true,
-		},
-	});
-	expect(res.ok()).toBeTruthy();
-	return (await res.json()).id ?? 1;
 }
 
 async function uploadFile(page: Page, filePath: string): Promise<void> {
