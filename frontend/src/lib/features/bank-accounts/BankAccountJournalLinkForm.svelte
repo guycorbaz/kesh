@@ -11,6 +11,7 @@
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { notifySuccess } from '$lib/shared/utils/notify';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+	import { withCurrentAccount } from '$lib/features/accounts/account-options';
 	import {
 		updateBankAccountJournalLink,
 		type BankAccountSummary,
@@ -52,6 +53,11 @@
 			)
 			.sort((a, b) => a.number.localeCompare(b.number)),
 	);
+
+	// Issue #271 : un compte lié AVANT de devenir non-postable — ou d'être
+	// archivé — disparaîtrait de ces options, laissant le champ vide alors que
+	// la liaison existe, et se laisserait effacer au premier `change`.
+	const accountOptions = $derived(withCurrentAccount(eligibleAccounts, selectedAccountId, accounts));
 
 	// Désactiver submit si pas de changement (KF-004 no-op cohérent UX).
 	const isNoOp = $derived(selectedAccountId === bankAccount.journalAccountId);
@@ -142,7 +148,7 @@
 			<option value={null}
 				>{i18nMsg('bank-accounts-labels-not-configured', 'Non configuré')}</option
 			>
-			{#each eligibleAccounts as acc (acc.id)}
+			{#each accountOptions as acc (acc.id)}
 				<option value={acc.id}>
 					{acc.number} — {acc.name}
 				</option>

@@ -4,6 +4,7 @@
 <script lang="ts">
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+	import { withCurrentAccount } from '$lib/features/accounts/account-options';
 	import { listProjects } from '$lib/features/projects/projects.api';
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import { createRule, updateRule } from './rules.api';
@@ -46,6 +47,14 @@
 				a.postable && // 14-3b : le compte de la règle sera effectivement posté
 				(a.accountType === 'Expense' || a.accountType === 'Revenue'),
 		),
+	);
+
+	// Issue #271 : une règle EXISTANTE dont le compte de contrepartie est devenu
+	// non-postable — ou archivé — depuis sa création. Sans réintroduction, le
+	// champ s'affiche vide sur une règle pourtant complète, et la validation
+	// « compte requis » réclame une saisie que l'utilisateur croit déjà faite.
+	const accountOptions = $derived(
+		withCurrentAccount(eligibleAccounts, counterpartyAccountId, accounts),
 	);
 
 	async function handleSubmit(e: SubmitEvent) {
@@ -190,7 +199,7 @@
 			data-testid="rule-form-counterparty"
 		>
 			<option value={null}>—</option>
-			{#each eligibleAccounts as a (a.id)}
+			{#each accountOptions as a (a.id)}
 				<option value={a.id}>{a.number} — {a.name}</option>
 			{/each}
 		</select>

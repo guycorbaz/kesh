@@ -284,6 +284,10 @@
 			sortBy = column;
 			sortDirection = 'Asc';
 		}
+		// Repartir de la première page : un nouveau tri avec un offset hérité
+		// montre une tranche arbitraire du nouvel ordre (issue #257). `invoices`
+		// et `products` le font déjà ; cette page était la seule à ne pas le faire.
+		offset = 0;
 	}
 
 	// --- Form handlers ---
@@ -638,6 +642,7 @@
 			<select
 				id="filter-type"
 				bind:value={filterType}
+				onchange={() => (offset = 0)}
 				class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 			>
 				<option value="">{i18nMsg('contact-filter-type-all', 'Tous les types')}</option>
@@ -657,6 +662,7 @@
 			<select
 				id="filter-is-client"
 				bind:value={filterIsClient}
+				onchange={() => (offset = 0)}
 				class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 			>
 				<option value="">—</option>
@@ -670,6 +676,7 @@
 			<select
 				id="filter-is-supplier"
 				bind:value={filterIsSupplier}
+				onchange={() => (offset = 0)}
 				class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 			>
 				<option value="">—</option>
@@ -679,7 +686,12 @@
 		</div>
 
 		<label class="flex items-center gap-2 text-sm pb-2">
-			<input type="checkbox" bind:checked={includeArchived} class="w-4 h-4" />
+			<input
+				type="checkbox"
+				bind:checked={includeArchived}
+				onchange={() => (offset = 0)}
+				class="w-4 h-4"
+			/>
 			{i18nMsg('contact-filter-archived', 'Inclure archivés')}
 		</label>
 
