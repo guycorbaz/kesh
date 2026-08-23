@@ -8,6 +8,26 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.11.1] — 2026-08-24
+
+**Correctif.** Trois défauts qui avaient en commun de ne rien dire : l'écran se comportait mal sans le signaler, et l'utilisateur ne pouvait pas savoir que quelque chose avait mal tourné. **La mise à jour est recommandée à qui importe des relevés bancaires** — la fonction était inutilisable.
+
+Aucune modification de la base de données ; un retour à 0.11.0 reste possible.
+
+### Corrigé
+
+- ⚠️ **L'écran d'import bancaire se vidait dès qu'on y déposait un fichier CAMT.053.** La zone de dépôt, la prévisualisation, les messages — tout disparaissait d'un coup, sans erreur ni explication, et l'import était **impossible**. Le défaut ne touchait que le format CAMT.053 (les imports CSV avec profil n'étaient pas concernés) et il est présent depuis plusieurs versions. ([#107](https://github.com/guycorbaz/kesh/issues/107))
+
+  *Ce qu'il s'était passé* : le serveur omet un champ facultatif quand il est vide — ce qui est le cas normal d'un relevé CAMT.053 —, et l'interface, qui le croyait toujours présent, s'interrompait en cours d'affichage.
+
+- **Un compte de facturation pouvait s'effacer tout seul.** Si un compte configuré dans *Paramètres → Facturation* — ou sur une règle de réconciliation, ou sur le lien comptable d'un compte bancaire — devenait ensuite **non imputable** (ce qui arrive quand on lui ajoute un sous-compte), il disparaissait de la liste déroulante : le champ s'affichait **vide** alors que la valeur était bien enregistrée. Toucher ce champ suffisait alors à effacer la configuration, et la facturation suivante échouait sur une erreur qui ne nommait pas la cause. Le compte enregistré reste désormais visible et sélectionné. ([#271](https://github.com/guycorbaz/kesh/issues/271))
+
+- **Le filtre « Statut » de la liste des factures pouvait afficher une liste vide trompeuse.** Depuis la page 2 ou 3, choisir un statut peu représenté laissait la pagination où elle était : la liste paraissait vide alors que le filtre avait bien fonctionné. Le même défaut est corrigé sur les filtres du carnet d'adresses (type, client, fournisseur, archivés) et sur son tri. ([#257](https://github.com/guycorbaz/kesh/issues/257))
+
+- **Accessibilité** : dans la liste des profils d'import CSV, la colonne d'actions n'avait pas de nom — un lecteur d'écran l'annonçait sans intitulé. Elle en porte désormais un, lu mais non affiché.
+
+---
+
 ## [0.11.0] — 2026-08-23
 
 **Kesh parlait français à ceux qui ne l'avaient pas choisi, et rien ne le signalait.** Sur une partie des écrans, un utilisateur ayant réglé Kesh en allemand, en italien ou en anglais lisait des libellés **en français** — non pas des clés brutes ou des messages d'erreur, mais du **français correct**, indiscernable d'une traduction volontaire. Cette version comble le manque et pose les garde-fous qui l'empêchent de revenir.
