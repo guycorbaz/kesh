@@ -8,6 +8,36 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.11.0] — 2026-08-23
+
+**Kesh parlait français à ceux qui ne l'avaient pas choisi, et rien ne le signalait.** Sur une partie des écrans, un utilisateur ayant réglé Kesh en allemand, en italien ou en anglais lisait des libellés **en français** — non pas des clés brutes ou des messages d'erreur, mais du **français correct**, indiscernable d'une traduction volontaire. Cette version comble le manque et pose les garde-fous qui l'empêchent de revenir.
+
+**La mise à jour est sans verrou** : aucune modification de la base de données, aucune version minimale requise. Un retour à 0.10.0 reste possible.
+
+### Corrigé
+
+- **Les quatre langues disent désormais la même chose, partout.** Les catalogues comptent **1630 libellés chacun, rigoureusement les mêmes** — contre 1273 en français et 1216 dans les trois autres langues auparavant. **1600 messages ont été écrits** : 358 nouveaux libellés français, et 414 dans chacune des trois autres langues. Les écrans concernés sont ceux des **factures fournisseurs**, de la **réconciliation bancaire**, des **rapports**, des **avoirs**, des **lots de paiement**, des **réglages**, du **carnet d'adresses**, de la **mise en route** et de la **liste des factures**. ([#316](https://github.com/guycorbaz/kesh/issues/316), [#283](https://github.com/guycorbaz/kesh/issues/283))
+
+  **Pourquoi personne ne l'avait vu.** Quand un libellé manque au catalogue, Kesh ne se plaint pas : il retombe sur un texte français inscrit dans le code, et le serveur sert le français comme base des trois autres langues. **Un oubli de traduction produisait donc du français correct, avec tous les contrôles au vert.** C'est le pire mode de défaillance qui soit — celui qui ne fait aucun bruit.
+
+- ⚠️ **Six messages disaient la mauvaise chose EN FRANÇAIS — c'est le seul point de cette version qui concerne un utilisateur francophone.** Six libellés étaient partagés par des écrans qui n'en attendaient pas le même sens. Le plus visible : **dix messages d'erreur de la mise en route s'effondraient tous sur « Erreur interne »**, là où chacun devait nommer ce qui n'allait pas — le plan comptable, l'exercice, le compte bancaire. Chaque écran a retrouvé son message. ([#330](https://github.com/guycorbaz/kesh/issues/330))
+
+- **Le statut d'une facture fournisseur s'affichait en français dans les quatre langues.** « Ouverte », « Payée » et « Annulée » étaient écrits en dur dans le code — un germanophone lisait donc « Status » au-dessus de « Payée », sur **chaque ligne** de la liste et en badge sur chaque fiche.
+
+- **Une même étiquette servait deux grandeurs différentes sur les factures fournisseurs**, et le défaut n'attendait que la traduction pour se voir : le total **TTC** d'une facture et le montant **hors taxe** d'une ligne partageaient un libellé. Une valeur unique au catalogue se serait imposée aux deux, affichant « TTC » au-dessus de montants hors taxe. Les deux étiquettes sont désormais distinctes. *(Trois cas de même nature ont été trouvés et corrigés sur les lots de paiement et la mise en route.)*
+
+- **L'écran de facturation des réglages et la liste des factures affichaient du français en dur**, sans jamais demander de traduction — pour l'écran de facturation, **douze traductions dormaient au catalogue depuis des mois** sans que rien ne les affiche. ([#328](https://github.com/guycorbaz/kesh/issues/328), [#255](https://github.com/guycorbaz/kesh/issues/255))
+
+### Interne, invisible de l'utilisateur
+
+- **Six garde-fous** empêchent désormais la réapparition silencieuse du défaut : un libellé demandé et absent d'une langue, une langue qui perd un libellé que les trois autres ont, un texte écrit en dur sans passer par la traduction, une étiquette qui repart servir deux sens, un paramètre de message qui ne correspond plus. Chacun a été **éprouvé en recréant le défaut qu'il prétend voir** — la liste des exceptions tolérées est vide, et un test refuse qu'on l'y remplisse.
+
+### Ce que cette version ne garantit pas
+
+⚠️ **Les traductions n'ont pas été relues par des locuteurs natifs.** Un glossaire fixe la terminologie comptable suisse (MWST, Geschäftsjahr, aliquota…) et des contrôles systématiques ont écarté les collisions de sens, mais **rien ne garantit le naturel de la langue**. Trois imperfections connues restent à traiter : deux termes allemands, italiens et anglais qui confondent des notions que le français distingue — « clôturer » et « fermer », « valider » et « enregistrer » ([#323](https://github.com/guycorbaz/kesh/issues/323), [#324](https://github.com/guycorbaz/kesh/issues/324)) — et six chaînes allemandes écrivant `MwSt` au lieu de la forme suisse `MWST` ([#321](https://github.com/guycorbaz/kesh/issues/321)). Aucune n'affecte l'utilisation en français.
+
+---
+
 ## [0.10.0] — 2026-08-19
 
 ⚠️ **Cette version ne se désinstalle pas : après la mise à jour, un retour à Kesh 0.9.0 ou antérieur est impossible.** La base de données porte désormais une version minimale requise de `0.10.0`, et un binaire plus ancien **refuse de démarrer** contre elle plutôt que de l'abîmer en silence. Il refuse également d'importer une sauvegarde produite par cette version. **Si vous tenez à pouvoir revenir en arrière, faites une sauvegarde AVANT de mettre à jour** : elle restera lisible par la version dont elle provient. Ce verrou est volontaire — la reprise du numéro de client décrite plus bas change la façon dont les données sont écrites, et une version antérieure les écrirait de nouveau sans forme canonique, hors de la contrainte d'unicité et **sans qu'aucun message ne le signale**.
