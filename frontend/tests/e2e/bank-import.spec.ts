@@ -145,7 +145,12 @@ test('shows balance mismatch warning and accepts override', async ({ page }) => 
 		.setInputFiles(FIXTURE_BALANCE_MISMATCH);
 
 	// Warning visible.
-	await expect(page.getByTestId('preview-warnings')).toBeVisible();
+	// ⚠️ `preview-warnings` n'a JAMAIS existé côté composant — vérifié au grep
+	// sur tout `src/` : le seul porteur du testid était cette ligne. Le
+	// conteneur réel est nommé d'après le warning qu'il porte, ce qui est plus
+	// discriminant : un test qui attend « un warning quelconque » passerait sur
+	// le mauvais (issue #107, KF-030).
+	await expect(page.getByTestId('warning-balance-mismatch')).toBeVisible();
 
 	// Confirm bouton désactivé tant que la checkbox confirmBalanceMismatch
 	// n'est pas cochée.
