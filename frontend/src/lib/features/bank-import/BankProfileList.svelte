@@ -51,7 +51,15 @@
 					<th class="text-left">{i18nMsg('bank-import-profile-labels-bank-name', 'Banque')}</th>
 					<th class="text-left">{i18nMsg('bank-import-profile-labels-filename-pattern', 'Pattern')}</th>
 					<th class="text-left">{i18nMsg('bank-import-profile-labels-encoding', 'Encodage')}</th>
-					<th></th>
+					<th class="text-left">
+						<!-- L'en-tête de la colonne d'actions était VIDE : `axe` le relève en
+						     `empty-table-header`, un lecteur d'écran annonçant une colonne sans
+						     nom. Le libellé est masqué visuellement mais lu — même patron que
+						     `ReconciliationProposals.svelte:238`. -->
+						<span class="sr-only">
+							{i18nMsg('bank-import-profile-labels-actions', 'Actions')}
+						</span>
+					</th>
 				</tr>
 			</thead>
 			<tbody>

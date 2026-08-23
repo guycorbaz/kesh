@@ -20,7 +20,13 @@
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import path from 'path';
-import { seedTestState, clearAuthStorage } from './helpers/test-state';
+import { fileURLToPath } from 'url';
+import {
+	seedTestState,
+	clearAuthStorage,
+	authedApiContext,
+	disposeContextSafe,
+} from './helpers/test-state';
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
@@ -36,6 +42,45 @@ async function login(page: Page): Promise<void> {
 	await page.fill('#password', 'admin123');
 	await page.click('button[type="submit"]');
 	await expect(page).toHaveURL('/');
+}
+
+// ⚠️ `__dirname` n'existe PAS ici : ce fichier est un module ESM, et les trois
+// `setInputFiles` de cette spec le référençaient — `ReferenceError` à
+// l'exécution. Les autres specs à fixtures calculent déjà leur répertoire
+// ainsi (`bank-import.spec.ts:33`) ; celle-ci était la seule à ne pas le faire.
+const FIXTURE_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
+
+const TEST_IBAN = 'CH4431999123000889012';
+
+/**
+ * Monte le compte bancaire dont les scénarios CSV ont besoin.
+ *
+ * ⚠️ **Cette spec n'en montait AUCUN**, alors que trois de ses tests
+ * sélectionnent un compte dans `bank-account-select`. Le seed `with-company`
+ * crée les comptes du plan comptable mais **pas** de `bank_account` : le
+ * `<select>` n'avait que son option de garde, et `selectOption({ index: 1 })`
+ * échouait sur « did not find some options ». Les tests dépendaient donc d'un
+ * décor laissé par une autre spec — c'est-à-dire de l'ordre d'exécution
+ * (issue #107, KF-030).
+ *
+ * ⚠️ Route CRUD, et NON `/api/v1/onboarding/bank-account` : cette dernière rend
+ * 400 `ONBOARDING_STEP_ALREADY_COMPLETED` sur ce seed.
+ */
+async function ensureBankAccount(page: Page): Promise<void> {
+	const ctx = await authedApiContext(page);
+	try {
+		const company = await ctx.get('/api/v1/companies/current');
+		if (company.ok()) {
+			const json = await company.json();
+			if (Array.isArray(json.bankAccounts) && json.bankAccounts.length > 0) return;
+		}
+		const res = await ctx.post('/api/v1/bank-accounts', {
+			data: { bankName: 'UBS Test', iban: TEST_IBAN, qrIban: null, isPrimary: true },
+		});
+		expect(res.ok(), `bank-account create failed: ${res.status()}`).toBeTruthy();
+	} finally {
+		await disposeContextSafe(ctx);
+	}
 }
 
 test('lists bank profiles page accessible', async ({ page }) => {
@@ -110,12 +155,13 @@ test('accessibility — profile pages axe scan zero violations', async ({ page }
 
 test('shows BANK_CSV_NO_PROFILE_MATCH on CSV upload without profile', async ({ page }) => {
 	await login(page);
+	await ensureBankAccount(page);
 	await page.goto('/bank-import');
 	await expect(page.getByTestId('bank-import-page-title')).toBeVisible();
 	await page.getByTestId('bank-account-select').selectOption({ index: 1 });
 	await page
 		.getByTestId('bank-import-file-input')
-		.setInputFiles(path.join(__dirname, 'fixtures', 'csv_utf8_minimal.csv'));
+		.setInputFiles(path.join(FIXTURE_DIR, 'csv_utf8_minimal.csv'));
 
 	const error = page.getByTestId('bank-import-error');
 	await expect(error).toBeVisible();
@@ -127,12 +173,13 @@ test('shows BANK_CSV_NO_PROFILE_MATCH on CSV upload without profile', async ({ p
 
 test('displays partial failure error panel with line numbers', async ({ page }) => {
 	await login(page);
+	await ensureBankAccount(page);
 	await page.goto('/bank-import');
 	await expect(page.getByTestId('bank-import-page-title')).toBeVisible();
 	await page.getByTestId('bank-account-select').selectOption({ index: 1 });
 	await page
 		.getByTestId('bank-import-file-input')
-		.setInputFiles(path.join(__dirname, 'fixtures', 'csv_partial_failure.csv'));
+		.setInputFiles(path.join(FIXTURE_DIR, 'csv_partial_failure.csv'));
 
 	// Sans profil bancaire configuré, on attend le 404 NO_PROFILE_MATCH
 	// (pas le 422 PARTIAL_FAILURE — le parsing n'est pas atteint).
@@ -147,6 +194,7 @@ test('displays partial failure error panel with line numbers', async ({ page }) 
 // complet (création profil → upload CSV → preview → parser → success).
 test('uploads CSV with matching profile end-to-end', async ({ page }) => {
 	await login(page);
+	await ensureBankAccount(page);
 
 	// Étape 1 — créer un profil bancaire qui matche `csv_utf8_minimal.csv`.
 	await page.goto('/bank-import/profiles/new');
@@ -172,7 +220,7 @@ test('uploads CSV with matching profile end-to-end', async ({ page }) => {
 	await page.getByTestId('bank-account-select').selectOption({ index: 1 });
 	await page
 		.getByTestId('bank-import-file-input')
-		.setInputFiles(path.join(__dirname, 'fixtures', 'csv_utf8_minimal.csv'));
+		.setInputFiles(path.join(FIXTURE_DIR, 'csv_utf8_minimal.csv'));
 
 	// Étape 3 — preview affiché avec 3 transactions (cf. fixture).
 	await expect(page.getByTestId('bank-import-preview')).toBeVisible();

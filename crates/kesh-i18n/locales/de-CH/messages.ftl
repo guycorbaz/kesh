@@ -816,6 +816,7 @@ bank-import-profile-labels-date-format = Datumsformat (chrono)
 bank-import-profile-labels-decimal-separator = Dezimaltrennzeichen
 bank-import-profile-labels-field-separator = Feldtrennzeichen
 bank-import-profile-labels-encoding = Encoding (optional)
+bank-import-profile-labels-actions = Aktionen
 bank-import-profile-labels-header-row-count = Anzahl Header-Zeilen (0-5)
 bank-import-profile-labels-column-mapping = Spaltenzuordnung (0-indiziert)
 bank-import-profile-labels-use-debit-credit-split = Getrennte Soll-/Haben-Spalten

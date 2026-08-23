@@ -91,13 +91,23 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * le moissonneur ne relève que les clés *demandées et absentes*, et la parité ne compare que
  * les catalogues entre eux. Une clé traduite que personne n'appelle est invisible des deux.
  *
+ * ⚠️ **1568 → 1569, +1 pour un en-tête de tableau qui n'existait pas** : la colonne d'actions
+ * de `BankProfileList.svelte` portait un `<th></th>` **vide**, qu'`axe` relève en
+ * `empty-table-header` — un lecteur d'écran annonce une colonne sans nom. Le libellé est
+ * masqué visuellement (`sr-only`) mais lu, sur le patron de `ReconciliationProposals:238`.
+ * ⚠️ **Ce n'est PAS un libellé déplacé : c'est un libellé qui manquait.** Le site est donc neuf,
+ * et la clé `bank-import-profile-labels-actions` aussi — relevée et non inventée, les quatre
+ * formes étant attestées par `reconciliation-cols-actions`. Trouvé par le scan axe de
+ * `bank-csv-import.spec.ts`, qui échouait depuis assez longtemps pour que la violation
+ * s'installe (issue #107, KF-030).
+ *
  * ⚠️ **33 → 34 sites non résolus, et c'est LÉGITIME** : `getGroupLabel`
  * (`routes/(app)/+layout.svelte`) est le symétrique exact de `getItemLabel`, deux lignes plus
  * haut et déjà de la liste — la clé est portée par la donnée, pas par le site d'appel. Un
  * dispatcher n'est pas une clé manquante.
  */
 const ATTENDU = {
-	sitesTotal: 1568,
+	sitesTotal: 1569,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

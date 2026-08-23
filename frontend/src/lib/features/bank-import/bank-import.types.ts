@@ -46,7 +46,15 @@ export interface PreviewWarnings {
 	duplicateFile?: DuplicateFilePayload | null;
 	duplicateLines: DuplicateLineWarning[];
 	invalidLines?: InvalidLinesPayload | null;
-	informational: string[];
+	/**
+	 * ⚠️ **Optionnel, parce que le backend l'OMET quand la liste est vide** :
+	 * `#[serde(skip_serializing_if = "Vec::is_empty")]` sur
+	 * `bank_imports.rs`. C'est le cas normal de tout import CAMT.053 — le
+	 * champ ne sert qu'aux profils CSV. Le déclarer obligatoire a fait
+	 * planter le rendu du preview sur `undefined.length`, rendant l'écran
+	 * d'import inutilisable dès qu'on y déposait un fichier.
+	 */
+	informational?: string[];
 }
 
 export interface BalanceMismatchPayload {

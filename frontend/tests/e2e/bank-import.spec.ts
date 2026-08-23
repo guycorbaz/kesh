@@ -23,7 +23,12 @@ import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { seedTestState, clearAuthStorage } from './helpers/test-state';
+import {
+	seedTestState,
+	clearAuthStorage,
+	authedApiContext,
+	disposeContextSafe,
+} from './helpers/test-state';
 
 const FIXTURE_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const FIXTURE_MINIMAL = path.join(FIXTURE_DIR, 'camt053_v04_minimal.xml');
@@ -48,65 +53,50 @@ async function login(page: Page): Promise<void> {
 }
 
 /**
- * Récupère le JWT stocké en localStorage par l'auth-store post-login
- * (review code Pass 1 M11) — `page.request.*` ne partage pas l'auth
- * de la page (pas de cookies dans cette stack JWT-in-memory). On lit
- * `kesh:auth:accessToken` directement et on l'injecte en bearer.
- *
- * Review code Pass 2 L4 : try/catch défensif autour de
- * `localStorage.getItem` — privacy mode browser ou quota plein peuvent
- * lever (rare mais a déjà cassé des CI flaky historiquement). Le throw
- * reste explicite pour échec rapide, juste avec un meilleur diag.
- */
-async function authHeaders(page: Page): Promise<Record<string, string>> {
-	let token: string | null = null;
-	try {
-		token = await page.evaluate(() => {
-			try {
-				return localStorage.getItem('kesh:auth:accessToken');
-			} catch {
-				return null;
-			}
-		});
-	} catch (err) {
-		throw new Error(
-			`localStorage inaccessible (privacy mode ou quota ?) : ${String(err)}`,
-		);
-	}
-	if (!token) {
-		throw new Error(
-			'JWT introuvable en localStorage post-login (auth-store cleared ou login fail ?)',
-		);
-	}
-	return { Authorization: `Bearer ${token}` };
-}
-
-/**
  * Configure un bank_account via l'API onboarding (le seul endpoint
  * exposé v0.1). Idempotent : vérifie qu'un bank_account existe avant
  * de tenter la création. M11 : passe le JWT en header explicite.
  */
+/**
+ * Monte le compte bancaire du scénario via l'API.
+ *
+ * ⚠️ Passe par `authedApiContext(page)` et NON par `page.request.*` avec un
+ * bearer lu en `localStorage` : depuis la Story 10-5, le JWT vit dans un
+ * **cookie HttpOnly** inaccessible au JS, et `readAccessTokenFromStorage` est
+ * marqué `@deprecated` — il rend toujours `null` en flux normal. Cette spec
+ * avait gardé son helper maison et échouait donc au MONTAGE, sur
+ * « JWT introuvable post-login », sans jamais atteindre ce qu'elle teste
+ * (issue #107, KF-030).
+ */
 async function ensureBankAccount(page: Page): Promise<number> {
-	const headers = await authHeaders(page);
-	const company = await page.request.get('/api/v1/companies/current', { headers });
-	if (company.ok()) {
-		const json = await company.json();
-		if (Array.isArray(json.bankAccounts) && json.bankAccounts.length > 0) {
-			return json.bankAccounts[0].id as number;
+	const ctx = await authedApiContext(page);
+	try {
+		const company = await ctx.get('/api/v1/companies/current');
+		if (company.ok()) {
+			const json = await company.json();
+			if (Array.isArray(json.bankAccounts) && json.bankAccounts.length > 0) {
+				return json.bankAccounts[0].id as number;
+			}
 		}
+		// ⚠️ Route CRUD, et NON `/api/v1/onboarding/bank-account` : cette dernière
+		// refuse désormais en 400 `ONBOARDING_STEP_ALREADY_COMPLETED` sur le seed
+		// `with-company`, qui marque l'étape franchie SANS créer de compte. Monter
+		// un décor par une route d'onboarding était un abus qui s'est retourné le
+		// jour où elle a gagné sa garde (issue #107, KF-030).
+		const res = await ctx.post('/api/v1/bank-accounts', {
+			data: {
+				bankName: 'UBS Test',
+				iban: TEST_IBAN,
+				qrIban: null,
+				isPrimary: true,
+			},
+		});
+		expect(res.ok(), `bank-account create failed: ${res.status()}`).toBeTruthy();
+		const created = await res.json();
+		return created.id ?? 1;
+	} finally {
+		await disposeContextSafe(ctx);
 	}
-	const res = await page.request.post('/api/v1/onboarding/bank-account', {
-		headers,
-		data: {
-			bankName: 'UBS Test',
-			iban: TEST_IBAN,
-			qrIban: null,
-			isPrimary: true,
-		},
-	});
-	expect(res.ok(), `bank-account create failed: ${res.status()}`).toBeTruthy();
-	const created = await res.json();
-	return created.id ?? 1;
 }
 
 test('imports a CAMT.053 v04 file end-to-end', async ({ page }) => {
@@ -155,7 +145,12 @@ test('shows balance mismatch warning and accepts override', async ({ page }) => 
 		.setInputFiles(FIXTURE_BALANCE_MISMATCH);
 
 	// Warning visible.
-	await expect(page.getByTestId('preview-warnings')).toBeVisible();
+	// ⚠️ `preview-warnings` n'a JAMAIS existé côté composant — vérifié au grep
+	// sur tout `src/` : le seul porteur du testid était cette ligne. Le
+	// conteneur réel est nommé d'après le warning qu'il porte, ce qui est plus
+	// discriminant : un test qui attend « un warning quelconque » passerait sur
+	// le mauvais (issue #107, KF-030).
+	await expect(page.getByTestId('warning-balance-mismatch')).toBeVisible();
 
 	// Confirm bouton désactivé tant que la checkbox confirmBalanceMismatch
 	// n'est pas cochée.
@@ -201,15 +196,24 @@ test('lists previous imports paginated', async ({ page }) => {
 	const accountId = await ensureBankAccount(page);
 	const fs = await import('fs');
 	const buf = fs.readFileSync(FIXTURE_MINIMAL);
-	const headers = await authHeaders(page);
-	const res = await page.request.post('/api/v1/bank-imports', {
-		headers,
-		multipart: {
-			bankAccountId: accountId.toString(),
-			file: { name: 'v04_minimal.xml', mimeType: 'application/xml', buffer: buf },
-		},
-	});
-	expect(res.status()).toBe(201);
+	const ctx = await authedApiContext(page);
+	try {
+		const res = await ctx.post('/api/v1/bank-imports', {
+			multipart: {
+				bankAccountId: accountId.toString(),
+				file: { name: 'v04_minimal.xml', mimeType: 'application/xml', buffer: buf },
+				// ⚠️ Ce test veut QU'UN import existe, pas qu'il soit le premier : la
+				// même fixture a déjà été importée par le scénario end-to-end, qui
+				// tourne avant lui sur la base partagée. Sans ce drapeau, le POST rend
+				// **422** (doublon de fichier) et l'échec dépend de l'ORDRE des tests,
+				// pas du code — il changeait de test d'un run à l'autre (issue #107).
+				confirmDuplicateFile: 'true',
+			},
+		});
+		expect(res.status()).toBe(201);
+	} finally {
+		await disposeContextSafe(ctx);
+	}
 
 	await page.reload();
 	await expect(page.getByTestId('bank-import-list')).toBeVisible();

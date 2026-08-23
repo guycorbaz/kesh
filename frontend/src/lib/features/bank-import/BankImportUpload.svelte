@@ -540,9 +540,9 @@
 			     le code brut. Sans cette transformation, l'utilisateur voyait
 			     `bank_csv_profile_auto_matched` en clair. La clé i18n suit le
 			     pattern `bank-import-info-<snake_to_kebab(info)>`. -->
-			{#if preview.warnings.informational.length > 0}
+			{#if (preview.warnings.informational?.length ?? 0) > 0}
 				<div class="mt-4 rounded border border-border p-3" data-testid="warning-informational">
-					{#each preview.warnings.informational as info (info)}
+					{#each preview.warnings.informational ?? [] as info (info)}
 						<p class="text-sm" data-info-code={info}>
 							{i18nMsg(`bank-import-info-${info.replace(/_/g, '-')}`, info)}
 						</p>
