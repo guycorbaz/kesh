@@ -298,6 +298,7 @@
 		<select
 			id="invoice-status-filter"
 			bind:value={statusFilter}
+			onchange={() => (offset = 0)}
 			class="h-9 rounded-md border border-border bg-background px-2 text-sm"
 		>
 			<option value="">Tous les statuts</option>

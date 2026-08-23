@@ -5,6 +5,7 @@
 	import { notifyError, notifySuccess } from '$lib/shared/utils/notify';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { authState } from '$lib/app/stores/auth.svelte';
+	import { withCurrentAccount } from '$lib/features/accounts/account-options';
 	import {
 		getInvoiceSettings,
 		updateInvoiceSettings,
@@ -55,6 +56,18 @@
 	let liabilityAccounts = $derived(
 		accounts.filter((a) => a.active && a.postable && a.accountType === 'Liability'),
 	);
+
+	// Issue #271 : chaque `<select>` a SA liste, parce que chacun a sa valeur
+	// courante — deux champs partageant `assetAccounts` ne réintroduisent pas le
+	// même compte. Sans cela, un compte devenu non-postable après configuration
+	// disparaît de ses options, s'affiche vide, et s'efface au premier `change`.
+	let receivableOptions = $derived(withCurrentAccount(assetAccounts, receivableId, accounts));
+	let revenueOptions = $derived(withCurrentAccount(revenueAccounts, revenueId, accounts));
+	let vatPayableOptions = $derived(withCurrentAccount(liabilityAccounts, vatPayableId, accounts));
+	let vatRecoverableOptions = $derived(
+		withCurrentAccount(assetAccounts, vatRecoverableId, accounts),
+	);
+	let vatDecompteOptions = $derived(withCurrentAccount(liabilityAccounts, vatDecompteId, accounts));
 
 	let formatValidation = $derived(validateFormatTemplate(format));
 	let formatPreview = $derived(
@@ -228,7 +241,7 @@
 					bind:value={receivableId}
 				>
 					<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
-					{#each assetAccounts as a (a.id)}
+					{#each receivableOptions as a (a.id)}
 						<option value={a.id}>{a.number} — {a.name}</option>
 					{/each}
 				</select>
@@ -243,7 +256,7 @@
 					bind:value={revenueId}
 				>
 					<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
-					{#each revenueAccounts as a (a.id)}
+					{#each revenueOptions as a (a.id)}
 						<option value={a.id}>{a.number} — {a.name}</option>
 					{/each}
 				</select>
@@ -282,7 +295,7 @@
 					bind:value={vatPayableId}
 				>
 					<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
-					{#each liabilityAccounts as a (a.id)}
+					{#each vatPayableOptions as a (a.id)}
 						<option value={a.id}>{a.number} — {a.name}</option>
 					{/each}
 				</select>
@@ -297,7 +310,7 @@
 					bind:value={vatRecoverableId}
 				>
 					<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
-					{#each assetAccounts as a (a.id)}
+					{#each vatRecoverableOptions as a (a.id)}
 						<option value={a.id}>{a.number} — {a.name}</option>
 					{/each}
 				</select>
@@ -312,7 +325,7 @@
 					bind:value={vatDecompteId}
 				>
 					<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
-					{#each liabilityAccounts as a (a.id)}
+					{#each vatDecompteOptions as a (a.id)}
 						<option value={a.id}>{a.number} — {a.name}</option>
 					{/each}
 				</select>
