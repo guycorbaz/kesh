@@ -36,7 +36,14 @@ const FIXTURE_CSV_PARTIAL = path.join(FIXTURE_DIR, 'csv_partial_failure.csv');
 
 const TEST_IBAN = 'CH4431999123000889012';
 
-test.beforeAll(async () => {
+// ⚠️ `beforeEach`, et NON `beforeAll` : les tests de cette spec importent tous
+// les mêmes fixtures, donc chacun laisse en base de quoi faire dévier le
+// suivant — un fichier déjà vu, des lignes déjà vues. Avec un seed par spec,
+// l'échec dépendait de l'ORDRE et se déplaçait de test en test à chaque
+// correctif ; c'est la « base de gate piégée » du CLAUDE.md, transposée aux
+// E2E. Un seed par TEST supprime la classe entière plutôt que ses symptômes
+// (issue #107, KF-030).
+test.beforeEach(async () => {
 	await seedTestState('with-company');
 });
 
@@ -127,10 +134,35 @@ test('duplicate lines warning shows panel with skip-or-import radio', async ({ p
 	await login(page);
 	await ensureBankAccount(page);
 
-	// Premier upload — minimal, persiste 1 transaction.
+	// Ce test a besoin d'un ÉTAT : une transaction en base, que le second upload
+	// viendra chevaucher. Il ne teste pas la primeur du fichier.
+	//
+	// ⚠️ Sur la base PARTAGÉE, cet état peut déjà exister — une spec précédente a
+	// pu importer la même fixture. Le preview porte alors un avertissement de
+	// fichier déjà importé, et le bouton de confirmation reste désactivé tant
+	// qu'on ne lève pas DEUX gardes (le fichier, puis ses lignes). Forcer ce
+	// passage ferait exactement ce que le second upload doit mesurer.
+	//
+	// On constate donc l'état au lieu de le forcer : si la fixture est déjà en
+	// base, on annule et on passe à la suite. Sans cela, l'échec dépend de
+	// l'ORDRE des tests et se déplace d'un run à l'autre (issue #107).
 	await page.goto('/bank-import');
 	await uploadFile(page, FIXTURE_MINIMAL);
-	await page.getByTestId('bank-import-confirm').click();
+	// ⚠️ DEUX signaux, pas un : selon ce qu'une spec précédente a importé, le
+	// doublon se présente comme fichier déjà vu OU comme lignes déjà vues. Ne
+	// guetter que le premier laissait le bouton désactivé sur le second, et le
+	// clic partait en timeout.
+	const vu = async (id: string) =>
+		await page
+			.getByTestId(id)
+			.isVisible()
+			.catch(() => false);
+	const dejaEnBase = (await vu('confirm-duplicate-file')) || (await vu('confirm-duplicate-lines-skip'));
+	if (dejaEnBase) {
+		await page.getByTestId('bank-import-cancel').click();
+	} else {
+		await page.getByTestId('bank-import-confirm').click();
+	}
 	await expect(page.getByTestId('bank-import-preview')).toBeHidden();
 
 	// Second upload — overlap.xml, hash distinct mais 1 transaction

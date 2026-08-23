@@ -202,6 +202,12 @@ test('lists previous imports paginated', async ({ page }) => {
 			multipart: {
 				bankAccountId: accountId.toString(),
 				file: { name: 'v04_minimal.xml', mimeType: 'application/xml', buffer: buf },
+				// ⚠️ Ce test veut QU'UN import existe, pas qu'il soit le premier : la
+				// même fixture a déjà été importée par le scénario end-to-end, qui
+				// tourne avant lui sur la base partagée. Sans ce drapeau, le POST rend
+				// **422** (doublon de fichier) et l'échec dépend de l'ORDRE des tests,
+				// pas du code — il changeait de test d'un run à l'autre (issue #107).
+				confirmDuplicateFile: 'true',
 			},
 		});
 		expect(res.status()).toBe(201);
