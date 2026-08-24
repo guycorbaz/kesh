@@ -82,7 +82,13 @@ test.describe('Page exercices — création + clôture', () => {
 		// Clôturer.
 		const rowFy = page.locator('tr', { hasText: 'FY 2031' }).first();
 		await rowFy.getByRole('button', { name: /Clôturer/ }).click();
-		await page.getByRole('button', { name: /définitivement/ }).click();
+		// KF-047 (#344) — ⚠️ ce sélecteur visait `/définitivement/`, un mot qui
+		// n'existe PLUS dans ce dialogue : le libellé de confirmation dit « Clôturer »,
+		// et le corps explique qu'un administrateur peut rouvrir l'exercice. Le texte
+		// a donc été corrigé — **la clôture n'est pas définitive** — et le test est
+		// resté sur l'ancien mot. C'est l'angle mort de KF-043 (#326) : un sélecteur
+		// figé sur un libellé ne survit pas à sa correction. Visé par `data-testid`.
+		await page.getByTestId('fiscal-year-close-confirm').click();
 
 		// Le statut passe à Clôturé et le bouton Clôturer disparaît.
 		await expect(rowFy.getByText(/Clôturé/)).toBeVisible({ timeout: 5000 });
@@ -280,7 +286,12 @@ test.describe('AC #22 — fallback toast actionnable', () => {
 		// Assertion 1 : toast actionnable visible avec message NO/INVALID (« Créez d'abord »).
 		// svelte-sonner rend les toasts avec `data-sonner-toast=""` + `aria-live="polite"`
 		// (PAS de `role="alert"` — vérifié `node_modules/svelte-sonner/dist/Toast.svelte:344-360`).
-		const toast = page.locator('[data-sonner-toast]').filter({ hasText: /Créez d'abord un exercice/ });
+		// KF-047 (#344) — ⚠️ `d['’]abord` accepte les DEUX apostrophes, et ce n'est
+		// pas une coquetterie : le repli JS de `notify.ts` écrit l'apostrophe DROITE,
+		// le catalogue `fr-CH` la TYPOGRAPHIQUE. Le catalogue gagne — c'est lui qui
+		// s'affiche — et la regex figée sur `d'abord` ne matchait plus rien. La
+		// traduction a amélioré la typographie ; le sélecteur ne l'a pas suivie.
+		const toast = page.locator('[data-sonner-toast]').filter({ hasText: /Créez d['’]abord un exercice/ });
 		await expect(toast).toBeVisible({ timeout: 5000 });
 
 		// Assertion 2 : clic sur le bouton action "Ouvrir Paramètres" → navigation.
@@ -317,7 +328,7 @@ test.describe('AC #22 — fallback toast actionnable', () => {
 		await page.getByRole('button', { name: 'Valider' }).click();
 
 		// Assertion 1 : toast actionnable « Créez d'abord » (selector svelte-sonner data-sonner-toast).
-		const toast = page.locator('[data-sonner-toast]').filter({ hasText: /Créez d'abord un exercice/ });
+		const toast = page.locator('[data-sonner-toast]').filter({ hasText: /Créez d['’]abord un exercice/ });
 		await expect(toast).toBeVisible({ timeout: 5000 });
 
 		// Assertion 2 : clic action → navigation paramètres.
