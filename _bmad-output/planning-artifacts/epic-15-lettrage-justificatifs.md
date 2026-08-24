@@ -64,24 +64,82 @@ Tout est à construire, et rien n'est à défaire.
 n'existait qu'en ligne de suivi, sans aucune spécification. Le trou avait été relevé à la
 revue de projet — c'est un précédent à garder en tête pour les trois autres.
 
-## Questions à trancher à la spécification de la 15-1
+## Décisions du kickoff — arbitrages de Guy, 2026-08-24
+
+Les quatre questions ouvertes sont tranchées. Elles sont **normatives** pour la 15-1.
+
+### D1 — Le lettrage COMPLÈTE la réconciliation, il ne la remplace pas
+
+⚠️ **Établi au sol avant l'arbitrage** : `accept_one_invoice`
+(`reconciliation.rs:1096-1206`) apparie déjà transaction bancaire ↔ facture, **propose et
+fait valider**, puis pose `matched_entry_id`, `status = 'reconciled'` et `paid_at`. Le
+chemin « facture réglée par virement importé » est donc **entièrement couvert**, et par le
+geste même que Guy décrit pour le lettrage.
+
+Le lettrage vise ce que ce chemin ne voit pas :
+
+- les règlements **hors import bancaire** — espèces, compensation, virement non importé ;
+- les comptes **fournisseurs** ;
+- les **écritures manuelles** qui se soldent (acomptes, avances) ;
+- et surtout la vue **« qu'est-ce qui reste ouvert sur ce compte ? »**, qu'aucun écran ne
+  donne aujourd'hui.
+
+⚠️ **Conséquence à ne pas découvrir en développement : la vue doit lire les DEUX
+mécanismes.** Une facture réglée par la réconciliation porte `paid_at` **sans** être
+lettrée. Si l'écran ne regardait que `lettering_code`, il l'afficherait comme **ouverte** —
+c'est-à-dire qu'il mentirait précisément là où il doit informer. La définition de
+« ouvert » est donc *ni lettré ni marqué payé*, et c'est un critère d'acceptation, pas un
+détail d'implémentation.
+
+### D2 — Un lettrage, une facture, un règlement
+
+Pas de paiement **partiel** (facture réglée en plusieurs fois), pas de règlement **groupé**
+(un virement pour plusieurs factures) — les deux hors périmètre au début.
+
+⚠️ **Ce que cette borne coûte, écrit d'avance** : les factures relevant de ces deux cas
+resteront affichées comme **ouvertes**. C'est acceptable parce que rien ne se perd en
+silence — l'utilisateur les voit et sait pourquoi —, mais le règlement groupé est **courant
+chez un client qui reçoit plusieurs factures par mois**. À rouvrir dès que l'usage réel le
+demande, et le dire dans le manuel plutôt que de le laisser surprendre.
+
+### D3 — Lettrer sur un exercice clôturé : OUI. Délettrer : NON
+
+Le lettrage **ne modifie aucun montant** : il note qu'une créance est soldée. Il n'entre
+donc pas en conflit avec l'immuabilité post-clôture, et c'est **ce qui rend le lettrage à
+cheval réellement possible** — une facture de décembre payée en février se lettre après la
+clôture de l'exercice.
+
+Le délettrage reste refusé sur exercice clôturé, conformément à `epics.md`.
+
+⚠️ **Le motif de Guy — « la clôture ne devrait se faire que lorsqu'il n'y a plus
+d'écritures à passer » — ne suffit PAS à lui seul**, et il faut le dire : une créance
+client ouverte au 31.12 est **normale**, elle figure au bilan. Attendre que tout soit réglé
+pour clôturer reviendrait à ne jamais clôturer. C'est donc bien D3, et non l'ordre des
+opérations, qui rend le cas à cheval possible.
+
+### D4 — Écran dédié
+
+Un écran de lettrage propre, sur le modèle de Bexio. ⚠️ **Risque à traiter à la
+spécification** : il ressemblera à l'écran de réconciliation, qui propose déjà des
+appariements. Deux écrans voisins qui font des choses différentes se confondent — leur
+frontière doit être lisible **pour l'utilisateur**, pas seulement pour le développeur.
+
+## Questions résiduelles pour la spécification
 
 Elles ne se devinent pas depuis `epics.md`, dont les critères d'acceptation tiennent en
 six lignes. **Chacune change le schéma ou l'interface**, donc aucune ne peut attendre le
 développement.
 
-1. **Le lettrage est-il partiel ?** Un règlement de 1000 CHF pour deux factures de 600 et
-   400 ; un acompte de 300 sur une facture de 1000. ⚠️ Un `lettering_code` posé sur des
-   lignes entières ne sait pas exprimer un solde partiel — c'est le choix structurant de
-   l'epic, et le PRD ne le tranche pas.
-2. **Automatique ou manuel ?** La règle du dépôt *« un appariement automatique propose, il
-   ne crée jamais »* s'applique-t-elle ici ? Elle a été écrite pour les contacts et les
-   fournisseurs ; un lettrage proposé sur montant et date exact serait dans le même esprit.
-3. **Que devient le lettrage à la clôture ?** `epics.md` dit : délettrage refusé sur
-   exercice clôturé. Reste à décider ce qui se passe pour un lettrage **à cheval** sur deux
-   exercices — cas courant d'une facture de décembre payée en janvier.
-4. **Quel écran ?** Le lettrage se fait-il depuis le compte (vue « grand livre d'un
-   compte »), depuis la facture, ou depuis un écran dédié ? Le PRD n'en dit rien.
+1. **Sur quels critères Kesh propose-t-il ?** Montant exact et compte, référence de
+   facture repérée dans le libellé, fenêtre de dates ? La réconciliation a déjà un jeu de
+   critères éprouvé (`WINDOW_DAYS`, bornes sur la date de facture) — **s'en inspirer plutôt
+   que d'en inventer un second**, et dire lequel dans la spec.
+2. **Le lettrage porte-t-il sur la ligne ou sur l'écriture ?** `epics.md` prescrit
+   `lettering_code` sur `journal_entry_lines`. À confirmer contre D2 : avec un
+   appariement 1↔1, un code sur l'écriture suffirait peut-être — mais la ligne est le
+   niveau juste dès qu'on rouvrira le partiel ou le groupé.
+3. **Que voit-on dans l'écran dédié**, et comment se distingue-t-il de la réconciliation
+   pour un utilisateur qui n'a pas lu le code ? (cf. D4)
 
 ## Risques
 
