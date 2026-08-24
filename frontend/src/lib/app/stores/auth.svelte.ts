@@ -15,6 +15,7 @@
  */
 
 import { resetVatRatesCache } from '$lib/features/vat-rates';
+import { apiHealth } from '$lib/shared/utils/api-health.svelte';
 
 /**
  * CR Pass 3 ECH3-M4 — `BroadcastChannel` singleton pour la synchronisation
@@ -285,13 +286,30 @@ export const authState = {
 				console.warn(
 					`[auth] Hydration via /me returned non-OK status ${res.status} — backend may be temporarily unavailable`,
 				);
-				_currentUser = null;
-				_expiresIn = null;
+				// Issue #347 — ⚠️ NE PAS effacer l'identité ici. Un backend
+				// indisponible ne dit RIEN sur la validité de la session : le
+				// cookie HttpOnly est intact, seul le serveur est momentanément
+				// absent. Effacer faisait basculer `isAuthenticated` à faux, et
+				// `(app)/+layout.ts` éjectait l'utilisateur vers `/login` — où il
+				// ne peut pas se reconnecter, et où rien ne lui explique pourquoi.
+				// **Ne rien affirmer plutôt qu'affirmer faux.** Un 401 ultérieur,
+				// lui, effacera l'état : c'est la seule réponse qui prouve que la
+				// session ne vaut plus.
+				apiHealth.setDegraded();
 			}
 		} catch (error) {
 			console.error('[auth] Hydration via /me failed:', error instanceof Error ? error.message : String(error));
-			_currentUser = null;
-			_expiresIn = null;
+			// Issue #347 — même raisonnement que la branche 5xx ci-dessus : un
+			// échec RÉSEAU ne prouve pas que la session est invalide.
+			//
+			// ⚠️ `hydrate()` appelle `fetch` DIRECTEMENT et non `apiClient` : le
+			// signalement d'indisponibilité que ce dernier pose dans son propre
+			// `catch` ne s'applique donc pas ici, et c'est pourquoi la bannière
+			// restait invisible. Au démarrage à froid, `_currentUser` vaut déjà
+			// `null` : l'utilisateur non authentifié est toujours redirigé vers
+			// `/login` — mais il y voit désormais la bannière, au lieu d'un écran
+			// de connexion muet sur lequel il ne peut rien faire.
+			apiHealth.setDegraded();
 		} finally {
 			_hydrated = true;
 		}
