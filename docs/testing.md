@@ -226,8 +226,28 @@ par un **grep du symptôme**, pas par la suite — celle-ci en était structurel
 **Règle qui en découle** : un sélecteur E2E ne se fige jamais sur un libellé traduit, `data-testid`
 sans exception. Ne pas compter sur la suite pour le rattraper : elle ne le peut pas.
 
-⚠️ **Cette règle est une DISCIPLINE, donc invérifiable en l'état** — c'est la faiblesse que ce
-dépôt documente sous « on peut l'affirmer sans l'avoir fait ». **[KF-043 (#326)](https://github.com/guycorbaz/kesh/issues/326)**
+✅ **Cette règle n'est plus une simple discipline : une garde la tient** —
+`src/lib/shared/e2e-selecteurs-traduits.test.ts`, livrée le 2026-08-24 (option 2 de KF-043,
+arbitrage du Project Lead). Elle lit `tests/e2e/**/*.spec.ts` et relève les sélecteurs qui
+**localisent** par texte — `getByText`, `getByLabel`, `getByPlaceholder`, `has-text(…)`,
+`getByRole(…, { name: '…' })` — quand la chaîne ressemble à du français.
+
+⚠️ **Elle est née PLEINE, et c'est délibéré** : le relevé initial rend 101 occurrences, soit
+**43 couples (fichier, libellé) distincts** sur 14 fichiers, tolérés nommément dans
+`DETTE_CONNUE`. Sa fonction n'est pas de résorber cette dette mais **d'empêcher qu'elle
+grossisse** — un sélecteur neuf figé sur du français rougit au gate. La liste est
+**décroissante par construction** : une entrée qui ne correspond plus à aucun site fait échouer
+la garde. **Ne jamais l'allonger pour faire passer un gate** — c'est le seul usage qu'elle ne
+doit pas avoir.
+
+⚠️ **Ce qu'elle NE prouve PAS** : que l'application soit juste en italien. Aucune analyse
+statique ne le peut. Ce qu'elle rend vérifiable est que **la suite cesse de dépendre des
+libellés**, condition préalable à tout rejeu dans une seconde locale (option 3, non retenue).
+Les **assertions** de contenu (`toContainText`, `toHaveText`) sont délibérément hors périmètre :
+vérifier ce qui s'affiche est l'objet même d'un test. Les sélecteurs par **regex** restent un
+angle mort assumé.
+
+*Historique de la décision* : **[KF-043 (#326)](https://github.com/guycorbaz/kesh/issues/326)**
 tient le sujet ouvert et pose les trois options : ne rien faire, une **garde statique** qui refuse
 un sélecteur français dans `tests/e2e/` (même patron que `i18n-libelle-en-dur.test.ts`, qui lit les
 sources), ou un run dans une seconde locale. L'arbitrage revient au Project Lead.
