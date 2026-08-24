@@ -43,7 +43,7 @@ const BOOLEAN_FT_OPERATORS: &[char] = &['+', '-', '>', '<', '(', ')', '~', '*', 
 /// Sanitize une chaîne utilisateur pour usage dans `MATCH(...) AGAINST(?
 /// IN BOOLEAN MODE)` MariaDB.
 ///
-/// **Stratégie : strip TOTAL (pas escape)**. Le backslash-escaping
+/// **Stratégie : remplacement par une ESPACE (pas escape, pas suppression)**. Le backslash-escaping
 /// (`\+`, `\-`, etc.) en `BOOLEAN MODE` n'est pas garanti déterministe
 /// selon la version MariaDB exacte. Le strip total donne un comportement
 /// prévisible sur toutes versions 11.x : l'utilisateur tape du texte,
@@ -51,7 +51,9 @@ const BOOLEAN_FT_OPERATORS: &[char] = &['+', '-', '>', '<', '(', ')', '~', '*', 
 /// caller append un `*` en suffixe pour le prefix wildcard (préservation
 /// de l'UX prefix-search).
 ///
-/// **Caractères supprimés** : `+ - > < ( ) ~ * " \` (10 caractères).
+/// **Caractères remplacés par une espace** : `+ - > < ( ) ~ * " \` (10).
+/// ⚠️ Ils étaient SUPPRIMÉS jusqu'à l'issue #314, ce qui collait les tokens
+/// voisins et rendait `Coop-Vaud` introuvable par son propre nom.
 ///
 /// **Caractères PRÉSERVÉS** :
 /// - `@` — non-opérateur `BOOLEAN MODE` (utile pour fragments d'email).
@@ -121,10 +123,36 @@ pub fn escape_boolean_ft(input: &str) -> String {
     if trimmed.is_empty() {
         return String::new();
     }
+    // Issue #314 — ⚠️ REMPLACER par une espace, et non supprimer.
+    //
+    // La suppression collait les tokens de part et d'autre de l'opérateur :
+    // `Coop-Vaud` devenait `CoopVaud`, puis la requête `CoopVaud*` — qui ne
+    // matche NI `Coop` NI `Vaud`, les deux seuls tokens que l'index FULLTEXT
+    // ait réellement produits. **Retaper un nom au caractère près ne trouvait
+    // rien**, ce qui est le comble pour une recherche.
+    //
+    // Le cas est massif en Suisse dès que le nom est composé — `Müller-Weber`,
+    // `Perrin-Jaquet` : le terme y dégénérait en recherche sur le seul prénom.
+    //
+    // `split_whitespace()` fait ici trois choses d'un coup, et c'est pourquoi
+    // il est préféré à un `replace` suivi d'un `trim` : il replie les espaces
+    // multiples (`a--b` → `a  b` → `a b`, sans token vide), retire les espaces
+    // de bord nés d'un opérateur en tête ou en queue (`-abc` → ` abc` → `abc`),
+    // et rend la chaîne vide quand l'entrée n'était QUE des opérateurs — cas
+    // que les appelants gardent déjà (cf. `products.rs:127`).
     trimmed
         .chars()
-        .filter(|c| !BOOLEAN_FT_OPERATORS.contains(c))
-        .collect()
+        .map(|c| {
+            if BOOLEAN_FT_OPERATORS.contains(&c) {
+                ' '
+            } else {
+                c
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 #[cfg(test)]
@@ -159,23 +187,46 @@ mod tests {
 
     #[test]
     fn test_escape_strip_all_operators() {
-        // Pour chacun des 10 opérateurs, vérifier qu'il est strippé entre
-        // deux tokens texte.
+        // ⚠️ Ce test assertait `"foobar"` — c'est-à-dire EXACTEMENT le défaut de
+        // l'issue #314 : il verrouillait la suppression qui collait les tokens.
+        // Un test peut figer un bug aussi solidement qu'il protège une règle.
+        //
+        // Pour chacun des 10 opérateurs, il est désormais remplacé par une
+        // espace : les deux tokens restent séparés, donc trouvables.
         for op in BOOLEAN_FT_OPERATORS {
             let input = format!("foo{op}bar");
             assert_eq!(
                 escape_boolean_ft(&input),
-                "foobar",
-                "operator {op:?} non strippé"
+                "foo bar",
+                "operator {op:?} non remplacé par une espace"
             );
         }
     }
 
     #[test]
     fn test_escape_strip_combined() {
-        // Combinaison de plusieurs opérateurs.
-        assert_eq!(escape_boolean_ft("foo+*bar\"baz"), "foobarbaz");
+        // Combinaison de plusieurs opérateurs (issue #314).
+        assert_eq!(escape_boolean_ft("foo+*bar\"baz"), "foo bar baz");
         assert_eq!(escape_boolean_ft("(foo) -bar ~baz"), "foo bar baz");
+        // ⚠️ Opérateurs ADJACENTS : deux espaces naîtraient du remplacement,
+        // et un token vide en découlerait sans le repli. C'est le piège que
+        // l'issue signale nommément.
+        assert_eq!(escape_boolean_ft("a--b"), "a b");
+        assert_eq!(escape_boolean_ft("a+-*b"), "a b");
+        // Opérateur en tête ou en queue : l'espace née au bord disparaît.
+        assert_eq!(escape_boolean_ft("-abc"), "abc");
+        assert_eq!(escape_boolean_ft("abc-"), "abc");
+    }
+
+    #[test]
+    fn test_escape_nom_compose_reste_trouvable() {
+        // Issue #314 — le cas fondateur, et il est massif en Suisse dès que le
+        // nom de famille est composé. Avant : `CoopVaud`, qui ne matche NI le
+        // token `Coop` NI le token `Vaud` produits par l'index FULLTEXT ;
+        // retaper le nom AU CARACTÈRE PRÈS ne trouvait rien.
+        assert_eq!(escape_boolean_ft("Coop-Vaud"), "Coop Vaud");
+        assert_eq!(escape_boolean_ft("Müller-Weber"), "Müller Weber");
+        assert_eq!(escape_boolean_ft("Perrin-Jaquet"), "Perrin Jaquet");
     }
 
     #[test]
@@ -259,17 +310,23 @@ mod tests {
     }
 
     #[test]
-    fn test_escape_internal_multiple_spaces_preserved() {
-        // Pass 2 LOW : espaces internes multiples ne sont PAS normalisés.
-        // MariaDB tokenizer les traite comme un séparateur équivalent.
-        assert_eq!(escape_boolean_ft("foo  bar"), "foo  bar");
-        assert_eq!(escape_boolean_ft("a  b  c"), "a  b  c");
+    fn test_escape_internal_multiple_spaces_normalises() {
+        // ⚠️ Changement assumé à l'issue #314 : les espaces internes multiples
+        // sont désormais REPLIÉES, là où ce test les disait préservées.
+        //
+        // **Sans effet fonctionnel**, et ce test le disait déjà lui-même : le
+        // tokenizer MariaDB « les traite comme un séparateur équivalent ». Le
+        // repli est le prix du remplacement des opérateurs par une espace — on
+        // ne peut pas distinguer une espace tapée par l'utilisateur d'une
+        // espace née d'un `-`, et il faut bien replier les secondes.
+        assert_eq!(escape_boolean_ft("foo  bar"), "foo bar");
+        assert_eq!(escape_boolean_ft("a  b  c"), "a b c");
     }
 
     #[test]
     fn test_escape_trailing_leading_spaces_trimmed() {
-        // Pass 2 LOW : les espaces leading/trailing sont strippés via trim,
-        // mais pas les espaces internes (cf. test ci-dessus).
+        // Les espaces de bord disparaissent au `trim` initial, et les internes
+        // sont repliées depuis #314 (cf. test ci-dessus).
         assert_eq!(escape_boolean_ft(" foo bar "), "foo bar");
         assert_eq!(escape_boolean_ft("\t Mar \n"), "Mar");
     }
