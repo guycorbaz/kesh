@@ -182,7 +182,7 @@ test.describe('Plan comptable — rôles & réactivation (Story 14-3a, #269)', (
 		await expect(page.locator(`[data-testid="account-row-${number}"]`)).toBeVisible();
 	});
 
-	test("un compte non postable porte un badge explicitement indicatif", async ({ page }) => {
+	test("un compte non postable porte un badge qui explique la contrainte", async ({ page }) => {
 		await loginAndGoToAccounts(page);
 
 		// Code review 14-3a : ne PAS dépendre d'un compte titre du seed (le seed CI
@@ -217,6 +217,17 @@ test.describe('Plan comptable — rôles & réactivation (Story 14-3a, #269)', (
 		const badge = page.locator(`[data-testid="account-row-${parent}-postable-badge"]`);
 		await expect(badge).toHaveCount(1);
 		await expect(badge).toContainText('Non postable');
-		await expect(badge).toHaveAttribute('title', /[Ii]ndicatif/);
+		// KF-048 (#345) — ⚠️ ce test attendait `/[Ii]ndicatif/`, et le mot a disparu
+		// pour une bonne raison : en 14-3a la postabilité était INDICATIVE, le badge
+		// le disait ; la 14-3b l'a rendue APPLIQUÉE à la saisie, et le libellé a
+		// suivi (`account-postable-hint` = « … n'accepte pas de saisie d'écriture
+		// manuelle »). **Ce n'était pas un sélecteur périmé mais une sémantique
+		// périmée** — le test affirmait une propriété que le produit n'a plus.
+		//
+		// Le title reste assert parce que c'est l'objet du test : le badge doit
+		// EXPLIQUER, pas seulement étiqueter. La regex vise le fond de la contrainte
+		// plutôt qu'un mot isolé, et tolère les deux apostrophes — le catalogue
+		// emploie la typographique là où le repli JS met la droite (cf. KF-047).
+		await expect(badge).toHaveAttribute('title', /saisie d['’]écriture/);
 	});
 });

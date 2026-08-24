@@ -527,6 +527,7 @@
 			</Dialog.Close>
 			<Button
 				type="button"
+				data-testid="fiscal-year-close-confirm"
 				class="bg-red-600 hover:bg-red-700"
 				disabled={closeSubmitting}
 				onclick={submitClose}

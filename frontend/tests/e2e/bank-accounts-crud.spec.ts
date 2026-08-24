@@ -120,7 +120,18 @@ test.describe('Bank accounts CRUD', () => {
 		await expect(page.getByText('Archive Me')).toBeVisible();
 
 		// Archiver.
-		const archiveBtn = page.locator('[data-testid^="archive-button-"]').first();
+		// KF-049 (#346) — ⚠️ ce sélecteur était `.first()`, c'est-à-dire le premier
+		// bouton d'archivage DE LA LISTE et non celui du compte que le test vient
+		// de créer. Selon l'ordre de la liste, il archivait un AUTRE compte, puis
+		// s'étonnait de voir « Archive Me » toujours là.
+		//
+		// ⚠️ **Vérifié dans l'application avant de toucher au test**, comme l'issue
+		// le demandait : `includeArchived` vaut `false` par défaut et la liste
+		// filtre bien (`+page.svelte:31,54`). Le comportement métier est correct —
+		// c'était le test qui visait à côté.
+		const archiveBtn = page
+			.locator('tr', { hasText: 'Archive Me' })
+			.locator('[data-testid^="archive-button-"]');
 		await archiveBtn.click();
 		await expect(page.locator('[data-testid="archive-confirm"]')).toBeVisible();
 		await page.click('[data-testid="archive-confirm-button"]');
@@ -139,7 +150,14 @@ test.describe('Bank accounts CRUD', () => {
 		await page.click('[data-testid="form-submit"]');
 		await expect(page.getByText('Toggle Test')).toBeVisible();
 
-		const archiveBtn = page.locator('[data-testid^="archive-button-"]').first();
+		// KF-049 (#346) — même défaut que le test précédent, et il passait par
+		// ACCIDENT : `.first()` visait le premier bouton de la liste, que l'ordre
+		// rendait par chance le bon. Corriger le test voisin a suffi à le faire
+		// rougir. **Greper le symptôme et non le site** — c'est la règle du dépôt,
+		// et elle vient de payer une fois de plus.
+		const archiveBtn = page
+			.locator('tr', { hasText: 'Toggle Test' })
+			.locator('[data-testid^="archive-button-"]');
 		await archiveBtn.click();
 		await page.click('[data-testid="archive-confirm-button"]');
 		await expect(page.getByText('Toggle Test')).not.toBeVisible({ timeout: 5000 });
