@@ -166,15 +166,33 @@ KESH_TEST_MODE=true KESH_HOST=127.0.0.1 KESH_COOKIE_SECURE=false \
   KESH_PORT=3000 KESH_STATIC_DIR="$PWD/frontend/build" \
   KESH_INBOX_DIR=/tmp/kesh-e2e/inbox KESH_DOCUMENTS_DIR=/tmp/kesh-e2e/documents \
   KESH_ADMIN_USERNAME=admin KESH_ADMIN_PASSWORD=e2e-admin-password-12chars \
+  KESH_SMTP_HOST=smtp.invalid KESH_SMTP_USER=e2e \
+  KESH_SMTP_PASSWORD=e2e KESH_SMTP_FROM=kesh@example.invalid \
   DATABASE_URL="mysql://kesh:kesh_dev@127.0.0.1:3306/kesh_e2e" \
   KESH_JWT_SECRET="dev-secret-at-least-32-bytes-long-for-testing" \
   cargo run -p kesh-api
 
 # Terminal 2 : Playwright
 cd frontend
-PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 \
+KESH_TEST_MODE=true PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 \
   KESH_BACKEND_URL=http://127.0.0.1:3000 npm run test:e2e
 ```
+
+⚠️ **Les deux ajouts ci-dessus manquaient à cette recette, et chacun produit des
+échecs qui ne ressemblent pas à un défaut de montage.**
+
+- **Les quatre `KESH_SMTP_*` côté backend** : sans elles, `/health.smtpConfigured`
+  est `false`, `GET /_test/sent-emails` rend **400**, et les specs d'e-mail
+  échouent — puis *entraînent* des cascades de timeouts sur la page de login qui
+  n'ont plus rien à voir avec la cause. Mesuré le 2026-08-24 : **44 échecs sans
+  ces variables, 16 avec**. Les valeurs sont factices ; en `KESH_TEST_MODE` le
+  boot substitue un `MockMailer` capturant (aucun envoi réel).
+- **`KESH_TEST_MODE=true` côté RUNNER** (et pas seulement côté backend) :
+  `xss-token-protection.spec.ts` lit `process.env.KESH_TEST_MODE` **dans
+  Playwright** pour savoir s'il doit exiger `Secure` sur le cookie d'accès. Sans
+  la variable, il l'exige alors que `KESH_COOKIE_SECURE=false` — obligatoire en
+  HTTP local — l'interdit. **Éprouvé par mutation** : sans elle `1 failed / 2
+  passed`, avec elle `3 passed`.
 
 ⚠️ **`KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR` ne sont pas facultatifs non plus, et leur absence
 ne ressemble PAS à un problème de configuration.** Leurs défauts sont `/data/inbox` et
@@ -219,7 +237,7 @@ ce constat en affirmant que « `CLAUDE.md` le documente comme un angle mort conn
 documentait pas**, et l'angle mort n'était écrit nulle part. Une réfutation qui s'appuie sur une
 source inexistante enterre le finding qu'elle prétend traiter.)*
 
-⚠️ **La suite locale n'est pas verte, et ce n'est pas une régression** : une quarantaine de tests échouent aussi sur `main` (localStorage/JWT, absence de SMTP factice, KF #282, cascades). **Seul le différentiel branche ↔ `main` se lit** — cf. la mémoire projet `comparer-suite-e2e-branche-vs-main` pour le montage à deux ports et deux bases.
+⚠️ **La suite locale n'est pas verte, et ce n'est pas une régression** : des tests échouent aussi sur `main`. **Mais leur nombre était très surestimé, et ça a coûté cher.** Ce paragraphe annonçait « une quarantaine » ; recompté le 2026-08-24 **avec le montage complet ci-dessus**, `main` en rend **15** — et v0.11.0, avant les correctifs de [#107], en rendait **32**. L'écart venait des variables manquantes de la recette : sans elles, on mesure **44**. ⚠️ **Un bruit de fond surestimé n'est pas un détail de documentation : il rend invisibles les défauts qu'il recouvre.** Les six échecs des KF-047 à KF-050 dormaient sous ce chiffre, dont une bannière de mode dégradé qui ne s'affiche peut-être plus quand la base tombe. **Seul le différentiel branche ↔ `main` se lit** — cf. la mémoire projet `comparer-suite-e2e-branche-vs-main` pour le montage à deux ports et deux bases.
 
 > **`KESH_COOKIE_SECURE=false` est obligatoire en local HTTP** : depuis les
 > tokens httpOnly (Story 10-5), les cookies d'auth sont `Secure` par défaut.
