@@ -36,70 +36,64 @@ enregistrement**, en laissant sa contrepartie marquée — donc réputée soldé
 quitte la vue des ouverts **en restant impayée** : le défaut est muet, et il fausse le solde
 sans rien signaler.
 
-## Décision à trancher AVANT le développement
+## Décisions tranchées par le Project Lead — 2026-08-25
 
-⛔ **Le porteur de la marque n'est pas décidé, et ce n'est pas au développeur de le
-faire.** La 15-1 prescrivait une colonne `lettering_code` sur `journal_entry_lines`. La
-passe 3 a montré que le moyen d'unicité qu'on lui associait est **impossible** :
+Les deux décisions que les passes 1 et 3 avaient laissées ouvertes sont **arbitrées**. Elles
+se figent l'une et l'autre dans la migration (P8 interdit de revenir sur un fichier appliqué),
+et elles conditionnent le DDL de T1.
 
-- `journal_entry_lines` **ne porte aucun `company_id`** — zéro occurrence dans les
-  migrations ; le scoping multi-tenant y passe par jointure sur `journal_entries.company_id`,
-  et le repository le documente lui-même (`journal_entries.rs:1226`) ;
-- une contrainte `UNIQUE (company_id, lettering_code)` **interdirait ce que le lettrage
-  exige** — deux lignes lettrées ensemble portent le *même* code.
-
-**Deux conduites réalisables, à arbitrer :**
-
-**(A) Colonne `lettering_code` nullable** sur `journal_entry_lines`, indexée. Migration
-`ADD COLUMN` **non-breaking** (P1 : pas de bump `min_required`). L'unicité du code à
-l'engendrement se tient alors **applicativement**, sous transaction.
-
-**(B) Table `letterings`** (`id`, `company_id`, `code`, `created_at`, `created_by`) avec
-`UNIQUE (company_id, code)`, que les lignes référencent par une FK nullable. Plus coûteuse
-d'une table, elle donne **l'unicité par le schéma**, la portée société **sans jointure
-supplémentaire**, et un point d'accroche pour la date de lettrage et son auteur — que
-(A) n'a nulle part où mettre.
-
-⚠️ **(A) et (B) n'offrent PAS la même garantie sur AC3, et c'est l'élément de poids de
-l'arbitrage** *(relevé en passe 1)*. Le dépôt a **un** pattern éprouvé de génération scopée
-sous concurrence — le gap lock d'`entry_number` :
+### Le porteur — une table `letterings`
 
 ```sql
-SELECT COALESCE(MAX(entry_number), 0) + 1 FROM journal_entries
- WHERE company_id = ? AND fiscal_year_id = ? FOR UPDATE   -- journal_entries.rs:232
+CREATE TABLE letterings (
+  id          BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  company_id  BIGINT NOT NULL,
+  code        VARCHAR(16) NOT NULL,
+  created_at  DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  created_by  BIGINT NULL,
+  CONSTRAINT uq_letterings_company_code UNIQUE (company_id, code),
+  ...
+);
+-- et sur journal_entry_lines : une FK nullable vers letterings(id)
 ```
 
-Il verrouille **directement** une colonne `company_id` de la table cible.
+**Pourquoi, et ce n'est pas un choix d'élégance** — l'alternative écartée était une colonne
+`lettering_code` nullable sur `journal_entry_lines` :
 
-- **(B) le transpose à l'identique** — `letterings` a sa propre `company_id` — **et** garde
-  un **filet au niveau du schéma** : une violation résiduelle est rattrapée par
-  `UNIQUE (company_id, code)`.
-- **(A) n'a aucune colonne à verrouiller** : `journal_entry_lines` ne porte pas de
-  `company_id`, il faudrait verrouiller **par jointure**, mécanisme jamais éprouvé ici pour
-  cet usage. Et **aucune contrainte de schéma n'est possible** — la spec l'établit plus haut.
+- ⚠️ **`journal_entry_lines` ne porte aucun `company_id`** (zéro occurrence dans les
+  migrations ; le scoping y passe par jointure, `journal_entries.rs:1226` le documente). Le
+  seul pattern de génération scopée sous concurrence éprouvé dans le dépôt — le gap lock
+  d'`entry_number`, `SELECT COALESCE(MAX(…))+1 … WHERE company_id = ? … FOR UPDATE`
+  (`journal_entries.rs:232`) — verrouille **directement** une `company_id` de la table cible.
+  `letterings` ayant la sienne, **il se transpose à l'identique**.
+- ⚠️ **Et il garde un filet au niveau du schéma** : si le verrouillage faiblit,
+  `UNIQUE (company_id, code)` rattrape la violation. Sur une colonne de
+  `journal_entry_lines`, **aucune contrainte n'était possible** — une contrainte d'unicité y
+  aurait d'ailleurs **interdit AC1**, puisque deux lignes lettrées ensemble portent le *même*
+  code. Une erreur de verrouillage n'y aurait été détectée par **rien**.
+- **`created_at` et `created_by` viennent gratuitement**, et AC13 en a besoin. La colonne
+  n'avait nulle part où les mettre.
 
-⛔ **Conséquence : dans (A), une erreur de verrouillage n'est détectée par RIEN.** Elle
-produit deux paires de lignes partageant la même marque, en silence — précisément le mode
-d'échec qu'AC3 existe pour empêcher. Ce n'est pas un argument décisif contre (A), mais le
-Project Lead doit l'avoir en main.
+⚠️ **Conséquence à ne pas oublier** : `reset_demo` a une liste de `DELETE` **explicite** —
+`letterings` doit y être ajoutée (cf. T2).
 
-⛔ **Et une SECONDE décision, distincte de la première : le FORMAT de la marque.**
-*(Relevé en passe 3 — la story mère nommait le trou dans ses **deux** dimensions, « ni format,
-ni portée » ; le split a conservé la portée et **perdu le format**.)* Compteur numérique,
-séquence alphabétique `A, B, … AA` à la manière de Bexio, longueur, type de colonne : rien
-n'est fixé, et T1 doit pourtant écrire le DDL.
+### Le format — une séquence alphabétique par société
 
-⚠️ **Elle se fige à la migration** : P8 interdit de retoucher un fichier déjà appliqué. Et
-elle se voit à l'écran — 15-1c exige que la marque soit **visible** sur la ligne, or un
-`BIGINT` global et un `VARCHAR(8)` par société ne donnent pas la même interface. C'est
-exactement la classe de décision que ce paragraphe existe pour ne pas laisser au développeur.
+**`A`, `B`, … `Z`, `AA`, `AB`, …** — base 26 bijective, engendrée par le serveur, **portée
+société** (chaque société repart de `A`).
 
-⚠️ **Un élément d'arbitrage qui vaut pour les deux décisions** : l'option (B) fournit
-**gratuitement** `created_at` et `created_by`, dont AC13 a besoin. L'option (A) n'a nulle
-part où les mettre.
+C'est le format des logiciels comptables suisses, Bexio compris — dont **D6 fait déjà le
+modèle de l'écran**. Il est court, se lit à l'œil sur une ligne d'écriture et **se dicte au
+téléphone**, ce qui compte pour une fiduciaire qui appelle son client à propos d'une facture.
 
-⚠️ **Ce choix conditionne les critères ci-dessous**, qui sont écrits pour rester vrais dans
-les deux cas : ils parlent de « la marque » et non d'une colonne.
+⚠️ **Écarté : un identifiant sans compteur** (ULID, UUID). Il supprimerait toute contention,
+mais 15-1c exige que la marque soit **visible sur la ligne** — une chaîne de 26 caractères y
+est inutilisable, et indictable.
+
+⚠️ **`VARCHAR(16)` laisse très large** : la séquence n'atteint `AAA` qu'après 702 lettrages
+dans une même société, et seize caractères en admettent bien davantage. Le choix d'un
+`VARCHAR` plutôt que d'un entier est ce qui rend la séquence alphabétique possible **sans
+conversion à l'affichage**.
 
 ## Décisions héritées de la 15-1
 
@@ -137,10 +131,18 @@ compteur non scopé serait un défaut de multi-tenant** — le dépôt en a déj
 et c'est exactement la classe d'erreur qu'une spécification muette invite à commettre.
 
 **AC3** — **L'unicité tient sous concurrence.** Deux lettrages simultanés dans la même
-société ne reçoivent jamais la même marque. Un compteur lu puis incrémenté hors transaction
-ne le garantit pas. ⛔ **Moyen EXCLU** : une contrainte `UNIQUE (company_id, lettering_code)`
-sur `journal_entry_lines` — la colonne `company_id` n'y existe pas, et la contrainte
-interdirait AC1.
+société ne reçoivent jamais le même code. Un compteur lu puis incrémenté hors transaction ne
+le garantit pas : **la génération se fait sous le gap lock**, sur le modèle d'`entry_number`
+(`SELECT … FOR UPDATE` scopé par `company_id`, `journal_entries.rs:232`), et
+`uq_letterings_company_code` **rattrape** toute violation résiduelle.
+
+⚠️ **Un test de concurrence est exigé** — deux lettrages simultanés dans la même société,
+deux codes distincts. Sans lui, le filet de schéma reste une intention.
+
+⛔ **Moyen EXCLU, et il faut savoir pourquoi il l'est** : porter la contrainte d'unicité sur
+`journal_entry_lines` — la colonne `company_id` n'y existe pas, et une contrainte d'unicité
+sur le code y **interdirait AC1**, deux lignes lettrées ensemble portant le *même* code.
+C'est l'une des raisons du choix de la table.
 
 **AC4** — Le lettrage est **refusé** si les deux lignes ne portent pas sur le **même
 compte**, ou si leurs sens (débit/crédit) ne s'opposent pas.
@@ -270,14 +272,15 @@ même précédent qu'AC2 invoque pour la portée du compteur.
 
 ## Tasks
 
-- [ ] **T1** — Migration selon le porteur arbitré (A ou B). ⚠️ Dans les deux cas, la
-      migration **n'écrit aucune donnée** : `ADD COLUMN` nullable ou `CREATE TABLE`, donc
-      **non-breaking** — pas de bump `min_required` (P1). Ligne d'audit d'idempotence
+- [ ] **T1** — Migration : `CREATE TABLE letterings` (avec `uq_letterings_company_code`)
+      **et** la FK nullable sur `journal_entry_lines`, selon le § *Décisions tranchées*.
+      ⚠️ La migration **n'écrit aucune donnée** — `CREATE TABLE` + `ADD COLUMN` nullable —
+      donc **non-breaking** : pas de bump `min_required` (P1). Ligne d'audit d'idempotence
       **obligatoire** (P5, `docs/migrations-idempotence-audit.md`), et les **deux** sites du
       total plus les trois compteurs de partition se **recomptent depuis le tableau**.
       ⛔ **Ne PAS l'inscrire à `EXEMPT_MIGRATIONS` (P7)** : *(relevé en passe 3, P3-10)* le
       détecteur ne trie **que** les migrations qui écrivent des données
-      (`post_restore.rs:711`) — un `ADD COLUMN` n'est jamais atteint. L'y inscrire ajouterait
+      (`post_restore.rs:711`) — ni un `CREATE TABLE` ni un `ADD COLUMN` n'y entre. L'y inscrire ajouterait
       du bruit à une liste dont toute la valeur tient à sa lisibilité.
       ⚠️ **P6 — le couplage positionnel** : lancer
       `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` et inspecter chaque
@@ -286,13 +289,13 @@ même précédent qu'AC2 invoque pour la portée du compteur.
       **l'anticiper coûte une minute, le découvrir au bout du gate en coûte soixante**.
 - [ ] **T2** — Repository : poser la marque, la retirer, la lire. Gardes d'exercice
       asymétriques (AC5/AC6). **Trace d'audit** (AC13).
-      ⚠️ **Si la conduite (B) est retenue, ajouter `letterings` à `reset_demo`** *(P3-6)* :
-      sa liste de `DELETE` est **explicite** (`kesh-seed/src/lib.rs`) et une table neuve n'y
-      figurerait pas. Le bloc s'exécute sous `SET FOREIGN_KEY_CHECKS=0`, si bien que le
+      ⛔ **Ajouter `letterings` à `reset_demo`** *(P3-6 — la conduite retenue le rend
+      obligatoire)* : sa liste de `DELETE` est **explicite** (`kesh-seed/src/lib.rs`) et une
+      table neuve n'y figure pas. Le bloc s'exécute sous `SET FOREIGN_KEY_CHECKS=0`, si bien que le
       `DELETE FROM companies` passerait **malgré la FK** et laisserait des lignes orphelines ;
       et le jour où ce drapeau serait retiré — le fichier dit que les `DELETE` explicites
       existent pour cela — `reset_demo` échouerait. *(La réfutation de passe 1, « le wipe
-      efface tout ensemble », ne vaut que pour la conduite (A).)*
+      efface tout ensemble », ne valait que pour la conduite écartée.)*
 - [ ] **T3** — ⚠️ **Gardes sur les chemins d'écriture existants** (AC7, AC8) — c'est le cœur
       de cette story. Recenser les appelants avant d'écrire :
       `grep -rn "delete_in_tx\|DELETE FROM journal_entry_lines" crates/`.
@@ -345,6 +348,37 @@ comment le run précédent s'est terminé (KF-039, #310).
 checksum est enregistré, et le binaire ne boote plus.
 
 ## Change Log
+
+### Arbitrage du Project Lead — 2026-08-25
+
+Les deux décisions que les passes avaient laissées ouvertes sont **tranchées par Guy**, et
+inscrites au § *Décisions tranchées*.
+
+**Le porteur : une table `letterings`.** Elle transpose à l'identique le gap lock éprouvé
+d'`entry_number` — sa propre `company_id` le permet —, garde un **filet au niveau du schéma**
+(`uq_letterings_company_code`) si le verrouillage faiblit, et fournit `created_at` /
+`created_by` dont AC13 a besoin. La colonne sur `journal_entry_lines` n'offrait aucun des
+trois : pas de `company_id` à verrouiller, aucune contrainte possible — une contrainte
+d'unicité y aurait même **interdit AC1** — et nulle part où porter l'auteur.
+
+**Le format : une séquence alphabétique par société**, `A`, `B`, … `Z`, `AA` — base 26
+bijective. C'est le format des logiciels comptables suisses, Bexio compris, dont **D6 fait
+déjà le modèle de l'écran** ; il est court, lisible à l'œil sur une ligne, et **se dicte au
+téléphone**. Un identifiant sans compteur (ULID, UUID) supprimerait la contention mais 15-1c
+exige que la marque soit **visible sur la ligne** : vingt-six caractères y sont
+inutilisables.
+
+**Propagé dans le même patch** : AC3 (la génération sous gap lock, le filet de schéma, et un
+**test de concurrence désormais exigé** — sans lui le filet reste une intention), T1 (le DDL
+est connu, `CREATE TABLE` + FK nullable), T2 (l'ajout de `letterings` à `reset_demo` devient
+**obligatoire** — sa liste de `DELETE` est explicite, et le bloc s'exécute sous
+`FOREIGN_KEY_CHECKS=0`), et le triage P7 (ni `CREATE TABLE` ni `ADD COLUMN` n'entre dans le
+détecteur).
+
+⚠️ **Une passe de contrôle reste due.** Cet arbitrage fixe une règle structurante **après**
+la convergence de la passe 4 : la passe ciblée à une lentille codifiée ce matin
+(§ A9, PR #355) **ne s'applique pas** — sa borne exclut les patches qui changent une règle
+métier.
 
 ### Passe 4 de `validate` — 2026-08-25 (Sonnet, contexte frais)
 
