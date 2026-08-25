@@ -25,7 +25,7 @@ cette story doit résoudre.**
 | Transaction bancaire ↔ écriture | l'encaissement importé et son écriture | `bank_transactions.matched_entry_id`, `.status` |
 | Marqueur de paiement | une facture réputée payée | `invoices.paid_at` |
 
-Et surtout : **`accept_one_invoice` (`reconciliation.rs:1003-1328`) apparie déjà transaction
+Et surtout : **`accept_one_invoice` (`kesh-api/src/routes/reconciliation.rs:1003-1313`) apparie déjà transaction
 bancaire ↔ facture, propose, fait valider, puis marque la facture payée.** Le chemin
 « facture réglée par virement importé » est donc **entièrement couvert** — et par le geste
 même qu'on attendait du lettrage.
@@ -241,9 +241,20 @@ pas.
 
 ⚠️ **L'unicité doit tenir sous concurrence** *(relevé en passe 2)* : deux lettrages
 simultanés dans la même société ne doivent pas recevoir le même code. Un compteur lu puis
-incrémenté hors transaction ne le garantit pas. Le moyen est libre — séquence atomique,
-contrainte d'unicité `(company_id, lettering_code)` qui fait échouer le second, ou identifiant
-engendré sans compteur.
+incrémenté hors transaction ne le garantit pas.
+
+⛔ **Un moyen est EXCLU, et il l'est deux fois** — la passe 2 l'avait proposé, la passe 3 l'a
+réfuté au sol : une **contrainte d'unicité `(company_id, lettering_code)`** sur
+`journal_entry_lines`. **(1)** La table ne porte **aucun** `company_id` — le scoping
+multi-tenant y passe par jointure sur `journal_entries.company_id`, le repository le
+documente lui-même (`journal_entries.rs:1226`). **(2)** Et même portée par jointure, elle
+**interdirait exactement ce qu'AC1 exige** : deux lignes lettrées ensemble portent le **même**
+code ; une contrainte d'unicité les refuserait, rendant tout lettrage impossible.
+
+Restent deux conduites réalisables : une **table `letterings`** (`id`, `company_id`, `code`,
+`UNIQUE (company_id, code)`) que les lignes référencent — elle donne l'unicité, la portée
+société et un point d'accroche pour la date de lettrage —, ou un **identifiant engendré sans
+compteur**. « Le moyen est libre » ne dispense pas d'écarter un moyen faux.
 
 **AC12** — ⚠️ **Une écriture dont une ligne est lettrée ne se supprime pas en laissant un
 code orphelin.** *(Relevé en relecture : `delete_journal_entry` existe —
@@ -328,6 +339,76 @@ précédent s'est terminé (KF-039, #310).
 
 
 ## Change Log
+
+### Passe 3 de `validate` — 2026-08-25 (Opus, contexte frais)
+
+⛔ **LA SÉVÉRITÉ REMONTE : `MEDIUM` (passe 2) → `HIGH` (passe 3).** 4 HIGH, 4 MEDIUM,
+3 LOW. **Le critère de non-convergence de la § *Règle de splitting préventif* est
+DÉCLENCHÉ** — il vise précisément la sévérité qui stagne ou régresse, et non la durée. Le
+découpage est proposé plus bas ; **l'arbitrage revient au Project Lead**, pas à
+l'orchestrateur.
+
+**Pourquoi cette passe trouve ce que deux autres n'ont pas vu**, et la leçon vaut au-delà de
+cette story : les passes 1 et 2 ont relu la spec **contre elle-même et contre le schéma**.
+Aucune n'a suivi les **chemins de code qui écrivent, effacent ou soldent** les lignes que le
+lettrage prétend porter. Tout est là.
+
+**Deux findings mettent en cause les patches des passes précédentes — corrigés dans ce
+commit, car ils ne demandent aucun arbitrage :**
+
+⛔ **P3-5 (MEDIUM) — le moyen d'unicité inscrit en passe 2 était impossible ET cassait AC1.**
+La passe 2 proposait une contrainte `UNIQUE (company_id, lettering_code)`. Or
+`journal_entry_lines` **ne porte aucun `company_id`** (vérifié : zéro occurrence dans les
+migrations ; le scoping passe par jointure, `journal_entries.rs:1226` le documente). Et même
+portée par jointure, cette contrainte **interdirait ce qu'AC1 exige** — deux lignes lettrées
+ensemble portent le *même* code. C'est une régression franche du patch précédent, exactement
+le motif que la § A9 du `CLAUDE.md` a codifié ce matin.
+
+⛔ **P3-11 (LOW) — la référence « corrigée » en passe 1 était encore fausse.** P1-4 avait
+remplacé `1096-1206` par `1003-1328` : `accept_one_invoice` finit à **1313** (vérifié à
+l'`awk` sur les accolades de colonne 1) ; la ligne 1328 tombe dans le doc-comment
+d'`accept_one_split`. **Corriger une valeur fausse par une autre valeur fausse**, puis la
+propager aux trois sites, est le mode d'échec que la § *Recompter ses propres comptes rendus*
+décrit. Le chemin de crate manquait aussi — deux fichiers s'appellent `reconciliation.rs`.
+
+**Les quatre HIGH, qui appellent des DÉCISIONS et non des précisions — non patchés :**
+
+| | défaut | preuve au sol |
+|---|---|---|
+| **P3-1** | **Modifier une écriture détruit ses lignes** : `update` fait `DELETE FROM journal_entry_lines` puis réinsère (`journal_entries.rs:981`, dans `update` l. 805). Le code de lettrage est perdu, la contrepartie reste lettrée donc **réputée soldée**. AC12 n'a tranché que la *suppression* | le `DELETE` et la fonction, vérifiés |
+| **P3-2** | **La garde d'AC12 est posée au mauvais endroit** : AC12 cite la route `journal_entries.rs:631`, mais `invoices::delete` efface aussi l'écriture via `journal_entries::delete_in_tx` (`invoices.rs:1338`), et **aucune de ses trois gardes ne regarde le lettrage** | le second appelant, vérifié |
+| **P3-3** | **Lettrer ne calme ni la balance âgée ni les relances** : toutes deux ne lisent que `paid_at` (`aged_receivables.rs:127`, `dunning_eligibility.rs:87`) et `lettering` a **0 occurrence** dans tout le dépôt. On relancera un débiteur soldé — le défaut n'est pas muet, **il est adressé au client** | les deux SQL + le grep, vérifiés |
+| **P3-4** | **Le § *Contexte* est FAUX sur les fournisseurs** : ils ont `pay()`, un `settlement_type IN ('bank_transfer','internal_account')` — donc **le règlement hors import existe déjà** — et un `settlement_journal_entry_id` dédié. Une facture fournisseur payée porte **DEUX** écritures ; AC3-bis, qui dit « un test par table », en masque une et **laisserait la ligne de règlement ouverte à jamais** | migration `20260628000001`, l. 44-68 |
+
+**Quatre MEDIUM** : P3-5 (corrigé ci-dessus) ; **P3-6** — `paid_at` n'a aucune contrepartie
+comptable côté client (`invoices.rs:1923` : « **Ne crée AUCUNE écriture comptable** »), donc
+la vue ne peut pas « justifier le solde » comme le promet le *so that* ; **P3-7** — la
+fenêtre de 30 jours **tue le cas de contre-passation qu'AC4 exige nommément**, l'écriture
+d'annulation étant datée du jour ; **P3-8** — le canal `paid_at` n'a **aucune garde
+d'exercice**, si bien qu'un dé-marquage rouvre une ligne sur un exercice clos, ce qu'AC7
+interdit par l'autre canal.
+
+**Trois LOW** : P3-9 (l'export CSV a un header figé sans garde d'exhaustivité pour
+`journal_entry_lines`), P3-10 (l'exemption P7 demandée par T1 est **inutile** — le détecteur
+ne trie que les migrations qui écrivent des données, un `ADD COLUMN` n'est jamais atteint),
+P3-11 (corrigé).
+
+**Pistes réfutées** : multi-devise et arrondis (non rouverts, rien ne les contredit),
+l'allowlist i18n vide (**vraie**, `i18n-keys.test.ts:432`), le rejeu de backfill à l'import
+(sans objet), l'exercice rouvert (`fiscal_years::reopen` existe et ne casse pas AC7 — il en
+est la soupape), et D3 contre un verrou global (faux positif confirmé pour la deuxième fois).
+
+**Verdict : la spec n'est pas prête, et le défaut n'est plus de la précision mais de la
+DÉCISION.** Trois questions restent ouvertes, chacune produisant un résultat faux et
+silencieux si elle est laissée au développeur : le sort du code face aux chemins d'écriture
+existants (P3-1, P3-2) ; ce que le lettrage change pour la relance et la balance âgée
+(P3-3) ; et ce que la vue prétend égaler, sachant que client et fournisseur **ne sont pas
+symétriques** dans le code existant (P3-4, P3-6).
+
+**Découpage proposé, à arbitrer** : **(a)** la colonne, sa portée et son cycle de vie face
+aux chemins d'écriture existants — socle que les deux autres supposent ; **(b)** la vue « ce
+qui reste ouvert » et sa relation aux dispositifs qui lisent déjà `paid_at` ; **(c)** le
+moteur de proposition et l'écran.
 
 ### Passe 2 de `validate` — 2026-08-25 (Haiku, contexte frais)
 
