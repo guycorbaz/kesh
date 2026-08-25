@@ -83,6 +83,21 @@ produit deux paires de lignes partageant la même marque, en silence — précis
 d'échec qu'AC3 existe pour empêcher. Ce n'est pas un argument décisif contre (A), mais le
 Project Lead doit l'avoir en main.
 
+⛔ **Et une SECONDE décision, distincte de la première : le FORMAT de la marque.**
+*(Relevé en passe 3 — la story mère nommait le trou dans ses **deux** dimensions, « ni format,
+ni portée » ; le split a conservé la portée et **perdu le format**.)* Compteur numérique,
+séquence alphabétique `A, B, … AA` à la manière de Bexio, longueur, type de colonne : rien
+n'est fixé, et T1 doit pourtant écrire le DDL.
+
+⚠️ **Elle se fige à la migration** : P8 interdit de retoucher un fichier déjà appliqué. Et
+elle se voit à l'écran — 15-1c exige que la marque soit **visible** sur la ligne, or un
+`BIGINT` global et un `VARCHAR(8)` par société ne donnent pas la même interface. C'est
+exactement la classe de décision que ce paragraphe existe pour ne pas laisser au développeur.
+
+⚠️ **Un élément d'arbitrage qui vaut pour les deux décisions** : l'option (B) fournit
+**gratuitement** `created_at` et `created_by`, dont AC13 a besoin. L'option (A) n'a nulle
+part où les mettre.
+
 ⚠️ **Ce choix conditionne les critères ci-dessous**, qui sont écrits pour rester vrais dans
 les deux cas : ils parlent de « la marque » et non d'une colonne.
 
@@ -141,35 +156,50 @@ refusée.** *(Relevé en passe 3, P3-1.)* `update` fait aujourd'hui `DELETE FROM
 journal_entry_lines` puis réinsère : une implémentation naïve **perd la marque en silence** et
 laisse la contrepartie marquée seule, donc réputée soldée.
 
-**TRANCHÉ** *(passe 2 — la première rédaction disait « à trancher à la spécification et non
-à l'implémentation », puis ne tranchait pas : exactement le défaut relevé sur la story mère,
-et reproduit ici)* :
+**TRANCHÉ**, et **re-tranché en passe 3** *(la conduite retenue en passe 2 rouvrait le trou
+que cette story existe pour fermer — voir le Change Log)* :
 
-> **La modification est REFUSÉE si elle change les LIGNES d'une écriture dont une ligne est
-> lettrée. L'en-tête — date, journal, libellé — reste modifiable.**
+> **(i)** La modification qui **change les lignes** d'une écriture dont une ligne est lettrée
+> est **REFUSÉE**, avec un message qui nomme la cause.
+> **(ii)** La modification du seul **en-tête** — date, journal, libellé — est **autorisée**,
+> **et `update` NE TOUCHE ALORS PAS AUX LIGNES.**
 
-⚠️ **Ce n'est pas un compromis de confort, et deux faits au sol l'imposent :**
+⛔ **La clause (ii) n'est pas un confort : sans elle, (i) ne protège rien.** *(P3-1,
+CRITICAL.)* Le `DELETE FROM journal_entry_lines` de `update` (`journal_entries.rs:981`) n'est
+gardé que par le court-circuit **no-op complet** — en-tête **et** lignes identiques
+(`is_no_op_change`, l. 972). Une modification d'en-tête seul le franchit **systématiquement** :
+les lignes sont effacées et réinsérées sans marque, tandis que la contrepartie garde la
+sienne. **C'est mot pour mot le mode d'échec décrit au § *Pourquoi cette story existe
+séparément*** — réintroduit par le critère censé le fermer.
 
-**(1) Un refus global rendrait une écriture lettrée immuable jusque dans son libellé.**
-`update` réécrit **systématiquement** toutes les lignes dès que le payload diffère — il
-n'existe aucun chemin « modifier seulement l'en-tête » (`journal_entries.rs:981-1015`).
-Refuser en bloc interdirait donc de corriger une faute de frappe sans délettrer d'abord — or
-**le délettrage est interdit sur exercice clos** (AC6). Une écriture lettrée sur un exercice
-clos deviendrait **définitivement figée, jusqu'à sa description**.
+⚠️ **La condition de la garde est exactement ce qui rend le `DELETE`/`INSERT` inutile** :
+quand le comparateur dit les lignes inchangées, il n'y a rien à réécrire. Créer le chemin
+« en-tête seul » dans `update` ferme donc P3-1 **et** rend sans objet l'objection de
+préservation par position.
 
-**(2) Préserver la marque à travers le `DELETE`/`INSERT` n'est PAS fiable.** La réinsertion
-numérote par position (`line_order = idx + 1`) : rien ne rattache une ligne nouvelle à
-l'ancienne si l'ordre a changé, si une ligne a été insérée ou retirée. La marque se
-retrouverait sur la mauvaise ligne — **pire qu'une marque perdue, puisque plausible**.
+**Ce qui coûterait un refus global, et il faut le dire juste** *(P3-2 — la passe 2 s'appuyait
+ici sur un fait FAUX)* : une écriture sur exercice **clos** est **déjà** immuable
+aujourd'hui, lettrage ou non — `update` la refuse à l'Étape 2 (`journal_entries.rs:892`,
+`DbError::FiscalYearClosed`). Le cas réel est plus étroit : une écriture sur exercice
+**ouvert**, lettrée avec une contrepartie sur exercice **clos** (AC5 le permet — c'est le
+lettrage à cheval). Là seulement, AC6 refusant le délettrage, un refus global figerait le
+libellé. Quand les deux exercices sont ouverts, il ne coûte qu'un aller-retour.
 
-⚠️ **Le comparateur existe déjà et n'est pas à inventer** : `is_no_op_change`
-(`journal_entries.rs:782`) compare l'en-tête **puis** les lignes (`len`, `account_id`,
-`debit`, `credit`, `project_id`). Sa seconde moitié **est** la garde demandée ; il s'agit de
-l'extraire, pas de l'écrire.
+⚠️ **Le comparateur de lignes existe déjà** : `is_no_op_change` (`journal_entries.rs:782`)
+compare l'en-tête **puis** les lignes. C'est sa **seconde moitié seulement** qu'il faut
+extraire — la fonction entière retourne `false` dès que l'en-tête diffère, **sans regarder les
+lignes**, ce qui donnerait l'exact contraire de la conduite ci-dessus. *(P3-9.)*
 
-⚠️ **Corollaire, et il règle la renumérotation** *(P2-3)* : réordonner les lignes **est** un
-changement de lignes au sens de ce comparateur, qui compare position par position. Une
-renumérotation d'écriture lettrée est donc **refusée**, sans avoir à l'énoncer à part.
+⚠️ **Une réserve à porter avec l'extraction** *(P3-9)* : le comparateur teste
+`b.project_id == c.project_id` alors que l'`INSERT` écrit `line.project_id.or(updated.project_id)`.
+Il n'est exact aujourd'hui que parce que les deux sites de la route passent
+`project_id: None` au niveau écriture. Un futur appelant fournissant un projet au niveau
+document ferait rapporter un faux changement de lignes — donc **refuser une modification qui
+n'en est pas une**.
+
+⚠️ **Corollaire, qui règle la renumérotation sans clause dédiée** : réordonner les lignes
+**est** un changement de lignes pour un comparateur positionnel. Une renumérotation
+d'écriture lettrée tombe donc sous (i).
 
 **AC8** — ⚠️ **Une écriture dont une ligne est lettrée ne se supprime pas en laissant une
 marque orpheline**, et **la garde se pose au point de passage des DEUX chemins**. *(Relevé
@@ -201,6 +231,32 @@ porte que le lettrage ouvre lui-même : AC4 laisserait passer le cas, puisque le
 sens sont bien ceux qu'il exige. **Délettrer d'abord est le geste attendu**, et le message de
 refus le dit.
 
+**AC12** — ⚠️ **Le lettrage est REFUSÉ si les deux montants ne sont pas égaux**, et le
+message nomme la cause — *« les montants diffèrent ; le lettrage partiel n'est pas encore
+géré »*. *(Rapatrié en passe 3 : la garde vivait dans **15-1c**, la story de l'écran, alors
+que **la route d'écriture est ici** — T4.)*
+
+⛔ **Le trou que ce rapatriement ferme est réel et daté.** 15-1a et 15-1b mergées, 15-1c
+pas encore : un appel direct à la route apparierait une ligne de 1000 et une ligne de 300 —
+même compte, sens opposés, aucune déjà lettrée, donc accepté — et la vue de 15-1b retirerait
+la créance alors que **700 restent dus**. C'est le finding **F2** de la story mère, coté
+**HIGH** deux fois, qui aurait survécu au découpage.
+
+⚠️ Une garde écrite dans le moteur de proposition ne protège **jamais** l'API — même
+raisonnement qu'AC11 contre l'IDOR. **Ce qui reste à 15-1c est l'arbitrage de la TOLÉRANCE**
+(zéro ou cinq centimes), pas l'existence du contrôle.
+
+**AC13** — ⚠️ **La pose et le retrait de la marque sont tracés à l'audit**
+(`lettering.created`, `lettering.removed`). *(Relevé en passe 3.)* Toutes les mutations
+voisines le sont — `journal_entry.created` / `.updated` / `.deleted`, `fiscal_year.closed` /
+`.reopened` : la convention est uniforme dans le dépôt.
+
+⚠️ **Et AC5 en fait une nécessité, pas une convention** : écrire une marque sur une ligne
+d'un exercice **clôturé** est le seul endroit où l'absence de trace est grave — plus rien ne
+pourra la défaire (AC6 refuse le délettrage), et rien ne dirait qui l'a posée ni quand. La
+note de D3 s'appuie elle-même sur le fait que `fiscal_years::reopen` est *explicite et
+tracée* pour justifier l'asymétrie ; le même argument commande de tracer le lettrage.
+
 **AC11** — ⚠️ **Les deux lignes appartiennent à la société de l'appelant, et c'est
 vérifié.** *(Relevé en passe 1.)* « Même compte » (AC4) garantit que les deux lignes sont de
 la même société **entre elles** — `accounts.company_id` est `NOT NULL` — mais **rien ne les
@@ -229,7 +285,14 @@ même précédent qu'AC2 invoque pour la portée du compteur.
       `assert_eq!(total, …)` codé en dur dont le message renvoie au garde-fou P6 — mais
       **l'anticiper coûte une minute, le découvrir au bout du gate en coûte soixante**.
 - [ ] **T2** — Repository : poser la marque, la retirer, la lire. Gardes d'exercice
-      asymétriques (AC5/AC6).
+      asymétriques (AC5/AC6). **Trace d'audit** (AC13).
+      ⚠️ **Si la conduite (B) est retenue, ajouter `letterings` à `reset_demo`** *(P3-6)* :
+      sa liste de `DELETE` est **explicite** (`kesh-seed/src/lib.rs`) et une table neuve n'y
+      figurerait pas. Le bloc s'exécute sous `SET FOREIGN_KEY_CHECKS=0`, si bien que le
+      `DELETE FROM companies` passerait **malgré la FK** et laisserait des lignes orphelines ;
+      et le jour où ce drapeau serait retiré — le fichier dit que les `DELETE` explicites
+      existent pour cela — `reset_demo` échouerait. *(La réfutation de passe 1, « le wipe
+      efface tout ensemble », ne vaut que pour la conduite (A).)*
 - [ ] **T3** — ⚠️ **Gardes sur les chemins d'écriture existants** (AC7, AC8) — c'est le cœur
       de cette story. Recenser les appelants avant d'écrire :
       `grep -rn "delete_in_tx\|DELETE FROM journal_entry_lines" crates/`.
@@ -238,10 +301,10 @@ même précédent qu'AC2 invoque pour la portée du compteur.
       comparateurs divergents donneraient deux réponses à la question « les lignes ont-elles
       changé ? ». La garde de AC8 se pose dans `delete_in_tx`, **pas** dans le handler.
 - [ ] **T4** — Routes : `POST` lettrage, `DELETE` délettrage.
-- [ ] **T5** — ⚠️ **Export CSV** *(relevé en passe 3, P3-9)* : le header de
-      `journal_entry_lines` est **figé en dur** (`exports/csv_tables.rs:286`) et il n'a
-      **aucune garde d'exhaustivité**, contrairement à `invoices` (`csv_tables.rs:1031`,
-      garde #262). S'y ajoutent **deux** listes de colonnes en dur côté repository
+- [ ] **T5** — ⚠️ **Export CSV** *(relevé en passe 3 de la story MÈRE)* : le header de
+      `journal_entry_lines` est **figé en dur**
+      (`crates/kesh-api/src/exports/csv_tables.rs:286`) et il n'a **aucune garde
+      d'exhaustivité**, contrairement à `invoices` (même fichier, l. 1031, garde #262). S'y ajoutent **deux** listes de colonnes en dur côté repository
       (`LINE_COLUMNS` l. 44 et le `SELECT` l. 1235) : en oublier une fait échouer l'export au
       runtime. Étendre la garde vaut mieux que se souvenir.
       *(Le `.keshbackup` n'est pas concerné : ses colonnes viennent d'`information_schema`.)*
@@ -249,14 +312,25 @@ même précédent qu'AC2 invoque pour la portée du compteur.
       implémentation plausible produit un défaut **muet**. Un test par chemin : modification
       d'écriture lettrée, suppression par la route, **et suppression par `invoices::delete`**.
       Plus **AC10** (ré-apparier une ligne déjà lettrée est refusé, et l'ancien partenaire
-      reste apparié) et **AC11** (deux lignes d'une autre société sont refusées — test
-      d'IDOR, pas de confort).
+      reste apparié), **AC11** (deux lignes d'une autre société sont refusées — test d'IDOR,
+      pas de confort) et **AC12** (montants inégaux refusés **à la route**, pas seulement à
+      l'écran).
+      ⛔ **Le test qui manquait, et qui aurait attrapé le défaut de la passe 2** : modifier
+      **le seul libellé** d'une écriture lettrée, puis vérifier que **la marque est toujours
+      là, des deux côtés**. Sans lui, la clause (ii) d'AC7 n'est pas couverte — et c'est
+      exactement le chemin par lequel la marque se perdait.
 - [ ] **T7** — i18n : les clés des messages de refus dans les **quatre** locales dès
-      l'écriture. **Trois refus, donc trois messages**, chacun nommant sa cause : lignes
-      modifiées sur écriture lettrée (AC7), suppression d'écriture lettrée (AC8), et ligne
-      déjà lettrée (AC10). *(Le décompte était indéterminé tant qu'AC7 n'était pas tranchée —
-      relevé en passe 2.)* L'allowlist de la garde i18n est **vide** (`i18n-keys.test.ts:432`) — une
-      clé manquante rougit au gate.
+      l'écriture. **Un message par refus, énuméré par critère** — et non un total, qui se
+      périme au premier critère ajouté *(P3-4 : la rédaction précédente en annonçait trois,
+      il en manquait quatre)* : compte différent **et** sens non opposés (AC4 — deux causes
+      distinctes), délettrage sur exercice clos (AC6), lignes modifiées sur écriture lettrée
+      (AC7), suppression d'écriture lettrée (AC8), ligne déjà lettrée (AC10), lignes d'une
+      autre société (AC11), montants inégaux (AC12).
+      ⛔ **La garde i18n ne rattrapera pas l'oubli.** Son allowlist est bien vide
+      (`frontend/src/lib/shared/i18n-keys.test.ts:432`), mais elle vérifie qu'une clé
+      **existante** figure dans les quatre catalogues — **pas qu'une clé jamais écrite
+      manque**. Un refus sans clé remonte en erreur générique, et l'utilisateur ne peut pas en
+      déduire la cause : le défaut même qu'AC8 et AC10 prennent soin de nommer.
 
 ## Dev Notes
 
@@ -271,6 +345,74 @@ comment le run précédent s'est terminé (KF-039, #310).
 checksum est enregistré, et le binaire ne boote plus.
 
 ## Change Log
+
+### Passe 3 de `validate` — 2026-08-25 (Opus, contexte frais)
+
+⛔ **1 CRITICAL, 2 HIGH, 4 MEDIUM, 2 LOW. Trajectoire : `HIGH → MEDIUM → CRITICAL`.**
+
+⚠️ **Le critère de non-convergence est déclenché une seconde fois — mais il ne commande PAS
+un re-split ici, et la raison importe.** 15-1a est **étroite** : ce n'est pas un défaut de
+largeur. C'est que **la passe 2 a tranché une règle métier sur un fait qu'elle n'avait pas
+vérifié**, et que la conduite retenue rouvrait le trou que la story existe pour fermer. Le
+remède est ciblé.
+
+**P3-1 (CRITICAL) — la conduite tranchée en passe 2 détruisait la marque sur le chemin
+qu'elle ouvrait.** AC7 autorisait la modification de l'en-tête. Or le `DELETE FROM
+journal_entry_lines` de `update` (`journal_entries.rs:981`) n'est gardé que par le
+court-circuit **no-op complet** — en-tête **et** lignes identiques. Une modification de
+libellé seul le franchit **systématiquement** : les lignes sont effacées et réinsérées sans
+marque, la contrepartie garde la sienne. **Mot pour mot le mode d'échec que cette story
+existe pour fermer**, réintroduit par le critère censé le fermer.
+
+Et le lien n'avait jamais été fait : l'argument (2) de la passe 2 écartait la préservation de
+la marque comme « pas fiable », alors qu'autoriser l'en-tête *l'exigeait* dans ce cas précis.
+→ **AC7 clause (ii)** : quand les lignes sont inchangées, `update` **ne les touche pas**. La
+condition de la garde est exactement ce qui rend le `DELETE`/`INSERT` inutile — le même patch
+ferme le CRITICAL et vide l'objection de son objet.
+
+**P3-2 (HIGH) — le premier des « deux faits au sol » de la passe 2 était FAUX.** Elle
+affirmait qu'un refus global rendrait une écriture lettrée sur exercice clos « figée jusqu'à
+sa description ». **Elle l'est déjà** : `update` refuse à l'Étape 2
+(`journal_entries.rs:892`, `DbError::FiscalYearClosed`), lettrage ou non. Le cas réel est
+plus étroit — écriture sur exercice **ouvert** lettrée contre une contrepartie sur exercice
+**clos**. ⚠️ Un développeur écrivant le test d'AC7 depuis ce texte aurait obtenu un 409
+inattendu, et aurait pu conclure que **la garde de clôture est l'obstacle et l'assouplir** :
+une régression sur l'immuabilité post-clôture introduite par un patch de lettrage.
+
+**P3-3 (HIGH) — le split avait laissé tomber l'égalité des montants.** La garde vivait dans
+**15-1c**, la story de l'écran, alors que **la route d'écriture est dans 15-1a**. 15-1a et
+15-1b mergées sans 15-1c, un appel direct appariait 1000 avec 300 et la vue retirait la
+créance en laissant 700 dus — le finding **F2** de la story mère, coté HIGH deux fois,
+survivant au découpage. Le tableau des décisions du split assignait à 15-1c « la **tolérance**
+de montant » : la tolérance et l'existence du contrôle sont deux questions, et le split a
+déplacé la seconde en croyant ne déplacer que la première. → **AC12**.
+
+**Quatre MEDIUM** : **P3-4** T7 annonçait « trois messages », il en manquait **quatre** — et
+la garde i18n ne rattrape pas une clé *jamais écrite* ; **P3-5** le **format** de la marque
+n'était fixé nulle part alors que T1 doit écrire le DDL et que P8 interdit d'y revenir — la
+story mère nommait pourtant le trou dans ses deux dimensions, « ni format, ni portée », et le
+split a **perdu le format** ; **P3-6** la réfutation du wipe `reset_demo` ne vaut que pour la
+conduite (A) — une table `letterings` n'est pas dans sa liste explicite de `DELETE` ;
+**P3-7** aucune trace d'audit n'était exigée, alors qu'AC5 autorise une écriture sur exercice
+**clos**, seul endroit où l'absence de trace est grave. → **AC13**.
+
+**Deux LOW** : chemins de fichier imprécis (P3-8) ; et **P3-9**, qui compte plus que sa
+cote — « sa seconde moitié EST la garde » invitait à réutiliser `is_no_op_change` **entière**,
+laquelle retourne `false` dès que l'en-tête diffère **sans regarder les lignes**, soit
+l'exact contraire de la conduite. S'y ajoute une réserve sur `project_id`, dont le
+comparateur n'est exact que parce que les deux sites de la route passent `None`.
+
+**Pistes réfutées, et l'une répondait à une inquiétude explicite** : ⚠️ **changer la DATE ne
+peut pas déplacer une écriture lettrée d'exercice** — `update` ne réécrit jamais
+`fiscal_year_id`, et confine `entry_date` aux bornes de l'exercice de l'écriture. La garantie
+d'AC5/AC6 survit aux modifications d'en-tête. Changer le **journal** est inerte. Les
+`DELETE FROM journal_entries` d'`invoices.rs:3866` et l'`INSERT` de `journal_entries.rs:2297`
+sont dans des `mod tests`. Le point de passage unique d'AC8 tient. Le lettrage d'une ligne
+avec elle-même est déjà fermé par la contrainte `chk_jel_debit_credit_exclusive`. Et **les
+patches de la passe 1 tiennent sans régression** — AC10 et AC11 purement additifs, numéros de
+ligne exacts.
+
+La spec passe de **11 à 14 critères**. **Verdict : passe 4 due**, modèle différent.
 
 ### Passe 2 de `validate` — 2026-08-25 (Haiku, contexte frais)
 
