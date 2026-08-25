@@ -28,12 +28,31 @@ vérifié au sol)*.
 
 **Ce qui se reprend — les critères STRUCTURELS, seuls universels :**
 
-| critère | valeur |
-|---|---|
-| même compte | identité stricte |
-| sens opposés | débit ↔ crédit |
-| fenêtre de dates | ⚠️ voir la réserve ci-dessous |
-| montant | **égalité STRICTE** — voir la réserve ci-dessous |
+| critère | valeur | provenance |
+|---|---|---|
+| même compte | identité stricte | ⚠️ **NEUF** |
+| sens opposés | débit ↔ crédit | ⚠️ **NEUF** |
+| **ni l'une ni l'autre déjà lettrée** | `lettering_id IS NULL` **des deux côtés** | ⚠️ **NEUF** |
+| fenêtre de dates | `WINDOW_DAYS` — ⚠️ voir la Réserve 2 | repris (constante extractible) |
+| montant | **égalité STRICTE** — ⚠️ voir la Réserve 1 | adapté (la logique existe, le seuil change) |
+
+⚠️ **La colonne « provenance » n'est pas décorative : trois critères sur cinq sont NEUFS, et
+la rédaction précédente laissait croire le contraire** *(relevé en passe 1)*. Le moteur de
+l'Epic 8 apparie une **transaction bancaire** à une **facture** — la première n'a pas de
+compte du plan comptable, la seconde n'a pas de sens débit/crédit. Son scoring est
+`0,50 × montant + 0,40 × référence + 0,10 × contact` (`kesh-reconciliation/src/matching.rs`) :
+**aucun terme de compte ni de sens**. Et `rules.rs` (Story 8-5b) a **délibérément retiré** le
+seul filtre de sens qui ait existé — *« Sign-agnostic : NE PAS hériter du sign filter 8-4 »*.
+
+⛔ **Conséquence pour T1** : « ne pas dupliquer, extraire si nécessaire » ne vaut que pour la
+fenêtre et le montant. **Il n'y a rien à extraire pour « même compte » et « sens opposés »** —
+un développeur qui les chercherait perdrait son temps devant du code qui n'existe pas.
+
+⛔ **Et le critère `lettering_id IS NULL` manquait** *(relevé en passe 1)*. AC10 de **15-1a**
+refuse de lettrer une ligne déjà marquée — la route est donc protégée —, mais **rien
+n'empêchait le MOTEUR de re-proposer** la paire. L'écran aurait présenté en boucle des
+« rapprochements évidents » que la validation rejette, ruinant la promesse du *so that* :
+*« sans ressaisir ce que le logiciel voit déjà »*.
 
 **Ce qui NE se reprend PAS — les filtres propres à la facture client :**
 
@@ -119,15 +138,65 @@ ou aide contextuelle — dit ce que cet écran fait et ce qu'il ne fait pas ; **
 E2E l'atteint par un `data-testid` stable et **jamais** par son libellé traduit. Un
 `data-testid` ne satisfait pas (1) : il est invisible.
 
+**AC6** — ⛔ **Le moteur ne voit QUE les lignes de la société de l'appelant, et c'est
+vérifié par jointure.** *(Relevé en passe 1 : 15-1c n'avait **aucune** mention de scoping —
+zéro occurrence de `company_id`, « multi-tenant » ou « IDOR ».)*
+
+⚠️ **15-1c ouvre une surface d'API NEUVE** — le moteur et ses routes de proposition — par un
+chemin **distinct** des routes de lettrage que 15-1a a pris soin de scoper (son AC11). La
+discipline ne s'hérite pas : elle se réécrit ici. `journal_entry_lines` n'ayant **aucun**
+`company_id`, la vérification passe par jointure sur `journal_entries.company_id`.
+
+⚠️ **Si une route accepte un identifiant externe** — un compte, une ligne —, le refus est un
+**404 indiscernable** de « inconnu », jamais un message qui nomme la cause : c'est la
+convention anti-IDOR du dépôt (`kesh-api/src/routes/products.rs:343`), et **le dépôt a déjà
+payé un défaut de cette classe (KF-002)**.
+
+⛔ **Inscrire la séquence de verrous et le scoping de ces routes au tableau du Pattern 5**
+(`docs/MULTI-TENANT-SCOPING-PATTERNS.md`), comme 15-1a l'impose pour les siennes — ce document
+**exige** que tout nouvel endpoint y figure.
+
+**AC7** — ⛔ **Le moteur est BORNÉ, en portée et en volume.** *(Relevé en passe 1 : T1 et T2
+tenaient en une phrase, sans limite ni portée.)*
+
+- **Portée** : le moteur travaille sur **un compte choisi**, jamais sur la société entière.
+- **Volume** : le nombre de propositions rendues est **plafonné côté serveur**, et un
+  `?limit=` reçu est **écrêté** — jamais cru sur parole.
+
+⚠️ **La réconciliation, dont cette story dit reprendre les critères, porte TROIS garde-fous
+pour le même genre de calcul** : `LIMIT 50` dans le SQL candidat, `MAX_PROPOSALS_LIMIT = 500`
+côté route — dont le commentaire dit en toutes lettres *« défense anti-DoS contre
+`?limit=999999` »* — et un **index dédié** créé pour l'occasion.
+
+⛔ **Deux facteurs aggravent le cas ici, et ils sont propres à cette story** : la **Réserve 2**
+envisage de retirer la fenêtre de dates du filtre — ce qui ferait comparer **toutes** les
+lignes ouvertes d'un compte entre elles, sans borne temporelle ; et **AC2 interdit de filtrer
+sur le statut de facture**, donc l'ensemble candidat ne peut plus être réduit comme le fait la
+réconciliation. Sur un compte fournisseur actif depuis plusieurs exercices — que **D3 autorise
+explicitement** à lettrer à cheval —, un appariement **quadratique non plafonné** est un
+calcul lourd et bloquant.
+
+⚠️ **L'index actuel ne suffit pas** : `journal_entry_lines` ne porte que `idx_jel_entry` et
+`idx_jel_account`, deux index **simples**. Vérifier et étendre l'indexation — au minimum un
+composite `(account_id, lettering_id)` — **avant** d'écrire la requête d'appariement.
+
 ## Tasks
 
-- [ ] **T1** — Moteur de proposition (D5). ⚠️ **Ne pas dupliquer** les critères structurels
-      de la réconciliation : extraire si nécessaire. Et **ne pas reprendre** ses filtres de
-      facture.
-- [ ] **T2** — Routes de proposition.
+- [ ] **T1** — Moteur de proposition (D5). ⚠️ **Ce qui s'extrait, ce sont la fenêtre et le
+      montant** — « même compte », « sens opposés » et `lettering_id IS NULL` sont **neufs**,
+      sans précédent dans `kesh-reconciliation`. Et **ne pas reprendre** les filtres de
+      facture (`status`, `paid_at`), propres à `invoices`.
+      ⛔ **Borne de volume et index (AC7)** avant d'écrire la requête : portée par compte,
+      plafond serveur, composite `(account_id, lettering_id)`.
+- [ ] **T2** — Routes de proposition. ⛔ **Scoping par jointure (AC6)**, écrêtage du `?limit=`
+      reçu (AC7), et inscription au tableau du Pattern 5.
 - [ ] **T3** — Écran dédié, avec la frontière énoncée (AC5).
 - [ ] **T4** — Tests : **AC2 en priorité**, ses trois cas nommés, avec l'écart de dates
       réaliste sur la contre-passation. Puis AC3 et AC5.
+      ⛔ Plus **AC6** (une ligne d'une autre société n'est **jamais** candidate — test d'IDOR),
+      **AC7** (le plafond tient, et un `?limit=` démesuré est écrêté), et le cas de **la ligne
+      déjà lettrée** : elle ne doit **jamais** apparaître en proposition. Ce dernier manquait
+      à la fois du tableau des critères **et** de la liste des tests.
 - [ ] **T5** — i18n : quatre locales dès l'écriture, allowlist vide.
 - [ ] **T6** — Manuel utilisateur : ce que le lettrage fait, et **ce qu'il ne fait pas
       encore** — le partiel et le groupé.
@@ -141,6 +210,43 @@ exception (garde #326).
 traverse réellement la frontière HTTP.
 
 ## Change Log
+
+### Passe 1 de `validate` — 2026-08-25 (Sonnet, contexte frais)
+
+**2 HIGH, 2 MEDIUM.** Tous vérifiés au sol par l'orchestrateur avant application.
+
+⚠️ **Les quatre findings répètent le motif des huit passes de 15-1a** : une lecture de la spec
+contre elle-même les aurait tous laissés passer. **Seule la lecture des chemins de code de
+l'Epic 8 et du schéma de `journal_entry_lines` les révèle.**
+
+| | défaut | gravité | remède |
+|---|---|---|---|
+| **P1-2** | **Aucune mention de scoping multi-tenant** — zéro occurrence de `company_id`, « multi-tenant » ou « IDOR ». Or 15-1c ouvre une **surface d'API neuve** par un chemin **distinct** des routes que 15-1a a scopées, et `journal_entry_lines` n'a **aucun** `company_id` | **HIGH** | **AC6** — jointure, 404 indiscernable, inscription au Pattern 5 |
+| **P1-4** | **Aucune borne de performance ni anti-DoS** — T1 et T2 tenaient en une phrase. La réconciliation en porte **trois** pour le même calcul : `LIMIT 50`, `MAX_PROPOSALS_LIMIT = 500` (*« défense anti-DoS contre `?limit=999999` »*) et un index dédié | **HIGH** | **AC7** — portée par compte, plafond serveur, composite `(account_id, lettering_id)` |
+| **P1-1** | **La provenance de deux critères sur quatre était FAUSSE** : « même compte » et « sens opposés » **n'existent nulle part** dans l'Epic 8, dont le scoring est `0,50 montant + 0,40 référence + 0,10 contact`. Pire, `rules.rs` a **délibérément retiré** le seul filtre de sens qui ait existé | MEDIUM | colonne « provenance » au tableau ; T1 dit ce qui s'extrait et ce qui est neuf |
+| **P1-3** | **Le critère `lettering_id IS NULL` manquait** au tableau **et** aux tests. AC10 de 15-1a protège la route, mais **rien n'empêchait le MOTEUR de re-proposer** une paire déjà lettrée | MEDIUM | critère ajouté, test nommé |
+
+⛔ **P1-4 est aggravé par deux traits propres à cette story**, et c'est ce qui le rend HIGH
+plutôt que MEDIUM : la **Réserve 2** envisage de retirer la fenêtre de dates du filtre — donc
+de comparer toutes les lignes d'un compte sans borne temporelle — et **AC2 interdit de filtrer
+sur le statut de facture**, si bien que l'ensemble candidat ne peut plus être réduit comme le
+fait la réconciliation. Sur un compte fournisseur actif depuis plusieurs exercices — que **D3
+autorise explicitement** —, l'appariement devient **quadratique et non plafonné**.
+
+⚠️ **P1-3 dit quelque chose du découpage** : le socle protège la **route**, la story de l'écran
+alimente le **moteur**, et le critère qui les relie n'était écrit ni dans l'une ni dans l'autre.
+C'est la même classe de trou que l'égalité des montants, tombée entre 15-1a et 15-1c et
+rapatriée en passe 3.
+
+**Six pistes réfutées au sol**, dont : la tolérance de 5 centimes n'est **pas** justifiée par
+les frais bancaires *dans le code* — ce narratif vient de la story mère, le commentaire réel
+dit seulement *« réduit le candidate set sans accepter le mismatch »* ; le montant TTC/HT ne
+pose **pas** ici le problème qu'il a posé à la réconciliation (#246), les lignes de grand livre
+portant déjà le TTC ; la paire facture/avoir **est** structurellement exacte, l'avoir créditant
+`total_ht + total_vat` au même compte ; et le règlement fournisseur crée bien une écriture au
+même compte, sens opposé, même TTC, **pour les deux modes de règlement**.
+
+La spec passe de **5 à 7 critères**. **Verdict : passe 2 due.**
 
 ### Création par split de la 15-1 — 2026-08-25
 
