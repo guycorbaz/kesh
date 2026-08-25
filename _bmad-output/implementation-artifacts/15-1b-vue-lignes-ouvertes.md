@@ -56,10 +56,45 @@ fidèle à la spec n'implémentera **ni l'un ni l'autre**.
 *(conduite ajoutée en passe 1 — elle manquait, et c'est la seule des trois qui ne porte aucun
 des deux risques ci-dessus)*. La ligne de créance d'une facture de vente est identifiable sans
 ambiguïté : c'est **la seule ligne à `debit > 0`** de l'écriture de vente, au compte
-`default_receivable_account_id` de la société. Un `LEFT JOIN journal_entry_lines … AND
-lettering_id IS NULL` s'ajoute donc au filtre existant d'`aged_receivables.rs:127` et de
-`dunning_eligibility.rs:87` **sans toucher ni `paid_at` ni `mark_as_paid`** — donc sans hériter
-du trou d'exercice que (A) traîne.
+`default_receivable_account_id` de la société.
+
+⛔ **La forme SQL écrite en passe 1 était FAUSSE, et elle aurait été appliquée sans effet.**
+*(P3-5, passe 3.)* Un `LEFT JOIN … AND lettering_id IS NULL` **n'exclut aucune ligne** — un
+`LEFT JOIN` ne filtre pas. Il faut un `INNER JOIN … AND jel.lettering_id IS NULL`, ou une
+anti-jointure (`LEFT JOIN … AND jel.lettering_id IS NOT NULL … WHERE jel.id IS NULL`). Tel
+qu'écrit, un développeur appliquait (C), **rien ne changeait**, et le gate restait vert.
+
+⛔ **Et la jointure DOIT porter ses deux discriminants** — `AND jel.debit > 0 AND
+jel.account_id = <compte de créances>` — faute de quoi elle rend **N+1 lignes par facture**
+(la créance **plus** toutes les lignes de produit et de TVA). ⚠️ `aged_receivables` est une
+requête d'**agrégat** (`SUM()` par contact) : chaque tranche de la balance âgée serait
+**multipliée par N+1**. Muet, et faux en argent. Le même oubli sur `dunning_eligibility`
+produit des **rappels en double**.
+
+**Le test qui garde la forme** : une facture à trois lignes de produit et deux taux de TVA,
+non lettrée, doit apparaître **une seule fois** et pour son TTC.
+
+⛔ **Et l'inventaire des LECTEURS était incomplet — il y en a CINQ, la conduite n'en nommait
+DEUX.** *(P3-3, passe 3, recompté au sol.)*
+
+| lecteur de `paid_at IS NULL` | conséquence si le lettrage ne l'atteint pas |
+|---|---|
+| `kesh-report/src/aged_receivables.rs` | balance âgée fausse — *cosmétique* |
+| `kesh-db/src/repositories/dunning_eligibility.rs` | rappel envoyé à tort — *visible du client* |
+| ⛔ `kesh-db/src/repositories/reconciliation.rs` | **la facture est proposée à un second règlement** — *écriture fausse* |
+| `kesh-db/src/repositories/invoices.rs` (filtres « impayées »/« en retard », `due_dates_summary`) | listes et KPI faux |
+| `kesh-api/src/routes/invoices.rs` (champ dérivé `isOverdue`) | affichage faux |
+
+⛔ **Le troisième est d'une autre nature que les autres, et il se traite EN PRIORITÉ** : une
+facture réglée en espèces et lettrée, mais laissée `paid_at IS NULL` — c'est-à-dire exactement
+ce que (B) et (C) produisent — reste **candidate à la réconciliation**. Un virement du même
+montant arrive un mois plus tard, l'utilisateur accepte : **la facture est soldée deux fois**,
+une fois en caisse et une fois en banque. Ce n'est plus un rappel de trop, c'est une écriture
+fausse.
+
+⚠️ **Toute conduite retenue nomme lequel des cinq elle laisse dehors.** Corriger les deux
+premiers en croyant l'écart fermé, c'est reproduire sur les **lecteurs** le défaut que la
+passe 1 avait relevé sur les **écrivains** — par son propre correctif.
 
 ✅ **Sa prémisse est VÉRIFIÉE au sol** *(contrôle de passe 2)* :
 `generate_invoice_journal_lines` (`kesh-db/src/repositories/invoices.rs:1368` et suivantes)
@@ -174,8 +209,22 @@ avec le total.
 ⛔ **La vue est BORNÉE aux comptes de créances et de dettes** — `role IN ('Receivable',
 'Payable')` — et le mécanisme **existe déjà, il n'est pas à construire** *(relevé en passe 1 :
 rien ne bornait la vue)*. `AccountRole::Receivable` / `::Payable`
-(`kesh-db/src/entities/account.rs:92,96`) est un **singleton par société**, tenu par la
-contrainte `chk_accounts_role` et déjà consommé par le bilan.
+(`kesh-db/src/entities/account.rs:92,96`) est déjà consommé par le bilan.
+
+⚠️ **Trois rectifications, toutes vérifiées au sol** *(P3-6, passe 3)* : le singleton n'est
+**pas** tenu par `chk_accounts_role` — qui ne contrôle que le **domaine de valeurs** — mais par
+`uq_accounts_company_singleton_role`. Il ne vaut que **parmi les comptes ACTIFS**, la colonne
+générée valant `NULL` dès qu'un compte est archivé : un compte de créances archivé **conserve**
+`role = 'Receivable'` et passerait une borne écrite `role IN (…)`. Et le dépôt interroge
+**toujours `singleton_role`**, jamais `role` — avec sa raison écrite : *« `role = ?` scannait
+l'index, `singleton_role = ?` restaure l'accès `const` »* (revue de la Story 14-3b). Écrire
+`role IN (…)` réintroduirait le défaut qu'une passe avait fermé.
+
+⛔ **Et une question de fond reste ouverte** : `accounts.role` n'est **pas** la source de vérité
+des écritures. Celles-ci visent `company_invoice_settings.default_receivable_account_id`, et
+`accounts::update` change `role` **sans jamais toucher ces réglages**. Déplacer le rôle de 1100
+vers 1101 laisserait les factures s'imputer sur 1100 tandis que la vue n'accepterait plus que
+1101, **vide** : « rien d'ouvert » sur le compte qui porte tout le solde.
 
 ⚠️ **`account_type` ne suffit PAS** : un compte débiteur et un compte de caisse sont tous deux
 `Asset`. Sans cette borne, ouvrir la vue sur un compte de produit ou sur le compte bancaire
@@ -220,7 +269,11 @@ manuelles qui se soldent sont **l'un des quatre cas d'usage** que le lettrage ex
 couvrir. Le test qui l'attrape : deux écritures manuelles au compte de créances, sens opposés,
 aucune facture derrière — **les deux doivent apparaître ouvertes**.
 
-**AC3-bis** — ⚠️ **Et pour les DEUX écritures d'une facture fournisseur payée** *(relevé en
+**AC3-bis** *(rectifié en passe 3 — la passe 1 avait corrigé la fixture dans T4 et laissé
+le critère, si bien que l'assertion prescrite était **fausse par construction** avec la
+fixture imposée)* : **les deux lignes de la facture PAYÉE disparaissent des ouverts ; celles
+d'une facture NON payée sur le même compte y restent.** ⚠️ **Et pour les DEUX écritures d'une
+facture fournisseur payée** *(relevé en
 passe 3)* : l'achat (`purchase_journal_entry_id`) **et** le règlement
 (`settlement_journal_entry_id`). Une jointure qui n'en voit qu'une laisse l'autre ouverte à
 jamais. **Un test qui paie une facture fournisseur et vérifie que le compte 2000 n'affiche
@@ -288,6 +341,63 @@ exception (garde #326, son allowlist ne doit pas s'allonger).
 ⚠️ **La base de gate se remet à zéro AVANT le gate**, inconditionnellement (KF-039, #310).
 
 ## Change Log
+
+### Passe 3 de `validate` — 2026-08-25 (Opus, contexte frais)
+
+⛔ **3 HIGH, 6 MEDIUM, 3 LOW. LA SÉVÉRITÉ REMONTE** (`0 HIGH` en passe 2 → `3 HIGH`). Critère
+de non-convergence franchi — **et 15-1c a franchi le sien dans la même heure**.
+
+⚠️ **Les deux rapports, indépendants, concluent à la MÊME chose : les fiches ne sont pas trop
+larges, elles sont trop COUPLÉES.** Aucun des trois HIGH n'est visible en relisant la fiche
+contre elle-même ; les trois le sont en la relisant contre **le code** et contre **ses sœurs**.
+
+⛔ **P3-2 (HIGH) — 15-1b et 15-1c donnent DEUX définitions différentes d'« ouvert ».** Ici,
+`paid_at IS NULL` est **constitutif** ; là-bas, il est **interdit** à l'éligibilité. Le cas
+d'usage nº 1 de l'epic le révèle : facture réglée en espèces, écriture de caisse passée à la
+main **et** facture marquée payée. La vue **cache** le débit de créance et **affiche** le
+crédit de caisse ; le moteur, lui, **propose la paire**. L'écran montre un rapprochement dont
+la vue ne rend qu'une moitié, et **le total des lignes ouvertes devient négatif**. → **c'est
+une CINQUIÈME décision, portée par aucune des deux fiches.**
+
+⛔ **P3-3 (HIGH) — l'inventaire des LECTEURS de `paid_at` était incomplet : CINQ, la conduite
+(C) en nommait DEUX.** Le troisième est d'une autre nature — `reconciliation.rs` propose une
+facture lettrée mais non marquée payée à un **second règlement** : la facture est **soldée deux
+fois**, une fois en caisse et une fois en banque. ⚠️ **C'est le mode d'échec que la passe 1
+avait relevé sur les ÉCRIVAINS, reproduit sur les LECTEURS par son propre correctif.**
+
+⛔ **P3-1 (HIGH) — le quatrième cas d'AC2-bis existe, et la fiche sœur le nomme depuis sa
+passe 1** : la facture **annulée par un avoir** passe à `cancelled`. Et les deux SQL cités en
+Décision 1 étaient **tronqués** — ils portent aussi `AND i.status = 'validated'`. Un
+développeur calquant la jointure sur les voisins que la fiche lui désigne ferait disparaître le
+débit de vente et laisserait le crédit d'avoir **ouvert à jamais** : la paire la plus propre du
+lettrage deviendrait la seule qu'on ne peut pas lettrer.
+
+**Trois erreurs factuelles de mes patches, corrigées ici :**
+
+| | ce qui était écrit | ce qui est vrai |
+|---|---|---|
+| **P3-5** | *« un `LEFT JOIN … AND lettering_id IS NULL` s'ajoute au filtre »* | **un `LEFT JOIN` n'exclut RIEN** — (C) aurait été appliquée **sans effet**, gate vert. Et sans ses deux discriminants, elle rend **N+1 lignes par facture** : `aged_receivables` étant un **agrégat**, chaque tranche serait multipliée |
+| **P3-6** | *« singleton tenu par `chk_accounts_role` »* | c'est `uq_accounts_company_singleton_role` ; le singleton ne vaut que **parmi les actifs** ; et le dépôt interroge **toujours `singleton_role`**, jamais `role` |
+| **P3-8** | AC3-bis exigeait « aucune ligne ouverte » | la fixture imposée par T4 en passe 1 rend cette assertion **fausse par construction** — la passe 1 avait corrigé la tâche et laissé le critère |
+
+**Six MEDIUM restants**, dont : une **troisième conduite** manque à la Décision 2 — ne pas
+filtrer sur `paid_at` du tout, seule qui rende vrai l'invariant *« somme des lignes ouvertes =
+solde du compte »*, testable en une assertion ; une société **sans rôle configuré** voit une
+vue vide sans que rien ne le lui dise ; « le total » d'AC1 ne dit pas s'il porte sur la page ou
+sur l'ensemble — **700 lignes, une page de 500, un total amputé de 29 %** sans le moindre
+signe ; le troisième cas d'AC2-bis est **mal nommé** (« aucune facture » recouvre l'avoir et la
+contre-passation, pas seulement le manuel) ; et une facture fournisseur peut porter **TROIS**
+écritures, la troisième n'étant **référencée par aucune colonne**.
+
+**Réfuté** : une facture payée **ne peut pas** être créditée (`credit_notes.rs:300` le refuse),
+donc pas de crédit d'avoir orphelin par ce chemin ; les trois FK nécessaires sont **indexées**,
+la requête de T1 n'a aucun problème de plan ; et la prémisse de (C) est confirmée **une
+troisième fois**, au niveau du schéma cette fois. ⚠️ **Mais elle ne se transpose pas au
+fournisseur** : à l'achat la ligne du compte 2000 est la seule à `credit > 0`, **au règlement
+la seule à `debit > 0`** — le discriminant **change de sens selon l'écriture**.
+
+**Verdict : ni une passe 4, ni un split — une DÉCISION et une relecture croisée des trois
+fiches.**
 
 ### Passe 2 de `validate` — 2026-08-25 (Haiku, contexte frais)
 
