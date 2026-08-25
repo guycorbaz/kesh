@@ -332,6 +332,53 @@ Cette règle s'applique à :
 
 **Exception** : si un finding `MEDIUM+` est explicitement reclassé en **dette technique documentée** (dans une section `Security debt` / `Performance debt` / équivalente du story file ou des Dev Notes) avec un propriétaire et une story de remédiation planifiée, il compte comme « résolu » pour cette itération.
 
+### La passe ciblée — une seule lentille, braquée sur la dernière remédiation
+
+**Règle** : quand une boucle de revue converge, la passe suivante peut être une **passe
+ciblée** — **une seule lentille**, en contexte frais, braquée sur **le seul commit de la
+remédiation précédente**, avec son prompt versionné à côté du story file. Elle remplace
+alors le protocole à trois lentilles sur le périmètre complet.
+
+**Le motif qui la justifie, et il est mesuré** : *la sévérité ne stagne pas, elle se
+déplace vers ce qu'on vient d'écrire.* Sur l'Epic 22, **deux CRITICAL de la 22-2 ont été
+INTRODUITS par une remédiation**, aucun ne venait de la spec ; la passe 3 a trouvé un
+défaut créé par la passe 2, la passe 4 un défaut créé par la passe 3, et la passe 5 une
+garde posée par la passe 4 que rien n'exerçait. Sur l'Epic 23, le motif s'est aggravé :
+**sur les huit passes cumulées de la 23-1a et de la 23-1b, SEPT ont trouvé une régression
+du patch précédent et AUCUNE un défaut de la conception d'origine.**
+
+**Donc : quand une boucle converge, ce qu'il reste à relire n'est plus la story — c'est la
+dernière remédiation.** Y braquer une lentille coûte environ le tiers d'une passe complète
+et vise l'endroit exact que personne n'a relu.
+
+**Quand l'employer** :
+
+- la sévérité est retombée à 0 au-dessus de LOW, ou n'a plus rien trouvé qui ne vienne du
+  patch précédent ;
+- **et** la remédiation à relire touche du code, non seulement des comptes rendus.
+
+**Quand elle ne suffit PAS** : si le patch précédent touche plusieurs modules ou change une
+règle métier, reprendre le protocole complet. La passe ciblée est un instrument de fin de
+boucle, pas une économie de passes.
+
+⚠️ **Ce qui permet de CLORE la boucle après elle** : que la remédiation qu'elle produit ne
+touche **aucune ligne de code de production**. C'est ce qui s'est vérifié en passe 5 de la
+22-2b — la fonction litigieuse vivait dans `mod tests`, les trois autres fichiers étaient
+deux `.test.ts` et un banc. Le motif « la remédiation introduit le défaut suivant » n'avait
+plus de prise. **Tant que le correctif touche la production, la boucle n'est pas close.**
+
+⚠️ **Le prompt de la lentille se VERSIONNE**, à côté du story file
+(`22-2b-review-prompt-regression-hunter-p5.md` est le précédent). Une passe qui ne suit pas
+le protocole standard doit laisser de quoi la rejouer et la contester — sans quoi son
+verdict n'est plus vérifiable, et une passe non vérifiable ne vaut pas mieux qu'une passe
+non faite.
+
+*(Inventée en passe 5 de la 22-2b sur arbitrage de Guy ; employée depuis en passe 4 de la
+23-1a. Codifiée le 2026-08-25 — action A9 de la rétrospective de l'Epic 22, signalée à
+trois revues de projet consécutives avant de l'être. ⚠️ Elle s'était transmise par le
+contexte de travail et non par ce fichier : un geste qui ne vit que dans une session se
+perd avec elle.)*
+
 ### Propagation post-patch — grep du symptôme avant la passe suivante
 
 **Règle** : après avoir appliqué un patch de remédiation (revue de spec ou de code), et **avant** de relancer la passe suivante, `grep` le **symptôme corrigé** — pas seulement le site corrigé — sur **tout le dépôt** : code, spec/story file, doc-comments, tests, i18n (les 4 locales), fallbacks Svelte, manuels LaTeX. Lister les sites atteints et les traiter dans le **même** patch.
