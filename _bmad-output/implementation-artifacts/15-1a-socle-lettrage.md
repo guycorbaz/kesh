@@ -46,16 +46,55 @@ et elles conditionnent le DDL de T1.
 
 ```sql
 CREATE TABLE letterings (
-  id          BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  company_id  BIGINT NOT NULL,
-  code        VARCHAR(16) NOT NULL,
-  created_at  DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  created_by  BIGINT NULL,
-  CONSTRAINT uq_letterings_company_code UNIQUE (company_id, code),
-  ...
-);
--- et sur journal_entry_lines : une FK nullable vers letterings(id)
+    id          BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    company_id  BIGINT NOT NULL,
+    seq         BIGINT NOT NULL
+                COMMENT 'Rang du lettrage dans la société — SEUL support du compteur ; `code` en est la projection',
+    code        VARCHAR(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL
+                COMMENT 'Projection base 26 bijective de seq (A, B, … Z, AA) — affichage et saisie',
+    created_at  DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    created_by  BIGINT NOT NULL,
+    CONSTRAINT fk_letterings_company FOREIGN KEY (company_id)
+        REFERENCES companies(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_letterings_user FOREIGN KEY (created_by)
+        REFERENCES users(id) ON DELETE RESTRICT,
+    CONSTRAINT uq_letterings_company_seq  UNIQUE (company_id, seq),
+    CONSTRAINT uq_letterings_company_code UNIQUE (company_id, code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE journal_entry_lines
+    ADD COLUMN lettering_id BIGINT NULL
+        COMMENT 'Marque de lettrage — deux lignes soldées partagent la même valeur',
+    ADD CONSTRAINT fk_jel_lettering FOREIGN KEY (lettering_id)
+        REFERENCES letterings(id) ON DELETE RESTRICT,
+    ADD INDEX idx_jel_lettering (lettering_id);
 ```
+
+⛔ **La colonne `seq` n'est pas un confort : sans elle, le compteur est FAUX.** *(P5-1,
+CRITICAL, relevé en passe 5.)* Le gap lock d'`entry_number` porte sur un **entier** ; sur du
+texte, `MAX()` trie **lexicographiquement**, et la séquence bijective n'est pas ordonnée
+ainsi — `MAX('Z', 'AA', … , 'AZ')` rend **`Z`**, quand la suite attend `BA`. **Le compteur
+repartirait en boucle après la vingt-sixième lettre**, et `uq_letterings_company_code` ferait
+alors échouer le lettrage — bruyamment, mais à chaque tentative.
+
+**Le mécanisme, en trois temps** : le gap lock s'applique à `seq`
+(`SELECT COALESCE(MAX(seq), 0) + 1 … WHERE company_id = ? FOR UPDATE`) — **transposition
+exacte** du pattern d'`entry_number` ; `code` est **calculé en Rust** depuis `seq` (base 26
+bijective) ; les deux contraintes d'unicité tiennent le filet. ⚠️ **La conversion est une
+fonction pure : elle se teste en `kesh-core`, sans base** — et ses cas limites sont `26 → Z`,
+`27 → AA`, `52 → AZ`, `53 → BA`, `702 → ZZ`, `703 → AAA`.
+
+**Les comportements de FK sont tranchés** *(P5-3)*, conformes aux conventions du dépôt
+(`companies(id) ON DELETE RESTRICT` partout ; `users(id) ON DELETE RESTRICT` pour un auteur
+d'action, cf. `bank_imports.imported_by_user_id`) :
+
+- `journal_entry_lines.lettering_id` → `letterings(id)` **`ON DELETE RESTRICT`** : on ne
+  supprime pas une entrée encore référencée. ⚠️ **Cela impose l'ordre du délettrage** — mettre
+  les deux lignes à `NULL`, **puis** supprimer l'entrée —, et c'est voulu : `SET NULL` ferait
+  disparaître une marque des deux côtés sans trace, exactement le défaut muet qu'AC8 ferme
+  ailleurs.
+- `letterings.company_id` → `companies(id)` **`RESTRICT`**, `letterings.created_by` →
+  `users(id)` **`RESTRICT`** : l'auteur d'un lettrage reste identifiable, ce dont AC13 dépend.
 
 **Pourquoi, et ce n'est pas un choix d'élégance** — l'alternative écartée était une colonne
 `lettering_code` nullable sur `journal_entry_lines` :
@@ -132,9 +171,14 @@ et c'est exactement la classe d'erreur qu'une spécification muette invite à co
 
 **AC3** — **L'unicité tient sous concurrence.** Deux lettrages simultanés dans la même
 société ne reçoivent jamais le même code. Un compteur lu puis incrémenté hors transaction ne
-le garantit pas : **la génération se fait sous le gap lock**, sur le modèle d'`entry_number`
-(`SELECT … FOR UPDATE` scopé par `company_id`, `journal_entries.rs:232`), et
-`uq_letterings_company_code` **rattrape** toute violation résiduelle.
+le garantit pas : **le gap lock porte sur `seq`** — `SELECT COALESCE(MAX(seq), 0) + 1 …
+WHERE company_id = ? FOR UPDATE`, transposition exacte du pattern d'`entry_number`
+(`journal_entries.rs:232`) — et les deux contraintes d'unicité rattrapent toute violation
+résiduelle.
+
+⛔ **Le gap lock ne doit JAMAIS porter sur `code`** *(P5-1)* : `MAX()` sur du texte trie
+**lexicographiquement**, et `MAX('Z','AA')` rend **`Z`**. Le compteur repartirait en boucle
+après la vingt-sixième lettre.
 
 ⚠️ **Un test de concurrence est exigé** — deux lettrages simultanés dans la même société,
 deux codes distincts. Sans lui, le filet de schéma reste une intention.
@@ -272,8 +316,12 @@ même précédent qu'AC2 invoque pour la portée du compteur.
 
 ## Tasks
 
-- [ ] **T1** — Migration : `CREATE TABLE letterings` (avec `uq_letterings_company_code`)
-      **et** la FK nullable sur `journal_entry_lines`, selon le § *Décisions tranchées*.
+- [ ] **T1** — Migration : `CREATE TABLE letterings` **et** la FK nullable sur
+      `journal_entry_lines` — le DDL entier est au § *Décisions tranchées*, à reprendre tel
+      quel (FK, contraintes d'unicité, `CHARACTER SET`/`COLLATE`, `COMMENT`, `ENGINE`).
+      ⚠️ **La conversion `seq` → `code` (base 26 bijective) est une fonction PURE** : elle va
+      dans `kesh-core` et **se teste sans base**. Cas limites à couvrir nommément :
+      `26 → Z`, `27 → AA`, `52 → AZ`, `53 → BA`, `702 → ZZ`, `703 → AAA`.
       ⚠️ La migration **n'écrit aucune donnée** — `CREATE TABLE` + `ADD COLUMN` nullable —
       donc **non-breaking** : pas de bump `min_required` (P1). Ligne d'audit d'idempotence
       **obligatoire** (P5, `docs/migrations-idempotence-audit.md`), et les **deux** sites du
@@ -287,6 +335,9 @@ même précédent qu'AC2 invoque pour la portée du compteur.
       site. Le filet est *fail-loud* — `migrations_upgrade_path.rs` porte un
       `assert_eq!(total, …)` codé en dur dont le message renvoie au garde-fou P6 — mais
       **l'anticiper coûte une minute, le découvrir au bout du gate en coûte soixante**.
+      *(P5-5 : le compteur de ce test bougera, la migration étant un fichier de plus ; en
+      revanche **aucun backfill à fenêtre n'est en jeu**, cette migration n'écrivant pas de
+      données.)*
 - [ ] **T2** — Repository : poser la marque, la retirer, la lire. Gardes d'exercice
       asymétriques (AC5/AC6). **Trace d'audit** (AC13).
       ⛔ **Ajouter `letterings` à `reset_demo`** *(P3-6 — la conduite retenue le rend
@@ -328,7 +379,10 @@ même précédent qu'AC2 invoque pour la portée du compteur.
       il en manquait quatre)* : compte différent **et** sens non opposés (AC4 — deux causes
       distinctes), délettrage sur exercice clos (AC6), lignes modifiées sur écriture lettrée
       (AC7), suppression d'écriture lettrée (AC8), ligne déjà lettrée (AC10), lignes d'une
-      autre société (AC11), montants inégaux (AC12).
+      autre société (AC11), montants inégaux (AC12). **Huit messages**, AC4 en portant
+      **deux** — *« les deux lignes ne sont pas sur le même compte »* et *« les deux lignes
+      vont dans le même sens »* sont des causes distinctes, et un message unique laisserait
+      l'utilisateur deviner laquelle s'applique *(P5-4)*.
       ⛔ **La garde i18n ne rattrapera pas l'oubli.** Son allowlist est bien vide
       (`frontend/src/lib/shared/i18n-keys.test.ts:432`), mais elle vérifie qu'une clé
       **existante** figure dans les quatre catalogues — **pas qu'une clé jamais écrite
@@ -348,6 +402,52 @@ comment le run précédent s'est terminé (KF-039, #310).
 checksum est enregistré, et le binaire ne boote plus.
 
 ## Change Log
+
+### Passe 5 — contrôle d'arbitrage — 2026-08-25 (Haiku, contexte frais)
+
+⛔ **1 CRITICAL, 1 HIGH, 2 MEDIUM, 1 LOW.** La passe était due parce que l'arbitrage fixait
+une règle structurante **après** la convergence de la passe 4. Elle a bien fait de l'être.
+
+**P5-1 (CRITICAL) — le compteur aurait été FAUX à la vingt-septième lettre.** Le § *Décisions
+tranchées* affirmait que le gap lock d'`entry_number` « se transpose à l'identique ». Il ne se
+transpose pas : `entry_number` est un **entier**, `code` est du **texte**, et `MAX()` sur du
+texte trie **lexicographiquement**. Vérifié : `MAX('A','B','Z','AA','AB','AZ','BA')` rend
+**`Z`**, quand la séquence bijective attend `BA`.
+
+⚠️ **Le défaut n'aurait pas été muet — il aurait été bruyant et tardif** : après `Z`, le
+compteur serait reparti sur des valeurs déjà prises, et `uq_letterings_company_code` aurait
+fait échouer **tout lettrage** de la société. En développement, avec une société de
+démonstration à moins de vingt-six lettrages, **rien ne l'aurait révélé**.
+
+**Le correctif ajoute une colonne `seq BIGINT`** : le gap lock porte sur elle — transposition
+**réellement** exacte du pattern éprouvé —, et `code` en est la **projection** base 26
+bijective, calculée en Rust. ⚠️ **La conversion est une fonction pure : elle se teste dans
+`kesh-core`, sans base**, et T1 nomme ses cas limites (`26 → Z`, `27 → AA`, `53 → BA`,
+`702 → ZZ`, `703 → AAA`). Les deux contraintes d'unicité, sur `seq` et sur `code`, tiennent
+le filet.
+
+**P5-2 (HIGH) — le DDL était un fragment.** Il portait un `...` et laissait au développeur les
+FK, les `ON DELETE`, le `CHARACTER SET`/`COLLATE`, les `COMMENT` et l'`ENGINE` — alors que les
+migrations du dépôt les déclarent toutes explicitement (comparé à
+`20260814000001_contacts_client_number_canonical.sql`). Le DDL est désormais **entier et à
+reprendre tel quel**.
+
+**P5-3 (MEDIUM) — les comportements de FK sont tranchés**, conformes aux conventions relevées
+au sol (`companies(id) ON DELETE RESTRICT` partout ; `users(id) RESTRICT` pour un auteur
+d'action, cf. `bank_imports.imported_by_user_id`). ⚠️ Le choix de **`RESTRICT`** sur
+`journal_entry_lines.lettering_id` impose l'ordre du délettrage — mettre les lignes à `NULL`
+**puis** supprimer l'entrée — et c'est voulu : un `SET NULL` ferait disparaître une marque des
+deux côtés **sans trace**, le défaut muet même qu'AC8 ferme ailleurs.
+
+**P5-4 (MEDIUM)** : T7 énumérait les critères sans dire qu'AC4 porte **deux** causes
+distinctes — huit messages, pas sept. **P5-5 (LOW)** : T1 précise que le compteur du test P6
+bougera, mais qu'aucun backfill à fenêtre n'est en jeu.
+
+**Ce que cette passe apprend sur le processus** : un arbitrage du Project Lead **n'est pas
+exempt de revue**. Celui-ci était juste dans ses deux choix — la table et le format restent
+les bons — mais sa **traduction en DDL** portait un défaut critique que ni l'arbitrage ni les
+quatre passes précédentes ne pouvaient contenir, puisqu'il n'existait pas encore. Une passe
+6 est due.
 
 ### Arbitrage du Project Lead — 2026-08-25
 
