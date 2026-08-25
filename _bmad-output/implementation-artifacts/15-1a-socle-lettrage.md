@@ -141,11 +141,35 @@ refusée.** *(Relevé en passe 3, P3-1.)* `update` fait aujourd'hui `DELETE FROM
 journal_entry_lines` puis réinsère : une implémentation naïve **perd la marque en silence** et
 laisse la contrepartie marquée seule, donc réputée soldée.
 
-Deux conduites acceptables, à trancher à la spécification et **non à l'implémentation** :
-refuser la modification d'une écriture dont une ligne est lettrée (cohérent avec AC8), ou
-préserver explicitement la marque à travers le cycle `DELETE`/`INSERT`. ⚠️ **La seconde ne
-va pas de soi** : la réécriture se fait par `line_order`, qui ne rattache pas une ligne
-nouvelle à l'ancienne si l'ordre a changé.
+**TRANCHÉ** *(passe 2 — la première rédaction disait « à trancher à la spécification et non
+à l'implémentation », puis ne tranchait pas : exactement le défaut relevé sur la story mère,
+et reproduit ici)* :
+
+> **La modification est REFUSÉE si elle change les LIGNES d'une écriture dont une ligne est
+> lettrée. L'en-tête — date, journal, libellé — reste modifiable.**
+
+⚠️ **Ce n'est pas un compromis de confort, et deux faits au sol l'imposent :**
+
+**(1) Un refus global rendrait une écriture lettrée immuable jusque dans son libellé.**
+`update` réécrit **systématiquement** toutes les lignes dès que le payload diffère — il
+n'existe aucun chemin « modifier seulement l'en-tête » (`journal_entries.rs:981-1015`).
+Refuser en bloc interdirait donc de corriger une faute de frappe sans délettrer d'abord — or
+**le délettrage est interdit sur exercice clos** (AC6). Une écriture lettrée sur un exercice
+clos deviendrait **définitivement figée, jusqu'à sa description**.
+
+**(2) Préserver la marque à travers le `DELETE`/`INSERT` n'est PAS fiable.** La réinsertion
+numérote par position (`line_order = idx + 1`) : rien ne rattache une ligne nouvelle à
+l'ancienne si l'ordre a changé, si une ligne a été insérée ou retirée. La marque se
+retrouverait sur la mauvaise ligne — **pire qu'une marque perdue, puisque plausible**.
+
+⚠️ **Le comparateur existe déjà et n'est pas à inventer** : `is_no_op_change`
+(`journal_entries.rs:782`) compare l'en-tête **puis** les lignes (`len`, `account_id`,
+`debit`, `credit`, `project_id`). Sa seconde moitié **est** la garde demandée ; il s'agit de
+l'extraire, pas de l'écrire.
+
+⚠️ **Corollaire, et il règle la renumérotation** *(P2-3)* : réordonner les lignes **est** un
+changement de lignes au sens de ce comparateur, qui compare position par position. Une
+renumérotation d'écriture lettrée est donc **refusée**, sans avoir à l'énoncer à part.
 
 **AC8** — ⚠️ **Une écriture dont une ligne est lettrée ne se supprime pas en laissant une
 marque orpheline**, et **la garde se pose au point de passage des DEUX chemins**. *(Relevé
@@ -209,6 +233,10 @@ même précédent qu'AC2 invoque pour la portée du compteur.
 - [ ] **T3** — ⚠️ **Gardes sur les chemins d'écriture existants** (AC7, AC8) — c'est le cœur
       de cette story. Recenser les appelants avant d'écrire :
       `grep -rn "delete_in_tx\|DELETE FROM journal_entry_lines" crates/`.
+      ⚠️ **Pour AC7, extraire la moitié « lignes » de `is_no_op_change`
+      (`journal_entries.rs:782`) plutôt que d'écrire un second comparateur** — deux
+      comparateurs divergents donneraient deux réponses à la question « les lignes ont-elles
+      changé ? ». La garde de AC8 se pose dans `delete_in_tx`, **pas** dans le handler.
 - [ ] **T4** — Routes : `POST` lettrage, `DELETE` délettrage.
 - [ ] **T5** — ⚠️ **Export CSV** *(relevé en passe 3, P3-9)* : le header de
       `journal_entry_lines` est **figé en dur** (`exports/csv_tables.rs:286`) et il n'a
@@ -224,7 +252,10 @@ même précédent qu'AC2 invoque pour la portée du compteur.
       reste apparié) et **AC11** (deux lignes d'une autre société sont refusées — test
       d'IDOR, pas de confort).
 - [ ] **T7** — i18n : les clés des messages de refus dans les **quatre** locales dès
-      l'écriture. L'allowlist de la garde i18n est **vide** (`i18n-keys.test.ts:432`) — une
+      l'écriture. **Trois refus, donc trois messages**, chacun nommant sa cause : lignes
+      modifiées sur écriture lettrée (AC7), suppression d'écriture lettrée (AC8), et ligne
+      déjà lettrée (AC10). *(Le décompte était indéterminé tant qu'AC7 n'était pas tranchée —
+      relevé en passe 2.)* L'allowlist de la garde i18n est **vide** (`i18n-keys.test.ts:432`) — une
       clé manquante rougit au gate.
 
 ## Dev Notes
@@ -240,6 +271,46 @@ comment le run précédent s'est terminé (KF-039, #310).
 checksum est enregistré, et le binaire ne boote plus.
 
 ## Change Log
+
+### Passe 2 de `validate` — 2026-08-25 (Haiku, contexte frais)
+
+**0 HIGH, 2 MEDIUM, 1 LOW** — et les trois portent sur **le même point**. La sévérité
+décroît (`HIGH → MEDIUM`) : convergence monotone, le critère de split n'est pas déclenché.
+
+**Aucune régression des patches de la passe 1** : AC10 et AC11 sont jugés cohérents et
+testables, et le bloc sur l'asymétrie (A)/(B) exact au sol.
+
+⚠️ **Le finding, et il est embarrassant : AC7 disait « à trancher à la spécification et non à
+l'implémentation », puis ne tranchait pas.** C'est **mot pour mot** le défaut relevé sur AC12
+de la story mère en passe 2 — reproduit par celui-là même qui l'avait relevé, dans la story
+née de ce relevé. Les deux MEDIUM et le LOW en découlent en cascade : le décompte des messages
+i18n de T7 était indéterminé, et le sort d'une renumérotation restait ouvert.
+
+**AC7 est tranchée, et deux faits au sol l'ont tranchée — pas une préférence :**
+
+> La modification est **refusée si elle change les LIGNES** d'une écriture dont une ligne est
+> lettrée. **L'en-tête reste modifiable.**
+
+**(1) Un refus global figerait l'écriture jusqu'à son libellé.** `update` réécrit
+systématiquement toutes les lignes dès que le payload diffère — aucun chemin « en-tête
+seul » n'existe. Refuser en bloc obligerait à délettrer pour corriger une faute de frappe,
+**or le délettrage est interdit sur exercice clos (AC6)** : une écriture lettrée sur un
+exercice clos deviendrait définitivement figée, description comprise. Cet effet de bord
+n'avait été vu par aucune des deux conduites que la spec proposait.
+
+**(2) Préserver la marque à travers le `DELETE`/`INSERT` n'est pas fiable** : la réinsertion
+numérote par position, rien ne rattache une ligne nouvelle à l'ancienne si l'ordre change ou
+si une ligne est insérée. La marque atterrirait sur la mauvaise ligne — **pire qu'une marque
+perdue, puisque plausible**.
+
+⚠️ **La conduite retenue n'était dans aucune des deux options offertes** — c'est une
+troisième, trouvée en cherchant *pourquoi* les deux premières coûtaient cher. Et elle
+n'invente rien : `is_no_op_change` (`journal_entries.rs:782`) compare déjà l'en-tête **puis**
+les lignes ; **sa seconde moitié EST la garde demandée**. Elle règle aussi la renumérotation
+(P2-3) sans clause dédiée : réordonner *est* un changement de lignes pour un comparateur
+positionnel.
+
+La spec reste à **11 critères**. **Verdict : passe 3 due** — deux MEDIUM au rapport.
 
 ### Passe 1 de `validate` — 2026-08-25 (Sonnet, contexte frais)
 
