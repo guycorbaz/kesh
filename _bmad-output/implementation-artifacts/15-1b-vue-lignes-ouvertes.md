@@ -245,62 +245,100 @@ consultation, et n'apparaîtra donc **jamais** comme ouverte au 31.12.2024 — a
 l'était. **Soit un `as_of` est ajouté, soit la limite est écrite** ; la laisser implicite fait
 promettre à la vue ce qu'elle ne tient pas.
 
-**AC2** — ⚠️ Une facture réglée par la **réconciliation bancaire** n'apparaît **pas** comme
-ouverte, bien qu'elle ne porte aucune marque de lettrage. « Ouvert » = **ni lettré, ni marqué
-payé**. C'est le chemin le plus fréquent, et une vue qui ne regarderait que la marque
-mentirait là où elle doit informer.
+**AC2** — ⛔ **« OUVERT » SIGNIFIE « NON LETTRÉ ». Un point c'est tout.** *(Arbitrage du
+Project Lead, 2026-08-26 — c'était la **cinquième décision**, celle que ni 15-1b ni 15-1c ne
+portait, et dont la passe 3 a montré qu'elle décidait de la forme de la requête que les deux
+stories allaient écrire.)*
 
-**AC3** — ⚠️ **La règle vaut pour les DEUX tables de factures**, `invoices` et
-`supplier_invoices`, chacune avec son propre `paid_at`. **Un test par table.**
+⚠️ **La vue ne regarde ni `invoices.paid_at`, ni `supplier_invoices.paid_at`, ni aucun statut
+de facture.** Elle ne joint **aucune** table de factures.
 
-**AC2-bis** — ⛔ **« Ni lettré, ni marqué payé » ne s'applique PAS uniformément : une écriture
-manuelle n'a AUCUN `paid_at`.** *(Relevé en passe 2.)* La définition doit donc se décliner en
-**trois cas**, et la requête les distingue :
+✅ **Ce que cet arbitrage achète, et c'est un INVARIANT, pas une commodité** : 15-1a AC4 refuse
+le lettrage hors même compte et sens opposés, AC12 le refuse hors montants égaux — donc **toute
+paire lettrée se nette exactement à zéro sur son compte**. Il en découle, sans exception :
 
-| la ligne appartient à… | « ouverte » signifie |
+> **La somme algébrique des lignes ouvertes d'un compte ÉGALE son solde.**
+
+C'est **testable en une assertion**, et c'est ce qui rend enfin vraie la promesse du *so that* :
+*« justifier le solde d'un compte »*. Aucune des deux définitions concurrentes ne le permettait.
+
+⛔ **Le prix, et il doit être assumé à l'écran** : une facture réglée par **virement importé**
+— le chemin le plus fréquent — réapparaît **ouverte** tant qu'elle n'est pas lettrée. C'est
+**comptablement vrai** : le compte 1100 porte toujours son débit, la réconciliation n'ayant
+créé **aucune écriture** (`invoices.rs:1923`). Mais c'est **contre-intuitif**, et AC4 devient
+de ce fait le critère le plus important de la fiche.
+
+**AC3** — ⛔ **Ce que cet arbitrage SUPPRIME**, et il faut le dire pour que personne ne le
+réintroduise :
+
+| ancienne exigence | pourquoi elle disparaît |
 |---|---|
-| une facture **client** | `invoices.paid_at IS NULL` **et** pas de marque |
-| une facture **fournisseur** | `supplier_invoices.paid_at IS NULL` **et** pas de marque |
-| **aucune facture** — écriture manuelle | **pas de marque**, un point c'est tout |
+| « la règle vaut pour les DEUX tables de factures » | la vue **ne joint aucune facture** |
+| la déclinaison en trois puis quatre cas (client, fournisseur, aucune facture, avoir) | il n'y a plus qu'**un** cas |
+| « les DEUX écritures d'une facture fournisseur payée » | plus de jointure, plus de piège |
+| le piège du `status = 'validated'` tronqué dans les SQL voisins | sans objet |
 
-⚠️ **Le troisième cas est celui qui casse en silence** : un filtre `paid_at IS NULL` écrit
-naïvement sur une jointure externe **exclut** les lignes sans facture — or les écritures
-manuelles qui se soldent sont **l'un des quatre cas d'usage** que le lettrage existe pour
-couvrir. Le test qui l'attrape : deux écritures manuelles au compte de créances, sens opposés,
-aucune facture derrière — **les deux doivent apparaître ouvertes**.
+⚠️ **Trois HIGH et trois MEDIUM des passes 1 à 3 tombent avec eux** — P3-1, P3-2, P3-10, P3-11
+et la moitié de P3-3. **Ce n'est pas une simplification cosmétique : c'est la disparition de la
+classe entière de défauts que ces passes trouvaient**, tous nés de ce que la vue tentait de
+concilier deux mécanismes que rien n'oblige à concilier.
 
-**AC3-bis** *(rectifié en passe 3 — la passe 1 avait corrigé la fixture dans T4 et laissé
-le critère, si bien que l'assertion prescrite était **fausse par construction** avec la
-fixture imposée)* : **les deux lignes de la facture PAYÉE disparaissent des ouverts ; celles
-d'une facture NON payée sur le même compte y restent.** ⚠️ **Et pour les DEUX écritures d'une
-facture fournisseur payée** *(relevé en
-passe 3)* : l'achat (`purchase_journal_entry_id`) **et** le règlement
-(`settlement_journal_entry_id`). Une jointure qui n'en voit qu'une laisse l'autre ouverte à
-jamais. **Un test qui paie une facture fournisseur et vérifie que le compte 2000 n'affiche
-plus AUCUNE ligne ouverte.**
+**AC3-bis** — ⚠️ **L'invariant est TESTÉ, pas seulement énoncé** : sur un compte portant des
+lignes lettrées **et** non lettrées, la somme algébrique des lignes rendues **égale** le solde
+du compte calculé par ailleurs. C'est le test qui garde l'arbitrage — si quelqu'un
+réintroduisait un filtre sur `paid_at`, **il rougirait**.
 
-**AC4** — L'écran indique **pourquoi** une facture manifestement réglée peut rester ouverte :
-paiement partiel ou règlement groupé, hors périmètre. Sans cela, la vue paraît fausse là où
-elle est seulement bornée.
+**AC4** — ⛔ **L'écran dit POURQUOI une facture réglée apparaît ouverte, et c'est désormais
+le critère le plus important de la fiche.** *(Élevé par l'arbitrage du 2026-08-26.)*
 
-**AC5** — *(dépend de la Décision 1)* La relation entre la marque de lettrage, la **balance
-âgée** et le **moteur de relance** est **explicite** : soit lettrer pose `paid_at` et les
-trois vues s'accordent, soit l'écart est énoncé à l'écran et couvert par un test qui
-**documente** le comportement retenu. ⛔ **Le silence n'est pas une option** : il produit un
-rappel envoyé à un débiteur soldé.
+Trois raisons, à distinguer pour l'utilisateur :
 
-**AC6** — *(dépend de la Décision 2)* Ce que la vue prétend égaler est **écrit**. Si elle ne
-justifie pas le solde du compte, elle ne le laisse pas croire.
+1. **elle est réglée mais pas encore lettrée** — cas le plus fréquent, celui du virement
+   importé : le règlement est enregistré, le rapprochement ligne à ligne reste à faire ;
+2. **paiement partiel** — hors périmètre (D2) ;
+3. **règlement groupé** couvrant plusieurs factures — hors périmètre (D2).
 
-**AC7** — *(dépend de la Décision 3)* La portée de la garantie d'immuabilité sur exercice
-clos est **énoncée** : ce que le refus de délettrage protège, et ce que le canal `paid_at`
-laisse passer.
+⚠️ **Sans le premier, la vue paraîtra fausse là où elle est exacte** — et c'est l'écran, pas
+la requête, qui porte cette pédagogie. L'invariant d'AC2 est ce qui la rend défendable :
+*« ce compte porte encore ces montants, parce que rien ne les a soldés ligne à ligne »*.
+
+⚠️ **Un chemin d'action depuis la vue vers le lettrage** est ce qui referme la boucle : voir
+une facture réglée mais non lettrée doit permettre de la lettrer, pas seulement de s'en
+étonner.
+
+**AC5** — *(dépend de la Décision 1, qui reste ouverte)* La relation entre la marque, la
+**balance âgée** et le **moteur de relance** est **explicite**.
+
+⛔ **L'arbitrage d'AC2 ne tranche PAS cette décision — il en déplace l'enjeu.** La vue ne lit
+plus `paid_at` ; les cinq **lecteurs** recensés, eux, continuent de le lire. Le plus grave
+reste entier et il est **comptable, pas cosmétique** : `reconciliation.rs` proposera une
+facture lettrée mais non marquée payée à un **second règlement** — **soldée deux fois**, une
+fois en caisse et une fois en banque.
+
+⚠️ **Toute conduite retenue nomme lequel des cinq lecteurs elle laisse dehors**, et traite
+`reconciliation.rs` **en premier**.
+
+**AC6** — ✅ **Tranché par AC2 : la vue justifie le solde du compte, exactement.** *(La
+Décision 2 est close — elle demandait « ce que la vue prétend égaler », et l'invariant y
+répond.)* L'écart que la Décision 2 s'apprêtait à faire assumer **n'existe plus** : il naissait
+du filtre sur `paid_at`, que l'arbitrage retire.
+
+**AC7** — *(dépend de la Décision 3, qui reste ouverte)* La portée de la garantie
+d'immuabilité sur exercice clos est **énoncée** : ce que le refus de délettrage protège, et ce
+que les **trois** canaux d'écriture de `paid_at` laissent passer.
+
+⚠️ **L'arbitrage d'AC2 réduit l'enjeu sans le supprimer** : la vue ne dépendant plus de
+`paid_at`, un dé-marquage sur exercice clos ne la fausse plus. Mais il fausse toujours les
+cinq lecteurs, et la question de la garde reste posée pour eux.
 
 ## Tasks
 
-- [ ] **T1** — Repository : lister les lignes ouvertes d'un compte. ⚠️ La requête implémente
-      la définition d'« ouvert » — les jointures sur les **deux** tables de factures, les
-      **deux** écritures fournisseur **et les trois cas d'AC2-bis** en font partie.
+- [ ] **T1** — Repository : lister les lignes ouvertes d'un compte. ⛔ **La requête ne joint
+      AUCUNE table de factures** (AC2) : `lettering_id IS NULL` sur le compte, et rien d'autre.
+      ⚠️ *La rédaction précédente prescrivait des jointures sur les deux tables de factures et
+      les deux écritures fournisseur — l'arbitrage du 2026-08-26 les supprime toutes.*
+      ⚠️ **Le test de l'invariant** (AC3-bis) est le plus important : somme algébrique des
+      lignes rendues **=** solde du compte.
       ⛔ **La borne de rôle d'AC1 s'applique DANS LA REQUÊTE, pas seulement à l'écran**
       *(P2-2, passe 2 : AC1 disait « la vue est bornée » sans dire où)*. Un compte hors
       `role IN ('Receivable','Payable')` ne rend **aucune ligne**. Une borne posée seulement au
@@ -341,6 +379,40 @@ exception (garde #326, son allowlist ne doit pas s'allonger).
 ⚠️ **La base de gate se remet à zéro AVANT le gate**, inconditionnellement (KF-039, #310).
 
 ## Change Log
+
+### Arbitrage du Project Lead — 2026-08-26 : « ouvert » = « non lettré »
+
+⛔ **La CINQUIÈME décision — celle que ni 15-1b ni 15-1c ne portait — est tranchée.** Les deux
+passes 3, indépendantes, avaient conclu qu'elle décidait de la forme de la requête que les
+deux stories allaient écrire.
+
+> **« Ouvert » signifie « non lettré ». La vue ne regarde ni `paid_at`, ni aucun statut de
+> facture, et ne joint aucune table de factures.**
+
+✅ **Ce que l'arbitrage achète — un INVARIANT, pas une commodité.** Toute paire lettrée se
+nettant exactement à zéro (15-1a AC4 et AC12), **la somme algébrique des lignes ouvertes d'un
+compte égale son solde**, sans exception. C'est **testable en une assertion**, et c'est ce qui
+rend enfin vraie la promesse du *so that* : *« justifier le solde d'un compte »*. Aucune des
+deux définitions concurrentes ne le permettait.
+
+⛔ **Ce qu'il coûte, et qui doit être assumé à l'écran** : une facture réglée par virement
+importé réapparaît **ouverte** tant qu'elle n'est pas lettrée. C'est **comptablement vrai** —
+la réconciliation ne crée aucune écriture, le compte porte toujours son débit — mais
+contre-intuitif. **AC4 de 15-1b devient de ce fait le critère le plus important de la fiche**,
+et il doit offrir un chemin vers le lettrage, pas seulement une explication.
+
+✅ **Ce qu'il SUPPRIME, et c'est le plus notable** : **trois HIGH et trois MEDIUM des passes 1
+à 3 tombent avec lui** — la contradiction entre fiches sœurs, la déclinaison en trois puis
+quatre cas, les deux tables de factures, les deux écritures fournisseur, la troisième écriture
+d'annulation non référencée. **Ce n'est pas une simplification cosmétique : c'est la
+disparition de la classe entière de défauts que ces passes trouvaient**, tous nés de ce que la
+vue tentait de concilier deux mécanismes que rien n'oblige à concilier.
+
+⚠️ **Ce qu'il NE tranche PAS.** La Décision 1 (relance) reste ouverte et son enjeu se
+**déplace** : la vue ne lit plus `paid_at`, mais les **cinq lecteurs** recensés continuent de
+le lire — et le plus grave est comptable, pas cosmétique. `reconciliation.rs` proposera une
+facture lettrée mais non marquée payée à un **second règlement** : **soldée deux fois**, une
+fois en caisse et une fois en banque. La Décision 3 reste ouverte pour la même raison.
 
 ### Passe 3 de `validate` — 2026-08-25 (Opus, contexte frais)
 
