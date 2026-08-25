@@ -25,7 +25,7 @@ cette story doit résoudre.**
 | Transaction bancaire ↔ écriture | l'encaissement importé et son écriture | `bank_transactions.matched_entry_id`, `.status` |
 | Marqueur de paiement | une facture réputée payée | `invoices.paid_at` |
 
-Et surtout : **`accept_one_invoice` (`reconciliation.rs:1096-1206`) apparie déjà transaction
+Et surtout : **`accept_one_invoice` (`reconciliation.rs:1003-1328`) apparie déjà transaction
 bancaire ↔ facture, propose, fait valider, puis marque la facture payée.** Le chemin
 « facture réglée par virement importé » est donc **entièrement couvert** — et par le geste
 même qu'on attendait du lettrage.
@@ -104,18 +104,61 @@ Arbitrage de Guy, conforme à la règle du dépôt *« un appariement automatiqu
 crée jamais »*. Aucun lettrage ne s'écrit sans validation humaine.
 
 **Les critères de proposition se reprennent de la réconciliation plutôt que de s'inventer**
-— ils y sont éprouvés depuis l'Epic 8 :
+— ils y sont éprouvés depuis l'Epic 8. ⚠️ **Mais ils ne se transposent PAS tous, et les
+reprendre en bloc casserait trois des quatre cas que cette story existe pour couvrir.**
+*(Relevé en passe 1 de `validate`, vérifié au sol.)*
 
-| critère | valeur chez la réconciliation |
-|---|---|
-| statut de la facture | `status = 'validated'` |
-| non déjà réglée | `paid_at IS NULL` |
-| fenêtre de dates | ±`WINDOW_DAYS` = **30 jours** |
-| montant | égalité à `amount_tolerance` près |
+**Ce qui se reprend — les critères STRUCTURELS, seuls universels :**
 
-⚠️ **Ne PAS créer un second jeu de critères.** Deux mécanismes de proposition qui divergent
-donneraient des suggestions différentes sur le même cas, et l'utilisateur n'aurait aucun
-moyen de savoir lequel croire.
+| critère | valeur | pourquoi il se transpose |
+|---|---|---|
+| même compte | identité stricte | le lettrage porte sur un compte (**D1**) |
+| sens opposés | débit ↔ crédit | une créance se solde par un règlement |
+| fenêtre de dates | ±`WINDOW_DAYS` = **30 jours** | même hypothèse de proximité temporelle |
+| montant | **égalité STRICTE** — voir la réserve ci-dessous | **D2** / **AC6-bis** |
+
+**Ce qui NE se reprend PAS — les filtres propres à la facture client :**
+
+⚠️ `status = 'validated'` et `paid_at IS NULL` interrogent la table `invoices`. Or **trois
+des quatre cas annoncés au § *Contexte* n'ont aucune facture `validated` derrière la ligne à
+apparier** :
+
+- les comptes **fournisseurs** vivent dans `supplier_invoices`, table distincte ;
+- deux **écritures manuelles** qui se soldent n'ont aucune ligne d'`invoices` ;
+- une facture **annulée par un avoir** passe à `status = 'cancelled'`
+  (`credit_notes.rs:563`, et `supplier_invoices.rs:811` côté fournisseur) — elle serait donc
+  **exclue**, alors que la paire facture/contre-passation est le cas de lettrage le plus
+  propre qui soit : deux lignes de même montant et de sens opposés sur le même compte.
+
+Et le lien lui-même manque : **`journal_entry_lines` ne porte ni `invoice_id` ni
+`supplier_invoice_id`** (vérifié dans `20260412000001_journal_entries.sql`) — le seul lien
+existant va de `invoices.journal_entry_id` vers l'**entête** d'écriture, pas vers la ligne.
+Un moteur de proposition ligne-à-ligne ne peut donc pas s'appuyer sur le statut de facture
+sans une jointure que le schéma ne permet pas.
+
+**Ces filtres restent légitimes pour trier les suggestions du seul cas facture client
+impayée ; ils ne doivent pas conditionner l'éligibilité d'une paire de lignes.**
+
+⚠️ **RÉSERVE OUVERTE — la tolérance de montant, et elle demande un arbitrage.** La
+réconciliation tolère **5 centimes** (`AMOUNT_TOLERANCE_HUNDREDTHS = 5`,
+`reconciliation.rs:60`), précisément pour absorber les frais bancaires. **AC6-bis exige
+l'égalité stricte.** Reprendre la tolérance produirait un système qui **propose ce qu'il
+refuse ensuite** : une créance de 1000.00 et un règlement de 999.97 seraient suggérés, puis
+rejetés à la validation. La spec tranche donc pour l'**égalité stricte des deux côtés** —
+c'est la seule lecture cohérente avec **D2** et **AC6-bis**.
+
+⚠️ **Sa conséquence doit être vue avant le développement, pas après** : un règlement amputé
+de frais bancaires ne sera **jamais lettrable**, et la facture restera affichée ouverte.
+C'est le même angle mort que le règlement groupé (**AC10**), et il se traite de la même
+façon — l'écran doit le dire. **Si cet arbitrage ne convient pas, c'est ici qu'il se change**,
+et la conduite alternative est nommée : garder la tolérance au *classement* des suggestions,
+jamais au *filtre d'éligibilité*.
+
+⚠️ **Ne PAS créer un second jeu de critères STRUCTURELS.** Deux mécanismes de proposition qui
+divergent sur le compte, le sens ou la fenêtre donneraient des suggestions différentes sur le
+même cas, et l'utilisateur n'aurait aucun moyen de savoir lequel croire. La distinction posée
+ici n'est pas une divergence : c'est la reconnaissance que le lettrage a un périmètre **plus
+large** que la réconciliation, et que les filtres de la seconde y sont **hors sujet**.
 
 ### D6 — Écran dédié, et sa frontière avec la réconciliation doit être lisible
 
@@ -149,8 +192,16 @@ dans le périmètre** : une définition de « ouvert » qui ne lirait que `invoi
 laisserait **la moitié du périmètre annoncé** afficher comme ouvertes des factures
 fournisseurs déjà réglées. Un test par table.
 
-**AC4** — Kesh **propose** des rapprochements selon les critères de **D5**, repris de la
-réconciliation. Aucun lettrage n'est écrit sans validation explicite (**D5**).
+**AC4** (porte **D5**) — Kesh **propose** des rapprochements selon les critères
+**structurels** de **D5** — même compte, sens opposés, fenêtre de 30 jours, montants égaux.
+Aucun lettrage n'est écrit sans validation explicite.
+
+⚠️ **La proposition ne filtre PAS sur le statut de la facture.** *(Relevé en passe 1 —
+`status = 'validated'` / `paid_at IS NULL` sont propres à `invoices` et écarteraient les
+fournisseurs, les écritures manuelles et les factures annulées par avoir.)* **Un test nommé
+par cas** : une paire facture/avoir (`status = 'cancelled'`), une paire sur un compte
+fournisseur, et une paire d'écritures manuelles sans facture doivent chacune être
+**proposées**.
 
 **AC5** — L'utilisateur peut lettrer deux lignes manuellement, sans proposition.
 
@@ -200,6 +251,17 @@ Deux conduites possibles, à trancher à l'implémentation : **refuser** la supp
 automatiquement** la contrepartie. ⚠️ La seconde ne vaut que si l'exercice est ouvert —
 sinon elle contournerait AC7 par un chemin détourné.
 
+**AC13** (porte **D6**) — ⚠️ **L'écran de lettrage énonce sa frontière avec la
+réconciliation bancaire, pour l'UTILISATEUR.** *(Relevé en passe 1 : **D6 n'était nommée par
+aucun critère** — elle ne vivait que dans sa propre section et dans T5.)* Un texte visible —
+bandeau ou aide contextuelle — dit ce que cet écran fait et ce qu'il ne fait pas, et le test
+E2E l'atteint par un `data-testid` stable, jamais par son libellé traduit.
+
+Sans ce critère, les douze autres passent, la story se déclare `done`, et le risque que **D6
+nomme** — deux écrans voisins qui font des choses différentes et se confondent — se réalise
+sans qu'aucun test ne l'ait vu. C'est la **sixième récidive** du même geste dans le dépôt :
+une décision portée par aucun critère n'est pas une décision, c'est une intention.
+
 ## Tasks
 
 - [ ] **T1** — Migration : `lettering_code` sur `journal_entry_lines`, nullable, indexée.
@@ -240,6 +302,40 @@ précédent s'est terminé (KF-039, #310).
 
 
 ## Change Log
+
+### Passe 1 de `validate` — 2026-08-25 (Sonnet, contexte frais)
+
+**Première passe au sens de la § *Review Iteration Rule*** : contexte frais et modèle
+distinct de l'auteur de la spec (Opus). C'est ce que la relecture de la veille, menée par cet
+auteur, ne pouvait pas offrir.
+
+**Quatre findings, tous vérifiés au sol par l'orchestrateur avant application** — la
+discipline grep ground-truth vaut pour tous les modèles, pas seulement pour Haiku.
+
+| | défaut | gravité | remède |
+|---|---|---|---|
+| **P1-1** | **D5 reprenait les critères de la réconciliation en bloc**, dont `status = 'validated'` et `paid_at IS NULL` — deux filtres propres à `invoices`. Ils excluent **trois des quatre cas** que la story existe pour couvrir : fournisseurs (`supplier_invoices`), écritures manuelles (aucune facture), et facture annulée par avoir (`status = 'cancelled'`). Et `journal_entry_lines` ne porte **aucun** `invoice_id` : la jointure supposée n'existe pas | **HIGH** | D5 sépare les critères **structurels** (transposables) des **filtres facture** (hors sujet) ; **AC4** exige un test nommé par cas |
+| **P1-2** | **D5 et AC6-bis se contredisaient sur le montant** : tolérance de 5 centimes en proposition, égalité stricte en validation. Le système aurait **proposé ce qu'il refuse** | **HIGH** | égalité stricte des deux côtés ; ⚠️ la conséquence (frais bancaires jamais lettrables) est **nommée et laissée à l'arbitrage** |
+| **P1-3** | **D6 n'était nommée par aucun critère** — elle ne vivait que dans sa section et dans T5 | MEDIUM | **AC13** |
+| **P1-4** | `accept_one_invoice` cité `1096-1206` ; la fonction va de **1003 à 1328**, et l'`UPDATE … paid_at` qu'elle invoque est **hors** de la plage citée | LOW | référence corrigée ici **et aux deux autres sites** qui la copiaient |
+
+⚠️ **P1-3 est la sixième récidive du même geste** — une décision que ne porte aucun critère.
+La relecture de la veille avait corrigé ce défaut **pour D1** et l'avait laissé **pour D6**,
+dans le même fichier et le même passage. **Corriger un site n'est pas corriger le symptôme** :
+c'est exactement ce que la § *Propagation post-patch* du `CLAUDE.md` demande de greper, et le
+grep n'avait pas été fait sur « quelle décision n'est citée par aucun AC ».
+
+**Ce que la passe dit de la relecture précédente** : ses quatre défauts tenaient tous, aucun
+n'a été réfuté. Mais elle avait cherché ce qui **manquait** à la spec, non ce qu'elle
+**affirmait à tort** — et les deux HIGH d'aujourd'hui sont l'un et l'autre des affirmations
+fausses sur du code existant, qu'aucune relecture d'auteur ne remet en cause puisqu'elle les
+a écrites.
+
+**Un seul faux positif écarté** (D3 contre un verrou global de clôture) : la garde
+`FiscalYearClosed` est posée par fonction, pas par déclencheur — D3 reste réalisable.
+
+La spec passe de **14 à 15 critères**. **Verdict de la passe : non prête pour le
+développement.** Une passe 2, modèle différent et contexte frais, est due.
 
 ### Relecture critique — 2026-08-25
 
