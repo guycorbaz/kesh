@@ -52,6 +52,19 @@ n'a AUCUNE garde d'exercice** (cf. Décision 3), et ce chemin en hériterait.
 groupé : un critère dédié, un test, et une phrase à l'écran. Aujourd'hui, un développeur
 fidèle à la spec n'implémentera **ni l'un ni l'autre**.
 
+**(C)** ⚠️ **Faire lire la marque DIRECTEMENT aux deux requêtes**, sans passer par `paid_at`
+*(conduite ajoutée en passe 1 — elle manquait, et c'est la seule des trois qui ne porte aucun
+des deux risques ci-dessus)*. La ligne de créance d'une facture de vente est identifiable sans
+ambiguïté : c'est **la seule ligne à `debit > 0`** de l'écriture de vente, au compte
+`default_receivable_account_id` de la société. Un `LEFT JOIN journal_entry_lines … AND
+lettering_id IS NULL` s'ajoute donc au filtre existant d'`aged_receivables.rs:127` et de
+`dunning_eligibility.rs:87` **sans toucher ni `paid_at` ni `mark_as_paid`** — donc sans hériter
+du trou d'exercice que (A) traîne.
+
+⚠️ **Son coût** : une jointure de plus dans deux requêtes existantes. **Sa réserve** : elle ne
+couvre que le lettrage, pas `paid_at` — elle est donc **orthogonale** aux deux autres, pas
+concurrente. Rien n'interdit de retenir (C) *et* de documenter l'écart résiduel.
+
 ### ⛔ Décision 2 — Côté client, `paid_at` n'a aucune contrepartie comptable
 
 `accept_one_invoice` **ne crée aucune écriture** — il met à jour deux tables. Le repository
@@ -79,9 +92,26 @@ justifie le solde.**
 
 ### ⛔ Décision 3 — Le canal `paid_at` n'a aucune garde d'exercice
 
-`mark_as_paid` (`invoices.rs:1926`) vérifie `status = 'validated'` et la version optimiste.
-**Rien d'autre** — pas de `fiscal_years`, pas de `FiscalYearClosed`. Et il sert aussi au
-**dé-marquage**, exposé par `POST /api/v1/invoices/:id/mark-paid` (`routes/invoices.rs:1033`).
+⛔ **`paid_at` a TROIS écrivains en production, pas un — et la rédaction précédente n'en
+nommait qu'un** *(relevé en passe 1, recompté par l'orchestrateur qui en a trouvé un de plus
+que la passe)* :
+
+| site | fonction | garde d'exercice ? |
+|---|---|---|
+| `kesh-db/src/repositories/invoices.rs:1989` | `mark_as_paid` (et le **dé-marquage**) | **non** |
+| `kesh-api/src/routes/reconciliation.rs:1231` | `accept_one_invoice` — **le chemin le plus fréquent** selon AC2 | **non** |
+| `kesh-db/src/repositories/supplier_invoices.rs:674` | `pay_in_tx` — côté fournisseur | **non** |
+
+`mark_as_paid` vérifie `status = 'validated'` et la version optimiste. **Rien d'autre** — pas
+de `fiscal_years`, pas de `FiscalYearClosed`. Il sert aussi au **dé-marquage**, exposé par
+`POST /api/v1/invoices/:id/mark-paid` (`kesh-api/src/routes/invoices.rs:1033`). Les deux
+autres écrivent la colonne **par SQL brut**, en court-circuitant complètement `mark_as_paid`.
+
+⛔ **Pourquoi ce recomptage change la décision** : un développeur fidèle à l'ancienne
+rédaction ouvre `mark_as_paid`, y pose la garde, et **croit le trou fermé**. Les deux autres
+canaux continuent d'écrire sans garde — dont celui de la réconciliation, que AC2 désigne comme
+le plus fréquent. **Toute conduite retenue doit couvrir les TROIS**, ou nommer explicitement
+lequel elle laisse dehors.
 
 ⚠️ Exercice 2025 clos : le refus de délettrage de la 15-1a interdit de rouvrir une ligne.
 Mais un **dé-marquage** rend cette même ligne « ouverte » au sens de la définition — le
@@ -126,6 +156,31 @@ quatre décisions**, sauf là où c'est indiqué. Ils ne peuvent pas tous être 
 **AC1** — Depuis l'écran, l'utilisateur choisit un compte et voit ses lignes **ouvertes**,
 avec le total.
 
+⛔ **La vue est BORNÉE aux comptes de créances et de dettes** — `role IN ('Receivable',
+'Payable')` — et le mécanisme **existe déjà, il n'est pas à construire** *(relevé en passe 1 :
+rien ne bornait la vue)*. `AccountRole::Receivable` / `::Payable`
+(`kesh-db/src/entities/account.rs:92,96`) est un **singleton par société**, tenu par la
+contrainte `chk_accounts_role` et déjà consommé par le bilan.
+
+⚠️ **`account_type` ne suffit PAS** : un compte débiteur et un compte de caisse sont tous deux
+`Asset`. Sans cette borne, ouvrir la vue sur un compte de produit ou sur le compte bancaire
+ledger exclurait des lignes *« parce que la facture derrière est payée »* — un critère qui
+**n'a aucun sens comptable** sur ces comptes-là. Et côté compte bancaire, cela chevaucherait
+en silence ce que la réconciliation gère par un tout autre mécanisme
+(`bank_transactions.status`) : exactement la confusion que 15-1c s'efforce de nommer **à
+l'écran**, et qu'il faut d'abord fermer **dans la requête**.
+
+**AC1-bis** — ⚠️ **La vue est un instantané « aujourd'hui », et elle le dit** *(relevé en
+passe 1)*. Elle ne répond **pas** à « qu'est-ce qui était ouvert au 31.12 ». Le rapport voisin
+le plus proche, `aged_receivables`, porte un paramètre `as_of` **bindé et non `UTC_DATE()` en
+dur, pour la testabilité** — la vue de lettrage n'en a pas.
+
+⚠️ **Le *so that* de cette story invoque pourtant la clôture** (« clore un exercice en sachant
+ce qu'il porte ») : une facture de 2024 réglée en janvier 2026 porte `paid_at` **avant** la
+consultation, et n'apparaîtra donc **jamais** comme ouverte au 31.12.2024 — alors qu'elle
+l'était. **Soit un `as_of` est ajouté, soit la limite est écrite** ; la laisser implicite fait
+promettre à la vue ce qu'elle ne tient pas.
+
 **AC2** — ⚠️ Une facture réglée par la **réconciliation bancaire** n'apparaît **pas** comme
 ouverte, bien qu'elle ne porte aucune marque de lettrage. « Ouvert » = **ni lettré, ni marqué
 payé**. C'est le chemin le plus fréquent, et une vue qui ne regarderait que la marque
@@ -162,11 +217,22 @@ laisse passer.
 - [ ] **T1** — Repository : lister les lignes ouvertes d'un compte. ⚠️ La requête implémente
       la définition d'« ouvert » — les jointures sur les **deux** tables de factures et les
       **deux** écritures fournisseur en font partie.
-- [ ] **T2** — Route `GET` lignes ouvertes d'un compte.
+- [ ] **T2** — Route `GET` lignes ouvertes d'un compte. ⛔ **Paginée**, sur le patron
+      systématique du dépôt — `const MAX_LIMIT: i64 = 500` et `list_by_company_paginated`
+      (`kesh-db/src/repositories/journal_entries.rs:541,673`), repris à l'identique par
+      `credit_notes`, `payment_batches`, `supplier_invoices` et `users` *(relevé en passe 1 :
+      aucune pagination n'était prévue)*. Un compte de créances actif depuis plusieurs
+      exercices accumule des centaines de lignes ouvertes — d'autant plus tant que la
+      Décision 1 n'est pas tranchée.
 - [ ] **T3** — Écran de consultation.
 - [ ] **T4** — Tests : **AC2, AC3 et AC3-bis en priorité** — le piège de la définition, sur
       les deux tables **et** les deux écritures. Puis le test qui matérialise l'arbitrage
-      d'AC5.
+      d'AC5, et **AC1** (un compte hors `Receivable`/`Payable` n'ouvre pas la vue).
+      ⛔ **La fixture d'AC3-bis porte DEUX factures fournisseur sur le compte 2000, une payée
+      et une NON payée** *(relevé en passe 1)*. Avec une seule facture, le test ne valide que
+      la **sous**-exclusion — il ne distingue pas une implémentation correcte d'une
+      implémentation qui **masque tout le compte** dès qu'une facture y est payée. La
+      non-payée doit **rester** dans les lignes ouvertes après le règlement de l'autre.
 - [ ] **T5** — i18n : quatre locales, allowlist vide.
 - [ ] **T6** — Manuel utilisateur : ce que la vue montre, et **ce qu'elle ne montre pas
       encore**.
@@ -179,6 +245,58 @@ exception (garde #326, son allowlist ne doit pas s'allonger).
 ⚠️ **La base de gate se remet à zéro AVANT le gate**, inconditionnellement (KF-039, #310).
 
 ## Change Log
+
+### Passe 1 de `validate` — 2026-08-25 (Sonnet, contexte frais)
+
+**3 HIGH, 3 MEDIUM.** Tous vérifiés au sol par l'orchestrateur avant application — et **l'un
+d'eux recompté à la hausse**.
+
+⚠️ **Le problème n'était pas le CONTENU des quatre décisions ouvertes, mais leur
+EXHAUSTIVITÉ.** Trois sur quatre étaient correctement posées et vérifiées ; la quatrième
+(Décision 4, les deux écritures fournisseur) est **exacte à la lettre**. Mais deux d'entre
+elles reposaient sur un relevé incomplet — et le Project Lead aurait tranché sur un tableau
+d'options faux.
+
+⛔ **P1-1 (HIGH) — `paid_at` a TROIS écrivains, la spec n'en nommait qu'un.** La passe en avait
+trouvé deux ; le recompte de l'orchestrateur en établit **trois** :
+`invoices.rs:1989` (`mark_as_paid`, et le dé-marquage), `reconciliation.rs:1231`
+(`accept_one_invoice` — **le chemin le plus fréquent** selon AC2) et `supplier_invoices.rs:674`
+(`pay_in_tx`). **Aucun des trois n'a de garde d'exercice**, et les deux derniers écrivent par
+SQL brut en court-circuitant `mark_as_paid`. Un développeur fidèle à l'ancienne rédaction
+aurait posé la garde à un seul endroit et **cru le trou fermé**.
+
+⛔ **P1-2 (HIGH) — une conduite manquait à la Décision 1, et c'est la moins risquée.**
+**(C)** faire lire la marque **directement** aux deux requêtes de relance, sans passer par
+`paid_at` : la ligne de créance est la seule à `debit > 0` de l'écriture de vente, donc
+identifiable sans ambiguïté. Un `LEFT JOIN … AND lettering_id IS NULL` s'ajoute au filtre
+existant **sans toucher `mark_as_paid`** — donc **sans hériter du trou d'exercice** que (A)
+traîne. Elle est **orthogonale** aux deux autres, pas concurrente.
+
+⛔ **P1-3 (HIGH) — la vue n'était bornée à aucun type de compte**, alors que le mécanisme
+existe déjà : `AccountRole::Receivable` / `::Payable`, singleton par société, tenu par
+`chk_accounts_role` et déjà consommé par le bilan. ⚠️ **`account_type` ne suffit pas** — un
+compte débiteur et une caisse sont tous deux `Asset`. Sans borne, la vue ouverte sur un compte
+de produit exclurait des lignes *« parce que la facture derrière est payée »*, critère qui n'a
+**aucun sens comptable** là ; et sur le compte bancaire, elle chevaucherait en silence la
+réconciliation — la confusion même que 15-1c nomme à l'écran, à fermer d'abord dans la requête.
+
+**Trois MEDIUM** : **P1-4** aucun paramètre temporel, alors que le *so that* invoque la clôture
+— une facture de 2024 réglée en 2026 n'apparaîtra **jamais** comme ouverte au 31.12.2024, et
+`aged_receivables` porte un `as_of` bindé pour cette raison exacte → **AC1-bis** ; **P1-5**
+aucune pagination, alors que le dépôt a un patron systématique (`MAX_LIMIT = 500`) ; **P1-6**
+le test d'AC3-bis ne validait que la **sous**-exclusion — avec une seule facture en fixture, il
+ne distingue pas une implémentation correcte d'une qui **masque tout le compte** dès qu'une
+facture y est payée.
+
+**Pistes réfutées au sol**, dont trois qui rassurent : `accept_one_invoice` **ne crée
+effectivement aucune écriture** ; un lot de paiement fournisseur n'appelle **pas** une écriture
+partagée — `confirm_batch` boucle facture par facture, chacune avec sa propre paire ; et
+**aucun canal de démarquage n'existe côté réconciliation**, le seul restant `mark_as_paid`. Le
+risque d'IDOR sur le choix du compte a été écarté : le dépôt applique `find_by_id_in_company`
+**sans un seul contre-exemple**.
+
+La spec passe de **7 à 9 critères**. **Verdict : passe 2 due** — et elle doit précéder
+l'arbitrage, faute de quoi le Project Lead tranchera sur des options incomplètes.
 
 ### Création par split de la 15-1 — 2026-08-25
 
