@@ -218,7 +218,16 @@ le garantit pas. **Le mécanisme est en DEUX temps, et le premier est celui qu'o
 > **(1)** un **sentinel** `SELECT id FROM companies WHERE id = ? FOR UPDATE` en tête de la
 > transaction — **Pattern 5, idiome du dépôt** (`journal_entries.rs:396` le nomme ainsi ;
 > `bank_accounts`, `projects`, `invoices` l'emploient) ;
-> **(2)** puis `SELECT COALESCE(MAX(seq), 0) + 1 FROM letterings WHERE company_id = ?`.
+> **(2)** puis `SELECT COALESCE(MAX(seq), 0) + 1 FROM letterings WHERE company_id = ?
+> **FOR UPDATE**`.
+
+⛔ **Le `FOR UPDATE` de (2) n'est pas optionnel, et le sentinel doit être le PREMIER énoncé de
+la transaction** *(P8-3 — une rédaction de la spec l'avait perdu)*. En `REPEATABLE READ`,
+l'instantané se fige à la **première lecture nue** : si le chargement des lignes (T4) précède
+le sentinel, deux transactions calculent le même `seq` depuis le même instantané et la seconde
+échoue en 1062 — précisément ce que le test d'AC3 interdit. Le `FOR UPDATE` rend le résultat
+**indépendant de l'ordre** ; l'exigence de T4 porte sur l'ordre des **gardes**, pas sur le
+sentinel.
 
 ⛔ **Sans (1), rien ne sérialise, et le dépôt porte déjà le diagnostic écrit.** *(P6-1.)*
 `email_templates.rs:16-23` l'énonce mot pour mot : *« un `SELECT ... FOR UPDATE` sur une ligne
@@ -284,11 +293,30 @@ Les deux issues qu'un développeur prendrait sans cette clause sont **toutes deu
   commit pendant la fenêtre, le délettrage commit après en croyant l'exercice ouvert, et
   **D3 est violée** — la décision comptable centrale de cette story.
 
-⚠️ **Le sentinel les ferme toutes les deux** : il sérialise tout le trafic de lettrage et de
-délettrage d'une société, ce qui rend l'ordre des verrous suivants **sans importance**. C'est
-l'idiome écrit du dépôt — `docs/MULTI-TENANT-SCOPING-PATTERNS.md`, **Pattern 5**, cité par
-`projects.rs:75-78` : *« verrou sentinelle `companies` une seule fois, PUIS `FOR UPDATE` sur
-les lignes — évite l'inversion ABBA »*. Le coût est négligeable au volume d'un lettrage.
+⛔ **Le sentinel n'en ferme qu'UNE, et croire le contraire laisserait D3 violable.**
+*(P8-1 — la rédaction précédente affirmait « le sentinel les ferme toutes les deux » ; c'est
+faux.)* Il ferme l'**ABBA entre deux délettrages**, qui le prennent tous deux. Il ne ferme
+**rien** du côté de la clôture concurrente : **`fiscal_years::close` ne prend AUCUN verrou sur
+`companies`** — sa première instruction est l'`UPDATE` lui-même
+(`kesh-db/src/repositories/fiscal_years.rs`), et
+`docs/MULTI-TENANT-SCOPING-PATTERNS.md` le confirme (*« fiscal_years only, single table,
+internal tx — pas de chaîne cross-table »*). Deux transactions ne se sérialisent que si elles
+se disputent **la même ressource** ; la seule commune ici est **la ligne `fiscal_years`**.
+
+> **Donc, après le sentinel, les deux lignes `fiscal_years` se lisent en
+> `SELECT … FOR UPDATE`.** C'est **ce verrou-là, et lui seul**, qui sérialise avec
+> `fiscal_years::close`. Le sentinel ne fait qu'**ordonner** ces deux verrous entre eux — il
+> n'en remplace aucun.
+
+⚠️ **Le défaut qu'il ferme est muet** : sans ce `FOR UPDATE`, une lecture nue rend `Open, Open`,
+une clôture concurrente commit, le délettrage commit après — **une créance rouverte sur un
+exercice clos, sans erreur ni trace**.
+
+L'ordonnancement par sentinel reste l'idiome du dépôt : `docs/MULTI-TENANT-SCOPING-PATTERNS.md`
+**Pattern 5**, cité par `kesh-db/src/repositories/projects.rs:77-79` — *« verrou sentinelle
+`companies` une seule fois, PUIS `FOR UPDATE` sur les lignes — évite l'inversion ABBA »*
+*(P8-8 : la citation visait `:75-78` d'un autre `projects.rs`, celui des routes, où ces lignes
+sont les champs d'un DTO)*.
 
 **AC7** — ⚠️ **La marque survit à la MODIFICATION d'une écriture, ou la modification est
 refusée.** *(Relevé en passe 3, P3-1.)* `update` fait aujourd'hui `DELETE FROM
@@ -339,6 +367,36 @@ n'en est pas une**.
 ⚠️ **Corollaire, qui règle la renumérotation sans clause dédiée** : réordonner les lignes
 **est** un changement de lignes pour un comparateur positionnel. Une renumérotation
 d'écriture lettrée tombe donc sous (i).
+
+⛔ **DÉCISION OUVERTE — où se pose le verrou entre le lettrage et `update`/`delete_in_tx`.**
+*(P8-2, HIGH, passe 8 — budget de passes épuisé, l'arbitrage revient au Project Lead.)*
+
+**Le défaut.** Aujourd'hui, **toute** mutation d'une ligne se fait sous le
+`SELECT … FOR UPDATE` de son en-tête. Le lettrage sera **le premier écrivain de
+`journal_entry_lines` à ne pas prendre ce verrou** — et symétriquement, `update` et
+`delete_in_tx` ne prennent pas le sentinel `companies`. **Les deux chemins ne partagent donc
+aucune ressource.**
+
+⚠️ Pire : `update` fige son instantané `REPEATABLE READ` sur une **lecture nue** faite *avant*
+le verrou d'en-tête (`journal_entries.rs:834`), puis relit ses lignes en lecture nue
+(`:952`). Un lettrage qui commit entre les deux est **invisible** : la garde d'AC7 lit
+`lettering_id = NULL`, laisse passer, et le `DELETE` de la l. 981 emporte la marque. **La
+contrepartie reste seule, marquée** — le mode d'échec exact que cette story existe pour
+fermer, traversant la garde censée le fermer. Aucune FK ne s'y oppose : le `RESTRICT` est posé
+côté **parent** (`letterings(id)`) et ne voit jamais la suppression d'une ligne enfant.
+
+**Deux conduites, toutes deux praticables :**
+
+**(a) Côté garde** — AC7 et AC8 relisent leurs lignes en **lecture verrouillante**
+(`SELECT … FROM journal_entry_lines WHERE entry_id = ? FOR UPDATE`), **après** le verrou
+d'en-tête. Modification locale à `update` et `delete_in_tx`.
+
+**(b) Côté lettrage** — la transaction de lettrage verrouille les **deux écritures parentes**
+(`SELECT … FROM journal_entries … FOR UPDATE`), rétablissant l'invariant « on ne touche une
+ligne qu'en tenant son en-tête ». L'ordre `companies → journal_entries` n'introduit pas d'ABBA.
+
+⚠️ **Le choix engage l'ordre de verrou global du dépôt**, d'où l'arbitrage. **Aucune des deux
+n'est optionnelle** : sans l'une ou l'autre, le défaut est **muet**.
 
 **AC8** — ⚠️ **Une écriture dont une ligne est lettrée ne se supprime pas en laissant une
 marque orpheline**, et **la garde se pose au point de passage des DEUX chemins**. *(Relevé
@@ -474,6 +532,18 @@ rester **indiscernable** d'un compte inexistant (garde anti-IDOR) »*
       appartenir à la société »*, **puis** « Critère 2 » (`kesh-api/src/routes/products.rs:343`).
       Les fonctions voisines documentent d'ailleurs leurs étapes une par une ; celle-ci le
       doit aussi.
+      ⛔ **Nommer le contrat des DEUX routes** *(P8-5)* — méthode, chemin, corps. La règle de
+      scoping ci-dessus n'était écrite que pour le lettrage : **le délettrage n'a aucun
+      contrat d'entrée**, et son chemin de scoping en dépend entièrement (par
+      `letterings.company_id` si la route reçoit la référence de lettrage ; par double
+      jointure sur `journal_entries.company_id` si elle reçoit une ligne). **AC11 ne se teste
+      pas sans cela**, et c'est une garde anti-IDOR — le 404 indiscernable vaut pour les deux
+      routes.
+      ⛔ **Inscrire la séquence de verrous des deux routes au tableau du Pattern 5**
+      (`docs/MULTI-TENANT-SCOPING-PATTERNS.md`) *(P8-6)* : ce document **exige** que tout
+      nouvel endpoint y figure, et son ordre global ne connaît aujourd'hui ni `letterings`, ni
+      `journal_entries`, ni `fiscal_years`. « Respecter l'ordre global » n'est pas exécutable
+      tant que les cibles de cette story n'y sont pas placées.
 - [ ] **T5** — ⚠️ **Export CSV** *(relevé en passe 3 de la story MÈRE)* : le header de
       `journal_entry_lines` est **figé en dur**
       (`crates/kesh-api/src/exports/csv_tables.rs:286`) et il n'a **aucune garde
@@ -481,12 +551,17 @@ rester **indiscernable** d'un compte inexistant (garde anti-IDOR) »*
       (`LINE_COLUMNS` l. 44 et le `SELECT` l. 1235) : en oublier une fait échouer l'export au
       runtime. Étendre la garde vaut mieux que se souvenir.
       ⛔ **TRANCHÉ : `lettering_id` entre dans la struct `JournalEntryLine`, dans
-      `LINE_COLUMNS` et dans l'export CSV dès cette story** *(P7-4)*. La garde-modèle des
-      `invoices` est **structurelle** — elle compare le header aux champs de la **struct**,
-      pas au schéma : exposer la marque par une lecture dédiée sans toucher le type partagé
-      laisserait la garde **verte tout en n'exportant jamais la marque**. Or l'export existe
-      pour que l'utilisateur puisse **vérifier ce que Kesh affirme**, ce qui est l'objet même
-      de cette story.
+      `LINE_COLUMNS` et dans l'export CSV dès cette story** — parce que **l'export existe pour
+      que l'utilisateur puisse vérifier ce que Kesh affirme**, ce qui est l'objet même de la
+      story. Le reporter à 15-1b livrerait un socle dont la marque est invisible à l'export.
+      ⚠️ **Le motif écrit en passe 7 était FAUX** *(P8-4)* : la garde-modèle des `invoices`
+      n'est **pas** structurelle — elle compare le header à une **chaîne littérale**
+      (`csv_tables.rs:1036`), Rust ne sachant pas énumérer les champs d'une struct sans macro.
+      **Elle ne rougit donc PAS** quand un champ est ajouté à la struct : elle ne détecte que
+      la dérive du header vis-à-vis de lui-même.
+      ⛔ **Conséquence à ne pas se cacher** : la garde ajoutée ici **ne protégera pas** contre
+      l'oubli d'exporter un futur champ. Ce qui protège, c'est que le header littéral et la
+      struct **changent dans le même commit** — et c'est cela que la tâche exige.
       ⛔ **Et le `.keshbackup` EST concerné** *(P6-2 — l'affirmation précédente, « pas
       concerné », n'était vraie que pour les COLONNES)* : l'**inventaire des tables** est
       **codé en dur**, `TABLES_TO_TRUNCATE` (`kesh-db/src/backup.rs:34`), ordonné enfants →
@@ -508,13 +583,22 @@ rester **indiscernable** d'un compte inexistant (garde anti-IDOR) »*
       **le seul libellé** d'une écriture lettrée, puis vérifier que **la marque est toujours
       là, des deux côtés**. Sans lui, la clause (ii) d'AC7 n'est pas couverte — et c'est
       exactement le chemin par lequel la marque se perdait.
+- [ ] **T5-bis** — ⛔ **DÉCISION OUVERTE : `letterings` entre-t-elle dans l'export de
+      souveraineté ?** *(P8-7 — question de produit.)* T5 fait entrer la **colonne**
+      `lettering_id` dans l'export des lignes ; la **table** `letterings`, elle, n'y est pas.
+      L'export global est une liste de 18 tables **tenue à la main**
+      (`kesh-api/src/exports/global.rs`), sans garde d'exhaustivité. En l'état, l'utilisateur
+      obtiendrait des **entiers opaques appariés** — vérifiables entre eux, mais **sans le
+      code `A`, `B` qu'il a sous les yeux à l'écran**.
+
 - [ ] **T7** — i18n : les clés des messages de refus dans les **quatre** locales dès
       l'écriture. **Un message par refus, énuméré par critère** — et non un total, qui se
       périme au premier critère ajouté *(P3-4 : la rédaction précédente en annonçait trois,
       il en manquait quatre)* : compte différent **et** sens non opposés (AC4 — deux causes
       distinctes), délettrage sur exercice clos (AC6), lignes modifiées sur écriture lettrée
-      (AC7), suppression d'écriture lettrée (AC8), ligne déjà lettrée (AC10), lignes d'une
-      montants inégaux (AC12). **SEPT messages**, et la ventilation se recompte : AC4 en
+      (AC7), suppression d'écriture lettrée (AC8), ligne déjà lettrée (AC10) et montants
+      inégaux (AC12) — *(P8-9 : le fragment « lignes d'une » traînait ici, résidu de la
+      suppression du message d'AC11)*. **SEPT messages**, et la ventilation se recompte : AC4 en
       porte **deux** — *« pas le même compte »* et *« les deux lignes vont dans le même
       sens »* sont des causes distinctes *(P5-4)* —, plus AC6, AC7, AC8, AC10, AC12.
       ⛔ **AC11 n'a PAS de message** *(P6-4)* : son refus est un 404 indiscernable de « ligne
@@ -540,6 +624,61 @@ comment le run précédent s'est terminé (KF-039, #310).
 checksum est enregistré, et le binaire ne boote plus.
 
 ## Change Log
+
+### Passe 8 de `validate` — 2026-08-25 (Opus, contexte frais) — **DERNIÈRE PASSE**
+
+**2 HIGH, 4 MEDIUM, 4 LOW.** Le plafond de 8 passes de la § *Review Iteration Rule* est
+**atteint** : il n'y aura pas de passe 9.
+
+⚠️ **Ce que huit passes ont établi, et c'est le motif de cette story** : les deux HIGH sont,
+pour la **troisième fois consécutive**, des défauts de **verrouillage** — et l'un des deux naît
+du correctif de la passe précédente. Sur l'ensemble, **quatre des cinq findings les plus
+graves sont nés d'un patch de remédiation**, aucun de la conception d'origine.
+
+⛔ **P8-1 (HIGH) — « le sentinel les ferme toutes les deux » était FAUX.** Il ferme l'ABBA
+entre deux délettrages ; il ne ferme **rien** de la clôture concurrente, car
+**`fiscal_years::close` ne prend aucun verrou sur `companies`** — sa première instruction est
+son `UPDATE`, et `docs/MULTI-TENANT-SCOPING-PATTERNS.md` le confirme (*« fiscal_years only,
+single table »*). Deux transactions ne se sérialisent que sur une ressource **commune** ; la
+seule ici est la ligne `fiscal_years`. → AC6 exige désormais le `SELECT … FOR UPDATE` sur les
+deux lignes d'exercice : **c'est ce verrou-là, et lui seul**, qui sérialise avec `close`. Le
+sentinel ne fait qu'**ordonner**. Sans lui, une créance se rouvre sur un exercice clos **sans
+erreur ni trace**.
+
+⛔ **P8-2 (HIGH) — laissé en DÉCISION OUVERTE**, budget épuisé : le lettrage sera le premier
+écrivain de `journal_entry_lines` à ne pas tenir le verrou d'en-tête, et `update` fige son
+instantané sur une **lecture nue antérieure** à ce verrou. Un lettrage qui commit entre les
+deux est **invisible** à la garde d'AC7. Deux conduites praticables, l'arbitrage engageant
+l'ordre de verrou global du dépôt — voir le § qui précède AC8.
+
+**Quatre MEDIUM, dont deux qui corrigent des affirmations FAUSSES de passes précédentes :**
+
+| | défaut | remède |
+|---|---|---|
+| **P8-3** | le `FOR UPDATE` du `MAX(seq)` avait **disparu** entre deux sites de la spec, et T4 poussait à placer le chargement des lignes **avant** le sentinel — l'instantané `REPEATABLE READ` se fige à la première lecture nue | `FOR UPDATE` rétabli ; le sentinel est le **premier énoncé** |
+| **P8-4** | ⚠️ **« la garde-modèle des `invoices` est structurelle » était FAUX** : elle compare le header à une **chaîne littérale** (`csv_tables.rs:1036`) et **ne rougit pas** quand un champ entre dans la struct | la décision reste, son motif est réécrit ; T5 dit ce que la garde protège **et ce qu'elle ne protège pas** |
+| **P8-5** | **le délettrage n'avait aucun contrat d'entrée** — or son chemin de scoping, donc le test d'AC11, en dépend entièrement | T4 nomme le contrat des deux routes |
+| **P8-6** | trois cibles de verrou neuves entraient dans le dépôt **sans être placées dans l'ordre global**, que `MULTI-TENANT-SCOPING-PATTERNS.md` **exige** de tenir à jour — « respecter l'ordre global » n'était pas exécutable | T4 impose l'inscription au tableau du Pattern 5 |
+
+**Quatre LOW** : `letterings` absente de l'**export de souveraineté** — laissé en **décision
+ouverte** (T5-bis), l'utilisateur obtiendrait sinon des entiers opaques sans le code qu'il voit
+à l'écran ; une citation désignant le mauvais `projects.rs` (il y en a deux) ; un fragment de
+phrase mort dans T7 ; et **le décompte de critères était faux — 13, pas 14**, dans un fichier
+qui invoque la règle de recompte.
+
+**Vérifié et réfuté** : faire entrer `lettering_id` dans la struct partagée **n'a aucun effet
+de bord** — `is_no_op_change` compare champ par champ, `entry_snapshot_json` construit son JSON
+à la main, l'API passe par un DTO distinct, et `sample_line()` casse **bruyamment** à la
+compilation ; le 404 d'AC11 n'entre pas en conflit avec AC7/AC8, qui sont des gardes internes ;
+`audit_log.entity_type` est un `VARCHAR` libre, AC13 n'a **aucune dépendance i18n cachée** ; et
+`delete_all_by_company` — troisième chemin de destruction, échappé au recensement de la
+passe 1 — n'a **que des appelants de test**.
+
+**Verdict de la passe : la spec ne part pas en développement en l'état**, et **une passe 9 n'y
+changerait rien**. Ce qui reste n'est plus de la détection — les défauts sont ici, prouvés,
+avec leurs lignes — mais **trois décisions humaines** : la discipline de lecture verrouillée
+(à porter aussi dans `MULTI-TENANT-SCOPING-PATTERNS.md`), le côté où se pose le verrou
+(P8-2), et l'export de souveraineté (P8-7).
 
 ### Passe 7 de `validate` — 2026-08-25 (Sonnet, contexte frais)
 
@@ -836,7 +975,7 @@ avec elle-même est déjà fermé par la contrainte `chk_jel_debit_credit_exclus
 patches de la passe 1 tiennent sans régression** — AC10 et AC11 purement additifs, numéros de
 ligne exacts.
 
-La spec passe de **11 à 14 critères**. **Verdict : passe 4 due**, modèle différent.
+La spec passe de **11 à 13 critères** *(rectifié en passe 8 : « 14 » avait été écrit sans recompter — `grep -c "^\*\*AC[0-9]*\*\*"` rend **13**, AC1 à AC13 sans trou. C'est exactement le geste que la § *Recompter ses propres comptes rendus* vise, commis dans un fichier qui l'invoque)*. **Verdict : passe 4 due**, modèle différent.
 
 ### Passe 2 de `validate` — 2026-08-25 (Haiku, contexte frais)
 
