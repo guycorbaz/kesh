@@ -154,6 +154,19 @@ elle-même** : la contre-passation, **datée du jour**, est celle que la proximi
 trois paires : c'est mot pour mot le « test qui ne dit rien du cas réel » que la Réserve 2
 existe pour empêcher. **Le test vérifie que la paire hors fenêtre est présente ET rangée.**
 
+**AC8** — ⛔ **Le moteur ne travaille QUE sur les comptes que la vue ouvre** — mêmes rôles,
+même borne, **dans la requête**. *(Tranché en passe 4 : c'était le dernier écart structurel
+entre les deux fiches, et il faisait mentir l'arbitrage qui les déclarait alignées.)*
+
+⚠️ **La borne s'écrit sur `singleton_role`, jamais sur `role`** — leçon payée par 15-1b : la
+colonne générée vaut `NULL` dès qu'un compte est archivé, et le dépôt a déjà corrigé une fois
+un `role = ?` qui scannait l'index là où `singleton_role = ?` rend un accès `const`.
+
+⛔ **Sans elle, on peut pointer le moteur sur le COMPTE BANCAIRE LEDGER** — que la vue
+n'ouvrira jamais — et y apparier des lignes que la réconciliation gère **par un tout autre
+mécanisme**. 15-1c répondait à ce risque par **un bandeau** (AC5) ; la fiche sœur ferme la
+porte dans le SQL. Un bandeau ne protège pas l'API.
+
 **AC5** (porte **D6**) — ⚠️ **L'écran énonce sa frontière avec la réconciliation bancaire,
 pour l'UTILISATEUR.** Deux exigences **distinctes** : **(1)** un texte **visible** — bandeau
 ou aide contextuelle — dit ce que cet écran fait et ce qu'il ne fait pas ; **(2)** le test
@@ -248,19 +261,17 @@ P3-1 : 15-1c exigeait qu'une paire fournisseur payée soit **proposée**, 15-1b 
 les mêmes deux lignes.)*
 
 **« Ouvert » signifie désormais « non lettré », un point c'est tout** : la vue de 15-1b ne
-joint plus aucune table de factures et ne regarde plus `paid_at`. **Les deux fiches
-s'accordent** — l'ensemble affiché et l'ensemble appariable sont **le même**, et la règle de
-D5 (« ne jamais filtrer sur la facture ») devient la règle **commune**, non plus une divergence
-à arbitrer.
+joint plus aucune table de factures et ne regarde plus `paid_at`. La règle de D5 (« ne jamais
+filtrer sur la facture ») devient la règle **commune**, non plus une divergence à arbitrer.
+
+⚠️ **Mais « le même ensemble » ne devient vrai qu'avec AC8 ci-dessous** *(P4-1, passe 4 : la
+première rédaction de cet arbitrage l'affirmait sans réserve, alors que la décision ouverte
+(2) du même document disait le contraire trois paragraphes plus loin)*. Il restait **un** écart
+structurel : la borne de rôle de compte, que 15-1b porte dans sa requête et que le moteur
+n'avait pas.
 
 ⚠️ **Ce que 15-1c y gagne au passage** : sa règle n'a plus à être justifiée contre sa sœur, et
 le test de la paire fournisseur d'AC2 n'a plus de test miroir contradictoire à honorer.
-
-**(2) MEDIUM — le moteur n'a aucune borne de rôle de compte** *(P3-7)*, là où 15-1b a tranché
-`role IN ('Receivable','Payable')` **dans la requête**. Rien n'empêche de pointer le moteur sur
-le **compte bancaire ledger**, où il apparierait des lignes que la réconciliation gère par un
-tout autre mécanisme. 15-1c y répond par **un bandeau** ; la fiche sœur ferme la porte dans le
-SQL.
 
 **(3) MEDIUM — l'acceptation d'une proposition n'a ni contrat, ni convention de lot, ni
 traitement de la proposition périmée** *(P3-8)*. ⚠️ Si l'écran permet d'accepter **plusieurs**
@@ -284,12 +295,24 @@ pas de l'identifiant** : `lettering_id` est un entier opaque, le code `A`, `B` v
       facture (`status`, `paid_at`), propres à `invoices`.
       ⛔ **Borne de volume et index (AC7)** avant d'écrire la requête : portée par compte,
       plafond serveur, composite `(account_id, lettering_id)`.
+      ⛔ **Tri par proximité de date décroissante, départage stable (AC4-bis)** *(P4-4 : le
+      critère existait depuis la passe 3 et n'avait ni tâche ni test)*. **Sans lui, le plafond
+      tronque un ensemble non ordonné** — et évince en premier la contre-passation que la
+      Réserve 2 protège.
+      ⛔ **Borne de rôle (AC8)**, sur `singleton_role`.
 - [ ] **T2** — Routes de proposition. ⛔ **Scoping par jointure (AC6)**, écrêtage du `?limit=`
-      reçu (AC7), et inscription au tableau du Pattern 5.
+      reçu (AC7), et **borne de rôle sur `singleton_role`** (AC8).
+      ⚠️ *Ne PAS inscrire ces routes au tableau du Pattern 5 — AC6 l'a rectifié en passe 3 :
+      ce sont des routes de **lecture**, sans séquence de verrous. La mention traînait ici
+      (P4-2), corriger le critère sans greper la tâche étant le geste même que la
+      § Propagation post-patch décrit.*
 - [ ] **T3** — Écran dédié, avec la frontière énoncée (AC5).
 - [ ] **T4** — Tests : **AC2 en priorité**, ses trois cas nommés, avec l'écart de dates
       réaliste sur la contre-passation. Puis AC3 et AC5.
-      ⛔ Plus **AC6** (une ligne d'une autre société n'est **jamais** candidate — test d'IDOR),
+      ⛔ Plus **AC4-bis** (la paire hors fenêtre est **présente ET rangée** — pas seulement
+      présente : c'est la différence entre un test qui prouve et un test qui passe),
+      **AC8** (un compte hors `Receivable`/`Payable` ne rend **aucune** proposition),
+      **AC6** (une ligne d'une autre société n'est **jamais** candidate — test d'IDOR),
       **AC7** (le plafond tient, et un `?limit=` démesuré est écrêté), et le cas de **la ligne
       déjà lettrée** : elle ne doit **jamais** apparaître en proposition. Ce dernier manquait
       à la fois du tableau des critères **et** de la liste des tests.
@@ -306,6 +329,44 @@ exception (garde #326).
 traverse réellement la frontière HTTP.
 
 ## Change Log
+
+### Passe 4 de `validate` — 2026-08-26 (Sonnet, contexte frais)
+
+**1 HIGH, 2 MEDIUM, 1 LOW.** Sévérité décroissante (`2 HIGH` → `1 HIGH`).
+
+⛔ **P4-1 (HIGH) — l'arbitrage affirmait « le même ensemble », et la décision ouverte (2) du
+MÊME document le contredisait trois paragraphes plus loin.** Un écart structurel subsistait :
+15-1b borne sa vue aux comptes `Receivable`/`Payable` **dans la requête** ; le moteur n'avait
+**aucune** borne de rôle. On pouvait donc pointer le moteur sur le **compte bancaire ledger** —
+que la vue n'ouvrira jamais — et y apparier des lignes que la réconciliation gère par un tout
+autre mécanisme. 15-1c y répondait par **un bandeau** : **un bandeau ne protège pas l'API**.
+
+→ **AC8** : le moteur ne travaille que sur les comptes que la vue ouvre, même borne, dans la
+requête. ⚠️ Sur **`singleton_role`**, jamais sur `role` — leçon déjà payée par 15-1b, dont la
+colonne générée vaut `NULL` pour un compte archivé.
+
+✅ **L'alignement des deux fiches est désormais RÉEL**, et non plus seulement proclamé.
+
+**P4-2 (MEDIUM) — résidu de propagation** : T2 prescrivait encore l'inscription au Pattern 5,
+qu'AC6 venait de déclarer **non applicable** en passe 3. Corriger le critère sans greper la
+tâche : le geste même que la § *Propagation post-patch* décrit, et la troisième fois qu'il se
+produit dans cet epic.
+
+**P4-4 (MEDIUM)** — **AC4-bis n'avait ni tâche ni test** depuis sa création en passe 3, alors
+que son propre texte en exigeait un. Sans le tri, le plafond tronque un ensemble non ordonné
+et évince **en premier** la contre-passation que la Réserve 2 protège — le critère introduit
+pour fermer ce défaut serait resté non implémenté.
+
+**P4-3 (LOW)** — le décompte de la passe 3 ne se recomptait pas : « quatre MEDIUM laissés » n'en
+nommait que **trois**, et P3-9/P3-10 relèvent des LOW. Rectifié.
+
+**Réfuté** : la borne de performance ne se dégrade **pas** avec l'alignement — l'absence de
+prédicat réducteur était acquise avant l'arbitrage ; l'index composite est bien livré par le
+socle ; et le paragraphe « ce que l'arbitrage supprime » décrit des findings de **15-1b**, ce
+qui est défendable pour un texte partagé entre fiches sœurs.
+
+La spec passe de **9 à 10 critères**. **Verdict : passe 5 due** — un HIGH au rapport, corrigé
+ici.
 
 ### Arbitrage du Project Lead — 2026-08-26 : « ouvert » = « non lettré »
 
@@ -368,7 +429,7 @@ l'analogie était fausse — la réconciliation est **1 → N**, le lettrage **N
 le **jeu candidat**, plafond **chiffré à 500**, et la remarque que l'égalité stricte rend
 l'appariement **groupable par montant**, donc linéaire.
 
-**Quatre MEDIUM corrigés ici** : **P3-3** le « classement » tranché en passe 2 n'existait dans
+**Trois MEDIUM corrigés ici** : **P3-3** le « classement » tranché en passe 2 n'existait dans
 aucun critère — le plafond tronquait un ensemble non ordonné, évinçant **en premier** la
 contre-passation que la Réserve 2 protège → **AC4-bis** ; **P3-4** la fenêtre figurait
 **toujours** comme critère d'éligibilité dans le tableau, la passe 2 ayant corrigé les deux
@@ -378,7 +439,7 @@ nouvel endpoint y figure » était FAUSSE** — le Pattern 5 impose un ordre à 
 **plus d'un verrou**, et les routes de 15-1c sont des routes de **lecture** ; **P3-9/P3-10** le
 décompte d'index (trois, pas deux) et le titre du tableau, que sa propre colonne contredisait.
 
-**Quatre MEDIUM laissés en décisions ouvertes** — voir le § dédié : la borne de rôle du moteur,
+**Trois MEDIUM laissés en décisions ouvertes** *(rectifié en passe 4 : « quatre » n'en nommait que trois, et P3-9/P3-10 sont deux des quatre LOW, pas des MEDIUM corrigés)* — voir le § dédié : la borne de rôle du moteur,
 le contrat d'acceptation et le pattern de lot, AC4 sans tâche ni test.
 
 **Réfuté** : le déplacement de l'index vers 15-1a est **correct des deux côtés**, `CREATE INDEX`
