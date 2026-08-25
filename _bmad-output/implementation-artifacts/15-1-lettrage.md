@@ -239,6 +239,12 @@ multi-tenant** — le dépôt en a déjà payé un (KF-002), et c'est exactement
 qu'une spécification muette invite à commettre. Le format est libre ; sa **portée** ne l'est
 pas.
 
+⚠️ **L'unicité doit tenir sous concurrence** *(relevé en passe 2)* : deux lettrages
+simultanés dans la même société ne doivent pas recevoir le même code. Un compteur lu puis
+incrémenté hors transaction ne le garantit pas. Le moyen est libre — séquence atomique,
+contrainte d'unicité `(company_id, lettering_code)` qui fait échouer le second, ou identifiant
+engendré sans compteur.
+
 **AC12** — ⚠️ **Une écriture dont une ligne est lettrée ne se supprime pas en laissant un
 code orphelin.** *(Relevé en relecture : `delete_journal_entry` existe —
 `journal_entries.rs:631`.)* Sans garde, supprimer l'écriture d'encaissement laisserait la
@@ -246,16 +252,32 @@ ligne de créance **lettrée donc réputée soldée**, alors que sa contrepartie
 la facture disparaîtrait de la vue des ouverts **en restant impayée**. C'est un défaut muet,
 et du genre le plus coûteux — il fausse le solde sans rien signaler.
 
-Deux conduites possibles, à trancher à l'implémentation : **refuser** la suppression d'une
-écriture lettrée (cohérent avec le refus de délettrage après clôture), ou **délettrer
-automatiquement** la contrepartie. ⚠️ La seconde ne vaut que si l'exercice est ouvert —
-sinon elle contournerait AC7 par un chemin détourné.
+**La conduite est TRANCHÉE : la suppression d'une écriture dont une ligne est lettrée est
+REFUSÉE**, et le message nomme la cause — *« cette écriture est lettrée ; délettrez-la
+d'abord »*. *(Tranché en passe 2 : la spec disait « à trancher à l'implémentation », ce qui
+laissait deux développeurs produire deux comportements opposés sur le même critère.)*
+
+Pourquoi le refus plutôt que le délettrage automatique : il est **cohérent avec AC7**, qui
+refuse déjà le délettrage sur exercice clos. Un délettrage automatique déclenché par une
+suppression **contournerait AC7 par un chemin détourné** — on obtiendrait sur un exercice
+clos, en supprimant une écriture, ce que le délettrage direct interdit. Et le refus est
+**réversible par l'utilisateur** en deux gestes explicites (délettrer, puis supprimer), là où
+le délettrage automatique agit sans qu'il l'ait demandé.
+
+Le délettrage automatique reste ouvert comme évolution, **à condition** d'être borné aux
+exercices ouverts.
 
 **AC13** (porte **D6**) — ⚠️ **L'écran de lettrage énonce sa frontière avec la
 réconciliation bancaire, pour l'UTILISATEUR.** *(Relevé en passe 1 : **D6 n'était nommée par
 aucun critère** — elle ne vivait que dans sa propre section et dans T5.)* Un texte visible —
-bandeau ou aide contextuelle — dit ce que cet écran fait et ce qu'il ne fait pas, et le test
-E2E l'atteint par un `data-testid` stable, jamais par son libellé traduit.
+bandeau ou aide contextuelle — dit ce que cet écran fait et ce qu'il ne fait pas.
+
+Deux exigences **distinctes**, que la première rédaction confondait *(relevé en passe 2)* :
+**(1)** un texte **visible par l'utilisateur** énonce la frontière — c'est l'exigence de
+fond, celle que D6 porte ; **(2)** le test E2E l'atteint par un `data-testid` stable et
+**jamais** par son libellé traduit — c'est la convention de test du dépôt (KF #326), pas
+quelque chose que l'utilisateur voit. Un `data-testid` ne satisfait pas (1) : il est
+invisible.
 
 Sans ce critère, les douze autres passent, la story se déclare `done`, et le risque que **D6
 nomme** — deux écrans voisins qui font des choses différentes et se confondent — se réalise
@@ -277,8 +299,12 @@ une décision portée par aucun critère n'est pas une décision, c'est une inte
       Garde de clôture selon **D3** — asymétrique, et c'est délibéré.
 - [ ] **T5** — Écran dédié (**D6**), avec la frontière énoncée pour l'utilisateur.
 - [ ] **T6** — Tests : **AC3 et AC3-bis** (le piège de D4, sur les DEUX tables),
-      **AC6-bis** (égalité des montants) et **AC7/AC8** (l'asymétrie de clôture) **en
-      priorité** — ce sont les endroits où une implémentation plausible se trompe.
+      **AC4** (les trois cas de proposition : facture/avoir `cancelled`, compte fournisseur,
+      écritures manuelles sans facture), **AC6-bis** (égalité des montants), **AC7/AC8**
+      (l'asymétrie de clôture) et **AC13** (la frontière énoncée) **en priorité** — ce sont
+      les endroits où une implémentation plausible se trompe.
+      ⚠️ *AC4 et AC13 manquaient à cette liste (relevé en passe 2) : une liste de tests
+      « prioritaires » incomplète se lit comme une couverture suffisante.*
 - [ ] **T9** — Portée du code de lettrage (**AC11**) et garde sur la suppression d'une
       écriture lettrée (**AC12**). ⚠️ Les deux sont nés d'une relecture, pas de la spec
       initiale : ils manquaient tous les deux.
@@ -302,6 +328,48 @@ précédent s'est terminé (KF-039, #310).
 
 
 ## Change Log
+
+### Passe 2 de `validate` — 2026-08-25 (Haiku, contexte frais)
+
+**La sévérité décroît : `HIGH → MEDIUM`.** Aucun HIGH, un MEDIUM retenu, quatre LOW dont
+deux réfutés au sol. C'est une convergence **monotone**, pas une stagnation — le critère de
+split de la § *Règle de splitting préventif* n'est donc pas déclenché.
+
+**Ce que la passe cherchait en priorité** : les régressions de la passe 1, le motif mesuré du
+dépôt étant que sept passes sur huit trouvent un défaut du patch précédent. Elle a vérifié
+les quatre patches un par un et **n'en a trouvé aucune** — la séparation critères
+structurels / filtres facture tient, la tolérance est bien retirée des deux côtés, et les six
+décisions D1-D6 sont désormais toutes portées par au moins un critère.
+
+| | défaut | gravité | remède |
+|---|---|---|---|
+| **P2-1** | **AC12 disait « à trancher à l'implémentation »** — deux développeurs auraient produit deux comportements opposés sur le même critère | MEDIUM | **tranché : la suppression est REFUSÉE**, le délettrage automatique contournerait AC7 par un chemin détourné |
+| **P2-3** | **T6 omettait AC4 et AC13** — une liste de tests « prioritaires » incomplète se lit comme une couverture suffisante | LOW | les deux ajoutés |
+| **P2-4** | **AC13 confondait deux exigences** : le texte visible et le `data-testid`. Un `data-testid` ne satisfait pas D6 — il est invisible | LOW | scindée en (1) et (2) |
+| **P2-5** | **AC11 muette sur l'unicité sous CONCURRENCE** — deux lettrages simultanés pouvaient recevoir le même code | LOW | exigence ajoutée, moyen laissé libre |
+
+**Deux findings RÉFUTÉS au sol, et la réfutation vaut d'être écrite :**
+
+⚠️ **P2-2 (multi-devise) — réfuté.** La passe reprochait à la spec d'être muette sur la
+comparaison de montants en devises différentes. Vérification : **`journal_entry_lines` ne
+porte AUCUNE colonne de devise** — `debit` et `credit` sont des `DECIMAL(19,4)` nus
+(`20260412000001_journal_entries.sql`) — et le PRD ne contient pas une occurrence de
+« devise » ni de « currency ». Les seules colonnes `currency` du schéma sont dans les tables
+d'**import** (`bank_transactions`, `imported_supplier_invoices`) : elles décrivent la donnée
+entrante **avant** son écriture comptable. La comptabilité de Kesh est mono-devise ; deux
+lignes d'écriture sont par construction dans la même unité. **Le cas n'existe pas.**
+
+⚠️ **P2-6 (arrondis) — réfuté par le même relevé.** `DECIMAL(19,4)` est un type **exact**,
+pas un flottant : l'égalité stricte entre deux montants stockés est exacte. Le scénario
+avancé — « 1000.004 arrondi à 1000.01 » — suppose une précision que la colonne n'admet pas.
+
+Ces deux réfutations coûtent le temps de la vérification et l'épargnent au développeur : un
+patch appliqué sur un défaut inexistant aurait ajouté à la spec une règle de change qu'aucun
+schéma ne permet d'implémenter.
+
+La spec reste à **15 critères** (les remèdes amendent, ils n'ajoutent pas). **Verdict :
+convergence en cours, passe 3 due** — un MEDIUM subsiste au moment où la passe a rendu son
+rapport, et la § *Review Iteration Rule* impose de relancer tant qu'un finding dépasse LOW.
 
 ### Passe 1 de `validate` — 2026-08-25 (Sonnet, contexte frais)
 
