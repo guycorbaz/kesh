@@ -61,9 +61,24 @@ lettering_id IS NULL` s'ajoute donc au filtre existant d'`aged_receivables.rs:12
 `dunning_eligibility.rs:87` **sans toucher ni `paid_at` ni `mark_as_paid`** — donc sans hériter
 du trou d'exercice que (A) traîne.
 
+✅ **Sa prémisse est VÉRIFIÉE au sol** *(contrôle de passe 2)* :
+`generate_invoice_journal_lines` (`kesh-db/src/repositories/invoices.rs:1368` et suivantes)
+pousse **une seule ligne au débit** — la créance, `total_ht + total_vat` — puis **toutes** les
+autres en crédit (produits, TVA). « La seule ligne à `debit > 0` » n'est donc pas une
+approximation : c'est la structure engendrée par le code, quel que soit le nombre de lignes de
+produit ou de taux de TVA.
+
+⚠️ **Et l'avoir n'est pas un contre-exemple** : il inverse bien les sens, mais il porte **sa
+propre écriture** — la jointure passant par `invoices.journal_entry_id` ne l'atteint pas.
+
 ⚠️ **Son coût** : une jointure de plus dans deux requêtes existantes. **Sa réserve** : elle ne
 couvre que le lettrage, pas `paid_at` — elle est donc **orthogonale** aux deux autres, pas
 concurrente. Rien n'interdit de retenir (C) *et* de documenter l'écart résiduel.
+
+⛔ **(C) porte sur `aged_receivables` et `dunning_eligibility`, PAS sur la requête de cette
+vue** *(P2-4, passe 2)*. La vue de 15-1b lit la marque de toute façon — c'est sa définition
+même. Ce que la Décision 1 arbitre, c'est si les **deux autres dispositifs** la lisent aussi.
+Un développeur qui confondrait les deux implémenterait la jointure au mauvais endroit.
 
 ### ⛔ Décision 2 — Côté client, `paid_at` n'a aucune contrepartie comptable
 
@@ -189,6 +204,22 @@ mentirait là où elle doit informer.
 **AC3** — ⚠️ **La règle vaut pour les DEUX tables de factures**, `invoices` et
 `supplier_invoices`, chacune avec son propre `paid_at`. **Un test par table.**
 
+**AC2-bis** — ⛔ **« Ni lettré, ni marqué payé » ne s'applique PAS uniformément : une écriture
+manuelle n'a AUCUN `paid_at`.** *(Relevé en passe 2.)* La définition doit donc se décliner en
+**trois cas**, et la requête les distingue :
+
+| la ligne appartient à… | « ouverte » signifie |
+|---|---|
+| une facture **client** | `invoices.paid_at IS NULL` **et** pas de marque |
+| une facture **fournisseur** | `supplier_invoices.paid_at IS NULL` **et** pas de marque |
+| **aucune facture** — écriture manuelle | **pas de marque**, un point c'est tout |
+
+⚠️ **Le troisième cas est celui qui casse en silence** : un filtre `paid_at IS NULL` écrit
+naïvement sur une jointure externe **exclut** les lignes sans facture — or les écritures
+manuelles qui se soldent sont **l'un des quatre cas d'usage** que le lettrage existe pour
+couvrir. Le test qui l'attrape : deux écritures manuelles au compte de créances, sens opposés,
+aucune facture derrière — **les deux doivent apparaître ouvertes**.
+
 **AC3-bis** — ⚠️ **Et pour les DEUX écritures d'une facture fournisseur payée** *(relevé en
 passe 3)* : l'achat (`purchase_journal_entry_id`) **et** le règlement
 (`settlement_journal_entry_id`). Une jointure qui n'en voit qu'une laisse l'autre ouverte à
@@ -215,8 +246,16 @@ laisse passer.
 ## Tasks
 
 - [ ] **T1** — Repository : lister les lignes ouvertes d'un compte. ⚠️ La requête implémente
-      la définition d'« ouvert » — les jointures sur les **deux** tables de factures et les
-      **deux** écritures fournisseur en font partie.
+      la définition d'« ouvert » — les jointures sur les **deux** tables de factures, les
+      **deux** écritures fournisseur **et les trois cas d'AC2-bis** en font partie.
+      ⛔ **La borne de rôle d'AC1 s'applique DANS LA REQUÊTE, pas seulement à l'écran**
+      *(P2-2, passe 2 : AC1 disait « la vue est bornée » sans dire où)*. Un compte hors
+      `role IN ('Receivable','Payable')` ne rend **aucune ligne**. Une borne posée seulement au
+      frontend laisserait la route la contourner — et le développeur qui lit T1 seul ne
+      l'implémenterait jamais.
+      ⚠️ **La requête est un instantané « aujourd'hui »** (AC1-bis) : elle lit `paid_at` tel
+      qu'il est **au moment de l'appel**, sans date de référence. C'est la limite énoncée par
+      AC1-bis, pas un oubli — mais elle se code explicitement, pas par omission.
 - [ ] **T2** — Route `GET` lignes ouvertes d'un compte. ⛔ **Paginée**, sur le patron
       systématique du dépôt — `const MAX_LIMIT: i64 = 500` et `list_by_company_paginated`
       (`kesh-db/src/repositories/journal_entries.rs:541,673`), repris à l'identique par
@@ -228,6 +267,10 @@ laisse passer.
 - [ ] **T4** — Tests : **AC2, AC3 et AC3-bis en priorité** — le piège de la définition, sur
       les deux tables **et** les deux écritures. Puis le test qui matérialise l'arbitrage
       d'AC5, et **AC1** (un compte hors `Receivable`/`Payable` n'ouvre pas la vue).
+      ⛔ Plus **AC2-bis** : deux écritures manuelles au compte de créances, sens opposés,
+      **aucune facture derrière** — les deux doivent apparaître **ouvertes**. C'est le cas que
+      la définition « ni lettré ni marqué payé » exclut en silence si on l'applique sans le
+      décliner.
       ⛔ **La fixture d'AC3-bis porte DEUX factures fournisseur sur le compte 2000, une payée
       et une NON payée** *(relevé en passe 1)*. Avec une seule facture, le test ne valide que
       la **sous**-exclusion — il ne distingue pas une implémentation correcte d'une
@@ -245,6 +288,40 @@ exception (garde #326, son allowlist ne doit pas s'allonger).
 ⚠️ **La base de gate se remet à zéro AVANT le gate**, inconditionnellement (KF-039, #310).
 
 ## Change Log
+
+### Passe 2 de `validate` — 2026-08-25 (Haiku, contexte frais)
+
+**0 HIGH, 3 MEDIUM, 2 LOW.** Sévérité décroissante (`HIGH → MEDIUM`) : convergence monotone.
+Le recompte des **trois** écrivains de `paid_at` est confirmé exact au sol.
+
+⛔ **P2-1 (MEDIUM) — « ni lettré, ni marqué payé » ne s'applique PAS uniformément : une
+écriture manuelle n'a AUCUN `paid_at`.** La définition se décline en **trois** cas — facture
+client, facture fournisseur, et **aucune facture**. ⚠️ **Le troisième casse en silence** : un
+filtre `paid_at IS NULL` écrit naïvement sur une jointure externe **exclut** les lignes sans
+facture — or les écritures manuelles qui se soldent sont **l'un des quatre cas d'usage** que le
+lettrage existe pour couvrir. → **AC2-bis**, avec son test.
+
+**P2-2 (MEDIUM)** — AC1 disait « la vue est bornée aux comptes `Receivable`/`Payable` » **sans
+dire où**. Une borne posée au seul frontend laisserait la route la contourner, et un
+développeur lisant T1 seul ne l'implémenterait jamais. → T1 dit **dans la requête**.
+
+**P2-3 (MEDIUM)** — la limite temporelle d'AC1-bis se **code explicitement**, elle ne
+s'obtient pas par omission. → précisé à T1.
+
+**P2-4 (LOW)** — **la conduite (C) porte sur `aged_receivables` et `dunning_eligibility`, PAS
+sur la requête de cette vue** : celle-ci lit la marque de toute façon, c'est sa définition
+même. Ce que la Décision 1 arbitre, c'est si les **deux autres dispositifs** la lisent aussi.
+Confondre les deux ferait implémenter la jointure au mauvais endroit.
+
+✅ **Et un contrôle que la passe n'avait PAS fait, mené par l'orchestrateur parce qu'il décide
+de la conduite (C)** : la prémisse *« la ligne de créance est la seule à `debit > 0` »* est
+**vraie**. `generate_invoice_journal_lines` (`invoices.rs:1368` sq.) pousse **une seule ligne
+au débit** — la créance TTC — puis **toutes** les autres en crédit, quel que soit le nombre de
+lignes de produit ou de taux de TVA. Et l'avoir n'est pas un contre-exemple : il inverse les
+sens mais porte **sa propre écriture**, hors d'atteinte de la jointure par
+`invoices.journal_entry_id`. **La conduite (C) est donc réalisable telle qu'écrite.**
+
+La spec passe de **9 à 10 critères**. **Verdict : passe 3 due.**
 
 ### Passe 1 de `validate` — 2026-08-25 (Sonnet, contexte frais)
 
