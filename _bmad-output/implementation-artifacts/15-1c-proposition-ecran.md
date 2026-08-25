@@ -108,9 +108,20 @@ forme une paire parfaite qui ne serait **jamais proposée**.
 moins de 30 jours. Un test qui ne dit rien du cas réel. Même effet sur un règlement client à
 45 jours, c'est-à-dire sur le débiteur qu'on veut relancer.
 
-**Deux conduites** : une fenêtre **distincte et justifiée** pour le lettrage — l'exercice
-comptable est le candidat naturel —, ou la fenêtre au **classement** et non au **filtre**,
-exactement la conduite alternative de la Réserve 1.
+**TRANCHÉ PAR DÉFAUT — la fenêtre s'applique au CLASSEMENT, pas au FILTRE.** *(Explicité en
+passe 2 : « tranchée par défaut » ne disait pas laquelle des deux conduites était le défaut, et
+**AC2 en dépend**.)*
+
+⛔ **C'est la seule lecture cohérente avec AC2**, qui exige un test datant les deux pièces à
+**plus de 30 jours d'écart**. Si la fenêtre filtrait, ce test **échouerait par construction** —
+et deux développeurs auraient raison en même temps : celui qui écrit le moteur avec un filtre à
+30 jours, et celui qui écrit le test tel qu'AC2 le prescrit. C'est exactement la contradiction
+« proposer ce qu'on refuse » de la Réserve 1, transposée à la date.
+
+**La conduite alternative**, si l'arbitrage change : une fenêtre **distincte et justifiée** —
+l'exercice comptable est le candidat naturel —, appliquée cette fois en filtre. ⚠️ Elle
+**oblige alors à réécrire AC2**, dont l'écart de dates devrait rentrer dans la nouvelle
+fenêtre.
 
 ## Critères d'acceptation
 
@@ -153,8 +164,10 @@ convention anti-IDOR du dépôt (`kesh-api/src/routes/products.rs:343`), et **le
 payé un défaut de cette classe (KF-002)**.
 
 ⛔ **Inscrire la séquence de verrous et le scoping de ces routes au tableau du Pattern 5**
-(`docs/MULTI-TENANT-SCOPING-PATTERNS.md`), comme 15-1a l'impose pour les siennes — ce document
-**exige** que tout nouvel endpoint y figure.
+(`docs/MULTI-TENANT-SCOPING-PATTERNS.md`) — ce document **exige** que tout nouvel endpoint y
+figure. ⚠️ **Reprendre le format des lignes voisines du tableau, et celui que 15-1a inscrit
+pour ses propres routes** *(P2-3 : « inscrire » ne disait ni quoi ni sous quelle forme)* :
+une ligne par route, avec sa séquence de verrous et son chemin de scoping.
 
 **AC7** — ⛔ **Le moteur est BORNÉ, en portée et en volume.** *(Relevé en passe 1 : T1 et T2
 tenaient en une phrase, sans limite ni portée.)*
@@ -176,9 +189,14 @@ réconciliation. Sur un compte fournisseur actif depuis plusieurs exercices — 
 explicitement** à lettrer à cheval —, un appariement **quadratique non plafonné** est un
 calcul lourd et bloquant.
 
-⚠️ **L'index actuel ne suffit pas** : `journal_entry_lines` ne porte que `idx_jel_entry` et
-`idx_jel_account`, deux index **simples**. Vérifier et étendre l'indexation — au minimum un
-composite `(account_id, lettering_id)` — **avant** d'écrire la requête d'appariement.
+⚠️ **L'index nécessaire est créé par 15-1a, pas ici** *(tranché en passe 2 : AC7 exigeait un
+composite que **personne** ne créait — 15-1a ne posait qu'un `idx_jel_lettering` simple)*. La
+migration vit dans le socle, donc **`idx_jel_account_lettering (account_id, lettering_id)` y a
+été ajouté** ; 15-1c le **consomme**, elle ne le crée pas.
+
+⚠️ **À vérifier au démarrage de 15-1c** : que le socle l'a bien livré. Sans lui, la requête
+`WHERE account_id = ? AND lettering_id IS NULL` balaie le compte entier — les deux index
+simples préexistants (`idx_jel_entry`, `idx_jel_account`) ne la servent pas.
 
 ## Tasks
 
@@ -210,6 +228,44 @@ exception (garde #326).
 traverse réellement la frontière HTTP.
 
 ## Change Log
+
+### Passe 2 de `validate` — 2026-08-25 (Haiku, contexte frais)
+
+**0 HIGH, 2 MEDIUM, 1 LOW.** Sévérité décroissante (`HIGH → MEDIUM`) : convergence monotone.
+
+**Aucune régression des patches de la passe 1** : AC6, AC7, la colonne « provenance » et le
+critère `lettering_id IS NULL` sont vérifiés exacts au sol et jugés bien posés.
+
+⚠️ **Les deux MEDIUM ne sont pas des défauts de raisonnement mais des ambiguïtés de
+COORDINATION entre fiches** — la classe d'erreur que le split fabrique, et la troisième fois
+qu'elle se manifeste dans cet epic.
+
+⛔ **P2-1 — AC7 exigeait un index composite que PERSONNE ne créait.** 15-1a ne posait qu'un
+`idx_jel_lettering (lettering_id)` simple ; le composite `(account_id, lettering_id)` n'était
+la tâche d'aucune des deux fiches. → **Tranché : la migration vit dans le socle**, donc
+`idx_jel_account_lettering` a été **ajouté au DDL de 15-1a** ; 15-1c le **consomme**.
+
+⚠️ **Et les deux index sont nécessaires**, le préfixe gauche ne permettant pas de les
+confondre : `(lettering_id)` sert « retrouver la contrepartie d'une marque »,
+`(account_id, lettering_id)` sert « les lignes ouvertes du compte A » — la requête du moteur
+**et** celle de la vue de 15-1b.
+
+⛔ **P2-2 — « tranchée par défaut » ne disait pas LAQUELLE des deux conduites était le défaut,
+et AC2 en dépendait.** → **Tranché : la fenêtre s'applique au CLASSEMENT, pas au filtre.**
+C'est la seule lecture cohérente avec AC2, qui exige un test datant les deux pièces à **plus de
+30 jours d'écart** : si la fenêtre filtrait, ce test **échouerait par construction**, et deux
+développeurs auraient raison en même temps — celui qui écrit le moteur avec un filtre, celui
+qui écrit le test tel qu'AC2 le prescrit. **C'est la contradiction « proposer ce qu'on refuse »
+de la Réserve 1, transposée à la date.**
+
+**P2-3 (LOW)** : « inscrire au tableau du Pattern 5 » ne disait ni quoi ni sous quelle forme —
+le format des lignes voisines est désormais nommé.
+
+**Vérifié et réfuté** : multi-devise et arrondis `DECIMAL(19,4)` sans objet ; AC1 et AC2
+complémentaires, pas antagonistes ; la Réserve 1 correctement posée, sa conséquence énoncée.
+
+**Verdict : passe 3 due** — deux MEDIUM au rapport. ⚠️ Aucun ne relève d'un arbitrage produit :
+les deux sont tranchés ici sur la cohérence interne, et **restent réversibles d'un mot**.
 
 ### Passe 1 de `validate` — 2026-08-25 (Sonnet, contexte frais)
 

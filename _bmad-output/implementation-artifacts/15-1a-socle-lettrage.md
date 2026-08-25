@@ -71,7 +71,22 @@ ALTER TABLE journal_entry_lines
         REFERENCES letterings(id) ON DELETE RESTRICT;
 
 CREATE INDEX idx_jel_lettering ON journal_entry_lines (lettering_id);
+CREATE INDEX idx_jel_account_lettering ON journal_entry_lines (account_id, lettering_id);
 ```
+
+⛔ **Les DEUX index, et ce n'est pas une redondance** *(relevé en passe 2 de **15-1c**, qui
+exigeait un composite que personne ne créait — la migration vit ici)* : ils servent deux
+requêtes que le préfixe gauche ne permet pas de confondre.
+
+| requête | index qui la sert |
+|---|---|
+| « les lignes portant la marque X » — retrouver la contrepartie | `idx_jel_lettering (lettering_id)` |
+| « les lignes **ouvertes** du compte A » — le moteur de 15-1c et la vue de 15-1b | `idx_jel_account_lettering (account_id, lettering_id)` |
+
+⚠️ Le composite rend `idx_jel_account (account_id)` **redondant** — il en est le préfixe
+gauche. On ne le supprime pas pour autant : il vit dans une migration **déjà appliquée**, et
+P8 interdit d'y revenir. Le laisser coûte un index de plus en écriture ; le retirer se ferait
+dans une migration ultérieure, hors périmètre.
 
 ⚠️ **L'index se déclare à part, et ce n'est pas une coquetterie** *(P6-8)* : le seul précédent
 d'`ALTER TABLE journal_entry_lines` du dépôt
