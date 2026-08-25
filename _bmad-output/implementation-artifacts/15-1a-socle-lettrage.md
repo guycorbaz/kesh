@@ -267,6 +267,29 @@ est clôturé, y compris à cheval sur deux exercices.
 **AC6** (porte **D3**) — Le délettrage est possible tant que **les deux** exercices sont
 ouverts, et **refusé** dès que l'un est clôturé.
 
+⛔ **Le délettrage prend le MÊME sentinel `companies FOR UPDATE` que le lettrage** *(P7-1)*,
+et pour une raison que cette story est la première du dépôt à rencontrer : **elle doit
+vérifier DEUX exercices dans une seule transaction.** Tout le code existant n'en verrouille
+qu'un — une écriture n'appartient qu'à un exercice — et le lettrage à cheval qu'AC5 organise
+brise cette hypothèse.
+
+Les deux issues qu'un développeur prendrait sans cette clause sont **toutes deux mauvaises** :
+
+- **verrouiller les deux `fiscal_years` dans l'ordre où les lignes arrivent** → deux
+  délettrages croisés (L1 sur 2024+2025, L2 sur 2025+2024) se bloquent en **ABBA**. Et le
+  `retry_on_deadlock` du dépôt n'ayant **aucun site d'appel**, le 1213 remonte tel quel à
+  l'utilisateur ;
+- **ne pas verrouiller du tout**, pour éviter ce risque → le contrôle « les deux exercices
+  sont ouverts » n'est plus sérialisé avec `fiscal_years::close`. Une clôture concurrente
+  commit pendant la fenêtre, le délettrage commit après en croyant l'exercice ouvert, et
+  **D3 est violée** — la décision comptable centrale de cette story.
+
+⚠️ **Le sentinel les ferme toutes les deux** : il sérialise tout le trafic de lettrage et de
+délettrage d'une société, ce qui rend l'ordre des verrous suivants **sans importance**. C'est
+l'idiome écrit du dépôt — `docs/MULTI-TENANT-SCOPING-PATTERNS.md`, **Pattern 5**, cité par
+`projects.rs:75-78` : *« verrou sentinelle `companies` une seule fois, PUIS `FOR UPDATE` sur
+les lignes — évite l'inversion ABBA »*. Le coût est négligeable au volume d'un lettrage.
+
 **AC7** — ⚠️ **La marque survit à la MODIFICATION d'une écriture, ou la modification est
 refusée.** *(Relevé en passe 3, P3-1.)* `update` fait aujourd'hui `DELETE FROM
 journal_entry_lines` puis réinsère : une implémentation naïve **perd la marque en silence** et
@@ -442,12 +465,28 @@ rester **indiscernable** d'un compte inexistant (garde anti-IDOR) »*
       comparateurs divergents donneraient deux réponses à la question « les lignes ont-elles
       changé ? ». La garde de AC8 se pose dans `delete_in_tx`, **pas** dans le handler.
 - [ ] **T4** — Routes : `POST` lettrage, `DELETE` délettrage.
+      ⛔ **L'ordre d'évaluation des gardes fait partie de la garantie d'AC11** *(P7-2)* : les
+      deux lignes se chargent par **une requête unique scopée `company_id = ?`** ; **moins de
+      deux lignes trouvées → 404**, **avant toute** évaluation d'AC4, AC10 ou AC12.
+      ⚠️ Sinon l'oracle qu'AC11 ferme **rouvre par un autre canal** : un 409 « comptes
+      différents » ou « déjà lettrée » révélerait l'existence de la ligne **et un de ses
+      attributs**. Le précédent du dépôt écrit cette séquence — *« Critère 1 — exister ET
+      appartenir à la société »*, **puis** « Critère 2 » (`kesh-api/src/routes/products.rs:343`).
+      Les fonctions voisines documentent d'ailleurs leurs étapes une par une ; celle-ci le
+      doit aussi.
 - [ ] **T5** — ⚠️ **Export CSV** *(relevé en passe 3 de la story MÈRE)* : le header de
       `journal_entry_lines` est **figé en dur**
       (`crates/kesh-api/src/exports/csv_tables.rs:286`) et il n'a **aucune garde
       d'exhaustivité**, contrairement à `invoices` (même fichier, l. 1031, garde #262). S'y ajoutent **deux** listes de colonnes en dur côté repository
       (`LINE_COLUMNS` l. 44 et le `SELECT` l. 1235) : en oublier une fait échouer l'export au
       runtime. Étendre la garde vaut mieux que se souvenir.
+      ⛔ **TRANCHÉ : `lettering_id` entre dans la struct `JournalEntryLine`, dans
+      `LINE_COLUMNS` et dans l'export CSV dès cette story** *(P7-4)*. La garde-modèle des
+      `invoices` est **structurelle** — elle compare le header aux champs de la **struct**,
+      pas au schéma : exposer la marque par une lecture dédiée sans toucher le type partagé
+      laisserait la garde **verte tout en n'exportant jamais la marque**. Or l'export existe
+      pour que l'utilisateur puisse **vérifier ce que Kesh affirme**, ce qui est l'objet même
+      de cette story.
       ⛔ **Et le `.keshbackup` EST concerné** *(P6-2 — l'affirmation précédente, « pas
       concerné », n'était vraie que pour les COLONNES)* : l'**inventaire des tables** est
       **codé en dur**, `TABLES_TO_TRUNCATE` (`kesh-db/src/backup.rs:34`), ordonné enfants →
@@ -501,6 +540,56 @@ comment le run précédent s'est terminé (KF-039, #310).
 checksum est enregistré, et le binaire ne boote plus.
 
 ## Change Log
+
+### Passe 7 de `validate` — 2026-08-25 (Sonnet, contexte frais)
+
+**0 CRITICAL, 1 HIGH, 2 MEDIUM, 1 LOW.**
+
+⛔ **P7-1 (HIGH) — la même famille de défaut que la passe 6 venait de fermer, mais sur AC6 :
+la décision comptable centrale de la story.** La passe 6 avait spécifié la concurrence de la
+**création** du code (AC3) et laissé le **délettrage** sans mécanisme.
+
+⚠️ **Cette story est la PREMIÈRE du dépôt à devoir vérifier DEUX exercices dans une seule
+transaction.** Tout le code existant n'en verrouille qu'un — une écriture n'appartient qu'à un
+exercice — et le lettrage à cheval qu'AC5 organise brise cette hypothèse. Les deux issues
+qu'un développeur aurait prises sont **toutes deux mauvaises** : verrouiller les deux
+`fiscal_years` dans l'ordre d'arrivée → **ABBA** entre deux délettrages croisés, avec un 1213
+qui remonte tel quel puisque `retry_on_deadlock` n'a aucun site d'appel ; ne pas verrouiller
+→ le contrôle « les deux exercices sont ouverts » n'est plus sérialisé avec
+`fiscal_years::close`, et **D3 est violée**.
+
+→ AC6 prend le **même sentinel** que le lettrage. Il sérialise tout le trafic d'une société,
+ce qui rend l'ordre des verrous suivants sans importance — idiome écrit du dépôt,
+`docs/MULTI-TENANT-SCOPING-PATTERNS.md` **Pattern 5**, que la passe 6 avait cité **pour AC3
+sans en tirer la conséquence pour AC6**.
+
+**P7-2 (MEDIUM) — l'oracle qu'AC11 venait de fermer pouvait rouvrir par un autre canal.** La
+spec disait *que* le refus cross-tenant est un 404 indiscernable, jamais *quand* ce contrôle
+s'exécute. Charger les données de la ligne avant de vérifier l'appartenance rendrait un **409
+distinct** — « comptes différents », « déjà lettrée » — révélant l'existence **et un
+attribut**. Pire que l'oracle fermé une passe plus tôt. → T4 impose la requête unique scopée
+et le 404 **avant** toute autre garde, comme le précédent `products.rs:343` l'écrit.
+
+**P7-4 (MEDIUM) — la garde CSV pouvait rester verte sans jamais exporter la marque.** La
+garde-modèle des `invoices` est **structurelle** : elle compare le header aux champs de la
+**struct**, pas au schéma. Exposer `lettering_id` par une lecture dédiée, sans toucher le type
+partagé, l'aurait laissée verte tout en n'exportant rien. → **Tranché** : `lettering_id` entre
+dans `JournalEntryLine`, `LINE_COLUMNS` et l'export dès cette story — l'export existe pour
+que l'utilisateur **vérifie ce que Kesh affirme**, l'objet même de la story.
+
+**P7-3 (LOW) — le jumeau resté dans `epics.md`.** La passe 6 avait corrigé la ligne 1368
+(colonne `lettering_code` écartée) et laissé la 1363 — « deux **ou plusieurs** écritures » —
+que D2 contredit, **dans le même paragraphe**. C'est mot pour mot le mode d'échec de la
+§ *Propagation post-patch* : corriger un site et laisser son jumeau. Corrigé.
+
+**Vérifié et réfuté** : la croissance non bornée de `letterings` est cohérente avec
+`audit_log` (append-only assumé) ; aucune entrée orpheline possible après rollback, tout étant
+dans la même transaction ; l'ordre dans `reset_demo` est indifférent (`FOREIGN_KEY_CHECKS=0`),
+contrairement à `TABLES_TO_TRUNCATE` ; les mentions résiduelles dans le fichier de kickoff
+sont un **instantané antérieur** aux décisions, pas un artefact vivant ; et **le décompte de
+sept messages est exact**, recompté depuis la ventilation — 2+1+1+1+1+1.
+
+**Verdict : passe 8 due — la dernière avant le plafond de budget.**
 
 ### Passe 6 de `validate` — 2026-08-25 (Opus, contexte frais)
 

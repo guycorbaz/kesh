@@ -1360,7 +1360,7 @@ L'utilisateur peut attacher des justificatifs aux écritures, lettrer des écrit
 
 **Critères d'acceptation :**
 
-- **Given** deux ou plusieurs écritures, **When** lettrage, **Then** les écritures sont marquées avec un code de lettrage commun (FR85)
+- **Given** **exactement DEUX lignes** d'écriture, **When** lettrage, **Then** les deux lignes sont marquées d'une référence de lettrage commune (FR85). ⚠️ *« deux ou plusieurs » corrigé le 2026-08-25 : **D2** borne à un lettrage = une facture = un règlement — ni partiel, ni groupé. Le jumeau de cette ligne avait été corrigé une passe plus tôt, celle-ci non : c'est le mode d'échec que la § Propagation post-patch décrit.*
 - **Given** écritures lettrées, **When** affichage, **Then** le code de lettrage est visible et les écritures liées sont identifiables
 - **Given** écritures lettrées dans un exercice ouvert, **When** délettrage, **Then** le lien de lettrage est supprimé (FR86)
 - **Given** exercice clôturé, **When** tentative de délettrage, **Then** refus (cohérent avec l'immutabilité post-clôture)
