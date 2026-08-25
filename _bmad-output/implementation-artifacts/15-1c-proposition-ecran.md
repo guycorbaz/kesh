@@ -26,14 +26,14 @@ Aucun lettrage ne s'écrit sans validation humaine.
 casserait trois des quatre cas que le lettrage existe pour couvrir** *(relevé en passe 1,
 vérifié au sol)*.
 
-**Ce qui se reprend — les critères STRUCTURELS, seuls universels :**
+**Les critères STRUCTURELS d'éligibilité — dont TROIS sont NEUFS** *(P3-10 : le titre disait « ce qui se reprend », ce que sa propre colonne contredit)* :
 
 | critère | valeur | provenance |
 |---|---|---|
 | même compte | identité stricte | ⚠️ **NEUF** |
 | sens opposés | débit ↔ crédit | ⚠️ **NEUF** |
 | **ni l'une ni l'autre déjà lettrée** | `lettering_id IS NULL` **des deux côtés** | ⚠️ **NEUF** |
-| fenêtre de dates | `WINDOW_DAYS` — ⚠️ voir la Réserve 2 | repris (constante extractible) |
+| ~~fenêtre de dates~~ | ⛔ **retirée de l'éligibilité** — elle sert au **CLASSEMENT** (AC4-bis) | *(cf. Réserve 2)* |
 | montant | **égalité STRICTE** — ⚠️ voir la Réserve 1 | adapté (la logique existe, le seuil change) |
 
 ⚠️ **La colonne « provenance » n'est pas décorative : trois critères sur cinq sont NEUFS, et
@@ -143,6 +143,17 @@ géré »* —, sinon l'utilisateur conclut à un défaut.
 **AC4** — La marque est **visible** sur la ligne, dans le détail d'écriture et dans l'écran
 dédié ; les lignes partageant une marque sont identifiables entre elles.
 
+**AC4-bis** — ⛔ **L'ordre des propositions est DÉFINI, et le plafond s'y adosse.**
+*(P3-3, passe 3 : « la fenêtre s'applique au classement » — mais aucun critère, aucune tâche,
+aucun test ne disait ce qu'était ce classement.)* Les propositions sont rendues par
+**proximité de date décroissante**, avec un départage stable.
+
+⚠️ **Sans cet ordre, le plafond tronque un ensemble non ordonné — et retourne AC2 contre
+elle-même** : la contre-passation, **datée du jour**, est celle que la proximité de date place
+**en dernier**, donc la première évincée. Le test d'AC2 passerait quand même sur une fixture à
+trois paires : c'est mot pour mot le « test qui ne dit rien du cas réel » que la Réserve 2
+existe pour empêcher. **Le test vérifie que la paire hors fenêtre est présente ET rangée.**
+
 **AC5** (porte **D6**) — ⚠️ **L'écran énonce sa frontière avec la réconciliation bancaire,
 pour l'UTILISATEUR.** Deux exigences **distinctes** : **(1)** un texte **visible** — bandeau
 ou aide contextuelle — dit ce que cet écran fait et ce qu'il ne fait pas ; **(2)** le test
@@ -163,18 +174,45 @@ discipline ne s'hérite pas : elle se réécrit ici. `journal_entry_lines` n'aya
 convention anti-IDOR du dépôt (`kesh-api/src/routes/products.rs:343`), et **le dépôt a déjà
 payé un défaut de cette classe (KF-002)**.
 
-⛔ **Inscrire la séquence de verrous et le scoping de ces routes au tableau du Pattern 5**
-(`docs/MULTI-TENANT-SCOPING-PATTERNS.md`) — ce document **exige** que tout nouvel endpoint y
-figure. ⚠️ **Reprendre le format des lignes voisines du tableau, et celui que 15-1a inscrit
-pour ses propres routes** *(P2-3 : « inscrire » ne disait ni quoi ni sous quelle forme)* :
-une ligne par route, avec sa séquence de verrous et son chemin de scoping.
+⛔ **RECTIFIÉ — l'inscription au Pattern 5 ne s'applique PAS ici, et l'affirmation qui la
+motivait était fausse** *(P3-6, passe 3)*. `MULTI-TENANT-SCOPING-PATTERNS.md` n'exige rien de
+« tout nouvel endpoint » : il impose un **ordre de verrous** à ceux qui en prennent **plus
+d'un**, et une inscription **seulement en cas de divergence délibérée** (« deny list »). Or
+**les routes de 15-1c sont des routes de LECTURE** — aucun `FOR UPDATE`, donc **aucune
+séquence de verrous à inscrire**. L'exigence avait été recopiée de 15-1a T4, où elle est
+légitime (le lettrage prend le sentinel `companies` **et** `fiscal_years FOR UPDATE`).
+
+⚠️ Et le raffinement de la passe 2 se contredisait lui-même : le tableau « Where This Applies »
+a trois colonnes — `Endpoint | Lock sequence | File` — et **pas de colonne de scoping**.
+
+**Ce qui s'applique réellement à une route de lecture**, et qui est déjà écrit plus haut : la
+**jointure de scoping** sur `journal_entries.company_id` et le **404 indiscernable**.
 
 **AC7** — ⛔ **Le moteur est BORNÉ, en portée et en volume.** *(Relevé en passe 1 : T1 et T2
 tenaient en une phrase, sans limite ni portée.)*
 
 - **Portée** : le moteur travaille sur **un compte choisi**, jamais sur la société entière.
-- **Volume** : le nombre de propositions rendues est **plafonné côté serveur**, et un
-  `?limit=` reçu est **écrêté** — jamais cru sur parole.
+- ⛔ **Jeu candidat borné — c'est LA borne, et elle agit AVANT le calcul** *(P3-2, passe 3 :
+  les deux bornes précédentes agissaient **après**, l'appariement ayant déjà eu lieu)* : le
+  nombre de lignes ouvertes **chargées** pour un compte est plafonné. Au-delà, **refus
+  explicite** — *« trop de lignes ouvertes sur ce compte, affinez »* — et **jamais** une
+  troncature silencieuse.
+- **Volume de sortie** : plafonné à **500** (`MAX_LIMIT`, patron du dépôt —
+  `journal_entries.rs:541`, repris par `credit_notes`, `payment_batches`, `supplier_invoices`,
+  `users`, et déjà cité par 15-1b T2), un `?limit=` reçu étant **écrêté**. *(Le chiffre
+  manquait : « le plafond tient » n'est pas un test tant qu'aucune valeur n'est nommée.)*
+
+⚠️ **Pourquoi la borne de sortie ne suffisait pas, et pourquoi l'analogie était fausse.** Le
+`LIMIT 50` de la réconciliation borne le **jeu candidat**, dans un `WHERE` que la fenêtre de
+dates **et** la tolérance de montant réduisent déjà. Ici, la Réserve 2 a retiré la fenêtre du
+filtre et AC2 interdit `status`/`paid_at` : **il ne reste aucun prédicat réducteur**. Et la
+réconciliation est un problème **1 → N** — une transaction, ses factures voisines — quand le
+lettrage est **N → N** : toutes les lignes ouvertes d'un compte appariées entre elles. Le
+premier se borne par un `LIMIT`, le second non.
+
+✅ **Ce que la Réserve 1 offre gratuitement, et que la fiche ne relevait pas** : l'égalité
+**stricte** des montants rend l'appariement **groupable par montant** — un regroupement en
+mémoire, **linéaire**, plutôt qu'une auto-jointure quadratique.
 
 ⚠️ **La réconciliation, dont cette story dit reprendre les critères, porte TROIS garde-fous
 pour le même genre de calcul** : `LIMIT 50` dans le SQL candidat, `MAX_PROPOSALS_LIMIT = 500`
@@ -196,7 +234,46 @@ migration vit dans le socle, donc **`idx_jel_account_lettering (account_id, lett
 
 ⚠️ **À vérifier au démarrage de 15-1c** : que le socle l'a bien livré. Sans lui, la requête
 `WHERE account_id = ? AND lettering_id IS NULL` balaie le compte entier — les deux index
-simples préexistants (`idx_jel_entry`, `idx_jel_account`) ne la servent pas.
+simples préexistants — `idx_jel_entry`, `idx_jel_account` **et `idx_jel_project`**
+*(P3-9 : le décompte disait deux, il y en a **trois**)* — ne la servent pas.
+
+## ⛔ Décisions ouvertes au terme de la passe 3
+
+**Elles ne se tranchent ni par l'orchestrateur ni par le développeur** — quatre sur cinq sont
+des **coutures entre les trois fiches**, pas des défauts internes à celle-ci.
+
+**(1) HIGH — 15-1c et 15-1b se contredisent sur le compte fournisseur payé.** *(P3-1.)* Sur le
+compte 2000, la seule façon d'avoir deux lignes de sens opposés est qu'une facture ait été
+**payée** — `pay_in_tx` pose `paid_at` **et** crée l'écriture de règlement. Donc **AC2 exige
+que la paire soit PROPOSÉE** (interdiction de regarder `paid_at`), tandis qu'**AC3-bis de
+15-1b exige que le compte n'affiche AUCUNE ligne ouverte**. Le même écran dirait « 0 ligne
+ouverte » et « 1 rapprochement proposé » sur **les mêmes deux lignes**.
+
+⚠️ **La question de fond** : lettrer une paire déjà soldée par `paid_at` matérialise un
+rapprochement que `paid_at` ne fait qu'affirmer — ou bien c'est du bruit, la facture ayant déjà
+quitté la liste des ouverts. **Soit 15-1c assume de proposer ce cas, soit sa règle « ne jamais
+filtrer sur la facture » est bornée aux lignes sans contrepartie opérationnelle.** Dans les
+deux cas, un test miroir est dû dans la fiche perdante.
+
+**(2) MEDIUM — le moteur n'a aucune borne de rôle de compte** *(P3-7)*, là où 15-1b a tranché
+`role IN ('Receivable','Payable')` **dans la requête**. Rien n'empêche de pointer le moteur sur
+le **compte bancaire ledger**, où il apparierait des lignes que la réconciliation gère par un
+tout autre mécanisme. 15-1c y répond par **un bandeau** ; la fiche sœur ferme la porte dans le
+SQL.
+
+**(3) MEDIUM — l'acceptation d'une proposition n'a ni contrat, ni convention de lot, ni
+traitement de la proposition périmée** *(P3-8)*. ⚠️ Si l'écran permet d'accepter **plusieurs**
+propositions — ce que « l'écran ressemblera à celui de la réconciliation » laisse attendre —,
+le **pattern `FailedProposal` du `CLAUDE.md` s'applique** et rien ne le nomme : identifiant
+métier, `error_code` canonique, HTTP 200 sur succès partiel. Et entre l'affichage et
+l'acceptation, la paire peut avoir été lettrée ou son écriture modifiée.
+
+**(4) MEDIUM — AC4 n'a ni tâche ni test** *(P3-5)*, et il exige une exposition d'API que
+personne ne porte : `JournalEntryLineResponse` (`kesh-api/src/routes/journal_entries.rs:101`)
+n'a **aucun champ de lettrage**, et la passe 8 de 15-1a cite ce DTO comme **preuve d'absence
+d'effet de bord** — donc comme raison de **ne pas** le toucher. ⚠️ **Et AC4 a besoin du CODE,
+pas de l'identifiant** : `lettering_id` est un entier opaque, le code `A`, `B` vit dans
+`letterings.code`. C'est le défaut que 15-1a T5-bis nomme pour l'export, transposé à l'API.
 
 ## Tasks
 
@@ -228,6 +305,52 @@ exception (garde #326).
 traverse réellement la frontière HTTP.
 
 ## Change Log
+
+### Passe 3 de `validate` — 2026-08-25 (Opus, contexte frais)
+
+⛔ **2 HIGH, 6 MEDIUM, 4 LOW. LA SÉVÉRITÉ REMONTE** — `2 HIGH+2 MED` → `2 MED+1 LOW` →
+`2 HIGH+6 MED`. **Le critère de non-convergence de la § *Règle de splitting préventif* est
+déclenché**, pour la seconde fois dans cet epic.
+
+⚠️ **Mais le diagnostic n'est PAS « la fiche est trop large » — elle est trop COUPLÉE à ses
+sœurs.** Cinq des huit findings > LOW sont des **coutures** entre 15-1a, 15-1b et 15-1c, et
+deux n'existent que depuis la passe 2 de **15-1b**, tombée pendant cette revue. **Une passe 4
+sur 15-1c seule ne verrait pas la suivante.** Ce qu'il faut n'est pas une passe de plus, mais
+**une relecture des trois fiches ENSEMBLE sur la seule question « qu'est-ce qui est ouvert, et
+qui le dit ».**
+
+⛔ **P3-1 (HIGH) — 15-1c et 15-1b prescrivent, chacune par un test nommé, deux comportements
+INCOMPATIBLES.** Sur le compte fournisseur, AC2 exige que la paire soit **proposée** ;
+AC3-bis de 15-1b exige que le compte n'affiche **aucune ligne ouverte**. Le même écran dirait
+« 0 ligne ouverte » et « 1 rapprochement proposé » sur **les mêmes deux lignes**. → **décision
+ouverte**, c'est un arbitrage de produit.
+
+⛔ **P3-2 (HIGH) — AC7 ne bornait pas ce qu'il disait borner.** Ses deux bornes agissaient
+**après** l'appariement ; le `LIMIT 50` qu'il citait en modèle borne le **jeu candidat**, dans
+un `WHERE` que la fenêtre **et** la tolérance réduisent. Or la passe 2 a retiré la fenêtre du
+filtre et AC2 interdit `status`/`paid_at` : **il ne restait aucun prédicat réducteur**. Et
+l'analogie était fausse — la réconciliation est **1 → N**, le lettrage **N → N**. → borne sur
+le **jeu candidat**, plafond **chiffré à 500**, et la remarque que l'égalité stricte rend
+l'appariement **groupable par montant**, donc linéaire.
+
+**Quatre MEDIUM corrigés ici** : **P3-3** le « classement » tranché en passe 2 n'existait dans
+aucun critère — le plafond tronquait un ensemble non ordonné, évinçant **en premier** la
+contre-passation que la Réserve 2 protège → **AC4-bis** ; **P3-4** la fenêtre figurait
+**toujours** comme critère d'éligibilité dans le tableau, la passe 2 ayant corrigé les deux
+sites qui en *parlent* et laissé les deux qui la *prescrivent* — le geste même que la
+§ *Propagation post-patch* codifie ; **P3-6** ⚠️ **mon affirmation « ce document exige que tout
+nouvel endpoint y figure » était FAUSSE** — le Pattern 5 impose un ordre à ceux qui prennent
+**plus d'un verrou**, et les routes de 15-1c sont des routes de **lecture** ; **P3-9/P3-10** le
+décompte d'index (trois, pas deux) et le titre du tableau, que sa propre colonne contredisait.
+
+**Quatre MEDIUM laissés en décisions ouvertes** — voir le § dédié : la borne de rôle du moteur,
+le contrat d'acceptation et le pattern de lot, AC4 sans tâche ni test.
+
+**Réfuté** : le déplacement de l'index vers 15-1a est **correct des deux côtés**, `CREATE INDEX`
+n'impose aucun bump `min_required`, et la colonne « provenance » est exacte sur ses trois lignes
+NEUF.
+
+**Verdict : relecture croisée des trois fiches due, pas une passe 4 sur celle-ci.**
 
 ### Passe 2 de `validate` — 2026-08-25 (Haiku, contexte frais)
 
