@@ -179,7 +179,7 @@ préservation par position.
 
 **Ce qui coûterait un refus global, et il faut le dire juste** *(P3-2 — la passe 2 s'appuyait
 ici sur un fait FAUX)* : une écriture sur exercice **clos** est **déjà** immuable
-aujourd'hui, lettrage ou non — `update` la refuse à l'Étape 2 (`journal_entries.rs:892`,
+aujourd'hui, lettrage ou non — `update` la refuse à l'Étape 2 (`journal_entries.rs:892-894`,
 `DbError::FiscalYearClosed`). Le cas réel est plus étroit : une écriture sur exercice
 **ouvert**, lettrée avec une contrepartie sur exercice **clos** (AC5 le permet — c'est le
 lettrage à cheval). Là seulement, AC6 refusant le délettrage, un refus global figerait le
@@ -346,6 +346,54 @@ checksum est enregistré, et le binaire ne boote plus.
 
 ## Change Log
 
+### Passe 4 de `validate` — 2026-08-25 (Sonnet, contexte frais)
+
+✅ **CONVERGENCE. Un seul finding, de sévérité LOW** — le critère d'arrêt de la § *Review
+Iteration Rule* est atteint (« uniquement des findings de sévérité `LOW` »).
+
+**Trajectoire complète** : `2 HIGH` → `2 MED` → `1 CRIT + 2 HIGH` → **`1 LOW`**.
+
+**Ce que la passe a vérifié en premier, et c'était sa raison d'être** : la correction du
+CRITICAL par la passe 3 est-elle elle-même juste ? Elle a relu `update` **en entier**
+(l. 782-1123) plutôt que les extraits cités, et conclut que **la clause (ii) d'AC7 est
+implémentable sans conflit** :
+
+- le `UPDATE` de l'en-tête, le `version + 1` et le snapshot d'audit restent valides —
+  `entry_snapshot_json` relit les lignes après coup, et des lignes non touchées se relisent
+  correctement, mêmes `id` et même `line_order` ;
+- ⚠️ **`is_no_op_change` doit rester ENTIÈRE pour le court-circuit KF-004** ; c'est une
+  **seconde** fonction, tirée de sa moitié « lignes », qui pilote la clause (ii). Aucun
+  risque de régression sur KF-004 ;
+- le comparateur de lignes est **exhaustif** vis-à-vis de `NewJournalEntryLine`, dont les
+  champs sont exactement `account_id`, `debit`, `credit`, `project_id` — rien n'y échappe. Un
+  changement du **nombre** de lignes est classé « changé » avant toute comparaison
+  positionnelle ;
+- ⚠️ **aucun chemin ne fait survivre une marque à une modification qui aurait dû la
+  détruire.** Toute modification touchant une ligne bascule sous la clause (i).
+
+**Une conséquence assumée, relevée par la passe et vraie** : modifier une ligne **non
+lettrée** dans une écriture qui en compte trois dont **une seule** est lettrée est refusé
+aussi. C'est la conséquence directe du mode d'écriture par `DELETE`/`INSERT` global — pas un
+défaut, mais une restriction à connaître.
+
+**P4-1 (LOW)** — la garde de clôture était citée `journal_entries.rs:892` ; le
+`return Err(DbError::FiscalYearClosed)` est en **894**, le test en 892. La citation porte
+désormais la garde entière, `892-894`. **Toutes les autres citations de la passe 3 sont
+vérifiées exactes** (`:981`, `:782`, `:1226`, `:232`, `invoices.rs:1338`, `:1235`).
+
+**Contrôles et réfutations propres à cette passe** : les deux seuls appelants de
+`delete_in_tx` dans tout le workspace sont confirmés (la route et `invoices::delete`) ; AC12
+est sans ambiguïté de devise ni d'arrondi — pas de colonne de devise, `Decimal` exact, débit
+et crédit mutuellement exclusifs par contrainte ; AC13 se conforme au motif `entité.verbe` du
+dépôt, et la question de l'`entity_id` d'un événement portant sur **deux** lignes **a été
+posée puis refermée** par D1 elle-même — la marque portant sur la ligne, l'entité d'audit est
+la ligne, un événement par ligne, que le porteur soit (A) ou (B). Enfin les compteurs de
+`docs/migrations-idempotence-audit.md` ont été recomptés depuis la source : **61 partout**,
+aucune dérive préexistante que T1 hériterait.
+
+**Verdict : la spécification est prête pour le développement**, une fois arbitrées les deux
+décisions réservées au Project Lead — le **porteur** de la marque (A ou B) et son **format**.
+
 ### Passe 3 de `validate` — 2026-08-25 (Opus, contexte frais)
 
 ⛔ **1 CRITICAL, 2 HIGH, 4 MEDIUM, 2 LOW. Trajectoire : `HIGH → MEDIUM → CRITICAL`.**
@@ -373,7 +421,7 @@ ferme le CRITICAL et vide l'objection de son objet.
 **P3-2 (HIGH) — le premier des « deux faits au sol » de la passe 2 était FAUX.** Elle
 affirmait qu'un refus global rendrait une écriture lettrée sur exercice clos « figée jusqu'à
 sa description ». **Elle l'est déjà** : `update` refuse à l'Étape 2
-(`journal_entries.rs:892`, `DbError::FiscalYearClosed`), lettrage ou non. Le cas réel est
+(`journal_entries.rs:892-894`, `DbError::FiscalYearClosed`), lettrage ou non. Le cas réel est
 plus étroit — écriture sur exercice **ouvert** lettrée contre une contrepartie sur exercice
 **clos**. ⚠️ Un développeur écrivant le test d'AC7 depuis ce texte aurait obtenu un 409
 inattendu, et aurait pu conclure que **la garde de clôture est l'obstacle et l'assouplir** :
