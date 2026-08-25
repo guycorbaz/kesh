@@ -60,6 +60,29 @@ d'une table, elle donne **l'unicité par le schéma**, la portée société **sa
 supplémentaire**, et un point d'accroche pour la date de lettrage et son auteur — que
 (A) n'a nulle part où mettre.
 
+⚠️ **(A) et (B) n'offrent PAS la même garantie sur AC3, et c'est l'élément de poids de
+l'arbitrage** *(relevé en passe 1)*. Le dépôt a **un** pattern éprouvé de génération scopée
+sous concurrence — le gap lock d'`entry_number` :
+
+```sql
+SELECT COALESCE(MAX(entry_number), 0) + 1 FROM journal_entries
+ WHERE company_id = ? AND fiscal_year_id = ? FOR UPDATE   -- journal_entries.rs:232
+```
+
+Il verrouille **directement** une colonne `company_id` de la table cible.
+
+- **(B) le transpose à l'identique** — `letterings` a sa propre `company_id` — **et** garde
+  un **filet au niveau du schéma** : une violation résiduelle est rattrapée par
+  `UNIQUE (company_id, code)`.
+- **(A) n'a aucune colonne à verrouiller** : `journal_entry_lines` ne porte pas de
+  `company_id`, il faudrait verrouiller **par jointure**, mécanisme jamais éprouvé ici pour
+  cet usage. Et **aucune contrainte de schéma n'est possible** — la spec l'établit plus haut.
+
+⛔ **Conséquence : dans (A), une erreur de verrouillage n'est détectée par RIEN.** Elle
+produit deux paires de lignes partageant la même marque, en silence — précisément le mode
+d'échec qu'AC3 existe pour empêcher. Ce n'est pas un argument décisif contre (A), mais le
+Project Lead doit l'avoir en main.
+
 ⚠️ **Ce choix conditionne les critères ci-dessous**, qui sont écrits pour rester vrais dans
 les deux cas : ils parlent de « la marque » et non d'une colonne.
 
@@ -144,6 +167,27 @@ chemin détourné — on obtiendrait sur un exercice clos, en supprimant ou modi
 écriture, ce que le délettrage direct interdit. Il reste ouvert comme évolution, **à
 condition** d'être borné aux exercices ouverts.
 
+**AC10** — ⚠️ **Le lettrage est REFUSÉ si l'une des deux lignes porte déjà une marque.**
+*(Relevé en passe 1 : aucun critère ne l'interdisait.)* Sans cette garde, ré-apparier une
+ligne déjà lettrée **écrase sa marque** et laisse son ancien partenaire **seul avec
+l'ancienne** — réputé soldé à vie, sans contrepartie, et **personne n'est prévenu**.
+
+C'est la même classe de défaut muet qu'AC7 et AC8 ferment sur les chemins d'écriture, par une
+porte que le lettrage ouvre lui-même : AC4 laisserait passer le cas, puisque le compte et les
+sens sont bien ceux qu'il exige. **Délettrer d'abord est le geste attendu**, et le message de
+refus le dit.
+
+**AC11** — ⚠️ **Les deux lignes appartiennent à la société de l'appelant, et c'est
+vérifié.** *(Relevé en passe 1.)* « Même compte » (AC4) garantit que les deux lignes sont de
+la même société **entre elles** — `accounts.company_id` est `NOT NULL` — mais **rien ne les
+rattache à l'appelant**. Un utilisateur de la société A envoyant deux identifiants de lignes
+de la société B poserait la marque chez B.
+
+⚠️ `journal_entry_lines` n'ayant pas de `company_id`, la vérification passe **par jointure**
+sur `journal_entries.company_id`, comme le documente la convention du repository
+(`journal_entries.rs:1226`). **C'est un IDOR**, et le dépôt en a déjà payé un (KF-002) — le
+même précédent qu'AC2 invoque pour la portée du compteur.
+
 ## Tasks
 
 - [ ] **T1** — Migration selon le porteur arbitré (A ou B). ⚠️ Dans les deux cas, la
@@ -155,6 +199,11 @@ condition** d'être borné aux exercices ouverts.
       détecteur ne trie **que** les migrations qui écrivent des données
       (`post_restore.rs:711`) — un `ADD COLUMN` n'est jamais atteint. L'y inscrire ajouterait
       du bruit à une liste dont toute la valeur tient à sa lisibilité.
+      ⚠️ **P6 — le couplage positionnel** : lancer
+      `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` et inspecter chaque
+      site. Le filet est *fail-loud* — `migrations_upgrade_path.rs` porte un
+      `assert_eq!(total, …)` codé en dur dont le message renvoie au garde-fou P6 — mais
+      **l'anticiper coûte une minute, le découvrir au bout du gate en coûte soixante**.
 - [ ] **T2** — Repository : poser la marque, la retirer, la lire. Gardes d'exercice
       asymétriques (AC5/AC6).
 - [ ] **T3** — ⚠️ **Gardes sur les chemins d'écriture existants** (AC7, AC8) — c'est le cœur
@@ -168,9 +217,12 @@ condition** d'être borné aux exercices ouverts.
       (`LINE_COLUMNS` l. 44 et le `SELECT` l. 1235) : en oublier une fait échouer l'export au
       runtime. Étendre la garde vaut mieux que se souvenir.
       *(Le `.keshbackup` n'est pas concerné : ses colonnes viennent d'`information_schema`.)*
-- [ ] **T6** — Tests : **AC7 et AC8 en priorité** — ce sont les deux endroits où une
+- [ ] **T6** — Tests : **AC7, AC8 et AC10 en priorité** — ce sont les trois endroits où une
       implémentation plausible produit un défaut **muet**. Un test par chemin : modification
       d'écriture lettrée, suppression par la route, **et suppression par `invoices::delete`**.
+      Plus **AC10** (ré-apparier une ligne déjà lettrée est refusé, et l'ancien partenaire
+      reste apparié) et **AC11** (deux lignes d'une autre société sont refusées — test
+      d'IDOR, pas de confort).
 - [ ] **T7** — i18n : les clés des messages de refus dans les **quatre** locales dès
       l'écriture. L'allowlist de la garde i18n est **vide** (`i18n-keys.test.ts:432`) — une
       clé manquante rougit au gate.
@@ -188,6 +240,43 @@ comment le run précédent s'est terminé (KF-039, #310).
 checksum est enregistré, et le binaire ne boote plus.
 
 ## Change Log
+
+### Passe 1 de `validate` — 2026-08-25 (Sonnet, contexte frais)
+
+**2 HIGH, 1 MEDIUM, 1 LOW.** Tous vérifiés au sol par l'orchestrateur avant application.
+
+⚠️ **Et un résultat POSITIF, qui vaut d'être écrit** : la passe a **refait le recensement des
+chemins d'écriture en indépendant** — `grep -rn "INSERT INTO journal_entry_lines\|DELETE FROM
+journal_entry_lines\|UPDATE journal_entry_lines" crates/` — et conclut qu'il est **exhaustif** :
+`create`, `update` et le wipe de `reset_demo`, rien d'autre. Elle a aussi vérifié que
+`update`/`delete_by_id`/`delete_in_tx` n'ont **aucun appelant** hors les deux routes et
+`invoices::delete` — la réconciliation, les avoirs et le règlement fournisseur créent tous des
+écritures **nouvelles** via `create_in_tx`, jamais de modification. **Le socle de raisonnement
+de cette story est confirmé, pas seulement non réfuté.**
+
+| | défaut | gravité | remède |
+|---|---|---|---|
+| **PA-1** | **Aucun critère ne refusait de lettrer une ligne DÉJÀ lettrée.** Ré-apparier écrase la marque et laisse l'ancien partenaire **seul avec l'ancienne** — réputé soldé à vie, sans contrepartie, et rien ne le signale. AC4 laissait passer le cas, compte et sens étant corrects | **HIGH** | **AC10** |
+| **PA-2** | **(A) et (B) n'offrent pas la même garantie sur AC3**, et la spec ne le disait pas. Le seul pattern éprouvé du dépôt (gap lock d'`entry_number`, `journal_entries.rs:232`) verrouille une `company_id` que `journal_entry_lines` **n'a pas** : (B) le transpose et garde un filet `UNIQUE`, (A) doit verrouiller par jointure **sans aucun filet de schéma** | **HIGH** | l'asymétrie est nommée au § *Décision à trancher* — c'est un **input d'arbitrage**, pas un blocage |
+| **PA-3** | **Aucun critère n'exigeait que les deux lignes appartiennent à la société de l'APPELANT.** « Même compte » les lie entre elles, pas à l'appelant : c'est un **IDOR**, et le dépôt en a déjà payé un (KF-002) | MEDIUM | **AC11** |
+| **PA-4** | T1 citait P1, P5 et P7 mais **pas P6** | LOW | le grep de recensement ajouté à T1 |
+
+⚠️ **PA-1 est le finding qui compte, et son intérêt dépasse la story** : les passes
+précédentes avaient fermé les chemins par lesquels un **autre** dispositif détruit la marque
+(modification, suppression). Celui-ci est une porte que **le lettrage ouvre lui-même** — le
+défaut muet vient de la fonctionnalité, pas de son environnement. Aucune des quatre passes de
+la story mère ne l'avait vu.
+
+**Pistes réfutées** : le wipe de `reset_demo` (il efface tout ensemble, cohérent) ; le
+`.keshbackup` (ses colonnes viennent d'`information_schema`) ; l'inutilité de l'exemption P7
+(confirmée — `writes_data()` ne matche que le premier mot-clé, `ADD COLUMN` n'y entre jamais) ;
+`fiscal_years::close`/`reopen`, lus en entier, ne touchent **jamais** `journal_entry_lines`.
+Et **aucune troisième conduite** ne manque au § *Décision à trancher* : les deux présentées
+sont faisables, un `UPDATE`-par-id supposerait de faire porter un `id` par
+`NewJournalEntryLine`, changement de contrat qui déborde le socle.
+
+La spec passe de **9 à 11 critères**. **Verdict : passe 2 due** — deux HIGH et un MEDIUM au
+rapport.
 
 ### Création par split de la 15-1 — 2026-08-25
 
