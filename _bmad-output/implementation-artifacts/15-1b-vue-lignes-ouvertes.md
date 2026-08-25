@@ -171,7 +171,14 @@ résultat que le refus existe pour empêcher, obtenu par l'autre canal.
 à ouvrir en CR —, **soit la story écrit que sa garantie d'immuabilité est partielle**. La
 laisser implicite fait croire à une protection qui n'existe pas.
 
-### ⛔ Décision 4 — Le fournisseur n'est pas le symétrique du client, il est en avance
+### ✅ Décision 4 — CLOSE par l'arbitrage du 2026-08-26 *(conservée pour sa généalogie)*
+
+⚠️ **Sans objet pour la vue** : elle argumentait pour une jointure sur
+`purchase_journal_entry_id` / `settlement_journal_entry_id` que la vue **n'utilise plus du
+tout**. Son relevé reste juste et utile à 15-1c ; ce qu'elle prescrivait ici ne l'est plus.
+*(P4-6 : rien ne le signalait, contrairement à la Décision 2, close explicitement par AC6.)*
+
+**Le fournisseur n'est pas le symétrique du client, il est en avance**
 
 La 15-1 affirmait que « les comptes fournisseurs n'ont aucun équivalent de ce mécanisme ».
 **C'est faux**, vérifié en passe 3 :
@@ -276,17 +283,42 @@ réintroduise :
 | « la règle vaut pour les DEUX tables de factures » | la vue **ne joint aucune facture** |
 | la déclinaison en trois puis quatre cas (client, fournisseur, aucune facture, avoir) | il n'y a plus qu'**un** cas |
 | « les DEUX écritures d'une facture fournisseur payée » | plus de jointure, plus de piège |
-| le piège du `status = 'validated'` tronqué dans les SQL voisins | sans objet |
+| le piège du `status = 'validated'` tronqué dans les SQL voisins | **sans objet POUR LA VUE seulement** ⚠️ *(P4-4)* — il reste **entier** pour la Décision 1, non résolue : les deux SQL qu'elle cite omettent toujours `AND i.status = 'validated'` |
 
-⚠️ **Trois HIGH et trois MEDIUM des passes 1 à 3 tombent avec eux** — P3-1, P3-2, P3-10, P3-11
-et la moitié de P3-3. **Ce n'est pas une simplification cosmétique : c'est la disparition de la
+⚠️ **Plusieurs findings HIGH et MEDIUM des passes 1 à 3 tombent avec eux** — dont **P3-1**
+(le quatrième cas), **P3-2** (les deux définitions), **P3-4** de la story mère (les deux
+écritures fournisseur) et la moitié de **P3-3** (les lecteurs de `paid_at`).
+
+⚠️ *(P4-5 : la rédaction précédente citait « P3-1, P3-2, P3-10, P3-11 » — **quatre
+identifiants qui désignent des findings du SOCLE**, pas de cette fiche — et annonçait un total
+que sa propre énumération ne portait pas. L'étiquette `P3-3` désigne par ailleurs **deux**
+findings distincts dans ce document, celui hérité de la mère et celui de la passe 3 d'ici.)* **Ce n'est pas une simplification cosmétique : c'est la disparition de la
 classe entière de défauts que ces passes trouvaient**, tous nés de ce que la vue tentait de
 concilier deux mécanismes que rien n'oblige à concilier.
 
-**AC3-bis** — ⚠️ **L'invariant est TESTÉ, pas seulement énoncé** : sur un compte portant des
-lignes lettrées **et** non lettrées, la somme algébrique des lignes rendues **égale** le solde
-du compte calculé par ailleurs. C'est le test qui garde l'arbitrage — si quelqu'un
-réintroduisait un filtre sur `paid_at`, **il rougirait**.
+**AC3-bis** — ⚠️ **L'invariant est TESTÉ, et le solde de comparaison est NOMMÉ** *(P4-1,
+passe 4 : « le solde du compte » ne suffisait pas — **le dépôt en calcule DEUX**)*.
+
+Le solde de référence est le **cumulatif** :
+`SELECT SUM(debit - credit) FROM journal_entry_lines … WHERE company_id = ? AND account_id = ?`,
+**sans borne d'exercice** — c'est la convention des tests de dépôt existants, et celle du
+**bilan**, *« cumulatifs depuis l'origine, tous exercices confondus »*
+(`kesh-report/src/balance_sheet.rs`).
+
+⛔ **Ce n'est PAS le solde de la Balance des comptes ni du Grand Livre**, tous deux bornés par
+`je.fiscal_year_id = ?` (`trial_balance.rs:82`, `journal_report.rs`).
+
+⚠️ **Et cet écart n'est pas théorique : il est le prix d'un choix déjà assumé.** 15-1a AC5
+autorise **explicitement** le lettrage à cheval sur deux exercices. Une créance de 2024 lettrée
+avec un règlement de 2025 se nette dans le cumul — mais **pas** dans la balance de 2025 prise
+seule. **L'utilisateur qui clôt un exercice consulte justement celle-là.**
+
+⛔ **À dire à l'écran** *(AC4)* : cette vue et la Balance des comptes d'un exercice **ne
+coïncideront pas** en présence d'un lettrage à cheval. Le découvrir en production, ce serait
+voir deux écrans se contredire sans explication.
+
+C'est le test qui garde l'arbitrage : si quelqu'un réintroduisait un filtre sur `paid_at`,
+**il rougirait**.
 
 **AC4** — ⛔ **L'écran dit POURQUOI une facture réglée apparaît ouverte, et c'est désormais
 le critère le plus important de la fiche.** *(Élevé par l'arbitrage du 2026-08-26.)*
@@ -354,19 +386,32 @@ cinq lecteurs, et la question de la garde reste posée pour eux.
       aucune pagination n'était prévue)*. Un compte de créances actif depuis plusieurs
       exercices accumule des centaines de lignes ouvertes — d'autant plus tant que la
       Décision 1 n'est pas tranchée.
-- [ ] **T3** — Écran de consultation.
-- [ ] **T4** — Tests : **AC2, AC3 et AC3-bis en priorité** — le piège de la définition, sur
-      les deux tables **et** les deux écritures. Puis le test qui matérialise l'arbitrage
-      d'AC5, et **AC1** (un compte hors `Receivable`/`Payable` n'ouvre pas la vue).
-      ⛔ Plus **AC2-bis** : deux écritures manuelles au compte de créances, sens opposés,
-      **aucune facture derrière** — les deux doivent apparaître **ouvertes**. C'est le cas que
-      la définition « ni lettré ni marqué payé » exclut en silence si on l'applique sans le
-      décliner.
-      ⛔ **La fixture d'AC3-bis porte DEUX factures fournisseur sur le compte 2000, une payée
-      et une NON payée** *(relevé en passe 1)*. Avec une seule facture, le test ne valide que
-      la **sous**-exclusion — il ne distingue pas une implémentation correcte d'une
-      implémentation qui **masque tout le compte** dès qu'une facture y est payée. La
-      non-payée doit **rester** dans les lignes ouvertes après le règlement de l'autre.
+- [ ] **T3** — Écran de consultation, **portant AC4 nommément** *(P4-3, passe 4 : AC4 était
+      déclaré « le critère le plus important de la fiche » et **aucune tâche ne le portait** —
+      la fiche sœur, elle, écrit « Écran dédié, avec la frontière énoncée (AC5) »)* : les
+      **trois raisons** distinguées, et l'écart avec la Balance des comptes énoncé (AC3-bis).
+      ⛔ **Le « chemin vers le lettrage » d'AC4 suppose 15-1c** — le lettrage manuel est son
+      AC1, aucune tâche de 15-1a n'expose d'écran, et T3 est ici un écran de **consultation**.
+      **Trancher** : soit un lien vers l'écran de 15-1c, soit un renvoi assumé « disponible
+      dès 15-1c ». ⚠️ **Ne pas dupliquer ici l'UI de lettrage** — ce serait reprendre le rôle
+      de la fiche sœur.
+- [ ] **T4** — Tests. ⛔ **Cette tâche a été RÉÉCRITE en passe 4 : elle prescrivait encore
+      l'ANCIENNE définition** — « les deux tables », « les deux écritures », une fixture « une
+      payée et une NON payée », et un critère `AC2-bis` **qui n'existe plus**. Un développeur
+      la suivant à la lettre aurait écrit des tests validant **exactement ce qu'AC2
+      interdit**. *(L'arbitrage avait réécrit les critères et T1, et laissé T4 : le geste que
+      la § Propagation post-patch décrit, commis une fois de plus.)*
+
+      **En priorité — le test de l'INVARIANT (AC3-bis)**, qui garde l'arbitrage tout entier :
+      un compte portant des lignes lettrées **et** non lettrées, de **provenances mêlées** —
+      facture client, facture fournisseur, écriture manuelle, avoir —, et l'assertion que la
+      somme algébrique des lignes rendues **égale** le solde **cumulatif** du compte.
+      ⚠️ **Aucun `paid_at` dans ce test**, ni dans aucun autre : le mentionner serait
+      réintroduire ce que l'arbitrage retire.
+
+      Puis **AC1** (un compte hors `Receivable`/`Payable` ne rend aucune ligne), **AC4** (les
+      trois raisons sont affichées, et le chemin vers le lettrage existe), et le test qui
+      matérialisera l'arbitrage de la Décision 1 quand elle sera tranchée.
 - [ ] **T5** — i18n : quatre locales, allowlist vide.
 - [ ] **T6** — Manuel utilisateur : ce que la vue montre, et **ce qu'elle ne montre pas
       encore**.
@@ -379,6 +424,51 @@ exception (garde #326, son allowlist ne doit pas s'allonger).
 ⚠️ **La base de gate se remet à zéro AVANT le gate**, inconditionnellement (KF-039, #310).
 
 ## Change Log
+
+### Passe 4 de `validate` — 2026-08-26 (Sonnet, contexte frais)
+
+**3 HIGH, 2 MEDIUM, 1 LOW.** Deux des trois HIGH sont des **conséquences de la réécriture
+d'arbitrage elle-même** — le motif de l'epic, une fois de plus.
+
+⛔ **P4-1 (HIGH) — l'invariant est VRAI, mais pas contre le solde que l'utilisateur consulte
+pour clore un exercice.** Le dépôt en calcule **deux** : le **bilan** est *« cumulatif depuis
+l'origine, tous exercices confondus »* (`balance_sheet.rs`), tandis que la **Balance des
+comptes** et le **Grand Livre** sont bornés par `je.fiscal_year_id = ?`
+(`trial_balance.rs:82`).
+
+⚠️ **Et l'écart n'est pas théorique : c'est le prix d'un choix déjà assumé.** 15-1a AC5
+autorise **explicitement** le lettrage à cheval. Une créance de 2024 lettrée avec un règlement
+de 2025 se nette dans le cumul, **pas** dans la balance de 2025 — or c'est celle-là qu'on ouvre
+pour clore. → AC3-bis **nomme** désormais le solde de référence (le cumulatif, convention des
+tests existants), et AC4 doit **dire l'écart à l'écran** : le découvrir en production, ce serait
+voir deux écrans se contredire sans explication.
+
+⛔ **P4-2 (HIGH) — T4 n'avait PAS été réécrite, et prescrivait encore l'ancienne définition.**
+L'arbitrage avait réécrit les critères et T1, **et laissé T4** : elle réclamait toujours « les
+deux tables », « les deux écritures », une fixture « une payée et une NON payée », et un
+critère `AC2-bis` **qui n'existe plus**. Un développeur la suivant à la lettre aurait écrit des
+tests validant **exactement ce qu'AC2 interdit**. → T4 entièrement réécrite autour du test de
+l'invariant, **sans un seul `paid_at`**.
+
+⛔ **P4-3 (HIGH) — AC4, déclaré deux fois « le critère le plus important de la fiche », n'avait
+ni tâche ni test** — zéro occurrence dans la section Tasks, là où la fiche sœur écrit « Écran
+dédié, avec la frontière énoncée (AC5) ». Et son « chemin vers le lettrage » **suppose 15-1c** :
+le lettrage manuel est son AC1, et T3 est ici un écran de **consultation**. → T3 porte AC4
+nommément, et la question est posée : lien vers 15-1c, ou renvoi assumé.
+
+**Deux MEDIUM** : le piège du `status = 'validated'` tronqué était classé « sans objet », alors
+qu'il reste **entier** pour la Décision 1, non résolue ; et les identifiants cités par AC3
+désignaient **des findings du SOCLE**, avec un total que leur énumération ne portait pas — la
+§ *Recompter ses propres comptes rendus*, encore.
+
+**Un LOW** : la Décision 4 était rendue caduque sans que rien ne le signale, contrairement à la
+Décision 2 close explicitement.
+
+**Réfuté** : l'invariant n'est **pas** mathématiquement faux — il est vrai sous la lecture
+cumulative, qui est celle du bilan et des tests du dépôt. Le défaut était son **périmètre non
+dit**, pas sa vérité.
+
+**Verdict : passe 5 due**, et les deux décisions (1 et 3) restent ouvertes.
 
 ### Arbitrage du Project Lead — 2026-08-26 : « ouvert » = « non lettré »
 
