@@ -1245,7 +1245,30 @@ Les factures dont les rappels sont \textbf{suspendus restent comptées} dans la 
     \item \textbf{Solde net dû à l'AFC} : TVA due − TVA récupérable. Un solde négatif signifie un crédit d'impôt en votre faveur.
 \end{itemize}
 
-\paragraph{Réconciliation et alerte d'écart.} Kesh recoupe le montant de TVA due calculé depuis les factures avec le solde réellement comptabilisé au grand livre. Si une écriture validée a été modifiée à la main et ne correspond plus à la TVA facturée, un \textbf{bandeau d'alerte} affiche l'écart constaté. L'alerte est informative (elle ne bloque pas le rapport) et vous invite à vérifier les écritures validées modifiées manuellement, afin que « les montants du décompte correspondent aux écritures comptables ». Le décompte et l'écart figurent aussi dans les exports PDF et CSV.
+\paragraph{Alerte d'écart --- ce qu'elle voit, et ce qu'elle ne voit pas.} Kesh compare le
+montant de TVA due calculé depuis les factures aux écritures comptables de ces mêmes factures.
+Si la ligne de TVA d'une facture a été \textbf{retouchée à la main} et ne correspond plus à la
+TVA facturée, un \textbf{bandeau d'alerte} affiche l'écart. L'alerte est informative --- elle
+ne bloque pas le rapport. Le décompte et l'écart figurent aussi dans les exports PDF et CSV.
+
+\begin{keshwarning}[title=\faExclamationTriangle\ Cette alerte ne rapproche pas le décompte du grand livre]
+Le contrôle porte sur les écritures \textbf{des factures retenues par le décompte}, et non sur
+le \textbf{solde du compte de TVA due}. Il applique donc le même filtre des deux côtés : une
+facture qui sort du décompte sort aussi de la comparaison, et l'écart n'apparaît pas.
+
+\medskip
+\noindent Le cas le plus courant est celui de l'\textbf{avoir}. Émettre un avoir annule la
+facture d'origine : elle quitte le décompte de sa période --- y compris si cette période a
+déjà été déclarée --- et la contre-passation est datée du jour de l'avoir, où le décompte ne
+la reprend pas non plus. Le grand livre, lui, est juste dans les deux périodes.
+\textbf{L'alerte n'en dira rien}, et affichera même que tout concorde.
+
+\medskip
+\noindent \textbf{Conséquence pratique.} Un décompte relancé plus tard peut donner un autre
+chiffre que celui qui a été déposé, sans que Kesh le signale. \textbf{Conservez vos décomptes
+déposés hors de Kesh} et rapprochez-les vous-même du solde du compte de TVA due --- c'est ce
+que la concordance annuelle exige (art.~72 al.~1 LTVA), et Kesh ne l'outille pas aujourd'hui.
+\end{keshwarning}
 
 \begin{quote}
 \small \emph{Limitation actuelle (v0.3)} : le format de décompte officiel AFC (e-décompte ESTV) et la méthode des taux de la dette fiscale nette (TDFN) ne sont pas encore couverts. Le décompte de Kesh fournit les montants (due, récupérable, solde net) à reporter manuellement sur le formulaire AFC.
@@ -1583,7 +1606,7 @@ dialogue qui le prennent en charge.
 Nouveautés de la version 0.3.0 :
 
 \begin{itemize}
-    \item TVA suisse comptabilisée : TVA due aux ventes (comptabilisée automatiquement à la validation des factures), impôt préalable sur les achats via l'assistant de saisie, décompte TVA (solde net dû à l'AFC) et réconciliation du rapport avec le grand livre (cf. \emph{Décompte TVA}). Le décompte officiel AFC / e-décompte ESTV reste à venir.
+    \item TVA suisse comptabilisée : TVA due aux ventes (comptabilisée automatiquement à la validation des factures), impôt préalable sur les achats via l'assistant de saisie, décompte TVA (solde net dû à l'AFC) et contrôle de cohérence entre le décompte et les écritures des factures qu'il retient (cf. \emph{Décompte TVA}, dont l'encadré dit ce que ce contrôle ne voit pas). Le décompte officiel AFC / e-décompte ESTV et le taux de la dette fiscale nette restent à venir.
 \end{itemize}
 
 Disponibles depuis la version 0.2.0 :
