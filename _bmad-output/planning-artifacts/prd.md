@@ -188,7 +188,9 @@ Elle prépare les paiements fournisseurs pour un client : sélectionne les factu
 
 - **Code des obligations suisse (CO art. 957-964)** — Intégrité des écritures, conservation obligatoire 10 ans. Jamais de suppression automatique de données comptables, même archivées.
 - **Standards SIX** — QR Bill 2.2 (conformité stricte : dimensions 46x46mm, position A4, police, croix suisse), pain.001.001.09.ch.03 (validation XSD), CAMT.053.001.04
-- **TVA suisse (AFC)** — Taux configurables avec historique et dates de validité, méthode effective/forfaitaire, arrondis commercial au centime
+- **TVA suisse (AFC)** — Taux configurables avec historique et dates de validité, **méthode effective uniquement**, arrondi commercial au centime, calculé **par ligne** conformément à la pratique AFC.
+  - ⚠️ **La méthode du taux de la dette fiscale nette (TDFN, art. 37 LTVA) n'est PAS couverte**, et son ancienne mention « effective/forfaitaire » a été retirée le 2026-08-26 : elle promettait un régime jamais implémenté. **Report arbitré à la phase « comptabilité indépendant », voire PME** — un particulier n'est pas assujetti, et la location d'immeuble est exclue du champ (art. 21 al. 2 LTVA).
+  - ⚠️ **La portée de ce report doit être connue** : la TDFN est le régime de référence de la petite entreprise suisse — accessible jusqu'à 5 024 000 CHF de chiffre d'affaires et 108 000 CHF d'impôt — et il est choisi précisément par les structures qui veulent simplifier leur décompte. **Un indépendant au TDFN ne peut pas utiliser le module TVA de Kesh** ; l'expert fiscal en fait l'une des quatre conditions cumulatives d'utilisabilité de ce profil (audit du 2026-08-26, § I.7). Suivi : issue TDFN du jalon « Vague 2 ».
 - **Numéro IDE (CHE)** — Validation format et checksum sur le carnet d'adresses (CHE-123.456.789)
 - **nLPD** — Post-MVP (export/anonymisation des données personnelles)
 
