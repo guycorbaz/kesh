@@ -192,7 +192,7 @@ Les factures peuvent être émises dans la langue du client (différente de la l
 \sffamily
 Self-hosting via \textbf{Docker Compose} chez vous ou votre fiduciaire. Aucune donnée transmise à un cloud tiers sans votre consentement explicite.
 
-Export ZIP de souveraineté en format ouvert (CSV + PDF + metadata SHA-256) téléchargeable à tout moment. Vous n'êtes \textbf{jamais prisonnier} de Kesh : migration vers un autre logiciel toujours possible.
+Export ZIP en format ouvert (CSV + PDF + manifeste SHA-256) téléchargeable à tout moment, et sauvegarde complète de l'installation au format \texttt{.keshbackup}. \emph{L'export CSV couvre aujourd'hui les ventes, la banque et le grand livre ; les achats, les avoirs et les projets analytiques y seront ajoutés.}
 \end{tcolorbox}
 
 \vspace{0.3cm}
@@ -204,9 +204,9 @@ Export ZIP de souveraineté en format ouvert (CSV + PDF + metadata SHA-256) tél
     title=\sffamily\bfseries\color{keshPrimaryLight}{\faUsers\ Multi-tenant pour fiduciaires}
 ]
 \sffamily
-Gérez \textbf{plusieurs sociétés} sur une seule instance Kesh. Isolation stricte des données par \texttt{company\_id} (défense en profondeur contre IDOR), audit-trail cross-company pour les super-administrateurs.
+Le modèle de données est \textbf{multi-société} : chaque enregistrement porte son \texttt{company\_id}, et l'isolation est vérifiée en profondeur (défense contre les accès croisés). \emph{L'interface ne propose pas encore de créer ni de basculer entre plusieurs sociétés : un dossier = une instance ou un compte dédié.}
 
-Idéal pour les \textbf{fiduciaires} souhaitant offrir Kesh comme solution à leurs clients tout en gardant une vue d'ensemble sur leur portefeuille de dossiers.
+Une piste pour les \textbf{fiduciaires} qui souhaitent offrir Kesh à leurs clients. \emph{La vue d'ensemble sur un portefeuille de dossiers reste à construire ; aujourd'hui, chaque dossier se gère séparément.}
 \end{tcolorbox}
 
 %%─────────────────────────────────────────────────────────────────────────────
@@ -233,7 +233,7 @@ Idéal pour les \textbf{fiduciaires} souhaitant offrir Kesh comme solution à le
 Vous êtes consultant, artisan, freelance, médecin, avocat, architecte ou autre indépendant suisse ? Kesh vous offre une solution comptable complète sans surdimensionnement :
 
 \begin{itemize}
-    \item Comptabilité simplifiée (recettes-dépenses) ou complète selon votre CA.
+    \item Comptabilité en \textbf{partie double}, avec un plan comptable adapté à votre forme juridique.
     \item Émission de factures QR Bill compatibles avec tous les e-banking.
     \item Suivi des paiements et relances clients facilités.
     \item Rapports de fin d'année pour votre fiduciaire ou votre déclaration personnelle.
@@ -254,15 +254,23 @@ Vous êtes consultant, artisan, freelance, médecin, avocat, architecte ou autre
 
 \vspace{0.3cm}
 
-Vous dirigez une PME avec 1--50 salariés et un chiffre d'affaires allant jusqu'à plusieurs millions ? Kesh vous accompagne dans :
+Vous dirigez une PME suisse ? Kesh vous accompagne dans :
 
 \begin{itemize}
     \item Gestion de plan comptable conforme Sterchi PME ou KMU.
     \item Facturation client en lot avec QR Bill et suivi des échéances.
     \item Import bancaire et réconciliation en un clic.
-    \item Production des comptes annuels (bilan, P\&L) conformes Art. 959/959a/959b CO.
+    \item Bilan et compte de résultat, exportables en PDF et CSV.
     \item Multi-utilisateurs avec RBAC : Administrateur (toutes opérations), Comptable (saisie et consultation), Consultation (lecture seule).
 \end{itemize}
+
+\medskip
+\noindent\textbf{Ce que Kesh ne fait pas, et qui se tient ailleurs.} La \textbf{gestion des
+salaires} --- décomptes AVS/AC/LPP/LAA, certificats de salaire, impôt à la source --- relève
+d'une application dédiée ; Kesh reçoit l'écriture récapitulative. Et la \textbf{mise en forme
+légale des comptes annuels} --- structures des art.~959a et 959b CO, annexe de l'art.~959c ---
+reste à produire avec votre fiduciaire : Kesh fournit les chiffres, pas la présentation
+normée.
 
 \end{tcolorbox}
 
@@ -306,7 +314,7 @@ Trésorier d'une association sportive, culturelle, syndicale ou caritative ? Kes
 Cabinet fiduciaire ou expert-comptable indépendant ? Kesh vous offre une plateforme moderne pour vos dossiers clients :
 
 \begin{itemize}
-    \item Architecture multi-tenant : plusieurs sociétés isolées sur une seule instance (chaque utilisateur est rattaché à une société, \texttt{company\_id} porté par le jeton).
+    \item Architecture multi-tenant : isolation par \texttt{company\_id}, porté par le jeton, chaque utilisateur étant rattaché à une société. \emph{(La bascule entre sociétés depuis l'interface reste à venir.)}
     \item Isolation stricte des données par société (conformité protection des données et secret professionnel). \emph{(Un sélecteur permettant de basculer entre dossiers depuis un même compte est prévu pour une version ultérieure.)}
     \item Audit-trail centralisé pour la responsabilité fiduciaire.
     \item Tarification self-hosted : pas de coût par utilisateur ni par dossier.
@@ -399,7 +407,7 @@ Kesh est en développement actif. Voici la feuille de route publique au \keshRel
 \begin{itemize}
     \item Configuration des taux + calcul et rapport de TVA par période.
     \item Comptabilisation de la TVA due aux ventes + impôt préalable sur les achats.
-    \item Décompte TVA (solde net dû à l'AFC) + réconciliation rapport \(\leftrightarrow\) grand livre. \emph{(Format de décompte officiel e-décompte ESTV à venir.)}
+    \item Décompte TVA (solde net dû à l'AFC), avec contrôle de cohérence entre le décompte et les écritures des factures qu'il retient. \emph{(Format de décompte officiel e-décompte ESTV et taux de la dette fiscale nette à venir ; le rapprochement du décompte avec le solde du compte de TVA reste à la charge de l'utilisateur.)}
 \end{itemize}
 
 \vspace{0.4cm}

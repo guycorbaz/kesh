@@ -93,9 +93,9 @@ Kesh est conçu pour :
 
 \begin{itemize}
     \item Les \textbf{entreprises individuelles} et les \textbf{sociétés de personnes} avec un chiffre d'affaires supérieur à CHF 500'000 (régime « comptabilité complète » selon CO Art. 957 al. 1).
-    \item Les \textbf{entreprises individuelles} et \textbf{sociétés de personnes} avec un chiffre d'affaires inférieur à CHF 500'000 (régime « recettes-dépenses + patrimoine » selon CO Art. 957 al. 2).
+    \item Les \textbf{entreprises individuelles} et \textbf{sociétés de personnes} avec un chiffre d'affaires inférieur à CHF 500'000, qui peuvent légalement se limiter au régime « recettes-dépenses + patrimoine » (CO Art. 957 al. 2). ⚠️ \emph{Kesh ne propose pas ce régime simplifié : il tient une comptabilité en partie double, ce qui est admis mais plus exigeant que ce que la loi leur impose.}
     \item Les \textbf{personnes morales} (SA, Sàrl, coopératives, associations, fondations).
-    \item Les \textbf{fiduciaires} gérant plusieurs dossiers clients via le mode multi-tenant.
+    \item Les \textbf{fiduciaires} gérant plusieurs dossiers clients. ⚠️ \emph{Un dossier = une instance ou un compte dédié : l'interface ne permet pas encore de basculer entre sociétés.}
 \end{itemize}
 
 Kesh n'est pas conçu pour les grands groupes soumis à l'audit ordinaire (Art. 727 CO, seuils 20/40/250 selon Art. 727 al. 1 ch. 2 CO) ni aux entités cotées en bourse soumises à IFRS / Swiss GAAP RPC obligatoires.
@@ -1789,14 +1789,30 @@ Toute action métier mutante est enregistrée dans la table \texttt{audit\_log} 
 
 \subsection{Conformité OLICo Art. 9 — intégrité des supports modifiables}
 
-Conformément à l'analyse réglementaire (cf. \keshpath{\_bmad-output/planning-artifacts/research-swiss-co-958f.md}), Kesh satisfait l'OLICo Art. 9 al. 1.b par le couple :
+Kesh met en place les éléments que l'OLICo Art. 9 al. 1.b attend d'un support modifiable :
 
 \begin{itemize}
-    \item \texttt{audit\_log} \textbf{immutable} insert-only (procédé technique garantissant l'intégrité, condition 1).
-    \item \texttt{SHA-256} dans \texttt{metadata.json} du ZIP d'export de souveraineté (Story 9-2b, condition 1 renforcée).
-    \item Timestamp DB \texttt{created\_at} pour preuve de moment d'enregistrement (condition 2).
-    \item Documentation des procédures dans ce manuel + journal de bord (conditions 3 et 4).
+    \item \texttt{audit\_log} alimenté à chaque création, modification et suppression d'écriture, avec instantané avant/après (condition 1).
+    \item \texttt{SHA-256} par fichier dans le \texttt{metadata.json} du ZIP d'export (condition 1 renforcée).
+    \item Horodatage \texttt{created\_at} pour le moment d'enregistrement (condition 2).
+    \item Documentation des procédures dans ce manuel et dans le journal de bord (conditions 3 et 4).
 \end{itemize}
+
+\begin{keshwarning}[title=\faExclamationTriangle\ Deux réserves à connaître avant d'invoquer cette conformité]
+\textbf{Le journal d'audit n'est pas inaltérable en pratique.} Deux chemins l'effacent :
+l'import d'une sauvegarde \texttt{.keshbackup}, qui remplace la table par le contenu de
+l'archive fournie, et la réinitialisation des données de démonstration. Aucun verrou de base
+de données ne s'y oppose. Tant que ces deux chemins existent, la condition~1 repose sur la
+discipline de l'exploitant, non sur un procédé technique.
+
+\medskip
+\noindent \textbf{L'empreinte SHA-256 est calculée et conservée par vous.} Sans horodatage ni
+tiers indépendant, qui modifie les données recalcule l'empreinte. C'est une \textbf{bonne
+pratique d'archivage} --- réelle, et supérieure à beaucoup de pratiques courantes --- mais
+elle ne constitue pas à elle seule la garantie d'intégrité qu'un contrôle attend d'un support
+modifiable. Pour des livres devant résister à une contestation, complétez par un archivage
+tiers ou un horodatage qualifié.
+\end{keshwarning}
 
 \begin{keshnote}
 La signature électronique qualifiée LSCSE (QES) n'est \textbf{pas requise} par l'OLICo pour les exports comptables des PME (interprétation « p. ex. » du législateur). Le verdict (b) « Dette explicite v0.2 » du document de recherche 9-5-4 confirme la conformité v0.1. Une implémentation QES est prévue en v0.2 via Epic 14 (issue GitHub \#98).
@@ -1897,7 +1913,7 @@ Kesh satisfait intégralement les exigences de l'Art. 957a CO pour les PME suiss
 Synthèse :
 
 \begin{itemize}
-    \item al. 1 : enregistrement intégral, fidèle et systématique → garanti par la saisie partie double et l'\texttt{audit\_log} immutable.
+    \item al. 1 : enregistrement intégral, fidèle et systématique → la saisie en partie double est contrôlée à trois niveaux (validation métier, contrainte de base, recalcul après écriture), et l'\texttt{audit\_log} conserve l'historique des modifications — sous les deux réserves de la section \emph{Conformité OLICo Art. 9}.
     \item al. 2 : principe de régularité → instancié par les patterns techniques Kesh (clarté multilingue, justification, traçabilité).
     \item al. 3 : pièce comptable papier ou électronique → support électronique autorisé.
     \item al. 4 : monnaie nationale ou monnaie principale → CHF par défaut, multi-monnaies prévu v0.2.
@@ -1929,7 +1945,7 @@ La \textbf{suppression définitive} d'une facture validée par un administrateur
 \subsection{Ordonnance OLICo (RS 221.431)}
 
 \begin{itemize}
-    \item Art. 1 : grand livre + journal → implémentés Kesh.
+    \item Art. 1 : journal chronologique → implémenté (rapport \emph{Journaux}). ⚠️ \textbf{Le grand livre --- l'extrait d'un compte donné --- n'existe pas encore} : aucun rapport ne le produit, et la liste des écritures ne se filtre pas par compte. C'est la première pièce que demande une révision ; elle doit aujourd'hui être reconstituée depuis l'export CSV.
     \item Art. 3 : intégrité (modification apparente) → garanti par \texttt{audit\_log} insert-only.
     \item Art. 9 al. 1.b : supports modifiables (disque dur, SSD) → conditions 1-4 satisfaites (cf. section sécurité plus haut).
     \item Art. 10 : contrôle et migration → test de restauration annuel obligatoire (cf. section Sauvegarde).
@@ -1941,7 +1957,7 @@ La signature électronique qualifiée n'est \textbf{pas obligatoire} pour la con
 
 \subsection{Loi sur la TVA (LTVA)}
 
-Kesh comptabilise la TVA suisse : TVA due sur les ventes (générée automatiquement à la validation des factures), impôt préalable sur les achats, décompte par période (solde net dû à l'AFC) et réconciliation du décompte avec le grand livre. La méthode effective (taux réels) est seule supportée.
+Kesh comptabilise la TVA suisse : TVA due sur les ventes (générée automatiquement à la validation des factures), impôt préalable sur les achats, décompte par période (solde net dû à l'AFC) et contrôle de cohérence entre le décompte et les écritures des factures qu'il retient. La méthode effective (taux réels) est seule supportée ; le taux de la dette fiscale nette (TDFN) ne l'est pas. \textbf{Le décompte n'est pas rapproché du solde du compte de TVA due} : ce rapprochement, qu'exige la concordance annuelle (art.~72 al.~1 LTVA), reste à la charge de l'utilisateur.
 
 \paragraph{Configuration des comptes TVA.} Trois comptes TVA standard du plan comptable suisse sont nécessaires à la comptabilisation et se configurent depuis \emph{Paramètres} → \emph{Facturation} :
 

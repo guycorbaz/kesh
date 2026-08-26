@@ -395,40 +395,42 @@ Vente d'une marchandise à crédit pour CHF 1'000 + TVA 8.1\% :
 
 Total débit = Total crédit = CHF 1'081.00. L'écriture peut être validée.
 
-\subsection{Validation d'une écriture}
+\subsection{Cycle de vie d'une écriture}
 
-Une écriture passe par trois états :
+Une écriture enregistrée est \textbf{immédiatement comptabilisée}. Kesh ne connaît pas
+d'état « brouillon » : il n'y a rien à valider, et une écriture apparaît dans les rapports
+dès son enregistrement.
 
-\begin{enumerate}
-    \item \textbf{Brouillon} : modification libre, n'apparaît pas dans les rapports.
-    \item \textbf{Validée} : intégrée à la comptabilité, apparaît dans les rapports. Modification restreinte (cf. règles de modification ci-dessous).
-    \item \textbf{Annulée} : neutralisée par une écriture de contre-passation (l'originale reste visible dans l'audit-trail).
-\end{enumerate}
+\subsection{Modification et suppression}
 
-Pour valider : cliquer sur \emph{Valider} dans l'écriture brouillon. Une confirmation est demandée.
+Tant que l'exercice est \textbf{ouvert}, une écriture peut être \textbf{modifiée ou
+supprimée} par un utilisateur ayant le rôle \emph{administrateur} ou \emph{comptable}. La
+modification porte sur tous les champs, y compris les comptes et les montants ; la
+suppression est définitive.
 
-\subsection{Modification d'une écriture validée}
+Dès que l'exercice est \textbf{clôturé}, ni l'une ni l'autre n'est possible : toute
+tentative est refusée.
 
-Pour des raisons d'audit-trail légal (CO Art. 957a al. 2 ch. 5 « traçabilité »), une écriture validée ne peut pas être modifiée silencieusement. Deux scénarios :
+\begin{keshwarning}[title=\faExclamationTriangle\ Ce que le logiciel ne fait pas à votre place]
+Kesh \textbf{n'impose pas} la correction par contre-passation, et \textbf{n'empêche pas} la
+suppression d'une écriture déjà comptabilisée. Les modifications et les suppressions sont
+enregistrées dans le journal d'audit interne, mais \textbf{ce journal n'est pas consultable
+depuis l'application} : vous ne pouvez donc pas produire, aujourd'hui, l'historique des
+corrections apportées à vos écritures.
 
-\subsubsection{Modification mineure (correction de libellé)}
+Si vos livres doivent être opposables --- à une fiduciaire, à un organe de révision, à
+l'administration fiscale ---, l'art.~958f CO et l'Olico exigent que toute correction soit
+\textbf{apparente}. Cela suppose de \textbf{contre-passer vous-même} plutôt que de modifier
+ou de supprimer~: saisissez une écriture inverse, puis l'écriture correcte. Les deux restent
+visibles, et la correction se lit dans les livres.
+\end{keshwarning}
 
-Possible directement si l'utilisateur a le rôle \emph{admin} ou \emph{accountant} et si l'écriture est dans un exercice non clôturé. L'action est tracée dans l'\texttt{audit\_log} (qui a modifié, quand, ancienne valeur, nouvelle valeur).
+\subsection{Numérotation}
 
-\subsubsection{Modification d'un montant ou d'un compte}
-
-Vous devez :
-
-\begin{enumerate}
-    \item \textbf{Contre-passer} l'écriture (création automatique d'une écriture inverse).
-    \item Saisir une \textbf{nouvelle écriture} avec les montants corrects.
-\end{enumerate}
-
-Cette procédure préserve l'audit-trail légal et permet le contrôle ultérieur des modifications.
-
-\subsection{Suppression d'une écriture}
-
-\textbf{Une écriture validée ne peut pas être supprimée.} Vous devez la contre-passer. Une écriture en brouillon peut être supprimée librement.
+Chaque écriture reçoit un numéro séquentiel par société et par exercice. \textbf{Cette
+numérotation peut comporter des trous} : supprimer une écriture laisse son numéro inoccupé,
+et supprimer la dernière écriture saisie fait réattribuer son numéro à la suivante. C'est une
+raison de plus de préférer la contre-passation à la suppression.
 
 \subsection{Recherche d'écritures}
 
@@ -899,7 +901,7 @@ Kesh \textbf{refuse} la suppression dans les cas suivants, pour préserver la co
 \begin{itemize}
     \item facture \textbf{marquée payée} : annulez d'abord le règlement (un paiement rapproché ne doit pas pointer dans le vide) ;
     \item facture déjà \textbf{créditée par un avoir} : l'avoir référence la facture, qui ne peut donc plus disparaître ;
-    \item facture dont l'écriture appartient à un \textbf{exercice clos} : l'intangibilité des périodes clôturées (CO art.~958f) est préservée — une facture d'un exercice clos ne peut jamais être supprimée.
+    \item facture dont l'écriture appartient à un \textbf{exercice clos} : la \textbf{suppression} est refusée — une facture d'un exercice clos ne peut jamais être supprimée. ⚠️ \textbf{En revanche, un avoir peut encore l'annuler} : seul l'exercice de l'\emph{avoir} est contrôlé, pas celui de la facture. Le statut de la facture bascule alors, et le décompte TVA de la période close s'en trouve modifié. L'intangibilité des périodes clôturées (CO art.~958f) n'est donc \textbf{pas} entièrement préservée sur ce chemin.
 \end{itemize}
 
 \begin{keshnote}
@@ -1175,15 +1177,21 @@ Si plusieurs écritures sont en brouillon issues des règles d'affectation, coch
 
 \keshscreenshot{rapport-bilan.png}{Bilan : actifs, passifs et capitaux propres à une date donnée.}  % TODO capture: rapport bilan
 
-\emph{Mensuel} → \emph{Rapports} → \emph{Bilan}. Affiche les actifs et passifs au format légal Art. 959 et 959a CO :
+\emph{Mensuel} → \emph{Rapports} → \emph{Bilan}. Affiche, à une date donnée, les comptes
+d'actif et de passif à solde non nul, \textbf{triés par numéro de compte}, avec les totaux
+Actifs, Passifs et Capitaux propres.
 
-\begin{itemize}
-    \item Actif circulant : trésorerie, créances, stocks.
-    \item Actif immobilisé : immobilisations corporelles, incorporelles, financières.
-    \item Capitaux étrangers court terme.
-    \item Capitaux étrangers long terme.
-    \item Capitaux propres : capital, réserves, bénéfice / perte de l'exercice.
-\end{itemize}
+\begin{keshwarning}[title=\faExclamationTriangle\ Le bilan n'est pas encore structuré selon l'art.~959a CO]
+Kesh ne regroupe pas les comptes en \textbf{actif circulant} et \textbf{actif immobilisé}, ni
+les dettes en \textbf{capitaux étrangers à court terme} et \textbf{à long terme}. Le plan
+comptable porte bien une hiérarchie de comptes, mais les rapports ne l'utilisent pas encore.
+
+\medskip
+\noindent Seule la partition \textbf{capitaux propres / dettes} est faite, et elle l'est
+correctement (voir ci-dessous). Pour des comptes annuels à remettre à un tiers --- fiduciaire,
+organe de révision, banque ---, la mise en forme normée reste donc à produire hors de Kesh, à
+partir des chiffres qu'il fournit.
+\end{keshwarning}
 
 La section \emph{Capitaux propres} est présentée \textbf{séparément des dettes} et \textbf{regroupée par rôle} de compte (capital, autres fonds propres, bénéfice / perte reporté), dans l'ordre légal de l'Art. 959a CO. Kesh distingue nettement deux grandeurs qu'il ne faut jamais confondre :
 
@@ -1200,14 +1208,19 @@ Filtres : date de référence (par défaut fin d'exercice en cours), exercice à
 
 \keshscreenshot{rapport-resultat.png}{Compte de résultat : produits, charges et résultat de la période.}  % TODO capture: rapport compte de resultat
 
-\emph{Mensuel} → \emph{Rapports} → \emph{Compte de résultat}. Disponible en deux présentations (Art. 959b CO) :
+\emph{Mensuel} → \emph{Rapports} → \emph{Compte de résultat}. Liste les comptes de produits
+et les comptes de charges à solde non nul, et le résultat de la période.
 
-\begin{itemize}
-    \item Par nature : produits nets, charges de matériel, charges de personnel, autres charges, amortissements, résultat exceptionnel.
-    \item Par fonction : produits nets, coût d'acquisition, charges d'administration, charges de distribution.
-\end{itemize}
+\begin{keshwarning}[title=\faExclamationTriangle\ Le compte de résultat n'est pas encore structuré selon l'art.~959b CO]
+Kesh ne propose \textbf{pas} les présentations \emph{par nature} et \emph{par fonction}, et ne
+calcule aucun des sous-totaux légaux --- résultat brut, résultat d'exploitation, résultat
+financier, résultat hors exploitation, impôts isolés. Vous obtenez deux listes et un résultat
+net.
 
-Le choix est défini par défaut au niveau de la company, modifiable par rapport.
+\medskip
+\noindent Pour des comptes annuels destinés à un tiers, la mise en forme normée reste à
+produire hors de Kesh, à partir de ces chiffres.
+\end{keshwarning}
 
 \subsection{Balance des comptes}
 
@@ -1243,7 +1256,30 @@ Les factures dont les rappels sont \textbf{suspendus restent comptées} dans la 
     \item \textbf{Solde net dû à l'AFC} : TVA due − TVA récupérable. Un solde négatif signifie un crédit d'impôt en votre faveur.
 \end{itemize}
 
-\paragraph{Réconciliation et alerte d'écart.} Kesh recoupe le montant de TVA due calculé depuis les factures avec le solde réellement comptabilisé au grand livre. Si une écriture validée a été modifiée à la main et ne correspond plus à la TVA facturée, un \textbf{bandeau d'alerte} affiche l'écart constaté. L'alerte est informative (elle ne bloque pas le rapport) et vous invite à vérifier les écritures validées modifiées manuellement, afin que « les montants du décompte correspondent aux écritures comptables ». Le décompte et l'écart figurent aussi dans les exports PDF et CSV.
+\paragraph{Alerte d'écart --- ce qu'elle voit, et ce qu'elle ne voit pas.} Kesh compare le
+montant de TVA due calculé depuis les factures aux écritures comptables de ces mêmes factures.
+Si la ligne de TVA d'une facture a été \textbf{retouchée à la main} et ne correspond plus à la
+TVA facturée, un \textbf{bandeau d'alerte} affiche l'écart. L'alerte est informative --- elle
+ne bloque pas le rapport. Le décompte et l'écart figurent aussi dans les exports PDF et CSV.
+
+\begin{keshwarning}[title=\faExclamationTriangle\ Cette alerte ne rapproche pas le décompte du grand livre]
+Le contrôle porte sur les écritures \textbf{des factures retenues par le décompte}, et non sur
+le \textbf{solde du compte de TVA due}. Il applique donc le même filtre des deux côtés : une
+facture qui sort du décompte sort aussi de la comparaison, et l'écart n'apparaît pas.
+
+\medskip
+\noindent Le cas le plus courant est celui de l'\textbf{avoir}. Émettre un avoir annule la
+facture d'origine : elle quitte le décompte de sa période --- y compris si cette période a
+déjà été déclarée --- et la contre-passation est datée du jour de l'avoir, où le décompte ne
+la reprend pas non plus. Le grand livre, lui, est juste dans les deux périodes.
+\textbf{L'alerte n'en dira rien}, et affichera même que tout concorde.
+
+\medskip
+\noindent \textbf{Conséquence pratique.} Un décompte relancé plus tard peut donner un autre
+chiffre que celui qui a été déposé, sans que Kesh le signale. \textbf{Conservez vos décomptes
+déposés hors de Kesh} et rapprochez-les vous-même du solde du compte de TVA due --- c'est ce
+que la concordance annuelle exige (art.~72 al.~1 LTVA), et Kesh ne l'outille pas aujourd'hui.
+\end{keshwarning}
 
 \begin{quote}
 \small \emph{Limitation actuelle (v0.3)} : le format de décompte officiel AFC (e-décompte ESTV) et la méthode des taux de la dette fiscale nette (TDFN) ne sont pas encore couverts. Le décompte de Kesh fournit les montants (due, récupérable, solde net) à reporter manuellement sur le formulaire AFC.
@@ -1255,7 +1291,7 @@ Tous les rapports peuvent être :
 
 \begin{itemize}
     \item \textbf{Visualisés en HTML} dans l'interface (interactif, tri, filtre).
-    \item \textbf{Exportés en PDF} (format paginé, conforme structure Art. 959/959a/959b).
+    \item \textbf{Exportés en PDF} (format paginé).
     \item \textbf{Exportés en CSV} (analyse Excel ou import dans un autre outil).
 \end{itemize}
 
@@ -1314,7 +1350,30 @@ distincte : le montant affiché correspond alors au décaissement réel.
 
 \subsection{Concept}
 
-L'\emph{export ZIP de souveraineté} (Story 9-2b) est l'export global de toutes vos données comptables dans un format ouvert et lisible 10 ans (conformité OLICo Art. 9 al. 1.b). Il garantit que vous n'êtes \textbf{jamais prisonnier de Kesh} : à tout moment, vous pouvez extraire l'ensemble de vos données pour migration vers un autre logiciel ou archivage légal.
+L'\emph{export ZIP de souveraineté} est l'export de vos données comptables dans un format
+ouvert (CSV), accompagné d'un manifeste portant l'empreinte SHA-256 de chaque fichier.
+
+\begin{keshwarning}[title=\faExclamationTriangle\ Ce que cet export couvre, et ce qu'il ne couvre pas]
+Il porte aujourd'hui les \textbf{ventes}, la \textbf{banque} et le \textbf{grand livre}. Il ne
+contient \textbf{pas} les factures fournisseurs, les avoirs, ni la table des projets
+analytiques --- les écritures exportées portent bien un identifiant de projet, mais rien ne dit
+à quoi il correspond. Les pièces justificatives importées n'y sont pas non plus.
+
+\medskip
+\noindent \textbf{Avant de compter sur cet export pour changer de logiciel}, vérifiez ce qu'il
+contient réellement : la liste exacte figure sur l'écran d'export, et le manifeste
+\texttt{metadata.json} énumère les fichiers produits. Pour une sauvegarde \emph{complète} de
+l'installation, utilisez plutôt l'export \texttt{.keshbackup} de l'administration --- mais
+c'est un format propriétaire, qui ne se relit que dans Kesh.
+
+\medskip
+\noindent \textbf{Sur la conservation à dix ans.} Le format ouvert et l'empreinte SHA-256 sont
+une \textbf{bonne pratique d'archivage}, et ils facilitent la conservation exigée par
+l'art.~958f CO. Ils ne constituent pas à eux seuls la garantie d'intégrité que l'Olico
+(art.~9 al.~1 let.~b) demande pour un support modifiable : l'empreinte est calculée et
+conservée par vous, sans horodatage ni tiers indépendant. Si vos livres doivent résister à une
+contestation, complétez cet export par un dispositif d'archivage tiers.
+\end{keshwarning}
 
 \subsection{Contenu du ZIP}
 
@@ -1417,7 +1476,7 @@ transactions à rapprocher) est prévu mais pas encore disponible.
 
 \subsection{Mes écritures ne se balancent pas, que faire ?}
 
-Vérifiez que la somme des débits égale exactement la somme des crédits (à 1 centime près). Kesh refuse de valider une écriture déséquilibrée. Si vous avez un écart d'arrondi sur de la TVA, utilisez un compte d'écart d'arrondi (typiquement 6997 ou 7997).
+Vérifiez que la somme des débits égale exactement la somme des crédits (à 1 centime près). Kesh refuse d'enregistrer une écriture déséquilibrée. Si vous avez un écart d'arrondi sur de la TVA, utilisez un compte d'écart d'arrondi (typiquement 6997 ou 7997).
 
 \subsection{Mon QR Bill ne s'affiche pas correctement, que faire ?}
 
@@ -1454,15 +1513,20 @@ La langue de la facture suit la langue de communication du client (champ \emph{L
 
 \subsection{Comment exporter mes données pour migration ?}
 
-Utilisez l'\emph{Export ZIP de souveraineté} (cf. section dédiée). Le format CSV ouvert est importable dans n'importe quel autre logiciel comptable supportant les standards Swiss PME.
+Utilisez l'\emph{Export ZIP de souveraineté} (cf. section dédiée), en tenant compte de ce qu'il ne contient pas encore. Le format CSV ouvert se relit dans un tableur et s'importe dans la plupart des logiciels comptables.
 
 \subsection{Comment puis-je revenir en arrière sur une action ?}
 
 Selon l'action :
 
 \begin{itemize}
-    \item Écriture brouillon : suppression libre.
-    \item Écriture validée : contre-passation (création d'une écriture inverse).
+    \item Écriture, exercice ouvert : modification ou suppression possible (rôles
+          administrateur et comptable). \textbf{Préférez la contre-passation} --- saisir
+          l'écriture inverse --- si vos livres doivent rester opposables : la correction
+          reste alors visible.
+    \item Écriture, exercice clôturé : ni modification ni suppression. Il faut rouvrir
+          l'exercice (administrateur, avec motif) ou passer une écriture sur l'exercice
+          courant.
     \item Facture validée : passage en avoir + génération d'une nouvelle facture.
     \item Rapprochement bancaire : déliaison (\emph{Délier} sur la transaction).
 \end{itemize}
@@ -1484,7 +1548,7 @@ L'\texttt{audit\_log} garde toujours la trace de l'action originale ET de l'acti
 \begin{itemize}
     \item Importer les relevés bancaires de la semaine.
     \item Réconcilier les nouveaux mouvements (acceptation des propositions auto + manuelle pour le reste).
-    \item Valider les écritures en brouillon.
+    \item Relire les écritures saisies dans la semaine.
     \item Émettre les factures de la semaine.
 \end{itemize}
 
@@ -1576,7 +1640,7 @@ dialogue qui le prennent en charge.
 Nouveautés de la version 0.3.0 :
 
 \begin{itemize}
-    \item TVA suisse comptabilisée : TVA due aux ventes (comptabilisée automatiquement à la validation des factures), impôt préalable sur les achats via l'assistant de saisie, décompte TVA (solde net dû à l'AFC) et réconciliation du rapport avec le grand livre (cf. \emph{Décompte TVA}). Le décompte officiel AFC / e-décompte ESTV reste à venir.
+    \item TVA suisse comptabilisée : TVA due aux ventes (comptabilisée automatiquement à la validation des factures), impôt préalable sur les achats via l'assistant de saisie, décompte TVA (solde net dû à l'AFC) et contrôle de cohérence entre le décompte et les écritures des factures qu'il retient (cf. \emph{Décompte TVA}, dont l'encadré dit ce que ce contrôle ne voit pas). Le décompte officiel AFC / e-décompte ESTV et le taux de la dette fiscale nette restent à venir.
 \end{itemize}
 
 Disponibles depuis la version 0.2.0 :

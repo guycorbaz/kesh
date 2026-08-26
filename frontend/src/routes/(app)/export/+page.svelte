@@ -2,7 +2,7 @@
 	// Story 9-2b — Page export global ZIP (souveraineté des données).
 	//
 	// Bouton unique « Lancer l'export » qui déclenche un GET
-	// `/api/v1/exports/global.zip` (16 CSV + metadata.json packagés en ZIP).
+	// `/api/v1/exports/global.zip` (19 CSV + metadata.json packagés en ZIP).
 	// Flag dédié `exporting` (Pass 1 ECH-H2 / AC #25), guard re-entrancy
 	// first-line (Pass 1 code-review M12 / AC #26), fallback i18n
 	// `export-global-error-generic` sur erreur non-`isApiError` (Pass 1 M13 /
@@ -64,7 +64,7 @@
 		<p class="text-sm text-gray-700">
 			{i18nMsg(
 				'export-global-description',
-				'Exportez toutes vos données comptables (comptes, écritures, contacts, factures, transactions bancaires) au format CSV dans un fichier ZIP. Utilisez cet export pour archiver, migrer vers un autre logiciel, ou conserver vos données 10 ans (Swiss CO Art. 958f).',
+				"Exportez vos données comptables (comptes, écritures, contacts, produits, factures de vente, comptes et transactions bancaires) au format CSV dans un fichier ZIP. Utilisez cet export pour archiver ou conserver vos données 10 ans (CO suisse art. 958f). ⚠️ Il ne couvre pas encore l'ensemble de votre comptabilité : lisez ci-dessous ce qu'il ne contient pas avant de compter dessus pour migrer vers un autre logiciel.",
 			)}
 		</p>
 	</header>
@@ -79,7 +79,7 @@
 		<p class="mt-2">
 			{i18nMsg(
 				'export-global-content-excludes',
-				"Ne contient pas : utilisateurs (PII + mots de passe), tokens de session, journal d'audit interne, état d'onboarding (raisons de sécurité et technicité).",
+				"Ne contient pas : factures fournisseurs et leurs lignes, avoirs, projets analytiques (les écritures portent un identifiant de projet, mais la table des projets est absente), lots de paiement, personnes de contact, pièces justificatives importées, utilisateurs (données personnelles et mots de passe), tokens de session, journal d'audit interne, état d'onboarding.",
 			)}
 		</p>
 		<p class="mt-2 italic">

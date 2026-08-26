@@ -1,10 +1,28 @@
 //! Repository pour les écritures comptables en partie double.
 //!
 //! L'invariant central est l'**atomicité** : une écriture (en-tête +
-//! lignes) est toujours créée ou rejetée en bloc. La numérotation
-//! séquentielle par `(company_id, fiscal_year_id)` est garantie sans
-//! trou par la combinaison `SELECT MAX(...) FOR UPDATE` + contrainte
-//! `UNIQUE (company_id, fiscal_year_id, entry_number)`.
+//! lignes) est toujours créée ou rejetée en bloc.
+//!
+//! # Numérotation — ce que la contrainte garantit, et ce qu'elle ne garantit pas
+//!
+//! `SELECT MAX(entry_number) FOR UPDATE` + `UNIQUE (company_id,
+//! fiscal_year_id, entry_number)` garantissent qu'**à un instant donné**, deux
+//! écritures d'un même exercice ne portent jamais le même numéro.
+//!
+//! ⚠️ **Ils ne garantissent NI la continuité, NI l'univocité dans le temps** :
+//!
+//! - supprimer l'écriture n° 42 au milieu laisse un **trou définitif** ;
+//! - supprimer la **dernière** fait **réattribuer son numéro** à la suivante,
+//!   qui aura un contenu différent.
+//!
+//! Le commentaire de la migration `20260412000001_journal_entries.sql` affirme
+//! « jamais de trou » : c'est **faux**, et ce fichier ne peut plus être corrigé
+//! (P8 — son checksum est enregistré, le modifier empêche le démarrage).
+//!
+//! Pour un contrôleur, une séquence ni continue ni univoque est un signal
+//! d'alarme. C'est une raison de plus de corriger par contre-passation plutôt
+//! que par suppression. Suivi : issues du jalon « Vague 1 » (audit du
+//! 2026-08-26).
 //!
 //! # Defense in depth
 //!
