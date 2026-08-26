@@ -575,6 +575,13 @@ fn decimal_max_safe() -> Decimal {
 #[derive(Debug, Clone)]
 pub struct JournalEntryListQuery {
     pub description: Option<String>,
+    /// Ne garder que les écritures **touchant ce compte** (issue #374).
+    ///
+    /// ⚠️ Le scoping multi-tenant reste porté par `company_id` sur
+    /// `journal_entries` : `journal_entry_lines` **n'a pas de `company_id`**, et
+    /// la sous-requête ne peut donc pas se scoper elle-même. C'est le `WHERE
+    /// company_id` de la requête englobante qui l'enferme.
+    pub account_id: Option<i64>,
     pub amount_min: Option<Decimal>,
     pub amount_max: Option<Decimal>,
     pub date_from: Option<NaiveDate>,
@@ -590,6 +597,7 @@ impl Default for JournalEntryListQuery {
     fn default() -> Self {
         Self {
             description: None,
+            account_id: None,
             amount_min: None,
             amount_max: None,
             date_from: None,
@@ -665,6 +673,18 @@ fn push_where_clauses<'a>(
     if let Some(journal) = query.journal {
         qb.push(" AND journal = ");
         qb.push_bind(journal);
+    }
+
+    // Filtre par compte (#374) — le contournement le plus direct au manque de
+    // grand livre, et utile en soi : « montre-moi tout ce qui a touché 1020 ».
+    // `EXISTS` plutôt que `IN` : il s'arrête à la première ligne trouvée.
+    if let Some(account_id) = query.account_id {
+        qb.push(
+            " AND EXISTS (SELECT 1 FROM journal_entry_lines jel \
+             WHERE jel.entry_id = journal_entries.id AND jel.account_id = ",
+        );
+        qb.push_bind(account_id);
+        qb.push(")");
     }
 
     // Filtre par plage de montants — sous-requête sur la somme des débits
@@ -2235,6 +2255,111 @@ mod tests {
                 "Tri ascendant cassé"
             );
         }
+    }
+
+    /// Filtre par compte (#374) — le contournement direct au manque de grand
+    /// livre.
+    ///
+    /// ⚠️ Ce test travaille sur la **base partagée**, où d'autres tests ont déjà
+    /// mouvementé `a1` et `a2`. Il ne peut donc pas compter en absolu : il crée
+    /// un **compte neuf** et vérifie que le filtre rend exactement ce qui le
+    /// touche — et rien de ce qui ne le touche pas.
+    #[tokio::test]
+    async fn test_list_filter_by_account() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        let today = chrono::Utc::now().naive_utc().date();
+
+        // Un compte que ce test est seul à mouvementer.
+        let suffixe = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
+        let neuf = accounts::create(
+            &pool,
+            admin_user_id,
+            crate::entities::account::NewAccount {
+                company_id,
+                number: format!("9{}", suffixe % 900_000 + 100_000),
+                name: "Compte du test de filtre".to_string(),
+                account_type: crate::entities::AccountType::Expense,
+                parent_id: None,
+                role: None,
+                postable: true,
+            },
+        )
+        .await
+        .unwrap();
+
+        // Une écriture qui le touche, une qui ne le touche pas.
+        let mut touche = mk_entry(
+            company_id,
+            today,
+            vec![
+                NewJournalEntryLine {
+                    account_id: neuf.id,
+                    debit: dec!(42),
+                    credit: dec!(0),
+                    project_id: None,
+                },
+                NewJournalEntryLine {
+                    account_id: a2,
+                    debit: dec!(0),
+                    credit: dec!(42),
+                    project_id: None,
+                },
+            ],
+        );
+        touche.description = "Touche le compte neuf".to_string();
+        let attendue = create(&pool, fy_id, admin_user_id, touche).await.unwrap();
+
+        let mut ailleurs = mk_entry(
+            company_id,
+            today,
+            vec![
+                NewJournalEntryLine {
+                    account_id: a1,
+                    debit: dec!(7),
+                    credit: dec!(0),
+                    project_id: None,
+                },
+                NewJournalEntryLine {
+                    account_id: a2,
+                    debit: dec!(0),
+                    credit: dec!(7),
+                    project_id: None,
+                },
+            ],
+        );
+        ailleurs.description = "Ne le touche pas".to_string();
+        create(&pool, fy_id, admin_user_id, ailleurs).await.unwrap();
+
+        let result = list_by_company_paginated(
+            &pool,
+            company_id,
+            JournalEntryListQuery {
+                account_id: Some(neuf.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.total, 1, "une seule écriture touche ce compte");
+        assert_eq!(result.items.len(), 1);
+        assert_eq!(result.items[0].entry.id, attendue.entry.id);
+
+        // ⚠️ Le total doit être celui du FILTRE, pas celui de la company : un
+        // `COUNT(*)` qui oublierait la clause rendrait une pagination fausse
+        // sans qu'aucune page ne paraisse anormale.
+        let sans_filtre =
+            list_by_company_paginated(&pool, company_id, JournalEntryListQuery::default())
+                .await
+                .unwrap();
+        assert!(
+            sans_filtre.total > result.total,
+            "le filtre doit réduire le total ({} vs {})",
+            sans_filtre.total,
+            result.total
+        );
     }
 
     #[tokio::test]

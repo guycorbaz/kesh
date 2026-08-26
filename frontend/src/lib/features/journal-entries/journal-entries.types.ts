@@ -72,6 +72,8 @@ export type SortDirection = 'Asc' | 'Desc';
  */
 export interface JournalEntryListQuery {
 	description?: string;
+	/** Ne garder que les écritures touchant ce compte (issue #374). */
+	accountId?: number;
 	amountMin?: string;
 	amountMax?: string;
 	dateFrom?: string;

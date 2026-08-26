@@ -113,9 +113,13 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * étant l'infobulle du lien qui mène du solde à son détail. La somme vaut le delta, ce
  * qui est la seule vérification qui distingue un ajout légitime d'un ajout compensant
  * un retrait silencieux ailleurs.
+ *
+ * ⚠️ **1602 → 1605, +3 pour le filtre par compte (#374)** — les trois sites de
+ * `routes/(app)/journal-entries/+page.svelte` : l'étiquette du filtre, et deux fois
+ * « Tous » (le déclencheur du select et son option). La ventilation vaut le delta.
  */
 const ATTENDU = {
-	sitesTotal: 1602,
+	sitesTotal: 1605,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

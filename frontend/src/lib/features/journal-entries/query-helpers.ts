@@ -22,6 +22,9 @@ export function serializeQuery(query: JournalEntryListQuery): URLSearchParams {
 	if (query.description && query.description.trim() !== '') {
 		params.set('description', query.description.trim());
 	}
+	if (query.accountId !== undefined && query.accountId !== null && query.accountId > 0) {
+		params.set('accountId', String(query.accountId));
+	}
 	if (query.amountMin && query.amountMin.trim() !== '') {
 		params.set('amountMin', query.amountMin.trim());
 	}
@@ -65,6 +68,15 @@ export function parseQueryFromUrl(searchParams: URLSearchParams): JournalEntryLi
 
 	const description = searchParams.get('description');
 	if (description && description.trim() !== '') query.description = description;
+
+	// ⚠️ `accountId` vient de l'URL, donc de l'extérieur : un identifiant non
+	// numérique ou négatif est **ignoré**, jamais transmis. Le backend le
+	// refuserait en 400, et un 400 sur un lien partagé se lit comme une panne.
+	const accountId = searchParams.get('accountId');
+	if (accountId !== null) {
+		const n = Number(accountId);
+		if (Number.isInteger(n) && n > 0) query.accountId = n;
+	}
 
 	const amountMin = searchParams.get('amountMin');
 	if (amountMin && amountMin.trim() !== '') query.amountMin = amountMin;

@@ -263,3 +263,36 @@ aurait attrapés seuls** :
 `scripts/test-fast.sh` complet vert, base de gate remise à zéro avant le run (KF-039).
 `npm run check` 0 erreur, `lint-i18n-ownership` vert, `npm run test:unit` vert, `npm run build`
 vert.
+
+### Le filtre par compte (#374) — 2026-08-26
+
+La story annonce couvrir **#373 et #374**. Le grand livre livré, #374 restait entier : la liste
+des écritures n'acceptait toujours pas d'`accountId`. Livré ici, backend et écran :
+`ListJournalEntriesQuery.account_id` → `JournalEntryListQuery.account_id` → clause `EXISTS` sur
+`journal_entry_lines`, et un sélecteur « Compte » dans la barre de filtres, adressable par
+l'URL.
+
+Trois points qui ne se déduisent pas du diff :
+
+- **`EXISTS` plutôt que `IN`** : il s'arrête à la première ligne trouvée, là où `IN` matérialise
+  l'ensemble. Le filtre par montant voisin, lui, garde son `IN` — il agrège (`GROUP BY … HAVING
+  SUM`), donc il n'a pas le choix.
+- **Le scoping multi-tenant reste porté par la requête englobante.** `journal_entry_lines`
+  **n'a pas de `company_id`** : la sous-requête ne peut pas se scoper elle-même, c'est le
+  `WHERE company_id` sur `journal_entries` qui l'enferme. Le test le vérifie sur un compte créé
+  pour lui seul, la base partagée interdisant tout comptage absolu.
+- **`accountId` invalide : 400 côté API, ignoré côté URL.** Le backend refuse un identifiant ≤ 0
+  — un filtre silencieusement vide se lit comme « pas d'écritures », le pire des deux messages.
+  Mais le frontend, lui, **ignore** une valeur non numérique venue de l'URL plutôt que de la
+  transmettre : un 400 sur un lien partagé se lirait comme une panne.
+
+**Deux gardes de décompte à mettre à jour, et chacune exige de nommer ce qui a bougé avant de
+changer le chiffre** — c'est leur raison d'être : `i18n-keys` 1602 → 1605 (les trois sites de la
+page des écritures), et `i18n-libelle-en-dur` 41 → 42 candidates, dont `accountFilterLabel`,
+classée `conforme` (elle rend de la donnée — « 1020 — Banque » —, pas un libellé traduisible).
+
+⚠️ **Un flake KF-038 (#228) rencontré au premier gate**, sans rapport avec la branche :
+`post_accept_skips_non_chf_transaction` a rendu 409 au lieu de 200 — le verrou de compte, que le
+test voisin `post_accept_returns_409_on_account_lock_contention` disputait *dans le même run, à
+la même seconde*. Rejoué seul : vert. Occurrence consignée sur l'issue #228, gate complet
+relancé.
