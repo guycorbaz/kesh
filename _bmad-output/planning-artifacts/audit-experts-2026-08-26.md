@@ -587,6 +587,10 @@ Arbitré par le Project Lead le 2026-08-26, en quatre vagues.
 | **2** | **La TVA opposable** | dériver la TVA du grand livre, l'avoir dans sa période, verrouiller les périodes déclarées, la déductibilité de l'impôt préalable |
 | **3** | **Le reste, selon la cible** | bouclement conforme, pilotage, ou le profil privé |
 
+**Les quatre vagues sont matérialisées par quatre jalons GitHub**, et le suivi s'y fait —
+pas ici. Ce document ne sera pas mis à jour au fil des corrections : il date du 2026-08-26 et
+consigne l'état constaté à cette date.
+
 ⚠️ **Grain des issues — consigne du Project Lead** : *« une issue séparée, quitte à en ouvrir
 trente. Je préfère beaucoup d'issues qu'on traite l'une après l'autre de manière maîtrisable
 qu'un gros truc difficile à gérer et qui prend du temps. »*
