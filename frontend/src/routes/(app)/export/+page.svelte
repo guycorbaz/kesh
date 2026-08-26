@@ -2,7 +2,7 @@
 	// Story 9-2b — Page export global ZIP (souveraineté des données).
 	//
 	// Bouton unique « Lancer l'export » qui déclenche un GET
-	// `/api/v1/exports/global.zip` (16 CSV + metadata.json packagés en ZIP).
+	// `/api/v1/exports/global.zip` (19 CSV + metadata.json packagés en ZIP).
 	// Flag dédié `exporting` (Pass 1 ECH-H2 / AC #25), guard re-entrancy
 	// first-line (Pass 1 code-review M12 / AC #26), fallback i18n
 	// `export-global-error-generic` sur erreur non-`isApiError` (Pass 1 M13 /

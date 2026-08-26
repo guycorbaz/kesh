@@ -1,7 +1,7 @@
 //! Story 9-2b T3 — Orchestrateur `build_global_export` + builder ZIP +
 //! struct `GlobalExportMeta` (retournée au handler pour audit + tracing).
 //!
-//! Pipeline (18 tables + 1 manifeste) :
+//! Pipeline (19 CSV + 1 manifeste) :
 //! 1. `Instant::now()` start.
 //! 2. Pour chaque table §scope-tables : appel repo (queries 18 SELECTs +
 //!    JOIN scoping `company_id`).

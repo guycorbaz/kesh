@@ -901,7 +901,7 @@ Kesh \textbf{refuse} la suppression dans les cas suivants, pour préserver la co
 \begin{itemize}
     \item facture \textbf{marquée payée} : annulez d'abord le règlement (un paiement rapproché ne doit pas pointer dans le vide) ;
     \item facture déjà \textbf{créditée par un avoir} : l'avoir référence la facture, qui ne peut donc plus disparaître ;
-    \item facture dont l'écriture appartient à un \textbf{exercice clos} : l'intangibilité des périodes clôturées (CO art.~958f) est préservée — une facture d'un exercice clos ne peut jamais être supprimée.
+    \item facture dont l'écriture appartient à un \textbf{exercice clos} : la \textbf{suppression} est refusée — une facture d'un exercice clos ne peut jamais être supprimée. ⚠️ \textbf{En revanche, un avoir peut encore l'annuler} : seul l'exercice de l'\emph{avoir} est contrôlé, pas celui de la facture. Le statut de la facture bascule alors, et le décompte TVA de la période close s'en trouve modifié. L'intangibilité des périodes clôturées (CO art.~958f) n'est donc \textbf{pas} entièrement préservée sur ce chemin.
 \end{itemize}
 
 \begin{keshnote}
@@ -1208,14 +1208,19 @@ Filtres : date de référence (par défaut fin d'exercice en cours), exercice à
 
 \keshscreenshot{rapport-resultat.png}{Compte de résultat : produits, charges et résultat de la période.}  % TODO capture: rapport compte de resultat
 
-\emph{Mensuel} → \emph{Rapports} → \emph{Compte de résultat}. Disponible en deux présentations (Art. 959b CO) :
+\emph{Mensuel} → \emph{Rapports} → \emph{Compte de résultat}. Liste les comptes de produits
+et les comptes de charges à solde non nul, et le résultat de la période.
 
-\begin{itemize}
-    \item Par nature : produits nets, charges de matériel, charges de personnel, autres charges, amortissements, résultat exceptionnel.
-    \item Par fonction : produits nets, coût d'acquisition, charges d'administration, charges de distribution.
-\end{itemize}
+\begin{keshwarning}[title=\faExclamationTriangle\ Le compte de résultat n'est pas encore structuré selon l'art.~959b CO]
+Kesh ne propose \textbf{pas} les présentations \emph{par nature} et \emph{par fonction}, et ne
+calcule aucun des sous-totaux légaux --- résultat brut, résultat d'exploitation, résultat
+financier, résultat hors exploitation, impôts isolés. Vous obtenez deux listes et un résultat
+net.
 
-Le choix est défini par défaut au niveau de la company, modifiable par rapport.
+\medskip
+\noindent Pour des comptes annuels destinés à un tiers, la mise en forme normée reste à
+produire hors de Kesh, à partir de ces chiffres.
+\end{keshwarning}
 
 \subsection{Balance des comptes}
 

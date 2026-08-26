@@ -42,7 +42,6 @@ frontend/               # SvelteKit — src/lib/features/ par domaine, tests/e2e
 scripts/                # Outillage : test-fast.sh, mem-guard.sh, prepare-release.sh, hooks
 docs/                   # Documentation, dont manual/{fr,de,en,it}/ (LaTeX + PDF versionnés)
 website/                # Site GitHub Pages (HTML statique)
-charts/                 # Plans comptables de référence
 _bmad/                  # Cadre BMAD (agents, workflows, skills, config)
 _bmad-output/           # Artefacts BMAD engendrés
   planning-artifacts/   # PRD, architecture, epics

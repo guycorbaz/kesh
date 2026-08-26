@@ -1,7 +1,18 @@
 //! Repository pour le journal d'audit.
 //!
 //! **Pas de méthode `delete`** : CO art. 957-964 impose la conservation
-//! 10 ans. Les entrées sont inamovibles.
+//! 10 ans.
+//!
+//! ⚠️ **Mais les entrées NE sont PAS inamovibles en pratique**, et ce module
+//! l'affirmait à tort. Deux chemins effacent la table sans passer par ici :
+//! l'import d'une sauvegarde (`audit_log` figure dans `TABLES_TO_TRUNCATE`,
+//! cf. `backup.rs`) et `reset_demo` (`kesh-seed`, `DELETE FROM audit_log` non
+//! scopé, sur une route ouverte à tout rôle authentifié). Aucun trigger ni
+//! `REVOKE` ne s'y oppose au niveau SGBD.
+//!
+//! L'absence de `delete` ici garantit donc que le CRUD métier ne détruit rien —
+//! pas que la piste de contrôle est infalsifiable. Suivi : issues du jalon
+//! « Vague 1 » (audit du 2026-08-26).
 //!
 //! La méthode principale [`insert_in_tx`] prend une transaction en cours
 //! pour garantir l'atomicité avec l'opération auditée (UPDATE/DELETE

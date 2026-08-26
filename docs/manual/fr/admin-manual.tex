@@ -93,9 +93,9 @@ Kesh est conçu pour :
 
 \begin{itemize}
     \item Les \textbf{entreprises individuelles} et les \textbf{sociétés de personnes} avec un chiffre d'affaires supérieur à CHF 500'000 (régime « comptabilité complète » selon CO Art. 957 al. 1).
-    \item Les \textbf{entreprises individuelles} et \textbf{sociétés de personnes} avec un chiffre d'affaires inférieur à CHF 500'000 (régime « recettes-dépenses + patrimoine » selon CO Art. 957 al. 2).
+    \item Les \textbf{entreprises individuelles} et \textbf{sociétés de personnes} avec un chiffre d'affaires inférieur à CHF 500'000, qui peuvent légalement se limiter au régime « recettes-dépenses + patrimoine » (CO Art. 957 al. 2). ⚠️ \emph{Kesh ne propose pas ce régime simplifié : il tient une comptabilité en partie double, ce qui est admis mais plus exigeant que ce que la loi leur impose.}
     \item Les \textbf{personnes morales} (SA, Sàrl, coopératives, associations, fondations).
-    \item Les \textbf{fiduciaires} gérant plusieurs dossiers clients via le mode multi-tenant.
+    \item Les \textbf{fiduciaires} gérant plusieurs dossiers clients. ⚠️ \emph{Un dossier = une instance ou un compte dédié : l'interface ne permet pas encore de basculer entre sociétés.}
 \end{itemize}
 
 Kesh n'est pas conçu pour les grands groupes soumis à l'audit ordinaire (Art. 727 CO, seuils 20/40/250 selon Art. 727 al. 1 ch. 2 CO) ni aux entités cotées en bourse soumises à IFRS / Swiss GAAP RPC obligatoires.
@@ -1945,7 +1945,7 @@ La \textbf{suppression définitive} d'une facture validée par un administrateur
 \subsection{Ordonnance OLICo (RS 221.431)}
 
 \begin{itemize}
-    \item Art. 1 : grand livre + journal → implémentés Kesh.
+    \item Art. 1 : journal chronologique → implémenté (rapport \emph{Journaux}). ⚠️ \textbf{Le grand livre --- l'extrait d'un compte donné --- n'existe pas encore} : aucun rapport ne le produit, et la liste des écritures ne se filtre pas par compte. C'est la première pièce que demande une révision ; elle doit aujourd'hui être reconstituée depuis l'export CSV.
     \item Art. 3 : intégrité (modification apparente) → garanti par \texttt{audit\_log} insert-only.
     \item Art. 9 al. 1.b : supports modifiables (disque dur, SSD) → conditions 1-4 satisfaites (cf. section sécurité plus haut).
     \item Art. 10 : contrôle et migration → test de restauration annuel obligatoire (cf. section Sauvegarde).
