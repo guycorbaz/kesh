@@ -296,3 +296,34 @@ classée `conforme` (elle rend de la donnée — « 1020 — Banque » —, pas 
 test voisin `post_accept_returns_409_on_account_lock_contention` disputait *dans le même run, à
 la même seconde*. Rejoué seul : vert. Occurrence consignée sur l'issue #228, gate complet
 relancé.
+
+### L'E2E a trouvé ce que six niveaux de test ne voyaient pas — 2026-08-26
+
+En écrivant la spec Playwright du grand livre, elle a échoué sur un **défaut réel de l'AC11**,
+et le mode d'échec mérite d'être nommé.
+
+**Le lien depuis le bilan et la balance pointe vers `/reports`.** Quand on le clique **depuis la
+page des rapports elle-même** — c'est-à-dire dans le seul cas où il sert : on regarde un bilan,
+on veut le détail d'une ligne —, SvelteKit change l'URL **sans remonter le composant**.
+`onMount` ne rejoue pas. Résultat : l'onglet « Grand livre » se sélectionne, la période et le
+compte restent vides, et **l'écran est muet**. Rien ne rougit, aucune erreur ne s'affiche : la
+page fonctionne, elle ne montre simplement rien.
+
+⚠️ **Aucun autre niveau de test ne pouvait le voir.** Le rendu du composant est testé par Vitest
+sur un DTO déjà chargé ; le générateur est testé par dix tests d'intégration ; la route est
+testée côté Rust. Le défaut ne vit dans aucun des trois — il vit dans **l'enchaînement clic →
+navigation → génération**, qui n'existe que dans un navigateur.
+
+Correction : un `$effect` gardé par la **clé du lien** (`accountId|from|to`), qui n'agit qu'une
+fois par URL distincte. Le garde-fou du fichier — « lecture ONE-SHOT au montage, jamais un effet
+réactif qui relit `page.url` » — reste respecté dans son intention : `selectTab` n'écrit que
+`?tab=…`, sans `from`/`to`, donc un changement d'onglet à la main ne déclenche **jamais** de
+génération, et la boucle que ce garde-fou craignait ne peut pas se former.
+
+**Un test de plus a rougi, et il avait raison** : `reports.spec.ts` comptait **8 onglets**. Le
+neuvième est le grand livre. Ce compte est le seul garde-fou du dépôt contre un onglet qui
+disparaîtrait — il se met à jour en nommant ce qui entre, jamais en alignant le chiffre sur ce
+qu'on observe.
+
+⚠️ **Les onglets se ciblent par leur `id`, pas par leur libellé** (règle du dépôt, issue #326) —
+un libellé est traduit, un sélecteur figé dessus casse à la première relecture de la langue.

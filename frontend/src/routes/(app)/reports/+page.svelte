@@ -4,7 +4,7 @@
 	// Code review Pass 1 patches : P5 (error handler isApiError + Fluent), P6 (ARIA tabs),
 	// P17 (reset dates on FY change), P19 (loading indicator), P20 (race guard).
 
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
@@ -536,19 +536,41 @@
 		if (raw && tabs.some((t) => t.id === raw)) {
 			activeTab = raw as TabId;
 		}
-		// Story 24-1 (AC11) — arrivée depuis un lien du bilan ou de la balance :
-		// la période et le compte sont dans l'URL, et le rapport se génère seul.
-		// Sans cette génération, le clic mènerait à un écran vide qui redemande
-		// ce que le lien portait déjà.
-		if (activeTab === 'general-ledger') {
-			const from = page.url.searchParams.get('from');
-			const to = page.url.searchParams.get('to');
-			const acc = page.url.searchParams.get('accountId');
-			if (from) ledgerFrom = from;
-			if (to) ledgerTo = to;
-			if (acc && /^[0-9]+$/.test(acc)) ledgerAccountId = Number(acc);
-			if (ledgerFrom && ledgerTo) void generate();
-		}
+	});
+
+	/**
+	 * Story 24-1 (AC11) — arrivée par un lien du bilan ou de la balance.
+	 *
+	 * ⚠️ **Un `onMount` ne suffit PAS ici, et l'échec est silencieux.** Ces liens
+	 * pointent vers `/reports`, donc quand on les clique **depuis la page des
+	 * rapports elle-même** — le cas normal : on regarde un bilan, on veut le
+	 * détail d'une ligne — SvelteKit change l'URL sans remonter le composant.
+	 * `onMount` ne rejoue pas, et l'extrait reste vide sur un onglet pourtant
+	 * sélectionné. Rien ne rougit : la page s'affiche, elle est simplement muette.
+	 *
+	 * D'où un effet réactif, gardé par la **clé du lien** : il n'agit qu'une fois
+	 * par URL distincte. `selectTab` n'écrit que `?tab=…` — sans `from`/`to` —,
+	 * donc un changement d'onglet à la main ne déclenche jamais de génération.
+	 */
+	let lastLedgerDeepLink: string | null = null;
+	$effect(() => {
+		const sp = page.url.searchParams;
+		const tab = sp.get('tab');
+		const from = sp.get('from');
+		const to = sp.get('to');
+		const acc = sp.get('accountId');
+		if (tab !== 'general-ledger' || !from || !to) return;
+		const key = `${acc ?? ''}|${from}|${to}`;
+		if (key === lastLedgerDeepLink) return;
+		lastLedgerDeepLink = key;
+		untrack(() => {
+			activeTab = 'general-ledger';
+			ledgerFrom = from;
+			ledgerTo = to;
+			ledgerAccountId = acc && /^[0-9]+$/.test(acc) ? Number(acc) : null;
+			errorMsg = null;
+			void generate();
+		});
 	});
 
 	// P6 — ARIA tabs : keyboard navigation (ArrowLeft/Right/Home/End).
