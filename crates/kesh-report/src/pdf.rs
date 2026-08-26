@@ -120,6 +120,23 @@ pub struct SectionLabels {
     pub header_period: String,
     // Journaux
     pub journal_filter_prefix: String,
+    // Grand livre (Story 24-1)
+    pub ledger_title: String,
+    pub col_piece: String,
+    pub col_journal: String,
+    pub col_counterpart: String,
+    pub col_running: String,
+    pub ledger_opening: String,
+    pub ledger_closing: String,
+    pub ledger_movements_total: String,
+    /// Pied de page d'un compte scindé : le solde emporté à la page suivante.
+    pub ledger_carry_forward: String,
+    /// En-tête de la suite d'un compte : le solde repris de la page précédente.
+    pub ledger_carried_over: String,
+    pub ledger_fy_break: String,
+    pub ledger_archived: String,
+    pub ledger_unnatural: String,
+    pub ledger_no_movement: String,
 }
 
 impl SectionLabels {
@@ -155,6 +172,20 @@ impl SectionLabels {
             col_description: "Libellé".into(),
             header_period: "Période".into(),
             journal_filter_prefix: "Journal".into(),
+            ledger_title: "Grand livre".into(),
+            col_piece: "Pièce".into(),
+            col_journal: "Journal".into(),
+            col_counterpart: "Contrepartie".into(),
+            col_running: "Solde".into(),
+            ledger_opening: "Solde d'ouverture".into(),
+            ledger_closing: "Solde de clôture".into(),
+            ledger_movements_total: "Total des mouvements".into(),
+            ledger_carry_forward: "À reporter".into(),
+            ledger_carried_over: "Report".into(),
+            ledger_fy_break: "Clôture de l'exercice — le solde repart de zéro".into(),
+            ledger_archived: "archivé".into(),
+            ledger_unnatural: "Solde contre nature".into(),
+            ledger_no_movement: "Aucun mouvement sur la période.".into(),
         }
     }
 
@@ -1414,6 +1445,272 @@ pub fn render_project_return_pdf(
 }
 
 // ============================================================================
+// Story 24-1 — Grand livre
+// ============================================================================
+
+/// Colonnes du grand livre, en mm depuis le bord gauche.
+///
+/// Huit colonnes sur de l'A4 portrait : la police descend à 8 pt pour que la
+/// dernière (le solde progressif) reste dans la marge droite.
+const LEDGER_FONT_PT: f32 = 8.0;
+const LEDGER_COL_DATE: f32 = MARGIN_LEFT_MM;
+const LEDGER_COL_PIECE: f32 = MARGIN_LEFT_MM + 19.0;
+const LEDGER_COL_JOURNAL: f32 = MARGIN_LEFT_MM + 34.0;
+const LEDGER_COL_DESC: f32 = MARGIN_LEFT_MM + 48.0;
+const LEDGER_COL_COUNTERPART: f32 = MARGIN_LEFT_MM + 96.0;
+const LEDGER_COL_DEBIT: f32 = MARGIN_LEFT_MM + 114.0;
+const LEDGER_COL_CREDIT: f32 = MARGIN_LEFT_MM + 136.0;
+const LEDGER_COL_RUNNING: f32 = MARGIN_LEFT_MM + 158.0;
+
+/// Un montant nul ne s'écrit pas — une colonne débit/crédit reste vide, comme
+/// sur un grand livre tenu à la main.
+fn ledger_amount(v: Decimal) -> String {
+    if v.is_zero() {
+        String::new()
+    } else {
+        format_swiss_amount(v)
+    }
+}
+
+/// Bandeau d'identification du compte : numéro, intitulé, mentions.
+///
+/// Il est redessiné **à chaque page** — un feuillet de grand livre qui ne dit
+/// pas de quel compte il est n'est pas une pièce comptable, c'est un listing.
+fn draw_ledger_account_header(
+    builder: &mut PdfBuilder,
+    ctx: &PdfContext,
+    section: &crate::general_ledger::LedgerSection,
+    continued: bool,
+) {
+    let l = &ctx.section_labels;
+    let mut title = format!("{} — {}", section.account_number, section.account_name);
+    if !section.active {
+        title.push_str(&format!(" ({})", l.ledger_archived));
+    }
+    if section.unnatural_balance {
+        title.push_str(&format!("  ⚠ {}", l.ledger_unnatural));
+    }
+    if continued {
+        title.push_str(&format!("  ({})", l.ledger_carried_over));
+    }
+    builder.write_line(&title, FONT_SIZE_PT, true, 0.0);
+
+    // En-têtes de colonnes.
+    builder.write_inline(&l.col_entry_date, LEDGER_FONT_PT, true, LEDGER_COL_DATE);
+    builder.write_inline(&l.col_piece, LEDGER_FONT_PT, true, LEDGER_COL_PIECE);
+    builder.write_inline(&l.col_journal, LEDGER_FONT_PT, true, LEDGER_COL_JOURNAL);
+    builder.write_inline(&l.col_description, LEDGER_FONT_PT, true, LEDGER_COL_DESC);
+    builder.write_inline(
+        &l.col_counterpart,
+        LEDGER_FONT_PT,
+        true,
+        LEDGER_COL_COUNTERPART,
+    );
+    builder.write_inline(&l.col_debit, LEDGER_FONT_PT, true, LEDGER_COL_DEBIT);
+    builder.write_inline(&l.col_credit, LEDGER_FONT_PT, true, LEDGER_COL_CREDIT);
+    builder.write_inline(&l.col_running, LEDGER_FONT_PT, true, LEDGER_COL_RUNNING);
+    builder.cursor_y -= LINE_HEIGHT_MM;
+}
+
+/// Une ligne « libellé à gauche, montant à droite » du grand livre — ouverture,
+/// clôture, report, rupture d'exercice.
+fn draw_ledger_marker(builder: &mut PdfBuilder, label: &str, amount: Decimal, bold: bool) {
+    builder.write_inline(label, LEDGER_FONT_PT, bold, LEDGER_COL_DATE);
+    builder.write_inline(
+        &format_swiss_amount(amount),
+        LEDGER_FONT_PT,
+        bold,
+        LEDGER_COL_RUNNING,
+    );
+    builder.cursor_y -= LINE_HEIGHT_MM;
+}
+
+/// Rend le grand livre en PDF (Story 24-1).
+///
+/// Deux propriétés que le tableau à l'écran n'a pas besoin de tenir, et que le
+/// papier exige :
+///
+/// - **l'en-tête de compte est répété sur chaque page**, faute de quoi un
+///   feuillet isolé ne dit plus de quel compte il parle ;
+/// - **un compte scindé entre deux pages porte « À reporter » au pied et
+///   « Report » en tête**, pour que la chaîne des soldes reste vérifiable à la
+///   main d'un feuillet à l'autre.
+pub fn render_general_ledger_pdf(
+    gl: &crate::general_ledger::GeneralLedger,
+    ctx: &PdfContext,
+) -> Result<Vec<u8>, ReportError> {
+    let l_title = ctx.section_labels.ledger_title.clone();
+    let mut builder = PdfBuilder::new(&l_title)?;
+    draw_header(&mut builder, ctx, &l_title, gl.period.from, gl.period.to);
+
+    if gl.sections.is_empty() {
+        draw_empty_message(&mut builder, ctx);
+        return builder.finalize();
+    }
+
+    for section in &gl.sections {
+        // Un compte commence en tête de page s'il ne tient pas au moins son
+        // bandeau, sa ligne d'ouverture et un mouvement.
+        builder.ensure_space_for_rows(4.0);
+        draw_ledger_account_header(&mut builder, ctx, section, false);
+        draw_ledger_marker(
+            &mut builder,
+            &ctx.section_labels.ledger_opening,
+            section.opening,
+            false,
+        );
+
+        if section.lines.is_empty() {
+            builder.write_line(
+                &ctx.section_labels.ledger_no_movement,
+                LEDGER_FONT_PT,
+                false,
+                0.0,
+            );
+        }
+
+        let mut prev_fy: Option<i64> = None;
+        // Le solde à reporter si la page se termine ici : celui de la dernière
+        // ligne écrite, ou l'ouverture tant qu'aucune ne l'a été.
+        let mut carry = section.opening;
+
+        for line in &section.lines {
+            // Rupture d'exercice — le solde d'un compte de résultat y repart de
+            // zéro. Se reconnaît au changement d'exercice, jamais à la date
+            // seule : plusieurs écritures partagent la date de bouclement.
+            if let Some(prev) = prev_fy
+                && prev != line.fiscal_year_id
+                && let Some(brk) = section
+                    .fiscal_year_breaks
+                    .iter()
+                    .find(|b| b.closing_fiscal_year_id == prev)
+            {
+                builder.ensure_space_for_row();
+                draw_ledger_marker(
+                    &mut builder,
+                    &format!(
+                        "{} — {}",
+                        format_swiss_date(brk.date),
+                        ctx.section_labels.ledger_fy_break
+                    ),
+                    brk.closing_balance,
+                    false,
+                );
+            }
+            prev_fy = Some(line.fiscal_year_id);
+
+            // Saut de page : « À reporter » au pied, bandeau + « Report » en tête.
+            if builder.cursor_y - 2.0 * LINE_HEIGHT_MM < MARGIN_BOTTOM_MM {
+                draw_ledger_marker(
+                    &mut builder,
+                    &ctx.section_labels.ledger_carry_forward,
+                    carry,
+                    true,
+                );
+                builder.new_page();
+                draw_ledger_account_header(&mut builder, ctx, section, true);
+                draw_ledger_marker(
+                    &mut builder,
+                    &ctx.section_labels.ledger_carried_over,
+                    carry,
+                    false,
+                );
+            }
+
+            builder.write_inline(
+                &format_swiss_date(line.entry_date),
+                LEDGER_FONT_PT,
+                false,
+                LEDGER_COL_DATE,
+            );
+            // ⚠️ Le numéro de pièce repart à 1 à chaque exercice : dès que la
+            // période en traverse plusieurs, il ne désigne rien tout seul.
+            let piece = if section.fiscal_year_breaks.is_empty() {
+                line.entry_number.to_string()
+            } else {
+                format!("{}/{}", line.fiscal_year_name, line.entry_number)
+            };
+            builder.write_inline(
+                &truncate_with_ellipsis(&piece, 9),
+                LEDGER_FONT_PT,
+                false,
+                LEDGER_COL_PIECE,
+            );
+            builder.write_inline(
+                &truncate_with_ellipsis(&line.journal, 7),
+                LEDGER_FONT_PT,
+                false,
+                LEDGER_COL_JOURNAL,
+            );
+            builder.write_inline(
+                &truncate_with_ellipsis(&line.description, 26),
+                LEDGER_FONT_PT,
+                false,
+                LEDGER_COL_DESC,
+            );
+            builder.write_inline(
+                &truncate_with_ellipsis(&line.counterpart.join(","), 10),
+                LEDGER_FONT_PT,
+                false,
+                LEDGER_COL_COUNTERPART,
+            );
+            builder.write_inline(
+                &ledger_amount(line.debit),
+                LEDGER_FONT_PT,
+                false,
+                LEDGER_COL_DEBIT,
+            );
+            builder.write_inline(
+                &ledger_amount(line.credit),
+                LEDGER_FONT_PT,
+                false,
+                LEDGER_COL_CREDIT,
+            );
+            builder.write_inline(
+                &format_swiss_amount(line.running_balance),
+                LEDGER_FONT_PT,
+                false,
+                LEDGER_COL_RUNNING,
+            );
+            builder.cursor_y -= LINE_HEIGHT_MM;
+            carry = line.running_balance;
+        }
+
+        // Totaux de mouvements, puis solde de clôture.
+        builder.ensure_space_for_rows(2.0);
+        builder.write_inline(
+            &ctx.section_labels.ledger_movements_total,
+            LEDGER_FONT_PT,
+            false,
+            LEDGER_COL_DATE,
+        );
+        builder.write_inline(
+            &format_swiss_amount(section.total_debit),
+            LEDGER_FONT_PT,
+            false,
+            LEDGER_COL_DEBIT,
+        );
+        builder.write_inline(
+            &format_swiss_amount(section.total_credit),
+            LEDGER_FONT_PT,
+            false,
+            LEDGER_COL_CREDIT,
+        );
+        builder.cursor_y -= LINE_HEIGHT_MM;
+
+        draw_ledger_marker(
+            &mut builder,
+            &ctx.section_labels.ledger_closing,
+            section.closing,
+            true,
+        );
+        builder.cursor_y -= LINE_HEIGHT_MM; // respiration entre deux comptes
+    }
+
+    builder.finalize()
+}
+
+// ============================================================================
 // Tests unit (T10.1)
 // ============================================================================
 
@@ -2021,5 +2318,90 @@ mod tests {
             "AC #31 violé : PDF 10k entries fait {} bytes (seuil 5 MB)",
             bytes.len()
         );
+    }
+
+    // ------------------------------------------------------------------
+    // Story 24-1 — grand livre
+    // ------------------------------------------------------------------
+
+    fn ledger_line(i: i64, fy: i64) -> crate::general_ledger::LedgerLine {
+        crate::general_ledger::LedgerLine {
+            line_id: i,
+            entry_id: i,
+            entry_date: NaiveDate::from_ymd_opt(2026, 3, 4).unwrap(),
+            fiscal_year_id: fy,
+            fiscal_year_name: format!("Exercice {fy}"),
+            entry_number: i,
+            journal: "Banque".into(),
+            description: "Un libellé assez long pour éprouver la troncature".into(),
+            counterpart: vec!["6000".into(), "6001".into()],
+            debit: dec!(120.00),
+            credit: dec!(0),
+            running_balance: Decimal::from(i) * dec!(120.00),
+        }
+    }
+
+    fn ledger_with(n: i64) -> crate::general_ledger::GeneralLedger {
+        crate::general_ledger::GeneralLedger {
+            period: crate::general_ledger::LedgerPeriod {
+                from: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+                to: NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+            },
+            sections: vec![crate::general_ledger::LedgerSection {
+                account_id: 7,
+                account_number: "1020".into(),
+                account_name: "Banque".into(),
+                account_type: AccountType::Asset,
+                active: true,
+                balance_side: "debit",
+                opening: dec!(500.00),
+                lines: (1..=n).map(|i| ledger_line(i, 1)).collect(),
+                total_debit: Decimal::from(n) * dec!(120.00),
+                total_credit: dec!(0),
+                closing: dec!(500.00) + Decimal::from(n) * dec!(120.00),
+                unnatural_balance: false,
+                fiscal_year_breaks: vec![],
+                line_count: n,
+            }],
+        }
+    }
+
+    #[test]
+    fn general_ledger_pdf_paginates_and_repeats_the_account_header() {
+        let ctx = PdfContext::fr_ch_default("Test SA");
+        // Une page A4 tient ~55 lignes ; 300 en couvre plusieurs, donc le chemin
+        // « À reporter / Report » est réellement emprunté.
+        let court = render_general_ledger_pdf(&ledger_with(5), &ctx).expect("pdf court");
+        let long = render_general_ledger_pdf(&ledger_with(300), &ctx).expect("pdf long");
+        assert!(!court.is_empty());
+        assert!(
+            long.len() > court.len(),
+            "un livre de 300 lignes doit peser plus qu'un livre de 5 ({} vs {})",
+            long.len(),
+            court.len()
+        );
+    }
+
+    #[test]
+    fn general_ledger_pdf_renders_a_fiscal_year_break() {
+        let ctx = PdfContext::fr_ch_default("Test SA");
+        let mut gl = ledger_with(2);
+        gl.sections[0].lines[1].fiscal_year_id = 2;
+        gl.sections[0].fiscal_year_breaks = vec![crate::general_ledger::FiscalYearBreak {
+            date: NaiveDate::from_ymd_opt(2025, 12, 31).unwrap(),
+            closing_fiscal_year_id: 1,
+            closing_balance: dec!(620.00),
+        }];
+        let bytes = render_general_ledger_pdf(&gl, &ctx).expect("pdf");
+        assert!(!bytes.is_empty());
+    }
+
+    #[test]
+    fn general_ledger_pdf_empty_renders_the_empty_message() {
+        let ctx = PdfContext::fr_ch_default("Test SA");
+        let mut gl = ledger_with(1);
+        gl.sections.clear();
+        let bytes = render_general_ledger_pdf(&gl, &ctx).expect("pdf vide");
+        assert!(!bytes.is_empty());
     }
 }

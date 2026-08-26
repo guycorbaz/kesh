@@ -553,3 +553,131 @@ async fn la_contrepartie_nomme_l_autre_compte(pool: MySqlPool) {
     assert_eq!(line.counterpart, vec!["3000".to_string()]);
     assert_eq!(line.description, "vente", "le libellé vient de l'écriture");
 }
+
+/// **L'export n'est pas paginé, et ce n'est pas un détail de confort.**
+///
+/// L'écran s'arrête à [`MAX_LEDGER_LIMIT`] lignes par compte et le dit ; le
+/// fichier produit, lui, doit contenir le livre entier — c'est lui qui porte
+/// l'obligation de produire les livres (Olico art. 3). Le test vaut d'abord
+/// pour ce que l'écriture du code rend facile à casser : `limit: None` a
+/// longtemps voulu dire « le défaut, soit 500 ». Il veut désormais dire « aucune
+/// borne », et rien d'autre que ce test ne le tient.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn l_export_sans_borne_rend_plus_que_le_plafond_de_l_ecran(pool: MySqlPool) {
+    use kesh_report::general_ledger::MAX_LEDGER_LIMIT;
+
+    let seeded = seed_accounting_company(&pool).await.expect("seed");
+    let caisse = seeded.accounts["1000"];
+    let ventes = seeded.accounts["3000"];
+
+    // Trois lignes de plus que le plafond : de quoi distinguer « écrêté » de
+    // « tout rendu » sans ambiguïté.
+    let total = MAX_LEDGER_LIMIT + 3;
+    for i in 0..total {
+        post(
+            &pool,
+            &seeded,
+            ymd(2026, 3, 1),
+            caisse,
+            ventes,
+            dec!(1.00),
+            &format!("mouvement {i}"),
+        )
+        .await;
+    }
+
+    let period = full_year();
+
+    let ecran = generate(
+        &pool,
+        seeded.company_id,
+        &period,
+        &LedgerOptions {
+            limit: Some(MAX_LEDGER_LIMIT),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("vue écran");
+    let export = generate(
+        &pool,
+        seeded.company_id,
+        &period,
+        &LedgerOptions {
+            limit: None,
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("export");
+
+    let se = ecran
+        .sections
+        .iter()
+        .find(|s| s.account_id == caisse)
+        .expect("section caisse");
+    let sx = export
+        .sections
+        .iter()
+        .find(|s| s.account_id == caisse)
+        .expect("section caisse");
+
+    assert_eq!(
+        se.lines.len() as i64,
+        MAX_LEDGER_LIMIT,
+        "l'écran s'arrête au plafond"
+    );
+    assert_eq!(
+        sx.lines.len() as i64,
+        total,
+        "l'export rend TOUTES les lignes, pas le plafond"
+    );
+    // `line_count` est le total réel dans les deux cas : c'est lui qui permet à
+    // l'écran d'annoncer honnêtement qu'il tronque.
+    assert_eq!(se.line_count, total);
+    assert_eq!(sx.line_count, total);
+    assert_eq!(se.closing, sx.closing, "le solde ne dépend pas de la page");
+}
+
+/// Une demande au-dessus du plafond reste écrêtée — `None` est le **seul**
+/// moyen de lever la borne, pas « un très grand nombre ».
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn une_limite_explicite_trop_grande_reste_ecretee(pool: MySqlPool) {
+    use kesh_report::general_ledger::MAX_LEDGER_LIMIT;
+
+    let seeded = seed_accounting_company(&pool).await.expect("seed");
+    let caisse = seeded.accounts["1000"];
+    let ventes = seeded.accounts["3000"];
+
+    for i in 0..(MAX_LEDGER_LIMIT + 2) {
+        post(
+            &pool,
+            &seeded,
+            ymd(2026, 3, 1),
+            caisse,
+            ventes,
+            dec!(1.00),
+            &format!("mouvement {i}"),
+        )
+        .await;
+    }
+
+    let ledger = generate(
+        &pool,
+        seeded.company_id,
+        &full_year(),
+        &LedgerOptions {
+            limit: Some(100_000),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("grand livre");
+
+    let s = ledger
+        .sections
+        .iter()
+        .find(|s| s.account_id == caisse)
+        .expect("section caisse");
+    assert_eq!(s.lines.len() as i64, MAX_LEDGER_LIMIT);
+}

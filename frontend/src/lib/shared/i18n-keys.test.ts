@@ -105,9 +105,17 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * (`routes/(app)/+layout.svelte`) est le symétrique exact de `getItemLabel`, deux lignes plus
  * haut et déjà de la liste — la clé est portée par la donnée, pas par le site d'appel. Un
  * dispatcher n'est pas une clé manquante.
+ *
+ * ⚠️ **1569 → 1602, +33 pour le grand livre (Story 24-1)**, et le décompte se ventile —
+ * il n'a pas été relevé puis recopié : 19 sites dans `GeneralLedgerView.svelte` (l'écran
+ * neuf), 10 dans `routes/(app)/reports/+page.svelte` (contrôles, onglet, export), 3 dans
+ * `BalanceSheetView.svelte` et 1 dans `TrialBalanceView.svelte` — ces quatre derniers
+ * étant l'infobulle du lien qui mène du solde à son détail. La somme vaut le delta, ce
+ * qui est la seule vérification qui distingue un ajout légitime d'un ajout compensant
+ * un retrait silencieux ailleurs.
  */
 const ATTENDU = {
-	sitesTotal: 1569,
+	sitesTotal: 1602,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

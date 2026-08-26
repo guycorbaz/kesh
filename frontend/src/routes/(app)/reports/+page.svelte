@@ -15,6 +15,7 @@
 	import AgedReceivablesView from '$lib/features/reports/AgedReceivablesView.svelte';
 	import IncomeStatementView from '$lib/features/reports/IncomeStatementView.svelte';
 	import TrialBalanceView from '$lib/features/reports/TrialBalanceView.svelte';
+	import GeneralLedgerView from '$lib/features/reports/GeneralLedgerView.svelte';
 	import JournalReportView from '$lib/features/reports/JournalReportView.svelte';
 	import VatReportView from '$lib/features/reports/VatReportView.svelte';
 	import {
@@ -29,12 +30,16 @@
 		getProjectReturn,
 		getTrialBalance,
 		getVatReport,
+		getGeneralLedger,
+		downloadGeneralLedger,
 		getAgedReceivables,
 		downloadAgedReceivables,
 	} from '$lib/features/reports/reports.api';
 	import ProjectExpensesView from '$lib/features/reports/ProjectExpensesView.svelte';
 	import ProjectReturnView from '$lib/features/reports/ProjectReturnView.svelte';
 	import { listProjects } from '$lib/features/projects/projects.api';
+	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
+	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import type {
 		BalanceSheetDto,
@@ -50,12 +55,19 @@
 		ReportType,
 		TrialBalanceDto,
 		VatReportDto,
+		GeneralLedgerDto,
+		LedgerQuery,
 		AgedReceivablesDto,
 	} from '$lib/features/reports/reports.types';
 	import type { FiscalYearResponse } from '$lib/features/fiscal-years/fiscal-years.types';
 
 	/** Onglets = rapports comptables classiques + rapports par projet (19-6a/b) + balance âgée (21-7). */
-	type TabId = ReportType | 'project-expenses' | 'project-return' | 'aged-receivables';
+	type TabId =
+		| ReportType
+		| 'project-expenses'
+		| 'project-return'
+		| 'aged-receivables'
+		| 'general-ledger';
 
 	interface PageData {
 		fiscalYears: FiscalYearResponse[];
@@ -84,6 +96,18 @@
 	// Story 21-7 — balance âgée : onglet à contrôles dédiés (pas de FY/période).
 	const isAgedTab = $derived(activeTab === 'aged-receivables');
 	let agedReceivables = $state<AgedReceivablesDto | null>(null);
+
+	// Story 24-1 — grand livre : onglet à contrôles dédiés lui aussi, mais pour
+	// une raison différente de la balance âgée — il prend bien une période, ce
+	// qu'il ne prend PAS c'est un exercice. Il franchit la borne, sans quoi il ne
+	// concorderait pas avec le bilan, qui est cumulatif depuis l'origine.
+	const isLedgerTab = $derived(activeTab === 'general-ledger');
+	let generalLedger = $state<GeneralLedgerDto | null>(null);
+	let ledgerFrom = $state('');
+	let ledgerTo = $state('');
+	let ledgerAccountId = $state<number | null>(null);
+	let ledgerIncludeZero = $state(false);
+	let accounts = $state<AccountResponse[]>([]);
 	// Export CSV réservé Comptable+ (D24) — inutile d'afficher un bouton qui prendra 403.
 	const canManage = $derived(
 		authState.currentUser?.role === 'Admin' || authState.currentUser?.role === 'Comptable',
@@ -96,6 +120,13 @@
 		listProjects()
 			.then((p) => (projects = p))
 			.catch(() => (projects = []));
+	});
+	// Grand livre : les comptes ARCHIVÉS sont inclus — un compte archivé garde
+	// son historique, et c'est précisément le grand livre qui le donne à lire.
+	$effect(() => {
+		fetchAccounts(true)
+			.then((a) => (accounts = a))
+			.catch(() => (accounts = []));
 	});
 	// Story 9-2a — flag dédié pour l'export (PAS partagé avec `loading` qui contrôle
 	// uniquement `generate()`). Pass 1 ECH-H2 + AC #36 + Pass 2 AA2-C1.
@@ -192,7 +223,35 @@
 		};
 	}
 
+	/** Construit la query du grand livre (null si la période est incomplète). */
+	function ledgerQuery(): LedgerQuery | null {
+		if (!ledgerFrom || !ledgerTo) return null;
+		return {
+			from: ledgerFrom,
+			to: ledgerTo,
+			accountIds: ledgerAccountId === null ? undefined : [ledgerAccountId],
+			includeZero: ledgerIncludeZero,
+		};
+	}
+
 	async function generate(): Promise<void> {
+		// Story 24-1 — grand livre : période libre, sans exercice.
+		if (isLedgerTab) {
+			const q = ledgerQuery();
+			if (!q) return;
+			const mySeq = ++genSeq;
+			loading = true;
+			errorMsg = null;
+			try {
+				const result = await getGeneralLedger(q);
+				if (mySeq === genSeq) generalLedger = result;
+			} catch (e) {
+				if (mySeq === genSeq) errorMsg = formatError(e);
+			} finally {
+				if (mySeq === genSeq) loading = false;
+			}
+			return;
+		}
 		// Story 21-7 — balance âgée : pas de FY/période (arrêté à aujourd'hui).
 		if (isAgedTab) {
 			const mySeq = ++genSeq;
@@ -324,6 +383,29 @@
 	async function exportReport(format: 'pdf' | 'csv'): Promise<void> {
 		// Pass 1 code-review M12 : guard re-entrancy avant TOUT await.
 		if (exporting) return;
+		// Story 24-1 — branche grand livre (query from/to, pas d'exercice).
+		if (isLedgerTab) {
+			const q = ledgerQuery();
+			if (!q || generalLedger === null) return;
+			exporting = true;
+			errorMsg = null;
+			try {
+				const typeSlug = i18nMsg('reports-filename-general-ledger', 'grand-livre');
+				const companySlug = data.companyName.replace(/[^a-zA-Z0-9]+/g, '-').slice(0, 20);
+				const filename = `kesh-${typeSlug}-${companySlug}-${q.from}_${q.to}.${format}`;
+				await downloadGeneralLedger(q, format, filename);
+			} catch (e) {
+				if (isApiError(e) && e.code) errorMsg = formatError(e);
+				else
+					errorMsg = i18nMsg(
+						'reports-export-error-generic',
+						"Impossible d'exporter le rapport. Vérifiez votre connexion et réessayez.",
+					);
+			} finally {
+				exporting = false;
+			}
+			return;
+		}
 		// Story 19-6a/b — branche projet.
 		if (isProjectTab) {
 			const q = projectQuery();
@@ -443,6 +525,7 @@
 			fallback: 'Rendement par projet',
 		},
 		{ id: 'aged-receivables', labelKey: 'reports-aged-balance', fallback: 'Balance âgée' },
+		{ id: 'general-ledger', labelKey: 'reports-ledger-tab', fallback: 'Grand livre' },
 	];
 
 	// Story 21-7 (D-7c) — synchro URL de l'onglet. Lecture ONE-SHOT au montage
@@ -452,6 +535,19 @@
 		const raw = page.url.searchParams.get('tab');
 		if (raw && tabs.some((t) => t.id === raw)) {
 			activeTab = raw as TabId;
+		}
+		// Story 24-1 (AC11) — arrivée depuis un lien du bilan ou de la balance :
+		// la période et le compte sont dans l'URL, et le rapport se génère seul.
+		// Sans cette génération, le clic mènerait à un écran vide qui redemande
+		// ce que le lien portait déjà.
+		if (activeTab === 'general-ledger') {
+			const from = page.url.searchParams.get('from');
+			const to = page.url.searchParams.get('to');
+			const acc = page.url.searchParams.get('accountId');
+			if (from) ledgerFrom = from;
+			if (to) ledgerTo = to;
+			if (acc && /^[0-9]+$/.test(acc)) ledgerAccountId = Number(acc);
+			if (ledgerFrom && ledgerTo) void generate();
 		}
 	});
 
@@ -492,7 +588,7 @@
 <div class="space-y-4 p-4">
 	<h1 class="text-2xl font-bold">{i18nMsg('reports-page-title', 'Rapports comptables')}</h1>
 
-	{#if !isProjectTab && !isAgedTab}
+	{#if !isProjectTab && !isAgedTab && !isLedgerTab}
 		<ReportSelector
 			fiscalYears={data.fiscalYears}
 			bind:selectedFiscalYearId
@@ -505,6 +601,83 @@
 			{canExport}
 			{exporting}
 		/>
+	{:else if isLedgerTab}
+		<!-- Story 24-1 — contrôles du grand livre. PAS de sélecteur d'exercice :
+		     ce rapport franchit la borne, c'est ce qui le rend concordant avec le
+		     bilan. La période est donc libre. -->
+		<div
+			class="flex flex-wrap items-end gap-3 rounded border border-border bg-surface p-3"
+			data-testid="ledger-controls"
+		>
+			<label class="text-sm">
+				{i18nMsg('reports-ledger-from', 'Du')}
+				<input
+					type="date"
+					class="mt-1 block rounded border border-border px-2 py-1 text-sm"
+					bind:value={ledgerFrom}
+					data-testid="ledger-from"
+				/>
+			</label>
+			<label class="text-sm">
+				{i18nMsg('reports-ledger-to', 'Au')}
+				<input
+					type="date"
+					class="mt-1 block rounded border border-border px-2 py-1 text-sm"
+					bind:value={ledgerTo}
+					data-testid="ledger-to"
+				/>
+			</label>
+			<label class="text-sm">
+				{i18nMsg('reports-ledger-account-label', 'Compte')}
+				<select
+					class="mt-1 block rounded border border-border px-2 py-1 text-sm"
+					bind:value={ledgerAccountId}
+					data-testid="ledger-account"
+				>
+					<option value={null}
+						>{i18nMsg('reports-ledger-all-accounts', 'Tous les comptes mouvementés')}</option
+					>
+					{#each accounts as a (a.id)}
+						<option value={a.id}
+							>{a.number} — {a.name}{a.active
+								? ''
+								: ` (${i18nMsg('reports-ledger-archived', 'archivé')})`}</option
+						>
+					{/each}
+				</select>
+			</label>
+			<label class="flex items-center gap-2 text-sm">
+				<input type="checkbox" bind:checked={ledgerIncludeZero} data-testid="ledger-include-zero" />
+				{i18nMsg('reports-ledger-include-zero', 'Inclure les comptes sans mouvement')}
+			</label>
+			<button
+				type="button"
+				class="rounded bg-primary px-3 py-1 text-sm text-white disabled:opacity-50"
+				onclick={generate}
+				disabled={loading || !ledgerFrom || !ledgerTo}
+				data-testid="ledger-generate"
+			>
+				{i18nMsg('reports-button-generate', 'Générer')}
+			</button>
+			<button
+				type="button"
+				class="rounded border border-border px-3 py-1 text-sm disabled:opacity-50"
+				onclick={exportPdf}
+				disabled={exporting || generalLedger === null}
+				data-testid="ledger-export-pdf"
+			>
+				PDF
+			</button>
+			<button
+				type="button"
+				class="rounded border border-border px-3 py-1 text-sm disabled:opacity-50"
+				onclick={exportCsv}
+				disabled={exporting || generalLedger === null}
+				data-testid="ledger-export-csv"
+			>
+				CSV
+			</button>
+		</div>
 	{:else if isProjectTab}
 		<!-- Story 19-6a — contrôles dédiés du rapport « Dépenses par projet ». -->
 		<div class="flex flex-wrap items-end gap-3 rounded border border-border bg-surface p-3" data-testid="project-report-controls">
@@ -659,6 +832,15 @@
 			<ProjectReturnView report={projectReturn} />
 		{:else if activeTab === 'aged-receivables' && agedReceivables}
 			<AgedReceivablesView dto={agedReceivables} />
+		{:else if activeTab === 'general-ledger' && generalLedger}
+			<GeneralLedgerView dto={generalLedger} />
+		{:else if isLedgerTab}
+			<p class="text-sm italic text-gray-500">
+				{i18nMsg(
+					'reports-ledger-instruction',
+					'Choisissez une période, puis cliquez sur Générer. Le compte est facultatif.',
+				)}
+			</p>
 		{:else if isAgedTab}
 			<!-- Balance âgée : pas d'exercice à sélectionner (arrêté à aujourd'hui) —
 			     message dédié plutôt que « sélectionnez un exercice » (review P2 LOW). -->

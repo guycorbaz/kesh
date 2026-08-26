@@ -55,6 +55,11 @@ use sqlx::MySqlPool;
 use crate::errors::ReportError;
 
 /// Plafond de lignes rendues en une fois, aligné sur le patron du dépôt.
+///
+/// ⚠️ Il borne **l'écran**, jamais l'export. Un grand livre tronqué n'est pas
+/// un grand livre : l'Olico exige qu'il soit produisible **en entier**, et c'est
+/// l'export qui porte cette obligation. D'où [`LedgerOptions::limit`] à `None`,
+/// qui ne pose aucune borne.
 pub const MAX_LEDGER_LIMIT: i64 = 500;
 
 /// Fenêtre du grand livre — **sans exercice**, contrairement à `ReportPeriod`.
@@ -132,6 +137,11 @@ pub struct LedgerLine {
     pub entry_id: i64,
     pub entry_date: NaiveDate,
     pub fiscal_year_id: i64,
+    /// Nom de l'exercice (`fiscal_years.name`). ⚠️ Il n'est pas décoratif : sans
+    /// lui, un numéro de pièce est **ambigu** dès que la période traverse deux
+    /// exercices, puisqu'il y repart à 1. C'est la pièce « n° 12 » de quel
+    /// exercice ? La question doit se lire, pas se déduire.
+    pub fiscal_year_name: String,
     /// ⚠️ Unique **par exercice** seulement.
     pub entry_number: i64,
     pub journal: String,
@@ -151,6 +161,7 @@ struct RawLine {
     entry_id: i64,
     entry_date: NaiveDate,
     fiscal_year_id: i64,
+    fiscal_year_name: String,
     entry_number: i64,
     journal: String,
     description: String,
@@ -309,13 +320,16 @@ async fn fetch_lines(
     account_id: i64,
     period: &LedgerPeriod,
     offset: i64,
-    limit: i64,
+    // `None` ⇒ pas de borne (export).
+    limit: Option<i64>,
 ) -> Result<Vec<RawLine>, ReportError> {
     let sql = "
         SELECT jel.id AS line_id, je.id AS entry_id, je.entry_date, je.fiscal_year_id,
+               fy.name AS fiscal_year_name,
                je.entry_number, je.journal, je.description, jel.debit, jel.credit
         FROM journal_entry_lines jel
         INNER JOIN journal_entries je ON je.id = jel.entry_id
+        INNER JOIN fiscal_years fy ON fy.id = je.fiscal_year_id
         WHERE jel.account_id = ? AND je.company_id = ?
           AND je.entry_date >= ? AND je.entry_date <= ?
         ORDER BY je.entry_date ASC, je.fiscal_year_id ASC, je.entry_number ASC,
@@ -327,7 +341,8 @@ async fn fetch_lines(
         .bind(company_id)
         .bind(period.from)
         .bind(period.to)
-        .bind(limit)
+        // MariaDB n'a pas de « LIMIT ALL » : la borne absente se dit i64::MAX.
+        .bind(limit.unwrap_or(i64::MAX))
         .bind(offset)
         .fetch_all(pool)
         .await
@@ -419,7 +434,9 @@ pub struct LedgerOptions {
     /// Rendre aussi les comptes sans mouvement **et** sans solde.
     pub include_zero: bool,
     pub offset: i64,
-    /// Écrêté à [`MAX_LEDGER_LIMIT`].
+    /// Écrêté à [`MAX_LEDGER_LIMIT`]. **`None` ⇒ aucune borne** — c'est ce que
+    /// prend l'export, qui doit rendre le livre entier. L'appelant qui veut le
+    /// défaut d'écran passe `Some(MAX_LEDGER_LIMIT)` explicitement.
     pub limit: Option<i64>,
 }
 
@@ -441,10 +458,7 @@ pub async fn generate(
         .is_some_and(|ids| !ids.is_empty());
     let accounts = select_accounts(pool, company_id, options.account_ids.as_deref()).await?;
 
-    let limit = options
-        .limit
-        .unwrap_or(MAX_LEDGER_LIMIT)
-        .clamp(1, MAX_LEDGER_LIMIT);
+    let limit = options.limit.map(|l| l.clamp(1, MAX_LEDGER_LIMIT));
     let offset = options.offset.max(0);
 
     let mut sections = Vec::new();
@@ -503,6 +517,7 @@ pub async fn generate(
                 entry_id: r.entry_id,
                 entry_date: r.entry_date,
                 fiscal_year_id: r.fiscal_year_id,
+                fiscal_year_name: r.fiscal_year_name,
                 entry_number: r.entry_number,
                 journal: r.journal,
                 description: r.description,

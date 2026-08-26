@@ -140,17 +140,17 @@ clés existantes `reports-column-*`.
 
 ## Tasks
 
-- [ ] **T1** — `LedgerPeriod` + module `kesh-report/src/general_ledger.rs`. ⛔ L'ouverture passe
+- [x] **T1** — `LedgerPeriod` + module `kesh-report/src/general_ledger.rs`. ⛔ L'ouverture passe
       par **le même point** que `fetch_cumulative_section`, pas par une copie du SQL — c'est
       la couture par laquelle le snapshot de clôture (#270) se branchera plus tard.
-- [ ] **T2** — Contrepartie : **seconde requête** `WHERE jel.entry_id IN (…)` sur les entrées
+- [x] **T2** — Contrepartie : **seconde requête** `WHERE jel.entry_id IN (…)` sur les entrées
       retenues, agrégation en Rust. ⛔ Pas de sous-requête corrélée par ligne.
-- [ ] **T3** — Route `GET /api/v1/reports/general-ledger` + `/export`, paginée.
-- [ ] **T4** — Écran `GeneralLedgerView.svelte`, et **les liens depuis le bilan et la balance**
+- [x] **T3** — Route `GET /api/v1/reports/general-ledger` + `/export`, paginée.
+- [x] **T4** — Écran `GeneralLedgerView.svelte`, et **les liens depuis le bilan et la balance**
       (AC11).
-- [ ] **T5** — CSV et PDF (AC10).
-- [ ] **T6** — i18n, quatre locales.
-- [ ] **T7** — Tests : les invariants ci-dessous, **écrits en même temps que le générateur**.
+- [x] **T5** — CSV et PDF (AC10).
+- [x] **T6** — i18n, quatre locales.
+- [x] **T7** — Tests : les invariants ci-dessous, **écrits en même temps que le générateur**.
 
 ## Invariants testables — ce qui protège le rapport dans le temps
 
@@ -218,3 +218,48 @@ affirmations vérifiées au sol par l'orchestrateur avant rédaction** : le num�
 bien à 1 à chaque exercice (`uq_journal_entries_number`), `journal_entry_lines` n'a
 effectivement **aucun libellé**, et `trial_balance` exclut bien les comptes archivés — exclusion
 que cette story demande de **ne pas** reproduire.
+
+### Implémentation — 2026-08-26
+
+**Livré** : module `crates/kesh-report/src/general_ledger.rs`, routes
+`GET /api/v1/reports/general-ledger` et `…/export?format=pdf|csv`, écran
+`GeneralLedgerView.svelte` avec son onglet, liens depuis le bilan et la balance, rendus CSV et
+PDF, 24 clés `reports-ledger-*` dans les quatre locales.
+
+**Décomptes, recomptés depuis la source et non repris d'une passe antérieure** — périmètre
+`main…HEAD` de la branche `story/vague1-grand-livre` :
+
+| Mesure | Valeur | Commande |
+|---|---|---|
+| tests d'intégration du grand livre | 10 | `grep -c '^#\[sqlx::test' crates/kesh-report/tests/general_ledger.rs` — ⚠️ **pas** `grep -c '^async fn'`, qui rend 11 en comptant le helper `post` |
+| tests unitaires PDF du grand livre | 3 | `grep -c 'fn general_ledger_pdf' crates/kesh-report/src/pdf.rs` |
+| tests unitaires CSV du grand livre | 2 | `grep -c 'fn general_ledger_csv' crates/kesh-report/src/csv.rs` |
+| tests Vitest de l'écran | 8 | `npx vitest run …/GeneralLedgerView.test.ts` |
+| clés i18n `reports-ledger-*` par locale | 24 | `grep -c '^reports-ledger-' …/messages.ftl` |
+| sites `i18nMsg` ajoutés | 33 | ventilés dans `i18n-keys.test.ts` |
+
+**Trois écarts à la spec, corrigés en cours de route et signalés ici parce qu'aucun test ne les
+aurait attrapés seuls** :
+
+1. **AC5 — la pièce sans son exercice.** Le premier écran affichait `entryNumber` nu. Comme ce
+   numéro **repart à 1 à chaque exercice**, un extrait couvrant deux exercices contenait deux
+   « pièce n° 12 » indiscernables. Corrigé par un `fiscal_year_name` joint depuis
+   `fiscal_years`, rendu en préfixe **seulement** quand la période traverse une rupture — le
+   préfixe systématique serait du bruit. La colonne « Exercice » du CSV portait, elle,
+   l'**identifiant** de l'exercice : un id de base de données ne dit rien à qui lit le fichier.
+
+2. **AC10 — un export tronqué.** `LedgerOptions::limit = None` valait « le défaut, soit 500 »,
+   si bien que l'export était plafonné comme l'écran — alors que le bandeau de l'écran promet
+   « l'export les contient toutes ». **C'est la documentation qui promettait ce que le code ne
+   faisait pas**, exactement le défaut relevé en vague 0. `None` veut désormais dire « aucune
+   borne », et deux tests le tiennent : l'export rend `MAX + 3` lignes là où l'écran s'arrête à
+   `MAX`, et une limite explicite trop grande reste écrêtée — `None` est le seul moyen de lever
+   la borne.
+
+3. **Trois erreurs `clippy -D warnings`** dont une `items_after_test_module` : le rendu CSV
+   avait été écrit **après** `mod tests`. Déplacé avant.
+
+**Gates** : `cargo fmt --check` vert, `cargo clippy --workspace --all-targets -D warnings` vert,
+`scripts/test-fast.sh` complet vert, base de gate remise à zéro avant le run (KF-039).
+`npm run check` 0 erreur, `lint-i18n-ownership` vert, `npm run test:unit` vert, `npm run build`
+vert.

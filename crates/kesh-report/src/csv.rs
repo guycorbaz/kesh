@@ -18,6 +18,7 @@ use rust_decimal::Decimal;
 use crate::aged_receivables::AgedReceivables;
 use crate::balance_sheet::BalanceSheet;
 use crate::errors::ReportError;
+use crate::general_ledger::GeneralLedger;
 use crate::income_statement::IncomeStatement;
 use crate::journal_report::JournalReport;
 use crate::trial_balance::TrialBalance;
@@ -612,6 +613,107 @@ fn map_io_err(e: std::io::Error) -> ReportError {
     ReportError::CsvGeneration(format!("csv io flush: {e}"))
 }
 
+/// Rend le grand livre en CSV.
+///
+/// ⚠️ **L'ouverture et la clôture sont des LIGNES, pas des métadonnées hors
+/// tableau** : un CSV doit rester réconciliable dans un tableur, où l'on
+/// additionne une colonne. Une ouverture reléguée en en-tête obligerait à la
+/// ressaisir à la main.
+///
+/// Une section par compte, séparée par une ligne vide — le compte est répété sur
+/// chaque ligne pour que le fichier reste filtrable et triable.
+pub fn render_general_ledger_csv<W: Write>(
+    ledger: &GeneralLedger,
+    mut writer: W,
+) -> Result<(), ReportError> {
+    write_bom(&mut writer)?;
+    let mut wtr = make_writer(writer);
+
+    wtr.write_record([
+        "NumeroCompte",
+        "NomCompte",
+        "Date",
+        "Piece",
+        "Exercice",
+        "Journal",
+        "Libelle",
+        "Contrepartie",
+        "Debit",
+        "Credit",
+        "SoldeProgressif",
+    ])
+    .map_err(map_csv_err)?;
+
+    for section in &ledger.sections {
+        // Ligne d'ouverture — le report d'entrée de période.
+        wtr.write_record([
+            &section.account_number,
+            &section.account_name,
+            &ledger.period.from.format("%Y-%m-%d").to_string(),
+            "",
+            "",
+            "",
+            "Solde d'ouverture",
+            "",
+            "",
+            "",
+            &format_amount_iso(section.opening),
+        ])
+        .map_err(map_csv_err)?;
+
+        for line in &section.lines {
+            wtr.write_record([
+                &section.account_number,
+                &section.account_name,
+                &line.entry_date.format("%Y-%m-%d").to_string(),
+                &line.entry_number.to_string(),
+                &line.fiscal_year_name,
+                &line.journal,
+                &line.description,
+                &line.counterpart.join(" "),
+                &format_amount_iso(line.debit),
+                &format_amount_iso(line.credit),
+                &format_amount_iso(line.running_balance),
+            ])
+            .map_err(map_csv_err)?;
+        }
+
+        // Total des mouvements, puis clôture.
+        wtr.write_record([
+            &section.account_number,
+            &section.account_name,
+            "",
+            "",
+            "",
+            "",
+            "Total des mouvements",
+            "",
+            &format_amount_iso(section.total_debit),
+            &format_amount_iso(section.total_credit),
+            "",
+        ])
+        .map_err(map_csv_err)?;
+
+        wtr.write_record([
+            &section.account_number,
+            &section.account_name,
+            &ledger.period.to.format("%Y-%m-%d").to_string(),
+            "",
+            "",
+            "",
+            "Solde de clôture",
+            "",
+            "",
+            "",
+            &format_amount_iso(section.closing),
+        ])
+        .map_err(map_csv_err)?;
+    }
+
+    wtr.flush().map_err(map_io_err)?;
+    Ok(())
+}
+
 // ============================================================================
 // Tests unit (T10.1)
 // ============================================================================
@@ -1114,5 +1216,82 @@ mod tests {
         let lines: Vec<&str> = body.split("\r\n").filter(|l| !l.is_empty()).collect();
         assert_eq!(lines.len(), 1, "rapport vide = en-tête seul");
         assert_eq!(lines[0], "Contact;Non échu;1-30;31-60;61-90;90+;Total");
+    }
+
+    // ------------------------------------------------------------------
+    // Story 24-1 — grand livre
+    // ------------------------------------------------------------------
+
+    fn ledger_fixture() -> GeneralLedger {
+        use crate::general_ledger::{GeneralLedger, LedgerLine, LedgerPeriod, LedgerSection};
+        GeneralLedger {
+            period: LedgerPeriod {
+                from: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+                to: NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
+            },
+            sections: vec![LedgerSection {
+                account_id: 7,
+                account_number: "1020".into(),
+                account_name: "Banque".into(),
+                account_type: AccountType::Asset,
+                active: true,
+                balance_side: "debit",
+                opening: dec!(500.00),
+                lines: vec![LedgerLine {
+                    line_id: 1,
+                    entry_id: 1,
+                    entry_date: NaiveDate::from_ymd_opt(2026, 3, 4).unwrap(),
+                    fiscal_year_id: 3,
+                    fiscal_year_name: "Exercice 2026".into(),
+                    entry_number: 12,
+                    journal: "Banque".into(),
+                    description: "Loyer mars".into(),
+                    counterpart: vec!["6000".into()],
+                    debit: dec!(1200.00),
+                    credit: dec!(0),
+                    running_balance: dec!(1700.00),
+                }],
+                total_debit: dec!(1200.00),
+                total_credit: dec!(0),
+                closing: dec!(1700.00),
+                unnatural_balance: false,
+                fiscal_year_breaks: vec![],
+                line_count: 1,
+            }],
+        }
+    }
+
+    /// ⚠️ Ouverture et clôture sont des **lignes du tableau**, pas des
+    /// métadonnées d'en-tête : c'est ce qui rend le fichier réconciliable dans
+    /// un tableur, où l'on additionne une colonne.
+    #[test]
+    fn general_ledger_csv_writes_opening_and_closing_as_rows() {
+        let mut buf = Vec::new();
+        render_general_ledger_csv(&ledger_fixture(), &mut buf).expect("csv");
+        let out = String::from_utf8(buf).expect("utf-8");
+        let lines: Vec<&str> = out.lines().collect();
+
+        assert!(lines[0].starts_with('\u{feff}') || lines[0].contains("NumeroCompte"));
+        let corps = out.replace('\u{feff}', "");
+        let l: Vec<&str> = corps.lines().collect();
+        assert!(l[1].contains("Solde d'ouverture"), "ligne 1 = {}", l[1]);
+        assert!(l[1].ends_with("500.00"));
+        assert!(l[2].contains("Loyer mars"));
+        assert!(l[3].contains("Total des mouvements"));
+        assert!(l[4].contains("Solde de clôture"));
+        assert!(l[4].ends_with("1700.00"));
+    }
+
+    /// La colonne « Exercice » porte le **nom** de l'exercice, jamais son id —
+    /// un identifiant de base de données ne dit rien à qui lit le fichier, et
+    /// c'est pourtant ce qui désambiguïse le numéro de pièce.
+    #[test]
+    fn general_ledger_csv_names_the_fiscal_year_instead_of_its_id() {
+        let mut buf = Vec::new();
+        render_general_ledger_csv(&ledger_fixture(), &mut buf).expect("csv");
+        let out = String::from_utf8(buf).expect("utf-8");
+        assert!(out.contains("Exercice 2026"), "le nom manque : {out}");
+        // L'id (3) ne doit pas s'être glissé dans la colonne Exercice.
+        assert!(!out.contains(";12;3;"), "l'id d'exercice est rendu : {out}");
     }
 }

@@ -842,6 +842,12 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/reports/general-ledger",
             get(routes::reports::get_general_ledger),
         )
+        // ⚠️ L'export n'est PAS paginé : l'écran s'arrête à 500 lignes par
+        // compte, le livre produit doit être entier (Olico art. 3).
+        .route(
+            "/api/v1/reports/general-ledger/export",
+            get(routes::reports::export_general_ledger),
+        )
         // Story 21-7 : balance âgée débiteurs — VUE JSON tous rôles (D-7b/D24).
         // L'export CSV est Comptable+ → monté dans `comptable_routes` (ci-dessous).
         .route(

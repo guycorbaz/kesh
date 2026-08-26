@@ -252,3 +252,77 @@ export interface ProjectReturnDto {
 	sections: ProjectReturnSectionDto[];
 	totals: ProjectReturnTotalsDto;
 }
+
+// --- Grand livre (Story 24-1) ---
+
+/**
+ * Fenêtre du grand livre.
+ *
+ * ⚠️ **Sans exercice, et c'est délibéré** : le grand livre franchit la borne
+ * d'exercice, sans quoi il ne concorderait pas avec le bilan, qui est cumulatif
+ * depuis l'origine. C'est le seul rapport dans ce cas.
+ */
+export interface LedgerPeriod {
+	from: string;
+	to: string;
+}
+
+/** Fin d'exercice traversée : sur un compte de résultat, le solde y repart de zéro. */
+export interface FiscalYearBreak {
+	date: string;
+	closingFiscalYearId: number;
+	closingBalance: string;
+}
+
+export interface LedgerLine {
+	lineId: number;
+	entryId: number;
+	entryDate: string;
+	fiscalYearId: number;
+	/** Nom de l'exercice — ce qui désambiguïse le numéro de pièce. */
+	fiscalYearName: string;
+	/** ⚠️ Unique **par exercice** seulement : il repart à 1. */
+	entryNumber: number;
+	journal: Journal;
+	/** Libellé de l'écriture — les lignes n'en portent pas. */
+	description: string;
+	counterpart: string[];
+	debit: string;
+	credit: string;
+	runningBalance: string;
+}
+
+export interface LedgerSection {
+	accountId: number;
+	accountNumber: string;
+	accountName: string;
+	accountType: AccountType;
+	/** `false` pour un compte archivé — il reste rendu s'il porte un solde. */
+	active: boolean;
+	balanceSide: 'debit' | 'credit';
+	opening: string;
+	lines: LedgerLine[];
+	totalDebit: string;
+	totalCredit: string;
+	closing: string;
+	/** Solde du côté opposé à la nature du compte : l'anomalie à voir. */
+	unnaturalBalance: boolean;
+	fiscalYearBreaks: FiscalYearBreak[];
+	/** Nombre de lignes sur la période, **avant pagination**. */
+	lineCount: number;
+}
+
+export interface GeneralLedgerDto {
+	period: LedgerPeriod;
+	sections: LedgerSection[];
+}
+
+/** Paramètres du grand livre — ni `fiscalYearId`, ni `periodStart`/`periodEnd`. */
+export interface LedgerQuery {
+	from: string;
+	to: string;
+	accountIds?: number[];
+	includeZero?: boolean;
+	offset?: number;
+	limit?: number;
+}

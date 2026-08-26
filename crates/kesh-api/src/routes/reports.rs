@@ -31,16 +31,16 @@ use kesh_report::pdf::{ProjectExpensesPdfLabels, ProjectReturnPdfLabels, VatPdfL
 use kesh_report::project_report::{ProjectPeriodMode, resolve_scope};
 use kesh_report::{
     AgedReceivables, BalanceSheet, GeneralLedger, IncomeStatement, JournalReport, LedgerOptions,
-    LedgerPeriod, PdfContext, ProjectExpensesReport, ProjectReturnReport, ReportPeriod,
-    TrialBalance, VatReport, generate_aged_receivables, generate_balance_sheet,
+    LedgerPeriod, MAX_LEDGER_LIMIT, PdfContext, ProjectExpensesReport, ProjectReturnReport,
+    ReportPeriod, TrialBalance, VatReport, generate_aged_receivables, generate_balance_sheet,
     generate_general_ledger, generate_income_statement, generate_journal_report,
     generate_project_expenses, generate_project_return, generate_trial_balance,
     generate_vat_report, render_aged_receivables_csv, render_balance_sheet_csv,
-    render_balance_sheet_pdf, render_income_statement_csv, render_income_statement_pdf,
-    render_journal_report_csv, render_journal_report_pdf, render_project_expenses_csv,
-    render_project_expenses_pdf, render_project_return_csv, render_project_return_pdf,
-    render_trial_balance_csv, render_trial_balance_pdf, render_vat_report_csv,
-    render_vat_report_pdf,
+    render_balance_sheet_pdf, render_general_ledger_csv, render_general_ledger_pdf,
+    render_income_statement_csv, render_income_statement_pdf, render_journal_report_csv,
+    render_journal_report_pdf, render_project_expenses_csv, render_project_expenses_pdf,
+    render_project_return_csv, render_project_return_pdf, render_trial_balance_csv,
+    render_trial_balance_pdf, render_vat_report_csv, render_vat_report_pdf,
 };
 use serde::Deserialize;
 use sqlx::MySqlPool;
@@ -81,35 +81,59 @@ pub struct GeneralLedgerQuery {
     pub limit: Option<i64>,
 }
 
+/// Query params de l'export du grand livre.
+///
+/// ⚠️ Ni `fiscalYearId`, ni `limit` : le grand livre franchit la borne
+/// d'exercice, et un export tronqué n'aurait aucune valeur probante.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GeneralLedgerExportQuery {
+    pub format: Option<String>,
+    pub from: NaiveDate,
+    pub to: NaiveDate,
+    pub account_ids: Option<String>,
+    pub include_zero: Option<bool>,
+}
+
 impl GeneralLedgerQuery {
-    /// Découpe `accountIds`. Une entrée non numérique est un 400 : mieux vaut
-    /// refuser que rendre silencieusement le grand livre d'un autre périmètre.
     fn parse_account_ids(&self) -> Result<Option<Vec<i64>>, AppError> {
-        let Some(raw) = self.account_ids.as_deref() else {
-            return Ok(None);
-        };
-        let trimmed = raw.trim();
-        if trimmed.is_empty() {
-            return Ok(None);
-        }
-        let mut ids = Vec::new();
-        for part in trimmed.split(',') {
-            let p = part.trim();
-            if p.is_empty() {
-                continue;
-            }
-            let id: i64 = p.parse().map_err(|_| {
-                AppError::Validation(format!("accountIds : « {p} » n'est pas un identifiant"))
-            })?;
-            if id <= 0 {
-                return Err(AppError::Validation(format!(
-                    "accountIds : « {p} » n'est pas un identifiant"
-                )));
-            }
-            ids.push(id);
-        }
-        Ok(if ids.is_empty() { None } else { Some(ids) })
+        parse_ledger_account_ids(self.account_ids.as_deref())
     }
+}
+
+impl GeneralLedgerExportQuery {
+    fn parse_account_ids(&self) -> Result<Option<Vec<i64>>, AppError> {
+        parse_ledger_account_ids(self.account_ids.as_deref())
+    }
+}
+
+/// Découpe `accountIds`. Une entrée non numérique est un 400 : mieux vaut
+/// refuser que rendre silencieusement le grand livre d'un autre périmètre.
+fn parse_ledger_account_ids(raw: Option<&str>) -> Result<Option<Vec<i64>>, AppError> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    let mut ids = Vec::new();
+    for part in trimmed.split(',') {
+        let p = part.trim();
+        if p.is_empty() {
+            continue;
+        }
+        let id: i64 = p.parse().map_err(|_| {
+            AppError::Validation(format!("accountIds : « {p} » n'est pas un identifiant"))
+        })?;
+        if id <= 0 {
+            return Err(AppError::Validation(format!(
+                "accountIds : « {p} » n'est pas un identifiant"
+            )));
+        }
+        ids.push(id);
+    }
+    Ok(if ids.is_empty() { None } else { Some(ids) })
 }
 
 /// Query params spécifiques au rapport journaux (avec `journal` optionnel).
@@ -272,7 +296,8 @@ pub async fn get_general_ledger(
         account_ids: query.parse_account_ids()?,
         include_zero: query.include_zero.unwrap_or(false),
         offset: query.offset.unwrap_or(0),
-        limit: query.limit,
+        // Écran : le défaut est le plafond. `None` (export) ne passe pas par ici.
+        limit: Some(query.limit.unwrap_or(MAX_LEDGER_LIMIT)),
     };
 
     let report =
@@ -288,6 +313,71 @@ pub async fn get_general_ledger(
     .await;
 
     Ok(Json(report))
+}
+
+/// `GET /api/v1/reports/general-ledger/export?format=pdf|csv`
+///
+/// ⚠️ **Sans pagination, et c'est le point.** L'écran s'arrête à
+/// [`MAX_LEDGER_LIMIT`] lignes par compte ; l'export, jamais — c'est lui qui
+/// porte l'obligation de produire le livre en entier (Olico art. 3), et le
+/// bandeau « seules N lignes sont affichées » de l'écran renvoie à lui.
+pub async fn export_general_ledger(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Query(query): Query<GeneralLedgerExportQuery>,
+) -> Result<Response, AppError> {
+    let format = validate_format(&query.format)?;
+    let period = LedgerPeriod::new(query.from, query.to)?;
+
+    let span = tracing::info_span!(
+        "report_export",
+        report_type = "general-ledger",
+        format = format.as_str(),
+        byte_size = tracing::field::Empty,
+        duration_ms = tracing::field::Empty
+    );
+    let _enter = span.enter();
+    let start = std::time::Instant::now();
+
+    let options = LedgerOptions {
+        account_ids: query.parse_account_ids()?,
+        include_zero: query.include_zero.unwrap_or(false),
+        offset: 0,
+        // `None` = aucune borne. Voir la note de doc ci-dessus.
+        limit: None,
+    };
+
+    let report =
+        generate_general_ledger(&state.pool, current_user.company_id, &period, &options).await?;
+    let (ctx, company_name) = load_pdf_context(&state.pool, current_user.company_id).await?;
+
+    let body: Vec<u8> = match format {
+        ExportFormat::Pdf => render_general_ledger_pdf(&report, &ctx)?,
+        ExportFormat::Csv => render_csv_to_vec(|w| render_general_ledger_csv(&report, w))?,
+    };
+
+    span.record("byte_size", body.len());
+    span.record("duration_ms", start.elapsed().as_millis() as u64);
+
+    emit_ledger_audit(
+        &state.pool,
+        current_user.user_id,
+        period.from,
+        period.to,
+        options.account_ids.as_deref(),
+    )
+    .await;
+
+    let type_slug = resolve_type_slug(&state, &ctx.locale, "general-ledger");
+    build_project_export_response(
+        format,
+        body,
+        &type_slug,
+        &company_name,
+        period.from,
+        period.to,
+        &ctx.locale,
+    )
 }
 
 pub async fn get_trial_balance(
