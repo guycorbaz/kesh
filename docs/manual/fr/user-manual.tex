@@ -1345,7 +1345,30 @@ distincte : le montant affiché correspond alors au décaissement réel.
 
 \subsection{Concept}
 
-L'\emph{export ZIP de souveraineté} (Story 9-2b) est l'export global de toutes vos données comptables dans un format ouvert et lisible 10 ans (conformité OLICo Art. 9 al. 1.b). Il garantit que vous n'êtes \textbf{jamais prisonnier de Kesh} : à tout moment, vous pouvez extraire l'ensemble de vos données pour migration vers un autre logiciel ou archivage légal.
+L'\emph{export ZIP de souveraineté} est l'export de vos données comptables dans un format
+ouvert (CSV), accompagné d'un manifeste portant l'empreinte SHA-256 de chaque fichier.
+
+\begin{keshwarning}[title=\faExclamationTriangle\ Ce que cet export couvre, et ce qu'il ne couvre pas]
+Il porte aujourd'hui les \textbf{ventes}, la \textbf{banque} et le \textbf{grand livre}. Il ne
+contient \textbf{pas} les factures fournisseurs, les avoirs, ni la table des projets
+analytiques --- les écritures exportées portent bien un identifiant de projet, mais rien ne dit
+à quoi il correspond. Les pièces justificatives importées n'y sont pas non plus.
+
+\medskip
+\noindent \textbf{Avant de compter sur cet export pour changer de logiciel}, vérifiez ce qu'il
+contient réellement : la liste exacte figure sur l'écran d'export, et le manifeste
+\texttt{metadata.json} énumère les fichiers produits. Pour une sauvegarde \emph{complète} de
+l'installation, utilisez plutôt l'export \texttt{.keshbackup} de l'administration --- mais
+c'est un format propriétaire, qui ne se relit que dans Kesh.
+
+\medskip
+\noindent \textbf{Sur la conservation à dix ans.} Le format ouvert et l'empreinte SHA-256 sont
+une \textbf{bonne pratique d'archivage}, et ils facilitent la conservation exigée par
+l'art.~958f CO. Ils ne constituent pas à eux seuls la garantie d'intégrité que l'Olico
+(art.~9 al.~1 let.~b) demande pour un support modifiable : l'empreinte est calculée et
+conservée par vous, sans horodatage ni tiers indépendant. Si vos livres doivent résister à une
+contestation, complétez cet export par un dispositif d'archivage tiers.
+\end{keshwarning}
 
 \subsection{Contenu du ZIP}
 
@@ -1485,7 +1508,7 @@ La langue de la facture suit la langue de communication du client (champ \emph{L
 
 \subsection{Comment exporter mes données pour migration ?}
 
-Utilisez l'\emph{Export ZIP de souveraineté} (cf. section dédiée). Le format CSV ouvert est importable dans n'importe quel autre logiciel comptable supportant les standards Swiss PME.
+Utilisez l'\emph{Export ZIP de souveraineté} (cf. section dédiée), en tenant compte de ce qu'il ne contient pas encore. Le format CSV ouvert se relit dans un tableur et s'importe dans la plupart des logiciels comptables.
 
 \subsection{Comment puis-je revenir en arrière sur une action ?}
 

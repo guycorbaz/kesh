@@ -64,7 +64,7 @@
 		<p class="text-sm text-gray-700">
 			{i18nMsg(
 				'export-global-description',
-				'Exportez toutes vos données comptables (comptes, écritures, contacts, factures, transactions bancaires) au format CSV dans un fichier ZIP. Utilisez cet export pour archiver, migrer vers un autre logiciel, ou conserver vos données 10 ans (Swiss CO Art. 958f).',
+				"Exportez vos données comptables (comptes, écritures, contacts, produits, factures de vente, comptes et transactions bancaires) au format CSV dans un fichier ZIP. Utilisez cet export pour archiver ou conserver vos données 10 ans (CO suisse art. 958f). ⚠️ Il ne couvre pas encore l'ensemble de votre comptabilité : lisez ci-dessous ce qu'il ne contient pas avant de compter dessus pour migrer vers un autre logiciel.",
 			)}
 		</p>
 	</header>
@@ -79,7 +79,7 @@
 		<p class="mt-2">
 			{i18nMsg(
 				'export-global-content-excludes',
-				"Ne contient pas : utilisateurs (PII + mots de passe), tokens de session, journal d'audit interne, état d'onboarding (raisons de sécurité et technicité).",
+				"Ne contient pas : factures fournisseurs et leurs lignes, avoirs, projets analytiques (les écritures portent un identifiant de projet, mais la table des projets est absente), lots de paiement, personnes de contact, pièces justificatives importées, utilisateurs (données personnelles et mots de passe), tokens de session, journal d'audit interne, état d'onboarding.",
 			)}
 		</p>
 		<p class="mt-2 italic">
