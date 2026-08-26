@@ -395,40 +395,42 @@ Vente d'une marchandise à crédit pour CHF 1'000 + TVA 8.1\% :
 
 Total débit = Total crédit = CHF 1'081.00. L'écriture peut être validée.
 
-\subsection{Validation d'une écriture}
+\subsection{Cycle de vie d'une écriture}
 
-Une écriture passe par trois états :
+Une écriture enregistrée est \textbf{immédiatement comptabilisée}. Kesh ne connaît pas
+d'état « brouillon » : il n'y a rien à valider, et une écriture apparaît dans les rapports
+dès son enregistrement.
 
-\begin{enumerate}
-    \item \textbf{Brouillon} : modification libre, n'apparaît pas dans les rapports.
-    \item \textbf{Validée} : intégrée à la comptabilité, apparaît dans les rapports. Modification restreinte (cf. règles de modification ci-dessous).
-    \item \textbf{Annulée} : neutralisée par une écriture de contre-passation (l'originale reste visible dans l'audit-trail).
-\end{enumerate}
+\subsection{Modification et suppression}
 
-Pour valider : cliquer sur \emph{Valider} dans l'écriture brouillon. Une confirmation est demandée.
+Tant que l'exercice est \textbf{ouvert}, une écriture peut être \textbf{modifiée ou
+supprimée} par un utilisateur ayant le rôle \emph{administrateur} ou \emph{comptable}. La
+modification porte sur tous les champs, y compris les comptes et les montants ; la
+suppression est définitive.
 
-\subsection{Modification d'une écriture validée}
+Dès que l'exercice est \textbf{clôturé}, ni l'une ni l'autre n'est possible : toute
+tentative est refusée.
 
-Pour des raisons d'audit-trail légal (CO Art. 957a al. 2 ch. 5 « traçabilité »), une écriture validée ne peut pas être modifiée silencieusement. Deux scénarios :
+\begin{keshwarning}[title=\faExclamationTriangle\ Ce que le logiciel ne fait pas à votre place]
+Kesh \textbf{n'impose pas} la correction par contre-passation, et \textbf{n'empêche pas} la
+suppression d'une écriture déjà comptabilisée. Les modifications et les suppressions sont
+enregistrées dans le journal d'audit interne, mais \textbf{ce journal n'est pas consultable
+depuis l'application} : vous ne pouvez donc pas produire, aujourd'hui, l'historique des
+corrections apportées à vos écritures.
 
-\subsubsection{Modification mineure (correction de libellé)}
+Si vos livres doivent être opposables --- à une fiduciaire, à un organe de révision, à
+l'administration fiscale ---, l'art.~958f CO et l'Olico exigent que toute correction soit
+\textbf{apparente}. Cela suppose de \textbf{contre-passer vous-même} plutôt que de modifier
+ou de supprimer~: saisissez une écriture inverse, puis l'écriture correcte. Les deux restent
+visibles, et la correction se lit dans les livres.
+\end{keshwarning}
 
-Possible directement si l'utilisateur a le rôle \emph{admin} ou \emph{accountant} et si l'écriture est dans un exercice non clôturé. L'action est tracée dans l'\texttt{audit\_log} (qui a modifié, quand, ancienne valeur, nouvelle valeur).
+\subsection{Numérotation}
 
-\subsubsection{Modification d'un montant ou d'un compte}
-
-Vous devez :
-
-\begin{enumerate}
-    \item \textbf{Contre-passer} l'écriture (création automatique d'une écriture inverse).
-    \item Saisir une \textbf{nouvelle écriture} avec les montants corrects.
-\end{enumerate}
-
-Cette procédure préserve l'audit-trail légal et permet le contrôle ultérieur des modifications.
-
-\subsection{Suppression d'une écriture}
-
-\textbf{Une écriture validée ne peut pas être supprimée.} Vous devez la contre-passer. Une écriture en brouillon peut être supprimée librement.
+Chaque écriture reçoit un numéro séquentiel par société et par exercice. \textbf{Cette
+numérotation peut comporter des trous} : supprimer une écriture laisse son numéro inoccupé,
+et supprimer la dernière écriture saisie fait réattribuer son numéro à la suivante. C'est une
+raison de plus de préférer la contre-passation à la suppression.
 
 \subsection{Recherche d'écritures}
 
@@ -1417,7 +1419,7 @@ transactions à rapprocher) est prévu mais pas encore disponible.
 
 \subsection{Mes écritures ne se balancent pas, que faire ?}
 
-Vérifiez que la somme des débits égale exactement la somme des crédits (à 1 centime près). Kesh refuse de valider une écriture déséquilibrée. Si vous avez un écart d'arrondi sur de la TVA, utilisez un compte d'écart d'arrondi (typiquement 6997 ou 7997).
+Vérifiez que la somme des débits égale exactement la somme des crédits (à 1 centime près). Kesh refuse d'enregistrer une écriture déséquilibrée. Si vous avez un écart d'arrondi sur de la TVA, utilisez un compte d'écart d'arrondi (typiquement 6997 ou 7997).
 
 \subsection{Mon QR Bill ne s'affiche pas correctement, que faire ?}
 
@@ -1461,8 +1463,13 @@ Utilisez l'\emph{Export ZIP de souveraineté} (cf. section dédiée). Le format 
 Selon l'action :
 
 \begin{itemize}
-    \item Écriture brouillon : suppression libre.
-    \item Écriture validée : contre-passation (création d'une écriture inverse).
+    \item Écriture, exercice ouvert : modification ou suppression possible (rôles
+          administrateur et comptable). \textbf{Préférez la contre-passation} --- saisir
+          l'écriture inverse --- si vos livres doivent rester opposables : la correction
+          reste alors visible.
+    \item Écriture, exercice clôturé : ni modification ni suppression. Il faut rouvrir
+          l'exercice (administrateur, avec motif) ou passer une écriture sur l'exercice
+          courant.
     \item Facture validée : passage en avoir + génération d'une nouvelle facture.
     \item Rapprochement bancaire : déliaison (\emph{Délier} sur la transaction).
 \end{itemize}
@@ -1484,7 +1491,7 @@ L'\texttt{audit\_log} garde toujours la trace de l'action originale ET de l'acti
 \begin{itemize}
     \item Importer les relevés bancaires de la semaine.
     \item Réconcilier les nouveaux mouvements (acceptation des propositions auto + manuelle pour le reste).
-    \item Valider les écritures en brouillon.
+    \item Relire les écritures saisies dans la semaine.
     \item Émettre les factures de la semaine.
 \end{itemize}
 
