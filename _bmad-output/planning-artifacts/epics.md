@@ -1360,12 +1360,12 @@ L'utilisateur peut attacher des justificatifs aux écritures, lettrer des écrit
 
 **Critères d'acceptation :**
 
-- **Given** deux ou plusieurs écritures, **When** lettrage, **Then** les écritures sont marquées avec un code de lettrage commun (FR85)
+- **Given** **exactement DEUX lignes** d'écriture, **When** lettrage, **Then** les deux lignes sont marquées d'une référence de lettrage commune (FR85). ⚠️ *« deux ou plusieurs » corrigé le 2026-08-25 : **D2** borne à un lettrage = une facture = un règlement — ni partiel, ni groupé. Le jumeau de cette ligne avait été corrigé une passe plus tôt, celle-ci non : c'est le mode d'échec que la § Propagation post-patch décrit.*
 - **Given** écritures lettrées, **When** affichage, **Then** le code de lettrage est visible et les écritures liées sont identifiables
 - **Given** écritures lettrées dans un exercice ouvert, **When** délettrage, **Then** le lien de lettrage est supprimé (FR86)
 - **Given** exercice clôturé, **When** tentative de délettrage, **Then** refus (cohérent avec l'immutabilité post-clôture)
 - **And** le lettrage aide à identifier les factures non payées et les paiements non affectés
-- **And** schéma: colonne lettering_code sur journal_entry_lines (nullable, même code = même lettrage)
+- **And** schéma: table `letterings` (`company_id`, `seq`, `code`, `created_at`, `created_by`) + FK nullable `lettering_id` sur `journal_entry_lines` — deux lignes portant la même référence sont lettrées ensemble. ⚠️ *Arbitrage du 2026-08-25 : la colonne `lettering_code` initialement prescrite a été ÉCARTÉE — `journal_entry_lines` n'a pas de `company_id`, donc aucune contrainte d'unicité scopée n'y était possible, et une contrainte sur le code y aurait interdit que deux lignes le partagent. Cf. `15-1a-socle-lettrage.md`.*
 
 ### Story 14.3 : Versioning parseurs, modèles & manuels
 

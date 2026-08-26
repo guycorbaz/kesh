@@ -2,244 +2,205 @@
 
 ## Status
 
-draft
+split
 
-## Story
+⛔ **CORPS VIDÉ — cette fiche ne contient plus ni décisions, ni critères, ni tâches.** Elle
+ne garde que les pointeurs vers ses trois moitiés et l'historique des passes qui ont conduit
+au découpage. *(La définition du statut `split` l'impose, et le précédent de la Story 17-2 —
+démêlé quatre passes durant — dit ce que coûte un corps complet laissé derrière un split.)*
 
-**As a** indépendant ou fiduciaire qui tient ses comptes dans Kesh,
-**I want** rapprocher une créance de son règlement et voir d'un coup d'œil ce qui reste ouvert sur un compte client ou fournisseur,
-**so that** je puisse relancer les bons débiteurs, justifier le solde d'un compte, et clore un exercice en sachant ce qu'il porte.
+## Les trois sous-stories
 
-Couvre **FR85** (lettrer) et **FR86** (délettrer). Première story de l'**Epic 15**, passée
-en tête au kickoff sur l'arbitrage de Guy : *« le lettrage est indispensable à la mise en
-production »*.
-
-## Contexte — ce qui existe, et ce qui manque vraiment
-
-⚠️ **Trois rapprochements sont déjà en place, et le relevé au sol a changé la question que
-cette story doit résoudre.**
-
-| dispositif | ce qu'il lie | où |
+| | fiche | ce qu'elle porte |
 |---|---|---|
-| Facture ↔ écriture de vente | la pièce et son écriture | `invoices.journal_entry_id` |
-| Transaction bancaire ↔ écriture | l'encaissement importé et son écriture | `bank_transactions.matched_entry_id`, `.status` |
-| Marqueur de paiement | une facture réputée payée | `invoices.paid_at` |
+| **15-1a** | `15-1a-socle-lettrage.md` | **Socle** : la marque, sa portée société, son unicité sous concurrence, et son **cycle de vie face aux chemins d'écriture existants** — c'est là que tombent les deux HIGH de la passe 3 |
+| **15-1b** | `15-1b-vue-lignes-ouvertes.md` | **La vue « ce qui reste ouvert »** et sa relation aux dispositifs qui lisent déjà `paid_at` — balance âgée, relances, et les deux écritures d'une facture fournisseur |
+| **15-1c** | `15-1c-proposition-ecran.md` | **Le moteur de proposition et l'écran**, avec la frontière énoncée pour l'utilisateur |
 
-Et surtout : **`accept_one_invoice` (`reconciliation.rs:1096-1206`) apparie déjà transaction
-bancaire ↔ facture, propose, fait valider, puis marque la facture payée.** Le chemin
-« facture réglée par virement importé » est donc **entièrement couvert** — et par le geste
-même qu'on attendait du lettrage.
+⚠️ **L'ordre n'est pas indifférent** : 15-1a est un **socle** que les deux autres supposent.
+15-1b lit la marque que 15-1a pose ; 15-1c la pose depuis un écran.
 
-**Ce qui reste sans réponse aujourd'hui**, et qui est l'objet de cette story :
+## Pourquoi le découpage
 
-- un règlement **hors import bancaire** — espèces, compensation, virement non importé —
-  ne rapproche rien : la facture reste `paid_at IS NULL` sauf saisie manuelle ;
-- les comptes **fournisseurs** n'ont aucun équivalent de ce mécanisme ;
-- deux **écritures manuelles** qui se soldent (acompte puis facture) ne se relient pas ;
-- et **aucun écran ne répond à « qu'est-ce qui reste ouvert sur ce compte ? »**.
+La spécification a subi **trois passes de `validate` sans converger** :
 
-`lettering_code` est **absent du dépôt** — 0 occurrence sur `crates/`. Tout est à
-construire, rien à défaire.
+| passe | modèle | sévérité maximale |
+|---|---|---|
+| relecture d'auteur (hors protocole) | Opus | HIGH |
+| passe 1 | Sonnet | HIGH |
+| passe 2 | Haiku | MEDIUM |
+| **passe 3** | **Opus** | **HIGH** ⛔ |
 
-## Décisions
+La remontée `MEDIUM → HIGH` déclenche le **critère de non-convergence** de la § *Règle de
+splitting préventif* — qui vise la sévérité qui stagne ou régresse, et non la durée. Décision
+prise par le Project Lead le 2026-08-25.
 
-### D1 — Le lettrage porte sur la LIGNE, et l'argument n'est pas le confort futur
+⚠️ **Ce que les trois passes ont appris, et qui vaut au-delà de cette story** : les passes 1
+et 2 ont relu la spec **contre elle-même et contre le schéma**. Aucune n'a suivi les **chemins
+de code qui écrivent, effacent ou soldent** les lignes que le lettrage prétend porter — et
+les quatre HIGH de la passe 3 étaient tous là.
 
-`epics.md` prescrit `lettering_code` sur `journal_entry_lines`. La question s'est posée de
-le porter sur l'écriture, puisque D2 borne à un appariement 1↔1.
+## Décisions restées ouvertes au moment du split
 
-⚠️ **C'est la ligne, et pour une raison de fond : le lettrage porte sur un COMPTE.** Une
-écriture de vente touche le compte client, un compte de produit et un compte de TVA. Dire
-« cette écriture est lettrée » n'a aucun sens comptable — ce qui est soldé, c'est la
-**ligne au compte client**, pas l'écriture entière. Un code posé sur l'écriture rendrait
-d'ailleurs la vue « ce qui reste ouvert **sur le compte 1100** » impossible à calculer sans
-retrouver la ligne concernée.
+Elles sont reportées **dans la sous-story qui les porte**, avec leurs conduites possibles :
 
-Le fait que ce niveau serve aussi le jour où l'on rouvrira le partiel ou le groupé est un
-bénéfice, **pas la justification**.
-
-### D2 — Un lettrage, une facture, un règlement
-
-Arbitrage de Guy. Ni paiement **partiel** (une facture réglée en plusieurs fois), ni
-règlement **groupé** (un virement pour plusieurs factures).
-
-⚠️ **Ce que cette borne coûte, et il faut que l'utilisateur le sache** : les factures
-relevant de ces deux cas resteront affichées **ouvertes**, indéfiniment. Rien ne se perd en
-silence — elles sont visibles, c'est même tout le propos de l'écran — mais un utilisateur
-qui ne comprend pas *pourquoi* une facture manifestement payée reste ouverte perdra
-confiance dans la vue. **Le manuel doit le dire, et l'écran devrait l'expliquer là où le cas
-se présente.**
-
-Le règlement groupé est **courant** chez un client qui reçoit plusieurs factures par mois :
-c'est le premier candidat à la réouverture du périmètre.
-
-### D3 — Lettrer sur un exercice clôturé : OUI. Délettrer : NON
-
-Le lettrage **ne modifie aucun montant** : il note qu'une créance est soldée. Il n'entre
-donc pas en conflit avec l'immuabilité post-clôture, et c'est **ce qui rend le lettrage à
-cheval réellement possible** — une facture de décembre payée en février se lettre après la
-clôture de l'exercice.
-
-Le délettrage reste refusé sur exercice clôturé (`epics.md`).
-
-⚠️ **La justification par l'ordre des opérations ne tient pas, et il faut l'écrire pour que
-personne ne la ressorte** : « ne clôturer que lorsqu'il n'y a plus d'écritures à passer »
-ne suffit pas, parce qu'**une créance client ouverte au 31.12 est normale** — elle figure
-au bilan. Attendre que tout soit réglé reviendrait à ne jamais clôturer. C'est D3, et elle
-seule, qui rend le cas à cheval praticable.
-
-### D4 — « Ouvert » signifie *ni lettré ni marqué payé*
-
-⚠️ **Le piège central de cette story, et il ne se voit qu'en connaissant D1 du plan
-d'epic.** Une facture réglée par la réconciliation porte `paid_at` **sans** être lettrée.
-Un écran qui ne regarderait que `lettering_code` l'afficherait **ouverte** — il mentirait
-précisément là où il doit informer, et sur le chemin le plus fréquent.
-
-La définition est donc : **une ligne est ouverte si elle n'est ni lettrée, ni portée par une
-facture marquée payée**. C'est un critère d'acceptation, pas un détail d'implémentation.
-
-### D5 — Kesh propose, l'utilisateur valide
-
-Arbitrage de Guy, conforme à la règle du dépôt *« un appariement automatique propose, il ne
-crée jamais »*. Aucun lettrage ne s'écrit sans validation humaine.
-
-**Les critères de proposition se reprennent de la réconciliation plutôt que de s'inventer**
-— ils y sont éprouvés depuis l'Epic 8 :
-
-| critère | valeur chez la réconciliation |
+| décision | fiche |
 |---|---|
-| statut de la facture | `status = 'validated'` |
-| non déjà réglée | `paid_at IS NULL` |
-| fenêtre de dates | ±`WINDOW_DAYS` = **30 jours** |
-| montant | égalité à `amount_tolerance` près |
-
-⚠️ **Ne PAS créer un second jeu de critères.** Deux mécanismes de proposition qui divergent
-donneraient des suggestions différentes sur le même cas, et l'utilisateur n'aurait aucun
-moyen de savoir lequel croire.
-
-### D6 — Écran dédié, et sa frontière avec la réconciliation doit être lisible
-
-Arbitrage de Guy, modèle Bexio.
-
-⚠️ **Risque réel** : cet écran ressemblera à celui de la réconciliation, qui propose déjà
-des appariements. Deux écrans voisins qui font des choses différentes se confondent. La
-distinction doit être énoncée **pour l'utilisateur**, pas seulement dans le code :
-
-- **Réconciliation bancaire** : « j'ai importé mon relevé, à quoi correspondent ces
-  mouvements ? » — part de la **banque** ;
-- **Lettrage** : « qu'est-ce qui reste ouvert sur ce compte, et qu'est-ce qui le solde ? » —
-  part du **compte**.
-
-## Critères d'acceptation
-
-**AC1** (porte **D1**) — Une colonne `lettering_code` (nullable) est ajoutée à
-`journal_entry_lines` — **la ligne, non l'écriture**. Deux lignes portant le même code sont
-lettrées ensemble.
-
-**AC2** — Depuis l'écran dédié, l'utilisateur choisit un compte et voit ses lignes
-**ouvertes**, au sens de **D4** : ni lettrées, ni portées par une facture marquée payée.
-
-**AC3** — ⚠️ Une facture réglée par la **réconciliation bancaire** n'apparaît **pas** comme
-ouverte, bien qu'elle ne soit pas lettrée. *(Test explicite : c'est le piège de D4.)*
-
-**AC3-bis** — ⚠️ **La règle vaut pour les DEUX tables de factures.** *(Relevé en
-relecture.)* `invoices` et `supplier_invoices` sont **deux tables distinctes**, chacune avec
-son propre `paid_at` — vérifié au sol. Or **D1 met explicitement les comptes fournisseurs
-dans le périmètre** : une définition de « ouvert » qui ne lirait que `invoices.paid_at`
-laisserait **la moitié du périmètre annoncé** afficher comme ouvertes des factures
-fournisseurs déjà réglées. Un test par table.
-
-**AC4** — Kesh **propose** des rapprochements selon les critères de **D5**, repris de la
-réconciliation. Aucun lettrage n'est écrit sans validation explicite (**D5**).
-
-**AC5** — L'utilisateur peut lettrer deux lignes manuellement, sans proposition.
-
-**AC6** — Le lettrage est **refusé** si les deux lignes ne portent pas sur le **même
-compte**, ou si leurs sens (débit/crédit) ne s'opposent pas.
-
-**AC6-bis** — ⚠️ Le lettrage est **refusé si les deux montants ne sont pas égaux**.
-*(Relevé en relecture — la spec ne l'imposait nulle part.)* **D2 exclut le paiement
-partiel** : lettrer une créance de 1000 avec un règlement de 300 prétendrait qu'elle est
-soldée, et **ferait mentir la vue qui est tout l'objet de cette story**. Tant que le partiel
-est hors périmètre, l'égalité est la condition qui rend le lettrage véridique — ce n'est pas
-une restriction technique mais la garantie du sens.
-
-⚠️ **Le message de refus doit nommer la cause** — *« les montants diffèrent ; le lettrage
-partiel n'est pas encore géré »* — sinon l'utilisateur conclut à un défaut.
-
-**AC7** — Le délettrage est possible tant que **les deux** exercices concernés sont ouverts,
-et **refusé** dès que l'un est clôturé (**D3**).
-
-**AC8** — Le lettrage est **autorisé** même si l'un des exercices est clôturé (**D3**), y
-compris à cheval sur deux exercices.
-
-**AC9** — Le code de lettrage est **visible** sur la ligne, dans le détail d'écriture et
-dans l'écran dédié ; les lignes partageant un code sont identifiables entre elles.
-
-**AC10** — ⚠️ L'écran indique **pourquoi** une facture manifestement réglée peut rester
-ouverte : paiement partiel ou règlement groupé, hors périmètre (**D2**). Sans cela, la vue
-paraît fausse là où elle est seulement bornée.
-
-**AC11** — ⚠️ **Le code de lettrage est engendré par le serveur, et sa portée est la
-société.** *(Relevé en relecture : la spec disait « deux lignes portant le même code sont
-lettrées ensemble » sans dire d'où vient le code.)* Deux sociétés doivent pouvoir porter le
-même code sans se voir ni se percuter. **Un compteur non scopé serait un défaut de
-multi-tenant** — le dépôt en a déjà payé un (KF-002), et c'est exactement la classe d'erreur
-qu'une spécification muette invite à commettre. Le format est libre ; sa **portée** ne l'est
-pas.
-
-**AC12** — ⚠️ **Une écriture dont une ligne est lettrée ne se supprime pas en laissant un
-code orphelin.** *(Relevé en relecture : `delete_journal_entry` existe —
-`journal_entries.rs:631`.)* Sans garde, supprimer l'écriture d'encaissement laisserait la
-ligne de créance **lettrée donc réputée soldée**, alors que sa contrepartie n'existe plus :
-la facture disparaîtrait de la vue des ouverts **en restant impayée**. C'est un défaut muet,
-et du genre le plus coûteux — il fausse le solde sans rien signaler.
-
-Deux conduites possibles, à trancher à l'implémentation : **refuser** la suppression d'une
-écriture lettrée (cohérent avec le refus de délettrage après clôture), ou **délettrer
-automatiquement** la contrepartie. ⚠️ La seconde ne vaut que si l'exercice est ouvert —
-sinon elle contournerait AC7 par un chemin détourné.
-
-## Tasks
-
-- [ ] **T1** — Migration : `lettering_code` sur `journal_entry_lines`, nullable, indexée.
-      ⚠️ `ADD COLUMN` nullable = **non-breaking**, donc pas de bump `min_required` (P1) ;
-      ligne d'audit d'idempotence **obligatoire** (P5) ; triage `POST_RESTORE_BACKFILLS`
-      (P7) — cette migration n'écrit **aucune donnée**, donc exemption avec justification.
-- [ ] **T2** — Repository : lettrer, délettrer, lister les lignes ouvertes d'un compte.
-      ⚠️ La requête « ouvertes » implémente **D4** — la jointure sur `invoices.paid_at` en
-      fait partie.
-- [ ] **T3** — Moteur de proposition, **réutilisant les critères de la réconciliation**
-      (D5). Ne pas dupliquer : extraire si nécessaire.
-- [ ] **T4** — Routes : `POST` lettrage, `DELETE` délettrage, `GET` lignes ouvertes.
-      Garde de clôture selon **D3** — asymétrique, et c'est délibéré.
-- [ ] **T5** — Écran dédié (**D6**), avec la frontière énoncée pour l'utilisateur.
-- [ ] **T6** — Tests : **AC3 et AC3-bis** (le piège de D4, sur les DEUX tables),
-      **AC6-bis** (égalité des montants) et **AC7/AC8** (l'asymétrie de clôture) **en
-      priorité** — ce sont les endroits où une implémentation plausible se trompe.
-- [ ] **T9** — Portée du code de lettrage (**AC11**) et garde sur la suppression d'une
-      écriture lettrée (**AC12**). ⚠️ Les deux sont nés d'une relecture, pas de la spec
-      initiale : ils manquaient tous les deux.
-- [ ] **T7** — i18n : toutes les clés dans les **quatre** locales dès l'écriture. Les six
-      gardes de l'Epic 23 le vérifient, et l'allowlist est **vide** — une clé manquante
-      rougit au gate.
-- [ ] **T8** — Manuel utilisateur : ce que le lettrage fait, et **ce qu'il ne fait pas
-      encore** (D2).
-
-## Dev Notes
-
-⚠️ **Le sélecteur E2E ne se fige jamais sur un libellé** — `data-testid` sans exception. La
-garde livrée par #326 le vérifie, et son allowlist ne doit pas s'allonger.
-
-⚠️ **Gate `kesh-db` : complet, jamais ciblé.** Cette story touche une migration et un
-repository — les garde-fous P6 et P7 imposent le gate entier, et le précédent de la
-Story 16-1a (un test devenu muet, passant à vide) dit pourquoi.
-
-⚠️ **La base de gate se remet à zéro AVANT le gate**, sans se demander comment le run
-précédent s'est terminé (KF-039, #310).
-
+| Le porteur de la marque : colonne `lettering_code` ou table `letterings` | 15-1a |
+| Le sort de la marque quand une écriture est **modifiée** | 15-1a |
+| Ce que lettrer change pour la **balance âgée** et les **relances** | 15-1b |
+| Ce que la vue **prétend égaler** — le solde du compte, ou autre chose | 15-1b |
+| La portée de la garantie d'immuabilité sur exercice clos | 15-1b |
+| La **tolérance de montant** face aux frais bancaires | 15-1c |
+| La **fenêtre de dates**, qui écarte aujourd'hui la contre-passation | 15-1c |
 
 ## Change Log
+
+### Passe 3 de `validate` — 2026-08-25 (Opus, contexte frais)
+
+⛔ **LA SÉVÉRITÉ REMONTE : `MEDIUM` (passe 2) → `HIGH` (passe 3).** 4 HIGH, 4 MEDIUM,
+3 LOW. **Le critère de non-convergence de la § *Règle de splitting préventif* est
+DÉCLENCHÉ** — il vise précisément la sévérité qui stagne ou régresse, et non la durée. Le
+découpage est proposé plus bas ; **l'arbitrage revient au Project Lead**, pas à
+l'orchestrateur.
+
+**Pourquoi cette passe trouve ce que deux autres n'ont pas vu**, et la leçon vaut au-delà de
+cette story : les passes 1 et 2 ont relu la spec **contre elle-même et contre le schéma**.
+Aucune n'a suivi les **chemins de code qui écrivent, effacent ou soldent** les lignes que le
+lettrage prétend porter. Tout est là.
+
+**Deux findings mettent en cause les patches des passes précédentes — corrigés dans ce
+commit, car ils ne demandent aucun arbitrage :**
+
+⛔ **P3-5 (MEDIUM) — le moyen d'unicité inscrit en passe 2 était impossible ET cassait AC1.**
+La passe 2 proposait une contrainte `UNIQUE (company_id, lettering_code)`. Or
+`journal_entry_lines` **ne porte aucun `company_id`** (vérifié : zéro occurrence dans les
+migrations ; le scoping passe par jointure, `journal_entries.rs:1226` le documente). Et même
+portée par jointure, cette contrainte **interdirait ce qu'AC1 exige** — deux lignes lettrées
+ensemble portent le *même* code. C'est une régression franche du patch précédent, exactement
+le motif que la § A9 du `CLAUDE.md` a codifié ce matin.
+
+⛔ **P3-11 (LOW) — la référence « corrigée » en passe 1 était encore fausse.** P1-4 avait
+remplacé `1096-1206` par `1003-1328` : `accept_one_invoice` finit à **1313** (vérifié à
+l'`awk` sur les accolades de colonne 1) ; la ligne 1328 tombe dans le doc-comment
+d'`accept_one_split`. **Corriger une valeur fausse par une autre valeur fausse**, puis la
+propager aux trois sites, est le mode d'échec que la § *Recompter ses propres comptes rendus*
+décrit. Le chemin de crate manquait aussi — deux fichiers s'appellent `reconciliation.rs`.
+
+**Les quatre HIGH, qui appellent des DÉCISIONS et non des précisions — non patchés :**
+
+| | défaut | preuve au sol |
+|---|---|---|
+| **P3-1** | **Modifier une écriture détruit ses lignes** : `update` fait `DELETE FROM journal_entry_lines` puis réinsère (`journal_entries.rs:981`, dans `update` l. 805). Le code de lettrage est perdu, la contrepartie reste lettrée donc **réputée soldée**. AC12 n'a tranché que la *suppression* | le `DELETE` et la fonction, vérifiés |
+| **P3-2** | **La garde d'AC12 est posée au mauvais endroit** : AC12 cite la route `journal_entries.rs:631`, mais `invoices::delete` efface aussi l'écriture via `journal_entries::delete_in_tx` (`invoices.rs:1338`), et **aucune de ses trois gardes ne regarde le lettrage** | le second appelant, vérifié |
+| **P3-3** | **Lettrer ne calme ni la balance âgée ni les relances** : toutes deux ne lisent que `paid_at` (`aged_receivables.rs:127`, `dunning_eligibility.rs:87`) et `lettering` a **0 occurrence** dans tout le dépôt. On relancera un débiteur soldé — le défaut n'est pas muet, **il est adressé au client** | les deux SQL + le grep, vérifiés |
+| **P3-4** | **Le § *Contexte* est FAUX sur les fournisseurs** : ils ont `pay()`, un `settlement_type IN ('bank_transfer','internal_account')` — donc **le règlement hors import existe déjà** — et un `settlement_journal_entry_id` dédié. Une facture fournisseur payée porte **DEUX** écritures ; AC3-bis, qui dit « un test par table », en masque une et **laisserait la ligne de règlement ouverte à jamais** | migration `20260628000001`, l. 44-68 |
+
+**Quatre MEDIUM** : P3-5 (corrigé ci-dessus) ; **P3-6** — `paid_at` n'a aucune contrepartie
+comptable côté client (`invoices.rs:1923` : « **Ne crée AUCUNE écriture comptable** »), donc
+la vue ne peut pas « justifier le solde » comme le promet le *so that* ; **P3-7** — la
+fenêtre de 30 jours **tue le cas de contre-passation qu'AC4 exige nommément**, l'écriture
+d'annulation étant datée du jour ; **P3-8** — le canal `paid_at` n'a **aucune garde
+d'exercice**, si bien qu'un dé-marquage rouvre une ligne sur un exercice clos, ce qu'AC7
+interdit par l'autre canal.
+
+**Trois LOW** : P3-9 (l'export CSV a un header figé sans garde d'exhaustivité pour
+`journal_entry_lines`), P3-10 (l'exemption P7 demandée par T1 est **inutile** — le détecteur
+ne trie que les migrations qui écrivent des données, un `ADD COLUMN` n'est jamais atteint),
+P3-11 (corrigé).
+
+**Pistes réfutées** : multi-devise et arrondis (non rouverts, rien ne les contredit),
+l'allowlist i18n vide (**vraie**, `i18n-keys.test.ts:432`), le rejeu de backfill à l'import
+(sans objet), l'exercice rouvert (`fiscal_years::reopen` existe et ne casse pas AC7 — il en
+est la soupape), et D3 contre un verrou global (faux positif confirmé pour la deuxième fois).
+
+**Verdict : la spec n'est pas prête, et le défaut n'est plus de la précision mais de la
+DÉCISION.** Trois questions restent ouvertes, chacune produisant un résultat faux et
+silencieux si elle est laissée au développeur : le sort du code face aux chemins d'écriture
+existants (P3-1, P3-2) ; ce que le lettrage change pour la relance et la balance âgée
+(P3-3) ; et ce que la vue prétend égaler, sachant que client et fournisseur **ne sont pas
+symétriques** dans le code existant (P3-4, P3-6).
+
+**Découpage proposé, à arbitrer** : **(a)** la colonne, sa portée et son cycle de vie face
+aux chemins d'écriture existants — socle que les deux autres supposent ; **(b)** la vue « ce
+qui reste ouvert » et sa relation aux dispositifs qui lisent déjà `paid_at` ; **(c)** le
+moteur de proposition et l'écran.
+
+### Passe 2 de `validate` — 2026-08-25 (Haiku, contexte frais)
+
+**La sévérité décroît : `HIGH → MEDIUM`.** Aucun HIGH, un MEDIUM retenu, quatre LOW dont
+deux réfutés au sol. C'est une convergence **monotone**, pas une stagnation — le critère de
+split de la § *Règle de splitting préventif* n'est donc pas déclenché.
+
+**Ce que la passe cherchait en priorité** : les régressions de la passe 1, le motif mesuré du
+dépôt étant que sept passes sur huit trouvent un défaut du patch précédent. Elle a vérifié
+les quatre patches un par un et **n'en a trouvé aucune** — la séparation critères
+structurels / filtres facture tient, la tolérance est bien retirée des deux côtés, et les six
+décisions D1-D6 sont désormais toutes portées par au moins un critère.
+
+| | défaut | gravité | remède |
+|---|---|---|---|
+| **P2-1** | **AC12 disait « à trancher à l'implémentation »** — deux développeurs auraient produit deux comportements opposés sur le même critère | MEDIUM | **tranché : la suppression est REFUSÉE**, le délettrage automatique contournerait AC7 par un chemin détourné |
+| **P2-3** | **T6 omettait AC4 et AC13** — une liste de tests « prioritaires » incomplète se lit comme une couverture suffisante | LOW | les deux ajoutés |
+| **P2-4** | **AC13 confondait deux exigences** : le texte visible et le `data-testid`. Un `data-testid` ne satisfait pas D6 — il est invisible | LOW | scindée en (1) et (2) |
+| **P2-5** | **AC11 muette sur l'unicité sous CONCURRENCE** — deux lettrages simultanés pouvaient recevoir le même code | LOW | exigence ajoutée, moyen laissé libre |
+
+**Deux findings RÉFUTÉS au sol, et la réfutation vaut d'être écrite :**
+
+⚠️ **P2-2 (multi-devise) — réfuté.** La passe reprochait à la spec d'être muette sur la
+comparaison de montants en devises différentes. Vérification : **`journal_entry_lines` ne
+porte AUCUNE colonne de devise** — `debit` et `credit` sont des `DECIMAL(19,4)` nus
+(`20260412000001_journal_entries.sql`) — et le PRD ne contient pas une occurrence de
+« devise » ni de « currency ». Les seules colonnes `currency` du schéma sont dans les tables
+d'**import** (`bank_transactions`, `imported_supplier_invoices`) : elles décrivent la donnée
+entrante **avant** son écriture comptable. La comptabilité de Kesh est mono-devise ; deux
+lignes d'écriture sont par construction dans la même unité. **Le cas n'existe pas.**
+
+⚠️ **P2-6 (arrondis) — réfuté par le même relevé.** `DECIMAL(19,4)` est un type **exact**,
+pas un flottant : l'égalité stricte entre deux montants stockés est exacte. Le scénario
+avancé — « 1000.004 arrondi à 1000.01 » — suppose une précision que la colonne n'admet pas.
+
+Ces deux réfutations coûtent le temps de la vérification et l'épargnent au développeur : un
+patch appliqué sur un défaut inexistant aurait ajouté à la spec une règle de change qu'aucun
+schéma ne permet d'implémenter.
+
+La spec reste à **15 critères** (les remèdes amendent, ils n'ajoutent pas). **Verdict :
+convergence en cours, passe 3 due** — un MEDIUM subsiste au moment où la passe a rendu son
+rapport, et la § *Review Iteration Rule* impose de relancer tant qu'un finding dépasse LOW.
+
+### Passe 1 de `validate` — 2026-08-25 (Sonnet, contexte frais)
+
+**Première passe au sens de la § *Review Iteration Rule*** : contexte frais et modèle
+distinct de l'auteur de la spec (Opus). C'est ce que la relecture de la veille, menée par cet
+auteur, ne pouvait pas offrir.
+
+**Quatre findings, tous vérifiés au sol par l'orchestrateur avant application** — la
+discipline grep ground-truth vaut pour tous les modèles, pas seulement pour Haiku.
+
+| | défaut | gravité | remède |
+|---|---|---|---|
+| **P1-1** | **D5 reprenait les critères de la réconciliation en bloc**, dont `status = 'validated'` et `paid_at IS NULL` — deux filtres propres à `invoices`. Ils excluent **trois des quatre cas** que la story existe pour couvrir : fournisseurs (`supplier_invoices`), écritures manuelles (aucune facture), et facture annulée par avoir (`status = 'cancelled'`). Et `journal_entry_lines` ne porte **aucun** `invoice_id` : la jointure supposée n'existe pas | **HIGH** | D5 sépare les critères **structurels** (transposables) des **filtres facture** (hors sujet) ; **AC4** exige un test nommé par cas |
+| **P1-2** | **D5 et AC6-bis se contredisaient sur le montant** : tolérance de 5 centimes en proposition, égalité stricte en validation. Le système aurait **proposé ce qu'il refuse** | **HIGH** | égalité stricte des deux côtés ; ⚠️ la conséquence (frais bancaires jamais lettrables) est **nommée et laissée à l'arbitrage** |
+| **P1-3** | **D6 n'était nommée par aucun critère** — elle ne vivait que dans sa section et dans T5 | MEDIUM | **AC13** |
+| **P1-4** | `accept_one_invoice` cité `1096-1206` ; la fonction va de **1003 à 1328**, et l'`UPDATE … paid_at` qu'elle invoque est **hors** de la plage citée | LOW | référence corrigée ici **et aux deux autres sites** qui la copiaient |
+
+⚠️ **P1-3 est la sixième récidive du même geste** — une décision que ne porte aucun critère.
+La relecture de la veille avait corrigé ce défaut **pour D1** et l'avait laissé **pour D6**,
+dans le même fichier et le même passage. **Corriger un site n'est pas corriger le symptôme** :
+c'est exactement ce que la § *Propagation post-patch* du `CLAUDE.md` demande de greper, et le
+grep n'avait pas été fait sur « quelle décision n'est citée par aucun AC ».
+
+**Ce que la passe dit de la relecture précédente** : ses quatre défauts tenaient tous, aucun
+n'a été réfuté. Mais elle avait cherché ce qui **manquait** à la spec, non ce qu'elle
+**affirmait à tort** — et les deux HIGH d'aujourd'hui sont l'un et l'autre des affirmations
+fausses sur du code existant, qu'aucune relecture d'auteur ne remet en cause puisqu'elle les
+a écrites.
+
+**Un seul faux positif écarté** (D3 contre un verrou global de clôture) : la garde
+`FiscalYearClosed` est posée par fonction, pas par déclencheur — D3 reste réalisable.
+
+La spec passe de **14 à 15 critères**. **Verdict de la passe : non prête pour le
+développement.** Une passe 2, modèle différent et contexte frais, est due.
 
 ### Relecture critique — 2026-08-25
 

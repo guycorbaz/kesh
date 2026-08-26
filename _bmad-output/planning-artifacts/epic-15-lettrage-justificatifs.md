@@ -71,7 +71,7 @@ Les quatre questions ouvertes sont tranchées. Elles sont **normatives** pour la
 ### D1 — Le lettrage COMPLÈTE la réconciliation, il ne la remplace pas
 
 ⚠️ **Établi au sol avant l'arbitrage** : `accept_one_invoice`
-(`reconciliation.rs:1096-1206`) apparie déjà transaction bancaire ↔ facture, **propose et
+(`kesh-api/src/routes/reconciliation.rs:1003-1313`) apparie déjà transaction bancaire ↔ facture, **propose et
 fait valider**, puis pose `matched_entry_id`, `status = 'reconciled'` et `paid_at`. Le
 chemin « facture réglée par virement importé » est donc **entièrement couvert**, et par le
 geste même que Guy décrit pour le lettrage.
