@@ -833,6 +833,15 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/reports/journals",
             get(routes::reports::get_journal_report),
         )
+        // Story 24-1 : grand livre — l'extrait d'un compte.
+        //
+        // ⚠️ Le SEUL rapport SANS `fiscalYearId` : il franchit la borne
+        // d'exercice, sans quoi il ne concorderait pas avec le bilan, qui est
+        // cumulatif depuis l'origine. Ses params sont `from`/`to`.
+        .route(
+            "/api/v1/reports/general-ledger",
+            get(routes::reports::get_general_ledger),
+        )
         // Story 21-7 : balance âgée débiteurs — VUE JSON tous rôles (D-7b/D24).
         // L'export CSV est Comptable+ → monté dans `comptable_routes` (ci-dessous).
         .route(

@@ -30,16 +30,17 @@ use kesh_db::entities::journal_entry::Journal;
 use kesh_report::pdf::{ProjectExpensesPdfLabels, ProjectReturnPdfLabels, VatPdfLabels};
 use kesh_report::project_report::{ProjectPeriodMode, resolve_scope};
 use kesh_report::{
-    AgedReceivables, BalanceSheet, IncomeStatement, JournalReport, PdfContext,
-    ProjectExpensesReport, ProjectReturnReport, ReportPeriod, TrialBalance, VatReport,
-    generate_aged_receivables, generate_balance_sheet, generate_income_statement,
-    generate_journal_report, generate_project_expenses, generate_project_return,
-    generate_trial_balance, generate_vat_report, render_aged_receivables_csv,
-    render_balance_sheet_csv, render_balance_sheet_pdf, render_income_statement_csv,
-    render_income_statement_pdf, render_journal_report_csv, render_journal_report_pdf,
-    render_project_expenses_csv, render_project_expenses_pdf, render_project_return_csv,
-    render_project_return_pdf, render_trial_balance_csv, render_trial_balance_pdf,
-    render_vat_report_csv, render_vat_report_pdf,
+    AgedReceivables, BalanceSheet, GeneralLedger, IncomeStatement, JournalReport, LedgerOptions,
+    LedgerPeriod, PdfContext, ProjectExpensesReport, ProjectReturnReport, ReportPeriod,
+    TrialBalance, VatReport, generate_aged_receivables, generate_balance_sheet,
+    generate_general_ledger, generate_income_statement, generate_journal_report,
+    generate_project_expenses, generate_project_return, generate_trial_balance,
+    generate_vat_report, render_aged_receivables_csv, render_balance_sheet_csv,
+    render_balance_sheet_pdf, render_income_statement_csv, render_income_statement_pdf,
+    render_journal_report_csv, render_journal_report_pdf, render_project_expenses_csv,
+    render_project_expenses_pdf, render_project_return_csv, render_project_return_pdf,
+    render_trial_balance_csv, render_trial_balance_pdf, render_vat_report_csv,
+    render_vat_report_pdf,
 };
 use serde::Deserialize;
 use sqlx::MySqlPool;
@@ -59,6 +60,56 @@ pub struct ReportQuery {
     pub fiscal_year_id: i64,
     pub period_start: Option<NaiveDate>,
     pub period_end: Option<NaiveDate>,
+}
+
+/// Query params du grand livre.
+///
+/// ⚠️ **Aucun `fiscalYearId`, et c'est le propre de ce rapport** : le grand livre
+/// franchit la borne d'exercice, sans quoi il ne concorderait pas avec le bilan,
+/// qui est cumulatif depuis l'origine.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GeneralLedgerQuery {
+    pub from: NaiveDate,
+    pub to: NaiveDate,
+    /// Comptes demandés, séparés par des virgules. Absent ⇒ tous ceux qui ont un
+    /// mouvement ou un solde d'ouverture.
+    pub account_ids: Option<String>,
+    /// Rendre aussi les comptes sans mouvement **et** sans solde.
+    pub include_zero: Option<bool>,
+    pub offset: Option<i64>,
+    pub limit: Option<i64>,
+}
+
+impl GeneralLedgerQuery {
+    /// Découpe `accountIds`. Une entrée non numérique est un 400 : mieux vaut
+    /// refuser que rendre silencieusement le grand livre d'un autre périmètre.
+    fn parse_account_ids(&self) -> Result<Option<Vec<i64>>, AppError> {
+        let Some(raw) = self.account_ids.as_deref() else {
+            return Ok(None);
+        };
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Ok(None);
+        }
+        let mut ids = Vec::new();
+        for part in trimmed.split(',') {
+            let p = part.trim();
+            if p.is_empty() {
+                continue;
+            }
+            let id: i64 = p.parse().map_err(|_| {
+                AppError::Validation(format!("accountIds : « {p} » n'est pas un identifiant"))
+            })?;
+            if id <= 0 {
+                return Err(AppError::Validation(format!(
+                    "accountIds : « {p} » n'est pas un identifiant"
+                )));
+            }
+            ids.push(id);
+        }
+        Ok(if ids.is_empty() { None } else { Some(ids) })
+    }
 }
 
 /// Query params spécifiques au rapport journaux (avec `journal` optionnel).
@@ -203,6 +254,42 @@ pub async fn get_income_statement(
 }
 
 /// GET /api/v1/reports/trial-balance
+/// `GET /api/v1/reports/general-ledger` — l'extrait d'un ou plusieurs comptes.
+///
+/// Répond à la question que ni la balance ni le bilan ne savent traiter : **de
+/// quoi ce solde est-il fait ?**
+///
+/// ⚠️ Scoping : `company_id` est appliqué **dans les requêtes du générateur**, à
+/// la fois sur `accounts` et sur `journal_entries` — `journal_entry_lines` ne
+/// porte pas de `company_id`.
+pub async fn get_general_ledger(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Query(query): Query<GeneralLedgerQuery>,
+) -> Result<Json<GeneralLedger>, AppError> {
+    let period = LedgerPeriod::new(query.from, query.to)?;
+    let options = LedgerOptions {
+        account_ids: query.parse_account_ids()?,
+        include_zero: query.include_zero.unwrap_or(false),
+        offset: query.offset.unwrap_or(0),
+        limit: query.limit,
+    };
+
+    let report =
+        generate_general_ledger(&state.pool, current_user.company_id, &period, &options).await?;
+
+    emit_ledger_audit(
+        &state.pool,
+        current_user.user_id,
+        period.from,
+        period.to,
+        options.account_ids.as_deref(),
+    )
+    .await;
+
+    Ok(Json(report))
+}
+
 pub async fn get_trial_balance(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -1188,6 +1275,45 @@ fn validate_fiscal_year_id(fiscal_year_id: i64) -> Result<(), AppError> {
 /// `emit_report_audit` (Story 9-1) + `emit_report_export_audit` (Story 9-2a).
 /// Référence pour futures fonctions audit Epic 10+ (`vat.calculated`,
 /// `payment.created`, etc.).
+/// Trace la consultation du grand livre.
+///
+/// Audit distinct de [`emit_report_audit`] : celui-ci exige un `fiscal_year_id`,
+/// que le grand livre n'a pas — il franchit les exercices.
+async fn emit_ledger_audit(
+    pool: &MySqlPool,
+    user_id: i64,
+    from: NaiveDate,
+    to: NaiveDate,
+    account_ids: Option<&[i64]>,
+) {
+    let result = async {
+        let mut tx = pool.begin().await.map_err(kesh_db::errors::map_db_error)?;
+        kesh_db::repositories::audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry::user(
+                user_id,
+                "report.generated",
+                "report",
+                AUDIT_ENTITY_ID_NONE,
+                Some(serde_json::json!({
+                    "report_type": "general-ledger",
+                    "period_start": from.format("%Y-%m-%d").to_string(),
+                    "period_end": to.format("%Y-%m-%d").to_string(),
+                    "account_ids": account_ids,
+                })),
+            ),
+        )
+        .await?;
+        tx.commit().await.map_err(kesh_db::errors::map_db_error)?;
+        Ok::<(), kesh_db::errors::DbError>(())
+    }
+    .await;
+
+    if let Err(e) = result {
+        tracing::warn!(error = %e, "audit report.generated (general-ledger) non enregistré");
+    }
+}
+
 async fn emit_report_audit(
     pool: &MySqlPool,
     user_id: i64,
