@@ -1177,15 +1177,21 @@ Si plusieurs écritures sont en brouillon issues des règles d'affectation, coch
 
 \keshscreenshot{rapport-bilan.png}{Bilan : actifs, passifs et capitaux propres à une date donnée.}  % TODO capture: rapport bilan
 
-\emph{Mensuel} → \emph{Rapports} → \emph{Bilan}. Affiche les actifs et passifs au format légal Art. 959 et 959a CO :
+\emph{Mensuel} → \emph{Rapports} → \emph{Bilan}. Affiche, à une date donnée, les comptes
+d'actif et de passif à solde non nul, \textbf{triés par numéro de compte}, avec les totaux
+Actifs, Passifs et Capitaux propres.
 
-\begin{itemize}
-    \item Actif circulant : trésorerie, créances, stocks.
-    \item Actif immobilisé : immobilisations corporelles, incorporelles, financières.
-    \item Capitaux étrangers court terme.
-    \item Capitaux étrangers long terme.
-    \item Capitaux propres : capital, réserves, bénéfice / perte de l'exercice.
-\end{itemize}
+\begin{keshwarning}[title=\faExclamationTriangle\ Le bilan n'est pas encore structuré selon l'art.~959a CO]
+Kesh ne regroupe pas les comptes en \textbf{actif circulant} et \textbf{actif immobilisé}, ni
+les dettes en \textbf{capitaux étrangers à court terme} et \textbf{à long terme}. Le plan
+comptable porte bien une hiérarchie de comptes, mais les rapports ne l'utilisent pas encore.
+
+\medskip
+\noindent Seule la partition \textbf{capitaux propres / dettes} est faite, et elle l'est
+correctement (voir ci-dessous). Pour des comptes annuels à remettre à un tiers --- fiduciaire,
+organe de révision, banque ---, la mise en forme normée reste donc à produire hors de Kesh, à
+partir des chiffres qu'il fournit.
+\end{keshwarning}
 
 La section \emph{Capitaux propres} est présentée \textbf{séparément des dettes} et \textbf{regroupée par rôle} de compte (capital, autres fonds propres, bénéfice / perte reporté), dans l'ordre légal de l'Art. 959a CO. Kesh distingue nettement deux grandeurs qu'il ne faut jamais confondre :
 
@@ -1280,7 +1286,7 @@ Tous les rapports peuvent être :
 
 \begin{itemize}
     \item \textbf{Visualisés en HTML} dans l'interface (interactif, tri, filtre).
-    \item \textbf{Exportés en PDF} (format paginé, conforme structure Art. 959/959a/959b).
+    \item \textbf{Exportés en PDF} (format paginé).
     \item \textbf{Exportés en CSV} (analyse Excel ou import dans un autre outil).
 \end{itemize}
 
