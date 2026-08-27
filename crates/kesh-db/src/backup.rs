@@ -37,6 +37,11 @@ pub const TABLES_TO_TRUNCATE: &[&str] = &[
     "payment_batch_items", // Story 12.3 — enfant de payment_batches (CASCADE) + supplier_invoices (RESTRICT) → avant eux.
     "invoice_lines",
     "invoice_reminders", // Story 21-5a (#231) — enfant de invoices (CASCADE) + companies (RESTRICT) → avant `invoices`.
+    // Story 24-2 (#371) — enfant de invoices (CASCADE) + companies (RESTRICT) +
+    // journal_entries (RESTRICT) → doit passer AVANT les trois. En particulier
+    // avant `journal_entry_lines`/`journal_entries` : la FK y est RESTRICT
+    // (une écriture référencée ne se supprime pas, elle se contre-passe).
+    "invoice_settlements",
     "journal_entry_lines",
     "projects", // Story 19-1 (Epic 19) — enfant de companies + self-ref parent_id (RESTRICT) ; référencé par journal_entry_lines.project_id → APRÈS journal_entry_lines, AVANT companies.
     "credit_notes", // Story 12.1 — enfant de invoices/journal_entries/contacts (RESTRICT) → avant eux.

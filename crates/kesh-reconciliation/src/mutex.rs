@@ -1,8 +1,28 @@
 //! Advisory lock per bank account (Story 8-4 §mutex-account).
 //!
 //! Helper [`with_account_lock`] acquiert un advisory lock MariaDB
-//! `GET_LOCK('reconcile:{company_id}:{bank_account_id}', timeout_secs)`
+//! `GET_LOCK('reconcile:{base}:{company_id}:{bank_account_id}', timeout_secs)`
 //! pour serializer les flows accept/reject sur le même compte bancaire.
+//!
+//! ⚠️ **Le nom de la base fait partie de la clé, et il n'y est pas par
+//! esthétique — c'est la cause racine de la KF-038 (#228).**
+//!
+//! `GET_LOCK` est **global au serveur MariaDB**, jamais borné à la base
+//! courante : un verrou pris depuis une base est vu, et bloque, depuis toute
+//! autre base du même serveur. Vérifié au sol le 2026-08-27, deux bases
+//! distinctes, une session tenant le verrou — la seconde ne peut pas
+//! l'acquérir et attend le timeout entier.
+//!
+//! En production la conséquence est nulle : une seule base, donc
+//! `{company_id}:{bank_account_id}` suffisait déjà à identifier un compte. Mais
+//! **chaque test `#[sqlx::test]` crée une base éphémère neuve, où les
+//! `AUTO_INCREMENT` repartent à 1** : tous les tests de réconciliation se
+//! disputaient donc le même `reconcile:1:1`, sur le même serveur, en parallèle.
+//! D'où des `409 AccountLocked` sporadiques, d'autant plus fréquents que le
+//! plafond de threads est haut et que le verrou est tenu longtemps.
+//!
+//! Le préfixe rend la clé unique par base **sans changer quoi que ce soit en
+//! production**, où `DATABASE()` est constant.
 //!
 //! **Choix vs alternatives** :
 //! - ❌ `SELECT ... FOR UPDATE` row-level : sémantique floue, plus
@@ -31,7 +51,7 @@
 
 use crate::errors::ReconciliationError;
 
-/// Acquiert un advisory lock MariaDB sur `(company_id, bank_account_id)`,
+/// Acquiert un advisory lock MariaDB sur `(base, company_id, bank_account_id)`,
 /// exécute la closure `f` dans la transaction sous le lock, puis
 /// libère explicitement le lock.
 ///
@@ -53,7 +73,17 @@ pub async fn with_account_lock<F, T>(
 where
     F: AsyncFnOnce(&mut sqlx::Transaction<'_, sqlx::MySql>) -> Result<T, ReconciliationError>,
 {
-    let lock_name = format!("reconcile:{company_id}:{bank_account_id}");
+    // ⚠️ `DATABASE()` et non un identifiant applicatif : c'est la seule chose
+    // qui distingue deux bases éphémères sur le même serveur (cf. l'en-tête du
+    // module, KF-038 #228). Le `COALESCE` couvre le cas — théorique ici, la
+    // transaction venant d'un pool configuré sur une base — d'une session sans
+    // base courante : on retombe alors sur l'ancienne clé plutôt que de
+    // fabriquer un nom contenant `NULL`.
+    let db_name: String = sqlx::query_scalar("SELECT COALESCE(DATABASE(), '')")
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(ReconciliationError::Database)?;
+    let lock_name = format!("reconcile:{db_name}:{company_id}:{bank_account_id}");
     // H5 Pass 1 — i32 binding explicite (MariaDB attend signed int) +
     // distinguer NULL vs 0 vs valeur inattendue.
     let acquired: Option<i32> = sqlx::query_scalar("SELECT GET_LOCK(?, ?)")

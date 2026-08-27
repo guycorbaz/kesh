@@ -229,7 +229,7 @@ async fn backfill_skips_archived_accounts(pool: MySqlPool) {
 // Ce test n'exerce PAS le chemin des migrations — il vérifie qu'une colonne
 // générée est absente du manifeste de backup. Il vit dans un fichier exempté
 // (les deux tests de backfill à fenêtre, eux, gèrent leurs migrations), et
-// l'exemption étant au grain du FICHIER, il payait les 61 migrations à
+// l'exemption étant au grain du FICHIER, il payait toutes les migrations à
 // perpétuité sans que rien ne le signale. *(Relevé en passe 1 de revue de
 // code ; la spec avait tranché « reste exclu » sans distinguer ce cas.)*
 #[sqlx::test(migrations = "./test-schema")]

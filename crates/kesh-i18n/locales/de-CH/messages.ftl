@@ -622,6 +622,9 @@ due-dates-result-suffix = Ergebnis(se)
 payment-status-paid = Bezahlt
 payment-status-unpaid = Unbezahlt
 payment-status-overdue = Überfällig
+payment-status-partial = Teilweise bezahlt
+invoice-amount-settled = Bereits bezahlt
+invoice-amount-due = Offener Betrag
 
 invoice-mark-paid-button = Als bezahlt markieren
 invoice-mark-paid-dialog-title = Rechnung als bezahlt markieren

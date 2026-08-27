@@ -622,6 +622,9 @@ due-dates-result-suffix = risultato/i
 payment-status-paid = Pagata
 payment-status-unpaid = Non pagata
 payment-status-overdue = In ritardo
+payment-status-partial = Parzialmente pagata
+invoice-amount-settled = Già pagato
+invoice-amount-due = Saldo dovuto
 
 invoice-mark-paid-button = Segna come pagata
 invoice-mark-paid-dialog-title = Segna la fattura come pagata

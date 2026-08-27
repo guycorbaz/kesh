@@ -81,6 +81,16 @@ export interface InvoiceResponse {
 	dunningPausedNote: string | null;
 	/** Calculé backend (P6 review pass 2). Source unique de vérité pour le badge « en retard ». */
 	isOverdue: boolean;
+	/**
+	 * Story 24-2 (#371) — ce qui a été réglé, et ce qui reste dû.
+	 *
+	 * ⚠️ **`null` veut dire « non calculé », jamais « zéro ».** Seule la fiche
+	 * facture les renseigne : ailleurs, le backend ne lit pas les règlements, et
+	 * rendre `0` affirmerait qu'aucun règlement n'existe. L'absence se lit, le
+	 * zéro ment.
+	 */
+	amountSettled: string | null;
+	amountDue: string | null;
 	version: number;
 	createdAt: string;
 	updatedAt: string;

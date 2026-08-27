@@ -27,8 +27,8 @@ use kesh_db::errors::DbError;
 use kesh_db::repositories::reconciliation::UnpaidInvoiceCandidate;
 use kesh_db::repositories::{
     accounts as accounts_repo, audit_log, bank_accounts, contacts as contacts_repo, fiscal_years,
-    invoices, journal_entries, projects, reconciliation as reconciliation_repo,
-    reconciliation_rules,
+    invoice_settlements, invoices, journal_entries, projects,
+    reconciliation as reconciliation_repo, reconciliation_rules,
 };
 use kesh_reconciliation::{
     MatchScore, ReconciliationError, SplitDetail, build_journal_entry_for_counterparty,
@@ -1134,7 +1134,7 @@ async fn accept_one_invoice(
             })),
         });
     }
-    let journal_entry_id = invoice.journal_entry_id.unwrap();
+    let sale_entry_id = invoice.journal_entry_id.unwrap();
 
     // Step 7 — re-calculer score serveur-side (M7 Pass 1).
     // #246 (21-2b) : re-score sur le TTC — `invoice` est chargé sans lignes,
@@ -1189,6 +1189,210 @@ async fn accept_one_invoice(
         .and_time(chrono::NaiveTime::from_hms_opt(0, 0, 0).expect("midnight is constant valid"));
     let invoice_version_pre = invoice.version;
 
+    // =====================================================================
+    // Step 7ter — L'ÉCRITURE D'ENCAISSEMENT (Story 24-2, #371).
+    //
+    // ⚠️ Avant cette story, la transaction bancaire était rapprochée de
+    // l'écriture de VENTE et aucune écriture de règlement n'était passée : le
+    // compte débiteurs accumulait des débits jamais crédités, la banque était
+    // sous-évaluée du même montant, et le bilan restait équilibré — donc muet.
+    //
+    // Le gabarit est `supplier_invoices::pay_in_tx`, symétrique et éprouvé.
+    // =====================================================================
+
+    // (a) Compte de banque au grand livre — inline, comme le chemin `split`
+    //     (les helpers `bank_accounts::*` prennent un `&MySqlPool`, pas un
+    //     Executor générique).
+    let bank_ledger_row: Option<(Option<i64>,)> = sqlx::query_as(
+        "SELECT journal_account_id FROM bank_accounts WHERE company_id = ? AND id = ? LIMIT 1",
+    )
+    .bind(company_id)
+    .bind(bank_account_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| FailedProposal {
+        bank_transaction_id,
+        error_code: "DATABASE_ERROR".to_string(),
+        details: Some(serde_json::json!({ "message": e.to_string() })),
+    })?;
+    let bank_ledger_account_id = match bank_ledger_row {
+        Some((Some(id),)) => id,
+        Some((None,)) => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "BANK_ACCOUNT_NOT_CONFIGURED".to_string(),
+                details: Some(serde_json::json!({ "bankAccountId": bank_account_id })),
+            });
+        }
+        None => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "BANK_ACCOUNT_NOT_FOUND".to_string(),
+                details: None,
+            });
+        }
+    };
+
+    // (b) ⛔ Le compte de créance se lit SUR L'ÉCRITURE DE VENTE, jamais sur les
+    //     réglages. C'est ce qui garantit que le compte se solde exactement,
+    //     quoi qu'il soit arrivé à la configuration entre l'émission de la
+    //     facture et son encaissement. Miroir strict de l'étape (2) de
+    //     `pay_in_tx`, qui lit la ligne de CRÉDIT de l'écriture d'achat.
+    //
+    //     `generate_invoice_journal_lines` pousse EXACTEMENT UNE ligne de débit,
+    //     en position 0, pour le TTC : l'invariante est vérifiée, pas supposée.
+    let receivable_row: Option<(i64,)> = sqlx::query_as(
+        "SELECT jel.account_id FROM journal_entry_lines jel \
+         JOIN journal_entries je ON je.id = jel.entry_id \
+         WHERE jel.entry_id = ? AND je.company_id = ? AND jel.debit > 0 \
+         ORDER BY jel.id LIMIT 1",
+    )
+    .bind(sale_entry_id)
+    .bind(company_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| FailedProposal {
+        bank_transaction_id,
+        error_code: "DATABASE_ERROR".to_string(),
+        details: Some(serde_json::json!({ "message": e.to_string() })),
+    })?;
+    let receivable_account_id = match receivable_row {
+        Some((id,)) => id,
+        None => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "INVOICE_SALE_ENTRY_MALFORMED".to_string(),
+                details: Some(serde_json::json!({
+                    "reason": "no_debit_line_on_sale_entry",
+                    "saleEntryId": sale_entry_id,
+                })),
+            });
+        }
+    };
+
+    // (c) ⛔ Le trop-perçu est REFUSÉ, il ne s'écrit pas. Sans ce garde, le
+    //     compte de créance passerait CRÉDITEUR — un solde contre nature que le
+    //     grand livre signalerait, mais après coup.
+    let due_before = invoice_settlements::amount_due(&mut **tx, invoice_id)
+        .await
+        .map_err(|e| FailedProposal {
+            bank_transaction_id,
+            error_code: "DATABASE_ERROR".to_string(),
+            details: Some(serde_json::json!({ "message": e.to_string() })),
+        })?;
+    if bank_transaction.amount > due_before {
+        return Err(FailedProposal {
+            bank_transaction_id,
+            error_code: "RECONCILIATION_OVERPAYMENT".to_string(),
+            details: Some(serde_json::json!({
+                "amountDue": due_before,
+                "transactionAmount": bank_transaction.amount,
+            })),
+        });
+    }
+
+    // (d) Exercice OUVERT couvrant la date de valeur. Jamais d'écriture dans un
+    //     exercice clos — c'est le verrou de bouclement, pas une commodité.
+    let fiscal_year =
+        match fiscal_years::find_open_covering_date(tx, company_id, paid_at_candidate).await {
+            Ok(Some(fy)) => fy,
+            Ok(None) => {
+                return Err(FailedProposal {
+                    bank_transaction_id,
+                    error_code: "FISCAL_YEAR_INVALID".to_string(),
+                    details: Some(serde_json::json!({ "valueDate": paid_at_candidate })),
+                });
+            }
+            Err(e) => {
+                return Err(FailedProposal {
+                    bank_transaction_id,
+                    error_code: "DATABASE_ERROR".to_string(),
+                    details: Some(serde_json::json!({ "message": e.to_string() })),
+                });
+            }
+        };
+
+    // (e) `D banque / C créance`, du MONTANT DE LA TRANSACTION — jamais du total
+    //     de la facture. L'écriture existe pour que le compte bancaire de Kesh
+    //     égale le relevé.
+    let label = invoice
+        .invoice_number
+        .clone()
+        .unwrap_or_else(|| invoice.id.to_string());
+    let contact_name = contact.as_ref().map(|c| c.name.clone()).unwrap_or_default();
+    let new_je = kesh_db::entities::NewJournalEntry {
+        company_id,
+        entry_date: paid_at_candidate,
+        journal: kesh_db::entities::Journal::Banque,
+        description: format!("Encaissement facture {label} - {contact_name}"),
+        // Le règlement hérite du projet de la facture (cohérence analytique,
+        // patron `pay_in_tx`).
+        project_id: invoice.project_id,
+        lines: vec![
+            kesh_db::entities::NewJournalEntryLine {
+                account_id: bank_ledger_account_id,
+                debit: bank_transaction.amount,
+                credit: Decimal::ZERO,
+                project_id: None,
+            },
+            kesh_db::entities::NewJournalEntryLine {
+                account_id: receivable_account_id,
+                debit: Decimal::ZERO,
+                credit: bank_transaction.amount,
+                project_id: None,
+            },
+        ],
+    };
+    // Flux automatique (réconciliation) : garde de postabilité désactivée
+    // (Story 14-3b, D-A0) — cohérent `pay_in_tx` et chemin `split`.
+    let settlement_je =
+        match journal_entries::create_in_tx(tx, fiscal_year.id, user_id, new_je, false).await {
+            Ok(j) => j,
+            Err(e) => {
+                return Err(project_error_to_failed_proposal(
+                    bank_transaction_id,
+                    invoice.project_id,
+                    e,
+                ));
+            }
+        };
+    let journal_entry_id = settlement_je.entry.id;
+
+    // (f) La liaison facture ↔ écriture. `UNIQUE (journal_entry_id)` en base :
+    //     une écriture d'encaissement règle UNE facture.
+    if let Err(e) = invoice_settlements::create_in_tx(
+        tx,
+        kesh_db::entities::NewInvoiceSettlement {
+            company_id,
+            invoice_id,
+            journal_entry_id,
+            amount: bank_transaction.amount,
+            settled_on: paid_at_candidate,
+        },
+    )
+    .await
+    {
+        return Err(FailedProposal {
+            bank_transaction_id,
+            error_code: "DATABASE_ERROR".to_string(),
+            details: Some(serde_json::json!({ "message": e.to_string() })),
+        });
+    }
+
+    // (g) ⛔ `paid_at` est la PROJECTION d'un solde tombé à zéro, pas un drapeau
+    //     posé par le premier virement. Une facture partiellement réglée garde
+    //     `paid_at` à NULL — et reste donc relançable et rapprochable pour le
+    //     solde, sans qu'aucun des cinq sites qui lisent `paid_at IS NULL` ait à
+    //     changer.
+    let due_after = invoice_settlements::amount_due(&mut **tx, invoice_id)
+        .await
+        .map_err(|e| FailedProposal {
+            bank_transaction_id,
+            error_code: "DATABASE_ERROR".to_string(),
+            details: Some(serde_json::json!({ "message": e.to_string() })),
+        })?;
+    let fully_settled = due_after <= Decimal::ZERO;
+
     // C1 Pass 1 — UPDATE avec guard `status='pending'` (defense-in-depth
     // contre une race entre step 4 et step 8 : le check status au step 4
     // est lu inside lock mais l'UPDATE reste séparé) + check
@@ -1226,12 +1430,20 @@ async fn accept_one_invoice(
         });
     }
 
+    // ⛔ `paid_at` seulement si le solde est tombé à zéro (Story 24-2). Un
+    // encaissement partiel bump la version et `updated_at` — la facture a bien
+    // changé d'état — mais laisse `paid_at` à NULL.
+    let paid_at_to_set: Option<chrono::NaiveDateTime> = if fully_settled {
+        Some(paid_at_dt)
+    } else {
+        None
+    };
     let invoice_update = sqlx::query(
         "UPDATE invoices \
          SET paid_at = ?, version = version + 1, updated_at = NOW(3) \
          WHERE id = ? AND company_id = ? AND version = ? AND status = 'validated'",
     )
-    .bind(paid_at_dt)
+    .bind(paid_at_to_set)
     .bind(invoice_id)
     .bind(company_id)
     .bind(invoice_version_pre)
@@ -1257,7 +1469,12 @@ async fn accept_one_invoice(
         "invoice_id": invoice_id,
         "score": score,
         "batch_size": batch_size,
+        // Story 24-2 : l'écriture d'ENCAISSEMENT, plus celle de vente.
         "journal_entry_id": journal_entry_id,
+        "sale_journal_entry_id": sale_entry_id,
+        "settled_amount": bank_transaction.amount,
+        "amount_due_after": due_after,
+        "fully_settled": fully_settled,
     });
     let entry_accepted = audit_log::insert_in_tx(
         tx,
@@ -1277,21 +1494,37 @@ async fn accept_one_invoice(
         details: Some(serde_json::json!({ "message": e.to_string() })),
     })?;
 
-    // Step 10 — dual audit log invoice.paid (HP3-3 Pass 3 + MP4-4 Pass 4).
+    // Step 10 — dual audit log (HP3-3 Pass 3 + MP4-4 Pass 4).
+    //
+    // ⚠️ Story 24-2 : l'action dépend désormais de l'effet réel. Un encaissement
+    // partiel n'est PAS `invoice.paid` — écrire « payée » sur une facture qui ne
+    // l'est pas remettrait un mensonge dans la piste d'audit, à l'endroit précis
+    // où elle doit faire foi.
+    let action = if fully_settled {
+        "invoice.paid"
+    } else {
+        "invoice.partially_settled"
+    };
     let details_paid = serde_json::json!({
-        "paid_at": paid_at_dt.and_utc(),
+        "paid_at": paid_at_to_set.map(|d| d.and_utc()),
         "paid_by_user_id": user_id,
         "paid_via": "reconciliation",
         "reconciliation_audit_id": entry_accepted.id,
+        "settlement_journal_entry_id": journal_entry_id,
+        "settled_amount": bank_transaction.amount,
+        "amount_due_after": due_after,
         "before": { "paid_at": null, "version": invoice_version_pre },
-        "after": { "paid_at": paid_at_dt.and_utc(), "version": invoice_version_pre + 1 },
+        "after": {
+            "paid_at": paid_at_to_set.map(|d| d.and_utc()),
+            "version": invoice_version_pre + 1
+        },
     });
     audit_log::insert_in_tx(
         tx,
         NewAuditLogEntry::for_actor(
             user_id,
             actor_api_key_id,
-            "invoice.paid",
+            action,
             "invoice",
             invoice_id,
             Some(details_paid),

@@ -2,7 +2,7 @@
 
 ## Status
 
-draft
+review
 
 ## Story
 
@@ -74,25 +74,41 @@ Conséquence directe : **une colonne `settlement_journal_entry_id` au singulier 
 pas** (contrairement au fournisseur, où le règlement est unique par construction). Il faut une
 **table de liaison** :
 
+⛔ **Le gabarit est `invoice_reminders`** (`20260715000001_invoice_reminders.sql:33`) : l'autre
+enfant récent de `invoices`. Il **porte un `company_id`** avec sa FK et son index composite
+`(company_id, invoice_id)`.
+
+⚠️ **Première rédaction de cette spec : « pas de `company_id`, comme `journal_entry_lines` ».
+C'était le mauvais voisin** — `journal_entry_lines` est un enfant d'`journal_entries`, pas
+d'`invoices`, et son omission est une exception documentée, pas la règle. Vérifié au sol et
+corrigé avant d'écrire une ligne de code.
+
 ```sql
 CREATE TABLE invoice_settlements (
-  id                BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  invoice_id        BIGINT NOT NULL,
-  journal_entry_id  BIGINT NOT NULL,
-  amount            DECIMAL(19,4) NOT NULL,
-  created_at        DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  CONSTRAINT fk_invoice_settlements_invoice FOREIGN KEY (invoice_id) REFERENCES invoices(id),
-  CONSTRAINT fk_invoice_settlements_entry   FOREIGN KEY (journal_entry_id) REFERENCES journal_entries(id),
-  CONSTRAINT chk_invoice_settlements_amount CHECK (amount > 0),
-  UNIQUE KEY uq_invoice_settlements_entry (journal_entry_id),
-  KEY idx_invoice_settlements_invoice (invoice_id)
-);
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    company_id BIGINT NOT NULL,
+    invoice_id BIGINT NOT NULL,
+    journal_entry_id BIGINT NOT NULL,
+    amount DECIMAL(19,4) NOT NULL,
+    settled_on DATE NOT NULL,
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (id),
+    CONSTRAINT fk_invoice_settlements_invoice
+        FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
+    CONSTRAINT fk_invoice_settlements_company
+        FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_invoice_settlements_entry
+        FOREIGN KEY (journal_entry_id) REFERENCES journal_entries(id) ON DELETE RESTRICT,
+    CONSTRAINT chk_invoice_settlements_amount_positive CHECK (amount > 0),
+    UNIQUE KEY uq_invoice_settlements_entry (journal_entry_id),
+    INDEX idx_invoice_settlements_company_invoice (company_id, invoice_id),
+    INDEX idx_invoice_settlements_invoice (invoice_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 
-⚠️ **Pas de `company_id`, et c'est délibéré** — même choix que `journal_entry_lines` : le
-scoping multi-tenant est porté par la table parente. Toute requête joint donc `invoices` et y
-applique `company_id`. **À écrire dans le doc-comment du repository**, sinon quelqu'un
-« corrigera » l'omission un jour et créera une dénormalisation qui peut diverger.
+⚠️ **`ON DELETE` asymétrique, et chaque branche a sa raison** : `CASCADE` sur la facture (patron
+`invoice_reminders`, aligné sur la suppression définitive #219) ; `RESTRICT` sur l'écriture —
+une écriture comptable référencée ne se supprime pas, elle se contre-passe.
 
 ⚠️ `UNIQUE` sur `journal_entry_id` : une écriture d'encaissement règle **une** facture. Le
 règlement groupé — un virement qui solde trois factures — n'est **pas** couvert ici (cf. Hors
@@ -277,3 +293,78 @@ isolé sur `post_accept_skips_non_chf_transaction` se rejoue seul **avant** tout
 
 ⚠️ **Traiter chaque test rouge comme une question** — « ce test décrivait-il le défaut ? » — et
 non comme un obstacle. C'est la différence entre corriger un bug et le déplacer dans les tests.
+
+## Change Log
+
+### Implémentation — 2026-08-27
+
+**Livré** : migration `20260827000001_invoice_settlements.sql`, entité et dépôt, l'écriture
+`D banque / C créance` dans `accept_one_invoice`, le résiduel calculé, `amountSettled` /
+`amountDue` sur la fiche, le badge `partial` dérivé, quatre locales.
+
+**Décomptes recomptés depuis la source** — périmètre `main…HEAD` :
+
+| Mesure | Valeur | Commande |
+|---|---|---|
+| migrations | 62 | `ls crates/kesh-db/migrations/*.sql \| wc -l` |
+| lignes du tableau d'audit | 62 | `grep -c '^\| `20' docs/migrations-idempotence-audit.md` |
+| partition d'idempotence | 5 + 57 + 0 = 62 | recomptée depuis le tableau |
+| tests de réconciliation | 27 | `cargo nextest run -E 'binary(reconciliation_e2e)'` |
+| tests d'import | 19 | `binary(admin_full_import_e2e)` |
+| clés i18n ajoutées × 4 locales | 3 | `payment-status-partial`, `invoice-amount-settled`, `invoice-amount-due` |
+| sites `i18nMsg` ajoutés | 2 | ventilés dans `i18n-keys.test.ts` |
+
+### ⛔ Sept garde-fous déclenchés, tous sur des fichiers que la story ne touche pas
+
+C'est la démonstration de ce que la § *Dev Notes* annonçait en interdisant le gate ciblé :
+**aucun** de ces sept n'aurait été vu autrement.
+
+| # | Garde | Ce qu'il a exigé |
+|---|---|---|
+| 1 | `clippy -D warnings` | un champ de fixture jamais lu |
+| 2 | `backup_inventory_matches_schema` | l'inventaire de sauvegarde connaît la table |
+| 3 | `full_export_structure_manifest_and_integrity` | 37 → 38 fichiers `data/*.ndjson` |
+| 4 | `registry_entries_are_within_import_window` | la fenêtre s'est refermée sur le registre |
+| 5 | compteur des exemptions « Hors fenêtre » | 4 → 6, en relisant les justifications |
+| 6 | `upgrade_path_preserves_data` (**P6**) | `total` et `N` incrémentés du même pas |
+| 7 | `published_migrations_keep_their_checksums` (**P8**) | inscrire le checksum = déclarer publiée |
+
+⚠️ **Le n° 4 est le plus profond, et n'a pas de correctif mécanique.** Créer une table
+applicative **referme la fenêtre d'importabilité** — et elle s'est refermée au-delà des **deux**
+entrées du registre de rejeu post-restauration. Un backup assez ancien pour les déclencher est
+désormais dépourvu de `invoice_settlements`, donc refusé en 400 avant tout rejeu. Les y laisser
+aurait produit du **code mort qui paraît fonctionner**, et pour celle de classe A, **exécuté à
+chaque import**.
+
+Sur arbitrage du Project Lead (« B »), la couverture est **préservée et non supprimée** :
+`RETIRED_BACKFILLS` porte les deux entrées comme fixture, les six tests d'import gardent leur
+montage HTTP réel et injectent le registre par la couture `replay_with_registry` — leurs
+assertions passent du JSON d'audit au **rapport typé**, ce qui est un gain. Un cas neuf
+verrouille la propriété de production : **l'import ne rejoue plus rien**.
+
+### La fixture était creuse, et c'est ce qui a caché le défaut fondateur
+
+`insert_fake_journal_entry` créait une écriture de vente **sans aucune ligne**, et le compte
+bancaire de test n'avait pas de `journal_account_id`. Les tests rapprochaient donc une facture
+**sans contrepartie comptable**. ⚠️ **On ne peut pas voir manquer une écriture d'encaissement là
+où rien n'a de substance** — c'est ce vide qui a laissé le défaut de #371 vivre des mois.
+
+Deux assertions **décrivaient le défaut** (`reconciliation_e2e.rs:915` et `:925`, l'écriture
+rapprochée figée sur la vente) : elles ont été retournées contre lui, `assert_ne!` là où il y
+avait `assert_eq!(je_id)`.
+
+### KF-038 (#228) fermée en chemin — cause racine, pas contournement
+
+`with_account_lock` nommait son verrou `reconcile:{company_id}:{bank_account_id}`. Or **`GET_LOCK`
+est global au serveur MariaDB**, et chaque base éphémère de test repart à `company_id = 1`,
+`bank_account_id = 1` : **tous les tests se disputaient `reconcile:1:1`**. Vérifié au sol sur
+deux bases. La production n'était pas touchée (une seule base) ; la story aggravait le défaut,
+l'écriture étant créée **à l'intérieur** du verrou.
+
+Le nom de la base entre dans la clé. Mesure, binaire seul : **1 échec sur 3 avant, 0 sur 5
+après**. ⚠️ Le test qui *fabrique* la contention connaissait l'ancien nom et est devenu
+**déterministe rouge** — signal correct : il n'observait plus rien.
+
+**Gates réellement exécutés** : `fmt`, `clippy -D warnings`, `scripts/test-fast.sh` complet,
+base remise à zéro avant chaque run (KF-039) ; frontend `check` 0 erreur,
+`lint-i18n-ownership`, `test:unit`, `build`.

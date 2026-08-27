@@ -236,10 +236,35 @@ pub struct InvoiceResponse {
     /// vérité pour « aujourd'hui » — évite la désync TZ client/serveur).
     /// `true` ssi `status == 'validated' && paid_at IS NULL && due_date < today_utc`.
     pub is_overdue: bool,
+    /// Story 24-2 (#371) — total déjà réglé, et ce qui reste dû.
+    ///
+    /// ⚠️ **`None` veut dire « non calculé ici », jamais « zéro ».** Ces deux
+    /// montants exigent une lecture des règlements et de l'avoir ; les routes
+    /// qui rendent une facture qu'on vient de créer ou de modifier ne la font
+    /// pas, et rendre `0` à leur place affirmerait qu'aucun règlement n'existe
+    /// — une affirmation fausse et silencieuse. **L'absence se lit, le zéro
+    /// ment.** C'est la même discipline que le résiduel non stocké : ne jamais
+    /// produire un chiffre qu'on n'a pas calculé.
+    pub amount_settled: Option<Decimal>,
+    pub amount_due: Option<Decimal>,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
     pub lines: Vec<InvoiceLineResponse>,
+}
+
+impl InvoiceResponse {
+    /// Renseigne les deux montants de la Story 24-2 : ce qui a été réglé, et ce
+    /// qui reste dû.
+    ///
+    /// ⚠️ **Appelée seulement là où le calcul a réellement lieu.** Ailleurs les
+    /// deux champs restent `None` — « non calculé », qui est vrai, plutôt que
+    /// `0`, qui serait faux.
+    pub(crate) fn with_settlement(mut self, settled: Decimal, due: Decimal) -> Self {
+        self.amount_settled = Some(settled);
+        self.amount_due = Some(due);
+        self
+    }
 }
 
 /// B3 (review pass 1 G2 B) : règle « en retard » centralisée — une seule
@@ -292,6 +317,8 @@ impl InvoiceResponse {
             dunning_paused_at: invoice.dunning_paused_at,
             dunning_paused_note: invoice.dunning_paused_note,
             is_overdue,
+            amount_settled: None,
+            amount_due: None,
             version: invoice.version,
             created_at: invoice.created_at,
             updated_at: invoice.updated_at,
@@ -600,7 +627,17 @@ pub async fn get_invoice(
         invoices::find_by_id_with_lines(&state.pool, current_user.company_id, id)
             .await?
             .ok_or(AppError::Database(DbError::NotFound))?;
-    Ok(Json(InvoiceResponse::from_parts(invoice, lines)))
+    // Story 24-2 (#371) — la fiche est la seule surface où le résiduel est
+    // calculé. ⚠️ Une requête de plus, sur UNE facture : pas de N+1 possible ici.
+    let settled = kesh_db::repositories::invoice_settlements::amount_settled(&state.pool, id)
+        .await
+        .map_err(AppError::Database)?;
+    let due = kesh_db::repositories::invoice_settlements::amount_due(&state.pool, id)
+        .await
+        .map_err(AppError::Database)?;
+    Ok(Json(
+        InvoiceResponse::from_parts(invoice, lines).with_settlement(settled, due),
+    ))
 }
 
 pub async fn create_invoice(
