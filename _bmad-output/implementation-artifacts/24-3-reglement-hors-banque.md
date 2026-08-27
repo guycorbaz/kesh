@@ -90,8 +90,9 @@ depuis l'interface.** C'est exactement la situation du côté fournisseur — v�
 pas `open`**, donc une facture réglée y est déjà figée. Cette story **aligne** les deux côtés au
 lieu d'aggraver un écart, mais elle rend le manque visible des deux.
 
-⛔ **Ouvrir une issue « annuler un règlement par contre-passation », couvrant les DEUX côtés.**
-Ce n'est pas un détail à reporter en silence : c'est le pendant nécessaire de ce qu'on retire.
+⛔ **Issue #414 ouverte** — « annuler un règlement par contre-passation », couvrant les **deux**
+côtés. Ce n'est pas un détail reporté en silence : c'est le pendant nécessaire de ce qu'on
+retire, et il est tracé à ce titre.
 
 ## D3 — Le montant, et ce qu'on ne demande pas
 
@@ -149,7 +150,7 @@ données) ; ligne d'audit d'idempotence, cinq compteurs recomptés.
 
 ## Hors périmètre
 
-L'**annulation d'un règlement** par contre-passation — issue à ouvrir, **les deux côtés**. Le
+L'**annulation d'un règlement** par contre-passation — **issue #414**, les deux côtés. Le
 **livre de caisse** comme rapport dédié. La **garde « caisse jamais créditrice »** : elle mérite
 sa propre story, et elle porte sur la saisie d'écriture en général, pas sur ce chemin. Le
 **lettrage** (epic 15). La propagation du résiduel aux rapports agrégés.
