@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Story 9-1 — Vue Balance des comptes.
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
-	import { formatReportAmount, formatSwissDate, isReportEmpty } from './reports.api';
+	import { formatReportAmount, formatSwissDate, isReportEmpty, ledgerHref } from './reports.api';
 	import type { TrialBalanceDto } from './reports.types';
 
 	interface Props {
@@ -43,7 +43,14 @@
 			<tbody>
 				{#each dto.rows as r (r.accountId)}
 					<tr class:opacity-60={!r.active}>
-						<td class="px-2 py-1 font-mono">{r.accountNumber}</td>
+						<td class="px-2 py-1 font-mono">
+							<a
+								class="text-indigo-700 hover:underline"
+								href={ledgerHref(r.accountId, dto.period.startDate, dto.period.endDate)}
+								title={i18nMsg('reports-ledger-open-from-balance', 'Voir le détail dans le grand livre')}
+							>{r.accountNumber}</a
+							>
+						</td>
 						<td class="px-2 py-1">
 							{r.accountName}
 							{#if !r.active}<span class="ml-1 rounded bg-gray-200 px-1 text-xs"

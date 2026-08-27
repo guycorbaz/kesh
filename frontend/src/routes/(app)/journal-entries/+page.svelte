@@ -61,6 +61,8 @@
 	let dateFrom = $state('');
 	let dateTo = $state('');
 	let journalFilter = $state<Journal | ''>('');
+	// Filtre par compte (#374) — « montre-moi tout ce qui a touché 1020 ».
+	let accountFilter = $state<number | null>(null);
 	let sortBy = $state<SortBy>('EntryDate');
 	let sortDir = $state<SortDirection>('Desc');
 
@@ -84,6 +86,7 @@
 			dateFrom: dateFrom || undefined,
 			dateTo: dateTo || undefined,
 			journal: journalFilter || undefined,
+			accountId: accountFilter ?? undefined,
 			sortBy,
 			sortDir,
 			offset,
@@ -149,6 +152,7 @@
 		if (initial.dateFrom) dateFrom = initial.dateFrom;
 		if (initial.dateTo) dateTo = initial.dateTo;
 		if (initial.journal) journalFilter = initial.journal;
+		if (initial.accountId) accountFilter = initial.accountId;
 		if (initial.sortBy) sortBy = initial.sortBy;
 		if (initial.sortDir) sortDir = initial.sortDir;
 		if (initial.offset !== undefined) offset = initial.offset;
@@ -191,6 +195,7 @@
 		dateFrom = '';
 		dateTo = '';
 		journalFilter = '';
+		accountFilter = null;
 		sortBy = 'EntryDate';
 		sortDir = 'Desc';
 		offset = 0;
@@ -218,6 +223,15 @@
 	function onJournalChange(value: string) {
 		journalFilter = (value as Journal) || '';
 		immediateLoad();
+	}
+	function onAccountFilterChange(value: string) {
+		accountFilter = value ? Number(value) : null;
+		immediateLoad();
+	}
+	/** Libellé d'un compte dans le filtre : « 1020 — Banque ». */
+	function accountFilterLabel(id: number): string {
+		const a = accounts.find((x) => x.id === id);
+		return a ? `${a.number} — ${a.name}` : String(id);
 	}
 
 	// Tri par header cliquable.
@@ -493,6 +507,30 @@
 						</Select.Item>
 						{#each JOURNALS as j (j)}
 							<Select.Item value={j}>{journalLabel(j)}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			</div>
+			<div>
+				<label for="filter-account" class="block text-xs font-medium mb-1">
+					{i18nMsg('journal-entries-filter-account', 'Compte')}
+				</label>
+				<Select.Root
+					type="single"
+					value={accountFilter === null ? '' : String(accountFilter)}
+					onValueChange={onAccountFilterChange}
+				>
+					<Select.Trigger id="filter-account">
+						{accountFilter === null
+							? i18nMsg('journal-entries-filter-account-all', 'Tous')
+							: accountFilterLabel(accountFilter)}
+					</Select.Trigger>
+					<Select.Content>
+						<Select.Item value="">
+							{i18nMsg('journal-entries-filter-account-all', 'Tous')}
+						</Select.Item>
+						{#each accounts as a (a.id)}
+							<Select.Item value={String(a.id)}>{a.number} — {a.name}</Select.Item>
 						{/each}
 					</Select.Content>
 				</Select.Root>

@@ -17,6 +17,7 @@ pub mod aged_receivables;
 pub mod balance_sheet;
 pub mod csv;
 pub mod errors;
+pub mod general_ledger;
 pub mod income_statement;
 pub mod journal_report;
 pub mod pdf;
@@ -29,13 +30,18 @@ pub use aged_receivables::{
     AgedBucket, AgedReceivables, AgedReceivablesRow, generate as generate_aged_receivables,
 };
 pub use balance_sheet::{AccountBalance, BalanceSheet, generate as generate_balance_sheet};
-pub use csv::render_aged_receivables_csv;
+pub use csv::{render_aged_receivables_csv, render_general_ledger_csv};
 pub use errors::ReportError;
+pub use general_ledger::{
+    GeneralLedger, LedgerLine, LedgerOptions, LedgerPeriod, LedgerSection, MAX_LEDGER_LIMIT,
+    generate as generate_general_ledger,
+};
 pub use income_statement::{IncomeStatement, generate as generate_income_statement};
 pub use journal_report::{
     JournalEntryLineRow, JournalEntryRow, JournalReport, JournalSection,
     generate as generate_journal_report,
 };
+pub use pdf::render_general_ledger_pdf;
 pub use period::ReportPeriod;
 pub use trial_balance::{TrialBalance, TrialBalanceRow, generate as generate_trial_balance};
 pub use vat_report::{VatReport, VatReportRow, generate as generate_vat_report};

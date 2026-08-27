@@ -16,6 +16,8 @@ import type {
 	ProjectReturnDto,
 	ReportQuery,
 	ReportType,
+	GeneralLedgerDto,
+	LedgerQuery,
 	TrialBalanceDto,
 	VatReportDto,
 } from './reports.types';
@@ -356,4 +358,63 @@ function triggerDownload(blob: Blob, filename: string): void {
 		if (a.parentNode) a.parentNode.removeChild(a);
 		URL.revokeObjectURL(objectUrl);
 	}
+}
+
+/**
+ * Grand livre — l'extrait d'un ou plusieurs comptes.
+ *
+ * ⚠️ Ne prend **pas** de `fiscalYearId` : ce rapport franchit la borne
+ * d'exercice, contrairement à tous les autres.
+ */
+export async function getGeneralLedger(query: LedgerQuery): Promise<GeneralLedgerDto> {
+	const qs = buildQuery({
+		from: query.from,
+		to: query.to,
+		accountIds: query.accountIds?.length ? query.accountIds.join(',') : undefined,
+		includeZero: query.includeZero ? 'true' : undefined,
+		offset: query.offset,
+		limit: query.limit,
+	});
+	return apiClient.get<GeneralLedgerDto>(`/api/v1/reports/general-ledger?${qs}`);
+}
+
+/**
+ * Télécharge le grand livre (PDF ou CSV).
+ *
+ * ⚠️ L'export n'est **pas** paginé côté serveur : l'écran s'arrête à 500 lignes
+ * par compte, le fichier produit contient le livre entier. C'est ce que promet
+ * le bandeau de troncature de l'écran.
+ */
+export async function downloadGeneralLedger(
+	query: LedgerQuery,
+	format: 'pdf' | 'csv',
+	filename: string,
+): Promise<void> {
+	const qs = buildQuery({
+		format,
+		from: query.from,
+		to: query.to,
+		accountIds: query.accountIds?.length ? query.accountIds.join(',') : undefined,
+		includeZero: query.includeZero ? 'true' : undefined,
+	});
+	const response = await apiClient.getBlob(`/api/v1/reports/general-ledger/export?${qs}`);
+	const blob = await response.blob();
+	triggerDownload(blob, filename);
+}
+
+/**
+ * Lien vers le grand livre d'un compte, sur la période affichée.
+ *
+ * C'est ce lien qui fait exister le rapport : sans lui, le grand livre est une
+ * page que personne n'ouvre, alors que la question « de quoi ce solde est-il
+ * fait ? » se pose toujours devant un bilan ou une balance.
+ */
+export function ledgerHref(accountId: number, from: string, to: string): string {
+	const qs = new URLSearchParams({
+		tab: 'general-ledger',
+		accountId: String(accountId),
+		from,
+		to,
+	});
+	return `/reports?${qs.toString()}`;
 }

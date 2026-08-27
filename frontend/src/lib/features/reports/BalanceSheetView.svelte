@@ -3,7 +3,7 @@
 	import Big from 'big.js';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { accountRoleKey, type AccountRole } from '$lib/features/accounts/accounts.types';
-	import { formatReportAmount, formatSwissDate, isReportEmpty } from './reports.api';
+	import { formatReportAmount, formatSwissDate, isReportEmpty, ledgerHref } from './reports.api';
 	import type { AccountBalance, BalanceSheetDto } from './reports.types';
 
 	interface Props {
@@ -128,7 +128,14 @@
 					<tbody>
 						{#each dto.assets as a (a.accountId)}
 							<tr class:opacity-60={!a.active}>
-								<td class="px-2 py-1 font-mono">{a.accountNumber}</td>
+								<td class="px-2 py-1 font-mono">
+									<a
+										class="text-indigo-700 hover:underline"
+										href={ledgerHref(a.accountId, dto.period.startDate, dto.period.endDate)}
+										title={i18nMsg('reports-ledger-open-from-balance', 'Voir le détail dans le grand livre')}
+									>{a.accountNumber}</a
+									>
+								</td>
 								<td class="px-2 py-1">{a.accountName}</td>
 								<td class="px-2 py-1 text-right font-mono">{fmt(a.balance)}</td>
 							</tr>
@@ -160,7 +167,14 @@
 					<tbody>
 						{#each dto.liabilities as l (l.accountId)}
 							<tr class:opacity-60={!l.active}>
-								<td class="px-2 py-1 font-mono">{l.accountNumber}</td>
+								<td class="px-2 py-1 font-mono">
+									<a
+										class="text-indigo-700 hover:underline"
+										href={ledgerHref(l.accountId, dto.period.startDate, dto.period.endDate)}
+										title={i18nMsg('reports-ledger-open-from-balance', 'Voir le détail dans le grand livre')}
+									>{l.accountNumber}</a
+									>
+								</td>
 								<td class="px-2 py-1">{l.accountName}</td>
 								<td class="px-2 py-1 text-right font-mono">{fmt(l.balance)}</td>
 							</tr>
@@ -208,7 +222,14 @@
 							{/if}
 							{#each group.rows as e (e.accountId)}
 								<tr class:opacity-60={!e.active}>
-									<td class="px-2 py-1 pl-4 font-mono">{e.accountNumber}</td>
+									<td class="px-2 py-1 pl-4 font-mono">
+										<a
+											class="text-indigo-700 hover:underline"
+											href={ledgerHref(e.accountId, dto.period.startDate, dto.period.endDate)}
+											title={i18nMsg('reports-ledger-open-from-balance', 'Voir le détail dans le grand livre')}
+										>{e.accountNumber}</a
+										>
+									</td>
 									<td class="px-2 py-1">{e.accountName}</td>
 									<td class="px-2 py-1 text-right font-mono">{fmt(e.balance)}</td>
 								</tr>

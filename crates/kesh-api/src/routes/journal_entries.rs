@@ -219,6 +219,9 @@ pub(crate) fn map_core_error(err: CoreError) -> AppError {
 pub struct ListJournalEntriesQuery {
     #[serde(default)]
     pub description: Option<String>,
+    /// Ne garder que les écritures touchant ce compte (issue #374).
+    #[serde(default)]
+    pub account_id: Option<i64>,
     #[serde(default)]
     pub amount_min: Option<String>,
     #[serde(default)]
@@ -241,9 +244,9 @@ pub struct ListJournalEntriesQuery {
 
 /// GET /api/v1/journal-entries — liste paginée avec filtres et tri.
 ///
-/// Query params : `description`, `amountMin`, `amountMax`, `dateFrom`,
-/// `dateTo`, `journal`, `sortBy`, `sortDir`, `offset`, `limit`. Tous
-/// optionnels. Voir `ListJournalEntriesQuery`.
+/// Query params : `description`, `accountId`, `amountMin`, `amountMax`,
+/// `dateFrom`, `dateTo`, `journal`, `sortBy`, `sortDir`, `offset`, `limit`.
+/// Tous optionnels. Voir `ListJournalEntriesQuery`.
 ///
 /// Retour : envelope `ListResponse<JournalEntryResponse>` avec
 /// `{ items, total, offset, limit }`.
@@ -330,6 +333,18 @@ pub async fn list_journal_entries(
         ));
     }
 
+    // `accountId <= 0` est un 400 plutôt qu'un filtre qui ne rendrait rien :
+    // un filtre silencieusement vide se lit comme « pas d'écritures », ce qui
+    // est le pire des deux messages.
+    if let Some(id) = params.account_id
+        && id <= 0
+    {
+        return Err(AppError::Validation(
+            "accountId doit être un identifiant positif".into(),
+        ));
+    }
+    let account_id = params.account_id;
+
     // Trim description (garde-fou cohérent avec create/update).
     let description = params
         .description
@@ -339,6 +354,7 @@ pub async fn list_journal_entries(
 
     let query = JournalEntryListQuery {
         description,
+        account_id,
         amount_min,
         amount_max,
         date_from,

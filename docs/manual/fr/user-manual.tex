@@ -1226,6 +1226,45 @@ produire hors de Kesh, à partir de ces chiffres.
 
 \emph{Mensuel} → \emph{Rapports} → \emph{Balance}. Liste tous les comptes avec leurs soldes débiteurs et créditeurs. Filtres : période, niveau de détail (comptes principaux uniquement, ou tous sous-comptes).
 
+\subsection{Grand livre}\label{sec:grand-livre}
+
+\emph{Rapports} → \emph{Grand livre}. C'est l'\textbf{extrait d'un compte} : ce qui a fait son
+solde, ligne à ligne. Là où le bilan dit « clients : 84'320.15 » et où la balance dit la même
+chose autrement, le grand livre répond à la question qui suit toujours — \emph{de quoi ce solde
+est-il fait ?}
+
+Chaque compte y est encadré par trois lignes sans lesquelles ce n'est pas un extrait : le
+\textbf{solde d'ouverture}, le \textbf{total des mouvements} (débit et crédit), le \textbf{solde
+de clôture}. Entre les deux, une ligne par écriture, avec sa date, sa pièce, son journal, son
+libellé, sa \textbf{contrepartie} — les autres comptes de la même écriture — et le \textbf{solde
+progressif} après chaque mouvement.
+
+\begin{itemize}
+    \item \textbf{Période libre, sans exercice.} C'est le seul rapport qui ne demande pas de
+          choisir un exercice : il en franchit la borne. Quand la période en traverse deux, une
+          ligne de rupture marque la clôture, et le solde d'un compte de charges ou de produits
+          y \textbf{repart de zéro} — c'est ce que fait un bouclement.
+    \item \textbf{Compte facultatif.} Sans sélection, tous les comptes mouvementés sont rendus.
+    \item \textbf{Les comptes archivés apparaissent} s'ils portent encore un solde, signalés
+          comme tels. Ce n'est pas un oubli de filtrage : un compte archivé à solde résiduel est
+          précisément l'anomalie que l'on cherche.
+    \item \textbf{Solde contre nature.} Un compte dont le solde tombe du côté opposé à sa nature
+          — une caisse créditrice, un fournisseur débiteur — est signalé. C'est une alerte, pas
+          une erreur : elle mérite un regard.
+    \item \textbf{Accès direct depuis le bilan et la balance} : le numéro de compte y est un
+          lien qui ouvre son grand livre sur la même période.
+    \item \textbf{Exports PDF et CSV.} Le PDF répète l'en-tête du compte sur chaque page et
+          porte « À reporter » au bas d'une page, « Report » en haut de la suivante, selon
+          l'usage suisse. Le CSV écrit l'ouverture et la clôture comme des \textbf{lignes du
+          tableau}, pour que le fichier reste additionnable dans un tableur.
+\end{itemize}
+
+\begin{keshnote}
+L'écran s'arrête à \textbf{500 lignes par compte} et le dit quand il tronque. \textbf{Les
+exports, eux, ne sont jamais tronqués} : c'est le fichier produit qui vaut présentation des
+livres.
+\end{keshnote}
+
 \subsection{Balance âgée des créances}\label{sec:balance-agee}
 
 Depuis la version \textbf{0.7}, l'onglet \emph{Rapports → Balance âgée} répartit l'\textbf{encours débiteur} (le total dû, TVA comprise) par \textbf{client} et par \textbf{tranche d'ancienneté}, arrêté à ce jour. C'est l'outil de pilotage du recouvrement : il montre d'un coup d'œil quelles créances vieillissent et lesquelles prioriser.
@@ -1287,13 +1326,19 @@ que la concordance annuelle exige (art.~72 al.~1 LTVA), et Kesh ne l'outille pas
 
 \subsection{Visualisation et exports}
 
-Tous les rapports peuvent être :
+Tous les rapports se \textbf{consultent à l'écran}. Pour les emporter :
 
 \begin{itemize}
-    \item \textbf{Visualisés en HTML} dans l'interface (interactif, tri, filtre).
-    \item \textbf{Exportés en PDF} (format paginé).
-    \item \textbf{Exportés en CSV} (analyse Excel ou import dans un autre outil).
+    \item \textbf{PDF et CSV} — bilan, compte de résultat, balance des comptes, grand livre,
+          journal des écritures, décompte TVA, et les deux rapports par projet.
+    \item \textbf{CSV seulement} — la \textbf{balance âgée des créances}, dont l'export est de
+          surcroît réservé aux rôles \emph{Comptable} et \emph{Administrateur}.
 \end{itemize}
+
+\begin{keshnote}
+Le PDF est paginé et destiné à être présenté ou archivé ; le CSV est destiné à être repris dans
+un tableur. Aucun des deux n'est tronqué, même quand l'écran l'est.
+\end{keshnote}
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Comptabilité analytique par projet}
@@ -1353,7 +1398,7 @@ distincte : le montant affiché correspond alors au décaissement réel.
 L'\emph{export ZIP de souveraineté} est l'export de vos données comptables dans un format
 ouvert (CSV), accompagné d'un manifeste portant l'empreinte SHA-256 de chaque fichier.
 
-\begin{keshwarning}[title=\faExclamationTriangle\ Ce que cet export couvre, et ce qu'il ne couvre pas]
+\begin{keshwarning}[title={\faExclamationTriangle\ Ce que cet export couvre, et ce qu'il ne couvre pas}]
 Il porte aujourd'hui les \textbf{ventes}, la \textbf{banque} et le \textbf{grand livre}. Il ne
 contient \textbf{pas} les factures fournisseurs, les avoirs, ni la table des projets
 analytiques --- les écritures exportées portent bien un identifiant de projet, mais rien ne dit

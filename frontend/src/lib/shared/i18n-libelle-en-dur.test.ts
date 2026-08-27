@@ -83,8 +83,15 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * ⚠️ **Un écart se recompte, il ne s'ajuste pas.** Si ce nombre rougit : ouvrir le relevé,
  * regarder QUELLES déclarations sont apparues ou ont disparu, et ne changer le chiffre
  * qu'après. Une baisse peut être un libellé qui a cessé d'être une fonction.
+ *
+ * ⚠️ **41 → 42, et la déclaration a été NOMMÉE avant d'ajuster le chiffre** :
+ * `accountFilterLabel` (`routes/(app)/journal-entries/+page.svelte`), née du filtre par
+ * compte (#374). Elle rend `« 1020 — Banque »` ou, à défaut, l'identifiant — c'est-à-dire
+ * de la **donnée**, jamais du libellé traduisible : classe `conforme`, qui passe donc de
+ * 35 à 36. Le patron est celui de `journalLabel`, quelques lignes plus haut, qui délègue à
+ * `i18nMsg` parce que « Banque » y est, lui, un mot de la langue.
  */
-const CANDIDATES_ATTENDUES = 41;
+const CANDIDATES_ATTENDUES = 42;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -601,7 +608,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 6, conforme: 35 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 6, conforme: 36 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

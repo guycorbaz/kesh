@@ -2,7 +2,8 @@
  * Story 9-1 — Tests E2E Playwright pour la page `/reports`.
  *
  * Scénarios :
- *   1. AC #27 + #33 : page chargée + 5 onglets visibles (Bilan, Compte de résultat, Balance, Journaux, TVA)
+ *   1. AC #27 + #33 : page chargée + les onglets visibles (Bilan, Compte de résultat,
+ *      Balance, Journaux, TVA, les deux rapports projet, Balance âgée, Grand livre)
  *   2. AC #28 (T12.1) : génération bilan via UI sur preset `with-company` (sans
  *      écritures → empty-state message attendu, mais le flow Generate→Response
  *      est vérifié end-to-end avec MariaDB up + audit best-effort)
@@ -44,16 +45,20 @@ async function login(page: Page): Promise<void> {
 	await expect(page).toHaveURL('/');
 }
 
-test('reports page loads with 8 tabs (AC #27 + #33, + Balance âgée Story 21-7)', async ({ page }) => {
+test('reports page loads with 9 tabs (AC #27 + #33, + Balance âgée 21-7, + Grand livre 24-1)', async ({ page }) => {
 	await login(page);
 	await page.goto('/reports');
 
 	await expect(page.getByRole('heading', { name: /rapports/i })).toBeVisible();
 
-	// 8 onglets : Bilan, Résultat, Balance, Journaux, TVA, Dépenses par projet,
-	// Rendement par projet (19-6b), + Balance âgée (21-7).
+	// 9 onglets : Bilan, Résultat, Balance, Journaux, TVA, Dépenses par projet,
+	// Rendement par projet (19-6b), Balance âgée (21-7), + Grand livre (24-1).
+	//
+	// ⚠️ Ce compte est le SEUL garde-fou du dépôt contre un onglet qui
+	// disparaîtrait. Il se met à jour en NOMMANT ce qui entre, jamais en
+	// alignant le chiffre sur ce qu'on observe.
 	const tabs = page.getByRole('tab');
-	await expect(tabs).toHaveCount(8);
+	await expect(tabs).toHaveCount(9);
 });
 
 test('reports project-expenses tab generates end-to-end (Story 19-6a)', async ({ page }) => {
@@ -316,6 +321,101 @@ test('échéancier : le lien croisé ouvre la balance âgée', async ({ page }) 
 	await page.getByTestId('due-dates-link-aged').click();
 	await expect(page).toHaveURL(/\/reports\?tab=aged-receivables/);
 	await expect(page.getByTestId('aged-report-controls')).toBeVisible();
+});
+
+// ---------------------------------------------------------------------------
+// Story 24-1 — Grand livre
+//
+// ⚠️ Ce que SEUL un E2E vérifie ici : qu'une valeur traverse réellement la
+// frontière HTTP. Vitest teste la construction du payload, les tests Rust la
+// validation, et ni l'un ni l'autre ne voit une clé qui disparaît entre les
+// deux. Le grand livre a précisément un contrat inhabituel — `from`/`to` et
+// AUCUN `fiscalYearId` —, donc c'est le genre de rapport où une clé se perd.
+// ---------------------------------------------------------------------------
+
+test('grand livre : une écriture postée réapparaît dans l’extrait de son compte (Story 24-1)', async ({
+	page,
+}) => {
+	await login(page);
+
+	const api = await authedApiContext(page);
+	let debitNumber = '';
+	try {
+		const accRes = await api.get('/api/v1/accounts?includeArchived=false');
+		expect(accRes.ok(), `list accounts: ${accRes.status()}`).toBeTruthy();
+		const accounts: Array<{ id: number; number: string }> = await accRes.json();
+		const debit = accounts.find((a) => /^10[0-9]{2}$/.test(a.number)) ?? accounts[0];
+		const credit = accounts.find((a) => /^3[0-9]{3}$/.test(a.number)) ?? accounts[1];
+		debitNumber = debit.number;
+
+		const today = new Date().toISOString().slice(0, 10);
+		const libelle = `Grand livre E2E ${Date.now()}`;
+		const entryRes = await api.post('/api/v1/journal-entries', {
+			data: {
+				entryDate: today,
+				journal: 'OD',
+				description: libelle,
+				lines: [
+					{ accountId: debit.id, debit: '1234.50', credit: '0.00' },
+					{ accountId: credit.id, debit: '0.00', credit: '1234.50' },
+				],
+			},
+		});
+		expect(entryRes.ok(), `create entry: ${entryRes.status()}`).toBeTruthy();
+
+		await page.goto('/reports');
+		await page.waitForLoadState('networkidle');
+		// ⚠️ L'onglet se cible par son ID, jamais par son libellé : un libellé est
+		// traduit, et un sélecteur figé dessus casse à la première relecture de
+		// la langue (règle du dépôt, issue #326).
+		await page.locator('#reports-tab-general-ledger').click();
+		await expect(page.getByTestId('ledger-controls')).toBeVisible();
+
+		// Période libre — et surtout : AUCUN exercice à choisir. C'est le seul
+		// rapport dans ce cas, et c'est ce qui le rend concordant avec le bilan.
+		const year = today.slice(0, 4);
+		await page.getByTestId('ledger-from').fill(`${year}-01-01`);
+		await page.getByTestId('ledger-to').fill(`${year}-12-31`);
+		await page.getByTestId('ledger-account').selectOption(String(debit.id));
+		await page.getByTestId('ledger-generate').click();
+
+		const section = page.getByTestId(`ledger-section-${debit.number}`);
+		await expect(section).toBeVisible({ timeout: 5000 });
+		await expect(section).toContainText(libelle);
+		// Le montant a bien traversé : formaté à la suisse, apostrophe typographique.
+		await expect(section).toContainText('1’234.50');
+		// Les trois lignes d'encadrement, sans lesquelles ce n'est pas un extrait.
+		await expect(page.getByTestId('ledger-opening')).toBeVisible();
+		await expect(page.getByTestId('ledger-closing')).toBeVisible();
+	} finally {
+		await disposeContextSafe(api);
+	}
+
+	// Le lien depuis la balance mène à l'extrait de CE compte (AC11) — sans lui,
+	// le rapport existe et personne ne le trouve.
+	await page.goto('/reports');
+	await page.waitForLoadState('networkidle');
+	await page.locator('#reports-tab-trial-balance').click();
+	await page.getByRole('button', { name: /générer/i }).click();
+	const lien = page.getByRole('link', { name: debitNumber }).first();
+	await expect(lien).toBeVisible({ timeout: 5000 });
+	await lien.click();
+	await expect(page).toHaveURL(/tab=general-ledger/);
+	await expect(page).toHaveURL(new RegExp(`accountId=`));
+	// Le lien porte sa période : l'extrait se génère seul, sans redemander ce
+	// que l'URL contenait déjà.
+	await expect(page.getByTestId(`ledger-section-${debitNumber}`)).toBeVisible({ timeout: 5000 });
+});
+
+test('grand livre : deep-link ?tab= ouvre directement l’onglet (Story 24-1)', async ({ page }) => {
+	await login(page);
+	await page.goto('/reports?tab=general-ledger');
+	await page.waitForLoadState('networkidle');
+	await expect(page.locator('#reports-tab-general-ledger')).toHaveAttribute(
+		'aria-selected',
+		'true',
+	);
+	await expect(page.getByTestId('ledger-controls')).toBeVisible();
 });
 
 test('reports aged-receivables : export CSV absent pour un rôle Consultation', async ({ page }) => {
