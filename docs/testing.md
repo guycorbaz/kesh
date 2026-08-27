@@ -314,6 +314,53 @@ Pour surcharger l'URL backend (ex: tests contre un kesh-api distant) :
 KESH_BACKEND_URL=http://localhost:3001 npm run test:e2e
 ```
 
+## Les échecs attendus — la suite ne passe PAS au vert, et il faut le savoir
+
+⚠️ **`npm run test:e2e` rend aujourd'hui 215 passés / 8 échoués, et ces huit sont ATTENDUS.**
+Sans cette liste, la règle du `CLAUDE.md` — « la suite complète tourne en local avant tout
+`git push` » — est **invérifiable** : personne ne peut dire « c'est vert », et chacun doit
+re-dériver à la main quels échecs sont connus. Le risque n'est pas le temps perdu, c'est
+l'inverse : conclure « ce sont les échecs habituels » sans regarder, et laisser passer une vraie
+régression au milieu.
+
+**Relevé du 2026-08-26** (montage complet de la § précédente, base `kesh_e2e` reconstruite) :
+
+| Test | Cause |
+|---|---|
+| `mode-expert.spec.ts:26` | KF-029 (#97) |
+| `mode-expert.spec.ts:41` | KF-029 (#97) |
+| `onboarding-path-b.spec.ts:65` | KF-029 (#97) |
+| `onboarding-path-b.spec.ts:92` | KF-029 (#97) |
+| `onboarding.spec.ts:57` | KF-029 (#97) |
+| `onboarding.spec.ts:77` | KF-029 (#97) |
+| `onboarding.spec.ts:150` | KF-029 (#97) |
+| `product-revenue-account.spec.ts:133` | **cascade** des précédents — voir ci-dessous |
+
+**La cascade, et elle n'est pas évidente.** Les specs `onboarding*` reseedent la base en
+`fresh-install`. L'ordre d'exécution de Playwright est **alphabétique**, `onboarding` précède
+`product`, et le test suivant se réveille sur *« Votre session a expiré »* — un symptôme qui ne
+ressemble en rien à sa cause. **Rejoué seul, `product-revenue-account.spec.ts` rend 4/4 verts** ;
+c'est le contrôle qui distingue la cascade d'une vraie régression.
+
+### Comment lire un rouge, dans l'ordre
+
+1. **Comparer les fichiers en échec à la liste ci-dessus.** Un échec hors liste est une
+   régression **jusqu'à preuve du contraire**.
+2. Pour un échec de la liste, vérifier que la branche ne touche pas le fichier :
+   `git log main..HEAD -- <fichier>` doit rendre zéro commit.
+3. Pour un échec qui suit immédiatement une spec `onboarding*`, **le rejouer seul** avant toute
+   autre chose : c'est probablement la cascade.
+
+⚠️ **Ce tableau se recompte, il ne se recopie pas.** S'il rougit d'un test de plus, la question
+n'est pas « faut-il ajuster le nombre ? » mais « **quel** test est apparu, et pourquoi ». Un
+tableau ajusté sans être compris redevient exactement le silence qu'il sert à rompre — c'est le
+mode d'échec que la § *« Recompter ses propres comptes rendus »* du `CLAUDE.md` décrit pour les
+décomptes de story.
+
+*(Consigné le 2026-08-26, au gate de la Story 24-1 : la liste existait dans la tête de qui
+lançait la suite, nulle part ailleurs. La KF-029 est ouverte depuis avril ; la traiter reste
+une décision distincte, à prendre en rétrospective.)*
+
 ## Cleanup entre tests (dette technique acceptée)
 
 - **Pas de reset entre tests individuels d'une même spec** (dette `D-6-4-A`). Si un test pollue (création + archivage incomplet), le test suivant peut être affecté. Mitigation : convention de cleanup explicite dans chaque test, ou adoption progressive de `test.beforeEach(seedTestState(...))` si symptômes apparaissent.

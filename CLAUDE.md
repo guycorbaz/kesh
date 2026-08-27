@@ -158,6 +158,13 @@ npm run test:e2e
 
 Pré-requis : MariaDB démarré + seed CI appliqué + Playwright browsers installés (cf. `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` sur Ubuntu 26.04+ — limitation upstream Playwright ≤ 1.49).
 
+⚠️ **« Vert » ne veut pas dire 0 échec, et sans cette précision la règle ci-dessus est
+invérifiable.** La suite rend **8 échecs attendus** — sept de la KF-029 (#97), ouverte depuis
+avril, plus une cascade dont le symptôme (« Votre session a expiré ») ne ressemble pas à sa
+cause. La liste nominative, le motif de chacun et **la marche à suivre pour distinguer un échec
+connu d'une régression** sont dans `docs/testing.md` § *« Les échecs attendus »*. Un rouge ne se
+juge pas au nombre : il se juge fichier par fichier contre cette liste.
+
 #### ⚠️ `KESH_COOKIE_SECURE=false` est OBLIGATOIRE en local HTTP — sans lui, TOUTE la suite échoue en 401
 
 **Le montage qui marche**, vérifié le 2026-08-04 :
