@@ -659,24 +659,33 @@ payment-status-overdue = En retard
 payment-status-partial = Partiellement payée
 invoice-amount-settled = Déjà réglé
 invoice-amount-due = Reste dû
+invoice-settle-button = Enregistrer un règlement
+invoice-settle-button-short = Régler
+invoice-settle-dialog-title = Enregistrer un règlement
+invoice-settle-dialog-body = Le règlement produit son écriture comptable, quel que soit le mode.
+invoice-settle-type-label = Mode de règlement
+invoice-settle-type-bank = Virement bancaire
+invoice-settle-type-internal = Espèces ou autre compte
+invoice-settle-bank-label = Compte bancaire
+invoice-settle-account-label = Compte
+invoice-settle-account-placeholder = — Choisir un compte
+invoice-settle-amount-label = Montant
+invoice-settle-date-label = Date de règlement
+invoice-settle-confirm = Enregistrer le règlement
+invoice-settle-success-full = Règlement enregistré — facture soldée
+invoice-settle-success-partial = Règlement partiel enregistré
+invoice-error-settled-on-required = Date de règlement obligatoire
+invoice-error-settled-on-before-invoice-date = La date de règlement ne peut être antérieure à la date de facture
+invoice-error-amount-positive = Le montant doit être supérieur à zéro
+invoice-error-amount-over-due = Le montant dépasse ce qui reste dû sur cette facture
+invoice-error-bank-account-required = Choisissez un compte bancaire
+invoice-error-account-required = Choisissez un compte
 
 # Marquer payée / Dé-marquer payée
-invoice-mark-paid-button = Marquer payée
-invoice-mark-paid-dialog-title = Marquer la facture comme payée
-invoice-mark-paid-dialog-body = Indiquez la date à laquelle vous avez reçu le paiement.
-invoice-mark-paid-date-label = Date de paiement
-invoice-mark-paid-confirm = Confirmer le paiement
-invoice-mark-paid-success = Facture marquée payée
-invoice-unmark-paid-button = Dé-marquer payée
-invoice-unmark-paid-dialog-title = Dé-marquer payée
-invoice-unmark-paid-dialog-body = Cette facture sera à nouveau considérée comme impayée. Utile pour corriger une erreur. Continuer ?
 invoice-unmark-paid-confirm = Dé-marquer
-invoice-unmark-paid-success = Marquage paiement annulé
 invoice-detail-paid-at-label = Payée le
 
 # Erreurs validation paidAt
-invoice-error-paid-at-required = Date de paiement obligatoire
-invoice-error-paid-at-before-invoice-date = La date de paiement ne peut être antérieure à la date de facture
 invoice-error-mark-paid-not-validated = Seules les factures validées peuvent être marquées payées
 invoice-error-already-unpaid = Cette facture n'est pas marquée payée
 

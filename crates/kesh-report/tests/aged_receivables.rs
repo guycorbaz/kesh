@@ -146,16 +146,18 @@ async fn aged_buckets_reconciliation_and_parity(pool: MySqlPool) {
 
     // Beta — uniquement une payée + un brouillon → Beta ne doit PAS apparaître.
     let paid = mk_validated(&pool, &seeded, beta, Some(days_before(50)), z, dec!(999)).await;
-    invoices::mark_as_paid(
-        &pool,
-        seeded.admin_user_id,
-        paid.invoice.id,
-        seeded.company_id,
-        paid.invoice.version,
-        Some(as_of().and_hms_opt(12, 0, 0).unwrap()),
-    )
-    .await
-    .expect("mark paid");
+    // ⚠️ `UPDATE` brut, et non `settle_invoice` : ce test porte sur ce que la
+    // BALANCE ÂGÉE exclut — il a besoin d'« une facture dont `paid_at` est
+    // posé », pas d'un règlement comptable complet. Depuis la Story 24-3
+    // (#372), `mark_as_paid` n'existe plus ; y substituer la machinerie de
+    // règlement (plan comptable, écriture de vente, exercice ouvert) coupleraient
+    // ce test à des changements sans rapport avec ce qu'il mesure.
+    sqlx::query("UPDATE invoices SET paid_at = ? WHERE id = ?")
+        .bind(as_of().and_hms_opt(12, 0, 0).unwrap())
+        .bind(paid.invoice.id)
+        .execute(&pool)
+        .await
+        .expect("montage : pose de paid_at");
     // Brouillon (créé, non validé) → exclu.
     invoices::create(
         &pool,

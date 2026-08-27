@@ -188,13 +188,31 @@ export interface DueDatesQuery {
 	offset?: number;
 }
 
-export interface MarkPaidRequest {
-	paidAt?: string;
-	version: number;
+/**
+ * Enregistrer un règlement — Story 24-3 (#372).
+ *
+ * ⛔ Remplace `MarkPaidRequest` / `UnmarkPaidRequest`, supprimés avec leurs
+ * routes. Un marquage ne demandait qu'une date parce qu'il n'écrivait rien ; un
+ * règlement produit son écriture, il lui faut donc une contrepartie et un
+ * montant.
+ *
+ * ⚠️ **Forme PLATE, et non un objet imbriqué** : c'est le contrat du backend
+ * (`SettleInvoiceRequest`), lui-même calqué sur `PaySupplierInvoiceRequest`.
+ * Exactement l'une des deux références de contrepartie est renseignée.
+ */
+export interface SettleInvoiceRequest {
+	settlementType: 'bank_transfer' | 'internal_account';
+	bankAccountId?: number;
+	accountId?: number;
+	amount: string;
+	settledOn: string;
 }
 
-export interface UnmarkPaidRequest {
-	version: number;
+export interface SettleInvoiceResponse {
+	invoice: InvoiceResponse;
+	journalEntryId: number;
+	amountDueAfter: string;
+	fullySettled: boolean;
 }
 
 export interface CreateInvoiceLineRequest {

@@ -123,9 +123,23 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * deux lignes qui n'apparaissent au pied de la facture que **si** un règlement existe. Le
  * badge « Partiellement payée », lui, n'ajoute **aucun** site : `PaymentStatusBadge` résout
  * sa clé par une table indexée sur le statut, et ce dispatcher était déjà relevé.
+ *
+ * ⚠️ **1607 → 1613, +6 pour le règlement hors banque (Story 24-3, #372)**, et la ventilation
+ * n'est pas monotone — c'est ce qui la rend informative :
+ *
+ * | site | delta |
+ * |---|---|
+ * | `SettleInvoiceDialog.svelte` (18) remplace `MarkPaidDialog.svelte` (7) | **+11** |
+ * | `routes/(app)/invoices/[id]/+page.svelte` — le dialogue de dé-marquage disparaît | **−6** |
+ * | `routes/(app)/invoices/due-dates/+page.svelte` | **+1** |
+ *
+ * Le dialogue en demande davantage parce qu'un **règlement a une contrepartie et un
+ * montant**, là où un marquage n'avait qu'une date. Et la fiche en perd six parce que
+ * « Dé-marquer payée » n'existe plus : annuler un règlement demande une contre-passation
+ * (issue #414), pas un retrait de drapeau.
  */
 const ATTENDU = {
-	sitesTotal: 1607,
+	sitesTotal: 1613,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

@@ -196,10 +196,25 @@ pub struct ReplayedBackfill {
 /// Deux entrées seulement : les sept autres migrations du dépôt qui écrivent des
 /// données sont hors de la fenêtre d'importabilité ou portent sur une table
 /// système (cf. [`EXEMPT_MIGRATIONS`]).
-pub const POST_RESTORE_BACKFILLS: &[PostRestoreBackfill] = &[];
+pub const POST_RESTORE_BACKFILLS: &[PostRestoreBackfill] = &[PostRestoreBackfill {
+    version: 20260828000001,
+    label: "20260828000001_invoice_settlements_type.sql",
+    // CLASSE B — cf. le doc-comment du fichier extrait. La sentinelle est
+    // valide : `settlement_bank_account_id` est ajoutée par le MÊME
+    // `ALTER TABLE` que l'`UPDATE` de backfill.
+    //
+    // ⚠️ **Première entrée depuis que la Story 24-2 a vidé ce registre**, et
+    // c'est le mécanisme qui reprend exactement son office : la 24-2 avait
+    // refermé la fenêtre d'importabilité en créant `invoice_settlements`
+    // (20260827000001) ; cette migration lui est POSTÉRIEURE, donc un backup
+    // situé entre les deux est parfaitement importable — et il porte la table
+    // sans la colonne. C'est le cas que ce dispositif existe pour rattraper.
+    trigger: BackfillTrigger::Sentinels(&[("invoice_settlements", "settlement_bank_account_id")]),
+    sql: include_str!("post_restore/20260828000001_invoice_settlements_type.sql"),
+}];
 
-// ⚠️ **Le registre est VIDE depuis la Story 24-2 (#371), et ce n'est pas un
-// oubli — c'est le mécanisme qui fonctionne.**
+// ⚠️ **Le registre a été VIDE entre les Stories 24-2 et 24-3, et ce n'était pas
+// un oubli — c'était le mécanisme qui fonctionnait.**
 //
 // La création de `invoice_settlements` (`20260827000001`) a **refermé la fenêtre
 // d'importabilité** au-delà des deux entrées qu'il portait (`20260722000001` et
@@ -215,8 +230,12 @@ pub const POST_RESTORE_BACKFILLS: &[PostRestoreBackfill] = &[];
 //
 // ⚠️ **Toute nouvelle table applicative aura le même effet** sur les entrées
 // futures. Ce n'est pas une raison de renoncer au mécanisme : il reste la seule
-// réponse au cas « le backup est dans la fenêtre et précède un backfill », et ce
-// cas se représentera dès la prochaine migration qui remplit une colonne.
+// réponse au cas « le backup est dans la fenêtre et précède un backfill ».
+//
+// ⛔ **Et ce cas s'est représenté à la story SUIVANTE** : `20260828000001`
+// (Story 24-3) est postérieure à la table qui avait refermé la fenêtre, donc un
+// backup pris entre les deux est importable ET dépourvu de la colonne. Le
+// registre n'était pas mort, il attendait.
 
 /// Les entrées **retirées** du registre parce que la fenêtre d'importabilité
 /// s'est refermée sur elles (Story 24-2, #371).

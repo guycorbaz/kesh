@@ -1368,6 +1368,10 @@ async fn accept_one_invoice(
             journal_entry_id,
             amount: bank_transaction.amount,
             settled_on: paid_at_candidate,
+            // La réconciliation bancaire est, par définition, un virement — et
+            // le compte est celui de l'import, pas un choix de l'utilisateur
+            // (Story 24-3).
+            choice: kesh_db::entities::SettlementChoice::BankTransfer { bank_account_id },
         },
     )
     .await

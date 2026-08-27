@@ -895,31 +895,12 @@ pub struct DueDatesResponse {
     pub summary: DueDatesSummary,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MarkPaidRequest {
-    #[serde(default)]
-    pub paid_at: Option<NaiveDateTime>,
-    pub version: i32,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UnmarkPaidRequest {
-    pub version: i32,
-}
-
-/// B12 (review pass 1 G2 B) : `version` sérialisée par le frontend ne doit
-/// jamais être négative. Sans cette garde, un payload `version=-1` produit
-/// un 409 OPTIMISTIC_LOCK_CONFLICT confus au lieu d'un 400 explicite.
-fn validate_version(v: i32) -> Result<(), AppError> {
-    if v < 0 {
-        return Err(AppError::Validation(
-            "version doit être un entier non négatif".into(),
-        ));
-    }
-    Ok(())
-}
+// ⚠️ **`MarkPaidRequest`, `UnmarkPaidRequest` et `validate_version` sont
+// supprimés avec leurs routes (Story 24-3, #372).** `validate_version` ne
+// servait qu'à ces deux-là : le règlement ne prend pas de `version`, parce
+// qu'enregistrer un règlement n'est pas modifier la facture — c'est y ajouter un
+// fait, et deux règlements concurrents ne se contredisent pas. Le garde qui
+// compte est le refus du trop-perçu, calculé sous verrou.
 
 /// Construit une `InvoiceListQuery` pour l'échéancier — force `status =
 /// 'validated'` et applique les défauts de tri (`due_date ASC`).
@@ -1067,54 +1048,110 @@ pub async fn list_due_dates_handler(
 // week-end/jour férié appliqué par la banque). La seule borne reste la borne
 // basse `paid_at >= invoice.date - 1j`, validée dans le repository.
 
-/// `POST /api/v1/invoices/:id/mark-paid` — marquage manuel.
-pub async fn mark_invoice_paid_handler(
-    State(state): State<AppState>,
-    Extension(current_user): Extension<CurrentUser>,
-    Path(id): Path<i64>,
-    Json(req): Json<MarkPaidRequest>,
-) -> Result<Json<InvoiceResponse>, AppError> {
-    validate_version(req.version)?;
-    let company = get_company_for(&current_user, &state.pool).await?;
-    let paid_at = req
-        .paid_at
-        .unwrap_or_else(|| chrono::Utc::now().naive_utc());
-
-    // M1 (review pass 1 G2) : mark_as_paid retourne `(Invoice, Vec<InvoiceLine>)`
-    // depuis la même transaction, supprimant la race DELETE/UPDATE entre
-    // l'UPDATE paid_at et un re-fetch post-commit.
-    let (updated, lines) = invoices::mark_as_paid(
-        &state.pool,
-        current_user.user_id,
-        id,
-        company.id,
-        req.version,
-        Some(paid_at),
-    )
-    .await?;
-    Ok(Json(InvoiceResponse::from_parts(updated, lines)))
+/// Corps de `POST /api/v1/invoices/{id}/settlements` — Story 24-3 (#372).
+///
+/// ⚠️ **Aucun champ `version`**, contrairement au `mark-paid` qu'il remplace.
+/// Enregistrer un règlement n'est pas modifier la facture : c'est y ajouter un
+/// fait. Deux règlements concurrents ne se contredisent pas — le garde qui
+/// compte est le refus du trop-perçu, calculé sous verrou.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettleInvoiceRequest {
+    /// `bank_transfer` ou `internal_account`.
+    pub settlement_type: String,
+    pub bank_account_id: Option<i64>,
+    pub account_id: Option<i64>,
+    pub amount: Decimal,
+    pub settled_on: NaiveDate,
 }
 
-/// `POST /api/v1/invoices/:id/unmark-paid` — annule un marquage payé.
-pub async fn unmark_invoice_paid_handler(
+impl SettleInvoiceRequest {
+    /// ⛔ **DTO plat converti explicitement, et non `#[serde(flatten)]` sur
+    /// `SettlementChoice`.** Le patron est celui de `PaySupplierInvoiceRequest`
+    /// (`routes/supplier_invoices.rs:181`), et il n'est pas décoratif : un enum
+    /// taggé aplati garde le nommage de SES champs, si bien que le payload
+    /// mélangerait `settledOn` en camelCase et `account_id` en snake_case. La
+    /// première rédaction l'a fait, et le test HTTP a rendu **422**.
+    ///
+    /// La conversion explicite donne en prime des messages d'erreur qui nomment
+    /// le champ manquant, là où serde ne dirait que « variant inconnu ».
+    ///
+    /// ⚠️ Prend `self` **par valeur** et rend tout d'un coup : un `into_*` qui
+    /// emprunte est refusé par `clippy::wrong_self_convention`, et le patron
+    /// fournisseur (`PaySupplierInvoiceRequest::into_choice`) prend déjà `self`.
+    fn into_parts(
+        self,
+    ) -> Result<(kesh_db::entities::SettlementChoice, Decimal, NaiveDate), AppError> {
+        use kesh_db::entities::SettlementChoice;
+        let choice = match self.settlement_type.as_str() {
+            "bank_transfer" => {
+                let bank_account_id = self.bank_account_id.ok_or_else(|| {
+                    AppError::Validation("bankAccountId requis pour un virement".into())
+                })?;
+                SettlementChoice::BankTransfer { bank_account_id }
+            }
+            "internal_account" => {
+                let account_id = self.account_id.ok_or_else(|| {
+                    AppError::Validation("accountId requis pour un compte interne".into())
+                })?;
+                SettlementChoice::InternalAccount { account_id }
+            }
+            autre => {
+                return Err(AppError::Validation(format!(
+                    "settlementType inconnu : « {autre} » (attendu bank_transfer | internal_account)"
+                )));
+            }
+        };
+        Ok((choice, self.amount, self.settled_on))
+    }
+}
+
+/// Réponse : la facture à jour, plus ce que le règlement a produit.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettleInvoiceResponse {
+    pub invoice: InvoiceResponse,
+    pub journal_entry_id: i64,
+    pub amount_due_after: Decimal,
+    pub fully_settled: bool,
+}
+
+/// `POST /api/v1/invoices/:id/settlements` — enregistre un règlement.
+///
+/// ⛔ **Remplace `mark-paid` / `unmark-paid`, supprimés.** Depuis la 24-2 un
+/// règlement produit son écriture ; un marquage qui n'écrivait rien n'a plus
+/// d'usage légitime, et son annulation gratuite non plus.
+pub async fn settle_invoice_handler(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
-    Json(req): Json<UnmarkPaidRequest>,
-) -> Result<Json<InvoiceResponse>, AppError> {
-    validate_version(req.version)?;
+    Json(req): Json<SettleInvoiceRequest>,
+) -> Result<Json<SettleInvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    // M1 (review pass 1 G2) : idem mark_invoice_paid_handler — fetch atomique.
-    let (updated, lines) = invoices::mark_as_paid(
+    let (choice, amount, settled_on) = req.into_parts()?;
+    let outcome = kesh_db::repositories::invoice_settlements_write::settle_invoice(
         &state.pool,
         current_user.user_id,
-        id,
         company.id,
-        req.version,
-        None,
+        id,
+        choice,
+        amount,
+        settled_on,
     )
     .await?;
-    Ok(Json(InvoiceResponse::from_parts(updated, lines)))
+
+    let (invoice, lines) = invoices::find_by_id_with_lines(&state.pool, company.id, id)
+        .await?
+        .ok_or(AppError::Database(DbError::NotFound))?;
+    let settled =
+        kesh_db::repositories::invoice_settlements::amount_settled(&state.pool, id).await?;
+    Ok(Json(SettleInvoiceResponse {
+        invoice: InvoiceResponse::from_parts(invoice, lines)
+            .with_settlement(settled, outcome.amount_due_after),
+        journal_entry_id: outcome.journal_entry_id,
+        amount_due_after: outcome.amount_due_after,
+        fully_settled: outcome.fully_settled,
+    }))
 }
 
 /// Clés FTL des en-têtes CSV (locale = `companies.accounting_language`).
