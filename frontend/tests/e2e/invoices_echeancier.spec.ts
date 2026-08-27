@@ -97,7 +97,7 @@ function daysFromToday(offset: number): string {
 }
 
 test.describe('Échéancier factures — Story 5.4', () => {
-	test('golden path : création → échéancier → marquer payée → dé-marquer → export CSV', async ({
+	test('golden path : création → échéancier → régler → export CSV', async ({
 		page,
 	}) => {
 		await login(page);
@@ -143,9 +143,19 @@ test.describe('Échéancier factures — Story 5.4', () => {
 		await page.getByTestId('settle-type').selectOption('internal_account');
 		// Le premier compte proposé suffit : ce cas porte sur le PARCOURS, pas sur
 		// le choix du compte — celui-ci est couvert par les tests Rust.
-		await page
-			.getByTestId('settle-account')
-			.selectOption({ index: 1 });
+		await page.getByTestId('settle-account').selectOption({ index: 1 });
+		// ⚠️ **Le montant doit être SAISI ici, et c'est délibéré.** L'échéancier
+		// ne connaît pas encore le résiduel (colonnes reportées à une issue
+		// séparée), donc le dialogue reçoit `amountDue = null` — « non calculé »
+		// — et laisse le champ vide plutôt que de pré-remplir.
+		//
+		// ⛔ Y pré-remplir le TTC de la ligne serait FAUX : sur une facture
+		// déjà partiellement réglée, TTC ≠ résiduel, et l'utilisateur serait
+		// conduit vers un trop-perçu que le serveur refuse. Un champ vide dit la
+		// vérité ; un champ pré-rempli d'un mauvais chiffre ment.
+		//
+		// 100.00 HT à 8.10 % ⇒ 108.10 TTC (cf. `createAndValidateInvoice`).
+		await page.getByLabel(/Montant|Amount|Importo|Betrag/i).fill('108.10');
 		await page.getByTestId('settle-confirm').click();
 
 		// Après reload, la facture en retard disparaît du filtre "Impayées".
