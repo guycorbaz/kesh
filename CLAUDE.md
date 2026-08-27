@@ -160,8 +160,8 @@ Pré-requis : MariaDB démarré + seed CI appliqué + Playwright browsers instal
 
 ⚠️ **« Vert » ne veut pas dire 0 échec, et sans cette précision la règle ci-dessus est
 invérifiable.** La suite rend **8 échecs attendus** — sept de la KF-029 (#97), ouverte depuis
-avril, plus une cascade dont le symptôme (« Votre session a expiré ») ne ressemble pas à sa
-cause. La liste nominative, le motif de chacun et **la marche à suivre pour distinguer un échec
+avril, plus **un huitième qui change d'identité d'un run à l'autre** — pollution d'état entre
+specs, et non défaut de la spec qui rougit. La liste nominative, le motif de chacun et **la marche à suivre pour distinguer un échec
 connu d'une régression** sont dans `docs/testing.md` § *« Les échecs attendus »*. Un rouge ne se
 juge pas au nombre : il se juge fichier par fichier contre cette liste.
 

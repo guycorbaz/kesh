@@ -334,13 +334,26 @@ régression au milieu.
 | `onboarding.spec.ts:57` | KF-029 (#97) |
 | `onboarding.spec.ts:77` | KF-029 (#97) |
 | `onboarding.spec.ts:150` | KF-029 (#97) |
-| `product-revenue-account.spec.ts:133` | **cascade** des précédents — voir ci-dessous |
+| **un huitième, VARIABLE** | pollution d'état entre specs — voir ci-dessous |
 
-**La cascade, et elle n'est pas évidente.** Les specs `onboarding*` reseedent la base en
-`fresh-install`. L'ordre d'exécution de Playwright est **alphabétique**, `onboarding` précède
-`product`, et le test suivant se réveille sur *« Votre session a expiré »* — un symptôme qui ne
-ressemble en rien à sa cause. **Rejoué seul, `product-revenue-account.spec.ts` rend 4/4 verts** ;
-c'est le contrôle qui distingue la cascade d'une vraie régression.
+**Le huitième n'a pas d'identité fixe, et c'est l'information utile.** Deux runs complets à
+un jour d'intervalle :
+
+| run | le huitième |
+|---|---|
+| 2026-08-26 | `product-revenue-account.spec.ts:133` — « Votre session a expiré » |
+| 2026-08-27 | `invoices_echeancier.spec.ts:100` — une ligne attendue absente du tableau |
+
+**Les deux passent 100 % rejoués seuls.** Un huitième qui change d'identité d'un run à l'autre
+n'est pas un défaut de la spec qui rougit : c'est de la **pollution d'état entre specs**, dette
+acceptée et documentée en § *« Cleanup entre tests »* (`D-6-4-A` : aucun reset entre tests d'une
+même spec). Les specs `onboarding*` y contribuent le plus — elles reseedent la base en
+`fresh-install`, et l'ordre d'exécution de Playwright est **alphabétique**.
+
+⚠️ **Une première rédaction de cette section nommait `product-revenue-account.spec.ts:133`
+comme s'il s'agissait du huitième, toujours le même.** C'était trop précis, et donc trompeur :
+un lecteur voyant rougir une autre spec en aurait conclu à une régression. Corrigé au run du
+2026-08-27, qui a rendu un huitième différent.
 
 ### Comment lire un rouge, dans l'ordre
 
@@ -348,8 +361,8 @@ c'est le contrôle qui distingue la cascade d'une vraie régression.
    régression **jusqu'à preuve du contraire**.
 2. Pour un échec de la liste, vérifier que la branche ne touche pas le fichier :
    `git log main..HEAD -- <fichier>` doit rendre zéro commit.
-3. Pour un échec qui suit immédiatement une spec `onboarding*`, **le rejouer seul** avant toute
-   autre chose : c'est probablement la cascade.
+3. Pour **tout** huitième échec hors liste, **le rejouer seul** avant toute autre chose. Vert
+   seul ⇒ pollution d'état, pas régression. Rouge seul ⇒ régression, et il faut chercher.
 
 ⚠️ **Ce tableau se recompte, il ne se recopie pas.** S'il rougit d'un test de plus, la question
 n'est pas « faut-il ajuster le nombre ? » mais « **quel** test est apparu, et pourquoi ». Un
