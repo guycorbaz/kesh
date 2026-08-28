@@ -98,16 +98,19 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * `i18nMsg`. Un `switch` exhaustif plutôt qu'une table indexée, pour qu'un code neuf
  * fasse rougir le type-check au lieu d'afficher du vide.
  *
- * ⚠️ Elle est passée par les deux classes, et c'est instructif. Livrée avec un
- * `default: return ''`, elle tombait en `ecartee` — un littéral, fût-il vide, écarte de
- * `conforme`. La **passe 2 de revue de code** a remplacé ce `default` par une affectation
- * à `never` (le seul dispositif qui fasse rougir le type-check à l'ajout d'un neuvième
- * code) : la fonction ne rend plus aucun littéral, donc `conforme` 36 → **37** et
- * `ecartee` 7 → **6**. Le total, lui, ne bouge pas.
+ * ⚠️ **Elle a changé de classe TROIS FOIS en une journée, et l'oscillation dit quelque
+ * chose de juste** : cette ventilation ne mesure pas une qualité, elle mesure un fait —
+ * *la fonction rend-elle un littéral ?* Livrée avec `default: return ''`, elle tombait en
+ * `ecartee`. La passe 2 de revue a remplacé ce `default` par une affectation à `never` et
+ * `return _exhaustif` : plus aucun littéral, donc `conforme`. La passe 3 a montré que
+ * `return _exhaustif` rend, **à l'exécution**, le code brut non traduit — `never` n'étant
+ * qu'une fiction de compilation. La forme finale garde les deux protections
+ * (`void _exhaustif; return '';`), et le littéral revient : `ecartee` **7**, `conforme`
+ * **36**. Le total, lui, n'a jamais bougé.
  *
- * *(Ce paragraphe a été réécrit deux fois, chaque fois APRÈS lecture de la ventilation
- * réelle : ce garde-fou interdit d'ajuster un chiffre sans le recompter, et sa première
- * rédaction annonçait `conforme` sans l'avoir vérifié.)*
+ * *(Chacune des trois écritures de ce paragraphe a suivi la lecture de la ventilation
+ * réelle, jamais l'inverse : ce garde-fou interdit d'ajuster un chiffre sans le
+ * recompter, et sa toute première rédaction annonçait `conforme` sans l'avoir vérifié.)*
  */
 const CANDIDATES_ATTENDUES = 43;
 
@@ -626,7 +629,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 6, conforme: 37 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 7, conforme: 36 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

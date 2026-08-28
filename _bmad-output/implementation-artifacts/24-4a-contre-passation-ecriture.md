@@ -517,6 +517,19 @@ La passe a vérifié quatre choses, et les quatre tiennent : le symptôme de P3-
 
 ⚠️ **P2-6 est le plus instructif pour le processus** : la story livrait une fonction que le manuel décrivait explicitement comme absente — « Ce que le logiciel ne fait pas à votre place… contre-passer vous-même ». **Aucun gate ne lit le manuel.** La § *Synchroniser TOUTES les docs* du `CLAUDE.md` le prescrit pourtant, et la *File List* n'en portait aucun.
 
+#### Passe 3 — 2026-08-28 · Sonnet 4.6, **passe ciblée** sur le seul commit `04c30535`
+
+Prompt versionné : `24-4a-code-review-prompt-regression-hunter-p3.md`.
+
+**0 CRITICAL, 0 HIGH, 2 MEDIUM, 0 LOW** — de dix findings à deux, et les deux portent encore sur la remédiation précédente.
+
+- **P3-2** — ⛔ **`never` n'est qu'une fiction de compilation.** La passe 2 avait remplacé `default: return ''` par une affectation à `never` pour rendre le `switch` exhaustif, puis écrit `return _exhaustif` — qui rend, **à l'exécution**, le code brut. Un navigateur au bundle périmé face à un serveur plus récent aurait affiché `NEUVIEME_CODE` en clair : une fuite de jeton interne non traduit. La lentille l'a démontré au sol, en ajoutant un neuvième code au type puis en restaurant le fichier. Les deux protections cohabitent désormais — `void _exhaustif;` pour le compile-time, `return '';` pour l'exécution.
+- **P3-1** — le champ portant le **numéro du compte archivé**, production la plus substantielle de la passe 2, n'était vérifié par aucun test. Un refactor du triplet de `reversal_blocker` l'aurait cassé en silence.
+
+⚠️ **Un effet de bord qui vaut d'être noté** : ce va-et-vient a fait changer de classe **trois fois en une journée** le compteur du garde-fou des libellés en dur — `ecartee` → `conforme` → `ecartee`. Ce n'est pas un défaut du garde-fou : il mesure un fait objectif (*la fonction rend-elle un littéral ?*), et les deux modifications ont réellement changé la réponse. Son doc-comment raconte désormais les trois états plutôt que de prétendre au dernier.
+
+**Ce que la passe a vérifié sans rien trouver** : la propagation des jetons (`sept`→`huit`, `63`→`64`, `2248`→`2257`, `archived_account_id`→`archived_account_number`) — zéro résidu ; le scoping des deux lectures ; le contrat `document_id`/`document_label` ; le déterminisme de la sous-requête ; et le **manuel**, dont la section neuve décrit fidèlement le code, PDF compris.
+
 ### Agent Model Used
 
 Opus 5 (1M context) — `bmad-dev-story`, 2026-08-28.

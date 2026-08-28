@@ -171,12 +171,20 @@
 			default: {
 				// ⛔ **C'est l'affectation à `never` qui fait rougir**, pas le
 				// `default` : ajouter un neuvième code au type sans l'ajouter ici
-				// casse le type-check, au lieu d'afficher un motif VIDE à la place
-				// du bouton. Le paramètre était typé `string`, ce qui ôtait au
-				// `switch` toute exhaustivité — trois doc-comments affirmaient
-				// pourtant le contraire. *(Passe 2 de revue de code.)*
+				// casse le type-check. Le paramètre était typé `string`, ce qui
+				// ôtait au `switch` toute exhaustivité — trois doc-comments
+				// affirmaient pourtant le contraire. *(Passe 2 de revue.)*
 				const _exhaustif: never = code;
-				return _exhaustif;
+				void _exhaustif;
+				// ⚠️ **Et l'on rend une chaîne vide, PAS `_exhaustif`.** À
+				// l'exécution, `never` n'est qu'une fiction de compilation :
+				// `return _exhaustif` rendait littéralement `code`, si bien qu'un
+				// navigateur au bundle périmé face à un serveur plus récent aurait
+				// affiché `NEUVIEME_CODE` en clair à l'utilisateur — une fuite de
+				// jeton interne non traduit. La garde protège le compile-time, la
+				// chaîne vide protège l'exécution ; il faut les deux.
+				// *(Relevé en passe 3 de revue de code.)*
+				return '';
 			}
 		}
 	}

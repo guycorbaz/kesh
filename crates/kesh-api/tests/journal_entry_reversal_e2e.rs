@@ -896,6 +896,15 @@ async fn detail_reports_an_archived_account_before_the_click(pool: MySqlPool) {
         detail["reversalBlockedBy"].as_str(),
         Some("ACCOUNT_ARCHIVED")
     );
+    // ⛔ **Et le NUMÉRO du compte, sans quoi l'écran dit « réactivez-le » sans
+    // dire lequel.** C'est la production la plus substantielle de la passe 2 de
+    // revue, et elle n'était vérifiée par aucun test — un refactor du triplet de
+    // `reversal_blocker` l'aurait cassée en silence. *(Passe 3 de revue.)*
+    assert_eq!(
+        detail["reversalBlockedLabel"].as_str(),
+        Some("6000"),
+        "le motif doit nommer le compte à réactiver"
+    );
 }
 
 /// AC 17 — **la précédence est figée** : un motif de propriété passe devant le
