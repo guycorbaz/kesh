@@ -2,7 +2,7 @@
 
 ## Status
 
-in-progress
+review
 
 ## Story
 
@@ -218,44 +218,44 @@ Chaque test de l'AC 17 monte **une seule** cause.
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — La migration et ses cinq garde-fous** (AC 3)
-  - [ ] `20260828000002_journal_entries_reversal.sql` : `reverses_entry_id BIGINT NULL`, FK `RESTRICT`, `UNIQUE`
-  - [ ] ligne `<version> <sha384>` dans `crates/kesh-db/migrations.sha384` (P8)
-  - [ ] ligne + les **cinq** compteurs de `docs/migrations-idempotence-audit.md`, recomptés depuis la source (P5)
-  - [ ] `crates/kesh-db/test-schema/0001_schema_squash.sql` aligné sur le schéma réel
-  - [ ] `assert_eq!(total, 63)` → `64` dans `migrations_upgrade_path.rs` (P6)
-  - [ ] contrôle P7 : la migration n'écrit aucune donnée → ni registre ni exemption
-- [ ] **T2 — L'entité et les lectures** (AC 3)
-  - [ ] `reverses_entry_id: Option<i64>` sur `JournalEntry`, et les `SELECT` qui listent les colonnes
-- [ ] **T3 — Le cœur : `reverse_in_tx` / `reverse`** (AC 1, 2, 7, 8, 10, 13, 14)
-  - [ ] relecture des lignes `… ORDER BY line_order`, inversion `D ↔ C`, `project_id` repris **par ligne**
-  - [ ] exercice ouvert du jour ; journal OD ; libellé au format figé
-  - [ ] `enforce_postable = false` **et** exemption de la validation des projets (AC 9)
-  - [ ] audit `journal_entry.reversed`
-- [ ] **T4 — Les refus** (AC 4, 5, 6, 11, 12)
-  - [ ] les six chemins FK → 409, message nommant la pièce et la correction
-  - [ ] `ALREADY_REVERSED` par discrimination du nom de contrainte sur 1062
-  - [ ] `IS_A_REVERSAL` ; `ACCOUNT_ARCHIVED` en **400** avec `details.rejected[]`
-- [ ] **T5 — La suppression** (AC 15, 16)
-  - [ ] `delete_all_by_company` remet `reverses_entry_id` à `NULL` avant le `DELETE`
-  - [ ] `DELETE /{id}` d'une origine contre-passée → **409 `ENTRY_IS_REVERSED`**
-  - [ ] doc-comment périmé de `delete_all_by_company` corrigé
-- [ ] **T6 — Route, RBAC et lecture enrichie** (AC 12, 17)
-  - [ ] `POST /api/v1/journal-entries/{id}/reverse` sous `comptable_routes`
-  - [ ] `reversesEntryId`, `reversedByEntryId`, `reversable`, `reversalBlockedBy` sur le **détail seul**, précédence figée
-- [ ] **T7 — L'export comptable** (AC 3)
-  - [ ] `reverses_entry_id` en snake_case dans `serialize_journal_entries_csv`, **avec son test**
-- [ ] **T8 — i18n et écran** (AC 18, 19)
-  - [ ] clés `journal-entries-reverse-*` dans les **quatre** locales
-  - [ ] bouton + confirmation + renvois croisés sur la fiche, `data-testid` (jamais un libellé traduit)
-- [ ] **T9 — Les tests**
-  - [ ] `crates/kesh-api/tests/journal_entry_reversal_e2e.rs` (NEW) — 9 tests de refus, une cause par test
-  - [ ] l'invariant I1 (somme nulle compte par compte), I2 (deux lignes au grand livre), I3 (aucune pièce désynchronisée)
-  - [ ] `frontend/tests/e2e/journal-entries.spec.ts`
-- [ ] **T10 — Les gates** (⛔ complets, ciblage interdit)
-  - [ ] base remise à zéro (KF-039), puis `scripts/test-fast.sh`
-  - [ ] `npm run check` / `lint-i18n-ownership` / `test:unit` / `build`
-  - [ ] suite Playwright complète, comparée à la baseline des 8 échecs attendus
+- [x] **T1 — La migration et ses cinq garde-fous** (AC 3)
+  - [x] `20260828000002_journal_entries_reversal.sql` : `reverses_entry_id BIGINT NULL`, FK `RESTRICT`, `UNIQUE`
+  - [x] ligne `<version> <sha384>` dans `crates/kesh-db/migrations.sha384` (P8)
+  - [x] ligne + les **cinq** compteurs de `docs/migrations-idempotence-audit.md`, recomptés depuis la source (P5)
+  - [x] `crates/kesh-db/test-schema/0001_schema_squash.sql` aligné sur le schéma réel
+  - [x] `assert_eq!(total, 63)` → `64` dans `migrations_upgrade_path.rs` (P6)
+  - [x] contrôle P7 : la migration n'écrit aucune donnée → ni registre ni exemption
+- [x] **T2 — L'entité et les lectures** (AC 3)
+  - [x] `reverses_entry_id: Option<i64>` sur `JournalEntry`, et les `SELECT` qui listent les colonnes
+- [x] **T3 — Le cœur : `reverse_in_tx` / `reverse`** (AC 1, 2, 7, 8, 10, 13, 14)
+  - [x] relecture des lignes `… ORDER BY line_order`, inversion `D ↔ C`, `project_id` repris **par ligne**
+  - [x] exercice ouvert du jour ; journal OD ; libellé au format figé
+  - [x] `enforce_postable = false` **et** exemption de la validation des projets (AC 9)
+  - [x] audit `journal_entry.reversed`
+- [x] **T4 — Les refus** (AC 4, 5, 6, 11, 12)
+  - [x] les six chemins FK → 409, message nommant la pièce et la correction
+  - [x] `ALREADY_REVERSED` par discrimination du nom de contrainte sur 1062
+  - [x] `IS_A_REVERSAL` ; `ACCOUNT_ARCHIVED` en **400** avec `details.rejected[]`
+- [x] **T5 — La suppression** (AC 15, 16)
+  - [x] `delete_all_by_company` remet `reverses_entry_id` à `NULL` avant le `DELETE`
+  - [x] `DELETE /{id}` d'une origine contre-passée → **409 `ENTRY_IS_REVERSED`**
+  - [x] doc-comment périmé de `delete_all_by_company` corrigé
+- [x] **T6 — Route, RBAC et lecture enrichie** (AC 12, 17)
+  - [x] `POST /api/v1/journal-entries/{id}/reverse` sous `comptable_routes`
+  - [x] `reversesEntryId`, `reversedByEntryId`, `reversable`, `reversalBlockedBy` sur le **détail seul**, précédence figée
+- [x] **T7 — L'export comptable** (AC 3)
+  - [x] `reverses_entry_id` en snake_case dans `serialize_journal_entries_csv`, **avec son test**
+- [x] **T8 — i18n et écran** (AC 18, 19)
+  - [x] clés `journal-entries-reverse-*` dans les **quatre** locales
+  - [x] bouton + confirmation + renvois croisés sur la fiche, `data-testid` (jamais un libellé traduit)
+- [x] **T9 — Les tests**
+  - [x] `crates/kesh-api/tests/journal_entry_reversal_e2e.rs` (NEW) — 9 tests de refus, une cause par test
+  - [x] l'invariant I1 (somme nulle compte par compte), I2 (deux lignes au grand livre), I3 (aucune pièce désynchronisée)
+  - [x] `frontend/tests/e2e/journal-entries.spec.ts`
+- [x] **T10 — Les gates** (⛔ complets, ciblage interdit)
+  - [x] base remise à zéro (KF-039), puis `scripts/test-fast.sh`
+  - [x] `npm run check` / `lint-i18n-ownership` / `test:unit` / `build`
+  - [x] suite Playwright complète, comparée à la baseline des 8 échecs attendus
 
 ## Hors périmètre
 
@@ -425,7 +425,71 @@ La passe a vérifié quatre choses, et les quatre tiennent : le symptôme de P3-
 
 ## Dev Agent Record
 
+### Ce que les gates ont réellement dit
+
+⛔ **Six passages du gate backend, et les quatre rouges venaient tous de fichiers hors périmètre** — la démonstration de ce que la spec annonçait en interdisant le ciblage.
+
+| # | garde | ce qu'il a exigé |
+|---|---|---|
+| 1 | `cargo fmt --check` | le pré-vol le moins cher du dépôt, arrêté avant les vingt minutes de tests |
+| 2 | `clippy::type_complexity` | le 7-uplet du recensement → struct `FromRow` nommée |
+| 3-4 | `invoice_lines_revenue_account_backfill` | `1054 Unknown column`, **deux fois** : à l'`INSERT` puis au `SELECT` |
+| 5 | `test_schema_guard` | mes dix tests montaient le vrai `MIGRATOR` au lieu du squash — ils auraient payé les 64 migrations à chaque test, en silence |
+
+⚠️ **Les rouges 3 et 4 ont une cause qui n'est PAS la colonne** : ce test fait tourner le **moteur d'aujourd'hui contre un schéma d'hier**, et il est resté vrai tant que personne n'ajoutait de colonne à `journal_entries` — la 24-4a est la première depuis avril. Deux correctifs, tous deux dans le sens du découplage : `create_in_tx` n'écrit la colonne **que si elle a quelque chose à dire** (pour tous les flux existants la requête redevient identique), et le test monte le schéma complet puis rejoue le backfill depuis le SQL embarqué — idempotent par construction, ce qui rend le rejeu légitime.
+
+### Le défaut que seul le E2E pouvait voir
+
+⛔ **`onMount` ne se rejoue pas quand SvelteKit réutilise le composant** — naviguer de `/journal-entries/12` à `/journal-entries/13` est la même route. Après la contre-passation, la page affichait **l'écriture précédente sous la nouvelle URL**. Remplacé par un `$effect` clé sur l'identifiant.
+
+⚠️ Ce défaut est né avec cette story — premier chemin du dépôt à naviguer d'une fiche d'écriture vers une autre — et **ni Vitest ni les tests Rust ne pouvaient le voir** : aucun des deux ne connaît la navigation.
+
+### Trois défauts trouvés en écrivant les tests, tous dans mes propres fixtures
+
+`accounts.number` que j'avais nommée `account_number` (500 en réponse) ; le vocabulaire de `contact_type` (`Entreprise`, pas `client`) ; et deux `CHECK` violés, dont `chk_invoice_settlements_counterparty` posée par la 24-3 **la veille**.
+
+### Ce qui reste ouvert, hors périmètre
+
+⚠️ **La liste des écritures ne renvoie PAS vers la fiche** — aucun `href`, vérifié au sol ; seuls la page d'un avoir et le grand livre y mènent. Le bouton « Contre-passer » vit donc sur un écran qu'on n'atteint pas depuis la liste. L'AC 18 est tenue (la fiche l'offre), la **découvrabilité** ne l'est pas. Signalé, non élargi.
+
+### Gates réellement exécutés
+
+| gate | résultat |
+|---|---|
+| `scripts/test-fast.sh` (fmt + clippy + nextest), base remise à zéro avant (KF-039) | **2248/2248**, 4 skipped |
+| `npm run check` | 0 erreur |
+| `npm run lint-i18n-ownership` | PASS |
+| `npm run test:unit` | **747/747** |
+| `npm run build` | OK |
+| Playwright, suite **complète**, montage de `docs/testing.md` | **218 passés / 7 échoués** — les sept de la KF-029 (#97) à la ligne près ; le huitième, variable, ne s'est pas manifesté. **Zéro régression.** |
+
+### File List
+
+- `crates/kesh-db/migrations/20260828000002_journal_entries_reversal.sql` (NEW)
+- `crates/kesh-db/migrations.sha384`
+- `crates/kesh-db/test-schema/0001_schema_squash.sql` (régénéré)
+- `crates/kesh-db/src/entities/journal_entry.rs`
+- `crates/kesh-db/src/errors.rs`
+- `crates/kesh-db/src/repositories/journal_entries.rs`
+- `crates/kesh-db/tests/migrations_upgrade_path.rs`
+- `crates/kesh-db/tests/invoice_lines_revenue_account_backfill.rs`
+- `crates/kesh-api/src/errors.rs`
+- `crates/kesh-api/src/lib.rs`
+- `crates/kesh-api/src/routes/journal_entries.rs`
+- `crates/kesh-api/src/exports/csv_tables.rs`
+- `crates/kesh-api/tests/journal_entry_reversal_e2e.rs` (NEW)
+- `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl`
+- `docs/migrations-idempotence-audit.md`
+- `frontend/src/lib/features/journal-entries/journal-entries.{api,types}.ts`
+- `frontend/src/lib/features/journal-entries/form-helpers.test.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/src/lib/shared/i18n-libelle-en-dur.test.ts`
+- `frontend/src/routes/(app)/journal-entries/[id]/+page.svelte`
+- `frontend/tests/e2e/journal-entries.spec.ts`
+
 ### Agent Model Used
+
+Opus 5 (1M context) — `bmad-dev-story`, 2026-08-28.
 
 ### Debug Log References
 

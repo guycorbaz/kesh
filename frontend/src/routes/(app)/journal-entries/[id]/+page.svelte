@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
-	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { ArrowLeft } from '@lucide/svelte';
@@ -30,7 +29,24 @@
 
 	let id = $derived(parseInt(page.params.id ?? '', 10));
 
-	onMount(async () => {
+	/**
+	 * ⛔ **`$effect` et non `onMount`.** SvelteKit RÉUTILISE le composant quand on
+	 * navigue de `/journal-entries/12` à `/journal-entries/13` : même route, autre
+	 * paramètre. `onMount` ne se rejoue pas, et la page affichait l'écriture
+	 * PRÉCÉDENTE sous la nouvelle URL.
+	 *
+	 * ⚠️ Ce défaut est né avec la contre-passation, qui est le premier chemin du
+	 * dépôt à naviguer d'une fiche d'écriture vers une autre. Trouvé par le seul
+	 * test E2E — ni Vitest ni les tests Rust ne voient une navigation.
+	 */
+	$effect(() => {
+		void loadEntry(id);
+	});
+
+	async function loadEntry(id: number) {
+		loading = true;
+		entry = null;
+		errorMsg = '';
 		if (!Number.isFinite(id) || id <= 0) {
 			errorMsg = "Identifiant d'écriture invalide";
 			loading = false;
@@ -66,7 +82,7 @@
 		} finally {
 			loading = false;
 		}
-	});
+	}
 
 	function accountLabel(accountId: number): string {
 		const a = accountsById.get(accountId);
