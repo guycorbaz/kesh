@@ -681,8 +681,6 @@ invoice-error-amount-over-due = Le montant dépasse ce qui reste dû sur cette f
 invoice-error-bank-account-required = Choisissez un compte bancaire
 invoice-error-account-required = Choisissez un compte
 
-# Marquer payée / Dé-marquer payée
-invoice-unmark-paid-confirm = Dé-marquer
 invoice-detail-paid-at-label = Payée le
 
 # Erreurs validation paidAt

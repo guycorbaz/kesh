@@ -647,7 +647,6 @@ invoice-error-amount-over-due = The amount exceeds what remains due on this invo
 invoice-error-bank-account-required = Choose a bank account
 invoice-error-account-required = Choose an account
 
-invoice-unmark-paid-confirm = Unmark
 invoice-detail-paid-at-label = Paid on
 
 invoice-error-mark-paid-not-validated = Only validated invoices can be marked as paid

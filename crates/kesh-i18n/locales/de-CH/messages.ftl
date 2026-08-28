@@ -647,7 +647,6 @@ invoice-error-amount-over-due = Der Betrag übersteigt den offenen Saldo dieser 
 invoice-error-bank-account-required = Wählen Sie ein Bankkonto
 invoice-error-account-required = Wählen Sie ein Konto
 
-invoice-unmark-paid-confirm = Rückgängig machen
 invoice-detail-paid-at-label = Bezahlt am
 
 invoice-error-mark-paid-not-validated = Nur validierte Rechnungen können als bezahlt markiert werden

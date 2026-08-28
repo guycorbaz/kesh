@@ -647,7 +647,6 @@ invoice-error-amount-over-due = L'importo supera il saldo dovuto su questa fattu
 invoice-error-bank-account-required = Scegliete un conto bancario
 invoice-error-account-required = Scegliete un conto
 
-invoice-unmark-paid-confirm = Annulla
 invoice-detail-paid-at-label = Pagata il
 
 invoice-error-mark-paid-not-validated = Solo le fatture convalidate possono essere contrassegnate come pagate
