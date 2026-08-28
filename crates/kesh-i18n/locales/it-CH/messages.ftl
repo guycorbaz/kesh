@@ -344,6 +344,7 @@ journal-entries-reverse-blocked-credit-note = Questa scrittura appartiene a una 
 journal-entries-reverse-blocked-supplier-invoice = Questa scrittura appartiene a una fattura fornitore: annullate la fattura.
 journal-entries-reverse-blocked-settlement = Questa scrittura è un pagamento di fattura: il suo annullamento arriverà con lo storno dei pagamenti.
 journal-entries-reverse-blocked-bank-match = Questa scrittura è riconciliata con una transazione bancaria.
+journal-entries-reverse-blocked-account-archived = Un conto di questa scrittura è stato archiviato: riattivatelo per poterla stornare.
 journal-entries-reverse-account-archived = Impossibile stornare — conto/conti archiviato/i: { $detail }. Riattivate i conti interessati.
 journal-entries-delete-blocked-reversed = Questa scrittura è stata stornata: non può più essere eliminata.
 

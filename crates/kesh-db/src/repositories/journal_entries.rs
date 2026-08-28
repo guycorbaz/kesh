@@ -1266,7 +1266,7 @@ pub(crate) async fn delete_in_tx(
     //
     // ⚠️ La FK `RESTRICT` refuserait de toute façon, mais avec une 1451 au
     // message opaque. La garde est ici pour que l'utilisateur lise POURQUOI.
-    if reversed_by(&mut **tx, id).await?.is_some() {
+    if reversed_by(&mut **tx, company_id, id).await?.is_some() {
         return Err(DbError::EntryIsReversed);
     }
 
@@ -1407,14 +1407,17 @@ pub async fn delete_all_by_company(pool: &MySqlPool, company_id: i64) -> Result<
 /// ⚠️ La **précédence** est celle de l'ordre des tests ci-dessous, et elle est
 /// figée : les causes se cumulent, et le champ exposé à l'écran est scalaire.
 ///
-/// ⚠️ Le compte archivé n'est **pas** évalué ici — il exige de joindre les lignes
-/// et les comptes, et son refus est un **400**, pas un 409. Il est contrôlé par
-/// [`reverse`] au moment d'écrire.
+/// ⚠️ **Le compte archivé EST évalué ici**, en dernier de la précédence — parce
+/// que l'AC 11 exige que l'écran masque le bouton **avant** le clic. Ne le
+/// contrôler qu'à l'écriture ferait afficher un bouton qui échoue.
+///
+/// Son refus à l'ÉCRITURE reste un **400** qui NOMME les comptes à réactiver
+/// ([`DbError::ReversalAccountsArchived`]) ; ce code-ci ne sert que la lecture.
 pub async fn reversal_blocker<'e, E>(
     executor: E,
     company_id: i64,
     id: i64,
-) -> Result<Option<(ReversalBlocker, Option<i64>)>, DbError>
+) -> Result<Option<(ReversalBlocker, Option<i64>, Option<String>)>, DbError>
 where
     E: sqlx::Executor<'e, Database = sqlx::MySql>,
 {
@@ -1428,10 +1431,14 @@ where
         reverses_entry_id: Option<i64>,
         reversed_by: Option<i64>,
         invoice_id: Option<i64>,
+        invoice_number: Option<String>,
         credit_note_id: Option<i64>,
+        credit_note_number: Option<String>,
         supplier_invoice_id: Option<i64>,
+        supplier_invoice_number: Option<String>,
         settlement_id: Option<i64>,
         bank_transaction_id: Option<i64>,
+        archived_account_id: Option<i64>,
     }
 
     let row: Option<BlockerRow> = sqlx::query_as(
@@ -1439,12 +1446,20 @@ where
            je.reverses_entry_id, \
            (SELECT r.id FROM journal_entries r WHERE r.reverses_entry_id = je.id) AS reversed_by, \
            (SELECT i.id FROM invoices i WHERE i.journal_entry_id = je.id LIMIT 1) AS invoice_id, \
+           (SELECT i.invoice_number FROM invoices i WHERE i.journal_entry_id = je.id LIMIT 1) AS invoice_number, \
            (SELECT c.id FROM credit_notes c WHERE c.journal_entry_id = je.id LIMIT 1) AS credit_note_id, \
+           (SELECT c.credit_note_number FROM credit_notes c WHERE c.journal_entry_id = je.id LIMIT 1) AS credit_note_number, \
            (SELECT s.id FROM supplier_invoices s \
              WHERE s.purchase_journal_entry_id = je.id OR s.settlement_journal_entry_id = je.id \
              LIMIT 1) AS supplier_invoice_id, \
+           (SELECT s.supplier_invoice_number FROM supplier_invoices s \
+             WHERE s.purchase_journal_entry_id = je.id OR s.settlement_journal_entry_id = je.id \
+             LIMIT 1) AS supplier_invoice_number, \
            (SELECT st.id FROM invoice_settlements st WHERE st.journal_entry_id = je.id LIMIT 1) AS settlement_id, \
-           (SELECT bt.id FROM bank_transactions bt WHERE bt.matched_entry_id = je.id LIMIT 1) AS bank_transaction_id \
+           (SELECT bt.id FROM bank_transactions bt WHERE bt.matched_entry_id = je.id LIMIT 1) AS bank_transaction_id, \
+           (SELECT a.id FROM journal_entry_lines jel \
+             JOIN accounts a ON a.id = jel.account_id \
+             WHERE jel.entry_id = je.id AND a.active = FALSE LIMIT 1) AS archived_account_id \
          FROM journal_entries je \
          WHERE je.id = ? AND je.company_id = ?",
     )
@@ -1457,25 +1472,48 @@ where
     let row = row.ok_or(DbError::NotFound)?;
 
     // ⚠️ Ordre = précédence. Ne pas réordonner sans réordonner la spec (D6).
+    // ⚠️ Le NUMÉRO de la pièce accompagne son identifiant quand il existe : un
+    // message qui dit « la facture F-2026-014 » se comprend, un `documentId: 47`
+    // ne se comprend pas. Toutes les pièces n'en ont pas — un règlement et une
+    // transaction bancaire n'ont que leur identifiant.
     let blocker = if row.reverses_entry_id.is_some() {
-        Some((ReversalBlocker::IsAReversal, row.reverses_entry_id))
+        Some((ReversalBlocker::IsAReversal, row.reverses_entry_id, None))
     } else if row.reversed_by.is_some() {
-        Some((ReversalBlocker::AlreadyReversed, row.reversed_by))
+        Some((ReversalBlocker::AlreadyReversed, row.reversed_by, None))
     } else if row.invoice_id.is_some() {
-        Some((ReversalBlocker::OwnedByInvoice, row.invoice_id))
+        Some((
+            ReversalBlocker::OwnedByInvoice,
+            row.invoice_id,
+            row.invoice_number,
+        ))
     } else if row.credit_note_id.is_some() {
-        Some((ReversalBlocker::OwnedByCreditNote, row.credit_note_id))
+        Some((
+            ReversalBlocker::OwnedByCreditNote,
+            row.credit_note_id,
+            row.credit_note_number,
+        ))
     } else if row.supplier_invoice_id.is_some() {
         Some((
             ReversalBlocker::OwnedBySupplierInvoice,
             row.supplier_invoice_id,
+            row.supplier_invoice_number,
         ))
     } else if row.settlement_id.is_some() {
-        Some((ReversalBlocker::OwnedBySettlement, row.settlement_id))
+        Some((ReversalBlocker::OwnedBySettlement, row.settlement_id, None))
     } else if row.bank_transaction_id.is_some() {
         Some((
             ReversalBlocker::MatchedBankTransaction,
             row.bank_transaction_id,
+            None,
+        ))
+    } else if row.archived_account_id.is_some() {
+        // ⛔ En dernier : c'est le seul motif que l'utilisateur peut lever
+        // lui-même (réactiver le compte), et l'annoncer avant un motif de
+        // propriété ferait croire qu'une facture deviendrait contre-passable.
+        Some((
+            ReversalBlocker::AccountArchived,
+            row.archived_account_id,
+            None,
         ))
     } else {
         None
@@ -1486,15 +1524,29 @@ where
 /// Rend l'écriture qui **contre-passe** celle-ci, s'il en existe une.
 ///
 /// Dérivé de l'`UNIQUE` — pas de seconde colonne à tenir cohérente (D2).
-pub async fn reversed_by<'e, E>(executor: E, id: i64) -> Result<Option<i64>, DbError>
+///
+/// ⚠️ **Scopée par `company_id` par DÉFENSE EN PROFONDEUR.** Aujourd'hui une
+/// contre-passation naît toujours dans la société de son origine ([`reverse`]
+/// reprend le `company_id` de l'appelant), si bien que le filtre est redondant.
+/// Mais la sûreté de la lecture reposerait alors entièrement sur un invariant
+/// d'ÉCRITURE, que rien n'oblige à tenir — et `reversal_blocker`, elle, filtre.
+/// Deux lectures voisines qui ne se scopent pas pareil finissent par diverger.
+pub async fn reversed_by<'e, E>(
+    executor: E,
+    company_id: i64,
+    id: i64,
+) -> Result<Option<i64>, DbError>
 where
     E: sqlx::Executor<'e, Database = sqlx::MySql>,
 {
-    sqlx::query_scalar::<_, i64>("SELECT id FROM journal_entries WHERE reverses_entry_id = ?")
-        .bind(id)
-        .fetch_optional(executor)
-        .await
-        .map_err(map_db_error)
+    sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM journal_entries WHERE reverses_entry_id = ? AND company_id = ?",
+    )
+    .bind(id)
+    .bind(company_id)
+    .fetch_optional(executor)
+    .await
+    .map_err(map_db_error)
 }
 
 /// Contre-passe une écriture : crée l'écriture **inverse** (Story 24-4a, #380).
@@ -1537,11 +1589,21 @@ pub async fn reverse(
         .map_err(map_db_error)?;
         let (_, entry_number, origin_fy_name) = origin.ok_or(DbError::NotFound)?;
 
-        if let Some((blocker, document_id)) = reversal_blocker(&mut *tx, company_id, id).await? {
-            return Err(DbError::EntryNotReversable {
-                blocker,
-                document_id,
-            });
+        // ⛔ **`AccountArchived` est le seul motif que l'ÉCRITURE ne traite pas
+        // ici.** Le recensement le rend pour que l'écran masque le bouton avant
+        // le clic (AC 11) ; mais s'arrêter dessus produirait un 409 muet, là où
+        // l'écriture doit rendre un **400 qui NOMME les comptes à réactiver**
+        // (étape 3 ci-dessous). Un refus qui ne dit pas quel compte n'est pas
+        // utilisable.
+        match reversal_blocker(&mut *tx, company_id, id).await? {
+            Some((ReversalBlocker::AccountArchived, _, _)) | None => {}
+            Some((blocker, document_id, document_label)) => {
+                return Err(DbError::EntryNotReversable {
+                    blocker,
+                    document_id,
+                    document_label,
+                });
+            }
         }
 
         // (2) Lignes de l'origine, dans l'ordre CONTRACTUEL, inversées D ↔ C.

@@ -160,6 +160,11 @@
 					'journal-entries-reverse-blocked-bank-match',
 					"Cette écriture est rapprochée d'une transaction bancaire."
 				);
+			case 'ACCOUNT_ARCHIVED':
+				return i18nMsg(
+					'journal-entries-reverse-blocked-account-archived',
+					'Un compte de cette écriture a été archivé : réactivez-le pour pouvoir la contre-passer.'
+				);
 			default:
 				return '';
 		}

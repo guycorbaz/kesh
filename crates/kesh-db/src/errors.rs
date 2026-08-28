@@ -75,6 +75,18 @@ pub enum ReversalBlocker {
     /// dé-rapprochement n'existe (#418) : le refus laisse un manque, assumé,
     /// parce que l'alternative recrée une désynchronisation muette.
     MatchedBankTransaction,
+    /// Un compte de l'écriture a été **archivé** depuis.
+    ///
+    /// ⛔ **En DERNIER de la précédence, et c'est voulu** : c'est le seul motif
+    /// que l'utilisateur peut lever lui-même (`PUT /accounts/{id}/reactivate`).
+    /// Le dire en premier ferait croire qu'une écriture possédée par une facture
+    /// deviendrait contre-passable une fois le compte réactivé — elle ne le
+    /// serait pas.
+    ///
+    /// ⚠️ Le refus à l'ÉCRITURE reste un **400** [`DbError::ReversalAccountsArchived`],
+    /// qui NOMME les comptes ; ce code-ci sert la LECTURE, pour que l'écran
+    /// masque le bouton **avant** le clic (AC 11).
+    AccountArchived,
 }
 
 impl ReversalBlocker {
@@ -88,6 +100,7 @@ impl ReversalBlocker {
             Self::OwnedBySupplierInvoice => "OWNED_BY_SUPPLIER_INVOICE",
             Self::OwnedBySettlement => "OWNED_BY_SETTLEMENT",
             Self::MatchedBankTransaction => "MATCHED_BANK_TRANSACTION",
+            Self::AccountArchived => "ACCOUNT_ARCHIVED",
         }
     }
 }
@@ -255,6 +268,10 @@ pub enum DbError {
         blocker: ReversalBlocker,
         /// Identifiant de la pièce propriétaire, quand le motif en désigne une.
         document_id: Option<i64>,
+        /// **Numéro** de la pièce — `F-2026-014`, `AV-2026-3`… — quand elle en a
+        /// un. ⚠️ Un identifiant de base de données ne se comprend pas ; c'est le
+        /// numéro que l'utilisateur voit sur son document.
+        document_label: Option<String>,
     },
 
     /// Un ou plusieurs comptes de l'écriture d'origine ont été **archivés**

@@ -437,13 +437,13 @@ pub async fn get_journal_entry(
         .ok_or(AppError::Database(kesh_db::errors::DbError::NotFound))?;
 
     let blocker = journal_entries::reversal_blocker(&state.pool, company.id, id).await?;
-    let reversed_by_entry_id = journal_entries::reversed_by(&state.pool, id).await?;
+    let reversed_by_entry_id = journal_entries::reversed_by(&state.pool, company.id, id).await?;
 
     Ok(Json(JournalEntryDetailResponse {
         entry: JournalEntryResponse::from(entry),
         reversed_by_entry_id,
         reversable: blocker.is_none(),
-        reversal_blocked_by: blocker.map(|(b, _)| b.code().to_string()),
+        reversal_blocked_by: blocker.map(|(b, _, _)| b.code().to_string()),
     }))
 }
 

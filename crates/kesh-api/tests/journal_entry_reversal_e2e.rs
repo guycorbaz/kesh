@@ -268,15 +268,45 @@ async fn reverse_creates_the_opposite_entry_and_leaves_the_origin_intact(pool: M
         "la contre-passation porte la date du JOUR, jamais celle de l'origine"
     );
 
-    // L'origine est inchangée — version comprise.
-    let (v, rev): (i32, Option<i64>) =
-        sqlx::query_as("SELECT version, reverses_entry_id FROM journal_entries WHERE id = ?")
-            .bind(origin)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(v, 1, "l'écriture d'origine ne doit pas être touchée");
+    // ⛔ **L'origine est inchangée — les SIX champs, pas deux.** Se contenter de
+    // `version` laisserait passer une réécriture qui ne bumpe pas la version, et
+    // c'est précisément le geste que cette story interdit.
+    let (number, date, journal, description, version, rev): (
+        i64,
+        NaiveDate,
+        String,
+        String,
+        i32,
+        Option<i64>,
+    ) = sqlx::query_as(
+        "SELECT entry_number, entry_date, journal, description, version, reverses_entry_id \
+         FROM journal_entries WHERE id = ?",
+    )
+    .bind(origin)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(number, 1);
+    assert_eq!(date, Utc::now().date_naive());
+    assert_eq!(journal, "OD");
+    assert_eq!(description, "Écriture à corriger");
+    assert_eq!(version, 1, "l'écriture d'origine ne doit pas être touchée");
     assert_eq!(rev, None);
+
+    // …et ses LIGNES, que la spec nomme en premier.
+    let origin_lines: Vec<(i64, rust_decimal::Decimal, rust_decimal::Decimal)> = sqlx::query_as(
+        "SELECT account_id, debit, credit FROM journal_entry_lines \
+         WHERE entry_id = ? ORDER BY line_order",
+    )
+    .bind(origin)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        origin_lines,
+        vec![(d, dec!(100.00), dec!(0)), (c, dec!(0), dec!(100.00))],
+        "les lignes de l'origine sont intactes"
+    );
 
     // I1 — somme nulle COMPTE PAR COMPTE sur les deux écritures.
     let sums: Vec<(i64, rust_decimal::Decimal)> = sqlx::query_as(
@@ -462,7 +492,8 @@ async fn every_document_owned_entry_is_refused(pool: MySqlPool) {
     // (1) facture client
     let e1 = make_entry(&pool, company_id, fy_id, d, c, (None, None)).await;
     let invoice_id = sqlx::query(
-        "INSERT INTO invoices (company_id, contact_id, date, journal_entry_id) VALUES (?, ?, ?, ?)",
+        "INSERT INTO invoices (company_id, contact_id, date, journal_entry_id, invoice_number) \
+         VALUES (?, ?, ?, ?, 'F-2026-014')",
     )
     .bind(company_id)
     .bind(contact)
@@ -598,7 +629,32 @@ async fn every_document_owned_entry_is_refused(pool: MySqlPool) {
             Some(code),
             "{quoi} : code attendu {code}"
         );
+        // ⛔ Le message doit nommer le chemin de CORRECTION, pas seulement
+        // interdire : un « interdit » sec n'est pas utilisable.
+        assert!(
+            !body["error"]["message"]
+                .as_str()
+                .unwrap_or_default()
+                .is_empty(),
+            "{quoi} : message vide"
+        );
     }
+
+    // ⚠️ **Et il nomme la PIÈCE quand elle a un numéro.** Un `documentId` brut
+    // ne se comprend pas : l'utilisateur connaît le numéro de son document, pas
+    // les identifiants de la base.
+    let (_, body) = post_reverse(&app, &token, e1).await;
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("F-2026-014"),
+        "le message doit nommer la facture : {body}"
+    );
+    assert_eq!(
+        body["error"]["details"]["documentNumber"].as_str(),
+        Some("F-2026-014")
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -696,4 +752,325 @@ async fn deleting_a_reversed_entry_is_refused_but_bulk_delete_still_works(pool: 
         .await
         .unwrap();
     assert_eq!(left, 0);
+}
+
+// ---------------------------------------------------------------------------
+// Ajouts de la passe 1 de revue de code — ce que les trois lentilles ont trouvé
+// ---------------------------------------------------------------------------
+
+/// Crée un utilisateur `Consultation` et rend son jeton (AC 12).
+async fn consultation_token(app: &TestApp, pool: &MySqlPool) -> String {
+    use kesh_db::entities::{NewUser, Role};
+
+    let company_id: i64 = sqlx::query_scalar("SELECT id FROM companies ORDER BY id LIMIT 1")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let password = "consultation-test-pw-12345";
+    let hash = kesh_api::auth::password::hash_password(password).expect("hash");
+    kesh_db::repositories::users::create(
+        pool,
+        NewUser {
+            username: "consultation".into(),
+            password_hash: hash,
+            role: Role::Consultation,
+            active: true,
+            company_id,
+            email: None,
+        },
+    )
+    .await
+    .expect("utilisateur Consultation");
+    login(app, "consultation", password).await
+}
+
+/// AC 12 — **Consultation ne contre-passe pas.**
+///
+/// ⚠️ `rbac_e2e.rs` ne couvre qu'un handler synthétique : sans ce test, un
+/// futur déplacement de la route hors de `comptable_routes` passerait tous les
+/// gates sans qu'aucun ne rougisse.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn consultation_cannot_reverse(pool: MySqlPool) {
+    let (app, token, company_id, fy_id) = setup(&pool).await;
+    let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
+    let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
+    let origin = make_entry(&pool, company_id, fy_id, d, c, (None, None)).await;
+
+    let readonly = consultation_token(&app, &pool).await;
+    let (status, _) = post_reverse(&app, &readonly, origin).await;
+    assert_eq!(status, 403, "Consultation ne contre-passe pas");
+
+    // …et le rôle Comptable+ passe, sur la MÊME écriture : sans cette moitié,
+    // le test resterait vert si la route devenait inaccessible à tout le monde.
+    let (ok, _) = post_reverse(&app, &token, origin).await;
+    assert_eq!(ok, 201);
+}
+
+/// AC 12 — une écriture d'une **autre société** rend 404, jamais 403.
+///
+/// ⛔ Un 403 révélerait l'existence de la ressource. C'est la convention IDOR du
+/// dépôt, et elle se teste sur la route réelle, pas sur une route voisine.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn another_company_entry_is_not_found(pool: MySqlPool) {
+    let (app, token, company_id, fy_id) = setup(&pool).await;
+    let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
+    let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
+    let mine = make_entry(&pool, company_id, fy_id, d, c, (None, None)).await;
+
+    // Une seconde société, avec son exercice, ses comptes et son écriture.
+    let other_company: i64 = sqlx::query(
+        "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+         SELECT CONCAT(name, ' bis'), address, org_type, accounting_language, instance_language \
+         FROM companies WHERE id = ?",
+    )
+    .bind(company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+
+    let today = Utc::now().date_naive();
+    let year: i32 = today.format("%Y").to_string().parse().unwrap();
+    let other_fy = fiscal_years::create(
+        &pool,
+        1,
+        NewFiscalYear {
+            company_id: other_company,
+            name: format!("Exercice {year}"),
+            start_date: NaiveDate::from_ymd_opt(year, 1, 1).unwrap(),
+            end_date: NaiveDate::from_ymd_opt(year, 12, 31).unwrap(),
+        },
+    )
+    .await
+    .expect("exercice de l'autre société");
+    let od = make_account(&pool, other_company, "6000", AccountType::Expense).await;
+    let oc = make_account(&pool, other_company, "1020", AccountType::Asset).await;
+    let theirs = make_entry(&pool, other_company, other_fy.id, od, oc, (None, None)).await;
+
+    let (status, _) = post_reverse(&app, &token, theirs).await;
+    assert_eq!(
+        status, 404,
+        "l'écriture d'une autre société est INTROUVABLE"
+    );
+
+    // Contrôle de sanité : la mienne, elle, se contre-passe — sinon ce test
+    // resterait vert avec une route cassée pour tout le monde.
+    let (ok, _) = post_reverse(&app, &token, mine).await;
+    assert_eq!(ok, 201);
+}
+
+/// AC 11 + AC 17 — **le compte archivé se voit AVANT le clic.**
+///
+/// ⛔ Le défaut que ce test ferme : le recensement des empêchements ignorait
+/// l'archivage, si bien que la fiche affichait un bouton « Contre-passer » qui
+/// échouait en 400 une fois cliqué. Relevé en passe 1 de revue de code.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn detail_reports_an_archived_account_before_the_click(pool: MySqlPool) {
+    let (app, token, company_id, fy_id) = setup(&pool).await;
+    let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
+    let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
+    let origin = make_entry(&pool, company_id, fy_id, d, c, (None, None)).await;
+
+    sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
+        .bind(d)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let detail: Value = app
+        .client
+        .get(app.url(&format!("/api/v1/journal-entries/{origin}")))
+        .header("Authorization", auth(&token))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        detail["reversable"].as_bool(),
+        Some(false),
+        "le bouton doit être masqué AVANT le clic"
+    );
+    assert_eq!(
+        detail["reversalBlockedBy"].as_str(),
+        Some("ACCOUNT_ARCHIVED")
+    );
+}
+
+/// AC 17 — **la précédence est figée** : un motif de propriété passe devant le
+/// compte archivé, parce que réactiver le compte ne rendrait pas l'écriture
+/// contre-passable pour autant.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ownership_outranks_the_archived_account(pool: MySqlPool) {
+    let (app, token, company_id, fy_id) = setup(&pool).await;
+    let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
+    let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
+    let contact = contact_id(&pool, company_id).await;
+    let entry = make_entry(&pool, company_id, fy_id, d, c, (None, None)).await;
+
+    sqlx::query(
+        "INSERT INTO invoices (company_id, contact_id, date, journal_entry_id) VALUES (?, ?, ?, ?)",
+    )
+    .bind(company_id)
+    .bind(contact)
+    .bind(Utc::now().date_naive())
+    .bind(entry)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
+        .bind(d)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let detail: Value = app
+        .client
+        .get(app.url(&format!("/api/v1/journal-entries/{entry}")))
+        .header("Authorization", auth(&token))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        detail["reversalBlockedBy"].as_str(),
+        Some("OWNED_BY_INVOICE"),
+        "les deux causes coexistent : c'est la propriété qui doit être annoncée"
+    );
+}
+
+/// AC 13 — l'audit porte le lien vers la contre-passation.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reverse_writes_an_audit_entry(pool: MySqlPool) {
+    let (app, token, company_id, fy_id) = setup(&pool).await;
+    let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
+    let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
+    let origin = make_entry(&pool, company_id, fy_id, d, c, (None, None)).await;
+
+    let (_, created) = post_reverse(&app, &token, origin).await;
+    let reversal_id = created["id"].as_i64().unwrap();
+
+    // ⚠️ `details_json` est stocké en JSON (BLOB au décodage) : on le rend en
+    // texte côté SQL plutôt que de deviner un type Rust.
+    let (action, target, details): (String, i64, Option<String>) = sqlx::query_as(
+        "SELECT action, entity_id, CAST(details_json AS CHAR) FROM audit_log \
+         WHERE action = 'journal_entry.reversed' ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("une entrée d'audit doit exister");
+    assert_eq!(action, "journal_entry.reversed");
+    assert_eq!(
+        target, origin,
+        "l'audit vise l'ORIGINE, pas la contre-passation"
+    );
+    assert!(
+        details
+            .unwrap_or_default()
+            .contains(&reversal_id.to_string()),
+        "l'audit porte `reversalJournalEntryId`"
+    );
+}
+
+/// AC 7 — sans exercice ouvert couvrant **aujourd'hui**, le refus est un **400**.
+///
+/// ⚠️ Et non un 409 : le mappage de `FiscalYearInvalid` est partagé par tous les
+/// flux du dépôt. Un test qui exigerait 409 pousserait à le changer pour eux tous.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reverse_without_an_open_fiscal_year_is_refused(pool: MySqlPool) {
+    let (app, token, company_id, fy_id) = setup(&pool).await;
+    let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
+    let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
+    let origin = make_entry(&pool, company_id, fy_id, d, c, (None, None)).await;
+
+    // L'exercice est clos APRÈS la création : l'origine reste, la cible manque.
+    sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+        .bind(fy_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (status, body) = post_reverse(&app, &token, origin).await;
+    assert_eq!(status, 400, "corps : {body}");
+    assert_eq!(body["error"]["code"].as_str(), Some("FISCAL_YEAR_INVALID"));
+}
+
+/// AC 10 — un compte devenu **non postable** ne bloque pas.
+///
+/// ⛔ Distinct de l'archivage : exiger la postabilité rendrait l'écriture
+/// incorrigible à cause d'un changement de configuration POSTÉRIEUR.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reverse_succeeds_when_an_account_became_non_postable(pool: MySqlPool) {
+    let (app, token, company_id, fy_id) = setup(&pool).await;
+    let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
+    let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
+    let origin = make_entry(&pool, company_id, fy_id, d, c, (None, None)).await;
+
+    sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ?")
+        .bind(d)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (status, body) = post_reverse(&app, &token, origin).await;
+    assert_eq!(status, 201, "corps : {body}");
+}
+
+/// **Invariant I3** — aucune pièce ne référence une écriture contre-passée.
+///
+/// ⚠️ Cet invariant était annoncé « écrit » par le compte rendu de la story et
+/// ne l'était pas. C'est le mode d'échec que le `CLAUDE.md` nomme : le compte
+/// rendu devient le lieu du défaut. Il l'est désormais.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn no_document_ever_points_at_a_reversed_entry(pool: MySqlPool) {
+    let (app, token, company_id, fy_id) = setup(&pool).await;
+    let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
+    let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
+    let contact = contact_id(&pool, company_id).await;
+    let today = Utc::now().date_naive();
+
+    // Une écriture libre, contre-passée ; une écriture possédée par une facture,
+    // dont la contre-passation est refusée. Après quoi l'invariant doit tenir.
+    let free = make_entry(&pool, company_id, fy_id, d, c, (None, None)).await;
+    let owned = make_entry(&pool, company_id, fy_id, d, c, (None, None)).await;
+    sqlx::query(
+        "INSERT INTO invoices (company_id, contact_id, date, journal_entry_id) VALUES (?, ?, ?, ?)",
+    )
+    .bind(company_id)
+    .bind(contact)
+    .bind(today)
+    .bind(owned)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(post_reverse(&app, &token, free).await.0, 201);
+    assert_eq!(post_reverse(&app, &token, owned).await.0, 409);
+
+    // ⛔ Le contrôle porte sur les CINQ tables qui possèdent une écriture.
+    for (table, colonne) in [
+        ("invoices", "journal_entry_id"),
+        ("credit_notes", "journal_entry_id"),
+        ("supplier_invoices", "purchase_journal_entry_id"),
+        ("supplier_invoices", "settlement_journal_entry_id"),
+        ("invoice_settlements", "journal_entry_id"),
+        ("bank_transactions", "matched_entry_id"),
+    ] {
+        let n: i64 = sqlx::query_scalar(&format!(
+            "SELECT COUNT(*) FROM {table} t \
+             JOIN journal_entries r ON r.reverses_entry_id = t.{colonne} \
+             WHERE t.company_id = ?"
+        ))
+        .bind(company_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            n, 0,
+            "{table}.{colonne} pointe une écriture contre-passée — la pièce et les livres divergent"
+        );
+    }
 }

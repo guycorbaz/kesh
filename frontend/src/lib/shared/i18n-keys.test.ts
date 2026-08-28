@@ -144,7 +144,7 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  *
  * | site | delta |
  * |---|---|
- * | `blockedLabel` — les **sept** codes de blocage rendus par le serveur | **+7** |
+ * | `blockedLabel` — les **huit** codes de blocage rendus par le serveur | **+8** |
  * | le bouton, le succès, l'erreur | **+3** |
  * | les deux renvois croisés (« contre-passe » / « contre-passée par ») | **+2** |
  * | le dialogue : titre, corps, annuler, confirmer | **+4** |
@@ -153,9 +153,15 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * **code**, jamais une phrase, et c'est ici que la traduction se fait — un dispatcher
  * indexé par table n'aurait compté que pour un, mais n'aurait pas fait rougir le
  * type-check à l'ajout d'un code.
+ *
+ * ⚠️ **1629 → 1630, +1 en passe 1 de revue de code** : le huitième code,
+ * `ACCOUNT_ARCHIVED`. Il manquait au recensement des empêchements, si bien que la
+ * fiche affichait un bouton « Contre-passer » qui échouait une fois cliqué —
+ * l'AC 11 exige l'inverse. Le code, le type TypeScript et le `switch` étaient
+ * silencieusement alignés sur l'omission, ce qui explique qu'aucun gate ne l'ait vu.
  */
 const ATTENDU = {
-	sitesTotal: 1629,
+	sitesTotal: 1630,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

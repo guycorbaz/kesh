@@ -2406,6 +2406,7 @@ impl IntoResponse for AppError {
                 DbError::EntryNotReversable {
                     blocker,
                     document_id,
+                    document_label,
                 } => {
                     let (fallback_key, fallback) = match blocker {
                         ReversalBlocker::IsAReversal => (
@@ -2436,12 +2437,34 @@ impl IntoResponse for AppError {
                             "journal-entries-reverse-blocked-bank-match",
                             "Cette écriture est rapprochée d'une transaction bancaire.",
                         ),
+                        // ⚠️ Ce cas ne remonte ici QUE par la lecture (le
+                        // recensement des empêchements). À l'écriture, il passe
+                        // par `ReversalAccountsArchived`, qui rend un 400 en
+                        // NOMMANT les comptes — un message que celui-ci ne peut
+                        // pas produire, faute d'avoir la liste sous la main.
+                        ReversalBlocker::AccountArchived => (
+                            "journal-entries-reverse-blocked-account-archived",
+                            "Un compte de cette écriture a été archivé : réactivez-le pour pouvoir la contre-passer.",
+                        ),
+                    };
+                    // ⚠️ Le NUMÉRO de la pièce est suffixé au message quand il
+                    // existe : « … : corrigez-la par un avoir (facture
+                    // F-2026-014) ». Un `documentId` brut dans les détails ne
+                    // suffit pas — l'utilisateur ne connaît pas les identifiants
+                    // de la base, il connaît le numéro sur son document.
+                    let base = t(fallback_key, fallback);
+                    let message = match document_label.as_deref() {
+                        Some(numero) => format!("{base} ({numero})"),
+                        None => base,
                     };
                     let body = serde_json::json!({
                         "error": {
                             "code": blocker.code(),
-                            "message": t(fallback_key, fallback),
-                            "details": { "documentId": document_id },
+                            "message": message,
+                            "details": {
+                                "documentId": document_id,
+                                "documentNumber": document_label,
+                            },
                         }
                     });
                     (StatusCode::CONFLICT, Json(body)).into_response()

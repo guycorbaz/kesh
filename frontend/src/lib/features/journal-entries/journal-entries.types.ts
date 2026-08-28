@@ -50,7 +50,8 @@ export type ReversalBlocker =
 	| 'OWNED_BY_CREDIT_NOTE'
 	| 'OWNED_BY_SUPPLIER_INVOICE'
 	| 'OWNED_BY_SETTLEMENT'
-	| 'MATCHED_BANK_TRANSACTION';
+	| 'MATCHED_BANK_TRANSACTION'
+	| 'ACCOUNT_ARCHIVED';
 
 /**
  * Détail d'une écriture — le `GET /{id}` seul, jamais la liste.

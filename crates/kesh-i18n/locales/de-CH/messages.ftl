@@ -344,6 +344,7 @@ journal-entries-reverse-blocked-credit-note = Diese Buchung gehört zu einer Gut
 journal-entries-reverse-blocked-supplier-invoice = Diese Buchung gehört zu einer Lieferantenrechnung: Stornieren Sie die Rechnung.
 journal-entries-reverse-blocked-settlement = Diese Buchung ist eine Rechnungszahlung: Ihre Stornierung folgt mit der Stornierung von Zahlungen.
 journal-entries-reverse-blocked-bank-match = Diese Buchung ist mit einer Banktransaktion abgeglichen.
+journal-entries-reverse-blocked-account-archived = Ein Konto dieser Buchung wurde archiviert: Reaktivieren Sie es, um stornieren zu können.
 journal-entries-reverse-account-archived = Stornierung nicht möglich — archivierte(s) Konto/Konten: { $detail }. Reaktivieren Sie die betroffenen Konten.
 journal-entries-delete-blocked-reversed = Diese Buchung wurde storniert: Sie kann nicht mehr gelöscht werden.
 

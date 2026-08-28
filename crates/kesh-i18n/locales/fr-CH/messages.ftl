@@ -338,6 +338,7 @@ journal-entries-reverse-blocked-credit-note = Cette écriture est celle d'un avo
 journal-entries-reverse-blocked-supplier-invoice = Cette écriture appartient à une facture fournisseur : annulez la facture.
 journal-entries-reverse-blocked-settlement = Cette écriture est un règlement de facture : son annulation viendra avec la contre-passation des règlements.
 journal-entries-reverse-blocked-bank-match = Cette écriture est rapprochée d'une transaction bancaire.
+journal-entries-reverse-blocked-account-archived = Un compte de cette écriture a été archivé : réactivez-le pour pouvoir la contre-passer.
 journal-entries-reverse-account-archived = Impossible de contre-passer — compte(s) archivé(s) : { $detail }. Réactivez le ou les comptes concernés.
 journal-entries-delete-blocked-reversed = Cette écriture a été contre-passée : elle ne peut plus être supprimée.
 

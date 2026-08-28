@@ -1179,6 +1179,59 @@ mod tests {
         assert!(text.contains(";Ventes;"), "missing journal enum: {text}");
     }
 
+    /// Story 24-4a (#380) — **le lien de contre-passation doit être DANS l'export.**
+    ///
+    /// ⛔ Ce test existe parce que rien d'autre ne le tiendrait :
+    /// `backup_inventory_matches_schema` ne compare que la liste des **tables**,
+    /// jamais les colonnes d'un CSV, et les deux assertions du test voisin sont
+    /// des sous-chaînes locales qui resteraient vraies sur un CSV à dix colonnes.
+    /// Un revert partiel passerait donc au vert — dans l'artefact même que le
+    /// réviseur consulte, et dont l'absence de trace est ce que l'art. 958f CO
+    /// interdit.
+    #[test]
+    fn serialize_journal_entries_csv_carries_the_reversal_link() {
+        let en_tete = {
+            let mut buf = Vec::new();
+            serialize_journal_entries_csv(&[], &mut buf).expect("serialize ok");
+            String::from_utf8(buf[3..].to_vec()).unwrap()
+        };
+        assert!(
+            en_tete.contains("reverses_entry_id"),
+            "la colonne manque à l'en-tête : {en_tete}"
+        );
+        // ⚠️ snake_case, comme les dix autres : c'est un export TABLE.
+        assert!(
+            !en_tete.contains("reversesEntryId"),
+            "en-tête en camelCase — cet export n'est pas une réponse JSON : {en_tete}"
+        );
+
+        let mut ordinaire = sample_entry();
+        ordinaire.reverses_entry_id = None;
+        let mut contre_passation = sample_entry();
+        contre_passation.id = 11;
+        contre_passation.reverses_entry_id = Some(10);
+
+        let mut buf = Vec::new();
+        serialize_journal_entries_csv(&[ordinaire, contre_passation], &mut buf)
+            .expect("serialize ok");
+        let text = std::str::from_utf8(&buf[3..]).unwrap();
+        let lignes: Vec<&str> = text.lines().collect();
+        assert_eq!(lignes.len(), 3, "en-tête + deux écritures : {text}");
+
+        // L'écriture ordinaire laisse la colonne VIDE, jamais un 0 trompeur.
+        assert!(
+            lignes[1].contains(";;"),
+            "une écriture ordinaire doit laisser la colonne vide : {}",
+            lignes[1]
+        );
+        // La contre-passation porte l'identifiant de son origine.
+        assert!(
+            lignes[2].contains(";10;"),
+            "le lien vers l'origine manque : {}",
+            lignes[2]
+        );
+    }
+
     // ----- AC #30(c) — journal_entry_lines serializer -----
 
     #[test]

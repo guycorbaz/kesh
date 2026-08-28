@@ -344,6 +344,7 @@ journal-entries-reverse-blocked-credit-note = This entry belongs to a credit not
 journal-entries-reverse-blocked-supplier-invoice = This entry belongs to a supplier invoice: cancel the invoice.
 journal-entries-reverse-blocked-settlement = This entry is an invoice settlement: reversing it will come with settlement reversal.
 journal-entries-reverse-blocked-bank-match = This entry is reconciled with a bank transaction.
+journal-entries-reverse-blocked-account-archived = An account of this entry has been archived: reactivate it to be able to reverse.
 journal-entries-reverse-account-archived = Cannot reverse — archived account(s): { $detail }. Reactivate the accounts concerned.
 journal-entries-delete-blocked-reversed = This entry has been reversed: it can no longer be deleted.
 
