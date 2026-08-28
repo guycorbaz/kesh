@@ -462,7 +462,10 @@ pub async fn reverse_journal_entry(
     let created =
         journal_entries::reverse(&state.pool, company.id, id, current_user.user_id).await?;
 
-    Ok((StatusCode::CREATED, Json(JournalEntryResponse::from(created))))
+    Ok((
+        StatusCode::CREATED,
+        Json(JournalEntryResponse::from(created)),
+    ))
 }
 
 /// POST /api/v1/journal-entries — crée une écriture en partie double.

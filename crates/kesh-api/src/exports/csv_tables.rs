@@ -274,7 +274,9 @@ pub fn serialize_journal_entries_csv<W: Write>(
             je.journal.as_str().to_string(),
             je.description.clone(),
             je.version.to_string(),
-            je.reverses_entry_id.map(|v| v.to_string()).unwrap_or_default(),
+            je.reverses_entry_id
+                .map(|v| v.to_string())
+                .unwrap_or_default(),
             fmt_dt(je.created_at),
             fmt_dt(je.updated_at),
         ])

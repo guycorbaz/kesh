@@ -191,7 +191,16 @@ pub async fn create_in_tx(
     new: NewJournalEntry,
     enforce_postable: bool,
 ) -> Result<JournalEntryWithLines, DbError> {
-    create_in_tx_inner(tx, fiscal_year_id, user_id, new, enforce_postable, true, None).await
+    create_in_tx_inner(
+        tx,
+        fiscal_year_id,
+        user_id,
+        new,
+        enforce_postable,
+        true,
+        None,
+    )
+    .await
 }
 
 /// Corps de [`create_in_tx`], avec les deux réglages que la contre-passation
@@ -293,22 +302,47 @@ async fn create_in_tx_inner(
     .map_err(map_db_error)?;
 
     // Étape 4 : INSERT de l'en-tête.
-    let header_result = sqlx::query(
-        "INSERT INTO journal_entries \
-         (company_id, fiscal_year_id, entry_number, entry_date, journal, description, \
-          reverses_entry_id) \
-         VALUES (?, ?, ?, ?, ?, ?, ?)",
-    )
-    .bind(new.company_id)
-    .bind(fiscal_year_id)
-    .bind(next_number)
-    .bind(new.entry_date)
-    .bind(new.journal)
-    .bind(&new.description)
-    .bind(reverses_entry_id)
-    .execute(&mut **tx)
-    .await
-    .map_err(map_db_error)?;
+    //
+    // ⛔ **La colonne `reverses_entry_id` n'entre dans l'INSERT que si elle a
+    // quelque chose à dire.** Ce n'est pas une coquetterie : plusieurs tests du
+    // dépôt montent le schéma à un point de migration ANTÉRIEUR puis exercent le
+    // vrai chemin applicatif (`invoice_lines_revenue_account_backfill`). Nommer
+    // une colonne née le 2026-08-28 dans un INSERT joué contre le schéma de
+    // juillet donne `1054 Unknown column` — un rouge sur un fichier que la story
+    // ne touche pas, et que seul le gate réellement exécuté révèle.
+    let header_result = if let Some(reverses) = reverses_entry_id {
+        sqlx::query(
+            "INSERT INTO journal_entries \
+             (company_id, fiscal_year_id, entry_number, entry_date, journal, description, \
+              reverses_entry_id) \
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(new.company_id)
+        .bind(fiscal_year_id)
+        .bind(next_number)
+        .bind(new.entry_date)
+        .bind(new.journal)
+        .bind(&new.description)
+        .bind(reverses)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_error)?
+    } else {
+        sqlx::query(
+            "INSERT INTO journal_entries \
+             (company_id, fiscal_year_id, entry_number, entry_date, journal, description) \
+             VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .bind(new.company_id)
+        .bind(fiscal_year_id)
+        .bind(next_number)
+        .bind(new.entry_date)
+        .bind(new.journal)
+        .bind(&new.description)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_error)?
+    };
 
     let last_id = header_result.last_insert_id();
     if last_id == 0 {
@@ -1384,15 +1418,23 @@ pub async fn reversal_blocker<'e, E>(
 where
     E: sqlx::Executor<'e, Database = sqlx::MySql>,
 {
-    let row: Option<(
-        Option<i64>,
-        Option<i64>,
-        Option<i64>,
-        Option<i64>,
-        Option<i64>,
-        Option<i64>,
-        Option<i64>,
-    )> = sqlx::query_as(
+    /// Les sept causes de blocage, telles que la requête les rend.
+    ///
+    /// ⚠️ Une struct nommée plutôt qu'un 7-uplet : `clippy::type_complexity`
+    /// refuse le second, et il avait surtout l'inconvénient de rendre l'ordre
+    /// des colonnes muet — sept `Option<i64>` d'affilée ne se relisent pas.
+    #[derive(sqlx::FromRow)]
+    struct BlockerRow {
+        reverses_entry_id: Option<i64>,
+        reversed_by: Option<i64>,
+        invoice_id: Option<i64>,
+        credit_note_id: Option<i64>,
+        supplier_invoice_id: Option<i64>,
+        settlement_id: Option<i64>,
+        bank_transaction_id: Option<i64>,
+    }
+
+    let row: Option<BlockerRow> = sqlx::query_as(
         "SELECT \
            je.reverses_entry_id, \
            (SELECT r.id FROM journal_entries r WHERE r.reverses_entry_id = je.id) AS reversed_by, \
@@ -1412,24 +1454,29 @@ where
     .await
     .map_err(map_db_error)?;
 
-    let (reverses, reversed_by, invoice, credit_note, supplier_invoice, settlement, bank_tx) =
-        row.ok_or(DbError::NotFound)?;
+    let row = row.ok_or(DbError::NotFound)?;
 
     // ⚠️ Ordre = précédence. Ne pas réordonner sans réordonner la spec (D6).
-    let blocker = if reverses.is_some() {
-        Some((ReversalBlocker::IsAReversal, reverses))
-    } else if reversed_by.is_some() {
-        Some((ReversalBlocker::AlreadyReversed, reversed_by))
-    } else if invoice.is_some() {
-        Some((ReversalBlocker::OwnedByInvoice, invoice))
-    } else if credit_note.is_some() {
-        Some((ReversalBlocker::OwnedByCreditNote, credit_note))
-    } else if supplier_invoice.is_some() {
-        Some((ReversalBlocker::OwnedBySupplierInvoice, supplier_invoice))
-    } else if settlement.is_some() {
-        Some((ReversalBlocker::OwnedBySettlement, settlement))
-    } else if bank_tx.is_some() {
-        Some((ReversalBlocker::MatchedBankTransaction, bank_tx))
+    let blocker = if row.reverses_entry_id.is_some() {
+        Some((ReversalBlocker::IsAReversal, row.reverses_entry_id))
+    } else if row.reversed_by.is_some() {
+        Some((ReversalBlocker::AlreadyReversed, row.reversed_by))
+    } else if row.invoice_id.is_some() {
+        Some((ReversalBlocker::OwnedByInvoice, row.invoice_id))
+    } else if row.credit_note_id.is_some() {
+        Some((ReversalBlocker::OwnedByCreditNote, row.credit_note_id))
+    } else if row.supplier_invoice_id.is_some() {
+        Some((
+            ReversalBlocker::OwnedBySupplierInvoice,
+            row.supplier_invoice_id,
+        ))
+    } else if row.settlement_id.is_some() {
+        Some((ReversalBlocker::OwnedBySettlement, row.settlement_id))
+    } else if row.bank_transaction_id.is_some() {
+        Some((
+            ReversalBlocker::MatchedBankTransaction,
+            row.bank_transaction_id,
+        ))
     } else {
         None
     };
@@ -1526,12 +1573,14 @@ pub async fn reverse(
 
         let reversal_lines: Vec<NewJournalEntryLine> = origin_lines
             .iter()
-            .map(|(account_id, debit, credit, project_id)| NewJournalEntryLine {
-                account_id: *account_id,
-                debit: *credit,
-                credit: *debit,
-                project_id: *project_id,
-            })
+            .map(
+                |(account_id, debit, credit, project_id)| NewJournalEntryLine {
+                    account_id: *account_id,
+                    debit: *credit,
+                    credit: *debit,
+                    project_id: *project_id,
+                },
+            )
             .collect();
 
         // (4) Exercice ouvert du JOUR.
@@ -1613,7 +1662,11 @@ async fn archived_accounts_in_tx(
     if account_ids.is_empty() {
         return Ok(Vec::new());
     }
-    let placeholders = account_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let placeholders = account_ids
+        .iter()
+        .map(|_| "?")
+        .collect::<Vec<_>>()
+        .join(",");
     let sql = format!(
         "SELECT id, number FROM accounts \
          WHERE company_id = ? AND active = FALSE AND id IN ({placeholders}) \

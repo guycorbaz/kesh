@@ -137,8 +137,12 @@ async fn setup(pool: &MySqlPool) -> (TestApp, String, i64, i64) {
         NewFiscalYear {
             company_id,
             name: format!("Exercice {}", today.format("%Y")),
-            start_date: NaiveDate::from_ymd_opt(today.format("%Y").to_string().parse().unwrap(), 1, 1)
-                .unwrap(),
+            start_date: NaiveDate::from_ymd_opt(
+                today.format("%Y").to_string().parse().unwrap(),
+                1,
+                1,
+            )
+            .unwrap(),
             end_date: NaiveDate::from_ymd_opt(
                 today.format("%Y").to_string().parse().unwrap(),
                 12,
@@ -245,7 +249,7 @@ async fn post_reverse(app: &TestApp, token: &str, id: i64) -> (reqwest::StatusCo
 ///
 /// ⚠️ L'invariant se vérifie par compte et non globalement : un total nul se
 /// laisserait tromper par une compensation entre deux comptes différents.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reverse_creates_the_opposite_entry_and_leaves_the_origin_intact(pool: MySqlPool) {
     let (app, token, company_id, fy_id) = setup(&pool).await;
     let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
@@ -290,14 +294,13 @@ async fn reverse_creates_the_opposite_entry_and_leaves_the_origin_intact(pool: M
     }
 
     // I2 — les DEUX écritures existent : la correction se voit.
-    let lines: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM journal_entry_lines WHERE entry_id IN (?, ?)",
-    )
-    .bind(origin)
-    .bind(reversal_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let lines: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM journal_entry_lines WHERE entry_id IN (?, ?)")
+            .bind(origin)
+            .bind(reversal_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(lines, 4);
 }
 
@@ -306,24 +309,26 @@ async fn reverse_creates_the_opposite_entry_and_leaves_the_origin_intact(pool: M
 /// ⛔ Le test est délibérément **multi-projets** : avec un seul projet, un
 /// implémenteur qui estampillerait toutes les lignes de la même valeur passerait
 /// sans qu'on le voie. C'est précisément la faute que la revue a rattrapée.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reverse_keeps_the_project_of_each_line(pool: MySqlPool) {
     let (app, token, company_id, fy_id) = setup(&pool).await;
     let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
     let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
 
-    let p1: i64 = sqlx::query("INSERT INTO projects (company_id, code, name) VALUES (?, 'P1', 'Projet 1')")
-        .bind(company_id)
-        .execute(&pool)
-        .await
-        .unwrap()
-        .last_insert_id() as i64;
-    let p2: i64 = sqlx::query("INSERT INTO projects (company_id, code, name) VALUES (?, 'P2', 'Projet 2')")
-        .bind(company_id)
-        .execute(&pool)
-        .await
-        .unwrap()
-        .last_insert_id() as i64;
+    let p1: i64 =
+        sqlx::query("INSERT INTO projects (company_id, code, name) VALUES (?, 'P1', 'Projet 1')")
+            .bind(company_id)
+            .execute(&pool)
+            .await
+            .unwrap()
+            .last_insert_id() as i64;
+    let p2: i64 =
+        sqlx::query("INSERT INTO projects (company_id, code, name) VALUES (?, 'P2', 'Projet 2')")
+            .bind(company_id)
+            .execute(&pool)
+            .await
+            .unwrap()
+            .last_insert_id() as i64;
 
     let origin = make_entry(&pool, company_id, fy_id, d, c, (Some(p1), Some(p2))).await;
     let (status, body) = post_reverse(&app, &token, origin).await;
@@ -345,17 +350,19 @@ async fn reverse_keeps_the_project_of_each_line(pool: MySqlPool) {
 }
 
 /// AC 9 — un projet **archivé** depuis ne bloque pas : le tag est copié, pas choisi.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reverse_succeeds_when_a_project_was_archived_since(pool: MySqlPool) {
     let (app, token, company_id, fy_id) = setup(&pool).await;
     let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
     let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
-    let p: i64 = sqlx::query("INSERT INTO projects (company_id, code, name) VALUES (?, 'PA', 'Projet archivé')")
-        .bind(company_id)
-        .execute(&pool)
-        .await
-        .unwrap()
-        .last_insert_id() as i64;
+    let p: i64 = sqlx::query(
+        "INSERT INTO projects (company_id, code, name) VALUES (?, 'PA', 'Projet archivé')",
+    )
+    .bind(company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
     let origin = make_entry(&pool, company_id, fy_id, d, c, (Some(p), None)).await;
 
     sqlx::query("UPDATE projects SET archived = TRUE WHERE id = ?")
@@ -376,7 +383,7 @@ async fn reverse_succeeds_when_a_project_was_archived_since(pool: MySqlPool) {
 ///
 /// ⛔ C'est l'asymétrie voulue avec le projet : `enforce_postable = false` ne
 /// lève pas la garde `active = TRUE`, qui est inconditionnelle.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reverse_refuses_when_an_account_was_archived_since(pool: MySqlPool) {
     let (app, token, company_id, fy_id) = setup(&pool).await;
     let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
@@ -407,7 +414,7 @@ async fn reverse_refuses_when_an_account_was_archived_since(pool: MySqlPool) {
 ///
 /// ⚠️ Le code vient de la discrimination du **nom de contrainte** sur la
 /// violation d'unicité, pas d'un `RESOURCE_CONFLICT` générique.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reversing_twice_is_refused(pool: MySqlPool) {
     let (app, token, company_id, fy_id) = setup(&pool).await;
     let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
@@ -423,7 +430,7 @@ async fn reversing_twice_is_refused(pool: MySqlPool) {
 }
 
 /// AC 5 — contre-passer une contre-passation est refusé.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reversing_a_reversal_is_refused(pool: MySqlPool) {
     let (app, token, company_id, fy_id) = setup(&pool).await;
     let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
@@ -444,7 +451,7 @@ async fn reversing_a_reversal_is_refused(pool: MySqlPool) {
 /// `purchase_journal_entry_id` et `settlement_journal_entry_id` partagent
 /// `OWNED_BY_SUPPLIER_INVOICE` mais renvoient vers deux corrections
 /// différentes — un test par code laisserait le second jamais exercé.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn every_document_owned_entry_is_refused(pool: MySqlPool) {
     let (app, token, company_id, fy_id) = setup(&pool).await;
     let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
@@ -599,7 +606,7 @@ async fn every_document_owned_entry_is_refused(pool: MySqlPool) {
 // ---------------------------------------------------------------------------
 
 /// AC 17 — la lecture porte de quoi décider, sans que l'écran devine.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn detail_exposes_what_the_screen_needs(pool: MySqlPool) {
     let (app, token, company_id, fy_id) = setup(&pool).await;
     let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
@@ -647,7 +654,7 @@ async fn detail_exposes_what_the_screen_needs(pool: MySqlPool) {
 
 /// AC 12 — un `id` inconnu rend **404**, jamais 403 : un 403 révélerait
 /// l'existence de la ressource.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn unknown_entry_is_not_found(pool: MySqlPool) {
     let (app, token, _company_id, _fy_id) = setup(&pool).await;
     let (status, _) = post_reverse(&app, &token, 999_999).await;
@@ -660,7 +667,7 @@ async fn unknown_entry_is_not_found(pool: MySqlPool) {
 /// ⛔ Sans le `NULL` préalable de `delete_all_by_company`, l'échec serait
 /// INTERMITTENT — InnoDB vérifie les FK ligne à ligne et l'ordre de parcours
 /// déciderait. Un test qui passe une fois sur deux est pire qu'un test rouge.
-#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn deleting_a_reversed_entry_is_refused_but_bulk_delete_still_works(pool: MySqlPool) {
     let (app, token, company_id, fy_id) = setup(&pool).await;
     let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;

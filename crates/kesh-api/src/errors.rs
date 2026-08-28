@@ -10,7 +10,7 @@ use std::sync::RwLock;
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use kesh_db::errors::{DbError, RejectedRevenueAccount, ReversalBlocker, RevenueAccountRejection};
+use kesh_db::errors::{DbError, RejectedRevenueAccount, RevenueAccountRejection, ReversalBlocker};
 use kesh_i18n::{FluentArgs, I18nBundle, Locale};
 use serde::Serialize;
 use thiserror::Error;
@@ -2455,7 +2455,11 @@ impl IntoResponse for AppError {
                 DbError::ReversalAccountsArchived(archived) => {
                     let detail = archived
                         .iter()
-                        .map(|a| a.account_number.clone().unwrap_or_else(|| a.account_id.to_string()))
+                        .map(|a| {
+                            a.account_number
+                                .clone()
+                                .unwrap_or_else(|| a.account_id.to_string())
+                        })
                         .collect::<Vec<_>>()
                         .join(", ");
                     let fallback = format!(

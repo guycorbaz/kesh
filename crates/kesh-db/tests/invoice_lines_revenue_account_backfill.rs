@@ -1192,9 +1192,20 @@ async fn validated_invoice_from_the_real_engine_is_recovered_by_the_backfill(poo
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 
-    apply_migrations_up_to(&pool, migrations_before_backfill())
-        .await
-        .expect("migrations jusqu'au backfill");
+    // ⛔ **Schéma COMPLET, et non « jusqu'au backfill ».** Ce test est le seul du
+    // fichier à faire tourner le MOTEUR RÉEL (`invoices::create` +
+    // `validate_invoice`), et le moteur d'aujourd'hui écrit et relit le schéma
+    // d'aujourd'hui : monter un schéma de juillet lui fait rendre
+    // `1054 Unknown column` dès qu'une colonne naît sur une table qu'il touche.
+    // L'état pré-backfill est reconstitué plus bas par les `UPDATE … = NULL`,
+    // qui sont de toute façon ce que le test mesure — et le backfill est rejoué
+    // explicitement à la fin, depuis le SQL EMBARQUÉ dans le binaire.
+    //
+    // *(Relevé au gate complet de la Story 24-4a (#380), première migration à
+    // ajouter une colonne à `journal_entries` depuis avril. Le montage
+    // d'origine couplait ce test à l'immobilité du schéma, sans que rien ne le
+    // dise.)*
+    kesh_db::MIGRATOR.run(&pool).await.expect("schéma complet");
 
     let seeded = seed_accounting_company(&pool).await.expect("seed");
     let contact_id = insert_contact(&pool, seeded.company_id).await;
@@ -1303,7 +1314,21 @@ async fn validated_invoice_from_the_real_engine_is_recovered_by_the_backfill(poo
     .await
     .expect("changement du défaut société");
 
-    kesh_db::MIGRATOR.run(&pool).await.expect("MIGRATOR.run()");
+    // Re-jeu du SQL RÉELLEMENT EMBARQUÉ dans le binaire — même idiome que
+    // `backfill_is_idempotent` plus haut. Le backfill est idempotent par
+    // construction (gardé par `revenue_account_id IS NULL`), ce qui est
+    // précisément ce qui rend ce rejeu légitime.
+    let backfill_sql = kesh_db::MIGRATOR
+        .migrations
+        .iter()
+        .find(|m| m.version == BACKFILL_MIGRATION)
+        .expect("migration de backfill introuvable dans le MIGRATOR")
+        .sql
+        .clone();
+    sqlx::raw_sql(&backfill_sql)
+        .execute(&pool)
+        .await
+        .expect("re-jeu du backfill");
 
     assert_eq!(
         invoice_line_accounts(&pool, invoice_id).await,
