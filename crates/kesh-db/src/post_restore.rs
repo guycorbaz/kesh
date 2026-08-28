@@ -196,7 +196,42 @@ pub struct ReplayedBackfill {
 /// Deux entrées seulement : les sept autres migrations du dépôt qui écrivent des
 /// données sont hors de la fenêtre d'importabilité ou portent sur une table
 /// système (cf. [`EXEMPT_MIGRATIONS`]).
-pub const POST_RESTORE_BACKFILLS: &[PostRestoreBackfill] = &[
+pub const POST_RESTORE_BACKFILLS: &[PostRestoreBackfill] = &[];
+
+// ⚠️ **Le registre est VIDE depuis la Story 24-2 (#371), et ce n'est pas un
+// oubli — c'est le mécanisme qui fonctionne.**
+//
+// La création de `invoice_settlements` (`20260827000001`) a **refermé la fenêtre
+// d'importabilité** au-delà des deux entrées qu'il portait (`20260722000001` et
+// `20260729000001`) : un backup assez ancien pour les déclencher est désormais
+// dépourvu de cette table, donc refusé en 400 au contrôle de couverture de
+// `parse_and_verify`, bien avant tout rejeu. Les y laisser aurait produit du
+// **code mort qui paraît fonctionner** — et, pour celle de classe A, exécuté à
+// chaque import.
+//
+// Les deux sont passées en [`EXEMPT_MIGRATIONS`] avec le marqueur `Hors fenêtre`,
+// que `exemptions_claiming_out_of_window_really_are_out_of_window` recalcule
+// depuis le `MIGRATOR` — l'affirmation est donc vérifiée, pas crue sur parole.
+//
+// ⚠️ **Toute nouvelle table applicative aura le même effet** sur les entrées
+// futures. Ce n'est pas une raison de renoncer au mécanisme : il reste la seule
+// réponse au cas « le backup est dans la fenêtre et précède un backfill », et ce
+// cas se représentera dès la prochaine migration qui remplit une colonne.
+
+/// Les entrées **retirées** du registre parce que la fenêtre d'importabilité
+/// s'est refermée sur elles (Story 24-2, #371).
+///
+/// ⚠️ **Ce n'est PAS un registre de production** — `replay_post_restore_backfills`
+/// ne le consulte jamais. Il existe pour que les tests de la **machinerie**
+/// (ordre de rejeu, sémantique OU des sentinelles, classes A/B, codes de sortie,
+/// transactionnalité) gardent un registre réaliste à exercer. Sans lui, ces
+/// tests tourneraient à vide — ou disparaîtraient, ce qui reviendrait à perdre
+/// la seule couverture d'un mécanisme qui redeviendra actif à la prochaine
+/// migration de backfill.
+///
+/// Les justifications de leur exemption sont dans [`EXEMPT_MIGRATIONS`].
+#[doc(hidden)]
+pub const RETIRED_BACKFILLS: &[PostRestoreBackfill] = &[
     PostRestoreBackfill {
         version: 20260722000001,
         label: "20260722000001_accounts_role_postable.sql",
@@ -204,11 +239,6 @@ pub const POST_RESTORE_BACKFILLS: &[PostRestoreBackfill] = &[
         // `role IS NULL`, mais les 2 `UPDATE` de `postable` ne portent AUCUNE
         // garde — rejoués sur une base à jour, ils écraseraient un `postable`
         // posé à la main (`PUT /api/v1/accounts/{id}`, sémantique full-replace).
-        //
-        // Et la garde `role IS NULL` n'en est pas une contre l'intention non
-        // plus : `role: null` est documenté comme l'acte de RETRAIT délibéré
-        // (`routes/accounts.rs`), et un compte hors plan standard (2850, 2860)
-        // porte `role = NULL` nominalement.
         //
         // Sentinelle valide : `role` et `postable` sont ajoutées par le MÊME
         // `ALTER TABLE` que les 12 `UPDATE` — donc « colonne présente » implique
@@ -221,24 +251,16 @@ pub const POST_RESTORE_BACKFILLS: &[PostRestoreBackfill] = &[
         label: "20260729000001_invoice_lines_revenue_account_backfill.sql",
         // CLASSE A. Les deux `UPDATE` sont gardés `revenue_account_id IS NULL`
         // ET restreints aux pièces `validated` / `issued`. C'est la CONJONCTION
-        // qui porte la sûreté : une facture validée n'est plus modifiable
-        // (`update` rejette tout statut != `draft`), donc un `NULL` qui y
-        // subsiste ne peut PAS être un choix utilisateur — contrairement à un
-        // `NULL` sur un brouillon, que le `PUT` produit dès qu'un client omet
-        // `revenueAccountId` (CR #278).
+        // qui porte la sûreté : une facture validée n'est plus modifiable, donc
+        // un `NULL` qui y subsiste ne peut PAS être un choix utilisateur.
         //
         // ⚠️ Ne PAS généraliser « un NULL n'est l'expression d'aucun choix » :
         // le critère est FAUX en général (cf. `default_payable_account_id`, que
-        // le `PUT` des réglages efface délibérément en full-replace). Il doit
-        // être vérifié route par route pour toute entrée de classe A future.
+        // le `PUT` des réglages efface délibérément en full-replace).
         //
         // Classe A et non B parce que sa colonne est créée par une migration
         // DISTINCTE (`20260727000001`, DDL pur) : une sentinelle mentirait sur
-        // un backup pris entre les deux, qui porte la colonne entièrement `NULL`.
-        //
-        // Backfill pur (aucun DDL) : la migration est rejouable EN ENTIER, d'où
-        // `include_str!` du fichier lui-même — zéro duplication, et un renommage
-        // casse la compilation plutôt que de dégrader en échec runtime.
+        // un backup pris entre les deux.
         trigger: BackfillTrigger::Unconditional,
         sql: include_str!(
             "../migrations/20260729000001_invoice_lines_revenue_account_backfill.sql"
@@ -259,6 +281,20 @@ pub const POST_RESTORE_BACKFILLS: &[PostRestoreBackfill] = &[
 /// redevient une affirmation crue sur parole — laquelle, si elle est fausse,
 /// désactive **définitivement et en silence** le rejeu du backfill concerné.
 pub const EXEMPT_MIGRATIONS: &[(i64, &str)] = &[
+    (
+        20260722000001,
+        "Hors fenêtre depuis 20260827000001 (invoice_settlements, Story 24-2) : un backup assez \
+         ancien pour porter role/postable vides est dépourvu de cette table, donc refusé au \
+         contrôle de couverture. Figurait au registre de rejeu jusque-là ; l'y laisser aurait \
+         produit du code mort qui paraît fonctionner.",
+    ),
+    (
+        20260729000001,
+        "Hors fenêtre depuis 20260827000001 (invoice_settlements, Story 24-2) : même raison que \
+         20260722000001. Elle était de CLASSE A, donc rejouée inconditionnellement à chaque \
+         import — la laisser au registre aurait fait exécuter à chaque restore un backfill dont \
+         le cas de déclenchement ne peut plus se présenter.",
+    ),
     (
         20260419000002,
         "users.company_id finit NOT NULL sans défaut => is_required() vrai => un backup qui ne la \
@@ -809,10 +845,16 @@ mod tests {
         // ce test vert en ne vérifiant plus rien. Le nombre est codé en dur À
         // DESSEIN — l'ajouter à ce compteur est le geste qui force à relire la
         // justification qu'on vient d'écrire.
+        //
+        // ⚠️ **4 → 6 (Story 24-2, #371), et les deux entrantes viennent du
+        // REGISTRE, pas de nulle part** : `20260722000001` et `20260729000001`
+        // y figuraient jusqu'à ce que la création de `invoice_settlements`
+        // referme la fenêtre au-delà d'elles. Leurs justifications ont été
+        // relues à ce titre — c'est exactement l'office de ce compteur.
         assert_eq!(
             checked,
-            4,
-            "attendu 4 exemptions marquées « Hors fenêtre » sur {}, trouvé {checked} — soit une \
+            6,
+            "attendu 6 exemptions marquées « Hors fenêtre » sur {}, trouvé {checked} — soit une \
              justification a été ajoutée sans le marqueur (et échappe alors au contrôle), soit le \
              marqueur a dérivé et ce test est devenu MUET.",
             EXEMPT_MIGRATIONS.len()

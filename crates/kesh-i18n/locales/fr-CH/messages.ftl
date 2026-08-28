@@ -656,6 +656,9 @@ due-dates-result-suffix = résultat(s)
 payment-status-paid = Payée
 payment-status-unpaid = Impayée
 payment-status-overdue = En retard
+payment-status-partial = Partiellement payée
+invoice-amount-settled = Déjà réglé
+invoice-amount-due = Reste dû
 
 # Marquer payée / Dé-marquer payée
 invoice-mark-paid-button = Marquer payée

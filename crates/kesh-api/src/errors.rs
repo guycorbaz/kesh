@@ -691,7 +691,7 @@ pub enum AppError {
     BankImportUnsupportedFormat,
 
     // ----- Story 8-4 — Reconciliation -----
-    /// Advisory lock `GET_LOCK('reconcile:{company}:{account}', timeout)`
+    /// Advisory lock `GET_LOCK('reconcile:{base}:{company}:{account}', timeout)`
     /// non acquis dans les `timeout_secs` secondes → `409`.
     #[error("Compte verrouillé par une autre opération de réconciliation")]
     ReconciliationAccountLocked {

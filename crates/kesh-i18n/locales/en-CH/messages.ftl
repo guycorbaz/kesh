@@ -622,6 +622,9 @@ due-dates-result-suffix = result(s)
 payment-status-paid = Paid
 payment-status-unpaid = Unpaid
 payment-status-overdue = Overdue
+payment-status-partial = Partially paid
+invoice-amount-settled = Already settled
+invoice-amount-due = Amount due
 
 invoice-mark-paid-button = Mark as paid
 invoice-mark-paid-dialog-title = Mark invoice as paid

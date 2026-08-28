@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 61 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 62 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -650,6 +650,27 @@ CREATE TABLE `invoice_reminders` (
   CONSTRAINT `chk_invoice_reminders_level_positive` CHECK (`level_number` >= 1),
   CONSTRAINT `chk_invoice_reminders_fee_range` CHECK (`fee_amount` >= 0 and `fee_amount` <= 10000),
   CONSTRAINT `chk_invoice_reminders_channel` CHECK (`channel` in ('email','manual'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `invoice_settlements`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `invoice_settlements` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` bigint(20) NOT NULL,
+  `invoice_id` bigint(20) NOT NULL,
+  `journal_entry_id` bigint(20) NOT NULL,
+  `amount` decimal(19,4) NOT NULL,
+  `settled_on` date NOT NULL,
+  `created_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_invoice_settlements_entry` (`journal_entry_id`),
+  KEY `idx_invoice_settlements_company_invoice` (`company_id`,`invoice_id`),
+  KEY `idx_invoice_settlements_invoice` (`invoice_id`),
+  CONSTRAINT `fk_invoice_settlements_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`),
+  CONSTRAINT `fk_invoice_settlements_entry` FOREIGN KEY (`journal_entry_id`) REFERENCES `journal_entries` (`id`),
+  CONSTRAINT `fk_invoice_settlements_invoice` FOREIGN KEY (`invoice_id`) REFERENCES `invoices` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `chk_invoice_settlements_amount_positive` CHECK (`amount` > 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `invoices`;

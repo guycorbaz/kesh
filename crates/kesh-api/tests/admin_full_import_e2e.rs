@@ -27,8 +27,10 @@ use kesh_api::auth::jwt::Claims;
 use kesh_api::auth::password::hash_password;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
+use kesh_db::backup::TableRestore;
 use kesh_db::entities::address::StructuredAddress;
 use kesh_db::entities::{Language, NewCompany, NewUser, OrgType, Role};
+use kesh_db::post_restore::ReplayedBackfill;
 use kesh_db::repositories::{companies, users};
 use reqwest::multipart;
 use serde_json::Value;
@@ -865,6 +867,66 @@ fn strip_column(manifest: &mut Value, table: &str, column: &str) {
     );
 }
 
+/// Rejoue le registre **retiré** sur la base que l'import vient de restaurer, et
+/// rend son rapport typé.
+///
+/// ⚠️ **Story 24-2 (#371) — pourquoi ces cas ne passent plus par l'import.**
+/// La création de `invoice_settlements` a refermé la fenêtre d'importabilité
+/// au-delà des deux entrées de backfill : un backup assez ancien pour les
+/// déclencher est désormais dépourvu de cette table, donc refusé en 400 avant
+/// tout rejeu. `POST_RESTORE_BACKFILLS` est donc **vide**, et l'import ne rejoue
+/// plus rien — c'est le mécanisme qui fonctionne, pas une régression.
+///
+/// Ces cas gardent pourtant toute leur substance : ils éprouvent la MACHINERIE
+/// (ordre, sémantique OU des sentinelles, classes A/B, codes de sortie, nombre
+/// de lignes touchées) **sur des données réellement restaurées par le chemin
+/// HTTP**. Seul le déclencheur change : le registre est injecté par la couture
+/// `replay_with_registry`, prévue pour ça, au lieu d'être lu du const de
+/// production.
+///
+/// ⛔ Les supprimer aurait été l'autre issue, et la mauvaise : le mécanisme
+/// redeviendra actif à la prochaine migration de backfill, et il n'aurait alors
+/// plus de couverture de bout en bout.
+async fn replay_retired(pool: &MySqlPool, manifest: &Value) -> Vec<ReplayedBackfill> {
+    // Seules les COLONNES entrent dans la décision des sentinelles ; les lignes
+    // sont déjà en base, restaurées par l'import.
+    let mut tables: BTreeMap<String, TableRestore> = BTreeMap::new();
+    for (name, spec) in manifest["tables"].as_object().expect("manifeste.tables") {
+        let column_names = spec["columnNames"]
+            .as_array()
+            .expect("columnNames")
+            .iter()
+            .map(|c| c.as_str().expect("nom de colonne").to_string())
+            .collect();
+        tables.insert(
+            name.clone(),
+            TableRestore {
+                column_names,
+                rows: Vec::new(),
+            },
+        );
+    }
+
+    let mut tx = pool.begin().await.expect("begin");
+    let report = kesh_db::post_restore::replay_with_registry(
+        &mut tx,
+        &tables,
+        kesh_db::post_restore::RETIRED_BACKFILLS,
+    )
+    .await
+    .expect("le rejeu du registre retiré doit réussir");
+    tx.commit().await.expect("commit");
+    report
+}
+
+/// L'entrée du rapport typé **que le cas discrimine**, retrouvée par sa version.
+fn retired_entry(report: &[ReplayedBackfill], version: i64) -> &ReplayedBackfill {
+    report
+        .iter()
+        .find(|e| e.version == version)
+        .unwrap_or_else(|| panic!("entrée {version} absente du rapport de rejeu"))
+}
+
 /// Le rapport de rejeu, relu depuis le détail d'audit de `admin.full_import`.
 async fn backfill_report(pool: &MySqlPool) -> Vec<Value> {
     // `details_json` est de type `JSON` : MariaDB l'expose en `BLOB`, pas en
@@ -881,14 +943,6 @@ async fn backfill_report(pool: &MySqlPool) -> Vec<Value> {
         .as_array()
         .expect("clé backfills_replayed présente au détail d'audit")
         .clone()
-}
-
-/// L'entrée du rapport **que le cas discrimine**, retrouvée par sa version.
-fn entry(report: &[Value], version: i64) -> &Value {
-    report
-        .iter()
-        .find(|e| e["version"] == version)
-        .unwrap_or_else(|| panic!("entrée {version} absente du rapport de rejeu : {report:?}"))
 }
 
 /// Les `revenue_account_id` des lignes d'une facture, dans l'ordre.
@@ -954,6 +1008,9 @@ async fn full_import_replays_revenue_account_backfill(pool: MySqlPool) {
     let (mut manifest, data) = unzip(&backup);
     strip_column(&mut manifest, "invoice_lines", "revenue_account_id");
     import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
+    // Story 24-2 (#371) : le registre de production est vide (fenêtre refermée),
+    // le rejeu est donc déclenché explicitement sur les entrées retirées.
+    let report = replay_retired(&pool, &manifest).await;
 
     assert_eq!(
         line_accounts(&pool, invoice_id).await,
@@ -961,8 +1018,7 @@ async fn full_import_replays_revenue_account_backfill(pool: MySqlPool) {
         "le rejeu doit reposer, sur TOUTES les lignes, le compte que l'écriture a crédité"
     );
 
-    let report = backfill_report(&pool).await;
-    let e = entry(&report, REVENUE_BACKFILL);
+    let e = retired_entry(&report, REVENUE_BACKFILL);
     // ⚠️ **Ce cas n'épingle PAS la classe déclarée**, et c'est délibéré : il
     // asserte que l'entrée a été REJOUÉE, pas *à quel titre*. Discriminer la
     // classe A de la classe B est le rôle de **C1-bis**, et lui seul.
@@ -974,7 +1030,8 @@ async fn full_import_replays_revenue_account_backfill(pool: MySqlPool) {
     // qu'elle vise. Le protocole de mutation a donc corrigé le montage, pas
     // seulement constaté la couleur.
     assert!(
-        e["outcome"] == "REPLAYED_UNCONDITIONAL" || e["outcome"] == "REPLAYED_SENTINELS_ABSENT",
+        e.outcome.code() == "REPLAYED_UNCONDITIONAL"
+            || e.outcome.code() == "REPLAYED_SENTINELS_ABSENT",
         "l'entrée doit avoir été REJOUÉE (et non sautée), got {e:?}"
     );
     // Décompte **exact**, et non `>= 2` : la base est fraîche, la facture porte
@@ -983,8 +1040,7 @@ async fn full_import_replays_revenue_account_backfill(pool: MySqlPool) {
     // faute d'avoir. Une borne lâche laisserait passer un `WHERE` élargi qui
     // toucherait des lignes hors périmètre.
     assert_eq!(
-        e["rows_affected"].as_u64().unwrap(),
-        2,
+        e.rows_affected, 2,
         "exactement les deux lignes de la facture, et rien d'autre, got {e:?}"
     );
 }
@@ -1033,6 +1089,9 @@ async fn full_import_replays_class_a_even_when_column_is_present(pool: MySqlPool
         "montage : la colonne doit être PRÉSENTE au manifeste — c'est tout l'enjeu du cas"
     );
     import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
+    // Story 24-2 (#371) : le registre de production est vide (fenêtre refermée),
+    // le rejeu est donc déclenché explicitement sur les entrées retirées.
+    let report = replay_retired(&pool, &manifest).await;
 
     assert_eq!(
         line_accounts(&pool, invoice_id).await,
@@ -1040,7 +1099,7 @@ async fn full_import_replays_class_a_even_when_column_is_present(pool: MySqlPool
         "classe A : le rejeu est INCONDITIONNEL, la présence de la colonne ne le sautage pas"
     );
     assert_eq!(
-        entry(&backfill_report(&pool).await, REVENUE_BACKFILL)["outcome"],
+        retired_entry(&report, REVENUE_BACKFILL).outcome.code(),
         "REPLAYED_UNCONDITIONAL"
     );
 }
@@ -1075,6 +1134,9 @@ async fn full_import_replays_role_and_postable_when_both_columns_absent(pool: My
     strip_column(&mut manifest, "accounts", "role");
     strip_column(&mut manifest, "accounts", "postable");
     import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
+    // Story 24-2 (#371) : le registre de production est vide (fenêtre refermée),
+    // le rejeu est donc déclenché explicitement sur les entrées retirées.
+    let report = replay_retired(&pool, &manifest).await;
 
     assert_eq!(
         account_role(&pool, "1100").await.as_deref(),
@@ -1111,18 +1173,17 @@ async fn full_import_replays_role_and_postable_when_both_columns_absent(pool: My
          {TITLE_ACCOUNT} a des enfants actifs et aucune écriture"
     );
 
-    let report = backfill_report(&pool).await;
-    let e = entry(&report, ROLE_POSTABLE);
-    assert_eq!(e["outcome"], "REPLAYED_SENTINELS_ABSENT");
+    let e = retired_entry(&report, ROLE_POSTABLE);
+    assert_eq!(e.outcome.code(), "REPLAYED_SENTINELS_ABSENT");
     assert!(
-        e["rows_affected"].as_u64().unwrap() > 0,
+        e.rows_affected > 0,
         "un rejeu déclenché qui ne touche AUCUNE ligne serait muet, got {e:?}"
     );
-    let missing: Vec<&str> = e["missing_sentinels"]
-        .as_array()
-        .unwrap()
+    let missing: Vec<&str> = e
+        .outcome
+        .missing_sentinels()
         .iter()
-        .map(|v| v.as_str().unwrap())
+        .map(String::as_str)
         .collect();
     assert_eq!(
         missing,
@@ -1164,18 +1225,21 @@ async fn full_import_replays_when_only_one_sentinel_is_absent(pool: MySqlPool) {
         "montage : `role` doit RESTER au manifeste — sans quoi le cas testerait C2"
     );
     import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
+    // Story 24-2 (#371) : le registre de production est vide (fenêtre refermée),
+    // le rejeu est donc déclenché explicitement sur les entrées retirées.
+    let report = replay_retired(&pool, &manifest).await;
 
-    let report = backfill_report(&pool).await;
-    let e = entry(&report, ROLE_POSTABLE);
+    let e = retired_entry(&report, ROLE_POSTABLE);
     assert_eq!(
-        e["outcome"], "REPLAYED_SENTINELS_ABSENT",
+        e.outcome.code(),
+        "REPLAYED_SENTINELS_ABSENT",
         "UNE sentinelle absente suffit — un ET rendrait ici `SKIPPED`"
     );
-    let missing: Vec<&str> = e["missing_sentinels"]
-        .as_array()
-        .unwrap()
+    let missing: Vec<&str> = e
+        .outcome
+        .missing_sentinels()
         .iter()
-        .map(|v| v.as_str().unwrap())
+        .map(String::as_str)
         .collect();
     assert_eq!(
         missing,
@@ -1231,6 +1295,9 @@ async fn full_import_skips_role_backfill_when_sentinels_are_present(pool: MySqlP
     let backup = export_backup(&app, &biz.ctx.jwt).await;
     let (manifest, data) = unzip(&backup);
     import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
+    // Story 24-2 (#371) : le registre de production est vide (fenêtre refermée),
+    // le rejeu est donc déclenché explicitement sur les entrées retirées.
+    let report = replay_retired(&pool, &manifest).await;
 
     assert_eq!(
         account_role(&pool, "1100").await,
@@ -1238,22 +1305,18 @@ async fn full_import_skips_role_backfill_when_sentinels_are_present(pool: MySqlP
         "la donnée du backup fait foi : un rôle DÉLIBÉRÉMENT effacé doit le rester"
     );
 
-    let report = backfill_report(&pool).await;
-    let e = entry(&report, ROLE_POSTABLE);
+    let e = retired_entry(&report, ROLE_POSTABLE);
     assert_eq!(
-        e["outcome"], "SKIPPED",
+        e.outcome.code(),
+        "SKIPPED",
         "sentinelles présentes → skip strict, aucun statement envoyé à la base"
     );
     assert_eq!(
-        e["missing_sentinels"].as_array().unwrap().len(),
+        e.outcome.missing_sentinels().len(),
         0,
         "aucune sentinelle manquante"
     );
-    assert_eq!(
-        e["rows_affected"].as_u64().unwrap(),
-        0,
-        "un skip strict ne touche aucune ligne"
-    );
+    assert_eq!(e.rows_affected, 0, "un skip strict ne touche aucune ligne");
 }
 
 /// **C5 — l'ordre de rejeu est un invariant.** Backup sans `accounts.role`, sans
@@ -1343,6 +1406,9 @@ async fn full_import_replays_backfills_in_increasing_version_order(pool: MySqlPo
     strip_column(&mut manifest, "accounts", "postable");
     strip_column(&mut manifest, "invoice_lines", "revenue_account_id");
     import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
+    // Story 24-2 (#371) : le registre de production est vide (fenêtre refermée),
+    // le rejeu est donc déclenché explicitement sur les entrées retirées.
+    let report = replay_retired(&pool, &manifest).await;
 
     assert!(
         !account_postable(&pool, "2979").await,
@@ -1355,6 +1421,43 @@ async fn full_import_replays_backfills_in_increasing_version_order(pool: MySqlPo
          ne cherche ses candidats, il n'en reste donc aucun et la ligne reste NULL. \
          En ordre inversé, `postable` vaudrait TRUE (valeur DEFAULT posée par le restore) \
          et 2979 serait écrit sur les lignes."
+    );
+
+    // L'ordre se lit AUSSI dans le rapport, et pas seulement dans son effet :
+    // une inversion qui, par accident, laisserait la donnée correcte serait
+    // sinon invisible ici.
+    let versions: Vec<i64> = report.iter().map(|e| e.version).collect();
+    assert_eq!(
+        versions,
+        vec![ROLE_POSTABLE, REVENUE_BACKFILL],
+        "le rejeu suit l'ordre de version CROISSANT"
+    );
+}
+
+/// ⛔ **Story 24-2 (#371) — l'import ne rejoue PLUS AUCUN backfill, et c'est une
+/// propriété à verrouiller.**
+///
+/// La création de `invoice_settlements` a refermé la fenêtre d'importabilité
+/// au-delà des deux entrées du registre, passées en exemption. `POST_RESTORE_BACKFILLS`
+/// est donc vide, et le rapport d'audit de l'import ne porte plus rien.
+///
+/// Ce test n'est pas une formalité : si quelqu'un ré-inscrit une entrée au
+/// registre sans vérifier qu'elle est DANS la fenêtre, il rougit et force à
+/// relire le triage — au lieu de laisser s'installer du code mort qui paraît
+/// fonctionner, exécuté à chaque import.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_replays_nothing_while_the_window_is_closed(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let biz = seed_business(&pool, "CW").await;
+    let _invoice_id = validated_invoice(&pool, &biz).await;
+
+    let backup = export_backup(&app, &biz.ctx.jwt).await;
+    let (manifest, data) = unzip(&backup);
+    import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
+
+    assert!(
+        backfill_report(&pool).await.is_empty(),
+        "le registre de production est vide : l'import ne doit rejouer AUCUNE entrée"
     );
 }
 

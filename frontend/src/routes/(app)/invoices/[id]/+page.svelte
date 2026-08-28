@@ -279,8 +279,15 @@
 	let unmarkSubmitting = $state(false);
 	let unmarkError = $state('');
 
-	function paymentStatus(inv: InvoiceResponse): 'paid' | 'unpaid' | 'overdue' {
+	function paymentStatus(inv: InvoiceResponse): 'paid' | 'unpaid' | 'overdue' | 'partial' {
 		if (inv.paidAt) return 'paid';
+		// Story 24-2 (#371) — « partiellement payée » : un règlement est entré
+		// sans éteindre la créance.
+		//
+		// ⚠️ Le test porte sur `amountSettled`, pas sur `amountDue` : `null` veut
+		// dire « non calculé », et il ne faut surtout pas le lire comme un zéro.
+		// La facture reste par ailleurs relançable — c'est voulu, il reste dû.
+		if (inv.amountSettled !== null && Number(inv.amountSettled) > 0) return 'partial';
 		// P6 (review pass 2) : `isOverdue` est calculé backend → single source
 		// of truth pour « aujourd'hui » (évite la désync TZ client/serveur).
 		// Pass 2 G2 D : strict `=== true` symétrique avec la page échéancier
@@ -872,6 +879,35 @@
 						<td colspan="5" class="py-3 text-right font-semibold">Total</td>
 						<td class="py-3 text-right font-mono text-lg font-semibold">
 							{formatInvoiceTotal(invoice.totalTtc)}
+						</td>
+					</tr>
+				{/if}
+				<!--
+				  Story 24-2 (#371) — ce qui a été réglé, et ce qui reste dû.
+
+				  ⚠️ Rendu SEULEMENT si un règlement existe : sur une facture
+				  intacte, « Réglé 0.00 / Reste dû 100.00 » n'apprend rien et
+				  répète le total juste au-dessus. Le bruit n'est pas neutre — il
+				  fait passer inaperçu le cas où ces lignes DISENT quelque chose.
+				-->
+				{#if invoice.amountSettled !== null && Number(invoice.amountSettled) > 0}
+					<tr class="border-t">
+						<td colspan="5" class="py-1 text-right">
+							{i18nMsg('invoice-amount-settled', 'Déjà réglé')}
+						</td>
+						<td class="py-1 text-right font-mono" data-testid="invoice-amount-settled">
+							{formatInvoiceTotal(invoice.amountSettled)}
+						</td>
+					</tr>
+					<tr>
+						<td colspan="5" class="py-1 text-right font-semibold">
+							{i18nMsg('invoice-amount-due', 'Reste dû')}
+						</td>
+						<td
+							class="py-1 text-right font-mono font-semibold"
+							data-testid="invoice-amount-due"
+						>
+							{formatInvoiceTotal(invoice.amountDue ?? '0')}
 						</td>
 					</tr>
 				{/if}

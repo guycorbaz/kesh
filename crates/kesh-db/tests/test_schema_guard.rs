@@ -441,7 +441,7 @@ async fn squash_seeds_the_kesh_version_row(pool: MySqlPool) {
 
 /// ⚠️ `#[tokio::test]`, PAS `#[sqlx::test]` : ce test ne lit jamais la base du
 /// vrai `MIGRATOR`, il monte la sienne. L'attribut `sqlx::test` lui faisait
-/// payer les 61 migrations pour un `_pool` inutilisé — dans la story qui existe
+/// payer toutes les migrations pour un `_pool` inutilisé — dans la story qui existe
 /// pour supprimer ce coût. *(Relevé en passe 1 de revue.)*
 #[tokio::test]
 async fn squash_database_tracks_exactly_one_migration() {
@@ -945,7 +945,7 @@ fn every_sqlx_test_attribute_is_accounted_for() {
     assert!(
         offenders.is_empty(),
         "ces attributs `#[sqlx::test]` n'utilisent PAS le squash et ne sont pas \
-         dans la liste d'exclusions — ils paieraient les 61 migrations à chaque \
+         dans la liste d’exclusions — ils paieraient toutes les migrations à chaque \
          test, sans que rien ne le signale (Story 22-5, #251).\n\
          Utilisez `migrations = \"./test-schema\"` (kesh-db) ou \
          `migrations = \"../kesh-db/test-schema\"` (kesh-api, kesh-report) ; si le \

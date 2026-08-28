@@ -258,6 +258,14 @@ async fn full_export_structure_manifest_and_integrity(pool: MySqlPool) {
     // payment_batches, payment_batch_items + 1 table import Story 12.5b :
     // imported_supplier_invoices + 1 table projets Story 19-1 : projects).
     // + email_templates (Story 20-1, #224) → 34.
+    // + dunning_levels / company_dunning_settings / invoice_reminders → 37.
+    // + invoice_settlements (Story 24-2, #371) → 38.
+    //
+    // ⚠️ **L'export a repris la table tout seul** : il dérive de
+    // `backup::TABLES_TO_TRUNCATE`. Ce nombre est donc un CONTRÔLE, pas une
+    // déclaration — il rougit quand l'inventaire bouge, ce qui est exactement
+    // son office. Il se met à jour en NOMMANT ce qui entre, jamais en alignant
+    // le chiffre sur ce qu'on observe.
     assert!(
         names.contains(&"manifest.json".to_string()),
         "manifest.json présent"
@@ -271,8 +279,8 @@ async fn full_export_structure_manifest_and_integrity(pool: MySqlPool) {
         .filter(|n| n.starts_with("data/") && n.ends_with(".ndjson"))
         .count();
     assert_eq!(
-        data_count, 37,
-        "37 fichiers data/<table>.ndjson (Story 21-5a : +invoice_reminders) : {names:?}"
+        data_count, 38,
+        "38 fichiers data/<table>.ndjson (Story 24-2 : +invoice_settlements) : {names:?}"
     );
 
     // Lire manifest.json.

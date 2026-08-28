@@ -183,6 +183,43 @@ async fn create_user(pool: &MySqlPool, username: &str, role: Role, company_id: i
     .id
 }
 
+/// Les trois comptes sans lesquels la fixture ne comptabilise rien : créance,
+/// produit, banque au grand livre.
+///
+/// ⚠️ **Avant la Story 24-2, cette fixture était CREUSE** — `insert_invoice`
+/// ne posait aucune `invoice_lines`, `insert_fake_journal_entry` aucune
+/// `journal_entry_lines`, et le compte bancaire n'avait pas de
+/// `journal_account_id`. Les tests rapprochaient donc une facture **sans
+/// substance comptable**, et c'est exactement ce vide qui a permis au défaut
+/// de #371 — aucune écriture d'encaissement — de passer inaperçu pendant des
+/// mois : on ne peut pas voir manquer une écriture là où rien n'existe.
+async fn seed_accounts(pool: &MySqlPool, company_id: i64) -> (i64, i64, i64) {
+    async fn one(
+        pool: &MySqlPool,
+        company_id: i64,
+        number: &str,
+        name: &str,
+        account_type: &str,
+    ) -> i64 {
+        sqlx::query(
+            "INSERT INTO accounts (company_id, number, name, account_type, active, postable) \
+             VALUES (?, ?, ?, ?, 1, 1)",
+        )
+        .bind(company_id)
+        .bind(number)
+        .bind(name)
+        .bind(account_type)
+        .execute(pool)
+        .await
+        .expect("account insert")
+        .last_insert_id() as i64
+    }
+    let receivable = one(pool, company_id, "1100", "Créances clients", "Asset").await;
+    let bank_ledger = one(pool, company_id, "1020", "Banque", "Asset").await;
+    let revenue = one(pool, company_id, "3000", "Ventes", "Revenue").await;
+    (receivable, revenue, bank_ledger)
+}
+
 async fn create_bank_account(pool: &MySqlPool, company_id: i64, iban: &str) -> i64 {
     bank_accounts::create(
         pool,
@@ -361,7 +398,55 @@ async fn seed_validated_invoice(
         None,
     )
     .await;
+
+    // ⛔ L'ÉCRITURE DE VENTE reçoit enfin ses lignes — `D créance / C produit`.
+    //
+    // `insert_invoice` posait déjà une `invoice_lines` (le TTC canonique se
+    // calcule dessus, #246), mais `insert_fake_journal_entry` créait une
+    // écriture **sans aucune ligne**. La facture avait donc un montant et
+    // aucune contrepartie comptable : rien à créditer, rien à solder.
+    //
+    // C'est cette moitié manquante qui rend l'invariante testable — le compte
+    // de créance se lit SUR LA LIGNE DE DÉBIT de l'écriture de vente, jamais
+    // sur les réglages, et c'est ce qui garantit qu'il se solde exactement.
+    let (receivable_id, revenue_id) = account_ids(pool, company_id).await;
+    for (order, account_id, debit, credit) in [
+        (1, receivable_id, amount, Decimal::ZERO),
+        (2, revenue_id, Decimal::ZERO, amount),
+    ] {
+        sqlx::query(
+            "INSERT INTO journal_entry_lines (entry_id, account_id, line_order, debit, credit) \
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(je_id)
+        .bind(account_id)
+        .bind(order)
+        .bind(debit)
+        .bind(credit)
+        .execute(pool)
+        .await
+        .expect("journal_entry_line insert");
+    }
+
     (inv_id, je_id)
+}
+
+/// Les identifiants des comptes seedés par [`seed_accounts`], retrouvés par leur
+/// numéro — évite de faire transiter le `CompanyCtx` par dix-huit appelants.
+async fn account_ids(pool: &MySqlPool, company_id: i64) -> (i64, i64) {
+    let receivable: i64 =
+        sqlx::query_scalar("SELECT id FROM accounts WHERE company_id = ? AND number = '1100'")
+            .bind(company_id)
+            .fetch_one(pool)
+            .await
+            .expect("compte 1100 seedé par setup_company");
+    let revenue: i64 =
+        sqlx::query_scalar("SELECT id FROM accounts WHERE company_id = ? AND number = '3000'")
+            .bind(company_id)
+            .fetch_one(pool)
+            .await
+            .expect("compte 3000 seedé par setup_company");
+    (receivable, revenue)
 }
 
 fn make_new_import(
@@ -470,13 +555,31 @@ struct CompanyCtx {
     bank_account_id: i64,
     contact_id: i64,
     jwt: String,
+    /// Compte de créances clients — celui que l'écriture de vente débite et que
+    /// l'encaissement doit créditer (Story 24-2).
+    receivable_account_id: i64,
+    /// Compte de banque au grand livre, câblé sur `bank_accounts.journal_account_id`.
+    bank_ledger_account_id: i64,
 }
 
 async fn setup_company(pool: &MySqlPool, label: &str, iban: &str, role: Role) -> CompanyCtx {
     let company_id = create_company(pool, label).await;
     let username = format!("{label}_user");
     let user_id = create_user(pool, &username, role, company_id).await;
+    // Le compte de produit n'est pas exposé par le contexte : les assertions
+    // portent sur la créance et la banque, et `seed_validated_invoice` retrouve
+    // le produit par son numéro (`account_ids`).
+    let (receivable_account_id, _revenue_account_id, bank_ledger_account_id) =
+        seed_accounts(pool, company_id).await;
     let bank_account_id = create_bank_account(pool, company_id, iban).await;
+    // ⚠️ Sans ce câblage, l'encaissement échoue en `BANK_ACCOUNT_NOT_CONFIGURED` :
+    // le compte bancaire n'a aucune contrepartie au grand livre.
+    sqlx::query("UPDATE bank_accounts SET journal_account_id = ? WHERE id = ?")
+        .bind(bank_ledger_account_id)
+        .bind(bank_account_id)
+        .execute(pool)
+        .await
+        .expect("wire journal_account_id");
     let contact_name = format!("{label} Client");
     let contact_id = create_contact(pool, company_id, user_id, &contact_name).await;
     let role_str = match role {
@@ -491,6 +594,8 @@ async fn setup_company(pool: &MySqlPool, label: &str, iban: &str, role: Role) ->
         bank_account_id,
         contact_id,
         jwt,
+        receivable_account_id,
+        bank_ledger_account_id,
     }
 }
 
@@ -911,8 +1016,56 @@ async fn post_accept_reconciles_transaction_and_invoice(pool: MySqlPool) {
     let acc = &accepted[0];
     assert_eq!(acc["bankTransactionId"].as_i64().unwrap(), tx_id);
     assert_eq!(acc["invoiceId"].as_i64().unwrap(), inv_id);
-    assert_eq!(acc["journalEntryId"].as_i64().unwrap(), je_id);
     assert!(acc["score"]["total"].as_f64().unwrap() > 0.0);
+
+    // ⛔ Story 24-2 (#371) — l'écriture rapprochée est celle de l'ENCAISSEMENT,
+    // pas celle de vente. Jusqu'ici, cette assertion valait `je_id` : elle
+    // DÉCRIVAIT le défaut. C'est `assert_ne!` qui l'aurait attrapé.
+    let settlement_entry_id = acc["journalEntryId"].as_i64().unwrap();
+    assert_ne!(
+        settlement_entry_id, je_id,
+        "l'écriture rapprochée ne doit PAS être l'écriture de vente"
+    );
+
+    // L'écriture d'encaissement dit ce qu'elle doit dire : `D banque / C créance`
+    // du montant encaissé. C'est l'invariante qui fait que la banque égale le
+    // relevé et que la créance se solde.
+    let lines: Vec<(i64, Decimal, Decimal)> = sqlx::query_as(
+        "SELECT account_id, debit, credit FROM journal_entry_lines \
+         WHERE entry_id = ? ORDER BY line_order",
+    )
+    .bind(settlement_entry_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        lines.len(),
+        2,
+        "l'encaissement est une écriture à deux lignes"
+    );
+    assert_eq!(lines[0].0, ctx.bank_ledger_account_id);
+    assert_eq!(
+        lines[0].1,
+        dec!(1234.56),
+        "la banque est DÉBITÉE du montant"
+    );
+    assert_eq!(lines[1].0, ctx.receivable_account_id);
+    assert_eq!(
+        lines[1].2,
+        dec!(1234.56),
+        "la créance est CRÉDITÉE du montant"
+    );
+
+    // La liaison facture ↔ écriture existe et porte le montant.
+    let (settled_invoice, settled_amount): (i64, Decimal) = sqlx::query_as(
+        "SELECT invoice_id, amount FROM invoice_settlements WHERE journal_entry_id = ?",
+    )
+    .bind(settlement_entry_id)
+    .fetch_one(&pool)
+    .await
+    .expect("une ligne invoice_settlements");
+    assert_eq!(settled_invoice, inv_id);
+    assert_eq!(settled_amount, dec!(1234.56));
 
     // Persistance.
     let (status, matched_entry_id): (String, Option<i64>) =
@@ -922,7 +1075,7 @@ async fn post_accept_reconciles_transaction_and_invoice(pool: MySqlPool) {
             .await
             .unwrap();
     assert_eq!(status, "reconciled");
-    assert_eq!(matched_entry_id, Some(je_id));
+    assert_eq!(matched_entry_id, Some(settlement_entry_id));
 
     let paid_at: Option<NaiveDateTime> =
         sqlx::query_scalar("SELECT paid_at FROM invoices WHERE id = ?")
@@ -930,7 +1083,10 @@ async fn post_accept_reconciles_transaction_and_invoice(pool: MySqlPool) {
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert!(paid_at.is_some(), "paid_at doit être set");
+    assert!(
+        paid_at.is_some(),
+        "paid_at doit être set — la facture est soldée"
+    );
 
     // Audit log reconciliation.accepted présent.
     let count: i64 = sqlx::query_scalar(
@@ -1322,7 +1478,19 @@ async fn post_accept_returns_409_on_account_lock_contention(pool: MySqlPool) {
     // Pré-acquérir le lock manuellement via une connexion dédiée — on
     // simule une réconciliation en cours qui détient le verrou pour
     // toute la durée du test (release à la fin).
-    let lock_name = format!("reconcile:{}:{}", ctx.company_id, ctx.bank_account_id);
+    // ⚠️ Le nom du verrou porte la BASE COURANTE depuis la correction de la
+    // KF-038 (#228) — `GET_LOCK` est global au serveur MariaDB, et sans ce
+    // préfixe toutes les bases éphémères des tests se disputaient le même
+    // `reconcile:1:1`. Ce test doit donc le reconstruire à l'identique, sinon il
+    // pose un verrou que personne ne prendra et n'observe plus aucune contention.
+    let db_name: String = sqlx::query_scalar("SELECT COALESCE(DATABASE(), '')")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let lock_name = format!(
+        "reconcile:{}:{}:{}",
+        db_name, ctx.company_id, ctx.bank_account_id
+    );
     let mut hold_conn = pool.acquire().await.unwrap();
     let acquired: Option<i32> = sqlx::query_scalar("SELECT GET_LOCK(?, ?)")
         .bind(&lock_name)
@@ -2039,7 +2207,11 @@ async fn post_accept_emits_dual_audit_invoice_paid(pool: MySqlPool) {
     let det0 = &row0.4;
     assert!(det0["score"]["total"].as_f64().is_some());
     assert!(det0["batch_size"].as_i64().is_some());
-    assert_eq!(det0["journal_entry_id"].as_i64().unwrap(), je_id);
+    // ⛔ Story 24-2 : `journal_entry_id` est celui de l'ENCAISSEMENT ; l'écriture
+    // de vente est tracée à part, sous `sale_journal_entry_id`.
+    assert_ne!(det0["journal_entry_id"].as_i64().unwrap(), je_id);
+    assert_eq!(det0["sale_journal_entry_id"].as_i64().unwrap(), je_id);
+    assert!(det0["fully_settled"].as_bool().unwrap());
 
     let row1 = &rows[1];
     assert_eq!(row1.1, "invoice.paid");
@@ -2559,4 +2731,231 @@ async fn accept_with_explicit_split_type_runs_split_flow(pool: MySqlPool) {
         .await
         .unwrap();
     assert_eq!(status, "reconciled");
+}
+
+// ============================================================
+// Story 24-2 (#371) — l'écriture d'encaissement
+//
+// ⚠️ Ces tests n'étaient PAS écrivables avant cette story : la fixture ne
+// posait aucune ligne sur l'écriture de vente, donc le compte de créance
+// n'existait nulle part et il n'y avait rien à solder. C'est le vide qui a
+// laissé le défaut fondateur invisible pendant des mois.
+// ============================================================
+
+/// Poste une proposition d'encaissement et rend le corps de la réponse.
+async fn post_accept_one(
+    app: &TestApp,
+    ctx: &CompanyCtx,
+    tx_id: i64,
+    inv_id: i64,
+) -> serde_json::Value {
+    let body = serde_json::json!({
+        "bankAccountId": ctx.bank_account_id,
+        "proposals": [{ "type": "invoice", "bankTransactionId": tx_id, "invoiceId": inv_id }],
+    });
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/accept"))
+        .bearer_auth(&ctx.jwt)
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        200,
+        "succès partiel = succès HTTP (pattern batch)"
+    );
+    resp.json().await.unwrap()
+}
+
+/// Solde du compte de créance sur la période — l'invariante centrale.
+async fn receivable_balance(pool: &MySqlPool, account_id: i64) -> Decimal {
+    sqlx::query_scalar::<_, Decimal>(
+        "SELECT COALESCE(SUM(debit) - SUM(credit), 0) FROM journal_entry_lines \
+         WHERE account_id = ?",
+    )
+    .bind(account_id)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// ⛔ **Deux encaissements partiels soldent la facture, et `paid_at` n'est posé
+/// qu'au second.**
+///
+/// C'est l'arbitrage du Project Lead — *« une facture est payée parce que la
+/// comptabilité le montre »* — rendu vérifiable. Une facture partiellement
+/// réglée garde `paid_at` à NULL, donc elle reste relançable et rapprochable
+/// pour le solde, sans qu'aucun des cinq sites lisant `paid_at IS NULL` change.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accept_settles_an_invoice_in_two_payments(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Partiel", "CH4431999123000889012", Role::Comptable).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let inv_date = NaiveDate::from_ymd_opt(2026, 4, 20).unwrap();
+    let (inv_id, je_id) = seed_validated_invoice(
+        &pool,
+        ctx.company_id,
+        ctx.contact_id,
+        "INV-PART-1",
+        inv_date,
+        dec!(100.00),
+    )
+    .await;
+    let tx_ids = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("accept_partial"),
+        day,
+        day,
+        vec![
+            make_new_tx(
+                ctx.company_id,
+                ctx.bank_account_id,
+                day,
+                Some(day),
+                dec!(60.00),
+                "CHF",
+                "INV-PART-1",
+                Some("Partiel Client"),
+            ),
+            make_new_tx(
+                ctx.company_id,
+                ctx.bank_account_id,
+                day,
+                Some(day),
+                dec!(40.00),
+                "CHF",
+                "INV-PART-1",
+                Some("Partiel Client"),
+            ),
+        ],
+    )
+    .await;
+
+    let app = spawn_app(pool.clone()).await;
+
+    // Premier versement : 60 sur 100.
+    let body = post_accept_one(&app, &ctx, tx_ids[0], inv_id).await;
+    assert_eq!(body["accepted"].as_array().unwrap().len(), 1);
+    let paid_at: Option<NaiveDateTime> =
+        sqlx::query_scalar("SELECT paid_at FROM invoices WHERE id = ?")
+            .bind(inv_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(
+        paid_at.is_none(),
+        "⛔ 60 sur 100 ne SOLDE pas : `paid_at` doit rester NULL, sinon la \
+         facture sort des relances alors qu'il reste 40 dus"
+    );
+    assert_eq!(
+        receivable_balance(&pool, ctx.receivable_account_id).await,
+        dec!(40.00),
+        "le compte de créance porte le solde restant"
+    );
+
+    // Second versement : le solde tombe à zéro.
+    let body = post_accept_one(&app, &ctx, tx_ids[1], inv_id).await;
+    assert_eq!(
+        body["accepted"].as_array().unwrap().len(),
+        1,
+        "failed = {:?}",
+        body["failed"]
+    );
+    let paid_at: Option<NaiveDateTime> =
+        sqlx::query_scalar("SELECT paid_at FROM invoices WHERE id = ?")
+            .bind(inv_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(paid_at.is_some(), "solde nul ⇒ la facture est payée");
+    assert_eq!(
+        receivable_balance(&pool, ctx.receivable_account_id).await,
+        Decimal::ZERO,
+        "⛔ L'INVARIANTE : le compte de créance se solde exactement"
+    );
+
+    // Deux liaisons, une par versement, et aucune ne pointe sur la vente.
+    let settlements: Vec<(i64, Decimal)> = sqlx::query_as(
+        "SELECT journal_entry_id, amount FROM invoice_settlements \
+         WHERE invoice_id = ? ORDER BY id",
+    )
+    .bind(inv_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(settlements.len(), 2);
+    assert_eq!(settlements[0].1, dec!(60.00));
+    assert_eq!(settlements[1].1, dec!(40.00));
+    assert!(settlements.iter().all(|(entry_id, _)| *entry_id != je_id));
+}
+
+/// ⛔ **Le trop-perçu est refusé, il ne s'écrit pas.**
+///
+/// Sans ce garde, le compte de créance passerait créditeur — un solde contre
+/// nature que le grand livre signalerait, mais après coup.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accept_refuses_an_overpayment_without_writing_anything(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Trop", "CH4431999123000889012", Role::Comptable).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let inv_date = NaiveDate::from_ymd_opt(2026, 4, 20).unwrap();
+    let (inv_id, _je_id) = seed_validated_invoice(
+        &pool,
+        ctx.company_id,
+        ctx.contact_id,
+        "INV-TROP-1",
+        inv_date,
+        dec!(100.00),
+    )
+    .await;
+    let tx_ids = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("accept_overpay"),
+        day,
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            day,
+            Some(day),
+            dec!(150.00),
+            "CHF",
+            // La référence matche : le score est > 0, donc le garde de score
+            // ne suffit PAS — c'est bien le nouveau garde qui doit refuser.
+            "INV-TROP-1",
+            Some("Trop Client"),
+        )],
+    )
+    .await;
+
+    let app = spawn_app(pool.clone()).await;
+    let body = post_accept_one(&app, &ctx, tx_ids[0], inv_id).await;
+
+    assert!(body["accepted"].as_array().unwrap().is_empty());
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1);
+    assert_eq!(
+        failed[0]["errorCode"].as_str().unwrap(),
+        "RECONCILIATION_OVERPAYMENT"
+    );
+
+    // Rien n'a été écrit : ni liaison, ni `paid_at`, ni mouvement de créance.
+    let settlements: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM invoice_settlements WHERE invoice_id = ?")
+            .bind(inv_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(settlements, 0);
+    assert_eq!(
+        receivable_balance(&pool, ctx.receivable_account_id).await,
+        dec!(100.00),
+        "la créance est intacte"
+    );
 }

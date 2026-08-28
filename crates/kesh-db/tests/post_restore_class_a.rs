@@ -43,7 +43,7 @@
 use std::collections::BTreeMap;
 
 use kesh_db::post_restore::{
-    BackfillTrigger, POST_RESTORE_BACKFILLS, PostRestoreBackfill, ReplayOutcome,
+    BackfillTrigger, POST_RESTORE_BACKFILLS, PostRestoreBackfill, RETIRED_BACKFILLS, ReplayOutcome,
     replay_with_registry,
 };
 use kesh_db::test_fixtures::{SeededCompany, seed_accounting_company};
@@ -56,14 +56,23 @@ const VAT: &str = "81.0000";
 const TTC: &str = "1081.0000";
 const ZERO: &str = "0.0000";
 
-/// Les entrées de **classe A** du registre canonique.
+/// Les entrées de **classe A** à éprouver.
 ///
-/// Résolues depuis `POST_RESTORE_BACKFILLS` et non énumérées à la main : une
-/// entrée de classe A ajoutée plus tard est automatiquement soumise aux deux
-/// propriétés, sans que personne ait à y penser.
+/// Résolues depuis les deux registres et non énumérées à la main : une entrée de
+/// classe A ajoutée plus tard est automatiquement soumise aux deux propriétés,
+/// sans que personne ait à y penser.
+///
+/// ⚠️ **`RETIRED_BACKFILLS` entre dans la source depuis la Story 24-2 (#371).**
+/// La création de `invoice_settlements` a refermé la fenêtre d'importabilité
+/// au-delà des deux entrées que portait `POST_RESTORE_BACKFILLS`, qui est donc
+/// **vide** — et ces deux tests, qui en dérivaient, tourneraient à vide. Les
+/// entrées retirées restent des cas d'espèce parfaitement valides pour éprouver
+/// la MACHINERIE : c'est elle qu'on protège ici, pas le fait qu'une entrée soit
+/// aujourd'hui atteignable en production.
 fn class_a_entries() -> Vec<PostRestoreBackfill> {
     POST_RESTORE_BACKFILLS
         .iter()
+        .chain(RETIRED_BACKFILLS.iter())
         .filter(|e| matches!(e.trigger, BackfillTrigger::Unconditional))
         .copied()
         .collect()

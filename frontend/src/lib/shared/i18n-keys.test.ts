@@ -117,9 +117,15 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * ⚠️ **1602 → 1605, +3 pour le filtre par compte (#374)** — les trois sites de
  * `routes/(app)/journal-entries/+page.svelte` : l'étiquette du filtre, et deux fois
  * « Tous » (le déclencheur du select et son option). La ventilation vaut le delta.
+ *
+ * ⚠️ **1605 → 1607, +2 pour l'écriture d'encaissement (Story 24-2, #371)** — les deux
+ * sites de `routes/(app)/invoices/[id]/+page.svelte` : « Déjà réglé » et « Reste dû », les
+ * deux lignes qui n'apparaissent au pied de la facture que **si** un règlement existe. Le
+ * badge « Partiellement payée », lui, n'ajoute **aucun** site : `PaymentStatusBadge` résout
+ * sa clé par une table indexée sur le statut, et ce dispatcher était déjà relevé.
  */
 const ATTENDU = {
-	sitesTotal: 1605,
+	sitesTotal: 1607,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

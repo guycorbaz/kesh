@@ -718,3 +718,44 @@ test.describe('Factures — téléchargement PDF (Story 5.3)', () => {
 		).toBeVisible({ timeout: 5000 });
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Story 24-2 (#371) — le résiduel traverse la frontière HTTP
+//
+// ⚠️ Ce que SEUL un E2E vérifie ici. Vitest teste le rendu sur un DTO déjà
+// construit, les tests Rust testent le calcul — et ni l'un ni l'autre ne voit
+// une clé qui se perd entre les deux. `amountSettled` et `amountDue` sont
+// `Option<Decimal>` côté Rust : `None` doit arriver en `null`, une valeur en
+// chaîne décimale, et le tout en camelCase. C'est exactement le mode d'échec qui
+// a coûté un aller-retour sur la 24-1.
+// ---------------------------------------------------------------------------
+
+test('facture : le résiduel traverse la frontière HTTP (Story 24-2)', async ({ page }) => {
+	await login(page);
+	const contactId = await createContactWithAddressViaApi(page, `Résiduel ${Date.now()}`);
+	const invoiceId = await createAndValidateInvoiceViaApi(page, contactId);
+
+	const ctx = await authedApiContext(page);
+	try {
+		const res = await ctx.get(`/api/v1/invoices/${invoiceId}`);
+		expect(res.ok(), `GET invoice: ${res.status()}`).toBeTruthy();
+		const invoice = await res.json();
+
+		// Les deux clés existent — en camelCase, et NON absentes.
+		expect(invoice).toHaveProperty('amountSettled');
+		expect(invoice).toHaveProperty('amountDue');
+
+		// Facture jamais encaissée : rien de réglé, tout reste dû.
+		expect(Number(invoice.amountSettled)).toBe(0);
+		expect(Number(invoice.amountDue)).toBe(Number(invoice.totalTtc));
+		expect(Number(invoice.amountDue)).toBeGreaterThan(0);
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+
+	// ⛔ Rien de réglé ⇒ le bloc « Déjà réglé / Reste dû » reste ABSENT. Sur une
+	// facture intacte il n'apprendrait rien et répéterait le total ; le bruit
+	// ferait passer inaperçu le cas où ces lignes disent quelque chose.
+	await page.goto(`/invoices/${invoiceId}`);
+	await expect(page.getByTestId('invoice-amount-due')).toHaveCount(0);
+});
