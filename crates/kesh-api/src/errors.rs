@@ -2437,11 +2437,13 @@ impl IntoResponse for AppError {
                             "journal-entries-reverse-blocked-bank-match",
                             "Cette écriture est rapprochée d'une transaction bancaire.",
                         ),
-                        // ⚠️ Ce cas ne remonte ici QUE par la lecture (le
-                        // recensement des empêchements). À l'écriture, il passe
-                        // par `ReversalAccountsArchived`, qui rend un 400 en
-                        // NOMMANT les comptes — un message que celui-ci ne peut
-                        // pas produire, faute d'avoir la liste sous la main.
+                        // ⚠️ **Aucun chemin ne construit ce cas aujourd'hui** :
+                        // l'écriture l'exclut délibérément pour atteindre
+                        // `ReversalAccountsArchived`, un 400 qui NOMME tous les
+                        // comptes. La branche existe pour que le `match` reste
+                        // exhaustif. *(Le commentaire précédent la disait servie
+                        // par la lecture : c'était faux, la lecture ne construit
+                        // aucun `DbError`. Passe 2 de revue.)*
                         ReversalBlocker::AccountArchived => (
                             "journal-entries-reverse-blocked-account-archived",
                             "Un compte de cette écriture a été archivé : réactivez-le pour pouvoir la contre-passer.",

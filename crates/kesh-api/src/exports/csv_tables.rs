@@ -1218,16 +1218,25 @@ mod tests {
         let lignes: Vec<&str> = text.lines().collect();
         assert_eq!(lignes.len(), 3, "en-tête + deux écritures : {text}");
 
-        // L'écriture ordinaire laisse la colonne VIDE, jamais un 0 trompeur.
-        assert!(
-            lignes[1].contains(";;"),
-            "une écriture ordinaire doit laisser la colonne vide : {}",
+        // ⛔ **Assertions POSITIONNELLES, et l'index vient de l'en-tête.** Un
+        // `contains(";;")` ne discriminerait que par accident — il suffirait
+        // qu'un autre champ du gabarit devienne vide pour qu'il reste vert sans
+        // la colonne. *(Relevé en passe 2 de revue de code.)*
+        let colonne = en_tete
+            .trim_end()
+            .split(';')
+            .position(|c| c == "reverses_entry_id")
+            .expect("la colonne doit être à l'en-tête");
+        assert_eq!(
+            lignes[1].split(';').nth(colonne),
+            Some(""),
+            "une écriture ordinaire laisse la colonne VIDE, jamais un 0 trompeur : {}",
             lignes[1]
         );
-        // La contre-passation porte l'identifiant de son origine.
-        assert!(
-            lignes[2].contains(";10;"),
-            "le lien vers l'origine manque : {}",
+        assert_eq!(
+            lignes[2].split(';').nth(colonne),
+            Some("10"),
+            "la contre-passation porte l'identifiant de son origine : {}",
             lignes[2]
         );
     }

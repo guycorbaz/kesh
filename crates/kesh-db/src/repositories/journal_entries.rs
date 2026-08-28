@@ -1438,13 +1438,14 @@ where
         supplier_invoice_number: Option<String>,
         settlement_id: Option<i64>,
         bank_transaction_id: Option<i64>,
-        archived_account_id: Option<i64>,
+        archived_account_number: Option<String>,
     }
 
     let row: Option<BlockerRow> = sqlx::query_as(
         "SELECT \
            je.reverses_entry_id, \
-           (SELECT r.id FROM journal_entries r WHERE r.reverses_entry_id = je.id) AS reversed_by, \
+           (SELECT r.id FROM journal_entries r \
+             WHERE r.reverses_entry_id = je.id AND r.company_id = je.company_id LIMIT 1) AS reversed_by, \
            (SELECT i.id FROM invoices i WHERE i.journal_entry_id = je.id LIMIT 1) AS invoice_id, \
            (SELECT i.invoice_number FROM invoices i WHERE i.journal_entry_id = je.id LIMIT 1) AS invoice_number, \
            (SELECT c.id FROM credit_notes c WHERE c.journal_entry_id = je.id LIMIT 1) AS credit_note_id, \
@@ -1457,9 +1458,10 @@ where
              LIMIT 1) AS supplier_invoice_number, \
            (SELECT st.id FROM invoice_settlements st WHERE st.journal_entry_id = je.id LIMIT 1) AS settlement_id, \
            (SELECT bt.id FROM bank_transactions bt WHERE bt.matched_entry_id = je.id LIMIT 1) AS bank_transaction_id, \
-           (SELECT a.id FROM journal_entry_lines jel \
+           (SELECT a.number FROM journal_entry_lines jel \
              JOIN accounts a ON a.id = jel.account_id \
-             WHERE jel.entry_id = je.id AND a.active = FALSE LIMIT 1) AS archived_account_id \
+             WHERE jel.entry_id = je.id AND a.active = FALSE \
+             ORDER BY a.number LIMIT 1) AS archived_account_number \
          FROM journal_entries je \
          WHERE je.id = ? AND je.company_id = ?",
     )
@@ -1506,14 +1508,20 @@ where
             row.bank_transaction_id,
             None,
         ))
-    } else if row.archived_account_id.is_some() {
+    } else if row.archived_account_number.is_some() {
         // ⛔ En dernier : c'est le seul motif que l'utilisateur peut lever
         // lui-même (réactiver le compte), et l'annoncer avant un motif de
         // propriété ferait croire qu'une facture deviendrait contre-passable.
+        //
+        // ⚠️ L'étiquette porte le **numéro du compte**, et `document_id` reste
+        // `None` : un compte n'est pas une pièce. Sans ce numéro, l'écran dirait
+        // « réactivez-LE » sans dire lequel, sur une écriture qui peut porter dix
+        // lignes — le refus qui NOMME (le 400 de l'écriture) étant devenu
+        // inatteignable depuis que le bouton est masqué. *(Passe 2 de revue.)*
         Some((
             ReversalBlocker::AccountArchived,
-            row.archived_account_id,
             None,
+            row.archived_account_number,
         ))
     } else {
         None

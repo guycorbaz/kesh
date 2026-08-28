@@ -64,6 +64,8 @@ export interface JournalEntryDetailResponse extends JournalEntryResponse {
 	reversedByEntryId: number | null;
 	reversable: boolean;
 	reversalBlockedBy: ReversalBlocker | null;
+	/** Numéro de la pièce, ou du compte archivé. `null` quand il n'y en a pas. */
+	reversalBlockedLabel: string | null;
 }
 
 export interface CreateJournalEntryLineRequest {

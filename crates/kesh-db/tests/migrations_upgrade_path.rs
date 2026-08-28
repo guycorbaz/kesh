@@ -37,7 +37,7 @@ async fn apply_migrations_up_to(
         "apply_migrations_up_to: n={} > total={} — vérifier que le calcul \
          `total - 30` (fenêtre d'upgrade, FRONTIÈRE figée à 34) reste \
          cohérent avec l'ajout de migrations futures. Si une migration a été ajoutée à \
-         la branche, l'assertion `total == 63` du test upgrade_path_preserves_data \
+         la branche, l'assertion `total == 64` du test upgrade_path_preserves_data \
          doit également échouer, c'est son rôle : elle signale qu'il faut décider \
          explicitement si la fenêtre s'élargit (bumper `total` seul) ou si la \
          frontière doit rester à 34 (bumper `total` ET la fenêtre). Cf. garde-fou \

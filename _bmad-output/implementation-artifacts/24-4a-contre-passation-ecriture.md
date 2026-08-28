@@ -456,7 +456,7 @@ La passe a vérifié quatre choses, et les quatre tiennent : le symptôme de P3-
 
 | gate | résultat |
 |---|---|
-| `scripts/test-fast.sh` (fmt + clippy + nextest), base remise à zéro avant (KF-039) | **2248/2248**, 4 skipped |
+| `scripts/test-fast.sh` (fmt + clippy + nextest), base remise à zéro avant (KF-039) | **2248/2248** au développement, puis **2257/2257** après la passe 1 de revue (+9 tests), 4 skipped |
 | `npm run check` | 0 erreur |
 | `npm run lint-i18n-ownership` | PASS |
 | `npm run test:unit` | **747/747** |
@@ -486,6 +486,36 @@ La passe a vérifié quatre choses, et les quatre tiennent : le symptôme de P3-
 - `frontend/src/lib/shared/i18n-libelle-en-dur.test.ts`
 - `frontend/src/routes/(app)/journal-entries/[id]/+page.svelte`
 - `frontend/tests/e2e/journal-entries.spec.ts`
+- `docs/manual/fr/user-manual.tex` + `.pdf` régénéré — passe 2, P2-6
+
+### Journal de revue de code
+
+#### Passe 1 — 2026-08-28 · Sonnet 4.6 ×2 + Haiku 4.5, contextes frais
+
+**2 CRITICAL, 2 HIGH, 6 MEDIUM, 3 LOW.** Les deux CRITICAL étaient de la main de l'auteur, et le premier était écrit **deux fois** — dans la spec et dans le code.
+
+- **BH-1** — la spec liste `ACCOUNT_ARCHIVED` parmi les codes de `reversalBlockedBy` ; `reversal_blocker` ne l'évaluait pas, avec un doc-comment qui le disait à voix haute. La fiche affichait un bouton qui échouait **après** le clic, là où l'AC 11 exige l'inverse. ⚠️ L'omission était alignée de bout en bout — enum Rust, type TypeScript, `switch` Svelte — ce qui explique qu'aucun gate ne l'ait vue : aucun test ne montait le couple « GET + compte archivé ».
+- **AA-1** — l'invariant **I3 était annoncé « écrit » et ne l'était pas**, sa tâche cochée. Le mode d'échec que le `CLAUDE.md` nomme : le compte rendu devient le lieu du défaut.
+- **HIGH** — l'export comptable livré « avec son test » sans aucune assertion ; aucun test RBAC ni IDOR sur la route neuve.
+- ⚠️ **Le correctif de BH-1 a introduit sa propre régression en dix minutes** : le chemin d'écriture s'arrêtait sur un 409 muet là où il doit rendre le 400 qui NOMME les comptes. Rattrapé par les tests neufs.
+
+#### Passe 2 — 2026-08-28 · Opus 5, contexte frais, braquée sur la remédiation
+
+**0 CRITICAL, 0 HIGH, 6 MEDIUM, 4 LOW — et 7 findings sur 10 portent sur la remédiation de la passe 1.**
+
+| # | ce qui clochait |
+|---|---|
+| P2-1 | le décompte « sept codes » corrigé **au seul site qu'une lentille avait nommé**, et laissé à trois autres — dont un **cinq lignes** sous le « huit » qu'il venait d'écrire |
+| P2-2 | `reversed_by` scopée par société avec, en doc-comment, « deux lectures voisines qui ne se scopent pas pareil finissent par diverger » — en laissant la lecture voisine non scopée, cent lignes plus haut, **dans le même commit** |
+| P2-3 | une branche morte, un commentaire qui la disait vivante, et un identifiant de **compte** prêt à sortir dans un champ nommé « pièce » |
+| P2-4 | masquer le bouton a rendu **inatteignable** le refus qui NOMME les comptes : l'écran disait « réactivez-le » sans dire lequel |
+| P2-5 | `blockedLabel(code: string)` — trois doc-comments promettaient une exhaustivité que le type interdisait |
+| P2-6 | **le manuel utilisateur disait que le logiciel ne le fait pas** |
+| P2-7 → P2-10 | un `63` resté sous un `64` ; la portée de la boucle I3 surestimée ; deux assertions CSV non discriminantes ; les décomptes de ce compte rendu |
+
+⚠️ **Deux de ces findings sont des auto-contradictions du même commit.** C'est le motif que le dépôt mesure depuis l'Epic 22, vérifié une fois de plus : la sévérité se déplace vers ce qu'on vient d'écrire.
+
+⚠️ **P2-6 est le plus instructif pour le processus** : la story livrait une fonction que le manuel décrivait explicitement comme absente — « Ce que le logiciel ne fait pas à votre place… contre-passer vous-même ». **Aucun gate ne lit le manuel.** La § *Synchroniser TOUTES les docs* du `CLAUDE.md` le prescrit pourtant, et la *File List* n'en portait aucun.
 
 ### Agent Model Used
 
@@ -494,5 +524,3 @@ Opus 5 (1M context) — `bmad-dev-story`, 2026-08-28.
 ### Debug Log References
 
 ### Completion Notes List
-
-### File List

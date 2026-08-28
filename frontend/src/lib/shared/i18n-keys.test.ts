@@ -149,7 +149,7 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * | les deux renvois croisés (« contre-passe » / « contre-passée par ») | **+2** |
  * | le dialogue : titre, corps, annuler, confirmer | **+4** |
  *
- * Les sept branches de `blockedLabel` comptent chacune pour un site : le serveur rend un
+ * Les huit branches de `blockedLabel` comptent chacune pour un site : le serveur rend un
  * **code**, jamais une phrase, et c'est ici que la traduction se fait — un dispatcher
  * indexé par table n'aurait compté que pour un, mais n'aurait pas fait rougir le
  * type-check à l'ajout d'un code.

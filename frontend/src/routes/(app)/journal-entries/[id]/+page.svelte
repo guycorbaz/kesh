@@ -8,7 +8,10 @@
 		getJournalEntry,
 		reverseJournalEntry
 	} from '$lib/features/journal-entries/journal-entries.api';
-	import type { JournalEntryDetailResponse } from '$lib/features/journal-entries/journal-entries.types';
+	import type {
+		JournalEntryDetailResponse,
+		ReversalBlocker
+	} from '$lib/features/journal-entries/journal-entries.types';
 	import { i18nMsg } from '$lib/features/onboarding/onboarding.svelte';
 	import { toast } from 'svelte-sonner';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
@@ -123,7 +126,7 @@
 	 * traduction se fait. Un `switch` exhaustif plutôt qu'une table indexée, pour
 	 * qu'un code neuf fasse rougir le type-check au lieu d'afficher du vide.
 	 */
-	function blockedLabel(code: string): string {
+	function blockedLabel(code: ReversalBlocker): string {
 		switch (code) {
 			case 'IS_A_REVERSAL':
 				return i18nMsg(
@@ -165,9 +168,29 @@
 					'journal-entries-reverse-blocked-account-archived',
 					'Un compte de cette écriture a été archivé : réactivez-le pour pouvoir la contre-passer.'
 				);
-			default:
-				return '';
+			default: {
+				// ⛔ **C'est l'affectation à `never` qui fait rougir**, pas le
+				// `default` : ajouter un neuvième code au type sans l'ajouter ici
+				// casse le type-check, au lieu d'afficher un motif VIDE à la place
+				// du bouton. Le paramètre était typé `string`, ce qui ôtait au
+				// `switch` toute exhaustivité — trois doc-comments affirmaient
+				// pourtant le contraire. *(Passe 2 de revue de code.)*
+				const _exhaustif: never = code;
+				return _exhaustif;
+			}
 		}
+	}
+
+	/**
+	 * Le motif, suffixé de ce qui le porte quand c'est connu — « … (6000) ».
+	 *
+	 * ⚠️ Sans ce suffixe, une écriture à dix lignes dont un compte est archivé
+	 * affiche « réactivez-le » sans dire lequel.
+	 */
+	function blockedMessage(entry: JournalEntryDetailResponse): string {
+		if (!entry.reversalBlockedBy) return '';
+		const motif = blockedLabel(entry.reversalBlockedBy);
+		return entry.reversalBlockedLabel ? `${motif} (${entry.reversalBlockedLabel})` : motif;
 	}
 
 	async function confirmReverse() {
@@ -212,7 +235,7 @@
 		</Button>
 	{:else if entry?.reversalBlockedBy}
 		<p class="text-sm text-text-muted" data-testid="reverse-blocked-reason">
-			{blockedLabel(entry.reversalBlockedBy)}
+			{blockedMessage(entry)}
 		</p>
 	{/if}
 </div>

@@ -94,15 +94,20 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * ⚠️ **42 → 43, et la déclaration est NOMMÉE avant que le chiffre ne bouge** :
  * `blockedLabel` (`routes/(app)/journal-entries/[id]/+page.svelte`), née de la
  * contre-passation (#380). Elle traduit le **code** de blocage rendu par le serveur —
- * `OWNED_BY_INVOICE`, `ALREADY_REVERSED`… — et ses sept branches délèguent toutes à
+ * `OWNED_BY_INVOICE`, `ALREADY_REVERSED`… — et ses huit branches délèguent toutes à
  * `i18nMsg`. Un `switch` exhaustif plutôt qu'une table indexée, pour qu'un code neuf
  * fasse rougir le type-check au lieu d'afficher du vide.
  *
- * ⚠️ Elle tombe en `ecartee` (6 → 7) et **non** en `conforme` : son `default` rend `''`,
- * un littéral, donc neutre au sens de `NEUTRES` — la classe `conforme` est réservée aux
- * fonctions qui ne rendent AUCUN littéral. *(Écrit après avoir lu la ventilation réelle :
- * la première rédaction de ce paragraphe annonçait `conforme` sans l'avoir vérifiée, ce
- * que ce garde-fou interdit précisément.)*
+ * ⚠️ Elle est passée par les deux classes, et c'est instructif. Livrée avec un
+ * `default: return ''`, elle tombait en `ecartee` — un littéral, fût-il vide, écarte de
+ * `conforme`. La **passe 2 de revue de code** a remplacé ce `default` par une affectation
+ * à `never` (le seul dispositif qui fasse rougir le type-check à l'ajout d'un neuvième
+ * code) : la fonction ne rend plus aucun littéral, donc `conforme` 36 → **37** et
+ * `ecartee` 7 → **6**. Le total, lui, ne bouge pas.
+ *
+ * *(Ce paragraphe a été réécrit deux fois, chaque fois APRÈS lecture de la ventilation
+ * réelle : ce garde-fou interdit d'ajuster un chiffre sans le recompter, et sa première
+ * rédaction annonçait `conforme` sans l'avoir vérifié.)*
  */
 const CANDIDATES_ATTENDUES = 43;
 
@@ -621,7 +626,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 7, conforme: 36 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 6, conforme: 37 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

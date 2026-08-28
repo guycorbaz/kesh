@@ -1024,6 +1024,13 @@ async fn reverse_succeeds_when_an_account_became_non_postable(pool: MySqlPool) {
 /// ⚠️ Cet invariant était annoncé « écrit » par le compte rendu de la story et
 /// ne l'était pas. C'est le mode d'échec que le `CLAUDE.md` nomme : le compte
 /// rendu devient le lieu du défaut. Il l'est désormais.
+///
+/// ⚠️ **Ce que la boucle ajoute VRAIMENT** : la garde est tenue par le `409`
+/// asserté juste au-dessus ; la boucle ne peut donc rougir que dans un seul cas
+/// — une contre-passation **committée malgré le refus**, c'est-à-dire une fuite
+/// de rollback. C'est peu, et c'est exactement ce qu'aucun autre test ne
+/// couvre. *(Portée précisée en passe 2 : une assertion dont on surestime la
+/// portée est un test qu'on croit plus fort qu'il n'est.)*
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn no_document_ever_points_at_a_reversed_entry(pool: MySqlPool) {
     let (app, token, company_id, fy_id) = setup(&pool).await;

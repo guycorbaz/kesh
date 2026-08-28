@@ -268,9 +268,11 @@ pub enum DbError {
         blocker: ReversalBlocker,
         /// Identifiant de la pièce propriétaire, quand le motif en désigne une.
         document_id: Option<i64>,
-        /// **Numéro** de la pièce — `F-2026-014`, `AV-2026-3`… — quand elle en a
-        /// un. ⚠️ Un identifiant de base de données ne se comprend pas ; c'est le
-        /// numéro que l'utilisateur voit sur son document.
+        /// **Étiquette lisible** de ce qui bloque : le numéro de la pièce
+        /// (`F-2026-014`, `AV-2026-3`…), ou le **numéro du compte** archivé.
+        ///
+        /// ⚠️ Un identifiant de base de données ne se comprend pas ; c'est ce que
+        /// l'utilisateur voit sur son document, ou dans son plan comptable.
         document_label: Option<String>,
     },
 
@@ -363,7 +365,7 @@ impl DbError {
             Self::AccountRoleInvalidForType { .. } => "ACCOUNT_ROLE_INVALID_FOR_TYPE",
             Self::InvalidRevenueAccounts(_) => "INVOICE_LINE_REVENUE_ACCOUNT_INVALID",
             Self::CreditNoteRevenueAccountsArchived(_) => "CREDIT_NOTE_REVENUE_ACCOUNT_ARCHIVED",
-            // ⚠️ Le code EXPOSÉ est celui du `ReversalBlocker` (sept valeurs) ;
+            // ⚠️ Le code EXPOSÉ est celui du `ReversalBlocker` (huit valeurs) ;
             // celui-ci n'est que le repli générique du mapping structuré.
             Self::EntryNotReversable { .. } => "ENTRY_NOT_REVERSABLE",
             Self::ReversalAccountsArchived(_) => "ACCOUNT_ARCHIVED",

@@ -148,6 +148,14 @@ pub struct JournalEntryDetailResponse {
     /// Code canonique du motif, `null` si `reversable`. ⚠️ Un code, jamais une
     /// phrase : la traduction se fait à l'écran, dans les quatre locales.
     pub reversal_blocked_by: Option<String>,
+    /// **Étiquette** de ce qui bloque — numéro de pièce, ou numéro du compte
+    /// archivé.
+    ///
+    /// ⛔ Sans elle, l'écran dirait « réactivez-**le** » sans dire lequel : le
+    /// refus qui NOMME les comptes est un 400 de l'ÉCRITURE, devenu
+    /// inatteignable depuis que le bouton est masqué avant le clic.
+    /// *(Relevé en passe 2 de revue de code.)*
+    pub reversal_blocked_label: Option<String>,
 }
 
 impl From<JournalEntryLine> for JournalEntryLineResponse {
@@ -443,7 +451,8 @@ pub async fn get_journal_entry(
         entry: JournalEntryResponse::from(entry),
         reversed_by_entry_id,
         reversable: blocker.is_none(),
-        reversal_blocked_by: blocker.map(|(b, _, _)| b.code().to_string()),
+        reversal_blocked_by: blocker.as_ref().map(|(b, _, _)| b.code().to_string()),
+        reversal_blocked_label: blocker.and_then(|(_, _, label)| label),
     }))
 }
 
