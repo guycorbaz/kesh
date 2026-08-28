@@ -11,9 +11,8 @@
 		getInvoice,
 		deleteInvoice,
 		validateInvoice,
-		markInvoicePaid,
-		unmarkInvoicePaid,
-		getInvoiceEmailPreview,
+		settleInvoice,
+			getInvoiceEmailPreview,
 		sendInvoiceEmail,
 		getInvoiceSettings,
 	} from '$lib/features/invoices/invoices.api';
@@ -22,7 +21,13 @@
 	import type { InvoiceSettingsResponse } from '$lib/features/invoices/invoices.types';
 	import { invoiceRevenueAccountLabel } from '$lib/features/accounts/account-label';
 	import PaymentStatusBadge from '$lib/features/invoices/PaymentStatusBadge.svelte';
-	import MarkPaidDialog from '$lib/features/invoices/MarkPaidDialog.svelte';
+	import SettleInvoiceDialog, {
+		type SettlementPayload,
+	} from '$lib/features/invoices/SettleInvoiceDialog.svelte';
+	import {
+		listBankAccounts,
+		type BankAccountSummary,
+	} from '$lib/features/bank-accounts/bank-accounts.api';
 	import SendEmailDialog from '$lib/features/invoices/SendEmailDialog.svelte';
 	import DunningPausedBadge from '$lib/features/invoices/DunningPausedBadge.svelte';
 	import ReminderHistory from '$lib/features/reminders/ReminderHistory.svelte';
@@ -275,9 +280,18 @@
 	let markOpen = $state(false);
 	let markSubmitting = $state(false);
 	let markError = $state('');
-	let unmarkOpen = $state(false);
-	let unmarkSubmitting = $state(false);
-	let unmarkError = $state('');
+	// ⛔ Story 24-3 (#372) : plus de « dé-marquer ». Annuler un règlement demande
+	// une CONTRE-PASSATION, pas un retrait de drapeau — issue #414.
+	let settleAccounts = $state<AccountResponse[]>([]);
+	let settleBankAccounts = $state<BankAccountSummary[]>([]);
+	$effect(() => {
+		void fetchAccounts(false)
+			.then((a) => (settleAccounts = a))
+			.catch(() => (settleAccounts = []));
+		void listBankAccounts(false)
+			.then((b) => (settleBankAccounts = b))
+			.catch(() => (settleBankAccounts = []));
+	});
 
 	function paymentStatus(inv: InvoiceResponse): 'paid' | 'unpaid' | 'overdue' | 'partial' {
 		if (inv.paidAt) return 'paid';
@@ -295,59 +309,28 @@
 		return inv.isOverdue === true ? 'overdue' : 'unpaid';
 	}
 
-	async function handleMarkConfirm(paidAt: string) {
+	async function handleSettleConfirm(payload: SettlementPayload) {
 		if (!invoice) return;
 		markSubmitting = true;
 		markError = '';
 		try {
-			invoice = await markInvoicePaid(invoice.id, { paidAt, version: invoice.version });
-			notifySuccess(i18nMsg('invoice-mark-paid-success', 'Facture marquée payée'));
+			const res = await settleInvoice(invoice.id, payload);
+			invoice = res.invoice;
+			notifySuccess(
+				res.fullySettled
+					? i18nMsg('invoice-settle-success-full', 'Règlement enregistré — facture soldée')
+					: i18nMsg('invoice-settle-success-partial', 'Règlement partiel enregistré'),
+			);
 			markOpen = false;
 		} catch (err) {
 			if (isApiError(err)) {
 				markError = err.message;
 				notifyError(err.message);
-				if (err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
-					try {
-						invoice = await getInvoice(invoice.id);
-					} catch {
-						// noop
-					}
-					markOpen = false;
-				}
 			} else {
 				markError = i18nMsg('common-error', 'Erreur inattendue');
 			}
 		} finally {
 			markSubmitting = false;
-		}
-	}
-
-	async function confirmUnmark() {
-		if (!invoice) return;
-		unmarkSubmitting = true;
-		unmarkError = '';
-		try {
-			invoice = await unmarkInvoicePaid(invoice.id, { version: invoice.version });
-			notifySuccess(i18nMsg('invoice-unmark-paid-success', 'Marquage paiement annulé'));
-			unmarkOpen = false;
-		} catch (err) {
-			if (isApiError(err)) {
-				unmarkError = err.message;
-				notifyError(err.message);
-				if (err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
-					try {
-						invoice = await getInvoice(invoice.id);
-					} catch {
-						// noop
-					}
-					unmarkOpen = false;
-				}
-			} else {
-				unmarkError = i18nMsg('common-error', 'Erreur inattendue');
-			}
-		} finally {
-			unmarkSubmitting = false;
 		}
 	}
 
@@ -647,13 +630,12 @@
 		</div>
 	{:else if invoice?.status === 'validated'}
 		<div class="flex gap-2">
+			<!-- ⛔ Le bouton disparaît quand la facture est soldée, et rien ne le
+			     remplace : annuler un règlement demande une contre-passation
+			     (issue #414), pas un retrait de drapeau. -->
 			{#if !invoice.paidAt}
-				<Button variant="outline" onclick={() => (markOpen = true)}>
-					{i18nMsg('invoice-mark-paid-button', 'Marquer payée')}
-				</Button>
-			{:else}
-				<Button variant="outline" onclick={() => (unmarkOpen = true)}>
-					{i18nMsg('invoice-unmark-paid-button', 'Dé-marquer payée')}
+				<Button variant="outline" onclick={() => (markOpen = true)} data-testid="settle-open">
+					{i18nMsg('invoice-settle-button', 'Enregistrer un règlement')}
 				</Button>
 			{/if}
 			<Button
@@ -1016,16 +998,19 @@
 		</Dialog.Content>
 	</Dialog.Root>
 
-	<MarkPaidDialog
+	<SettleInvoiceDialog
 		open={markOpen}
-		onOpenChange={(o) => {
+		onOpenChange={(o: boolean) => {
 			markOpen = o;
 			if (!o) markError = '';
 		}}
 		invoiceDate={invoice.date}
+		amountDue={invoice.amountDue}
+		accounts={settleAccounts}
+		bankAccounts={settleBankAccounts}
 		submitting={markSubmitting}
 		errorMsg={markError}
-		onConfirm={handleMarkConfirm}
+		onConfirm={handleSettleConfirm}
 	/>
 
 	<SendEmailDialog
@@ -1060,40 +1045,12 @@
 		onConfirm={confirmPause}
 	/>
 
-	<Dialog.Root
-		open={unmarkOpen}
-		onOpenChange={(o) => {
-			unmarkOpen = o;
-			if (!o) unmarkError = '';
-		}}
-	>
-		<Dialog.Content>
-			<Dialog.Header>
-				<Dialog.Title>
-					{i18nMsg('invoice-unmark-paid-dialog-title', 'Dé-marquer payée')}
-				</Dialog.Title>
-			</Dialog.Header>
-			<p class="text-sm">
-				{i18nMsg(
-					'invoice-unmark-paid-dialog-body',
-					'Cette facture sera à nouveau considérée comme impayée. Utile pour corriger une erreur. Continuer ?',
-				)}
-			</p>
-			{#if unmarkError}
-				<div class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
-					{unmarkError}
-				</div>
-			{/if}
-			<Dialog.Footer>
-				<Button variant="outline" onclick={() => (unmarkOpen = false)} disabled={unmarkSubmitting}>
-					{i18nMsg('common-cancel', 'Annuler')}
-				</Button>
-				<Button variant="destructive" onclick={confirmUnmark} disabled={unmarkSubmitting}>
-					{i18nMsg('invoice-unmark-paid-confirm', 'Dé-marquer')}
-				</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
+	<!-- ⛔ Story 24-3 (#372) : le dialogue « Dé-marquer payée » est SUPPRIMÉ.
+	     Il ne coûtait rien parce que le marquage n'écrivait rien. Depuis que le
+	     règlement produit son écriture, revenir en arrière demande une
+	     contre-passation — une écriture inverse, à sa propre date, qui laisse les
+	     deux visibles au grand livre. C'est l'objet de l'issue #414, qui couvre
+	     aussi le côté fournisseur, lequel n'a jamais su le faire. -->
 
 	<Dialog.Root
 		open={creditNoteOpen}

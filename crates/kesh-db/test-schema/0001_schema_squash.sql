@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 62 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 63 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -663,14 +663,23 @@ CREATE TABLE `invoice_settlements` (
   `amount` decimal(19,4) NOT NULL,
   `settled_on` date NOT NULL,
   `created_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  `settlement_type` varchar(20) NOT NULL DEFAULT 'bank_transfer',
+  `settlement_bank_account_id` bigint(20) DEFAULT NULL,
+  `settlement_account_id` bigint(20) DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_invoice_settlements_entry` (`journal_entry_id`),
   KEY `idx_invoice_settlements_company_invoice` (`company_id`,`invoice_id`),
   KEY `idx_invoice_settlements_invoice` (`invoice_id`),
+  KEY `fk_invoice_settlements_settlement_bank` (`settlement_bank_account_id`),
+  KEY `fk_invoice_settlements_settlement_account` (`settlement_account_id`),
   CONSTRAINT `fk_invoice_settlements_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`),
   CONSTRAINT `fk_invoice_settlements_entry` FOREIGN KEY (`journal_entry_id`) REFERENCES `journal_entries` (`id`),
   CONSTRAINT `fk_invoice_settlements_invoice` FOREIGN KEY (`invoice_id`) REFERENCES `invoices` (`id`) ON DELETE CASCADE,
-  CONSTRAINT `chk_invoice_settlements_amount_positive` CHECK (`amount` > 0)
+  CONSTRAINT `fk_invoice_settlements_settlement_account` FOREIGN KEY (`settlement_account_id`) REFERENCES `accounts` (`id`),
+  CONSTRAINT `fk_invoice_settlements_settlement_bank` FOREIGN KEY (`settlement_bank_account_id`) REFERENCES `bank_accounts` (`id`),
+  CONSTRAINT `chk_invoice_settlements_amount_positive` CHECK (`amount` > 0),
+  CONSTRAINT `chk_invoice_settlements_type` CHECK (`settlement_type` in ('bank_transfer','internal_account')),
+  CONSTRAINT `chk_invoice_settlements_counterparty` CHECK (`settlement_type` = 'bank_transfer' and `settlement_bank_account_id` is not null and `settlement_account_id` is null or `settlement_type` = 'internal_account' and `settlement_account_id` is not null and `settlement_bank_account_id` is null)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `invoices`;

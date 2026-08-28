@@ -17,7 +17,7 @@
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import {
 		listDueDates,
-		markInvoicePaid,
+		settleInvoice,
 		exportDueDatesCsv,
 	} from '$lib/features/invoices/invoices.api';
 	import type {
@@ -32,7 +32,15 @@
 	import type { ContactResponse } from '$lib/features/contacts/contacts.types';
 	import { getContact } from '$lib/features/contacts/contacts.api';
 	import PaymentStatusBadge from '$lib/features/invoices/PaymentStatusBadge.svelte';
-	import MarkPaidDialog from '$lib/features/invoices/MarkPaidDialog.svelte';
+	import SettleInvoiceDialog, {
+		type SettlementPayload,
+	} from '$lib/features/invoices/SettleInvoiceDialog.svelte';
+	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
+	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+	import {
+		listBankAccounts,
+		type BankAccountSummary,
+	} from '$lib/features/bank-accounts/bank-accounts.api';
 
 	const VALID_PAYMENT_STATUS: PaymentStatusFilter[] = ['all', 'unpaid', 'overdue', 'paid'];
 
@@ -82,6 +90,18 @@
 	let markTarget = $state<DueDateItem | null>(null);
 	let markSubmitting = $state(false);
 	let markError = $state('');
+	// Chargés une fois : le dialogue de règlement en a besoin pour proposer une
+	// contrepartie (Story 24-3, #372).
+	let settleAccounts = $state<AccountResponse[]>([]);
+	let settleBankAccounts = $state<BankAccountSummary[]>([]);
+	$effect(() => {
+		void fetchAccounts(false)
+			.then((a) => (settleAccounts = a))
+			.catch(() => (settleAccounts = []));
+		void listBankAccounts(false)
+			.then((b) => (settleBankAccounts = b))
+			.catch(() => (settleBankAccounts = []));
+	});
 
 	async function initFromUrl() {
 		const params = page.url.searchParams;
@@ -221,25 +241,27 @@
 		markOpen = true;
 	}
 
-	async function handleMarkConfirm(paidAt: string) {
+	async function handleSettleConfirm(payload: SettlementPayload) {
 		if (!markTarget) return;
 		markSubmitting = true;
 		markError = '';
 		try {
-			await markInvoicePaid(markTarget.id, { paidAt, version: markTarget.version });
-			notifySuccess(i18nMsg('invoice-mark-paid-success', 'Facture marquée payée'));
+			const res = await settleInvoice(markTarget.id, payload);
+			notifySuccess(
+				res.fullySettled
+					? i18nMsg('invoice-settle-success-full', 'Règlement enregistré — facture soldée')
+					: i18nMsg('invoice-settle-success-partial', 'Règlement partiel enregistré'),
+			);
 			markOpen = false;
 			markTarget = null;
+			// ⚠️ Rechargement systématique : un règlement PARTIEL laisse la facture
+			// dans la liste, avec un résiduel moindre. Ne recharger que sur solde
+			// complet ferait afficher un montant périmé.
 			await load();
 		} catch (err) {
 			if (isApiError(err)) {
 				markError = err.message;
 				notifyError(err.message);
-				if (err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
-					markOpen = false;
-					markTarget = null;
-					await load();
-				}
 			} else {
 				markError = i18nMsg('common-error', 'Erreur inattendue');
 			}
@@ -436,7 +458,7 @@
 					<td class="py-2 pr-2 text-right">
 						{#if !inv.paidAt}
 							<Button variant="outline" size="sm" onclick={() => openMark(inv)}>
-								{i18nMsg('invoice-mark-paid-button', 'Marquer payée')}
+								{i18nMsg('invoice-settle-button-short', 'Régler')}
 							</Button>
 						{/if}
 					</td>
@@ -468,9 +490,13 @@
 {/if}
 
 {#if markTarget}
-	<MarkPaidDialog
+	<!-- ⚠️ `amountDue={null}` : l'échéancier ne porte pas encore le résiduel
+	     (colonnes reportées à une issue séparée, arbitrage du 2026-08-27).
+	     `null` dit « non calculé » et non « zéro » — le dialogue laisse alors le
+	     montant entièrement à saisir plutôt que de pré-remplir un chiffre faux. -->
+	<SettleInvoiceDialog
 		open={markOpen}
-		onOpenChange={(o) => {
+		onOpenChange={(o: boolean) => {
 			markOpen = o;
 			if (!o) {
 				markError = '';
@@ -478,9 +504,12 @@
 			}
 		}}
 		invoiceDate={markTarget.date}
+		amountDue={null}
+		accounts={settleAccounts}
+		bankAccounts={settleBankAccounts}
 		submitting={markSubmitting}
 		errorMsg={markError}
-		onConfirm={handleMarkConfirm}
+		onConfirm={handleSettleConfirm}
 	/>
 {/if}
 

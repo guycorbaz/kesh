@@ -97,7 +97,7 @@ function daysFromToday(offset: number): string {
 }
 
 test.describe('Échéancier factures — Story 5.4', () => {
-	test('golden path : création → échéancier → marquer payée → dé-marquer → export CSV', async ({
+	test('golden path : création → échéancier → régler → export CSV', async ({
 		page,
 	}) => {
 		await login(page);
@@ -132,11 +132,31 @@ test.describe('Échéancier factures — Story 5.4', () => {
 		// Badge "En retard" présent au moins une fois dans le tableau.
 		await expect(page.locator('tbody').getByText(/En retard|Overdue|In ritardo|Überfällig/i).first()).toBeVisible();
 
-		// Cliquer "Marquer payée" sur la facture en retard.
-		await overdueRow.getByRole('button', { name: /Marquer payée|Mark as paid|Segna|Als bezahlt/i }).click();
-		// Dialog s'ouvre → confirmer (date défaut = today).
+		// Story 24-3 (#372) — « Régler » remplace « Marquer payée » : le règlement
+		// produit son écriture, il lui faut donc une contrepartie et un montant.
+		//
+		// ⚠️ Les contrôles du dialogue se ciblent par `data-testid` et non par
+		// leur libellé : un libellé est traduit, et un sélecteur figé dessus
+		// casse à la première relecture de la langue (règle du dépôt, #326).
+		await overdueRow.getByRole('button', { name: /Régler|Settle|Pagare|Erfassen/i }).click();
 		await expect(page.getByRole('dialog')).toBeVisible();
-		await page.getByRole('button', { name: /Confirmer|Confirm|Conferma|bestätigen/i }).click();
+		await page.getByTestId('settle-type').selectOption('internal_account');
+		// Le premier compte proposé suffit : ce cas porte sur le PARCOURS, pas sur
+		// le choix du compte — celui-ci est couvert par les tests Rust.
+		await page.getByTestId('settle-account').selectOption({ index: 1 });
+		// ⚠️ **Le montant doit être SAISI ici, et c'est délibéré.** L'échéancier
+		// ne connaît pas encore le résiduel (colonnes reportées à une issue
+		// séparée), donc le dialogue reçoit `amountDue = null` — « non calculé »
+		// — et laisse le champ vide plutôt que de pré-remplir.
+		//
+		// ⛔ Y pré-remplir le TTC de la ligne serait FAUX : sur une facture
+		// déjà partiellement réglée, TTC ≠ résiduel, et l'utilisateur serait
+		// conduit vers un trop-perçu que le serveur refuse. Un champ vide dit la
+		// vérité ; un champ pré-rempli d'un mauvais chiffre ment.
+		//
+		// 100.00 HT à 8.10 % ⇒ 108.10 TTC (cf. `createAndValidateInvoice`).
+		await page.getByLabel(/Montant|Amount|Importo|Betrag/i).fill('108.10');
+		await page.getByTestId('settle-confirm').click();
 
 		// Après reload, la facture en retard disparaît du filtre "Impayées".
 		await expect(overdueRow).toHaveCount(0, { timeout: 5000 });
@@ -149,17 +169,19 @@ test.describe('Échéancier factures — Story 5.4', () => {
 		await expect(paidRow).toBeVisible({ timeout: 5000 });
 		await expect(paidRow.getByText(/Payée|Paid|Pagata|Bezahlt/i).first()).toBeVisible();
 
-		// Naviguer vers la page détail → dé-marquer.
+		// ⛔ Story 24-3 : le « dé-marquage » a DISPARU, et rien ne le remplace.
+		// Annuler un règlement demande une contre-passation — une écriture
+		// inverse, à sa propre date — et non le retrait d'un drapeau : c'est
+		// l'objet de l'issue #414. Le cas vérifie donc l'ABSENCE du bouton, ce
+		// qui est la seule assertion honnête tant que #414 n'est pas livrée.
 		await page.goto(`/invoices/${overdueId}`);
-		await page.getByRole('button', { name: /Dé-marquer|Unmark|Annulla|rückgängig/i }).click();
-		await page.getByRole('dialog').getByRole('button', { name: /Dé-marquer|Unmark|Annulla|rückgängig/i }).click();
+		await expect(
+			page.getByRole('button', { name: /Dé-marquer|Unmark|Annulla|rückgängig/i }),
+		).toHaveCount(0);
+		// Et le bouton de règlement s'efface aussi : la facture est soldée.
+		await expect(page.getByTestId('settle-open')).toHaveCount(0);
 
-		// Retour échéancier : la facture réapparaît en Impayées/En retard.
 		await page.goto('/invoices/due-dates');
-		const backRow = page.locator('tbody tr', { hasText: contactName }).filter({
-			hasText: daysFromToday(-1),
-		});
-		await expect(backRow).toBeVisible({ timeout: 5000 });
 
 		// Export CSV : intercepter le téléchargement.
 		const [download] = await Promise.all([

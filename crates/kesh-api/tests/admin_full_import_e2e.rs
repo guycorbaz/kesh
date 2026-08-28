@@ -1434,19 +1434,21 @@ async fn full_import_replays_backfills_in_increasing_version_order(pool: MySqlPo
     );
 }
 
-/// ⛔ **Story 24-2 (#371) — l'import ne rejoue PLUS AUCUN backfill, et c'est une
-/// propriété à verrouiller.**
+/// ⛔ **Le rapport d'import reflète EXACTEMENT le registre de production.**
 ///
-/// La création de `invoice_settlements` a refermé la fenêtre d'importabilité
-/// au-delà des deux entrées du registre, passées en exemption. `POST_RESTORE_BACKFILLS`
-/// est donc vide, et le rapport d'audit de l'import ne porte plus rien.
+/// ⚠️ **Ce cas a déjà fait son office une fois, et c'est ce qui le justifie.**
+/// Écrit en Story 24-2 (#371) sous le nom « l'import ne rejoue plus rien » — la
+/// création de `invoice_settlements` ayant refermé la fenêtre d'importabilité
+/// au-delà des deux entrées d'alors —, il a **rougi dès la Story 24-3** (#372),
+/// qui en inscrit une nouvelle. C'est exactement le garde-fou annoncé : *« si
+/// quelqu'un ré-inscrit une entrée sans vérifier qu'elle est DANS la fenêtre,
+/// il rougit et force à relire le triage. »* Le triage a été relu, l'entrée est
+/// légitime, et l'assertion suit.
 ///
-/// Ce test n'est pas une formalité : si quelqu'un ré-inscrit une entrée au
-/// registre sans vérifier qu'elle est DANS la fenêtre, il rougit et force à
-/// relire le triage — au lieu de laisser s'installer du code mort qui paraît
-/// fonctionner, exécuté à chaque import.
+/// Elle est écrite **contre le registre** et non contre une liste recopiée :
+/// une entrée ajoutée ou retirée sans mise à jour du triage la fait rougir.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn full_import_replays_nothing_while_the_window_is_closed(pool: MySqlPool) {
+async fn full_import_report_mirrors_the_production_registry(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let biz = seed_business(&pool, "CW").await;
     let _invoice_id = validated_invoice(&pool, &biz).await;
@@ -1455,10 +1457,29 @@ async fn full_import_replays_nothing_while_the_window_is_closed(pool: MySqlPool)
     let (manifest, data) = unzip(&backup);
     import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
 
-    assert!(
-        backfill_report(&pool).await.is_empty(),
-        "le registre de production est vide : l'import ne doit rejouer AUCUNE entrée"
+    let report = backfill_report(&pool).await;
+    let attendues: Vec<i64> = kesh_db::post_restore::POST_RESTORE_BACKFILLS
+        .iter()
+        .map(|e| e.version)
+        .collect();
+    let rendues: Vec<i64> = report
+        .iter()
+        .map(|e| e["version"].as_i64().expect("version au rapport"))
+        .collect();
+    assert_eq!(
+        rendues, attendues,
+        "le rapport doit porter une entrée par entrée du registre, dans l'ordre"
     );
+
+    // ⚠️ Le backup vient du binaire COURANT : il porte donc la colonne
+    // sentinelle, et l'entrée de classe B doit être SAUTÉE. Un `REPLAYED_*` ici
+    // signalerait une sentinelle qui ne détecte plus rien.
+    for e in &report {
+        assert_eq!(
+            e["outcome"], "SKIPPED",
+            "sentinelle présente au manifeste ⇒ skip strict, got {e:?}"
+        );
+    }
 }
 
 // ============================================================================

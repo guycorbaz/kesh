@@ -20,12 +20,29 @@ const FEATURES_PATH = path.join(__dirname, '../src/lib/features');
 // These components are shared across multiple features but reference feature-specific keys.
 // TODO: Refactor to move keys to global namespace or reorganize components.
 const KNOWN_VIOLATIONS = new Set([
-  'src/lib/features/invoices/MarkPaidDialog.svelte:invoice-error-paid-at-required',
-  'src/lib/features/invoices/MarkPaidDialog.svelte:invoice-error-paid-at-before-invoice-date',
-  'src/lib/features/invoices/MarkPaidDialog.svelte:invoice-mark-paid-dialog-title',
-  'src/lib/features/invoices/MarkPaidDialog.svelte:invoice-mark-paid-dialog-body',
-  'src/lib/features/invoices/MarkPaidDialog.svelte:invoice-mark-paid-date-label',
-  'src/lib/features/invoices/MarkPaidDialog.svelte:invoice-mark-paid-confirm',
+  // Story 24-3 (#372) — `SettleInvoiceDialog` REMPLACE `MarkPaidDialog`, dont
+  // les six entrées sont retirées avec lui. Même dette #30 (dossier pluriel
+  // `invoices/` vs préfixe singulier `invoice-`), ni plus ni moins : le nombre
+  // d'entrées suit le nombre de clés du dialogue, qui en demande davantage
+  // parce qu'un règlement a une contrepartie et un montant là où un marquage
+  // n'avait qu'une date.
+  'src/lib/features/invoices/SettleInvoiceDialog.svelte:invoice-error-settled-on-required',
+  'src/lib/features/invoices/SettleInvoiceDialog.svelte:invoice-error-settled-on-before-invoice-date',
+  'src/lib/features/invoices/SettleInvoiceDialog.svelte:invoice-error-amount-positive',
+  'src/lib/features/invoices/SettleInvoiceDialog.svelte:invoice-error-amount-over-due',
+  'src/lib/features/invoices/SettleInvoiceDialog.svelte:invoice-error-bank-account-required',
+  'src/lib/features/invoices/SettleInvoiceDialog.svelte:invoice-error-account-required',
+  'src/lib/features/invoices/SettleInvoiceDialog.svelte:invoice-settle-dialog-title',
+  'src/lib/features/invoices/SettleInvoiceDialog.svelte:invoice-settle-dialog-body',
+  'src/lib/features/invoices/SettleInvoiceDialog.svelte:invoice-settle-type-label',
+  'src/lib/features/invoices/SettleInvoiceDialog.svelte:invoice-settle-type-bank',
+  'src/lib/features/invoices/SettleInvoiceDialog.svelte:invoice-settle-type-internal',
+  'src/lib/features/invoices/SettleInvoiceDialog.svelte:invoice-settle-bank-label',
+  'src/lib/features/invoices/SettleInvoiceDialog.svelte:invoice-settle-account-label',
+  'src/lib/features/invoices/SettleInvoiceDialog.svelte:invoice-settle-account-placeholder',
+  'src/lib/features/invoices/SettleInvoiceDialog.svelte:invoice-settle-amount-label',
+  'src/lib/features/invoices/SettleInvoiceDialog.svelte:invoice-settle-date-label',
+  'src/lib/features/invoices/SettleInvoiceDialog.svelte:invoice-settle-confirm',
   // Story 20-3b2 — même architecture #30 (dossier pluriel `invoices/` vs
   // préfixe singulier `invoice-`) que MarkPaidDialog ci-dessus.
   'src/lib/features/invoices/SendEmailDialog.svelte:invoice-send-email-error-empty',

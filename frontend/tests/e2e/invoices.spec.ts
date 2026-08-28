@@ -237,10 +237,17 @@ test.describe('Factures — suspension des rappels (21-6a)', () => {
  * Story 21-6c (#231) — Toggle de suspension + historique des rappels sur la
  * fiche facture. FRONTEND PUR (endpoints livrés 21-5a).
  *
- * Le scénario clé est l'**anti-régression du piège n°1** : pause/resume
+ * Le scénario clé était l'**anti-régression du piège n°1** : pause/resume
  * renvoient un `DunningPauseResponse` (version incrémentée), pas la facture
- * entière — si la nouvelle version n'est pas ré-appliquée, la prochaine action
- * (ici « Marquer payée ») prend un 409. Le test le prouve bout-en-bout.
+ * entière — si la nouvelle version n'était pas ré-appliquée, la prochaine action
+ * version-portante prenait un 409.
+ *
+ * ⚠️ **Story 24-3 (#372) — ce risque a disparu par conception du côté du
+ * règlement**, qui ne porte plus de version : enregistrer un règlement n'est pas
+ * modifier la facture, c'est y ajouter un fait. Le cas continue de valoir, mais
+ * il prouve désormais autre chose — que **pause et règlement sont orthogonaux**,
+ * dans les deux sens. Le piège n°1 reste réel pour les actions qui portent
+ * encore une version (validation, suppression, modification).
  */
 test.describe('Factures — suspension & historique sur la fiche (21-6c)', () => {
 	/** Enregistre un rappel manuel (papier) via l'API 21-5a — peuple l'historique. */
@@ -296,15 +303,26 @@ test.describe('Factures — suspension & historique sur la fiche (21-6c)', () =>
 		await expect(page.getByTestId('dunning-pause-button')).toBeVisible();
 
 		// Re-suspendre, puis anti-régression piège n°1 : après pause (version
-		// incrémentée serveur), une action version-portante D'UN AUTRE type DOIT
-		// réussir sans 409 → « Marquer payée ».
+		// incrémentée serveur), régler la facture DOIT réussir.
+		//
+		// ⚠️ **Story 24-3 (#372) — le risque de 409 a disparu PAR CONCEPTION**,
+		// et le cas en sort renforcé plutôt qu'affaibli. Il vérifiait qu'une
+		// action « version-portante d'un autre type » survivait au bump de
+		// version d'une pause ; le règlement ne porte plus de version du tout,
+		// parce qu'enregistrer un règlement n'est pas modifier la facture, c'est
+		// y ajouter un fait. Ce que le cas prouve désormais : la pause et le
+		// règlement sont **orthogonaux**, dans les deux sens.
 		await page.getByTestId('dunning-pause-button').click();
 		await page.getByTestId('dunning-pause-confirm').click();
 		await expect(page.getByTestId('invoice-paused-badge')).toBeVisible();
-		await page.getByRole('button', { name: 'Marquer payée' }).click();
-		await page.getByRole('button', { name: 'Confirmer le paiement' }).click();
-		// Succès prouvé : le bouton bascule en « Dé-marquer payée » (paidAt posé).
-		await expect(page.getByRole('button', { name: 'Dé-marquer payée' })).toBeVisible();
+		await page.getByTestId('settle-open').click();
+		await page.getByTestId('settle-type').selectOption('internal_account');
+		await page.getByTestId('settle-account').selectOption({ index: 1 });
+		await page.getByTestId('settle-confirm').click();
+		// Succès prouvé : le bouton de règlement s'efface (la facture est soldée)
+		// — et rien ne le remplace, l'annulation demandant une contre-passation
+		// (issue #414).
+		await expect(page.getByTestId('settle-open')).toHaveCount(0);
 		// Le badge de suspension persiste (la pause n'a pas été perdue).
 		await expect(page.getByTestId('invoice-paused-badge')).toBeVisible();
 		// BH1 (review P1) : facture payée = hors dunning → boutons Suspendre/Reprendre masqués.

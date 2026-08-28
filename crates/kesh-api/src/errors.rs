@@ -2502,12 +2502,18 @@ impl IntoResponse for AppError {
                     tracing::warn!("invalid input: {code}");
                     // Dispatch vers une clé FTL dédiée selon le code métier.
                     // H2 (review pass 1 G2) : pour les codes connus, on résout
-                    // la clé i18n spec (ex. paidAtBeforeInvoiceDate → clé
-                    // `invoice-error-paid-at-before-invoice-date`).
+                    // la clé i18n spec.
+                    //
+                    // ⚠️ **Story 24-3 (#372) : `paidAtBeforeInvoiceDate` →
+                    // `settledOnBeforeInvoiceDate`.** L'ancien code n'était émis
+                    // que par `mark_as_paid`, supprimé ; le laisser aurait laissé
+                    // une branche morte et une clé FTL que personne ne demande —
+                    // l'angle mort exact décrit au `CLAUDE.md`, qu'aucune garde
+                    // ne voit dans ce sens-là.
                     let (key, default): (String, &str) = match code.as_str() {
-                        "paidAtBeforeInvoiceDate" => (
-                            "invoice-error-paid-at-before-invoice-date".to_string(),
-                            "La date de paiement ne peut être antérieure à la date de facture.",
+                        "settledOnBeforeInvoiceDate" => (
+                            "invoice-error-settled-on-before-invoice-date".to_string(),
+                            "La date de règlement ne peut être antérieure à la date de facture.",
                         ),
                         // N2 (review pass 3 B) : code "paidAtFuture" supprimé —
                         // `paid_at` peut être dans le futur (date d'exécution bancaire).

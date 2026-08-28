@@ -466,9 +466,15 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/reports/aged-receivables/export",
             get(routes::reports::export_aged_receivables),
         )
+        // Story 24-3 (#372) — « enregistrer un règlement » REMPLACE `mark-paid`
+        // et `unmark-paid`, tous deux supprimés.
+        //
+        // ⚠️ Un marquage qui n'écrivait rien s'annulait gratuitement ; un
+        // règlement qui produit son écriture ne s'annule pas, il se
+        // CONTRE-PASSE — issue #414, les deux côtés.
         .route(
-            "/api/v1/invoices/{id}/mark-paid",
-            post(routes::invoices::mark_invoice_paid_handler),
+            "/api/v1/invoices/{id}/settlements",
+            post(routes::invoices::settle_invoice_handler),
         )
         // Story 21-5a — rappels débiteurs (Comptable+) : liste à rappeler groupée
         // par contact, suspension/reprise par facture, enregistrement d'un rappel manuel.
@@ -510,10 +516,6 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route(
             "/api/v1/invoices/{id}/send-email",
             post(routes::invoice_email::send_invoice_email),
-        )
-        .route(
-            "/api/v1/invoices/{id}/unmark-paid",
-            post(routes::invoices::unmark_invoice_paid_handler),
         )
         // Story 3.7 : mutations exercices comptables
         .route(

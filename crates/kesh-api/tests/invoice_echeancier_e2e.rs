@@ -265,127 +265,6 @@ async fn list_due_dates_default_returns_only_unpaid_validated(pool: MySqlPool) {
     assert_eq!(body["summary"]["unpaidCount"], 1);
 }
 
-/// N2 (review pass 3 B) : test inversé — un `paid_at` futur (date d'exécution
-/// bancaire programmée) doit être accepté. Le test précédent qui asseyait un
-/// rejet 400 reposait sur une AC#8 incorrecte (clarification domaine 2026-04-15).
-#[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn mark_paid_accepts_future_paid_at_returns_200(pool: MySqlPool) {
-    let (admin_id, company_id) = seed_base(&pool).await;
-    let contact_id = seed_contact(&pool, company_id, admin_id).await;
-    let (id, version) = create_validated_invoice(
-        &pool,
-        company_id,
-        contact_id,
-        admin_id,
-        NaiveDate::from_ymd_opt(2026, 4, 1).unwrap(),
-        NaiveDate::from_ymd_opt(2026, 4, 30).unwrap(),
-        dec!(50.00),
-    )
-    .await;
-
-    let app = spawn_app(pool.clone()).await;
-    let token = login(&app).await;
-    // Date future plausible (ordre de virement programmé J+30).
-    let future = "2026-05-15T00:00:00";
-    let resp = app
-        .client
-        .post(app.url(&format!("/api/v1/invoices/{id}/mark-paid")))
-        .header("Authorization", format!("Bearer {token}"))
-        .json(&json!({ "paidAt": future, "version": version }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 200);
-}
-
-#[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn mark_paid_on_draft_invoice_returns_409(pool: MySqlPool) {
-    let (admin_id, company_id) = seed_base(&pool).await;
-    let contact_id = seed_contact(&pool, company_id, admin_id).await;
-    // Facture draft (jamais validée).
-    let (inv, _) = invoices::create(
-        &pool,
-        admin_id,
-        NewInvoice {
-            company_id,
-            contact_id,
-            date: NaiveDate::from_ymd_opt(2026, 4, 1).unwrap(),
-            due_date: Some(NaiveDate::from_ymd_opt(2026, 4, 30).unwrap()),
-            payment_terms: None,
-            lines: vec![NewInvoiceLine {
-                revenue_account_id: None,
-                description: "X".into(),
-                quantity: dec!(1),
-                unit_price: dec!(10.00),
-                vat_rate: dec!(8.10),
-            }],
-            project_id: None,
-        },
-    )
-    .await
-    .unwrap();
-
-    let app = spawn_app(pool.clone()).await;
-    let token = login(&app).await;
-    let resp = app
-        .client
-        .post(app.url(&format!("/api/v1/invoices/{}/mark-paid", inv.id)))
-        .header("Authorization", format!("Bearer {token}"))
-        .json(&json!({ "version": inv.version }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 409);
-    let body: serde_json::Value = resp.json().await.unwrap();
-    assert_eq!(body["error"]["code"], "ILLEGAL_STATE_TRANSITION");
-}
-
-#[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn mark_paid_then_unmark_paid_round_trip(pool: MySqlPool) {
-    let (admin_id, company_id) = seed_base(&pool).await;
-    let contact_id = seed_contact(&pool, company_id, admin_id).await;
-    let (id, v) = create_validated_invoice(
-        &pool,
-        company_id,
-        contact_id,
-        admin_id,
-        NaiveDate::from_ymd_opt(2026, 4, 1).unwrap(),
-        NaiveDate::from_ymd_opt(2026, 4, 30).unwrap(),
-        dec!(75.00),
-    )
-    .await;
-
-    let app = spawn_app(pool.clone()).await;
-    let token = login(&app).await;
-
-    // Mark.
-    let resp = app
-        .client
-        .post(app.url(&format!("/api/v1/invoices/{id}/mark-paid")))
-        .header("Authorization", format!("Bearer {token}"))
-        .json(&json!({ "version": v }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 200);
-    let body: serde_json::Value = resp.json().await.unwrap();
-    assert!(body["paidAt"].is_string());
-    let v2 = body["version"].as_i64().unwrap() as i32;
-
-    // Unmark.
-    let resp = app
-        .client
-        .post(app.url(&format!("/api/v1/invoices/{id}/unmark-paid")))
-        .header("Authorization", format!("Bearer {token}"))
-        .json(&json!({ "version": v2 }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 200);
-    let body: serde_json::Value = resp.json().await.unwrap();
-    assert_eq!(body["paidAt"], serde_json::Value::Null);
-}
-
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_csv_has_bom_and_swiss_amounts(pool: MySqlPool) {
     let (admin_id, company_id) = seed_base(&pool).await;
@@ -443,46 +322,6 @@ async fn export_csv_has_bom_and_swiss_amounts(pool: MySqlPool) {
 // et AC #10 (export CSV > 10'000 lignes → 400 RESULT_TOO_LARGE).
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn mark_paid_rejects_paid_at_before_invoice_date(pool: MySqlPool) {
-    let (admin_id, company_id) = seed_base(&pool).await;
-    let contact_id = seed_contact(&pool, company_id, admin_id).await;
-    // Facture datée 2026-04-10 ; paid_at = 2026-04-01 → 9 jours avant, bien
-    // au-delà de la tolérance de 1 jour (P2 review pass 1 G1).
-    let (id, version) = create_validated_invoice(
-        &pool,
-        company_id,
-        contact_id,
-        admin_id,
-        NaiveDate::from_ymd_opt(2026, 4, 10).unwrap(),
-        NaiveDate::from_ymd_opt(2026, 4, 30).unwrap(),
-        dec!(10.00),
-    )
-    .await;
-
-    let app = spawn_app(pool.clone()).await;
-    let token = login(&app).await;
-    let before = "2026-04-01T12:00:00";
-    let resp = app
-        .client
-        .post(app.url(&format!("/api/v1/invoices/{id}/mark-paid")))
-        .header("Authorization", format!("Bearer {token}"))
-        .json(&json!({ "paidAt": before, "version": version }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 400);
-    let body: serde_json::Value = resp.json().await.unwrap();
-    assert_eq!(body["error"]["code"], "INVALID_INPUT");
-    // H2 (review pass 1 G2) : le message est localisé via la clé FTL dédiée
-    // `invoice-error-paid-at-before-invoice-date`, pas le fallback générique.
-    let msg = body["error"]["message"].as_str().unwrap();
-    assert!(
-        msg.to_lowercase().contains("date") && msg.to_lowercase().contains("paiement"),
-        "expected localized paidAtBeforeInvoiceDate message, got: {msg}"
-    );
-}
-
-#[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_csv_over_limit_returns_400_result_too_large(pool: MySqlPool) {
     // MAX_EXPORT_ROWS = 10_000 → créer 10_001 factures serait prohibitif.
     // On utilise un override d'env var pour piloter la limite effective.
@@ -530,40 +369,179 @@ async fn export_csv_over_limit_returns_400_result_too_large(pool: MySqlPool) {
     assert_eq!(v["error"]["code"], "RESULT_TOO_LARGE");
 }
 
-/// B10 (review pass 1 G2 B) : exerce le path `alreadyUnpaid` — tenter de
-/// dé-marquer une facture jamais marquée payée doit retourner 400
-/// `INVALID_INPUT` avec la clé i18n `invoice-error-already-unpaid`.
+// ============================================================================
+// Story 24-3 (#372) — « enregistrer un règlement » remplace `mark-paid`
+//
+// ⚠️ Les cinq cas HTTP de `mark-paid` / `unmark-paid` ont été retirés AVEC leurs
+// routes. Ceux qui suivent portent leurs règles SURVIVANTES sur le nouveau
+// chemin — statut, date, borne haute — plus ce que le nouveau chemin apporte.
+// ============================================================================
+
+/// Le compte de caisse de la fixture comptable, retrouvé par son numéro.
+async fn caisse_id(pool: &MySqlPool, company_id: i64) -> i64 {
+    sqlx::query_scalar("SELECT id FROM accounts WHERE company_id = ? AND number = '1000'")
+        .bind(company_id)
+        .fetch_one(pool)
+        .await
+        .expect("compte 1000 seedé")
+}
+
+/// ⛔ **Un règlement en espèces passe par HTTP et produit son écriture.** C'est
+/// la correction de #372 vue du client : le mode n'y change rien.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn unmark_paid_on_never_paid_returns_400_already_unpaid(pool: MySqlPool) {
-    let (admin_id, company_id) = seed_base(&pool).await;
+async fn settle_in_cash_returns_200_and_settles(pool: MySqlPool) {
+    let (company_id, admin_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
-    let (id, version) = create_validated_invoice(
+    let (id, _v) = create_validated_invoice(
         &pool,
         company_id,
         contact_id,
         admin_id,
         NaiveDate::from_ymd_opt(2026, 4, 1).unwrap(),
         NaiveDate::from_ymd_opt(2026, 4, 30).unwrap(),
-        dec!(50.00),
+        dec!(100.00),
     )
     .await;
+    let caisse = caisse_id(&pool, company_id).await;
 
     let app = spawn_app(pool.clone()).await;
     let token = login(&app).await;
     let resp = app
         .client
-        .post(app.url(&format!("/api/v1/invoices/{id}/unmark-paid")))
+        .post(app.url(&format!("/api/v1/invoices/{id}/settlements")))
         .header("Authorization", format!("Bearer {token}"))
-        .json(&json!({ "version": version }))
+        .json(&json!({
+            "settlementType": "internal_account",
+            "accountId": caisse,
+            "amount": "108.10",
+            "settledOn": "2026-04-15"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let v: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(v["fullySettled"], true);
+    assert_eq!(
+        v["amountDueAfter"]
+            .as_str()
+            .unwrap()
+            .parse::<f64>()
+            .unwrap(),
+        0.0
+    );
+    assert!(v["journalEntryId"].as_i64().unwrap() > 0);
+    assert!(
+        v["invoice"]["paidAt"].as_str().is_some(),
+        "solde nul ⇒ `paid_at` posé, got {v:?}"
+    );
+}
+
+/// Règle SURVIVANTE de `mark_paid_on_draft_invoice_returns_409` : seule une
+/// facture validée se règle.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn settle_on_draft_invoice_returns_409(pool: MySqlPool) {
+    let (company_id, admin_id) = seed_base(&pool).await;
+    let contact_id = seed_contact(&pool, company_id, admin_id).await;
+    let (inv, _) = invoices::create(
+        &pool,
+        admin_id,
+        NewInvoice {
+            company_id,
+            contact_id,
+            date: NaiveDate::from_ymd_opt(2026, 4, 1).unwrap(),
+            due_date: Some(NaiveDate::from_ymd_opt(2026, 4, 30).unwrap()),
+            payment_terms: None,
+            project_id: None,
+            lines: vec![NewInvoiceLine {
+                revenue_account_id: None,
+                description: "Brouillon".into(),
+                quantity: dec!(1),
+                unit_price: dec!(50.00),
+                vat_rate: dec!(0),
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    let caisse = caisse_id(&pool, company_id).await;
+
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{}/settlements", inv.id)))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&json!({
+            "settlementType": "internal_account",
+            "accountId": caisse,
+            "amount": "50.00",
+            "settledOn": "2026-04-15"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 409);
+}
+
+/// Règle SURVIVANTE de `mark_paid_rejects_paid_at_before_invoice_date`, avec sa
+/// tolérance d'un jour — voir le doc-comment de `settle_invoice`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn settle_rejects_settled_on_before_invoice_date(pool: MySqlPool) {
+    let (company_id, admin_id) = seed_base(&pool).await;
+    let contact_id = seed_contact(&pool, company_id, admin_id).await;
+    let (id, _v) = create_validated_invoice(
+        &pool,
+        company_id,
+        contact_id,
+        admin_id,
+        NaiveDate::from_ymd_opt(2026, 4, 10).unwrap(),
+        NaiveDate::from_ymd_opt(2026, 4, 30).unwrap(),
+        dec!(100.00),
+    )
+    .await;
+    let caisse = caisse_id(&pool, company_id).await;
+
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{id}/settlements")))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&json!({
+            "settlementType": "internal_account",
+            "accountId": caisse,
+            "amount": "108.10",
+            "settledOn": "2026-04-01"
+        }))
         .send()
         .await
         .unwrap();
     assert_eq!(resp.status(), 400);
-    let body: serde_json::Value = resp.json().await.unwrap();
-    assert_eq!(body["error"]["code"], "INVALID_INPUT");
-    let msg = body["error"]["message"].as_str().unwrap();
-    assert!(
-        msg.to_lowercase().contains("payée") || msg.to_lowercase().contains("paid"),
-        "expected localized alreadyUnpaid message, got: {msg}"
-    );
+}
+
+/// ⛔ **Les routes retirées ne répondent plus.** Sans cette assertion, un retrait
+/// à moitié fait — handler supprimé, route encore montée — passerait inaperçu.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn removed_mark_paid_routes_are_gone(pool: MySqlPool) {
+    // ⚠️ Le seed est nécessaire au LOGIN, pas au cas lui-même : sans utilisateur,
+    // `login` échoue avant d'atteindre la route qu'on veut voir absente.
+    let (_company_id, _admin_id) = seed_base(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    for chemin in ["mark-paid", "unmark-paid"] {
+        let resp = app
+            .client
+            .post(app.url(&format!("/api/v1/invoices/1/{chemin}")))
+            .header("Authorization", format!("Bearer {token}"))
+            .json(&json!({ "version": 1 }))
+            .send()
+            .await
+            .unwrap();
+        assert!(
+            resp.status() == 404 || resp.status() == 405,
+            "`{chemin}` doit avoir disparu, got {}",
+            resp.status()
+        );
+    }
 }

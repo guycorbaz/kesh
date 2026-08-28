@@ -30,6 +30,13 @@ pub struct InvoiceSettlement {
     pub amount: Decimal,
     /// Date de valeur du règlement — celle de l'écriture, pas celle de la saisie.
     pub settled_on: NaiveDate,
+    /// `bank_transfer` ou `internal_account` — vocabulaire repris **mot pour
+    /// mot** de `chk_supplier_invoices_settlement_type` (Story 24-3).
+    pub settlement_type: String,
+    /// Renseigné ssi `settlement_type = 'bank_transfer'` (contrainte DB).
+    pub settlement_bank_account_id: Option<i64>,
+    /// Renseigné ssi `settlement_type = 'internal_account'` (contrainte DB).
+    pub settlement_account_id: Option<i64>,
     pub created_at: NaiveDateTime,
 }
 
@@ -41,4 +48,37 @@ pub struct NewInvoiceSettlement {
     pub journal_entry_id: i64,
     pub amount: Decimal,
     pub settled_on: NaiveDate,
+    /// Le MODE, et sa contrepartie. Story 24-3 (#372).
+    ///
+    /// ⚠️ **Il vit sur le RÈGLEMENT, pas sur la facture** — contrairement au
+    /// symétrique fournisseur, où le règlement est unique par construction. Une
+    /// facture client peut être réglée moitié en espèces, moitié par virement.
+    pub choice: SettlementChoice,
+}
+
+/// Le mode de règlement, et rien d'autre : ce n'est **pas** une table de modes.
+///
+/// ⛔ Réexporté depuis `supplier_invoice` plutôt que redéfini. Deux vocabulaires
+/// pour la même notion coûteraient à chaque lecture, et le contrat DB est
+/// littéralement le même (`('bank_transfer', 'internal_account')`).
+pub use super::supplier_invoice::SettlementChoice;
+
+impl SettlementChoice {
+    /// La valeur persistée en `settlement_type`.
+    pub fn type_str(&self) -> &'static str {
+        match self {
+            SettlementChoice::BankTransfer { .. } => "bank_transfer",
+            SettlementChoice::InternalAccount { .. } => "internal_account",
+        }
+    }
+
+    /// Les deux références de contrepartie, dans l'ordre
+    /// `(settlement_bank_account_id, settlement_account_id)` — **exactement une
+    /// est renseignée**, ce que `chk_invoice_settlements_counterparty` impose.
+    pub fn counterparty_refs(&self) -> (Option<i64>, Option<i64>) {
+        match self {
+            SettlementChoice::BankTransfer { bank_account_id } => (Some(*bank_account_id), None),
+            SettlementChoice::InternalAccount { account_id } => (None, Some(*account_id)),
+        }
+    }
 }

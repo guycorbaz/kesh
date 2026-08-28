@@ -13,9 +13,9 @@ import type {
 	InvoiceSettingsResponse,
 	ListInvoicesQuery,
 	ListResponse,
-	MarkPaidRequest,
+	SettleInvoiceRequest,
 	SendInvoiceEmailRequest,
-	UnmarkPaidRequest,
+	SettleInvoiceResponse,
 	UpdateInvoiceRequest,
 	UpdateInvoiceSettingsRequest,
 } from './invoices.types';
@@ -101,15 +101,22 @@ export async function listDueDates(query: DueDatesQuery = {}): Promise<DueDatesR
 	return apiClient.get(`/api/v1/invoices/due-dates${buildDueDatesQueryString(query)}`);
 }
 
-export async function markInvoicePaid(id: number, req: MarkPaidRequest): Promise<InvoiceResponse> {
-	return apiClient.post(`/api/v1/invoices/${id}/mark-paid`, req);
-}
-
-export async function unmarkInvoicePaid(
+/**
+ * Enregistre un règlement — Story 24-3 (#372).
+ *
+ * ⛔ **Remplace `markInvoicePaid` / `unmarkInvoicePaid`, supprimés avec leurs
+ * routes.** Un marquage qui n'écrivait rien s'annulait gratuitement ; un
+ * règlement qui produit son écriture se **contre-passe** (issue #414).
+ *
+ * ⚠️ Pas de `version` : enregistrer un règlement n'est pas modifier la facture,
+ * c'est y ajouter un fait. Le garde qui compte est le refus du trop-perçu,
+ * calculé côté serveur sous verrou.
+ */
+export async function settleInvoice(
 	id: number,
-	req: UnmarkPaidRequest,
-): Promise<InvoiceResponse> {
-	return apiClient.post(`/api/v1/invoices/${id}/unmark-paid`, req);
+	req: SettleInvoiceRequest,
+): Promise<SettleInvoiceResponse> {
+	return apiClient.post(`/api/v1/invoices/${id}/settlements`, req);
 }
 
 // Story 20-3b2 — Envoi de facture par e-mail (#224)

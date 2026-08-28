@@ -13,6 +13,11 @@
 use rust_decimal::Decimal;
 use sqlx::MySqlPool;
 
+/// Colonnes de la table, dans l'ordre attendu par `FromRow`. Centralisées :
+/// une colonne ajoutée sans passer par ici casse la compilation, pas le runtime.
+const COLUMNS: &str = "id, company_id, invoice_id, journal_entry_id, amount, settled_on, \
+     settlement_type, settlement_bank_account_id, settlement_account_id, created_at";
+
 use crate::entities::{InvoiceSettlement, NewInvoiceSettlement};
 use crate::errors::{DbError, map_db_error};
 
@@ -61,25 +66,33 @@ pub async fn create_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     new: NewInvoiceSettlement,
 ) -> Result<InvoiceSettlement, DbError> {
+    // ⚠️ Le mode et sa contrepartie sortent du MÊME `SettlementChoice` — les
+    // dissocier rouvrirait la possibilité d'un `bank_transfer` sans compte
+    // bancaire, que `chk_invoice_settlements_counterparty` refuse de toute
+    // façon, mais en 500 plutôt qu'en erreur métier.
+    let (bank_account_id, account_id) = new.choice.counterparty_refs();
     let id: u64 = sqlx::query(
         "INSERT INTO invoice_settlements \
-         (company_id, invoice_id, journal_entry_id, amount, settled_on) \
-         VALUES (?, ?, ?, ?, ?)",
+         (company_id, invoice_id, journal_entry_id, amount, settled_on, \
+          settlement_type, settlement_bank_account_id, settlement_account_id) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(new.company_id)
     .bind(new.invoice_id)
     .bind(new.journal_entry_id)
     .bind(new.amount)
     .bind(new.settled_on)
+    .bind(new.choice.type_str())
+    .bind(bank_account_id)
+    .bind(account_id)
     .execute(&mut **tx)
     .await
     .map_err(map_db_error)?
     .last_insert_id();
 
-    sqlx::query_as::<_, InvoiceSettlement>(
-        "SELECT id, company_id, invoice_id, journal_entry_id, amount, settled_on, created_at \
-         FROM invoice_settlements WHERE id = ?",
-    )
+    sqlx::query_as::<_, InvoiceSettlement>(&format!(
+        "SELECT {COLUMNS} FROM invoice_settlements WHERE id = ?"
+    ))
     .bind(id as i64)
     .fetch_one(&mut **tx)
     .await
@@ -92,11 +105,10 @@ pub async fn list_for_invoice(
     company_id: i64,
     invoice_id: i64,
 ) -> Result<Vec<InvoiceSettlement>, DbError> {
-    sqlx::query_as::<_, InvoiceSettlement>(
-        "SELECT id, company_id, invoice_id, journal_entry_id, amount, settled_on, created_at \
-         FROM invoice_settlements WHERE company_id = ? AND invoice_id = ? \
-         ORDER BY settled_on ASC, id ASC",
-    )
+    sqlx::query_as::<_, InvoiceSettlement>(&format!(
+        "SELECT {COLUMNS} FROM invoice_settlements WHERE company_id = ? AND invoice_id = ? \
+         ORDER BY settled_on ASC, id ASC"
+    ))
     .bind(company_id)
     .bind(invoice_id)
     .fetch_all(pool)

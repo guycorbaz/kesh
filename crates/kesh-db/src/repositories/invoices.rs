@@ -19,7 +19,7 @@
 //!   l'atomicité snapshot + check statut + DELETE. Détails du lock-ordering
 //!   d'`update()` dans son docblock fonction.
 
-use chrono::{Duration, NaiveDate, NaiveDateTime};
+use chrono::{NaiveDate, NaiveDateTime};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::QueryBuilder;
@@ -1902,157 +1902,32 @@ pub async fn validate_invoice(
 }
 
 // ---------------------------------------------------------------------------
-// Story 5.4 — Échéancier : mark_as_paid / unmark_as_paid
+// Story 24-3 (#372) — `mark_as_paid` / `unmark_as_paid` SUPPRIMÉS
+//
+// ⛔ Ils datent de la Story 5.4, où « payé » n'était qu'un marqueur : le
+// doc-comment de `mark_as_paid` disait en toutes lettres « Ne crée AUCUNE
+// écriture comptable ». Depuis la 24-2, un règlement PRODUIT son écriture, et
+// depuis la 24-3 il en produit une quel que soit le mode — espèces comprise. Un
+// marquage qui n'écrit rien n'a plus d'usage légitime, et son annulation
+// gratuite non plus.
+//
+// Remplacés par `repositories::invoice_settlements_write::settle_invoice`.
+//
+// ⚠️ **Une seule de leurs gardes restait vraie et a été PORTÉE** : un règlement
+// ne précède pas sa facture, avec la tolérance d'un jour qui absorbe l'écart
+// entre date de valeur bancaire et date métier locale. Les autres — verrou
+// optimiste, « déjà non payée », concurrence 409 — n'ont plus d'objet :
+// enregistrer un règlement n'est pas modifier la facture, c'est y ajouter un
+// fait, et deux faits concurrents ne se contredisent pas.
+//
+// ⚠️ **Annuler un règlement demande une CONTRE-PASSATION** — issue #414, ouverte
+// à ce titre et couvrant aussi le côté fournisseur, qui n'a jamais su le faire.
 // ---------------------------------------------------------------------------
 
-/// Marque une facture validée comme payée (`paid_at.is_some()`) ou l'annule
-/// (`paid_at.is_none()` → unmark).
-///
-/// # Concurrence
-///
-/// Transaction atomique :
-/// 1. `SELECT ... FOR UPDATE` sur la facture (scope company).
-/// 2. Vérifie `status = 'validated'` (sinon [`DbError::IllegalStateTransition`]).
-/// 3. Vérifie `version == expected_version` (sinon [`DbError::OptimisticLockConflict`]).
-/// 4. `UPDATE invoices SET paid_at = ?, version = version + 1`.
-/// 5. Insert audit log wrapper `{before, after}` avec action `invoice.paid`
-///    (si `paid_at.is_some()`) ou `invoice.unpaid` (si `None`).
-///
-/// # Note écriture comptable
-///
-/// **Ne crée AUCUNE écriture comptable** en v0.1. L'écriture d'encaissement
-/// sera générée par la réconciliation automatique (Epic 6). Ici `paid_at`
-/// est un simple marqueur opérationnel.
-pub async fn mark_as_paid(
-    pool: &MySqlPool,
-    user_id: i64,
-    id: i64,
-    company_id: i64,
-    expected_version: i32,
-    paid_at: Option<NaiveDateTime>,
-) -> Result<(Invoice, Vec<InvoiceLine>), DbError> {
-    let mut tx = pool.begin().await.map_err(map_db_error)?;
-
-    let result = async {
-        let before_opt =
-            sqlx::query_as::<_, Invoice>(&format!("{FIND_INVOICE_SCOPED_SQL} FOR UPDATE"))
-                .bind(id)
-                .bind(company_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(map_db_error)?;
-
-        let before = match before_opt {
-            None => return Err(DbError::NotFound),
-            Some(inv) if inv.status != "validated" => {
-                return Err(DbError::IllegalStateTransition(format!(
-                    "impossible de marquer payée une facture de statut '{}'",
-                    inv.status
-                )));
-            }
-            Some(inv) if inv.version != expected_version => {
-                return Err(DbError::OptimisticLockConflict);
-            }
-            Some(inv) => inv,
-        };
-
-        // P2 (review pass 2) : rejeter `unmark_paid` sur une facture jamais
-        // marquée payée. Sans ce guard, l'UPDATE `SET paid_at = NULL` peut
-        // retourner `rows_affected = 0` (MariaDB) → faux
-        // `OPTIMISTIC_LOCK_CONFLICT`, ou bump de version + audit
-        // `invoice.unpaid` spurious sur une transition logiquement invalide.
-        if paid_at.is_none() && before.paid_at.is_none() {
-            return Err(DbError::InvalidInput("alreadyUnpaid".to_string()));
-        }
-
-        // Validation calendaire paid_at vs invoice.date (défense en profondeur —
-        // le handler pré-valide aussi). Comparaison sur la date (pas le datetime)
-        // pour éviter qu'un paiement à 00:30 UTC soit rejeté comme « antérieur »
-        // à une facture du même jour.
-        // P2 (review pass 1) : tolérance 1 jour pour absorber l'écart entre
-        // `paid_at` stocké en UTC naïf et `invoice.date` en date métier locale
-        // (jusqu'à +/- 2h en CET/CEST). Sans cette tolérance, un paiement
-        // saisi à 00:30 CET le jour même de la facture serait rejeté.
-        if let Some(pa) = paid_at
-            && pa.date() < before.date - Duration::days(1)
-        {
-            return Err(DbError::InvalidInput("paidAtBeforeInvoiceDate".to_string()));
-        }
-        // Pas de borne supérieure : `paid_at` représente la date d'exécution
-        // bancaire, qui peut être dans le futur (ordre de virement programmé,
-        // décalage week-end/jour férié réécrit par la banque). Voir N2 review
-        // pass 3 B + AC#8 à amender dans la spec story 5.4.
-
-        let lines_before = fetch_lines(&mut tx, id).await?;
-
-        let rows = sqlx::query(
-            "UPDATE invoices SET paid_at = ?, version = version + 1 \
-             WHERE id = ? AND company_id = ? AND version = ? AND status = 'validated'",
-        )
-        .bind(paid_at)
-        .bind(id)
-        .bind(company_id)
-        .bind(expected_version)
-        .execute(&mut *tx)
-        .await
-        .map_err(map_db_error)?
-        .rows_affected();
-
-        if rows == 0 {
-            return Err(DbError::OptimisticLockConflict);
-        }
-
-        let after = sqlx::query_as::<_, Invoice>(FIND_INVOICE_SCOPED_SQL)
-            .bind(id)
-            .bind(company_id)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(map_db_error)?;
-
-        let audit_details = serde_json::json!({
-            "before": invoice_snapshot_json(&before, &lines_before),
-            "after": invoice_snapshot_json(&after, &lines_before),
-        });
-
-        let action = if paid_at.is_some() {
-            "invoice.paid"
-        } else {
-            "invoice.unpaid"
-        };
-
-        audit_log::insert_in_tx(
-            &mut tx,
-            NewAuditLogEntry::user(
-                user_id,
-                action.to_string(),
-                "invoice".to_string(),
-                id,
-                Some(audit_details),
-            ),
-        )
-        .await?;
-
-        // M1 (review pass 1 G2) : retourner lignes issues de la même tx pour
-        // éviter une race DELETE/UPDATE entre mark_as_paid et le re-fetch du
-        // handler (lignes inchangées par mark_as_paid → réutilise lines_before).
-        Ok((after, lines_before))
-    }
-    .await;
-
-    match result {
-        Ok(v) => {
-            tx.commit().await.map_err(map_db_error)?;
-            Ok(v)
-        }
-        Err(e) => {
-            let _ = tx.rollback().await;
-            Err(e)
-        }
-    }
-}
-
 /// Suspend (`paused = true`) ou reprend (`paused = false`) les rappels débiteurs d'une
-/// facture (Story 21-5a, item 10). Calqué sur [`mark_as_paid`] : `SELECT … FOR UPDATE`
+/// facture (Story 21-5a, item 10). ⚠️ Le doc-comment disait « calqué sur
+/// `mark_as_paid` » — cette fonction a été supprimée par la Story 24-3 (#372).
+/// Le patron décrit ci-dessous reste celui qu'elle appliquait : `SELECT … FOR UPDATE`
 /// scopé company, verrou optimiste `version`, audit dans la même tx. La reprise remet
 /// `dunning_paused_at` ET `dunning_paused_note` à NULL (M4). Une facture suspendue
 /// reste dans la balance âgée / l'échéancier — elle ne sort que de la liste « à rappeler ».
@@ -2362,6 +2237,29 @@ pub async fn list_all_lines_by_company(
 
 #[cfg(test)]
 mod tests {
+
+    /// Pose `paid_at` **en montage de test**, sans passer par la comptabilité.
+    ///
+    /// ⚠️ **C'est délibérément un `UPDATE` brut.** Les tests qui l'appellent
+    /// portent sur les FILTRES de l'échéancier — ils ont besoin d'« une facture
+    /// dont `paid_at` est posé », pas d'un règlement comptable. Depuis la Story
+    /// 24-3, la seule façon légitime de payer une facture est
+    /// `invoice_settlements_write::settle_invoice`, qui exige un plan comptable,
+    /// une écriture de vente et un exercice ouvert : y coupler un test de filtre
+    /// le rendrait fragile à des changements sans rapport avec ce qu'il mesure.
+    async fn set_paid_at_for_test(
+        pool: &MySqlPool,
+        invoice_id: i64,
+        paid_at: chrono::NaiveDateTime,
+    ) {
+        sqlx::query("UPDATE invoices SET paid_at = ? WHERE id = ?")
+            .bind(paid_at)
+            .bind(invoice_id)
+            .execute(pool)
+            .await
+            .expect("montage : pose de paid_at");
+    }
+
     use super::*;
     use crate::entities::NewJournalEntryLine;
     use crate::entities::contact::{ContactType, NewContact};
@@ -3900,291 +3798,6 @@ mod tests {
         (inv.id, v, je_id)
     }
 
-    #[tokio::test]
-    async fn test_mark_as_paid_nominal() {
-        let pool = test_pool().await;
-        let company_id = get_company_id(&pool).await;
-        let admin_user_id = get_admin_user_id(&pool).await;
-        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
-
-        let (id, v, je_id) = create_and_validate(
-            &pool,
-            company_id,
-            admin_user_id,
-            contact_id,
-            today(),
-            Some(today()),
-            dec!(100.00),
-        )
-        .await;
-
-        let paid_at = Some(chrono::Utc::now().naive_utc());
-        let (after, lines_after) = mark_as_paid(&pool, admin_user_id, id, company_id, v, paid_at)
-            .await
-            .unwrap();
-        assert!(after.paid_at.is_some());
-        assert_eq!(after.version, v + 1);
-        // M1 (review pass 1 G2) : mark_as_paid retourne maintenant les lignes
-        // de la même transaction — pas de re-fetch post-commit côté handler.
-        assert!(!lines_after.is_empty());
-
-        let entries = audit_log::find_by_entity(&pool, "invoice", id, 10)
-            .await
-            .unwrap();
-        assert!(entries.iter().any(|e| e.action == "invoice.paid"));
-
-        cleanup_invoices(&pool, &[id]).await;
-        cleanup_journal_entries(&pool, &[je_id]).await;
-        cleanup_contacts(&pool, &[contact_id]).await;
-    }
-
-    #[tokio::test]
-    async fn test_mark_as_paid_rejects_draft() {
-        let pool = test_pool().await;
-        let company_id = get_company_id(&pool).await;
-        let admin_user_id = get_admin_user_id(&pool).await;
-        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
-
-        let (inv, _) = create(
-            &pool,
-            admin_user_id,
-            NewInvoice {
-                company_id,
-                contact_id,
-                date: today(),
-                due_date: Some(today()),
-                payment_terms: None,
-                lines: vec![sample_line("X", dec!(1), dec!(10.00))],
-                project_id: None,
-            },
-        )
-        .await
-        .unwrap();
-
-        let err = mark_as_paid(
-            &pool,
-            admin_user_id,
-            inv.id,
-            company_id,
-            inv.version,
-            Some(chrono::Utc::now().naive_utc()),
-        )
-        .await
-        .unwrap_err();
-        assert!(matches!(err, DbError::IllegalStateTransition(_)));
-
-        cleanup_invoices(&pool, &[inv.id]).await;
-        cleanup_contacts(&pool, &[contact_id]).await;
-    }
-
-    #[tokio::test]
-    async fn test_mark_as_paid_optimistic_lock() {
-        let pool = test_pool().await;
-        let company_id = get_company_id(&pool).await;
-        let admin_user_id = get_admin_user_id(&pool).await;
-        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
-
-        let (id, v, je_id) = create_and_validate(
-            &pool,
-            company_id,
-            admin_user_id,
-            contact_id,
-            today(),
-            Some(today()),
-            dec!(50.00),
-        )
-        .await;
-
-        let err = mark_as_paid(
-            &pool,
-            admin_user_id,
-            id,
-            company_id,
-            v + 42,
-            Some(chrono::Utc::now().naive_utc()),
-        )
-        .await
-        .unwrap_err();
-        assert!(matches!(err, DbError::OptimisticLockConflict));
-
-        cleanup_invoices(&pool, &[id]).await;
-        cleanup_journal_entries(&pool, &[je_id]).await;
-        cleanup_contacts(&pool, &[contact_id]).await;
-    }
-
-    #[tokio::test]
-    async fn test_unmark_paid_writes_audit_unpaid() {
-        let pool = test_pool().await;
-        let company_id = get_company_id(&pool).await;
-        let admin_user_id = get_admin_user_id(&pool).await;
-        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
-
-        let (id, v, je_id) = create_and_validate(
-            &pool,
-            company_id,
-            admin_user_id,
-            contact_id,
-            today(),
-            Some(today()),
-            dec!(75.00),
-        )
-        .await;
-
-        let (after1, _) = mark_as_paid(
-            &pool,
-            admin_user_id,
-            id,
-            company_id,
-            v,
-            Some(chrono::Utc::now().naive_utc()),
-        )
-        .await
-        .unwrap();
-        let (after2, _) = mark_as_paid(&pool, admin_user_id, id, company_id, after1.version, None)
-            .await
-            .unwrap();
-        assert!(after2.paid_at.is_none());
-
-        let entries = audit_log::find_by_entity(&pool, "invoice", id, 10)
-            .await
-            .unwrap();
-        assert!(entries.iter().any(|e| e.action == "invoice.unpaid"));
-
-        cleanup_invoices(&pool, &[id]).await;
-        cleanup_journal_entries(&pool, &[je_id]).await;
-        cleanup_contacts(&pool, &[contact_id]).await;
-    }
-
-    #[tokio::test]
-    async fn test_mark_as_paid_rejects_paid_at_before_invoice_date() {
-        let pool = test_pool().await;
-        let company_id = get_company_id(&pool).await;
-        let admin_user_id = get_admin_user_id(&pool).await;
-        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
-
-        let invoice_date = NaiveDate::from_ymd_opt(2026, 3, 15).unwrap();
-        let (id, v, je_id) = create_and_validate(
-            &pool,
-            company_id,
-            admin_user_id,
-            contact_id,
-            invoice_date,
-            Some(invoice_date),
-            dec!(10.00),
-        )
-        .await;
-
-        let before = NaiveDate::from_ymd_opt(2026, 3, 10)
-            .unwrap()
-            .and_hms_opt(12, 0, 0)
-            .unwrap();
-        let err = mark_as_paid(&pool, admin_user_id, id, company_id, v, Some(before))
-            .await
-            .unwrap_err();
-        match err {
-            DbError::InvalidInput(code) => assert_eq!(code, "paidAtBeforeInvoiceDate"),
-            other => panic!("attendu InvalidInput, reçu {other:?}"),
-        }
-
-        cleanup_invoices(&pool, &[id]).await;
-        cleanup_journal_entries(&pool, &[je_id]).await;
-        cleanup_contacts(&pool, &[contact_id]).await;
-    }
-
-    /// P4 (review pass 2) : spec T2.4 §715 — le statut `cancelled` doit
-    /// aussi être rejeté avec `IllegalStateTransition`. Le test `rejects_draft`
-    /// ne couvre que le cas `draft` ; la guard `status != "validated"` dans
-    /// le code couvre tous les autres statuts, mais il faut un test pour
-    /// capter toute régression si la condition devient un whitelist.
-    #[tokio::test]
-    async fn test_mark_as_paid_rejects_cancelled() {
-        let pool = test_pool().await;
-        let company_id = get_company_id(&pool).await;
-        let admin_user_id = get_admin_user_id(&pool).await;
-        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
-
-        let (inv, _) = create(
-            &pool,
-            admin_user_id,
-            NewInvoice {
-                company_id,
-                contact_id,
-                date: today(),
-                due_date: Some(today()),
-                payment_terms: None,
-                lines: vec![sample_line("X", dec!(1), dec!(10.00))],
-                project_id: None,
-            },
-        )
-        .await
-        .unwrap();
-
-        // Force le statut à 'cancelled' via SQL direct (pas d'API de cancel
-        // dans v0.1 ; sera ajoutée Epic 10 avoirs).
-        sqlx::query("UPDATE invoices SET status = 'cancelled' WHERE id = ?")
-            .bind(inv.id)
-            .execute(&pool)
-            .await
-            .unwrap();
-
-        let err = mark_as_paid(
-            &pool,
-            admin_user_id,
-            inv.id,
-            company_id,
-            inv.version,
-            Some(chrono::Utc::now().naive_utc()),
-        )
-        .await
-        .unwrap_err();
-        assert!(matches!(err, DbError::IllegalStateTransition(_)));
-
-        cleanup_invoices(&pool, &[inv.id]).await;
-        cleanup_contacts(&pool, &[contact_id]).await;
-    }
-
-    /// P2 (review pass 2) : `unmark_paid` sur une facture validée jamais
-    /// marquée payée retourne `InvalidInput("alreadyUnpaid")` (transition
-    /// logiquement invalide) au lieu d'un faux `OPTIMISTIC_LOCK_CONFLICT`
-    /// ou d'un audit `invoice.unpaid` spurious.
-    #[tokio::test]
-    async fn test_unmark_never_paid_returns_invalid_input() {
-        let pool = test_pool().await;
-        let company_id = get_company_id(&pool).await;
-        let admin_user_id = get_admin_user_id(&pool).await;
-        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
-
-        let (id, v, je_id) = create_and_validate(
-            &pool,
-            company_id,
-            admin_user_id,
-            contact_id,
-            today(),
-            Some(today()),
-            dec!(10.00),
-        )
-        .await;
-
-        let err = mark_as_paid(&pool, admin_user_id, id, company_id, v, None)
-            .await
-            .unwrap_err();
-        match err {
-            DbError::InvalidInput(code) => assert_eq!(code, "alreadyUnpaid"),
-            other => panic!("attendu InvalidInput(alreadyUnpaid), reçu {other:?}"),
-        }
-
-        // Vérifie qu'aucune entrée audit `invoice.unpaid` n'a été écrite
-        // (la guard doit bloquer AVANT l'insert audit).
-        let entries = audit_log::find_by_entity(&pool, "invoice", id, 10)
-            .await
-            .unwrap();
-        assert!(!entries.iter().any(|e| e.action == "invoice.unpaid"));
-
-        cleanup_invoices(&pool, &[id]).await;
-        cleanup_journal_entries(&pool, &[je_id]).await;
-        cleanup_contacts(&pool, &[contact_id]).await;
-    }
-
     /// N3 (review pass 3 B) : si `payment_status` est actif (non-`All`), un
     /// `query.status` contradictoire (ex. `draft` ou `cancelled`) est ignoré
     /// silencieusement au profit de la garde implicite `status='validated'`.
@@ -4197,7 +3810,7 @@ mod tests {
         let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
 
         // Une facture validée + payée pour qu'elle apparaisse sous Paid.
-        let (id, v, je_id) = create_and_validate(
+        let (id, _v, je_id) = create_and_validate(
             &pool,
             company_id,
             admin_user_id,
@@ -4207,16 +3820,7 @@ mod tests {
             dec!(42.00),
         )
         .await;
-        let _ = mark_as_paid(
-            &pool,
-            admin_user_id,
-            id,
-            company_id,
-            v,
-            Some(chrono::Utc::now().naive_utc()),
-        )
-        .await
-        .unwrap();
+        set_paid_at_for_test(&pool, id, chrono::Utc::now().naive_utc()).await;
 
         // status='draft' contradictoire avec payment_status=Paid : le repo
         // doit ignorer le `status` et émettre `status='validated'` via le
@@ -4238,64 +3842,6 @@ mod tests {
             res.items.iter().any(|i| i.id == id),
             "facture validée+payée doit apparaître malgré status='draft' (payment_status l'emporte)"
         );
-
-        cleanup_invoices(&pool, &[id]).await;
-        cleanup_journal_entries(&pool, &[je_id]).await;
-        cleanup_contacts(&pool, &[contact_id]).await;
-    }
-
-    /// P12 (review pass 3 A) : spec §184 — si l'insert audit échoue,
-    /// la transaction complète est rollbackée et `paid_at` reste NULL.
-    /// On force l'échec audit via un `user_id` inexistant (violation FK
-    /// `fk_audit_log_user`).
-    #[tokio::test]
-    async fn test_mark_as_paid_atomic_rollback_on_audit_failure() {
-        let pool = test_pool().await;
-        let company_id = get_company_id(&pool).await;
-        let admin_user_id = get_admin_user_id(&pool).await;
-        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
-
-        let (id, v, je_id) = create_and_validate(
-            &pool,
-            company_id,
-            admin_user_id,
-            contact_id,
-            today(),
-            Some(today()),
-            dec!(50.00),
-        )
-        .await;
-
-        // user_id = -999 : FK `fk_audit_log_user` échoue → l'insert audit
-        // lève une erreur DB qui force le rollback de l'UPDATE invoices.
-        let err = mark_as_paid(
-            &pool,
-            -999,
-            id,
-            company_id,
-            v,
-            Some(chrono::Utc::now().naive_utc()),
-        )
-        .await
-        .unwrap_err();
-        // N4 (review pass 3 B) : assertion stricte sur `ForeignKeyViolation` —
-        // l'invariant testé est précisément que l'échec de l'insert audit
-        // (causé par la FK `fk_audit_log_user`) provoque le rollback.
-        // Toute autre variante d'erreur indique que le test ne couvre plus
-        // ce qu'il prétend couvrir (ex. FK désactivée, schéma changé).
-        assert!(
-            matches!(err, DbError::ForeignKeyViolation(_)),
-            "attendu DbError::ForeignKeyViolation (FK audit_log.user_id), reçu {err:?}"
-        );
-
-        // Vérifie atomicité : `paid_at` est toujours NULL et `version`
-        // n'a pas été bumpé (l'UPDATE a été annulé par le rollback).
-        let (after, _) = find_by_id_with_lines(&pool, company_id, id)
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(after.paid_at.is_none(), "paid_at aurait dû rester NULL");
-        assert_eq!(after.version, v, "version n'aurait pas dû être bumpée");
 
         cleanup_invoices(&pool, &[id]).await;
         cleanup_journal_entries(&pool, &[je_id]).await;
@@ -4324,7 +3870,7 @@ mod tests {
             dec!(100.00),
         )
         .await;
-        let (id_overdue_paid, v_op, je2) = create_and_validate(
+        let (id_overdue_paid, _v_op, je2) = create_and_validate(
             &pool,
             company_id,
             admin_user_id,
@@ -4334,16 +3880,7 @@ mod tests {
             dec!(200.00),
         )
         .await;
-        let _ = mark_as_paid(
-            &pool,
-            admin_user_id,
-            id_overdue_paid,
-            company_id,
-            v_op,
-            Some(chrono::Utc::now().naive_utc()),
-        )
-        .await
-        .unwrap();
+        set_paid_at_for_test(&pool, id_overdue_paid, chrono::Utc::now().naive_utc()).await;
         let (id_future_unpaid, _, je3) = create_and_validate(
             &pool,
             company_id,
@@ -4421,7 +3958,7 @@ mod tests {
             dec!(50.00),
         )
         .await;
-        let (id_paid, v_p, je3) = create_and_validate(
+        let (id_paid, _v_p, je3) = create_and_validate(
             &pool,
             company_id,
             admin_user_id,
@@ -4431,16 +3968,7 @@ mod tests {
             dec!(500.00),
         )
         .await;
-        let _ = mark_as_paid(
-            &pool,
-            admin_user_id,
-            id_paid,
-            company_id,
-            v_p,
-            Some(chrono::Utc::now().naive_utc()),
-        )
-        .await
-        .unwrap();
+        set_paid_at_for_test(&pool, id_paid, chrono::Utc::now().naive_utc()).await;
 
         let summary = due_dates_summary(
             &pool,
@@ -4492,7 +4020,7 @@ mod tests {
             dec!(20.00),
         )
         .await;
-        let (id_paid, v_p, je3) = create_and_validate(
+        let (id_paid, _v_p, je3) = create_and_validate(
             &pool,
             company_id,
             admin_user_id,
@@ -4502,16 +4030,7 @@ mod tests {
             dec!(999.00),
         )
         .await;
-        let _ = mark_as_paid(
-            &pool,
-            admin_user_id,
-            id_paid,
-            company_id,
-            v_p,
-            Some(chrono::Utc::now().naive_utc()),
-        )
-        .await
-        .unwrap();
+        set_paid_at_for_test(&pool, id_paid, chrono::Utc::now().naive_utc()).await;
 
         // Avec payment_status = Paid → summary doit toujours compter les impayées.
         let summary = due_dates_summary(
@@ -4533,62 +4052,6 @@ mod tests {
         cleanup_invoices(&pool, &[id_unpaid_a, id_unpaid_b, id_paid]).await;
         cleanup_journal_entries(&pool, &[je1, je2, je3]).await;
         cleanup_contacts(&pool, &[contact_id]).await;
-    }
-
-    /// Concurrence : deux `mark_as_paid` en parallèle → un réussit, l'autre
-    /// reçoit `OptimisticLockConflict`. Pool dédié à 4 connexions pour éviter
-    /// le deadlock pool-timeout (chaque tx garde sa connexion jusqu'au COMMIT).
-    #[tokio::test]
-    async fn test_mark_as_paid_concurrent_one_succeeds_other_409() {
-        dotenvy::dotenv().ok();
-        let url = std::env::var("DATABASE_URL").expect("DATABASE_URL required for DB tests");
-        let pool = sqlx::mysql::MySqlPoolOptions::new()
-            .max_connections(4)
-            .connect(&url)
-            .await
-            .expect("pool connect");
-
-        let company_id = get_company_id(&pool).await;
-        let admin_user_id = get_admin_user_id(&pool).await;
-        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
-
-        let (id, v, je_id) = create_and_validate(
-            &pool,
-            company_id,
-            admin_user_id,
-            contact_id,
-            today(),
-            Some(today()),
-            dec!(42.00),
-        )
-        .await;
-
-        let pool_a = pool.clone();
-        let pool_b = pool.clone();
-        let date_a = chrono::Utc::now().naive_utc();
-        let date_b = date_a;
-
-        let (res_a, res_b) = tokio::join!(
-            async move { mark_as_paid(&pool_a, admin_user_id, id, company_id, v, Some(date_a)).await },
-            async move { mark_as_paid(&pool_b, admin_user_id, id, company_id, v, Some(date_b)).await },
-        );
-
-        let successes = [&res_a, &res_b].iter().filter(|r| r.is_ok()).count();
-        assert_eq!(successes, 1, "exactement un mark_as_paid doit réussir");
-        let conflicts = [&res_a, &res_b]
-            .iter()
-            .filter(|r| matches!(r, Err(DbError::OptimisticLockConflict)))
-            .count();
-        assert_eq!(conflicts, 1, "l'autre doit recevoir OptimisticLockConflict");
-
-        cleanup_invoices(&pool, &[id]).await;
-        cleanup_journal_entries(&pool, &[je_id]).await;
-        cleanup_contacts(&pool, &[contact_id]).await;
-
-        // P8 (review pass 1) : fermer le pool dédié pour libérer les 4
-        // connexions (éviter l'accumulation face à `max_connections` serveur
-        // sur une suite de tests avec pools multiples).
-        pool.close().await;
     }
 
     /// KF-020 (closes #49) : sous concurrence `update` (mutation) vs `update`
