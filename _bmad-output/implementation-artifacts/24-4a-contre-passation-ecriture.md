@@ -77,7 +77,7 @@ Elle porte **trois** propriétés d'un seul geste, et c'est ce qui la justifie :
 | `invoice_settlements.journal_entry_id` | RESTRICT | ⛔ **le cas le plus grave** : le résiduel se calcule depuis `settlements.amount`, que la contre-passation ne toucherait pas → grand livre et résiduel divergent **en silence**. Le chemin est **#414** |
 | `bank_transactions.matched_entry_id` | **SET NULL** | la transaction resterait « rapprochée » contre une écriture contre-passée |
 
-⚠️ **La dernière ligne est la décision la moins évidente, et elle est assumée.** Il n'existe **aucune** route de dé-rapprochement (`accept`, `reject`, `manual`, `split` — rien d'autre, vérifié au montage `lib.rs:558-576`) : refuser laisse donc une écriture de rapprochement manuel **sans voie de correction**. On refuse quand même, parce que l'alternative — contre-passer en laissant `matched_entry_id` pointer l'origine — recrée exactement la désynchronisation muette que cette vague supprime. **Le manque est réel : ouvrir une issue « annuler un rapprochement bancaire », pendant de #414.**
+⚠️ **La dernière ligne est la décision la moins évidente, et elle est assumée.** Il n'existe **aucune** route de dé-rapprochement (`accept`, `reject`, `manual`, `split` — rien d'autre, vérifié au montage `lib.rs:558-576`) : refuser laisse donc une écriture de rapprochement manuel **sans voie de correction**. On refuse quand même, parce que l'alternative — contre-passer en laissant `matched_entry_id` pointer l'origine — recrée exactement la désynchronisation muette que cette vague supprime. **Le manque est réel, et il est tracé : #418.** ⛔ Après la 24-4b, l'écriture de rapprochement manuel devient **définitivement** incorrigible — d'où l'urgence relative de #418.
 
 **Le refus est un code métier, pas un 500** : `DbError::IllegalStateTransition` → HTTP **409**, avec un message nommant la pièce propriétaire et le chemin de correction à emprunter. Un utilisateur qui lit « cette écriture appartient à la facture F-2026-014, corrigez-la par un avoir » sait quoi faire ; un « interdit » sec, non.
 
@@ -139,7 +139,7 @@ La contre-passation porte la **date du jour**, et exige un exercice **ouvert** q
 - **Le gel** — statut `comptabilisé`, `PUT`/`DELETE` refusés : **24-4b**.
 - **Le verrou de période** plus fin que l'année : **24-4c**.
 - **Annuler un règlement** (client et fournisseur) : **#414**.
-- **Annuler un rapprochement bancaire** : issue à ouvrir (cf. D3).
+- **Annuler un rapprochement bancaire** : **#418**, ouverte à ce titre (cf. D3).
 - **Les trous de numérotation** laissés par le `DELETE` physique : **#381**.
 - Aucun statut brouillon — arbitrage du Project Lead : l'écriture reste définitive dès l'insertion.
 
