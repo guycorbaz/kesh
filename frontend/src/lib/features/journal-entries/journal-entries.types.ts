@@ -29,9 +29,40 @@ export interface JournalEntryResponse {
 	journal: Journal;
 	description: string;
 	version: number;
+	/** Écriture que celle-ci contre-passe (Story 24-4a, #380). `null` = ordinaire. */
+	reversesEntryId: number | null;
 	lines: JournalEntryLineResponse[];
 	createdAt: string;
 	updatedAt: string;
+}
+
+/**
+ * Motif pour lequel une écriture ne peut pas être contre-passée (Story 24-4a).
+ *
+ * ⚠️ Un **code**, jamais une phrase : la traduction se fait ici, dans les quatre
+ * locales. Les causes se cumulent côté serveur, qui n'en rend que la première
+ * selon une précédence figée.
+ */
+export type ReversalBlocker =
+	| 'IS_A_REVERSAL'
+	| 'ALREADY_REVERSED'
+	| 'OWNED_BY_INVOICE'
+	| 'OWNED_BY_CREDIT_NOTE'
+	| 'OWNED_BY_SUPPLIER_INVOICE'
+	| 'OWNED_BY_SETTLEMENT'
+	| 'MATCHED_BANK_TRANSACTION';
+
+/**
+ * Détail d'une écriture — le `GET /{id}` seul, jamais la liste.
+ *
+ * Sans ces champs l'écran devinerait : il ne pourrait ni masquer le bouton ni
+ * dire pourquoi, et se rabattrait sur un 409 découvert **après** le clic.
+ */
+export interface JournalEntryDetailResponse extends JournalEntryResponse {
+	/** Écriture qui contre-passe celle-ci. Dérivé, pas une colonne. */
+	reversedByEntryId: number | null;
+	reversable: boolean;
+	reversalBlockedBy: ReversalBlocker | null;
 }
 
 export interface CreateJournalEntryLineRequest {

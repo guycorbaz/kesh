@@ -90,8 +90,21 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * de la **donnée**, jamais du libellé traduisible : classe `conforme`, qui passe donc de
  * 35 à 36. Le patron est celui de `journalLabel`, quelques lignes plus haut, qui délègue à
  * `i18nMsg` parce que « Banque » y est, lui, un mot de la langue.
+ *
+ * ⚠️ **42 → 43, et la déclaration est NOMMÉE avant que le chiffre ne bouge** :
+ * `blockedLabel` (`routes/(app)/journal-entries/[id]/+page.svelte`), née de la
+ * contre-passation (#380). Elle traduit le **code** de blocage rendu par le serveur —
+ * `OWNED_BY_INVOICE`, `ALREADY_REVERSED`… — et ses sept branches délèguent toutes à
+ * `i18nMsg`. Un `switch` exhaustif plutôt qu'une table indexée, pour qu'un code neuf
+ * fasse rougir le type-check au lieu d'afficher du vide.
+ *
+ * ⚠️ Elle tombe en `ecartee` (6 → 7) et **non** en `conforme` : son `default` rend `''`,
+ * un littéral, donc neutre au sens de `NEUTRES` — la classe `conforme` est réservée aux
+ * fonctions qui ne rendent AUCUN littéral. *(Écrit après avoir lu la ventilation réelle :
+ * la première rédaction de ce paragraphe annonçait `conforme` sans l'avoir vérifiée, ce
+ * que ce garde-fou interdit précisément.)*
  */
-const CANDIDATES_ATTENDUES = 42;
+const CANDIDATES_ATTENDUES = 43;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -608,7 +621,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 6, conforme: 36 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 7, conforme: 36 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

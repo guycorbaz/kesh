@@ -5,6 +5,7 @@
 import { apiClient } from '$lib/shared/utils/api-client';
 import type {
 	CreateJournalEntryRequest,
+	JournalEntryDetailResponse,
 	JournalEntryListQuery,
 	JournalEntryResponse,
 	ListResponse,
@@ -32,8 +33,19 @@ export async function fetchJournalEntries(
  * Récupère le détail d'une écriture (lignes incluses) par son id.
  * `404` si l'écriture n'existe pas ou appartient à une autre company.
  */
-export async function getJournalEntry(id: number): Promise<JournalEntryResponse> {
-	return apiClient.get<JournalEntryResponse>(`/api/v1/journal-entries/${id}`);
+export async function getJournalEntry(id: number): Promise<JournalEntryDetailResponse> {
+	return apiClient.get<JournalEntryDetailResponse>(`/api/v1/journal-entries/${id}`);
+}
+
+/**
+ * Contre-passe une écriture (Story 24-4a, #380).
+ *
+ * ⛔ Ne modifie rien : crée l'écriture inverse et rend celle-ci. L'origine
+ * demeure — c'est la correction qui doit se voir, pas remplacer ce qu'elle
+ * corrige.
+ */
+export async function reverseJournalEntry(id: number): Promise<JournalEntryResponse> {
+	return apiClient.post<JournalEntryResponse>(`/api/v1/journal-entries/${id}/reverse`, {});
 }
 
 export async function createJournalEntry(

@@ -18,6 +18,7 @@ function mockEntry(
 		entryNumber: 1,
 		entryDate: '2026-04-10',
 		journal: 'Banque',
+		reversesEntryId: null,
 		description: 'Test',
 		version: 1,
 		lines: lines.map((l) => ({ id: l.lineOrder, projectId: null, ...l })),

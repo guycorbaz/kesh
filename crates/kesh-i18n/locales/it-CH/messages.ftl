@@ -328,6 +328,25 @@ journal-entries-sort-asc-indicator = ordinamento crescente
 journal-entries-sort-desc-indicator = ordinamento decrescente
 journal-entries-loading = Caricamento…
 
+# Story 24-4a (#380) — lo storno di una scrittura.
+journal-entries-reverse-action = Stornare
+journal-entries-reverse-dialog-title = Stornare questa scrittura?
+journal-entries-reverse-dialog-body = Kesh creerà una scrittura inversa in data odierna. La scrittura originale resta intatta: la correzione deve vedersi, non sparire.
+journal-entries-reverse-confirm = Stornare
+journal-entries-reverse-cancel = Annulla
+journal-entries-reverse-success = Scrittura stornata
+journal-entries-reverses-link = Storna la scrittura n. { $number }
+journal-entries-reversed-by-link = Stornata dalla scrittura n. { $number }
+journal-entries-reverse-blocked-is-a-reversal = Questa scrittura è essa stessa uno storno.
+journal-entries-reverse-blocked-already-reversed = Questa scrittura è già stata stornata.
+journal-entries-reverse-blocked-invoice = Questa scrittura appartiene a una fattura cliente: correggetela con una nota di credito.
+journal-entries-reverse-blocked-credit-note = Questa scrittura appartiene a una nota di credito, che è già uno storno.
+journal-entries-reverse-blocked-supplier-invoice = Questa scrittura appartiene a una fattura fornitore: annullate la fattura.
+journal-entries-reverse-blocked-settlement = Questa scrittura è un pagamento di fattura: il suo annullamento arriverà con lo storno dei pagamenti.
+journal-entries-reverse-blocked-bank-match = Questa scrittura è riconciliata con una transazione bancaria.
+journal-entries-reverse-account-archived = Impossibile stornare — conto/conti archiviato/i: { $detail }. Riattivate i conti interessati.
+journal-entries-delete-blocked-reversed = Questa scrittura è stata stornata: non può più essere eliminata.
+
 # Tooltip bilingue termini contabili (Story 3.5)
 tooltip-debit-natural = Il denaro entra in questo conto
 tooltip-debit-technical = Dare — colonna sinistra

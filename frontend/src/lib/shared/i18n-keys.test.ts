@@ -137,9 +137,25 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * montant**, là où un marquage n'avait qu'une date. Et la fiche en perd six parce que
  * « Dé-marquer payée » n'existe plus : annuler un règlement demande une contre-passation
  * (issue #414), pas un retrait de drapeau.
+ *
+ * ⚠️ **1613 → 1629, +16 pour la contre-passation (Story 24-4a, #380)**, tous sur
+ * `routes/(app)/journal-entries/[id]/+page.svelte`, un écran qui n'appelait `i18nMsg`
+ * nulle part jusqu'ici :
+ *
+ * | site | delta |
+ * |---|---|
+ * | `blockedLabel` — les **sept** codes de blocage rendus par le serveur | **+7** |
+ * | le bouton, le succès, l'erreur | **+3** |
+ * | les deux renvois croisés (« contre-passe » / « contre-passée par ») | **+2** |
+ * | le dialogue : titre, corps, annuler, confirmer | **+4** |
+ *
+ * Les sept branches de `blockedLabel` comptent chacune pour un site : le serveur rend un
+ * **code**, jamais une phrase, et c'est ici que la traduction se fait — un dispatcher
+ * indexé par table n'aurait compté que pour un, mais n'aurait pas fait rougir le
+ * type-check à l'ajout d'un code.
  */
 const ATTENDU = {
-	sitesTotal: 1613,
+	sitesTotal: 1629,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

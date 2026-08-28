@@ -328,6 +328,25 @@ journal-entries-sort-asc-indicator = aufsteigend sortiert
 journal-entries-sort-desc-indicator = absteigend sortiert
 journal-entries-loading = Wird geladen…
 
+# Story 24-4a (#380) — Stornierung einer Buchung.
+journal-entries-reverse-action = Stornieren
+journal-entries-reverse-dialog-title = Diese Buchung stornieren?
+journal-entries-reverse-dialog-body = Kesh erstellt eine Gegenbuchung mit dem heutigen Datum. Die ursprüngliche Buchung bleibt unverändert: Die Korrektur muss sichtbar sein, nicht verschwinden.
+journal-entries-reverse-confirm = Stornieren
+journal-entries-reverse-cancel = Abbrechen
+journal-entries-reverse-success = Buchung storniert
+journal-entries-reverses-link = Storniert Buchung Nr. { $number }
+journal-entries-reversed-by-link = Storniert durch Buchung Nr. { $number }
+journal-entries-reverse-blocked-is-a-reversal = Diese Buchung ist selbst eine Stornobuchung.
+journal-entries-reverse-blocked-already-reversed = Diese Buchung wurde bereits storniert.
+journal-entries-reverse-blocked-invoice = Diese Buchung gehört zu einer Kundenrechnung: Korrigieren Sie sie mit einer Gutschrift.
+journal-entries-reverse-blocked-credit-note = Diese Buchung gehört zu einer Gutschrift, die bereits eine Stornobuchung ist.
+journal-entries-reverse-blocked-supplier-invoice = Diese Buchung gehört zu einer Lieferantenrechnung: Stornieren Sie die Rechnung.
+journal-entries-reverse-blocked-settlement = Diese Buchung ist eine Rechnungszahlung: Ihre Stornierung folgt mit der Stornierung von Zahlungen.
+journal-entries-reverse-blocked-bank-match = Diese Buchung ist mit einer Banktransaktion abgeglichen.
+journal-entries-reverse-account-archived = Stornierung nicht möglich — archivierte(s) Konto/Konten: { $detail }. Reaktivieren Sie die betroffenen Konten.
+journal-entries-delete-blocked-reversed = Diese Buchung wurde storniert: Sie kann nicht mehr gelöscht werden.
+
 # Zweisprachige Tooltips Buchhaltungsbegriffe (Story 3.5)
 tooltip-debit-natural = Geld kommt auf dieses Konto
 tooltip-debit-technical = Soll — linke Spalte

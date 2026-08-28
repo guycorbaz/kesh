@@ -1615,9 +1615,9 @@ async fn archived_accounts_in_tx(
     }
     let placeholders = account_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
     let sql = format!(
-        "SELECT id, account_number FROM accounts \
+        "SELECT id, number FROM accounts \
          WHERE company_id = ? AND active = FALSE AND id IN ({placeholders}) \
-         ORDER BY account_number"
+         ORDER BY number"
     );
     let mut q = sqlx::query_as::<_, (i64, String)>(&sql).bind(company_id);
     for id in account_ids {
