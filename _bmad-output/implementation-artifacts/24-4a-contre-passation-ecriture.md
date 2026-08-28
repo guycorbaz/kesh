@@ -530,6 +530,39 @@ Prompt versionné : `24-4a-code-review-prompt-regression-hunter-p3.md`.
 
 **Ce que la passe a vérifié sans rien trouver** : la propagation des jetons (`sept`→`huit`, `63`→`64`, `2248`→`2257`, `archived_account_id`→`archived_account_number`) — zéro résidu ; le scoping des deux lectures ; le contrat `document_id`/`document_label` ; le déterminisme de la sous-requête ; et le **manuel**, dont la section neuve décrit fidèlement le code, PDF compris.
 
+#### Passe 4 — 2026-08-28 · Haiku 4.5, **passe ciblée** sur le seul commit `cabf18d8`
+
+Prompt versionné : `24-4a-code-review-prompt-regression-hunter-p4.md`.
+
+**0 finding, toutes sévérités confondues — la boucle CONVERGE.**
+
+La lentille a **fait** ce qu'on lui demandait plutôt que de le supposer : elle a ajouté un neuvième code au type `ReversalBlocker`, lancé `npm run check`, constaté le rouge (`Type '"NINTH_CODE"' is not assignable to type 'never'`), puis restauré le fichier et vérifié que l'arbre était propre. Elle a recompté la ventilation depuis la source (7 + 36 = 43) et cherché les jumeaux du symptôme : **une seule affectation à `never` dans tout le frontend**, celle du commit.
+
+#### Trajectoire des quatre passes
+
+| passe | lentilles | CRIT | HIGH | MED | LOW | total | issus du patch précédent |
+|---|---|---|---|---|---|---|---|
+| 1 | Sonnet 4.6 ×2 + Haiku 4.5 | 2 | 2 | 6 | 3 | **13** | — |
+| 2 | Opus 5 *(ciblée)* | 0 | 0 | 6 | 4 | **10** | 7 |
+| 3 | Sonnet 4.6 *(ciblée)* | 0 | 0 | 2 | 0 | **2** | 2 |
+| 4 | Haiku 4.5 *(ciblée)* | 0 | 0 | 0 | 0 | **0** | — |
+
+⚠️ **Vingt-cinq findings, dont QUINZE nés d'une remédiation** — et aucune passe après la première n'a pris en défaut une décision de conception d'origine. Le motif que le dépôt mesure depuis l'Epic 22 s'est vérifié **deux fois dans la même journée** sur cette story : d'abord en revue de spécification, puis en revue de code.
+
+#### Deux enseignements à verser à la rétrospective
+
+⛔ **Aucun gate ne lit le manuel.** Le manuel utilisateur affirmait, dans un encadré intitulé « Ce que le logiciel ne fait pas à votre place », qu'il faut « contre-passer vous-même ». La story livrait exactement cette fonction. C'est la seule des découvertes de la passe 2 qu'aucun outil n'aurait pu attraper, et elle portait sur la promesse même de la story. La règle existe (§ *Synchroniser TOUTES les docs*) ; ce qui manque, c'est ce qui la rappelle au moment d'écrire la *File List*.
+
+⛔ **`never` ne protège que la compilation.** Une garde d'exhaustivité écrite `return _exhaustif` rend, à l'exécution, la valeur brute. Il faut les deux gestes — `void _exhaustif;` pour le compilateur, `return '';` pour l'utilisateur.
+
+### Gates de clôture — ce qui a RÉELLEMENT tourné
+
+| gate | résultat |
+|---|---|
+| `scripts/test-fast.sh`, base remise à zéro avant (KF-039) | **2257/2257**, 4 skipped |
+| `npm run check` · `lint-i18n-ownership` · `test:unit` · `build` | 0 erreur · PASS · **747/747** · OK |
+| Playwright, suite **complète**, frontend reconstruit | **218 passés / 7 échoués** — les sept de la KF-029 (#97) à la ligne près. **Zéro régression.** |
+
 ### Agent Model Used
 
 Opus 5 (1M context) — `bmad-dev-story`, 2026-08-28.
