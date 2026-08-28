@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev
+in-progress
 
 ## Story
 
@@ -215,6 +215,47 @@ Chaque test de l'AC 17 monte **une seule** cause.
 - **I1 — Somme nulle** : pour toute écriture contre-passée, `SUM(debit) = SUM(credit)` sur l'origine **et** sur la contre-passation, et la somme des deux écritures est **nulle compte par compte**. C'est l'invariant qui prouve que l'inversion est exacte, là où un total global se laisserait tromper par une compensation entre comptes.
 - **I2 — Le grand livre montre les deux** : après contre-passation, l'extrait du compte touché porte **deux** lignes, jamais zéro. (La correction est apparente — c'est l'exigence légale, écrite en test.)
 - **I3 — Aucune pièce désynchronisée** : après la suite complète, aucune ligne de `invoices`, `credit_notes`, `supplier_invoices`, `invoice_settlements`, `bank_transactions` ne référence une écriture portant un `reverses_entry_id` entrant.
+
+## Tasks / Subtasks
+
+- [ ] **T1 — La migration et ses cinq garde-fous** (AC 3)
+  - [ ] `20260828000002_journal_entries_reversal.sql` : `reverses_entry_id BIGINT NULL`, FK `RESTRICT`, `UNIQUE`
+  - [ ] ligne `<version> <sha384>` dans `crates/kesh-db/migrations.sha384` (P8)
+  - [ ] ligne + les **cinq** compteurs de `docs/migrations-idempotence-audit.md`, recomptés depuis la source (P5)
+  - [ ] `crates/kesh-db/test-schema/0001_schema_squash.sql` aligné sur le schéma réel
+  - [ ] `assert_eq!(total, 63)` → `64` dans `migrations_upgrade_path.rs` (P6)
+  - [ ] contrôle P7 : la migration n'écrit aucune donnée → ni registre ni exemption
+- [ ] **T2 — L'entité et les lectures** (AC 3)
+  - [ ] `reverses_entry_id: Option<i64>` sur `JournalEntry`, et les `SELECT` qui listent les colonnes
+- [ ] **T3 — Le cœur : `reverse_in_tx` / `reverse`** (AC 1, 2, 7, 8, 10, 13, 14)
+  - [ ] relecture des lignes `… ORDER BY line_order`, inversion `D ↔ C`, `project_id` repris **par ligne**
+  - [ ] exercice ouvert du jour ; journal OD ; libellé au format figé
+  - [ ] `enforce_postable = false` **et** exemption de la validation des projets (AC 9)
+  - [ ] audit `journal_entry.reversed`
+- [ ] **T4 — Les refus** (AC 4, 5, 6, 11, 12)
+  - [ ] les six chemins FK → 409, message nommant la pièce et la correction
+  - [ ] `ALREADY_REVERSED` par discrimination du nom de contrainte sur 1062
+  - [ ] `IS_A_REVERSAL` ; `ACCOUNT_ARCHIVED` en **400** avec `details.rejected[]`
+- [ ] **T5 — La suppression** (AC 15, 16)
+  - [ ] `delete_all_by_company` remet `reverses_entry_id` à `NULL` avant le `DELETE`
+  - [ ] `DELETE /{id}` d'une origine contre-passée → **409 `ENTRY_IS_REVERSED`**
+  - [ ] doc-comment périmé de `delete_all_by_company` corrigé
+- [ ] **T6 — Route, RBAC et lecture enrichie** (AC 12, 17)
+  - [ ] `POST /api/v1/journal-entries/{id}/reverse` sous `comptable_routes`
+  - [ ] `reversesEntryId`, `reversedByEntryId`, `reversable`, `reversalBlockedBy` sur le **détail seul**, précédence figée
+- [ ] **T7 — L'export comptable** (AC 3)
+  - [ ] `reverses_entry_id` en snake_case dans `serialize_journal_entries_csv`, **avec son test**
+- [ ] **T8 — i18n et écran** (AC 18, 19)
+  - [ ] clés `journal-entries-reverse-*` dans les **quatre** locales
+  - [ ] bouton + confirmation + renvois croisés sur la fiche, `data-testid` (jamais un libellé traduit)
+- [ ] **T9 — Les tests**
+  - [ ] `crates/kesh-api/tests/journal_entry_reversal_e2e.rs` (NEW) — 9 tests de refus, une cause par test
+  - [ ] l'invariant I1 (somme nulle compte par compte), I2 (deux lignes au grand livre), I3 (aucune pièce désynchronisée)
+  - [ ] `frontend/tests/e2e/journal-entries.spec.ts`
+- [ ] **T10 — Les gates** (⛔ complets, ciblage interdit)
+  - [ ] base remise à zéro (KF-039), puis `scripts/test-fast.sh`
+  - [ ] `npm run check` / `lint-i18n-ownership` / `test:unit` / `build`
+  - [ ] suite Playwright complète, comparée à la baseline des 8 échecs attendus
 
 ## Hors périmètre
 

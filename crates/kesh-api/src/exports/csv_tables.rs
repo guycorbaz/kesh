@@ -253,6 +253,13 @@ pub fn serialize_journal_entries_csv<W: Write>(
         "journal",
         "description",
         "version",
+        // ⛔ snake_case : cet en-tête est un export TABLE, pas une réponse JSON.
+        // ⚠️ Sans cette colonne, l'export comptable complet — celui que le
+        // réviseur consulte — ne montrerait AUCUNE trace d'une contre-passation,
+        // en contradiction avec l'exigence (art. 958f CO) que la Story 24-4a sert.
+        // Et rien ne rougirait : `backup_inventory_matches_schema` ne compare que
+        // la liste des TABLES, jamais les colonnes d'un CSV.
+        "reverses_entry_id",
         "created_at",
         "updated_at",
     ])
@@ -267,6 +274,7 @@ pub fn serialize_journal_entries_csv<W: Write>(
             je.journal.as_str().to_string(),
             je.description.clone(),
             je.version.to_string(),
+            je.reverses_entry_id.map(|v| v.to_string()).unwrap_or_default(),
             fmt_dt(je.created_at),
             fmt_dt(je.updated_at),
         ])
@@ -985,6 +993,7 @@ mod tests {
             journal: JournalEnum::Ventes,
             description: "Vente test".into(),
             version: 1,
+            reverses_entry_id: None,
             created_at: naive_dt(2026, 5, 17, 8, 15, 0),
             updated_at: naive_dt(2026, 5, 17, 8, 15, 0),
         }

@@ -46,6 +46,63 @@ pub struct RejectedRevenueAccount {
     pub reason: RevenueAccountRejection,
 }
 
+/// Motif pour lequel une écriture ne peut **pas** être contre-passée
+/// (Story 24-4a, #380).
+///
+/// ⚠️ **Les causes se CUMULENT** — une écriture peut être possédée par une
+/// facture, déjà contre-passée *et* porter un compte archivé. Le champ exposé
+/// étant scalaire, la précédence est figée par l'ordre des variantes ci-dessous,
+/// sans quoi le test « une cause, un test » deviendrait non déterministe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReversalBlocker {
+    /// L'écriture EST une contre-passation. En contre-passer une reviendrait à
+    /// réécrire l'original en trois écritures au lieu d'une.
+    IsAReversal,
+    /// Une contre-passation existe déjà (garantie par `uq_journal_entries_reverses`).
+    AlreadyReversed,
+    /// Écriture de vente d'une facture client → le chemin est l'**avoir**.
+    OwnedByInvoice,
+    /// L'avoir EST déjà la contre-passation de la facture.
+    OwnedByCreditNote,
+    /// Écriture d'achat ou de règlement d'une facture fournisseur → le chemin
+    /// est `supplier_invoices::cancel`, ou l'issue #414 pour le règlement.
+    OwnedBySupplierInvoice,
+    /// ⛔ Le cas le plus grave : le résiduel se calcule depuis
+    /// `invoice_settlements.amount`, que la contre-passation ne toucherait pas —
+    /// grand livre et résiduel divergeraient **en silence**. Chemin : #414.
+    OwnedBySettlement,
+    /// Écriture rapprochée d'une transaction bancaire. ⚠️ Aucune route de
+    /// dé-rapprochement n'existe (#418) : le refus laisse un manque, assumé,
+    /// parce que l'alternative recrée une désynchronisation muette.
+    MatchedBankTransaction,
+}
+
+impl ReversalBlocker {
+    /// Code canonique, jamais une phrase : la traduction se fait à l'écran.
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::IsAReversal => "IS_A_REVERSAL",
+            Self::AlreadyReversed => "ALREADY_REVERSED",
+            Self::OwnedByInvoice => "OWNED_BY_INVOICE",
+            Self::OwnedByCreditNote => "OWNED_BY_CREDIT_NOTE",
+            Self::OwnedBySupplierInvoice => "OWNED_BY_SUPPLIER_INVOICE",
+            Self::OwnedBySettlement => "OWNED_BY_SETTLEMENT",
+            Self::MatchedBankTransaction => "MATCHED_BANK_TRANSACTION",
+        }
+    }
+}
+
+/// Un compte de l'écriture d'origine, archivé depuis (Story 24-4a, #380).
+///
+/// Le refus **nomme** le compte à réactiver — un « interdit » sec ne serait pas
+/// utilisable. Gabarit : [`RejectedRevenueAccount`] et son `details.rejected[]`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArchivedAccount {
+    pub account_id: i64,
+    /// `None` quand le compte est inconnu de la société — rien à afficher.
+    pub account_number: Option<String>,
+}
+
 /// Erreurs des opérations de persistance MariaDB.
 ///
 /// Les messages `Display` sont destinés au logging serveur uniquement.
@@ -186,6 +243,42 @@ pub enum DbError {
     #[error("Comptes de produit archivés sur l'avoir ({} ligne(s))", .0.len())]
     CreditNoteRevenueAccountsArchived(Vec<RejectedRevenueAccount>),
 
+    /// L'écriture ne peut pas être contre-passée (Story 24-4a, #380).
+    ///
+    /// C'est un **conflit d'état**, pas une donnée invalide → HTTP **409**, avec
+    /// le code canonique du [`ReversalBlocker`] et l'identifiant de la pièce
+    /// propriétaire quand il y en a une. Le message doit nommer la pièce ET le
+    /// chemin de correction : un utilisateur qui lit « corrigez la facture
+    /// F-2026-014 par un avoir » sait quoi faire, un « interdit » sec non.
+    #[error("Écriture non contre-passable ({})", .blocker.code())]
+    EntryNotReversable {
+        blocker: ReversalBlocker,
+        /// Identifiant de la pièce propriétaire, quand le motif en désigne une.
+        document_id: Option<i64>,
+    },
+
+    /// Un ou plusieurs comptes de l'écriture d'origine ont été **archivés**
+    /// depuis (Story 24-4a, #380).
+    ///
+    /// ⛔ `enforce_postable = false` NE SUFFIT PAS : la clause `active = TRUE` de
+    /// la validation des comptes est **inconditionnelle**, seule `postable` est
+    /// gouvernée par le drapeau.
+    ///
+    /// Mappé vers HTTP **400** `ACCOUNT_ARCHIVED` — même statut que le gabarit
+    /// [`DbError::CreditNoteRevenueAccountsArchived`] dont il reprend la forme.
+    #[error("Comptes archivés sur l'écriture à contre-passer ({})", .0.len())]
+    ReversalAccountsArchived(Vec<ArchivedAccount>),
+
+    /// L'écriture a été contre-passée : on ne la supprime plus (Story 24-4a).
+    ///
+    /// Supprimer une écriture qu'on a corrigée **effacerait la correction** —
+    /// exactement ce que l'art. 958f CO interdit. Le refus est donc voulu ; il
+    /// est rendu explicite plutôt que laissé remonter comme une violation de
+    /// clé étrangère au message opaque. Mappé vers HTTP **409**
+    /// `ENTRY_IS_REVERSED`.
+    #[error("Écriture contre-passée : suppression refusée")]
+    EntryIsReversed,
+
     /// Aucun exercice ouvert ne couvre la date fournie (Story 5.2).
     /// Distinct de `FiscalYearClosed` — l'exercice est peut-être
     /// inexistant (date hors de tous les exercices connus) OU clôturé.
@@ -253,6 +346,11 @@ impl DbError {
             Self::AccountRoleInvalidForType { .. } => "ACCOUNT_ROLE_INVALID_FOR_TYPE",
             Self::InvalidRevenueAccounts(_) => "INVOICE_LINE_REVENUE_ACCOUNT_INVALID",
             Self::CreditNoteRevenueAccountsArchived(_) => "CREDIT_NOTE_REVENUE_ACCOUNT_ARCHIVED",
+            // ⚠️ Le code EXPOSÉ est celui du `ReversalBlocker` (sept valeurs) ;
+            // celui-ci n'est que le repli générique du mapping structuré.
+            Self::EntryNotReversable { .. } => "ENTRY_NOT_REVERSABLE",
+            Self::ReversalAccountsArchived(_) => "ACCOUNT_ARCHIVED",
+            Self::EntryIsReversed => "ENTRY_IS_REVERSED",
             Self::FiscalYearInvalid => "FISCAL_YEAR_INVALID",
             Self::ConfigurationRequired(_) => "CONFIGURATION_REQUIRED",
             Self::ConnectionUnavailable(_) => "CONNECTION_UNAVAILABLE",

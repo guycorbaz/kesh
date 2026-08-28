@@ -35,7 +35,7 @@ async fn apply_migrations_up_to(
     assert!(
         n <= all.len(),
         "apply_migrations_up_to: n={} > total={} — vérifier que le calcul \
-         `total - 29` (fenêtre d'upgrade, FRONTIÈRE figée à 34) reste \
+         `total - 30` (fenêtre d'upgrade, FRONTIÈRE figée à 34) reste \
          cohérent avec l'ajout de migrations futures. Si une migration a été ajoutée à \
          la branche, l'assertion `total == 63` du test upgrade_path_preserves_data \
          doit également échouer, c'est son rôle : elle signale qu'il faut décider \
@@ -54,7 +54,7 @@ async fn apply_migrations_up_to(
     sub.run(pool).await
 }
 
-/// AC #15a — cas générique upgrade path : `total - 29` migrations appliquées
+/// AC #15a — cas générique upgrade path : `total - 30` migrations appliquées
 /// (**34** à ce jour) + seed + `MIGRATOR.run()` final, qui applique les **27**
 /// dernières. Assertion : seed préservé à travers la fenêtre d'upgrade.
 ///
@@ -90,13 +90,14 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // + contacts_client_number_canonical (Story 22-1, #294/#295) = 61.
     // + invoice_settlements (Story 24-2, #371) = 62.
     // + invoice_settlements_type (Story 24-3, #372) = 63.
+    // + journal_entries_reversal (Story 24-4a, #380) = 64.
     let total = kesh_db::MIGRATOR.migrations.len();
     assert_eq!(
-        total, 63,
-        "63 migrations attendues (62 précédentes + Story 24-3 : invoice_settlements_type)"
+        total, 64,
+        "64 migrations attendues (63 précédentes + Story 24-4a : journal_entries_reversal)"
     );
 
-    // Étape 1 : applique toutes les migrations sauf les 29 dernières. La
+    // Étape 1 : applique toutes les migrations sauf les 30 dernières. La
     // fenêtre d'upgrade démarre donc à la 35ᵉ, `20260614000001_vat_accounts_config`
     // (Story 18-1a), et court jusqu'à la dernière du dépôt. Ne pas ré-énumérer
     // ici les migrations de la fenêtre : une liste nominative se périme à chaque
@@ -104,17 +105,17 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // plus bas. Le seul nombre qui fait foi est celui du `total - N` ci-dessous.
     //
     // Note `total - N` : expression relative à la longueur totale, tandis que
-    // l'assertion `total == 63` ci-dessus est INTENTIONNELLEMENT codée en dur
+    // l'assertion `total == 64` ci-dessus est INTENTIONNELLEMENT codée en dur
     // pour fail-loud sur toute évolution non revue. À chaque migration ajoutée,
     // le mainteneur doit (1) bumper ce compte (2) incrémenter `N` du même pas,
     // de sorte que `total - N` — la frontière — reste **constant**.
     //
     // Frontière actuelle : **34**. Le test applique donc les 34 premières
     // migrations (jusqu'à `20260613000001_vat_rates_crud` incluse), seede des
-    // données, puis joue les 29 restantes comme « fenêtre d’upgrade ».
+    // données, puis joue les 30 restantes comme « fenêtre d’upgrade ».
     //
-    // ⚠️ `N` DOIT être incrémenté en même temps que `total`. Le laisser à 28
-    // avec `total = 63` porterait la frontière à 35 : le test continuerait de
+    // ⚠️ `N` DOIT être incrémenté en même temps que `total`. Le laisser à 29
+    // avec `total = 64` porterait la frontière à 35 : le test continuerait de
     // passer en testant une fenêtre plus étroite d'une migration.
     // Story 16-1a : 21 → 22, frontière inchangée (56 - 22 = 55 - 21 = 34).
     // Story 16-1a-bis : 22 → 23, frontière inchangée (57 - 23 = 34).
@@ -124,6 +125,7 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // Story 22-1  : 26 → 27, frontière inchangée (61 - 27 = 34).
     // Story 24-2  : 27 → 28, frontière inchangée (62 - 28 = 34).
     // Story 24-3  : 28 → 29, frontière inchangée (63 - 29 = 34).
+    // Story 24-4a : 29 → 30, frontière inchangée (64 - 30 = 34).
     //
     // ⚠️ DÉRIVE DOCUMENTAIRE CONSTATÉE (revue de code 16-1a). Ce commentaire
     // affirmait simuler « l'état pré-Story-10-2 » et parlait d'une « frontière
@@ -152,7 +154,7 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // d'upgrade réellement testé — sans que rien ne le signale. La fenêtre
     // s'élargit donc d'un cran à chaque migration ajoutée, ce qui est le sens
     // voulu : « depuis un socle figé, jusqu'à la dernière du dépôt ».
-    let n_before_upgrade_window = total - 29;
+    let n_before_upgrade_window = total - 30;
     apply_migrations_up_to(&pool, n_before_upgrade_window)
         .await
         .expect("apply_migrations_up_to(total - 27) failed");
