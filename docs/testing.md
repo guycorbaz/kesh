@@ -314,6 +314,66 @@ Pour surcharger l'URL backend (ex: tests contre un kesh-api distant) :
 KESH_BACKEND_URL=http://localhost:3001 npm run test:e2e
 ```
 
+## Les échecs attendus — la suite ne passe PAS au vert, et il faut le savoir
+
+⚠️ **`npm run test:e2e` rend aujourd'hui 215 passés / 8 échoués, et ces huit sont ATTENDUS.**
+Sans cette liste, la règle du `CLAUDE.md` — « la suite complète tourne en local avant tout
+`git push` » — est **invérifiable** : personne ne peut dire « c'est vert », et chacun doit
+re-dériver à la main quels échecs sont connus. Le risque n'est pas le temps perdu, c'est
+l'inverse : conclure « ce sont les échecs habituels » sans regarder, et laisser passer une vraie
+régression au milieu.
+
+**Relevé du 2026-08-26** (montage complet de la § précédente, base `kesh_e2e` reconstruite) :
+
+| Test | Cause |
+|---|---|
+| `mode-expert.spec.ts:26` | KF-029 (#97) |
+| `mode-expert.spec.ts:41` | KF-029 (#97) |
+| `onboarding-path-b.spec.ts:65` | KF-029 (#97) |
+| `onboarding-path-b.spec.ts:92` | KF-029 (#97) |
+| `onboarding.spec.ts:57` | KF-029 (#97) |
+| `onboarding.spec.ts:77` | KF-029 (#97) |
+| `onboarding.spec.ts:150` | KF-029 (#97) |
+| **un huitième, VARIABLE** | pollution d'état entre specs — voir ci-dessous |
+
+**Le huitième n'a pas d'identité fixe, et c'est l'information utile.** Deux runs complets à
+un jour d'intervalle :
+
+| run | le huitième |
+|---|---|
+| 2026-08-26 | `product-revenue-account.spec.ts:133` — « Votre session a expiré » |
+| 2026-08-27 | `invoices_echeancier.spec.ts:100` — une ligne attendue absente du tableau |
+
+**Les deux passent 100 % rejoués seuls.** Un huitième qui change d'identité d'un run à l'autre
+n'est pas un défaut de la spec qui rougit : c'est de la **pollution d'état entre specs**, dette
+acceptée et documentée en § *« Cleanup entre tests »* (`D-6-4-A` : aucun reset entre tests d'une
+même spec). Les specs `onboarding*` y contribuent le plus — elles reseedent la base en
+`fresh-install`, et l'ordre d'exécution de Playwright est **alphabétique**.
+
+⚠️ **Une première rédaction de cette section nommait `product-revenue-account.spec.ts:133`
+comme s'il s'agissait du huitième, toujours le même.** C'était trop précis, et donc trompeur :
+un lecteur voyant rougir une autre spec en aurait conclu à une régression. Corrigé au run du
+2026-08-27, qui a rendu un huitième différent.
+
+### Comment lire un rouge, dans l'ordre
+
+1. **Comparer les fichiers en échec à la liste ci-dessus.** Un échec hors liste est une
+   régression **jusqu'à preuve du contraire**.
+2. Pour un échec de la liste, vérifier que la branche ne touche pas le fichier :
+   `git log main..HEAD -- <fichier>` doit rendre zéro commit.
+3. Pour **tout** huitième échec hors liste, **le rejouer seul** avant toute autre chose. Vert
+   seul ⇒ pollution d'état, pas régression. Rouge seul ⇒ régression, et il faut chercher.
+
+⚠️ **Ce tableau se recompte, il ne se recopie pas.** S'il rougit d'un test de plus, la question
+n'est pas « faut-il ajuster le nombre ? » mais « **quel** test est apparu, et pourquoi ». Un
+tableau ajusté sans être compris redevient exactement le silence qu'il sert à rompre — c'est le
+mode d'échec que la § *« Recompter ses propres comptes rendus »* du `CLAUDE.md` décrit pour les
+décomptes de story.
+
+*(Consigné le 2026-08-26, au gate de la Story 24-1 : la liste existait dans la tête de qui
+lançait la suite, nulle part ailleurs. La KF-029 est ouverte depuis avril ; la traiter reste
+une décision distincte, à prendre en rétrospective.)*
+
 ## Cleanup entre tests (dette technique acceptée)
 
 - **Pas de reset entre tests individuels d'une même spec** (dette `D-6-4-A`). Si un test pollue (création + archivage incomplet), le test suivant peut être affecté. Mitigation : convention de cleanup explicite dans chaque test, ou adoption progressive de `test.beforeEach(seedTestState(...))` si symptômes apparaissent.
