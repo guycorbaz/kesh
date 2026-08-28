@@ -357,7 +357,30 @@ Prompt versionné : `24-4a-review-prompt-regression-hunter-p3.md`.
 
 **Verdict de clôture** : la remédiation de cette passe **ne touche aucune décision de conception ni aucune ligne de code** — une phrase retirée, une affirmation factuelle corrigée à trois endroits, un doc-comment inscrit aux tâches. C'est le critère de clôture du `CLAUDE.md` (« tant que le correctif touche la production, la boucle n'est pas close » — ici il ne la touche pas). Le volume s'effondre de 11 à 2, la sévérité maximale reste HIGH mais ne régresse pas : pas de split.
 
-⚠️ **La décision de clore revient au Project Lead** : la lettre de la *Review Iteration Rule* (arrêt à « uniquement LOW ») demanderait une passe 4 ; sa clause de passe ciblée l'autorise à s'arrêter ici. Les deux lectures sont défendables, et c'est un arbitrage, pas un calcul.
+⚠️ **Arbitrage du Project Lead : la lettre de la règle.** La clause de passe ciblée autorisait à clore ici ; Guy a demandé la quatrième passe.
+
+### Passe 4 — 2026-08-28 · Haiku 4.5, **passe ciblée** sur le seul commit `6de043cc`
+
+Prompt versionné : `24-4a-review-prompt-regression-hunter-p4.md`.
+
+**0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW — la boucle CONVERGE.**
+
+La passe a vérifié quatre choses, et les quatre tiennent : le symptôme de P3-1 n'a **aucun résidu** ailleurs dans le dépôt (la seule occurrence restante est la citation du défaut dans ce journal) ; la correction sur `reset_demo` dit vrai, contrôlée dans `kesh-seed/src/lib.rs` ; le doc-comment périmé existe bien à la ligne annoncée et dit bien ce qu'on lui reproche ; et les décomptes de ce journal se recomptent juste — **19 critères, 9 findings en passe 1, 11 en passe 2, 2 en passe 3**.
+
+**Trajectoire des quatre passes :**
+
+| passe | modèle(s) | CRIT | HIGH | MED | LOW | total | dont nés du patch précédent |
+|---|---|---|---|---|---|---|---|
+| 1 | Sonnet + Haiku | 2 | 1 | 6 | — | **9** | — |
+| 2 | Opus | 0 | 4 | 6 | 1 | **11** | 8 |
+| 3 | Sonnet *(ciblée)* | 0 | 2 | 0 | 0 | **2** | 2 |
+| 4 | Haiku *(ciblée)* | 0 | 0 | 0 | 0 | **0** | — |
+
+⚠️ **Le motif à verser à la rétrospective, et il est net : sur les 22 findings des trois premières passes, DIX se sont révélés être des défauts introduits par une remédiation** — jamais par la conception d'origine, qui n'a été prise en défaut qu'aux passes 1 et 2 (six fois au total). Le dépôt mesurait déjà cela sur les Epics 22 et 23 ; la 24-4a le confirme sur une **spécification**, là où le précédent portait sur du code.
+
+⚠️ **Deux des trois fautes les plus coûteuses avaient la même racine : croire une source sur parole.** Un gabarit voisin dont le modèle de données diffère (`cancel` et son `project_id`), et un **doc-comment périmé** (`delete_all_by_company` se disant « utilisée par `reset_demo` »). Ni l'un ni l'autre ne ment ; tous deux décrivent un état qui a changé.
+
+**La boucle est close.** Critère d'arrêt de la *Review Iteration Rule* atteint : zéro finding au-dessus de LOW, quatre passes, quatre contextes frais, rotation complète Sonnet → Haiku → Opus → Sonnet → Haiku. Prochaine étape : `bmad-dev-story` 24-4a.
 
 ## Dev Agent Record
 
