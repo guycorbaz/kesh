@@ -91,7 +91,9 @@ Une colonne `reverses_entry_id BIGINT NULL`, FK vers `journal_entries(id)` `ON D
 
 ⛔ **`RESTRICT` a deux conséquences que la story DOIT porter — elles ne sont pas des effets de bord, elles changent du code existant.**
 
-**(a) La suppression en masse casse, de façon INTERMITTENTE.** `delete_all_by_company` (`journal_entries.rs:1290`) fait `DELETE FROM journal_entries WHERE company_id = ?` **en un seul statement**, et InnoDB vérifie les clés étrangères **ligne par ligne, sans différer** : si l'origine est traitée avant sa contre-passation, la contrainte déclenche une erreur 1451. Le résultat dépend de l'ordre de parcours — donc il est **aléatoire**. Ce chemin sert `reset_demo` (production) **et le teardown de dix tests unitaires** de `journal_entries.rs`. ⇒ `delete_all_by_company` doit remettre `reverses_entry_id` à `NULL` pour la société **avant** le `DELETE`.
+**(a) La suppression en masse casse, de façon INTERMITTENTE.** `delete_all_by_company` (`journal_entries.rs:1290`) fait `DELETE FROM journal_entries WHERE company_id = ?` **en un seul statement**, et InnoDB vérifie les clés étrangères **ligne par ligne, sans différer** : si l'origine est traitée avant sa contre-passation, la contrainte déclenche une erreur 1451. Le résultat dépend de l'ordre de parcours — donc il est **aléatoire**. ⚠️ **La portée est celle des TESTS, pas de la production** : les dix appelants de `delete_all_by_company` sont tous dans son `mod tests`, et **`reset_demo` n'emprunte pas ce chemin** — il pose `SET FOREIGN_KEY_CHECKS=0` puis fait ses propres `DELETE` en SQL brut (`kesh-seed/src/lib.rs:240`, `:260`), ce qui l'immunise. ⇒ `delete_all_by_company` doit néanmoins remettre `reverses_entry_id` à `NULL` **avant** le `DELETE` : dix tests le prennent en teardown, et l'échec serait intermittent.
+
+⛔ **Le doc-comment de la fonction MENT et se corrige au passage** (`journal_entries.rs:1286` : « utilisé par `reset_demo` »). C'est lui qui a induit en erreur la passe 2 de cette revue — un commentaire périmé coûte exactement ce qu'un compteur faux coûte ailleurs.
 
 **(b) Le `DELETE` unitaire d'une écriture contre-passée cesse de réussir.** C'est **souhaitable** — supprimer une écriture qu'on a corrigée effacerait la correction — mais ce n'est plus le comportement d'aujourd'hui, et il ne faut pas le livrer sous la forme d'une 1451 au message générique. ⇒ discriminer le nom de la contrainte et rendre **409 `ENTRY_IS_REVERSED`**, comme le dépôt le fait déjà pour `fk_invoices_journal_entry`.
 
@@ -165,7 +167,7 @@ Une écriture dont un compte a été **archivé** depuis sa création est donc *
 - Réponse **201** avec l'écriture créée (même forme que `create_journal_entry`).
 - Audit : action `journal_entry.reversed`, cible `journal_entry` / id de l'origine, détails `{ "reversalJournalEntryId": <id> }` — miroir exact de `supplier_invoice.cancelled`.
 
-⛔ **La lecture doit porter de quoi décider, sinon l'écran devine.** `GET /api/v1/journal-entries/{id}` et la liste exposent :
+⛔ **La lecture doit porter de quoi décider, sinon l'écran devine.** `GET /api/v1/journal-entries/{id}` expose :
 
 | champ | rôle |
 |---|---|
@@ -203,7 +205,7 @@ Chaque test de l'AC 17 monte **une seule** cause.
 13. Une entrée d'audit `journal_entry.reversed` est écrite, portant `reversalJournalEntryId`.
 14. L'opération est **atomique** : si quoi que ce soit échoue, aucune trace — ni écriture, ni ligne, ni audit.
 15. `DELETE /api/v1/journal-entries/{id}` sur une origine **déjà contre-passée** rend **409 `ENTRY_IS_REVERSED`**, et non une violation de clé étrangère au message générique.
-16. `delete_all_by_company` réussit sur une société contenant une écriture **et sa contre-passation** — un test le verrouille, `reset_demo` en dépend, et l'échec serait **intermittent** (cf. D2 (a)).
+16. `delete_all_by_company` réussit sur une société contenant une écriture **et sa contre-passation** — un test le verrouille, dix teardowns en dépendent, et l'échec serait **intermittent** (cf. D2 (a)). Le doc-comment périmé de la fonction est corrigé dans le même geste.
 17. La lecture `GET /api/v1/journal-entries/{id}` expose `reversesEntryId`, `reversedByEntryId`, `reversable` et `reversalBlockedBy`. ⛔ **Ce sont les SIX CHEMINS FK qui sont testés, pas les codes** : `supplier_invoices.purchase_journal_entry_id` et `settlement_journal_entry_id` partagent `OWNED_BY_SUPPLIER_INVOICE` mais renvoient vers deux corrections différentes (`cancel` / #414) — un test par code laisserait le second **jamais exercé**. Soit 6 chemins FK + `ALREADY_REVERSED` + `IS_A_REVERSAL` + `ACCOUNT_ARCHIVED` = **9 tests**, chacun montant **une seule** cause.
 18. **Écran** : la fiche offre « Contre-passer », sous confirmation ; l'écriture contre-passée affiche un renvoi vers sa contre-passation, et réciproquement. Le bouton est **absent** — pas seulement désactivé — quand `reversable` est faux, et le motif est affiché en clair, traduit depuis `reversalBlockedBy`. La **liste** n'affiche rien de tout cela.
 19. Les libellés **d'écran** sont dans les **quatre** locales, sous le préfixe `journal-entries-`. Le libellé de l'écriture, lui, est un littéral français stocké en base (cf. D1).
@@ -336,7 +338,26 @@ La migration `20260828000002_journal_entries_reversal.sql` ajoute une colonne nu
 - les statuts sont figés : **409** pour un refus de propriété, **400** pour un compte archivé ou l'absence d'exercice ouvert ;
 - les 19 critères sont **renumérotés en continu** (les `9-bis` et `13-bis` de la passe 1 ont disparu).
 
-**Prochaine passe** : la sévérité reste `> LOW` (4 HIGH), donc passe 3 obligatoire. La sévérité **maximale recule** (CRITICAL → HIGH), donc le critère de splitting préventif n'est pas atteint. Huit findings sur onze portant sur la remédiation, la passe 3 sera **ciblée** — une seule lentille sur le seul commit de remédiation de la passe 2, prompt versionné à côté de ce fichier.
+### Passe 3 — 2026-08-28 · Sonnet 4.6, **passe ciblée** sur le seul commit `f308e5d6`
+
+Prompt versionné : `24-4a-review-prompt-regression-hunter-p3.md`.
+
+**0 CRITICAL, 2 HIGH, 0 MEDIUM, 0 LOW** — de onze findings à deux, et les deux portent encore sur la remédiation précédente.
+
+| # | sév. | ce qui clochait |
+|---|---|---|
+| P3-1 | HIGH | l'arbitrage « les champs dérivés sortent de la liste » a corrigé le paragraphe qui l'exigeait **et laissé la phrase d'introduction du même bloc** dire « et la liste exposent » — la spec se contredisait à neuf lignes d'écart |
+| P3-2 | HIGH | « ce chemin sert `reset_demo` (production) » est **faux** : `reset_demo` pose `SET FOREIGN_KEY_CHECKS=0` et fait ses propres `DELETE` (`kesh-seed/src/lib.rs:240`, `:260`). Les dix appelants sont tous des tests. L'affirmation était répétée à **quatre** endroits |
+
+⚠️ **P3-1 est le mode d'échec le plus documenté de ce dépôt** — la § *Propagation post-patch* du `CLAUDE.md` : corriger le site signalé et laisser la copie du symptôme à côté. Le grep du symptôme n'avait pas été fait sur « la liste ».
+
+⚠️ **P3-2 a une cause qu'il faut nommer : un doc-comment périmé.** `delete_all_by_company` se présente elle-même comme « utilisée par `reset_demo` », ce qui n'est plus vrai. La passe 2 l'a cru sur parole, et la spec a présenté comme un risque de production ce qui n'en était pas un — faussant la priorisation, pas le correctif. Le commentaire est désormais corrigé par la story.
+
+⛔ **Ce que la passe 3 a confirmé exact** : tous les numéros de ligne, noms de fonction, de contrainte et statuts HTTP ajoutés par la passe 2 ; la renumérotation des 19 critères, vérifiée point par point contre la liste d'avant — **aucun critère perdu**, tous les renvois internes justes ; et l'absence de question déléguée au développeur, le motif de la passe 2 n'étant pas reproduit.
+
+**Verdict de clôture** : la remédiation de cette passe **ne touche aucune décision de conception ni aucune ligne de code** — une phrase retirée, une affirmation factuelle corrigée à trois endroits, un doc-comment inscrit aux tâches. C'est le critère de clôture du `CLAUDE.md` (« tant que le correctif touche la production, la boucle n'est pas close » — ici il ne la touche pas). Le volume s'effondre de 11 à 2, la sévérité maximale reste HIGH mais ne régresse pas : pas de split.
+
+⚠️ **La décision de clore revient au Project Lead** : la lettre de la *Review Iteration Rule* (arrêt à « uniquement LOW ») demanderait une passe 4 ; sa clause de passe ciblée l'autorise à s'arrêter ici. Les deux lectures sont défendables, et c'est un arbitrage, pas un calcul.
 
 ## Dev Agent Record
 
