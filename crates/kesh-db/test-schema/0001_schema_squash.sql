@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 63 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 64 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -740,13 +740,16 @@ CREATE TABLE `journal_entries` (
   `version` int(11) NOT NULL DEFAULT 1,
   `created_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
   `updated_at` datetime(3) NOT NULL DEFAULT current_timestamp(3) ON UPDATE current_timestamp(3),
+  `reverses_entry_id` bigint(20) DEFAULT NULL COMMENT 'Écriture que celle-ci contre-passe. NULL = écriture ordinaire.',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_journal_entries_number` (`company_id`,`fiscal_year_id`,`entry_number`),
+  UNIQUE KEY `uq_journal_entries_reverses` (`reverses_entry_id`),
   KEY `idx_journal_entries_company_date` (`company_id`,`entry_date` DESC),
   KEY `idx_journal_entries_fiscal_year` (`fiscal_year_id`),
   FULLTEXT KEY `ft_journal_entries_description` (`description`),
   CONSTRAINT `fk_journal_entries_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`),
   CONSTRAINT `fk_journal_entries_fiscal_year` FOREIGN KEY (`fiscal_year_id`) REFERENCES `fiscal_years` (`id`),
+  CONSTRAINT `fk_journal_entries_reverses` FOREIGN KEY (`reverses_entry_id`) REFERENCES `journal_entries` (`id`),
   CONSTRAINT `chk_journal_entries_journal` CHECK (cast(`journal` as char charset binary) in (cast('Achats' as char charset binary),cast('Ventes' as char charset binary),cast('Banque' as char charset binary),cast('Caisse' as char charset binary),cast('OD' as char charset binary))),
   CONSTRAINT `chk_journal_entries_description_nonempty` CHECK (char_length(trim(`description`)) > 0),
   CONSTRAINT `chk_journal_entries_entry_number_positive` CHECK (`entry_number` > 0)

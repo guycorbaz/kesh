@@ -41,7 +41,7 @@
 
 use std::str::FromStr;
 
-use chrono::NaiveDate;
+use chrono::{NaiveDate, Utc};
 use rust_decimal::Decimal;
 use sqlx::mysql::MySqlPool;
 use sqlx::{QueryBuilder, Row};
@@ -51,13 +51,14 @@ use kesh_core::listing::{SortBy, SortDirection};
 use crate::entities::audit_log::NewAuditLogEntry;
 use crate::entities::{
     Journal, JournalEntry, JournalEntryLine, JournalEntryWithLines, NewJournalEntry,
+    NewJournalEntryLine,
 };
-use crate::errors::{DbError, map_db_error};
+use crate::errors::{ArchivedAccount, DbError, ReversalBlocker, map_db_error};
 use crate::repositories::audit_log;
 use crate::util::search::escape_boolean_ft;
 
 const ENTRY_COLUMNS: &str = "id, company_id, fiscal_year_id, entry_number, entry_date, journal, description, \
-     version, created_at, updated_at";
+     version, reverses_entry_id, created_at, updated_at";
 
 const LINE_COLUMNS: &str = "id, entry_id, account_id, line_order, debit, credit, project_id";
 
@@ -190,6 +191,47 @@ pub async fn create_in_tx(
     new: NewJournalEntry,
     enforce_postable: bool,
 ) -> Result<JournalEntryWithLines, DbError> {
+    create_in_tx_inner(
+        tx,
+        fiscal_year_id,
+        user_id,
+        new,
+        enforce_postable,
+        true,
+        None,
+    )
+    .await
+}
+
+/// Corps de [`create_in_tx`], avec les deux réglages que la contre-passation
+/// (Story 24-4a, #380) est seule à employer.
+///
+/// `enforce_project_taggable` — `true` partout sauf pour la contre-passation.
+/// Celle-ci **copie** les tags de projet de l'écriture d'origine, elle ne les
+/// choisit pas : les re-valider ferait échouer la correction d'une écriture dont
+/// un projet a été archivé depuis, c'est-à-dire rendrait cette écriture
+/// définitivement incorrigible. Le dépôt tranche déjà ainsi pour les flux
+/// automatiques document-level (cf. `pay_succeeds_when_project_archived_after_tagging`).
+///
+/// ⚠️ **L'asymétrie avec le compte archivé est VOULUE** : un compte archivé fait
+/// échouer la contre-passation (la garde `active = TRUE` de [`validate_accounts`]
+/// protège tous les flux, et poster sur un compte archivé le ressusciterait),
+/// alors qu'un projet archivé est toléré. Étiqueter une ligne n'est pas écrire
+/// dans un compte.
+///
+/// `reverses_entry_id` — l'écriture contre-passée, `None` pour toute écriture
+/// ordinaire. L'`UNIQUE` de la colonne porte l'idempotence **structurellement**,
+/// sans pré-`SELECT`, donc elle tient sous concurrence.
+#[allow(clippy::too_many_arguments)]
+async fn create_in_tx_inner(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    fiscal_year_id: i64,
+    user_id: i64,
+    new: NewJournalEntry,
+    enforce_postable: bool,
+    enforce_project_taggable: bool,
+    reverses_entry_id: Option<i64>,
+) -> Result<JournalEntryWithLines, DbError> {
     // Étape 0 : validation des projets analytiques par-ligne (Story 19-2).
     // AVANT le lock fiscal_years pour respecter l'ordre de verrouillage global
     // companies → projects → fiscal_years (Pattern 5) : le flux fournisseur 19-3
@@ -200,8 +242,10 @@ pub async fn create_in_tx(
     // (document-level 19-3) n'est PAS re-validé ici — les flux pay/cancel
     // stampent volontairement un projet potentiellement archivé après coup
     // (cf. test supplier `pay_succeeds_when_project_archived_after_tagging`).
-    let line_project_ids: Vec<i64> = new.lines.iter().filter_map(|l| l.project_id).collect();
-    super::projects::validate_taggable_in_tx(tx, new.company_id, &line_project_ids).await?;
+    if enforce_project_taggable {
+        let line_project_ids: Vec<i64> = new.lines.iter().filter_map(|l| l.project_id).collect();
+        super::projects::validate_taggable_in_tx(tx, new.company_id, &line_project_ids).await?;
+    }
 
     // Étape 1 : re-lock de l'exercice contre une clôture concurrente + bornes de dates.
     let fy_row: Option<(i64, String, NaiveDate, NaiveDate)> = sqlx::query_as(
@@ -258,20 +302,47 @@ pub async fn create_in_tx(
     .map_err(map_db_error)?;
 
     // Étape 4 : INSERT de l'en-tête.
-    let header_result = sqlx::query(
-        "INSERT INTO journal_entries \
-         (company_id, fiscal_year_id, entry_number, entry_date, journal, description) \
-         VALUES (?, ?, ?, ?, ?, ?)",
-    )
-    .bind(new.company_id)
-    .bind(fiscal_year_id)
-    .bind(next_number)
-    .bind(new.entry_date)
-    .bind(new.journal)
-    .bind(&new.description)
-    .execute(&mut **tx)
-    .await
-    .map_err(map_db_error)?;
+    //
+    // ⛔ **La colonne `reverses_entry_id` n'entre dans l'INSERT que si elle a
+    // quelque chose à dire.** Ce n'est pas une coquetterie : plusieurs tests du
+    // dépôt montent le schéma à un point de migration ANTÉRIEUR puis exercent le
+    // vrai chemin applicatif (`invoice_lines_revenue_account_backfill`). Nommer
+    // une colonne née le 2026-08-28 dans un INSERT joué contre le schéma de
+    // juillet donne `1054 Unknown column` — un rouge sur un fichier que la story
+    // ne touche pas, et que seul le gate réellement exécuté révèle.
+    let header_result = if let Some(reverses) = reverses_entry_id {
+        sqlx::query(
+            "INSERT INTO journal_entries \
+             (company_id, fiscal_year_id, entry_number, entry_date, journal, description, \
+              reverses_entry_id) \
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(new.company_id)
+        .bind(fiscal_year_id)
+        .bind(next_number)
+        .bind(new.entry_date)
+        .bind(new.journal)
+        .bind(&new.description)
+        .bind(reverses)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_error)?
+    } else {
+        sqlx::query(
+            "INSERT INTO journal_entries \
+             (company_id, fiscal_year_id, entry_number, entry_date, journal, description) \
+             VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .bind(new.company_id)
+        .bind(fiscal_year_id)
+        .bind(next_number)
+        .bind(new.entry_date)
+        .bind(new.journal)
+        .bind(&new.description)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_error)?
+    };
 
     let last_id = header_result.last_insert_id();
     if last_id == 0 {
@@ -1189,6 +1260,16 @@ pub(crate) async fn delete_in_tx(
         return Err(DbError::FiscalYearClosed);
     }
 
+    // Étape 3-bis (Story 24-4a, #380) : une écriture CONTRE-PASSÉE ne se
+    // supprime plus — la supprimer effacerait la correction, ce que l'art. 958f
+    // CO interdit précisément.
+    //
+    // ⚠️ La FK `RESTRICT` refuserait de toute façon, mais avec une 1451 au
+    // message opaque. La garde est ici pour que l'utilisateur lise POURQUOI.
+    if reversed_by(&mut **tx, company_id, id).await?.is_some() {
+        return Err(DbError::EntryIsReversed);
+    }
+
     // Étape 4 : snapshot avant suppression.
     let before_entry: JournalEntry = sqlx::query_as::<_, JournalEntry>(&format!(
         "SELECT {ENTRY_COLUMNS} FROM journal_entries WHERE id = ?"
@@ -1283,17 +1364,396 @@ pub async fn list_all_lines_by_company(
     .map_err(map_db_error)
 }
 
-/// Supprime toutes les écritures d'une company (utilisé par `reset_demo`).
+/// Supprime toutes les écritures d'une company.
 ///
 /// Les lignes suivent par `ON DELETE CASCADE`.
+///
+/// ⚠️ **Ce doc-comment annonçait « utilisé par `reset_demo` » — c'était faux**, et
+/// cette erreur a coûté une passe de revue à la Story 24-4a. `reset_demo`
+/// (`kesh-seed`) pose `SET FOREIGN_KEY_CHECKS=0` et fait ses propres `DELETE` en
+/// SQL brut ; il n'emprunte pas ce chemin. Les seuls appelants sont les
+/// **teardowns des tests** de ce module. Un commentaire périmé coûte ce qu'un
+/// compteur faux coûte ailleurs.
+///
+/// ⛔ **Le `NULL` préalable n'est pas un raffinement, il est nécessaire.**
+/// `reverses_entry_id` est une clé étrangère **auto-référente** en `RESTRICT`, et
+/// InnoDB vérifie les FK **ligne par ligne, sans différer** : sur un `DELETE`
+/// monolithique, si l'origine est traitée avant sa contre-passation, la
+/// contrainte déclenche une 1451. Le résultat dépendrait donc de l'ordre de
+/// parcours — un échec **intermittent**, ce qui est pire qu'un échec franc.
 pub async fn delete_all_by_company(pool: &MySqlPool, company_id: i64) -> Result<u64, DbError> {
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+    sqlx::query("UPDATE journal_entries SET reverses_entry_id = NULL WHERE company_id = ?")
+        .bind(company_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
     let rows = sqlx::query("DELETE FROM journal_entries WHERE company_id = ?")
         .bind(company_id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await
         .map_err(map_db_error)?
         .rows_affected();
+    tx.commit().await.map_err(map_db_error)?;
     Ok(rows)
+}
+
+/// Recense ce qui **empêche** de contre-passer une écriture (Story 24-4a, #380).
+///
+/// Rend `None` quand l'écriture est contre-passable, et `Some((motif, id de la
+/// pièce))` sinon. ⛔ **Une seule requête** : les sept causes se calculent par
+/// sous-requêtes corrélées, jamais par sept allers-retours.
+///
+/// ⚠️ La **précédence** est celle de l'ordre des tests ci-dessous, et elle est
+/// figée : les causes se cumulent, et le champ exposé à l'écran est scalaire.
+///
+/// ⚠️ **Le compte archivé EST évalué ici**, en dernier de la précédence — parce
+/// que l'AC 11 exige que l'écran masque le bouton **avant** le clic. Ne le
+/// contrôler qu'à l'écriture ferait afficher un bouton qui échoue.
+///
+/// Son refus à l'ÉCRITURE reste un **400** qui NOMME les comptes à réactiver
+/// ([`DbError::ReversalAccountsArchived`]) ; ce code-ci ne sert que la lecture.
+pub async fn reversal_blocker<'e, E>(
+    executor: E,
+    company_id: i64,
+    id: i64,
+) -> Result<Option<(ReversalBlocker, Option<i64>, Option<String>)>, DbError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::MySql>,
+{
+    /// Les sept causes de blocage, telles que la requête les rend.
+    ///
+    /// ⚠️ Une struct nommée plutôt qu'un 7-uplet : `clippy::type_complexity`
+    /// refuse le second, et il avait surtout l'inconvénient de rendre l'ordre
+    /// des colonnes muet — sept `Option<i64>` d'affilée ne se relisent pas.
+    #[derive(sqlx::FromRow)]
+    struct BlockerRow {
+        reverses_entry_id: Option<i64>,
+        reversed_by: Option<i64>,
+        invoice_id: Option<i64>,
+        invoice_number: Option<String>,
+        credit_note_id: Option<i64>,
+        credit_note_number: Option<String>,
+        supplier_invoice_id: Option<i64>,
+        supplier_invoice_number: Option<String>,
+        settlement_id: Option<i64>,
+        bank_transaction_id: Option<i64>,
+        archived_account_number: Option<String>,
+    }
+
+    let row: Option<BlockerRow> = sqlx::query_as(
+        "SELECT \
+           je.reverses_entry_id, \
+           (SELECT r.id FROM journal_entries r \
+             WHERE r.reverses_entry_id = je.id AND r.company_id = je.company_id LIMIT 1) AS reversed_by, \
+           (SELECT i.id FROM invoices i WHERE i.journal_entry_id = je.id LIMIT 1) AS invoice_id, \
+           (SELECT i.invoice_number FROM invoices i WHERE i.journal_entry_id = je.id LIMIT 1) AS invoice_number, \
+           (SELECT c.id FROM credit_notes c WHERE c.journal_entry_id = je.id LIMIT 1) AS credit_note_id, \
+           (SELECT c.credit_note_number FROM credit_notes c WHERE c.journal_entry_id = je.id LIMIT 1) AS credit_note_number, \
+           (SELECT s.id FROM supplier_invoices s \
+             WHERE s.purchase_journal_entry_id = je.id OR s.settlement_journal_entry_id = je.id \
+             LIMIT 1) AS supplier_invoice_id, \
+           (SELECT s.supplier_invoice_number FROM supplier_invoices s \
+             WHERE s.purchase_journal_entry_id = je.id OR s.settlement_journal_entry_id = je.id \
+             LIMIT 1) AS supplier_invoice_number, \
+           (SELECT st.id FROM invoice_settlements st WHERE st.journal_entry_id = je.id LIMIT 1) AS settlement_id, \
+           (SELECT bt.id FROM bank_transactions bt WHERE bt.matched_entry_id = je.id LIMIT 1) AS bank_transaction_id, \
+           (SELECT a.number FROM journal_entry_lines jel \
+             JOIN accounts a ON a.id = jel.account_id \
+             WHERE jel.entry_id = je.id AND a.active = FALSE \
+             ORDER BY a.number LIMIT 1) AS archived_account_number \
+         FROM journal_entries je \
+         WHERE je.id = ? AND je.company_id = ?",
+    )
+    .bind(id)
+    .bind(company_id)
+    .fetch_optional(executor)
+    .await
+    .map_err(map_db_error)?;
+
+    let row = row.ok_or(DbError::NotFound)?;
+
+    // ⚠️ Ordre = précédence. Ne pas réordonner sans réordonner la spec (D6).
+    // ⚠️ Le NUMÉRO de la pièce accompagne son identifiant quand il existe : un
+    // message qui dit « la facture F-2026-014 » se comprend, un `documentId: 47`
+    // ne se comprend pas. Toutes les pièces n'en ont pas — un règlement et une
+    // transaction bancaire n'ont que leur identifiant.
+    let blocker = if row.reverses_entry_id.is_some() {
+        Some((ReversalBlocker::IsAReversal, row.reverses_entry_id, None))
+    } else if row.reversed_by.is_some() {
+        Some((ReversalBlocker::AlreadyReversed, row.reversed_by, None))
+    } else if row.invoice_id.is_some() {
+        Some((
+            ReversalBlocker::OwnedByInvoice,
+            row.invoice_id,
+            row.invoice_number,
+        ))
+    } else if row.credit_note_id.is_some() {
+        Some((
+            ReversalBlocker::OwnedByCreditNote,
+            row.credit_note_id,
+            row.credit_note_number,
+        ))
+    } else if row.supplier_invoice_id.is_some() {
+        Some((
+            ReversalBlocker::OwnedBySupplierInvoice,
+            row.supplier_invoice_id,
+            row.supplier_invoice_number,
+        ))
+    } else if row.settlement_id.is_some() {
+        Some((ReversalBlocker::OwnedBySettlement, row.settlement_id, None))
+    } else if row.bank_transaction_id.is_some() {
+        Some((
+            ReversalBlocker::MatchedBankTransaction,
+            row.bank_transaction_id,
+            None,
+        ))
+    } else if row.archived_account_number.is_some() {
+        // ⛔ En dernier : c'est le seul motif que l'utilisateur peut lever
+        // lui-même (réactiver le compte), et l'annoncer avant un motif de
+        // propriété ferait croire qu'une facture deviendrait contre-passable.
+        //
+        // ⚠️ L'étiquette porte le **numéro du compte**, et `document_id` reste
+        // `None` : un compte n'est pas une pièce. Sans ce numéro, l'écran dirait
+        // « réactivez-LE » sans dire lequel, sur une écriture qui peut porter dix
+        // lignes — le refus qui NOMME (le 400 de l'écriture) étant devenu
+        // inatteignable depuis que le bouton est masqué. *(Passe 2 de revue.)*
+        Some((
+            ReversalBlocker::AccountArchived,
+            None,
+            row.archived_account_number,
+        ))
+    } else {
+        None
+    };
+    Ok(blocker)
+}
+
+/// Rend l'écriture qui **contre-passe** celle-ci, s'il en existe une.
+///
+/// Dérivé de l'`UNIQUE` — pas de seconde colonne à tenir cohérente (D2).
+///
+/// ⚠️ **Scopée par `company_id` par DÉFENSE EN PROFONDEUR.** Aujourd'hui une
+/// contre-passation naît toujours dans la société de son origine ([`reverse`]
+/// reprend le `company_id` de l'appelant), si bien que le filtre est redondant.
+/// Mais la sûreté de la lecture reposerait alors entièrement sur un invariant
+/// d'ÉCRITURE, que rien n'oblige à tenir — et `reversal_blocker`, elle, filtre.
+/// Deux lectures voisines qui ne se scopent pas pareil finissent par diverger.
+pub async fn reversed_by<'e, E>(
+    executor: E,
+    company_id: i64,
+    id: i64,
+) -> Result<Option<i64>, DbError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::MySql>,
+{
+    sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM journal_entries WHERE reverses_entry_id = ? AND company_id = ?",
+    )
+    .bind(id)
+    .bind(company_id)
+    .fetch_optional(executor)
+    .await
+    .map_err(map_db_error)
+}
+
+/// Contre-passe une écriture : crée l'écriture **inverse** (Story 24-4a, #380).
+///
+/// ⛔ **L'écriture d'origine n'est pas touchée** — ni ses lignes, ni sa date, ni
+/// son `entry_number`, ni sa `version`. Corriger, en comptabilité, c'est ajouter
+/// une écriture, jamais en réécrire une (art. 958f CO, Olico art. 3).
+///
+/// Séquence, calquée sur `supplier_invoices::cancel` :
+/// 1. verrou `FOR UPDATE` sur l'origine + recensement des empêchements ;
+/// 2. relecture des lignes **`ORDER BY line_order`** et inversion `D ↔ C` ;
+/// 3. exercice **ouvert** couvrant **la date du jour** ;
+/// 4. création au journal `OD`, `enforce_postable = false`, projets non re-validés ;
+/// 5. audit `journal_entry.reversed`.
+///
+/// ⚠️ La contre-passation porte la date du **jour**, jamais celle de l'origine :
+/// une origine dans un exercice clos serait sinon incorrigible, et dater la
+/// correction du jour de l'erreur la rendrait invisible dans la période où elle
+/// a été décidée.
+pub async fn reverse(
+    pool: &MySqlPool,
+    company_id: i64,
+    id: i64,
+    user_id: i64,
+) -> Result<JournalEntryWithLines, DbError> {
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    let result = async {
+        // (1) Verrou sur l'origine, puis recensement des empêchements.
+        let origin: Option<(i64, i64, String)> = sqlx::query_as(
+            "SELECT je.id, je.entry_number, fy.name \
+             FROM journal_entries je \
+             JOIN fiscal_years fy ON fy.id = je.fiscal_year_id \
+             WHERE je.id = ? AND je.company_id = ? FOR UPDATE",
+        )
+        .bind(id)
+        .bind(company_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
+        let (_, entry_number, origin_fy_name) = origin.ok_or(DbError::NotFound)?;
+
+        // ⛔ **`AccountArchived` est le seul motif que l'ÉCRITURE ne traite pas
+        // ici.** Le recensement le rend pour que l'écran masque le bouton avant
+        // le clic (AC 11) ; mais s'arrêter dessus produirait un 409 muet, là où
+        // l'écriture doit rendre un **400 qui NOMME les comptes à réactiver**
+        // (étape 3 ci-dessous). Un refus qui ne dit pas quel compte n'est pas
+        // utilisable.
+        match reversal_blocker(&mut *tx, company_id, id).await? {
+            Some((ReversalBlocker::AccountArchived, _, _)) | None => {}
+            Some((blocker, document_id, document_label)) => {
+                return Err(DbError::EntryNotReversable {
+                    blocker,
+                    document_id,
+                    document_label,
+                });
+            }
+        }
+
+        // (2) Lignes de l'origine, dans l'ordre CONTRACTUEL, inversées D ↔ C.
+        //
+        // ⛔ `ORDER BY line_order` et non `id` : `uq_jel_entry_order` fait de
+        // `line_order` la position, et le `project_id` se reprend POSITIONNELLEMENT
+        // — une écriture manuelle porte un tag par ligne (Story 19-2), là où le
+        // gabarit `cancel` n'a qu'un projet document-level à propager.
+        let origin_lines: Vec<(i64, Decimal, Decimal, Option<i64>)> = sqlx::query_as(
+            "SELECT account_id, debit, credit, project_id FROM journal_entry_lines \
+             WHERE entry_id = ? ORDER BY line_order",
+        )
+        .bind(id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
+        if origin_lines.is_empty() {
+            return Err(DbError::Invariant(
+                "écriture sans ligne : rien à contre-passer".into(),
+            ));
+        }
+
+        // (3) Comptes archivés depuis — refus qui NOMME, cf. `ReversalAccountsArchived`.
+        let account_ids: Vec<i64> = origin_lines.iter().map(|(a, _, _, _)| *a).collect();
+        let archived = archived_accounts_in_tx(&mut tx, company_id, &account_ids).await?;
+        if !archived.is_empty() {
+            return Err(DbError::ReversalAccountsArchived(archived));
+        }
+
+        let reversal_lines: Vec<NewJournalEntryLine> = origin_lines
+            .iter()
+            .map(
+                |(account_id, debit, credit, project_id)| NewJournalEntryLine {
+                    account_id: *account_id,
+                    debit: *credit,
+                    credit: *debit,
+                    project_id: *project_id,
+                },
+            )
+            .collect();
+
+        // (4) Exercice ouvert du JOUR.
+        let today = Utc::now().date_naive();
+        let fy = super::fiscal_years::find_open_covering_date(&mut tx, company_id, today)
+            .await?
+            .ok_or(DbError::FiscalYearInvalid)?;
+
+        // Le nom de l'exercice DE L'ORIGINE lève l'ambiguïté du numéro, qui
+        // REPART À 1 à chaque exercice. Celui de la contre-passation
+        // n'apprendrait rien.
+        let description = if fy.name == origin_fy_name {
+            format!("Contre-passation écriture n° {entry_number}")
+        } else {
+            format!("Contre-passation écriture n° {entry_number} ({origin_fy_name})")
+        };
+
+        let created = create_in_tx_inner(
+            &mut tx,
+            fy.id,
+            user_id,
+            NewJournalEntry {
+                company_id,
+                entry_date: today,
+                journal: Journal::OD,
+                description,
+                // ⛔ `None` au niveau document : les projets sont repris PAR LIGNE.
+                project_id: None,
+                lines: reversal_lines,
+            },
+            // Les comptes viennent de l'origine : exiger la postabilité rendrait
+            // l'écriture incorrigible à cause d'un changement de config postérieur.
+            false,
+            // Idem pour les projets — les tags sont COPIÉS, pas choisis.
+            false,
+            Some(id),
+        )
+        .await?;
+
+        audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry::user(
+                user_id,
+                "journal_entry.reversed".to_string(),
+                "journal_entry".to_string(),
+                id,
+                Some(serde_json::json!({
+                    "reversalJournalEntryId": created.entry.id,
+                })),
+            ),
+        )
+        .await?;
+
+        Ok(created)
+    }
+    .await;
+
+    match result {
+        Ok(created) => {
+            tx.commit().await.map_err(map_db_error)?;
+            Ok(created)
+        }
+        Err(e) => {
+            let _ = tx.rollback().await;
+            Err(e)
+        }
+    }
+}
+
+/// Les comptes de `account_ids` qui sont **archivés** (`active = FALSE`).
+///
+/// ⛔ Existe parce que `enforce_postable = false` NE lève PAS la garde
+/// `active = TRUE` de [`validate_accounts`], qui est inconditionnelle.
+async fn archived_accounts_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    account_ids: &[i64],
+) -> Result<Vec<ArchivedAccount>, DbError> {
+    if account_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let placeholders = account_ids
+        .iter()
+        .map(|_| "?")
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "SELECT id, number FROM accounts \
+         WHERE company_id = ? AND active = FALSE AND id IN ({placeholders}) \
+         ORDER BY number"
+    );
+    let mut q = sqlx::query_as::<_, (i64, String)>(&sql).bind(company_id);
+    for id in account_ids {
+        q = q.bind(id);
+    }
+    let rows = q.fetch_all(&mut **tx).await.map_err(map_db_error)?;
+    Ok(rows
+        .into_iter()
+        .map(|(account_id, account_number)| ArchivedAccount {
+            account_id,
+            account_number: Some(account_number),
+        })
+        .collect())
 }
 
 #[cfg(test)]

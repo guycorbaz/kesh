@@ -328,6 +328,26 @@ journal-entries-sort-asc-indicator = sorted ascending
 journal-entries-sort-desc-indicator = sorted descending
 journal-entries-loading = Loading…
 
+# Story 24-4a (#380) — reversing a journal entry.
+journal-entries-reverse-action = Reverse
+journal-entries-reverse-dialog-title = Reverse this entry?
+journal-entries-reverse-dialog-body = Kesh will create an opposite entry dated today. The original entry stays untouched: a correction must be visible, not disappear.
+journal-entries-reverse-confirm = Reverse
+journal-entries-reverse-cancel = Cancel
+journal-entries-reverse-success = Entry reversed
+journal-entries-reverses-link = Reverses entry no. { $number }
+journal-entries-reversed-by-link = Reversed by entry no. { $number }
+journal-entries-reverse-blocked-is-a-reversal = This entry is itself a reversal.
+journal-entries-reverse-blocked-already-reversed = This entry has already been reversed.
+journal-entries-reverse-blocked-invoice = This entry belongs to a customer invoice: correct it with a credit note.
+journal-entries-reverse-blocked-credit-note = This entry belongs to a credit note, which is already a reversal.
+journal-entries-reverse-blocked-supplier-invoice = This entry belongs to a supplier invoice: cancel the invoice.
+journal-entries-reverse-blocked-settlement = This entry is an invoice settlement: reversing it will come with settlement reversal.
+journal-entries-reverse-blocked-bank-match = This entry is reconciled with a bank transaction.
+journal-entries-reverse-blocked-account-archived = An account of this entry has been archived: reactivate it to be able to reverse.
+journal-entries-reverse-account-archived = Cannot reverse — archived account(s): { $detail }. Reactivate the accounts concerned.
+journal-entries-delete-blocked-reversed = This entry has been reversed: it can no longer be deleted.
+
 # Bilingual tooltips for accounting terms (Story 3.5)
 tooltip-debit-natural = Money comes into this account
 tooltip-debit-technical = Debit — left column

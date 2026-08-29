@@ -322,6 +322,26 @@ journal-entries-sort-asc-indicator = tri ascendant
 journal-entries-sort-desc-indicator = tri descendant
 journal-entries-loading = Chargement…
 
+# Story 24-4a (#380) — la contre-passation d'une écriture.
+journal-entries-reverse-action = Contre-passer
+journal-entries-reverse-dialog-title = Contre-passer cette écriture ?
+journal-entries-reverse-dialog-body = Kesh créera une écriture inverse à la date du jour. L'écriture d'origine reste intacte : c'est la correction qui doit se voir, pas disparaître.
+journal-entries-reverse-confirm = Contre-passer
+journal-entries-reverse-cancel = Annuler
+journal-entries-reverse-success = Écriture contre-passée
+journal-entries-reverses-link = Contre-passe l'écriture n° { $number }
+journal-entries-reversed-by-link = Contre-passée par l'écriture n° { $number }
+journal-entries-reverse-blocked-is-a-reversal = Cette écriture est elle-même une contre-passation.
+journal-entries-reverse-blocked-already-reversed = Cette écriture a déjà été contre-passée.
+journal-entries-reverse-blocked-invoice = Cette écriture appartient à une facture client : corrigez-la par un avoir.
+journal-entries-reverse-blocked-credit-note = Cette écriture est celle d'un avoir, qui est déjà une contre-passation.
+journal-entries-reverse-blocked-supplier-invoice = Cette écriture appartient à une facture fournisseur : annulez la facture.
+journal-entries-reverse-blocked-settlement = Cette écriture est un règlement de facture : son annulation viendra avec la contre-passation des règlements.
+journal-entries-reverse-blocked-bank-match = Cette écriture est rapprochée d'une transaction bancaire.
+journal-entries-reverse-blocked-account-archived = Un compte de cette écriture a été archivé : réactivez-le pour pouvoir la contre-passer.
+journal-entries-reverse-account-archived = Impossible de contre-passer — compte(s) archivé(s) : { $detail }. Réactivez le ou les comptes concernés.
+journal-entries-delete-blocked-reversed = Cette écriture a été contre-passée : elle ne peut plus être supprimée.
+
 # Tooltips bilingues termes comptables (Story 3.5)
 tooltip-debit-natural = L'argent entre dans ce compte
 tooltip-debit-technical = Débit — colonne de gauche

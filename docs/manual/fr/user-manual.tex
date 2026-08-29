@@ -411,18 +411,40 @@ suppression est définitive.
 Dès que l'exercice est \textbf{clôturé}, ni l'une ni l'autre n'est possible : toute
 tentative est refusée.
 
-\begin{keshwarning}[title=\faExclamationTriangle\ Ce que le logiciel ne fait pas à votre place]
-Kesh \textbf{n'impose pas} la correction par contre-passation, et \textbf{n'empêche pas} la
-suppression d'une écriture déjà comptabilisée. Les modifications et les suppressions sont
-enregistrées dans le journal d'audit interne, mais \textbf{ce journal n'est pas consultable
-depuis l'application} : vous ne pouvez donc pas produire, aujourd'hui, l'historique des
-corrections apportées à vos écritures.
+\subsection{Corriger une écriture : la contre-passation}
+
+Sur la fiche d'une écriture, le bouton \textbf{Contre-passer} crée l'\textbf{écriture
+inverse} --- mêmes comptes, débit et crédit échangés --- à la date du jour, dans l'exercice
+ouvert. \textbf{L'écriture d'origine n'est pas touchée} : les deux restent visibles au grand
+livre, et chacune renvoie à l'autre depuis sa fiche. C'est ce que l'art.~958f CO et l'Olico
+exigent --- non pas qu'on ne se trompe jamais, mais que \textbf{la correction soit
+apparente}.
+
+Le lien figure aussi dans l'export comptable complet (colonne
+\texttt{reverses\_entry\_id} du fichier \texttt{journal\_entries.csv}), afin qu'une
+fiduciaire ou un organe de révision le retrouve sans ouvrir le logiciel.
+
+Une écriture n'est pas toujours contre-passable, et l'écran vous dit alors pourquoi plutôt
+que de vous laisser essayer~: une écriture qui appartient à une \textbf{pièce} se corrige
+par le chemin de cette pièce (une facture client par un \textbf{avoir}, une facture
+fournisseur par son \textbf{annulation}), une écriture déjà contre-passée ne l'est pas deux
+fois, et une écriture dont un \textbf{compte a été archivé} attend que vous réactiviez ce
+compte --- son numéro vous est indiqué.
+
+\begin{keshwarning}[title=\faExclamationTriangle\ Ce que le logiciel ne fait pas encore à votre place]
+Kesh \textbf{n'empêche pas} encore la modification ni la suppression d'une écriture déjà
+comptabilisée~: la contre-passation est \textbf{offerte}, elle n'est pas encore
+\textbf{imposée}. Les modifications et les suppressions sont enregistrées dans le journal
+d'audit interne, mais \textbf{ce journal n'est pas consultable depuis l'application} : vous
+ne pouvez donc pas produire, aujourd'hui, l'historique complet des corrections apportées à
+vos écritures.
+
+Une seule exception, déjà en vigueur~: une écriture \textbf{déjà contre-passée} ne peut plus
+être supprimée --- la supprimer effacerait la correction.
 
 Si vos livres doivent être opposables --- à une fiduciaire, à un organe de révision, à
-l'administration fiscale ---, l'art.~958f CO et l'Olico exigent que toute correction soit
-\textbf{apparente}. Cela suppose de \textbf{contre-passer vous-même} plutôt que de modifier
-ou de supprimer~: saisissez une écriture inverse, puis l'écriture correcte. Les deux restent
-visibles, et la correction se lit dans les livres.
+l'administration fiscale ---, \textbf{préférez la contre-passation} à la modification et à
+la suppression, tant que le logiciel vous laisse le choix.
 \end{keshwarning}
 
 \subsection{Numérotation}
@@ -1566,9 +1588,13 @@ Selon l'action :
 
 \begin{itemize}
     \item Écriture, exercice ouvert : modification ou suppression possible (rôles
-          administrateur et comptable). \textbf{Préférez la contre-passation} --- saisir
-          l'écriture inverse --- si vos livres doivent rester opposables : la correction
-          reste alors visible.
+          administrateur et comptable). \textbf{Préférez le bouton \og Contre-passer \fg{}}
+          de la fiche de l'écriture si vos livres doivent rester opposables : Kesh crée
+          l'écriture inverse, garde l'origine, et lie les deux --- la correction reste
+          visible. Une écriture \textbf{déjà contre-passée} ne peut plus être supprimée.
+    \item Écriture appartenant à une pièce (facture, avoir, facture fournisseur,
+          règlement, rapprochement) : elle n'est pas contre-passable directement --- passez
+          par le chemin de la pièce, que l'écran vous indique.
     \item Écriture, exercice clôturé : ni modification ni suppression. Il faut rouvrir
           l'exercice (administrateur, avec motif) ou passer une écriture sur l'exercice
           courant.

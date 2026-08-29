@@ -90,8 +90,29 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * de la **donnée**, jamais du libellé traduisible : classe `conforme`, qui passe donc de
  * 35 à 36. Le patron est celui de `journalLabel`, quelques lignes plus haut, qui délègue à
  * `i18nMsg` parce que « Banque » y est, lui, un mot de la langue.
+ *
+ * ⚠️ **42 → 43, et la déclaration est NOMMÉE avant que le chiffre ne bouge** :
+ * `blockedLabel` (`routes/(app)/journal-entries/[id]/+page.svelte`), née de la
+ * contre-passation (#380). Elle traduit le **code** de blocage rendu par le serveur —
+ * `OWNED_BY_INVOICE`, `ALREADY_REVERSED`… — et ses huit branches délèguent toutes à
+ * `i18nMsg`. Un `switch` exhaustif plutôt qu'une table indexée, pour qu'un code neuf
+ * fasse rougir le type-check au lieu d'afficher du vide.
+ *
+ * ⚠️ **Elle a changé de classe TROIS FOIS en une journée, et l'oscillation dit quelque
+ * chose de juste** : cette ventilation ne mesure pas une qualité, elle mesure un fait —
+ * *la fonction rend-elle un littéral ?* Livrée avec `default: return ''`, elle tombait en
+ * `ecartee`. La passe 2 de revue a remplacé ce `default` par une affectation à `never` et
+ * `return _exhaustif` : plus aucun littéral, donc `conforme`. La passe 3 a montré que
+ * `return _exhaustif` rend, **à l'exécution**, le code brut non traduit — `never` n'étant
+ * qu'une fiction de compilation. La forme finale garde les deux protections
+ * (`void _exhaustif; return '';`), et le littéral revient : `ecartee` **7**, `conforme`
+ * **36**. Le total, lui, n'a jamais bougé.
+ *
+ * *(Chacune des trois écritures de ce paragraphe a suivi la lecture de la ventilation
+ * réelle, jamais l'inverse : ce garde-fou interdit d'ajuster un chiffre sans le
+ * recompter, et sa toute première rédaction annonçait `conforme` sans l'avoir vérifié.)*
  */
-const CANDIDATES_ATTENDUES = 42;
+const CANDIDATES_ATTENDUES = 43;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -608,7 +629,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 6, conforme: 36 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 7, conforme: 36 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

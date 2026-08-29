@@ -337,6 +337,12 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             put(routes::journal_entries::update_journal_entry)
                 .delete(routes::journal_entries::delete_journal_entry),
         )
+        // Story 24-4a (#380) — contre-passation. ⛔ Sous `comptable_routes` comme
+        // create/update/delete : Consultation ne contre-passe pas.
+        .route(
+            "/api/v1/journal-entries/{id}/reverse",
+            post(routes::journal_entries::reverse_journal_entry),
+        )
         // Story 14-4 : bilan d'ouverture (soldes de départ) — Comptable+.
         // Le GET /status est ici aussi (PAS authenticated_routes qui
         // laisserait passer Consultation, P1-M2-ECH).

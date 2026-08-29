@@ -121,9 +121,41 @@ pub struct JournalEntryResponse {
     pub journal: CoreJournal,
     pub description: String,
     pub version: i32,
+    /// Écriture que celle-ci contre-passe (Story 24-4a, #380).
+    pub reverses_entry_id: Option<i64>,
     pub lines: Vec<JournalEntryLineResponse>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+}
+
+/// Détail d'une écriture, enrichi de quoi DÉCIDER côté écran (Story 24-4a).
+///
+/// ⛔ Ces trois champs vivent sur le **détail seul**, jamais sur la liste
+/// paginée : aucun écran ne les y consomme, et les calculer par ligne
+/// obligerait à joindre cinq tables plus `journal_entry_lines` → `accounts`.
+///
+/// Sans eux, l'écran devinerait — il ne pourrait ni masquer le bouton ni dire
+/// pourquoi, et se rabattrait sur un 409 découvert APRÈS le clic.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JournalEntryDetailResponse {
+    #[serde(flatten)]
+    pub entry: JournalEntryResponse,
+    /// Écriture qui contre-passe celle-ci. **Dérivé** de l'`UNIQUE`, pas une
+    /// colonne — une seconde colonne serait un second état à tenir cohérent.
+    pub reversed_by_entry_id: Option<i64>,
+    pub reversable: bool,
+    /// Code canonique du motif, `null` si `reversable`. ⚠️ Un code, jamais une
+    /// phrase : la traduction se fait à l'écran, dans les quatre locales.
+    pub reversal_blocked_by: Option<String>,
+    /// **Étiquette** de ce qui bloque — numéro de pièce, ou numéro du compte
+    /// archivé.
+    ///
+    /// ⛔ Sans elle, l'écran dirait « réactivez-**le** » sans dire lequel : le
+    /// refus qui NOMME les comptes est un 400 de l'ÉCRITURE, devenu
+    /// inatteignable depuis que le bouton est masqué avant le clic.
+    /// *(Relevé en passe 2 de revue de code.)*
+    pub reversal_blocked_label: Option<String>,
 }
 
 impl From<JournalEntryLine> for JournalEntryLineResponse {
@@ -149,6 +181,7 @@ fn convert_entry(entry: JournalEntry, lines: Vec<JournalEntryLine>) -> JournalEn
         journal: entry.journal.into(),
         description: entry.description,
         version: entry.version,
+        reverses_entry_id: entry.reverses_entry_id,
         lines: lines
             .into_iter()
             .map(JournalEntryLineResponse::from)
@@ -404,14 +437,44 @@ pub async fn get_journal_entry(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
-) -> Result<Json<JournalEntryResponse>, AppError> {
+) -> Result<Json<JournalEntryDetailResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
 
     let entry = journal_entries::find_by_id(&state.pool, company.id, id)
         .await?
         .ok_or(AppError::Database(kesh_db::errors::DbError::NotFound))?;
 
-    Ok(Json(JournalEntryResponse::from(entry)))
+    let blocker = journal_entries::reversal_blocker(&state.pool, company.id, id).await?;
+    let reversed_by_entry_id = journal_entries::reversed_by(&state.pool, company.id, id).await?;
+
+    Ok(Json(JournalEntryDetailResponse {
+        entry: JournalEntryResponse::from(entry),
+        reversed_by_entry_id,
+        reversable: blocker.is_none(),
+        reversal_blocked_by: blocker.as_ref().map(|(b, _, _)| b.code().to_string()),
+        reversal_blocked_label: blocker.and_then(|(_, _, label)| label),
+    }))
+}
+
+/// POST /api/v1/journal-entries/{id}/reverse — contre-passe une écriture.
+///
+/// ⛔ **Crée une écriture, n'en modifie aucune.** L'origine reste intacte : c'est
+/// l'exigence de l'art. 958f CO — la correction doit être apparente, non
+/// substituée à ce qu'elle corrige.
+pub async fn reverse_journal_entry(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+) -> Result<(StatusCode, Json<JournalEntryResponse>), AppError> {
+    let company = get_company_for(&current_user, &state.pool).await?;
+
+    let created =
+        journal_entries::reverse(&state.pool, company.id, id, current_user.user_id).await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(JournalEntryResponse::from(created)),
+    ))
 }
 
 /// POST /api/v1/journal-entries — crée une écriture en partie double.

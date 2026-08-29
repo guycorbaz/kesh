@@ -134,6 +134,13 @@ pub struct JournalEntry {
     pub journal: Journal,
     pub description: String,
     pub version: i32,
+    /// Écriture que celle-ci contre-passe (Story 24-4a, #380). `None` = écriture
+    /// ordinaire.
+    ///
+    /// ⚠️ Le renvoi INVERSE — « quelle écriture me contre-passe ? » — n'a pas de
+    /// colonne : il se dérive de l'`UNIQUE` par un `WHERE reverses_entry_id = ?`.
+    /// Une seconde colonne serait un second état à tenir cohérent avec le premier.
+    pub reverses_entry_id: Option<i64>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }

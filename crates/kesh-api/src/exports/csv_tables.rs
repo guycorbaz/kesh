@@ -253,6 +253,13 @@ pub fn serialize_journal_entries_csv<W: Write>(
         "journal",
         "description",
         "version",
+        // ⛔ snake_case : cet en-tête est un export TABLE, pas une réponse JSON.
+        // ⚠️ Sans cette colonne, l'export comptable complet — celui que le
+        // réviseur consulte — ne montrerait AUCUNE trace d'une contre-passation,
+        // en contradiction avec l'exigence (art. 958f CO) que la Story 24-4a sert.
+        // Et rien ne rougirait : `backup_inventory_matches_schema` ne compare que
+        // la liste des TABLES, jamais les colonnes d'un CSV.
+        "reverses_entry_id",
         "created_at",
         "updated_at",
     ])
@@ -267,6 +274,9 @@ pub fn serialize_journal_entries_csv<W: Write>(
             je.journal.as_str().to_string(),
             je.description.clone(),
             je.version.to_string(),
+            je.reverses_entry_id
+                .map(|v| v.to_string())
+                .unwrap_or_default(),
             fmt_dt(je.created_at),
             fmt_dt(je.updated_at),
         ])
@@ -985,6 +995,7 @@ mod tests {
             journal: JournalEnum::Ventes,
             description: "Vente test".into(),
             version: 1,
+            reverses_entry_id: None,
             created_at: naive_dt(2026, 5, 17, 8, 15, 0),
             updated_at: naive_dt(2026, 5, 17, 8, 15, 0),
         }
@@ -1166,6 +1177,68 @@ mod tests {
         );
         // journal enum string (as_str())
         assert!(text.contains(";Ventes;"), "missing journal enum: {text}");
+    }
+
+    /// Story 24-4a (#380) — **le lien de contre-passation doit être DANS l'export.**
+    ///
+    /// ⛔ Ce test existe parce que rien d'autre ne le tiendrait :
+    /// `backup_inventory_matches_schema` ne compare que la liste des **tables**,
+    /// jamais les colonnes d'un CSV, et les deux assertions du test voisin sont
+    /// des sous-chaînes locales qui resteraient vraies sur un CSV à dix colonnes.
+    /// Un revert partiel passerait donc au vert — dans l'artefact même que le
+    /// réviseur consulte, et dont l'absence de trace est ce que l'art. 958f CO
+    /// interdit.
+    #[test]
+    fn serialize_journal_entries_csv_carries_the_reversal_link() {
+        let en_tete = {
+            let mut buf = Vec::new();
+            serialize_journal_entries_csv(&[], &mut buf).expect("serialize ok");
+            String::from_utf8(buf[3..].to_vec()).unwrap()
+        };
+        assert!(
+            en_tete.contains("reverses_entry_id"),
+            "la colonne manque à l'en-tête : {en_tete}"
+        );
+        // ⚠️ snake_case, comme les dix autres : c'est un export TABLE.
+        assert!(
+            !en_tete.contains("reversesEntryId"),
+            "en-tête en camelCase — cet export n'est pas une réponse JSON : {en_tete}"
+        );
+
+        let mut ordinaire = sample_entry();
+        ordinaire.reverses_entry_id = None;
+        let mut contre_passation = sample_entry();
+        contre_passation.id = 11;
+        contre_passation.reverses_entry_id = Some(10);
+
+        let mut buf = Vec::new();
+        serialize_journal_entries_csv(&[ordinaire, contre_passation], &mut buf)
+            .expect("serialize ok");
+        let text = std::str::from_utf8(&buf[3..]).unwrap();
+        let lignes: Vec<&str> = text.lines().collect();
+        assert_eq!(lignes.len(), 3, "en-tête + deux écritures : {text}");
+
+        // ⛔ **Assertions POSITIONNELLES, et l'index vient de l'en-tête.** Un
+        // `contains(";;")` ne discriminerait que par accident — il suffirait
+        // qu'un autre champ du gabarit devienne vide pour qu'il reste vert sans
+        // la colonne. *(Relevé en passe 2 de revue de code.)*
+        let colonne = en_tete
+            .trim_end()
+            .split(';')
+            .position(|c| c == "reverses_entry_id")
+            .expect("la colonne doit être à l'en-tête");
+        assert_eq!(
+            lignes[1].split(';').nth(colonne),
+            Some(""),
+            "une écriture ordinaire laisse la colonne VIDE, jamais un 0 trompeur : {}",
+            lignes[1]
+        );
+        assert_eq!(
+            lignes[2].split(';').nth(colonne),
+            Some("10"),
+            "la contre-passation porte l'identifiant de son origine : {}",
+            lignes[2]
+        );
     }
 
     // ----- AC #30(c) — journal_entry_lines serializer -----

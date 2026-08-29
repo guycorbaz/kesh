@@ -10,7 +10,7 @@ use std::sync::RwLock;
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use kesh_db::errors::{DbError, RejectedRevenueAccount, RevenueAccountRejection};
+use kesh_db::errors::{DbError, RejectedRevenueAccount, RevenueAccountRejection, ReversalBlocker};
 use kesh_i18n::{FluentArgs, I18nBundle, Locale};
 use serde::Serialize;
 use thiserror::Error;
@@ -2272,6 +2272,19 @@ impl IntoResponse for AppError {
                     // formulaire « ce numéro existe déjà ». On ne peut pas
                     // nommer le compte détenteur ici (l'info n'est pas dans
                     // l'erreur), d'où le message sans argument.
+                    // Story 24-4a (#380) : deux contre-passations concurrentes
+                    // de la MÊME écriture. L'`UNIQUE` porte l'idempotence
+                    // structurellement ; il reste à la nommer à l'utilisateur.
+                    if m.contains("uq_journal_entries_reverses") {
+                        return build_response(
+                            StatusCode::CONFLICT,
+                            "ALREADY_REVERSED",
+                            &t(
+                                "journal-entries-reverse-blocked-already-reversed",
+                                "Cette écriture a déjà été contre-passée.",
+                            ),
+                        );
+                    }
                     if m.contains("uq_accounts_company_singleton_role") {
                         build_response(
                             StatusCode::CONFLICT,
@@ -2385,6 +2398,126 @@ impl IntoResponse for AppError {
                         &t("error-check-constraint", "Valeur invalide"),
                     )
                 }
+                // Story 24-4a (#380) — la contre-passation.
+                //
+                // ⚠️ Le code exposé est celui du `ReversalBlocker`, PAS un code
+                // générique : l'écran doit pouvoir dire POURQUOI le bouton est
+                // absent, et vers quelle correction se tourner.
+                DbError::EntryNotReversable {
+                    blocker,
+                    document_id,
+                    document_label,
+                } => {
+                    let (fallback_key, fallback) = match blocker {
+                        ReversalBlocker::IsAReversal => (
+                            "journal-entries-reverse-blocked-is-a-reversal",
+                            "Cette écriture est elle-même une contre-passation.",
+                        ),
+                        ReversalBlocker::AlreadyReversed => (
+                            "journal-entries-reverse-blocked-already-reversed",
+                            "Cette écriture a déjà été contre-passée.",
+                        ),
+                        ReversalBlocker::OwnedByInvoice => (
+                            "journal-entries-reverse-blocked-invoice",
+                            "Cette écriture appartient à une facture client : corrigez-la par un avoir.",
+                        ),
+                        ReversalBlocker::OwnedByCreditNote => (
+                            "journal-entries-reverse-blocked-credit-note",
+                            "Cette écriture est celle d'un avoir, qui est déjà une contre-passation.",
+                        ),
+                        ReversalBlocker::OwnedBySupplierInvoice => (
+                            "journal-entries-reverse-blocked-supplier-invoice",
+                            "Cette écriture appartient à une facture fournisseur : annulez la facture.",
+                        ),
+                        ReversalBlocker::OwnedBySettlement => (
+                            "journal-entries-reverse-blocked-settlement",
+                            "Cette écriture est un règlement de facture : son annulation viendra avec la contre-passation des règlements.",
+                        ),
+                        ReversalBlocker::MatchedBankTransaction => (
+                            "journal-entries-reverse-blocked-bank-match",
+                            "Cette écriture est rapprochée d'une transaction bancaire.",
+                        ),
+                        // ⚠️ **Aucun chemin ne construit ce cas aujourd'hui** :
+                        // l'écriture l'exclut délibérément pour atteindre
+                        // `ReversalAccountsArchived`, un 400 qui NOMME tous les
+                        // comptes. La branche existe pour que le `match` reste
+                        // exhaustif. *(Le commentaire précédent la disait servie
+                        // par la lecture : c'était faux, la lecture ne construit
+                        // aucun `DbError`. Passe 2 de revue.)*
+                        ReversalBlocker::AccountArchived => (
+                            "journal-entries-reverse-blocked-account-archived",
+                            "Un compte de cette écriture a été archivé : réactivez-le pour pouvoir la contre-passer.",
+                        ),
+                    };
+                    // ⚠️ Le NUMÉRO de la pièce est suffixé au message quand il
+                    // existe : « … : corrigez-la par un avoir (facture
+                    // F-2026-014) ». Un `documentId` brut dans les détails ne
+                    // suffit pas — l'utilisateur ne connaît pas les identifiants
+                    // de la base, il connaît le numéro sur son document.
+                    let base = t(fallback_key, fallback);
+                    let message = match document_label.as_deref() {
+                        Some(numero) => format!("{base} ({numero})"),
+                        None => base,
+                    };
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": blocker.code(),
+                            "message": message,
+                            "details": {
+                                "documentId": document_id,
+                                "documentNumber": document_label,
+                            },
+                        }
+                    });
+                    (StatusCode::CONFLICT, Json(body)).into_response()
+                }
+                // ⚠️ **400**, comme le gabarit `CreditNoteRevenueAccountsArchived`
+                // dont il reprend la forme : un compte archivé est une donnée
+                // d'entrée invalide, là où un refus de propriété est un conflit
+                // d'état. Le refus NOMME les comptes — un « interdit » sec ne
+                // serait pas utilisable, la réactivation étant le chemin de sortie
+                // (`PUT /api/v1/accounts/{id}/reactivate`).
+                DbError::ReversalAccountsArchived(archived) => {
+                    let detail = archived
+                        .iter()
+                        .map(|a| {
+                            a.account_number
+                                .clone()
+                                .unwrap_or_else(|| a.account_id.to_string())
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let fallback = format!(
+                        "Impossible de contre-passer — compte(s) archivé(s) : {detail}. Réactivez le ou les comptes concernés."
+                    );
+                    let mut args = FluentArgs::new();
+                    args.set("detail", detail.clone());
+                    let msg = t_args("journal-entries-reverse-account-archived", &fallback, &args);
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "ACCOUNT_ARCHIVED",
+                            "message": msg,
+                            "details": {
+                                "rejected": archived.iter().map(|a| serde_json::json!({
+                                    "accountId": a.account_id,
+                                    "accountNumber": a.account_number,
+                                })).collect::<Vec<_>>(),
+                            },
+                        }
+                    });
+                    (StatusCode::BAD_REQUEST, Json(body)).into_response()
+                }
+                // ⚠️ Refuser est VOULU : supprimer une écriture qu'on a corrigée
+                // effacerait la correction. Rendu explicite plutôt que laissé
+                // remonter comme une violation de clé étrangère au message opaque.
+                DbError::EntryIsReversed => build_response(
+                    StatusCode::CONFLICT,
+                    "ENTRY_IS_REVERSED",
+                    &t(
+                        "journal-entries-delete-blocked-reversed",
+                        "Cette écriture a été contre-passée : elle ne peut plus être supprimée.",
+                    ),
+                ),
                 DbError::IllegalStateTransition(m) => {
                     tracing::warn!("illegal state: {m}");
                     build_response(
