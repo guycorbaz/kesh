@@ -303,11 +303,16 @@ qu'il faut faire au lieu de laisser l'utilisateur découvrir un refus.
    seul appelant qui passe `enforce_immutability = false` ; leur passage au rouge est le seul
    signal de la régression.
    ⚠️ **Aucun test « facture validée dont l'écriture est contre-passée » n'est à écrire** : la
-   combinaison est **inatteignable**. `reversal_blocker` (`journal_entries.rs:1449`) rend
+   combinaison est **inatteignable**. `reversal_blocker` (`journal_entries.rs:1416`) rend
    `OWNED_BY_INVOICE` dès qu'une facture référence l'écriture, donc celle-ci n'a jamais pu être
    contre-passée. Fabriquer l'état en SQL brut testerait un cas que le logiciel ne produit pas.
-9. `journal_entries::update` **n'existe plus** dans `crates/kesh-db` ; aucun appelant, aucun
-   doc-comment ne s'y réfère au présent.
+9. `journal_entries::update` **n'existe plus** dans `crates/kesh-db` ; aucun appelant, et aucun
+   doc-comment **de code** ne s'y réfère au présent — il y en a **trois** hors du site principal
+   (`accounts.rs:444`, `admin_full_import_e2e.rs:1354`, `balance_sheet.rs:28`).
+   ⛔ **Les MIGRATIONS sont exclues de cette AC, et l'exclusion n'est pas un confort** :
+   `20260729000001_invoice_lines_revenue_account_backfill.sql:54` cite la fonction dans un
+   commentaire, et **cette migration est publiée depuis v0.9.0**. La corriger changerait son
+   checksum et **empêcherait toute installation à jour de démarrer** (P8). Elle ne se touche pas.
 10. Le bilan d'ouverture ne peut plus être corrigé ni par réécriture ni par suppression : des
     tests vérifient que **`PUT` et `DELETE`** sur l'écriture d'ouverture rendent **409**, et que
     `create_opening_entry` refuse toujours sur une société non vierge. ⚠️ Le `PUT` est déjà
@@ -398,6 +403,7 @@ qu'il faut faire au lieu de laisser l'utilisateur découvrir un refus.
   - [ ] base remise à zéro (KF-039), puis `scripts/test-fast.sh`
   - [ ] `npm run check` / `lint-i18n-ownership` / `test:unit` / `build`
   - [ ] suite Playwright complète, comparée à la baseline de `docs/testing.md`
+  - [ ] ⛔ **l'issue de D5 est OUVERTE** (jalon « Vague 1 »), et son numéro reporté dans le commentaire d'`invoices::delete` — sans porteur, elle n'existerait jamais, et la § *Issue Tracking Rule* fait de GitHub la source de vérité unique
 
 ## Hors périmètre
 
@@ -407,6 +413,13 @@ qu'il faut faire au lieu de laisser l'utilisateur découvrir un refus.
 - **Les trous de numérotation** : **#381**, que cette story ne ferme pas (D6).
 - **`reset_demo`** : **#377**, **#279**.
 - **Annuler un règlement** : **#414**. **Annuler un rapprochement** : **#418**.
+
+⚠️ **Ce que le gel referme pour ces deux-là, et qu'il faut nommer.** Une écriture bloquée par
+`OWNED_BY_SETTLEMENT` ou `MATCHED_BANK_TRANSACTION` n'est pas contre-passable (24-4a D3) ; le
+`PUT` et le `DELETE` étaient sa dernière porte, et cette story la ferme. ⛔ **Elle devient donc
+incorrigible jusqu'à #414 et #418** — la 24-4a l'avait annoncé pour le rapprochement (« après la
+24-4b, définitivement incorrigible ») ; c'est ici que cela se produit, et cela vaut aussi pour le
+règlement. C'est le prix assumé de l'ordre des stories, pas un oubli.
 
 ## Dev Notes
 
@@ -435,7 +448,9 @@ split si la sévérité cesse de reculer.
 | `crates/kesh-api/src/errors.rs` | UPDATE — mappage 409 |
 | `crates/kesh-api/src/routes/journal_entries.rs` | UPDATE — handler `update_journal_entry` réécrit |
 | `crates/kesh-report/src/balance_sheet.rs` | UPDATE — ⚠️ une ligne : le doc-comment `:28` cite `journal_entries::update` au présent |
-| `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl` | UPDATE — 7 clés retirées, les neuves ajoutées |
+| `crates/kesh-db/src/repositories/accounts.rs` | UPDATE — ⚠️ une ligne : le commentaire `:444` cite `journal_entries::update` au présent |
+| `crates/kesh-api/tests/admin_full_import_e2e.rs` | UPDATE — ⚠️ le doc-comment `:1354` cite la fonction **et une de ses lignes internes** (`:936`) |
+| `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl` | UPDATE — **onze** clés retirées, les neuves ajoutées |
 | `frontend/src/routes/(app)/journal-entries/+page.svelte` | UPDATE — la cellule d'actions devient un lien |
 | `frontend/src/lib/features/journal-entries/JournalEntryForm.svelte` | UPDATE — création seule |
 | `frontend/src/lib/features/journal-entries/journal-entries.api.ts` | UPDATE — deux fonctions retirées |
@@ -443,12 +458,12 @@ split si la sévérité cesse de reculer.
 | `frontend/src/lib/shared/i18n-keys.test.ts` | UPDATE — `sitesTotal` et sa ventilation |
 | `frontend/tests/e2e/journal-entries.spec.ts` | UPDATE — le bloc « modification » |
 | `crates/kesh-api/tests/journal_entry_reversal_e2e.rs` | UPDATE — la couverture du gel |
-| `docs/manual/fr/user-manual.tex` (+ `.pdf`) | UPDATE — six passages |
+| `docs/manual/fr/user-manual.tex` (+ `.pdf`) | UPDATE — **sept** passages |
 
 ### Le manuel, ligne par ligne — ⛔ AUCUN GATE NE LE LIT
 
 C'est la leçon la plus coûteuse de la 24-4a : le manuel affirmait que le logiciel ne savait pas
-contre-passer, **le jour où la story livrait la fonction**. Ici, six passages deviennent faux :
+contre-passer, **le jour où la story livrait la fonction**. Ici, **sept** passages deviennent faux :
 
 | ligne | ce qu'il dit aujourd'hui | ce qu'il faut |
 |---|---|---|
@@ -458,9 +473,9 @@ contre-passer, **le jour où la story livrait la fonction**. Ici, six passages d
 | `:453` | les trous de numérotation viennent de la suppression d'écritures | la cause principale disparaît ; #381 subsiste par `invoices::delete` |
 | `:502` | la clôture « verrouille » les écritures de l'exercice | à reformuler : le verrou n'est plus ce qui distingue un exercice clos |
 | `:532` | ⛔ « **supprimez toutes les écritures** de la société puis revenez sur l'écran » | la procédure **n'existe plus** — cf. D7 |
-| `:1585` | ⛔ FAQ « revenir en arrière » : « exercice ouvert : modification ou suppression **possible** […] **Préférez** le bouton Contre-passer » et « exercice clôturé : […] il faut **rouvrir l'exercice** » | les deux puces sont fausses : le gel est **inconditionnel**, et rouvrir un exercice ne restaure **aucune** éditabilité. La troisième puce (« écriture appartenant à une pièce ») reste vraie |
+| `:1585` | ⛔ FAQ « revenir en arrière » : « exercice ouvert : modification ou suppression **possible** […] **Préférez** le bouton Contre-passer » et « exercice clôturé : […] il faut **rouvrir l'exercice** » | les deux puces sont fausses : le gel est **inconditionnel**, et rouvrir un exercice ne restaure **aucune** éditabilité. La **deuxième** puce (« écriture appartenant à une pièce ») reste vraie |
 
-⛔ **Le grep prescrit remonte NEUF autres occurrences qu'il ne faut PAS toucher**, et
+⛔ **Le grep prescrit remonte SEPT autres occurrences qu'il ne faut PAS toucher**, et
 sur-corriger coûterait un manuel faux dans l'autre sens :
 
 | ligne | pourquoi elle reste vraie |
@@ -472,7 +487,11 @@ sur-corriger coûterait un manuel faux dans l'autre sens :
 ⚠️ **Greper la VALEUR, pas la formulation** (§ *Propagation post-patch*) : chercher
 `modifi`, `supprim` et `écritur` **séparément** sur les `.tex`, jamais la phrase du site corrigé.
 Le grep de contrôle est `grep -nE "écritur" docs/manual/fr/user-manual.tex | grep -E "modifi|supprim|réécri|éditab"`,
-et il se **trie à la main** — c'est le prix, et il est bas. Les manuels DE/EN/IT ne contiennent
+il rend **quinze** lignes, et il se **trie à la main** — c'est le prix, et il est bas : six à
+reprendre, sept intouchables, plus `:454` et `:1594`, qui sont les **lignes de continuation** de
+`:453` et de la FAQ et partent donc avec elles. ⚠️ **`:1585` n'est pas un hit du grep** — c'est
+le `\subsection{}` de la FAQ ; le hit est `:1594`. Le pointeur reste juste comme désignation de
+passage, mais le compte ne se referme pas sur lui-même. Les manuels DE/EN/IT ne contiennent
 que des `README.md` — rien à propager.
 
 ### Pièges vérifiés au sol
@@ -483,7 +502,8 @@ que des `README.md` — rien à propager.
 - ⛔ **`journal-entries-delete-blocked-reversed` NE SE RETIRE PAS — elle est vivante côté BACKEND.** Elle est consommée par `crates/kesh-api/src/errors.rs:2517`, qui construit le message du 409 `ENTRY_IS_REVERSED`. ⚠️ **Et son retrait ne dégraderait pas gracieusement** : `t(key, default)` (`errors.rs:33`) ne retombe sur `default` que si **aucun** bundle n'est chargé ; bundle chargé et clé absente, `bundle.format` rend **la clé brute** — comportement prouvé par `format_unknown_key_returns_key` (`kesh-i18n/src/loader.rs:653`). L'utilisateur lirait donc `journal-entries-delete-blocked-reversed` comme message d'erreur, **dans les quatre langues, en production**, et aucun gate ne le verrait : `parity_between_locales` ne compare que les catalogues entre eux, `i18n-keys.test.ts` ne scanne que le **frontend**.
 - ⚠️ **Les tests unitaires de `journal_entries.rs`** (**36** `#[tokio::test]` dans `mod tests`, qui commence à `:1759` — recompté, la spec annonçait 32) comptent plusieurs cas d'`update` : ils partent **avec** la fonction. Recompter le solde depuis la source avant de l'écrire dans le Change Log (§ *Recompter ses propres comptes rendus*), et **déclarer le périmètre** de mesure.
 - ⚠️ **`invoices.rs:3764`** fait bien un `DELETE FROM journal_entries` en masse — mais il est dans `mod tests` (helper `cleanup_journal_entries`). Ne pas le confondre avec un chemin de production.
-- ✅ **Aucune migration**, donc P5/P6/P7/P8 muets et `test-schema/` intact. ⛔ Le gate complet reste dû (D1).
+- ✅ **Aucune migration écrite**, donc P5/P6/P7 muets et `test-schema/` intact. ⛔ Le gate complet reste dû (D1).
+- ⛔ **P8 N'EST PAS MUET, et c'est le piège le plus cher de cette story.** Le grep de `journal_entries::update` remonte `crates/kesh-db/migrations/20260729000001_invoice_lines_revenue_account_backfill.sql:54`, qui cite la fonction dans un commentaire. **Cette migration est publiée depuis v0.9.0** (`git tag --contains` rend v0.9.0, v0.10.0, v0.11.0, v0.11.1). Y corriger un commentaire change son **checksum** : `sqlx` refuse alors de démarrer avec `migration <version> was previously applied but has been modified`, et **aucune installation à jour ne boote plus**. ⚠️ Le gate complet ne verrait rien — les `#[sqlx::test]` rejouent les migrations sur une base neuve. **Ne pas la toucher, pas même d'un caractère.**
 
 ### Références
 
@@ -509,7 +529,7 @@ que des `README.md` — rien à propager.
 
 ### Passe 1 — 2026-08-29 · Sonnet 4.6 + Haiku 4.5, contextes frais, orthogonales à l'auteur (Opus 5)
 
-**2 CRITICAL, 3 HIGH, 3 MEDIUM, 2 LOW retenus · 2 findings réfutés au sol.**
+**2 CRITICAL, 3 HIGH, 4 MEDIUM, 2 LOW retenus — soit onze · 2 findings réfutés au sol.**
 
 | # | sév. | lentille | ce qui manquait |
 |---|---|---|---|
@@ -528,7 +548,7 @@ que des `README.md` — rien à propager.
 **Réfutés au sol, avec preuve** :
 
 - ⚠️ *« tester `invoices::delete` sur une écriture contre-passée »* — la combinaison est
-  **inatteignable** : `reversal_blocker` (`journal_entries.rs:1449`) rend `OWNED_BY_INVOICE` dès
+  **inatteignable** : `reversal_blocker` (`journal_entries.rs:1416`) rend `OWNED_BY_INVOICE` dès
   qu'une facture référence l'écriture.
 - ⚠️ *« tester `invoices::delete` en exercice clos »* — le test **existe déjà**
   (`invoices.rs:3160`). Mieux : le test que l'AC 8 demandait d'écrire existait lui aussi
@@ -546,3 +566,47 @@ ni D2 (le refus au repository, la précédence), ni D5 (`invoices::delete` non g
 bilan d'ouverture). Ce qui a cédé, ce sont les **relevés** : clés, passages, décomptes, zones.
 
 **Prochaine** : passe 2, contexte frais, lentille braquée sur le commit de cette remédiation.
+
+### Passe 2 — 2026-08-29 · Opus 5, contexte frais, passe CIBLÉE sur le seul commit `fae6471a`
+
+Prompt versionné dans `24-4b-review-prompt-regression-hunter-p2.md`.
+**0 CRITICAL, 3 HIGH, 2 MEDIUM, 3 LOW — soit huit, et les HUIT portent sur le patch de la passe 1.**
+
+| # | sév. | ce qui était faux |
+|---|---|---|
+| R2-1 | HIGH | `reversal_blocker` cité à `:1449` — au milieu d'un littéral SQL — au lieu de `:1416`, **aux deux sites**. C'était la preuve sur laquelle reposait une réfutation : le pointeur qui permettait de la contester |
+| R2-2 | HIGH | ⛔ le grep de `journal_entries::update` **s'était arrêté au premier résultat** — trois sites manquaient, dont **une migration publiée depuis v0.9.0** |
+| R2-3 | HIGH | trois décomptes corrigés dans les AC et restés faux dans la **table des fichiers**, celle que l'implémenteur coche (`:438` « 7 clés », `:446` et `:451` « six passages ») |
+| R2-4 | MEDIUM | « NEUF autres occurrences » pour un tableau qui en liste **sept** ; et `:1585` n'est pas un hit du grep, c'est `:1594` |
+| R2-5 | MEDIUM | le journal de la passe 1 annonçait « 3 MEDIUM » et dix findings pour un tableau de **onze** |
+| R2-6 | LOW | « la troisième puce » de la FAQ est la **deuxième** |
+| R2-7 | LOW | le séquencement de l'issue de D5 était levé, mais **aucune tâche ne la portait** |
+| R2-8 | LOW | I3 rétréci ne nomme plus personne : qui reste **enfermé** après le gel ? |
+
+⛔ **R2-2 est le finding le plus cher de la boucle, et il ne coûte rien à corriger.** L'AC 9
+exigeait qu'« aucun doc-comment ne s'y réfère au présent », sans exclure les migrations —
+`20260729000001_invoice_lines_revenue_account_backfill.sql:54` en cite une. La corriger change
+son **checksum** ; `sqlx` refuse alors de démarrer, et **aucune installation à jour ne boote
+plus**. ⚠️ Le gate complet ne l'aurait pas vu : les `#[sqlx::test]` rejouent les migrations sur
+une base neuve. C'est le garde-fou **P8**, que les « Pièges vérifiés au sol » déclaraient muet
+au motif que la story n'écrit aucune migration — vrai pour P5, P6 et P7, **faux pour P8**, qui
+ne protège pas de ce qu'on écrit mais de ce qu'on **retouche**.
+
+⚠️ **Le motif est le même qu'en passe 1, et il s'est reproduit DANS sa propre remédiation** :
+le patch a corrigé les décomptes que la passe 1 lui avait nommés et **laissé leurs jumeaux**, a
+produit **trois décomptes neufs faux**, et a arrêté au premier résultat le grep dont son message
+de commit proclamait l'avoir « refait en grand ». La § *Propagation post-patch* n'a pas été
+enfreinte par ignorance : elle était citée dans le patch qui l'enfreignait.
+
+✅ **Ce que la passe 2 a vérifié et confirmé JUSTE** : les onze clés et leur unicité de site, la
+clé vivante côté backend et le comportement de `t()`, `loader.rs:653`, les deux tests existants
+de l'AC 8, `lib.rs:335-338`, les 36 tests et leur périmètre déclaré, `sitesTotal` 1630, les trois
+entrées de `DETTE_CONNUE`, la dérogation au splitting — et **les deux réfutations de la passe 1**,
+tenues pour fondées après contrôle indépendant.
+
+⚠️ **Aucune décision de conception n'a été prise en défaut, pour la deuxième passe consécutive** :
+D1, D2, D3, D5 et D7 tiennent. La sévérité **recule** (CRITICAL → HIGH) : la § *Règle de
+splitting préventif* ne se déclenche pas, une convergence lente mais monotone étant le signe
+d'une revue qui travaille.
+
+**Prochaine** : passe 3, ciblée sur le commit de cette remédiation, quatrième contexte frais.
