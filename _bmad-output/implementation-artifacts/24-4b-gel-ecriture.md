@@ -123,9 +123,13 @@ par une contre-passation »* — **un conseil faux, sur une écriture déjà con
 `journal_entries::update` (`:914`) n'a **qu'un seul appelant** en production : le handler
 `update_journal_entry` (`routes/journal_entries.rs:596`, l'appel à `:684`). Vérifié au sol —
 `grep -rn "journal_entries::update" .` — ⛔ **sur le dépôt entier, jamais sur `crates/` seul** —
-ne rend, hors de ce site, que des **doc-comments**, des tests et des documents. La restriction à
-`crates/` a laissé passer deux sites à la passe 2 **et un troisième à la passe 3** : le scope de
-la commande est la moitié du geste.
+ne rend, hors de ce site, que des **doc-comments**, des tests et des documents. ⛔ **Deux défauts distincts se sont
+succédé ici, et les confondre empêche de retenir la leçon** : la restriction à `crates/` a laissé
+passer **un site de code (`frontend/`) et un document (`docs/`)**, trouvés en passe 3 ; tandis
+que les trois sites de `crates/`, eux, **étaient nommés dès la passe 1** — dans T3, mais absents
+de la table des fichiers et de l'AC 9, c'est-à-dire du plan de travail. Le premier défaut est un
+**scope de commande** trop étroit ; le second est un **report incomplet** de ce que la commande
+avait pourtant rendu. Le scope est la moitié du geste ; le report est l'autre.
 
 ⛔ **`update` est SUPPRIMÉE, pas neutralisée par une garde en tête.** Poser le refus à la
 première ligne laisserait derrière lui cent cinquante lignes qu'aucun chemin n'atteint plus :
@@ -658,3 +662,27 @@ volume s'effondre : onze findings, puis huit, puis **deux**.
 
 **Prochaine** : passe 4, ciblée, cinquième contexte frais. La lettre de la § *Review Iteration
 Rule* l'impose — il reste un HIGH.
+
+### Passe 4 — 2026-08-29 · Haiku 4.5, contexte frais, passe CIBLÉE sur le seul commit `8bc61265`
+
+Prompt versionné dans `24-4b-review-prompt-regression-hunter-p4.md`.
+**0 CRITICAL, 1 HIGH, 0 MEDIUM, 0 LOW — soit un · 1 finding réfuté comme doublon.**
+
+| # | sév. | ce qui était faux |
+|---|---|---|
+| R4-1 | HIGH | ⛔ le patch de la passe 3 **raconte faux l'histoire de sa propre boucle** : « la restriction à `crates/` a laissé passer deux sites à la passe 2 » — or ces trois sites étaient nommés dans **T3 dès la passe 1** (`git show 0937ac07:… | grep -nF` → ligne 343), et absents seulement de la **table des fichiers** |
+
+**Réfuté** : le second finding de la lentille (« la correction de la passe 3 introduit un nouveau
+défaut ») n'est pas indépendant — c'est la reformulation du premier, compté deux fois. Un
+finding est un défaut, pas une conséquence du même défaut.
+
+⛔ **La correction porte une distinction qui vaut mieux que la phrase qu'elle remplace.** Deux
+défauts se sont succédé et les confondre empêchait d'en tirer la leçon : un **scope de commande**
+trop étroit (`crates/` au lieu du dépôt), qui a caché le site `frontend/` et le document `docs/`
+jusqu'à la passe 3 ; et un **report incomplet** de ce que la commande avait pourtant rendu — les
+trois sites connus de T3 et jamais recopiés dans le plan de travail. Chercher et reporter sont
+deux gestes, et chacun a raté une fois.
+
+⚠️ **Aucune décision de conception n'a été prise en défaut, pour la QUATRIÈME passe consécutive.**
+Le volume : 11 → 8 → 2 → **1**. Et ce dernier finding ne porte ni sur ce qu'il faut faire, ni sur
+un décompte du plan de travail : il porte sur le **récit** que la story fait de sa propre revue.
