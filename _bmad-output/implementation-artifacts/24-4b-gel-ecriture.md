@@ -122,8 +122,10 @@ par une contre-passation »* — **un conseil faux, sur une écriture déjà con
 
 `journal_entries::update` (`:914`) n'a **qu'un seul appelant** en production : le handler
 `update_journal_entry` (`routes/journal_entries.rs:596`, l'appel à `:684`). Vérifié au sol —
-`grep -rn "journal_entries::update" crates/` ne rend, hors de ce site, que des **doc-comments**
-et des tests.
+`grep -rn "journal_entries::update" .` — ⛔ **sur le dépôt entier, jamais sur `crates/` seul** —
+ne rend, hors de ce site, que des **doc-comments**, des tests et des documents. La restriction à
+`crates/` a laissé passer deux sites à la passe 2 **et un troisième à la passe 3** : le scope de
+la commande est la moitié du geste.
 
 ⛔ **`update` est SUPPRIMÉE, pas neutralisée par une garde en tête.** Poser le refus à la
 première ligne laisserait derrière lui cent cinquante lignes qu'aucun chemin n'atteint plus :
@@ -307,8 +309,14 @@ qu'il faut faire au lieu de laisser l'utilisateur découvrir un refus.
    `OWNED_BY_INVOICE` dès qu'une facture référence l'écriture, donc celle-ci n'a jamais pu être
    contre-passée. Fabriquer l'état en SQL brut testerait un cas que le logiciel ne produit pas.
 9. `journal_entries::update` **n'existe plus** dans `crates/kesh-db` ; aucun appelant, et aucun
-   doc-comment **de code** ne s'y réfère au présent — il y en a **trois** hors du site principal
-   (`accounts.rs:444`, `admin_full_import_e2e.rs:1354`, `balance_sheet.rs:28`).
+   doc-comment **de code** ne s'y réfère au présent — il y en a **quatre** hors du site principal :
+   `accounts.rs:444`, `admin_full_import_e2e.rs:1354`, `balance_sheet.rs:28` et
+   **`frontend/tests/e2e/fiscal-years.spec.ts:114`**.
+   ⚠️ **Ce dernier devient DOUBLEMENT faux** : il nomme la fonction supprimée, et il affirme que
+   `FISCAL_YEAR_CLOSED` est levé par `create` **et** `update` — or après le gel, `create` seul le
+   lève. ✅ **Ses neuf tests survivent** : ils passent tous par « Nouvelle écriture », jamais par
+   l'édition (vérifié — `fiscal-years.spec.ts:316`, `:354`). C'est le commentaire qui ment, pas
+   le test.
    ⛔ **Les MIGRATIONS sont exclues de cette AC, et l'exclusion n'est pas un confort** :
    `20260729000001_invoice_lines_revenue_account_backfill.sql:54` cite la fonction dans un
    commentaire, et **cette migration est publiée depuis v0.9.0**. La corriger changerait son
@@ -381,7 +389,9 @@ qu'il faut faire au lieu de laisser l'utilisateur découvrir un refus.
 - [ ] **T3 — Le `PUT`** (AC 1, 2, 9)
   - [ ] `journal_entries::update` **supprimée**, avec ses tests unitaires devenus sans objet
   - [ ] handler `update_journal_entry` réécrit : plus de corps désérialisé, `find_by_id` scopé, 404 sinon 409
-  - [ ] `UpdateJournalEntryRequest` retiré s'il ne sert plus ; `grep` des doc-comments qui citent `journal_entries::update` au présent (⚠️ `admin_full_import_e2e.rs:1354`, `balance_sheet.rs:28`, `accounts.rs:444`)
+  - [ ] `UpdateJournalEntryRequest` retiré s'il ne sert plus
+  - [ ] ⛔ `grep -rn "journal_entries::update" .` **sur le dépôt entier** — quatre sites de code au présent (`accounts.rs:444`, `admin_full_import_e2e.rs:1354`, `balance_sheet.rs:28`, `frontend/tests/e2e/fiscal-years.spec.ts:114`) plus `docs/optimistic-locking-patterns.md` (`:49`, `:75`)
+  - [ ] ⛔ **NE PAS toucher** : la migration `20260729000001…sql:54` (P8) ni les six story files historiques de `_bmad-output/` — cf. Dev Notes
 - [ ] **T4 — L'écran** (AC 11, 12, 13)
   - [ ] liste : ✎ et 🗑 remplacés par un lien vers la fiche, `data-testid`
   - [ ] `JournalEntryForm.svelte` en création seule ; `editingEntry`, mode `'edit'`, modale de suppression et modale de conflit de version retirés
@@ -426,7 +436,7 @@ règlement. C'est le prix assumé de l'ordre des stories, pas un oubli.
 ### Règle de splitting — examinée, non déclenchée
 
 La story touche **six** zones — `kesh-db`, `kesh-api`, **`kesh-report`**, `kesh-i18n`,
-`frontend`, `docs/manual` — et franchit donc à la lettre le seuil de la § *Règle de splitting
+`frontend`, `docs/` — et franchit donc à la lettre le seuil de la § *Règle de splitting
 préventif* (« plus de 5 modules distincts »).
 
 ⚠️ **Le splitting n'est pourtant PAS déclenché, et la dérogation se motive plutôt que se
@@ -450,6 +460,8 @@ split si la sévérité cesse de reculer.
 | `crates/kesh-report/src/balance_sheet.rs` | UPDATE — ⚠️ une ligne : le doc-comment `:28` cite `journal_entries::update` au présent |
 | `crates/kesh-db/src/repositories/accounts.rs` | UPDATE — ⚠️ une ligne : le commentaire `:444` cite `journal_entries::update` au présent |
 | `crates/kesh-api/tests/admin_full_import_e2e.rs` | UPDATE — ⚠️ le doc-comment `:1354` cite la fonction **et une de ses lignes internes** (`:936`) |
+| `frontend/tests/e2e/fiscal-years.spec.ts` | UPDATE — ⚠️ le JSDoc `:114` seul ; **les neuf tests survivent**, ils passent par « Nouvelle écriture » |
+| `docs/optimistic-locking-patterns.md` | UPDATE — la ligne 8 du tableau (`:49`) et « Variant A protégée » (`:75`) décriront une fonction supprimée |
 | `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl` | UPDATE — **onze** clés retirées, les neuves ajoutées |
 | `frontend/src/routes/(app)/journal-entries/+page.svelte` | UPDATE — la cellule d'actions devient un lien |
 | `frontend/src/lib/features/journal-entries/JournalEntryForm.svelte` | UPDATE — création seule |
@@ -503,6 +515,7 @@ que des `README.md` — rien à propager.
 - ⚠️ **Les tests unitaires de `journal_entries.rs`** (**36** `#[tokio::test]` dans `mod tests`, qui commence à `:1759` — recompté, la spec annonçait 32) comptent plusieurs cas d'`update` : ils partent **avec** la fonction. Recompter le solde depuis la source avant de l'écrire dans le Change Log (§ *Recompter ses propres comptes rendus*), et **déclarer le périmètre** de mesure.
 - ⚠️ **`invoices.rs:3764`** fait bien un `DELETE FROM journal_entries` en masse — mais il est dans `mod tests` (helper `cleanup_journal_entries`). Ne pas le confondre avec un chemin de production.
 - ✅ **Aucune migration écrite**, donc P5/P6/P7 muets et `test-schema/` intact. ⛔ Le gate complet reste dû (D1).
+- ⛔ **Le grep de `journal_entries::update` remonte SIX story files historiques de `_bmad-output/` — ils ne se touchent PAS.** `3-3`, `7-3`, `9-5-1d`, `16-1a-bis`, `16-1c` et `16-1d` décrivent un état **vrai au moment où il a été écrit** ; les réécrire falsifierait le journal du projet, et le dépôt s'appuie sur ces récits pour se relire. ⚠️ **C'est la TROISIÈME fois dans cette seule story qu'un grep large remonte des occurrences légitimes** — le manuel, la migration, ces story files. Le geste correct n'est pas de grepper plus étroit, c'est de grepper large **et de trier à la main** : c'est le prix, et il est bas.
 - ⛔ **P8 N'EST PAS MUET, et c'est le piège le plus cher de cette story.** Le grep de `journal_entries::update` remonte `crates/kesh-db/migrations/20260729000001_invoice_lines_revenue_account_backfill.sql:54`, qui cite la fonction dans un commentaire. **Cette migration est publiée depuis v0.9.0** (`git tag --contains` rend v0.9.0, v0.10.0, v0.11.0, v0.11.1). Y corriger un commentaire change son **checksum** : `sqlx` refuse alors de démarrer avec `migration <version> was previously applied but has been modified`, et **aucune installation à jour ne boote plus**. ⚠️ Le gate complet ne verrait rien — les `#[sqlx::test]` rejouent les migrations sur une base neuve. **Ne pas la toucher, pas même d'un caractère.**
 
 ### Références
@@ -610,3 +623,38 @@ splitting préventif* ne se déclenche pas, une convergence lente mais monotone 
 d'une revue qui travaille.
 
 **Prochaine** : passe 3, ciblée sur le commit de cette remédiation, quatrième contexte frais.
+
+### Passe 3 — 2026-08-29 · Sonnet 4.6, contexte frais, passe CIBLÉE sur le seul commit `d32a2d08`
+
+Prompt versionné dans `24-4b-review-prompt-regression-hunter-p3.md`.
+**0 CRITICAL, 1 HIGH, 1 MEDIUM, 0 LOW — soit deux, et les DEUX portent sur le patch de la passe 2.**
+
+| # | sév. | ce qui était faux |
+|---|---|---|
+| R3-1 | HIGH | ⛔ le grep de `journal_entries::update` **est resté scopé `crates/`** — un quatrième site de code vit dans `frontend/tests/e2e/fiscal-years.spec.ts:114` |
+| R3-2 | MEDIUM | `docs/optimistic-locking-patterns.md` (`:49`, `:75`) décrira une fonction supprimée — hors de la lettre de l'AC 9, dans l'esprit de la § *Propagation post-patch* |
+
+⛔ **Le patch de la passe 2 a reproduit, dans le geste censé le corriger, le défaut qu'il
+corrigeait.** R2-2 disait « le grep s'était arrêté au premier résultat » ; la remédiation a
+élargi le **résultat** — de un à quatre sites — sans jamais élargir le **scope de la commande**,
+restée `grep -rn "…" crates/`. Le scope est pourtant la moitié du geste, et c'est la troisième
+passe consécutive où le même symptôme revient sous une forme un peu différente.
+
+✅ **Précision apportée par vérification au sol, que la lentille n'avait pas poussée** : les
+**neuf tests** de `fiscal-years.spec.ts` **survivent au gel** — ils passent tous par « Nouvelle
+écriture » (`:316`, `:354`), jamais par l'édition. R3-1 porte donc sur un **commentaire**, non
+sur un test cassé : le finding tient, sa conséquence est moindre que ce qui était craint.
+
+⚠️ **Et le grep, refait en grand, a rendu une troisième famille d'occurrences légitimes** : six
+story files historiques de `_bmad-output/` (`3-3`, `7-3`, `9-5-1d`, `16-1a-bis`, `16-1c`,
+`16-1d`) citent la fonction. Ils **ne se touchent pas** — ils décrivent un état vrai au moment
+où il a été écrit, et les réécrire falsifierait le journal du projet. Avec le manuel et la
+migration, cela fait **trois** familles à trier dans cette seule story : la leçon n'est pas de
+grepper plus étroit, c'est de grepper large **et de trier à la main**.
+
+⚠️ **Aucune décision de conception n'a été prise en défaut, pour la TROISIÈME passe consécutive** :
+D1, D2, D3, D5 et D7 tiennent. La sévérité **recule** encore — CRITICAL → HIGH → HIGH, et le
+volume s'effondre : onze findings, puis huit, puis **deux**.
+
+**Prochaine** : passe 4, ciblée, cinquième contexte frais. La lettre de la § *Review Iteration
+Rule* l'impose — il reste un HIGH.
