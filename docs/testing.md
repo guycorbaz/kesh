@@ -316,7 +316,9 @@ KESH_BACKEND_URL=http://localhost:3001 npm run test:e2e
 
 ## Les échecs attendus — la suite ne passe PAS au vert, et il faut le savoir
 
-⚠️ **`npm run test:e2e` rend aujourd'hui 215 passés / 8 échoués, et ces huit sont ATTENDUS.**
+⚠️ **`npm run test:e2e` ne passe PAS au vert, et le nombre d'échecs attendus DÉPEND DE L'HEURE :
+8 l'après-midi, 10 le matin** (relevé du 2026-08-30 : 212 passés / 11 échoués à 10:42 CEST, dont
+un de pollution en plus). Ces échecs sont ATTENDUS.**
 Sans cette liste, la règle du `CLAUDE.md` — « la suite complète tourne en local avant tout
 `git push` » — est **invérifiable** : personne ne peut dire « c'est vert », et chacun doit
 re-dériver à la main quels échecs sont connus. Le risque n'est pas le temps perdu, c'est
@@ -335,6 +337,23 @@ régression au milieu.
 | `onboarding.spec.ts:77` | KF-029 (#97) |
 | `onboarding.spec.ts:150` | KF-029 (#97) |
 | **un huitième, VARIABLE** | pollution d'état entre specs — voir ci-dessous |
+| `invoices.spec.ts:405` | ⏰ **KF-045 (#421)** — seulement **avant 12:00 UTC** |
+| `invoices.spec.ts:429` | ⏰ **KF-045 (#421)** — idem |
+
+⏰ **Les deux dernières ne rougissent QUE le matin, et c'est vérifié.** Le helper poste un rappel
+manuel daté de `${today}T12:00:00`, que la route compare à `Utc::now().naive_utc()`
+(`dunning_reminders.rs:261`, garde « pas de date d'envoi future »). Tant qu'il est plus tôt que
+**12:00 UTC** — soit 14:00 en Suisse l'été —, midi est dans le futur et la route rend **422**.
+
+⚠️ **Elles échouent rejouées SEULES**, donc ce n'est pas la pollution du huitième variable ; et
+elles échouent aussi sur `main` avant toute branche en cours (vérifié en worktree sur
+`d2910022`). Le relevé du 2026-08-26 ne les portait pas parce qu'il a été fait l'après-midi.
+**Un test qui dépend de l'heure ne rougit que pour la moitié des gens qui le lancent.**
+
+⇒ **Selon l'heure du run, attendre 8 ou 10 échecs.** Relevé du 2026-08-30 à 10:42 CEST, base
+`kesh_e2e` reconstruite : **212 passés / 11 échoués** = les 7 de la KF-029, les 2 de la KF-045,
+et 2 de pollution (`reconciliation-rules.spec.ts:37`, `reports.spec.ts:306`) qui passent
+rejoués seuls.
 
 **Le huitième n'a pas d'identité fixe, et c'est l'information utile.** Deux runs complets à
 un jour d'intervalle :

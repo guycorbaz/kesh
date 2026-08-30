@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev
+in-progress
 
 ## Story
 
@@ -383,41 +383,41 @@ qu'il faut faire au lieu de laisser l'utilisateur découvrir un refus.
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — L'erreur** (AC 1, 3, 4)
-  - [ ] `DbError::EntryIsPosted` + `"ENTRY_IS_POSTED"` dans `crates/kesh-db/src/errors.rs`, miroir exact d'`EntryIsReversed`
-  - [ ] mappage **409** dans `crates/kesh-api/src/errors.rs`, message nommant la contre-passation
-- [ ] **T2 — Le `DELETE`** (AC 3, 5, 6, 8)
-  - [ ] `delete_in_tx` gagne `enforce_immutability: bool` ; refus **après** `FiscalYearClosed` et **après** `ENTRY_IS_REVERSED`
-  - [ ] `delete_by_id` passe `true` ; `invoices::delete` passe `false`, avec le commentaire nommant le résidu (D5)
-  - [ ] doc-comments des deux fonctions repris — ⛔ ils décrivent aujourd'hui une suppression qui aboutit
-- [ ] **T3 — Le `PUT`** (AC 1, 2, 9)
-  - [ ] `journal_entries::update` **supprimée**, avec ses tests unitaires devenus sans objet
-  - [ ] handler `update_journal_entry` réécrit : plus de corps désérialisé, `find_by_id` scopé, 404 sinon 409
-  - [ ] `UpdateJournalEntryRequest` retiré s'il ne sert plus
-  - [ ] ⛔ `grep -rn "journal_entries::update" .` **sur le dépôt entier** — quatre sites de code au présent (`accounts.rs:444`, `admin_full_import_e2e.rs:1354`, `balance_sheet.rs:28`, `frontend/tests/e2e/fiscal-years.spec.ts:114`) plus `docs/optimistic-locking-patterns.md` (`:49`, `:75`)
-  - [ ] ⛔ **NE PAS toucher** : la migration `20260729000001…sql:54` (P8) ni les six story files historiques de `_bmad-output/` — cf. Dev Notes
-- [ ] **T4 — L'écran** (AC 11, 12, 13)
-  - [ ] liste : ✎ et 🗑 remplacés par un lien vers la fiche, `data-testid`
-  - [ ] `JournalEntryForm.svelte` en création seule ; `editingEntry`, mode `'edit'`, modale de suppression et modale de conflit de version retirés
-  - [ ] `updateJournalEntry` / `deleteJournalEntry` retirés de `journal-entries.api.ts`
-- [ ] **T5 — i18n et dette de sélecteurs** (AC 14, 15)
-  - [ ] clés neuves dans les **quatre** locales ; **onze** clés orphelines retirées des quatre — dont les **quatre** de la modale de conflit
-  - [ ] ⛔ ne PAS retirer `journal-entries-delete-blocked-reversed` (backend, `errors.rs:2517`)
-  - [ ] `journal-entries.spec.ts :: Supprimer` et `:: Annuler` retirées de `DETTE_CONNUE`
-  - [ ] ⚠️ `i18n-keys.test.ts` (`ATTENDU.sitesTotal`, **1630**) rougira — ventilation documentée dans son doc-comment, avec le delta et son motif
-- [ ] **T6 — Le manuel** (AC 16)
-  - [ ] les **sept** passages de `docs/manual/fr/user-manual.tex` (cf. Dev Notes), dont `:532` et la FAQ `:1585`
-  - [ ] `make fr` dans `docs/manual/`, PDF commité
-- [ ] **T7 — Les tests**
-  - [ ] `crates/kesh-api/tests/journal_entry_reversal_e2e.rs` étendu — c'est le fichier que la 24-4a a créé **pour porter aussi cette story**
-  - [ ] la précédence de l'AC 5 testée en montant les deux causes ensemble
-  - [ ] I1, I2, I3 — I3 sur une écriture d'exercice **clos** et sur l'écriture d'**ouverture**
-  - [ ] les quatre tests du bloc `« Page écritures — modification (Story 3.3) »` de `journal-entries.spec.ts` réécrits ou retirés
-- [ ] **T8 — Les gates** (⛔ complets, ciblage interdit — exception `kesh-db`)
-  - [ ] base remise à zéro (KF-039), puis `scripts/test-fast.sh`
-  - [ ] `npm run check` / `lint-i18n-ownership` / `test:unit` / `build`
+- [x] **T1 — L'erreur** (AC 1, 3, 4)
+  - [x] `DbError::EntryIsPosted` + `"ENTRY_IS_POSTED"` dans `crates/kesh-db/src/errors.rs`, miroir exact d'`EntryIsReversed`
+  - [x] mappage **409** dans `crates/kesh-api/src/errors.rs`, message nommant la contre-passation
+- [x] **T2 — Le `DELETE`** (AC 3, 5, 6, 8)
+  - [x] `delete_in_tx` gagne `enforce_immutability: bool` ; refus **après** `FiscalYearClosed` et **après** `ENTRY_IS_REVERSED`
+  - [x] `delete_by_id` passe `true` ; `invoices::delete` passe `false`, avec le commentaire nommant le résidu (D5)
+  - [x] doc-comments des deux fonctions repris — ⛔ ils décrivent aujourd'hui une suppression qui aboutit
+- [x] **T3 — Le `PUT`** (AC 1, 2, 9)
+  - [x] `journal_entries::update` **supprimée**, avec ses tests unitaires devenus sans objet
+  - [x] handler `update_journal_entry` réécrit : plus de corps désérialisé, `find_by_id` scopé, 404 sinon 409
+  - [x] `UpdateJournalEntryRequest` retiré s'il ne sert plus
+  - [x] ⛔ `grep -rn "journal_entries::update" .` **sur le dépôt entier** — quatre sites de code au présent (`accounts.rs:444`, `admin_full_import_e2e.rs:1354`, `balance_sheet.rs:28`, `frontend/tests/e2e/fiscal-years.spec.ts:114`) plus `docs/optimistic-locking-patterns.md` (`:49`, `:75`)
+  - [x] ⛔ **NE PAS toucher** : la migration `20260729000001…sql:54` (P8) ni les six story files historiques de `_bmad-output/` — cf. Dev Notes
+- [x] **T4 — L'écran** (AC 11, 12, 13)
+  - [x] liste : ✎ et 🗑 remplacés par un lien vers la fiche, `data-testid`
+  - [x] `JournalEntryForm.svelte` en création seule ; `editingEntry`, mode `'edit'`, modale de suppression et modale de conflit de version retirés
+  - [x] `updateJournalEntry` / `deleteJournalEntry` retirés de `journal-entries.api.ts`
+- [x] **T5 — i18n et dette de sélecteurs** (AC 14, 15)
+  - [x] clés neuves dans les **quatre** locales ; **onze** clés orphelines retirées des quatre — dont les **quatre** de la modale de conflit
+  - [x] ⛔ ne PAS retirer `journal-entries-delete-blocked-reversed` (backend, `errors.rs:2517`)
+  - [x] `journal-entries.spec.ts :: Supprimer` et `:: Annuler` retirées de `DETTE_CONNUE`
+  - [x] ⚠️ `i18n-keys.test.ts` (`ATTENDU.sitesTotal`, **1630**) rougira — ventilation documentée dans son doc-comment, avec le delta et son motif
+- [x] **T6 — Le manuel** (AC 16)
+  - [x] les **sept** passages de `docs/manual/fr/user-manual.tex` (cf. Dev Notes), dont `:532` et la FAQ `:1585`
+  - [x] `make fr` dans `docs/manual/`, PDF commité
+- [x] **T7 — Les tests**
+  - [x] `crates/kesh-api/tests/journal_entry_reversal_e2e.rs` étendu — c'est le fichier que la 24-4a a créé **pour porter aussi cette story**
+  - [x] la précédence de l'AC 5 testée en montant les deux causes ensemble
+  - [x] I1, I2, I3 — I3 sur une écriture d'exercice **clos** et sur l'écriture d'**ouverture**
+  - [x] les quatre tests du bloc `« Page écritures — modification (Story 3.3) »` de `journal-entries.spec.ts` réécrits ou retirés
+- [x] **T8 — Les gates** (⛔ complets, ciblage interdit — exception `kesh-db`)
+  - [x] base remise à zéro (KF-039), puis `scripts/test-fast.sh`
+  - [x] `npm run check` / `lint-i18n-ownership` / `test:unit` / `build`
   - [ ] suite Playwright complète, comparée à la baseline de `docs/testing.md`
-  - [ ] ⛔ **l'issue de D5 est OUVERTE** (jalon « Vague 1 »), et son numéro reporté dans le commentaire d'`invoices::delete` — sans porteur, elle n'existerait jamais, et la § *Issue Tracking Rule* fait de GitHub la source de vérité unique
+  - [x] ⛔ **l'issue de D5 est OUVERTE** (jalon « Vague 1 »), et son numéro reporté dans le commentaire d'`invoices::delete` — sans porteur, elle n'existerait jamais, et la § *Issue Tracking Rule* fait de GitHub la source de vérité unique
 
 ## Hors périmètre
 
@@ -536,11 +536,77 @@ que des `README.md` — rien à propager.
 
 ### Agent Model Used
 
-### Debug Log References
+Opus 5 (`claude-opus-5[1m]`) — implémentation du 2026-08-30.
 
 ### Completion Notes List
 
+**Ce que l'implémentation a confirmé de la spec, et ce qu'elle a dû trancher au sol.**
+
+- ⛔ **`journal_entries::update` pesait 329 lignes**, helper `is_no_op_change` compris. La spec
+  demandait de la supprimer plutôt que de la neutraliser ; à l'exécution, l'argument s'est
+  renforcé : la garde d'exercice clos, le contrôle de version optimiste, le *grandfathering* des
+  projets archivés et la validation des comptes seraient tous devenus inatteignables **en
+  paraissant vivants**.
+- ⚠️ **Huit tests unitaires exerçaient `update`** — ils sont partis avec elle, ainsi que le
+  helper `three_accounts` que `clippy -D warnings` a immédiatement signalé mort. C'est le seul
+  résidu que la compilation ait trouvé.
+- ⚠️ **`form-helpers.ts` n'a survécu que par son type.** Ses trois fonctions
+  (`amountToFieldValue`, `lineResponseToDraft`, `fromJournalEntryResponse`) n'existaient que
+  pour pré-remplir le formulaire depuis une écriture existante ; elles sont mortes avec le mode
+  édition, et leur fichier de tests (7 tests) avec elles. Le type `LineDraft` reste, il sert à
+  la saisie.
+- ⛔ **Le `\og … \fg{}` de LaTeX n'est pas défini dans ce manuel** — la compilation a échoué
+  net sur la première occurrence. Le document emploie « » directement, 62 fois : les quatre
+  occurrences introduites ont été converties. *Une convention se lit dans le fichier, elle ne se
+  suppose pas.*
+- ⚠️ **Le `\subsection{Modification et suppression}` a été renommé**, pas seulement réécrit :
+  un titre qui annonce une fonction disparue est un mensonge de sommaire.
+- ⚠️ **Un huitième passage du manuel** a été trouvé pendant la reprise, hors des sept de la
+  spec : `:328` disait « une écriture saisie à la main (création **ou modification**) ». Le grep
+  prescrit l'avait rendu ; il fallait le lire jusqu'au bout de la ligne.
+- ⚠️ **La seconde société du test IDOR a échoué au premier gate** (`Field 'address' doesn't have
+  a default value`). Le fichier portait déjà le gabarit correct — un `INSERT … SELECT` qui
+  recopie la société existante. *Un précédent qui existe dans le fichier même vaut mieux qu'un
+  `INSERT` réinventé.*
+
+**Décomptes, recomptés depuis la source** (périmètre : de `main` au commit d'implémentation) :
+
+| grandeur | avant | après | écart |
+|---|---|---|---|
+| tests backend (`test-fast.sh`) | 2257 | **2258** | −8 unitaires partis avec `update`, +9 d'intégration neufs |
+| `#[tokio::test]` dans `journal_entries.rs` | 36 | **28** | −8 |
+| tests du binaire `journal_entry_reversal_e2e` | 18 | **27** | +9 |
+| tests frontend (`test:unit`) | 747 | **740** | −7 (`form-helpers.test.ts`, supprimé) |
+| `ATTENDU.sitesTotal` | 1630 | **1619** | −11 clés, −1 site du bouton Annuler de la modale, +1 lien |
+| clés par catalogue (les quatre) | 1687 | **1678** | −11 retirées, +2 ajoutées |
+| passages du manuel repris | — | **8** | les sept de la spec, plus `:328` |
+
 ### File List
+
+| fichier | nature |
+|---|---|
+| `crates/kesh-db/src/errors.rs` | UPDATE — `DbError::EntryIsPosted` + code canonique |
+| `crates/kesh-db/src/repositories/journal_entries.rs` | UPDATE — ⛔ `update` et `is_no_op_change` **supprimées** (329 lignes) ; `delete_in_tx(+enforce_immutability)` ; 8 tests unitaires et le helper `three_accounts` retirés |
+| `crates/kesh-db/src/repositories/invoices.rs` | UPDATE — le seul `enforce_immutability = false`, commenté |
+| `crates/kesh-db/src/repositories/accounts.rs` | UPDATE — commentaire `:444` |
+| `crates/kesh-api/src/errors.rs` | UPDATE — mappage 409 `ENTRY_IS_POSTED` |
+| `crates/kesh-api/src/routes/journal_entries.rs` | UPDATE — handler réécrit sans extracteur de corps ; `UpdateJournalEntryRequest` retiré |
+| `crates/kesh-report/src/balance_sheet.rs` | UPDATE — doc-comment `:28` |
+| `crates/kesh-api/tests/admin_full_import_e2e.rs` | UPDATE — doc-comment `:1354` |
+| `crates/kesh-api/tests/journal_entry_reversal_e2e.rs` | UPDATE — **9 tests neufs** (18 → 27) |
+| `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl` | UPDATE — 11 clés retirées, 2 ajoutées |
+| `frontend/src/routes/(app)/journal-entries/+page.svelte` | UPDATE — la cellule d'actions devient un lien (733 → 594 lignes) |
+| `frontend/src/lib/features/journal-entries/JournalEntryForm.svelte` | UPDATE — création seule (546 → 460 lignes) |
+| `frontend/src/lib/features/journal-entries/journal-entries.api.ts` | UPDATE — deux fonctions retirées |
+| `frontend/src/lib/features/journal-entries/journal-entries.types.ts` | UPDATE — `UpdateJournalEntryRequest` retiré |
+| `frontend/src/lib/features/journal-entries/form-helpers.ts` | UPDATE — seul le type `LineDraft` survit |
+| `frontend/src/lib/features/journal-entries/form-helpers.test.ts` | **DELETE** — 7 tests, tous sur les fonctions supprimées |
+| `frontend/src/lib/shared/e2e-selecteurs-traduits.test.ts` | UPDATE — 2 entrées mortes retirées |
+| `frontend/src/lib/shared/i18n-keys.test.ts` | UPDATE — `sitesTotal` 1630 → 1619, ventilation documentée |
+| `frontend/tests/e2e/journal-entries.spec.ts` | UPDATE — le bloc « modification » remplacé par celui du gel |
+| `frontend/tests/e2e/fiscal-years.spec.ts` | UPDATE — JSDoc `:114` |
+| `docs/optimistic-locking-patterns.md` | UPDATE — la ligne 8 du tableau et « Variant A protégée » |
+| `docs/manual/fr/user-manual.tex` (+ `.pdf`) | UPDATE — 8 passages, PDF régénéré en deux passes |
 
 ## Journal de revue
 
