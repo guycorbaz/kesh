@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev
+review
 
 ## Story
 
@@ -294,44 +294,44 @@ sont verrouillées jusqu'au 31.03.2026 ; cette écriture est datée du 15.01.202
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — La migration et ses garde-fous** (AC 1)
-  - [ ] `books_locked_through DATE NULL` sur `companies` — `ADD COLUMN` nullable, donc **non breaking** (P1) : ni bump `min_required`, ni bump Cargo
-  - [ ] ligne dans `crates/kesh-db/migrations.sha384` (P8)
-  - [ ] ligne + les **cinq** compteurs de `docs/migrations-idempotence-audit.md`, recomptés depuis la source (P5)
-  - [ ] `crates/kesh-db/test-schema/0001_schema_squash.sql` aligné
-  - [ ] ⛔ **DEUX nombres à bumper, pas un** (P6) : `assert_eq!(total, 64)` → `65` (`migrations_upgrade_path.rs:96`) **ET** le `N` de `total - N` de `30` → `31`, pour que la **frontière reste à 34**. Le fichier le dit lui-même (`:108-115`) : bumper le total seul élargirait la fenêtre d'upgrade en silence
-  - [ ] contrôle P7 : DDL pur, aucune donnée écrite → ni registre ni exemption
-- [ ] **T2 — La garde, au point de passage unique** (AC 2, 4, 9)
-  - [ ] `DbError::PeriodLocked { locked_through, attempted }` → **400** `PERIOD_LOCKED`, message nommant les deux dates
-  - [ ] ⛔ contrôle dans **`create_in_tx_inner`** (`:226`) et non dans le wrapper `create_in_tx` — `reverse` appelle l'inner directement (`:1385`)
-  - [ ] contrôle placé **après** les gardes d'exercice, dans l'ordre réel du code (D4)
-  - [ ] ⛔ vérifier au sol les **douze** chemins de production — puis **trier** : dix des vingt-deux lignes du grep ne créent rien
-- [ ] **T3 — Poser et lever** (AC 3, 6, 7, 8)
-  - [ ] `companies::lock_books` / `unlock_books`, gabarit `fiscal_years::reopen` (`:779`)
-  - [ ] refus d'une borne **future ou du jour** (AC 3) ; motif obligatoire et non blanc au déverrouillage
-  - [ ] ⛔ **`lock_books` refuse une date `<=` à la borne courante** — la garde de valeur sans laquelle la garde de rôle est contournable (AC 6)
-  - [ ] routes sous `comptable_routes` (pose) et `admin_routes` (levée) ; audit `books.locked` / `books.unlocked`
-- [ ] **T4 — L'écran** (AC 11, 12)
-  - [ ] Réglages → Comptabilité ; bandeau sur la liste ; `min` sur le champ date
-  - [ ] clés dans les **quatre** locales, `data-testid` (jamais un libellé traduit — KF-043)
-- [ ] **T5 — L'export et la RESTAURATION** (AC 13, 14)
-  - [ ] ⛔ **le vrai chemin** : l'import `.keshbackup` écrit **`books.restored`** — et **jamais** `books.unlocked`, qui a un seul producteur (AC 8) — dès que la borne recule ; `companies` est dans `TABLES_TO_TRUNCATE`, la colonne y voyage toute seule
-  - [ ] `books_locked_through` dans **`serialize_company_csv`** (`csv_tables.rs:127` — au singulier, contrairement aux autres), **avec son test** — ⛔ la 24-4a a montré que cet export perd une colonne **en silence**
-- [ ] **T6 — Les tests**
-  - [ ] la garde sur le journal manuel, **la validation de facture** et **le rapprochement**
-  - [ ] ⛔ **poser une borne à la date du jour rend 400** (AC 3) — la garde neuve que rien n'exercerait sinon
-  - [ ] ⛔ **le test de l'AC 5 pose la borne À LA VEILLE**, valeur maximale admise — écrit avec une borne franchement passée, il ne verrait pas le défaut d'un jour
-  - [ ] ⛔ **un jeton Comptable ne peut pas reculer la borne** par l'endpoint d'avancement (AC 6), et la garde se tait quand la borne est `NULL`
-  - [ ] ⛔ **l'import qui fait reculer la borne écrit `books.restored`** avec l'ANCIENNE valeur (AC 14)
-  - [ ] la contre-passation qui aboutit (AC 5) **en traversant la garde** ; la précédence (AC 9) ; I1, I2, I3
-- [ ] **T7 — La doc**
-  - [ ] manuel **utilisateur** : le verrou, ses deux gestes, et ce qu'il ne remplace pas
-  - [ ] manuel **admin** : ⛔ la section *Conformité OLICo Art. 9* — le verrou de période **renforce** l'argument, comme le gel l'a fait ; ne pas le sous-déclarer
-  - [ ] README : la feuille de route v0.12.0
-- [ ] **T8 — Les gates** (⛔ complets, ciblage interdit — migration **et** repository)
-  - [ ] base remise à zéro (KF-039), puis `scripts/test-fast.sh`
-  - [ ] `npm run check` / `lint-i18n-ownership` / `test:unit` / `build`
-  - [ ] suite Playwright complète — ⚠️ **reconstruire `kesh_e2e`**, pas seulement la migrer (leçon 24-4b) ; comparer à la baseline de `docs/testing.md`, dont le compte **dépend de l'heure** (KF-045 #421)
+- [x] **T1 — La migration et ses garde-fous** (AC 1)
+  - [x] `books_locked_through DATE NULL` sur `companies` — `ADD COLUMN` nullable, donc **non breaking** (P1) : ni bump `min_required`, ni bump Cargo
+  - [x] ligne dans `crates/kesh-db/migrations.sha384` (P8)
+  - [x] ligne + les **cinq** compteurs de `docs/migrations-idempotence-audit.md`, recomptés depuis la source (P5)
+  - [x] `crates/kesh-db/test-schema/0001_schema_squash.sql` aligné
+  - [x] ⛔ **DEUX nombres à bumper, pas un** (P6) : `assert_eq!(total, 64)` → `65` (`migrations_upgrade_path.rs:96`) **ET** le `N` de `total - N` de `30` → `31`, pour que la **frontière reste à 34**. Le fichier le dit lui-même (`:108-115`) : bumper le total seul élargirait la fenêtre d'upgrade en silence
+  - [x] contrôle P7 : DDL pur, aucune donnée écrite → ni registre ni exemption
+- [x] **T2 — La garde, au point de passage unique** (AC 2, 4, 9)
+  - [x] `DbError::PeriodLocked { locked_through, attempted }` → **400** `PERIOD_LOCKED`, message nommant les deux dates
+  - [x] ⛔ contrôle dans **`create_in_tx_inner`** (`:226`) et non dans le wrapper `create_in_tx` — `reverse` appelle l'inner directement (`:1385`)
+  - [x] contrôle placé **après** les gardes d'exercice, dans l'ordre réel du code (D4)
+  - [x] ⛔ vérifier au sol les **douze** chemins de production — puis **trier** : dix des vingt-deux lignes du grep ne créent rien
+- [x] **T3 — Poser et lever** (AC 3, 6, 7, 8)
+  - [x] `companies::lock_books` / `unlock_books`, gabarit `fiscal_years::reopen` (`:779`)
+  - [x] refus d'une borne **future ou du jour** (AC 3) ; motif obligatoire et non blanc au déverrouillage
+  - [x] ⛔ **`lock_books` refuse une date `<=` à la borne courante** — la garde de valeur sans laquelle la garde de rôle est contournable (AC 6)
+  - [x] routes sous `comptable_routes` (pose) et `admin_routes` (levée) ; audit `books.locked` / `books.unlocked`
+- [x] **T4 — L'écran** (AC 11, 12)
+  - [x] Réglages → Comptabilité ; bandeau sur la liste ; `min` sur le champ date
+  - [x] clés dans les **quatre** locales, `data-testid` (jamais un libellé traduit — KF-043)
+- [x] **T5 — L'export et la RESTAURATION** (AC 13, 14)
+  - [x] ⛔ **le vrai chemin** : l'import `.keshbackup` écrit **`books.restored`** — et **jamais** `books.unlocked`, qui a un seul producteur (AC 8) — dès que la borne recule ; `companies` est dans `TABLES_TO_TRUNCATE`, la colonne y voyage toute seule
+  - [x] `books_locked_through` dans **`serialize_company_csv`** (`csv_tables.rs:127` — au singulier, contrairement aux autres), **avec son test** — ⛔ la 24-4a a montré que cet export perd une colonne **en silence**
+- [x] **T6 — Les tests**
+  - [x] la garde sur le journal manuel, **la validation de facture** et **le rapprochement**
+  - [x] ⛔ **poser une borne à la date du jour rend 400** (AC 3) — la garde neuve que rien n'exercerait sinon
+  - [x] ⛔ **le test de l'AC 5 pose la borne À LA VEILLE**, valeur maximale admise — écrit avec une borne franchement passée, il ne verrait pas le défaut d'un jour
+  - [x] ⛔ **un jeton Comptable ne peut pas reculer la borne** par l'endpoint d'avancement (AC 6), et la garde se tait quand la borne est `NULL`
+  - [x] ⛔ **l'import qui fait reculer la borne écrit `books.restored`** avec l'ANCIENNE valeur (AC 14)
+  - [x] la contre-passation qui aboutit (AC 5) **en traversant la garde** ; la précédence (AC 9) ; I1, I2, I3
+- [x] **T7 — La doc**
+  - [x] manuel **utilisateur** : le verrou, ses deux gestes, et ce qu'il ne remplace pas
+  - [x] manuel **admin** : ⛔ la section *Conformité OLICo Art. 9* — le verrou de période **renforce** l'argument, comme le gel l'a fait ; ne pas le sous-déclarer
+  - [x] README : la feuille de route v0.12.0
+- [x] **T8 — Les gates** (⛔ complets, ciblage interdit — migration **et** repository)
+  - [x] base remise à zéro (KF-039), puis `scripts/test-fast.sh`
+  - [x] `npm run check` / `lint-i18n-ownership` / `test:unit` / `build`
+  - [x] suite Playwright complète — ⚠️ **reconstruire `kesh_e2e`**, pas seulement la migrer (leçon 24-4b) ; comparer à la baseline de `docs/testing.md`, dont le compte **dépend de l'heure** (KF-045 #421)
 
 ## Hors périmètre
 
@@ -417,11 +417,96 @@ vrai.*
 
 ### Agent Model Used
 
-### Debug Log References
+Opus 5 (`claude-opus-5[1m]`) — implémentation du 2026-08-30.
 
 ### Completion Notes List
 
+⛔ **Ce que le GATE a trouvé et que quatre passes de revue de spec n'avaient pas vu.** Les
+listes de colonnes de `companies` **écrites à la main** existent dans **quatre** endroits, pas
+un : la spec n'avait nommé que `serialize_company_csv`, alors que `routes/onboarding.rs` en
+portait **deux** et `kesh-seed/src/lib.rs` **une**. Les trois manquantes faisaient échouer
+l'onboarding en **500**, et **seule l'exécution réelle les a révélées** — c'est exactement ce
+que les garde-fous P6 et P7 disent de ce mode d'échec : *il ne naît ni du code écrit ni de la
+spec, mais de l'interaction avec ce que la story ne touche pas.*
+
+⚠️ **Deux garde-fous hors périmètre ont parlé, et c'était leur travail.**
+`admin_pat_denied_e2e` tient la liste des couples de routes Admin **et** leur répartition entre
+les deux gardes ; ajouter la route de déverrouillage a fait rougir les deux assertions. La
+seconde (`(5, 20)` → `(5, 21)`) est celle qu'on aurait pu « ajuster » sans réfléchir : elle dit
+que le déverrouillage est arrêté par le **gate de portée** de la clé et non par la couche de
+rôle, ce qui est le comportement voulu.
+
+⛔ **J'ai réintroduit un défaut que j'avais corrigé quatre fois plus tôt le même jour** : le
+`\og … \fg{}` de LaTeX, **indéfini dans ce manuel**, qui fait échouer la compilation. C'est
+le symptôme même que les passes 1 à 3 de cette story ont nommé — *corriger au site et laisser
+le geste se reproduire ailleurs*. Deux titres d'encadré ont aussi dû être protégés par des
+accolades : une virgule dans un `[title=…]` casse l'analyse `pgfkeys`.
+
+⚠️ **La borne se lit tôt et s'évalue tard**, et il faut le comprendre pour ne pas le
+« simplifier » : l'ordre des **verrous** (companies en premier, Pattern 5) et l'ordre des
+**refus** (le verrou parle en dernier) ne sont pas le même. Lire la borne après le lock
+`fiscal_years` créerait une inversion ABBA ; l'évaluer avant les gardes d'exercice enverrait
+l'utilisateur corriger la mauvaise chose.
+
+**Décomptes, recomptés depuis la source** (périmètre : de `main` au commit d'implémentation) :
+
+| grandeur | avant | après | écart |
+|---|---|---|---|
+| tests backend (`test-fast.sh`) | 2258 | **2270** | +11 (`period_lock_e2e`) +1 (export) |
+| migrations | 64 | **65** | +1, et les **cinq** compteurs de l'audit recomptés (partition 5+60+0 = 65) |
+| `assert_eq!(total, N)` · fenêtre `total - N` | 64 · 30 | **65 · 31** | frontière tenue à **34** |
+| clés par catalogue (les quatre) | 1678 | **1687** | +9 |
+| `ATTENDU.sitesTotal` | 1619 | **1630** | +11 — neuf clés, onze sites |
+| tests frontend (`test:unit`) | 740 | **740** | inchangé |
+
+### Gates réellement exécutés
+
+| gate | résultat |
+|---|---|
+| `cargo fmt --all -- --check` | propre |
+| `cargo clippy --workspace --all-targets -- -D warnings` | 0 warning |
+| `scripts/test-fast.sh`, base remise à zéro (KF-039) | **2270/2270**, 4 skipped |
+| `npm run check` · `lint-i18n-ownership` · `test:unit` · `build` | 0 erreur · PASS · **740/740** · OK |
+| Playwright, suite **complète**, `kesh_e2e` **reconstruite** | **214 passés / 9 échoués — ZÉRO RÉGRESSION** |
+
+**Les neuf échecs, chacun tranché** : 7 de la KF-029 (#97), 1 de pollution
+(`reminders.spec.ts:146`, verte rejouée seule), et 1 de la **KF-046 (#424)**, ouverte à cette
+occasion.
+
+⛔ **La KF-046 a été mesurée sur `main`, pas déduite** : frontend de `main` reconstruit en
+worktree (`npm ci && npm run build`), servi par `KESH_STATIC_DIR`, base reconstruite —
+**l'échec est identique**. Ce n'est pas une régression. ⚠️ Elle passait pourtant seule le matin
+même : un test qui dépend de la **route d'atterrissage** est fragile comme celui de la KF-045
+dépend de l'heure.
+
+✅ **Et la KF-045 ne s'est PAS déclenchée sur ce run** — il était 14:13 UTC, donc après midi.
+C'est la confirmation empirique de son diagnostic horaire.
+
 ### File List
+
+| fichier | nature |
+|---|---|
+| `crates/kesh-db/migrations/20260830000001_companies_books_lock.sql` | NEW |
+| `crates/kesh-db/migrations.sha384` · `test-schema/0001_schema_squash.sql` | UPDATE |
+| `crates/kesh-db/tests/migrations_upgrade_path.rs` | UPDATE — P6, **deux** nombres (`total` et `N`) |
+| `docs/migrations-idempotence-audit.md` | UPDATE — P5, ligne + cinq compteurs |
+| `crates/kesh-db/src/entities/company.rs` · `errors.rs` | UPDATE — le champ, `DbError::PeriodLocked` |
+| `crates/kesh-db/src/repositories/companies.rs` | UPDATE — `lock_books` / `unlock_books` |
+| `crates/kesh-db/src/repositories/journal_entries.rs` | UPDATE — la garde dans `create_in_tx_inner` |
+| `crates/kesh-api/src/errors.rs` | UPDATE — mappage **400** `PERIOD_LOCKED` |
+| `crates/kesh-api/src/routes/companies.rs` · `lib.rs` | UPDATE — les deux routes, RBAC asymétrique |
+| `crates/kesh-api/src/routes/admin.rs` | UPDATE — `books.restored`, borne relevée **avant** le restore |
+| `crates/kesh-api/src/routes/onboarding.rs` · `crates/kesh-seed/src/lib.rs` | UPDATE — ⛔ **trois** listes de colonnes manuelles, trouvées par le gate |
+| `crates/kesh-api/src/exports/csv_tables.rs` | UPDATE — la colonne **et son test** |
+| `crates/kesh-api/tests/period_lock_e2e.rs` | NEW — **11 tests** |
+| `crates/kesh-api/tests/admin_pat_denied_e2e.rs` | UPDATE — le couple Admin et la répartition |
+| `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl` | UPDATE — 9 clés × 4 |
+| `frontend/src/lib/features/settings/settings.{api,types}.ts` | UPDATE |
+| `frontend/src/routes/(app)/settings/+page.svelte` | UPDATE — la section, `msg()` accepte les arguments |
+| `frontend/src/routes/(app)/journal-entries/+page.svelte` | UPDATE — le bandeau |
+| `frontend/src/lib/features/journal-entries/JournalEntryForm.svelte` | UPDATE — le `min` du champ date |
+| `frontend/src/lib/shared/i18n-keys.test.ts` | UPDATE — `sitesTotal` et sa ventilation |
+| `docs/manual/fr/{user,admin}-manual.tex` (+ PDF) · `README.md` · `docs/testing.md` | UPDATE |
 
 ## Journal de revue
 
