@@ -487,6 +487,28 @@ dépend de l'heure.
 ✅ **Et la KF-045 ne s'est PAS déclenchée sur ce run** — il était 14:13 UTC, donc après midi.
 C'est la confirmation empirique de son diagnostic horaire.
 
+**Run de contrôle du 2026-08-30, 18:53 UTC — après une session perdue, harnais remonté de
+zéro** : suite complète rejouée sur `kesh_e2e` **reconstruite** (`DROP` + `CREATE` + 65
+migrations), **215 passés / 8 échoués / 19 ignorés** en 9,0 min. **ZÉRO RÉGRESSION**, et la
+ventilation se recoupe : les **7** de la KF-029 (#97) à la ligne près, plus **1** de pollution —
+`product-revenue-account.spec.ts:133`, **verte rejouée seule (4/4 en 7,7 s)**, son bouton de
+soumission resté `disabled` par une spec antérieure.
+
+⚠️ **Huit et non neuf, parce que ni la KF-045 ni la KF-046 ne se sont déclenchées** : la première
+parce que le run était du soir (18:53 UTC), la seconde parce qu'elle dépend de la route
+d'atterrissage. *Deux runs du même jour, deux comptes différents, aucune régression dans ni l'un
+ni l'autre — c'est précisément pourquoi un rouge se juge fichier par fichier et jamais au nombre.*
+
+⚠️ **L'identité de la pollution a encore changé** : `product-revenue-account.spec.ts:133` est la
+**cinquième** relevée, et la **troisième spec distincte du seul 2026-08-30**. Le motif documenté
+tient : l'identité varie, le nombre varie, et chacune repasse rejouée seule.
+
+⛔ **Ce que ce run a coûté et qu'il faut savoir avant le prochain** : `kesh_e2e` avait **disparu**
+— plus de `_sqlx_migrations` — le conteneur MariaDB ayant redémarré entre-temps et son tmpfs
+ayant tout emporté. La règle « un gate laisse la base piégée » a donc ici une **troisième**
+circonstance, après le gate interrompu et le gate terminé : *le conteneur redémarré*. Dans les
+trois cas le geste est le même, et il est inconditionnel.
+
 ### File List
 
 | fichier | nature |
