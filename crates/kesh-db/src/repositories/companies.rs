@@ -450,6 +450,26 @@ pub async fn unlock_books(
         )));
     }
 
+    // ⛔ Et le sous-cas symétrique : **poser un PREMIER verrou par la levée**.
+    // Sans borne courante, la garde ci-dessus se tait — comme celle de
+    // `lock_books`, où ce silence est voulu. Mais ici l'effet diffère : la
+    // société n'a jamais été verrouillée, et l'opération réussirait en écrivant
+    // `books.unlocked` sur un verrou qui n'a jamais existé.
+    //
+    // ⚠️ Aucune faille de droits — la route est Admin seule, et l'écran ne rend
+    // le formulaire que si une borne existe. Ce qui se corrompt est la **trace** :
+    // le réviseur qui filtre « qui a déverrouillé » lirait une pose, sur une
+    // société qui n'a jamais rien verrouillé. *C'est la même exigence que R4,
+    // étendue au seul sous-cas qu'elle avait laissé ouvert.*
+    if before.is_none() && through.is_some() {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Err(DbError::IllegalStateTransition(
+            "les livres ne sont pas verrouillés — il n'y a rien à reculer ni à retirer ; \
+             poser une borne relève de `lock_books`"
+                .into(),
+        ));
+    }
+
     sqlx::query("UPDATE companies SET books_locked_through = ? WHERE id = ?")
         .bind(through)
         .bind(company_id)

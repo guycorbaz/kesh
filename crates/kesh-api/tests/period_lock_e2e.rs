@@ -824,3 +824,41 @@ async fn le_refus_de_borne_dit_pourquoi(pool: MySqlPool) {
         "le refus doit expliquer, pas dire « Entrée invalide » : {message}"
     );
 }
+
+/// ⛔ **On ne pose pas un PREMIER verrou par l'endpoint de levée.**
+///
+/// Sans borne courante, la garde d'avancée se tait — comme celle de la pose, où
+/// ce silence est voulu. Mais l'effet diffère : l'opération réussissait en
+/// écrivant `books.unlocked` sur une société **qui n'a jamais rien verrouillé**.
+///
+/// ⚠️ Aucune faille de droits, et le formulaire ne s'affiche même pas dans ce
+/// cas. Ce qui se corrompait est la **trace** — le réviseur qui filtre « qui a
+/// déverrouillé » aurait lu une pose. *Relevé en passe 3 de revue de code, par
+/// une lentille qui a écrit une sonde pour le reproduire.*
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn on_ne_pose_pas_un_premier_verrou_par_la_levee(pool: MySqlPool) {
+    let (app, token, _company_id, _fy) = setup(&pool).await;
+
+    let (st, body) = lever_verrou(&app, &token, Some(hier()), "tentative de pose déguisée").await;
+    assert_eq!(
+        st, 409,
+        "aucune borne courante : il n'y a rien à reculer — {body}"
+    );
+
+    let borne: Option<chrono::NaiveDate> =
+        sqlx::query_scalar("SELECT books_locked_through FROM companies ORDER BY id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(borne.is_none(), "aucune borne ne doit avoir été posée");
+
+    let traces: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'books.unlocked'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        traces, 0,
+        "aucune trace de déverrouillage sur une société jamais verrouillée"
+    );
+}

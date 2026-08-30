@@ -470,7 +470,7 @@ l'utilisateur corriger la mauvaise chose.
 |---|---|
 | `cargo fmt --all -- --check` | propre |
 | `cargo clippy --workspace --all-targets -- -D warnings` | 0 warning |
-| `scripts/test-fast.sh`, base remise à zéro (KF-039) | **2280/2280**, 4 skipped *(2270 à la livraison, +5 en passe 1 de revue, +5 en passe 2)* |
+| `scripts/test-fast.sh`, base remise à zéro (KF-039) | **2281/2281**, 4 skipped *(2270 à la livraison, +5 en passe 1, +5 en passe 2, +1 en passe 3)* |
 | `npm run check` · `lint-i18n-ownership` · `test:unit` · `build` | 0 erreur · PASS · **740/740** · OK |
 | Playwright, suite **complète**, `kesh_e2e` **reconstruite** | **214 passés / 9 échoués — ZÉRO RÉGRESSION** |
 
@@ -585,6 +585,38 @@ neufs**, dont les quatre qui exercent enfin `unlock_books` sur ses deux moitiés
 
 **Gate après remédiation** : `test-fast.sh` **2280/2280** sur base remise à zéro ; frontend
 0 erreur, lint-i18n PASS, 740/740.
+
+### Revue de code — passe 3, 2026-08-30 · Sonnet 4.6, contexte frais, CIBLÉE sur `c1962294`..`2d3f1c51`
+
+**0 CRITICAL, 0 HIGH, 1 MEDIUM, 0 LOW — un seul finding.**
+
+| # | sév. | ce qui était faux |
+|---|---|---|
+| P3-1 | MEDIUM | ⛔ **on pouvait poser un PREMIER verrou par l'endpoint de levée.** Sans borne courante, la garde d'avancée se taisait — et l'opération réussissait en écrivant `books.unlocked` sur une société **qui n'a jamais rien verrouillé** |
+
+⚠️ **La lentille a écrit une sonde pour le reproduire**, puis l'a retirée : `git status` propre.
+Elle a aussi vérifié **par mutation** que les quatre gardes neuves font bien rougir leurs tests,
+en restaurant à chaque fois. *Une garde vérifiée par mutation est une garde dont on sait qu'elle
+tient ; les autres sont des espoirs.*
+
+✅ **Tout le reste est confirmé correct** : les deux codes présents une fois chacun dans la
+constante, le dispatch et les quatre catalogues, sans phrase brute résiduelle ; les deux sites de
+`period_locked_failed_proposal` ; l'omission de `projectId` ; le calcul du `max` en UTC, y
+compris au changement de mois ; et le mappage `IllegalStateTransition` → **409 générique**,
+identique au refus symétrique de `lock_books` — cohérent, donc pas une régression.
+
+⛔ **Ce finding CLÔT une famille plutôt qu'il n'en ouvre une.** Le sous-cas `before = None` est
+le dernier angle de la garde R4, que ni la spec ni les deux remédiations précédentes n'avaient
+considéré. Le corriger ferme l'exigence entière : `books.unlocked` a désormais **réellement** un
+seul producteur, ce que son doc-comment affirmait depuis deux passes.
+
+**Un rattrapage fait AVANT cette passe, et il compte**, parce qu'il vient du geste que la passe 2
+recommandait — greper chaque correction dans les tests : la remédiation de la passe 2 avait
+ajouté **deux** codes au dispatch et n'en testait **qu'un**. C'est la **cinquième** occurrence du
+motif « corriger au site, laisser le jumeau » sur cette story, et **la première attrapée par un
+geste systématique plutôt que par une lentille**.
+
+**Gate après remédiation** : `test-fast.sh` **2281/2281** sur base remise à zéro.
 
 ⚠️ **Réserve maintenue.** La passe 1 n'a eu que **deux** lentilles au lieu des trois du
 protocole. Et l'AC 4 est désormais tenue pour la **facture** (test E2E) et pour le **mappage**
