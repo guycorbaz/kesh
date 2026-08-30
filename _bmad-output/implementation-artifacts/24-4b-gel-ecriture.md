@@ -679,8 +679,41 @@ code et non seulement en commentaire ; les deux seuls appelants d'`enforce_immut
 compris côté backend ; `sitesTotal` 1619 ; les 8 passages du manuel et les 7 occurrences
 légitimes laissées en place. **Les 16 AC et les 3 invariants : tenus, aucun test muet détecté.**
 
-**Gate après remédiation** — le patch touche un **repository**, donc ciblage interdit
-(`CLAUDE.md`, exception `kesh-db`) : `test-fast.sh` **2258/2258** sur base remise à zéro.
+**Gate après remédiation — COMPLET, comme l'exige le dernier commit d'une boucle de revue.**
+Le patch touche un **repository**, donc ciblage interdit (`CLAUDE.md`, exception `kesh-db`).
+
+| gate | résultat |
+|---|---|
+| `test-fast.sh`, base remise à zéro | **2258/2258**, 4 skipped |
+| `npm run check` · `lint-i18n-ownership` · `test:unit` | 0 erreur · PASS · **740/740** |
+| Playwright, suite **complète**, base `kesh_e2e` reconstruite | **212 passés / 11 échoués — ZÉRO RÉGRESSION** |
+
+⚠️ **Le second run E2E a rendu le même total que le premier, mais PAS les mêmes échecs** :
+7 (KF-029) + 2 (KF-045, run matinal) + **2 de pollution qui ont changé d'identité** —
+`products.spec.ts:166` et `sidebar-navigation.spec.ts:75`, là où c'était
+`reconciliation-rules.spec.ts:37` et `reports.spec.ts:306`. Les quatre passent **rejouées
+seules**. ⛔ *Un total identique ne prouve donc rien : deux runs peuvent rendre 11 sans rougir
+au même endroit.* `docs/testing.md` porte désormais les deux listes nominatives et dit que la
+pollution n'a **ni identité fixe ni nombre fixe**.
+
+### BOUCLE DE REVUE DE CODE CLOSE — 2026-08-30
+
+**Une passe, une lentille, contexte frais, modèle orthogonal à l'auteur.**
+
+| passe | modèle | CRIT | HIGH | MED | LOW |
+|---|---|---|---|---|---|
+| 1 | Sonnet 4.6 | 0 | 0 | 1 | 2 |
+
+⚠️ **Critère de clôture** : la remédiation de cette passe ne touche **aucune ligne de code
+exécutable** — un doc-comment, un caractère de Markdown, une cellule de tableau. C'est le
+critère que le `CLAUDE.md` retient pour clore après une passe ciblée, et le motif « la
+remédiation introduit le défaut suivant » n'a plus de prise.
+
+⚠️ **Deux réserves, déclarées plutôt que tues.** (1) Le protocole de passe 1 emploie
+normalement **trois** lentilles en parallèle ; celle-ci n'en a eu qu'une, sur demande — la
+couverture est donc moindre, et l'orthogonalité des contextes n'a pas joué. (2) Les seize AC ont
+été audités par cette unique lentille, qui les déclare tous tenus : c'est un verdict de plus à
+prendre comme tel, non comme une preuve indépendante.
 
 
 ## Journal de revue

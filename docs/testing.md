@@ -350,10 +350,18 @@ elles échouent aussi sur `main` avant toute branche en cours (vérifié en work
 `d2910022`). Le relevé du 2026-08-26 ne les portait pas parce qu'il a été fait l'après-midi.
 **Un test qui dépend de l'heure ne rougit que pour la moitié des gens qui le lancent.**
 
-⇒ **Selon l'heure du run, attendre 8 ou 10 échecs.** Relevé du 2026-08-30 à 10:42 CEST, base
-`kesh_e2e` reconstruite : **212 passés / 11 échoués** = les 7 de la KF-029, les 2 de la KF-045,
-et 2 de pollution (`reconciliation-rules.spec.ts:37`, `reports.spec.ts:306`) qui passent
-rejoués seuls.
+⇒ **Le compte attendu est `7 + (2 si le run est matinal) + 1 à 2 de pollution`**, soit **8 à 11**.
+Deux relevés du 2026-08-30, base `kesh_e2e` reconstruite, tous deux **212 passés / 11 échoués** :
+
+| run | les 7 fixes | KF-045 | pollution — **change d'identité** |
+|---|---|---|---|
+| 10:42 CEST | ✅ | ✅ | `reconciliation-rules.spec.ts:37`, `reports.spec.ts:306` |
+| 11:06 CEST | ✅ | ✅ | `products.spec.ts:166`, `sidebar-navigation.spec.ts:75` |
+
+⚠️ **Les quatre passent rejouées seules.** La pollution n'a donc ni une identité fixe **ni même
+un nombre fixe** — la première rédaction parlait d'« un huitième » au singulier, ce qui était
+déjà trop précis. **Ne jamais juger un rouge au nombre : le juger fichier par fichier contre les
+deux listes nominatives ci-dessus, puis rejouer seul ce qui reste.**
 
 **Le huitième n'a pas d'identité fixe, et c'est l'information utile.** Deux runs complets à
 un jour d'intervalle :
