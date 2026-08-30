@@ -239,7 +239,15 @@ Le gate **complet** reste obligatoire : avant tout `git push`, avant de déclare
 
 ### Quand sauter
 
-Cette règle ne s'applique pas aux **commits doc-only** (markdown, yaml de planning, README, CLAUDE.md lui-même) qui ne touchent pas de code exécutable. Pour ces commits, la CI elle-même est généralement no-op (pas de Rust ni de TypeScript modifié → cache hit instantané).
+Cette règle ne s'applique pas aux **commits doc-only** (markdown, yaml de planning, README, CLAUDE.md lui-même) qui ne touchent pas de code exécutable : il n'y a rien à y casser localement.
+
+⚠️ **En revanche, la CI n'est PAS no-op sur un commit doc-only, et cette phrase disait le contraire.** `.github/workflows/ci.yml` n'a **aucun filtre `paths:`** — vérifié : ses déclencheurs sont `push: branches: [main]` et `pull_request: branches: [main]`, sans restriction de chemin. Les **trois** jobs s'exécutent donc à chaque push, quel que soit le fichier touché, et `Backend (Rust)` y enchaîne `cargo fmt`, `cargo build --workspace --all-targets`, `cargo clippy --workspace --all-targets`, `cargo publish --dry-run -p kesh-import` puis la suite complète en `-j1 --test-threads=1`.
+
+⛔ **Le cache `Swatinem/rust-cache` réduit la compilation, il ne supprime rien** — et il rate dès que `main` a bougé. Mesuré le 2026-08-30 sur la PR #423, dont le diff ne portait que deux fichiers Markdown et un YAML de planning : `Backend (Rust)` a dépassé **dix minutes**, les deux autres jobs étant verts en quelques-unes.
+
+**Ce que cela change en pratique** : un commit doc-only reste **gratuit en gate local** — c'est le sens de cette section, et il ne bouge pas — mais il **coûte un cycle de CI complet**. En conséquence, éviter d'en multiplier sur une même branche : les regrouper, ou les faire voyager avec la PR qui les motive.
+
+*(Corrigé le 2026-08-30, sur remarque de Guy. La formulation d'origine — « généralement no-op, cache hit instantané » — laissait croire qu'un commit de documentation ne déclenchait rien ; il déclenche tout.)*
 
 ## Plafonds mémoire — pourquoi une session de travail meurt en plein gate
 
