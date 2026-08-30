@@ -493,6 +493,19 @@ async fn le_deverrouillage_exige_un_motif_non_blanc(pool: MySqlPool) {
         assert_eq!(st, 400, "motif {motif:?} : doit être refusé");
     }
 
+    // ⛔ Le refus du motif porte lui aussi un CODE, et il doit traverser le
+    // dispatch. ⚠️ Le patch de la passe 2 en a ajouté DEUX à la liste blanche et
+    // n'en testait qu'UN : le jumeau serait resté muet, arrivant à l'écran en
+    // « Entrée invalide » sans que rien ne rougisse. *Trouvé en grepant chaque
+    // correction dans les tests avant d'écrire le journal — le geste que la
+    // passe 2 avait recommandé.*
+    let (_st, body) = lever_verrou(&app, &token, None, "").await;
+    let message = body["error"]["message"].as_str().unwrap_or_default();
+    assert!(
+        message.to_lowercase().contains("motif"),
+        "le refus doit nommer le motif, pas dire « Entrée invalide » : {message}"
+    );
+
     let (st, body) = lever_verrou(&app, &token, None, "erreur de saisie sur le T1").await;
     assert_eq!(st, 200, "avec motif, le déverrouillage passe : {body}");
     assert!(
