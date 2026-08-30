@@ -574,7 +574,7 @@ Opus 5 (`claude-opus-5[1m]`) — implémentation du 2026-08-30.
 | grandeur | avant | après | écart |
 |---|---|---|---|
 | tests backend (`test-fast.sh`) | 2257 | **2258** | −8 unitaires partis avec `update`, +9 d'intégration neufs |
-| `#[tokio::test]` dans `journal_entries.rs` | 36 | **28** | −8 |
+| `#[tokio::test]` dans `journal_entries.rs` | 35 | **27** | −8 |
 | tests du binaire `journal_entry_reversal_e2e` | 18 | **27** | +9 |
 | tests frontend (`test:unit`) | 747 | **740** | −7 (`form-helpers.test.ts`, supprimé) |
 | `ATTENDU.sitesTotal` | 1630 | **1619** | −11 clés, −1 site du bouton Annuler de la modale, +1 lien |
@@ -653,6 +653,35 @@ d'échecs attendus dépend de l'heure.
 | 2026-08-29 | **Spec** (`bmad-create-story`). Aucune migration, aucun statut `status` — l'effet de #380 sans sa colonne. |
 | 2026-08-29 | **Revue de spec, 4 passes**, rotation Sonnet + Haiku → Opus → Sonnet → Haiku, contextes frais, les trois dernières **ciblées** avec prompt versionné. **22 findings : 11 → 8 → 2 → 1**, dont **onze nés d'une remédiation** et, à partir de la passe 2, **la totalité**. ⚠️ Aucune décision de conception prise en défaut. Boucle close sur arbitrage de Guy. |
 | 2026-08-30 | **Implémentation** (`bmad-dev-story`). Gates ci-dessus. **KF-045 (#421)** ouverte — deux échecs E2E dépendants de l'heure, préexistants, vérifiés sur `main`. |
+| 2026-08-30 | **Revue de code, passe 1** (Sonnet 4.6, contexte frais, orthogonale à l'auteur Opus 5, diff **aplati** `d2910022..HEAD`) : **0 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW** — les trois sur des comptes rendus, aucun sur le comportement. |
+
+### Revue de code — passe 1, 2026-08-30 · Sonnet 4.6
+
+| # | sév. | lentille | ce qui était faux |
+|---|---|---|---|
+| BH-1 | MEDIUM | BlindHunter | ⛔ le doc-comment de `delete_by_id` était resté **identique à l'octet près** à sa version d'avant la story — il décrit encore un `DELETE` qui aboutit, alors que la fonction ne dépasse plus jamais l'étape 3. **Et la tâche T2 était cochée en déclarant « les doc-comments des DEUX fonctions repris »** : la case mentait. |
+| BH-2 | LOW | BlindHunter | un `**` orphelin dans `docs/testing.md` |
+| BH-3 | LOW | BlindHunter | le Dev Agent Record annonçait « 36 → 28 » `#[tokio::test]` ; ce sont **35 → 27**, un doc-comment contenant le motif étant compté aux deux bornes. Le delta (−8) était juste |
+
+⚠️ **BH-1 est le seul MEDIUM, et c'est exactement le défaut que cette famille de stories a déjà
+payé cher** : la passe 3 de revue de la 24-4a avait été égarée une journée entière par un
+doc-comment périmé de six mots. `delete_by_id` est la fonction qu'on ouvre en **premier** quand
+on cherche pourquoi un `DELETE` échoue.
+
+⚠️ **La lentille a raison sur BH-3, mais sa commande ne reproduit pas** : elle cite
+`grep -c '^#\[tokio::test\]'`, qui rend **0** — les attributs sont indentés. Le motif qui
+reproduit est `grep -cE '^[[:space:]]*#\[tokio::test\]$'`. *Une vérification au sol se relit
+comme le reste : un résultat juste obtenu par une commande fausse reste à refaire.*
+
+✅ **Confirmés exacts par la lentille, après contrôle indépendant** : la précédence des refus au
+code et non seulement en commentaire ; les deux seuls appelants d'`enforce_immutability` ; le
+404 avant le 409 ; la migration publiée **intacte** (P8) ; les onze clés sans site résiduel, y
+compris côté backend ; `sitesTotal` 1619 ; les 8 passages du manuel et les 7 occurrences
+légitimes laissées en place. **Les 16 AC et les 3 invariants : tenus, aucun test muet détecté.**
+
+**Gate après remédiation** — le patch touche un **repository**, donc ciblage interdit
+(`CLAUDE.md`, exception `kesh-db`) : `test-fast.sh` **2258/2258** sur base remise à zéro.
+
 
 ## Journal de revue
 

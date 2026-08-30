@@ -878,6 +878,16 @@ fn entry_snapshot_json(entry: &JournalEntry, lines: &[JournalEntryLine]) -> serd
 /// 5. INSERT audit_log (AVANT le DELETE pour préserver la trace)
 /// 6. DELETE FROM journal_entries → lignes suivent par CASCADE
 /// 7. COMMIT
+///
+/// ⛔ **Story 24-4b (#380) — DEPUIS LE GEL, CETTE FONCTION NE DÉPASSE JAMAIS
+/// L'ÉTAPE 3.** Elle appelle `delete_in_tx` avec `enforce_immutability = true`,
+/// qui refuse en [`DbError::EntryIsPosted`] : ni snapshot, ni audit, ni DELETE.
+/// Les étapes 4 à 7 ci-dessus décrivent le chemin que suit encore
+/// `invoices::delete`, seul appelant à passer `false`.
+///
+/// ⚠️ Cette précision est ici parce qu'un doc-comment périmé a déjà égaré une
+/// journée entière de revue sur la story précédente : c'est cette fonction
+/// qu'on ouvre en premier quand on cherche pourquoi un `DELETE` échoue.
 pub async fn delete_by_id(
     pool: &MySqlPool,
     company_id: i64,

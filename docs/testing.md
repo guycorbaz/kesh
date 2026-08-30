@@ -318,7 +318,7 @@ KESH_BACKEND_URL=http://localhost:3001 npm run test:e2e
 
 ⚠️ **`npm run test:e2e` ne passe PAS au vert, et le nombre d'échecs attendus DÉPEND DE L'HEURE :
 8 l'après-midi, 10 le matin** (relevé du 2026-08-30 : 212 passés / 11 échoués à 10:42 CEST, dont
-un de pollution en plus). Ces échecs sont ATTENDUS.**
+un de pollution en plus). Ces échecs sont ATTENDUS.
 Sans cette liste, la règle du `CLAUDE.md` — « la suite complète tourne en local avant tout
 `git push` » — est **invérifiable** : personne ne peut dire « c'est vert », et chacun doit
 re-dériver à la main quels échecs sont connus. Le risque n'est pas le temps perdu, c'est
