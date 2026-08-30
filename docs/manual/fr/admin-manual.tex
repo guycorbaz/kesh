@@ -1792,7 +1792,8 @@ Toute action métier mutante est enregistrée dans la table \texttt{audit\_log} 
 Kesh met en place les éléments que l'OLICo Art. 9 al. 1.b attend d'un support modifiable :
 
 \begin{itemize}
-    \item \texttt{audit\_log} alimenté à chaque création, modification et suppression d'écriture, avec instantané avant/après (condition 1).
+    \item \textbf{Une écriture enregistrée n'est plus ni modifiable ni supprimable} --- l'application refuse les deux, sans exception et quel que soit le rôle ; la correction passe par la \textbf{contre-passation}, qui laisse l'origine et sa correction dans les livres (CO Art.~958f : l'exigence n'est pas qu'on ne se trompe jamais, c'est que la correction soit apparente). L'immutabilité n'est donc plus seulement \emph{tracée}, elle est \textbf{imposée}.
+    \item \texttt{audit\_log} alimenté à chaque création d'écriture, avec instantané (condition 1). \emph{Il conserve aussi les modifications et suppressions antérieures au gel, ainsi que celles des autres entités.}
     \item \texttt{SHA-256} par fichier dans le \texttt{metadata.json} du ZIP d'export (condition 1 renforcée).
     \item Horodatage \texttt{created\_at} pour le moment d'enregistrement (condition 2).
     \item Documentation des procédures dans ce manuel et dans le journal de bord (conditions 3 et 4).
@@ -1913,7 +1914,7 @@ Kesh satisfait intégralement les exigences de l'Art. 957a CO pour les PME suiss
 Synthèse :
 
 \begin{itemize}
-    \item al. 1 : enregistrement intégral, fidèle et systématique → la saisie en partie double est contrôlée à trois niveaux (validation métier, contrainte de base, recalcul après écriture), et l'\texttt{audit\_log} conserve l'historique des modifications — sous les deux réserves de la section \emph{Conformité OLICo Art. 9}.
+    \item al. 1 : enregistrement intégral, fidèle et systématique → la saisie en partie double est contrôlée à trois niveaux (validation métier, contrainte de base, recalcul après écriture) ; une écriture enregistrée est \textbf{définitive} et se corrige par contre-passation ; et l'\texttt{audit\_log} conserve l'historique — sous les deux réserves de la section \emph{Conformité OLICo Art. 9}.
     \item al. 2 : principe de régularité → instancié par les patterns techniques Kesh (clarté multilingue, justification, traçabilité).
     \item al. 3 : pièce comptable papier ou électronique → support électronique autorisé.
     \item al. 4 : monnaie nationale ou monnaie principale → CHF par défaut, multi-monnaies prévu v0.2.
