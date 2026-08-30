@@ -271,17 +271,7 @@ invoice-error-total-zero = Cette facture est d'un montant total nul : elle ne pe
 credit-note-error-total-zero = Cette facture est d'un montant total nul : aucun avoir ne peut être émis.
 
 # Modification & suppression d'écritures (Story 3.3)
-journal-entry-edit = Modifier
-journal-entry-delete = Supprimer
-journal-entry-delete-confirm-title = Supprimer l'écriture N°{ $number } ?
-journal-entry-delete-confirm-message = Cette action est irréversible. L'action sera enregistrée dans le journal d'audit.
-journal-entry-delete-confirm-cancel = Annuler
-journal-entry-delete-confirm-delete = Supprimer
-journal-entry-deleted = Écriture supprimée
-journal-entry-conflict-title = Conflit de version
-journal-entry-conflict-message = Cette écriture a été modifiée par un autre utilisateur. Voulez-vous recharger ?
-journal-entry-conflict-reload = Recharger
-journal-entry-conflict-reloaded = Liste rechargée — cliquez à nouveau sur modifier pour reprendre
+journal-entry-open = Ouvrir la fiche
 
 # Assistant TVA achat (Story 18-1c)
 vat-purchase-title = Assistant TVA achat
@@ -341,6 +331,7 @@ journal-entries-reverse-blocked-bank-match = Cette écriture est rapprochée d'u
 journal-entries-reverse-blocked-account-archived = Un compte de cette écriture a été archivé : réactivez-le pour pouvoir la contre-passer.
 journal-entries-reverse-account-archived = Impossible de contre-passer — compte(s) archivé(s) : { $detail }. Réactivez le ou les comptes concernés.
 journal-entries-delete-blocked-reversed = Cette écriture a été contre-passée : elle ne peut plus être supprimée.
+journal-entries-blocked-posted = Une écriture comptabilisée ne se modifie plus. Pour la corriger, contre-passez-la : Kesh crée l'écriture inverse et conserve l'originale.
 
 # Tooltips bilingues termes comptables (Story 3.5)
 tooltip-debit-natural = L'argent entre dans ce compte

@@ -151,8 +151,6 @@ const DETTE_CONNUE: readonly string[] = [
 	"invoices.spec.ts :: Créer la facture",
 	"invoices.spec.ts :: Facture",
 	"invoices.spec.ts :: Nouvelle facture",
-	"journal-entries.spec.ts :: Annuler",
-	"journal-entries.spec.ts :: Supprimer",
 	"journal-entries.spec.ts :: Valider",
 	"onboarding-path-b.spec.ts :: Compte bancaire",
 	"onboarding-path-b.spec.ts :: Configurer pour la production",

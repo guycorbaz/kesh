@@ -24,8 +24,13 @@
 //! `Σ_actifs(débit−crédit) = Σ_passifs(crédit−débit) + Σ_résultat(crédit−débit)`. Le
 //! terme résultat se scinde en `retained_earnings` (avant `fy_start`) + `equity_result`
 //! (`[fy_start, date d'arrêté]`). L'invariant dont dépend l'égalité : chaque écriture a
-//! son `entry_date` **dans** les bornes de son `fiscal_year_id` (imposé par
-//! `journal_entries::update` ; `equation_holds` sert de filet — cf. Dev Notes 14-1).
+//! son `entry_date` **dans** les bornes de son `fiscal_year_id` (imposé à la
+//! création par `journal_entries::create_in_tx` ; `equation_holds` sert de filet
+//! — cf. Dev Notes 14-1).
+//!
+//! ⚠️ L'invariant était aussi tenu par `journal_entries::update`, supprimée par
+//! la Story 24-4b (#380) : une écriture comptabilisée ne se réécrit plus, donc
+//! son `entry_date` ne peut plus sortir de ses bornes après coup.
 //!
 //! # Présentation par rôle des fonds propres (Story 14-3c)
 //!

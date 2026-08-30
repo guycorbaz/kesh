@@ -1335,7 +1335,19 @@ pub async fn delete(
     // `journal_entry.deleted`. Sur Err, le drop de `tx` rollback la suppression
     // de la facture aussi.
     if let Some(je_id) = current.journal_entry_id
-        && let Err(e) = journal_entries::delete_in_tx(&mut tx, company_id, je_id, user_id).await
+        && let Err(e) =
+            // ⚠️ Story 24-4b (#380) — `enforce_immutability = false`, seul site
+            // du dépôt. Ce chemin ne supprime pas une écriture : il supprime
+            // UNE FACTURE, dont l'écriture part avec elle, sous les trois
+            // gardes ci-dessus (non payée, non créditée, sans rappels). Le
+            // geler retirerait la suppression d'une facture validée (#219) —
+            // une décision de facturation, pas d'écriture.
+            //
+            // ⛔ Le résidu est assumé et tracé : cf. #380 (le gel) et #381 (les
+            // trous de numérotation, que ce chemin continue de creuser).
+            // `delete_in_tx` applique quand même la garde d'exercice clos ET le
+            // refus d'une écriture contre-passée — seul le gel est levé.
+            journal_entries::delete_in_tx(&mut tx, company_id, je_id, user_id, false).await
     {
         tx.rollback().await.map_err(map_db_error)?;
         return Err(e);

@@ -867,335 +867,6 @@ fn entry_snapshot_json(entry: &JournalEntry, lines: &[JournalEntryLine]) -> serd
     })
 }
 
-/// Met à jour une écriture existante avec verrouillage optimiste.
-///
-/// Stratégie « lock + check applicatif » :
-/// 1. `SELECT ... FOR UPDATE` sur l'entry + jointure fiscal_years (exclusif)
-/// 2. Check `fy.status == Open` sinon `FiscalYearClosed`
-/// 3. Check `version_db == version_param` sinon `OptimisticLockConflict`
-/// 4. Check `updated.entry_date` dans `[fy.start_date, fy.end_date]` sinon `DateOutsideFiscalYear`
-/// 5. Vérifier tous les comptes actifs et appartenant à la company
-/// 6. Snapshot "before" (SELECTs inline dans la tx)
-/// 7. DELETE lines + UPDATE header (version += 1) + INSERT new lines
-/// 8. Re-check balance applicatif
-/// 9. Re-fetch + snapshot "after"
-/// 10. INSERT audit_log avec `before`/`after`
-/// 11. COMMIT
-///
-/// Compare l'état persisté (header + lignes) au payload — `true` si aucun
-/// champ métier ne diffère (KF-004 : court-circuit no-op pour ne pas bumper
-/// version inutilement).
-///
-/// Comparaison lignes en respectant `line_order` (la sémantique métier
-/// d'une écriture comptable dépend de l'ordre — débit puis crédit, etc.).
-fn is_no_op_change(
-    before_entry: &JournalEntry,
-    before_lines: &[JournalEntryLine],
-    updated: &NewJournalEntry,
-) -> bool {
-    if before_entry.entry_date != updated.entry_date
-        || before_entry.journal != updated.journal
-        || before_entry.description != updated.description
-    {
-        return false;
-    }
-    if before_lines.len() != updated.lines.len() {
-        return false;
-    }
-    before_lines.iter().zip(updated.lines.iter()).all(|(b, c)| {
-        b.account_id == c.account_id
-            && b.debit == c.debit
-            && b.credit == c.credit
-            && b.project_id == c.project_id
-    })
-}
-
-/// Règle stricte : `tx.rollback()` explicite avant chaque `return Err`.
-pub async fn update(
-    pool: &MySqlPool,
-    company_id: i64,
-    id: i64,
-    version: i32,
-    user_id: i64,
-    updated: NewJournalEntry,
-) -> Result<JournalEntryWithLines, DbError> {
-    let mut tx = pool.begin().await.map_err(map_db_error)?;
-
-    // Étape 0 : validation des projets analytiques par-ligne (Story 19-2),
-    // AVANT le FOR UPDATE sur l'entry+fiscal_year — même ordre de verrouillage
-    // global que create_in_tx (companies → projects → fiscal_years, Pattern 5).
-    //
-    // Grandfathering : les projets DÉJÀ tagués sur cette écriture sont exemptés
-    // de la validation — sinon archiver un projet rendrait toute écriture
-    // historique non-éditable (409 « projet archivé » sur un simple fix de
-    // libellé). Leur existence/company est garantie (FK + scoping à la pose du
-    // tag). Le SELECT est scopé company (JOIN journal_entries) pour ne pas
-    // offrir de bypass IDOR via l'entry d'une autre company.
-    //
-    // Portée VOLONTAIREMENT au niveau écriture (pas ligne par ligne) : un
-    // projet archivé déjà présent sur l'écriture peut être re-tagué sur une
-    // autre ligne de la MÊME écriture. Nécessaire pour corriger une
-    // affectation (déplacer le tag de la ligne A vers la ligne B) après
-    // archivage — un grandfathering par-ligne strict rendrait ce déplacement
-    // impossible. Le périmètre analytique de l'écriture n'en est pas élargi :
-    // le projet y figurait déjà. (Code-review 19-2 Pass 1 BH-M1, décision
-    // documentée + testée par test_update_moves_archived_tag_between_lines.)
-    let prior_project_ids: Vec<i64> = sqlx::query_scalar(
-        "SELECT DISTINCT jel.project_id FROM journal_entry_lines jel \
-         JOIN journal_entries je ON je.id = jel.entry_id \
-         WHERE jel.entry_id = ? AND je.company_id = ? AND jel.project_id IS NOT NULL",
-    )
-    .bind(id)
-    .bind(company_id)
-    .fetch_all(&mut *tx)
-    .await
-    .map_err(map_db_error)?;
-
-    let line_project_ids: Vec<i64> = updated
-        .lines
-        .iter()
-        .filter_map(|l| l.project_id)
-        .filter(|pid| !prior_project_ids.contains(pid))
-        .collect();
-    if let Err(e) =
-        super::projects::validate_taggable_in_tx(&mut tx, company_id, &line_project_ids).await
-    {
-        tx.rollback().await.map_err(map_db_error)?;
-        return Err(e);
-    }
-
-    // Étape 1 : SELECT FOR UPDATE join fiscal_year.
-    #[derive(sqlx::FromRow)]
-    struct LockedRow {
-        entry_version: i32,
-        fy_status: String,
-        fy_start: NaiveDate,
-        fy_end: NaiveDate,
-    }
-
-    let locked: Option<LockedRow> = sqlx::query_as(
-        "SELECT je.version AS entry_version, \
-                fy.status AS fy_status, \
-                fy.start_date AS fy_start, \
-                fy.end_date AS fy_end \
-         FROM journal_entries je \
-         JOIN fiscal_years fy ON fy.id = je.fiscal_year_id \
-         WHERE je.id = ? AND je.company_id = ? \
-         FOR UPDATE",
-    )
-    .bind(id)
-    .bind(company_id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(map_db_error)?;
-
-    let locked = match locked {
-        None => {
-            tx.rollback().await.map_err(map_db_error)?;
-            return Err(DbError::NotFound);
-        }
-        Some(row) => row,
-    };
-
-    // Étape 2 : statut fiscal_year.
-    if locked.fy_status == "Closed" {
-        tx.rollback().await.map_err(map_db_error)?;
-        return Err(DbError::FiscalYearClosed);
-    }
-
-    // Étape 3 : version check applicatif.
-    if locked.entry_version != version {
-        tx.rollback().await.map_err(map_db_error)?;
-        return Err(DbError::OptimisticLockConflict);
-    }
-
-    // Étape 4 : date dans l'exercice courant (anti-TOCTOU, M4 passe 1).
-    if updated.entry_date < locked.fy_start || updated.entry_date > locked.fy_end {
-        tx.rollback().await.map_err(map_db_error)?;
-        return Err(DbError::DateOutsideFiscalYear);
-    }
-
-    // Étape 5 : comptes actifs appartenant à la company + garde de postabilité
-    // en saisie manuelle (Story 14-3b). L'update est toujours un flux MANUEL
-    // (`enforce_postable = true`).
-    if updated.lines.is_empty() {
-        tx.rollback().await.map_err(map_db_error)?;
-        return Err(DbError::Invariant(
-            "NewJournalEntry sans lignes — devait être rejeté en amont".into(),
-        ));
-    }
-
-    // Grandfather PAR COMPTE (D-A1) : les comptes DÉJÀ référencés par les lignes
-    // persistées sont exemptés de la garde de postabilité — sinon un compte
-    // devenu non-postable APRÈS création (14-3a : ajouter un sous-compte bascule
-    // le parent `postable = FALSE`) rendrait l'écriture historique inéditable
-    // (même pour corriger sa seule date). Récupéré AVANT la validation (l'ancien
-    // `before_lines` de l'« Étape 6 » était fetché trop tard, cf. spec T1). Le
-    // verrou `FOR UPDATE` sur l'en-tête (Étape 1) garantit un snapshot cohérent.
-    let exempt_account_ids: Vec<i64> = sqlx::query_scalar(
-        "SELECT DISTINCT account_id FROM journal_entry_lines WHERE entry_id = ?",
-    )
-    .bind(id)
-    .fetch_all(&mut *tx)
-    .await
-    .map_err(map_db_error)?;
-
-    let account_ids: Vec<i64> = updated.lines.iter().map(|l| l.account_id).collect();
-    if let Err(e) =
-        validate_lines_accounts_in_tx(&mut tx, company_id, &account_ids, true, &exempt_account_ids)
-            .await
-    {
-        tx.rollback().await.map_err(map_db_error)?;
-        return Err(e);
-    }
-
-    // Étape 6 : snapshot "before" (SELECTs inline dans la tx — M2 tranché).
-    let before_entry: JournalEntry = sqlx::query_as::<_, JournalEntry>(&format!(
-        "SELECT {ENTRY_COLUMNS} FROM journal_entries WHERE id = ?"
-    ))
-    .bind(id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(map_db_error)?;
-
-    let before_lines: Vec<JournalEntryLine> = sqlx::query_as::<_, JournalEntryLine>(&format!(
-        "SELECT {LINE_COLUMNS} FROM journal_entry_lines WHERE entry_id = ? ORDER BY line_order"
-    ))
-    .bind(id)
-    .fetch_all(&mut *tx)
-    .await
-    .map_err(map_db_error)?;
-
-    let before_json = entry_snapshot_json(&before_entry, &before_lines);
-
-    // KF-004 : court-circuit no-op AVANT le DELETE/UPDATE/INSERT.
-    // Tous les guards (FY status, version check, date dans FY, comptes
-    // actifs) ont déjà passé — un payload identique avec un état env
-    // valide retourne l'entry inchangée. Le verrou `FOR UPDATE` est
-    // libéré par le `tx.rollback()` (équivalent à commit côté locks
-    // InnoDB pour ce qui est de leur libération).
-    // NOTE concurrence (KF-004): grâce à `SELECT ... FOR UPDATE` étape 1,
-    // cette fonction n'est PAS exposée à la race REPEATABLE READ décrite
-    // dans la spec §race-condition. Les commits parallèles attendent le
-    // verrou X-lock, donc le snapshot post-lock est forcément à jour.
-    if is_no_op_change(&before_entry, &before_lines, &updated) {
-        tx.rollback().await.map_err(map_db_error)?;
-        return Ok(JournalEntryWithLines {
-            entry: before_entry,
-            lines: before_lines,
-        });
-    }
-
-    // Étape 7 : DELETE old lines + UPDATE header + INSERT new lines.
-    sqlx::query("DELETE FROM journal_entry_lines WHERE entry_id = ?")
-        .bind(id)
-        .execute(&mut *tx)
-        .await
-        .map_err(map_db_error)?;
-
-    let update_result = sqlx::query(
-        "UPDATE journal_entries SET entry_date = ?, journal = ?, description = ?, \
-         version = version + 1, updated_at = CURRENT_TIMESTAMP(3) \
-         WHERE id = ?",
-    )
-    .bind(updated.entry_date)
-    .bind(updated.journal)
-    .bind(&updated.description)
-    .bind(id)
-    .execute(&mut *tx)
-    .await;
-
-    if let Err(e) = update_result {
-        tx.rollback().await.map_err(map_db_error)?;
-        return Err(map_db_error(e));
-    }
-
-    for (idx, line) in updated.lines.iter().enumerate() {
-        let line_order = (idx as i32) + 1;
-        let insert = sqlx::query(
-            "INSERT INTO journal_entry_lines \
-             (entry_id, account_id, line_order, debit, credit, project_id) \
-             VALUES (?, ?, ?, ?, ?, ?)",
-        )
-        .bind(id)
-        .bind(line.account_id)
-        .bind(line_order)
-        .bind(line.debit)
-        .bind(line.credit)
-        .bind(line.project_id.or(updated.project_id))
-        .execute(&mut *tx)
-        .await;
-
-        if let Err(e) = insert {
-            tx.rollback().await.map_err(map_db_error)?;
-            return Err(map_db_error(e));
-        }
-    }
-
-    // Étape 8 : re-check balance applicatif.
-    let row = sqlx::query(
-        "SELECT COALESCE(SUM(debit), 0) AS d, COALESCE(SUM(credit), 0) AS c \
-         FROM journal_entry_lines WHERE entry_id = ?",
-    )
-    .bind(id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(map_db_error)?;
-
-    let total_debit: Decimal = row.try_get("d").map_err(map_db_error)?;
-    let total_credit: Decimal = row.try_get("c").map_err(map_db_error)?;
-
-    if total_debit != total_credit {
-        tx.rollback().await.map_err(map_db_error)?;
-        return Err(DbError::Invariant(format!(
-            "balance DB incohérente après UPDATE : débit={total_debit}, crédit={total_credit}"
-        )));
-    }
-
-    // Étape 9 : re-fetch pour le retour + snapshot "after".
-    let after_entry = sqlx::query_as::<_, JournalEntry>(&format!(
-        "SELECT {ENTRY_COLUMNS} FROM journal_entries WHERE id = ?"
-    ))
-    .bind(id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(map_db_error)?;
-
-    let after_lines = sqlx::query_as::<_, JournalEntryLine>(&format!(
-        "SELECT {LINE_COLUMNS} FROM journal_entry_lines WHERE entry_id = ? ORDER BY line_order"
-    ))
-    .bind(id)
-    .fetch_all(&mut *tx)
-    .await
-    .map_err(map_db_error)?;
-
-    let after_json = entry_snapshot_json(&after_entry, &after_lines);
-
-    // Étape 10 : INSERT audit_log dans la même tx.
-    let audit_details = serde_json::json!({
-        "before": before_json,
-        "after": after_json,
-    });
-    audit_log::insert_in_tx(
-        &mut tx,
-        NewAuditLogEntry::user(
-            user_id,
-            "journal_entry.updated".to_string(),
-            "journal_entry".to_string(),
-            id,
-            Some(audit_details),
-        ),
-    )
-    .await?;
-
-    tx.commit().await.map_err(map_db_error)?;
-
-    Ok(JournalEntryWithLines {
-        entry: after_entry,
-        lines: after_lines,
-    })
-}
-
 /// Supprime une écriture et ses lignes (CASCADE), avec enregistrement
 /// audit atomique.
 ///
@@ -1207,6 +878,16 @@ pub async fn update(
 /// 5. INSERT audit_log (AVANT le DELETE pour préserver la trace)
 /// 6. DELETE FROM journal_entries → lignes suivent par CASCADE
 /// 7. COMMIT
+///
+/// ⛔ **Story 24-4b (#380) — DEPUIS LE GEL, CETTE FONCTION NE DÉPASSE JAMAIS
+/// L'ÉTAPE 3.** Elle appelle `delete_in_tx` avec `enforce_immutability = true`,
+/// qui refuse en [`DbError::EntryIsPosted`] : ni snapshot, ni audit, ni DELETE.
+/// Les étapes 4 à 7 ci-dessus décrivent le chemin que suit encore
+/// `invoices::delete`, seul appelant à passer `false`.
+///
+/// ⚠️ Cette précision est ici parce qu'un doc-comment périmé a déjà égaré une
+/// journée entière de revue sur la story précédente : c'est cette fonction
+/// qu'on ouvre en premier quand on cherche pourquoi un `DELETE` échoue.
 pub async fn delete_by_id(
     pool: &MySqlPool,
     company_id: i64,
@@ -1216,7 +897,10 @@ pub async fn delete_by_id(
     let mut tx = pool.begin().await.map_err(map_db_error)?;
     // En cas d'Err, `delete_in_tx` ne rollback pas (n'a qu'un &mut) : `tx` est
     // droppé ici, ce qui déclenche le rollback automatique sqlx.
-    delete_in_tx(&mut tx, company_id, id, user_id).await?;
+    //
+    // ⛔ Story 24-4b (#380) — `enforce_immutability = true` : c'est LE chemin de
+    // la route `DELETE /api/v1/journal-entries/{id}`, et il est gelé.
+    delete_in_tx(&mut tx, company_id, id, user_id, true).await?;
     tx.commit().await.map_err(map_db_error)?;
     Ok(())
 }
@@ -1230,11 +914,29 @@ pub async fn delete_by_id(
 /// N'exécute **pas** de rollback en cas d'erreur (n'a qu'un `&mut` sur la tx) :
 /// l'appelant, propriétaire de la transaction, est responsable du rollback
 /// (le drop de `Transaction` déclenche le rollback automatique sqlx).
+///
+/// # `enforce_immutability` — Story 24-4b (#380)
+///
+/// ⛔ **`true` gèle l'écriture** : toute écriture étant comptabilisée dès son
+/// insertion, la suppression est refusée en [`DbError::EntryIsPosted`]. C'est
+/// ce que passe [`delete_by_id`], donc la route.
+///
+/// ⚠️ **`false` n'est passé QUE par `invoices::delete`**, et l'exception est
+/// voulue : ce chemin ne supprime pas une écriture, il supprime **une facture**
+/// dont l'écriture part avec elle, sous ses trois gardes propres (non payée,
+/// non créditée, sans historique de rappels). Le geler reviendrait à retirer la
+/// suppression d'une facture validée (#219) — une décision de facturation, pas
+/// d'écriture. Le résidu est assumé et tracé (cf. #380, #381).
+///
+/// ⛔ **Le drapeau vit ICI et non chez l'appelant** : une garde posée dans
+/// `delete_by_id` laisserait `delete_in_tx` nu, et un futur appelant obtiendrait
+/// le contournement sans le savoir et sans que rien ne rougisse.
 pub(crate) async fn delete_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     id: i64,
     user_id: i64,
+    enforce_immutability: bool,
 ) -> Result<(), DbError> {
     // Étape 2 : lock entry + fiscal_year.
     let locked: Option<(i64, String)> = sqlx::query_as(
@@ -1268,6 +970,18 @@ pub(crate) async fn delete_in_tx(
     // message opaque. La garde est ici pour que l'utilisateur lise POURQUOI.
     if reversed_by(&mut **tx, company_id, id).await?.is_some() {
         return Err(DbError::EntryIsReversed);
+    }
+
+    // Étape 3-ter (Story 24-4b, #380) : le GEL. Une écriture comptabilisée ne
+    // se supprime pas — et toutes le sont, dès l'insertion.
+    //
+    // ⛔ L'ORDRE EST LE POINT LE PLUS FACILE À CASSER DE CETTE STORY. Ce refus
+    // vient APRÈS celui de l'étape 3-bis : sur une écriture déjà contre-passée,
+    // répondre « corrigez-la par une contre-passation » serait un conseil FAUX,
+    // et `ENTRY_IS_REVERSED` deviendrait injoignable par toute route — son test
+    // de la 24-4a passerait au vert en mesurant autre chose.
+    if enforce_immutability {
+        return Err(DbError::EntryIsPosted);
     }
 
     // Étape 4 : snapshot avant suppression.
@@ -2914,342 +2628,6 @@ mod tests {
         );
     }
 
-    /// KF-004 : payload identique (header + lignes même ordre + comptes
-    /// toujours actifs + FY ouvert) → pas de bump version, `updated_at`
-    /// inchangé, mêmes IDs DB pour les lignes (pas de DELETE+INSERT),
-    /// pas d'audit_log `journal_entry.updated`.
-    #[tokio::test]
-    async fn update_no_op_returns_unchanged_entity_no_lines_churn() {
-        let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
-        let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
-
-        let created = create(
-            &pool,
-            fy_id,
-            admin_user_id,
-            mk_entry(
-                company_id,
-                today,
-                vec![
-                    NewJournalEntryLine {
-                        account_id: a1,
-                        debit: dec!(100),
-                        credit: dec!(0),
-                        project_id: None,
-                    },
-                    NewJournalEntryLine {
-                        account_id: a2,
-                        debit: dec!(0),
-                        credit: dec!(100),
-                        project_id: None,
-                    },
-                ],
-            ),
-        )
-        .await
-        .unwrap();
-        let version_initial = created.entry.version;
-        let updated_at_initial = created.entry.updated_at;
-        let line_ids_initial: Vec<i64> = created.lines.iter().map(|l| l.id).collect();
-
-        // Payload strictement identique reconstruit depuis les `before` lines.
-        let identical = NewJournalEntry {
-            company_id,
-            entry_date: created.entry.entry_date,
-            journal: created.entry.journal,
-            description: created.entry.description.clone(),
-            project_id: None,
-            lines: created
-                .lines
-                .iter()
-                .map(|l| NewJournalEntryLine {
-                    account_id: l.account_id,
-                    debit: l.debit,
-                    credit: l.credit,
-                    project_id: None,
-                })
-                .collect(),
-        };
-
-        let result = update(
-            &pool,
-            company_id,
-            created.entry.id,
-            version_initial,
-            admin_user_id,
-            identical,
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(result.entry.version, version_initial);
-        assert_eq!(result.entry.updated_at, updated_at_initial);
-        let line_ids_after: Vec<i64> = result.lines.iter().map(|l| l.id).collect();
-        assert_eq!(
-            line_ids_after, line_ids_initial,
-            "no-op : pas de DELETE+INSERT, IDs lignes identiques"
-        );
-
-        let count: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM audit_log WHERE entity_type = 'journal_entry' AND entity_id = ? AND action = 'journal_entry.updated'",
-        )
-        .bind(created.entry.id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(count.0, 0);
-    }
-
-    /// KF-004 : si l'exercice est clôturé entre la création et l'update no-op,
-    /// le check `FiscalYearClosed` rejette AVANT le no-op check (pas de leak).
-    #[tokio::test]
-    async fn update_no_op_in_closed_fy_returns_fiscal_year_closed() {
-        let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
-        let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
-
-        let created = create(
-            &pool,
-            fy_id,
-            admin_user_id,
-            mk_entry(
-                company_id,
-                today,
-                vec![
-                    NewJournalEntryLine {
-                        account_id: a1,
-                        debit: dec!(50),
-                        credit: dec!(0),
-                        project_id: None,
-                    },
-                    NewJournalEntryLine {
-                        account_id: a2,
-                        debit: dec!(0),
-                        credit: dec!(50),
-                        project_id: None,
-                    },
-                ],
-            ),
-        )
-        .await
-        .unwrap();
-
-        fiscal_years::close(&pool, admin_user_id, company_id, fy_id)
-            .await
-            .unwrap();
-
-        let identical = NewJournalEntry {
-            company_id,
-            entry_date: created.entry.entry_date,
-            journal: created.entry.journal,
-            description: created.entry.description.clone(),
-            project_id: None,
-            lines: created
-                .lines
-                .iter()
-                .map(|l| NewJournalEntryLine {
-                    account_id: l.account_id,
-                    debit: l.debit,
-                    credit: l.credit,
-                    project_id: None,
-                })
-                .collect(),
-        };
-
-        let result = update(
-            &pool,
-            company_id,
-            created.entry.id,
-            created.entry.version,
-            admin_user_id,
-            identical,
-        )
-        .await;
-        assert!(
-            matches!(result, Err(DbError::FiscalYearClosed)),
-            "expected FiscalYearClosed, got {:?}",
-            result
-        );
-
-        // Nettoyage (cf. test_create_rejects_closed_fiscal_year).
-        delete_all_by_company(&pool, company_id).await.unwrap();
-        sqlx::query("DELETE FROM fiscal_years WHERE id = ?")
-            .bind(fy_id)
-            .execute(&pool)
-            .await
-            .unwrap();
-        let year = chrono::Utc::now().naive_utc().date().year();
-        fiscal_years::create_for_seed(
-            &pool,
-            crate::entities::NewFiscalYear {
-                company_id,
-                name: format!("Exercice {year}"),
-                start_date: NaiveDate::from_ymd_opt(year, 1, 1).unwrap(),
-                end_date: NaiveDate::from_ymd_opt(year, 12, 31).unwrap(),
-            },
-        )
-        .await
-        .unwrap();
-    }
-
-    /// KF-004 : si un compte référencé par l'écriture a été archivé entre la
-    /// création et l'update no-op, le check d'intégrité rejette AVANT le no-op
-    /// check (pas de leak via no-op).
-    #[tokio::test]
-    async fn update_no_op_with_inactive_account_returns_inactive_error() {
-        let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
-        let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
-
-        let created = create(
-            &pool,
-            fy_id,
-            admin_user_id,
-            mk_entry(
-                company_id,
-                today,
-                vec![
-                    NewJournalEntryLine {
-                        account_id: a1,
-                        debit: dec!(75),
-                        credit: dec!(0),
-                        project_id: None,
-                    },
-                    NewJournalEntryLine {
-                        account_id: a2,
-                        debit: dec!(0),
-                        credit: dec!(75),
-                        project_id: None,
-                    },
-                ],
-            ),
-        )
-        .await
-        .unwrap();
-
-        // Archiver a1 directement en SQL (la fonction archive() exige de ne
-        // pas avoir de sous-comptes ; on évite cette vérification ici car
-        // elle est orthogonale au scope du test).
-        sqlx::query("UPDATE accounts SET active = FALSE, version = version + 1 WHERE id = ?")
-            .bind(a1)
-            .execute(&pool)
-            .await
-            .unwrap();
-
-        let identical = NewJournalEntry {
-            company_id,
-            entry_date: created.entry.entry_date,
-            journal: created.entry.journal,
-            description: created.entry.description.clone(),
-            project_id: None,
-            lines: created
-                .lines
-                .iter()
-                .map(|l| NewJournalEntryLine {
-                    account_id: l.account_id,
-                    debit: l.debit,
-                    credit: l.credit,
-                    project_id: None,
-                })
-                .collect(),
-        };
-
-        let result = update(
-            &pool,
-            company_id,
-            created.entry.id,
-            created.entry.version,
-            admin_user_id,
-            identical,
-        )
-        .await;
-        assert!(
-            matches!(result, Err(DbError::InactiveOrInvalidAccounts)),
-            "expected InactiveOrInvalidAccounts, got {:?}",
-            result
-        );
-
-        // Réactiver le compte pour les tests suivants.
-        sqlx::query("UPDATE accounts SET active = TRUE WHERE id = ?")
-            .bind(a1)
-            .execute(&pool)
-            .await
-            .unwrap();
-        delete_all_by_company(&pool, company_id).await.unwrap();
-    }
-
-    /// KF-004 régression : modifier la `description` → bump version.
-    #[tokio::test]
-    async fn update_partial_change_bumps_version() {
-        let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
-        let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
-
-        let created = create(
-            &pool,
-            fy_id,
-            admin_user_id,
-            mk_entry(
-                company_id,
-                today,
-                vec![
-                    NewJournalEntryLine {
-                        account_id: a1,
-                        debit: dec!(33),
-                        credit: dec!(0),
-                        project_id: None,
-                    },
-                    NewJournalEntryLine {
-                        account_id: a2,
-                        debit: dec!(0),
-                        credit: dec!(33),
-                        project_id: None,
-                    },
-                ],
-            ),
-        )
-        .await
-        .unwrap();
-        let version_initial = created.entry.version;
-
-        let mut payload = NewJournalEntry {
-            company_id,
-            entry_date: created.entry.entry_date,
-            journal: created.entry.journal,
-            description: created.entry.description.clone(),
-            project_id: None,
-            lines: created
-                .lines
-                .iter()
-                .map(|l| NewJournalEntryLine {
-                    account_id: l.account_id,
-                    debit: l.debit,
-                    credit: l.credit,
-                    project_id: None,
-                })
-                .collect(),
-        };
-        payload.description = "Description modifiée".into();
-
-        let result = update(
-            &pool,
-            company_id,
-            created.entry.id,
-            version_initial,
-            admin_user_id,
-            payload,
-        )
-        .await
-        .unwrap();
-        assert_eq!(result.entry.version, version_initial + 1);
-        assert_eq!(result.entry.description, "Description modifiée");
-    }
-
     // -----------------------------------------------------------------------
     // Story 19-2 — tag analytique par-ligne (écritures manuelles)
     // -----------------------------------------------------------------------
@@ -3453,211 +2831,6 @@ mod tests {
         );
     }
 
-    /// AC15 — un update qui ne change QUE le projet d'une ligne n'est PAS un
-    /// no-op : version bumpée et tag persisté (garde `is_no_op_change`).
-    #[tokio::test]
-    async fn test_update_project_only_change_is_not_noop() {
-        let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
-        let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
-        let p = mk_project(&pool, company_id, "P19-2-NOOP", false).await;
-
-        let created = create(
-            &pool,
-            fy_id,
-            admin_user_id,
-            mk_entry(
-                company_id,
-                today,
-                vec![line(a1, dec!(10), dec!(0)), line(a2, dec!(0), dec!(10))],
-            ),
-        )
-        .await
-        .unwrap();
-        let v0 = created.entry.version;
-
-        // Même payload, seul le project_id de la 1re ligne change.
-        let payload = NewJournalEntry {
-            company_id,
-            entry_date: created.entry.entry_date,
-            journal: created.entry.journal,
-            description: created.entry.description.clone(),
-            project_id: None,
-            lines: vec![
-                tagged_line(a1, dec!(10), dec!(0), p),
-                line(a2, dec!(0), dec!(10)),
-            ],
-        };
-        let updated = update(
-            &pool,
-            company_id,
-            created.entry.id,
-            v0,
-            admin_user_id,
-            payload,
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(
-            updated.entry.version,
-            v0 + 1,
-            "changement de projet ≠ no-op"
-        );
-        assert_eq!(updated.lines[0].project_id, Some(p));
-        assert_eq!(updated.lines[1].project_id, None);
-    }
-
-    /// AC15/DC2 — grandfathering : un tag DÉJÀ présent sur l'écriture reste
-    /// éditable après archivage du projet (fix de libellé possible), mais un
-    /// NOUVEAU projet archivé est refusé.
-    #[tokio::test]
-    async fn test_update_grandfathers_preexisting_archived_project() {
-        let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
-        let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
-        let p = mk_project(&pool, company_id, "P19-2-GRAND", false).await;
-        let q = mk_project(&pool, company_id, "P19-2-GRAND-Q", true).await;
-
-        let created = create(
-            &pool,
-            fy_id,
-            admin_user_id,
-            mk_entry(
-                company_id,
-                today,
-                vec![
-                    tagged_line(a1, dec!(10), dec!(0), p),
-                    line(a2, dec!(0), dec!(10)),
-                ],
-            ),
-        )
-        .await
-        .unwrap();
-
-        // Archiver P après la pose du tag.
-        sqlx::query("UPDATE projects SET archived = TRUE WHERE id = ?")
-            .bind(p)
-            .execute(&pool)
-            .await
-            .unwrap();
-
-        // (a) Édition du libellé en conservant le tag P archivé → OK.
-        let payload = NewJournalEntry {
-            company_id,
-            entry_date: created.entry.entry_date,
-            journal: created.entry.journal,
-            description: "Libellé corrigé (grandfathering)".to_string(),
-            project_id: None,
-            lines: vec![
-                tagged_line(a1, dec!(10), dec!(0), p),
-                line(a2, dec!(0), dec!(10)),
-            ],
-        };
-        let updated = update(
-            &pool,
-            company_id,
-            created.entry.id,
-            created.entry.version,
-            admin_user_id,
-            payload,
-        )
-        .await
-        .expect("le tag pré-existant archivé doit être toléré à l'édition");
-        assert_eq!(updated.lines[0].project_id, Some(p));
-
-        // (b) Ajouter un AUTRE projet archivé (Q, jamais tagué ici) → refus.
-        let payload = NewJournalEntry {
-            company_id,
-            entry_date: updated.entry.entry_date,
-            journal: updated.entry.journal,
-            description: updated.entry.description.clone(),
-            project_id: None,
-            lines: vec![
-                tagged_line(a1, dec!(10), dec!(0), p),
-                tagged_line(a2, dec!(0), dec!(10), q),
-            ],
-        };
-        let err = update(
-            &pool,
-            company_id,
-            updated.entry.id,
-            updated.entry.version,
-            admin_user_id,
-            payload,
-        )
-        .await
-        .unwrap_err();
-        assert!(
-            matches!(err, DbError::IllegalStateTransition(_)),
-            "nouveau projet archivé doit être refusé, got {err:?}"
-        );
-    }
-
-    /// Review Pass 1 BH-M1 — la portée écriture du grandfathering permet de
-    /// DÉPLACER un tag archivé d'une ligne à l'autre de la même écriture
-    /// (correction d'affectation post-archivage). Un grandfathering par-ligne
-    /// strict rendrait ce déplacement impossible.
-    #[tokio::test]
-    async fn test_update_moves_archived_tag_between_lines() {
-        let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
-        let (a1, a2) = two_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
-        let p = mk_project(&pool, company_id, "P19-2-MOVE", false).await;
-
-        // Ligne 1 taguée P, ligne 2 vierge.
-        let created = create(
-            &pool,
-            fy_id,
-            admin_user_id,
-            mk_entry(
-                company_id,
-                today,
-                vec![
-                    tagged_line(a1, dec!(10), dec!(0), p),
-                    line(a2, dec!(0), dec!(10)),
-                ],
-            ),
-        )
-        .await
-        .unwrap();
-
-        sqlx::query("UPDATE projects SET archived = TRUE WHERE id = ?")
-            .bind(p)
-            .execute(&pool)
-            .await
-            .unwrap();
-
-        // Déplacer le tag : ligne 1 détaguée, ligne 2 taguée P (archivé mais
-        // déjà présent sur l'écriture → exempté).
-        let payload = NewJournalEntry {
-            company_id,
-            entry_date: created.entry.entry_date,
-            journal: created.entry.journal,
-            description: created.entry.description.clone(),
-            project_id: None,
-            lines: vec![
-                line(a1, dec!(10), dec!(0)),
-                tagged_line(a2, dec!(0), dec!(10), p),
-            ],
-        };
-        let updated = update(
-            &pool,
-            company_id,
-            created.entry.id,
-            created.entry.version,
-            admin_user_id,
-            payload,
-        )
-        .await
-        .expect("déplacer un tag archivé au sein de la même écriture doit passer");
-        assert_eq!(updated.lines[0].project_id, None);
-        assert_eq!(updated.lines[1].project_id, Some(p));
-    }
-
     // ─── Story 14-3b : garde de postabilité à la saisie manuelle (chantier A) ───
 
     /// Bascule `postable` d'un compte directement en SQL — plus simple que de
@@ -3670,15 +2843,6 @@ mod tests {
             .execute(pool)
             .await
             .unwrap();
-    }
-
-    /// Trois comptes actifs distincts issus du seed.
-    async fn three_accounts(pool: &MySqlPool, company_id: i64) -> (i64, i64, i64) {
-        let accs = accounts::list_by_company(pool, company_id, false)
-            .await
-            .unwrap();
-        assert!(accs.len() >= 3, "need ≥ 3 active accounts (run seed-demo)");
-        (accs[0].id, accs[1].id, accs[2].id)
     }
 
     /// AC-A / D-A0 — `create` pool-level (SAISIE MANUELLE, `enforce_postable =
@@ -3748,105 +2912,6 @@ mod tests {
         assert!(
             committed,
             "flux automatique (enforce_postable=false) doit accepter un compte non-postable"
-        );
-        delete_all_by_company(&pool, company_id).await.unwrap();
-    }
-
-    /// AC-A / D-A1 (grandfather PAR COMPTE + brèche L3) — une écriture manuelle
-    /// sur un compte X qui devient non-postable APRÈS coup reste éditable tant
-    /// qu'on ne référence pas un NOUVEAU compte non-postable :
-    /// - éditer sans changer les comptes → OK (grandfather) ;
-    /// - ajouter une 2e ligne sur X (déjà référencé, non-postable) → TOLÉRÉ (L3) ;
-    /// - ajouter une ligne vers Y (non-postable, jamais référencé) → REJET.
-    #[tokio::test]
-    async fn test_update_grandfathers_non_postable_by_account() {
-        let pool = test_pool().await;
-        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
-        let (a1, a2, a3) = three_accounts(&pool, company_id).await;
-        let today = chrono::Utc::now().naive_utc().date();
-
-        // Écriture initiale (a1 débit / a2 crédit), tous postables.
-        let created = create(
-            &pool,
-            fy_id,
-            admin_user_id,
-            mk_entry(
-                company_id,
-                today,
-                vec![line(a1, dec!(50), dec!(0)), line(a2, dec!(0), dec!(50))],
-            ),
-        )
-        .await
-        .unwrap();
-
-        // a1 devient non-postable APRÈS coup.
-        set_postable(&pool, a1, false).await;
-
-        // (a) Éditer le seul libellé (mêmes comptes) → OK, a1 grandfathered.
-        let mut edit = mk_entry(
-            company_id,
-            today,
-            vec![line(a1, dec!(50), dec!(0)), line(a2, dec!(0), dec!(50))],
-        );
-        edit.description = "Édition libellé".to_string();
-        let edited = update(
-            &pool,
-            company_id,
-            created.entry.id,
-            created.entry.version,
-            admin_user_id,
-            edit,
-        )
-        .await
-        .expect("grandfather : édition sans toucher au compte non-postable doit passer");
-
-        // (b) L3 TOLÉRÉ : ajouter une 2e ligne sur a1 (déjà référencé) → OK.
-        let tolerated = mk_entry(
-            company_id,
-            today,
-            vec![
-                line(a1, dec!(30), dec!(0)),
-                line(a1, dec!(20), dec!(0)),
-                line(a2, dec!(0), dec!(50)),
-            ],
-        );
-        let after_tol = update(
-            &pool,
-            company_id,
-            edited.entry.id,
-            edited.entry.version,
-            admin_user_id,
-            tolerated,
-        )
-        .await
-        .expect("L3 : ajout d'une ligne sur un compte non-postable DÉJÀ référencé est toléré");
-
-        // (c) REJET : ajouter une ligne vers a3 (non-postable) jamais référencé.
-        set_postable(&pool, a3, false).await;
-        let bad = mk_entry(
-            company_id,
-            today,
-            vec![
-                line(a1, dec!(50), dec!(0)),
-                line(a2, dec!(0), dec!(30)),
-                line(a3, dec!(0), dec!(20)),
-            ],
-        );
-        let result = update(
-            &pool,
-            company_id,
-            after_tol.entry.id,
-            after_tol.entry.version,
-            admin_user_id,
-            bad,
-        )
-        .await;
-        set_postable(&pool, a1, true).await; // restaurer avant asserts
-        set_postable(&pool, a3, true).await;
-        assert!(
-            matches!(result, Err(DbError::InactiveOrInvalidAccounts)),
-            "ajout d'une ligne vers un compte non-postable jamais référencé → rejet, obtenu {:?}",
-            result
         );
         delete_all_by_company(&pool, company_id).await.unwrap();
     }

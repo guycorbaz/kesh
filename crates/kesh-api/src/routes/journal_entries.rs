@@ -84,18 +84,6 @@ pub struct CreateJournalEntryRequest {
     pub lines: Vec<CreateJournalEntryLineRequest>,
 }
 
-/// Payload de modification d'une écriture existante — inclut `version`
-/// pour le verrouillage optimiste.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateJournalEntryRequest {
-    pub entry_date: NaiveDate,
-    pub journal: CoreJournal,
-    pub description: String,
-    pub version: i32,
-    pub lines: Vec<CreateJournalEntryLineRequest>,
-}
-
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JournalEntryLineResponse {
@@ -591,118 +579,31 @@ pub async fn create_journal_entry(
     ))
 }
 
-/// PUT /api/v1/journal-entries/{id} — modifie une écriture existante
-/// (verrouillage optimiste, FR24 immutabilité post-clôture).
+/// PUT /api/v1/journal-entries/{id} — **REFUSÉ**. Une écriture comptabilisée ne
+/// se réécrit pas (Story 24-4b, #380).
+///
+/// ⛔ **La route reste MONTÉE** et rend **409 `ENTRY_IS_POSTED`**. La démonter
+/// rendrait 405 — un statut qui n'apprend rien à un client d'API et ne se
+/// traduit par aucun message utile à l'écran.
+///
+/// ⚠️ **Le corps n'est plus désérialisé.** Le refus ne dépend d'aucune donnée
+/// d'entrée ; un extracteur `Json<T>` ferait précéder le 409 d'un 400 sur un
+/// corps malformé, soit deux refus pour une seule cause.
+///
+/// ⚠️ **Le 404 précède le 409** : un `id` inexistant ou appartenant à une autre
+/// société ne doit jamais révéler l'existence de la ressource (convention IDOR
+/// du dépôt). D'où la lecture scopée `company` avant tout.
 pub async fn update_journal_entry(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
-    Json(req): Json<UpdateJournalEntryRequest>,
-) -> Result<Json<JournalEntryResponse>, AppError> {
+) -> Result<StatusCode, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
 
-    let trimmed_description = req.description.trim().to_string();
-
-    if trimmed_description.chars().count() > MAX_DESCRIPTION_LEN {
-        return Err(AppError::Validation(format!(
-            "libellé trop long (max {MAX_DESCRIPTION_LEN} caractères)"
-        )));
+    match journal_entries::find_by_id(&state.pool, company.id, id).await? {
+        None => Err(AppError::from(kesh_db::errors::DbError::NotFound)),
+        Some(_) => Err(AppError::from(kesh_db::errors::DbError::EntryIsPosted)),
     }
-
-    if req.lines.len() > MAX_LINES_PER_ENTRY {
-        return Err(AppError::Validation(format!(
-            "trop de lignes dans l'écriture (max {MAX_LINES_PER_ENTRY})"
-        )));
-    }
-
-    // Parse des montants.
-    let mut line_drafts: Vec<JournalEntryLineDraft> = Vec::with_capacity(req.lines.len());
-    for (idx, line) in req.lines.iter().enumerate() {
-        let debit = Decimal::from_str(&line.debit).map_err(|e| {
-            AppError::Validation(format!("ligne {}: débit invalide ({e})", idx + 1))
-        })?;
-        let credit = Decimal::from_str(&line.credit).map_err(|e| {
-            AppError::Validation(format!("ligne {}: crédit invalide ({e})", idx + 1))
-        })?;
-        line_drafts.push(JournalEntryLineDraft {
-            account_id: line.account_id,
-            debit: Money::new(debit),
-            credit: Money::new(credit),
-            project_id: line.project_id,
-        });
-    }
-
-    // Pré-check FY lock-free (distingue NO_FISCAL_YEAR et FISCAL_YEAR_CLOSED
-    // pour l'UX). La vérification fine « date dans l'exercice courant de
-    // l'entry » est faite DANS la tx du repository (M4 anti-TOCTOU).
-    let covering =
-        fiscal_years::find_covering_date(&state.pool, company.id, req.entry_date).await?;
-    match covering {
-        None => {
-            return Err(AppError::NoFiscalYear {
-                date: req.entry_date.to_string(),
-            });
-        }
-        Some(fy) if fy.status == kesh_db::entities::FiscalYearStatus::Closed => {
-            return Err(AppError::FiscalYearClosed {
-                date: req.entry_date.to_string(),
-            });
-        }
-        Some(_) => {}
-    }
-
-    // Validation métier (garde-fou #1 partie double).
-    let draft = JournalEntryDraft {
-        date: req.entry_date,
-        journal: req.journal,
-        description: trimmed_description,
-        lines: line_drafts,
-    };
-    let balanced = accounting::validate(draft).map_err(map_core_error)?;
-    let validated = balanced.into_draft();
-
-    let new = NewJournalEntry {
-        company_id: company.id,
-        entry_date: validated.date,
-        journal: DbJournal::from(validated.journal),
-        description: validated.description,
-        project_id: None,
-        lines: validated
-            .lines
-            .into_iter()
-            .map(|l| NewJournalEntryLine {
-                account_id: l.account_id,
-                debit: l.debit.amount(),
-                credit: l.credit.amount(),
-                // Tag analytique par-ligne (19-2) — a traversé validate()
-                // verbatim depuis la request.
-                project_id: l.project_id,
-            })
-            .collect(),
-    };
-
-    let result = journal_entries::update(
-        &state.pool,
-        company.id,
-        id,
-        req.version,
-        current_user.user_id,
-        new,
-    )
-    .await
-    .map_err(|e| match e {
-        // Race : clôture concurrente après le pré-check → message contextuel.
-        kesh_db::errors::DbError::FiscalYearClosed => AppError::FiscalYearClosed {
-            date: req.entry_date.to_string(),
-        },
-        // TOCTOU cross-exercice dans la tx → message contextuel.
-        kesh_db::errors::DbError::DateOutsideFiscalYear => AppError::DateOutsideFiscalYear {
-            date: req.entry_date.to_string(),
-        },
-        other => AppError::from(other),
-    })?;
-
-    Ok(Json(JournalEntryResponse::from(result)))
 }
 
 /// DELETE /api/v1/journal-entries/{id} — supprime une écriture avec

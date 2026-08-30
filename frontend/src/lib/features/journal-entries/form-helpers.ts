@@ -1,10 +1,15 @@
 /**
- * Helpers de transformation pour le formulaire d'écriture — extraction
- * et reconstitution du state LineDraft depuis/vers la forme API.
+ * Type d'état du formulaire d'écriture.
+ *
+ * ⛔ **Story 24-4b (#380)** — les trois fonctions de reconstitution
+ * (`amountToFieldValue`, `lineResponseToDraft`, `fromJournalEntryResponse`)
+ * ont été retirées avec le gel : elles n'existaient que pour pré-remplir le
+ * formulaire depuis une écriture existante, et une écriture comptabilisée ne se
+ * réécrit plus. Le formulaire est en création seule ; la correction passe par la
+ * contre-passation. Leur corps se relit dans l'historique si un jour un statut
+ * brouillon les rend utiles — mais l'édition d'un brouillon n'aura ni le même
+ * contrat ni les mêmes gardes.
  */
-
-import Big from 'big.js';
-import type { JournalEntryLineResponse, JournalEntryResponse } from './journal-entries.types';
 
 export interface LineDraft {
 	accountId: number | null;
@@ -12,42 +17,4 @@ export interface LineDraft {
 	credit: string;
 	/** Projet analytique de la ligne (Epic 19). `null` = non taguée. */
 	projectId: number | null;
-}
-
-/**
- * Règle : si le montant reçu depuis l'API vaut 0, on laisse la string
- * vide dans le state du formulaire — cela permet de distinguer visuellement
- * une ligne débit d'une ligne crédit et correspond à la sémantique
- * « ligne incomplète » du composant.
- */
-function amountToFieldValue(raw: string): string {
-	if (!raw || raw === '') return '';
-	try {
-		return new Big(raw).eq(0) ? '' : raw;
-	} catch {
-		return raw;
-	}
-}
-
-/**
- * Convertit une ligne persistée en draft de formulaire.
- */
-export function lineResponseToDraft(line: JournalEntryLineResponse): LineDraft {
-	return {
-		accountId: line.accountId,
-		debit: amountToFieldValue(line.debit),
-		credit: amountToFieldValue(line.credit),
-		projectId: line.projectId ?? null
-	};
-}
-
-/**
- * Convertit une écriture existante en `LineDraft[]` prêt à injecter
- * dans l'état initial de `JournalEntryForm`.
- */
-export function fromJournalEntryResponse(entry: JournalEntryResponse): LineDraft[] {
-	return entry.lines
-		.slice()
-		.sort((a, b) => a.lineOrder - b.lineOrder)
-		.map(lineResponseToDraft);
 }

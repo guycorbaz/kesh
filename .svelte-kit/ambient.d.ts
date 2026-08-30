@@ -67,9 +67,9 @@ declare module '$env/static/private' {
 	export const OBSIDIAN_VAULT_PATH: string;
 	export const OLDPWD: string;
 	export const DESKTOP_SESSION: string;
+	export const CLAUDE_CODE_BRIDGE_SESSION_ID: string;
 	export const npm_package_json: string;
 	export const IM_CONFIG_ENTRY: string;
-	export const npm_package_engines_node: string;
 	export const GTK_MODULES: string;
 	export const CLAUDE_CODE_CHILD_SESSION: string;
 	export const MANAGERPID: string;
@@ -78,7 +78,6 @@ declare module '$env/static/private' {
 	export const DBUS_STARTER_BUS_TYPE: string;
 	export const SYSTEMD_EXEC_PID: string;
 	export const DBUS_SESSION_BUS_ADDRESS: string;
-	export const npm_config_engine_strict: string;
 	export const COLORTERM: string;
 	export const GIO_LAUNCHED_DESKTOP_FILE_PID: string;
 	export const COLOR: string;
@@ -87,6 +86,7 @@ declare module '$env/static/private' {
 	export const WAYLAND_DISPLAY: string;
 	export const LOGNAME: string;
 	export const MANAGERPIDFDID: string;
+	export const _: string;
 	export const npm_config_prefix: string;
 	export const MEMORY_PRESSURE_WATCH: string;
 	export const XDG_SESSION_CLASS: string;
@@ -99,7 +99,6 @@ declare module '$env/static/private' {
 	export const PATH: string;
 	export const INVOCATION_ID: string;
 	export const NODE: string;
-	export const npm_package_name: string;
 	export const COREPACK_ENABLE_AUTO_PIN: string;
 	export const XDG_MENU_PREFIX: string;
 	export const PTYXIS_PROFILE: string;
@@ -118,7 +117,6 @@ declare module '$env/static/private' {
 	export const npm_lifecycle_script: string;
 	export const SSH_AUTH_SOCK: string;
 	export const SHELL: string;
-	export const npm_package_version: string;
 	export const npm_lifecycle_event: string;
 	export const QT_ACCESSIBILITY: string;
 	export const GDMSESSION: string;
@@ -267,9 +265,9 @@ declare module '$env/dynamic/private' {
 		OBSIDIAN_VAULT_PATH: string;
 		OLDPWD: string;
 		DESKTOP_SESSION: string;
+		CLAUDE_CODE_BRIDGE_SESSION_ID: string;
 		npm_package_json: string;
 		IM_CONFIG_ENTRY: string;
-		npm_package_engines_node: string;
 		GTK_MODULES: string;
 		CLAUDE_CODE_CHILD_SESSION: string;
 		MANAGERPID: string;
@@ -278,7 +276,6 @@ declare module '$env/dynamic/private' {
 		DBUS_STARTER_BUS_TYPE: string;
 		SYSTEMD_EXEC_PID: string;
 		DBUS_SESSION_BUS_ADDRESS: string;
-		npm_config_engine_strict: string;
 		COLORTERM: string;
 		GIO_LAUNCHED_DESKTOP_FILE_PID: string;
 		COLOR: string;
@@ -287,6 +284,7 @@ declare module '$env/dynamic/private' {
 		WAYLAND_DISPLAY: string;
 		LOGNAME: string;
 		MANAGERPIDFDID: string;
+		_: string;
 		npm_config_prefix: string;
 		MEMORY_PRESSURE_WATCH: string;
 		XDG_SESSION_CLASS: string;
@@ -299,7 +297,6 @@ declare module '$env/dynamic/private' {
 		PATH: string;
 		INVOCATION_ID: string;
 		NODE: string;
-		npm_package_name: string;
 		COREPACK_ENABLE_AUTO_PIN: string;
 		XDG_MENU_PREFIX: string;
 		PTYXIS_PROFILE: string;
@@ -318,7 +315,6 @@ declare module '$env/dynamic/private' {
 		npm_lifecycle_script: string;
 		SSH_AUTH_SOCK: string;
 		SHELL: string;
-		npm_package_version: string;
 		npm_lifecycle_event: string;
 		QT_ACCESSIBILITY: string;
 		GDMSESSION: string;

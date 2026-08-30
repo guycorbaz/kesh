@@ -271,17 +271,7 @@ invoice-error-total-zero = Diese Rechnung hat einen Gesamtbetrag von null und ka
 credit-note-error-total-zero = Diese Rechnung hat einen Gesamtbetrag von null: Es kann keine Gutschrift ausgestellt werden.
 
 # Buchung bearbeiten & löschen (Story 3.3)
-journal-entry-edit = Bearbeiten
-journal-entry-delete = Löschen
-journal-entry-delete-confirm-title = Buchung Nr.{ $number } löschen?
-journal-entry-delete-confirm-message = Diese Aktion ist unwiderruflich. Die Aktion wird im Prüfprotokoll gespeichert.
-journal-entry-delete-confirm-cancel = Abbrechen
-journal-entry-delete-confirm-delete = Löschen
-journal-entry-deleted = Buchung gelöscht
-journal-entry-conflict-title = Versionskonflikt
-journal-entry-conflict-message = Diese Buchung wurde von einem anderen Benutzer geändert. Neu laden?
-journal-entry-conflict-reload = Neu laden
-journal-entry-conflict-reloaded = Liste aktualisiert — klicken Sie erneut auf Bearbeiten
+journal-entry-open = Detailansicht öffnen
 
 # Assistent Vorsteuer-Einkauf (Story 18-1c)
 vat-purchase-title = MWST-Einkaufsassistent
@@ -347,6 +337,7 @@ journal-entries-reverse-blocked-bank-match = Diese Buchung ist mit einer Banktra
 journal-entries-reverse-blocked-account-archived = Ein Konto dieser Buchung wurde archiviert: Reaktivieren Sie es, um stornieren zu können.
 journal-entries-reverse-account-archived = Stornierung nicht möglich — archivierte(s) Konto/Konten: { $detail }. Reaktivieren Sie die betroffenen Konten.
 journal-entries-delete-blocked-reversed = Diese Buchung wurde storniert: Sie kann nicht mehr gelöscht werden.
+journal-entries-blocked-posted = Eine verbuchte Buchung kann nicht mehr geändert werden. Zur Korrektur stornieren Sie sie: Kesh erstellt die Gegenbuchung und behält das Original.
 
 # Zweisprachige Tooltips Buchhaltungsbegriffe (Story 3.5)
 tooltip-debit-natural = Geld kommt auf dieses Konto

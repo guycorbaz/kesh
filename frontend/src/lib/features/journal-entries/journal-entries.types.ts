@@ -84,10 +84,6 @@ export interface CreateJournalEntryRequest {
 	lines: CreateJournalEntryLineRequest[];
 }
 
-export interface UpdateJournalEntryRequest extends CreateJournalEntryRequest {
-	version: number;
-}
-
 // ---------------------------------------------------------------------------
 // Listing / pagination / tri (Story 3.4)
 // ---------------------------------------------------------------------------

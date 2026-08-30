@@ -271,12 +271,24 @@ test.describe("Page écritures — saisie", () => {
   test.skip("refus écriture exercice clos FR24 (12.1)", async () => {});
 });
 
-test.describe("Page écritures — modification (Story 3.3)", () => {
+test.describe("Page écritures — le gel (Story 24-4b, #380)", () => {
+  /**
+   * ⛔ **Le bloc « modification (Story 3.3) » a été retiré ici, pas déplacé.**
+   * Ses quatre tests — édition du libellé, suppression avec confirmation,
+   * annulation de la suppression, modale de conflit 409 — exerçaient des
+   * chemins que le gel supprime. Les conserver aurait produit des tests
+   * rouges, ou pire, des tests réécrits pour passer sans plus rien mesurer.
+   *
+   * ⚠️ Ce qui reste à vérifier À L'ÉCRAN, c'est ce qu'aucun test Rust ne voit :
+   * que les deux actions ont bien disparu de la liste, et que le lien qui les
+   * remplace mène à la fiche — donc au bouton « Contre-passer ». Les refus
+   * HTTP eux-mêmes (409 `ENTRY_IS_POSTED`) sont couverts par
+   * `crates/kesh-api/tests/journal_entry_reversal_e2e.rs`.
+   */
   async function createSeedEntry(page: import("@playwright/test").Page) {
-    // Helper : crée une écriture via l'UI pour les tests d'édition/suppression.
     const { debitNumber, creditNumber } = await getSeedAccountNumbers(page);
     await page.getByRole("button", { name: /Nouvelle écriture/ }).click();
-    await page.fill("#entry-description", "Test 3.3 edit target");
+    await page.fill("#entry-description", "Test 24-4b gel target");
     const accountInputs = page.locator('input[aria-autocomplete="list"]');
     await accountInputs.nth(0).fill(debitNumber);
     await page.getByRole("listbox").getByRole("option").first().click();
@@ -285,121 +297,44 @@ test.describe("Page écritures — modification (Story 3.3)", () => {
     await page.getByRole("listbox").getByRole("option").first().click();
     await page.locator('input[inputmode="decimal"]').nth(3).fill("200.00");
     await page.getByRole("button", { name: "Valider" }).click();
-    await expect(page.getByText(/Test 3.3 edit target/).first()).toBeVisible({
+    await expect(page.getByText(/Test 24-4b gel target/).first()).toBeVisible({
       timeout: 5000,
     });
   }
 
-  test("édition nominale — modification du libellé", async ({ page }) => {
+  test("la liste n'offre plus ni modification ni suppression", async ({
+    page,
+  }) => {
     await goToJournalEntries(page);
     await createSeedEntry(page);
 
-    // Cliquer sur le bouton ✎ de la première ligne contenant notre description.
-    const row = page.locator("tr", { hasText: "Test 3.3 edit target" }).first();
-    await row.getByRole("button", { name: /Modifier/ }).click();
-    await expect(page.getByText(/Saisie d'écriture/)).toBeVisible();
-
-    // Modifier le libellé.
-    const descInput = page.locator("#entry-description");
-    await descInput.fill("Test 3.3 edit target MODIFIÉ");
-
-    // Valider.
-    await page.getByRole("button", { name: "Valider" }).click();
-    await expect(
-      page.getByText(/Test 3.3 edit target MODIFIÉ/).first(),
-    ).toBeVisible({
-      timeout: 5000,
-    });
-  });
-
-  test("suppression avec confirmation", async ({ page }) => {
-    await goToJournalEntries(page);
-    await createSeedEntry(page);
-
-    // Matching EXACT : le test « édition nominale » précédent laisse une
-    // écriture « Test 3.3 edit target MODIFIÉ » que la regex substring
-    // matcherait aussi — on cible et on vérifie l'entrée exacte seulement.
     const row = page
-      .getByRole("row")
-      .filter({ has: page.getByText("Test 3.3 edit target", { exact: true }) })
+      .locator("tr", { hasText: "Test 24-4b gel target" })
       .first();
-    await row.getByRole("button", { name: /Supprimer/ }).click();
 
-    // Dialog de confirmation apparaît.
-    await expect(page.getByText(/Supprimer l'écriture N°/)).toBeVisible();
+    // ⛔ Absence, pas désactivation : un bouton grisé laisserait croire qu'un
+    // droit manque, alors que le geste n'existe plus pour personne.
+    await expect(row.getByRole("button", { name: /Modifier/ })).toHaveCount(0);
+    await expect(row.getByRole("button", { name: /Supprimer/ })).toHaveCount(0);
+  });
 
-    // Confirmer via le bouton Supprimer du dialog.
-    await page
-      .getByRole("dialog")
-      .getByRole("button", { name: "Supprimer" })
-      .click();
+  test("la ligne renvoie vers la fiche, d'où part la contre-passation", async ({
+    page,
+  }) => {
+    await goToJournalEntries(page);
+    await createSeedEntry(page);
 
-    // L'écriture disparaît de la liste.
+    const row = page
+      .locator("tr", { hasText: "Test 24-4b gel target" })
+      .first();
+
+    // Le sélecteur est un `data-testid`, jamais un libellé traduit (KF-043).
+    await row.getByTestId("journal-entry-open").click();
+
+    await expect(page).toHaveURL(/\/journal-entries\/\d+$/);
     await expect(
-      page.getByText("Test 3.3 edit target", { exact: true }),
-    ).toHaveCount(0, {
-      timeout: 5000,
-    });
-  });
-
-  test("annulation suppression", async ({ page }) => {
-    await goToJournalEntries(page);
-    await createSeedEntry(page);
-
-    const row = page.locator("tr", { hasText: "Test 3.3 edit target" }).first();
-    await row.getByRole("button", { name: /Supprimer/ }).click();
-
-    // Annuler.
-    await page
-      .getByRole("dialog")
-      .getByRole("button", { name: "Annuler" })
-      .click();
-
-    // L'écriture est toujours présente.
-    await expect(page.getByText(/Test 3.3 edit target/).first()).toBeVisible();
-  });
-
-  test("conflit 409 affiche la modale de reload", async ({ page }) => {
-    await goToJournalEntries(page);
-    await createSeedEntry(page);
-
-    // Ouvrir le mode édition.
-    const row = page.locator("tr", { hasText: "Test 3.3 edit target" }).first();
-    await row.getByRole("button", { name: /Modifier/ }).click();
-    await expect(page.getByText(/Saisie d'écriture/)).toBeVisible();
-
-    // Mock PUT pour retourner 409 OPTIMISTIC_LOCK_CONFLICT.
-    const mockHandler = (route: import("@playwright/test").Route) => {
-      if (route.request().method() === "PUT") {
-        return route.fulfill({
-          status: 409,
-          contentType: "application/json",
-          body: JSON.stringify({
-            error: {
-              code: "OPTIMISTIC_LOCK_CONFLICT",
-              message: "Conflit de version — la ressource a été modifiée",
-            },
-          }),
-        });
-      }
-      return route.continue();
-    };
-    await page.route("**/api/v1/journal-entries/*", mockHandler);
-
-    try {
-      await page.getByRole("button", { name: "Valider" }).click();
-      await expect(
-        page.getByRole("heading", { name: /Conflit de version/ }),
-      ).toBeVisible({
-        timeout: 5000,
-      });
-      await expect(
-        page.getByRole("button", { name: /Recharger/ }),
-      ).toBeVisible();
-    } finally {
-      // Cleanup critique — éviter de polluer les autres tests.
-      await page.unroute("**/api/v1/journal-entries/*", mockHandler);
-    }
+      page.getByTestId("reverse-entry"),
+    ).toBeVisible();
   });
 });
 

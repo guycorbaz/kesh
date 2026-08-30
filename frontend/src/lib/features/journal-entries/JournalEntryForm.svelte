@@ -9,15 +9,10 @@
 	import { notifyMissingFiscalYearOrFallback } from '$lib/shared/utils/notify';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
-	import { createJournalEntry, updateJournalEntry } from './journal-entries.api';
-	import type {
-		CreateJournalEntryRequest,
-		Journal,
-		JournalEntryResponse,
-		UpdateJournalEntryRequest
-	} from './journal-entries.types';
+	import { createJournalEntry } from './journal-entries.api';
+	import type { CreateJournalEntryRequest, Journal } from './journal-entries.types';
 	import { computeBalance, classifyLine, formatSwissAmount, isValidAmount } from './balance';
-	import { fromJournalEntryResponse, type LineDraft } from './form-helpers';
+	import type { LineDraft } from './form-helpers';
 	import { isDraftLineNonEmpty } from './vat-purchase';
 	import AccountAutocomplete from './AccountAutocomplete.svelte';
 	import VatPurchaseAssistant from './VatPurchaseAssistant.svelte';
@@ -28,28 +23,20 @@
 		accountsLoadError: boolean;
 		/** Projets analytiques actifs (Epic 19, Story 19-2). Vide = colonne masquée. */
 		projects?: ProjectResponse[];
-		/** Si fourni → mode édition. Sinon mode création. */
-		initialEntry?: JournalEntryResponse | null;
 		/** Compte d'impôt préalable pour l'assistant TVA achat (Story 18-1c). Null si non configuré. */
 		recoverableAccountId?: number | null;
 		onSuccess: () => void;
 		onCancel: () => void;
-		/** Appelé quand un conflit de version (409) doit déclencher un reload. */
-		onConflictReload?: () => void;
 	}
 
 	let {
 		accounts,
 		accountsLoadError,
 		projects = [],
-		initialEntry = null,
 		recoverableAccountId = null,
 		onSuccess,
-		onCancel,
-		onConflictReload
+		onCancel
 	}: Props = $props();
-
-	const isEdit = $derived(initialEntry !== null);
 
 	const JOURNALS: Journal[] = ['Achats', 'Ventes', 'Banque', 'Caisse', 'OD'];
 
@@ -62,43 +49,25 @@
 	}
 
 	// --- État formulaire ---
-	// Pré-remplissage depuis initialEntry si mode édition. Les warnings
-	// `state_referenced_locally` sont intentionnellement supprimés : on
-	// veut uniquement capturer la valeur initiale au montage du composant.
-	// Si initialEntry change au cours de la vie du composant, le parent
-	// doit démonter/remonter le formulaire (ce qui est le cas : le parent
-	// passe de mode 'list' à 'edit' en changeant mode ET editingEntry).
-	/* svelte-ignore state_referenced_locally */
-	let entryDate = $state(initialEntry?.entryDate ?? todayISO());
-	/* svelte-ignore state_referenced_locally */
-	let journal = $state<Journal>(initialEntry?.journal ?? 'Achats');
-	/* svelte-ignore state_referenced_locally */
-	let description = $state(initialEntry?.description ?? '');
-	/* svelte-ignore state_referenced_locally */
-	let lines = $state<LineDraft[]>(
-		initialEntry
-			? fromJournalEntryResponse(initialEntry)
-			: [
-					{ accountId: null, debit: '', credit: '', projectId: null },
-					{ accountId: null, debit: '', credit: '', projectId: null }
-				]
-	);
-	/* svelte-ignore state_referenced_locally */
-	let version = $state(initialEntry?.version ?? 0);
+	// ⛔ Story 24-4b (#380) — le formulaire est en CRÉATION SEULE. Le
+	// pré-remplissage depuis une écriture existante est parti avec le gel :
+	// une écriture comptabilisée ne se réécrit plus, on la corrige par
+	// contre-passation depuis sa fiche.
+	let entryDate = $state(todayISO());
+	let journal = $state<Journal>('Achats');
+	let description = $state('');
+	let lines = $state<LineDraft[]>([
+		{ accountId: null, debit: '', credit: '', projectId: null },
+		{ accountId: null, debit: '', credit: '', projectId: null }
+	]);
 	// Colonne projet affichée si des projets actifs existent — sans projet
-	// défini, le formulaire reste identique à avant (zéro friction). En
-	// édition, une ligne peut porter un tag historique alors que tous les
-	// projets sont archivés (liste active vide) : on affiche quand même la
-	// colonne pour que le tag reste visible et détaguable (review Pass 1 BH-L2).
+	// défini, le formulaire reste identique à avant (zéro friction).
 	const showProjectColumn = $derived(
 		projects.length > 0 || lines.some((l) => l.projectId !== null)
 	);
 	const tableColCount = $derived(showProjectColumn ? 5 : 4);
 
 	let submitting = $state(false);
-
-	// Modale de conflit 409.
-	let showConflictDialog = $state(false);
 
 	// Assistant TVA achat (Story 18-1c) : lignes en attente de confirmation
 	// de remplacement (si le brouillon n'est pas vierge).
@@ -175,12 +144,7 @@
 		};
 
 		try {
-			if (isEdit && initialEntry) {
-				const updatePayload: UpdateJournalEntryRequest = { ...payload, version };
-				await updateJournalEntry(initialEntry.id, updatePayload);
-			} else {
-				await createJournalEntry(payload);
-			}
+			await createJournalEntry(payload);
 			toast.success(i18nMsg('journal-entry-saved', 'Écriture enregistrée'));
 			onSuccess();
 		} catch (err) {
@@ -196,10 +160,6 @@
 					case 'INACTIVE_OR_INVALID_ACCOUNTS':
 					case 'VALIDATION_ERROR':
 						toast.error(err.message);
-						break;
-					case 'OPTIMISTIC_LOCK_CONFLICT':
-						// Conflit de version (story 3.3) — ouvrir la modale de reload.
-						showConflictDialog = true;
 						break;
 					case 'RESOURCE_CONFLICT':
 						// Race sur uq_journal_entries_number (création).
@@ -218,15 +178,6 @@
 			}
 		} finally {
 			submitting = false;
-		}
-	}
-
-	function handleConflictReload() {
-		showConflictDialog = false;
-		if (onConflictReload) {
-			onConflictReload();
-		} else {
-			onCancel();
 		}
 	}
 
@@ -289,14 +240,12 @@
 		</div>
 	</div>
 
-	{#if !isEdit}
-		<VatPurchaseAssistant
-			{accounts}
-			{accountsLoadError}
-			{recoverableAccountId}
-			onApply={handleAssistantApply}
-		/>
-	{/if}
+	<VatPurchaseAssistant
+		{accounts}
+		{accountsLoadError}
+		{recoverableAccountId}
+		onApply={handleAssistantApply}
+	/>
 
 	<table class="w-full border-collapse">
 		<thead>
@@ -509,38 +458,3 @@
 	</div>
 {/if}
 
-<!-- Modale de conflit de version 409 (story 3.3) -->
-{#if showConflictDialog}
-	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-		role="dialog"
-		aria-modal="true"
-		aria-labelledby="conflict-title"
-		aria-describedby="conflict-desc"
-	>
-		<div class="bg-card border border-border rounded-lg p-6 max-w-md mx-4 shadow-lg">
-			<h2 id="conflict-title" class="text-lg font-semibold mb-2">
-				{i18nMsg('journal-entry-conflict-title', 'Conflit de version')}
-			</h2>
-			<p id="conflict-desc" class="text-sm text-text-muted mb-4">
-				{i18nMsg(
-					'journal-entry-conflict-message',
-					'Cette écriture a été modifiée par un autre utilisateur. Voulez-vous recharger ?'
-				)}
-			</p>
-			<div class="flex justify-end gap-2">
-				<!-- P5 : "Annuler" déclenche aussi un reload — sinon la version est
-				     périmée et tout resubmit retourne 409 en boucle. Le seul chemin
-				     pour quitter le mode édition "proprement" est via le bouton
-				     Annuler du formulaire principal. Ici "Annuler le conflit" = "Recharger". -->
-				<!-- svelte-ignore a11y_autofocus -->
-				<Button type="button" variant="outline" onclick={handleConflictReload} autofocus>
-					{i18nMsg('journal-entry-form-cancel', 'Annuler')}
-				</Button>
-				<Button type="button" onclick={handleConflictReload}>
-					{i18nMsg('journal-entry-conflict-reload', 'Recharger')}
-				</Button>
-			</div>
-		</div>
-	</div>
-{/if}

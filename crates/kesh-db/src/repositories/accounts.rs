@@ -440,8 +440,10 @@ pub async fn update(
         .await
         .map_err(map_db_error)?;
 
-    // Story 3.5 : audit log avec wrapper {before, after} pour update
-    // (cohérent avec journal_entries::update).
+    // Story 3.5 : audit log avec wrapper {before, after} pour update.
+    // ⚠️ Le modèle était `journal_entries::update`, supprimée par la Story
+    // 24-4b (#380) — une écriture comptabilisée ne se réécrit plus. Le format
+    // {before, after} reste celui de tous les `update` du dépôt.
     // Rollback explicite pour cohérence avec les autres branches d'erreur.
     let audit_details = serde_json::json!({
         "before": account_snapshot_json(&before),

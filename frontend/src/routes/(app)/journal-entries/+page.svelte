@@ -6,19 +6,14 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import * as Select from '$lib/components/ui/select';
-	import { Pencil, Plus, Trash2 } from '@lucide/svelte';
-	import { toast } from 'svelte-sonner';
+	import { ChevronRight, Plus } from '@lucide/svelte';
 	import Big from 'big.js';
 	import { i18nMsg } from '$lib/features/onboarding/onboarding.svelte';
-	import { isApiError } from '$lib/shared/utils/api-client';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import { listProjects } from '$lib/features/projects/projects.api';
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
-	import {
-		deleteJournalEntry,
-		fetchJournalEntries
-	} from '$lib/features/journal-entries/journal-entries.api';
+	import { fetchJournalEntries } from '$lib/features/journal-entries/journal-entries.api';
 	import type {
 		Journal,
 		JournalEntryListQuery,
@@ -35,7 +30,10 @@
 	} from '$lib/features/journal-entries/query-helpers';
 	import { debounce } from '$lib/features/journal-entries/debounce';
 
-	type Mode = 'list' | 'create' | 'edit';
+	// ⛔ Story 24-4b (#380) — le gel : plus de mode 'edit'. Une écriture
+	// comptabilisée ne se réécrit pas ; on la corrige par contre-passation,
+	// depuis sa fiche.
+	type Mode = 'list' | 'create';
 
 	let mode = $state<Mode>('list');
 	let entries = $state<JournalEntryResponse[]>([]);
@@ -65,15 +63,6 @@
 	let accountFilter = $state<number | null>(null);
 	let sortBy = $state<SortBy>('EntryDate');
 	let sortDir = $state<SortDirection>('Desc');
-
-	// Édition (story 3.3)
-	let editingEntry = $state<JournalEntryResponse | null>(null);
-
-	// Suppression (story 3.3)
-	let deleteTarget = $state<JournalEntryResponse | null>(null);
-	let deleting = $state(false);
-
-	const rowActionsDisabled = $derived(deleting || deleteTarget !== null);
 
 	const JOURNALS: Journal[] = ['Achats', 'Ventes', 'Banque', 'Caisse', 'OD'];
 	const PAGE_SIZES = [25, 50, 100];
@@ -269,86 +258,25 @@
 		}
 	}
 
-	// --- Édition/suppression (story 3.3, inchangé) ---
+	// --- Saisie (story 3.3 ; l'édition et la suppression sont parties avec le
+	// gel de la Story 24-4b, #380) ---
 	function openCreate() {
-		editingEntry = null;
 		mode = 'create';
-	}
-
-	function openEdit(entry: JournalEntryResponse) {
-		editingEntry = entry;
-		mode = 'edit';
 	}
 
 	function handleSuccess() {
 		mode = 'list';
-		editingEntry = null;
 		void loadFiltered();
 	}
 
 	function handleCancel() {
 		mode = 'list';
-		editingEntry = null;
-	}
-
-	function handleConflictReload() {
-		mode = 'list';
-		editingEntry = null;
-		void loadFiltered();
-		toast.info(
-			i18nMsg(
-				'journal-entry-conflict-reloaded',
-				'Liste rechargée — cliquez à nouveau sur modifier pour reprendre'
-			)
-		);
-	}
-
-	function openDeleteConfirm(entry: JournalEntryResponse) {
-		if (deleting || deleteTarget) return;
-		deleteTarget = entry;
-	}
-
-	function cancelDelete() {
-		if (deleting) return;
-		deleteTarget = null;
-	}
-
-	async function confirmDelete() {
-		if (!deleteTarget) return;
-		deleting = true;
-		const targetId = deleteTarget.id;
-		try {
-			await deleteJournalEntry(targetId);
-			toast.success(i18nMsg('journal-entry-deleted', 'Écriture supprimée'));
-			await loadFiltered();
-		} catch (err) {
-			if (isApiError(err)) {
-				const code = err.code ?? '';
-				switch (code) {
-					case 'FISCAL_YEAR_CLOSED':
-					case 'NOT_FOUND':
-					case 'VALIDATION_ERROR':
-						toast.error(err.message);
-						break;
-					default:
-						toast.error(err.message || 'Erreur lors de la suppression');
-				}
-			} else {
-				toast.error('Erreur lors de la suppression');
-			}
-		} finally {
-			deleteTarget = null;
-			deleting = false;
-		}
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
 		if ((e.ctrlKey || e.metaKey) && e.key === 'n' && mode === 'list') {
 			e.preventDefault();
 			openCreate();
-		}
-		if (e.key === 'Escape' && deleteTarget && !deleting) {
-			cancelDelete();
 		}
 	}
 
@@ -413,16 +341,6 @@
 			{recoverableAccountId}
 			onSuccess={handleSuccess}
 			onCancel={handleCancel}
-		/>
-	{:else if mode === 'edit' && editingEntry}
-		<JournalEntryForm
-			{accounts}
-			{accountsLoadError}
-			{projects}
-			initialEntry={editingEntry}
-			onSuccess={handleSuccess}
-			onCancel={handleCancel}
-			onConflictReload={handleConflictReload}
 		/>
 	{:else}
 		<!-- Barre de filtres (Story 3.4) -->
@@ -609,25 +527,21 @@
 							<td class="py-2">{journalLabel(entry.journal)}</td>
 							<td class="py-2">{entry.description}</td>
 							<td class="py-2 text-right tabular-nums">{totalOf(entry)}</td>
+							<!-- ⛔ Story 24-4b (#380) — les deux boutons ✎ et 🗑 sont partis
+							     avec le gel, et le lien qui les remplace n'est pas un lot de
+							     consolation : la liste ne renvoyait vers la fiche par AUCUN
+							     href, si bien que le bouton « Contre-passer » livré par la
+							     24-4a vivait sur un écran qu'on n'atteignait pas d'ici. Le
+							     chemin de correction devient continu. -->
 							<td class="py-2 text-right">
-								<button
-									type="button"
-									class="text-text-muted hover:text-foreground p-1 disabled:opacity-40 disabled:cursor-not-allowed"
-									onclick={() => openEdit(entry)}
-									disabled={rowActionsDisabled}
-									aria-label={i18nMsg('journal-entry-edit', 'Modifier')}
+								<a
+									href="/journal-entries/{entry.id}"
+									class="text-text-muted hover:text-foreground p-1 inline-flex"
+									data-testid="journal-entry-open"
+									aria-label={i18nMsg('journal-entry-open', 'Ouvrir la fiche')}
 								>
-									<Pencil class="w-4 h-4" />
-								</button>
-								<button
-									type="button"
-									class="text-text-muted hover:text-destructive p-1 disabled:opacity-40 disabled:cursor-not-allowed"
-									onclick={() => openDeleteConfirm(entry)}
-									disabled={rowActionsDisabled}
-									aria-label={i18nMsg('journal-entry-delete', 'Supprimer')}
-								>
-									<Trash2 class="w-4 h-4" />
-								</button>
+									<ChevronRight class="w-4 h-4" />
+								</a>
 							</td>
 						</tr>
 					{/each}
@@ -678,56 +592,3 @@
 	{/if}
 </div>
 
-<!-- Dialog de confirmation de suppression (story 3.3) -->
-{#if deleteTarget}
-	<!-- ⚠️ L'interpolation passe par le TROISIÈME argument d'`i18nMsg`, pas par un `.replace()`
-	     maison. Le backend pré-résout Fluent sans arguments : `{ $number }` ressort entouré des
-	     marques d'isolation bidi U+2068/U+2069, qu'`i18nMsg` consomme avec le placeholder. Un
-	     `.replace()` qui ne cherche que `{ $number }` remplace bien la variable mais **laisse les
-	     deux marques dans le DOM** — invisibles à l'œil, fatales à toute assertion E2E portant sur
-	     la valeur. Relevé par `i18n-entrees-a-variables.test.ts` (story 23-5). -->
-	{@const deleteTitle = i18nMsg(
-		'journal-entry-delete-confirm-title',
-		"Supprimer l'écriture N°{ $number } ?",
-		{ number: deleteTarget.entryNumber }
-	)}
-	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-		role="dialog"
-		aria-modal="true"
-		aria-labelledby="delete-confirm-title"
-		aria-describedby="delete-confirm-desc"
-	>
-		<div class="bg-card border border-border rounded-lg p-6 max-w-md mx-4 shadow-lg">
-			<h2 id="delete-confirm-title" class="text-lg font-semibold mb-2">
-				{deleteTitle}
-			</h2>
-			<p id="delete-confirm-desc" class="text-sm text-text-muted mb-4">
-				{i18nMsg(
-					'journal-entry-delete-confirm-message',
-					"Cette action est irréversible. L'action sera enregistrée dans le journal d'audit."
-				)}
-			</p>
-			<div class="flex justify-end gap-2">
-				<!-- svelte-ignore a11y_autofocus -->
-				<Button
-					type="button"
-					variant="outline"
-					onclick={cancelDelete}
-					disabled={deleting}
-					autofocus
-				>
-					{i18nMsg('journal-entry-delete-confirm-cancel', 'Annuler')}
-				</Button>
-				<Button
-					type="button"
-					variant="destructive"
-					onclick={confirmDelete}
-					disabled={deleting}
-				>
-					{i18nMsg('journal-entry-delete-confirm-delete', 'Supprimer')}
-				</Button>
-			</div>
-		</div>
-	</div>
-{/if}

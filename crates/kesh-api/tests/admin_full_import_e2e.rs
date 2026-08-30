@@ -1351,9 +1351,9 @@ async fn full_import_skips_role_backfill_when_sentinels_are_present(pool: MySqlP
 /// Le candidat s'obtient donc en **REPOINTANT** l'unique ligne de crédit de
 /// produit, par SQL direct sur la base source. Aucun chemin applicatif ne peut
 /// produire cet état : `POST /invoices` refuse un compte de produit non
-/// imputable ; `journal_entries::update` passe `enforce_postable = true` en dur
-/// (`:936`) et son *grandfather* n'exempte que les comptes **déjà référencés**
-/// par l'écriture (`:926-928`) ; et `2979` **naît** non imputable, le seed
+/// imputable ; l'écriture, une fois créée, **ne se réécrit plus du tout**
+/// (Story 24-4b, #380 — `journal_entries::update` supprimée, `PUT` refusé en
+/// 409 `ENTRY_IS_POSTED`) ; et `2979` **naît** non imputable, le seed
 /// appliquant `is_postable`, jumelle pure d'`effective_postable`. Le repointage
 /// préserve en outre l'équilibre débit/crédit, qu'aucun `CHECK` ne protège.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]

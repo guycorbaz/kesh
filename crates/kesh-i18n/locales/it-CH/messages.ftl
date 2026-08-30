@@ -271,17 +271,7 @@ invoice-error-total-zero = Questa fattura ha un importo totale nullo: non può e
 credit-note-error-total-zero = Questa fattura ha un importo totale nullo: non è possibile emettere alcuna nota di credito.
 
 # Modifica & eliminazione scritture (Story 3.3)
-journal-entry-edit = Modifica
-journal-entry-delete = Elimina
-journal-entry-delete-confirm-title = Eliminare la scrittura N°{ $number }?
-journal-entry-delete-confirm-message = Questa azione è irreversibile. L'azione verrà registrata nel registro di audit.
-journal-entry-delete-confirm-cancel = Annulla
-journal-entry-delete-confirm-delete = Elimina
-journal-entry-deleted = Scrittura eliminata
-journal-entry-conflict-title = Conflitto di versione
-journal-entry-conflict-message = Questa scrittura è stata modificata da un altro utente. Ricaricare?
-journal-entry-conflict-reload = Ricarica
-journal-entry-conflict-reloaded = Lista ricaricata — cliccare nuovamente su Modifica
+journal-entry-open = Apri la scheda
 
 # Assistente IVA acquisto (Story 18-1c)
 vat-purchase-title = Assistente IVA acquisto
@@ -347,6 +337,7 @@ journal-entries-reverse-blocked-bank-match = Questa scrittura è riconciliata co
 journal-entries-reverse-blocked-account-archived = Un conto di questa scrittura è stato archiviato: riattivatelo per poterla stornare.
 journal-entries-reverse-account-archived = Impossibile stornare — conto/conti archiviato/i: { $detail }. Riattivate i conti interessati.
 journal-entries-delete-blocked-reversed = Questa scrittura è stata stornata: non può più essere eliminata.
+journal-entries-blocked-posted = Una scrittura contabilizzata non può più essere modificata. Per correggerla, stornatela: Kesh crea la scrittura inversa e conserva l'originale.
 
 # Tooltip bilingue termini contabili (Story 3.5)
 tooltip-debit-natural = Il denaro entra in questo conto

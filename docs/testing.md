@@ -316,7 +316,9 @@ KESH_BACKEND_URL=http://localhost:3001 npm run test:e2e
 
 ## Les échecs attendus — la suite ne passe PAS au vert, et il faut le savoir
 
-⚠️ **`npm run test:e2e` rend aujourd'hui 215 passés / 8 échoués, et ces huit sont ATTENDUS.**
+⚠️ **`npm run test:e2e` ne passe PAS au vert, et le nombre d'échecs attendus DÉPEND DE L'HEURE :
+8 l'après-midi, 10 le matin** (relevé du 2026-08-30 : 212 passés / 11 échoués à 10:42 CEST, dont
+un de pollution en plus). Ces échecs sont ATTENDUS.
 Sans cette liste, la règle du `CLAUDE.md` — « la suite complète tourne en local avant tout
 `git push` » — est **invérifiable** : personne ne peut dire « c'est vert », et chacun doit
 re-dériver à la main quels échecs sont connus. Le risque n'est pas le temps perdu, c'est
@@ -335,6 +337,31 @@ régression au milieu.
 | `onboarding.spec.ts:77` | KF-029 (#97) |
 | `onboarding.spec.ts:150` | KF-029 (#97) |
 | **un huitième, VARIABLE** | pollution d'état entre specs — voir ci-dessous |
+| `invoices.spec.ts:405` | ⏰ **KF-045 (#421)** — seulement **avant 12:00 UTC** |
+| `invoices.spec.ts:429` | ⏰ **KF-045 (#421)** — idem |
+
+⏰ **Les deux dernières ne rougissent QUE le matin, et c'est vérifié.** Le helper poste un rappel
+manuel daté de `${today}T12:00:00`, que la route compare à `Utc::now().naive_utc()`
+(`dunning_reminders.rs:261`, garde « pas de date d'envoi future »). Tant qu'il est plus tôt que
+**12:00 UTC** — soit 14:00 en Suisse l'été —, midi est dans le futur et la route rend **422**.
+
+⚠️ **Elles échouent rejouées SEULES**, donc ce n'est pas la pollution du huitième variable ; et
+elles échouent aussi sur `main` avant toute branche en cours (vérifié en worktree sur
+`d2910022`). Le relevé du 2026-08-26 ne les portait pas parce qu'il a été fait l'après-midi.
+**Un test qui dépend de l'heure ne rougit que pour la moitié des gens qui le lancent.**
+
+⇒ **Le compte attendu est `7 + (2 si le run est matinal) + 1 à 2 de pollution`**, soit **8 à 11**.
+Deux relevés du 2026-08-30, base `kesh_e2e` reconstruite, tous deux **212 passés / 11 échoués** :
+
+| run | les 7 fixes | KF-045 | pollution — **change d'identité** |
+|---|---|---|---|
+| 10:42 CEST | ✅ | ✅ | `reconciliation-rules.spec.ts:37`, `reports.spec.ts:306` |
+| 11:06 CEST | ✅ | ✅ | `products.spec.ts:166`, `sidebar-navigation.spec.ts:75` |
+
+⚠️ **Les quatre passent rejouées seules.** La pollution n'a donc ni une identité fixe **ni même
+un nombre fixe** — la première rédaction parlait d'« un huitième » au singulier, ce qui était
+déjà trop précis. **Ne jamais juger un rouge au nombre : le juger fichier par fichier contre les
+deux listes nominatives ci-dessus, puis rejouer seul ce qui reste.**
 
 **Le huitième n'a pas d'identité fixe, et c'est l'information utile.** Deux runs complets à
 un jour d'intervalle :
