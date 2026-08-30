@@ -23,6 +23,13 @@
 		accountsLoadError: boolean;
 		/** Projets analytiques actifs (Epic 19, Story 19-2). Vide = colonne masquée. */
 		projects?: ProjectResponse[];
+		/**
+		 * Borne du verrou de période (Story 24-4c, #380) — `null` = aucun verrou.
+		 * ⚠️ Sert UNIQUEMENT au `min` du champ date : c'est un confort de saisie.
+		 * **Le refus qui fait autorité est celui du serveur** (400 `PERIOD_LOCKED`),
+		 * et il est testé sans passer par l'écran.
+		 */
+		booksLockedThrough?: string | null;
 		/** Compte d'impôt préalable pour l'assistant TVA achat (Story 18-1c). Null si non configuré. */
 		recoverableAccountId?: number | null;
 		onSuccess: () => void;
@@ -33,6 +40,7 @@
 		accounts,
 		accountsLoadError,
 		projects = [],
+		booksLockedThrough = null,
 		recoverableAccountId = null,
 		onSuccess,
 		onCancel
@@ -66,6 +74,16 @@
 		projects.length > 0 || lines.some((l) => l.projectId !== null)
 	);
 	const tableColCount = $derived(showProjectColumn ? 5 : 4);
+
+	// Premier jour SAISISSABLE : le lendemain de la borne. La borne étant
+	// INCLUSIVE, `min` doit valoir borne + 1 jour — un `min` posé à la borne
+	// elle-même laisserait l'écran proposer une date que le serveur refuse.
+	const minEntryDate = $derived.by(() => {
+		if (!booksLockedThrough) return undefined;
+		const d = new Date(`${booksLockedThrough}T00:00:00Z`);
+		d.setUTCDate(d.getUTCDate() + 1);
+		return d.toISOString().slice(0, 10);
+	});
 
 	let submitting = $state(false);
 
@@ -210,7 +228,7 @@
 			<label for="entry-date" class="block text-sm font-medium mb-1">
 				{i18nMsg('journal-entry-form-date', 'Date')}
 			</label>
-			<Input id="entry-date" type="date" bind:value={entryDate} required />
+			<Input id="entry-date" type="date" bind:value={entryDate} min={minEntryDate} required />
 		</div>
 		<div>
 			<label for="entry-journal" class="block text-sm font-medium mb-1">

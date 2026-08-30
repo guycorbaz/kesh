@@ -338,6 +338,15 @@ journal-entries-reverse-blocked-account-archived = Ein Konto dieser Buchung wurd
 journal-entries-reverse-account-archived = Stornierung nicht möglich — archivierte(s) Konto/Konten: { $detail }. Reaktivieren Sie die betroffenen Konten.
 journal-entries-delete-blocked-reversed = Diese Buchung wurde storniert: Sie kann nicht mehr gelöscht werden.
 journal-entries-blocked-posted = Eine verbuchte Buchung kann nicht mehr geändert werden. Zur Korrektur stornieren Sie sie: Kesh erstellt die Gegenbuchung und behält das Original.
+journal-entries-period-locked = Die Buchungen sind bis zum { $lockedThrough } gesperrt; diese ist auf den { $attempted } datiert.
+settings-books-lock-title = Periodensperre
+settings-books-lock-none = Keine Sperre: Alle Daten eines offenen Geschäftsjahres werden akzeptiert.
+settings-books-lock-current = Bücher gesperrt bis und mit { $date }.
+settings-books-lock-set = Sperren bis zum
+settings-books-lock-release = Entsperren
+settings-books-lock-motif = Grund der Entsperrung
+settings-books-lock-motif-required = Für die Entsperrung ist ein Grund erforderlich.
+journal-entries-books-locked-banner = Bücher gesperrt bis und mit { $date } — keine Buchung kann auf dieses Datum lauten.
 
 # Zweisprachige Tooltips Buchhaltungsbegriffe (Story 3.5)
 tooltip-debit-natural = Geld kommt auf dieses Konto

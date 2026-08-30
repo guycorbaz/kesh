@@ -312,6 +312,27 @@ pub enum DbError {
     #[error("Écriture comptabilisée : modification et suppression refusées")]
     EntryIsPosted,
 
+    /// La date de l'écriture tombe dans une période verrouillée
+    /// (Story 24-4c, #380).
+    ///
+    /// ⛔ Le seuil est **inclusif** : une borne au 31.03 refuse le 31.03.
+    ///
+    /// ⚠️ C'est un **400**, pas un 409 : ce qui est invalide, c'est la **date
+    /// proposée**, pas l'état d'une ressource qu'on voudrait changer. La 24-4b
+    /// a figé l'asymétrie — `ENTRY_IS_POSTED` porte sur l'écriture qu'on veut
+    /// modifier, `PERIOD_LOCKED` sur la date qu'on propose.
+    ///
+    /// Les deux dates voyagent avec l'erreur pour que le message les NOMME :
+    /// un refus qui ne dit pas jusqu'où les livres sont fermés n'est pas
+    /// utilisable.
+    #[error(
+        "Les écritures sont verrouillées jusqu'au {locked_through} ; celle-ci est datée du {attempted}"
+    )]
+    PeriodLocked {
+        locked_through: chrono::NaiveDate,
+        attempted: chrono::NaiveDate,
+    },
+
     /// Aucun exercice ouvert ne couvre la date fournie (Story 5.2).
     /// Distinct de `FiscalYearClosed` — l'exercice est peut-être
     /// inexistant (date hors de tous les exercices connus) OU clôturé.
@@ -385,6 +406,7 @@ impl DbError {
             Self::ReversalAccountsArchived(_) => "ACCOUNT_ARCHIVED",
             Self::EntryIsReversed => "ENTRY_IS_REVERSED",
             Self::EntryIsPosted => "ENTRY_IS_POSTED",
+            Self::PeriodLocked { .. } => "PERIOD_LOCKED",
             Self::FiscalYearInvalid => "FISCAL_YEAR_INVALID",
             Self::ConfigurationRequired(_) => "CONFIGURATION_REQUIRED",
             Self::ConnectionUnavailable(_) => "CONNECTION_UNAVAILABLE",

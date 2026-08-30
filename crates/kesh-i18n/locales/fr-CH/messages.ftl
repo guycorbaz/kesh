@@ -332,6 +332,15 @@ journal-entries-reverse-blocked-account-archived = Un compte de cette écriture 
 journal-entries-reverse-account-archived = Impossible de contre-passer — compte(s) archivé(s) : { $detail }. Réactivez le ou les comptes concernés.
 journal-entries-delete-blocked-reversed = Cette écriture a été contre-passée : elle ne peut plus être supprimée.
 journal-entries-blocked-posted = Une écriture comptabilisée ne se modifie plus. Pour la corriger, contre-passez-la : Kesh crée l'écriture inverse et conserve l'originale.
+journal-entries-period-locked = Les écritures sont verrouillées jusqu'au { $lockedThrough } ; celle-ci est datée du { $attempted }.
+settings-books-lock-title = Verrou de période
+settings-books-lock-none = Aucun verrou : toutes les dates d'un exercice ouvert sont acceptées.
+settings-books-lock-current = Livres verrouillés jusqu'au { $date } inclus.
+settings-books-lock-set = Verrouiller jusqu'au
+settings-books-lock-release = Déverrouiller
+settings-books-lock-motif = Motif du déverrouillage
+settings-books-lock-motif-required = Un motif est obligatoire pour déverrouiller.
+journal-entries-books-locked-banner = Livres verrouillés jusqu'au { $date } inclus — aucune écriture ne peut y être datée.
 
 # Tooltips bilingues termes comptables (Story 3.5)
 tooltip-debit-natural = L'argent entre dans ce compte

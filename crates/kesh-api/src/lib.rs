@@ -287,6 +287,15 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/fiscal-years/{id}/reopen",
             post(routes::fiscal_years::reopen_fiscal_year),
         )
+        // Story 24-4c (#380) : RECULER ou RETIRER le verrou de période.
+        // ⛔ Admin uniquement + motif obligatoire, exactement comme la
+        // réouverture d'exercice ci-dessus — et pour la même raison :
+        // verrouiller est un geste d'hygiène, DÉVERROUILLER DÉFAIT UNE
+        // GARANTIE. La pose, elle, vit dans `comptable_routes`.
+        .route(
+            "/api/v1/companies/current/books-lock/release",
+            post(routes::companies::unlock_company_books),
+        )
         // ⚠️⚠️ TOUTE ROUTE S'AJOUTE AU-DESSUS DE CETTE LIGNE. ⚠️⚠️
         //
         // `route_layer` n'enveloppe que les routes DÉJÀ enregistrées au moment
@@ -336,6 +345,13 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/journal-entries/{id}",
             put(routes::journal_entries::update_journal_entry)
                 .delete(routes::journal_entries::delete_journal_entry),
+        )
+        // Story 24-4c (#380) : POSER ou AVANCER le verrou de période.
+        // ⛔ Admin + Comptable : verrouiller doit pouvoir se faire souvent et
+        // sans cérémonie. La levée est Admin-only (cf. `admin` ci-dessus).
+        .route(
+            "/api/v1/companies/current/books-lock",
+            post(routes::companies::lock_company_books),
         )
         // Story 24-4a (#380) — contre-passation. ⛔ Sous `comptable_routes` comme
         // create/update/delete : Consultation ne contre-passe pas.

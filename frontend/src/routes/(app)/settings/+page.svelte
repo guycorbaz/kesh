@@ -4,6 +4,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Separator } from '$lib/components/ui/separator';
 	import { i18nMsg } from '$lib/features/onboarding/onboarding.svelte';
+	import { lockBooks, releaseBooksLock } from '$lib/features/settings/settings.api';
 	import {
 		fetchCompanyCurrent,
 		updateCompanyContactDetails,
@@ -15,8 +16,17 @@
 	import { isPlausibleEmail } from '$lib/shared/utils/email';
 	import { notifySuccess } from '$lib/shared/utils/notify';
 
-	function msg(key: string, fallback: string): string {
-		return i18nMsg(key, fallback);
+	// ⚠️ Le troisième argument porte les variables Fluent. Il passe par
+	// `i18nMsg` et JAMAIS par un `.replace()` maison : le backend pré-résout
+	// Fluent sans arguments, si bien qu'un `{ $date }` ressort entouré des
+	// marques d'isolation bidi U+2068/U+2069 — invisibles à l'œil, fatales à
+	// toute assertion E2E portant sur la valeur.
+	function msg(
+		key: string,
+		fallback: string,
+		args?: Record<string, string | number>
+	): string {
+		return i18nMsg(key, fallback, args);
 	}
 
 	let data = $state<CompanyCurrentResponse | null>(null);
@@ -194,6 +204,54 @@
 				return orgType;
 		}
 	}
+
+	// --- Story 24-4c (#380) : le verrou de période ---
+	let lockThrough = $state('');
+	let unlockThrough = $state('');
+	let unlockMotif = $state('');
+	let lockBusy = $state(false);
+	let lockError = $state<string | null>(null);
+	let showUnlock = $state(false);
+
+	async function submitLock() {
+		if (!lockThrough || lockBusy) return;
+		lockBusy = true;
+		lockError = null;
+		try {
+			const updated = await lockBooks(lockThrough);
+			if (data) data = { ...data, company: updated };
+			lockThrough = '';
+		} catch (e) {
+			lockError = e instanceof Error ? e.message : String(e);
+		} finally {
+			lockBusy = false;
+		}
+	}
+
+	async function submitUnlock() {
+		if (lockBusy) return;
+		// ⛔ Le motif est obligatoire côté SERVEUR ; ce contrôle n'est qu'un
+		// confort. Déverrouiller défait une garantie — c'est le seul geste des
+		// deux qui doive coûter.
+		if (!unlockMotif.trim()) {
+			lockError = msg('settings-books-lock-motif-required', 'Un motif est obligatoire pour déverrouiller.');
+			return;
+		}
+		lockBusy = true;
+		lockError = null;
+		try {
+			const updated = await releaseBooksLock(unlockThrough || null, unlockMotif);
+			if (data) data = { ...data, company: updated };
+			unlockThrough = '';
+			unlockMotif = '';
+			showUnlock = false;
+		} catch (e) {
+			lockError = e instanceof Error ? e.message : String(e);
+		} finally {
+			lockBusy = false;
+		}
+	}
+
 </script>
 
 <svelte:head>
@@ -436,6 +494,74 @@
 				<h2 class="text-lg font-semibold">{msg('settings-users-title', 'Utilisateurs')}</h2>
 				<Button variant="outline" size="sm" href="/users">{msg('settings-manage', 'Gérer')}</Button>
 			</div>
+		</section>
+
+		<Separator />
+
+		<!-- Section Verrou de période (Story 24-4c, #380) -->
+		<section class="rounded-lg border border-border bg-white p-6 shadow-sm" data-testid="settings-books-lock">
+			<h2 class="text-lg font-semibold">{msg('settings-books-lock-title', 'Verrou de période')}</h2>
+			<p class="mt-2 text-sm text-text-muted">
+				{#if data?.company.booksLockedThrough}
+					{msg('settings-books-lock-current', 'Livres verrouillés jusqu\'au { $date } inclus.', {
+						date: data.company.booksLockedThrough
+					})}
+				{:else}
+					{msg('settings-books-lock-none', "Aucun verrou : toutes les dates d'un exercice ouvert sont acceptées.")}
+				{/if}
+			</p>
+
+			{#if lockError}
+				<p class="mt-2 text-sm text-destructive" data-testid="books-lock-error">{lockError}</p>
+			{/if}
+
+			<div class="mt-4 flex flex-wrap items-end gap-2">
+				<div>
+					<label for="books-lock-through" class="block text-sm font-medium mb-1">
+						{msg('settings-books-lock-set', 'Verrouiller jusqu\'au')}
+					</label>
+					<Input id="books-lock-through" type="date" bind:value={lockThrough} />
+				</div>
+				<Button size="sm" onclick={submitLock} disabled={lockBusy || !lockThrough} data-testid="books-lock-submit">
+					{msg('settings-books-lock-set', 'Verrouiller jusqu\'au')}
+				</Button>
+				{#if data?.company.booksLockedThrough}
+					<Button
+						size="sm"
+						variant="outline"
+						onclick={() => (showUnlock = !showUnlock)}
+						data-testid="books-lock-release-toggle"
+					>
+						{msg('settings-books-lock-release', 'Déverrouiller')}
+					</Button>
+				{/if}
+			</div>
+
+			{#if showUnlock}
+				<div class="mt-3 flex flex-wrap items-end gap-2 border-t border-border pt-3">
+					<div>
+						<label for="books-unlock-through" class="block text-sm font-medium mb-1">
+							{msg('settings-books-lock-set', 'Verrouiller jusqu\'au')}
+						</label>
+						<Input id="books-unlock-through" type="date" bind:value={unlockThrough} />
+					</div>
+					<div class="grow">
+						<label for="books-unlock-motif" class="block text-sm font-medium mb-1">
+							{msg('settings-books-lock-motif', 'Motif du déverrouillage')}
+						</label>
+						<Input id="books-unlock-motif" type="text" bind:value={unlockMotif} />
+					</div>
+					<Button
+						size="sm"
+						variant="destructive"
+						onclick={submitUnlock}
+						disabled={lockBusy}
+						data-testid="books-lock-release-submit"
+					>
+						{msg('settings-books-lock-release', 'Déverrouiller')}
+					</Button>
+				</div>
+			{/if}
 		</section>
 
 		<Separator />

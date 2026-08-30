@@ -130,6 +130,7 @@ mod tests {
             phone: None,
             website: None,
             is_stub: false,
+            books_locked_through: None,
             version: 1,
             created_at: naive_dt(2026, 1, 1),
             updated_at: naive_dt(2026, 1, 1),

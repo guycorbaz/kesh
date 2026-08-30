@@ -1,7 +1,7 @@
 //! Entité `Company` : données de l'entreprise/organisation utilisant Kesh.
 
 use crate::entities::address::StructuredAddress;
-use chrono::NaiveDateTime;
+use chrono::{NaiveDate, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use sqlx::{Decode, Encode, MySql, Type, encode::IsNull, error::BoxDynError, mysql::MySqlTypeInfo};
 
@@ -179,6 +179,10 @@ pub struct Company {
     /// nudge de renommage non-bloquant.
     pub is_stub: bool,
     /// Version pour optimistic locking (incrémentée à chaque update).
+    /// Borne **inclusive** du verrou de période (Story 24-4c, #380).
+    /// `None` = aucun verrou. Aucune écriture ne peut être créée avec une
+    /// `entry_date <= ` cette date, quel que soit le chemin de création.
+    pub books_locked_through: Option<NaiveDate>,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,

@@ -23,6 +23,7 @@
 	} from '$lib/features/journal-entries/journal-entries.types';
 	import JournalEntryForm from '$lib/features/journal-entries/JournalEntryForm.svelte';
 	import { getInvoiceSettings } from '$lib/features/invoices/invoices.api';
+	import { fetchCompanyCurrent } from '$lib/features/settings/settings.api';
 	import { formatSwissAmount } from '$lib/features/journal-entries/balance';
 	import {
 		parseQueryFromUrl,
@@ -45,6 +46,8 @@
 	// Compte d'impôt préalable pour l'assistant TVA achat (Story 18-1c).
 	// Échec réseau → reste null (assistant en mode config-requise).
 	let recoverableAccountId = $state<number | null>(null);
+	// Borne du verrou de période (Story 24-4c, #380) — `null` = aucun verrou.
+	let booksLockedThrough = $state<string | null>(null);
 	let loading = $state(false);
 
 	// Story 3.4 — pagination + filtres.
@@ -153,6 +156,9 @@
 		void getInvoiceSettings()
 			.then((s) => (recoverableAccountId = s.defaultVatRecoverableAccountId ?? null))
 			.catch(() => (recoverableAccountId = null));
+		void fetchCompanyCurrent()
+			.then((c) => (booksLockedThrough = c.company.booksLockedThrough))
+			.catch(() => (booksLockedThrough = null));
 
 		return () => {
 			debouncedLoad.cancel();
@@ -339,10 +345,28 @@
 			{accountsLoadError}
 			{projects}
 			{recoverableAccountId}
+			{booksLockedThrough}
 			onSuccess={handleSuccess}
 			onCancel={handleCancel}
 		/>
 	{:else}
+		<!-- ⛔ Story 24-4c (#380) : le bandeau du verrou de période. Sans lui,
+		     l'utilisateur découvre le verrou AU REFUS — et la 24-4a a établi
+		     qu'un refus découvert après le clic est un défaut, pas une
+		     fonctionnalité. -->
+		{#if booksLockedThrough}
+			<div
+				class="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm"
+				data-testid="books-locked-banner"
+			>
+				{i18nMsg(
+					'journal-entries-books-locked-banner',
+					'Livres verrouillés jusqu\'au { $date } inclus — aucune écriture ne peut y être datée.',
+					{ date: booksLockedThrough }
+				)}
+			</div>
+		{/if}
+
 		<!-- Barre de filtres (Story 3.4) -->
 		<div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-2 p-4 bg-muted/30 rounded-md">
 			<div>

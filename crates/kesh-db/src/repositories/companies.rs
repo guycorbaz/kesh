@@ -8,20 +8,23 @@
 //! Utilise les variantes non-macro `sqlx::query_as::<_, T>("...")` pour
 //! éviter la dépendance à une DB live au moment du build.
 
+use chrono::{NaiveDate, Utc};
+use serde_json::json;
 use sqlx::mysql::MySqlPool;
 
-use crate::entities::{Company, CompanyUpdate, NewCompany};
+use crate::entities::{Company, CompanyUpdate, NewAuditLogEntry, NewCompany};
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::MAX_LIST_LIMIT;
+use crate::repositories::audit_log;
 
 const FIND_BY_ID_SQL: &str = "SELECT id, name, first_name, last_name, address, address_street, address_building, \
             address_postal_code, address_city, address_country, ide_number, org_type, \
-            accounting_language, instance_language, email, phone, website, is_stub, version, created_at, updated_at \
+            accounting_language, instance_language, email, phone, website, is_stub, books_locked_through, version, created_at, updated_at \
      FROM companies WHERE id = ?";
 
 const LIST_SQL: &str = "SELECT id, name, first_name, last_name, address, address_street, address_building, \
             address_postal_code, address_city, address_country, ide_number, org_type, \
-            accounting_language, instance_language, email, phone, website, is_stub, version, created_at, updated_at \
+            accounting_language, instance_language, email, phone, website, is_stub, books_locked_through, version, created_at, updated_at \
      FROM companies ORDER BY id LIMIT ? OFFSET ?";
 
 /// Crée une nouvelle company et retourne l'entité persistée.
@@ -269,4 +272,157 @@ pub async fn update(
 
     tx.commit().await.map_err(map_db_error)?;
     Ok(company)
+}
+
+// ---------------------------------------------------------------------------
+// Story 24-4c (#380) — le verrou de période
+// ---------------------------------------------------------------------------
+
+/// Pose ou **avance** la borne du verrou de période.
+///
+/// Autorisé aux rôles **Admin et Comptable** : verrouiller est un geste
+/// d'hygiène, qu'on doit pouvoir faire souvent et sans cérémonie.
+///
+/// # Deux gardes de VALEUR, et elles ne sont pas décoratives
+///
+/// ⛔ **`through` doit être STRICTEMENT antérieure à aujourd'hui.** Une borne
+/// posée à la date du jour refuserait toute contre-passation faite le même jour
+/// — celle-ci étant datée du jour et le seuil de la garde étant inclusif —,
+/// c'est-à-dire rendrait les livres incorrigibles le jour même. ⚠️ « Aujourd'hui »
+/// est `Utc::now().date_naive()`, la **même horloge** que la contre-passation :
+/// mélanger les deux réintroduirait l'écart d'un jour sous une autre forme.
+///
+/// ⛔ **`through` doit être STRICTEMENT postérieure à la borne courante non
+/// nulle.** Sans cette garde, la séparation par rôle serait contournable *par le
+/// verbe* : un Comptable appellerait ce point d'entrée avec une date antérieure,
+/// la borne reculerait sans motif ni rôle Admin, et le journal d'audit écrirait
+/// `books.locked` — un retrait **maquillé en pose**. Avancer veut dire avancer.
+///
+/// ⚠️ Le « non nulle » compte : à la première pose la borne vaut `NULL`, et
+/// c'est le seul cas où cette garde doit se taire.
+pub async fn lock_books(
+    pool: &MySqlPool,
+    user_id: i64,
+    company_id: i64,
+    through: NaiveDate,
+) -> Result<Company, DbError> {
+    if through >= Utc::now().date_naive() {
+        return Err(DbError::InvalidInput(
+            "la borne du verrou doit être antérieure à aujourd'hui".into(),
+        ));
+    }
+
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    let before: Option<Option<NaiveDate>> =
+        sqlx::query_scalar("SELECT books_locked_through FROM companies WHERE id = ? FOR UPDATE")
+            .bind(company_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(map_db_error)?;
+
+    let before = match before {
+        None => {
+            tx.rollback().await.map_err(map_db_error)?;
+            return Err(DbError::NotFound);
+        }
+        Some(v) => v,
+    };
+
+    if let Some(current) = before
+        && through <= current
+    {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Err(DbError::IllegalStateTransition(format!(
+            "les livres sont déjà verrouillés jusqu'au {current} — avancer la borne exige une date postérieure ;              la reculer relève du déverrouillage (Admin, motif obligatoire)"
+        )));
+    }
+
+    sqlx::query("UPDATE companies SET books_locked_through = ? WHERE id = ?")
+        .bind(through)
+        .bind(company_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
+
+    audit_log::insert_in_tx(
+        &mut tx,
+        NewAuditLogEntry::user(
+            user_id,
+            "books.locked".to_string(),
+            "company".to_string(),
+            company_id,
+            Some(json!({ "before": before, "after": through })),
+        ),
+    )
+    .await?;
+
+    tx.commit().await.map_err(map_db_error)?;
+    find_by_id(pool, company_id).await?.ok_or(DbError::NotFound)
+}
+
+/// **Recule ou retire** la borne du verrou de période.
+///
+/// ⛔ Réservé à **Admin**, et le **motif est obligatoire** — c'est l'asymétrie
+/// qui fait toute la mesure. Verrouiller est un geste d'hygiène ; déverrouiller
+/// **défait une garantie**, et doit donc coûter, se justifier et se retrouver
+/// dans le journal d'audit, exactement comme la réouverture d'un exercice clos.
+///
+/// `through = None` retire le verrou entièrement.
+///
+/// ⚠️ L'action `books.unlocked` a **un seul producteur** : cette fonction. La
+/// restauration d'une sauvegarde, qui peut elle aussi faire reculer la borne,
+/// écrit `books.restored` — confondre les deux rendrait le filtre d'audit
+/// inutilisable pour le réviseur qui cherche **qui** a déverrouillé.
+pub async fn unlock_books(
+    pool: &MySqlPool,
+    user_id: i64,
+    company_id: i64,
+    through: Option<NaiveDate>,
+    motif: String,
+) -> Result<Company, DbError> {
+    if motif.trim().is_empty() {
+        return Err(DbError::InvalidInput(
+            "un motif est obligatoire pour reculer ou retirer le verrou de période".into(),
+        ));
+    }
+
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    let before: Option<Option<NaiveDate>> =
+        sqlx::query_scalar("SELECT books_locked_through FROM companies WHERE id = ? FOR UPDATE")
+            .bind(company_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(map_db_error)?;
+
+    let before = match before {
+        None => {
+            tx.rollback().await.map_err(map_db_error)?;
+            return Err(DbError::NotFound);
+        }
+        Some(v) => v,
+    };
+
+    sqlx::query("UPDATE companies SET books_locked_through = ? WHERE id = ?")
+        .bind(through)
+        .bind(company_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
+
+    audit_log::insert_in_tx(
+        &mut tx,
+        NewAuditLogEntry::user(
+            user_id,
+            "books.unlocked".to_string(),
+            "company".to_string(),
+            company_id,
+            Some(json!({ "before": before, "after": through, "motif": motif })),
+        ),
+    )
+    .await?;
+
+    tx.commit().await.map_err(map_db_error)?;
+    find_by_id(pool, company_id).await?.ok_or(DbError::NotFound)
 }

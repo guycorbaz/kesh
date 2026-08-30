@@ -419,6 +419,39 @@ La contrepartie est qu'il faut se relire \textbf{avant} de valider --- et que l'
 saisie vous y aide en refusant toute écriture déséquilibrée.
 \end{keshtip}
 
+\subsection{Arrêter les livres à une date : le verrou de période}
+\label{sec:verrou-periode}
+
+La clôture d'exercice est annuelle. Or on remet ses comptes bien plus souvent que cela~: un
+décompte de TVA trimestriel est déposé, un exercice est remis au fiduciaire, un mois est arrêté.
+Rien n'empêchait alors de \textbf{saisir après coup} une écriture datée d'une période déjà
+déclarée --- et comme les rapports se recalculent à la volée, le chiffre changeait \textbf{sans
+que rien ne le signale}.
+
+Le \textbf{verrou de période} ferme cela. Dans \emph{Réglages} $\rightarrow$ \emph{Verrou de
+période}, indiquez une date~: «~les écritures jusqu'au 31 mars 2026 inclus sont verrouillées~». Aucune écriture ne pourra plus y être datée, \textbf{par aucun chemin} ---
+ni la saisie manuelle, ni la validation d'une facture antérieure, ni un rapprochement bancaire.
+
+\begin{keshtip}[title={\faLightbulb\ Deux gestes, deux exigences différentes}]
+\textbf{Verrouiller} est un geste d'hygiène~: un comptable comme un administrateur peut le
+faire, aussi souvent qu'il le souhaite, sans justification. \textbf{Déverrouiller} défait une
+garantie~: c'est réservé à un \emph{administrateur}, un \textbf{motif est obligatoire}, et
+l'opération est inscrite au journal d'audit --- exactement comme la réouverture d'un exercice
+clôturé.
+\end{keshtip}
+
+\begin{keshwarning}[title={\faExclamationTriangle\ Ce que le verrou n'empêche pas, et c'est voulu}]
+\textbf{Une écriture d'une période verrouillée reste corrigeable par contre-passation.} La
+contre-passation est datée du \textbf{jour}, donc après le verrou~: elle passe. Le verrou arrête
+ce qui \textbf{entre dans le passé}, jamais ce qui \textbf{corrige depuis le présent}. C'est
+cette distinction qui empêche le verrou de rendre vos livres incorrigibles --- et c'est pourquoi
+Kesh refuse de poser une borne à la date du jour ou dans le futur.
+\end{keshwarning}
+
+Le verrou et la clôture d'exercice sont \textbf{indépendants}~: clôturer ne touche pas la borne,
+et la borne n'empêche ni la clôture ni la réouverture. Le premier est un état d'exercice, le
+second une borne mobile à l'intérieur d'un exercice ouvert.
+
 \subsection{Corriger une écriture : la contre-passation}
 
 Sur la fiche d'une écriture, le bouton \textbf{Contre-passer} crée l'\textbf{écriture

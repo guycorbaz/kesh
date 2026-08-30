@@ -687,7 +687,8 @@ async fn finalize_inner(
     let company = match sqlx::query_as::<_, kesh_db::entities::Company>(
         "SELECT id, name, first_name, last_name, address, address_street, address_building, address_postal_code, \
                 address_city, address_country, ide_number, org_type, accounting_language, \
-                instance_language, email, phone, website, is_stub, version, created_at, updated_at \
+                instance_language, email, phone, website, is_stub, books_locked_through, \
+                version, created_at, updated_at \
          FROM companies ORDER BY id LIMIT 1 FOR UPDATE",
     )
     .fetch_optional(&mut *tx)
@@ -852,7 +853,8 @@ async fn ensure_company_with_language(state: &AppState, lang: Language) -> Resul
     let existing = sqlx::query_as::<_, kesh_db::entities::Company>(
         "SELECT id, name, first_name, last_name, address, address_street, address_building, address_postal_code, \
                 address_city, address_country, ide_number, org_type, accounting_language, \
-                instance_language, email, phone, website, is_stub, version, created_at, updated_at \
+                instance_language, email, phone, website, is_stub, books_locked_through, \
+                version, created_at, updated_at \
          FROM companies ORDER BY id LIMIT 1 FOR UPDATE",
     )
     .fetch_optional(&mut *tx)
@@ -907,7 +909,7 @@ async fn ensure_company_with_language(state: &AppState, lang: Language) -> Resul
 // P5: ORDER BY id for deterministic row selection (Pattern 5 lock-discipline).
 const COMPANY_SELECT_FOR_UPDATE: &str = "SELECT id, name, first_name, last_name, address, address_street, address_building, \
             address_postal_code, address_city, address_country, ide_number, org_type, accounting_language, \
-            instance_language, email, phone, website, is_stub, version, created_at, updated_at \
+            instance_language, email, phone, website, is_stub, books_locked_through, version, created_at, updated_at \
      FROM companies ORDER BY id LIMIT 1 FOR UPDATE";
 
 /// Retourne la company (première et unique). Erreur si aucune company n'existe.

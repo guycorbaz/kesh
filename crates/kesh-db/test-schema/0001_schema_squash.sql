@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 64 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 65 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -256,6 +256,7 @@ CREATE TABLE `companies` (
   `email` varchar(320) DEFAULT NULL,
   `phone` varchar(50) DEFAULT NULL,
   `website` varchar(255) DEFAULT NULL,
+  `books_locked_through` date DEFAULT NULL COMMENT 'Story 24-4c (#380) : borne INCLUSIVE du verrou de période. NULL = aucun verrou. Aucune écriture ne peut être créée avec une entry_date <= cette date.',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_companies_ide_number` (`ide_number`),
   CONSTRAINT `chk_companies_org_type` CHECK (cast(`org_type` as char charset binary) in (cast('Independant' as char charset binary),cast('Association' as char charset binary),cast('Pme' as char charset binary))),

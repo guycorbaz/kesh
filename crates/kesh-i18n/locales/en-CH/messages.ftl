@@ -338,6 +338,15 @@ journal-entries-reverse-blocked-account-archived = An account of this entry has 
 journal-entries-reverse-account-archived = Cannot reverse — archived account(s): { $detail }. Reactivate the accounts concerned.
 journal-entries-delete-blocked-reversed = This entry has been reversed: it can no longer be deleted.
 journal-entries-blocked-posted = A posted entry can no longer be modified. To correct it, reverse it: Kesh creates the opposite entry and keeps the original.
+journal-entries-period-locked = Entries are locked through { $lockedThrough }; this one is dated { $attempted }.
+settings-books-lock-title = Period lock
+settings-books-lock-none = No lock: any date within an open fiscal year is accepted.
+settings-books-lock-current = Books locked through { $date } inclusive.
+settings-books-lock-set = Lock through
+settings-books-lock-release = Unlock
+settings-books-lock-motif = Reason for unlocking
+settings-books-lock-motif-required = A reason is required to unlock.
+journal-entries-books-locked-banner = Books locked through { $date } inclusive — no entry can be dated on or before it.
 
 # Bilingual tooltips for accounting terms (Story 3.5)
 tooltip-debit-natural = Money comes into this account

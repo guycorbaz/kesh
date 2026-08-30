@@ -247,6 +247,33 @@ async fn create_in_tx_inner(
         super::projects::validate_taggable_in_tx(tx, new.company_id, &line_project_ids).await?;
     }
 
+    // Étape 0-bis (Story 24-4c, #380) : LIRE la borne du verrou de période.
+    //
+    // ⛔ ELLE SE LIT ICI ET S'ÉVALUE PLUS BAS, et cette dissociation est
+    // délibérée : **l'ordre des VERROUS et l'ordre des REFUS ne sont pas le
+    // même**, et les confondre casserait l'un ou l'autre.
+    //
+    //   - **Verrous** : `companies` vient EN PREMIER dans l'ordre global
+    //     (companies → projects → fiscal_years, Pattern 5). Lire la borne après
+    //     le lock `fiscal_years` de l'étape 1 créerait une inversion ABBA avec
+    //     le flux fournisseur 19-3, qui prend déjà sentinel + projects en amont.
+    //   - **Refus** : le verrou de période parle EN DERNIER. Dire « période
+    //     verrouillée » à quelqu'un qui s'est trompé d'exercice l'enverrait
+    //     corriger la mauvaise chose.
+    //
+    // ⚠️ Lecture NON verrouillante, volontairement. Prendre un `FOR SHARE`
+    // bloquerait chaque création derrière toute pose de borne concurrente pour
+    // un gain nul : le seul écart possible est qu'une écriture commitée à
+    // l'instant même de la pose passe — ce qui est le comportement attendu d'une
+    // borne, qui ferme le passé et non l'instant présent.
+    let books_locked_through: Option<NaiveDate> =
+        sqlx::query_scalar("SELECT books_locked_through FROM companies WHERE id = ?")
+            .bind(new.company_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(map_db_error)?
+            .flatten();
+
     // Étape 1 : re-lock de l'exercice contre une clôture concurrente + bornes de dates.
     let fy_row: Option<(i64, String, NaiveDate, NaiveDate)> = sqlx::query_as(
         "SELECT id, status, start_date, end_date FROM fiscal_years \
@@ -274,6 +301,28 @@ async fn create_in_tx_inner(
                 return Err(DbError::DateOutsideFiscalYear);
             }
         }
+    }
+
+    // Étape 1-bis (Story 24-4c, #380) : LE VERROU DE PÉRIODE, évalué en dernier
+    // des trois refus de date (cf. étape 0-bis).
+    //
+    // ⛔ Le seuil est INCLUSIF : une borne au 31.03 verrouille le 31.03. C'est
+    // ce que « jusqu'au 31 mars inclus » veut dire, et l'écart d'un jour est
+    // exactement le genre de défaut qu'aucun test ne rattrape s'il n'est pas
+    // nommé.
+    //
+    // ⚠️ **La contre-passation TRAVERSE cette garde, elle ne la contourne pas.**
+    // Elle passe parce que sa date est celle du jour et que la borne est
+    // strictement antérieure à aujourd'hui (garde de `companies::lock_books`) —
+    // non parce qu'elle emprunterait un autre chemin. C'est ce qui rend la
+    // propriété vraie par construction plutôt que par accident de câblage.
+    if let Some(locked_through) = books_locked_through
+        && new.entry_date <= locked_through
+    {
+        return Err(DbError::PeriodLocked {
+            locked_through,
+            attempted: new.entry_date,
+        });
     }
 
     // Étape 2 : vérifier que tous les comptes existent, appartiennent

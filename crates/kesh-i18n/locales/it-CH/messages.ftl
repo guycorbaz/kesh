@@ -338,6 +338,15 @@ journal-entries-reverse-blocked-account-archived = Un conto di questa scrittura 
 journal-entries-reverse-account-archived = Impossibile stornare — conto/conti archiviato/i: { $detail }. Riattivate i conti interessati.
 journal-entries-delete-blocked-reversed = Questa scrittura è stata stornata: non può più essere eliminata.
 journal-entries-blocked-posted = Una scrittura contabilizzata non può più essere modificata. Per correggerla, stornatela: Kesh crea la scrittura inversa e conserva l'originale.
+journal-entries-period-locked = Le scritture sono bloccate fino al { $lockedThrough }; questa è datata { $attempted }.
+settings-books-lock-title = Blocco di periodo
+settings-books-lock-none = Nessun blocco: tutte le date di un esercizio aperto sono accettate.
+settings-books-lock-current = Libri bloccati fino al { $date } incluso.
+settings-books-lock-set = Bloccare fino al
+settings-books-lock-release = Sbloccare
+settings-books-lock-motif = Motivo dello sblocco
+settings-books-lock-motif-required = È obbligatorio un motivo per sbloccare.
+journal-entries-books-locked-banner = Libri bloccati fino al { $date } incluso — nessuna scrittura può esservi datata.
 
 # Tooltip bilingue termini contabili (Story 3.5)
 tooltip-debit-natural = Il denaro entra in questo conto

@@ -49,6 +49,10 @@ pub struct CompanyJson {
     /// sur le PDF, et **invisible dans l'écran de réglages, pour toujours**.
     pub phone: Option<String>,
     pub website: Option<String>,
+    /// Borne **inclusive** du verrou de période (Story 24-4c, #380).
+    /// `null` = aucun verrou. L'écran s'en sert pour le bandeau et pour le
+    /// `min` du champ date de saisie.
+    pub books_locked_through: Option<chrono::NaiveDate>,
     /// Verrou optimiste — requis par les routes `PUT /companies/current/*`.
     pub version: i32,
 }
@@ -71,6 +75,7 @@ impl From<Company> for CompanyJson {
             email: c.email,
             phone: c.phone,
             website: c.website,
+            books_locked_through: c.books_locked_through,
             version: c.version,
         }
     }
@@ -273,4 +278,66 @@ pub async fn get_current(
         company: company.into(),
         bank_accounts: accounts.into_iter().map(Into::into).collect(),
     }))
+}
+
+// ---------------------------------------------------------------------------
+// Story 24-4c (#380) — le verrou de période
+// ---------------------------------------------------------------------------
+
+/// Payload de `POST /api/v1/companies/current/books-lock`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LockBooksRequest {
+    /// Borne **inclusive** : les écritures datées de ce jour ou avant sont
+    /// refusées. Doit être strictement antérieure à aujourd'hui, et strictement
+    /// postérieure à la borne courante s'il y en a une.
+    pub through: chrono::NaiveDate,
+}
+
+/// Payload de `POST /api/v1/companies/current/books-lock/release`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnlockBooksRequest {
+    /// Nouvelle borne, ou `null` pour retirer le verrou entièrement.
+    #[serde(default)]
+    pub through: Option<chrono::NaiveDate>,
+    /// ⛔ Obligatoire et non blanc : déverrouiller défait une garantie, et le
+    /// journal d'audit doit pouvoir dire pourquoi.
+    pub motif: String,
+}
+
+/// POST /api/v1/companies/current/books-lock — pose ou **avance** le verrou de
+/// période (Admin + Comptable, Story 24-4c).
+///
+/// ⚠️ Ce point d'entrée ne peut PAS reculer la borne : le repository refuse
+/// toute date antérieure ou égale à la borne courante. Sans cette garde de
+/// **valeur**, la garde de **rôle** serait contournable par le verbe.
+pub async fn lock_company_books(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Json(req): Json<LockBooksRequest>,
+) -> Result<Json<CompanyJson>, AppError> {
+    let company = get_company_for(&current_user, &state.pool).await?;
+    let updated =
+        companies::lock_books(&state.pool, current_user.user_id, company.id, req.through).await?;
+    Ok(Json(updated.into()))
+}
+
+/// POST /api/v1/companies/current/books-lock/release — **recule ou retire** le
+/// verrou de période (Admin uniquement, motif obligatoire, Story 24-4c).
+pub async fn unlock_company_books(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Json(req): Json<UnlockBooksRequest>,
+) -> Result<Json<CompanyJson>, AppError> {
+    let company = get_company_for(&current_user, &state.pool).await?;
+    let updated = companies::unlock_books(
+        &state.pool,
+        current_user.user_id,
+        company.id,
+        req.through,
+        req.motif,
+    )
+    .await?;
+    Ok(Json(updated.into()))
 }
