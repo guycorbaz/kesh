@@ -686,3 +686,37 @@ deux gestes, et chacun a raté une fois.
 ⚠️ **Aucune décision de conception n'a été prise en défaut, pour la QUATRIÈME passe consécutive.**
 Le volume : 11 → 8 → 2 → **1**. Et ce dernier finding ne porte ni sur ce qu'il faut faire, ni sur
 un décompte du plan de travail : il porte sur le **récit** que la story fait de sa propre revue.
+
+### BOUCLE CLOSE — arbitrage de Guy, 2026-08-30
+
+**Quatre passes, cinq contextes frais, rotation complète Sonnet + Haiku → Opus → Sonnet → Haiku.**
+
+| passe | modèle | CRIT | HIGH | MED | LOW | total | nés d'une remédiation |
+|---|---|---|---|---|---|---|---|
+| 1 | Sonnet 4.6 + Haiku 4.5 | 2 | 3 | 4 | 2 | **11** | — |
+| 2 | Opus 5 *(ciblée)* | 0 | 3 | 2 | 3 | **8** | **8 / 8** |
+| 3 | Sonnet 4.6 *(ciblée)* | 0 | 1 | 1 | 0 | **2** | **2 / 2** |
+| 4 | Haiku 4.5 *(ciblée)* | 0 | 1 | 0 | 0 | **1** | **1 / 1** |
+
+⚠️ **Arbitrage** : la lettre de la § *Review Iteration Rule* demandait une passe 5, un HIGH
+subsistant. Guy a tranché pour la **clôture** — et le motif est précis : ce dernier HIGH ne
+porte ni sur ce qu'il faut faire, ni sur un décompte du plan de travail, mais sur le **récit**
+que la story fait de sa propre revue. Un implémenteur qui ne lirait pas ce paragraphe livrerait
+exactement le même code. *(La 24-4a avait vu l'arbitrage inverse à la même question, et il avait
+eu raison : la clause de sortie n'est pas une règle, c'est un jugement.)*
+
+⛔ **CE QUE CES QUATRE PASSES ÉTABLISSENT, et qui dépasse cette story** : **vingt-deux findings,
+dont ONZE nés d'une remédiation** — et, à partir de la passe 2, **la totalité**. Aucune passe
+après la première n'a pris en défaut une décision de conception. Le motif mesuré sur les Epics
+22 et 23, puis sur la 24-4a, se vérifie une fois de plus.
+
+⛔ **Le symptôme unique de cette boucle : le grep.** Il a manqué quatre fois, sous quatre formes
+différentes — périmètre `frontend/` seul (passe 1), arrêt au premier résultat (passe 2),
+périmètre `crates/` seul (passe 3), et report incomplet de ce qu'il avait rendu (passe 4). ⚠️ La
+§ *Propagation post-patch* était **citée dans le patch qui l'enfreignait**, à chaque fois.
+
+⛔ **Et il a rendu TROIS familles d'occurrences légitimes** — sept passages du manuel, une
+migration publiée (P8), six story files historiques. La leçon n'est donc pas de grepper plus
+étroit : c'est de grepper **large**, et de **trier à la main**.
+
+**Prochaine** : `bmad-dev-story`.
