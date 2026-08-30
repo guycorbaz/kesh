@@ -533,3 +533,56 @@ passes 1 et 2 avaient tous deux fait échouer. La sévérité tient (HIGH), le v
 8 → 13 → **3**.
 
 **Prochaine** : passe 4, ciblée, quatrième contexte frais.
+
+### Passe 4 — 2026-08-30 · Haiku 4.5, contexte frais, passe CIBLÉE sur le seul commit `0c2c5f54`
+
+Prompt versionné dans `24-4c-review-prompt-regression-hunter-p4.md`.
+**0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW — aucun écart.**
+
+⚠️ **Le prompt de cette passe a une FORME différente des trois autres, et c'est une réponse à
+l'échec de cette même lentille en passe 1.** Elle y avait rendu zéro finding en vérifiant la spec
+**contre elle-même**, laissant passer deux CRITICAL. On ne lui a donc demandé **aucun jugement de
+conception** : des **commandes à exécuter**, et le rapport de leurs sorties. *Le mode d'échec
+restant était mécanique — une valeur corrigée à un site et laissée fausse ailleurs — donc son
+contrôle devait l'être aussi.*
+
+⛔ **Et le verdict a été REFAIT indépendamment avant d'être accepté.** Les trois greps de jetons
+ont été rejoués sur le document, hors section « Journal de revue » : cinq occurrences de
+`create_in_tx` qui distinguent toutes explicitement le wrapper de l'inner ; sept de
+`books.unlocked` qui désignent toutes le déverrouillage délibéré — dont celle de T5, désormais
+formulée **en négatif** (« et jamais `books.unlocked` ») ; zéro « seize ». *Un zéro de cette
+lentille avait déjà été faux une fois dans cette boucle ; le refaire coûte trente secondes.*
+
+### BOUCLE CLOSE — 2026-08-30
+
+**Quatre passes, cinq contextes frais, rotation complète Sonnet + Haiku → Opus → Sonnet → Haiku.**
+
+| passe | modèle | CRIT | HIGH | MED | LOW | total | nés d'une remédiation |
+|---|---|---|---|---|---|---|---|
+| 1 | Sonnet 4.6 + Haiku 4.5 | 2 | 1 | 3 | 2 | **8** | — |
+| 2 | Opus 5 *(ciblée)* | 0 | 4 | 6 | 3 | **13** | **13 / 13** |
+| 3 | Sonnet 4.6 *(ciblée)* | 0 | 3 | 0 | 0 | **3** | **3 / 3** |
+| 4 | Haiku 4.5 *(ciblée)* | 0 | 0 | 0 | 0 | **0** | — |
+
+⛔ **VINGT-QUATRE findings, dont SEIZE nés d'une remédiation — et à partir de la passe 2, la
+totalité.** Aucune passe après la première n'a pris en défaut une décision de conception : la
+borne comme date, la garde au point de passage, l'asymétrie des deux gestes, le 400 plutôt que
+le 409 ont tenu de bout en bout.
+
+⛔ **LE MODE D'ÉCHEC PROPRE À CETTE STORY, à verser à la rétrospective.** Ce n'est pas le grep
+trop étroit de la 24-4b, c'en est le cousin : **corriger la thèse au site nommé et laisser ses
+applications ailleurs dans le même document.** Il s'est produit **deux fois de suite**
+(passe 1→2, puis 2→3), et sous sa forme la plus nette en P3-1, où une correction de nombre a été
+**ajoutée à côté** du chiffre faux au lieu de le remplacer — la phrase affirmant alors les deux.
+
+⚠️ **Ce qui a fini par le fermer n'est pas une passe de plus, c'est un GESTE** : greper le
+**jeton** sur tout le document plutôt que corriger les sites qu'une lentille énumère. À la
+passe 3, la lentille nommait trois occurrences de `create_in_tx` ; le grep du jeton en a rendu
+**six**, dont le titre même de la section D2. *Une lentille énumère ce qu'elle a vu ; seul le
+grep du jeton énumère ce qui existe.*
+
+⚠️ **Deux CRITICAL de la passe 1 visaient le MÉCANISME DE GARDE lui-même**, non ce qu'il protège :
+un invariant qui s'énonçait sans s'implémenter, et une séparation de rôles contournable par
+l'autre verbe. *Une garde se lit comme le reste : en demandant qui l'empêche d'être contournée.*
+
+**Prochaine** : `bmad-dev-story`.
