@@ -387,6 +387,23 @@ pub async fn unlock_books(
         ));
     }
 
+    // ⛔ La MÊME garde de date que `lock_books`, et son absence ici était un
+    // trou béant : ce point d'entrée POSE aussi une borne (il la recule), donc
+    // un administrateur pouvait y placer une date future — d'un clic
+    // malencontreux dans le formulaire — et refuser du même coup TOUTE création
+    // d'écriture datée d'aujourd'hui, contre-passation comprise.
+    //
+    // ⚠️ C'est-à-dire casser l'invariant I2, « le verrou n'enferme pas », que
+    // toute la vague 24-4a → 24-4c existe pour tenir. Le déni est récupérable
+    // (un second appel avec une date passée), mais total pendant la fenêtre.
+    if let Some(d) = through
+        && d >= Utc::now().date_naive()
+    {
+        return Err(DbError::InvalidInput(
+            "la borne du verrou doit être antérieure à aujourd'hui".into(),
+        ));
+    }
+
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
     let before: Option<Option<NaiveDate>> =

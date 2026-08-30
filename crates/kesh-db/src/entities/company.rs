@@ -178,11 +178,11 @@ pub struct Company {
     /// choisit le path demo (`seed_demo`). Le frontend l'utilise pour un
     /// nudge de renommage non-bloquant.
     pub is_stub: bool,
-    /// Version pour optimistic locking (incrémentée à chaque update).
     /// Borne **inclusive** du verrou de période (Story 24-4c, #380).
     /// `None` = aucun verrou. Aucune écriture ne peut être créée avec une
     /// `entry_date <= ` cette date, quel que soit le chemin de création.
     pub books_locked_through: Option<NaiveDate>,
+    /// Version pour optimistic locking (incrémentée à chaque update).
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,

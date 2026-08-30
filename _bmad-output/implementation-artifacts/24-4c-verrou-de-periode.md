@@ -422,9 +422,10 @@ Opus 5 (`claude-opus-5[1m]`) — implémentation du 2026-08-30.
 ### Completion Notes List
 
 ⛔ **Ce que le GATE a trouvé et que quatre passes de revue de spec n'avaient pas vu.** Les
-listes de colonnes de `companies` **écrites à la main** existent dans **quatre** endroits, pas
+listes de colonnes de `companies` **écrites à la main** existent dans **cinq** endroits, pas
 un : la spec n'avait nommé que `serialize_company_csv`, alors que `routes/onboarding.rs` en
-portait **deux** et `kesh-seed/src/lib.rs` **une**. Les trois manquantes faisaient échouer
+portait **trois** (`:690`, `:856`, et la constante `:912`) et `kesh-seed/src/lib.rs` **une**.
+⚠️ *Le compte rendu annonçait quatre — recompté à la revue de code, `grep -c` à l'appui.* Les trois manquantes faisaient échouer
 l'onboarding en **500**, et **seule l'exécution réelle les a révélées** — c'est exactement ce
 que les garde-fous P6 et P7 disent de ce mode d'échec : *il ne naît ni du code écrit ni de la
 spec, mais de l'interaction avec ce que la story ne touche pas.*
@@ -465,7 +466,7 @@ l'utilisateur corriger la mauvaise chose.
 |---|---|
 | `cargo fmt --all -- --check` | propre |
 | `cargo clippy --workspace --all-targets -- -D warnings` | 0 warning |
-| `scripts/test-fast.sh`, base remise à zéro (KF-039) | **2270/2270**, 4 skipped |
+| `scripts/test-fast.sh`, base remise à zéro (KF-039) | **2275/2275**, 4 skipped *(2270 avant la passe 1 de revue de code, +5)* |
 | `npm run check` · `lint-i18n-ownership` · `test:unit` · `build` | 0 erreur · PASS · **740/740** · OK |
 | Playwright, suite **complète**, `kesh_e2e` **reconstruite** | **214 passés / 9 échoués — ZÉRO RÉGRESSION** |
 
@@ -509,6 +510,48 @@ C'est la confirmation empirique de son diagnostic horaire.
 | `docs/manual/fr/{user,admin}-manual.tex` (+ PDF) · `README.md` · `docs/testing.md` | UPDATE |
 
 ## Journal de revue
+
+### Revue de code — passe 1, 2026-08-30 · Sonnet 4.6 + Haiku 4.5, contextes frais
+
+**2 CRITICAL, 1 HIGH, 2 LOW + 1 MEDIUM (Haiku) — six findings.**
+
+| # | sév. | ce qui manquait |
+|---|---|---|
+| F2 | CRITICAL | ⛔ **`PeriodLocked` tombait dans le repli `_` du pattern batch et sortait en `DATABASE_ERROR`** — un rapprochement antidaté rapporté au client comme une **panne de base** là où il s'agit d'un refus métier. Le § *Pattern batch* du `CLAUDE.md` déclare les trois `accept_one_*` **inviolables** sur ce point. Et l'AC 4 n'avait **aucun** test : ni facture, ni rapprochement |
+| F1 | CRITICAL | l'AC 14 n'avait aucun test **dans le commit** — les deux que j'écrivais au même moment n'étaient pas encore commités (cf. H1 ci-dessous, même racine) |
+| H1 | MEDIUM *(Haiku)* | l'AC 14 (`books.restored`) sans test — **et deux cases de tâches cochées l'affirmaient faite** |
+| F3 | HIGH | ⛔ **`unlock_books` n'avait AUCUNE garde de valeur** : un Admin pouvait y poser une borne **future** et refuser du même coup toute création d'écriture du jour — contre-passation comprise. C'est-à-dire casser l'invariant **I2**, que toute la vague existe pour tenir |
+| F4 | LOW | un doc-comment déplacé, **dans deux fichiers**, par le même geste d'insertion |
+| F5 | LOW | « quatre endroits » : il y en a **cinq** — `onboarding.rs` en porte **trois**, pas deux |
+
+⛔ **LA CASE COCHÉE QUI MENT, POUR LA DEUXIÈME STORY CONSÉCUTIVE.** La revue de la 24-4b avait
+trouvé T2 déclarant « les doc-comments des **deux** fonctions repris » alors qu'une seule
+l'était ; ici, **deux** cases affirmaient que le chemin de restauration était testé. Dans les
+deux cas, une lentille externe l'a vu — **jamais moi en relisant mes propres cases**. ⇒ *La règle
+« ne déclarer que ce qui a tourné » vise les gates ; elle vaut aussi pour les cases de tâches,
+et rien ne les vérifie.* À verser à la rétrospective.
+
+⚠️ **F2 est le finding le plus instructif de la story**, parce qu'il ne vit dans aucun fichier
+qu'elle touche. Introduire un variant d'erreur **change le comportement de tous les `match` qui
+ne le nomment pas** — et `reconciliation.rs` n'est pas dans le diff. C'est le mode d'échec que
+les garde-fous P6 et P7 décrivent : *il naît de l'interaction avec ce que la story ne touche
+pas.* La lentille l'a trouvé en suivant un chemin d'appel que personne n'avait suivi.
+
+**Remédiation** : le bras `PeriodLocked` aux **deux** sites du pattern batch (`project_error_to_failed_proposal`
+et le mappage en ligne d'`accept_one_rule`), la garde de date sur `unlock_books`, les deux
+doc-comments rendus à `version`, le décompte corrigé — et **cinq tests neufs** :
+`period_locked_is_reported_as_a_business_refusal_not_a_database_error` avec son contre-test,
+`validating_a_backdated_invoice_is_refused_by_the_period_lock`,
+`full_import_traces_a_receding_books_lock` et son contre-test d'avancée.
+
+**Gate après remédiation** — ciblage interdit (repository touché) : `test-fast.sh`
+**2275/2275** sur base remise à zéro.
+
+⚠️ **Deux réserves déclarées.** La passe n'a eu que **deux** lentilles au lieu des trois du
+protocole. Et l'AC 4 est désormais tenue pour la **facture** (test E2E) et pour le **mappage**
+du rapprochement (test unitaire du code fautif), mais **pas par un rapprochement bancaire
+complet de bout en bout** : le montage coûte davantage que ce que la garde restante justifie, et
+c'est dit plutôt que coché.
 
 ### Passe 1 — 2026-08-30 · Sonnet 4.6 + Haiku 4.5, contextes frais, orthogonales à l'auteur (Opus 5)
 

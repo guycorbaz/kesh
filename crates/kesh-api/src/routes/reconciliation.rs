@@ -202,6 +202,26 @@ fn project_error_to_failed_proposal(
             error_code: "PROJECT_NOT_FOUND".to_string(),
             details: details(None),
         },
+        // ⛔ Story 24-4c (#380) — le verrou de période. SANS ce bras, un
+        // rapprochement antidaté tomberait dans le `_` ci-dessous et serait
+        // rapporté au client comme `DATABASE_ERROR` : une panne de base là où
+        // il s'agit d'un refus MÉTIER parfaitement légitime.
+        //
+        // ⚠️ C'est le § *Pattern batch* du `CLAUDE.md` qui l'exige — « error_code :
+        // constante canonique », jamais un repli générique — et il déclare les
+        // trois `accept_one_*` inviolables sur ce point.
+        DbError::PeriodLocked {
+            locked_through,
+            attempted,
+        } => FailedProposal {
+            bank_transaction_id,
+            error_code: "PERIOD_LOCKED".to_string(),
+            details: Some(serde_json::json!({
+                "lockedThrough": locked_through.to_string(),
+                "attempted": attempted.to_string(),
+                "projectId": project_id,
+            })),
+        },
         _ => FailedProposal {
             bank_transaction_id,
             error_code: "DATABASE_ERROR".to_string(),
@@ -2173,6 +2193,23 @@ async fn accept_one_rule(
             // 11bis ; un NotFound ici provient d'une autre cause (jamais projet,
             // les lignes portent project_id=None) → mapping générique pour ne
             // pas mal étiqueter en PROJECT_NOT_FOUND (Pass 1 LOW BH/ECH).
+            //
+            // ⛔ Story 24-4c (#380) : le verrou de période fait EXCEPTION au
+            // repli générique — c'est un refus métier, pas une panne de base.
+            if let kesh_db::errors::DbError::PeriodLocked {
+                locked_through,
+                attempted,
+            } = &e
+            {
+                return Err(FailedProposal {
+                    bank_transaction_id,
+                    error_code: "PERIOD_LOCKED".to_string(),
+                    details: Some(serde_json::json!({
+                        "lockedThrough": locked_through.to_string(),
+                        "attempted": attempted.to_string(),
+                    })),
+                });
+            }
             return Err(FailedProposal {
                 bank_transaction_id,
                 error_code: "DATABASE_ERROR".to_string(),
@@ -3449,5 +3486,69 @@ pub async fn post_split(
                 "internal: unexpected Rule variant in post_split".into(),
             ))
         }
+    }
+}
+
+#[cfg(test)]
+mod period_lock_tests {
+    use super::*;
+
+    /// Story 24-4c (#380) — ⛔ **un rapprochement antidaté est un refus MÉTIER,
+    /// jamais une panne de base.**
+    ///
+    /// Sans le bras dédié, `DbError::PeriodLocked` tombait dans le repli `_` et
+    /// sortait en `DATABASE_ERROR` : le client d'un `accept_batch` aurait lu une
+    /// erreur d'infrastructure là où il fallait lui dire que la période est
+    /// verrouillée et jusqu'à quand.
+    ///
+    /// ⚠️ C'est le § *Pattern batch* du `CLAUDE.md` qui l'exige — « error_code :
+    /// constante canonique », jamais un repli générique — et il déclare les
+    /// trois `accept_one_*` **inviolables** sur ce point. Relevé en passe 1 de
+    /// revue de code, la spec ayant demandé le test sans qu'il soit écrit.
+    #[test]
+    fn period_locked_is_reported_as_a_business_refusal_not_a_database_error() {
+        let locked_through = chrono::NaiveDate::from_ymd_opt(2026, 3, 31).unwrap();
+        let attempted = chrono::NaiveDate::from_ymd_opt(2026, 1, 15).unwrap();
+
+        let failed = project_error_to_failed_proposal(
+            42,
+            Some(7),
+            DbError::PeriodLocked {
+                locked_through,
+                attempted,
+            },
+        );
+
+        assert_eq!(failed.bank_transaction_id, 42);
+        assert_eq!(
+            failed.error_code, "PERIOD_LOCKED",
+            "un repli en DATABASE_ERROR rapporterait une panne là où il y a un refus métier"
+        );
+
+        // ⛔ Les DEUX dates voyagent dans `details` : un refus qui ne dit pas
+        // jusqu'où les livres sont fermés n'est pas utilisable par le client.
+        let details = failed.details.expect("details attendus");
+        assert_eq!(details["lockedThrough"], "2026-03-31");
+        assert_eq!(details["attempted"], "2026-01-15");
+        assert_eq!(
+            details["projectId"], 7,
+            "le contexte projet reste porté, comme pour les autres codes"
+        );
+    }
+
+    /// Le contre-test : les autres erreurs gardent leur mappage. Sans lui, un
+    /// bras ajouté trop haut dans le `match` pourrait capturer autre chose sans
+    /// que rien ne rougisse.
+    #[test]
+    fn other_errors_keep_their_mapping() {
+        let f = project_error_to_failed_proposal(1, None, DbError::NotFound);
+        assert_eq!(f.error_code, "PROJECT_NOT_FOUND");
+
+        let f = project_error_to_failed_proposal(
+            1,
+            None,
+            DbError::IllegalStateTransition("le projet analytique est archivé".into()),
+        );
+        assert_eq!(f.error_code, "PROJECT_ARCHIVED");
     }
 }
