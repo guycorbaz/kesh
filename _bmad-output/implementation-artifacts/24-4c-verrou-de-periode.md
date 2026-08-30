@@ -66,19 +66,30 @@ est le premier usage.*
 
 ## D2 — Le refus vit dans `create_in_tx`, le point de passage unique
 
-⛔ **Treize sites de production créent une écriture** — facture validée, avoir, facture
-fournisseur ×3, règlement, rapprochement ×5, journal manuel — auxquels s'ajoutent
-`create_opening_entry` et `reverse`, qui appellent `create_in_tx` depuis l'intérieur du module.
-**Tous y passent.**
+⛔ **Douze sites de production créent une écriture** — facture validée, avoir, facture
+fournisseur ×3, règlement, rapprochement ×5, journal manuel.
 
-⚠️ **Le grep brut rend 22 lignes, et neuf d'entre elles ne créent rien** : ce sont des
-doc-comments et un message `tracing::error!` (`trial_balance.rs:125`) qui citent le nom de la
-fonction. Le tri se fait avec `| grep -vE ":\s*(///|//!|//)"`. *Un implémenteur qui compte les
-lignes du grep sans les trier croira avoir vérifié vingt-deux chemins dont dix n'existent pas.*
+⚠️ **Le grep brut rend 22 lignes, et DIX d'entre elles ne créent rien** : neuf doc-comments,
+plus un message `tracing::error!` (`trial_balance.rs:125`) qui cite le nom de la fonction sans
+l'appeler. Le tri `| grep -vE ":\s*(///|//!|//)"` en écarte neuf et **laisse le dixième** — il
+se retire à la main. *Un implémenteur qui compte les lignes du grep sans les trier croira avoir
+vérifié vingt-deux chemins dont dix n'existent pas.*
 
-⇒ La garde s'y place, sur le modèle exact d'`enforce_postable` : **une seule ligne à écrire, et
-aucun chemin ne peut la contourner**. Une garde posée aux routes en laisserait vingt et un
-ouverts.
+⛔ **LE POINT DE PASSAGE UNIQUE EST `create_in_tx_inner`, PAS `create_in_tx`.** Vérifié :
+`create_in_tx` (`:187`) n'est qu'un mince wrapper qui appelle `create_in_tx_inner` (`:194`) ;
+`create_opening_entry` passe par le wrapper, mais **`reverse` appelle `create_in_tx_inner`
+DIRECTEMENT** (`:1385`). Poser la garde dans le wrapper laisserait donc un second point d'entrée
+l'éviter — celui que la 24-4a a ajouté il y a deux jours.
+
+⚠️ **Et il ne faut PAS que la contre-passation évite la garde : il faut qu'elle la FRANCHISSE.**
+Aujourd'hui elle passerait dans les deux cas — sa date est celle du jour, et l'AC 3 impose une
+borne strictement passée. Mais « elle passe parce qu'elle contourne » et « elle passe parce que
+sa date est valide » ne sont pas la même propriété : la première se casse au premier refactor,
+la seconde tient par construction. ⇒ **garde dans `create_in_tx_inner`, et un test qui vérifie
+que la contre-passation la traverse.**
+
+⇒ Sur le modèle exact d'`enforce_postable` : **une seule ligne à écrire, et aucun chemin ne peut
+la contourner**. Une garde posée aux routes en laisserait onze ouverts.
 
 ⛔ **La garde s'applique aux flux AUTOMATIQUES aussi, et c'est le point qu'il ne faut pas
 adoucir.** Valider une facture datée du 15 janvier après le verrou produirait exactement
@@ -127,9 +138,21 @@ exercice ouvert. Un exercice clos reste clos quelle que soit la borne.
 
 ## D4 — La précédence des refus, figée ici
 
-Sur une création, l'ordre est :
+Sur une création, l'ordre **réel du code** est :
 
-`DateOutsideFiscalYear` (400) → `FiscalYearClosed` (400) → **`PeriodLocked`** (400)
+`NoFiscalYear` (400 `NO_FISCAL_YEAR`, au handler) → `FiscalYearClosed` (400) →
+`DateOutsideFiscalYear` (400) → **`PeriodLocked`** (400)
+
+⚠️ **Cet ordre a été vérifié au sol, et il n'est pas celui qu'on suppose** : le `match` de
+`create_in_tx_inner` rend `FiscalYearClosed` en `:263`, **avant** le contrôle de bornes en
+`:274`. Une première rédaction de cette spec avait écrit la flèche dans l'autre sens.
+
+⛔ **`DATE_OUTSIDE_FISCAL_YEAR` est INATTEIGNABLE par la route de saisie manuelle.** Le handler
+résout d'abord l'exercice couvrant la date (`routes/journal_entries.rs:512-524`) : une date qui
+ne tombe dans aucun exercice rend **`NO_FISCAL_YEAR`**, jamais `DATE_OUTSIDE_FISCAL_YEAR` — ce
+dernier est la garde **défensive** de `create_in_tx_inner`, pour les appelants internes qui
+passent un `fiscal_year_id` explicite. *Un test d'AC écrit sans cette distinction obtiendra
+`NO_FISCAL_YEAR` et sera « ajusté » jusqu'à passer.*
 
 ⚠️ **Le verrou parle en DERNIER, et c'est délibéré** : une date hors exercice ou dans un
 exercice clos est un problème plus grave et plus ancien, dont le message existe déjà et renvoie
@@ -170,6 +193,11 @@ sont verrouillées jusqu'au 31.03.2026 ; cette écriture est datée du 15.01.202
    `PERIOD_LOCKED`** ; une écriture datée du **lendemain** de la borne passe.
 3. La borne est **strictement antérieure à aujourd'hui** (`< today`) : poser une date future
    **ou celle du jour** est refusé en **400**.
+   ⛔ **« Aujourd'hui » est `Utc::now().date_naive()`, la MÊME horloge que la contre-passation.**
+   Sans cette précision, une pose faite en Suisse entre minuit et 2 h locales — où la date locale
+   vaut la date UTC + 1 — serait refusée alors qu'elle vise la veille. *L'écart d'un jour est
+   exactement ce que cette AC corrige ; le laisser implicite le réintroduirait sous une autre
+   forme.*
    ⛔ **Le « ou celle du jour » n'est pas un excès de prudence, c'est la correction d'un défaut
    réel.** La contre-passation est datée du **jour** (`journal_entries.rs:1371`,
    `Utc::now().date_naive()`) et le seuil de l'AC 2 est **inclusif** : une borne posée à la date
@@ -185,16 +213,23 @@ sont verrouillées jusqu'au 31.03.2026 ; cette écriture est datée du 15.01.202
    les livres de devenir incorrigibles, et rien d'autre ne la protège.
 6. Avancer la borne est permis à **Admin et Comptable** ; la reculer ou la retirer est réservé à
    **Admin** et exige un **motif non vide** (blancs seuls refusés), sinon **400**.
-   ⛔ **`lock_books` refuse toute date `<=` à la borne courante** (400) : sans cette garde de
-   **valeur**, la garde de **rôle** est contournable — un Comptable reculerait la borne par
-   l'endpoint d'avancement, sans motif et sous une entrée d'audit `books.locked` mensongère. Un
-   test dédié l'exerce **avec un jeton Comptable**.
+   ⛔ **`lock_books` refuse toute date `<=` à la borne courante NON NULLE** (400) : sans cette
+   garde de **valeur**, la garde de **rôle** est contournable — un Comptable reculerait la borne
+   par l'endpoint d'avancement, sans motif et sous une entrée d'audit `books.locked` mensongère.
+   ⚠️ **Le « non nulle » n'est pas décoratif** : à la première pose la borne vaut `NULL`, et
+   c'est le seul cas où cette garde doit se taire. Un test dédié l'exerce **avec un jeton
+   Comptable**.
 7. Consultation reçoit **403** sur les deux gestes.
 8. Chaque pose écrit une entrée d'audit `books.locked`, chaque retrait une entrée
    `books.unlocked` portant le **motif** et l'**ancienne** valeur.
-9. La précédence est testée : une date **hors exercice** dans une période verrouillée rend
-   `DATE_OUTSIDE_FISCAL_YEAR`, et une date d'un **exercice clos** rend `FISCAL_YEAR_CLOSED` —
-   jamais `PERIOD_LOCKED`.
+   ⛔ **`books.unlocked` a UN SEUL producteur** : le déverrouillage délibéré par un Admin. La
+   restauration de sauvegarde écrit **`books.restored`** (AC 14) — confondre les deux rendrait
+   le filtre d'audit inutilisable pour le réviseur qui cherche qui a déverrouillé.
+9. La précédence est testée **par la route** : une date qui ne tombe dans **aucun exercice**,
+   période verrouillée ou non, rend **`NO_FISCAL_YEAR`** ; une date d'un **exercice clos** rend
+   **`FISCAL_YEAR_CLOSED`** — jamais `PERIOD_LOCKED` dans les deux cas.
+   ⚠️ **Ne pas écrire de test attendant `DATE_OUTSIDE_FISCAL_YEAR` par la route** : il est
+   inatteignable par ce chemin (cf. D4).
 10. La clôture annuelle et le verrou de période sont **indépendants** : clôturer un exercice ne
     touche pas la borne, et la borne n'empêche ni la clôture ni la réouverture.
 11. **Écran** : Réglages → Comptabilité expose la borne et ses deux gestes, le déverrouillage
@@ -202,7 +237,7 @@ sont verrouillées jusqu'au 31.03.2026 ; cette écriture est datée du 15.01.202
     existe ; le champ date du formulaire porte un `min`.
 12. Les libellés d'écran sont dans les **quatre** locales.
 13. La date de verrou entre dans l'**export de souveraineté** — `serialize_company_csv`
-    (`csv_tables.rs:127`, **au singulier** : c'est la seule des seize fonctions d'export à le
+    (`csv_tables.rs:127`, **au singulier** : c'est la seule des **dix-neuf** fonctions d'export à le
     porter, et un `grep serialize_companies_csv` rend zéro). ⚠️ **Cet export n'a AUCUN
     importeur dans le dépôt** : la colonne y va parce qu'un export de souveraineté doit être
     complet, **pas** parce qu'elle protégerait d'une restauration — cf. AC 14, qui traite le
@@ -216,9 +251,25 @@ sont verrouillées jusqu'au 31.03.2026 ; cette écriture est datée du 15.01.202
     l'installation **entière** : si les livres reviennent à l'état de l'archive, il est cohérent
     que la borne les suive — refuser produirait une installation dont le verrou ne correspond
     plus aux écritures. Ce qui serait grave, c'est que la restauration devienne un
-    **déverrouillage silencieux**. ⇒ l'import écrit une entrée d'audit `books.unlocked` portant
-    l'ancienne et la nouvelle valeur **dès que la borne recule**, avec le motif
-    `« restauration de sauvegarde »`.
+    **déverrouillage silencieux**. ⇒ l'import écrit une entrée d'audit **`books.restored`**
+    portant l'ancienne et la nouvelle valeur **dès que la borne recule**.
+    ⛔ **L'ancienne valeur se relève AVANT le restore, et c'est le point le plus facile à
+    manquer.** `companies` figure dans `TABLES_TO_TRUNCATE` (`backup.rs:76`) et
+    `restore_tables_in_tx` la **vide** avant de la ré-insérer ; à l'endroit où l'entrée d'audit
+    survit — après le restore, dans la même transaction, à côté de `admin.full_import` —
+    l'ancienne borne **n'existe plus nulle part**. Elle se lit donc avant, sous le `FOR UPDATE`
+    déjà pris, et se compare après. *Écrite naïvement, la trace rapporterait l'ancienne valeur
+    comme étant la nouvelle : une trace qui ne trace rien, sur le chemin même qu'elle existe
+    pour couvrir.*
+    ⛔ **Et l'action est `books.restored`, PAS `books.unlocked`.** Il n'existe aucun acteur
+    « système » — `ActorType` ne connaît que `User` et `ApiKey` — et l'audit d'import est
+    attribué au `MIN(id)` des admins **du dataset restauré**, un administrateur qui n'a rien
+    déverrouillé. Réutiliser `books.unlocked` mêlerait, dans le filtre d'un réviseur, les
+    déverrouillages délibérés et les restaurations, sous la signature d'un innocent.
+    ⚠️ **Cas à trancher à l'implémentation** : une archive venue d'une **autre installation**
+    n'a pas de `companies.id` comparable. La comparaison porte alors sur la société courante
+    unique ; si l'inventaire ne permet pas de l'apparier, `books.restored` est écrite **sans
+    ancienne valeur**, avec la mention explicite.
 
 ## Invariants testables
 
@@ -231,6 +282,12 @@ sont verrouillées jusqu'au 31.03.2026 ; cette écriture est datée du 15.01.202
 - **I3 — La borne ne recule pas SANS TRACE.** Aucune opération ne diminue
   `books_locked_through` sans écrire une entrée d'audit : ni la clôture, ni la réouverture, ni
   la pose (qui la refuse, AC 6), ni l'import de sauvegarde (qui la trace, AC 14).
+  ⚠️ **Un cinquième chemin existe, ATTÉNUÉ et non absent** : `reset_demo` fait
+  `DELETE FROM companies` (`kesh-seed/src/lib.rs`). Il est hors d'atteinte d'une installation
+  susceptible de porter une borne — le handler refuse dès `step_completed >= 7` et hors mode
+  démo au-delà de l'étape 2 (`onboarding.rs:256-278`) — mais un invariant qui se dit universel
+  doit **nommer** le cas et sa garde. Suivi par #377 et #279.
+
   ⚠️ **La première rédaction disait « ne recule pas toute seule » et prétendait que l'import
   était couvert** — il ne l'était pas, et rien dans la story ne l'en empêchait. Un invariant qui
   énonce l'objectif ne démontre pas qu'il est atteint : c'est l'AC qui doit le faire.
@@ -246,8 +303,9 @@ sont verrouillées jusqu'au 31.03.2026 ; cette écriture est datée du 15.01.202
   - [ ] contrôle P7 : DDL pur, aucune donnée écrite → ni registre ni exemption
 - [ ] **T2 — La garde, au point de passage unique** (AC 2, 4, 9)
   - [ ] `DbError::PeriodLocked { locked_through, attempted }` → **400** `PERIOD_LOCKED`, message nommant les deux dates
-  - [ ] contrôle dans `create_in_tx`, **après** les gardes d'exercice (D4)
-  - [ ] ⛔ vérifier au sol que les 22 chemins de création y passent bien — `grep -rn "journal_entries::create"`
+  - [ ] ⛔ contrôle dans **`create_in_tx_inner`** (`:226`) et non dans le wrapper `create_in_tx` — `reverse` appelle l'inner directement (`:1385`)
+  - [ ] contrôle placé **après** les gardes d'exercice, dans l'ordre réel du code (D4)
+  - [ ] ⛔ vérifier au sol les **douze** chemins de production — puis **trier** : dix des vingt-deux lignes du grep ne créent rien
 - [ ] **T3 — Poser et lever** (AC 3, 6, 7, 8)
   - [ ] `companies::lock_books` / `unlock_books`, gabarit `fiscal_years::reopen` (`:779`)
   - [ ] refus d'une borne **future ou du jour** (AC 3) ; motif obligatoire et non blanc au déverrouillage
@@ -261,7 +319,11 @@ sont verrouillées jusqu'au 31.03.2026 ; cette écriture est datée du 15.01.202
   - [ ] `books_locked_through` dans **`serialize_company_csv`** (`csv_tables.rs:127` — au singulier, contrairement aux autres), **avec son test** — ⛔ la 24-4a a montré que cet export perd une colonne **en silence**
 - [ ] **T6 — Les tests**
   - [ ] la garde sur le journal manuel, **la validation de facture** et **le rapprochement**
-  - [ ] la contre-passation qui aboutit (AC 5) ; la précédence (AC 9) ; I1, I2, I3
+  - [ ] ⛔ **poser une borne à la date du jour rend 400** (AC 3) — la garde neuve que rien n'exercerait sinon
+  - [ ] ⛔ **le test de l'AC 5 pose la borne À LA VEILLE**, valeur maximale admise — écrit avec une borne franchement passée, il ne verrait pas le défaut d'un jour
+  - [ ] ⛔ **un jeton Comptable ne peut pas reculer la borne** par l'endpoint d'avancement (AC 6), et la garde se tait quand la borne est `NULL`
+  - [ ] ⛔ **l'import qui fait reculer la borne écrit `books.restored`** avec l'ANCIENNE valeur (AC 14)
+  - [ ] la contre-passation qui aboutit (AC 5) **en traversant la garde** ; la précédence (AC 9) ; I1, I2, I3
 - [ ] **T7 — La doc**
   - [ ] manuel **utilisateur** : le verrou, ses deux gestes, et ce qu'il ne remplace pas
   - [ ] manuel **admin** : ⛔ la section *Conformité OLICo Art. 9* — le verrou de période **renforce** l'argument, comme le gel l'a fait ; ne pas le sous-déclarer
@@ -312,6 +374,8 @@ vrai.*
 | `crates/kesh-api/src/exports/csv_tables.rs` | UPDATE — ⛔ `serialize_company_csv` (`:127`, **au singulier**), la colonne **et son test** |
 | `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl` | UPDATE |
 | `frontend/src/routes/(app)/settings/…` · `journal-entries/+page.svelte` · `JournalEntryForm.svelte` | UPDATE |
+| `crates/kesh-api/src/routes/admin.rs` | UPDATE — ⛔ l'AC 14 : relever la borne avant le restore, écrire `books.restored` après |
+| `crates/kesh-api/tests/admin_full_import_e2e.rs` | UPDATE — le test de l'AC 14 |
 | `crates/kesh-api/tests/period_lock_e2e.rs` | NEW |
 | `docs/manual/fr/{user,admin}-manual.tex` (+ PDF) · `README.md` | UPDATE |
 
@@ -333,7 +397,7 @@ vrai.*
   comme `serialize_journal_entries_csv` : aucun test n'impose leur exhaustivité vis-à-vis du
   schéma (`backup_inventory_matches_schema` ne compare que la liste des **tables**). ⛔ La 24-4a
   a payé ce piège ; ne pas le repayer. ⚠️ Noter le **singulier** — c'est la seule des seize
-  fonctions d'export à le porter, et un `grep serialize_companies_csv` rend zéro.
+  fonctions d'export à le porter (**dix-neuf**, recomptées), et un `grep serialize_companies_csv` rend zéro.
 - ⛔ **Le compte de migrations passe de 64 à 65, et il vit à QUATRE endroits** : les **deux**
   sites du total de `docs/migrations-idempotence-audit.md` (l'en-tête de section et la ligne
   `Total`), sa **partition** (`yes` / `tracked-by-sqlx` / `no`, dont la somme doit valoir le
@@ -396,3 +460,42 @@ rôles contournable par l'autre verbe. La conception d'ensemble (la borne comme 
 point de passage unique, la précédence) n'a pas été prise en défaut.
 
 **Prochaine** : passe 2, contexte frais, lentille braquée sur le commit de cette remédiation.
+
+### Passe 2 — 2026-08-30 · Opus 5, contexte frais, passe CIBLÉE sur le seul commit `295f4319`
+
+Prompt versionné dans `24-4c-review-prompt-regression-hunter-p2.md`.
+**0 CRITICAL, 4 HIGH, 6 MEDIUM, 3 LOW — soit treize, et les TREIZE portent sur le patch de la passe 1.**
+
+| # | sév. | ce qui était faux |
+|---|---|---|
+| P2-1 | HIGH | ⛔ **« Tous passent par `create_in_tx` » est FAUX** : `reverse` appelle `create_in_tx_inner` **directement** (`:1385`). Le point de passage réel est l'inner, et la garde posée dans le wrapper aurait laissé un second point d'entrée l'éviter — celui que la 24-4a a ajouté il y a deux jours |
+| P2-2 | HIGH | « treize sites » en vaut **douze** (le tri prescrit laisse `trial_balance.rs:125`), et le même paragraphe disait « neuf » puis « dix ». **Trois nombres neufs qui ne se recoupent pas, dans un patch qui corrigeait un décompte** |
+| P2-3 | HIGH | ⛔ la flèche de D4 était **inversée** : le code rend `FiscalYearClosed` (`:263`) **avant** `DateOutsideFiscalYear` (`:274`). Le patch avait écrit le fait douze lignes plus bas **sans corriger la flèche qu'il réfutait** |
+| P2-5 | HIGH | ⛔ l'AC 14 exigeait « l'ancienne valeur » **là où elle n'existe plus** : `companies` est vidée avant le seul point où l'audit survit. La trace aurait rapporté la nouvelle valeur comme étant l'ancienne |
+| P2-4 | MEDIUM | `DATE_OUTSIDE_FISCAL_YEAR` est **inatteignable par la route** — c'est `NO_FISCAL_YEAR` qui répond. L'AC 9 aurait produit un test « ajusté jusqu'à passer » |
+| P2-6 | MEDIUM | l'entrée d'audit de l'import aurait été signée par un Admin **de l'archive** (`MIN(id)`), sous `books.unlocked` — mêlant déverrouillages délibérés et restaurations sous la signature d'un innocent |
+| P2-7 | MEDIUM | deux résidus du décompte corrigé, dont **la tâche T2** qui demandait encore de vérifier « les 22 chemins » |
+| P2-8 | MEDIUM | l'AC 14 n'avait **ni fichier ni test**, quand l'AC 13 — celle qui protège le chemin sans importeur — en exigeait un en gras |
+| P2-9 | MEDIUM | la garde neuve de l'AC 3 n'avait **aucun test nommé**, et le patch décrivait lui-même le test muet qui la manquerait |
+| P2-10 | MEDIUM | « seize fonctions d'export » : il y en a **dix-neuf** — un décompte non recompté, recopié dans une clause normative |
+| P2-11 | LOW | le « non nulle » de la garde de valeur perdu entre D3 et l'AC 6 |
+| P2-12 | LOW | `< today` ne disait pas **quelle horloge** — l'écart d'un jour réintroduit sous une autre forme |
+| P2-13 | LOW | I3 réécrit en universel omettait `reset_demo` |
+
+⛔ **Le motif du dépôt sous sa forme la plus nette.** P2-2 : trois nombres neufs se contredisent
+**à l'intérieur d'un seul paragraphe**, dans le patch qui corrigeait un décompte. P2-3 : le patch
+**écrit le fait au sol et laisse la ligne qu'il réfute** douze lignes au-dessus. C'est la
+§ *Propagation post-patch* et le § *Recompter ses propres comptes rendus*, tous deux pris en
+défaut par la remédiation qui les invoquait.
+
+✅ **La divergence de la passe 1 est CONFIRMÉE juste** — tracer la restauration plutôt que
+l'interdire — mais son **exécution** ne l'était pas : l'ancienne valeur détruite avant la trace
+(P2-5), et le mauvais signataire (P2-6). *Un arbitrage défendable ne dispense pas de vérifier
+qu'il est réalisable.*
+
+⚠️ **Aucune décision de conception antérieure au commit n'a été prise en défaut** : la borne
+comme date, la garde au point de passage, l'asymétrie des deux gestes, le 400 plutôt que le 409
+tiennent. La sévérité **recule** (CRITICAL → HIGH).
+
+**Prochaine** : passe 3, ciblée, sur un modèle différent — avec un contrôle explicite du tableau
+« Fichiers à toucher » contre les AC, que cette passe a trouvé désynchronisé.
