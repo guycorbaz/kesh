@@ -19,7 +19,7 @@ modifiable, dans aucune période, par personne.
 
 **Ce qui reste ouvert, et que cette story ferme, c'est l'ANTIDATAGE.**
 
-`create_in_tx` ne contrôle qu'une chose sur la date (`journal_entries.rs:273`) :
+`create_in_tx_inner` ne contrôle qu'une chose sur la date (`journal_entries.rs:273`) :
 
 ```rust
 if new.entry_date < fy_start || new.entry_date > fy_end {
@@ -64,7 +64,7 @@ il pourra **proposer** la date à verrouiller — la borne reste le mécanisme, 
 devient qu'une source de suggestion. *Le verrou ne dépend pas de la TVA ; c'est la TVA qui en
 est le premier usage.*
 
-## D2 — Le refus vit dans `create_in_tx`, le point de passage unique
+## D2 — Le refus vit dans `create_in_tx_inner`, le point de passage unique
 
 ⛔ **Douze sites de production créent une écriture** — facture validée, avoir, facture
 fournisseur ×3, règlement, rapprochement ×5, journal manuel.
@@ -160,7 +160,7 @@ ailleurs. Dire « période verrouillée » à quelqu'un qui s'est trompé d'exer
 corriger la mauvaise chose.
 
 ⚠️ **Les DEUX PREMIERS refus sont mutuellement exclusifs, et aucun test combiné n'est
-possible entre eux.** Le `match` de `create_in_tx` (`journal_entries.rs:261-277`) rend
+possible entre eux.** Le `match` de `create_in_tx_inner` (`journal_entries.rs:261-277`) rend
 `FiscalYearClosed` **dans son bras de garde**, avant d'avoir regardé la moindre date : un
 exercice clos n'atteint jamais le contrôle de bornes. ⛔ Ne pas chercher à reproduire ici le
 test « les deux causes à la fois » de la 24-4b — il n'est constructible que pour les couples
@@ -315,7 +315,7 @@ sont verrouillées jusqu'au 31.03.2026 ; cette écriture est datée du 15.01.202
   - [ ] Réglages → Comptabilité ; bandeau sur la liste ; `min` sur le champ date
   - [ ] clés dans les **quatre** locales, `data-testid` (jamais un libellé traduit — KF-043)
 - [ ] **T5 — L'export et la RESTAURATION** (AC 13, 14)
-  - [ ] ⛔ **le vrai chemin** : l'import `.keshbackup` écrit `books.unlocked` dès que la borne recule (AC 14) — `companies` est dans `TABLES_TO_TRUNCATE`, la colonne y voyage toute seule
+  - [ ] ⛔ **le vrai chemin** : l'import `.keshbackup` écrit **`books.restored`** — et **jamais** `books.unlocked`, qui a un seul producteur (AC 8) — dès que la borne recule ; `companies` est dans `TABLES_TO_TRUNCATE`, la colonne y voyage toute seule
   - [ ] `books_locked_through` dans **`serialize_company_csv`** (`csv_tables.rs:127` — au singulier, contrairement aux autres), **avec son test** — ⛔ la 24-4a a montré que cet export perd une colonne **en silence**
 - [ ] **T6 — Les tests**
   - [ ] la garde sur le journal manuel, **la validation de facture** et **le rapprochement**
@@ -356,7 +356,7 @@ décompte de zones, qui décidera d'un split si la sévérité cesse de reculer.
 ⛔ **Relire le § « Le défaut a CHANGÉ de nature » avant toute chose.** La note de planification
 du 2026-08-28 décrivait un défaut de **réécriture** ; la 24-4b l'a fermé. Ce qui reste est
 l'**antidatage**, et c'est un autre mécanisme : il ne se garde pas au même endroit
-(`create_in_tx` et non `update`), ni avec le même statut (400 et non 409), ni contre le même
+(`create_in_tx_inner` et non `update`), ni avec le même statut (400 et non 409), ni contre le même
 geste. *Une story qui hérite d'une note de planification doit vérifier que la note dit encore
 vrai.*
 
@@ -368,7 +368,7 @@ vrai.*
 | `crates/kesh-db/migrations.sha384` · `test-schema/0001_schema_squash.sql` | UPDATE |
 | `crates/kesh-db/src/entities/company.rs` | UPDATE — `books_locked_through: Option<NaiveDate>` |
 | `crates/kesh-db/src/repositories/companies.rs` | UPDATE — `lock_books` / `unlock_books` |
-| `crates/kesh-db/src/repositories/journal_entries.rs` | UPDATE — la garde dans `create_in_tx` |
+| `crates/kesh-db/src/repositories/journal_entries.rs` | UPDATE — la garde dans **`create_in_tx_inner`** (`:226`), PAS dans le wrapper `create_in_tx` |
 | `crates/kesh-db/src/errors.rs` · `crates/kesh-api/src/errors.rs` | UPDATE — `PeriodLocked` → 400 |
 | `crates/kesh-api/src/routes/companies.rs` · `lib.rs` | UPDATE — les deux routes |
 | `crates/kesh-api/src/exports/csv_tables.rs` | UPDATE — ⛔ `serialize_company_csv` (`:127`, **au singulier**), la colonne **et son test** |
@@ -381,7 +381,7 @@ vrai.*
 
 ### Pièges vérifiés au sol
 
-- ⚠️ **`create_in_tx` ne connaît pas la société directement** : elle la lit dans
+- ⚠️ **`create_in_tx_inner` ne connaît pas la société directement** : elle la lit dans
   `new.company_id`. La borne se charge donc dans la même transaction, sous le verrou de
   `companies` déjà pris par le lock ordering (`companies → projects → fiscal_years`,
   Pattern 5) — ⛔ **ne pas prendre un verrou dans un autre ordre**, sous peine d'ABBA
@@ -396,8 +396,8 @@ vrai.*
 - ⚠️ **`serialize_company_csv` énumère ses dix colonnes à la main** (`csv_tables.rs:127-140`),
   comme `serialize_journal_entries_csv` : aucun test n'impose leur exhaustivité vis-à-vis du
   schéma (`backup_inventory_matches_schema` ne compare que la liste des **tables**). ⛔ La 24-4a
-  a payé ce piège ; ne pas le repayer. ⚠️ Noter le **singulier** — c'est la seule des seize
-  fonctions d'export à le porter (**dix-neuf**, recomptées), et un `grep serialize_companies_csv` rend zéro.
+  a payé ce piège ; ne pas le repayer. ⚠️ Noter le **singulier** — c'est la seule des **dix-neuf**
+  fonctions d'export à le porter, et un `grep serialize_companies_csv` rend zéro.
 - ⛔ **Le compte de migrations passe de 64 à 65, et il vit à QUATRE endroits** : les **deux**
   sites du total de `docs/migrations-idempotence-audit.md` (l'en-tête de section et la ligne
   `Total`), sa **partition** (`yes` / `tracked-by-sqlx` / `no`, dont la somme doit valoir le
@@ -406,7 +406,7 @@ vrai.*
 
 ### Références
 
-- `journal_entries.rs:266-274` (la seule garde de date aujourd'hui) · `:187` (`create_in_tx`)
+- `journal_entries.rs:266-274` (la seule garde de date aujourd'hui) · `:187` (`create_in_tx`, le wrapper) · `:226` (`create_in_tx_inner`, **le point de passage réel**) · `:1385` (`reverse`, qui appelle l'inner directement)
 - `fiscal_years.rs:779` (`reopen` — le gabarit : motif, `FOR UPDATE` scopé, audit)
 - `kesh-report/src/vat_report.rs:83` · `period.rs:16` (`ReportPeriod` — deux dates, sans persistance)
 - Stories **24-4a** et **24-4b** — la contre-passation datée du jour, et le gel
@@ -499,3 +499,37 @@ tiennent. La sévérité **recule** (CRITICAL → HIGH).
 
 **Prochaine** : passe 3, ciblée, sur un modèle différent — avec un contrôle explicite du tableau
 « Fichiers à toucher » contre les AC, que cette passe a trouvé désynchronisé.
+
+### Passe 3 — 2026-08-30 · Sonnet 4.6, contexte frais, passe CIBLÉE sur le seul commit `59a165e6`
+
+Prompt versionné dans `24-4c-review-prompt-regression-hunter-p3.md`.
+**0 CRITICAL, 3 HIGH, 0 MEDIUM, 0 LOW — et les TROIS sont le MÊME symptôme.**
+
+| # | sév. | ce qui était faux |
+|---|---|---|
+| P3-1 | HIGH | ⛔ la correction de « seize » avait **ajouté** « (dix-neuf, recomptées) » **à côté** du chiffre faux au lieu de le remplacer : la phrase affirmait 16 et 19 à la fois — la forme exacte du finding P2-2, recréée par le patch qui venait de la sanctionner |
+| P3-2 | HIGH | trois occurrences de `create_in_tx` non corrigées en `create_in_tx_inner`, dont **le tableau des fichiers** et **le piège qui dit où lire `company_id`** — la thèse corrigée, ses applications laissées fausses |
+| P3-3 | HIGH | la tâche **T5 prescrivait encore `books.unlocked`** pour l'import, que l'AC 14 du **même commit** venait d'interdire en toutes lettres |
+
+⛔ **LE MÊME SYMPTÔME POUR LA TROISIÈME PASSE CONSÉCUTIVE : corriger la thèse au site nommé et
+laisser ses applications ailleurs.** Passe 1→2, passe 2→3, et il ne s'agit plus d'un accident :
+c'est le mode d'échec propre à cette story, à verser au Change Log de clôture au-delà du
+§ *Propagation post-patch* déjà codifié.
+
+⚠️ **La remédiation a trouvé PLUS que la lentille, et par le geste que le § prescrit.** Elle
+nommait **trois** occurrences de `create_in_tx` ; un `grep` du **jeton** sur tout le document en
+a rendu **six** — s'y ajoutaient le §22, le **titre même de la section D2**, et le paragraphe des
+Dev Notes qui compare la garde à `update`. *Une lentille énumère ce qu'elle a vu ; seul le grep
+du jeton énumère ce qui existe.*
+
+✅ **Tout le reste de la passe 2 est confirmé correctement corrigé** après contrôle indépendant :
+la flèche de D4, `reverse` → `create_in_tx_inner`, `NO_FISCAL_YEAR` au handler, le compte
+« douze », `MIN(id)` et `ActorType`, `backup.rs:76`, `reset_demo` et ses issues, les compteurs de
+migrations, le « non nulle » aux deux sites.
+
+⚠️ **Aucune décision de conception n'a été prise en défaut, pour la troisième passe consécutive**,
+et **aucun de ces trois findings ne déplace le lieu où le code va s'écrire** — critère que les
+passes 1 et 2 avaient tous deux fait échouer. La sévérité tient (HIGH), le volume s'effondre :
+8 → 13 → **3**.
+
+**Prochaine** : passe 4, ciblée, quatrième contexte frais.
