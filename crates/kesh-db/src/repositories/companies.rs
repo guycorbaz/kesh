@@ -461,7 +461,17 @@ pub async fn unlock_books(
     // le réviseur qui filtre « qui a déverrouillé » lirait une pose, sur une
     // société qui n'a jamais rien verrouillé. *C'est la même exigence que R4,
     // étendue au seul sous-cas qu'elle avait laissé ouvert.*
-    if before.is_none() && through.is_some() {
+    // ⚠️ La condition est `before.is_none()` SEULE, et le conjoint qu'une
+    // première rédaction y avait ajouté (`&& through.is_some()`) la rétrécissait
+    // sans raison : il laissait passer `through = None` — retirer une borne
+    // inexistante —, une opération qui ne change rien et écrit pourtant
+    // `books.unlocked`, verbe qui affirme qu'une borne a été retirée.
+    //
+    // ⛔ Sans borne courante, il n'y a **rien à reculer ni à retirer**, quelle
+    // que soit la cible. C'est le troisième et dernier angle de l'exigence
+    // « `books.unlocked` a un seul producteur » : les passes 2, 3 et 4 en ont
+    // fermé un chacune. *Une garde partielle est une garde qui rouvre.*
+    if before.is_none() {
         tx.rollback().await.map_err(map_db_error)?;
         return Err(DbError::IllegalStateTransition(
             "les livres ne sont pas verrouillés — il n'y a rien à reculer ni à retirer ; \

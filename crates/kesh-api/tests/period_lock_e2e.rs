@@ -845,6 +845,17 @@ async fn on_ne_pose_pas_un_premier_verrou_par_la_levee(pool: MySqlPool) {
         "aucune borne courante : il n'y a rien à reculer — {body}"
     );
 
+    // ⛔ Et le cas SYMÉTRIQUE, que la première rédaction de la garde laissait
+    // passer : retirer une borne **inexistante**. L'opération ne changeait rien
+    // et écrivait pourtant `books.unlocked` — un verbe qui affirme qu'une borne
+    // a été retirée. *Relevé en passe 4, par mutation : la garde portait un
+    // conjoint `&& through.is_some()` qui la rétrécissait sans raison.*
+    let (st, body) = lever_verrou(&app, &token, None, "retirer ce qui n'existe pas").await;
+    assert_eq!(
+        st, 409,
+        "retirer une borne inexistante ne change rien et ne doit rien tracer — {body}"
+    );
+
     let borne: Option<chrono::NaiveDate> =
         sqlx::query_scalar("SELECT books_locked_through FROM companies ORDER BY id LIMIT 1")
             .fetch_one(&pool)

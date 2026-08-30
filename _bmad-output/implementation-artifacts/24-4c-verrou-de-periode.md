@@ -618,6 +618,58 @@ geste systématique plutôt que par une lentille**.
 
 **Gate après remédiation** : `test-fast.sh` **2281/2281** sur base remise à zéro.
 
+### Revue de code — passe 4, 2026-08-30 · Haiku 4.5, contexte frais, CIBLÉE sur `4b15f9e9`
+
+Prompt versionné dans `24-4c-code-review-prompt-regression-hunter-p4.md`.
+**0 CRITICAL, 0 HIGH, 1 MEDIUM, 0 LOW.**
+
+⛔ **La passe a MUTÉ les quatre gardes, une à une, et les quatre tests rougissent** — motif vide,
+borne future, avancée par la levée, première pose par la levée. Dépôt restauré et propre après
+chaque mutation. *Une garde vérifiée par mutation est une garde dont on sait qu'elle tient.*
+
+| # | sév. | ce qui était faux |
+|---|---|---|
+| P4-1 | MEDIUM | ⛔ **retirer une borne INEXISTANTE** (`before = None`, `through = None`) passait toutes les gardes, faisait un `UPDATE` sans effet, et écrivait `books.unlocked` — un verbe qui affirme qu'une borne a été retirée |
+
+⚠️ **Le défaut était dans la FORME de ma garde, pas dans son absence.** Je l'avais écrite
+`before.is_none() && through.is_some()` quand la condition juste était `before.is_none()`
+**seule** : le conjoint ajouté la rétrécissait sans raison. *Une garde partielle est une garde
+qui rouvre* — et c'est la sixième occurrence, sous une forme neuve, du motif de cette story.
+
+⛔ **Ce finding ferme le TROISIÈME et dernier angle** de l'exigence « `books.unlocked` a un seul
+producteur » : avancer par la levée (passe 2), poser un premier verrou par la levée (passe 3),
+retirer une borne inexistante (passe 4). Une passe par angle, et la famille est close.
+
+**Gate après remédiation** : `test-fast.sh` **2281/2281** sur base remise à zéro.
+
+### BOUCLE DE REVUE DE CODE CLOSE — 2026-08-30
+
+| passe | modèle | CRIT | HIGH | MED | LOW | total |
+|---|---|---|---|---|---|---|
+| 1 | Sonnet 4.6 + Haiku 4.5 | 2 | 1 | 1 | 2 | **6** |
+| 2 | Opus 5 *(ciblée)* | 0 | 1 | 3 | 3 | **7** |
+| 3 | Sonnet 4.6 *(ciblée)* | 0 | 0 | 1 | 0 | **1** |
+| 4 | Haiku 4.5 *(ciblée)* | 0 | 0 | 1 | 0 | **1** |
+
+⛔ **QUINZE findings, dont le plus grave ne vivait dans aucun fichier que la story touche.**
+`DbError::PeriodLocked`, variant neuf, tombait dans le repli du pattern batch et sortait en
+`DATABASE_ERROR` : *introduire un variant d'erreur change le comportement de tous les `match` qui
+ne le nomment pas.* C'est le mode d'échec des garde-fous P6 et P7, appliqué aux types.
+
+⛔ **LE MOTIF DE CETTE STORY, SIX FOIS** : *corriger au site nommé, laisser le jumeau.* Quatre
+fois en revue de spec, deux fois en revue de code, et sous une forme neuve à la fin — une garde
+dont la **condition** était partielle plutôt que le **site**. ⚠️ **La cinquième a été attrapée
+non par une lentille, mais par un geste** : greper chaque correction dans les tests avant
+d'écrire le journal. *C'est le geste qui manque au protocole, pas une passe de plus.*
+
+⛔ **ET LA CASE COCHÉE QUI MENT, deux stories de suite puis une passe de suite.** La règle « ne
+déclarer que ce qui a tourné » vise les gates ; **rien ne vérifie les cases de tâches**, et c'est
+toujours une lentille externe qui l'a vu. À verser à la rétrospective avec le geste ci-dessus.
+
+✅ **La mutation est la technique la plus productive de cette boucle** : employée aux passes 2,
+3 et 4, elle a révélé un contre-test inutile, confirmé quatre gardes, et servi à reproduire un
+défaut avant de le corriger.
+
 ⚠️ **Réserve maintenue.** La passe 1 n'a eu que **deux** lentilles au lieu des trois du
 protocole. Et l'AC 4 est désormais tenue pour la **facture** (test E2E) et pour le **mappage**
 du rapprochement (test unitaire du code fautif), mais **pas par un rapprochement bancaire
