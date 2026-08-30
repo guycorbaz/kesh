@@ -8,8 +8,7 @@ import type {
 	JournalEntryDetailResponse,
 	JournalEntryListQuery,
 	JournalEntryResponse,
-	ListResponse,
-	UpdateJournalEntryRequest
+	ListResponse
 } from './journal-entries.types';
 import { serializeQuery } from './query-helpers';
 
@@ -54,13 +53,10 @@ export async function createJournalEntry(
 	return apiClient.post<JournalEntryResponse>('/api/v1/journal-entries', req);
 }
 
-export async function updateJournalEntry(
-	id: number,
-	req: UpdateJournalEntryRequest
-): Promise<JournalEntryResponse> {
-	return apiClient.put<JournalEntryResponse>(`/api/v1/journal-entries/${id}`, req);
-}
-
-export async function deleteJournalEntry(id: number): Promise<void> {
-	return apiClient.delete(`/api/v1/journal-entries/${id}`);
-}
+/**
+ * ⛔ Story 24-4b (#380) — `updateJournalEntry` et `deleteJournalEntry` ont été
+ * retirées : le `PUT` et le `DELETE` rendent désormais 409 `ENTRY_IS_POSTED`.
+ * Une écriture comptabilisée se corrige par `reverseJournalEntry`, jamais par
+ * réécriture. Les deux routes restent montées côté serveur pour que le refus
+ * porte un message ; aucun écran ne les appelle.
+ */

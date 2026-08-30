@@ -298,6 +298,20 @@ pub enum DbError {
     #[error("Écriture contre-passée : suppression refusée")]
     EntryIsReversed,
 
+    /// L'écriture est comptabilisée : elle ne se réécrit ni ne se supprime
+    /// (Story 24-4b, #380).
+    ///
+    /// ⛔ Toute écriture l'est **dès son insertion** — il n'existe pas de statut
+    /// brouillon, et la story n'en introduit pas. Le refus est donc
+    /// inconditionnel, et c'est l'exigence de l'art. 958f CO : la correction
+    /// doit être **apparente**, ce que seule la contre-passation permet.
+    ///
+    /// ⚠️ Ce refus vient **après** [`DbError::EntryIsReversed`] : sur une
+    /// écriture déjà contre-passée, conseiller la contre-passation serait un
+    /// conseil faux. Mappé vers HTTP **409** `ENTRY_IS_POSTED`.
+    #[error("Écriture comptabilisée : modification et suppression refusées")]
+    EntryIsPosted,
+
     /// Aucun exercice ouvert ne couvre la date fournie (Story 5.2).
     /// Distinct de `FiscalYearClosed` — l'exercice est peut-être
     /// inexistant (date hors de tous les exercices connus) OU clôturé.
@@ -370,6 +384,7 @@ impl DbError {
             Self::EntryNotReversable { .. } => "ENTRY_NOT_REVERSABLE",
             Self::ReversalAccountsArchived(_) => "ACCOUNT_ARCHIVED",
             Self::EntryIsReversed => "ENTRY_IS_REVERSED",
+            Self::EntryIsPosted => "ENTRY_IS_POSTED",
             Self::FiscalYearInvalid => "FISCAL_YEAR_INVALID",
             Self::ConfigurationRequired(_) => "CONFIGURATION_REQUIRED",
             Self::ConnectionUnavailable(_) => "CONNECTION_UNAVAILABLE",

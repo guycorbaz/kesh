@@ -271,17 +271,7 @@ invoice-error-total-zero = This invoice has a total amount of zero and cannot be
 credit-note-error-total-zero = This invoice has a total amount of zero: no credit note can be issued.
 
 # Edit & delete journal entries (Story 3.3)
-journal-entry-edit = Edit
-journal-entry-delete = Delete
-journal-entry-delete-confirm-title = Delete entry No.{ $number }?
-journal-entry-delete-confirm-message = This action is irreversible. The action will be recorded in the audit log.
-journal-entry-delete-confirm-cancel = Cancel
-journal-entry-delete-confirm-delete = Delete
-journal-entry-deleted = Entry deleted
-journal-entry-conflict-title = Version conflict
-journal-entry-conflict-message = This entry has been modified by another user. Reload?
-journal-entry-conflict-reload = Reload
-journal-entry-conflict-reloaded = List reloaded — click Edit again to resume
+journal-entry-open = Open details
 
 # VAT purchase assistant (Story 18-1c)
 vat-purchase-title = VAT purchase assistant
@@ -347,6 +337,7 @@ journal-entries-reverse-blocked-bank-match = This entry is reconciled with a ban
 journal-entries-reverse-blocked-account-archived = An account of this entry has been archived: reactivate it to be able to reverse.
 journal-entries-reverse-account-archived = Cannot reverse — archived account(s): { $detail }. Reactivate the accounts concerned.
 journal-entries-delete-blocked-reversed = This entry has been reversed: it can no longer be deleted.
+journal-entries-blocked-posted = A posted entry can no longer be modified. To correct it, reverse it: Kesh creates the opposite entry and keeps the original.
 
 # Bilingual tooltips for accounting terms (Story 3.5)
 tooltip-debit-natural = Money comes into this account

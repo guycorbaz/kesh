@@ -2518,6 +2518,22 @@ impl IntoResponse for AppError {
                         "Cette écriture a été contre-passée : elle ne peut plus être supprimée.",
                     ),
                 ),
+                // ⛔ Story 24-4b (#380) — le gel. Toute écriture est comptabilisée
+                // dès son insertion : le PUT et le DELETE sont refusés sans
+                // exception, et le message NOMME le chemin de correction. Un
+                // refus qui ne dit pas quoi faire n'est pas utilisable.
+                //
+                // ⚠️ 409 et non 400 : c'est un conflit d'ÉTAT de la ressource,
+                // pas une donnée d'entrée invalide (asymétrie posée en 24-4a).
+                DbError::EntryIsPosted => build_response(
+                    StatusCode::CONFLICT,
+                    "ENTRY_IS_POSTED",
+                    &t(
+                        "journal-entries-blocked-posted",
+                        "Une écriture comptabilisée ne se modifie plus. Pour la corriger, \
+                         contre-passez-la : Kesh crée l'écriture inverse et conserve l'originale.",
+                    ),
+                ),
                 DbError::IllegalStateTransition(m) => {
                     tracing::warn!("illegal state: {m}");
                     build_response(

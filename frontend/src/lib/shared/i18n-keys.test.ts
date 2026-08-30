@@ -159,9 +159,24 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * fiche affichait un bouton « Contre-passer » qui échouait une fois cliqué —
  * l'AC 11 exige l'inverse. Le code, le type TypeScript et le `switch` étaient
  * silencieusement alignés sur l'omission, ce qui explique qu'aucun gate ne l'ait vu.
+ *
+ * ⚠️ **1630 → 1619 à la Story 24-4b (#380), le gel de l'écriture** — une BAISSE, la première
+ * depuis longtemps, et elle se ventile exactement :
+ *
+ * | mouvement | sites |
+ * |---|---|
+ * | les **onze clés** de l'édition, de la suppression et de la modale de conflit, retirées des quatre catalogues avec les chemins d'écran qui les appelaient | **−11** |
+ * | le **troisième site** de `journal-entry-form-cancel`, qui vivait dans le bouton « Annuler » de cette même modale de conflit (il en reste deux) | **−1** |
+ * | `journal-entry-open`, le lien de la liste vers la fiche qui remplace les deux boutons ✎ et 🗑 | **+1** |
+ * | **total** | **−11** |
+ *
+ * ⛔ La baisse est **délibérée** : le `PUT` et le `DELETE` d'une écriture ne rendent plus que
+ * 409 `ENTRY_IS_POSTED`, donc les écrans qui les appelaient n'existent plus. Une borne qui
+ * rougit sur une baisse fait le même travail que sur une hausse — elle exige qu'on dise
+ * pourquoi.
  */
 const ATTENDU = {
-	sitesTotal: 1630,
+	sitesTotal: 1619,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

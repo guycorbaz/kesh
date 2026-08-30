@@ -325,7 +325,7 @@ Lors de la mise à jour vers cette version, Kesh a \textbf{pré-attribué les r�
 \end{keshwarning}
 
 \begin{keshnote}
-Dans cette version, l'indicateur \emph{postable} \textbf{bloque la saisie manuelle} : Kesh refuse une écriture saisie à la main (création ou modification) dont une ligne vise un compte non-postable — typiquement un compte de regroupement ou le compte de résultat. Les écritures \textbf{déjà enregistrées} sur un tel compte restent modifiables (seule une ligne vers un compte non-postable \emph{qui n'était pas déjà utilisé par cette écriture} est refusée), et les flux automatiques (factures, avoirs, réconciliation) ne sont pas concernés.
+Dans cette version, l'indicateur \emph{postable} \textbf{bloque la saisie manuelle} : Kesh refuse une écriture saisie à la main dont une ligne vise un compte non-postable — typiquement un compte de regroupement ou le compte de résultat. Les flux automatiques (factures, avoirs, réconciliation) ne sont pas concernés. \textbf{Une écriture déjà enregistrée ne se modifie plus du tout} : depuis la version qui introduit le gel, elle se corrige par contre-passation (voir «~Corriger une écriture~»).
 \end{keshnote}
 
 \subsection{Import d'un plan personnalisé}
@@ -401,15 +401,23 @@ Une écriture enregistrée est \textbf{immédiatement comptabilisée}. Kesh ne c
 d'état « brouillon » : il n'y a rien à valider, et une écriture apparaît dans les rapports
 dès son enregistrement.
 
-\subsection{Modification et suppression}
+\subsection{Une écriture enregistrée ne se modifie plus}
 
-Tant que l'exercice est \textbf{ouvert}, une écriture peut être \textbf{modifiée ou
-supprimée} par un utilisateur ayant le rôle \emph{administrateur} ou \emph{comptable}. La
-modification porte sur tous les champs, y compris les comptes et les montants ; la
-suppression est définitive.
+Une écriture est \textbf{comptabilisée dès son enregistrement}. Elle ne peut plus être ni
+modifiée ni supprimée --- par personne, dans aucun exercice, quel que soit le rôle. Toute
+tentative est refusée, et le message vous renvoie vers le seul chemin de correction~: la
+\textbf{contre-passation}.
 
-Dès que l'exercice est \textbf{clôturé}, ni l'une ni l'autre n'est possible : toute
-tentative est refusée.
+C'est l'exigence de l'art.~958f CO et de l'Olico~: \emph{on ne demande pas de ne jamais se
+tromper, on demande que la correction soit apparente}. Effacer une écriture fausse, ou la
+réécrire, fait disparaître l'erreur \emph{et} sa correction~; la contre-passation laisse les
+deux dans les livres.
+
+\begin{keshtip}[title=\faLightbulb\ Pourquoi il n'y a pas de «~brouillon~»]
+Kesh ne connaît pas d'état intermédiaire~: ce que vous validez part directement aux livres.
+La contrepartie est qu'il faut se relire \textbf{avant} de valider --- et que l'écran de
+saisie vous y aide en refusant toute écriture déséquilibrée.
+\end{keshtip}
 
 \subsection{Corriger une écriture : la contre-passation}
 
@@ -432,12 +440,12 @@ fois, et une écriture dont un \textbf{compte a été archivé} attend que vous 
 compte --- son numéro vous est indiqué.
 
 \begin{keshwarning}[title=\faExclamationTriangle\ Ce que le logiciel ne fait pas encore à votre place]
-Kesh \textbf{n'empêche pas} encore la modification ni la suppression d'une écriture déjà
-comptabilisée~: la contre-passation est \textbf{offerte}, elle n'est pas encore
-\textbf{imposée}. Les modifications et les suppressions sont enregistrées dans le journal
-d'audit interne, mais \textbf{ce journal n'est pas consultable depuis l'application} : vous
-ne pouvez donc pas produire, aujourd'hui, l'historique complet des corrections apportées à
-vos écritures.
+La contre-passation est désormais \textbf{imposée} et non plus seulement offerte~: la
+modification et la suppression d'une écriture sont refusées. Ce qui manque encore, c'est la
+\textbf{consultation du journal d'audit} depuis l'application~: les opérations y sont bien
+enregistrées, mais vous ne pouvez pas encore produire, depuis Kesh, l'historique complet des
+corrections apportées à vos écritures. Le verrou reste par ailleurs \textbf{annuel}~: aucun
+verrou de période plus fin --- le trimestre TVA déclaré, par exemple --- n'existe encore.
 
 Une seule exception, déjà en vigueur~: une écriture \textbf{déjà contre-passée} ne peut plus
 être supprimée --- la supprimer effacerait la correction.
@@ -450,9 +458,9 @@ la suppression, tant que le logiciel vous laisse le choix.
 \subsection{Numérotation}
 
 Chaque écriture reçoit un numéro séquentiel par société et par exercice. \textbf{Cette
-numérotation peut comporter des trous} : supprimer une écriture laisse son numéro inoccupé,
-et supprimer la dernière écriture saisie fait réattribuer son numéro à la suivante. C'est une
-raison de plus de préférer la contre-passation à la suppression.
+numérotation peut encore comporter des trous}, mais la cause principale a disparu~: une
+écriture ne se supprime plus. Il subsiste un seul chemin qui en creuse --- la suppression
+définitive d'une facture validée, qui emporte son écriture (voir «~Supprimer une facture~»).
 
 \subsection{Recherche d'écritures}
 
@@ -499,7 +507,7 @@ Le nouvel exercice s'ouvre vide. Les comptes du bilan sont automatiquement repor
 La clôture est un simple \textbf{verrou} : elle ne génère aucune écriture. Le report des soldes de bilan d'un exercice à l'autre est \textbf{calculé en temps réel} depuis l'origine (report à-nouveau automatique), sans écriture de clôture ni de report à passer. La clôture :
 
 \begin{itemize}
-    \item Verrouille toutes les écritures de l'exercice : plus aucune écriture ne peut y être saisie, modifiée ou supprimée tant qu'il reste clôturé (immutabilité, CO art. 957-964).
+    \item Verrouille l'exercice : plus aucune écriture ne peut y être \textbf{saisie} tant qu'il reste clôturé (immutabilité, CO art. 957-964). \emph{La modification et la suppression, elles, sont refusées en permanence --- clôture ou non.}
     \item Inscrit l'opération dans le journal d'audit (\texttt{audit\_log}).
     \item N'affecte pas le report à-nouveau, qui reste calculé automatiquement — les rapports finaux (bilan, compte de résultat, balance) demeurent consultables et exportables (CSV/PDF).
 \end{itemize}
@@ -529,7 +537,9 @@ Si vous migrez vers Kesh depuis un autre logiciel comptable, l'écran \emph{Admi
 \end{enumerate}
 
 \begin{keshnote}
-L'écran n'est disponible que tant que la société ne contient \textbf{aucune écriture} (dans aucun exercice). Une fois l'écriture d'ouverture générée, il se verrouille : pour corriger un solde, modifiez l'écriture d'ouverture directement dans le journal (c'est une écriture OD normale, modifiable tant que l'exercice reste ouvert). Pour re-saisir intégralement les soldes, supprimez toutes les écritures de la société puis revenez sur l'écran.
+L'écran n'est disponible que tant que la société ne contient \textbf{aucune écriture} (dans aucun exercice). Une fois l'écriture d'ouverture générée, il se verrouille \textbf{définitivement} --- et l'écriture, comme toutes les autres, ne se modifie ni ne se supprime plus.
+
+Pour corriger un solde de départ, on procède donc comme un comptable~: \textbf{contre-passez} l'écriture d'ouverture depuis sa fiche, puis saisissez une écriture manuelle portant les soldes justes. Vous obtenez trois écritures au lieu d'une, et une piste de correction lisible --- ce qui est précisément l'objet de la règle.
 \end{keshnote}
 
 \begin{keshtip}
@@ -1587,17 +1597,18 @@ Utilisez l'\emph{Export ZIP de souveraineté} (cf. section dédiée), en tenant 
 Selon l'action :
 
 \begin{itemize}
-    \item Écriture, exercice ouvert : modification ou suppression possible (rôles
-          administrateur et comptable). \textbf{Préférez le bouton \og Contre-passer \fg{}}
-          de la fiche de l'écriture si vos livres doivent rester opposables : Kesh crée
+    \item Écriture~: ni modification ni suppression, jamais --- et c'est voulu. Le seul
+          chemin est le bouton «~Contre-passer~» de la fiche de l'écriture~: Kesh crée
           l'écriture inverse, garde l'origine, et lie les deux --- la correction reste
-          visible. Une écriture \textbf{déjà contre-passée} ne peut plus être supprimée.
+          visible. On atteint la fiche depuis la liste des écritures, en cliquant sur la
+          ligne.
     \item Écriture appartenant à une pièce (facture, avoir, facture fournisseur,
           règlement, rapprochement) : elle n'est pas contre-passable directement --- passez
           par le chemin de la pièce, que l'écran vous indique.
-    \item Écriture, exercice clôturé : ni modification ni suppression. Il faut rouvrir
-          l'exercice (administrateur, avec motif) ou passer une écriture sur l'exercice
-          courant.
+    \item Écriture d'un exercice \textbf{clôturé}~: elle reste contre-passable, et la
+          contre-passation tombe dans l'exercice \textbf{courant} --- c'est la pratique
+          comptable, et il n'y a donc aucune raison de rouvrir l'exercice pour corriger une
+          écriture.
     \item Facture validée : passage en avoir + génération d'une nouvelle facture.
     \item Rapprochement bancaire : déliaison (\emph{Délier} sur la transaction).
 \end{itemize}

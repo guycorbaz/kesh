@@ -46,7 +46,7 @@ Story 7-3 a appliqué le pattern aux 9 fonctions `update()` user-form du crate `
 | 5 | `bank_accounts.rs` | `upsert_primary` (branche `Some`) | `bank_name, iban, qr_iban` |
 | 6 | `companies.rs` | `update` | `name, address, ide_number, org_type, accounting_language, instance_language` |
 | 7 | `company_invoice_settings.rs` | `update` | `invoice_number_format, default_receivable_account_id, default_revenue_account_id, default_sales_journal, journal_entry_description_template` |
-| 8 | `journal_entries.rs` | `update` | `entry_date, journal, description` + lignes (en ordre `line_order`) |
+| ~~8~~ | ~~`journal_entries.rs`~~ | ~~`update`~~ | **Supprimée par la Story 24-4b (#380)** — une écriture comptabilisée ne se réécrit plus ; le `PUT` rend 409 `ENTRY_IS_POSTED`. |
 | 9 | `users.rs` | `update_role_and_active` | `role, active` |
 | 10 | `email_templates.rs` | `upsert_override` | `subject, body` |
 
@@ -72,7 +72,7 @@ Sous REPEATABLE READ + plain SELECT, si une tx parallèle commit entre `BEGIN` e
 
 - **Variant A — 5 cibles exposées** : `contacts`, `products`, `invoices`, `accounts`, `company_invoice_settings`.
 - **Variant C — 2 cibles exposées** (refactorées de UPDATE-then-check vers SELECT-then-UPDATE par cette story) : `companies`, `users`.
-- **Variant A protégée** : `journal_entries::update` — `SELECT FOR UPDATE` étape 1 (pas de race).
+- ~~**Variant A protégée** : `journal_entries::update`~~ — fonction **supprimée** par la Story 24-4b (#380). Le verrou optimiste n'a plus d'objet sur les écritures : elles ne se réécrivent pas.
 - **Variant B protégée** : `bank_accounts::upsert_primary` — `SELECT FOR UPDATE` étape 1 (pas de race).
 
 **Mitigation Epic 8 prerequisite** : passer `invoices::update` en `SELECT FOR UPDATE` (entité comptable la plus exposée — sessions de saisie facture longues). Tracé via une issue GitHub follow-up dédiée. Les 5 autres entités variant A restent en pattern optimiste.

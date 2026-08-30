@@ -111,7 +111,11 @@ test.describe('Page exercices — création + clôture', () => {
  *   - `validate_invoice` utilise `find_open_covering_date` (`invoices.rs:970`)
  *     → un FY clos retourne `FISCAL_YEAR_INVALID` (PAS `FISCAL_YEAR_CLOSED`).
  *   - `FISCAL_YEAR_CLOSED` n'est levé QUE par `journal_entries::create`
- *     (`journal_entries.rs:109`) + `journal_entries::update` (`:598 + :836`).
+ *     (`journal_entries.rs:109`). ⚠️ `journal_entries::update` le levait aussi
+ *     jusqu'à la Story 24-4b (#380), qui l'a supprimée : le `PUT` rend
+ *     désormais 409 `ENTRY_IS_POSTED` sans consulter l'exercice. Les tests
+ *     ci-dessous passent tous par « Nouvelle écriture », donc par `create` —
+ *     ils sont indifférents au gel.
  *   - Test 3 utilise donc `JournalEntryForm`, pas `validateInvoice`.
  */
 
