@@ -206,6 +206,17 @@
 	}
 
 	// --- Story 24-4c (#380) : le verrou de période ---
+	// Dernière borne SAISISSABLE : la veille. ⚠️ Confort de saisie seulement —
+	// le refus qui fait autorité est celui du serveur (`booksLockBoundNotPast`),
+	// et il est testé sans passer par l'écran. Sans ce `max`, le formulaire
+	// proposait une date que le serveur refuse, sur le geste même que la garde
+	// existe pour rattraper.
+	const maxLockDate = (() => {
+		const d = new Date();
+		d.setUTCDate(d.getUTCDate() - 1);
+		return d.toISOString().slice(0, 10);
+	})();
+
 	let lockThrough = $state('');
 	let unlockThrough = $state('');
 	let unlockMotif = $state('');
@@ -520,7 +531,7 @@
 					<label for="books-lock-through" class="block text-sm font-medium mb-1">
 						{msg('settings-books-lock-set', 'Verrouiller jusqu\'au')}
 					</label>
-					<Input id="books-lock-through" type="date" bind:value={lockThrough} />
+					<Input id="books-lock-through" type="date" max={maxLockDate} bind:value={lockThrough} />
 				</div>
 				<Button size="sm" onclick={submitLock} disabled={lockBusy || !lockThrough} data-testid="books-lock-submit">
 					{msg('settings-books-lock-set', 'Verrouiller jusqu\'au')}
@@ -543,7 +554,7 @@
 						<label for="books-unlock-through" class="block text-sm font-medium mb-1">
 							{msg('settings-books-lock-set', 'Verrouiller jusqu\'au')}
 						</label>
-						<Input id="books-unlock-through" type="date" bind:value={unlockThrough} />
+						<Input id="books-unlock-through" type="date" max={maxLockDate} bind:value={unlockThrough} />
 					</div>
 					<div class="grow">
 						<label for="books-unlock-motif" class="block text-sm font-medium mb-1">

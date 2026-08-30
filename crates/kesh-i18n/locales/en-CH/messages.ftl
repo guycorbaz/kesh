@@ -346,6 +346,7 @@ settings-books-lock-set = Lock through
 settings-books-lock-release = Unlock
 settings-books-lock-motif = Reason for unlocking
 settings-books-lock-motif-required = A reason is required to unlock.
+settings-books-lock-bound-not-past = The lock boundary must be earlier than today: locking through today would refuse any correction made today.
 journal-entries-books-locked-banner = Books locked through { $date } inclusive — no entry can be dated on or before it.
 
 # Bilingual tooltips for accounting terms (Story 3.5)

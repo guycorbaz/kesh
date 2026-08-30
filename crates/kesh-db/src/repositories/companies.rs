@@ -278,6 +278,17 @@ pub async fn update(
 // Story 24-4c (#380) — le verrou de période
 // ---------------------------------------------------------------------------
 
+/// Code de refus — la borne proposée n'est pas strictement passée.
+///
+/// ⛔ **C'est un CODE, pas un message.** `DbError::InvalidInput` est confronté
+/// par `AppError` à une **liste blanche stricte** ; tout code inconnu retombe
+/// sur « Entrée invalide », sans date ni raison. Le code doit donc être ajouté
+/// au dispatch de `kesh-api/src/errors.rs` **et** aux quatre catalogues.
+pub const BOOKS_LOCK_BOUND_NOT_PAST: &str = "booksLockBoundNotPast";
+
+/// Code de refus — le déverrouillage exige un motif non blanc.
+pub const BOOKS_UNLOCK_MOTIF_REQUIRED: &str = "booksUnlockMotifRequired";
+
 /// Pose ou **avance** la borne du verrou de période.
 ///
 /// Autorisé aux rôles **Admin et Comptable** : verrouiller est un geste
@@ -306,10 +317,13 @@ pub async fn lock_books(
     company_id: i64,
     through: NaiveDate,
 ) -> Result<Company, DbError> {
+    // ⚠️ `InvalidInput` transporte un **CODE**, jamais une phrase : `AppError`
+    // le confronte à une liste blanche stricte (`errors.rs`, whitelist B13) et
+    // retombe sur « Entrée invalide » pour tout code inconnu. Une phrase
+    // française y arriverait donc **sans date, sans raison et sans quoi faire**
+    // — sur le geste même que cette garde existe pour rattraper.
     if through >= Utc::now().date_naive() {
-        return Err(DbError::InvalidInput(
-            "la borne du verrou doit être antérieure à aujourd'hui".into(),
-        ));
+        return Err(DbError::InvalidInput(BOOKS_LOCK_BOUND_NOT_PAST.into()));
     }
 
     let mut tx = pool.begin().await.map_err(map_db_error)?;
@@ -382,9 +396,7 @@ pub async fn unlock_books(
     motif: String,
 ) -> Result<Company, DbError> {
     if motif.trim().is_empty() {
-        return Err(DbError::InvalidInput(
-            "un motif est obligatoire pour reculer ou retirer le verrou de période".into(),
-        ));
+        return Err(DbError::InvalidInput(BOOKS_UNLOCK_MOTIF_REQUIRED.into()));
     }
 
     // ⛔ La MÊME garde de date que `lock_books`, et son absence ici était un
@@ -399,9 +411,7 @@ pub async fn unlock_books(
     if let Some(d) = through
         && d >= Utc::now().date_naive()
     {
-        return Err(DbError::InvalidInput(
-            "la borne du verrou doit être antérieure à aujourd'hui".into(),
-        ));
+        return Err(DbError::InvalidInput(BOOKS_LOCK_BOUND_NOT_PAST.into()));
     }
 
     let mut tx = pool.begin().await.map_err(map_db_error)?;
@@ -420,6 +430,25 @@ pub async fn unlock_books(
         }
         Some(v) => v,
     };
+
+    // ⛔ Ce point d'entrée RECULE ou RETIRE — il n'avance pas. Sans cette garde,
+    // un Admin pouvait y poster une date POSTÉRIEURE à la borne courante :
+    // le verrou avançait, et le journal d'audit écrivait `books.unlocked`.
+    //
+    // ⚠️ Le doc-comment de cette fonction affirme deux écrans plus haut que
+    // `books.unlocked` a **un seul producteur**, le déverrouillage délibéré. Le
+    // laisser produire une AVANCÉE ferait mentir le verbe, et le réviseur qui
+    // filtre « qui a déverrouillé » lirait une pose. *Une garde de valeur
+    // manquante ne crée pas ici de faille de droits — elle corrompt la trace.*
+    if let (Some(avant), Some(vise)) = (before, through)
+        && vise > avant
+    {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Err(DbError::IllegalStateTransition(format!(
+            "les livres sont verrouillés jusqu'au {avant} — avancer la borne relève de la pose \
+             (`lock_books`), pas du déverrouillage"
+        )));
+    }
 
     sqlx::query("UPDATE companies SET books_locked_through = ? WHERE id = ?")
         .bind(through)

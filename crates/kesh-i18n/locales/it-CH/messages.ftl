@@ -346,6 +346,7 @@ settings-books-lock-set = Bloccare fino al
 settings-books-lock-release = Sbloccare
 settings-books-lock-motif = Motivo dello sblocco
 settings-books-lock-motif-required = È obbligatorio un motivo per sbloccare.
+settings-books-lock-bound-not-past = Il limite del blocco deve essere anteriore a oggi: bloccare fino a oggi rifiuterebbe qualsiasi correzione effettuata oggi.
 journal-entries-books-locked-banner = Libri bloccati fino al { $date } incluso — nessuna scrittura può esservi datata.
 
 # Tooltip bilingue termini contabili (Story 3.5)

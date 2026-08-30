@@ -702,3 +702,112 @@ async fn la_cloture_ne_touche_pas_la_borne(pool: MySqlPool) {
             .unwrap();
     assert_eq!(apres, Some(borne), "clôturer ne doit pas toucher la borne");
 }
+
+// ---------------------------------------------------------------------------
+// AC 3 · AC 6 — l'endpoint de LEVÉE porte les mêmes gardes de valeur
+// ---------------------------------------------------------------------------
+
+/// ⛔ **La garde de date manquait sur `unlock_books`, et rien ne l'exerçait.**
+/// Un Admin pouvait y poser une borne **future** — d'un clic dans le formulaire
+/// de déverrouillage, qui n'a aucun garde-fou visuel — et refuser du même coup
+/// toute création d'écriture datée d'aujourd'hui, **contre-passation comprise**.
+/// C'est-à-dire casser l'invariant I2, « le verrou n'enferme pas », que toute la
+/// vague 24-4a → 24-4c existe pour tenir.
+///
+/// ⚠️ Ce test existe parce que la garde a été **livrée sans lui** en passe 1 de
+/// revue, et que le journal de cette passe déclarait deux réserves qui portaient
+/// sur autre chose. *Une garde qu'aucun test n'exerce se supprime au prochain
+/// refactor sans que rien ne rougisse.*
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn le_deverrouillage_refuse_une_borne_future(pool: MySqlPool) {
+    let (app, token, _company_id, _fy) = setup(&pool).await;
+    let (st, _) = poser_verrou(&app, &token, hier()).await;
+    assert_eq!(st, 200);
+
+    for cible in [
+        Utc::now().date_naive() + chrono::Duration::days(1),
+        Utc::now().date_naive(),
+    ] {
+        let (st, _) = lever_verrou(&app, &token, Some(cible), "motif valable").await;
+        assert_eq!(
+            st, 400,
+            "une borne {cible} posée par la LEVÉE doit être refusée comme par la pose"
+        );
+    }
+}
+
+/// ⛔ **Reculer la borne d'un cran** — la moitié de `unlock_books` que rien
+/// n'exerçait : les quatre appels du fichier passaient tous `None`, donc seule
+/// la suppression totale était testée, jamais le recul.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn le_deverrouillage_recule_effectivement_la_borne(pool: MySqlPool) {
+    let (app, token, _company_id, _fy) = setup(&pool).await;
+    let haute = Utc::now().date_naive() - chrono::Duration::days(10);
+    let basse = Utc::now().date_naive() - chrono::Duration::days(40);
+
+    let (st, _) = poser_verrou(&app, &token, haute).await;
+    assert_eq!(st, 200);
+
+    let (st, body) = lever_verrou(&app, &token, Some(basse), "le T2 doit être rouvert").await;
+    assert_eq!(st, 200, "reculer d'un cran doit passer : {body}");
+    assert_eq!(
+        body["booksLockedThrough"].as_str(),
+        Some(basse.to_string().as_str()),
+        "la borne doit avoir effectivement reculé : {body}"
+    );
+}
+
+/// ⛔ **L'endpoint de LEVÉE ne peut pas AVANCER la borne** — sinon le verrou
+/// avancerait sous une entrée d'audit `books.unlocked`, et le doc-comment de la
+/// fonction affirmerait faux : ce verbe a **un seul producteur**, le
+/// déverrouillage délibéré.
+///
+/// ⚠️ Pas de faille de droits ici — la route est Admin seule. Ce qui se
+/// corrompt, c'est la **trace** : le réviseur qui filtre « qui a déverrouillé »
+/// lirait une pose.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn le_deverrouillage_ne_peut_pas_avancer_la_borne(pool: MySqlPool) {
+    let (app, token, _company_id, _fy) = setup(&pool).await;
+    let basse = Utc::now().date_naive() - chrono::Duration::days(40);
+    let (st, _) = poser_verrou(&app, &token, basse).await;
+    assert_eq!(st, 200);
+
+    let (st, body) = lever_verrou(
+        &app,
+        &token,
+        Some(Utc::now().date_naive() - chrono::Duration::days(10)),
+        "tentative d'avancée par le mauvais verbe",
+    )
+    .await;
+    assert_eq!(st, 409, "avancer par la levée doit être refusé : {body}");
+
+    // La borne n'a pas bougé, et aucune entrée `books.unlocked` mensongère.
+    let apres: Option<chrono::NaiveDate> =
+        sqlx::query_scalar("SELECT books_locked_through FROM companies ORDER BY id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(apres, Some(basse));
+    let mensonges: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'books.unlocked'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(mensonges, 0, "un refus n'écrit aucune trace");
+}
+
+/// AC 3 — ⚠️ **le refus porte un CODE, pas une phrase.** `DbError::InvalidInput`
+/// est confronté à une liste blanche stricte côté API ; un code absent du
+/// dispatch retombe sur « Entrée invalide », sans date ni raison — sur le geste
+/// même que la garde existe pour rattraper.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn le_refus_de_borne_dit_pourquoi(pool: MySqlPool) {
+    let (app, token, _company_id, _fy) = setup(&pool).await;
+    let (_st, body) = poser_verrou(&app, &token, Utc::now().date_naive()).await;
+    let message = body["error"]["message"].as_str().unwrap_or_default();
+    assert!(
+        message.to_lowercase().contains("antérieure")
+            || message.to_lowercase().contains("aujourd'hui"),
+        "le refus doit expliquer, pas dire « Entrée invalide » : {message}"
+    );
+}

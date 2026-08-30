@@ -2706,6 +2706,19 @@ impl IntoResponse for AppError {
                             "credit-note-error-total-zero".to_string(),
                             "Cette facture est d'un montant total nul : aucun avoir ne peut être émis.",
                         ),
+                        // Story 24-4c (#380) — le verrou de période. ⛔ Sans ces
+                        // deux entrées, les refus de `lock_books` / `unlock_books`
+                        // retomberaient sur « Entrée invalide » : le geste que la
+                        // garde existe pour rattraper recevrait un message qui ne
+                        // dit ni la date, ni la raison, ni quoi faire.
+                        "booksLockBoundNotPast" => (
+                            "settings-books-lock-bound-not-past".to_string(),
+                            "La borne du verrou doit être antérieure à aujourd'hui : verrouiller le jour même refuserait toute correction faite aujourd'hui.",
+                        ),
+                        "booksUnlockMotifRequired" => (
+                            "settings-books-lock-motif-required".to_string(),
+                            "Un motif est obligatoire pour déverrouiller.",
+                        ),
                         // B13 (review pass 1 G2 B) : whitelist stricte —
                         // un code non listé ne doit PAS construire dynamiquement
                         // une clé FTL (potentielle pollution si le code provient

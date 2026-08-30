@@ -340,6 +340,7 @@ settings-books-lock-set = Verrouiller jusqu'au
 settings-books-lock-release = Déverrouiller
 settings-books-lock-motif = Motif du déverrouillage
 settings-books-lock-motif-required = Un motif est obligatoire pour déverrouiller.
+settings-books-lock-bound-not-past = La borne du verrou doit être antérieure à aujourd'hui : verrouiller le jour même refuserait toute correction faite aujourd'hui.
 journal-entries-books-locked-banner = Livres verrouillés jusqu'au { $date } inclus — aucune écriture ne peut y être datée.
 
 # Tooltips bilingues termes comptables (Story 3.5)

@@ -346,6 +346,7 @@ settings-books-lock-set = Sperren bis zum
 settings-books-lock-release = Entsperren
 settings-books-lock-motif = Grund der Entsperrung
 settings-books-lock-motif-required = Für die Entsperrung ist ein Grund erforderlich.
+settings-books-lock-bound-not-past = Die Sperrgrenze muss vor dem heutigen Tag liegen: eine Sperre auf den heutigen Tag würde jede heute vorgenommene Korrektur verweigern.
 journal-entries-books-locked-banner = Bücher gesperrt bis und mit { $date } — keine Buchung kann auf dieses Datum lauten.
 
 # Zweisprachige Tooltips Buchhaltungsbegriffe (Story 3.5)

@@ -425,7 +425,11 @@ Opus 5 (`claude-opus-5[1m]`) — implémentation du 2026-08-30.
 listes de colonnes de `companies` **écrites à la main** existent dans **cinq** endroits, pas
 un : la spec n'avait nommé que `serialize_company_csv`, alors que `routes/onboarding.rs` en
 portait **trois** (`:690`, `:856`, et la constante `:912`) et `kesh-seed/src/lib.rs` **une**.
-⚠️ *Le compte rendu annonçait quatre — recompté à la revue de code, `grep -c` à l'appui.* Les trois manquantes faisaient échouer
+⚠️ *Le compte rendu annonçait quatre — recompté deux fois en revue de code.* ⚠️ **« Endroit »
+compte ici les listes écrites à la main HORS `repositories/companies.rs`**, propriétaire du
+champ, qui en porte deux de plus (`FIND_BY_ID_SQL`, `LIST_SQL`) : sans cette convention le
+nombre est indécidable, et c'est ce flou qui a produit deux comptes faux d'affilée. **Les quatre
+manquantes** faisaient échouer
 l'onboarding en **500**, et **seule l'exécution réelle les a révélées** — c'est exactement ce
 que les garde-fous P6 et P7 disent de ce mode d'échec : *il ne naît ni du code écrit ni de la
 spec, mais de l'interaction avec ce que la story ne touche pas.*
@@ -466,7 +470,7 @@ l'utilisateur corriger la mauvaise chose.
 |---|---|
 | `cargo fmt --all -- --check` | propre |
 | `cargo clippy --workspace --all-targets -- -D warnings` | 0 warning |
-| `scripts/test-fast.sh`, base remise à zéro (KF-039) | **2275/2275**, 4 skipped *(2270 avant la passe 1 de revue de code, +5)* |
+| `scripts/test-fast.sh`, base remise à zéro (KF-039) | **2280/2280**, 4 skipped *(2270 à la livraison, +5 en passe 1 de revue, +5 en passe 2)* |
 | `npm run check` · `lint-i18n-ownership` · `test:unit` · `build` | 0 erreur · PASS · **740/740** · OK |
 | Playwright, suite **complète**, `kesh_e2e` **reconstruite** | **214 passés / 9 échoués — ZÉRO RÉGRESSION** |
 
@@ -547,7 +551,42 @@ doc-comments rendus à `version`, le décompte corrigé — et **cinq tests neuf
 **Gate après remédiation** — ciblage interdit (repository touché) : `test-fast.sh`
 **2275/2275** sur base remise à zéro.
 
-⚠️ **Deux réserves déclarées.** La passe n'a eu que **deux** lentilles au lieu des trois du
+### Revue de code — passe 2, 2026-08-30 · Opus 5, contexte frais, CIBLÉE sur `f5c71403`
+
+Prompt versionné dans `24-4c-code-review-prompt-regression-hunter-p2.md`.
+**0 CRITICAL, 1 HIGH, 3 MEDIUM, 3 LOW — soit sept, dont SIX nés du patch de la passe 1.**
+
+| # | sév. | ce qui était faux |
+|---|---|---|
+| R1 | HIGH | ⛔ **la garde HIGH de la passe 1 était livrée SANS AUCUN TEST**, et le journal déclarait deux réserves qui portaient sur autre chose. ⚠️ *La case cochée qui ment — dans le commit qui la dénonce en gras.* Corollaire : `unlock_books` n'était exercée que sur sa moitié, les quatre appels passant tous `None` |
+| R2 | MEDIUM | ⛔ `DbError::InvalidInput` transporte un **CODE** confronté à une **liste blanche stricte**, pas une phrase : mes deux refus arrivaient à l'écran en « **Entrée invalide** », sans date ni raison — sur le geste même que la garde existe pour rattraper. ⚠️ **J'avais copié l'idiome cassé de `lock_books` au lieu de le voir** |
+| R3 | MEDIUM | le décompte corrigé se contredisait : « **cinq** endroits… les **trois** manquantes ». 1 + 3 + 1 = 5 ⇒ **quatre** manquantes |
+| R4 | MEDIUM | `unlock_books` pouvait toujours **AVANCER** la borne, sous une entrée d'audit `books.unlocked` — alors que son propre doc-comment affirme que ce verbe a **un seul producteur** |
+| R5 | LOW | le bras neuf publiait `projectId: null` là où tous les autres codes **omettent** la clé |
+| R6 | LOW | la justification d'un contre-test était **fausse** — ⚠️ *démontrée par MUTATION* : le test principal rougit sans le bras, le contre-test passe inchangé |
+| R7 | LOW | le mappage d'`accept_one_rule` était une **copie manuelle** du même code, non testée |
+
+✅ **La piste que la passe 1 avait ouverte est FERMÉE** : la lentille a refait le recensement de
+tous les `match` sur `DbError` — `opening_balances`, `imported_supplier_invoices`,
+`settle_invoice_handler`, les quatre `ReconciliationError::Db` — et **aucun autre repli** ne
+laisse passer `PeriodLocked` sans le nommer.
+
+⛔ **R1 est le finding qui compte, et il est de la même famille que le pire de la passe 1.**
+Deux stories de suite, puis **une passe de revue de suite**, ont déclaré faite une couverture
+qui n'existait pas. ⇒ *Le geste manquant n'est pas une lentille de plus : c'est de greper, avant
+d'écrire le journal, le nom de chaque fonction corrigée dans `crates/*/tests/` et de vérifier
+qu'un test la nomme.* À verser à la rétrospective avec la case cochée qui ment.
+
+**Remédiation** : deux codes canoniques ajoutés au dispatch et aux quatre catalogues, la garde
+d'avancée sur `unlock_books`, un constructeur unique `period_locked_failed_proposal` pour les
+deux sites du batch, le `max` sur les deux champs date, la justification du contre-test
+réécrite, le décompte tranché **et** la convention de comptage définie — et **cinq tests
+neufs**, dont les quatre qui exercent enfin `unlock_books` sur ses deux moitiés.
+
+**Gate après remédiation** : `test-fast.sh` **2280/2280** sur base remise à zéro ; frontend
+0 erreur, lint-i18n PASS, 740/740.
+
+⚠️ **Réserve maintenue.** La passe 1 n'a eu que **deux** lentilles au lieu des trois du
 protocole. Et l'AC 4 est désormais tenue pour la **facture** (test E2E) et pour le **mappage**
 du rapprochement (test unitaire du code fautif), mais **pas par un rapprochement bancaire
 complet de bout en bout** : le montage coûte davantage que ce que la garde restante justifie, et
