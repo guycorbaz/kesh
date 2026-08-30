@@ -2,7 +2,7 @@
 
 ## Status
 
-in-progress
+review
 
 ## Story
 
@@ -416,7 +416,7 @@ qu'il faut faire au lieu de laisser l'utilisateur découvrir un refus.
 - [x] **T8 — Les gates** (⛔ complets, ciblage interdit — exception `kesh-db`)
   - [x] base remise à zéro (KF-039), puis `scripts/test-fast.sh`
   - [x] `npm run check` / `lint-i18n-ownership` / `test:unit` / `build`
-  - [ ] suite Playwright complète, comparée à la baseline de `docs/testing.md`
+  - [x] suite Playwright complète, comparée à la baseline de `docs/testing.md`
   - [x] ⛔ **l'issue de D5 est OUVERTE** (jalon « Vague 1 »), et son numéro reporté dans le commentaire d'`invoices::delete` — sans porteur, elle n'existerait jamais, et la § *Issue Tracking Rule* fait de GitHub la source de vérité unique
 
 ## Hors périmètre
@@ -581,6 +581,43 @@ Opus 5 (`claude-opus-5[1m]`) — implémentation du 2026-08-30.
 | clés par catalogue (les quatre) | 1687 | **1678** | −11 retirées, +2 ajoutées |
 | passages du manuel repris | — | **8** | les sept de la spec, plus `:328` |
 
+### Gates réellement exécutés
+
+| gate | résultat |
+|---|---|
+| `cargo fmt --all -- --check` | propre |
+| `cargo clippy --workspace --all-targets -- -D warnings` | 0 warning |
+| `scripts/test-fast.sh`, base remise à zéro avant (KF-039) | **2258/2258**, 4 skipped |
+| `npm run check` · `lint-i18n-ownership` · `test:unit` · `build` | 0 erreur · PASS · **740/740** · OK |
+| Playwright, suite **complète**, base `kesh_e2e` **reconstruite** | **212 passés / 11 échoués — ZÉRO RÉGRESSION** |
+
+⛔ **Le premier run E2E a rendu SEIZE échecs, et il ne fallait pas s'en contenter.** L'un
+d'eux — `journal-entries.spec.ts:492` — tombait dans le fichier que cette story modifie.
+Rejoué seul : **17/17**, `:492` compris. C'était de la pollution d'état.
+
+⚠️ **La base `kesh_e2e` n'avait été que MIGRÉE, pas reconstruite.** La baseline du dépôt a été
+relevée sur une base reconstruite ; la reconstruire a fait tomber **cinq** des neuf échecs
+excédentaires. C'est la § *« Un gate laisse la base piégée »* du `CLAUDE.md`, appliquée au
+harnais E2E où elle n'était pas écrite.
+
+**Ventilation des onze échecs du second run**, chacun tranché et aucun laissé sur une
+impression :
+
+| échecs | verdict |
+|---|---|
+| 7 | **KF-029 (#97)**, à la ligne près — la baseline connue |
+| 2 | **KF-045 (#421)** — `invoices.spec.ts:405` et `:429`, ouverte à cette occasion |
+| 2 | pollution d'état (`reconciliation-rules.spec.ts:37`, `reports.spec.ts:306`) — **passent rejoués seuls** |
+
+⛔ **La KF-045 est une trouvaille de ce gate, et elle est préexistante.** Les deux tests
+échouent **rejoués seuls**, donc hors de la pollution ; le helper poste un rappel manuel daté de
+`${today}T12:00:00` que la route compare à `Utc::now().naive_utc()` — tant qu'il est plus tôt
+que **12:00 UTC**, midi est dans le futur et la route rend 422. ⚠️ **Vérifié sur `main` en
+worktree** (`d2910022`, binaire et base reconstruits) : ils échouent à l'identique. Ce n'est pas
+une régression de cette story. *Un test qui dépend de l'heure ne rougit que pour la moitié des
+gens qui le lancent.* `docs/testing.md` porte désormais les deux lignes et dit que le nombre
+d'échecs attendus dépend de l'heure.
+
 ### File List
 
 | fichier | nature |
@@ -607,6 +644,15 @@ Opus 5 (`claude-opus-5[1m]`) — implémentation du 2026-08-30.
 | `frontend/tests/e2e/fiscal-years.spec.ts` | UPDATE — JSDoc `:114` |
 | `docs/optimistic-locking-patterns.md` | UPDATE — la ligne 8 du tableau et « Variant A protégée » |
 | `docs/manual/fr/user-manual.tex` (+ `.pdf`) | UPDATE — 8 passages, PDF régénéré en deux passes |
+| `docs/testing.md` | UPDATE — les deux lignes de la KF-045 et le chapeau recompté |
+
+### Change Log
+
+| date | ce qui s'est passé |
+|---|---|
+| 2026-08-29 | **Spec** (`bmad-create-story`). Aucune migration, aucun statut `status` — l'effet de #380 sans sa colonne. |
+| 2026-08-29 | **Revue de spec, 4 passes**, rotation Sonnet + Haiku → Opus → Sonnet → Haiku, contextes frais, les trois dernières **ciblées** avec prompt versionné. **22 findings : 11 → 8 → 2 → 1**, dont **onze nés d'une remédiation** et, à partir de la passe 2, **la totalité**. ⚠️ Aucune décision de conception prise en défaut. Boucle close sur arbitrage de Guy. |
+| 2026-08-30 | **Implémentation** (`bmad-dev-story`). Gates ci-dessus. **KF-045 (#421)** ouverte — deux échecs E2E dépendants de l'heure, préexistants, vérifiés sur `main`. |
 
 ## Journal de revue
 
