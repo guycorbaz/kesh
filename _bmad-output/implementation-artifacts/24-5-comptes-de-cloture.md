@@ -1099,6 +1099,11 @@ côté serveur.
 9000/9100/9200, ceux mêmes que la story ferme. Aucun compte de contrepartie ou de charge légitime
 n'est concerné.
 
+**Gate complet après remédiation** — ciblage interdit (`kesh-db` touché), base remise à zéro :
+`fmt` et `clippy -D warnings` propres, `test-fast.sh` **2300/2300** (4 skipped, 92,2 s). Le
+décompte se recoupe : **2299 + 1 test neuf = 2300**. Frontend **non touché** par cette
+remédiation, son gate est sans objet (il l'avait été à la passe 3 et rejoué en entier).
+
 **Prochaine** : passe 5, **ciblée**, contexte frais. ⚠️ **Ne pas confier à Haiku 4.5** ce périmètre
 tant qu'il inclut un script exécutable : la passe 4 a lancé un script de release au lieu d'en lire
 la logique, malgré une interdiction explicite. Rotation → Sonnet 4.6 ou Opus 5.
