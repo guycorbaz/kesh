@@ -899,6 +899,70 @@ mod tests {
         );
     }
 
+    /// **Les justifications PÉRISSABLES ne sont pas laissées sans filet.**
+    ///
+    /// Une exemption peut reposer non sur la fenêtre d'importabilité ni sur une
+    /// propriété du schéma, mais sur un FAIT DATÉ — « aucune version publiée ne
+    /// se situe dans tel intervalle ». Ce fait-là cesse d'être vrai dès qu'on
+    /// publie, et rien dans le code ne le sait : le test ci-dessus ne contrôle
+    /// que le marqueur `Hors fenêtre`.
+    ///
+    /// `scripts/prepare-release.sh` affiche donc un rappel avant le tag, en
+    /// comptant le marqueur `SE PÉRIME`. Ce test est la garde de non-vacuité de
+    /// CE marqueur-là : sans elle, une reformulation de la justification, un
+    /// accent perdu ou une continuation `\` coupant la chaîne rendrait le
+    /// `grep` du script silencieusement vide — et le rappel ne s'afficherait
+    /// plus jamais, sans que rien ne rougisse.
+    ///
+    /// Jumeau de la garde de non-vacuité de
+    /// [`exemptions_claiming_out_of_window_really_are_out_of_window`] ; même
+    /// raison d'être, même nombre codé en dur À DESSEIN — l'incrémenter est le
+    /// geste qui force à relire la justification qu'on vient d'écrire.
+    ///
+    /// ⚠️ **Ce que chacune des deux assertions attrape, établi PAR MUTATION** —
+    /// la première seule ne suffisait pas, et son message le prétendait :
+    ///
+    /// - retirer l'accent de `PÉRIME` dans une justification existante → la
+    ///   **première** rougit (le marqueur a dérivé, le rappel serait muet) ;
+    /// - ajouter une exemption datée SANS le marqueur → la première **passe**,
+    ///   car elle ne compte que les entrées qui le portent déjà. Seule la
+    ///   **seconde** rougit, en constatant que le registre a grandi. C'est le
+    ///   même office que le `assert_eq!(checked, 6)` ci-dessus : le nombre codé
+    ///   en dur est le geste qui force à relire l'entrée qu'on vient d'écrire.
+    ///
+    /// Relevé en passe 2 de revue de code de la Story 24-5 (#375), finding P2-3.
+    #[test]
+    fn perishable_exemptions_carry_the_marker_the_release_script_greps() {
+        let marked: Vec<i64> = EXEMPT_MIGRATIONS
+            .iter()
+            .filter(|(_, justification)| justification.contains("SE PÉRIME"))
+            .map(|(version, _)| *version)
+            .collect();
+
+        assert_eq!(
+            marked,
+            vec![20260909000001],
+            "attendu exactement 1 exemption portant le marqueur « SE PÉRIME » \
+             (20260909000001, Story 24-5) sur {} — soit une justification datée a été ajoutée \
+             sans le marqueur (et le rappel de prepare-release.sh ne la verra JAMAIS), soit le \
+             marqueur a dérivé et ce rappel est devenu MUET. Le script compte cette chaîne \
+             exacte : `grep -c \"SE PÉRIME\" crates/kesh-db/src/post_restore.rs` (restreint au \
+             registre : le module de tests cite lui-même le marqueur).",
+            EXEMPT_MIGRATIONS.len()
+        );
+
+        // Une entrée AJOUTÉE sans le marqueur échappe à l'assertion ci-dessus —
+        // elle ne compte que celles qui le portent. Ce compteur-ci la voit.
+        assert_eq!(
+            EXEMPT_MIGRATIONS.len(),
+            11,
+            "le registre d'exemptions a changé de taille. Si l'entrée neuve repose sur un FAIT \
+             DATÉ (« aucune version publiée dans tel intervalle »), sa justification DOIT porter \
+             le marqueur « SE PÉRIME », faute de quoi aucune release ne la relira jamais. Sinon, \
+             bumper simplement ce nombre."
+        );
+    }
+
     /// **Fidélité de l'extrait.** Chaque statement de l'extrait de classe B doit
     /// être un sous-texte du SQL de la migration source tel qu'embarqué dans le
     /// `MIGRATOR`.

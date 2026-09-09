@@ -146,14 +146,48 @@ echo "  ✓ CHANGELOG.md : '$PATTERN' → '$REPLACEMENT'"
 #
 # Relevé en passe 1 de revue de code de la Story 24-5 (#375), finding BH-2.
 
-MIGRATIONS_PERISSABLES=$(grep -c "SE PÉRIME" crates/kesh-db/src/post_restore.rs || true)
+# ⚠️ On ne lit QUE le registre, pas le module de tests : la garde de non-vacuité
+# qui protège ce marqueur le cite elle-même (doc-comment et message d'échec), et
+# un `grep` sur le fichier entier compterait ces citations comme des exemptions.
+# Constaté en appliquant ce correctif : 5 au lieu de 1.
+REGISTRE_SRC=$(sed '/^#\[cfg(test)\]/,$d' crates/kesh-db/src/post_restore.rs)
+MIGRATIONS_PERISSABLES=$(printf '%s\n' "$REGISTRE_SRC" | grep -c "SE PÉRIME" || true)
 if [ "${MIGRATIONS_PERISSABLES:-0}" -gt 0 ]; then
   echo
   echo "⚠️  $MIGRATIONS_PERISSABLES exemption(s) de rejeu à justification PÉRISSABLE dans post_restore.rs."
   echo "    Chacune repose sur « aucune version publiée dans tel intervalle » — un fait"
   echo "    que CETTE release peut rendre faux, silencieusement et définitivement."
   echo "    ⇒ relire chaque justification marquée « SE PÉRIME » AVANT de poser le tag :"
-  grep -n "SE PÉRIME" crates/kesh-db/src/post_restore.rs | sed 's/^/      /'
+  printf '%s\n' "$REGISTRE_SRC" | grep -n "SE PÉRIME" | sed 's/^/      /'
+  echo
+
+  # La question décidable n'est PAS « quel est le dernier tag ? » : celui-là
+  # désigne la release PRÉCÉDENTE et ne dit rien du seul cas qui périme
+  # réellement une justification datée — une release préparée depuis un point de
+  # branchement ANTÉRIEUR à la migration exemptée (typiquement un hotfix sur une
+  # branche ancienne), qui publierait donc une version DANS l'intervalle que la
+  # justification déclare vide. On y répond en regardant si CETTE release
+  # emporte la migration.
+  #
+  # Chaque entrée du registre est `(<version>,\n "<justification>",)` : on
+  # retient la dernière version lue avant chaque marqueur.
+  VERSIONS_PERISSABLES=$(printf '%s\n' "$REGISTRE_SRC" | awk '
+    /^[[:space:]]*2[0-9]{13},[[:space:]]*$/ { v = $1; sub(/,$/, "", v) }
+    /SE PÉRIME/ { if (v != "") print v }
+  ' | sort -u)
+
+  echo "    Cette release emporte-t-elle la migration exemptée ?"
+  for version in $VERSIONS_PERISSABLES; do
+    if compgen -G "crates/kesh-db/migrations/${version}_*.sql" > /dev/null; then
+      echo "      ✓ $version — présente dans cet arbre : l'intervalle qu'elle déclare vide est"
+      echo "        refermé par cette release même, la justification tient."
+    else
+      echo "      ⛔ $version — ABSENTE de cet arbre. Cette release publierait une version DANS"
+      echo "         l'intervalle que la justification déclare vide : elle devient FAUSSE, et le"
+      echo "         backfill ne sera JAMAIS rejoué chez qui installera cette version."
+      echo "         ⇒ traiter AVANT de poser le tag (inscrire au registre, ou re-motiver)."
+    fi
+  done
   echo "    Dernier tag publié : $(git tag --sort=-creatordate | head -1) ($(git log -1 --format=%cs "$(git tag --sort=-creatordate | head -1)" 2>/dev/null || echo '?'))"
   echo
 fi

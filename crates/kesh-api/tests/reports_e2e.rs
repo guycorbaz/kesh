@@ -1931,9 +1931,16 @@ async fn posting_to_a_closed_closing_account_is_refused(pool: MySqlPool) {
     );
 
     // L'AC 13 porte sur le code d'erreur AUTANT que sur le statut : « avec son code
-    // d'erreur et son message ACTUELS, sans en inventer un neuf ». Sans cette
-    // assertion, un refus survenant pour une AUTRE raison — toujours en 400 — passerait
-    // pour la garde qu'on croit mesurer.
+    // d'erreur ACTUEL, sans en inventer un neuf ». Sans cette assertion, un refus
+    // survenant pour une AUTRE raison — toujours en 400 — passerait pour la garde
+    // qu'on croit mesurer.
+    //
+    // ⚠️ Le MESSAGE n'est délibérément pas asserté : il passe par
+    // `t("error-inactive-accounts", …)` et change avec la locale — l'asserter
+    // attacherait ce test à une traduction. C'est le patron du fichier (les quatre
+    // autres refus n'assertent que leur code). L'AC a été amendée en ce sens en
+    // passe 2 de revue de code (finding P2-5) ; son libellé d'origine demandait
+    // « son code d'erreur ET son message », que ce test ne tenait qu'à moitié.
     let body: Value = resp.json().await.unwrap();
     assert_eq!(
         body["error"]["code"], "INACTIVE_OR_INVALID_ACCOUNTS",

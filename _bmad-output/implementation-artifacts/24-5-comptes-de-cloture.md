@@ -301,7 +301,16 @@ un **symptôme visible**, pas un bug, et c'est par là qu'un utilisateur peut se
     ni dans le report à nouveau du bilan.
 13. La postabilité est déjà appliquée à la saisie (Story 14-3b) : **aucun nouveau refus n'est à
     écrire**. Un test vérifie que le refus existant se déclenche bien sur ces comptes — ⚠️ **avec
-    son code d'erreur et son message actuels, sans en inventer un neuf.**
+    son code d'erreur actuel, sans en inventer un neuf.**
+
+    *(Amendée en passe 2 de revue de code, finding P2-5. Le libellé d'origine disait « son code
+    d'erreur **et son message** actuels », et le test n'assertait que le code — l'AC était donc
+    déclarée tenue sur une moitié de ce qu'elle demandait. Ce n'est pas le test qu'on corrige,
+    c'est l'AC : le message passe par `t("error-inactive-accounts", …)` et **change avec la
+    locale**, si bien que l'asserter attacherait le test à une traduction. Le patron du dépôt
+    tranche déjà ainsi — `grep -cF '["error"]["message"]' crates/kesh-api/tests/reports_e2e.rs`
+    rend **0** sur les quatre refus qu'y assertent déjà leur code. Le comportement exigé est
+    inchangé : aucun changement de périmètre, donc pas de CR.)*
 
 ## Invariants testables
 
@@ -810,12 +819,108 @@ zéro, `test-fast.sh` **2295/2295** en 83 s, fmt et clippy propres. ⚠️ *Le t
 c'est correct : la remédiation renforce un test existant (l'assertion du code d'erreur), elle n'en
 ajoute pas.* PDF du manuel régénéré (62 p.).
 
-✅ **Ce que les trois lentilles ont confirmé exact** : les 13 AC (**15 TENU sur 16**, aucun NON
-TENU, **aucun test muet**), les trois causes d'`is_postable` et leur ordre, les 3 × 3 annotations
+✅ **Ce que les trois lentilles ont confirmé exact** : les 13 AC (**15 TENU sur 16 — soit
+13 AC + 3 invariants, le seizième étant I1**, amendé en passe 1 puis tenu sous sa forme amendée ;
+aucun NON TENU, **aucun test muet**), les trois causes d'`is_postable` et leur ordre, les 3 × 3 annotations
 JSON, l'idempotence et la portée de la migration, tous les compteurs recomptés depuis la source
 (66 migrations, `yes` 6, `tracked-by-sqlx` 60), le `sha384` recalculé, le fait `v0.11.1 <
 20260827000001`, l'issue #426, et les 14 tests neufs. **BlindHunter a exécuté `fmt`, `build
 --all-targets` et `clippy -D warnings` : verts.**
+
+### Passe 2 — 2026-09-09 · Opus 5, contexte frais, **ciblée** sur `2bf9568d`, prompt versionné
+
+**0 CRITICAL, 0 HIGH, 3 MEDIUM, 3 LOW.** Sévérité en recul (P1 : 1 HIGH / 2 MED / 2 LOW),
+convergence monotone, pas de split. **Cinq findings sur six naissent de la remédiation** ; aucun ne
+met en défaut la conception d'origine ni le code livré en `2ba9613d`. Tous **vérifiés au sol par
+l'orchestrateur** avant d'être traités comme réels — aucun faux positif.
+
+⛔ **P2-1 (MED) — LE MANUEL, TROISIÈME TOUR, ET LE DÉFAUT PRIS PAR L'AUTRE BOUT.** La passe 1 avait
+trouvé un manuel qui promettait une protection absente ; sa remédiation en a écrit un qui annonce
+un **trou largement absent**. Le `keshnote` neuf disait « validation d'une facture, avoir,
+rapprochement bancaire ne la vérifient pas » — or `invoices.rs:567` rejette explicitement un compte
+de produit non imputable (`RevenueAccountRejection::NotPostable`, D3-bis de la 16-1a), et les trois
+modales de réconciliation écartent toutes un 9000 : par préfixe de classe (`['5','6','7']`) pour
+`ManualMatchModal` et `TransactionSplitModal`, par `a.postable` pour `RuleFormModal`. Le manuel
+**utilisateur** disait donc à son lecteur « l'écriture passera » d'un geste que son écran ne lui
+permet pas de faire ; le trou réel est **serveur seulement**, atteignable par clé API. ⚠️ **Et la
+remédiation s'était ADOSSÉE au jumeau préexistant `:328`** (« Les flux automatiques ne sont pas
+concernés », faux depuis la 16-1a) au lieu de le vérifier — alors que c'est le paragraphe même que
+la passe 1 avait lu pour établir sa contradiction. Les deux sites corrigés dans le même patch,
+PDF régénéré (62 p., ancien texte absent, neuf présent — vérifié sur texte aplati, un `grep` naïf
+échouant sur les césures).
+
+⛔ **P2-2 (MED) — trois résidus P6 de plus, et le compte rendu déclarait le balayage terminé.**
+`:117` disait « joue les **30** restantes » quand 66 − 34 = **32** — jumeau exact de la ligne
+corrigée quinze lignes plus haut, dans le même paragraphe de raisonnement ; `:119-120` portait un
+exemple arithmétiquement faux (65 − 29 = 36, pas 35) **et** périmé ; `:155-156` commentait `- 32`
+en disant `- 29`. Le finding ne porte pas sur du code écrit par la remédiation — `git blame` les
+donne antérieurs — mais sur sa **déclaration** : le grep structurel annoncé (`total - <N>`) ne
+pouvait rendre ni « les 30 restantes » ni « `- 29` ».
+
+⛔ **ET LE GREP DE PROPAGATION A RENDU UN QUATRIÈME RÉSIDU QUE LA LENTILLE N'AVAIT PAS VU** :
+`:234`, « appliquer les **29** migrations restantes », dans la même fonction et sur la même fenêtre.
+*La leçon de la passe 1 se confirme d'un cran : greper le motif structurel ne suffit pas non plus —
+c'est l'**intervalle de valeurs plausibles** (`\b(2[4-9]|3[0-9]|4[01])\b`) qu'il faut balayer, en
+triant à la main les généalogies historiques.* Les deux généalogies délibérées (`total == 39`,
+`total - 8`) ont été laissées intactes, comme le prescrivait le prompt.
+
+⛔ **P2-3 (MED) — le filet posé en passe 1 était muet par construction, sur trois volets.**
+*(a)* Aucun test ne lisait le marqueur « SE PÉRIME », alors que son marqueur frère « Hors fenêtre »
+a une garde de non-vacuité codée en dur dont le commentaire dit exactement pourquoi. *(b)* Le datum
+affiché (« dernier tag publié ») désigne la release **précédente** et ne décide pas la question :
+le seul cas qui périme une justification datée est une release préparée depuis un point de
+branchement **antérieur** à la migration exemptée. *(c)* Le script se disait « seul point de
+passage de toute release » alors qu'il n'était nommé **nulle part** — une seule occurrence dans
+tout le dépôt, la ligne d'inventaire `CLAUDE.md:42`. *Un garde-fou hors de la procédure qu'il garde
+n'est pas un garde-fou.*
+
+⛔ **ET LA REMÉDIATION A CASSÉ LE GARDE-FOU QU'ELLE ÉCRIVAIT, CE QUI L'A ÉTABLIE.** Le test neuf
+cite le marqueur dans son doc-comment et son message d'échec : le `grep -c` du script est passé de
+**1 à 5** — il aurait annoncé cinq exemptions périssables pour une. Corrigé en restreignant la
+lecture au registre (`sed '/^#\[cfg(test)\]/,$d'`), et le motif est consigné dans le script.
+*C'est le motif de la vague, observé cette fois sur soi-même, dans le geste même qui le combat.*
+
+⛔ **ET L'ÉPREUVE PAR MUTATION A MONTRÉ QUE LE TEST NE TENAIT QUE LA MOITIÉ DE CE QU'IL DÉCLARAIT.**
+Mutation 1 (accent de `PÉRIME` retiré) : **rougit** ✅. Mutation 2 (exemption datée ajoutée **sans**
+le marqueur) : **passe** ❌ — alors que le message d'assertion promettait les deux cas. Une seconde
+assertion (`EXEMPT_MIGRATIONS.len() == 11`) ferme le cas, rejouée sous mutation : rougit. *Un test
+qui passe ne prouve pas qu'il teste — et un message d'échec qui promet plus que son assertion est
+la même faute que celle qu'on reproche au manuel.*
+
+**P2-4 (LOW)** — l'issue #427 présentait comme transcript une sortie dont la ligne
+`1416: invoice_settlements::create_in_tx(` avait été retirée et dont quatre lignes étaient abrégées
+en `...`, sous un motif de grep plus large que la conclusion. Conclusion exacte, mais *un
+transcript retouché n'est plus une vérification au sol*. Corps rectifié, commande resserrée à
+`journal_entries::create_in_tx\(`, labels `triage` + `technical-debt` posés (le template les
+prévoit, la conclusion « catégorie A » appelle le second).
+
+**P2-5 (LOW)** — l'AC 13 exigeait « son code d'erreur **et son message** » ; le test n'assertait que
+le code, et l'AC était déclarée tenue. **C'est l'AC qu'on amende, pas le test** : le message passe
+par `t("error-inactive-accounts", …)` et change avec la locale — l'asserter attacherait le test à
+une traduction, et le patron du dépôt tranche déjà ainsi (0 assertion de message sur les quatre
+refus du même fichier). Comportement exigé inchangé, donc pas de CR. ⚠️ **Le grep de propagation a
+rendu un résidu** : le commentaire du test citait l'ancien libellé pour justifier son assertion —
+aligné. Le journal de la passe 1, lui, garde sa citation d'époque : c'est un compte rendu daté.
+
+**P2-6 (LOW)** — « les 13 AC (15 TENU sur 16) » : un total sans sa ventilation. Recompté depuis la
+source (13 AC, 3 invariants I1/I2/I3, 8 tâches T1..T8), la ventilation est désormais écrite, et le
+seizième item nommé.
+
+✅ **Ce que la passe a vérifié et trouvé exact** : le PDF **avait bien** été régénéré en passe 1
+(62 p.) ; l'assertion neuve vise le bon code, mappage tracé de bout en bout `enforce_postable` →
+`DbError::InactiveOrInvalidAccounts` → `400` / `"INACTIVE_OR_INVALID_ACCOUNTS"` ; les cinq
+compteurs d'audit se recoupent (66 ; `yes` 6 + `tracked-by-sqlx` 60 + `no` 0) ; les 14 tests neufs
+et `2281 + 14 = 2295` ; tout le reste de l'issue #427 à la ligne près ; les autres sites P6 du
+dépôt passent tous par `migrations_before(<version>)` — résolution par version, insensible aux
+ajouts futurs. `fmt`, `check --all-targets` et `clippy -D warnings` verts.
+
+⚠️ **Limite déclarée de la passe** : ni la suite complète ni Playwright n'ont tourné pendant la
+lentille — interdits par l'orchestrateur, `kesh_e2e` étant alors en reconstruction. Le « 2295/2295 »
+de l'implémentation n'a donc pas été revérifié **par la lentille** ; il l'a été par le gate ci-dessous.
+
+**Prochaine** : passe 3, **ciblée** sur le commit de remédiation de celle-ci, contexte frais,
+Sonnet 4.6 (rotation), prompt versionné. La boucle n'est pas close : trois MEDIUM au-dessus de LOW,
+et la remédiation touche du code de production.
 
 ## Dev Agent Record
 

@@ -114,10 +114,10 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     //
     // Frontière actuelle : **34**. Le test applique donc les 34 premières
     // migrations (jusqu'à `20260613000001_vat_rates_crud` incluse), seede des
-    // données, puis joue les 30 restantes comme « fenêtre d’upgrade ».
+    // données, puis joue les 32 restantes comme « fenêtre d’upgrade ».
     //
-    // ⚠️ `N` DOIT être incrémenté en même temps que `total`. Le laisser à 29
-    // avec `total = 65` porterait la frontière à 35 : le test continuerait de
+    // ⚠️ `N` DOIT être incrémenté en même temps que `total`. Le laisser à 31
+    // avec `total = 66` porterait la frontière à 35 : le test continuerait de
     // passer en testant une fenêtre plus étroite d'une migration.
     // Story 16-1a : 21 → 22, frontière inchangée (56 - 22 = 55 - 21 = 34).
     // Story 16-1a-bis : 22 → 23, frontière inchangée (57 - 23 = 34).
@@ -152,9 +152,10 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // du même symptôme dans le même fichier, découverts un par passe. Ce qui
     // reste ouvert n'est plus documentaire, c'est la décision de périmètre
     // ci-dessus.
-    // ⚠️ `- 29` et non `- 28` depuis la Story 24-3 (même geste qu'en 24-2) : c'est la FRONTIÈRE (34) qui
-    // est l'invariant voulu, pas la taille de la fenêtre. Garder `- 25` aurait
-    // déplacé le point de départ à la 36ᵉ migration et changé le chemin
+    // ⚠️ `- 32` et non `- 31` depuis la Story 24-5 (même geste qu'en 24-2, 24-3,
+    // 24-4a et 24-4c) : c'est la FRONTIÈRE (34) qui
+    // est l'invariant voulu, pas la taille de la fenêtre. Garder `- 31` aurait
+    // déplacé le point de départ à la 35ᵉ migration et changé le chemin
     // d'upgrade réellement testé — sans que rien ne le signale. La fenêtre
     // s'élargit donc d'un cran à chaque migration ajoutée, ce qui est le sens
     // voulu : « depuis un socle figé, jusqu'à la dernière du dépôt ».
@@ -230,7 +231,7 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     .await
     .expect("INSERT invoice failed");
 
-    // Étape 3 : appliquer les 29 migrations restantes via MIGRATOR.run().
+    // Étape 3 : appliquer les 32 migrations restantes via MIGRATOR.run().
     kesh_db::MIGRATOR
         .run(&pool)
         .await

@@ -325,7 +325,7 @@ Lors de la mise à jour vers cette version, Kesh a \textbf{pré-attribué les r�
 \end{keshwarning}
 
 \begin{keshnote}
-Dans cette version, l'indicateur \emph{postable} \textbf{bloque la saisie manuelle} : Kesh refuse une écriture saisie à la main dont une ligne vise un compte non-postable — typiquement un compte de regroupement ou le compte de résultat. Les flux automatiques (factures, avoirs, réconciliation) ne sont pas concernés. \textbf{Une écriture déjà enregistrée ne se modifie plus du tout} : depuis la version qui introduit le gel, elle se corrige par contre-passation (voir «~Corriger une écriture~»).
+Dans cette version, l'indicateur \emph{postable} \textbf{bloque la saisie manuelle} : Kesh refuse une écriture saisie à la main dont une ligne vise un compte non-postable — typiquement un compte de regroupement ou le compte de résultat. Les flux automatiques ne le vérifient pas tous~: la validation d'une facture contrôle bien le compte de produit de chaque ligne, le rapprochement bancaire non — mais ses écrans n'offrent pas de compte non-postable. \textbf{Une écriture déjà enregistrée ne se modifie plus du tout} : depuis la version qui introduit le gel, elle se corrige par contre-passation (voir «~Corriger une écriture~»).
 \end{keshnote}
 
 \subsection{Les comptes de clôture 9000, 9100 et 9200}
@@ -335,7 +335,7 @@ Les plans comptables livrés avec Kesh comportent une classe~9 — \emph{Bilan d
 \textbf{Kesh n'en passe aucune}~: le bilan, le compte de résultat et le report à-nouveau sont \textbf{recalculés en permanence} à partir de vos écritures. Ces trois comptes n'ont donc, ici, aucun usage — et Kesh \textbf{refuse toute écriture saisie à la main} qui les vise, exactement comme pour le compte \emph{Résultat de l'exercice}, dont il calcule aussi le solde.
 
 \begin{keshnote}
-\textbf{Cette protection porte sur la saisie manuelle}, comme l'indicateur \emph{postable} en général (voir «~Rôles des comptes~»). Les flux automatiques — validation d'une facture, avoir, rapprochement bancaire — ne la vérifient pas~: si vous désignez vous-même un compte de clôture comme contrepartie d'un rapprochement, l'écriture passera. Ne le faites pas.
+\textbf{Cette protection porte sur la saisie manuelle}, comme l'indicateur \emph{postable} en général (voir «~Rôles des comptes~»). Les autres chemins d'écriture ne vous y exposent pas davantage~: la validation d'une facture refuse un compte de produit non imputable, et les écrans de rapprochement bancaire ne vous proposent pas ces comptes-là. Seule une intégration appelant directement l'interface de programmation pourrait encore les viser.
 \end{keshnote}
 
 \begin{keshwarning}
