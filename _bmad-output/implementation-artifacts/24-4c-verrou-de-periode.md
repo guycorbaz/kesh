@@ -509,6 +509,14 @@ ayant tout emporté. La règle « un gate laisse la base piégée » a donc ici 
 circonstance, après le gate interrompu et le gate terminé : *le conteneur redémarré*. Dans les
 trois cas le geste est le même, et il est inconditionnel.
 
+**Gate frontend de contrôle du 2026-09-09, avant l'ouverture de la PR** : les quatre passes de
+revue de code ont touché le frontend (`settings.types.ts`, `settings/+page.svelte`) **après** le
+gate frontend de livraison, qui ne les couvrait donc pas. Rejoué en entier : `npm run check`
+**0 erreur** (27 warnings préexistants), `lint-i18n-ownership` **PASS**, `test:unit`
+**740/740** en 36,2 s, `build` **OK**. ⚠️ Le backend et la suite E2E ne sont pas rejoués : le
+gate backend a tourné **après** la passe 4 (`test-fast.sh` 2281/2281, base remise à zéro) et le
+run E2E de contrôle lui est postérieur — c'est le seul segment qui manquait.
+
 ### File List
 
 | fichier | nature |
