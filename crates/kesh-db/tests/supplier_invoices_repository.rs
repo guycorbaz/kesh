@@ -338,6 +338,42 @@ async fn pay_cancelled_invoice_rejected(pool: MySqlPool) {
     assert!(matches!(err, DbError::IllegalStateTransition(_)));
 }
 
+/// ⛔ **Un compte de CHARGE non imputable est refusé à la création.**
+///
+/// Le type ne suffit pas : les comptes de clôture 9000/9100/9200 sont eux-mêmes
+/// typés `Expense` — c'est le fait fondateur de la Story 24-5 — donc la garde
+/// `t == "Expense"` les laissait passer. Ce flux écrit avec
+/// `enforce_postable = false` : le `SELECT active, postable, account_type` est
+/// le seul contrôle.
+///
+/// ⛔ Trouvé APRÈS la passe 4 de revue de code (#375), en refaisant l'énumération
+/// exhaustive des appels à `journal_entries::create_in_tx` que cette passe avait
+/// déclarée « rapide ». Cinquième chemin d'écriture de la story.
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_with_non_postable_expense_account_is_rejected(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+
+    // Le compte de charge de `one_line` reste ACTIF et de type Expense — c'est
+    // `postable` seul qui doit refuser.
+    sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ?")
+        .bind(ctx.seeded.accounts["4000"])
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let err = supplier_invoices::create(
+        &pool,
+        one_line(&ctx, dec!(100.00), dec!(0)),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(err, DbError::InactiveOrInvalidAccounts),
+        "got {err:?}"
+    );
+}
+
 /// ⛔ **Un compte de contrepartie NON IMPUTABLE est refusé.**
 ///
 /// Jumeau du test de `invoice_settlement.rs` : `pay` écrit sans la garde de

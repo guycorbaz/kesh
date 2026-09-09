@@ -318,10 +318,24 @@ pub async fn create_in_tx(
                 "taux de TVA hors bornes (0-100)".into(),
             ));
         }
-        // Compte de charge : doit exister, être actif, company-scoped, et de
-        // type Expense (AC6 — sinon l'écriture débiterait un Passif/Actif).
-        let acct: Option<(bool, String)> = sqlx::query_as(
-            "SELECT active, account_type FROM accounts WHERE id = ? AND company_id = ? FOR UPDATE",
+        // Compte de charge : doit exister, être actif, company-scoped, de type
+        // Expense (AC6 — sinon l'écriture débiterait un Passif/Actif) **et
+        // imputable**.
+        //
+        // ⛔ `postable` ajouté après la passe 4 de revue de code de la Story 24-5
+        // (#375). Le type ne suffit PAS : les comptes de clôture 9000/9100/9200
+        // sont eux-mêmes typés `Expense` — c'est le fait fondateur de cette
+        // story — donc `t == "Expense"` les laissait passer. Ce flux écrit avec
+        // `enforce_postable = false`, ce SELECT est donc le seul contrôle.
+        //
+        // L'écran filtre déjà `active && postable`
+        // (`supplier-invoices/+page.svelte:129`), si bien que le trou n'était
+        // atteignable que par appel direct à l'API — comme pour le règlement
+        // fournisseur, fermé au même titre : *une garde serveur ne se déduit pas
+        // d'un filtre d'écran.*
+        let acct: Option<(bool, bool, String)> = sqlx::query_as(
+            "SELECT active, postable, account_type FROM accounts \
+             WHERE id = ? AND company_id = ? FOR UPDATE",
         )
         .bind(line.expense_account_id)
         .bind(company_id)
@@ -329,7 +343,7 @@ pub async fn create_in_tx(
         .await
         .map_err(map_db_error)?;
         match acct {
-            Some((true, ref t)) if t == "Expense" => {}
+            Some((true, true, ref t)) if t == "Expense" => {}
             _ => return Err(DbError::InactiveOrInvalidAccounts),
         }
         pairs.push((line_total, line.vat_rate, line.expense_account_id));

@@ -148,7 +148,26 @@ echo "  ✓ CHANGELOG.md : '$PATTERN' → '$REPLACEMENT'"
 # quatre modes d'échec en deux passes de revue, tous muets. Story 24-5 (#375),
 # findings P2-3 puis P3-2 / P3-3.
 
-PERISSABLES=$(cargo run -q -p kesh-db --example perishable_exemptions 2>/dev/null || true)
+# ⛔ L'ÉCHEC DE CETTE LECTURE EST FATAL, IL N'EST PAS « PAS D'EXEMPTION ».
+# Avec un `|| true`, un crate qui ne compile pas rendait la variable vide et le
+# rappel DISPARAISSAIT en silence — exactement le mode d'échec que tout ce
+# dispositif combat, pour la cinquième fois sur le même artefact. Éprouvé :
+# `cargo` neutralisé ⇒ 0 octet de sortie et `exit 0`. Relevé après la passe 4,
+# qui l'avait déclaré « robuste » sans l'exécuter.
+# stderr va dans un fichier À PART : le mêler à stdout (`2>&1`) ferait passer un
+# warning de compilation pour une ligne d'inventaire, que la boucle plus bas
+# lirait comme une exemption.
+ERR_PERISSABLES=$(mktemp)
+if ! PERISSABLES=$(cargo run -q -p kesh-db --example perishable_exemptions 2>"$ERR_PERISSABLES"); then
+  echo
+  echo "⛔ Impossible de lire l'inventaire des exemptions périssables :"
+  sed 's/^/     /' "$ERR_PERISSABLES"
+  echo "   Ce rappel est le SEUL contrôle de ces justifications. Ne pas poser de tag"
+  echo "   tant qu'il n'a pas pu s'exécuter."
+  rm -f "$ERR_PERISSABLES"
+  exit 1
+fi
+rm -f "$ERR_PERISSABLES"
 
 if [ -n "$PERISSABLES" ]; then
   echo
