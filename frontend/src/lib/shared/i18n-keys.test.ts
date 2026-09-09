@@ -174,9 +174,24 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * 409 `ENTRY_IS_POSTED`, donc les écrans qui les appelaient n'existent plus. Une borne qui
  * rougit sur une baisse fait le même travail que sur une hausse — elle exige qu'on dise
  * pourquoi.
+ *
+ * ⚠️ **1619 → 1630 à la Story 24-4c (#380), le verrou de période** — une hausse, et elle se
+ * ventile exactement :
+ *
+ * | mouvement | sites |
+ * |---|---|
+ * | `journal-entries-books-locked-banner` — le bandeau de la liste des écritures | **+1** |
+ * | `settings-books-lock-set` — employée **trois** fois (l'étiquette du champ, le bouton de pose, l'étiquette du champ de déverrouillage) | **+3** |
+ * | `settings-books-lock-release` — employée **deux** fois (le bouton qui déplie, celui qui soumet) | **+2** |
+ * | `settings-books-lock-{title,current,none,motif,motif-required}` — un site chacune | **+5** |
+ * | **total** | **+11** |
+ *
+ * ⚠️ Les deux clés à **plusieurs** sites sont la raison pour laquelle ce compteur ne se déduit
+ * pas du nombre de clés ajoutées : neuf clés neuves, onze sites. *Un total doit être cohérent
+ * avec sa propre ventilation, et la ventilation se recompte depuis l'écran.*
  */
 const ATTENDU = {
-	sitesTotal: 1619,
+	sitesTotal: 1630,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

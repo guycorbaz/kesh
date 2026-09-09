@@ -1572,3 +1572,192 @@ async fn full_import_refuses_client_number_collision_400(pool: MySqlPool) {
     .unwrap();
     assert_eq!((remaining, filled), (2, 0), "état précédent préservé");
 }
+
+/// Story 24-4c (#380) — **la restauration qui fait RECULER le verrou de période
+/// laisse une trace, et cette trace porte l'ANCIENNE valeur.**
+///
+/// ⛔ Ce test existe parce que son absence était **cochée comme faite**. Deux
+/// cases des tâches de la 24-4c affirmaient que ce chemin était testé ; il ne
+/// l'était pas, et c'est la revue de code qui l'a vu. *Une case cochée est une
+/// affirmation, et elle se vérifie comme les autres.*
+///
+/// ⚠️ **Le piège que ce test verrouille** : `companies` figure dans
+/// `TABLES_TO_TRUNCATE`, donc l'import la VIDE avant de la ré-insérer. Lire la
+/// borne à l'endroit où l'entrée d'audit s'écrit rapporterait la **nouvelle**
+/// valeur comme étant l'ancienne — une trace qui ne trace rien, sur le chemin
+/// même qu'elle existe pour couvrir. L'assertion sur `before` est donc le cœur
+/// du test, pas un détail.
+///
+/// ⚠️ **L'action est `books.restored`, jamais `books.unlocked`** : ce dernier a
+/// un seul producteur, le déverrouillage délibéré par un Admin. L'entrée écrite
+/// ici est signée par `MIN(id)` des admins du dataset restauré — quelqu'un qui
+/// n'a rien déverrouillé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_traces_a_receding_books_lock(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+
+    // Source : un admin et sa company, SANS verrou de période.
+    let a = seed_admin(&pool, "Source").await;
+    let backup = export_backup(&app, &a.jwt).await;
+
+    // Destination : la même installation, mais les livres y ont été verrouillés
+    // depuis la sauvegarde.
+    let borne = chrono::Utc::now().date_naive() - chrono::Duration::days(30);
+    sqlx::query("UPDATE companies SET books_locked_through = ?")
+        .bind(borne)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Restaurer l'archive ramène la borne à NULL — le recul maximal.
+    let resp = post_import(&app, &a.jwt, backup).await;
+    assert_eq!(resp.status(), 200, "import → 200");
+
+    let apres: Option<chrono::NaiveDate> =
+        sqlx::query_scalar("SELECT books_locked_through FROM companies ORDER BY id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(
+        apres.is_none(),
+        "la borne suit les livres restaurés : {apres:?}"
+    );
+
+    // ⛔ L'entrée d'audit existe, porte le bon verbe, et surtout l'ANCIENNE valeur.
+    let details: Option<String> = sqlx::query_scalar(
+        "SELECT CAST(details_json AS CHAR) FROM audit_log WHERE action = 'books.restored'",
+    )
+    .fetch_optional(&pool)
+    .await
+    .unwrap();
+    let details = details.expect("une entrée `books.restored` doit exister — sans elle, la restauration est un déverrouillage SILENCIEUX");
+    assert!(
+        details.contains(&borne.to_string()),
+        "la trace doit porter l'ANCIENNE borne ({borne}), relevée AVANT le restore : {details}"
+    );
+
+    // ⚠️ Et jamais `books.unlocked` : le filtre du réviseur doit rester utilisable.
+    let usurpations: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'books.unlocked'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        usurpations, 0,
+        "une restauration n'est pas un déverrouillage délibéré"
+    );
+}
+
+/// Story 24-4c (#380) — une restauration qui fait **AVANCER** la borne n'écrit
+/// **aucune** trace.
+///
+/// ⚠️ Le contre-test du précédent, et il n'est pas décoratif : une comparaison
+/// écrite à la légère (`before != after`) tracerait aussi les avancées, et le
+/// journal se remplirait d'entrées `books.restored` qui ne signalent rien.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_does_not_trace_an_advancing_books_lock(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+
+    let a = seed_admin(&pool, "Source").await;
+    // La source PORTE un verrou ; la destination n'en aura pas.
+    let borne = chrono::Utc::now().date_naive() - chrono::Duration::days(30);
+    sqlx::query("UPDATE companies SET books_locked_through = ?")
+        .bind(borne)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let backup = export_backup(&app, &a.jwt).await;
+
+    sqlx::query("UPDATE companies SET books_locked_through = NULL")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let resp = post_import(&app, &a.jwt, backup).await;
+    assert_eq!(resp.status(), 200);
+
+    let traces: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'books.restored'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        traces, 0,
+        "la borne AVANCE (NULL → date) : rien ne recule, donc rien à tracer"
+    );
+}
+
+/// Story 24-4c (#380) · AC 4 — ⛔ **le verrou tient sous la VALIDATION D'UNE
+/// FACTURE, pas seulement sous la saisie manuelle.**
+///
+/// C'est le point que l'AC 4 exigeait et qu'aucun test n'exerçait : une garde
+/// posée aux routes aurait laissé onze chemins ouverts, et valider une facture
+/// antidatée aurait produit exactement l'écriture que la story interdit — le
+/// fait qu'elle vienne d'une pièce n'y change rien.
+///
+/// ⚠️ Ce test vit ici et non dans `period_lock_e2e.rs` parce que le montage
+/// d'une facture validée (société, contact, séquences, réglages de facturation)
+/// existe **déjà** dans ce fichier. *Un fixture qu'on porte est un fixture
+/// qu'on duplique, et deux copies divergent.*
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn validating_a_backdated_invoice_is_refused_by_the_period_lock(pool: MySqlPool) {
+    let _app = spawn_app(pool.clone()).await;
+    let biz = seed_business(&pool, "Verrou").await;
+
+    // La borne tombe APRÈS la date de la facture (2026-03-01) et avant
+    // aujourd'hui — les deux conditions que `lock_books` impose.
+    let borne = chrono::NaiveDate::from_ymd_opt(2026, 6, 30).unwrap();
+    assert!(
+        borne < chrono::Utc::now().date_naive(),
+        "le test suppose une borne passée ; il pourrira sinon en 2026"
+    );
+    sqlx::query("UPDATE companies SET books_locked_through = ? WHERE id = ?")
+        .bind(borne)
+        .bind(biz.ctx.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let invoice_id = invoices::create(
+        &pool,
+        biz.ctx.user_id,
+        NewInvoice {
+            company_id: biz.ctx.company_id,
+            contact_id: biz.contact_id,
+            date: chrono::NaiveDate::from_ymd_opt(2026, 3, 1).unwrap(),
+            due_date: None,
+            payment_terms: None,
+            project_id: None,
+            lines: vec![NewInvoiceLine {
+                description: "Prestation antidatée".into(),
+                quantity: dec!(1),
+                unit_price: dec!(100.00),
+                vat_rate: dec!(0),
+                revenue_account_id: None,
+            }],
+        },
+    )
+    .await
+    .map(|(inv, _)| inv.id)
+    .expect("le brouillon se crée : il ne porte aucune écriture");
+
+    let err = invoices::validate_invoice(&pool, biz.ctx.company_id, invoice_id, biz.ctx.user_id)
+        .await
+        .expect_err("valider produit l'écriture de vente — le verrou doit la refuser");
+
+    assert!(
+        matches!(err, kesh_db::errors::DbError::PeriodLocked { .. }),
+        "le refus doit être PeriodLocked et non un message générique, or : {err:?}"
+    );
+
+    // ⛔ Et rien n'est entré : la validation est atomique, la facture reste brouillon.
+    let statut: String = sqlx::query_scalar("SELECT status FROM invoices WHERE id = ?")
+        .bind(invoice_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        statut, "draft",
+        "un refus ne doit rien laisser à moitié fait"
+    );
+}

@@ -28,3 +28,28 @@ export async function updateCompanyContactDetails(
 ): Promise<CompanyJson> {
 	return apiClient.put<CompanyJson>('/api/v1/companies/current/contact-details', req);
 }
+
+/**
+ * Pose ou **avance** le verrou de période (Admin + Comptable, Story 24-4c).
+ *
+ * ⚠️ Ce point d'entrée ne peut pas reculer la borne : le serveur refuse toute
+ * date antérieure ou égale à la borne courante. Reculer relève de
+ * `releaseBooksLock`, réservé à l'Admin avec motif.
+ */
+export async function lockBooks(through: string): Promise<CompanyJson> {
+	return apiClient.post<CompanyJson>('/api/v1/companies/current/books-lock', { through });
+}
+
+/**
+ * **Recule ou retire** le verrou de période (Admin seul, motif obligatoire).
+ * `through = null` retire le verrou entièrement.
+ */
+export async function releaseBooksLock(
+	through: string | null,
+	motif: string
+): Promise<CompanyJson> {
+	return apiClient.post<CompanyJson>('/api/v1/companies/current/books-lock/release', {
+		through,
+		motif
+	});
+}

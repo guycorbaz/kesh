@@ -18,6 +18,8 @@ export interface CompanyJson {
 	 */
 	phone: string | null;
 	website: string | null;
+	/** Borne **inclusive** du verrou de période (Story 24-4c, #380). `null` = aucun verrou. */
+	booksLockedThrough: string | null;
 	/** Verrou optimiste — requis par les routes `PUT /companies/current/*`. */
 	version: number;
 }

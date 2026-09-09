@@ -1418,6 +1418,7 @@ mod tests {
             phone: None,
             website: None,
             is_stub: false,
+            books_locked_through: None,
             version: 1,
             created_at: chrono::NaiveDateTime::default(),
             updated_at: chrono::NaiveDateTime::default(),

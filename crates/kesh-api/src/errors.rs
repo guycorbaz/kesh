@@ -2525,6 +2525,31 @@ impl IntoResponse for AppError {
                 //
                 // ⚠️ 409 et non 400 : c'est un conflit d'ÉTAT de la ressource,
                 // pas une donnée d'entrée invalide (asymétrie posée en 24-4a).
+                // ⛔ Story 24-4c (#380) — le verrou de période. **400 et non 409** :
+                // ce qui est invalide, c'est la DATE PROPOSÉE, pas l'état de la
+                // ressource visée (asymétrie figée par la 24-4a et suivie par la
+                // 24-4b).
+                //
+                // ⚠️ Le message NOMME LES DEUX BORNES — jusqu'où les livres sont
+                // fermés, et de quand est l'écriture refusée. Un refus qui ne dit
+                // pas où s'arrête le verrou envoie l'utilisateur deviner.
+                DbError::PeriodLocked {
+                    locked_through,
+                    attempted,
+                } => {
+                    let fallback = format!(
+                        "Les écritures sont verrouillées jusqu'au {locked_through} ; \
+                         celle-ci est datée du {attempted}."
+                    );
+                    let mut args = FluentArgs::new();
+                    args.set("lockedThrough", locked_through.to_string());
+                    args.set("attempted", attempted.to_string());
+                    build_response(
+                        StatusCode::BAD_REQUEST,
+                        "PERIOD_LOCKED",
+                        &t_args("journal-entries-period-locked", &fallback, &args),
+                    )
+                }
                 DbError::EntryIsPosted => build_response(
                     StatusCode::CONFLICT,
                     "ENTRY_IS_POSTED",
@@ -2680,6 +2705,19 @@ impl IntoResponse for AppError {
                         "creditNoteTotalZero" => (
                             "credit-note-error-total-zero".to_string(),
                             "Cette facture est d'un montant total nul : aucun avoir ne peut être émis.",
+                        ),
+                        // Story 24-4c (#380) — le verrou de période. ⛔ Sans ces
+                        // deux entrées, les refus de `lock_books` / `unlock_books`
+                        // retomberaient sur « Entrée invalide » : le geste que la
+                        // garde existe pour rattraper recevrait un message qui ne
+                        // dit ni la date, ni la raison, ni quoi faire.
+                        "booksLockBoundNotPast" => (
+                            "settings-books-lock-bound-not-past".to_string(),
+                            "La borne du verrou doit être antérieure à aujourd'hui : verrouiller le jour même refuserait toute correction faite aujourd'hui.",
+                        ),
+                        "booksUnlockMotifRequired" => (
+                            "settings-books-lock-motif-required".to_string(),
+                            "Un motif est obligatoire pour déverrouiller.",
                         ),
                         // B13 (review pass 1 G2 B) : whitelist stricte —
                         // un code non listé ne doit PAS construire dynamiquement

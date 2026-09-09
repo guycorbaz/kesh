@@ -260,6 +260,30 @@ async fn run_backup_and_restore(
     let backup_created =
         write_pre_import_backup(&state.config.admin_backup_dir, &backup_bytes).await?;
 
+    // 4-bis (Story 24-4c, #380) : RELEVER LA BORNE DU VERROU DE PÉRIODE
+    // AVANT LE RESTORE — c'est le seul instant où elle est encore lisible.
+    //
+    // ⛔ `companies` figure dans `TABLES_TO_TRUNCATE` : l'étape 5 la VIDE puis
+    // la ré-insère depuis l'archive, et `books_locked_through` y voyage tout
+    // seul. Après le restore, l'ancienne valeur n'existe **nulle part** — la
+    // lire à l'endroit où l'entrée d'audit s'écrit rapporterait la NOUVELLE
+    // valeur comme étant l'ancienne, c'est-à-dire une trace qui ne trace rien.
+    //
+    // ⚠️ Restaurer une archive antérieure à la pose du verrou fait donc reculer
+    // la borne. **Ce n'est pas un défaut à interdire** : un `.keshbackup`
+    // restaure l'installation ENTIÈRE, et il est cohérent que le verrou suive
+    // les écritures — refuser produirait un verrou décorrélé des livres. Ce qui
+    // serait grave, c'est que la restauration devienne un DÉVERROUILLAGE
+    // SILENCIEUX. D'où la trace ci-dessous.
+    let books_lock_before: Option<chrono::NaiveDate> =
+        sqlx::query_scalar("SELECT books_locked_through FROM companies ORDER BY id LIMIT 1")
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| {
+                AppError::AdminFullImportFailed(format!("lecture du verrou de période : {e}"))
+            })?
+            .flatten();
+
     // 5. Restore transactionnel (DELETE+INSERT, FK_CHECKS gérés dans kesh-db).
     let (tables_restored, rows_restored) =
         kesh_db::backup::restore_tables_in_tx(&mut tx, &parsed.tables)
@@ -332,6 +356,55 @@ async fn run_backup_and_restore(
             "le backup source ne contient aucun compte Admin — import refusé".into(),
         )
     })?;
+
+    // Story 24-4c (#380) : la borne a-t-elle RECULÉ ? Si oui, la restauration
+    // vaut déverrouillage et doit se voir.
+    //
+    // ⛔ L'action est `books.restored`, PAS `books.unlocked`. Ce dernier a **un
+    // seul producteur** — le déverrouillage délibéré par un Admin — et l'entrée
+    // écrite ici serait signée par `MIN(id)` des admins **du dataset restauré**,
+    // un administrateur qui n'a rien déverrouillé (il n'existe aucun acteur
+    // « système » : `ActorType` ne connaît que `User` et `ApiKey`). Les
+    // confondre rendrait le filtre d'audit inutilisable pour le réviseur qui
+    // cherche QUI a déverrouillé.
+    let books_lock_after: Option<chrono::NaiveDate> =
+        sqlx::query_scalar("SELECT books_locked_through FROM companies ORDER BY id LIMIT 1")
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| {
+                AppError::AdminFullImportFailed(format!("relecture du verrou de période : {e}"))
+            })?
+            .flatten();
+
+    // ⚠️ « Reculer » couvre AUSSI le passage à `NULL` (verrou retiré), qui est
+    // le recul maximal. `None > Some(_)` étant faux pour `Option<NaiveDate>`,
+    // la comparaison se fait à la main plutôt que par `<`.
+    let a_recule = match (books_lock_before, books_lock_after) {
+        (Some(_), None) => true,
+        (Some(avant), Some(apres)) => apres < avant,
+        (None, _) => false,
+    };
+    if a_recule {
+        kesh_db::repositories::audit_log::insert_in_tx(
+            &mut tx,
+            kesh_db::entities::NewAuditLogEntry::user(
+                audit_uid,
+                "books.restored".to_string(),
+                "company".to_string(),
+                0,
+                Some(serde_json::json!({
+                    "before": books_lock_before,
+                    "after": books_lock_after,
+                    "motif": "restauration de sauvegarde",
+                    "triggered_by_user": current_user.user_id,
+                })),
+            ),
+        )
+        .await
+        .map_err(|e| {
+            AppError::AdminFullImportFailed(format!("audit du verrou de période : {e}"))
+        })?;
+    }
 
     let details = serde_json::json!({
         "source_kesh_version": parsed.manifest.kesh_version,

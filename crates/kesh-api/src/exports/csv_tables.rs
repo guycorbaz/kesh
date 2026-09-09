@@ -136,6 +136,12 @@ pub fn serialize_company_csv<W: Write>(rows: &[Company], writer: W) -> Result<()
         "org_type",
         "accounting_language",
         "instance_language",
+        // Story 24-4c (#380) : sans cette colonne, l'export de souverainete ne
+        // dirait pas jusqu'ou les livres sont arretes -- une information que le
+        // reviseur cherche en premier. Elle est ici parce qu'un export complet
+        // doit l'etre, PAS parce qu'elle protegerait d'une restauration : ce
+        // CSV n'a aucun importeur (cf. l'audit `books.restored`).
+        "books_locked_through",
         "version",
         "created_at",
         "updated_at",
@@ -150,6 +156,9 @@ pub fn serialize_company_csv<W: Write>(rows: &[Company], writer: W) -> Result<()
             c.org_type.as_str().to_string(),
             c.accounting_language.as_str().to_string(),
             c.instance_language.as_str().to_string(),
+            c.books_locked_through
+                .map(|d| d.to_string())
+                .unwrap_or_default(),
             c.version.to_string(),
             fmt_dt(c.created_at),
             fmt_dt(c.updated_at),
@@ -985,6 +994,35 @@ mod tests {
         }
     }
 
+    /// Société minimale pour les tests d'export. Les champs non exportés sont
+    /// remplis de valeurs neutres — seul l'en-tête CSV fait foi.
+    fn sample_company() -> kesh_db::entities::Company {
+        kesh_db::entities::Company {
+            id: 1,
+            name: "Test SA".into(),
+            first_name: None,
+            last_name: None,
+            address: "Rue du Test 1, 1000 Lausanne".into(),
+            address_street: "Rue du Test".into(),
+            address_building: "1".into(),
+            address_postal_code: "1000".into(),
+            address_city: "Lausanne".into(),
+            address_country: "CH".into(),
+            ide_number: None,
+            org_type: kesh_db::entities::OrgType::Pme,
+            accounting_language: kesh_db::entities::Language::Fr,
+            instance_language: kesh_db::entities::Language::Fr,
+            email: None,
+            phone: None,
+            website: None,
+            is_stub: false,
+            books_locked_through: None,
+            version: 1,
+            created_at: naive_dt(2026, 1, 1, 0, 0, 0),
+            updated_at: naive_dt(2026, 1, 1, 0, 0, 0),
+        }
+    }
+
     fn sample_entry() -> JournalEntry {
         JournalEntry {
             id: 10,
@@ -1188,6 +1226,63 @@ mod tests {
     /// Un revert partiel passerait donc au vert — dans l'artefact même que le
     /// réviseur consulte, et dont l'absence de trace est ce que l'art. 958f CO
     /// interdit.
+    /// Story 24-4c (#380) — la borne du verrou dans l'export de souveraineté.
+    ///
+    /// ⛔ `serialize_company_csv` énumère ses colonnes À LA MAIN, et aucun test
+    /// n'impose leur exhaustivité vis-à-vis du schéma : `backup_inventory_matches_schema`
+    /// ne compare que la liste des **tables**, jamais les colonnes d'un CSV. La
+    /// 24-4a a payé ce piège sur `journal_entries` ; ce test est là pour ne pas
+    /// le repayer sur `companies`.
+    #[test]
+    fn serialize_company_csv_carries_the_books_lock() {
+        let en_tete = {
+            let mut buf = Vec::new();
+            serialize_company_csv(&[], &mut buf).expect("serialize ok");
+            String::from_utf8(buf[3..].to_vec()).unwrap()
+        };
+        assert!(
+            en_tete.contains("books_locked_through"),
+            "la colonne manque à l'en-tête : {en_tete}"
+        );
+        // ⚠️ snake_case, comme les autres : c'est un export TABLE, pas du JSON.
+        assert!(
+            !en_tete.contains("booksLockedThrough"),
+            "en-tête en camelCase — cet export n'est pas une réponse JSON : {en_tete}"
+        );
+
+        let mut sans_verrou = sample_company();
+        sans_verrou.books_locked_through = None;
+        let mut verrouillee = sample_company();
+        verrouillee.id = 2;
+        verrouillee.books_locked_through = NaiveDate::from_ymd_opt(2026, 3, 31);
+
+        let mut buf = Vec::new();
+        serialize_company_csv(&[sans_verrou, verrouillee], &mut buf).expect("serialize ok");
+        let text = std::str::from_utf8(&buf[3..]).unwrap();
+        let lignes: Vec<&str> = text.lines().collect();
+        assert_eq!(lignes.len(), 3, "en-tête + deux sociétés : {text}");
+
+        // ⛔ Assertions POSITIONNELLES, index tiré de l'en-tête — un
+        // `contains(";;")` resterait vert si un autre champ devenait vide.
+        let colonne = en_tete
+            .trim_end()
+            .split(';')
+            .position(|c| c == "books_locked_through")
+            .expect("la colonne doit être à l'en-tête");
+        assert_eq!(
+            lignes[1].split(';').nth(colonne),
+            Some(""),
+            "une société sans verrou laisse la colonne VIDE : {}",
+            lignes[1]
+        );
+        assert_eq!(
+            lignes[2].split(';').nth(colonne),
+            Some("2026-03-31"),
+            "la borne est exportée telle quelle, en ISO : {}",
+            lignes[2]
+        );
+    }
+
     #[test]
     fn serialize_journal_entries_csv_carries_the_reversal_link() {
         let en_tete = {

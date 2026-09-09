@@ -76,6 +76,10 @@ const ADMIN_COUPLES: &[(&str, &str)] = &[
     ("PUT", "/api/v1/companies/current/email"),
     ("PUT", "/api/v1/companies/current/contact-details"),
     ("POST", "/api/v1/fiscal-years/1/reopen"),
+    // Story 24-4c (#380) : DÉVERROUILLER une période. Admin-only, comme la
+    // réouverture d'exercice ci-dessus et pour la même raison — la POSE, elle,
+    // vit dans `comptable_routes` et n'a pas à figurer ici.
+    ("POST", "/api/v1/companies/current/books-lock/release"),
 ];
 
 /// Les chemins que `axum` sert **aussi** en `HEAD`, en rejouant le handler `get`
@@ -806,7 +810,7 @@ async fn read_only_pat_is_stopped_by_the_right_guard_on_each_couple(pool: MySqlP
 
     assert_eq!(
         (reached_layer, stopped_by_scope),
-        (5, 20),
+        (5, 21),
         "la répartition attendue entre la couche et le gate de portée a changé"
     );
 }

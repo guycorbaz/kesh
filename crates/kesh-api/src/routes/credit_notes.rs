@@ -389,6 +389,7 @@ mod tests {
             phone: Some("+41 21 123 45 67".into()),
             website: Some("https://demo.ch".into()),
             is_stub: false,
+            books_locked_through: None,
             version: 1,
             created_at: chrono::NaiveDateTime::default(),
             updated_at: chrono::NaiveDateTime::default(),

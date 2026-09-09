@@ -339,6 +339,7 @@ régression au milieu.
 | **un huitième, VARIABLE** | pollution d'état entre specs — voir ci-dessous |
 | `invoices.spec.ts:405` | ⏰ **KF-045 (#421)** — seulement **avant 12:00 UTC** |
 | `invoices.spec.ts:429` | ⏰ **KF-045 (#421)** — idem |
+| `sidebar-navigation.spec.ts:75` | **KF-046 (#424)** — déterministe, dépend de la route d'atterrissage |
 
 ⏰ **Les deux dernières ne rougissent QUE le matin, et c'est vérifié.** Le helper poste un rappel
 manuel daté de `${today}T12:00:00`, que la route compare à `Utc::now().naive_utc()`
@@ -350,13 +351,20 @@ elles échouent aussi sur `main` avant toute branche en cours (vérifié en work
 `d2910022`). Le relevé du 2026-08-26 ne les portait pas parce qu'il a été fait l'après-midi.
 **Un test qui dépend de l'heure ne rougit que pour la moitié des gens qui le lancent.**
 
-⇒ **Le compte attendu est `7 + (2 si le run est matinal) + 1 à 2 de pollution`**, soit **8 à 11**.
+⚠️ **La KF-046 dépend de l'état, pas de l'heure** : le groupe « Administration » s'auto-ouvre
+sans persister quand la route active y tombe, et le test suppose le groupe fermé. Elle a **passé
+seule** le matin du 2026-08-30 puis **échoué seule** l'après-midi, sur un frontend `main`
+inchangé — seule la base `kesh_e2e` avait été reconstruite entre les deux.
+
+⇒ **Le compte attendu est `7 + (2 si le run est matinal) + (1 si la KF-046 se déclenche) + 1 à 2
+de pollution`**, soit **8 à 12**.
 Deux relevés du 2026-08-30, base `kesh_e2e` reconstruite, tous deux **212 passés / 11 échoués** :
 
 | run | les 7 fixes | KF-045 | pollution — **change d'identité** |
 |---|---|---|---|
 | 10:42 CEST | ✅ | ✅ | `reconciliation-rules.spec.ts:37`, `reports.spec.ts:306` |
 | 11:06 CEST | ✅ | ✅ | `products.spec.ts:166`, `sidebar-navigation.spec.ts:75` |
+| 16:13 CEST | ✅ | ❌ *(après 12:00 UTC)* | `reminders.spec.ts:146` — plus **KF-046** |
 
 ⚠️ **Les quatre passent rejouées seules.** La pollution n'a donc ni une identité fixe **ni même
 un nombre fixe** — la première rédaction parlait d'« un huitième » au singulier, ce qui était

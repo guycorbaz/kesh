@@ -172,6 +172,42 @@ pub struct FailedProposal {
 /// validation projet — sinon un `NotFound` non-projet (ex. fiscal_year absent)
 /// serait mal étiqueté. Le chemin `create_in_tx` d'`accept_one_rule` (projet
 /// déjà validé en amont) utilise donc le mapping générique, pas ce mapper.
+/// Story 24-4c (#380) — le refus de verrou de période, sous la forme que le
+/// § *Pattern batch* du `CLAUDE.md` impose : un **code canonique**, jamais un
+/// repli générique.
+///
+/// ⛔ **Un seul constructeur pour les DEUX sites.** `project_error_to_failed_proposal`
+/// et le mappage en ligne d'`accept_one_rule` en avaient chacun une copie ; deux
+/// copies du même mappage divergent, et une seule des deux était testée.
+///
+/// ⚠️ `projectId` est **omis** quand il n'y a pas de projet, jamais publié à
+/// `null` — c'est la convention de tous les autres codes du batch, et le chemin
+/// `split` appelle précisément avec `None`.
+fn period_locked_failed_proposal(
+    bank_transaction_id: i64,
+    project_id: Option<i64>,
+    locked_through: chrono::NaiveDate,
+    attempted: chrono::NaiveDate,
+) -> FailedProposal {
+    let mut obj = serde_json::Map::new();
+    obj.insert(
+        "lockedThrough".to_string(),
+        serde_json::json!(locked_through.to_string()),
+    );
+    obj.insert(
+        "attempted".to_string(),
+        serde_json::json!(attempted.to_string()),
+    );
+    if let Some(pid) = project_id {
+        obj.insert("projectId".to_string(), serde_json::json!(pid));
+    }
+    FailedProposal {
+        bank_transaction_id,
+        error_code: "PERIOD_LOCKED".to_string(),
+        details: Some(serde_json::Value::Object(obj)),
+    }
+}
+
 fn project_error_to_failed_proposal(
     bank_transaction_id: i64,
     project_id: Option<i64>,
@@ -202,6 +238,23 @@ fn project_error_to_failed_proposal(
             error_code: "PROJECT_NOT_FOUND".to_string(),
             details: details(None),
         },
+        // ⛔ Story 24-4c (#380) — le verrou de période. SANS ce bras, un
+        // rapprochement antidaté tomberait dans le `_` ci-dessous et serait
+        // rapporté au client comme `DATABASE_ERROR` : une panne de base là où
+        // il s'agit d'un refus MÉTIER parfaitement légitime.
+        //
+        // ⚠️ C'est le § *Pattern batch* du `CLAUDE.md` qui l'exige — « error_code :
+        // constante canonique », jamais un repli générique — et il déclare les
+        // trois `accept_one_*` inviolables sur ce point.
+        DbError::PeriodLocked {
+            locked_through,
+            attempted,
+        } => period_locked_failed_proposal(
+            bank_transaction_id,
+            project_id,
+            *locked_through,
+            *attempted,
+        ),
         _ => FailedProposal {
             bank_transaction_id,
             error_code: "DATABASE_ERROR".to_string(),
@@ -2173,6 +2226,21 @@ async fn accept_one_rule(
             // 11bis ; un NotFound ici provient d'une autre cause (jamais projet,
             // les lignes portent project_id=None) → mapping générique pour ne
             // pas mal étiqueter en PROJECT_NOT_FOUND (Pass 1 LOW BH/ECH).
+            //
+            // ⛔ Story 24-4c (#380) : le verrou de période fait EXCEPTION au
+            // repli générique — c'est un refus métier, pas une panne de base.
+            if let kesh_db::errors::DbError::PeriodLocked {
+                locked_through,
+                attempted,
+            } = &e
+            {
+                return Err(period_locked_failed_proposal(
+                    bank_transaction_id,
+                    None,
+                    *locked_through,
+                    *attempted,
+                ));
+            }
             return Err(FailedProposal {
                 bank_transaction_id,
                 error_code: "DATABASE_ERROR".to_string(),
@@ -3449,5 +3517,100 @@ pub async fn post_split(
                 "internal: unexpected Rule variant in post_split".into(),
             ))
         }
+    }
+}
+
+#[cfg(test)]
+mod period_lock_tests {
+    use super::*;
+
+    /// Story 24-4c (#380) — ⛔ **un rapprochement antidaté est un refus MÉTIER,
+    /// jamais une panne de base.**
+    ///
+    /// Sans le bras dédié, `DbError::PeriodLocked` tombait dans le repli `_` et
+    /// sortait en `DATABASE_ERROR` : le client d'un `accept_batch` aurait lu une
+    /// erreur d'infrastructure là où il fallait lui dire que la période est
+    /// verrouillée et jusqu'à quand.
+    ///
+    /// ⚠️ C'est le § *Pattern batch* du `CLAUDE.md` qui l'exige — « error_code :
+    /// constante canonique », jamais un repli générique — et il déclare les
+    /// trois `accept_one_*` **inviolables** sur ce point. Relevé en passe 1 de
+    /// revue de code, la spec ayant demandé le test sans qu'il soit écrit.
+    #[test]
+    fn period_locked_is_reported_as_a_business_refusal_not_a_database_error() {
+        let locked_through = chrono::NaiveDate::from_ymd_opt(2026, 3, 31).unwrap();
+        let attempted = chrono::NaiveDate::from_ymd_opt(2026, 1, 15).unwrap();
+
+        let failed = project_error_to_failed_proposal(
+            42,
+            Some(7),
+            DbError::PeriodLocked {
+                locked_through,
+                attempted,
+            },
+        );
+
+        assert_eq!(failed.bank_transaction_id, 42);
+        assert_eq!(
+            failed.error_code, "PERIOD_LOCKED",
+            "un repli en DATABASE_ERROR rapporterait une panne là où il y a un refus métier"
+        );
+
+        // ⛔ Les DEUX dates voyagent dans `details` : un refus qui ne dit pas
+        // jusqu'où les livres sont fermés n'est pas utilisable par le client.
+        let details = failed.details.expect("details attendus");
+        assert_eq!(details["lockedThrough"], "2026-03-31");
+        assert_eq!(details["attempted"], "2026-01-15");
+        assert_eq!(
+            details["projectId"], 7,
+            "le contexte projet reste porté, comme pour les autres codes"
+        );
+    }
+
+    /// ⛔ **Sans projet, la clé est OMISE — jamais publiée à `null`.** C'est la
+    /// convention de tous les autres codes du batch, et le chemin `split`
+    /// appelle précisément avec `None` : le seul code à publier une clé nulle
+    /// serait celui-ci. *Relevé en passe 2 de revue, le bras neuf ayant codé
+    /// `projectId` en dur au lieu de passer par la closure existante.*
+    #[test]
+    fn period_locked_omits_the_project_key_when_there_is_no_project() {
+        let failed = project_error_to_failed_proposal(
+            9,
+            None,
+            DbError::PeriodLocked {
+                locked_through: chrono::NaiveDate::from_ymd_opt(2026, 3, 31).unwrap(),
+                attempted: chrono::NaiveDate::from_ymd_opt(2026, 1, 15).unwrap(),
+            },
+        );
+        let details = failed.details.expect("details attendus");
+        assert!(
+            details.get("projectId").is_none(),
+            "la clé doit être ABSENTE, pas nulle : {details}"
+        );
+        assert_eq!(details["lockedThrough"], "2026-03-31");
+    }
+
+    /// Verrouille les deux mappages voisins, `PROJECT_NOT_FOUND` et
+    /// `PROJECT_ARCHIVED`.
+    ///
+    /// ⚠️ **Ce test ne garde PAS l'ordre du `match`**, contrairement à ce que sa
+    /// première rédaction affirmait : un bras à variante concrète
+    /// (`DbError::PeriodLocked { .. }`) ne peut capturer ni `NotFound` ni
+    /// `IllegalStateTransition`, quelle que soit sa position. *Vérifié par
+    /// mutation en passe 2 de revue — le test principal rougit sans le bras,
+    /// celui-ci passe inchangé.* Une justification fausse est ce qui fait qu'on
+    /// cesse d'entretenir un test : elle est corrigée plutôt que le test retiré,
+    /// car les deux mappages qu'il épingle valent d'être tenus.
+    #[test]
+    fn other_errors_keep_their_mapping() {
+        let f = project_error_to_failed_proposal(1, None, DbError::NotFound);
+        assert_eq!(f.error_code, "PROJECT_NOT_FOUND");
+
+        let f = project_error_to_failed_proposal(
+            1,
+            None,
+            DbError::IllegalStateTransition("le projet analytique est archivé".into()),
+        );
+        assert_eq!(f.error_code, "PROJECT_ARCHIVED");
     }
 }
