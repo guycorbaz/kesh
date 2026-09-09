@@ -313,6 +313,64 @@ async fn un_compte_archive_est_refuse(pool: MySqlPool) {
     );
 }
 
+/// ⛔ **Un compte NON IMPUTABLE est refusé** — et c'est ce test qui manquait.
+///
+/// Ce flux écrit avec `enforce_postable = false` : la garde de la Story 14-3b ne
+/// s'applique donc PAS, et seul le `SELECT active, postable` de
+/// `settle_invoice` tient la promesse. Sans lui, « Enregistrer un règlement » →
+/// « Compte interne » → 9000 rouvrait, **d'un geste ordinaire**, le défaut que
+/// la Story 24-5 ferme : le menu de l'écran ne filtrait que `active`, et le
+/// compte de clôture y figurait.
+///
+/// ⛔ Relevé en passe 3 de revue de code de la Story 24-5 (#375), finding P3-1 —
+/// CRITICAL. Le test d'à côté n'éprouvait que l'archivage : *un flux qui n'a
+/// qu'une garde testée sur deux est un flux dont la seconde peut disparaître
+/// sans que rien ne rougisse.*
+#[sqlx::test(migrations = "./test-schema")]
+async fn un_compte_non_imputable_est_refuse(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.expect("seed");
+    let caisse = seeded.accounts["1000"];
+    let inv_id = validated_invoice(&pool, &seeded, dec!(100.00), ymd(2026, 3, 1)).await;
+
+    // Le compte reste ACTIF — c'est bien `postable` seul qui doit refuser.
+    sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ?")
+        .bind(caisse)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let err = invoice_settlements_write::settle_invoice(
+        &pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        inv_id,
+        SettlementChoice::InternalAccount { account_id: caisse },
+        dec!(100.00),
+        ymd(2026, 3, 5),
+    )
+    .await
+    .expect_err("un compte non imputable doit être refusé");
+    assert!(
+        format!("{err:?}").contains("InactiveOrInvalid"),
+        "got {err:?}"
+    );
+
+    // Et rien n'a été écrit : ni règlement, ni écriture.
+    assert_eq!(
+        invoice_settlements::list_for_invoice(&pool, seeded.company_id, inv_id)
+            .await
+            .unwrap()
+            .len(),
+        0,
+        "aucun règlement ne doit subsister"
+    );
+    assert_eq!(
+        solde(&pool, caisse).await,
+        Decimal::ZERO,
+        "le compte refusé reste intact"
+    );
+}
+
 /// ⛔ **Un règlement ne PRÉCÈDE pas sa facture** — la seule garde de
 /// `mark_as_paid` qui reste vraie, et qui a été portée plutôt que perdue.
 #[sqlx::test(migrations = "./test-schema")]

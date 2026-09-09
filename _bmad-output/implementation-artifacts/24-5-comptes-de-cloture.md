@@ -916,11 +916,126 @@ ajouts futurs. `fmt`, `check --all-targets` et `clippy -D warnings` verts.
 
 ⚠️ **Limite déclarée de la passe** : ni la suite complète ni Playwright n'ont tourné pendant la
 lentille — interdits par l'orchestrateur, `kesh_e2e` étant alors en reconstruction. Le « 2295/2295 »
-de l'implémentation n'a donc pas été revérifié **par la lentille** ; il l'a été par le gate ci-dessous.
+de l'implémentation n'a donc pas été revérifié **par la lentille** ; il l'a été par le gate
+ci-dessous.
+
+**Gate complet après remédiation** — ciblage interdit (`kesh-db` touché), base remise à zéro au
+préalable : `fmt` et `clippy -D warnings` propres, `test-fast.sh` **2296/2296** (4 skipped, 85,8 s).
+Le décompte se recoupe : **2295 + 1 test neuf = 2296**. Frontend **non touché** (0 fichier), son
+gate est sans objet.
+
+⚠️ *Cette ligne manquait, et la phrase ci-dessus promettait pourtant « le gate ci-dessous » — le
+chiffre ne vivait que dans le message de commit. Relevé en passe 3, finding P3-4 : le story file est
+ce que les passes suivantes lisent pour argent comptant, il ne peut pas affirmer l'existence d'une
+preuve qu'il ne porte pas.*
 
 **Prochaine** : passe 3, **ciblée** sur le commit de remédiation de celle-ci, contexte frais,
 Sonnet 4.6 (rotation), prompt versionné. La boucle n'est pas close : trois MEDIUM au-dessus de LOW,
 et la remédiation touche du code de production.
+
+### Passe 3 — 2026-09-09 · Sonnet 4.6, contexte frais, **ciblée** sur `a994a814`, prompt versionné
+
+**1 CRITICAL, 0 HIGH, 3 MEDIUM, 2 LOW.** La sévérité **remonte** — premier renversement de la
+boucle — et **six findings sur six** naissent de la remédiation de la passe 2 ; aucun résidu
+antérieur. Tous vérifiés au sol par l'orchestrateur : aucun faux positif.
+
+⛔ **P3-1 (CRITICAL) — UN QUATRIÈME CHEMIN D'ÉCRITURE QUE PERSONNE N'AVAIT ÉNUMÉRÉ, ET IL EST
+ATTEIGNABLE D'UN CLIC.** Ni la spec, ni ses quatre passes, ni les trois passes de revue de code
+n'avaient regardé le **règlement de facture**. Sur une facture validée, « Enregistrer un
+règlement » → « Compte interne » offrait les comptes de clôture : l'écran ne filtrait que
+`active` (`SettleInvoiceDialog.svelte:81`), la migration de cette story ne touche pas `active`, et
+la garde serveur ne lisait que `active` elle aussi — `grep -cF postable
+invoice_settlements_write.rs` rendait **0**, l'écriture partant avec `enforce_postable = false`.
+*Le défaut que cette story entière existe pour fermer était rouvert par un geste ordinaire.*
+
+⛔ **ET LE MANUEL LE NIAIT — TROISIÈME TOUR, TROISIÈME FORME.** La passe 1 avait trouvé un manuel
+qui promettait une protection **absente** ; la passe 2, un manuel qui annonçait un trou
+**absent** ; la passe 3 trouve un manuel qui **borne trop étroitement un trou réel** (« *seule* une
+intégration appelant directement l'interface de programmation »). ✅ **Mais cette fois le manuel a
+servi de RÉVÉLATEUR** : c'est en vérifiant s'il disait vrai que la lentille a trouvé le chemin
+applicatif. *Le fichier que trois passes ont traité comme le lieu du défaut est aussi le seul
+endroit où l'on énumère ce que le code est censé garantir — et c'est pour cela qu'il trouve.*
+
+⛔ **ET LE GREP DE PROPAGATION A RENDU LE JUMEAU** : `supplier_invoices.rs:598`, même
+`SettlementChoice::InternalAccount`, même garde `active` seule, côté facture fournisseur. La
+lentille avait nommé ce fichier pour **une autre** de ses gardes, pas pour celle-ci. Son écran
+filtre bien `active && postable`, donc ce jumeau-là n'était atteignable que par API — fermé quand
+même : *une garde serveur ne se déduit pas d'un filtre d'écran.*
+
+**Traitement, sur arbitrage de Guy : fermer ici plutôt que tracer.** Ce qui a emporté la décision
+n'est pas le périmètre mais la **nature de l'exposition** — les flux de #427 n'offrent pas ces
+comptes à l'utilisateur, celui-ci les lui mettait dans un menu. Livrer « les comptes de clôture
+n'acceptent plus d'écriture » en laissant un clic ordinaire les viser, c'est livrer l'inverse de
+l'énoncé. Les deux gardes serveur portent désormais `postable`, l'écran client filtre comme le
+faisait déjà l'écran fournisseur, **deux tests négatifs neufs** couvrent les deux flux — et
+**l'épreuve par mutation les valide** : gardes neutralisées, les deux rougissent.
+
+⛔ **P3-2 et P3-3 (MED) — LE GARDE-FOU DE LA PASSE 2, PRIS EN DÉFAUT UNE TROISIÈME ET UNE QUATRIÈME
+FOIS.** `rustfmt` collapse une entrée courte du registre sur une seule ligne : l'`awk` ne mettait
+alors pas à jour sa variable et **réattribuait la version précédente** (vérifié : deux fois
+`20260909000001` sur un registre à deux entrées marquées). Et une justification coupée par une
+continuation `\` entre « SE » et « PÉRIME » est invisible au `grep` alors que `contains()` la voit
+— mon test lisait la valeur compilée, le script lisait le texte source : il **ne pouvait
+structurellement pas** détecter le cas que son doc-comment annonçait protéger.
+
+**Traitement, sur arbitrage de Guy : ne pas rafistoler — refondre.** Quatre modes d'échec en deux
+passes sur le même artefact ne sont pas quatre fautes d'écriture : ils tiennent tous à ce qu'**un
+shell lisait une chaîne française accentuée dans du source Rust**. ⚠️ **Et l'analyse a montré que
+ma modélisation du risque était fausse** : le rappel prétendait attraper « une release préparée
+depuis un point de branchement antérieur », or dans une telle branche la migration *et* l'entrée du
+registre sont absentes toutes les deux — il ne se serait jamais déclenché. Le risque réel est
+qu'un **tag déjà publié** se situe dans l'intervalle déclaré vide. *Rafistoler l'`awk` aurait été
+réparer soigneusement le mauvais instrument.*
+
+⇒ Le fondement se **déclare** : `ExemptionBasis::{Durable, PerishableSince(borne)}`, troisième
+champ du registre. Le test le lit comme une donnée ; `examples/perishable_exemptions.rs` le donne
+au script ; **le script ne grepe plus rien** et pose enfin la question décidable — existe-t-il un
+tag publié dont l'arbre porte la borne basse sans porter la migration exemptée ? **Éprouvé dans les
+deux sens** : cas nominal `exit 0` (« aucun tag publié dans l'intervalle »), cas fautif `exit 1`
+avec **15 tags nommés**. ✅ **L'arbitrage du 2026-09-09 (« le NAS exécute v0.11.1 ») est désormais
+VÉRIFIÉ MÉCANIQUEMENT au lieu d'être cru sur parole.**
+
+**P3-4 (MED)** — le journal de la passe 2 promettait « il l'a été par le gate **ci-dessous** », et
+aucun `2296` ne figurait dans le story file : le chiffre ne vivait que dans le message de commit.
+Ligne de gate ajoutée. *Ce fichier est ce que les passes suivantes lisent pour argent comptant ; il
+ne peut pas affirmer l'existence d'une preuve qu'il ne porte pas.*
+
+**P3-5 (LOW)** — l'AC 13 avait été amendée en passe 2 sans CR, alors que la § « Issue Tracking
+Rule » en exige un **avant** tout changement d'AC d'une story en `review`, sans exception pour
+« comportement inchangé ». **CR ouvert a posteriori : issue #428** — qui enregistre le défaut de
+procédure autant que le changement.
+
+**P3-6 (LOW)** — « seul point de passage de toute release » n'était garanti par aucun outillage :
+`release.yml` se déclenche sur `push: tags:` et n'impose rien. Formulation corrigée, et le
+mécanisme réel décrit (le script **refuse** désormais la release, `exit 1`).
+
+✅ **Ce que la passe a vérifié et trouvé exact** : les trois modales de réconciliation écartent bien
+un 9000 ; `invoices.rs:567` refuse bien un compte de produit non imputable, exemption D3-bis
+correctement bornée ; le PDF correspond au `.tex` (62 p.) ; les quatre résidus P6 de la passe 2 sont
+cohérents et le balayage de l'intervalle n'en rend pas de nouveau ; 66 migrations, 11 entrées au
+registre, 13 AC + 3 invariants + 8 tâches, tous recomptés depuis la source ; renumérotation de
+`CLAUDE.md` cohérente, aucun renvoi résiduel.
+
+⚠️ **Limite déclarée** : ni la suite complète ni Playwright n'ont tourné pendant la lentille. P3-1 a
+été établi par lecture de code et absence de test, non par une exécution — mais la chaîne de preuve
+(requête SQL, filtre d'écran, aucun test couvrant le cas) est directe, et le gate ci-dessous l'a
+depuis exercée par mutation.
+
+**Gate complet après remédiation** — ciblage interdit (`kesh-db` touché), base remise à zéro :
+`fmt` et `clippy -D warnings` propres, `test-fast.sh` **2299/2299** (4 skipped, 89,1 s). Le
+décompte se recoupe : **2296 + 3 tests neufs = 2299** — les deux tests négatifs des règlements et
+`the_release_script_sees_every_perishable_exemption` ; le quatrième,
+`every_exemption_declares_a_coherent_basis`, **remplace** le test par marqueur et ne s'ajoute donc
+pas. **Frontend TOUCHÉ cette fois** (`SettleInvoiceDialog.svelte`) et rejoué en entier : check
+**0 erreur**, lint-i18n **PASS**, **740/740**, build OK.
+
+⚠️ **Le premier passage du gate est mort sur `cargo fmt`** — un ordre d'import dans l'exemple neuf
+— et **aucun test n'a donc tourné**. Deuxième fois sur cette story : `fmt` en pré-vol reste le
+geste le moins cher du dépôt, et il n'a pas été fait.
+
+**Prochaine** : passe 4, **ciblée**, contexte frais, Haiku 4.5 (rotation complète), prompt
+versionné. La boucle ne peut pas se clore ici : la remédiation touche du code de production, sur
+trois fichiers et deux crates.
 
 ## Dev Agent Record
 

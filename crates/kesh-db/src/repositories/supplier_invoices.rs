@@ -594,17 +594,33 @@ pub async fn pay_in_tx(
                 )
             }
             SettlementChoice::InternalAccount { account_id } => {
-                let active: Option<bool> = sqlx::query_scalar(
-                    "SELECT active FROM accounts WHERE id = ? AND company_id = ? FOR UPDATE",
+                // ⚠️ ACTIF **et IMPUTABLE** — jumeau exact de la garde de
+                // `invoice_settlements_write.rs`. Ce flux écrit sans la garde de
+                // postabilité de la 14-3b, donc ce SELECT est le seul contrôle.
+                //
+                // Ici l'écran filtre déjà `active && postable`
+                // (`supplier-invoices/[id]/+page.svelte:66`), si bien que le
+                // trou n'était atteignable que par appel direct à l'API — à la
+                // différence de son jumeau côté client, où l'écran offrait le
+                // compte. Le fermer quand même : une garde serveur ne se déduit
+                // pas d'un filtre d'écran, et le jumeau nous rappelle pourquoi.
+                //
+                // ⛔ Trouvé par le grep de propagation du finding P3-1 (passe 3
+                // de revue de code de la Story 24-5, #375) — la lentille avait
+                // nommé ce fichier pour SA validation de compte de charge, pas
+                // pour ce site-ci.
+                let account: Option<(bool, bool)> = sqlx::query_as(
+                    "SELECT active, postable FROM accounts WHERE id = ? AND company_id = ? \
+                     FOR UPDATE",
                 )
                 .bind(account_id)
                 .bind(company_id)
                 .fetch_optional(&mut **tx)
                 .await
                 .map_err(map_db_error)?;
-                match active {
-                    None | Some(false) => return Err(DbError::InactiveOrInvalidAccounts),
-                    Some(true) => {}
+                match account {
+                    Some((true, true)) => {}
+                    _ => return Err(DbError::InactiveOrInvalidAccounts),
                 }
                 (
                     account_id,

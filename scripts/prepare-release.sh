@@ -132,63 +132,63 @@ fi
 sed -i "s|## \\[$NEW_VERSION\\] — Non publié|$REPLACEMENT|" CHANGELOG.md
 echo "  ✓ CHANGELOG.md : '$PATTERN' → '$REPLACEMENT'"
 
-# --- Exemptions du registre de rejeu dont la justification se PÉRIME ---
+# --- Exemptions du registre de rejeu dont le fondement SE PÉRIME ---
 #
 # Certaines entrées de `EXEMPT_MIGRATIONS` (crates/kesh-db/src/post_restore.rs)
 # ne s'appuient ni sur la fenêtre d'importabilité ni sur une propriété du schéma,
-# mais sur un FAIT DATÉ : « aucune version publiée ne se situe dans tel
-# intervalle ». Ces justifications-là cessent d'être vraies dès qu'on publie.
+# mais sur un FAIT DATÉ : « aucune version publiée ne se situe dans
+# [borne .. la migration exemptée) ». Publier une version dans cet intervalle
+# rend la justification fausse, et désactive le rejeu du backfill définitivement
+# et en silence. Le test `exemptions_claiming_out_of_window_really_are_out_of_window`
+# ne les couvre PAS : il ne contrôle que le fondement « Hors fenêtre ».
 #
-# ⚠️ Le test `exemptions_claiming_out_of_window_really_are_out_of_window` ne les
-# couvre PAS : il ne contrôle que celles qui invoquent l'argument « Hors fenêtre ».
-# Une justification fondée sur le parc n'a donc aucun filet automatisé — d'où ce
-# rappel, au seul endroit par lequel toute release passe.
-#
-# Relevé en passe 1 de revue de code de la Story 24-5 (#375), finding BH-2.
+# ⛔ CE BLOC NE GREPE RIEN. Le registre est lu par du Rust, qui le connaît comme
+# une donnée (`ExemptionBasis::PerishableSince`). Sa version précédente cherchait
+# un marqueur textuel accentué dans le source et en déduisait la version par awk :
+# quatre modes d'échec en deux passes de revue, tous muets. Story 24-5 (#375),
+# findings P2-3 puis P3-2 / P3-3.
 
-# ⚠️ On ne lit QUE le registre, pas le module de tests : la garde de non-vacuité
-# qui protège ce marqueur le cite elle-même (doc-comment et message d'échec), et
-# un `grep` sur le fichier entier compterait ces citations comme des exemptions.
-# Constaté en appliquant ce correctif : 5 au lieu de 1.
-REGISTRE_SRC=$(sed '/^#\[cfg(test)\]/,$d' crates/kesh-db/src/post_restore.rs)
-MIGRATIONS_PERISSABLES=$(printf '%s\n' "$REGISTRE_SRC" | grep -c "SE PÉRIME" || true)
-if [ "${MIGRATIONS_PERISSABLES:-0}" -gt 0 ]; then
+PERISSABLES=$(cargo run -q -p kesh-db --example perishable_exemptions 2>/dev/null || true)
+
+if [ -n "$PERISSABLES" ]; then
   echo
-  echo "⚠️  $MIGRATIONS_PERISSABLES exemption(s) de rejeu à justification PÉRISSABLE dans post_restore.rs."
+  echo "⚠️  Exemption(s) de rejeu à fondement PÉRISSABLE dans post_restore.rs."
   echo "    Chacune repose sur « aucune version publiée dans tel intervalle » — un fait"
   echo "    que CETTE release peut rendre faux, silencieusement et définitivement."
-  echo "    ⇒ relire chaque justification marquée « SE PÉRIME » AVANT de poser le tag :"
-  printf '%s\n' "$REGISTRE_SRC" | grep -n "SE PÉRIME" | sed 's/^/      /'
   echo
 
-  # La question décidable n'est PAS « quel est le dernier tag ? » : celui-là
-  # désigne la release PRÉCÉDENTE et ne dit rien du seul cas qui périme
-  # réellement une justification datée — une release préparée depuis un point de
-  # branchement ANTÉRIEUR à la migration exemptée (typiquement un hotfix sur une
-  # branche ancienne), qui publierait donc une version DANS l'intervalle que la
-  # justification déclare vide. On y répond en regardant si CETTE release
-  # emporte la migration.
-  #
-  # Chaque entrée du registre est `(<version>,\n "<justification>",)` : on
-  # retient la dernière version lue avant chaque marqueur.
-  VERSIONS_PERISSABLES=$(printf '%s\n' "$REGISTRE_SRC" | awk '
-    /^[[:space:]]*2[0-9]{13},[[:space:]]*$/ { v = $1; sub(/,$/, "", v) }
-    /SE PÉRIME/ { if (v != "") print v }
-  ' | sort -u)
+  # La question décidable n'est pas « quel est le dernier tag ? » — celui-là
+  # désigne la release précédente et ne dit rien de l'intervalle. Elle est :
+  # UN TAG DÉJÀ PUBLIÉ SE SITUE-T-IL DANS L'INTERVALLE ? Un tag y est si son
+  # arbre porte la migration de la borne basse mais PAS la migration exemptée.
+  FAUTIVES=0
+  while read -r version borne; do
+    [ -z "$version" ] && continue
+    echo "    Exemption $version — intervalle déclaré vide : [$borne .. $version)"
+    trouve=0
+    for tag in $(git tag --sort=-creatordate); do
+      a_borne=$(git ls-tree -r --name-only "$tag" -- crates/kesh-db/migrations/ 2>/dev/null \
+                | grep -c "/${borne}_" || true)
+      a_version=$(git ls-tree -r --name-only "$tag" -- crates/kesh-db/migrations/ 2>/dev/null \
+                  | grep -c "/${version}_" || true)
+      if [ "$a_borne" -gt 0 ] && [ "$a_version" -eq 0 ]; then
+        echo "      ⛔ $tag ($(git log -1 --format=%cs "$tag" 2>/dev/null || echo '?')) EST DANS"
+        echo "         L'INTERVALLE : la justification est FAUSSE. Le backfill ne sera jamais"
+        echo "         rejoué chez qui a installé cette version puis restaure un backup."
+        echo "         ⇒ inscrire la migration au registre POST_RESTORE_BACKFILLS, ou"
+        echo "           re-motiver l'exemption — AVANT de poser le tag."
+        trouve=1
+        FAUTIVES=1
+      fi
+    done
+    [ "$trouve" -eq 0 ] && echo "      ✓ aucun tag publié dans l'intervalle — la justification tient."
+  done <<< "$PERISSABLES"
 
-  echo "    Cette release emporte-t-elle la migration exemptée ?"
-  for version in $VERSIONS_PERISSABLES; do
-    if compgen -G "crates/kesh-db/migrations/${version}_*.sql" > /dev/null; then
-      echo "      ✓ $version — présente dans cet arbre : l'intervalle qu'elle déclare vide est"
-      echo "        refermé par cette release même, la justification tient."
-    else
-      echo "      ⛔ $version — ABSENTE de cet arbre. Cette release publierait une version DANS"
-      echo "         l'intervalle que la justification déclare vide : elle devient FAUSSE, et le"
-      echo "         backfill ne sera JAMAIS rejoué chez qui installera cette version."
-      echo "         ⇒ traiter AVANT de poser le tag (inscrire au registre, ou re-motiver)."
-    fi
-  done
-  echo "    Dernier tag publié : $(git tag --sort=-creatordate | head -1) ($(git log -1 --format=%cs "$(git tag --sort=-creatordate | head -1)" 2>/dev/null || echo '?'))"
+  if [ "$FAUTIVES" -eq 1 ]; then
+    echo
+    echo "⛔ Au moins une justification périssable est DÉMENTIE par un tag publié."
+    exit 1
+  fi
   echo
 fi
 

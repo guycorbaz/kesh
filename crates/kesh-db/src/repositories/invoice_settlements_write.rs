@@ -124,19 +124,36 @@ pub async fn settle_invoice(
         }
         SettlementChoice::InternalAccount { account_id } => {
             // ⚠️ N'importe quel compte du plan — caisse, poste, compensation —
-            // mais il doit être ACTIF : régler sur un compte archivé produirait
-            // une écriture qu'aucun écran ne montre plus.
-            let active: Option<bool> = sqlx::query_scalar(
-                "SELECT active FROM accounts WHERE id = ? AND company_id = ? FOR UPDATE",
+            // mais il doit être ACTIF **et IMPUTABLE**.
+            //
+            // `active` : régler sur un compte archivé produirait une écriture
+            // qu'aucun écran ne montre plus.
+            //
+            // `postable` : ce flux passe `enforce_postable = false` plus bas, si
+            // bien que la garde de la Story 14-3b ne s'applique PAS ici — c'est
+            // donc ce SELECT, et lui seul, qui tient la promesse. Sans lui, un
+            // compte de regroupement, le 2979 *Résultat de l'exercice* ou un
+            // compte de clôture 9000/9100/9200 (Story 24-5) peut recevoir une
+            // écriture : le choix vient du client, et l'écran le proposait.
+            //
+            // ⛔ Relevé en passe 3 de revue de code de la Story 24-5 (#375),
+            // finding P3-1 — CRITICAL. Le défaut que la 24-5 ferme était
+            // rouvert ICI, et par un geste ORDINAIRE : « Enregistrer un
+            // règlement » → « Compte interne » → 9000. Ce n'était donc pas le
+            // trou « API seulement » que le manuel décrivait. Les trois flux de
+            // réconciliation, eux, restent ouverts et sont suivis par #427 —
+            // mais aucun de leurs écrans n'offre ces comptes.
+            let account: Option<(bool, bool)> = sqlx::query_as(
+                "SELECT active, postable FROM accounts WHERE id = ? AND company_id = ? FOR UPDATE",
             )
             .bind(account_id)
             .bind(company_id)
             .fetch_optional(&mut *tx)
             .await
             .map_err(map_db_error)?;
-            match active {
-                None | Some(false) => return Err(DbError::InactiveOrInvalidAccounts),
-                Some(true) => account_id,
+            match account {
+                Some((true, true)) => account_id,
+                _ => return Err(DbError::InactiveOrInvalidAccounts),
             }
         }
     };

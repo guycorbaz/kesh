@@ -338,6 +338,52 @@ async fn pay_cancelled_invoice_rejected(pool: MySqlPool) {
     assert!(matches!(err, DbError::IllegalStateTransition(_)));
 }
 
+/// ⛔ **Un compte de contrepartie NON IMPUTABLE est refusé.**
+///
+/// Jumeau du test de `invoice_settlement.rs` : `pay` écrit sans la garde de
+/// postabilité de la 14-3b, donc son `SELECT active, postable` est le seul
+/// contrôle. Ici l'écran filtrait déjà `active && postable`, si bien que le trou
+/// n'était atteignable que par appel direct à l'API — raison de plus pour que le
+/// test existe : *rien d'autre n'en fait foi.*
+///
+/// ⛔ Trouvé par le grep de propagation du finding P3-1 (passe 3 de revue de code
+/// de la Story 24-5, #375), qui a rendu ce site à côté de son jumeau client.
+#[sqlx::test(migrations = "./test-schema")]
+async fn pay_with_non_postable_account_is_rejected(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let created = supplier_invoices::create(
+        &pool,
+        one_line(&ctx, dec!(100.00), dec!(0)),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .unwrap();
+
+    // Le compte reste ACTIF — c'est `postable` seul qui doit refuser.
+    sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ?")
+        .bind(ctx.seeded.accounts["1000"])
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let err = supplier_invoices::pay(
+        &pool,
+        ctx.seeded.company_id,
+        created.invoice.id,
+        SettlementChoice::InternalAccount {
+            account_id: ctx.seeded.accounts["1000"],
+        },
+        d(2026, 6, 20),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(err, DbError::InactiveOrInvalidAccounts),
+        "got {err:?}"
+    );
+}
+
 #[sqlx::test(migrations = "./test-schema")]
 async fn cancel_paid_invoice_rejected(pool: MySqlPool) {
     let ctx = setup(&pool).await;
