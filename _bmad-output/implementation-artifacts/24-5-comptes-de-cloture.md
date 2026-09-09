@@ -679,6 +679,59 @@ une convergence lente n'est pas une non-convergence.* **Arbitrage porté au Proj
 
 **Prochaine** : passe 4, contexte frais, modèle différent, prompt versionné.
 
+### Passe 4 — 2026-09-09 · Haiku 4.5, contexte frais, CIBLÉE sur `85b83904`..`4ccddb19`
+
+**0 finding, toutes sévérités confondues.** Le critère d'arrêt de la Review Iteration Rule est
+atteint.
+
+✅ **Et cette passe a réellement travaillé, ce qui n'allait pas de soi.** Le dépôt garde le
+précédent d'un zéro de complaisance : en passe 1 de la 24-4c, la même lentille avait rendu zéro en
+vérifiant *« par grep ou lecture directe DE LA SPEC »* — elle avait contrôlé que la spec disait ce
+que la spec disait, et déclaré traité le cas où se cachait le premier CRITICAL. **Ici les
+vérifications portent sur le CODE et les FICHIERS TIERS** : `git tag` et les dates de publication,
+`admin-manual.tex:1609`, `user-manual.tex:562`, le sidebar `nav-administration`,
+`chart_of_accounts/mod.rs:299`, `post_restore.rs:257-260`, les deux blocs de
+`20260722000001` (`:110-113` licéité / `:115-118` limite), et les **dix littéraux `ChartEntry`**
+retrouvés un par un aux lignes annoncées.
+
+✅ **Le point le plus utile de cette passe est négatif** : après **deux renversements** de D6 —
+classe A avec dérogation, puis exemption sur le parc —, elle n'a trouvé **aucune trace résiduelle**
+de l'ancienne décision dans les treize AC, les huit tâches, les Dev Notes ni les journaux. *C'était
+le risque principal de cette remédiation, et il ne s'est pas réalisé.*
+
+### BOUCLE DE REVUE DE SPEC CLOSE — 2026-09-09
+
+| passe | modèle | CRIT | HIGH | MED | LOW | total |
+|---|---|---|---|---|---|---|
+| 1 | Sonnet 4.6 + Haiku 4.5 | 1 | 1 | 3 | 1 | **6** |
+| 2 | Opus 5 *(ciblée)* | 0 | 1 | 8 | 4 | **13** |
+| 3 | Sonnet 4.6 *(ciblée)* | 0 | 1 | 2 | 1 | **4** |
+| 4 | Haiku 4.5 *(ciblée)* | 0 | 0 | 0 | 0 | **0** |
+
+**Trend : 6 → 13 → 4 → 0.** Sévérité maximale : CRITICAL → HIGH → HIGH → rien. Rotation complète
+Sonnet+Haiku → Opus → Sonnet → Haiku, quatre contextes frais, trois prompts versionnés.
+
+⛔ **VINGT-TROIS findings, dont QUATORZE nés d'une remédiation** — et à partir de la passe 2,
+**la quasi-totalité**. Aucune décision de conception d'origine n'a été prise en défaut après la
+passe 1. *Le motif que le dépôt mesure depuis l'Epic 22 se vérifie une fois de plus.*
+
+⛔ **CE QUE CETTE STORY APPREND, ET QUI N'EST PAS DANS LE CLAUDE.MD : le défaut était deux fois de
+suite dans un fichier que la spec prescrivait de MODIFIER sans l'avoir LU.** En passe 3, le manuel
+d'administration **promettait** l'inverse de ce que la spec s'apprêtait à faire — et cette promesse
+a renversé la décision centrale. Puis le chemin d'écran a été écrit « Réglages » quand le manuel
+utilisateur écrivait **déjà** « Administration », correctement, 180 lignes plus haut.
+⇒ *La leçon « aucun gate ne lit le manuel » de la 24-4a a une jumelle : **aucune passe ne le lit
+non plus, sauf si son prompt le lui demande.*** C'est le prompt de la passe 3 qui a produit le
+HIGH, pas la sagacité de la lentille. **À verser à la rétrospective.**
+
+⚠️ **La stagnation de sévérité HIGH → HIGH n'a PAS déclenché de split, et le motif s'écrit** :
+volume en chute (13 → 4 → 0), findings portant exclusivement sur la dernière remédiation, aucune
+décision d'origine prise en défaut, et un HIGH qui n'était pas une régression mais une **omission
+de lecture**. La passe 4 confirme l'arbitrage *a posteriori* — mais il était rendu avant elle, donc
+sans cette confirmation.
+
+**Prochaine** : `bmad-dev-story` 24-5.
+
 ## Dev Agent Record
 
 ### Agent Model Used
