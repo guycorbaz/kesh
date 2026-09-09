@@ -210,10 +210,15 @@ git log -1 --format=%ci $(git tag --sort=-creatordate | head -1)
 ⇒ **Le contrôle est une tâche (T3), et il se refait au gate de clôture (T8)**, pas seulement à
 l'écriture de la spec.
 
-⚠️ **Question ouverte, à trancher avant l'implémentation** : l'instance qui tourne sur le NAS de
-l'auteur exécute-t-elle un binaire **postérieur au 2026-08-27** ? Si oui, elle est le seul membre
-du parc concerné, et la décision se rouvre — l'exemption deviendrait fausse pour la seule
-installation réelle du projet. *Cette question ne se déduit d'aucun fichier du dépôt.*
+✅ **TRANCHÉ — arbitrage de Guy, 2026-09-09 : l'instance du NAS exécute v0.11.1**, publiée le
+2026-08-24, donc **antérieure** à la borne du `20260827000001`. Le parc réel — la seule
+installation en service du projet — est **hors de l'intervalle**, et l'exemption est établie sur
+un fait, non sur une présomption.
+
+⚠️ **Cette réponse ne se déduisait d'aucun fichier du dépôt** : ni un tag, ni un manifeste ne dit
+ce qui tourne sur une machine. C'est pourquoi elle a été **demandée** plutôt que supposée — et
+c'est aussi pourquoi le contrôle de T3/T8 porte sur les **tags publiés**, seule part du fait qui
+soit vérifiable par commande.
 
 ## D5 — Le défaut a DEUX surfaces, l'issue n'en nomme qu'une
 
@@ -655,9 +660,9 @@ dérogation. ✅ **Trois findings tombent par la racine** : plus de dérogation 
 clôture. Une exemption fausse désactive le rejeu *définitivement et en silence* ; c'est ce que le
 CLAUDE.md dit de l'exemption : « l'issue la moins coûteuse, donc celle qu'il faut contrôler ».
 
-⛔ **Une question reste ouverte et n'est déductible d'AUCUN fichier** : l'instance du NAS
-exécute-t-elle un binaire postérieur au 2026-08-27 ? Si oui, elle est le seul membre du parc
-concerné et la décision se rouvre. *Portée à l'arbitrage du Project Lead.*
+✅ **La question ouverte de cette passe a été tranchée le jour même** : l'instance du NAS
+exécute **v0.11.1** (2026-08-24), donc hors de l'intervalle — arbitrage de Guy. L'exemption repose
+désormais sur un fait établi, et non sur une présomption favorable.
 
 ⚠️ **Le MEDIUM restant est de la même famille que le HIGH** : la remédiation de la passe 2 écrivait
 « Réglages → Soldes de départ » quand le sidebar range cet écran sous **Administration** — et le
