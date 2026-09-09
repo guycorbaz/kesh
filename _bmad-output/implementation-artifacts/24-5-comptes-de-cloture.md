@@ -148,28 +148,57 @@ Les trois issues, examinées :
 | **classe B** (sentinelle) | ⛔ **indisponible** — la classe B exige que **le DDL et le backfill soient dans le même fichier** ; notre migration est un `UPDATE` **pur**, il n'y a aucune colonne à créer, donc aucune sentinelle valide |
 | **classe A** (inconditionnel) | ⚠️ **le critère n'est pas satisfait** — `AND postable = TRUE` porte l'**idempotence**, pas une garde d'**intention** |
 
-⛔ **Et le rejeu est NÉCESSAIRE.** La colonne `postable` existe depuis juillet
-(`20260722000001`) : une archive prise entre cette date et cette migration porte donc
-`postable = TRUE` sur le 9000 et le **restaure**. Sans rejeu, le défaut **rouvre définitivement**
-— `_sqlx_migrations` n'étant pas restaurée, la migration reste marquée appliquée et ne repassera
+⛔ **Et le rejeu est NÉCESSAIRE.** Une archive prise entre **`20260827000001`** — dernière
+migration créatrice de table, donc **borne basse de la fenêtre** — et cette migration porte
+`postable = TRUE` sur le 9000 et le **restaure**. Sans rejeu, le défaut **rouvre définitivement** :
+`_sqlx_migrations` n'étant pas restaurée, la migration reste marquée appliquée et ne repassera
 jamais. C'est le mode d'échec exact que P7 existe pour empêcher.
 
-⇒ **Décision : classe A, et la réserve s'écrit au lieu de se taire.** Le rejeu peut refermer un
-compte qu'un utilisateur avait délibérément rouvert. On l'accepte, sur l'asymétrie des coûts —
-la même que le dépôt applique aux doublons de contacts :
+⚠️ **La borne est celle de la fenêtre, PAS la date de la colonne.** `postable` existe depuis
+juillet, mais une archive de juillet est **refusée en 400** au contrôle de couverture — c'est le
+motif même par lequel les deux anciennes entrées ont été exemptées. *Invoquer juillet ici
+utiliserait une fenêtre que le paragraphe précédent vient de recalculer autrement.* L'intervalle
+réel est donc étroit — il exclut **v0.11.1**, la version publiée — mais il n'est pas vide, et c'est
+tout ce que la nécessité du rejeu demande.
 
-- **l'écrasement est bruyant et réparable** — le compte est visible dans le plan comptable, et un
-  `PUT` le rouvre en un geste ;
+### Les gardes d'intention examinées, et pourquoi aucune n'est retenue
+
+| voie | verdict |
+|---|---|
+| `AND version = 1` | ⛔ **faux négatif silencieux** — un compte seulement **renommé** porte `version > 1` sans qu'on ait touché `postable` ; le rejeu le sauterait. *Le mode d'échec qu'on ferme, réintroduit par sa propre garde.* |
+| garde par **`audit_log`** | ⚠️ **constructible et correcte en principe** — `audit_log` est restaurée (`backup.rs`, `TABLES_TO_TRUNCATE`) et `account_snapshot_json` (`accounts.rs:46-60`) y écrit `postable` depuis la 14-3a, donc l'archive **porte** la trace d'une réouverture délibérée. **Écartée sur le coût** : elle ferait dépendre une migration de données du **contenu** d'une table d'audit — table dont la sémantique évolue, que le dépôt ne requête nulle part à cette fin, et qui n'a **aucun précédent** de ce type. Le remède serait plus lourd que le mal. |
+| **backfill hors migration** (au boot et en fin d'import, gabarit `backfill_client_number_canonical`, 22-1) | ⛔ **écartée** — elle s'exécuterait à **chaque démarrage** pour fermer trois comptes une fois, et déplacerait hors de toute trace un geste que le registre, lui, rapporte. |
+
+⇒ **Décision : classe A, avec dérogation P7 DÉCLARÉE.**
+
+⛔ **C'est une dérogation, pas une conformité, et elle doit se dire.** Le garde-fou P7 énonce
+« classe A **uniquement si** tous les statements sont gardés » ; notre `AND postable = TRUE` porte
+l'**idempotence**, pas une garde d'**intention**. Ne pas le déclarer programmerait un finding
+MEDIUM en revue de code sur une décision pourtant arbitrée. **Propriétaire de l'arbitrage : le
+Project Lead.** *Le report éventuel de cette exception au `CLAUDE.md` lui-même n'appartient pas à
+cette story — il se pose à la rétrospective de l'Epic 24.*
+
+⛔ **Et l'en-tête du module devient faux si on ne le touche pas** (`post_restore.rs:38-40`) :
+*« Classe A — auto-gardée… **Tous** ses statements sont gardés contre l'écrasement d'une valeur
+posée par l'utilisateur »*. Après cette story, cette phrase mentirait sur son propre registre. Elle
+est donc amendée par T3. *C'est le motif de la 24-4c — corriger la thèse au site nommé et laisser
+ses applications ailleurs — transposé du story file au code.*
+
+**L'arbitrage repose sur l'asymétrie des coûts**, la même que le dépôt applique aux doublons de
+contacts :
+
+- **l'écrasement est réparable et finit par se voir** — le plan comptable affiche un badge « non
+  postable », et un `PUT` rouvre le compte en un geste ;
 - **le non-rejeu est muet et comptablement faux** — l'à-nouveau repart en charges, et rien ne le
   signale.
 
-⚠️ **`AND version = 1` a été examiné comme garde d'intention et écarté** : un utilisateur ayant
-simplement **renommé** son compte porte `version > 1` sans avoir touché `postable`, et le rejeu le
-sauterait — un faux négatif **silencieux**, c'est-à-dire le mode d'échec qu'on cherche à fermer,
-réintroduit par sa propre garde.
-
-⛔ **Cette réserve va au manuel d'administration** (T6) : elle décrit un comportement observable
-par l'exploitant, et une réserve qui ne vit que dans un commentaire Rust n'atteint personne.
+⚠️ **La première branche est la plus faible, et il faut le dire.** Le rejeu se produit **à
+l'intérieur d'un import complet**, où tout change ; son seul témoin est `rows_affected`, dont le
+doc-comment dit lui-même qu'il est *« informatif »* et **non nul dans le cas nominal**. Rien ne
+nomme les comptes retournés. Or **le 9000 sert une fois l'an** : restauration en mars, symptôme en
+janvier suivant. ⇒ **« bruyant » veut dire « à la prochaine tentative de saisie »**, ce qui peut
+être dix mois plus tard — d'où l'exigence, en T6, que le manuel d'administration dise **quoi
+vérifier après un import**, et non seulement que le cas existe.
 
 ## D5 — Le défaut a DEUX surfaces, l'issue n'en nomme qu'une
 
@@ -272,6 +301,10 @@ un **symptôme visible**, pas un bug, et c'est par là qu'un utilisateur peut se
   - [ ] la troisième cause dans `is_postable`, **en tête**, et son doc-comment mis à jour —
         ⚠️ il énonce aujourd'hui « **deux** causes » : le décompte se recompte (§ *Recompter ses
         propres comptes rendus*)
+  - [ ] ⛔ **et corriger sa ligne de résumé, qui est INVERSÉE** : `chart_of_accounts/mod.rs:299`
+        dit *« `true` si l'entrée doit être créée non-postable »* alors que la fonction rend `true`
+        pour un compte **postable**. Défaut préexistant — mais la story édite ce commentaire, et
+        passer dessus sans le voir le rendrait invisible pour un an de plus
   - [ ] ⛔ **les DIX littéraux `ChartEntry { … }` existants doivent recevoir le champ** — huit
         dans `chart_of_accounts/mod.rs` (`:464`, `:480`, `:492`, `:505`, `:512`, `:526`, `:592`,
         `:657`) et **deux dans `kesh-db/src/repositories/accounts.rs`** (`:1438`, `:1450`).
@@ -290,7 +323,16 @@ un **symptôme visible**, pas un bug, et c'est par là qu'un utilisateur peut se
   - [ ] `UPDATE accounts SET postable = FALSE WHERE number IN ('9000','9100','9200') AND postable = TRUE`
         — la clause `AND postable = TRUE` rend la migration **idempotente** et son effet mesurable
   - [ ] ⛔ **P7 — inscription en classe A au registre** (AC 9) : `POST_RESTORE_BACKFILLS`,
-        `BackfillTrigger::Unconditional`, le `.sql` embarqué sous `src/post_restore/`.
+        `BackfillTrigger::Unconditional`, et **`sql: include_str!("../migrations/<date>_closing_accounts_not_postable.sql")`**.
+        ⛔ **AUCUN fichier neuf sous `src/post_restore/`** : ce répertoire ne porte que les
+        **extraits** de migrations mixtes (DDL + données) ; le champ le dit — *« la migration
+        entière si elle est du backfill pur, un extrait sinon »* (`post_restore.rs:133-135`), et
+        la seule entrée de backfill pur du dépôt (`20260729000001`, `:284`) pointe bien
+        `../migrations/`. ⚠️ *Dupliquer le fichier passerait tous les tests — les extraits sont
+        vérifiés comme sous-chaînes verbatim de leur source — donc la faute serait **muette**.*
+  - [ ] ⛔ **Amender l'en-tête du module** (`post_restore.rs:38-40`) : il affirme aujourd'hui que
+        **toute** entrée de classe A est auto-gardée, ce que cette entrée dément. La phrase doit
+        nommer l'exception et renvoyer au commentaire de l'entrée (cf. D6).
         ⛔ **Ne PAS chercher une exemption ni une sentinelle** — D6 démontre que l'une est fausse
         et l'autre indisponible ; le test `every_data_backfill_migration_is_triaged` nommerait le
         fichier, et `exemptions_claiming_out_of_window_really_are_out_of_window` rejetterait la
@@ -302,12 +344,16 @@ un **symptôme visible**, pas un bug, et c'est par là qu'un utilisateur peut se
         `grep -c '^| `20' docs/migrations-idempotence-audit.md`, l'en-tête `## Table d'audit (N
         migrations)`, la ligne `Total`, et les trois compteurs de partition dont la **somme** doit
         égaler le total — ⚠️ **ils ne valent pas le total**
-  - [ ] ⛔ **Le verdict d'idempotence est `yes`, et le compteur `yes` passe de 5 à 6.** Le critère
-        du document est net : **DML pur, sans DDL** ⇒ `yes`. Le précédent à copier est
-        `20260729000001_invoice_lines_revenue_account_backfill.sql` (« deux `UPDATE` de données
-        uniquement, aucun DDL »), **pas** `20260722000001`, qui porte `tracked-by-sqlx` **parce
-        qu'il contient aussi du DDL**. ⚠️ *Un verdict mal affecté laisse la somme juste et la
-        partition fausse : recompter les cinq compteurs ne le détecte pas.*
+  - [ ] ⛔ **Le verdict d'idempotence est `yes`, et le compteur `yes` passe de 5 à 6.**
+        ⚠️ **Le critère n'est PAS « DML pur » — c'est la RE-EXÉCUTION MANUELLE SANS EFFET.**
+        Quatre des cinq `yes` actuels sont du **DDL** pur, gardé par des `IF NOT EXISTS` ; ici
+        c'est la clause **`AND postable = TRUE`** qui porte le verdict. *L'absence de DDL ne suffit
+        pas : un `UPDATE accounts SET version = version + 1` serait du DML pur et ne serait pas
+        idempotent pour deux sous.* ⇒ **si le SQL change à l'implémentation, le verdict se
+        re-décide.** Le précédent à copier est `20260729000001` (`yes`), **pas** `20260722000001`,
+        qui porte `tracked-by-sqlx` **parce qu'il contient aussi du DDL**.
+        ⚠️ *Un verdict mal affecté laisse la somme juste et la partition fausse : recompter les
+        cinq compteurs ne le détecte pas.*
   - [ ] ⛔ **P6 — DEUX nombres**, pas un : `total == 65` → **66** *et* la fenêtre `total - 31` →
         `total - 32`, frontière tenue à **34** (`crates/kesh-db/tests/migrations_upgrade_path.rs`).
         *Bumper le total seul élargirait la fenêtre en silence — la 24-4c a payé ce piège.*
@@ -319,23 +365,38 @@ un **symptôme visible**, pas un bug, et c'est par là qu'un utilisateur peut se
   - [ ] `crates/kesh-db/tests/accounts_role_backfill.rs` étendu aux trois comptes
   - [ ] ⚠️ ce test monte les migrations **par version** (`migrations_before`), jamais par
         position : ne pas y introduire de `total - N`
-- [ ] **T5 — Les deux surfaces** (AC 12, 13, I1, I3)
+- [ ] **T5 — Les deux surfaces** (AC 11, 12, 13, I1, I3)
   - [ ] test d'intégration : poster sur le 9000 est refusé par la garde **existante** de 14-3b
   - [ ] test : un solde historique sur le 9000 n'apparaît **ni** au compte de résultat **ni** dans
-        `fetch_retained_earnings` **une fois les lignes retirées** — ⚠️ et **apparaît** tant
+        le **`retainedEarnings` du bilan rendu** — ⛔ *pas* dans `fetch_retained_earnings`, qui est
+        **privée** : elle ne s'observe qu'au travers de `GET /api/v1/reports/balance-sheet` —
+        **une fois les lignes retirées** — ⚠️ et **apparaît** tant
         qu'elles sont là : c'est ce second sens qui démontre le défaut, le premier ne démontre que
         l'absence de lignes
   - [ ] test I3 : décompte avant/après du backfill, et aucun `account_type` modifié
-- [ ] **T6 — Le manuel** (D4)
+  - [ ] ⛔ **test de l'AC 11** : un `PUT /api/v1/accounts/{id}` avec `postable: true` sur un 9000
+        que le backfill a fermé le **rouvre**. ⚠️ *C'est la moitié « réparable » de D6 : sans ce
+        test, le seul geste qui rend l'écrasement acceptable n'est exercé par rien, et D6
+        deviendrait faux sans que rien ne rougisse.*
+- [ ] **T6 — Les manuels** (D4, D6)
   - [ ] `docs/manual/fr/user-manual.tex` : les comptes de clôture n'accueillent pas d'écriture
-        dans Kesh ; le report à nouveau se pose au **2970** ; une écriture déjà passée sur un
-        compte 9 se corrige par **contre-passation** (24-4a), non par réécriture (24-4b)
+        dans Kesh ; une écriture déjà passée sur un compte 9 se corrige par **contre-passation**
+        (24-4a), non par réécriture (24-4b)
+  - [ ] ⛔ **et montrer la porte ouverte, pas seulement celle qu'on ferme** : la voie prévue pour
+        un bilan d'ouverture de migration est l'écran **Réglages → Soldes de départ**
+        (`routes/opening_balances`) ; le **2970** en est la contrepartie comptable, **pas la
+        procédure**. ⚠️ *Fermer un chemin sans montrer l'autre est exactement le reproche que
+        cette story adresse au correctif annoncé par l'issue.* ✅ Vérifié : la grille des soldes de
+        départ ne prend que les comptes de bilan (`Asset`/`Liability`), donc les 9xxx en sont
+        **déjà** exclus — la story ne casse rien de ce côté
   - [ ] PDF régénéré (`make fr` dans `docs/manual/`) et commité
   - [ ] **la réserve de D6 va au manuel d'ADMINISTRATION** (`docs/manual/fr/admin-manual.tex`) :
         restaurer une sauvegarde antérieure à cette version referme les comptes de clôture, y
         compris ceux que l'exploitant aurait rouverts délibérément
   - [ ] ⚠️ **la limite du critère « numéro »**, sur le modèle de celle que le backfill de rôles
-        énonce déjà (`20260722000001:110-113`) : un utilisateur ayant **réaffecté** le numéro 9000
+        énonce déjà — ⛔ **`20260722000001:115-118`**, le bloc « LIMITE ASSUMÉE » ; `:110-113`
+        défend la *licéité* du numéro en migration, c'est-à-dire le gabarit de l'**AC 6**, pas
+        celui de la limite : un utilisateur ayant **réaffecté** le numéro 9000
         à un autre usage verra ce compte fermé, sans erreur. *Exposition faible —
         `uq_accounts_company_number` n'est pas filtrée sur `active`, donc un numéro semé garde son
         compte à vie — mais le précédent la documente, et l'omettre ici serait une régression de
@@ -372,13 +433,18 @@ un **symptôme visible**, pas un bug, et c'est par là qu'un utilisateur peut se
 ### Règle de splitting — examinée, non déclenchée
 
 Modules touchés : `kesh-core/chart_of_accounts`, `kesh-db` (migration, registre de rejeu, test
-d'invariant), **`kesh-api` (le test de bout en bout de l'AC 12 vit dans
-`crates/kesh-api/tests/reports_e2e.rs`)** et `docs/manual`. **Quatre**, sous le seuil de cinq.
-Aucun frontend, **aucune clé i18n** — la garde de 14-3b et son message existent déjà (AC 13).
+d'invariant), **`kesh-api`** et `docs/manual`. **Quatre**, sous le seuil de cinq. Aucun frontend,
+**aucune clé i18n** — la garde de 14-3b et son message existent déjà (AC 13).
 
-⚠️ **Le décompte a été recompté, et il était faux à trois** : `kesh-api` manquait, alors que
-l'AC 12 l'exige. *Un décompte qu'on écrit sans le refaire est le défaut que le § « Recompter ses
-propres comptes rendus » vise ; il ne devient pas vrai parce qu'il reste sous le seuil.*
+⛔ **Pourquoi `kesh-api` et non `kesh-report`, et le motif n'est pas celui qu'on croit.**
+`crates/kesh-report/tests/` **existe** et monte le schéma (six fichiers, `#[sqlx::test]`) : passer
+du test unitaire au test d'intégration ne fait donc pas sortir de `kesh-report`. La vraie raison
+est que **`fetch_retained_earnings` est privée** (`balance_sheet.rs:333`, pas de `pub`) : le report
+à nouveau ne s'observe qu'**au travers du rapport rendu**, donc par la route HTTP.
+
+⚠️ **Le décompte a été recompté, et il était faux à trois.** *Un décompte qu'on écrit sans le
+refaire est le défaut que le § « Recompter ses propres comptes rendus » vise ; il ne devient pas
+vrai parce qu'il reste sous le seuil.*
 
 ### Fichiers à toucher
 
@@ -391,10 +457,11 @@ propres comptes rendus » vise ; il ne devient pas vrai parce qu'il reste sous l
 | `crates/kesh-db/migrations.sha384` · `test-schema/0001_schema_squash.sql` | UPDATE — P8 + squash |
 | `crates/kesh-db/tests/migrations_upgrade_path.rs` | UPDATE — P6, **deux** nombres |
 | `docs/migrations-idempotence-audit.md` | UPDATE — P5, ligne + **cinq** compteurs |
-| `crates/kesh-db/src/post_restore.rs` (+ `src/post_restore/<date>_*.sql`) | UPDATE + NEW — P7, entrée **classe A** et sa réserve (D6) |
+| `crates/kesh-db/src/post_restore.rs` | UPDATE — P7, entrée **classe A** (`include_str!` de la migration, **aucun extrait**), sa réserve (D6), et l'en-tête du module amendé |
 | `crates/kesh-db/tests/accounts_role_backfill.rs` | UPDATE — l'invariant seed ≡ backfill |
 | `crates/kesh-api/tests/reports_e2e.rs` | UPDATE — le test de bout en bout de l'AC 12 (les tests de `income_statement.rs` ne montent **aucune** base) |
-| `docs/manual/fr/user-manual.tex` (+ PDF) | UPDATE — T6 |
+| `docs/manual/fr/user-manual.tex` (+ PDF) | UPDATE — T6, la conduite à tenir (D4) |
+| `docs/manual/fr/admin-manual.tex` (+ PDF) | UPDATE — T6, **la réserve de D6** et quoi vérifier après un import |
 
 ### Pièges vérifiés au sol
 
@@ -460,11 +527,15 @@ table « Fichiers à toucher » ne nommait pas. Sans eux, `cargo build --workspa
 rend `E0063 missing field`.
 
 ⚠️ **Deux MEDIUM portaient sur des comptes rendus de la spec, pas sur sa conception** : le
-décompte de modules disait « trois » en omettant `kesh-api`, où vit le seul fichier capable de
-porter le test de bout en bout (les tests de `income_statement.rs` ne montent aucune base) ; et le
+décompte de modules disait « trois » en omettant `kesh-api`, que l'AC 12 exige — ⚠️ *le motif
+alors avancé, « les tests d'`income_statement.rs` ne montent aucune base », était un
+non-séquitur : `kesh-report/tests/` existe et monte le schéma. La vraie raison, établie en passe 2,
+est que `fetch_retained_earnings` est **privée*** ; et le
 verdict d'idempotence de la ligne d'audit n'était pas spécifié, avec un gabarit qui **induisait en
 erreur** — `20260722000001` porte `tracked-by-sqlx` **parce qu'il contient du DDL**, quand notre
-migration, DML pur, relève du `yes` de `20260729000001`. *Un verdict mal affecté laisse la somme
+migration relève du `yes` de `20260729000001` — ⚠️ *non parce qu'elle est du DML pur, motif
+énoncé alors et corrigé en passe 2, mais parce que sa clause `AND postable = TRUE` la rend
+rejouable sans effet.* *Un verdict mal affecté laisse la somme
 juste et la partition fausse : recompter les cinq compteurs ne le détecte pas.*
 
 ✅ **Ce que la propagation post-patch a rattrapé, et que les deux lentilles n'avaient pas vu** :
@@ -478,6 +549,62 @@ dans son environnement), et n'a pas vérifié exhaustivement que **aucun réglag
 compte 9** (D4) — jugé plausible, non prouvé. À traiter en passe 2 ou à l'implémentation.
 
 **Prochaine** : passe 2 **ciblée** sur le seul commit de remédiation, contexte frais, modèle
+différent, prompt versionné.
+
+### Passe 2 — 2026-09-09 · Opus 5, contexte frais, CIBLÉE sur `99dce529`, prompt versionné
+
+**0 CRITICAL, 1 HIGH, 8 MEDIUM, 4 LOW — et ONZE findings sur TREIZE naissent de la remédiation
+de la passe 1.** Aucune décision antérieure à cette remédiation n'a été prise en défaut. La
+sévérité recule (CRITICAL → HIGH) : convergence lente mais monotone, donc **pas de split**.
+
+⛔ **Le HIGH ne porte pas sur une erreur de raisonnement mais sur une RÈGLE ENFREINTE SANS
+DÉROGATION DÉCLARÉE.** D6 écrivait « le critère n'est pas satisfait » puis tranchait quand même
+pour la classe A — or P7 dit « classe A **uniquement si** ». Le patch avait vu le problème,
+l'avait bien analysé, **et avait omis de dire qu'il sortait de la règle**. ⚠️ Second volet, que
+personne n'avait vu : l'**en-tête du module** (`post_restore.rs:38-40`) définit la classe A comme
+*« auto-gardée… tous ses statements sont gardés »* — après la story, il **mentirait sur son propre
+registre**. *C'est le motif de la 24-4c — corriger la thèse au site nommé et laisser ses
+applications ailleurs — transposé du story file au code.*
+
+⛔ **Deux voies de garde n'avaient PAS été examinées**, et l'énumération se donnait pour close.
+La plus sérieuse : `audit_log` **est restaurée** et `account_snapshot_json` y écrit `postable`
+depuis la 14-3a — une garde d'intention y est donc **constructible**, contrairement au proxy
+`version` qu'on avait écarté à juste titre. Elle est désormais examinée **et rejetée par écrit**,
+sur le coût. *« Une hypothèse éliminée par raisonnement n'est pas une hypothèse testée » vaut
+aussi pour celles qu'on n'énonce pas.*
+
+⛔ **Le critère du verdict d'idempotence était faux, et il l'était dans la puce qui met en garde
+contre les verdicts mal affectés.** La spec écrivait « DML pur, sans DDL ⇒ `yes` » ; or **quatre
+des cinq `yes` du dépôt sont du DDL pur**, gardés par `IF NOT EXISTS`. Le vrai critère est la
+**re-exécution manuelle sans effet**. Le verdict retenu restait juste, mais pour la mauvaise
+raison — et il aurait cessé de l'être si le SQL changeait à l'implémentation.
+
+⚠️ **Trois autres findings sont des renvois que la remédiation a CRÉÉS** : un numéro de ligne
+(`:110-113` défend la licéité du numéro, la limite est à `:115-118`), une exigence sur
+`admin-manual.tex` absente de la table des fichiers, et une étiquette `(D4)` sur une tâche à qui
+D6 venait de confier sa réserve.
+
+⛔ **Et l'AC 11 n'était couverte par AUCUNE tâche** — la seule des treize. La remédiation l'avait
+transformée d'assertion de doctrine en affirmation vérifiable, **et l'avait rendue portante pour
+D6** : c'est la moitié « réparable » de l'asymétrie. *Le seul geste qui rend l'écrasement
+acceptable n'était exercé par rien : D6 pouvait devenir faux sans que rien ne rougisse.*
+
+⚠️ **L'asymétrie de D6 a été qualifiée plutôt que défendue.** « Bruyant » veut dire « à la
+prochaine tentative de saisie » — or le 9000 sert **une fois l'an**. Restauration en mars,
+symptôme en janvier. Le rapport de rejeu ne nomme aucun compte et son `rows_affected` est déclaré
+« informatif ». L'arbitrage reste le bon ; sa justification était plus faible qu'écrite.
+
+✅ **Ce que la passe 2 a tranché et que la passe 1 avait laissé ouvert** : **D4 est prouvée, plus
+seulement plausible** — aucun réglage ne pointe sur un compte de la classe 9 (neuf FK vers
+`accounts` recensées, `company_dunning_settings` n'en porte aucune, et les trois écrans passent
+par `account-options.ts`, le correctif de #271).
+
+✅ **Le grep de propagation a de nouveau payé, et sur le compte rendu lui-même** : la table des
+fichiers prescrivait encore un `.sql` neuf sous `src/post_restore/`, et **le journal de la passe 1
+portait le non-séquitur de P2-8 dans le paragraphe même où il se félicitait d'avoir attrapé un
+jumeau.**
+
+**Prochaine** : passe 3 ciblée sur le seul commit de remédiation, contexte frais, modèle
 différent, prompt versionné.
 
 ## Dev Agent Record
