@@ -169,36 +169,51 @@ tout ce que la nécessité du rejeu demande.
 | garde par **`audit_log`** | ⚠️ **constructible et correcte en principe** — `audit_log` est restaurée (`backup.rs`, `TABLES_TO_TRUNCATE`) et `account_snapshot_json` (`accounts.rs:46-60`) y écrit `postable` depuis la 14-3a, donc l'archive **porte** la trace d'une réouverture délibérée. **Écartée sur le coût** : elle ferait dépendre une migration de données du **contenu** d'une table d'audit — table dont la sémantique évolue, que le dépôt ne requête nulle part à cette fin, et qui n'a **aucun précédent** de ce type. Le remède serait plus lourd que le mal. |
 | **backfill hors migration** (au boot et en fin d'import, gabarit `backfill_client_number_canonical`, 22-1) | ⛔ **écartée** — elle s'exécuterait à **chaque démarrage** pour fermer trois comptes une fois, et déplacerait hors de toute trace un geste que le registre, lui, rapporte. |
 
-⇒ **Décision : classe A, avec dérogation P7 DÉCLARÉE.**
+⇒ **Décision : EXEMPTION, avec une justification factuelle et vérifiable — et NON une classe A
+par dérogation.**
 
-⛔ **C'est une dérogation, pas une conformité, et elle doit se dire.** Le garde-fou P7 énonce
-« classe A **uniquement si** tous les statements sont gardés » ; notre `AND postable = TRUE` porte
-l'**idempotence**, pas une garde d'**intention**. Ne pas le déclarer programmerait un finding
-MEDIUM en revue de code sur une décision pourtant arbitrée. **Propriétaire de l'arbitrage : le
-Project Lead.** *Le report éventuel de cette exception au `CLAUDE.md` lui-même n'appartient pas à
-cette story — il se pose à la rétrospective de l'Epic 24.*
+⛔ **Ce qui a fait changer la décision : la classe A casserait une PROMESSE FAITE À L'EXPLOITANT,
+pas seulement un commentaire.** `admin-manual.tex:1609` énonce, comme première des trois
+propriétés du rejeu :
 
-⛔ **Et l'en-tête du module devient faux si on ne le touche pas** (`post_restore.rs:38-40`) :
-*« Classe A — auto-gardée… **Tous** ses statements sont gardés contre l'écrasement d'une valeur
-posée par l'utilisateur »*. Après cette story, cette phrase mentirait sur son propre registre. Elle
-est donc amendée par T3. *C'est le motif de la 24-4c — corriger la thèse au site nommé et laisser
-ses applications ailleurs — transposé du story file au code.*
+> *« **Vos données ne sont jamais écrasées.** Si la sauvegarde contenait déjà l'information, elle
+> fait foi : un rôle de compte ou un réglage que vous aviez ajusté à la main est conservé tel
+> quel. »*
 
-**L'arbitrage repose sur l'asymétrie des coûts**, la même que le dépôt applique aux doublons de
-contacts :
+Le manuel, l'en-tête du module et le critère de P7 disent donc **la même chose**, à trois endroits
+indépendants. Une classe A non gardée ne contredirait pas un détail d'implémentation : elle
+rendrait **fausse une garantie publiée**.
 
-- **l'écrasement est réparable et finit par se voir** — le plan comptable affiche un badge « non
-  postable », et un `PUT` rouvre le compte en un geste ;
-- **le non-rejeu est muet et comptablement faux** — l'à-nouveau repart en charges, et rien ne le
-  signale.
+⛔ **Et le rejeu protégerait un parc qui N'EXISTE PAS.** L'intervalle où une archive porterait
+`postable = TRUE` est `[20260827000001 … cette migration)`. Or la dernière version **publiée** est
+**v0.11.1, du 2026-08-24** — donc **antérieure** à la borne basse. Cet intervalle ne contient
+**aucun binaire distribué** : uniquement des builds de développement.
 
-⚠️ **La première branche est la plus faible, et il faut le dire.** Le rejeu se produit **à
-l'intérieur d'un import complet**, où tout change ; son seul témoin est `rows_affected`, dont le
-doc-comment dit lui-même qu'il est *« informatif »* et **non nul dans le cas nominal**. Rien ne
-nomme les comptes retournés. Or **le 9000 sert une fois l'an** : restauration en mars, symptôme en
-janvier suivant. ⇒ **« bruyant » veut dire « à la prochaine tentative de saisie »**, ce qui peut
-être dix mois plus tard — d'où l'exigence, en T6, que le manuel d'administration dise **quoi
-vérifier après un import**, et non seulement que le cas existe.
+⇒ **L'exemption est donc l'issue juste, et sa justification est factuelle** : *« aucune version
+publiée ne se situe entre `20260827000001` et cette migration ; l'intervalle ne contient que des
+binaires de développement non distribués. »*
+
+⚠️ **Elle ne commence PAS par `Hors fenêtre`, et c'est délibéré** : la migration **est** dans la
+fenêtre, et le marqueur textuel déclencherait le contrôle symétrique
+(`exemptions_claiming_out_of_window_really_are_out_of_window`) qui la **rejetterait à juste titre**.
+L'argument n'est pas la fenêtre, c'est le **parc**.
+
+⛔ **CETTE JUSTIFICATION SE PÉRIME, donc elle se contrôle — deux fois.** Une exemption fausse
+désactive le rejeu *définitivement et en silence* ; celle-ci est vraie **aujourd'hui** et cesserait
+de l'être si une version était publiée depuis `main` avant le merge de cette story :
+
+```sh
+git tag --sort=-creatordate | head -1        # doit rester <= v0.11.1 (2026-08-24)
+git log -1 --format=%ci $(git tag --sort=-creatordate | head -1)
+```
+
+⇒ **Le contrôle est une tâche (T3), et il se refait au gate de clôture (T8)**, pas seulement à
+l'écriture de la spec.
+
+⚠️ **Question ouverte, à trancher avant l'implémentation** : l'instance qui tourne sur le NAS de
+l'auteur exécute-t-elle un binaire **postérieur au 2026-08-27** ? Si oui, elle est le seul membre
+du parc concerné, et la décision se rouvre — l'exemption deviendrait fausse pour la seule
+installation réelle du projet. *Cette question ne se déduit d'aucun fichier du dépôt.*
 
 ## D5 — Le défaut a DEUX surfaces, l'issue n'en nomme qu'une
 
@@ -254,12 +269,13 @@ un **symptôme visible**, pas un bug, et c'est par là qu'un utilisateur peut se
 8. Le backfill **ne touche ni `account_type`, ni les écritures, ni `version`** — cf. D4 et le
    précédent de `create` (`accounts.rs:191` : *« pas de bump de version : postable est ici une
    conséquence structurelle »*).
-9. ⛔ **Le backfill est inscrit à `POST_RESTORE_BACKFILLS` en classe A** (`Unconditional`), et
-   **ni exempté, ni classé B** — cf. D6, qui établit que les deux autres issues sont
-   respectivement **fausse** (la migration est dans la fenêtre) et **indisponible** (pas de DDL,
-   donc pas de sentinelle). ⚠️ **L'entrée porte, en commentaire, la réserve de D6** : le rejeu
-   peut écraser un `postable` posé à la main. *Le dépôt a déjà écrit cette réserve pour le
-   gabarit (`post_restore.rs:257-260`) ; ne pas la répéter ici la ferait disparaître avec lui.*
+9. ⛔ **Le backfill est EXEMPTÉ** (`EXEMPT_MIGRATIONS`), avec la justification factuelle de D6 —
+   *aucune version publiée ne se situe dans l'intervalle* —, et **non** inscrit en classe A.
+   ⚠️ **La justification ne commence PAS par `Hors fenêtre`** : la migration est dans la fenêtre,
+   et ce marqueur déclencherait un contrôle qui la rejetterait. ⛔ **Le fait se vérifie par
+   commande avant le merge** (T3) **et se re-vérifie au gate de clôture** (T8) : une exemption
+   fausse désactive le rejeu *définitivement et en silence*.
+
 10. **L'invariant « seed ≡ backfill » tient** : le test dédié
    (`crates/kesh-db/tests/accounts_role_backfill.rs`) compare les deux sources et doit rester
    vert **en couvrant les trois comptes neufs**.
@@ -322,23 +338,19 @@ un **symptôme visible**, pas un bug, et c'est par là qu'un utilisateur peut se
 - [ ] **T3 — La migration de backfill** (AC 6, 7, 8, 9)
   - [ ] `UPDATE accounts SET postable = FALSE WHERE number IN ('9000','9100','9200') AND postable = TRUE`
         — la clause `AND postable = TRUE` rend la migration **idempotente** et son effet mesurable
-  - [ ] ⛔ **P7 — inscription en classe A au registre** (AC 9) : `POST_RESTORE_BACKFILLS`,
-        `BackfillTrigger::Unconditional`, et **`sql: include_str!("../migrations/<date>_closing_accounts_not_postable.sql")`**.
-        ⛔ **AUCUN fichier neuf sous `src/post_restore/`** : ce répertoire ne porte que les
-        **extraits** de migrations mixtes (DDL + données) ; le champ le dit — *« la migration
-        entière si elle est du backfill pur, un extrait sinon »* (`post_restore.rs:133-135`), et
-        la seule entrée de backfill pur du dépôt (`20260729000001`, `:284`) pointe bien
-        `../migrations/`. ⚠️ *Dupliquer le fichier passerait tous les tests — les extraits sont
-        vérifiés comme sous-chaînes verbatim de leur source — donc la faute serait **muette**.*
-  - [ ] ⛔ **Amender l'en-tête du module** (`post_restore.rs:38-40`) : il affirme aujourd'hui que
-        **toute** entrée de classe A est auto-gardée, ce que cette entrée dément. La phrase doit
-        nommer l'exception et renvoyer au commentaire de l'entrée (cf. D6).
-        ⛔ **Ne PAS chercher une exemption ni une sentinelle** — D6 démontre que l'une est fausse
-        et l'autre indisponible ; le test `every_data_backfill_migration_is_triaged` nommerait le
-        fichier, et `exemptions_claiming_out_of_window_really_are_out_of_window` rejetterait la
-        justification « hors fenêtre »
-  - [ ] le commentaire de l'entrée porte **la réserve de D6** — le rejeu peut écraser un
-        `postable` posé à la main — et **dit pourquoi on l'accepte**
+  - [ ] ⛔ **P7 — exemption avec justification factuelle** (AC 9) : entrée dans
+        `EXEMPT_MIGRATIONS` (`crates/kesh-db/src/post_restore.rs`), libellée sur le **parc** et
+        non sur la fenêtre. ⛔ **Ne PAS commencer par `Hors fenêtre`** — le contrôle symétrique
+        recalculerait la fenêtre et rejetterait la justification, à juste titre.
+  - [ ] ⛔ **Vérifier le fait AVANT d'écrire la justification**, et le citer dans le commentaire :
+        `git tag --sort=-creatordate | head -1` doit rendre **v0.11.1 (2026-08-24)** ou antérieur.
+        Si une version a été publiée depuis `main` après le `2026-08-27`, **la décision de D6 se
+        rouvre** et l'exemption devient fausse.
+  - [ ] ⛔ **NE PAS inscrire l'entrée au registre `POST_RESTORE_BACKFILLS`** : ce serait du code
+        **exécuté à chaque import** pour un parc vide, et — l'entrée n'étant pas gardée — cela
+        contredirait la promesse publiée du manuel d'administration (`admin-manual.tex:1609`,
+        « vos données ne sont jamais écrasées »). ⚠️ *Ni l'en-tête du module ni le manuel n'ont
+        donc à être amendés : la story ne les met plus en défaut.*
   - [ ] ⛔ **P5** — ligne dans `docs/migrations-idempotence-audit.md` **et les cinq compteurs**,
         recomptés depuis la source : `ls crates/kesh-db/migrations/*.sql | wc -l` (**65 → 66**),
         `grep -c '^| `20' docs/migrations-idempotence-audit.md`, l'en-tête `## Table d'audit (N
@@ -378,21 +390,25 @@ un **symptôme visible**, pas un bug, et c'est par là qu'un utilisateur peut se
         que le backfill a fermé le **rouvre**. ⚠️ *C'est la moitié « réparable » de D6 : sans ce
         test, le seul geste qui rend l'écrasement acceptable n'est exercé par rien, et D6
         deviendrait faux sans que rien ne rougisse.*
-- [ ] **T6 — Les manuels** (D4, D6)
+- [ ] **T6 — Le manuel** (D4)
   - [ ] `docs/manual/fr/user-manual.tex` : les comptes de clôture n'accueillent pas d'écriture
         dans Kesh ; une écriture déjà passée sur un compte 9 se corrige par **contre-passation**
         (24-4a), non par réécriture (24-4b)
   - [ ] ⛔ **et montrer la porte ouverte, pas seulement celle qu'on ferme** : la voie prévue pour
-        un bilan d'ouverture de migration est l'écran **Réglages → Soldes de départ**
-        (`routes/opening_balances`) ; le **2970** en est la contrepartie comptable, **pas la
+        un bilan d'ouverture de migration est l'écran **Administration → Soldes de départ**
+        (`routes/opening_balances`) — ⚠️ **« Administration », pas « Réglages »** : c'est le groupe
+        du sidebar (`+layout.svelte`, `nav-administration`) et la formulation que `user-manual.tex:562`
+        emploie **déjà** pour ce même écran ; le **2970** en est la contrepartie comptable, **pas la
         procédure**. ⚠️ *Fermer un chemin sans montrer l'autre est exactement le reproche que
         cette story adresse au correctif annoncé par l'issue.* ✅ Vérifié : la grille des soldes de
         départ ne prend que les comptes de bilan (`Asset`/`Liability`), donc les 9xxx en sont
         **déjà** exclus — la story ne casse rien de ce côté
   - [ ] PDF régénéré (`make fr` dans `docs/manual/`) et commité
-  - [ ] **la réserve de D6 va au manuel d'ADMINISTRATION** (`docs/manual/fr/admin-manual.tex`) :
-        restaurer une sauvegarde antérieure à cette version referme les comptes de clôture, y
-        compris ceux que l'exploitant aurait rouverts délibérément
+  - [ ] ✅ **RIEN à corriger dans le manuel d'administration** : D6 ayant retenu l'exemption plutôt
+        que la classe A, la promesse *« vos données ne sont jamais écrasées »*
+        (`admin-manual.tex:1609`) **reste vraie**. ⚠️ *C'est le meilleur argument en faveur de
+        l'exemption : la décision qui n'oblige à réécrire aucune garantie publiée est celle qui
+        n'en casse aucune.*
   - [ ] ⚠️ **la limite du critère « numéro »**, sur le modèle de celle que le backfill de rôles
         énonce déjà — ⛔ **`20260722000001:115-118`**, le bloc « LIMITE ASSUMÉE » ; `:110-113`
         défend la *licéité* du numéro en migration, c'est-à-dire le gabarit de l'**AC 6**, pas
@@ -457,11 +473,10 @@ vrai parce qu'il reste sous le seuil.*
 | `crates/kesh-db/migrations.sha384` · `test-schema/0001_schema_squash.sql` | UPDATE — P8 + squash |
 | `crates/kesh-db/tests/migrations_upgrade_path.rs` | UPDATE — P6, **deux** nombres |
 | `docs/migrations-idempotence-audit.md` | UPDATE — P5, ligne + **cinq** compteurs |
-| `crates/kesh-db/src/post_restore.rs` | UPDATE — P7, entrée **classe A** (`include_str!` de la migration, **aucun extrait**), sa réserve (D6), et l'en-tête du module amendé |
+| `crates/kesh-db/src/post_restore.rs` | UPDATE — P7, **une entrée d'exemption** justifiée sur le parc (D6) ; ni registre, ni extrait `.sql`, ni en-tête à amender |
 | `crates/kesh-db/tests/accounts_role_backfill.rs` | UPDATE — l'invariant seed ≡ backfill |
 | `crates/kesh-api/tests/reports_e2e.rs` | UPDATE — le test de bout en bout de l'AC 12 (les tests de `income_statement.rs` ne montent **aucune** base) |
 | `docs/manual/fr/user-manual.tex` (+ PDF) | UPDATE — T6, la conduite à tenir (D4) |
-| `docs/manual/fr/admin-manual.tex` (+ PDF) | UPDATE — T6, **la réserve de D6** et quoi vérifier après un import |
 
 ### Pièges vérifiés au sol
 
@@ -511,9 +526,13 @@ portent AUCUNE garde — rejoués sur une base à jour, ils écraseraient un `po
 main. »* La spec traitait P7 comme une case à cocher (« inscrire ou exempter ») alors qu'**aucune
 des trois issues n'était propre** : l'exemption « hors fenêtre » est **fausse** (la migration est
 la dernière du dépôt, donc dans la fenêtre), la classe B est **indisponible** (`UPDATE` pur, donc
-aucune sentinelle constructible), et la classe A ne satisfait pas son propre critère. ⇒ **D6**,
-qui tranche pour la classe A sur l'asymétrie des coûts — *l'écrasement est bruyant et réparable,
-le non-rejeu est muet et comptablement faux* — et **écrit la réserve au lieu de la taire**.
+aucune sentinelle constructible), et la classe A ne satisfait pas son propre critère. ⇒ **D6**.
+
+⚠️ **La décision prise ici a été RENVERSÉE en passe 3, et la trace se garde.** D6 tranchait alors
+pour la **classe A**, sur l'asymétrie des coûts. La passe 3 a établi deux faits qui l'ont défaite :
+le manuel d'administration **promet** que les données ne sont jamais écrasées, et **aucune version
+publiée** ne se trouve dans l'intervalle que le rejeu aurait protégé. *L'analyse des trois issues
+reste juste ; c'est la conclusion qu'on en tirait qui était trop chère.*
 
 ⚠️ **La garde `AND version = 1` a été examinée et écartée dans la remédiation** : un utilisateur
 ayant seulement **renommé** son compte porte `version > 1` sans avoir touché `postable`, et le
@@ -595,9 +614,11 @@ symptôme en janvier. Le rapport de rejeu ne nomme aucun compte et son `rows_aff
 « informatif ». L'arbitrage reste le bon ; sa justification était plus faible qu'écrite.
 
 ✅ **Ce que la passe 2 a tranché et que la passe 1 avait laissé ouvert** : **D4 est prouvée, plus
-seulement plausible** — aucun réglage ne pointe sur un compte de la classe 9 (neuf FK vers
-`accounts` recensées, `company_dunning_settings` n'en porte aucune, et les trois écrans passent
-par `account-options.ts`, le correctif de #271).
+seulement plausible** — aucun réglage ne pointe sur un compte de la classe 9 (les colonnes de réglage pointant un compte
+ont été recensées une à une, `company_dunning_settings` n'en porte aucune, et les trois écrans
+passent par `account-options.ts`, le correctif de #271). ⚠️ *Le décompte « neuf FK » d'abord écrit
+ici était faux et mal nommé — `bank_accounts.journal_account_id` est documenté comme n'ayant
+volontairement pas de FK au niveau base.*
 
 ✅ **Le grep de propagation a de nouveau payé, et sur le compte rendu lui-même** : la table des
 fichiers prescrivait encore un `.sql` neuf sous `src/post_restore/`, et **le journal de la passe 1
@@ -606,6 +627,52 @@ jumeau.**
 
 **Prochaine** : passe 3 ciblée sur le seul commit de remédiation, contexte frais, modèle
 différent, prompt versionné.
+
+### Passe 3 — 2026-09-09 · Sonnet 4.6, contexte frais, CIBLÉE sur `3740f456`, prompt versionné
+
+**0 CRITICAL, 1 HIGH, 2 MEDIUM, 1 LOW** — le volume s'effondre (13 → 4), et **trois findings sur
+quatre naissent du texte que la passe 2 venait d'écrire**. Aucune décision antérieure à cette
+remédiation n'est prise en défaut.
+
+⛔ **LE HIGH A RENVERSÉ LA DÉCISION, et il l'a fait avec un fichier que deux passes n'avaient pas
+ouvert : le manuel.** `admin-manual.tex:1609` promet, comme **première** des trois propriétés du
+rejeu : *« Vos données ne sont jamais écrasées. […] un réglage que vous aviez ajusté à la main est
+conservé tel quel. »* La classe A ne cassait donc pas un commentaire de module — elle rendait
+**fausse une garantie publiée**. Le manuel, l'en-tête du module et le critère de P7 disaient la
+même chose à trois endroits indépendants ; la dérogation devait les contredire tous les trois.
+
+⛔ **Et le second fait a achevé la décision** : le rejeu protégeait **un parc vide**. L'intervalle
+concerné est `[20260827000001 … cette migration)`, or la dernière version publiée est **v0.11.1 du
+2026-08-24** — antérieure à la borne basse. *On s'apprêtait à enfreindre une règle et à démentir
+une promesse pour couvrir des binaires qui n'existent pas.*
+
+⇒ **D6 refondue : exemption avec justification factuelle sur le PARC**, et non classe A par
+dérogation. ✅ **Trois findings tombent par la racine** : plus de dérogation à mettre en forme
+(P3-3 sans objet), plus d'en-tête de module à amender, plus de promesse du manuel à réécrire.
+*La décision qui n'oblige à réécrire aucune garantie publiée est celle qui n'en casse aucune.*
+
+⚠️ **Mais la justification se périme, donc elle se contrôle** — deux fois, en T3 et au gate de
+clôture. Une exemption fausse désactive le rejeu *définitivement et en silence* ; c'est ce que le
+CLAUDE.md dit de l'exemption : « l'issue la moins coûteuse, donc celle qu'il faut contrôler ».
+
+⛔ **Une question reste ouverte et n'est déductible d'AUCUN fichier** : l'instance du NAS
+exécute-t-elle un binaire postérieur au 2026-08-27 ? Si oui, elle est le seul membre du parc
+concerné et la décision se rouvre. *Portée à l'arbitrage du Project Lead.*
+
+⚠️ **Le MEDIUM restant est de la même famille que le HIGH** : la remédiation de la passe 2 écrivait
+« Réglages → Soldes de départ » quand le sidebar range cet écran sous **Administration** — et le
+manuel utilisateur l'écrit **déjà correctement** 180 lignes plus haut. *Deux fois de suite, le
+défaut était dans un fichier que la spec prescrivait de modifier sans l'avoir lu.*
+
+**Trend** : 6 → 13 → 4. Sévérité maximale : CRITICAL → HIGH → HIGH.
+⚠️ **La sévérité maximale STAGNE, et la règle de splitting préventif en fait un signal.** Elle
+n'est pas retenue ici, et le motif s'écrit : le **volume** s'effondre, les findings portent
+**exclusivement** sur la dernière remédiation, aucune décision de conception d'origine n'a été
+prise en défaut en trois passes, et le HIGH de la passe 3 n'est pas une régression mais une
+**omission de lecture** — le manuel. *C'est le cas que l'amendement de la rétro Epic 14 vise :
+une convergence lente n'est pas une non-convergence.* **Arbitrage porté au Project Lead.**
+
+**Prochaine** : passe 4, contexte frais, modèle différent, prompt versionné.
 
 ## Dev Agent Record
 
