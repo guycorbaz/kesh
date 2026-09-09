@@ -132,6 +132,32 @@ fi
 sed -i "s|## \\[$NEW_VERSION\\] — Non publié|$REPLACEMENT|" CHANGELOG.md
 echo "  ✓ CHANGELOG.md : '$PATTERN' → '$REPLACEMENT'"
 
+# --- Exemptions du registre de rejeu dont la justification se PÉRIME ---
+#
+# Certaines entrées de `EXEMPT_MIGRATIONS` (crates/kesh-db/src/post_restore.rs)
+# ne s'appuient ni sur la fenêtre d'importabilité ni sur une propriété du schéma,
+# mais sur un FAIT DATÉ : « aucune version publiée ne se situe dans tel
+# intervalle ». Ces justifications-là cessent d'être vraies dès qu'on publie.
+#
+# ⚠️ Le test `exemptions_claiming_out_of_window_really_are_out_of_window` ne les
+# couvre PAS : il ne contrôle que celles qui invoquent l'argument « Hors fenêtre ».
+# Une justification fondée sur le parc n'a donc aucun filet automatisé — d'où ce
+# rappel, au seul endroit par lequel toute release passe.
+#
+# Relevé en passe 1 de revue de code de la Story 24-5 (#375), finding BH-2.
+
+MIGRATIONS_PERISSABLES=$(grep -c "SE PÉRIME" crates/kesh-db/src/post_restore.rs || true)
+if [ "${MIGRATIONS_PERISSABLES:-0}" -gt 0 ]; then
+  echo
+  echo "⚠️  $MIGRATIONS_PERISSABLES exemption(s) de rejeu à justification PÉRISSABLE dans post_restore.rs."
+  echo "    Chacune repose sur « aucune version publiée dans tel intervalle » — un fait"
+  echo "    que CETTE release peut rendre faux, silencieusement et définitivement."
+  echo "    ⇒ relire chaque justification marquée « SE PÉRIME » AVANT de poser le tag :"
+  grep -n "SE PÉRIME" crates/kesh-db/src/post_restore.rs | sed 's/^/      /'
+  echo "    Dernier tag publié : $(git tag --sort=-creatordate | head -1) ($(git log -1 --format=%cs "$(git tag --sort=-creatordate | head -1)" 2>/dev/null || echo '?'))"
+  echo
+fi
+
 # --- Récap + invite commit ---
 
 echo

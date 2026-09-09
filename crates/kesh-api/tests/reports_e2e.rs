@@ -1929,6 +1929,17 @@ async fn posting_to_a_closed_closing_account_is_refused(pool: MySqlPool) {
         400,
         "poster sur un compte de cloture doit etre refuse par la garde de la 14-3b"
     );
+
+    // L'AC 13 porte sur le code d'erreur AUTANT que sur le statut : « avec son code
+    // d'erreur et son message ACTUELS, sans en inventer un neuf ». Sans cette
+    // assertion, un refus survenant pour une AUTRE raison — toujours en 400 — passerait
+    // pour la garde qu'on croit mesurer.
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["error"]["code"], "INACTIVE_OR_INVALID_ACCOUNTS",
+        "aucun code d'erreur neuf n'est introduit par cette story : c'est le refus \
+         existant de la 14-3b qui doit parler"
+    );
 }
 
 /// **AC 11 — la moitié « réparable » de la décision D6.**

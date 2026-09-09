@@ -332,7 +332,11 @@ Dans cette version, l'indicateur \emph{postable} \textbf{bloque la saisie manuel
 
 Les plans comptables livrés avec Kesh comportent une classe~9 — \emph{Bilan d'ouverture} (9000), \emph{Compte de résultat} (9100) et \emph{Bilan de clôture} (9200). Dans les logiciels qui passent des \textbf{écritures de clôture}, ces comptes reçoivent le virement des soldes en fin d'exercice.
 
-\textbf{Kesh n'en passe aucune}~: le bilan, le compte de résultat et le report à-nouveau sont \textbf{recalculés en permanence} à partir de vos écritures. Ces trois comptes n'ont donc, ici, aucun usage — et ils \textbf{n'acceptent aucune écriture}, exactement comme le compte \emph{Résultat de l'exercice}, dont Kesh calcule aussi le solde.
+\textbf{Kesh n'en passe aucune}~: le bilan, le compte de résultat et le report à-nouveau sont \textbf{recalculés en permanence} à partir de vos écritures. Ces trois comptes n'ont donc, ici, aucun usage — et Kesh \textbf{refuse toute écriture saisie à la main} qui les vise, exactement comme pour le compte \emph{Résultat de l'exercice}, dont il calcule aussi le solde.
+
+\begin{keshnote}
+\textbf{Cette protection porte sur la saisie manuelle}, comme l'indicateur \emph{postable} en général (voir «~Rôles des comptes~»). Les flux automatiques — validation d'une facture, avoir, rapprochement bancaire — ne la vérifient pas~: si vous désignez vous-même un compte de clôture comme contrepartie d'un rapprochement, l'écriture passera. Ne le faites pas.
+\end{keshnote}
 
 \begin{keshwarning}
 \textbf{Si vous arrivez d'un autre logiciel, n'utilisez pas le 9000 pour votre bilan d'ouverture.} La reprise se fait par l'écran \emph{Administration} → \emph{Soldes de départ} (voir «~Reprise de comptabilité~»), et votre report accumulé se pose sur le compte \emph{Bénéfice reporté} (2970 dans les plans standards).

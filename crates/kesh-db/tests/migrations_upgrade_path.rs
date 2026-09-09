@@ -99,7 +99,7 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
         "66 migrations attendues (65 précédentes + Story 24-5 : closing_accounts_not_postable)"
     );
 
-    // Étape 1 : applique toutes les migrations sauf les 30 dernières. La
+    // Étape 1 : applique toutes les migrations sauf les 32 dernières. La
     // fenêtre d'upgrade démarre donc à la 35ᵉ, `20260614000001_vat_accounts_config`
     // (Story 18-1a), et court jusqu'à la dernière du dépôt. Ne pas ré-énumérer
     // ici les migrations de la fenêtre : une liste nominative se périme à chaque
@@ -161,7 +161,7 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     let n_before_upgrade_window = total - 32;
     apply_migrations_up_to(&pool, n_before_upgrade_window)
         .await
-        .expect("apply_migrations_up_to(total - 27) failed");
+        .expect("apply_migrations_up_to(total - 32) failed");
 
     // Étape 2 : seed 1 company + 1 user + 2 accounts + 1 invoice + 1 contact.
     let company_id: i64 = sqlx::query_scalar(

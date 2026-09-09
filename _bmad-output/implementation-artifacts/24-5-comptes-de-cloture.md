@@ -305,8 +305,21 @@ un **symptôme visible**, pas un bug, et c'est par là qu'un utilisateur peut se
 
 ## Invariants testables
 
-- **I1 — Aucune écriture neuve sous un compte de clôture.** Après la migration, aucune ligne de
-  `journal_entry_lines` créée postérieurement ne pointe sur un compte de numéro 9000/9100/9200.
+- **I1 — Aucune écriture neuve sous un compte de clôture, PAR LA SAISIE MANUELLE.**
+  ⛔ **Amendé en passe 1 de revue de code (BH-1), et l'énoncé d'origine était FAUX.** Il disait
+  « aucune écriture neuve », sans réserve. Or les trois flux de réconciliation
+  (`post_manual`, `accept_one_split`, `accept_one_rule`) appellent `create_in_tx(..., false)` —
+  `enforce_postable = false` — et leurs gardes ne vérifient que `active` : `grep -nF postable
+  crates/kesh-api/src/routes/reconciliation.rs` rend **zéro**. Un rapprochement dont l'utilisateur
+  désigne lui-même un compte 9000 comme contrepartie **passe**.
+  ⇒ L'invariant tient pour la **saisie manuelle**, qui est le vecteur nommé par l'issue #375 et le
+  seul que la garde de la 14-3b couvre. La fermeture des flux automatiques est **hors périmètre**
+  et tracée par l'issue **#427**.
+  ⚠️ *L'énoncé faux avait une conséquence concrète : le manuel, modifié par cette même story,
+  affirmait « n'acceptent aucune écriture » à sept lignes d'un paragraphe préexistant disant « les
+  flux automatiques ne sont pas concernés ». La contradiction a été introduite par la story et
+  corrigée par la revue.*
+
 - **I2 — Le plan livré et le plan migré coïncident.** Pour les trois `org_type`, l'ensemble
   `{(numéro, postable)}` produit par le seed est **identique** à celui produit par le backfill sur
   une base contenant le plan d'origine. *C'est l'AC 10, énoncée comme propriété.*
@@ -731,6 +744,78 @@ de lecture**. La passe 4 confirme l'arbitrage *a posteriori* — mais il était 
 sans cette confirmation.
 
 **Prochaine** : `bmad-dev-story` 24-5.
+
+## Journal de revue de code
+
+### Passe 1 — 2026-09-09 · Sonnet 4.6 ×2 + Haiku 4.5, contextes frais, **trois lentilles** (protocole complet), orthogonales à l'auteur (Opus 5)
+
+**0 CRITICAL, 1 HIGH, 2 MEDIUM, 2 LOW.** ✅ **Protocole complet tenu** — BlindHunter,
+EdgeCaseHunter et AcceptanceAuditor : les deux stories précédentes n'avaient eu que deux lentilles,
+réserve déclarée dans leur PR.
+
+⛔ **LE HIGH (BH-1) REND FAUX UN INVARIANT DE LA STORY, et la story avait écrit la contradiction
+dans le manuel elle-même.** Les trois flux de réconciliation (`post_manual`, `accept_one_split`,
+`accept_one_rule`) appellent `create_in_tx(..., false)` — `enforce_postable = false` — et leurs
+gardes ne contrôlent que `active` : `grep -nF postable
+crates/kesh-api/src/routes/reconciliation.rs` rend **zéro**. Un rapprochement dont l'utilisateur
+désigne un 9000 comme contrepartie **passe**.
+
+⚠️ **Et le manuel disait les deux choses à sept lignes d'écart** : le paragraphe préexistant de la
+14-3b (`:328`) énonce « les flux automatiques ne sont pas concernés », quand celui que **cette
+story venait d'ajouter** affirmait « n'acceptent aucune écriture ». ⛔ *C'est la troisième fois de
+la vague que le manuel est le lieu du défaut — mais la première où c'est NOUS qui l'y avons mis, et
+ce, après une boucle de revue de spec entièrement consacrée à cette leçon.*
+
+⇒ **I1 amendé** pour dire la vérité (l'invariant vaut pour la saisie manuelle, vecteur nommé par
+l'issue), **manuel corrigé** (la réserve est explicite, plus d'affirmation absolue), et **issue
+#427 ouverte** — le compte y vient du **client**, ce qui n'est pas le cas d'usage de
+`enforce_postable = false`, prévu pour les comptes de **configuration**. ⚠️ Fermer les trois flux
+côté serveur touche du code très exercé et sans aucun test négatif existant : hors périmètre,
+dette de catégorie A tracée.
+
+⛔ **BH-2 (MEDIUM) — l'exemption P7 n'avait AUCUN filet.** Ses deux sœurs commencent par
+`Hors fenêtre` et sont recontrôlées à chaque gate par
+`exemptions_claiming_out_of_window_really_are_out_of_window` ; la nôtre argumente sur le **parc**,
+donc échappe — à raison — à ce test, et ne reposait plus que sur une tâche humaine. ⇒ un rappel
+est posé dans **`scripts/prepare-release.sh`**, seul point de passage de toute release, accroché
+au marqueur textuel **« SE PÉRIME »** que porte la justification.
+
+⛔ **AC 13 (MEDIUM, AcceptanceAuditor) — un test qui prouvait la moitié de son AC.** Il vérifiait
+`status == 400` mais pas `body["error"]["code"]`, alors que l'AC exige « son code d'erreur et son
+message **actuels** » et que le même fichier applique ce patron **quatre fois**. Le test n'était
+pas muet — il rougirait si la garde disparaissait — mais un refus survenant pour une **autre**
+raison, toujours en 400, serait passé pour celle qu'on croit mesurer.
+
+⛔ **LE CINQUIÈME JUMEAU P6, ET IL ENSEIGNE UNE NUANCE NEUVE.** Le commit déclarait avoir corrigé
+**quatre** résidus ; il en restait **deux** — `.expect("apply_migrations_up_to(total - 27) failed")`
+et « sauf les **30** dernières ». *Mon grep avait cherché les valeurs **courantes** (`total - 31`,
+`total == 65`) et ne pouvait donc pas voir un résidu portant une valeur **périmée de trois
+stories**.* ⇒ **greper le motif STRUCTUREL (`total - <N>`), pas seulement les valeurs qu'on vient
+de changer** — le § « Propagation post-patch » dit de greper la valeur plutôt que la formulation,
+ce cas ajoute qu'il faut aussi greper la forme.
+
+⚠️ **Et ce fichier tient la chronique de sa propre récidive** : son commentaire raconte que la même
+dérive y a déjà survécu à ses corrections sur **trois passes** de la 16-1a. **Celle-ci est la
+quatrième.** *Le grep structurel a d'ailleurs rendu deux occurrences de plus, `total == 39` et
+`total - 8` — des **généalogies historiques délibérées**, laissées intactes : c'est le tri à la
+main dont le CLAUDE.md dit qu'il est le prix, et qu'il est bas.*
+
+✅ **ECH-1 (LOW) ÉCARTÉ, et la lentille le reconnaît elle-même** : créer à la main un 9000
+imputable est **explicitement tranché par l'AC 11** — « la story corrige le plan livré, pas la
+liberté de l'utilisateur ; le dépôt ne déduit jamais de sémantique d'un numéro ». Ce n'est pas un
+oubli, c'est une décision, et elle est écrite.
+
+**Gate après remédiation** — ciblage interdit (le patch touche un test `kesh-db`) : base remise à
+zéro, `test-fast.sh` **2295/2295** en 83 s, fmt et clippy propres. ⚠️ *Le total est inchangé, et
+c'est correct : la remédiation renforce un test existant (l'assertion du code d'erreur), elle n'en
+ajoute pas.* PDF du manuel régénéré (62 p.).
+
+✅ **Ce que les trois lentilles ont confirmé exact** : les 13 AC (**15 TENU sur 16**, aucun NON
+TENU, **aucun test muet**), les trois causes d'`is_postable` et leur ordre, les 3 × 3 annotations
+JSON, l'idempotence et la portée de la migration, tous les compteurs recomptés depuis la source
+(66 migrations, `yes` 6, `tracked-by-sqlx` 60), le `sha384` recalculé, le fait `v0.11.1 <
+20260827000001`, l'issue #426, et les 14 tests neufs. **BlindHunter a exécuté `fmt`, `build
+--all-targets` et `clippy -D warnings` : verts.**
 
 ## Dev Agent Record
 
