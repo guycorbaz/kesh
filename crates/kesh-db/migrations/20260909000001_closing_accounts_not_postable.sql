@@ -1,0 +1,60 @@
+-- Story 24-5 (Epic 24, refs #375) — les comptes de clôture n'acceptent plus d'écriture.
+--
+-- LE DÉFAUT. Les trois plans livrés portent 9000/9100/9200 (bilan d'ouverture,
+-- compte de résultat, bilan de clôture) typés `Expense`. Ces comptes sont des
+-- FEUILLES et ne portent aucun rôle : rien ne les rendait donc non imputables.
+-- Un utilisateur venant d'un autre logiciel qui passe son à-nouveau par le 9000,
+-- comme il en a l'habitude, envoie le montant ENTIER de son bilan d'ouverture en
+-- CHARGES. L'équation du bilan continue de tenir, aucun contrôle ne rougit, et le
+-- résultat de l'exercice est faux du montant du bilan.
+--
+-- DEUX SURFACES, pas une : `income_statement` sélectionne sur `account_type`, et
+-- `balance_sheet::fetch_retained_earnings` filtre `account_type IN ('Revenue',
+-- 'Expense')` — le montant fausse donc AUSSI le report à nouveau du bilan.
+--
+-- CE QUI FERME LE CHEMIN EST LA POSTABILITÉ, PAS LE TYPE. Changer le type
+-- déplacerait le montant sans l'empêcher d'entrer : `Liability` l'enverrait au
+-- bilan en passif, et un type hors états le ferait disparaître des DEUX, c'est-à-
+-- dire plus silencieusement encore. Le dépôt a déjà tranché ce cas exact pour
+-- `2979 Résultat de l'exercice`, non imputable parce que l'application CALCULE ce
+-- solde (Story 14-1) : les comptes de clôture matérialisent exactement ce que Kesh
+-- calcule, et aucun site applicatif ne les cite.
+--
+-- LE NUMÉRO EST ICI LE CRITÈRE, ET C'EST LICITE. La règle « aucun numéro codé en
+-- dur » (Story 14-3a) vise le CODE APPLICATIF ; une migration corrige un plan DÉJÀ
+-- ÉCRIT en base, où le numéro est la seule donnée qui porte l'intention d'origine.
+-- Même geste que 20260722000001:129-138.
+--
+-- LIMITE ASSUMÉE, symétrique de celle de 20260722000001:115-118 : un utilisateur
+-- ayant réaffecté le numéro 9000 à un autre usage verra ce compte fermé, sans
+-- erreur. L'exposition est faible — `uq_accounts_company_number` n'est pas filtrée
+-- sur `active`, donc un numéro semé garde son compte à vie — et la page Plan
+-- comptable permet de rouvrir le compte d'un geste.
+--
+-- PAS DE `AND active = TRUE`, contrairement aux dix UPDATE de rôle du gabarit. Là,
+-- la clause protège l'unicité des rôles singleton ; ici il n'y a aucun rôle, et un
+-- compte 9000 archivé puis RÉACTIVÉ doit rester non imputable. Le gabarit exact
+-- est 20260722000001:177, qui ne filtre ni sur `active` ni sur la société.
+--
+-- CE QUE CETTE MIGRATION NE FAIT PAS : elle ne touche ni `account_type`, ni les
+-- écritures existantes, ni `version`. Les montants déjà passés sur un compte 9
+-- RESTENT en charges — les déplacer d'office serait une correction INVISIBLE DANS
+-- LES LIVRES, ce que l'art. 958f CO interdit. La voie de correction est la
+-- contre-passation (Story 24-4a), et le manuel utilisateur l'enseigne.
+--
+-- IDEMPOTENCE : `AND postable = TRUE` rend le rejeu manuel hors sqlx sans effet.
+-- C'est cette clause qui porte le verdict `yes` de l'audit d'idempotence, et non
+-- l'absence de DDL — quatre des cinq `yes` du dépôt sont du DDL gardé par
+-- `IF NOT EXISTS`.
+--
+-- P1/P3 : aucun DDL, donc NON BREAKING — ni bump `kesh_version_min_required`, ni
+-- bump de version Cargo.
+-- P7 : backfill de données, EXEMPTÉ au registre de rejeu — cf. la justification
+-- dans `crates/kesh-db/src/post_restore.rs`. L'exemption ne porte PAS sur la
+-- fenêtre (cette migration y est) mais sur le PARC : aucune version publiée ne se
+-- situe entre 20260827000001 et celle-ci, la dernière étant v0.11.1 (2026-08-24).
+
+UPDATE accounts
+   SET postable = FALSE
+ WHERE number IN ('9000', '9100', '9200')
+   AND postable = TRUE;

@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev
+review
 
 ## Story
 
@@ -316,17 +316,17 @@ un **symptôme visible**, pas un bug, et c'est par là qu'un utilisateur peut se
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Le champ du plan** (AC 1, 2, 3)
-  - [ ] `postable: Option<bool>` dans `ChartEntry`, `#[serde(default)]`, doc-comment sur le
+- [x] **T1 — Le champ du plan** (AC 1, 2, 3)
+  - [x] `postable: Option<bool>` dans `ChartEntry`, `#[serde(default)]`, doc-comment sur le
         modèle de celui de `role`
-  - [ ] la troisième cause dans `is_postable`, **en tête**, et son doc-comment mis à jour —
+  - [x] la troisième cause dans `is_postable`, **en tête**, et son doc-comment mis à jour —
         ⚠️ il énonce aujourd'hui « **deux** causes » : le décompte se recompte (§ *Recompter ses
         propres comptes rendus*)
-  - [ ] ⛔ **et corriger sa ligne de résumé, qui est INVERSÉE** : `chart_of_accounts/mod.rs:299`
+  - [x] ⛔ **et corriger sa ligne de résumé, qui est INVERSÉE** : `chart_of_accounts/mod.rs:299`
         dit *« `true` si l'entrée doit être créée non-postable »* alors que la fonction rend `true`
         pour un compte **postable**. Défaut préexistant — mais la story édite ce commentaire, et
         passer dessus sans le voir le rendrait invisible pour un an de plus
-  - [ ] ⛔ **les DIX littéraux `ChartEntry { … }` existants doivent recevoir le champ** — huit
+  - [x] ⛔ **les DIX littéraux `ChartEntry { … }` existants doivent recevoir le champ** — huit
         dans `chart_of_accounts/mod.rs` (`:464`, `:480`, `:492`, `:505`, `:512`, `:526`, `:592`,
         `:657`) et **deux dans `kesh-db/src/repositories/accounts.rs`** (`:1438`, `:1450`).
         `ChartEntry` n'a **pas** de `#[derive(Default)]` et ne peut pas en avoir un
@@ -334,34 +334,34 @@ un **symptôme visible**, pas un bug, et c'est par là qu'un utilisateur peut se
         --all-targets` échoue en **`E0063 missing field`** — le deuxième des quatre checks du gate.
         ⚠️ *Le précédent le prouve : l'ajout de `role` en 14-3a a dû faire exactement cela, et
         c'est pourquoi tous ces littéraux portent aujourd'hui un `role:` explicite.*
-  - [ ] tests unitaires : `Some(false)` retire ; `Some(true)` ne force ni sur un parent ni sur
+  - [x] tests unitaires : `Some(false)` retire ; `Some(true)` ne force ni sur un parent ni sur
         `CurrentYearResult` ; `None` se comporte comme aujourd'hui
-- [ ] **T2 — Les trois plans** (AC 4, 5)
-  - [ ] `"postable": false` sur 9000/9100/9200 dans `pme.json`, `association.json`,
+- [x] **T2 — Les trois plans** (AC 4, 5)
+  - [x] `"postable": false` sur 9000/9100/9200 dans `pme.json`, `association.json`,
         `independant.json` — ⚠️ **et nulle part ailleurs**
-  - [ ] test : pour chaque `org_type`, exactement trois entrées portent `postable: Some(false)`
-- [ ] **T3 — La migration de backfill** (AC 6, 7, 8, 9)
-  - [ ] `UPDATE accounts SET postable = FALSE WHERE number IN ('9000','9100','9200') AND postable = TRUE`
+  - [x] test : pour chaque `org_type`, exactement trois entrées portent `postable: Some(false)`
+- [x] **T3 — La migration de backfill** (AC 6, 7, 8, 9)
+  - [x] `UPDATE accounts SET postable = FALSE WHERE number IN ('9000','9100','9200') AND postable = TRUE`
         — la clause `AND postable = TRUE` rend la migration **idempotente** et son effet mesurable
-  - [ ] ⛔ **P7 — exemption avec justification factuelle** (AC 9) : entrée dans
+  - [x] ⛔ **P7 — exemption avec justification factuelle** (AC 9) : entrée dans
         `EXEMPT_MIGRATIONS` (`crates/kesh-db/src/post_restore.rs`), libellée sur le **parc** et
         non sur la fenêtre. ⛔ **Ne PAS commencer par `Hors fenêtre`** — le contrôle symétrique
         recalculerait la fenêtre et rejetterait la justification, à juste titre.
-  - [ ] ⛔ **Vérifier le fait AVANT d'écrire la justification**, et le citer dans le commentaire :
+  - [x] ⛔ **Vérifier le fait AVANT d'écrire la justification**, et le citer dans le commentaire :
         `git tag --sort=-creatordate | head -1` doit rendre **v0.11.1 (2026-08-24)** ou antérieur.
         Si une version a été publiée depuis `main` après le `2026-08-27`, **la décision de D6 se
         rouvre** et l'exemption devient fausse.
-  - [ ] ⛔ **NE PAS inscrire l'entrée au registre `POST_RESTORE_BACKFILLS`** : ce serait du code
+  - [x] ⛔ **NE PAS inscrire l'entrée au registre `POST_RESTORE_BACKFILLS`** : ce serait du code
         **exécuté à chaque import** pour un parc vide, et — l'entrée n'étant pas gardée — cela
         contredirait la promesse publiée du manuel d'administration (`admin-manual.tex:1609`,
         « vos données ne sont jamais écrasées »). ⚠️ *Ni l'en-tête du module ni le manuel n'ont
         donc à être amendés : la story ne les met plus en défaut.*
-  - [ ] ⛔ **P5** — ligne dans `docs/migrations-idempotence-audit.md` **et les cinq compteurs**,
+  - [x] ⛔ **P5** — ligne dans `docs/migrations-idempotence-audit.md` **et les cinq compteurs**,
         recomptés depuis la source : `ls crates/kesh-db/migrations/*.sql | wc -l` (**65 → 66**),
         `grep -c '^| `20' docs/migrations-idempotence-audit.md`, l'en-tête `## Table d'audit (N
         migrations)`, la ligne `Total`, et les trois compteurs de partition dont la **somme** doit
         égaler le total — ⚠️ **ils ne valent pas le total**
-  - [ ] ⛔ **Le verdict d'idempotence est `yes`, et le compteur `yes` passe de 5 à 6.**
+  - [x] ⛔ **Le verdict d'idempotence est `yes`, et le compteur `yes` passe de 5 à 6.**
         ⚠️ **Le critère n'est PAS « DML pur » — c'est la RE-EXÉCUTION MANUELLE SANS EFFET.**
         Quatre des cinq `yes` actuels sont du **DDL** pur, gardé par des `IF NOT EXISTS` ; ici
         c'est la clause **`AND postable = TRUE`** qui porte le verdict. *L'absence de DDL ne suffit
@@ -371,35 +371,35 @@ un **symptôme visible**, pas un bug, et c'est par là qu'un utilisateur peut se
         qui porte `tracked-by-sqlx` **parce qu'il contient aussi du DDL**.
         ⚠️ *Un verdict mal affecté laisse la somme juste et la partition fausse : recompter les
         cinq compteurs ne le détecte pas.*
-  - [ ] ⛔ **P6 — DEUX nombres**, pas un : `total == 65` → **66** *et* la fenêtre `total - 31` →
+  - [x] ⛔ **P6 — DEUX nombres**, pas un : `total == 65` → **66** *et* la fenêtre `total - 31` →
         `total - 32`, frontière tenue à **34** (`crates/kesh-db/tests/migrations_upgrade_path.rs`).
         *Bumper le total seul élargirait la fenêtre en silence — la 24-4c a payé ce piège.*
-  - [ ] ⛔ **P8** — ligne dans `crates/kesh-db/migrations.sha384`
-  - [ ] le squash `crates/kesh-db/test-schema/0001_schema_squash.sql` régénéré
-  - [ ] **P1/P3 — non breaking** : `UPDATE` de données, aucun DDL destructif ⇒ **ni bump
+  - [x] ⛔ **P8** — ligne dans `crates/kesh-db/migrations.sha384`
+  - [x] le squash `crates/kesh-db/test-schema/0001_schema_squash.sql` régénéré
+  - [x] **P1/P3 — non breaking** : `UPDATE` de données, aucun DDL destructif ⇒ **ni bump
         `min_required`, ni bump Cargo**
-- [ ] **T4 — L'invariant seed ≡ backfill** (AC 10, I2)
-  - [ ] `crates/kesh-db/tests/accounts_role_backfill.rs` étendu aux trois comptes
-  - [ ] ⚠️ ce test monte les migrations **par version** (`migrations_before`), jamais par
+- [x] **T4 — L'invariant seed ≡ backfill** (AC 10, I2)
+  - [x] `crates/kesh-db/tests/accounts_role_backfill.rs` étendu aux trois comptes
+  - [x] ⚠️ ce test monte les migrations **par version** (`migrations_before`), jamais par
         position : ne pas y introduire de `total - N`
-- [ ] **T5 — Les deux surfaces** (AC 11, 12, 13, I1, I3)
-  - [ ] test d'intégration : poster sur le 9000 est refusé par la garde **existante** de 14-3b
-  - [ ] test : un solde historique sur le 9000 n'apparaît **ni** au compte de résultat **ni** dans
+- [x] **T5 — Les deux surfaces** (AC 11, 12, 13, I1, I3)
+  - [x] test d'intégration : poster sur le 9000 est refusé par la garde **existante** de 14-3b
+  - [x] test : un solde historique sur le 9000 n'apparaît **ni** au compte de résultat **ni** dans
         le **`retainedEarnings` du bilan rendu** — ⛔ *pas* dans `fetch_retained_earnings`, qui est
         **privée** : elle ne s'observe qu'au travers de `GET /api/v1/reports/balance-sheet` —
         **une fois les lignes retirées** — ⚠️ et **apparaît** tant
         qu'elles sont là : c'est ce second sens qui démontre le défaut, le premier ne démontre que
         l'absence de lignes
-  - [ ] test I3 : décompte avant/après du backfill, et aucun `account_type` modifié
-  - [ ] ⛔ **test de l'AC 11** : un `PUT /api/v1/accounts/{id}` avec `postable: true` sur un 9000
+  - [x] test I3 : décompte avant/après du backfill, et aucun `account_type` modifié
+  - [x] ⛔ **test de l'AC 11** : un `PUT /api/v1/accounts/{id}` avec `postable: true` sur un 9000
         que le backfill a fermé le **rouvre**. ⚠️ *C'est la moitié « réparable » de D6 : sans ce
         test, le seul geste qui rend l'écrasement acceptable n'est exercé par rien, et D6
         deviendrait faux sans que rien ne rougisse.*
-- [ ] **T6 — Le manuel** (D4)
-  - [ ] `docs/manual/fr/user-manual.tex` : les comptes de clôture n'accueillent pas d'écriture
+- [x] **T6 — Le manuel** (D4)
+  - [x] `docs/manual/fr/user-manual.tex` : les comptes de clôture n'accueillent pas d'écriture
         dans Kesh ; une écriture déjà passée sur un compte 9 se corrige par **contre-passation**
         (24-4a), non par réécriture (24-4b)
-  - [ ] ⛔ **et montrer la porte ouverte, pas seulement celle qu'on ferme** : la voie prévue pour
+  - [x] ⛔ **et montrer la porte ouverte, pas seulement celle qu'on ferme** : la voie prévue pour
         un bilan d'ouverture de migration est l'écran **Administration → Soldes de départ**
         (`routes/opening_balances`) — ⚠️ **« Administration », pas « Réglages »** : c'est le groupe
         du sidebar (`+layout.svelte`, `nav-administration`) et la formulation que `user-manual.tex:562`
@@ -408,13 +408,13 @@ un **symptôme visible**, pas un bug, et c'est par là qu'un utilisateur peut se
         cette story adresse au correctif annoncé par l'issue.* ✅ Vérifié : la grille des soldes de
         départ ne prend que les comptes de bilan (`Asset`/`Liability`), donc les 9xxx en sont
         **déjà** exclus — la story ne casse rien de ce côté
-  - [ ] PDF régénéré (`make fr` dans `docs/manual/`) et commité
-  - [ ] ✅ **RIEN à corriger dans le manuel d'administration** : D6 ayant retenu l'exemption plutôt
+  - [x] PDF régénéré (`make fr` dans `docs/manual/`) et commité
+  - [x] ✅ **RIEN à corriger dans le manuel d'administration** : D6 ayant retenu l'exemption plutôt
         que la classe A, la promesse *« vos données ne sont jamais écrasées »*
         (`admin-manual.tex:1609`) **reste vraie**. ⚠️ *C'est le meilleur argument en faveur de
         l'exemption : la décision qui n'oblige à réécrire aucune garantie publiée est celle qui
         n'en casse aucune.*
-  - [ ] ⚠️ **la limite du critère « numéro »**, sur le modèle de celle que le backfill de rôles
+  - [x] ⚠️ **la limite du critère « numéro »**, sur le modèle de celle que le backfill de rôles
         énonce déjà — ⛔ **`20260722000001:115-118`**, le bloc « LIMITE ASSUMÉE » ; `:110-113`
         défend la *licéité* du numéro en migration, c'est-à-dire le gabarit de l'**AC 6**, pas
         celui de la limite : un utilisateur ayant **réaffecté** le numéro 9000
@@ -422,18 +422,18 @@ un **symptôme visible**, pas un bug, et c'est par là qu'un utilisateur peut se
         `uq_accounts_company_number` n'est pas filtrée sur `active`, donc un numéro semé garde son
         compte à vie — mais le précédent la documente, et l'omettre ici serait une régression de
         complétude.*
-  - [ ] ⛔ **Aucun gate ne lit le manuel** — leçon de la 24-4a, appliquée ici *avant* le fait
-- [ ] **T7 — La limitation L1** (D3)
-  - [ ] issue GitHub `[FEATURE]` : l'arbre affiche les comptes de clôture sous un type Charge ;
+  - [x] ⛔ **Aucun gate ne lit le manuel** — leçon de la 24-4a, appliquée ici *avant* le fait
+- [x] **T7 — La limitation L1** (D3)
+  - [x] issue GitHub `[FEATURE]` : l'arbre affiche les comptes de clôture sous un type Charge ;
         exige un variant d'`AccountType`, donc une migration **breaking**. Labels `enhancement`,
         `v0.2-milestone` ⇒ **catégorie B tracée** au sens de la politique zero carry-forward
-  - [ ] la limitation écrite dans les Dev Notes avec son numéro d'issue
-- [ ] **T8 — Les gates** (⛔ **complets, ciblage interdit** — migration *et* repository)
-  - [ ] base remise à zéro **avant** (inconditionnel — gate interrompu, gate terminé, **ou
+  - [x] la limitation écrite dans les Dev Notes avec son numéro d'issue
+- [x] **T8 — Les gates** (⛔ **complets, ciblage interdit** — migration *et* repository)
+  - [x] base remise à zéro **avant** (inconditionnel — gate interrompu, gate terminé, **ou
         conteneur redémarré**)
-  - [ ] `cargo fmt` · `clippy --workspace --all-targets -D warnings` · `scripts/test-fast.sh`
-  - [ ] frontend : `check` · `lint-i18n-ownership` · `test:unit` · `build`
-  - [ ] Playwright **complet**, `kesh_e2e` **reconstruite** — le rouge se juge fichier par fichier
+  - [x] `cargo fmt` · `clippy --workspace --all-targets -D warnings` · `scripts/test-fast.sh`
+  - [x] frontend : `check` · `lint-i18n-ownership` · `test:unit` · `build`
+  - [x] Playwright **complet**, `kesh_e2e` **reconstruite** — le rouge se juge fichier par fichier
         contre `docs/testing.md` § « Les échecs attendus », **jamais au nombre**
 
 ## Hors périmètre
@@ -736,8 +736,107 @@ sans cette confirmation.
 
 ### Agent Model Used
 
-### Debug Log References
+Opus 5 (1M context) — implémentation. Revue de spec : Sonnet 4.6 + Haiku 4.5 (P1), Opus 5 (P2),
+Sonnet 4.6 (P3), Haiku 4.5 (P4).
 
 ### Completion Notes List
 
+**Ce que le développement a confirmé de la spec.**
+
+- ⛔ **Le HIGH de la passe 1 était exact à la ligne près** : l'ajout du champ a fait échouer
+  `cargo check` en **`E0063`** sur **huit** littéraux de `chart_of_accounts/mod.rs` puis **deux**
+  de `repositories/accounts.rs` — les dix annoncés, aux lignes annoncées. Sans ce finding, le
+  gate aurait cassé au deuxième de ses quatre checks.
+- ⚠️ **Un onzième site que personne n'avait vu**, et il n'était pas grepable comme les autres :
+  `validate_chart_rejects_duplicate_singleton_role` construit son entrée avec le **raccourci de
+  champ** `role,` et non `role: X,`. Le motif qui a servi aux dix autres ne le voyait pas ; c'est
+  le compilateur qui l'a nommé. *Un grep bien formé rate ce qu'une autre syntaxe exprime.*
+- ✅ **Le squash n'a PAS eu à être régénéré** : la migration est un `UPDATE` pur, sans DDL, donc le
+  schéma ne bouge pas. `squash_matches_real_schema_structure` le confirme.
+- ⛔ **`every_sqlx_test_attribute_is_accounted_for` a rougi, et c'est son rôle** : les quatre tests
+  neufs montent le vrai `MIGRATOR` (montage à fenêtre obligatoire pour tester un backfill), donc
+  le fichier a dû être inscrit à `ALLOWED_REAL_MIGRATOR_FILES`. Le garde-fou a fonctionné comme
+  prévu — un test qui s'écarte du squash ne peut pas passer inaperçu.
+
+**Ce que le développement a trouvé et que la spec n'avait pas prévu.**
+
+- ⛔ **Le grep de propagation P6 a rendu QUATRE jumeaux.** La spec ne demandait de bumper que deux
+  nombres (`total` 65→66 et la fenêtre 31→32) ; mais `total - 31` et `total == 65` étaient **aussi**
+  écrits dans le message d'erreur du helper, dans un doc-comment d'AC et dans un commentaire
+  d'explication. *Corriger les deux sites nommés aurait laissé le fichier se contredire lui-même —
+  exactement le motif que la story a rencontré six fois en revue de spec.* Un cinquième résidu a
+  suivi : « les **27** dernières » migrations, recompté à **32**.
+- ⚠️ **Deux erreurs de fixture dans mes propres tests**, toutes deux muettes à l'écriture : une
+  date d'écriture hors de l'exercice du montage (2026-03-15 pour un exercice juillet→juin), et une
+  comparaison de solde **en chaîne** (`"40000.00"` contre `40000.0000` rendu par le serveur) —
+  corrigée en comparaison de `Decimal`, qui ne casse pas au premier changement d'échelle.
+
+**Ce qui a été prouvé plutôt qu'affirmé.**
+
+- ⛔ **L'invariant seed ≡ backfill a été vérifié PAR MUTATION** : l'annotation du 9000 retirée du
+  plan PME fait **rougir** `backfill_matches_seed_for_every_chart`, restaurée le fait repasser.
+  *Un test qui passe ne prouve pas qu'il teste — c'est le mode d'échec du test muet, payé deux fois
+  par ce dépôt.*
+- ✅ **Les deux surfaces de D5 sont démontrées par un test qui les VOIT**, et non par l'absence de
+  lignes : `closing_account_balance_reaches_both_report_surfaces` pose 40 000 sur un 9000 ouvert et
+  assied que le montant apparaît **en charges** *et* fausse l'`equityResult` du bilan (−40 500 au
+  lieu de −500). C'est ce second sens qui rend le test probant.
+- ✅ **L'AC 11 est exercée** : `a_closed_closing_account_can_be_reopened_by_its_owner` démontre la
+  réouverture par `PUT`. *C'est la moitié « réparable » de D6 ; sans ce test, la justification de
+  l'exemption ne reposerait sur rien d'exécuté.*
+
+**Limitation L1** — le type reste `Expense`, issue de suivi **#426** ouverte (`enhancement`,
+`v0.2-milestone`), catégorie B tracée.
+
 ### File List
+
+| fichier | nature |
+|---|---|
+| `crates/kesh-db/migrations/20260909000001_closing_accounts_not_postable.sql` | **NEW** — le backfill |
+| `crates/kesh-db/tests/closing_accounts_backfill.rs` | **NEW** — 4 tests, invariant I3 |
+| `crates/kesh-core/src/chart_of_accounts/mod.rs` | UPDATE — `ChartEntry.postable`, `is_postable` (3ᵉ cause + résumé inversé corrigé), 8 littéraux, **7 tests** |
+| `crates/kesh-core/assets/charts/{pme,association,independant}.json` | UPDATE — 3 × 3 annotations |
+| `crates/kesh-db/src/repositories/accounts.rs` | UPDATE — 2 littéraux `ChartEntry` |
+| `crates/kesh-db/src/post_restore.rs` | UPDATE — l'exemption P7, justifiée sur le **parc** |
+| `crates/kesh-db/migrations.sha384` | UPDATE — P8 |
+| `crates/kesh-db/tests/migrations_upgrade_path.rs` | UPDATE — P6, **deux** nombres + **quatre** jumeaux |
+| `crates/kesh-db/tests/test_schema_guard.rs` | UPDATE — le fichier neuf inscrit à `ALLOWED_REAL_MIGRATOR_FILES` |
+| `docs/migrations-idempotence-audit.md` | UPDATE — P5, ligne + les 5 compteurs (`yes` 5→6) |
+| `crates/kesh-api/tests/reports_e2e.rs` | UPDATE — **3 tests** : les deux surfaces, le refus, la réouverture |
+| `docs/manual/fr/user-manual.tex` (+ PDF, 62 p.) | UPDATE — T6 |
+
+### Gates réellement exécutés
+
+| gate | résultat |
+|---|---|
+| `cargo fmt --all -- --check` | propre — ⚠️ **rouge au premier passage**, sur le test neuf : `fmt` en pré-vol reste le geste le moins cher du dépôt |
+| `cargo clippy --workspace --all-targets -- -D warnings` | 0 warning |
+| `scripts/test-fast.sh`, **base remise à zéro** (KF-039, inconditionnel) | **2295/2295**, 4 skipped, en 85 s |
+
+| `npm run check` · `lint-i18n-ownership` · `test:unit` · `build` | 0 erreur (27 warnings préexistants) · PASS · **740/740** · OK |
+| Playwright, suite **complète**, `kesh_e2e` **reconstruite** | **215 passés / 8 échoués / 19 ignorés** en 8,1 min — **ZÉRO RÉGRESSION** |
+
+⛔ **Le décompte se recoupe, et c'est la seule façon de l'écrire** : **2281** au dernier gate de la
+24-4c, **+14 tests neufs** (7 unitaires sur `is_postable` et les plans, 4 d'intégration sur le
+backfill, 3 de bout en bout sur les surfaces, le refus et la réouverture) = **2295**. Recompté
+depuis la source, pas déduit du total.
+
+**Les huit échecs, tranchés fichier par fichier contre `docs/testing.md` — jamais au nombre** :
+
+| spec | cause |
+|---|---|
+| `mode-expert:26`, `:41` · `onboarding-path-b:65`, `:92` · `onboarding:57`, `:77`, `:150` | **7 × KF-029 (#97)**, à la ligne près |
+| `sidebar-navigation:75` | **KF-046 (#424)** — déterministe, mesurée sur `main` en worktree à la 24-4c |
+
+✅ **Zéro pollution sur ce run**, ce qui n'était arrivé à aucun des trois précédents — leur
+huitième échec changeait d'identité à chaque fois. ✅ **La KF-045 ne s'est pas déclenchée** : run à
+16:44 UTC, donc après midi, ce qui confirme une fois de plus son diagnostic horaire.
+
+⚠️ **`kesh_e2e` a été reconstruite de ZÉRO** — 0 table au départ, le conteneur MariaDB ayant
+redémarré et son tmpfs ayant tout emporté ; 66 migrations rejouées. *La troisième circonstance de
+la règle « un gate laisse la base piégée », et elle s'est présentée sans qu'on l'ait provoquée.*
+
+⚠️ **Le premier passage du gate backend est mort sur `cargo fmt`** — un diff de formatage dans le
+test neuf. Sans conséquence ici (la suite tourne en 85 s), mais c'est le rappel que `fmt` en
+pré-vol reste le geste le moins cher du dépôt : sur la 16-1d, la même omission avait fait échouer
+un gate complet **au bout de 59 minutes**.

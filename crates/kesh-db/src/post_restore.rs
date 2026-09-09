@@ -301,6 +301,25 @@ pub const RETIRED_BACKFILLS: &[PostRestoreBackfill] = &[
 /// désactive **définitivement et en silence** le rejeu du backfill concerné.
 pub const EXEMPT_MIGRATIONS: &[(i64, &str)] = &[
     (
+        20260909000001,
+        "Parc vide, et NON « hors fenêtre » — cette migration EST dans la fenêtre d'importabilité, \
+         et invoquer la fenêtre serait faux. L'argument porte sur le PARC : l'intervalle où un \
+         backup porterait `postable = TRUE` sur les comptes de clôture est \
+         [20260827000001 .. celle-ci), et AUCUNE version publiée ne s'y trouve — la dernière est \
+         v0.11.1 (2026-08-24), antérieure à la borne basse ; l'instance en service exécute cette \
+         version (arbitrage du 2026-09-09). L'intervalle ne contient que des builds de \
+         développement non distribués. \
+         POURQUOI PAS LE REGISTRE : l'entrée serait de classe A, or son UPDATE n'est PAS gardé \
+         contre l'écrasement d'une valeur posée par l'utilisateur — `postable` est réouvrable par \
+         `PUT /api/v1/accounts/{id}` (sémantique full-replace, cf. `effective_postable`), et rien \
+         ne distingue « jamais touché » de « rouvert exprès ». La classe A démentirait donc la \
+         promesse publiée du manuel d'administration (« vos données ne sont jamais écrasées »), \
+         et la classe B est indisponible faute de DDL offrant une sentinelle. \
+         ⚠️ CETTE JUSTIFICATION SE PÉRIME : elle cesserait d'être vraie si une version était \
+         publiée depuis `main` entre le 2026-08-27 et le merge de la Story 24-5. À revérifier \
+         par `git tag --sort=-creatordate | head -1` avant toute release — Story 24-5, #375.",
+    ),
+    (
         20260722000001,
         "Hors fenêtre depuis 20260827000001 (invoice_settlements, Story 24-2) : un backup assez \
          ancien pour porter role/postable vides est dépourvu de cette table, donc refusé au \

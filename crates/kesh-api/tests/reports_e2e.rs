@@ -1775,3 +1775,214 @@ async fn aged_receivables_scoped_per_company(pool: MySqlPool) {
         "B ne doit pas voir les postes ouverts de A"
     );
 }
+
+// ============================================================
+// Story 24-5 (#375) — les comptes de clôture n'accueillent plus d'écriture
+// ============================================================
+
+/// **Les DEUX surfaces du défaut**, et c'est le point que l'issue ne nomme qu'à
+/// moitié.
+///
+/// Un solde sur un compte de la classe 9 — typé `Expense` et resté imputable —
+/// entre à la fois dans le **compte de résultat** (`income_statement`, qui
+/// sélectionne sur `account_type`) et dans le **report à nouveau du bilan**
+/// (`fetch_retained_earnings`, qui filtre `account_type IN ('Revenue','Expense')`).
+///
+/// ⚠️ Ce test ne monte pas la migration — les tests montent le squash — il
+/// **démontre la surface** que la migration ferme en amont, côté plan livré.
+/// C'est ce qui justifie l'AC 12 : *un test écrit contre le seul compte de
+/// résultat laisserait la seconde surface non vérifiée*, et c'est elle qui touche
+/// l'état qu'un réviseur ouvre en premier.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn closing_account_balance_reaches_both_report_surfaces(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "co_24_5_surfaces", Role::Comptable).await;
+
+    // Un compte de clôture tel que le plan le livrait AVANT cette story :
+    // feuille, sans rôle, typé Expense — donc imputable.
+    let acc_9000 = create_acc(
+        &pool,
+        ctx.user_id,
+        ctx.company_id,
+        "9000",
+        "Bilan d'ouverture",
+        AccountType::Expense,
+    )
+    .await;
+
+    // L'à-nouveau que passe un migrant : 9000 au débit.
+    post_entry(
+        &pool,
+        ctx.user_id,
+        ctx.fy_id,
+        ctx.company_id,
+        NaiveDate::from_ymd_opt(2026, 9, 15).unwrap(),
+        Journal::OD,
+        "A-nouveau passe par le 9000",
+        acc_9000,
+        ctx.acc_2000_liab,
+        dec!(40000),
+    )
+    .await;
+
+    let app = spawn_app(pool).await;
+
+    // Surface 1 — le compte de résultat.
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reports/income-statement?fiscalYearId={}",
+            ctx.fy_id
+        )))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let expenses = body["expenses"].as_array().expect("expenses");
+    let ligne_9000 = expenses
+        .iter()
+        .find(|a| a["accountNumber"] == "9000")
+        .expect(
+            "le 9000 DOIT apparaitre en charges — c'est le defaut que la story ferme ; \
+             s'il n'y est pas, ce test ne demontre plus rien",
+        );
+    let solde_9000: Decimal = ligne_9000["balance"].as_str().unwrap().parse().unwrap();
+    assert_eq!(
+        solde_9000,
+        dec!(40000),
+        "comparaison en Decimal et non en chaine : le serveur rend 40000.0000, \
+         et une egalite textuelle casserait au premier changement d'echelle"
+    );
+
+    // Surface 2 — le report à nouveau du bilan, celle que l'issue ne nomme pas.
+    // `fetch_retained_earnings` est privée : elle ne s'observe qu'au travers du
+    // rapport rendu.
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reports/balance-sheet?fiscalYearId={}",
+            ctx.fy_id
+        )))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let equity_result: Decimal = body["equityResult"].as_str().unwrap().parse().unwrap();
+    assert_eq!(
+        equity_result,
+        dec!(-40500),
+        "equityResult = produits 500 - charges (1000 + 40000) : les 40 000 du 9000 \
+         faussent AUSSI le bilan, pas seulement le compte de resultat"
+    );
+}
+
+/// **La garde qui ferme le chemin**, et elle existe déjà (Story 14-3b).
+///
+/// Une fois le compte non imputable — ce que le plan livré et le backfill
+/// produisent —, la création d'écriture est refusée. ⛔ Aucun code d'erreur neuf
+/// n'est introduit par cette story : on vérifie **celui qui existe**.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn posting_to_a_closed_closing_account_is_refused(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "co_24_5_refus", Role::Comptable).await;
+
+    let acc_9000 = accounts::create(
+        &pool,
+        ctx.user_id,
+        NewAccount {
+            company_id: ctx.company_id,
+            number: "9000".into(),
+            name: "Bilan d'ouverture".into(),
+            account_type: AccountType::Expense,
+            parent_id: None,
+            role: None,
+            postable: false, // l'etat que produit le plan livre + le backfill
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+
+    let app = spawn_app(pool).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/journal-entries"))
+        .bearer_auth(&ctx.jwt)
+        .json(&serde_json::json!({
+            "entryDate": "2026-09-15",
+            "journal": "OD",
+            "description": "A-nouveau refuse",
+            "lines": [
+                { "accountId": acc_9000, "debit": "40000.00", "credit": "0.00" },
+                { "accountId": ctx.acc_2000_liab, "debit": "0.00", "credit": "40000.00" },
+            ],
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.status(),
+        400,
+        "poster sur un compte de cloture doit etre refuse par la garde de la 14-3b"
+    );
+}
+
+/// **AC 11 — la moitié « réparable » de la décision D6.**
+///
+/// L'utilisateur peut rouvrir d'un `PUT` un compte que le backfill a fermé :
+/// `effective_postable` ne force `false` que pour un parent ou le rôle
+/// `CurrentYearResult`, jamais pour un numéro.
+///
+/// ⛔ **Sans ce test, le seul geste qui rend l'exemption de D6 acceptable ne
+/// serait exercé par rien** — et D6 pourrait devenir faux sans que rien ne
+/// rougisse. C'est le mode d'échec du test muet appliqué à la justification d'un
+/// arbitrage.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_closed_closing_account_can_be_reopened_by_its_owner(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "co_24_5_reouverture", Role::Comptable).await;
+
+    let compte = accounts::create(
+        &pool,
+        ctx.user_id,
+        NewAccount {
+            company_id: ctx.company_id,
+            number: "9000".into(),
+            name: "Bilan d'ouverture".into(),
+            account_type: AccountType::Expense,
+            parent_id: None,
+            role: None,
+            postable: false,
+        },
+    )
+    .await
+    .unwrap();
+
+    let app = spawn_app(pool).await;
+
+    let resp = app
+        .client
+        .put(app.url(&format!("/api/v1/accounts/{}", compte.id)))
+        .bearer_auth(&ctx.jwt)
+        .json(&serde_json::json!({
+            "name": "Bilan d'ouverture",
+            "accountType": "Expense",
+            "role": null,
+            "postable": true,
+            "version": compte.version,
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200, "la reouverture doit aboutir");
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["postable"], true,
+        "le compte doit etre effectivement rouvert — c'est ce qui rend l'ecrasement \
+         de D6 reparable, et donc la decision defendable"
+    );
+}

@@ -192,6 +192,17 @@ pub struct ChartEntry {
     pub parent_number: Option<String>,
     #[serde(default)]
     pub role: Option<AccountRole>,
+    /// Postabilité **imposée par le plan**, quand elle ne se déduit ni de la
+    /// hiérarchie ni du rôle (Story 24-5).
+    ///
+    /// `None` — le cas de la quasi-totalité des entrées — laisse
+    /// [`is_postable`] décider seule ; un plan sans annotation reste donc
+    /// valide et se comporte comme avant (non-breaking, comme `role`).
+    ///
+    /// ⚠️ Ce champ ne sait que **retirer** la postabilité : `Some(true)` ne
+    /// rouvre ni un compte de regroupement ni le résultat de l'exercice.
+    #[serde(default)]
+    pub postable: Option<bool>,
 }
 
 /// Résout le nom d'un compte dans la langue demandée, avec fallback FR.
@@ -296,22 +307,40 @@ fn validate_chart(entries: &[ChartEntry]) -> Result<(), CoreError> {
     Ok(())
 }
 
-/// `true` si l'entrée doit être créée non-postable.
+/// `true` si l'entrée doit être créée **postable**.
 ///
-/// Deux causes, toutes deux **chart-agnostiques** (aucun numéro codé en dur) :
-/// 1. l'entrée est le parent d'une autre entrée du plan — c'est un compte titre
+/// ⚠️ La ligne de résumé disait l'inverse jusqu'à la Story 24-5 — la fonction a
+/// toujours rendu `true` pour un compte **imputable**. Corrigé plutôt que laissé,
+/// parce qu'un résumé faux se lit plus souvent que le corps qu'il résume.
+///
+/// **Trois** causes de non-postabilité, toutes **chart-agnostiques** (aucun
+/// numéro codé en dur) :
+/// 1. l'entrée porte `postable: Some(false)` — le plan l'impose (Story 24-5) ;
+/// 2. l'entrée est le parent d'une autre entrée du plan — c'est un compte titre
 ///    ou de regroupement, on ne poste pas dessus ;
-/// 2. l'entrée porte le rôle [`AccountRole::CurrentYearResult`] — en modèle
+/// 3. l'entrée porte le rôle [`AccountRole::CurrentYearResult`] — en modèle
 ///    « temps réel virtuel » (Story 14-1), l'application **calcule** le résultat
 ///    de l'exercice à chaque rendu ; y poster serait un double-comptage garanti.
 ///
+/// ⛔ La première cause ne fait que **retirer** : `Some(true)` ne court-circuite
+/// rien et laisse les deux autres s'appliquer. Sans cela, un plan pourrait rouvrir
+/// un compte de regroupement ou le résultat de l'exercice, c'est-à-dire défaire
+/// depuis une donnée l'invariant que le code tient.
+///
 /// [`AccountRole::RetainedEarnings`] reste postable : un utilisateur qui migre
 /// depuis un autre logiciel doit pouvoir poser son report à nouveau d'ouverture.
+/// C'est la ligne de partage avec la cause 1 — un report à nouveau est une
+/// **donnée** que l'utilisateur apporte, un bilan d'ouverture un **état** que
+/// Kesh dérive.
 ///
-/// Cette fonction est la **contrepartie exacte** des deux `UPDATE` de backfill
-/// de la migration `20260722000001_accounts_role_postable.sql` ; l'invariant
+/// Cette fonction est la **contrepartie exacte** des `UPDATE` de backfill des
+/// migrations `20260722000001_accounts_role_postable.sql` et
+/// `20260909000001_closing_accounts_not_postable.sql` ; l'invariant
 /// « seed ≡ backfill » est vérifié par un test dédié dans `kesh-db`.
 pub fn is_postable(entry: &ChartEntry, parent_numbers: &HashSet<&str>) -> bool {
+    if entry.postable == Some(false) {
+        return false;
+    }
     if parent_numbers.contains(entry.number.as_str()) {
         return false;
     }
@@ -470,6 +499,7 @@ mod tests {
             account_type: AccountType::Asset,
             parent_number: None,
             role: None,
+            postable: None,
         };
         assert_eq!(resolve_name(&entry, "de"), "Kasse");
         assert_eq!(resolve_name(&entry, "DE"), "Kasse");
@@ -483,6 +513,7 @@ mod tests {
             account_type: AccountType::Asset,
             parent_number: None,
             role: None,
+            postable: None,
         };
         assert_eq!(resolve_name(&entry, "de"), "Caisse");
     }
@@ -495,6 +526,7 @@ mod tests {
             account_type: AccountType::Asset,
             parent_number: None,
             role: None,
+            postable: None,
         };
         assert_eq!(resolve_name(&entry, "fr"), "1000");
     }
@@ -508,6 +540,7 @@ mod tests {
                 account_type: AccountType::Asset,
                 parent_number: None,
                 role: None,
+                postable: None,
             },
             ChartEntry {
                 number: "1000".to_string(),
@@ -515,6 +548,7 @@ mod tests {
                 account_type: AccountType::Asset,
                 parent_number: None,
                 role: None,
+                postable: None,
             },
         ];
         let err = validate_chart(&entries).unwrap_err();
@@ -529,6 +563,7 @@ mod tests {
             account_type: AccountType::Asset,
             parent_number: Some("999".to_string()),
             role: None,
+            postable: None,
         }];
         let err = validate_chart(&entries).unwrap_err();
         assert!(err.to_string().contains("parent inexistant"));
@@ -595,6 +630,7 @@ mod tests {
             account_type: AccountType::Asset,
             parent_number: None,
             role,
+            postable: None,
         };
 
         // Deux comptes portant Receivable (singleton) → rejet.
@@ -660,6 +696,7 @@ mod tests {
             account_type: AccountType::Expense,
             parent_number: None,
             role: Some(AccountRole::Payable),
+            postable: None,
         }];
         let err = validate_chart(&entries).expect_err("Payable sur une charge doit être rejeté");
         let msg = format!("{err:?}");
@@ -734,5 +771,116 @@ mod tests {
             assert_eq!(r.as_str().parse::<AccountRole>().unwrap(), r);
         }
         assert!("Bogus".parse::<AccountRole>().is_err());
+    }
+
+    // =======================================================================
+    // Story 24-5 — postabilité imposée par le plan (comptes de clôture)
+    // =======================================================================
+
+    /// Entrée de test : feuille, sans rôle, postabilité au choix.
+    fn entry_24_5(number: &str, role: Option<AccountRole>, postable: Option<bool>) -> ChartEntry {
+        ChartEntry {
+            number: number.into(),
+            name: HashMap::from([("fr".to_string(), format!("Compte {number}"))]),
+            account_type: AccountType::Expense,
+            parent_number: None,
+            role,
+            postable,
+        }
+    }
+
+    #[test]
+    fn postable_false_retire_la_postabilite_dune_feuille_sans_role() {
+        let entry = entry_24_5("9000", None, Some(false));
+        let parents = HashSet::new();
+        assert!(
+            !is_postable(&entry, &parents),
+            "`postable: Some(false)` doit retirer la postabilité, y compris \
+             sur une feuille qu'aucune autre cause n'atteint"
+        );
+    }
+
+    #[test]
+    fn postable_none_se_comporte_comme_avant() {
+        let feuille = entry_24_5("6000", None, None);
+        let parents = HashSet::new();
+        assert!(
+            is_postable(&feuille, &parents),
+            "sans annotation, une feuille sans rôle reste postable — c'est ce qui \
+             rend le champ non-breaking pour un plan qui ne le porte pas"
+        );
+    }
+
+    #[test]
+    fn postable_true_ne_rouvre_pas_un_compte_de_regroupement() {
+        let parent = entry_24_5("90", None, Some(true));
+        let parents = HashSet::from(["90"]);
+        assert!(
+            !is_postable(&parent, &parents),
+            "`Some(true)` ne doit RIEN forcer : un compte qui a des enfants reste \
+             un compte de regroupement, sans quoi une donnée de plan pourrait \
+             défaire l'invariant que le code tient"
+        );
+    }
+
+    #[test]
+    fn postable_true_ne_rouvre_pas_le_resultat_de_lexercice() {
+        let entry = entry_24_5("2979", Some(AccountRole::CurrentYearResult), Some(true));
+        let parents = HashSet::new();
+        assert!(
+            !is_postable(&entry, &parents),
+            "`Some(true)` ne doit pas rouvrir le compte dont l'application CALCULE \
+             le solde — y poster serait un double-comptage garanti (Story 14-1)"
+        );
+    }
+
+    #[test]
+    fn postable_false_et_les_autres_causes_se_cumulent_sans_se_contredire() {
+        let parents = HashSet::from(["90"]);
+        // Les deux causes à la fois : le résultat est le même, false.
+        assert!(!is_postable(&entry_24_5("90", None, Some(false)), &parents));
+        assert!(!is_postable(
+            &entry_24_5("2979", Some(AccountRole::CurrentYearResult), Some(false)),
+            &parents
+        ));
+    }
+
+    #[test]
+    fn un_plan_sans_le_champ_postable_reste_deserialisable() {
+        // La forme exacte d'une entrée des plans livrés AVANT la Story 24-5.
+        let json =
+            r#"[{"number":"1000","name":{"fr":"Caisse"},"type":"Asset","parentNumber":null}]"#;
+        let entries: Vec<ChartEntry> =
+            serde_json::from_str(json).expect("un plan sans `postable` doit rester valide");
+        assert_eq!(entries[0].postable, None);
+        assert_eq!(entries[0].role, None);
+    }
+
+    #[test]
+    fn les_trois_plans_ferment_exactement_les_trois_comptes_de_cloture() {
+        for org in ["Pme", "Association", "Independant"] {
+            let chart = load_chart(org).unwrap();
+            let fermes: Vec<&str> = chart
+                .iter()
+                .filter(|e| e.postable == Some(false))
+                .map(|e| e.number.as_str())
+                .collect();
+            assert_eq!(
+                fermes,
+                vec!["9000", "9100", "9200"],
+                "plan {org} : exactement les trois comptes de clôture doivent porter \
+                 l'annotation — ni `9` ni `90`, qui sont DÉJÀ fermés comme parents"
+            );
+
+            // Et la conséquence, qui est ce qui compte vraiment.
+            let parents = parent_numbers(&chart);
+            for number in ["9", "90", "9000", "9100", "9200"] {
+                let entry = chart.iter().find(|e| e.number == number).unwrap();
+                assert!(
+                    !is_postable(entry, &parents),
+                    "plan {org} : le compte {number} ne doit accepter aucune écriture"
+                );
+            }
+        }
     }
 }
