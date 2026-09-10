@@ -393,6 +393,38 @@ trois revues de projet consécutives avant de l'être. ⚠️ Elle s'était tran
 contexte de travail et non par ce fichier : un geste qui ne vit que dans une session se
 perd avec elle.)*
 
+### Le prompt d'une passe doit NOMMER le manuel — sinon personne ne l'ouvre
+
+**Règle** : tout prompt de passe de revue portant sur du code visible de l'utilisateur doit inscrire, parmi ses axes, la vérification du **manuel** (`docs/manual/`) contre le code — et exiger que le **PDF** soit contrôlé, pas seulement le `.tex`.
+
+**Pourquoi, et le motif n'est pas celui qu'on croit.** La leçon écrite à la Story 24-4a était : *aucun gate ne lit le manuel*. Elle a une jumelle plus coûteuse : **aucune passe ne le lit non plus, sauf si son prompt le lui demande.** Sur l'Epic 24, le manuel a été pris en défaut à **six tours sous six formes** — il promettait une protection absente, puis annonçait un trou absent, puis bornait trop étroitement un trou réel, puis omettait un flux, puis ignorait une exemption.
+
+⛔ **Mais le rendement de cet axe n'est pas de corriger le manuel : c'est ce qu'il RÉVÈLE.** C'est en vérifiant si le manuel disait vrai qu'une lentille a trouvé un **quatrième chemin d'écriture** — atteignable d'un clic — que quatre passes de spec et deux passes de code n'avaient pas énuméré ; puis un cinquième, puis un sixième. *Le seul endroit où l'on écrit ce que le code est censé garantir est aussi le seul où l'écart se voit.*
+
+⚠️ **Contrôler le PDF, et l'aplatir avant de greper** : `pdftotext` coupe les lignes, un `grep` naïf sur une phrase rend un faux négatif. `pdftotext f.pdf - | tr '\n' ' ' | tr -s ' '`.
+
+*(codifié 2026-09-10, rétrospective Epic 24 — action A6, insight I1/I2.)*
+
+### Une passe qui ne déclare pas ses axes exercés ne compte pas comme passe
+
+**Règle** : tout prompt de passe exige, dans le rapport, **la liste des axes réellement exercés et de ceux qui ne l'ont pas été**. Un « 0 finding » non adossé à cette liste ne clôt rien et ne compte pas dans le décompte de la boucle.
+
+**Précédent, et il est net.** La passe 4 de la Story 24-5 (Haiku 4.5) a rendu **0 finding**. Elle a déclaré elle-même n'avoir pas couvert l'axe le plus cher — « examen rapide » de l'énumération des chemins d'écriture, celui-là même qui avait produit le CRITICAL de la passe précédente —, qualifié de « robuste » un point qu'elle **n'avait pas exécuté** — et il était faux —, et **écrit dans le dépôt** malgré une interdiction explicite, en lançant `scripts/prepare-release.sh` qui a bumpé les dix crates du workspace. **Deux défauts réels attendaient derrière**, trouvés en refaisant le travail annoncé.
+
+⚠️ **Corollaire pour l'orchestrateur** : un « 0 finding » se vérifie comme un finding. Reprendre soi-même les axes que la passe déclare n'avoir pas exercés coûte une fraction d'une passe, et c'est exactement là que se trouve ce qu'elle a manqué.
+
+⛔ **Et interdire l'écriture ne suffit pas : il faut interdire les COMMANDES qui écrivent.** Le prompt disait « n'écris aucun fichier » ; la lentille a exécuté un script qui écrit. Nommer explicitement `scripts/prepare-release.sh` — et tout script mutant — dans les interdits.
+
+*(codifié 2026-09-10, rétrospective Epic 24 — action A7, insight I3.)*
+
+### Inventorier les sites NON RÉSOLUS, plutôt qu'énumérer les formes qui marchent
+
+**Règle** : quand un critère doit prouver qu'une classe de défauts est fermée, ne pas énumérer les formes traitées — **inventorier l'ensemble clos des sites qui ne résolvent pas**, et exiger que chacun soit soit résolu, soit écrit comme angle mort assumé.
+
+**Pourquoi** : une énumération de formes est ouverte par nature — une forme imprévue la contourne sans que rien ne rougisse. Pire, le critère censé fermer la faille peut la **certifier** : sur l'Epic 23, l'`AC7` comparait la liste des sites à la table de référence, **les deux côtés sortant du même extracteur**. L'assertion était verte *par construction*. L'inventaire des non-résolus — 36 sur 1496 — est en revanche comptable et décidable, et c'est la seule assertion qu'une forme imprévue ne puisse pas contourner.
+
+*(D4-ter, acquis méthodologique de l'Epic 23 — codifié 2026-09-10, action A9 de la rétrospective Epic 24, après **deux reports**.)*
+
 ### Propagation post-patch — grep du symptôme avant la passe suivante
 
 **Règle** : après avoir appliqué un patch de remédiation (revue de spec ou de code), et **avant** de relancer la passe suivante, `grep` le **symptôme corrigé** — pas seulement le site corrigé — sur **tout le dépôt** : code, spec/story file, doc-comments, tests, i18n (les 4 locales), fallbacks Svelte, manuels LaTeX. Lister les sites atteints et les traiter dans le **même** patch.
@@ -607,6 +639,17 @@ Un epic peut donc se clore proprement côté code tout en laissant dériver le d
 | CR / feature request | `feature_request.yml` | `enhancement`, `triage` |
 
 Titre homogène pour les KF : `[KF-NNN] description` — facilite la recherche visuelle dans la liste d'issues.
+
+⛔ **Le numéro se lit DEPUIS GITHUB avant d'être attribué — jamais depuis un fichier, une mémoire ou une rétrospective.** Rien ne contrôle l'unicité, et un numéro relu depuis un état périmé produit une collision **silencieuse** : la recherche par numéro rend alors deux résultats sans le signaler.
+
+```sh
+gh issue list --state all --limit 300 --json title --jq '.[].title' \
+  | grep -oE '^\[KF-[0-9]{3}\]' | grep -oE '[0-9]{3}' | sort -n | tail -1
+```
+
+⚠️ **Le détecteur porte sur le PRÉFIXE, pas sur le titre entier** : un titre peut *mentionner* une autre KF sans la porter — `[KF-020] … pour fermer la race no-op KF-004 résiduelle` est une référence, pas une attribution. Un `grep` sur le titre entier compte les deux et rend un faux positif. *Un détecteur mal formé coûte le même diagnostic qu'un défaut réel.*
+
+**Précédent (rétrospective Epic 24, 2026-09-10)** : `KF-045` et `KF-046` désignaient chacune **deux issues distinctes** — #330/#421 et #339/#424 —, les secondes ouvertes huit jours après les premières. Renumérotées en KF-051 et KF-052. Reste `KF-002`, portée par #2, #40 et #41 (avril 2026, toutes fermées) : collision historique laissée telle quelle, réécrire le titre de tickets clos n'apporterait rien.
 
 ### Quand créer une issue
 

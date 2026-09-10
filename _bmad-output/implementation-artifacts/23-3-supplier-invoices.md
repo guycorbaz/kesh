@@ -150,6 +150,30 @@ donc **langue par langue**, sur le catalogue **complet** de chacune.
 - [x] **T7 — Allowlist** : 275 → 166 (AC2).
 - [x] **T8 — Gates complets, E2E comprise** (AC9), et PR en `refs #316` (AC10).
 
+### Review Findings — passe 5 — **consignée rétroactivement le 2026-09-10**
+
+⚠️ **Cette passe a eu lieu, et son compte rendu manquait ici.** Le suivi de sprint la mentionne
+depuis la clôture rétroactive du 2026-08-22 ; le story file, non. L'écart a été relevé à la
+rétrospective de l'Epic 23 (action A7), reporté à celle de l'Epic 24, et se solde ici.
+
+**Verdict de la passe 5** : **2 HIGH · 3 MEDIUM · 1 LOW.** Le critère d'arrêt de la
+§ *Review Iteration Rule* n'était donc **pas** atteint au merge de la PR #325 — c'est à juste titre
+que la story était restée en `review`.
+
+⛔ **Les deux HIGH ont été EXTERNALISÉS, non résolus ici.** Ils constataient que le défaut de la
+passe 4 existait **à l'identique** dans `payment-batches` et `credit-notes` : sur arbitrage du
+Project Lead, ils sont devenus la story **23-3b**, plutôt que d'élargir le périmètre d'une story
+déjà mergée.
+
+⚠️ **Ce que cette consignation tardive enseigne** : le suivi de sprint et le story file ont porté
+des états divergents pendant **dix-neuf jours**, et c'est le suivi qui disait vrai. Une passe dont
+le compte rendu ne vit que dans le suivi est invisible à qui lit la story — or c'est le story file
+que les passes suivantes ouvrent.
+
+*(Consigné 2026-09-10 — action A8 de la rétrospective Epic 24, report de l'action A7 de la
+rétrospective Epic 23. Le détail des six findings n'a pas été retrouvé : seul leur décompte et le
+sort des deux HIGH sont attestés par le suivi. Ce qui est écrit ici est ce qui est prouvé.)*
+
 ### Review Findings — passe 4 (2026-08-20, Opus ×3, braquée sur le CODE)
 
 ⚠️ **L'hypothèse « le code est stable » est RÉFUTÉE.** Les passes 2 et 3 n'avaient plus mis en cause
