@@ -1070,8 +1070,18 @@ moitiés.
 **Ce que l'orchestrateur a trouvé en refaisant le travail annoncé** — deux défauts, tous deux nés
 de la remédiation de la passe 3 :
 
-⛔ **A (MED) — le rappel de release redevenait MUET si `cargo run` échouait.** Cinquième tour de
-l'artefact. `PERISSABLES=$(cargo run … || true)` ⇒ variable vide ⇒ le `if [ -n … ]` ne se déclenche
+⛔ **A (MED) — le rappel de release redevenait MUET si l'exemple ne s'exécutait pas.** Cinquième
+tour de l'artefact.
+
+⚠️ **La justification d'origine de ce correctif était fausse, et la passe 5 l'a démontrée**
+(finding P5-2) : elle invoquait « un crate qui ne compile pas », or l'étape [2/3] du script lance
+`cargo check --workspace` et **tue le processus bien avant** le rappel — le cas invoqué était
+inatteignable. La cause réellement couverte est autre, et elle n'était écrite nulle part :
+**`cargo check --workspace` ne construit pas les *examples*** (vérifié : `--message-format=json`
+rend 0 cible `example` sans `--all-targets`, 1 avec). Un `perishable_exemptions.rs` cassé — à la
+compilation ou à l'exécution — franchit donc l'étape 2 et n'est arrêté que par cette garde. *Le
+correctif était bon ; sa justification était fausse, sur l'artefact même dont toute l'histoire est
+faite de justifications fausses.* `PERISSABLES=$(cargo run … || true)` ⇒ variable vide ⇒ le `if [ -n … ]` ne se déclenche
 pas ⇒ aucune sortie, aucun signal. Corrigé : l'échec de lecture est désormais **fatal** (`exit 1`
 avec le message d'erreur de cargo), éprouvé dans les deux sens. Et `stderr` va dans un fichier à
 part — le mêler à `stdout` ferait passer un warning de compilation pour une ligne d'inventaire, que
@@ -1085,19 +1095,54 @@ account_type`), avec son test négatif. L'écran filtrait déjà `postable`, don
 API-seulement — fermé au même titre que le jumeau de la passe 3 : *une garde serveur ne se déduit
 pas d'un filtre d'écran.*
 
-✅ **L'énumération est désormais CLOSE, et vérifiée site par site.** Les appels à
-`journal_entries::create_in_tx` du dépôt : cinq en réconciliation (ouverts, tracés par **#427**,
-et le manuel les décrit correctement) ; `invoice_settlements_write` et les trois de
-`supplier_invoices` (création, règlement, annulation) **fermés ou sans choix utilisateur** ;
-`journal_entries` ×2 en saisie manuelle (`enforce_postable = true`) ; `credit_notes` qui
-contre-passe des comptes déjà validés ; `journal_entries:2952` qui est dans `mod tests`.
-**Le manuel devient donc EXACT** en écrivant que seul le rapprochement bancaire reste ouvert
-côté serveur.
+✅ **L'énumération, corrigée en passe 5 — treize sites, et non onze.** Les appels à
+`journal_entries::create_in_tx` / `create_in_tx_inner` du dépôt :
 
-✅ **Et l'axe 1 est levé : la garde ne casse AUCUN cas légitime.** Les trois plans livrés
-(`association`, `pme`, `independant`) ne portent chacun que **trois** comptes non-postable —
-9000/9100/9200, ceux mêmes que la story ferme. Aucun compte de contrepartie ou de charge légitime
-n'est concerné.
+| site | garde | verdict |
+|---|---|---|
+| `reconciliation.rs` ×5 | `false` | **ouverts**, tracés par **#427** ; leurs écrans n'offrent pas ces comptes |
+| `invoice_settlements_write.rs:183` | `false` | **fermé** en passe 3 (`SELECT active, postable`) |
+| `supplier_invoices.rs` :373 (création) | `false` | **fermé** en passe 4 (`active, postable, account_type`) |
+| `supplier_invoices.rs` :681 (règlement) | `false` | **fermé** en passe 3 |
+| `supplier_invoices.rs` :820 (annulation) | `false` | contre-passe des comptes déjà validés |
+| `journal_entries.rs:153` (`create`) | **`true`** | saisie manuelle — la garde de la 14-3b joue |
+| `journal_entries.rs:629` (`create_opening_entry`) | **`true`** | **soldes de départ**, et non « saisie manuelle » |
+| `journal_entries.rs:1434` (contre-passation) | `false` | recopie les comptes de l'écriture d'origine |
+| `invoices.rs:1810` (validation de facture) | `false` | couvert par `validate_line_revenue_accounts_in_tx` |
+| `credit_notes.rs:491` (avoir) | `false` | contre-passe des comptes déjà validés |
+| `journal_entries.rs:2952` | `false` | dans `mod tests` (le module commence à `:1522`) |
+
+⚠️ **La rédaction d'origine en omettait deux — `invoices.rs:1810` et `journal_entries.rs:1434` —
+et étiquetait `create_opening_entry` comme « saisie manuelle ».** Les deux omis sont sains, mais
+c'était l'**exhaustivité** qui portait la conclusion « le manuel devient donc exact ». Relevé en
+passe 5, finding P5-5.
+
+⛔ **Et le manuel n'était PAS exact, pour deux raisons de plus.** *(a)* `invoices.rs:567` porte une
+**exemption** — le compte de produit non imputable est accepté s'il est le compte **par défaut**
+de la société (D3-bis, Story 16-1a) ; le journal de la passe 2 avait lu cette ligne sans sa
+condition. *(b)* **Un sixième chemin** : `validate_account` des réglages de facturation ne
+contrôle pas `postable` (`grep -cF postable` rend 0 sur la route **et** sur le repository), si
+bien qu'un `PUT` peut y poser un compte titre, ensuite posté sans re-validation. ⚠️ Ce sixième
+chemin **ne met pas les comptes de clôture en cause** — ils sont typés `Expense`, qu'aucun champ
+de réglage n'accepte : ce n'est pas une violation d'AC, c'est le même motif sur une autre surface.
+**Tracé : issue #429**, voisine de #427. Les deux paragraphes du manuel sont corrigés en
+conséquence, PDF régénéré (62 p.).
+
+✅ **Et l'axe 1 est levé : la garde ne casse aucun cas légitime.** Les trois plans livrés
+(`association`, `pme`, `independant`) portent chacun **25 comptes non imputables** — 21 parents,
+1 `CurrentYearResult`, 3 posés en JSON — dont **onze de type `Expense`** : `4`, `40`, `5`, `50`,
+`6`, `60`, `9`, `90`, plus les trois de clôture. Ce sont donc onze comptes que la garde neuve
+refuse désormais à une facture fournisseur, et non trois. **Ce qui lève l'axe n'est pas leur
+petit nombre, c'est leur nature** : tous sont des comptes titres ou de clôture, sur lesquels
+aucune imputation n'est régulière.
+
+⚠️ **La rédaction d'origine annonçait « trois comptes » — faux d'un facteur 8**, et c'était le
+**seul** argument avancé pour lever l'axe le plus cher du prompt. Relevé en passe 5, finding P5-1.
+⛔ **Et le recompte de contrôle a d'abord été faux LUI AUSSI** : il dérivait la parenté par
+préfixe de numéro alors que le JSON porte un champ `parentNumber` explicite, et lisait
+`accountType` quand le champ s'appelle `type` — d'où « 13 non-postable, aucun Expense ». *Deux
+réplications fausses de suite d'une règle qui existe en une fonction : `is_postable`
+(`chart_of_accounts/mod.rs:340`). Répliquer une règle est plus fragile que l'appeler.*
 
 **Gate complet après remédiation** — ciblage interdit (`kesh-db` touché), base remise à zéro :
 `fmt` et `clippy -D warnings` propres, `test-fast.sh` **2300/2300** (4 skipped, 92,2 s). Le
@@ -1107,6 +1152,81 @@ remédiation, son gate est sans objet (il l'avait été à la passe 3 et rejoué
 **Prochaine** : passe 5, **ciblée**, contexte frais. ⚠️ **Ne pas confier à Haiku 4.5** ce périmètre
 tant qu'il inclut un script exécutable : la passe 4 a lancé un script de release au lieu d'en lire
 la logique, malgré une interdiction explicite. Rotation → Sonnet 4.6 ou Opus 5.
+
+### Passe 5 — 2026-09-09 · Opus 5, contexte frais, **ciblée** sur `f7715037..HEAD`, prompt versionné
+
+**0 CRITICAL, 0 HIGH, 6 MEDIUM, 4 LOW.** Sept findings sur dix nés d'une remédiation ; aucune
+décision d'origine prise en défaut. **Tous les six MEDIUM vérifiés au sol, tous confirmés.**
+
+⛔ **LA NATURE DU DÉFAUT A CHANGÉ : QUATRE DES SIX MEDIUM SONT DES AFFIRMATIONS FAUSSES — LES
+MIENNES.** La passe 4 n'ayant pas fait son travail, c'est l'orchestrateur qui avait trouvé les deux
+défauts précédents : il se relisait donc lui-même, ce que ce protocole existe précisément pour
+corriger. Le résultat est net — la sévérité du code recule, celle des comptes rendus monte.
+
+⛔ **P5-1 (MED) — mon décompte était FAUX D'UN FACTEUR 8, et c'était le SEUL argument qui levait
+l'axe le plus cher.** J'avais écrit « les trois plans ne portent que trois comptes non-postable ».
+Recompté depuis `is_postable` : **25 par plan** (21 parents + 1 `CurrentYearResult` + 3 JSON), dont
+**onze de type `Expense`**. La garde reste juste, mais parce que ces onze sont des comptes titres
+ou de clôture — pas parce qu'ils seraient trois. ⛔ **Et mon recompte de contrôle a d'abord été
+FAUX LUI AUSSI** : parenté dérivée par préfixe alors que le JSON porte `parentNumber`, et lecture
+d'`accountType` quand le champ s'appelle `type`. *Deux réplications fausses de suite d'une règle
+qui existe en une fonction. Répliquer une règle est plus fragile que l'appeler.*
+
+⛔ **P5-4 (MED) — UN SIXIÈME CHEMIN.** `validate_account` des réglages de facturation contrôle
+existence, société, `active` et type — **jamais `postable`** (`grep -cF` rend 0 sur la route **et**
+sur le repository), alors que l'écran filtre ses trois listes. Un `PUT` peut y poser un compte
+titre, ensuite injecté tel quel dans les lignes d'écriture et posté sans re-validation. ⚠️ **Ce
+n'est PAS une violation d'AC** : les 9000/9100/9200 sont typés `Expense`, qu'aucun champ de réglage
+n'accepte — les comptes de clôture restent hors d'atteinte. ⇒ **TRACÉ, issue #429**, et non fermé :
+le fermer ferait de cette story une refonte générale des gardes de postabilité. La doctrine, elle,
+reste : *une garde serveur ne se déduit pas d'un filtre d'écran.*
+
+⛔ **P5-6 (MED) — le script MUTE PUIS VALIDE, et c'est ce qui explique l'accident de la passe 4.**
+`grep -cF "Non publié" CHANGELOG.md` rend **0** : `prepare-release.sh` bumpait les dix `Cargo.toml`,
+régénérait `Cargo.lock`, puis mourait à l'étape 3 sur un motif absent — laissant le dépôt sale et
+**non rejouable** (la garde « working tree clean » refuse, et `CURRENT_VERSION` relu d'un Cargo.toml
+déjà bumpé déclenche « version identique »). L'accident n'était donc pas seulement « une lentille a
+lancé un script interdit » : le script est **conçu** pour laisser l'arbre sale à l'abandon, et la
+passe 4 lui avait ajouté une **troisième** sortie après mutation. ⇒ Les deux préconditions sont
+hissées en **pré-vol `[0/3]`**, avant tout `sed -i`.
+
+**P5-2 (MED)** — ma justification du correctif de la passe 4 décrivait un cas **inatteignable** :
+l'étape [2/3] tue le processus avant le rappel. La cause réellement couverte n'était écrite nulle
+part — `cargo check --workspace` **ne construit pas les *examples***. Corrigée.
+
+**P5-3 (MED)** — le manuel affirmait sans réserve que la validation de facture refuse un compte de
+produit non imputable. `invoices.rs:567` porte une **exemption** : le compte de produit **par
+défaut** est accepté (D3-bis). Deux journaux avaient lu cette ligne sans sa condition.
+
+**P5-5 (MED)** — mon énumération « close, vérifiée site par site » en omettait **deux sur treize**
+et étiquetait `create_opening_entry` comme « saisie manuelle » alors qu'il s'agit des soldes de
+départ. Les deux omis sont sains, mais c'était l'exhaustivité qui portait la conclusion.
+
+**Les LOW, tous traités** : **P5-7** — la branche `t == "Expense"` du `match` réécrit n'était
+exercée par **aucun** test (mutation : les 20 tests du binaire restaient verts) ⇒ test jumeau
+ajouté. **P5-8** — trois specs E2E choisissaient leur compte de charge sans filtrer `postable` ;
+sûres avec le seed actuel, elles casseraient contre un vrai plan, dont le premier `Expense` par
+numéro est `4`, non imputable ⇒ filtre ajouté, et le type local complété. **P5-9** — `trap` posé
+sur le `mktemp`, et le cas nominal vide **parle** désormais (*tout le passif de cet artefact est
+d'avoir été muet*). **P5-10** — le nouveau refus emprunte `InactiveOrInvalidAccounts`, dont le
+message nomme une autre cause ; cohérent avec ses deux jumeaux, **versé à la rétrospective**.
+
+✅ **Ce que la passe a vérifié et validé** : mon test de la passe 4 **est** honnête — mutation
+faite, il échoue *parce que `create` réussit*, donc c'est bien `postable` qui le porte ; le rappel
+de release fonctionne dans ses cinq cas ; PDF ≡ `.tex` ; le **delta** « +1 test » se recoupe ;
+`journal_entries:2952` est bien dans `mod tests` ; les autres chemins d'écriture sont sains.
+⚠️ Elle déclare honnêtement ses limites, dont l'horodatage du bump — **invérifiable**, la mutation
+ayant été restaurée sans trace en base d'objets ; seul le *fait* est corroboré.
+
+**Gate complet après remédiation** — base remise à zéro, `fmt` en pré-vol : `clippy -D warnings`
+propre, `test-fast.sh` **2301/2301** (4 skipped, 94,6 s), soit **2300 + 1 test jumeau**. Frontend
+**touché** et rejoué en entier : ⚠️ **rouge au premier passage** — le type local des trois specs ne
+déclarait pas `postable`, 3 erreurs — puis **0 erreur**, lint-i18n PASS, **740/740**, build OK.
+
+**Prochaine** : passe 6, **ciblée**, contexte frais, rotation → Sonnet 4.6 ou Haiku. ⚠️ La boucle ne
+peut toujours pas se clore : la remédiation touche du code de production (`prepare-release.sh`, les
+trois specs, le test jumeau) et **quatre des six MEDIUM portaient sur mes propres comptes rendus** —
+c'est précisément ce que la passe suivante doit relire.
 
 ## Dev Agent Record
 

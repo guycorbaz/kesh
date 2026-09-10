@@ -75,6 +75,131 @@ if [ "$CURRENT_VERSION" = "$NEW_VERSION" ]; then
     exit 1
 fi
 
+check_perishable_exemptions() {
+  # --- Exemptions du registre de rejeu dont le fondement SE PÉRIME ---
+  #
+  # Certaines entrées de `EXEMPT_MIGRATIONS` (crates/kesh-db/src/post_restore.rs)
+  # ne s'appuient ni sur la fenêtre d'importabilité ni sur une propriété du schéma,
+  # mais sur un FAIT DATÉ : « aucune version publiée ne se situe dans
+  # [borne .. la migration exemptée) ». Publier une version dans cet intervalle
+  # rend la justification fausse, et désactive le rejeu du backfill définitivement
+  # et en silence. Le test `exemptions_claiming_out_of_window_really_are_out_of_window`
+  # ne les couvre PAS : il ne contrôle que le fondement « Hors fenêtre ».
+  #
+  # ⛔ CE BLOC NE GREPE RIEN. Le registre est lu par du Rust, qui le connaît comme
+  # une donnée (`ExemptionBasis::PerishableSince`). Sa version précédente cherchait
+  # un marqueur textuel accentué dans le source et en déduisait la version par awk :
+  # quatre modes d'échec en deux passes de revue, tous muets. Story 24-5 (#375),
+  # findings P2-3 puis P3-2 / P3-3.
+
+  # ⛔ L'ÉCHEC DE CETTE LECTURE EST FATAL, IL N'EST PAS « PAS D'EXEMPTION ».
+  # Avec un `|| true`, un crate qui ne compile pas rendait la variable vide et le
+  # rappel DISPARAISSAIT en silence — exactement le mode d'échec que tout ce
+  # dispositif combat, pour la cinquième fois sur le même artefact. Éprouvé :
+  # `cargo` neutralisé ⇒ 0 octet de sortie et `exit 0`. Relevé après la passe 4,
+  # qui l'avait déclaré « robuste » sans l'exécuter.
+  # stderr va dans un fichier À PART : le mêler à stdout (`2>&1`) ferait passer un
+  # warning de compilation pour une ligne d'inventaire, que la boucle plus bas
+  # lirait comme une exemption.
+  ERR_PERISSABLES=$(mktemp)
+  # `trap` RETURN : une interruption entre le mktemp et le rm -f laisserait
+  # traîner le fichier. C'est le seul cas restant, aucune autre sortie n'existe
+  # entre les deux (P5-9).
+  trap 'rm -f "$ERR_PERISSABLES"' RETURN
+  if ! PERISSABLES=$(cargo run -q -p kesh-db --example perishable_exemptions 2>"$ERR_PERISSABLES"); then
+    echo
+    echo "⛔ Impossible de lire l'inventaire des exemptions périssables :"
+    sed 's/^/     /' "$ERR_PERISSABLES"
+    echo "   Ce rappel est le SEUL contrôle de ces justifications. Ne pas poser de tag"
+    echo "   tant qu'il n'a pas pu s'exécuter."
+    rm -f "$ERR_PERISSABLES"
+    exit 1
+  fi
+  rm -f "$ERR_PERISSABLES"
+
+  if [ -z "$PERISSABLES" ]; then
+    # ⛔ Le cas nominal PARLE, lui aussi. Tout le passif de cet artefact est
+    # d'avoir été muet : un silence ne doit plus jamais valoir « rien à
+    # signaler » (P5-9).
+    echo "  ✓ aucune exemption à fondement périssable au registre."
+    return 0
+  fi
+  {
+    echo
+    echo "⚠️  Exemption(s) de rejeu à fondement PÉRISSABLE dans post_restore.rs."
+    echo "    Chacune repose sur « aucune version publiée dans tel intervalle » — un fait"
+    echo "    que CETTE release peut rendre faux, silencieusement et définitivement."
+    echo
+
+    # La question décidable n'est pas « quel est le dernier tag ? » — celui-là
+    # désigne la release précédente et ne dit rien de l'intervalle. Elle est :
+    # UN TAG DÉJÀ PUBLIÉ SE SITUE-T-IL DANS L'INTERVALLE ? Un tag y est si son
+    # arbre porte la migration de la borne basse mais PAS la migration exemptée.
+    FAUTIVES=0
+    while read -r version borne; do
+      [ -z "$version" ] && continue
+      echo "    Exemption $version — intervalle déclaré vide : [$borne .. $version)"
+      trouve=0
+      for tag in $(git tag --sort=-creatordate); do
+        a_borne=$(git ls-tree -r --name-only "$tag" -- crates/kesh-db/migrations/ 2>/dev/null \
+                  | grep -c "/${borne}_" || true)
+        a_version=$(git ls-tree -r --name-only "$tag" -- crates/kesh-db/migrations/ 2>/dev/null \
+                    | grep -c "/${version}_" || true)
+        if [ "$a_borne" -gt 0 ] && [ "$a_version" -eq 0 ]; then
+          echo "      ⛔ $tag ($(git log -1 --format=%cs "$tag" 2>/dev/null || echo '?')) EST DANS"
+          echo "         L'INTERVALLE : la justification est FAUSSE. Le backfill ne sera jamais"
+          echo "         rejoué chez qui a installé cette version puis restaure un backup."
+          echo "         ⇒ inscrire la migration au registre POST_RESTORE_BACKFILLS, ou"
+          echo "           re-motiver l'exemption — AVANT de poser le tag."
+          trouve=1
+          FAUTIVES=1
+        fi
+      done
+      [ "$trouve" -eq 0 ] && echo "      ✓ aucun tag publié dans l'intervalle — la justification tient."
+    done <<< "$PERISSABLES"
+
+    if [ "$FAUTIVES" -eq 1 ]; then
+      echo
+      echo "⛔ Au moins une justification périssable est DÉMENTIE par un tag publié."
+      exit 1
+    fi
+    echo
+  }
+}
+
+# --- (0) PRÉ-VOL : tout ce qui peut refuser la release se vérifie AVANT de muter ---
+#
+# ⛔ Ce script MUTE PUIS VALIDE, et cela a un coût réel : à l'abandon il laisse
+# les dix `Cargo.toml` bumpés et le dépôt sale, dans un état d'où il n'est même
+# pas rejouable — la garde « working tree clean » refuse, et si on la contourne,
+# `CURRENT_VERSION` relu depuis un Cargo.toml déjà bumpé déclenche « version
+# cible identique ». C'est exactement ce qui est arrivé le 2026-09-09 : dix
+# crates bumpés `0.11.1 → 0.12.0`, `CHANGELOG.md` intact, parce que l'étape 3
+# ne trouvait pas son motif.
+#
+# D'où ce pré-vol. Les deux contrôles ci-dessous étaient à l'étape 3 et à la fin ;
+# ils ne mutent rien et peuvent donc parler AVANT.
+#
+# *(Relevé en passe 5 de revue de code de la Story 24-5, #375, finding P5-6.)*
+
+echo
+echo "[0/3] Pré-vol"
+
+# (0a) La section du CHANGELOG que l'étape 3 finalisera doit exister.
+PATTERN="## [$NEW_VERSION] — Non publié"
+if ! grep -qF "$PATTERN" CHANGELOG.md; then
+    echo "ERREUR: pattern '$PATTERN' introuvable dans CHANGELOG.md." >&2
+    echo "Le CHANGELOG doit contenir une section '$PATTERN' à finaliser." >&2
+    echo "Vérifie que la section existe et que le texte exact match (espaces, tirets longs, etc.)." >&2
+    echo "⇒ Refusé AVANT toute modification : le dépôt est intact." >&2
+    exit 1
+fi
+echo "  ✓ CHANGELOG.md porte la section à finaliser."
+
+# (0b) Exemptions du registre de rejeu dont le fondement SE PÉRIME.
+check_perishable_exemptions
+echo
+
 # --- (1) Bump des 10 crates Cargo.toml ---
 
 echo
@@ -117,99 +242,13 @@ echo
 echo "[3/3] CHANGELOG.md : finaliser la date pour [$NEW_VERSION]"
 
 TODAY=$(date +%Y-%m-%d)
-# `grep -F` = fixed-string : `[`/`]` doivent être littéraux (pas échappés).
-PATTERN="## [$NEW_VERSION] — Non publié"
+# `$PATTERN` a été posé ET vérifié en pré-vol (0a) : rien à revalider ici, et
+# surtout rien qui puisse encore refuser après que les Cargo.toml ont bougé.
 REPLACEMENT="## [$NEW_VERSION] — $TODAY"
-
-if ! grep -qF "$PATTERN" CHANGELOG.md; then
-    echo "ERREUR: pattern '$PATTERN' introuvable dans CHANGELOG.md." >&2
-    echo "Le CHANGELOG doit contenir une section '$PATTERN' à finaliser." >&2
-    echo "Vérifie que la section existe et que le texte exact match (espaces, tirets longs, etc.)." >&2
-    exit 1
-fi
 
 # Pour sed BRE, échapper les `[` `]` (signification regex caractère class).
 sed -i "s|## \\[$NEW_VERSION\\] — Non publié|$REPLACEMENT|" CHANGELOG.md
 echo "  ✓ CHANGELOG.md : '$PATTERN' → '$REPLACEMENT'"
-
-# --- Exemptions du registre de rejeu dont le fondement SE PÉRIME ---
-#
-# Certaines entrées de `EXEMPT_MIGRATIONS` (crates/kesh-db/src/post_restore.rs)
-# ne s'appuient ni sur la fenêtre d'importabilité ni sur une propriété du schéma,
-# mais sur un FAIT DATÉ : « aucune version publiée ne se situe dans
-# [borne .. la migration exemptée) ». Publier une version dans cet intervalle
-# rend la justification fausse, et désactive le rejeu du backfill définitivement
-# et en silence. Le test `exemptions_claiming_out_of_window_really_are_out_of_window`
-# ne les couvre PAS : il ne contrôle que le fondement « Hors fenêtre ».
-#
-# ⛔ CE BLOC NE GREPE RIEN. Le registre est lu par du Rust, qui le connaît comme
-# une donnée (`ExemptionBasis::PerishableSince`). Sa version précédente cherchait
-# un marqueur textuel accentué dans le source et en déduisait la version par awk :
-# quatre modes d'échec en deux passes de revue, tous muets. Story 24-5 (#375),
-# findings P2-3 puis P3-2 / P3-3.
-
-# ⛔ L'ÉCHEC DE CETTE LECTURE EST FATAL, IL N'EST PAS « PAS D'EXEMPTION ».
-# Avec un `|| true`, un crate qui ne compile pas rendait la variable vide et le
-# rappel DISPARAISSAIT en silence — exactement le mode d'échec que tout ce
-# dispositif combat, pour la cinquième fois sur le même artefact. Éprouvé :
-# `cargo` neutralisé ⇒ 0 octet de sortie et `exit 0`. Relevé après la passe 4,
-# qui l'avait déclaré « robuste » sans l'exécuter.
-# stderr va dans un fichier À PART : le mêler à stdout (`2>&1`) ferait passer un
-# warning de compilation pour une ligne d'inventaire, que la boucle plus bas
-# lirait comme une exemption.
-ERR_PERISSABLES=$(mktemp)
-if ! PERISSABLES=$(cargo run -q -p kesh-db --example perishable_exemptions 2>"$ERR_PERISSABLES"); then
-  echo
-  echo "⛔ Impossible de lire l'inventaire des exemptions périssables :"
-  sed 's/^/     /' "$ERR_PERISSABLES"
-  echo "   Ce rappel est le SEUL contrôle de ces justifications. Ne pas poser de tag"
-  echo "   tant qu'il n'a pas pu s'exécuter."
-  rm -f "$ERR_PERISSABLES"
-  exit 1
-fi
-rm -f "$ERR_PERISSABLES"
-
-if [ -n "$PERISSABLES" ]; then
-  echo
-  echo "⚠️  Exemption(s) de rejeu à fondement PÉRISSABLE dans post_restore.rs."
-  echo "    Chacune repose sur « aucune version publiée dans tel intervalle » — un fait"
-  echo "    que CETTE release peut rendre faux, silencieusement et définitivement."
-  echo
-
-  # La question décidable n'est pas « quel est le dernier tag ? » — celui-là
-  # désigne la release précédente et ne dit rien de l'intervalle. Elle est :
-  # UN TAG DÉJÀ PUBLIÉ SE SITUE-T-IL DANS L'INTERVALLE ? Un tag y est si son
-  # arbre porte la migration de la borne basse mais PAS la migration exemptée.
-  FAUTIVES=0
-  while read -r version borne; do
-    [ -z "$version" ] && continue
-    echo "    Exemption $version — intervalle déclaré vide : [$borne .. $version)"
-    trouve=0
-    for tag in $(git tag --sort=-creatordate); do
-      a_borne=$(git ls-tree -r --name-only "$tag" -- crates/kesh-db/migrations/ 2>/dev/null \
-                | grep -c "/${borne}_" || true)
-      a_version=$(git ls-tree -r --name-only "$tag" -- crates/kesh-db/migrations/ 2>/dev/null \
-                  | grep -c "/${version}_" || true)
-      if [ "$a_borne" -gt 0 ] && [ "$a_version" -eq 0 ]; then
-        echo "      ⛔ $tag ($(git log -1 --format=%cs "$tag" 2>/dev/null || echo '?')) EST DANS"
-        echo "         L'INTERVALLE : la justification est FAUSSE. Le backfill ne sera jamais"
-        echo "         rejoué chez qui a installé cette version puis restaure un backup."
-        echo "         ⇒ inscrire la migration au registre POST_RESTORE_BACKFILLS, ou"
-        echo "           re-motiver l'exemption — AVANT de poser le tag."
-        trouve=1
-        FAUTIVES=1
-      fi
-    done
-    [ "$trouve" -eq 0 ] && echo "      ✓ aucun tag publié dans l'intervalle — la justification tient."
-  done <<< "$PERISSABLES"
-
-  if [ "$FAUTIVES" -eq 1 ]; then
-    echo
-    echo "⛔ Au moins une justification périssable est DÉMENTIE par un tag publié."
-    exit 1
-  fi
-  echo
-fi
 
 # --- Récap + invite commit ---
 

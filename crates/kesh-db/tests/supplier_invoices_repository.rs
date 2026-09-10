@@ -338,6 +338,34 @@ async fn pay_cancelled_invoice_rejected(pool: MySqlPool) {
     assert!(matches!(err, DbError::IllegalStateTransition(_)));
 }
 
+/// ⛔ **Un compte de charge du MAUVAIS TYPE est refusé à la création.**
+///
+/// Jumeau du test ci-dessous, sur l'autre moitié du même `match`. Le commentaire
+/// de la garde affirme « de type Expense (AC6 — sinon l'écriture débiterait un
+/// Passif/Actif) » : sans ce test, cette moitié-là n'était tenue par **rien**.
+///
+/// ⛔ Relevé en passe 5 de revue de code de la Story 24-5 (#375), finding P5-7 —
+/// par mutation : remplacer `Some((true, true, ref t)) if t == "Expense"` par
+/// `Some((true, true, _))` laissait les 20 tests du binaire au vert. Défaut
+/// préexistant, mais la passe 4 avait réécrit ce `match` et son commentaire sans
+/// voir que la moitié de ce qu'il affirme n'était exercée par personne.
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_with_non_expense_account_is_rejected(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+
+    // 1000 est un Asset, actif et postable : seul le TYPE doit le faire refuser.
+    let mut new = one_line(&ctx, dec!(100.00), dec!(0));
+    new.lines[0].expense_account_id = ctx.seeded.accounts["1000"];
+
+    let err = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, DbError::InactiveOrInvalidAccounts),
+        "got {err:?}"
+    );
+}
+
 /// ⛔ **Un compte de CHARGE non imputable est refusé à la création.**
 ///
 /// Le type ne suffit pas : les comptes de clôture 9000/9100/9200 sont eux-mêmes
