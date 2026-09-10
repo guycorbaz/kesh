@@ -19,6 +19,12 @@ qui les rend incommodes.**
 
 ### 25-1 — La piste de contrôle : la rendre inaltérable, puis lisible
 
+⚠️ **SPLITTÉE en 25-1a / 25-1b / 25-1c à la passe 1 de validation (2026-09-10)** — quatre volets
+hétérogènes, 14 AC, et **six modules** touchés par les seuls trous d'alimentation, ce qui déclenche
+la § *Règle de splitting préventif*. **25-1a** ferme les chemins d'effacement et corrige les quatre
+documents publiés ; **25-1b** comble les six trous ; **25-1c** livre la route et l'écran. L'ordre
+reste imposé : 1a avant 1c.
+
 **Issues : [#376], [#377], [#379], [#378].** C'est le III.3 de l'audit, et **c'est la
 contrepartie directe de ce que l'Epic 24 vient de livrer** : la contre-passation et le gel
 rendent les corrections *apparentes*, mais la seule trace de qui a corrigé quoi est effaçable
