@@ -1237,6 +1237,118 @@ peut toujours pas se clore : la remédiation touche du code de production (`prep
 trois specs, le test jumeau) et **quatre des six MEDIUM portaient sur mes propres comptes rendus** —
 c'est précisément ce que la passe suivante doit relire.
 
+### Passe 6 — 2026-09-10 · Sonnet 4.6, contexte frais, **ciblée** sur `9ee3984b`, prompt versionné
+
+**0 CRITICAL, 0 HIGH, 1 MEDIUM, 1 LOW — et ZÉRO finding sur le code.** Première passe de la story
+où tous les axes « code » reviennent propres, et ils le font **par épreuve directe** : script joué
+en sandbox isolé sur six scénarios, test jumeau éprouvé par mutation (exactement 1 échec sur 21
+tests du binaire), gate frontend **exécuté** et non recopié (0 erreur, PASS, 740/740, build),
+recompte des plans par **appel** à `is_postable` et non par réplication.
+
+⛔ **P6-1 (MED) — LE PARAGRAPHE QUI CORRIGEAIT UNE ÉNUMÉRATION INCOMPLÈTE ANNONÇAIT UN TOTAL FAUX À
+SON TOUR.** « Treize sites, et non onze » : recompté au sol, **quinze**, en **onze lignes** de
+tableau dont la première en vaut cinq. *La signature est nette — les onze lignes comptées, puis les
+deux sites retrouvés ajoutés : un total incrémenté de confiance au lieu d'être recompté depuis la
+source.* Sur une story où cette règle est citée à chaque passe, et dans le paragraphe même qui
+corrigeait une omission. Corrigé aux trois sites du story file et aux deux de `sprint-status.yaml`.
+
+**P6-2 (LOW)** — le journal disait un point « versé à la rétrospective » sans qu'aucune trace ne le
+porte : l'Epic 24 n'est pas clos, aucun fichier de rétro n'existe. ⇒ **trace posée en commentaire
+sur #429**, qui porte la même famille. *Un engagement qui ne vit que dans un compte rendu se perd
+avec lui.*
+
+✅ **Ce que la passe a vérifié au sol et validé** : le script dans ses six scénarios (pré-vol qui
+refuse **avant** toute mutation, échec de lecture fatal, tag fautif détecté, deux exemptions
+simultanées, `trap` qui ne se déclenche pas sur `exit` — cohérent avec les `rm -f` explicites,
+fonction définie avant appel) ; le manuel membre par membre, PDF ≡ `.tex`, 62 p. ; **le seed E2E
+offre bien un `4000 Charges CI` actif et postable**, donc les trois specs trouvent leur compte ;
+l'issue #429 champ par champ ; et **les 25 comptes non imputables par plan dont onze `Expense`**,
+recomptés par appel à la fonction — le chiffre corrigé en passe 5 est juste.
+
+---
+
+## BOUCLE DE REVUE DE CODE CLOSE — 2026-09-10
+
+**Six passes, rotation complète parcourue deux fois, six prompts versionnés.**
+
+| passe | modèle | CRIT | HIGH | MED | LOW |
+|---|---|---|---|---|---|
+| 1 | Sonnet 4.6 ×2 + Haiku 4.5 (trois lentilles) | 0 | **1** | 2 | 2 |
+| 2 | Opus 5, ciblée | 0 | 0 | **3** | 3 |
+| 3 | Sonnet 4.6, ciblée | **1** | 0 | 3 | 2 |
+| 4 | Haiku 4.5, ciblée | *(0 déclaré — passe NON retenue ; 2 MED trouvés hors passe)* | | | |
+| 5 | Opus 5, ciblée | 0 | 0 | **6** | 4 |
+| 6 | Sonnet 4.6, ciblée | 0 | 0 | **1** | 1 |
+
+**Critère d'arrêt atteint** : la remédiation de la passe 6 ne touche **aucune ligne de code de
+production** — deux corrections de chiffres et un commentaire d'issue. Le motif « la remédiation
+introduit le défaut suivant » n'a plus de prise.
+
+⛔ **CE QUE CETTE BOUCLE AURA ENSEIGNÉ, ET QUI EST À VERSER À LA RÉTROSPECTIVE.**
+
+**(1) Le compte rendu est devenu le lieu du défaut, plus souvent que le code.** Le manuel a été pris
+en défaut à **six tours sous six formes** : il promettait une protection absente (P1), annonçait un
+trou absent (P2), bornait trop étroitement un trou réel (P3), omettait un flux (P4), ignorait une
+exemption et un sixième chemin (P5). Le rappel de release, lui, a été pris en défaut **six fois**.
+Et mes propres décomptes **trois fois — dont deux en corrigeant un décompte**.
+
+**(2) Aucune décision de conception n'a jamais été prise en défaut, sur aucune passe.** La spec
+tenait. Ce qui cassait, c'est ce qu'on écrivait à son sujet, et les gardes qu'on posait à la hâte.
+
+**(3) Le manuel n'est pas seulement le lieu du défaut : c'est le RÉVÉLATEUR.** C'est en vérifiant
+s'il disait vrai que la passe 3 a trouvé le quatrième chemin d'écriture — celui qu'aucune des
+quatre passes de spec ni des deux passes de code n'avait énuméré. *Le seul endroit où l'on écrit ce
+que le code est censé garantir est aussi le seul où l'écart se voit.*
+
+**(4) Une passe qui rend « 0 finding » sans dire quels axes elle a exercés ne vaut rien.** La
+passe 4 en est la preuve : elle a rendu zéro, déclaré elle-même n'avoir pas couvert l'axe le plus
+cher, qualifié de « robuste » un point qu'elle n'avait pas exécuté — et **deux défauts réels
+attendaient derrière**. Depuis, tout prompt exige la liste des axes réellement exercés ; la passe 6
+la fournit, et son « zéro sur le code » vaut par elle.
+
+**(5) Répliquer une règle est plus fragile que l'appeler.** Deux réplications fausses consécutives
+de `is_postable` — l'une par une lentille, l'autre par l'orchestrateur — avant qu'on ne pense à
+appeler la fonction.
+
+**(6) Un garde-fou pris en défaut quatre fois n'est pas mal écrit : il est mal conçu.** Le marqueur
+textuel « SE PÉRIME » a été réparé trois fois avant qu'on ne constate que le vrai défaut était
+qu'un shell lisait une chaîne accentuée dans du source Rust — **et que la modélisation du risque
+elle-même était fausse**, le rappel ne pouvant jamais se déclencher dans le cas qu'il prétendait
+couvrir.
+
+**Reste ouvert, tracé, et hors périmètre** : **#427** (les cinq flux de réconciliation) et **#429**
+(les réglages de facturation) — même famille, écran qui filtre et serveur muet ; ni l'un ni l'autre
+ne met les comptes de clôture en cause. **#428** (CR de l'AC 13), **#426** (L1, typage de l'arbre).
+
+### Gate E2E de clôture — 2026-09-10
+
+**La suite complète a été exécutée**, harnais monté de zéro (`kesh_e2e` reconstruite, frontend
+buildé, backend servant les deux, les onze variables de `docs/testing.md` dont les quatre SMTP) :
+
+> **214 passés · 9 échoués · 19 ignorés**, en 8,8 min.
+
+**Les neuf échecs, jugés fichier par fichier contre la baseline** — *un rouge ne se juge pas au
+nombre* :
+
+| échec | statut |
+|---|---|
+| `mode-expert.spec.ts` ×2 | **KF-029 (#97)** — attendu |
+| `onboarding.spec.ts` ×3 | **KF-029 (#97)** — attendu |
+| `onboarding-path-b.spec.ts` ×2 | **KF-029 (#97)** — attendu |
+| `sidebar-navigation.spec.ts:75` | **KF-046 (#424)** — attendu, déterministe |
+| `products.spec.ts:211` | **pollution d'état** — rejoué seul : **3/3 verts** en 10 s |
+
+⇒ **ZÉRO RÉGRESSION.** Les sept de la KF-029 à la ligne près, la KF-046 connue, et le neuvième est
+le « huitième qui change d'identité d'un run à l'autre » que `docs/testing.md` documente — ici
+`products.spec.ts:211`, sans rapport avec cette story.
+
+⛔ **ET C'EST CE RUN, ET LUI SEUL, QUI RÉPONDAIT À LA QUESTION OUVERTE** : les trois specs modifiées
+en passe 5 pour filtrer `postable` — `supplier-invoices`, `payment-batches`, `inbox-import` —
+**passent toutes les trois**. Aucun gate local ne pouvait le dire : Vitest teste la construction du
+payload, les tests Rust la validation, et *ni l'un ni l'autre ne voit une clé qui disparaît entre
+les deux*. Si le seed avait cessé d'offrir un compte `Expense` postable, les trois auraient échoué
+sans qu'aucun autre gate ne rougisse.
+
 ## Dev Agent Record
 
 ### Agent Model Used
