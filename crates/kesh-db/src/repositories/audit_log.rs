@@ -28,7 +28,7 @@ use crate::errors::{DbError, map_db_error};
 // Story 17-2a (F-OPUS-3) — `actor_type` + `actor_api_key_id` ajoutés. Doit
 // rester en bijection avec les champs de `AuditLogEntry` (FromRow) sinon sqlx
 // échoue runtime `ColumnNotFound`.
-const COLUMNS: &str = "id, user_id, action, entity_type, entity_id, details_json, actor_type, actor_api_key_id, created_at";
+const COLUMNS: &str = "id, user_id, actor_label, action, entity_type, entity_id, details_json, actor_type, actor_api_key_id, created_at";
 
 /// Insère une entrée d'audit dans une transaction en cours.
 ///

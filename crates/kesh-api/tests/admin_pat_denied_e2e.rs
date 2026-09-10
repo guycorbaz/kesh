@@ -51,6 +51,8 @@ const MARKER_END: &str = "KESH-ADMIN-ROUTES-END";
 /// qui la confronte au compte dérivé de la source. Ajouter une route sans
 /// l'ajouter ici fait rougir ce test.
 const ADMIN_COUPLES: &[(&str, &str)] = &[
+    // Story 25-1a (#377) — la réinitialisation de démo rejoint le bloc admin.
+    ("POST", "/api/v1/onboarding/reset"),
     ("GET", "/api/v1/users"),
     ("POST", "/api/v1/users"),
     ("GET", "/api/v1/users/1"),
@@ -810,7 +812,10 @@ async fn read_only_pat_is_stopped_by_the_right_guard_on_each_couple(pool: MySqlP
 
     assert_eq!(
         (reached_layer, stopped_by_scope),
-        (5, 21),
+        // 21 → 22 : Story 25-1a (#377) a fait entrer `POST /api/v1/onboarding/reset`
+        // dans le bloc. Le nombre est codé en dur À DESSEIN — l'incrémenter est le
+        // geste qui force à relire la route qu'on vient d'y ajouter.
+        (5, 22),
         "la répartition attendue entre la couche et le gate de portée a changé"
     );
 }
