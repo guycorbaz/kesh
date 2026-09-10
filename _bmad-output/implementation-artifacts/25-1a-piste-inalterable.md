@@ -35,15 +35,26 @@ plus qu'il l'est déjà,
    portent une entrée — et `import.rs:129` rejette en 400 tout manifeste contenant une table « hors
    inventaire applicatif ». ⇒ **`audit_log` RESTE dans la constante** ; c'est son **traitement au
    restore** qui change.
-2. ⛔ **Et « conserver la piste de l'instance importatrice » est un piège symétrique.** Le restore
-   remplace `users` sous `FOREIGN_KEY_CHECKS = 0` (`backup.rs:400`), puis les rétablit — sans
-   revalider les lignes existantes. Une piste conservée référencerait des `user_id` disparus, **ou
-   pire, réattribués par auto-incrément à une autre personne**. Le test
-   `admin_full_import_e2e.rs:330-346` encode déjà ce piège (« l'audit import porte `user_id` =
-   MIN(admin) **source** […] le caller B n'existe plus → aurait violé la FK »). ⇒ **Trancher, et
-   écrire le mécanisme AVANT de coder** : conservation avec remappage explicite des acteurs, ou
-   fusion avec dédoublonnage des `id`. *Aucune des deux n'est gratuite ; ce qui est interdit, c'est
-   de ne pas choisir.*
+2. ⛔ **Et « conserver la piste » est un piège symétrique — le RÉSULTAT est donc posé comme
+   contrainte, pas le mécanisme.** Le restore remplace `users` sous `FOREIGN_KEY_CHECKS = 0`
+   (`backup.rs:400`, `DELETE` à `:434`), puis rétablit **sans revalider l'existant**. Les
+   identifiants ne sont pas réattribués par auto-incrément — le restore réinsère les `id` sources
+   explicitement — mais **les espaces d'identifiants de deux instances se recouvrent** : une ligne
+   locale conservée pointerait vers un `users.id` disparu, ou occupé par **quelqu'un d'autre**.
+
+   **Résultat exigé, et il est vérifiable** : *après l'import d'un backup étranger, chaque entrée
+   d'audit antérieure à l'import existe encore et nomme son auteur d'origine.*
+
+   ⚠️ **Les deux mécanismes envisagés en passe 1 échouent, et il faut le savoir avant de coder** :
+   *« fusion avec dédoublonnage des `id` »* traite les collisions de clé primaire et **ne touche
+   pas** le problème des acteurs ; *« conservation avec remappage »* réécrirait `user_id` vers un
+   survivant — c'est-à-dire ferait dire à la piste que **quelqu'un d'autre** a fait l'opération,
+   le défaut exact que cette story ferme. ⛔ **Et aucune colonne n'accueille l'attribution
+   d'origine** : `audit_log` porte `user_id NOT NULL FK users(id) ON DELETE RESTRICT`, et la
+   migration `20260605000002_audit_log_actor.sql` **interdit explicitement** de la passer nullable
+   (« Ne PAS le passer nullable »). ⇒ **T1 doit donc trancher un mécanisme qui préserve le libellé
+   de l'acteur** — colonne textuelle, dépôt dans `details_json`, ou autre — et l'écrire avant de
+   coder. *Relevé en passe 2, P2-2.*
 3. **`reset_demo` ne supprime plus la piste sans un droit** — `kesh-seed/src/lib.rs:250`,
    `DELETE FROM audit_log` non scopé.
 4. **La route `/api/v1/onboarding/reset` exige le rôle administrateur.** Elle est montée dans
@@ -61,25 +72,49 @@ plus qu'il l'est déjà,
 
 ### Volet B — cesser de promettre ce qui est faux
 
-7. ⛔ **QUATRE documents publiés affirment l'inaltérabilité, et ils sont faux AUJOURD'HUI.** La
-   vague 0 a corrigé l'en-tête du module ([#359]) et **laissé les quatre** :
+7. ⛔ **CINQ documents publiés parlent de l'inaltérabilité, et ils ne mentent pas tous dans le même
+   sens.** La vague 0 a corrigé l'en-tête du module ([#359]) et **laissé les cinq** :
 
-   | site | ce qu'il dit | statut |
-   |---|---|---|
-   | `user-manual.tex:1597` | « **aucune entrée ne peut être modifiée ou supprimée** » | **faux** |
-   | `marketing-brochure.tex:139` | « *audit-trail immutable* […] **garantit l'intégrité légale** au sens de l'OLICo Art. 9 » | **faux**, et publié en marketing |
-   | `admin-manual.tex:1951` | « Art. 3 : intégrité → **garanti par `audit_log` insert-only** » | **faux**, affirmation de conformité |
-   | `admin-manual.tex:1785` | « aucune **route API** ne permet de modifier ou supprimer **une entrée** » | exact au mot près, **trompeur en substance** — une route efface la table entière |
+   | site | ce qu'il dit | aujourd'hui | après la story |
+   |---|---|---|---|
+   | `user-manual.tex:1597` | « aucune entrée ne peut être modifiée ou supprimée » | **faux** | **vrai SEULEMENT sur une instance finalisée** — cf. AC 8 |
+   | `marketing-brochure.tex:139` | « *audit-trail immutable* […] garantit l'**intégrité** légale au sens de l'OLICo Art. 9 » | **faux** | ⛔ **dépend de la 25-1b** — l'intégrité suppose une piste *complète* |
+   | `admin-manual.tex:1951` | « Art. 3 : **intégrité** → garanti par `audit_log` insert-only » | **faux** | ⛔ **dépend de la 25-1b** |
+   | `admin-manual.tex:1785` | « aucune **route API** ne permet de modifier ou supprimer **une entrée** » | exact au mot près, **trompeur en substance** | à reformuler — une route efface la table entière |
+   | ⛔ `admin-manual.tex:1803-1808` | « **Le journal d'audit n'est PAS inaltérable en pratique.** Deux chemins l'effacent » | **vrai**, mais **incomplet** (trois chemins) | ⛔ **DEVIENDRA FAUX** — à réécrire |
 
-   ⇒ Une fois les chemins fermés, ces phrases redeviennent vraies **sauf la quatrième**, dont la
-   formulation reste à corriger : elle décrit une garantie plus étroite que celle qu'on donne.
-8. **Le manuel utilisateur `:496-503`** (« Ce qui manque encore… ») et **`:1597-1603`** sont relus
-   ensemble : le second annonce une page de consultation « prévue pour une version ultérieure » —
-   c'est la **25-1c**, pas celle-ci. Ne pas l'annoncer livrée ici.
-9. **L'en-tête de `audit_log.rs:1-21` est réécrit**, et il **nomme le chemin de test** (AC 5).
-   ⚠️ Il dit aujourd'hui l'inverse — « les entrées NE sont PAS inamovibles en pratique ». *Une fois
-   les chemins fermés, cette phrase devient fausse à son tour, dans l'autre sens.*
-10. **PDF régénérés** (`make fr`) et commités.
+   ⚠️ **Le cinquième site est celui que la story rend faux**, et il vit dans la **section de
+   conformité OLICo** — celle qu'un réviseur lit. Sans lui, le PDF publié dirait à cent-cinquante
+   lignes d'écart que la piste est effaçable *et* qu'elle garantit l'intégrité. *Relevé en passe 2,
+   P2-1.*
+
+8. ⛔ **LA NUANCE QUI REND `user-manual:1597` VRAI, ET SANS LAQUELLE ON REFABRIQUE LE MENSONGE DE
+   [#359].** L'AC 3 ne **supprime pas** la suppression : elle la met derrière un droit. Après cette
+   story, un administrateur peut encore effacer la table par `POST /api/v1/onboarding/reset`.
+   **Mais seulement sur une instance NON FINALISÉE** : le handler refuse à `step_completed >= 7`
+   (`onboarding.rs:257`, « *irreversible finalization — never reset* »). ⇒ **Sur une instance en
+   service, la piste est déjà inatteignable**, et c'est cela que le manuel doit dire — non « aucune
+   entrée ne peut être supprimée » tout court. *Relevé en passe 2, P2-3(i).*
+
+9. ⛔ **DEUX DES CINQ SITES NE PEUVENT PAS ÊTRE RÉTABLIS PAR CETTE STORY.** La brochure et
+   `admin-manual:1951` parlent d'**intégrité**, qui suppose une piste **complète** — or les six
+   trous d'alimentation sont renvoyés à la **25-1b**. ⇒ **Ne pas les rétablir ici** ; la 25-1a
+   corrige ce qui la concerne et laisse ces deux-là à la 25-1b, qui les reprendra. *Sans quoi la
+   25-1a promettrait ce qu'elle ne tient pas — P2-3(ii).*
+
+10. **Deux mentions n'appellent aucune action** : `website/index.html:106` et
+    `website/roadmap.html:105` (« immutable audit log ») redeviennent vraies d'elles-mêmes.
+    ⚠️ **`README.md:218`, en revanche, est à vérifier** : il énumère ce qui reste ouvert dans la
+    vague sans y mettre l'inaltérabilité, ce qui le laisse trompeur (§ *Synchroniser le planning du
+    README*). *Le décompte annoncé en passe 1 — « quatre documents » — sous-comptait : sept
+    mentions, cinq à traiter. P2-9.*
+
+11. **L'en-tête de `audit_log.rs:1-21` est réécrit**, et il **nomme les TROIS chemins** (AC 5).
+    ⚠️ Il dit aujourd'hui l'inverse. *Une fois les chemins fermés, cette phrase devient fausse à
+    son tour, dans l'autre sens.*
+
+12. **PDF régénérés** (`make fr`) et commités. ⚠️ Les manuels `de/`, `en/`, `it/` ne contiennent
+    **aucun `.tex`** — vérifié en passe 2 : rien à y traduire.
 
 ## Tasks / Subtasks
 
@@ -90,10 +125,21 @@ plus qu'il l'est déjà,
 - [ ] **T2 — Implémenter** (AC 1, 2) + tests, dont un prouvant qu'un backup **existant** reste
       importable et que l'export porte toujours `audit_log`.
 - [ ] **T3 — Fermer `reset_demo`** (AC 3, 4).
-- [ ] **T4 — Nommer ou fermer le chemin de test** (AC 5).
-- [ ] **T5 — Mutation** (AC 6) sur chaque garde neuve.
-- [ ] **T6 — Les quatre documents publiés + l'en-tête du module** (AC 7, 8, 9), PDF régénérés (AC 10).
-- [ ] **T7 — Gate complet**, base remise à zéro. ⛔ `kesh-db` touché : **ciblage interdit**.
+- [ ] **T4 — NOMMER le chemin de test** (AC 5), sans alternative. ⛔ **Ne PAS le fermer** :
+      `truncate_all` sert `/api/v1/_test/seed` et `/reset`, dont dépend **tout le montage de la
+      suite E2E** (`frontend/tests/e2e/helpers/test-state.ts:83`). Le fermer casserait une suite
+      que la CI n'exécute pas — personne ne le verrait avant le gate local. *P2-5.*
+- [ ] **T5 — Mutation** (AC 6) sur chaque garde neuve, **plus un test POSITIF de refus** :
+      ⛔ **la mutation ne détecte pas une garde JAMAIS POSÉE.** `lib.rs:300-306` documente le
+      piège : *« une route chaînée après le `route_layer` COMPILE, ne panique pas, et échappe aux
+      DEUX couches »*. Un test « non-Admin ⇒ 403 » le voit ; une mutation, non. *P2-6.*
+- [ ] **T6 — Les CINQ documents publiés + l'en-tête du module** (AC 7 à 11), PDF régénérés (AC 12),
+      et le README vérifié.
+- [ ] **T7 — SI le mécanisme de T1 touche le schéma** : garde-fous **P2-bis** (bump Cargo
+      solidaire), **P3** (bump `min_required` si breaking), **P5** (ligne d'audit d'idempotence +
+      recompte des deux totaux et des trois compteurs), **P6** (`grep` des sites positionnels),
+      **P7** (triage au registre de rejeu). *P2-4.*
+- [ ] **T8 — Gate complet**, base remise à zéro. ⛔ `kesh-db` touché : **ciblage interdit**.
 
 ## Dev Notes
 
@@ -103,7 +149,7 @@ plus qu'il l'est déjà,
 
 | site | usage |
 |---|---|
-| `backup.rs:400-408` | le `DELETE`+`INSERT` du restore, sous `FOREIGN_KEY_CHECKS=0` |
+| `backup.rs:400-408` | les `FOREIGN_KEY_CHECKS` du restore (le `DELETE` est à `:434`) |
 | `export.rs:55` | **produire** l'export NDJSON |
 | `export.rs:96` | `table_count` du **manifeste** |
 | `import.rs:118` | couverture — chaque table attendue doit figurer au manifeste |
@@ -141,12 +187,15 @@ Sans conséquence pour cette story ; **bloquant pour la 25-1c**, qui doit tranch
 
 - `audit-experts-2026-08-26.md` § III.3 · `epic-25-vague1-suite.md` § 25-1
 - Issues : [#376], [#377] · voisines : [#378] (25-1c), [#379] (25-1b), [#359] (vague 0, close)
-- Sites : `kesh-db/src/backup.rs:55` et `:382-460`, `kesh-api/src/admin_backup/export.rs:55,96`,
-  `import.rs:118,129`, `kesh-db/src/test_fixtures.rs:327`, `kesh-api/src/routes/test_endpoints.rs:172`,
+- Sites : `kesh-db/src/backup.rs:34` (la constante), `:400-408` (les `FOREIGN_KEY_CHECKS`), `:434` (le `DELETE`), `:582-609` (`backup_inventory_matches_schema`), `kesh-api/src/admin_backup/export.rs:55,96`,
+  `import.rs:118,129`, `kesh-db/src/test_fixtures.rs:327`, `kesh-api/src/routes/test_endpoints.rs:172` (`/seed`) et `:306` (`/reset`),
   `kesh-seed/src/lib.rs:250`, `kesh-api/src/lib.rs:773`, `routes/onboarding.rs:257-289`,
-  `kesh-db/src/repositories/audit_log.rs:1-21`, `migrations/20260413000001_audit_log.sql`
-- Tests qui encodent le comportement actuel : `admin_full_import_e2e.rs:330-346`,
-  `admin_backup_e2e.rs:263-277`
+  `kesh-db/src/repositories/audit_log.rs:1-21`, `migrations/20260413000001_audit_log.sql`,
+  `migrations/20260605000002_audit_log_actor.sql` (« ne PAS passer `user_id` nullable »),
+  `kesh-db/src/post_restore.rs` (rejeu des backfills après import — **à lire en T1**)
+- Tests qui encodent le comportement actuel : `admin_full_import_e2e.rs:343-355` (le bloc O-1),
+  `admin_backup_e2e.rs:277-281` (l'assertion `audit_log = baseline + 1`), et **le rayon d'impact de
+  l'AC 4** : `onboarding_e2e.rs:343,382,444,486` + `frontend/src/lib/features/onboarding/onboarding.api.ts:21`
 
 ## Dev Agent Record
 
