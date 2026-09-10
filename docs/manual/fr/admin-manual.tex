@@ -1782,7 +1782,7 @@ Le contrôle d'accès basé sur les rôles est appliqué \textbf{au niveau de ch
 Toute action métier mutante est enregistrée dans la table \texttt{audit\_log} :
 
 \begin{itemize}
-    \item Contrainte \textbf{insert-only} : aucune route API ne permet de modifier ou supprimer une entrée \texttt{audit\_log} (défense en profondeur).
+    \item Contrainte \textbf{insert-only} : aucune route API ne permet de modifier ou supprimer une entrée \texttt{audit\_log}, et \textbf{aucune ne permet d'effacer la table} sur une installation finalisée. \emph{La formulation antérieure ne parlait que d'«~une entrée~»~: elle était exacte au mot près et trompeuse en substance, une route effaçant alors la table entière.}
     \item Champs : \texttt{user\_id}, \texttt{company\_id}, \texttt{timestamp}, \texttt{action}, \texttt{entity\_type}, \texttt{entity\_id}, \texttt{metadata\_json}.
     \item Conservation 10 ans (selon CO Art. 958f al. 1).
 \end{itemize}
@@ -1801,11 +1801,16 @@ Kesh met en place les éléments que l'OLICo Art. 9 al. 1.b attend d'un support 
 \end{itemize}
 
 \begin{keshwarning}[title=\faExclamationTriangle\ Deux réserves à connaître avant d'invoquer cette conformité]
-\textbf{Le journal d'audit n'est pas inaltérable en pratique.} Deux chemins l'effacent :
-l'import d'une sauvegarde \texttt{.keshbackup}, qui remplace la table par le contenu de
-l'archive fournie, et la réinitialisation des données de démonstration. Aucun verrou de base
-de données ne s'y oppose. Tant que ces deux chemins existent, la condition~1 repose sur la
-discipline de l'exploitant, non sur un procédé technique.
+\textbf{Le journal d'audit est inaltérable sur une installation en service}, et il faut
+savoir à quoi cela tient. L'\textbf{import d'une sauvegarde} ne remplace plus la table~: les
+entrées de l'archive sont \textbf{fusionnées} avec celles de l'installation, et chaque entrée
+porte le nom de son auteur au moment de l'écriture --- il survit donc au remplacement des
+comptes utilisateurs. La \textbf{réinitialisation des données de démonstration} efface encore
+la table, mais elle exige le rôle d'administrateur \emph{et} est refusée dès que
+l'installation est finalisée. \emph{Aucun verrou de base de données ne s'y oppose~: la
+garantie est portée par l'application, non par le SGBD.} Reste, en mode test uniquement
+(\texttt{KESH\_TEST\_MODE}, jamais actif en déploiement réel), les points d'entrée de
+réinitialisation de la suite de tests automatisés.
 
 \medskip
 \noindent \textbf{L'empreinte SHA-256 est calculée et conservée par vous.} Sans horodatage ni
@@ -2176,7 +2181,7 @@ export global) ou par les mécanismes documentés ailleurs dans ce manuel :
 \subsection{Glossaire}
 
 \begin{description}
-    \item[Audit-trail] Trace immuable de toutes les actions métier (table \texttt{audit\_log}).
+    \item[Audit-trail] Trace de toutes les actions métier (table \texttt{audit\_log}), inaltérable sur une installation en service --- voir les réserves de la section «~Conformité~».
     \item[CAMT.053] Standard ISO 20022 d'extrait de compte bancaire suisse.
     \item[Company] Entité comptable (PME, association) dans Kesh ; isolation multi-tenant par \texttt{company\_id}.
     \item[Fiscal year] Exercice comptable, généralement annuel (1\textsuperscript{er} janvier -- 31 décembre par défaut).

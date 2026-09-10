@@ -1,18 +1,39 @@
 //! Repository pour le journal d'audit.
 //!
-//! **Pas de méthode `delete`** : CO art. 957-964 impose la conservation
-//! 10 ans.
+//! **Pas de méthode `delete`** : CO art. 957-964 impose la conservation 10 ans.
 //!
-//! ⚠️ **Mais les entrées NE sont PAS inamovibles en pratique**, et ce module
-//! l'affirmait à tort. Deux chemins effacent la table sans passer par ici :
-//! l'import d'une sauvegarde (`audit_log` figure dans `TABLES_TO_TRUNCATE`,
-//! cf. `backup.rs`) et `reset_demo` (`kesh-seed`, `DELETE FROM audit_log` non
-//! scopé, sur une route ouverte à tout rôle authentifié). Aucun trigger ni
-//! `REVOKE` ne s'y oppose au niveau SGBD.
+//! ⚠️ **L'absence de `delete` ici ne suffit pas, et ce module l'a affirmé à
+//! tort pendant des mois.** Elle garantit que le CRUD métier ne détruit rien —
+//! pas que la piste est infalsifiable. Trois chemins la contournaient ; voici
+//! ce qu'ils sont devenus (Story 25-1a, #376/#377) :
 //!
-//! L'absence de `delete` ici garantit donc que le CRUD métier ne détruit rien —
-//! pas que la piste de contrôle est infalsifiable. Suivi : issues du jalon
-//! « Vague 1 » (audit du 2026-08-26).
+//! 1. **L'import d'une sauvegarde** — `audit_log` figurait dans
+//!    [`crate::backup::TABLES_TO_TRUNCATE`] et la table était **remplacée** par
+//!    celle de l'archive. ✅ **Fermé** : la piste locale est désormais conservée
+//!    et celle du backup **fusionnée**. La table reste dans la constante — qui
+//!    sert aussi à produire l'export et à valider le manifeste — mais elle est
+//!    exclue du `DELETE`, comme `onboarding_state`.
+//! 2. **`reset_demo`** — `DELETE FROM audit_log` non scopé, sur une route montée
+//!    « tout rôle authentifié ». ✅ **Fermé** : la route exige `require_admin_role`
+//!    et vit dans le bloc admin. ⚠️ **Elle efface toujours la piste**, mais
+//!    seulement sur une instance **non finalisée** : le handler refuse dès
+//!    `step_completed >= 7`, inconditionnellement — *« even if
+//!    KESH_PRODUCTION_RESET is set »*. Sur une installation en service, la piste
+//!    est donc hors d'atteinte.
+//! 3. ⚠️ **`/api/v1/_test/seed` et `/api/v1/_test/reset`** — ils appellent
+//!    `truncate_all`, qui réutilise la même constante. **Ce chemin RESTE OUVERT,
+//!    et c'est délibéré** : tout le montage de la suite E2E en dépend. Il est
+//!    gardé au boot (`KESH_TEST_MODE`, et le serveur refuse de démarrer hors
+//!    loopback en mode test), jamais actif sur un déploiement réel. *Le nommer
+//!    ici est la seule façon de ne pas refabriquer l'affirmation trop large que
+//!    l'issue #359 a dû corriger.*
+//!
+//! ⛔ **`user_id` n'est plus une FK** (Story 25-1a) : c'est un **pointeur
+//! logique**, comme `actor_api_key_id` et `entity_id`. La contrainte a été
+//! retirée pour que la piste survive au remplacement de `users` par un import —
+//! et [`crate::entities::audit_log::AuditLogEntry::actor_label`] porte le nom de
+//! l'acteur au moment de l'écriture, faute de quoi retirer la FK aurait
+//! transformé un mensonge en trou.
 //!
 //! La méthode principale [`insert_in_tx`] prend une transaction en cours
 //! pour garantir l'atomicité avec l'opération auditée (UPDATE/DELETE

@@ -1594,8 +1594,13 @@ d'entités, imports, réconciliations, exports, changements de paramètres — a
 l'auteur, l'horodatage et le contexte.
 
 \begin{keshnote}
-Cette piste d'audit est \textbf{insert-only} : aucune entrée ne peut être
-modifiée ou supprimée. Elle garantit la traçabilité conforme à l'OLICo Art. 9
+Cette piste d'audit est \textbf{insert-only} : aucune entrée ne peut être modifiée,
+et \textbf{aucune ne peut être supprimée sur une installation en service}. Deux
+précisions, parce qu'une garantie vague ne vaut rien~: l'\textbf{import d'une
+sauvegarde ne la remplace plus} --- les entrées de l'archive s'y ajoutent, les vôtres
+restent ---, et la \textbf{réinitialisation des données de démonstration} reste
+possible, mais elle est réservée à un administrateur \emph{et} refusée dès que
+l'installation est finalisée. Elle garantit la traçabilité conforme à l'OLICo Art. 9
 al. 1.b ch. 4. Dans la version actuelle, elle est \textbf{enregistrée en base}
 à des fins de conformité et d'expertise, mais n'est pas encore consultable via un
 écran dédié dans l'interface (page de consultation prévue pour une version
@@ -1723,7 +1728,7 @@ L'\texttt{audit\_log} garde toujours la trace de l'action originale ET de l'acti
 \begin{description}
     \item[Actif] Ce que possède l'entreprise (liquidités, créances, stocks, immobilisations). Classe 1 du plan comptable.
     \item[Amortissement] Constatation comptable de la perte de valeur d'une immobilisation sur sa durée d'utilisation.
-    \item[Audit-trail (piste d'audit)] Journal infalsifiable de toutes les modifications comptables (qui, quand, quelle valeur), exigé par le CO Art. 957a.
+    \item[Audit-trail (piste d'audit)] Journal de toutes les modifications comptables (qui, quand, quelle valeur), exigé par le CO Art. 957a. Aucune entrée ne peut y être modifiée, ni supprimée sur une installation en service~; voir «~Journal d'audit~» pour les deux réserves.
     \item[Avoir (note de crédit)] Document qui annule tout ou partie d'une facture émise (l'inverse d'une facture).
     \item[Balance des comptes] Liste de tous les comptes avec leurs soldes débiteurs et créditeurs à une date donnée.
     \item[Bilan] État du patrimoine d'une entreprise à une date donnée (actifs = passifs + capitaux propres).
