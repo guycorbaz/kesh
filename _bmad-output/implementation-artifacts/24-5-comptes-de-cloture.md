@@ -1095,7 +1095,7 @@ account_type`), avec son test négatif. L'écran filtrait déjà `postable`, don
 API-seulement — fermé au même titre que le jumeau de la passe 3 : *une garde serveur ne se déduit
 pas d'un filtre d'écran.*
 
-✅ **L'énumération, corrigée en passe 5 — treize sites, et non onze.** Les appels à
+✅ **L'énumération, corrigée en passe 5 — quinze sites en onze lignes.** Les appels à
 `journal_entries::create_in_tx` / `create_in_tx_inner` du dépôt :
 
 | site | garde | verdict |
@@ -1113,7 +1113,16 @@ pas d'un filtre d'écran.*
 | `journal_entries.rs:2952` | `false` | dans `mod tests` (le module commence à `:1522`) |
 
 ⚠️ **La rédaction d'origine en omettait deux — `invoices.rs:1810` et `journal_entries.rs:1434` —
-et étiquetait `create_opening_entry` comme « saisie manuelle ».** Les deux omis sont sains, mais
+et étiquetait `create_opening_entry` comme « saisie manuelle ».**
+
+⛔ **Et le total annoncé ici a été FAUX à son tour : « treize sites, et non onze ».** Recompté au
+sol : 5 (`reconciliation`) + 1 + 3 (`supplier_invoices`) + 1 + 1 + 4 (`journal_entries`, hors
+définition et passthrough) = **quinze**, en **onze lignes** de tableau — la première en vaut cinq.
+L'état antérieur en comptait treize, pas onze. *La signature de l'erreur est nette : les onze
+lignes du tableau ont été comptées, puis les deux sites retrouvés ajoutés — un total incrémenté de
+confiance au lieu d'être recompté depuis la source, dans le paragraphe même qui corrigeait une
+énumération incomplète, sur une story où cette règle est citée à chaque passe.* Relevé en passe 6,
+finding P6-1. Les deux omis sont sains, mais
 c'était l'**exhaustivité** qui portait la conclusion « le manuel devient donc exact ». Relevé en
 passe 5, finding P5-5.
 
@@ -1198,7 +1207,7 @@ part — `cargo check --workspace` **ne construit pas les *examples***. Corrigé
 produit non imputable. `invoices.rs:567` porte une **exemption** : le compte de produit **par
 défaut** est accepté (D3-bis). Deux journaux avaient lu cette ligne sans sa condition.
 
-**P5-5 (MED)** — mon énumération « close, vérifiée site par site » en omettait **deux sur treize**
+**P5-5 (MED)** — mon énumération « close, vérifiée site par site » en omettait **deux sur quinze**
 et étiquetait `create_opening_entry` comme « saisie manuelle » alors qu'il s'agit des soldes de
 départ. Les deux omis sont sains, mais c'était l'exhaustivité qui portait la conclusion.
 
