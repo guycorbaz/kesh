@@ -214,6 +214,58 @@ périmètre ici. *Relevé par la lentille Sonnet, S3.*
 **La table n'a pas de `company_id`** — elle est **globale** dans une application multi-société.
 Sans conséquence pour cette story ; **bloquant pour la 25-1c**, qui doit trancher.
 
+### ⛔ T1 — DÉCISION DE CONCEPTION : le mécanisme du restore
+
+**Écrite avant de coder, comme l'AC 2 l'exige.** Le résultat à tenir : *après l'import d'un backup
+étranger, chaque entrée d'audit antérieure existe encore et nomme son auteur d'origine.*
+
+#### Ce qui rendait la question difficile, et ce qui la débloque
+
+Deux patrons **existent déjà dans le dépôt** et résolvent chacun une moitié :
+
+| patron | où | ce qu'il donne |
+|---|---|---|
+| **Exclusion du restore** | `onboarding_state` — dans `TABLES_TO_TRUNCATE` (donc au manifeste, donc l'import ne casse pas) mais **ni effacée ni restaurée** (`backup.rs:431,445`) | conserver la piste locale **sans toucher au format de backup** |
+| **Pointeur logique sans FK** | `actor_api_key_id`, `entity_id` — *« l'audit survit 10 ans à la révocation/suppression de la clé »* | survivre à la disparition de l'acteur |
+
+*La décision n'invente donc rien : elle applique à `audit_log` ce que le dépôt fait déjà ailleurs.*
+
+#### Le scénario qui tranche
+
+L'audit reproche que l'import « remplace intégralement la piste ». Le risque n'est pas la perte
+d'un historique : c'est le **blanchiment** — effacer ses traces en important un backup. ⛔ **Une
+option qui conserve la piste locale sans restaurer celle du backup ne ferme ce scénario qu'à
+moitié** : elle protège l'instance courante et perd l'historique légitime de l'instance
+sauvegardée, que l'OLICo demande de conserver dix ans.
+
+#### Décision retenue — **fusion**
+
+1. **`audit_log` sort du `DELETE`** du restore, comme `onboarding_state` — la piste locale est
+   **conservée intégralement**.
+2. **Les entrées du backup sont INSÉRÉES sans leur `id`** (auto-increment), et non avec : les
+   espaces d'identifiants des deux instances se recouvrent. ⚠️ L'`id` n'est pas une donnée métier
+   d'une piste ; l'ordre chronologique est porté par `created_at`.
+3. **Une colonne dénormalisée `actor_label`** porte le nom de l'acteur au moment de l'écriture. La
+   FK `user_id` devient un **pointeur logique** — patron `actor_api_key_id`. *C'est elle qui tient
+   « nomme son auteur d'origine » quand le `users.id` a changé de titulaire.*
+4. **Une entrée `admin.full_import`** documente la fusion, avec le compte des deux côtés.
+
+#### Ce que cette décision coûte, et il faut le dire
+
+- **Une migration** ⇒ garde-fous **P5** (ligne d'audit d'idempotence + recompte), **P6** (grep des
+  sites positionnels), **P7** (triage du backfill d'`actor_label` au registre de rejeu).
+- **Non breaking** (`ADD COLUMN` + `DROP` d'une FK — un binaire antérieur continue d'insérer des
+  lignes valides) ⇒ **ni bump `min_required`, ni bump Cargo** (P1/P2-bis).
+- **Deux tests existants encodent le comportement actuel** et **rougiront** :
+  `admin_backup_e2e.rs:277-281` (`audit_log == baseline + 1`) et `admin_full_import_e2e.rs:343-355`.
+  *Ce n'est pas une régression : c'est le comportement que la story change, et leurs assertions
+  doivent être réécrites en même temps que le code.*
+
+⚠️ **ARBITRAGE SOUMIS AU PROJECT LEAD** — cette décision engage la **conformité** (OLICo art. 9,
+CO art. 958f), pas seulement l'implémentation. L'alternative, plus simple, serait de conserver la
+piste locale **sans** restaurer celle du backup : moins de code, pas de fusion d'`id`, mais
+l'historique de l'instance sauvegardée est perdu à chaque restauration.
+
 ### Ce que la story ne fait pas
 
 - **Les trous d'alimentation** → 25-1b. Six modules, pas deux : `users` (4 opérations),
