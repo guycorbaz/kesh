@@ -341,7 +341,20 @@ async fn full_import_round_trip_replaces_state_and_audits_source_admin(pool: MyS
     assert_eq!(admin_ids, vec![a.user_id], "seul l'admin source subsiste");
 
     // O-1 : l'audit import porte user_id = MIN(admin) SOURCE (= A), PAS le
-    // caller B (qui n'existe plus → aurait violé la FK audit_log.user_id).
+    // caller B (qui n'existe plus après le remplacement de `users`).
+    //
+    // ⚠️ **Le MOTIF de ce choix a changé, pas le choix.** Il était contraint :
+    // écrire le caller aurait violé `fk_audit_log_user`. Cette FK a été RETIRÉE
+    // par la Story 25-1a (#376) — `user_id` est devenu un pointeur logique, pour
+    // que la piste survive au remplacement de `users`. Rien n'oblige donc plus
+    // techniquement à choisir l'admin source ; c'est désormais une décision, et
+    // elle reste la bonne : attribuer l'import à un compte qui n'existe plus dans
+    // l'installation restaurée produirait une entrée que personne ne peut relier
+    // à quiconque.
+    //
+    // ⛔ Une assertion dont la justification est périmée est une assertion qu'on
+    // relira de travers — c'est le motif dominant de l'Epic 24, et il vaut pour
+    // les commentaires de test autant que pour les manuels.
     let (audit_uid, actor): (i64, String) = sqlx::query_as(
         "SELECT user_id, actor_type FROM audit_log \
          WHERE action = 'admin.full_import' ORDER BY id DESC LIMIT 1",

@@ -40,7 +40,11 @@ async fn create_company(pool: &MySqlPool) -> i64 {
 }
 
 /// Crée un admin user pour ce company. Nécessaire pour les fns repo qui
-/// appellent `audit_log::insert_in_tx` (FK `audit_log.user_id → users.id`).
+/// appellent `audit_log::insert_in_tx`.
+///
+/// ⚠️ Ce n'est plus une contrainte de FK — retirée par la Story 25-1a (#376) —
+/// mais le libellé d'acteur (`actor_label`) est résolu par sous-SELECT sur
+/// `users` à l'insertion : sans utilisateur, l'entrée porterait « (inconnu) ».
 async fn create_admin_user(pool: &MySqlPool, company_id: i64) -> i64 {
     users::create(
         pool,

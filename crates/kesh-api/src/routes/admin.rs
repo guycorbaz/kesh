@@ -343,9 +343,14 @@ async fn run_backup_and_restore(
             }
         })?;
 
-    // Audit in-tx, user_id = MIN(admin) **du dataset restauré** (O-1, FK
-    // audit_log.user_id → users). PAS current_user (peut ne pas exister dans
-    // la source).
+    // Audit in-tx, user_id = MIN(admin) **du dataset restauré** (O-1). PAS
+    // current_user (peut ne pas exister dans la source).
+    //
+    // ⚠️ Le motif était la FK `audit_log.user_id → users`, RETIRÉE par la Story
+    // 25-1a (#376) — `user_id` est un pointeur logique depuis que la piste
+    // survit au remplacement de `users`. Le choix reste néanmoins le bon :
+    // attribuer l'import à un compte absent de l'installation restaurée
+    // produirait une entrée que personne ne peut relier à quiconque.
     let min_admin: Option<i64> =
         sqlx::query_scalar("SELECT MIN(id) FROM users WHERE role = 'Admin'")
             .fetch_one(&mut *tx)

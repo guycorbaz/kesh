@@ -272,12 +272,36 @@ async fn full_roundtrip_rich_dataset_preserves_all_tables(pool: MySqlPool) {
             after[table], baseline[table]
         );
     }
-    // `audit_log` : restaurée à l'identique PUIS reçoit l'entrée
-    // `admin.full_import` insérée dans la transaction de restore (O-1/AC16).
-    assert_eq!(
+    // ⛔ `audit_log` : **FUSIONNÉE, non remplacée** — Story 25-1a (#376).
+    //
+    // L'ancienne assertion était `baseline + 1` : la table était effacée, celle du
+    // backup restaurée, puis `admin.full_import` ajoutée. Elle rend désormais **2**,
+    // et l'écart dit exactement ce que la story a changé : la trace de l'EXPORT —
+    // `admin.full_export`, émise APRÈS que `baseline` a été relevé — **survit
+    // maintenant à l'import**. Auparavant, importer effaçait la preuve qu'on avait
+    // exporté.
+    //
+    // ⚠️ On assert les ACTIONS et non un compte : un compte se périme dès qu'une
+    // opération tracée s'ajoute au scénario, et l'invariant à tenir n'est pas
+    // « combien » mais « rien n'a disparu ».
+    let actions: Vec<String> = sqlx::query_scalar("SELECT action FROM audit_log ORDER BY id")
+        .fetch_all(&pool)
+        .await
+        .expect("actions audit après import");
+    assert!(
+        actions.iter().any(|a| a == "admin.full_export"),
+        "la trace de l'export doit SURVIVRE à l'import — c'est le blanchiment que \
+         la Story 25-1a ferme ; got {actions:?}"
+    );
+    assert!(
+        actions.iter().any(|a| a == "admin.full_import"),
+        "l'import doit se tracer lui-même ; got {actions:?}"
+    );
+    assert!(
+        after["audit_log"] > baseline["audit_log"],
+        "la piste ne DIMINUE jamais : {} après import, {} au baseline",
         after["audit_log"],
-        baseline["audit_log"] + 1,
-        "audit_log : baseline + 1 (entrée admin.full_import in-tx) attendu"
+        baseline["audit_log"]
     );
     // `onboarding_state` (DC11) : exclue du restore puis **forcée à l'état
     // terminé** (`step_completed == 8`, valeur post-finalize) car le dataset
