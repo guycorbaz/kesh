@@ -42,10 +42,24 @@ pub async fn insert_in_tx(
     new: NewAuditLogEntry,
 ) -> Result<AuditLogEntry, DbError> {
     let result = sqlx::query(
-        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, details_json, actor_type, actor_api_key_id) \
-         VALUES (?, ?, ?, ?, ?, ?, ?)",
+        // ⛔ `actor_label` est rempli par un SOUS-SELECT, et non par l'appelant.
+        //
+        // C'est délibéré : le libellé doit être l'INSTANTANÉ du nom au moment de
+        // l'écriture, et le faire descendre depuis `CurrentUser` obligerait à
+        // toucher les quelque trente sites qui appellent ce repository — sans
+        // rien gagner, puisque la valeur cherchée est justement celle que la base
+        // porte à cet instant.
+        //
+        // Le `COALESCE` n'est pas décoratif : depuis la Story 25-1a, `user_id`
+        // est un **pointeur logique sans FK** (la contrainte a été retirée pour
+        // que la piste survive au remplacement de `users` par un import). Un
+        // acteur peut donc, en théorie, ne plus exister — et une piste doit
+        // écrire « (inconnu) » plutôt que de refuser d'écrire.
+        "INSERT INTO audit_log (user_id, actor_label, action, entity_type, entity_id, details_json, actor_type, actor_api_key_id) \
+         VALUES (?, COALESCE((SELECT username FROM users WHERE id = ?), '(inconnu)'), ?, ?, ?, ?, ?, ?)",
     )
     .bind(new.user_id)
+    .bind(new.user_id) // sous-SELECT du libellé — cf. le commentaire ci-dessus
     .bind(&new.action)
     .bind(&new.entity_type)
     .bind(new.entity_id)

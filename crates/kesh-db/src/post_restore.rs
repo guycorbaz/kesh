@@ -196,22 +196,48 @@ pub struct ReplayedBackfill {
 /// Deux entrées seulement : les sept autres migrations du dépôt qui écrivent des
 /// données sont hors de la fenêtre d'importabilité ou portent sur une table
 /// système (cf. [`EXEMPT_MIGRATIONS`]).
-pub const POST_RESTORE_BACKFILLS: &[PostRestoreBackfill] = &[PostRestoreBackfill {
-    version: 20260828000001,
-    label: "20260828000001_invoice_settlements_type.sql",
-    // CLASSE B — cf. le doc-comment du fichier extrait. La sentinelle est
-    // valide : `settlement_bank_account_id` est ajoutée par le MÊME
-    // `ALTER TABLE` que l'`UPDATE` de backfill.
-    //
-    // ⚠️ **Première entrée depuis que la Story 24-2 a vidé ce registre**, et
-    // c'est le mécanisme qui reprend exactement son office : la 24-2 avait
-    // refermé la fenêtre d'importabilité en créant `invoice_settlements`
-    // (20260827000001) ; cette migration lui est POSTÉRIEURE, donc un backup
-    // situé entre les deux est parfaitement importable — et il porte la table
-    // sans la colonne. C'est le cas que ce dispositif existe pour rattraper.
-    trigger: BackfillTrigger::Sentinels(&[("invoice_settlements", "settlement_bank_account_id")]),
-    sql: include_str!("post_restore/20260828000001_invoice_settlements_type.sql"),
-}];
+pub const POST_RESTORE_BACKFILLS: &[PostRestoreBackfill] = &[
+    PostRestoreBackfill {
+        version: 20260828000001,
+        label: "20260828000001_invoice_settlements_type.sql",
+        // CLASSE B — cf. le doc-comment du fichier extrait. La sentinelle est
+        // valide : `settlement_bank_account_id` est ajoutée par le MÊME
+        // `ALTER TABLE` que l'`UPDATE` de backfill.
+        //
+        // ⚠️ **Première entrée depuis que la Story 24-2 a vidé ce registre**, et
+        // c'est le mécanisme qui reprend exactement son office : la 24-2 avait
+        // refermé la fenêtre d'importabilité en créant `invoice_settlements`
+        // (20260827000001) ; cette migration lui est POSTÉRIEURE, donc un backup
+        // situé entre les deux est parfaitement importable — et il porte la table
+        // sans la colonne. C'est le cas que ce dispositif existe pour rattraper.
+        trigger: BackfillTrigger::Sentinels(&[(
+            "invoice_settlements",
+            "settlement_bank_account_id",
+        )]),
+        sql: include_str!("post_restore/20260828000001_invoice_settlements_type.sql"),
+    },
+    PostRestoreBackfill {
+        version: 20260910000001,
+        label: "20260910000001_audit_log_actor_label.sql",
+        // CLASSE B — la sentinelle est valide : `actor_label` est ajoutée par le
+        // MÊME `ALTER TABLE` que l'`UPDATE` de backfill, donc son absence prouve que
+        // la migration n'a pas tourné sur les données restaurées.
+        //
+        // ⚠️ **Le cas de déclenchement est ici PARTICULIER, et il vaut d'être écrit** :
+        // à partir de la Story 25-1a, `audit_log` n'est plus effacée ni restaurée par
+        // l'import — elle rejoint `onboarding_state` dans l'exclusion, et les entrées
+        // de l'archive sont FUSIONNÉES. Le rejeu ne porte donc pas sur des lignes
+        // « restaurées » au sens habituel, mais sur celles **issues du backup** :
+        // écrites par une instance antérieure à cette migration, elles arrivent avec
+        // `actor_label` vide et le rejeu leur donne un nom.
+        //
+        // ⛔ Sans ce rejeu, la fusion produirait exactement le trou qu'elle prétend
+        // fermer : des entrées conservées dont l'acteur ne serait nommé nulle part —
+        // ni par la FK, qui n'existe plus, ni par le libellé, qui serait vide.
+        trigger: BackfillTrigger::Sentinels(&[("audit_log", "actor_label")]),
+        sql: include_str!("post_restore/20260910000001_audit_log_actor_label.sql"),
+    },
+];
 
 // ⚠️ **Le registre a été VIDE entre les Stories 24-2 et 24-3, et ce n'était pas
 // un oubli — c'était le mécanisme qui fonctionnait.**

@@ -106,6 +106,17 @@ pub struct AuditLogEntry {
     /// Story 17-2a (DC5) — id de la clé API si `actor_type = ApiKey`, sinon `None`.
     /// Pas de FK (pointeur logique — l'audit survit 10 ans à la révocation/suppression de la clé).
     pub actor_api_key_id: Option<i64>,
+    /// Story 25-1a (#376) — nom de l'acteur **au moment de l'écriture**.
+    ///
+    /// ⚠️ **Un instantané, pas une jointure** : il ne suit pas les renommages
+    /// ultérieurs, et c'est voulu — une piste de contrôle dit qui a agi *sous quel
+    /// nom à l'instant de l'acte*, non sous quel nom cette personne s'appelle
+    /// aujourd'hui.
+    ///
+    /// C'est lui qui tient l'attribution quand `user_id` ne le peut plus :
+    /// depuis la 25-1a la FK est retirée, la piste survivant au remplacement de
+    /// `users` par un import de sauvegarde.
+    pub actor_label: String,
     pub created_at: NaiveDateTime,
 }
 

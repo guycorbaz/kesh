@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 65 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 67 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -99,10 +99,10 @@ CREATE TABLE `audit_log` (
   `created_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
   `actor_type` enum('user','api_key') NOT NULL DEFAULT 'user' COMMENT 'Story 17-2a — user (UI/JWT) ou api_key (PAT)',
   `actor_api_key_id` bigint(20) DEFAULT NULL COMMENT 'Story 17-2a — id clé API si actor_type=api_key (pointeur logique, pas de FK)',
+  `actor_label` varchar(64) NOT NULL DEFAULT '' COMMENT 'Story 25-1a — nom de l''acteur AU MOMENT de l''écriture (instantané, pas une jointure). Survit au remplacement de users par un import de sauvegarde.',
   PRIMARY KEY (`id`),
   KEY `idx_audit_log_entity` (`entity_type`,`entity_id`),
   KEY `idx_audit_log_user_date` (`user_id`,`created_at` DESC),
-  CONSTRAINT `fk_audit_log_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`),
   CONSTRAINT `chk_audit_log_action_nonempty` CHECK (char_length(trim(`action`)) > 0),
   CONSTRAINT `chk_audit_log_entity_type_nonempty` CHECK (char_length(trim(`entity_type`)) > 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
