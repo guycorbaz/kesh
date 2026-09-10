@@ -98,7 +98,8 @@ plus qu'il l'est déjà,
    service, la piste est déjà inatteignable**, et c'est cela que le manuel doit dire — non « aucune
    entrée ne peut être supprimée » tout court. *Relevé en passe 2, P2-3(i).*
 
-9. ⛔ **DEUX DES CINQ SITES NE PEUVENT PAS ÊTRE RÉTABLIS PAR CETTE STORY.** La brochure et
+9. ⛔ **`admin-manual.tex:1951` ET `marketing-brochure.tex:139` NE PEUVENT PAS ÊTRE RÉTABLIS PAR
+   CETTE STORY.** *(Énoncé volontairement SANS chiffre — cf. l'avertissement de l'item 10.)* La brochure et
    `admin-manual:1951` parlent d'**intégrité**, qui suppose une piste **complète** — or les six
    trous d'alimentation sont renvoyés à la **25-1b**. ⇒ **Ne pas les rétablir ici** ; la 25-1a
    corrige ce qui la concerne et laisse ces deux-là à la 25-1b, qui les reprendra. *Sans quoi la
@@ -128,7 +129,20 @@ plus qu'il l'est déjà,
     nuancer l'inaltérabilité *et* dire que la consultation reste à venir. *Un correctif qui ne
     retirerait que « inaltérable » laisserait la phrase fausse. P3-3.*
 
-    ⚠️ **Troisième décompte faux d'affilée sur cette story** — « quatre documents » (P1), puis
+    ⛔ **QUATRIÈME décompte faux d'affilée sur cette story, et le motif change ENCORE** : le
+    titre de l'AC 7 est passé de « CINQ » à « SEPT », et l'AC 9 a gardé son « des CINQ » — **dans
+    le même document, à vingt-six lignes d'écart**. C'est la § *Propagation post-patch* prise en
+    défaut sur son voisinage le plus proche : *corriger la thèse au site nommé et laisser ses
+    applications ailleurs dans le même document* — exactement le mode d'échec que la 24-4c avait
+    relevé comme « propre à cette story ».
+
+    ⇒ **RÈGLE TIRÉE, ET APPLIQUÉE ICI** : *un énoncé qui dépend d'un TOTAL se périme à chaque
+    révision du total ; un énoncé qui NOMME ses objets, non.* L'AC 9 nomme désormais ses deux
+    sites au lieu de les compter. Les seuls chiffres qui subsistent sont ceux de la ventilation
+    ci-dessus, qui **se recoupent entre eux** — et c'est leur recoupement, non leur exactitude
+    supposée, qui les rend contrôlables.
+
+    ⚠️ **Trois décomptes faux avant celui-là** — « quatre documents » (P1), puis
     « sept mentions, cinq à traiter » (P2), non dérivable de sa propre énumération. **Et le motif
     a changé à chaque fois** : d'abord un inventaire incomplet, puis un total incrémenté, enfin un
     mot-clé trop étroit — `inaltérable|immutable|insert-only` **ne pouvait pas** attraper
