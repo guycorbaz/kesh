@@ -83,9 +83,10 @@ async function ensureConfigAndExpense(page: import('@playwright/test').Page): Pr
 			number: string;
 			accountType: string;
 			active: boolean;
+			postable: boolean;
 		}>;
 		const payable = accounts.find((a) => a.number === '2000');
-		const expense = accounts.find((a) => a.accountType === 'Expense' && a.active);
+		const expense = accounts.find((a) => a.accountType === 'Expense' && a.active && a.postable);
 		expect(payable, 'compte 2000 attendu').toBeTruthy();
 		expect(expense, 'un compte de charge attendu').toBeTruthy();
 		const s = await (await ctx.get('/api/v1/company/invoice-settings')).json();

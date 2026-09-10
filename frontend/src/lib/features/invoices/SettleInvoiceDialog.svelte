@@ -76,9 +76,18 @@
 		}
 	});
 
-	// ⚠️ Seuls les comptes ACTIFS : le backend refuse un compte archivé, et
-	// proposer ce qu'il refusera est une erreur qu'on fait commettre.
-	let selectableAccounts = $derived(accounts.filter((a) => a.active));
+	// ⚠️ Seuls les comptes ACTIFS **et IMPUTABLES** : le backend refuse l'un et
+	// l'autre, et proposer ce qu'il refusera est une erreur qu'on fait commettre.
+	//
+	// ⛔ `postable` ajouté en passe 3 de revue de code de la Story 24-5 (#375),
+	// finding P3-1 — CRITICAL. Sans lui, ce menu offrait les comptes de clôture
+	// 9000/9100/9200 que la story venait de fermer, ainsi que le 2979 *Résultat
+	// de l'exercice* et les comptes de regroupement : « Enregistrer un
+	// règlement » → « Compte interne » → 9000 rouvrait, d'un geste ordinaire, le
+	// défaut même que la story ferme. Le patron est celui de l'écran de règlement
+	// fournisseur (`supplier-invoices/[id]/+page.svelte:66`), qui filtrait déjà
+	// les deux.
+	let selectableAccounts = $derived(accounts.filter((a) => a.active && a.postable));
 
 	let clientError = $derived.by(() => {
 		if (!settledOn) {

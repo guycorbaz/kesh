@@ -1446,6 +1446,7 @@ mod tests {
                 account_type: kesh_core::chart_of_accounts::AccountType::Asset,
                 parent_number: None,
                 role: None,
+                postable: None,
             },
             kesh_core::chart_of_accounts::ChartEntry {
                 number: "T10".into(),
@@ -1458,6 +1459,7 @@ mod tests {
                 account_type: kesh_core::chart_of_accounts::AccountType::Asset,
                 parent_number: Some("T1".into()),
                 role: None,
+                postable: None,
             },
         ];
 

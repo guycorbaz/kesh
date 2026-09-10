@@ -325,7 +325,29 @@ Lors de la mise à jour vers cette version, Kesh a \textbf{pré-attribué les r�
 \end{keshwarning}
 
 \begin{keshnote}
-Dans cette version, l'indicateur \emph{postable} \textbf{bloque la saisie manuelle} : Kesh refuse une écriture saisie à la main dont une ligne vise un compte non-postable — typiquement un compte de regroupement ou le compte de résultat. Les flux automatiques (factures, avoirs, réconciliation) ne sont pas concernés. \textbf{Une écriture déjà enregistrée ne se modifie plus du tout} : depuis la version qui introduit le gel, elle se corrige par contre-passation (voir «~Corriger une écriture~»).
+Dans cette version, l'indicateur \emph{postable} \textbf{bloque la saisie manuelle} : Kesh refuse une écriture saisie à la main dont une ligne vise un compte non-postable — typiquement un compte de regroupement ou le compte de résultat. Les flux automatiques ne le vérifient pas tous~: la validation d'une facture contrôle le compte de produit de chaque ligne, l'enregistrement d'un règlement son compte de contrepartie et la saisie d'une facture fournisseur son compte de charge~; le rapprochement bancaire et les réglages de facturation, non — mais leurs écrans n'offrent pas de compte non-postable. \textbf{Une écriture déjà enregistrée ne se modifie plus du tout} : depuis la version qui introduit le gel, elle se corrige par contre-passation (voir «~Corriger une écriture~»).
+\end{keshnote}
+
+\subsection{Les comptes de clôture 9000, 9100 et 9200}
+
+Les plans comptables livrés avec Kesh comportent une classe~9 — \emph{Bilan d'ouverture} (9000), \emph{Compte de résultat} (9100) et \emph{Bilan de clôture} (9200). Dans les logiciels qui passent des \textbf{écritures de clôture}, ces comptes reçoivent le virement des soldes en fin d'exercice.
+
+\textbf{Kesh n'en passe aucune}~: le bilan, le compte de résultat et le report à-nouveau sont \textbf{recalculés en permanence} à partir de vos écritures. Ces trois comptes n'ont donc, ici, aucun usage — et Kesh \textbf{refuse toute écriture saisie à la main} qui les vise, exactement comme pour le compte \emph{Résultat de l'exercice}, dont il calcule aussi le solde.
+
+\begin{keshnote}
+\textbf{Cette protection porte sur la saisie manuelle}, comme l'indicateur \emph{postable} en général (voir «~Rôles des comptes~»). Les autres chemins d'écriture la reprennent chacun pour leur compte~: la validation d'une facture refuse un compte de produit non imputable — sauf s'il s'agit du compte de produit \emph{par défaut} que vous avez configuré —, l'enregistrement d'un règlement refuse un compte de contrepartie non imputable, et la saisie d'une facture fournisseur refuse un compte de charge non imputable. Deux chemins font exception~: le rapprochement bancaire, et les comptes que vous désignez dans les réglages de facturation. Leurs écrans ne vous proposent pas de compte non imputable, mais leur contrôle côté serveur ne vérifie pas cet indicateur — une intégration appelant directement l'interface de programmation pourrait donc les viser par ces deux chemins-là.
+\end{keshnote}
+
+\begin{keshwarning}
+\textbf{Si vous arrivez d'un autre logiciel, n'utilisez pas le 9000 pour votre bilan d'ouverture.} La reprise se fait par l'écran \emph{Administration} → \emph{Soldes de départ} (voir «~Reprise de comptabilité~»), et votre report accumulé se pose sur le compte \emph{Bénéfice reporté} (2970 dans les plans standards).
+
+Avant la version qui introduit cette règle, un à-nouveau passé par le 9000 partait \textbf{en charges} sans le moindre avertissement~: le bilan restait équilibré, mais le résultat de l'exercice était faux du montant du bilan, et le report à-nouveau l'était aussi.
+\end{keshwarning}
+
+\begin{keshnote}
+La mise à jour \textbf{ferme ces comptes pour l'avenir, elle ne corrige pas le passé}. Si des écritures y ont déjà été passées, elles y restent~: les déplacer d'office serait une correction \textbf{invisible dans vos livres}, ce que la loi n'admet pas (art.~958f~CO). Consultez le \textbf{grand livre} du compte concerné, puis \textbf{contre-passez} les écritures fautives et ressaisissez-les sur les bons comptes.
+
+Si votre plan a été renuméroté et que le numéro 9000 y désigne un compte que vous utilisez, la page \emph{Plan comptable} vous permet de le rouvrir~: ouvrez sa fiche et rétablissez l'indicateur \emph{postable}.
 \end{keshnote}
 
 \subsection{Import d'un plan personnalisé}

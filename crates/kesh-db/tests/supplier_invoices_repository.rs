@@ -338,6 +338,116 @@ async fn pay_cancelled_invoice_rejected(pool: MySqlPool) {
     assert!(matches!(err, DbError::IllegalStateTransition(_)));
 }
 
+/// ⛔ **Un compte de charge du MAUVAIS TYPE est refusé à la création.**
+///
+/// Jumeau du test ci-dessous, sur l'autre moitié du même `match`. Le commentaire
+/// de la garde affirme « de type Expense (AC6 — sinon l'écriture débiterait un
+/// Passif/Actif) » : sans ce test, cette moitié-là n'était tenue par **rien**.
+///
+/// ⛔ Relevé en passe 5 de revue de code de la Story 24-5 (#375), finding P5-7 —
+/// par mutation : remplacer `Some((true, true, ref t)) if t == "Expense"` par
+/// `Some((true, true, _))` laissait les 20 tests du binaire au vert. Défaut
+/// préexistant, mais la passe 4 avait réécrit ce `match` et son commentaire sans
+/// voir que la moitié de ce qu'il affirme n'était exercée par personne.
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_with_non_expense_account_is_rejected(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+
+    // 1000 est un Asset, actif et postable : seul le TYPE doit le faire refuser.
+    let mut new = one_line(&ctx, dec!(100.00), dec!(0));
+    new.lines[0].expense_account_id = ctx.seeded.accounts["1000"];
+
+    let err = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, DbError::InactiveOrInvalidAccounts),
+        "got {err:?}"
+    );
+}
+
+/// ⛔ **Un compte de CHARGE non imputable est refusé à la création.**
+///
+/// Le type ne suffit pas : les comptes de clôture 9000/9100/9200 sont eux-mêmes
+/// typés `Expense` — c'est le fait fondateur de la Story 24-5 — donc la garde
+/// `t == "Expense"` les laissait passer. Ce flux écrit avec
+/// `enforce_postable = false` : le `SELECT active, postable, account_type` est
+/// le seul contrôle.
+///
+/// ⛔ Trouvé APRÈS la passe 4 de revue de code (#375), en refaisant l'énumération
+/// exhaustive des appels à `journal_entries::create_in_tx` que cette passe avait
+/// déclarée « rapide ». Cinquième chemin d'écriture de la story.
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_with_non_postable_expense_account_is_rejected(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+
+    // Le compte de charge de `one_line` reste ACTIF et de type Expense — c'est
+    // `postable` seul qui doit refuser.
+    sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ?")
+        .bind(ctx.seeded.accounts["4000"])
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let err = supplier_invoices::create(
+        &pool,
+        one_line(&ctx, dec!(100.00), dec!(0)),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(err, DbError::InactiveOrInvalidAccounts),
+        "got {err:?}"
+    );
+}
+
+/// ⛔ **Un compte de contrepartie NON IMPUTABLE est refusé.**
+///
+/// Jumeau du test de `invoice_settlement.rs` : `pay` écrit sans la garde de
+/// postabilité de la 14-3b, donc son `SELECT active, postable` est le seul
+/// contrôle. Ici l'écran filtrait déjà `active && postable`, si bien que le trou
+/// n'était atteignable que par appel direct à l'API — raison de plus pour que le
+/// test existe : *rien d'autre n'en fait foi.*
+///
+/// ⛔ Trouvé par le grep de propagation du finding P3-1 (passe 3 de revue de code
+/// de la Story 24-5, #375), qui a rendu ce site à côté de son jumeau client.
+#[sqlx::test(migrations = "./test-schema")]
+async fn pay_with_non_postable_account_is_rejected(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let created = supplier_invoices::create(
+        &pool,
+        one_line(&ctx, dec!(100.00), dec!(0)),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .unwrap();
+
+    // Le compte reste ACTIF — c'est `postable` seul qui doit refuser.
+    sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ?")
+        .bind(ctx.seeded.accounts["1000"])
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let err = supplier_invoices::pay(
+        &pool,
+        ctx.seeded.company_id,
+        created.invoice.id,
+        SettlementChoice::InternalAccount {
+            account_id: ctx.seeded.accounts["1000"],
+        },
+        d(2026, 6, 20),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(err, DbError::InactiveOrInvalidAccounts),
+        "got {err:?}"
+    );
+}
+
 #[sqlx::test(migrations = "./test-schema")]
 async fn cancel_paid_invoice_rejected(pool: MySqlPool) {
     let ctx = setup(&pool).await;

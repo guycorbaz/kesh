@@ -299,9 +299,64 @@ pub const RETIRED_BACKFILLS: &[PostRestoreBackfill] = &[
 /// justification « hors fenêtre » rédigée autrement échappe au contrôle et
 /// redevient une affirmation crue sur parole — laquelle, si elle est fausse,
 /// désactive **définitivement et en silence** le rejeu du backfill concerné.
-pub const EXEMPT_MIGRATIONS: &[(i64, &str)] = &[
+/// **Sur quoi repose une exemption — et si ce fondement peut CESSER d'être vrai.**
+///
+/// Le champ existe parce qu'un marqueur textuel dans la justification ne suffit
+/// pas. Écrit en passe 2 de revue de code de la Story 24-5, il a été pris en
+/// défaut **quatre fois en deux passes** : le `grep` du script de release
+/// comptait aussi les citations du marqueur par le test qui le gardait (1 → 5) ;
+/// l'épreuve par mutation a montré que ce test ne couvrait pas l'ajout d'une
+/// entrée sans marqueur ; `rustfmt` collapse une entrée courte sur une ligne, ce
+/// qui faisait réattribuer par l'`awk` la version de l'entrée précédente ; et une
+/// continuation `\` coupant la chaîne entre « SE » et « PÉRIME » est invisible
+/// au `grep` alors que `contains()` la voit.
+///
+/// Aucun de ces quatre modes d'échec n'était une faute d'écriture : ils tiennent
+/// tous à ce qu'un shell lisait une chaîne accentuée dans du source Rust. Le
+/// fondement se DÉCLARE donc, et se lit comme une donnée.
+///
+/// *(Refondu en passe 3, findings P3-2 et P3-3.)*
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExemptionBasis {
+    /// Le fondement ne se périme pas : fenêtre d'importabilité, table système,
+    /// propriété du schéma. Rien de ce qu'on publiera ne peut le rendre faux.
+    Durable,
+    /// Le fondement est un **fait daté** : « aucune version publiée ne se situe
+    /// dans `[borne .. la migration exemptée)` ». Publier une version dans cet
+    /// intervalle le rend faux — et le rejeu du backfill est alors désactivé
+    /// définitivement, en silence.
+    ///
+    /// La valeur portée est la **borne basse** de l'intervalle déclaré vide.
+    PerishableSince(i64),
+}
+
+pub const EXEMPT_MIGRATIONS: &[(i64, ExemptionBasis, &str)] = &[
+    (
+        20260909000001,
+        ExemptionBasis::PerishableSince(20260827000001),
+        "Parc vide, et NON « hors fenêtre » — cette migration EST dans la fenêtre d'importabilité, \
+         et invoquer la fenêtre serait faux. L'argument porte sur le PARC : l'intervalle où un \
+         backup porterait `postable = TRUE` sur les comptes de clôture est \
+         [20260827000001 .. celle-ci), et AUCUNE version publiée ne s'y trouve — la dernière est \
+         v0.11.1 (2026-08-24), antérieure à la borne basse ; l'instance en service exécute cette \
+         version (arbitrage du 2026-09-09). L'intervalle ne contient que des builds de \
+         développement non distribués. \
+         POURQUOI PAS LE REGISTRE : l'entrée serait de classe A, or son UPDATE n'est PAS gardé \
+         contre l'écrasement d'une valeur posée par l'utilisateur — `postable` est réouvrable par \
+         `PUT /api/v1/accounts/{id}` (sémantique full-replace, cf. `effective_postable`), et rien \
+         ne distingue « jamais touché » de « rouvert exprès ». La classe A démentirait donc la \
+         promesse publiée du manuel d'administration (« vos données ne sont jamais écrasées »), \
+         et la classe B est indisponible faute de DDL offrant une sentinelle. \
+         ⚠️ CE FONDEMENT SE PÉRIME, d'où `ExemptionBasis::PerishableSince(20260827000001)` \
+         ci-dessus : il cesserait d'être vrai si une version était publiée depuis `main` dans \
+         l'intervalle. Ce n'est plus une affirmation sur parole — `scripts/prepare-release.sh` \
+         la CONTRÔLE avant chaque tag, en cherchant un tag publié dont l'arbre porte la borne \
+         basse sans porter cette migration, et refuse la release s'il en trouve un \
+         — Story 24-5, #375.",
+    ),
     (
         20260722000001,
+        ExemptionBasis::Durable,
         "Hors fenêtre depuis 20260827000001 (invoice_settlements, Story 24-2) : un backup assez \
          ancien pour porter role/postable vides est dépourvu de cette table, donc refusé au \
          contrôle de couverture. Figurait au registre de rejeu jusque-là ; l'y laisser aurait \
@@ -309,6 +364,7 @@ pub const EXEMPT_MIGRATIONS: &[(i64, &str)] = &[
     ),
     (
         20260729000001,
+        ExemptionBasis::Durable,
         "Hors fenêtre depuis 20260827000001 (invoice_settlements, Story 24-2) : même raison que \
          20260722000001. Elle était de CLASSE A, donc rejouée inconditionnellement à chaque \
          import — la laisser au registre aurait fait exécuter à chaque restore un backfill dont \
@@ -316,26 +372,31 @@ pub const EXEMPT_MIGRATIONS: &[(i64, &str)] = &[
     ),
     (
         20260419000002,
+        ExemptionBasis::Durable,
         "users.company_id finit NOT NULL sans défaut => is_required() vrai => un backup qui ne la \
          porte pas est refusé par check_schema_compat (400). Le cas ne peut pas se produire.",
     ),
     (
         20260428000001,
+        ExemptionBasis::Durable,
         "Hors fenêtre : la migration crée elle-même vat_rates, donc un backup dépourvu de ses 4 \
          lignes de taux est un backup dépourvu de la table => refusé au contrôle de couverture.",
     ),
     (
         20260522000001,
+        ExemptionBasis::Durable,
         "INSERT sur _kesh_version, table système hors TABLES_TO_TRUNCATE : jamais exportée ni \
          restaurée. Ce n'est pas un backfill de données applicatives.",
     ),
     (
         20260613000001,
+        ExemptionBasis::Durable,
         "Hors fenêtre : un backup dépourvu de vat_rates.category précède 20260628000001, donc \
          n'a pas les tables supplier_invoices => refusé au contrôle de couverture.",
     ),
     (
         20260614000001,
+        ExemptionBasis::Durable,
         "Hors fenêtre : un backup dépourvu des comptes 1171/2206 précède 20260628000001, donc \
          n'a pas les tables supplier_invoices => refusé au contrôle de couverture. (Version de \
          référence citée EXPLICITEMENT — un « antérieur aux tables créées depuis » ne se vérifie \
@@ -343,17 +404,20 @@ pub const EXEMPT_MIGRATIONS: &[(i64, &str)] = &[
     ),
     (
         20260628000001,
+        ExemptionBasis::Durable,
         "Hors fenêtre, et autoréfutante : la migration crée elle-même supplier_invoices et \
          supplier_invoice_lines, donc un backup dépourvu de default_payable_account_id est \
          dépourvu de ces tables.",
     ),
     (
         20260714000002,
+        ExemptionBasis::Durable,
         "UPDATE sur _kesh_version (bump kesh_version_min_required), table système jamais \
          restaurée. Ce n'est pas un backfill applicatif.",
     ),
     (
         20260814000001,
+        ExemptionBasis::Durable,
         "UPDATE sur _kesh_version (bump kesh_version_min_required), table système jamais \
          restaurée. Le reste de la migration est du DDL pur ; le remplissage du parc vit HORS \
          migration (backfill_client_number_canonical, appelée au boot et en fin d'import — D6 \
@@ -770,7 +834,7 @@ mod tests {
             let known = POST_RESTORE_BACKFILLS
                 .iter()
                 .any(|e| e.version == m.version)
-                || EXEMPT_MIGRATIONS.iter().any(|(v, _)| *v == m.version);
+                || EXEMPT_MIGRATIONS.iter().any(|(v, _, _)| *v == m.version);
             if !known {
                 // `m.description` porte des ESPACES là où le fichier porte des
                 // `_` (sqlx dérive la description du nom de fichier). Rendre la
@@ -804,7 +868,7 @@ mod tests {
     /// emploi avec le registre.
     #[test]
     fn exemptions_are_real_and_disjoint_from_registry() {
-        for (version, justification) in EXEMPT_MIGRATIONS {
+        for (version, _, justification) in EXEMPT_MIGRATIONS {
             assert!(
                 crate::MIGRATOR
                     .migrations
@@ -845,7 +909,7 @@ mod tests {
         let window = last_table_creating_migration();
         let mut checked = 0usize;
 
-        for (version, justification) in EXEMPT_MIGRATIONS {
+        for (version, _, justification) in EXEMPT_MIGRATIONS {
             if !justification.starts_with("Hors fenêtre") {
                 continue;
             }
@@ -877,6 +941,109 @@ mod tests {
              justification a été ajoutée sans le marqueur (et échappe alors au contrôle), soit le \
              marqueur a dérivé et ce test est devenu MUET.",
             EXEMPT_MIGRATIONS.len()
+        );
+    }
+
+    /// **Les fondements PÉRISSABLES ne sont pas laissés sans filet.**
+    ///
+    /// Une exemption peut reposer non sur la fenêtre d'importabilité ni sur une
+    /// propriété du schéma, mais sur un FAIT DATÉ — « aucune version publiée ne
+    /// se situe dans tel intervalle ». Ce fait-là cesse d'être vrai dès qu'on
+    /// publie, et le test ci-dessus ne le voit pas : il ne contrôle que le
+    /// fondement « Hors fenêtre ».
+    ///
+    /// D'où le champ [`ExemptionBasis`], que `scripts/prepare-release.sh` lit
+    /// via `examples/perishable_exemptions.rs` pour vérifier, avant chaque tag,
+    /// qu'aucune version publiée ne se situe dans l'intervalle déclaré vide.
+    ///
+    /// **Le fondement déclaré d'une exemption est-il cohérent, et exact ?**
+    ///
+    /// Remplace le contrôle par marqueur textuel écrit en passe 2 — voir
+    /// [`ExemptionBasis`] pour les quatre modes d'échec qui l'ont condamné. Ici
+    /// plus rien n'est grepé : le fondement est une donnée, ce test la lit, et
+    /// `examples/perishable_exemptions.rs` la donne au script de release.
+    ///
+    /// Trois contrôles :
+    /// 1. une justification « Hors fenêtre » ne peut pas être déclarée
+    ///    périssable, ni l'inverse — les deux fondements sont exclusifs ;
+    /// 2. la borne basse d'un fondement périssable désigne une migration RÉELLE
+    ///    et STRICTEMENT antérieure à l'exemption : sans quoi l'intervalle
+    ///    déclaré vide est vide de sens ;
+    /// 3. garde de non-vacuité sur la taille du registre — toute entrée ajoutée
+    ///    force à déclarer son fondement plutôt qu'à l'omettre.
+    ///
+    /// *(Refondu en passe 3 de revue de code de la Story 24-5, #375, findings
+    /// P3-2 et P3-3.)*
+    #[test]
+    fn every_exemption_declares_a_coherent_basis() {
+        let versions: Vec<i64> = crate::MIGRATOR
+            .migrations
+            .iter()
+            .map(|m| m.version)
+            .collect();
+
+        for (version, basis, justification) in EXEMPT_MIGRATIONS {
+            let claims_window = justification.starts_with("Hors fenêtre");
+            match basis {
+                ExemptionBasis::Durable => assert!(
+                    !justification.contains("aucune version publiée"),
+                    "exemption {version} : déclarée Durable, mais sa justification argumente sur \
+                     le PARC (« aucune version publiée »), ce qui est un fait DATÉ. La déclarer \
+                     PerishableSince(<borne>), faute de quoi aucune release ne la relira."
+                ),
+                ExemptionBasis::PerishableSince(borne) => {
+                    assert!(
+                        !claims_window,
+                        "exemption {version} : déclarée périssable ET « Hors fenêtre ». Les deux \
+                         fondements sont exclusifs — la fenêtre ne se périme pas."
+                    );
+                    assert!(
+                        versions.contains(borne),
+                        "exemption {version} : la borne {borne} ne désigne aucune migration du \
+                         MIGRATOR. L'intervalle déclaré vide est donc invérifiable."
+                    );
+                    assert!(
+                        borne < version,
+                        "exemption {version} : la borne {borne} ne lui est pas antérieure — \
+                         l'intervalle [{borne} .. {version}) est vide de sens."
+                    );
+                }
+            }
+        }
+
+        // Garde de non-vacuité : une entrée ajoutée fait rougir ce test, ce qui
+        // force à déclarer son fondement au lieu de le laisser par défaut.
+        // Le nombre est codé en dur À DESSEIN, comme celui de « Hors fenêtre ».
+        assert_eq!(
+            EXEMPT_MIGRATIONS.len(),
+            11,
+            "le registre d'exemptions a changé de taille : déclarer le fondement de l'entrée \
+             neuve (Durable, ou PerishableSince(<borne>) si elle argumente sur un fait daté), \
+             puis bumper ce nombre."
+        );
+    }
+
+    /// **Le script de release voit-il exactement les exemptions périssables ?**
+    ///
+    /// L'exemple `perishable_exemptions` est ce que `scripts/prepare-release.sh`
+    /// exécute ; si son inventaire diverge du registre, le rappel de release
+    /// devient muet — le mode d'échec que toute cette mécanique combat.
+    #[test]
+    fn the_release_script_sees_every_perishable_exemption() {
+        let perishable: Vec<(i64, i64)> = EXEMPT_MIGRATIONS
+            .iter()
+            .filter_map(|(version, basis, _)| match basis {
+                ExemptionBasis::PerishableSince(borne) => Some((*version, *borne)),
+                ExemptionBasis::Durable => None,
+            })
+            .collect();
+
+        assert_eq!(
+            perishable,
+            vec![(20260909000001, 20260827000001)],
+            "l'inventaire des exemptions périssables a changé. `scripts/prepare-release.sh` le \
+             lit via `cargo run -p kesh-db --example perishable_exemptions` : vérifier que le \
+             rappel de release dit encore vrai, puis mettre ce test à jour."
         );
     }
 

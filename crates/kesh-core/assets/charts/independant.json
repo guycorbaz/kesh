@@ -88,7 +88,7 @@
 
   {"number": "9", "name": {"fr": "Clôture", "de": "Abschluss", "it": "Chiusura", "en": "Closing"}, "type": "Expense", "parentNumber": null},
   {"number": "90", "name": {"fr": "Comptes de clôture", "de": "Abschlusskonten", "it": "Conti di chiusura", "en": "Closing accounts"}, "type": "Expense", "parentNumber": "9"},
-  {"number": "9000", "name": {"fr": "Bilan d'ouverture", "de": "Eröffnungsbilanz", "it": "Bilancio di apertura", "en": "Opening balance"}, "type": "Expense", "parentNumber": "90"},
-  {"number": "9100", "name": {"fr": "Compte de résultat", "de": "Erfolgsrechnung", "it": "Conto economico", "en": "Income statement"}, "type": "Expense", "parentNumber": "90"},
-  {"number": "9200", "name": {"fr": "Bilan de clôture", "de": "Schlussbilanz", "it": "Bilancio di chiusura", "en": "Closing balance"}, "type": "Expense", "parentNumber": "90"}
+  {"number": "9000", "name": {"fr": "Bilan d'ouverture", "de": "Eröffnungsbilanz", "it": "Bilancio di apertura", "en": "Opening balance"}, "type": "Expense", "parentNumber": "90", "postable": false},
+  {"number": "9100", "name": {"fr": "Compte de résultat", "de": "Erfolgsrechnung", "it": "Conto economico", "en": "Income statement"}, "type": "Expense", "parentNumber": "90", "postable": false},
+  {"number": "9200", "name": {"fr": "Bilan de clôture", "de": "Schlussbilanz", "it": "Bilancio di chiusura", "en": "Closing balance"}, "type": "Expense", "parentNumber": "90", "postable": false}
 ]

@@ -393,6 +393,38 @@ trois revues de projet consécutives avant de l'être. ⚠️ Elle s'était tran
 contexte de travail et non par ce fichier : un geste qui ne vit que dans une session se
 perd avec elle.)*
 
+### Le prompt d'une passe doit NOMMER le manuel — sinon personne ne l'ouvre
+
+**Règle** : tout prompt de passe de revue portant sur du code visible de l'utilisateur doit inscrire, parmi ses axes, la vérification du **manuel** (`docs/manual/`) contre le code — et exiger que le **PDF** soit contrôlé, pas seulement le `.tex`.
+
+**Pourquoi, et le motif n'est pas celui qu'on croit.** La leçon écrite à la Story 24-4a était : *aucun gate ne lit le manuel*. Elle a une jumelle plus coûteuse : **aucune passe ne le lit non plus, sauf si son prompt le lui demande.** Sur l'Epic 24, le manuel a été pris en défaut à **six tours sous six formes** — il promettait une protection absente, puis annonçait un trou absent, puis bornait trop étroitement un trou réel, puis omettait un flux, puis ignorait une exemption.
+
+⛔ **Mais le rendement de cet axe n'est pas de corriger le manuel : c'est ce qu'il RÉVÈLE.** C'est en vérifiant si le manuel disait vrai qu'une lentille a trouvé un **quatrième chemin d'écriture** — atteignable d'un clic — que quatre passes de spec et deux passes de code n'avaient pas énuméré ; puis un cinquième, puis un sixième. *Le seul endroit où l'on écrit ce que le code est censé garantir est aussi le seul où l'écart se voit.*
+
+⚠️ **Contrôler le PDF, et l'aplatir avant de greper** : `pdftotext` coupe les lignes, un `grep` naïf sur une phrase rend un faux négatif. `pdftotext f.pdf - | tr '\n' ' ' | tr -s ' '`.
+
+*(codifié 2026-09-10, rétrospective Epic 24 — action A6, insight I1/I2.)*
+
+### Une passe qui ne déclare pas ses axes exercés ne compte pas comme passe
+
+**Règle** : tout prompt de passe exige, dans le rapport, **la liste des axes réellement exercés et de ceux qui ne l'ont pas été**. Un « 0 finding » non adossé à cette liste ne clôt rien et ne compte pas dans le décompte de la boucle.
+
+**Précédent, et il est net.** La passe 4 de la Story 24-5 (Haiku 4.5) a rendu **0 finding**. Elle a déclaré elle-même n'avoir pas couvert l'axe le plus cher — « examen rapide » de l'énumération des chemins d'écriture, celui-là même qui avait produit le CRITICAL de la passe précédente —, qualifié de « robuste » un point qu'elle **n'avait pas exécuté** — et il était faux —, et **écrit dans le dépôt** malgré une interdiction explicite, en lançant `scripts/prepare-release.sh` qui a bumpé les dix crates du workspace. **Deux défauts réels attendaient derrière**, trouvés en refaisant le travail annoncé.
+
+⚠️ **Corollaire pour l'orchestrateur** : un « 0 finding » se vérifie comme un finding. Reprendre soi-même les axes que la passe déclare n'avoir pas exercés coûte une fraction d'une passe, et c'est exactement là que se trouve ce qu'elle a manqué.
+
+⛔ **Et interdire l'écriture ne suffit pas : il faut interdire les COMMANDES qui écrivent.** Le prompt disait « n'écris aucun fichier » ; la lentille a exécuté un script qui écrit. Nommer explicitement `scripts/prepare-release.sh` — et tout script mutant — dans les interdits.
+
+*(codifié 2026-09-10, rétrospective Epic 24 — action A7, insight I3.)*
+
+### Inventorier les sites NON RÉSOLUS, plutôt qu'énumérer les formes qui marchent
+
+**Règle** : quand un critère doit prouver qu'une classe de défauts est fermée, ne pas énumérer les formes traitées — **inventorier l'ensemble clos des sites qui ne résolvent pas**, et exiger que chacun soit soit résolu, soit écrit comme angle mort assumé.
+
+**Pourquoi** : une énumération de formes est ouverte par nature — une forme imprévue la contourne sans que rien ne rougisse. Pire, le critère censé fermer la faille peut la **certifier** : sur l'Epic 23, l'`AC7` comparait la liste des sites à la table de référence, **les deux côtés sortant du même extracteur**. L'assertion était verte *par construction*. L'inventaire des non-résolus — 36 sur 1496 — est en revanche comptable et décidable, et c'est la seule assertion qu'une forme imprévue ne puisse pas contourner.
+
+*(D4-ter, acquis méthodologique de l'Epic 23 — codifié 2026-09-10, action A9 de la rétrospective Epic 24, après **deux reports**.)*
+
 ### Propagation post-patch — grep du symptôme avant la passe suivante
 
 **Règle** : après avoir appliqué un patch de remédiation (revue de spec ou de code), et **avant** de relancer la passe suivante, `grep` le **symptôme corrigé** — pas seulement le site corrigé — sur **tout le dépôt** : code, spec/story file, doc-comments, tests, i18n (les 4 locales), fallbacks Svelte, manuels LaTeX. Lister les sites atteints et les traiter dans le **même** patch.
@@ -608,6 +640,17 @@ Un epic peut donc se clore proprement côté code tout en laissant dériver le d
 
 Titre homogène pour les KF : `[KF-NNN] description` — facilite la recherche visuelle dans la liste d'issues.
 
+⛔ **Le numéro se lit DEPUIS GITHUB avant d'être attribué — jamais depuis un fichier, une mémoire ou une rétrospective.** Rien ne contrôle l'unicité, et un numéro relu depuis un état périmé produit une collision **silencieuse** : la recherche par numéro rend alors deux résultats sans le signaler.
+
+```sh
+gh issue list --state all --limit 300 --json title --jq '.[].title' \
+  | grep -oE '^\[KF-[0-9]{3}\]' | grep -oE '[0-9]{3}' | sort -n | tail -1
+```
+
+⚠️ **Le détecteur porte sur le PRÉFIXE, pas sur le titre entier** : un titre peut *mentionner* une autre KF sans la porter — `[KF-020] … pour fermer la race no-op KF-004 résiduelle` est une référence, pas une attribution. Un `grep` sur le titre entier compte les deux et rend un faux positif. *Un détecteur mal formé coûte le même diagnostic qu'un défaut réel.*
+
+**Précédent (rétrospective Epic 24, 2026-09-10)** : `KF-045` et `KF-046` désignaient chacune **deux issues distinctes** — #330/#421 et #339/#424 —, les secondes ouvertes huit jours après les premières. Renumérotées en KF-051 et KF-052. Reste `KF-002`, portée par #2, #40 et #41 (avril 2026, toutes fermées) : collision historique laissée telle quelle, réécrire le titre de tickets clos n'apporterait rien.
+
 ### Quand créer une issue
 
 - **Bug report** : dès qu'un comportement incorrect est reproduit, **hors du flux normal de dev d'une story en cours**. Si le bug est découvert pendant l'implémentation d'une story liée, le corriger directement dans la story et le documenter dans le Change Log de la story.
@@ -811,7 +854,8 @@ Au-delà du planning README à chaque commit (ci-dessus), élargir la vérificat
 4. **Manuels LaTeX FR** : si la story touche install/config/sécurité/usage utilisateur, mettre à jour la section correspondante (admin-manual pour DevOps, user-manual pour fiduciaires/comptables). Régénérer le PDF (`latexmk -xelatex` dans `docs/manual/fr/`) et le commiter (la convention projet est de versionner les PDFs cf. PR #102).
 4-bis. **Macro version des manuels — gate release OBLIGATOIRE et inconditionnel** : à **toute création de release** (pas seulement si la story touche un manuel), bumper les trois macros de `docs/manual/shared/kesh-style.sty` pour qu'elles correspondent EXACTEMENT à la version publiée : `\keshVersion{X.Y.Z}` (= version Cargo / champ `version` de `/health`), `\keshReleaseDate{AAAA-MM-JJ}` (date de publication Docker Hub) et `\keshTargetRelease{vX.Y}`. **Puis régénérer les 3 PDF** (`make fr` dans `docs/manual/`) et les commiter — la page de titre et l'en-tête de chaque manuel affichent `\keshVersion`, donc un macro périmé ment sur toutes les pages. *Précédent (2026-06-27, doc-sync v0.3) : la macro était restée bloquée à `0.1.0-dev`/`v0.1` à travers v0.2 ET v0.3 — l'étape « manuels » 4 était conditionnée « si la story touche un manuel », ce qui laissait passer les releases purement code. D'où ce gate inconditionnel.* **Garde-fou** : si un tag `vX.Y.Z` est créé alors que `\keshVersion` ≠ `X.Y.Z`, c'est un défaut de release à corriger avant le push du tag.
 5. **CHANGELOG** (une fois créé Story 10-4) : entrée pour la release courante avec sections `Added` / `Changed` / `Fixed` / `Security` / `Removed` (style [Keep a Changelog](https://keepachangelog.com/)).
-6. **`docs/known-failures.md` + `docs/change_request.md`** : déjà archivés depuis 2026-04-16/18 — **pas** d'update ici, juste vérifier qu'aucune nouvelle entrée n'a été ajoutée par erreur (les KF/CR vont sur GitHub Issues désormais, cf. §"Issue Tracking Rule").
+6. **`scripts/prepare-release.sh` — à LANCER, pas seulement à connaître** : il bumpe les versions Cargo, date l'entrée du CHANGELOG, et **affiche les rappels qui n'ont pas d'autre filet**. Le principal : les exemptions du registre de rejeu (`EXEMPT_MIGRATIONS`, `crates/kesh-db/src/post_restore.rs`) dont la justification repose sur un **fait daté** — « aucune version publiée ne se situe dans tel intervalle » — et que **cette release même peut rendre fausses**, silencieusement et définitivement. Le test `exemptions_claiming_out_of_window_really_are_out_of_window` ne les couvre pas : il ne contrôle que le fondement « Hors fenêtre ». Le script **refuse la release** (`exit 1`) s'il trouve un tag déjà publié dont l'arbre porte la borne basse de l'intervalle sans porter la migration exemptée — c'est-à-dire une version publiée là où la justification déclare qu'il n'y en a aucune. ⚠️ **`release.yml` se déclenche sur `push: tags:` et n'impose rien** : poser un tag à la main contourne ce contrôle. Le script est le seul endroit qui *pose* la question, pas une barrière — d'où sa place dans cette liste. *(Ajouté le 2026-09-09, passe 2 de revue de code de la Story 24-5, finding P2-3 : le script existait, son rappel était écrit, et il se disait « seul point de passage de toute release » alors qu'il n'était nommé nulle part. Un garde-fou hors de la procédure qu'il garde n'est pas un garde-fou. Reformulé en passe 3, finding P3-6 : la formulation absolue n'était garantie par aucun outillage. Le rappel lui-même a été refondu aux findings P3-2/P3-3 — il ne grepe plus rien, il lit `ExemptionBasis` par un exemple Rust.)*
+7. **`docs/known-failures.md` + `docs/change_request.md`** : déjà archivés depuis 2026-04-16/18 — **pas** d'update ici, juste vérifier qu'aucune nouvelle entrée n'a été ajoutée par erreur (les KF/CR vont sur GitHub Issues désormais, cf. §"Issue Tracking Rule").
 
 **Règle d'inclusion** : tout update de doc déclenché par la story DOIT être **dans le même commit** ou la même PR que le code qui le motive (pas de PR doc séparée a posteriori, sauf cas où plusieurs stories y contribuent et que la doc serait rejouée — alors batched dans la PR de la dernière story de l'epic, cohérent `feedback_avoid_parallel_prs`).
 
