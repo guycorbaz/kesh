@@ -72,8 +72,8 @@ plus qu'il l'est déjà,
 
 ### Volet B — cesser de promettre ce qui est faux
 
-7. ⛔ **CINQ documents publiés parlent de l'inaltérabilité, et ils ne mentent pas tous dans le même
-   sens.** La vague 0 a corrigé l'en-tête du module ([#359]) et **laissé les cinq** :
+7. ⛔ **SEPT sites de manuel parlent de l'inaltérabilité, et ils ne mentent pas tous dans le même
+   sens.** *(Le décompte total, README et site web compris, est à l'item 10 — dix mentions.)* La vague 0 a corrigé l'en-tête du module ([#359]) et **laissé les cinq** :
 
    | site | ce qu'il dit | aujourd'hui | après la story |
    |---|---|---|---|
@@ -82,6 +82,8 @@ plus qu'il l'est déjà,
    | `admin-manual.tex:1951` | « Art. 3 : **intégrité** → garanti par `audit_log` insert-only » | **faux** | ⛔ **dépend de la 25-1b** |
    | `admin-manual.tex:1785` | « aucune **route API** ne permet de modifier ou supprimer **une entrée** » | exact au mot près, **trompeur en substance** | à reformuler — une route efface la table entière |
    | ⛔ `admin-manual.tex:1803-1808` | « **Le journal d'audit n'est PAS inaltérable en pratique.** Deux chemins l'effacent » | **vrai**, mais **incomplet** (trois chemins) | ⛔ **DEVIENDRA FAUX** — à réécrire |
+   | ⛔ `user-manual.tex:1726` *(glossaire)* | « Journal **infalsifiable** de toutes les modifications comptables » | **faux** | **vrai seulement sur instance finalisée** — cf. AC 8 |
+   | ⛔ `admin-manual.tex:2179` *(glossaire)* | « Trace **immuable** de toutes les actions métier » | **faux** | **vrai seulement sur instance finalisée** — cf. AC 8 |
 
    ⚠️ **Le cinquième site est celui que la story rend faux**, et il vit dans la **section de
    conformité OLICo** — celle qu'un réviseur lit. Sans lui, le PDF publié dirait à cent-cinquante
@@ -102,12 +104,37 @@ plus qu'il l'est déjà,
    corrige ce qui la concerne et laisse ces deux-là à la 25-1b, qui les reprendra. *Sans quoi la
    25-1a promettrait ce qu'elle ne tient pas — P2-3(ii).*
 
-10. **Deux mentions n'appellent aucune action** : `website/index.html:106` et
-    `website/roadmap.html:105` (« immutable audit log ») redeviennent vraies d'elles-mêmes.
-    ⚠️ **`README.md:218`, en revanche, est à vérifier** : il énumère ce qui reste ouvert dans la
-    vague sans y mettre l'inaltérabilité, ce qui le laisse trompeur (§ *Synchroniser le planning du
-    README*). *Le décompte annoncé en passe 1 — « quatre documents » — sous-comptait : sept
-    mentions, cinq à traiter. P2-9.*
+10. ⛔ **L'INVENTAIRE, RECOMPTÉ DEPUIS LA SOURCE — et sa ventilation se recoupe.**
+
+    ```sh
+    grep -rniE "inaltérable|immutable|insert-only|infalsifiable|immuable|inviolable" \
+      docs/manual/fr/*.tex website/*.html README.md
+    ```
+
+    **Dix mentions, six fichiers** — dont **sept dans les manuels** :
+
+    | | sites | sort |
+    |---|---|---|
+    | **à traiter ici** | `admin:1785`, `admin:1804`, `admin:2179`, `user:1597`, `user:1726`, `README:218` | **6** |
+    | **différées à la 25-1b** | `admin:1951`, `brochure:139` — elles portent sur l'**intégrité** (AC 9) | 2 |
+    | **sans action** | `website/index.html:106`, `website/roadmap.html:105` — redeviennent vraies | 2 |
+
+    ⚠️ **`website/about.html:138` est un faux positif** du grep élargi : il parle des « immutable
+    change logs » du **processus BMAD**, pas de la piste d'audit.
+
+    ⛔ **`README.md:218` n'est pas une omission, c'est une affirmation POSITIVE et DOUBLEMENT
+    FAUSSE** : « une piste d'audit **inaltérable et consultable** », au présent. Le second membre
+    dépend de la **25-1c**. ⇒ le corriger avec la **même grille** que les deux sites différés :
+    nuancer l'inaltérabilité *et* dire que la consultation reste à venir. *Un correctif qui ne
+    retirerait que « inaltérable » laisserait la phrase fausse. P3-3.*
+
+    ⚠️ **Troisième décompte faux d'affilée sur cette story** — « quatre documents » (P1), puis
+    « sept mentions, cinq à traiter » (P2), non dérivable de sa propre énumération. **Et le motif
+    a changé à chaque fois** : d'abord un inventaire incomplet, puis un total incrémenté, enfin un
+    mot-clé trop étroit — `inaltérable|immutable|insert-only` **ne pouvait pas** attraper
+    « infalsifiable » ni « immuable ». *La § « greper la VALEUR, pas la formulation » a une
+    jumelle : greper le CONCEPT, pas un de ses mots. Les deux glossaires ont traversé trois
+    passes, dont une qui cherchait explicitement un site supplémentaire.* P3-1, P3-2.
 
 11. **L'en-tête de `audit_log.rs:1-21` est réécrit**, et il **nomme les TROIS chemins** (AC 5).
     ⚠️ Il dit aujourd'hui l'inverse. *Une fois les chemins fermés, cette phrase devient fausse à
@@ -133,7 +160,7 @@ plus qu'il l'est déjà,
       ⛔ **la mutation ne détecte pas une garde JAMAIS POSÉE.** `lib.rs:300-306` documente le
       piège : *« une route chaînée après le `route_layer` COMPILE, ne panique pas, et échappe aux
       DEUX couches »*. Un test « non-Admin ⇒ 403 » le voit ; une mutation, non. *P2-6.*
-- [ ] **T6 — Les CINQ documents publiés + l'en-tête du module** (AC 7 à 11), PDF régénérés (AC 12),
+- [ ] **T6 — Les SIX sites à traiter + l'en-tête du module** (AC 7 à 11), PDF régénérés (AC 12),
       et le README vérifié.
 - [ ] **T7 — SI le mécanisme de T1 touche le schéma** : garde-fous **P2-bis** (bump Cargo
       solidaire), **P3** (bump `min_required` si breaking), **P5** (ligne d'audit d'idempotence +
