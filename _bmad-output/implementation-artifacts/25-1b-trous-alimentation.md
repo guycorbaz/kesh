@@ -415,8 +415,10 @@ variant transactionnel :
 - **La migration des 16 repositories qui emploient `::user`** → [#431], explicitement hors
   périmètre. ⚠️ L'issue en annonce 10 ; ils sont **16** aujourd'hui — le recensement a vieilli, et
   cela se signalera à l'issue plutôt que de se corriger ici.
-- **La route et l'écran de consultation** → 25-1c, qui attend un arbitrage : `audit_log` n'a pas de
-  `company_id`.
+- **La route et l'écran de consultation** → 25-1c. ✅ **Son arbitrage est rendu** (2026-09-11) :
+  `audit_log` prend un `company_id`. ⚠️ **Si ce `company_id` devenait un champ de
+  `NewAuditLogEntry` plutôt qu'un sous-SELECT du repository, les treize appels ajoutés ici
+  devraient le fournir** — à vérifier avant de coder, pas après.
 - **Aucun changement de schéma** : la story n'ajoute ni colonne ni migration — donc **ni P2-bis, ni
   P3, ni P5, ni P6, ni P7, ni P8**. ⚠️ *Le vérifier en fin d'implémentation plutôt que de le tenir
   pour acquis : un `_in_tx` extrait ne touche pas le schéma, un index ajouté au passage, si.*

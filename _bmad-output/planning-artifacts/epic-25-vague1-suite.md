@@ -49,6 +49,28 @@ chemins d'effacement d'abord.
 *« Apparent » et « archivé dans une table que personne ne peut lire » ne sont pas la même
 chose.*
 
+#### ✅ Arbitrage du 2026-09-11 — `audit_log` prend un `company_id`
+
+La table est **globale** alors que Kesh est multi-société : une route de consultation exposerait
+les traces de toutes les sociétés à l'administrateur d'une seule. Des trois issues possibles —
+ajouter la colonne, restreindre la route, documenter la limite — le Project Lead retient **la
+colonne**.
+
+⚠️ **Ce n'est pas un détail de la 25-1c, c'est une story de plus.** Une migration **avec
+backfill** arme les garde-fous **P2-bis, P3, P5, P6, P7 et P8**, là où la 25-1b n'en arme aucun.
+D'où le découpage : **la colonne et son backfill d'abord, la route et l'écran ensuite.**
+
+⛔ **Le mécanisme reste à concevoir, et il commande l'ordre des stories.** Si `company_id` se
+dérive par **sous-SELECT dans l'INSERT** — le patron exact que la 25-1a a employé pour
+`actor_label` —, aucun des quelque trente sites appelants ne bouge et l'ordre est indifférent.
+S'il devient un champ de `NewAuditLogEntry`, **tous** doivent le fournir, y compris les treize que
+la 25-1b ajoute, et la colonne passe **devant** elle.
+
+⚠️ **Et le sous-SELECT n'est pas gratuit pour autant** : la société de l'**acteur** n'est pas
+toujours celle de l'**entité** auditée, et après un import de sauvegarde `users` est celle du
+backup — `user_id` étant un pointeur logique sans FK depuis la 25-1a. *Un instantané figé à
+l'écriture est correct ; une jointure vive ne l'est pas.*
+
 ### 25-2 — Les gardes structurelles : numérotation et type de compte
 
 **Issues : [#381], [#382].** Deux gardes absentes qui rendent les livres contestables.
