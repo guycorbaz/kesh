@@ -645,3 +645,146 @@ Le raisonnement porte sur C7-bis, où l'`UPDATE` **ne tourne pas** (entrée
 changé. La mutation qu'il suggère — `WHERE FALSE` — est en revanche la bonne
 idée appliquée au mauvais cas ; c'est C7-ter qui la porte, sous la forme
 `WHERE TRUE`, qui est le sens du dommage.
+
+### Passe 3 de `bmad-code-review` — lentille unique (Sonnet 4.6), contexte frais
+
+Prompt versionné : `25-1a-review-prompt-p3.md`, écrit pour **corriger les deux
+erreurs de méthode de la passe 2** : nommer et justifier sa base de comparaison,
+et vérifier que l'état de départ d'un scénario est atteignable.
+
+**0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW.** Les sept axes sont déclarés exercés.
+
+#### LOW-1 — retenu et corrigé
+
+`website/roadmap.html:105` annonçait « append-only audit log » — formulation
+posée par la passe 2 elle-même, et **littéralement démentie** par l'`UPDATE` du
+rejeu post-restore. La portée pratique est faible (le rejeu ne complète que le
+nom d'acteur d'une ligne fraîchement fusionnée, jamais le contenu métier, jamais
+une entrée locale déjà attribuée), mais l'affirmation est fausse au mot près sur
+un support **publié**. Aligné sur la formulation d'`index.html`, exacte et déjà
+validée : « audit log that a backup import no longer replaces ».
+
+⚠️ **C'est une remédiation de la passe 2 qui a introduit ce défaut** — le motif
+mesuré du dépôt, *la sévérité se déplace vers ce qu'on vient d'écrire*, s'est
+vérifié une fois de plus, cette fois sur une ligne de prose.
+
+#### Observation écartée — le `LEFT JOIN` du backfill
+
+Aucun test n'exerce le `COALESCE(u.username, '(inconnu)')` du rejeu : une
+mutation `LEFT JOIN` → `JOIN` ne serait tuée par aucun des trois cas
+`actor_label`. La lentille l'a **écartée elle-même** plutôt que d'en faire un
+finding, et son raisonnement tient : (a) un backup pré-25-1a provient d'une
+instance où `fk_audit_log_user` existait encore, donc chaque `user_id` y avait un
+utilisateur ; (b) un backup post-25-1a est sauté par la sentinelle. Le chemin est
+inatteignable — ce que la migration dit déjà en toutes lettres (« impossible
+aujourd'hui […] mais la garde coûte une ligne »). **Rien à faire**, et le
+signalement est correct : un état inatteignable n'est pas un défaut.
+
+#### Ce que la passe 3 a revérifié depuis la source, et non depuis nos déclarations
+
+- **P5** : `ls migrations/*.sql` = 67 = en-tête = lignes du tableau ;
+  7 `yes` + 60 `tracked-by-sqlx` + 0 `no` = 67.
+- **P6** : `migrations_upgrade_path.rs` passé de `total - 32` à `total - 33`,
+  frontière 34 inchangée, test vert.
+- **P7** : classe B, sentinelle valide, absente d'`EXEMPT_MIGRATIONS`.
+- **P8** : migration neuve, `published_migrations_keep_their_checksums` vert.
+- **La route déplacée** est bien enregistrée **avant** le
+  `route_layer(require_admin_role)` — vérifié par **lecture directe**, et pas
+  seulement par le test qui en dépend.
+- La réserve du manuel « la couverture n'est pas complète (gestion des
+  utilisateurs) » est **vraie** : `routes/users.rs` ne contient aucun appel à
+  `insert_in_tx`.
+
+⚠️ **Ce que la passe 3 n'a PAS vérifié, et le dit** : elle n'a pas relancé le
+gate complet (elle a listé 2307 tests sans les exécuter tous) ni la suite
+Playwright. Le « 4 skipped » du Change Log n'a donc pas été recontrôlé par elle —
+il l'est par le gate de clôture ci-dessous.
+
+---
+
+## Boucle de revue de code — close
+
+| Passe | Modèle(s) | Rendu | Réel après vérification |
+|---|---|---|---|
+| 1 | Sonnet 4.6 · Haiku 4.5 · Sonnet 4.6 (3 lentilles) | 0 C, 0 H, **7 M**, 2 L | 9 findings, tous fondés |
+| 2 | Haiku 4.5 (lentille unique) | 1 C, 1 H, 1 M | **2 réfutés**, 1 mal fondé — mais **1 défaut réel** trouvé en les vérifiant |
+| 3 | Sonnet 4.6 (lentille unique) | 0 C, 0 H, 0 M, **1 L** | 1 finding fondé, corrigé |
+
+**Critère d'arrêt atteint** : plus aucun finding au-dessus de LOW, et la
+remédiation de la passe 3 ne touche **aucune ligne de code de production** (une
+ligne de prose sur une page statique). La boucle est close en 3 passes.
+
+### Ce que cette boucle apprend, au-delà de la story
+
+1. **Une passe peut payer sans avoir raison.** La passe 2 s'est trompée sur ses
+   trois findings, et c'est en les réfutant qu'un trou réel est apparu — la garde
+   `WHERE actor_label = ''` n'était exercée nulle part. *Vérifier un faux positif
+   coûte peu et rapporte parfois plus que le finding lui-même.*
+2. **Déclarer un axe non exercé et en tirer un finding est contradictoire.** La
+   passe 2 l'a fait sur l'axe « manuels ». Le prompt de la passe 3 l'a interdit
+   explicitement, et la passe 3 a exercé l'axe pour de bon.
+3. **Un grep de propagation doit partir des FICHIERS à couvrir, pas des mots à
+   trouver.** Cinq fois sur cette seule story, le mot-clé trop étroit a laissé
+   passer un site : synonymes manqués (×4), puis la **langue du support**.
+4. **Une remise à zéro de base qui échoue est indiscernable d'une régression.**
+   Le premier gate a rendu 34 faux échecs parce qu'un `sqlx migrate run` avait
+   échoué en silence. La remise à zéro doit être **vérifiée**, pas seulement
+   exécutée.
+
+
+---
+
+## ⏸️ Point de reprise — 2026-09-11, avant redémarrage de la machine
+
+### Ce qui est ACQUIS et vérifié
+
+- **Boucle de revue de code CLOSE en 3 passes** (trend au tableau ci-dessus).
+- **Gate backend complet VERT : 2307/2307, 4 skipped**, base remise à zéro *et
+  vérifiée*, lancé après la dernière modification de code.
+- **Gate frontend VERT** : `npm run check` 0 erreur, `lint-i18n-ownership` vert,
+  `test:unit` 740/740, `build` vert.
+- **Les trois PDF des manuels sont régénérés et vérifiés** au `pdftotext` aplati.
+- Tâches T1 à T8 cochées.
+
+### ⛔ Ce qui reste À FAIRE, et ne doit pas être cru fait
+
+**Le gate E2E Playwright n'a PAS de résultat exploitable.** Deux runs, aucun
+concluant :
+
+1. **Premier run — montage INCOMPLET, résultat à JETER.** 18 échecs, dont neuf
+   hors baseline (`reminders`, `dunning-roundtrip`, `invoice-send-email`,
+   `inbox-import`, `xss-token-protection`). Cause établie : `KESH_INBOX_DIR`,
+   `KESH_DOCUMENTS_DIR` et les quatre `KESH_SMTP_*` manquaient, plus
+   `KESH_TEST_MODE` côté **runner**. Aucun rapport avec la branche.
+2. **Second run — montage complet — INTERROMPU** par le redémarrage à 138/224.
+   Aucune conclusion ne peut en être tirée.
+
+⇒ **À la reprise : relancer la suite E2E depuis le début**, montage complet, et
+juger **fichier par fichier** contre `docs/testing.md` § « Les échecs attendus ».
+Le compte attendu dépend de l'heure : 7 (KF-029) + 2 (KF-045, si run **avant
+12:00 UTC**) + 1 éventuel (KF-046) + 1 à 2 de pollution.
+
+⚠️ **Contrôle qui coûte deux secondes et tranche** : après démarrage du backend,
+`curl -s http://127.0.0.1:3000/health` doit rendre `"smtpConfigured":true`. S'il
+rend `false`, le montage est incomplet et la suite rougira pour rien.
+
+### Puis, pour clore la story
+
+1. Passer `25-1a-piste-inalterable` à `done` dans `sprint-status.yaml`.
+2. `git push -u origin story/24-5-comptes-de-cloture`.
+3. Ouvrir la PR avec **`closes #376, closes #377`** dans le **corps de la PR** —
+   le dépôt merge en squash, les commits portent tous `refs`, et le mot-clé de
+   fermeture ne vaut que sur la PR.
+4. Surveiller la CI, merger au vert, puis vérifier que les deux issues sont bien
+   fermées (`gh issue view 376 --json state --jq .state`).
+
+### Ce qui vient après
+
+**Story 25-1b** — les six trous d'alimentation du journal ([#379]).
+
+⛔ **Arbitrage du Project Lead attendu avant la 25-1c** : `audit_log` n'a pas de
+colonne `company_id` — la table est **globale** alors que Kesh est multi-société.
+Une route de consultation exposerait les traces de toutes les sociétés à
+l'administrateur d'une seule. Trois issues : ajouter la colonne (migration +
+backfill), restreindre la route, ou documenter la limite. **Ne pas trancher
+seul** — la décision conditionne la spec.
