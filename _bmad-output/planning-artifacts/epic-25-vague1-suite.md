@@ -60,16 +60,49 @@ colonne**.
 backfill** arme les garde-fous **P2-bis, P3, P5, P6, P7 et P8**, là où la 25-1b n'en arme aucun.
 D'où le découpage : **la colonne et son backfill d'abord, la route et l'écran ensuite.**
 
-⛔ **Le mécanisme reste à concevoir, et il commande l'ordre des stories.** Si `company_id` se
-dérive par **sous-SELECT dans l'INSERT** — le patron exact que la 25-1a a employé pour
-`actor_label` —, aucun des quelque trente sites appelants ne bouge et l'ordre est indifférent.
-S'il devient un champ de `NewAuditLogEntry`, **tous** doivent le fournir, y compris les treize que
-la 25-1b ajoute, et la colonne passe **devant** elle.
+✅ **Mécanisme arrêté le 2026-09-11, après lecture ciblée : le SOUS-SELECT**, sur le patron exact
+d'`actor_label`. La colonne est **`BIGINT NULL`, sans clé étrangère, sans `NOT NULL`**.
 
-⚠️ **Et le sous-SELECT n'est pas gratuit pour autant** : la société de l'**acteur** n'est pas
-toujours celle de l'**entité** auditée, et après un import de sauvegarde `users` est celle du
-backup — `user_id` étant un pointeur logique sans FK depuis la 25-1a. *Un instantané figé à
-l'écriture est correct ; une jointure vive ne l'est pas.*
+⇒ **Aucun des 89 sites de construction d'une entrée d'audit ne bouge**, et **l'ordre des stories
+redevient indifférent** : la 25-1b n'a pas à attendre la colonne.
+
+**Ce qui a été vérifié, et non supposé** :
+
+- `users.company_id` est **NOT NULL**, écrit une fois à la création et jamais modifié ; aucune
+  table de jonction n'existe — un utilisateur appartient à **exactement une** société.
+- **Aucune route n'écrit un audit sur une entité d'une autre société que celle de l'acteur** :
+  aucun handler ne reçoit de `company_id` depuis la requête, et tout écart est converti en 404.
+- Le seul site où l'acteur n'est pas l'utilisateur courant — `admin.full_import`, qui prend le
+  plus petit administrateur du **jeu restauré** — est celui où le sous-SELECT est **plus juste**
+  qu'un champ : ce dernier propagerait l'identifiant d'une société que la restauration vient de
+  détruire.
+- Le code l'assumait déjà par écrit : `routes/exports.rs:137-139` nomme `users.company_id` comme
+  voie de requête à défaut de colonne.
+
+⚠️ **L'estimation de coût qui fondait l'hésitation était fausse d'un facteur 2,5** — « une
+trentaine de sites » ; il y en a **89**, sur 32 fichiers, dont une quarantaine dans des
+repositories qui ne reçoivent même pas de `company_id`.
+
+⛔ **Trois contraintes de mise en œuvre, chacune adossée à un mode d'échec du dépôt** :
+
+1. **`NULL`, jamais `NOT NULL` sans défaut** — `check_schema_compat` (`admin_backup/import.rs:195-236`)
+   rejette en 400 tout backup dont la source ne porte pas une colonne destination `NOT NULL` sans
+   défaut : *une colonne mal déclarée rendrait inimportables toutes les sauvegardes existantes.*
+   C'est pourquoi `actor_label` est `NOT NULL DEFAULT ''`.
+2. **Aucune clé étrangère vers `companies`** — `companies` **est** remplacée au restore
+   (`backup.rs:76`), alors que les entrées d'audit locales sont **conservées** depuis la 25-1a.
+   C'est littéralement le scénario qui a fait retirer `fk_audit_log_user`. `company_id` rejoint la
+   famille des pointeurs logiques : `entity_id`, `actor_api_key_id`, `user_id`.
+3. **Pas de `COALESCE`, pas de rejeu post-restore.** `NULL` est la bonne réponse quand l'acteur a
+   disparu, et c'est un **état légitime et permanent** — non un trou à combler. La garde
+   d'`actor_label` (`WHERE actor_label = ''`) reposait sur une sentinelle textuelle ; `NULL` n'en
+   est pas une.
+
+⛔ **Le point qui reste ouvert, et qui appartient à la 25-1c** : après une restauration, les
+entrées locales **conservées** portent le `company_id` d'une société que le restore a détruite.
+Une consultation scopée ne les montrerait donc à personne. *La 25-1a s'est battue pour que ces
+entrées survivent à l'import ; il serait fâcheux que l'écran qui les rend enfin lisibles soit
+précisément celui qui les cache.* À traiter là-bas, pas ici.
 
 ### 25-2 — Les gardes structurelles : numérotation et type de compte
 
