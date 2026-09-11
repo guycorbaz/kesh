@@ -518,3 +518,130 @@ intact, `git diff` vide).
 
 **La suite E2E Playwright reste à lancer** — elle est un prérequis du `push`,
 non du commit, et n'a donc pas encore tourné sur cette branche.
+
+### Passe 2 de `bmad-code-review` — lentille unique (Haiku 4.5), contexte frais
+
+Prompt versionné : `25-1a-review-prompt-p2.md`. Périmètre : le seul commit de
+remédiation de la passe 1 (`9dfbb527`).
+
+**Rendu brut : 1 CRITICAL, 1 HIGH, 1 MEDIUM. Après vérification au sol : deux
+réfutés, et UN défaut réel qu'aucun des trois ne nommait correctement.**
+
+#### C1 (CRITICAL) — RÉFUTÉ
+
+*« Les manuels n'ont pas été modifiés, les PDF non plus. »*
+
+Faux. Les six sites ont été traités au commit `b48a9e00` et les trois PDF
+régénérés. La lentille a inspecté `git show 9dfbb527:docs/manual/…` — le commit
+de **remédiation**, qui ne touche pas les manuels — et en a conclu « texte
+identique à `main` » **sans jamais comparer à `main`**.
+
+⚠️ Le plus instructif : l'extrait qu'elle cite comme preuve à charge contient la
+phrase qui la réfute — *« l'import d'une sauvegarde ne la remplace plus »*. C'est
+le mode d'échec Haiku documenté au `CLAUDE.md` (§ *Haiku-specific guardrails*),
+transposé du diff multi-commit au **choix de la base de comparaison**.
+
+⛔ **Et la lentille déclarait cet axe « NON EXERCÉ » tout en en tirant son
+CRITICAL.** Déclarer un axe non exercé et en produire un finding sont
+contradictoires ; c'est un signal que l'orchestrateur doit traiter comme tel.
+Contrôle : `git diff --stat main...HEAD -- docs/manual/` → 6 fichiers, 22
+insertions, 12 suppressions.
+
+#### H1 (HIGH) — RÉFUTÉ SUR SA PRÉMISSE
+
+*« Une ligne d'audit LOCALE portant `actor_label = ''` serait réattribuée par la
+jointure. »*
+
+L'état de départ n'est pas atteignable : `grep -rn "INSERT INTO audit_log"
+crates/ --include=*.rs` ne rend que **deux** sites, dont l'un est dans `mod
+tests`. Le seul chemin de production est `repositories::audit_log::insert_in_tx`,
+dont le sous-SELECT `COALESCE(…, '(inconnu)')` ne produit **jamais** de chaîne
+vide. Aucune migration ni seed n'écrit dans la table.
+
+#### Le défaut RÉEL, trouvé en vérifiant les deux précédents
+
+H1 et M1 tournaient autour d'un trou véritable sans le nommer : **rien
+n'exerçait la garde `WHERE actor_label = ''` dans le cas où le rejeu tourne.**
+
+- **C7-bis** ne fait pas tourner l'`UPDATE` du tout — sentinelle présente,
+  entrée `Skipped`. Il éprouve le **déclencheur**, pas la garde.
+- **C7** le fait tourner, mais sa ligne locale porte `al_absent_user`, soit
+  exactement ce que la jointure produirait : retirer la garde y est
+  **indiscernable**.
+
+⛔ **Et le dommage n'est pas celui que le finding décrivait.** Après le restore,
+`users` est celle du **backup** : le `user_id` d'une entrée locale conservée y
+désigne le porteur de cet identifiant dans l'instance *source*. Un rejeu sans
+garde ne rendrait pas l'entrée anonyme — il l'attribuerait à **quelqu'un
+d'autre**. C'est le mensonge silencieux que cette story existe pour fermer.
+
+→ `full_import_replay_does_not_overwrite_a_local_actor_label` (C7-ter). L'état
+de départ est atteignable en production : il suffit qu'un utilisateur ait été
+renommé depuis l'écriture — ce que l'instantané est fait pour tenir.
+
+**Mutation, et son résultat est le cœur de la démonstration** : garde remplacée
+par `WHERE TRUE` → **C7 et C7-bis restent VERTS, seul C7-ter rougit**. C'est ce
+qui établit que le trou existait.
+
+#### Résidu trouvé en réfutant C1
+
+`user-manual.tex:1603` affirmait encore *« Elle garantit la traçabilité conforme
+à l'OLICo Art. 9 al. 1.b ch. 4 »* — une **promesse de conformité**, que
+l'arbitrage du Project Lead demandait de retirer et non de différer. Le
+`marketing-brochure` et l'`admin-manual` avaient été traités au volet B ; celui-ci
+non, le grep d'alors ayant porté sur l'inaltérabilité et non sur la conformité.
+
+Reformulé : *« contribue à la traçabilité attendue par l'OLICo Art. 9 al. 1.b
+ch. 4 — sans que cela vaille attestation de conformité : celle-ci se juge sur
+l'installation entière et son exploitation, non sur une table. »* PDF régénéré
+(`make fr`) et **vérifié au `pdftotext` aplati** — l'ancienne formulation est
+absente, la nouvelle présente.
+
+Grep de propagation sur le symptôme (`garanti(t|ssent) .{0,40}(OLICo|CO Art)`
+sur `docs/manual/`, `website/`, `README.md`) : **ce site était le seul**.
+
+#### ⛔ Le grep du volet B était en FRANÇAIS — et le site public est en anglais
+
+En reprenant l'axe 3 moi-même, deux affirmations non nuancées sont apparues sur
+un support **publié automatiquement au push sur `main`** :
+
+- `website/index.html:106` — « immutable audit log »
+- `website/roadmap.html:105` — « immutable audit log »
+
+Le grep du volet B portait sur
+`inamovible|inaltérable|infalsifiable|immuable|insert-only` : **aucun de ces
+jetons n'apparaît dans une page anglaise**. C'est, pour la **cinquième fois sur
+cette story**, le même motif sous une forme neuve — *le mot-clé trop étroit* —, et
+la variante est cette fois **la langue du support**, non le choix du synonyme.
+
+Corrigé sans sur-promettre dans l'autre sens : `index.html` annonce désormais
+« an audit log that a backup import no longer replaces » (ce que la story livre,
+vérifiable), `roadmap.html` décrit l'E3 par « append-only audit log » (exact au
+niveau de la table, sans revendiquer l'inaltérabilité du système).
+
+⚠️ `website/about.html:138` mentionne « immutable change logs » — c'est le
+**processus BMAD**, sans rapport avec `audit_log`. Inspecté, laissé.
+
+**Règle qui en sort, pour la rétrospective** : un grep de propagation sur des
+supports multilingues doit porter les jetons de **chaque langue publiée**, ou
+mieux, partir des **fichiers** à couvrir plutôt que des mots à trouver.
+
+#### Gate de la passe 2 — ce qui a RÉELLEMENT tourné
+
+| Gate | Résultat |
+|---|---|
+| `cargo fmt` + `clippy --workspace --all-targets -D warnings` | vert, 0 warning |
+| `cargo nextest run` (profil `ci`, base remise à zéro **et vérifiée**) | **2307 passed, 0 failed, 4 skipped** — 85,1 s |
+
+⚠️ **La remise à zéro est désormais VÉRIFIÉE, pas seulement exécutée** : la
+commande compte les lignes seedées et interrompt le gate si la base est vide.
+C'est la leçon du premier gate de la passe 1, où un `sqlx migrate run` échoué en
+silence avait produit 34 faux échecs indiscernables d'une régression.
+
+#### M1 (MEDIUM) — mal fondé, mais convergent
+
+Le raisonnement porte sur C7-bis, où l'`UPDATE` **ne tourne pas** (entrée
+`Skipped`, `rows_affected == 0` asserté) : la mutation proposée n'y aurait rien
+changé. La mutation qu'il suggère — `WHERE FALSE` — est en revanche la bonne
+idée appliquée au mauvais cas ; c'est C7-ter qui la porte, sous la forme
+`WHERE TRUE`, qui est le sens du dommage.

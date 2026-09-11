@@ -1981,3 +1981,79 @@ async fn full_import_preserves_archived_actor_label_when_column_is_present(pool:
         "un skip strict ne touche aucune ligne, got {e:?}"
     );
 }
+
+/// **C7-ter — la GARDE, exercée là où le rejeu tourne vraiment.**
+///
+/// # Le trou que ce cas ferme, et pourquoi C7 / C7-bis ne le voient pas
+///
+/// `WHERE actor_label = ''` est ce qui protège l'instantané d'une entrée LOCALE
+/// pendant un rejeu déclenché. Or aucun des deux cas précédents ne l'exerce :
+///
+/// - **C7-bis** ne fait pas tourner l'`UPDATE` du tout — sentinelle présente,
+///   l'entrée est `Skipped`. Il éprouve le déclencheur, pas la garde.
+/// - **C7** fait bien tourner l'`UPDATE`, mais sa seule ligne nommée porte
+///   `al_absent_user` — exactement ce que la jointure produirait. Retirer la
+///   garde y serait **indiscernable** : le test resterait vert.
+///
+/// Ici le libellé local est délibérément **divergent** du `username`. Sans la
+/// garde, le rejeu l'écrase et les deux lignes deviennent identiques.
+///
+/// ⛔ **Et le dommage réel n'est pas cosmétique.** Après le restore, `users` est
+/// celle du **backup** : le `user_id` d'une entrée locale y désigne le porteur de
+/// cet identifiant dans l'instance SOURCE — c'est-à-dire, potentiellement,
+/// **quelqu'un d'autre**. Un rejeu sans garde ne rendrait pas l'entrée anonyme,
+/// il l'attribuerait à un tiers. C'est le mensonge silencieux que la Story 25-1a
+/// existe pour fermer, et rien ne l'exerçait.
+///
+/// L'état de départ est atteignable en production : il suffit qu'un utilisateur
+/// ait été renommé depuis l'écriture — ce que l'instantané est fait pour tenir.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_replay_does_not_overwrite_a_local_actor_label(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = seed_admin(&pool, "al_guard").await;
+
+    let mut tx = pool.begin().await.expect("begin");
+    kesh_db::repositories::audit_log::insert_in_tx(
+        &mut tx,
+        kesh_db::entities::NewAuditLogEntry::user(ctx.user_id, "test.trace", "contact", 1, None),
+    )
+    .await
+    .expect("écriture de l'entrée d'audit source");
+    tx.commit().await.expect("commit");
+
+    // Le nom d'ALORS — l'utilisateur a été renommé depuis l'écriture.
+    sqlx::query("UPDATE audit_log SET actor_label = 'nom_d_alors' WHERE action = 'test.trace'")
+        .execute(&pool)
+        .await
+        .expect("pose du libellé historique");
+
+    let backup = export_backup(&app, &ctx.jwt).await;
+    let (mut manifest, data) = unzip(&backup);
+    // Sentinelle retirée ⇒ le rejeu TOURNE. C'est ce qui distingue ce cas de C7-bis.
+    strip_column(&mut manifest, "audit_log", "actor_label");
+    import_ok(&app, &ctx.jwt, &manifest, &data).await;
+
+    let report = backfill_report(&pool).await;
+    assert_eq!(
+        report_entry(&report, AUDIT_ACTOR_LABEL)["outcome"],
+        "REPLAYED_SENTINELS_ABSENT",
+        "pré-condition du cas : le rejeu doit avoir TOURNÉ, sinon la garde n'est pas exercée"
+    );
+
+    // ⛔ Le cœur : deux libellés DIFFÉRENTS. La ligne locale garde son
+    // instantané, celle de l'archive — arrivée vide — reçoit le nom résolu.
+    let mut traces: Vec<String> = sqlx::query_scalar(
+        "SELECT actor_label FROM audit_log WHERE action = 'test.trace' ORDER BY id ASC",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    traces.sort();
+    assert_eq!(
+        traces,
+        vec!["al_guard_user".to_string(), "nom_d_alors".to_string()],
+        "la garde `actor_label = ''` doit épargner l'entrée LOCALE : sans elle, le rejeu \
+         réattribue une entrée conservée au porteur ACTUEL de son user_id — qui, après \
+         remplacement de `users` par celle du backup, peut être quelqu'un d'autre"
+    );
+}
