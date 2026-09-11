@@ -36,6 +36,11 @@ L'issue [#379] nomme **deux** domaines ; le relevé du split en nommait **six**.
 conduit à la spécification (2026-09-11) porte sur l'**ensemble clos des 105 routes mutantes** du
 backend et rend : **73 tracées, 28 non tracées, 1 partielle, 3 sans matière à auditer.**
 
+⚠️ **« 1 partielle » vaut pour les six familles de cette story, PAS pour le backend entier** :
+[#434] en documente une seconde — `POST /onboarding/finalize`, où l'exercice comptable est tracé
+mais ni les réglages de facturation ni les taux de TVA. *Un chiffre dont la portée n'est pas dite
+sera relu contre le mauvais périmètre* — et il l'a été, par la passe 3.
+
 ⛔ **La méthode n'est pas négociable, et le dépôt l'a codifiée** (§ *Inventorier les sites NON
 RÉSOLUS*) : on n'énumère pas les formes qui marchent, on inventorie les sites qui ne résolvent
 pas. Une énumération de formes est ouverte par nature — une forme imprévue la contourne sans que
@@ -46,7 +51,7 @@ rien ne rougisse.
 
 | | Route | Pourquoi |
 |---|---|---|
-| **partielle** | `POST /imported-supplier-invoices/{id}/complete` | la facture créée **est** auditée, la transition de la pièce ne l'est pas ⇒ **traitée ici**, AC 3 |
+| **partielle** *(des six familles)* | `POST /imported-supplier-invoices/{id}/complete` | la facture créée **est** auditée, la transition de la pièce ne l'est pas ⇒ **traitée ici**, AC 3 |
 | sans matière | `PUT /journal-entries/{id}` | **ne mute rien** : le corps n'est même pas désérialisé, le handler rend 404 ou 409 `ENTRY_IS_POSTED` |
 | sans matière | `POST /supplier-invoices/scan-qr` | parsing pur du payload SPC, **aucun accès base** |
 | sans matière | `POST /bank-imports/preview` | *« parse + validate sans persistance »* — aucune mutation |
@@ -292,7 +297,9 @@ nommant toute route absente du registre, et toute entrée du registre disparue d
 ailleurs — `/seed`, `/reset` et `/password-reset-token` (`routes/test_endpoints.rs:49,50,53`),
 montées par le `nest()` de `lib.rs:995` et conditionnées au mode test. Le registre les inscrit
 **nommément comme exemptées**, sans quoi une quatrième route ajoutée à ce fichier ne ferait rougir
-aucun garde. *Un détecteur dont on croit à tort qu'il couvre tout est pire qu'un détecteur
+aucun garde. ⚠️ **Mais elles sortent du diff automatique** — n'ayant jamais été dans `lib.rs`, le
+volet « entrée du registre disparue de `lib.rs` » les ferait échouer en permanence. *Un garde qui
+rougit toujours est un garde qu'on désactive.* *Un détecteur dont on croit à tort qu'il couvre tout est pire qu'un détecteur
 absent.*
 
 ⚠️ **L'extracteur doit échouer bruyamment si deux routes partagent verbe et handler.** L'identité
@@ -332,6 +339,12 @@ plus :
 | `admin:1956` | *« la couverture n'est pas complète : **la gestion des utilisateurs** et quelques autres »* | la réserve reste **vraie**, mais son **exemple devient faux** : il doit nommer `onboarding` et `auth` |
 | **`admin:2184`** *(glossaire)* | *« Trace de **toutes** les actions métier »* | même promesse que `:1782`, **400 lignes plus loin** — la corriger seule **réinstallerait la contradiction** |
 | **`user-manual:1591-1594`** | *« de **toutes** les actions comptables significatives — … **changements de paramètres** »* | **un autre manuel**, et l'exemple le plus faux du lot : la création du plan comptable par l'onboarding n'est pas tracée ([#434]) |
+| **`admin:1762`** | *« les mutations effectuées via une clé sont tracées avec `actor_type = 'api_key'` »* | ⛔ **faux pour les 38 sites de [#431]**, qui écrivent `'user'` — et cette story **ne les corrige pas** |
+
+⛔ **Le sixième site ne parle pas de COUVERTURE mais d'ATTRIBUTION**, et c'est pourquoi cinq
+relectures successives l'ont manqué : on cherchait « ce qui est tracé », il dit « comment c'est
+attribué ». ⚠️ *Un inventaire construit sur une seule question ne trouve que les réponses à
+cette question.*
 
 ⛔ **Le `:1782` n'est pas rendu faux par cette story — il l'était déjà, et il le restera.** C'est
 précisément pourquoi il se corrige **ici** : cette story est le seul moment où l'on sait
@@ -372,6 +385,9 @@ comme une erreur de plume.
         **déjà écrit**, il suffit de lui ajouter l'assertion d'audit.
   - [ ] ⛔ **Tracer aussi le chemin d'amorçage** `auth/bootstrap.rs:123` (AC 6) — il crée le même
         premier administrateur et n'écrit rien.
+  - [ ] ⚠️ **Sa branche `UniqueConstraintViolation` change de forme** : l'appel vit dans un `match`
+        dont une branche nettoie la société stub. Ouvrir la transaction, n'auditer que sur `Ok`,
+        laisser le `Drop` rollbacker sinon, et **conserver le nettoyage existant**.
 - [ ] **T3 — `contact_persons`, trois routes** (AC 2, 7, 9, 10)
   - [ ] Variants `_in_tx` : aucune de ces trois fonctions n'ouvre de transaction aujourd'hui.
   - [ ] Pré-charger l'instantané avant l'archivage, sans quoi la trace ne nomme personne.
@@ -410,6 +426,12 @@ comme une erreur de plume.
 - [ ] **T6 — `profile`** (AC 5, 7, 9, 10)
   - [ ] Ajouter l'extracteur `Extension(current_user)` et capturer le résultat de `update_step`,
         que le handler jette aujourd'hui.
+  - [ ] Extraire `onboarding::update_step_in_tx` ; `update_step` reste une **enveloppe mince et
+        NON auditée**, et le handler mène la transaction.
+  - [ ] ⛔ **L'audit se pose dans le HANDLER, jamais dans `update_step`.** Cette fonction a
+        **d'autres appelants** — le seed et huit routes d'onboarding, toutes hors périmètre et
+        suivies par [#434] : y placer la trace ferait écrire `installation.ui_mode_changed` à
+        **chaque étape de l'onboarding**. *Une trace au mauvais étage ne manque pas : elle ment.*
   - [ ] Tests sur `tests/profile_e2e.rs`.
 - [ ] **T7 — `setup`** (AC 6, 9, 10)
   - [ ] L'audit entre la création et le commit, dans la transaction ouverte au handler.
@@ -688,4 +710,30 @@ la remédiation n'a presque rien cassé, c'est la conception qui était incompl�
 3. **Un total publié ailleurs se recompte aussi.** Le commentaire porté à [#431]
    annonçait 35 sites quand sa propre ventilation sommait à 41 : les trois
    occurrences de test avaient été soustraites deux fois. Rectifié sur l'issue.
+
+### Passe 3 de `bmad-create-story validate` — lentille unique (Sonnet 4.6), contexte frais
+
+Prompt versionné (`25-1b-validate-prompt-p3.md`), **deux fronts d'égal poids** : les patches de la
+passe 2, et **les axes que la passe 2 avait déclaré ne pas avoir exercés**. **0 CRITICAL, 1 HIGH,
+2 MEDIUM, 2 LOW** — troisième recul consécutif, et **les cinq sont d'origine**.
+
+| # | Sév. | Objet |
+|---|---|---|
+| P3-1 | **HIGH** | **T6 contredisait l'AC 9 en silence** : elle ne disait ni d'extraire `update_step_in_tx`, ni qui mène la transaction — et **placer la trace dans `update_step` ferait écrire `installation.ui_mode_changed` à chaque étape de l'onboarding** |
+| P3-2 | MEDIUM | **Un SIXIÈME site du manuel**, et il parle d'**attribution** et non de couverture : `admin:1762` promet `actor_type = 'api_key'` sur les mutations par clé — faux pour les 38 sites de [#431] |
+| P3-3 | MEDIUM | « 1 partielle » n'avait pas de **portée déclarée** : [#434] en documente une seconde, et le chiffre a été relu contre le mauvais périmètre |
+| P3-4 | LOW | La branche `UniqueConstraintViolation` du chemin d'amorçage change de forme |
+| P3-5 | LOW | Les trois routes de `test_endpoints.rs` doivent sortir du **diff automatique** — un garde qui rougit toujours est un garde qu'on désactive |
+
+### Ce que cette passe apprend
+
+1. ⛔ **Reprendre les axes qu'une passe déclare n'avoir pas exercés paie deux fois.** La règle du
+   dépôt disait « c'est exactement là que se trouve ce qu'elle a manqué » : c'est vrai — l'axe
+   « contenu de [#434] » a rendu P3-3, l'axe « faisabilité » a rendu P3-1. *Une passe qui déclare
+   honnêtement ses manques rend la suivante plus efficace que si elle avait bluffé.*
+2. ⛔ **Un inventaire construit sur une seule question ne trouve que les réponses à cette
+   question.** Cinq relectures du manuel cherchaient « ce qui est tracé » ; le sixième site dit
+   « comment c'est attribué ». Il était là depuis le début, en évidence.
+3. **Une trace au mauvais étage ne manque pas : elle ment.** Le HIGH n'est pas un oubli d'écriture,
+   c'est un risque de trace **surnuméraire et fausse** sur neuf chemins hors périmètre.
 
