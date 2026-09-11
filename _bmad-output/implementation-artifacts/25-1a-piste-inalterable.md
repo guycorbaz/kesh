@@ -756,13 +756,33 @@ concluant :
    `inbox-import`, `xss-token-protection`). Cause établie : `KESH_INBOX_DIR`,
    `KESH_DOCUMENTS_DIR` et les quatre `KESH_SMTP_*` manquaient, plus
    `KESH_TEST_MODE` côté **runner**. Aucun rapport avec la branche.
-2. **Second run — montage complet — INTERROMPU** par le redémarrage à 138/224.
-   Aucune conclusion ne peut en être tirée.
+2. **Second run — montage complet — PARTIEL mais CONCLUANT sur ce qu'il a
+   couvert.** 171 passés, 19 skipped, 24 échoués, 28 non exécutés. Le backend a
+   été arrêté en cours de run (préparation du redémarrage).
 
-⇒ **À la reprise : relancer la suite E2E depuis le début**, montage complet, et
-juger **fichier par fichier** contre `docs/testing.md` § « Les échecs attendus ».
-Le compte attendu dépend de l'heure : 7 (KF-029) + 2 (KF-045, si run **avant
-12:00 UTC**) + 1 éventuel (KF-046) + 1 à 2 de pollution.
+   ⛔ **La ventilation des 24 échecs est nette, et elle est bonne** :
+
+   | Échecs | Verdict |
+   |---|---|
+   | 1–9 : `invoices:405`, `invoices:429`, `mode-expert:26/41`, `onboarding-path-b:65/92`, `onboarding:57/77/150` | **EXACTEMENT la baseline attendue** d'un run matinal : 7 KF-029 + 2 KF-045 |
+   | 10 : `reminders:146` | login resté sur `/login` — le backend mourait |
+   | 11–24 (quatorze) | **`connect ECONNREFUSED`** — backend arrêté |
+
+   ⇒ **Zéro échec surnuméraire sur la portion réellement exercée** (~196 tests,
+   toutes les specs jusqu'à `reminders`). Aucune régression détectée.
+
+⇒ **À la reprise : relancer la suite E2E**, montage complet, et juger **fichier
+par fichier** contre `docs/testing.md` § « Les échecs attendus ». Ce qui reste à
+confirmer est **la tranche alphabétique ≥ `reminders`** — les 15 cassés par
+l'arrêt et les 28 non exécutés. Le compte attendu dépend de l'heure : 7 (KF-029)
++ 2 (KF-045, si run **avant 12:00 UTC**) + 1 éventuel (KF-046) + 1 à 2 de
+pollution.
+
+⚠️ **Un seul point mérite une attention particulière** : `reminders.spec.ts:146`
+a échoué dans les DEUX runs — au premier pour cause de montage incomplet, au
+second parce que le backend mourait. Il n'a donc **jamais été exercé dans des
+conditions saines**. Ne pas le compter comme connu tant qu'il n'a pas tourné une
+fois proprement.
 
 ⚠️ **Contrôle qui coûte deux secondes et tranche** : après démarrage du backend,
 `curl -s http://127.0.0.1:3000/health` doit rendre `"smtpConfigured":true`. S'il
