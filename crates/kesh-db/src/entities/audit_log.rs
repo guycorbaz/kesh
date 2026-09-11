@@ -1,10 +1,20 @@
 //! Entité `AuditLogEntry` — journal d'audit des actions utilisateurs.
 //!
-//! Conformément au Code des obligations suisse (art. 957-964), les
-//! entrées d'audit sont **inamovibles** : pas de repository `delete`.
-//! La FK `users.id ON DELETE RESTRICT` empêche de supprimer un
-//! utilisateur qui a laissé des traces d'audit (conservation 10 ans
-//! obligatoire).
+//! Aucune méthode `delete` au repository, et aucune route ne modifie ni ne
+//! supprime une entrée.
+//!
+//! ⚠️ **Ce paragraphe affirmait que les entrées étaient « inamovibles » et que la
+//! FK `users.id ON DELETE RESTRICT` l'y aidait. Les deux sont faux depuis la
+//! Story 25-1a (#376), et la première l'était déjà avant.** La FK a été
+//! **retirée** — `user_id` est un pointeur logique, comme `actor_api_key_id` —
+//! afin que la piste survive au remplacement de `users` par un import de
+//! sauvegarde ; c'est [`AuditLogEntry::actor_label`] qui porte désormais
+//! l'attribution.
+//!
+//! **L'état réel des chemins d'effacement est documenté à un seul endroit** :
+//! l'en-tête de `crate::repositories::audit_log`. Ne pas le dupliquer ici — deux
+//! énoncés de la même garantie divergent, et c'est ainsi que celui-ci est devenu
+//! faux.
 //!
 //! Scope v0.1 (story 3.3) : `journal_entry.updated`, `journal_entry.deleted`.
 //! Story 3.5 étendra avec `journal_entry.created` et l'UI de consultation.
@@ -106,6 +116,17 @@ pub struct AuditLogEntry {
     /// Story 17-2a (DC5) — id de la clé API si `actor_type = ApiKey`, sinon `None`.
     /// Pas de FK (pointeur logique — l'audit survit 10 ans à la révocation/suppression de la clé).
     pub actor_api_key_id: Option<i64>,
+    /// Story 25-1a (#376) — nom de l'acteur **au moment de l'écriture**.
+    ///
+    /// ⚠️ **Un instantané, pas une jointure** : il ne suit pas les renommages
+    /// ultérieurs, et c'est voulu — une piste de contrôle dit qui a agi *sous quel
+    /// nom à l'instant de l'acte*, non sous quel nom cette personne s'appelle
+    /// aujourd'hui.
+    ///
+    /// C'est lui qui tient l'attribution quand `user_id` ne le peut plus :
+    /// depuis la 25-1a la FK est retirée, la piste survivant au remplacement de
+    /// `users` par un import de sauvegarde.
+    pub actor_label: String,
     pub created_at: NaiveDateTime,
 }
 

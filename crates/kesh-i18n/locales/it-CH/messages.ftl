@@ -59,6 +59,7 @@ demo-reset-confirm-body = Tutti i dati dimostrativi verranno eliminati. Vuoi con
 demo-reset-confirm-ok = Conferma
 demo-reset-confirm-cancel = Annulla
 demo-reset-error = Errore durante la reimpostazione
+demo-reset-forbidden = Solo un amministratore può reimpostare questa istanza
 
 # Navigation sidebar (Story 6.3 + v014-1)
 nav-home = Home

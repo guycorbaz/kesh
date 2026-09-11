@@ -426,9 +426,23 @@ async fn restore_body(
     tx: &mut Transaction<'_, MySql>,
     tables: &BTreeMap<String, TableRestore>,
 ) -> Result<(usize, usize), DbError> {
-    // DELETE enfants→parents (ordre TABLES_TO_TRUNCATE), onboarding_state exclue.
+    // DELETE enfants→parents (ordre TABLES_TO_TRUNCATE) — DEUX exclusions.
+    //
+    // `onboarding_state` : état local, jamais restauré (DC11, Story 17-3c).
+    //
+    // ⛔ `audit_log` **depuis la Story 25-1a (#376)** : la piste de contrôle n'est
+    // plus remplacée, elle est **FUSIONNÉE**. Le motif n'est pas la perte d'un
+    // historique — c'est le **BLANCHIMENT** : effacer ses traces en important un
+    // backup. L'audit du 2026-08-26 le relève en III.3, et le module d'audit
+    // promettait l'inamovibilité sans la tenir.
+    //
+    // ⚠️ La table **reste dans `TABLES_TO_TRUNCATE`**, et il le faut : la
+    // constante sert aussi à produire l'export (`export.rs:55`), à compter les
+    // tables du manifeste (`:96`) et à REJETER un manifeste portant une table
+    // hors inventaire (`import.rs:129`). L'en sortir rendrait **tout backup
+    // existant inimportable**.
     for &table in TABLES_TO_TRUNCATE {
-        if table == "onboarding_state" {
+        if table == "onboarding_state" || table == "audit_log" {
             continue;
         }
         sqlx::query(&format!("DELETE FROM `{table}`"))
@@ -463,13 +477,26 @@ async fn restore_body(
         if data.rows.is_empty() {
             continue;
         }
-        let cols_sql = data
-            .column_names
+        // ⛔ FUSION de la piste de contrôle (Story 25-1a) — la colonne `id` de
+        // `audit_log` est ÉCARTÉE, et l'auto-increment en attribue de nouveaux.
+        //
+        // Sans cela la fusion échouerait en doublon de clé primaire : les entrées
+        // conservées et celles du backup viennent de **deux instances dont les
+        // espaces d'identifiants se recouvrent**. Écarter `id` est licite ici et
+        // ne l'est pour aucune autre table : sur une piste de contrôle, l'`id`
+        // n'est pas une donnée métier et n'est référencé par rien — l'ordre
+        // chronologique est porté par `created_at`, et les liens vers les objets
+        // audités par `entity_type`/`entity_id`, qui sont des pointeurs logiques.
+        let skip_id = table == "audit_log";
+        let kept: Vec<usize> = (0..data.column_names.len())
+            .filter(|&i| !(skip_id && data.column_names[i].eq_ignore_ascii_case("id")))
+            .collect();
+        let cols_sql = kept
             .iter()
-            .map(|c| format!("`{c}`"))
+            .map(|&i| format!("`{}`", data.column_names[i]))
             .collect::<Vec<_>>()
             .join(", ");
-        let placeholders = vec!["?"; data.column_names.len()].join(", ");
+        let placeholders = vec!["?"; kept.len()].join(", ");
         let sql = format!("INSERT INTO `{table}` ({cols_sql}) VALUES ({placeholders})");
         for row in &data.rows {
             if row.len() != data.column_names.len() {
@@ -479,9 +506,12 @@ async fn restore_body(
                     data.column_names.len()
                 )));
             }
+            // ⚠️ Les valeurs suivent `kept`, pas `row` : sur `audit_log` la
+            // colonne `id` est écartée des DEUX côtés, faute de quoi le nombre de
+            // paramètres ne correspondrait plus aux placeholders.
             let mut q = sqlx::query(&sql);
-            for v in row {
-                q = bind_json_value(q, v)?;
+            for &i in &kept {
+                q = bind_json_value(q, &row[i])?;
             }
             q.execute(&mut **tx).await.map_err(map_db_error)?;
             rows_restored += 1;
@@ -732,6 +762,175 @@ mod tests {
     /// Round-trip restore : insère 2 companies → exporte (export_table) →
     /// restore_tables_in_tx (DELETE+INSERT) → les 2 companies sont rétablies
     /// avec les mêmes valeurs (fidélité de type).
+    /// ⛔ **AC 2 de la Story 25-1a — la piste de contrôle SURVIT à un import, et
+    /// nomme encore ses auteurs.**
+    ///
+    /// Le résultat exigé, mot pour mot : *après l'import d'un backup étranger,
+    /// chaque entrée d'audit antérieure existe encore et nomme son auteur
+    /// d'origine.* Le défaut fermé est le **blanchiment** — effacer ses traces en
+    /// important une sauvegarde.
+    ///
+    /// Trois choses sont vérifiées d'un coup, et la troisième est celle qui
+    /// manquait au dépôt : l'entrée locale **survit**, l'entrée du backup est
+    /// **fusionnée** malgré un `id` en collision, et le libellé d'acteur reste
+    /// lisible **alors que la table `users` a été remplacée**.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn restore_merges_audit_log_and_keeps_actor_names(pool: MySqlPool) {
+        // Un utilisateur local, et une entrée d'audit qui lui est attribuée.
+        // (`users.company_id` est NOT NULL sans défaut depuis 20260419000002.)
+        sqlx::query(
+            "INSERT INTO companies (id, name, address, org_type, accounting_language, instance_language) \
+             VALUES (1, 'Locale SA', 'Rue 1', 'Pme', 'FR', 'FR')",
+        )
+        .execute(&pool)
+        .await
+        .expect("insert company locale");
+        sqlx::query(
+            "INSERT INTO users (id, company_id, username, password_hash, role) \
+             VALUES (7, 1, 'alice', 'x0123456789012345678901234567890', 'Admin')",
+        )
+        .execute(&pool)
+        .await
+        .expect("insert user local");
+        sqlx::query(
+            "INSERT INTO audit_log (id, user_id, actor_label, action, entity_type, entity_id) \
+             VALUES (100, 7, 'alice', 'books.locked', 'company', 1)",
+        )
+        .execute(&pool)
+        .await
+        .expect("insert audit local");
+
+        // Le backup vient d'une AUTRE instance : son entrée porte le MÊME `id`
+        // (les espaces d'identifiants se recouvrent) et un acteur qui n'existe
+        // pas ici.
+        let mut tables = BTreeMap::new();
+        tables.insert(
+            "audit_log".to_string(),
+            TableRestore {
+                column_names: vec![
+                    "id".into(),
+                    "user_id".into(),
+                    "actor_label".into(),
+                    "action".into(),
+                    "entity_type".into(),
+                    "entity_id".into(),
+                ],
+                rows: vec![vec![
+                    serde_json::json!(100),
+                    serde_json::json!(42),
+                    serde_json::json!("bob"),
+                    serde_json::json!("invoice.created"),
+                    serde_json::json!("invoice"),
+                    serde_json::json!(9),
+                ]],
+            },
+        );
+        // `users` est remplacée par celle du backup — alice DISPARAÎT.
+        tables.insert(
+            "users".to_string(),
+            TableRestore {
+                column_names: vec![
+                    "id".into(),
+                    "company_id".into(),
+                    "username".into(),
+                    "password_hash".into(),
+                    "role".into(),
+                ],
+                rows: vec![vec![
+                    serde_json::json!(42),
+                    serde_json::json!(1),
+                    serde_json::json!("bob"),
+                    serde_json::json!("x0123456789012345678901234567890"),
+                    serde_json::json!("Admin"),
+                ]],
+            },
+        );
+
+        let mut tx = pool.begin().await.expect("begin");
+        restore_tables_in_tx(&mut tx, &tables)
+            .await
+            .expect("restore");
+        tx.commit().await.expect("commit");
+
+        let entries: Vec<(String, String)> =
+            sqlx::query_as("SELECT action, actor_label FROM audit_log ORDER BY action")
+                .fetch_all(&pool)
+                .await
+                .expect("select audit");
+
+        assert_eq!(
+            entries.len(),
+            2,
+            "la piste doit porter les DEUX entrées — la locale conservée et celle \
+             du backup fusionnée ; got {entries:?}"
+        );
+        assert!(
+            entries.contains(&("books.locked".to_string(), "alice".to_string())),
+            "l'entrée LOCALE doit survivre à l'import et nommer encore alice — \
+             c'est le blanchiment que cette story ferme ; got {entries:?}"
+        );
+        assert!(
+            entries.contains(&("invoice.created".to_string(), "bob".to_string())),
+            "l'entrée du BACKUP doit être fusionnée malgré son id en collision ; \
+             got {entries:?}"
+        );
+
+        // alice n'existe plus dans `users` : sans `actor_label`, son entrée
+        // serait devenue anonyme — ou pire, aurait désigné bob (id réattribué).
+        let alice: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE username = 'alice'")
+            .fetch_one(&pool)
+            .await
+            .expect("count alice");
+        assert_eq!(
+            alice, 0,
+            "users doit bien avoir été remplacée par le backup"
+        );
+    }
+
+    /// ⛔ **`actor_label` ne doit JAMAIS être plus étroit que `users.username`.**
+    ///
+    /// Le libellé est posé par un **sous-SELECT** dans l'`INSERT` du repository
+    /// (`repositories/audit_log.rs`) : la valeur vient donc directement de
+    /// `users.username`, sans passer par aucune validation Rust. Si la colonne
+    /// source devenait plus large que la cible, MariaDB en mode strict —
+    /// `STRICT_TRANS_TABLES`, actif en production — refuserait l'`INSERT` avec
+    /// « Data too long ». Et comme l'écriture d'audit partage la transaction de
+    /// l'opération auditée, **c'est l'opération métier entière qui échouerait**,
+    /// sur un motif que rien ne rattacherait au nom de l'utilisateur.
+    ///
+    /// Le mode d'échec n'est donc pas « un libellé tronqué » mais « une facture
+    /// qu'on ne peut plus valider parce qu'un administrateur porte un nom long ».
+    /// D'où ce test, qui lit les deux largeurs dans `information_schema` plutôt
+    /// que de répéter un nombre : il ne se périme pas, et il rougit en nommant
+    /// exactement le couple qui a divergé.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn actor_label_is_at_least_as_wide_as_username(pool: MySqlPool) {
+        let width = |table: &'static str, column: &'static str| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query_scalar::<_, u64>(
+                    "SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS \
+                     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+                )
+                .bind(table)
+                .bind(column)
+                .fetch_one(&pool)
+                .await
+                .unwrap_or_else(|e| panic!("largeur de {table}.{column} introuvable : {e}"))
+            }
+        };
+
+        let label = width("audit_log", "actor_label").await;
+        let username = width("users", "username").await;
+        assert!(
+            label >= username,
+            "audit_log.actor_label ({label}) est plus ÉTROIT que users.username \
+             ({username}) : le sous-SELECT du repository ferait échouer l'INSERT \
+             d'audit — donc l'opération métier qu'il accompagne — pour tout nom \
+             d'utilisateur dépassant {label} caractères"
+        );
+    }
+
     #[sqlx::test(migrations = "./test-schema")]
     async fn restore_tables_in_tx_round_trips_companies(pool: MySqlPool) {
         for (name, ide) in [("Acme SA", Some("CHE123456789")), ("Beta GmbH", None)] {

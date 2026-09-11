@@ -296,6 +296,17 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/companies/current/books-lock/release",
             post(routes::companies::unlock_company_books),
         )
+        // Story 25-1a (#377) : RÉINITIALISER les données de démonstration.
+        // ⛔ **Déplacée depuis `authenticated_routes`** — elle y vivait sans
+        // `require_admin_role`, donc atteignable par TOUT rôle authentifié.
+        //
+        // Ses gardes étaient des ÉTATS, pas des droits : `step_completed >= 7`,
+        // `!is_demo && > 2`, le drapeau `KESH_PRODUCTION_RESET`. *Un état se
+        // contourne en amenant le système dans l'état voulu ; un droit, non.*
+        //
+        // Elle efface `audit_log` (`kesh-seed`, `DELETE` non scopé) : c'était le
+        // second des trois chemins par lesquels la piste de contrôle se perdait.
+        .route("/api/v1/onboarding/reset", post(routes::onboarding::reset))
         // ⚠️⚠️ TOUTE ROUTE S'AJOUTE AU-DESSUS DE CETTE LIGNE. ⚠️⚠️
         //
         // `route_layer` n'enveloppe que les routes DÉJÀ enregistrées au moment
@@ -770,7 +781,6 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/onboarding/seed-demo",
             post(routes::onboarding::seed_demo),
         )
-        .route("/api/v1/onboarding/reset", post(routes::onboarding::reset))
         .route(
             "/api/v1/onboarding/start-production",
             post(routes::onboarding::start_production),
