@@ -59,12 +59,12 @@ donc suivi chaque route jusqu'à son repository.
 Elles sortent du périmètre de [#379] **et** feraient passer la story à huit modules, au-delà du
 seuil de la § *Règle de splitting préventif*. Elles partent en issues propres :
 
-- **`onboarding` — 11 routes.** Toute la séquence d'installation est invisible : création du plan
+- **`onboarding` — 11 routes ⇒ [#434].** Toute la séquence d'installation est invisible : création du plan
   comptable (`accounts::bulk_create_from_chart`, **non audité alors que les quatre autres
   mutations de `accounts` le sont**), création du compte bancaire, peuplement de démonstration,
   finalisation, et la remise à zéro. ⚠️ **Le code le sait déjà** : `routes/onboarding.rs:523-527`
   porte un TODO qui nomme l'absence.
-- **`auth` / session — 4 routes.** `change_password` (`auth.rs:511`) n'écrit rien, alors que
+- **`auth` / session — 4 routes ⇒ [#435].** `change_password` (`auth.rs:511`) n'écrit rien, alors que
   `reset_password` — **effet matériel identique** — audite à `auth.rs:948`. S'y ajoutent login,
   logout et refresh, dont **la révocation en masse pour vol de jeton détecté** (`auth.rs:382`),
   qui ne laisse aucune trace persistante.
@@ -283,8 +283,9 @@ contenu reste le fait des tests par route des AC 1 à 6.
         c'est le moment, et la règle DRY du projet l'impose.
 - [ ] **T9 — Le registre des routes mutantes et sa garde** (AC 11)
   - [ ] Inscrire les 105 routes, chacune `traced` ou `exempt("<justification>")`.
-  - [ ] ⚠️ Les 15 exemptions `onboarding` et `auth` portent le **numéro de l'issue** qui les suit —
-        une justification sans suivi est un abandon déguisé.
+  - [ ] ⚠️ Les 15 exemptions portent le **numéro de l'issue** qui les suit — **[#434]** pour les
+        onze routes d'onboarding, **[#435]** pour les quatre d'`auth`/session. *Une justification
+        sans suivi est un abandon déguisé.*
   - [ ] ⚠️ Le test `admin_pat_denied_e2e` lit déjà `lib.rs` par `include_str!` et exige un compte
         exact entre les marqueurs `KESH-ADMIN-ROUTES-BEGIN/END` : **s'en inspirer, et ne pas
         déplacer les marqueurs**.
@@ -410,11 +411,16 @@ variant transactionnel :
 
 ### Ce que la story ne fait pas
 
-- **`onboarding` (11 routes) et `auth`/session (4 routes)** → issues propres, cf. § *Deux familles
-  découvertes*. Elles sont **exemptées au registre de l'AC 11**, pas oubliées.
-- **La migration des 16 repositories qui emploient `::user`** → [#431], explicitement hors
-  périmètre. ⚠️ L'issue en annonce 10 ; ils sont **16** aujourd'hui — le recensement a vieilli, et
-  cela se signalera à l'issue plutôt que de se corriger ici.
+- **`onboarding` (11 routes) → [#434]** et **`auth`/session (4 routes) → [#435]**, ouvertes le
+  2026-09-11. Elles sont **exemptées au registre de l'AC 11 en citant leur numéro**, pas oubliées.
+  ⚠️ **[#435] pose une question de conception que cette story n'a pas** : tracer chaque `login` et
+  chaque `refresh` ferait de la piste un journal de sessions, au risque de noyer les gestes
+  comptables. Les quatre routes ne se valent pas.
+- **La migration des repositories qui emploient `::user`** → [#431], explicitement hors périmètre.
+  ⚠️ **Recensement refait et porté à l'issue le 2026-09-11** : **15 repositories de production et
+  35 sites** — l'issue en annonçait 10 —, plus `audit_log.rs` dont les trois occurrences sont dans
+  `mod tests`. ⚠️ `invoices.rs` porte **les deux formes à la fois** (`::user` ×5 et `for_actor`
+  `:2112`) : *aucun décompte par fichier ne montre une migration à moitié faite.*
 - **La route et l'écran de consultation** → 25-1c. ✅ **Son arbitrage est rendu** (2026-09-11) :
   `audit_log` prend un `company_id`. ⚠️ **Si ce `company_id` devenait un champ de
   `NewAuditLogEntry` plutôt qu'un sous-SELECT du repository, les treize appels ajoutés ici
@@ -427,7 +433,8 @@ variant transactionnel :
 ### References
 
 - `audit-experts-2026-08-26.md` § III.3 · `epic-25-vague1-suite.md` § 25-1
-- Issue : [#379] · voisines : [#376], [#377] (25-1a, mergée en PR #433), [#378] (25-1c), [#431]
+- Issue : [#379] · voisines : [#376], [#377] (25-1a, mergée en PR #433), [#378] (25-1c), [#431],
+  et les deux ouvertes par cette spécification : [#434] (onboarding), [#435] (`auth`/session)
 - Story sœur : `25-1a-piste-inalterable.md` — § *Le patron d'appel* y trouve son état antérieur,
   et sa boucle de revue documente **cinq** échecs du grep de propagation sur une seule story
 - Socle : `crates/kesh-db/src/entities/audit_log.rs` (constructeurs `:157`, `:179`, `:203`,
