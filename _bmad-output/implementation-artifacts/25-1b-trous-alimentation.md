@@ -97,6 +97,12 @@ les changements d'adresse la rend introuvable.
 `new_hash`, ni `user.password_hash`. Pour `user.password_reset`, **`details_json = None`** : le
 précédent du dépôt est `routes/auth.rs:948-957`, et l'acteur et la cible suffisent à tout dire.
 
+⚠️ **Deux libellés coexisteront pour un effet matériel identique** : `user.password_reset`
+(réinitialisation **par un administrateur**) et `auth.password_reset_completed` déjà écrit par le
+chemin self-service (`routes/auth.rs:951`). C'est **voulu** — l'un est subi, l'autre demandé, et
+le réviseur qui cherche « qui a changé le mot de passe de qui » a besoin de les distinguer —
+**mais il doit chercher les deux**, et c'est écrit ici pour qu'il le sache.
+
 **2. `contact_persons` — trois routes.** `contact_person.created`, `contact_person.updated`,
 `contact_person.archived`, `entity_type = "contact_person"`.
 
@@ -123,7 +129,21 @@ de `run_inbox_import` → `process_inbox` → `process_one_file` ; c'est mécani
 ⚠️ **Conséquence à écrire, pas à découvrir** : un import qui n'accepte **aucune** pièce n'écrit
 alors **aucune** trace. C'est voulu — rien n'est entré dans le système.
 
-⛔ **Et l'acteur ne suffit PAS : il manque une transaction.** `imported_supplier_invoices::create`
+⛔ **TROIS chemins d'entrée, pas deux — le troisième est une RÉACTIVATION.** Quand le hash d'un
+fichier correspond à une pièce `discarded`, `inbox_import.rs:418-431` la repasse en `to_complete`
+par `reactivate_to_complete` et rend **`FileOutcome::Accepted`** : la pièce figure au rapport des
+acceptées, indiscernable d'une création. ⇒ **`imported_supplier_invoice.reactivated`**, et
+`reactivate_to_complete_in_tx` à extraire comme `create_in_tx` — même défaut, fonction voisine
+(`repositories/imported_supplier_invoices.rs:211`, `.execute(pool)` à `:223`).
+
+⛔ **Sans lui, la piste dirait le CONTRAIRE de l'état** : une pièce écartée puis réintroduite
+garderait `imported_supplier_invoice.discarded` pour **dernière** trace alors que son statut est
+`to_complete`. *Un journal qui affirme le contraire de la base est pire qu'un journal muet.*
+
+⚠️ **Et la réciproque de la phrase ci-dessus devient fausse si on l'oublie** : un import peut
+**accepter** une pièce et n'écrire aucune trace.
+
+⛔ **L'acteur ne suffit pas non plus : il manque une transaction.** `imported_supplier_invoices::create`
 (`repositories/imported_supplier_invoices.rs:28`) exécute son `INSERT` **directement sur le pool**
 (`:61`), et **aucun variant `create_in_tx` n'existe** — à la différence de `mark_completed`
 (`:144`) et `mark_discarded` (`:177`), qui prennent tous deux une transaction. Faire seulement
@@ -158,6 +178,12 @@ n'est **pas** une préférence d'affichage par utilisateur. Il vit dans `onboard
 bascule donc l'installation entière en mode Expert, ce qui ouvre à tous l'écriture directe au
 journal. ⚠️ **Écrire `entity_type = "user"` ici serait mentir sur la portée.**
 
+⚠️ **Cette route écrira une trace même quand rien ne change, et c'est assumé.**
+`onboarding::update_step` incrémente `version` **inconditionnellement** — aucun court-circuit
+no-op —, donc un `PUT` répété avec le même mode écrira `installation.ui_mode_changed` avec
+`before == after`. L'AC 8 ne s'y applique pas et sa garde `version` n'y servirait à rien.
+*Une décision subie devient un défaut ; écrite, elle reste une décision.*
+
 ⚠️ **Le handler n'a pas d'acteur** : `set_mode` n'extrait aucun `CurrentUser`
 (`routes/profile.rs:23-27`) — c'est la seule route authentifiée du lot dans ce cas. L'extracteur
 s'ajoute au handler, le routage ne bouge pas.
@@ -171,12 +197,25 @@ création ordinaire sans inventer un second libellé pour la même chose matéri
 `require_auth` (`lib.rs:965`), donc il n'existe ni `CurrentUser`, ni jeton, ni identité antérieure.
 C'est le patron déjà tenu par `auth/bootstrap.rs:252-265` et `routes/auth.rs:948-957`.
 
+⛔ **Le premier administrateur a DEUX chemins de création, et AUCUN n'est tracé.**
+`auth/bootstrap.rs:123` le crée depuis `KESH_ADMIN_PASSWORD` par `users::create`, et le seul
+`insert_in_tx` de ce fichier est à `:252` — le *break-glass*, pas la création. ⇒ **le chemin
+d'amorçage est tracé lui aussi**, avec le même libellé et le même `"first_admin": true`.
+
+⚠️ **Sans cela, la réponse à « qui a créé le premier administrateur ? » dépendrait SILENCIEUSEMENT
+du chemin d'installation.** Et ce chemin n'est pas une route : il échappe aux 105, à [#434] comme à
+[#435] — *il ne serait donc écrit nulle part.*
+
 ⚠️ **Contrainte d'ORDRE, non négociable** : l'audit se pose **après** `users::create_in_tx` et
 **dans la même transaction**. `insert_in_tx` remplit `actor_label` par un sous-`SELECT` sur
 `users` (`repositories/audit_log.rs:79-80`) ; posé avant l'insertion, il écrirait `'(inconnu)'`.
 
-⚠️ **Aucune trace sur les chemins refusés** — les trois sorties en `410`/`400` font `rollback`, et
-c'est la transaction qui garantit ce silence, pas un `if`.
+⚠️ **Aucune trace sur les chemins refusés, mais pour DEUX raisons distinctes** : les deux sorties
+`410` (`setup.rs:183-188` et `:212-221`) et la sortie `500` (`:224`) sont **après** l'ouverture de
+la transaction et font `rollback` — c'est elle qui garantit leur silence. Les quatre `400`
+(`:91`, `:98`, `:108`, `:121`) sont **avant** le `begin` : ils sont muets parce que le code
+n'atteint jamais l'audit. *Attribuer le second silence à la transaction serait s'appuyer sur un
+mécanisme qui n'opère pas là.*
 
 ### Volet B — les invariants qui valent pour les treize
 
@@ -197,8 +236,10 @@ ailleurs : `from_current_user` quand le handler a l'acteur, `for_actor` quand l'
 `actor_type = 'user'` sur une action faite par une intégration. C'est la dette [#431], et une
 story qui la reproduit l'aggrave.
 
-**8. Une opération sans changement n'écrit pas de trace.** Trois des treize routes passent par un
-repository qui **court-circuite le no-op** et retourne l'état antérieur sans incrémenter
+**8. Une opération sans changement n'écrit pas de trace.** **Quatre** des treize routes passent par
+un repository qui **court-circuite le no-op** — les deux `users` (`PUT /users/{id}` et `/disable`,
+qui partagent `update_role_and_active`) et les deux `companies` (`/email` et `/contact-details`,
+qui partagent `update`) et retourne l'état antérieur sans incrémenter
 `version` — `users::update_role_and_active` (`repositories/users.rs:384-387`) et
 `companies::update` (`repositories/companies.rs:176-186`, le `if` à `:181`). L'audit n'est écrit **que si `version` a
 bougé**, sur le patron de `routes/bank_accounts.rs:741`.
@@ -227,6 +268,18 @@ avec sa justification.** Un test de garde extrait de `lib.rs` **chaque route mut
 identité** — verbe et handler — et en fait un **diff ensembliste** avec le registre : il échoue en
 nommant toute route absente du registre, et toute entrée du registre disparue de `lib.rs`.
 
+⚠️ **L'ensemble clos est celui de `lib.rs`, PAS celui du backend.** Trois routes mutantes vivent
+ailleurs — `/seed`, `/reset` et `/password-reset-token` (`routes/test_endpoints.rs:49,50,53`),
+montées par le `nest()` de `lib.rs:995` et conditionnées au mode test. Le registre les inscrit
+**nommément comme exemptées**, sans quoi une quatrième route ajoutée à ce fichier ne ferait rougir
+aucun garde. *Un détecteur dont on croit à tort qu'il couvre tout est pire qu'un détecteur
+absent.*
+
+⚠️ **L'extracteur doit échouer bruyamment si deux routes partagent verbe et handler.** L'identité
+est aujourd'hui discriminante — 105 couples, zéro doublon, vérifié — mais **rien ne l'impose** : un
+alias futur ferait disparaître une route du diff en silence. Il doit par ailleurs s'ancrer sur
+`routes::`, `lib.rs:1015-1016` portant des constructeurs dans un bloc **commenté**.
+
 ⛔ **Une égalité de cardinalité ne suffit pas, et le croire serait le défaut que ce critère
 prétend fermer** : une route retirée pendant qu'une autre est ajoutée laisse le compte inchangé et
 la dérive invisible. Le précédent `admin_pat_denied_e2e` peut compter, lui, parce qu'il opère sur
@@ -249,18 +302,23 @@ contenu reste le fait des tests par route des AC 1 à 6.
 **12. Le manuel administrateur dit ce que l'inventaire établit.** Trois affirmations de
 `docs/manual/fr/admin-manual.tex` sont corrigées, et les trois PDF régénérés :
 
+**CINQ sites, dans DEUX manuels** — l'inventaire en comptait trois, la passe 2 en a trouvé deux de
+plus :
+
 | Site | Ce qu'il dit | Ce qui est vrai |
 |---|---|---|
-| `:1782` | *« **Toute** action métier mutante est enregistrée »* | **28 routes sur 105 ne l'étaient pas** — et **15 ne le seront toujours pas** après cette story ([#434], [#435]) |
-| `:1786` | champs `user_id, company_id, timestamp, action, entity_type, entity_id, metadata_json` | **trois sont faux** : `company_id` **n'existe pas**, `timestamp` est `created_at`, `metadata_json` est `details_json` — et quatre manquent (`id`, `actor_type`, `actor_api_key_id`, `actor_label`) |
-| `:1956` | *« la couverture n'est pas complète : **la gestion des utilisateurs** et quelques autres »* | la réserve reste **vraie**, mais son **exemple devient faux** : il doit nommer `onboarding` et `auth` |
+| `admin:1782` | *« **Toute** action métier mutante est enregistrée »* | **28 routes sur 105 ne l'étaient pas** — et **15 ne le seront toujours pas** après cette story ([#434], [#435]) |
+| `admin:1786` | champs `user_id, company_id, timestamp, action, entity_type, entity_id, metadata_json` | **trois sont faux** : `company_id` **n'existe pas**, `timestamp` est `created_at`, `metadata_json` est `details_json` — et quatre manquent (`id`, `actor_type`, `actor_api_key_id`, `actor_label`) |
+| `admin:1956` | *« la couverture n'est pas complète : **la gestion des utilisateurs** et quelques autres »* | la réserve reste **vraie**, mais son **exemple devient faux** : il doit nommer `onboarding` et `auth` |
+| **`admin:2184`** *(glossaire)* | *« Trace de **toutes** les actions métier »* | même promesse que `:1782`, **400 lignes plus loin** — la corriger seule **réinstallerait la contradiction** |
+| **`user-manual:1591-1594`** | *« de **toutes** les actions comptables significatives — … **changements de paramètres** »* | **un autre manuel**, et l'exemple le plus faux du lot : la création du plan comptable par l'onboarding n'est pas tracée ([#434]) |
 
 ⛔ **Le `:1782` n'est pas rendu faux par cette story — il l'était déjà, et il le restera.** C'est
 précisément pourquoi il se corrige **ici** : cette story est le seul moment où l'on sait
 exactement ce qui est tracé et ce qui ne l'est pas. La 25-1a a posé la règle — *différer une
 promesse fausse revient à la maintenir.*
 
-⚠️ **Et le manuel se contredit lui-même à 170 lignes d'écart** : `:1782` promet la couverture
+⚠️ **Et le manuel se contredit lui-même à 174 lignes d'écart** : `:1782` promet la couverture
 totale, `:1956` avoue qu'elle est partielle. C'est le motif exact que la 25-1a a payé sur la
 section de conformité OLICo.
 
@@ -286,8 +344,14 @@ comme une erreur de plume.
         sait lequel, pas le repository.
   - [ ] `/reset-password` : `update_password_in_tx` existe (`repositories/users.rs:320`), et son
         doc-comment dit qu'il a été créé pour cela.
+  - [ ] ⚠️ **La révocation des sessions reste HORS de la transaction** : `routes/users.rs:267`,
+        `:317` et `:344` appellent `refresh_tokens::revoke_all_for_user(&state.pool, …)` après le
+        commit. Elle prend le pool — donc une seconde connexion sur les cinq. Ne pas chercher à
+        l'y faire entrer, mais **l'écrire** plutôt que de la laisser découvrir.
   - [ ] Tests greffés sur `crates/kesh-api/tests/users_e2e.rs` — `update_user_change_role` y est
         **déjà écrit**, il suffit de lui ajouter l'assertion d'audit.
+  - [ ] ⛔ **Tracer aussi le chemin d'amorçage** `auth/bootstrap.rs:123` (AC 6) — il crée le même
+        premier administrateur et n'écrit rien.
 - [ ] **T3 — `contact_persons`, trois routes** (AC 2, 7, 9, 10)
   - [ ] Variants `_in_tx` : aucune de ces trois fonctions n'ouvre de transaction aujourd'hui.
   - [ ] Pré-charger l'instantané avant l'archivage, sans quoi la trace ne nomme personne.
@@ -299,26 +363,39 @@ comme une erreur de plume.
   - [ ] ⛔ **Extraire `imported_supplier_invoices::create_in_tx`** — le `create` actuel écrit
         **sur le pool** (`:61`), donc l'audit ne pourrait pas partager sa transaction. Sans cette
         extraction, l'AC 9 est **intenable sur cette seule route**.
-  - [ ] Faire porter la transaction par `process_one_file` (un seul appelant, aucun test cassé).
+  - [ ] ⛔ **Extraire aussi `reactivate_to_complete_in_tx`** — le chemin de réactivation
+        (`inbox_import.rs:418-431`) porte le **même** défaut, à soixante lignes de là.
+  - [ ] ⚠️ **La transaction se pose autour de la SEULE étape d'insertion** (`inbox_import.rs:488-516`),
+        **pas** en tête de `process_one_file` : le pool est à **5 connexions**
+        (`main.rs:73`), `run_inbox_import` en tient déjà une pour son `GET_LOCK`, et la tenir
+        pendant le `sleep` de stabilité, le rendu PDF et l'archivage disque donnerait une connexion
+        *idle-in-transaction* par fichier — jusqu'à 200 par run.
+  - [ ] ⚠️ `tx.rollback()` **avant** `dispose_failed` sur les branches `UniqueConstraintViolation`
+        (`:495`) et `DataLengthOrRange` (`:500`).
+  - [ ] ✅ **Vérifié en passe 2, à ne pas re-débattre** : le `GET_LOCK` n'interfère pas (verrou
+        nommé, connexion distincte) ; une transaction **par fichier** est le bon grain — un échec ne
+        rollbacke que sa pièce, les précédentes restent commitées ; `create` n'a qu'un appelant de
+        production.
   - [ ] Faire descendre `(user_id, api_key_id)` sur `run_inbox_import` → `process_inbox` →
         `process_one_file`, puis `for_actor` à l'endroit de l'insertion.
   - [ ] `discard` : la transaction est **déjà ouverte** dans le handler — l'appel se glisse après
         `mark_discarded`.
   - [ ] Tests greffés sur `tests/inbox_import_e2e.rs` (`discard_marks_discarded` existe).
-- [ ] **T5 — `companies`, deux routes** (AC 4, 7, 8, 9)
+- [ ] **T5 — `companies`, deux routes** (AC 4, 7, 8, 9, 10)
   - [ ] Extraire `companies::update_in_tx` ; garder le court-circuit no-op **dans** le variant, et
         la garde `version` **dans** le handler.
   - [ ] Tests sur `tests/companies_e2e.rs` : `an_omitted_field_clears_it_just_like_null` prouve que
         l'effacement silencieux laisse désormais une trace, et
         `overlong_contact_details_are_rejected_by_the_api` qu'un refus n'en laisse aucune.
-- [ ] **T6 — `profile`** (AC 5, 7, 9)
+- [ ] **T6 — `profile`** (AC 5, 7, 9, 10)
   - [ ] Ajouter l'extracteur `Extension(current_user)` et capturer le résultat de `update_step`,
         que le handler jette aujourd'hui.
   - [ ] Tests sur `tests/profile_e2e.rs`.
 - [ ] **T7 — `setup`** (AC 6, 9, 10)
   - [ ] L'audit entre la création et le commit, dans la transaction ouverte au handler.
-  - [ ] Tests sur `tests/setup_admin_e2e.rs` : une trace au succès, **aucune** sur les deux refus,
-        et **exactement une** sur `toctou_race_two_distinct_usernames_creates_exactly_one_admin`.
+  - [ ] Tests sur `tests/setup_admin_e2e.rs` : une trace au succès, **aucune** sur les deux `410`
+        ni sur les `400` (muets pour deux raisons différentes, cf. AC 6), et **exactement une** sur
+        `toctou_race_two_distinct_usernames_creates_exactly_one_admin`.
 - [ ] **T8 — Un helper d'assertion d'audit partagé** (DRY)
   - [ ] `crates/kesh-api/tests/common/mod.rs` n'expose qu'un seul helper et **aucun** pour l'audit :
         chaque fichier de test réécrit son `sqlx::query_scalar`. Cette story en ajoute treize —
@@ -332,12 +409,16 @@ comme une erreur de plume.
         exact entre les marqueurs `KESH-ADMIN-ROUTES-BEGIN/END` : **s'en inspirer, et ne pas
         déplacer les marqueurs**.
 - [ ] **T10 — Propagation du symptôme, avant la première passe de revue**
-  - [ ] Les **trois sites nommés de l'AC 12** — `admin-manual.tex:1782`, `:1786`, `:1956` — puis
-        **régénérer les trois PDF** (`make fr` dans `docs/manual/`) et les commiter.
-  - [ ] `grep` des autres affirmations rendues fausses : commentaires « pas d'audit », TODO
-        d'audit, `website/`, `README.md`. ✅ **Déjà balayé à la passe 1 de validation** : le
-        symptôme est **circonscrit au manuel administrateur FR** — `metadata_json` n'existe nulle
-        part ailleurs, et les manuels DE/EN/IT ne portent qu'un `README.md`.
+  - [ ] Les **cinq sites nommés de l'AC 12** — `admin-manual.tex:1782`, `:1786`, `:1956`, `:2184`
+        et `user-manual.tex:1591-1594` — puis **régénérer les trois PDF** (`make fr` dans
+        `docs/manual/`) et les commiter.
+  - [ ] ⛔ **Ne pas croire un balayage sur parole, fût-il le sien.** La passe 1 avait déclaré le
+        symptôme « circonscrit au manuel administrateur » : la passe 2 y a trouvé **deux sites de
+        plus, dont un dans un autre manuel**. Le grep portait sur `metadata_json`, qui n'est **qu'un
+        des trois** symptômes de l'AC 12 — *greper un symptôme n'est pas greper le défaut.*
+  - [ ] `grep` des autres affirmations : commentaires « pas d'audit », TODO d'audit, `website/`,
+        `README.md`, `docs/api-external.md`. ✅ Ceux-là sont propres, et les manuels DE/EN/IT ne
+        portent qu'un `README.md`.
   - [ ] Contrôler le **PDF aplati** (`pdftotext f.pdf - | tr '\n' ' ' | tr -s ' '`), pas seulement
         le `.tex` : un `grep` naïf sur une phrase coupée rend un faux négatif.
   - [ ] ⛔ Partir des **fichiers à couvrir**, pas des mots à trouver : sur la 25-1a, le mot-clé trop
@@ -395,7 +476,7 @@ de la clé — **mais l'information « c'était une intégration, pas une person
   HTTP est en camelCase, la piste en snake_case, pour que `details_json->>'$.field_name'` marche
   en SQL.
 - **Jamais de secret dans les détails** : le dépôt écrit `"iban_present": true` plutôt que l'IBAN
-  (`routes/bank_accounts.rs:466-472`). Aucun mot de passe, hash, jeton ni IBAN complet.
+  (`routes/bank_accounts.rs:458-462`). Aucun mot de passe, hash, jeton ni IBAN complet.
 - **`before`/`after` avec `version`** est la forme canonique d'un `updated`
   (`routes/bank_accounts.rs:560-578`).
 
@@ -465,8 +546,10 @@ variant transactionnel :
   comptables. Les quatre routes ne se valent pas.
 - **La migration des repositories qui emploient `::user`** → [#431], explicitement hors périmètre.
   ⚠️ **Recensement refait et porté à l'issue le 2026-09-11** : **15 repositories de production et
-  35 sites** — l'issue en annonçait 10 —, plus `audit_log.rs` dont les trois occurrences sont dans
-  `mod tests`. ⚠️ `invoices.rs` porte **les deux formes à la fois** (`::user` ×5 et `for_actor`
+  38 sites** — l'issue en annonçait 10 —, `audit_log.rs` et ses trois occurrences de `mod tests`
+  étant exclus des 38. ⛔ **Le commentaire publié sur GitHub annonçait 35 : son total contredisait
+  sa propre ventilation, qui somme à 41.** Corrigé le même jour. *Recompter depuis la source vaut
+  aussi pour ce qu'on vient d'écrire ailleurs.* ⚠️ `invoices.rs` porte **les deux formes à la fois** (`::user` ×5 et `for_actor`
   `:2112`) : *aucun décompte par fichier ne montre une migration à moitié faite.*
 - **La route et l'écran de consultation** → 25-1c. ✅ **Son arbitrage est rendu** (2026-09-11) :
   `audit_log` prend un `company_id`. ⚠️ **Si ce `company_id` devenait un champ de
@@ -547,4 +630,41 @@ vérifiés au sol avant traitement, tous patchés.
 4. ⚠️ **Trouvé en chemin, hors périmètre** : `user-manual.tex:503` nie un verrou
    de période que `:444-453` documente — le manuel se contredit à cinquante lignes
    d'écart depuis la 24-4c. **À tracer.**
+
+### Passe 2 de `bmad-create-story validate` — lentille unique (Opus 5), contexte frais
+
+Prompt versionné (`25-1b-validate-prompt-p2.md`), braqué en priorité sur les sept
+patches de la passe 1. **0 CRITICAL, 3 HIGH, 5 MEDIUM, 6 LOW** — sévérité en
+**recul**, donc pas de split déclenché.
+
+⚠️ **Ventilation par origine : 13 findings sur 15 sont D'ORIGINE**, un seul HIGH et
+un seul LOW naissant d'un patch. *C'est l'inverse du motif habituel de ce dépôt —
+la remédiation n'a presque rien cassé, c'est la conception qui était incomplète.*
+
+| # | Sév. | Origine | Objet |
+|---|---|---|---|
+| P2-1 | **HIGH** | d'origine | **Un TROISIÈME chemin d'entrée** : la **réactivation** d'une pièce écartée rend `Accepted` sans rien créer ⇒ la piste dirait `discarded` sur une pièce `to_complete` |
+| P2-2 | **HIGH** | d'origine | *« son chemin jumeau l'est »* est **faux** : `auth/bootstrap.rs:123` crée le même premier administrateur et **n'écrit rien** — et ce n'est pas une route, donc écrit **nulle part** |
+| P2-3 | **HIGH** | **du patch P1** | Le balayage déclaré « déjà fait » était faux : **deux sites de plus**, dont un dans un **autre manuel** |
+| P2-4 | MEDIUM | d'origine | AC 8 : **quatre** routes court-circuitent le no-op, pas trois |
+| P2-5 | MEDIUM | d'origine | [#431] : **38** sites, pas 35 — le total publié contredisait sa ventilation |
+| P2-6 | MEDIUM | d'origine | AC 6 : deux `410` et un `500` après le `begin`, quatre `400` **avant** — deux silences, deux mécanismes |
+| P2-7 | MEDIUM | d'origine | AC 11 : l'ensemble clos est celui de `lib.rs`, **pas du backend** — trois routes vivent dans `test_endpoints.rs` |
+| P2-8 | MEDIUM | **du patch P1** | *« transaction portée par `process_one_file` »* ne dit pas **où** : pool à **5 connexions**, à poser autour de la seule insertion |
+| P2-9..14 | LOW | d'origine | issue manquante, référence divergente, « 170 » pour 174, traçabilité AC↔tâches, révocation hors transaction, coexistence de deux libellés |
+
+### Ce que cette passe apprend
+
+1. ⛔ **Déclarer un balayage complet est une affirmation comme une autre, et elle
+   se vérifie.** La passe 1 avait écrit « symptôme circonscrit au manuel
+   administrateur » ; il restait deux sites, dont un dans un autre manuel. Le grep
+   portait sur `metadata_json` — **un** des trois symptômes de l'AC 12. *Greper un
+   symptôme n'est pas greper le défaut.* C'est la **sixième** fois que ce geste est
+   pris en défaut sur ces deux stories.
+2. **Le CRITICAL de la passe 1 avait un jumeau à soixante lignes.** Corriger
+   `create` sans regarder le `match` qui le précède laissait `reactivate_to_complete`
+   intact — *un patch qui ne remonte pas au site voisin ferme la moitié d'un trou.*
+3. **Un total publié ailleurs se recompte aussi.** Le commentaire porté à [#431]
+   annonçait 35 sites quand sa propre ventilation sommait à 41 : les trois
+   occurrences de test avaient été soustraites deux fois. Rectifié sur l'issue.
 
