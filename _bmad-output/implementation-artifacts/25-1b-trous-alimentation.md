@@ -1,0 +1,457 @@
+# Story 25.1b : Combler les trous d'alimentation du journal d'audit
+
+Status: ready-for-dev
+
+⚠️ **Issue du SPLIT de la 25-1** (passe 1 de validation, 2026-09-10) : **25-1a** a fermé les
+chemins d'effacement et corrigé les documents publiés ; **25-1b** *(celle-ci)* comble les trous
+d'alimentation ; **25-1c** livrera la route et l'écran de consultation.
+
+⛔ **L'ordre garde son raisonnement** : une piste qu'on rend *lisible* avant d'être *complète*
+donnerait à voir un journal dont les silences passeraient pour des faits. Ce que la 25-1a a fait
+pour l'effacement, celle-ci le fait pour l'omission — *un journal incomplet ne ment pas moins
+qu'un journal effacé, il ment plus discrètement.*
+
+## Story
+
+**En tant que** responsable de comptes soumis à la conservation (CO art. 957-964, OLICo art. 9),
+**je veux** que les gestes qui changent les droits d'une personne ou l'identité de l'entité
+laissent une trace,
+**afin qu'**un réviseur puisse répondre à « qui a donné ce droit, et quand ? » — la question que
+le journal existe pour trancher.
+
+**Couvre** : [#379]. *(Voisines : [#376] et [#377] → 25-1a, mergée ; [#378] → 25-1c.)*
+
+⚠️ **Le geste le plus sensible de l'application n'est pas comptable, il est administratif** :
+`PUT /api/v1/users/{id}` peut promouvoir n'importe qui au rôle Comptable — donc au droit
+d'écrire dans les livres — et n'écrit **aucune** ligne d'audit. La contre-passation et le gel
+livrés par l'Epic 24 rendent les corrections *apparentes* ; ils ne disent pas **qui avait le
+droit de les faire**.
+
+## Ce que l'inventaire a établi, et qui n'était pas dans l'issue
+
+L'issue [#379] nomme **deux** domaines ; le relevé du split en nommait **six**. L'inventaire
+conduit à la spécification (2026-09-11) porte sur l'**ensemble clos des 105 routes mutantes** du
+backend et rend : **73 tracées, 28 non tracées, 1 partielle, 3 sans matière à auditer.**
+
+⛔ **La méthode n'est pas négociable, et le dépôt l'a codifiée** (§ *Inventorier les sites NON
+RÉSOLUS*) : on n'énumère pas les formes qui marchent, on inventorie les sites qui ne résolvent
+pas. Une énumération de formes est ouverte par nature — une forme imprévue la contourne sans que
+rien ne rougisse.
+
+⚠️ **Le traçage se fait au REPOSITORY autant qu'à la route.** Un `grep` au niveau du fichier de
+route conclut à un trou là où il n'y en a pas, et l'inverse : `companies.rs` compte deux
+insertions d'audit, mais dans `lock_books`/`unlock_books`, **pas** dans `update`. L'inventaire a
+donc suivi chaque route jusqu'à son repository.
+
+### Les six familles de cette story — 13 routes
+
+| Famille | Routes | Ce que le silence coûte |
+|---|---|---|
+| `users` | 4 | **un changement de rôle vers Comptable ne laisse aucune trace** |
+| `contact_persons` | 3 | le repository l'assume en tête de fichier : *« Pas d'audit log (donnée informative) »* |
+| `imported_supplier_invoices` | 2 | une pièce entre dans le système sans que rien ne dise par qui |
+| `companies::update` | **2**, et non 1 | l'identité de l'entité dont on tient les livres change sans trace |
+| `profile` | 1 | — *(cf. AC 5 : le seul dont la valeur se discute)* |
+| `setup` | 1 | **la création du tout premier administrateur** n'est pas tracée, alors que son chemin jumeau l'est |
+
+### ⛔ Deux familles que l'inventaire a découvertes, et qui NE SONT PAS dans cette story
+
+Elles sortent du périmètre de [#379] **et** feraient passer la story à huit modules, au-delà du
+seuil de la § *Règle de splitting préventif*. Elles partent en issues propres :
+
+- **`onboarding` — 11 routes.** Toute la séquence d'installation est invisible : création du plan
+  comptable (`accounts::bulk_create_from_chart`, **non audité alors que les quatre autres
+  mutations de `accounts` le sont**), création du compte bancaire, peuplement de démonstration,
+  finalisation, et la remise à zéro. ⚠️ **Le code le sait déjà** : `routes/onboarding.rs:523-527`
+  porte un TODO qui nomme l'absence.
+- **`auth` / session — 4 routes.** `change_password` (`auth.rs:511`) n'écrit rien, alors que
+  `reset_password` — **effet matériel identique** — audite à `auth.rs:948`. S'y ajoutent login,
+  logout et refresh, dont **la révocation en masse pour vol de jeton détecté** (`auth.rs:382`),
+  qui ne laisse aucune trace persistante.
+
+⚠️ **Ces deux familles ne sont pas des marges.** Les écarter est un choix de découpage, pas un
+verdict sur leur importance : la seconde porte le seul cas de sécurité du lot.
+
+## Acceptance Criteria
+
+### Volet A — les six familles
+
+**1. `users` — quatre routes, et le changement de rôle porte son propre libellé.**
+`POST /users` écrit `user.created` ; `PUT /users/{id}` écrit **`user.role_changed` si le rôle a
+changé**, `user.updated` sinon ; `PUT /users/{id}/disable` écrit `user.disabled` ;
+`PUT /users/{id}/reset-password` écrit `user.password_reset`. `entity_type = "user"`,
+`entity_id` = l'utilisateur **cible**, l'acteur étant l'administrateur qui agit.
+
+⛔ **Pourquoi un libellé distinct pour le rôle, et pourquoi ce n'est pas du zèle** : le dépôt a
+déjà tranché ce point en séparant `books.unlocked` de `books.restored`, au motif que *« confondre
+les deux rendrait le filtre d'audit inutilisable pour le réviseur qui cherche qui a déverrouillé »*
+(`repositories/companies.rs:387-390`). Ici la question du réviseur est **« qui a donné le droit
+d'écrire dans les livres ? »** ; noyer une promotion au rôle Comptable parmi les activations et
+les changements d'adresse la rend introuvable.
+
+⚠️ **`details_json` doit porter l'avant ET l'après du rôle** — `{"before": {"role": …, "active": …},
+"after": {…}}`. L'ancien état est déjà en main : le handler lit la cible en tête
+(`routes/users.rs:229-231` et `:289-291`).
+
+⛔ **Jamais de mot de passe ni de hachage**, ni en clair ni haché — ni `req.password`, ni
+`new_hash`, ni `user.password_hash`. Pour `user.password_reset`, **`details_json = None`** : le
+précédent du dépôt est `routes/auth.rs:948-957`, et l'acteur et la cible suffisent à tout dire.
+
+**2. `contact_persons` — trois routes.** `contact_person.created`, `contact_person.updated`,
+`contact_person.archived`, `entity_type = "contact_person"`.
+
+⚠️ **Le commentaire d'en-tête du repository devient faux et doit partir** :
+`repositories/contact_persons.rs:5` affirme *« Pas d'audit log (donnée informative) »*. Le laisser
+serait la faute de la 25-1a répétée — *un module qui affirme le contraire de ce qu'il fait est un
+mensonge qui survit à la story qui l'a créé.*
+
+⚠️ **`DELETE` ne connaît rien de ce qu'il archive** — le handler n'a que l'identifiant
+(`routes/contact_persons.rs:209-216`). Une trace lisible exige un pré-chargement
+(`contact_persons::find_by_id_in_company`), sur le modèle de `contact.archived` qui journalise un
+instantané complet (`repositories/contacts.rs:656-667`).
+
+**3. `imported_supplier_invoices` — une trace PAR PIÈCE, pas par lot.**
+`imported_supplier_invoice.created` à l'entrée d'une pièce, `imported_supplier_invoice.discarded`
+à son rejet ; `entity_id` = la pièce.
+
+⛔ **Pourquoi par pièce alors qu'une trace de lot coûterait dix fois moins** : une trace de lot
+n'est pas atteignable par `find_by_entity("imported_supplier_invoice", id)` — donc **invisible à
+l'écran que livrera la 25-1c**, qui lit la piste par entité. Une trace que la consultation ne
+montre pas ne répond à personne. Le prix est de faire descendre `(user_id, api_key_id)` le long
+de `run_inbox_import` → `process_inbox` → `process_one_file` ; c'est mécanique.
+
+⚠️ **Conséquence à écrire, pas à découvrir** : un import qui n'accepte **aucune** pièce n'écrit
+alors **aucune** trace. C'est voulu — rien n'est entré dans le système.
+
+⛔ **`creditor_iban` est un IBAN complet** : appliquer la convention du dépôt — `"iban_present":
+true`, jamais la valeur (`routes/bank_accounts.rs:460-461`).
+
+**4. `companies` — deux routes, et c'est l'effacement silencieux qui justifie la trace.**
+`company.updated`, `entity_type = "company"`, `entity_id` = la société ; `details_json` ne porte
+**que les champs que la route touche** (`email` d'un côté, `phone` et `website` de l'autre), en
+`{before, after}`.
+
+⚠️ **Ne pas journaliser l'objet entier** : `companies::update` est un *full-replace* et les
+handlers reconstruisent la totalité des champs depuis l'état courant — un `{before, after}`
+complet dirait que quinze champs ont changé quand un seul a bougé.
+
+⛔ **C'est ici que la trace a le plus de valeur** : sur `/contact-details`, **une clé absente vaut
+`null` et efface** (`routes/companies.rs:155-163`). Un effacement par omission ne laisse
+aujourd'hui aucune trace — journaliser l'avant et l'après le rend opposable.
+
+**5. `profile` — la trace porte sur l'INSTALLATION, pas sur l'utilisateur.**
+`PUT /profile/mode` écrit `installation.ui_mode_changed`, `entity_type = "installation"`,
+`entity_id = AUDIT_ENTITY_ID_NONE`, `details_json = {"before": …, "after": …}`.
+
+⛔ **C'est le seul critère dont la valeur se discutait, et l'inspection la tranche** : `ui_mode`
+n'est **pas** une préférence d'affichage par utilisateur. Il vit dans `onboarding_state`, table
+**mono-ligne et globale, sans `company_id`** (`entities/onboarding.rs:60-72`) — un utilisateur
+bascule donc l'installation entière en mode Expert, ce qui ouvre à tous l'écriture directe au
+journal. ⚠️ **Écrire `entity_type = "user"` ici serait mentir sur la portée.**
+
+⚠️ **Le handler n'a pas d'acteur** : `set_mode` n'extrait aucun `CurrentUser`
+(`routes/profile.rs:23-27`) — c'est la seule route authentifiée du lot dans ce cas. L'extracteur
+s'ajoute au handler, le routage ne bouge pas.
+
+**6. `setup` — la création du tout premier administrateur, acteur et cible confondus.**
+`POST /setup/admin` écrit `user.created` avec `entity_type = "user"`, `entity_id = user.id`, et
+`details_json` portant **`"first_admin": true`** — ce qui distingue ce geste fondateur d'une
+création ordinaire sans inventer un second libellé pour la même chose matérielle.
+
+⛔ **L'acteur est l'utilisateur créé lui-même** — la route est publique, montée avant tout
+`require_auth` (`lib.rs:965`), donc il n'existe ni `CurrentUser`, ni jeton, ni identité antérieure.
+C'est le patron déjà tenu par `auth/bootstrap.rs:252-265` et `routes/auth.rs:948-957`.
+
+⚠️ **Contrainte d'ORDRE, non négociable** : l'audit se pose **après** `users::create_in_tx` et
+**dans la même transaction**. `insert_in_tx` remplit `actor_label` par un sous-`SELECT` sur
+`users` (`repositories/audit_log.rs:79-80`) ; posé avant l'insertion, il écrirait `'(inconnu)'`.
+
+⚠️ **Aucune trace sur les chemins refusés** — les trois sorties en `410`/`400` font `rollback`, et
+c'est la transaction qui garantit ce silence, pas un `if`.
+
+### Volet B — les invariants qui valent pour les treize
+
+**7. Le constructeur dit la vérité sur l'acteur.** `NewAuditLogEntry::user` **uniquement** là où un
+jeton d'API ne peut structurellement pas passer — le bloc `admin_routes`, seul porteur de
+`require_not_pat` (`lib.rs:330`) — ou en l'absence totale de `CurrentUser` (`setup`). Partout
+ailleurs : `from_current_user` quand le handler a l'acteur, `for_actor` quand l'appel est plus bas.
+
+| Routes | Constructeur |
+|---|---|
+| les quatre `users`, les deux `companies` | `::user` — le bloc est fermé aux jetons |
+| `contact_persons` ×3, `discard` | `from_current_user` |
+| `inbox-import` | `for_actor`, `(user_id, api_key_id)` **threadés** |
+| `profile/mode` | `from_current_user`, après ajout de l'extracteur |
+| `setup/admin` | `::user(user.id, …)` — pré-authentification |
+
+⛔ **Employer `::user` hors de ces cas n'est pas une approximation, c'est écrire un fait faux** :
+`actor_type = 'user'` sur une action faite par une intégration. C'est la dette [#431], et une
+story qui la reproduit l'aggrave.
+
+**8. Une opération sans changement n'écrit pas de trace.** Trois des treize routes passent par un
+repository qui **court-circuite le no-op** et retourne l'état antérieur sans incrémenter
+`version` — `users::update_role_and_active` (`repositories/users.rs:384-387`) et
+`companies::update` (`repositories/companies.rs:175-178`). L'audit n'est écrit **que si `version` a
+bougé**, sur le patron de `routes/bank_accounts.rs:741`.
+
+⚠️ *Sans cette garde, un `PUT` identique écrirait une trace qui affirme un changement qui n'a pas
+eu lieu — un journal qui invente des faits est pire qu'un journal muet.*
+
+**9. La trace et la mutation sont atomiques.** L'écriture d'audit partage la transaction de
+l'opération auditée : une mutation dont la trace ne peut pas s'écrire **n'est pas commitée**. Là
+où le repository ouvre et commite seul, la story extrait un variant `_in_tx` et le handler mène la
+transaction — elle n'ajoute **pas** une transaction séparée pour l'audit d'une mutation.
+
+⚠️ **Cela vaut aussi pour `setup/admin`**, où l'échec de l'audit ferait échouer la création du
+premier administrateur. C'est le comportement voulu, et il est assumé ici plutôt que découvert en
+production.
+
+**10. Aucun secret dans `details_json`.** Ni mot de passe, ni hachage, ni jeton, ni IBAN complet.
+Les booléens de présence (`"iban_present": true`) sont la forme du dépôt. Les clés sont en
+**snake_case** — la surface HTTP est en camelCase, la piste ne l'est pas
+(`routes/reports.rs:1350-1367`).
+
+### Volet C — que l'inventaire reste vrai après la story
+
+**11. Les routes mutantes sont inscrites à un registre, et chacune y est soit tracée, soit exemptée
+avec sa justification.** Un test de garde compare le nombre de routes mutantes déclarées dans
+`lib.rs` au nombre d'entrées du registre et échoue si une route apparaît sans entrée.
+
+⛔ **Pourquoi un registre et non une liste dans la documentation** : cette story ferme **13** des
+**28** sites non tracés. Les **15 restants** — `onboarding` et `auth` — deviennent des angles morts
+**assumés**, et un angle mort qui n'est écrit nulle part redevient un oubli au premier ajout de
+route. Le dépôt connaît ce mécanisme et l'a outillé deux fois : `EXEMPT_MIGRATIONS`
+(`post_restore.rs`) et le garde-fou de schéma de test. ⚠️ **Un inventaire exact qui ne vit que dans
+un story file se périme le jour où la story est close.**
+
+⚠️ **Ce que ce test NE fait PAS, et il faut l'écrire** : il ne peut pas vérifier *qu'une route est
+réellement tracée* — le traçage se fait au repository, parfois à trois appels de distance, et
+aucune analyse statique raisonnable ne le suit. Il vérifie que **toute route mutante a été
+examinée**, ce qui est une propriété plus faible et la seule qui soit décidable. Le contrôle du
+contenu reste le fait des tests par route des AC 1 à 6.
+
+## Tasks / Subtasks
+
+- [ ] **T1 — Écrire la décision de conception AVANT de coder** (AC 9)
+  - [ ] Pour chacune des 13 routes, arrêter où l'audit se pose : handler menant la transaction
+        (variant `_in_tx`) ou repository. Le tableau des Dev Notes donne la décision proposée ;
+        la confirmer ou la contester **par écrit**, avec le motif.
+  - [ ] ⚠️ Avant de toucher la signature de `companies::update` ou de `onboarding::update_step` :
+        `grep -rn "companies::update(\|onboarding::update_step(" crates/` — **les deux ont
+        d'autres appelants**. Le geste sûr est d'extraire un `_in_tx` et de laisser la fonction
+        actuelle en mince enveloppe.
+- [ ] **T2 — `users`, quatre routes** (AC 1, 7, 8, 9, 10)
+  - [ ] `POST /users` : `create_in_tx` existe déjà (`repositories/users.rs:50`) — le handler mène
+        la transaction.
+  - [ ] `PUT /users/{id}` et `/disable` : extraire `update_role_and_active_in_tx`. Les deux routes
+        partagent la fonction et doivent écrire **des libellés différents** — c'est le handler qui
+        sait lequel, pas le repository.
+  - [ ] `/reset-password` : `update_password_in_tx` existe (`repositories/users.rs:320`), et son
+        doc-comment dit qu'il a été créé pour cela.
+  - [ ] Tests greffés sur `crates/kesh-api/tests/users_e2e.rs` — `update_user_change_role` y est
+        **déjà écrit**, il suffit de lui ajouter l'assertion d'audit.
+- [ ] **T3 — `contact_persons`, trois routes** (AC 2, 7, 9, 10)
+  - [ ] Variants `_in_tx` : aucune de ces trois fonctions n'ouvre de transaction aujourd'hui.
+  - [ ] Pré-charger l'instantané avant l'archivage, sans quoi la trace ne nomme personne.
+  - [ ] ⚠️ Corriger l'en-tête `repositories/contact_persons.rs:5`.
+  - [ ] ⛔ **Créer `crates/kesh-api/tests/contact_persons_e2e.rs`** : ces trois routes n'ont
+        **aucun test**, ni d'intégration ni E2E. *C'est un trou de couverture que la story découvre
+        et qu'elle ne peut pas laisser* — on n'ajoute pas une trace à du code que rien n'exerce.
+- [ ] **T4 — `imported_supplier_invoices`, deux routes** (AC 3, 7, 9, 10)
+  - [ ] Faire descendre `(user_id, api_key_id)` sur `run_inbox_import` → `process_inbox` →
+        `process_one_file`, puis `for_actor` à l'endroit de l'insertion.
+  - [ ] `discard` : la transaction est **déjà ouverte** dans le handler — l'appel se glisse après
+        `mark_discarded`.
+  - [ ] Tests greffés sur `tests/inbox_import_e2e.rs` (`discard_marks_discarded` existe).
+- [ ] **T5 — `companies`, deux routes** (AC 4, 7, 8, 9)
+  - [ ] Extraire `companies::update_in_tx` ; garder le court-circuit no-op **dans** le variant, et
+        la garde `version` **dans** le handler.
+  - [ ] Tests sur `tests/companies_e2e.rs` : `an_omitted_field_clears_it_just_like_null` prouve que
+        l'effacement silencieux laisse désormais une trace, et
+        `overlong_contact_details_are_rejected_by_the_api` qu'un refus n'en laisse aucune.
+- [ ] **T6 — `profile`** (AC 5, 7, 9)
+  - [ ] Ajouter l'extracteur `Extension(current_user)` et capturer le résultat de `update_step`,
+        que le handler jette aujourd'hui.
+  - [ ] Tests sur `tests/profile_e2e.rs`.
+- [ ] **T7 — `setup`** (AC 6, 9, 10)
+  - [ ] L'audit entre la création et le commit, dans la transaction ouverte au handler.
+  - [ ] Tests sur `tests/setup_admin_e2e.rs` : une trace au succès, **aucune** sur les deux refus,
+        et **exactement une** sur `toctou_race_two_distinct_usernames_creates_exactly_one_admin`.
+- [ ] **T8 — Un helper d'assertion d'audit partagé** (DRY)
+  - [ ] `crates/kesh-api/tests/common/mod.rs` n'expose qu'un seul helper et **aucun** pour l'audit :
+        chaque fichier de test réécrit son `sqlx::query_scalar`. Cette story en ajoute treize —
+        c'est le moment, et la règle DRY du projet l'impose.
+- [ ] **T9 — Le registre des routes mutantes et sa garde** (AC 11)
+  - [ ] Inscrire les 105 routes, chacune `traced` ou `exempt("<justification>")`.
+  - [ ] ⚠️ Les 15 exemptions `onboarding` et `auth` portent le **numéro de l'issue** qui les suit —
+        une justification sans suivi est un abandon déguisé.
+  - [ ] ⚠️ Le test `admin_pat_denied_e2e` lit déjà `lib.rs` par `include_str!` et exige un compte
+        exact entre les marqueurs `KESH-ADMIN-ROUTES-BEGIN/END` : **s'en inspirer, et ne pas
+        déplacer les marqueurs**.
+- [ ] **T10 — Propagation du symptôme, avant la première passe de revue**
+  - [ ] `grep` des affirmations rendues fausses ou incomplètes : commentaires « pas d'audit »,
+        TODO d'audit, et **les manuels** — `docs/manual/{fr,de,en,it}/`, en contrôlant le **PDF**
+        aplati (`pdftotext f.pdf - | tr '\n' ' ' | tr -s ' '`), pas seulement le `.tex`.
+  - [ ] ⛔ Partir des **fichiers à couvrir**, pas des mots à trouver : sur la 25-1a, le mot-clé trop
+        étroit a laissé passer un site **cinq fois**, dont une par la seule **langue** du support.
+- [ ] **T11 — Gates**
+  - [ ] ⛔ **Ciblage interdit** si un patch touche `crates/kesh-db/` — gate complet, exception
+        `kesh-db` de la § *« Pendant une boucle de revue »*. Cette story touche des repositories.
+  - [ ] Base de gate remise à zéro **et vérifiée** avant le gate complet, inconditionnellement.
+  - [ ] E2E au push ; frontend **non touché** par cette story — le vérifier plutôt que le supposer.
+
+## Dev Notes
+
+### Le patron d'appel, tel qu'il est — relevé au sol, pas supposé
+
+**Une seule fonction écrit dans la piste** : `kesh_db::repositories::audit_log::insert_in_tx`
+(`crates/kesh-db/src/repositories/audit_log.rs:61`). Aucun trigger, aucun `INSERT INTO audit_log`
+ailleurs. Une route est donc tracée **si et seulement si** son chemin atteint cet appel.
+
+**`insert_in_tx` ne commit jamais** (doc-comment `:54-60`) : elle reçoit la transaction de
+l'opération auditée et y écrit. C'est le contrat, et il a une conséquence que la 25-1a a
+verrouillée par un test — *l'écriture d'audit partage la transaction de l'opération, donc son
+échec fait échouer l'opération métier entière.* Pour une **mutation**, c'est le comportement
+voulu : une mutation dont la trace n'a pas pu s'écrire ne doit pas être commitée.
+
+⛔ **`actor_label` n'ajoute RIEN à faire.** La 25-1a a ajouté la colonne **sans toucher la surface
+d'appel** : elle est remplie par un sous-SELECT dans l'`INSERT` du repository
+(`audit_log.rs:79-80`). `NewAuditLogEntry` n'a pas changé. Ne pas chercher à la renseigner.
+
+#### Quel constructeur — le critère n'est PAS le rôle
+
+| Forme | Quand |
+|---|---|
+| `NewAuditLogEntry::from_current_user(&current_user, …)` | **le défaut** — dès que le handler a un `&CurrentUser` en main (trait `AuditActor`, `crates/kesh-api/src/audit.rs:33`) |
+| `NewAuditLogEntry::for_actor(user_id, api_key_id, …)` | en dessous du handler (helper, repository) : on fait **descendre** `(user_id, api_key_id)` |
+| `NewAuditLogEntry::user(user_id, …)` | seulement si la route est dans `admin_routes` — un jeton d'API n'y passe pas — **ou** s'il n'y a pas de `CurrentUser` du tout (pré-authentification) |
+
+⚠️ **Le critère est « un jeton d'API peut-il atteindre ce chemin », pas « la route est-elle
+admin-only ».** `require_not_pat` n'est posé **qu'une fois**, en `route_layer` du bloc
+`admin_routes` (`crates/kesh-api/src/lib.rs:330`). Tout ce qui est hors de ce bloc est
+atteignable par un jeton personnel ; `::user` y écrirait `actor_type = 'user'` sur une action
+faite par une intégration. *C'est exactement la dette [#431], et une story qui la reproduit
+l'aggrave.*
+
+⚠️ **Ce que `::user` perd n'est pas l'imputabilité humaine** — `user_id` porte alors le créateur
+de la clé — **mais l'information « c'était une intégration, pas une personne ».**
+
+#### Les conventions, vérifiées sur les 73 sites en place
+
+- **Action** : `<entité_singulier>.<participe_passé>` — `contact.created`, `invoice.validated`,
+  `journal_entry.reversed`. Les écarts existants (`books.locked`, `admin.full_import`,
+  `exports.global`) sont des précédents documentés, **pas des autorisations**.
+- **`entity_type`** : le nom de table **au singulier**. Trois exceptions historiques
+  (`bank_imports`, `bank_profiles`, `reconciliation_rules`) — ne pas les imiter.
+- **`details_json`** : **snake_case**, et c'est écrit (`routes/reports.rs:1350-1367`) — la surface
+  HTTP est en camelCase, la piste en snake_case, pour que `details_json->>'$.field_name'` marche
+  en SQL.
+- **Jamais de secret dans les détails** : le dépôt écrit `"iban_present": true` plutôt que l'IBAN
+  (`routes/bank_accounts.rs:466-472`). Aucun mot de passe, hash, jeton ni IBAN complet.
+- **`before`/`after` avec `version`** est la forme canonique d'un `updated`
+  (`routes/bank_accounts.rs:560-578`).
+
+#### Les tests — deux patrons, et celui-ci n'est pas le léger
+
+| Patron | Quand |
+|---|---|
+| `audit_log::find_by_entity(&pool, "<type>", id, 10)` puis `.any(\|e\| e.action == "…")` | prouver qu'une action **a été écrite** |
+| `sqlx::query_as` direct sur `audit_log` | ⛔ **le patron de cette story** — dès qu'on assertionne l'**attribution** (`actor_type`, `actor_api_key_id`, `user_id`) ou le contenu de `details_json` |
+
+Référence du second : `crates/kesh-api/tests/api_keys_e2e.rs:484-509`, le seul test qui prouve le
+comportement par jeton de bout en bout.
+
+⚠️ **`details_json` se lit en `Option<Vec<u8>>`, pas en `Value`** — MariaDB le stocke en blob
+binaire, puis `serde_json::from_slice`. Précédent : `tests/reports_e2e.rs:977-1010`, dont le
+commentaire dit pourquoi l'assertion porte sur le **contenu** : *« auparavant seuls
+user/action/entity_* étaient assertés → faux-vert si une régression renommait les clés JSON »*.
+
+### Où poser l'audit — le fait structurant, et la décision route par route
+
+⛔ **`insert_in_tx` ne prend qu'une `&mut Transaction`.** Or **sept** des treize chemins passent
+par un repository qui **ouvre et commite sa propre transaction en interne** : le handler n'a donc
+rien où greffer l'audit. C'est le fait qui commande tout le reste, et il n'apparaît nulle part
+dans l'issue.
+
+| Route | Transaction aujourd'hui | Décision proposée |
+|---|---|---|
+| `POST /users` | `users::create` commite seul | **handler** — `create_in_tx` existe déjà (`users.rs:50`) |
+| `PUT /users/{id}` | `update_role_and_active` commite seul | **extraire `_in_tx`** — deux routes, deux libellés |
+| `PUT /users/{id}/disable` | idem, **même fonction** | **extraire `_in_tx`** — cf. ci-dessus |
+| `PUT /users/{id}/reset-password` | `update_password` : **aucune** transaction | **handler** — `update_password_in_tx` existe (`users.rs:320`) |
+| `POST /contacts/{id}/persons` | aucune | **extraire `_in_tx`** |
+| `PUT /contact-persons/{id}` | aucune | **extraire `_in_tx`** |
+| `DELETE /contact-persons/{id}` | aucune | **extraire `_in_tx`** + pré-chargement |
+| `POST /inbox-import` | aucune, sur toute la chaîne | **threader l'acteur** jusqu'à l'insertion |
+| `POST /…/{id}/discard` | ✅ **déjà ouverte au handler** | rien d'autre à bouger |
+| `PUT /companies/current/email` | `companies::update` commite seul | **extraire `_in_tx`**, enveloppe conservée |
+| `PUT /companies/current/contact-details` | idem, **même fonction** | idem |
+| `PUT /profile/mode` | `onboarding::update_step` commite seul | **extraire `_in_tx`**, enveloppe conservée |
+| `POST /setup/admin` | ✅ **déjà ouverte au handler** | rien d'autre à bouger |
+
+⚠️ **Deux routes sont gratuites** (`discard`, `setup/admin`) : la transaction est déjà là, l'appel
+se glisse dedans. **Deux autres le sont presque** (`POST /users`, `/reset-password`) : le variant
+`_in_tx` existe déjà, écrit pour cette raison même. Commencer par ces quatre donne le patron
+complet à moindre risque avant de toucher aux signatures partagées.
+
+⛔ **Pourquoi l'extraction d'un `_in_tx` plutôt qu'un paramètre `user_id` dans le repository** —
+c'est l'arbitrage le moins évident de la story. Le dépôt fait les deux (`contacts::create(pool,
+user_id, new)` d'un côté, `routes/vat.rs:309-368` de l'autre). Trois raisons penchent ici vers le
+variant transactionnel :
+
+1. **`users::update_role_and_active` sert DEUX routes qui doivent écrire deux libellés
+   différents.** Passer l'action au repository reviendrait à lui faire porter une décision qui
+   n'est pas la sienne.
+2. **`companies::update` et `onboarding::update_step` ont d'autres appelants** — leur ajouter un
+   paramètre les touche tous, dont l'onboarding et les imports.
+3. **Le paramètre `user_id` seul est le mécanisme même de [#431]** : il fait perdre
+   `api_key_id` en chemin. Les routes `comptable` de cette story sont atteignables par jeton ;
+   descendre `user_id` nu y écrirait un acteur faux.
+
+### Ce que la story ne fait pas
+
+- **`onboarding` (11 routes) et `auth`/session (4 routes)** → issues propres, cf. § *Deux familles
+  découvertes*. Elles sont **exemptées au registre de l'AC 11**, pas oubliées.
+- **La migration des 16 repositories qui emploient `::user`** → [#431], explicitement hors
+  périmètre. ⚠️ L'issue en annonce 10 ; ils sont **16** aujourd'hui — le recensement a vieilli, et
+  cela se signalera à l'issue plutôt que de se corriger ici.
+- **La route et l'écran de consultation** → 25-1c, qui attend un arbitrage : `audit_log` n'a pas de
+  `company_id`.
+- **Aucun changement de schéma** : la story n'ajoute ni colonne ni migration — donc **ni P2-bis, ni
+  P3, ni P5, ni P6, ni P7, ni P8**. ⚠️ *Le vérifier en fin d'implémentation plutôt que de le tenir
+  pour acquis : un `_in_tx` extrait ne touche pas le schéma, un index ajouté au passage, si.*
+- **Le frontend** : aucune surface visible ne change.
+
+### References
+
+- `audit-experts-2026-08-26.md` § III.3 · `epic-25-vague1-suite.md` § 25-1
+- Issue : [#379] · voisines : [#376], [#377] (25-1a, mergée en PR #433), [#378] (25-1c), [#431]
+- Story sœur : `25-1a-piste-inalterable.md` — § *Le patron d'appel* y trouve son état antérieur,
+  et sa boucle de revue documente **cinq** échecs du grep de propagation sur une seule story
+- Socle : `crates/kesh-db/src/entities/audit_log.rs` (constructeurs `:157`, `:179`, `:203`,
+  `AUDIT_ENTITY_ID_NONE` `:97`), `crates/kesh-db/src/repositories/audit_log.rs:61` (`insert_in_tx`,
+  contrat `:54-60`, sous-SELECT d'`actor_label` `:79-80`), `crates/kesh-api/src/audit.rs:33`
+  (`from_current_user`)
+- Blocs de routeur : `crates/kesh-api/src/lib.rs:182-332` (`admin_routes`, marqueurs et compte
+  exact), `:330` (`require_not_pat`, **l'unique**), `:336-660` (`comptable_routes`), `:663-943`
+  (`authenticated_routes`), `:965` (`setup`, publique)
+- Patrons cités : `routes/bank_accounts.rs:741` (garde no-op), `:460-461` (présence et non valeur),
+  `routes/companies.rs:155-163` (l'effacement par omission), `repositories/companies.rs:387-390`
+  (deux libellés plutôt qu'un), `routes/auth.rs:948-957` (`details_json = None`),
+  `auth/bootstrap.rs:252-265` (acteur et cible confondus), `routes/reports.rs:1350-1367`
+  (snake_case)
+- Tests : `tests/api_keys_e2e.rs:484-509` (attribution par jeton), `tests/reports_e2e.rs:977-1010`
+  (`details_json` en `Option<Vec<u8>>`), `tests/period_lock_e2e.rs:546-554` (séquence d'actions),
+  `tests/bank_accounts_e2e.rs:582` (pas de doublon en no-op)
+
+## Dev Agent Record
+
+### Agent Model Used
+
+### Debug Log References
+
+### Completion Notes List
+
+### File List
+
+## Change Log
