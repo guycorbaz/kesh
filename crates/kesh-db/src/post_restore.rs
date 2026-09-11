@@ -26,9 +26,12 @@
 //! dernière migration créatrice de table applicative.**
 //!
 //! C'est cette fenêtre qui fixe le contenu du registre — et non le nombre de
-//! migrations portant un backfill. Sur les neuf migrations qui écrivent des
-//! données, sept sont hors d'atteinte de ce mécanisme et sont **exemptées**
-//! (cf. [`EXEMPT_MIGRATIONS`]). Toute future migration créant une table
+//! migrations portant un backfill. La plupart des migrations qui écrivent des
+//! données sont hors d'atteinte de ce mécanisme et sont **exemptées**
+//! (cf. [`EXEMPT_MIGRATIONS`], qui porte la liste et la justification de
+//! chacune — ⚠️ ne pas récrire ici un décompte, il se périmerait en silence à la
+//! prochaine migration ; la source se lit, elle ne se résume pas).
+//! Toute future migration créant une table
 //! applicative **referme la fenêtre** et périme les entrées antérieures : le
 //! test `registry_entries_are_within_import_window` le fait échouer bruyamment
 //! plutôt que de laisser du code mort qui *paraît* fonctionner.
@@ -61,7 +64,8 @@
 //!
 //! Le registre est trié par **version croissante**, et l'itération suit cet
 //! ordre, afin de reproduire exactement ce qu'aurait fait une montée de version.
-//! Les deux entrées ne sont pas indépendantes : `20260722000001` attribue le
+//! Des entrées peuvent ne PAS être indépendantes — l'exemple canonique vit
+//! aujourd'hui dans [`RETIRED_BACKFILLS`] : `20260722000001` attribue le
 //! rôle `CurrentYearResult` au compte de résultat puis le rend non imputable, et
 //! la condition d'imputabilité de `20260729000001` s'appuie sur ce `postable`.
 //! Rejoué à l'envers, le second verrait `postable = TRUE` partout (valeur
@@ -193,9 +197,10 @@ pub struct ReplayedBackfill {
 /// Registre des backfills à rejouer après un restore, **trié par version
 /// croissante** (invariant verrouillé par `registry_versions_are_strictly_increasing`).
 ///
-/// Deux entrées seulement : les sept autres migrations du dépôt qui écrivent des
-/// données sont hors de la fenêtre d'importabilité ou portent sur une table
-/// système (cf. [`EXEMPT_MIGRATIONS`]).
+/// N'y figurent que les migrations de backfill **dans** la fenêtre
+/// d'importabilité ; les autres sont hors fenêtre ou portent sur une table
+/// système, et sont énumérées avec leur justification dans
+/// [`EXEMPT_MIGRATIONS`].
 pub const POST_RESTORE_BACKFILLS: &[PostRestoreBackfill] = &[
     PostRestoreBackfill {
         version: 20260828000001,

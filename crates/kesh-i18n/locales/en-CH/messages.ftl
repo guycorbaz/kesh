@@ -59,6 +59,7 @@ demo-reset-confirm-body = All demo data will be deleted. Do you want to continue
 demo-reset-confirm-ok = Confirm
 demo-reset-confirm-cancel = Cancel
 demo-reset-error = Error while resetting
+demo-reset-forbidden = Only an administrator can reset this instance
 
 # Navigation sidebar (Story 6.3 + v014-1)
 nav-home = Home

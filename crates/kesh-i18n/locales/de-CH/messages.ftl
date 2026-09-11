@@ -59,6 +59,7 @@ demo-reset-confirm-body = Alle Demonstrationsdaten werden gelöscht. Möchten Si
 demo-reset-confirm-ok = Bestätigen
 demo-reset-confirm-cancel = Abbrechen
 demo-reset-error = Fehler beim Zurücksetzen
+demo-reset-forbidden = Nur ein Administrator kann diese Instanz zurücksetzen
 
 # Navigation sidebar (Story 6.3 + v014-1)
 nav-home = Startseite

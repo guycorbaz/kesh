@@ -887,6 +887,50 @@ mod tests {
         );
     }
 
+    /// ⛔ **`actor_label` ne doit JAMAIS être plus étroit que `users.username`.**
+    ///
+    /// Le libellé est posé par un **sous-SELECT** dans l'`INSERT` du repository
+    /// (`repositories/audit_log.rs`) : la valeur vient donc directement de
+    /// `users.username`, sans passer par aucune validation Rust. Si la colonne
+    /// source devenait plus large que la cible, MariaDB en mode strict —
+    /// `STRICT_TRANS_TABLES`, actif en production — refuserait l'`INSERT` avec
+    /// « Data too long ». Et comme l'écriture d'audit partage la transaction de
+    /// l'opération auditée, **c'est l'opération métier entière qui échouerait**,
+    /// sur un motif que rien ne rattacherait au nom de l'utilisateur.
+    ///
+    /// Le mode d'échec n'est donc pas « un libellé tronqué » mais « une facture
+    /// qu'on ne peut plus valider parce qu'un administrateur porte un nom long ».
+    /// D'où ce test, qui lit les deux largeurs dans `information_schema` plutôt
+    /// que de répéter un nombre : il ne se périme pas, et il rougit en nommant
+    /// exactement le couple qui a divergé.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn actor_label_is_at_least_as_wide_as_username(pool: MySqlPool) {
+        let width = |table: &'static str, column: &'static str| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query_scalar::<_, u64>(
+                    "SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS \
+                     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+                )
+                .bind(table)
+                .bind(column)
+                .fetch_one(&pool)
+                .await
+                .unwrap_or_else(|e| panic!("largeur de {table}.{column} introuvable : {e}"))
+            }
+        };
+
+        let label = width("audit_log", "actor_label").await;
+        let username = width("users", "username").await;
+        assert!(
+            label >= username,
+            "audit_log.actor_label ({label}) est plus ÉTROIT que users.username \
+             ({username}) : le sous-SELECT du repository ferait échouer l'INSERT \
+             d'audit — donc l'opération métier qu'il accompagne — pour tout nom \
+             d'utilisateur dépassant {label} caractères"
+        );
+    }
+
     #[sqlx::test(migrations = "./test-schema")]
     async fn restore_tables_in_tx_round_trips_companies(pool: MySqlPool) {
         for (name, ide) in [("Acme SA", Some("CHE123456789")), ("Beta GmbH", None)] {

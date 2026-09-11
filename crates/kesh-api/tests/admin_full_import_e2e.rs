@@ -887,8 +887,14 @@ fn strip_column(manifest: &mut Value, table: &str, column: &str) {
 /// La création de `invoice_settlements` a refermé la fenêtre d'importabilité
 /// au-delà des deux entrées de backfill : un backup assez ancien pour les
 /// déclencher est désormais dépourvu de cette table, donc refusé en 400 avant
-/// tout rejeu. `POST_RESTORE_BACKFILLS` est donc **vide**, et l'import ne rejoue
-/// plus rien — c'est le mécanisme qui fonctionne, pas une régression.
+/// tout rejeu. Ces deux entrées-là ont donc quitté `POST_RESTORE_BACKFILLS` —
+/// c'est le mécanisme qui fonctionne, pas une régression.
+///
+/// ⚠️ **Le registre de production, lui, n'est PAS vide** — il l'a été entre les
+/// Stories 24-2 et 24-3, et cette phrase l'a affirmé trop longtemps. Il porte
+/// depuis des entrées postérieures à la table qui avait refermé la fenêtre
+/// (24-3, puis 25-1a). Ce que ce helper injecte, ce sont les entrées RETIRÉES,
+/// et elles seules.
 ///
 /// Ces cas gardent pourtant toute leur substance : ils éprouvent la MACHINERIE
 /// (ordre, sémantique OU des sentinelles, classes A/B, codes de sortie, nombre
@@ -1021,8 +1027,10 @@ async fn full_import_replays_revenue_account_backfill(pool: MySqlPool) {
     let (mut manifest, data) = unzip(&backup);
     strip_column(&mut manifest, "invoice_lines", "revenue_account_id");
     import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
-    // Story 24-2 (#371) : le registre de production est vide (fenêtre refermée),
-    // le rejeu est donc déclenché explicitement sur les entrées retirées.
+    // Story 24-2 (#371) : ces deux entrées-là ont quitté le registre de
+    // production (fenêtre refermée), le rejeu est donc déclenché explicitement
+    // sur les entrées retirées — cf. `replay_retired`, qui dit pourquoi le
+    // registre, lui, n'est PAS vide.
     let report = replay_retired(&pool, &manifest).await;
 
     assert_eq!(
@@ -1102,8 +1110,10 @@ async fn full_import_replays_class_a_even_when_column_is_present(pool: MySqlPool
         "montage : la colonne doit être PRÉSENTE au manifeste — c'est tout l'enjeu du cas"
     );
     import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
-    // Story 24-2 (#371) : le registre de production est vide (fenêtre refermée),
-    // le rejeu est donc déclenché explicitement sur les entrées retirées.
+    // Story 24-2 (#371) : ces deux entrées-là ont quitté le registre de
+    // production (fenêtre refermée), le rejeu est donc déclenché explicitement
+    // sur les entrées retirées — cf. `replay_retired`, qui dit pourquoi le
+    // registre, lui, n'est PAS vide.
     let report = replay_retired(&pool, &manifest).await;
 
     assert_eq!(
@@ -1147,8 +1157,10 @@ async fn full_import_replays_role_and_postable_when_both_columns_absent(pool: My
     strip_column(&mut manifest, "accounts", "role");
     strip_column(&mut manifest, "accounts", "postable");
     import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
-    // Story 24-2 (#371) : le registre de production est vide (fenêtre refermée),
-    // le rejeu est donc déclenché explicitement sur les entrées retirées.
+    // Story 24-2 (#371) : ces deux entrées-là ont quitté le registre de
+    // production (fenêtre refermée), le rejeu est donc déclenché explicitement
+    // sur les entrées retirées — cf. `replay_retired`, qui dit pourquoi le
+    // registre, lui, n'est PAS vide.
     let report = replay_retired(&pool, &manifest).await;
 
     assert_eq!(
@@ -1238,8 +1250,10 @@ async fn full_import_replays_when_only_one_sentinel_is_absent(pool: MySqlPool) {
         "montage : `role` doit RESTER au manifeste — sans quoi le cas testerait C2"
     );
     import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
-    // Story 24-2 (#371) : le registre de production est vide (fenêtre refermée),
-    // le rejeu est donc déclenché explicitement sur les entrées retirées.
+    // Story 24-2 (#371) : ces deux entrées-là ont quitté le registre de
+    // production (fenêtre refermée), le rejeu est donc déclenché explicitement
+    // sur les entrées retirées — cf. `replay_retired`, qui dit pourquoi le
+    // registre, lui, n'est PAS vide.
     let report = replay_retired(&pool, &manifest).await;
 
     let e = retired_entry(&report, ROLE_POSTABLE);
@@ -1308,8 +1322,10 @@ async fn full_import_skips_role_backfill_when_sentinels_are_present(pool: MySqlP
     let backup = export_backup(&app, &biz.ctx.jwt).await;
     let (manifest, data) = unzip(&backup);
     import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
-    // Story 24-2 (#371) : le registre de production est vide (fenêtre refermée),
-    // le rejeu est donc déclenché explicitement sur les entrées retirées.
+    // Story 24-2 (#371) : ces deux entrées-là ont quitté le registre de
+    // production (fenêtre refermée), le rejeu est donc déclenché explicitement
+    // sur les entrées retirées — cf. `replay_retired`, qui dit pourquoi le
+    // registre, lui, n'est PAS vide.
     let report = replay_retired(&pool, &manifest).await;
 
     assert_eq!(
@@ -1419,8 +1435,10 @@ async fn full_import_replays_backfills_in_increasing_version_order(pool: MySqlPo
     strip_column(&mut manifest, "accounts", "postable");
     strip_column(&mut manifest, "invoice_lines", "revenue_account_id");
     import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
-    // Story 24-2 (#371) : le registre de production est vide (fenêtre refermée),
-    // le rejeu est donc déclenché explicitement sur les entrées retirées.
+    // Story 24-2 (#371) : ces deux entrées-là ont quitté le registre de
+    // production (fenêtre refermée), le rejeu est donc déclenché explicitement
+    // sur les entrées retirées — cf. `replay_retired`, qui dit pourquoi le
+    // registre, lui, n'est PAS vide.
     let report = replay_retired(&pool, &manifest).await;
 
     assert!(
@@ -1772,5 +1790,194 @@ async fn validating_a_backdated_invoice_is_refused_by_the_period_lock(pool: MySq
     assert_eq!(
         statut, "draft",
         "un refus ne doit rien laisser à moitié fait"
+    );
+}
+
+// ============================================================================
+// Story 25-1a (#377) — la piste d'audit traverse l'import par le chemin HTTP
+// ============================================================================
+
+/// Version de l'entrée de registre que ces deux cas discriminent.
+const AUDIT_ACTOR_LABEL: i64 = 20260910000001;
+
+/// Les libellés d'acteur présents en base, triés — la sonde des deux cas.
+async fn actor_labels(pool: &MySqlPool) -> Vec<String> {
+    let mut v: Vec<String> =
+        sqlx::query_scalar("SELECT actor_label FROM audit_log ORDER BY id ASC")
+            .fetch_all(pool)
+            .await
+            .expect("lecture des libellés d'acteur");
+    v.sort();
+    v
+}
+
+/// L'entrée du rapport d'audit `admin.full_import` qui porte la version donnée.
+fn report_entry(report: &[Value], version: i64) -> &Value {
+    report
+        .iter()
+        .find(|e| e["version"].as_i64() == Some(version))
+        .unwrap_or_else(|| panic!("entrée {version} absente du rapport d'import"))
+}
+
+/// **C7 — un backup PRÉ-25-1a s'importe, et ses entrées d'audit ressortent
+/// NOMMÉES.** Le manifeste est privé de `audit_log.actor_label` : la sentinelle
+/// manque, l'entrée `20260910000001` se rejoue, et les lignes venues de
+/// l'archive reçoivent le nom de leur acteur.
+///
+/// # Ce que ce test discrimine, et pourquoi les tests existants ne le font pas
+///
+/// C'est le **seul** cas qui traverse la chaîne complète — export, retrait de la
+/// colonne, `POST /admin/full-import`, fusion, rejeu post-restore — sur la
+/// table `audit_log`. `restore_merges_audit_log_and_keeps_actor_names`
+/// (`kesh-db`) exerce `restore_tables_in_tx` en direct, avec des lignes **déjà
+/// pourvues** du libellé : il prouve la fusion, jamais le rejeu.
+///
+/// ⛔ **L'assertion porte sur l'ABSENCE de libellé vide, et c'est délibéré.**
+/// Sans le rejeu, la ligne réinsérée depuis l'archive porterait `''` — la valeur
+/// `DEFAULT` de la colonne, que le restore repose puisque la colonne manque au
+/// manifeste. Asserter « aucun `''` » tombe donc dès que l'entrée du registre
+/// est neutralisée, alors qu'asserter la seule ligne d'origine passerait
+/// toujours : elle, la fusion la laisse intacte.
+///
+/// ⚠️ **La fusion produit un DOUBLON attendu.** `audit_log` étant exclue du
+/// `DELETE`, la ligne d'origine reste ET sa jumelle d'archive est réinsérée sous
+/// un nouvel `id`. Les deux doivent porter le même nom d'acteur — l'une parce
+/// qu'elle ne fut jamais touchée, l'autre par le rejeu.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_replays_actor_label_when_column_is_absent(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = seed_admin(&pool, "al_absent").await;
+
+    // Une entrée d'audit écrite par le chemin réel : le sous-SELECT du
+    // repository pose le libellé, comme en production.
+    let mut tx = pool.begin().await.expect("begin");
+    kesh_db::repositories::audit_log::insert_in_tx(
+        &mut tx,
+        kesh_db::entities::NewAuditLogEntry::user(ctx.user_id, "test.trace", "contact", 1, None),
+    )
+    .await
+    .expect("écriture de l'entrée d'audit source");
+    tx.commit().await.expect("commit");
+
+    assert_eq!(
+        actor_labels(&pool).await,
+        vec!["al_absent_user".to_string()],
+        "pré-condition : la source porte UNE entrée, nommée"
+    );
+
+    let backup = export_backup(&app, &ctx.jwt).await;
+    let (mut manifest, data) = unzip(&backup);
+    strip_column(&mut manifest, "audit_log", "actor_label");
+    import_ok(&app, &ctx.jwt, &manifest, &data).await;
+
+    // ⛔ Le cœur du cas : plus aucune ligne sans nom d'acteur.
+    let vides: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE actor_label = ''")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        vides, 0,
+        "le rejeu doit nommer l'acteur des entrées venues de l'archive — \
+         sans lui elles resteraient au DEFAULT '' de la colonne"
+    );
+
+    // La ligne d'origine ET sa jumelle d'archive portent le même nom. Le compte
+    // est EXACT : une borne lâche laisserait passer une fusion qui perd une
+    // ligne ou en duplique trois.
+    let traces: Vec<String> = sqlx::query_scalar(
+        "SELECT actor_label FROM audit_log WHERE action = 'test.trace' ORDER BY id ASC",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        traces,
+        vec!["al_absent_user".to_string(), "al_absent_user".to_string()],
+        "fusion : la ligne d'origine est conservée, celle de l'archive est ajoutée et nommée"
+    );
+
+    // Et le rapport d'audit le DIT — sinon un exploitant ne saurait pas qu'un
+    // rattrapage a eu lieu sur sa piste d'audit.
+    let report = backfill_report(&pool).await;
+    let e = report_entry(&report, AUDIT_ACTOR_LABEL);
+    assert_eq!(
+        e["outcome"], "REPLAYED_SENTINELS_ABSENT",
+        "sentinelle absente ⇒ rejeu déclaré, got {e:?}"
+    );
+    assert_eq!(
+        e["missing_sentinels"],
+        serde_json::json!(["audit_log.actor_label"]),
+        "la sentinelle manquante doit être NOMMÉE au rapport, got {e:?}"
+    );
+}
+
+/// **C7-bis — un backup POST-25-1a n'est pas réécrit.** La colonne est présente
+/// au manifeste : l'entrée est `Skipped`, et un libellé porté par l'archive
+/// survit tel quel.
+///
+/// # Ce que ce test discrimine
+///
+/// Le **skip strict** de la classe B sur cette entrée. L'`UPDATE` de rejeu est
+/// gardé `WHERE actor_label = ''`, mais cette garde ne suffirait pas à protéger
+/// un cas que C7 ne voit pas : un libellé **divergent** du nom actuel de
+/// l'utilisateur. C'est tout l'objet de l'instantané — un acteur renommé depuis
+/// doit rester nommé comme il l'était à l'écriture. Ici le libellé d'archive est
+/// délibérément rendu différent du `username` pour que la jointure, si elle
+/// tournait, l'écrase de façon visible.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_preserves_archived_actor_label_when_column_is_present(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = seed_admin(&pool, "al_present").await;
+
+    let mut tx = pool.begin().await.expect("begin");
+    kesh_db::repositories::audit_log::insert_in_tx(
+        &mut tx,
+        kesh_db::entities::NewAuditLogEntry::user(ctx.user_id, "test.trace", "contact", 1, None),
+    )
+    .await
+    .expect("écriture de l'entrée d'audit source");
+    tx.commit().await.expect("commit");
+
+    // Le nom d'ALORS, divergent du `username` d'aujourd'hui : c'est le
+    // discriminant. L'état est atteignable en production — il suffit que
+    // l'utilisateur ait été renommé depuis l'écriture.
+    sqlx::query("UPDATE audit_log SET actor_label = 'nom_d_alors' WHERE action = 'test.trace'")
+        .execute(&pool)
+        .await
+        .expect("pose du libellé historique");
+
+    let backup = export_backup(&app, &ctx.jwt).await;
+    let (manifest, data) = unzip(&backup);
+    assert!(
+        manifest["tables"]["audit_log"]["columnNames"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c == "actor_label"),
+        "montage : la colonne doit être PRÉSENTE au manifeste — c'est tout l'enjeu du cas"
+    );
+    import_ok(&app, &ctx.jwt, &manifest, &data).await;
+
+    let traces: Vec<String> = sqlx::query_scalar(
+        "SELECT actor_label FROM audit_log WHERE action = 'test.trace' ORDER BY id ASC",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        traces,
+        vec!["nom_d_alors".to_string(), "nom_d_alors".to_string()],
+        "le libellé de l'archive fait foi : un instantané ne se recalcule pas par jointure"
+    );
+
+    let report = backfill_report(&pool).await;
+    let e = report_entry(&report, AUDIT_ACTOR_LABEL);
+    assert_eq!(
+        e["outcome"], "SKIPPED",
+        "sentinelle présente ⇒ skip strict, got {e:?}"
+    );
+    assert_eq!(
+        e["rows_affected"], 0,
+        "un skip strict ne touche aucune ligne, got {e:?}"
     );
 }

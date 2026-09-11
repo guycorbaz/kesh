@@ -174,28 +174,28 @@ plus qu'il l'est déjà,
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Trancher le mécanisme du restore** (AC 1, 2) : lire `backup.rs:382-460`,
+- [x] **T1 — Trancher le mécanisme du restore** (AC 1, 2) : lire `backup.rs:382-460`,
       `import.rs:112-140`, et les tests `admin_full_import_e2e.rs:330-346` /
       `admin_backup_e2e.rs:263-277` qui **encodent le comportement actuel**. Écrire la décision et
       son motif dans les Dev Notes **avant** de coder.
-- [ ] **T2 — Implémenter** (AC 1, 2) + tests, dont un prouvant qu'un backup **existant** reste
+- [x] **T2 — Implémenter** (AC 1, 2) + tests, dont un prouvant qu'un backup **existant** reste
       importable et que l'export porte toujours `audit_log`.
-- [ ] **T3 — Fermer `reset_demo`** (AC 3, 4).
-- [ ] **T4 — NOMMER le chemin de test** (AC 5), sans alternative. ⛔ **Ne PAS le fermer** :
+- [x] **T3 — Fermer `reset_demo`** (AC 3, 4).
+- [x] **T4 — NOMMER le chemin de test** (AC 5), sans alternative. ⛔ **Ne PAS le fermer** :
       `truncate_all` sert `/api/v1/_test/seed` et `/reset`, dont dépend **tout le montage de la
       suite E2E** (`frontend/tests/e2e/helpers/test-state.ts:83`). Le fermer casserait une suite
       que la CI n'exécute pas — personne ne le verrait avant le gate local. *P2-5.*
-- [ ] **T5 — Mutation** (AC 6) sur chaque garde neuve, **plus un test POSITIF de refus** :
+- [x] **T5 — Mutation** (AC 6) sur chaque garde neuve, **plus un test POSITIF de refus** :
       ⛔ **la mutation ne détecte pas une garde JAMAIS POSÉE.** `lib.rs:300-306` documente le
       piège : *« une route chaînée après le `route_layer` COMPILE, ne panique pas, et échappe aux
       DEUX couches »*. Un test « non-Admin ⇒ 403 » le voit ; une mutation, non. *P2-6.*
-- [ ] **T6 — Les SIX sites à traiter + l'en-tête du module** (AC 7 à 11), PDF régénérés (AC 12),
+- [x] **T6 — Les SIX sites à traiter + l'en-tête du module** (AC 7 à 11), PDF régénérés (AC 12),
       et le README vérifié.
-- [ ] **T7 — SI le mécanisme de T1 touche le schéma** : garde-fous **P2-bis** (bump Cargo
+- [x] **T7 — SI le mécanisme de T1 touche le schéma** : garde-fous **P2-bis** (bump Cargo
       solidaire), **P3** (bump `min_required` si breaking), **P5** (ligne d'audit d'idempotence +
       recompte des deux totaux et des trois compteurs), **P6** (`grep` des sites positionnels),
       **P7** (triage au registre de rejeu). *P2-4.*
-- [ ] **T8 — Gate complet**, base remise à zéro. ⛔ `kesh-db` touché : **ciblage interdit**.
+- [x] **T8 — Gate complet**, base remise à zéro. ⛔ `kesh-db` touché : **ciblage interdit**.
 
 ## Dev Notes
 
@@ -309,8 +309,212 @@ l'historique de l'instance sauvegardée est perdu à chaque restauration.
 
 ### Agent Model Used
 
+- **Implémentation** (`bmad-dev-story`) : Claude Opus 5 (1M context).
+- **Validation de spec**, 4 passes : Sonnet 4.6 → Haiku 4.5 → Opus 5 → Sonnet 4.6.
+- **Revue de code**, passe 1 — trois lentilles en contexte frais : BlindHunter
+  (Sonnet 4.6), EdgeCaseHunter (Haiku 4.5), AcceptanceAuditor (Sonnet 4.6).
+
 ### Debug Log References
+
+Quatre garde-fous du dépôt se sont déclenchés pendant l'implémentation, **aucun
+redondant** — chacun a attrapé un défaut qu'aucun autre ne voyait :
+
+| Garde-fou | Ce qu'il a attrapé |
+|---|---|
+| `every_data_backfill_migration_is_triaged` (P7) | l'`UPDATE` de backfill non trié → entrée classe B au registre |
+| `migrations.sha384` (P8) | checksum de la migration non inscrit |
+| `migrations_upgrade_path` (P6) | site positionnel `total - N` décalé par la 67ᵉ migration |
+| `admin_pat_denied_e2e` (marqueurs `KESH-ADMIN-ROUTES`) | compteur `(5, 21)` du bloc admin, devenu `(5, 22)` |
+
+Trois échecs de gate ont par ailleurs été diagnostiqués et fermés :
+
+- `Unknown column 'actor_label'` — squash de test périmé → `scripts/regen-test-schema.sh` ;
+- `ColumnNotFound("actor_label")` — champ ajouté à l'entité sans l'ajouter à
+  `const COLUMNS` du repository (le doc-comment du fichier en avertissait) ;
+- `users.company_id` NOT NULL sans défaut — fixture de test incomplète, société
+  créée explicitement.
 
 ### Completion Notes List
 
+- **T1 — décision de conception arbitrée avant de coder** (cf. Dev Notes) : le
+  restore **fusionne** `audit_log` au lieu de la remplacer. `audit_log` rejoint
+  `onboarding_state` dans l'exclusion du `DELETE`, et son `id` est écarté de
+  l'`INSERT` pour que les identifiants des deux instances puissent se recouvrir
+  sans collision.
+- **La FK `fk_audit_log_user` est retirée** : conserver une entrée locale alors
+  que `users` est remplacée ferait pointer son `user_id` vers un identifiant
+  disparu — ou réattribué à quelqu'un d'autre. `user_id` rejoint la famille des
+  pointeurs logiques sans FK (`entity_id`, `actor_api_key_id`), et `actor_label`
+  nomme ce que le pointeur ne garantit plus.
+- **`actor_label` est un INSTANTANÉ, pas une jointure** — posé par un sous-SELECT
+  dans l'`INSERT` du repository, il porte le `username` au moment de l'écriture
+  et ne suit pas les renommages. Le cas est verrouillé par
+  `full_import_preserves_archived_actor_label_when_column_is_present`.
+- **AC 6 — la réinitialisation de démo exige un droit, pas un état** : la route
+  `POST /api/v1/onboarding/reset` est passée dans le bloc `admin_routes`, et le
+  bouton du `DemoBanner` est masqué hors rôle Admin (un contrôle visible mais
+  mort fait chercher la panne du mauvais côté).
+- **Volet B — les promesses retirées, non différées.** Huit sites affirmaient une
+  inaltérabilité que le code ne tient pas ; le huitième (`entities/audit_log.rs`)
+  a été manqué par l'inventaire initial, qui ne balayait que `docs/`, `website/`
+  et `README.md` — pas le code. Leçon portée au Change Log.
+
+**Décomptes, recomptés depuis la source, périmètre déclaré :**
+
+| Mesure | `main` → dev (`fd49c77e`) | `main` → HEAD (revue P1 comprise) |
+|---|---|---|
+| tests `admin_full_import_e2e.rs` | 23 → 23 | 23 → **25** |
+| tests `onboarding_e2e.rs` | 13 → **14** | 13 → **14** |
+| tests `backup.rs` (`mod tests`) | 8 → **9** | 8 → **10** |
+| **total de tests neufs** | **2** | **5** |
+
+Migrations : **67** (`ls crates/kesh-db/migrations/*.sql | wc -l`), reportées aux
+cinq sites de `docs/migrations-idempotence-audit.md` (7 `yes` + 60
+`tracked-by-sqlx`).
+
+**Gate** : le gate complet est lancé au push, conformément à l'exception
+`kesh-db` de la § *« Pendant une boucle de revue »* — cette story touche
+`migrations/`, `post_restore.rs` et un repository, le ciblage y est interdit.
+Les résultats réellement obtenus sont consignés au Change Log, jamais anticipés.
+
 ### File List
+
+**Backend — schéma et persistance**
+- `crates/kesh-db/migrations/20260910000001_audit_log_actor_label.sql` *(nouveau)*
+- `crates/kesh-db/src/post_restore/20260910000001_audit_log_actor_label.sql` *(nouveau)*
+- `crates/kesh-db/migrations.sha384`
+- `crates/kesh-db/test-schema/0001_schema_squash.sql` *(régénéré, jamais édité)*
+- `crates/kesh-db/src/backup.rs`
+- `crates/kesh-db/src/post_restore.rs`
+- `crates/kesh-db/src/entities/audit_log.rs`
+- `crates/kesh-db/src/repositories/audit_log.rs`
+- `crates/kesh-db/tests/migrations_upgrade_path.rs`
+- `crates/kesh-db/tests/fiscal_years_repository.rs`
+
+**Backend — API**
+- `crates/kesh-api/src/lib.rs`
+- `crates/kesh-api/src/routes/admin.rs`
+- `crates/kesh-api/tests/admin_full_import_e2e.rs`
+- `crates/kesh-api/tests/admin_backup_e2e.rs`
+- `crates/kesh-api/tests/admin_pat_denied_e2e.rs`
+- `crates/kesh-api/tests/onboarding_e2e.rs`
+
+**Frontend et i18n**
+- `frontend/src/lib/shared/components/DemoBanner.svelte`
+- `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl`
+
+**Documentation**
+- `docs/migrations-idempotence-audit.md`
+- `docs/manual/fr/{user-manual,admin-manual,marketing-brochure}.{tex,pdf}`
+- `README.md`
+
+## Change Log
+
+### Passe 1 de `bmad-code-review` — trois lentilles, contexte frais
+
+| Lentille | Modèle | Findings |
+|---|---|---|
+| BlindHunter | Sonnet 4.6 | 4 |
+| EdgeCaseHunter | Haiku 4.5 | 5 |
+| AcceptanceAuditor | Sonnet 4.6 | 2 |
+
+**Après dédoublonnage : 0 CRITICAL, 0 HIGH, 7 MEDIUM, 2 LOW.** Trois findings
+convergeaient (BH-1 / AA-2 / ECH-3), sur le même trou.
+
+**Remédiations, dans l'ordre où elles ont été appliquées :**
+
+- **ECH-2 / AA-1 (MEDIUM)** — l'AC 6 n'était tenue qu'à moitié : le seul test
+  couvrant `POST /onboarding/reset` exerçait un PAT (garde anti-PAT), pas le
+  RBAC. → `reset_by_comptable_is_forbidden`, éprouvé par mutation (route remise
+  dans `authenticated_routes` → 200 au lieu de 403).
+- **BH-2 (MEDIUM)** — l'en-tête de `entities/audit_log.rs` affirmait encore que
+  « les entrées d'audit sont inamovibles » et que « la FK `ON DELETE RESTRICT`
+  empêche… ». **Huitième site**, manqué parce que l'inventaire du volet B ne
+  balayait que `docs/`, `website/` et `README.md` — pas le code. Réécrit pour
+  renvoyer à la source unique. Grep élargi au code
+  (`inamovible|inaltérable|infalsifiable|immuable|insert-only` sur `crates/`) :
+  aucun autre site.
+- **BH-3 (MEDIUM)** — le bouton « Réinitialiser pour la production » n'était pas
+  gaté par rôle : depuis le déplacement de la route dans `admin_routes`, un
+  Comptable le voyait, cliquait, et recevait un toast générique. → bouton masqué
+  hors Admin, et le 403 distingué d'une panne (`demo-reset-forbidden`, quatre
+  locales). ⚠️ La première rédaction importait `authState` depuis un chemin
+  **inexistant** (`$lib/features/auth/…` au lieu de `$lib/app/stores/…`) et le
+  test inline du 403 dupliquait `isApiError` : les deux corrigés avant gate.
+- **BH-1 / AA-2 / ECH-3 (MEDIUM, convergents)** — aucun test HTTP ne couvrait
+  « backup pré-25-1a → fusion → rejeu post-restore ».
+  `restore_merges_audit_log_and_keeps_actor_names` exerce `restore_tables_in_tx`
+  en direct, sur des lignes **déjà pourvues** du libellé : il prouve la fusion,
+  jamais le rejeu. → deux cas neufs dans `admin_full_import_e2e.rs` :
+  `full_import_replays_actor_label_when_column_is_absent` (C7) et
+  `full_import_preserves_archived_actor_label_when_column_is_present` (C7-bis).
+  **Éprouvés par deux mutations**, chacune tuant les deux tests : (1) retrait de
+  l'entrée `20260910000001` du registre → C7 rougit sur son assertion de cœur
+  (`1 != 0` libellé vide) ; (2) `audit_log` remise dans le `DELETE` du restore →
+  C7-bis rougit sur la fusion (`["nom_d_alors"]` au lieu de deux).
+- **ECH-4 (MEDIUM)** — le cas du backfill rejoué **hors flux d'import** n'était
+  documenté nulle part. → en-tête de l'extrait
+  `post_restore/20260910000001_*.sql`, qui énonce pourquoi la jointure ne se
+  trompe pas *dans ce flux* (l'ordre : le rejeu suit le remplacement de `users` ;
+  la garde : `actor_label = ''` n'atteint que les lignes d'archive) et pourquoi
+  un rejeu manuel viole cette condition.
+- **ECH-5 (LOW)** — cas limite `actor_label` à 64 caractères. Le recompte montre
+  que `users.username` et `actor_label` sont tous deux `VARCHAR(64)`, donc
+  **aucune troncature possible aujourd'hui** — mais rien ne verrouillait
+  l'égalité. Le mode d'échec n'est d'ailleurs pas « un libellé tronqué » : le
+  libellé venant d'un sous-SELECT, MariaDB en mode strict refuserait l'`INSERT`
+  d'audit, donc **l'opération métier entière**. → test
+  `actor_label_is_at_least_as_wide_as_username`, qui lit les deux largeurs dans
+  `information_schema` plutôt que de répéter un nombre.
+- **BH-4 (LOW)** — deux décomptes périmés dans `post_restore.rs` (« neuf »
+  migrations écrivant des données, « sept » exemptées). Recompte depuis la
+  source : **2 actives + 11 exemptées = 13**. Plutôt que de corriger les
+  nombres, les deux énoncés ont été **réécrits sans total** — un énoncé qui
+  dépend d'un total se périme, un énoncé qui nomme ses objets, non.
+
+**Grep de propagation — et il a rendu six sites de plus.** Le symptôme corrigé
+n'était pas un nombre mais une **affirmation** : « le registre de production est
+vide ». Vraie entre les Stories 24-2 et 24-3, fausse depuis, elle vivait encore
+dans le doc-comment de `replay_retired` **et dans six commentaires de cas**.
+Tous corrigés dans le même patch.
+
+⚠️ Un septième site a été inspecté et **volontairement laissé** :
+`24-2-encaissement-client.md:343` (« l'import ne rejoue plus rien »). C'est un
+compte rendu **daté** d'une story close, exact au moment où il a été écrit — le
+réécrire falsifierait l'histoire plutôt que de corriger une erreur.
+
+**Cinquième garde-fou du dépôt déclenché par cette story** : `i18n-keys.test.ts`
+a rougi sur `1631 != 1630` dès l'ajout de `demo-reset-forbidden`. Compteur mis à
+jour **avec sa ventilation** (+1 site, et non +1 clé : le `{#if}` du masquage
+n'ajoute aucun site — il change qui voit la clé, pas combien de fois le code la
+demande).
+
+**Gate — ce qui a RÉELLEMENT tourné.**
+
+| Gate | Résultat |
+|---|---|
+| `cargo fmt --all -- --check` | vert |
+| `cargo clippy --workspace --all-targets -D warnings` | vert, 0 warning |
+| `cargo nextest run` (profil `ci`, base remise à zéro) | **2306 passed, 0 failed, 4 skipped** — 92,8 s |
+| `npm run check` | 0 erreur (27 warnings préexistants, aucun dans le diff) |
+| `npm run lint-i18n-ownership` | vert |
+| `npm run test:unit` | **740 passed**, 76 fichiers |
+| `npm run build` | vert |
+
+⚠️ **Le premier gate a rougi sur 34 tests `products` / `journal_entries`, et la
+cause n'était pas la story** : la commande de remise à zéro avait vu son
+`sqlx migrate run` échouer **en silence** (sortie redirigée vers `/dev/null`),
+laissant la base de gate **sans schéma**. La doctrine du dépôt dit de
+reconstruire la base avant de diagnostiquer ; ce cas montre qu'elle doit dire
+aussi de **vérifier que la reconstruction a réussi** — une remise à zéro ratée
+est indiscernable d'une régression, et coûte le même diagnostic.
+
+⚠️ **Le second gate a rougi sur UN seul test, et c'était le mien** :
+`actor_label_is_at_least_as_wide_as_username` décodait
+`CHARACTER_MAXIMUM_LENGTH` en `i64` alors qu'`information_schema` le rend en
+`BIGINT UNSIGNED`. Corrigé en `u64`, puis **éprouvé par mutation** (rétrécir
+`actor_label` à `varchar(32)` dans le squash de test → rouge ; squash restauré
+intact, `git diff` vide).
+
+**La suite E2E Playwright reste à lancer** — elle est un prérequis du `push`,
+non du commit, et n'a donc pas encore tourné sur cette branche.

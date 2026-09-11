@@ -189,9 +189,22 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * ⚠️ Les deux clés à **plusieurs** sites sont la raison pour laquelle ce compteur ne se déduit
  * pas du nombre de clés ajoutées : neuf clés neuves, onze sites. *Un total doit être cohérent
  * avec sa propre ventilation, et la ventilation se recompte depuis l'écran.*
+ *
+ * ⚠️ **1630 → 1631 à la Story 25-1a (#377), la piste de contrôle** — une hausse d'un seul
+ * site, et elle se ventile :
+ *
+ * | mouvement | sites |
+ * |---|---|
+ * | `demo-reset-forbidden` — le toast du `DemoBanner` quand le backend rend 403 | **+1** |
+ * | **total** | **+1** |
+ *
+ * ⛔ Le **masquage** du bouton hors rôle Admin, ajouté par la même story, n'ajoute AUCUN
+ * site : `demo-banner-reset` existait déjà et n'est que déplacée sous un `{#if}`. Un
+ * `{#if}` change qui voit la clé, jamais combien de fois le code la demande — et c'est
+ * bien le second que ce compteur mesure.
  */
 const ATTENDU = {
-	sitesTotal: 1630,
+	sitesTotal: 1631,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,
