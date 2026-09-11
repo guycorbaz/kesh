@@ -21,6 +21,9 @@ le journal existe pour trancher.
 
 **Couvre** : [#379]. *(Voisines : [#376] et [#377] → 25-1a, mergée ; [#378] → 25-1c.)*
 
+**Périmètre en un nombre** : **14 routes** — les 13 non tracées des six familles, plus la
+**partielle** que l'inventaire comptait à part.
+
 ⚠️ **Le geste le plus sensible de l'application n'est pas comptable, il est administratif** :
 `PUT /api/v1/users/{id}` peut promouvoir n'importe qui au rôle Comptable — donc au droit
 d'écrire dans les livres — et n'écrit **aucune** ligne d'audit. La contre-passation et le gel
@@ -38,18 +41,28 @@ RÉSOLUS*) : on n'énumère pas les formes qui marchent, on inventorie les sites
 pas. Une énumération de formes est ouverte par nature — une forme imprévue la contourne sans que
 rien ne rougisse.
 
+⛔ **La ventilation se NOMME, elle ne se résume pas à des nombres.** La « partielle » et les
+« trois sans matière » restaient anonymes, donc invérifiables :
+
+| | Route | Pourquoi |
+|---|---|---|
+| **partielle** | `POST /imported-supplier-invoices/{id}/complete` | la facture créée **est** auditée, la transition de la pièce ne l'est pas ⇒ **traitée ici**, AC 3 |
+| sans matière | `PUT /journal-entries/{id}` | **ne mute rien** : le corps n'est même pas désérialisé, le handler rend 404 ou 409 `ENTRY_IS_POSTED` |
+| sans matière | `POST /supplier-invoices/scan-qr` | parsing pur du payload SPC, **aucun accès base** |
+| sans matière | `POST /bank-imports/preview` | *« parse + validate sans persistance »* — aucune mutation |
+
 ⚠️ **Le traçage se fait au REPOSITORY autant qu'à la route.** Un `grep` au niveau du fichier de
 route conclut à un trou là où il n'y en a pas, et l'inverse : `companies.rs` compte deux
 insertions d'audit, mais dans `lock_books`/`unlock_books`, **pas** dans `update`. L'inventaire a
 donc suivi chaque route jusqu'à son repository.
 
-### Les six familles de cette story — 13 routes
+### Les six familles de cette story — 13 routes non tracées, plus 1 partielle
 
 | Famille | Routes | Ce que le silence coûte |
 |---|---|---|
 | `users` | 4 | **un changement de rôle vers Comptable ne laisse aucune trace** |
 | `contact_persons` | 3 | le repository l'assume en tête de fichier : *« Pas d'audit log (donnée informative) »* |
-| `imported_supplier_invoices` | 2 | une pièce entre dans le système sans que rien ne dise par qui |
+| `imported_supplier_invoices` | 2 **+ 1 partielle** | une pièce entre, ressort ou aboutit sans que rien ne dise par qui |
 | `companies::update` | **2**, et non 1 | l'identité de l'entité dont on tient les livres change sans trace |
 | `profile` | 1 | — *(cf. AC 5 : le seul dont la valeur se discute)* |
 | `setup` | 1 | **la création du tout premier administrateur** n'est pas tracée, alors que son chemin jumeau l'est |
@@ -116,9 +129,16 @@ mensonge qui survit à la story qui l'a créé.*
 (`contact_persons::find_by_id_in_company`), sur le modèle de `contact.archived` qui journalise un
 instantané complet (`repositories/contacts.rs:656-667`).
 
-**3. `imported_supplier_invoices` — une trace PAR PIÈCE, pas par lot.**
-`imported_supplier_invoice.created` à l'entrée d'une pièce, `imported_supplier_invoice.discarded`
-à son rejet ; `entity_id` = la pièce.
+**3. `imported_supplier_invoices` — une trace PAR PIÈCE, pas par lot, et QUATRE transitions.**
+`imported_supplier_invoice.created` à l'entrée d'une pièce, `.reactivated` à sa réintroduction,
+`.completed` à sa transformation en facture, `.discarded` à son rejet ; `entity_id` = la pièce.
+
+⛔ **`.completed` est la « route partielle » de l'inventaire, et son absence était une
+ASYMÉTRIE** : `POST /imported-supplier-invoices/{id}/complete` audite la facture fournisseur
+créée (`supplier_invoice.created`, via `supplier_invoices::create_in_tx`) mais **pas** la
+transition de la pièce (`mark_completed`). Le cycle de vie d'une pièce disait donc `created` →
+`discarded` quand elle est rejetée, et `created` → **rien** quand elle aboutit. ⚠️ *Le coût est
+d'une ligne* : la transaction est déjà ouverte au handler et `mark_completed` la prend déjà.
 
 ⛔ **Pourquoi par pièce alors qu'une trace de lot coûterait dix fois moins** : une trace de lot
 n'est pas atteignable par `find_by_entity("imported_supplier_invoice", id)` — donc **invisible à
@@ -217,7 +237,7 @@ la transaction et font `rollback` — c'est elle qui garantit leur silence. Les 
 n'atteint jamais l'audit. *Attribuer le second silence à la transaction serait s'appuyer sur un
 mécanisme qui n'opère pas là.*
 
-### Volet B — les invariants qui valent pour les treize
+### Volet B — les invariants qui valent pour les quatorze
 
 **7. Le constructeur dit la vérité sur l'acteur.** `NewAuditLogEntry::user` **uniquement** là où un
 jeton d'API ne peut structurellement pas passer — le bloc `admin_routes`, seul porteur de
@@ -236,7 +256,7 @@ ailleurs : `from_current_user` quand le handler a l'acteur, `for_actor` quand l'
 `actor_type = 'user'` sur une action faite par une intégration. C'est la dette [#431], et une
 story qui la reproduit l'aggrave.
 
-**8. Une opération sans changement n'écrit pas de trace.** **Quatre** des treize routes passent par
+**8. Une opération sans changement n'écrit pas de trace.** **Quatre** des quatorze routes passent par
 un repository qui **court-circuite le no-op** — les deux `users` (`PUT /users/{id}` et `/disable`,
 qui partagent `update_role_and_active`) et les deux `companies` (`/email` et `/contact-details`,
 qui partagent `update`) et retourne l'état antérieur sans incrémenter
@@ -329,7 +349,7 @@ comme une erreur de plume.
 ## Tasks / Subtasks
 
 - [ ] **T1 — Écrire la décision de conception AVANT de coder** (AC 9)
-  - [ ] Pour chacune des 13 routes, arrêter où l'audit se pose : handler menant la transaction
+  - [ ] Pour chacune des 14 routes, arrêter où l'audit se pose : handler menant la transaction
         (variant `_in_tx`) ou repository. Le tableau des Dev Notes donne la décision proposée ;
         la confirmer ou la contester **par écrit**, avec le motif.
   - [ ] ⚠️ Avant de toucher la signature de `companies::update` ou de `onboarding::update_step` :
@@ -378,8 +398,8 @@ comme une erreur de plume.
         production.
   - [ ] Faire descendre `(user_id, api_key_id)` sur `run_inbox_import` → `process_inbox` →
         `process_one_file`, puis `for_actor` à l'endroit de l'insertion.
-  - [ ] `discard` : la transaction est **déjà ouverte** dans le handler — l'appel se glisse après
-        `mark_discarded`.
+  - [ ] `discard` **et `complete`** : la transaction est **déjà ouverte** dans les deux handlers —
+        l'appel se glisse après `mark_discarded` et après `mark_completed`.
   - [ ] Tests greffés sur `tests/inbox_import_e2e.rs` (`discard_marks_discarded` existe).
 - [ ] **T5 — `companies`, deux routes** (AC 4, 7, 8, 9, 10)
   - [ ] Extraire `companies::update_in_tx` ; garder le court-circuit no-op **dans** le variant, et
@@ -398,7 +418,7 @@ comme une erreur de plume.
         `toctou_race_two_distinct_usernames_creates_exactly_one_admin`.
 - [ ] **T8 — Un helper d'assertion d'audit partagé** (DRY)
   - [ ] `crates/kesh-api/tests/common/mod.rs` n'expose qu'un seul helper et **aucun** pour l'audit :
-        chaque fichier de test réécrit son `sqlx::query_scalar`. Cette story en ajoute treize —
+        chaque fichier de test réécrit son `sqlx::query_scalar`. Cette story en ajoute quatorze —
         c'est le moment, et la règle DRY du projet l'impose.
 - [ ] **T9 — Le registre des routes mutantes et sa garde** (AC 11)
   - [ ] Inscrire les 105 routes, chacune `traced` ou `exempt("<justification>")`.
@@ -497,7 +517,7 @@ user/action/entity_* étaient assertés → faux-vert si une régression renomma
 
 ### Où poser l'audit — le fait structurant, et la décision route par route
 
-⛔ **`insert_in_tx` ne prend qu'une `&mut Transaction`.** Or **sept** des treize chemins passent
+⛔ **`insert_in_tx` ne prend qu'une `&mut Transaction`.** Or **sept** des quatorze chemins passent
 par un repository qui **ouvre et commite sa propre transaction en interne** : le handler n'a donc
 rien où greffer l'audit. C'est le fait qui commande tout le reste, et il n'apparaît nulle part
 dans l'issue.
@@ -513,12 +533,13 @@ dans l'issue.
 | `DELETE /contact-persons/{id}` | aucune | **extraire `_in_tx`** + pré-chargement |
 | `POST /inbox-import` | aucune, sur toute la chaîne | **extraire `create_in_tx`** ⚠️ **et** threader l'acteur |
 | `POST /…/{id}/discard` | ✅ **déjà ouverte au handler** | rien d'autre à bouger |
+| `POST /…/{id}/complete` | ✅ **déjà ouverte au handler** | rien d'autre à bouger — une ligne |
 | `PUT /companies/current/email` | `companies::update` commite seul | **extraire `_in_tx`**, enveloppe conservée |
 | `PUT /companies/current/contact-details` | idem, **même fonction** | idem |
 | `PUT /profile/mode` | `onboarding::update_step` commite seul | **extraire `_in_tx`**, enveloppe conservée |
 | `POST /setup/admin` | ✅ **déjà ouverte au handler** | rien d'autre à bouger |
 
-⚠️ **Deux routes sont gratuites** (`discard`, `setup/admin`) : la transaction est déjà là, l'appel
+⚠️ **Trois routes sont gratuites** (`discard`, `complete`, `setup/admin`) : la transaction est déjà là, l'appel
 se glisse dedans. **Deux autres le sont presque** (`POST /users`, `/reset-password`) : le variant
 `_in_tx` existe déjà, écrit pour cette raison même. Commencer par ces quatre donne le patron
 complet à moindre risque avant de toucher aux signatures partagées.
@@ -553,7 +574,7 @@ variant transactionnel :
   `:2112`) : *aucun décompte par fichier ne montre une migration à moitié faite.*
 - **La route et l'écran de consultation** → 25-1c. ✅ **Son arbitrage est rendu** (2026-09-11) :
   `audit_log` prend un `company_id`. ⚠️ **Si ce `company_id` devenait un champ de
-  `NewAuditLogEntry` plutôt qu'un sous-SELECT du repository, les treize appels ajoutés ici
+  `NewAuditLogEntry` plutôt qu'un sous-SELECT du repository, les quatorze appels ajoutés ici
   devraient le fournir** — à vérifier avant de coder, pas après.
 - **Aucun changement de schéma** : la story n'ajoute ni colonne ni migration — donc **ni P2-bis, ni
   P3, ni P5, ni P6, ni P7, ni P8**. ⚠️ *Le vérifier en fin d'implémentation plutôt que de le tenir
