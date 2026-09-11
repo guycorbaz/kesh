@@ -1,6 +1,6 @@
 # Story 25.1a : Rendre la piste de contrôle inaltérable — et cesser de promettre ce qui est faux
 
-Status: ready-for-dev
+Status: done
 
 ⚠️ **Issue du SPLIT de la 25-1**, décidé à la passe 1 de validation (2026-09-10). La story
 d'origine portait **quatre volets hétérogènes et 14 AC** ; ses seuls trous d'alimentation touchent
@@ -734,77 +734,45 @@ ligne de prose sur une page statique). La boucle est close en 3 passes.
 
 ---
 
-## ⏸️ Point de reprise — 2026-09-11, avant redémarrage de la machine
+## ✅ Gate E2E de clôture — 2026-09-11, 16:23 UTC
 
-### Ce qui est ACQUIS et vérifié
+**214 passés / 19 skipped / 9 échoués, en 8 min 42 s**, montage complet de
+`docs/testing.md` § *Prérequis Playwright local*, base `kesh_e2e` **détruite et
+reconstruite** (67 migrations, dont `20260910000001_audit_log_actor_label`), et
+`/health` contrôlé **avant** le lancement : `"smtpConfigured":true`.
 
-- **Boucle de revue de code CLOSE en 3 passes** (trend au tableau ci-dessus).
-- **Gate backend complet VERT : 2307/2307, 4 skipped**, base remise à zéro *et
-  vérifiée*, lancé après la dernière modification de code.
-- **Gate frontend VERT** : `npm run check` 0 erreur, `lint-i18n-ownership` vert,
-  `test:unit` 740/740, `build` vert.
-- **Les trois PDF des manuels sont régénérés et vérifiés** au `pdftotext` aplati.
-- Tâches T1 à T8 cochées.
+**Jugement fichier par fichier contre `docs/testing.md` § *Les échecs attendus***
+— jamais au nombre :
 
-### ⛔ Ce qui reste À FAIRE, et ne doit pas être cru fait
+| Échec | Verdict |
+|---|---|
+| `mode-expert.spec.ts:26` et `:41` | **KF-029 (#97)** |
+| `onboarding-path-b.spec.ts:65` et `:92` | **KF-029 (#97)** |
+| `onboarding.spec.ts:57`, `:77`, `:150` | **KF-029 (#97)** |
+| `products.spec.ts:166` | pollution d'état — **passe rejoué seul** |
+| `sidebar-navigation.spec.ts:75` | pollution d'état — **passe rejoué seul** |
 
-**Le gate E2E Playwright n'a PAS de résultat exploitable.** Deux runs, aucun
-concluant :
+Compte attendu `7 + 0 (run d'après-midi) + (0 à 1 KF-046) + 1 à 2 de pollution`
+= **8 à 10** ; observé **9**. ⇒ **Aucun échec surnuméraire, aucune régression.**
 
-1. **Premier run — montage INCOMPLET, résultat à JETER.** 18 échecs, dont neuf
-   hors baseline (`reminders`, `dunning-roundtrip`, `invoice-send-email`,
-   `inbox-import`, `xss-token-protection`). Cause établie : `KESH_INBOX_DIR`,
-   `KESH_DOCUMENTS_DIR` et les quatre `KESH_SMTP_*` manquaient, plus
-   `KESH_TEST_MODE` côté **runner**. Aucun rapport avec la branche.
-2. **Second run — montage complet — PARTIEL mais CONCLUANT sur ce qu'il a
-   couvert.** 171 passés, 19 skipped, 24 échoués, 28 non exécutés. Le backend a
-   été arrêté en cours de run (préparation du redémarrage).
+**Trois points qui se lèvent d'eux-mêmes** :
 
-   ⛔ **La ventilation des 24 échecs est nette, et elle est bonne** :
+1. **`reminders.spec.ts:146` est VERT.** Il avait échoué dans les deux runs du
+   matin pour **deux raisons différentes** — montage incomplet, puis backend
+   arrêté — sans jamais tourner dans des conditions saines. La réserve du point
+   de reprise tombe : il n'était pas un échec connu, il n'était pas un échec.
+2. **La KF-045 (#421) ne s'est pas déclenchée**, `invoices.spec.ts:405` et `:429`
+   passent — conforme à un run lancé **après 12:00 UTC**.
+3. **La KF-046 (#424) non plus.** Elle est *déterministe* et **échoue rejouée
+   seule** ; or `sidebar-navigation.spec.ts:75` **passe** rejoué seul, ce qui
+   l'écarte au profit de la pollution. ⚠️ *Le même test porte deux causes
+   distinctes selon le contexte : la liste nominative ne suffit pas, il faut le
+   rejeu isolé pour trancher entre elles.*
 
-   | Échecs | Verdict |
-   |---|---|
-   | 1–9 : `invoices:405`, `invoices:429`, `mode-expert:26/41`, `onboarding-path-b:65/92`, `onboarding:57/77/150` | **EXACTEMENT la baseline attendue** d'un run matinal : 7 KF-029 + 2 KF-045 |
-   | 10 : `reminders:146` | login resté sur `/login` — le backend mourait |
-   | 11–24 (quatorze) | **`connect ECONNREFUSED`** — backend arrêté |
+⚠️ **La tranche alphabétique ≥ `reminders` — celle que le run interrompu du matin
+n'avait jamais couverte — est donc exercée et verte**, à l'exception des deux
+pollutions ci-dessus, toutes deux postérieures à `reminders` dans l'ordre
+alphabétique et toutes deux réfutées par le rejeu isolé.
 
-   ⇒ **Zéro échec surnuméraire sur la portion réellement exercée** (~196 tests,
-   toutes les specs jusqu'à `reminders`). Aucune régression détectée.
-
-⇒ **À la reprise : relancer la suite E2E**, montage complet, et juger **fichier
-par fichier** contre `docs/testing.md` § « Les échecs attendus ». Ce qui reste à
-confirmer est **la tranche alphabétique ≥ `reminders`** — les 15 cassés par
-l'arrêt et les 28 non exécutés. Le compte attendu dépend de l'heure : 7 (KF-029)
-+ 2 (KF-045, si run **avant 12:00 UTC**) + 1 éventuel (KF-046) + 1 à 2 de
-pollution.
-
-⚠️ **Un seul point mérite une attention particulière** : `reminders.spec.ts:146`
-a échoué dans les DEUX runs — au premier pour cause de montage incomplet, au
-second parce que le backend mourait. Il n'a donc **jamais été exercé dans des
-conditions saines**. Ne pas le compter comme connu tant qu'il n'a pas tourné une
-fois proprement.
-
-⚠️ **Contrôle qui coûte deux secondes et tranche** : après démarrage du backend,
-`curl -s http://127.0.0.1:3000/health` doit rendre `"smtpConfigured":true`. S'il
-rend `false`, le montage est incomplet et la suite rougira pour rien.
-
-### Puis, pour clore la story
-
-1. Passer `25-1a-piste-inalterable` à `done` dans `sprint-status.yaml`.
-2. `git push -u origin story/24-5-comptes-de-cloture`.
-3. Ouvrir la PR avec **`closes #376, closes #377`** dans le **corps de la PR** —
-   le dépôt merge en squash, les commits portent tous `refs`, et le mot-clé de
-   fermeture ne vaut que sur la PR.
-4. Surveiller la CI, merger au vert, puis vérifier que les deux issues sont bien
-   fermées (`gh issue view 376 --json state --jq .state`).
-
-### Ce qui vient après
-
-**Story 25-1b** — les six trous d'alimentation du journal ([#379]).
-
-⛔ **Arbitrage du Project Lead attendu avant la 25-1c** : `audit_log` n'a pas de
-colonne `company_id` — la table est **globale** alors que Kesh est multi-société.
-Une route de consultation exposerait les traces de toutes les sociétés à
-l'administrateur d'une seule. Trois issues : ajouter la colonne (migration +
-backfill), restreindre la route, ou documenter la limite. **Ne pas trancher
-seul** — la décision conditionne la spec.
+**Les trois gates de la story sont désormais verts** : backend **2307/2307**,
+frontend **740/740**, E2E **214 passés, 9 échecs tous attendus**.

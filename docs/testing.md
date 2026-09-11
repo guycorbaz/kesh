@@ -356,6 +356,13 @@ sans persister quand la route active y tombe, et le test suppose le groupe ferm�
 seule** le matin du 2026-08-30 puis **échoué seule** l'après-midi, sur un frontend `main`
 inchangé — seule la base `kesh_e2e` avait été reconstruite entre les deux.
 
+⚠️ **Et `sidebar-navigation.spec.ts:75` porte DEUX causes distinctes — seul le rejeu isolé les
+sépare.** Il figure ici comme KF-046 *et* dans le relevé de pollution du 11:06 CEST ci-dessous.
+La KF-046 est **déterministe** et **échoue rejouée seule** ; la pollution **passe rejouée seule**.
+Relevé du 2026-09-11 à 16:23 UTC : le test échoue dans la suite et **passe seul en 828 ms** —
+c'était donc la pollution, pas la KF-046. *Lire la liste nominative ne suffit pas à nommer la
+cause : sur ce test, elle donne deux réponses, et c'est le rejeu qui tranche.*
+
 ⇒ **Le compte attendu est `7 + (2 si le run est matinal) + (1 si la KF-046 se déclenche) + 1 à 2
 de pollution`**, soit **8 à 12**.
 Deux relevés du 2026-08-30, base `kesh_e2e` reconstruite, tous deux **212 passés / 11 échoués** :
