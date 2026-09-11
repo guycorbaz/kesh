@@ -103,6 +103,66 @@ fn auth(token: &str) -> String {
 
 // --- Tests ---
 
+/// ⛔ **Un COMPTABLE authentifié ne peut pas réinitialiser — Story 25-1a (#377).**
+///
+/// La route vivait dans `authenticated_routes`, donc atteignable par tout rôle
+/// authentifié ; ses seules gardes étaient des **états** (`step_completed`,
+/// `is_demo`, un drapeau d'environnement). *Un état se contourne en amenant le
+/// système dans l'état voulu ; un droit, non.*
+///
+/// ⚠️ **Ce test positif est nécessaire, et la mutation ne le remplace pas.** Le
+/// dépôt documente qu'une route chaînée **après** le `route_layer` compile, ne
+/// panique pas, et échappe aux deux couches (`lib.rs`, « TOUTE ROUTE S'AJOUTE
+/// AU-DESSUS DE CETTE LIGNE »). Neutraliser une garde fait rougir un test ;
+/// **une garde jamais posée ne fait rougir personne**. Seul un appel réel avec un
+/// rôle insuffisant le voit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reset_by_comptable_is_forbidden(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+
+    // Un comptable actif. (Le preset d'onboarding part d'une installation
+    // fraîche : aucune société n'existe encore, d'où la création explicite.)
+    create_test_company(&pool).await;
+    let company_id: i64 = sqlx::query_scalar("SELECT MIN(id) FROM companies")
+        .fetch_one(&pool)
+        .await
+        .expect("company de test");
+    sqlx::query(
+        "INSERT INTO users (company_id, username, password_hash, role, active) \
+         VALUES (?, 'compt_reset', ?, 'Comptable', TRUE)",
+    )
+    .bind(company_id)
+    .bind(kesh_api::auth::password::hash_password(TEST_ADMIN_PASSWORD).expect("hash"))
+    .execute(&pool)
+    .await
+    .expect("insert comptable");
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/auth/login"))
+        .json(&json!({ "username": "compt_reset", "password": TEST_ADMIN_PASSWORD }))
+        .send()
+        .await
+        .expect("login comptable");
+    assert_eq!(resp.status(), 200, "le comptable doit pouvoir se connecter");
+    let body: serde_json::Value = resp.json().await.expect("login json");
+    let token = body["accessToken"].as_str().expect("token").to_string();
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/onboarding/reset"))
+        .header("Authorization", auth(&token))
+        .send()
+        .await
+        .expect("reset request");
+
+    assert_eq!(
+        resp.status(),
+        403,
+        "un Comptable authentifié doit être refusé par le RBAC du bloc admin"
+    );
+}
+
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn get_state_returns_initial_state(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
