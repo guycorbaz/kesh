@@ -98,8 +98,23 @@ plus qu'il l'est déjà,
    service, la piste est déjà inatteignable**, et c'est cela que le manuel doit dire — non « aucune
    entrée ne peut être supprimée » tout court. *Relevé en passe 2, P2-3(i).*
 
-9. ⛔ **`admin-manual.tex:1951` ET `marketing-brochure.tex:139` NE PEUVENT PAS ÊTRE RÉTABLIS PAR
-   CETTE STORY.** *(Énoncé volontairement SANS chiffre — cf. l'avertissement de l'item 10.)* La brochure et
+9. ✅ **`admin-manual.tex:1951` et `marketing-brochure.tex:139` sont TRAITÉS ICI, et non différés
+   — arbitrage du Project Lead du 2026-09-11.**
+
+   Ils affirmaient une **conformité** (« garantissent l'intégrité légale au sens de l'OLICo
+   Art. 9 », « intégrité → garanti par `audit_log` insert-only`), ce qui supposait une piste
+   complète — donc la 25-1b. ⛔ **Mais différer une promesse fausse revient à la maintenir.**
+   Plutôt que d'attendre de pouvoir la tenir, on la **retire** : la brochure décrit désormais ce
+   que le journal *fait*, et le manuel admin **dit la réserve** (« la couverture du journal n'est
+   pas complète : la gestion des utilisateurs et quelques autres opérations n'y sont pas encore
+   inscrites »).
+
+   ⚠️ **Calibrage donné par le Project Lead** : *« ne pas se focaliser sur une application stricte
+   de l'OLICo — très peu de logiciels comptables la suivent strictement. »* La conformité
+   réglementaire cesse d'être le moteur des décisions ; la règle qui demeure est celle de la
+   vague 0, indépendante de tout texte de loi — **ne pas promettre ce que le code ne fait pas**.
+   *La décision de fusion, elle, tient sans l'OLICo : une piste qu'un import efface ne sert à
+   rien, et l'argument utile était le blanchiment, pas l'article 9.* La brochure et
    `admin-manual:1951` parlent d'**intégrité**, qui suppose une piste **complète** — or les six
    trous d'alimentation sont renvoyés à la **25-1b**. ⇒ **Ne pas les rétablir ici** ; la 25-1a
    corrige ce qui la concerne et laisse ces deux-là à la 25-1b, qui les reprendra. *Sans quoi la

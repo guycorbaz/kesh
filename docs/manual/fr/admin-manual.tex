@@ -1953,7 +1953,7 @@ La \textbf{suppression définitive} d'une facture validée par un administrateur
 
 \begin{itemize}
     \item Art. 1 : journal chronologique → implémenté (rapport \emph{Journaux}). ⚠️ \textbf{Le grand livre --- l'extrait d'un compte donné --- n'existe pas encore} : aucun rapport ne le produit, et la liste des écritures ne se filtre pas par compte. C'est la première pièce que demande une révision ; elle doit aujourd'hui être reconstituée depuis l'export CSV.
-    \item Art. 3 : intégrité (modification apparente) → garanti par \texttt{audit\_log} insert-only.
+    \item Art. 3 : intégrité (modification apparente) → les corrections passent par \textbf{contre-passation}, qui laisse l'écriture d'origine en place, et \texttt{audit\_log} en conserve la trace. ⚠️ \emph{La couverture du journal n'est pas complète~: la gestion des utilisateurs et quelques autres opérations n'y sont pas encore inscrites.}
     \item Art. 9 al. 1.b : supports modifiables (disque dur, SSD) → conditions 1-4 satisfaites (cf. section sécurité plus haut).
     \item Art. 10 : contrôle et migration → test de restauration annuel obligatoire (cf. section Sauvegarde).
 \end{itemize}
