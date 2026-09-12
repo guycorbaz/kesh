@@ -329,8 +329,10 @@ contenu reste le fait des tests par route des AC 1 à 6.
 **12. Le manuel administrateur dit ce que l'inventaire établit.** Trois affirmations de
 `docs/manual/fr/admin-manual.tex` sont corrigées, et les trois PDF régénérés :
 
-**CINQ sites, dans DEUX manuels** — l'inventaire en comptait trois, la passe 2 en a trouvé deux de
-plus :
+**SEPT sites, dans DEUX manuels** — l'inventaire en comptait trois, la passe 2 en a trouvé deux de
+plus, la passe 3 un sixième, la passe 4 un septième. ⚠️ **Et chacun l'a été en posant une question
+que le précédent ne posait pas** : la couverture, puis les champs, puis l'attribution, puis
+l'**exportabilité**.
 
 | Site | Ce qu'il dit | Ce qui est vrai |
 |---|---|---|
@@ -340,6 +342,8 @@ plus :
 | **`admin:2184`** *(glossaire)* | *« Trace de **toutes** les actions métier »* | même promesse que `:1782`, **400 lignes plus loin** — la corriger seule **réinstallerait la contradiction** |
 | **`user-manual:1591-1594`** | *« de **toutes** les actions comptables significatives — … **changements de paramètres** »* | **un autre manuel**, et l'exemple le plus faux du lot : la création du plan comptable par l'onboarding n'est pas tracée ([#434]) |
 | **`admin:1762`** | *« les mutations effectuées via une clé sont tracées avec `actor_type = 'api_key'` »* | ⛔ **faux pour les 38 sites de [#431]**, qui écrivent `'user'` — et cette story **ne les corrige pas** |
+
+| **`admin:1935`** | *« al. 3 : … → garanti par `audit_log` + SHA-256 + format ouverts du **ZIP d'export** »* | ⛔ **`audit_log` n'est PAS dans l'export** (19 tables sur 38, [#386]) — une affirmation de **conformité OLICo** gagée sur un contenu inexistant |
 
 ⛔ **Le sixième site ne parle pas de COUVERTURE mais d'ATTRIBUTION**, et c'est pourquoi cinq
 relectures successives l'ont manqué : on cherchait « ce qui est tracé », il dit « comment c'est
@@ -451,8 +455,8 @@ comme une erreur de plume.
         exact entre les marqueurs `KESH-ADMIN-ROUTES-BEGIN/END` : **s'en inspirer, et ne pas
         déplacer les marqueurs**.
 - [ ] **T10 — Propagation du symptôme, avant la première passe de revue**
-  - [ ] Les **cinq sites nommés de l'AC 12** — `admin-manual.tex:1782`, `:1786`, `:1956`, `:2184`
-        et `user-manual.tex:1591-1594` — puis **régénérer les trois PDF** (`make fr` dans
+  - [ ] Les **sept sites nommés de l'AC 12** — `admin-manual.tex:1762`, `:1782`, `:1786`, `:1935`,
+        `:1956`, `:2184` et `user-manual.tex:1591-1594` — puis **régénérer les trois PDF** (`make fr` dans
         `docs/manual/`) et les commiter.
   - [ ] ⛔ **Ne pas croire un balayage sur parole, fût-il le sien.** La passe 1 avait déclaré le
         symptôme « circonscrit au manuel administrateur » : la passe 2 y a trouvé **deux sites de
@@ -736,4 +740,42 @@ passe 2, et **les axes que la passe 2 avait déclaré ne pas avoir exercés**. *
    « comment c'est attribué ». Il était là depuis le début, en évidence.
 3. **Une trace au mauvais étage ne manque pas : elle ment.** Le HIGH n'est pas un oubli d'écriture,
    c'est un risque de trace **surnuméraire et fausse** sur neuf chemins hors périmètre.
+
+### Passe 4 de `bmad-create-story validate` — lentille unique (Haiku 4.5), contexte frais
+
+Prompt versionné (`25-1b-validate-prompt-p4.md`), axe principal : **les 73 routes réputées
+tracées**, que trois passes avaient déclaré ne pas avoir exercées.
+
+⛔ **La lentille a rendu 0 finding en déclarant n'avoir traité que 4 routes sur 73**, ni le
+septième site du manuel, ni les recomptes. **Elle ne compte donc pas comme passe** — mais sa
+franchise a fait son travail : *un « 0 finding » adossé à la liste de ce qui n'a pas été fait vaut
+infiniment mieux qu'un « 0 finding » qui se tait.* L'orchestrateur a repris les trois axes.
+
+**L'axe principal, repris et exercé autrement** — non route par route, mais par les **94 appels
+d'audit** du backend et leur gouvernance : **8 sont sous condition**, et les huit sont justifiés
+(garde no-op, lot vide, verrou qui recule, best-effort, complémentarité). ⇒ **Aucun trou de
+couverture nouveau.**
+
+⚠️ **Ce que cette méthode ne voit pas, et il faut l'écrire** : une route dont un chemin de succès
+**contournerait** le repository qui trace. Elle établit qu'aucune trace existante n'est
+conditionnée à tort ; elle n'établit pas que tout chemin en atteint une.
+
+| # | Sév. | Objet |
+|---|---|---|
+| P4-1 | MEDIUM | **Un SEPTIÈME site de manuel** : `admin:1935` gage la conformité **OLICo al. 3** sur un ZIP d'export censé contenir `audit_log` — il ne le contient pas ([#386]) |
+| — | *hors périmètre* | `reconciliation_rule.deleted` écrit son attribution **différemment selon l'effet de l'opération** ⇒ porté à [#431] |
+| — | *hors périmètre* | Le site `:1935` porté à [#386], avec la correction inverse à prévoir quand l'export intégrera la piste |
+
+### Ce que cette passe apprend
+
+1. ⛔ **Sept sites de manuel, sept questions différentes.** Couverture, champs, attribution,
+   exportabilité : *chaque site a été trouvé en posant une question que le précédent ne posait
+   pas.* Un inventaire documentaire ne se clôt pas par l'épuisement des fichiers, mais par celui
+   des **questions** — et rien ne dit qu'il n'en reste pas une.
+2. **Une passe peut échouer utilement.** Celle-ci n'a pas fait son axe ; en le disant, elle a
+   désigné exactement où chercher. *C'est le contraire du précédent de la 24-5, où une passe avait
+   qualifié de « robuste » un point non exécuté.*
+3. **L'incohérence vaut pire que l'absence.** `reconciliation_rule.deleted` est toujours tracée,
+   mais son `actor_type` dépend de l'effet de l'opération : un réviseur qui filtre sur les jetons
+   verra les suppressions **sans effet** et manquera celles qui en ont eu un.
 
