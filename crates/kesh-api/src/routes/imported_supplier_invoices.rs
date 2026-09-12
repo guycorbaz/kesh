@@ -51,7 +51,14 @@ pub async fn post_inbox_import(
     Extension(current_user): Extension<CurrentUser>,
 ) -> Result<Json<inbox_import::InboxImportReport>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    let report = inbox_import::run_inbox_import(&state.pool, &state.config, company.id).await?;
+    let report = inbox_import::run_inbox_import(
+        &state.pool,
+        &state.config,
+        company.id,
+        current_user.user_id,
+        current_user.api_key_id,
+    )
+    .await?;
     Ok(Json(report))
 }
 

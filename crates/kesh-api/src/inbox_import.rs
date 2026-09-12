@@ -40,9 +40,10 @@ use crate::config::Config;
 use crate::document_storage::{self, mime_for_ext};
 use crate::errors::AppError;
 use crate::qr_decode::{self, DecodeConfig, DecodeError};
+use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::imported_supplier_invoice::NewImportedSupplierInvoice;
-use kesh_db::errors::DbError;
-use kesh_db::repositories::imported_supplier_invoices;
+use kesh_db::errors::{DbError, map_db_error};
+use kesh_db::repositories::{audit_log, imported_supplier_invoices};
 
 // --- Catalogue des `error_code` per-fichier (constantes canoniques) ----------
 
@@ -115,6 +116,11 @@ pub async fn run_inbox_import(
     pool: &MySqlPool,
     config: &Config,
     company_id: i64,
+    // Story 25-1b — l'acteur descend jusqu'à l'insertion : la chaîne ne
+    // transportait que `company_id`, et une pièce entrait dans le système sans
+    // que rien ne dise par qui.
+    user_id: i64,
+    actor_api_key_id: Option<i64>,
 ) -> Result<InboxImportReport, AppError> {
     // (1) Connexion dédiée tenue pendant tout le run (GET_LOCK est lié à la
     //     connexion qui l'acquiert — JAMAIS via pool.execute() qui recyclerait
@@ -148,7 +154,7 @@ pub async fn run_inbox_import(
 
     // (2) Traitement : on capture le résultat puis on relâche TOUJOURS le verrou
     //     (succès comme erreur) sur la même connexion avant de la rendre au pool.
-    let result = process_inbox(pool, config, company_id).await;
+    let result = process_inbox(pool, config, company_id, user_id, actor_api_key_id).await;
 
     let _ = sqlx::query("SELECT RELEASE_LOCK(?)")
         .bind(&lock_key)
@@ -172,6 +178,8 @@ async fn process_inbox(
     pool: &MySqlPool,
     config: &Config,
     company_id: i64,
+    user_id: i64,
+    actor_api_key_id: Option<i64>,
 ) -> Result<InboxImportReport, AppError> {
     let inbox_root = ensure_canonical_dir(&config.inbox_dir)
         .map_err(|e| AppError::Internal(format!("inbox import: racine inbox: {e}")))?;
@@ -223,6 +231,8 @@ async fn process_inbox(
             &documents_root,
             &failed_dir,
             company_id,
+            user_id,
+            actor_api_key_id,
             &path,
             &file_name,
             &sym_meta,
@@ -268,6 +278,8 @@ async fn process_one_file(
     documents_root: &Path,
     failed_dir: &Path,
     company_id: i64,
+    user_id: i64,
+    actor_api_key_id: Option<i64>,
     path: &Path,
     file_name: &str,
     sym_meta: &std::fs::Metadata,
@@ -420,13 +432,44 @@ async fn process_one_file(
             // Réactivation `discarded` → `to_complete` (F5). Le justificatif est
             // déjà archivé (storage_path de la row) → pas de ré-archivage, on
             // supprime juste la copie inbox.
-            let reactivated =
-                imported_supplier_invoices::reactivate_to_complete(pool, company_id, existing.id)
-                    .await?;
+            // Story 25-1b (AC 3) — la réactivation est un TROISIÈME chemin
+            // d'entrée : elle rend `Accepted` sans rien créer. Sans sa trace, la
+            // piste garderait `discarded` pour dernière trace d'une pièce
+            // redevenue `to_complete` — elle dirait le contraire de la base.
+            let mut tx = pool
+                .begin()
+                .await
+                .map_err(|e| AppError::Database(map_db_error(e)))?;
+            let reactivated = imported_supplier_invoices::reactivate_to_complete(
+                &mut tx,
+                company_id,
+                existing.id,
+            )
+            .await?;
             if reactivated {
+                audit_log::insert_in_tx(
+                    &mut tx,
+                    NewAuditLogEntry::for_actor(
+                        user_id,
+                        actor_api_key_id,
+                        "imported_supplier_invoice.reactivated",
+                        "imported_supplier_invoice",
+                        existing.id,
+                        Some(serde_json::json!({
+                            "original_filename": file_name,
+                            "file_hash": file_hash,
+                        })),
+                    ),
+                )
+                .await?;
+                tx.commit()
+                    .await
+                    .map_err(|e| AppError::Database(map_db_error(e)))?;
                 remove_inbox_file(path);
                 return Ok(FileOutcome::Accepted(existing.id));
             }
+            // Rien réactivé : la transaction n'a rien à valider.
+            let _ = tx.rollback().await;
             // Race : la row n'est plus `discarded` → traité comme doublon.
             return dispose_failed(path, failed_dir, file_name, &disambig, ERR_DUPLICATE, None);
         }
@@ -487,33 +530,80 @@ async fn process_one_file(
 
     // (8) Staging : INSERT imported_supplier_invoices (status='to_complete').
     let new = NewImportedSupplierInvoice::from_scanned(company_id, &scanned, doc);
-    match imported_supplier_invoices::create(pool, &new).await {
-        Ok(row) => {
-            remove_inbox_file(path);
-            Ok(FileOutcome::Accepted(row.id))
+
+    // ⚠️ Story 25-1b — la transaction est ouverte ICI, autour de la SEULE étape
+    // d'insertion, et non en tête de la fonction : le pool est à 5 connexions,
+    // `run_inbox_import` en tient déjà une pour son GET_LOCK, et la tenir
+    // pendant le délai de stabilité, le rendu PDF et l'archivage disque
+    // donnerait une connexion *idle-in-transaction* par fichier — jusqu'à 200
+    // par run.
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
+    let inserted = match imported_supplier_invoices::create_in_tx(&mut tx, &new).await {
+        Ok(row) => row,
+        Err(e) => {
+            // ⚠️ Rollback AVANT `dispose_failed` : la transaction ne doit pas
+            // rester ouverte pendant les manipulations de fichiers.
+            let _ = tx.rollback().await;
+            return match e {
+                DbError::UniqueConstraintViolation(_) => {
+                    // Race sur UNIQUE (company_id, file_hash) : le justificatif
+                    // archivé est partagé (content-addressed) avec la row
+                    // gagnante → NE PAS le supprimer.
+                    dispose_failed(path, failed_dir, file_name, &disambig, ERR_DUPLICATE, None)
+                }
+                DbError::DataLengthOrRange(_) => {
+                    // Champ QR tiers sur-long (hors SIX 2.2) → échec par-fichier
+                    // propre (D2). Nettoyage best-effort de l'orphelin archivé
+                    // (content-addressed → idempotent : un ré-import réécrirait
+                    // le même chemin).
+                    let _ = std::fs::remove_file(documents_root.join(&storage_path));
+                    dispose_failed(
+                        path,
+                        failed_dir,
+                        file_name,
+                        &disambig,
+                        ERR_FIELD_TOO_LONG,
+                        None,
+                    )
+                }
+                // Toute autre DbError = catastrophe (pool mort, etc.) → 500 global.
+                other => Err(AppError::Database(other)),
+            };
         }
-        Err(DbError::UniqueConstraintViolation(_)) => {
-            // Race sur UNIQUE (company_id, file_hash) : le justificatif archivé est
-            // partagé (content-addressed) avec la row gagnante → NE PAS le supprimer.
-            dispose_failed(path, failed_dir, file_name, &disambig, ERR_DUPLICATE, None)
-        }
-        Err(DbError::DataLengthOrRange(_)) => {
-            // Champ QR tiers sur-long (hors SIX 2.2) → échec par-fichier propre (D2).
-            // Nettoyage best-effort de l'orphelin archivé (content-addressed →
-            // idempotent : un ré-import réécrirait le même chemin).
-            let _ = std::fs::remove_file(documents_root.join(&storage_path));
-            dispose_failed(
-                path,
-                failed_dir,
-                file_name,
-                &disambig,
-                ERR_FIELD_TOO_LONG,
-                None,
-            )
-        }
-        // Toute autre DbError = catastrophe (pool mort, etc.) → 500 global.
-        Err(e) => Err(AppError::Database(e)),
-    }
+    };
+
+    // La trace partage la transaction de l'INSERT : une pièce dont la trace n'a
+    // pas pu s'écrire n'entre pas dans le système.
+    audit_log::insert_in_tx(
+        &mut tx,
+        NewAuditLogEntry::for_actor(
+            user_id,
+            actor_api_key_id,
+            "imported_supplier_invoice.created",
+            "imported_supplier_invoice",
+            inserted.id,
+            Some(serde_json::json!({
+                "original_filename": inserted.original_filename,
+                "creditor_name": inserted.creditor_name,
+                "amount": inserted.amount,
+                "currency": inserted.currency,
+                "reference_type": inserted.reference_type,
+                // Jamais l'IBAN lui-même : seulement sa présence.
+                "iban_present": !inserted.creditor_iban.is_empty(),
+                "is_qr_iban": inserted.is_qr_iban,
+            })),
+        ),
+    )
+    .await?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
+
+    remove_inbox_file(path);
+    Ok(FileOutcome::Accepted(inserted.id))
 }
 
 // --- Helpers -----------------------------------------------------------------

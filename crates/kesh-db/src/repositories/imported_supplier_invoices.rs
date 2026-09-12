@@ -10,6 +10,7 @@ use crate::entities::imported_supplier_invoice::{
 };
 use crate::errors::{DbError, map_db_error};
 use sqlx::MySqlPool;
+use sqlx::{MySql, Transaction};
 
 /// SELECT scopé multi-tenant (anti-IDOR — toujours `AND company_id = ?`).
 const FIND_BY_ID_SQL: &str =
@@ -27,6 +28,24 @@ const FIND_BY_ID_SQL: &str =
 ///   relèvent de la couche d'ingestion 12-5c. Voir dette déférée code-review M2.
 pub async fn create(
     pool: &MySqlPool,
+    new: &NewImportedSupplierInvoice,
+) -> Result<ImportedSupplierInvoice, DbError> {
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+    let created = create_in_tx(&mut tx, new).await?;
+    tx.commit().await.map_err(map_db_error)?;
+    Ok(created)
+}
+
+/// Variante transaction-aware de [`create`] — Story 25-1b.
+///
+/// **Pourquoi** : l'entrée d'audit `imported_supplier_invoice.created` doit
+/// partager la transaction de l'INSERT. Sans ce variant, la trace se serait
+/// écrite dans une transaction distincte, **après** l'autocommit — exactement
+/// la fenêtre non atomique que la story ferme sur les treize autres routes.
+///
+/// Ne commite jamais.
+pub async fn create_in_tx(
+    tx: &mut Transaction<'_, MySql>,
     new: &NewImportedSupplierInvoice,
 ) -> Result<ImportedSupplierInvoice, DbError> {
     let id = sqlx::query(
@@ -58,14 +77,28 @@ pub async fn create(
     .bind(&new.currency)
     .bind(&new.unstructured_message)
     .bind(&new.billing_information)
-    .execute(pool)
+    .execute(&mut **tx)
     .await
     .map_err(map_db_error)?
     .last_insert_id() as i64;
 
-    find_by_id_scoped(pool, new.company_id, id)
+    find_by_id_scoped_in_tx(tx, new.company_id, id)
         .await?
         .ok_or(DbError::NotFound)
+}
+
+/// Lecture scopée dans une transaction en cours — Story 25-1b.
+pub async fn find_by_id_scoped_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    id: i64,
+) -> Result<Option<ImportedSupplierInvoice>, DbError> {
+    sqlx::query_as::<_, ImportedSupplierInvoice>(FIND_BY_ID_SQL)
+        .bind(id)
+        .bind(company_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)
 }
 
 /// Récupère une facture importée par id, scopée à la company (anti-IDOR).
@@ -208,8 +241,11 @@ pub async fn mark_discarded(
 /// (donnée incohérente). Le `WHERE status='discarded'` rend l'opération
 /// idempotente et sans effet sur une row déjà active. Retourne `true` si une
 /// row a effectivement été réactivée.
+/// ⚠️ Prend la transaction (Story 25-1b) : la réactivation est un **chemin
+/// d'entrée** comme la création, et sa trace doit partager sa transaction.
+/// Ne commite jamais.
 pub async fn reactivate_to_complete(
-    pool: &MySqlPool,
+    tx: &mut Transaction<'_, MySql>,
     company_id: i64,
     id: i64,
 ) -> Result<bool, DbError> {
@@ -220,7 +256,7 @@ pub async fn reactivate_to_complete(
     )
     .bind(id)
     .bind(company_id)
-    .execute(pool)
+    .execute(&mut **tx)
     .await
     .map_err(map_db_error)?
     .rows_affected();
