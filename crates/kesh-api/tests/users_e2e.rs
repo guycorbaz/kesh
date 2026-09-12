@@ -9,7 +9,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use chrono::TimeDelta;
-use common::create_test_company;
+use common::{audit_actions, audit_actor, audit_count, audit_details, create_test_company};
 use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
@@ -450,6 +450,109 @@ async fn update_user_change_role(pool: MySqlPool) {
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["role"], "Consultation");
     assert!(body["version"].as_i64().unwrap() > version);
+
+    // Story 25-1b (AC 1) — le changement de RÔLE porte son propre libellé.
+    // ⚠️ Ce n'est pas du zèle : le réviseur cherche « qui a donné le droit
+    // d'écrire dans les livres ? », et noyer une promotion parmi les activations
+    // la rendrait introuvable. Même motif que `books.unlocked` / `books.restored`.
+    let actions = audit_actions(&pool, "user", id).await;
+    assert_eq!(
+        actions,
+        vec!["user.created".to_string(), "user.role_changed".to_string()],
+        "la création puis le changement de rôle, chacun sous son libellé"
+    );
+
+    // Le détail porte l'AVANT et l'APRÈS : une trace qui ne dit pas d'où l'on
+    // vient ne répond pas à « qui a donné ce droit ».
+    let details = audit_details(&pool, "user", id, "user.role_changed")
+        .await
+        .expect("le changement de rôle porte un détail");
+    assert_eq!(details["before"]["role"], "Comptable");
+    assert_eq!(details["after"]["role"], "Consultation");
+
+    // L'acteur est l'administrateur, la cible est l'utilisateur modifié.
+    let (actor_type, api_key_id, actor_user_id, actor_label) =
+        audit_actor(&pool, "user", id, "user.role_changed").await;
+    assert_eq!(actor_type, "user");
+    assert_eq!(api_key_id, None, "route admin : un jeton d'API n'y passe pas");
+    assert_ne!(actor_user_id, id, "l'acteur n'est pas la cible");
+    assert!(!actor_label.is_empty(), "actor_label nomme l'acteur");
+}
+
+/// Story 25-1b (AC 1, 8) — un PUT qui ne change RIEN n'écrit aucune trace.
+///
+/// ⚠️ C'est la garde la plus facile à omettre et la plus trompeuse quand elle
+/// manque : le repository court-circuite le no-op sans incrémenter `version`,
+/// et sans cette garde le journal affirmerait un changement qui n'a pas eu lieu.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn update_user_no_op_writes_no_audit(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let token = login_admin(&app, &pool).await;
+
+    let resp = create_user_api(&app, &token, "bob", "secure-password-12chars", "Comptable").await;
+    let user: Value = resp.json().await.unwrap();
+    let id = user["id"].as_i64().unwrap();
+    let version = user["version"].as_i64().unwrap();
+
+    let before = audit_count(&pool).await;
+
+    // Mêmes valeurs qu'à la création : rien ne change.
+    let resp = app
+        .client
+        .put(app.url(&format!("/api/v1/users/{}", id)))
+        .bearer_auth(&token)
+        .json(&json!({"role": "Comptable", "active": true, "version": version}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "le no-op reste un succès HTTP");
+
+    assert_eq!(
+        audit_count(&pool).await,
+        before,
+        "aucune trace : rien n'a changé"
+    );
+    assert_eq!(
+        audit_actions(&pool, "user", id).await,
+        vec!["user.created".to_string()],
+        "seule la création figure à la piste"
+    );
+}
+
+/// Story 25-1b (AC 1, 10) — la réinitialisation par un administrateur est
+/// tracée, et ne journalise NI mot de passe NI hachage.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reset_password_writes_audit_without_any_secret(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let token = login_admin(&app, &pool).await;
+
+    let resp = create_user_api(&app, &token, "carol", "secure-password-12chars", "Comptable").await;
+    let user: Value = resp.json().await.unwrap();
+    let id = user["id"].as_i64().unwrap();
+
+    let resp = app
+        .client
+        .put(app.url(&format!("/api/v1/users/{}/reset-password", id)))
+        .bearer_auth(&token)
+        .json(&json!({"newPassword": "brand-new-password-12"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    let actions = audit_actions(&pool, "user", id).await;
+    assert!(
+        actions.contains(&"user.password_reset".to_string()),
+        "la réinitialisation laisse une trace, actions = {actions:?}"
+    );
+
+    // `details_json` est délibérément NULL : l'acteur et la cible disent tout,
+    // et le moindre détail ici serait une occasion de fuite.
+    assert_eq!(
+        audit_details(&pool, "user", id, "user.password_reset").await,
+        None,
+        "aucun détail — ni mot de passe, ni hachage, ni longueur"
+    );
 }
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
