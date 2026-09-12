@@ -861,3 +861,56 @@ post-patch* moi-même, sur **tous** les énoncés numériques du document. Elle 
    reconduit le motif.** Ce qu'il faut ajouter, c'est le **geste** — la propagation systématique —
    et le faire soi-même.
 
+### Passe 7 CIBLÉE — lentille unique (Haiku 4.5), contexte frais
+
+Prompt versionné (`25-1b-validate-prompt-p7.md`), périmètre **le seul commit `1f02097f`**.
+**0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW** — quatre axes exercés, axes non exercés déclarés et tous
+**logiquement impossibles à ce stade** (vérifier des PDF régénérés ou un registre écrit, pour une
+spec non implémentée).
+
+**Les deux affirmations principales ont été reprises par l'orchestrateur** — *un « 0 finding » se
+vérifie comme un finding* : plus aucun « sept sites » hors Change Log, et la somme du tableau des
+décisions fait bien **6 + 5 + 3 = 14**.
+
+⚠️ **Et le contrôle a produit un faux positif instructif** : un test cherchant le mot « audit » sur
+la ligne `admin:1786` l'a signalée comme vide, alors qu'elle énumère des **noms de colonnes** et ne
+contient pas le mot. *Un détecteur mal formé coûte le même diagnostic qu'un défaut réel* — jusque
+dans la vérification d'une clôture.
+
+---
+
+## ✅ Boucle de validation CLOSE — sept passes
+
+| Passe | Modèle(s) | Rendu | Ce qu'elle a trouvé |
+|---|---|---|---|
+| 1 | Sonnet 4.6 · Haiku 4.5 | **1 C**, 1 H, 3 M, 2 L | un invariant **intenable sur une seule route** |
+| 2 | Opus 5 | 0 C, **3 H**, 5 M, 6 L | un **troisième chemin d'entrée**, une justification fondée sur un fait inexistant |
+| 3 | Sonnet 4.6 | 0 C, **1 H**, 2 M, 2 L | une trace qui, posée au mauvais étage, **mentirait sur neuf chemins** |
+| 4 | Haiku 4.5 *(+ reprise)* | **1 M** | un septième site de manuel, et **l'axe principal non exercé — déclaré** |
+| 5 | Opus 5 *(ciblée)* | 0 C, 0 H, **4 M**, 5 L | un patch ayant **vidé la justification qu'il laissait debout** |
+| 6 | Sonnet 4.6 *(ciblée)* | 0 C, 0 H, **2 M** | un critère mis à jour **sans la tâche qui l'exécute** |
+| 7 | Haiku 4.5 *(ciblée)* | **0** | rien — **critère d'arrêt atteint** |
+
+**Sévérité maximale, passe après passe : CRITICAL → HIGH → HIGH → MEDIUM → MEDIUM → MEDIUM → rien.**
+Décroissance stricte. Le rebond du **nombre** de MEDIUM en passe 5 a été porté au Project Lead au
+titre de la § *Règle de splitting préventif* ; arbitrage rendu : **pas de split**, aucun de ces
+findings ne touchant la conception.
+
+### Ce que cette boucle laisse au-delà de la story
+
+1. ⛔ **Un inventaire ne se clôt ni par l'épuisement des FICHIERS, ni par celui des QUESTIONS, mais
+   par leur PRODUIT.** Huit sites de manuel, trouvés en quatre questions × deux fichiers — et le
+   huitième par une question déjà posée dans un fichier qu'elle n'avait pas visité.
+2. ⛔ **Deux grandeurs différentes portant le même nombre sont indétectables à la relecture.**
+   « 73 » désignait tantôt les routes tracées, tantôt les libellés d'action. Seul un balayage
+   interrogeant *ce que chaque nombre compte* — et non sa valeur — pouvait le voir.
+3. ⛔ **Un patch met à jour le critère et oublie la tâche qui l'exécute.** Le développeur aurait
+   corrigé sept sites sur huit, **et le gate serait resté vert**.
+4. ⛔ **Quand une passe ne trouve plus que les défauts de son propre patch, ajouter une passe
+   reconduit le motif** — ce qu'il faut ajouter, c'est le **geste**, et le faire soi-même.
+5. ✅ **Une passe qui déclare honnêtement ce qu'elle n'a pas fait vaut mieux qu'une passe qui
+   bluffe** : celle de la passe 4 a désigné exactement où chercher, et deux findings de la passe 3
+   en sont nés.
+
+**Statut : `ready-for-dev`.** Prochaine étape : `bmad-dev-story`.
+
