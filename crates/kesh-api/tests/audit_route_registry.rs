@@ -209,6 +209,34 @@ fn every_mutating_route_of_lib_is_in_the_registry() {
         .next()
         .expect("le fichier n'est pas vide");
 
+    // ⛔ **L'INVENTAIRE DES SITES QUE L'EXTRACTEUR NE SAIT PAS LIRE.**
+    //
+    // L'extraction ci-dessous énumère **une forme qui marche** —
+    // `post(routes::module::handler)`. Une route écrite autrement, par exemple
+    // `post(users::create_widget)` après un `use crate::routes::users;`, ne
+    // serait **pas extraite** : trois ensembles vides, test vert, et personne
+    // n'aurait examiné la route. La passe 1 croyait fermer ce faux vert en
+    // traitant les alias ; elle l'avait seulement déplacé.
+    //
+    // La § *Inventorier les sites NON RÉSOLUS* du `CLAUDE.md` dit quoi faire :
+    // ne pas énumérer les formes qui marchent, mais inventorier **l'ensemble
+    // clos de celles qui ne résolvent pas**, et exiger que chacune soit soit
+    // résolue, soit écrite comme angle mort assumé.
+    let non_resolus: Vec<(String, String)> = extract_counted(source, "")
+        .into_keys()
+        .filter(|(_, arg)| !arg.starts_with("routes::"))
+        .collect();
+    assert_eq!(
+        non_resolus,
+        Vec::<(String, String)>::new(),
+        "⛔ Site(s) de montage de route que l'extracteur du registre NE SAIT PAS \
+         lire : {non_resolus:?}\n\n\
+         Soit la route est écrite `post(routes::module::handler)` comme les 105 \
+         autres, soit cet inventaire doit l'accueillir explicitement comme angle \
+         mort assumé. ⚠️ Ne PAS élargir le filtre d'extraction sans élargir aussi \
+         cet inventaire : c'est lui qui empêche une forme imprévue de passer."
+    );
+
     let counted = extract_counted(source, "routes::");
 
     // ⛔ Un alias — deux routes partageant verbe et handler — rendrait l'ensemble
