@@ -252,7 +252,7 @@ ailleurs : `from_current_user` quand le handler a l'acteur, `for_actor` quand l'
 | Routes | Constructeur |
 |---|---|
 | les quatre `users`, les deux `companies` | `::user` — le bloc est fermé aux jetons |
-| `contact_persons` ×3, `discard` | `from_current_user` |
+| `contact_persons` ×3, `discard`, **`complete`** | `from_current_user` |
 | `inbox-import` | `for_actor`, `(user_id, api_key_id)` **threadés** |
 | `profile/mode` | `from_current_user`, après ajout de l'extracteur |
 | `setup/admin` | `::user(user.id, …)` — pré-authentification |
@@ -295,11 +295,14 @@ nommant toute route absente du registre, et toute entrée du registre disparue d
 
 ⚠️ **L'ensemble clos est celui de `lib.rs`, PAS celui du backend.** Trois routes mutantes vivent
 ailleurs — `/seed`, `/reset` et `/password-reset-token` (`routes/test_endpoints.rs:49,50,53`),
-montées par le `nest()` de `lib.rs:995` et conditionnées au mode test. Le registre les inscrit
-**nommément comme exemptées**, sans quoi une quatrième route ajoutée à ce fichier ne ferait rougir
-aucun garde. ⚠️ **Mais elles sortent du diff automatique** — n'ayant jamais été dans `lib.rs`, le
-volet « entrée du registre disparue de `lib.rs` » les ferait échouer en permanence. *Un garde qui
-rougit toujours est un garde qu'on désactive.* *Un détecteur dont on croit à tort qu'il couvre tout est pire qu'un détecteur
+montées par le `nest()` de `lib.rs:995` et conditionnées au mode test. ⇒ **l'extracteur lit `lib.rs` ET `routes/test_endpoints.rs`**, et le registre les inscrit
+nommément.
+
+⚠️ **Elles sortent du SECOND volet du diff seulement.** « Route absente du registre » s'applique
+aux deux fichiers — une quatrième route ajoutée à `test_endpoints.rs` doit rougir. « Entrée du
+registre disparue de `lib.rs` » ne s'applique qu'à `lib.rs`, faute de quoi ces trois entrées
+échoueraient en permanence. *Un garde qui rougit toujours est un garde qu'on désactive — mais un
+garde qu'on exempte entièrement ne garde plus rien.* *Un détecteur dont on croit à tort qu'il couvre tout est pire qu'un détecteur
 absent.*
 
 ⚠️ **L'extracteur doit échouer bruyamment si deux routes partagent verbe et handler.** L'identité
@@ -326,13 +329,17 @@ aucune analyse statique raisonnable ne le suit. Il vérifie que **toute route mu
 examinée**, ce qui est une propriété plus faible et la seule qui soit décidable. Le contrôle du
 contenu reste le fait des tests par route des AC 1 à 6.
 
-**12. Le manuel administrateur dit ce que l'inventaire établit.** Trois affirmations de
-`docs/manual/fr/admin-manual.tex` sont corrigées, et les trois PDF régénérés :
+**12. Les manuels administrateur ET utilisateur disent ce que l'inventaire établit.** **Huit**
+affirmations sont corrigées, et les trois PDF régénérés :
 
-**SEPT sites, dans DEUX manuels** — l'inventaire en comptait trois, la passe 2 en a trouvé deux de
-plus, la passe 3 un sixième, la passe 4 un septième. ⚠️ **Et chacun l'a été en posant une question
-que le précédent ne posait pas** : la couverture, puis les champs, puis l'attribution, puis
-l'**exportabilité**.
+**HUIT sites, dans DEUX manuels** — trois à l'inventaire, deux à la passe 2, un à chacune des
+passes 3, 4 et 5.
+
+⛔ **Les sept premiers ont été trouvés en posant chacun une question neuve** — couverture, champs,
+attribution, exportabilité. **Le huitième, non** : il répond à une question déjà posée, dans un
+**fichier qu'elle n'avait pas visité** — le glossaire du manuel utilisateur. ⚠️ *Un inventaire
+documentaire ne se clôt ni par l'épuisement des fichiers, ni par celui des questions, mais par leur
+PRODUIT.*
 
 | Site | Ce qu'il dit | Ce qui est vrai |
 |---|---|---|
@@ -342,7 +349,7 @@ l'**exportabilité**.
 | **`admin:2184`** *(glossaire)* | *« Trace de **toutes** les actions métier »* | même promesse que `:1782`, **400 lignes plus loin** — la corriger seule **réinstallerait la contradiction** |
 | **`user-manual:1591-1594`** | *« de **toutes** les actions comptables significatives — … **changements de paramètres** »* | **un autre manuel**, et l'exemple le plus faux du lot : la création du plan comptable par l'onboarding n'est pas tracée ([#434]) |
 | **`admin:1762`** | *« les mutations effectuées via une clé sont tracées avec `actor_type = 'api_key'` »* | ⛔ **faux pour les 38 sites de [#431]**, qui écrivent `'user'` — et cette story **ne les corrige pas** |
-
+| **`user-manual:1733`** *(glossaire)* | *« Journal de **toutes** les modifications comptables »* + un renvoi vers une section *« Journal d'audit »* **qui n'existe pas** (elle s'appelle « Traçabilité ») et dont les deux réserves portent sur l'**inaltérabilité**, pas la couverture | même promesse que `:1591-1594`, dans le **glossaire de l'autre manuel** — la corriger seule réinstallerait la contradiction |
 | **`admin:1935`** | *« al. 3 : … → garanti par `audit_log` + SHA-256 + format ouverts du **ZIP d'export** »* | ⛔ **`audit_log` n'est PAS dans l'export** (19 tables sur 38, [#386]) — une affirmation de **conformité OLICo** gagée sur un contenu inexistant |
 
 ⛔ **Le sixième site ne parle pas de COUVERTURE mais d'ATTRIBUTION**, et c'est pourquoi cinq
@@ -399,7 +406,7 @@ comme une erreur de plume.
   - [ ] ⛔ **Créer `crates/kesh-api/tests/contact_persons_e2e.rs`** : ces trois routes n'ont
         **aucun test**, ni d'intégration ni E2E. *C'est un trou de couverture que la story découvre
         et qu'elle ne peut pas laisser* — on n'ajoute pas une trace à du code que rien n'exerce.
-- [ ] **T4 — `imported_supplier_invoices`, deux routes** (AC 3, 7, 9, 10)
+- [ ] **T4 — `imported_supplier_invoices`, trois routes** (AC 3, 7, 9, 10)
   - [ ] ⛔ **Extraire `imported_supplier_invoices::create_in_tx`** — le `create` actuel écrit
         **sur le pool** (`:61`), donc l'audit ne pourrait pas partager sa transaction. Sans cette
         extraction, l'AC 9 est **intenable sur cette seule route**.
@@ -428,8 +435,8 @@ comme une erreur de plume.
         l'effacement silencieux laisse désormais une trace, et
         `overlong_contact_details_are_rejected_by_the_api` qu'un refus n'en laisse aucune.
 - [ ] **T6 — `profile`** (AC 5, 7, 9, 10)
-  - [ ] Ajouter l'extracteur `Extension(current_user)` et capturer le résultat de `update_step`,
-        que le handler jette aujourd'hui.
+  - [ ] Ajouter l'extracteur `Extension(current_user)` et capturer le résultat de
+        `update_step_in_tx`, que le handler jette aujourd'hui.
   - [ ] Extraire `onboarding::update_step_in_tx` ; `update_step` reste une **enveloppe mince et
         NON auditée**, et le handler mène la transaction.
   - [ ] ⛔ **L'audit se pose dans le HANDLER, jamais dans `update_step`.** Cette fonction a
@@ -437,7 +444,7 @@ comme une erreur de plume.
         suivies par [#434] : y placer la trace ferait écrire `installation.ui_mode_changed` à
         **chaque étape de l'onboarding**. *Une trace au mauvais étage ne manque pas : elle ment.*
   - [ ] Tests sur `tests/profile_e2e.rs`.
-- [ ] **T7 — `setup`** (AC 6, 9, 10)
+- [ ] **T7 — `setup`** (AC 6, 7, 9, 10)
   - [ ] L'audit entre la création et le commit, dans la transaction ouverte au handler.
   - [ ] Tests sur `tests/setup_admin_e2e.rs` : une trace au succès, **aucune** sur les deux `410`
         ni sur les `400` (muets pour deux raisons différentes, cf. AC 6), et **exactement une** sur
@@ -543,8 +550,9 @@ user/action/entity_* étaient assertés → faux-vert si une régression renomma
 
 ### Où poser l'audit — le fait structurant, et la décision route par route
 
-⛔ **`insert_in_tx` ne prend qu'une `&mut Transaction`.** Or **sept** des quatorze chemins passent
-par un repository qui **ouvre et commite sa propre transaction en interne** : le handler n'a donc
+⛔ **`insert_in_tx` ne prend qu'une `&mut Transaction`.** Or **six** des quatorze chemins passent
+par un repository qui **ouvre et commite sa propre transaction en interne** — et **quatre autres
+n'ouvrent aucune transaction du tout** : le handler n'a donc
 rien où greffer l'audit. C'est le fait qui commande tout le reste, et il n'apparaît nulle part
 dans l'issue.
 
@@ -778,4 +786,32 @@ conditionnée à tort ; elle n'établit pas que tout chemin en atteint une.
 3. **L'incohérence vaut pire que l'absence.** `reconciliation_rule.deleted` est toujours tracée,
    mais son `actor_type` dépend de l'effet de l'opération : un réviseur qui filtre sur les jetons
    verra les suppressions **sans effet** et manquera celles qui en ont eu un.
+
+### Passe 5 CIBLÉE — lentille unique (Opus 5), contexte frais
+
+Prompt versionné (`25-1b-validate-prompt-p5.md`), périmètre **la remédiation des passes 3 et 4**,
+non la story. **0 CRITICAL, 0 HIGH, 4 MEDIUM, 5 LOW.**
+
+| # | Sév. | Origine | Objet |
+|---|---|---|---|
+| P5-1 | MEDIUM | **du patch P3** | **Le patch a annulé le bénéfice qu'il invoquait** : sortir les trois routes de `test_endpoints.rs` du diff entier rend une **quatrième** route de ce fichier aussi invisible qu'avant ⇒ exclusion du **second volet seulement** |
+| P5-2 | MEDIUM | **du patch P2** | **La propagation 13 → 14 était incomplète** : le commit annonçait « six énoncés », il y en avait **huit** — l'AC 7 n'assignait de constructeur qu'à treize routes, T4 s'intitulait « deux routes » pour trois |
+| P5-3 | MEDIUM | d'origine | **Un HUITIÈME site de manuel** : `user-manual:1733`, le glossaire — même promesse que `:1591-1594`, plus un **renvoi vers une section qui n'existe pas** |
+| P5-4 | MEDIUM | **du patch P2** | L'AC 12 s'intitulait *« le manuel administrateur… trois affirmations »* quand sa table en listait sept dans **deux** manuels |
+| P5-5..9 | LOW | mixte | « sept des quatorze chemins » (il y en a **six**), une ligne vide coupant la table, deux puces de T6 contradictoires, T7 n'appelant pas l'AC 7, deux aphorismes collés |
+
+### Ce que cette passe apprend
+
+1. ⛔ **Un inventaire ne se clôt ni par l'épuisement des FICHIERS, ni par celui des QUESTIONS, mais
+   par leur PRODUIT.** Les sept premiers sites avaient chacun demandé une question neuve ; le
+   huitième répond à une question **déjà posée**, dans un fichier qu'elle n'avait pas visité.
+   *La leçon de la passe 4 était vraie et incomplète — elle orientait la recherche vers des thèmes
+   neufs et détournait du balayage exhaustif.*
+2. ⛔ **Un patch peut laisser debout la justification qu'il vient de vider.** P5-1 : la phrase
+   « sans quoi une quatrième route ne ferait rougir aucun garde » a survécu au patch qui la rendait
+   fausse. *Corriger un mécanisme sans relire ce qui le motivait produit un texte qui se réfute
+   lui-même.*
+3. ⛔ **« Propagé partout » est une affirmation, donc elle se vérifie.** Mon commit disait six
+   énoncés ; il y en avait huit — et c'est exactement le défaut que la passe 2 avait reproché à la
+   spec. *Celui qui corrige une dérive de compteur n'est pas immunisé contre elle.*
 
