@@ -319,8 +319,29 @@ pub async fn update_user(
                 "user",
                 id,
                 Some(serde_json::json!({
-                    "before": { "role": user.role, "active": user.active },
-                    "after": { "role": updated.role, "active": updated.active },
+                    "before": {
+                        "role": user.role,
+                        "active": user.active,
+                        // ⛔ L'e-mail EST journalisé, par sa présence, et ce
+                        // n'est pas décoratif : cette route est un
+                        // *remplacement*, donc un champ ABSENT vaut `null` et
+                        // EFFACE (cf. le doc-comment de `UpdateUserRequest`).
+                        // Un administrateur qui PUT pour changer un rôle sans
+                        // renvoyer l'e-mail détruit le canal de recouvrement du
+                        // compte — et sans cette clé, la trace dirait
+                        // `before == after`, indiscernable du no-op que la garde
+                        // de version existe pour éviter.
+                        //
+                        // Le principe était déjà écrit pour `companies` ; il
+                        // n'avait pas été propagé ici. *Relevé en passe 2 de
+                        // revue de code.*
+                        "email_present": user.email.is_some(),
+                    },
+                    "after": {
+                        "role": updated.role,
+                        "active": updated.active,
+                        "email_present": updated.email.is_some(),
+                    },
                 })),
             ),
         )

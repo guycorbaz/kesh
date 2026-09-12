@@ -201,13 +201,25 @@ fn extract_counted(source: &str, pattern_prefix: &str) -> BTreeMap<(String, Stri
 
 #[test]
 fn every_mutating_route_of_lib_is_in_the_registry() {
-    // ⚠️ On coupe au bloc d'exemple commenté de fin de fichier : il porte des
-    // constructeurs de route qui ne sont pas des routes.
+    // ⚠️ **La coupe tombe au DÉBUT du bloc d'exemple commenté**, non à sa fin.
+    //
+    // Le marqueur employé d'abord — `// let app = build_router` — est la
+    // DERNIÈRE ligne de ce bloc : les lignes précédentes, dont un
+    // `.route(…, post(...))` d'exemple, restaient dans la source balayée. Elles
+    // n'étaient inoffensives que grâce au filtre de préfixe, c'est-à-dire par
+    // accident. On coupe donc à l'en-tête du bloc, ce qui rend l'inventaire des
+    // sites non lus **vide** plutôt que d'avoir à y accueillir un faux site.
     let source = include_str!("../src/lib.rs");
     let source = source
-        .split("// let app = build_router")
+        .split("// NOTE: les stories futures ajouteront leurs routes protégées")
         .next()
         .expect("le fichier n'est pas vide");
+    assert!(
+        !source.contains("// let app = build_router"),
+        "⛔ la coupe doit précéder le bloc d'exemple commenté en entier — si ce \
+         marqueur subsiste, l'en-tête du bloc a été réécrit et la coupe est \
+         retombée trop tard"
+    );
 
     // ⛔ **L'INVENTAIRE DES SITES QUE L'EXTRACTEUR NE SAIT PAS LIRE.**
     //
@@ -319,6 +331,42 @@ fn every_mutating_route_of_test_endpoints_is_in_the_registry() {
         in_code, in_registry,
         "⛔ Les routes mutantes de test_endpoints.rs ne correspondent plus au \
          registre. Code : {in_code:?} — registre : {in_registry:?}"
+    );
+}
+
+/// ⛔ **Le registre couvre DEUX fichiers ; rien n'exigeait qu'un troisième soit
+/// couvert.** Un futur `.nest("/api/v1/x", routes::x::router())` échapperait aux
+/// deux volets — ses routes vivant hors de `lib.rs` et hors de
+/// `test_endpoints.rs`. Ce test inventorie les sous-routeurs EXTERNES montés par
+/// `lib.rs` et exige que l'ensemble reste celui que le registre sait lire.
+///
+/// *Relevé en passe 2 de revue de code : le doc de module avait anticipé « une
+/// quatrième route de `test_endpoints.rs` », pas un second fichier.*
+#[test]
+fn no_third_route_file_escapes_the_registry() {
+    let source = include_str!("../src/lib.rs");
+    let source = source
+        .split("// NOTE: les stories futures ajouteront leurs routes protégées")
+        .next()
+        .expect("le fichier n'est pas vide");
+
+    let mut externes: Vec<String> = Vec::new();
+    for (i, _) in source.match_indices("::router()") {
+        let debut = source[..i].rfind("routes::").unwrap_or(i);
+        externes.push(source[debut..i].to_string());
+    }
+    externes.sort();
+    externes.dedup();
+
+    assert_eq!(
+        externes,
+        vec!["routes::test_endpoints".to_string()],
+        "⛔ Un sous-routeur EXTERNE autre que `test_endpoints` est monté dans \
+         lib.rs : ses routes mutantes échapperaient aux deux volets du \
+         registre.\n\n\
+         Ajouter un volet pour ce fichier, sur le modèle de \
+         `every_mutating_route_of_test_endpoints_is_in_the_registry`, puis \
+         inscrire ses routes au registre."
     );
 }
 

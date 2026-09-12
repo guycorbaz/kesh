@@ -123,6 +123,19 @@ async fn spawn_app_with_config(
 
 /// AC #11 — Happy path : DB vide (1 stub company seedée) + users_exist=false →
 /// POST /setup/admin retourne 200 + Set-Cookie HttpOnly + flag bascule true.
+/// Le nombre de traces de création d'utilisateur — Story 25-1b.
+///
+/// ⚠️ Le comptage est **filtré sur l'action**, jamais absolu — sauf là où le test
+/// a fait `truncate_all` et n'exerce aucune route tracée : l'absolu y est alors
+/// exact et c'est la forme la plus forte. *Cette distinction a été prise en
+/// défaut cinq fois sur cette story.*
+async fn user_created_traces(pool: &MySqlPool) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'user.created'")
+        .fetch_one(pool)
+        .await
+        .expect("comptage des traces de création")
+}
+
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn setup_admin_happy_path_returns_200_and_cookies(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
@@ -230,11 +243,7 @@ async fn setup_admin_returns_410_when_user_already_exists(pool: MySqlPool) {
 
     // Story 25-1b — la mesure se prend AUTOUR du refus : le premier POST a
     // légitimement tracé. *Un absolu aurait mesuré autre chose que le refus.*
-    let traces_avant_refus: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'user.created'")
-            .fetch_one(&pool)
-            .await
-            .expect("comptage");
+    let traces_avant_refus = user_created_traces(&pool).await;
     assert_eq!(
         traces_avant_refus, 1,
         "le premier setup a tracé sa création — c'est la référence"
@@ -263,17 +272,19 @@ async fn setup_admin_returns_410_when_user_already_exists(pool: MySqlPool) {
         .expect("count");
     assert_eq!(count, 1, "no second admin created");
 
-    // Story 25-1b (AC 6, 9) — le refus n'ajoute AUCUNE trace, et c'est le
-    // `rollback` qui le garantit, pas un `if` : le 410 survient APRÈS
-    // l'ouverture de la transaction.
-    let traces_apres_refus: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'user.created'")
-            .fetch_one(&pool)
-            .await
-            .expect("comptage");
+    // Story 25-1b (AC 6, 9) — le refus n'ajoute AUCUNE trace.
+    //
+    // ⚠️ **La garantie ici est un `if`, PAS le rollback**, et l'écrire de travers
+    // serait s'appuyer sur un mécanisme qui n'opère pas : le chemin 410 est un
+    // `if user_count > 0` situé AVANT `create_in_tx` et avant l'audit, si bien
+    // que ni l'un ni l'autre n'a lieu. Le rollback ne relâche que le verrou
+    // sentinelle. *(La première rédaction attribuait ce silence au rollback —
+    // relevé en passe 2, dans le fichier même où le test voisin interdit cette
+    // faute.)*
+    let traces_apres_refus = user_created_traces(&pool).await;
     assert_eq!(
         traces_apres_refus, traces_avant_refus,
-        "le 410 n'ajoute rien : son rollback emporte l'audit avec l'INSERT"
+        "le 410 n'ajoute rien : le code n'atteint jamais l'audit"
     );
 }
 
@@ -331,17 +342,22 @@ async fn setup_admin_returns_400_on_weak_password(pool: MySqlPool) {
     // le 400 survient AVANT l'ouverture de la transaction, donc le code
     // n'atteint jamais l'audit. Attribuer ce silence au rollback serait
     // s'appuyer sur un mécanisme qui n'opère pas ici.
-    // ⚠️ Le comptage est FILTRÉ sur l'action attendue, non absolu : un absolu
-    // rougirait à tort le jour où le montage de ce test tracerait quelque chose.
-    // *Quatre assertions de cette story ont été prises en défaut ainsi.*
-    let traces: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'user.created'")
-            .fetch_one(&pool)
-            .await
-            .expect("comptage");
+    // ⚠️ Ici l'absolu NON FILTRÉ est exact, et c'est la forme la PLUS FORTE
+    // disponible : ce test commence par `truncate_all` et n'exerce aucune route
+    // tracée. Un filtre par action laisserait passer un refactor qui tracerait
+    // le refus sous un autre libellé.
+    //
+    // *Un patch dit « de propagation » l'avait affaibli en filtrant par action,
+    // sur un motif — « mesurer un écart » — qui ne s'appliquait pas à ce test.
+    // Rétabli en passe 2 : propager un remède hors de son domaine est une
+    // régression.*
+    let traces: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM audit_log")
+        .fetch_one(&pool)
+        .await
+        .expect("comptage");
     assert_eq!(
         traces, 0,
-        "refus en amont du `begin` : l'audit n'est jamais atteint"
+        "refus en amont du `begin` : l'audit n'est jamais atteint, sous AUCUN libellé"
     );
 }
 
@@ -560,14 +576,26 @@ async fn toctou_race_two_distinct_usernames_creates_exactly_one_admin(pool: MySq
     // exactement qu'un admin.** C'est la propriété la plus délicate de la
     // story : deux requêtes concourantes, un seul gagnant, et la trace doit
     // suivre le gagnant — ni zéro, ni deux.
-    let traces: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'user.created'")
-            .fetch_one(&pool)
-            .await
-            .expect("comptage");
     assert_eq!(
-        traces, 1,
+        user_created_traces(&pool).await,
+        1,
         "une seule création, une seule trace — le perdant de la race a été \
          rollbacké, audit compris"
+    );
+
+    // ⛔ Et la trace suit LE GAGNANT. Sans ce lien, « exactement une » resterait
+    // vrai même si la trace nommait le perdant.
+    let audite: i64 =
+        sqlx::query_scalar("SELECT entity_id FROM audit_log WHERE action = 'user.created' LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .expect("entity_id de la trace");
+    let survivant: i64 = sqlx::query_scalar("SELECT id FROM users LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .expect("id du survivant");
+    assert_eq!(
+        audite, survivant,
+        "la trace désigne l'utilisateur qui a réellement survécu à la race"
     );
 }

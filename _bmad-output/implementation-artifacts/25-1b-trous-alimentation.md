@@ -1084,3 +1084,44 @@ dehors, au plus 2 connexions sur 5), les douze critères tenus et les huit sites
 **2318/2318** (4 skipped, 89 s) — nombre inchangé, les assertions ayant été greffées sur des
 tests existants.
 
+### Passe 2 — lentille unique (Opus 5), contexte frais
+
+Prompt versionné (`25-1b-review-prompt-p2.md`), braquée sur la remédiation de la passe 1.
+**0 CRITICAL, 1 HIGH, 4 MEDIUM, 4 LOW** — dont **trois nés de cette remédiation**.
+
+| # | Sév. | Origine | Objet |
+|---|---|---|---|
+| P2-1 | **HIGH** | d'origine *(sa clôture déclarée naît de la P1)* | ⛔ **La garde contre les alias DÉPLAÇAIT le faux vert au lieu de le fermer** — prouvé par exécution : une route écrite `post(users::create_widget)`, sans le préfixe `routes::`, n'était **pas extraite**, et le test restait vert |
+| P2-2 | MEDIUM | d'origine | Rien n'exigeait qu'un **troisième fichier de routes** soit couvert |
+| P2-3 | MEDIUM | **de la P1** | Le commentaire du 410 attribuait le silence au **`rollback`** : ce chemin est un `if` **avant** l'INSERT — faute commise dans le fichier même où le test voisin l'interdit |
+| P2-4 | MEDIUM | **de la P1** | Mon patch « de propagation » avait **AFFAIBLI** la seule assertion qui établissait son propre énoncé |
+| P2-5 | MEDIUM | d'origine | ⛔ **DÉFAUT DE PRODUCTION** : `PUT /users/{id}` **efface l'e-mail par omission** et la trace ne le disait pas |
+| P2-6..9 | LOW | mixte | dénominateur du manuel, quatre copies d'une requête, commentaire de troncature, trace non reliée au gagnant de la race |
+
+### ⛔ Ce que cette passe apprend
+
+1. ⛔ **Fermer un faux vert par l'énumération d'une forme qui marche ne le ferme pas — il le
+   déplace.** La garde de la passe 1 traitait les **alias** ; la forme d'écriture suivante passait.
+   La § *Inventorier les sites NON RÉSOLUS* du `CLAUDE.md` dit quoi faire, et je ne l'avais pas
+   appliquée à mon propre détecteur. ⇒ **l'inventaire est désormais vide**, et la cause réelle —
+   une troncature de source tombant à la **fin** du bloc commenté au lieu de son **début** — est
+   corrigée. *Éprouvé par la mutation même qui passait inaperçue.*
+2. ⛔ **Propager un remède hors de son domaine est une régression.** Mon patch proactif a filtré
+   par action une assertion dont l'absolu était **exact** (`truncate_all` en tête) et la forme la
+   **plus forte**. Le message de commit diagnostiquait « il fallait l'écart » et appliquait autre
+   chose. *Un motif juste — « mesurer un delta » — cesse de l'être hors du cas qui l'a produit.*
+3. ⛔ **On écrit l'avertissement d'un côté et on commet la faute de l'autre.** Le commentaire du
+   410 attribuait un silence au `rollback` soixante lignes au-dessus d'un test qui interdit
+   précisément cela. *Écrire une règle ne protège pas de l'enfreindre dans le même fichier.*
+4. ⛔ **Le défaut de production est un manqué de propagation** : le principe — *« une clé absente
+   vaut `null` et EFFACE ; un effacement par omission ne laissait aucune trace »* — était écrit
+   pour `companies` et n'avait pas été porté à `users`, dont la route a la **même** sémantique.
+
+**Gate après remédiation** : base reconstruite par les **trois** étapes et vérifiée, `fmt` propre,
+`clippy --workspace --all-targets -D warnings` propre, **2320/2320** (4 skipped, 90 s) —
+2318 + 2 tests neufs.
+
+⚠️ **La boucle NE PEUT PAS se clore sur la passe 3** : P2-5 s'est corrigé **dans du code de
+production** (`routes/users.rs`), et la § *La passe ciblée* exige alors une passe de plus braquée
+sur ce patch.
+

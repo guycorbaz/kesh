@@ -482,6 +482,76 @@ async fn update_user_change_role(pool: MySqlPool) {
     assert!(!actor_label.is_empty(), "actor_label nomme l'acteur");
 }
 
+/// Story 25-1b (AC 1) — ⛔ **l'effacement de l'e-mail PAR OMISSION est tracé.**
+///
+/// Cette route est un *remplacement* : un champ absent vaut `null` et efface.
+/// Un administrateur qui PUT pour changer un rôle sans renvoyer l'e-mail détruit
+/// le canal de recouvrement du compte. Sans la clé `email_present`, la trace
+/// dirait `before == after` — indiscernable du no-op.
+///
+/// *Relevé en passe 2 de revue de code : le principe était écrit pour
+/// `companies` et n'avait pas été propagé ici.*
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn update_user_traces_the_email_erased_by_omission(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let token = login_admin(&app, &pool).await;
+
+    let resp = create_user_api(&app, &token, "dave", "secure-password-12chars", "Comptable").await;
+    let user: Value = resp.json().await.unwrap();
+    let id = user["id"].as_i64().unwrap();
+
+    // On pose un e-mail.
+    let resp = app
+        .client
+        .put(app.url(&format!("/api/v1/users/{}", id)))
+        .bearer_auth(&token)
+        .json(&json!({
+            "role": "Comptable",
+            "active": true,
+            "email": "dave@example.test",
+            "version": user["version"].as_i64().unwrap(),
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let posed: Value = resp.json().await.unwrap();
+    assert_eq!(posed["email"], "dave@example.test", "montage");
+
+    // Puis on change SEULEMENT le rôle, sans renvoyer l'e-mail : il est effacé.
+    let resp = app
+        .client
+        .put(app.url(&format!("/api/v1/users/{}", id)))
+        .bearer_auth(&token)
+        .json(&json!({
+            "role": "Consultation",
+            "active": true,
+            "version": posed["version"].as_i64().unwrap(),
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let after: Value = resp.json().await.unwrap();
+    assert!(
+        after["email"].is_null(),
+        "l'omission a bien effacé l'e-mail — c'est la sémantique de la route"
+    );
+
+    // ⛔ Et la trace le DIT.
+    let details = audit_details(&pool, "user", id, "user.role_changed")
+        .await
+        .expect("détails présents");
+    assert_eq!(
+        details["before"]["email_present"], true,
+        "avant : le compte avait un e-mail"
+    );
+    assert_eq!(
+        details["after"]["email_present"], false,
+        "après : il n'en a plus — et le journal le prouve"
+    );
+}
+
 /// Story 25-1b (AC 1, 8) — un PUT qui ne change RIEN n'écrit aucune trace.
 ///
 /// ⚠️ C'est la garde la plus facile à omettre et la plus trompeuse quand elle
