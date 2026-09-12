@@ -1,6 +1,6 @@
 # Story 25.1b : Combler les trous d'alimentation du journal d'audit
 
-Status: ready-for-dev
+Status: review
 
 ⚠️ **Issue du SPLIT de la 25-1** (passe 1 de validation, 2026-09-10) : **25-1a** a fermé les
 chemins d'effacement et corrigé les documents publiés ; **25-1b** *(celle-ci)* comble les trous
@@ -380,109 +380,109 @@ comme une erreur de plume.
         `grep -rn "companies::update(\|onboarding::update_step(" crates/` — **les deux ont
         d'autres appelants**. Le geste sûr est d'extraire un `_in_tx` et de laisser la fonction
         actuelle en mince enveloppe.
-- [ ] **T2 — `users`, quatre routes** (AC 1, 7, 8, 9, 10)
-  - [ ] `POST /users` : `create_in_tx` existe déjà (`repositories/users.rs:50`) — le handler mène
+- [x] **T2 — `users`, quatre routes** (AC 1, 7, 8, 9, 10)
+  - [x] `POST /users` : `create_in_tx` existe déjà (`repositories/users.rs:50`) — le handler mène
         la transaction.
-  - [ ] `PUT /users/{id}` et `/disable` : extraire `update_role_and_active_in_tx`. Les deux routes
+  - [x] `PUT /users/{id}` et `/disable` : extraire `update_role_and_active_in_tx`. Les deux routes
         partagent la fonction et doivent écrire **des libellés différents** — c'est le handler qui
         sait lequel, pas le repository.
-  - [ ] `/reset-password` : `update_password_in_tx` existe (`repositories/users.rs:320`), et son
+  - [x] `/reset-password` : `update_password_in_tx` existe (`repositories/users.rs:320`), et son
         doc-comment dit qu'il a été créé pour cela.
-  - [ ] ⚠️ **La révocation des sessions reste HORS de la transaction** : `routes/users.rs:267`,
+  - [x] ⚠️ **La révocation des sessions reste HORS de la transaction** : `routes/users.rs:267`,
         `:317` et `:344` appellent `refresh_tokens::revoke_all_for_user(&state.pool, …)` après le
         commit. Elle prend le pool — donc une seconde connexion sur les cinq. Ne pas chercher à
         l'y faire entrer, mais **l'écrire** plutôt que de la laisser découvrir.
-  - [ ] Tests greffés sur `crates/kesh-api/tests/users_e2e.rs` — `update_user_change_role` y est
+  - [x] Tests greffés sur `crates/kesh-api/tests/users_e2e.rs` — `update_user_change_role` y est
         **déjà écrit**, il suffit de lui ajouter l'assertion d'audit.
-  - [ ] ⛔ **Tracer aussi le chemin d'amorçage** `auth/bootstrap.rs:123` (AC 6) — il crée le même
+  - [x] ⛔ **Tracer aussi le chemin d'amorçage** `auth/bootstrap.rs:123` (AC 6) — il crée le même
         premier administrateur et n'écrit rien.
-  - [ ] ⚠️ **Sa branche `UniqueConstraintViolation` change de forme** : l'appel vit dans un `match`
+  - [x] ⚠️ **Sa branche `UniqueConstraintViolation` change de forme** : l'appel vit dans un `match`
         dont une branche nettoie la société stub. Ouvrir la transaction, n'auditer que sur `Ok`,
         laisser le `Drop` rollbacker sinon, et **conserver le nettoyage existant**.
-- [ ] **T3 — `contact_persons`, trois routes** (AC 2, 7, 9, 10)
-  - [ ] Variants `_in_tx` : aucune de ces trois fonctions n'ouvre de transaction aujourd'hui.
-  - [ ] Pré-charger l'instantané avant l'archivage, sans quoi la trace ne nomme personne.
-  - [ ] ⚠️ Corriger l'en-tête `repositories/contact_persons.rs:5`.
-  - [ ] ⛔ **Créer `crates/kesh-api/tests/contact_persons_e2e.rs`** : ces trois routes n'ont
+- [x] **T3 — `contact_persons`, trois routes** (AC 2, 7, 9, 10)
+  - [x] Variants `_in_tx` : aucune de ces trois fonctions n'ouvre de transaction aujourd'hui.
+  - [x] Pré-charger l'instantané avant l'archivage, sans quoi la trace ne nomme personne.
+  - [x] ⚠️ Corriger l'en-tête `repositories/contact_persons.rs:5`.
+  - [x] ⛔ **Créer `crates/kesh-api/tests/contact_persons_e2e.rs`** : ces trois routes n'ont
         **aucun test**, ni d'intégration ni E2E. *C'est un trou de couverture que la story découvre
         et qu'elle ne peut pas laisser* — on n'ajoute pas une trace à du code que rien n'exerce.
-- [ ] **T4 — `imported_supplier_invoices`, trois routes** (AC 3, 7, 9, 10)
-  - [ ] ⛔ **Extraire `imported_supplier_invoices::create_in_tx`** — le `create` actuel écrit
+- [x] **T4 — `imported_supplier_invoices`, trois routes** (AC 3, 7, 9, 10)
+  - [x] ⛔ **Extraire `imported_supplier_invoices::create_in_tx`** — le `create` actuel écrit
         **sur le pool** (`:61`), donc l'audit ne pourrait pas partager sa transaction. Sans cette
         extraction, l'AC 9 est **intenable sur cette seule route**.
-  - [ ] ⛔ **Extraire aussi `reactivate_to_complete_in_tx`** — le chemin de réactivation
+  - [x] ⛔ **Extraire aussi `reactivate_to_complete_in_tx`** — le chemin de réactivation
         (`inbox_import.rs:418-431`) porte le **même** défaut, à soixante lignes de là.
-  - [ ] ⚠️ **La transaction se pose autour de la SEULE étape d'insertion** (`inbox_import.rs:488-516`),
+  - [x] ⚠️ **La transaction se pose autour de la SEULE étape d'insertion** (`inbox_import.rs:488-516`),
         **pas** en tête de `process_one_file` : le pool est à **5 connexions**
         (`main.rs:73`), `run_inbox_import` en tient déjà une pour son `GET_LOCK`, et la tenir
         pendant le `sleep` de stabilité, le rendu PDF et l'archivage disque donnerait une connexion
         *idle-in-transaction* par fichier — jusqu'à 200 par run.
-  - [ ] ⚠️ `tx.rollback()` **avant** `dispose_failed` sur les branches `UniqueConstraintViolation`
+  - [x] ⚠️ `tx.rollback()` **avant** `dispose_failed` sur les branches `UniqueConstraintViolation`
         (`:495`) et `DataLengthOrRange` (`:500`).
-  - [ ] ✅ **Vérifié en passe 2, à ne pas re-débattre** : le `GET_LOCK` n'interfère pas (verrou
+  - [x] ✅ **Vérifié en passe 2, à ne pas re-débattre** : le `GET_LOCK` n'interfère pas (verrou
         nommé, connexion distincte) ; une transaction **par fichier** est le bon grain — un échec ne
         rollbacke que sa pièce, les précédentes restent commitées ; `create` n'a qu'un appelant de
         production.
-  - [ ] Faire descendre `(user_id, api_key_id)` sur `run_inbox_import` → `process_inbox` →
+  - [x] Faire descendre `(user_id, api_key_id)` sur `run_inbox_import` → `process_inbox` →
         `process_one_file`, puis `for_actor` à l'endroit de l'insertion.
-  - [ ] `discard` **et `complete`** : la transaction est **déjà ouverte** dans les deux handlers —
+  - [x] `discard` **et `complete`** : la transaction est **déjà ouverte** dans les deux handlers —
         l'appel se glisse après `mark_discarded` et après `mark_completed`.
-  - [ ] Tests greffés sur `tests/inbox_import_e2e.rs` (`discard_marks_discarded` existe).
-- [ ] **T5 — `companies`, deux routes** (AC 4, 7, 8, 9, 10)
-  - [ ] Extraire `companies::update_in_tx` ; garder le court-circuit no-op **dans** le variant, et
+  - [x] Tests greffés sur `tests/inbox_import_e2e.rs` (`discard_marks_discarded` existe).
+- [x] **T5 — `companies`, deux routes** (AC 4, 7, 8, 9, 10)
+  - [x] Extraire `companies::update_in_tx` ; garder le court-circuit no-op **dans** le variant, et
         la garde `version` **dans** le handler.
-  - [ ] Tests sur `tests/companies_e2e.rs` : `an_omitted_field_clears_it_just_like_null` prouve que
+  - [x] Tests sur `tests/companies_e2e.rs` : `an_omitted_field_clears_it_just_like_null` prouve que
         l'effacement silencieux laisse désormais une trace, et
         `overlong_contact_details_are_rejected_by_the_api` qu'un refus n'en laisse aucune.
-- [ ] **T6 — `profile`** (AC 5, 7, 9, 10)
-  - [ ] Ajouter l'extracteur `Extension(current_user)` et capturer le résultat de
+- [x] **T6 — `profile`** (AC 5, 7, 9, 10)
+  - [x] Ajouter l'extracteur `Extension(current_user)` et capturer le résultat de
         `update_step_in_tx`, que le handler jette aujourd'hui.
-  - [ ] Extraire `onboarding::update_step_in_tx` ; `update_step` reste une **enveloppe mince et
+  - [x] Extraire `onboarding::update_step_in_tx` ; `update_step` reste une **enveloppe mince et
         NON auditée**, et le handler mène la transaction.
-  - [ ] ⛔ **L'audit se pose dans le HANDLER, jamais dans `update_step`.** Cette fonction a
+  - [x] ⛔ **L'audit se pose dans le HANDLER, jamais dans `update_step`.** Cette fonction a
         **d'autres appelants** — le seed et huit routes d'onboarding, toutes hors périmètre et
         suivies par [#434] : y placer la trace ferait écrire `installation.ui_mode_changed` à
         **chaque étape de l'onboarding**. *Une trace au mauvais étage ne manque pas : elle ment.*
-  - [ ] Tests sur `tests/profile_e2e.rs`.
-- [ ] **T7 — `setup`** (AC 6, 7, 9, 10)
-  - [ ] L'audit entre la création et le commit, dans la transaction ouverte au handler.
-  - [ ] Tests sur `tests/setup_admin_e2e.rs` : une trace au succès, **aucune** sur les deux `410`
+  - [x] Tests sur `tests/profile_e2e.rs`.
+- [x] **T7 — `setup`** (AC 6, 7, 9, 10)
+  - [x] L'audit entre la création et le commit, dans la transaction ouverte au handler.
+  - [x] Tests sur `tests/setup_admin_e2e.rs` : une trace au succès, **aucune** sur les deux `410`
         ni sur les `400` (muets pour deux raisons différentes, cf. AC 6), et **exactement une** sur
         `toctou_race_two_distinct_usernames_creates_exactly_one_admin`.
-- [ ] **T8 — Un helper d'assertion d'audit partagé** (DRY)
-  - [ ] `crates/kesh-api/tests/common/mod.rs` n'expose qu'un seul helper et **aucun** pour l'audit :
+- [x] **T8 — Un helper d'assertion d'audit partagé** (DRY)
+  - [x] `crates/kesh-api/tests/common/mod.rs` n'expose qu'un seul helper et **aucun** pour l'audit :
         chaque fichier de test réécrit son `sqlx::query_scalar`. Cette story en ajoute quatorze —
         c'est le moment, et la règle DRY du projet l'impose.
-- [ ] **T9 — Le registre des routes mutantes et sa garde** (AC 11)
-  - [ ] Inscrire **108 routes** — les 105 de `lib.rs` **plus les trois de `test_endpoints.rs`** —,
+- [x] **T9 — Le registre des routes mutantes et sa garde** (AC 11)
+  - [x] Inscrire **108 routes** — les 105 de `lib.rs` **plus les trois de `test_endpoints.rs`** —,
         chacune `traced` ou `exempt("<justification>")`. ⚠️ *L'ensemble clos de l'inventaire est
         celui de `lib.rs` ; celui du registre est plus large, et c'est voulu.*
-  - [ ] ⚠️ Les 15 exemptions portent le **numéro de l'issue** qui les suit — **[#434]** pour les
+  - [x] ⚠️ Les 15 exemptions portent le **numéro de l'issue** qui les suit — **[#434]** pour les
         onze routes d'onboarding, **[#435]** pour les quatre d'`auth`/session. *Une justification
         sans suivi est un abandon déguisé.*
-  - [ ] ⚠️ Le test `admin_pat_denied_e2e` lit déjà `lib.rs` par `include_str!` et exige un compte
+  - [x] ⚠️ Le test `admin_pat_denied_e2e` lit déjà `lib.rs` par `include_str!` et exige un compte
         exact entre les marqueurs `KESH-ADMIN-ROUTES-BEGIN/END` : **s'en inspirer, et ne pas
         déplacer les marqueurs**.
-- [ ] **T10 — Propagation du symptôme, avant la première passe de revue**
-  - [ ] Les **huit sites nommés de l'AC 12** — `admin-manual.tex:1762`, `:1782`, `:1786`, `:1935`,
+- [x] **T10 — Propagation du symptôme, avant la première passe de revue**
+  - [x] Les **huit sites nommés de l'AC 12** — `admin-manual.tex:1762`, `:1782`, `:1786`, `:1935`,
         `:1956`, `:2184`, et `user-manual.tex:1591-1594`, `:1733` — puis **régénérer les trois PDF**
         (`make fr` dans `docs/manual/`) et les commiter.
-  - [ ] ⛔ **Ne pas croire un balayage sur parole, fût-il le sien.** La passe 1 avait déclaré le
+  - [x] ⛔ **Ne pas croire un balayage sur parole, fût-il le sien.** La passe 1 avait déclaré le
         symptôme « circonscrit au manuel administrateur » : la passe 2 y a trouvé **deux sites de
         plus, dont un dans un autre manuel**. Le grep portait sur `metadata_json`, qui n'est **qu'un
         des trois** symptômes de l'AC 12 — *greper un symptôme n'est pas greper le défaut.*
-  - [ ] `grep` des autres affirmations : commentaires « pas d'audit », TODO d'audit, `website/`,
+  - [x] `grep` des autres affirmations : commentaires « pas d'audit », TODO d'audit, `website/`,
         `README.md`, `docs/api-external.md`. ✅ Ceux-là sont propres, et les manuels DE/EN/IT ne
         portent qu'un `README.md`.
-  - [ ] Contrôler le **PDF aplati** (`pdftotext f.pdf - | tr '\n' ' ' | tr -s ' '`), pas seulement
+  - [x] Contrôler le **PDF aplati** (`pdftotext f.pdf - | tr '\n' ' ' | tr -s ' '`), pas seulement
         le `.tex` : un `grep` naïf sur une phrase coupée rend un faux négatif.
-  - [ ] ⛔ Partir des **fichiers à couvrir**, pas des mots à trouver : sur la 25-1a, le mot-clé trop
+  - [x] ⛔ Partir des **fichiers à couvrir**, pas des mots à trouver : sur la 25-1a, le mot-clé trop
         étroit a laissé passer un site **cinq fois**, dont une par la seule **langue** du support.
-- [ ] **T11 — Gates**
-  - [ ] ⛔ **Ciblage interdit** si un patch touche `crates/kesh-db/` — gate complet, exception
+- [x] **T11 — Gates**
+  - [x] ⛔ **Ciblage interdit** si un patch touche `crates/kesh-db/` — gate complet, exception
         `kesh-db` de la § *« Pendant une boucle de revue »*. Cette story touche des repositories.
-  - [ ] Base de gate remise à zéro **et vérifiée** avant le gate complet, inconditionnellement.
-  - [ ] E2E au push ; frontend **non touché** par cette story — le vérifier plutôt que le supposer.
+  - [x] Base de gate remise à zéro **et vérifiée** avant le gate complet, inconditionnellement.
+  - [x] E2E au push ; frontend **non touché** par cette story — le vérifier plutôt que le supposer.
 
 ## Dev Notes
 
@@ -672,6 +672,97 @@ le recensement impose :
    ici elle ne protégerait rien.
 
 ### Agent Model Used
+
+Claude Opus 5 (1M context) — implémentation.
+
+### Completion Notes List
+
+**Les quatorze routes sont tracées**, chacune dans la transaction de la mutation
+qu'elle décrit. Trois extractions `_in_tx` avec enveloppe conservée (`users`,
+`companies`, `onboarding` — 60, 9 et 10 appelants), deux conversions directes
+sans enveloppe (`contact_persons`, aucun appelant ni test ; `reactivate_to_complete`,
+un appelant), et une extraction avec enveloppe pour `imported_supplier_invoices::create`.
+L'acteur descend le long de `run_inbox_import` → `process_inbox` → `process_one_file`.
+
+⛔ **CINQ DÉFAUTS QUE SEULE L'EXÉCUTION A RÉVÉLÉS, et ce sont tous des détecteurs
+mal formés — les miens.** Aucune des sept passes de revue de spécification ne
+pouvait les voir :
+
+1. **`creditor_iban` n'est pas `Option<String>`** — le compilateur a rejeté le
+   `is_some()` que la spec prescrivait. ⇒ `!is_empty()`.
+2. ⛔ **Les quatre helpers d'audit cassaient le gate.** `tests/common/mod.rs` est
+   compilé **séparément dans chaque binaire de test** : un helper employé par dix
+   fichiers sur quarante est « jamais utilisé » dans les trente autres, et
+   `clippy -D warnings` refusait. ⇒ `#![allow(dead_code)]`, motivé en tête du
+   module.
+3. ⛔ **Mon extracteur du registre rendait un ensemble VIDE** sur
+   `test_endpoints.rs`, dont la forme diffère (`.route("/x", post(h))` et non
+   `post(routes::m::h)`) — et **comparait donc deux ensembles vides avec
+   succès**. ⇒ garde explicite contre l'ensemble vide.
+4. ⚠️ **Mon contrôle de PDF a rendu un faux négatif** sur une apostrophe
+   **typographique** cherchée en apostrophe droite. Le piège que le `CLAUDE.md`
+   documente, pris sur le fait.
+5. ⛔ **Ma remise à zéro de la base de gate était INCOMPLÈTE, puis OMISE.** La
+   première fois le **seed** a été sauté (29 tests tombés sur *« need at least
+   one Admin user in DB »*) ; la seconde, la base n'a pas été reconstruite entre
+   deux runs alors que la règle est **inconditionnelle**. ⚠️ Et la première
+   erreur a été masquée par une **vérification mal formée** : elle comptait les
+   migrations et les tables — ce qui était commode — au lieu de ce dont les tests
+   ont besoin. *Vérifier n'est pas exécuter ; mais vérifier la mauvaise chose ne
+   vaut pas mieux que ne rien vérifier.*
+
+**Un test a rougi à raison, et c'était le TEST** : il comptait les traces
+globalement alors que le chemin d'amorçage écrit désormais la sienne. Les trois
+compteurs globaux du dépôt ont été inspectés ensuite — deux robustes par
+comparaison, un passant par l'enveloppe non auditée. Aucun cassé.
+
+**Deux gardes éprouvées par MUTATION** : la garde no-op de `users` (neutralisée
+→ rouge, rétablie → vert) et celle du registre (une entrée retirée → elle nomme
+la route manquante).
+
+**Gates** — base détruite, reconstruite **par les trois étapes** et vérifiée sur
+ce dont les tests ont besoin (1 admin, zéro résidu) :
+
+| Gate | Résultat |
+|---|---|
+| `cargo fmt --all -- --check` | propre |
+| `cargo clippy --workspace --all-targets -- -D warnings` | propre |
+| `scripts/test-fast.sh --ci` | **2318/2318, 4 skipped, 90 s** |
+| frontend | **non touché** — vérifié par `git diff --stat`, pas supposé |
+| i18n | **non touché** — aucune clé ajoutée |
+
+⚠️ **E2E au push**, conformément à la règle.
+
+**Décompte recoupé** : 2307 (25-1a) + **11 tests neufs** = 2318 — deux sur
+`users`, un sur `profile`, quatre sur `contact_persons` *(fichier créé)*, quatre
+sur le registre. Les autres assertions sont greffées sur des tests existants.
+
+### File List
+
+**Backend — persistance** *(cinq repositories)*
+- `crates/kesh-db/src/repositories/users.rs` *(extraction `update_role_and_active_in_tx`)*
+- `crates/kesh-db/src/repositories/companies.rs` *(extraction `update_in_tx`)*
+- `crates/kesh-db/src/repositories/onboarding.rs` *(extraction `update_step_in_tx`, **non auditée**)*
+- `crates/kesh-db/src/repositories/contact_persons.rs` *(conversion, en-tête corrigé)*
+- `crates/kesh-db/src/repositories/imported_supplier_invoices.rs` *(extractions `create_in_tx`, `find_by_id_scoped_in_tx`, conversion de `reactivate_to_complete`)*
+
+**Backend — API**
+- `crates/kesh-api/src/routes/users.rs` · `companies.rs` · `contact_persons.rs` ·
+  `profile.rs` · `setup.rs` · `imported_supplier_invoices.rs`
+- `crates/kesh-api/src/auth/bootstrap.rs` *(le second chemin de création du premier admin)*
+- `crates/kesh-api/src/inbox_import.rs` *(threading de l'acteur, transaction par pièce)*
+
+**Tests**
+- `crates/kesh-api/tests/common/mod.rs` *(quatre helpers d'audit)*
+- `crates/kesh-api/tests/contact_persons_e2e.rs` *(**nouveau** — ces routes n'avaient aucun test)*
+- `crates/kesh-api/tests/audit_route_registry.rs` *(**nouveau** — le registre et sa garde)*
+- `users_e2e.rs` · `profile_e2e.rs` · `companies_e2e.rs` · `setup_admin_e2e.rs` ·
+  `inbox_import_e2e.rs`
+
+**Documentation**
+- `docs/manual/fr/admin-manual.{tex,pdf}` *(six sites)*
+- `docs/manual/fr/user-manual.{tex,pdf}` *(deux sites, dont un renvoi mort)*
+- `docs/manual/fr/marketing-brochure.pdf` *(régénéré par `make fr`)*
 
 ### Debug Log References
 
