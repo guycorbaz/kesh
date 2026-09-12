@@ -331,11 +331,18 @@ async fn setup_admin_returns_400_on_weak_password(pool: MySqlPool) {
     // le 400 survient AVANT l'ouverture de la transaction, donc le code
     // n'atteint jamais l'audit. Attribuer ce silence au rollback serait
     // s'appuyer sur un mécanisme qui n'opère pas ici.
-    let traces: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM audit_log")
-        .fetch_one(&pool)
-        .await
-        .expect("comptage");
-    assert_eq!(traces, 0, "refus en amont : l'audit n'est jamais atteint");
+    // ⚠️ Le comptage est FILTRÉ sur l'action attendue, non absolu : un absolu
+    // rougirait à tort le jour où le montage de ce test tracerait quelque chose.
+    // *Quatre assertions de cette story ont été prises en défaut ainsi.*
+    let traces: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'user.created'")
+            .fetch_one(&pool)
+            .await
+            .expect("comptage");
+    assert_eq!(
+        traces, 0,
+        "refus en amont du `begin` : l'audit n'est jamais atteint"
+    );
 }
 
 /// T-A5 (Story 17-4a) — Validation email : email invalide → 400.
