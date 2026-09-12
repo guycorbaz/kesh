@@ -158,7 +158,10 @@ async fn setup(pool: &MySqlPool, app: &TestApp) -> Ctx {
         .await
         .expect("login");
     let body: Value = resp.json().await.expect("json");
-    let jwt = body["accessToken"].as_str().expect("accessToken").to_string();
+    let jwt = body["accessToken"]
+        .as_str()
+        .expect("accessToken")
+        .to_string();
 
     Ctx {
         jwt,

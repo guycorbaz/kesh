@@ -474,7 +474,10 @@ async fn update_user_change_role(pool: MySqlPool) {
     let (actor_type, api_key_id, actor_user_id, actor_label) =
         audit_actor(&pool, "user", id, "user.role_changed").await;
     assert_eq!(actor_type, "user");
-    assert_eq!(api_key_id, None, "route admin : un jeton d'API n'y passe pas");
+    assert_eq!(
+        api_key_id, None,
+        "route admin : un jeton d'API n'y passe pas"
+    );
     assert_ne!(actor_user_id, id, "l'acteur n'est pas la cible");
     assert!(!actor_label.is_empty(), "actor_label nomme l'acteur");
 }
@@ -526,7 +529,14 @@ async fn reset_password_writes_audit_without_any_secret(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login_admin(&app, &pool).await;
 
-    let resp = create_user_api(&app, &token, "carol", "secure-password-12chars", "Comptable").await;
+    let resp = create_user_api(
+        &app,
+        &token,
+        "carol",
+        "secure-password-12chars",
+        "Comptable",
+    )
+    .await;
     let user: Value = resp.json().await.unwrap();
     let id = user["id"].as_i64().unwrap();
 

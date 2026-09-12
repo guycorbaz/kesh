@@ -447,7 +447,13 @@ pub async fn reset_password(
     users::update_password_in_tx(&mut tx, id, &new_hash).await?;
     audit_log::insert_in_tx(
         &mut tx,
-        NewAuditLogEntry::user(current_user.user_id, "user.password_reset", "user", id, None),
+        NewAuditLogEntry::user(
+            current_user.user_id,
+            "user.password_reset",
+            "user",
+            id,
+            None,
+        ),
     )
     .await?;
     tx.commit()

@@ -178,7 +178,6 @@ pub async fn update_in_tx(
     version: i32,
     changes: CompanyUpdate,
 ) -> Result<Company, DbError> {
-
     // Snapshot "before" pour permettre la détection no-op (KF-004).
     let before_opt = sqlx::query_as::<_, Company>(FIND_BY_ID_SQL)
         .bind(id)
