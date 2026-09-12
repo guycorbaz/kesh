@@ -454,7 +454,9 @@ comme une erreur de plume.
         chaque fichier de test réécrit son `sqlx::query_scalar`. Cette story en ajoute quatorze —
         c'est le moment, et la règle DRY du projet l'impose.
 - [ ] **T9 — Le registre des routes mutantes et sa garde** (AC 11)
-  - [ ] Inscrire les 105 routes, chacune `traced` ou `exempt("<justification>")`.
+  - [ ] Inscrire **108 routes** — les 105 de `lib.rs` **plus les trois de `test_endpoints.rs`** —,
+        chacune `traced` ou `exempt("<justification>")`. ⚠️ *L'ensemble clos de l'inventaire est
+        celui de `lib.rs` ; celui du registre est plus large, et c'est voulu.*
   - [ ] ⚠️ Les 15 exemptions portent le **numéro de l'issue** qui les suit — **[#434]** pour les
         onze routes d'onboarding, **[#435]** pour les quatre d'`auth`/session. *Une justification
         sans suivi est un abandon déguisé.*
@@ -462,9 +464,9 @@ comme une erreur de plume.
         exact entre les marqueurs `KESH-ADMIN-ROUTES-BEGIN/END` : **s'en inspirer, et ne pas
         déplacer les marqueurs**.
 - [ ] **T10 — Propagation du symptôme, avant la première passe de revue**
-  - [ ] Les **sept sites nommés de l'AC 12** — `admin-manual.tex:1762`, `:1782`, `:1786`, `:1935`,
-        `:1956`, `:2184` et `user-manual.tex:1591-1594` — puis **régénérer les trois PDF** (`make fr` dans
-        `docs/manual/`) et les commiter.
+  - [ ] Les **huit sites nommés de l'AC 12** — `admin-manual.tex:1762`, `:1782`, `:1786`, `:1935`,
+        `:1956`, `:2184`, et `user-manual.tex:1591-1594`, `:1733` — puis **régénérer les trois PDF**
+        (`make fr` dans `docs/manual/`) et les commiter.
   - [ ] ⛔ **Ne pas croire un balayage sur parole, fût-il le sien.** La passe 1 avait déclaré le
         symptôme « circonscrit au manuel administrateur » : la passe 2 y a trouvé **deux sites de
         plus, dont un dans un autre manuel**. Le grep portait sur `metadata_json`, qui n'est **qu'un
@@ -518,7 +520,11 @@ l'aggrave.*
 ⚠️ **Ce que `::user` perd n'est pas l'imputabilité humaine** — `user_id` porte alors le créateur
 de la clé — **mais l'information « c'était une intégration, pas une personne ».**
 
-#### Les conventions, vérifiées sur les 73 sites en place
+#### Les conventions, relevées sur l'ensemble des libellés d'action du dépôt
+
+⚠️ *Ce relevé portait sur les **libellés** — il se trouve qu'ils étaient 73, comme les routes
+tracées. Deux grandeurs sans rapport que le même nombre rendait indiscernables : l'énoncé nomme
+désormais son objet plutôt que son total.*
 
 - **Action** : `<entité_singulier>.<participe_passé>` — `contact.created`, `invoice.validated`,
   `journal_entry.reversed`. Les écarts existants (`books.locked`, `admin.full_import`,
@@ -551,8 +557,8 @@ user/action/entity_* étaient assertés → faux-vert si une régression renomma
 ### Où poser l'audit — le fait structurant, et la décision route par route
 
 ⛔ **`insert_in_tx` ne prend qu'une `&mut Transaction`.** Or **six** des quatorze chemins passent
-par un repository qui **ouvre et commite sa propre transaction en interne** — et **quatre autres
-n'ouvrent aucune transaction du tout** : le handler n'a donc
+par un repository qui **ouvre et commite sa propre transaction en interne** — et **cinq autres
+n'ouvrent aucune transaction du tout**, et trois en ont déjà une au handler — **6 + 5 + 3 = 14** : le handler n'a donc
 rien où greffer l'audit. C'est le fait qui commande tout le reste, et il n'apparaît nulle part
 dans l'issue.
 
@@ -814,4 +820,44 @@ non la story. **0 CRITICAL, 0 HIGH, 4 MEDIUM, 5 LOW.**
 3. ⛔ **« Propagé partout » est une affirmation, donc elle se vérifie.** Mon commit disait six
    énoncés ; il y en avait huit — et c'est exactement le défaut que la passe 2 avait reproché à la
    spec. *Celui qui corrige une dérive de compteur n'est pas immunisé contre elle.*
+
+### Passe 6 CIBLÉE — lentille unique (Sonnet 4.6), contexte frais
+
+Prompt versionné (`25-1b-validate-prompt-p6.md`), périmètre **le seul commit `2f87b1aa`**.
+**0 CRITICAL, 0 HIGH, 2 MEDIUM, 0 LOW** — et **les deux sont nés du correctif de la passe 5**.
+
+| # | Sév. | Objet |
+|---|---|---|
+| P6-1 | MEDIUM | *« quatre autres n'ouvrent aucune transaction »* — le tableau juste en dessous en liste **cinq** ; 6 + 5 + 3 = 14 |
+| P6-2 | MEDIUM | **T10 listait encore SEPT sites** quand l'AC 12 en comptait huit : *le patch avait mis à jour le critère et pas la tâche qui l'exécute* |
+
+✅ **Deux vérifications demandées, toutes deux favorables** : le constructeur de `complete` est
+**exact** — la route est dans `comptable_routes`, donc atteignable par un jeton, donc
+`from_current_user` —, et **aucun neuvième site** n'existe : le manuel utilisateur ne fait
+simplement aucune promesse sur les champs, l'attribution ou l'exportabilité.
+
+⛔ **Trois corrections appliquées, plus un balayage que la passe n'avait pas demandé.** Le motif
+était devenu clair — *la passe 5 corrige, la passe 6 trouve deux défauts du patch de la passe 5* —
+et y répondre par une passe de plus l'aurait reconduit. J'ai donc appliqué la § *Propagation
+post-patch* moi-même, sur **tous** les énoncés numériques du document. Elle a rendu :
+
+- l'ambiguïté **105 contre 108** entrées au registre, que la passe 6 signalait sans la trancher :
+  l'inventaire porte sur `lib.rs` (105), **le registre est plus large** (108) — et c'est voulu ;
+- ⛔ **un dernier piège que six passes ont laissé passer** : *« les conventions, vérifiées sur les
+  **73 sites** en place »*. Ce 73 désignait les **libellés d'action**, pas les 73 routes tracées.
+  **Deux grandeurs sans rapport que le même nombre rendait indiscernables.** L'énoncé nomme
+  désormais son objet plutôt que son total.
+
+### Ce que cette passe apprend
+
+1. ⛔ **Un patch met à jour le critère et oublie la tâche qui l'exécute.** P6-2 : l'AC 12 disait
+   huit, T10 disait sept. *Un développeur suivant la tâche à la lettre aurait corrigé sept sites
+   sur huit — et le gate serait resté vert.*
+2. ⛔ **Deux grandeurs différentes portant le même nombre sont indétectables à la relecture.**
+   Seul un balayage qui interroge **ce que chaque nombre compte**, et non sa valeur, pouvait le
+   voir. *C'est la § « greper la VALEUR, pas la formulation » retournée : ici la valeur était
+   juste et l'objet faux.*
+3. **Quand une passe ne trouve plus que des défauts de son propre patch, ajouter une passe
+   reconduit le motif.** Ce qu'il faut ajouter, c'est le **geste** — la propagation systématique —
+   et le faire soi-même.
 
