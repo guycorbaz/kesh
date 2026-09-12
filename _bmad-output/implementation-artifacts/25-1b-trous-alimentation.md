@@ -678,10 +678,18 @@ Claude Opus 5 (1M context) — implémentation.
 ### Completion Notes List
 
 **Les quatorze routes sont tracées**, chacune dans la transaction de la mutation
-qu'elle décrit. Trois extractions `_in_tx` avec enveloppe conservée (`users`,
-`companies`, `onboarding` — 60, 9 et 10 appelants), deux conversions directes
-sans enveloppe (`contact_persons`, aucun appelant ni test ; `reactivate_to_complete`,
-un appelant), et une extraction avec enveloppe pour `imported_supplier_invoices::create`.
+qu'elle décrit. Le geste diffère selon ce que le recensement montrait :
+
+- **quatre extractions de variant `_in_tx`, enveloppe conservée** —
+  `users::update_role_and_active`, `companies::update`, `onboarding::update_step`
+  et `imported_supplier_invoices::create` (60, 9, 10 et 1 appelants) ;
+- **quatre conversions directes, SANS enveloppe** — les trois de
+  `contact_persons` et `reactivate_to_complete`, qui n'avaient qu'un appelant
+  chacune et aucun test. *Une enveloppe que personne n'appelle est du code mort
+  qui paraît vivant.*
+
+⚠️ *La formulation « six extractions » du premier jet mélangeait les deux gestes ;
+corrigée en passe 1 de revue de code.*
 L'acteur descend le long de `run_inbox_import` → `process_inbox` → `process_one_file`.
 
 ⛔ **CINQ DÉFAUTS QUE SEULE L'EXÉCUTION A RÉVÉLÉS, et ce sont tous des détecteurs
@@ -1029,4 +1037,50 @@ findings ne touchant la conception.
    en sont nés.
 
 **Statut : `ready-for-dev`.** Prochaine étape : `bmad-dev-story`.
+
+---
+
+## Boucle de revue de code
+
+### Passe 1 — trois lentilles, contexte frais
+
+Prompt versionné (`25-1b-review-prompt-p1.md`), diff **aplati**, modèles orthogonaux à l'auteur
+(Sonnet 4.6 ×2 · Haiku 4.5). **0 CRITICAL, 4 HIGH, 1 MEDIUM, 2 LOW.**
+
+| # | Sév. | Lentille | Objet |
+|---|---|---|---|
+| P1-1 | **HIGH** | attribution/tests | ⛔ **L'extracteur du registre laissait passer un ALIAS** verbe+handler — vérifié **empiriquement** : une route réutilisant un handler déjà inscrit laissait le test **vert**. C'était le faux vert que l'AC 11 nommait |
+| P1-2 | **HIGH** | attribution/tests | ⛔ **Trois des quatre actions d'import n'étaient pas testées**, dont **`.reactivated`** — le chemin du défaut le plus sévère de toute la boucle de validation |
+| P1-3 | **HIGH** | attribution/tests | T7 revendiquait des tests sur les refus de `setup` et « exactement une trace » sur la race TOCTOU : **aucun n'existait** |
+| P1-4 | **HIGH** | attribution/tests | T5 revendiquait qu'un test prouve qu'un refus n'écrit rien : **il ne contenait aucune assertion d'audit** |
+| P1-5 | MEDIUM | atomicité | Orphelinat de fichier possible si l'audit échoue après archivage ⇒ **documenté**, non corrigé |
+| P1-6 | LOW | atomicité | « six extractions » mélangeait extractions et conversions |
+| P1-7 | LOW | orchestrateur | Le grep de `Pas d'audit log` rend la **note historique** qui documente la correction — faux positif à trier à la main |
+
+✅ **Ce que les lentilles ont confirmé, preuves à l'appui** : l'atomicité aux quinze sites
+(quatorze routes + l'amorçage), l'attribution **15/15**, l'absence de secret **15/15**, les
+`rollback` retirés des corps extraits bien assurés par le `Drop` de sqlx chez les appelants, la
+transaction d'import ouverte **autour de la seule insertion** (décodage QR et archivage disque en
+dehors, au plus 2 connexions sur 5), les douze critères tenus et les huit sites de manuel exacts —
+**aucun neuvième**.
+
+### ⛔ Ce que cette passe apprend, et c'est la leçon la plus coûteuse de la story
+
+1. ⛔ **TROIS des quatre HIGH portent sur des couvertures de test que la SPEC revendiquait et que
+   je n'avais pas écrites.** C'est exactement la faute que le `CLAUDE.md` nomme — *le story file
+   ne doit affirmer que ce qui a tourné* — commise en rédigeant les tâches **avant** de coder,
+   puis jamais relue contre le code livré. ⚠️ *Une tâche qui décrit un test est une promesse ; la
+   cocher sans l'avoir écrit la transforme en mensonge, et le gate reste vert.*
+2. ⛔ **QUATRE fois dans cette seule remédiation, mes assertions de « rien n'est écrit » étaient
+   MAL FORMÉES** : elles mesuraient un **total absolu** là où il fallait l'**écart autour du
+   refus**, le montage du test ayant légitimement tracé. Chacune a rougi et chacune a été
+   corrigée — mais quatre fois, c'est un motif, non un accident. *Prouver qu'un refus n'écrit rien
+   exige de mesurer un DELTA ; un absolu mesure autre chose que ce qu'il prétend.*
+3. ✅ **Deux gardes de plus éprouvées par mutation** : celle des alias (route dupliquée → rouge,
+   retirée → vert) et, déjà, celle du no-op. *Une garde qu'on n'a pas vue rougir ne garde rien.*
+
+**Gate après remédiation** : base reconstruite par les **trois** étapes et vérifiée,
+`fmt` propre, `clippy --workspace --all-targets -D warnings` propre,
+**2318/2318** (4 skipped, 89 s) — nombre inchangé, les assertions ayant été greffées sur des
+tests existants.
 

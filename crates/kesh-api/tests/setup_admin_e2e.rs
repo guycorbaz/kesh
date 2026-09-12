@@ -228,6 +228,18 @@ async fn setup_admin_returns_410_when_user_already_exists(pool: MySqlPool) {
         .expect("first POST");
     assert_eq!(res.status(), 200);
 
+    // Story 25-1b — la mesure se prend AUTOUR du refus : le premier POST a
+    // légitimement tracé. *Un absolu aurait mesuré autre chose que le refus.*
+    let traces_avant_refus: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'user.created'")
+            .fetch_one(&pool)
+            .await
+            .expect("comptage");
+    assert_eq!(
+        traces_avant_refus, 1,
+        "le premier setup a tracé sa création — c'est la référence"
+    );
+
     // 2e POST → 410.
     let res2 = app
         .client
@@ -250,6 +262,19 @@ async fn setup_admin_returns_410_when_user_already_exists(pool: MySqlPool) {
         .await
         .expect("count");
     assert_eq!(count, 1, "no second admin created");
+
+    // Story 25-1b (AC 6, 9) — le refus n'ajoute AUCUNE trace, et c'est le
+    // `rollback` qui le garantit, pas un `if` : le 410 survient APRÈS
+    // l'ouverture de la transaction.
+    let traces_apres_refus: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'user.created'")
+            .fetch_one(&pool)
+            .await
+            .expect("comptage");
+    assert_eq!(
+        traces_apres_refus, traces_avant_refus,
+        "le 410 n'ajoute rien : son rollback emporte l'audit avec l'INSERT"
+    );
 }
 
 /// AC #13 — Route protégée + `users_exist=false` → 423 SETUP_REQUIRED.
@@ -301,6 +326,16 @@ async fn setup_admin_returns_400_on_weak_password(pool: MySqlPool) {
         .await
         .expect("count");
     assert_eq!(count, 0);
+
+    // Story 25-1b (AC 6) — ⚠️ ce silence a une AUTRE cause que celui du 410 :
+    // le 400 survient AVANT l'ouverture de la transaction, donc le code
+    // n'atteint jamais l'audit. Attribuer ce silence au rollback serait
+    // s'appuyer sur un mécanisme qui n'opère pas ici.
+    let traces: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM audit_log")
+        .fetch_one(&pool)
+        .await
+        .expect("comptage");
+    assert_eq!(traces, 0, "refus en amont : l'audit n'est jamais atteint");
 }
 
 /// T-A5 (Story 17-4a) — Validation email : email invalide → 400.
@@ -512,5 +547,20 @@ async fn toctou_race_two_distinct_usernames_creates_exactly_one_admin(pool: MySq
         statuses,
         [200, 410],
         "un succès (200) et un auto-disable (410), ordre indifférent"
+    );
+
+    // Story 25-1b (AC 6, 9) — ⛔ **EXACTEMENT UNE trace, comme il n'y a
+    // exactement qu'un admin.** C'est la propriété la plus délicate de la
+    // story : deux requêtes concourantes, un seul gagnant, et la trace doit
+    // suivre le gagnant — ni zéro, ni deux.
+    let traces: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'user.created'")
+            .fetch_one(&pool)
+            .await
+            .expect("comptage");
+    assert_eq!(
+        traces, 1,
+        "une seule création, une seule trace — le perdant de la race a été \
+         rollbacké, audit compris"
     );
 }

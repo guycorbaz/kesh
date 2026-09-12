@@ -5,7 +5,7 @@ mod common;
 use std::sync::Arc;
 
 use chrono::TimeDelta;
-use common::{audit_actions, audit_details, create_test_company};
+use common::{audit_actions, audit_count, audit_details, create_test_company};
 use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
@@ -437,6 +437,11 @@ async fn overlong_contact_details_are_rejected_by_the_api(pool: MySqlPool) {
         .as_i64()
         .unwrap();
 
+    // Story 25-1b (AC 9) — la mesure se prend AUTOUR du refus, pas en absolu :
+    // le montage ci-dessus a fait des appels qui, eux, ont légitimement tracé.
+    // *Un compteur global aurait mesuré autre chose que ce qu'il prétend.*
+    let audit_avant_refus = audit_count(&pool).await;
+
     for (champ, valeur) in [("phone", "0".repeat(51)), ("website", "x".repeat(256))] {
         let resp = app
             .client
@@ -454,6 +459,17 @@ async fn overlong_contact_details_are_rejected_by_the_api(pool: MySqlPool) {
              direct, et MariaDB tronquerait en silence"
         );
     }
+
+    // ⛔ **Un refus n'écrit RIEN, et il faut le PROUVER.** La validation a lieu
+    // avant l'ouverture de la transaction : rien ne garantirait cette propriété
+    // contre un refactor qui la déplacerait après, et le test resterait vert.
+    // C'est le finding de la passe 1 de revue de code : la spec revendiquait
+    // cette couverture, le test ne la fournissait pas.
+    assert_eq!(
+        audit_count(&pool).await,
+        audit_avant_refus,
+        "deux requêtes refusées, aucune trace de plus"
+    );
 }
 
 /// **Un champ OMIS du payload efface la valeur** — comportement épinglé, pas

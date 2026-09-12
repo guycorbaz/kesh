@@ -577,6 +577,24 @@ async fn process_one_file(
 
     // La trace partage la transaction de l'INSERT : une pièce dont la trace n'a
     // pas pu s'écrire n'entre pas dans le système.
+    //
+    // ⚠️ **Conséquence assumée, relevée en passe 1 de revue de code** : si cet
+    // audit échoue, la transaction est annulée et la pièce n'entre pas — mais le
+    // justificatif déjà archivé par l'étape (7) reste sur disque, orphelin.
+    // Trois raisons de ne PAS le supprimer ici :
+    //
+    // 1. l'orphelin est **récupérable** : le stockage est adressé par contenu,
+    //    donc un ré-import du même fichier réécrit le même chemin et reprend la
+    //    main — contrairement à une donnée perdue ;
+    // 2. supprimer un fichier adressé par contenu est précisément ce que la
+    //    branche `UniqueConstraintViolation` évite, le justificatif pouvant être
+    //    **partagé** avec une autre ligne ;
+    // 3. ce n'est pas une régression : le chemin « toute autre `DbError` »
+    //    laissait déjà cet orphelin avant cette story. Elle ajoute une source
+    //    d'échec, pas un comportement.
+    //
+    // `audit_log` ne porte aucune contrainte d'unicité : la probabilité réelle
+    // est celle d'une panne de base, où l'orphelin est le moindre souci.
     audit_log::insert_in_tx(
         &mut tx,
         NewAuditLogEntry::for_actor(

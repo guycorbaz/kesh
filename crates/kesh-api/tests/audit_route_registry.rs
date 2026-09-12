@@ -30,7 +30,7 @@
 //! - volet « entrée du registre absente du code » → sur les deux également,
 //!   chaque entrée nommant le fichier dont elle provient.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Statut d'examen d'une route mutante au regard du journal d'audit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -168,9 +168,16 @@ const TEST_ENDPOINT_ROUTES: &[(&str, &str, Status)] = &[
     ("post", "/password-reset-token", Exempt("chemin de test, jamais monté en production")),
 ];
 
-/// Extrait les routes mutantes d'un source par leur identité.
-fn extract(source: &str, pattern_prefix: &str) -> BTreeSet<(String, String)> {
-    let mut out = BTreeSet::new();
+/// Extrait les routes mutantes d'un source par leur identité, **avec le nombre
+/// d'occurrences de chacune**.
+///
+/// ⛔ **Le compte n'est pas décoratif** : deux routes différentes peuvent
+/// partager le même couple `(verbe, handler)` — un alias. L'ensemble extrait
+/// serait alors identique à celui d'avant l'ajout, et le diff resterait **vert
+/// sur une route mutante que personne n'a examinée**. C'est le faux vert que
+/// l'AC 11 nommait, et il a été vérifié empiriquement en passe 1 de revue.
+fn extract_counted(source: &str, pattern_prefix: &str) -> BTreeMap<(String, String), usize> {
+    let mut out: BTreeMap<(String, String), usize> = BTreeMap::new();
     for verb in ["post", "put", "delete", "patch"] {
         let needle = format!("{verb}(");
         let mut rest = source;
@@ -179,10 +186,11 @@ fn extract(source: &str, pattern_prefix: &str) -> BTreeSet<(String, String)> {
             if let Some(close) = after.find(')') {
                 let arg = &after[..close];
                 if arg.starts_with(pattern_prefix) {
-                    out.insert((
+                    *out.entry((
                         verb.to_string(),
                         arg.trim_start_matches(pattern_prefix).to_string(),
-                    ));
+                    ))
+                    .or_insert(0) += 1;
                 }
             }
             rest = &rest[pos + needle.len()..];
@@ -201,7 +209,24 @@ fn every_mutating_route_of_lib_is_in_the_registry() {
         .next()
         .expect("le fichier n'est pas vide");
 
-    let in_code = extract(source, "routes::");
+    let counted = extract_counted(source, "routes::");
+
+    // ⛔ Un alias — deux routes partageant verbe et handler — rendrait l'ensemble
+    // extrait identique à celui d'avant l'ajout, et ce test vert sur une route
+    // mutante jamais examinée. On échoue donc BRUYAMMENT, au lieu de compter sur
+    // une unicité que rien n'impose.
+    let aliases: Vec<_> = counted.iter().filter(|(_, n)| **n > 1).collect();
+    assert!(
+        aliases.is_empty(),
+        "⛔ Deux routes de lib.rs partagent le même couple (verbe, handler) : \
+         {aliases:?}\n\n\
+         L'identité du registre cesse alors d'être discriminante, et une route \
+         mutante pourrait s'ajouter sans que ce test ne rougisse. Donner un \
+         handler distinct à chaque route, ou enrichir l'identité du registre \
+         (par exemple du chemin HTTP)."
+    );
+
+    let in_code: BTreeSet<(String, String)> = counted.into_keys().collect();
     let in_registry: BTreeSet<(String, String)> = LIB_ROUTES
         .iter()
         .map(|(v, h, _)| (v.to_string(), h.to_string()))

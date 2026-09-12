@@ -554,6 +554,32 @@ async fn import_duplicate_scoped_and_reactivates_discarded(pool: MySqlPool) {
         staging_id
     );
     assert_eq!(staging_status(&pool, staging_id).await, "to_complete");
+
+    // ⛔ Story 25-1b (AC 3) — LE CHEMIN LE PLUS SÉVÈRE DE LA STORY, et il n'avait
+    // aucun test avant la passe 1 de revue de code.
+    //
+    // La réactivation rend `Accepted` SANS rien créer. Sans sa propre trace, la
+    // piste garderait `discarded` pour DERNIÈRE trace d'une pièce redevenue
+    // `to_complete` : elle dirait le contraire de la base. C'est cet ordre-là
+    // qu'on vérifie, pas seulement la présence des actions.
+    let actions: Vec<String> = sqlx::query_scalar(
+        "SELECT action FROM audit_log WHERE entity_type = 'imported_supplier_invoice' \
+         AND entity_id = ? ORDER BY id",
+    )
+    .bind(staging_id)
+    .fetch_all(&pool)
+    .await
+    .expect("lecture des actions");
+    assert_eq!(
+        actions,
+        vec![
+            "imported_supplier_invoice.created".to_string(),
+            "imported_supplier_invoice.reactivated".to_string(),
+        ],
+        "l'entrée initiale puis la réactivation — et la DERNIÈRE trace doit \
+         concorder avec le statut `to_complete`, non le démentir. Le doublon \
+         rejeté entre les deux n'écrit rien : trois imports, deux traces."
+    );
 }
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -722,6 +748,35 @@ async fn complete_creates_invoice_and_marks_completed(pool: MySqlPool) {
         supplier_invoice_count(&pool, ctx.seeded.company_id).await,
         1
     );
+
+    // Story 25-1b (AC 3) — la transition de la PIÈCE porte sa propre trace.
+    // ⚠️ Son absence était une ASYMÉTRIE : le cycle de vie disait
+    // `created → discarded` quand une pièce est rejetée, et `created → rien`
+    // quand elle aboutit. Deux traces s'écrivent ici, dans la même transaction :
+    // celle de la facture créée et celle de la pièce.
+    let actions: Vec<String> = sqlx::query_scalar(
+        "SELECT action FROM audit_log WHERE entity_type = 'imported_supplier_invoice' \
+         AND entity_id = ? ORDER BY id",
+    )
+    .bind(staging_id)
+    .fetch_all(&pool)
+    .await
+    .expect("lecture des actions");
+    assert_eq!(
+        actions,
+        vec!["imported_supplier_invoice.completed".to_string()],
+        "la pièce a été semée directement en base, d'où l'absence de `.created`"
+    );
+
+    // La facture fournisseur créée est tracée de son côté — la trace de la
+    // pièce ne la remplace pas, elle la complète.
+    let invoice_traces: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log WHERE action = 'supplier_invoice.created'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("comptage");
+    assert_eq!(invoice_traces, 1, "les deux traces coexistent");
 }
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
