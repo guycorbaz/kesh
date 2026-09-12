@@ -1043,6 +1043,30 @@ async fn discard_marks_discarded(pool: MySqlPool) {
         .unwrap();
     assert_eq!(resp.status(), 204);
     assert_eq!(staging_status(&pool, staging_id).await, "discarded");
+
+    // Story 25-1b (AC 3, 10) — le rejet laisse une trace, et l'IBAN n'y figure
+    // JAMAIS : seule sa présence est journalisée (convention du dépôt).
+    let row: (String, Option<Vec<u8>>) = sqlx::query_as(
+        "SELECT action, details_json FROM audit_log          WHERE entity_type = 'imported_supplier_invoice' AND entity_id = ? ORDER BY id DESC LIMIT 1",
+    )
+    .bind(staging_id)
+    .fetch_one(&pool)
+    .await
+    .expect("une trace de rejet");
+    assert_eq!(row.0, "imported_supplier_invoice.discarded");
+    let details: serde_json::Value =
+        serde_json::from_slice(&row.1.expect("détails présents")).expect("json valide");
+    assert!(
+        details.get("iban_present").is_some(),
+        "la présence de l'IBAN est journalisée"
+    );
+    assert!(
+        details.get("creditor_iban").is_none(),
+        "⛔ l'IBAN lui-même ne doit JAMAIS figurer dans la piste"
+    );
+    // Le détail nomme la pièce : une trace qui ne dit pas ce qui a été rejeté
+    // ne répond à personne.
+    assert!(details.get("original_filename").is_some());
 }
 
 // ============================================================

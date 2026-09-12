@@ -178,6 +178,33 @@ async fn setup_admin_happy_path_returns_200_and_cookies(pool: MySqlPool) {
         .await
         .expect("count");
     assert_eq!(user_count, 1);
+
+    // Story 25-1b (AC 6) — la création du TOUT PREMIER administrateur laisse une
+    // trace, et l'acteur y est la cible : la route est publique, il n'existe ni
+    // `CurrentUser` ni jeton ni identité antérieure.
+    let admin_id: i64 = sqlx::query_scalar("SELECT id FROM users LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .expect("id du premier admin");
+    let row: (String, Option<i64>, i64, String, Option<Vec<u8>>) = sqlx::query_as(
+        "SELECT actor_type, actor_api_key_id, user_id, actor_label, details_json          FROM audit_log WHERE entity_type = 'user' AND action = 'user.created'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("une trace de création du premier admin");
+    assert_eq!(row.0, "user");
+    assert_eq!(row.1, None, "pré-authentification : aucun jeton d'API");
+    assert_eq!(row.2, admin_id, "l'acteur EST la cible");
+    assert_eq!(
+        row.3, "first-admin",
+        "actor_label est renseigné par le sous-SELECT — la preuve que l'audit          vient APRÈS l'INSERT et dans la MÊME transaction"
+    );
+    let details: Value =
+        serde_json::from_slice(&row.4.expect("détails présents")).expect("json valide");
+    assert_eq!(
+        details["first_admin"], true,
+        "le geste fondateur se distingue d'une création ordinaire"
+    );
 }
 
 /// AC #10 — Deuxième appel → 410 SETUP_ALREADY_COMPLETE.
