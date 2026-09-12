@@ -372,11 +372,11 @@ comme une erreur de plume.
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Écrire la décision de conception AVANT de coder** (AC 9)
-  - [ ] Pour chacune des 14 routes, arrêter où l'audit se pose : handler menant la transaction
+- [x] **T1 — Écrire la décision de conception AVANT de coder** (AC 9)
+  - [x] Pour chacune des 14 routes, arrêter où l'audit se pose : handler menant la transaction
         (variant `_in_tx`) ou repository. Le tableau des Dev Notes donne la décision proposée ;
         la confirmer ou la contester **par écrit**, avec le motif.
-  - [ ] ⚠️ Avant de toucher la signature de `companies::update` ou de `onboarding::update_step` :
+  - [x] ⚠️ Avant de toucher la signature de `companies::update` ou de `onboarding::update_step` :
         `grep -rn "companies::update(\|onboarding::update_step(" crates/` — **les deux ont
         d'autres appelants**. Le geste sûr est d'extraire un `_in_tx` et de laisser la fonction
         actuelle en mince enveloppe.
@@ -645,6 +645,31 @@ variant transactionnel :
   `tests/bank_accounts_e2e.rs:582` (pas de doublon en no-op)
 
 ## Dev Agent Record
+
+### ⛔ T1 — Décision de conception, arrêtée AVANT de coder
+
+**Recensement des appelants, fait et non supposé** (`grep -rn` sur `crates/`) :
+
+| Fonction | Appelants de production | Tests | ⇒ Geste |
+|---|---|---|---|
+| `users::create` | **2** — `routes/users.rs:212`, `auth/bootstrap.rs:123` | **~60** | `create_in_tx` **existe déjà** : les deux sites de production y passent, `create` reste intacte pour les tests |
+| `users::update_role_and_active` | 2 routes (`:263`, `:314`) | quelques-uns | **extraire `_in_tx`**, enveloppe conservée |
+| `users::update_password` | 1 route | — | `update_password_in_tx` **existe déjà** |
+| `companies::update` | 2 routes + **`kesh-seed/src/lib.rs:122`** | **9** | **extraire `_in_tx`**, enveloppe conservée — *le seed et les neuf tests ne bougent pas* |
+| `onboarding::update_step` | `profile.rs:36` + **8 routes d'onboarding** + `kesh-seed:222` | 6 | **extraire `_in_tx`**, enveloppe conservée et **NON auditée** |
+| `contact_persons::{create,update,archive}` | **1 chacune**, et **aucun test** | 0 | **conversion directe en `_in_tx`**, sans enveloppe — *une enveloppe que personne n'appelle est du code mort qui paraît vivant* |
+| `imported_supplier_invoices::create` | 1 (`inbox_import.rs:490`) | 1 | **extraire `create_in_tx`** |
+| `imported_supplier_invoices::reactivate_to_complete` | 1 (`inbox_import.rs:424`) | — | **extraire `_in_tx`** |
+
+**La décision proposée aux Dev Notes est confirmée sur les huit lignes**, avec deux précisions que
+le recensement impose :
+
+1. ⛔ **`users::create` n'est PAS convertie** — soixante tests l'appellent. Seuls ses **deux**
+   appelants de production passent à `create_in_tx`, qui existe déjà. *Convertir une fonction que
+   soixante tests appellent pour en servir deux serait payer un refactor au prix d'un risque.*
+2. ⛔ **`contact_persons` est le seul cas de conversion SANS enveloppe** : une fonction par route,
+   aucun test, aucun autre appelant. Partout ailleurs l'enveloppe protège des appelants réels —
+   ici elle ne protégerait rien.
 
 ### Agent Model Used
 

@@ -21,12 +21,14 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 
 use kesh_core::accounting::vat::line_vat_amount;
+use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::imported_supplier_invoice::ImportedSupplierInvoice;
 use kesh_db::entities::{NewSupplierInvoice, NewSupplierInvoiceLine};
 use kesh_db::errors::map_db_error;
-use kesh_db::repositories::{imported_supplier_invoices, supplier_invoices};
+use kesh_db::repositories::{audit_log, imported_supplier_invoices, supplier_invoices};
 
 use crate::AppState;
+use crate::audit::AuditActor;
 use crate::document_storage::{self, ReadDocumentError};
 use crate::errors::AppError;
 use crate::helpers::get_company_for;
@@ -242,6 +244,25 @@ pub async fn complete_import(
         )
         .await?;
 
+        // Story 25-1b (AC 3) — la transition de la PIÈCE laisse sa propre trace.
+        // La facture fournisseur créée juste au-dessus est déjà auditée
+        // (`supplier_invoice.created`, dans `create_in_tx`) ; sans celle-ci, le
+        // cycle de vie d'une pièce disait `created` → `discarded` quand elle est
+        // rejetée, et `created` → RIEN quand elle aboutit. C'était l'asymétrie.
+        audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry::from_current_user(
+                &current_user,
+                "imported_supplier_invoice.completed",
+                "imported_supplier_invoice",
+                id,
+                Some(serde_json::json!({
+                    "supplier_invoice_id": created.invoice.id,
+                })),
+            ),
+        )
+        .await?;
+
         Ok(created)
     }
     .await;
@@ -302,6 +323,28 @@ pub async fn discard_import(
             });
         }
         imported_supplier_invoices::mark_discarded(&mut tx, company.id, id).await?;
+
+        // Story 25-1b (AC 3) — le rejet d'une pièce laisse une trace, dans la
+        // transaction qui le produit. `creditor_iban` n'est JAMAIS journalisé :
+        // seule sa présence l'est (convention du dépôt, cf. `bank_accounts.rs`).
+        audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry::from_current_user(
+                &current_user,
+                "imported_supplier_invoice.discarded",
+                "imported_supplier_invoice",
+                id,
+                Some(serde_json::json!({
+                    "original_filename": staging.original_filename,
+                    "creditor_name": staging.creditor_name,
+                    "amount": staging.amount,
+                    "currency": staging.currency,
+                    "iban_present": !staging.creditor_iban.is_empty(),
+                    "is_qr_iban": staging.is_qr_iban,
+                })),
+            ),
+        )
+        .await?;
         Ok(())
     }
     .await;
