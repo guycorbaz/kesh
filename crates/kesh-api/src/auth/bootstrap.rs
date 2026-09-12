@@ -20,7 +20,7 @@
 //! initialiser `AppState::users_exist`).
 
 use kesh_db::entities::{Language, NewAuditLogEntry, NewUser, OrgType, Role};
-use kesh_db::errors::DbError;
+use kesh_db::errors::{DbError, map_db_error};
 use kesh_db::repositories::{audit_log, refresh_tokens, users};
 use sqlx::MySqlPool;
 
@@ -120,19 +120,51 @@ pub async fn ensure_admin_user(pool: &MySqlPool, config: &Config) -> Result<i64,
             };
 
             let hash = hash_password_async(admin_password).await?;
-            let result = users::create(
-                pool,
-                NewUser {
-                    username: admin_username.clone(),
-                    password_hash: hash,
-                    role: Role::Admin,
-                    active: true,
-                    company_id,
-                    // Bootstrap par env vars : pas d'email (Story 17-4a).
-                    // L'admin pourra le renseigner via /users ou re-setup.
-                    email: None,
-                },
-            )
+
+            // Story 25-1b (AC 6) — ce chemin crée le MÊME premier administrateur
+            // que `POST /api/v1/setup/admin`, et n'écrivait aucune trace.
+            // Sans lui, la réponse à « qui a créé le premier administrateur ? »
+            // dépendrait SILENCIEUSEMENT du chemin d'installation — et ce chemin
+            // n'étant pas une route, il échappait aussi aux issues #434 et #435.
+            //
+            // Acteur = la cible : il n'y a ni `CurrentUser`, ni jeton, ni identité
+            // antérieure. Même patron que `setup.rs` et que le break-glass ci-dessous.
+            let result = async {
+                let mut tx = pool.begin().await.map_err(map_db_error)?;
+                let created = users::create_in_tx(
+                    &mut tx,
+                    NewUser {
+                        username: admin_username.clone(),
+                        password_hash: hash,
+                        role: Role::Admin,
+                        active: true,
+                        company_id,
+                        // Bootstrap par env vars : pas d'email (Story 17-4a).
+                        // L'admin pourra le renseigner via /users ou re-setup.
+                        email: None,
+                    },
+                )
+                .await?;
+                audit_log::insert_in_tx(
+                    &mut tx,
+                    NewAuditLogEntry::user(
+                        created.id,
+                        "user.created",
+                        "user",
+                        created.id,
+                        Some(serde_json::json!({
+                            "username": created.username,
+                            "role": created.role,
+                            "company_id": created.company_id,
+                            "first_admin": true,
+                            "bootstrap": true,
+                        })),
+                    ),
+                )
+                .await?;
+                tx.commit().await.map_err(map_db_error)?;
+                Ok::<_, DbError>(created)
+            }
             .await;
 
             match result {

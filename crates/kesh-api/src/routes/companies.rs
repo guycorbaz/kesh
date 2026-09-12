@@ -7,8 +7,10 @@ use axum::Json;
 use axum::extract::State;
 use serde::{Deserialize, Serialize};
 
+use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::{BankAccount, Company, CompanyUpdate};
-use kesh_db::repositories::{bank_accounts, companies};
+use kesh_db::errors::map_db_error;
+use kesh_db::repositories::{audit_log, bank_accounts, companies};
 
 use crate::AppState;
 use crate::errors::AppError;
@@ -135,7 +137,42 @@ pub async fn update_company_email(
         website: company.website.clone(),
     };
 
-    let updated = companies::update(&state.pool, company.id, req.version, changes).await?;
+    // Story 25-1b (AC 4, 8, 9) — `details_json` ne porte QUE les champs que cette
+    // route touche : `companies::update` est un full-replace et les handlers
+    // reconstruisent tous les champs depuis l'état courant, si bien qu'un
+    // `{before, after}` complet dirait que quinze champs ont changé quand un seul
+    // a bougé.
+    //
+    // ⚠️ C'est ici que la trace vaut le plus : une clé absente vaut `null` et
+    // EFFACE. Un effacement par omission ne laissait aucune trace.
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
+    let updated = companies::update_in_tx(&mut tx, company.id, req.version, changes).await?;
+    // AC 8 — le repository court-circuite le no-op sans incrémenter `version`.
+    if updated.version != company.version {
+        audit_log::insert_in_tx(
+            &mut tx,
+            // `::user` est sûr : la route est dans `admin_routes`, seul bloc
+            // porteur de `require_not_pat`.
+            NewAuditLogEntry::user(
+                current_user.user_id,
+                "company.updated",
+                "company",
+                company.id,
+                Some(serde_json::json!({
+                    "before": { "email": company.email },
+                    "after": { "email": updated.email },
+                })),
+            ),
+        )
+        .await?;
+    }
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
     Ok(Json(CompanyJson::from(updated)))
 }
 
@@ -234,7 +271,42 @@ pub async fn update_company_contact_details(
         website,
     };
 
-    let updated = companies::update(&state.pool, company.id, req.version, changes).await?;
+    // Story 25-1b (AC 4, 8, 9) — `details_json` ne porte QUE les champs que cette
+    // route touche : `companies::update` est un full-replace et les handlers
+    // reconstruisent tous les champs depuis l'état courant, si bien qu'un
+    // `{before, after}` complet dirait que quinze champs ont changé quand un seul
+    // a bougé.
+    //
+    // ⚠️ C'est ici que la trace vaut le plus : une clé absente vaut `null` et
+    // EFFACE. Un effacement par omission ne laissait aucune trace.
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
+    let updated = companies::update_in_tx(&mut tx, company.id, req.version, changes).await?;
+    // AC 8 — le repository court-circuite le no-op sans incrémenter `version`.
+    if updated.version != company.version {
+        audit_log::insert_in_tx(
+            &mut tx,
+            // `::user` est sûr : la route est dans `admin_routes`, seul bloc
+            // porteur de `require_not_pat`.
+            NewAuditLogEntry::user(
+                current_user.user_id,
+                "company.updated",
+                "company",
+                company.id,
+                Some(serde_json::json!({
+                    "before": { "phone": company.phone, "website": company.website },
+                    "after": { "phone": updated.phone, "website": updated.website },
+                })),
+            ),
+        )
+        .await?;
+    }
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
     Ok(Json(CompanyJson::from(updated)))
 }
 

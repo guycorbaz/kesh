@@ -11,6 +11,7 @@
 use chrono::{NaiveDate, Utc};
 use serde_json::json;
 use sqlx::mysql::MySqlPool;
+use sqlx::{MySql, Transaction};
 
 use crate::entities::{Company, CompanyUpdate, NewAuditLogEntry, NewCompany};
 use crate::errors::{DbError, map_db_error};
@@ -153,21 +154,43 @@ pub async fn update(
     changes: CompanyUpdate,
 ) -> Result<Company, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
+    let company = update_in_tx(&mut tx, id, version, changes).await?;
+    tx.commit().await.map_err(map_db_error)?;
+    Ok(company)
+}
+
+/// Variante transaction-aware de [`update`] — Story 25-1b.
+///
+/// **Pourquoi** : deux routes (`/companies/current/email` et
+/// `/contact-details`) doivent écrire leur trace d'audit dans la transaction de
+/// la mutation. L'enveloppe ci-dessus reste en place pour le seed et les neuf
+/// tests qui l'appellent — *un refactor qui touche onze appelants pour en
+/// servir deux paie un risque au prix d'une commodité*.
+///
+/// ⚠️ **Le court-circuit no-op de KF-004 vit ICI** : si rien ne change, la
+/// fonction retourne le snapshot `before` SANS incrémenter `version`.
+/// L'appelant compare les versions et n'écrit alors aucune trace.
+///
+/// Ne commite jamais.
+pub async fn update_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    id: i64,
+    version: i32,
+    changes: CompanyUpdate,
+) -> Result<Company, DbError> {
 
     // Snapshot "before" pour permettre la détection no-op (KF-004).
     let before_opt = sqlx::query_as::<_, Company>(FIND_BY_ID_SQL)
         .bind(id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await
         .map_err(map_db_error)?;
 
     let before = match before_opt {
         None => {
-            tx.rollback().await.map_err(map_db_error)?;
             return Err(DbError::NotFound);
         }
         Some(c) if c.version != version => {
-            tx.rollback().await.map_err(map_db_error)?;
             return Err(DbError::OptimisticLockConflict);
         }
         Some(c) => c,
@@ -179,7 +202,6 @@ pub async fn update(
     // stale au lieu d'un 409. Race acceptée v0.1 (cf. spec 7-3 §race-condition).
     // Mitigation future: SELECT FOR UPDATE partout (non v0.1).
     if is_no_op_change(&before, &changes) {
-        tx.rollback().await.map_err(map_db_error)?;
         return Ok(before);
     }
 
@@ -239,7 +261,7 @@ pub async fn update(
     .bind(&changes.website)
     .bind(id)
     .bind(version)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await
     .map_err(map_db_error)?
     .rows_affected();
@@ -247,13 +269,12 @@ pub async fn update(
     if rows_affected == 0 {
         // Défensif : ne devrait pas arriver puisque la version-check applicative
         // a déjà validé la version. Race théorique entre le SELECT et l'UPDATE.
-        tx.rollback().await.map_err(map_db_error)?;
         return Err(DbError::OptimisticLockConflict);
     }
 
     let company_opt = sqlx::query_as::<_, Company>(FIND_BY_ID_SQL)
         .bind(id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await
         .map_err(map_db_error)?;
 
@@ -263,14 +284,12 @@ pub async fn update(
     let company = match company_opt {
         Some(c) => c,
         None => {
-            tx.rollback().await.map_err(map_db_error)?;
             return Err(DbError::Invariant(format!(
                 "company {id} introuvable après UPDATE réussi"
             )));
         }
     };
 
-    tx.commit().await.map_err(map_db_error)?;
     Ok(company)
 }
 

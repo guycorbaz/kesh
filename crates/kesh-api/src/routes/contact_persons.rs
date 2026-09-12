@@ -9,12 +9,14 @@ use axum::http::StatusCode;
 use axum::{Extension, Json};
 use serde::{Deserialize, Serialize};
 
+use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::contact::ContactType;
 use kesh_db::entities::contact_person::{ContactPerson, ContactPersonUpdate, NewContactPerson};
-use kesh_db::errors::DbError;
-use kesh_db::repositories::{contact_persons, contacts};
+use kesh_db::errors::{DbError, map_db_error};
+use kesh_db::repositories::{audit_log, contact_persons, contacts};
 
 use crate::AppState;
+use crate::audit::AuditActor;
 use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
 
@@ -152,6 +154,22 @@ pub async fn list_persons(
     Ok(Json(persons.into_iter().map(Into::into).collect()))
 }
 
+/// Instantané d'une personne de contact pour `details_json` — Story 25-1b.
+///
+/// Les clés sont en **snake_case** : la surface HTTP est en camelCase, la piste
+/// d'audit ne l'est pas, pour que `details_json->>'$.last_name'` marche en SQL.
+fn person_snapshot_json(p: &ContactPerson) -> serde_json::Value {
+    serde_json::json!({
+        "contact_id": p.contact_id,
+        "first_name": p.first_name,
+        "last_name": p.last_name,
+        "role": p.role,
+        "email": p.email,
+        "phone": p.phone,
+        "version": p.version,
+    })
+}
+
 /// POST /api/v1/contacts/{contactId}/persons
 pub async fn create_person(
     State(state): State<AppState>,
@@ -161,8 +179,16 @@ pub async fn create_person(
 ) -> Result<(StatusCode, Json<ContactPersonResponse>), AppError> {
     ensure_entreprise_contact(&state, contact_id, current_user.company_id).await?;
     let v = validate(&body)?;
+    // Story 25-1b (AC 2, 7, 9) — le handler mène la transaction : l'audit doit
+    // partager celle de la mutation, et `from_current_user` est obligatoire ici
+    // car la route est dans `comptable_routes`, donc atteignable par un jeton.
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
     let person = contact_persons::create(
-        &state.pool,
+        &mut tx,
         NewContactPerson {
             company_id: current_user.company_id,
             contact_id,
@@ -174,6 +200,20 @@ pub async fn create_person(
         },
     )
     .await?;
+    audit_log::insert_in_tx(
+        &mut tx,
+        NewAuditLogEntry::from_current_user(
+            &current_user,
+            "contact_person.created",
+            "contact_person",
+            person.id,
+            Some(person_snapshot_json(&person)),
+        ),
+    )
+    .await?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
     Ok((StatusCode::CREATED, Json(person.into())))
 }
 
@@ -188,8 +228,17 @@ pub async fn update_person(
         .version
         .ok_or_else(|| AppError::Validation("Le champ version est requis".into()))?;
     let v = validate(&body)?;
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
+    // L'état « avant » est lu DANS la transaction : sans lui, la trace dirait ce
+    // que la personne est devenue sans dire ce qu'elle était.
+    let before =
+        contact_persons::find_by_id_in_company_in_tx(&mut tx, id, current_user.company_id).await?;
     let person = contact_persons::update(
-        &state.pool,
+        &mut tx,
         id,
         current_user.company_id,
         version,
@@ -202,6 +251,23 @@ pub async fn update_person(
         },
     )
     .await?;
+    audit_log::insert_in_tx(
+        &mut tx,
+        NewAuditLogEntry::from_current_user(
+            &current_user,
+            "contact_person.updated",
+            "contact_person",
+            id,
+            Some(serde_json::json!({
+                "before": before.as_ref().map(person_snapshot_json),
+                "after": person_snapshot_json(&person),
+            })),
+        ),
+    )
+    .await?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
     Ok(Json(person.into()))
 }
 
@@ -211,6 +277,30 @@ pub async fn delete_person(
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, AppError> {
-    contact_persons::archive(&state.pool, id, current_user.company_id).await?;
+    // ⚠️ Le handler ne connaît QUE l'identifiant : sans pré-chargement, la trace
+    // ne nommerait personne. Précédent : `contact.archived`, qui journalise un
+    // instantané complet.
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
+    let before =
+        contact_persons::find_by_id_in_company_in_tx(&mut tx, id, current_user.company_id).await?;
+    contact_persons::archive(&mut tx, id, current_user.company_id).await?;
+    audit_log::insert_in_tx(
+        &mut tx,
+        NewAuditLogEntry::from_current_user(
+            &current_user,
+            "contact_person.archived",
+            "contact_person",
+            id,
+            before.as_ref().map(person_snapshot_json),
+        ),
+    )
+    .await?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
     Ok(StatusCode::NO_CONTENT)
 }
