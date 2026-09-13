@@ -1159,3 +1159,65 @@ Prompt versionné (`25-1b-review-prompt-p3.md`), braquée sur la remédiation de
 
 ⚠️ **La boucle ne peut toujours pas se clore** : ce patch touche de nouveau du code de production.
 
+### Passe 4 CIBLÉE — lentille unique (Haiku 4.5), contexte frais
+
+Prompt versionné (`25-1b-review-prompt-p4.md`), braquée sur le seul commit `e15b2258`.
+**0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW.**
+
+✅ **Ce qu'elle a établi, exécution à l'appui** : l'e-mail en clair est **licite** au regard de
+l'AC 10 — qui vise le mot de passe, le hachage, le jeton et l'IBAN — et le dépôt le journalise
+déjà ainsi dans `companies.rs`, **dans la même story** ; le `before` est bien l'état antérieur ;
+l'inventaire des appels non-handlers **ne peut pas rougir à tort** (ni les constantes, sans
+parenthèse, ni les types, ni les handlers) et voit les trois formes de montage.
+
+⚠️ **Deux de ses affirmations ont été reprises** — *un « 0 finding » se vérifie comme un finding* :
+
+1. Son recompte des tests neufs ne portait que sur `users_e2e.rs` et trouvait **un** test là où le
+   commit en ajoute **deux** ; sa conclusion était juste, son fondement non. Recompté :
+   `git show e15b2258 | grep -cE "^\+#\[(sqlx::)?test"` → **2**.
+2. Elle mentionnait « un test E2E i18n pollué » au gate complet. Vérifié : **4/4 verts**. Le
+   phénomène qu'elle décrit est la pollution connue de la base partagée sous `cargo test`
+   parallèle — sans rapport avec cette story, et absent du gate `nextest` sur base reconstruite.
+
+⚠️ Elle déclare **aucun axe non exercé**, ce qui n'est pas exact au sens strict : elle n'a lancé
+ni le gate complet ni l'E2E, et le dit entre parenthèses. *La déclaration d'axes vaut par sa
+franchise, pas par sa complétude affichée.*
+
+---
+
+## ✅ Boucle de revue de code CLOSE — quatre passes
+
+| Passe | Modèle(s) | Rendu | Ce qu'elle a trouvé |
+|---|---|---|---|
+| 1 | Sonnet ×2 · Haiku *(3 lentilles)* | **4 HIGH**, 1 M, 2 L | ⛔ **trois couvertures de test que la SPEC revendiquait sans les avoir** ; et un **faux vert** dans la garde du registre |
+| 2 | Opus 5 | 1 **HIGH**, 4 M, 4 L | ⛔ la garde **déplaçait** le faux vert ; un **défaut de PRODUCTION** dormait ; mon patch « proactif » était une **régression** |
+| 3 | Sonnet 4.6 | **2 M** | ⛔ le correctif de production était **incomplet** (détruire ≠ rediriger) ; la garde énumérait **encore** une forme qui marche |
+| 4 | Haiku 4.5 *(ciblée)* | **0** | rien — **critère d'arrêt atteint** |
+
+**Sévérité maximale : HIGH → HIGH → MEDIUM → rien.** Décroissance stricte.
+
+⛔ **La clôture est justifiée par la règle qui l'interdisait** : la passe 3 ayant touché du code de
+production, la § *La passe ciblée* exigeait une passe de plus braquée sur ce patch. C'est la
+passe 4, et **elle ne produit aucune remédiation**.
+
+### Ce que cette boucle laisse au-delà de la story
+
+1. ⛔ **TROIS FOIS j'ai énuméré une forme qui marche au lieu d'inventorier les sites non
+   résolus** — au registre, à sa garde d'alias, puis à celle du troisième fichier. La règle est
+   écrite dans le `CLAUDE.md` depuis l'Epic 23 ; *chacune de ces gardes corrigeait la précédente
+   en refaisant sa faute d'un cran plus loin.*
+2. ⛔ **Un test qui ne compile pas ne rougit pas : il se tait.** Rencontré dans l'outil même qui
+   sert à éviter le test muet. ⇒ un détecteur s'éprouve en **fonction pure sur source factice**,
+   jamais en mutant le fichier qu'il lit.
+3. ⛔ **Propager un remède hors de son domaine est une régression.** Mon patch proactif a affaibli
+   une assertion dont l'absolu était exact, au nom d'un motif — « mesurer un delta » — vrai
+   ailleurs.
+4. ⛔ **Une tâche qui décrit un test est une promesse ; la cocher sans l'avoir écrit la transforme
+   en mensonge, et le gate reste vert.** Trois HIGH de la passe 1 tenaient à cela.
+5. ⛔ **Détruire et rediriger sont deux gestes**, et une trace qui ne montre que le premier laisse
+   passer le second.
+
+**Gate final** : `fmt` propre, `clippy --workspace --all-targets -D warnings` propre,
+**2322/2322** (4 skipped), base reconstruite par les trois étapes et vérifiée. Frontend et i18n
+non touchés. ⚠️ **E2E au push.**
+
