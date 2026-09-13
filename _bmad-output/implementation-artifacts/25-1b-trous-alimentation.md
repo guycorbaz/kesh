@@ -1,6 +1,6 @@
 # Story 25.1b : Combler les trous d'alimentation du journal d'audit
 
-Status: review
+Status: done
 
 ⚠️ **Issue du SPLIT de la 25-1** (passe 1 de validation, 2026-09-10) : **25-1a** a fermé les
 chemins d'effacement et corrigé les documents publiés ; **25-1b** *(celle-ci)* comble les trous
@@ -1220,4 +1220,28 @@ passe 4, et **elle ne produit aucune remédiation**.
 **Gate final** : `fmt` propre, `clippy --workspace --all-targets -D warnings` propre,
 **2322/2322** (4 skipped), base reconstruite par les trois étapes et vérifiée. Frontend et i18n
 non touchés. ⚠️ **E2E au push.**
+
+## ✅ Gate E2E de clôture — 2026-09-13
+
+**216 passés / 19 skipped / 7 échoués, en 8 min 42 s.** Montage complet, base `kesh_e2e`
+**détruite et reconstruite**, `/health` contrôlé avant lancement (`"smtpConfigured":true`).
+
+⚠️ **Le build frontend était EN RETARD et a été refait** : il datait du 11 septembre 11:40, alors
+que le dernier commit touchant `frontend/` — celui de la 25-1a, mergé depuis dans `main` — est de
+19:18. *Cette story ne touche pourtant pas le frontend* : c'est exactement le piège de la 24-5,
+**un gate déclaré vert sur un périmètre qui a bougé n'est plus un gate**.
+
+**Jugement fichier par fichier contre `docs/testing.md`** — les sept échecs sont **exactement la
+baseline KF-029 (#97)** : `mode-expert:26` et `:41`, `onboarding-path-b:65` et `:92`,
+`onboarding:57`, `:77`, `:150`.
+
+✅ **Aucune pollution d'état, aucune KF-045** (run d'après-midi), **aucune KF-046** — le compte
+attendu était de 8 à 10, l'observé est **7** : la baseline pure, le meilleur résultat possible.
+
+⚠️ **Le recoupement tient** : 216 + 19 + 7 = 242, comme au run du 11 septembre (214 + 19 + 9). Les
+deux tests supplémentaires qui passent sont précisément les deux pollutions qui ne se sont pas
+déclenchées. ⇒ **Zéro régression, zéro échec surnuméraire.**
+
+**Les trois gates de la story sont verts** : backend **2322/2322**, E2E **216 passés, 7 échecs
+tous attendus**, frontend et i18n **non touchés** (vérifié par `git diff`, pas supposé).
 
