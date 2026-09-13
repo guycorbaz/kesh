@@ -334,14 +334,54 @@ fn every_mutating_route_of_test_endpoints_is_in_the_registry() {
     );
 }
 
-/// ⛔ **Le registre couvre DEUX fichiers ; rien n'exigeait qu'un troisième soit
-/// couvert.** Un futur `.nest("/api/v1/x", routes::x::router())` échapperait aux
-/// deux volets — ses routes vivant hors de `lib.rs` et hors de
-/// `test_endpoints.rs`. Ce test inventorie les sous-routeurs EXTERNES montés par
-/// `lib.rs` et exige que l'ensemble reste celui que le registre sait lire.
+/// ⛔ **Le registre couvre DEUX fichiers ; rien n'exigeait qu'un troisième le
+/// soit.** Un futur sous-routeur externe échapperait aux deux volets — ses
+/// routes vivant hors de `lib.rs` et hors de `test_endpoints.rs`.
 ///
-/// *Relevé en passe 2 de revue de code : le doc de module avait anticipé « une
-/// quatrième route de `test_endpoints.rs` », pas un second fichier.*
+/// ⚠️ **Ce test inventorie les sites NON RÉSOLUS, il n'énumère pas une forme
+/// qui marche.** Une première rédaction cherchait la sous-chaîne `::router()` :
+/// un module exposant `routes()`, `mount()` ou `build()` l'aurait contournée en
+/// silence. *C'est exactement la faute que la passe 2 avait relevée sur l'autre
+/// garde de ce fichier, refaite un cran plus loin — et relevée de nouveau en
+/// passe 3.*
+///
+/// La propriété décidable est : **tout appel à une fonction d'un module de
+/// `routes::` qui n'est PAS un handler de route doit être connu.** Un handler
+/// apparaît toujours comme argument d'un constructeur de méthode
+/// (`post(routes::m::h)`) ; tout autre usage construit ou monte quelque chose,
+/// et c'est cela qu'il faut inventorier.
+/// Les appels à un module de `routes::` qui **ne sont pas des handlers** —
+/// donc les sites qui construisent ou montent quelque chose.
+///
+/// Fonction pure, pour que la garde ci-dessous soit **éprouvable sur une source
+/// factice** : muter `lib.rs` pour la tester ne compile pas, et un test qui ne
+/// compile pas ne rougit pas — il se tait.
+fn appels_non_handlers(source: &str) -> Vec<String> {
+    let mut appels: Vec<String> = Vec::new();
+    let mut reste = source;
+    while let Some(pos) = reste.find("routes::") {
+        let apres = &reste[pos..];
+        if let Some(paren) = apres.find('(') {
+            let chemin = &apres[..paren];
+            // Un chemin de module tient sur une ligne et n'a ni espace ni virgule.
+            if !chemin.contains(char::is_whitespace) && !chemin.contains(',') {
+                // Handler ? Le constructeur de méthode le précède immédiatement.
+                let avant = &reste[..pos];
+                let est_handler = ["post(", "put(", "delete(", "patch(", "get("]
+                    .iter()
+                    .any(|c| avant.ends_with(c));
+                if !est_handler {
+                    appels.push(chemin.to_string());
+                }
+            }
+        }
+        reste = &reste[pos + "routes::".len()..];
+    }
+    appels.sort();
+    appels.dedup();
+    appels
+}
+
 #[test]
 fn no_third_route_file_escapes_the_registry() {
     let source = include_str!("../src/lib.rs");
@@ -350,24 +390,45 @@ fn no_third_route_file_escapes_the_registry() {
         .next()
         .expect("le fichier n'est pas vide");
 
-    let mut externes: Vec<String> = Vec::new();
-    for (i, _) in source.match_indices("::router()") {
-        let debut = source[..i].rfind("routes::").unwrap_or(i);
-        externes.push(source[debut..i].to_string());
-    }
-    externes.sort();
-    externes.dedup();
-
+    let appels = appels_non_handlers(source);
     assert_eq!(
-        externes,
-        vec!["routes::test_endpoints".to_string()],
-        "⛔ Un sous-routeur EXTERNE autre que `test_endpoints` est monté dans \
-         lib.rs : ses routes mutantes échapperaient aux deux volets du \
-         registre.\n\n\
-         Ajouter un volet pour ce fichier, sur le modèle de \
-         `every_mutating_route_of_test_endpoints_is_in_the_registry`, puis \
-         inscrire ses routes au registre."
+        appels,
+        vec!["routes::test_endpoints::router".to_string()],
+        "⛔ Appel(s) à un module de `routes::` qui ne sont pas des handlers et \
+         que le registre ne connaît pas : {appels:?}\n\n\
+         Si c'est un sous-routeur externe, ses routes mutantes échappent aux \
+         DEUX volets du registre : ajouter un volet pour son fichier, sur le \
+         modèle de `every_mutating_route_of_test_endpoints_is_in_the_registry`, \
+         puis inscrire ses routes. ⚠️ Ne PAS se contenter d'ajouter le nom ici."
     );
+}
+
+/// ⛔ **La garde ci-dessus est éprouvée sur une source factice**, parce que la
+/// muter dans `lib.rs` ne compilerait pas — et *un test qui ne compile pas ne
+/// rougit pas : il se tait.*
+///
+/// Les trois formes ci-dessous sont celles qui contournaient la rédaction
+/// précédente, qui cherchait la sous-chaîne `::router()`.
+#[test]
+fn the_third_file_guard_sees_forms_that_are_not_named_router() {
+    let handler_seul = r#"        .route("/api/v1/users", post(routes::users::create_user))"#;
+    assert!(
+        appels_non_handlers(handler_seul).is_empty(),
+        "un handler n'est pas un montage — il ne doit pas être inventorié"
+    );
+
+    for forme in [
+        r#"        .nest("/api/v1/x", routes::widgets::router())"#,
+        r#"        .nest("/api/v1/x", routes::widgets::mount())"#,
+        r#"        let sous = routes::widgets::build();"#,
+    ] {
+        assert_eq!(
+            appels_non_handlers(forme).len(),
+            1,
+            "⛔ la garde doit voir CE montage, quel que soit le nom de la \
+             fonction : {forme}"
+        );
+    }
 }
 
 #[test]

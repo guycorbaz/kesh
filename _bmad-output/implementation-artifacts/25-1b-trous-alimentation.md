@@ -1125,3 +1125,37 @@ Prompt versionné (`25-1b-review-prompt-p2.md`), braquée sur la remédiation de
 production** (`routes/users.rs`), et la § *La passe ciblée* exige alors une passe de plus braquée
 sur ce patch.
 
+### Passe 3 — lentille unique (Sonnet 4.6), contexte frais
+
+Prompt versionné (`25-1b-review-prompt-p3.md`), braquée sur la remédiation de la passe 2.
+**0 CRITICAL, 0 HIGH, 2 MEDIUM, 0 LOW** — **les deux nés de cette remédiation**.
+
+| # | Sév. | Objet |
+|---|---|---|
+| P3-1 | MEDIUM | ⛔ **Le correctif de production était INCOMPLET** : `email_present` rendait visible l'**effacement** de l'e-mail, pas son **REMPLACEMENT** — une redirection écrivait `true → true` |
+| P3-2 | MEDIUM | ⛔ **La garde du troisième fichier énumérait encore une forme qui marche** (`::router()`) : un module exposant `mount()` ou `build()` l'aurait contournée |
+
+### ⛔ Ce que cette passe apprend
+
+1. ⛔ **Détruire et rediriger sont deux gestes, et le second n'est pas le moindre.** Tracer la
+   *présence* montrait qu'un canal de recouvrement disparaissait ; il ne montrait pas qu'on le
+   **détournait vers une autre adresse**. ⇒ la trace porte la **valeur**, comme `companies` le
+   faisait déjà dans la même story. *Le correctif d'un manqué de propagation était lui-même
+   incomplet.*
+2. ⛔ **Troisième occurrence de la même faute dans cette story : énumérer une forme qui marche.**
+   La § *Inventorier les sites NON RÉSOLUS* a dû être appliquée trois fois — au registre, à sa
+   garde d'alias, puis à celle du troisième fichier. ⇒ propriété décidable désormais : *tout appel
+   à un module de `routes::` qui n'est pas un handler doit être connu.*
+3. ⛔ **Un test qui ne compile pas ne rougit pas : il se tait.** Ma première tentative pour
+   éprouver cette garde mutait `lib.rs` avec un appel inexistant — le binaire ne compilait pas, et
+   l'absence de rouge ressemblait à un succès. ⇒ le détecteur est extrait en **fonction pure** et
+   éprouvé sur une **source factice** ; rétablir l'ancienne rédaction fait rougir en nommant la
+   forme manquée. *C'est le mode d'échec du test muet, rencontré dans l'outil même qui sert à
+   l'éviter.*
+
+**Gate après remédiation** : base reconstruite par les trois étapes et vérifiée, `fmt` propre,
+`clippy --workspace --all-targets -D warnings` propre, **2322/2322** (4 skipped, 84 s) —
+2320 + 2 tests neufs (la redirection d'e-mail, et l'épreuve du détecteur).
+
+⚠️ **La boucle ne peut toujours pas se clore** : ce patch touche de nouveau du code de production.
+

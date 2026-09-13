@@ -322,25 +322,33 @@ pub async fn update_user(
                     "before": {
                         "role": user.role,
                         "active": user.active,
-                        // ⛔ L'e-mail EST journalisé, par sa présence, et ce
-                        // n'est pas décoratif : cette route est un
-                        // *remplacement*, donc un champ ABSENT vaut `null` et
-                        // EFFACE (cf. le doc-comment de `UpdateUserRequest`).
-                        // Un administrateur qui PUT pour changer un rôle sans
-                        // renvoyer l'e-mail détruit le canal de recouvrement du
-                        // compte — et sans cette clé, la trace dirait
-                        // `before == after`, indiscernable du no-op que la garde
-                        // de version existe pour éviter.
+                        // ⛔ L'e-mail est journalisé PAR SA VALEUR, comme le
+                        // fait `companies` dans la même story — et ce n'est pas
+                        // décoratif.
                         //
-                        // Le principe était déjà écrit pour `companies` ; il
-                        // n'avait pas été propagé ici. *Relevé en passe 2 de
-                        // revue de code.*
-                        "email_present": user.email.is_some(),
+                        // Cette route est un *remplacement* : un champ ABSENT
+                        // vaut `null` et EFFACE (cf. le doc-comment de
+                        // `UpdateUserRequest`). Un administrateur qui PUT pour
+                        // changer un rôle sans renvoyer l'e-mail **détruit** le
+                        // canal de recouvrement du compte ; un autre qui le
+                        // remplace le **redirige**. Les deux gestes comptent, et
+                        // un booléen de présence ne montrerait que le premier :
+                        // un remplacement d'adresse écrirait `true → true`,
+                        // indiscernable d'un PUT qui n'y touche pas.
+                        //
+                        // ⚠️ L'e-mail n'est PAS un secret au sens de l'AC 10 —
+                        // qui vise le mot de passe, le hachage, le jeton et
+                        // l'IBAN. `companies` le journalise déjà en clair.
+                        //
+                        // *Le principe venait de `companies` et n'avait pas été
+                        // propagé ici (passe 2) ; la présence seule ne suffisait
+                        // pas (passe 3).*
+                        "email": user.email,
                     },
                     "after": {
                         "role": updated.role,
                         "active": updated.active,
-                        "email_present": updated.email.is_some(),
+                        "email": updated.email,
                     },
                 })),
             ),

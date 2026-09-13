@@ -543,12 +543,76 @@ async fn update_user_traces_the_email_erased_by_omission(pool: MySqlPool) {
         .await
         .expect("détails présents");
     assert_eq!(
-        details["before"]["email_present"], true,
-        "avant : le compte avait un e-mail"
+        details["before"]["email"], "dave@example.test",
+        "avant : le journal NOMME l'adresse perdue"
+    );
+    assert!(
+        details["after"]["email"].is_null(),
+        "après : il n'en a plus — et le journal le prouve"
+    );
+}
+
+/// Story 25-1b (AC 1) — ⛔ **le REMPLACEMENT d'e-mail est tracé, pas seulement
+/// son effacement.**
+///
+/// Un booléen de présence ne montrerait que la destruction du canal de
+/// recouvrement ; sa **redirection** vers une autre adresse écrirait
+/// `true → true`, indiscernable d'un PUT qui n'y touche pas. Les deux gestes
+/// comptent, et le second n'est pas le moins grave.
+///
+/// *Relevé en passe 3 de revue de code : le correctif de la passe 2 traçait la
+/// présence, non la valeur.*
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn update_user_traces_the_email_replaced_by_another(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let token = login_admin(&app, &pool).await;
+
+    let resp = create_user_api(&app, &token, "erin", "secure-password-12chars", "Comptable").await;
+    let user: Value = resp.json().await.unwrap();
+    let id = user["id"].as_i64().unwrap();
+
+    let resp = app
+        .client
+        .put(app.url(&format!("/api/v1/users/{}", id)))
+        .bearer_auth(&token)
+        .json(&json!({
+            "role": "Comptable",
+            "active": true,
+            "email": "erin@example.test",
+            "version": user["version"].as_i64().unwrap(),
+        }))
+        .send()
+        .await
+        .unwrap();
+    let posed: Value = resp.json().await.unwrap();
+
+    // Le rôle change ET l'adresse est REDIRIGÉE vers une autre.
+    let resp = app
+        .client
+        .put(app.url(&format!("/api/v1/users/{}", id)))
+        .bearer_auth(&token)
+        .json(&json!({
+            "role": "Consultation",
+            "active": true,
+            "email": "pirate@example.test",
+            "version": posed["version"].as_i64().unwrap(),
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    let details = audit_details(&pool, "user", id, "user.role_changed")
+        .await
+        .expect("détails présents");
+    assert_eq!(
+        details["before"]["email"], "erin@example.test",
+        "l'adresse d'origine est nommée"
     );
     assert_eq!(
-        details["after"]["email_present"], false,
-        "après : il n'en a plus — et le journal le prouve"
+        details["after"]["email"], "pirate@example.test",
+        "⛔ la redirection est VISIBLE — un booléen de présence aurait écrit \
+         `true → true` et n'aurait rien montré"
     );
 }
 
