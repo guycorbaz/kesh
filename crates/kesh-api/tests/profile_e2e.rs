@@ -5,7 +5,7 @@ mod common;
 use std::sync::Arc;
 
 use chrono::TimeDelta;
-use common::create_test_company;
+use common::{audit_actions, audit_details, create_test_company};
 use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
@@ -116,6 +116,69 @@ async fn set_mode_updates_onboarding_state(pool: MySqlPool) {
     // Verify persisted
     let state = onboarding::get_state(&pool).await.unwrap().unwrap();
     assert_eq!(state.ui_mode.unwrap().as_str(), "expert");
+
+    // Story 25-1b (AC 5) — la trace porte sur l'INSTALLATION, pas sur
+    // l'utilisateur : `ui_mode` vit dans `onboarding_state`, table mono-ligne et
+    // GLOBALE, sans `company_id`. Un utilisateur bascule l'installation entière
+    // en mode Expert, ce qui ouvre à tous l'écriture directe au journal.
+    // ⚠️ Écrire `entity_type = "user"` ici serait mentir sur la portée — et c'est
+    // précisément ce que ce test empêche de faire par mégarde.
+    assert_eq!(
+        audit_actions(&pool, "installation", 0).await,
+        vec!["installation.ui_mode_changed".to_string()],
+        "entity_type = installation, entity_id = AUDIT_ENTITY_ID_NONE"
+    );
+    assert!(
+        audit_actions(&pool, "user", 0).await.is_empty(),
+        "rien ne doit être écrit sous entity_type = user"
+    );
+
+    let details = audit_details(&pool, "installation", 0, "installation.ui_mode_changed")
+        .await
+        .expect("détails présents");
+    assert_eq!(details["after"], "expert");
+}
+
+/// Story 25-1b (AC 5) — cette route trace MÊME quand rien ne change, et c'est
+/// assumé : `update_step` incrémente `version` inconditionnellement, il n'y a
+/// aucun court-circuit no-op à garder. *Une décision subie devient un défaut ;
+/// écrite — et testée — elle reste une décision.*
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn set_mode_traces_even_when_unchanged(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+    onboarding::init_state(&pool).await.unwrap();
+
+    for _ in 0..2 {
+        let resp = app
+            .client
+            .put(app.url("/api/v1/profile/mode"))
+            .header("Authorization", format!("Bearer {token}"))
+            .json(&json!({ "mode": "expert" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 204);
+    }
+
+    // ⚠️ On compte les traces de l'INSTALLATION, pas toutes celles de la base :
+    // `ensure_admin_user` écrit désormais la sienne (`user.created` par le chemin
+    // d'amorçage, AC 6). Un compteur global aurait ici mesuré autre chose que ce
+    // qu'il prétend — et le test aurait rougi pour une raison étrangère à son objet.
+    assert_eq!(
+        audit_actions(&pool, "installation", 0).await.len(),
+        2,
+        "deux appels identiques, deux traces — l'égalité se lit dans details_json"
+    );
+    let details = audit_details(&pool, "installation", 0, "installation.ui_mode_changed")
+        .await
+        .expect("détails présents");
+    assert_eq!(
+        details["before"], details["after"],
+        "la seconde trace porte before == after, et le dit"
+    );
 }
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]

@@ -356,23 +356,42 @@ pub async fn update_role_and_active(
     changes: UserUpdate,
 ) -> Result<User, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
+    let user = update_role_and_active_in_tx(&mut tx, id, version, changes).await?;
+    tx.commit().await.map_err(map_db_error)?;
+    Ok(user)
+}
 
+/// Variante transaction-aware de [`update_role_and_active`] — Story 25-1b.
+///
+/// **Pourquoi ce variant existe** : l'appelant doit pouvoir écrire l'entrée
+/// d'audit dans la MÊME transaction que la mutation. Deux routes partagent
+/// cette fonction (`PUT /users/{id}` et `PUT /users/{id}/disable`) et doivent
+/// écrire des libellés DIFFÉRENTS — c'est donc le handler qui décide, pas le
+/// repository, et il lui faut la transaction.
+///
+/// ⚠️ **Le court-circuit no-op de KF-004 est conservé ici** : si rien ne change,
+/// la fonction retourne le snapshot `before` SANS incrémenter `version`.
+/// L'appelant reconnaît ce cas en comparant `version` avant et après, et
+/// n'écrit alors AUCUNE trace — une trace qui affirme un changement qui n'a pas
+/// eu lieu est pire qu'une trace absente.
+///
+/// Ne commite jamais : c'est le contrat.
+pub async fn update_role_and_active_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    id: i64,
+    version: i32,
+    changes: UserUpdate,
+) -> Result<User, DbError> {
     // Snapshot "before" pour permettre la détection no-op (KF-004).
     let before_opt = sqlx::query_as::<_, User>(FIND_BY_ID_SQL)
         .bind(id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await
         .map_err(map_db_error)?;
 
     let before = match before_opt {
-        None => {
-            tx.rollback().await.map_err(map_db_error)?;
-            return Err(DbError::NotFound);
-        }
-        Some(u) if u.version != version => {
-            tx.rollback().await.map_err(map_db_error)?;
-            return Err(DbError::OptimisticLockConflict);
-        }
+        None => return Err(DbError::NotFound),
+        Some(u) if u.version != version => return Err(DbError::OptimisticLockConflict),
         Some(u) => u,
     };
 
@@ -382,7 +401,6 @@ pub async fn update_role_and_active(
     // stale au lieu d'un 409. Race acceptée v0.1 (cf. spec 7-3 §race-condition).
     // Mitigation future: SELECT FOR UPDATE partout (non v0.1).
     if is_no_op_change(&before, &changes) {
-        tx.rollback().await.map_err(map_db_error)?;
         return Ok(before);
     }
 
@@ -396,7 +414,7 @@ pub async fn update_role_and_active(
     .bind(&changes.email)
     .bind(id)
     .bind(version)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await
     .map_err(map_db_error)?
     .rows_affected();
@@ -404,26 +422,23 @@ pub async fn update_role_and_active(
     if rows_affected == 0 {
         // Défensif : ne devrait pas arriver puisque la version-check applicative
         // a déjà validé la version. Race théorique entre le SELECT et l'UPDATE.
-        tx.rollback().await.map_err(map_db_error)?;
         return Err(DbError::OptimisticLockConflict);
     }
 
     let user_opt = sqlx::query_as::<_, User>(FIND_BY_ID_SQL)
         .bind(id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await
         .map_err(map_db_error)?;
 
     let user = match user_opt {
         Some(u) => u,
         None => {
-            tx.rollback().await.map_err(map_db_error)?;
             return Err(DbError::Invariant(format!(
                 "user {id} introuvable après UPDATE réussi"
             )));
         }
     };
 
-    tx.commit().await.map_err(map_db_error)?;
     Ok(user)
 }

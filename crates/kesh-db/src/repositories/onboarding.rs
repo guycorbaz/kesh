@@ -4,6 +4,7 @@
 //! La table contient au plus une ligne par instance Kesh.
 
 use sqlx::mysql::MySqlPool;
+use sqlx::{MySql, Transaction};
 
 use crate::entities::onboarding::{OnboardingState, UiMode};
 use crate::errors::{DbError, map_db_error};
@@ -66,11 +67,33 @@ pub async fn update_step(
     version: i32,
 ) -> Result<OnboardingState, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
+    let state = update_step_in_tx(&mut tx, step, is_demo, ui_mode, version).await?;
+    tx.commit().await.map_err(map_db_error)?;
+    Ok(state)
+}
 
+/// Variante transaction-aware de [`update_step`] — Story 25-1b.
+///
+/// ⛔ **Cette fonction n'écrit AUCUNE trace d'audit, et l'enveloppe ci-dessus
+/// non plus.** Dix appelants la partagent — le seed et huit routes d'onboarding,
+/// toutes hors du périmètre de la story et suivies par l'issue #434. Y placer
+/// l'audit ferait écrire « changement de mode d'affichage » à chaque étape de
+/// l'installation : *une trace au mauvais étage ne manque pas, elle ment.*
+///
+/// Seul `PUT /api/v1/profile/mode` trace, et il le fait dans son handler.
+///
+/// Ne commite jamais.
+pub async fn update_step_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    step: i32,
+    is_demo: bool,
+    ui_mode: Option<UiMode>,
+    version: i32,
+) -> Result<OnboardingState, DbError> {
     // Filtre sur id ET version pour éviter un UPDATE multi-row si la table
     // est corrompue (normalement single-row, mais défensif).
     let current_id = sqlx::query_as::<_, (i64,)>("SELECT id FROM onboarding_state LIMIT 1")
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await
         .map_err(map_db_error)?
         .ok_or(DbError::NotFound)?
@@ -86,25 +109,23 @@ pub async fn update_step(
     .bind(ui_mode)
     .bind(current_id)
     .bind(version)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await
     .map_err(map_db_error)?
     .rows_affected();
 
     if rows_affected == 0 {
-        tx.rollback().await.map_err(map_db_error)?;
         return Err(DbError::OptimisticLockConflict);
     }
 
     let state = sqlx::query_as::<_, OnboardingState>(SELECT_SQL)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await
         .map_err(map_db_error)?
         .ok_or_else(|| {
             DbError::Invariant("onboarding_state introuvable après UPDATE réussi".into())
         })?;
 
-    tx.commit().await.map_err(map_db_error)?;
     Ok(state)
 }
 

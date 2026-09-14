@@ -9,8 +9,10 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use chrono::NaiveDateTime;
+use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::{NewUser, Role, User, UserUpdate};
-use kesh_db::repositories::{refresh_tokens, users};
+use kesh_db::errors::map_db_error;
+use kesh_db::repositories::{audit_log, refresh_tokens, users};
 use serde::{Deserialize, Serialize};
 
 use crate::AppState;
@@ -209,7 +211,36 @@ pub async fn create_user(
         email,
     };
 
-    let user = users::create(&state.pool, new_user).await?;
+    // Story 25-1b (AC 1, 9) — la création passe par le variant transactionnel
+    // pour que la trace partage la transaction de l'INSERT : une création dont
+    // la trace n'a pas pu s'écrire ne doit pas être commitée.
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
+    let user = users::create_in_tx(&mut tx, new_user).await?;
+    audit_log::insert_in_tx(
+        &mut tx,
+        // `::user` est sûr ici : la route est dans `admin_routes`, seul bloc
+        // porteur de `require_not_pat` — un jeton d'API ne l'atteint pas.
+        NewAuditLogEntry::user(
+            current_user.user_id,
+            "user.created",
+            "user",
+            user.id,
+            Some(serde_json::json!({
+                "username": user.username,
+                "role": user.role,
+                "active": user.active,
+                "email_present": user.email.is_some(),
+            })),
+        ),
+    )
+    .await?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
     tracing::info!(user_id = user.id, role = ?user.role, company_id = current_user.company_id, "user created");
 
     Ok((StatusCode::CREATED, Json(UserResponse::from(user))))
@@ -260,9 +291,77 @@ pub async fn update_user(
         email,
     };
 
-    let updated = users::update_role_and_active(&state.pool, id, req.version, changes).await?;
+    // Story 25-1b (AC 1, 8, 9). Deux libellés distincts selon que le RÔLE change :
+    // le réviseur cherche « qui a donné le droit d'écrire dans les livres ? », et
+    // noyer une promotion parmi les activations la rendrait introuvable. C'est le
+    // précédent `books.unlocked` / `books.restored`.
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
+    let updated = users::update_role_and_active_in_tx(&mut tx, id, req.version, changes).await?;
 
-    // Révoquer les sessions si désactivation
+    // AC 8 — le repository court-circuite le no-op sans incrémenter `version` :
+    // sans cette garde, un PUT sans changement écrirait une trace qui affirme un
+    // changement qui n'a pas eu lieu.
+    if updated.version != user.version {
+        let action = if updated.role != user.role {
+            "user.role_changed"
+        } else {
+            "user.updated"
+        };
+        audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry::user(
+                current_user.user_id,
+                action,
+                "user",
+                id,
+                Some(serde_json::json!({
+                    "before": {
+                        "role": user.role,
+                        "active": user.active,
+                        // ⛔ L'e-mail est journalisé PAR SA VALEUR, comme le
+                        // fait `companies` dans la même story — et ce n'est pas
+                        // décoratif.
+                        //
+                        // Cette route est un *remplacement* : un champ ABSENT
+                        // vaut `null` et EFFACE (cf. le doc-comment de
+                        // `UpdateUserRequest`). Un administrateur qui PUT pour
+                        // changer un rôle sans renvoyer l'e-mail **détruit** le
+                        // canal de recouvrement du compte ; un autre qui le
+                        // remplace le **redirige**. Les deux gestes comptent, et
+                        // un booléen de présence ne montrerait que le premier :
+                        // un remplacement d'adresse écrirait `true → true`,
+                        // indiscernable d'un PUT qui n'y touche pas.
+                        //
+                        // ⚠️ L'e-mail n'est PAS un secret au sens de l'AC 10 —
+                        // qui vise le mot de passe, le hachage, le jeton et
+                        // l'IBAN. `companies` le journalise déjà en clair.
+                        //
+                        // *Le principe venait de `companies` et n'avait pas été
+                        // propagé ici (passe 2) ; la présence seule ne suffisait
+                        // pas (passe 3).*
+                        "email": user.email,
+                    },
+                    "after": {
+                        "role": updated.role,
+                        "active": updated.active,
+                        "email": updated.email,
+                    },
+                })),
+            ),
+        )
+        .await?;
+    }
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
+
+    // Révoquer les sessions si désactivation.
+    // ⚠️ Story 25-1b : cet appel reste HORS de la transaction — il prend le pool,
+    // donc une seconde connexion sur les cinq. Le découplage est assumé.
     if is_deactivating {
         refresh_tokens::revoke_all_for_user(&state.pool, id, "admin_disable").await?;
     }
@@ -311,9 +410,35 @@ pub async fn disable_user(
         email: user.email.clone(),
     };
 
-    let updated = users::update_role_and_active(&state.pool, id, user.version, changes).await?;
+    // Story 25-1b (AC 1, 8, 9) — libellé propre : c'est une désactivation, pas
+    // une rétrogradation (le rôle est recopié à l'identique juste au-dessus).
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
+    let updated = users::update_role_and_active_in_tx(&mut tx, id, user.version, changes).await?;
+    if updated.version != user.version {
+        audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry::user(
+                current_user.user_id,
+                "user.disabled",
+                "user",
+                id,
+                Some(serde_json::json!({
+                    "before": { "role": user.role, "active": user.active },
+                    "after": { "role": updated.role, "active": updated.active },
+                })),
+            ),
+        )
+        .await?;
+    }
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
 
-    // Invalider toutes les sessions
+    // Invalider toutes les sessions (hors transaction, cf. `update_user`).
     refresh_tokens::revoke_all_for_user(&state.pool, id, "admin_disable").await?;
     tracing::info!(user_id = id, "user disabled + sessions revoked");
 
@@ -338,7 +463,31 @@ pub async fn reset_password(
 
     // Hash + update
     let new_hash = password::hash_password_async(req.new_password).await?;
-    users::update_password(&state.pool, id, &new_hash).await?;
+
+    // Story 25-1b (AC 1, 9, 10) — `details_json = None` : ni mot de passe, ni
+    // hachage, et l'acteur (l'administrateur) plus la cible (`entity_id`)
+    // suffisent à tout dire. Précédent : `auth.password_reset_completed`.
+    // ⚠️ L'acteur n'est PAS la cible ici, contrairement à ce précédent.
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
+    users::update_password_in_tx(&mut tx, id, &new_hash).await?;
+    audit_log::insert_in_tx(
+        &mut tx,
+        NewAuditLogEntry::user(
+            current_user.user_id,
+            "user.password_reset",
+            "user",
+            id,
+            None,
+        ),
+    )
+    .await?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
 
     // Invalider toutes les sessions de l'utilisateur cible
     refresh_tokens::revoke_all_for_user(&state.pool, id, "password_change").await?;

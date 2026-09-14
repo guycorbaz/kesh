@@ -35,9 +35,10 @@ use axum::Json;
 use axum::extract::{ConnectInfo, State};
 use axum_extra::extract::CookieJar;
 use chrono::Utc;
+use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::{NewRefreshToken, NewUser, Role};
 use kesh_db::errors::DbError;
-use kesh_db::repositories::{refresh_tokens, users};
+use kesh_db::repositories::{audit_log, refresh_tokens, users};
 use serde::Deserialize;
 
 use crate::AppState;
@@ -223,6 +224,38 @@ pub async fn create_admin(
         // Toute autre erreur : le `return` droppe `tx` → rollback automatique sqlx.
         Err(e) => return Err(AppError::Database(e)),
     };
+
+    // 4c-bis — Story 25-1b (AC 6) : la création du tout premier administrateur
+    // laisse une trace, dans la MÊME transaction que l'INSERT qui la produit.
+    //
+    // Acteur = la cible : la route est publique (montée avant tout `require_auth`,
+    // cf. `lib.rs`), il n'existe donc ni `CurrentUser`, ni jeton, ni identité
+    // antérieure. C'est le patron de `auth/bootstrap.rs` (`admin_break_glass_reset`)
+    // et de `routes/auth.rs` (`auth.password_reset_completed`).
+    //
+    // ⚠️ ORDRE NON NÉGOCIABLE : l'audit vient APRÈS `create_in_tx`. `insert_in_tx`
+    // remplit `actor_label` par un sous-SELECT sur `users` ; posé avant l'INSERT,
+    // il écrirait `'(inconnu)'`.
+    //
+    // `first_admin` distingue ce geste fondateur d'une création ordinaire sans
+    // inventer un second libellé pour la même chose matérielle.
+    audit_log::insert_in_tx(
+        &mut tx,
+        NewAuditLogEntry::user(
+            user.id,
+            "user.created",
+            "user",
+            user.id,
+            Some(serde_json::json!({
+                "username": user.username,
+                "role": user.role,
+                "company_id": user.company_id,
+                "first_admin": true,
+                "ip": ip.to_string(),
+            })),
+        ),
+    )
+    .await?;
 
     // 4d — commit : valide check+insert ensemble et relâche le verrou sentinelle.
     tx.commit()

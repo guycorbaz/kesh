@@ -5,7 +5,7 @@ mod common;
 use std::sync::Arc;
 
 use chrono::TimeDelta;
-use common::create_test_company;
+use common::{audit_actions, audit_count, audit_details, create_test_company};
 use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
@@ -437,6 +437,11 @@ async fn overlong_contact_details_are_rejected_by_the_api(pool: MySqlPool) {
         .as_i64()
         .unwrap();
 
+    // Story 25-1b (AC 9) — la mesure se prend AUTOUR du refus, pas en absolu :
+    // le montage ci-dessus a fait des appels qui, eux, ont légitimement tracé.
+    // *Un compteur global aurait mesuré autre chose que ce qu'il prétend.*
+    let audit_avant_refus = audit_count(&pool).await;
+
     for (champ, valeur) in [("phone", "0".repeat(51)), ("website", "x".repeat(256))] {
         let resp = app
             .client
@@ -454,6 +459,17 @@ async fn overlong_contact_details_are_rejected_by_the_api(pool: MySqlPool) {
              direct, et MariaDB tronquerait en silence"
         );
     }
+
+    // ⛔ **Un refus n'écrit RIEN, et il faut le PROUVER.** La validation a lieu
+    // avant l'ouverture de la transaction : rien ne garantirait cette propriété
+    // contre un refactor qui la déplacerait après, et le test resterait vert.
+    // C'est le finding de la passe 1 de revue de code : la spec revendiquait
+    // cette couverture, le test ne la fournissait pas.
+    assert_eq!(
+        audit_count(&pool).await,
+        audit_avant_refus,
+        "deux requêtes refusées, aucune trace de plus"
+    );
 }
 
 /// **Un champ OMIS du payload efface la valeur** — comportement épinglé, pas
@@ -521,5 +537,39 @@ async fn an_omitted_field_clears_it_just_like_null(pool: MySqlPool) {
         "une clé ABSENTE efface la valeur, exactement comme `null` — c'est le \
          full-replace hérité du patron e-mail. Si cette assertion rougit, la \
          sémantique a changé : mettre à jour le doc-comment du DTO et le CHANGELOG."
+    );
+
+    // Story 25-1b (AC 4) — ⛔ **c'est ici que la trace vaut le plus** : un
+    // effacement PAR OMISSION ne laissait auparavant aucune trace. Le journal
+    // rend désormais opposable le fait qu'un site web a disparu sans que
+    // personne ne l'ait explicitement demandé.
+    let company_id = 1_i64;
+    let actions = audit_actions(&pool, "company", company_id).await;
+    assert!(
+        actions.iter().all(|a| a == "company.updated"),
+        "toutes les traces de société portent `company.updated`, actions = {actions:?}"
+    );
+    assert_eq!(
+        actions.len(),
+        2,
+        "deux mutations effectives : la pose des deux champs, puis l'omission"
+    );
+
+    let details = audit_details(&pool, "company", company_id, "company.updated")
+        .await
+        .expect("détails présents");
+    assert_eq!(
+        details["before"]["website"], "https://demo.ch",
+        "l'avant nomme la valeur effacée — sans quoi la trace ne prouverait rien"
+    );
+    assert!(
+        details["after"]["website"].is_null(),
+        "l'après montre l'effacement"
+    );
+    // ⚠️ `details_json` ne porte QUE les champs de cette route : un
+    // {before, after} complet dirait que quinze champs ont changé.
+    assert!(
+        details["before"].get("email").is_none(),
+        "la route contact-details ne journalise pas l'e-mail, qu'elle ne touche pas"
     );
 }

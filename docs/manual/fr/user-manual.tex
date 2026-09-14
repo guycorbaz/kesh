@@ -1588,10 +1588,16 @@ ultérieure.
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Traçabilité (audit-trail)}
 
-Kesh enregistre une \textbf{piste d'audit} (\texttt{audit\_log}) de toutes les
-actions comptables significatives — création, modification et annulation
-d'entités, imports, réconciliations, exports, changements de paramètres — avec
-l'auteur, l'horodatage et le contexte.
+Kesh enregistre une \textbf{piste d'audit} (\texttt{audit\_log}) des actions
+comptables significatives — création, modification et annulation d'entités,
+imports, réconciliations, exports, gestion des utilisateurs et modification de
+la société — avec l'auteur, l'horodatage et le contexte.
+
+⚠️ \textbf{Deux familles d'opérations n'y figurent pas encore} : la séquence
+d'\emph{installation} — création du plan comptable, du compte bancaire,
+peuplement de démonstration — et les \emph{gestes de session} : connexion,
+déconnexion, changement de votre propre mot de passe. Ce sont des manques
+connus et suivis, pas des oublis.
 
 \begin{keshnote}
 Cette piste d'audit est \textbf{insert-only} : aucune entrée ne peut être modifiée,
@@ -1730,7 +1736,7 @@ L'\texttt{audit\_log} garde toujours la trace de l'action originale ET de l'acti
 \begin{description}
     \item[Actif] Ce que possède l'entreprise (liquidités, créances, stocks, immobilisations). Classe 1 du plan comptable.
     \item[Amortissement] Constatation comptable de la perte de valeur d'une immobilisation sur sa durée d'utilisation.
-    \item[Audit-trail (piste d'audit)] Journal de toutes les modifications comptables (qui, quand, quelle valeur), exigé par le CO Art. 957a. Aucune entrée ne peut y être modifiée, ni supprimée sur une installation en service~; voir «~Journal d'audit~» pour les deux réserves.
+    \item[Audit-trail (piste d'audit)] Journal des modifications comptables (qui, quand, quelle valeur), exigé par le CO Art. 957a. ⚠️ \emph{La couverture n'est pas totale --- voir la section «~Traçabilité~» pour les deux familles d'opérations qui n'y figurent pas encore.} Aucune entrée ne peut y être modifiée, ni supprimée sur une installation en service.
     \item[Avoir (note de crédit)] Document qui annule tout ou partie d'une facture émise (l'inverse d'une facture).
     \item[Balance des comptes] Liste de tous les comptes avec leurs soldes débiteurs et créditeurs à une date donnée.
     \item[Bilan] État du patrimoine d'une entreprise à une date donnée (actifs = passifs + capitaux propres).
