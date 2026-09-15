@@ -89,6 +89,11 @@ ORDER BY created_at DESC, id DESC
   MariaDB compare en **rendant 0 ligne** (avertissement 1292). ⇒ la route **refuse en 400** toute date
   hors de `[1000-01-01, 9999-12-31]` (AC 7), calcule la borne par **`checked_add_days`**, et **omet la
   borne haute** quand `date_to` vaut `9999-12-31`. *(Relevé en passe 2 de validation, par sonde.)*
+  ⛔ **Qui fait quoi, pour qu'il n'y ait qu'UNE implémentation** : la **route** valide la plage des deux
+  dates et répond 400 (AC 7) ; le **repository** calcule la borne dans **`push_where_clauses`** —
+  `date_to.checked_add_days(Days::new(1))`, clause **omise** si le résultat est `None` —, si bien que
+  `list_by_company_paginated` et `list_for_export` la partagent. Le repository reçoit des dates déjà
+  bornées et ne renvoie jamais d'erreur de validation ; le handler ne calcule aucune borne.
 - **UTC** : MariaDB tourne en UTC (`@@system_time_zone = UTC`, `NOW() = UTC_TIMESTAMP()`, vérifié le
   2026-09-15) et `created_at` vaut `CURRENT_TIMESTAMP(3)`. Les dates de filtre s'entendent en **jours
   UTC**. À écrire dans le doc-comment. ⚠️ **Le fait qui tient vraiment n'est pas le réglage du serveur**
@@ -142,7 +147,10 @@ un libellé serait du bruit. À écrire dans le doc-comment du handler.
   des écritures (`routes/journal_entries.rs:287-288`), pas le rejet en 400 des factures. Motif : un
   écran de consultation n'a aucune raison de faire échouer une page pour une taille hors bornes.
 - **Dates** reçues en `String` et parsées dans le handler (`journal_entries.rs:291-304`) : format
-  invalide ⇒ **400 `VALIDATION_ERROR`** nommant le paramètre ; `dateFrom > dateTo` ⇒ 400 ; **date hors de `[1000-01-01, 9999-12-31]` ⇒ 400** (AC 2).
+  invalide ⇒ **400 `VALIDATION_ERROR`** nommant le paramètre ; `dateFrom > dateTo` ⇒ 400 ; **date hors de `[1000-01-01, 9999-12-31]` ⇒ 400**, pour **`dateFrom` comme pour `dateTo`** (AC 2). ⚠️ La
+  borne basse n'est pas moins exposée : `NaiveDate::from_str("0999-12-31")` réussit, et une année
+  au-delà de 65535 échoue à l'**encodage** sqlx (`sqlx-mysql-0.8.6/src/types/chrono.rs:263-264`,
+  `u16::try_from`) — une **500**, pas une 400.
 - **Textes** `entityType`, `action` : `trim()` ; vide ⇒ absent ; plus long que la colonne
   (`entity_type` 32, `action` 64 caractères) ⇒ 400 — une valeur plus longue ne peut rien trouver, et
   le dire vaut mieux qu'une liste vide muette.
@@ -340,7 +348,8 @@ de la route (AC 7), faute de quoi le clamp de (g) est invérifiable :
   l'export est précisément le chemin d'extraction que l'arbitrage 1 ferme ;
 - ⛔ **clé API `read` d'un Admin ⇒ 403 `API_KEY_MANAGEMENT_FORBIDDEN`**, sur **les deux** routes ;
 - 400 `VALIDATION_ERROR` : `dateFrom` invalide, `dateFrom > dateTo`, `entityId` sans `entityType`,
-  `entityId <= 0`, `action` de 65 caractères, `dateTo=+262142-12-31` ; et **`dateTo=9999-12-31` accepté**
+  `entityId <= 0`, `action` de 65 caractères, `dateTo=+262142-12-31`, **`dateFrom=+262142-12-31`**, **`dateFrom=0999-12-31`** ; et
+  **`dateTo=9999-12-31` accepté**
   (200, sans borne haute) ;
 - forme de la réponse : `actorType` vaut **`"user"`** (jamais `"User"`), `createdAt` finit par `Z`,
   `companyId` `null` pour une entrée sans société ;
@@ -585,3 +594,26 @@ des parenthèses tranche, rejouée.
 sites de la spec (AC 12, AC 15 ×3, Dev Notes) ; « Deux choix non arbitrés » → trois dans le suivi. Les
 prompts des passes 1 et 2, qui citent « 10 clés, 9 colonnes », sont des **artefacts datés** et ne sont
 pas réécrits.
+
+### Passe 3 de `bmad-create-story validate` — lentille unique (Sonnet), contexte frais
+
+Prompt versionné : `25-1c-a-validate-prompt-p3.md`. Base déclarée : `git diff 49ff49d7 -- …`. Sondes :
+base jetable (parenthèses, an 10000), crate chrono (panique, `checked_add_days`, `NaiveDate::MAX`),
+round-trip CSV, source d'Axum 0.8.9 (`HEAD` servi par le handler `GET`).
+
+**Rendu : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 1 LOW — les deux retenus.** Tout le reste de la remédiation de la
+passe 2 est **confirmé sur pièces** : `from_current_user`, `HEAD`, les trois sites du manuel, les
+décomptes (22 AC, 11 tâches, 11 colonnes, 12 clés).
+
+- **M1 — la borne basse n'était ni exigée ni testée.** L'AC 20 ne portait que `dateTo`, et la narration
+  de l'AC 2 ne parlait que de lui ; or `0999-12-31` se parse, et une année au-delà de 65535 échoue à
+  l'encodage sqlx en **500**. → la plage vaut explicitement pour les deux paramètres, trois cas de test.
+- **L2 — la couche qui calcule la borne haute n'était pas nommée** : la route « calcule la borne », mais
+  la clause vit dans `push_where_clauses`. → la route valide, le repository calcule — **une seule**
+  implémentation, partagée par la liste et l'export.
+
+⚠️ **Sévérité maximale MEDIUM → MEDIUM : signal littéral de la § *Règle de splitting préventif*.** Il ne
+traduit pas une story trop large : le seul MEDIUM est **né de la remédiation de la passe 2** (les bornes
+de date qu'elle a introduites), et la lentille n'a rien trouvé d'autre. C'est la condition d'emploi de la
+§ *La passe ciblée* ⇒ **passe 4 ciblée** sur ce seul correctif, précédent du Project Lead sur la 25-1c-zero
+(« continue »).
