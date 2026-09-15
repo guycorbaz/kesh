@@ -59,7 +59,7 @@ company_id, AuditLogListQuery) -> Result<AuditLogListResult, DbError>`, sur le *
 `journal_entries::list_by_company_paginated` (`repositories/journal_entries.rs:825-864`) :
 
 - deux `QueryBuilder` **distincts**, l'un pour `SELECT COUNT(*)`, l'autre pour les lignes, alimentés
-  par **une seule** fonction `push_where_clauses` (le commentaire `:737-740` dit pourquoi un
+  par **une seule** fonction `push_where_clauses` (le commentaire `:745-747` dit pourquoi un
   `QueryBuilder` ne se réutilise pas) ;
 - colonnes lues par `const COLUMNS` (`:52`), **jamais** une liste recopiée ;
 - `AuditLogListQuery { date_from: Option<NaiveDate>, date_to: Option<NaiveDate>, entity_type:
@@ -213,6 +213,12 @@ sécurité non testée qu'on déplace est une fonction qu'on peut casser sans le
 **best-effort** — transaction dédiée, `tracing::warn!` en cas d'échec, réponse 200 malgré tout — patron
 `emit_report_export_audit` (`routes/reports.rs:1463-1510`).
 
+⚠️ **`for_actor` et non `::user`, bien que sa branche « clé API » soit morte ici** : `ensure_not_pat`
+refuse toute clé avant d'atteindre l'écriture, donc `api_key_id` vaut toujours `None` à cet endroit.
+Le choix est délibéré — **défense en profondeur** : si la garde devait un jour être levée, l'entrée
+attribuerait encore correctement l'export à la clé, là où `::user` écrirait un fait faux (limitation L2
+de `reports.rs:1423-1426`). À écrire en commentaire au site.
+
 ⚠️ **Choix de conception, NON arbitré — à confirmer en revue** : *qui a extrait la piste* est
 précisément ce qu'une piste doit dire ; la consultation à l'écran ne l'est pas (AC 9), l'extraction
 d'un fichier qui quitte l'application l'est.
@@ -236,10 +242,18 @@ de `frontend/src/lib/shared/i18n-keys.test.ts` ne bouge. Le vérifier, pas le su
 lire depuis l'application »*. **La moitié devient fausse.** Réécrire : une route de consultation et
 d'export existe pour le Comptable et l'Admin, l'écran reste à venir (#378).
 
-**17. La conséquence de l'arbitrage 2, écrite dans le même manuel**, § import d'une sauvegarde
-(`admin-manual.tex` ~1600) : **l'import sert à restaurer la même installation**. Importer la sauvegarde
-d'une autre installation est techniquement possible, et ferait attribuer les entrées d'audit locales à
-la société importée.
+**17. La conséquence de l'arbitrage 2, écrite dans le même manuel** : **l'import sert à restaurer la
+même installation**. Importer la sauvegarde d'une autre installation est techniquement possible, et
+ferait attribuer les entrées d'audit locales à la société importée. **Deux sites**, et le premier
+contredit aujourd'hui la prémisse :
+
+- `admin-manual.tex:1585` — ⛔ la sous-section s'intitule **« Importer (restauration / migration) »**.
+  « Migration » laisse entendre qu'on importe vers une **autre** installation. Dire ce que le mot
+  couvre — déplacer **la même** installation vers un autre serveur — ou le retirer ; ne pas laisser
+  le titre promettre l'usage que l'arbitrage exclut ;
+- `admin-manual.tex:1803-1810` — l'encadré « Deux réserves à connaître avant d'invoquer cette
+  conformité » affirme que les entrées de l'archive sont « **fusionnées** » avec celles de
+  l'installation : c'est là que la conséquence d'un import étranger doit être écrite.
 
 **18. Régénération et contrôle** : `make fr` dans `docs/manual/`, PDF commités, **PDF aplati vérifié**
 (`pdftotext f.pdf - | tr '\n' ' ' | tr -s ' '`) — l'ancienne phrase absente, les nouvelles présentes.
@@ -258,8 +272,15 @@ déjà présent (25-1c-zero) :
 - (a) **scoping** : une entrée de la société 30 n'apparaît **jamais** dans la consultation de la 40 ;
 - (b) **entrée sans société** : une entrée `company_id IS NULL` apparaît dans la consultation de la 40
   **et** dans celle de la 30 ;
-- (c) ⛔ **les parenthèses** : filtre `action = X` posé, une entrée `NULL` d'action `Y` **n'apparaît
-  pas** — sans les parenthèses, elle apparaîtrait ;
+- (c) ⛔ **les parenthèses** : filtre `action = X` posé, une entrée **de la société ciblée** (40)
+  d'action `Y` **n'apparaît pas**. ⚠️ **C'est elle, et non une entrée sans société, qui tranche** :
+  `AND` liant plus fort que `OR`, la clause sans parenthèses se lit
+  `company_id = 40 OR (company_id IS NULL AND … AND action = X)` — la branche `company_id = 40` y
+  échappe à **tous** les filtres, alors que la branche `NULL` les garde. Une entrée `NULL` d'action `Y`
+  reste donc **absente dans les deux cas**, et ne peut pas servir de sonde. *(Reproduit sur base jetable
+  en passe 1 de validation.)* Garder l'assertion sur l'entrée `NULL` d'action `Y` absente, mais comme
+  **propriété de l'AC 19 (b)** — une entrée sans société reste soumise aux filtres —, non comme sonde
+  des parenthèses ;
 - (d) **bornes de date** : entrée à `date_to 23:59:59.999` **incluse**, entrée au lendemain
   `00:00:00.000` **exclue**, entrée à `date_from 00:00:00.000` **incluse** — dates posées par `UPDATE`
   explicite ;
@@ -292,7 +313,7 @@ déjà présent (25-1c-zero) :
 | mutation | test attendu rouge |
 |---|---|
 | `OR company_id IS NULL` retiré | 19 (b) |
-| parenthèses retirées | 19 (c) |
+| parenthèses retirées | 19 (c) — l'entrée de la société ciblée d'action `Y` apparaît |
 | borne haute `< date_to + 1 j` → `<= date_to` | 19 (d) |
 | `ensure_not_pat` retiré de la route de liste | 20, clé API |
 | `csv_sanitize` retirée de la cellule `actor_label` | 20, injection |
@@ -426,3 +447,46 @@ recense que les verbes mutants, `:181,311`), les tests de parité i18n.
   MariaDB, sérialisation d'`ActorType`, emplacement de `ensure_not_pat`, unicité de `csv_sanitize`.
   **Deux choix de conception laissés à confirmer en revue** : l'inclusion des entrées sans société, et
   l'audit de l'export.
+- **2026-09-15** — Contrôle checklist : `csv_sanitize` n'a **aucun** test aujourd'hui — l'AC 13 exige
+  désormais ses tests unitaires à l'extraction.
+
+### Passe 1 de `bmad-create-story validate` — deux lentilles, contexte frais
+
+Prompt versionné : `25-1c-a-validate-prompt-p1.md`.
+
+| Lentille | Modèle | Rendu brut | Après vérification au sol |
+|---|---|---|---|
+| Sonnet | Sonnet | 1 C, 1 M, 3 L | **1 C, 1 M, 2 L retenus**, 1 L écarté |
+| Haiku | Haiku 4.5 | 1 H, 1 L | H **écarté**, L retenu (doublon du M de Sonnet) |
+
+**Bilan retenu : 1 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW.**
+
+- **C1 — la sonde des parenthèses ne sondait rien** (Sonnet). L'AC 19 (c) posait une entrée **sans
+  société** d'action `Y` ; or `AND` liant plus fort que `OR`, la clause sans parenthèses se lit
+  `company_id = ? OR (company_id IS NULL AND … AND action = ?)` : la branche `NULL` garde ses filtres,
+  et c'est une entrée **de la société ciblée** qui fuit. La mutation « parenthèses retirées » serait
+  restée **verte**, et l'AC 21 exigeait de la consigner rouge. Reproduit par la lentille sur base
+  jetable, et confirmé par la priorité des opérateurs. → sonde réécrite, tableau de mutations mis en
+  accord. ⛔ *Le défaut était dans le texte même qui expliquait le mécanisme* — l'AC 2 disait « le `OR`
+  absorberait tous les filtres suivants », sans dire **quelle branche** y échappe.
+- **M2 — référence fausse** (Sonnet, convergent avec le LOW de Haiku) : le commentaire du patron
+  `QueryBuilder` est à `journal_entries.rs:745-747`, non `:737-740` (qui désigne les champs de
+  `JournalEntryListResult`). Vérifié par `grep -nF "CRITIQUE"`.
+- **L3 — l'AC 17 visait le mauvais endroit, et c'était pire que signalé** (Sonnet). La sous-section
+  s'intitule « **Importer (restauration / migration)** » (`admin-manual.tex:1585`) : son titre même
+  contredit l'arbitrage 2. → deux sites nommés, dont le titre.
+- **L4 — branche morte de `for_actor`** (Sonnet) : fondé, mais le choix est **maintenu** pour défense
+  en profondeur, et désormais justifié dans l'AC 14.
+
+**Écartés, sur preuve** :
+
+- **« 109 sites d'écriture et non 106 »** (Sonnet) — son motif `insert_in_tx(` compte aussi
+  `invoice_reminders::insert_in_tx` (`dunning_reminders.rs:296`, `invoice_email.rs:586`) et sa
+  définition (`invoice_reminders.rs:130`). Le motif de la spec, restreint à `audit_log(_repo)?::`,
+  rend **106** : la spec est juste.
+- **HIGH « le manuel ne dit pas que l'import restaure la même installation »** (Haiku) — c'est le
+  travail que l'AC 17 **prescrit**, pour une story `ready-for-dev`. Constat vrai, défaut inexistant.
+
+⚠️ **La lentille Haiku a déclaré « aucun axe non exercé » en laissant l'axe 7 de côté** (« pas
+d'implémentation attendue » — alors que l'axe porte sur la conception des tests écrite dans la spec).
+C'est la lentille Sonnet qui l'a exercé, et c'est là qu'était le CRITICAL.
