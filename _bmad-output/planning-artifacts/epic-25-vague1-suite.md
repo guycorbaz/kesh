@@ -59,6 +59,7 @@ colonne**.
 ⚠️ **Ce n'est pas un détail de la 25-1c, c'est une story de plus.** Une migration **avec
 backfill** arme les garde-fous **P2-bis, P3, P5, P6, P7 et P8**, là où la 25-1b n'en arme aucun.
 D'où le découpage : **la colonne et son backfill d'abord, la route et l'écran ensuite.**
+La colonne est la story **`25-1c-zero-audit-company-id`**, spécifiée le 2026-09-15.
 
 ✅ **Mécanisme arrêté le 2026-09-11, après lecture ciblée : le SOUS-SELECT**, sur le patron exact
 d'`actor_label`. La colonne est **`BIGINT NULL`, sans clé étrangère, sans `NOT NULL`**.
