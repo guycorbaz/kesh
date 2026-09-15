@@ -2187,6 +2187,17 @@ async fn characterization_full_import_keeps_company_ids_as_written(pool: MySqlPo
         .execute(&pool)
         .await
         .expect("renommage local de C1");
+    // Le montage se verrouille lui-même : sans cette relecture, retirer le renommage
+    // laisserait le test vert (passe 2 de revue de code, L1).
+    let nom_a_l_ecriture: String = sqlx::query_scalar("SELECT name FROM companies WHERE id = ?")
+        .bind(u1.company_id)
+        .fetch_one(&pool)
+        .await
+        .expect("relecture de C1 avant l'écriture");
+    assert_eq!(
+        nom_a_l_ecriture, NOM_LOCAL,
+        "montage : C1 porte l'identité LOCALE au moment où l'entrée est écrite"
+    );
     write_trace(&pool, u1.user_id, "test.identiques").await;
 
     let u2 = seed_admin(&pool, "car_deux").await;
@@ -2227,9 +2238,11 @@ async fn characterization_full_import_keeps_company_ids_as_written(pool: MySqlPo
         .fetch_one(&pool)
         .await
         .expect("société C1 restaurée");
-    assert_ne!(
-        nom_restaure, NOM_LOCAL,
-        "sous-cas « identiques » : même `id`, autre identité — une consultation scopée \
+    // Égalité STRICTE avec le nom de l'archive — `seed_admin` nomme la société
+    // `CI {label}` —, et non une simple différence avec `NOM_LOCAL`, vraie par construction.
+    assert_eq!(
+        nom_restaure, "CI car_un",
+        "sous-cas « identiques » : même `id`, identité de l'ARCHIVE — une consultation scopée \
          présenterait cette entrée à une société qui ne l'a pas écrite"
     );
 

@@ -1,6 +1,6 @@
 # Story 25.1c-zero : Rattacher chaque entrée d'audit à sa société
 
-Status: review
+Status: done
 
 ⚠️ **Story-zéro de la 25-1c**, née de l'arbitrage du Project Lead du **2026-09-11** : `audit_log`
 est **globale** alors que Kesh est multi-société, et une route de consultation exposerait les traces
@@ -499,6 +499,7 @@ encore, c'est la consultation du journal d'audit ») — c'est la 25-1c qui le r
 Hunter (Haiku 4.5), Acceptance Auditor (Sonnet). Prompt : `25-1c-zero-review-prompt-p1.md`.*
 
 - [x] [Review][Patch] Le sous-cas « identiques » de la caractérisation (AC 8) n'est pas exercé : `test.identiques` est écrite AVANT l'export, donc la copie locale et la C1 restaurée sont la même société — l'assertion est vraie par construction et ne montre pas « une autre identité sous le même `id` ». Écrire l'entrée APRÈS l'export, sous une C1 localement renommée, et asserter que la C1 restaurée porte une autre identité [crates/kesh-api/tests/admin_full_import_e2e.rs:2157]
+- [x] [Review][Patch] (passe 2, LOW) L'assertion « autre nom » était vraie par construction — le nom d'archive diffère de `NOM_LOCAL` que le renommage ait lieu ou non. Relecture du nom juste après le renommage, puis égalité stricte avec le nom d'archive [crates/kesh-api/tests/admin_full_import_e2e.rs:2243]
 
 ## Dev Notes
 
@@ -1015,3 +1016,59 @@ ciblé** est licite (exception `kesh-db` non déclenchée).
 | `cargo nextest run -p kesh-api --test admin_full_import_e2e` | **27 passed, 0 failed** |
 
 ⚠️ **Gate complet au dernier commit de la boucle**, et suite E2E avant le push.
+
+## Revue de code — passe 2, PASSE CIBLÉE (2026-09-15)
+
+Prompt versionné : `25-1c-zero-review-prompt-p2.md`. Lentille unique (Opus), braquée sur le seul
+correctif de la passe 1. Base déclarée : `git diff 9c04aa08 -- …/admin_full_import_e2e.rs
+…/25-1c-zero-audit-company-id.md`. Trois axes exercés, binaire exécuté (27/27).
+
+**Rendu : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW — retenu.**
+
+- **L1 — l'assertion « autre nom » était vraie par construction.** Le nom de C1 dans l'archive
+  (`CI car_un`, posé par `seed_admin`) diffère de `NOM_LOCAL` **que le renommage ait eu lieu ou non** :
+  retirer le `UPDATE companies` laissait le test vert — précisément le geste qui fait de C1 « une
+  autre identité sous le même `id` ». → le nom est **relu juste après le renommage** et doit valoir
+  `NOM_LOCAL` ; après import, il doit valoir **exactement** `CI car_un`. Le test observe désormais les
+  deux bouts : l'identité à l'écriture, l'identité après le restore.
+
+**Épreuve du correctif** : renommage retiré → le test rougit **sur l'assertion de montage** (« C1 porte
+l'identité LOCALE au moment où l'entrée est écrite ») ; fichier restauré, `cmp` identique.
+
+⚠️ **Le motif s'est vérifié une fois de plus** : le MEDIUM de la passe 1 disait qu'une assertion était
+vraie par construction ; son correctif a introduit **une autre** assertion vraie par construction,
+trouvée par la passe suivante. *Corriger une assertion non discriminante n'immunise pas la suivante.*
+
+Observation sans sévérité, non retenue : le Change Log de la passe 3 de validation décrit l'ancien
+montage (« U1 écrit deux entrées ») — compte rendu **daté**, exact au moment où il a été écrit ; le
+réécrire falsifierait l'histoire.
+
+### Gate de clôture de la boucle — ce qui a RÉELLEMENT tourné
+
+Base de dev **remise à zéro et vérifiée** : 68 migrations appliquées, 1 administrateur.
+
+| Gate | Résultat |
+|---|---|
+| `cargo fmt` + `cargo clippy --workspace --all-targets -D warnings` | vert |
+| `cargo nextest run` via `scripts/test-fast.sh` | **2330 passed, 0 failed, 4 skipped** — 88,9 s |
+
+Le total est inchangé depuis l'implémentation : les deux passes ont **renforcé** un test existant,
+elles n'en ont pas ajouté.
+
+---
+
+## Boucle de revue de code — close en 2 passes
+
+| Passe | Modèle(s) | CRITICAL | HIGH | MEDIUM | LOW | Retenus |
+|---|---|---|---|---|---|---|
+| 1 | Sonnet · Haiku 4.5 · Sonnet (3 lentilles) | 0 | 0 | 1 | 1 | 1 M (le LOW écarté sur `EXPLAIN`) |
+| 2 | Opus — **ciblée** | 0 | 0 | 0 | 1 | 1 L |
+
+**Critère d'arrêt atteint** : aucun finding au-dessus de LOW, et les remédiations des deux passes ne
+touchent **aucune ligne de code de production** — un seul fichier de test, et la spec.
+
+**Aucune ligne de production n'a été prise en défaut par la revue.** Les deux findings retenus portent
+sur le **même test de caractérisation**, et le premier venait du montage que la spec prescrivait.
+
+⚠️ **Reste avant le push : la suite E2E Playwright**, base `kesh_e2e` reconstruite — la seule à
+démarrer un binaire contre une base persistante, donc la seule à pouvoir voir un défaut P8.
