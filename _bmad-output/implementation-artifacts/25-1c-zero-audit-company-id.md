@@ -99,7 +99,9 @@ empêcher qu'on le « simplifie » en cours de route :
 - l'index **`idx_audit_log_company_date (company_id, created_at)`**.
 
 Les deux clauses portent `IF NOT EXISTS` (précédents : `20260418000001_country_code.sql` pour la colonne, `20260419000001_invoice_paid_at.sql`
-pour l'index ; MariaDB **10.11** en dev, en production et en CI — les trois `image:` vérifiées), ce qui
+pour l'index, mais sous la forme `CREATE INDEX IF NOT EXISTS` — la forme `ALTER TABLE … ADD INDEX IF
+NOT EXISTS` retenue ici n'a pas de précédent au dépôt ; elle a été **exécutée** sur MariaDB 10.11 en
+passe 2 de validation, note 1061 au rejeu ; MariaDB **10.11** en dev, en production et en CI — les trois `image:` vérifiées), ce qui
 rend le DDL ré-entrant et fonde le verdict d'idempotence de l'AC 10.
 
 ⛔ **Interdits, et un seul suffit à casser quelque chose** : `NOT NULL` (contrainte 1), `FOREIGN KEY`
@@ -202,6 +204,27 @@ sous-cas, et ils ne se valent pas :
 ⚠️ **Le second sous-cas n'est écrit nulle part** : l'epic ne nomme que le premier. Le test doit
 **couvrir les deux**, et le doc-comment renvoyer à la 25-1c. **Ne pas le résoudre ici.**
 
+**Montage — un seul aller-retour produit les deux sous-cas.** Un export puis un import sur la même
+base ne donne **que** « identiques », puisque `restore_body` réinsère `companies` avec les `id` de
+l'archive. Pour obtenir aussi « différents » :
+
+1. `seed_admin("a")` crée la société C1 et l'administrateur U1 ; U1 écrit une entrée ; **export**.
+2. `seed_admin("b")` crée **ensuite** C2 et U2, absents de l'archive ; U2 écrit une entrée.
+3. **Import** avec le JWT de U2. Le handler l'accepte : l'importateur « peut ne pas exister dans la
+   source » (`routes/admin.rs:346-347`).
+
+**Ce qu'on asserte, et pourquoi chaque assertion tranche** :
+
+- l'entrée **locale** de U1 porte C1 : c'est le sous-cas « identiques » ;
+- l'entrée **locale** de U2 porte C2, que le restore a supprimée : c'est le sous-cas « différents » ;
+- l'entrée `admin.full_import` porte **C1**, alors que l'importateur est dans **C2**. L'acteur est le
+  plus petit administrateur **restauré** (`admin.rs:354-363`), et c'est cette différence qui rend
+  l'assertion discriminante ;
+- **« verbatim »** : avant l'export, poser sur l'entrée de U1 un `company_id` que le sous-SELECT ne
+  produirait jamais (une société inexistante, sur le patron de `nom_d_alors`,
+  `admin_full_import_e2e.rs:1944`). Après import, la copie fusionnée doit la porter **telle
+  quelle**.
+
 ### Volet D — les garde-fous de migration
 
 **9. P7 — triage : EXEMPTION PÉRISSABLE, et non registre de rejeu.**
@@ -277,7 +300,8 @@ ne rend aucun autre site positionnel : les trois autres fichiers résolvent **pa
   `published_migrations_keep_their_checksums` (`test_schema_guard.rs:556`) **imprime la ligne
   attendue** quand elle manque.
 - `crates/kesh-db/test-schema/0001_schema_squash.sql` est **régénéré par `scripts/regen-test-schema.sh`**,
-  jamais édité. Sans cela, 1102 tests échouent en `Unknown column 'company_id'`
+  jamais édité. Sans cela, tout test monté sur le squash qui écrit ou relit une entrée d'audit échoue en
+  `Unknown column 'company_id'`
   (`squash_matches_real_schema_structure` nomme la divergence).
 
 **13. P1/P2/P2-bis/P3 — non breaking, donc aucun bump.** `ADD COLUMN` nullable et `ADD INDEX` : un
@@ -299,10 +323,23 @@ rougit sur `#[sqlx::test(migrations = false)]` : un test qui ne monte pas le squ
 total exact : rien d'autre à y bumper.
 
 - (a) **deux sociétés**, un utilisateur chacune, des entrées de chacun ⇒ chaque entrée prend **la
-  société de son acteur**, et **aucune** celle de l'autre ;
+  société de son acteur**, et **aucune** celle de l'autre.
+  ⛔ **Identifiants DÉSALIGNÉS, posés explicitement** (par exemple sociétés `10` et `20`,
+  utilisateurs `101` et `202`, `entity_id` `7`) : dans une base neuve, la première société et le
+  premier utilisateur prennent tous deux l'`id` 1, et un backfill fautif `SET a.company_id = a.user_id`
+  ou `= u.id` passerait alors au vert ;
 - (b) une entrée dont le `user_id` **n'existe pas** ⇒ `company_id` **reste `NULL`**, la migration
   ne s'arrête pas. *Il tue la mutation `JOIN` → `LEFT JOIN … COALESCE`* ;
-- (c) **idempotence** : rejouer l'`UPDATE` de la migration est un no-op (`rows_affected == 0`) ;
+- (c) **idempotence** : **après** la migration, poser à la main sur une entrée un `company_id` que le
+  backfill ne produirait pas (celui de l'autre société), puis **rejouer le SQL embarqué** —
+  `kesh_db::MIGRATOR.migrations` filtré sur la version `20260915000001`, fichier entier, et **jamais
+  une copie** recopiée dans le test —, et asserter que la valeur posée **n'a pas bougé**.
+  ⚠️ *Pourquoi ces trois précisions* : une copie resterait gardée quand la migration ne l'est plus,
+  et la mutation 3 de l'AC 16 passerait au vert ; la valeur ne peut pas être posée **avant** la
+  migration, la colonne n'existant pas (c'est l'assertion (d)) ; et l'assertion porte sur la
+  **valeur**, pas sur `rows_affected`, dont le sens dépend du drapeau `CLIENT_FOUND_ROWS` de la
+  connexion. Rejouer le fichier entier est sans risque : le DDL rejoué rend 0 ligne et les notes
+  1060 et 1061 (vérifié en passe 2) ;
 - (d) ⛔ **assertion de montage** : avant `MIGRATOR.run()`, la colonne `company_id` **n'existe
   pas** dans `information_schema`. Sans elle, un test qui tournerait après la migration **passerait
   à vide** — le mode d'échec de `backfill_skips_archived_accounts` (16-1a).
@@ -315,6 +352,13 @@ dans `kesh-api`, c'est `"../kesh-db/test-schema"`) :
 - (b) constructeur `api_key` ⇒ la société du **créateur** de la clé ;
 - (c) `user_id` inexistant ⇒ l'`INSERT` **réussit**, `company_id = None`, `actor_label = "(inconnu)"`.
 
+⛔ **Même exigence qu'en AC 14 (a) : identifiants désalignés.** Le squash de test n'insère **que** la
+ligne `_kesh_version` (`0001_schema_squash.sql:1110`) ; `test_fixtures::seed_accounting_company`
+crée la société 1 puis les utilisateurs 1 et 2. Un sous-SELECT fautif `SELECT id FROM users`, ou
+un `?` lié dans le mauvais ordre, rendrait alors la bonne valeur par coïncidence. ⇒ Créer d'abord
+une société **factice**, et placer l'acteur dans la **seconde** : `companies.id`, `users.id`,
+`entity_id` et `actor_api_key_id` doivent être **deux à deux distincts**.
+
 ⚠️ Les trois tests existants du module utilisent `#[tokio::test]` avec une base **partagée**
 (`test_pool()`) et l'administrateur du seed : ne pas les imiter pour les nouveaux cas. Une base
 éphémère évite de laisser des résidus qui feraient rougir le gate suivant (KF-039, #310).
@@ -326,7 +370,9 @@ test visé exécuté et **vu rouge**, puis la mutation retirée et `git diff` v�
 |---|---|
 | sous-SELECT de l'AC 4 remplacé par `NULL` | 15 (a) et (b) |
 | `JOIN` → `LEFT JOIN` + `COALESCE(u.company_id, 0)` | 14 (b) |
-| `WHERE a.company_id IS NULL` retiré, puis une valeur pré-posée à la main | 14 (c) |
+| `WHERE a.company_id IS NULL` retiré **de la migration** | 14 (c) — parce qu'il rejoue le SQL **embarqué** |
+| sous-SELECT `SELECT company_id FROM users` → `SELECT id FROM users` | 15 (a) — **seulement** si les identifiants sont désalignés |
+| backfill `SET a.company_id = u.company_id` → `= a.user_id` | 14 (a) — **seulement** si les identifiants sont désalignés |
 | entrée retirée d'`EXEMPT_MIGRATIONS` | `every_data_backfill_migration_is_triaged` |
 
 ⛔ **Un test qui ne compile pas ne rougit pas : il se tait** (acquis de la 25-1b). Chaque mutation
@@ -340,6 +386,7 @@ patch :
 | site | ce qu'il affirme |
 |---|---|
 | `crates/kesh-api/src/routes/exports.rs:137-139` | « la table `audit_log` n'a pas de colonne `company_id`, donc les requêtes multi-tenant doivent passer par `details_json` ou par FK `users.company_id` » |
+| ⛔ `docs/manual/fr/admin-manual.tex:1786` **et son PDF** | la liste des champs d'`audit_log`, puis « Il n'y a pas de colonne `company_id` : la table est globale. Une consultation par société l'exige, et c'est le sujet de l'issue #378. » — cf. AC 18 |
 | `crates/kesh-api/tests/exports_global_e2e.rs:1144-1145` | « `audit_log` n'a PAS de colonne company_id ; on filtre par user_id » |
 | `crates/kesh-db/src/repositories/audit_log.rs:70` | « toucher les quelque **trente** sites » — ils sont **106** ; la phrase est dans le commentaire même que l'AC 4 modifie |
 
@@ -358,6 +405,8 @@ l'exécution réelle du grep et non d'une supposition :
 ```sh
 grep -rnE "(n'a (PAS|pas) de|sans) (colonne )?\`?company_id" crates docs README.md
 grep -nE "trente|\b(30|89|106)\b" crates/kesh-db/src/repositories/audit_log.rs
+grep -rnE 'pas de colonne .{0,20}company(\\)?_id' docs/manual/fr/*.tex website README.md
+pdftotext docs/manual/fr/admin-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -o "pas de colonne company_id"
 ```
 
 - **Premier grep** : aujourd'hui **8 lignes**. Après le patch, il en reste **6**, qui parlent toutes
@@ -371,22 +420,43 @@ grep -nE "trente|\b(30|89|106)\b" crates/kesh-db/src/repositories/audit_log.rs
 
   Les deux lignes qui disparaissent sont `exports.rs:138` et `exports_global_e2e.rs:1144`.
 - **Second grep** : **aucune ligne** après le patch — ni l'ancien total, ni un nouveau.
+- **Troisième et quatrième** (le manuel, `.tex` puis PDF aplati) : **aucune ligne** après le patch.
+  ⛔ **En LaTeX, le souligné s'écrit `\_`** : un motif `company_id` ne voit **jamais**
+  `company\_id`. C'est ainsi que l'AC 18 a d'abord conclu « aucun site » — sur un grep aveugle par
+  construction. D'où le `(\\)?` et le contrôle du PDF.
 
 ⚠️ Les numéros de ligne des faux positifs peuvent dériver d'ici le développement : on juge le
 résultat **fichier par fichier**, pas au nombre de lignes.
 
-**18. Les manuels — AUCUN site à changer, et c'est une conclusion à VÉRIFIER, non à croire.**
-`grep -nE "audit_log|company_id|journal d.audit" docs/manual/fr/*.tex` : aucune mention du schéma
-de la table ni de sa portée par société. `user-manual.tex:498-502` (« ce qui manque encore, c'est
-la consultation du journal d'audit ») **reste vrai** : c'est la 25-1c qui le rendra faux. ⇒ **Pas de
-régénération de PDF.** Pas d'entrée CHANGELOG non plus : aucun effet visible. La 25-1c portera
-l'une et l'autre.
+**18. Le manuel d'administration — UN site, que la story rend faux.**
+
+`admin-manual.tex:1786` (§ *Audit-trail (audit\_log)*) énumère les champs de la table et affirme :
+*« Il n'y a pas de colonne `company_id` : la table est globale. Une consultation par société
+l'exige, et c'est le sujet de l'issue #378. »* Au merge, la liste devient incomplète et la phrase
+fausse. ⇒ **dans le même patch** :
+
+- ajouter `company_id` à la liste des champs, avec sa nature en une incise : *la société de
+  l'auteur au moment de l'écriture, vide quand elle est indéterminable* ;
+- réécrire l'avertissement **sans sur-promettre dans l'autre sens** : la colonne existe, mais
+  **la consultation par société n'existe pas encore** — elle reste l'objet de l'issue #378 ;
+- régénérer les PDF (`make fr` dans `docs/manual/`), commiter le PDF, et le **vérifier aplati** —
+  l'ancienne phrase absente, la nouvelle présente.
+
+⚠️ **Ce qui reste vrai et ne doit PAS être touché** : `user-manual.tex:498-502` (« ce qui manque
+encore, c'est la consultation du journal d'audit ») — c'est la 25-1c qui le rendra faux.
+`marketing-brochure.tex`, `README.md` et `website/` ne disent rien de la portée de la table
+(vérifié par le grep de l'AC 17). Pas d'entrée CHANGELOG : aucun effet visible pour l'utilisateur
+— la 25-1c la portera.
 
 ## Tasks / Subtasks
 
 - [ ] **T0 — Remise à zéro VÉRIFIÉE de la base de dev** avant tout (la machine a redémarré, le
       tmpfs est vide) : les trois étapes de `CLAUDE.md` § *Un gate laisse la base piégée*, **puis**
       contrôler qu'un `Admin` existe. *Compter les migrations ne prouve rien.*
+      ⚠️ **À prévoir, pas à diagnostiquer** : entre T2 et T9, les trois `#[tokio::test]`
+      historiques de `audit_log.rs`, qui lisent la base **partagée** `kesh`, échoueront en
+      `Unknown column 'company_id'` tant qu'elle n'a pas reçu la 68ᵉ migration. Ce n'est pas une
+      régression ; la remise à zéro de T9 la leur apporte.
 - [ ] **T1 — La migration** (AC 1, 2, 3, 13). En-tête **relu avant** le premier `migrate run`.
 - [ ] **T2 — Alimentation et entité** (AC 4, 5), commentaire `:70` corrigé au passage (AC 17).
 - [ ] **T3 — Squash et checksum** (AC 12) : `scripts/regen-test-schema.sh`, ligne `migrations.sha384`.
@@ -396,7 +466,8 @@ l'une et l'autre.
 - [ ] **T6 — Tests** (AC 6, 7, 8, 14, 15). ⛔ *Une tâche qui décrit un test est une promesse ; la
       cocher sans l'avoir écrit la transforme en mensonge, et le gate reste vert* (acquis 25-1b).
 - [ ] **T7 — Mutations** (AC 16), résultats **observés** consignés.
-- [ ] **T8 — Propagation** (AC 17) et vérification des manuels (AC 18), les deux greps rejoués.
+- [ ] **T8 — Propagation** (AC 17) et manuel d'administration (AC 18) : `.tex` corrigé, PDF
+      régénéré par `make fr` et vérifié aplati, les quatre greps de l'AC 17 rejoués.
 - [ ] **T9 — Gate complet**, base remise à zéro **et vérifiée**. ⛔ `kesh-db` touché : **ciblage
       interdit**, même en boucle de revue (exception `kesh-db` de `CLAUDE.md`). Backend :
       `scripts/test-fast.sh`. Frontend : non touché, gate non requis pour le commit — **mais** la
@@ -422,8 +493,9 @@ l'une et l'autre.
 | `crates/kesh-api/tests/admin_full_export_e2e.rs` *(ou `admin_backup_e2e.rs`)* | test AC 6 |
 | `crates/kesh-api/src/routes/exports.rs`, `tests/exports_global_e2e.rs` | commentaires (AC 17) |
 | `docs/migrations-idempotence-audit.md` | ligne + deux totaux + partition |
+| `docs/manual/fr/admin-manual.tex` + `.pdf` (et les deux autres PDF que `make fr` régénère) | § *Audit-trail* : champ ajouté, avertissement réécrit (AC 18) |
 
-**Deux crates, aucun frontend, aucune clé i18n** — sous le seuil de la § *Règle de splitting
+**Deux crates et un manuel, aucun frontend, aucune clé i18n** — sous le seuil de la § *Règle de splitting
 préventif*.
 
 ### Ce qui ne bouge PAS, et qu'il ne faut pas « améliorer »
@@ -462,7 +534,9 @@ préventif*.
   P8, site positionnel P6, compteur de routes admin. Les trois premiers se déclencheront ici.
 - Échecs de gate rencontrés, à ne pas rediagnostiquer : **squash périmé** → `regen-test-schema.sh` ;
   **`ColumnNotFound`** → champ absent de `COLUMNS` ; **fixture sans société** → `users.company_id`
-  est NOT NULL sans défaut.
+  est NOT NULL sans défaut. ⚠️ **Et `users` porte `CHECK (OCTET_LENGTH(password_hash) >= 20)`**
+  (`20260404000001_initial_schema.sql:36`) : le montage en SQL brut de l'AC 14, avec un hachage
+  factice court, échoue en `ERROR 4025` (relevé en passe 2).
 - ⛔ **Une remise à zéro de base qui échoue en silence est indiscernable d'une régression** (34 faux
   échecs, `sqlx migrate run` redirigé vers `/dev/null`). La vérifier.
 - `information_schema` rend `CHARACTER_MAXIMUM_LENGTH` en **`BIGINT UNSIGNED`** : décoder en `u64`.
@@ -577,3 +651,55 @@ spec, mais c'est lui, et non le « 0 finding » de la lentille, qui ferme l'axe.
 **Leçon, et c'est la troisième fois qu'elle se présente sur l'Epic 25** : *un nombre recopié d'un
 document de planification n'est pas un nombre vérifié* — le « 89 » avait été produit **pour
 corriger** une estimation fausse (« ~30 »), et il était faux à son tour.
+
+### Passe 2 de `bmad-create-story validate` — lentille unique (Opus), contexte frais
+
+Prompt versionné : `25-1c-zero-validate-prompt-p2.md`. Base de comparaison déclarée par la
+lentille : `git diff 08187010 -- _bmad-output/`. La syntaxe SQL a été **exécutée** sur une base
+jetable créée puis supprimée par la lentille.
+
+**Rendu : 0 CRITICAL, 1 HIGH, 4 MEDIUM, 4 LOW — tous retenus après vérification au sol.**
+Sévérité maximale **MEDIUM → HIGH** : la passe 2 est plus sévère que la passe 1. ⚠️ Ce n'est pas le
+signal de non-convergence de la § *Règle de splitting préventif* : le HIGH ne vient **ni** d'une
+remédiation de la passe 1, **ni** d'une décision de conception, mais d'un **axe que la passe 1 a
+exercé avec un outil aveugle**.
+
+- **H1 — l'AC 18 était FAUX : le manuel d'administration dit le contraire de ce que la story
+  livre.** `admin-manual.tex:1786` énumère les champs d'`audit_log` et affirme « Il n'y a pas de
+  colonne `company_id` : la table est globale ». Confirmé dans le PDF aplati. ⛔ **Pourquoi deux
+  lentilles et l'auteur l'ont manqué** : en LaTeX le souligné s'écrit `\_`, et
+  `grep "company_id" *.tex` ne voit **jamais** `company\_id`. L'AC 18 concluait « aucun site » sur un
+  grep aveugle par construction ; le PDF, lui, l'aurait montré. → AC 18 réécrit (champ ajouté,
+  avertissement reformulé sans sur-promettre, PDF régénéré et vérifié aplati), AC 17 complété de
+  deux greps (`company(\\)?_id` sur le `.tex`, puis le PDF), T8 et tableau des fichiers mis à jour.
+- **M2 — les tests AC 14 (a) et 15 ne distinguaient pas `company_id` de `user_id`.** Le squash
+  n'insère que `_kesh_version` (`0001_schema_squash.sql:1110`, vérifié) : première société et premier
+  utilisateur prennent l'`id` 1, et `SELECT id FROM users` passerait au vert. → identifiants
+  **désalignés et deux à deux distincts** exigés, deux mutations ajoutées à l'AC 16.
+- **M3 — la mutation 3 de l'AC 16 pouvait rester verte** si le test rejouait une **copie** de
+  l'`UPDATE`. → (c) rejoue le SQL **embarqué** dans `MIGRATOR`, pose sa valeur **après** la
+  migration, et asserte sur la **valeur** plutôt que sur `rows_affected` (sqlx 0.8.6 active
+  `FOUND_ROWS`, vérifié à `stream.rs:46` — l'assertion ne doit pas en dépendre).
+- **M4 — l'AC 8 ne disait pas comment obtenir le sous-cas « différents »**, ni comment rendre ses
+  assertions discriminantes. → montage en trois temps (C1/U1, export, C2/U2, import par U2), validé
+  contre `routes/admin.rs:346-347` (« l'importateur peut ne pas exister dans la source »).
+- **M5 — un « 89 » a survécu dans `sprint-status.yaml:318`**, alors que le Change Log de la passe 1
+  déclarait le suivi corrigé. ⛔ **Faute de propagation de l'orchestrateur** : la ligne portait
+  **deux** occurrences, et la correction a visé **la phrase** au lieu du **jeton** — la leçon même de
+  la 16-3b, que le `CLAUDE.md` codifie (« greper la VALEUR, pas la formulation »). Le grep avait
+  été lancé ; son résultat, tronqué à 230 caractères par un `cut`, ne montrait pas la seconde.
+- **L6** « 1102 tests » périmé (1203 montent le squash aujourd'hui) et mal nommé → énoncé sans total.
+- **L7** précédent d'index cité sous une autre forme (`CREATE INDEX`) → citation corrigée.
+- **L8** `CHECK (OCTET_LENGTH(password_hash) >= 20)` sur `users`, piège du montage SQL brut → Dev Notes.
+- **L9** trois `#[tokio::test]` sur base partagée rougiront entre T2 et T9 → T0 le prévient.
+
+**Grep de propagation après patch** (jetons `89` et `1102`, et toute conclusion « aucun manuel » ou
+« pas de PDF » dans la spec) : aucun résidu.
+
+**Deux leçons pour la rétrospective** :
+
+1. ⛔ *Un grep a la graphie de son support.* Après la **langue** (25-1a, site web anglais), c'est
+   la **syntaxe** : un manuel LaTeX échappe le souligné. Contrôler le **PDF aplati** n'est pas une
+   précaution de plus, c'est le seul contrôle qui voit ce que lit l'utilisateur.
+2. ⛔ *Un `cut` sur la sortie d'un grep de propagation peut masquer le résidu qu'on cherche* — une
+   ligne longue du suivi en portait deux, l'affichage n'en montrait qu'une.
