@@ -211,17 +211,22 @@ l'archive. Pour obtenir aussi « différents » :
 1. `seed_admin("a")` crée la société C1 et l'administrateur U1. U1 écrit **deux** entrées,
    d'actions distinctes : `test.identiques`, laissée intacte, et `test.verbatim`, sur laquelle
    **seule** on pose ensuite un `company_id` que le sous-SELECT ne produirait jamais — une société
-   inexistante, sur le patron de `nom_d_alors` (`admin_full_import_e2e.rs:1944`). Puis **export**.
+   inexistante, **hors de la plage des identifiants que le montage crée** (par exemple `999` : une petite
+   valeur coïnciderait avec l'`id` que prendra C2), sur le patron de `nom_d_alors`
+   (`admin_full_import_e2e.rs:1944`). Puis **export**.
    ⛔ *Deux entrées et non une* : la valeur posée pour l'assertion « verbatim » **écraserait** celle
    que l'assertion « identiques » exige, sur une ligne que la fusion conserve telle quelle.
-2. `seed_admin("b")` crée **ensuite** C2 et U2, absents de l'archive ; U2 écrit une entrée.
+2. `seed_admin("b")` crée **ensuite** C2 et U2, absents de l'archive ; U2 écrit une entrée sous une **troisième** action,
+   `test.differents`. ⛔ Ne pas reprendre l'action d'une entrée de U1 : la règle « pour une même
+   action, la copie locale est celle de plus petit `id` » suppose **une seule** entrée locale par
+   action.
 3. **Import** avec le JWT de U2. Le handler l'accepte : l'importateur « peut ne pas exister dans la
    source » (`routes/admin.rs:346-347`).
 
 **Ce qu'on asserte, et pourquoi chaque assertion tranche** :
 
 - l'entrée **locale** `test.identiques` porte C1 : c'est le sous-cas « identiques » ;
-- l'entrée **locale** de U2 porte C2, que le restore a supprimée : c'est le sous-cas « différents » ;
+- l'entrée **locale** `test.differents` porte C2, que le restore a supprimée : c'est le sous-cas « différents » ;
 - l'entrée `admin.full_import` porte **C1**, alors que l'importateur est dans **C2**. L'acteur est le
   plus petit administrateur **restauré** (`admin.rs:354-363`), et c'est cette différence qui rend
   l'assertion discriminante ;
@@ -742,3 +747,57 @@ la remédiation de la passe 2. Précédents de même courbe, convergés sans dé
 ⇒ **La passe 4 est une PASSE CIBLÉE**, braquée sur le seul correctif de la passe 3
 (`25-1c-zero-validate-prompt-p4.md`). La passe 3 n'a rien trouvé hors du patch précédent : c'est
 la condition d'emploi de la § *La passe ciblée*.
+
+✅ **Arbitrage du Project Lead, 2026-09-15** : informé du signal HIGH → HIGH, **pas de découpage** —
+« continue ».
+
+### Passe 4 de `bmad-create-story validate` — PASSE CIBLÉE, lentille unique (Opus)
+
+Prompt versionné : `25-1c-zero-validate-prompt-p4.md`. Base déclarée :
+`git diff c3f91d8a -- …/25-1c-zero-audit-company-id.md`. Trois axes exercés, le reste de la spec
+relu pour contradiction seulement. ⚠️ **Le montage de l'AC 8 a été EXÉCUTÉ** sur une base jetable
+(MariaDB 10.11.16), séquence complète jusqu'à `admin.full_import` : les `id` obtenus confirment que la
+copie locale est celle de plus petit `id`, qu'aucune entrée parasite ne fausse le décompte
+(`admin.full_export` est écrite **après** l'archive ; `books.restored` n'est pas écrite, la borne
+étant `NULL`), et que chaque assertion rougirait sous le défaut qu'elle vise.
+
+**Rendu : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW.**
+
+- **L1** — l'action de l'entrée de U2 n'était pas nommée ; reprendre celle d'une entrée de U1
+  briserait la règle « une entrée locale par action ». → `test.differents` nommée, valeur verbatim
+  imposée hors de la plage des identifiants créés (`999`).
+
+⚠️ **Observation retenue sans sévérité** : dans les tests e2e, le squash aligne les identifiants
+(C1 = U1 = 1, C2 = U2 = 2), si bien que la mutation `SELECT id FROM users` laisserait l'AC 8 **vert**.
+Ce n'est pas un défaut — l'AC 16 confie cette mutation aux tests 15 (a) et (b), et l'AC 8 caractérise
+un état, il ne chasse pas de mutation. ⇒ **Ne pas l'ajouter à la table de l'AC 16.**
+
+---
+
+## Boucle de validation — close en 4 passes
+
+| Passe | Modèle(s) | CRITICAL | HIGH | MEDIUM | LOW | Origine des findings > LOW |
+|---|---|---|---|---|---|---|
+| 1 | Sonnet · Haiku 4.5 | 0 | 0 | 2 | 1 | spec d'origine (un total hérité de l'epic, une liste supposée) |
+| 2 | Opus | 0 | 1 | 4 | 4 | spec d'origine (le HIGH : un grep aveugle au `\_` de LaTeX) **et** faute de propagation de la passe 1 |
+| 3 | Sonnet | 0 | 1 | 1 | 0 | **tous nés de la remédiation de la passe 2** |
+| 4 | Opus — **ciblée** | 0 | 0 | 0 | 1 | — |
+
+**Critère d'arrêt atteint** : aucun finding au-dessus de LOW, et la remédiation de la passe 4 ne
+touche **aucune ligne de code de production** — c'est une spec.
+
+**Findings réfutés au sol : aucun.** Les **15** findings retenus des quatre passes — 3 + 9 + 2 + 1,
+le LOW de la lentille Haiku, déjà traité par l'AC 17, n'étant pas compté — ont tous été vérifiés
+avant application ; le seul rapport à 0 finding exploitable (Haiku, passe 1) a vu son axe 3 repris
+par l'orchestrateur.
+
+**Ce que la boucle apprend, pour la rétrospective de l'Epic 25** :
+
+1. ⛔ *Un nombre recopié d'un document de planification n'est pas un nombre vérifié* — le « 89 » de
+   l'epic avait été écrit **pour corriger** une estimation, et il était faux à son tour.
+2. ⛔ *Un grep a la graphie de son support* : après la **langue** (25-1a), la **syntaxe** — LaTeX
+   échappe le souligné. Seul le PDF aplati montre ce que lit l'utilisateur.
+3. ⛔ *Un `cut` sur la sortie d'un grep de propagation peut masquer le résidu cherché.*
+4. *La sévérité se déplace vers ce qu'on vient d'écrire* — vérifié une fois de plus : le HIGH de la
+   passe 3 est né de la passe 2, et la passe ciblée l'a confirmé clos en exécutant le montage plutôt
+   qu'en le relisant.
