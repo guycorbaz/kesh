@@ -208,14 +208,17 @@ sous-cas, et ils ne se valent pas :
 base ne donne **que** « identiques », puisque `restore_body` réinsère `companies` avec les `id` de
 l'archive. Pour obtenir aussi « différents » :
 
-1. `seed_admin("a")` crée la société C1 et l'administrateur U1. U1 écrit **deux** entrées,
-   d'actions distinctes : `test.identiques`, laissée intacte, et `test.verbatim`, sur laquelle
-   **seule** on pose ensuite un `company_id` que le sous-SELECT ne produirait jamais — une société
+1. `seed_admin("a")` crée la société C1 et l'administrateur U1. U1 écrit `test.verbatim`, sur laquelle
+   on pose ensuite un `company_id` que le sous-SELECT ne produirait jamais — une société
    inexistante, **hors de la plage des identifiants que le montage crée** (par exemple `999` : une petite
    valeur coïnciderait avec l'`id` que prendra C2), sur le patron de `nom_d_alors`
    (`admin_full_import_e2e.rs:1944`). Puis **export**.
-   ⛔ *Deux entrées et non une* : la valeur posée pour l'assertion « verbatim » **écraserait** celle
-   que l'assertion « identiques » exige, sur une ligne que la fusion conserve telle quelle.
+   **Après l'export**, C1 est renommée localement — pour la base, une autre identité sous le même
+   `id` —, et U1 écrit `test.identiques`, une entrée **locale**, absente de l'archive.
+   ⛔ *Écrite avant l'export*, elle partirait dans l'archive : la C1 locale et la C1 restaurée
+   seraient la même société, et l'assertion « identiques » serait vraie par construction (passe 1
+   de revue de code). Et elle ne peut pas porter la valeur « verbatim » : celle-ci écraserait la
+   société que l'assertion « identiques » exige.
 2. `seed_admin("b")` crée **ensuite** C2 et U2, absents de l'archive ; U2 écrit une entrée sous une **troisième** action,
    `test.differents`. ⛔ Ne pas reprendre l'action d'une entrée de U1 : la règle « pour une même
    action, la copie locale est celle de plus petit `id` » suppose **une seule** entrée locale par
@@ -225,7 +228,8 @@ l'archive. Pour obtenir aussi « différents » :
 
 **Ce qu'on asserte, et pourquoi chaque assertion tranche** :
 
-- l'entrée **locale** `test.identiques` porte C1 : c'est le sous-cas « identiques » ;
+- l'entrée **locale** `test.identiques` — une seule copie — porte C1, et la C1 restaurée porte un
+  **autre nom** que celui sous lequel l'entrée a été écrite : c'est le sous-cas « identiques » ;
 - l'entrée **locale** `test.differents` porte C2, que le restore a supprimée : c'est le sous-cas « différents » ;
 - l'entrée `admin.full_import` porte **C1**, alors que l'importateur est dans **C2**. L'acteur est le
   plus petit administrateur **restauré** (`admin.rs:354-363`), et c'est cette différence qui rend
@@ -488,6 +492,13 @@ encore, c'est la consultation du journal d'audit ») — c'est la 25-1c qui le r
       `scripts/test-fast.sh`. Frontend : non touché, gate non requis pour le commit — **mais** la
       suite E2E est un prérequis du push, et c'est **elle seule** qui démarre un binaire contre
       une base persistante (P8).
+
+### Review Findings
+
+*Passe 1 de `bmad-code-review` (2026-09-15) — trois lentilles : Blind Hunter (Sonnet), Edge Case
+Hunter (Haiku 4.5), Acceptance Auditor (Sonnet). Prompt : `25-1c-zero-review-prompt-p1.md`.*
+
+- [x] [Review][Patch] Le sous-cas « identiques » de la caractérisation (AC 8) n'est pas exercé : `test.identiques` est écrite AVANT l'export, donc la copie locale et la C1 restaurée sont la même société — l'assertion est vraie par construction et ne montre pas « une autre identité sous le même `id` ». Écrire l'entrée APRÈS l'export, sous une C1 localement renommée, et asserter que la C1 restaurée porte une autre identité [crates/kesh-api/tests/admin_full_import_e2e.rs:2157]
 
 ## Dev Notes
 
@@ -940,3 +951,67 @@ Base de dev **remise à zéro et vérifiée** juste avant : conteneur redémarr�
   **la seule** qui démarre un binaire contre une base persistante : elle seule verrait un défaut P8
   (checksum) que les bases éphémères de `nextest` ne voient pas. **À lancer avant tout push**, base
   `kesh_e2e` reconstruite.
+
+---
+
+## Revue de code — passe 1 (2026-09-15)
+
+Prompt versionné : `25-1c-zero-review-prompt-p1.md`. Diff aplati `main...HEAD` hors
+`_bmad-output` et PDF : 15 fichiers, 954 lignes.
+
+| Lentille | Modèle | Rendu | Après vérification au sol |
+|---|---|---|---|
+| Blind Hunter (diff seul) | Sonnet | 1 M, 1 L, 2 « à vérifier » | **1 M retenu**, le reste écarté |
+| Edge Case Hunter | Haiku 4.5 | 0 | 0 — axes survolés couverts par les autres couches |
+| Acceptance Auditor | Sonnet | 0 au-dessus de LOW, 1 réserve | réserve écartée |
+
+**Bilan : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 0 LOW retenu ; 4 écartés.**
+
+### Le finding retenu
+
+**M1 — le sous-cas « identiques » de la caractérisation n'était pas exercé** (Blind Hunter).
+`test.identiques` était écrite **avant** l'export : elle partait dans l'archive, et la C1 locale et
+la C1 restaurée étaient **la même société**. L'assertion `[Some(C1), Some(C1)]` était vraie par
+construction et ne montrait pas ce que le doc-comment annonçait — *une autre identité sous le même
+`id`*. ⛔ **Le défaut venait du montage de la spec elle-même** (AC 8), qu'aucune des quatre passes de
+validation n'avait pris en défaut — la passe 4 l'avait même **exécuté** sur base jetable : elle a
+vérifié que chaque assertion tenait, non ce que chacune démontrait.
+
+→ `test.identiques` est écrite **après** l'export, sous une C1 **renommée localement** ; le test
+asserte une copie unique et un nom restauré différent du nom d'écriture. AC 8 de la spec mis en
+accord (§ *Propagation post-patch* : le symptôme vivait aussi dans la spec).
+
+**Épreuve du correctif** : remettre l'écriture avant l'export fait rougir le test **sur assertion**
+(« une seule copie, locale : écrite après l'export ») ; fichier restauré, `cmp` identique.
+
+### Les findings écartés, chacun sur preuve
+
+- **Index sans `DESC`** (LOW, Blind Hunter) — `EXPLAIN SELECT id FROM audit_log WHERE company_id = 1
+  ORDER BY created_at DESC LIMIT 50` : `key: idx_audit_log_company_date`, `Extra: Using where; Using
+  index` — aucun tri disque, le parcours inverse de l'index sert l'ordre décroissant. Modifier la
+  migration imposerait de reconstruire les bases de dev (P8), pour aucun gain.
+- **Acteur de `admin.full_import`** (à vérifier, Blind Hunter) — `routes/admin.rs:354-363` :
+  `SELECT MIN(id) FROM users WHERE role = 'Admin'`, dans la transaction, après le restore.
+- **`strip_column` ne touche que le manifeste** (à vérifier, Blind Hunter) — `parse_ndjson_rows`
+  lit chaque ligne **par nom de colonne** (`obj.get(c)`), et le test passe.
+- **Mutations et gate non rejoués** (réserve, Acceptance Auditor) — exécutés par l'orchestrateur,
+  résultats observés consignés plus haut.
+
+⚠️ **La lentille Haiku a déclaré ses sept axes « exhaustivement parcourus » sans en montrer
+l'exécution** — elle tenait le PDF pour vérifié parce que « le binaire apparaît dans le diff », et
+les mutations pour rouges sans avoir le droit de les lancer. Son « 0 finding » ne compte pas seul :
+l'axe manuel a été exercé par l'Acceptance Auditor (PDF aplati), l'axe mutations par
+l'orchestrateur.
+
+### Gate de la passe 1 — ce qui a RÉELLEMENT tourné
+
+Le correctif ne touche que `crates/kesh-api/tests/` — aucun fichier de `kesh-db` : le **gate
+ciblé** est licite (exception `kesh-db` non déclenchée).
+
+| Gate | Résultat |
+|---|---|
+| `cargo fmt --all -- --check` | vert |
+| `cargo clippy --workspace --all-targets -- -D warnings` | vert |
+| `cargo nextest run -p kesh-api --test admin_full_import_e2e` | **27 passed, 0 failed** |
+
+⚠️ **Gate complet au dernier commit de la boucle**, et suite E2E avant le push.

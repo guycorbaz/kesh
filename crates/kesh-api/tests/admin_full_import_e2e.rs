@@ -2143,10 +2143,17 @@ async fn full_import_without_company_column_merges_archive_entries_as_null(pool:
 ///
 /// # Montage — un seul aller-retour produit les deux sous-cas
 ///
-/// 1. U1 (société C1) écrit `test.identiques` et `test.verbatim` ; sur la seconde
-///    seulement, on pose la société inexistante `999` ; **export** ;
-/// 2. U2 (société C2, absente de l'archive) écrit `test.differents` ;
-/// 3. **import** avec le JWT de U2.
+/// 1. U1 (société C1) écrit `test.verbatim`, sur laquelle on pose la société inexistante
+///    `999` ; **export** ;
+/// 2. C1 est **renommée localement** — pour la base, une autre identité sous le même
+///    `id` —, puis U1 écrit `test.identiques` : une entrée LOCALE, absente de l'archive ;
+/// 3. U2 (société C2, absente de l'archive) écrit `test.differents` ;
+/// 4. **import** avec le JWT de U2.
+///
+/// ⚠️ **`test.identiques` est écrite APRÈS l'export, et c'est ce qui la rend
+/// discriminante.** Écrite avant, elle partirait dans l'archive : la C1 locale et la C1
+/// restaurée seraient la même société, et l'assertion serait vraie par construction
+/// (passe 1 de revue de code, Blind Hunter).
 ///
 /// La fusion DUPLIQUE chaque entrée exportée : la copie locale a le plus petit `id`.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -2154,7 +2161,6 @@ async fn characterization_full_import_keeps_company_ids_as_written(pool: MySqlPo
     let app = spawn_app(pool.clone()).await;
 
     let u1 = seed_admin(&pool, "car_un").await;
-    write_trace(&pool, u1.user_id, "test.identiques").await;
     write_trace(&pool, u1.user_id, "test.verbatim").await;
     sqlx::query("UPDATE audit_log SET company_id = 999 WHERE action = 'test.verbatim'")
         .execute(&pool)
@@ -2171,6 +2177,17 @@ async fn characterization_full_import_keeps_company_ids_as_written(pool: MySqlPo
             .any(|c| c == "company_id"),
         "montage : la colonne doit être PRÉSENTE au manifeste — c'est le cas caractérisé"
     );
+
+    // Après l'export : C1 change d'identité LOCALEMENT, et U1 écrit sous cette identité.
+    // Pour la base, c'est une autre société qui porte le même `id` que la C1 de l'archive.
+    const NOM_LOCAL: &str = "Identité locale, absente de l'archive";
+    sqlx::query("UPDATE companies SET name = ? WHERE id = ?")
+        .bind(NOM_LOCAL)
+        .bind(u1.company_id)
+        .execute(&pool)
+        .await
+        .expect("renommage local de C1");
+    write_trace(&pool, u1.user_id, "test.identiques").await;
 
     let u2 = seed_admin(&pool, "car_deux").await;
     assert_ne!(u2.company_id, u1.company_id, "montage : C2 ≠ C1");
@@ -2197,11 +2214,23 @@ async fn characterization_full_import_keeps_company_ids_as_written(pool: MySqlPo
         "montage : seule C1 subsiste — C2 a été remplacée par le restore"
     );
 
-    // Sous-cas « identiques » : la copie locale porte C1, qui existe encore — mais
-    // c'est la C1 RESTAURÉE. La copie d'archive porte aussi C1.
+    // Sous-cas « identiques » : l'entrée LOCALE porte C1, et C1 existe encore — mais sous
+    // l'identité RESTAURÉE, non sous celle qui était la sienne quand l'entrée a été écrite.
+    // Une seule copie : l'entrée, postérieure à l'export, n'était pas dans l'archive.
     assert_eq!(
         company_ids(&pool, "test.identiques").await,
-        vec![Some(u1.company_id), Some(u1.company_id)],
+        vec![Some(u1.company_id)],
+        "une seule copie, locale : écrite après l'export"
+    );
+    let nom_restaure: String = sqlx::query_scalar("SELECT name FROM companies WHERE id = ?")
+        .bind(u1.company_id)
+        .fetch_one(&pool)
+        .await
+        .expect("société C1 restaurée");
+    assert_ne!(
+        nom_restaure, NOM_LOCAL,
+        "sous-cas « identiques » : même `id`, autre identité — une consultation scopée \
+         présenterait cette entrée à une société qui ne l'a pas écrite"
     );
 
     // Sous-cas « différents » : l'entrée locale de U2 porte C2, que le restore a
