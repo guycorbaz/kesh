@@ -208,22 +208,32 @@ sous-cas, et ils ne se valent pas :
 base ne donne **que** « identiques », puisque `restore_body` réinsère `companies` avec les `id` de
 l'archive. Pour obtenir aussi « différents » :
 
-1. `seed_admin("a")` crée la société C1 et l'administrateur U1 ; U1 écrit une entrée ; **export**.
+1. `seed_admin("a")` crée la société C1 et l'administrateur U1. U1 écrit **deux** entrées,
+   d'actions distinctes : `test.identiques`, laissée intacte, et `test.verbatim`, sur laquelle
+   **seule** on pose ensuite un `company_id` que le sous-SELECT ne produirait jamais — une société
+   inexistante, sur le patron de `nom_d_alors` (`admin_full_import_e2e.rs:1944`). Puis **export**.
+   ⛔ *Deux entrées et non une* : la valeur posée pour l'assertion « verbatim » **écraserait** celle
+   que l'assertion « identiques » exige, sur une ligne que la fusion conserve telle quelle.
 2. `seed_admin("b")` crée **ensuite** C2 et U2, absents de l'archive ; U2 écrit une entrée.
 3. **Import** avec le JWT de U2. Le handler l'accepte : l'importateur « peut ne pas exister dans la
    source » (`routes/admin.rs:346-347`).
 
 **Ce qu'on asserte, et pourquoi chaque assertion tranche** :
 
-- l'entrée **locale** de U1 porte C1 : c'est le sous-cas « identiques » ;
+- l'entrée **locale** `test.identiques` porte C1 : c'est le sous-cas « identiques » ;
 - l'entrée **locale** de U2 porte C2, que le restore a supprimée : c'est le sous-cas « différents » ;
 - l'entrée `admin.full_import` porte **C1**, alors que l'importateur est dans **C2**. L'acteur est le
   plus petit administrateur **restauré** (`admin.rs:354-363`), et c'est cette différence qui rend
   l'assertion discriminante ;
-- **« verbatim »** : avant l'export, poser sur l'entrée de U1 un `company_id` que le sous-SELECT ne
-  produirait jamais (une société inexistante, sur le patron de `nom_d_alors`,
-  `admin_full_import_e2e.rs:1944`). Après import, la copie fusionnée doit la porter **telle
-  quelle**.
+- **« verbatim »** : après import, les **deux** copies de `test.verbatim` portent la valeur posée à
+  l'étape 1, telle quelle — la locale, conservée, et celle **fusionnée depuis l'archive**, qui
+  prouve que l'import n'a rien recalculé.
+
+⚠️ **La fusion DUPLIQUE chaque entrée exportée** : `audit_log` n'est pas vidée au restore
+(`backup.rs:444-447`), et les entrées de l'archive sont réinsérées sans leur `id`. Pour une même
+action, la copie **locale** est donc celle de plus petit `id`, la copie **d'archive** celle d'`id`
+neuf. Les assertions « locale » ci-dessus visent la première ; les compter sans les distinguer ne
+tranche rien.
 
 ### Volet D — les garde-fous de migration
 
@@ -371,7 +381,7 @@ test visé exécuté et **vu rouge**, puis la mutation retirée et `git diff` v�
 | sous-SELECT de l'AC 4 remplacé par `NULL` | 15 (a) et (b) |
 | `JOIN` → `LEFT JOIN` + `COALESCE(u.company_id, 0)` | 14 (b) |
 | `WHERE a.company_id IS NULL` retiré **de la migration** | 14 (c) — parce qu'il rejoue le SQL **embarqué** |
-| sous-SELECT `SELECT company_id FROM users` → `SELECT id FROM users` | 15 (a) — **seulement** si les identifiants sont désalignés |
+| sous-SELECT `SELECT company_id FROM users` → `SELECT id FROM users` | 15 (a) **et (b)** — même `INSERT` pour les deux constructeurs ; **seulement** si les identifiants sont désalignés |
 | backfill `SET a.company_id = u.company_id` → `= a.user_id` | 14 (a) — **seulement** si les identifiants sont désalignés |
 | entrée retirée d'`EXEMPT_MIGRATIONS` | `every_data_backfill_migration_is_triaged` |
 
@@ -703,3 +713,32 @@ exercé avec un outil aveugle**.
    précaution de plus, c'est le seul contrôle qui voit ce que lit l'utilisateur.
 2. ⛔ *Un `cut` sur la sortie d'un grep de propagation peut masquer le résidu qu'on cherche* — une
    ligne longue du suivi en portait deux, l'affichage n'en montrait qu'une.
+
+### Passe 3 de `bmad-create-story validate` — lentille unique (Sonnet), contexte frais
+
+Prompt versionné : `25-1c-zero-validate-prompt-p3.md`. Base déclarée : `git diff 3fccc3fc --
+_bmad-output/`. Six axes déclarés exercés ; idempotence du DDL et du backfill **exécutée** sur base
+jetable, les quatre greps de l'AC 17 **rejoués** — ils rendent les comptes annoncés.
+
+**Rendu : 0 CRITICAL, 1 HIGH, 1 MEDIUM — les deux confirmés : ils portent sur le texte même de la
+remédiation de la passe 2.**
+
+- **H1 — le montage de l'AC 8 était contradictoire.** U1 écrivait **une** entrée, qui devait à la
+  fois porter C1 (sous-cas « identiques ») et recevoir, **avant l'export**, une société inexistante
+  (assertion « verbatim ») ; la fusion conservant la ligne locale telle quelle, les deux ne pouvaient
+  être vraies ensemble. → U1 écrit **deux** entrées d'actions distinctes, et la spec dit comment
+  distinguer la copie locale de la copie d'archive, que la fusion **duplique**.
+- **M2 — la table de mutations sous-déclarait 15 (b)** pour la mutation `SELECT id FROM users` :
+  l'`INSERT` est commun aux deux constructeurs. → ligne corrigée.
+
+**Sévérité maximale : HIGH (passe 2) → HIGH (passe 3).** ⚠️ Au sens littéral de la § *Règle de
+splitting préventif*, c'est le signal de non-convergence — **signalé au Project Lead**. La boucle
+continue sur deux motifs : le périmètre (deux crates, un manuel) n'est pas celui que la règle vise, et
+**aucun finding des passes 2 et 3 ne met en cause la conception** ; ils suivent le motif mesuré du
+dépôt, *la sévérité se déplace vers ce qu'on vient d'écrire* — le HIGH de la passe 3 est **né** de
+la remédiation de la passe 2. Précédents de même courbe, convergés sans découpage : 24-4c et 24-5
+(CRITICAL → HIGH → HIGH → rien).
+
+⇒ **La passe 4 est une PASSE CIBLÉE**, braquée sur le seul correctif de la passe 3
+(`25-1c-zero-validate-prompt-p4.md`). La passe 3 n'a rien trouvé hors du patch précédent : c'est
+la condition d'emploi de la § *La passe ciblée*.
