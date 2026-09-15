@@ -74,26 +74,37 @@ company_id, AuditLogListQuery) -> Result<AuditLogListResult, DbError>`, sur le *
 ```sql
 WHERE (company_id = ? OR company_id IS NULL)
   [AND created_at >= ?]                 -- date_from à 00:00:00.000
-  [AND created_at <  ?]                 -- date_to + 1 jour à 00:00:00.000
+  [AND created_at <= ?]                 -- date_to à 23:59:59.999
   [AND entity_type = ?] [AND entity_id = ?] [AND action = ?]
 ORDER BY created_at DESC, id DESC
 ```
 
 - ⛔ **`OR company_id IS NULL`** tient le choix par défaut ci-dessus. **Les parenthèses sont
   obligatoires** : sans elles, le `OR` absorberait tous les filtres suivants.
-- ⛔ **Borne haute exclusive au lendemain**, et non `<= date_to` : `created_at` est un
-  `DATETIME(3)`, et `<= '2026-09-15'` exclurait tout ce qui est postérieur à minuit pile.
-  ⛔ **Et ce « + 1 jour » a deux modes d'échec que la route des écritures n'a pas** (elle lie
-  `date_to` sans l'incrémenter) : `NaiveDate::from_str("+262142-12-31")` réussit, puis `+ Days(1)`
-  **panique** — aucun `CatchPanic` dans `kesh-api` —, et `9999-12-31` + 1 jour donne l'an 10000, que
-  MariaDB compare en **rendant 0 ligne** (avertissement 1292). ⇒ la route **refuse en 400** toute date
-  hors de `[1000-01-01, 9999-12-31]` (AC 7), calcule la borne par **`checked_add_days`**, et **omet la
-  borne haute** quand `date_to` vaut `9999-12-31`. *(Relevé en passe 2 de validation, par sonde.)*
+- ⛔ **Bornes INCLUSIVES à la milliseconde, sans aucune arithmétique de date** : `date_from` à
+  `00:00:00.000`, `date_to` à **`23:59:59.999`**, liées comme `NaiveDateTime`. `created_at` est un
+  `DATETIME(3)` : aucune valeur ne tient entre `23:59:59.999` et le lendemain, la borne est donc
+  **exacte**. ⚠️ **Ni `<= date_to` nu** — `<= '2026-09-15'` exclurait tout ce qui suit minuit pile —,
+  **ni « `< date_to + 1 jour` »** : cette forme, retenue d'abord, a produit **trois passes de défauts**
+  (panique de `+ Days(1)` sur `+262142-12-31`, an 10000 comparé en **0 ligne** sous l'avertissement
+  1292, puis une règle d'omission par `checked_add_days` qui ne se déclenchait **jamais** pour
+  `9999-12-31`). La borne inclusive supprime la classe entière : elle ne calcule rien, et
+  `'9999-12-31 23:59:59.999'` est une valeur valide.
+
+  **Éprouvé par l'orchestrateur sur base jetable** (2026-09-15, passe 4) : entrées à `2026-09-15
+  00:00:00.000` et `23:59:59.999` **incluses**, `2026-09-16 00:00:00.000` et `2026-09-14 23:59:59.999`
+  **exclues** ; au `9999-12-31`, les entrées de `00:00:00.000` et `23:59:59.999` **incluses** ; mêmes
+  résultats en **requête préparée** avec bornes `DATETIME(6)` (la forme sqlx) ; **aucun avertissement** ;
+  `EXPLAIN` : `range` sur l'index.
+
   ⛔ **Qui fait quoi, pour qu'il n'y ait qu'UNE implémentation** : la **route** valide la plage des deux
-  dates et répond 400 (AC 7) ; le **repository** calcule la borne dans **`push_where_clauses`** —
-  `date_to.checked_add_days(Days::new(1))`, clause **omise** si le résultat est `None` —, si bien que
-  `list_by_company_paginated` et `list_for_export` la partagent. Le repository reçoit des dates déjà
-  bornées et ne renvoie jamais d'erreur de validation ; le handler ne calcule aucune borne.
+  dates et répond 400 (AC 7) ; le **repository** construit les deux bornes horodatées dans
+  **`push_where_clauses`** — `date_from.and_hms_milli_opt(0, 0, 0, 0)` et
+  `date_to.and_hms_milli_opt(23, 59, 59, 999)` —, partagée par `list_by_company_paginated` et
+  `list_for_export`. ⚠️ **Précondition de `push_where_clauses`, à écrire en doc-comment** : des dates
+  **dans `[1000-01-01, 9999-12-31]`**. Hors plage, `push_bind` **panique**
+  (`sqlx-core-0.8.6/src/query_builder.rs:158`, `expect`), et aucun `CatchPanic` n'existe dans `kesh-api`
+  — c'est la raison d'être de la validation de la route.
 - **UTC** : MariaDB tourne en UTC (`@@system_time_zone = UTC`, `NOW() = UTC_TIMESTAMP()`, vérifié le
   2026-09-15) et `created_at` vaut `CURRENT_TIMESTAMP(3)`. Les dates de filtre s'entendent en **jours
   UTC**. À écrire dans le doc-comment. ⚠️ **Le fait qui tient vraiment n'est pas le réglage du serveur**
@@ -148,9 +159,11 @@ un libellé serait du bruit. À écrire dans le doc-comment du handler.
   écran de consultation n'a aucune raison de faire échouer une page pour une taille hors bornes.
 - **Dates** reçues en `String` et parsées dans le handler (`journal_entries.rs:291-304`) : format
   invalide ⇒ **400 `VALIDATION_ERROR`** nommant le paramètre ; `dateFrom > dateTo` ⇒ 400 ; **date hors de `[1000-01-01, 9999-12-31]` ⇒ 400**, pour **`dateFrom` comme pour `dateTo`** (AC 2). ⚠️ La
-  borne basse n'est pas moins exposée : `NaiveDate::from_str("0999-12-31")` réussit, et une année
-  au-delà de 65535 échoue à l'**encodage** sqlx (`sqlx-mysql-0.8.6/src/types/chrono.rs:263-264`,
-  `u16::try_from`) — une **500**, pas une 400.
+  borne basse n'est pas moins exposée : `NaiveDate::from_str("-0001-01-01")` **réussit**, et une année
+  négative — comme une année au-delà de 65535 (`sqlx-mysql-0.8.6/src/types/chrono.rs:263-264`,
+  `u16::try_from`) — fait **paniquer** la liaison (`push_bind`, `query_builder.rs:158`). Ce n'est pas
+  une 500 : c'est une panique, qu'aucune couche ne rattrape. `0999-12-31`, lui, se lie sans erreur et
+  rendrait simplement tout le journal — il est refusé pour que la plage soit la même aux deux bornes.
 - **Textes** `entityType`, `action` : `trim()` ; vide ⇒ absent ; plus long que la colonne
   (`entity_type` 32, `action` 64 caractères) ⇒ 400 — une valeur plus longue ne peut rien trouver, et
   le dire vaut mieux qu'une liste vide muette.
@@ -333,7 +346,8 @@ de la route (AC 7), faute de quoi le clamp de (g) est invérifiable :
   **propriété de l'AC 19 (b)** — une entrée sans société reste soumise aux filtres —, non comme sonde
   des parenthèses ;
 - (d) **bornes de date** : entrée à `date_to 23:59:59.999` **incluse**, entrée au lendemain
-  `00:00:00.000` **exclue**, entrée à `date_from 00:00:00.000` **incluse** — dates posées par `UPDATE`
+  `00:00:00.000` **exclue**, entrée à `date_from 00:00:00.000` **incluse**, entrée de la **veille** à `23:59:59.999` **exclue**, et au
+  **dernier jour possible** — `date_to = 9999-12-31` — une entrée à `9999-12-31 23:59:59.999` **incluse** — dates posées par `UPDATE`
   explicite ;
 - (e) filtres `entity_type`, `entity_id`, `action`, chacun seul ;
 - (f) **ordre** `created_at DESC, id DESC`, dont deux entrées de même `created_at` ;
@@ -348,9 +362,14 @@ de la route (AC 7), faute de quoi le clamp de (g) est invérifiable :
   l'export est précisément le chemin d'extraction que l'arbitrage 1 ferme ;
 - ⛔ **clé API `read` d'un Admin ⇒ 403 `API_KEY_MANAGEMENT_FORBIDDEN`**, sur **les deux** routes ;
 - 400 `VALIDATION_ERROR` : `dateFrom` invalide, `dateFrom > dateTo`, `entityId` sans `entityType`,
-  `entityId <= 0`, `action` de 65 caractères, `dateTo=+262142-12-31`, **`dateFrom=+262142-12-31`**, **`dateFrom=0999-12-31`** ; et
+  `entityId <= 0`, `action` de 65 caractères, `dateTo=%2B262142-12-31`, **`dateFrom=%2B262142-12-31`**, **`dateFrom=-0001-01-01`**,
+  **`dateFrom=0999-12-31`**, **`dateTo=0999-12-31`** — ⛔ le `+` **encodé `%2B`**, ou les paramètres passés
+  par `.query(&[…])` : écrit en clair, `form_urlencoded` le décode en **espace**, la valeur échoue au
+  **format** et le test ne sonde plus la **plage**. L'assertion vérifie que le message nomme **la
+  plage**, pas le format ; et
   **`dateTo=9999-12-31` accepté**
-  (200, sans borne haute) ;
+  (200, **avec des `items`** : une entrée datée du `9999-12-31` est rendue — un 200 à liste vide
+  masquerait exactement le défaut que la borne inclusive supprime) ;
 - forme de la réponse : `actorType` vaut **`"user"`** (jamais `"User"`), `createdAt` finit par `Z`,
   `companyId` `null` pour une entrée sans société ;
 - export : `Content-Type`, `Content-Disposition` (`filename*=`), **BOM**, séparateur `;`, en-têtes,
@@ -372,7 +391,7 @@ de la route (AC 7), faute de quoi le clamp de (g) est invérifiable :
 |---|---|
 | `OR company_id IS NULL` retiré | 19 (b) |
 | parenthèses retirées | 19 (c) — l'entrée de la société ciblée d'action `Y` apparaît |
-| borne haute `< date_to + 1 j` → `<= date_to` | 19 (d) |
+| borne haute `date_to 23:59:59.999` → `date_to 00:00:00.000` | 19 (d) — l'entrée de `23:59:59.999` disparaît |
 | `ensure_not_pat` retiré de la route de liste | 20, clé API |
 | `csv_sanitize` retirée de la cellule `actor_label` | 20, injection |
 | route d'export montée dans `authenticated_routes` au lieu de `comptable_routes` | 20, Consultation sur l'export |
@@ -607,7 +626,8 @@ décomptes (22 AC, 11 tâches, 11 colonnes, 12 clés).
 
 - **M1 — la borne basse n'était ni exigée ni testée.** L'AC 20 ne portait que `dateTo`, et la narration
   de l'AC 2 ne parlait que de lui ; or `0999-12-31` se parse, et une année au-delà de 65535 échoue à
-  l'encodage sqlx en **500**. → la plage vaut explicitement pour les deux paramètres, trois cas de test.
+  l'encodage sqlx en **500**. → la plage vaut explicitement pour les deux paramètres, **deux** cas de test ajoutés (le troisième
+  cité, `dateTo=+262142-12-31`, existait depuis la passe 2 — décompte corrigé en passe 4).
 - **L2 — la couche qui calcule la borne haute n'était pas nommée** : la route « calcule la borne », mais
   la clause vit dans `push_where_clauses`. → la route valide, le repository calcule — **une seule**
   implémentation, partagée par la liste et l'export.
@@ -617,3 +637,34 @@ traduit pas une story trop large : le seul MEDIUM est **né de la remédiation d
 de date qu'elle a introduites), et la lentille n'a rien trouvé d'autre. C'est la condition d'emploi de la
 § *La passe ciblée* ⇒ **passe 4 ciblée** sur ce seul correctif, précédent du Project Lead sur la 25-1c-zero
 (« continue »).
+
+### Passe 4 de `bmad-create-story validate` — PASSE CIBLÉE, lentille unique (Opus)
+
+Prompt versionné : `25-1c-a-validate-prompt-p4.md`. Base déclarée : `git diff 63e1ce4d -- …`. Sondes :
+crate aux versions du `Cargo.lock` (chrono 0.4.45, sqlx 0.8.6, serde_urlencoded 0.7.1), base jetable.
+
+**Rendu : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 2 LOW — tous retenus. La remédiation de la passe 3 NE TENAIT
+PAS.**
+
+- **M1 — la règle d'omission ne se déclenchait jamais pour `9999-12-31`** : `checked_add_days` y rend
+  `Some(+10000-01-01)`, et `None` n'apparaît qu'à `NaiveDate::MAX` (`+262142-12-31`), déjà refusé par la
+  route. La liste revenait vide, sans signal — le M1 de la passe 2, **ramené**. Et le test « 200 » de
+  l'AC 20 restait vert sur une liste vide.
+- **M2 — les cas `+262142-12-31` étaient muets** : `form_urlencoded` décode un `+` en clair en espace,
+  la valeur échouait au **format**, et le test ne sondait plus la **plage**.
+- **L1** « une 500 » était faux : `push_bind` **panique** ; l'exposition de la borne basse est l'année
+  **négative**, non `0999-12-31`. **L2** `dateTo=0999-12-31` non testé, et « trois cas » au Change Log
+  de la passe 3 pour deux ajoutés.
+
+⛔ **Sévérité maximale MEDIUM → MEDIUM → MEDIUM, et les trois fois sur la même famille** — les bornes de
+date, chaque passe trouvant le défaut de la correction précédente. **La leçon de la 25-1b s'applique à
+la lettre** : *quand une passe ne trouve plus que les défauts de son propre patch, ajouter une passe
+reconduit le motif — changer le geste, et le faire soi-même.* ⇒ **le geste a changé** : la forme
+« `< date_to + 1 jour` » est **abandonnée** pour une borne **inclusive `23:59:59.999`**, qui ne calcule
+rien — la classe de défauts disparaît au lieu d'être rapiécée. L'orchestrateur l'a **éprouvée lui-même**
+sur base jetable avant de l'écrire (cf. AC 2). M2, L1 et L2 corrigés dans l'AC 20, l'AC 7 et le présent
+Change Log ; AC 19 (d) et la mutation de l'AC 21 alignés sur la nouvelle forme.
+
+⚠️ **Signal de la § *Règle de splitting préventif* franchi deux fois de suite** — signalé au Project
+Lead. Ce n'est pas la largeur de la story qui résiste, c'est **un choix de conception** — et il est
+désormais retiré. Passe 5 ciblée sur ce changement.
