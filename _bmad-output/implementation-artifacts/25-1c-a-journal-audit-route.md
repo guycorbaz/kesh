@@ -393,7 +393,9 @@ en-tête `:15-19` dit pourquoi) :
 
 - **formes résolues** : le littéral nu, `"…".to_string()`, `"…".into()`, et — ⛔ **sans quoi la garde est
   verte par construction** — une **variable locale liée par une conditionnelle** à deux littéraux
-  (`let action = if … { "a" } else { "b" };`), dont les deux branches sont lues ; environ soixante sites
+  (`let action = if … { "a" } else { "b" };`), dont les deux branches sont lues ; et une **conditionnelle écrite directement en argument**, sans
+  variable intermédiaire — un seul site au 2026-09-15, `kesh-api/src/routes/projects.rs:351-357`
+  (`if archived { "project.archived" } else { "project.unarchived" }`), lue de même ; environ soixante sites
   écrivent `.to_string()`, et un extracteur « littéraux nus » ne rend que 43 actions ;
 - **commentaires masqués** avant lecture (patron `strip_line_comments` d'`admin_pat_denied_e2e.rs`) : le
   doc-comment `email_templates.rs:32` contient `NewAuditLogEntry::for_actor(…)` et serait lu comme un appel ;
@@ -897,7 +899,7 @@ Après la clôture de la boucle, le Project Lead a répondu aux trois choix de c
 |---|---|---|
 | une entrée **sans société** est incluse dans toute consultation | *« le cas réel n'existe pas […] le cas théorique est … théorique »* | **filtre strict** `company_id = ?` (AC 2) ; plus de `companyId` au DTO (AC 8), plus de colonne « Société » au CSV (AC 12) ; test 22 (b) inversé ; la sonde et la mutation des **parenthèses** disparaissent avec le `OR` |
 | l'**export écrit une entrée d'audit** | *« non »* | AC 14 réécrit : l'export ne fait que lire ; tests et limitation `HEAD` retirés ; le type d'entité `audit_log` n'existe plus |
-| les cellules **action** et **type** du CSV restent des **codes bruts** | *« il faut mettre la traduction de la langue utilisée par l'utilisateur de kesh »* ; écran : *« ok »* ; story séparée : *« non, maintenant »* | **source unique des libellés** côté serveur (AC 16) ; libellés dans la liste JSON (AC 8) ; **route de vocabulaire** pour les filtres de l'écran (AC 17) ; **110 libellés** à écrire dans les quatre langues (AC 15) ; **garde ensembliste** sur la source (AC 18) ; langue = **celle de l'interface**, et non `accounting_language` (AC 12) |
+| les cellules **action** et **type** du CSV restent des **codes bruts** | *« il faut mettre la traduction de la langue utilisée par l'utilisateur de kesh »* ; écran : *« ok »* ; story séparée : *« non, maintenant »* | **source unique des libellés** côté serveur (AC 16) ; libellés dans la liste JSON (AC 8) ; **route de vocabulaire** pour les filtres de l'écran (AC 17) ; **110 libellés** *(120 depuis la revalidation R1)* à écrire dans les quatre langues (AC 15) ; **garde ensembliste** sur la source (AC 18) ; langue = **celle de l'interface**, et non `accounting_language` (AC 12) |
 
 **Numérotation** : les AC 1-13 gardent leur numéro, pour que les renvois des 25-1c-b1 et b2 restent
 valables ; l'AC 14 change de sens ; les clés restent à l'AC 15 ; le module, la route de vocabulaire et la
@@ -906,7 +908,7 @@ le Change Log ci-dessus sont ceux de la version validée**, et ne sont pas réé
 
 **Faits vérifiés au sol pour la réécriture** : aucune langue par utilisateur (`KESH_LANG`,
 `config.rs:831`, `routes/i18n.rs:21`) ; `I18nBundle::format` rend la clé brute pour une clé absente
-(`loader.rs:110-128`) ; 82 codes d'action et 28 types par script ; `admin_break_glass_reset` sans point
+(`loader.rs:110-128`) ; 82 codes d'action *(92 depuis la revalidation R1, qui a trouvé dix actions indirectes)* et 28 types par script ; `admin_break_glass_reset` sans point
 (`bootstrap.rs:289`) ; patron `audit_route_registry.rs` ; `PREFIXES_A_COUVERTURE_CLOSE` ne contient pas
 `audit-log-` (`i18n-keys.test.ts:388`).
 
@@ -947,3 +949,26 @@ connaît la locale d'affichage » était fausse, corrigée ; et le tableau d'en-
 b2 rouvertes (L8 de la b1).
 
 Remédiation : texte de spec uniquement. **Revalidation R2 requise** (HIGH).
+
+### Revalidation R2 CIBLÉE — une lentille Sonnet, contexte frais
+
+Prompt versionné : `25-1c-a-validate-prompt-r2.md`. Base : `git diff 46a3d54b 02d3d45f`. Sonde : extraction
+positionnelle rejouée sur `crates/*/src`, avec la seule table des formes écrite dans la fiche.
+
+**Rendu : 0 CRITICAL, 1 HIGH, 1 MEDIUM, 0 LOW — vérifiés au sol et retenus. Après reclassement : 2 MEDIUM.**
+
+- **H1 → MEDIUM** — les formes résolues de l'AC 18 ne couvraient pas une **conditionnelle écrite
+  directement en argument** : `projects.rs:351-357` (`project.archived` / `project.unarchived`), seul site de
+  cette forme (vérifié par script sur les quatre constructeurs). Un extracteur écrit selon la fiche ne l'aurait
+  ni résolu ni trouvé à l'inventaire, et la règle (d) aurait rougi dès sa construction. → forme ajoutée.
+  *Reclassé* : le **total de 92 était juste** — les deux actions y figuraient déjà, l'extraction de la R1
+  résolvant cette forme sans l'avoir écrite —, et l'échec aurait été **bruyant**, non muet.
+- **M2** — deux anciens comptes restaient écrits sans marque de péremption dans la section de réouverture
+  (« 110 libellés », « 82 codes d'action ») → annotés, sur le modèle des autres mentions historiques.
+
+La passe confirme par ailleurs : les six sites de l'inventaire aux lignes dites, 28 types, le module public
+sans conflit, `dir_name()` → `de-CH`, `build_content_disposition` qui accepte ce tag,
+`map_language_to_bcp47` sur les langues comptables, et l'absence de `syn` en dépendance directe — la garde
+se construit par lecture de texte, sur le patron `strip_line_comments`.
+
+Remédiation : texte de spec uniquement. **Revalidation R3 ciblée requise** (MEDIUM).
