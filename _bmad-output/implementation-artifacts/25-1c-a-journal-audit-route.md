@@ -392,6 +392,7 @@ de la route (AC 7), faute de quoi le clamp de (g) est invérifiable :
 | `OR company_id IS NULL` retiré | 19 (b) |
 | parenthèses retirées | 19 (c) — l'entrée de la société ciblée d'action `Y` apparaît |
 | borne haute `date_to 23:59:59.999` → `date_to 00:00:00.000` | 19 (d) — l'entrée de `23:59:59.999` disparaît |
+| borne basse `created_at >= ?` → `created_at > ?` | 19 (d) — l'entrée de `date_from 00:00:00.000` disparaît |
 | `ensure_not_pat` retiré de la route de liste | 20, clé API |
 | `csv_sanitize` retirée de la cellule `actor_label` | 20, injection |
 | route d'export montée dans `authenticated_routes` au lieu de `comptable_routes` | 20, Consultation sur l'export |
@@ -668,3 +669,51 @@ Change Log ; AC 19 (d) et la mutation de l'AC 21 alignés sur la nouvelle forme.
 ⚠️ **Signal de la § *Règle de splitting préventif* franchi deux fois de suite** — signalé au Project
 Lead. Ce n'est pas la largeur de la story qui résiste, c'est **un choix de conception** — et il est
 désormais retiré. Passe 5 ciblée sur ce changement.
+
+### Passe 5 de `bmad-create-story validate` — PASSE CIBLÉE, lentille unique (Sonnet)
+
+Prompt versionné : `25-1c-a-validate-prompt-p5.md`, écrit pour **prendre en défaut** la borne inclusive.
+Base déclarée : `git diff c25999f7 -- …`. Sondes aux versions du `Cargo.lock` et base jetable.
+
+**Rendu : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW — retenu.** La borne inclusive **tient**, et chaque fait de
+l'AC 2 a été **reproduit indépendamment** : `created_at` est `DATETIME(3)` dans la migration **et** le
+squash ; une valeur à **sept décimales est tronquée** à `.999`, jamais arrondie au lendemain, sous le
+`sql_mode` strict de `pool.rs:39` ; `and_hms_milli_opt` existe et rend `Some` ; la liaison en **protocole
+binaire** réel (`push_bind`) rend exactement les lignes attendues, sans avertissement ; les deux bornes
+extrêmes se lient sans panique, l'année −1 panique au message exact cité ; `-0001-01-01` passe `Query` et
+le parsing ; le `+` en clair est décodé en espace par `serde_urlencoded`, `%2B` non.
+
+- **L1** — la sonde de borne **basse** ajoutée à l'AC 19 (d) n'avait pas de mutation dans l'AC 21. →
+  mutation `>=` → `>` ajoutée.
+
+---
+
+## Boucle de validation — close en 5 passes
+
+| Passe | Modèle | CRITICAL | HIGH | MEDIUM | LOW | Retenus |
+|---|---|---|---|---|---|---|
+| 1 | Sonnet · Haiku 4.5 | 1 | 0 | 1 | 2 | 4 (2 écartés) |
+| 2 | Opus | 0 | 0 | 5 | 8 | 13 |
+| 3 | Sonnet | 0 | 0 | 1 | 1 | 2 |
+| 4 | Opus — **ciblée** | 0 | 0 | 2 | 2 | 4 |
+| 5 | Sonnet — **ciblée** | 0 | 0 | 0 | 1 | 1 |
+
+**Critère d'arrêt atteint** : aucun finding au-dessus de LOW, et la remédiation de la passe 5 ne touche
+**aucune ligne de code** — c'est une spec.
+
+**24 findings retenus, 2 écartés sur preuve** (« 109 sites », et un HIGH reprochant au manuel l'absence du
+texte que l'AC 17 prescrit).
+
+**Ce que la boucle apprend, pour la rétrospective de l'Epic 25** :
+
+1. ⛔ *Une forme de calcul qui produit un défaut à chaque correction se retire, elle ne se rapièce pas.*
+   La borne « `< date_to + 1 jour` » a coûté les passes 2, 3 et 4 — panique, an 10000, puis une règle
+   d'omission qui ne s'appliquait jamais. La borne inclusive, qui ne calcule rien, a clos la famille en
+   une passe. C'est la leçon de la 25-1b (« changer le geste, et le faire soi-même ») appliquée — **mais
+   deux passes trop tard** : le signal de stagnation était lisible dès la passe 3.
+2. ⛔ *Un arbitrage résumé est un arbitrage réécrit* — « aucune traduction côté serveur » pour « les
+   types d'entité traduits » (passe 2, M4).
+3. ⛔ *Un test d'URL écrit à la main ment sur le `+`* : décodé en espace, il fait échouer le format au
+   lieu de la plage (passe 4, M2).
+4. *La sonde a été le seul outil décisif* : les défauts des passes 2 à 5 ont été établis ou réfutés par
+   exécution (base jetable, crate aux versions du `Cargo.lock`), aucun par lecture seule.
