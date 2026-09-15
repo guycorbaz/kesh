@@ -1,6 +1,6 @@
 # Story 25.1c-zero : Rattacher chaque entrée d'audit à sa société
 
-Status: ready-for-dev
+Status: review
 
 ⚠️ **Story-zéro de la 25-1c**, née de l'arbitrage du Project Lead du **2026-09-11** : `audit_log`
 est **globale** alors que Kesh est multi-société, et une route de consultation exposerait les traces
@@ -465,25 +465,25 @@ encore, c'est la consultation du journal d'audit ») — c'est la 25-1c qui le r
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Remise à zéro VÉRIFIÉE de la base de dev** avant tout (la machine a redémarré, le
+- [x] **T0 — Remise à zéro VÉRIFIÉE de la base de dev** avant tout (la machine a redémarré, le
       tmpfs est vide) : les trois étapes de `CLAUDE.md` § *Un gate laisse la base piégée*, **puis**
       contrôler qu'un `Admin` existe. *Compter les migrations ne prouve rien.*
       ⚠️ **À prévoir, pas à diagnostiquer** : entre T2 et T9, les trois `#[tokio::test]`
       historiques de `audit_log.rs`, qui lisent la base **partagée** `kesh`, échoueront en
       `Unknown column 'company_id'` tant qu'elle n'a pas reçu la 68ᵉ migration. Ce n'est pas une
       régression ; la remise à zéro de T9 la leur apporte.
-- [ ] **T1 — La migration** (AC 1, 2, 3, 13). En-tête **relu avant** le premier `migrate run`.
-- [ ] **T2 — Alimentation et entité** (AC 4, 5), commentaire `:70` corrigé au passage (AC 17).
-- [ ] **T3 — Squash et checksum** (AC 12) : `scripts/regen-test-schema.sh`, ligne `migrations.sha384`.
-- [ ] **T4 — P7** (AC 9) : entrée `PerishableSince`, justification sans le marqueur, trois nombres
+- [x] **T1 — La migration** (AC 1, 2, 3, 13). En-tête **relu avant** le premier `migrate run`.
+- [x] **T2 — Alimentation et entité** (AC 4, 5), commentaire `:70` corrigé au passage (AC 17).
+- [x] **T3 — Squash et checksum** (AC 12) : `scripts/regen-test-schema.sh`, ligne `migrations.sha384`.
+- [x] **T4 — P7** (AC 9) : entrée `PerishableSince`, justification sans le marqueur, trois nombres
       du tableau de l'AC 9.
-- [ ] **T5 — P5 et P6** (AC 10, 11), **compteurs recomptés depuis la source**, valeurs grepées.
-- [ ] **T6 — Tests** (AC 6, 7, 8, 14, 15). ⛔ *Une tâche qui décrit un test est une promesse ; la
+- [x] **T5 — P5 et P6** (AC 10, 11), **compteurs recomptés depuis la source**, valeurs grepées.
+- [x] **T6 — Tests** (AC 6, 7, 8, 14, 15). ⛔ *Une tâche qui décrit un test est une promesse ; la
       cocher sans l'avoir écrit la transforme en mensonge, et le gate reste vert* (acquis 25-1b).
-- [ ] **T7 — Mutations** (AC 16), résultats **observés** consignés.
-- [ ] **T8 — Propagation** (AC 17) et manuel d'administration (AC 18) : `.tex` corrigé, PDF
+- [x] **T7 — Mutations** (AC 16), résultats **observés** consignés.
+- [x] **T8 — Propagation** (AC 17) et manuel d'administration (AC 18) : `.tex` corrigé, PDF
       régénéré par `make fr` et vérifié aplati, les quatre greps de l'AC 17 rejoués.
-- [ ] **T9 — Gate complet**, base remise à zéro **et vérifiée**. ⛔ `kesh-db` touché : **ciblage
+- [x] **T9 — Gate complet**, base remise à zéro **et vérifiée**. ⛔ `kesh-db` touché : **ciblage
       interdit**, même en boucle de revue (exception `kesh-db` de `CLAUDE.md`). Backend :
       `scripts/test-fast.sh`. Frontend : non touché, gate non requis pour le commit — **mais** la
       suite E2E est un prérequis du push, et c'est **elle seule** qui démarre un binaire contre
@@ -612,11 +612,99 @@ préventif*.
 
 ### Agent Model Used
 
+- **Implémentation** (`bmad-dev-story`) : Claude Opus 5 (1M context).
+- **Validation de spec**, 4 passes : Sonnet + Haiku 4.5 → Opus → Sonnet → Opus (ciblée).
+
 ### Debug Log References
+
+Aucun échec de gate à diagnostiquer pendant l'implémentation. Trois points **prévus par la spec**
+et rencontrés tels quels :
+
+- **P6** — le grep de la VALEUR (`\b(33|67)\b`) sur `migrations_upgrade_path.rs` a rendu, après les
+  premières retouches, **quatre résidus** que l'énumération de l'AC 11 ne nommait pas : le message
+  d'assertion d'`apply_migrations_up_to` (`total - 33`, `total == 67`), le doc-comment du test
+  (`total - 33`, « les **33** dernières ») et l'étape 3 (« les 33 migrations restantes »). Tous
+  corrigés ; le grep ne rend plus que des occurrences historiques (généalogie, lignes de story).
+- **Base partagée** — la 68ᵉ migration a été appliquée à `kesh` avant le premier `nextest`, pour que
+  les trois `#[tokio::test]` historiques de `audit_log.rs` ne rougissent pas en
+  `Unknown column 'company_id'` (T0). L'en-tête de la migration était alors définitif (P8).
+- **Grep de l'AC 17, second motif** — `grep -nE "trente|\b(30|89|106)\b"` rend **trois lignes**,
+  toutes dans les tests neufs de l'AC 15 : `\b30\b` attrape l'`id` de la société **factice** (30).
+  C'est un faux positif **du motif**, non un résidu : le total a bien disparu du commentaire. Le
+  test n'a pas été modifié pour contenter le grep.
 
 ### Completion Notes List
 
+- **T1 — migration** `20260915000001_audit_log_company_id.sql` : `ADD COLUMN IF NOT EXISTS company_id
+  BIGINT NULL` + `ADD INDEX IF NOT EXISTS idx_audit_log_company_date`, puis `UPDATE … JOIN users …
+  WHERE a.company_id IS NULL`. Aucun `NOT NULL`, aucune FK, aucun `COALESCE`, aucun
+  `UPDATE _kesh_version`.
+- **T2 — alimentation** : un troisième sous-SELECT dans `insert_in_tx`, `user_id` lié une troisième
+  fois ; `COLUMNS` et `AuditLogEntry` gagnent `company_id` dans le même patch. Le commentaire qui
+  annonçait « quelque trente sites » est réécrit **sans total**. `NewAuditLogEntry` et ses trois
+  constructeurs sont inchangés : **aucun des 106 sites d'écriture ne bouge**.
+- **T3** — squash régénéré par son script (rejeu vérifié, 39 tables) ; checksum ajouté à
+  `migrations.sha384`, calculé par `sha384sum` après contrôle du mode de calcul sur la migration de
+  la 25-1a.
+- **T4 — P7** : exemption `PerishableSince(20260827000001)`, justification ouverte par « Parc
+  vide », placée juste après `20260909000001` ; taille du registre 11 → 12, inventaire périssable à
+  deux entrées. Le compteur « Hors fenêtre » reste à 6.
+- **T5** — P6 : 68 / `total - 34`, frontière inchangée à 34, quatre résidus corrigés (cf. Debug
+  Log). P5 : recompté **depuis la source** — `ls` = 68, lignes du tableau = 68, les deux totaux à
+  68, partition `yes` 8 + `tracked-by-sqlx` 60 + `no` 0 = 68.
+- **T6 — huit tests neufs**, dont l'existence et la sélection ont été **vérifiées par
+  `nextest list`** avant les mutations :
+  - `audit_log_company_id_backfill.rs` (AC 14) : `backfill_attributes_each_entry_to_its_actors_company`,
+    `backfill_leaves_null_when_the_actor_no_longer_exists`,
+    `backfill_is_idempotent_and_never_overwrites_a_set_value` — identifiants désalignés (10/20,
+    101/202), assertion de montage factorisée dans `mount()`, rejeu du SQL **embarqué** par
+    `sqlx::raw_sql` ; fichier inscrit à `ALLOWED_REAL_MIGRATOR_FILES` ;
+  - `repositories/audit_log.rs` (AC 15) : `insert_sets_the_company_of_a_user_actor`,
+    `insert_sets_the_company_of_an_api_key_creator`, `insert_with_an_unknown_actor_writes_a_null_company`
+    — sociétés 30 (factice) et 40, utilisateur 501, `entity_id` 7, clé 9 ;
+  - `admin_full_import_e2e.rs` (AC 7, 8) : `full_import_without_company_column_merges_archive_entries_as_null`
+    et `characterization_full_import_keeps_company_ids_as_written` ;
+  - l'AC 6 est une **assertion ajoutée** au test existant `full_export_structure_manifest_and_integrity`,
+    non un test neuf.
+- **T7 — mutations** : six sur six tuées, chacune par un **échec d'assertion**, fichiers restaurés et
+  vérifiés identiques par `cmp` (détail au Change Log).
+- **T8** — les deux commentaires rendus faux (`exports.rs`, `exports_global_e2e.rs`) réécrits ; le
+  manuel d'administration corrigé (champ ajouté, avertissement reformulé sans sur-promettre) ; `make
+  fr` a régénéré `admin-manual.pdf` et `user-manual.pdf` (la brochure est sortie identique). **PDF
+  vérifié aplati** : l'ancienne phrase est absente, la nouvelle présente.
+- **`backup.rs`, `export.rs`, `import.rs` : aucune ligne modifiée** — les AC 6 à 8 passent sans eux,
+  ce qui confirme l'analyse du volet C.
+
+**Décompte des tests, périmètre `main` → arbre de travail** : **+8** tests (3 + 3 + 2) ; **+1**
+assertion dans un test existant.
+
 ### File List
+
+**Backend — schéma et persistance**
+- `crates/kesh-db/migrations/20260915000001_audit_log_company_id.sql` *(nouveau)*
+- `crates/kesh-db/migrations.sha384`
+- `crates/kesh-db/test-schema/0001_schema_squash.sql` *(régénéré, jamais édité)*
+- `crates/kesh-db/src/repositories/audit_log.rs`
+- `crates/kesh-db/src/entities/audit_log.rs`
+- `crates/kesh-db/src/post_restore.rs`
+- `crates/kesh-db/tests/audit_log_company_id_backfill.rs` *(nouveau)*
+- `crates/kesh-db/tests/migrations_upgrade_path.rs`
+- `crates/kesh-db/tests/test_schema_guard.rs`
+
+**Backend — API**
+- `crates/kesh-api/src/routes/exports.rs` *(commentaire)*
+- `crates/kesh-api/tests/admin_full_import_e2e.rs`
+- `crates/kesh-api/tests/admin_full_export_e2e.rs`
+- `crates/kesh-api/tests/exports_global_e2e.rs` *(commentaire)*
+
+**Documentation**
+- `docs/migrations-idempotence-audit.md`
+- `docs/manual/fr/admin-manual.tex`, `docs/manual/fr/admin-manual.pdf`
+- `docs/manual/fr/user-manual.pdf` *(régénéré par `make fr`, source inchangé)*
+
+**Suivi**
+- `_bmad-output/implementation-artifacts/25-1c-zero-audit-company-id.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
 
@@ -801,3 +889,54 @@ par l'orchestrateur.
 4. *La sévérité se déplace vers ce qu'on vient d'écrire* — vérifié une fois de plus : le HIGH de la
    passe 3 est né de la passe 2, et la passe ciblée l'a confirmé clos en exécutant le montage plutôt
    qu'en le relisant.
+
+---
+
+## Implémentation — `bmad-dev-story`, 2026-09-15
+
+### Épreuve par mutation (AC 16) — résultats OBSERVÉS
+
+Script versionné hors dépôt (scratchpad de la session) : chaque mutation appliquée par `sed` ou
+Python, **nombre de sites mutés contrôlé par `grep -c`**, test visé exécuté par `nextest`, puis
+fichier restauré depuis une copie. Pour les mutations de la migration, `lib.rs` est touché afin que
+le SQL embarqué par `sqlx::migrate!` soit recompilé — sans quoi une mutation paraîtrait survivre à
+tort.
+
+| mutation | test attendu rouge | observé |
+|---|---|---|
+| M1 — sous-SELECT → `(SELECT NULL FROM users WHERE id = ?)` | 15 (a), 15 (b) | **FAIL** (a) et (b) sur assertion ; (c) PASS, attendu (`NULL` dans les deux cas) |
+| M2 — `LEFT JOIN` + `COALESCE(u.company_id, 0)` | 14 (b) | **FAIL** sur assertion |
+| M3 — `WHERE a.company_id IS NULL` retiré de la migration | 14 (c) | **FAIL** sur assertion |
+| M4 — `SELECT company_id` → `SELECT id` | 15 (a), 15 (b) | **FAIL** (a) et (b) sur assertion |
+| M5 — `SET a.company_id = a.user_id` | 14 (a) | **FAIL** sur assertion |
+| M6 — entrée retirée d'`EXEMPT_MIGRATIONS` | `every_data_backfill_migration_is_triaged` | **FAIL** |
+
+**Six sur six tuées, aucune par une erreur de compilation.** Restauration vérifiée par `cmp` sur les
+trois fichiers mutés : identiques.
+
+⚠️ **M1 n'est pas le « `NULL` nu » de la spec, et c'est délibéré** : remplacer le sous-SELECT par
+`NULL` laisse un paramètre lié en trop, et le test échouerait sur une **erreur de requête** — un
+échec qui ne prouve rien. `(SELECT NULL FROM users WHERE id = ?)` garde le même nombre de
+paramètres et produit la valeur fautive que l'assertion doit voir.
+
+### Gate — ce qui a RÉELLEMENT tourné
+
+Base de dev **remise à zéro et vérifiée** juste avant : conteneur redémarré (tmpfs vidé),
+`sqlx migrate run` — **68** migrations appliquées —, seed chargé, **1** administrateur contrôlé.
+
+| Gate | Résultat |
+|---|---|
+| `cargo fmt --all -- --check` | vert |
+| `cargo clippy --workspace --all-targets -- -D warnings` | vert, 0 warning |
+| `cargo nextest run` via `scripts/test-fast.sh` | **2330 passed, 0 failed, 4 skipped** — 85,6 s |
+
+**Le total se recoupe** : 2322 au gate de la 25-1b, **+ 8** tests neufs de cette story = 2330.
+
+**Ce qui n'a PAS tourné, et pourquoi** :
+
+- **Frontend** — non touché par la story (aucun fichier sous `frontend/`) : gate non requis pour le
+  commit.
+- ⚠️ **Suite E2E Playwright — non lancée.** C'est un prérequis du **push**, non du commit, et c'est
+  **la seule** qui démarre un binaire contre une base persistante : elle seule verrait un défaut P8
+  (checksum) que les bases éphémères de `nextest` ne voient pas. **À lancer avant tout push**, base
+  `kesh_e2e` reconstruite.

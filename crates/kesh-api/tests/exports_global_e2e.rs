@@ -1141,8 +1141,10 @@ async fn export_global_zip_audit_log_inserted(pool: MySqlPool) {
     // Pass 1 code-review M4 (C3 Blind F5 + C3-ECH-009) — poll loop avec timeout
     // 2s au lieu de sleep fixe 100ms (audit best-effort async, latence variable
     // selon charge CI). Si l'audit n'arrive pas dans 2s, on échoue.
-    // Pass 3 ECH3-C1 ground-truth : `audit_log` n'a PAS de colonne company_id ;
-    // on filtre par user_id (FK users.company_id garante isolation multi-tenant).
+    // On filtre par user_id, qui désigne l'entrée sans ambiguïté dans ce montage.
+    // (Pass 3 ECH3-C1 filtrait ainsi faute de colonne `company_id` sur `audit_log` ;
+    // la colonne existe depuis la Story 25-1c-zero, et le filtre par acteur reste
+    // suffisant ici.)
     // `details_json` est une colonne MariaDB `JSON` qui se décode en `serde_json::Value`
     // directement (alors qu'un `Option<String>` panique avec « SQL type BLOB incompatible »).
     let mut row: Option<(i64, String, String, i64, serde_json::Value)> = None;

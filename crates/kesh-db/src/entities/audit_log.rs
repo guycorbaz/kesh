@@ -127,6 +127,19 @@ pub struct AuditLogEntry {
     /// depuis la 25-1a la FK est retirée, la piste survivant au remplacement de
     /// `users` par un import de sauvegarde.
     pub actor_label: String,
+    /// Story 25-1c-zero (refs #378) — société de l'acteur **au moment de
+    /// l'écriture**, posée par sous-SELECT sur `users.company_id`.
+    ///
+    /// **Pointeur logique, sans clé étrangère** : `companies` est remplacée au
+    /// restore alors que les entrées d'audit locales sont conservées, comme
+    /// `user_id` et `actor_api_key_id`.
+    ///
+    /// ⛔ **`None` signifie « société indéterminable » — l'acteur n'existe pas —,
+    /// et c'est PERMANENT.** Ni `COALESCE` à l'écriture, ni rejeu après import :
+    /// `NULL` n'est pas une sentinelle, et un rattrapage ne distinguerait pas une
+    /// entrée d'archive d'une entrée locale dont le `user_id` désigne, après un
+    /// restore, quelqu'un de l'instance source.
+    pub company_id: Option<i64>,
     pub created_at: NaiveDateTime,
 }
 

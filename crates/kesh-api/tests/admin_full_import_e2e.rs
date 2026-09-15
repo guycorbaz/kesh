@@ -2057,3 +2057,176 @@ async fn full_import_replay_does_not_overwrite_a_local_actor_label(pool: MySqlPo
          remplacement de `users` par celle du backup, peut être quelqu'un d'autre"
     );
 }
+
+// ============================================================
+// Story 25-1c-zero (refs #378) — `audit_log.company_id` à travers l'import
+// ============================================================
+
+/// Version de la migration de la colonne — exemptée du rejeu, jamais au registre.
+const AUDIT_COMPANY_ID: i64 = 20260915000001;
+
+/// Écrit une entrée d'audit par le chemin réel : le sous-SELECT du repository pose
+/// `company_id`, comme en production.
+async fn write_trace(pool: &MySqlPool, user_id: i64, action: &str) {
+    let mut tx = pool.begin().await.expect("begin");
+    kesh_db::repositories::audit_log::insert_in_tx(
+        &mut tx,
+        kesh_db::entities::NewAuditLogEntry::user(user_id, action, "contact", 1, None),
+    )
+    .await
+    .expect("écriture de l'entrée d'audit");
+    tx.commit().await.expect("commit");
+}
+
+/// Les `company_id` des entrées d'une action, dans l'ordre des `id` — la copie
+/// LOCALE d'abord, la copie fusionnée depuis l'archive ensuite (elle reçoit un
+/// `id` neuf).
+async fn company_ids(pool: &MySqlPool, action: &str) -> Vec<Option<i64>> {
+    sqlx::query_scalar("SELECT company_id FROM audit_log WHERE action = ? ORDER BY id ASC")
+        .bind(action)
+        .fetch_all(pool)
+        .await
+        .expect("lecture des company_id")
+}
+
+/// **AC 7 — un backup SANS la colonne reste importable, et ses entrées arrivent
+/// `NULL`.**
+///
+/// ⚠️ **Ce `NULL` est le coût ASSUMÉ de l'exemption périssable** de la migration
+/// `20260915000001` (`EXEMPT_MIGRATIONS`) : pas de rejeu post-restore, par arbitrage
+/// du 2026-09-11. Un tel backup ne peut venir que d'un build de développement
+/// situé entre `20260827000001` et cette migration — aucune version publiée ne s'y
+/// trouve. Le test l'écrit pour qu'on ne le découvre pas plus tard.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_without_company_column_merges_archive_entries_as_null(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = seed_admin(&pool, "co_absent").await;
+    write_trace(&pool, ctx.user_id, "test.trace").await;
+
+    let backup = export_backup(&app, &ctx.jwt).await;
+    let (mut manifest, data) = unzip(&backup);
+    strip_column(&mut manifest, "audit_log", "company_id");
+    import_ok(&app, &ctx.jwt, &manifest, &data).await;
+
+    assert_eq!(
+        company_ids(&pool, "test.trace").await,
+        vec![Some(ctx.company_id), None],
+        "la copie locale garde sa société ; la copie venue d'un backup sans la colonne \
+         arrive `NULL` et le RESTE — aucun rejeu ne la complète"
+    );
+
+    // Et rien n'a été rejoué : la migration n'est pas au registre.
+    let report = backfill_report(&pool).await;
+    assert!(
+        report
+            .iter()
+            .all(|e| e["version"].as_i64() != Some(AUDIT_COMPANY_ID)),
+        "la migration de `company_id` est EXEMPTÉE du rejeu, elle ne doit pas figurer au \
+         rapport : {report:?}"
+    );
+}
+
+/// **AC 8 — CARACTÉRISATION : ce que l'import fait des `company_id`, mesuré pour la
+/// Story 25-1c.**
+///
+/// ⛔ **Ce test ne valide pas un comportement souhaitable : il MESURE un état que la
+/// 25-1c devra traiter** avant d'afficher quoi que ce soit par société. Après un
+/// restore, les entrées locales conservées portent le `company_id` d'une société que
+/// le restore a remplacée. Deux sous-cas, qui ne se valent pas :
+///
+/// - **identiques** — la société locale a le même `id` qu'une société restaurée (le
+///   cas probable : une seule société, `id = 1` des deux côtés). Une consultation
+///   scopée présenterait à la société restaurée des traces d'une autre instance
+///   comme les siennes ;
+/// - **différents** — la société locale n'existe plus. Une consultation scopée ne
+///   montrerait ces entrées à personne.
+///
+/// # Montage — un seul aller-retour produit les deux sous-cas
+///
+/// 1. U1 (société C1) écrit `test.identiques` et `test.verbatim` ; sur la seconde
+///    seulement, on pose la société inexistante `999` ; **export** ;
+/// 2. U2 (société C2, absente de l'archive) écrit `test.differents` ;
+/// 3. **import** avec le JWT de U2.
+///
+/// La fusion DUPLIQUE chaque entrée exportée : la copie locale a le plus petit `id`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn characterization_full_import_keeps_company_ids_as_written(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+
+    let u1 = seed_admin(&pool, "car_un").await;
+    write_trace(&pool, u1.user_id, "test.identiques").await;
+    write_trace(&pool, u1.user_id, "test.verbatim").await;
+    sqlx::query("UPDATE audit_log SET company_id = 999 WHERE action = 'test.verbatim'")
+        .execute(&pool)
+        .await
+        .expect("pose d'une société que le sous-SELECT ne produirait jamais");
+
+    let backup = export_backup(&app, &u1.jwt).await;
+    let (manifest, _) = unzip(&backup);
+    assert!(
+        manifest["tables"]["audit_log"]["columnNames"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c == "company_id"),
+        "montage : la colonne doit être PRÉSENTE au manifeste — c'est le cas caractérisé"
+    );
+
+    let u2 = seed_admin(&pool, "car_deux").await;
+    assert_ne!(u2.company_id, u1.company_id, "montage : C2 ≠ C1");
+    assert_ne!(
+        u2.company_id, 999,
+        "montage : C2 ne doit pas coïncider avec la valeur posée"
+    );
+    write_trace(&pool, u2.user_id, "test.differents").await;
+
+    let resp = post_import(&app, &u2.jwt, backup).await;
+    assert_eq!(
+        resp.status(),
+        200,
+        "import par un administrateur absent de l'archive"
+    );
+
+    let societes: Vec<i64> = sqlx::query_scalar("SELECT id FROM companies ORDER BY id")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        societes,
+        vec![u1.company_id],
+        "montage : seule C1 subsiste — C2 a été remplacée par le restore"
+    );
+
+    // Sous-cas « identiques » : la copie locale porte C1, qui existe encore — mais
+    // c'est la C1 RESTAURÉE. La copie d'archive porte aussi C1.
+    assert_eq!(
+        company_ids(&pool, "test.identiques").await,
+        vec![Some(u1.company_id), Some(u1.company_id)],
+    );
+
+    // Sous-cas « différents » : l'entrée locale de U2 porte C2, que le restore a
+    // supprimée. Elle n'a pas de copie d'archive : écrite après l'export.
+    assert_eq!(
+        company_ids(&pool, "test.differents").await,
+        vec![Some(u2.company_id)],
+    );
+
+    // « Verbatim » : les deux copies portent la valeur posée — l'import n'a rien
+    // recalculé, ni sur la ligne conservée ni sur la ligne fusionnée.
+    assert_eq!(
+        company_ids(&pool, "test.verbatim").await,
+        vec![Some(999), Some(999)],
+    );
+
+    // L'entrée d'import porte la société RESTAURÉE : son acteur est le plus petit
+    // administrateur du jeu restauré (U1), non l'importateur (U2, dans C2).
+    let import_company: Option<i64> = sqlx::query_scalar(
+        "SELECT company_id FROM audit_log WHERE action = 'admin.full_import' \
+         ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("entrée admin.full_import");
+    assert_eq!(import_company, Some(u1.company_id));
+    assert_ne!(import_company, Some(u2.company_id));
+}

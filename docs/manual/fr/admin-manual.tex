@@ -1783,7 +1783,7 @@ La quasi-totalité des actions métier mutantes est enregistrée dans la table \
 
 \begin{itemize}
     \item Contrainte \textbf{insert-only} : aucune route API ne permet de modifier ou supprimer une entrée \texttt{audit\_log}, et \textbf{aucune ne permet d'effacer la table} sur une installation finalisée. \emph{La formulation antérieure ne parlait que d'«~une entrée~»~: elle était exacte au mot près et trompeuse en substance, une route effaçant alors la table entière.}
-    \item Champs : \texttt{id}, \texttt{user\_id}, \texttt{actor\_label} (le nom de l'auteur \emph{au moment} de l'écriture), \texttt{actor\_type} et \texttt{actor\_api\_key\_id}, \texttt{action}, \texttt{entity\_type}, \texttt{entity\_id}, \texttt{details\_json}, \texttt{created\_at}. ⚠️ \emph{Il n'y a pas de colonne \texttt{company\_id}~: la table est globale. Une consultation par société l'exige, et c'est le sujet de l'issue \#378.}
+    \item Champs : \texttt{id}, \texttt{user\_id}, \texttt{actor\_label} (le nom de l'auteur \emph{au moment} de l'écriture), \texttt{actor\_type} et \texttt{actor\_api\_key\_id}, \texttt{company\_id} (la société de l'auteur au moment de l'écriture, vide quand elle est indéterminable), \texttt{action}, \texttt{entity\_type}, \texttt{entity\_id}, \texttt{details\_json}, \texttt{created\_at}. ⚠️ \emph{Chaque entrée porte la société de son auteur, mais le journal ne se \textbf{consulte} pas encore~: aucune route ni aucun écran ne permet de le lire depuis l'application --- c'est le sujet de l'issue \#378.}
     \item Conservation 10 ans (selon CO Art. 958f al. 1).
 \end{itemize}
 
