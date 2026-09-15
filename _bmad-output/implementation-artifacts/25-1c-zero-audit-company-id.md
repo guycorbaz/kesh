@@ -1070,5 +1070,34 @@ touchent **aucune ligne de code de production** — un seul fichier de test, et 
 **Aucune ligne de production n'a été prise en défaut par la revue.** Les deux findings retenus portent
 sur le **même test de caractérisation**, et le premier venait du montage que la spec prescrivait.
 
-⚠️ **Reste avant le push : la suite E2E Playwright**, base `kesh_e2e` reconstruite — la seule à
-démarrer un binaire contre une base persistante, donc la seule à pouvoir voir un défaut P8.
+---
+
+## ✅ Gate E2E de clôture — 2026-09-15, 12:41 UTC
+
+**214 passés / 19 skipped / 9 échoués, en 8,3 min.** Montage complet de `docs/testing.md`
+§ *Prérequis Playwright local* : base `kesh_e2e` **détruite et reconstruite** (68 migrations, 40
+tables), frontend rebuildé, binaire `kesh-api` compilé et lancé sous `nohup`, `/health` contrôlé
+**avant** le lancement — `"db":true`, `"smtpConfigured":true`.
+
+⛔ **Le contrôle P8 a eu lieu, et c'est lui que cette suite seule pouvait faire** : le binaire a
+démarré contre une base **persistante** portant la migration `20260915000001`, et son journal de
+boot dit « Vérification de version DB : binaire v0.11.1 > kesh_version_min_required v0.10.0 » puis
+« Migrations appliquées » — **aucune erreur de checksum**.
+
+**Jugement fichier par fichier contre `docs/testing.md` § *Les échecs attendus*** — jamais au nombre :
+
+| Échec | Verdict |
+|---|---|
+| `mode-expert.spec.ts:26` et `:41` | **KF-029 (#97)** |
+| `onboarding-path-b.spec.ts:65` et `:92` | **KF-029 (#97)** |
+| `onboarding.spec.ts:57`, `:77`, `:150` | **KF-029 (#97)** |
+| `product-revenue-account.spec.ts:133` | pollution d'état — **passe rejoué seul** (2,0 s) |
+| `sidebar-navigation.spec.ts:75` | pollution d'état — **passe rejoué seul** (1,4 s) ; ⇒ **ce n'est PAS la KF-046**, déterministe, qui échoue seule |
+
+Compte attendu à 12:41 UTC : `7 + 0 (KF-045, run après midi) + (0 à 1 KF-046) + 1 à 2 de pollution`
+= **8 à 10** ; observé **9**. **La branche ne touche aucun des cinq fichiers en échec, ni aucun
+fichier de `frontend/`** (`git log main..HEAD -- <fichier>` : 0 commit pour chacun).
+⇒ **Aucun échec surnuméraire, aucune régression.**
+
+**Les quatre gates de la story sont verts** : backend **2330/2330**, E2E **214 passés, 9 échecs tous
+attendus**, frontend non touché, et la suite E2E a exercé le démarrage réel contre la migration.
