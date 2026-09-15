@@ -2,18 +2,22 @@
 
 Status: ready-for-dev
 
+⚠️ **RÉOUVERTE le 2026-09-15 au soir** après sa validation en 5 passes : trois arbitrages du Project Lead
+changent sa conception (arbitrages 2, 3 et 5 ci-dessous). **Revalidation requise** avant implémentation.
+
 ⚠️ **Issue du SPLIT de la 25-1c**, décidé le 2026-09-15 par le Project Lead avant spécification :
 sept modules, donc la § *Règle de splitting préventif*. Découpage :
 
 | | objet | état |
 |---|---|---|
 | 25-1c-zero | la colonne `audit_log.company_id` | done (PR #437) |
-| **25-1c-a** *(celle-ci)* | **la route de consultation et son export CSV — backend** | ready-for-dev |
-| 25-1c-b | l'écran, le menu, les libellés, les E2E, les manuels utilisateur | backlog |
+| **25-1c-a** *(celle-ci)* | **la route de consultation, son vocabulaire traduit et son export CSV — backend** | ready-for-dev, réouverte |
+| 25-1c-b1 | l'écran, le menu, les gardes i18n du frontend, les E2E | ready-for-dev |
+| 25-1c-b2 | les manuels, le README, le vocabulaire « journal d'audit » | ready-for-dev |
 
 ⛔ **Cette story ne livre AUCUN écran.** Elle livre ce qu'un écran consommera, et ce qu'un réviseur
-peut déjà obtenir par un appel HTTP authentifié. **Rien d'anticipé sur la 25-1c-b** : ni composant,
-ni clé i18n de libellé d'action ou de type d'entité, ni entrée de menu.
+peut déjà obtenir par un appel HTTP authentifié : la liste, l'export, et **le vocabulaire traduit** — les
+libellés des types d'entité et des actions, dont elle est **la source unique** (AC 16).
 
 ⚠️ **Dépendance** : la branche est empilée sur `story/25-1c-zero-audit-company-id`. Elle se rebase sur
 `main` (`git rebase --onto origin/main 42b6aac0` — par **SHA** : le nom de branche peut être supprimé au merge) **après** le squash-merge
@@ -22,35 +26,41 @@ de la PR #437, et **avant** d'ouvrir sa propre PR.
 ## Story
 
 **En tant que** comptable ou administrateur d'une société tenue dans Kesh,
-**je veux** lire le journal d'audit de ma société — filtré par période, par entité et par action — et
-l'exporter,
+**je veux** lire le journal d'audit de ma société — filtré par période, par entité et par action, dans
+la langue de l'interface — et l'exporter,
 **afin de** pouvoir **produire** la trace des corrections apportées aux livres, ce que l'art. 958f CO
 exige et qu'aucune route ne permet aujourd'hui.
 
-**Couvre** : [#378], volet backend. **Ne ferme pas l'issue** — le `closes #378` appartient à la PR de
-la 25-1c-b, qui livre l'écran.
+**Couvre** : [#378], volet backend. **Ne ferme pas l'issue** — le `closes #378` appartient à la PR des
+25-1c-b1 et b2, qui livrent l'écran et ses textes.
 
 ## ✅ Arbitrages du Project Lead — 2026-09-15 (`epic-25-vague1-suite.md`)
 
 1. **Qui consulte** : le **Comptable** et l'**Admin**. **Ni le rôle Consultation** — les détails
    portent des e-mails et des changements de rôle —, **ni une clé API** — qu'on ne puisse pas
-   extraire la piste entière par programme.
+   extraire le journal entier par programme.
 2. **Filtre strict par société.** Un import de sauvegarde restaure **la même** installation (*« si on
    importe une sauvegarde, c'est que la base de données a disparu ou est corrompue et doit être
-   recréée »*) : les identifiants de société ne changent pas. Les deux sous-cas mesurés par la
-   caractérisation de la 25-1c-zero ne naissent que d'un **usage hors intention** — importer la
-   sauvegarde d'une **autre** installation.
-3. **Affichage sobre** — cité de l'epic : *« le code d'action tel quel, les types d'entité traduits, les
-   détails en JSON indenté »*. ⇒ la **route JSON** renvoie les codes bruts `action` et `entity_type`
-   et le détail tel quel : la traduction des types d'entité se fait **à l'écran** (25-1c-b). Pour le
-   **CSV**, produit côté serveur, cf. le troisième choix non arbitré de l'AC 12.
+   recréée »*). Et, au soir, sur les entrées sans société : *« le cas réel n'existe pas : le système ne
+   sera pas en production avant de pouvoir faire les sauvegardes complètes. le cas théorique est …
+   théorique »*. ⇒ **la route ne rend que `company_id = ?`** ; une entrée sans société n'apparaît dans
+   aucune consultation.
+3. **Affichage** — cité de l'epic : *« le code d'action tel quel, les types d'entité traduits, les
+   détails en JSON indenté »* ; **amendé au soir** sur le CSV : *« dans l'export csv, il faut mettre la
+   traduction de la langue utilisée par l'utilisateur de kesh, sinon ce sera difficile à utiliser »* ; et
+   sur l'écran, à la proposition d'afficher aussi l'action traduite : *« ok »*. À la proposition d'écrire
+   les libellés d'action dans une story séparée : *« non, maintenant »*.
+   ⇒ **types d'entité ET actions traduits, à l'écran comme dans le CSV** ; les libellés s'écrivent
+   **dans cette story** ; les **détails** restent du JSON.
 4. **Vocabulaire** : « journal d'audit » — `Audit-Protokoll`, `registro di audit`, `audit log`.
+5. **L'export n'écrit PAS d'entrée d'audit** — réponse *« non »* à « chaque export CSV du journal
+   s'inscrit-il lui-même dans le journal ? ».
 
-⚠️ **Choix par défaut, NON arbitré explicitement — à confirmer en revue** : une entrée **sans
-société** (`company_id IS NULL` : auteur inexistant à l'écriture, ou fusionnée d'un backup antérieur
-à la colonne) **est incluse** dans la consultation de toute société. Motif : dans une installation à
-une seule société — la seule réalité du code, aucune route n'en créant une seconde —, elle ne peut
-appartenir qu'à celle-là ; l'exclure la rendrait invisible à tous, défaut que la 25-1a a combattu.
+⚠️ **« La langue utilisée par l'utilisateur » est, dans Kesh, celle de l'INSTALLATION** : il n'existe
+aucune langue par utilisateur. L'interface entière suit `KESH_LANG` (`config.rs:831`,
+`state.config.locale`), que `routes/i18n.rs:21` sert à l'écran. **La route, le vocabulaire et le CSV
+suivent la même** — et non la `accounting_language` de la société, qui est la langue des libellés
+comptables.
 
 ## Acceptance Criteria
 
@@ -72,15 +82,15 @@ company_id, AuditLogListQuery) -> Result<AuditLogListResult, DbError>`, sur le *
 **2. La clause WHERE, et chacune de ses parties est une décision** :
 
 ```sql
-WHERE (company_id = ? OR company_id IS NULL)
+WHERE company_id = ?
   [AND created_at >= ?]                 -- date_from à 00:00:00.000
   [AND created_at <= ?]                 -- date_to à 23:59:59.999
   [AND entity_type = ?] [AND entity_id = ?] [AND action = ?]
 ORDER BY created_at DESC, id DESC
 ```
 
-- ⛔ **`OR company_id IS NULL`** tient le choix par défaut ci-dessus. **Les parenthèses sont
-  obligatoires** : sans elles, le `OR` absorberait tous les filtres suivants.
+- ⛔ **`company_id = ?` seul, sans `OR company_id IS NULL`** (arbitrage 2). Une entrée sans société
+  n'appartient à aucune consultation.
 - ⛔ **Bornes INCLUSIVES à la milliseconde, sans aucune arithmétique de date** : `date_from` à
   `00:00:00.000`, `date_to` à **`23:59:59.999`**, liées comme `NaiveDateTime`. `created_at` est un
   `DATETIME(3)` : aucune valeur ne tient entre `23:59:59.999` et le lendemain, la borne est donc
@@ -127,14 +137,19 @@ d'`entities/audit_log.rs:20` (« Story 3.5 étendra avec … l'UI de consultatio
 modifie plus, pas même un commentaire (P8) : la consultation passe par
 `list_by_company_paginated`.
 
-### Volet B — la route de consultation (`kesh-api`)
+### Volet B — les routes de consultation (`kesh-api`)
 
-**5. `GET /api/v1/audit-log`**, montée dans **`comptable_routes`** (`lib.rs:336-660`), **avant** le
+**5. Trois routes**, montées dans **`comptable_routes`** (`lib.rs:336-660`), **avant** le
 `route_layer(require_comptable_role)` de `:658` — ⛔ une route chaînée après le `route_layer` compile
-et échappe au RBAC (`lib.rs:310-321`). Handler dans un **nouveau** module `routes/audit_log.rs`
-(`pub mod audit_log;` dans `routes/mod.rs`).
+et échappe au RBAC (`lib.rs:310-321`) :
 
-**6. Les refus — et ils ne se valent pas** :
+- `GET /api/v1/audit-log` — la liste (AC 7-9) ;
+- `GET /api/v1/audit-log/export.csv` — l'export (AC 10-14) ;
+- `GET /api/v1/audit-log/vocabulary` — le vocabulaire traduit (AC 17).
+
+Handlers dans un **nouveau** module `routes/audit_log.rs` (`pub mod audit_log;` dans `routes/mod.rs`).
+
+**6. Les refus — identiques sur les TROIS routes, et ils ne se valent pas** :
 
 | appelant | réponse | porté par |
 |---|---|---|
@@ -151,8 +166,9 @@ et échappe au RBAC (`lib.rs:310-321`). Handler dans un **nouveau** module `rout
 ⚠️ Son code d'erreur parle de « gestion » ; il est **réutilisé tel quel** — un variant de plus pour
 un libellé serait du bruit. À écrire dans le doc-comment du handler.
 
-**7. Les paramètres** — struct `ListAuditLogQuery`, `#[serde(rename_all = "camelCase")]` :
-`dateFrom`, `dateTo`, `entityType`, `entityId`, `action`, `offset`, `limit`.
+**7. Les paramètres de la liste et de l'export** — struct `ListAuditLogQuery`,
+`#[serde(rename_all = "camelCase")]` : `dateFrom`, `dateTo`, `entityType`, `entityId`, `action`,
+`offset`, `limit`.
 
 - **Pagination** : défaut `limit = 50`, **ramené** dans `[1, 200]` et `offset.max(0)` — convention
   des écritures (`routes/journal_entries.rs:287-288`), pas le rejet en 400 des factures. Motif : un
@@ -164,16 +180,17 @@ un libellé serait du bruit. À écrire dans le doc-comment du handler.
   `u16::try_from`) — fait **paniquer** la liaison (`push_bind`, `query_builder.rs:158`). Ce n'est pas
   une 500 : c'est une panique, qu'aucune couche ne rattrape. `0999-12-31`, lui, se lie sans erreur et
   rendrait simplement tout le journal — il est refusé pour que la plage soit la même aux deux bornes.
-- **Textes** `entityType`, `action` : `trim()` ; vide ⇒ absent ; plus long que la colonne
-  (`entity_type` 32, `action` 64 caractères) ⇒ 400 — une valeur plus longue ne peut rien trouver, et
-  le dire vaut mieux qu'une liste vide muette.
+- **Textes** `entityType`, `action` : des **codes** (l'écran les prend dans le vocabulaire, AC 17) ;
+  `trim()` ; vide ⇒ absent ; plus long que la colonne (`entity_type` 32, `action` 64 caractères) ⇒ 400 —
+  une valeur plus longue ne peut rien trouver, et le dire vaut mieux qu'une liste vide muette. Un code
+  **absent** du vocabulaire reste **accepté** : un code historique doit rester filtrable.
 - **`entityId`** : `<= 0` ⇒ 400 ; **fourni sans `entityType` ⇒ 400** — un identifiant n'a de sens que
   rapporté à son type (`entities/audit_log.rs:87-97`, « filtrer sur le couple »).
 - ⚠️ **Refus hors `VALIDATION_ERROR`, et c'est assumé** : un `entityId`, `offset` ou `limit` **non
   numérique** est rejeté par l'extracteur `Query` d'Axum en **400 texte**, avant le handler — convention
   écrite du dépôt (`journal_entries.rs:275-279`). Ne pas la « corriger » ici.
 
-**8. La réponse** — `ListResponse<AuditLogEntryResponse>` (`routes/mod.rs:44-63`), soit
+**8. La réponse de la liste** — `ListResponse<AuditLogEntryResponse>` (`routes/mod.rs:44-63`), soit
 `{ items, total, offset, limit }`. ⛔ **DTO dédié, et non l'entité sérialisée** :
 
 | champ JSON | source | pourquoi un DTO |
@@ -184,21 +201,25 @@ un libellé serait du bruit. À écrire dans le doc-comment du handler.
 | `actorType` | **`actor_type.as_str()`** : `"user"` / `"api_key"` | ⚠️ `ActorType` dérive `Serialize` **sans renommage** et sortirait `"User"` / `"ApiKey"` (`entities/audit_log.rs:35-49`) — la valeur de la base est la seule stable |
 | `actorApiKeyId` | `actor_api_key_id` | — |
 | `userId` | `user_id` | — |
-| `action`, `entityType` | codes bruts | arbitrage 3 |
+| `action` | code brut | l'écran filtre et construit l'URL sur le **code** |
+| `actionLabel` | `audit_labels::action_label(…)` (AC 16), langue de l'interface | arbitrage 3 |
+| `entityType` | code brut | idem |
+| `entityTypeLabel` | `audit_labels::entity_type_label(…)` (AC 16), langue de l'interface | arbitrage 3 |
 | `entityId` | `entity_id` **tel quel**, `0` compris | `AUDIT_ENTITY_ID_NONE` vaut `0` ; le filtrer ferait disparaître l'information |
-| `companyId` | `company_id`, `null` possible | `null` = « société indéterminée » |
 | `details` | `details_json` **tel quel** (`serde_json::Value`), `null` possible | arbitrage 3 |
 
-**9. La consultation elle-même n'écrit PAS d'entrée d'audit.** Chaque page d'écran en écrirait une, et
-le journal enflerait de sa propre lecture. ⚠️ **Asymétrie assumée avec l'export** (AC 13).
+⚠️ **Pas de champ `companyId`** : le filtre est strict (arbitrage 2), toutes les lignes portent la
+société de l'appelant — le champ n'apprendrait rien.
+
+**9. La consultation n'écrit PAS d'entrée d'audit**, pas plus que le vocabulaire ni l'export
+(arbitrage 5, AC 14). Chaque page d'écran en écrirait une, et le journal enflerait de sa propre lecture.
 
 ### Volet C — l'export CSV
 
-**10. `GET /api/v1/audit-log/export.csv`**, dans `comptable_routes` **avant** le `route_layer`,
-**mêmes refus** que l'AC 6 (`ensure_not_pat` en tête), **mêmes filtres et mêmes validations** que
-l'AC 7 — `offset` et `limit` **ignorés**, comme l'export de l'échéancier (`invoices.rs:1225-1231`).
-⛔ La validation des paramètres est **une seule fonction** partagée par les deux handlers, qui produit
-l'`AuditLogListQuery`.
+**10. `GET /api/v1/audit-log/export.csv`** — **mêmes refus** que l'AC 6 (`ensure_not_pat` en tête),
+**mêmes filtres et mêmes validations** que l'AC 7 — `offset` et `limit` **ignorés**, comme l'export de
+l'échéancier (`invoices.rs:1225-1231`). ⛔ La validation des paramètres est **une seule fonction**
+partagée par les deux handlers, qui produit l'`AuditLogListQuery`.
 
 **11. Plafond** : `MAX_EXPORT_ROWS = 10_000`. Le handler demande `MAX_EXPORT_ROWS + 1` lignes ; au-delà
 ⇒ **400 `RESULT_TOO_LARGE`** (`AppError::ResultTooLarge`, `errors.rs:546,1422`), message i18n
@@ -208,40 +229,35 @@ l'`AuditLogListQuery`.
 
 - UTF-8 **avec BOM**, séparateur `;`, fins de ligne CRLF, `csv::WriterBuilder` — patron
   `invoices.rs:1266-1281` ;
-- **onze colonnes**, en-têtes traduits dans la `accounting_language` de la société
-  (`get_company_for`), clés `audit-log-csv-header-*` avec repli français :
+- **dix colonnes**, en-têtes traduits dans **la langue de l'interface** (`state.config.locale`, cf.
+  l'encadré sous les arbitrages), clés `audit-log-csv-header-*` avec repli français :
 
-  | clé | repli |
-  |---|---|
-  | `…-id` | N° |
-  | `…-created-at` | Date (UTC) |
-  | `…-actor` | Auteur |
-  | `…-user-id` | Identifiant d'auteur |
-  | `…-actor-type` | Type d'auteur |
-  | `…-action` | Action |
-  | `…-entity-type` | Type d'entité |
-  | `…-entity-id` | Identifiant d'entité |
-  | `…-company-id` | Société |
-  | `…-api-key-id` | Clé API |
-  | `…-details` | Détails |
+  | clé | repli | contenu de la cellule |
+  |---|---|---|
+  | `…-id` | N° | `id` |
+  | `…-created-at` | Date (UTC) | `created_at`, `YYYY-MM-DD HH:MM:SS.mmm` |
+  | `…-actor` | Auteur | `actor_label` |
+  | `…-user-id` | Identifiant d'auteur | `user_id` |
+  | `…-actor-type` | Type d'auteur | **libellé traduit** (`audit-log-actor-type-user` / `-api-key`) |
+  | `…-action` | Action | **libellé traduit** de l'action |
+  | `…-entity-type` | Type d'entité | **libellé traduit** du type |
+  | `…-entity-id` | Identifiant d'entité | `entity_id` |
+  | `…-api-key-id` | Clé API | `actor_api_key_id`, vide si absent |
+  | `…-details` | Détails | `details_json` en **JSON compact**, vide si absent |
 
   ⚠️ **`id` et `user_id` sont exportés, et ce n'est pas du remplissage** : des **trous** dans la suite
   des `id` sont un indice d'effacement, et `actor_label` n'est qu'un **instantané** du nom — `user_id`
   relie l'entrée au compte.
 
-- `created_at` écrit `YYYY-MM-DD HH:MM:SS.mmm` (UTC, annoncé par l'en-tête) ; `details_json` écrit en
-  **JSON compact** ; valeurs absentes ⇒ cellule vide ;
-- ⚠️ **Troisième choix de conception, NON arbitré — à confirmer en revue** : les cellules `action` et
-  `entity_type` restent des **codes bruts**. L'arbitrage 3 dit « les types d'entité traduits » ; pour la
-  route JSON, la traduction se fait à l'écran (25-1c-b), mais le CSV **sort du serveur** — le traduire
-  ici imposerait les 28 libellés dans les quatre langues, que la 25-1c-b doit écrire, et les ferait
-  vivre en deux endroits. Les **en-têtes**, eux, sont traduits ;
-- ⛔ **toute cellule texte passe par `csv_sanitize`** : `actor_label`, `action`, `entity_type`,
-  `details`. Un nom d'utilisateur ou un détail commençant par `=`, `+`, `-` ou `@` est une injection de
-  formule — et `actor_label` est **choisi par un utilisateur** ;
+  ⚠️ **Plus de colonne « Société »** : le filtre strict la rendrait constante (arbitrage 2).
+- ⛔ **Les libellés viennent des fonctions de l'AC 16, et d'elles seules** — les mêmes que la liste
+  JSON. Un code **inconnu** du vocabulaire sort **tel quel** dans sa cellule.
+- ⛔ **toute cellule texte passe par `csv_sanitize`** : `actor_label`, les trois libellés, `details`.
+  Un nom d'utilisateur ou un détail commençant par `=`, `+`, `-` ou `@` est une injection de formule —
+  `actor_label` est **choisi par un utilisateur**, et le repli d'un libellé est un **code** lu en base ;
 - `Content-Type: text/csv; charset=utf-8` ; `Content-Disposition` par
-  **`build_content_disposition`** (`util.rs:104-116`, RFC 5987), nom
-  `kesh-journal-audit-{slug société}-{AAAA-MM-JJ}.csv` (`slugify`, `util.rs:37`).
+  **`build_content_disposition`** (`util.rs:104-116`, RFC 5987), avec le tag de langue de l'interface ;
+  nom `kesh-journal-audit-{slug société}-{AAAA-MM-JJ}.csv` (`slugify`, `util.rs:37`).
 
 **13. `csv_sanitize` est EXTRAITE, pas recopiée.** Elle est aujourd'hui privée à `routes/invoices.rs`
 (`:1176-1199`), et c'est le **seul** échappement anti-formule du dépôt — le moteur `kesh-report` n'en
@@ -256,52 +272,119 @@ sécurité non testée qu'on déplace est une fonction qu'on peut casser sans le
 (`=`, `+`, `-`, `@`), le **contournement par espace de tête** (`" =cmd"`), le remplacement de `\r`,
 `\n`, `\t`, et une chaîne ordinaire rendue inchangée.
 
-**14. L'export ÉCRIT une entrée d'audit** — action **`audit_log.exported`**, `entity_type = "audit_log"`,
-`entity_id = AUDIT_ENTITY_ID_NONE`, via `NewAuditLogEntry::from_current_user(&current_user, …)` (trait `AuditActor`, `kesh-api/src/audit.rs:24`
-— la convention du dépôt quand un `CurrentUser` est à portée) ; détails
-**snake_case** : `row_count`, `date_from`, `date_to`, `entity_type`, `entity_id`, `action`. En
-**best-effort** — transaction dédiée, `tracing::warn!` en cas d'échec, réponse 200 malgré tout — patron
-`emit_report_export_audit` (`routes/reports.rs:1463-1510`).
+**14. L'export n'écrit PAS d'entrée d'audit** (arbitrage 5). ⇒ ni transaction dédiée, ni patron
+`emit_report_export_audit`, ni traitement particulier des requêtes `HEAD` : l'export ne fait que lire.
 
-⚠️ **`from_current_user` et non `::user`, bien que sa branche « clé API » soit morte ici** : `ensure_not_pat`
-refuse toute clé avant d'atteindre l'écriture, donc `api_key_id` vaut toujours `None` à cet endroit.
-Le choix est délibéré — **défense en profondeur** : si la garde devait un jour être levée, l'entrée
-attribuerait encore correctement l'export à la clé, là où `::user` écrirait un fait faux (limitation L2
-de `reports.rs:1423-1426`). À écrire en commentaire au site.
+### Volet D — le vocabulaire traduit et les clés i18n
 
-⛔ **Deux cas où l'export n'écrit PAS d'entrée** — rien ne sort, rien ne se trace :
+**15. Les clés, dans les quatre catalogues** (`crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`),
+en un bloc commenté `# --- Journal d'audit — route, vocabulaire et export (Story 25-1c-a) ---` :
 
-- un refus **`RESULT_TOO_LARGE`** ;
-- une requête **`HEAD`** : Axum la sert par le handler `GET` (`admin_pat_denied_e2e.rs:826-835`), qui
-  l'exécuterait jusqu'au bout. Le handler lit la méthode (`axum::http::Method`) et **n'écrit l'entrée
-  que pour `GET`**.
+| famille | nombre | origine |
+|---|---|---|
+| `audit-log-csv-header-*` | 10 | AC 12 |
+| `audit-log-export-error-too-large` | 1 | AC 11 |
+| `audit-log-actor-type-user`, `-api-key` | 2 | AC 12 |
+| `audit-log-entity-*` | **28** à la spécification | un par code de `ENTITY_TYPES` (AC 16) |
+| `audit-log-action-*` | **82** à la spécification | un par code de `ACTIONS` (AC 16) |
 
-⚠️ **Choix de conception, NON arbitré — à confirmer en revue** : *qui a extrait la piste* est
-précisément ce qu'une piste doit dire ; la consultation à l'écran ne l'est pas (AC 9), l'extraction
-d'un fichier qui quitte l'application l'est.
+⚠️ **Les deux derniers nombres se RECOMPTENT** : ils sont ceux du 2026-09-15, et c'est la garde de
+l'AC 18 qui les fixe, pas cette fiche. Le **total** (123 à la spécification) s'écrit avec sa ventilation au
+Dev Agent Record. Vocabulaire de l'arbitrage 4 ; le test de parité `crates/kesh-i18n/src/loader.rs:693`
+impose le même jeu de clés partout.
 
-### Volet D — i18n
+**Règles d'écriture des libellés** :
 
-**15. Douze clés, dans les quatre catalogues** (`crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`),
-en un bloc commenté `# --- Journal d'audit — export CSV (Story 25-1c-a) ---` : les **onze** en-têtes
-de l'AC 12 et `audit-log-export-error-too-large` (11 + 1). ⚠️ Le compte se **recompte depuis la
-source** à l'implémentation — `grep -c '^audit-log-' crates/kesh-i18n/locales/*/messages.ftl` doit
-rendre 12 dans chacune des quatre locales. Vocabulaire de l'arbitrage 4 ;
-le test de parité `crates/kesh-i18n/src/loader.rs:693` impose le même jeu de clés partout.
+- **action** : « *Objet* *participe passé* », majuscule initiale, sans point — `invoice.validated` →
+  « Facture validée », `reconciliation_rule.applied` → « Règle d'affectation appliquée »,
+  `contact_person.archived` → « Personne de contact archivée » ;
+- **type d'entité** : le nom au singulier, majuscule initiale — y compris pour les codes au pluriel
+  (`bank_imports` → « Import bancaire ») ;
+- ⛔ **les termes suivent `docs/i18n-glossaire.md`**, partie A là où elle les atteste (créé /
+  `erstellt` / `creato·a` / `created`, annulé / `storniert` / `annullato·a` / `cancelled`, avoir /
+  `Gutschrift` / `nota di credito` / `credit note`…) ; un terme récurrent qu'elle n'atteste pas va en
+  **partie B**, avec sa valeur proposée ;
+- les codes irréguliers reçoivent un libellé qui dit ce qui s'est passé, non ce que dit le préfixe :
+  `books.locked` → « Livres verrouillés », `reconciliation.split_applied` → « Ventilation appliquée »,
+  `admin_break_glass_reset` → « Réinitialisation d'urgence de l'administrateur » ;
+- **la liste française complète est recopiée au Dev Agent Record** pour relecture par le Project Lead.
 
-⚠️ Ces clés sont **backend** : aucun appel `i18nMsg` n'est ajouté au frontend, donc **aucun** compteur
-de `frontend/src/lib/shared/i18n-keys.test.ts` ne bouge. Le vérifier, pas le supposer.
+⚠️ **Les clés sont écrites par le backend, et le frontend les lit pourtant** — par la route
+`/api/v1/i18n/messages`, qui sert **tout** le catalogue (`routes/i18n.rs:22`, `all_messages`). La 25-1c-b1
+n'en a cependant pas besoin : elle reçoit les libellés **déjà traduits** (AC 8, AC 17). ⇒ **aucun**
+compteur de `frontend/src/lib/shared/i18n-keys.test.ts` ne bouge, et `audit-log-` n'entre **pas** dans
+`PREFIXES_A_COUVERTURE_CLOSE` (`:388`). Le vérifier, pas le supposer.
+
+**16. Le module `crates/kesh-api/src/audit_labels.rs` — la SOURCE UNIQUE des libellés** :
+
+- `pub(crate) const ENTITY_TYPES: &[&str]` et `pub(crate) const ACTIONS: &[&str]`, triés par code ;
+- clés **dérivées** : `audit-log-entity-{code}` et `audit-log-action-{code}`, où `.` et `_` deviennent
+  `-` (`invoice.reminder_sent` → `audit-log-action-invoice-reminder-sent`) ;
+- `pub(crate) fn entity_type_label(i18n: &I18nBundle, locale: &Locale, code: &str) -> String`,
+  `action_label(…)` et `actor_type_label(…)`.
+
+⛔ **Un code inconnu rend le CODE, et ce n'est pas `format` qui le garantit.** `I18nBundle::format`
+(`kesh-i18n/src/loader.rs:110-128`) replie sur le français puis rend **la clé brute** : appelé sur un code
+hors liste, il afficherait `audit-log-action-foo-bar`. La fonction **teste d'abord l'appartenance** du
+code à la liste, et ne traduit qu'ensuite. Motif du repli sur le code : le journal conserve les codes des
+versions antérieures (`journal_entry.updated`, qu'aucun site n'écrit plus) et un code futur ne doit
+rien casser.
+
+Tests unitaires dans le module : un code connu rend son libellé dans deux locales ; un code inconnu rend
+le code ; **les clés dérivées sont deux à deux distinctes** — deux codes qui ne diffèrent que par `.` et
+`_` produiraient la même clé.
+
+**17. `GET /api/v1/audit-log/vocabulary`** — **mêmes refus** que l'AC 6, aucune lecture en base, aucune
+entrée d'audit. Réponse :
+
+```json
+{ "entityTypes": [{ "code": "account", "label": "Compte" }, …],
+  "actions":     [{ "code": "account.archived", "label": "Compte archivé" }, …] }
+```
+
+- une entrée par code de `ENTITY_TYPES` et de `ACTIONS`, libellés par les fonctions de l'AC 16, dans la
+  langue de l'interface ;
+- **ordre des listes : celui des constantes** (par code). Le tri par libellé est l'affaire de l'écran,
+  qui connaît la locale d'affichage (`Intl.Collator`, 25-1c-b1) — un tri d'octets côté serveur rangerait
+  « Écriture » après « Utilisateur ».
+
+Motif de la route : l'écran doit proposer des **listes** pour les filtres — un code d'action tapé à la
+main n'a plus de sens quand l'écran n'affiche que des libellés —, et elle lui évite de recopier les deux
+listes de codes.
+
+**18. La garde des libellés — `crates/kesh-api/tests/audit_label_registry.rs`**, sur le patron de
+`tests/audit_route_registry.rs` (lecture de la source, **diff ensembliste**, jamais un compteur — son
+en-tête `:15-19` dit pourquoi) :
+
+- (a) **l'ensemble des actions ÉCRITES par le code de production** — les littéraux passés à
+  `NewAuditLogEntry::{user, for_actor, api_key, from_current_user}(` dans `crates/*/src`, hors modules
+  `#[cfg(test)]` — **est égal** à `ACTIONS`, dans les deux sens : une action ajoutée demain sans libellé
+  rougit, un libellé dont l'action a disparu aussi ;
+- (b) **même égalité** pour les types d'entité et `ENTITY_TYPES` ;
+- (c) **chaque clé dérivée existe dans CHACUN des quatre fichiers `.ftl`**, lus directement — ⚠️ **pas**
+  par `all_messages`, qui comble les absences par le français (`loader.rs:130-131`) et rendrait vraie par
+  construction une clé manquante en allemand ;
+- ⛔ **l'inventaire des sites que l'extracteur ne lit pas est écrit, et clos** (D4-ter du `CLAUDE.md`) —
+  au 2026-09-15 : l'action `admin_break_glass_reset`, **sans point** (`auth/bootstrap.rs:289`), et les deux
+  helpers qui reçoivent l'action **en paramètre** et ne portent aucun littéral (`kesh-api/src/audit.rs:36-52`,
+  `repositories/email_templates.rs`), dont les appelants portent les littéraux. Chaque site de l'inventaire
+  est **vérifié présent** par la garde : un site renommé ne doit pas sortir de l'inventaire en silence.
+
+⚠️ **La spécification a compté 82 actions et 28 types par script** (arguments littéraux des quatre
+constructeurs, hors tests) ; le script rendait aussi, parmi les littéraux sans point, des **clés de
+détails** (`before`, `after`, `email`…) qui ne sont ni des actions ni des types. **L'extracteur de la garde
+doit lire la POSITION de l'argument** (action, puis type), pas « tout littéral de l'appel ».
 
 ### Volet E — ce que la story rend faux
 
-**16. Le manuel d'administration** — `docs/manual/fr/admin-manual.tex:1786` affirme depuis la
+**19. Le manuel d'administration** — `docs/manual/fr/admin-manual.tex:1786` affirme depuis la
 25-1c-zero : *« le journal ne se **consulte** pas encore : aucune route ni aucun écran ne permet de le
 lire depuis l'application »*. **La moitié devient fausse.** Réécrire : une route de consultation et
 d'export existe pour le Comptable et l'Admin, l'écran reste à venir (#378).
 
-**17. La conséquence de l'arbitrage 2, écrite dans le même manuel** : **l'import sert à restaurer la
+**20. La conséquence de l'arbitrage 2, écrite dans le même manuel** : **l'import sert à restaurer la
 même installation**. Importer la sauvegarde d'une autre installation est techniquement possible, et
-ferait attribuer les entrées d'audit locales à la société importée. **Deux sites**, et le premier
+ferait attribuer les entrées d'audit locales à la société importée. **Trois sites**, et le premier
 contredit aujourd'hui la prémisse :
 
 - `admin-manual.tex:1585` — ⛔ la sous-section s'intitule **« Importer (restauration / migration) »**.
@@ -316,51 +399,43 @@ contredit aujourd'hui la prémisse :
   conformité » affirme que les entrées de l'archive sont « **fusionnées** » avec celles de
   l'installation : c'est là que la conséquence d'un import étranger doit être écrite.
 
-**18. Régénération et contrôle** : `make fr` dans `docs/manual/`, PDF commités, **PDF aplati vérifié**
+**21. Régénération et contrôle** : `make fr` dans `docs/manual/`, PDF commités, **PDF aplati vérifié**
 (`pdftotext f.pdf - | tr '\n' ' ' | tr -s ' '`) — l'ancienne phrase absente, les nouvelles présentes.
 ⛔ **En LaTeX le souligné s'écrit `\_`** : greper `audit(\\)?_log`, jamais `audit_log`.
 
 ⚠️ **Ce qui reste VRAI et ne doit pas être touché** : `user-manual.tex:498-503` (« ce qui manque encore,
 c'est la consultation du journal d'audit **depuis l'application** ») et la feuille de route du `README.md`, lignes des epics 24 et 25 (« consultable
-par aucun **écran** ») — c'est la 25-1c-b qui les rendra faux.
+par aucun **écran** ») — c'est la 25-1c-b2 qui les rendra faux.
 
 ### Volet F — les tests
 
-**19. Repository** — `#[sqlx::test(migrations = "./test-schema")]` dans `repositories/audit_log.rs`,
+**22. Repository** — `#[sqlx::test(migrations = "./test-schema")]` dans `repositories/audit_log.rs`,
 **identifiants désalignés** (sociétés 30 et 40, utilisateurs 501 et 602), sur le montage `seed_actor`
 déjà présent (25-1c-zero). ⚠️ Ce montage ne crée que l'utilisateur 501 de la société 40 : **un helper
 distinct** ajoute l'utilisateur 602 dans la société 30, **sans modifier `seed_actor`**, dont dépendent les
 tests de la 25-1c-zero. Et `MAX_LIMIT` n'existe pas encore dans ce module : le **fixer à 200**, la borne
-de la route (AC 7), faute de quoi le clamp de (g) est invérifiable :
+de la route (AC 7), faute de quoi le clamp de (f) est invérifiable :
 
 - (a) **scoping** : une entrée de la société 30 n'apparaît **jamais** dans la consultation de la 40 ;
-- (b) **entrée sans société** : une entrée `company_id IS NULL` apparaît dans la consultation de la 40
-  **et** dans celle de la 30 ;
-- (c) ⛔ **les parenthèses** : filtre `action = X` posé, une entrée **de la société ciblée** (40)
-  d'action `Y` **n'apparaît pas**. ⚠️ **C'est elle, et non une entrée sans société, qui tranche** :
-  `AND` liant plus fort que `OR`, la clause sans parenthèses se lit
-  `company_id = 40 OR (company_id IS NULL AND … AND action = X)` — la branche `company_id = 40` y
-  échappe à **tous** les filtres, alors que la branche `NULL` les garde. Une entrée `NULL` d'action `Y`
-  reste donc **absente dans les deux cas**, et ne peut pas servir de sonde. *(Reproduit sur base jetable
-  en passe 1 de validation.)* Garder l'assertion sur l'entrée `NULL` d'action `Y` absente, mais comme
-  **propriété de l'AC 19 (b)** — une entrée sans société reste soumise aux filtres —, non comme sonde
-  des parenthèses ;
-- (d) **bornes de date** : entrée à `date_to 23:59:59.999` **incluse**, entrée au lendemain
+- (b) **filtre strict** : une entrée `company_id IS NULL` n'apparaît **ni** dans la consultation de la
+  40, **ni** dans celle de la 30, **ni** dans `list_for_export` — posée par `UPDATE` explicite après
+  insertion ;
+- (c) **bornes de date** : entrée à `date_to 23:59:59.999` **incluse**, entrée au lendemain
   `00:00:00.000` **exclue**, entrée à `date_from 00:00:00.000` **incluse**, entrée de la **veille** à `23:59:59.999` **exclue**, et au
   **dernier jour possible** — `date_to = 9999-12-31` — une entrée à `9999-12-31 23:59:59.999` **incluse** — dates posées par `UPDATE`
   explicite ;
-- (e) filtres `entity_type`, `entity_id`, `action`, chacun seul ;
-- (f) **ordre** `created_at DESC, id DESC`, dont deux entrées de même `created_at` ;
-- (g) **pagination** : `total` indépendant de `limit`/`offset`, page 2 correcte, clamp ;
-- (h) `list_for_export` rend **exactement** les lignes de la consultation non paginée, dans le même
+- (d) filtres `entity_type`, `entity_id`, `action`, chacun seul ;
+- (e) **ordre** `created_at DESC, id DESC`, dont deux entrées de même `created_at` ;
+- (f) **pagination** : `total` indépendant de `limit`/`offset`, page 2 correcte, clamp ;
+- (g) `list_for_export` rend **exactement** les lignes de la consultation non paginée, dans le même
   ordre, et respecte `max_rows`.
 
-**20. API** — nouveau `crates/kesh-api/tests/audit_log_e2e.rs`, `#[sqlx::test(migrations =
+**23. API** — nouveau `crates/kesh-api/tests/audit_log_e2e.rs`, `#[sqlx::test(migrations =
 "../kesh-db/test-schema")]`, patron `spawn_app` / `seed_role` d'`admin_full_import_e2e.rs` :
 
-- ⛔ **sur les deux routes** : Comptable ⇒ 200, Admin ⇒ 200, **Consultation ⇒ 403**, sans jeton ⇒ 401 —
-  l'export est précisément le chemin d'extraction que l'arbitrage 1 ferme ;
-- ⛔ **clé API `read` d'un Admin ⇒ 403 `API_KEY_MANAGEMENT_FORBIDDEN`**, sur **les deux** routes ;
+- ⛔ **sur les TROIS routes** : Comptable ⇒ 200, Admin ⇒ 200, **Consultation ⇒ 403**, sans jeton ⇒ 401 ;
+  **clé API `read` d'un Admin ⇒ 403 `API_KEY_MANAGEMENT_FORBIDDEN`** — l'export et le vocabulaire sont
+  des chemins d'extraction comme la liste ;
 - 400 `VALIDATION_ERROR` : `dateFrom` invalide, `dateFrom > dateTo`, `entityId` sans `entityType`,
   `entityId <= 0`, `action` de 65 caractères, `dateTo=%2B262142-12-31`, **`dateFrom=%2B262142-12-31`**, **`dateFrom=-0001-01-01`**,
   **`dateFrom=0999-12-31`**, **`dateTo=0999-12-31`** — ⛔ le `+` **encodé `%2B`**, ou les paramètres passés
@@ -370,62 +445,79 @@ de la route (AC 7), faute de quoi le clamp de (g) est invérifiable :
   **`dateTo=9999-12-31` accepté**
   (200, **avec des `items`** : une entrée datée du `9999-12-31` est rendue — un 200 à liste vide
   masquerait exactement le défaut que la borne inclusive supprime) ;
-- forme de la réponse : `actorType` vaut **`"user"`** (jamais `"User"`), `createdAt` finit par `Z`,
-  `companyId` `null` pour une entrée sans société ;
-- export : `Content-Type`, `Content-Disposition` (`filename*=`), **BOM**, séparateur `;`, en-têtes,
-  une ligne par entrée ;
+- **forme de la réponse** : `actorType` vaut **`"user"`** (jamais `"User"`), `createdAt` finit par `Z`,
+  **aucun champ `companyId`** ;
+- ⛔ **langue** : l'application montée **en `de-CH`** (`AppConfig::with_locale`, `config.rs:524`) **et**
+  la société en `accounting_language` **française** — pour qu'une implémentation qui lirait la langue
+  comptable rougisse. Une entrée `invoice.validated` sur `invoice` rend `actionLabel` et
+  `entityTypeLabel` **allemands** ; le vocabulaire et les en-têtes du CSV aussi ;
+- ⛔ **code inconnu** : une entrée d'action `zz.unknown_code` et de type `zz_unknown` rend, dans la liste
+  **et** dans le CSV, **le code** — et non une clé `audit-log-action-…` ;
+- **vocabulaire** : autant d'entrées que `ACTIONS.len()` et `ENTITY_TYPES.len()` (lus depuis le module,
+  jamais recopiés), dans l'ordre des constantes, libellés traduits ;
+- **export** : `Content-Type`, `Content-Disposition` (`filename*=`), **BOM**, séparateur `;`, dix en-têtes,
+  une ligne par entrée, cellules action, type et type d'auteur **traduites** ;
 - ⛔ **injection** : un `actor_label` posé à `=HYPERLINK("x")` sort préfixé d'une apostrophe. ⚠️
   **Relire le fichier par `csv::ReaderBuilder` (séparateur `;`) et comparer la CELLULE exacte**
   `'=HYPERLINK("x")` : le writer double les guillemets (`"'=HYPERLINK(""x"")"`), si bien qu'une
   assertion par sous-chaîne rougit à tort, et qu'une assertion négative reste verte sous la mutation ;
 - **`RESULT_TOO_LARGE`** : 10 001 entrées semées par **un seul** `INSERT … SELECT` (pas 10 001
   appels) ⇒ 400 avec ce code ;
-- **audit de l'export** : après un export, **une** entrée `audit_log.exported` dont `row_count` est
-  exact ; **aucune** entrée après une consultation, ni après un `HEAD` sur l'export, ni après un refus
-  `RESULT_TOO_LARGE`.
+- ⛔ **aucune écriture** : le nombre de lignes d'`audit_log` est **identique** avant et après une
+  consultation, un appel au vocabulaire et un export réussi.
 
-**21. Épreuve par mutation, résultats OBSERVÉS consignés** — chaque mutation appliquée, le test visé
+**24. Épreuve par mutation, résultats OBSERVÉS consignés** — chaque mutation appliquée, le test visé
 **vu rouge sur assertion**, puis fichier restauré et `cmp` vérifié :
 
 | mutation | test attendu rouge |
 |---|---|
-| `OR company_id IS NULL` retiré | 19 (b) |
-| parenthèses retirées | 19 (c) — l'entrée de la société ciblée d'action `Y` apparaît |
-| borne haute `date_to 23:59:59.999` → `date_to 00:00:00.000` | 19 (d) — l'entrée de `23:59:59.999` disparaît |
-| borne basse `created_at >= ?` → `created_at > ?` | 19 (d) — l'entrée de `date_from 00:00:00.000` disparaît |
-| `ensure_not_pat` retiré de la route de liste | 20, clé API |
-| `csv_sanitize` retirée de la cellule `actor_label` | 20, injection |
-| route d'export montée dans `authenticated_routes` au lieu de `comptable_routes` | 20, Consultation sur l'export |
-| `actor_type.as_str()` → sérialisation serde de l'enum | 20, forme |
+| `company_id = ?` → `(company_id = ? OR company_id IS NULL)` | 22 (b) |
+| borne haute `date_to 23:59:59.999` → `date_to 00:00:00.000` | 22 (c) — l'entrée de `23:59:59.999` disparaît |
+| borne basse `created_at >= ?` → `created_at > ?` | 22 (c) — l'entrée de `date_from 00:00:00.000` disparaît |
+| `ensure_not_pat` retiré de la route de vocabulaire | 23, clé API |
+| route d'export montée dans `authenticated_routes` au lieu de `comptable_routes` | 23, Consultation sur l'export |
+| `csv_sanitize` retirée de la cellule `actor_label` | 23, injection |
+| `actor_type.as_str()` → sérialisation serde de l'enum | 23, forme |
+| test d'appartenance retiré d'`action_label` (appel direct à `format`) | 23, code inconnu ; 16, test unitaire |
+| langue lue dans `accounting_language` au lieu de `state.config.locale` | 23, langue |
+| cellule action écrite avec le code au lieu du libellé | 23, export |
+| une entrée retirée de `ACTIONS` | 18 (a) |
+| une clé `audit-log-action-*` retirée du seul `de-CH` | 18 (c) |
 
 ⛔ **Un test qui ne compile pas ne rougit pas : il se tait.** Chaque mutation doit produire un échec
 d'**assertion**.
 
-**22. Les gardes existantes restent vertes sans être modifiées** — à vérifier, pas à supposer :
-`admin_pat_denied_e2e.rs` (la route n'est **pas** dans le bloc admin), `audit_route_registry.rs` (il ne
-recense que les verbes mutants, `:181,311`), les tests de parité i18n.
+**25. Les gardes existantes restent vertes sans être modifiées** — à vérifier, pas à supposer :
+`admin_pat_denied_e2e.rs` (les routes ne sont **pas** dans le bloc admin), `audit_route_registry.rs` (il ne
+recense que les verbes mutants, `:181,311`), les tests de parité i18n, et les gardes i18n du frontend
+(AC 15).
 
 ## Tasks / Subtasks
 
 - [ ] **T0 — Rebase** sur `main` **après** le merge de la PR #437 (ouverte au 2026-09-15 : ne pas
       implémenter avant), par SHA (cf. en-tête), puis remise à zéro
       **vérifiée** de la base de dev.
-- [ ] **T1 — Repository** (AC 1-4) et ses tests (AC 19).
+- [ ] **T1 — Repository** (AC 1-4) et ses tests (AC 22).
 - [ ] **T2 — Extraction de `csv_sanitize`** (AC 13), tests de l'échéancier verts avant d'aller plus loin.
-- [ ] **T3 — Route de consultation** (AC 5-9) : module, DTO, validation partagée, montage.
-- [ ] **T4 — Export CSV** (AC 10-12, 14).
-- [ ] **T5 — i18n** (AC 15), **recompte depuis la source**.
-- [ ] **T6 — Tests API** (AC 20). ⛔ *Une tâche qui décrit un test est une promesse ; la cocher sans
+- [ ] **T3 — Module `audit_labels` et garde des libellés** (AC 16, 18) : **la garde d'abord**, qui fixe
+      les deux listes par diff contre la source ; puis le module et ses tests unitaires.
+- [ ] **T4 — Libellés, quatre locales** (AC 15) : les 110 libellés à la spécification, et les 13 autres clés ;
+      glossaire partie B si un terme l'exige ; **liste française recopiée au Dev Agent Record**.
+- [ ] **T5 — Routes de consultation et de vocabulaire** (AC 5-9, 17) : module, DTO, validation partagée,
+      montage.
+- [ ] **T6 — Export CSV** (AC 10-14).
+- [ ] **T7 — Tests API** (AC 23). ⛔ *Une tâche qui décrit un test est une promesse ; la cocher sans
       l'avoir écrit la transforme en mensonge.*
-- [ ] **T7 — Mutations** (AC 21), résultats observés.
-- [ ] **T8 — Manuel d'administration** (AC 16-18), PDF régénéré et vérifié aplati.
-- [ ] **T9 — Propagation** : `grep -rniE "aucune route|post-MVP|story 3\.5" crates docs/manual/fr/*.tex --exclude-dir=migrations`
+- [ ] **T8 — Mutations** (AC 24), résultats observés.
+- [ ] **T9 — Manuel d'administration** (AC 19-21), PDF régénéré et vérifié aplati.
+- [ ] **T10 — Propagation** : `grep -rniE "aucune route|post-MVP|story 3\.5" crates docs/manual/fr/*.tex --exclude-dir=migrations`
       (⛔ **insensible à la casse**, sinon « Story 3.5 » échappe ; et **sans** `migrations/` — une
       migration appliquée ne se modifie plus, P8)
       et le symptôme « la consultation n'existe pas » sur le code, les manuels, le README et `website/` ;
-      trier ce qui devient faux (**cette** story) de ce qui reste vrai jusqu'à la 25-1c-b.
-- [ ] **T10 — Gates** : backend complet via `scripts/test-fast.sh`, base remise à zéro **et vérifiée** ;
-      frontend non touché ; **E2E complète avant le push**, `kesh_e2e` reconstruite.
+      trier ce qui devient faux (**cette** story) de ce qui reste vrai jusqu'à la 25-1c-b2.
+- [ ] **T11 — Gates** : backend complet via `scripts/test-fast.sh`, base remise à zéro **et vérifiée** ;
+      frontend : `npm run test:unit` (gardes i18n, AC 15) ; **E2E complète avant le push**, `kesh_e2e`
+      reconstruite.
 
 ## Dev Notes
 
@@ -433,17 +525,21 @@ recense que les verbes mutants, `:181,311`), les tests de parité i18n.
 
 | fichier | nature |
 |---|---|
-| `crates/kesh-db/src/repositories/audit_log.rs` | `AuditLogListQuery`, `AuditLogListResult`, `push_where_clauses`, deux lectures, doc de `find_by_entity`, tests AC 19 |
-| `crates/kesh-api/src/routes/audit_log.rs` | **nouveau** : DTO, validation, deux handlers, audit de l'export |
-| `crates/kesh-api/src/routes/mod.rs` | `pub mod audit_log;` |
-| `crates/kesh-api/src/lib.rs` | deux `.route(…)` dans `comptable_routes`, **avant** `:658` |
+| `crates/kesh-db/src/repositories/audit_log.rs` | `AuditLogListQuery`, `AuditLogListResult`, `push_where_clauses`, deux lectures, doc de `find_by_entity`, tests AC 22 |
+| `crates/kesh-api/src/routes/audit_log.rs` | **nouveau** : DTO, validation, trois handlers |
+| `crates/kesh-api/src/audit_labels.rs` | **nouveau** : les deux listes et les trois fonctions de libellé (AC 16) |
+| `crates/kesh-api/src/routes/mod.rs`, `src/lib.rs` | `pub mod` ; trois `.route(…)` dans `comptable_routes`, **avant** `:658` |
 | `crates/kesh-api/src/util.rs` | `csv_sanitize` déplacée |
 | `crates/kesh-api/src/routes/invoices.rs` | `csv_sanitize` importée, plus définie |
-| `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` | douze clés |
-| `crates/kesh-api/tests/audit_log_e2e.rs` | **nouveau** (AC 20) |
-| `docs/manual/fr/admin-manual.tex` + PDF | AC 16-18 |
+| `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` | 123 clés par locale à la spécification (AC 15) |
+| `docs/i18n-glossaire.md` | partie B, si un terme des libellés l'exige |
+| `crates/kesh-api/tests/audit_log_e2e.rs`, `tests/audit_label_registry.rs` | **nouveaux** (AC 18, 23) |
+| `docs/manual/fr/admin-manual.tex` + PDF | AC 19-21 |
 
-**Trois crates et un manuel, aucun frontend** — sous le seuil de splitting.
+**Trois crates, le glossaire et un manuel, aucun frontend** — sous le seuil de splitting. ⚠️ **Le volume
+change de nature** : 123 clés × 4 langues, dont 110 libellés à rédiger. C'est du texte, gardé par une
+seule garde ensembliste, et non de la logique ; le Project Lead a refusé de le sortir en story séparée
+(arbitrage 3).
 
 ### Faits établis à la spécification, et non supposés
 
@@ -451,6 +547,16 @@ recense que les verbes mutants, `:181,311`), les tests de parité i18n.
   paginée, et n'est appelée par **aucune** route (`crates/kesh-api/src` : 0 appel).
 - **Fuseau** : UTC — `@@system_time_zone = UTC`, `NOW()` = `UTC_TIMESTAMP()` ; et surtout, **sqlx impose
   `time_zone='+00:00'` à chaque session** (`sqlx-mysql-0.8.6/src/options/mod.rs:112`).
+- **Langue** : aucune langue par utilisateur ; `KESH_LANG` → `config.locale` (`config.rs:831-832`), servie
+  à l'écran par `routes/i18n.rs:21-22`. `companies.instance_language` existe (« langue de l'interface »,
+  `entities/company.rs:164-165`) mais **aucune route ne la lit** : la langue réellement affichée est
+  celle de la configuration. `accounting_language` n'est lue par les rapports que pour **étiqueter** le
+  nom du fichier (`reports.rs:1228-1233`).
+- **`I18nBundle::format`** rend la clé brute pour une clé absente partout, après repli sur le français
+  (`loader.rs:110-128`) ; `all_messages` comble les absences par le français (`:130-131`).
+- **Vocabulaire** : **82 actions** (81 à point, plus `admin_break_glass_reset`) et **28 types d'entité**,
+  comptés par script sur les arguments littéraux des quatre constructeurs, hors tests (2026-09-15) ; les
+  helpers `audit.rs:36-52` et `email_templates.rs` reçoivent l'action en paramètre.
 - **`ActorType`** sérialise `"User"`/`"ApiKey"` ; la base stocke `user`/`api_key` (`as_str`).
 - **Clé API** : une clé `read` passe tout GET hors bloc admin (`middleware/auth.rs:141-143,172-177`) —
   d'où `ensure_not_pat`.
@@ -461,57 +567,66 @@ recense que les verbes mutants, `:181,311`), les tests de parité i18n.
 - **Index** : `idx_audit_log_company_date (company_id, created_at)` sert le filtre principal ; aucun
   index sur `action` — le volume d'une PME ne le justifie pas, et `EXPLAIN` le montrera au dev si le
   doute naît.
-- **Irrégularités des codes**, que la route **ne corrige pas** (arbitrage 3) : types d'entité au pluriel
+- **Irrégularités des codes**, que la route **ne corrige pas** : types d'entité au pluriel
   (`reconciliation_rules`, `bank_imports`, `bank_profiles`), préfixe d'action ≠ type (`books.*` →
   `company`, `reconciliation.*` → `bank_transaction`), `admin_break_glass_reset` sans point,
   `journal_entry.updated` historique qu'aucun site n'écrit plus. `details_json` mêle camelCase et
-  snake_case.
+  snake_case. ⚠️ **Le libellé, lui, les corrige** (AC 15) : c'est ce qui les rend lisibles.
 - **Données personnelles** dans `details_json` : e-mails d'utilisateurs, coordonnées de contacts et de
   la société — motif de l'exclusion du rôle Consultation.
 
 ### Ce qui ne bouge PAS
 
-- `insert_in_tx`, `find_by_entity` (hors doc-comment), les 106 sites d'écriture.
+- `insert_in_tx`, `find_by_entity` (hors doc-comment), les 106 sites d'écriture — **aucun code d'action
+  n'est renommé** pour faciliter les libellés.
 - Le bloc `admin_routes` et ses gardes.
 - Le frontend, dans son entier.
 - `user-manual.tex:498-503` et les lignes des epics 24 et 25 de la feuille de route du `README.md`, qui
-  restent vraies.
+  restent vraies jusqu'à la 25-1c-b2.
 
 ### Intelligence des stories précédentes
 
 - **25-1c-zero** : un test qui **exécute** un montage ne prouve pas ce qu'il **démontre** — deux
   assertions vraies par construction ont traversé quatre passes de validation. Pour chaque assertion
-  des AC 19-20, se demander **ce qui la rendrait fausse**. Identifiants **désalignés** partout.
+  des AC 22-23, se demander **ce qui la rendrait fausse**. Identifiants **désalignés** partout.
 - **25-1c-zero** : une mutation « `NULL` nu » laisse un paramètre lié en trop et échoue sur **erreur**,
   pas sur assertion.
 - **25-1a / 25-1c-zero** : grep des manuels avec `\_` ; contrôle du **PDF aplati**.
 - **25-1b** : *deux grandeurs différentes portant le même nombre sont indétectables à la relecture* —
-  le nombre de clés i18n (AC 15) se recompte.
+  le nombre de clés i18n (AC 15) se recompte. Et le registre des routes : **diff ensembliste**, jamais un
+  compteur (AC 18).
+- **25-1c-b1** (validation) : *une assertion ajoutée pour en garantir une autre peut être muette à son
+  tour* — la langue de l'AC 23 se teste avec **deux** langues différentes, sans quoi elle est vraie par
+  construction.
 - **Gate** : remise à zéro de base **vérifiée** ; build frontend et gate E2E **postérieurs** au dernier
   patch.
 
 ### Hors périmètre
 
-- **L'écran**, le menu, la traduction des 28 types d'entité, le glossaire → **25-1c-b**.
+- **L'écran**, le menu, le tri des listes par libellé → **25-1c-b1** ; les manuels utilisateur, le README
+  et le glossaire partie A → **25-1c-b2**.
 - **[#386]** — l'export de souveraineté qui omet `audit_log` → 25-5. ⚠️ Même donnée, périmètre
   différent : la table entière dans un ZIP, contre un export filtré ici.
 - Le **nom** d'une clé API (jointure sur `api_keys`) — la route renvoie `actorApiKeyId`.
 - **[#431]** (attribution par clé API incomplète), **[#434]**, **[#435]**.
 - Un **marqueur d'origine** des entrées importées — écarté par l'arbitrage 2.
+- Une **langue par utilisateur** : Kesh n'en a pas, et cette story n'en crée pas.
 
 ### References
 
-- `_bmad-output/planning-artifacts/epic-25-vague1-suite.md` § *Arbitrages du 2026-09-15*
+- `_bmad-output/planning-artifacts/epic-25-vague1-suite.md` § *Arbitrages du 2026-09-15* et § *fin de soirée*
 - `25-1c-zero-audit-company-id.md` (colonne, caractérisation du restore)
 - Issue [#378] · voisines [#386], [#431], [#434], [#435]
 - `repositories/journal_entries.rs:745-895` — **patron de la lecture paginée**
 - `routes/journal_entries.rs:238-404` — **patron du handler de liste**
 - `routes/invoices.rs:812,1158-1340` — **patron de l'export CSV**
-- `routes/reports.rs:1463-1510` — **patron de l'audit best-effort d'un export**
+- `tests/audit_route_registry.rs` — **patron de la garde ensembliste sur la source**
+- `routes/i18n.rs`, `config.rs:524,831-832`, `kesh-i18n/src/loader.rs:110-131` — **langue et traduction**
 - `routes/mod.rs:44-63` (`ListResponse`), `routes/api_keys.rs:95-100` (`ensure_not_pat`),
   `util.rs:37,104-116`, `errors.rs:546,1422`, `lib.rs:310-321,336-660`
+- `docs/i18n-glossaire.md` § A, B, *Comment s'en servir*
 - `CLAUDE.md` § *Test Locally First*, § *Propagation post-patch*, § *Le prompt d'une passe doit NOMMER
-  le manuel*
+  le manuel*, § *Inventorier les sites NON RÉSOLUS*
 
 ## Dev Agent Record
 
@@ -717,3 +832,30 @@ texte que l'AC 17 prescrit).
    lieu de la plage (passe 4, M2).
 4. *La sonde a été le seul outil décisif* : les défauts des passes 2 à 5 ont été établis ou réfutés par
    exécution (base jetable, crate aux versions du `Cargo.lock`), aucun par lecture seule.
+
+---
+
+## Réouverture du 2026-09-15 (soir) — trois arbitrages changent la conception
+
+Après la clôture de la boucle, le Project Lead a répondu aux trois choix de conception laissés à confirmer
+(`epic-25-vague1-suite.md` § *fin de soirée*) :
+
+| choix par défaut de la spec validée | réponse | ce qui change |
+|---|---|---|
+| une entrée **sans société** est incluse dans toute consultation | *« le cas réel n'existe pas […] le cas théorique est … théorique »* | **filtre strict** `company_id = ?` (AC 2) ; plus de `companyId` au DTO (AC 8), plus de colonne « Société » au CSV (AC 12) ; test 22 (b) inversé ; la sonde et la mutation des **parenthèses** disparaissent avec le `OR` |
+| l'**export écrit une entrée d'audit** | *« non »* | AC 14 réécrit : l'export ne fait que lire ; tests et limitation `HEAD` retirés ; le type d'entité `audit_log` n'existe plus |
+| les cellules **action** et **type** du CSV restent des **codes bruts** | *« il faut mettre la traduction de la langue utilisée par l'utilisateur de kesh »* ; écran : *« ok »* ; story séparée : *« non, maintenant »* | **source unique des libellés** côté serveur (AC 16) ; libellés dans la liste JSON (AC 8) ; **route de vocabulaire** pour les filtres de l'écran (AC 17) ; **110 libellés** à écrire dans les quatre langues (AC 15) ; **garde ensembliste** sur la source (AC 18) ; langue = **celle de l'interface**, et non `accounting_language` (AC 12) |
+
+**Numérotation** : les AC 1-13 gardent leur numéro, pour que les renvois des 25-1c-b1 et b2 restent
+valables ; l'AC 14 change de sens ; les clés restent à l'AC 15 ; le module, la route de vocabulaire et la
+garde prennent les AC 16-18 ; le manuel passe aux AC 19-21 et les tests aux AC 22-25. **Les AC cités dans
+le Change Log ci-dessus sont ceux de la version validée**, et ne sont pas réécrits.
+
+**Faits vérifiés au sol pour la réécriture** : aucune langue par utilisateur (`KESH_LANG`,
+`config.rs:831`, `routes/i18n.rs:21`) ; `I18nBundle::format` rend la clé brute pour une clé absente
+(`loader.rs:110-128`) ; 82 codes d'action et 28 types par script ; `admin_break_glass_reset` sans point
+(`bootstrap.rs:289`) ; patron `audit_route_registry.rs` ; `PREFIXES_A_COUVERTURE_CLOSE` ne contient pas
+`audit-log-` (`i18n-keys.test.ts:388`).
+
+**Revalidation requise** : la réécriture touche la conception (trois routes au lieu de deux, un module, une
+garde, cent dix libellés). Une passe complète, puis ciblées jusqu'à zéro au-dessus de LOW.
