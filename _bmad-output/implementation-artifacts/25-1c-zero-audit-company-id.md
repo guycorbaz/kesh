@@ -38,8 +38,10 @@ Arrêté le 2026-09-11 après lecture ciblée, consigné dans `epic-25-vague1-su
 empêcher qu'on le « simplifie » en cours de route :
 
 - **Un SOUS-SELECT dans l'`INSERT`**, sur le patron exact d'`actor_label`
-  (`repositories/audit_log.rs:79-83`). ⇒ **aucun des 89 sites de construction d'une entrée ne
-  bouge**, et `NewAuditLogEntry` ne gagne aucun champ.
+  (`repositories/audit_log.rs:79-83`). ⇒ **aucun des 106 sites qui écrivent une entrée ne
+  bouge** (38 fichiers, tous hors tests — recompté le 2026-09-15 par
+  `grep -rnE "audit_log(_repo)?::insert_in_tx\(" crates/*/src --include=*.rs | wc -l` ; l'epic
+  annonçait 89 sur 32), et `NewAuditLogEntry` ne gagne aucun champ.
 - **Colonne `BIGINT NULL`, sans clé étrangère.**
 
 **Ce qui le rend exact, vérifié et non supposé** :
@@ -48,10 +50,10 @@ empêcher qu'on le « simplifie » en cours de route :
   jonction — un utilisateur appartient à **exactement une** société.
 - **Aucune route n'écrit un audit sur une entité d'une autre société que celle de l'acteur** :
   aucun handler ne reçoit de `company_id` depuis la requête, et tout écart devient 404.
-- Une mutation par clé API écrit `user_id` = le **créateur** de la clé (`entities/audit_log.rs:102-105`)
+- Une mutation par clé API écrit `user_id` = le **créateur** de la clé (`entities/audit_log.rs:101-104`)
   ⇒ même société.
 - `admin.full_import` écrit son entrée **après** le remplacement de `users`, dans la même
-  transaction (`routes/admin.rs:444-455`), avec pour acteur le plus petit administrateur du **jeu
+  transaction (`routes/admin.rs:442-453`), avec pour acteur le plus petit administrateur du **jeu
   restauré** : le sous-SELECT rend donc la société **restaurée** — *plus juste* qu'un champ, qui
   propagerait l'identifiant d'une société que le restore vient de détruire.
 - **Aucune route ne crée de seconde société** (`companies::create` n'est appelée par aucune route ;
@@ -339,22 +341,39 @@ patch :
 |---|---|
 | `crates/kesh-api/src/routes/exports.rs:137-139` | « la table `audit_log` n'a pas de colonne `company_id`, donc les requêtes multi-tenant doivent passer par `details_json` ou par FK `users.company_id` » |
 | `crates/kesh-api/tests/exports_global_e2e.rs:1144-1145` | « `audit_log` n'a PAS de colonne company_id ; on filtre par user_id » |
-| `crates/kesh-db/src/repositories/audit_log.rs:70` | « toucher les quelque **trente** sites » — ils sont **89** ; la phrase est dans le commentaire même que l'AC 4 modifie |
+| `crates/kesh-db/src/repositories/audit_log.rs:70` | « toucher les quelque **trente** sites » — ils sont **106** ; la phrase est dans le commentaire même que l'AC 4 modifie |
+
+⛔ **Ne PAS remplacer « trente » par un autre nombre** dans ce commentaire : le réécrire **sans
+total** (« tous les sites qui appellent ce repository »). *Un énoncé qui dépend d'un total se
+périme à chaque route ajoutée ; un énoncé qui nomme ses objets, non* (règle tirée de la 25-1a). Le
+nombre recompté vit dans cette spec, daté et adossé à sa commande — et c'est parce que le « 89 » de
+l'epic n'avait jamais été recompté qu'il était faux.
 
 ⚠️ Le filtre par `user_id` du test d'export **reste correct** : il n'y a pas lieu de le réécrire,
 seulement de corriger le commentaire qui le motive.
 
-**Grep de contrôle, à rejouer après le patch** — il doit ne rendre **que** des occurrences
-historiques datées :
+**Grep de contrôle, à rejouer après le patch** — résultat **attendu** ci-dessous, tiré de
+l'exécution réelle du grep et non d'une supposition :
 
 ```sh
 grep -rnE "(n'a (PAS|pas) de|sans) (colonne )?\`?company_id" crates docs README.md
-grep -rnE "\b(trente|30) sites\b" crates
+grep -nE "trente|\b(30|89|106)\b" crates/kesh-db/src/repositories/audit_log.rs
 ```
 
-⚠️ `routes/dunning_levels.rs:3`, `profile.rs:43`, `accounts.rs:246`, `reports.rs:288`,
-`journal_entries.rs:701/1106` et `invoices.rs:2222` parlent **d'autres tables** : faux positifs à
-laisser.
+- **Premier grep** : aujourd'hui **8 lignes**. Après le patch, il en reste **6**, qui parlent toutes
+  **d'autres tables** et sont des faux positifs à laisser :
+  - `kesh-api/src/routes/dunning_levels.rs:3` ;
+  - `kesh-api/src/routes/profile.rs:43` ;
+  - `kesh-api/tests/profile_e2e.rs:122` ;
+  - `kesh-db/src/repositories/invoices.rs:2222` ;
+  - `kesh-db/src/repositories/journal_entries.rs:701` ;
+  - `kesh-db/src/repositories/journal_entries.rs:1106`.
+
+  Les deux lignes qui disparaissent sont `exports.rs:138` et `exports_global_e2e.rs:1144`.
+- **Second grep** : **aucune ligne** après le patch — ni l'ancien total, ni un nouveau.
+
+⚠️ Les numéros de ligne des faux positifs peuvent dériver d'ici le développement : on juge le
+résultat **fichier par fichier**, pas au nombre de lignes.
 
 **18. Les manuels — AUCUN site à changer, et c'est une conclusion à VÉRIFIER, non à croire.**
 `grep -nE "audit_log|company_id|journal d.audit" docs/manual/fr/*.tex` : aucune mention du schéma
@@ -409,7 +428,7 @@ préventif*.
 
 ### Ce qui ne bouge PAS, et qu'il ne faut pas « améliorer »
 
-- **Les 89 sites qui construisent une entrée d'audit**, et `NewAuditLogEntry`.
+- **Les 106 sites qui écrivent une entrée d'audit**, et `NewAuditLogEntry`.
 - **`backup.rs`, `export.rs`, `import.rs`** : les AC 6 à 8 prouvent qu'ils n'ont rien à changer. Si
   l'un d'eux doit changer pour que ces tests passent, **s'arrêter et le signaler** : l'analyse
   ci-dessus serait fausse.
@@ -455,8 +474,10 @@ préventif*.
 
 - *Un inventaire ne se clôt ni par l'épuisement des fichiers, ni par celui des questions, mais par
   leur produit.*
-- *Deux grandeurs différentes portant le même nombre sont indétectables à la relecture* — ici, 89
-  désigne les **sites de construction** d'une entrée, pas les routes tracées (108 au registre).
+- *Deux grandeurs différentes portant le même nombre sont indétectables à la relecture* — ici, 106
+  désigne les **appels à `insert_in_tx`**, pas les routes tracées (108 au registre), ni les
+  **constructeurs** de `NewAuditLogEntry` (110 appels, dont 16 par le trait `from_current_user`) — trois
+  grandeurs voisines, trois nombres différents.
 - ⚠️ **Deux fautes de gate** : un seed sauté (29 tests sur « need at least one Admin user »), et un
   build frontend **en retard d'un périmètre** au gate E2E.
 
@@ -491,7 +512,7 @@ préventif*.
 - `crates/kesh-db/src/post_restore.rs:364-457` (`EXEMPT_MIGRATIONS`), `:971`, `:1049`, `:1072`
 - `crates/kesh-db/src/backup.rs:34-77` (`TABLES_TO_TRUNCATE`), `:425-521` (`restore_body`)
 - `crates/kesh-api/src/admin_backup/import.rs:195-236` (`check_schema_compat`)
-- `crates/kesh-api/src/routes/admin.rs:444-455` (entrée `admin.full_import`)
+- `crates/kesh-api/src/routes/admin.rs:442-453` (entrée `admin.full_import`)
 - `crates/kesh-db/tests/closing_accounts_backfill.rs`, `tests/common/mod.rs` — **patron du test AC 14**
 - `crates/kesh-api/tests/admin_full_import_e2e.rs:1847` — **patron des tests AC 7 et 8**
 - `crates/kesh-db/tests/test_schema_guard.rs:556`, `scripts/regen-test-schema.sh`
@@ -523,3 +544,36 @@ préventif*.
   `ALLOWED_REAL_MIGRATOR_FILES`, faute de quoi `every_sqlx_test_attribute_is_accounted_for`
   rougissait — ; la graphie de l'attribut des tests AC 15 ajoutée ; `strip_column` confirmé
   suffisant (lignes lues par nom) ; `IF NOT EXISTS` confirmé sur MariaDB 10.11 aux trois sites.
+
+### Passe 1 de `bmad-create-story validate` — deux lentilles, contexte frais
+
+Prompt versionné : `25-1c-zero-validate-prompt-p1.md`.
+
+| Lentille | Modèle | Rendu brut | Après vérification au sol |
+|---|---|---|---|
+| Sonnet | Sonnet | 0 C, 0 H, **2 M**, 1 L | 3 findings, **tous confirmés** |
+| Haiku | Haiku 4.5 | 0 C, 0 H, 0 M, 1 L | son LOW était déjà traité par l'AC 17 ⇒ **0** |
+
+**Bilan : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 1 LOW.** Au-dessus de LOW ⇒ passe 2 requise.
+
+- **M1 — le « 89 sites » était faux** : **106** appels à `insert_in_tx`, sur **38** fichiers, tous
+  hors tests (vérifié : aucune occurrence après un `#[cfg(test)]`). Hérité de l'epic, jamais
+  recompté. ⛔ **La spec allait faire remplacer un total faux par un autre total faux**, dans le
+  commentaire même qu'elle modifie. → AC 17 exige désormais un commentaire **sans total** ;
+  nombre corrigé à trois sites de la spec, dans l'epic (avec note datée) et dans le suivi.
+- **M2 — la liste des faux positifs de l'AC 17 était supposée, pas exécutée** : deux entrées
+  (`accounts.rs:246`, `reports.rs:288`) ne sortent pas du grep annoncé, et `profile_e2e.rs:122` en
+  sort sans être nommée. → liste **régénérée depuis l'exécution réelle**, avec le résultat attendu
+  avant et après le patch.
+- **L3 — deux dérives de ligne** : `admin.rs:444-455` → `442-453`, `entities/audit_log.rs:102-105`
+  → `101-104`.
+
+⚠️ **La lentille Haiku a déclaré l'axe 3 exercé sans montrer l'inventaire des sites non résolus**,
+qui en était l'objet : elle a relu les sites que la spec nommait. L'orchestrateur l'a donc refait
+lui-même, par `grep -rnwE "67|33"` sur `crates/`, par la recherche de `SELECT *` sur `audit_log` et
+par la recherche d'usages dans le frontend : **aucun site non listé**. Ce complément confirme la
+spec, mais c'est lui, et non le « 0 finding » de la lentille, qui ferme l'axe.
+
+**Leçon, et c'est la troisième fois qu'elle se présente sur l'Epic 25** : *un nombre recopié d'un
+document de planification n'est pas un nombre vérifié* — le « 89 » avait été produit **pour
+corriger** une estimation fausse (« ~30 »), et il était faux à son tour.
