@@ -391,15 +391,21 @@ en-tête `:15-19` dit pourquoi) :
 | `NewAuditLogEntry::for_actor(user_id, api_key_id, action, entity_type, …)` | 3ᵉ | 4ᵉ |
 | `NewAuditLogEntry::api_key(api_key_id, user_id, action, entity_type, …)` | 3ᵉ | 4ᵉ |
 
-- **formes résolues** : le littéral nu, `"…".to_string()`, `"…".into()`, et — ⛔ **sans quoi la garde est
+- **formes résolues** : le littéral nu, `"…".to_string()` et `"…".into()` — une quarantaine de sites de
+  production écrivent `.to_string()`, et un extracteur « littéraux nus » ne rend que 43 actions —, et — ⛔ **sans quoi la garde est
   verte par construction** — une **variable locale liée par une conditionnelle** à deux littéraux
   (`let action = if … { "a" } else { "b" };`), dont les deux branches sont lues ; et une **conditionnelle écrite directement en argument**, sans
-  variable intermédiaire — un seul site au 2026-09-15, `kesh-api/src/routes/projects.rs:351-357`
-  (`if archived { "project.archived" } else { "project.unarchived" }`), lue de même ; environ soixante sites
-  écrivent `.to_string()`, et un extracteur « littéraux nus » ne rend que 43 actions ;
+  variable intermédiaire — un seul site au 2026-09-15, `kesh-api/src/routes/projects.rs:354-358`
+  (`if archived { "project.archived" } else { "project.unarchived" }`), lue de même ;
+- ⛔ **une forme se reconnaît sur l'argument ENTIER**, borné aux virgules de profondeur 0 ; un argument qui
+  n'y correspond pas entièrement est **non résolu** (d). Motif : un extracteur qui chercherait un littéral
+  *dans* l'argument lirait `"project.archived"` seul, fixerait `ACTIONS` à 91, et `project.unarchived`
+  sortirait en code brut **sans que rien ne rougisse** ;
 - **commentaires masqués** avant lecture (patron `strip_line_comments` d'`admin_pat_denied_e2e.rs`) : le
   doc-comment `email_templates.rs:32` contient `NewAuditLogEntry::for_actor(…)` et serait lu comme un appel ;
-- **modules `#[cfg(test)] mod … { }` exclus** par appariement d'accolades ;
+- **modules `#[cfg(test)] mod … { }` exclus** par appariement d'accolades — ⚠️ **dans les seuls fichiers qui
+  contiennent `NewAuditLogEntry::`** : ailleurs, des chaînes à `{{` (gabarits de
+  `kesh-core/src/email_template_engine.rs`) déséquilibrent le compte ;
 - une action **sans point** reste une action : `admin_break_glass_reset` (`auth/bootstrap.rs:289`).
 
 **L'inventaire des sites indirects, au 2026-09-15** (établi par extraction positionnelle en revalidation R1) :
@@ -913,7 +919,7 @@ le Change Log ci-dessus sont ceux de la version validée**, et ne sont pas réé
 `audit-log-` (`i18n-keys.test.ts:388`).
 
 **Revalidation requise** : la réécriture touche la conception (trois routes au lieu de deux, un module, une
-garde, cent dix libellés). Une passe complète, puis ciblées jusqu'à zéro au-dessus de LOW.
+garde, cent dix libellés *(cent vingt depuis la revalidation R1)*). Une passe complète, puis ciblées jusqu'à zéro au-dessus de LOW.
 
 ### Revalidation R1 — une lentille Opus, contexte frais
 
@@ -958,7 +964,7 @@ positionnelle rejouée sur `crates/*/src`, avec la seule table des formes écrit
 **Rendu : 0 CRITICAL, 1 HIGH, 1 MEDIUM, 0 LOW — vérifiés au sol et retenus. Après reclassement : 2 MEDIUM.**
 
 - **H1 → MEDIUM** — les formes résolues de l'AC 18 ne couvraient pas une **conditionnelle écrite
-  directement en argument** : `projects.rs:351-357` (`project.archived` / `project.unarchived`), seul site de
+  directement en argument** : `projects.rs:354-358` (`project.archived` / `project.unarchived`), seul site de
   cette forme (vérifié par script sur les quatre constructeurs). Un extracteur écrit selon la fiche ne l'aurait
   ni résolu ni trouvé à l'inventaire, et la règle (d) aurait rougi dès sa construction. → forme ajoutée.
   *Reclassé* : le **total de 92 était juste** — les deux actions y figuraient déjà, l'extraction de la R1
@@ -972,3 +978,27 @@ sans conflit, `dir_name()` → `de-CH`, `build_content_disposition` qui accepte 
 se construit par lecture de texte, sur le patron `strip_line_comments`.
 
 Remédiation : texte de spec uniquement. **Revalidation R3 ciblée requise** (MEDIUM).
+
+### Revalidation R3 CIBLÉE — une lentille Opus, contexte frais
+
+Prompt versionné : `25-1c-a-validate-prompt-r3.md`. Base : `git diff 02d3d45f 8715effb` — commits
+« revalidation R1 » et « revalidation R2 ciblée » de la 25-1c-a. Sonde : extraction rejouée avec les **seules**
+formes et l'inventaire écrits dans la fiche.
+
+**Rendu : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 3 LOW — vérifiés et retenus.** La conception tient : **92 actions et
+28 types**, sites non résolus exactement ceux de l'inventaire, aucune autre forme (`match`, bloc, `const`,
+macro) dans le code de production.
+
+- **M1** — un troisième compte périmé, écrit **en toutes lettres** (« cent dix libellés »), avait échappé à la
+  R2, qui cherchait « 110 » en chiffres : *greper la valeur, pas la formulation* (`CLAUDE.md`). Le Change Log
+  R2 disait donc « deux anciens comptes » pour trois. → annoté.
+- **L1** — l'AC 18 ne disait pas qu'une forme couvre l'argument **entier** : un extracteur cherchant un littéral
+  *dans* l'argument aurait lu une seule branche de la conditionnelle de `projects.rs`, sans rien faire rougir.
+  → écrit ; le « échec bruyant » du reclassement de la R2 ne valait que pour une implémentation fidèle.
+- **L2** — `projects.rs:351-357` désignait l'appel ; la conditionnelle est à `:354-358` → corrigé aux deux sites.
+- **L3** — « environ soixante sites » `.to_string()` : il y en a une **quarantaine**, et la phrase, déplacée par
+  l'insertion de la R2, semblait justifier la conditionnelle → corrigé et replacé.
+- **Hors périmètre, intégré** — l'appariement d'accolades échoue sur les gabarits `{{` d'`email_template_engine.rs`
+  → restreint aux fichiers qui contiennent `NewAuditLogEntry::`.
+
+Remédiation : texte de spec uniquement. **Revalidation R4 ciblée requise** (MEDIUM).
