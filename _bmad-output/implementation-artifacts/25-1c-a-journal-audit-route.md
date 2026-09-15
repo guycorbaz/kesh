@@ -404,8 +404,9 @@ en-tête `:15-19` dit pourquoi) :
 - **commentaires masqués** avant lecture (patron `strip_line_comments` d'`admin_pat_denied_e2e.rs`) : le
   doc-comment `email_templates.rs:32` contient `NewAuditLogEntry::for_actor(…)` et serait lu comme un appel ;
 - **modules `#[cfg(test)] mod … { }` exclus** par appariement d'accolades — ⚠️ **dans les seuls fichiers qui
-  contiennent `NewAuditLogEntry::`** : ailleurs, des chaînes à `{{` (gabarits de
-  `kesh-core/src/email_template_engine.rs`) déséquilibrent le compte ;
+  contiennent `NewAuditLogEntry::`** : ailleurs, une **accolade isolée dans un littéral**
+  (`kesh-core/src/email_template_engine.rs:160`, test `"Texte { non fermé"`) déséquilibre le compte — un
+  appariement naïf ne distingue pas une accolade de chaîne d'une accolade de code ;
 - une action **sans point** reste une action : `admin_break_glass_reset` (`auth/bootstrap.rs:289`).
 
 **L'inventaire des sites indirects, au 2026-09-15** (établi par extraction positionnelle en revalidation R1) :
@@ -998,7 +999,44 @@ macro) dans le code de production.
 - **L2** — `projects.rs:351-357` désignait l'appel ; la conditionnelle est à `:354-358` → corrigé aux deux sites.
 - **L3** — « environ soixante sites » `.to_string()` : il y en a une **quarantaine**, et la phrase, déplacée par
   l'insertion de la R2, semblait justifier la conditionnelle → corrigé et replacé.
-- **Hors périmètre, intégré** — l'appariement d'accolades échoue sur les gabarits `{{` d'`email_template_engine.rs`
-  → restreint aux fichiers qui contiennent `NewAuditLogEntry::`.
+- **Hors périmètre, intégré** — l'appariement d'accolades échoue sur `email_template_engine.rs` → restreint aux
+  fichiers qui contiennent `NewAuditLogEntry::`. *(La cause d'abord écrite ici, « des gabarits `{{` », était
+  fausse : le fichier n'en contient aucun ; c'est une accolade isolée dans un littéral de test, `:160` —
+  corrigé en R4.)*
 
 Remédiation : texte de spec uniquement. **Revalidation R4 ciblée requise** (MEDIUM).
+
+### Revalidation R4 CIBLÉE — une lentille Sonnet, contexte frais — **BOUCLE CLOSE**
+
+Prompt versionné : `25-1c-a-validate-prompt-r4.md`. Base : `git diff 8715effb 360f2b4e` — commits
+« docs(25-1c-a): revalidation R2 ciblée » et « docs(25-1c-a): revalidation R3 ciblée ». Sondes : appariement
+d'accolades rejoué sur les 42 fichiers de production qui contiennent `NewAuditLogEntry::`, extraction
+positionnelle bornée aux virgules de profondeur 0 sur les 108 sites d'appel.
+
+**Rendu : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW — vérifié et appliqué.** Les trois axes sont déclarés exercés.
+
+- **L1** — la cause citée pour restreindre l'appariement d'accolades était fausse : `email_template_engine.rs` ne
+  contient aucun `{{` ; le déséquilibre vient d'une **accolade isolée dans un littéral de test** (`:160`, vérifié par
+  l'orchestrateur). La conclusion — restreindre aux fichiers concernés — était juste. → cause corrigée à l'AC 18 et
+  annotée au Change Log R3 ; une implémentation qui ne chercherait que des `{{` aurait raté l'accolade seule.
+
+La passe confirme : les 42 fichiers concernés ferment à profondeur 0 ; les 108 sites d'appel se répartissent en
+60 littéraux, 39 `.to_string()`, 7 variables, 1 conditionnelle en argument et 1 `action.to_string()`, sans `match`,
+bloc ni macro ; `projects.rs:354-358` exact ; aucun compte périmé non annoté.
+
+**Critère de clôture** : aucun finding au-dessus de LOW, et la dernière remédiation ne touche que du texte de spec.
+
+**Trend de la boucle rouverte** (après la clôture en 5 passes de la version d'avant les arbitrages du soir) :
+
+| passe | modèle | rendu (après reclassement) |
+|---|---|---|
+| R1 | Opus, complète | 1 H, 3 M, 3 L |
+| R2 | Sonnet, ciblée | 2 M |
+| R3 | Opus, ciblée | 1 M, 3 L |
+| R4 | Sonnet, ciblée | **1 L** |
+
+**Ce que la boucle rouverte apprend** : le HIGH de R1 était **de conception** — dix actions écrites par variable ou
+par helper échappaient au comptage, dont `invoice.paid`. Il n'a été trouvé que par une **extraction exécutée**, et
+chaque passe suivante a trouvé ce que la précédente avait écrit sans l'exécuter : une forme d'argument non décrite,
+un compte en toutes lettres oublié par un grep en chiffres, une cause d'échec affirmée sans lecture du fichier.
+⛔ *Un inventaire se prouve en le rejouant avec ce qui est écrit, et seulement ce qui est écrit.*
