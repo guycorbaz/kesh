@@ -74,6 +74,17 @@ empêcher qu'on le « simplifie » en cours de route :
    combler. La garde d'`actor_label` (`WHERE actor_label = ''`) reposait sur une sentinelle
    textuelle ; **`NULL` n'en est pas une**.
 
+## ✅ Arbitrages du Project Lead — 2026-09-15
+
+1. **Aucune release ne part avant le merge de cette story.** C'est la condition qui tient vrai le
+   fondement de l'exemption périssable (AC 9) : une version taguée depuis `main` avant le merge se
+   placerait dans l'intervalle `[20260827000001 .. 20260915000001)` que la justification déclare
+   vide. ⚠️ **Si cette condition venait à être levée**, l'exemption devrait être reprise avant le
+   tag — `scripts/prepare-release.sh` refuserait sinon la release **suivante**.
+2. **Le partage avec la 25-1c est validé.** Cette story **mesure** les deux sous-cas du restore
+   (AC 8, test de caractérisation) ; la 25-1c **tranche** ce qu'un écran scopé en fait. Ne rien
+   résoudre ici.
+
 ## Acceptance Criteria
 
 ### Volet A — le schéma
