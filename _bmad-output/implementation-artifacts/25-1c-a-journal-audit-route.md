@@ -959,6 +959,48 @@ Claude Opus 5 (1M context) — implémentation du 2026-09-16.
 
 ## Change Log
 
+### Passe 2 de `bmad-code-review` — braquée sur la REMÉDIATION (`8599035c..HEAD`)
+
+⛔ **Périmètre délibérément restreint au patch, non à la conception.** C'est le motif que ce dépôt a
+mesuré : sur les Epics 22 et 23, **sept passes sur huit** ont trouvé une régression du patch précédent
+et **aucune** un défaut d'origine. Modèles tournés par rapport à la passe 1.
+
+| lentille | modèle | axe | rendu |
+|---|---|---|---|
+| La garde remédiée tient-elle ? | Opus | garde, extracteur | **1 H, 3 M, 2 L** |
+| Production et documents | Sonnet | code, docs | **1 M** — le reste prouvé au sol : équivalence stricte de la cellule, `Default` retirable, documents exacts, aucune propagation résiduelle |
+| Les comptes rendus disent-ils vrai ? | Haiku 4.5 | fiche, sprint-status | **1 H, 3 M** — toutes sur les statistiques git |
+
+⛔ **Le HIGH : mon correctif de la passe 1 fermait le RENOMMAGE et laissait ouvert l'AJOUT.** Une
+branche neuve — `else if définitif { "invoice.dunning_cancelled" }` — passait les sept tests : le site
+restait non résolu donc inventorié, les deux codes déclarés étaient toujours là, et le code neuf
+n'était **ni** relevé (une variable n'est pas un littéral) **ni** déclaré, donc n'entrait dans aucun
+ensemble. *Le défaut de la passe 1, déplacé d'un cran.* ⇒ contrôle rendu **bilatéral**.
+
+Les trois autres défauts de ma remédiation : le test lisait la source **brute** là où l'extracteur
+assainit — un code en simple commentaire le satisfaisait ; la garde du chemin ne couvrait qu'**un**
+fichier alors qu'elle invoque une règle de dépôt ; et mes commentaires attribuaient la protection
+d'`audit.rs` au « volet (a) », **ce qui est faux** — elle vient du retrait de l'exclusion, et un
+lecteur trompé aurait pu rouvrir le trou en croyant bien faire.
+
+**Le tamis du sens 2 a d'abord rendu six faux positifs**, tous des colonnes SQL qualifiées. Plutôt que
+six exceptions, un **critère** ferme la famille — un préfixe d'au moins trois caractères écarte les
+alias `i.`, `c.`, aucun type d'entité de Kesh ne descendant sous quatre — et **une** exception déclarée
+avec son motif couvre le reste.
+
+**Les trois correctifs sont ÉPROUVÉS par mutation**, et non seulement verts :
+
+| mutation | test vu rouge |
+|---|---|
+| branche neuve portant un code non déclaré | `les_codes_de_l_inventaire…` — « contient le littéral `invoice.dunning_cancelled` » |
+| dérivation posée dans **`routes/users.rs`** | `aucune_route_ne_derive…` — la garde nomme le fichier fautif |
+| code renommé mais laissé en **commentaire** | `les_codes_de_l_inventaire…` — l'assainissement mord |
+
+⚠️ **Signal à porter au Project Lead : la sévérité maximale ne décroît pas** — `HIGH → HIGH` entre les
+passes 1 et 2. La § *Règle de splitting préventif* en fait un critère. ⚠️ **Mais les deux HIGH portent
+sur MA remédiation, non sur la conception** : c'est le comportement attendu d'une boucle dans ce
+dépôt, pas le signe d'une story trop large. Arbitrage laissé à qui il revient.
+
 ### Passe 1 de `bmad-code-review` — trois lentilles, trois modèles, contexte frais
 
 | lentille | modèle | axe | rendu brut | après vérification au sol |
