@@ -959,6 +959,51 @@ Claude Opus 5 (1M context) — implémentation du 2026-09-16.
 
 ## Change Log
 
+### Passe 6 — CIBLÉE, et elle CONCLUT : simplifier plutôt que raffiner
+
+Prompt **versionné** : `25-1c-a-review-prompt-p6-ciblee.md`. Modèle : Opus.
+
+**Rendu : 3 HIGH, 2 MEDIUM, 1 LOW** — tous sur ma garde, aucun sur le code de production.
+
+⛔ **Ma garde symétrique était VERTE PAR VACUITÉ, et c'est mesuré.** Sur les **99** fichiers portant un
+`#[cfg(test)]`, **95** n'ont aucun item reconnu en colonne 0 après l'attribut ; et retirer le correctif
+qu'elle surveillait ne changeait **rien** sur le dépôt entier — **0 fichier sur 218**. Elle ne
+détectait donc pas son propre scénario nominal.
+
+⛔ **Et la VISIBILITÉ décidait de la protection** : `est_item_de_production` énumérait douze préfixes
+où manquaient `pub(crate) fn` (**28** occurrences réelles), `pub mod` (**202**), `pub use` (**85**).
+Un `pub fn` était surveillé, le même code écrit `pub(crate) fn` ne l'était plus. *Le travers que
+D4-ter proscrit, commis dans la garde censée l'appliquer.*
+
+⛔ **Mon doc-comment affirmait « vérifié » et disait FAUX.** `kesh-i18n/src/loader.rs:386` porte
+`contains('{')` **dans** son bloc de test (attribut l.195) : la profondeur n'y retombait jamais à zéro,
+et ce bloc n'était masqué correctement que **par accident**, parce qu'il court jusqu'à la dernière
+ligne du fichier. Toute production ajoutée après lui aurait été avalée en silence. *Une limite
+déclarée sans être mesurée vaut moins qu'une limite tue : elle dissuade d'aller voir.*
+
+⛔ **MEDIUM — septième décompte faux**, introduit par le commit qui fermait les décomptes faux :
+« les trois lecteurs » alors qu'il y en a **cinq**, ce commit ayant lui-même ajouté le cinquième.
+
+**⇒ La remédiation SIMPLIFIE au lieu de corriger**, sur recommandation de la lentille et conformément
+à ce que j'avais annoncé au Project Lead. Le balayage du dépôt est remplacé par **quatre entrées
+synthétiques écrites en dur** — `mod` déclaré sans bloc, bloc ordinaire, bloc piégé par une accolade
+de chaîne **et** un littéral de caractère, attribut sur une méthode. Décidables, **indépendantes de ce
+que le dépôt contient ce jour-là**, et elles exercent les quatre cas que les passes 3 à 6 ont mis au
+jour. `accolades_hors_chaines` traite désormais les littéraux de caractère, sans confondre avec une
+lifetime. Le nombre de lecteurs n'est plus écrit.
+
+**Éprouvé — et cette fois les tests DÉTECTENT, cas par cas** :
+
+| mutation | test vu rouge |
+|---|---|
+| sortie 2 retirée | « mod déclaré sans bloc » — `production_apres_mod_declare` a disparu |
+| traitement des littéraux de caractère retiré | « bloc piégé » — `production_apres_accolades_piegees` a disparu |
+
+⚠️ **Verdict de la lentille, que je fais mien** : « élargir l'énumération ne ferait que déplacer la
+frontière ; une garde dont la sensibilité dépend du dépôt est verte par vacuité. Le coût est réel —
+deux passes — et le rendement mesuré est nul. » *C'est la réponse à la question de conduite portée au
+Project Lead à la passe 5.*
+
 ### Passe 5 — CIBLÉE, une seule lentille sur le seul commit `b7a06a29`
 
 Prompt **versionné** : `25-1c-a-review-prompt-p5-ciblee.md`. Modèle : Sonnet (la passe 4 était Opus).
