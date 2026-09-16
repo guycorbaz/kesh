@@ -1263,17 +1263,32 @@ mod tests {
 
     /// AC 1 — un compte qu'aucune écriture ne touche ne recense rien, et le
     /// retypage doit donc rester libre.
+    ///
+    /// ⚠️ **La société porte DÉLIBÉRÉMENT une écriture sur un AUTRE compte.**
+    /// Sans elle, ce test vérifiait « zéro » dans un univers où tout rend zéro :
+    /// il restait vert sous n'importe quelle mutation de la requête — filtre
+    /// `account_id` relâché, inversé ou supprimé — et ne gardait donc rien. Le
+    /// voisin mouvementé est ce qui rend l'assertion discriminante : si le filtre
+    /// par compte cède, ce test voit l'écriture de T908 et rougit.
     #[tokio::test]
     async fn retype_impact_d_un_compte_vierge_ne_recense_rien() {
         let pool = test_pool().await;
         let admin = get_admin_user_id(&pool).await;
-        let (company_id, _fy) = mk_company_with_fy(&pool, "impact-vierge").await;
+        let (company_id, fy) = mk_company_with_fy(&pool, "impact-vierge").await;
 
-        let account = mk_account(&pool, company_id, admin, "T900", AccountType::Expense).await;
+        let vierge = mk_account(&pool, company_id, admin, "T900", AccountType::Expense).await;
 
-        let (count, closed) = retype_impact(&pool, company_id, account).await.unwrap();
+        // Le voisin mouvementé, dont ce compte-ci ne doit RIEN voir.
+        let voisin = mk_account(&pool, company_id, admin, "T908", AccountType::Expense).await;
+        let caisse = mk_account(&pool, company_id, admin, "T909", AccountType::Asset).await;
+        mk_entry(&pool, company_id, fy, admin, voisin, caisse).await;
 
-        assert_eq!(count, 0, "un compte vierge ne porte aucune écriture");
+        let (count, closed) = retype_impact(&pool, company_id, vierge).await.unwrap();
+
+        assert_eq!(
+            count, 0,
+            "un compte vierge ne porte aucune écriture — même quand sa société en porte"
+        );
         assert!(closed.is_empty(), "aucun exercice clos ne peut être touché");
 
         drop_company_deep(&pool, company_id).await;
