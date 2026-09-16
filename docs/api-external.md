@@ -203,7 +203,7 @@ Les principales ressources accessibles via l'API (liste non exhaustive — toute
 | Ressource | Lecture (`read`) | Écriture (`read-write`) |
 |-----------|------------------|--------------------------|
 | Identité de la clé | `GET /auth/me` | — |
-| Plan comptable | `GET /accounts` | `POST /accounts`, … |
+| Plan comptable | `GET /accounts` | `POST /accounts`, `PUT /accounts/{id}` ³, … |
 | Contacts | `GET /contacts`, `GET /contacts/{id}` | `POST /contacts`, … |
 | Produits | `GET /products`, `GET /products/{id}` | `POST /products`, … |
 | Factures | `GET /invoices`, `GET /invoices/{id}` | `POST /invoices`, `PUT /invoices/{id}`, … ² |
@@ -213,6 +213,17 @@ Les principales ressources accessibles via l'API (liste non exhaustive — toute
 *(Préfixe `…/api/v1` omis dans le tableau. Les corps de requête d'écriture peuvent différer des champs renvoyés en lecture : référez-vous aux formulaires correspondants de l'interface web pour les champs attendus.)*
 
 ² **Deux opérations sur les factures sont réservées à l'interface web** : `DELETE /invoices/{id}` (suppression définitive) et `POST /invoices/{id}/reminders/{reminderId}/cancel` (annulation d'un rappel) sont des routes d'administration, donc fermées aux clés (`403 API_KEY_ADMIN_FORBIDDEN`, cf. §4). Tout le reste du cycle de facturation reste ouvert.
+
+³ **Changer le `accountType` d'un compte qui porte des écritures exige une
+confirmation explicite.** Sans elle, `PUT /accounts/{id}` répond **`409
+ACCOUNT_HAS_ENTRIES`** et son `details` porte l'ampleur du reclassement :
+`entryCount` (écritures concernées), `closedFiscalYears` (exercices **clos**
+touchés), `fromType` et `toType`. Pour passer outre, renvoyer la même requête
+avec `"confirmAccountRetype": true`. Le champ est facultatif et vaut `false`
+s'il est omis — un client existant n'a donc rien à changer tant qu'il ne retype
+pas un compte mouvementé. ⚠️ Ce refus est **neuf** : la requête aboutissait
+auparavant sans avertir, alors qu'elle reclasse rétroactivement tout
+l'historique du compte, exercices clos compris.
 
 ¹ **Les mutations de taux de TVA ne sont pas accessibles via l'API** :
 `POST /vat-rates`, `PUT /vat-rates/{id}` et `DELETE /vat-rates/{id}` sont
