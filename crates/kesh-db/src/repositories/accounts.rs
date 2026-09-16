@@ -488,17 +488,26 @@ pub async fn update(
     // un retypage — et APRÈS le contrôle de version — confirmer un retypage ne
     // doit jamais écraser la modification concurrente d'un tiers. Et AVANT
     // l'`UPDATE`, faute de quoi elle ne garderait rien.
-    if !confirm_retype && before.account_type != changes.account_type {
+    // ⚠️ L'ampleur est calculée **une fois**, et elle sert deux fois : à refuser
+    // quand rien n'est confirmé, et à NOURRIR L'AUDIT quand le geste passe. Un
+    // `account.retyped` qui ne dirait pas combien d'écritures ont basculé ne
+    // vaudrait pas mieux qu'un `account.updated` — c'est l'ampleur qui fait la
+    // différence pour qui relira le journal.
+    let mut retype_trace: Option<(i64, Vec<String>)> = None;
+    if before.account_type != changes.account_type {
         let (entry_count, closed_fiscal_years) =
             retype_impact(&mut *tx, before.company_id, id).await?;
         if entry_count > 0 {
-            tx.rollback().await.map_err(map_db_error)?;
-            return Err(DbError::AccountHasEntries {
-                entry_count,
-                closed_fiscal_years,
-                from_type: before.account_type.as_str(),
-                to_type: changes.account_type.as_str(),
-            });
+            if !confirm_retype {
+                tx.rollback().await.map_err(map_db_error)?;
+                return Err(DbError::AccountHasEntries {
+                    entry_count,
+                    closed_fiscal_years,
+                    from_type: before.account_type.as_str(),
+                    to_type: changes.account_type.as_str(),
+                });
+            }
+            retype_trace = Some((entry_count, closed_fiscal_years));
         }
     }
 
@@ -536,15 +545,48 @@ pub async fn update(
     // 24-4b (#380) — une écriture comptabilisée ne se réécrit plus. Le format
     // {before, after} reste celui de tous les `update` du dépôt.
     // Rollback explicite pour cohérence avec les autres branches d'erreur.
-    let audit_details = serde_json::json!({
+    let mut audit_details = serde_json::json!({
         "before": account_snapshot_json(&before),
         "after": account_snapshot_json(&after),
     });
+
+    // Story 25-2-a ([#382], [#274]) — un retypage de compte MOUVEMENTÉ porte son
+    // propre code d'action.
+    //
+    // ⛔ **Pourquoi un code distinct et non un `account.updated` de plus** : ce
+    // geste ne modifie pas un compte, il **reclasse un historique**, exercices
+    // clos compris. Noyé parmi les renommages et les changements de rôle, il
+    // serait introuvable le jour où quelqu'un cherche pourquoi le résultat d'une
+    // année close a bougé — et c'est précisément ce jour-là qu'on le cherche.
+    //
+    // ⚠️ Un compte **vierge** retypé reste un `account.updated` : sans écriture,
+    // il n'y a pas d'historique à reclasser, donc rien à signaler.
+    //
+    // ⛔ **DETTE ASSUMÉE ET TRACÉE** : `account.retyped` doit être inscrit au
+    // registre `crates/kesh-api/src/audit_labels.rs` et traduit dans les quatre
+    // locales, faute de quoi le journal d'audit affichera **le code brut** — le
+    // repli délibéré de la Story 25-1c-a. Ce fichier N'EXISTE PAS sur `main` : il
+    // naît avec la 25-1c-a, dont la PR #439 est ouverte et non mergée (vérifié
+    // par `git cat-file -e origin/main:…`, pas supposé). L'inscription est donc
+    // portée par cette PR-là, et non oubliée ici.
+    let action = match &retype_trace {
+        Some((entry_count, closed_fiscal_years)) => {
+            audit_details["retype"] = serde_json::json!({
+                "fromType": before.account_type.as_str(),
+                "toType": after.account_type.as_str(),
+                "entryCount": entry_count,
+                "closedFiscalYears": closed_fiscal_years,
+            });
+            "account.retyped"
+        }
+        None => "account.updated",
+    };
+
     if let Err(e) = audit_log::insert_in_tx(
         &mut tx,
         NewAuditLogEntry::user(
             user_id,
-            "account.updated".to_string(),
+            action.to_string(),
             "account".to_string(),
             id,
             Some(audit_details),
@@ -1645,6 +1687,162 @@ mod tests {
         assert!(
             matches!(err, DbError::OptimisticLockConflict),
             "le verrou optimiste doit primer, reçu {err:?}"
+        );
+
+        drop_company_deep(&pool, company_id).await;
+    }
+
+    /// AC 5 — un retypage confirmé porte **son propre code d'action**, et il
+    /// porte l'ampleur.
+    ///
+    /// ⛔ Noyé parmi les `account.updated`, ce geste serait introuvable le jour
+    /// où quelqu'un cherche pourquoi le résultat d'une année close a bougé — et
+    /// c'est précisément ce jour-là qu'on le cherche.
+    #[tokio::test]
+    async fn un_retypage_confirme_journalise_son_propre_code_d_action() {
+        let pool = test_pool().await;
+        let admin = get_admin_user_id(&pool).await;
+        let (company_id, fy) = mk_company_with_fy(&pool, "audit-retype").await;
+
+        let charge = mk_account(&pool, company_id, admin, "T921", AccountType::Expense).await;
+        let caisse = mk_account(&pool, company_id, admin, "T922", AccountType::Asset).await;
+        mk_entry(&pool, company_id, fy, admin, charge, caisse).await;
+        sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+            .bind(fy)
+            .execute(&pool)
+            .await
+            .expect("fermeture de l'exercice de test");
+
+        let before = find_by_id(&pool, charge).await.unwrap().unwrap();
+        update(
+            &pool,
+            charge,
+            before.version,
+            admin,
+            AccountUpdate {
+                name: before.name.clone(),
+                account_type: AccountType::Asset,
+                role: None,
+                postable: true,
+            },
+            true,
+        )
+        .await
+        .expect("retypage confirmé");
+
+        let entries = audit_log::find_by_entity(&pool, "account", charge, 10)
+            .await
+            .unwrap();
+
+        let retyped = entries
+            .iter()
+            .find(|e| e.action == "account.retyped")
+            .expect("une entrée account.retyped doit exister");
+        let details = retyped
+            .details_json
+            .as_ref()
+            .expect("details_json must be present");
+        let trace = details.get("retype").expect("le bloc retype");
+        assert_eq!(
+            trace.get("fromType").and_then(|v| v.as_str()),
+            Some("Expense")
+        );
+        assert_eq!(trace.get("toType").and_then(|v| v.as_str()), Some("Asset"));
+        assert_eq!(trace.get("entryCount").and_then(|v| v.as_i64()), Some(1));
+        assert_eq!(
+            trace
+                .get("closedFiscalYears")
+                .and_then(|v| v.as_array())
+                .and_then(|a| a.first())
+                .and_then(|v| v.as_str()),
+            Some("Exercice audit-retype"),
+            "le journal doit NOMMER l'exercice clos reclassé"
+        );
+
+        // Et le geste ne se dédouble pas en un `account.updated` ordinaire, qui
+        // le rendrait indistinguable d'un renommage.
+        assert!(
+            !entries.iter().any(|e| e.action == "account.updated"),
+            "un retypage ne journalise PAS aussi account.updated"
+        );
+
+        drop_company_deep(&pool, company_id).await;
+    }
+
+    /// AC 5 — le code ordinaire reste celui des autres modifications : une garde
+    /// qui déborderait sur le renommage rendrait le journal illisible.
+    #[tokio::test]
+    async fn un_renommage_garde_le_code_d_action_ordinaire() {
+        let pool = test_pool().await;
+        let admin = get_admin_user_id(&pool).await;
+        let (company_id, fy) = mk_company_with_fy(&pool, "audit-renomme").await;
+
+        let charge = mk_account(&pool, company_id, admin, "T923", AccountType::Expense).await;
+        let caisse = mk_account(&pool, company_id, admin, "T924", AccountType::Asset).await;
+        mk_entry(&pool, company_id, fy, admin, charge, caisse).await;
+
+        let before = find_by_id(&pool, charge).await.unwrap().unwrap();
+        update(
+            &pool,
+            charge,
+            before.version,
+            admin,
+            AccountUpdate {
+                name: "Libellé corrigé".into(),
+                account_type: before.account_type,
+                role: None,
+                postable: true,
+            },
+            false,
+        )
+        .await
+        .expect("renommer ne retype pas");
+
+        let entries = audit_log::find_by_entity(&pool, "account", charge, 10)
+            .await
+            .unwrap();
+        assert!(entries.iter().any(|e| e.action == "account.updated"));
+        assert!(!entries.iter().any(|e| e.action == "account.retyped"));
+
+        drop_company_deep(&pool, company_id).await;
+    }
+
+    /// AC 5 — **un compte vierge retypé reste un `account.updated`.** Sans
+    /// écriture, il n'y a pas d'historique à reclasser, donc rien à signaler à
+    /// un contrôleur. Sans ce test, l'affirmation du commentaire de `update` ne
+    /// serait éprouvée par rien.
+    #[tokio::test]
+    async fn retyper_un_compte_vierge_reste_une_modification_ordinaire() {
+        let pool = test_pool().await;
+        let admin = get_admin_user_id(&pool).await;
+        let (company_id, _fy) = mk_company_with_fy(&pool, "audit-vierge").await;
+
+        let compte = mk_account(&pool, company_id, admin, "T925", AccountType::Expense).await;
+        let before = find_by_id(&pool, compte).await.unwrap().unwrap();
+
+        update(
+            &pool,
+            compte,
+            before.version,
+            admin,
+            AccountUpdate {
+                name: before.name.clone(),
+                account_type: AccountType::Asset,
+                role: None,
+                postable: true,
+            },
+            false,
+        )
+        .await
+        .expect("un compte vierge se retype librement");
+
+        let entries = audit_log::find_by_entity(&pool, "account", compte, 10)
+            .await
+            .unwrap();
+        assert!(entries.iter().any(|e| e.action == "account.updated"));
+        assert!(
+            !entries.iter().any(|e| e.action == "account.retyped"),
+            "sans écriture, rien n'est reclassé : pas de code distinct"
         );
 
         drop_company_deep(&pool, company_id).await;
