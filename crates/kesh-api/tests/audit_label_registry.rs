@@ -207,10 +207,20 @@ fn strip_line_comments(src: &str) -> String {
 /// isolée dans un littéral (`"Texte { non fermé"`, réel dans
 /// `kesh-core/src/email_template_engine.rs`) déséquilibrerait le compte.
 ///
-/// ⚠️ Limites assumées, héritées de `strip_line_comments` : un `//` **dans une
-/// chaîne** tronque la ligne, et les commentaires de **bloc** `/* … */` ne sont
-/// pas retirés. Aucun argument d'audit n'en porte aujourd'hui, et les deux vont
-/// dans le sens sûr — un rouge injustifié, jamais un vert silencieux.
+/// ⚠️ **Limites assumées, toutes écrites** — un doc-comment qui prétend les
+/// écrire et en omet est pire qu'un doc-comment muet :
+///
+/// - un `//` **dans une chaîne** tronque la ligne (hérité de
+///   `strip_line_comments`) ;
+/// - les commentaires de **bloc** `/* … */` ne sont pas retirés ;
+/// - `accolades_hors_chaines` ne reconnaît ni les **littéraux de caractère**
+///   (`'{'`, `'}'`) ni la sémantique des **chaînes brutes** (`r#"…"#`), où un
+///   guillemet interne n'est pas un délimiteur.
+///
+/// Aucun de ces cas n'existe aujourd'hui dans un bloc de test du dépôt — vérifié
+/// — et la garde symétrique `le_masquage_ne_retire_aucun_item_de_production`
+/// rougirait si l'un d'eux faussait le compte au point d'emporter de la
+/// production.
 fn source_assainie(brut: &str) -> String {
     let sans_commentaires = strip_line_comments(brut);
     let lignes: Vec<&str> = sans_commentaires.lines().collect();
@@ -225,17 +235,31 @@ fn source_assainie(brut: &str) -> String {
         }
         // Bloc de test : sauter l'attribut, puis l'item qu'il garde, jusqu'à ce
         // que ses accolades se referment.
+        //
+        // ⛔ **Deux sorties, et l'absence de la seconde a coûté une passe.** Un
+        // item gardé peut n'ouvrir AUCUNE accolade — `use …;`, `mod fixtures;`,
+        // `const … = …;`. Sans sortie propre, la boucle continuait jusqu'à la
+        // prochaine accolade du fichier, **quelle qu'elle soit**, avalant tout ce
+        // qui se trouvait entre les deux ; et si le fichier n'en portait plus,
+        // jusqu'à la fin. `#[cfg(test)] mod fixtures;` est un idiome courant, pas
+        // une forme exotique.
         i += 1;
         let mut profondeur = 0i32;
         let mut ouvert = false;
         while i < lignes.len() {
-            let (o, f) = accolades_hors_chaines(lignes[i]);
+            let ligne = lignes[i];
+            let (o, f) = accolades_hors_chaines(ligne);
             profondeur += o - f;
             if o > 0 {
                 ouvert = true;
             }
             i += 1;
+            // Sortie 1 — le bloc s'est ouvert puis refermé.
             if ouvert && profondeur <= 0 {
+                break;
+            }
+            // Sortie 2 — l'item s'est terminé SANS jamais ouvrir de bloc.
+            if !ouvert && profondeur == 0 && ligne.trim_end().ends_with(';') {
                 break;
             }
         }
@@ -703,6 +727,74 @@ fn le_masquage_des_blocs_de_test_ne_laisse_aucun_attribut_derriere_lui() {
 }
 
 #[test]
+fn le_masquage_ne_retire_aucun_item_de_production() {
+    // ⛔ **Le garde-fou SYMÉTRIQUE, et son absence a coûté deux passes.**
+    //
+    // Son voisin vérifie que le masquage n'en fait pas **trop peu** — aucun
+    // attribut ne subsiste. Celui-ci vérifie qu'il n'en fait pas **trop**. Sans
+    // lui, une sur-consommation restait VERTE PAR EXCÈS : si le masquage avale
+    // tout le fichier, il ne reste évidemment plus aucun attribut à trouver.
+    //
+    // *Un détecteur qui ne surveille qu'un sens de sa propre erreur ne surveille
+    // rien : c'est la même faute que l'inventaire qui affirmait au lieu de
+    // vérifier, à deux passes de distance.*
+    for chemin in fichiers_de_production() {
+        let brut = std::fs::read_to_string(&chemin).expect("lire un fichier source");
+        if !brut.contains("#[cfg(test)]") {
+            continue;
+        }
+        let assainie = source_assainie(&brut);
+        let lignes: Vec<&str> = brut.lines().collect();
+
+        for (n, ligne) in lignes.iter().enumerate() {
+            if !est_item_de_production(ligne) {
+                continue;
+            }
+            // Un item directement gardé par l'attribut DOIT disparaître.
+            let precedente = lignes[..n].iter().rev().find(|p| !p.trim().is_empty());
+            if precedente.is_some_and(|p| p.trim() == "#[cfg(test)]") {
+                continue;
+            }
+            assert!(
+                assainie.contains(ligne.trim_end()),
+                "⛔ `{}` : le masquage des blocs de test a emporté un item de \
+                 PRODUCTION — « {} » (l.{}).\n\n\
+                 Le saut d'un bloc a consommé au-delà de sa fermeture. Vérifier \
+                 les deux sorties de boucle de `source_assainie` : un item gardé \
+                 qui n'ouvre aucune accolade (`use …;`, `mod x;`, `const …;`) doit \
+                 s'arrêter sur son point-virgule, faute de quoi le saut court \
+                 jusqu'à la prochaine accolade du fichier — ou jusqu'à sa fin.",
+                chemin.display(),
+                ligne.trim(),
+                n + 1
+            );
+        }
+    }
+}
+
+/// Une déclaration de production, reconnue à sa **colonne 0** : le contenu d'un
+/// `mod tests { … }` est indenté, donc hors de portée de ce détecteur.
+fn est_item_de_production(ligne: &str) -> bool {
+    const DEBUTS: &[&str] = &[
+        "pub fn ",
+        "pub async fn ",
+        "pub struct ",
+        "pub enum ",
+        "pub trait ",
+        "pub const ",
+        "pub static ",
+        "fn ",
+        "async fn ",
+        "struct ",
+        "enum ",
+        "impl ",
+    ];
+    // ⚠️ `mod ` est volontairement absent : `mod tests` est en colonne 0 et DOIT
+    // disparaître.
+    DEBUTS.iter().any(|d| ligne.starts_with(d))
+}
+
+#[test]
 fn l_inventaire_compte_ce_que_le_fichier_annonce() {
     // ⚠️ Un nombre écrit en prose se périme **en silence** : « six sites » est
     // resté faux à trois endroits de ce fichier après l'ajout du septième, dont
@@ -711,9 +803,13 @@ fn l_inventaire_compte_ce_que_le_fichier_annonce() {
     assert_eq!(
         SITES_INDIRECTS.len(),
         7,
-        "⛔ Le nombre de sites indirects a changé. Mettre à jour les mentions en \
-         toutes lettres de l'en-tête de ce fichier — elles sont trois — puis ce \
-         nombre. `grep -niE '\\b(six|sept|huit)\\b'` les trouve."
+        "⛔ Le nombre de sites indirects a changé. Mettre à jour **toutes** les \
+         mentions en toutes lettres de ce fichier — elles ne sont pas confinées à \
+         l'en-tête — puis ce nombre.\n\n\
+         `grep -niE '\\b(six|sept|huit)\\b' <ce fichier>` les trouve toutes : les \
+         traiter une par une, sans en avancer le nombre ici. ⚠️ Un message qui \
+         annonce « elles sont N » est lui-même un décompte, et il se périme comme \
+         les autres — c'est arrivé."
     );
 }
 
