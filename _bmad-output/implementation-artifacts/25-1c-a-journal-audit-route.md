@@ -614,7 +614,19 @@ recense que les verbes mutants, `:181,311`), les tests de parité i18n, et les g
       liaison, ce qu'aucune couche ne rattrape. Montées dans `comptable_routes`, module déclaré à son
       rang alphabétique. `cargo check` et `clippy -D warnings` verts. ⚠️ **Non testée ici** : les tests
       d'API sont la tâche T7, et cette note ne prétend pas le contraire.)*
-- [ ] **T6 — Export CSV** (AC 10-14).
+- [x] **T6 — Export CSV** (AC 10-14).
+      *(2026-09-16 : `export_audit_log_csv` — **même** fonction de validation que la liste, donc mêmes
+      lignes à l'écran et au fichier ; `offset` et `limit` **ignorés sans être refusés**, un export
+      n'étant pas paginé. Plafond demandé à `MAX_EXPORT_ROWS + 1` : c'est ce `+1` qui distingue
+      « exactement le plafond » de « au-delà », et le refus est un `RESULT_TOO_LARGE` **nommé** plutôt
+      qu'un fichier tronqué en silence. Dix colonnes, en-têtes traduits avec **repli français** —
+      `format` rend la clé brute quand elle manque, l'en-tête afficherait sinon
+      `audit-log-csv-header-id`. ⛔ Toute cellule texte passe par `csv_sanitize` : `actor_label` est
+      choisi par un utilisateur et le repli d'un libellé est un **code lu en base**. `Content-Disposition`
+      par `build_content_disposition` avec `locale.dir_name()` — ⚠️ **pas** `map_language_to_bcp47`, qui
+      attend une langue comptable et replie silencieusement sur `fr-CH`. ⚠️ Le site voisin
+      (`invoices.rs:1306`) construit cet en-tête **à la main** ; la spec impose le helper, c'est lui qui
+      est suivi. `clippy -D warnings` et `fmt` verts. ⚠️ **Non testé ici** — tests d'API en T7.)*
 - [ ] **T7 — Tests API** (AC 23). ⛔ *Une tâche qui décrit un test est une promesse ; la cocher sans
       l'avoir écrit la transforme en mensonge.*
 - [ ] **T8 — Mutations** (AC 24), résultats observés.

@@ -273,7 +273,8 @@ mod tests {
             (PREFIX_ACTION, ACTIONS),
             (PREFIX_ACTOR_TYPE, ACTOR_TYPES),
         ] {
-            let mut vues: std::collections::HashMap<String, &str> = std::collections::HashMap::new();
+            let mut vues: std::collections::HashMap<String, &str> =
+                std::collections::HashMap::new();
             for &code in liste {
                 let cle = message_key(prefixe, code);
                 if let Some(autre) = vues.insert(cle.clone(), code) {

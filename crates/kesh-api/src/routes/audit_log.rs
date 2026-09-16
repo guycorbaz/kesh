@@ -30,12 +30,13 @@ use kesh_db::entities::audit_log::AuditLogEntry;
 use kesh_db::repositories::audit_log::{self as audit_log_repo, AuditLogListQuery, MAX_LIMIT};
 use kesh_i18n::{I18nBundle, Locale};
 
+use crate::AppState;
 use crate::audit_labels::{self, ACTIONS, ENTITY_TYPES};
 use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
-use crate::routes::api_keys::ensure_not_pat;
 use crate::routes::ListResponse;
-use crate::AppState;
+use crate::routes::api_keys::ensure_not_pat;
+use crate::util::{build_content_disposition, csv_sanitize, slugify};
 
 /// Longueur de `audit_log.entity_type` en base.
 const ENTITY_TYPE_MAX_LEN: usize = 32;
@@ -161,7 +162,9 @@ pub struct VocabularyResponse {
 /// l'extracteur `Query` d'Axum le refuse en 400 **texte**, avant le handler.
 /// C'est la convention écrite du dépôt (`journal_entries.rs:275-279`) ; ne pas
 /// la « corriger » ici.
-pub(crate) fn construire_requete(params: &ListAuditLogQuery) -> Result<AuditLogListQuery, AppError> {
+pub(crate) fn construire_requete(
+    params: &ListAuditLogQuery,
+) -> Result<AuditLogListQuery, AppError> {
     let date_from = parse_date(params.date_from.as_deref(), "dateFrom")?;
     let date_to = parse_date(params.date_to.as_deref(), "dateTo")?;
     if let (Some(depuis), Some(jusqu)) = (date_from, date_to)
@@ -232,6 +235,189 @@ fn parse_code(valeur: Option<&str>, nom: &str, maximum: usize) -> Result<Option<
         )));
     }
     Ok(Some(texte.to_string()))
+}
+
+/// Plafond dur de l'export. Au-delà, un refus **nommé** vaut mieux qu'un
+/// fichier tronqué en silence.
+const MAX_EXPORT_ROWS: i64 = 10_000;
+
+/// Clés FTL des dix en-têtes, **dans l'ordre des colonnes**.
+const CSV_HEADER_KEYS: [&str; 10] = [
+    "audit-log-csv-header-id",
+    "audit-log-csv-header-created-at",
+    "audit-log-csv-header-actor",
+    "audit-log-csv-header-user-id",
+    "audit-log-csv-header-actor-type",
+    "audit-log-csv-header-action",
+    "audit-log-csv-header-entity-type",
+    "audit-log-csv-header-entity-id",
+    "audit-log-csv-header-api-key-id",
+    "audit-log-csv-header-details",
+];
+
+/// Replis français, **même ordre**. `I18nBundle::format` rend la clé brute
+/// quand elle manque : sans ce repli, l'en-tête afficherait
+/// `audit-log-csv-header-id`.
+const CSV_HEADER_FALLBACKS: [&str; 10] = [
+    "N°",
+    "Date (UTC)",
+    "Auteur",
+    "Identifiant d'auteur",
+    "Type d'auteur",
+    "Action",
+    "Type d'entité",
+    "Identifiant d'entité",
+    "Clé API",
+    "Détails",
+];
+
+/// Traduit une clé, ou rend son repli si le catalogue ne la porte pas.
+fn traduire_ou_replier(i18n: &I18nBundle, locale: &Locale, cle: &str, repli: &str) -> String {
+    let valeur = i18n.format(locale, cle, None);
+    if valeur.is_empty() || valeur == cle {
+        repli.to_string()
+    } else {
+        valeur
+    }
+}
+
+/// `GET /api/v1/audit-log/export.csv` — le journal filtré, en CSV (AC 10-14).
+///
+/// **Mêmes refus et mêmes filtres que la liste** : `construire_requete` est
+/// partagée. `offset` et `limit` sont **ignorés** — un export n'est pas paginé —
+/// sans être refusés, comme l'export de l'échéancier.
+///
+/// ⛔ **L'export n'écrit PAS d'entrée d'audit** (arbitrage 5, AC 14) : il ne
+/// fait que lire.
+pub async fn export_audit_log_csv(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Query(params): Query<ListAuditLogQuery>,
+) -> Result<axum::response::Response, AppError> {
+    use axum::http::HeaderValue;
+    use axum::http::StatusCode;
+    use axum::http::header;
+    use axum::response::IntoResponse;
+
+    ensure_not_pat(&current_user)?;
+
+    let requete = construire_requete(&params)?;
+    let societe = crate::helpers::get_company_for(&current_user, &state.pool).await?;
+    let locale = state.config.locale;
+
+    // +1 : c'est ce qui distingue « exactement le plafond » de « au-delà ».
+    let lignes = audit_log_repo::list_for_export(
+        &state.pool,
+        current_user.company_id,
+        &requete,
+        MAX_EXPORT_ROWS + 1,
+    )
+    .await?;
+
+    if lignes.len() as i64 > MAX_EXPORT_ROWS {
+        let cle = "audit-log-export-error-too-large";
+        let mut args = kesh_i18n::FluentArgs::new();
+        args.set("limit", MAX_EXPORT_ROWS);
+        let message = state.i18n.format(&locale, cle, Some(&args));
+        let message = if message.is_empty() || message == cle {
+            format!("Trop de résultats (> {MAX_EXPORT_ROWS}). Veuillez affiner vos filtres.")
+        } else {
+            message
+        };
+        return Err(AppError::ResultTooLarge(message));
+    }
+
+    let mut tampon: Vec<u8> = Vec::with_capacity(lignes.len().saturating_mul(200) + 4);
+    // BOM UTF-8 : sans lui, Excel sous Windows massacre les accents.
+    tampon.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
+    {
+        let mut redacteur = csv::WriterBuilder::new()
+            .delimiter(b';')
+            .terminator(csv::Terminator::CRLF)
+            .from_writer(&mut tampon);
+
+        let entetes: Vec<String> = CSV_HEADER_KEYS
+            .iter()
+            .zip(CSV_HEADER_FALLBACKS.iter())
+            .map(|(cle, repli)| traduire_ou_replier(&state.i18n, &locale, cle, repli))
+            .collect();
+        redacteur
+            .write_record(&entetes)
+            .map_err(|e| AppError::Internal(format!("en-tête CSV : {e}")))?;
+
+        for entree in lignes {
+            // ⛔ TOUTE cellule texte passe par `csv_sanitize` : `actor_label` est
+            // choisi par un utilisateur, et le repli d'un libellé est un CODE lu
+            // en base. Un champ commençant par `=`, `+`, `-` ou `@` est une
+            // injection de formule dans le tableur qui ouvrira le fichier.
+            redacteur
+                .write_record(&[
+                    entree.id.to_string(),
+                    entree
+                        .created_at
+                        .format("%Y-%m-%d %H:%M:%S%.3f")
+                        .to_string(),
+                    csv_sanitize(entree.actor_label),
+                    entree.user_id.to_string(),
+                    csv_sanitize(traduire_ou_replier(
+                        &state.i18n,
+                        &locale,
+                        &audit_labels::message_key(
+                            audit_labels::PREFIX_ACTOR_TYPE,
+                            entree.actor_type.as_str(),
+                        ),
+                        entree.actor_type.as_str(),
+                    )),
+                    csv_sanitize(audit_labels::action_label(
+                        &state.i18n,
+                        &locale,
+                        &entree.action,
+                    )),
+                    csv_sanitize(audit_labels::entity_type_label(
+                        &state.i18n,
+                        &locale,
+                        &entree.entity_type,
+                    )),
+                    entree.entity_id.to_string(),
+                    entree
+                        .actor_api_key_id
+                        .map(|id| id.to_string())
+                        .unwrap_or_default(),
+                    csv_sanitize(
+                        entree
+                            .details_json
+                            .as_ref()
+                            .map(|v| v.to_string())
+                            .unwrap_or_default(),
+                    ),
+                ])
+                .map_err(|e| AppError::Internal(format!("ligne CSV : {e}")))?;
+        }
+        redacteur
+            .flush()
+            .map_err(|e| AppError::Internal(format!("vidage CSV : {e}")))?;
+    }
+
+    let aujourd_hui = chrono::Utc::now().naive_utc().date();
+    let nom = format!(
+        "kesh-journal-audit-{}-{}.csv",
+        slugify(&societe.name, "societe"),
+        aujourd_hui.format("%Y-%m-%d")
+    );
+
+    let mut reponse = (StatusCode::OK, tampon).into_response();
+    reponse.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/csv; charset=utf-8"),
+    );
+    // ⛔ `dir_name()` rend « de-CH », un vrai tag BCP 47. Ne PAS employer
+    // `util::map_language_to_bcp47`, qui attend une langue COMPTABLE (« FR »,
+    // « DE ») et replie tout autre code sur `fr-CH` avec un simple avertissement.
+    reponse.headers_mut().insert(
+        header::CONTENT_DISPOSITION,
+        build_content_disposition(&nom, locale.dir_name())?,
+    );
+    Ok(reponse)
 }
 
 /// `GET /api/v1/audit-log` — la page de consultation (AC 5-9).

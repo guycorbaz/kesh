@@ -667,6 +667,10 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/audit-log/vocabulary",
             get(routes::audit_log::vocabulary),
         )
+        .route(
+            "/api/v1/audit-log/export.csv",
+            get(routes::audit_log::export_audit_log_csv),
+        )
         .route_layer(axum::middleware::from_fn(
             crate::middleware::rbac::require_comptable_role,
         ));
