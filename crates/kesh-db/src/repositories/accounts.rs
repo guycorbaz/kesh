@@ -339,6 +339,66 @@ fn is_no_op_change(before: &Account, changes: &AccountUpdate) -> bool {
         && before.postable == changes.postable
 }
 
+/// Recense ce qu'un changement d'`account_type` infligerait à l'historique d'un
+/// compte : le nombre d'écritures **distinctes** qui le mouvementent, et les noms
+/// des exercices **clos** parmi elles.
+///
+/// Story 25-2-a ([#382], [#274]) — c'est la matière du refus `ACCOUNT_HAS_ENTRIES`.
+/// Un refus qui ne dit pas ce qu'il protège ne sert qu'à être contourné : le
+/// comptable doit lire *combien* d'écritures et *quels exercices clos* basculent
+/// d'un état à l'autre avant de confirmer.
+///
+/// ⚠️ **Des écritures distinctes, pas des lignes.** Une écriture qui mouvemente
+/// deux fois le même compte reste **une** écriture ; l'annoncer deux fois
+/// surestimerait l'ampleur à l'instant précis où l'utilisateur décide.
+///
+/// Générique sur l'exécuteur — comme `journal_entries::reversal_blocker` et
+/// `journal_entries::count_by_company` — pour servir les tests sur un pool et
+/// [`update`] dans sa propre transaction, sans deux variantes à tenir
+/// synchronisées.
+pub(crate) async fn retype_impact<'e, E>(
+    executor: E,
+    company_id: i64,
+    account_id: i64,
+) -> Result<(i64, Vec<String>), DbError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::MySql>,
+{
+    // Une seule requête, groupée par exercice.
+    //
+    // ⚠️ `COUNT(DISTINCT je.id)` et non `COUNT(*)` : deux lignes d'une même
+    // écriture sur ce compte ne font pas deux écritures.
+    //
+    // ⚠️ Le total s'obtient en **additionnant** les comptes par exercice, et
+    // c'est exact parce qu'une écriture appartient à un seul exercice
+    // (`journal_entries.fiscal_year_id` est unique et non nul). L'alternative —
+    // un `GROUP_CONCAT` des noms d'exercices clos — exigerait un séparateur
+    // qu'aucune contrainte n'interdit d'apparaître dans `fiscal_years.name`.
+    let rows: Vec<(String, String, i64)> = sqlx::query_as(
+        "SELECT fy.name, fy.status, COUNT(DISTINCT je.id) \
+           FROM journal_entry_lines jel \
+           JOIN journal_entries je ON je.id = jel.entry_id \
+           JOIN fiscal_years fy ON fy.id = je.fiscal_year_id \
+          WHERE jel.account_id = ? AND je.company_id = ? \
+          GROUP BY fy.id, fy.name, fy.status \
+          ORDER BY fy.name",
+    )
+    .bind(account_id)
+    .bind(company_id)
+    .fetch_all(executor)
+    .await
+    .map_err(map_db_error)?;
+
+    let count: i64 = rows.iter().map(|(_, _, n)| *n).sum();
+    let closed_fiscal_years: Vec<String> = rows
+        .iter()
+        .filter(|(_, status, _)| status == "Closed")
+        .map(|(name, _, _)| name.clone())
+        .collect();
+
+    Ok((count, closed_fiscal_years))
+}
+
 /// Met à jour un compte actif (nom et type). Verrouillage optimiste + audit log (Story 3.5).
 /// Retourne `IllegalStateTransition` si le compte est archivé.
 pub async fn update(
@@ -1015,6 +1075,289 @@ mod tests {
             .execute(pool)
             .await
             .ok();
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 25-2-a ([#382], [#274]) — recensement de l'ampleur d'un retypage.
+    // -----------------------------------------------------------------------
+
+    /// Nettoyage **profond** d'une société jetable.
+    ///
+    /// ⚠️ `drop_role_company` ne suffit pas ici, et son insuffisance est muette.
+    /// Il enchaîne `DELETE FROM accounts` puis `DELETE FROM companies` ; or
+    /// `fk_jel_account` est en `ON DELETE RESTRICT`. Dès qu'une écriture
+    /// mouvemente un compte de la société, les deux suppressions échouent — et
+    /// l'échec est **avalé par `.ok()`** —, laissant en base société, exercice,
+    /// comptes et écritures. C'est le mode d'échec de la **KF-039** : un résidu
+    /// qui fait rougir le gate SUIVANT, sur un module que la branche ne touche
+    /// pas.
+    ///
+    /// D'où deux différences délibérées : l'ordre imposé par les clés étrangères,
+    /// et un **`panic!` au lieu d'un `.ok()`** — un nettoyage qui échoue doit le
+    /// dire, sans quoi il est pire que pas de nettoyage du tout.
+    ///
+    /// `audit_log` n'est **pas** touchée : `company_id` y est un pointeur logique
+    /// sans clé étrangère (Story 25-1c-zero), et la piste d'audit se conserve.
+    async fn drop_company_deep(pool: &MySqlPool, company_id: i64) {
+        for sql in [
+            "DELETE FROM journal_entries WHERE company_id = ?",
+            "UPDATE accounts SET parent_id = NULL WHERE company_id = ?",
+            "DELETE FROM accounts WHERE company_id = ?",
+            "DELETE FROM fiscal_years WHERE company_id = ?",
+            "DELETE FROM companies WHERE id = ?",
+        ] {
+            sqlx::query(sql)
+                .bind(company_id)
+                .execute(pool)
+                .await
+                .unwrap_or_else(|e| panic!("nettoyage « {sql} » : {e}"));
+        }
+    }
+
+    /// Société jetable **avec son exercice** — `mk_role_company` n'en crée aucun,
+    /// et une écriture en exige un. L'exercice naît toujours `Open` : une
+    /// écriture ne s'insère pas dans un exercice clos, si bien que le cas « clos »
+    /// se construit comme dans la vraie vie — écrire d'abord, fermer ensuite.
+    async fn mk_company_with_fy(pool: &MySqlPool, tag: &str) -> (i64, i64) {
+        let name = format!("Test roles {tag}");
+        if let Ok(Some(row)) =
+            sqlx::query_as::<_, (i64,)>("SELECT id FROM companies WHERE name = ?")
+                .bind(&name)
+                .fetch_optional(pool)
+                .await
+        {
+            drop_company_deep(pool, row.0).await;
+        }
+
+        let company_id = mk_role_company(pool, tag).await;
+        let res = sqlx::query(
+            "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
+             VALUES (?, ?, '2026-01-01', '2026-12-31', 'Open')",
+        )
+        .bind(company_id)
+        .bind(format!("Exercice {tag}"))
+        .execute(pool)
+        .await
+        .expect("création de l'exercice de test");
+
+        (company_id, res.last_insert_id() as i64)
+    }
+
+    async fn mk_account(
+        pool: &MySqlPool,
+        company_id: i64,
+        admin_user_id: i64,
+        number: &str,
+        account_type: AccountType,
+    ) -> i64 {
+        create(
+            pool,
+            admin_user_id,
+            NewAccount {
+                company_id,
+                number: number.into(),
+                name: format!("Compte {number}"),
+                account_type,
+                parent_id: None,
+                role: None,
+                postable: true,
+            },
+        )
+        .await
+        .expect("création du compte de test")
+        .id
+    }
+
+    /// Écriture équilibrée à trois lignes dont **deux sur le compte débité** :
+    /// c'est la forme qui distingue « écritures distinctes » de « lignes ».
+    async fn mk_entry_two_lines_on_debit(
+        pool: &MySqlPool,
+        company_id: i64,
+        fiscal_year_id: i64,
+        admin_user_id: i64,
+        debit_account: i64,
+        credit_account: i64,
+    ) {
+        use crate::entities::journal_entry::{Journal, NewJournalEntry, NewJournalEntryLine};
+        use crate::repositories::journal_entries;
+        use rust_decimal::Decimal;
+
+        journal_entries::create(
+            pool,
+            fiscal_year_id,
+            admin_user_id,
+            NewJournalEntry {
+                company_id,
+                entry_date: chrono::NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(),
+                journal: Journal::OD,
+                description: "Écriture de test 25-2-a".into(),
+                project_id: None,
+                lines: vec![
+                    NewJournalEntryLine {
+                        account_id: debit_account,
+                        debit: Decimal::from(100),
+                        credit: Decimal::ZERO,
+                        project_id: None,
+                    },
+                    NewJournalEntryLine {
+                        account_id: debit_account,
+                        debit: Decimal::from(50),
+                        credit: Decimal::ZERO,
+                        project_id: None,
+                    },
+                    NewJournalEntryLine {
+                        account_id: credit_account,
+                        debit: Decimal::ZERO,
+                        credit: Decimal::from(150),
+                        project_id: None,
+                    },
+                ],
+            },
+        )
+        .await
+        .expect("création de l'écriture de test");
+    }
+
+    /// Écriture simple à deux lignes.
+    async fn mk_entry(
+        pool: &MySqlPool,
+        company_id: i64,
+        fiscal_year_id: i64,
+        admin_user_id: i64,
+        debit_account: i64,
+        credit_account: i64,
+    ) {
+        use crate::entities::journal_entry::{Journal, NewJournalEntry, NewJournalEntryLine};
+        use crate::repositories::journal_entries;
+        use rust_decimal::Decimal;
+
+        journal_entries::create(
+            pool,
+            fiscal_year_id,
+            admin_user_id,
+            NewJournalEntry {
+                company_id,
+                entry_date: chrono::NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(),
+                journal: Journal::OD,
+                description: "Écriture de test 25-2-a".into(),
+                project_id: None,
+                lines: vec![
+                    NewJournalEntryLine {
+                        account_id: debit_account,
+                        debit: Decimal::from(100),
+                        credit: Decimal::ZERO,
+                        project_id: None,
+                    },
+                    NewJournalEntryLine {
+                        account_id: credit_account,
+                        debit: Decimal::ZERO,
+                        credit: Decimal::from(100),
+                        project_id: None,
+                    },
+                ],
+            },
+        )
+        .await
+        .expect("création de l'écriture de test");
+    }
+
+    /// AC 1 — un compte qu'aucune écriture ne touche ne recense rien, et le
+    /// retypage doit donc rester libre.
+    #[tokio::test]
+    async fn retype_impact_d_un_compte_vierge_ne_recense_rien() {
+        let pool = test_pool().await;
+        let admin = get_admin_user_id(&pool).await;
+        let (company_id, _fy) = mk_company_with_fy(&pool, "impact-vierge").await;
+
+        let account = mk_account(&pool, company_id, admin, "T900", AccountType::Expense).await;
+
+        let (count, closed) = retype_impact(&pool, company_id, account).await.unwrap();
+
+        assert_eq!(count, 0, "un compte vierge ne porte aucune écriture");
+        assert!(closed.is_empty(), "aucun exercice clos ne peut être touché");
+
+        drop_company_deep(&pool, company_id).await;
+    }
+
+    /// AC 2 — l'ampleur annoncée est le nombre d'écritures, dans un exercice
+    /// ouvert la liste des exercices clos reste vide.
+    #[tokio::test]
+    async fn retype_impact_compte_les_ecritures_d_un_exercice_ouvert() {
+        let pool = test_pool().await;
+        let admin = get_admin_user_id(&pool).await;
+        let (company_id, fy) = mk_company_with_fy(&pool, "impact-ouvert").await;
+
+        let charge = mk_account(&pool, company_id, admin, "T901", AccountType::Expense).await;
+        let caisse = mk_account(&pool, company_id, admin, "T902", AccountType::Asset).await;
+
+        mk_entry(&pool, company_id, fy, admin, charge, caisse).await;
+        mk_entry(&pool, company_id, fy, admin, charge, caisse).await;
+
+        let (count, closed) = retype_impact(&pool, company_id, charge).await.unwrap();
+
+        assert_eq!(count, 2, "deux écritures mouvementent ce compte");
+        assert!(
+            closed.is_empty(),
+            "l'exercice est ouvert : rien à signaler comme clos, or on a reçu {closed:?}"
+        );
+
+        drop_company_deep(&pool, company_id).await;
+    }
+
+    /// AC 2 — **le cas qui justifie la story** : le refus doit nommer les
+    /// exercices clos, puisque ce sont eux dont le résultat changerait sans
+    /// qu'aucune écriture ne l'explique.
+    #[tokio::test]
+    async fn retype_impact_nomme_les_exercices_clos_touches() {
+        let pool = test_pool().await;
+        let admin = get_admin_user_id(&pool).await;
+        let (company_id, fy) = mk_company_with_fy(&pool, "impact-clos").await;
+
+        let charge = mk_account(&pool, company_id, admin, "T903", AccountType::Expense).await;
+        let caisse = mk_account(&pool, company_id, admin, "T904", AccountType::Asset).await;
+        mk_entry(&pool, company_id, fy, admin, charge, caisse).await;
+
+        // Fermer APRÈS avoir écrit : une écriture ne s'insère pas dans un
+        // exercice clos, et c'est bien l'ordre de la vraie vie.
+        sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+            .bind(fy)
+            .execute(&pool)
+            .await
+            .expect("fermeture de l'exercice de test");
+
+        let (count, closed) = retype_impact(&pool, company_id, charge).await.unwrap();
+
+        assert_eq!(count, 1);
+        assert_eq!(
+            closed,
+            vec!["Exercice impact-clos".to_string()],
+            "le refus doit NOMMER l'exercice clos touché"
+        );
+
+        drop_company_deep(&pool, company_id).await;
+    }
+
+    /// AC 2 — des écritures **distinctes**, jamais des lignes : une écriture qui
+    /// mouvemente deux fois le même compte reste une écriture.
+    #[tokio::test]
+    async fn retype_impact_compte_les_ecritures_et_non_les_lignes() {
+        let pool = test_pool().await;
+        let admin = get_admin_user_id(&pool).await;
+        let (company_id, fy) = mk_company_with_fy(&pool, "impact-lignes").await;
+
+        let charge = mk_account(&pool, company_id, admin, "T905", AccountType::Expense).await;
+        let caisse = mk_account(&pool, company_id, admin, "T906", AccountType::Asset).await;
+
+        mk_entry_two_lines_on_debit(&pool, company_id, fy, admin, charge, caisse).await;
+
+        let (count, _closed) = retype_impact(&pool, company_id, charge).await.unwrap();
+
+        assert_eq!(
+            count, 1,
+            "deux lignes d'une même écriture ne font pas deux écritures"
+        );
+
+        drop_company_deep(&pool, company_id).await;
     }
 
     #[tokio::test]
