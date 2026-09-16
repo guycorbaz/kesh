@@ -2262,6 +2262,43 @@ impl IntoResponse for AppError {
                         "Conflit de version — la ressource a été modifiée",
                     ),
                 ),
+                // Story 25-2-a ([#382], [#274]) — **409 et non 400** : le payload
+                // est valide, c'est l'ÉTAT du compte qui s'y oppose. Même lecture
+                // que `OptimisticLockConflict` ci-dessus, et symétrique inverse de
+                // `ReversalAccountsArchived`, qui reste un 400 parce qu'un compte
+                // archivé y est une donnée d'entrée invalide.
+                //
+                // ⛔ **Le refus NOMME l'ampleur**, sans quoi il ne serait qu'un
+                // obstacle à contourner : l'écran doit pouvoir écrire « douze
+                // écritures, dont l'exercice 2025 qui est clos » AVANT de demander
+                // la confirmation. C'est tout l'écart entre un avertissement
+                // bloquant et un refus sec.
+                DbError::AccountHasEntries {
+                    entry_count,
+                    closed_fiscal_years,
+                    from_type,
+                    to_type,
+                } => {
+                    let fallback = format!(
+                        "Ce compte porte {entry_count} écriture(s) : changer son type reclasserait tout son historique, exercices clos compris."
+                    );
+                    let mut args = FluentArgs::new();
+                    args.set("count", entry_count);
+                    let msg = t_args("error-account-has-entries", &fallback, &args);
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "ACCOUNT_HAS_ENTRIES",
+                            "message": msg,
+                            "details": {
+                                "entryCount": entry_count,
+                                "closedFiscalYears": closed_fiscal_years,
+                                "fromType": from_type,
+                                "toType": to_type,
+                            }
+                        }
+                    });
+                    (StatusCode::CONFLICT, Json(body)).into_response()
+                }
                 DbError::UniqueConstraintViolation(m) => {
                     tracing::warn!("unique violation: {m}");
                     // Course perdue sur un rôle singleton : deux requêtes

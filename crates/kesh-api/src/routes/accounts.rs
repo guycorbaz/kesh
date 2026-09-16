@@ -279,8 +279,17 @@ pub async fn update_account(
         postable,
     };
 
-    let account =
-        accounts::update(&state.pool, id, req.version, current_user.user_id, changes).await?;
+    // Story 25-2-a : `false` en attendant que la route porte le drapeau
+    // `confirmAccountRetype` (tâche T4). Le défaut sûr est de refuser.
+    let account = accounts::update(
+        &state.pool,
+        id,
+        req.version,
+        current_user.user_id,
+        changes,
+        false,
+    )
+    .await?;
     Ok(Json(AccountResponse::from(account)))
 }
 

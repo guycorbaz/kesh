@@ -177,6 +177,32 @@ pub enum DbError {
     #[error("La date n'est pas dans l'exercice courant de cette écriture")]
     DateOutsideFiscalYear,
 
+    /// Le compte porte des écritures et l'appelant veut changer son
+    /// `account_type` **sans l'avoir confirmé** (Story 25-2-a, [#382], [#274]).
+    ///
+    /// ⚠️ **Ce n'est pas un refus définitif** — l'arbitrage retenu est
+    /// l'*avertissement bloquant*, non le refus sec : un compte mal typé à la
+    /// création le resterait sinon à vie, rien ne permettant de déplacer ses
+    /// écritures ailleurs. L'appelant lève l'obstacle en confirmant.
+    ///
+    /// Les champs portent l'**ampleur** parce qu'un refus qui ne dit pas ce
+    /// qu'il protège ne sert qu'à être contourné : le comptable doit lire
+    /// combien d'écritures et quels exercices **clos** basculeraient d'un état à
+    /// l'autre avant de décider. C'est là tout l'enjeu — retyper un compte
+    /// mouvementé change le résultat d'un exercice clos sans qu'aucune écriture
+    /// ne l'explique.
+    #[error(
+        "Le compte porte {entry_count} écriture(s) : changer son type reclasserait tout son historique"
+    )]
+    AccountHasEntries {
+        /// Écritures **distinctes**, jamais des lignes.
+        entry_count: i64,
+        /// Noms des exercices **clos** touchés, triés ; vide si aucun.
+        closed_fiscal_years: Vec<String>,
+        from_type: &'static str,
+        to_type: &'static str,
+    },
+
     /// Un rôle de compte **singleton** est déjà porté par un autre compte actif
     /// de la même société (Story 14-3a).
     ///
@@ -395,6 +421,7 @@ impl DbError {
             Self::FiscalYearClosed => "FISCAL_YEAR_CLOSED",
             Self::InactiveOrInvalidAccounts => "INACTIVE_OR_INVALID_ACCOUNTS",
             Self::DateOutsideFiscalYear => "DATE_OUTSIDE_FISCAL_YEAR",
+            Self::AccountHasEntries { .. } => "ACCOUNT_HAS_ENTRIES",
             Self::AccountRoleAlreadyAssigned { .. } => "ACCOUNT_ROLE_ALREADY_ASSIGNED",
             Self::AccountParentArchived { .. } => "ACCOUNT_PARENT_ARCHIVED",
             Self::AccountRoleInvalidForType { .. } => "ACCOUNT_ROLE_INVALID_FOR_TYPE",

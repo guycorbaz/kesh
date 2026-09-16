@@ -18,6 +18,7 @@ error-cannot-disable-last-admin = Impossible de désactiver le dernier administr
 error-not-found = Ressource introuvable
 error-conflict = Ressource déjà existante
 error-optimistic-lock = Conflit de version — la ressource a été modifiée
+error-account-has-entries = Ce compte porte { $count } écriture(s) : changer son type reclasserait tout son historique, exercices clos compris.
 error-foreign-key = Référence invalide
 error-journal-entry-linked-to-invoice = Cette écriture comptable a été générée par une facture validée et ne peut pas être supprimée directement. Annulez d'abord la facture concernée.
 error-check-constraint = Valeur invalide

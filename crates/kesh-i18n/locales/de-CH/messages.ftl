@@ -18,6 +18,7 @@ error-cannot-disable-last-admin = Der letzte Administrator kann nicht deaktivier
 error-not-found = Ressource nicht gefunden
 error-conflict = Ressource bereits vorhanden
 error-optimistic-lock = Versionskonflikt — die Ressource wurde geändert
+error-account-has-entries = Dieses Konto weist { $count } Buchung(en) auf: Eine Änderung des Kontotyps würde die gesamte Historie neu klassifizieren, abgeschlossene Geschäftsjahre eingeschlossen.
 error-foreign-key = Ungültige Referenz
 error-journal-entry-linked-to-invoice = Dieser Buchungssatz wurde durch eine validierte Rechnung erzeugt und kann nicht direkt gelöscht werden. Stornieren Sie zuerst die betreffende Rechnung.
 error-check-constraint = Ungültiger Wert
