@@ -9,6 +9,7 @@
 pub mod address_input;
 pub(crate) mod admin_backup;
 pub mod audit;
+pub mod audit_labels;
 pub mod auth;
 pub mod config;
 pub mod document_storage;
