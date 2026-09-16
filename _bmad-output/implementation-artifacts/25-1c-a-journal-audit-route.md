@@ -1,9 +1,12 @@
 # Story 25.1c-a : La route de consultation du journal d'audit
 
-Status: ready-for-dev
+Status: in-progress
 
 ⚠️ **RÉOUVERTE le 2026-09-15 au soir** après sa validation en 5 passes : trois arbitrages du Project Lead
-changent sa conception (arbitrages 2, 3 et 5 ci-dessous). **Revalidation requise** avant implémentation.
+changent sa conception (arbitrages 2, 3 et 5 ci-dessous). ✅ **Revalidation CLOSE le 2026-09-16 en 4 passes
+ciblées** (`1H/3M/3L → 2M → 1M/3L → 1L`), et les **122 libellés français arbitrés** le même jour
+(`25-1c-a-libelles-proposes.md`). **Implémentation commencée le 2026-09-16**, après le merge de la PR #437
+(squash `842eaac0`).
 
 ⚠️ **Issue du SPLIT de la 25-1c**, décidé le 2026-09-15 par le Project Lead avant spécification :
 sept modules, donc la § *Règle de splitting préventif*. Découpage :
@@ -551,10 +554,20 @@ recense que les verbes mutants, `:181,311`), les tests de parité i18n, et les g
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Rebase** sur `main` **après** le merge de la PR #437 (ouverte au 2026-09-15 : ne pas
+- [x] **T0 — Rebase** sur `main` **après** le merge de la PR #437 (ouverte au 2026-09-15 : ne pas
       implémenter avant), par SHA (cf. en-tête), puis remise à zéro
       **vérifiée** de la base de dev.
-- [ ] **T1 — Repository** (AC 1-4) et ses tests (AC 22).
+      *(2026-09-16 : PR #437 fusionnée en squash `842eaac0` ; `git rebase --onto origin/main 42b6aac0` —
+      13 commits rejoués, sans conflit ; base de dev recréée en trois étapes — **40 tables, 1 Admin,
+      colonne `company_id` présente**. ⚠️ Le premier essai a échoué : le conteneur répondait au `ping`
+      alors qu'il **initialisait encore** son datadir tmpfs — attendre qu'un `SELECT 1` passe, pas un
+      ping.)*
+- [x] **T1 — Repository** (AC 1-4) et ses tests (AC 22).
+      *(2026-09-16 : `MAX_LIMIT = 200`, `AuditLogListQuery`, `AuditLogListResult`, `push_where_clauses`
+      partagée, `list_by_company_paginated`, `list_for_export` ; deux doc-comments périmés corrigés —
+      `find_by_entity` et l'en-tête d'`entities/audit_log.rs`. **13 tests verts**, dont les 7 neufs, en
+      0,43 s : scoping, filtre strict, bornes inclusives à la milliseconde jusqu'au 9999-12-31, filtres,
+      ordre à égalité de milliseconde, pagination et clamp, parité export/consultation.)*
 - [ ] **T2 — Extraction de `csv_sanitize`** (AC 13), tests de l'échéancier verts avant d'aller plus loin.
 - [ ] **T3 — Module `audit_labels` et garde des libellés** (AC 16, 18) : **la garde d'abord**, qui fixe
       les deux listes par diff contre la source ; puis le module et ses tests unitaires.
@@ -695,11 +708,29 @@ seule garde ensembliste, et non de la logique ; le Project Lead a refusé de le 
 
 ### Agent Model Used
 
+Claude Opus 5 (1M context) — implémentation du 2026-09-16.
+
 ### Debug Log References
+
+- **Remise à zéro de la base (T0)** : le premier essai a échoué en `ERROR 1045 Access denied for
+  'root'@'localhost'`. Le conteneur répondait déjà au `mariadb-admin ping` alors qu'il **initialisait
+  encore** son datadir tmpfs. ⇒ attendre qu'un `SELECT 1` passe, jamais un ping. Deuxième essai : 40
+  tables, 1 Admin, colonne `company_id` présente.
+- **T1** : `cargo test -p kesh-db --lib repositories::audit_log` ⇒ **13 passed, 0 failed** (0,43 s), après
+  correction d'un `unused_mut` que `clippy -D warnings` aurait refusé au gate.
 
 ### Completion Notes List
 
+- **T1 — repository.** La clause WHERE vit dans **une seule** fonction, `push_where_clauses`, appelée sur
+  deux `QueryBuilder` distincts (count et items) puis par l'export : c'est ce qui garantit que l'export et
+  l'écran montrent les mêmes lignes. Les bornes de date sont **inclusives à la milliseconde** et ne
+  calculent rien — le test les éprouve jusqu'au `9999-12-31 23:59:59.999`, la valeur qui faisait paniquer
+  la forme abandonnée.
+
 ### File List
+
+- `crates/kesh-db/src/repositories/audit_log.rs` — modifié (T1)
+- `crates/kesh-db/src/entities/audit_log.rs` — modifié (doc-comment, AC 4)
 
 ## Change Log
 
