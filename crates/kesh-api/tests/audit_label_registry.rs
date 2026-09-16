@@ -818,6 +818,25 @@ pub fn production_apres_methode() -> i32 {
     4
 }
 ";
+    // ⛔ **Les LIFETIMES, et ce cas manquait.** Le saut d'un littéral de
+    // caractère (`'x'`) ne doit pas se déclencher sur une lifetime (`'a`), qui
+    // n'a pas d'apostrophe fermante — sans quoi le compteur avalerait
+    // l'accolade qui suit sur la même ligne. La passe 7 a montré par mutation
+    // qu'une régression de cette branche restait **invisible aux dix tests** :
+    // aucune des quatre entrées précédentes ne portait de lifetime.
+    const BLOC_APRES_LIFETIME: &str = "\
+impl<'a> Chose<'a> {
+    #[cfg(test)]
+    fn aide<'b>(&'b self) -> &'b str {
+        let _ = '{';
+        \"x\"
+    }
+}
+
+pub fn production_apres_lifetime() -> i32 {
+    5
+}
+";
 
     for (nom, source, attendu) in [
         (
@@ -835,6 +854,11 @@ pub fn production_apres_methode() -> i32 {
             "attribut sur une méthode",
             ATTRIBUT_SUR_METHODE,
             "production_apres_methode",
+        ),
+        (
+            "lifetimes ET littéral de caractère sur les mêmes lignes",
+            BLOC_APRES_LIFETIME,
+            "production_apres_lifetime",
         ),
     ] {
         let assainie = source_assainie(source);
