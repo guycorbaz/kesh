@@ -573,10 +573,32 @@ recense que les verbes mutants, `:181,311`), les tests de parité i18n, et les g
       `invoices.rs` l'importe et garde un renvoi à sa place. **Quatre tests unitaires écrits** — elle n'en
       avait aucun : un cas par caractère déclencheur, le contournement par espace ou tabulation de tête,
       CR/LF/TAB remplacés, et une chaîne ordinaire intacte. 17 tests d'`util` verts.)*
-- [ ] **T3 — Module `audit_labels` et garde des libellés** (AC 16, 18) : **la garde d'abord**, qui fixe
+- [x] **T3 — Module `audit_labels` et garde des libellés** (AC 16, 18) : **la garde d'abord**, qui fixe
       les deux listes par diff contre la source ; puis le module et ses tests unitaires.
-- [ ] **T4 — Libellés, quatre locales** (AC 15) : les 120 libellés à la spécification, et les 13 autres clés ;
+      *(2026-09-16 : garde écrite en premier, elle a FIXÉ les listes par extraction positionnelle sur
+      **cinq** formes — les quatre constructeurs plus le helper `build_audit_entry` des exercices. Ses
+      trois volets structurels étaient **verts dès le premier lancement**, ce qui confirme les 92 actions
+      et les 28 types par une extraction indépendante de celle du document arbitré. Inventaire clos de
+      **six** sites non résolus, plus deux passe-plats d'`audit.rs` exclus nommément — ils relaient
+      l'action de leurs appelants et ne sont l'angle mort de personne. Diff **bilatéral** : le sens
+      « liste → code » attraperait une coupe `#[cfg(test)]` devenue trop gourmande. Les `.ftl` sont lus
+      **directement**, jamais via `I18nBundle` — `format` replie sur le français et `all_messages`
+      comble les trous, si bien qu'une locale vide passerait au vert. Module : test d'appartenance
+      **avant** traduction, sans quoi la clé brute s'afficherait. Garde 4/4 et module 4/4 après T4 ;
+      avant T4, 3/4 de part et d'autre, le rouge portant sur les 122 clés absentes.)*
+- [x] **T4 — Libellés, quatre locales** (AC 15) : les 120 libellés à la spécification, et les 13 autres clés ;
       glossaire partie B si un terme l'exige ; **liste française recopiée au Dev Agent Record**.
+      *(2026-09-16 : **133 clés par locale**, recomptées depuis les fichiers et non estimées —
+      ventilation `grep -c` sur `fr-CH` : 28 `entity` + 92 `action` + 2 `actor-type` + 10 `csv-header`
+      + 1 `export-error` = 133, et les quatre locales rendent le même total. Français **recopié du
+      document arbitré** `25-1c-a-libelles-proposes.md`, sans reformulation. Les trois langues cibles
+      sont **relevées** au catalogue, jamais inventées : deux balayages ont extrait les participes et
+      les noms d'entité attestés (`erstellt`/`creato`, `storniert`/`annullata`, `archiviert`,
+      `validiert`/`convalidata`, `widerrufen`/`revocata`, `verworfen`/`scartata`, `Mahnstufe`,
+      `API-Schlüssel`, `Bankprofil`, `Zuordnungsregel`…), et les 11 clés d'export **décalquent**
+      `echeancier-csv-header-*` et `echeancier-export-error-too-large`, dont seul l'exemple de filtre
+      change. Verts : garde 4/4, module 4/4, `kesh-i18n` 29/29 dont `parity_between_locales`,
+      `lint-i18n-ownership` PASS, frontend 740/740.)*
 - [ ] **T5 — Routes de consultation et de vocabulaire** (AC 5-9, 17) : module, DTO, validation partagée,
       montage.
 - [ ] **T6 — Export CSV** (AC 10-14).
@@ -730,6 +752,24 @@ Claude Opus 5 (1M context) — implémentation du 2026-09-16.
   l'écran montrent les mêmes lignes. Les bornes de date sont **inclusives à la milliseconde** et ne
   calculent rien — le test les éprouve jusqu'au `9999-12-31 23:59:59.999`, la valeur qui faisait paniquer
   la forme abandonnée.
+- **T3 — la garde a précédé le module, et c'est ce qui a servi.** Écrite d'abord, elle a **fixé** les
+  deux listes par extraction positionnelle sur cinq formes, et ses trois volets structurels étaient
+  verts au premier lancement : les 92 actions et 28 types du module sont donc confirmés par une
+  extraction **indépendante** de celle qui avait produit le document arbitré. Deux acquis qui ne se
+  devinent pas : `audit.rs` est un **passe-plat** (il relaie l'action de ses appelants et n'en produit
+  aucune — l'inventorier eût rapporté deux faux angles morts), et le helper `build_audit_entry` des
+  exercices écrit `"fiscal_year"` **en dur**, d'où une forme sans position de type.
+- **T4 — liste française.** Elle n'est pas recopiée ici mais dans
+  `25-1c-a-libelles-proposes.md`, **versionné et arbitré** le 2026-09-16 (commit `4639944a`) : la
+  dupliquer créerait deux sources pour une même décision, et c'est l'écart entre les deux qu'on
+  découvrirait plus tard. ⚠️ **Deux points laissés au Project Lead** : le catalogue dit « Éclater »
+  là où le document arbitré dit « Ventilation appliquée » (`reconciliation.split_applied`) — le
+  français arbitré est conservé, les trois cibles suivent l'attesté ; et `Mahneinstellungen` /
+  `Fakturierungseinstellungen` sont **composés** à partir de termes attestés, non relevés tels quels.
+  ⚠️ Relevé au passage sans être corrigé ici : « Règles d'affectation » porte **deux** formes
+  allemandes au catalogue (`Zuordnungsregeln` en navigation, `Zuweisungsregeln` en titre de page) ;
+  la première est retenue. Et `fiscal-year-close-button` reste **KF-041** — il dit `Schliessen`, le
+  mot de « fermer » ; le libellé d'audit écrit donc `abgeschlossen`, conformément au glossaire.
 
 ### File List
 
@@ -737,6 +777,11 @@ Claude Opus 5 (1M context) — implémentation du 2026-09-16.
 - `crates/kesh-db/src/entities/audit_log.rs` — modifié (doc-comment, AC 4)
 - `crates/kesh-api/src/util.rs` — modifié (T2 : `csv_sanitize` et ses quatre tests)
 - `crates/kesh-api/src/routes/invoices.rs` — modifié (T2 : import et renvoi, définition retirée)
+- `crates/kesh-api/src/audit_labels.rs` — **créé** (T3 : les deux listes, `message_key`, les trois
+  fonctions de libellé et leurs quatre tests)
+- `crates/kesh-api/src/lib.rs` — modifié (T3 : `pub mod audit_labels;` — la garde est une crate externe)
+- `crates/kesh-api/tests/audit_label_registry.rs` — **créé** (T3 : la garde, quatre tests)
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` — modifiés (T4 : 122 clés par locale)
 
 ## Change Log
 
