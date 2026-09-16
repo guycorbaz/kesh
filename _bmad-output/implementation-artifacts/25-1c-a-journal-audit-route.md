@@ -959,6 +959,46 @@ Claude Opus 5 (1M context) — implémentation du 2026-09-16.
 
 ## Change Log
 
+### Passe 5 — CIBLÉE, une seule lentille sur le seul commit `b7a06a29`
+
+Prompt **versionné** : `25-1c-a-review-prompt-p5-ciblee.md`. Modèle : Sonnet (la passe 4 était Opus).
+
+**Rendu : 1 CRITICAL, 1 MEDIUM, 2 LOW** — le CRITICAL est **l'angle que je lui avais donné**, et
+elle l'a confirmé par mutation compilée.
+
+⛔ **Mon appariement d'accolades ne sortait que sur `ouvert && profondeur <= 0`.** Un item gardé qui
+n'ouvre **aucune** accolade — `use …;`, `mod fixtures;`, `const … = …;` — ne le déclenchait jamais :
+le saut courait jusqu'à la **prochaine accolade du fichier, quelle qu'elle soit**, avalant tout ce qui
+se trouvait entre les deux ; et si le fichier n'en portait plus, **jusqu'à sa fin**. Plus profond que
+la troncature que la passe 4 avait remplacée. ⚠️ Dormant — aucun site de ce genre aujourd'hui — mais
+`#[cfg(test)] mod fixtures;` est un idiome courant.
+
+⛔ **Et mon garde-fou restait VERT PAR EXCÈS.** Il ne vérifiait que l'absence d'attribut résiduel : or
+si le masquage avale tout, il ne reste évidemment plus aucun attribut à trouver. *Un détecteur qui ne
+surveille qu'un sens de sa propre erreur ne surveille rien* — c'est la faute de l'inventaire qui
+affirmait au lieu de vérifier, à deux passes de distance.
+
+⇒ **Deux correctifs** : une seconde sortie de boucle (l'item se termine sur son point-virgule sans
+avoir ouvert de bloc), et une garde **symétrique** — le masquage ne retire aucun item de production,
+reconnu à sa colonne 0.
+
+⛔ **MEDIUM — sixième décompte faux de cette boucle**, et dans le test censé fermer cette classe : mon
+message annonçait « elles sont trois » là où le grep en trouve **cinq**, hors de l'en-tête. ⇒ le
+message ne chiffre plus rien : *un message qui annonce « elles sont N » est lui-même un décompte.*
+
+**Éprouvé DANS LES DEUX SENS — une première dans cette boucle** :
+
+| épreuve | verdict |
+|---|---|
+| correctif **en place**, sonde `#[cfg(test)] const …;` suivie de production | ✅ rouge — l'action neuve est vue, la production n'est plus avalée |
+| correctif **retiré**, même sonde | ✅ rouge — la garde symétrique nomme l'item perdu |
+
+⚠️ La remédiation ne touche **aucune ligne de code de production**. Sévérité toujours au-dessus de
+LOW ⇒ passe 6, **sous réserve de l'arbitrage de conduite porté au Project Lead** : la sévérité ne
+décroît pas (HIGH en P4, CRITICAL en P5), le code de production n'a plus été pris en défaut depuis la
+passe 2, et les cinq passes se sont jouées sur **un seul fichier de test**. *Ce détecteur vaut-il ce
+qu'il coûte ?*
+
 ### Passe 4 — CIBLÉE, une seule lentille sur le seul commit `9ff606de`
 
 Prompt **versionné** : `25-1c-a-review-prompt-p4-ciblee.md`. Modèle : Opus (la passe 3 était Sonnet).
@@ -1137,7 +1177,7 @@ son voisin `:1613` disant, lui, « écran dédié ».
   (7 dépôt, 4 `util`, 5 module, 4 garde, 15 E2E), **133 clés** par locale × 4.
   ⛔ **L'état courant n'est PAS répété ici** — ni commits, ni fichiers, ni lignes, ni total de tests.
   Une telle mesure se périme **à chaque commit de revue**, et celle-ci l'avait déjà fait deux fois :
-  elle annonçait « 27 commits, 31 fichiers, +5417/−44, +40 tests, la garde passée de 4 à 7 » quand le
+  elle annonçait « 27 commits, 31 fichiers, +5417/−44, +41 tests, la garde passée de 4 à 7 » quand le
   dépôt en était à 34, 33, +5980 et une garde à 9. *J'avais tiré cette leçon pour la mesure figée
   ci-dessus et l'avais oubliée sur la phrase suivante.* L'état courant est tenu dans
   `sprint-status.yaml`, **daté à chaque passe**.
