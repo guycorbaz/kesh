@@ -656,6 +656,17 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/projects/{id}/unarchive",
             post(routes::projects::unarchive_project),
         )
+        // Story 25-1c-a (#378) — consultation du journal d'audit. Le bloc porte
+        // `require_comptable_role` : le rôle Consultation est refusé en 403
+        // (AC 6). ⚠️ Les clés API, elles, sont refusées par `ensure_not_pat` en
+        // tête de CHAQUE handler — ce bloc n'a pas de couche anti-clé, et le
+        // garde-fou d'`admin_pat_denied_e2e` interdit un second consommateur de
+        // `require_not_pat`.
+        .route("/api/v1/audit-log", get(routes::audit_log::list_audit_log))
+        .route(
+            "/api/v1/audit-log/vocabulary",
+            get(routes::audit_log::vocabulary),
+        )
         .route_layer(axum::middleware::from_fn(
             crate::middleware::rbac::require_comptable_role,
         ));

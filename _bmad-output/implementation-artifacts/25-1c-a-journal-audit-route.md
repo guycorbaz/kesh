@@ -313,7 +313,10 @@ impose le même jeu de clés partout.
   `Gutschrift` / `nota di credito` / `credit note`…) ; un terme récurrent qu'elle n'atteste pas va en
   **partie B**, avec sa valeur proposée ;
 - les codes irréguliers reçoivent un libellé qui dit ce qui s'est passé, non ce que dit le préfixe :
-  `books.locked` → « Livres verrouillés », `reconciliation.split_applied` → « Ventilation appliquée »,
+  `books.locked` → « **Période comptable verrouillée** » *(⚠️ cette ligne disait « Livres verrouillés »,
+  la forme écartée : l'arbitrage du 2026-09-16 — « 1: période comptable » — l'a remplacée au document des
+  libellés, et ce jumeau-ci avait été oublié. Corrigé à T4)*, `reconciliation.split_applied` →
+  « Ventilation appliquée »,
   `admin_break_glass_reset` → « Réinitialisation d'urgence de l'administrateur » ;
 - **la liste française complète est recopiée au Dev Agent Record** pour relecture par le Project Lead.
 
@@ -599,8 +602,18 @@ recense que les verbes mutants, `:181,311`), les tests de parité i18n, et les g
       `echeancier-csv-header-*` et `echeancier-export-error-too-large`, dont seul l'exemple de filtre
       change. Verts : garde 4/4, module 4/4, `kesh-i18n` 29/29 dont `parity_between_locales`,
       `lint-i18n-ownership` PASS, frontend 740/740.)*
-- [ ] **T5 — Routes de consultation et de vocabulaire** (AC 5-9, 17) : module, DTO, validation partagée,
+- [x] **T5 — Routes de consultation et de vocabulaire** (AC 5-9, 17) : module, DTO, validation partagée,
       montage.
+      *(2026-09-16 : `routes/audit_log.rs` créé — `ListAuditLogQuery`, `AuditLogEntryResponse`,
+      `VocabularyResponse`, et **une seule** fonction `construire_requete` que la liste et l'export
+      partageront : deux validations séparées dériveraient, et l'export cesserait de montrer les lignes
+      de l'écran. `ensure_not_pat` est la **première instruction** de chaque handler, pas une couche de
+      bloc — `comptable_routes` n'a pas de garde anti-clé et le garde-fou d'`admin_pat_denied_e2e`
+      interdit un second consommateur de `require_not_pat`. Bornes de date refusées **aux deux côtés**
+      (`1000-01-01` … `9999-12-31`) : une année négative se parse sans erreur et fait **paniquer** la
+      liaison, ce qu'aucune couche ne rattrape. Montées dans `comptable_routes`, module déclaré à son
+      rang alphabétique. `cargo check` et `clippy -D warnings` verts. ⚠️ **Non testée ici** : les tests
+      d'API sont la tâche T7, et cette note ne prétend pas le contraire.)*
 - [ ] **T6 — Export CSV** (AC 10-14).
 - [ ] **T7 — Tests API** (AC 23). ⛔ *Une tâche qui décrit un test est une promesse ; la cocher sans
       l'avoir écrit la transforme en mensonge.*
@@ -781,7 +794,11 @@ Claude Opus 5 (1M context) — implémentation du 2026-09-16.
   fonctions de libellé et leurs quatre tests)
 - `crates/kesh-api/src/lib.rs` — modifié (T3 : `pub mod audit_labels;` — la garde est une crate externe)
 - `crates/kesh-api/tests/audit_label_registry.rs` — **créé** (T3 : la garde, quatre tests)
-- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` — modifiés (T4 : 122 clés par locale)
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` — modifiés (T4 : **133** clés par locale)
+- `crates/kesh-api/src/routes/audit_log.rs` — **créé** (T5 : DTO, validation partagée, liste et
+  vocabulaire)
+- `crates/kesh-api/src/routes/mod.rs` — modifié (T5 : `pub mod audit_log;`)
+- `crates/kesh-api/src/lib.rs` — modifié (T5 : montage des deux routes dans `comptable_routes`)
 
 ## Change Log
 

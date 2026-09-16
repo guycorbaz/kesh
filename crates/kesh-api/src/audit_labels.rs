@@ -262,6 +262,28 @@ mod tests {
     }
 
     #[test]
+    fn deux_codes_distincts_ne_produisent_jamais_la_meme_cle() {
+        // ⛔ `.` et `_` deviennent TOUS DEUX `-` : `a.b` et `a_b` rendraient la
+        // même clé, donc le même libellé pour deux codes différents — et le
+        // journal afficherait « Facture payée » sur une autre action, sans que
+        // rien ne rougisse. La dérivation n'est pas injective par construction ;
+        // ce test atteste qu'elle l'est sur les codes réellement présents.
+        for (prefixe, liste) in [
+            (PREFIX_ENTITY, ENTITY_TYPES),
+            (PREFIX_ACTION, ACTIONS),
+            (PREFIX_ACTOR_TYPE, ACTOR_TYPES),
+        ] {
+            let mut vues: std::collections::HashMap<String, &str> = std::collections::HashMap::new();
+            for &code in liste {
+                let cle = message_key(prefixe, code);
+                if let Some(autre) = vues.insert(cle.clone(), code) {
+                    panic!("« {autre} » et « {code} » produisent la même clé « {cle} »");
+                }
+            }
+        }
+    }
+
+    #[test]
     fn un_code_inconnu_rend_le_code_et_jamais_la_cle() {
         // ⛔ Le cœur du module. Sans le test d'appartenance, `format` rendrait
         // `audit-log-action-parti-en-vacances` — affiché tel quel à l'écran et
