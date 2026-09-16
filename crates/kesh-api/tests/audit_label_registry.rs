@@ -178,8 +178,9 @@ fn strip_line_comments(src: &str) -> String {
 }
 
 /// La source d'un fichier, prête à être lue : commentaires masqués et blocs
-/// `#[cfg(test)]` **retirés par appariement d'accolades**. **Les trois lecteurs
-/// de ce fichier passent par ici.**
+/// `#[cfg(test)]` **retirés par appariement d'accolades**. **Tous les lecteurs
+/// de ce fichier passent par ici** — leur nombre n'est pas écrit : il a changé
+/// trois fois, et la phrase était fausse deux fois sur trois.
 ///
 /// ⛔ **On MASQUE le bloc, on ne TRONQUE pas le fichier — et il a fallu deux
 /// passes pour y venir.**
@@ -213,14 +214,14 @@ fn strip_line_comments(src: &str) -> String {
 /// - un `//` **dans une chaîne** tronque la ligne (hérité de
 ///   `strip_line_comments`) ;
 /// - les commentaires de **bloc** `/* … */` ne sont pas retirés ;
-/// - `accolades_hors_chaines` ne reconnaît ni les **littéraux de caractère**
-///   (`'{'`, `'}'`) ni la sémantique des **chaînes brutes** (`r#"…"#`), où un
-///   guillemet interne n'est pas un délimiteur.
+/// - `accolades_hors_chaines` ne comprend pas la sémantique des **chaînes
+///   brutes** (`r#"…"#`), où un guillemet interne n'est pas un délimiteur : 27
+///   lignes du dépôt en portent dans des blocs masqués, toutes de bilan nul.
 ///
-/// Aucun de ces cas n'existe aujourd'hui dans un bloc de test du dépôt — vérifié
-/// — et la garde symétrique `le_masquage_ne_retire_aucun_item_de_production`
-/// rougirait si l'un d'eux faussait le compte au point d'emporter de la
-/// production.
+/// ⚠️ **Les littéraux de caractère, eux, SONT traités** — une rédaction
+/// antérieure affirmait ici qu'aucun cas n'existait, « vérifié », et c'était
+/// **faux** : `loader.rs:386` en porte un. *Une limite déclarée sans être
+/// mesurée vaut moins qu'une limite tue : elle dissuade d'aller voir.*
 fn source_assainie(brut: &str) -> String {
     let sans_commentaires = strip_line_comments(brut);
     let lignes: Vec<&str> = sans_commentaires.lines().collect();
@@ -267,11 +268,28 @@ fn source_assainie(brut: &str) -> String {
     gardees.join("\n")
 }
 
-/// Compte les accolades d'une ligne **en ignorant celles des chaînes**.
+/// Compte les accolades d'une ligne **en ignorant celles des chaînes et des
+/// littéraux de caractère**.
+///
+/// ⛔ **`'{'` compte pour une accolade si on ne le traite pas — et ce n'était pas
+/// théorique.** `kesh-i18n/src/loader.rs:386` porte `ligne[..pos].contains('{')`
+/// **à l'intérieur** de son bloc de test : la profondeur n'y retombait jamais à
+/// zéro, et ce bloc n'était masqué correctement que **par accident**, parce
+/// qu'il court jusqu'à la dernière ligne du fichier. Toute production ajoutée
+/// après lui aurait été avalée en silence.
+///
+/// ⚠️ Une apostrophe n'est pas toujours un littéral : `&'static str` en porte
+/// une qui ne ferme jamais. On ne saute donc que la forme complète — `'x'` ou
+/// `'\n'` —, et une **lifetime** est laissée telle quelle, sans effet sur le
+/// compte.
 fn accolades_hors_chaines(ligne: &str) -> (i32, i32) {
     let (mut ouvrantes, mut fermantes) = (0, 0);
     let (mut dans_chaine, mut echappe) = (false, false);
-    for ch in ligne.chars() {
+    let chars: Vec<char> = ligne.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        let ch = chars[i];
         if dans_chaine {
             if echappe {
                 echappe = false;
@@ -280,14 +298,28 @@ fn accolades_hors_chaines(ligne: &str) -> (i32, i32) {
             } else if ch == '"' {
                 dans_chaine = false;
             }
+            i += 1;
             continue;
         }
         match ch {
             '"' => dans_chaine = true,
+            '\'' => {
+                // `'x'` (3 caractères) ou `'\n'` (4) : un littéral, qu'on saute
+                // en entier. Tout le reste est une lifetime.
+                if i + 2 < chars.len() && chars[i + 1] != '\\' && chars[i + 2] == '\'' {
+                    i += 3;
+                    continue;
+                }
+                if i + 3 < chars.len() && chars[i + 1] == '\\' && chars[i + 3] == '\'' {
+                    i += 4;
+                    continue;
+                }
+            }
             '{' => ouvrantes += 1,
             '}' => fermantes += 1,
             _ => {}
         }
+        i += 1;
     }
     (ouvrantes, fermantes)
 }
@@ -727,71 +759,103 @@ fn le_masquage_des_blocs_de_test_ne_laisse_aucun_attribut_derriere_lui() {
 }
 
 #[test]
-fn le_masquage_ne_retire_aucun_item_de_production() {
-    // ⛔ **Le garde-fou SYMÉTRIQUE, et son absence a coûté deux passes.**
+fn le_masquage_se_verifie_sur_des_entrees_synthetiques() {
+    // ⛔ **Ce test a REMPLACÉ un balayage du dépôt, et le motif vaut d'être écrit.**
     //
-    // Son voisin vérifie que le masquage n'en fait pas **trop peu** — aucun
-    // attribut ne subsiste. Celui-ci vérifie qu'il n'en fait pas **trop**. Sans
-    // lui, une sur-consommation restait VERTE PAR EXCÈS : si le masquage avale
-    // tout le fichier, il ne reste évidemment plus aucun attribut à trouver.
+    // La rédaction précédente parcourait les ~200 fichiers de `crates/*/src` en
+    // cherchant les items de production emportés par le masquage. Mesuré par la
+    // passe 6 : **verte par vacuité sur 95 des 99 fichiers concernés**, et le
+    // retrait du correctif qu'elle surveillait ne changeait **rien** sur le dépôt
+    // entier — 0 fichier sur 218. Elle reconnaissait de surcroît les items par
+    // une **énumération de préfixes** où manquaient `pub(crate) fn` (28
+    // occurrences réelles), `pub mod` (202), `pub use` (85) : *la visibilité
+    // décidait de la protection.*
     //
-    // *Un détecteur qui ne surveille qu'un sens de sa propre erreur ne surveille
-    // rien : c'est la même faute que l'inventaire qui affirmait au lieu de
-    // vérifier, à deux passes de distance.*
-    for chemin in fichiers_de_production() {
-        let brut = std::fs::read_to_string(&chemin).expect("lire un fichier source");
-        if !brut.contains("#[cfg(test)]") {
-            continue;
-        }
-        let assainie = source_assainie(&brut);
-        let lignes: Vec<&str> = brut.lines().collect();
+    // ⚠️ **Une garde dont la sensibilité dépend de ce que le dépôt contient ce
+    // jour-là ne garde rien.** Élargir la liste n'aurait fait que déplacer la
+    // frontière. Des entrées **écrites en dur** sont décidables, indépendantes du
+    // dépôt, et exercent les cas que les cinq passes ont mis au jour.
+    const MOD_SANS_BLOC: &str = "\
+#[cfg(test)]
+mod fixtures;
 
-        for (n, ligne) in lignes.iter().enumerate() {
-            if !est_item_de_production(ligne) {
-                continue;
-            }
-            // Un item directement gardé par l'attribut DOIT disparaître.
-            let precedente = lignes[..n].iter().rev().find(|p| !p.trim().is_empty());
-            if precedente.is_some_and(|p| p.trim() == "#[cfg(test)]") {
-                continue;
-            }
-            assert!(
-                assainie.contains(ligne.trim_end()),
-                "⛔ `{}` : le masquage des blocs de test a emporté un item de \
-                 PRODUCTION — « {} » (l.{}).\n\n\
-                 Le saut d'un bloc a consommé au-delà de sa fermeture. Vérifier \
-                 les deux sorties de boucle de `source_assainie` : un item gardé \
-                 qui n'ouvre aucune accolade (`use …;`, `mod x;`, `const …;`) doit \
-                 s'arrêter sur son point-virgule, faute de quoi le saut court \
-                 jusqu'à la prochaine accolade du fichier — ou jusqu'à sa fin.",
-                chemin.display(),
-                ligne.trim(),
-                n + 1
-            );
-        }
+pub(crate) fn production_apres_mod_declare() -> i32 {
+    1
+}
+";
+    const BLOC_ORDINAIRE: &str = "\
+#[cfg(test)]
+mod tests {
+    fn dedans() {}
+}
+
+pub fn production_apres_bloc() -> i32 {
+    2
+}
+";
+    const BLOC_AVEC_ACCOLADE_LITTERALE: &str = "\
+#[cfg(test)]
+mod tests {
+    fn dedans() {
+        let _ = \"texte { non fermé\";
+        let _ = '{';
     }
 }
 
-/// Une déclaration de production, reconnue à sa **colonne 0** : le contenu d'un
-/// `mod tests { … }` est indenté, donc hors de portée de ce détecteur.
-fn est_item_de_production(ligne: &str) -> bool {
-    const DEBUTS: &[&str] = &[
-        "pub fn ",
-        "pub async fn ",
-        "pub struct ",
-        "pub enum ",
-        "pub trait ",
-        "pub const ",
-        "pub static ",
-        "fn ",
-        "async fn ",
-        "struct ",
-        "enum ",
-        "impl ",
-    ];
-    // ⚠️ `mod ` est volontairement absent : `mod tests` est en colonne 0 et DOIT
-    // disparaître.
-    DEBUTS.iter().any(|d| ligne.starts_with(d))
+pub fn production_apres_accolades_piegees() -> i32 {
+    3
+}
+";
+    const ATTRIBUT_SUR_METHODE: &str = "\
+impl Chose {
+    #[cfg(test)]
+    fn aide_de_test(&self) -> u8 {
+        0
+    }
+}
+
+pub fn production_apres_methode() -> i32 {
+    4
+}
+";
+
+    for (nom, source, attendu) in [
+        (
+            "mod déclaré sans bloc",
+            MOD_SANS_BLOC,
+            "production_apres_mod_declare",
+        ),
+        ("bloc ordinaire", BLOC_ORDINAIRE, "production_apres_bloc"),
+        (
+            "bloc piégé par une accolade de chaîne ET un littéral de caractère",
+            BLOC_AVEC_ACCOLADE_LITTERALE,
+            "production_apres_accolades_piegees",
+        ),
+        (
+            "attribut sur une méthode",
+            ATTRIBUT_SUR_METHODE,
+            "production_apres_methode",
+        ),
+    ] {
+        let assainie = source_assainie(source);
+        assert!(
+            assainie.contains(attendu),
+            "⛔ {nom} : le masquage a EMPORTÉ la production qui suit le bloc de \
+             test — « {attendu} » a disparu.\n\n\
+             Source assainie :\n{assainie}"
+        );
+        assert!(
+            !assainie.contains("#[cfg(test)]"),
+            "⛔ {nom} : le masquage n'a PAS retiré le bloc de test.\n\n\
+             Source assainie :\n{assainie}"
+        );
+    }
+
+    // Et le contenu du bloc, lui, doit bien avoir disparu.
+    assert!(
+        !source_assainie(BLOC_ORDINAIRE).contains("dedans"),
+        "⛔ le corps du bloc de test subsiste dans la source assainie"
+    );
 }
 
 #[test]
