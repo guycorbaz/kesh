@@ -618,7 +618,10 @@ mod tests {
             .expect("consultation de la 40");
         let ids: Vec<i64> = page.items.iter().map(|e| e.id).collect();
 
-        assert!(ids.contains(&chez_40.id), "l'entrée de la société consultée");
+        assert!(
+            ids.contains(&chez_40.id),
+            "l'entrée de la société consultée"
+        );
         assert!(
             !ids.contains(&chez_30.id),
             "une entrée de la société 30 ne doit JAMAIS apparaître dans la consultation de la 40"
@@ -638,7 +641,10 @@ mod tests {
             NewAuditLogEntry::user(777, "contact.created", "contact", 9, None),
         )
         .await;
-        assert_eq!(sans_societe.company_id, None, "montage : entrée sans société");
+        assert_eq!(
+            sans_societe.company_id, None,
+            "montage : entrée sans société"
+        );
 
         let avec_societe = insert(
             &pool,
@@ -701,8 +707,14 @@ mod tests {
             .expect("consultation bornée");
         let ids: Vec<i64> = page.items.iter().map(|e| e.id).collect();
 
-        assert!(ids.contains(&debut), "00:00:00.000 du jour `date_from` est INCLUS");
-        assert!(ids.contains(&fin), "23:59:59.999 du jour `date_to` est INCLUS");
+        assert!(
+            ids.contains(&debut),
+            "00:00:00.000 du jour `date_from` est INCLUS"
+        );
+        assert!(
+            ids.contains(&fin),
+            "23:59:59.999 du jour `date_to` est INCLUS"
+        );
         assert!(
             !ids.contains(&veille_fin),
             "la veille à 23:59:59.999 est EXCLUE"
@@ -856,8 +868,14 @@ mod tests {
         )
         .await
         .expect("page 1");
-        assert_eq!(page1.total, 5, "le total ne dépend ni de `limit` ni d'`offset`");
-        assert_eq!(page1.items.iter().map(|e| e.id).collect::<Vec<_>>(), ids[..2]);
+        assert_eq!(
+            page1.total, 5,
+            "le total ne dépend ni de `limit` ni d'`offset`"
+        );
+        assert_eq!(
+            page1.items.iter().map(|e| e.id).collect::<Vec<_>>(),
+            ids[..2]
+        );
 
         let page2 = list_by_company_paginated(
             &pool,
@@ -871,7 +889,10 @@ mod tests {
         .await
         .expect("page 2");
         assert_eq!(page2.total, 5);
-        assert_eq!(page2.items.iter().map(|e| e.id).collect::<Vec<_>>(), ids[2..4]);
+        assert_eq!(
+            page2.items.iter().map(|e| e.id).collect::<Vec<_>>(),
+            ids[2..4]
+        );
 
         // Clamp défensif : `limit` hors bornes est ramené dans [1, MAX_LIMIT].
         let trop_grand = list_by_company_paginated(
