@@ -1,8 +1,8 @@
-# Story 25-1c-a — les 122 libellés français, proposés pour relecture
+# Story 25-1c-a — les 122 libellés français, ARBITRÉS
 
-**Écrit le 2026-09-16, pendant l'attente du merge de la PR #437.** Ce document ne modifie aucune fiche
-validée : c'est une **proposition**, que la story recopiera dans les quatre catalogues à son implémentation
-(AC 15, tâche T4), et que le Project Lead relit ici avant que 488 traductions n'en découlent.
+**Écrit le 2026-09-16 pendant l'attente du merge de la PR #437, et arbitré le même jour** par le Project
+Lead. Ce document ne modifie aucune fiche validée : il **fixe le français**, que la story recopiera dans les
+quatre catalogues à son implémentation (AC 15, tâche T4), et sur lequel s'appuieront 366 traductions.
 
 ⛔ **Le français d'abord, et lui seul.** L'allemand, l'italien et l'anglais s'écriront à l'implémentation,
 d'après ces choix et le glossaire — les traduire maintenant figerait quatre fois une formulation qui peut
@@ -161,7 +161,7 @@ réels de la base ; leur libellé est au singulier, puisqu'il désigne **une** e
 | `email_template.updated` | Modèle d'e-mail modifié |
 | `email_template.restored_default` | Modèle d'e-mail réinitialisé |
 | `installation.ui_mode_changed` | Mode d'utilisation changé |
-| `admin.full_export` | Sauvegarde exportée |
+| `admin.full_export` | Sauvegarde complète exportée |
 | `admin.full_import` | Sauvegarde importée |
 | `exports.global` | Export global effectué |
 | `report.generated` | Rapport généré |
@@ -178,8 +178,16 @@ réels de la base ; leur libellé est au singulier, puisqu'il désigne **une** e
 
 ## Ce sur quoi je demande votre avis
 
-Cinq libellés ne se déduisent d'aucun terme attesté. Ma proposition est en premier ; l'autre forme suit. Un
-sixième, que le catalogue a tranché entre-temps, est gardé ici pour mémoire.
+✅ **TRANCHÉS le 2026-09-16.** Réponses du Project Lead, citées : *« 1: période comptable. 2: projet
+réactivé. 3: sauvegarde complète, sauvegarde importée. 4: import bancaire effectué 5: oui. »*
+
+⇒ les tableaux ci-dessus portent ces choix : « Période comptable verrouillée / déverrouillée », « Projet
+réactivé », « **Sauvegarde complète exportée** » et « Sauvegarde importée », « Import bancaire effectué »,
+« Réinitialisation d'urgence de l'administrateur ». Les questions restent écrites ci-dessous : une décision
+se relit mieux avec ce qu'elle écartait.
+
+Cinq libellés ne se déduisaient d'aucun terme attesté. Ma proposition était en premier ; l'autre forme
+suivait. Un sixième, que le catalogue a tranché entre-temps, est gardé pour mémoire.
 
 1. **`books.locked` / `books.unlocked` / `books.restored`** — « Période comptable verrouillée /
    déverrouillée » et « Verrou de période rétabli après restauration ». **Vérifié au code** : ces actions
@@ -194,7 +202,9 @@ sixième, que le catalogue a tranché entre-temps, est gardé ici pour mémoire.
    « Choisissez votre mode d'utilisation » (`onboarding-choose-mode`), « Guidé » et « Expert »
    (`mode-guided-label`, `mode-expert-label`). C'est ce mot-là que reprend le libellé — « mode d'affichage »,
    d'abord écrit ici, n'est le mot de personne.
-4. **`admin.full_export` / `admin.full_import`** — « Sauvegarde exportée / importée », le mot que le manuel
+4. **`admin.full_export` / `admin.full_import`** — ⇒ **retenu : « Sauvegarde complète exportée » et
+   « Sauvegarde importée »**, la seule des cinq réponses qui amende la proposition. Je proposais
+   « Sauvegarde exportée / importée », le mot que le manuel
    emploie. L'autre forme, littérale, serait « Export complet de l'installation ».
 5. **`bank_import.created`** — « Import bancaire effectué » plutôt que « créé » : on n'« crée » pas un
    import, on le fait.

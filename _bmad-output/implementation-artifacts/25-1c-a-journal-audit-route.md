@@ -686,6 +686,7 @@ seule garde ensembliste, et non de la logique ; le Project Lead a refusé de le 
 - `routes/i18n.rs`, `config.rs:524,831-832`, `kesh-i18n/src/loader.rs:110-131` — **langue et traduction**
 - `routes/mod.rs:44-63` (`ListResponse`), `routes/api_keys.rs:95-100` (`ensure_not_pat`),
   `util.rs:37,104-116`, `errors.rs:546,1422`, `lib.rs:310-321,336-660`
+- `25-1c-a-libelles-proposes.md` — **les 122 libellés français, arbitrés le 2026-09-16** (AC 15, T4)
 - `docs/i18n-glossaire.md` § A, B, *Comment s'en servir*
 - `CLAUDE.md` § *Test Locally First*, § *Propagation post-patch*, § *Le prompt d'une passe doit NOMMER
   le manuel*, § *Inventorier les sites NON RÉSOLUS*
@@ -1040,3 +1041,15 @@ par helper échappaient au comptage, dont `invoice.paid`. Il n'a été trouvé q
 chaque passe suivante a trouvé ce que la précédente avait écrit sans l'exécuter : une forme d'argument non décrite,
 un compte en toutes lettres oublié par un grep en chiffres, une cause d'échec affirmée sans lecture du fichier.
 ⛔ *Un inventaire se prouve en le rejouant avec ce qui est écrit, et seulement ce qui est écrit.*
+
+### Après la clôture — les libellés français, écrits et arbitrés (2026-09-16)
+
+Pendant l'attente du merge de la PR #437, les **122 libellés français** (92 actions, 28 types d'entité, 2 types
+d'auteur) ont été rédigés et soumis au Project Lead : `25-1c-a-libelles-proposes.md`. Cinq lui ont été posés en
+question, cinq ont été tranchés le jour même ; deux autres l'avaient été **par le code** — `books.*` désigne le
+verrou de période (`lock_books` écrit `companies.books_locked_through`), et `installation.ui_mode_changed` le
+mode d'utilisation, mot déjà employé par le catalogue.
+
+⚠️ **Cet ajout ne touche aucun AC** : il ne fait qu'ajouter un renvoi aux References, et il alimente la tâche
+T4, qui demandait précisément que la liste française soit relue par le Project Lead. Aucune revalidation n'est
+requise pour un renvoi ; la fiche reste close à `1 LOW`.
