@@ -568,7 +568,11 @@ recense que les verbes mutants, `:181,311`), les tests de parité i18n, et les g
       `find_by_entity` et l'en-tête d'`entities/audit_log.rs`. **13 tests verts**, dont les 7 neufs, en
       0,43 s : scoping, filtre strict, bornes inclusives à la milliseconde jusqu'au 9999-12-31, filtres,
       ordre à égalité de milliseconde, pagination et clamp, parité export/consultation.)*
-- [ ] **T2 — Extraction de `csv_sanitize`** (AC 13), tests de l'échéancier verts avant d'aller plus loin.
+- [x] **T2 — Extraction de `csv_sanitize`** (AC 13), tests de l'échéancier verts avant d'aller plus loin.
+      *(2026-09-16 : fonction déplacée dans `crate::util` en `pub(crate)`, **comportement identique** ;
+      `invoices.rs` l'importe et garde un renvoi à sa place. **Quatre tests unitaires écrits** — elle n'en
+      avait aucun : un cas par caractère déclencheur, le contournement par espace ou tabulation de tête,
+      CR/LF/TAB remplacés, et une chaîne ordinaire intacte. 17 tests d'`util` verts.)*
 - [ ] **T3 — Module `audit_labels` et garde des libellés** (AC 16, 18) : **la garde d'abord**, qui fixe
       les deux listes par diff contre la source ; puis le module et ses tests unitaires.
 - [ ] **T4 — Libellés, quatre locales** (AC 15) : les 120 libellés à la spécification, et les 13 autres clés ;
@@ -731,6 +735,8 @@ Claude Opus 5 (1M context) — implémentation du 2026-09-16.
 
 - `crates/kesh-db/src/repositories/audit_log.rs` — modifié (T1)
 - `crates/kesh-db/src/entities/audit_log.rs` — modifié (doc-comment, AC 4)
+- `crates/kesh-api/src/util.rs` — modifié (T2 : `csv_sanitize` et ses quatre tests)
+- `crates/kesh-api/src/routes/invoices.rs` — modifié (T2 : import et renvoi, définition retirée)
 
 ## Change Log
 
