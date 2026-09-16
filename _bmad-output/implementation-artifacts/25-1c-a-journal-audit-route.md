@@ -1,6 +1,6 @@
 # Story 25.1c-a : La route de consultation du journal d'audit
 
-Status: in-progress
+Status: review
 
 ⚠️ **RÉOUVERTE le 2026-09-15 au soir** après sa validation en 5 passes : trois arbitrages du Project Lead
 changent sa conception (arbitrages 2, 3 et 5 ci-dessous). ✅ **Revalidation CLOSE le 2026-09-16 en 4 passes
@@ -931,6 +931,17 @@ Claude Opus 5 (1M context) — implémentation du 2026-09-16.
 
 ## Change Log
 
+- **2026-09-16** — **Implémentation close** (`bmad-dev-story`, Opus 5) : les **onze** tâches cochées,
+  **24 commits**, rien de poussé. Décomptes **recomptés depuis la source**, périmètre `main..HEAD` :
+  **+35 tests** (7 dépôt, 4 `util`, 5 module, 4 garde, 15 E2E), **133 clés** par locale × 4, 29 fichiers,
+  +5206/−41. Gates : backend **2365/2365**, frontend **740/740** + build, E2E **214/9/19** avec les neuf
+  échecs qualifiés un par un ⇒ **0 régression**. Épreuve par mutation : **9 mutations, 9 rouges sur
+  assertion**. ⚠️ Trois points laissés au Project Lead, écrits plutôt que tranchés en silence : l'**écart
+  entre la garde et la spec** sur le découpage de l'inventaire (`audit.rs` exclu comme passe-plat et
+  `projects.rs` inventorié, là où la spec fait l'inverse — six sites de part et d'autre, mais pas les
+  mêmes six) ; le libellé de `reconciliation.split_applied` (« Ventilation appliquée » au document
+  arbitré, « Éclater » au catalogue — le français arbitré est conservé) ; et les `⚠️`, `✓`, `✗` du manuel
+  qui **ne s'impriment pas**, défaut antérieur à cette story. Prochaine étape : `bmad-code-review`.
 - **2026-09-15** — Spécification créée (`bmad-create-story`), après le split de la 25-1c et les
   arbitrages du Project Lead. Quatre explorations du code (conventions backend, patrons d'écran,
   sémantique des entrées, données disponibles après import). Faits vérifiés au sol : fuseau UTC de
