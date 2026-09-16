@@ -150,29 +150,65 @@ rôle↔type de la 14-3a. C'est bien le seul `account_type` qui est nu.
         l'API sans correspondance. Commiter la garde seule, c'était commiter un arbre qui ne
         compile pas.
 
-- [ ] **T4 — API : le drapeau** (AC 4)
-  - [ ] `confirmAccountRetype` dans `UpdateAccountRequest`, `#[serde(default)]`.
+- [x] **T4 — API : le drapeau** (AC 4)
+  - [x] `confirmAccountRetype` dans `UpdateAccountRequest`, `#[serde(default)]`.
+  - [x] ⚠️ L'**asymétrie** avec `role` et `postable` — obligatoires — est justifiée **sur place** :
+        leur omission ferait perdre une donnée en silence, tandis que le défaut de celui-ci est le
+        défaut **sûr**. Sans cette note, une passe de revue y lirait une incohérence du contrat
+        full-replace.
+  - [x] **Câblage prouvé par mutation** (`req.confirm_account_retype` → `false`) : **seul**
+        `retyper_passe_avec_confirm_account_retype` rougit. C'est la seule preuve qu'un champ du
+        payload atteint réellement la garde — aucun test unitaire ne voit une clé qui disparaît en
+        route.
 
-- [ ] **T5 — Audit** (AC 5, 6)
-  - [ ] `account.retyped` à l'insertion quand le retypage est confirmé.
-  - [ ] **Premier geste de la tâche** : constater l'état de la PR #439 (`gh pr view 439`) et
-        appliquer la branche correspondante de l'AC 6 — l'inscription au registre n'est possible que
-        si `audit_labels.rs` est sur `main`.
-  - [ ] Si elle l'est : `ACTIONS` + `audit-log-action-account-retyped` × 4 locales, puis vérifier
-        `audit_label_registry.rs` **et** `audit_route_registry.rs`.
-  - [ ] Sinon : consigner la dette dans le Change Log **et** la porter à la PR de la 25-1c-a.
+- [x] **T5 — Audit** (AC 5, 6)
+  - [x] ⚠️ **Tâche d'abord OUBLIÉE** : `update` journalisait encore `account.updated` pour un
+        retypage confirmé, et j'ai failli cocher la story sans elle. Relevé en relisant la fiche.
+  - [x] `account.retyped` quand le type change **et** que le compte porte des écritures. Un compte
+        **vierge** retypé reste un `account.updated` — sans écriture, aucun historique n'est
+        reclassé. Cette affirmation, d'abord simple commentaire, a désormais son test.
+  - [x] L'ampleur est calculée **une fois** et sert deux fois : refuser, puis nourrir l'audit. Un
+        `account.retyped` muet sur le nombre d'écritures ne vaudrait pas mieux qu'un
+        `account.updated`.
+  - [x] **État de la PR #439 constaté** (`gh pr view` + `git cat-file -e origin/main:…`) :
+        **ouverte**, `audit_labels.rs` **absent d'`origin/main`**. C'est donc la branche « non
+        mergée » de l'AC 6 qui s'applique — tranchée par le fait, non par préférence.
+  - [ ] ⛔ **DETTE OUVERTE — inscription au registre.** `account.retyped` doit entrer dans `ACTIONS`
+        et recevoir `audit-log-action-account-retyped` dans les **quatre** locales, **à porter par la
+        PR de la 25-1c-a (#439)**. Sans elle, le journal d'audit affichera **le code brut** : c'est
+        le repli délibéré de la 25-1c-a, et **rien ne rougira** pour le signaler.
 
-- [ ] **T6 — E2E backend** (AC 1, 2, 3, 5, 8)
-  - [ ] 409 sans drapeau, corps exact (code + les quatre champs de `details`) ; 200 avec drapeau et
-        entrée d'audit `account.retyped` relue en base ; renommage seul non gêné ; compte vierge non
-        gêné.
+- [x] **T6 — E2E backend** (AC 1, 2, 3, 8)
+  - [x] Cinq tests : 409 sans drapeau avec les **quatre** champs de `details` ; le 409 nommant
+        l'exercice clos ; 200 avec le drapeau ; renommage non gêné ; compte vierge non gêné.
+        Suite `accounts_e2e` complète : **19/19**.
+  - [x] ⚠️ **Rectification de ma propre spec** : cette tâche annonçait une entrée d'audit
+        « `account.retyped` relue en base » au niveau E2E. Elle est éprouvée au niveau **dépôt**
+        (trois tests), pas ici. L'écrire autrement laisserait croire à une couverture qui n'existe
+        pas — et les passes de revue lisent ce record comme argent comptant.
 
-- [ ] **T7 — Frontend** (AC 10)
-  - [ ] `accounts.api.ts` : champ optionnel ; `+page.svelte` : rattrapage du 409 et avertissement
-        nommant les chiffres ; tests Vitest sur les deux branches (confirmé / abandonné).
+- [x] **T7 — Frontend** (AC 10)
+  - [x] `accounts.types.ts` : champ optionnel **et** `readRetypeImpact`, qui **valide** `details` au
+        lieu de le supposer — `ApiError.details` est un `Record<string, unknown>`.
+  - [x] `+page.svelte` : le 409 n'est pas affiché comme une erreur, il **ouvre une question**. La
+        boîte d'édition reste ouverte derrière : qui renonce retrouve sa saisie.
+  - [x] Le `PUT` est **extrait** dans `putAccount(confirm)` plutôt que recopié dans la modale — deux
+        appels jumeaux seraient deux chemins à tenir synchronisés.
+  - [x] Cinq tests de page — cet écran n'en avait **aucun**. **Prouvés par mutation** : branche
+        `ACCOUNT_HAS_ENTRIES` neutralisée → **quatre rouges, un vert**, le vert étant celui du
+        `details` illisible, qui vérifie justement l'absence de modale.
 
-- [ ] **T8 — Documentation** (AC 11)
-  - [ ] Manuel utilisateur + PDF régénéré ; `docs/api-external.md` ; `CHANGELOG.md`.
+- [x] **T8 — Documentation** (AC 11)
+  - [x] ⚠️ Le manuel **promettait une liberté révolue** : « Vous pouvez modifier le libellé, le
+        compte parent, **le type**… ». Rectifié, avec un encadré `keshwarning` chiffré sur un
+        exemple.
+  - [x] `docs/api-external.md` : note ³ sur le 409 neuf. Ce document ne recense **aucun** code
+        d'erreur par ressource — y ajouter une table aurait été inventer une structure.
+  - [x] `CHANGELOG.md` : section « Non publié » créée (elle n'existait pas sur cette branche),
+        unicité vérifiée après insertion.
+  - [x] PDF régénéré (`make user`), **63 pages avant comme après**, contrôlé sur le texte **aplati**.
+        ⚠️ Ce contrôle établit la **présence** des phrases, pas leur nombre : `grep -c` compte des
+        lignes, et le fichier aplati n'en a qu'une.
 
 - [ ] **T9 — Gates complets et PR** (AC 12)
   - [ ] Base de gate remise à zéro **avant** le gate, inconditionnellement.
@@ -249,7 +285,15 @@ Pas de split préventif.
 
 | Fichier | État |
 |---|---|
-| `crates/kesh-db/src/repositories/accounts.rs` | modifié — `retype_impact`, la garde, **10 tests neufs**, nettoyage profond des sociétés jetables |
+| `crates/kesh-db/src/repositories/accounts.rs` | modifié — `retype_impact`, la garde, le code d'audit distinct, **13 tests neufs**, nettoyage profond des sociétés jetables |
+| `crates/kesh-api/tests/accounts_e2e.rs` | modifié — **5 tests neufs** + helpers typés |
+| `frontend/src/lib/features/accounts/accounts.types.ts` | modifié — champ optionnel, `RetypeImpact`, `readRetypeImpact` |
+| `frontend/src/routes/(app)/accounts/+page.svelte` | modifié — l'avertissement bloquant |
+| `frontend/src/routes/(app)/accounts/accounts-page.test.ts` | **créé** — 5 tests ; l'écran n'en avait aucun |
+| `frontend/src/lib/shared/i18n-keys.test.ts` | modifié — compteur de sites 1631 → 1638, **avec sa ventilation** |
+| `docs/manual/fr/user-manual.tex` + `.pdf` | modifiés — la sous-section mentait ; PDF régénéré |
+| `docs/api-external.md` | modifié — note ³ sur le 409 neuf |
+| `CHANGELOG.md` | modifié — section « Non publié » |
 | `crates/kesh-db/src/errors.rs` | modifié — variante `AccountHasEntries` + `error_code()` |
 | `crates/kesh-api/src/errors.rs` | modifié — mapping 409 avec `details` |
 | `crates/kesh-api/src/routes/accounts.rs` | modifié — appelant ; `false` **provisoire** jusqu'à la T4 |
@@ -263,4 +307,6 @@ Pas de split préventif.
 |---|---|---|
 | 2026-09-16 | spec | Story créée. Arbitrage de Guy : **avertissement bloquant** (parmi les trois options de #274). #382 et #274 fusionnées — même site, même correctif. |
 | 2026-09-16 | spec (corr.) | L'AC 6 affirmait une inscription au registre `audit_labels.rs` **qui n'existe pas sur `main`** — il naît avec la 25-1c-a, PR #439 non mergée. Constaté par `git cat-file`, pas déduit. L'AC porte désormais ses deux branches. |
+| 2026-09-16 | gate | **Gate complet backend : 2348 tests, 2348 passés, 4 ignorés, 97 s**, sur une base **remise à zéro et contrôlée**. `fmt` et `clippy --workspace --all-targets -D warnings` verts. Gate **complet et non ciblé** : le patch touche un repository de `kesh-db`, ce qui interdit le ciblage. Frontend passé complet au commit de la T7 (**745/745**, `check` 0 erreur, `lint-i18n-ownership` PASS, `build` abouti) et non rejoué depuis — aucun fichier frontend n'a bougé après. ⛔ **E2E PAS ENCORE JOUÉE** : `kesh_e2e` a été effacée par la remise à zéro du tmpfs et doit être reconstruite. |
+| 2026-09-16 | dev T4→T8 | Story implémentée de bout en bout. **+23 tests** — 13 au dépôt, 5 à l'API, 5 à l'écran. ⚠️ **T5 d'abord OUBLIÉE** : j'allais cocher la story alors que `update` journalisait encore `account.updated` pour un retypage confirmé ; relevé en relisant la fiche, pas par un test. **Quatre preuves par mutation** jouées aujourd'hui, chacune seule, restaurée, identité vérifiée : le test du compte vierge (**lui seul** rouge) ; la garde (**exactement les deux** tests de refus) ; le câblage du drapeau à travers HTTP (**un seul** rouge) ; le code d'audit distinct (**un seul** rouge sur trois). ⛔ **DETTE OUVERTE** : `account.retyped` n'est **pas** inscrit au registre `audit_labels.rs`, absent d'`origin/main` — à porter par la PR #439. Sans elle, le journal affiche le code brut et **rien ne rougit**. ⚠️ **Cinq détecteurs mal formés produits et corrigés en séance** : un compteur de `false,` mesuré à une seule borne ; un test vert par vacuité ; une attente sur `ping` là où il fallait l'authentification ; un grep i18n aveugle aux appels multi-lignes ; un `grep -c` sur un fichier aplati d'une seule ligne. *Chacun a d'abord paru donner une réponse.* |
 | 2026-09-16 | dev T1→T3 | **Gate complet backend : 2340 tests, 2340 passés, 4 ignorés, 96 s**, sur une base **reconstruite et contrôlée** (41 tables, 1 société, 1 admin, 1 exercice, 5 comptes). `fmt` et `clippy --workspace --all-targets -D warnings` verts. ⚠️ Gate **complet** et non ciblé : le patch touche un repository de `kesh-db`, ce qui interdit le ciblage. **+10 tests.** Deux preuves par mutation jouées, chacune seule, restaurée, identité vérifiée : le test du compte vierge (`account_id = ?` → `<> ?` → **lui seul** rouge) et la garde (`!confirm_retype` → `false &&` → **exactement les deux** tests de refus rouges, les quatre autres verts). ⛔ **Un premier gate avait rendu des centaines d'échecs sur `products` et `journal_entries` — modules hors branche : la base n'était pas reconstruite**, mon attente sur `mariadb-admin ping` ayant rendu la main avant que MariaDB ait recréé ses droits après réinitialisation du tmpfs. Le rouge ne disait rien du code ; le détecteur était mal formé. |
