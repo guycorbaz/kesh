@@ -1,6 +1,10 @@
 # Story 25.2-b : Dévalider une facture — pour l'effacer, ou pour la corriger
 
-Status: draft — ⛔ **une issue GitHub reste à ouvrir** (cf. § *Traçage*)
+Status: ready-for-dev
+
+**Issue : [#440]**, ouverte le 2026-09-16. Elle **remplace [#219]** (fermée), dont le besoin est
+conservé mais le chemin change. ⚠️ Elle **ne ferme pas [#381]** — cf. § *Ce que cette story ne fait
+pas*.
 
 ## Story
 
@@ -126,9 +130,15 @@ chemin qui change, et il gagne une étape nommée.
 
 11. **`docs/api-external.md`** porte la route neuve et ses codes d'erreur.
 
+12. **#440 se ferme** — `closes #440` sur la **PR**, `refs` sur les commits intermédiaires, le dépôt
+    mergeant en squash. ⚠️ **#219 ne se rouvre pas** : elle est fermée et le reste ; cette story
+    remplace son chemin, elle ne revient pas sur sa décision. Et **#381 ne se ferme pas ici** — un
+    `closes` posé par mégarde sur elle serait un mensonge que rien ne rattraperait après le merge.
+
 ## Tasks / Subtasks
 
-- [ ] **T0 — Traçage** (cf. § *Traçage*) — ouvrir l'issue, reporter son numéro ici et dans le titre.
+- [x] **T0 — Traçage** — issue **[#440]** ouverte le 2026-09-16 sur `feature_request.yml`
+      (labels `enhancement`, `triage`), sur demande explicite de Guy.
 - [ ] **T1 — Dépôt : la dévalidation** (AC 1, 2, 3, 5, 8)
   - [ ] `invoices::unvalidate`, transaction unique : verrou, inventaire des empêchements, `NULL` sur
         `journal_entry_id`, `status = 'draft'`, suppression de l'écriture, audit.
@@ -149,12 +159,15 @@ chemin qui change, et il gagne une étape nommée.
 ### Traçage — ⛔ à faire avant le développement
 
 La dévalidation est une **fonctionnalité neuve**, pas un correctif : la règle de traçage du dépôt
-impose une issue GitHub (`feature_request.yml`) **avant** le changement de scope. **Elle n'est pas
-ouverte** — Guy doit le demander. #219 est fermée et décrit le chemin que cette story remplace ;
-#381 appartient à la 25-2-c.
+impose une issue GitHub (`feature_request.yml`) **avant** le changement de scope. ✅ **Fait —
+[#440]**, ouverte le 2026-09-16 sur demande de Guy, labels `enhancement` et `triage` posés par le
+gabarit.
 
-⚠️ **Le numéro se lit depuis GitHub au moment de l'attribution**, jamais depuis un fichier ou une
-mémoire : rien ne contrôle l'unicité, et une collision est silencieuse.
+Les trois issues voisines, et pourquoi elles ne se confondent pas :
+
+- **[#219]** — fermée. Elle décrit le chemin que cette story **remplace** ; elle ne se rouvre pas.
+- **[#381]** — appartient à la **25-2-c**. Cette story ne la ferme pas.
+- **[#440]** — celle-ci.
 
 ### Ce que cette story ne fait pas
 
@@ -193,4 +206,5 @@ selon le critère de non-convergence.
 | Date | Étape | Note |
 |---|---|---|
 | 2026-09-16 | spec | Story créée sur arbitrage de Guy, après que la contre-passation se soit révélée inapplicable (`OwnedByInvoice`). Deux cycles demandés : dévalider-effacer **et** dévalider-corriger-revalider. ⛔ Issue GitHub non ouverte. |
+| 2026-09-16 | traçage | Issue **[#440]** ouverte sur demande de Guy ; la story passe de `draft` à `ready-for-dev`. Le dernier point ouvert est levé. |
 | 2026-09-16 | arbitrage | `emailed_at` → **refus sec**, non levable : *« on ne doit pas pouvoir modifier une facture créée et envoyée à un client »* (Guy). Réserve écrite : la garde n'attrape que ce que Kesh sait avoir envoyé. ⚠️ Fait relevé au passage, **contre l'asymétrie supposée** : les factures **reçues** ne sont pas plus faciles à modifier — `supplier_invoices` n'a **aucune** fonction de mise à jour, et son `cancel` **contre-passe** l'écriture d'achat au lieu de la supprimer. Le côté fournisseur est donc plus strict, pas plus souple. |
