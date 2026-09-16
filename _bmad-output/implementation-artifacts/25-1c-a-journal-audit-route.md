@@ -627,8 +627,23 @@ recense que les verbes mutants, `:181,311`), les tests de parité i18n, et les g
       attend une langue comptable et replie silencieusement sur `fr-CH`. ⚠️ Le site voisin
       (`invoices.rs:1306`) construit cet en-tête **à la main** ; la spec impose le helper, c'est lui qui
       est suivi. `clippy -D warnings` et `fmt` verts. ⚠️ **Non testé ici** — tests d'API en T7.)*
-- [ ] **T7 — Tests API** (AC 23). ⛔ *Une tâche qui décrit un test est une promesse ; la cocher sans
+- [x] **T7 — Tests API** (AC 23). ⛔ *Une tâche qui décrit un test est une promesse ; la cocher sans
       l'avoir écrit la transforme en mensonge.*
+      *(2026-09-16 : `tests/audit_log_e2e.rs`, **15 tests, 15 verts** en 4,6 s. L'application est montée
+      **en `de-CH`** pendant que la société est en `accounting_language` **française** : c'est le seul
+      dispositif qui fasse rougir une lecture de la mauvaise langue — les deux langues concordant, le
+      test passerait au vert sur un code faux. Les refus sont éprouvés **sur les trois routes** en
+      boucle : 401 sans jeton, 403 pour Consultation, 403 `API_KEY_MANAGEMENT_FORBIDDEN` pour une clé
+      `read` d'**Admin** — le cas le plus favorable au refus qu'on veut prouver. Les dix cas de 400
+      passent le `+` **encodé `%2B`** : écrit en clair, `form_urlencoded` le décode en espace, la valeur
+      échoue au **format** et le test ne sonde plus la **plage** ; un test distinct vérifie que le
+      message nomme la plage. La borne `9999-12-31` est acceptée **avec des `items`** — un 200 à liste
+      vide masquerait exactement le défaut que la borne inclusive supprime. L'injection est relue par
+      `csv::ReaderBuilder` et comparée **cellule à cellule** (`'=HYPERLINK("x")`) : le writer double les
+      guillemets, une assertion par sous-chaîne rougirait à tort et une assertion négative resterait
+      verte sous la mutation. Les 10 001 entrées du plafond sont semées par **un seul**
+      `INSERT … SELECT FROM seq_1_to_10001`. Les longueurs du vocabulaire sont **lues du module**,
+      jamais recopiées.)*
 - [ ] **T8 — Mutations** (AC 24), résultats observés.
 - [ ] **T9 — Manuel d'administration** (AC 19-21), PDF régénéré et vérifié aplati.
 - [ ] **T10 — Propagation** : `grep -rniE "aucune route|post-MVP|story 3\.5" crates docs/manual/fr/*.tex --exclude-dir=migrations`
@@ -810,7 +825,8 @@ Claude Opus 5 (1M context) — implémentation du 2026-09-16.
 - `crates/kesh-api/src/routes/audit_log.rs` — **créé** (T5 : DTO, validation partagée, liste et
   vocabulaire)
 - `crates/kesh-api/src/routes/mod.rs` — modifié (T5 : `pub mod audit_log;`)
-- `crates/kesh-api/src/lib.rs` — modifié (T5 : montage des deux routes dans `comptable_routes`)
+- `crates/kesh-api/src/lib.rs` — modifié (T5, T6 : montage des **trois** routes dans `comptable_routes`)
+- `crates/kesh-api/tests/audit_log_e2e.rs` — **créé** (T7 : 15 tests HTTP, application montée en `de-CH`)
 
 ## Change Log
 
