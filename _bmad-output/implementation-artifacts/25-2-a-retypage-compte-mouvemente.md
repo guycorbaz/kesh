@@ -113,24 +113,42 @@ rôle↔type de la 14-3a. C'est bien le seul `account_type` qui est nu.
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Dépôt : recenser l'ampleur** (AC 1, 2)
-  - [ ] `retype_impact(tx, company_id, account_id) -> Result<(i64, Vec<String>), DbError>` dans
-        `accounts.rs` : écritures distinctes + noms des exercices clos touchés, en **une** requête.
-  - [ ] Tests : compte vierge → `(0, [])` ; compte mouvementé en exercice ouvert → `(n, [])` ;
-        écritures dans un exercice clos → le nom y figure ; deux lignes d'une même écriture ne
-        comptent qu'une fois.
+- [x] **T1 — Dépôt : recenser l'ampleur** (AC 1, 2)
+  - [x] `retype_impact(executor, company_id, account_id) -> Result<(i64, Vec<String>), DbError>`.
+        ⚠️ **Générique sur `sqlx::Executor`** et non sur une transaction, comme
+        `journal_entries::reversal_blocker` : les tests l'appellent sur un pool, `update` dans sa
+        transaction, sans deux variantes à tenir synchronisées.
+  - [x] Une **seule** requête, groupée par exercice. Le total additionne les comptes par exercice —
+        exact parce qu'une écriture n'appartient qu'à un exercice. L'alternative, un `GROUP_CONCAT`
+        des noms, exigerait un séparateur qu'aucune contrainte n'interdit dans `fiscal_years.name`.
+  - [x] Quatre tests. **Étape rouge effectivement jouée** : corps rendant d'abord `(0, [])`, trois
+        tests rouges **sur assertion** (0 contre 2, 1 et 1), aucun à la compilation.
+  - [x] ⚠️ **Le quatrième était vert par vacuité** et aucune étape rouge ne pouvait le racheter : sa
+        société ne portait aucune écriture, il vérifiait « zéro » dans un univers où tout rend zéro.
+        Corrigé par un **voisin mouvementé**, puis prouvé par mutation (`account_id = ?` → `<> ?`) :
+        **lui seul** rougit, `left: 1, right: 0`.
 
-- [ ] **T2 — Dépôt : la garde** (AC 1, 3, 8, 9)
-  - [ ] `accounts::update` prend `confirm_retype: bool`.
-  - [ ] Garde placée **après** le court-circuit no-op (`accounts.rs:395`) et **après** le contrôle de
-        version, **avant** l'`UPDATE` — l'ordre est un critère, pas un détail.
-  - [ ] `DbError::AccountHasEntries { entry_count, closed_fiscal_years, from_type, to_type }`.
-  - [ ] Tests : (type changé / inchangé) × (mouvementé / vierge), plus « nom seul modifié sur compte
-        mouvementé », plus « conflit de version sur un retypage confirmé → 409 optimistic lock ».
+- [x] **T2 — Dépôt : la garde** (AC 1, 3, 8, 9)
+  - [x] `accounts::update` prend `confirm_retype: bool` ; garde après le no-op, après le contrôle de
+        version, avant l'`UPDATE`.
+  - [x] `DbError::AccountHasEntries { entry_count, closed_fiscal_years, from_type, to_type }`.
+  - [x] Six tests, dont trois qui gardent ce qu'aucun autre ne garde : **« passe une fois confirmé »**
+        (sans lui, une garde refusant TOUJOURS satisferait les tests de refus), **« renommer reste
+        libre »** (une garde débordant sur le nom régresserait la 14-3a), et **« le conflit de version
+        précède la garde »** (l'ordre de l'AC 9).
+  - [x] **Garde prouvée par mutation** (`!confirm_retype` → `false &&`) : **exactement deux** tests
+        rougissent, les deux tests de refus ; les quatre autres restent verts. 32 passed / 2 failed.
+  - [x] Les **douze** appels de test existants reçoivent `false` — ils opèrent sur des comptes sans
+        écritures, leur sens est préservé, et un rouge de leur part serait un signal réel.
 
-- [ ] **T3 — API : code, détails, message** (AC 1, 2, 7)
-  - [ ] Mapping `AppError` → 409 `ACCOUNT_HAS_ENTRIES`, `details` en camelCase.
-  - [ ] `error-account-has-entries` × 4 locales.
+- [x] **T3 — API : code, détails, message** (AC 1, 2, 7)
+  - [x] Mapping → **409** `ACCOUNT_HAS_ENTRIES`, `details` en camelCase : `entryCount`,
+        `closedFiscalYears`, `fromType`, `toType`.
+  - [x] `error-account-has-entries` × 4 locales, avec l'argument Fluent `{ $count }`.
+  - [x] ⚠️ **T2 et T3 n'ont pas pu faire deux commits** : la variante d'erreur casse le `match`
+        exhaustif de `kesh-api` — exhaustif par choix, pour qu'aucune variante neuve ne traverse
+        l'API sans correspondance. Commiter la garde seule, c'était commiter un arbre qui ne
+        compile pas.
 
 - [ ] **T4 — API : le drapeau** (AC 4)
   - [ ] `confirmAccountRetype` dans `UpdateAccountRequest`, `#[serde(default)]`.
@@ -229,8 +247,20 @@ Pas de split préventif.
 
 ### File List
 
+| Fichier | État |
+|---|---|
+| `crates/kesh-db/src/repositories/accounts.rs` | modifié — `retype_impact`, la garde, **10 tests neufs**, nettoyage profond des sociétés jetables |
+| `crates/kesh-db/src/errors.rs` | modifié — variante `AccountHasEntries` + `error_code()` |
+| `crates/kesh-api/src/errors.rs` | modifié — mapping 409 avec `details` |
+| `crates/kesh-api/src/routes/accounts.rs` | modifié — appelant ; `false` **provisoire** jusqu'à la T4 |
+| `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` | modifiés — `error-account-has-entries` |
+| `_bmad-output/implementation-artifacts/25-2-a-retypage-compte-mouvemente.md` | créé |
+| `_bmad-output/implementation-artifacts/sprint-status.yaml` | modifié |
+
 ## Change Log
 
 | Date | Étape | Note |
 |---|---|---|
 | 2026-09-16 | spec | Story créée. Arbitrage de Guy : **avertissement bloquant** (parmi les trois options de #274). #382 et #274 fusionnées — même site, même correctif. |
+| 2026-09-16 | spec (corr.) | L'AC 6 affirmait une inscription au registre `audit_labels.rs` **qui n'existe pas sur `main`** — il naît avec la 25-1c-a, PR #439 non mergée. Constaté par `git cat-file`, pas déduit. L'AC porte désormais ses deux branches. |
+| 2026-09-16 | dev T1→T3 | **Gate complet backend : 2340 tests, 2340 passés, 4 ignorés, 96 s**, sur une base **reconstruite et contrôlée** (41 tables, 1 société, 1 admin, 1 exercice, 5 comptes). `fmt` et `clippy --workspace --all-targets -D warnings` verts. ⚠️ Gate **complet** et non ciblé : le patch touche un repository de `kesh-db`, ce qui interdit le ciblage. **+10 tests.** Deux preuves par mutation jouées, chacune seule, restaurée, identité vérifiée : le test du compte vierge (`account_id = ?` → `<> ?` → **lui seul** rouge) et la garde (`!confirm_retype` → `false &&` → **exactement les deux** tests de refus rouges, les quatre autres verts). ⛔ **Un premier gate avait rendu des centaines d'échecs sur `products` et `journal_entries` — modules hors branche : la base n'était pas reconstruite**, mon attente sur `mariadb-admin ping` ayant rendu la main avant que MariaDB ait recréé ses droits après réinitialisation du tmpfs. Le rouge ne disait rien du code ; le détecteur était mal formé. |
