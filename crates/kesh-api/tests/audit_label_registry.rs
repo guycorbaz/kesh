@@ -17,8 +17,8 @@
 //! # L'inventaire des sites NON RÉSOLUS (D4-ter du `CLAUDE.md`)
 //!
 //! ⛔ L'extracteur ci-dessous lit un **littéral à une position d'argument**.
-//! Six sites du dépôt n'en portent pas : l'action y est une variable ou un
-//! ternaire. Énumérer « les formes qui marchent » laisserait une septième forme
+//! Sept sites du dépôt n'en portent pas : l'action y est une variable ou un
+//! ternaire. Énumérer « les formes qui marchent » laisserait une huitième forme
 //! passer sans que rien ne rougisse. On inventorie donc l'**ensemble clos de ce
 //! qui ne résout pas** : tout site indirect doit figurer dans
 //! `SITES_INDIRECTS`, avec les codes qu'il produit, écrits à la main et relus.
@@ -177,28 +177,95 @@ fn strip_line_comments(src: &str) -> String {
         .join("\n")
 }
 
-/// La source d'un fichier, prête à être lue : commentaires masqués et `mod
-/// tests` retiré. **Les trois lecteurs de ce fichier passent par ici.**
+/// La source d'un fichier, prête à être lue : commentaires masqués et blocs
+/// `#[cfg(test)]` **retirés par appariement d'accolades**. **Les trois lecteurs
+/// de ce fichier passent par ici.**
 ///
-/// ⛔ **La coupe porte sur une LIGNE ENTIÈRE, jamais sur une sous-chaîne.** Une
-/// première rédaction faisait `brut.split("#[cfg(test)]")` sur la source brute :
-/// `config.rs:406` contient cette chaîne **dans un doc-comment** —
-/// « aux modules `#[cfg(test)]` internes du crate » — bien avant son vrai
-/// attribut, si bien que **83 % du fichier** sortait du balayage. Une dérivation
-/// posée dans les lignes perdues devenait invisible.
+/// ⛔ **On MASQUE le bloc, on ne TRONQUE pas le fichier — et il a fallu deux
+/// passes pour y venir.**
 ///
-/// ⚠️ Le défaut était **dormant** tant que la garde du chemin ne lisait qu'un
-/// fichier ; c'est son élargissement qui l'a activé. *Un détecteur qui coupe
-/// avant d'assainir se fie à la prose qu'il est censé ignorer.*
+/// - Première rédaction : `brut.split("#[cfg(test)]")` sur la source brute.
+///   `config.rs:406` porte cette chaîne dans un **doc-comment**, bien avant son
+///   vrai attribut : **83 %** du fichier sortait du balayage.
+/// - Deuxième : coupe sur une **ligne entière**, ce qui fermait la variante
+///   « sous-chaîne dans la prose » — et laissait intacte la plus coûteuse. Un
+///   `#[cfg(test)]` posé sur une **méthode** (`invoice_email.rs:901`) ou un `mod
+///   tests` placé **au milieu** d'un fichier (`version.rs:97`,
+///   `entities/user.rs:178`) sont deux arrangements Rust ordinaires : tronquer
+///   à la première occurrence perdait **686, 256 et 75 lignes de PRODUCTION**,
+///   dont `send_reminder_batch`, `check_downgrade_protection` et `UserUpdate`.
+///   ⚠️ Or `invoice_email.rs` **écrit déjà de l'audit**, et la zone perdue
+///   appelait cette écriture : le trou était sous le pied du prochain code
+///   d'audit.
 ///
-/// ⚠️ Limite connue et assumée, héritée de `strip_line_comments` : un `//` placé
-/// **dans une chaîne** tronque la ligne. Aucun argument d'audit n'en porte.
+/// *C'est l'appariement d'accolades que l'AC 18 demandait dès l'origine ; je
+/// l'avais simplifié en `split`, en comptant sur le diff bilatéral pour
+/// rattraper. Il ne rattrape rien pour une action NEUVE, qui n'entre dans aucun
+/// ensemble.*
+///
+/// ⚠️ Les accolades sont comptées **hors chaînes** — sans quoi une accolade
+/// isolée dans un littéral (`"Texte { non fermé"`, réel dans
+/// `kesh-core/src/email_template_engine.rs`) déséquilibrerait le compte.
+///
+/// ⚠️ Limites assumées, héritées de `strip_line_comments` : un `//` **dans une
+/// chaîne** tronque la ligne, et les commentaires de **bloc** `/* … */` ne sont
+/// pas retirés. Aucun argument d'audit n'en porte aujourd'hui, et les deux vont
+/// dans le sens sûr — un rouge injustifié, jamais un vert silencieux.
 fn source_assainie(brut: &str) -> String {
-    let sans_tests: Vec<&str> = brut
-        .lines()
-        .take_while(|l| l.trim() != "#[cfg(test)]")
-        .collect();
-    strip_line_comments(&sans_tests.join("\n"))
+    let sans_commentaires = strip_line_comments(brut);
+    let lignes: Vec<&str> = sans_commentaires.lines().collect();
+    let mut gardees: Vec<&str> = Vec::new();
+    let mut i = 0;
+
+    while i < lignes.len() {
+        if lignes[i].trim() != "#[cfg(test)]" {
+            gardees.push(lignes[i]);
+            i += 1;
+            continue;
+        }
+        // Bloc de test : sauter l'attribut, puis l'item qu'il garde, jusqu'à ce
+        // que ses accolades se referment.
+        i += 1;
+        let mut profondeur = 0i32;
+        let mut ouvert = false;
+        while i < lignes.len() {
+            let (o, f) = accolades_hors_chaines(lignes[i]);
+            profondeur += o - f;
+            if o > 0 {
+                ouvert = true;
+            }
+            i += 1;
+            if ouvert && profondeur <= 0 {
+                break;
+            }
+        }
+    }
+    gardees.join("\n")
+}
+
+/// Compte les accolades d'une ligne **en ignorant celles des chaînes**.
+fn accolades_hors_chaines(ligne: &str) -> (i32, i32) {
+    let (mut ouvrantes, mut fermantes) = (0, 0);
+    let (mut dans_chaine, mut echappe) = (false, false);
+    for ch in ligne.chars() {
+        if dans_chaine {
+            if echappe {
+                echappe = false;
+            } else if ch == '\\' {
+                echappe = true;
+            } else if ch == '"' {
+                dans_chaine = false;
+            }
+            continue;
+        }
+        match ch {
+            '"' => dans_chaine = true,
+            '{' => ouvrantes += 1,
+            '}' => fermantes += 1,
+            _ => {}
+        }
+    }
+    (ouvrantes, fermantes)
 }
 
 /// Découpe les arguments d'un appel — `src` commence **après** la parenthèse
@@ -247,7 +314,7 @@ fn args_de(src: &str) -> Option<Vec<String>> {
 /// Le code porté par un argument, s'il est littéral.
 ///
 /// ⚠️ `"product.created".to_string()` EST un littéral : le refuser rapporterait
-/// quatre-vingts faux sites indirects et noierait les six vrais.
+/// quatre-vingts faux sites indirects et noierait les sept vrais.
 fn litteral(arg: &str) -> Option<String> {
     let mut a = arg.trim();
     if let Some(reste) = a.strip_prefix("String::from(") {
@@ -284,9 +351,16 @@ fn relever() -> Releve {
         );
         let brut = std::fs::read_to_string(&chemin).expect("lire un fichier source");
 
-        // ⛔ Les `mod tests` construisent des entrées avec des codes inventés.
-        // On coupe au premier `#[cfg(test)]`. Une coupe trop gourmande ne passe
-        // pas inaperçue : le volet « liste → code » rougirait sur le code perdu.
+        // ⛔ Les `mod tests` construisent des entrées avec des codes inventés :
+        // leurs blocs sont MASQUÉS par appariement d'accolades.
+        //
+        // ⚠️ **Ne pas se fier au filet qu'une première rédaction annonçait ici**
+        // — « une coupe trop gourmande rougirait sur le code perdu ». C'est vrai
+        // du seul cas où le code perdu était l'**unique** site d'une action
+        // **déjà** dans `ACTIONS`. Une action **NEUVE** posée dans une zone
+        // perdue n'entre dans aucun ensemble et ne fait **rien** rougir. C'est
+        // cette phrase rassurante qui a rendu le défaut invisible à trois
+        // relectures.
         let source = source_assainie(&brut);
 
         for (motif, idx_action, idx_type) in FORMES {
@@ -483,6 +557,11 @@ fn litteraux_en_forme_de_code(source: &str) -> BTreeSet<String> {
         if dans_chaine {
             if echappe {
                 echappe = false;
+                // ⚠️ Le `\` est CONSERVÉ : sans lui, `"erreur.\ndetail"` devenait
+                // `erreur.ndetail`, que le tamis retenait comme un code. Un faux
+                // positif — donc un rouge injustifié —, latent aujourd'hui, mais
+                // que le scanner naïf n'avait pas.
+                courant.push('\\');
                 courant.push(ch);
             } else if ch == '\\' {
                 echappe = true;
@@ -587,6 +666,55 @@ fn aucune_route_ne_derive_une_cle_de_code_hors_du_module_source_unique() {
     // ⚠️ `traduire_ou_replier` reste légitime : elle sert les en-têtes de colonne
     // (`audit-log-csv-header-*`), qui ne sont **pas** des codes du journal et
     // n'ont donc pas de fonction de libellé dans le module.
+}
+
+#[test]
+fn le_masquage_des_blocs_de_test_ne_laisse_aucun_attribut_derriere_lui() {
+    // ⛔ **La garde du masqueur lui-même** (D4-ter : inventorier ce qui ne
+    // résout pas, plutôt qu'énumérer les formes qui marchent).
+    //
+    // Si `source_assainie` rendait une source contenant encore un
+    // `#[cfg(test)]`, c'est que l'appariement d'accolades a échoué — accolade
+    // dans un littéral non détectée, attribut sur une forme imprévue — et le
+    // bloc de test serait **balayé comme de la production**. À l'inverse, une
+    // troncature emporterait la production qui suit, ce qui était le défaut de
+    // la rédaction précédente.
+    //
+    // ⚠️ Cette assertion est **comptable et décidable** : elle rougit sur tout
+    // fichier du workspace, sans énumérer les arrangements acceptables.
+    for chemin in fichiers_de_production() {
+        let brut = std::fs::read_to_string(&chemin).expect("lire un fichier source");
+        if !brut.contains("#[cfg(test)]") {
+            continue;
+        }
+        let assainie = source_assainie(&brut);
+        assert!(
+            !assainie.contains("#[cfg(test)]"),
+            "⛔ `{}` : le masquage des blocs de test a échoué — un attribut \
+             subsiste dans la source assainie.\n\n\
+             L'appariement d'accolades de `source_assainie` n'a pas su refermer \
+             un bloc : accolade isolée dans un littéral, ou attribut posé sur une \
+             forme imprévue. ⚠️ Ne pas « corriger » en tronquant le fichier : \
+             c'est ce que faisait la rédaction précédente, et elle emportait \
+             jusqu'à 686 lignes de PRODUCTION.",
+            chemin.display()
+        );
+    }
+}
+
+#[test]
+fn l_inventaire_compte_ce_que_le_fichier_annonce() {
+    // ⚠️ Un nombre écrit en prose se périme **en silence** : « six sites » est
+    // resté faux à trois endroits de ce fichier après l'ajout du septième, dont
+    // deux qu'un patch de remédiation avait laissés. Cette assertion, elle, ne
+    // se périme pas — elle rougit.
+    assert_eq!(
+        SITES_INDIRECTS.len(),
+        7,
+        "⛔ Le nombre de sites indirects a changé. Mettre à jour les mentions en \
+         toutes lettres de l'en-tête de ce fichier — elles sont trois — puis ce \
+         nombre. `grep -niE '\\b(six|sept|huit)\\b'` les trouve."
+    );
 }
 
 #[test]
