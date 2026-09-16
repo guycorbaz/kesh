@@ -78,6 +78,8 @@ La liste affiche aussi la date de dernière utilisation et le statut (active / e
 >
 > Le motif est le même que pour la gestion des clés : **une clé compromise ne doit pas pouvoir créer un compte administrateur**, sans quoi la révoquer n'arrêterait plus l'incident.
 
+> ⚠️ **La consultation du journal d'audit est fermée elle aussi**, et elle ne relève pourtant pas de l'administration. Les trois routes `/api/v1/audit-log`, `/audit-log/vocabulary` et `/audit-log/export.csv` refusent toute clé, y compris une clé `read` créée par un Administrateur. **Le code diffère** : `403 API_KEY_MANAGEMENT_FORBIDDEN`, et non `API_KEY_ADMIN_FORBIDDEN` (cf. §10). Son libellé parle de « gestion de clés » pour des raisons historiques ; ici, il signifie simplement qu'une clé n'a pas accès à la piste de contrôle. La lecture se fait dans l'interface web, par un Comptable ou un Administrateur.
+
 ---
 
 ## 5. URL de base et périmètre des données
@@ -198,7 +200,7 @@ Pour une IA en lecture seule (analyse de comptes, génération de rapports), cr�
 
 ## 7. Ressources disponibles
 
-Les principales ressources accessibles via l'API (liste non exhaustive — toute route `/api/v1/*` de l'UI est consommable, **à deux exceptions près, toutes deux fermées aux clés API** : les routes d'administration, et **la consultation du journal d'audit** (`/api/v1/audit-log*`) — cf. §4) :
+Les principales ressources accessibles via l'API (liste non exhaustive — toute route `/api/v1/*` de l'UI est consommable, **à deux exceptions près, toutes deux fermées aux clés API** : les routes d'administration, et **la consultation du journal d'audit** (`/api/v1/audit-log*`) — cf. §4 pour l'administration, §10 pour le journal, dont le **code d'erreur diffère**) :
 
 | Ressource | Lecture (`read`) | Écriture (`read-write`) |
 |-----------|------------------|--------------------------|

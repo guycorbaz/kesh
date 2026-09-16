@@ -65,8 +65,16 @@ const TYPE_DU_HELPER_EXERCICES: &str = "fiscal_year";
 // s'affichait brut à l'écran comme dans le CSV.
 //
 // `audit.rs` est donc inventorié comme site indirect à codes vides — ce qui dit
-// exactement la bonne chose — et tout littéral qu'on y ajouterait redevient
-// visible du volet (a).
+// exactement la bonne chose.
+//
+// ⚠️ **Et c'est le RETRAIT de l'exclusion qui protège, non l'entrée
+// d'inventaire.** Une première rédaction de ce commentaire attribuait la
+// protection au « volet (a) » : c'est faux, ce volet ne voit que les sites dont
+// l'argument n'est PAS littéral. Un littéral ajouté dans `audit.rs` est attrapé
+// par le **diff des actions**, parce que le fichier est de nouveau balayé.
+// L'entrée à codes vides, elle, ne protège rien — elle empêche seulement
+// `inconnus` de rougir sur un fichier désormais lu. *Se tromper là-dessus
+// conduirait à réintroduire une exclusion de fichier en croyant bien faire.*
 
 /// **L'ensemble clos des sites dont l'action n'est pas un littéral.**
 ///
@@ -113,8 +121,9 @@ const SITES_INDIRECTS: &[(&str, &str, &[&str])] = &[
         "passe-plat : `from_current_user` relaie l'action de ses appelants, extraits normalement",
         // ⚠️ Codes vides À DESSEIN : ce fichier ne PRODUIT aucun code. L'entrée
         // n'est pas une accusation, c'est la déclaration d'un site que
-        // l'extracteur ne résout pas — et c'est elle qui rendra visible un
-        // littéral qu'on y ajouterait.
+        // l'extracteur ne résout pas. ⛔ Elle ne protège rien par elle-même :
+        // ce qui rendrait visible un littéral ajouté ici, c'est que le fichier
+        // soit BALAYÉ — cf. le commentaire sur l'absence de liste d'exclusion.
         &[],
     ),
 ];
@@ -346,8 +355,16 @@ fn les_codes_de_l_inventaire_sont_verifies_dans_le_fichier_de_leur_site() {
         .to_path_buf();
 
     for (fichier, _motif, codes) in SITES_INDIRECTS {
-        let source = std::fs::read_to_string(racine.join(fichier))
+        let brut = std::fs::read_to_string(racine.join(fichier))
             .unwrap_or_else(|e| panic!("⛔ site inventorié introuvable — {fichier} : {e}"));
+        // ⚠️ **Le MÊME assainissement que `relever()`**, et non la source brute.
+        // Une première rédaction lisait le fichier tel quel : un code présent
+        // dans un simple **commentaire** — ou dans une fixture de `mod tests` —
+        // suffisait alors à satisfaire le contrôle, qui s'éteignait en silence.
+        let source = strip_line_comments(brut.split("#[cfg(test)]").next().unwrap_or(""));
+
+        // ── Sens 1 : tout code DÉCLARÉ est présent dans le fichier ───────────
+        // Ferme le RENOMMAGE.
         for code in *codes {
             let litteral = format!("\"{code}\"");
             assert!(
@@ -361,7 +378,88 @@ fn les_codes_de_l_inventaire_sont_verifies_dans_le_fichier_de_leur_site() {
                  défaut, pas l'inventaire."
             );
         }
+
+        // ── Sens 2 : tout code EN FORME D'ACTION trouvé dans le fichier est ──
+        // ── soit déclaré, soit déjà connu d'`ACTIONS` ───────────────────────
+        //
+        // ⛔ **Ferme l'AJOUT, et c'est le sens qui manquait.** Le sens 1 seul
+        // laissait passer une branche NEUVE : `else if définitif {
+        // "invoice.dunning_cancelled" }` n'est ni relevé par l'extracteur — la
+        // variable n'est pas un littéral — ni déclaré à l'inventaire, donc il
+        // n'entrait dans AUCUN ensemble. Les sept tests restaient verts pendant
+        // que la production écrivait un code sans libellé.
+        //
+        // *Le contrôle n'était unilatéral que dans un sens : il fallait le rendre
+        // bilatéral sur le périmètre restreint des fichiers inventoriés.*
+        for code in litteraux_en_forme_de_code(&source) {
+            assert!(
+                codes.contains(&code.as_str()) || ACTIONS.contains(&code.as_str()),
+                "⛔ « {fichier} » contient le littéral « {code} », qui a la forme d'un \
+                 code d'action et n'est **ni** déclaré à son entrée de SITES_INDIRECTS \
+                 **ni** présent dans `ACTIONS`.\n\n\
+                 Si c'est une action neuve : lui donner son libellé dans les quatre \
+                 catalogues, l'ajouter à `ACTIONS`, et l'inscrire aux codes de ce site. \
+                 Si ce n'en est pas une, c'est que le tamis de \
+                 `litteraux_en_forme_de_code` est trop large — l'y exclure \
+                 explicitement, jamais en retirant ce contrôle."
+            );
+        }
     }
+}
+
+/// Littéraux qui ont la forme d'un code d'action **sans en être un**, et qu'on
+/// déclare plutôt que d'élargir le tamis.
+///
+/// ⚠️ **Un ensemble clos, borné aux six fichiers inventoriés** — et non une
+/// liste ouverte sur tout le dépôt : elle ne grossit que si l'on écrit un
+/// littéral de cette forme dans l'un d'eux. Chaque entrée porte son motif, comme
+/// l'inventaire lui-même.
+const PAS_DES_CODES: &[(&str, &str)] = &[(
+    "bank_account.journal_account_id",
+    "clé de CONFIGURATION nommant le champ manquant (`DbError::ConfigurationRequired`), \
+     pas un acte — la forme `table.colonne` est ici fortuite",
+)];
+
+/// Les littéraux d'un source qui ont la **forme** d'un code d'action :
+/// `entité.acte`, un seul point, ni espace ni ponctuation.
+///
+/// ⚠️ **Un tamis, pas une preuve** : il repère les codes *candidats* dans un
+/// fichier inventorié, là où l'extracteur positionnel ne sait pas lire. Les
+/// requêtes SQL (espaces), les formats de date (`%`, `-`) et les clés JSON (pas
+/// de point) en sortent d'elles-mêmes.
+///
+/// ⛔ **Le préfixe doit faire au moins trois caractères**, ce qui écarte la
+/// famille entière des **alias SQL** — `"i.date"`, `"c.name"`, relevés dans le
+/// `match` qui traduit un enum de tri en noms de colonnes. Aucun type d'entité
+/// de Kesh ne descend sous quatre caractères (`user`), la borne est donc sûre.
+/// *Sans elle, il aurait fallu déclarer cinq exceptions qui n'ont rien à voir
+/// avec l'audit.*
+fn litteraux_en_forme_de_code(source: &str) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    let mut reste = source;
+    while let Some(debut) = reste.find('"') {
+        let apres = &reste[debut + 1..];
+        let Some(fin) = apres.find('"') else { break };
+        let contenu = &apres[..fin];
+        reste = &apres[fin + 1..];
+
+        if PAS_DES_CODES.iter().any(|(c, _)| *c == contenu) {
+            continue;
+        }
+        let Some((prefixe, acte)) = contenu.split_once('.') else {
+            continue;
+        };
+        if prefixe.len() >= 3
+            && !acte.is_empty()
+            && !acte.contains('.')
+            && contenu
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c == '.' || c == '_')
+        {
+            out.insert(contenu.to_string());
+        }
+    }
+    out
 }
 
 #[test]
@@ -382,26 +480,53 @@ fn aucune_route_ne_derive_une_cle_de_code_hors_du_module_source_unique() {
     // Un test de SORTIE ne peut pas trancher — les deux chemins rendent le même
     // texte, et `actor_type` étant un ENUM à deux valeurs, aucun code inconnu
     // n'est insérable en base. Ce qui se vérifie, c'est le CHEMIN.
-    let source = include_str!("../src/routes/audit_log.rs");
-    let source = strip_line_comments(source);
+    // ⚠️ **Tout `kesh-api/src`, et non le seul fichier de la route.** Une
+    // première rédaction lisait `include_str!("../src/routes/audit_log.rs")` :
+    // la règle invoquée est une règle de DÉPÔT, et une dérivation posée dans un
+    // autre fichier de route lui échappait. Le balayage large passe
+    // immédiatement — aucun second consommateur n'existe aujourd'hui — et
+    // couvrira la 25-1c-b, qui ouvrira la surface.
+    let mut fichiers = Vec::new();
+    collecter(&racine_crates().join("kesh-api/src"), &mut fichiers);
 
-    for interdit in [
-        "message_key(",
-        "PREFIX_ACTOR_TYPE",
-        "PREFIX_ACTION",
-        "PREFIX_ENTITY",
-    ] {
-        assert!(
-            !source.contains(interdit),
-            "⛔ `routes/audit_log.rs` emploie « {interdit} » : il dérive donc une clé \
-             de code lui-même, alors que l'AC 12 impose que « les libellés viennent \
-             des fonctions de l'AC 16, et d'elles seules ».\n\n\
-             Appeler `audit_labels::{{action,entity_type,actor_type}}_label`. ⚠️ Si un \
-             repli est nécessaire quand la clé manque, sa place est DANS la fonction \
-             du module, jamais au site d'appel — sinon le test d'appartenance cesse \
-             d'être exercé par le seul code qui s'en sert."
-        );
+    for chemin in fichiers {
+        // Le module EST l'endroit légitime de la dérivation.
+        if chemin.ends_with("audit_labels.rs") {
+            continue;
+        }
+        let brut = std::fs::read_to_string(&chemin).expect("lire un fichier source");
+        // Coupe `#[cfg(test)]` comme `relever()` : un test unitaire qui
+        // construirait une clé attendue n'enfreint aucune règle, et le faire
+        // rougir pousserait à contourner la garde — donc à l'affaiblir.
+        let source = strip_line_comments(brut.split("#[cfg(test)]").next().unwrap_or(""));
+
+        for interdit in [
+            "message_key(",
+            "PREFIX_ACTOR_TYPE",
+            "PREFIX_ACTION",
+            "PREFIX_ENTITY",
+        ] {
+            assert!(
+                !source.contains(interdit),
+                "⛔ `{}` emploie « {interdit} » : il dérive donc une clé de code \
+                 lui-même, alors que l'AC 12 impose que « les libellés viennent des \
+                 fonctions de l'AC 16, et d'elles seules ».\n\n\
+                 Appeler `audit_labels::{{action,entity_type,actor_type}}_label`. ⚠️ Si \
+                 un repli est nécessaire quand la clé manque, sa place est DANS la \
+                 fonction du module, jamais au site d'appel — sinon le test \
+                 d'appartenance cesse d'être exercé par le seul code qui s'en sert.",
+                chemin.display()
+            );
+        }
     }
+
+    // ⚠️ **Ce que cette garde NE ferme PAS, et il faut le dire plutôt que de le
+    // laisser croire** : elle est TEXTUELLE. Un alias d'import
+    // (`use …::message_key as mk;`) ou une dérivation réécrite à la main
+    // (`format!("audit-log-action-{}", …)`) lui échappent, de même qu'un `//`
+    // placé dans une chaîne AVANT l'appel, qui tronque la ligne au masquage des
+    // commentaires. Elle attrape l'oubli et la reprise distraite — la forme la
+    // plus probable —, pas la contorsion délibérée.
 
     // ⚠️ `traduire_ou_replier` reste légitime : elle sert les en-têtes de colonne
     // (`audit-log-csv-header-*`), qui ne sont **pas** des codes du journal et

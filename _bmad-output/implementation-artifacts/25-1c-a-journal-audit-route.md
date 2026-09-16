@@ -997,11 +997,19 @@ tient si « depuis l'application » se lit « depuis l'écran » — auquel cas 
 son voisin `:1613` disant, lui, « écran dédié ».
 
 - **2026-09-16** — **Implémentation close** (`bmad-dev-story`, Opus 5) : les **onze** tâches cochées,
-  **24 commits**, rien de poussé. Décomptes **recomptés depuis la source**, périmètre `main..HEAD` :
-  **+38 tests** *(recompté après la passe 1 de revue, qui en ajoute trois — la fiche a annoncé « +35 »
-  tant que la garde en portait 4)* — 7 dépôt, 4 `util`, 5 module, **7 garde**, 15 E2E —,
-  **133 clés** par locale × 4, 29 fichiers,
-  +5206/−41. Gates : backend **2365/2365**, frontend **740/740** + build, E2E **214/9/19** avec les neuf
+  rien de poussé. ⛔ **Périmètre FIGÉ `main..8599035c`** — et non `main..HEAD`, qui **bouge** : c'est
+  la clôture de l'implémentation, avant la revue. **25 commits, 29 fichiers, +5217/−41**, **+35 tests**
+  (7 dépôt, 4 `util`, 5 module, 4 garde, 15 E2E), **133 clés** par locale × 4.
+  *(État actuel, revue comprise — `main..HEAD` : 27 commits, 31 fichiers, +5417/−44, **+38 tests**, la
+  garde étant passée de 4 à 7.)*
+
+  ⚠️ **Deux de ces nombres étaient FAUX dès l'écriture**, relevé par la passe 2 : « 24 commits » pour
+  **25**, et « +5206 » pour **+5217** — repris d'un `git diff --stat` antérieur au dernier commit de la
+  série, dans la ligne même qui annonçait « décomptes recomptés depuis la source ». Les deux autres,
+  29 fichiers et −41, étaient exacts et n'ont péri que du périmètre mouvant. *D'où le périmètre figé
+  ci-dessus : rafraîchir les nombres les aurait repérimés au commit suivant.*
+
+  Gates : backend **2365/2365**, frontend **740/740** + build, E2E **214/9/19** avec les neuf
   échecs qualifiés un par un ⇒ **0 régression**. Épreuve par mutation : **9 mutations, 9 rouges sur
   assertion**. ⚠️ Trois points laissés au Project Lead, écrits plutôt que tranchés en silence : l'**écart
   entre la garde et la spec** sur le découpage de l'inventaire (`audit.rs` exclu comme passe-plat et
