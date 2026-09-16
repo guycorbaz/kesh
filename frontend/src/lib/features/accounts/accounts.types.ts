@@ -113,14 +113,27 @@ export interface RetypeImpact {
  */
 export function readRetypeImpact(details: Record<string, unknown> | undefined): RetypeImpact | null {
 	if (!details) return null;
-	const entryCount = details.entryCount;
+
+	// ⚠️ Les QUATRE champs invalident, pas seulement `entryCount`.
+	//
+	// La première rédaction ne contrôlait que `entryCount` et dégradait les
+	// trois autres en silence — `closedFiscalYears` non-tableau devenait `[]`,
+	// `fromType`/`toType` manquants devenaient `''`. Sans conséquence visible,
+	// puisque la modale n'affiche aujourd'hui que les deux premiers ; mais le
+	// commentaire promettait de « valider au lieu de supposer », et le code ne
+	// le faisait qu'au quart. *Relevé en passe 1 de revue.* Un jour où la modale
+	// affichera le type de départ, un `''` silencieux produirait une phrase à
+	// trou que rien ne signalerait.
+	const { entryCount, closedFiscalYears, fromType, toType } = details;
 	if (typeof entryCount !== 'number') return null;
-	const years = details.closedFiscalYears;
+	if (!Array.isArray(closedFiscalYears)) return null;
+	if (typeof fromType !== 'string' || typeof toType !== 'string') return null;
+
 	return {
 		entryCount,
-		closedFiscalYears: Array.isArray(years) ? years.filter((y): y is string => typeof y === 'string') : [],
-		fromType: typeof details.fromType === 'string' ? details.fromType : '',
-		toType: typeof details.toType === 'string' ? details.toType : '',
+		closedFiscalYears: closedFiscalYears.filter((y): y is string => typeof y === 'string'),
+		fromType,
+		toType,
 	};
 }
 

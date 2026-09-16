@@ -1,6 +1,6 @@
 # Story 25.2-a : Le retypage d'un compte mouvementé exige une confirmation explicite
 
-Status: ready-for-dev
+Status: review
 
 **Issues : [#382], [#274].** Les deux décrivent le **même** défaut, au même site, avec le même
 correctif — #382 en donne la lecture comptable, #274 le mécanisme et les options. Elles se ferment
@@ -219,9 +219,39 @@ rôle↔type de la 14-3a. C'est bien le seul `account_type` qui est nu.
 
 ### Ce que cette story ne fait pas
 
-Elle ne touche **pas** à la numérotation des écritures (#381) : c'est la story **25-2-b**, et son
-arbitrage est encore ouvert. L'epic groupait les deux sous `25-2-gardes-structurelles` ; elles sont
-séparées ici parce que leurs sites, leurs risques et leurs décisions n'ont rien de commun.
+Elle ne touche **pas** à la numérotation des écritures (#381) : c'est la story **25-2-c**.
+⚠️ Cette phrase a dit **25-2-b** jusqu'à la passe 1 de revue — le découpage a bougé en cours de
+séance (la 25-2-b est devenue la dévalidation d'une facture, #440), et la référence n'avait pas
+suivi. *Même défaut que le `Status` périmé relevé par cette passe : un record qui contredit son
+propre contenu.* L'epic groupait les deux sous `25-2-gardes-structurelles` ; elles sont séparées
+parce que leurs sites, leurs risques et leurs décisions n'ont rien de commun.
+
+### Angles morts assumés — inventoriés, non tus
+
+Conformément à D4-ter : ce qui n'est pas résolu s'écrit, plutôt que d'être couvert par une
+énumération de ce qui marche.
+
+1. **Aucun scénario Playwright du parcours complet.** Le trajet *navigateur réel → dialogue →
+   confirmation → seconde requête* n'est joué nulle part. Relevé en passe 1, et **assumé** :
+   - le contrat HTTP est éprouvé de bout en bout côté Rust (`accounts_e2e.rs` — requêtes réseau
+     réelles, les quatre champs de `details` relus dans le corps) ;
+   - le dialogue et le rejeu avec le drapeau sont éprouvés côté Vitest **et prouvés par mutation**
+     (quatre rouges, un vert) ;
+   - `apiClient.put` est un passthrough générique qu'exercent des dizaines de specs.
+   ⛔ **Ce qui a décidé l'arbitrage, et qui est mesuré** : aucun des trois états de seed Playwright
+   ne pose d'écriture comptable — `with-data` vaut `with-company` + contact + produit, « pas de
+   facture » (`test_endpoints.rs:19`). Le scénario devrait donc fabriquer exercice, comptes et
+   écriture dans un fichier dont le `beforeAll` seede globalement autre chose. Le coût dépasse la
+   valeur ajoutée résiduelle.
+
+2. **La fenêtre TOCTOU de `POST /opening-balances` reste ouverte.** #274 signale que sa garde
+   write-time ne peut se suffire tant que le retypage est libre. Le retypage **après coup** est
+   désormais fermé ; mais l'instant entre le pré-check de type et l'insertion de l'écriture
+   d'ouverture ne l'est pas — à cet instant le compte ne porte encore **aucune** écriture, donc la
+   garde ne mord pas. ⚠️ **Résidu pré-existant, ni introduit ni aggravé par cette story**, de la
+   même famille que la course KF-004 acceptée en v0.1 (`accounts.rs`). Relevé en passe 1. Il est
+   écrit ici parce que l'AC 12 ferme #274 : la fermer sans nommer ce qui survit reviendrait à
+   déclarer close une classe de défauts qui ne l'est pas tout à fait.
 
 ### Sites exacts
 
@@ -307,6 +337,7 @@ Pas de split préventif.
 |---|---|---|
 | 2026-09-16 | spec | Story créée. Arbitrage de Guy : **avertissement bloquant** (parmi les trois options de #274). #382 et #274 fusionnées — même site, même correctif. |
 | 2026-09-16 | spec (corr.) | L'AC 6 affirmait une inscription au registre `audit_labels.rs` **qui n'existe pas sur `main`** — il naît avec la 25-1c-a, PR #439 non mergée. Constaté par `git cat-file`, pas déduit. L'AC porte désormais ses deux branches. |
+| 2026-09-16 | revue P1 | **Passe 1 — Sonnet, contexte frais, périmètre `main...HEAD`** : **0 CRITICAL, 0 HIGH, 1 MEDIUM, 4 LOW**. La passe a **déclaré ses axes exercés** (les huit, PDF **aplati** compris) et **recompté depuis la source** : +23 tests et la ventilation i18n à 7 sites sont confirmés indépendamment. **Remédiations appliquées** : (1) *MEDIUM* — `Status` passe de `ready-for-dev` à `review` ; le champ contredisait ses propres tâches, toutes cochées. (2) *LOW* — `readRetypeImpact` ne validait qu'`entryCount` et dégradait les trois autres champs **en silence**, alors que son commentaire promettait de « valider au lieu de supposer » : **les quatre invalident désormais**. (3) *LOW* — les deux angles morts (Playwright, TOCTOU d'`opening-balances`) sont **inventoriés** en Dev Notes plutôt que tus. **Trouvé au passage, hors findings** : la section « Ce que cette story ne fait pas » renvoyait encore la numérotation à la *25-2-b* alors qu'elle est devenue la **25-2-c** — même défaut que le `Status`, un record qui contredit son contenu. ⚠️ **Le LOW « pas de scénario Playwright » est assumé, sur mesure et non par commodité** : aucun preset de seed ne pose d'écriture (`test_endpoints.rs:19`), le montage coûterait plus que la couverture résiduelle qu'il ajouterait. |
 | 2026-09-16 | gate | **Gate complet backend : 2348 tests, 2348 passés, 4 ignorés, 97 s**, sur une base **remise à zéro et contrôlée**. `fmt` et `clippy --workspace --all-targets -D warnings` verts. Gate **complet et non ciblé** : le patch touche un repository de `kesh-db`, ce qui interdit le ciblage. Frontend passé complet au commit de la T7 (**745/745**, `check` 0 erreur, `lint-i18n-ownership` PASS, `build` abouti) et non rejoué depuis — aucun fichier frontend n'a bougé après. **E2E : 242 tests, 216 passés, 19 ignorés, 7 échoués, 8,3 min** — sur `kesh_e2e` **reconstruite** (40 tables, 68 migrations) et un bundle frontend **rebuildé puis vérifié par son contenu**, non par son horodatage. ⛔ **Les 7 échecs sont qualifiés NOM PAR NOM** et sont exactement les sept de la **KF-029 (#97)** : `mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`. **Aucun nom hors liste.** Pas de KF-045 (conforme : 19 h UTC, elle ne rougit qu'avant midi) ; pas de KF-046 (`sidebar-navigation:75` absent) ; **aucune pollution**, là où la fourchette en annonce une à deux — sous la borne basse, ce qui est une bonne surprise et non une anomalie. **Zéro régression.** Montage de l'inbox établi par le journal (`racine inbox` absent, zéro `Permission denied`), et non déduit de l'absence de `inbox-import` parmi les échecs. ⚠️ **`npm run test:e2e` rend un code de sortie 0 malgré sept échecs** — le script ne propage pas celui de Playwright. Sans portée ici, puisque le rapport est lu ; mais dans un enchaînement automatisé, ce zéro ferait prendre un rouge pour un vert. |
 | 2026-09-16 | dev T4→T8 | Story implémentée de bout en bout. **+23 tests** — 13 au dépôt, 5 à l'API, 5 à l'écran. ⚠️ **T5 d'abord OUBLIÉE** : j'allais cocher la story alors que `update` journalisait encore `account.updated` pour un retypage confirmé ; relevé en relisant la fiche, pas par un test. **Quatre preuves par mutation** jouées aujourd'hui, chacune seule, restaurée, identité vérifiée : le test du compte vierge (**lui seul** rouge) ; la garde (**exactement les deux** tests de refus) ; le câblage du drapeau à travers HTTP (**un seul** rouge) ; le code d'audit distinct (**un seul** rouge sur trois). ⛔ **DETTE OUVERTE** : `account.retyped` n'est **pas** inscrit au registre `audit_labels.rs`, absent d'`origin/main` — à porter par la PR #439. Sans elle, le journal affiche le code brut et **rien ne rougit**. ⚠️ **Cinq détecteurs mal formés produits et corrigés en séance** : un compteur de `false,` mesuré à une seule borne ; un test vert par vacuité ; une attente sur `ping` là où il fallait l'authentification ; un grep i18n aveugle aux appels multi-lignes ; un `grep -c` sur un fichier aplati d'une seule ligne. *Chacun a d'abord paru donner une réponse.* |
 | 2026-09-16 | dev T1→T3 | **Gate complet backend : 2340 tests, 2340 passés, 4 ignorés, 96 s**, sur une base **reconstruite et contrôlée** (41 tables, 1 société, 1 admin, 1 exercice, 5 comptes). `fmt` et `clippy --workspace --all-targets -D warnings` verts. ⚠️ Gate **complet** et non ciblé : le patch touche un repository de `kesh-db`, ce qui interdit le ciblage. **+10 tests.** Deux preuves par mutation jouées, chacune seule, restaurée, identité vérifiée : le test du compte vierge (`account_id = ?` → `<> ?` → **lui seul** rouge) et la garde (`!confirm_retype` → `false &&` → **exactement les deux** tests de refus rouges, les quatre autres verts). ⛔ **Un premier gate avait rendu des centaines d'échecs sur `products` et `journal_entries` — modules hors branche : la base n'était pas reconstruite**, mon attente sur `mariadb-admin ping` ayant rendu la main avant que MariaDB ait recréé ses droits après réinitialisation du tmpfs. Le rouge ne disait rien du code ; le détecteur était mal formé. |
