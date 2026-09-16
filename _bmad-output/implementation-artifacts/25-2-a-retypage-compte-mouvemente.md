@@ -70,11 +70,21 @@ rôle↔type de la 14-3a. C'est bien le seul `account_type` qui est nu.
    `toType`, `entryCount` et `closedFiscalYears`. Toute autre modification continue de journaliser
    `account.updated` (`accounts.rs:456`).
 
-6. **Le code neuf est inscrit au registre.** `account.retyped` entre dans `ACTIONS`
-   (`crates/kesh-api/src/audit_labels.rs`, qui en compte 92 aujourd'hui, dont quatre en `account.*`)
-   et reçoit sa clé `audit-log-action-account-retyped` dans **les quatre** locales. ⚠️ Sans les
-   quatre, le journal d'audit affiche **le code brut** — c'est le repli délibéré posé par la 25-1c-a,
-   pas un accident. Les tests de `crates/kesh-api/tests/audit_label_registry.rs` doivent rester verts.
+6. **Le code neuf est inscrit au registre — et cet AC dépend d'une PR non mergée.**
+   ⛔ **`crates/kesh-api/src/audit_labels.rs` et `crates/kesh-api/tests/audit_label_registry.rs`
+   N'EXISTENT PAS sur `main`** : ils naissent avec la story 25-1c-a, **PR #439, ouverte et non
+   mergée** au moment où cette spec est écrite. Vérifié, pas supposé (`git cat-file -e main:…`).
+   Deux branches, à trancher **au démarrage du développement** et non maintenant :
+   - **#439 mergée d'ici là** → `account.retyped` entre dans `ACTIONS` (92 codes, dont quatre en
+     `account.*`) et reçoit sa clé `audit-log-action-account-retyped` dans **les quatre** locales ;
+     les tests de `audit_label_registry.rs` doivent rester verts. Sans les quatre traductions, le
+     journal d'audit affiche **le code brut** — c'est le repli délibéré de la 25-1c-a, pas un
+     accident.
+   - **#439 non mergée** → le code d'action s'écrit comme les autres le font sur `main`, en chaîne
+     littérale au site d'insertion (`accounts.rs:456` pour le voisin `account.updated`), et
+     **l'inscription au registre reste due** : elle est alors portée par la PR qui merge la 25-1c-a,
+     ou par une tâche de suivi explicite. Ne pas la laisser tomber en silence — un code absent du
+     registre s'affiche brut sans que rien ne rougisse.
 
 7. **Le message est traduit.** `error-account-has-entries` existe dans les quatre
    `crates/kesh-i18n/locales/*/messages.ftl`, sur la convention `error-*` déjà en place.
@@ -127,8 +137,12 @@ rôle↔type de la 14-3a. C'est bien le seul `account_type` qui est nu.
 
 - [ ] **T5 — Audit** (AC 5, 6)
   - [ ] `account.retyped` à l'insertion quand le retypage est confirmé.
-  - [ ] `ACTIONS` + `audit-log-action-account-retyped` × 4 locales.
-  - [ ] Vérifier `audit_label_registry.rs` **et** `audit_route_registry.rs`.
+  - [ ] **Premier geste de la tâche** : constater l'état de la PR #439 (`gh pr view 439`) et
+        appliquer la branche correspondante de l'AC 6 — l'inscription au registre n'est possible que
+        si `audit_labels.rs` est sur `main`.
+  - [ ] Si elle l'est : `ACTIONS` + `audit-log-action-account-retyped` × 4 locales, puis vérifier
+        `audit_label_registry.rs` **et** `audit_route_registry.rs`.
+  - [ ] Sinon : consigner la dette dans le Change Log **et** la porter à la PR de la 25-1c-a.
 
 - [ ] **T6 — E2E backend** (AC 1, 2, 3, 5, 8)
   - [ ] 409 sans drapeau, corps exact (code + les quatre champs de `details`) ; 200 avec drapeau et
@@ -171,6 +185,11 @@ séparées ici parce que leurs sites, leurs risques et leurs décisions n'ont ri
 
 ### Contraintes
 
+- ⚠️ **Dépendance à la PR #439, partielle et datée.** Le corps de la story — garde, code d'erreur,
+  drapeau, écran, tests — ne dépend de rien et se développe sur `main` tel quel. **Seul l'AC 6**
+  (l'inscription du code d'audit au registre) exige `audit_labels.rs`, qui vit uniquement sur la
+  branche de la 25-1c-a. Cette spec a d'abord affirmé l'inverse — « la 25-2-a ne dépend pas d'elle » —
+  et c'était faux.
 - ⛔ **Aucune migration.** La garde est en lecture seule ; rien n'entre au schéma. Les garde-fous
   **P5, P6, P7 et P8** de `CLAUDE.md` sont donc sans objet — et le rester est un critère : si une
   migration apparaît dans le diff, c'est que la story a dérivé.
