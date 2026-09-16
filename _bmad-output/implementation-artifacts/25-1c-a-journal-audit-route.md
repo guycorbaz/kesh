@@ -587,8 +587,10 @@ recense que les verbes mutants, `:181,311`), les tests de parité i18n, et les g
       « liste → code » attraperait une coupe `#[cfg(test)]` devenue trop gourmande. Les `.ftl` sont lus
       **directement**, jamais via `I18nBundle` — `format` replie sur le français et `all_messages`
       comble les trous, si bien qu'une locale vide passerait au vert. Module : test d'appartenance
-      **avant** traduction, sans quoi la clé brute s'afficherait. Garde 4/4 et module 4/4 après T4 ;
-      avant T4, 3/4 de part et d'autre, le rouge portant sur les 122 clés absentes.)*
+      **avant** traduction, sans quoi la clé brute s'afficherait. À la livraison de T4 : garde 4/4 et
+      module 4/4 ; avant T4, 3/4 de part et d'autre, le rouge portant sur les 122 clés absentes.
+      ⚠️ **Depuis la passe 1 de revue, garde 7/7 et module 5/5** — trois tests ajoutés à la garde et un
+      au module par la remédiation.)*
 - [x] **T4 — Libellés, quatre locales** (AC 15) : les 120 libellés à la spécification, et les 13 autres clés ;
       glossaire partie B si un terme l'exige ; **liste française recopiée au Dev Agent Record**.
       *(2026-09-16 : **133 clés par locale**, recomptées depuis les fichiers et non estimées —
@@ -600,7 +602,8 @@ recense que les verbes mutants, `:181,311`), les tests de parité i18n, et les g
       `validiert`/`convalidata`, `widerrufen`/`revocata`, `verworfen`/`scartata`, `Mahnstufe`,
       `API-Schlüssel`, `Bankprofil`, `Zuordnungsregel`…), et les 11 clés d'export **décalquent**
       `echeancier-csv-header-*` et `echeancier-export-error-too-large`, dont seul l'exemple de filtre
-      change. Verts : garde 4/4, module 4/4, `kesh-i18n` 29/29 dont `parity_between_locales`,
+      change. Verts à la livraison de T4 : garde 4/4, module 4/4 *(7/7 et 5/5 depuis la passe 1 de
+      revue)*, `kesh-i18n` 29/29 dont `parity_between_locales`,
       `lint-i18n-ownership` PASS, frontend 740/740.)*
 - [x] **T5 — Routes de consultation et de vocabulaire** (AC 5-9, 17) : module, DTO, validation partagée,
       montage.
@@ -668,6 +671,31 @@ recense que les verbes mutants, `:181,311`), les tests de parité i18n, et les g
       sans l'être. Rejouée seule *(ligne « idem, rejouée »)* : elle rougit avec le message attendu,
       « le repli a laissé fuir une clé brute : `audit-log-action-parti-en-vacances` ». *Un enchaînement
       de commandes qui court-circuite transforme une épreuve en affirmation.*
+
+      ⛔ **ÉCART DÉCLARÉ, relevé par la passe 1 de revue : l'AC 24 prescrit SEIZE mutations, neuf
+      avaient été jouées, et le total « neuf mutations, neuf rouges » se lisait comme complet.** Ma
+      fenêtre de lecture du tableau s'était arrêtée à la ligne 541 et j'avais cru la table finie ; elle
+      court jusqu'à 548. *Un décompte qui ne dit pas son dénominateur n'est pas un décompte.*
+      ⇒ **16 prescrites · 15 jouées · 1 sans objet, motivée** :
+
+      | mutation (AC 24) | résultat |
+      |---|---|
+      | tag `Content-Disposition` replié sur `fr-CH` | ✅ rouge — `l_export_porte_son_bom…:568` |
+      | message `RESULT_TOO_LARGE` formé en français | ✅ rouge — `au_dela_du_plafond…:660` |
+      | un site retiré de l'inventaire de la garde | ✅ rouge — `tout_site_dont…:305` |
+      | résolution des conditionnelles retirée de l'extracteur | ⚪ **SANS OBJET** — mon extracteur ne les résout **pas** : c'est l'inventaire qui les porte (cf. l'écart d'AC 18 ci-dessous). Il n'y a donc aucune résolution à retirer, et la propriété visée est éprouvée par la mutation précédente |
+      | cellule action écrite avec le code au lieu du libellé | ✅ rouge — `l_export_porte_son_bom…:591` |
+      | une entrée retirée d'`ACTIONS` | ✅ rouge — `les_actions_de_la_liste…:398` |
+      | une clé retirée du seul `de-CH` | ✅ rouge — `chaque_code_a_son_libelle…:471` |
+
+      ⚠️ **Les trois dernières ont été REJOUÉES contre la garde corrigée** : leur premier passage avait
+      tourné contre la version d'origine (cf. l'incident ci-dessous).
+
+      ⛔ **Incident de méthode, déclaré plutôt que tu.** Le script de mutation restaure ses cibles par
+      `git checkout`. Lancé sur des correctifs **non commités**, il les a **effacés** — les six éditions
+      de la remédiation ont dû être réécrites. *Commiter avant toute épreuve qui restaure par git.*
+      ⚠️ Et le `git status` final le disait déjà : seuls les fichiers de documentation y figuraient,
+      les fichiers Rust étant redevenus « propres ». Je l'ai lu sans le comprendre.
 
       ⚠️ Deux sites étaient **ambigus** — `ensure_not_pat` et `let locale = state.config.locale`
       apparaissent chacun **trois** fois, une par handler. La mutation porte donc sur un **numéro de
@@ -917,7 +945,7 @@ Claude Opus 5 (1M context) — implémentation du 2026-09-16.
 - `crates/kesh-api/src/util.rs` — modifié (T2 : `csv_sanitize` et ses quatre tests)
 - `crates/kesh-api/src/routes/invoices.rs` — modifié (T2 : import et renvoi, définition retirée)
 - `crates/kesh-api/src/audit_labels.rs` — **créé** (T3 : les deux listes, `message_key`, les trois
-  fonctions de libellé et leurs quatre tests)
+  fonctions de libellé et leurs **cinq** tests)
 - `crates/kesh-api/src/lib.rs` — modifié (T3 : `pub mod audit_labels;` — la garde est une crate externe)
 - `crates/kesh-api/tests/audit_label_registry.rs` — **créé** (T3 : la garde, quatre tests)
 - `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` — modifiés (T4 : **133** clés par locale)
@@ -931,9 +959,48 @@ Claude Opus 5 (1M context) — implémentation du 2026-09-16.
 
 ## Change Log
 
+### Passe 1 de `bmad-code-review` — trois lentilles, trois modèles, contexte frais
+
+| lentille | modèle | axe | rendu brut | après vérification au sol |
+|---|---|---|---|---|
+| Correction et sécurité | Sonnet | code de production | 0C/0H/0M/2L | **2 L** — un `derive(Default)` divergent (corrigé), et `entityId=0`, qui est une **décision de spec** que la lentille a elle-même retrouvée : écartée |
+| Les tests mentent-ils ? | Haiku 4.5 | tests et garde | 1C/1H/1M/1L | **1 H** (reclassé du C : le code livré est juste, c'est la garde qui était perméable), 1 M, 1 L — tous vérifiés **au sol** avant traitement, comme la § *Haiku-specific guardrails* l'impose |
+| Le code tient-il ses textes ? | Opus | spec, manuel, propagation | 0C/1H/5M/3L | **1 H, 5 M, 3 L** — 23 AC sur 25 tenus, les 120 libellés français comparés **programmatiquement** au document arbitré (0 écart) |
+
+**Ce que la passe a trouvé de plus coûteux, et c'était sur la garde elle-même** : son inventaire
+**affirmait au lieu de vérifier**. Les codes de `SITES_INDIRECTS` entraient dans l'ensemble attendu
+**inconditionnellement** ; un site qui aurait renommé son code aurait laissé l'inventaire **et**
+`ACTIONS` sur l'ancienne valeur — diff bilatéral vide, test vert, et la production écrivant un code
+**sans libellé**. L'AC 18 (d) demandait « ses valeurs **vérifiées** » ; je n'avais vérifié que leur
+présence dans `ACTIONS`, ce qui va de soi. *C'est l'assertion vraie par construction que le
+`CLAUDE.md` décrit, les deux côtés sortant de la même source.*
+
+**Remédiation** (commit `919dabcc` et le suivant) : le test qui confronte chaque code déclaré au
+**texte** du fichier de son site ; `PASSE_PLATS` retiré au profit d'une entrée d'inventaire à codes
+vides pour `audit.rs` — *exclure un fichier échangeait une ligne de bruit contre un trou* ; la cellule
+« type d'auteur » du CSV repassée par `actor_type_label` ; un code contenant `/` désormais refusé ;
+`derive(Default)` retiré ; `api-external.md` et la section « Clés API » du manuel disent enfin que le
+journal est fermé aux clés, **avec un autre code** que les routes d'administration ;
+`Fakturierungseinstellungen` remonté en partie B du glossaire.
+
+⛔ **Un finding que j'ai trouvé sur moi-même en éprouvant mes propres correctifs** : après avoir
+corrigé la cellule du CSV, je l'ai remutée — **les quinze tests HTTP sont restés verts**. Aucun test
+ne protégeait le correctif, et le rendu étant identique par les deux chemins, aucun test de sortie ne
+le pourrait. D'où une garde qui vérifie le **chemin** : aucune route ne dérive une clé de code hors du
+module source unique. Éprouvée à son tour — verte sur le code correct, rouge sur la dérivation
+manuelle.
+
+⚠️ **Reste ouvert, porté au Project Lead** : `user-manual.tex:498-503` affirme qu'on ne peut « pas
+encore **produire** » l'historique des corrections. L'AC 21 le déclarait « vrai et à ne pas toucher » ;
+la lentille conteste, le verbe *produire* étant exactement celui que l'export CSV livre. L'arbitrage
+tient si « depuis l'application » se lit « depuis l'écran » — auquel cas il gagnerait à être écrit,
+son voisin `:1613` disant, lui, « écran dédié ».
+
 - **2026-09-16** — **Implémentation close** (`bmad-dev-story`, Opus 5) : les **onze** tâches cochées,
   **24 commits**, rien de poussé. Décomptes **recomptés depuis la source**, périmètre `main..HEAD` :
-  **+35 tests** (7 dépôt, 4 `util`, 5 module, 4 garde, 15 E2E), **133 clés** par locale × 4, 29 fichiers,
+  **+38 tests** *(recompté après la passe 1 de revue, qui en ajoute trois — la fiche a annoncé « +35 »
+  tant que la garde en portait 4)* — 7 dépôt, 4 `util`, 5 module, **7 garde**, 15 E2E —,
+  **133 clés** par locale × 4, 29 fichiers,
   +5206/−41. Gates : backend **2365/2365**, frontend **740/740** + build, E2E **214/9/19** avec les neuf
   échecs qualifiés un par un ⇒ **0 régression**. Épreuve par mutation : **9 mutations, 9 rouges sur
   assertion**. ⚠️ Trois points laissés au Project Lead, écrits plutôt que tranchés en silence : l'**écart

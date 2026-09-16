@@ -365,6 +365,50 @@ fn les_codes_de_l_inventaire_sont_verifies_dans_le_fichier_de_leur_site() {
 }
 
 #[test]
+fn aucune_route_ne_derive_une_cle_de_code_hors_du_module_source_unique() {
+    // ⛔ **Ce test existe parce que son absence a été PROUVÉE coûteuse.**
+    //
+    // La cellule « type d'auteur » de l'export redérivait sa clé à la main —
+    // `message_key(PREFIX_ACTOR_TYPE, …)` — au lieu d'appeler `actor_type_label`.
+    // Le rendu était identique, si bien qu'**aucun** des quinze tests HTTP ne
+    // rougissait : vérifié en remettant la dérivation manuelle, suite verte.
+    //
+    // Le défaut n'est donc pas un mauvais affichage, c'est qu'un **second chemin
+    // de dérivation** vivait hors du module déclaré source unique : son test
+    // d'appartenance n'était plus exercé par le code qui sert le fichier, et la
+    // fonction imposée par l'AC 16 survivait à sa propre inutilité, couverte par
+    // ses seuls tests unitaires.
+    //
+    // Un test de SORTIE ne peut pas trancher — les deux chemins rendent le même
+    // texte, et `actor_type` étant un ENUM à deux valeurs, aucun code inconnu
+    // n'est insérable en base. Ce qui se vérifie, c'est le CHEMIN.
+    let source = include_str!("../src/routes/audit_log.rs");
+    let source = strip_line_comments(source);
+
+    for interdit in [
+        "message_key(",
+        "PREFIX_ACTOR_TYPE",
+        "PREFIX_ACTION",
+        "PREFIX_ENTITY",
+    ] {
+        assert!(
+            !source.contains(interdit),
+            "⛔ `routes/audit_log.rs` emploie « {interdit} » : il dérive donc une clé \
+             de code lui-même, alors que l'AC 12 impose que « les libellés viennent \
+             des fonctions de l'AC 16, et d'elles seules ».\n\n\
+             Appeler `audit_labels::{{action,entity_type,actor_type}}_label`. ⚠️ Si un \
+             repli est nécessaire quand la clé manque, sa place est DANS la fonction \
+             du module, jamais au site d'appel — sinon le test d'appartenance cesse \
+             d'être exercé par le seul code qui s'en sert."
+        );
+    }
+
+    // ⚠️ `traduire_ou_replier` reste légitime : elle sert les en-têtes de colonne
+    // (`audit-log-csv-header-*`), qui ne sont **pas** des codes du journal et
+    // n'ont donc pas de fonction de libellé dans le module.
+}
+
+#[test]
 fn aucun_code_ne_contient_de_slash_qui_tromperait_le_masquage_des_commentaires() {
     // ⚠️ `strip_line_comments` coupe à `//`. Un code qui en contiendrait serait
     // tronqué **avant** l'extraction, et le site deviendrait invisible. Aucun
