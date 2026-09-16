@@ -713,9 +713,46 @@ recense que les verbes mutants, `:181,311`), les tests de parité i18n, et les g
       deux à CONSERVER : `README.md:218` dit « consultable par aucun **écran** », ce qui **reste vrai**
       jusqu'à la 25-1c-b2, et la spec de cette story cite l'ancienne phrase pour la corriger. ⚠️ Vérifié
       au `git diff --stat` : `user-manual.tex`, `README.md` et `website/` sont **intacts**.)*
-- [ ] **T11 — Gates** : backend complet via `scripts/test-fast.sh`, base remise à zéro **et vérifiée** ;
+- [x] **T11 — Gates** : backend complet via `scripts/test-fast.sh`, base remise à zéro **et vérifiée** ;
       frontend : `npm run test:unit` (gardes i18n, AC 15) ; **E2E complète avant le push**, `kesh_e2e`
       reconstruite.
+      *(2026-09-16 : les quatre volets ont tourné. **Aucune régression imputable à la story** — les neuf
+      échecs E2E sont tous qualifiés un par un ci-dessous.)*
+
+      | volet | résultat observé |
+      |---|---|
+      | base de gate | remise à zéro **inconditionnelle** puis **vérifiée** : `SELECT 1` réel après 4 s — jamais un `ping`, le datadir tmpfs s'initialise encore —, migrations rejouées, seed appliqué, **40 tables, 1 Admin** |
+      | backend (`scripts/test-fast.sh`) | ✅ **2365 tests, 2365 passés**, 4 ignorés, 86,7 s — `fmt` et `clippy -D warnings` compris |
+      | frontend | ✅ `check` **0 erreur** (27 avertissements, tous **préexistants** — aucun de mes fichiers) · `lint-i18n-ownership` PASS · `test:unit` **740/740** · `build` ✔ |
+      | E2E Playwright | ✅ **214 passés / 9 échoués / 19 ignorés** en 8,3 min — `kesh_e2e` **recréée** (DROP/CREATE + migrations, 40 tables) |
+
+      **Les neuf échecs, qualifiés un par un** — un rouge ne se juge pas au nombre :
+
+      | échec | verdict |
+      |---|---|
+      | `mode-expert:26` et `:41`, `onboarding-path-b:65` et `:92`, `onboarding:57`, `:77`, `:150` | **les 7 fixes de la KF-029 (#97)**, au complet |
+      | `invoices.spec.ts:405` et `:429` | **absents, et c'est correct** : la KF-045 ne rougit qu'**avant 12:00 UTC** ; le run a tourné à 14:34 UTC. Leur présence aurait été une régression |
+      | `sidebar-navigation:75` | **pollution d'état** — rejoué **seul**, il **passe** (2,0 s). Ce n'est donc pas la KF-046, qui échoue rejouée seule. La liste nominative donne deux causes sur ce test ; seul le rejeu tranche |
+      | `inbox-import.spec.ts:106` | ⛔ **défaut de MON montage, pas du code** — voir ci-dessous |
+
+      ⛔ **Le seul échec hors liste venait de ma propre recette, et le dépôt l'avait documenté.**
+      `inbox-import:106` échouait **rejoué seul** — donc pas de la pollution. Diagnostic **vérifié au
+      log**, non supposé : `internal: inbox import: racine inbox: Permission denied (os error 13)`.
+      `docs/testing.md:198-207` décrit ce symptôme mot pour mot — sans `KESH_INBOX_DIR` ni
+      `KESH_DOCUMENTS_DIR`, le fichier rend « 1 échec et 2 tests skippés » et Playwright ne trouve pas
+      `getByTestId('inbox-import-report')`. J'avais monté le backend depuis la recette du `CLAUDE.md`
+      **sans lire la recette complète** de `docs/testing.md`. Backend relancé avec les deux variables,
+      spec rejouée **dans les conditions exactes du run complet** ⇒ **passe en 1,5 s**, et plus aucune
+      erreur au log. *C'est la faute que ce dépôt documente déjà pour `KESH_COOKIE_SECURE` : chercher la
+      doc du dépôt AVANT de diagnostiquer. Elle s'est reproduite sur une autre variable.*
+
+      ⚠️ **Le rouge attendu se juge fichier par fichier, jamais au nombre.** Run lancé à **14:34 UTC**,
+      donc **après 12:00 UTC** : les deux échecs KF-045 (`invoices.spec.ts:405` et `:429`) **ne doivent
+      pas** apparaître — ils ne rougissent que le matin. Attendu ici : les **7 fixes** de la KF-029
+      (`mode-expert:26,41`, `onboarding-path-b:65,92`, `onboarding:57,77,150`), plus éventuellement
+      `sidebar-navigation:75` (KF-046) et **1 à 2 échecs de pollution à identité variable**. Tout test
+      hors de cette liste sera **rejoué seul** : sur `sidebar-navigation:75`, la liste donne deux causes
+      possibles et **seul le rejeu isolé tranche** — la KF-046 échoue seule, la pollution passe seule.
 
 ## Dev Notes
 
