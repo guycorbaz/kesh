@@ -959,6 +959,38 @@ Claude Opus 5 (1M context) — implémentation du 2026-09-16.
 
 ## Change Log
 
+### Passe 7 — CIBLÉE : **1 MEDIUM, zéro CRITICAL ni HIGH** — une première depuis la passe 1
+
+Prompt **versionné** : `25-1c-a-review-prompt-p7-ciblee.md`. Modèle : Sonnet.
+
+⛔ **Le MEDIUM : la distinction lifetime / littéral introduite à la passe 6 n'était gardée par RIEN.**
+Prouvé par mutation **exécutée** : une régression plausible de cette branche restait invisible aux dix
+tests, sur les quatre entrées synthétiques **comme sur les 218 fichiers réels**. ⚠️ La lentille note
+elle-même la nuance qui abaisse la sévérité : mon message de commit l'annonçait comme lacune assumée.
+
+Elle confirme au sol les chiffres de la passe 6 — 218 fichiers, 99 portant l'attribut, 27 lignes de
+chaînes brutes, le littéral de `loader.rs:386` — et vérifie que mes deux autres mutations sont bien
+attrapées.
+
+⛔ **Ma première tentative de correctif NE GARDAIT RIEN, et c'est l'épreuve qui l'a montré.** La
+cinquième entrée synthétique est restée **verte** sous la mutation. La cause était ma construction :
+sur `impl<'a> Chose<'a> {`, le saut « large » va d'une apostrophe à l'autre **sans jamais enjamber
+d'accolade** — la régression rend donc le même compte. *Aucune de mes lignes ne portait le cas
+discriminant : une accolade située **entre** deux apostrophes.*
+
+⇒ **La propriété se teste directement sur `accolades_hors_chaines`**, non par le détour de son
+appelant : `impl<'a> Foo { fn g<'b>() {} }` doit rendre `(2, 2)`, là où un saut « de la prochaine
+apostrophe » enjamberait l'accolade de `Foo {` et rendrait `(1, 2)`. S'y ajoutent les lifetimes
+ordinaires, `'{'`, `'}'`, l'apostrophe échappée, le guillemet-caractère et l'accolade de chaîne.
+
+⚠️ *C'est la leçon de la passe 6, une couche plus bas : **tester une fonction par le détour de son
+appelant laisse passer ce que l'appelant ne distingue pas**.*
+
+| épreuve | verdict |
+|---|---|
+| mutation « saut large », **première** tentative (entrée synthétique) | ⛔ **restée verte** — l'entrée ne gardait rien |
+| mutation « saut large », après correctif (test unitaire, cas discriminant) | ✅ **rouge** — « une lifetime n'ouvre ni ne ferme rien, et n'enjambe aucune accolade » |
+
 ### Passe 6 — CIBLÉE, et elle CONCLUT : simplifier plutôt que raffiner
 
 Prompt **versionné** : `25-1c-a-review-prompt-p6-ciblee.md`. Modèle : Opus.
@@ -1222,7 +1254,7 @@ son voisin `:1613` disant, lui, « écran dédié ».
   (7 dépôt, 4 `util`, 5 module, 4 garde, 15 E2E), **133 clés** par locale × 4.
   ⛔ **L'état courant n'est PAS répété ici** — ni commits, ni fichiers, ni lignes, ni total de tests.
   Une telle mesure se périme **à chaque commit de revue**, et celle-ci l'avait déjà fait deux fois :
-  elle annonçait « 27 commits, 31 fichiers, +5417/−44, +41 tests, la garde passée de 4 à 7 » quand le
+  elle annonçait « 27 commits, 31 fichiers, +5417/−44, +42 tests, la garde passée de 4 à 7 » quand le
   dépôt en était à 34, 33, +5980 et une garde à 9. *J'avais tiré cette leçon pour la mesure figée
   ci-dessus et l'avais oubliée sur la phrase suivante.* L'état courant est tenu dans
   `sprint-status.yaml`, **daté à chaque passe**.
