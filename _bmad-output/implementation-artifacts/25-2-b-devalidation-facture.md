@@ -81,8 +81,17 @@ chemin qui change, et il gagne une étape nommée.
    que trois (payée, créditée, rappels) et délègue l'exercice clos. La dévalidation les ajoute — et
    c'est un durcissement, pas une régression.
 
-   ⛔ **`emailed_at` est le seul empêchement qui soit un arbitrage et non une déduction.** Guy doit
-   confirmer : refus sec, ou levable par confirmation explicite (motif `confirm_*`, comme en 25-2-a) ?
+   ⛔ **`emailed_at` : REFUS SEC, non levable par confirmation.** Arbitrage de Guy, 2026-09-16 :
+   *« on ne doit pas pouvoir modifier une facture créée et envoyée à un client »*. C'est le seul des
+   sept empêchements qui ne se déduise pas du schéma — les six autres protègent une donnée interne,
+   celui-ci protège un document **sorti de Kesh**, que le client détient. Une fois la facture partie,
+   le chemin de correction redevient l'**avoir**, et c'est cohérent : l'avoir existe précisément pour
+   corriger ce qu'un tiers a déjà reçu.
+
+   ⚠️ **La garde n'attrape que ce que Kesh sait avoir envoyé.** `emailed_at` est renseigné par
+   `mark_emailed` ; une facture dont le PDF a été téléchargé puis transmis à la main ne laisse
+   **aucune trace**, et restera dévalidable. La limite est structurelle, pas réparable ici — elle
+   s'écrit, elle ne se comble pas.
 
 4. **Deux sorties, et elles sont symétriques.**
    - **effacer** : la facture redevenue `draft` se supprime par le chemin brouillon **existant**, sans
@@ -183,4 +192,5 @@ selon le critère de non-convergence.
 
 | Date | Étape | Note |
 |---|---|---|
-| 2026-09-16 | spec | Story créée sur arbitrage de Guy, après que la contre-passation se soit révélée inapplicable (`OwnedByInvoice`). Deux cycles demandés : dévalider-effacer **et** dévalider-corriger-revalider. ⛔ Issue GitHub non ouverte ; `emailed_at` comme empêchement reste à arbitrer. |
+| 2026-09-16 | spec | Story créée sur arbitrage de Guy, après que la contre-passation se soit révélée inapplicable (`OwnedByInvoice`). Deux cycles demandés : dévalider-effacer **et** dévalider-corriger-revalider. ⛔ Issue GitHub non ouverte. |
+| 2026-09-16 | arbitrage | `emailed_at` → **refus sec**, non levable : *« on ne doit pas pouvoir modifier une facture créée et envoyée à un client »* (Guy). Réserve écrite : la garde n'attrape que ce que Kesh sait avoir envoyé. ⚠️ Fait relevé au passage, **contre l'asymétrie supposée** : les factures **reçues** ne sont pas plus faciles à modifier — `supplier_invoices` n'a **aucune** fonction de mise à jour, et son `cancel` **contre-passe** l'écriture d'achat au lieu de la supprimer. Le côté fournisseur est donc plus strict, pas plus souple. |
