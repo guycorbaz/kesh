@@ -724,7 +724,7 @@ recense que les verbes mutants, `:181,311`), les tests de parité i18n, et les g
       There is no ⚠ (U+26A0)`), de même que `✓`, `✗` et `═`. C'est **antérieur à cette story** et hors
       de son périmètre ; le seul que j'allais ajouter a été écrit `\faExclamationTriangle`, la commande
       que ce fichier emploie déjà.
-- [ ] **T10 — Propagation** : `grep -rniE "aucune route|post-MVP|story 3\.5" crates docs/manual/fr/*.tex --exclude-dir=migrations`
+- [x] **T10 — Propagation** : `grep -rniE "aucune route|post-MVP|story 3\.5" crates docs/manual/fr/*.tex --exclude-dir=migrations`
       (⛔ **insensible à la casse**, sinon « Story 3.5 » échappe ; et **sans** `migrations/` — une
       migration appliquée ne se modifie plus, P8)
       et le symptôme « la consultation n'existe pas » sur le code, les manuels, le README et `website/` ;
@@ -741,6 +741,20 @@ recense que les verbes mutants, `:181,311`), les tests de parité i18n, et les g
       deux à CONSERVER : `README.md:218` dit « consultable par aucun **écran** », ce qui **reste vrai**
       jusqu'à la 25-1c-b2, et la spec de cette story cite l'ancienne phrase pour la corriger. ⚠️ Vérifié
       au `git diff --stat` : `user-manual.tex`, `README.md` et `website/` sont **intacts**.)*
+
+      ⚠️ **Ce dernier constat ne vaut que pour T10, et la CLÔTURE l'a dépassé** — sur instruction du
+      Project Lead (« mettre à jour la doc »), qui a du même coup tranché l'arbitrage laissé ouvert à la
+      passe 3. Quatre sites de plus ont été traités :
+
+      | site | ce qui était devenu faux |
+      |---|---|
+      | `docs/manual/fr/user-manual.tex:497` | « vous ne pouvez pas encore **produire** l'historique » — or l'export CSV le produit. Réécrit pour distinguer l'**API**, qui existe, de l'**écran**, qui manque. ⚠️ Le site voisin `:1613` dit « écran dédié » : il **reste vrai**, il n'a pas été touché |
+      | `README.md`, ligne v0.12.1 | « la consultation depuis l'application, **qui n'existe toujours pas** » — la route existe désormais |
+      | `CHANGELOG.md` | aucune section `[Unreleased]` n'existait, alors que le manuel d'administration y **renvoie** ; créée, avec l'entrée de cette story |
+      | `website/` | vérifié : **aucune** de ses mentions du journal ne promet de consultation — rien à corriger |
+
+      PDF régénérés et **contrôlés aplatis** (apostrophes normalisées) : l'ancienne phrase absente, les
+      trois neuves présentes, « écran dédié » intact.
 - [x] **T11 — Gates** : backend complet via `scripts/test-fast.sh`, base remise à zéro **et vérifiée** ;
       frontend : `npm run test:unit` (gardes i18n, AC 15) ; **E2E complète avant le push**, `kesh_e2e`
       reconstruite.
@@ -958,6 +972,38 @@ Claude Opus 5 (1M context) — implémentation du 2026-09-16.
 - `docs/manual/fr/admin-manual.pdf` — régénéré et commité (T9, convention du dépôt)
 
 ## Change Log
+
+### Gate de clôture — après les sept passes de revue
+
+⛔ **Relancé en entier, et non repris de T11** : depuis, la garde a été réécrite **cinq fois**, la
+cellule d'export du CSV a changé, `derive(Default)` a été retiré, quatre documents et un PDF ont été
+modifiés. *Les verts consignés à T11 ne valaient plus pour cet état.*
+
+| volet | résultat observé |
+|---|---|
+| base de gate | remise à zéro **inconditionnelle** puis **vérifiée** : `SELECT 1` réel après 4 s, migrations rejouées, seed appliqué — **40 tables, 1 Admin** |
+| backend (`scripts/test-fast.sh`) | ✅ **2372 tests, 2372 passés**, 4 ignorés, 100,8 s — `fmt` et `clippy -D warnings` compris |
+| frontend | ✅ `check` **0 erreur** (27 avertissements, tous préexistants) · `lint-i18n-ownership` PASS · `test:unit` **740/740** · `build` ✔ |
+| E2E Playwright | ✅ **215 passés / 8 échoués / 19 ignorés** en 8,7 min — `kesh_e2e` reconstruite, montage **complet** |
+
+**Les huit échecs, qualifiés un par un** :
+
+| échec | verdict |
+|---|---|
+| `mode-expert:26` et `:41`, `onboarding-path-b:65` et `:92`, `onboarding:57`, `:77`, `:150` | **les 7 fixes de la KF-029 (#97)**, au complet |
+| `sidebar-navigation:75` | **KF-046 (#424)** — rejoué **seul**, il **échoue** : c'est donc la KF déterministe, et non la pollution, qui passe rejouée seule |
+| `invoices.spec.ts:405` et `:429` | **absents, et c'est correct** — la KF-045 ne rougit qu'avant 12:00 UTC ; le run a tourné à 16:53 |
+| `inbox-import.spec.ts:106` | **absent** — la confirmation que l'échec de l'après-midi venait de **mon montage**, non du code |
+
+⇒ **ZÉRO régression**, et zéro pollution : les huit sont tous des échecs connus et nommés.
+
+⚠️ **Le montage E2E porte cette fois `KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR`**, omises cet
+après-midi, ce qui m'avait fait prendre un défaut de ma propre recette pour un échec inconnu. Les trois
+contrôles préalables sont verts avant lancement : `/health` en 1 s, `smtpConfigured: true`, **aucune**
+erreur `racine inbox` au log.
+
+⚠️ Suite lancée à **16:53 UTC**, donc **après 12:00** : les deux échecs KF-045 (`invoices.spec.ts:405`
+et `:429`) **ne doivent pas** apparaître — leur présence serait une régression, non un échec connu.
 
 ### Passe 7 — CIBLÉE : **1 MEDIUM, zéro CRITICAL ni HIGH** — une première depuis la passe 1
 
