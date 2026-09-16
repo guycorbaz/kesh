@@ -72,9 +72,15 @@ const TYPE_DU_HELPER_EXERCICES: &str = "fiscal_year";
 // protection au « volet (a) » : c'est faux, ce volet ne voit que les sites dont
 // l'argument n'est PAS littéral. Un littéral ajouté dans `audit.rs` est attrapé
 // par le **diff des actions**, parce que le fichier est de nouveau balayé.
-// L'entrée à codes vides, elle, ne protège rien — elle empêche seulement
-// `inconnus` de rougir sur un fichier désormais lu. *Se tromper là-dessus
-// conduirait à réintroduire une exclusion de fichier en croyant bien faire.*
+// L'entrée à codes vides, elle, n'apporte pas cette protection-là — elle
+// empêche `inconnus` de rougir sur un fichier désormais lu. *Se tromper
+// là-dessus conduirait à réintroduire une exclusion de fichier en croyant bien
+// faire.*
+//
+// ⚠️ **Elle apporte en revanche une SECONDE ligne de défense**, depuis que le
+// contrôle de l'inventaire est bilatéral : tout littéral en forme de code
+// trouvé dans `audit.rs` devra être dans `ACTIONS`, sa liste déclarée étant
+// vide. Le premier état de ce commentaire ne le disait pas.
 
 /// **L'ensemble clos des sites dont l'action n'est pas un littéral.**
 ///
@@ -171,6 +177,30 @@ fn strip_line_comments(src: &str) -> String {
         .join("\n")
 }
 
+/// La source d'un fichier, prête à être lue : commentaires masqués et `mod
+/// tests` retiré. **Les trois lecteurs de ce fichier passent par ici.**
+///
+/// ⛔ **La coupe porte sur une LIGNE ENTIÈRE, jamais sur une sous-chaîne.** Une
+/// première rédaction faisait `brut.split("#[cfg(test)]")` sur la source brute :
+/// `config.rs:406` contient cette chaîne **dans un doc-comment** —
+/// « aux modules `#[cfg(test)]` internes du crate » — bien avant son vrai
+/// attribut, si bien que **83 % du fichier** sortait du balayage. Une dérivation
+/// posée dans les lignes perdues devenait invisible.
+///
+/// ⚠️ Le défaut était **dormant** tant que la garde du chemin ne lisait qu'un
+/// fichier ; c'est son élargissement qui l'a activé. *Un détecteur qui coupe
+/// avant d'assainir se fie à la prose qu'il est censé ignorer.*
+///
+/// ⚠️ Limite connue et assumée, héritée de `strip_line_comments` : un `//` placé
+/// **dans une chaîne** tronque la ligne. Aucun argument d'audit n'en porte.
+fn source_assainie(brut: &str) -> String {
+    let sans_tests: Vec<&str> = brut
+        .lines()
+        .take_while(|l| l.trim() != "#[cfg(test)]")
+        .collect();
+    strip_line_comments(&sans_tests.join("\n"))
+}
+
 /// Découpe les arguments d'un appel — `src` commence **après** la parenthèse
 /// ouvrante. Rend `None` si l'appel n'est pas refermé.
 fn args_de(src: &str) -> Option<Vec<String>> {
@@ -257,7 +287,7 @@ fn relever() -> Releve {
         // ⛔ Les `mod tests` construisent des entrées avec des codes inventés.
         // On coupe au premier `#[cfg(test)]`. Une coupe trop gourmande ne passe
         // pas inaperçue : le volet « liste → code » rougirait sur le code perdu.
-        let source = strip_line_comments(brut.split("#[cfg(test)]").next().unwrap_or(""));
+        let source = source_assainie(&brut);
 
         for (motif, idx_action, idx_type) in FORMES {
             let mut reste = source.as_str();
@@ -361,7 +391,7 @@ fn les_codes_de_l_inventaire_sont_verifies_dans_le_fichier_de_leur_site() {
         // Une première rédaction lisait le fichier tel quel : un code présent
         // dans un simple **commentaire** — ou dans une fixture de `mod tests` —
         // suffisait alors à satisfaire le contrôle, qui s'éteignait en silence.
-        let source = strip_line_comments(brut.split("#[cfg(test)]").next().unwrap_or(""));
+        let source = source_assainie(&brut);
 
         // ── Sens 1 : tout code DÉCLARÉ est présent dans le fichier ───────────
         // Ferme le RENOMMAGE.
@@ -410,10 +440,12 @@ fn les_codes_de_l_inventaire_sont_verifies_dans_le_fichier_de_leur_site() {
 /// Littéraux qui ont la forme d'un code d'action **sans en être un**, et qu'on
 /// déclare plutôt que d'élargir le tamis.
 ///
-/// ⚠️ **Un ensemble clos, borné aux six fichiers inventoriés** — et non une
+/// ⚠️ **Un ensemble clos, borné aux SEPT fichiers inventoriés** — et non une
 /// liste ouverte sur tout le dépôt : elle ne grossit que si l'on écrit un
 /// littéral de cette forme dans l'un d'eux. Chaque entrée porte son motif, comme
-/// l'inventaire lui-même.
+/// l'inventaire lui-même. *(« six » ici était faux : `SITES_INDIRECTS` en compte
+/// sept depuis l'ajout d'`audit.rs` — décompte relevé par la passe 3, dans le
+/// commentaire même qui corrigeait un défaut de comptage voisin.)*
 const PAS_DES_CODES: &[(&str, &str)] = &[(
     "bank_account.journal_account_id",
     "clé de CONFIGURATION nommant le champ manquant (`DbError::ConfigurationRequired`), \
@@ -436,30 +468,54 @@ const PAS_DES_CODES: &[(&str, &str)] = &[(
 /// avec l'audit.*
 fn litteraux_en_forme_de_code(source: &str) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
-    let mut reste = source;
-    while let Some(debut) = reste.find('"') {
-        let apres = &reste[debut + 1..];
-        let Some(fin) = apres.find('"') else { break };
-        let contenu = &apres[..fin];
-        reste = &apres[fin + 1..];
 
-        if PAS_DES_CODES.iter().any(|(c, _)| *c == contenu) {
-            continue;
-        }
-        let Some((prefixe, acte)) = contenu.split_once('.') else {
-            continue;
-        };
-        if prefixe.len() >= 3
-            && !acte.is_empty()
-            && !acte.contains('.')
-            && contenu
-                .chars()
-                .all(|c| c.is_ascii_lowercase() || c == '.' || c == '_')
-        {
-            out.insert(contenu.to_string());
+    // ⛔ **Suivi d'état, et non `find('"')`.** Une première rédaction appariait
+    // les guillemets naïvement, sans regarder les ÉCHAPPEMENTS — alors qu'`args_de`,
+    // vingt lignes plus haut, les suit. Un seul `\"` en nombre impair
+    // désynchronisait l'appariement pour **tout le reste du fichier** : l'ensemble
+    // rendu devenait VIDE, la boucle d'assertion ne s'exécutait plus, et le trou
+    // que ce tamis existe pour fermer se rouvrait — en silence, la garde restant
+    // verte. Ce n'est pas un cas tordu : `reconciliation.rs` porte déjà des
+    // guillemets échappés, en nombre pair par chance.
+    let mut courant = String::new();
+    let (mut dans_chaine, mut echappe) = (false, false);
+    for ch in source.chars() {
+        if dans_chaine {
+            if echappe {
+                echappe = false;
+                courant.push(ch);
+            } else if ch == '\\' {
+                echappe = true;
+            } else if ch == '"' {
+                dans_chaine = false;
+                if let Some(code) = retenir_si_code(&courant) {
+                    out.insert(code);
+                }
+                courant.clear();
+            } else {
+                courant.push(ch);
+            }
+        } else if ch == '"' {
+            dans_chaine = true;
+            courant.clear();
         }
     }
     out
+}
+
+/// Le contenu d'un littéral, s'il a la forme d'un code d'action.
+fn retenir_si_code(contenu: &str) -> Option<String> {
+    if PAS_DES_CODES.iter().any(|(c, _)| *c == contenu) {
+        return None;
+    }
+    let (prefixe, acte) = contenu.split_once('.')?;
+    (prefixe.len() >= 3
+        && !acte.is_empty()
+        && !acte.contains('.')
+        && contenu
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c == '.' || c == '_'))
+    .then(|| contenu.to_string())
 }
 
 #[test]
@@ -498,7 +554,7 @@ fn aucune_route_ne_derive_une_cle_de_code_hors_du_module_source_unique() {
         // Coupe `#[cfg(test)]` comme `relever()` : un test unitaire qui
         // construirait une clé attendue n'enfreint aucune règle, et le faire
         // rougir pousserait à contourner la garde — donc à l'affaiblir.
-        let source = strip_line_comments(brut.split("#[cfg(test)]").next().unwrap_or(""));
+        let source = source_assainie(&brut);
 
         for interdit in [
             "message_key(",
