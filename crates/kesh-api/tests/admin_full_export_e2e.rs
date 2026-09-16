@@ -310,6 +310,18 @@ async fn full_export_structure_manifest_and_integrity(pool: MySqlPool) {
         "active_uniq (VIRTUAL) doit être exclue : {rr_cols:?}"
     );
 
+    // Story 25-1c-zero (refs #378) — `audit_log.company_id` voyage dans le backup.
+    // Rien n'a été ajouté à l'export pour elle : il lit les colonnes par
+    // `information_schema`. C'est ce que cette assertion prouve, plutôt que de le
+    // supposer.
+    let audit_cols = manifest["tables"]["audit_log"]["columnNames"]
+        .as_array()
+        .unwrap();
+    assert!(
+        audit_cols.iter().any(|c| c == "company_id"),
+        "audit_log.company_id doit figurer au manifeste : {audit_cols:?}"
+    );
+
     // companies a au moins 1 ligne (la company seedée).
     assert!(
         manifest["tables"]["companies"]["rowCount"]

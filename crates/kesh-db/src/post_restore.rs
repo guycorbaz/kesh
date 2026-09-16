@@ -386,6 +386,29 @@ pub const EXEMPT_MIGRATIONS: &[(i64, ExemptionBasis, &str)] = &[
          — Story 24-5, #375.",
     ),
     (
+        20260915000001,
+        ExemptionBasis::PerishableSince(20260827000001),
+        "Parc vide, et NON « hors fenêtre » — cette migration ne crée aucune table : elle EST dans \
+         la fenêtre d'importabilité, et invoquer la fenêtre serait faux. L'argument porte sur le \
+         PARC : un backup importable porte `invoice_settlements` (20260827000001), et il ne manque \
+         `audit_log.company_id` que s'il précède celle-ci. L'intervalle \
+         [20260827000001 .. celle-ci) ne contient AUCUNE version publiée — la dernière est v0.11.1 \
+         (2026-08-24), antérieure à la borne basse ; l'instance en service exécute cette version. \
+         POURQUOI PAS LE REGISTRE : la classe B serait techniquement disponible — le DDL et \
+         l'UPDATE sont dans le même fichier —, mais elle est écartée par l'arbitrage du 2026-09-11, \
+         « ni COALESCE ni rejeu post-restore ». Un rejeu gardé `company_id IS NULL` ne \
+         distinguerait pas une entrée d'archive d'une entrée LOCALE restée NULL, dont le `user_id` \
+         désigne, après le remplacement de `users`, le porteur de cet identifiant dans l'instance \
+         SOURCE : il l'attribuerait à la mauvaise société. NULL signifie « société \
+         indéterminable », un état légitime et permanent. CE QUE CELA COÛTE : un backup pris dans \
+         l'intervalle — build de développement non distribué — fusionne ses entrées avec \
+         `company_id = NULL`. \
+         ⚠️ CE FONDEMENT SE PÉRIME, d'où `ExemptionBasis::PerishableSince(20260827000001)` \
+         ci-dessus : il cesserait d'être vrai si une version était taguée depuis `main` avant le \
+         merge de cette migration — d'où l'arbitrage du 2026-09-15, aucune release avant ce merge. \
+         `scripts/prepare-release.sh` le CONTRÔLE avant chaque tag — Story 25-1c-zero, refs #378.",
+    ),
+    (
         20260722000001,
         ExemptionBasis::Durable,
         "Hors fenêtre depuis 20260827000001 (invoice_settlements, Story 24-2) : un backup assez \
@@ -1047,7 +1070,7 @@ mod tests {
         // Le nombre est codé en dur À DESSEIN, comme celui de « Hors fenêtre ».
         assert_eq!(
             EXEMPT_MIGRATIONS.len(),
-            11,
+            12,
             "le registre d'exemptions a changé de taille : déclarer le fondement de l'entrée \
              neuve (Durable, ou PerishableSince(<borne>) si elle argumente sur un fait daté), \
              puis bumper ce nombre."
@@ -1071,7 +1094,10 @@ mod tests {
 
         assert_eq!(
             perishable,
-            vec![(20260909000001, 20260827000001)],
+            vec![
+                (20260909000001, 20260827000001),
+                (20260915000001, 20260827000001)
+            ],
             "l'inventaire des exemptions périssables a changé. `scripts/prepare-release.sh` le \
              lit via `cargo run -p kesh-db --example perishable_exemptions` : vérifier que le \
              rappel de release dit encore vrai, puis mettre ce test à jour."

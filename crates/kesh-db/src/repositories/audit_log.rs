@@ -49,7 +49,7 @@ use crate::errors::{DbError, map_db_error};
 // Story 17-2a (F-OPUS-3) — `actor_type` + `actor_api_key_id` ajoutés. Doit
 // rester en bijection avec les champs de `AuditLogEntry` (FromRow) sinon sqlx
 // échoue runtime `ColumnNotFound`.
-const COLUMNS: &str = "id, user_id, actor_label, action, entity_type, entity_id, details_json, actor_type, actor_api_key_id, created_at";
+const COLUMNS: &str = "id, user_id, actor_label, action, entity_type, entity_id, details_json, actor_type, actor_api_key_id, company_id, created_at";
 
 /// Insère une entrée d'audit dans une transaction en cours.
 ///
@@ -67,7 +67,7 @@ pub async fn insert_in_tx(
         //
         // C'est délibéré : le libellé doit être l'INSTANTANÉ du nom au moment de
         // l'écriture, et le faire descendre depuis `CurrentUser` obligerait à
-        // toucher les quelque trente sites qui appellent ce repository — sans
+        // toucher tous les sites qui appellent ce repository — sans
         // rien gagner, puisque la valeur cherchée est justement celle que la base
         // porte à cet instant.
         //
@@ -76,11 +76,23 @@ pub async fn insert_in_tx(
         // que la piste survive au remplacement de `users` par un import). Un
         // acteur peut donc, en théorie, ne plus exister — et une piste doit
         // écrire « (inconnu) » plutôt que de refuser d'écrire.
-        "INSERT INTO audit_log (user_id, actor_label, action, entity_type, entity_id, details_json, actor_type, actor_api_key_id) \
-         VALUES (?, COALESCE((SELECT username FROM users WHERE id = ?), '(inconnu)'), ?, ?, ?, ?, ?, ?)",
+        //
+        // ⛔ `company_id` suit le MÊME patron (Story 25-1c-zero), et pour la même
+        // raison : la société de l'acteur au moment de l'écriture est une valeur
+        // que la base porte déjà. Un utilisateur appartient à exactement une
+        // société, et une clé API écrit le `user_id` de son créateur.
+        //
+        // ⚠️ **Mais SANS `COALESCE`, et ce n'est pas un oubli.** Un libellé doit
+        // toujours nommer quelque chose ; une société peut être indéterminable.
+        // Un acteur inexistant donne donc `NULL` — état légitime et permanent,
+        // que la migration `20260915000001` n'impose ni ne rattrape — et
+        // l'`INSERT` réussit : une piste doit écrire plutôt que refuser d'écrire.
+        "INSERT INTO audit_log (user_id, actor_label, company_id, action, entity_type, entity_id, details_json, actor_type, actor_api_key_id) \
+         VALUES (?, COALESCE((SELECT username FROM users WHERE id = ?), '(inconnu)'), (SELECT company_id FROM users WHERE id = ?), ?, ?, ?, ?, ?, ?)",
     )
     .bind(new.user_id)
     .bind(new.user_id) // sous-SELECT du libellé — cf. le commentaire ci-dessus
+    .bind(new.user_id) // sous-SELECT de la société — idem, sans COALESCE
     .bind(&new.action)
     .bind(&new.entity_type)
     .bind(new.entity_id)
@@ -260,5 +272,106 @@ mod tests {
             .await
             .unwrap();
         assert!(exists.is_none(), "audit_log entry should be rolled back");
+    }
+
+    // ------------------------------------------------------------------
+    // Story 25-1c-zero (refs #378) — `company_id` posé par sous-SELECT.
+    //
+    // ⛔ Base ÉPHÉMÈRE (squash), et non la base partagée des trois tests
+    // ci-dessus : aucun résidu laissé au gate suivant (KF-039, #310).
+    //
+    // ⛔ Identifiants posés À LA MAIN et DEUX À DEUX DISTINCTS — sociétés 30
+    // (factice) et 40, utilisateur 501, `entity_id` 7, clé API 9. Le squash
+    // n'insère que `_kesh_version` : sans cela, la première société et le premier
+    // utilisateur prendraient tous deux l'`id` 1, et un sous-SELECT fautif
+    // `SELECT id FROM users` rendrait la bonne valeur par coïncidence.
+    // ------------------------------------------------------------------
+
+    /// Hachage factice : `users` exige `OCTET_LENGTH(password_hash) >= 20`.
+    const FAKE_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$factice$factice-factice";
+
+    /// Sème une société factice (30), puis la société de l'acteur (40) et
+    /// l'acteur lui-même (501). Rend `(company_id, user_id)` de l'acteur.
+    async fn seed_actor(pool: &MySqlPool) -> (i64, i64) {
+        for (id, name) in [(30_i64, "Factice"), (40_i64, "Société de l'acteur")] {
+            sqlx::query(
+                "INSERT INTO companies (id, name, address, org_type, accounting_language, instance_language) \
+                 VALUES (?, ?, 'Rue du Test 1', 'Pme', 'FR', 'FR')",
+            )
+            .bind(id)
+            .bind(name)
+            .execute(pool)
+            .await
+            .expect("insert company");
+        }
+        sqlx::query(
+            "INSERT INTO users (id, username, password_hash, role, active, company_id) \
+             VALUES (501, 'acteur', ?, 'Comptable', TRUE, 40)",
+        )
+        .bind(FAKE_HASH)
+        .execute(pool)
+        .await
+        .expect("insert user");
+        (40, 501)
+    }
+
+    async fn insert(pool: &MySqlPool, new: NewAuditLogEntry) -> AuditLogEntry {
+        let mut tx = pool.begin().await.unwrap();
+        let entry = insert_in_tx(&mut tx, new).await.expect("insert_in_tx");
+        tx.commit().await.unwrap();
+        entry
+    }
+
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn insert_sets_the_company_of_a_user_actor(pool: MySqlPool) {
+        let (company_id, user_id) = seed_actor(&pool).await;
+
+        let entry = insert(
+            &pool,
+            NewAuditLogEntry::user(user_id, "test.user", "contact", 7, None),
+        )
+        .await;
+
+        assert_eq!(
+            entry.company_id,
+            Some(company_id),
+            "la société de l'acteur (40) — ni son id (501), ni la société factice (30)"
+        );
+    }
+
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn insert_sets_the_company_of_an_api_key_creator(pool: MySqlPool) {
+        let (company_id, user_id) = seed_actor(&pool).await;
+
+        let entry = insert(
+            &pool,
+            NewAuditLogEntry::api_key(9, user_id, "test.api_key", "contact", 7, None),
+        )
+        .await;
+
+        assert_eq!(entry.actor_api_key_id, Some(9));
+        assert_eq!(
+            entry.company_id,
+            Some(company_id),
+            "une mutation par clé API écrit le `user_id` du CRÉATEUR : même société"
+        );
+    }
+
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn insert_with_an_unknown_actor_writes_a_null_company(pool: MySqlPool) {
+        seed_actor(&pool).await;
+
+        // Atteignable : `user_id` est un pointeur logique sans FK depuis la 25-1a.
+        let entry = insert(
+            &pool,
+            NewAuditLogEntry::user(777, "test.inconnu", "contact", 7, None),
+        )
+        .await;
+
+        assert_eq!(
+            entry.company_id, None,
+            "acteur inexistant ⇒ `NULL`, « société indéterminable » — et l'INSERT réussit"
+        );
+        assert_eq!(entry.actor_label, "(inconnu)");
     }
 }

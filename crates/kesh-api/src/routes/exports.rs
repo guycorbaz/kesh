@@ -134,9 +134,11 @@ pub(crate) fn build_global_filename(company_name: &str, export_date: NaiveDate) 
 /// (toutes tables vs 1 rapport agrégé). `entity_type = 'export'`,
 /// `entity_id = AUDIT_ENTITY_ID_NONE` (pas d'entité 1:1).
 ///
-/// `details_json` inclut `company_id` (Pass 3 ECH3-C1 — la table `audit_log`
-/// n'a pas de colonne `company_id`, donc les requêtes multi-tenant doivent
-/// passer par `details_json->>'$.company_id'` ou par FK `users.company_id`).
+/// `details_json` inclut `company_id` (Pass 3 ECH3-C1). Depuis la Story
+/// 25-1c-zero, `audit_log` porte aussi une **colonne** `company_id`, remplie par
+/// sous-SELECT sur l'acteur dans `insert_in_tx` : une requête multi-tenant peut
+/// filtrer dessus. La clé du `details_json` est conservée — les entrées déjà
+/// écrites la portent, et la retirer ne corrigerait rien.
 #[allow(clippy::too_many_arguments)]
 async fn emit_global_export_audit(
     pool: &MySqlPool,

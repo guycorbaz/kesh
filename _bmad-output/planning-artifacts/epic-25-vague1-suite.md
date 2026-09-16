@@ -59,11 +59,12 @@ colonne**.
 ⚠️ **Ce n'est pas un détail de la 25-1c, c'est une story de plus.** Une migration **avec
 backfill** arme les garde-fous **P2-bis, P3, P5, P6, P7 et P8**, là où la 25-1b n'en arme aucun.
 D'où le découpage : **la colonne et son backfill d'abord, la route et l'écran ensuite.**
+La colonne est la story **`25-1c-zero-audit-company-id`**, spécifiée le 2026-09-15.
 
 ✅ **Mécanisme arrêté le 2026-09-11, après lecture ciblée : le SOUS-SELECT**, sur le patron exact
 d'`actor_label`. La colonne est **`BIGINT NULL`, sans clé étrangère, sans `NOT NULL`**.
 
-⇒ **Aucun des 89 sites de construction d'une entrée d'audit ne bouge**, et **l'ordre des stories
+⇒ **Aucun des 106 sites qui écrivent une entrée d'audit ne bouge**, et **l'ordre des stories
 redevient indifférent** : la 25-1b n'a pas à attendre la colonne.
 
 **Ce qui a été vérifié, et non supposé** :
@@ -79,8 +80,10 @@ redevient indifférent** : la 25-1b n'a pas à attendre la colonne.
 - Le code l'assumait déjà par écrit : `routes/exports.rs:137-139` nomme `users.company_id` comme
   voie de requête à défaut de colonne.
 
-⚠️ **L'estimation de coût qui fondait l'hésitation était fausse d'un facteur 2,5** — « une
-trentaine de sites » ; il y en a **89**, sur 32 fichiers, dont une quarantaine dans des
+⚠️ **L'estimation de coût qui fondait l'hésitation était fausse d'un facteur 3,5** — « une
+trentaine de sites » ; il y en a **106**, sur 38 fichiers *(recompté le 2026-09-15 à la passe 1 de
+validation de la 25-1c-zero, par `grep -rnE "audit_log(_repo)?::insert_in_tx\(" crates/*/src | wc -l` :
+le « 89 sur 32 » d'abord écrit ici, **pour corriger** l'estimation, était lui-même faux)*, dont une quarantaine dans des
 repositories qui ne reçoivent même pas de `company_id`.
 
 ⛔ **Trois contraintes de mise en œuvre, chacune adossée à un mode d'échec du dépôt** :
