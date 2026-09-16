@@ -53,14 +53,20 @@ const FORMES: &[(&str, usize, Option<usize>)] = &[
 /// Le type d'entité que `fiscal_years::build_audit_entry` écrit en dur.
 const TYPE_DU_HELPER_EXERCICES: &str = "fiscal_year";
 
-/// Fichiers dont les sites ne produisent **aucun** code : ce sont des
-/// passe-plats qui relaient l'action de leurs appelants.
-///
-/// ⚠️ `audit.rs` implémente `from_current_user` en appelant `::api_key` ou
-/// `::user` avec ses propres paramètres. L'y compter rapporterait deux sites
-/// « non résolus » qui ne sont l'angle mort de personne — les vrais sites sont
-/// les appelants de `from_current_user`, extraits normalement.
-const PASSE_PLATS: &[&str] = &["crates/kesh-api/src/audit.rs"];
+// ⚠️ **Il n'y a PAS de liste de fichiers exclus, et c'est une correction.**
+//
+// Une première rédaction sautait `crates/kesh-api/src/audit.rs` au motif que
+// c'est un passe-plat — il relaie l'action de ses appelants, extraits par
+// ailleurs. L'argument était juste sur le constat et **faux sur la conclusion** :
+// l'inventaire n'est pas une liste de coupables, c'est **l'ensemble clos de ce
+// que l'extracteur ne résout pas**. Exclure le FICHIER échangeait une ligne de
+// bruit contre un TROU : un littéral d'action ajouté demain dans `audit.rs`
+// n'entrait dans aucun ensemble, aucune assertion ne bougeait, et le code
+// s'affichait brut à l'écran comme dans le CSV.
+//
+// `audit.rs` est donc inventorié comme site indirect à codes vides — ce qui dit
+// exactement la bonne chose — et tout littéral qu'on y ajouterait redevient
+// visible du volet (a).
 
 /// **L'ensemble clos des sites dont l'action n'est pas un littéral.**
 ///
@@ -101,6 +107,15 @@ const SITES_INDIRECTS: &[(&str, &str, &[&str])] = &[
             "fiscal_year.closed",
             "fiscal_year.reopened",
         ],
+    ),
+    (
+        "crates/kesh-api/src/audit.rs",
+        "passe-plat : `from_current_user` relaie l'action de ses appelants, extraits normalement",
+        // ⚠️ Codes vides À DESSEIN : ce fichier ne PRODUIT aucun code. L'entrée
+        // n'est pas une accusation, c'est la déclaration d'un site que
+        // l'extracteur ne résout pas — et c'est elle qui rendra visible un
+        // littéral qu'on y ajouterait.
+        &[],
     ),
 ];
 
@@ -228,9 +243,6 @@ fn relever() -> Releve {
                 .expect("sous crates/")
                 .to_string_lossy()
         );
-        if PASSE_PLATS.contains(&relatif.as_str()) {
-            continue;
-        }
         let brut = std::fs::read_to_string(&chemin).expect("lire un fichier source");
 
         // ⛔ Les `mod tests` construisent des entrées avec des codes inventés.
@@ -308,6 +320,69 @@ fn tout_site_dont_l_action_n_est_pas_litterale_est_inventorie() {
          {evanouis:?} — le site a été réécrit en littéral, ou supprimé. Retirer \
          l'entrée, faute de quoi l'inventaire protège un site qui n'existe plus."
     );
+}
+
+#[test]
+fn les_codes_de_l_inventaire_sont_verifies_dans_le_fichier_de_leur_site() {
+    // ⛔ **Sans ce test, l'inventaire AFFIRME au lieu de VÉRIFIER.**
+    //
+    // Le volet (a) absorbe les codes de `SITES_INDIRECTS` dans `attendues`
+    // **inconditionnellement**. Si un site renommait son code — `dunning_paused`
+    // devenant `dunning_suspended` —, l'inventaire ET `ACTIONS` porteraient tous
+    // deux l'ANCIENNE valeur : le diff bilatéral serait vide, le test vert, et la
+    // production écrirait un code **sans libellé**, affiché brut à l'écran et dans
+    // le CSV. C'est l'assertion vraie par construction que le `CLAUDE.md` décrit —
+    // les deux côtés sortant de la même source.
+    //
+    // L'AC 18 (d) demandait « ses valeurs **vérifiées** » ; la première rédaction
+    // n'avait vérifié que leur présence dans `ACTIONS`, ce qui va de soi.
+    //
+    // Ici on confronte chaque code déclaré au **texte du fichier** : les branches
+    // d'une conditionnelle sont des littéraux, elles y sont donc lisibles même
+    // quand l'extracteur ne sait pas les résoudre.
+    let racine = racine_crates()
+        .parent()
+        .expect("le dépôt est le parent de crates/")
+        .to_path_buf();
+
+    for (fichier, _motif, codes) in SITES_INDIRECTS {
+        let source = std::fs::read_to_string(racine.join(fichier))
+            .unwrap_or_else(|e| panic!("⛔ site inventorié introuvable — {fichier} : {e}"));
+        for code in *codes {
+            let litteral = format!("\"{code}\"");
+            assert!(
+                source.contains(&litteral),
+                "⛔ L'inventaire déclare que « {fichier} » produit « {code} », et ce \
+                 littéral ne s'y trouve PAS.\n\n\
+                 Soit le site a été renommé — et l'entrée de SITES_INDIRECTS doit \
+                 suivre, FAUTE DE QUOI la production écrit un code sans libellé sans \
+                 que rien ne rougisse —, soit le code a changé de fichier. ⚠️ Ne pas \
+                 corriger en retirant la ligne : c'est le libellé manquant qui est le \
+                 défaut, pas l'inventaire."
+            );
+        }
+    }
+}
+
+#[test]
+fn aucun_code_ne_contient_de_slash_qui_tromperait_le_masquage_des_commentaires() {
+    // ⚠️ `strip_line_comments` coupe à `//`. Un code qui en contiendrait serait
+    // tronqué **avant** l'extraction, et le site deviendrait invisible. Aucun
+    // code n'en porte aujourd'hui ; cette assertion empêche le premier d'arriver
+    // sans qu'on s'en aperçoive.
+    for (nom, liste) in [
+        ("ACTIONS", ACTIONS),
+        ("ENTITY_TYPES", ENTITY_TYPES),
+        ("ACTOR_TYPES", ACTOR_TYPES),
+    ] {
+        for code in liste {
+            assert!(
+                !code.contains('/'),
+                "⛔ « {code} » de {nom} contient « / » : le masquage des commentaires \
+                 tronquerait son site d'écriture, qui disparaîtrait de l'extraction."
+            );
+        }
+    }
 }
 
 #[test]

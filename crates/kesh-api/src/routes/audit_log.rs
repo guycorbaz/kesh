@@ -69,7 +69,13 @@ fn borne_haute() -> NaiveDate {
 }
 
 /// Filtres reçus par la liste **et** par l'export.
-#[derive(Debug, Deserialize, Default)]
+///
+/// ⚠️ **Pas de `derive(Default)`, délibérément.** Il rendrait `limit = 0` et
+/// `offset = 0` — `i64::default()` —, là où les `serde(default = …)` posent
+/// `limit = 50`. Deux valeurs par défaut pour le même champ, dont une seule est
+/// la bonne : un futur appelant de `ListAuditLogQuery::default()` hériterait
+/// silencieusement d'une page vide.
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListAuditLogQuery {
     #[serde(default)]
@@ -359,13 +365,16 @@ pub async fn export_audit_log_csv(
                         .to_string(),
                     csv_sanitize(entree.actor_label),
                     entree.user_id.to_string(),
-                    csv_sanitize(traduire_ou_replier(
+                    // ⛔ Passe par `actor_type_label`, et non par une dérivation
+                    // de clé refaite ici. L'AC 12 l'exige — « les libellés
+                    // viennent des fonctions de l'AC 16, et d'elles seules » — et
+                    // le motif n'est pas formel : un second chemin de dérivation
+                    // hors du module « source unique » n'exerce plus son test
+                    // d'appartenance, et la fonction imposée survivrait à sa
+                    // propre inutilité, couverte par ses seuls tests unitaires.
+                    csv_sanitize(audit_labels::actor_type_label(
                         &state.i18n,
                         &locale,
-                        &audit_labels::message_key(
-                            audit_labels::PREFIX_ACTOR_TYPE,
-                            entree.actor_type.as_str(),
-                        ),
                         entree.actor_type.as_str(),
                     )),
                     csv_sanitize(audit_labels::action_label(
