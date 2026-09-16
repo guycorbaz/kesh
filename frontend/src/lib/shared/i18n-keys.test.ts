@@ -202,9 +202,40 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * site : `demo-banner-reset` existait déjà et n'est que déplacée sous un `{#if}`. Un
  * `{#if}` change qui voit la clé, jamais combien de fois le code la demande — et c'est
  * bien le second que ce compteur mesure.
+ *
+ * ⚠️ **1631 → 1638 à la Story 25-2-a ([#382], [#274]), l'avertissement bloquant au
+ * retypage d'un compte mouvementé** — sept sites, et ils se ventilent :
+ *
+ * | mouvement | sites |
+ * |---|---|
+ * | `accounts-retype-title` — le titre de la modale d'avertissement | **+1** |
+ * | `accounts-retype-warning` — sa description, **appel multi-ligne** | **+1** |
+ * | `accounts-retype-closed-years` — le bloc des exercices clos, **appel multi-ligne** | **+1** |
+ * | `accounts-retype-confirm` — le bouton qui confirme le retypage | **+1** |
+ * | `accounts-updating` — l'état « en cours » de ce bouton | **+1** |
+ * | `common-cancel` — le bouton d'annulation de la modale | **+1** |
+ * | `error-unexpected` — la branche d'échec de `confirmRetype` | **+1** |
+ * | **total** | **+7** |
+ *
+ * ⛔ **Deux de ces sept sites emploient une clé qui EXISTAIT DÉJÀ** — `common-cancel` et
+ * `error-unexpected`. Le catalogue, lui, ne gagne que six clés, dont une
+ * (`error-account-has-entries`) que le frontend n'emploie nulle part puisqu'elle sert le
+ * message du backend. *Le nombre de clés au catalogue et le nombre de sites dans le code
+ * sont deux grandeurs distinctes, et c'est la seconde que ce compteur mesure.*
+ *
+ * ⛔ **`accounts-updated` n'ajoute AUCUN site** : l'appel a été déplacé de `submitEdit`
+ * vers `editSucceeded`, extrait pour que la confirmation et la soumission initiale
+ * partagent le même chemin de succès. Le diff montre une ligne supprimée et une ajoutée —
+ * un déplacement, pas une demande de plus.
+ *
+ * ⚠️ Cette ventilation a dû être **recomptée deux fois**. Le premier relevé, fait au
+ * `grep` sur `i18nMsg\('<clé>'`, en annonçait cinq : il ne captait que les appels dont la
+ * clé tient sur la même ligne, et manquait donc les deux appels multi-lignes. *Un
+ * détecteur trop étroit sur un compteur qu'on s'apprête à corriger fait écrire un nombre
+ * faux avec l'assurance de l'avoir mesuré.*
  */
 const ATTENDU = {
-	sitesTotal: 1631,
+	sitesTotal: 1638,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,
