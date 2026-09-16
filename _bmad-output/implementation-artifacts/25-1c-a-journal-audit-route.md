@@ -673,12 +673,46 @@ recense que les verbes mutants, `:181,311`), les tests de parité i18n, et les g
       apparaissent chacun **trois** fois, une par handler. La mutation porte donc sur un **numéro de
       ligne** (464 pour le vocabulaire, 440 pour la liste) : muter par texte aurait touché le mauvais
       handler, ou les trois, et le rouge obtenu n'aurait pas prouvé ce qu'il prétend.
-- [ ] **T9 — Manuel d'administration** (AC 19-21), PDF régénéré et vérifié aplati.
+- [x] **T9 — Manuel d'administration** (AC 19-21), PDF régénéré et vérifié aplati.
+      *(2026-09-16 : **quatre** corrections. AC 19 — la phrase des champs disait « le journal ne se
+      consulte pas encore : aucune route ni aucun écran » ; elle dit désormais que la consultation
+      existe par l'API (liste, vocabulaire, export), réservée au Comptable et à l'Admin, refusée aux
+      clés, **l'écran restant à venir**. AC 20, les trois sites : le titre « Importer (restauration /
+      **migration**) » devient « Importer (**restaurer la même installation**) » et dit ce que le mot
+      couvrait ; l'avertissement ne parle plus des « identifiants de l'**instance importée** » mais de
+      ceux « tels qu'ils étaient au moment de la sauvegarde » ; et l'encadré OLICo porte la conséquence
+      d'un import étranger — les entrées locales seraient rattachées à la société importée, **sans
+      qu'aucun message ne le signale**. PDF régénéré sous `mem-guard` (67 pages) et **contrôlé aplati** :
+      ancienne phrase absente, huit phrases neuves présentes.)*
+
+      ⚠️ **Mon premier contrôle a rendu trois faux négatifs**, et la cause valait d'être établie plutôt
+      que corrigée à l'aveugle : les trois phrases « absentes » étaient les trois qui contiennent une
+      **apostrophe**. LaTeX rend `'` par `’` (U+2019), qu'un `grep -F` sur l'apostrophe droite ne trouve
+      jamais. Le contrôle normalise désormais les apostrophes avant de chercher. *C'était le détecteur
+      qui était faux, pas le manuel — et un détecteur mal formé coûte le même diagnostic qu'un défaut
+      réel.*
+
+      ⚠️ **Relevé sans être traité** : les `⚠️` du manuel ne sont **pas rendus** (`Missing character:
+      There is no ⚠ (U+26A0)`), de même que `✓`, `✗` et `═`. C'est **antérieur à cette story** et hors
+      de son périmètre ; le seul que j'allais ajouter a été écrit `\faExclamationTriangle`, la commande
+      que ce fichier emploie déjà.
 - [ ] **T10 — Propagation** : `grep -rniE "aucune route|post-MVP|story 3\.5" crates docs/manual/fr/*.tex --exclude-dir=migrations`
       (⛔ **insensible à la casse**, sinon « Story 3.5 » échappe ; et **sans** `migrations/` — une
       migration appliquée ne se modifie plus, P8)
       et le symptôme « la consultation n'existe pas » sur le code, les manuels, le README et `website/` ;
       trier ce qui devient faux (**cette** story) de ce qui reste vrai jusqu'à la 25-1c-b2.
+      *(2026-09-16 : grep prescrit exécuté ⇒ **20 occurrences, 0 résidu**. Le tri, site par site : les
+      « aucune route » parlent des **PAT et de l'administration** (`admin_pat_denied_e2e`, `lib.rs:326`,
+      `errors.rs:192`), de l'absence d'**update générique de société** (`companies.rs:98,232`), de la
+      **non-réactivation** (`backfill.rs:169`) ou du registre lui-même (`audit_route_registry.rs:288,325`)
+      — aucune ne parle de consulter le journal ; les « story 3.5 » sont les références **historiques** à
+      l'origine du journal d'audit (`journal_entries.rs`, `fiscal_years.rs`, `accounts.rs`), exactes et à
+      conserver ; l'unique « post-MVP » vise le **format d'erreur d'Axum** (`journal_entries.rs:279`),
+      sans rapport. Second volet — le symptôme « la consultation n'existe pas » grepé sur tout le dépôt
+      (`.tex`, `.md`, `.rs`, `.html`, `.svelte`, `.ts`, `website/` compris) ⇒ **deux** occurrences, toutes
+      deux à CONSERVER : `README.md:218` dit « consultable par aucun **écran** », ce qui **reste vrai**
+      jusqu'à la 25-1c-b2, et la spec de cette story cite l'ancienne phrase pour la corriger. ⚠️ Vérifié
+      au `git diff --stat` : `user-manual.tex`, `README.md` et `website/` sont **intacts**.)*
 - [ ] **T11 — Gates** : backend complet via `scripts/test-fast.sh`, base remise à zéro **et vérifiée** ;
       frontend : `npm run test:unit` (gardes i18n, AC 15) ; **E2E complète avant le push**, `kesh_e2e`
       reconstruite.
@@ -855,6 +889,8 @@ Claude Opus 5 (1M context) — implémentation du 2026-09-16.
 - `crates/kesh-api/src/routes/mod.rs` — modifié (T5 : `pub mod audit_log;`)
 - `crates/kesh-api/src/lib.rs` — modifié (T5, T6 : montage des **trois** routes dans `comptable_routes`)
 - `crates/kesh-api/tests/audit_log_e2e.rs` — **créé** (T7 : 15 tests HTTP, application montée en `de-CH`)
+- `docs/manual/fr/admin-manual.tex` — modifié (T9 : AC 19 et les trois sites de l'AC 20)
+- `docs/manual/fr/admin-manual.pdf` — régénéré et commité (T9, convention du dépôt)
 
 ## Change Log
 

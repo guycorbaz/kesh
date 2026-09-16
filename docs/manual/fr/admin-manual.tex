@@ -1582,12 +1582,14 @@ Menu \textbf{Administration → Sauvegarde complète} (\keshpath{/admin/backup})
 Le fichier \keshcommand{.keshbackup} est un \textbf{secret} : il contient les \textbf{condensés (hash) des mots de passe} de tous les utilisateurs, les \textbf{condensés des clés API (PAT)} ainsi que les \textbf{jetons de session}. Il n'est \textbf{pas chiffré} par défaut. Conservez-le et transmettez-le comme une donnée hautement sensible — chiffrez-le pour tout transit hors de votre infrastructure contrôlée (par ex. \keshcommand{gpg} ou \keshcommand{age}).
 \end{keshwarning}
 
-\subsubsection{Importer (restauration / migration)}
+\subsubsection{Importer (restaurer la même installation)}
 
 Menu \textbf{Administration → Restaurer / Importer} (\keshpath{/admin/restore}) → sélection du fichier \keshcommand{.keshbackup} → bouton \textbf{« Importer et remplacer l'installation »} → \textbf{confirmation forte} dans une fenêtre modale.
 
+\textbf{Cette fonction sert à restaurer \emph{votre} installation} --- la remettre dans un état antérieur, ou la déplacer telle quelle vers un autre serveur. Ce n'est \textbf{pas} un outil pour verser les données d'une \emph{autre} installation dans la vôtre~: c'est techniquement possible, et les conséquences sur la piste de contrôle sont décrites plus bas (section \emph{Conformité OLICo}).
+
 \begin{keshwarning}
-\textbf{Opération destructrice et irréversible.} L'import \textbf{remplace l'intégralité des données} de l'installation actuelle par celles du fichier. À la fin, vous êtes \textbf{déconnecté} et devez vous reconnecter avec les \textbf{identifiants de l'instance importée} (les comptes de l'installation précédente n'existent plus). Avant toute suppression, Kesh crée \textbf{automatiquement une sauvegarde de l'état courant} côté serveur (répertoire \keshcommand{KESH\_ADMIN\_BACKUP\_DIR}, défaut \keshpath{/tmp}) en filet de sécurité ; conservez ce répertoire à l'abri et purgez-le selon votre politique.
+\textbf{Opération destructrice et irréversible.} L'import \textbf{remplace l'intégralité des données} de l'installation actuelle par celles du fichier. À la fin, vous êtes \textbf{déconnecté} et devez vous reconnecter avec les \textbf{identifiants tels qu'ils étaient au moment de la sauvegarde} --- tout compte créé, renommé ou dont le mot de passe a changé \emph{depuis} cette sauvegarde revient à son état d'alors, et les comptes créés depuis n'existent plus. Avant toute suppression, Kesh crée \textbf{automatiquement une sauvegarde de l'état courant} côté serveur (répertoire \keshcommand{KESH\_ADMIN\_BACKUP\_DIR}, défaut \keshpath{/tmp}) en filet de sécurité ; conservez ce répertoire à l'abri et purgez-le selon votre politique.
 \end{keshwarning}
 
 L'import \textbf{refuse} le fichier et préserve l'installation si :
@@ -1783,7 +1785,7 @@ La quasi-totalité des actions métier mutantes est enregistrée dans la table \
 
 \begin{itemize}
     \item Contrainte \textbf{insert-only} : aucune route API ne permet de modifier ou supprimer une entrée \texttt{audit\_log}, et \textbf{aucune ne permet d'effacer la table} sur une installation finalisée. \emph{La formulation antérieure ne parlait que d'«~une entrée~»~: elle était exacte au mot près et trompeuse en substance, une route effaçant alors la table entière.}
-    \item Champs : \texttt{id}, \texttt{user\_id}, \texttt{actor\_label} (le nom de l'auteur \emph{au moment} de l'écriture), \texttt{actor\_type} et \texttt{actor\_api\_key\_id}, \texttt{company\_id} (la société de l'auteur au moment de l'écriture, vide quand elle est indéterminable), \texttt{action}, \texttt{entity\_type}, \texttt{entity\_id}, \texttt{details\_json}, \texttt{created\_at}. ⚠️ \emph{Chaque entrée porte la société de son auteur, mais le journal ne se \textbf{consulte} pas encore~: aucune route ni aucun écran ne permet de le lire depuis l'application --- c'est le sujet de l'issue \#378.}
+    \item Champs : \texttt{id}, \texttt{user\_id}, \texttt{actor\_label} (le nom de l'auteur \emph{au moment} de l'écriture), \texttt{actor\_type} et \texttt{actor\_api\_key\_id}, \texttt{company\_id} (la société de l'auteur au moment de l'écriture, vide quand elle est indéterminable), \texttt{action}, \texttt{entity\_type}, \texttt{entity\_id}, \texttt{details\_json}, \texttt{created\_at}. ⚠️ \emph{Chaque entrée porte la société de son auteur. Le journal se \textbf{consulte} désormais depuis l'API~: une liste paginée et filtrable, un vocabulaire des codes traduits, et un export CSV --- réservés aux rôles \textbf{Comptable} et \textbf{Administrateur}, et refusés aux clés API. L'\textbf{écran}, lui, reste à venir (issue \#378). La consultation ne filtre que votre société, et ne s'inscrit pas elle-même au journal.}
     \item Conservation 10 ans (selon CO Art. 958f al. 1).
 \end{itemize}
 
@@ -1805,7 +1807,12 @@ Kesh met en place les éléments que l'OLICo Art. 9 al. 1.b attend d'un support 
 savoir à quoi cela tient. L'\textbf{import d'une sauvegarde} ne remplace plus la table~: les
 entrées de l'archive sont \textbf{fusionnées} avec celles de l'installation, et chaque entrée
 porte le nom de son auteur au moment de l'écriture --- il survit donc au remplacement des
-comptes utilisateurs. La \textbf{réinitialisation des données de démonstration} efface encore
+comptes utilisateurs. \faExclamationTriangle\ \textbf{Cette fusion suppose que la sauvegarde
+soit celle de votre propre installation.} Importer celle d'une \emph{autre} installation est techniquement
+possible, et les entrées d'audit \textbf{déjà présentes chez vous} se retrouveraient alors
+rattachées à la société importée~: la piste de contrôle mêlerait deux comptabilités sans
+qu'aucun message ne le signale. N'importez que vos propres sauvegardes. La
+\textbf{réinitialisation des données de démonstration} efface encore
 la table, mais elle exige le rôle d'administrateur \emph{et} est refusée dès que
 l'installation est finalisée. \emph{Aucun verrou de base de données ne s'y oppose~: la
 garantie est portée par l'application, non par le SGBD.} Reste, en mode test uniquement
