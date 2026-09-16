@@ -818,25 +818,15 @@ pub fn production_apres_methode() -> i32 {
     4
 }
 ";
-    // ⛔ **Les LIFETIMES, et ce cas manquait.** Le saut d'un littéral de
-    // caractère (`'x'`) ne doit pas se déclencher sur une lifetime (`'a`), qui
-    // n'a pas d'apostrophe fermante — sans quoi le compteur avalerait
-    // l'accolade qui suit sur la même ligne. La passe 7 a montré par mutation
-    // qu'une régression de cette branche restait **invisible aux dix tests** :
-    // aucune des quatre entrées précédentes ne portait de lifetime.
-    const BLOC_APRES_LIFETIME: &str = "\
-impl<'a> Chose<'a> {
-    #[cfg(test)]
-    fn aide<'b>(&'b self) -> &'b str {
-        let _ = '{';
-        \"x\"
-    }
-}
-
-pub fn production_apres_lifetime() -> i32 {
-    5
-}
-";
+    // ⚠️ La distinction **lifetime / littéral de caractère** n'est PAS éprouvée
+    // ici : elle l'est directement sur `accolades_hors_chaines`, par
+    // `les_lifetimes_ne_sont_pas_prises_pour_des_litteraux`. Une première
+    // rédaction avait tenté une cinquième entrée synthétique — et l'épreuve par
+    // mutation a montré qu'elle **ne gardait rien** : sur `impl<'a> Chose<'a> {`
+    // le saut « large » va d'une apostrophe à l'autre sans jamais enjamber
+    // d'accolade, si bien que la régression rendait le même compte. *Tester une
+    // fonction par le détour de son appelant laisse passer ce que l'appelant ne
+    // distingue pas.*
 
     for (nom, source, attendu) in [
         (
@@ -854,11 +844,6 @@ pub fn production_apres_lifetime() -> i32 {
             "attribut sur une méthode",
             ATTRIBUT_SUR_METHODE,
             "production_apres_methode",
-        ),
-        (
-            "lifetimes ET littéral de caractère sur les mêmes lignes",
-            BLOC_APRES_LIFETIME,
-            "production_apres_lifetime",
         ),
     ] {
         let assainie = source_assainie(source);
@@ -879,6 +864,43 @@ pub fn production_apres_lifetime() -> i32 {
     assert!(
         !source_assainie(BLOC_ORDINAIRE).contains("dedans"),
         "⛔ le corps du bloc de test subsiste dans la source assainie"
+    );
+}
+
+#[test]
+fn les_lifetimes_ne_sont_pas_prises_pour_des_litteraux() {
+    // ⛔ **Le cas DISCRIMINANT est celui où une accolade tombe ENTRE deux
+    // apostrophes.** Partout ailleurs, un détecteur qui confondrait lifetime et
+    // littéral rendrait le même compte — c'est ce qui a fait échouer une
+    // première tentative de garder cette branche par une entrée synthétique de
+    // `source_assainie` : la mutation y donnait un résultat identique.
+    //
+    // Sur `impl<'a> Foo { fn g<'b>() {} }`, un saut « de la prochaine
+    // apostrophe » enjamberait l'accolade de `Foo {` et rendrait `(1, 2)` au
+    // lieu de `(2, 2)` — le bloc ne se refermerait plus au bon endroit, et la
+    // production suivante serait avalée.
+    assert_eq!(
+        accolades_hors_chaines("impl<'a> Foo { fn g<'b>() {} }"),
+        (2, 2),
+        "une lifetime n'ouvre ni ne ferme rien, et n'enjambe aucune accolade"
+    );
+
+    // Lifetimes ordinaires : le compte doit être celui des seules vraies accolades.
+    assert_eq!(accolades_hors_chaines("impl<'a> Chose<'a> {"), (1, 0));
+    assert_eq!(accolades_hors_chaines("fn g<'a>(x: &'a str) { }"), (1, 1));
+    assert_eq!(accolades_hors_chaines("fn h(&self) -> &'_ str {"), (1, 0));
+
+    // Littéraux de caractère : l'accolade qu'ils portent ne compte PAS.
+    assert_eq!(accolades_hors_chaines("let c = '{';"), (0, 0));
+    assert_eq!(accolades_hors_chaines("let c = '}';"), (0, 0));
+    assert_eq!(accolades_hors_chaines("if ligne.contains('{') {"), (1, 0));
+    assert_eq!(accolades_hors_chaines(r"let c = '\'';"), (0, 0));
+    assert_eq!(accolades_hors_chaines(r#"let c = '"';"#), (0, 0));
+
+    // Et les accolades d'une chaîne ne comptent pas davantage.
+    assert_eq!(
+        accolades_hors_chaines("let s = \"texte { non fermé\";"),
+        (0, 0)
     );
 }
 
