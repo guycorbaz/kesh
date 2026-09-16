@@ -959,6 +959,46 @@ Claude Opus 5 (1M context) — implémentation du 2026-09-16.
 
 ## Change Log
 
+### Passe 3 — CIBLÉE, une seule lentille sur le seul commit `9b47e3b8`
+
+Prompt **versionné** : `25-1c-a-review-prompt-p3-ciblee.md`, comme l'exige la § *La passe ciblée* —
+« une passe non vérifiable ne vaut pas mieux qu'une passe non faite ». Modèle : Sonnet.
+
+**Rendu : 2 CRITICAL, 1 MEDIUM, 2 LOW — les deux CRITICAL démontrés par REPRODUCTION**, en harnais
+isolé, sans écrire dans le dépôt. Tous deux causés par **mon patch de la passe 2**.
+
+| défaut | ce qu'il rouvrait |
+|---|---|
+| le tamis appariait les guillemets **sans suivre les échappements**, quand `args_de` les suit vingt lignes plus haut | un seul `\"` en nombre impair désynchronise **tout le reste du fichier** : l'ensemble devient vide, la boucle d'assertion ne s'exécute plus, et le trou que ce tamis existe pour fermer se rouvre — la garde restant **verte**. Reproduit : 7 littéraux → 0 |
+| la coupe `#[cfg(test)]` portait sur la source **brute**, avant tout retrait de commentaire | `config.rs:406` porte cette chaîne dans un **doc-comment**, bien avant son vrai attribut : **83 %** du fichier sortait du balayage. Défaut **dormant** tant que la garde ne lisait qu'un fichier, **activé** par mon élargissement |
+
+⛔ **Propagation faite dans le même patch** : `relever()` — l'extracteur principal, qui balaie **toutes**
+les crates — portait le même défaut de coupe. La lentille le signalait en « axes non exercés » sans
+l'auditer. Les trois lecteurs passent désormais par **une seule** fonction, `source_assainie`, qui coupe
+sur une **ligne entière** et non sur une sous-chaîne cherchée dans la prose. *Trois copies d'une ligne
+qui s'est révélée fausse, c'était le défaut suivant.*
+
+**MEDIUM** : « borné aux **six** fichiers inventoriés » — il y en a **sept** depuis l'ajout d'`audit.rs`.
+Un décompte faux dans le commentaire même qui corrigeait un défaut de comptage voisin.
+
+**Les deux correctifs sont ÉPROUVÉS** :
+
+| épreuve | verdict |
+|---|---|
+| dérivation posée dans `config.rs` **après** le `#[cfg(test)]` en prose | ✅ rouge — la garde nomme le fichier |
+| guillemet échappé impair **suivi** d'un code neuf, dans `reconciliation.rs` | ✅ rouge — le tamis voit le code malgré l'échappement |
+
+⚠️ **La seconde épreuve a d'abord rendu un FAUX NÉGATIF, et la cause était mon épreuve, pas mon
+patch.** J'avais posé la sonde **en fin de fichier** ; or `reconciliation.rs` porte son `#[cfg(test)]`
+à la ligne 3523 sur 3616, si bien que la sonde tombait dans les 93 lignes **légitimement coupées**.
+J'avais pris cette précaution pour `config.rs` et l'avais oubliée ici. *Une épreuve mal construite rend
+un verdict qui ressemble à s'y méprendre à un correctif défaillant — et aurait fait « corriger » du
+code sain.*
+
+⚠️ **Critère de clôture** : cette remédiation ne touche **aucune ligne de code de production** — c'est
+la condition qui permettra de clore la boucle. Mais la sévérité, elle, reste au-dessus de LOW :
+**passe 4 requise**.
+
 ### Passe 2 de `bmad-code-review` — braquée sur la REMÉDIATION (`8599035c..HEAD`)
 
 ⛔ **Périmètre délibérément restreint au patch, non à la conception.** C'est le motif que ce dépôt a
