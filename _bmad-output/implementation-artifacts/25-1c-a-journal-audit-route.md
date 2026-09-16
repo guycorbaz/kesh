@@ -959,6 +959,59 @@ Claude Opus 5 (1M context) — implémentation du 2026-09-16.
 
 ## Change Log
 
+### Passe 4 — CIBLÉE, une seule lentille sur le seul commit `9ff606de`
+
+Prompt **versionné** : `25-1c-a-review-prompt-p4-ciblee.md`. Modèle : Opus (la passe 3 était Sonnet).
+
+**Rendu : 1 HIGH, 2 MEDIUM, 3 LOW.**
+
+⛔ **Le HIGH : ma coupe fermait une variante du défaut et laissait l'autre — la plus coûteuse.**
+Elle s'arrêtait à la première ligne valant `#[cfg(test)]`, **quel que soit l'item gardé**. Or un
+attribut posé sur une **méthode**, ou un `mod tests` placé **au milieu** d'un fichier, sont deux
+arrangements Rust ordinaires. Vérifié au sol :
+
+| fichier | coupe | production sortie du balayage |
+|---|---|---|
+| `routes/invoice_email.rs` | l.901, sur `fn code(&self)` | **686 lignes**, dont `send_reminder_batch` |
+| `kesh-db/src/version.rs` | l.97, `mod tests` au milieu | **256 lignes**, dont `check_downgrade_protection` — *le garde-fou P2-bis* — et `record_boot_version` |
+| `kesh-db/src/entities/user.rs` | l.178 | **75 lignes**, dont `UserUpdate` |
+
+⚠️ Et `invoice_email.rs` **écrit déjà de l'audit** : la zone perdue **appelait** cette écriture. Le
+trou était sous le pied du prochain code d'audit du lot de rappels.
+
+⛔ **Mais le défaut n'était pas la coupe seule : c'était mon DOC-COMMENT**, qui déclarait la classe
+fermée — « la coupe porte sur une LIGNE ENTIÈRE, jamais sur une sous-chaîne » — alors qu'une seule de
+ses deux variantes l'était. *Le lecteur suivant aurait lu cette assurance et ne serait pas allé voir.*
+Même reproche au « filet » annoncé dans `relever()` (MEDIUM-1) : il ne prend que si le code perdu était
+l'**unique** site d'une action **déjà** déclarée ; une action **neuve** n'entre dans aucun ensemble.
+
+⇒ **Correctif : masquer le bloc par appariement d'accolades, comptées hors chaînes** — c'est ce que
+l'AC 18 demandait dès l'origine. Je l'avais simplifié en `split`, en comptant sur le diff bilatéral
+pour rattraper.
+
+⛔ **MEDIUM-2 — la règle de propagation enfreinte dans le commit qui corrigeait ce défaut.** J'avais
+corrigé « six » à **un** site en écrivant que c'était un décompte faux, et j'en ai laissé **deux
+autres dans le même fichier** (l.20, l.250). Le grep qui suffisait :
+`grep -niE '\b(six|sept)\b'`. ⇒ les nombres en prose sont désormais **doublés d'une assertion**, qui
+ne se périme pas en silence.
+
+**Deux gardes ajoutées** : le masqueur ne laisse aucun attribut derrière lui — sur **tout** le
+workspace, ensemble clos et décidable — et l'inventaire compte ce que le fichier annonce.
+
+**Les correctifs sont ÉPROUVÉS, dans les DEUX variantes du défaut** :
+
+| épreuve | verdict |
+|---|---|
+| action neuve après un `#[cfg(test)]` sur une **méthode** | ✅ rouge — `invoice.reminder_batch_sent` |
+| action neuve après un `mod tests` **au milieu** | ✅ rouge — `installation.sonde_neuve` |
+| accolade non appariée **dans un littéral** de test | ✅ reste verte — le comptage hors chaînes tient |
+
+⚠️ **Renseignement en soi** : les neuf tests passent alors qu'environ **mille lignes de production**
+supplémentaires sont désormais balayées — aucune action d'audit ne s'y cachait.
+
+⚠️ La remédiation ne touche **aucune ligne de code de production**, mais la sévérité reste au-dessus
+de LOW : **passe 5 requise**.
+
 ### Passe 3 — CIBLÉE, une seule lentille sur le seul commit `9b47e3b8`
 
 Prompt **versionné** : `25-1c-a-review-prompt-p3-ciblee.md`, comme l'exige la § *La passe ciblée* —
@@ -1082,8 +1135,12 @@ son voisin `:1613` disant, lui, « écran dédié ».
   rien de poussé. ⛔ **Périmètre FIGÉ `main..8599035c`** — et non `main..HEAD`, qui **bouge** : c'est
   la clôture de l'implémentation, avant la revue. **25 commits, 29 fichiers, +5217/−41**, **+35 tests**
   (7 dépôt, 4 `util`, 5 module, 4 garde, 15 E2E), **133 clés** par locale × 4.
-  *(État actuel, revue comprise — `main..HEAD` : 27 commits, 31 fichiers, +5417/−44, **+38 tests**, la
-  garde étant passée de 4 à 7.)*
+  ⛔ **L'état courant n'est PAS répété ici** — ni commits, ni fichiers, ni lignes, ni total de tests.
+  Une telle mesure se périme **à chaque commit de revue**, et celle-ci l'avait déjà fait deux fois :
+  elle annonçait « 27 commits, 31 fichiers, +5417/−44, +40 tests, la garde passée de 4 à 7 » quand le
+  dépôt en était à 34, 33, +5980 et une garde à 9. *J'avais tiré cette leçon pour la mesure figée
+  ci-dessus et l'avais oubliée sur la phrase suivante.* L'état courant est tenu dans
+  `sprint-status.yaml`, **daté à chaque passe**.
 
   ⚠️ **Deux de ces nombres étaient FAUX dès l'écriture**, relevé par la passe 2 : « 24 commits » pour
   **25**, et « +5206 » pour **+5217** — repris d'un `git diff --stat` antérieur au dernier commit de la
