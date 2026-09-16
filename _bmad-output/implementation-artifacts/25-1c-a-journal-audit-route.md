@@ -644,7 +644,35 @@ recense que les verbes mutants, `:181,311`), les tests de parité i18n, et les g
       verte sous la mutation. Les 10 001 entrées du plafond sont semées par **un seul**
       `INSERT … SELECT FROM seq_1_to_10001`. Les longueurs du vocabulaire sont **lues du module**,
       jamais recopiées.)*
-- [ ] **T8 — Mutations** (AC 24), résultats observés.
+- [x] **T8 — Mutations** (AC 24), résultats observés.
+      *(2026-09-16 : **neuf mutations, neuf rouges sur assertion** — aucune n'a échoué à la compilation,
+      ce qui ne prouverait rien. Chacune appliquée **seule**, le fichier restauré et l'identité vérifiée
+      par `git diff --quiet` après chaque tour ; arbre propre à la fin.)*
+
+      | mutation | test vu rouge | ligne de l'assertion |
+      |---|---|---|
+      | `WHERE company_id = ?` → `(company_id IS NULL OR company_id = ?)` | `list_excludes_entries_without_a_company` | `audit_log.rs:658` |
+      | borne haute `23:59:59.999` → `00:00:00.000` | `list_date_bounds_are_inclusive_to_the_millisecond` | `audit_log.rs:714` |
+      | borne basse `created_at >=` → `created_at >` | idem | `audit_log.rs:710` *(assertion **différente** de la précédente — les deux bornes sont éprouvées séparément)* |
+      | `ensure_not_pat` retiré du **vocabulaire** | `une_cle_api_est_refusee_sur_les_trois_routes` | `audit_log_e2e.rs:317` |
+      | export monté dans `authenticated_routes` | `le_role_consultation_est_refuse_sur_les_trois_routes` | `:300` |
+      | `csv_sanitize` retirée de la cellule `actor_label` | `l_export_neutralise_une_formule_dans_le_nom_de_l_auteur` | `:629` |
+      | `actor_type.as_str()` → sérialisation de l'enum | `la_reponse_porte_le_code_de_base_et_jamais_la_societe` | `:447` |
+      | test d'appartenance retiré d'`action_label` | `un_code_inconnu_sort_en_code_dans_la_liste_et_dans_le_csv` | `:494` |
+      | idem, **rejouée** pour le test unitaire | `un_code_inconnu_rend_le_code_et_jamais_la_cle` | `audit_labels.rs:299` |
+      | langue lue ailleurs que `state.config.locale` | `les_libelles_suivent_la_langue_de_l_interface_et_non_la_comptable` | `:476` |
+
+      ⚠️ **Défaut de ma propre épreuve, relevé et corrigé.** La mutation du test d'appartenance visait
+      **deux** tests ; je les avais chaînés par `&&`. Le premier ayant rougi, le `&&` a court-circuité et
+      le test **unitaire n'a jamais tourné sous mutation** — la mutation aurait été déclarée complète
+      sans l'être. Rejouée seule *(ligne « idem, rejouée »)* : elle rougit avec le message attendu,
+      « le repli a laissé fuir une clé brute : `audit-log-action-parti-en-vacances` ». *Un enchaînement
+      de commandes qui court-circuite transforme une épreuve en affirmation.*
+
+      ⚠️ Deux sites étaient **ambigus** — `ensure_not_pat` et `let locale = state.config.locale`
+      apparaissent chacun **trois** fois, une par handler. La mutation porte donc sur un **numéro de
+      ligne** (464 pour le vocabulaire, 440 pour la liste) : muter par texte aurait touché le mauvais
+      handler, ou les trois, et le rouge obtenu n'aurait pas prouvé ce qu'il prétend.
 - [ ] **T9 — Manuel d'administration** (AC 19-21), PDF régénéré et vérifié aplati.
 - [ ] **T10 — Propagation** : `grep -rniE "aucune route|post-MVP|story 3\.5" crates docs/manual/fr/*.tex --exclude-dir=migrations`
       (⛔ **insensible à la casse**, sinon « Story 3.5 » échappe ; et **sans** `migrations/` — une
