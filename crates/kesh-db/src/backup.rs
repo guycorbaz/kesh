@@ -51,6 +51,15 @@ pub const TABLES_TO_TRUNCATE: &[&str] = &[
     "invoices",
     "invoice_number_sequences",
     "credit_note_number_sequences", // Story 12.1 — enfant de companies + fiscal_years (RESTRICT).
+    // Story 25-2-c (#381) — enfant de companies + fiscal_years (RESTRICT), sans
+    // enfant propre : sa place suit celle de ses deux sœurs.
+    //
+    // ⛔ **Son absence d'ici ferait échouer la story sur son propre but, et en
+    // silence** : un compteur non sauvegardé revient VIDE d'une restauration,
+    // repart de 1, et réattribue des numéros déjà portés — précisément le défaut
+    // muet que #381 ferme. Une table de séquence se sauvegarde comme ses deux
+    // voisines, pour la même raison qu'elles.
+    "journal_entry_number_sequences",
     "journal_entries",
     "audit_log",
     "api_keys", // Story 17-2a (#100) — enfant de companies + users (RESTRICT).
