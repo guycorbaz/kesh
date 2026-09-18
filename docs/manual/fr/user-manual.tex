@@ -512,10 +512,21 @@ la suppression, tant que le logiciel vous laisse le choix.
 
 \subsection{Numérotation}
 
-Chaque écriture reçoit un numéro séquentiel par société et par exercice. \textbf{Cette
-numérotation peut encore comporter des trous}, mais la cause principale a disparu~: une
-écriture ne se supprime plus. Il subsiste un seul chemin qui en creuse --- la suppression
-définitive d'une facture validée, qui emporte son écriture (voir «~Supprimer une facture~»).
+Chaque écriture reçoit un numéro séquentiel par société et par exercice, tiré d'un
+\textbf{compteur qui ne redescend jamais}.
+
+\textbf{Un numéro attribué ne sera jamais réattribué à une autre écriture.} C'est la
+garantie qui compte devant un contrôle. Si vous supprimez la dernière écriture d'un
+exercice, la suivante prendra le numéro d'après --- pas celui qui vient d'être libéré.
+Jusqu'à cette version, ce numéro était repris~: une écriture au contenu tout différent
+portait alors un numéro déjà employé, \textbf{sans aucun message et sans trace visible}.
+
+\textbf{Cette numérotation peut en revanche comporter des trous}, et c'est assumé. Une
+écriture ne se supprime plus, mais il subsiste un chemin qui en creuse~: la suppression
+définitive d'une facture validée, qui emporte son écriture (voir «~Supprimer une
+facture~»). \emph{Un trou se voit et s'explique} --- le journal d'audit nomme ce qui a été
+supprimé, quand et par qui. C'est la réattribution, elle, qui ne se voyait pas~; le combler
+exigerait de renuméroter des écritures existantes, ce qu'une comptabilité ne fait pas.
 
 \subsection{Recherche d'écritures}
 
