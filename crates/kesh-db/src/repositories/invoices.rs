@@ -3227,6 +3227,17 @@ mod tests {
 
         cleanup_invoices(&pool, &[inv.id]).await;
         cleanup_journal_entries(&pool, &[je_id]).await;
+        // Story 25-2-c (#381) — le compteur de numéros d'écriture référence
+        // l'exercice (FK RESTRICT). ⚠️ Sans ce nettoyage, la suppression
+        // ci-dessous n'ÉCHOUE PAS : son `.ok()` avale l'erreur et laisse
+        // l'exercice clos en base. Pas de rouge, un RÉSIDU — et c'est le gate
+        // suivant qui le paie, sur un module que la branche ne touche pas
+        // (KF-039).
+        sqlx::query("DELETE FROM journal_entry_number_sequences WHERE fiscal_year_id = ?")
+            .bind(closed_fy)
+            .execute(&pool)
+            .await
+            .ok();
         sqlx::query("DELETE FROM fiscal_years WHERE id = ?")
             .bind(closed_fy)
             .execute(&pool)

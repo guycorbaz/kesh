@@ -339,16 +339,21 @@ async fn create_in_tx_inner(
     // postabilité dépend de `enforce_postable` (D-A0).
     validate_lines_accounts_in_tx(tx, new.company_id, &account_ids, enforce_postable, &[]).await?;
 
-    // Étape 3 : calculer le prochain entry_number (sérialisé par gap lock).
-    let next_number: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(MAX(entry_number), 0) + 1 FROM journal_entries \
-         WHERE company_id = ? AND fiscal_year_id = ? FOR UPDATE",
-    )
-    .bind(new.company_id)
-    .bind(fiscal_year_id)
-    .fetch_one(&mut **tx)
-    .await
-    .map_err(map_db_error)?;
+    // Étape 3 : consommer le prochain entry_number au COMPTEUR.
+    //
+    // ⛔ **Story 25-2-c (#381) — remplace un `COALESCE(MAX(entry_number), 0) + 1`.**
+    // L'`UNIQUE (company_id, fiscal_year_id, entry_number)` garantissait
+    // l'unicité à un instant donné, jamais l'univocité DANS LE TEMPS : supprimer
+    // la dernière écriture libérait son numéro, qu'une écriture au contenu
+    // différent reprenait ensuite — sans que rien ne le signale. Un compteur ne
+    // redescend pas.
+    //
+    // ⚠️ **La sérialisation change de nature, pas d'existence** : le `MAX + 1`
+    // s'appuyait sur un *gap lock* de l'index ; c'est désormais le verrou de
+    // ligne du compteur qui l'assure. L'`UNIQUE` reste le filet.
+    let next_number =
+        super::journal_entry_number_sequences::next_number_for(tx, new.company_id, fiscal_year_id)
+            .await?;
 
     // Étape 4 : INSERT de l'en-tête.
     //
@@ -1594,6 +1599,15 @@ mod tests {
             // Exercice couvrant mais clos → purge des écritures puis suppression
             // (un exercice clos ne peut pas être rouvert par politique métier).
             delete_all_by_company(pool, company_id).await.unwrap();
+            // Story 25-2-c (#381) — le compteur de numéros référence l'exercice
+            // (FK RESTRICT), et il porte une ligne dès la PREMIÈRE écriture.
+            // Sans ce nettoyage, la suppression ci-dessous échoue et emporte
+            // tous les tests qui passent après celui qui clôt l'exercice.
+            sqlx::query("DELETE FROM journal_entry_number_sequences WHERE fiscal_year_id = ?")
+                .bind(fy.id)
+                .execute(pool)
+                .await
+                .expect("delete entry-number counter");
             sqlx::query("DELETE FROM fiscal_years WHERE id = ?")
                 .bind(fy.id)
                 .execute(pool)
@@ -1736,7 +1750,13 @@ mod tests {
         );
 
         let created = create(&pool, fy_id, admin_user_id, new).await.unwrap();
-        assert_eq!(created.entry.entry_number, 1);
+        // ⚠️ Story 25-2-c (#381) — l'égalité à 1 est tombée, et c'est l'effet
+        // VOULU du compteur. `setup` efface les écritures (`delete_all_by_company`)
+        // mais **pas** le compteur, qui par construction ne redescend pas : sur la
+        // base partagée, la première écriture d'un test ne porte plus le n° 1.
+        // Ce test-ci vérifie la création et ses LIGNES ; la numérotation a ses
+        // propres tests, et c'est là qu'elle doit être éprouvée.
+        assert!(created.entry.entry_number >= 1);
         assert_eq!(created.lines.len(), 2);
         assert_eq!(created.lines[0].line_order, 1);
         assert_eq!(created.lines[1].line_order, 2);
@@ -1751,7 +1771,14 @@ mod tests {
         let (a1, a2) = two_accounts(&pool, company_id).await;
         let today = chrono::Utc::now().naive_utc().date();
 
-        for expected in 1..=3 {
+        // ⚠️ Story 25-2-c (#381) — la boucle attendait `1..=3`. La propriété
+        // qu'elle voulait dire est la CONTIGUÏTÉ, et celle-là tient toujours ;
+        // c'est son ANCRE qui est tombée. Le compteur ne redescendant pas, et
+        // `setup` n'effaçant que les écritures, le point de départ dépend de ce
+        // que la base partagée a déjà servi. On capte donc le premier numéro
+        // rendu au lieu de le postuler.
+        let mut attendu: Option<i64> = None;
+        for _ in 0..3 {
             let new = mk_entry(
                 company_id,
                 today,
@@ -1771,8 +1798,248 @@ mod tests {
                 ],
             );
             let created = create(&pool, fy_id, admin_user_id, new).await.unwrap();
-            assert_eq!(created.entry.entry_number, expected);
+            match attendu {
+                None => attendu = Some(created.entry.entry_number + 1),
+                Some(n) => {
+                    assert_eq!(
+                        created.entry.entry_number, n,
+                        "les numéros doivent se suivre sans saut"
+                    );
+                    attendu = Some(n + 1);
+                }
+            }
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 25-2-c (#381) — le numéro vient d'un compteur, non d'un MAX + 1.
+    // -----------------------------------------------------------------------
+
+    /// Deux lignes équilibrées de 10.–, pour ne pas répéter le même bloc.
+    fn paire(a1: i64, a2: i64) -> Vec<NewJournalEntryLine> {
+        vec![
+            NewJournalEntryLine {
+                account_id: a1,
+                debit: dec!(10),
+                credit: dec!(0),
+                project_id: None,
+            },
+            NewJournalEntryLine {
+                account_id: a2,
+                debit: dec!(0),
+                credit: dec!(10),
+                project_id: None,
+            },
+        ]
+    }
+
+    /// ⛔ **LE TEST DÉCISIF DE LA STORY.** C'est lui qui dit si le but est
+    /// atteint ; sans lui, rien ne prouverait quoi que ce soit.
+    ///
+    /// Sous le `MAX + 1`, supprimer la **dernière** écriture libérait son numéro,
+    /// qu'une écriture au contenu différent reprenait ensuite. Le trou du milieu
+    /// est **visible** — un contrôleur le voit et demande l'explication ; la
+    /// réattribution, elle, est **muette**. C'est elle que le compteur ferme.
+    ///
+    /// ⚠️ L'assertion est **relationnelle** et non absolue : le compteur ne
+    /// redescendant pas, et `setup` n'effaçant que les écritures, exiger une
+    /// valeur exacte ferait rougir ce test pour une raison étrangère à ce qu'il
+    /// mesure.
+    #[tokio::test]
+    async fn un_numero_libere_n_est_jamais_reattribue() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        let today = chrono::Utc::now().naive_utc().date();
+
+        create(
+            &pool,
+            fy_id,
+            admin,
+            mk_entry(company_id, today, paire(a1, a2)),
+        )
+        .await
+        .unwrap();
+        create(
+            &pool,
+            fy_id,
+            admin,
+            mk_entry(company_id, today, paire(a1, a2)),
+        )
+        .await
+        .unwrap();
+        let troisieme = create(
+            &pool,
+            fy_id,
+            admin,
+            mk_entry(company_id, today, paire(a1, a2)),
+        )
+        .await
+        .unwrap();
+        let libere = troisieme.entry.entry_number;
+
+        // Supprimer LA DERNIÈRE — c'est le seul cas qui produisait la
+        // réattribution. `delete_in_tx` avec `enforce_immutability = false` est
+        // le dernier chemin de suppression du dépôt depuis le gel de l'Epic 24.
+        let mut tx = pool.begin().await.unwrap();
+        delete_in_tx(&mut tx, company_id, troisieme.entry.id, admin, false)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+
+        let suivante = create(
+            &pool,
+            fy_id,
+            admin,
+            mk_entry(company_id, today, paire(a1, a2)),
+        )
+        .await
+        .unwrap();
+
+        assert!(
+            suivante.entry.entry_number > libere,
+            "le numéro {libere} vient d'être RÉATTRIBUÉ à une écriture au contenu différent — \
+             c'est le symptôme muet de #381 ; reçu {}",
+            suivante.entry.entry_number
+        );
+    }
+
+    /// AC 3 — **le trou subsiste, et c'est assumé.** Le combler exigerait de
+    /// renuméroter des écritures existantes, ce que le gel de l'Epic 24 interdit.
+    /// Ce test fixe cette limite par écrit : si un jour la numérotation se met à
+    /// reboucher les trous, il rougira et forcera la conversation.
+    #[tokio::test]
+    async fn le_trou_du_milieu_subsiste_et_c_est_assume() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        let today = chrono::Utc::now().naive_utc().date();
+
+        let premiere = create(
+            &pool,
+            fy_id,
+            admin,
+            mk_entry(company_id, today, paire(a1, a2)),
+        )
+        .await
+        .unwrap();
+        let milieu = create(
+            &pool,
+            fy_id,
+            admin,
+            mk_entry(company_id, today, paire(a1, a2)),
+        )
+        .await
+        .unwrap();
+        let troisieme = create(
+            &pool,
+            fy_id,
+            admin,
+            mk_entry(company_id, today, paire(a1, a2)),
+        )
+        .await
+        .unwrap();
+
+        let mut tx = pool.begin().await.unwrap();
+        delete_in_tx(&mut tx, company_id, milieu.entry.id, admin, false)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+
+        // Le numéro du milieu manque, et rien ne le réattribue non plus.
+        assert_eq!(
+            troisieme.entry.entry_number - premiere.entry.entry_number,
+            2,
+            "les trois numéros se suivaient"
+        );
+        let suivante = create(
+            &pool,
+            fy_id,
+            admin,
+            mk_entry(company_id, today, paire(a1, a2)),
+        )
+        .await
+        .unwrap();
+        assert!(
+            suivante.entry.entry_number > troisieme.entry.entry_number,
+            "le trou ne se rebouche pas : la suivante continue après la dernière"
+        );
+    }
+
+    /// AC 9 — deux créations **concurrentes** dans le même exercice n'obtiennent
+    /// jamais le même numéro. Le `MAX + 1` s'appuyait sur un *gap lock* ; c'est
+    /// désormais le verrou de ligne du compteur qui sérialise.
+    #[tokio::test]
+    async fn deux_creations_concurrentes_n_obtiennent_pas_le_meme_numero() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        let today = chrono::Utc::now().naive_utc().date();
+
+        let (g, d) = tokio::join!(
+            create(
+                &pool,
+                fy_id,
+                admin,
+                mk_entry(company_id, today, paire(a1, a2))
+            ),
+            create(
+                &pool,
+                fy_id,
+                admin,
+                mk_entry(company_id, today, paire(a1, a2))
+            ),
+        );
+
+        let (g, d) = (g.unwrap(), d.unwrap());
+        assert_ne!(
+            g.entry.entry_number, d.entry.entry_number,
+            "deux créations simultanées ont reçu le MÊME numéro — la sérialisation a cédé"
+        );
+    }
+
+    /// AC 4 — l'**invariant d'amorçage** : le compteur est toujours strictement
+    /// au-dessus du plus grand numéro en service. C'est ce que la migration pose
+    /// sur une base existante, et ce que chaque création préserve.
+    ///
+    /// ⚠️ Testé comme invariant plutôt qu'en rejouant la migration : sur la base
+    /// partagée elle a déjà tourné, et la rejouer ne prouverait rien de plus que
+    /// ce que le gate de migrations vérifie déjà.
+    #[tokio::test]
+    async fn le_compteur_reste_au_dessus_du_plus_grand_numero_en_service() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        let today = chrono::Utc::now().naive_utc().date();
+
+        create(
+            &pool,
+            fy_id,
+            admin,
+            mk_entry(company_id, today, paire(a1, a2)),
+        )
+        .await
+        .unwrap();
+
+        let (max, next): (i64, i64) = sqlx::query_as(
+            "SELECT COALESCE(MAX(je.entry_number), 0), s.next_number \
+               FROM journal_entry_number_sequences s \
+               LEFT JOIN journal_entries je \
+                 ON je.company_id = s.company_id AND je.fiscal_year_id = s.fiscal_year_id \
+              WHERE s.company_id = ? AND s.fiscal_year_id = ? \
+              GROUP BY s.next_number",
+        )
+        .bind(company_id)
+        .bind(fy_id)
+        .fetch_one(&pool)
+        .await
+        .expect("le compteur doit exister après une création");
+
+        assert!(
+            next > max,
+            "le compteur ({next}) doit rester au-dessus du plus grand numéro en service ({max}) — \
+             sinon la prochaine écriture réattribuerait un numéro"
+        );
     }
 
     #[tokio::test]
@@ -1820,6 +2087,14 @@ mod tests {
         // cet exercice pour éviter un échec FK RESTRICT si un test
         // concurrent en a inséré (garde-fou défensif).
         delete_all_by_company(&pool, company_id).await.unwrap();
+        // Story 25-2-c (#381) — l'inventaire des référents de `fiscal_years` que
+        // ce commentaire annonçait s'est allongé : le compteur de numéros
+        // d'écriture en fait partie, avec la même FK RESTRICT.
+        sqlx::query("DELETE FROM journal_entry_number_sequences WHERE fiscal_year_id = ?")
+            .bind(fy_id)
+            .execute(&pool)
+            .await
+            .unwrap();
         sqlx::query("DELETE FROM fiscal_years WHERE id = ?")
             .bind(fy_id)
             .execute(&pool)
