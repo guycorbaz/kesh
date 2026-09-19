@@ -978,7 +978,9 @@ pub async fn delete_by_id(
 /// ⚠️ **`false` n'est passé QUE par `invoices::delete`**, et l'exception est
 /// voulue : ce chemin ne supprime pas une écriture, il supprime **une facture**
 /// dont l'écriture part avec elle, sous ses trois gardes propres (non payée,
-/// non créditée, sans historique de rappels). Le geler reviendrait à retirer la
+/// non créditée, sans historique de rappels). ⚠️ Le gel levé, les autres
+/// gardes de cette fonction tiennent — exercice clos, contre-passation et
+/// **verrou de période** (#443) : `false` ne lève que le gel. Le geler reviendrait à retirer la
 /// suppression d'une facture validée (#219) — une décision de facturation, pas
 /// d'écriture. Le résidu est assumé et tracé (cf. #380, #381).
 ///
@@ -992,9 +994,10 @@ pub(crate) async fn delete_in_tx(
     user_id: i64,
     enforce_immutability: bool,
 ) -> Result<(), DbError> {
-    // Étape 2 : lock entry + fiscal_year.
-    let locked: Option<(i64, String)> = sqlx::query_as(
-        "SELECT je.fiscal_year_id, fy.status \
+    // Étape 2 : lock entry + fiscal_year. `entry_date` vient avec, pour la garde
+    // du verrou de période (étape 3-quater) — sans seconde lecture de la ligne.
+    let locked: Option<(i64, String, NaiveDate)> = sqlx::query_as(
+        "SELECT je.fiscal_year_id, fy.status, je.entry_date \
          FROM journal_entries je \
          JOIN fiscal_years fy ON fy.id = je.fiscal_year_id \
          WHERE je.id = ? AND je.company_id = ? \
@@ -1006,7 +1009,7 @@ pub(crate) async fn delete_in_tx(
     .await
     .map_err(map_db_error)?;
 
-    let (_fy_id, fy_status) = match locked {
+    let (_fy_id, fy_status, entry_date) = match locked {
         None => return Err(DbError::NotFound),
         Some(row) => row,
     };
@@ -1036,6 +1039,38 @@ pub(crate) async fn delete_in_tx(
     // de la 24-4a passerait au vert en mesurant autre chose.
     if enforce_immutability {
         return Err(DbError::EntryIsPosted);
+    }
+
+    // Étape 3-quater (Story 25-2-b-zero, #443) : le VERROU DE PÉRIODE. Une
+    // écriture datée d'une période verrouillée ne disparaît pas — sans quoi les
+    // totaux d'un trimestre déjà déclaré changeraient en silence, le rapport TVA
+    // se recalculant à la volée. La 24-4c ne le contrôlait qu'à la création :
+    // le gel suffisait sur la route, mais `false` (suppression d'une facture
+    // validée) passait.
+    //
+    // ⛔ APRÈS le gel, et c'est délibéré : sur la route gelée, une écriture de
+    // période verrouillée reste un `409 ENTRY_IS_POSTED`, comme avant cette
+    // garde. C'est la règle de la création — le verrou de période parle en
+    // dernier.
+    //
+    // ⚠️ Lecture NON verrouillante, pour la raison écrite à l'étape 0-bis de
+    // `create_in_tx_inner` ; ici elle évite en plus de prendre un verrou sur
+    // `companies` APRÈS ceux de l'étape 2, ce qui inverserait l'ordre global.
+    // Seuil INCLUSIF, le même qu'à la création.
+    let books_locked_through: Option<NaiveDate> =
+        sqlx::query_scalar("SELECT books_locked_through FROM companies WHERE id = ?")
+            .bind(company_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(map_db_error)?
+            .flatten();
+    if let Some(locked_through) = books_locked_through
+        && entry_date <= locked_through
+    {
+        return Err(DbError::PeriodLocked {
+            locked_through,
+            attempted: entry_date,
+        });
     }
 
     // Étape 4 : snapshot avant suppression.
@@ -2130,6 +2165,134 @@ mod tests {
             "le plancher doit voir l'écriture n° {hors_bande} validée pendant la transaction ; \
              l'allocateur a rendu {rendu}, que l'UNIQUE aurait refusé"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 25-2-b-zero (#443) — le verrou de période protège aussi de la
+    // suppression.
+    // -----------------------------------------------------------------------
+
+    /// Pose (`Some`) ou retire (`None`) la borne du verrou de période, en SQL
+    /// direct.
+    ///
+    /// ⚠️ Pas par `companies::lock_books` : elle refuse de RECULER une borne, si
+    /// bien qu'un test ne pourrait pas poser la sienne derrière celle d'un run
+    /// précédent. Et la borne se retire **avant** l'assertion, pour partir même
+    /// si le test rougit : une borne laissée posée ferait tomber le gate suivant
+    /// (KF-039).
+    async fn poser_borne(pool: &MySqlPool, company_id: i64, borne: Option<NaiveDate>) {
+        sqlx::query("UPDATE companies SET books_locked_through = ? WHERE id = ?")
+            .bind(borne)
+            .bind(company_id)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    /// Crée une écriture datée de `date`, pose la borne à `borne`, tente
+    /// `delete_in_tx(…, enforce_immutability)`, retire la borne, et rend le
+    /// résultat — la ligne existe-t-elle encore, en second.
+    async fn supprimer_sous_borne(
+        date: NaiveDate,
+        borne: Option<NaiveDate>,
+        enforce_immutability: bool,
+    ) -> (Result<(), DbError>, bool) {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        poser_borne(&pool, company_id, None).await;
+        let entree = create(
+            &pool,
+            fy_id,
+            admin,
+            mk_entry(company_id, date, paire(a1, a2)),
+        )
+        .await
+        .unwrap();
+
+        poser_borne(&pool, company_id, borne).await;
+        let mut tx = pool.begin().await.unwrap();
+        let resultat = delete_in_tx(
+            &mut tx,
+            company_id,
+            entree.entry.id,
+            admin,
+            enforce_immutability,
+        )
+        .await;
+        if resultat.is_ok() {
+            tx.commit().await.unwrap();
+        } else {
+            tx.rollback().await.unwrap();
+        }
+        poser_borne(&pool, company_id, None).await;
+
+        let reste: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE id = ?")
+            .bind(entree.entry.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        (resultat, reste == 1)
+    }
+
+    /// Une date passée, dans l'exercice ouvert que `setup` garantit.
+    fn il_y_a(jours: i64) -> NaiveDate {
+        chrono::Utc::now().naive_utc().date() - chrono::Duration::days(jours)
+    }
+
+    /// ⛔ Le cas que #443 décrit : le gel levé (`false`, suppression d'une
+    /// facture validée), une écriture datée **du jour même de la borne** ne
+    /// disparaît pas. Le seuil est inclusif, comme à la création.
+    #[tokio::test]
+    async fn la_suppression_refuse_une_ecriture_datee_du_jour_de_la_borne() {
+        let borne = il_y_a(30);
+        let (resultat, reste) = supprimer_sous_borne(borne, Some(borne), false).await;
+        assert!(
+            matches!(resultat, Err(DbError::PeriodLocked { locked_through, attempted })
+                if locked_through == borne && attempted == borne),
+            "attendu PeriodLocked au seuil, obtenu {resultat:?}"
+        );
+        assert!(
+            reste,
+            "l'écriture d'une période verrouillée doit rester en base"
+        );
+    }
+
+    /// Le lendemain de la borne est hors de la période verrouillée.
+    #[tokio::test]
+    async fn la_suppression_accepte_une_ecriture_datee_du_lendemain_de_la_borne() {
+        let borne = il_y_a(30);
+        let (resultat, reste) = supprimer_sous_borne(il_y_a(29), Some(borne), false).await;
+        assert!(
+            resultat.is_ok(),
+            "attendu Ok hors période verrouillée, obtenu {resultat:?}"
+        );
+        assert!(!reste, "l'écriture hors période doit être supprimée");
+    }
+
+    /// Sans borne, rien ne change.
+    #[tokio::test]
+    async fn la_suppression_sans_borne_est_inchangee() {
+        let (resultat, reste) = supprimer_sous_borne(il_y_a(30), None, false).await;
+        assert!(
+            resultat.is_ok(),
+            "attendu Ok sans borne, obtenu {resultat:?}"
+        );
+        assert!(!reste);
+    }
+
+    /// ⛔ L'ORDRE : sur le chemin gelé (la route), une écriture de période
+    /// verrouillée reste un `EntryIsPosted` — le contrat d'avant cette garde.
+    /// Placée avant le gel, elle rendrait `PeriodLocked` et ce test rougirait.
+    #[tokio::test]
+    async fn le_gel_parle_avant_le_verrou_de_periode() {
+        let borne = il_y_a(30);
+        let (resultat, reste) = supprimer_sous_borne(borne, Some(borne), true).await;
+        assert!(
+            matches!(resultat, Err(DbError::EntryIsPosted)),
+            "attendu EntryIsPosted, obtenu {resultat:?}"
+        );
+        assert!(reste);
     }
 
     #[tokio::test]

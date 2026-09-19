@@ -1,6 +1,6 @@
 # Story 25.2-b-zero : Le verrou de période protège aussi de la suppression
 
-Status: ready-for-dev
+Status: review
 
 **Issue : [#443]**, ouverte le 2026-09-19. Détachée de la **25-2-b** (#440) sur arbitrage de Guy du
 même jour : le trou existe sur `main` indépendamment de la dévalidation, et le fermer d'abord allège
@@ -94,15 +94,15 @@ promesse faite au lecteur est que les totaux d'une période verrouillée ne boug
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — La garde** (AC 1-5) : étendre la requête de l'étape 2 à `entry_date` ; **après**
+- [x] **T1 — La garde** (AC 1-5) : étendre la requête de l'étape 2 à `entry_date` ; **après**
       l'étape 3-ter, lire la borne par un `SELECT` **non verrouillant** puis refuser. Lue là, elle ne
       prend aucun verrou sur `companies` : aucun cycle possible avec `lock_books` / `unlock_books`,
       qui ne verrouillent que `companies`. ⚠️ Le champ `attempted` de `PeriodLocked` porte ici la
       date d'une écriture **existante**, non une date qu'on a tenté de poser : les messages des
       quatre locales (« celle-ci est datée du… ») restent justes, et le nom du champ ne change pas.
-- [ ] **T2 — Tests et mutations** (AC 6).
-- [ ] **T3 — Manuels, PDF, CHANGELOG** (AC 7).
-- [ ] **T4 — Gates complets** — gate backend **complet** et non ciblé : la story touche un
+- [x] **T2 — Tests et mutations** (AC 6).
+- [x] **T3 — Manuels, PDF, CHANGELOG** (AC 7).
+- [x] **T4 — Gates complets** — gate backend **complet** et non ciblé : la story touche un
       repository de `kesh-db`. E2E complète avant le push.
 
 ## Dev Notes
@@ -137,11 +137,22 @@ promesse faite au lecteur est que les totaux d'une période verrouillée ne boug
 
 ### Agent Model Used
 
+Claude Opus 5 (1M context).
+
 ### Debug Log References
 
 ### Completion Notes List
 
 ### File List
+
+| Fichier | État |
+|---|---|
+| `crates/kesh-db/src/repositories/journal_entries.rs` | modifié — étape 2 étendue à `entry_date`, étape 3-quater (la garde), doc-comment de `delete_in_tx` ; **4 tests** neufs et deux helpers |
+| `crates/kesh-api/tests/invoice_delete_e2e.rs` | modifié — **1 test** neuf, helper `create_validated_invoice_on` (l'existant le réutilise) |
+| `docs/manual/fr/user-manual.tex` + `.pdf` | modifiés — la suppression refusée en période verrouillée |
+| `docs/manual/fr/admin-manual.tex` + `.pdf` | modifiés — idem |
+| `CHANGELOG.md` | modifié — « Corrigé » |
+| `README.md` | modifié — ligne E25 |
 
 ## Change Log
 
@@ -149,3 +160,4 @@ promesse faite au lecteur est que les totaux d'une période verrouillée ne boug
 |---|---|---|
 | 2026-09-19 | spec | Story détachée de la 25-2-b, sur arbitrage de Guy. Le trou a été trouvé par l'orchestrateur en vérifiant les findings de la passe 1 de validation de la 25-2-b — **aucune lentille ne l'avait vu**. Issue **#443** ouverte le même jour (`bug_report`, labels `bug` + `triage`). |
 | 2026-09-19 | validate P1 — **close** | **Une lentille Sonnet**, prompt versionné `25-2-b-zero-validate-prompt-p1.md`. **0 au-dessus de LOW, 2 LOW**, sept axes déclarés exercés. L'inventaire des autres chemins qui effaceraient une écriture est **complet** : pas de suppression d'avoir, `supplier_invoices::cancel` contre-passe, aucune FK en `CASCADE` vers les écritures, aucune `UPDATE` de production sur leurs dates ou montants ; purges de société hors périmètre à bon droit. LOW corrigés : position et nature de la lecture de la borne fixées à T1 ; sens du champ `attempted` écrit. Relevé hors périmètre, versé à la 25-2-b : `admin-manual.tex:1799` et `README.md:218` affirment déjà faux qu'une écriture n'est « ni modifiable ni supprimable, sans exception ». |
+| 2026-09-19 | dev T1→T4 | **La garde** : étape 3-quater de `delete_in_tx`, **après** le gel, lecture non verrouillante de la borne, seuil inclusif, `entry_date` ramenée par la requête de verrouillage de l'étape 2 (aucune seconde lecture). **5 tests neufs** (périmètre : `main` → ce commit) — 4 de dépôt, 1 de bout en bout. ⚠️ **Écart à l'AC 6, assumé** : la borne est posée en **SQL direct**, non par `companies::lock_books`, qui refuse de *reculer* une borne — un test ne pourrait pas poser la sienne derrière celle d'un run précédent ; elle est retirée avant l'assertion, et le gate l'a confirmé (`books_locked_through` à `NULL` après le run). **Quatre mutations, toutes tuées sur assertion** : garde neutralisée → `…du_jour_de_la_borne` rouge (dépôt) et `…locked_period_returns_400…` rouge (`left: 204, right: 400`) ; `<=` en `<` → `…du_jour_de_la_borne` rouge ; garde déplacée avant le gel → `le_gel_parle_avant_le_verrou_de_periode` rouge ; fichier restauré à l'identique après chacune (`cmp`). **Gate backend complet : 2401/2401**, 4 ignorés, base remise à zéro et contrôlée ; `fmt`, `clippy -D warnings` verts. **E2E : 213 passés, 10 échecs** — les 7 de la KF-029, et **3 de pollution** : `product-revenue-account:133` et `products:185` passent rejoués seuls, `sidebar-navigation:75` échoue encore seul sur la base polluée mais **passe deux fois sur une base `kesh_e2e` reconstruite**. ⚠️ Trois échecs de pollution, un de plus que la fourchette connue (1 à 2). Frontend non rejoué : identique à `main` (`git diff --quiet main -- frontend`). Manuels : PDF régénérés, phrases neuves contrôlées à plat dans les deux. |
