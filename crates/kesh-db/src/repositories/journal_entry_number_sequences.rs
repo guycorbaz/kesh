@@ -44,6 +44,14 @@ use crate::errors::{DbError, map_db_error};
 /// La ligne est créée **à la demande** : une société qui n'a jamais écrit dans un
 /// exercice n'a pas de ligne, et la première écriture la pose. L'`INSERT IGNORE`
 /// absorbe la course où deux transactions la créeraient en même temps.
+///
+/// ⚠️ **Précondition : l'appelant a vérifié que la société et l'exercice
+/// existent.** En MariaDB, `INSERT IGNORE` ne se contente pas d'absorber le
+/// doublon : il change aussi une violation de clé étrangère en simple
+/// avertissement. Sur un exercice inexistant, la ligne ne serait donc pas créée,
+/// et la relecture échouerait en `DbError::NotFound` sans nommer la cause.
+/// `create_in_tx`, seul appelant de production, verrouille l'exercice et rejette
+/// son absence avant d'arriver ici.
 pub async fn next_number_for(
     tx: &mut sqlx::Transaction<'_, MySql>,
     company_id: i64,
@@ -109,9 +117,21 @@ pub async fn next_number_for(
     // Le rattrapage ne peut jouer que vers le HAUT.
     //
     // C'est exactement ce que fait la migration à l'amorçage — ici en continu.
+    //
+    // ⛔ **La lecture est VERROUILLANTE, et c'est ce qui la rend juste.** Sous
+    // `REPEATABLE READ`, un `SELECT` ordinaire lit l'instantané pris à la
+    // première lecture de la transaction — dans `create_in_tx`, bien avant
+    // d'arriver ici. Il ignorerait une écriture validée entre-temps, rendrait
+    // son numéro, et l'`UNIQUE` refuserait l'insertion : le rattrapage raterait
+    // exactement le cas pour lequel il existe. `FOR UPDATE` lit le dernier état
+    // validé. Le verrou d'intervalle qu'il pose sur
+    // `(company_id, fiscal_year_id, entry_number)` est celui que posait déjà le
+    // `MAX + 1` d'avant cette story ; il est pris APRÈS le verrou du compteur,
+    // que toute création prend en premier — pas de cycle entre créations.
+    // Prouvé par `le_plancher_voit_une_ecriture_validee_pendant_la_transaction`.
     let plancher: i64 = sqlx::query_scalar(
         "SELECT COALESCE(MAX(entry_number), 0) + 1 FROM journal_entries \
-         WHERE company_id = ? AND fiscal_year_id = ?",
+         WHERE company_id = ? AND fiscal_year_id = ? FOR UPDATE",
     )
     .bind(company_id)
     .bind(fiscal_year_id)

@@ -2042,6 +2042,85 @@ mod tests {
         );
     }
 
+    /// Le **plancher** de l'allocateur voit une écriture arrivée hors de lui
+    /// **pendant** la transaction, et pas seulement avant.
+    ///
+    /// Sous `REPEATABLE READ`, un `SELECT` non verrouillant lit l'instantané pris
+    /// à la **première** lecture de la transaction — dans `create_in_tx`, celle de
+    /// `books_locked_through`. Un plancher lu sans verrou ignorerait donc une
+    /// écriture validée entre-temps, rendrait un numéro déjà pris, et l'`UNIQUE`
+    /// refuserait l'insertion : le rattrapage raterait précisément le cas pour
+    /// lequel il existe. Seule une lecture **verrouillante** lit le dernier état
+    /// validé. *(Passe 1 de revue, relevé par deux lentilles indépendantes.)*
+    ///
+    /// Le montage reproduit la course de façon déterministe : l'instantané est
+    /// ouvert AVANT l'insertion concurrente, l'allocateur appelé APRÈS.
+    #[tokio::test]
+    async fn le_plancher_voit_une_ecriture_validee_pendant_la_transaction() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        let today = chrono::Utc::now().naive_utc().date();
+
+        // Le compteur existe et porte une valeur connue.
+        create(
+            &pool,
+            fy_id,
+            admin,
+            mk_entry(company_id, today, paire(a1, a2)),
+        )
+        .await
+        .unwrap();
+        let compteur: i64 = sqlx::query_scalar(
+            "SELECT next_number FROM journal_entry_number_sequences \
+             WHERE company_id = ? AND fiscal_year_id = ?",
+        )
+        .bind(company_id)
+        .bind(fy_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        // Transaction A : sa première lecture non verrouillante fige l'instantané.
+        let mut tx = pool.begin().await.unwrap();
+        let _: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE company_id = ?")
+                .bind(company_id)
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+
+        // Hors de A, et hors de l'allocateur : une écriture validée qui porte
+        // EXACTEMENT le numéro que le compteur s'apprête à rendre — le seul cas
+        // où le rater produit une collision. Le compteur, lui, n'en sait rien.
+        let hors_bande = compteur;
+        sqlx::query(
+            "INSERT INTO journal_entries \
+             (company_id, fiscal_year_id, entry_number, entry_date, journal, description) \
+             VALUES (?, ?, ?, ?, 'OD', 'hors allocateur')",
+        )
+        .bind(company_id)
+        .bind(fy_id)
+        .bind(hors_bande)
+        .bind(today)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let rendu = super::super::journal_entry_number_sequences::next_number_for(
+            &mut tx, company_id, fy_id,
+        )
+        .await
+        .unwrap();
+        tx.rollback().await.unwrap();
+
+        assert!(
+            rendu > hors_bande,
+            "le plancher doit voir l'écriture n° {hors_bande} validée pendant la transaction ; \
+             l'allocateur a rendu {rendu}, que l'UNIQUE aurait refusé"
+        );
+    }
+
     #[tokio::test]
     async fn test_create_rejects_closed_fiscal_year() {
         let pool = test_pool().await;
