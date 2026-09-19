@@ -1014,6 +1014,7 @@ Kesh \textbf{refuse} la suppression dans les cas suivants, pour préserver la co
 \begin{itemize}
     \item facture \textbf{marquée payée} : annulez d'abord le règlement (un paiement rapproché ne doit pas pointer dans le vide) ;
     \item facture déjà \textbf{créditée par un avoir} : l'avoir référence la facture, qui ne peut donc plus disparaître ;
+    \item facture ayant un \textbf{historique de rappels} : la supprimer effacerait la preuve du recouvrement ;
     \item facture dont l'écriture est datée d'une \textbf{période verrouillée} (cf. \S\ref{sec:verrou-periode}) : la supprimer changerait les totaux d'une période déjà déclarée ;
     \item facture dont l'écriture appartient à un \textbf{exercice clos} : la \textbf{suppression} est refusée — une facture d'un exercice clos ne peut jamais être supprimée. ⚠️ \textbf{En revanche, un avoir peut encore l'annuler} : seul l'exercice de l'\emph{avoir} est contrôlé, pas celui de la facture. Le statut de la facture bascule alors, et le décompte TVA de la période close s'en trouve modifié. L'intangibilité des périodes clôturées (CO art.~958f) n'est donc \textbf{pas} entièrement préservée sur ce chemin.
 \end{itemize}

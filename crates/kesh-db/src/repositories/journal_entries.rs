@@ -927,9 +927,10 @@ fn entry_snapshot_json(entry: &JournalEntry, lines: &[JournalEntryLine]) -> serd
 /// Étapes :
 /// 1. BEGIN tx
 /// 2. SELECT FOR UPDATE join fiscal_year (lock entry + FY)
-/// 3. Si `Closed` → rollback + `FiscalYearClosed` ; puis, dans `delete_in_tx` :
-///    écriture contre-passée → `EntryIsReversed` (3-bis), gel → `EntryIsPosted`
-///    (3-ter), période verrouillée → `PeriodLocked` (3-quater, #443)
+/// 3. Dans `delete_in_tx` : exercice clos → `FiscalYearClosed` ; écriture
+///    contre-passée → `EntryIsReversed` (3-bis) ; gel → `EntryIsPosted` (3-ter) ;
+///    période verrouillée → `PeriodLocked` (3-quater, #443). Sur erreur, le drop
+///    de la transaction fait le rollback.
 /// 4. Snapshot "before" (re-fetch lines)
 /// 5. INSERT audit_log (AVANT le DELETE pour préserver la trace)
 /// 6. DELETE FROM journal_entries → lignes suivent par CASCADE
@@ -961,8 +962,9 @@ pub async fn delete_by_id(
     Ok(())
 }
 
-/// Variante `_in_tx` de [`delete_by_id`] : exécute les étapes 2-6 (lock FY,
-/// garde `Closed`, snapshot, audit, DELETE CASCADE) dans une transaction
+/// Variante `_in_tx` de [`delete_by_id`] : exécute les étapes 2 à 6 (lock de
+/// l'écriture et de l'exercice, gardes 3 à 3-quater, snapshot, audit, DELETE
+/// CASCADE) dans une transaction
 /// fournie par l'appelant, **sans** BEGIN/COMMIT. Permet à un autre repo de
 /// supprimer l'écriture liée dans la MÊME transaction atomique (ex.
 /// `invoices::delete` d'une facture validée — #219).
@@ -2217,18 +2219,27 @@ mod tests {
     /// `commit` ou un `rollback` qui paniquerait la laisserait posée sur la
     /// société partagée. Les erreurs sont recueillies, la borne retirée, puis
     /// seulement les erreurs levées.
+    ///
+    /// `recul` place la borne `recul` jours avant la date de l'écriture — `0` :
+    /// le jour même. Le jour n'est calculé qu'**une fois** : l'évaluer deux fois
+    /// ferait rougir le test du seuil à tort si minuit passait entre les deux.
+    /// *(Passe 2 de revue.)* ⚠️ Une borne au jour même est un état de
+    /// laboratoire — `lock_books` la refuserait —, sans conséquence ici : la
+    /// garde est une pure comparaison de dates.
     async fn supprimer_sous_borne(
-        borne: Option<NaiveDate>,
+        recul: Option<i64>,
         enforce_immutability: bool,
     ) -> (Result<(), DbError>, bool) {
         let pool = test_pool().await;
         let (company_id, fy_id, admin) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
+        let jour = chrono::Utc::now().naive_utc().date();
+        let borne = recul.map(|jours| jour - chrono::Duration::days(jours));
         let entree = create(
             &pool,
             fy_id,
             admin,
-            mk_entry(company_id, aujourd_hui(), paire(a1, a2)),
+            mk_entry(company_id, jour, paire(a1, a2)),
         )
         .await
         .unwrap();
@@ -2262,20 +2273,15 @@ mod tests {
         (resultat, reste == 1)
     }
 
-    fn aujourd_hui() -> NaiveDate {
-        chrono::Utc::now().naive_utc().date()
-    }
-
     /// ⛔ Le cas que #443 décrit : le gel levé (`false`, suppression d'une
     /// facture validée), une écriture datée **du jour même de la borne** ne
     /// disparaît pas. Le seuil est inclusif, comme à la création.
     #[tokio::test]
     async fn la_suppression_refuse_une_ecriture_datee_du_jour_de_la_borne() {
-        let borne = aujourd_hui();
-        let (resultat, reste) = supprimer_sous_borne(Some(borne), false).await;
+        let (resultat, reste) = supprimer_sous_borne(Some(0), false).await;
         assert!(
             matches!(resultat, Err(DbError::PeriodLocked { locked_through, attempted })
-                if locked_through == borne && attempted == borne),
+                if locked_through == attempted),
             "attendu PeriodLocked au seuil, obtenu {resultat:?}"
         );
         assert!(
@@ -2288,8 +2294,7 @@ mod tests {
     /// verrouillée.
     #[tokio::test]
     async fn la_suppression_accepte_une_ecriture_datee_du_lendemain_de_la_borne() {
-        let veille = aujourd_hui() - chrono::Duration::days(1);
-        let (resultat, reste) = supprimer_sous_borne(Some(veille), false).await;
+        let (resultat, reste) = supprimer_sous_borne(Some(1), false).await;
         assert!(
             resultat.is_ok(),
             "attendu Ok hors période verrouillée, obtenu {resultat:?}"
@@ -2313,7 +2318,7 @@ mod tests {
     /// Placée avant le gel, elle rendrait `PeriodLocked` et ce test rougirait.
     #[tokio::test]
     async fn le_gel_parle_avant_le_verrou_de_periode() {
-        let (resultat, reste) = supprimer_sous_borne(Some(aujourd_hui()), true).await;
+        let (resultat, reste) = supprimer_sous_borne(Some(0), true).await;
         assert!(
             matches!(resultat, Err(DbError::EntryIsPosted)),
             "attendu EntryIsPosted, obtenu {resultat:?}"
