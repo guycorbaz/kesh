@@ -18,6 +18,7 @@ error-cannot-disable-last-admin = Impossible de désactiver le dernier administr
 error-not-found = Ressource introuvable
 error-conflict = Ressource déjà existante
 error-optimistic-lock = Conflit de version — la ressource a été modifiée
+error-account-has-entries = Ce compte porte { $count } écriture(s) : changer son type reclasserait tout son historique, exercices clos compris.
 error-foreign-key = Référence invalide
 error-journal-entry-linked-to-invoice = Cette écriture comptable a été générée par une facture validée et ne peut pas être supprimée directement. Annulez d'abord la facture concernée.
 error-check-constraint = Valeur invalide
@@ -196,6 +197,11 @@ accounts-edit-title = Modifier le compte { $number }
 accounts-edit-description = Le numéro n'est pas modifiable après création.
 accounts-archive-title = Archiver le compte { $number } ?
 accounts-archiving = Archivage…
+accounts-updating = Modification…
+accounts-retype-title = Changer le type du compte { $number } ?
+accounts-retype-warning = Ce compte porte { $count } écriture(s). Changer son type reclasse tout son historique : les montants passent du compte de résultat au bilan, ou l’inverse.
+accounts-retype-closed-years = Exercices clos concernés : { $years }. Leur résultat changera sans qu’aucune écriture ne l’explique.
+accounts-retype-confirm = Changer le type quand même
 account-field-parent-optional = Compte parent (optionnel)
 accounts-parent-none = Aucun
 accounts-parent-archived = Le compte parent { $number } est archivé. Réactivez-le d'abord.
@@ -1951,7 +1957,7 @@ reports-ledger-instruction = Choisissez une période, puis cliquez sur Générer
 
 # --- Journal d'audit — route, vocabulaire et export (Story 25-1c-a) ---
 # ----------------------------------------------------------------------
-# 28 types d'entité, 92 actions, 2 types d'auteur.
+# 28 types d'entité, 93 actions, 2 types d'auteur.
 #
 audit-log-entity-account = Compte
 audit-log-entity-api-key = Clé API
@@ -1989,6 +1995,7 @@ audit-log-action-account-created = Compte créé
 audit-log-action-account-updated = Compte modifié
 audit-log-action-account-archived = Compte archivé
 audit-log-action-account-reactivated = Compte réactivé
+audit-log-action-account-retyped = Type de compte modifié
 audit-log-action-fiscal-year-created = Exercice comptable créé
 audit-log-action-fiscal-year-updated = Exercice comptable modifié
 audit-log-action-fiscal-year-closed = Exercice comptable clôturé

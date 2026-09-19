@@ -79,6 +79,62 @@ export interface UpdateAccountRequest {
 	role: AccountRole | null;
 	postable: boolean;
 	version: number;
+	/**
+	 * Story 25-2-a (#382, #274) — confirme le changement d'`accountType` d'un
+	 * compte **qui porte des écritures**. Omis, l'API refuse en 409
+	 * `ACCOUNT_HAS_ENTRIES` et renvoie l'ampleur dans `details`.
+	 *
+	 * ⚠️ Optionnel ici alors que `role` et `postable` sont obligatoires, et
+	 * l'asymétrie est voulue : ces deux-là perdent une donnée en silence si on
+	 * les omet, tandis que le défaut de celui-ci est le défaut **sûr**.
+	 */
+	confirmAccountRetype?: boolean;
+}
+
+/**
+ * Story 25-2-a — contenu de `details` du 409 `ACCOUNT_HAS_ENTRIES`.
+ *
+ * ⚠️ `ApiError.details` est un `Record<string, unknown>` : ce type décrit ce que
+ * le serveur envoie, il ne le garantit pas. Toute lecture passe par
+ * `readRetypeImpact`, qui valide au lieu de supposer.
+ */
+export interface RetypeImpact {
+	entryCount: number;
+	closedFiscalYears: string[];
+	fromType: string;
+	toType: string;
+}
+
+/**
+ * Lit l'ampleur d'un refus de retypage sans jamais faire confiance à la forme
+ * reçue — un `details` absent, partiel ou mal typé rend `null`, et l'écran
+ * retombe alors sur le message générique plutôt que d'afficher « undefined
+ * écriture(s) ».
+ */
+export function readRetypeImpact(details: Record<string, unknown> | undefined): RetypeImpact | null {
+	if (!details) return null;
+
+	// ⚠️ Les QUATRE champs invalident, pas seulement `entryCount`.
+	//
+	// La première rédaction ne contrôlait que `entryCount` et dégradait les
+	// trois autres en silence — `closedFiscalYears` non-tableau devenait `[]`,
+	// `fromType`/`toType` manquants devenaient `''`. Sans conséquence visible,
+	// puisque la modale n'affiche aujourd'hui que les deux premiers ; mais le
+	// commentaire promettait de « valider au lieu de supposer », et le code ne
+	// le faisait qu'au quart. *Relevé en passe 1 de revue.* Un jour où la modale
+	// affichera le type de départ, un `''` silencieux produirait une phrase à
+	// trou que rien ne signalerait.
+	const { entryCount, closedFiscalYears, fromType, toType } = details;
+	if (typeof entryCount !== 'number') return null;
+	if (!Array.isArray(closedFiscalYears)) return null;
+	if (typeof fromType !== 'string' || typeof toType !== 'string') return null;
+
+	return {
+		entryCount,
+		closedFiscalYears: closedFiscalYears.filter((y): y is string => typeof y === 'string'),
+		fromType,
+		toType,
+	};
 }
 
 export interface ArchiveAccountRequest {

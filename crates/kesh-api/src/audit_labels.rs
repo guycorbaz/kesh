@@ -66,6 +66,7 @@ pub const ACTIONS: &[&str] = &[
     "account.archived",
     "account.created",
     "account.reactivated",
+    "account.retyped",
     "account.updated",
     "admin.full_export",
     "admin.full_import",

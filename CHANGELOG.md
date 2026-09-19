@@ -8,7 +8,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
-## [Unreleased]
+## [Non publié]
 
 ### Ajouté
 
@@ -16,9 +16,15 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
   L'accès est réservé aux rôles **Comptable** et **Administrateur**, et **refusé aux clés API** — y compris en lecture seule et y compris à une clé créée par un administrateur : la piste de contrôle se lit dans l'interface, par une personne. Chaque consultation est **strictement limitée à votre société**, et **ne s'inscrit pas elle-même au journal**, qui enflerait sinon de sa propre lecture.
 
-  Les codes techniques (`invoice.validated`, `bank_imports`) sont remplacés par des **libellés lisibles dans les quatre langues** — 122 libellés, dans la langue de l'installation et non dans la langue comptable de la société. L'export porte les mêmes libellés, ses dix colonnes sont traduites, et toute cellule de texte est neutralisée contre l'**injection de formule** dans le tableur qui l'ouvrira.
+  Les codes techniques (`invoice.validated`, `bank_imports`) sont remplacés par des **libellés lisibles dans les quatre langues** — 123 libellés, dans la langue de l'installation et non dans la langue comptable de la société. L'export porte les mêmes libellés, ses dix colonnes sont traduites, et toute cellule de texte est neutralisée contre l'**injection de formule** dans le tableur qui l'ouvrira.
 
   ⚠️ **L'écran, lui, reste à venir** : cette version ouvre la lecture par l'interface de programmation, ce qui suppose un outil technique. La page qui la rendra lisible depuis l'application fait l'objet de la suite de l'issue.
+
+### Corrigé
+
+- **Changer le type d'un compte qui porte des écritures ne se fait plus sans avertissement.** Le type d'un compte — Actif, Passif, Produit, Charge — décide dans quel état ses montants apparaissent, et les rapports le lisent au moment où on les demande : passer un compte de charge en actif faisait donc **sortir tout son historique du compte de résultat pour le faire entrer au bilan**, y compris pour des exercices **clos**. Le résultat d'une année close changeait, donc le report à nouveau, donc le bilan d'ouverture de l'année en cours — sans qu'aucune écriture ne l'explique, et sans le moindre message. Kesh refuse désormais le changement au premier essai, indique combien d'écritures sont concernées et nomme les exercices clos touchés ; le geste reste possible sur confirmation explicite, et il est journalisé sous son propre intitulé. ([#382](https://github.com/guycorbaz/kesh/issues/382), [#274](https://github.com/guycorbaz/kesh/issues/274))
+
+  *Pour les intégrations* : `PUT /api/v1/accounts/{id}` peut désormais répondre `409 ACCOUNT_HAS_ENTRIES`. Le champ facultatif `confirmAccountRetype` lève le refus ; un client qui ne retype pas de compte mouvementé n'a rien à changer.
 
 ---
 

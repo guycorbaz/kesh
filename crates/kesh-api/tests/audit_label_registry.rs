@@ -17,8 +17,8 @@
 //! # L'inventaire des sites NON RÉSOLUS (D4-ter du `CLAUDE.md`)
 //!
 //! ⛔ L'extracteur ci-dessous lit un **littéral à une position d'argument**.
-//! Sept sites du dépôt n'en portent pas : l'action y est une variable ou un
-//! ternaire. Énumérer « les formes qui marchent » laisserait une huitième forme
+//! Huit sites du dépôt n'en portent pas : l'action y est une variable ou un
+//! ternaire. Énumérer « les formes qui marchent » laisserait une neuvième forme
 //! passer sans que rien ne rougisse. On inventorie donc l'**ensemble clos de ce
 //! qui ne résout pas** : tout site indirect doit figurer dans
 //! `SITES_INDIRECTS`, avec les codes qu'il produit, écrits à la main et relus.
@@ -121,6 +121,12 @@ const SITES_INDIRECTS: &[(&str, &str, &[&str])] = &[
             "fiscal_year.closed",
             "fiscal_year.reopened",
         ],
+    ),
+    (
+        "crates/kesh-db/src/repositories/accounts.rs",
+        "`match` sur l'ampleur du retypage : un compte MOUVEMENTÉ dont le type change \
+         est `account.retyped`, tout autre changement `account.updated` (Story 25-2-a)",
+        &["account.retyped", "account.updated"],
     ),
     (
         "crates/kesh-api/src/audit.rs",
@@ -370,7 +376,7 @@ fn args_de(src: &str) -> Option<Vec<String>> {
 /// Le code porté par un argument, s'il est littéral.
 ///
 /// ⚠️ `"product.created".to_string()` EST un littéral : le refuser rapporterait
-/// quatre-vingts faux sites indirects et noierait les sept vrais.
+/// quatre-vingts faux sites indirects et noierait les huit vrais.
 fn litteral(arg: &str) -> Option<String> {
     let mut a = arg.trim();
     if let Some(reste) = a.strip_prefix("String::from(") {
@@ -570,7 +576,7 @@ fn les_codes_de_l_inventaire_sont_verifies_dans_le_fichier_de_leur_site() {
 /// Littéraux qui ont la forme d'un code d'action **sans en être un**, et qu'on
 /// déclare plutôt que d'élargir le tamis.
 ///
-/// ⚠️ **Un ensemble clos, borné aux SEPT fichiers inventoriés** — et non une
+/// ⚠️ **Un ensemble clos, borné aux HUIT fichiers inventoriés** — et non une
 /// liste ouverte sur tout le dépôt : elle ne grossit que si l'on écrit un
 /// littéral de cette forme dans l'un d'eux. Chaque entrée porte son motif, comme
 /// l'inventaire lui-même. *(« six » ici était faux : `SITES_INDIRECTS` en compte
@@ -912,7 +918,7 @@ fn l_inventaire_compte_ce_que_le_fichier_annonce() {
     // se périme pas — elle rougit.
     assert_eq!(
         SITES_INDIRECTS.len(),
-        7,
+        8,
         "⛔ Le nombre de sites indirects a changé. Mettre à jour **toutes** les \
          mentions en toutes lettres de ce fichier — elles ne sont pas confinées à \
          l'en-tête — puis ce nombre.\n\n\
@@ -1003,7 +1009,7 @@ fn chaque_code_a_son_libelle_dans_les_quatre_catalogues() {
     //
     // `format` replie sur le français et `all_messages` comble les trous avec le
     // français : passer par le bundle ferait passer au vert une locale qui n'a
-    // aucune des 122 clés. Le seul endroit où l'absence se voit est le fichier.
+    // aucune des 123 clés. Le seul endroit où l'absence se voit est le fichier.
     let locales = racine_crates().join("kesh-i18n/locales");
     let attendues: Vec<String> = [
         (PREFIX_ENTITY, ENTITY_TYPES),

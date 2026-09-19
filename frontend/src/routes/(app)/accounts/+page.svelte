@@ -18,9 +18,11 @@
 	import {
 		ACCOUNT_ROLES,
 		accountRoleKey,
+		readRetypeImpact,
 		type AccountResponse,
 		type AccountRole,
 		type AccountType,
+		type RetypeImpact,
 	} from '$lib/features/accounts/accounts.types';
 
 	const ACCOUNT_TYPES: AccountType[] = ['Asset', 'Liability', 'Revenue', 'Expense'];
@@ -235,6 +237,45 @@
 		return '';
 	});
 
+	// --- Story 25-2-a (#382, #274) : avertissement bloquant au retypage ---
+	//
+	// ⛔ L'écran ne PRÉ-VÉRIFIE rien : il soumet, et réagit au 409. Une
+	// pré-vérification rouvrirait la fenêtre TOCTOU que #274 signale déjà sur
+	// les soldes d'ouverture — entre le coup d'œil et l'écriture, une écriture
+	// peut naître.
+	let retypeWarnOpen = $state(false);
+	let retypeImpact = $state<RetypeImpact | null>(null);
+
+	/**
+	 * Le PUT, paramétré par la confirmation.
+	 *
+	 * ⚠️ Extrait plutôt que recopié dans la modale : deux appels jumeaux
+	 * seraient deux chemins à tenir synchronisés, et le second serait oublié au
+	 * premier correctif.
+	 */
+	async function putAccount(confirmAccountRetype: boolean) {
+		if (!editAccount) return;
+		await updateAccount(editAccount.id, {
+			name: editName.trim(),
+			accountType: editType,
+			// full-replace : role/postable sont obligatoires côté API.
+			role: editRole === NO_ROLE ? null : (editRole as AccountRole),
+			postable: editPostable,
+			version: editAccount.version,
+			...(confirmAccountRetype ? { confirmAccountRetype: true } : {}),
+		});
+	}
+
+	function editSucceeded() {
+		toast.success(
+			i18nMsg('accounts-updated', 'Compte { $number } modifié', {
+				number: editAccount?.number ?? '',
+			})
+		);
+		retypeWarnOpen = false;
+		editOpen = false;
+	}
+
 	async function submitEdit() {
 		if (!editAccount) return;
 		if (editValidation) {
@@ -244,29 +285,47 @@
 		editSubmitting = true;
 		editError = '';
 		try {
-			await updateAccount(editAccount.id, {
-				name: editName.trim(),
-				accountType: editType,
-				// full-replace : role/postable sont obligatoires côté API.
-				role: editRole === NO_ROLE ? null : (editRole as AccountRole),
-				postable: editPostable,
-				version: editAccount.version,
-			});
-			toast.success(
-				i18nMsg('accounts-updated', 'Compte { $number } modifié', { number: editAccount.number })
-			);
-			editOpen = false;
+			await putAccount(false);
+			editSucceeded();
 			await loadAccounts();
 		} catch (err) {
 			if (isApiError(err)) {
 				if (err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
 					editError = i18nMsg('accounts-error-stale', 'Les données ont été modifiées. Rechargez la page.');
+				} else if (err.code === 'ACCOUNT_HAS_ENTRIES') {
+					// Ce n'est pas une erreur à afficher : c'est une question à poser.
+					// ⚠️ La boîte d'édition RESTE ouverte derrière l'avertissement —
+					// qui renonce retrouve sa saisie intacte.
+					retypeImpact = readRetypeImpact(err.details);
+					if (retypeImpact) {
+						retypeWarnOpen = true;
+					} else {
+						// `details` illisible : on ne bricole pas un message à trous.
+						editError = err.message;
+					}
 				} else {
 					editError = err.message;
 				}
 			} else {
 				editError = i18nMsg('error-unexpected', 'Erreur inattendue.');
 			}
+		} finally {
+			editSubmitting = false;
+		}
+	}
+
+	/** L'utilisateur a lu l'ampleur et confirme : on rejoue avec le drapeau. */
+	async function confirmRetype() {
+		editSubmitting = true;
+		try {
+			await putAccount(true);
+			editSucceeded();
+			await loadAccounts();
+		} catch (err) {
+			retypeWarnOpen = false;
+			editError = isApiError(err)
+				? err.message
+				: i18nMsg('error-unexpected', 'Erreur inattendue.');
 		} finally {
 			editSubmitting = false;
 		}
@@ -620,6 +679,54 @@
 </Dialog.Root>
 
 <!-- Dialog : Archiver un compte -->
+<!-- Story 25-2-a (#382, #274) — avertissement bloquant avant de retyper un
+     compte mouvementé. Il NOMME l'ampleur : un refus qui ne dit pas ce qu'il
+     protège ne sert qu'à être contourné. -->
+<Dialog.Root bind:open={retypeWarnOpen}>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title>
+				{i18nMsg('accounts-retype-title', 'Changer le type du compte { $number } ?', {
+					number: editAccount?.number ?? '',
+				})}
+			</Dialog.Title>
+			<Dialog.Description>
+				{i18nMsg(
+					'accounts-retype-warning',
+					'Ce compte porte { $count } écriture(s). Changer son type reclasse tout son historique : les montants passent du compte de résultat au bilan, ou l’inverse.',
+					{ count: retypeImpact?.entryCount ?? 0 }
+				)}
+			</Dialog.Description>
+		</Dialog.Header>
+		{#if retypeImpact && retypeImpact.closedFiscalYears.length > 0}
+			<p class="text-destructive text-sm" data-testid="account-retype-closed-years">
+				{i18nMsg(
+					'accounts-retype-closed-years',
+					'Exercices clos concernés : { $years }. Leur résultat changera sans qu’aucune écriture ne l’explique.',
+					{ years: retypeImpact.closedFiscalYears.join(', ') }
+				)}
+			</p>
+		{/if}
+		<Dialog.Footer class="mt-4">
+			<Dialog.Close>
+				<Button variant="outline" type="button" autofocus data-testid="account-retype-dialog-cancel">
+					{i18nMsg('common-cancel', 'Annuler')}
+				</Button>
+			</Dialog.Close>
+			<Button
+				variant="destructive"
+				disabled={editSubmitting}
+				onclick={confirmRetype}
+				data-testid="account-retype-dialog-confirm"
+			>
+				{editSubmitting
+					? i18nMsg('accounts-updating', 'Modification…')
+					: i18nMsg('accounts-retype-confirm', 'Changer le type quand même')}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
 <Dialog.Root bind:open={archiveOpen}>
 	<Dialog.Content>
 		<Dialog.Header>

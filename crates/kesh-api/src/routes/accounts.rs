@@ -86,6 +86,21 @@ pub struct UpdateAccountRequest {
     /// serait rejeté par serde en 422, incohérent pour le client).
     #[serde(default)]
     pub postable: Option<bool>,
+    /// Story 25-2-a ([#382], [#274]) — autorise le changement d'`account_type`
+    /// d'un compte **qui porte des écritures**. Absent ≡ `false`.
+    ///
+    /// ⚠️ **L'asymétrie avec `role` et `postable` ci-dessus est délibérée, et
+    /// elle ne contredit pas le contrat full-replace.** Ces deux champs sont
+    /// obligatoires parce que leur omission ferait **perdre une donnée en
+    /// silence** — un client corrigeant un libellé effacerait le rôle du compte.
+    /// Ici l'effet est inverse : le défaut est le défaut **sûr**, celui qui
+    /// refuse. Rendre le champ obligatoire casserait tous les clients existants
+    /// sans rien protéger de plus.
+    ///
+    /// Suit le motif `confirm_*` de `routes/bank_imports.rs` — le seul motif de
+    /// confirmation explicite du dépôt, qu'il ne faut pas doubler d'un second.
+    #[serde(default)]
+    pub confirm_account_retype: bool,
     pub version: i32,
 }
 
@@ -279,8 +294,18 @@ pub async fn update_account(
         postable,
     };
 
-    let account =
-        accounts::update(&state.pool, id, req.version, current_user.user_id, changes).await?;
+    // Story 25-2-a : le dépôt refuse en 409 `ACCOUNT_HAS_ENTRIES` si le compte
+    // porte des écritures et que le client n'a pas confirmé. L'écran n'a rien à
+    // pré-vérifier — il réagit au refus, qui lui dit l'ampleur.
+    let account = accounts::update(
+        &state.pool,
+        id,
+        req.version,
+        current_user.user_id,
+        changes,
+        req.confirm_account_retype,
+    )
+    .await?;
     Ok(Json(AccountResponse::from(account)))
 }
 
