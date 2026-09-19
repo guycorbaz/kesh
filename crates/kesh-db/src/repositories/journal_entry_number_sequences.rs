@@ -90,12 +90,44 @@ pub async fn next_number_for(
         }
     };
 
-    // Étape 2 : consommer le numéro.
-    let rows = sqlx::query(
-        "UPDATE journal_entry_number_sequences \
-         SET next_number = next_number + 1, version = version + 1 \
+    // Étape 2 : **le plus grand des deux** — le compteur, ou le plus grand numéro
+    // réellement en service augmenté de un.
+    //
+    // ⛔ **Pourquoi, et ce n'est pas une précaution de confort.** Le compteur
+    // n'avance que si l'on passe par ici. Qu'une écriture arrive autrement — SQL
+    // direct, import partiel, intervention en base, choses qui arrivent en
+    // comptabilité — et le compteur reste en retard : il rendrait alors un numéro
+    // déjà pris, l'`UNIQUE` refuserait l'insertion, et **toute création
+    // d'écriture échouerait indéfiniment** jusqu'à une intervention manuelle.
+    // Pour un logiciel de comptabilité, un blocage total de la saisie est un mode
+    // de panne inacceptable ; ce rattrapage le remplace par une réparation
+    // silencieuse.
+    //
+    // ⚠️ **Il ne coûte RIEN à la propriété que la story installe.** Supprimer la
+    // dernière écriture fait redescendre `MAX + 1`, jamais le compteur : c'est
+    // donc le compteur qui l'emporte, et le numéro libéré n'est pas réattribué.
+    // Le rattrapage ne peut jouer que vers le HAUT.
+    //
+    // C'est exactement ce que fait la migration à l'amorçage — ici en continu.
+    let plancher: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(entry_number), 0) + 1 FROM journal_entries \
          WHERE company_id = ? AND fiscal_year_id = ?",
     )
+    .bind(company_id)
+    .bind(fiscal_year_id)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+
+    let next_number = next_number.max(plancher);
+
+    // Étape 3 : consommer le numéro retenu.
+    let rows = sqlx::query(
+        "UPDATE journal_entry_number_sequences \
+         SET next_number = ?, version = version + 1 \
+         WHERE company_id = ? AND fiscal_year_id = ?",
+    )
+    .bind(next_number + 1)
     .bind(company_id)
     .bind(fiscal_year_id)
     .execute(&mut **tx)

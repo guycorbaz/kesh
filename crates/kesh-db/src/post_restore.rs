@@ -258,6 +258,40 @@ pub const POST_RESTORE_BACKFILLS: &[PostRestoreBackfill] = &[
 #[doc(hidden)]
 pub const RETIRED_BACKFILLS: &[PostRestoreBackfill] = &[
     PostRestoreBackfill {
+        version: 20260722000001,
+        label: "20260722000001_accounts_role_postable.sql",
+        // CLASSE B. Sur ses 12 statements, les 10 `UPDATE` de rôle sont gardés
+        // `role IS NULL`, mais les 2 `UPDATE` de `postable` ne portent AUCUNE
+        // garde — rejoués sur une base à jour, ils écraseraient un `postable`
+        // posé à la main (`PUT /api/v1/accounts/{id}`, sémantique full-replace).
+        //
+        // Sentinelle valide : `role` et `postable` sont ajoutées par le MÊME
+        // `ALTER TABLE` que les 12 `UPDATE` — donc « colonne présente » implique
+        // bien « backfill appliqué ».
+        trigger: BackfillTrigger::Sentinels(&[("accounts", "role"), ("accounts", "postable")]),
+        sql: include_str!("post_restore/20260722000001_accounts_role_postable.sql"),
+    },
+    PostRestoreBackfill {
+        version: 20260729000001,
+        label: "20260729000001_invoice_lines_revenue_account_backfill.sql",
+        // CLASSE A. Les deux `UPDATE` sont gardés `revenue_account_id IS NULL`
+        // ET restreints aux pièces `validated` / `issued`. C'est la CONJONCTION
+        // qui porte la sûreté : une facture validée n'est plus modifiable, donc
+        // un `NULL` qui y subsiste ne peut PAS être un choix utilisateur.
+        //
+        // ⚠️ Ne PAS généraliser « un NULL n'est l'expression d'aucun choix » :
+        // le critère est FAUX en général (cf. `default_payable_account_id`, que
+        // le `PUT` des réglages efface délibérément en full-replace).
+        //
+        // Classe A et non B parce que sa colonne est créée par une migration
+        // DISTINCTE (`20260727000001`, DDL pur) : une sentinelle mentirait sur
+        // un backup pris entre les deux.
+        trigger: BackfillTrigger::Unconditional,
+        sql: include_str!(
+            "../migrations/20260729000001_invoice_lines_revenue_account_backfill.sql"
+        ),
+    },
+    PostRestoreBackfill {
         version: 20260828000001,
         label: "20260828000001_invoice_settlements_type.sql",
         // CLASSE B — cf. le doc-comment du fichier extrait. La sentinelle est
@@ -296,40 +330,6 @@ pub const RETIRED_BACKFILLS: &[PostRestoreBackfill] = &[
         // ni par la FK, qui n'existe plus, ni par le libellé, qui serait vide.
         trigger: BackfillTrigger::Sentinels(&[("audit_log", "actor_label")]),
         sql: include_str!("post_restore/20260910000001_audit_log_actor_label.sql"),
-    },
-    PostRestoreBackfill {
-        version: 20260722000001,
-        label: "20260722000001_accounts_role_postable.sql",
-        // CLASSE B. Sur ses 12 statements, les 10 `UPDATE` de rôle sont gardés
-        // `role IS NULL`, mais les 2 `UPDATE` de `postable` ne portent AUCUNE
-        // garde — rejoués sur une base à jour, ils écraseraient un `postable`
-        // posé à la main (`PUT /api/v1/accounts/{id}`, sémantique full-replace).
-        //
-        // Sentinelle valide : `role` et `postable` sont ajoutées par le MÊME
-        // `ALTER TABLE` que les 12 `UPDATE` — donc « colonne présente » implique
-        // bien « backfill appliqué ».
-        trigger: BackfillTrigger::Sentinels(&[("accounts", "role"), ("accounts", "postable")]),
-        sql: include_str!("post_restore/20260722000001_accounts_role_postable.sql"),
-    },
-    PostRestoreBackfill {
-        version: 20260729000001,
-        label: "20260729000001_invoice_lines_revenue_account_backfill.sql",
-        // CLASSE A. Les deux `UPDATE` sont gardés `revenue_account_id IS NULL`
-        // ET restreints aux pièces `validated` / `issued`. C'est la CONJONCTION
-        // qui porte la sûreté : une facture validée n'est plus modifiable, donc
-        // un `NULL` qui y subsiste ne peut PAS être un choix utilisateur.
-        //
-        // ⚠️ Ne PAS généraliser « un NULL n'est l'expression d'aucun choix » :
-        // le critère est FAUX en général (cf. `default_payable_account_id`, que
-        // le `PUT` des réglages efface délibérément en full-replace).
-        //
-        // Classe A et non B parce que sa colonne est créée par une migration
-        // DISTINCTE (`20260727000001`, DDL pur) : une sentinelle mentirait sur
-        // un backup pris entre les deux.
-        trigger: BackfillTrigger::Unconditional,
-        sql: include_str!(
-            "../migrations/20260729000001_invoice_lines_revenue_account_backfill.sql"
-        ),
     },
 ];
 

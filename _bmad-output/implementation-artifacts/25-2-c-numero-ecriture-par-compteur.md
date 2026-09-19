@@ -101,29 +101,59 @@ l'aligne ; elle n'invente pas de mécanisme.
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — La migration** (AC 1, 4, 5, 6, 7, 8)
-  - [ ] `CREATE TABLE journal_entry_number_sequences`, calquée jusqu'aux noms de contraintes.
-  - [ ] `INSERT … SELECT company_id, fiscal_year_id, MAX(entry_number) + 1 … GROUP BY` — amorçage.
-  - [ ] P5 : ligne d'audit + **recompte** des deux totaux et des trois partitions.
-  - [ ] P7 : triage, registre ou exemption justifiée.
-  - [ ] P6 : grep des sites positionnels, inspection de chacun.
-  - [ ] ⛔ **Gate complet, pas ciblé** — la règle l'impose dès qu'un patch touche
-        `crates/kesh-db/migrations/`.
+- [x] **T1 — La migration** (AC 1, 4, 5, 6, 7, 8) — `20260917000001`
+  - [x] `CREATE TABLE journal_entry_number_sequences`, calquée jusqu'aux noms de contraintes.
+  - [x] Amorçage `INSERT … SELECT … GROUP BY`, sans lequel la migration ferait **l'inverse** de son
+        but sur une installation en service : le compteur partirait de 1 et heurterait l'`UNIQUE`.
+  - [x] ⛔ **La table entre dans `TABLES_TO_TRUNCATE`** — non prévu par la spec, et **décisif** : un
+        compteur non sauvegardé revient vide d'une restauration, repart de 1 et réattribue. La story
+        aurait échoué sur son propre objet, en silence.
+  - [x] **P5** : ligne d'audit + les **cinq** valeurs recomptées depuis la source (69 fichiers,
+        69 lignes, en-tête 69, Total 69, partitions 8+61+0 = 69).
+  - [x] **P6** : sans objet — `migrations_before` résout **par version**, pas par position ; les
+        treize montages de `invoice_lines_revenue_account_backfill` sont insensibles.
+  - [x] **P7** : triage complet. Créer une table applicative **referme la fenêtre
+        d'importabilité** : les deux entrées du registre passent à `RETIRED_BACKFILLS` + exemption
+        `Hors fenêtre`, le registre actif redevient vide. ⚠️ **Mon exemption a d'abord invoqué
+        « Hors fenêtre » par analogie avec `vat_rates` ; le contrôle symétrique l'a REFUSÉE** — cette
+        migration *est* la fenêtre, et le marqueur est réservé à un fait de chronologie. Fondement
+        réécrit en termes de **couverture**. *Le garde-fou a corrigé un raisonnement.*
+  - [x] Squash du schéma de test régénéré **par son script** (il ne s'édite jamais) : 69 migrations,
+        40 tables, rejeu vérifié.
+  - [ ] ⛔ **Gate complet, pas ciblé** — reste à jouer, cf. T5.
 
-- [ ] **T2 — L'allocateur** (AC 1, 9)
-  - [ ] `journal_entry_number_sequences::next_number_for(tx, company_id, fiscal_year_id)`, sur le
-        modèle exact de l'existant, `rows_affected() == 1` compris.
-  - [ ] `create_in_tx` l'appelle ; le `SELECT COALESCE(MAX(...))` disparaît.
+- [x] **T2 — L'allocateur** (AC 1, 9)
+  - [x] `next_number_for`, calqué jusqu'au contrôle de `rows_affected() == 1`.
+  - [x] `create_in_tx` l'appelle ; le `COALESCE(MAX(...))` a disparu. ⚠️ La sérialisation **change
+        de nature, pas d'existence** : gap lock d'index → verrou de ligne du compteur.
 
-- [ ] **T3 — Les tests qui prouvent** (AC 2, 3, 9, 10)
-  - [ ] **Le test décisif de l'AC 2**, nommé pour ce qu'il vérifie.
-  - [ ] Trou du milieu → toujours un trou, assumé.
-  - [ ] Concurrence.
-  - [ ] Amorçage : base pré-existante avec écritures → le premier numéro suivant est bien `MAX + 1`.
+- [x] **T3 — Les tests qui prouvent** (AC 2, 3, 9)
+  - [x] **Le test décisif**, `un_numero_libere_n_est_jamais_reattribue`, **prouvé par mutation** :
+        `MAX + 1` rebranché → **un seul rouge sur 31**, le sien, sur son assertion. Les trois autres
+        tests neufs restent verts, et c'est juste — seule la *source* du numéro change.
+  - [x] Trou du milieu assumé ; concurrence ; invariant du compteur.
+  - [x] ⚠️ Assertions **relationnelles** et non absolues : `setup` efface les écritures mais **pas**
+        le compteur, donc exiger une valeur exacte ferait rougir pour une raison étrangère.
+  - [x] Deux tests existants réécrits pour la même cause — `test_create_sequential_numbering` disait
+        la bonne propriété (la contiguïté) avec la mauvaise ancre (`1..=3`).
+  - [ ] ⛔ **AC 4 NON ÉPROUVÉ — angle mort déclaré, pas coché en silence.** L'amorçage sur une base
+        **portant déjà des écritures** n'a **aucun** test : le mien vérifie l'invariant « le compteur
+        reste au-dessus du plus grand numéro », ce qui n'est pas la même chose. Le motif existe
+        pourtant (`apply_migrations_up_to` + `migrations_before`, cf.
+        `invoice_lines_revenue_account_backfill.rs`). ⚠️ **C'est le cas le plus dangereux** : sur une
+        installation en service, un amorçage manqué ferait repartir le compteur à 1 et heurter
+        aussitôt l'`UNIQUE`. À traiter avant de clore la story.
 
-- [ ] **T4 — Documentation** (AC 11)
-  - [ ] Vérifier ce que #368 a écrit ; `CHANGELOG.md` ; manuel si une promesse y figure — **contrôle
-        du PDF à plat**.
+- [x] **T4 — Documentation** (AC 11)
+  - [x] ⚠️ Le manuel n'était pas **faux**, il était devenu **incomplet** — nuance qui change le
+        correctif. Sa sous-section « Numérotation » (écrite pour #368) disait juste sur les **trous** ;
+        elle ne disait **rien** de la réattribution, le symptôme muet. Ajout, pas correction.
+  - [x] `CHANGELOG.md` : section « Non publié » créée, unicité vérifiée. ⚠️ **Conflit prévisible**
+        avec la branche 25-2-a, qui la crée au même endroit.
+  - [x] PDF régénéré (63 pages avant comme après), contrôlé **à plat** — apostrophes typographiques
+        et tirets cadratins, précisément où un grep naïf rend un faux négatif.
+  - [x] Écartés après vérification : brochure et § 811 parlent des **factures** (autre compteur) ;
+        `docs/api-external.md` ne mentionne pas la numérotation.
 
 - [ ] **T5 — Gates complets et PR** (AC 12)
 

@@ -94,11 +94,12 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // + companies_books_lock (Story 24-4c, #380) = 65,
     // + closing_accounts_not_postable (Story 24-5, #375) = 66,
     // + audit_log_actor_label (Story 25-1a, #376) = 67,
-    // + audit_log_company_id (Story 25-1c-zero, refs #378) = 68.
+    // + audit_log_company_id (Story 25-1c-zero, refs #378) = 68,
+    // + journal_entry_number_sequences (Story 25-2-c, refs #381) = 69.
     let total = kesh_db::MIGRATOR.migrations.len();
     assert_eq!(
-        total, 68,
-        "68 migrations attendues (67 précédentes + Story 25-1c-zero : audit_log_company_id)"
+        total, 69,
+        "69 migrations attendues (68 précédentes + Story 25-2-c : journal_entry_number_sequences)"
     );
 
     // Étape 1 : applique toutes les migrations sauf les 34 dernières. La
@@ -163,10 +164,17 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // d'upgrade réellement testé — sans que rien ne le signale. La fenêtre
     // s'élargit donc d'un cran à chaque migration ajoutée, ce qui est le sens
     // voulu : « depuis un socle figé, jusqu'à la dernière du dépôt ».
-    let n_before_upgrade_window = total - 34;
+    // Story 25-2-c : 34 → 35, frontière inchangée (69 - 35 = 34).
+    //
+    // ⚠️ J'ai d'abord porté `total` à 69 SANS toucher à ce soustracteur : le socle
+    // est alors passé de 34 à 35 migrations, la fenêtre a glissé d'un cran, et le
+    // test a rougi non plus sur son compteur mais sur `COUNT(accounts) : expected
+    // 4, got 2` — un échec qui ne ressemble en rien à sa cause. *Les deux nombres
+    // se bougent du même pas, et le commentaire ci-dessus le disait.*
+    let n_before_upgrade_window = total - 35;
     apply_migrations_up_to(&pool, n_before_upgrade_window)
         .await
-        .expect("apply_migrations_up_to(total - 34) failed");
+        .expect("apply_migrations_up_to(total - 35) failed");
 
     // Étape 2 : seed 1 company + 1 user + 2 accounts + 1 invoice + 1 contact.
     let company_id: i64 = sqlx::query_scalar(
