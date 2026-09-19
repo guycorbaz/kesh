@@ -190,8 +190,32 @@ occasions de réattribution muette pendant l'intervalle.
 
 ### File List
 
+| Fichier | État |
+|---|---|
+| `crates/kesh-db/migrations/20260917000001_journal_entry_number_sequences.sql` | **créé** — ⛔ appliqué, donc **figé par P8** |
+| `crates/kesh-db/src/repositories/journal_entry_number_sequences.rs` | **créé** — l'allocateur, et son rattrapage |
+| `crates/kesh-db/src/repositories/mod.rs` | modifié — déclaration du module |
+| `crates/kesh-db/src/repositories/journal_entries.rs` | modifié — le `MAX + 1` remplacé ; **6 tests** (4 neufs, 2 réécrits) ; nettoyage du compteur dans deux helpers |
+| `crates/kesh-db/src/repositories/invoices.rs` | modifié — nettoyage du compteur (son `.ok()` **avalait** l'échec) |
+| `crates/kesh-seed/src/lib.rs` | modifié — **code livré** : suppression du compteur avant les exercices |
+| `crates/kesh-db/src/backup.rs` | modifié — la table entre à `TABLES_TO_TRUNCATE` ; **sans quoi la story échouait sur son propre objet** |
+| `crates/kesh-db/src/post_restore.rs` | modifié — triage P7 : registre vidé, 2 entrées retirées, 3 exemptions |
+| `crates/kesh-db/migrations.sha384` | modifié — registre de checksums P8 |
+| `crates/kesh-db/test-schema/0001_schema_squash.sql` | **régénéré par son script** (il ne s'édite jamais) |
+| `crates/kesh-db/tests/migrations_upgrade_path.rs` | modifié — compteur **et** soustracteur |
+| `crates/kesh-api/tests/admin_full_import_e2e.rs` | modifié — 4 tests, substitution de source ; `report_entry` supprimé |
+| `crates/kesh-api/tests/admin_full_export_e2e.rs` | modifié — décompte 38 → 39 |
+| `crates/kesh-api/tests/admin_backup_e2e.rs` | modifié — commentaire qui annonçait « les 23 » pour 38 réelles |
+| `docs/migrations-idempotence-audit.md` | modifié — ligne + **cinq** valeurs recomptées |
+| `docs/manual/fr/user-manual.tex` + `.pdf` | modifiés — la garantie neuve ; PDF contrôlé à plat |
+| `CHANGELOG.md` | modifié — section « Non publié » ⚠️ **conflit prévisible avec la 25-2-a** |
+
 ## Change Log
 
 | Date | Étape | Note |
 |---|---|---|
+| 2026-09-18 | preuves | **Le rattrapage prouvé par DEUX mutations symétriques, et c'était nécessaire de les jouer à deux.** (1) **Compteur retiré** (plancher seul) → `un_numero_libere_n_est_jamais_reattribue` **rouge** : sans compteur, le numéro libéré est réattribué. (2) **Plancher retiré** (compteur seul) → `post_accept_reconciles_transaction_and_invoice` **rouge** : sans plancher, une écriture arrivée hors de l'allocateur bloque toute création. ⛔ **Aucune des deux moitiés n'est décorative** — chacune garde un défaut que l'autre ne voit pas, et une seule mutation aurait laissé croire le contraire. Chaque mutation jouée seule, restaurée, identité vérifiée avec un détecteur **borné au fichier**. ⚠️ La preuve antérieure du test décisif (rebranchement du `MAX + 1`) ne valait plus : l'allocateur avait changé depuis, et une preuve porte sur le code qu'elle a mesuré, pas sur son nom. |
+| 2026-09-18 | gate | **Gate complet backend : 2334 tests, 2334 passés, 4 ignorés, 91 s**, sur une base **remise à zéro et contrôlée** (41 tables, 1 société, 1 admin, 1 exercice, 5 comptes). `fmt` et `clippy --workspace --all-targets -D warnings` verts. Gate **complet et non ciblé** : la branche touche les migrations **et** deux repositories, ce qui interdit le ciblage. ⛔ **Aucun neuvième garde-fou** : les huit réparations tiennent ensemble — c'était l'objet même de ce run, après huit corrections dont aucune n'avait été trouvée par moi. ⚠️ **E2E pas encore jouée** ; frontend non concerné, la branche n'y touche aucun fichier. |
+| 2026-09-18 | dev T1→T4 | **⛔ Une décision de conception non prévue par la spec, et c'est la plus lourde : l'allocateur retient LE PLUS GRAND des deux** — son compteur, ou le plus grand numéro en service plus un. Sept tests de rapprochement l'ont imposée (`Duplicate entry '1-1-1'`) : le compteur n'avance que si l'on passe par lui, et si une écriture arrive autrement, il rend un numéro déjà pris — l'`UNIQUE` refuse alors, et **toute création d'écriture échoue indéfiniment** jusqu'à intervention manuelle. Pour une comptabilité, un blocage total de la saisie est inacceptable. ⚠️ **Le rattrapage ne coûte rien à la propriété** : il ne joue que vers le HAUT, et un numéro libéré laisse le compteur au-dessus. Établi au préalable, et contre mon premier relevé qui disait l'inverse : **aucun chemin de production n'insère une écriture hors de l'allocateur** (mon grep cherchait dans `src/`, où vivent aussi les tests de `kesh-db`). |
+| 2026-09-18 | dev — garde-fous | **HUIT garde-fous réveillés, et le dépôt me les a TOUS signalés : aucun trouvé par moi.** ⚠️ Mes inventaires P5/P6/P7 en avaient manqué la moitié. (1) `migrations.sha384`, registre de checksums P8 **que je n'avais jamais rencontré** — le test donne la ligne à coller. (2)(3) `migrations_upgrade_path` : compteur 68→69 **et** soustracteur 34→35 ; j'ai fait le premier sans le second, la fenêtre a glissé d'un cran et le test a rougi sur `COUNT(accounts) : expected 4, got 2` — *un échec qui ne ressemble en rien à sa cause*. (4) décompte d'export 38→39. (5)(6)(7) les trois tests de libellé d'acteur — **substitution de source**, pas ajout : j'ai d'abord ajouté le rejeu sans changer la source, et les trois ont continué d'échouer au même point. (8) `report_entry` devenu `never used`, supprimé plutôt que masqué. ⛔ **Et la clé étrangère du compteur vers `fiscal_years` a fait tomber DIX-SEPT tests d'un coup** — `invoice_number_sequences` porte la même, mais ne crée sa ligne qu'à la validation d'une facture ; la mienne en crée une dès la première écriture. Quatre sites de nettoyage l'ignoraient, dont `kesh-seed` (code **livré**) et un `invoices.rs` dont le `.ok()` aurait **avalé** l'échec en laissant un résidu. |
 | 2026-09-16 | spec | Story créée, détachée de la 25-2-b. Fait établi le même jour : le compteur monotone **existe déjà** dans le dépôt (`invoice_number_sequences`), à la portée exacte d'`entry_number` — la story l'étend au lieu de l'inventer. |
