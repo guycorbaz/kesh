@@ -562,13 +562,10 @@ pub async fn update(
     // ⚠️ Un compte **vierge** retypé reste un `account.updated` : sans écriture,
     // il n'y a pas d'historique à reclasser, donc rien à signaler.
     //
-    // ⛔ **DETTE ASSUMÉE ET TRACÉE** : `account.retyped` doit être inscrit au
-    // registre `crates/kesh-api/src/audit_labels.rs` et traduit dans les quatre
-    // locales, faute de quoi le journal d'audit affichera **le code brut** — le
-    // repli délibéré de la Story 25-1c-a. Ce fichier N'EXISTE PAS sur `main` : il
-    // naît avec la 25-1c-a, dont la PR #439 est ouverte et non mergée (vérifié
-    // par `git cat-file -e origin/main:…`, pas supposé). L'inscription est donc
-    // portée par cette PR-là, et non oubliée ici.
+    // `account.retyped` est inscrit au registre `crates/kesh-api/src/audit_labels.rs`
+    // et traduit dans les quatre locales — sans quoi le journal d'audit afficherait
+    // le code brut, repli délibéré de la Story 25-1c-a. L'inscription a été faite
+    // au merge de `main` dans la 25-2-a, le registre n'existant pas avant (#439).
     let action = match &retype_trace {
         Some((entry_count, closed_fiscal_years)) => {
             audit_details["retype"] = serde_json::json!({

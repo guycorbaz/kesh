@@ -43,6 +43,7 @@ use crate::routes::limits::{
     MAX_DECIMAL_SCALE, MAX_LINE_TOTAL, MAX_QUANTITY, MAX_UNIT_PRICE, scale_within,
 };
 use crate::routes::vat;
+use crate::util::csv_sanitize;
 
 // ---------------------------------------------------------------------------
 // Limites
@@ -1165,38 +1166,10 @@ const CSV_HEADER_KEYS: [&str; 7] = [
     "echeancier-csv-header-paid-at",
 ];
 
-/// M3 (review pass 1 G2) : neutralise l'injection de formules Excel/Calc.
-/// Si une cellule commence par `=`, `+`, `-`, `@` (voir OWASP CSV Injection),
-/// on préfixe d'une apostrophe simple pour forcer l'interprétation texte.
-///
-/// P3 (review pass 2) : supprime aussi les CR/LF en défense en profondeur.
-/// `csv::Writer` quote les champs contenant `\n`/`\r`, mais un champ remplacé
-/// par un espace reste lisible sans casser l'alignement des lignes si un
-/// parseur tiers naïf lit le fichier.
-fn csv_sanitize(raw: String) -> String {
-    // B9 (review pass 1 G2 B) : neutralise aussi TAB (Excel l'interprète
-    // comme déclencheur dans certains contextes) et le whitespace de tête
-    // (un attaquant peut bypasser le check via " =cmd").
-    let raw: String = raw
-        .chars()
-        .map(|c| {
-            if c == '\r' || c == '\n' || c == '\t' {
-                ' '
-            } else {
-                c
-            }
-        })
-        .collect();
-    if let Some(first) = raw.trim_start().chars().next()
-        && matches!(first, '=' | '+' | '-' | '@')
-    {
-        let mut out = String::with_capacity(raw.len() + 1);
-        out.push('\'');
-        out.push_str(&raw);
-        return out;
-    }
-    raw
-}
+// `csv_sanitize` vit désormais dans `crate::util` (Story 25-1c-a) : l'export du
+// journal d'audit en est le deuxième consommateur, et la règle DRY du dépôt
+// interdit la recopie. Comportement identique ; ses tests unitaires, qui
+// n'existaient pas, ont été écrits à l'extraction (`util.rs`).
 
 const CSV_HEADER_FALLBACKS: [&str; 7] = [
     "Numéro",

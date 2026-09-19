@@ -204,6 +204,41 @@ pub(crate) fn hex_encode(bytes: &[u8]) -> String {
     s
 }
 
+/// Neutralise une cellule CSV contre l'**injection de formule**.
+///
+/// Un tableur interprète une cellule commençant par `=`, `+`, `-` ou `@` comme
+/// une formule : on préfixe d'une apostrophe simple pour forcer le texte.
+///
+/// Neutralise aussi TAB, CR et LF — Excel traite la tabulation en déclencheur
+/// dans certains contextes, et un champ remplacé par une espace reste lisible
+/// sans casser l'alignement pour un parseur tiers naïf. Le **whitespace de
+/// tête** est pris en compte : sans cela, `" =cmd"` contournerait le contrôle.
+///
+/// ⛔ **Seul échappement anti-formule du dépôt** — le moteur `kesh-report` n'en
+/// a pas. Extraite ici de `routes::invoices` par la Story 25-1c-a (deuxième
+/// consommateur : l'export du journal d'audit), **comportement identique**.
+pub(crate) fn csv_sanitize(raw: String) -> String {
+    let raw: String = raw
+        .chars()
+        .map(|c| {
+            if c == '\r' || c == '\n' || c == '\t' {
+                ' '
+            } else {
+                c
+            }
+        })
+        .collect();
+    if let Some(first) = raw.trim_start().chars().next()
+        && matches!(first, '=' | '+' | '-' | '@')
+    {
+        let mut out = String::with_capacity(raw.len() + 1);
+        out.push('\'');
+        out.push_str(&raw);
+        return out;
+    }
+    raw
+}
+
 // ===========================================================================
 // Tests
 // ===========================================================================
@@ -211,6 +246,46 @@ pub(crate) fn hex_encode(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ----- csv_sanitize (Story 25-1c-a, AC 13) -----
+    //
+    // ⛔ La fonction n'avait AUCUN test avant son extraction. Une fonction de
+    // sécurité non testée qu'on déplace est une fonction qu'on peut casser sans
+    // le voir.
+
+    #[test]
+    fn csv_sanitize_prefixes_each_formula_trigger() {
+        for declencheur in ['=', '+', '-', '@'] {
+            let cellule = format!("{declencheur}HYPERLINK(\"x\")");
+            assert_eq!(
+                csv_sanitize(cellule.clone()),
+                format!("'{cellule}"),
+                "une cellule commençant par `{declencheur}` doit être préfixée"
+            );
+        }
+    }
+
+    #[test]
+    fn csv_sanitize_sees_through_leading_whitespace() {
+        // Sans `trim_start`, `" =cmd"` contournerait le contrôle.
+        assert_eq!(csv_sanitize(" =cmd".to_string()), "' =cmd");
+        assert_eq!(csv_sanitize("\t=cmd".to_string()), "' =cmd");
+    }
+
+    #[test]
+    fn csv_sanitize_replaces_cr_lf_and_tab_with_spaces() {
+        assert_eq!(
+            csv_sanitize("a\rb\nc\td".to_string()),
+            "a b c d",
+            "CR, LF et TAB deviennent des espaces"
+        );
+    }
+
+    #[test]
+    fn csv_sanitize_leaves_an_ordinary_string_untouched() {
+        assert_eq!(csv_sanitize("Müller SA".to_string()), "Müller SA");
+        assert_eq!(csv_sanitize(String::new()), "");
+    }
 
     // ----- slugify -----
 
