@@ -136,13 +136,18 @@ l'aligne ; elle n'invente pas de mécanisme.
         le compteur, donc exiger une valeur exacte ferait rougir pour une raison étrangère.
   - [x] Deux tests existants réécrits pour la même cause — `test_create_sequential_numbering` disait
         la bonne propriété (la contiguïté) avec la mauvaise ancre (`1..=3`).
-  - [ ] ⛔ **AC 4 NON ÉPROUVÉ — angle mort déclaré, pas coché en silence.** L'amorçage sur une base
-        **portant déjà des écritures** n'a **aucun** test : le mien vérifie l'invariant « le compteur
-        reste au-dessus du plus grand numéro », ce qui n'est pas la même chose. Le motif existe
-        pourtant (`apply_migrations_up_to` + `migrations_before`, cf.
-        `invoice_lines_revenue_account_backfill.rs`). ⚠️ **C'est le cas le plus dangereux** : sur une
-        installation en service, un amorçage manqué ferait repartir le compteur à 1 et heurter
-        aussitôt l'`UNIQUE`. À traiter avant de clore la story.
+  - [x] **AC 4 — l'amorçage sur une base portant déjà des écritures**,
+        `tests/journal_entry_number_sequences_bootstrap.rs` : migrations jusqu'à juste avant
+        `20260917000001` (index **par version**, P6), écritures d'avant insérées en SQL brut —
+        **numéros troués** (`1, 2, 5`), sociétés et exercices **désalignés**, un exercice **sans**
+        écriture —, puis `MIGRATOR.run()`. Assertion de montage : la table n'existe pas avant.
+        **Prouvé par trois mutations** de l'amorçage, toutes tuées : retiré, `COUNT(*) + 1`,
+        `MAX` sans `+ 1`. Inscrit à `ALLOWED_REAL_MIGRATOR_FILES`.
+        ⚠️ **Le danger décrit ici était mal nommé.** Avec le plancher de l'allocateur, un amorçage
+        manqué ne heurte plus l'`UNIQUE` : il **réattribue en silence** les numéros des dernières
+        écritures supprimées. C'est pire — muet — et c'est ce que l'assertion (2) du test exerce.
+        L'en-tête de la migration dit encore « la contrainte d'unicité refuserait l'insertion » :
+        vrai au moment où il a été écrit, **figé par P8**, donc corrigé ici et non là-bas.
 
 - [x] **T4 — Documentation** (AC 11)
   - [x] ⚠️ Le manuel n'était pas **faux**, il était devenu **incomplet** — nuance qui change le
@@ -202,6 +207,8 @@ occasions de réattribution muette pendant l'intervalle.
 | `crates/kesh-db/src/post_restore.rs` | modifié — triage P7 : registre vidé, 2 entrées retirées, 3 exemptions |
 | `crates/kesh-db/migrations.sha384` | modifié — registre de checksums P8 |
 | `crates/kesh-db/test-schema/0001_schema_squash.sql` | **régénéré par son script** (il ne s'édite jamais) |
+| `crates/kesh-db/tests/journal_entry_number_sequences_bootstrap.rs` | **créé** — AC 4, l'amorçage sur base peuplée |
+| `crates/kesh-db/tests/test_schema_guard.rs` | modifié — le test ci-dessus inscrit à `ALLOWED_REAL_MIGRATOR_FILES` |
 | `crates/kesh-db/tests/migrations_upgrade_path.rs` | modifié — compteur **et** soustracteur |
 | `crates/kesh-api/tests/admin_full_import_e2e.rs` | modifié — 4 tests, substitution de source ; `report_entry` supprimé |
 | `crates/kesh-api/tests/admin_full_export_e2e.rs` | modifié — décompte 38 → 39 |
@@ -214,6 +221,8 @@ occasions de réattribution muette pendant l'intervalle.
 
 | Date | Étape | Note |
 |---|---|---|
+| 2026-09-19 | gate | **Gate complet backend : 2335 tests, 2335 passés, 4 ignorés, 91 s** (2334 + le test d'amorçage), base remise à zéro et contrôlée ; `fmt` et `clippy -D warnings` verts. **E2E complète : 214 passés, 9 échecs, 19 ignorés, 8,4 min**, `kesh_e2e` reconstruite (`DROP` + migrations), frontend rebuildé, `smtpConfigured:true`. Les 9 échecs, jugés fichier par fichier, sont **tous** attendus : les 7 de la KF-029 (`mode-expert:26,41`, `onboarding-path-b:65,92`, `onboarding:57,77,150`) et les 2 de la KF-045 (`invoices:405,429`), run lancé à 09:14 UTC. Aucune pollution. |
+| 2026-09-19 | AC 4 | **L'angle mort déclaré est fermé** : test d'amorçage sur base peuplée, un test neuf, trois mutations de l'amorçage toutes tuées (retiré → `[]` ; `COUNT(*)+1` → `(10,110,4)` ; `MAX` sans `+1` → `(10,110,5)`), fichier de migration restauré et vérifié par `git status`. ⚠️ Le danger était **mal nommé** dans cette fiche et dans l'en-tête de la migration : depuis le plancher, un amorçage manqué ne bloque plus la saisie, il **réattribue en silence**. ⚠️ L'assertion comportementale (2) n'est pas éprouvée **isolément** : chaque mutation tombe d'abord sur l'assertion (1). |
 | 2026-09-18 | preuves | **Le rattrapage prouvé par DEUX mutations symétriques, et c'était nécessaire de les jouer à deux.** (1) **Compteur retiré** (plancher seul) → `un_numero_libere_n_est_jamais_reattribue` **rouge** : sans compteur, le numéro libéré est réattribué. (2) **Plancher retiré** (compteur seul) → `post_accept_reconciles_transaction_and_invoice` **rouge** : sans plancher, une écriture arrivée hors de l'allocateur bloque toute création. ⛔ **Aucune des deux moitiés n'est décorative** — chacune garde un défaut que l'autre ne voit pas, et une seule mutation aurait laissé croire le contraire. Chaque mutation jouée seule, restaurée, identité vérifiée avec un détecteur **borné au fichier**. ⚠️ La preuve antérieure du test décisif (rebranchement du `MAX + 1`) ne valait plus : l'allocateur avait changé depuis, et une preuve porte sur le code qu'elle a mesuré, pas sur son nom. |
 | 2026-09-18 | gate | **Gate complet backend : 2334 tests, 2334 passés, 4 ignorés, 91 s**, sur une base **remise à zéro et contrôlée** (41 tables, 1 société, 1 admin, 1 exercice, 5 comptes). `fmt` et `clippy --workspace --all-targets -D warnings` verts. Gate **complet et non ciblé** : la branche touche les migrations **et** deux repositories, ce qui interdit le ciblage. ⛔ **Aucun neuvième garde-fou** : les huit réparations tiennent ensemble — c'était l'objet même de ce run, après huit corrections dont aucune n'avait été trouvée par moi. ⚠️ **E2E pas encore jouée** ; frontend non concerné, la branche n'y touche aucun fichier. |
 | 2026-09-18 | dev T1→T4 | **⛔ Une décision de conception non prévue par la spec, et c'est la plus lourde : l'allocateur retient LE PLUS GRAND des deux** — son compteur, ou le plus grand numéro en service plus un. Sept tests de rapprochement l'ont imposée (`Duplicate entry '1-1-1'`) : le compteur n'avance que si l'on passe par lui, et si une écriture arrive autrement, il rend un numéro déjà pris — l'`UNIQUE` refuse alors, et **toute création d'écriture échoue indéfiniment** jusqu'à intervention manuelle. Pour une comptabilité, un blocage total de la saisie est inacceptable. ⚠️ **Le rattrapage ne coûte rien à la propriété** : il ne joue que vers le HAUT, et un numéro libéré laisse le compteur au-dessus. Établi au préalable, et contre mon premier relevé qui disait l'inverse : **aucun chemin de production n'insère une écriture hors de l'allocateur** (mon grep cherchait dans `src/`, où vivent aussi les tests de `kesh-db`). |
