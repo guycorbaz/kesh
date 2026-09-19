@@ -2094,7 +2094,7 @@ mod tests {
         // EXACTEMENT le numéro que le compteur s'apprête à rendre — le seul cas
         // où le rater produit une collision. Le compteur, lui, n'en sait rien.
         let hors_bande = compteur;
-        sqlx::query(
+        let hors_bande_id = sqlx::query(
             "INSERT INTO journal_entries \
              (company_id, fiscal_year_id, entry_number, entry_date, journal, description) \
              VALUES (?, ?, ?, ?, 'OD', 'hors allocateur')",
@@ -2105,7 +2105,8 @@ mod tests {
         .bind(today)
         .execute(&pool)
         .await
-        .unwrap();
+        .unwrap()
+        .last_insert_id();
 
         let rendu = super::super::journal_entry_number_sequences::next_number_for(
             &mut tx, company_id, fy_id,
@@ -2113,6 +2114,16 @@ mod tests {
         .await
         .unwrap();
         tx.rollback().await.unwrap();
+
+        // L'écriture hors bande a été validée HORS de `tx` : le `rollback` ne
+        // l'emporte pas. La supprimer avant l'assertion, pour qu'elle parte même
+        // si le test rougit — un résidu est ce qui fait tomber le gate SUIVANT
+        // (KF-039). *(Passe 2 de revue.)*
+        sqlx::query("DELETE FROM journal_entries WHERE id = ?")
+            .bind(hors_bande_id)
+            .execute(&pool)
+            .await
+            .unwrap();
 
         assert!(
             rendu > hors_bande,
