@@ -339,14 +339,81 @@ fn is_no_op_change(before: &Account, changes: &AccountUpdate) -> bool {
         && before.postable == changes.postable
 }
 
+/// Recense ce qu'un changement d'`account_type` infligerait à l'historique d'un
+/// compte : le nombre d'écritures **distinctes** qui le mouvementent, et les noms
+/// des exercices **clos** parmi elles.
+///
+/// Story 25-2-a ([#382], [#274]) — c'est la matière du refus `ACCOUNT_HAS_ENTRIES`.
+/// Un refus qui ne dit pas ce qu'il protège ne sert qu'à être contourné : le
+/// comptable doit lire *combien* d'écritures et *quels exercices clos* basculent
+/// d'un état à l'autre avant de confirmer.
+///
+/// ⚠️ **Des écritures distinctes, pas des lignes.** Une écriture qui mouvemente
+/// deux fois le même compte reste **une** écriture ; l'annoncer deux fois
+/// surestimerait l'ampleur à l'instant précis où l'utilisateur décide.
+///
+/// Générique sur l'exécuteur — comme `journal_entries::reversal_blocker` et
+/// `journal_entries::count_by_company` — pour servir les tests sur un pool et
+/// [`update`] dans sa propre transaction, sans deux variantes à tenir
+/// synchronisées.
+pub(crate) async fn retype_impact<'e, E>(
+    executor: E,
+    company_id: i64,
+    account_id: i64,
+) -> Result<(i64, Vec<String>), DbError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::MySql>,
+{
+    // Une seule requête, groupée par exercice.
+    //
+    // ⚠️ `COUNT(DISTINCT je.id)` et non `COUNT(*)` : deux lignes d'une même
+    // écriture sur ce compte ne font pas deux écritures.
+    //
+    // ⚠️ Le total s'obtient en **additionnant** les comptes par exercice, et
+    // c'est exact parce qu'une écriture appartient à un seul exercice
+    // (`journal_entries.fiscal_year_id` est unique et non nul). L'alternative —
+    // un `GROUP_CONCAT` des noms d'exercices clos — exigerait un séparateur
+    // qu'aucune contrainte n'interdit d'apparaître dans `fiscal_years.name`.
+    let rows: Vec<(String, String, i64)> = sqlx::query_as(
+        "SELECT fy.name, fy.status, COUNT(DISTINCT je.id) \
+           FROM journal_entry_lines jel \
+           JOIN journal_entries je ON je.id = jel.entry_id \
+           JOIN fiscal_years fy ON fy.id = je.fiscal_year_id \
+          WHERE jel.account_id = ? AND je.company_id = ? \
+          GROUP BY fy.id, fy.name, fy.status \
+          ORDER BY fy.name",
+    )
+    .bind(account_id)
+    .bind(company_id)
+    .fetch_all(executor)
+    .await
+    .map_err(map_db_error)?;
+
+    let count: i64 = rows.iter().map(|(_, _, n)| *n).sum();
+    let closed_fiscal_years: Vec<String> = rows
+        .iter()
+        .filter(|(_, status, _)| status == "Closed")
+        .map(|(name, _, _)| name.clone())
+        .collect();
+
+    Ok((count, closed_fiscal_years))
+}
+
 /// Met à jour un compte actif (nom et type). Verrouillage optimiste + audit log (Story 3.5).
 /// Retourne `IllegalStateTransition` si le compte est archivé.
+///
+/// `confirm_retype` (Story 25-2-a, [#382], [#274]) : autorise le changement
+/// d'`account_type` d'un compte **qui porte des écritures**. Sans lui, un tel
+/// changement est refusé par [`DbError::AccountHasEntries`], qui en nomme
+/// l'ampleur. ⚠️ Il ne dispense d'**aucune** autre garde — ni du verrou
+/// optimiste, ni de l'interdit sur compte archivé.
 pub async fn update(
     pool: &MySqlPool,
     id: i64,
     version: i32,
     user_id: i64,
     changes: AccountUpdate,
+    confirm_retype: bool,
 ) -> Result<Account, DbError> {
     check_role_account_type(changes.role, changes.account_type)?;
 
@@ -411,6 +478,39 @@ pub async fn update(
         return Err(role_conflict(role, holder));
     }
 
+    // Story 25-2-a ([#382], [#274]) — retyper un compte mouvementé reclasse tout
+    // son historique, exercices CLOS compris : le résultat des années
+    // antérieures change, donc le report à nouveau, donc le bilan d'ouverture de
+    // l'exercice courant. Sans écriture pour l'expliquer.
+    //
+    // ⛔ **La place de cette garde est un critère de la story, pas un détail.**
+    // Elle vient APRÈS le court-circuit no-op — renvoyer le même type n'est pas
+    // un retypage — et APRÈS le contrôle de version — confirmer un retypage ne
+    // doit jamais écraser la modification concurrente d'un tiers. Et AVANT
+    // l'`UPDATE`, faute de quoi elle ne garderait rien.
+    // ⚠️ L'ampleur est calculée **une fois**, et elle sert deux fois : à refuser
+    // quand rien n'est confirmé, et à NOURRIR L'AUDIT quand le geste passe. Un
+    // `account.retyped` qui ne dirait pas combien d'écritures ont basculé ne
+    // vaudrait pas mieux qu'un `account.updated` — c'est l'ampleur qui fait la
+    // différence pour qui relira le journal.
+    let mut retype_trace: Option<(i64, Vec<String>)> = None;
+    if before.account_type != changes.account_type {
+        let (entry_count, closed_fiscal_years) =
+            retype_impact(&mut *tx, before.company_id, id).await?;
+        if entry_count > 0 {
+            if !confirm_retype {
+                tx.rollback().await.map_err(map_db_error)?;
+                return Err(DbError::AccountHasEntries {
+                    entry_count,
+                    closed_fiscal_years,
+                    from_type: before.account_type.as_str(),
+                    to_type: changes.account_type.as_str(),
+                });
+            }
+            retype_trace = Some((entry_count, closed_fiscal_years));
+        }
+    }
+
     let rows = sqlx::query(
         "UPDATE accounts SET name = ?, account_type = ?, role = ?, postable = ?, \
          version = version + 1 WHERE id = ? AND version = ? AND active = TRUE",
@@ -445,15 +545,45 @@ pub async fn update(
     // 24-4b (#380) — une écriture comptabilisée ne se réécrit plus. Le format
     // {before, after} reste celui de tous les `update` du dépôt.
     // Rollback explicite pour cohérence avec les autres branches d'erreur.
-    let audit_details = serde_json::json!({
+    let mut audit_details = serde_json::json!({
         "before": account_snapshot_json(&before),
         "after": account_snapshot_json(&after),
     });
+
+    // Story 25-2-a ([#382], [#274]) — un retypage de compte MOUVEMENTÉ porte son
+    // propre code d'action.
+    //
+    // ⛔ **Pourquoi un code distinct et non un `account.updated` de plus** : ce
+    // geste ne modifie pas un compte, il **reclasse un historique**, exercices
+    // clos compris. Noyé parmi les renommages et les changements de rôle, il
+    // serait introuvable le jour où quelqu'un cherche pourquoi le résultat d'une
+    // année close a bougé — et c'est précisément ce jour-là qu'on le cherche.
+    //
+    // ⚠️ Un compte **vierge** retypé reste un `account.updated` : sans écriture,
+    // il n'y a pas d'historique à reclasser, donc rien à signaler.
+    //
+    // `account.retyped` est inscrit au registre `crates/kesh-api/src/audit_labels.rs`
+    // et traduit dans les quatre locales — sans quoi le journal d'audit afficherait
+    // le code brut, repli délibéré de la Story 25-1c-a. L'inscription a été faite
+    // au merge de `main` dans la 25-2-a, le registre n'existant pas avant (#439).
+    let action = match &retype_trace {
+        Some((entry_count, closed_fiscal_years)) => {
+            audit_details["retype"] = serde_json::json!({
+                "fromType": before.account_type.as_str(),
+                "toType": after.account_type.as_str(),
+                "entryCount": entry_count,
+                "closedFiscalYears": closed_fiscal_years,
+            });
+            "account.retyped"
+        }
+        None => "account.updated",
+    };
+
     if let Err(e) = audit_log::insert_in_tx(
         &mut tx,
         NewAuditLogEntry::user(
             user_id,
-            "account.updated".to_string(),
+            action.to_string(),
             "account".to_string(),
             id,
             Some(audit_details),
@@ -1017,6 +1147,708 @@ mod tests {
             .ok();
     }
 
+    // -----------------------------------------------------------------------
+    // Story 25-2-a ([#382], [#274]) — recensement de l'ampleur d'un retypage.
+    // -----------------------------------------------------------------------
+
+    /// Nettoyage **profond** d'une société jetable.
+    ///
+    /// ⚠️ `drop_role_company` ne suffit pas ici, et son insuffisance est muette.
+    /// Il enchaîne `DELETE FROM accounts` puis `DELETE FROM companies` ; or
+    /// `fk_jel_account` est en `ON DELETE RESTRICT`. Dès qu'une écriture
+    /// mouvemente un compte de la société, les deux suppressions échouent — et
+    /// l'échec est **avalé par `.ok()`** —, laissant en base société, exercice,
+    /// comptes et écritures. C'est le mode d'échec de la **KF-039** : un résidu
+    /// qui fait rougir le gate SUIVANT, sur un module que la branche ne touche
+    /// pas.
+    ///
+    /// D'où deux différences délibérées : l'ordre imposé par les clés étrangères,
+    /// et un **`panic!` au lieu d'un `.ok()`** — un nettoyage qui échoue doit le
+    /// dire, sans quoi il est pire que pas de nettoyage du tout.
+    ///
+    /// `audit_log` n'est **pas** touchée : `company_id` y est un pointeur logique
+    /// sans clé étrangère (Story 25-1c-zero), et la piste d'audit se conserve.
+    async fn drop_company_deep(pool: &MySqlPool, company_id: i64) {
+        for sql in [
+            "DELETE FROM journal_entries WHERE company_id = ?",
+            "UPDATE accounts SET parent_id = NULL WHERE company_id = ?",
+            "DELETE FROM accounts WHERE company_id = ?",
+            // Story 25-2-c : le compteur d'écritures porte une clé étrangère
+            // `RESTRICT` vers l'exercice, et toute écriture créée en pose une
+            // ligne. Il part donc avant l'exercice.
+            "DELETE FROM journal_entry_number_sequences WHERE company_id = ?",
+            "DELETE FROM fiscal_years WHERE company_id = ?",
+            "DELETE FROM companies WHERE id = ?",
+        ] {
+            sqlx::query(sql)
+                .bind(company_id)
+                .execute(pool)
+                .await
+                .unwrap_or_else(|e| panic!("nettoyage « {sql} » : {e}"));
+        }
+    }
+
+    /// Société jetable **avec son exercice** — `mk_role_company` n'en crée aucun,
+    /// et une écriture en exige un. L'exercice naît toujours `Open` : une
+    /// écriture ne s'insère pas dans un exercice clos, si bien que le cas « clos »
+    /// se construit comme dans la vraie vie — écrire d'abord, fermer ensuite.
+    async fn mk_company_with_fy(pool: &MySqlPool, tag: &str) -> (i64, i64) {
+        let name = format!("Test roles {tag}");
+        if let Ok(Some(row)) =
+            sqlx::query_as::<_, (i64,)>("SELECT id FROM companies WHERE name = ?")
+                .bind(&name)
+                .fetch_optional(pool)
+                .await
+        {
+            drop_company_deep(pool, row.0).await;
+        }
+
+        let company_id = mk_role_company(pool, tag).await;
+        let res = sqlx::query(
+            "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
+             VALUES (?, ?, '2026-01-01', '2026-12-31', 'Open')",
+        )
+        .bind(company_id)
+        .bind(format!("Exercice {tag}"))
+        .execute(pool)
+        .await
+        .expect("création de l'exercice de test");
+
+        (company_id, res.last_insert_id() as i64)
+    }
+
+    async fn mk_account(
+        pool: &MySqlPool,
+        company_id: i64,
+        admin_user_id: i64,
+        number: &str,
+        account_type: AccountType,
+    ) -> i64 {
+        create(
+            pool,
+            admin_user_id,
+            NewAccount {
+                company_id,
+                number: number.into(),
+                name: format!("Compte {number}"),
+                account_type,
+                parent_id: None,
+                role: None,
+                postable: true,
+            },
+        )
+        .await
+        .expect("création du compte de test")
+        .id
+    }
+
+    /// Écriture équilibrée à trois lignes dont **deux sur le compte débité** :
+    /// c'est la forme qui distingue « écritures distinctes » de « lignes ».
+    async fn mk_entry_two_lines_on_debit(
+        pool: &MySqlPool,
+        company_id: i64,
+        fiscal_year_id: i64,
+        admin_user_id: i64,
+        debit_account: i64,
+        credit_account: i64,
+    ) {
+        use crate::entities::journal_entry::{Journal, NewJournalEntry, NewJournalEntryLine};
+        use crate::repositories::journal_entries;
+        use rust_decimal::Decimal;
+
+        journal_entries::create(
+            pool,
+            fiscal_year_id,
+            admin_user_id,
+            NewJournalEntry {
+                company_id,
+                entry_date: chrono::NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(),
+                journal: Journal::OD,
+                description: "Écriture de test 25-2-a".into(),
+                project_id: None,
+                lines: vec![
+                    NewJournalEntryLine {
+                        account_id: debit_account,
+                        debit: Decimal::from(100),
+                        credit: Decimal::ZERO,
+                        project_id: None,
+                    },
+                    NewJournalEntryLine {
+                        account_id: debit_account,
+                        debit: Decimal::from(50),
+                        credit: Decimal::ZERO,
+                        project_id: None,
+                    },
+                    NewJournalEntryLine {
+                        account_id: credit_account,
+                        debit: Decimal::ZERO,
+                        credit: Decimal::from(150),
+                        project_id: None,
+                    },
+                ],
+            },
+        )
+        .await
+        .expect("création de l'écriture de test");
+    }
+
+    /// Écriture simple à deux lignes.
+    async fn mk_entry(
+        pool: &MySqlPool,
+        company_id: i64,
+        fiscal_year_id: i64,
+        admin_user_id: i64,
+        debit_account: i64,
+        credit_account: i64,
+    ) {
+        use crate::entities::journal_entry::{Journal, NewJournalEntry, NewJournalEntryLine};
+        use crate::repositories::journal_entries;
+        use rust_decimal::Decimal;
+
+        journal_entries::create(
+            pool,
+            fiscal_year_id,
+            admin_user_id,
+            NewJournalEntry {
+                company_id,
+                entry_date: chrono::NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(),
+                journal: Journal::OD,
+                description: "Écriture de test 25-2-a".into(),
+                project_id: None,
+                lines: vec![
+                    NewJournalEntryLine {
+                        account_id: debit_account,
+                        debit: Decimal::from(100),
+                        credit: Decimal::ZERO,
+                        project_id: None,
+                    },
+                    NewJournalEntryLine {
+                        account_id: credit_account,
+                        debit: Decimal::ZERO,
+                        credit: Decimal::from(100),
+                        project_id: None,
+                    },
+                ],
+            },
+        )
+        .await
+        .expect("création de l'écriture de test");
+    }
+
+    /// AC 1 — un compte qu'aucune écriture ne touche ne recense rien, et le
+    /// retypage doit donc rester libre.
+    ///
+    /// ⚠️ **La société porte DÉLIBÉRÉMENT une écriture sur un AUTRE compte.**
+    /// Sans elle, ce test vérifiait « zéro » dans un univers où tout rend zéro :
+    /// il restait vert sous n'importe quelle mutation de la requête — filtre
+    /// `account_id` relâché, inversé ou supprimé — et ne gardait donc rien. Le
+    /// voisin mouvementé est ce qui rend l'assertion discriminante : si le filtre
+    /// par compte cède, ce test voit l'écriture de T908 et rougit.
+    #[tokio::test]
+    async fn retype_impact_d_un_compte_vierge_ne_recense_rien() {
+        let pool = test_pool().await;
+        let admin = get_admin_user_id(&pool).await;
+        let (company_id, fy) = mk_company_with_fy(&pool, "impact-vierge").await;
+
+        let vierge = mk_account(&pool, company_id, admin, "T900", AccountType::Expense).await;
+
+        // Le voisin mouvementé, dont ce compte-ci ne doit RIEN voir.
+        let voisin = mk_account(&pool, company_id, admin, "T908", AccountType::Expense).await;
+        let caisse = mk_account(&pool, company_id, admin, "T909", AccountType::Asset).await;
+        mk_entry(&pool, company_id, fy, admin, voisin, caisse).await;
+
+        let (count, closed) = retype_impact(&pool, company_id, vierge).await.unwrap();
+
+        assert_eq!(
+            count, 0,
+            "un compte vierge ne porte aucune écriture — même quand sa société en porte"
+        );
+        assert!(closed.is_empty(), "aucun exercice clos ne peut être touché");
+
+        drop_company_deep(&pool, company_id).await;
+    }
+
+    /// AC 2 — l'ampleur annoncée est le nombre d'écritures, dans un exercice
+    /// ouvert la liste des exercices clos reste vide.
+    #[tokio::test]
+    async fn retype_impact_compte_les_ecritures_d_un_exercice_ouvert() {
+        let pool = test_pool().await;
+        let admin = get_admin_user_id(&pool).await;
+        let (company_id, fy) = mk_company_with_fy(&pool, "impact-ouvert").await;
+
+        let charge = mk_account(&pool, company_id, admin, "T901", AccountType::Expense).await;
+        let caisse = mk_account(&pool, company_id, admin, "T902", AccountType::Asset).await;
+
+        mk_entry(&pool, company_id, fy, admin, charge, caisse).await;
+        mk_entry(&pool, company_id, fy, admin, charge, caisse).await;
+
+        let (count, closed) = retype_impact(&pool, company_id, charge).await.unwrap();
+
+        assert_eq!(count, 2, "deux écritures mouvementent ce compte");
+        assert!(
+            closed.is_empty(),
+            "l'exercice est ouvert : rien à signaler comme clos, or on a reçu {closed:?}"
+        );
+
+        drop_company_deep(&pool, company_id).await;
+    }
+
+    /// AC 2 — **le cas qui justifie la story** : le refus doit nommer les
+    /// exercices clos, puisque ce sont eux dont le résultat changerait sans
+    /// qu'aucune écriture ne l'explique.
+    #[tokio::test]
+    async fn retype_impact_nomme_les_exercices_clos_touches() {
+        let pool = test_pool().await;
+        let admin = get_admin_user_id(&pool).await;
+        let (company_id, fy) = mk_company_with_fy(&pool, "impact-clos").await;
+
+        let charge = mk_account(&pool, company_id, admin, "T903", AccountType::Expense).await;
+        let caisse = mk_account(&pool, company_id, admin, "T904", AccountType::Asset).await;
+        mk_entry(&pool, company_id, fy, admin, charge, caisse).await;
+
+        // Fermer APRÈS avoir écrit : une écriture ne s'insère pas dans un
+        // exercice clos, et c'est bien l'ordre de la vraie vie.
+        sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+            .bind(fy)
+            .execute(&pool)
+            .await
+            .expect("fermeture de l'exercice de test");
+
+        let (count, closed) = retype_impact(&pool, company_id, charge).await.unwrap();
+
+        assert_eq!(count, 1);
+        assert_eq!(
+            closed,
+            vec!["Exercice impact-clos".to_string()],
+            "le refus doit NOMMER l'exercice clos touché"
+        );
+
+        drop_company_deep(&pool, company_id).await;
+    }
+
+    /// AC 2 — des écritures **distinctes**, jamais des lignes : une écriture qui
+    /// mouvemente deux fois le même compte reste une écriture.
+    #[tokio::test]
+    async fn retype_impact_compte_les_ecritures_et_non_les_lignes() {
+        let pool = test_pool().await;
+        let admin = get_admin_user_id(&pool).await;
+        let (company_id, fy) = mk_company_with_fy(&pool, "impact-lignes").await;
+
+        let charge = mk_account(&pool, company_id, admin, "T905", AccountType::Expense).await;
+        let caisse = mk_account(&pool, company_id, admin, "T906", AccountType::Asset).await;
+
+        mk_entry_two_lines_on_debit(&pool, company_id, fy, admin, charge, caisse).await;
+
+        let (count, _closed) = retype_impact(&pool, company_id, charge).await.unwrap();
+
+        assert_eq!(
+            count, 1,
+            "deux lignes d'une même écriture ne font pas deux écritures"
+        );
+
+        drop_company_deep(&pool, company_id).await;
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 25-2-a — la garde elle-même : avertissement bloquant, pas refus sec.
+    // -----------------------------------------------------------------------
+
+    /// AC 1 — sans confirmation, retyper un compte mouvementé est refusé, et le
+    /// refus porte l'ampleur.
+    #[tokio::test]
+    async fn retyper_un_compte_mouvemente_sans_confirmation_est_refuse() {
+        let pool = test_pool().await;
+        let admin = get_admin_user_id(&pool).await;
+        let (company_id, fy) = mk_company_with_fy(&pool, "garde-refus").await;
+
+        let charge = mk_account(&pool, company_id, admin, "T910", AccountType::Expense).await;
+        let caisse = mk_account(&pool, company_id, admin, "T911", AccountType::Asset).await;
+        mk_entry(&pool, company_id, fy, admin, charge, caisse).await;
+
+        let before = find_by_id(&pool, charge).await.unwrap().unwrap();
+        let err = update(
+            &pool,
+            charge,
+            before.version,
+            admin,
+            AccountUpdate {
+                name: before.name.clone(),
+                account_type: AccountType::Asset,
+                role: None,
+                postable: true,
+            },
+            false,
+        )
+        .await
+        .unwrap_err();
+
+        match err {
+            DbError::AccountHasEntries {
+                entry_count,
+                closed_fiscal_years,
+                from_type,
+                to_type,
+            } => {
+                assert_eq!(entry_count, 1);
+                assert!(closed_fiscal_years.is_empty());
+                assert_eq!(from_type, "Expense");
+                assert_eq!(to_type, "Asset");
+            }
+            other => panic!("attendu AccountHasEntries, reçu {other:?}"),
+        }
+
+        // Et le type n'a PAS bougé : un refus qui laisserait passer l'écriture
+        // serait pire qu'aucun refus.
+        let after = find_by_id(&pool, charge).await.unwrap().unwrap();
+        assert_eq!(after.account_type, AccountType::Expense);
+        assert_eq!(after.version, before.version, "aucune version consommée");
+
+        drop_company_deep(&pool, company_id).await;
+    }
+
+    /// AC 2 — le refus nomme les exercices clos : ce sont eux dont le résultat
+    /// changerait sans qu'aucune écriture ne l'explique.
+    #[tokio::test]
+    async fn le_refus_de_retypage_nomme_les_exercices_clos() {
+        let pool = test_pool().await;
+        let admin = get_admin_user_id(&pool).await;
+        let (company_id, fy) = mk_company_with_fy(&pool, "garde-clos").await;
+
+        let charge = mk_account(&pool, company_id, admin, "T912", AccountType::Expense).await;
+        let caisse = mk_account(&pool, company_id, admin, "T913", AccountType::Asset).await;
+        mk_entry(&pool, company_id, fy, admin, charge, caisse).await;
+        sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+            .bind(fy)
+            .execute(&pool)
+            .await
+            .expect("fermeture de l'exercice de test");
+
+        let before = find_by_id(&pool, charge).await.unwrap().unwrap();
+        let err = update(
+            &pool,
+            charge,
+            before.version,
+            admin,
+            AccountUpdate {
+                name: before.name.clone(),
+                account_type: AccountType::Asset,
+                role: None,
+                postable: true,
+            },
+            false,
+        )
+        .await
+        .unwrap_err();
+
+        match err {
+            DbError::AccountHasEntries {
+                closed_fiscal_years,
+                ..
+            } => assert_eq!(closed_fiscal_years, vec!["Exercice garde-clos".to_string()]),
+            other => panic!("attendu AccountHasEntries, reçu {other:?}"),
+        }
+
+        drop_company_deep(&pool, company_id).await;
+    }
+
+    /// AC 1 — **avertissement bloquant, pas refus sec** : confirmé, le geste
+    /// passe. Sans ce test, une garde qui refuserait TOUJOURS satisferait les
+    /// précédents.
+    #[tokio::test]
+    async fn retyper_un_compte_mouvemente_passe_une_fois_confirme() {
+        let pool = test_pool().await;
+        let admin = get_admin_user_id(&pool).await;
+        let (company_id, fy) = mk_company_with_fy(&pool, "garde-confirme").await;
+
+        let charge = mk_account(&pool, company_id, admin, "T914", AccountType::Expense).await;
+        let caisse = mk_account(&pool, company_id, admin, "T915", AccountType::Asset).await;
+        mk_entry(&pool, company_id, fy, admin, charge, caisse).await;
+
+        let before = find_by_id(&pool, charge).await.unwrap().unwrap();
+        let updated = update(
+            &pool,
+            charge,
+            before.version,
+            admin,
+            AccountUpdate {
+                name: before.name.clone(),
+                account_type: AccountType::Asset,
+                role: None,
+                postable: true,
+            },
+            true,
+        )
+        .await
+        .expect("un retypage confirmé doit aboutir");
+
+        assert_eq!(updated.account_type, AccountType::Asset);
+
+        drop_company_deep(&pool, company_id).await;
+    }
+
+    /// AC 8 — un compte vierge n'est pas gêné : le drapeau ne change rien.
+    #[tokio::test]
+    async fn retyper_un_compte_vierge_ne_demande_aucune_confirmation() {
+        let pool = test_pool().await;
+        let admin = get_admin_user_id(&pool).await;
+        let (company_id, _fy) = mk_company_with_fy(&pool, "garde-vierge").await;
+
+        let compte = mk_account(&pool, company_id, admin, "T916", AccountType::Expense).await;
+        let before = find_by_id(&pool, compte).await.unwrap().unwrap();
+
+        let updated = update(
+            &pool,
+            compte,
+            before.version,
+            admin,
+            AccountUpdate {
+                name: before.name.clone(),
+                account_type: AccountType::Asset,
+                role: None,
+                postable: true,
+            },
+            false,
+        )
+        .await
+        .expect("un compte sans écriture se retype librement");
+
+        assert_eq!(updated.account_type, AccountType::Asset);
+
+        drop_company_deep(&pool, company_id).await;
+    }
+
+    /// AC 3 — **la garde ne mord que sur le type.** Renommer un compte
+    /// mouvementé doit rester libre ; une garde qui déborderait sur le nom
+    /// serait une régression silencieuse de la 14-3a.
+    #[tokio::test]
+    async fn renommer_un_compte_mouvemente_reste_libre() {
+        let pool = test_pool().await;
+        let admin = get_admin_user_id(&pool).await;
+        let (company_id, fy) = mk_company_with_fy(&pool, "garde-renomme").await;
+
+        let charge = mk_account(&pool, company_id, admin, "T917", AccountType::Expense).await;
+        let caisse = mk_account(&pool, company_id, admin, "T918", AccountType::Asset).await;
+        mk_entry(&pool, company_id, fy, admin, charge, caisse).await;
+
+        let before = find_by_id(&pool, charge).await.unwrap().unwrap();
+        let updated = update(
+            &pool,
+            charge,
+            before.version,
+            admin,
+            AccountUpdate {
+                name: "Nom modifié sans retypage".into(),
+                account_type: before.account_type,
+                role: None,
+                postable: true,
+            },
+            false,
+        )
+        .await
+        .expect("renommer ne retype pas");
+
+        assert_eq!(updated.name, "Nom modifié sans retypage");
+        assert_eq!(updated.account_type, AccountType::Expense);
+
+        drop_company_deep(&pool, company_id).await;
+    }
+
+    /// AC 9 — **l'ordre des gardes est un critère.** Le conflit de version
+    /// précède la garde de retypage : sinon, confirmer un retypage écraserait la
+    /// modification concurrente d'un tiers. Le compte est mouvementé ET la
+    /// version est fausse ; c'est `OptimisticLockConflict` qui doit sortir, pas
+    /// `AccountHasEntries`.
+    #[tokio::test]
+    async fn le_conflit_de_version_precede_la_garde_de_retypage() {
+        let pool = test_pool().await;
+        let admin = get_admin_user_id(&pool).await;
+        let (company_id, fy) = mk_company_with_fy(&pool, "garde-version").await;
+
+        let charge = mk_account(&pool, company_id, admin, "T919", AccountType::Expense).await;
+        let caisse = mk_account(&pool, company_id, admin, "T920", AccountType::Asset).await;
+        mk_entry(&pool, company_id, fy, admin, charge, caisse).await;
+
+        let before = find_by_id(&pool, charge).await.unwrap().unwrap();
+        let err = update(
+            &pool,
+            charge,
+            before.version + 7, // version qui n'a jamais existé
+            admin,
+            AccountUpdate {
+                name: before.name.clone(),
+                account_type: AccountType::Asset,
+                role: None,
+                postable: true,
+            },
+            false,
+        )
+        .await
+        .unwrap_err();
+
+        assert!(
+            matches!(err, DbError::OptimisticLockConflict),
+            "le verrou optimiste doit primer, reçu {err:?}"
+        );
+
+        drop_company_deep(&pool, company_id).await;
+    }
+
+    /// AC 5 — un retypage confirmé porte **son propre code d'action**, et il
+    /// porte l'ampleur.
+    ///
+    /// ⛔ Noyé parmi les `account.updated`, ce geste serait introuvable le jour
+    /// où quelqu'un cherche pourquoi le résultat d'une année close a bougé — et
+    /// c'est précisément ce jour-là qu'on le cherche.
+    #[tokio::test]
+    async fn un_retypage_confirme_journalise_son_propre_code_d_action() {
+        let pool = test_pool().await;
+        let admin = get_admin_user_id(&pool).await;
+        let (company_id, fy) = mk_company_with_fy(&pool, "audit-retype").await;
+
+        let charge = mk_account(&pool, company_id, admin, "T921", AccountType::Expense).await;
+        let caisse = mk_account(&pool, company_id, admin, "T922", AccountType::Asset).await;
+        mk_entry(&pool, company_id, fy, admin, charge, caisse).await;
+        sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+            .bind(fy)
+            .execute(&pool)
+            .await
+            .expect("fermeture de l'exercice de test");
+
+        let before = find_by_id(&pool, charge).await.unwrap().unwrap();
+        update(
+            &pool,
+            charge,
+            before.version,
+            admin,
+            AccountUpdate {
+                name: before.name.clone(),
+                account_type: AccountType::Asset,
+                role: None,
+                postable: true,
+            },
+            true,
+        )
+        .await
+        .expect("retypage confirmé");
+
+        let entries = audit_log::find_by_entity(&pool, "account", charge, 10)
+            .await
+            .unwrap();
+
+        let retyped = entries
+            .iter()
+            .find(|e| e.action == "account.retyped")
+            .expect("une entrée account.retyped doit exister");
+        let details = retyped
+            .details_json
+            .as_ref()
+            .expect("details_json must be present");
+        let trace = details.get("retype").expect("le bloc retype");
+        assert_eq!(
+            trace.get("fromType").and_then(|v| v.as_str()),
+            Some("Expense")
+        );
+        assert_eq!(trace.get("toType").and_then(|v| v.as_str()), Some("Asset"));
+        assert_eq!(trace.get("entryCount").and_then(|v| v.as_i64()), Some(1));
+        assert_eq!(
+            trace
+                .get("closedFiscalYears")
+                .and_then(|v| v.as_array())
+                .and_then(|a| a.first())
+                .and_then(|v| v.as_str()),
+            Some("Exercice audit-retype"),
+            "le journal doit NOMMER l'exercice clos reclassé"
+        );
+
+        // Et le geste ne se dédouble pas en un `account.updated` ordinaire, qui
+        // le rendrait indistinguable d'un renommage.
+        assert!(
+            !entries.iter().any(|e| e.action == "account.updated"),
+            "un retypage ne journalise PAS aussi account.updated"
+        );
+
+        drop_company_deep(&pool, company_id).await;
+    }
+
+    /// AC 5 — le code ordinaire reste celui des autres modifications : une garde
+    /// qui déborderait sur le renommage rendrait le journal illisible.
+    #[tokio::test]
+    async fn un_renommage_garde_le_code_d_action_ordinaire() {
+        let pool = test_pool().await;
+        let admin = get_admin_user_id(&pool).await;
+        let (company_id, fy) = mk_company_with_fy(&pool, "audit-renomme").await;
+
+        let charge = mk_account(&pool, company_id, admin, "T923", AccountType::Expense).await;
+        let caisse = mk_account(&pool, company_id, admin, "T924", AccountType::Asset).await;
+        mk_entry(&pool, company_id, fy, admin, charge, caisse).await;
+
+        let before = find_by_id(&pool, charge).await.unwrap().unwrap();
+        update(
+            &pool,
+            charge,
+            before.version,
+            admin,
+            AccountUpdate {
+                name: "Libellé corrigé".into(),
+                account_type: before.account_type,
+                role: None,
+                postable: true,
+            },
+            false,
+        )
+        .await
+        .expect("renommer ne retype pas");
+
+        let entries = audit_log::find_by_entity(&pool, "account", charge, 10)
+            .await
+            .unwrap();
+        assert!(entries.iter().any(|e| e.action == "account.updated"));
+        assert!(!entries.iter().any(|e| e.action == "account.retyped"));
+
+        drop_company_deep(&pool, company_id).await;
+    }
+
+    /// AC 5 — **un compte vierge retypé reste un `account.updated`.** Sans
+    /// écriture, il n'y a pas d'historique à reclasser, donc rien à signaler à
+    /// un contrôleur. Sans ce test, l'affirmation du commentaire de `update` ne
+    /// serait éprouvée par rien.
+    #[tokio::test]
+    async fn retyper_un_compte_vierge_reste_une_modification_ordinaire() {
+        let pool = test_pool().await;
+        let admin = get_admin_user_id(&pool).await;
+        let (company_id, _fy) = mk_company_with_fy(&pool, "audit-vierge").await;
+
+        let compte = mk_account(&pool, company_id, admin, "T925", AccountType::Expense).await;
+        let before = find_by_id(&pool, compte).await.unwrap().unwrap();
+
+        update(
+            &pool,
+            compte,
+            before.version,
+            admin,
+            AccountUpdate {
+                name: before.name.clone(),
+                account_type: AccountType::Asset,
+                role: None,
+                postable: true,
+            },
+            false,
+        )
+        .await
+        .expect("un compte vierge se retype librement");
+
+        let entries = audit_log::find_by_entity(&pool, "account", compte, 10)
+            .await
+            .unwrap();
+        assert!(entries.iter().any(|e| e.action == "account.updated"));
+        assert!(
+            !entries.iter().any(|e| e.action == "account.retyped"),
+            "sans écriture, rien n'est reclassé : pas de code distinct"
+        );
+
+        drop_company_deep(&pool, company_id).await;
+    }
+
     #[tokio::test]
     async fn test_create_and_find() {
         let pool = test_pool().await;
@@ -1138,6 +1970,7 @@ mod tests {
                 role: None,
                 postable: true,
             },
+            false,
         )
         .await
         .unwrap();
@@ -1157,6 +1990,7 @@ mod tests {
                 role: None,
                 postable: true,
             },
+            false,
         )
         .await
         .unwrap_err();
@@ -1331,6 +2165,7 @@ mod tests {
                 role: None,
                 postable: true,
             },
+            false,
         )
         .await
         .unwrap();
@@ -1516,6 +2351,7 @@ mod tests {
                 role: None,
                 postable: true,
             },
+            false,
         )
         .await
         .unwrap();
@@ -1571,6 +2407,7 @@ mod tests {
                 role: None,
                 postable: true,
             },
+            false,
         )
         .await
         .unwrap();
@@ -1670,6 +2507,7 @@ mod tests {
                 role: Some(AccountRole::EquityCapital),
                 postable: true,
             },
+            false,
         )
         .await
         .unwrap();
@@ -1723,6 +2561,7 @@ mod tests {
                 role: a.role,
                 postable: a.postable,
             },
+            false,
         )
         .await
         .unwrap();
@@ -1740,6 +2579,7 @@ mod tests {
                 role: a.role,
                 postable: true,
             },
+            false,
         )
         .await
         .unwrap();
@@ -1777,6 +2617,7 @@ mod tests {
                 role: Some(AccountRole::Receivable),
                 postable: true,
             },
+            false,
         )
         .await
         .expect_err("le rôle Receivable est déjà pris");
@@ -1903,6 +2744,7 @@ mod tests {
                 role: None,
                 postable: true,
             },
+            false,
         )
         .await
         .unwrap();
@@ -2103,6 +2945,7 @@ mod tests {
                 role: Some(AccountRole::Receivable),
                 postable: true,
             },
+            false,
         )
         .await
         .expect_err("Receivable sur une charge");
@@ -2183,6 +3026,7 @@ mod tests {
                 role: parent.role,
                 postable: true,
             },
+            false,
         )
         .await
         .unwrap();

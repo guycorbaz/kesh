@@ -78,6 +78,8 @@ La liste affiche aussi la date de dernière utilisation et le statut (active / e
 >
 > Le motif est le même que pour la gestion des clés : **une clé compromise ne doit pas pouvoir créer un compte administrateur**, sans quoi la révoquer n'arrêterait plus l'incident.
 
+> ⚠️ **La consultation du journal d'audit est fermée elle aussi**, et elle ne relève pourtant pas de l'administration. Les trois routes `/api/v1/audit-log`, `/audit-log/vocabulary` et `/audit-log/export.csv` refusent toute clé, y compris une clé `read` créée par un Administrateur. **Le code diffère** : `403 API_KEY_MANAGEMENT_FORBIDDEN`, et non `API_KEY_ADMIN_FORBIDDEN` (cf. §10). Son libellé parle de « gestion de clés » pour des raisons historiques ; ici, il signifie simplement qu'une clé n'a pas accès à la piste de contrôle. La lecture se fait dans l'interface web, par un Comptable ou un Administrateur.
+
 ---
 
 ## 5. URL de base et périmètre des données
@@ -198,12 +200,12 @@ Pour une IA en lecture seule (analyse de comptes, génération de rapports), cr�
 
 ## 7. Ressources disponibles
 
-Les principales ressources accessibles via l'API (liste non exhaustive — toute route `/api/v1/*` de l'UI est consommable, **à l'exception des routes d'administration**, fermées aux clés API : cf. §4) :
+Les principales ressources accessibles via l'API (liste non exhaustive — toute route `/api/v1/*` de l'UI est consommable, **à deux exceptions près, toutes deux fermées aux clés API** : les routes d'administration, et **la consultation du journal d'audit** (`/api/v1/audit-log*`) — cf. §4 pour l'administration, §10 pour le journal, dont le **code d'erreur diffère**) :
 
 | Ressource | Lecture (`read`) | Écriture (`read-write`) |
 |-----------|------------------|--------------------------|
 | Identité de la clé | `GET /auth/me` | — |
-| Plan comptable | `GET /accounts` | `POST /accounts`, … |
+| Plan comptable | `GET /accounts` | `POST /accounts`, `PUT /accounts/{id}` ³, … |
 | Contacts | `GET /contacts`, `GET /contacts/{id}` | `POST /contacts`, … |
 | Produits | `GET /products`, `GET /products/{id}` | `POST /products`, … |
 | Factures | `GET /invoices`, `GET /invoices/{id}` | `POST /invoices`, `PUT /invoices/{id}`, … ² |
@@ -213,6 +215,17 @@ Les principales ressources accessibles via l'API (liste non exhaustive — toute
 *(Préfixe `…/api/v1` omis dans le tableau. Les corps de requête d'écriture peuvent différer des champs renvoyés en lecture : référez-vous aux formulaires correspondants de l'interface web pour les champs attendus.)*
 
 ² **Deux opérations sur les factures sont réservées à l'interface web** : `DELETE /invoices/{id}` (suppression définitive) et `POST /invoices/{id}/reminders/{reminderId}/cancel` (annulation d'un rappel) sont des routes d'administration, donc fermées aux clés (`403 API_KEY_ADMIN_FORBIDDEN`, cf. §4). Tout le reste du cycle de facturation reste ouvert.
+
+³ **Changer le `accountType` d'un compte qui porte des écritures exige une
+confirmation explicite.** Sans elle, `PUT /accounts/{id}` répond **`409
+ACCOUNT_HAS_ENTRIES`** et son `details` porte l'ampleur du reclassement :
+`entryCount` (écritures concernées), `closedFiscalYears` (exercices **clos**
+touchés), `fromType` et `toType`. Pour passer outre, renvoyer la même requête
+avec `"confirmAccountRetype": true`. Le champ est facultatif et vaut `false`
+s'il est omis — un client existant n'a donc rien à changer tant qu'il ne retype
+pas un compte mouvementé. ⚠️ Ce refus est **neuf** : la requête aboutissait
+auparavant sans avertir, alors qu'elle reclasse rétroactivement tout
+l'historique du compte, exercices clos compris.
 
 ¹ **Les mutations de taux de TVA ne sont pas accessibles via l'API** :
 `POST /vat-rates`, `PUT /vat-rates/{id}` et `DELETE /vat-rates/{id}` sont
@@ -281,7 +294,7 @@ Les erreurs sont renvoyées en JSON avec ce format :
 |------|--------|-------|
 | `401` | `UNAUTHENTICATED` | Clé absente, invalide, révoquée, expirée — ou créateur désactivé. |
 | `403` | `API_KEY_READ_ONLY` | Méthode d'écriture (`POST`/`PUT`/`PATCH`/`DELETE`) avec une clé `read`. |
-| `403` | `API_KEY_MANAGEMENT_FORBIDDEN` | Tentative de gérer des clés (`/api/v1/settings/api-keys`) via l'API. |
+| `403` | `API_KEY_MANAGEMENT_FORBIDDEN` | Tentative de gérer des clés (`/api/v1/settings/api-keys`) **ou de consulter le journal d'audit** (`/api/v1/audit-log`, `/audit-log/vocabulary`, `/audit-log/export.csv`) via l'API. ⚠️ Le libellé du code parle de « gestion de clés » pour des raisons historiques : sur le journal d'audit, il signifie simplement **qu'une clé API n'y a pas accès**, quel que soit son scope. Ne cherchez pas le défaut dans votre configuration de clé. |
 | `403` | `API_KEY_ADMIN_FORBIDDEN` | Route d'**administration** atteinte avec une clé API — quel que soit le rôle du créateur de la clé. Voir §4. |
 | `400` | `VALIDATION_ERROR` | Corps de requête invalide (champ manquant, valeur hors limites, …). |
 | `404` | `NOT_FOUND` | Ressource absente ou appartenant à une autre company (anti-énumération). Certaines ressources renvoient un code spécifique (ex. `ACCOUNT_NOT_FOUND`). |

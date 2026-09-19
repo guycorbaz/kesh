@@ -13,7 +13,7 @@ use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
 
-use chrono::{TimeDelta, Utc};
+use chrono::{NaiveDate, TimeDelta, Utc};
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use kesh_api::auth::jwt::Claims;
 use kesh_api::auth::password::hash_password;
@@ -21,8 +21,13 @@ use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
 use kesh_db::entities::account::{AccountRole, AccountType};
 use kesh_db::entities::address::StructuredAddress;
-use kesh_db::entities::{Language, NewAccount, NewCompany, NewUser, OrgType, Role};
-use kesh_db::repositories::{accounts, companies, users};
+use kesh_db::entities::journal_entry::Journal;
+use kesh_db::entities::{
+    Language, NewAccount, NewCompany, NewFiscalYear, NewJournalEntry, NewJournalEntryLine, NewUser,
+    OrgType, Role,
+};
+use kesh_db::repositories::{accounts, companies, fiscal_years, journal_entries, users};
+use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 use sqlx::MySqlPool;
 
@@ -202,6 +207,270 @@ async fn setup(pool: &MySqlPool) -> (i64, i64, String) {
     let admin_id = create_user(pool, "admin", Role::Admin, company_id).await;
     let token = forge_jwt(admin_id, role_str(Role::Admin), company_id);
     (company_id, admin_id, token)
+}
+
+// ============================================================
+// Story 25-2-a ([#382], [#274]) — retyper un compte mouvementé
+// ============================================================
+
+/// ⚠️ `mk_account` ci-dessus force `AccountType::Asset`. Retyper exige de partir
+/// d'un autre type — d'où ce helper plutôt qu'une modification de l'existant,
+/// qui ferait porter à quinze tests étrangers le risque de cette story.
+async fn mk_typed_account(
+    pool: &MySqlPool,
+    company_id: i64,
+    user_id: i64,
+    number: &str,
+    account_type: AccountType,
+) -> i64 {
+    accounts::create(
+        pool,
+        user_id,
+        NewAccount::new(
+            company_id,
+            number,
+            format!("Compte {number}"),
+            account_type,
+            None,
+        )
+        .with_role(None, true),
+    )
+    .await
+    .unwrap()
+    .id
+}
+
+fn current_year() -> i32 {
+    Utc::now()
+        .date_naive()
+        .format("%Y")
+        .to_string()
+        .parse()
+        .unwrap()
+}
+
+/// Exercice **ouvert** de l'année courante — l'écriture porte la date du jour,
+/// elle doit donc y tomber.
+async fn mk_fiscal_year(pool: &MySqlPool, company_id: i64, user_id: i64) -> i64 {
+    let year = current_year();
+    fiscal_years::create(
+        pool,
+        user_id,
+        NewFiscalYear {
+            company_id,
+            name: format!("Exercice {year}"),
+            start_date: NaiveDate::from_ymd_opt(year, 1, 1).unwrap(),
+            end_date: NaiveDate::from_ymd_opt(year, 12, 31).unwrap(),
+        },
+    )
+    .await
+    .expect("exercice")
+    .id
+}
+
+async fn mk_entry(
+    pool: &MySqlPool,
+    company_id: i64,
+    fiscal_year_id: i64,
+    user_id: i64,
+    debit_account: i64,
+    credit_account: i64,
+) {
+    journal_entries::create(
+        pool,
+        fiscal_year_id,
+        user_id,
+        NewJournalEntry {
+            company_id,
+            entry_date: Utc::now().date_naive(),
+            journal: Journal::OD,
+            description: "Écriture de test 25-2-a".into(),
+            project_id: None,
+            lines: vec![
+                NewJournalEntryLine {
+                    account_id: debit_account,
+                    debit: dec!(100),
+                    credit: dec!(0),
+                    project_id: None,
+                },
+                NewJournalEntryLine {
+                    account_id: credit_account,
+                    debit: dec!(0),
+                    credit: dec!(100),
+                    project_id: None,
+                },
+            ],
+        },
+    )
+    .await
+    .expect("écriture");
+}
+
+/// AC 1 et 2 — le refus traverse réellement la frontière HTTP, et il **nomme
+/// l'ampleur**. C'est le seul niveau qui vérifie que les quatre champs de
+/// `details` arrivent jusqu'au client : les tests du dépôt voient la variante
+/// d'erreur, pas le JSON.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn retyper_un_compte_mouvemente_rend_409_et_nomme_l_ampleur(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let (company_id, admin_id, token) = setup(&pool).await;
+    let fy = mk_fiscal_year(&pool, company_id, admin_id).await;
+
+    let charge = mk_typed_account(&pool, company_id, admin_id, "6500", AccountType::Expense).await;
+    let caisse = mk_typed_account(&pool, company_id, admin_id, "1000", AccountType::Asset).await;
+    mk_entry(&pool, company_id, fy, admin_id, charge, caisse).await;
+
+    let res = app
+        .client
+        .put(app.url(&format!("/api/v1/accounts/{charge}")))
+        .bearer_auth(&token)
+        .json(&json!({
+            "name": "Compte 6500", "accountType": "Asset",
+            "role": null, "postable": true, "version": 1
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), 409);
+    let body: Value = res.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ACCOUNT_HAS_ENTRIES");
+    assert_eq!(body["error"]["details"]["entryCount"], 1);
+    assert_eq!(body["error"]["details"]["fromType"], "Expense");
+    assert_eq!(body["error"]["details"]["toType"], "Asset");
+    assert_eq!(
+        body["error"]["details"]["closedFiscalYears"]
+            .as_array()
+            .expect("closedFiscalYears doit être un tableau")
+            .len(),
+        0
+    );
+}
+
+/// AC 2 — l'exercice **clos** est nommé : c'est lui dont le résultat changerait
+/// sans qu'aucune écriture ne l'explique.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn le_409_nomme_les_exercices_clos_touches(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let (company_id, admin_id, token) = setup(&pool).await;
+    let fy = mk_fiscal_year(&pool, company_id, admin_id).await;
+
+    let charge = mk_typed_account(&pool, company_id, admin_id, "6500", AccountType::Expense).await;
+    let caisse = mk_typed_account(&pool, company_id, admin_id, "1000", AccountType::Asset).await;
+    mk_entry(&pool, company_id, fy, admin_id, charge, caisse).await;
+
+    // Fermer APRÈS avoir écrit — l'ordre de la vraie vie.
+    sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+        .bind(fy)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let res = app
+        .client
+        .put(app.url(&format!("/api/v1/accounts/{charge}")))
+        .bearer_auth(&token)
+        .json(&json!({
+            "name": "Compte 6500", "accountType": "Asset",
+            "role": null, "postable": true, "version": 1
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), 409);
+    let body: Value = res.json().await.unwrap();
+    assert_eq!(
+        body["error"]["details"]["closedFiscalYears"][0],
+        format!("Exercice {}", current_year())
+    );
+}
+
+/// AC 4 — **avertissement bloquant, pas refus sec** : `confirmAccountRetype`
+/// laisse passer. Sans ce test, une garde qui refuserait toujours satisferait
+/// les deux précédents.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn retyper_passe_avec_confirm_account_retype(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let (company_id, admin_id, token) = setup(&pool).await;
+    let fy = mk_fiscal_year(&pool, company_id, admin_id).await;
+
+    let charge = mk_typed_account(&pool, company_id, admin_id, "6500", AccountType::Expense).await;
+    let caisse = mk_typed_account(&pool, company_id, admin_id, "1000", AccountType::Asset).await;
+    mk_entry(&pool, company_id, fy, admin_id, charge, caisse).await;
+
+    let res = app
+        .client
+        .put(app.url(&format!("/api/v1/accounts/{charge}")))
+        .bearer_auth(&token)
+        .json(&json!({
+            "name": "Compte 6500", "accountType": "Asset",
+            "role": null, "postable": true, "version": 1,
+            "confirmAccountRetype": true
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), 200);
+    let body: Value = res.json().await.unwrap();
+    assert_eq!(body["accountType"], "Asset");
+}
+
+/// AC 3 — la garde ne mord que sur le type : renommer un compte mouvementé
+/// reste libre, sans drapeau.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn renommer_un_compte_mouvemente_ne_demande_aucune_confirmation(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let (company_id, admin_id, token) = setup(&pool).await;
+    let fy = mk_fiscal_year(&pool, company_id, admin_id).await;
+
+    let charge = mk_typed_account(&pool, company_id, admin_id, "6500", AccountType::Expense).await;
+    let caisse = mk_typed_account(&pool, company_id, admin_id, "1000", AccountType::Asset).await;
+    mk_entry(&pool, company_id, fy, admin_id, charge, caisse).await;
+
+    let res = app
+        .client
+        .put(app.url(&format!("/api/v1/accounts/{charge}")))
+        .bearer_auth(&token)
+        .json(&json!({
+            "name": "Frais de bureau", "accountType": "Expense",
+            "role": null, "postable": true, "version": 1
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), 200);
+    let body: Value = res.json().await.unwrap();
+    assert_eq!(body["name"], "Frais de bureau");
+    assert_eq!(body["accountType"], "Expense");
+}
+
+/// AC 8 — un compte sans écriture se retype comme avant : le drapeau, absent,
+/// ne change rien.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn retyper_un_compte_vierge_ne_demande_aucune_confirmation(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let (company_id, admin_id, token) = setup(&pool).await;
+
+    let compte = mk_typed_account(&pool, company_id, admin_id, "6500", AccountType::Expense).await;
+
+    let res = app
+        .client
+        .put(app.url(&format!("/api/v1/accounts/{compte}")))
+        .bearer_auth(&token)
+        .json(&json!({
+            "name": "Compte 6500", "accountType": "Asset",
+            "role": null, "postable": true, "version": 1
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), 200);
+    let body: Value = res.json().await.unwrap();
+    assert_eq!(body["accountType"], "Asset");
 }
 
 // ============================================================

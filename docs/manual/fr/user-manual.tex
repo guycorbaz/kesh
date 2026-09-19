@@ -298,7 +298,17 @@ Le plan comptable est la colonne vertébrale de votre comptabilité. Kesh fourni
 
 \subsection{Modification d'un compte}
 
-Cliquer sur un compte ouvre son détail. Vous pouvez modifier le libellé, le compte parent, le type, le \textbf{rôle} et l'indicateur \textbf{postable}. Le numéro n'est pas modifiable une fois des écritures saisies (pour préserver l'audit-trail).
+Cliquer sur un compte ouvre son détail. Vous pouvez modifier le libellé, le compte parent, le \textbf{rôle} et l'indicateur \textbf{postable}. Le numéro n'est pas modifiable une fois des écritures saisies (pour préserver l'audit-trail). Le \textbf{type} se modifie librement tant que le compte ne porte aucune écriture ; au-delà, Kesh vous avertit avant de le laisser faire (voir ci-dessous).
+
+\begin{keshwarning}
+\textbf{Changer le type d'un compte qui porte des écritures reclasse tout son historique.} Le type — Actif, Passif, Produit, Charge — ne décrit pas seulement le compte : c'est lui qui décide dans quel état ses montants apparaissent. Les rapports le lisent \textbf{au moment où vous les demandez}, jamais au moment où l'écriture a été passée.
+
+Concrètement : un compte de charge portant 1\,200.-- d'écritures de l'an dernier, passé en Actif, fait sortir ces 1\,200.-- du compte de résultat pour les faire entrer au bilan. \textbf{Le résultat de l'exercice écoulé change}, donc le report à nouveau, donc le bilan d'ouverture de l'exercice courant --- et \textbf{aucune écriture n'explique ce mouvement}.
+
+C'est pourquoi Kesh \textbf{refuse le changement au premier essai} et vous indique combien d'écritures sont concernées, en nommant les \textbf{exercices clos} touchés s'il y en a. Le geste reste possible --- un compte mal typé à la création doit pouvoir être corrigé --- mais il exige une confirmation explicite, et il est journalisé sous son propre intitulé dans le journal d'audit.
+
+\textbf{Si l'historique est important et que le type est faux}, préférez un compte neuf correctement typé : le reclassement rétroactif d'un exercice clos est difficile à justifier devant un contrôleur.
+\end{keshwarning}
 
 \subsection{Suppression d'un compte}
 
@@ -496,10 +506,12 @@ compte --- son numéro vous est indiqué.
 
 \begin{keshwarning}[title=\faExclamationTriangle\ Ce que le logiciel ne fait pas encore à votre place]
 La contre-passation est désormais \textbf{imposée} et non plus seulement offerte~: la
-modification et la suppression d'une écriture sont refusées. Ce qui manque encore, c'est la
-\textbf{consultation du journal d'audit} depuis l'application~: les opérations y sont bien
-enregistrées, mais vous ne pouvez pas encore produire, depuis Kesh, l'historique complet des
-corrections apportées à vos écritures. Le verrou reste par ailleurs \textbf{annuel}~: aucun
+modification et la suppression d'une écriture sont refusées. Ce qui manque encore, c'est
+\textbf{l'écran} de consultation du journal d'audit~: les opérations y sont bien enregistrées,
+et l'historique complet des corrections apportées à vos écritures \textbf{peut désormais être
+produit} --- liste filtrable et export CSV, dans votre langue --- mais par l'\textbf{interface
+de programmation} seulement, ce qui suppose un outil technique. La page qui le rendra lisible
+depuis l'application reste à venir. Le verrou reste par ailleurs \textbf{annuel}~: aucun
 verrou de période plus fin --- le trimestre TVA déclaré, par exemple --- n'existe encore.
 
 Une seule exception, déjà en vigueur~: une écriture \textbf{déjà contre-passée} ne peut plus
