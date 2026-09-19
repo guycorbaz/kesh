@@ -26,6 +26,10 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
   *Pour les intégrations* : `PUT /api/v1/accounts/{id}` peut désormais répondre `409 ACCOUNT_HAS_ENTRIES`. Le champ facultatif `confirmAccountRetype` lève le refus ; un client qui ne retype pas de compte mouvementé n'a rien à changer.
 
+- **Un numéro d'écriture n'est plus jamais réattribué.** Le numéro suivant se calculait comme « le plus grand numéro existant, plus un ». Supprimer la **dernière** écriture d'un exercice libérait donc son numéro, qu'une écriture au contenu tout différent reprenait ensuite — **sans aucun message et sans trace visible**. Les numéros viennent désormais d'un compteur qui ne redescend jamais. ([#381](https://github.com/guycorbaz/kesh/issues/381))
+
+  *Ce qui ne change pas, et c'est voulu* : la numérotation peut toujours comporter des **trous**, lorsque la suppression définitive d'une facture validée emporte son écriture. Un trou se **voit** et s'explique — le journal d'audit nomme ce qui a disparu, quand et par qui. C'était la réattribution, invisible, qui rendait la séquence contestable devant un contrôle ; la combler exigerait de renuméroter des écritures déjà passées, ce qu'une comptabilité ne fait pas.
+
 ---
 
 ## [0.11.1] — 2026-08-24

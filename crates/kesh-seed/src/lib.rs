@@ -263,6 +263,15 @@ pub async fn reset_demo(pool: &MySqlPool) -> Result<(), SeedError> {
         sqlx::query("DELETE FROM accounts")
             .execute(&mut *conn)
             .await?;
+        // Story 25-2-c (#381) — les compteurs de numéros d'écriture référencent
+        // `fiscal_years` (FK RESTRICT). Sous `FOREIGN_KEY_CHECKS=0` leur oubli
+        // ne ferait rien ÉCHOUER : il laisserait des lignes orphelines pointant
+        // vers des exercices effacés, et la base porterait des références mortes
+        // dès la réactivation des contrôles. C'est une question de cohérence de
+        // données, pas de contrainte technique.
+        sqlx::query("DELETE FROM journal_entry_number_sequences")
+            .execute(&mut *conn)
+            .await?;
         sqlx::query("DELETE FROM fiscal_years")
             .execute(&mut *conn)
             .await?;

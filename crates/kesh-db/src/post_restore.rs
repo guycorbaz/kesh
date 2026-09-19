@@ -202,46 +202,21 @@ pub struct ReplayedBackfill {
 /// système, et sont énumérées avec leur justification dans
 /// [`EXEMPT_MIGRATIONS`].
 pub const POST_RESTORE_BACKFILLS: &[PostRestoreBackfill] = &[
-    PostRestoreBackfill {
-        version: 20260828000001,
-        label: "20260828000001_invoice_settlements_type.sql",
-        // CLASSE B — cf. le doc-comment du fichier extrait. La sentinelle est
-        // valide : `settlement_bank_account_id` est ajoutée par le MÊME
-        // `ALTER TABLE` que l'`UPDATE` de backfill.
-        //
-        // ⚠️ **Première entrée depuis que la Story 24-2 a vidé ce registre**, et
-        // c'est le mécanisme qui reprend exactement son office : la 24-2 avait
-        // refermé la fenêtre d'importabilité en créant `invoice_settlements`
-        // (20260827000001) ; cette migration lui est POSTÉRIEURE, donc un backup
-        // situé entre les deux est parfaitement importable — et il porte la table
-        // sans la colonne. C'est le cas que ce dispositif existe pour rattraper.
-        trigger: BackfillTrigger::Sentinels(&[(
-            "invoice_settlements",
-            "settlement_bank_account_id",
-        )]),
-        sql: include_str!("post_restore/20260828000001_invoice_settlements_type.sql"),
-    },
-    PostRestoreBackfill {
-        version: 20260910000001,
-        label: "20260910000001_audit_log_actor_label.sql",
-        // CLASSE B — la sentinelle est valide : `actor_label` est ajoutée par le
-        // MÊME `ALTER TABLE` que l'`UPDATE` de backfill, donc son absence prouve que
-        // la migration n'a pas tourné sur les données restaurées.
-        //
-        // ⚠️ **Le cas de déclenchement est ici PARTICULIER, et il vaut d'être écrit** :
-        // à partir de la Story 25-1a, `audit_log` n'est plus effacée ni restaurée par
-        // l'import — elle rejoint `onboarding_state` dans l'exclusion, et les entrées
-        // de l'archive sont FUSIONNÉES. Le rejeu ne porte donc pas sur des lignes
-        // « restaurées » au sens habituel, mais sur celles **issues du backup** :
-        // écrites par une instance antérieure à cette migration, elles arrivent avec
-        // `actor_label` vide et le rejeu leur donne un nom.
-        //
-        // ⛔ Sans ce rejeu, la fusion produirait exactement le trou qu'elle prétend
-        // fermer : des entrées conservées dont l'acteur ne serait nommé nulle part —
-        // ni par la FK, qui n'existe plus, ni par le libellé, qui serait vide.
-        trigger: BackfillTrigger::Sentinels(&[("audit_log", "actor_label")]),
-        sql: include_str!("post_restore/20260910000001_audit_log_actor_label.sql"),
-    },
+    // ⛔ **VIDE depuis la Story 25-2-c (#381), et ce n'est pas un oubli** — c'est
+    // le mécanisme qui refonctionne. `journal_entry_number_sequences`
+    // (20260917000001) est une table applicative : sa création a **refermé la
+    // fenêtre d'importabilité** au-delà des deux entrées que ce registre portait
+    // (`20260828000001` et `20260910000001`), désormais dans [`RETIRED_BACKFILLS`].
+    //
+    // ⚠️ **Conséquence à connaître, pas à découvrir au gate** : les cinq tests
+    // unitaires qui ne parcourent QUE ce registre — extraction verbatim,
+    // couverture des statements d'écriture, sentinelle de classe B, absence de
+    // DDL, littéraux dangereux — tournent désormais **à vide**. Les tests de la
+    // machinerie de rejeu, eux, gardent leur matière : `post_restore_class_a.rs`
+    // enchaîne les deux registres (`.chain(RETIRED_BACKFILLS.iter())`).
+    //
+    // Le registre l'a déjà été entre les Stories 24-2 et 24-3, et la suivante l'a
+    // rempli de nouveau : il n'est pas mort, il attend.
 ];
 
 // ⚠️ **Le registre a été VIDE entre les Stories 24-2 et 24-3, et ce n'était pas
@@ -316,6 +291,46 @@ pub const RETIRED_BACKFILLS: &[PostRestoreBackfill] = &[
             "../migrations/20260729000001_invoice_lines_revenue_account_backfill.sql"
         ),
     },
+    PostRestoreBackfill {
+        version: 20260828000001,
+        label: "20260828000001_invoice_settlements_type.sql",
+        // CLASSE B — cf. le doc-comment du fichier extrait. La sentinelle est
+        // valide : `settlement_bank_account_id` est ajoutée par le MÊME
+        // `ALTER TABLE` que l'`UPDATE` de backfill.
+        //
+        // ⚠️ **Première entrée depuis que la Story 24-2 a vidé ce registre**, et
+        // c'est le mécanisme qui reprend exactement son office : la 24-2 avait
+        // refermé la fenêtre d'importabilité en créant `invoice_settlements`
+        // (20260827000001) ; cette migration lui est POSTÉRIEURE, donc un backup
+        // situé entre les deux est parfaitement importable — et il porte la table
+        // sans la colonne. C'est le cas que ce dispositif existe pour rattraper.
+        trigger: BackfillTrigger::Sentinels(&[(
+            "invoice_settlements",
+            "settlement_bank_account_id",
+        )]),
+        sql: include_str!("post_restore/20260828000001_invoice_settlements_type.sql"),
+    },
+    PostRestoreBackfill {
+        version: 20260910000001,
+        label: "20260910000001_audit_log_actor_label.sql",
+        // CLASSE B — la sentinelle est valide : `actor_label` est ajoutée par le
+        // MÊME `ALTER TABLE` que l'`UPDATE` de backfill, donc son absence prouve que
+        // la migration n'a pas tourné sur les données restaurées.
+        //
+        // ⚠️ **Le cas de déclenchement est ici PARTICULIER, et il vaut d'être écrit** :
+        // à partir de la Story 25-1a, `audit_log` n'est plus effacée ni restaurée par
+        // l'import — elle rejoint `onboarding_state` dans l'exclusion, et les entrées
+        // de l'archive sont FUSIONNÉES. Le rejeu ne porte donc pas sur des lignes
+        // « restaurées » au sens habituel, mais sur celles **issues du backup** :
+        // écrites par une instance antérieure à cette migration, elles arrivent avec
+        // `actor_label` vide et le rejeu leur donne un nom.
+        //
+        // ⛔ Sans ce rejeu, la fusion produirait exactement le trou qu'elle prétend
+        // fermer : des entrées conservées dont l'acteur ne serait nommé nulle part —
+        // ni par la FK, qui n'existe plus, ni par le libellé, qui serait vide.
+        trigger: BackfillTrigger::Sentinels(&[("audit_log", "actor_label")]),
+        sql: include_str!("post_restore/20260910000001_audit_log_actor_label.sql"),
+    },
 ];
 
 /// Migrations qui écrivent des données mais que ce mécanisme n'a **pas** à
@@ -362,6 +377,37 @@ pub enum ExemptionBasis {
 }
 
 pub const EXEMPT_MIGRATIONS: &[(i64, ExemptionBasis, &str)] = &[
+    (
+        20260828000001,
+        ExemptionBasis::Durable,
+        "Hors fenêtre depuis 20260917000001 (journal_entry_number_sequences, Story 25-2-c) : \
+         un backup assez ancien pour porter invoice_settlements sans \
+         settlement_bank_account_id est dépourvu de la table des compteurs d'écriture, donc \
+         refusé au contrôle de couverture. Figurait au registre de rejeu jusque-là ; l'y \
+         laisser aurait produit du code mort qui paraît fonctionner.",
+    ),
+    (
+        20260910000001,
+        ExemptionBasis::Durable,
+        "Hors fenêtre depuis 20260917000001 (journal_entry_number_sequences, Story 25-2-c) : \
+         même raison que 20260828000001. Elle était de CLASSE B, conditionnée à l'absence de \
+         audit_log.actor_label — un cas de déclenchement qui ne peut plus se présenter, le \
+         backup correspondant étant refusé en amont.",
+    ),
+    (
+        20260917000001,
+        ExemptionBasis::Durable,
+        "La migration crée elle-même journal_entry_number_sequences : un backup dépourvu de ses \
+         lignes d'amorçage est un backup dépourvu de la TABLE, donc refusé au contrôle de \
+         couverture de parse_and_verify ; un backup postérieur les porte, et l'import les \
+         restaure puisque la table est dans TABLES_TO_TRUNCATE. Le cas de déclenchement ne peut \
+         se présenter d'aucun côté. ⚠️ NE PAS écrire « Hors fenêtre » ici, quoique le fondement \
+         ressemble à celui de 20260428000001 (vat_rates) : ce marqueur est réservé à un fait de \
+         CHRONOLOGIE, et cette migration EST la dernière créatrice de table applicative — donc la \
+         fenêtre elle-même. `exemptions_claiming_out_of_window_really_are_out_of_window` exige \
+         version < window et l'a refusé, à juste titre. Le fondement est ici la COUVERTURE, pas \
+         la fenêtre.",
+    ),
     (
         20260909000001,
         ExemptionBasis::PerishableSince(20260827000001),
@@ -988,10 +1034,24 @@ mod tests {
         // y figuraient jusqu'à ce que la création de `invoice_settlements`
         // referme la fenêtre au-delà d'elles. Leurs justifications ont été
         // relues à ce titre — c'est exactement l'office de ce compteur.
+        // ⚠️ **6 → 8 (Story 25-2-c, #381)**, et les deux entrantes viennent encore
+        // du REGISTRE : `20260828000001` et `20260910000001` y figuraient jusqu'à
+        // ce que la création de `journal_entry_number_sequences` referme la
+        // fenêtre au-delà d'elles. C'est le même mouvement qu'à la 24-2, à une
+        // table près — le module l'annonçait : *« toute nouvelle table
+        // applicative aura le même effet »*.
+        //
+        // ⛔ **La troisième exemption de cette story n'entre PAS dans ce
+        // décompte**, et c'est le point à retenir : elle EST la migration qui
+        // referme la fenêtre, donc elle ne peut pas l'invoquer. Sa justification
+        // a d'abord porté le marqueur par analogie avec `vat_rates` ; ce test
+        // l'a refusée, à juste titre, et le fondement a été réécrit en termes de
+        // COUVERTURE. *Le marqueur dit un fait de chronologie, pas une famille
+        // d'arguments qui se ressemblent.*
         assert_eq!(
             checked,
-            6,
-            "attendu 6 exemptions marquées « Hors fenêtre » sur {}, trouvé {checked} — soit une \
+            8,
+            "attendu 8 exemptions marquées « Hors fenêtre » sur {}, trouvé {checked} — soit une \
              justification a été ajoutée sans le marqueur (et échappe alors au contrôle), soit le \
              marqueur a dérivé et ce test est devenu MUET.",
             EXEMPT_MIGRATIONS.len()
@@ -1068,9 +1128,15 @@ mod tests {
         // Garde de non-vacuité : une entrée ajoutée fait rougir ce test, ce qui
         // force à déclarer son fondement au lieu de le laisser par défaut.
         // Le nombre est codé en dur À DESSEIN, comme celui de « Hors fenêtre ».
+        // ⚠️ **12 → 15 (Story 25-2-c, #381)**, et les trois se ventilent : deux
+        // viennent du REGISTRE — `20260828000001` et `20260910000001`, que la
+        // création de `journal_entry_number_sequences` a mises hors fenêtre — et
+        // la troisième est cette migration même. ⛔ La sienne ne porte PAS le
+        // marqueur « Hors fenêtre » : elle EST la fenêtre, et son fondement est
+        // la couverture, pas la chronologie.
         assert_eq!(
             EXEMPT_MIGRATIONS.len(),
-            12,
+            15,
             "le registre d'exemptions a changé de taille : déclarer le fondement de l'entrée \
              neuve (Durable, ou PerishableSince(<borne>) si elle argumente sur un fait daté), \
              puis bumper ce nombre."

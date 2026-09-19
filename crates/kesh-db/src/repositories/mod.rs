@@ -29,6 +29,7 @@ pub mod invoice_settlements;
 pub mod invoice_settlements_write;
 pub mod invoices;
 pub mod journal_entries;
+pub mod journal_entry_number_sequences;
 pub mod onboarding;
 pub mod password_reset_tokens;
 pub mod payment_batches;

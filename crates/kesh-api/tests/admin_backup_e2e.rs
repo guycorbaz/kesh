@@ -123,7 +123,13 @@ fn forge_jwt(user_id: i64, role: &str, company_id: i64) -> String {
     .unwrap()
 }
 
-/// `COUNT(*)` par table applicative (les 23 de `TABLES_TO_TRUNCATE`).
+/// `COUNT(*)` par table applicative — **toutes** celles de `TABLES_TO_TRUNCATE`.
+///
+/// ⚠️ Ce commentaire annonçait « les 23 » alors que la liste en portait **38**.
+/// Aucun test n'assertant ce nombre, la déclaration a dérivé de quinze sans que
+/// rien ne rougisse. Elle ne porte plus de chiffre : la boucle parcourt la liste,
+/// et c'est la liste qui fait foi. *(Relevé à la Story 25-2-c, qui y ajoute une
+/// 39ᵉ table.)*
 async fn table_counts(pool: &MySqlPool) -> BTreeMap<&'static str, i64> {
     let mut counts = BTreeMap::new();
     for &table in TABLES_TO_TRUNCATE {

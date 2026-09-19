@@ -1173,6 +1173,10 @@ mod tests {
             "DELETE FROM journal_entries WHERE company_id = ?",
             "UPDATE accounts SET parent_id = NULL WHERE company_id = ?",
             "DELETE FROM accounts WHERE company_id = ?",
+            // Story 25-2-c : le compteur d'écritures porte une clé étrangère
+            // `RESTRICT` vers l'exercice, et toute écriture créée en pose une
+            // ligne. Il part donc avant l'exercice.
+            "DELETE FROM journal_entry_number_sequences WHERE company_id = ?",
             "DELETE FROM fiscal_years WHERE company_id = ?",
             "DELETE FROM companies WHERE id = ?",
         ] {

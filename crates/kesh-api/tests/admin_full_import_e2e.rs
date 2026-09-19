@@ -686,6 +686,9 @@ use rust_decimal_macros::dec;
 /// mutation 5 réduit le vecteur à un seul élément, observé par quatre cas.
 const REVENUE_BACKFILL: i64 = 20260729000001;
 const ROLE_POSTABLE: i64 = 20260722000001;
+/// Story 25-2-c (#381) — entrée déplacée au registre des retirés quand
+/// `journal_entry_number_sequences` a refermé la fenêtre d'importabilité.
+const SETTLEMENT_TYPE: i64 = 20260828000001;
 
 /// Un compte **titre** du plan PME — parent d'entrées du plan, donc jamais
 /// imputable, et jamais mouvementé par la fixture.
@@ -1458,9 +1461,20 @@ async fn full_import_replays_backfills_in_increasing_version_order(pool: MySqlPo
     // une inversion qui, par accident, laisserait la donnée correcte serait
     // sinon invisible ici.
     let versions: Vec<i64> = report.iter().map(|e| e.version).collect();
+    // ⚠️ Story 25-2-c (#381) — **quatre** entrées désormais, et non deux. La
+    // création de `journal_entry_number_sequences` a refermé la fenêtre
+    // d'importabilité au-delà de `20260828000001` et `20260910000001`, qui ont
+    // donc rejoint le registre des retirés. Ce test n'observe pas un défaut : il
+    // observe une liste qui s'est allongée, et l'ordre CROISSANT — le seul objet
+    // de son assertion — reste vérifié.
     assert_eq!(
         versions,
-        vec![ROLE_POSTABLE, REVENUE_BACKFILL],
+        vec![
+            ROLE_POSTABLE,
+            REVENUE_BACKFILL,
+            SETTLEMENT_TYPE,
+            AUDIT_ACTOR_LABEL
+        ],
         "le rejeu suit l'ordre de version CROISSANT"
     );
 }
@@ -1811,13 +1825,17 @@ async fn actor_labels(pool: &MySqlPool) -> Vec<String> {
     v
 }
 
-/// L'entrée du rapport d'audit `admin.full_import` qui porte la version donnée.
-fn report_entry(report: &[Value], version: i64) -> &Value {
-    report
-        .iter()
-        .find(|e| e["version"].as_i64() == Some(version))
-        .unwrap_or_else(|| panic!("entrée {version} absente du rapport d'import"))
-}
+// ⚠️ Story 25-2-c (#381) — `report_entry` a été SUPPRIMÉ, et son absence est un
+// fait, pas un oubli. Il sélectionnait une entrée dans le rapport d'audit de
+// `admin.full_import` ; ses trois derniers appelants — les cas C7, C7-bis et
+// C7-ter du libellé d'acteur — lisent désormais le rapport rendu par
+// `replay_retired`, l'entrée `20260910000001` ayant quitté le registre de
+// production quand `journal_entry_number_sequences` a refermé la fenêtre
+// d'importabilité. Le compilateur l'a signalé `never used` ; le garder sous un
+// `#[allow(dead_code)]` aurait fait taire un signal juste.
+//
+// `backfill_report`, lui, reste employé : d'autres cas lisent toujours le
+// rapport d'audit de l'import.
 
 /// **C7 — un backup PRÉ-25-1a s'importe, et ses entrées d'audit ressortent
 /// NOMMÉES.** Le manifeste est privé de `audit_log.actor_label` : la sentinelle
@@ -1869,6 +1887,21 @@ async fn full_import_replays_actor_label_when_column_is_absent(pool: MySqlPool) 
     let (mut manifest, data) = unzip(&backup);
     strip_column(&mut manifest, "audit_log", "actor_label");
     import_ok(&app, &ctx.jwt, &manifest, &data).await;
+    // ⚠️ Story 25-2-c (#381) — `20260910000001` a quitté le registre de
+    // production : la création de `journal_entry_number_sequences` a refermé la
+    // fenêtre d'importabilité au-delà d'elle. Le rejeu se déclenche donc
+    // explicitement sur les entrées retirées, exactement comme la Story 24-2
+    // l'a fait pour ses deux prédécesseurs.
+    //
+    // ⛔ **Ce que ce basculement coûte, et pourquoi il est acceptable.** Ce test
+    // n'éprouve plus le comportement réel d'un import, mais la MACHINERIE de
+    // rejeu. C'est légitime seulement parce que le cas simulé est devenu
+    // INATTEIGNABLE : une instance qui porte `journal_entry_number_sequences`
+    // (17 septembre) porte forcément `actor_label` (10 septembre) — sqlx
+    // n'applique pas les migrations dans le désordre —, et un backup dépourvu de
+    // la table est refusé au contrôle de couverture bien avant tout rejeu. *Si ce
+    // raisonnement est faux, ce commentaire est l'endroit où le contester.*
+    let report = replay_retired(&pool, &manifest).await;
 
     // ⛔ Le cœur du cas : plus aucune ligne sans nom d'acteur.
     let vides: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE actor_label = ''")
@@ -1896,17 +1929,23 @@ async fn full_import_replays_actor_label_when_column_is_absent(pool: MySqlPool) 
         "fusion : la ligne d'origine est conservée, celle de l'archive est ajoutée et nommée"
     );
 
-    // Et le rapport d'audit le DIT — sinon un exploitant ne saurait pas qu'un
-    // rattrapage a eu lieu sur sa piste d'audit.
-    let report = backfill_report(&pool).await;
-    let e = report_entry(&report, AUDIT_ACTOR_LABEL);
+    // Et le rapport le DIT — sinon un exploitant ne saurait pas qu'un rattrapage
+    // a eu lieu sur sa piste d'audit.
+    //
+    // ⚠️ Story 25-2-c (#381) — la source du rapport CHANGE, pas son contenu :
+    // l'entrée ayant quitté le registre de production, elle ne figure plus au
+    // rapport d'audit de `admin.full_import` (`backfill_report`) mais dans celui
+    // que `replay_retired` REND. Les codes d'issue, eux, sont les mêmes — ils
+    // sont contractuels précisément pour survivre à ce genre de déplacement.
+    let e = retired_entry(&report, AUDIT_ACTOR_LABEL);
     assert_eq!(
-        e["outcome"], "REPLAYED_SENTINELS_ABSENT",
+        e.outcome.code(),
+        "REPLAYED_SENTINELS_ABSENT",
         "sentinelle absente ⇒ rejeu déclaré, got {e:?}"
     );
     assert_eq!(
-        e["missing_sentinels"],
-        serde_json::json!(["audit_log.actor_label"]),
+        e.outcome.missing_sentinels(),
+        ["audit_log.actor_label".to_string()],
         "la sentinelle manquante doit être NOMMÉE au rapport, got {e:?}"
     );
 }
@@ -1970,14 +2009,24 @@ async fn full_import_preserves_archived_actor_label_when_column_is_present(pool:
         "le libellé de l'archive fait foi : un instantané ne se recalcule pas par jointure"
     );
 
-    let report = backfill_report(&pool).await;
-    let e = report_entry(&report, AUDIT_ACTOR_LABEL);
+    // ⚠️ Story 25-2-c (#381) — `20260910000001` a quitté le registre de
+    // production : la création de `journal_entry_number_sequences` a refermé la
+    // fenêtre d'importabilité au-delà d'elle. Le rejeu est donc déclenché
+    // explicitement sur les entrées retirées, et son issue se lit au rapport
+    // RENDU plutôt qu'à celui de l'audit d'import.
+    //
+    // ⛔ Ce que ce test éprouve ne change pas d'un iota : la colonne étant
+    // PRÉSENTE au manifeste, la sentinelle est trouvée et l'entrée est `Skipped`.
+    // C'est le discernement du mécanisme qui est en jeu, pas son effet.
+    let report = replay_retired(&pool, &manifest).await;
+    let e = retired_entry(&report, AUDIT_ACTOR_LABEL);
     assert_eq!(
-        e["outcome"], "SKIPPED",
+        e.outcome.code(),
+        "SKIPPED",
         "sentinelle présente ⇒ skip strict, got {e:?}"
     );
     assert_eq!(
-        e["rows_affected"], 0,
+        e.rows_affected, 0,
         "un skip strict ne touche aucune ligne, got {e:?}"
     );
 }
@@ -2032,10 +2081,27 @@ async fn full_import_replay_does_not_overwrite_a_local_actor_label(pool: MySqlPo
     // Sentinelle retirée ⇒ le rejeu TOURNE. C'est ce qui distingue ce cas de C7-bis.
     strip_column(&mut manifest, "audit_log", "actor_label");
     import_ok(&app, &ctx.jwt, &manifest, &data).await;
+    // ⚠️ Story 25-2-c (#381) — `20260910000001` a quitté le registre de
+    // production : la création de `journal_entry_number_sequences` a refermé la
+    // fenêtre d'importabilité au-delà d'elle. Le rejeu se déclenche donc
+    // explicitement sur les entrées retirées, exactement comme la Story 24-2
+    // l'a fait pour ses deux prédécesseurs.
+    //
+    // ⛔ **Ce que ce basculement coûte, et pourquoi il est acceptable.** Ce test
+    // n'éprouve plus le comportement réel d'un import, mais la MACHINERIE de
+    // rejeu. C'est légitime seulement parce que le cas simulé est devenu
+    // INATTEIGNABLE : une instance qui porte `journal_entry_number_sequences`
+    // (17 septembre) porte forcément `actor_label` (10 septembre) — sqlx
+    // n'applique pas les migrations dans le désordre —, et un backup dépourvu de
+    // la table est refusé au contrôle de couverture bien avant tout rejeu. *Si ce
+    // raisonnement est faux, ce commentaire est l'endroit où le contester.*
+    let report = replay_retired(&pool, &manifest).await;
 
-    let report = backfill_report(&pool).await;
+    // ⚠️ Story 25-2-c (#381) — même substitution de source que dans C7 : l'entrée
+    // a quitté le registre de production, son issue se lit désormais au rapport
+    // rendu par `replay_retired` et non à celui de l'audit d'import.
     assert_eq!(
-        report_entry(&report, AUDIT_ACTOR_LABEL)["outcome"],
+        retired_entry(&report, AUDIT_ACTOR_LABEL).outcome.code(),
         "REPLAYED_SENTINELS_ABSENT",
         "pré-condition du cas : le rejeu doit avoir TOURNÉ, sinon la garde n'est pas exercée"
     );

@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 68 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 69 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -780,6 +780,25 @@ CREATE TABLE `journal_entry_lines` (
   CONSTRAINT `chk_jel_debit_credit_exclusive` CHECK (`debit` = 0 and `credit` > 0 or `debit` > 0 and `credit` = 0),
   CONSTRAINT `chk_jel_debit_nonneg` CHECK (`debit` >= 0),
   CONSTRAINT `chk_jel_credit_nonneg` CHECK (`credit` >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `journal_entry_number_sequences`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `journal_entry_number_sequences` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` bigint(20) NOT NULL,
+  `fiscal_year_id` bigint(20) NOT NULL,
+  `next_number` bigint(20) NOT NULL DEFAULT 1 COMMENT 'Prochain numéro à attribuer. Ne redescend JAMAIS : c''est toute la propriété qui manquait au MAX+1.',
+  `version` int(11) NOT NULL DEFAULT 1,
+  `created_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  `updated_at` datetime(3) NOT NULL DEFAULT current_timestamp(3) ON UPDATE current_timestamp(3),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_jens_company_fy` (`company_id`,`fiscal_year_id`),
+  KEY `fk_jens_fiscal_year` (`fiscal_year_id`),
+  CONSTRAINT `fk_jens_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`),
+  CONSTRAINT `fk_jens_fiscal_year` FOREIGN KEY (`fiscal_year_id`) REFERENCES `fiscal_years` (`id`),
+  CONSTRAINT `chk_jens_next_positive` CHECK (`next_number` >= 1)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `onboarding_state`;
