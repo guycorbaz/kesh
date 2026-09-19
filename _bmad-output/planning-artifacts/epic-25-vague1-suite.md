@@ -107,6 +107,34 @@ Une consultation scopée ne les montrerait donc à personne. *La 25-1a s'est bat
 entrées survivent à l'import ; il serait fâcheux que l'écran qui les rend enfin lisibles soit
 précisément celui qui les cache.* À traiter là-bas, pas ici.
 
+#### ✅ Arbitrages du 2026-09-15 — la 25-1c, avant sa spécification
+
+Rendus par le Project Lead après l'exploration du code (quatre relevés : conventions backend,
+patrons d'écran, sémantique des entrées, données disponibles après un import).
+
+1. **La 25-1c est DÉCOUPÉE** — § *Règle de splitting préventif*, sept modules touchés :
+   **25-1c-a** la route de consultation et son export CSV (backend) ; **25-1c-b** l'écran, le
+   menu, les libellés dans les quatre langues, les E2E et les manuels.
+2. **Qui consulte** : le **Comptable** et l'**Admin**. **Ni le rôle Consultation** — les détails
+   portent des e-mails et des changements de rôle —, **ni une clé API** — qu'on ne puisse pas
+   extraire la piste entière par programme.
+3. **Le restore n'est PAS un problème de numérotation, et la raison est d'usage** : *« si on importe
+   une sauvegarde, c'est que la base de données a disparu ou est corrompue et doit être recréée »*.
+   L'import restaure **la même** installation, donc les mêmes identifiants de société. ⇒ la
+   consultation filtre **strictement par `company_id`**. Les deux sous-cas mesurés par la 25-1c-zero
+   ne naissent que d'un **usage hors intention** — l'import de la sauvegarde d'une **autre**
+   installation, que le code n'empêche pas. ⚠️ **Conséquence signalée, non traitée** : le manuel
+   d'administration doit dire que l'import sert à restaurer la même installation.
+4. **Affichage sobre** : le code d'action tel quel, les **types d'entité** traduits, les détails en
+   JSON indenté. Des libellés par action pourront suivre.
+5. **Vocabulaire figé** : **« journal d'audit »** — `Audit-Protokoll` (de), `registro di audit`
+   (it), `audit log` (en). À porter au glossaire ; les catalogues emploient aujourd'hui aussi
+   « piste d'audit » et « journal d'audit interne ».
+
+⚠️ **Choix par défaut, non arbitré explicitement** : une entrée sans société (`company_id` vide,
+auteur inexistant) est **montrée**, marquée « société indéterminée » — dans une installation à une
+seule société, elle ne peut appartenir qu'à celle-là.
+
 ### 25-2 — Les gardes structurelles : numérotation et type de compte
 
 **Issues : [#381], [#382].** Deux gardes absentes qui rendent les livres contestables.

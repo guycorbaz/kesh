@@ -17,7 +17,9 @@
 //! faux.
 //!
 //! Scope v0.1 (story 3.3) : `journal_entry.updated`, `journal_entry.deleted`.
-//! Story 3.5 étendra avec `journal_entry.created` et l'UI de consultation.
+//! Depuis, les écritures se sont étendues à tout le domaine, et la Story
+//! 25-1c-a livre la **consultation** — `repositories::audit_log::list_by_company_paginated`,
+//! scopée par société et paginée.
 
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};

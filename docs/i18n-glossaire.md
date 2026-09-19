@@ -193,6 +193,7 @@ contraignantes pour tout le rollout.
 | fr-CH | de-CH proposé | it-CH proposé | en-CH proposé | motif / réserve |
 |---|---|---|---|---|
 | personne physique / morale | natürliche / juristische Person | persona fisica / giuridica | individual / legal entity | |
+| **réglages de facturation** | **Fakturierungseinstellungen** | **impostazioni di fatturazione** | **invoicing settings** | story 25-1c-a (#378), libellé d'audit `company_invoice_settings.updated`. ⚠️ **COMPOSÉ, non relevé** : `Fakturierung` est attesté (`settings-invoicing-title`) et `Einstellungen` l'est en partie A, mais leur composition n'a **aucun précédent hors des clés que cette story crée** — c'est-à-dire qu'il s'atteste lui-même, le défaut que ce glossaire documente sur son entrée « lot ». À trancher avant qu'un rollout ne le fige. *(Son voisin `Mahneinstellungen`, lui, a un précédent : `dunning-load-error`.)* |
 | bascule (**interrupteur**) | Umschalter | interruttore | toggle | élément d'interface. ⚠️ **NE PAS employer pour « date de bascule »**, qui est un changement de taux et vit en partie A |
 
 ---

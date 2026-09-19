@@ -8,6 +8,20 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [Unreleased]
+
+### Ajouté
+
+- **La piste de contrôle se lit enfin.** Le journal d'audit enregistrait les opérations depuis l'Epic 7 et **aucune route, aucun écran ne permettait de le relire** : la trace existait sans être consultable, ce qui est peu utile à qui doit justifier une correction. Trois routes l'ouvrent — une **liste paginée et filtrable** (par date, type d'entité, identifiant, action), un **vocabulaire** des codes traduits pour alimenter les filtres, et un **export CSV**. ([#378](https://github.com/guycorbaz/kesh/issues/378))
+
+  L'accès est réservé aux rôles **Comptable** et **Administrateur**, et **refusé aux clés API** — y compris en lecture seule et y compris à une clé créée par un administrateur : la piste de contrôle se lit dans l'interface, par une personne. Chaque consultation est **strictement limitée à votre société**, et **ne s'inscrit pas elle-même au journal**, qui enflerait sinon de sa propre lecture.
+
+  Les codes techniques (`invoice.validated`, `bank_imports`) sont remplacés par des **libellés lisibles dans les quatre langues** — 122 libellés, dans la langue de l'installation et non dans la langue comptable de la société. L'export porte les mêmes libellés, ses dix colonnes sont traduites, et toute cellule de texte est neutralisée contre l'**injection de formule** dans le tableur qui l'ouvrira.
+
+  ⚠️ **L'écran, lui, reste à venir** : cette version ouvre la lecture par l'interface de programmation, ce qui suppose un outil technique. La page qui la rendra lisible depuis l'application fait l'objet de la suite de l'issue.
+
+---
+
 ## [0.11.1] — 2026-08-24
 
 **Correctif.** Trois défauts qui avaient en commun de ne rien dire : l'écran se comportait mal sans le signaler, et l'utilisateur ne pouvait pas savoir que quelque chose avait mal tourné. **La mise à jour est recommandée à qui importe des relevés bancaires** — la fonction était inutilisable.
