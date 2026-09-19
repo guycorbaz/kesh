@@ -94,8 +94,12 @@ promesse faite au lecteur est que les totaux d'une période verrouillée ne boug
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — La garde** (AC 1-5) : étendre la requête de l'étape 2 à `entry_date`, lire la borne,
-      refuser après l'étape 3-ter.
+- [ ] **T1 — La garde** (AC 1-5) : étendre la requête de l'étape 2 à `entry_date` ; **après**
+      l'étape 3-ter, lire la borne par un `SELECT` **non verrouillant** puis refuser. Lue là, elle ne
+      prend aucun verrou sur `companies` : aucun cycle possible avec `lock_books` / `unlock_books`,
+      qui ne verrouillent que `companies`. ⚠️ Le champ `attempted` de `PeriodLocked` porte ici la
+      date d'une écriture **existante**, non une date qu'on a tenté de poser : les messages des
+      quatre locales (« celle-ci est datée du… ») restent justes, et le nom du champ ne change pas.
 - [ ] **T2 — Tests et mutations** (AC 6).
 - [ ] **T3 — Manuels, PDF, CHANGELOG** (AC 7).
 - [ ] **T4 — Gates complets** — gate backend **complet** et non ciblé : la story touche un
@@ -144,3 +148,4 @@ promesse faite au lecteur est que les totaux d'une période verrouillée ne boug
 | Date | Étape | Note |
 |---|---|---|
 | 2026-09-19 | spec | Story détachée de la 25-2-b, sur arbitrage de Guy. Le trou a été trouvé par l'orchestrateur en vérifiant les findings de la passe 1 de validation de la 25-2-b — **aucune lentille ne l'avait vu**. Issue **#443** ouverte le même jour (`bug_report`, labels `bug` + `triage`). |
+| 2026-09-19 | validate P1 — **close** | **Une lentille Sonnet**, prompt versionné `25-2-b-zero-validate-prompt-p1.md`. **0 au-dessus de LOW, 2 LOW**, sept axes déclarés exercés. L'inventaire des autres chemins qui effaceraient une écriture est **complet** : pas de suppression d'avoir, `supplier_invoices::cancel` contre-passe, aucune FK en `CASCADE` vers les écritures, aucune `UPDATE` de production sur leurs dates ou montants ; purges de société hors périmètre à bon droit. LOW corrigés : position et nature de la lecture de la borne fixées à T1 ; sens du champ `attempted` écrit. Relevé hors périmètre, versé à la 25-2-b : `admin-manual.tex:1799` et `README.md:218` affirment déjà faux qu'une écriture n'est « ni modifiable ni supprimable, sans exception ». |
