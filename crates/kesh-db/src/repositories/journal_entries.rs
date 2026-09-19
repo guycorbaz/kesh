@@ -927,7 +927,9 @@ fn entry_snapshot_json(entry: &JournalEntry, lines: &[JournalEntryLine]) -> serd
 /// Étapes :
 /// 1. BEGIN tx
 /// 2. SELECT FOR UPDATE join fiscal_year (lock entry + FY)
-/// 3. Si `Closed` → rollback + `FiscalYearClosed`
+/// 3. Si `Closed` → rollback + `FiscalYearClosed` ; puis, dans `delete_in_tx` :
+///    écriture contre-passée → `EntryIsReversed` (3-bis), gel → `EntryIsPosted`
+///    (3-ter), période verrouillée → `PeriodLocked` (3-quater, #443)
 /// 4. Snapshot "before" (re-fetch lines)
 /// 5. INSERT audit_log (AVANT le DELETE pour préserver la trace)
 /// 6. DELETE FROM journal_entries → lignes suivent par CASCADE
@@ -1590,6 +1592,16 @@ mod tests {
         // Nettoyer les écritures existantes pour éviter les interférences.
         delete_all_by_company(pool, company_id).await.unwrap();
 
+        // Story 25-2-b-zero (#443) — retirer toute borne du verrou de période.
+        // Auto-réparation, comme l'exercice ouvert plus bas (#140) : une borne
+        // laissée par un test interrompu ferait refuser la création de toute
+        // écriture datée de la période, sur des tests sans rapport (KF-039).
+        sqlx::query("UPDATE companies SET books_locked_through = NULL WHERE id = ?")
+            .bind(company_id)
+            .execute(pool)
+            .await
+            .unwrap();
+
         // Garantir un exercice OUVERT couvrant aujourd'hui (auto-réparation #140).
         let today = chrono::Utc::now().naive_utc().date();
         let fy = ensure_open_fiscal_year(pool, company_id, today).await;
@@ -2189,42 +2201,57 @@ mod tests {
             .unwrap();
     }
 
-    /// Crée une écriture datée de `date`, pose la borne à `borne`, tente
+    /// Crée une écriture datée **du jour**, pose la borne à `borne`, tente
     /// `delete_in_tx(…, enforce_immutability)`, retire la borne, et rend le
     /// résultat — la ligne existe-t-elle encore, en second.
+    ///
+    /// ⚠️ **L'écriture est datée du jour, et c'est ce qui rend le montage sûr
+    /// toute l'année.** `setup` ne garantit qu'un exercice couvrant AUJOURD'HUI ;
+    /// une date passée (« il y a trente jours ») tombe hors de l'exercice civil
+    /// qu'`ensure_open_fiscal_year` recrée, chaque mois de janvier, et la
+    /// création paniquerait avant d'atteindre la garde. La borne, posée en SQL,
+    /// n'a pas à être dans le passé : on la place sur le jour même, ou la veille.
+    /// *(Passe 1 de revue.)*
+    ///
+    /// ⚠️ **Aucun `unwrap` entre la pose et le retrait de la borne** : un
+    /// `commit` ou un `rollback` qui paniquerait la laisserait posée sur la
+    /// société partagée. Les erreurs sont recueillies, la borne retirée, puis
+    /// seulement les erreurs levées.
     async fn supprimer_sous_borne(
-        date: NaiveDate,
         borne: Option<NaiveDate>,
         enforce_immutability: bool,
     ) -> (Result<(), DbError>, bool) {
         let pool = test_pool().await;
         let (company_id, fy_id, admin) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
-        poser_borne(&pool, company_id, None).await;
         let entree = create(
             &pool,
             fy_id,
             admin,
-            mk_entry(company_id, date, paire(a1, a2)),
+            mk_entry(company_id, aujourd_hui(), paire(a1, a2)),
         )
         .await
         .unwrap();
 
         poser_borne(&pool, company_id, borne).await;
-        let mut tx = pool.begin().await.unwrap();
-        let resultat = delete_in_tx(
-            &mut tx,
-            company_id,
-            entree.entry.id,
-            admin,
-            enforce_immutability,
-        )
-        .await;
-        if resultat.is_ok() {
-            tx.commit().await.unwrap();
-        } else {
-            tx.rollback().await.unwrap();
+        let resultat = async {
+            let mut tx = pool.begin().await.map_err(map_db_error)?;
+            let r = delete_in_tx(
+                &mut tx,
+                company_id,
+                entree.entry.id,
+                admin,
+                enforce_immutability,
+            )
+            .await;
+            if r.is_ok() {
+                tx.commit().await.map_err(map_db_error)?;
+            } else {
+                tx.rollback().await.map_err(map_db_error)?;
+            }
+            r
         }
+        .await;
         poser_borne(&pool, company_id, None).await;
 
         let reste: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE id = ?")
@@ -2235,9 +2262,8 @@ mod tests {
         (resultat, reste == 1)
     }
 
-    /// Une date passée, dans l'exercice ouvert que `setup` garantit.
-    fn il_y_a(jours: i64) -> NaiveDate {
-        chrono::Utc::now().naive_utc().date() - chrono::Duration::days(jours)
+    fn aujourd_hui() -> NaiveDate {
+        chrono::Utc::now().naive_utc().date()
     }
 
     /// ⛔ Le cas que #443 décrit : le gel levé (`false`, suppression d'une
@@ -2245,8 +2271,8 @@ mod tests {
     /// disparaît pas. Le seuil est inclusif, comme à la création.
     #[tokio::test]
     async fn la_suppression_refuse_une_ecriture_datee_du_jour_de_la_borne() {
-        let borne = il_y_a(30);
-        let (resultat, reste) = supprimer_sous_borne(borne, Some(borne), false).await;
+        let borne = aujourd_hui();
+        let (resultat, reste) = supprimer_sous_borne(Some(borne), false).await;
         assert!(
             matches!(resultat, Err(DbError::PeriodLocked { locked_through, attempted })
                 if locked_through == borne && attempted == borne),
@@ -2258,11 +2284,12 @@ mod tests {
         );
     }
 
-    /// Le lendemain de la borne est hors de la période verrouillée.
+    /// Une écriture datée du lendemain de la borne est hors de la période
+    /// verrouillée.
     #[tokio::test]
     async fn la_suppression_accepte_une_ecriture_datee_du_lendemain_de_la_borne() {
-        let borne = il_y_a(30);
-        let (resultat, reste) = supprimer_sous_borne(il_y_a(29), Some(borne), false).await;
+        let veille = aujourd_hui() - chrono::Duration::days(1);
+        let (resultat, reste) = supprimer_sous_borne(Some(veille), false).await;
         assert!(
             resultat.is_ok(),
             "attendu Ok hors période verrouillée, obtenu {resultat:?}"
@@ -2273,7 +2300,7 @@ mod tests {
     /// Sans borne, rien ne change.
     #[tokio::test]
     async fn la_suppression_sans_borne_est_inchangee() {
-        let (resultat, reste) = supprimer_sous_borne(il_y_a(30), None, false).await;
+        let (resultat, reste) = supprimer_sous_borne(None, false).await;
         assert!(
             resultat.is_ok(),
             "attendu Ok sans borne, obtenu {resultat:?}"
@@ -2286,8 +2313,7 @@ mod tests {
     /// Placée avant le gel, elle rendrait `PeriodLocked` et ce test rougirait.
     #[tokio::test]
     async fn le_gel_parle_avant_le_verrou_de_periode() {
-        let borne = il_y_a(30);
-        let (resultat, reste) = supprimer_sous_borne(borne, Some(borne), true).await;
+        let (resultat, reste) = supprimer_sous_borne(Some(aujourd_hui()), true).await;
         assert!(
             matches!(resultat, Err(DbError::EntryIsPosted)),
             "attendu EntryIsPosted, obtenu {resultat:?}"
