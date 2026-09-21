@@ -8,7 +8,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
-## [0.12.0] — Non publié
+## [0.12.0] — 2026-09-21
 
 ⚠️ **Cette version n'est pas encore destinée à tenir une comptabilité réelle.** Elle corrige le défaut fondateur du produit — l'encaissement d'une facture ne produisait aucune écriture — et referme les gardes qui rendaient les livres contestables. Mais plusieurs fonctions nécessaires à un exercice complet manquent encore, et l'export de sauvegarde est incomplet. Elle s'installe, elle s'exerce, elle ne tient pas vos livres.
 
