@@ -34,7 +34,7 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
 2. **`enforce_immutability = false` n'a plus qu'un appelant de production** — `unvalidate`. Le
    drapeau **reste dans `delete_in_tx`**, jamais chez l'appelant : une garde posée chez l'appelant
    laisserait la fonction nue pour le suivant. ⚠️ **Les trois doc-comments qui nomment
-   `invoices::delete` comme seul appelant** (`journal_entries.rs:943`, `:982` ;
+   `invoices::delete` comme seul appelant** (`journal_entries.rs:943`, `:982-989` ;
    `invoices.rs:1339-1340`) sont réécrits **par la 25-2-b-1**, qui les périme en créant le second
    appelant. ⛔ **NEUF AUTRES sites affirment encore que `invoices::delete` détruit l'écriture d'une
    facture validée**, et ils deviennent faux **ici** — aucun test ne les garde. Ventilation, parce
@@ -43,28 +43,46 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
    s'ajoutent les **deux** déjà nommés ci-dessus, qui se réécrivent ici une **seconde** fois —
    **onze ancrages en tout**. *(« Huit » était faux : cinquième décompte pris en défaut dans cette
    story.)*
-   - *(les deux déjà nommés)* `journal_entries.rs:943` et `:982-988` — **deuxième réécriture** : b-1 les fait dire « deux
+   - *(les deux déjà nommés)* `journal_entries.rs:943` et `:982-989` — **deuxième réécriture** (le paragraphe court jusqu'à `:989`, « le résidu est assumé et tracé ») : b-1 les fait dire « deux
      appelants », b-2 en retire `invoices::delete` **et** sa justification (« sous ses trois gardes
      propres »), qui déménage chez `unvalidate` ;
    - `journal_entries.rs:970` — « (ex. `invoices::delete` d'une facture validée — #219) » ;
    - `crates/kesh-api/src/lib.rs:234` et `:416` ;
    - `crates/kesh-api/src/routes/invoices.rs:5` (doc de module) ;
    - `crates/kesh-api/tests/invoice_delete_e2e.rs:1` et `:6` (doc de module) ;
-   - `frontend/src/routes/(app)/invoices/[id]/+page.svelte:68`, `:95`, `:920`.
+   - `frontend/src/routes/(app)/invoices/[id]/+page.svelte:68`, `:95` — et `:920`, qui **part avec
+     le bloc retiré** par l'AC 4 (`:919-943`) au lieu de se réécrire : il compte parmi les onze
+     ancrages, non parmi les gestes de réécriture.
+   ⛔ **Un DIXIÈME site existe, et il NE SE TOUCHE PAS** :
+   `crates/kesh-db/migrations/20260715000001_invoice_reminders.sql:14` — « FK `invoice_id ON DELETE
+   CASCADE` : aligné sur la **suppression définitive** #219 ». **P8** interdit de modifier une
+   migration appliquée, *pas même un commentaire* : `sqlx` en compare le checksum et **le binaire ne
+   boote plus**. ⚠️ Le gate backend ne verrait rien (bases éphémères) ; seule l'E2E rougirait, après
+   coup — précédent Story 16-3b. La remarque y reste, périmée et inoffensive. *Un grep du symptôme
+   y mène droit : c'est écrit ici pour que personne ne « corrige » ce fichier.*
+
    Ceux du bras `Some(inv) if inv.status == "validated"` (`invoices.rs:1236-1282`) **avec son
    commentaire d'en-tête** (`:1232-1235`), plus `:1331` et **`:1339-1349`**, **partent avec la
-   branche** : ils ne se réécrivent pas. ⚠️ *Trois citations successives ont été fausses ici :
+   branche** : ils ne se réécrivent pas. ⛔ **Et c'est le BLOC `invoices.rs:1337-1354` qui part en
+   entier**, pas seulement ses commentaires : c'est lui qui porte le `false`
+   (`delete_in_tx(&mut tx, company_id, je_id, user_id, false)`, `:1350`), et il vit **hors** du
+   `match` que l'AC 1 retire. Le laisser rendrait l'AC 2 **faux en silence** — un brouillon n'ayant
+   pas de `journal_entry_id`, le `if let` ne se déclencherait jamais et **rien ne rougirait**.
+   ⚠️ *Trois citations successives ont été fausses ici :
    `1228-1231` visait le bras `NotFound` et le bras **brouillon** (qui reste), `1232-1282` désignait
    le bras « en entier » alors qu'il commence à `1236`, et `1339-1345` coupait un commentaire qui
    court jusqu'à `1349`.*
 
 3. **HUIT tests existants changent d'objet, et PAS tous de la même façon** — relevé en passe 2 :
-   cinq d'entre eux (motifs 1, 2, 3, 5, 6) réaffirmeraient mot pour mot ce que la **25-2-b-1** teste
-   déjà sur `unvalidate`. La consigne uniforme « réécrire contre `unvalidate` » produirait des
-   doublons ; ⛔ **ce qui n'est couvert nulle part, c'est le refus neuf** de `delete` sur une facture
-   validée (`INVOICE_MUST_BE_UNVALIDATED_FIRST`), pour lequel l'AC 1 ne prévoit qu'un test. Chaque
-   test est donc traité **nommément**, et non par une règle à appliquer au jugé — relevé en passe 3,
-   où la règle en bloc laissait les deux tests de **succès** sans destination :
+   **quatre** d'entre eux (motifs 1, 2, 3, 5) réaffirmeraient mot pour mot ce que la **25-2-b-1**
+   teste déjà sur `unvalidate` — ⚠️ **le motif 6 fait exception**, cf. sa ligne du tableau. La
+   consigne uniforme « réécrire contre `unvalidate` » produirait des doublons ; ⛔ **ce qui n'est
+   couvert nulle part, c'est le refus neuf** de `delete` sur une facture validée
+   (`INVOICE_MUST_BE_UNVALIDATED_FIRST`), pour lequel l'AC 1 ne prescrit **aucun test neuf** mais
+   **les deux tests retargetés ci-dessous** — l'un au dépôt, l'autre à la couche HTTP. Chaque
+   test est donc traité **nommément**, et non par une règle à appliquer au jugé. ⚠️ **Quatre**
+   d'entre eux seulement (motifs 1, 2, 3, 5) feraient doublon avec la b-1 ; **le motif 6 fait
+   exception**, cf. sa ligne du tableau :
 
    | Test | Ce qu'il devient | Pourquoi |
    |---|---|---|
@@ -132,9 +150,13 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
    redescend pas, et c'est voulu. La confirmation de suppression d'un brouillon **qui porte un
    numéro** le dit ; celle d'un brouillon jamais validé reste inchangée.
    ⛔ **Il y a DEUX chemins de suppression d'un brouillon, et le second n'était nommé nulle part** :
-   l'écran de **liste**, `frontend/src/routes/(app)/invoices/+page.svelte` — bouton `:423-429`,
-   gardé par le seul `{#if inv.status === 'draft'}` donc **sans garde de rôle**, et sa confirmation
-   `:459-491`, qui ne dit **pas un mot du numéro**. Les deux critères ci-dessus **et** la garde de
+   l'écran de **liste**, `frontend/src/routes/(app)/invoices/+page.svelte` — bouton **`:427-429`**,
+   gardé par le seul `{#if inv.status === 'draft'}` (`:423`) donc **sans garde de rôle**, et sa
+   confirmation
+   `:459-491`, qui ne dit **pas un mot du numéro**. ⚠️ **La garde va sur le bouton `:427-429`, PAS
+   sur le `{#if}` de `:423`** : il enveloppe aussi *Modifier* (`:424-426`), que le Comptable doit
+   garder. *Même défaut que sur l'écran de fiche, recommis sur l'écran jumeau par le patch qui le
+   corrigeait — un symptôme se grepe sur les DEUX écrans.* Les deux critères ci-dessus **et** la garde de
    rôle de l'AC 4 valent **aux deux endroits**. *Énumérés par `grep -rn "deleteInvoice" frontend/src` :
    deux appels, `[id]/+page.svelte:206` et `+page.svelte:233`, vers une seule route backend. C'est le
    motif du « quatrième chemin d'écriture » de l'Epic 24 — quatre passes n'en avaient énuméré qu'un.*
@@ -161,18 +183,28 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
      (« ni modifiable ni supprimable […] **sans exception** ») ; ⛔ l. 1957 : **tout le paragraphe se
      réécrit** — il repose sur la prémisse qu'un administrateur peut supprimer une facture qui a des
      rappels, fausse déjà sur `main`.
-   - `README.md:218` — « ni modifiable ni supprimable, **par personne** » (formulation propre au
-     README, distincte de celle du manuel), et la ligne **v0.12.1** (`:219`) de la feuille de route,
-     qui énumère les stories livrées de l'E25 : **#440 s'y ajoute**, cette story étant celle qui la
-     ferme.
+   - `README.md` — ⚠️ **la feuille de route n'est pas une note de version** : c'est un document
+     **vivant**, que la § *Règle de commit et push* impose de tenir à jour ; l'interdit de l'AC 10
+     ne la vise donc pas. La ligne **v0.12.0** (`:218`) porte « ni modifiable ni supprimable, **par
+     personne** » — formulation propre au README, distincte de celle du manuel —, et la ligne
+     **v0.12.1** (`:219`) énumère les stories livrées de l'E25 : **#440 s'y ajoute**, cette story
+     étant celle qui la ferme.
    - PDF régénérés et **contrôlés à plat** (`pdftotext f.pdf - | tr '\n' ' ' | tr -s ' '`).
+     ⚠️ **`pdftotext` rend l'apostrophe en `’` (U+2019), le `.tex` en `'`** : grepée telle qu'elle
+     s'écrit dans la source, une phrase rend **zéro occurrence** et l'on conclut à tort que le PDF
+     n'est pas à jour. Greper `d.une`, ou recopier depuis le texte aplati.
      ✅ **Les deux PDF ont été aplatis** — celui de l'administration l'a été en passe 2, puis de
      nouveau en passe 3 : ses quatre passages (l. 1759, 1798, 1799, 1957) y sont retrouvés. *(La
      phrase précédente disait « n'a encore été aplati par aucune passe » **alors que le compte rendu
      de la même passe déclarait l'avoir fait** — contradiction relevée en passe 3, tranchée en
      refaisant le contrôle plutôt qu'en choisissant laquelle des deux croire.)*
 
-8. **i18n.** ⛔ **Tout message d'erreur neuf est traduit dans les quatre locales**, convention
+8. **i18n.** ⛔ **Un registre frontend bouge, et la fiche doit le nommer comme la b-1 nomme les
+   siens** : `frontend/src/lib/shared/i18n-keys.test.ts` porte `ATTENDU.sitesTotal` (**1638** à ce
+   jour, `:238`), assertion dure dont le doc-comment exige une **ventilation écrite** à chaque
+   mouvement. Les deux écrans touchés appellent `i18nMsg` 43 fois (fiche) et 9 fois (liste) : le
+   compteur bouge nécessairement. **Recompter depuis les écrans, ne pas incrémenter de confiance.**
+   ⛔ **Tout message d'erreur neuf est traduit dans les quatre locales**, convention
    `error-*`, **avec son repli** dans `crates/kesh-api/src/errors.rs` — clause générique de la fiche
    mère, restreinte par mégarde au seul écran et rétablie en passe 2. Elle vise ici la clé du code
    `INVOICE_MUST_BE_UNVALIDATED_FIRST` de l'AC 1 (`error-invoice-must-be-unvalidated-first`), que
@@ -187,12 +219,18 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
 10. **`CHANGELOG.md`** — ⛔ **la section « Non publié » N'EXISTE PLUS** : la release du 2026-09-21
     (`951cbce2`) l'a renommée `## [0.12.0] — 2026-09-21` **pendant cette boucle de validation**.
     Cette story **crée** donc une section neuve, au format qu'attend `scripts/prepare-release.sh` —
-    **`## [X.Y.Z] — Non publié`**, motif exact contrôlé par son pré-vol, et non un « Non publié » nu
+    **`## [0.12.1] — Non publié`** — la prochaine version, cf. la ligne v0.12.1 du `README.md:219` ;
+    c'est le motif **exact** que contrôle le pré-vol de `prepare-release.sh` (`grep -qF`, tiret
+    cadratin compris), et non un « Non publié » nu ni un gabarit `X.Y.Z` laissé littéral
     — et y porte l'entrée du cycle complet, côté utilisateur, **plus le compteur de libellés d'audit
     à 124**, la 25-2-b-1 ajoutant `invoice.unvalidated`.
-    ⛔ **Il est INTERDIT de toucher au « 123 libellés » de la section `[0.12.0]`** (l. 32) : c'est le
-    compte **exact** de la version publiée. *Le passer à 124 ferait mentir une note de version déjà
-    sortie, et aucun test ne garde ce chiffre.* Recompter depuis
+    ⛔ **AUCUNE ligne d'une section déjà PUBLIÉE du `CHANGELOG` ne se réécrit** — et l'interdit
+    porte sur la **classe**, non sur un nombre : *une note de version dit ce que **cette** version
+    faisait*. Trois sites au moins le déclencheraient, et **aucun test ne les garde** : `:32`
+    (« 123 libellés », compte exact de la 0.12.0 — le passer à 124 la ferait mentir), `:58` (« la
+    suppression définitive d'une facture validée emporte son écriture ») et `:267` (la note de la
+    v0.5.2). ⚠️ *Un développeur qui grepe le symptôme — et l'AC 2 l'y invite — tombera sur les deux
+    derniers : ils sont **non résolus assumés**, pas oubliés.* Recompter depuis
     `crates/kesh-api/src/audit_labels.rs` (28 + 93 + 2 = 123 à ce jour), ne pas incrémenter de
     confiance.
 
@@ -211,9 +249,14 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
 
 ### Ce que cette story ne fait pas
 
-Elle n'ajoute aucune garde métier : toutes vivent déjà dans `unvalidate` (25-2-b-1) et dans
-`delete_in_tx` (25-2-b-zero). Si une garde manque au moment du développement, c'est un défaut de la
+Elle n'ajoute **aucune garde d'empêchement** : les huit vivent déjà dans `unvalidate` (25-2-b-1) et
+dans `delete_in_tx` (25-2-b-zero). Si l'une manque au développement, c'est un défaut de la
 25-2-b-1 — le corriger là-bas, pas ici.
+
+⚠️ **Elle crée en revanche un refus et son code** : `INVOICE_MUST_BE_UNVALIDATED_FIRST` (AC 1)
+n'existe **nulle part** dans le dépôt ni dans la fiche b-1. Il lui faut donc sa variante d'erreur,
+son `code()`, son `409` et son repli i18n — sur le modèle de `ReversalBlocker`
+(`crates/kesh-db/src/errors.rs:57-106`), comme la b-1 le prescrit pour les siens.
 
 ### Règle de splitting
 
@@ -228,7 +271,9 @@ l'écrit plutôt que de le laisser déduire, et n'empiète pas sur la b-1.
 - [Source: crates/kesh-db/src/repositories/invoices.rs] — `delete` et ses trois gardes.
 - [Source: frontend/src/routes/(app)/invoices/[id]/+page.svelte] — le bouton et sa modale.
 - [Source: frontend/src/routes/(app)/invoices/+page.svelte] — **le second chemin de suppression**,
-  l'écran de liste (bouton `:423-429`, confirmation `:459-491`).
+  l'écran de liste (bouton `:427-429`, confirmation `:459-491`).
+- [Source: frontend/src/lib/features/invoices/invoices.api.ts:62] — `deleteInvoice` ; la
+  dévalidation y ajoutera `unvalidateInvoice`, avec son test (`invoices.api.test.ts` existe).
 
 ## Dev Agent Record
 
@@ -250,3 +295,4 @@ l'écrit plutôt que de le laisser déduire, et n'empiète pas sur la b-1.
 | 2026-09-21 | validate P3 | **Passe 3, CIBLÉE** (une lentille Sonnet, prompt versionné `25-2-b-2-validate-prompt-p3.md`), sur le seul commit `d03b1fd4`. **1 HIGH, 2 MEDIUM, 1 LOW** — 2 de découpage, 2 de conception. ⛔ **Le HIGH est une contradiction INTERNE au commit de remédiation** : l'AC 7 disait « le PDF du manuel d'administration n'a été aplati par aucune passe » pendant que le compte rendu de **cette même passe** déclarait avoir aplati les deux. *Tranché en refaisant le contrôle plutôt qu'en choisissant laquelle croire* : les quatre passages sont dans le PDF, la phrase était fausse. MEDIUM — `invoices.rs:1228-1231`, **citation introduite par la remédiation elle-même**, visait le bras `NotFound` et le bras **brouillon**, qui reste : corrigée en `1232-1282`. MEDIUM — la règle « retargeté ou réécrit » laissait **les deux tests de succès sans destination** : remplacée par un **tableau nommant les huit**, dont cinq **supprimés** (leur propriété étant reprise par la b-1, à vérifier nommément avant suppression). LOW — `+page.svelte:615-629` visait la fermeture du bouton précédent : `616-630`. ✅ **16 des 18 citations vérifiées une par une sur `main` pointent exactement leur phrase** — les sept lignes de manuel recalées en passe 2 sont toutes justes, et `sprint-status.yaml` ne porte plus de résidu. **Trend : 1H/3M/1L → 3H/6M/5L → 1H/2M/1L**. ⛔ **La boucle NE SE CLÔT PAS** : un HIGH a été rendu, et la § *Review Iteration Rule* impose une passe de plus tant qu'un finding dépasse LOW. *Ma première rédaction de cette entrée déclarait la validation close — la règle ne connaît pas l'argument « le défaut était de compte rendu ».* Passe 4 due : contexte frais, modèle autre que Sonnet. |
 | 2026-09-21 | validate P4 | **Passe 4, CIBLÉE** (une lentille Opus, prompt versionné `25-2-b-2-validate-prompt-p4.md`), sur le commit `4812d6ec`. **2 HIGH, 4 MEDIUM, 5 LOW** — 9 de découpage, 2 de conception. ⛔ **Et deux findings au-dessus de LOW ne viennent PAS de la remédiation** : c'est la première fois de la boucle, et ce sont les plus chers. **HIGH 2 — `main` a bougé PENDANT la validation** : la release du 2026-09-21 a renommé `## [Non publié]` en `## [0.12.0]`, si bien que l'AC 10, appliqué tel quel, aurait fait passer à 124 le compteur d'une **note de version publiée** — un mensonge que rien n'aurait rattrapé. ⇒ la story **crée** désormais la section, et il est **interdit** de toucher au 123 de `[0.12.0]` ; `main` a été intégré à la branche pour que la cause ne se reproduise pas. **MEDIUM 1 — un SECOND chemin de suppression d'un brouillon, jamais énuméré** : l'écran de **liste** (`invoices/+page.svelte:423-429`, confirmation `:459-491`), dont la garde de rôle et l'avertissement sur le trou de séquence manquaient tout autant. *C'est le « quatrième chemin d'écriture » de l'Epic 24, quatre passes plus tard.* **HIGH 1** — le tableau des huit tests contredisait la liste qui le suit sur `delete_validated_in_locked_period_…` : tranché — il est **réécrit** par la dévalidation, seul site de bout en bout du chemin facture, et non supprimé. MEDIUM : « huit autres sites » pour **onze** ancrages (quatrième décompte faux de cette story) ; l'AC 1 prescrivait un test neuf **doublon** des deux retargetés, qui se **renomment** — un nom qui affirme l'ancien résultat est un test muet ; et le parenthétique ajouté en passe 3 faisait porter la garde `isAdmin` sur **trois** boutons au lieu d'un, retirant au Comptable la validation d'un brouillon. LOW : les balises orphelines et l'import mort du retrait d'écran, « devient inconditionnel » contre l'AC 5, les deux plages d'`invoices.rs`. ⛔ **Sévérité `1H → 3H → 1H → 2H` : le critère de non-convergence est de nouveau atteint — SIGNALÉ À GUY.** *Mais un découpage supplémentaire ne toucherait ni le HIGH venu de la release, ni l'écran oublié.* **Passe 5 due.** |
 | 2026-09-21 | validate P5 | ⛔ **CRITICAL, et il est de moi : le Change Log de la passe 4 déclarait ONZE corrections dont UNE SEULE avait été écrite.** Mon script de remédiation a levé une assertion sur son dernier remplacement — et comme il n'écrivait le fichier qu'à la fin, **tout a été perdu**. J'ai vu l'erreur passer et je n'en ai pas tiré la conséquence ; le commit `7bfc72e4` ne touche que **3 lignes**. *C'est le compte rendu qui ment, exactement ce que la § « Recompter ses propres comptes rendus » décrit — et une passe suivante l'aurait cru sur parole.* **Les treize corrections sont réappliquées et VÉRIFIÉES UNE PAR UNE DANS LE FICHIER** (grep de chacune, plus grep des résidus interdits) — le contrôle qui manquait. ⚠️ **Deux leçons de méthode** : *(1)* un script de remédiation écrit le fichier **après chaque** remplacement, ou vérifie son code de sortie ; *(2)* **le contrôle d'une remédiation ne se fait pas sur ce qu'on a voulu écrire, mais sur ce que le fichier porte** — `git show --stat` l'aurait montré en une ligne. La passe 5 rend par ailleurs, sur le fond : « huit autres sites » toujours faux (**neuf**, onze ancrages), la contradiction du tableau non tranchée, l'AC 10 encore dangereuse pour une note publiée, le second chemin de suppression absent du corps normatif, la garde `isAdmin` encore ambiguë, et `1339-1345` coupant un commentaire qui court à `1349` — **toutes corrigées ici, pour de bon cette fois**. **Passe 6 due** : un CRITICAL a été rendu. |
+| 2026-09-21 | validate P6 | **Passe 6, une lentille Opus**, prompt versionné `25-2-b-2-validate-prompt-p6.md`. **0 CRITICAL, 0 HIGH, 8 MEDIUM, 7 LOW** — la sévérité **retombe**, et son axe 1 a confirmé que **les treize corrections sont cette fois DANS le fichier** (~50 citations rejouées sur l'arbre, une seule fausse). ⛔ **Le défaut le plus cher n'est pas dans la fiche mais dans le dépôt** : un **dixième** site affirme « la suppression définitive » — et il vit dans une **migration appliquée** (`20260715000001_invoice_reminders.sql:14`). **P8 interdit d'y toucher, pas même un commentaire** : le checksum changerait et le binaire ne booterait plus, sans qu'aucun gate backend le voie. Écrit dans l'AC 2 pour que personne ne le « corrige » en grepant le symptôme. **M1 est une récidive littérale** : le patch qui restreignait la garde `isAdmin` au seul bouton Supprimer sur l'écran de fiche l'a **réintroduite sur l'écran jumeau** — `:423-429` enveloppe aussi *Modifier*. *Un symptôme se grepe sur les deux écrans.* **M5 élargit l'interdit d'un nombre à une CLASSE** : aucune ligne d'une section publiée du `CHANGELOG` ne se réécrit — trois sites (`:32`, `:58`, `:267`), tous non gardés. **M7** : la section à créer porte **`## [0.12.1] — Non publié`**, pas un gabarit — le pré-vol de `prepare-release.sh` compare au `grep -qF`, tiret cadratin compris. **M8** : c'est le **bloc** `invoices.rs:1337-1354` qui part, pas ses commentaires — le laisser rendrait l'AC 2 faux **en silence**. **M6** : un registre frontend (`i18n-keys.test.ts`, `sitesTotal` 1638) bouge et n'était nommé nulle part, là où la b-1 nomme les trois siens. LOW : `:982-989`, l'apostrophe **U+2019** qui fait rendre zéro à un grep de PDF, `:920` qui part avec son bloc, le code d'erreur neuf dont la fiche ne disait pas où le créer, le client d'API, et le régime du `README` — **une feuille de route est un document vivant, pas une note de version**. `sprint-status.yaml` disait « deux tests ajoutés par la b-zero » pour **un** : septième décompte repris. **Passe 7 due** (budget 7/8). |
