@@ -25,17 +25,18 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
 
 1. **`invoices::delete` ne traite plus que les brouillons.** Sa branche `status == "validated"` et
    ses trois gardes disparaissent — elles vivent désormais dans `unvalidate`. Une facture validée y
-   est refusée par un message qui **oriente vers la dévalidation**, non par le générique
-   `ILLEGAL_STATE_TRANSITION`, et un test neuf l'exerce : la branche retirée ne doit pas redevenir
+   est refusée sous un code propre — **`INVOICE_MUST_BE_UNVALIDATED_FIRST`, `409`** — dont le
+   message **oriente vers la dévalidation**, et non sous le générique `ILLEGAL_STATE_TRANSITION` ;
+   un test neuf l'exerce : la branche retirée ne doit pas redevenir
    un chemin silencieux.
 
 2. **`enforce_immutability = false` n'a plus qu'un appelant de production** — `unvalidate`. Le
    drapeau **reste dans `delete_in_tx`**, jamais chez l'appelant : une garde posée chez l'appelant
    laisserait la fonction nue pour le suivant. Les doc-comments qui nomment `invoices::delete`
-   comme seul appelant (`journal_entries.rs:937-942`, `:976-981` ; `invoices.rs:1339-1349`) sont
+   comme seul appelant (`journal_entries.rs:943` et `:982` — les phrases elles-mêmes, non les en-têtes qui les précèdent ; `invoices.rs:1339-1349`) sont
    réécrits.
 
-3. **SIX tests existants se réécrivent contre `unvalidate`** — ils ne se suppriment pas, sous peine
+3. **HUIT tests existants se réécrivent contre `unvalidate`** — ils ne se suppriment pas, sous peine
    d'emporter la couverture des gardes :
    - `crates/kesh-db/src/repositories/invoices.rs` : `test_delete_validated_unpaid_open_fy_removes_invoice_and_je`,
      `test_delete_validated_paid_is_rejected`, `test_delete_validated_in_closed_fy_is_rejected`,
@@ -47,8 +48,14 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
      chemin de suppression ; il se réécrit par la dévalidation.
    - Et le Playwright `frontend/tests/e2e/invoices.spec.ts:333-367` (« fiche fantôme »), qui
      supprime une facture **validée** par l'API : il dévalide d'abord.
-   ⚠️ **Sept sites au total, et le décompte se recompte** — la fiche mère annonçait « cinq » avant
-   que la 25-2-b-zero n'en ajoute un.
+   ⚠️ **HUIT au total — 5 + 2 + 1 —, et ce chiffre a été faux trois fois.** La fiche mère disait
+   « cinq » (elle ignorait les deux E2E backend), cette fiche a d'abord titré « six » en en
+   énumérant huit, et sa propre note de correction disait « sept ». Recompté depuis la source en
+   passe 1 de validation : `grep -c "async fn test_delete_validated" invoices.rs` → **5** ;
+   `invoice_delete_e2e.rs` → **2** (`:203`, `:246`) ; Playwright → **1**. ⛔ *Corriger un décompte
+   et écrire juste sont deux gestes distincts.* ⚠️ `delete_requires_auth_returns_401` et
+   `delete_as_comptable_returns_403` sont **exclus à bon droit** : ils échouent en amont, sur l'auth
+   et le rôle, sans atteindre la branche retirée.
 
 4. **L'écran.** Sur une facture **validée**, le bouton « Supprimer » devient **« Dévalider »**, et
    dit ce qui va se passer : l'écriture comptable est supprimée, la facture repasse en brouillon,
@@ -56,7 +63,7 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
    motif**. Friction : une confirmation simple — **pas** de numéro à retaper, la facture restant en
    place.
    - ⚠️ **Résidu à retirer** : la branche `invoice?.status === 'validated'` de la modale
-     « retaper le numéro » (`frontend/src/routes/(app)/invoices/[id]/+page.svelte:908-919`, `:958`)
+     « retaper le numéro » (`frontend/src/routes/(app)/invoices/[id]/+page.svelte:919-945` — le bloc `{#if invoice?.status === 'validated'}` en entier —, et `:958`)
      devient du code mort.
    - ⚠️ **La garde actuelle `isAdmin && !invoice.paidAt` (`:729`) sous-couvre le motif 1** : une
      facture *partiellement* réglée n'a pas de `paid_at`. L'écran lit le résiduel, ou assume le
@@ -76,7 +83,7 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
 7. **Les manuels**, sites établis par les passes 1 à 3 :
    - `docs/manual/fr/user-manual.tex` — §`sec:suppression-facture` (l. 1001-1022) : **refonte** ;
      l. 464-465 : la dévalidation **entre dans l'énumération** des chemins que le verrou ferme ;
-     l. 502 et 618, l. 538, l. 778, l. 834, l. 966 : relus contre le cycle neuf ;
+     l. 502 et 618, l. 538, l. 778, l. 834, et l. **968** (« une suppression définitive encadrée est également possible » — l. 966 est l'en-tête `\subsection{Avoirs et notes de crédit}`) : relus contre le cycle neuf ;
    - `docs/manual/fr/admin-manual.tex` — l. 1759 (routes d'administration) ; l. 1799 et
      `README.md:218` (« ni modifiable ni supprimable […] sans exception », **déjà faux**) ;
      ⛔ l. 1957 : **tout le paragraphe se réécrit** — il repose sur la prémisse qu'un administrateur
@@ -134,3 +141,4 @@ Elle n'ajoute aucune garde métier : toutes vivent déjà dans `unvalidate` (25-
 | Date | Étape | Note |
 |---|---|---|
 | 2026-09-21 | spec | Story née du **découpage** de la 25-2-b (arbitrage de Guy). Elle hérite des trois passes de validation de la fiche mère. ⚠️ Son AC 3 corrige un décompte de la mère : **sept** sites de test, non cinq — la 25-2-b-zero en a ajouté un le 2026-09-19, et la passe 3 l'a vu. |
+| 2026-09-21 | validate P1 | **Passe 1, une lentille Sonnet**, prompt versionné `25-2-b-2-validate-prompt-p1.md`, sept axes exercés. **1 HIGH, 3 MEDIUM, 1 LOW**, tous vérifiés depuis la source avant d'être retenus. ⛔ **Le HIGH est une faute de décompte DANS la phrase qui corrigeait un décompte** : titre « SIX », énumération de **huit**, note finale « Sept ». Recompté : **8** (5 + 2 + 1). MEDIUM : le refus de `delete` sur une facture validée n'avait pas de code nommé (`INVOICE_MUST_BE_UNVALIDATED_FIRST`, `409`) ; deux plages de lignes de `journal_entries.rs` s'arrêtaient **juste avant** la phrase visée (943 et 982) ; la plage du résidu d'écran désignait le gestionnaire du dialogue et non le bloc mort (`:919-945`). LOW : `user-manual.tex:966` est l'en-tête de sous-section, la phrase est à **968**. ⚠️ Ces trois citations étaient **héritées mot pour mot de la fiche mère**, et aucune de ses trois passes ne les avait rouvertes — *une citation recopiée n'est pas une citation vérifiée*. Vérifié sans rien trouver : l'asymétrie des sorties, les cinq citations de manuel et d'`api-external.md`, les PDF aplatis des deux manuels FR, l'ordre des deux filles, le périmètre (4 modules). |

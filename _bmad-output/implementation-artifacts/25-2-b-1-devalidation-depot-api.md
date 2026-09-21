@@ -125,8 +125,9 @@ referme.
 ### Ce que cette story ne fait pas
 
 - Elle ne retire **pas** la branche `validated` d'`invoices::delete` : c'est la 25-2-b-2, avec les
-  **six** tests qui en dépendent (cf. fiche mère, AC 5 — dont
-  `delete_validated_in_locked_period_returns_400_period_locked`, ajouté par la 25-2-b-zero).
+  **huit** tests qui en dépendent — 5 dans `invoices.rs`, 2 dans `invoice_delete_e2e.rs` (dont
+  `delete_validated_in_locked_period_returns_400_period_locked`, ajouté par la 25-2-b-zero), 1
+  Playwright. ⚠️ La fiche mère en annonçait cinq : recompté en passe 1 de validation de la b-2.
 - Elle ne touche **ni l'écran, ni les manuels, ni le `CHANGELOG`**.
 - Elle ne ferme pas #440, et **ne rouvre pas** #219.
 
