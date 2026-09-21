@@ -53,8 +53,8 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
    - `frontend/src/routes/(app)/invoices/[id]/+page.svelte:68`, `:95` — et `:920`, qui **part avec
      le bloc retiré** par l'AC 4 (`:919-943`) au lieu de se réécrire : il compte parmi les onze
      ancrages, non parmi les gestes de réécriture.
-   ⛔ **Un site de plus existe — le DIXIÈME de la liste ci-dessus, DOUZIÈME ancrage en comptant les
-   deux déjà nommés — et il NE SE TOUCHE PAS** :
+   ⛔ **Un site de plus existe, et il NE SE TOUCHE PAS** — *il ne compte pas parmi les onze
+   ancrages : rien ne s'y réécrit* :
    `crates/kesh-db/migrations/20260715000001_invoice_reminders.sql:14` — « FK `invoice_id ON DELETE
    CASCADE` : aligné sur la **suppression définitive** #219 ». **P8** interdit de modifier une
    migration appliquée, *pas même un commentaire* : `sqlx` en compare le checksum et **le binaire ne
@@ -64,8 +64,9 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
 
    Ceux du bras `Some(inv) if inv.status == "validated"` (`invoices.rs:1236-1282`) **avec son
    commentaire d'en-tête** (`:1232-1235`), plus `:1331` et **`:1339-1349`**, **partent avec la
-   branche** : ils ne se réécrivent pas. ⛔ **Et c'est le BLOC `invoices.rs:1337-1354` qui part en
-   entier**, pas seulement ses commentaires : c'est lui qui porte le `false`
+   branche** : ils ne se réécrivent pas. ⛔ **Et c'est le BLOC `invoices.rs:1331-1354` qui part en
+   entier — commentaire d'en-tête compris** (`:1331-1336`, et non la seule ligne `:1331`, sous peine
+   de le laisser décapité et toujours affirmatif) —, pas seulement ses commentaires : c'est lui qui porte le `false`
    (`delete_in_tx(&mut tx, company_id, je_id, user_id, false)`, `:1350`), et il vit **hors** du
    `match` que l'AC 1 retire. Le laisser rendrait l'AC 2 **faux en silence** — un brouillon n'ayant
    pas de `journal_entry_id`, le `if let` ne se déclencherait jamais et **rien ne rougirait**.
@@ -118,6 +119,16 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
    son numéro est conservé. Les refus de l'AC 3 de la fiche mère s'affichent **en nommant leur
    motif**. Friction : une confirmation simple — **pas** de numéro à retaper, la facture restant en
    place.
+   - ⛔ **UNE SEULE MODALE sert aujourd'hui les deux branches, et rien ne le disait.** Le bouton du
+     brouillon (`:626`) et celui de la facture validée (`:730`) ouvrent le **même** état
+     `deleteOpen` (`:92`) ; le titre est **en dur et partagé** (`:917`, « Supprimer la facture »),
+     le pied aussi (`:952-961`, bouton « Supprimer » → `confirmDelete` `:201` → `deleteInvoice`
+     puis `goto('/invoices')`). ⚠️ *Renommer le bouton sans toucher à la modale donnerait un
+     « Dévalider » qui ouvre « Supprimer la facture » et **appelle la suppression** — laquelle
+     échouerait en 409 après l'AC 1. Seule l'E2E de l'AC 6 le rattraperait.* **La branche validée
+     reçoit donc sa PROPRE modale** — état, titre, corps, bouton — appelant `unvalidateInvoice` ;
+     `deleteOpen`, `confirmDelete` et le `goto('/invoices')` ne servent plus que le brouillon (et le
+     `goto` n'a aucun sens après une dévalidation : la facture reste).
    - ⚠️ **Résidu à retirer, et PAS « le bloc en entier »** (relevé en passe 2) : dans
      `frontend/src/routes/(app)/invoices/[id]/+page.svelte`, retirer le test
      `{#if invoice?.status === 'validated'}` (`:919`) et son corps (`:920-942`), en **conservant**
@@ -154,8 +165,10 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
    l'écran de **liste**, `frontend/src/routes/(app)/invoices/+page.svelte` — bouton **`:427-429`**,
    gardé par le seul `{#if inv.status === 'draft'}` (`:423`) donc **sans garde de rôle**, et sa
    confirmation
-   `:459-491`, qui ne dit **pas un mot du numéro**. ⚠️ **La garde va sur le bouton `:427-429`, PAS
-   sur le `{#if}` de `:423`** : il enveloppe aussi *Modifier* (`:424-426`), que le Comptable doit
+   `:459-491`, qui ne dit **pas un mot du numéro**. ⛔ **Cet écran n'a AUCUNE notion de rôle** —
+   `grep -n "authState|isAdmin|canManage|role"` n'y rend rien : il faudra y importer `authState` et
+   dériver la garde, là où l'écran de fiche les a déjà (`:65-69`). ⚠️ **Et elle va sur le bouton
+   `:427-429`, PAS sur le `{#if}` de `:423`** : il enveloppe aussi *Modifier* (`:424-426`), que le Comptable doit
    garder. *Même défaut que sur l'écran de fiche, recommis sur l'écran jumeau par le patch qui le
    corrigeait — un symptôme se grepe sur les DEUX écrans.* Les deux critères ci-dessus **et** la garde de
    rôle de l'AC 4 valent **aux deux endroits**. *Énumérés par `grep -rn "deleteInvoice" frontend/src` :
@@ -178,7 +191,15 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
      emporte son écriture, est refusée si cette écriture est datée d'une période verrouillée ». La
      promesse reste vraie, **le mécanisme nommé disparaît** : la phrase se réécrit autour de la
      **dévalidation**.
-   - l. **505**, **540-541**, **621**, **781**, **837**, **969** : relues contre le cycle neuf.
+   - ⛔ **Trois de ces lignes deviennent FAUSSES et se réécrivent**, au même titre que 466-468 :
+     **540-541** (« il subsiste un chemin qui en creuse : la **suppression définitive d'une facture
+     validée, qui emporte son écriture** » — le chemin nommé disparaît, c'est la dévalidation qui
+     prend sa place) ; **969** (« une **suppression définitive encadrée est également possible** »
+     — il faut désormais dévaliser d'abord) ; **781** (« Brouillon : … **pas de numéro définitif** »
+     — après dévalidation, un brouillon **porte** son numéro, et c'est la prémisse de l'AC 5).
+   - l. **505** et **621** : relues contre le cycle neuf. ⚠️ l. **837** (« la numérotation est
+     strictement séquentielle dans un exercice ») demande un **arbitrage** : l'AC 5 y creuse un trou
+     assumé.
    - `docs/manual/fr/admin-manual.tex` — l. 1759 (routes d'administration) ; l. **1798**, réécrite
      elle aussi par la 25-2-b-zero (« pas même avec la facture validée qui la porte ») ; l. 1799
      (« ni modifiable ni supprimable […] **sans exception** ») ; ⛔ l. 1957 : **tout le paragraphe se
@@ -189,7 +210,9 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
      ne la vise donc pas. La ligne **v0.12.0** (`:218`) porte « ni modifiable ni supprimable, **par
      personne** » — formulation propre au README, distincte de celle du manuel —, et la ligne
      **v0.12.1** (`:219`) énumère les stories livrées de l'E25 : **#440 s'y ajoute**, cette story
-     étant celle qui la ferme.
+     étant celle qui la ferme. ⚠️ **Et la phrase qui y décrit #443 se relit** : « supprimer une
+     facture validée emportait son écriture même datée d'un trimestre déjà déclaré » nomme un chemin
+     que cette story supprime.
    - PDF régénérés et **contrôlés à plat** (`pdftotext f.pdf - | tr '\n' ' ' | tr -s ' '`).
      ⚠️ **`pdftotext` rend l'apostrophe en `’` (U+2019), le `.tex` en `'`** : grepée telle qu'elle
      s'écrit dans la source, une phrase rend **zéro occurrence** et l'on conclut à tort que le PDF
@@ -203,8 +226,7 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
 8. **i18n.** ⛔ **Un registre frontend bouge, et la fiche doit le nommer comme la b-1 nomme les
    siens** : `frontend/src/lib/shared/i18n-keys.test.ts` porte `ATTENDU.sitesTotal` (**1638** à ce
    jour, `:238`), assertion dure dont le doc-comment exige une **ventilation écrite** à chaque
-   mouvement. Les deux écrans touchés appellent `i18nMsg` **plusieurs dizaines de fois** : le
-   compteur bouge nécessairement. **Recompter au moment du développement**
+   mouvement. Les deux écrans touchés appellent `i18nMsg`, et le compteur bouge nécessairement. **Recompter au moment du développement**
    (`grep -c 'i18nMsg(' <écran>`), ne pas incrémenter de confiance — et **ne pas se fier à un chiffre
    écrit ici** : celui de la passe 6 comptait l'import et une mention en commentaire comme des
    appels, *un détecteur trop large sur un compteur qu'on s'apprête à corriger*. Relevé en passe 7.
@@ -215,7 +237,15 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
    rien ne couvrait — et le garde-fou i18n, rendu **inconditionnel** à l'Epic 23, fait rougir le gate
    sur une clé sans traduction. S'y ajoutent les libellés de l'écran dans les quatre locales, et le
    message `journal-entries-reverse-blocked-invoice` (« corrigez-la par un avoir », fr `:333`,
-   de/en/it `:339`, repli `errors.rs:2458`), qui nomme désormais aussi la dévalidation.
+   de/en/it `:339`, repli `errors.rs:2458`), qui nomme désormais aussi la dévalidation — **et sa
+   jumelle, que huit passes n'avaient pas vue** : `error-journal-entry-linked-to-invoice` (les
+   quatre locales, `:23` ; code `JOURNAL_ENTRY_LINKED_TO_INVOICE`,
+   `crates/kesh-api/src/errors.rs:2416-2418`), qui dit « **Annulez d'abord la facture concernée** »
+   alors que le geste qui libère l'écriture devient la **dévalidation**.
+   ⚠️ **Quatre clés `invoice-delete-*` existent déjà au catalogue et ne sont appelées nulle part**
+   (`invoice-delete-button` fr `:541`, `invoice-deleted-success` `:547`,
+   `invoice-delete-confirm-title` `:548`, `invoice-delete-confirm-body` `:549`) — les deux écrans
+   codent le français en dur. **Les réemployer**, plutôt que d'en créer des doublons.
 
 9. **`docs/api-external.md`** : la note ² (l. 217) ne décrit plus `DELETE /invoices/{id}` comme une
    « suppression définitive » — la route ne supprime plus que des brouillons.
@@ -268,6 +298,49 @@ Modules touchés : `kesh-db`, `kesh-api`, `kesh-i18n`, `frontend` — **quatre**
 (`docs/`, `CHANGELOG.md` et `README.md` n'en sont pas). Née d'une non-convergence, cette fille
 l'écrit plutôt que de le laisser déduire, et n'empiète pas sur la b-1.
 
+### ⛔ Ce qui reste OUVERT au moment de clore — huit passes de validation
+
+**La boucle se clôt sur le PLAFOND DE BUDGET, pas sur la convergence** (§ *Review Iteration Rule*,
+huit passes). La passe 8 rendait encore quatre MEDIUM, tous corrigés — mais trois d'entre eux
+venaient d'**axes jamais exercés**, non du dernier patch : ils auraient été trouvés par n'importe
+quelle passe qui aurait ouvert ces portes. *Ce qui suit n'est donc pas une liste de restes : c'est
+ce qu'une neuvième passe aurait regardé.*
+
+**Ce que le développeur devra trancher lui-même** :
+
+1. **Où vit `INVOICE_MUST_BE_UNVALIDATED_FIRST`** : une variante propre de `DbError`, ou une entrée
+   de l'enum à cinq variantes que la **25-2-b-1** crée pour les empêchements ? Les deux se
+   défendent ; le choix n'est écrit nulle part.
+2. **La tension de l'AC 1** : retirer le bras `validated` laisse le fourre-tout `Some(inv) =>`
+   (`invoices.rs:1284-1290`) rendre `IllegalStateTransition` — donc il faut un **bras de refus
+   neuf** là où partait le bras d'autorisation. C'est déductible, ce n'est pas écrit.
+3. **La structure de la modale de dévalidation** (AC 4), et le sort du `goto('/invoices')`, qui n'a
+   plus de sens quand la facture reste.
+4. **La couverture du motif 1 côté écran** : l'AC 4 laisse le choix (« lit le résiduel, ou assume le
+   refus serveur ») — **trancher et l'écrire au Dev Agent Record**.
+5. **`user-manual.tex:837`** (« numérotation strictement séquentielle ») : à nuancer ou non, contre
+   le trou assumé de l'AC 5.
+
+**Ce que la revue de code devra regarder en priorité** :
+
+1. ⛔ **Le site sous P8 n'a PAS été « corrigé »** :
+   `crates/kesh-db/migrations/20260715000001_invoice_reminders.sql:14`. Un grep du symptôme y mène
+   droit ; le modifier change le checksum et **le binaire ne boote plus**, sans qu'aucun gate
+   backend le voie.
+2. **Le commentaire `invoices.rs:1331-1336`** est-il parti **en entier**, ou décapité ?
+3. **Les trois lignes de sections PUBLIÉES du `CHANGELOG`** (`:32`, `:58`, `:267`) sont-elles
+   intactes ? Et la section neuve porte-t-elle littéralement `## [0.12.1] — Non publié`, tiret
+   cadratin compris (pré-vol `grep -qF`) ?
+4. **`ATTENDU.sitesTotal`** (`i18n-keys.test.ts:238`) : une **ventilation écrite**, non un nombre
+   ajusté.
+5. **La garde de rôle, sur les DEUX écrans et sur le BON nœud** — `:626-629` et `:427-429` seuls,
+   jamais les blocs qui les contiennent. ⚠️ *Ce défaut a été commis deux fois, dont une par le patch
+   qui le corrigeait sur l'écran jumeau.*
+6. **Le manuel contre le code, PDF compris** (`pdftotext f.pdf - | tr '\n' ' ' | tr -s ' '`,
+   apostrophe `’`). *C'est l'axe qui a rendu le finding le plus cher de cette boucle, deux fois.*
+7. **Les deux tests retargetés sont-ils RENOMMÉS** ? `…_removes_invoice_and_je` et `…_returns_204`
+   affirmeraient un résultat qu'ils ne mesurent plus — famille du test muet.
+
 ### References
 
 - `_bmad-output/implementation-artifacts/25-2-b-devalidation-facture.md` — la fiche mère.
@@ -301,3 +374,4 @@ l'écrit plutôt que de le laisser déduire, et n'empiète pas sur la b-1.
 | 2026-09-21 | validate P5 | ⛔ **CRITICAL, et il est de moi : le Change Log de la passe 4 déclarait ONZE corrections dont UNE SEULE avait été écrite.** Mon script de remédiation a levé une assertion sur son dernier remplacement — et comme il n'écrivait le fichier qu'à la fin, **tout a été perdu**. J'ai vu l'erreur passer et je n'en ai pas tiré la conséquence ; le commit `7bfc72e4` ne touche que **3 lignes**. *C'est le compte rendu qui ment, exactement ce que la § « Recompter ses propres comptes rendus » décrit — et une passe suivante l'aurait cru sur parole.* **Les treize corrections sont réappliquées et VÉRIFIÉES UNE PAR UNE DANS LE FICHIER** (grep de chacune, plus grep des résidus interdits) — le contrôle qui manquait. ⚠️ **Deux leçons de méthode** : *(1)* un script de remédiation écrit le fichier **après chaque** remplacement, ou vérifie son code de sortie ; *(2)* **le contrôle d'une remédiation ne se fait pas sur ce qu'on a voulu écrire, mais sur ce que le fichier porte** — `git show --stat` l'aurait montré en une ligne. La passe 5 rend par ailleurs, sur le fond : « huit autres sites » toujours faux (**neuf**, onze ancrages), la contradiction du tableau non tranchée, l'AC 10 encore dangereuse pour une note publiée, le second chemin de suppression absent du corps normatif, la garde `isAdmin` encore ambiguë, et `1339-1345` coupant un commentaire qui court à `1349` — **toutes corrigées ici, pour de bon cette fois**. **Passe 6 due** : un CRITICAL a été rendu. |
 | 2026-09-21 | validate P6 | **Passe 6, une lentille Opus**, prompt versionné `25-2-b-2-validate-prompt-p6.md`. **0 CRITICAL, 0 HIGH, 8 MEDIUM, 7 LOW** — la sévérité **retombe**, et son axe 1 a confirmé que **les treize corrections sont cette fois DANS le fichier** (~50 citations rejouées sur l'arbre, une seule fausse). ⛔ **Le défaut le plus cher n'est pas dans la fiche mais dans le dépôt** : un **dixième** site affirme « la suppression définitive » — et il vit dans une **migration appliquée** (`20260715000001_invoice_reminders.sql:14`). **P8 interdit d'y toucher, pas même un commentaire** : le checksum changerait et le binaire ne booterait plus, sans qu'aucun gate backend le voie. Écrit dans l'AC 2 pour que personne ne le « corrige » en grepant le symptôme. **M1 est une récidive littérale** : le patch qui restreignait la garde `isAdmin` au seul bouton Supprimer sur l'écran de fiche l'a **réintroduite sur l'écran jumeau** — `:423-429` enveloppe aussi *Modifier*. *Un symptôme se grepe sur les deux écrans.* **M5 élargit l'interdit d'un nombre à une CLASSE** : aucune ligne d'une section publiée du `CHANGELOG` ne se réécrit — trois sites (`:32`, `:58`, `:267`), tous non gardés. **M7** : la section à créer porte **`## [0.12.1] — Non publié`**, pas un gabarit — le pré-vol de `prepare-release.sh` compare au `grep -qF`, tiret cadratin compris. **M8** : c'est le **bloc** `invoices.rs:1337-1354` qui part, pas ses commentaires — le laisser rendrait l'AC 2 faux **en silence**. **M6** : un registre frontend (`i18n-keys.test.ts`, `sitesTotal` 1638) bouge et n'était nommé nulle part, là où la b-1 nomme les trois siens. LOW : `:982-989`, l'apostrophe **U+2019** qui fait rendre zéro à un grep de PDF, `:920` qui part avec son bloc, le code d'erreur neuf dont la fiche ne disait pas où le créer, le client d'API, et le régime du `README` — **une feuille de route est un document vivant, pas une note de version**. `sprint-status.yaml` disait « deux tests ajoutés par la b-zero » pour **un** : septième décompte repris. **Passe 7 due** (budget 7/8). |
 | 2026-09-21 | validate P7 | **Passe 7, une lentille Sonnet**, prompt versionné `25-2-b-2-validate-prompt-p7.md`. **1 MEDIUM, 1 LOW** — et **les deux sont nés de la remédiation de la passe 6**, sixième fois de suite que le motif se vérifie. ⛔ **Le MEDIUM est un décompte, dans le paragraphe même qui prêche le recompte** : « 43 appels (fiche) et 9 (liste) » comptaient **l'import et une mention en commentaire** comme des appels — 41 et 7 en réalité (`grep -c 'i18nMsg('`). *Un détecteur trop LARGE, miroir exact du détecteur trop étroit que le doc-comment de `i18n-keys.test.ts` documente déjà.* Corrigé **en retirant le chiffre** plutôt qu'en le remplaçant : l'instruction opérante est de recompter au développement, et un nombre daté dans une fiche se périme sans que rien ne le signale. LOW : l'ordinal « dixième » se lisait comme une contradiction avec les « onze ancrages » de trois lignes plus haut — reformulé (dixième de la liste, douzième ancrage). ✅ **Axe 1 exhaustif : les treize citations de la passe 6 vérifiées à l'octet, ZÉRO écart** — la convergence est réelle sur le texte. ✅ Axe 2 : le symptôme grepé sur tout le dépôt ne rend **aucun site de plus** ; `deleteInvoice` n'a que **deux** appelants. ✅ Axe 3 : `[0.12.1]` est le bon numéro (aucun tag postérieur, crates à `0.12.0`), et le bloc `1337-1354` ne contredit pas la b-1 — séquentiel, non contradictoire. ⚠️ **Déclaré non vérifié à l'issue du budget** : les PDF aplatis (non touchés depuis la passe 6), le total `28+93+2`, les six lignes du manuel non modifiées, et les quatre locales au-delà de la clé contrôlée. **Passe 8 due — la dernière**, et son patch ne touche aucune ligne de code de production. |
+| 2026-09-21 | validate P8 — **boucle close au PLAFOND** | **Passe 8, une lentille Opus** — la dernière, § *Review Iteration Rule*, 8 passes. **0 CRITICAL, 0 HIGH, 4 MEDIUM, 5 LOW**, tous corrigés. ⛔ **Le motif s'INVERSE enfin** : après six passes sur sept où le défaut naissait de la remédiation précédente, les deux findings nés du patch ne sont ici que des LOW — **les quatre MEDIUM viennent d'axes jamais exercés**. **M1 — l'axe du manuel rend encore le finding le plus cher** : trois des six lignes rangées sous « relues » deviennent **fausses** (540-541 nomme le chemin qui disparaît, 969 promet une suppression qui n'existera plus, 781 dit qu'un brouillon n'a pas de numéro alors que l'AC 5 en fait la prémisse). **M2 — une SEULE modale sert les deux branches de l'écran** : le titre est en dur, et renommer le bouton aurait donné un « Dévaliser » ouvrant « Supprimer la facture » et **appelant la suppression**, qui échouerait en 409 — seule l'E2E l'aurait rattrapé. **M3 — une clé i18n jumelle**, `error-journal-entry-linked-to-invoice`, dit « annulez d'abord la facture » là où le geste devient la dévalidation ; et **quatre clés `invoice-delete-*` existent déjà, inutilisées** (les écrans codent le français en dur). **M4 — `:1331` citait une ligne d'un commentaire de six** : le retirer seule l'aurait laissé décapité et toujours affirmatif. ✅ **Vérifié, et c'était la dernière occasion** : les deux PDF aplatis contre les dix passages, `28+93+2 = 123` recompté depuis `audit_labels.rs`, les six lignes du manuel, les quatre locales, `website/` (**zéro mention**), la brochure, les manuels DE/IT/EN (vides), le détecteur des huit tests (**le huit tient**), et l'unicité de l'appelant `delete_in_tx(…, false)`. ✅ **Les deux filles ensemble : aucune contradiction** — numérotation des motifs, contreparties des tests, `api-external.md` partagé sans recouvrement, transfert du compteur, régime des clés API. ⛔ **La boucle se clôt sur le budget, PAS sur la convergence** — et la § *Ce qui reste OUVERT* le dit en propre : cinq décisions laissées au développeur, sept points pour la revue de code. *Écrire qu'on s'arrête n'est pas écrire qu'on a fini.* |
