@@ -105,7 +105,7 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Dépôt** (AC 1, 2, 3) — retrait de la branche, réécriture des sept sites de test.
+- [ ] **T1 — Dépôt** (AC 1, 2, 3) — retrait de la branche, réécriture des **huit** sites de test.
 - [ ] **T2 — Écran** (AC 4, 5, 8).
 - [ ] **T3 — E2E des deux cycles** (AC 6).
 - [ ] **T4 — Manuels, PDF, `api-external.md`, `CHANGELOG`** (AC 7, 9, 10).

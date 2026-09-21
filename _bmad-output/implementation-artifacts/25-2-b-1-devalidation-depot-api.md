@@ -25,8 +25,8 @@ réalité commerciale.
 **Dans cette story** : le dépôt, la route, les empêchements, l'audit, les messages traduits, la
 documentation de l'API externe.
 
-**Dans la 25-2-b-2** : le retrait de la branche `validated` d'`invoices::delete` et les six tests
-qui en dépendent, l'écran, les E2E des deux cycles, les manuels, le `CHANGELOG`, et `closes #440`.
+**Dans la 25-2-b-2** : le retrait de la branche `validated` d'`invoices::delete` et les **huit**
+tests qui en dépendent, l'écran, les E2E des deux cycles, les manuels, le `CHANGELOG`, et `closes #440`.
 
 ⚠️ **Entre les deux stories, deux chemins détruisent une écriture de facture** : la suppression
 directe (#219) et la dévalidation. C'est un état intermédiaire **assumé et borné** — les deux
