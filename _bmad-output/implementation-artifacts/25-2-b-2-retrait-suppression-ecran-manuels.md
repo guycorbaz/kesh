@@ -32,9 +32,10 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
 
 2. **`enforce_immutability = false` n'a plus qu'un appelant de production** — `unvalidate`. Le
    drapeau **reste dans `delete_in_tx`**, jamais chez l'appelant : une garde posée chez l'appelant
-   laisserait la fonction nue pour le suivant. Les doc-comments qui nomment `invoices::delete`
-   comme seul appelant (`journal_entries.rs:943` et `:982` — les phrases elles-mêmes, non les en-têtes qui les précèdent ; `invoices.rs:1339-1349`) sont
-   réécrits.
+   laisserait la fonction nue pour le suivant. ⚠️ **Les trois doc-comments qui nomment
+   `invoices::delete` comme seul appelant** (`journal_entries.rs:943`, `:982` ;
+   `invoices.rs:1339`) sont réécrits **par la 25-2-b-1**, qui les périme en créant le second
+   appelant. Ici, seule la phrase qui décrit le chemin retiré se met à jour.
 
 3. **HUIT tests existants se réécrivent contre `unvalidate`** — ils ne se suppriment pas, sous peine
    d'emporter la couverture des gardes :
@@ -98,7 +99,11 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
 9. **`docs/api-external.md`** : la note ² (l. 217) ne décrit plus `DELETE /invoices/{id}` comme une
    « suppression définitive » — la route ne supprime plus que des brouillons.
 
-10. **`CHANGELOG.md`**, section « Non publié » : l'entrée du cycle complet, côté utilisateur.
+10. **`CHANGELOG.md`**, section « Non publié » : l'entrée du cycle complet, côté utilisateur, **et
+    le compteur de libellés d'audit** — « 123 libellés » devient **124**, la 25-2-b-1 ayant ajouté
+    `invoice.unvalidated`. ⚠️ Elle le rend faux et ne touche pas ce fichier ; c'est donc ici qu'il se
+    corrige. Recompter depuis `crates/kesh-api/src/audit_labels.rs` (types d'entité + actions +
+    types d'auteur), ne pas incrémenter de confiance.
 
 11. **Gate complet** — la story touche `kesh-db`, le frontend et les manuels : gate backend complet,
     gate frontend, E2E complète avant le push.
