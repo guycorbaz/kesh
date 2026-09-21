@@ -8,9 +8,22 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
-## [Non publié]
+## [0.12.0] — Non publié
+
+⚠️ **Cette version n'est pas encore destinée à tenir une comptabilité réelle.** Elle corrige le défaut fondateur du produit — l'encaissement d'une facture ne produisait aucune écriture — et referme les gardes qui rendaient les livres contestables. Mais plusieurs fonctions nécessaires à un exercice complet manquent encore, et l'export de sauvegarde est incomplet. Elle s'installe, elle s'exerce, elle ne tient pas vos livres.
 
 ### Ajouté
+
+- **L'écriture d'encaissement — la banque cesse d'être sous-évaluée.** Encaisser une facture client ne produisait **aucune écriture comptable** : le compte débiteurs accumulait des débits jamais crédités, la banque restait sous-évaluée, et le rapprochement bancaire était impossible. Le mode d'échec était silencieux — le bilan restait équilibré, aucun contrôle ne rougissait. Chaque règlement, total ou partiel, écrit désormais son écriture. ([#371](https://github.com/guycorbaz/kesh/issues/371), [#228](https://github.com/guycorbaz/kesh/issues/228))
+
+- **Le grand livre — savoir de quoi un solde est fait.** L'extrait de compte n'existait pas : on voyait des soldes sans pouvoir les ouvrir. C'est l'instrument qui rend les autres défauts visibles. ([#373](https://github.com/guycorbaz/kesh/issues/373), [#374](https://github.com/guycorbaz/kesh/issues/374))
+
+- **Régler en espèces**, et retirer un marquage de règlement qui n'avait produit aucune écriture. ([#372](https://github.com/guycorbaz/kesh/issues/372))
+
+- **La contre-passation — corriger une écriture sans l'effacer.** L'écriture inverse laisse l'origine intacte, comme l'exige l'art. 958f CO : *l'exigence n'est pas qu'on ne se trompe jamais, c'est que la correction soit apparente*. ([#380](https://github.com/guycorbaz/kesh/issues/380))
+
+- **Le verrou de période — arrêter les livres à une date.** Un trimestre de TVA déjà déclaré ne bouge plus dans le dos de personne : aucune écriture ne peut plus y être datée, par aucun chemin. Le déverrouillage est réservé à un administrateur, exige un motif, et s'inscrit au journal d'audit. ([#380](https://github.com/guycorbaz/kesh/issues/380))
+
 
 - **La piste de contrôle se lit enfin.** Le journal d'audit enregistrait les opérations depuis l'Epic 7 et **aucune route, aucun écran ne permettait de le relire** : la trace existait sans être consultable, ce qui est peu utile à qui doit justifier une correction. Trois routes l'ouvrent — une **liste paginée et filtrable** (par date, type d'entité, identifiant, action), un **vocabulaire** des codes traduits pour alimenter les filtres, et un **export CSV**. ([#378](https://github.com/guycorbaz/kesh/issues/378))
 
@@ -19,6 +32,18 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   Les codes techniques (`invoice.validated`, `bank_imports`) sont remplacés par des **libellés lisibles dans les quatre langues** — 123 libellés, dans la langue de l'installation et non dans la langue comptable de la société. L'export porte les mêmes libellés, ses dix colonnes sont traduites, et toute cellule de texte est neutralisée contre l'**injection de formule** dans le tableur qui l'ouvrira.
 
   ⚠️ **L'écran, lui, reste à venir** : cette version ouvre la lecture par l'interface de programmation, ce qui suppose un outil technique. La page qui la rendra lisible depuis l'application fait l'objet de la suite de l'issue.
+
+- **Quatorze routes cessent d'agir sans laisser de trace.** La gestion des utilisateurs, la modification de la société, les personnes de contact et les pièces importées n'écrivaient **aucune** trace. Le **changement de rôle** porte désormais son propre libellé, pour qu'une promotion au droit d'écrire dans les livres ne se noie pas parmi les activations. ⚠️ L'**effacement d'une adresse par omission** est tracé lui aussi : sur ces écrans, un champ laissé vide efface, et détruire le canal de recouvrement d'un compte ne laissait jusqu'ici aucune trace. ([#379](https://github.com/guycorbaz/kesh/issues/379))
+
+### Modifié
+
+- **Une écriture enregistrée ne se modifie ni ne se supprime plus — par personne.** Toute écriture étant comptabilisée dès son insertion, la corriger passe désormais par la **contre-passation**. ⚠️ **Une exception subsiste, et elle est en train de se refermer** : la suppression d'une facture validée emporte encore son écriture. Elle est gardée — facture non payée, non créditée, sans historique de rappels, hors exercice clos et hors période verrouillée — et sera remplacée par la **dévalidation** ([#440](https://github.com/guycorbaz/kesh/issues/440)).
+
+- **Les comptes de clôture n'acceptent plus d'écriture.** Un compte de clôture n'est pas un compte où l'on saisit : l'écriture y est refusée. ([#375](https://github.com/guycorbaz/kesh/issues/375))
+
+- **La piste de contrôle survit à l'import d'une sauvegarde.** Les entrées de l'archive sont désormais **fusionnées** avec les vôtres au lieu de les remplacer, et chacune porte le nom de son auteur **au moment de l'écriture** — un instantané qui survit au remplacement des comptes utilisateurs. ⚠️ **Le motif n'est pas théorique** : effacer ses traces en important une sauvegarde était un scénario de blanchiment, relevé par l'audit du 2026-08-26. La **réinitialisation des données de démonstration** exige par ailleurs le rôle d'administrateur — *sa seule protection était un état, pas un droit*. ([#376](https://github.com/guycorbaz/kesh/issues/376), [#377](https://github.com/guycorbaz/kesh/issues/377))
+
+- **Chaque entrée du journal d'audit porte la société de son auteur.** La table était globale en multi-société : une entrée écrite dans une société restait visible depuis une autre. ([#378](https://github.com/guycorbaz/kesh/issues/378))
 
 ### Corrigé
 
