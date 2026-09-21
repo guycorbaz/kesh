@@ -46,16 +46,27 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
    - `crates/kesh-api/src/routes/invoices.rs:5` (doc de module) ;
    - `crates/kesh-api/tests/invoice_delete_e2e.rs:1` et `:6` (doc de module) ;
    - `frontend/src/routes/(app)/invoices/[id]/+page.svelte:68`, `:95`, `:920`.
-   Ceux d'`invoices.rs:1228-1231`, `:1331`, `:1339-1345` **partent avec la branche** : ils ne se
-   réécrivent pas.
+   Ceux d'`invoices.rs:**1232-1282**` (l'arme `Some(inv) if inv.status == "validated"` en entier),
+   `:1331` et `:1339-1345` **partent avec la branche** : ils ne se réécrivent pas. ⚠️ *La plage
+   citée en passe 2 — `1228-1231` — visait le bras `NotFound` et le bras **brouillon**, qui reste :
+   une citation introduite par une remédiation, et fausse. Relevée en passe 3.*
 
 3. **HUIT tests existants changent d'objet, et PAS tous de la même façon** — relevé en passe 2 :
    cinq d'entre eux (motifs 1, 2, 3, 5, 6) réaffirmeraient mot pour mot ce que la **25-2-b-1** teste
    déjà sur `unvalidate`. La consigne uniforme « réécrire contre `unvalidate` » produirait des
    doublons ; ⛔ **ce qui n'est couvert nulle part, c'est le refus neuf** de `delete` sur une facture
    validée (`INVOICE_MUST_BE_UNVALIDATED_FIRST`), pour lequel l'AC 1 ne prévoit qu'un test. Chaque
-   test est donc **retargeté sur ce refus** quand b-1 couvre déjà son motif, et réécrit contre
-   `unvalidate` seulement sinon. Aucun ne se supprime sans que sa propriété soit reprise ailleurs :
+   test est donc traité **nommément**, et non par une règle à appliquer au jugé — relevé en passe 3,
+   où la règle en bloc laissait les deux tests de **succès** sans destination :
+
+   | Test | Ce qu'il devient | Pourquoi |
+   |---|---|---|
+   | `test_delete_validated_unpaid_open_fy_removes_invoice_and_je` | **retargeté** : `delete` sur une facture validée → `INVOICE_MUST_BE_UNVALIDATED_FIRST` | c'est le test du **succès** qui disparaît : après l'AC 1, aucun succès n'existe plus sur ce chemin |
+   | `delete_validated_as_admin_returns_204` | **retargeté** : même refus, par l'API (`409`) | idem, côté HTTP |
+   | `…_paid_is_rejected`, `…_credited_by_avoir_…`, `…_with_reminders_…`, `…_in_closed_fy_…`, `delete_validated_in_locked_period_…` | **supprimés ici**, leur propriété étant reprise par les tests d'empêchement de la **25-2-b-1** (motifs 1, 2, 3, 5, 6) | réécrits contre `unvalidate`, ils **répéteraient mot pour mot** ceux de b-1 ; ⛔ **ne les supprimer qu'après avoir vérifié nommément que le test de b-1 existe** pour chaque motif |
+   | `invoices.spec.ts:333-370` (Playwright) | **adapté** : dévalide d'abord, puis supprime le brouillon | le parcours qu'il mesure — « fiche fantôme » — ne change pas, son chemin si |
+
+   Aucun ne disparaît sans que sa propriété soit reprise ailleurs :
    - `crates/kesh-db/src/repositories/invoices.rs` : `test_delete_validated_unpaid_open_fy_removes_invoice_and_je`,
      `test_delete_validated_paid_is_rejected`, `test_delete_validated_in_closed_fy_is_rejected`,
      `test_delete_validated_credited_by_avoir_is_rejected`,
@@ -97,7 +108,7 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
    - ⚠️ **L'asymétrie des deux sorties s'affiche** (arbitrage de Guy, 2026-09-19) : dévaliser est
      ouvert au **Comptable**, mais **effacer** reste réservé à l'**Administrateur** (`admin_routes`,
      décision de #219, fermée aux clés API). ⛔ **Le `403` en question vient du bouton de la branche
-     BROUILLON** (`+page.svelte:615-629`), qui n'a **aucune** garde de rôle — relevé en passe 2, et
+     BROUILLON** (`+page.svelte:616-630`, le bloc `{#if invoice?.status === 'draft'}` en entier), qui n'a **aucune** garde de rôle — relevé en passe 2, et
      nommé nulle part ailleurs, pas même dans la fiche mère : le Comptable dévalide, obtient un
      brouillon numéroté, et c'est **là** qu'il se heurte au refus. Ce bouton reçoit donc sa garde
      `isAdmin`, ou la réserve à l'Administrateur s'affiche.
@@ -132,8 +143,12 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
      README, distincte de celle du manuel), et la ligne **v0.12.1** (`:219`) de la feuille de route,
      qui énumère les stories livrées de l'E25 : **#440 s'y ajoute**, cette story étant celle qui la
      ferme.
-   - PDF régénérés et **contrôlés à plat** (`pdftotext f.pdf - | tr '\n' ' ' | tr -s ' '`). ⚠️ Le PDF
-     du manuel d'administration n'a encore été aplati par aucune passe.
+   - PDF régénérés et **contrôlés à plat** (`pdftotext f.pdf - | tr '\n' ' ' | tr -s ' '`).
+     ✅ **Les deux PDF ont été aplatis** — celui de l'administration l'a été en passe 2, puis de
+     nouveau en passe 3 : ses quatre passages (l. 1759, 1798, 1799, 1957) y sont retrouvés. *(La
+     phrase précédente disait « n'a encore été aplati par aucune passe » **alors que le compte rendu
+     de la même passe déclarait l'avoir fait** — contradiction relevée en passe 3, tranchée en
+     refaisant le contrôle plutôt qu'en choisissant laquelle des deux croire.)*
 
 8. **i18n.** ⛔ **Tout message d'erreur neuf est traduit dans les quatre locales**, convention
    `error-*`, **avec son repli** dans `crates/kesh-api/src/errors.rs` — clause générique de la fiche
@@ -202,3 +217,4 @@ l'écrit plutôt que de le laisser déduire, et n'empiète pas sur la b-1.
 | 2026-09-21 | spec | Story née du **découpage** de la 25-2-b (arbitrage de Guy). Elle hérite des trois passes de validation de la fiche mère. ⚠️ Son AC 3 annonçait corriger un décompte de la mère (cinq) et s'est trompé à son tour, à trois reprises dans le même paragraphe ; recompté en passe 1 de validation : **huit**. |
 | 2026-09-21 | validate P1 | **Passe 1, une lentille Sonnet**, prompt versionné `25-2-b-2-validate-prompt-p1.md`, sept axes exercés. **1 HIGH, 3 MEDIUM, 1 LOW**, tous vérifiés depuis la source avant d'être retenus. ⛔ **Le HIGH est une faute de décompte DANS la phrase qui corrigeait un décompte** : titre « SIX », énumération de **huit**, note finale « Sept ». Recompté : **8** (5 + 2 + 1). MEDIUM : le refus de `delete` sur une facture validée n'avait pas de code nommé (`INVOICE_MUST_BE_UNVALIDATED_FIRST`, `409`) ; deux plages de lignes de `journal_entries.rs` s'arrêtaient **juste avant** la phrase visée (943 et 982) ; la plage du résidu d'écran désignait le gestionnaire du dialogue et non le bloc mort (`:919-945`). LOW : `user-manual.tex:966` est l'en-tête de sous-section, la phrase est à **968**. ⚠️ Ces trois citations étaient **héritées mot pour mot de la fiche mère**, et aucune de ses trois passes ne les avait rouvertes — *une citation recopiée n'est pas une citation vérifiée*. Vérifié sans rien trouver : l'asymétrie des sorties, les cinq citations de manuel et d'`api-external.md`, les PDF aplatis des deux manuels FR, l'ordre des deux filles, le périmètre (4 modules). |
 | 2026-09-21 | validate P2 | **Passe 2, une lentille Opus** (P1 était Sonnet), prompt versionné `25-2-b-2-validate-prompt-p2.md`, sept axes exercés, PDF des deux manuels aplatis. **3 HIGH, 6 MEDIUM, 5 LOW** — ⛔ **douze sur quatorze de nature DÉCOUPAGE, deux de conception** (et ces deux-là sont des incomplétudes d'énumération, non des contradictions). ⛔ **HIGH 1 et 3 ont la même cause, et elle est de moi : la 25-2-b-zero, mergée ENTRE les passes, a inséré trois lignes dans le manuel** — les sept citations de l'AC 7 étaient décalées d'autant, et deux sites qu'elle a elle-même écrits (`user-manual.tex:466-468`, `admin-manual.tex:1798`) nommaient un chemin que cette story supprime. *Une story livrée entre deux passes périme leurs citations, et rien ne le signale.* ⚠️ La passe 1 avait écrit « vérifié sans rien trouver : les cinq citations de manuel » — **elle certifiait un contrôle qui n'avait pas eu lieu sur la bonne base**. HIGH 2 — la prescription « le bouton passe d'`isAdmin` à la garde comptable », donc **l'élargissement de rôle arbitré par Guy**, était **tombée entre les deux filles** : sans elle, le Comptable ne verrait jamais le bouton. MEDIUM : huit doc-comments deviennent faux ici et non en b-1 ; « retirer le bloc en entier » emportait la confirmation du brouillon que l'AC 5 exige de garder ; le `403` du Comptable vient du bouton de la branche **brouillon**, que personne ne nommait ; cinq des huit tests feraient **doublon** avec ceux de la b-1 — ils se retargettent sur le refus neuf ; la clause i18n générique avait été restreinte à l'écran, alors que c'est cette story qui crée un code d'erreur ; `sprint-status.yaml` disait encore **SEPT**. LOW : quatre citations recalées, la § *Règle de splitting* écrite. **Sévérité `HIGH → HIGH`** : signalée à Guy, mais **la nature tranche** — aucune contradiction de conception, et douze findings sur quatorze disparaissent avec le recalage. |
+| 2026-09-21 | validate P3 — **close** | **Passe 3, CIBLÉE** (une lentille Sonnet, prompt versionné `25-2-b-2-validate-prompt-p3.md`), sur le seul commit `d03b1fd4`. **1 HIGH, 2 MEDIUM, 1 LOW** — 2 de découpage, 2 de conception. ⛔ **Le HIGH est une contradiction INTERNE au commit de remédiation** : l'AC 7 disait « le PDF du manuel d'administration n'a été aplati par aucune passe » pendant que le compte rendu de **cette même passe** déclarait avoir aplati les deux. *Tranché en refaisant le contrôle plutôt qu'en choisissant laquelle croire* : les quatre passages sont dans le PDF, la phrase était fausse. MEDIUM — `invoices.rs:1228-1231`, **citation introduite par la remédiation elle-même**, visait le bras `NotFound` et le bras **brouillon**, qui reste : corrigée en `1232-1282`. MEDIUM — la règle « retargeté ou réécrit » laissait **les deux tests de succès sans destination** : remplacée par un **tableau nommant les huit**, dont cinq **supprimés** (leur propriété étant reprise par la b-1, à vérifier nommément avant suppression). LOW — `+page.svelte:615-629` visait la fermeture du bouton précédent : `616-630`. ✅ **16 des 18 citations vérifiées une par une sur `main` pointent exactement leur phrase** — les sept lignes de manuel recalées en passe 2 sont toutes justes, et `sprint-status.yaml` ne porte plus de résidu. **Trend : 1H/3M/1L → 3H/6M/5L → 1H/2M/1L**, et la validation se clôt : ce qui restait tenait à des citations et à une règle en bloc, non à la conception. |
