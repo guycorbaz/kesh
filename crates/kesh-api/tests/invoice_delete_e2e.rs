@@ -150,10 +150,29 @@ async fn create_validated_invoice(
     contact_id: i64,
     admin_id: i64,
 ) -> (i64, i64) {
+    create_validated_invoice_on(
+        pool,
+        company_id,
+        contact_id,
+        admin_id,
+        chrono::Utc::now().date_naive(),
+    )
+    .await
+}
+
+/// Variante datée de [`create_validated_invoice`] : l'écriture de vente porte
+/// la date de la facture.
+async fn create_validated_invoice_on(
+    pool: &MySqlPool,
+    company_id: i64,
+    contact_id: i64,
+    admin_id: i64,
+    date: chrono::NaiveDate,
+) -> (i64, i64) {
     let new = NewInvoice {
         company_id,
         contact_id,
-        date: chrono::Utc::now().date_naive(),
+        date,
         due_date: None,
         payment_terms: None,
         lines: vec![NewInvoiceLine {
@@ -213,6 +232,56 @@ async fn delete_validated_as_admin_returns_204(pool: MySqlPool) {
     assert!(
         je.is_none(),
         "l'écriture comptable liée doit être supprimée"
+    );
+}
+
+/// Story 25-2-b-zero (#443) — une facture validée datée d'une période
+/// **verrouillée** ne se supprime plus : son écriture changerait sinon les
+/// totaux d'une période déjà déclarée, sans aucun signal. `400 PERIOD_LOCKED`,
+/// et la facture comme son écriture restent en place.
+///
+/// La borne est posée en SQL direct : la base est éphémère (`#[sqlx::test]`),
+/// et la route de pose n'est pas l'objet du test.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn delete_validated_in_locked_period_returns_400_period_locked(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let (admin_id, company_id) = seed_base(&pool).await;
+    let contact_id = seed_contact(&pool, company_id, admin_id).await;
+    let borne = chrono::Utc::now().date_naive() - TimeDelta::days(30);
+    let (invoice_id, je_id) =
+        create_validated_invoice_on(&pool, company_id, contact_id, admin_id, borne).await;
+    sqlx::query("UPDATE companies SET books_locked_through = ? WHERE id = ?")
+        .bind(borne)
+        .bind(company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+    let resp = app
+        .client
+        .delete(app.url(&format!("/api/v1/invoices/{invoice_id}")))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"].as_str(), Some("PERIOD_LOCKED"));
+
+    let restes: (i64, i64) = sqlx::query_as(
+        "SELECT (SELECT COUNT(*) FROM invoices WHERE id = ?), \
+                (SELECT COUNT(*) FROM journal_entries WHERE id = ?)",
+    )
+    .bind(invoice_id)
+    .bind(je_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        restes,
+        (1, 1),
+        "la facture ET son écriture doivent rester en place"
     );
 }
 

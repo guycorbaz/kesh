@@ -22,6 +22,8 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ### Corrigé
 
+- **Le verrou de période protège aussi de la suppression.** Il empêchait de *dater* une écriture dans une période verrouillée, mais pas d'en *effacer* une : supprimer une facture validée emportait son écriture même datée d'un trimestre déjà déclaré, et les totaux de TVA de ce trimestre changeaient **sans aucun signal**. La suppression est désormais refusée (`PERIOD_LOCKED`) quand l'écriture est datée d'une période verrouillée. ([#443](https://github.com/guycorbaz/kesh/issues/443))
+
 - **Changer le type d'un compte qui porte des écritures ne se fait plus sans avertissement.** Le type d'un compte — Actif, Passif, Produit, Charge — décide dans quel état ses montants apparaissent, et les rapports le lisent au moment où on les demande : passer un compte de charge en actif faisait donc **sortir tout son historique du compte de résultat pour le faire entrer au bilan**, y compris pour des exercices **clos**. Le résultat d'une année close changeait, donc le report à nouveau, donc le bilan d'ouverture de l'année en cours — sans qu'aucune écriture ne l'explique, et sans le moindre message. Kesh refuse désormais le changement au premier essai, indique combien d'écritures sont concernées et nomme les exercices clos touchés ; le geste reste possible sur confirmation explicite, et il est journalisé sous son propre intitulé. ([#382](https://github.com/guycorbaz/kesh/issues/382), [#274](https://github.com/guycorbaz/kesh/issues/274))
 
   *Pour les intégrations* : `PUT /api/v1/accounts/{id}` peut désormais répondre `409 ACCOUNT_HAS_ENTRIES`. Le champ facultatif `confirmAccountRetype` lève le refus ; un client qui ne retype pas de compte mouvementé n'a rien à changer.
