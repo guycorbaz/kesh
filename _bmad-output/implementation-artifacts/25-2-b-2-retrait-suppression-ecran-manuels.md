@@ -53,6 +53,25 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
    - `frontend/src/routes/(app)/invoices/[id]/+page.svelte:68`, `:95` — et `:920`, qui **part avec
      le bloc retiré** par l'AC 4 (`:919-943`) au lieu de se réécrire : il compte parmi les onze
      ancrages, non parmi les gestes de réécriture.
+   ⛔ **RECALAGE DES CITATIONS APRÈS LE MERGE DE LA b-1** (relevé le 2026-09-22 sur la branche de
+   la b-1, gates verts — *une story livrée entre deux passes périme les citations de la suivante, et
+   rien ne le signale*). **Trois ancrages sur onze ont bougé, les huit autres sont intacts** :
+
+   | Citation de cette fiche | Ligne réelle après la b-1 |
+   |---|---|
+   | `journal_entries.rs:943` | **943** — inchangée |
+   | `journal_entries.rs:982-989` | **984-998** (le paragraphe court désormais jusqu'à « le résidu est assumé et tracé ») |
+   | `journal_entries.rs:970` | **972** |
+   | `invoices.rs:1339-1340` | **1382-1387** — et la **formulation a changé** : la b-1 y a écrit « n'est plus le seul site du dépôt depuis la 25-2-b-1 (#440) », qu'il faut relire avant de réécrire |
+   | `lib.rs:234` et `:416` | **inchangées** |
+   | `routes/invoices.rs:5` | **inchangée** |
+   | `invoice_delete_e2e.rs:1` et `:6` | **inchangées** |
+   | `+page.svelte:68`, `:95` | **inchangées** (`:96` porte la suite de la phrase de `:95`) |
+
+   ⚠️ **À revérifier tout de même au démarrage** : le relevé date d'avant le squash-merge de la b-1,
+   et `main` peut bouger d'ici là. *Le contrôle coûte une minute ; la passe qu'il évite en coûte
+   trente.*
+
    ⛔ **Un site de plus existe, et il NE SE TOUCHE PAS** — *il ne compte pas parmi les onze
    ancrages : rien ne s'y réécrit* :
    `crates/kesh-db/migrations/20260715000001_invoice_reminders.sql:14` — « FK `invoice_id ON DELETE
