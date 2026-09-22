@@ -246,14 +246,31 @@ async fn le_cycle_complet_rend_le_meme_numero_sans_consommer_le_compteur(pool: M
     // facture dévalidée AVEC ses lignes, forme que le frontend consomme déjà.
     let corps: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(corps["status"].as_str(), Some("draft"));
-    assert!(
-        corps["journalEntryId"].is_null(),
-        "l'écriture est détachée dans le corps rendu, pas seulement en base"
+    // ⛔ `is_null()` ne suffit PAS : `serde_json` rend `Null` pour une clé
+    // ABSENTE, si bien qu'un champ renommé ou disparu passerait à vide.
+    // `get()` distingue les deux.
+    assert_eq!(
+        corps.get("journalEntryId"),
+        Some(&serde_json::Value::Null),
+        "l'écriture est détachée dans le corps rendu, et le champ EXISTE"
     );
     assert_eq!(
         corps["lines"].as_array().map(|l| l.len()),
         Some(1),
         "la réponse porte les lignes ; obtenu {corps}"
+    );
+    // Les deux champs dont l'appelant a besoin JUSTE APRÈS : le numéro, qui
+    // est l'invariant-titre de la story, et la version, qu'il doit réutiliser
+    // pour le `PUT` ou le `DELETE` suivant.
+    assert_eq!(
+        corps["invoiceNumber"].as_str(),
+        Some(numero_initial.as_str()),
+        "le numéro survit DANS LE CORPS rendu ; obtenu {corps}"
+    );
+    assert_eq!(
+        corps["version"].as_i64(),
+        Some(version as i64 + 1),
+        "la version rendue est celle d'après la dévalidation ; obtenu {corps}"
     );
     let (statut, numero, version, je) = etat(&pool, invoice_id).await;
     assert_eq!(statut, "draft");

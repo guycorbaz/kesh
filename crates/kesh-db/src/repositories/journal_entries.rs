@@ -987,9 +987,11 @@ pub async fn delete_by_id(
 /// facture**, dont l'écriture part avec elle, sous les gardes propres de
 /// l'appelant. ⛔ **Ces gardes ne sont PAS les mêmes des deux côtés, et ne pas
 /// le dire égare** : `delete` en porte trois (non payée, non créditée, sans
-/// historique de rappels), `unvalidate` cinq — les trois mêmes, plus le
-/// règlement **partiel**, l'envoi au client et le rapprochement bancaire. Cf.
-/// le doc-comment de chacune, qui les énumère. ⚠️ Le gel levé, les autres
+/// historique de rappels) ; `unvalidate` cinq — les deux dernières à
+/// l'identique, la **première élargie** (`invoice_settlements` OU `paid_at`,
+/// donc le règlement **partiel** aussi), plus l'envoi au client et le
+/// rapprochement bancaire. ⚠️ Le règlement partiel n'est donc pas une garde de
+/// plus : c'est la même, en plus large. Cf. le doc-comment de chacune. ⚠️ Le gel levé, les autres
 /// gardes de cette fonction tiennent — exercice clos, contre-passation et
 /// **verrou de période** (#443) : `false` ne lève que le gel. Le geler reviendrait à retirer la
 /// suppression d'une facture validée (#219) — une décision de facturation, pas

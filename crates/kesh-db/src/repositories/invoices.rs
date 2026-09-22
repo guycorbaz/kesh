@@ -1406,10 +1406,6 @@ pub async fn delete(
 // Story 5.2 — Validation & numérotation
 // ---------------------------------------------------------------------------
 
-/// Résultat d'une validation réussie (facture validée + lignes + écriture
-/// comptable générée). Les lignes sont retournées pour permettre au
-/// handler HTTP de construire la réponse sans re-fetch post-commit
-/// (review P3 — évite une fenêtre de race sur les lignes).
 /// Dévalide une facture : elle repasse en **brouillon**, garde son **numéro**,
 /// et son écriture comptable est supprimée (Story 25-2-b-1, #440).
 ///
@@ -1643,6 +1639,14 @@ pub async fn unvalidate(
     }
 }
 
+/// Résultat d'une validation réussie (facture validée + lignes + écriture
+/// comptable générée). Les lignes sont retournées pour permettre au
+/// handler HTTP de construire la réponse sans re-fetch post-commit
+/// (review P3 — évite une fenêtre de race sur les lignes).
+///
+/// ⚠️ Ce doc-comment s'était retrouvé **collé à `unvalidate`** — insérée juste
+/// au-dessus sans ligne vide —, si bien que rustdoc l'attachait à elle et
+/// laissait cette struct nue. Relevé en passe 2 de revue.
 #[derive(Debug)]
 pub struct ValidatedInvoice {
     pub invoice: Invoice,

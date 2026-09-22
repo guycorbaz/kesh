@@ -234,7 +234,17 @@ Corps : `{ "version": n }` — le verrou optimiste. Réponse : la facture, même
 | Version périmée | `OPTIMISTIC_LOCK_CONFLICT` | `409` |
 | Facture qui n'est pas au statut « validée » | `ILLEGAL_STATE_TRANSITION` | `409` |
 
-⚠️ **Le champ `details` est générique, et son contenu dépend du motif** — ne pas le lire comme un numéro de document. `INVOICE_HAS_SETTLEMENTS` y met l'identifiant du règlement ; `INVOICE_CREDITED` le numéro de l'avoir ; `INVOICE_EMAILED` l'**adresse du destinataire** ; les autres le laissent vide. Le code d'erreur, lui, est stable : c'est sur lui qu'on branche une logique.
+⚠️ **Le champ `details` est générique : `documentNumber` n'est PAS toujours un numéro de document, et pas toujours celui d'un AUTRE document.** Branchez votre logique sur le **code d'erreur**, qui est stable ; lisez `details` comme un complément d'affichage, motif par motif :
+
+| Code | `documentId` | `documentNumber` |
+|---|---|---|
+| `INVOICE_HAS_SETTLEMENTS` | l'identifiant du règlement — **`null`** si le refus vient du seul `paid_at` (facture réglée avant la v0.10) | le numéro de **la facture elle-même** |
+| `INVOICE_CREDITED` | l'identifiant de l'avoir | le numéro de l'avoir — **`null`** tant que l'avoir est un brouillon |
+| `INVOICE_HAS_REMINDERS` | l'identifiant du rappel | le numéro de **la facture elle-même** |
+| `INVOICE_EMAILED` | `null` | l'**adresse du destinataire** |
+| `MATCHED_BANK_TRANSACTION` | l'identifiant de la transaction bancaire | le numéro de **la facture elle-même** |
+
+⛔ Les **cinq autres** codes du tableau des refus — 10 lignes en tout, 5 avec `details` et 5 sans — `FISCAL_YEAR_CLOSED`, `ENTRY_IS_REVERSED`, `PERIOD_LOCKED`, `OPTIMISTIC_LOCK_CONFLICT`, `ILLEGAL_STATE_TRANSITION` — n'émettent **aucun** `details`. Un message du type « bloquée par le document {documentNumber} » opposerait donc la facture à elle-même dans trois cas sur cinq.
 
 ⚠️ **« Envoyée au client » est un refus sec** : il ne se lève par aucune confirmation. Une facture que le client détient se corrige par un **avoir**. La garde ne connaît que ce que Kesh a envoyé lui-même — un PDF téléchargé puis transmis à la main ne laisse aucune trace.
 
