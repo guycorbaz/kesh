@@ -1,16 +1,25 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Pencil, Trash2, ArrowLeft, CheckCircle2, BookOpen, Printer, Mail } from '@lucide/svelte';
+	import {
+		Pencil,
+		Trash2,
+		Undo2,
+		ArrowLeft,
+		CheckCircle2,
+		BookOpen,
+		Printer,
+		Mail,
+	} from '@lucide/svelte';
 
 	import {
 		getInvoice,
 		deleteInvoice,
 		validateInvoice,
+		unvalidateInvoice,
 		settleInvoice,
 			getInvoiceEmailPreview,
 		sendInvoiceEmail,
@@ -65,7 +74,12 @@
 	let canManage = $derived(
 		authState.currentUser?.role === 'Admin' || authState.currentUser?.role === 'Comptable',
 	);
-	// #219 : la suppression définitive d'une facture validée est réservée Admin.
+	// ⛔ **L'ASYMÉTRIE DES DEUX SORTIES** (arbitrage du 2026-09-19, Story
+	// 25-2-b-2) : **dévalider** est ouvert au Comptable — c'est un geste de
+	// facturation, réversible, qui laisse la facture en place —, mais
+	// **effacer** reste réservé à l'Administrateur (#219, `admin_routes`).
+	// Le Comptable dévalide donc, obtient un brouillon numéroté, et c'est
+	// **là** qu'il se heurte au refus.
 	let isAdmin = $derived(authState.currentUser?.role === 'Admin');
 
 	async function confirmCreateCreditNote() {
@@ -92,9 +106,13 @@
 	let deleteOpen = $state(false);
 	let deleteSubmitting = $state(false);
 	let deleteError = $state('');
-	// #219 : saisie de confirmation forte (retaper le n° de facture) pour la
-	// suppression d'une facture validée.
-	let deleteConfirmText = $state('');
+	// ⛔ Story 25-2-b-2 (#440) — la branche validée a désormais **sa propre**
+	// modale. Une seule les servait toutes deux, titre et pied en dur : y
+	// renommer le bouton aurait donné un « Dévalider » qui ouvre « Supprimer la
+	// facture » et **appelle la suppression**.
+	let unvalidateOpen = $state(false);
+	let unvalidateSubmitting = $state(false);
+	let unvalidateError = $state('');
 	let validateOpen = $state(false);
 	let validateSubmitting = $state(false);
 	let validateError = $state('');
@@ -218,6 +236,38 @@
 			}
 		} finally {
 			deleteSubmitting = false;
+		}
+	}
+
+	async function confirmUnvalidate() {
+		if (!invoice) return;
+		unvalidateSubmitting = true;
+		unvalidateError = '';
+		try {
+			// ⚠️ La réponse porte la facture à jour, lignes comprises : pas de
+			// relecture, et donc pas de `goto` — la facture RESTE, c'est tout
+			// l'objet du geste.
+			invoice = await unvalidateInvoice(invoice.id, invoice.version);
+			unvalidateOpen = false;
+			notifySuccess(
+				i18nMsg('invoice-unvalidated-success', 'Facture repassée en brouillon'),
+			);
+		} catch (err) {
+			// ⛔ Le refus NOMME son motif : les huit empêchements ont chacun leur
+			// code et leur message traduit. L'afficher tel quel vaut mieux que
+			// de le réécrire ici.
+			if (isApiError(err)) {
+				unvalidateError = err.message;
+				notifyError(err.message);
+			} else {
+				unvalidateError = i18nMsg(
+					'invoice-unvalidate-error',
+					'Erreur lors de la dévalidation',
+				);
+				notifyError(unvalidateError);
+			}
+		} finally {
+			unvalidateSubmitting = false;
 		}
 	}
 
@@ -623,10 +673,16 @@
 				<Pencil class="h-4 w-4" aria-hidden="true" />
 				Modifier
 			</Button>
-			<Button variant="destructive" onclick={() => (deleteOpen = true)}>
-				<Trash2 class="h-4 w-4" aria-hidden="true" />
-				Supprimer
-			</Button>
+			<!-- ⛔ La garde va sur CE bouton, et non sur le `{#if}` qui enveloppe
+			     aussi Valider et Modifier : l'y mettre retirerait au Comptable la
+			     validation et la modification d'un brouillon, soit l'inverse exact
+			     de l'élargissement voulu. -->
+			{#if isAdmin}
+				<Button variant="destructive" onclick={() => (deleteOpen = true)}>
+					<Trash2 class="h-4 w-4" aria-hidden="true" />
+					Supprimer
+				</Button>
+			{/if}
 		</div>
 	{:else if invoice?.status === 'validated'}
 		<div class="flex gap-2">
@@ -726,10 +782,22 @@
 					</Button>
 				{/if}
 			{/if}
-			{#if isAdmin && !invoice.paidAt}
-				<Button variant="destructive" onclick={() => (deleteOpen = true)}>
-					<Trash2 class="h-4 w-4" aria-hidden="true" />
-					Supprimer
+			<!-- ⛔ `canManage` et non `isAdmin` : dévalider est ouvert au Comptable
+			     (arbitrage du 2026-09-19). ⚠️ Et la condition `!invoice.paidAt` est
+			     RETIRÉE délibérément : elle sous-couvrait le motif « réglée », une
+			     facture PARTIELLEMENT réglée n'ayant pas de `paidAt`. L'écran
+			     n'essaie donc pas de rejouer la règle métier — il laisse le serveur
+			     refuser, et affiche le motif nommé. Cacher le bouton sur une
+			     moitié des cas aurait été pire : l'utilisateur n'aurait rien eu à
+			     lire. -->
+			{#if canManage}
+				<Button
+					variant="destructive"
+					data-testid="invoice-unvalidate-button"
+					onclick={() => (unvalidateOpen = true)}
+				>
+					<Undo2 class="h-4 w-4" aria-hidden="true" />
+					{i18nMsg('invoice-unvalidate-button', 'Dévalider')}
 				</Button>
 			{/if}
 		</div>
@@ -906,42 +974,33 @@
 		open={deleteOpen}
 		onOpenChange={(o) => {
 			deleteOpen = o;
-			if (!o) {
-				deleteError = '';
-				deleteConfirmText = '';
-			}
+			if (!o) deleteError = '';
 		}}
 	>
 		<Dialog.Content>
 			<Dialog.Header>
 				<Dialog.Title>Supprimer la facture</Dialog.Title>
 			</Dialog.Header>
-			{#if invoice?.status === 'validated'}
-				<!-- #219 : confirmation forte pour une facture validée (efface la
-				     facture ET son écriture comptable). -->
+			<!-- ⛔ Story 25-2-b-2 (#440) — cette modale ne sert plus QUE le
+			     brouillon : une facture validée se dévalide, elle ne se supprime
+			     plus. ⚠️ La condition n'est pas tombée, elle a CHANGÉ — du statut
+			     vers la présence d'un NUMÉRO. -->
+			{#if invoice?.invoiceNumber}
 				<div class="space-y-3 text-sm">
-					<div
-						class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-destructive"
-					>
-						<strong>Action irréversible.</strong> La facture
-						<strong>{invoice.invoiceNumber}</strong> et son écriture comptable
-						associée seront <strong>définitivement supprimées</strong>. À réserver
-						à la correction d'une validation erronée ou à la purge d'essais.
+					<p>{i18nMsg('invoice-delete-confirm-body', 'Confirmer la suppression définitive de cette facture brouillon ?')}</p>
+					<!-- ⚠️ Un brouillon NUMÉROTÉ a déjà consommé son numéro : le
+					     compteur ne redescend pas, et le trou restera. Il se voit et
+					     s'explique — c'est la réattribution qui serait grave. -->
+					<div class="rounded-md border border-warning bg-warning/10 px-3 py-2">
+						{i18nMsg(
+							'invoice-delete-numbered-warning',
+							'Cette facture porte déjà le numéro { $number } : le supprimer laissera un trou définitif dans la séquence, le compteur ne redescendant pas.',
+							{ number: invoice.invoiceNumber },
+						)}
 					</div>
-					<label class="block space-y-1">
-						<span class="text-text-muted">
-							Pour confirmer, retapez le numéro de facture
-							<strong>{invoice.invoiceNumber}</strong>
-						</span>
-						<Input
-							bind:value={deleteConfirmText}
-							autocomplete="off"
-							aria-label="Confirmer en retapant le numéro de facture"
-						/>
-					</label>
 				</div>
 			{:else}
-				<p class="text-sm">Confirmer la suppression définitive de cette facture brouillon ?</p>
+				<p class="text-sm">{i18nMsg('invoice-delete-confirm-body', 'Confirmer la suppression définitive de cette facture brouillon ?')}</p>
 			{/if}
 			{#if deleteError}
 				<div class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -950,14 +1009,68 @@
 			{/if}
 			<Dialog.Footer>
 				<Button variant="outline" onclick={() => (deleteOpen = false)}>Annuler</Button>
+				<Button variant="destructive" onclick={confirmDelete} disabled={deleteSubmitting}>
+					{i18nMsg('invoice-delete-button', 'Supprimer')}
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+
+	<!-- ⛔ **La branche validée a SA PROPRE modale** (Story 25-2-b-2, #440). Une
+	     seule servait les deux, titre et pied en dur : renommer le bouton sans
+	     toucher à la modale aurait donné un « Dévalider » qui ouvre « Supprimer
+	     la facture » et **appelle la suppression** — laquelle échoue désormais
+	     en 409. Seule une E2E l'aurait rattrapé. -->
+	<Dialog.Root
+		open={unvalidateOpen}
+		onOpenChange={(o) => {
+			unvalidateOpen = o;
+			if (!o) unvalidateError = '';
+		}}
+	>
+		<Dialog.Content data-testid="invoice-unvalidate-dialog">
+			<Dialog.Header>
+				<Dialog.Title>
+					{i18nMsg('invoice-unvalidate-confirm-title', 'Dévalider la facture')}
+				</Dialog.Title>
+			</Dialog.Header>
+			<div class="space-y-3 text-sm">
+				<!-- ⚠️ Dire ce qui va se passer, les trois effets : l'écriture part,
+				     la facture redevient un brouillon, et le NUMÉRO est conservé —
+				     c'est ce dernier point qui distingue ce geste de la suppression,
+				     et qui rend la revalidation sans coût. -->
+				<p>
+					{i18nMsg(
+						'invoice-unvalidate-confirm-body',
+						"Son écriture comptable sera supprimée et la facture repassera en brouillon. Son numéro est conservé : en la revalidant, elle reprendra le même.",
+					)}
+				</p>
+				{#if invoice?.invoiceNumber}
+					<p class="text-text-muted">
+						{i18nMsg('invoice-unvalidate-keeps-number', 'Numéro conservé :')}
+						<strong>{invoice.invoiceNumber}</strong>
+					</p>
+				{/if}
+			</div>
+			{#if unvalidateError}
+				<div
+					class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive"
+					data-testid="invoice-unvalidate-error"
+				>
+					{unvalidateError}
+				</div>
+			{/if}
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (unvalidateOpen = false)}>
+					{i18nMsg('common-cancel', 'Annuler')}
+				</Button>
 				<Button
 					variant="destructive"
-					onclick={confirmDelete}
-					disabled={deleteSubmitting ||
-						(invoice?.status === 'validated' &&
-							deleteConfirmText.trim() !== invoice?.invoiceNumber)}
+					data-testid="invoice-unvalidate-confirm"
+					onclick={confirmUnvalidate}
+					disabled={unvalidateSubmitting}
 				>
-					Supprimer
+					{i18nMsg('invoice-unvalidate-button', 'Dévalider')}
 				</Button>
 			</Dialog.Footer>
 		</Dialog.Content>

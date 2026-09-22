@@ -108,11 +108,25 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * (`void _exhaustif; return '';`), et le littéral revient : `ecartee` **7**, `conforme`
  * **36**. Le total, lui, n'a jamais bougé.
  *
- * *(Chacune des trois écritures de ce paragraphe a suivi la lecture de la ventilation
+ * ⚠️ **43 → 42, et la déclaration est NOMMÉE avant que le chiffre ne bouge** :
+ * `deleteConfirmText` (`routes/(app)/invoices/[id]/+page.svelte`) a **disparu** avec la
+ * Story 25-2-b-2 (#440). Elle portait la confirmation forte — retaper le numéro de
+ * facture — exigée avant de supprimer une facture validée ; ce chemin n'existe plus, une
+ * facture validée se **dévalide** désormais, et la friction qui le remplace est une
+ * confirmation simple, la facture restant en place. Elle était `ecartee` (son littéral
+ * était `''`, neutre), d'où `ecartee` **7 → 6** ; `conforme` ne bouge pas.
+ *
+ * ⚠️ *Elle n'a été trouvée qu'en lisant `SUFFIXES` : le relevé ne porte que sur les noms
+ * finissant par `Label`, `Text` ou `Display`, et rien dans le diff ne signalait qu'un
+ * `let …Text` retiré ferait bouger ce compteur.* C'est le prix d'un détecteur par
+ * convention de nommage — et la raison pour laquelle ce chiffre se recompte au lieu de
+ * s'ajuster au jugé.
+ *
+ * *(Chacune des écritures de ce paragraphe a suivi la lecture de la ventilation
  * réelle, jamais l'inverse : ce garde-fou interdit d'ajuster un chiffre sans le
  * recompter, et sa toute première rédaction annonçait `conforme` sans l'avoir vérifié.)*
  */
-const CANDIDATES_ATTENDUES = 43;
+const CANDIDATES_ATTENDUES = 42;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -629,7 +643,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 7, conforme: 36 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 6, conforme: 36 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

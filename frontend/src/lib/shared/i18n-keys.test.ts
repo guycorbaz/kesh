@@ -235,7 +235,18 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * faux avec l'assurance de l'avoir mesuré.*
  */
 const ATTENDU = {
-	sitesTotal: 1638,
+	// Story 25-2-b-2 (#440) : 1638 → 1651, soit **+13**, ventilés — recomptés
+	// depuis la source (`grep -c 'i18nMsg('` aux deux bornes), non incrémentés :
+	//   • `invoices/[id]/+page.svelte` 41 → 53 (**+12**) — la modale de
+	//     dévalidation qui naît (titre, corps, numéro conservé, bouton, annuler),
+	//     ses deux messages de retour (succès, erreur), le bouton de la barre
+	//     d'action, et les quatre libellés de la modale de suppression qui
+	//     cessent d'être codés en dur en français (`invoice-delete-*`, qui
+	//     existaient déjà au catalogue sans être appelés) ;
+	//   • `invoices/+page.svelte` 7 → 8 (**+1**) — l'avertissement sur le trou de
+	//     séquence, sur l'écran de LISTE : le second chemin de suppression d'un
+	//     brouillon, que quatre passes de validation n'avaient pas énuméré.
+	sitesTotal: 1651,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

@@ -165,7 +165,7 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
      verrait jamais le bouton « Dévalider »** et l'arbitrage ne serait pas livré.
    - ⚠️ **Et `!invoice.paidAt` sous-couvre le motif 1** : une facture *partiellement* réglée n'a pas
      de `paid_at`. L'écran lit le résiduel, ou assume le refus serveur — au choix, mais écrit.
-   - ⚠️ **L'asymétrie des deux sorties s'affiche** (arbitrage de Guy, 2026-09-19) : dévaliser est
+   - ⚠️ **L'asymétrie des deux sorties s'affiche** (arbitrage de Guy, 2026-09-19) : dévalider est
      ouvert au **Comptable**, mais **effacer** reste réservé à l'**Administrateur** (`admin_routes`,
      décision de #219, fermée aux clés API). ⛔ **Le `403` vient du bouton SUPPRIMER de la branche
      brouillon** — `+page.svelte:626-629`, **et lui seul** —, qui n'a aucune garde de rôle : le
@@ -194,7 +194,7 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
    deux appels, `[id]/+page.svelte:206` et `+page.svelte:233`, vers une seule route backend. C'est le
    motif du « quatrième chemin d'écriture » de l'Epic 24 — quatre passes n'en avaient énuméré qu'un.*
 
-6. **E2E : les deux cycles, bout à bout.** Dévaliser puis effacer ; dévaliser, corriger, revalider
+6. **E2E : les deux cycles, bout à bout.** Dévalider puis effacer ; dévalider, corriger, revalider
    — et vérifier que le **numéro de facture est le même** après revalidation.
 
 7. **Les manuels.** ⛔ **Toutes les lignes ci-dessous valent sur `main` au `951cbce2`**, release comprise —
@@ -214,7 +214,7 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
      **540-541** (« il subsiste un chemin qui en creuse : la **suppression définitive d'une facture
      validée, qui emporte son écriture** » — le chemin nommé disparaît, c'est la dévalidation qui
      prend sa place) ; **969** (« une **suppression définitive encadrée est également possible** »
-     — il faut désormais dévaliser d'abord) ; **781** (« Brouillon : … **pas de numéro définitif** »
+     — il faut désormais dévalider d'abord) ; **781** (« Brouillon : … **pas de numéro définitif** »
      — après dévalidation, un brouillon **porte** son numéro, et c'est la prémisse de l'AC 5).
    - l. **505** et **621** : relues contre le cycle neuf. ⚠️ l. **837** (« la numérotation est
      strictement séquentielle dans un exercice ») demande un **arbitrage** : l'AC 5 y creuse un trou
