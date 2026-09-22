@@ -197,10 +197,15 @@ async fn create_validated_invoice_on(
 
 // --- Tests -------------------------------------------------------------------
 
-/// Happy path : Admin supprime une facture validée impayée en exercice ouvert
-/// → 204 + la facture ET son écriture comptable liée disparaissent.
+/// ⛔ **Le test du succès est devenu le test du refus** (Story 25-2-b-2, #440),
+/// et il est **renommé** : `…_returns_204` portait un code de retour qu'il
+/// n'aura plus. *Un nom qui affirme l'ancien résultat est un test muet.*
+///
+/// Il est le pendant HTTP de `test_delete_validated_requires_unvalidate_first`
+/// (dépôt) : ce qu'il ajoute, c'est le **statut** et le **code** que l'appelant
+/// reçoit réellement — une correspondance HTTP fausse ne se voit pas au dépôt.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn delete_validated_as_admin_returns_204(pool: MySqlPool) {
+async fn delete_validated_requires_unvalidate_first(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
@@ -215,35 +220,75 @@ async fn delete_validated_as_admin_returns_204(pool: MySqlPool) {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 204);
-
-    let inv: Option<(i64,)> = sqlx::query_as("SELECT id FROM invoices WHERE id = ?")
-        .bind(invoice_id)
-        .fetch_optional(&pool)
-        .await
-        .unwrap();
-    assert!(inv.is_none(), "la facture doit être supprimée");
-
-    let je: Option<(i64,)> = sqlx::query_as("SELECT id FROM journal_entries WHERE id = ?")
-        .bind(je_id)
-        .fetch_optional(&pool)
-        .await
-        .unwrap();
-    assert!(
-        je.is_none(),
-        "l'écriture comptable liée doit être supprimée"
+    assert_eq!(
+        resp.status(),
+        409,
+        "une facture validée ne se supprime plus"
     );
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["error"]["code"].as_str(),
+        Some("INVOICE_MUST_BE_UNVALIDATED_FIRST"),
+        "un code PROPRE, qui nomme le geste à faire ; obtenu {body}"
+    );
+
+    let restes: (i64, i64) = sqlx::query_as(
+        "SELECT (SELECT COUNT(*) FROM invoices WHERE id = ?), \
+                (SELECT COUNT(*) FROM journal_entries WHERE id = ?)",
+    )
+    .bind(invoice_id)
+    .bind(je_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        restes,
+        (1, 1),
+        "la facture ET son écriture restent en place : un refus ne détruit rien à moitié"
+    );
+
+    // ⛔ Et le chemin que le refus DÉSIGNE fonctionne — sans quoi l'utilisateur
+    // serait renvoyé vers une porte fermée.
+    let (version,): (i32,) = sqlx::query_as("SELECT version FROM invoices WHERE id = ?")
+        .bind(invoice_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/unvalidate")))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "version": version }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "la dévalidation est le chemin annoncé");
+    let resp = app
+        .client
+        .delete(app.url(&format!("/api/v1/invoices/{invoice_id}")))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 204, "une fois brouillon, elle se supprime");
 }
 
-/// Story 25-2-b-zero (#443) — une facture validée datée d'une période
-/// **verrouillée** ne se supprime plus : son écriture changerait sinon les
-/// totaux d'une période déjà déclarée, sans aucun signal. `400 PERIOD_LOCKED`,
-/// et la facture comme son écriture restent en place.
+/// Story 25-2-b-zero (#443), **réécrite par la 25-2-b-2 (#440)** — une écriture
+/// datée d'une période **verrouillée** ne disparaît pas : elle changerait sinon
+/// les totaux d'une période déjà déclarée, sans aucun signal.
+///
+/// ⛔ **Le chemin change, la propriété reste.** La suppression directe d'une
+/// facture validée n'existe plus ; le geste qui peut faire disparaître son
+/// écriture est désormais la **dévalidation**. Ce test la prend donc pour
+/// chemin — et il est **conservé**, là où quatre de ses voisins sont
+/// supprimés, parce qu'il est le **seul site de bout en bout du chemin
+/// facture** pour le verrou de période : la 25-2-b-1 ne le couvre qu'au dépôt,
+/// et `period_lock_e2e.rs` ne couvre que l'écriture nue.
 ///
 /// La borne est posée en SQL direct : la base est éphémère (`#[sqlx::test]`),
 /// et la route de pose n'est pas l'objet du test.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn delete_validated_in_locked_period_returns_400_period_locked(pool: MySqlPool) {
+async fn unvalidate_in_locked_period_returns_400_period_locked(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
@@ -257,11 +302,17 @@ async fn delete_validated_in_locked_period_returns_400_period_locked(pool: MySql
         .await
         .unwrap();
 
+    let (version,): (i32,) = sqlx::query_as("SELECT version FROM invoices WHERE id = ?")
+        .bind(invoice_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
     let resp = app
         .client
-        .delete(app.url(&format!("/api/v1/invoices/{invoice_id}")))
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/unvalidate")))
         .bearer_auth(&token)
+        .json(&serde_json::json!({ "version": version }))
         .send()
         .await
         .unwrap();
