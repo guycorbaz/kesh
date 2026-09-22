@@ -23,6 +23,13 @@ error-foreign-key = Riferimento non valido
 error-journal-entry-linked-to-invoice = Questa scrittura contabile è stata generata da una fattura convalidata e non può essere eliminata direttamente. Annullare prima la fattura interessata.
 error-check-constraint = Valore non valido
 error-illegal-state = Transizione di stato non consentita
+error-invoice-unvalidate-blocked-settled = Questa fattura presenta un pagamento, anche parziale: annullatelo prima.
+error-invoice-unvalidate-blocked-credited = Questa fattura è stornata da una nota di credito, che ne è già la correzione.
+error-invoice-unvalidate-blocked-reminders = Questa fattura ha uno storico di solleciti: eliminarlo cancellerebbe la prova del recupero.
+error-invoice-unvalidate-blocked-emailed = Questa fattura è stata inviata al cliente: correggetela con una nota di credito.
+error-invoice-unvalidate-blocked-matched = La registrazione di questa fattura è riconciliata con una transazione bancaria: annullate prima la riconciliazione.
+error-invoice-number-fiscal-year-mismatch = Questa fattura ha già un numero: la sua data non può uscire dall'esercizio che l'ha emessa.
+error-invoice-must-be-unvalidated-first = Questa fattura è convalidata: annullate prima la convalida, poi eliminate la bozza.
 
 # Errori di validazione
 error-validation = Errore di validazione
@@ -1956,6 +1963,7 @@ audit-log-action-vat-rate-deactivated = Aliquota IVA disattivata
 audit-log-action-invoice-created = Fattura creata
 audit-log-action-invoice-updated = Fattura aggiornata
 audit-log-action-invoice-validated = Fattura convalidata
+audit-log-action-invoice-unvalidated = Fattura annullata (convalida)
 audit-log-action-invoice-cancelled = Fattura annullata
 audit-log-action-invoice-deleted = Fattura eliminata
 audit-log-action-invoice-emailed = Fattura inviata per e-mail

@@ -121,6 +121,7 @@ pub const ACTIONS: &[&str] = &[
     "invoice.reminder_cancelled",
     "invoice.reminder_sent",
     "invoice.updated",
+    "invoice.unvalidated",
     "invoice.validated",
     "journal_entry.created",
     "journal_entry.deleted",

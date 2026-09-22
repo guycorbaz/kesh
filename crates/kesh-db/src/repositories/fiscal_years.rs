@@ -500,6 +500,38 @@ pub async fn find_covering_date(
 /// s'acquiert **après** `invoices` et **avant** `invoice_number_sequences`
 /// et `journal_entries`. Toute divergence = risque de deadlock avec
 /// `journal_entries::create_in_tx` en cours sur la même company.
+/// L'exercice qui couvre `date`, **quel que soit son statut**, dans une
+/// transaction fournie (Story 25-2-b-1, #440).
+///
+/// ⚠️ Distincte de [`find_open_covering_date`], qui filtre `status = 'Open'` :
+/// la garde du numéro compare **deux exercices couvrants** pour savoir si une
+/// date reste dans le sien, et un exercice **clos** en est un. Filtrer sur
+/// l'ouverture ferait refuser un déplacement de date à l'intérieur d'un exercice
+/// clos pour la mauvaise raison — et dirait « mauvais exercice » là où il
+/// faudrait dire « exercice clos ».
+///
+/// Lecture **non verrouillante** : elle ne décide d'aucune écriture sur
+/// `fiscal_years`, et prendre un `FOR UPDATE` ici inverserait l'ordre des
+/// verrous de `invoices::update`, qui tient déjà la facture.
+pub async fn find_covering_date_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    date: NaiveDate,
+) -> Result<Option<FiscalYear>, DbError> {
+    sqlx::query_as::<_, FiscalYear>(
+        "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+         FROM fiscal_years \
+         WHERE company_id = ? AND start_date <= ? AND end_date >= ? \
+         LIMIT 1",
+    )
+    .bind(company_id)
+    .bind(date)
+    .bind(date)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)
+}
+
 pub async fn find_open_covering_date(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,

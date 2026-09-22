@@ -362,6 +362,14 @@ pub enum DbError {
         document_label: Option<String>,
     },
 
+    /// Un brouillon **numéroté** changerait d'exercice (Story 25-2-b-1, #440).
+    ///
+    /// Le numéro vient du compteur de l'exercice qui couvre la date : le
+    /// déplacer lui ferait porter le numéro d'une autre séquence. Conflit
+    /// d'état → **409**.
+    #[error("Un brouillon numéroté ne peut pas changer d'exercice")]
+    InvoiceNumberFiscalYearMismatch,
+
     /// `delete` a reçu une facture **validée** (Story 25-2-b-2, #440).
     ///
     /// ⛔ **Un code propre, et non le générique `ILLEGAL_STATE_TRANSITION`** : le
@@ -520,6 +528,7 @@ impl DbError {
             Self::EntryNotReversable { .. } => "ENTRY_NOT_REVERSABLE",
             Self::ReversalAccountsArchived(_) => "ACCOUNT_ARCHIVED",
             Self::InvoiceNotUnvalidatable { blocker, .. } => blocker.code(),
+            Self::InvoiceNumberFiscalYearMismatch => "INVOICE_NUMBER_FISCAL_YEAR_MISMATCH",
             Self::InvoiceMustBeUnvalidatedFirst => "INVOICE_MUST_BE_UNVALIDATED_FIRST",
             Self::EntryIsReversed => "ENTRY_IS_REVERSED",
             Self::EntryIsPosted => "ENTRY_IS_POSTED",

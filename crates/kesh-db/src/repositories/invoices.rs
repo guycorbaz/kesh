@@ -1055,6 +1055,49 @@ pub async fn update(
         Some(inv) => inv,
     };
 
+    // Story 25-2-b-1 (#440) — UN BROUILLON NUMÉROTÉ NE CHANGE PAS D'EXERCICE.
+    //
+    // ⛔ Le numéro est tiré du compteur de l'exercice qui couvre la date
+    // (`invoice_number_sequences`, `UNIQUE (company_id, fiscal_year_id)`), et son
+    // millésime vient de cet exercice. Redater une facture **dévalidée** dans un
+    // autre exercice lui ferait donc porter le numéro d'une séquence qui n'est
+    // pas la sienne — sans qu'aucune contrainte ne s'y oppose, et sans que rien
+    // ne le signale.
+    //
+    // ⚠️ **On compare deux exercices COUVRANTS, jamais le numéro lui-même** :
+    // `invoices` ne porte aucun `fiscal_year_id`, et un gabarit peut n'avoir
+    // aucun marqueur d'année (`{SEQ}` seul suffit) — l'exercice d'origine n'est
+    // pas reconstructible depuis le numéro. C'est un invariant inductif : tant
+    // que cette garde tient, l'exercice qui couvre la date d'une facture
+    // numérotée **est** celui qui a émis son numéro.
+    //
+    // ⚠️ Un brouillon **sans** numéro n'est pas concerné : rien n'a encore été
+    // émis, et le déplacer est légitime.
+    if before_invoice.invoice_number.is_some() && changes.date != before_invoice.date {
+        let fy_avant =
+            super::fiscal_years::find_covering_date_in_tx(&mut tx, company_id, before_invoice.date)
+                .await;
+        let fy_apres =
+            super::fiscal_years::find_covering_date_in_tx(&mut tx, company_id, changes.date).await;
+        let (fy_avant, fy_apres) = match (fy_avant, fy_apres) {
+            (Ok(a), Ok(b)) => (a, b),
+            _ => {
+                tx.rollback().await.map_err(map_db_error)?;
+                return Err(DbError::FiscalYearInvalid);
+            }
+        };
+        let meme_exercice = match (&fy_avant, &fy_apres) {
+            (Some(a), Some(b)) => a.id == b.id,
+            // Aucun exercice ne couvre la date proposée : la validation le
+            // refuserait de toute façon, mais le dire ICI nomme la vraie cause.
+            _ => false,
+        };
+        if !meme_exercice {
+            tx.rollback().await.map_err(map_db_error)?;
+            return Err(DbError::InvoiceNumberFiscalYearMismatch);
+        }
+    }
+
     let before_lines = match fetch_lines(&mut tx, id).await {
         Ok(l) => l,
         Err(e) => {

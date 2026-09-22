@@ -487,6 +487,12 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/invoices/{id}/validate",
             post(routes::invoices::validate_invoice_handler),
         )
+        // Story 25-2-b-1 (#440) — la dévalidation, au même endroit que la
+        // validation : Administrateur ET Comptable, clés API admises.
+        .route(
+            "/api/v1/invoices/{id}/unvalidate",
+            post(routes::invoices::unvalidate_invoice_handler),
+        )
         // Story 5.4 : marquage manuel paiement + export CSV échéancier
         // (Comptable+ — review pass 1 G2 B / B2).
         .route(

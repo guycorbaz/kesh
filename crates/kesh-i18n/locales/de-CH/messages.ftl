@@ -23,6 +23,13 @@ error-foreign-key = Ungültige Referenz
 error-journal-entry-linked-to-invoice = Dieser Buchungssatz wurde durch eine validierte Rechnung erzeugt und kann nicht direkt gelöscht werden. Stornieren Sie zuerst die betreffende Rechnung.
 error-check-constraint = Ungültiger Wert
 error-illegal-state = Unzulässiger Statusübergang
+error-invoice-unvalidate-blocked-settled = Diese Rechnung weist eine — auch nur teilweise — Zahlung auf: stornieren Sie diese zuerst.
+error-invoice-unvalidate-blocked-credited = Diese Rechnung wurde durch eine Gutschrift korrigiert, die bereits die Korrektur darstellt.
+error-invoice-unvalidate-blocked-reminders = Diese Rechnung hat eine Mahnhistorie: deren Löschung würde den Nachweis des Inkassos vernichten.
+error-invoice-unvalidate-blocked-emailed = Diese Rechnung wurde dem Kunden zugestellt: korrigieren Sie sie mit einer Gutschrift.
+error-invoice-unvalidate-blocked-matched = Die Buchung dieser Rechnung ist mit einer Banktransaktion abgeglichen: heben Sie den Abgleich zuerst auf.
+error-invoice-number-fiscal-year-mismatch = Diese Rechnung trägt bereits eine Nummer: ihr Datum darf das ausstellende Geschäftsjahr nicht verlassen.
+error-invoice-must-be-unvalidated-first = Diese Rechnung ist validiert: entvalidieren Sie sie zuerst und löschen Sie dann den Entwurf.
 
 # Validierungsfehler
 error-validation = Validierungsfehler
@@ -1955,6 +1962,7 @@ audit-log-action-vat-rate-deactivated = MWST-Satz deaktiviert
 audit-log-action-invoice-created = Rechnung erstellt
 audit-log-action-invoice-updated = Rechnung aktualisiert
 audit-log-action-invoice-validated = Rechnung validiert
+audit-log-action-invoice-unvalidated = Rechnung entvalidiert
 audit-log-action-invoice-cancelled = Rechnung storniert
 audit-log-action-invoice-deleted = Rechnung gelöscht
 audit-log-action-invoice-emailed = Rechnung per E-Mail gesendet
