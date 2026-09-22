@@ -4011,6 +4011,66 @@ mod tests {
         res.last_insert_id() as i64
     }
 
+    /// Un rappel minimal, pour le motif 3 (Story 25-2-b-1, #440).
+    async fn insert_stub_reminder(pool: &MySqlPool, company_id: i64, invoice_id: i64) -> i64 {
+        sqlx::query(
+            "INSERT INTO invoice_reminders (company_id, invoice_id, level_number, fee_amount, \
+             sent_at, channel, subject, body) \
+             VALUES (?, ?, 1, 0.00, NOW(6), 'manual', 'stub', 'stub')",
+        )
+        .bind(company_id)
+        .bind(invoice_id)
+        .execute(pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64
+    }
+
+    /// Une transaction bancaire **rapprochée** de `je_id`, pour le motif 7.
+    ///
+    /// ⚠️ Elle exige un compte bancaire et un import : l'état n'est atteignable
+    /// par aucun chemin de l'application (le rapprochement pointe une écriture
+    /// NEUVE, jamais celle de vente), il se construit donc à la main — et c'est
+    /// précisément pourquoi la garde existe, la FK étant `ON DELETE SET NULL`.
+    async fn insert_stub_bank_transaction(pool: &MySqlPool, company_id: i64, je_id: i64) -> i64 {
+        let account_id = sqlx::query(
+            "INSERT INTO bank_accounts (company_id, bank_name, iban) VALUES (?, 'Stub', ?)",
+        )
+        .bind(company_id)
+        .bind(format!("CH93007620116238529{:02}", je_id % 100))
+        .execute(pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64;
+        let import_id = sqlx::query(
+            "INSERT INTO bank_imports (company_id, bank_account_id, filename, file_hash, \
+             source_format, period_from, period_to, imported_by_user_id) \
+             VALUES (?, ?, 'stub.xml', ?, 'CAMT053_V04', CURDATE(), CURDATE(), \
+             (SELECT id FROM users WHERE company_id = ? LIMIT 1))",
+        )
+        .bind(company_id)
+        .bind(account_id)
+        .bind(format!("{:064}", je_id))
+        .bind(company_id)
+        .execute(pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64;
+        sqlx::query(
+            "INSERT INTO bank_transactions (company_id, import_id, bank_account_id, \
+             booking_date, amount, currency, details, matched_entry_id) \
+             VALUES (?, ?, ?, CURDATE(), 100.00, 'CHF', 'stub', ?)",
+        )
+        .bind(company_id)
+        .bind(import_id)
+        .bind(account_id)
+        .bind(je_id)
+        .execute(pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64
+    }
+
     async fn insert_stub_journal_entry(pool: &MySqlPool, company_id: i64, fy_id: i64) -> i64 {
         let (max_n,): (Option<i64>,) = sqlx::query_as(
             "SELECT MAX(entry_number) FROM journal_entries \
@@ -4073,6 +4133,390 @@ mod tests {
         }
         sep.push_unseparated(")");
         qb.build().execute(pool).await.ok();
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 25-2-b-1 (#440) — la dévalidation.
+    // -----------------------------------------------------------------------
+
+    /// Dévalide et rend `(résultat, statut, numéro, écriture encore là ?)`.
+    ///
+    /// ⚠️ Le montage passe par `force_validate` : il pose un état validé sans
+    /// consommer le compteur de numéros, ce qui convient aux empêchements. **Le
+    /// test du NUMÉRO, lui, emprunte le vrai chemin** — c'est tout son objet.
+    async fn devalider(
+        pool: &MySqlPool,
+        company_id: i64,
+        invoice_id: i64,
+        user_id: i64,
+        version: i32,
+        je_id: i64,
+    ) -> (Result<Invoice, DbError>, String, Option<String>, bool) {
+        let r = unvalidate(pool, company_id, invoice_id, user_id, version).await;
+        let (statut, numero): (String, Option<String>) =
+            sqlx::query_as("SELECT status, invoice_number FROM invoices WHERE id = ?")
+                .bind(invoice_id)
+                .fetch_one(pool)
+                .await
+                .unwrap();
+        let reste: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE id = ?")
+            .bind(je_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        (r, statut, numero, reste == 1)
+    }
+
+    /// Efface la facture **puis** son écriture — dans cet ordre, la FK
+    /// `journal_entry_id` étant `ON DELETE RESTRICT`.
+    ///
+    /// ⛔ **`cleanup_journal_entries` ne suffit PAS** : son `.ok()` avale
+    /// l'échec de clé étrangère, et la facture reste, liée à une écriture. Le
+    /// `delete_all_by_company` du montage de `journal_entries::tests` échoue
+    /// alors au run suivant, sur un module que la branche ne touche pas — c'est
+    /// **KF-039** (#310), et ces tests l'ont réveillée avant de le corriger ici.
+    async fn nettoyer_facture(pool: &MySqlPool, invoice_id: i64, je_id: i64) {
+        sqlx::query("DELETE FROM invoice_lines WHERE invoice_id = ?")
+            .bind(invoice_id)
+            .execute(pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM invoices WHERE id = ?")
+            .bind(invoice_id)
+            .execute(pool)
+            .await
+            .unwrap();
+        cleanup_journal_entries(pool, &[je_id]).await;
+    }
+
+    /// ⛔ **LE CHEMIN NOMINAL.** La facture repasse en brouillon, **garde son
+    /// numéro**, et son écriture disparaît — dans cet ordre, la FK étant
+    /// `RESTRICT`.
+    #[tokio::test]
+    async fn devalider_repasse_en_brouillon_garde_le_numero_et_supprime_l_ecriture() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+        let (id, v, je_id) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            NaiveDate::from_ymd_opt(2026, 3, 1).unwrap(),
+            None,
+            dec!(100),
+        )
+        .await;
+        // ⚠️ Le numéro porte l'`id` : `UNIQUE (company_id, invoice_number)` rend
+        // un numéro FIXE non rejouable, et le test échouerait au deuxième run
+        // sur un `Duplicate entry` — mode d'échec KF-039, commis ici même à la
+        // première rédaction.
+        let numero_attendu = format!("F-TEST-DEVAL-{id}");
+        sqlx::query("UPDATE invoices SET invoice_number = ? WHERE id = ?")
+            .bind(&numero_attendu)
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let (r, statut, numero, ecriture_restante) =
+            devalider(&pool, company_id, id, admin_user_id, v, je_id).await;
+
+        assert!(r.is_ok(), "dévalidation refusée : {r:?}");
+        assert_eq!(statut, "draft");
+        assert_eq!(
+            numero.as_deref(),
+            Some(numero_attendu.as_str()),
+            "le numéro doit SURVIVRE : sans cela, chaque cycle en brûlerait un"
+        );
+        assert!(
+            !ecriture_restante,
+            "l'écriture comptable doit avoir disparu"
+        );
+
+        // L'audit NOMME le geste.
+        let actions: Vec<(String,)> = sqlx::query_as(
+            "SELECT action FROM audit_log WHERE entity_type = 'invoice' AND entity_id = ?",
+        )
+        .bind(id)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert!(
+            actions.iter().any(|(a,)| a == "invoice.unvalidated"),
+            "audit `invoice.unvalidated` attendu, obtenu {actions:?}"
+        );
+
+        // La facture est un brouillon sans écriture : elle part seule.
+        sqlx::query("DELETE FROM invoice_lines WHERE invoice_id = ?")
+            .bind(id)
+            .execute(&pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM invoices WHERE id = ?")
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    /// Motif 1 — RÉGLÉE, et c'est `paid_at` **seul** qui est posé ici : le cas
+    /// des factures réglées avant la création d'`invoice_settlements`.
+    #[tokio::test]
+    async fn devalider_refuse_une_facture_payee_sans_ligne_de_reglement() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+        let (id, v, je_id) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            NaiveDate::from_ymd_opt(2026, 3, 2).unwrap(),
+            None,
+            dec!(100),
+        )
+        .await;
+        sqlx::query("UPDATE invoices SET paid_at = NOW(3) WHERE id = ?")
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let (r, statut, _, ecriture_restante) =
+            devalider(&pool, company_id, id, admin_user_id, v, je_id).await;
+
+        assert!(
+            matches!(
+                r,
+                Err(DbError::InvoiceNotUnvalidatable {
+                    blocker: UnvalidationBlocker::Settled,
+                    ..
+                })
+            ),
+            "attendu Settled, obtenu {r:?}"
+        );
+        assert_eq!(statut, "validated", "le refus ne doit RIEN changer");
+        assert!(ecriture_restante);
+        nettoyer_facture(&pool, id, je_id).await;
+    }
+
+    /// Motif 4 — ENVOYÉE : refus **sec**, non levable.
+    #[tokio::test]
+    async fn devalider_refuse_une_facture_envoyee_au_client() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+        let (id, v, je_id) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            NaiveDate::from_ymd_opt(2026, 3, 3).unwrap(),
+            None,
+            dec!(100),
+        )
+        .await;
+        sqlx::query("UPDATE invoices SET emailed_at = NOW(3), emailed_to = ? WHERE id = ?")
+            .bind("client@example.invalid")
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let (r, statut, _, _) = devalider(&pool, company_id, id, admin_user_id, v, je_id).await;
+
+        assert!(
+            matches!(
+                r,
+                Err(DbError::InvoiceNotUnvalidatable {
+                    blocker: UnvalidationBlocker::Emailed,
+                    ..
+                })
+            ),
+            "attendu Emailed, obtenu {r:?}"
+        );
+        assert_eq!(statut, "validated");
+        nettoyer_facture(&pool, id, je_id).await;
+    }
+
+    /// Motif 7 — ÉCRITURE RAPPROCHÉE. ⚠️ L'état se construit à la main : aucun
+    /// chemin de l'application ne rapproche l'écriture de **vente** (les cinq
+    /// sites de `reconciliation.rs` rapprochent une écriture **neuve**). La
+    /// garde n'en est pas moins nécessaire — la FK est `ON DELETE SET NULL`, et
+    /// sans elle le lien s'effacerait **en silence**.
+    #[tokio::test]
+    async fn devalider_refuse_une_ecriture_rapprochee() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+        let (id, v, je_id) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            NaiveDate::from_ymd_opt(2026, 3, 4).unwrap(),
+            None,
+            dec!(100),
+        )
+        .await;
+        let bank_tx_id = insert_stub_bank_transaction(&pool, company_id, je_id).await;
+
+        let (r, statut, _, _) = devalider(&pool, company_id, id, admin_user_id, v, je_id).await;
+
+        assert!(
+            matches!(
+                r,
+                Err(DbError::InvoiceNotUnvalidatable {
+                    blocker: UnvalidationBlocker::MatchedBankTransaction,
+                    ..
+                })
+            ),
+            "attendu MatchedBankTransaction, obtenu {r:?}"
+        );
+        assert_eq!(statut, "validated");
+        sqlx::query("DELETE FROM bank_transactions WHERE id = ?")
+            .bind(bank_tx_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        nettoyer_facture(&pool, id, je_id).await;
+    }
+
+    /// ⛔ **LA PRÉCÉDENCE**, et elle se vérifie de part et d'autre de l'appel à
+    /// `delete_in_tx` : la facture porte **un rappel** (motif 3, contrôlé ici)
+    /// **et** son exercice est clos (motif 5, contrôlé dans `delete_in_tx`).
+    /// C'est le rappel qui doit parler — sans quoi l'ordre annoncé par la fiche
+    /// ne serait qu'une intention.
+    #[tokio::test]
+    async fn devalider_rend_le_premier_empechement_de_l_ordre() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+        let (id, v, je_id) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            NaiveDate::from_ymd_opt(2026, 3, 5).unwrap(),
+            None,
+            dec!(100),
+        )
+        .await;
+        insert_stub_reminder(&pool, company_id, id).await;
+        let fy_id: i64 =
+            sqlx::query_scalar("SELECT fiscal_year_id FROM journal_entries WHERE id = ?")
+                .bind(je_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+            .bind(fy_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let (r, _, _, _) = devalider(&pool, company_id, id, admin_user_id, v, je_id).await;
+
+        assert!(
+            matches!(
+                r,
+                Err(DbError::InvoiceNotUnvalidatable {
+                    blocker: UnvalidationBlocker::HasReminders,
+                    ..
+                })
+            ),
+            "le rappel (motif 3) parle AVANT l'exercice clos (motif 5) ; obtenu {r:?}"
+        );
+
+        sqlx::query("UPDATE fiscal_years SET status = 'Open' WHERE id = ?")
+            .bind(fy_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM invoice_reminders WHERE invoice_id = ?")
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        nettoyer_facture(&pool, id, je_id).await;
+    }
+
+    /// ⛔ **Le verrou optimiste parle AVANT les empêchements**, et c'est ce test
+    /// qui le prouve : la facture est **envoyée** (motif 4) *et* la version est
+    /// périmée. Sans le contrôle en tête de fonction, c'est `INVOICE_EMAILED`
+    /// qui sortirait — un motif métier pour un état que le client ne voit déjà
+    /// plus.
+    ///
+    /// ⚠️ *Le test voisin ne suffisait pas* : l'`UPDATE` porte lui-même
+    /// `AND version = ?`, si bien qu'un conflit ressort même sans le contrôle
+    /// initial. Retirer celui-ci ne faisait rougir aucun test — mutation jouée,
+    /// survécue, d'où celui-ci.
+    #[tokio::test]
+    async fn devalider_le_verrou_parle_avant_les_empechements() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+        let (id, v, je_id) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            NaiveDate::from_ymd_opt(2026, 3, 7).unwrap(),
+            None,
+            dec!(100),
+        )
+        .await;
+        sqlx::query("UPDATE invoices SET emailed_at = NOW(3) WHERE id = ?")
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let (r, statut, _, _) = devalider(&pool, company_id, id, admin_user_id, v - 1, je_id).await;
+
+        assert!(
+            matches!(r, Err(DbError::OptimisticLockConflict)),
+            "la version périmée parle avant l'empêchement « envoyée » ; obtenu {r:?}"
+        );
+        assert_eq!(statut, "validated");
+        nettoyer_facture(&pool, id, je_id).await;
+    }
+
+    /// Le verrou optimiste : une version périmée est refusée, et **avant** les
+    /// empêchements — inutile de dire pourquoi c'est bloqué si l'état lu n'est
+    /// plus celui du client.
+    #[tokio::test]
+    async fn devalider_refuse_une_version_perimee() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+        let (id, v, je_id) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            NaiveDate::from_ymd_opt(2026, 3, 6).unwrap(),
+            None,
+            dec!(100),
+        )
+        .await;
+
+        let (r, statut, _, _) = devalider(&pool, company_id, id, admin_user_id, v - 1, je_id).await;
+
+        assert!(
+            matches!(r, Err(DbError::OptimisticLockConflict)),
+            "attendu OptimisticLockConflict, obtenu {r:?}"
+        );
+        assert_eq!(statut, "validated");
+        nettoyer_facture(&pool, id, je_id).await;
     }
 
     async fn create_and_validate(
