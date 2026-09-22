@@ -120,6 +120,7 @@ pub const ACTIONS: &[&str] = &[
     "invoice.partially_settled",
     "invoice.reminder_cancelled",
     "invoice.reminder_sent",
+    "invoice.unvalidated",
     "invoice.updated",
     "invoice.validated",
     "journal_entry.created",

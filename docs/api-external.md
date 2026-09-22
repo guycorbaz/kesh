@@ -214,6 +214,42 @@ Les principales ressources accessibles via l'API (liste non exhaustive — toute
 
 *(Préfixe `…/api/v1` omis dans le tableau. Les corps de requête d'écriture peuvent différer des champs renvoyés en lecture : référez-vous aux formulaires correspondants de l'interface web pour les champs attendus.)*
 
+### Dévalider une facture — `POST /api/v1/invoices/{id}/unvalidate`
+
+**Ouverte aux clés API** en écriture, comme la validation (`POST /invoices/{id}/validate`).
+Elle repasse une facture validée en **brouillon**, **conserve son numéro** et supprime son écriture comptable. Deux sorties ensuite : supprimer le brouillon, ou le corriger et le revalider — la revalidation **reprend le même numéro**, sans consommer de nouveau.
+
+Corps : `{ "version": n }` — le verrou optimiste. Réponse : la facture, même forme que la validation.
+
+| Refus | Code | Statut |
+|---|---|---|
+| Règlement, même partiel | `INVOICE_HAS_SETTLEMENTS` | `409` |
+| Créditée par un avoir | `INVOICE_CREDITED` | `409` |
+| Historique de rappels | `INVOICE_HAS_REMINDERS` | `409` |
+| Envoyée au client | `INVOICE_EMAILED` | `409` |
+| Écriture rapprochée d'une transaction bancaire | `MATCHED_BANK_TRANSACTION` | `409` |
+| Exercice clos | `FISCAL_YEAR_CLOSED` | `400` |
+| Écriture contre-passée | `ENTRY_IS_REVERSED` | `409` |
+| Écriture en période verrouillée | `PERIOD_LOCKED` | `400` |
+| Version périmée | `OPTIMISTIC_LOCK_CONFLICT` | `409` |
+| Facture qui n'est pas au statut « validée » | `ILLEGAL_STATE_TRANSITION` | `409` |
+
+⚠️ **Le champ `details` est générique : `documentNumber` n'est PAS toujours un numéro de document, et pas toujours celui d'un AUTRE document.** Branchez votre logique sur le **code d'erreur**, qui est stable ; lisez `details` comme un complément d'affichage, motif par motif :
+
+| Code | `documentId` | `documentNumber` |
+|---|---|---|
+| `INVOICE_HAS_SETTLEMENTS` | l'identifiant du règlement — **`null`** si le refus vient du seul `paid_at`, c'est-à-dire pour une facture réglée **avant la v0.12**, qui a introduit les lignes de règlement | le numéro de **la facture elle-même** |
+| `INVOICE_CREDITED` | l'identifiant de l'avoir | le numéro de l'avoir — **`null`** tant que l'avoir est un brouillon |
+| `INVOICE_HAS_REMINDERS` | l'identifiant du rappel | le numéro de **la facture elle-même** |
+| `INVOICE_EMAILED` | `null` | l'**adresse du destinataire** |
+| `MATCHED_BANK_TRANSACTION` | l'identifiant de la transaction bancaire | le numéro de **la facture elle-même** |
+
+⛔ Les **cinq autres** codes du tableau des refus — 10 lignes en tout, 5 avec `details` et 5 sans — `FISCAL_YEAR_CLOSED`, `ENTRY_IS_REVERSED`, `PERIOD_LOCKED`, `OPTIMISTIC_LOCK_CONFLICT`, `ILLEGAL_STATE_TRANSITION` — n'émettent **aucun** `details`. Un message du type « bloquée par le document {documentNumber} » opposerait donc la facture à elle-même dans trois cas sur cinq.
+
+⚠️ **« Envoyée au client » est un refus sec** : il ne se lève par aucune confirmation. Une facture que le client détient se corrige par un **avoir**. La garde ne connaît que ce que Kesh a envoyé lui-même — un PDF téléchargé puis transmis à la main ne laisse aucune trace.
+
+⚠️ **Un brouillon qui porte déjà un numéro ne change pas d'exercice** : `PUT /invoices/{id}` refuse une date hors de l'exercice qui a émis le numéro (`INVOICE_NUMBER_FISCAL_YEAR_MISMATCH`, `409`).
+
 ² **Deux opérations sur les factures sont réservées à l'interface web** : `DELETE /invoices/{id}` (suppression définitive) et `POST /invoices/{id}/reminders/{reminderId}/cancel` (annulation d'un rappel) sont des routes d'administration, donc fermées aux clés (`403 API_KEY_ADMIN_FORBIDDEN`, cf. §4). Tout le reste du cycle de facturation reste ouvert.
 
 ³ **Changer le `accountType` d'un compte qui porte des écritures exige une

@@ -806,6 +806,54 @@ pub async fn validate_invoice_handler(
     )))
 }
 
+/// Corps de `POST /api/v1/invoices/{id}/unvalidate` (Story 25-2-b-1, #440).
+///
+/// ⚠️ La **validation** ne prend aucun corps ; la dévalidation en prend un,
+/// parce qu'elle porte le **verrou optimiste** — convention du dépôt, comme
+/// `UpdateInvoiceRequest.version` et la contre-passation d'écriture.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnvalidateInvoiceRequest {
+    pub version: i32,
+}
+
+/// `POST /api/v1/invoices/{id}/unvalidate` — dévalide une facture.
+///
+/// Elle repasse en **brouillon**, **garde son numéro**, et son écriture
+/// comptable est supprimée. Deux sorties ensuite, toutes deux par des chemins
+/// existants : l'effacer (brouillon), ou la corriger et la revalider — qui
+/// reprendra le même numéro.
+///
+/// # Rôle et clés API
+///
+/// Montée dans `comptable_routes` : **Administrateur et Comptable**, arbitrage
+/// de Guy du 2026-09-19 — *qui peut valider peut dévalider*. ⚠️ **Les clés API y
+/// passent**, comme pour la validation (« même approche que Bexio », dont l'API
+/// publique porte `revert_issue`) : c'est un **élargissement**, jusqu'ici aucune
+/// clé ne pouvait détruire l'écriture d'une facture. Une clé `read` reste
+/// refusée par le gate de portée, sur la méthode.
+pub async fn unvalidate_invoice_handler(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+    Json(payload): Json<UnvalidateInvoiceRequest>,
+) -> Result<Json<InvoiceResponse>, AppError> {
+    let company = get_company_for(&current_user, &state.pool).await?;
+    // ⛔ Le résultat TRANSACTIONNEL, jamais un re-fetch post-commit — même
+    // raison qu'à la validation (`validate_invoice_handler`, « Review P3 ») :
+    // entre le commit et une seconde lecture, une suppression concurrente du
+    // brouillon rendrait un `404` sur une mutation déjà faite et auditée.
+    let (invoice, lines) = invoices::unvalidate(
+        &state.pool,
+        company.id,
+        id,
+        current_user.user_id,
+        payload.version,
+    )
+    .await?;
+    Ok(Json(InvoiceResponse::from_parts(invoice, lines)))
+}
+
 // ---------------------------------------------------------------------------
 // Story 5.4 — Échéancier factures
 // ---------------------------------------------------------------------------

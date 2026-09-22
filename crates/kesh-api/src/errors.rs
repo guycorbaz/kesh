@@ -10,7 +10,9 @@ use std::sync::RwLock;
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use kesh_db::errors::{DbError, RejectedRevenueAccount, RevenueAccountRejection, ReversalBlocker};
+use kesh_db::errors::{
+    DbError, RejectedRevenueAccount, RevenueAccountRejection, ReversalBlocker, UnvalidationBlocker,
+};
 use kesh_i18n::{FluentArgs, I18nBundle, Locale};
 use serde::Serialize;
 use thiserror::Error;
@@ -2508,6 +2510,79 @@ impl IntoResponse for AppError {
                     });
                     (StatusCode::CONFLICT, Json(body)).into_response()
                 }
+                // Story 25-2-b-1 (#440) — la dévalidation refusée.
+                //
+                // ⛔ **Un code par motif**, jamais le générique : les trois
+                // gardes que la suppression de #219 portait rendaient toutes
+                // `ILLEGAL_STATE_TRANSITION`, dont le message n'était que
+                // journalisé — à l'écran, « transition interdite » ne dit ni ce
+                // qui bloque ni quoi faire. Même forme que la contre-passation
+                // ci-dessus, jusqu'aux `details`.
+                DbError::InvoiceNotUnvalidatable {
+                    blocker,
+                    document_id,
+                    document_label,
+                } => {
+                    let (fallback_key, fallback) = match blocker {
+                        UnvalidationBlocker::Settled => (
+                            "error-invoice-unvalidate-blocked-settled",
+                            "Cette facture porte un règlement, même partiel : annulez-le d'abord.",
+                        ),
+                        UnvalidationBlocker::Credited => (
+                            "error-invoice-unvalidate-blocked-credited",
+                            "Cette facture est créditée par un avoir, qui en est déjà la correction.",
+                        ),
+                        UnvalidationBlocker::HasReminders => (
+                            "error-invoice-unvalidate-blocked-reminders",
+                            "Cette facture a un historique de rappels : le dévalider effacerait la preuve du recouvrement.",
+                        ),
+                        UnvalidationBlocker::Emailed => (
+                            "error-invoice-unvalidate-blocked-emailed",
+                            "Cette facture a été envoyée au client : corrigez-la par un avoir.",
+                        ),
+                        UnvalidationBlocker::MatchedBankTransaction => (
+                            "error-invoice-unvalidate-blocked-matched",
+                            "L'écriture de cette facture est rapprochée d'une transaction bancaire : annulez le rapprochement d'abord.",
+                        ),
+                    };
+                    let base = t(fallback_key, fallback);
+                    let message = match document_label.as_deref() {
+                        Some(etiquette) => format!("{base} ({etiquette})"),
+                        None => base,
+                    };
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": blocker.code(),
+                            "message": message,
+                            "details": {
+                                "documentId": document_id,
+                                "documentNumber": document_label,
+                            },
+                        }
+                    });
+                    (StatusCode::CONFLICT, Json(body)).into_response()
+                }
+                // Story 25-2-b-1 (#440) — un brouillon numéroté qu'on redate
+                // hors de son exercice. Conflit d'état → 409.
+                DbError::InvoiceNumberFiscalYearMismatch => build_response(
+                    StatusCode::CONFLICT,
+                    "INVOICE_NUMBER_FISCAL_YEAR_MISMATCH",
+                    &t(
+                        "error-invoice-number-fiscal-year-mismatch",
+                        "Cette facture porte déjà un numéro : sa date ne peut pas sortir de l'exercice qui l'a émis.",
+                    ),
+                ),
+                // Story 25-2-b-2 (#440) — `delete` sur une facture validée.
+                // ⚠️ Le message ORIENTE : sans lui, l'utilisateur lit un refus
+                // sec sur le seul chemin qui lui reste.
+                DbError::InvoiceMustBeUnvalidatedFirst => build_response(
+                    StatusCode::CONFLICT,
+                    "INVOICE_MUST_BE_UNVALIDATED_FIRST",
+                    &t(
+                        "error-invoice-must-be-unvalidated-first",
+                        "Cette facture est validée : dévalidez-la d'abord, puis supprimez le brouillon.",
+                    ),
+                ),
                 // ⚠️ **400**, comme le gabarit `CreditNoteRevenueAccountsArchived`
                 // dont il reprend la forme : un compte archivé est une donnée
                 // d'entrée invalide, là où un refus de propriété est un conflit

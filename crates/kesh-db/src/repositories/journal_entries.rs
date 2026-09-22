@@ -940,7 +940,9 @@ fn entry_snapshot_json(entry: &JournalEntry, lines: &[JournalEntryLine]) -> serd
 /// L'ÉTAPE 3.** Elle appelle `delete_in_tx` avec `enforce_immutability = true`,
 /// qui refuse en [`DbError::EntryIsPosted`] : ni snapshot, ni audit, ni DELETE.
 /// Les étapes 4 à 7 ci-dessus décrivent le chemin que suit encore
-/// `invoices::delete`, seul appelant à passer `false`.
+/// `invoices::delete` et `invoices::unvalidate`, les deux appelants à passer
+/// `false`. ⚠️ Le second est arrivé avec la 25-2-b-1 (#440) ; la 25-2-b-2
+/// retire le premier.
 ///
 /// ⚠️ Cette précision est ici parce qu'un doc-comment périmé a déjà égaré une
 /// journée entière de revue sur la story précédente : c'est cette fonction
@@ -979,10 +981,17 @@ pub async fn delete_by_id(
 /// insertion, la suppression est refusée en [`DbError::EntryIsPosted`]. C'est
 /// ce que passe [`delete_by_id`], donc la route.
 ///
-/// ⚠️ **`false` n'est passé QUE par `invoices::delete`**, et l'exception est
-/// voulue : ce chemin ne supprime pas une écriture, il supprime **une facture**
-/// dont l'écriture part avec elle, sous ses trois gardes propres (non payée,
-/// non créditée, sans historique de rappels). ⚠️ Le gel levé, les autres
+/// ⚠️ **`false` n'est passé que par `invoices::delete` et
+/// `invoices::unvalidate`** (25-2-b-1, #440), et l'exception est
+/// voulue : ni l'un ni l'autre ne supprime une écriture — ils traitent **une
+/// facture**, dont l'écriture part avec elle, sous les gardes propres de
+/// l'appelant. ⛔ **Ces gardes ne sont PAS les mêmes des deux côtés, et ne pas
+/// le dire égare** : `delete` en porte trois (non payée, non créditée, sans
+/// historique de rappels) ; `unvalidate` cinq — les deux dernières à
+/// l'identique, la **première élargie** (`invoice_settlements` OU `paid_at`,
+/// donc le règlement **partiel** aussi), plus l'envoi au client et le
+/// rapprochement bancaire. ⚠️ Le règlement partiel n'est donc pas une garde de
+/// plus : c'est la même, en plus large. Cf. le doc-comment de chacune. ⚠️ Le gel levé, les autres
 /// gardes de cette fonction tiennent — exercice clos, contre-passation et
 /// **verrou de période** (#443) : `false` ne lève que le gel. Le geler reviendrait à retirer la
 /// suppression d'une facture validée (#219) — une décision de facturation, pas
