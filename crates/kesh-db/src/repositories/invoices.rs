@@ -1444,7 +1444,7 @@ pub async fn unvalidate(
     invoice_id: i64,
     user_id: i64,
     version: i32,
-) -> Result<Invoice, DbError> {
+) -> Result<(Invoice, Vec<InvoiceLine>), DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
     let result = async {
@@ -1618,14 +1618,23 @@ pub async fn unvalidate(
             .await
             .map_err(map_db_error)?;
 
-        Ok(after)
+        // ⛔ **Les lignes sortent AVEC la facture, et c'est délibéré.** Elles
+        // sont déjà en main, lues dans cette transaction ; les faire relire par
+        // l'appelant après le commit rouvrirait la fenêtre que la revue P3 de
+        // la Story 5.2 avait fermée sur `validate_invoice_handler` — une
+        // suppression concurrente du brouillon, et l'appelant reçoit un `404`
+        // alors que la dévalidation a bien eu lieu et a été auditée.
+        //
+        // ⚠️ La dévalidation ne touche pas `invoice_lines` : les lignes lues
+        // avant l'`UPDATE` sont celles d'après.
+        Ok((after, lines))
     }
     .await;
 
     match result {
-        Ok(invoice) => {
+        Ok(payload) => {
             tx.commit().await.map_err(map_db_error)?;
-            Ok(invoice)
+            Ok(payload)
         }
         Err(e) => {
             tx.rollback().await.map_err(map_db_error)?;
@@ -4154,7 +4163,9 @@ mod tests {
         version: i32,
         je_id: i64,
     ) -> (Result<Invoice, DbError>, String, Option<String>, bool) {
-        let r = unvalidate(pool, company_id, invoice_id, user_id, version).await;
+        let r = unvalidate(pool, company_id, invoice_id, user_id, version)
+            .await
+            .map(|(invoice, _lines)| invoice);
         let (statut, numero): (String, Option<String>) =
             sqlx::query_as("SELECT status, invoice_number FROM invoices WHERE id = ?")
                 .bind(invoice_id)
@@ -4306,6 +4317,146 @@ mod tests {
     }
 
     /// Motif 4 — ENVOYÉE : refus **sec**, non levable.
+    /// ⛔ **L'AUTRE MOITIÉ du motif 1**, et le code dit lui-même qu'elle est
+    /// indispensable : la lecture est un `OU` entre `invoice_settlements` et
+    /// `paid_at`, et le test jumeau ne pose que le second. Sans ce test-ci,
+    /// retirer `settlement.is_some() ||` ne ferait rougir **rien** — le
+    /// règlement **partiel**, qui ne pose pas `paid_at`, passerait.
+    ///
+    /// *(Trou trouvé en passe 1 de revue, lentille C. Le compte rendu de
+    /// l'implémentation affirmait pourtant les cinq empêchements prouvés.)*
+    #[tokio::test]
+    async fn devalider_refuse_un_reglement_partiel_sans_paid_at() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+        let (id, v, je_id) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            NaiveDate::from_ymd_opt(2026, 3, 3).unwrap(),
+            None,
+            dec!(100),
+        )
+        .await;
+        // Le règlement porte SA propre écriture (`journal_entry_id` est UNIQUE
+        // et NOT NULL), distincte de celle de la facture.
+        let fy_id = ensure_fiscal_year(&pool, company_id).await;
+        let je_reglement = insert_stub_journal_entry(&pool, company_id, fy_id).await;
+        // ⚠️ `chk_invoice_settlements_counterparty` exige une contrepartie :
+        // un compte interne OU un compte bancaire, jamais ni l'un ni l'autre.
+        let compte_id: i64 =
+            sqlx::query_scalar("SELECT id FROM accounts WHERE company_id = ? LIMIT 1")
+                .bind(company_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        sqlx::query(
+            "INSERT INTO invoice_settlements (company_id, invoice_id, journal_entry_id, \
+             amount, settled_on, settlement_type, settlement_account_id) \
+             VALUES (?, ?, ?, ?, CURDATE(), 'internal_account', ?)",
+        )
+        .bind(company_id)
+        .bind(id)
+        .bind(je_reglement)
+        .bind(dec!(40))
+        .bind(compte_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        // ⚠️ `paid_at` reste NULL : c'est tout l'objet du test.
+        let paid_at: Option<chrono::NaiveDateTime> =
+            sqlx::query_scalar("SELECT paid_at FROM invoices WHERE id = ?")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(paid_at.is_none(), "le montage doit laisser `paid_at` NULL");
+
+        let (r, statut, _, ecriture_restante) =
+            devalider(&pool, company_id, id, admin_user_id, v, je_id).await;
+
+        assert!(
+            matches!(
+                r,
+                Err(DbError::InvoiceNotUnvalidatable {
+                    blocker: UnvalidationBlocker::Settled,
+                    ..
+                })
+            ),
+            "un règlement PARTIEL doit refuser, sans `paid_at` ; obtenu {r:?}"
+        );
+        assert_eq!(statut, "validated");
+        assert!(ecriture_restante);
+
+        sqlx::query("DELETE FROM invoice_settlements WHERE invoice_id = ?")
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        cleanup_journal_entries(&pool, &[je_reglement]).await;
+        nettoyer_facture(&pool, id, je_id).await;
+    }
+
+    /// Le **motif 2**, qu'aucun test n'atteignait — ni de dépôt ni E2E.
+    ///
+    /// ⚠️ La facture n'est ni payée ni réglée : sans cela, le motif 1 parlerait
+    /// le premier et ce test certifierait le mauvais empêchement.
+    #[tokio::test]
+    async fn devalider_refuse_une_facture_creditee() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+        let (id, v, je_id) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            NaiveDate::from_ymd_opt(2026, 3, 4).unwrap(),
+            None,
+            dec!(100),
+        )
+        .await;
+        let cn = sqlx::query(
+            "INSERT INTO credit_notes (company_id, contact_id, invoice_id, status, date) \
+             VALUES (?, ?, ?, 'draft', CURDATE())",
+        )
+        .bind(company_id)
+        .bind(contact_id)
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let cn_id = cn.last_insert_id() as i64;
+
+        let (r, statut, _, ecriture_restante) =
+            devalider(&pool, company_id, id, admin_user_id, v, je_id).await;
+
+        assert!(
+            matches!(
+                r,
+                Err(DbError::InvoiceNotUnvalidatable {
+                    blocker: UnvalidationBlocker::Credited,
+                    ..
+                })
+            ),
+            "attendu Credited, obtenu {r:?}"
+        );
+        assert_eq!(statut, "validated");
+        assert!(ecriture_restante);
+
+        // L'avoir référence la facture (RESTRICT) : il part en premier.
+        sqlx::query("DELETE FROM credit_notes WHERE id = ?")
+            .bind(cn_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        nettoyer_facture(&pool, id, je_id).await;
+    }
+
     #[tokio::test]
     async fn devalider_refuse_une_facture_envoyee_au_client() {
         let pool = test_pool().await;
@@ -4381,8 +4532,30 @@ mod tests {
             "attendu MatchedBankTransaction, obtenu {r:?}"
         );
         assert_eq!(statut, "validated");
+        // ⚠️ Le helper crée TROIS lignes : la transaction, son import et le
+        // compte bancaire. N'effacer que la première laisse deux orphelines par
+        // run sur la base partagée — la fuite que `nettoyer_facture` ne connaît
+        // pas (KF-039, #310).
+        let (import_id, account_id): (i64, i64) = sqlx::query_as(
+            "SELECT bi.id, bi.bank_account_id FROM bank_transactions bt \
+             JOIN bank_imports bi ON bi.id = bt.import_id WHERE bt.id = ?",
+        )
+        .bind(bank_tx_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
         sqlx::query("DELETE FROM bank_transactions WHERE id = ?")
             .bind(bank_tx_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM bank_imports WHERE id = ?")
+            .bind(import_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM bank_accounts WHERE id = ?")
+            .bind(account_id)
             .execute(&pool)
             .await
             .unwrap();

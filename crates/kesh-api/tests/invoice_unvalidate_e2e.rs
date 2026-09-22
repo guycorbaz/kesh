@@ -241,6 +241,20 @@ async fn le_cycle_complet_rend_le_meme_numero_sans_consommer_le_compteur(pool: M
         .await
         .unwrap();
     assert_eq!(resp.status(), 200, "dévalidation refusée");
+    // ⛔ **Le CORPS, et pas seulement la base.** Le handler reconstruit la
+    // réponse après le commit ; rien d'autre ne vérifie qu'elle porte bien la
+    // facture dévalidée AVEC ses lignes, forme que le frontend consomme déjà.
+    let corps: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(corps["status"].as_str(), Some("draft"));
+    assert!(
+        corps["journalEntryId"].is_null(),
+        "l'écriture est détachée dans le corps rendu, pas seulement en base"
+    );
+    assert_eq!(
+        corps["lines"].as_array().map(|l| l.len()),
+        Some(1),
+        "la réponse porte les lignes ; obtenu {corps}"
+    );
     let (statut, numero, version, je) = etat(&pool, invoice_id).await;
     assert_eq!(statut, "draft");
     assert_eq!(numero.as_deref(), Some(numero_initial.as_str()));
@@ -552,4 +566,84 @@ async fn une_cle_read_write_devalide_une_cle_read_est_refusee(pool: MySqlPool) {
     let (statut, _, _, je) = etat(&pool, seconde).await;
     assert_eq!(statut, "draft");
     assert!(je.is_none(), "l'écriture est détachée puis supprimée");
+}
+
+/// ⛔ **Le refus, par la couche HTTP.** Les tests de dépôt établissent le
+/// `DbError` ; **aucun** n'établissait le statut, le code ni le `details` que
+/// l'appelant reçoit réellement. Une correspondance HTTP fausse — mauvais
+/// statut, code interpolé, `details` vide — passait inaperçue.
+///
+/// *(Trou trouvé en passe 1 de revue, lentille C.)*
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn un_refus_de_devalidation_rend_409_et_son_code(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let (admin_id, company_id) = seed_base(&pool).await;
+    let contact_id = seed_contact(&pool, company_id, admin_id).await;
+    let invoice_id = create_draft(
+        &pool,
+        company_id,
+        contact_id,
+        admin_id,
+        chrono::Utc::now().date_naive(),
+    )
+    .await;
+    kesh_db::repositories::invoices::validate_invoice(&pool, company_id, invoice_id, admin_id)
+        .await
+        .expect("validate_invoice");
+    sqlx::query("UPDATE invoices SET emailed_at = NOW(3), emailed_to = ? WHERE id = ?")
+        .bind("client@example.invalid")
+        .bind(invoice_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (_, _numero, version, _) = etat(&pool, invoice_id).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/unvalidate")))
+        .bearer_auth(&token)
+        .json(&json!({ "version": version }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 409, "un empêchement rend 409");
+    let corps: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(corps["error"]["code"].as_str(), Some("INVOICE_EMAILED"));
+    // ⚠️ **`documentNumber` ne porte PAS un numéro pour ce motif** : il porte
+    // l'adresse du destinataire, seule information utile pour comprendre le
+    // refus. Le champ est générique et son contenu dépend du motif — piège
+    // relevé en écrivant ce test, et écrit dans `docs/api-external.md`.
+    assert_eq!(
+        corps["error"]["details"]["documentNumber"].as_str(),
+        Some("client@example.invalid"),
+        "le `details` nomme le destinataire ; obtenu {corps}"
+    );
+    assert_eq!(
+        etat(&pool, invoice_id).await.0,
+        "validated",
+        "le refus ne touche à rien"
+    );
+
+    // Et le conflit de version, par la même couche.
+    sqlx::query("UPDATE invoices SET emailed_at = NULL WHERE id = ?")
+        .bind(invoice_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/unvalidate")))
+        .bearer_auth(&token)
+        .json(&json!({ "version": version - 1 }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 409, "version périmée → 409");
+    let corps: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(
+        corps["error"]["code"].as_str(),
+        Some("OPTIMISTIC_LOCK_CONFLICT")
+    );
 }

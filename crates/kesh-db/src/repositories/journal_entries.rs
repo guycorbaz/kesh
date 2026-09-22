@@ -983,9 +983,13 @@ pub async fn delete_by_id(
 ///
 /// ⚠️ **`false` n'est passé que par `invoices::delete` et
 /// `invoices::unvalidate`** (25-2-b-1, #440), et l'exception est
-/// voulue : ce chemin ne supprime pas une écriture, il supprime **une facture**
-/// dont l'écriture part avec elle, sous ses trois gardes propres (non payée,
-/// non créditée, sans historique de rappels). ⚠️ Le gel levé, les autres
+/// voulue : ni l'un ni l'autre ne supprime une écriture — ils traitent **une
+/// facture**, dont l'écriture part avec elle, sous les gardes propres de
+/// l'appelant. ⛔ **Ces gardes ne sont PAS les mêmes des deux côtés, et ne pas
+/// le dire égare** : `delete` en porte trois (non payée, non créditée, sans
+/// historique de rappels), `unvalidate` cinq — les trois mêmes, plus le
+/// règlement **partiel**, l'envoi au client et le rapprochement bancaire. Cf.
+/// le doc-comment de chacune, qui les énumère. ⚠️ Le gel levé, les autres
 /// gardes de cette fonction tiennent — exercice clos, contre-passation et
 /// **verrou de période** (#443) : `false` ne lève que le gel. Le geler reviendrait à retirer la
 /// suppression d'une facture validée (#219) — une décision de facturation, pas

@@ -839,7 +839,11 @@ pub async fn unvalidate_invoice_handler(
     Json(payload): Json<UnvalidateInvoiceRequest>,
 ) -> Result<Json<InvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    let invoice = invoices::unvalidate(
+    // ⛔ Le résultat TRANSACTIONNEL, jamais un re-fetch post-commit — même
+    // raison qu'à la validation (`validate_invoice_handler`, « Review P3 ») :
+    // entre le commit et une seconde lecture, une suppression concurrente du
+    // brouillon rendrait un `404` sur une mutation déjà faite et auditée.
+    let (invoice, lines) = invoices::unvalidate(
         &state.pool,
         company.id,
         id,
@@ -847,12 +851,6 @@ pub async fn unvalidate_invoice_handler(
         payload.version,
     )
     .await?;
-    // Les lignes ne changent pas à la dévalidation ; on les relit pour rendre
-    // la même forme que la validation, que le frontend consomme déjà.
-    let lines = invoices::find_by_id_with_lines(&state.pool, company.id, id)
-        .await?
-        .map(|(_, lines)| lines)
-        .ok_or(AppError::Database(kesh_db::errors::DbError::NotFound))?;
     Ok(Json(InvoiceResponse::from_parts(invoice, lines)))
 }
 

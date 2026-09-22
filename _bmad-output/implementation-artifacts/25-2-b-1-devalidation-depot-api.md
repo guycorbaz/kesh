@@ -226,11 +226,18 @@ Claude Opus 5 (1M context) — implémentation.
   de la garde d'exercice (AC 5 — sans lui, une garde refusant *toute* redatation
   passait), les **deux cas de clé API** (AC 2), et les **trois doc-comments**
   (T3-bis). Aucun n'aurait été vu par un gate.
-- **AC 11 — mutations.** Sept gardes prouvées par mutation, chacune vue rouge
-  **sur assertion** : les cinq empêchements, le contrôle de version en tête
-  (mutation qui ne cassait rien sans le test d'ordre, l'`UPDATE` final portant
-  lui-même `AND version = ?`), et la remontée du verrou de période depuis
-  `delete_in_tx` (`&& false` sur la garde 3-quater → rouge sur assertion).
+- **AC 11 — mutations.** ⛔ **Ce paragraphe affirmait « sept gardes prouvées,
+  les cinq empêchements » — c'était FAUX**, et la passe 1 de revue l'a établi :
+  le motif 2 (créditée) n'était atteint par **aucun** test, et la moitié
+  `invoice_settlements` du motif 1 non plus. Une mutation ne peut pas avoir été
+  « vue rouge » sur un code que rien n'exerce. *Le compte rendu est redevenu le
+  lieu du défaut, dans la story même qui prêche le recompte.*
+  **État après remédiation**, chacune vue rouge **sur assertion** : les cinq
+  empêchements (le règlement partiel sans `paid_at` et l'avoir ont reçu leur
+  test en passe 1), le contrôle de version en tête — mutation qui ne cassait
+  rien sans le test d'ordre, l'`UPDATE` final portant lui-même
+  `AND version = ?` —, et la remontée du verrou de période depuis `delete_in_tx`
+  (`&& false` sur la garde 3-quater).
 - **Ce que la story ne fait pas**, et qui reste à la 25-2-b-2 : le retrait de la
   branche `validated` d'`invoices::delete`, l'écran, les manuels, le `CHANGELOG`
   et `closes #440`.
@@ -240,7 +247,7 @@ Claude Opus 5 (1M context) — implémentation.
 | Fichier | Nature |
 |---|---|
 | `crates/kesh-db/src/errors.rs` | `UnvalidationBlocker` (5 variantes), 3 variantes de `DbError`, leurs `code()` |
-| `crates/kesh-db/src/repositories/invoices.rs` | `unvalidate`, garde d'exercice du `PUT`, `validate_invoice` (numéro conservé), **8** tests de dépôt (`#[tokio::test]` : 30 → 38 de `main` à `HEAD`), doc-comment T3-bis |
+| `crates/kesh-db/src/repositories/invoices.rs` | `unvalidate`, garde d'exercice du `PUT`, `validate_invoice` (numéro conservé), **10** tests de dépôt (`#[tokio::test]` : 30 → 40 de `main` à `HEAD`), doc-comment T3-bis |
 | `crates/kesh-db/src/repositories/journal_entries.rs` | deux doc-comments T3-bis |
 | `crates/kesh-db/src/repositories/fiscal_years.rs` | `find_covering_date_in_tx` |
 | `crates/kesh-api/src/routes/invoices.rs` | `UnvalidateInvoiceRequest`, `unvalidate_invoice_handler` |
@@ -248,7 +255,7 @@ Claude Opus 5 (1M context) — implémentation.
 | `crates/kesh-api/src/errors.rs` | correspondance HTTP des trois variantes |
 | `crates/kesh-api/src/audit_labels.rs` | `invoice.unvalidated` dans `ACTIONS` |
 | `crates/kesh-api/tests/audit_route_registry.rs` | 105→106, 108→109, `traced` 87→88 et sa ventilation |
-| `crates/kesh-api/tests/invoice_unvalidate_e2e.rs` | **5** tests E2E (`grep -c '#[sqlx::test'`) |
+| `crates/kesh-api/tests/invoice_unvalidate_e2e.rs` | **6** tests E2E (`grep -c '#[sqlx::test'`) |
 | `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl` | 8 clés × 4 locales |
 | `docs/api-external.md` | la route, son corps, ses codes |
 
@@ -258,4 +265,5 @@ Claude Opus 5 (1M context) — implémentation.
 |---|---|---|
 | 2026-09-21 | spec | Story née du **découpage** de la 25-2-b, arbitré par Guy après une sévérité `HIGH → HIGH` entre les passes 2 et 3. Elle hérite des trois passes de validation de la fiche mère : rien n'y est réécrit, tout y est **référencé**. |
 | 2026-09-21 | validate P1 | **Passe 1, une lentille Opus**, prompt versionné `25-2-b-1-validate-prompt-p1.md`, **sept axes exercés**. **2 HIGH, 6 MEDIUM, 5 LOW** — ⛔ **tous des défauts du DÉCOUPAGE, aucun de la conception** : c'est précisément ce qu'une fille doit se faire dire. HIGH 1 — l'AC 5 prescrivait une garde sur « l'exercice du numéro », que la phrase suivante déclarait non reconstructible : en comprimant, j'avais supprimé les deux tests de la mère, seul indice du mécanisme. Rétabli, et le mécanisme écrit : **comparer les deux exercices couvrants**, invariant inductif. HIGH 2 — le compteur « 123 libellés » du `CHANGELOG` : cette story le rend faux et s'interdit d'y toucher, la sœur ne le reprenait pas ; **transféré nommément à l'AC 10 de la b-2**. MEDIUM : `unvalidate` devient le **second** appelant à `false` et périme trois doc-comments **dès ce merge** (T3-bis, ramenés ici) ; la partition `traced` laissait sa ventilation « 73 + 14 » ; « les deux portent leurs gardes » était **faux** de la suppression directe, qui n'en garde que trois sur huit ; le contrat HTTP n'était pas spécifié et « comme validate » le contredisait (`validate_invoice_handler` ne prend **aucun** corps) ; ⛔ `ENTRY_IS_RECONCILED` **doublait** un code canonique publié — remplacé par `MATCHED_BANK_TRANSACTION` ; la fenêtre de l'envoi laisse un brouillon porteur d'`emailed_at`, **indévalidable à jamais une fois revalidé**. LOW : ordre imposé par la FK rétabli, justification du `UPDATE` unique qualifiée, les cinq codes nommés, `errors.rs:57-106`, § *Règle de splitting*. Vérifié exact et à ne pas refaire : compteurs de routes (105/108 complets), « 123 libellés » (28+93+2), clé i18n, `SITES_INDIRECTS`, le passage des clés `read-write` par `comptable_routes`, la précédence du code mergé, l'absence de site confondant « numéroté » et « validé ». |
+| 2026-09-22 | review P1 | **Passe 1, trois lentilles Sonnet** en contexte frais (l'implémentation est d'Opus 5), prompt versionné `25-2-b-1-review-prompt-p1.md`, **tous les axes déclarés exercés par les trois**. **3 HIGH, 4 MEDIUM, 3 LOW.** ⛔ **Les trois HIGH portent sur ce que la story croyait tenir, et deux sur mon propre compte rendu.** **HIGH C-1 — le motif 2 (créditée) n'avait AUCUN test**, ni dépôt ni E2E, alors que le Dev Agent Record affirmait « les cinq empêchements prouvés par mutation » : une mutation ne peut pas avoir été vue rouge sur un code que rien n'exerce. **HIGH C-2 — la moitié `invoice_settlements` du motif 1 était muette** : seul `paid_at` était posé, si bien que retirer `settlement.is_some() ||` — la moitié que le code lui-même déclare indispensable, parce qu'elle seule attrape le règlement **partiel** — ne faisait rougir rien. Les deux tests neufs tuent leur mutation **sur assertion**. **HIGH B-1 — le handler relisait la facture APRÈS le commit** : exactement l'aller-retour que la revue P3 de la Story 5.2 avait retiré de `validate_invoice_handler`, commentaire à l'appui. Conséquence atteignable : une suppression concurrente du brouillon dans la fenêtre, et l'appelant reçoit `404` sur une dévalidation **faite et auditée**. `unvalidate` rend désormais `(Invoice, Vec<InvoiceLine>)`. MEDIUM : la fuite de `bank_accounts`/`bank_imports` du helper bancaire (KF-039, base partagée) ; **aucun test HTTP n'exerçait un refus** — écrire celui-ci a révélé que `documentNumber` porte, pour le motif « envoyée », l'**adresse du destinataire** et non un numéro, désormais écrit dans `docs/api-external.md` ; le **corps** de la réponse n'était jamais inspecté ; `ILLEGAL_STATE_TRANSITION` manquait au tableau des refus. LOW : le compte de gardes « trois » laissé faux dans le doc-comment par ma propre réécriture (`unvalidate` en porte cinq) — *une conséquence de l'ancien énoncé ayant survécu à sa réécriture* ; la redondance de `devalider_refuse_une_version_perimee`, **laissée** ; le variant `InvoiceMustBeUnvalidatedFirst` sans appelant, **délibéré** (b-2). ⚠️ **Signalé, hors périmètre** : `settle_invoice_handler` (`routes/invoices.rs:1192`) porte le **même** re-fetch post-commit, sur `main` — à ouvrir en issue, non traité ici. Décomptes recomptés : 10 tests de dépôt (`#[tokio::test]` 30 → 40), 6 E2E. Gate backend complet **2417/2417** sur base reconstruite, résidu nul sur six tables contrôlées. |
 | 2026-09-21 | validate P2 — **close** | **Passe 2, une lentille Sonnet** (P1 était Opus), prompt versionné `25-2-b-1-validate-prompt-p2.md`, **sept axes exercés, aucun laissé**. **0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW** — et le LOW est de nature **découpage** : la citation `invoices.rs:1339`, resserrée par ma tâche T3-bis là où la mère citait une plage, coupait une phrase qui court sur deux lignes. Corrigée. ⛔ **Aucun finding de CONCEPTION** — c'est le signal qui comptait : la sévérité `HIGH → LOW` confirme que le découpage était la bonne remédiation, et non un report du problème. Vérifié depuis la source et **à ne pas refaire** : le contrat de `validate_invoice_handler` (aucun corps), la convention `version` du dépôt, `comptable_routes` sans garde anti-clé, `errors.rs:57-106` et `MATCHED_BANK_TRANSACTION` à `:102`, la précédence réelle `5, 8, 6` du code mergé, les compteurs du registre de routes, `SITES_INDIRECTS`, les quatre locales, et — point neuf — **`find_covering_date` existe sans filtre de statut**, ce qui rend le mécanisme de l'AC 5 réalisable sans lecture dupliquée. Axe 2 tranché : **aucun test existant ne rougit au merge de b-1 seule**, l'état « brouillon numéroté » n'existant pas encore sur `main`. |

@@ -232,6 +232,9 @@ Corps : `{ "version": n }` — le verrou optimiste. Réponse : la facture, même
 | Écriture contre-passée | `ENTRY_IS_REVERSED` | `409` |
 | Écriture en période verrouillée | `PERIOD_LOCKED` | `400` |
 | Version périmée | `OPTIMISTIC_LOCK_CONFLICT` | `409` |
+| Facture qui n'est pas au statut « validée » | `ILLEGAL_STATE_TRANSITION` | `409` |
+
+⚠️ **Le champ `details` est générique, et son contenu dépend du motif** — ne pas le lire comme un numéro de document. `INVOICE_HAS_SETTLEMENTS` y met l'identifiant du règlement ; `INVOICE_CREDITED` le numéro de l'avoir ; `INVOICE_EMAILED` l'**adresse du destinataire** ; les autres le laissent vide. Le code d'erreur, lui, est stable : c'est sur lui qu'on branche une logique.
 
 ⚠️ **« Envoyée au client » est un refus sec** : il ne se lève par aucune confirmation. Une facture que le client détient se corrige par un **avoir**. La garde ne connaît que ce que Kesh a envoyé lui-même — un PDF téléchargé puis transmis à la main ne laisse aucune trace.
 
