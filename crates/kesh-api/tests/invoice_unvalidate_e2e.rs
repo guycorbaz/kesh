@@ -408,3 +408,148 @@ async fn un_brouillon_numerote_ne_change_pas_d_exercice(pool: MySqlPool) {
         "le refus ne touche à rien : la facture garde son numéro"
     );
 }
+
+/// **Le cas positif de la garde d'exercice**, et il est indispensable : sans
+/// lui, une garde qui refuserait TOUTE redatation passerait le test du refus
+/// sans que rien ne le dise. Elle ne compare pas deux dates, elle compare deux
+/// **exercices couvrants**.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn un_brouillon_numerote_se_redate_dans_son_propre_exercice(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let (admin_id, company_id) = seed_base(&pool).await;
+    let contact_id = seed_contact(&pool, company_id, admin_id).await;
+    let aujourd_hui = chrono::Utc::now().date_naive();
+    let invoice_id = create_draft(&pool, company_id, contact_id, admin_id, aujourd_hui).await;
+    kesh_db::repositories::invoices::validate_invoice(&pool, company_id, invoice_id, admin_id)
+        .await
+        .expect("validate_invoice");
+    let (_, _, version, _) = etat(&pool, invoice_id).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+    app.client
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/unvalidate")))
+        .bearer_auth(&token)
+        .json(&json!({ "version": version }))
+        .send()
+        .await
+        .unwrap();
+
+    // Une autre date du MÊME exercice : la veille, sauf au premier jour.
+    let (debut, _fin): (chrono::NaiveDate, chrono::NaiveDate) = sqlx::query_as(
+        "SELECT start_date, end_date FROM fiscal_years WHERE company_id = ? ORDER BY start_date LIMIT 1",
+    )
+    .bind(company_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let dans_exercice = if aujourd_hui > debut {
+        aujourd_hui - TimeDelta::days(1)
+    } else {
+        aujourd_hui + TimeDelta::days(1)
+    };
+    let (_, numero_avant, version, _) = etat(&pool, invoice_id).await;
+
+    let resp = app
+        .client
+        .put(app.url(&format!("/api/v1/invoices/{invoice_id}")))
+        .bearer_auth(&token)
+        .json(&json!({
+            "contactId": contact_id,
+            "date": dans_exercice,
+            "version": version,
+            "lines": [{
+                "description": "Prestation",
+                "quantity": "1",
+                "unitPrice": "100.00",
+                "vatRate": "8.10"
+            }]
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.status(),
+        200,
+        "une date du même exercice doit être acceptée"
+    );
+    let (_, numero_apres, _, _) = etat(&pool, invoice_id).await;
+    assert_eq!(
+        numero_apres, numero_avant,
+        "la redatation ne touche pas au numéro"
+    );
+}
+
+/// Crée une clé API par l'endpoint HTTP et rend le secret clair.
+async fn creer_cle(app: &TestApp, token: &str, nom: &str, scope: &str) -> String {
+    let resp = app
+        .client
+        .post(app.url("/api/v1/settings/api-keys"))
+        .bearer_auth(token)
+        .json(&json!({ "name": nom, "scope": scope }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "création de clé");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    body["key"].as_str().unwrap().to_string()
+}
+
+/// ⚠️ **C'est un ÉLARGISSEMENT, et il est voulu** — « même approche que
+/// Bexio », dont l'API publique porte `POST /2.0/kb_invoice/{id}/revert_issue`.
+/// Jusqu'ici aucune clé API ne pouvait détruire l'écriture d'une facture.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn une_cle_read_write_devalide_une_cle_read_est_refusee(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let (admin_id, company_id) = seed_base(&pool).await;
+    let contact_id = seed_contact(&pool, company_id, admin_id).await;
+    let aujourd_hui = chrono::Utc::now().date_naive();
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+    let cle_rw = creer_cle(&app, &token, "rw", "read-write").await;
+    let cle_ro = creer_cle(&app, &token, "ro", "read").await;
+
+    // 1. La clé en lecture seule est refusée — et la facture ne bouge pas.
+    let premiere = create_draft(&pool, company_id, contact_id, admin_id, aujourd_hui).await;
+    kesh_db::repositories::invoices::validate_invoice(&pool, company_id, premiere, admin_id)
+        .await
+        .expect("validate_invoice");
+    let (_, _, version, _) = etat(&pool, premiere).await;
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{premiere}/unvalidate")))
+        .bearer_auth(&cle_ro)
+        .json(&json!({ "version": version }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 403, "clé `read` sur une mutation → 403");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["error"]["code"].as_str(),
+        Some("API_KEY_READ_ONLY"),
+        "le refus est celui du scope, pas un refus de route"
+    );
+    assert_eq!(
+        etat(&pool, premiere).await.0,
+        "validated",
+        "le refus ne touche à rien"
+    );
+
+    // 2. La clé en écriture dévalide.
+    let seconde = create_draft(&pool, company_id, contact_id, admin_id, aujourd_hui).await;
+    kesh_db::repositories::invoices::validate_invoice(&pool, company_id, seconde, admin_id)
+        .await
+        .expect("validate_invoice");
+    let (_, _, version, _) = etat(&pool, seconde).await;
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{seconde}/unvalidate")))
+        .bearer_auth(&cle_rw)
+        .json(&json!({ "version": version }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "clé `read-write` → dévalidation admise");
+    let (statut, _, _, je) = etat(&pool, seconde).await;
+    assert_eq!(statut, "draft");
+    assert!(je.is_none(), "l'écriture est détachée puis supprimée");
+}

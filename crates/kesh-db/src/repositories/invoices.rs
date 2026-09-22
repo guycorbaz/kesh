@@ -1379,8 +1379,10 @@ pub async fn delete(
     // de la facture aussi.
     if let Some(je_id) = current.journal_entry_id
         && let Err(e) =
-            // ⚠️ Story 24-4b (#380) — `enforce_immutability = false`, seul site
-            // du dépôt. Ce chemin ne supprime pas une écriture : il supprime
+            // ⚠️ Story 24-4b (#380) — `enforce_immutability = false`. ⚠️ Ce
+            // n'est plus le seul site du dépôt depuis la 25-2-b-1 (#440) :
+            // `unvalidate` le passe aussi. Ce chemin ne supprime pas une
+            // écriture : il supprime
             // UNE FACTURE, dont l'écriture part avec elle, sous les trois
             // gardes ci-dessus (non payée, non créditée, sans rappels). Le
             // geler retirerait la suppression d'une facture validée (#219) —
@@ -4457,6 +4459,66 @@ mod tests {
     /// `AND version = ?`, si bien qu'un conflit ressort même sans le contrôle
     /// initial. Retirer celui-ci ne faisait rougir aucun test — mutation jouée,
     /// survécue, d'où celui-ci.
+    /// Le motif **6** vit dans `delete_in_tx`, pas dans `unvalidate` : rien ne
+    /// prouverait qu'il **remonte** si aucun test ne le traversait par la
+    /// dévalidation. Le test de précédence, lui, montre l'inverse — un
+    /// empêchement d'`unvalidate` qui parle avant, donc sans jamais atteindre
+    /// `delete_in_tx`.
+    #[tokio::test]
+    async fn devalider_refuse_une_periode_verrouillee() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+        let date = NaiveDate::from_ymd_opt(2026, 3, 5).unwrap();
+        let (id, v, je_id) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            date,
+            None,
+            dec!(100),
+        )
+        .await;
+        // ⚠️ La borne se pose sur la date de l'ÉCRITURE, qu'il faut lire : le
+        // stub de `force_validate` est daté de `CURDATE()`, non de la date de
+        // la facture. Une borne posée sur cette dernière laisse passer, et le
+        // test rougit pour une raison de montage — c'est arrivé ici.
+        let entry_date: NaiveDate =
+            sqlx::query_scalar("SELECT entry_date FROM journal_entries WHERE id = ?")
+                .bind(je_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        sqlx::query("UPDATE companies SET books_locked_through = ? WHERE id = ?")
+            .bind(entry_date)
+            .bind(company_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let (r, statut, _, ecriture_restante) =
+            devalider(&pool, company_id, id, admin_user_id, v, je_id).await;
+
+        assert!(
+            matches!(r, Err(DbError::PeriodLocked { .. })),
+            "attendu PeriodLocked, obtenu {r:?}"
+        );
+        assert_eq!(statut, "validated", "le refus ne doit RIEN changer");
+        assert!(
+            ecriture_restante,
+            "l'écriture survit : la transaction est annulée en entier"
+        );
+
+        sqlx::query("UPDATE companies SET books_locked_through = NULL WHERE id = ?")
+            .bind(company_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        nettoyer_facture(&pool, id, je_id).await;
+    }
+
     #[tokio::test]
     async fn devalider_le_verrou_parle_avant_les_empechements() {
         let pool = test_pool().await;

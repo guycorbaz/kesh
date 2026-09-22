@@ -202,11 +202,55 @@ attendu et se corrige ; un `HIGH` de **conception** relancerait le critère.
 
 ### Agent Model Used
 
+Claude Opus 5 (1M context) — implémentation.
+
 ### Debug Log References
+
+- **Le gate a rougi sur un module que la branche ne touche pas** :
+  `journal_entries::tests::deux_creations_concurrentes_n_obtiennent_pas_le_meme_numero`,
+  `ForeignKeyViolation` sur `kesh.invoices`. Cause : mes tests de refus laissaient
+  la facture liée à son écriture, et `cleanup_journal_entries` avale l'échec de FK
+  par un `.ok()` final. C'est **KF-039** (#310). Fermé par `nettoyer_facture`, qui
+  efface la facture **puis** l'écriture — la FK étant `ON DELETE RESTRICT`. Six
+  factures orphelines traînaient déjà en base de gate ; base reconstruite avant le
+  gate final.
+- **`devalider_refuse_une_periode_verrouillee` a rougi d'abord pour rien** : la
+  borne était posée sur la date de la *facture*, alors que le stub d'écriture de
+  `force_validate` porte `CURDATE()`. La borne se lit désormais sur l'écriture.
 
 ### Completion Notes List
 
+- **Quatre manques relevés par moi-même avant d'ouvrir la boucle de revue**, en
+  reprenant les AC un à un plutôt qu'en faisant confiance à mon propre compte
+  rendu : le test du motif **6 par la dévalidation** (AC 11), le **cas positif**
+  de la garde d'exercice (AC 5 — sans lui, une garde refusant *toute* redatation
+  passait), les **deux cas de clé API** (AC 2), et les **trois doc-comments**
+  (T3-bis). Aucun n'aurait été vu par un gate.
+- **AC 11 — mutations.** Sept gardes prouvées par mutation, chacune vue rouge
+  **sur assertion** : les cinq empêchements, le contrôle de version en tête
+  (mutation qui ne cassait rien sans le test d'ordre, l'`UPDATE` final portant
+  lui-même `AND version = ?`), et la remontée du verrou de période depuis
+  `delete_in_tx` (`&& false` sur la garde 3-quater → rouge sur assertion).
+- **Ce que la story ne fait pas**, et qui reste à la 25-2-b-2 : le retrait de la
+  branche `validated` d'`invoices::delete`, l'écran, les manuels, le `CHANGELOG`
+  et `closes #440`.
+
 ### File List
+
+| Fichier | Nature |
+|---|---|
+| `crates/kesh-db/src/errors.rs` | `UnvalidationBlocker` (5 variantes), 3 variantes de `DbError`, leurs `code()` |
+| `crates/kesh-db/src/repositories/invoices.rs` | `unvalidate`, garde d'exercice du `PUT`, `validate_invoice` (numéro conservé), **8** tests de dépôt (`#[tokio::test]` : 30 → 38 de `main` à `HEAD`), doc-comment T3-bis |
+| `crates/kesh-db/src/repositories/journal_entries.rs` | deux doc-comments T3-bis |
+| `crates/kesh-db/src/repositories/fiscal_years.rs` | `find_covering_date_in_tx` |
+| `crates/kesh-api/src/routes/invoices.rs` | `UnvalidateInvoiceRequest`, `unvalidate_invoice_handler` |
+| `crates/kesh-api/src/lib.rs` | la route, dans `comptable_routes` |
+| `crates/kesh-api/src/errors.rs` | correspondance HTTP des trois variantes |
+| `crates/kesh-api/src/audit_labels.rs` | `invoice.unvalidated` dans `ACTIONS` |
+| `crates/kesh-api/tests/audit_route_registry.rs` | 105→106, 108→109, `traced` 87→88 et sa ventilation |
+| `crates/kesh-api/tests/invoice_unvalidate_e2e.rs` | **5** tests E2E (`grep -c '#[sqlx::test'`) |
+| `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl` | 8 clés × 4 locales |
+| `docs/api-external.md` | la route, son corps, ses codes |
 
 ## Change Log
 
