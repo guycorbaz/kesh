@@ -238,7 +238,7 @@ Corps : `{ "version": n }` — le verrou optimiste. Réponse : la facture, même
 
 | Code | `documentId` | `documentNumber` |
 |---|---|---|
-| `INVOICE_HAS_SETTLEMENTS` | l'identifiant du règlement — **`null`** si le refus vient du seul `paid_at` (facture réglée avant la v0.10) | le numéro de **la facture elle-même** |
+| `INVOICE_HAS_SETTLEMENTS` | l'identifiant du règlement — **`null`** si le refus vient du seul `paid_at`, c'est-à-dire pour une facture réglée **avant la v0.12**, qui a introduit les lignes de règlement | le numéro de **la facture elle-même** |
 | `INVOICE_CREDITED` | l'identifiant de l'avoir | le numéro de l'avoir — **`null`** tant que l'avoir est un brouillon |
 | `INVOICE_HAS_REMINDERS` | l'identifiant du rappel | le numéro de **la facture elle-même** |
 | `INVOICE_EMAILED` | `null` | l'**adresse du destinataire** |
