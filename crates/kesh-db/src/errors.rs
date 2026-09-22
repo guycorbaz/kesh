@@ -105,6 +105,70 @@ impl ReversalBlocker {
     }
 }
 
+/// Ce qui empêche de **dévalider** une facture (Story 25-2-b-1, #440).
+///
+/// ⛔ **Un code par motif, et jamais le générique.** Les trois gardes que la
+/// suppression de #219 portait rendaient toutes `IllegalStateTransition`, dont
+/// le message n'est que journalisé : à l'écran, « transition interdite » ne dit
+/// **ni** ce qui bloque **ni** quoi faire. Le gabarit suivi est celui de
+/// [`ReversalBlocker`], en service depuis la 24-4a.
+///
+/// ⚠️ **Les causes se CUMULENT** — une facture peut être réglée, créditée *et*
+/// envoyée. Le champ exposé étant scalaire, la précédence est figée par l'ordre
+/// des variantes ci-dessous, et c'est celle qu'un test vérifie ; sans quoi le
+/// motif rendu dépendrait de l'ordre des requêtes.
+///
+/// ⚠️ **Les trois autres empêchements (exercice clos, contre-passée, période
+/// verrouillée) ne sont PAS ici** : ils vivent dans
+/// [`super::repositories::journal_entries::delete_in_tx`] et gardent leurs
+/// variantes propres — `FiscalYearClosed`, `EntryIsReversed`, `PeriodLocked`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnvalidationBlocker {
+    /// Un règlement, même **partiel**, pointe la facture.
+    ///
+    /// ⛔ La garde lit l'**existence d'une ligne** `invoice_settlements` **OU**
+    /// `paid_at IS NOT NULL` — les deux, jamais l'une seule. `paid_at` seul rate
+    /// le partiel (il n'est posé qu'au résiduel nul) ; la table seule rate les
+    /// factures réglées **avant** sa création (`20260827000001`, DDL pur, sans
+    /// rattrapage), qui portent `paid_at` sans aucune ligne.
+    Settled,
+    /// Un avoir référence la facture : il est déjà la contre-passation.
+    Credited,
+    /// La facture a un historique de rappels : le dévalider effacerait la
+    /// preuve du recouvrement (#260).
+    HasReminders,
+    /// La facture a été **envoyée au client** (`emailed_at`).
+    ///
+    /// ⛔ **Refus sec, non levable par confirmation** — arbitrage de Guy du
+    /// 2026-09-16 : le client détient un document que les livres ne porteraient
+    /// plus. Le chemin de correction redevient l'**avoir**.
+    Emailed,
+    /// L'écriture est **rapprochée** d'une transaction bancaire.
+    ///
+    /// ⚠️ La FK `bank_transactions.matched_entry_id` est `ON DELETE SET NULL` :
+    /// sans cette garde, le lien s'effacerait **en silence** au moment de la
+    /// suppression de l'écriture.
+    MatchedBankTransaction,
+}
+
+impl UnvalidationBlocker {
+    /// Code canonique, jamais une phrase — même discipline que
+    /// [`ReversalBlocker::code`].
+    ///
+    /// ⚠️ `MATCHED_BANK_TRANSACTION` **réemploie** le code de `ReversalBlocker` :
+    /// c'est le **même état** du monde, et lui donner un second nom ferait deux
+    /// vocabulaires pour un fait.
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::Settled => "INVOICE_HAS_SETTLEMENTS",
+            Self::Credited => "INVOICE_CREDITED",
+            Self::HasReminders => "INVOICE_HAS_REMINDERS",
+            Self::Emailed => "INVOICE_EMAILED",
+            Self::MatchedBankTransaction => "MATCHED_BANK_TRANSACTION",
+        }
+    }
+}
+
 /// Un compte de l'écriture d'origine, archivé depuis (Story 24-4a, #380).
 ///
 /// Le refus **nomme** le compte à réactiver — un « interdit » sec ne serait pas
@@ -282,6 +346,30 @@ pub enum DbError {
     #[error("Comptes de produit archivés sur l'avoir ({} ligne(s))", .0.len())]
     CreditNoteRevenueAccountsArchived(Vec<RejectedRevenueAccount>),
 
+    /// La facture ne peut pas être **dévalidée** (Story 25-2-b-1, #440).
+    ///
+    /// Conflit d'état → HTTP **409**, avec le code canonique de
+    /// l'[`UnvalidationBlocker`] et, quand le motif désigne une pièce, son
+    /// identifiant et son étiquette lisible.
+    #[error("Facture non dévalidable ({})", .blocker.code())]
+    InvoiceNotUnvalidatable {
+        blocker: UnvalidationBlocker,
+        /// Identifiant de la pièce qui bloque, quand le motif en désigne une
+        /// (l'avoir, le règlement…).
+        document_id: Option<i64>,
+        /// **Étiquette lisible** de ce qui bloque — le numéro de l'avoir, la
+        /// date du règlement. ⚠️ Un identifiant de base ne se comprend pas.
+        document_label: Option<String>,
+    },
+
+    /// `delete` a reçu une facture **validée** (Story 25-2-b-2, #440).
+    ///
+    /// ⛔ **Un code propre, et non le générique `ILLEGAL_STATE_TRANSITION`** : le
+    /// message doit **orienter vers la dévalidation**, sans quoi l'utilisateur
+    /// lit « transition interdite » sur le seul chemin qui lui reste.
+    #[error("Facture validée : dévalider d'abord")]
+    InvoiceMustBeUnvalidatedFirst,
+
     /// L'écriture ne peut pas être contre-passée (Story 24-4a, #380).
     ///
     /// C'est un **conflit d'état**, pas une donnée invalide → HTTP **409**, avec
@@ -431,6 +519,8 @@ impl DbError {
             // celui-ci n'est que le repli générique du mapping structuré.
             Self::EntryNotReversable { .. } => "ENTRY_NOT_REVERSABLE",
             Self::ReversalAccountsArchived(_) => "ACCOUNT_ARCHIVED",
+            Self::InvoiceNotUnvalidatable { blocker, .. } => blocker.code(),
+            Self::InvoiceMustBeUnvalidatedFirst => "INVOICE_MUST_BE_UNVALIDATED_FIRST",
             Self::EntryIsReversed => "ENTRY_IS_REVERSED",
             Self::EntryIsPosted => "ENTRY_IS_POSTED",
             Self::PeriodLocked { .. } => "PERIOD_LOCKED",

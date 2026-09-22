@@ -30,7 +30,7 @@ use kesh_core::listing::SortDirection;
 
 use crate::entities::audit_log::NewAuditLogEntry;
 use crate::entities::invoice::{Invoice, InvoiceLine, InvoiceUpdate, NewInvoice, NewInvoiceLine};
-use crate::errors::{DbError, map_db_error};
+use crate::errors::{DbError, UnvalidationBlocker, map_db_error};
 use crate::repositories::audit_log;
 use crate::repositories::journal_entries;
 use crate::util::search::{escape_boolean_ft, escape_like};
@@ -1365,6 +1365,230 @@ pub async fn delete(
 /// comptable générée). Les lignes sont retournées pour permettre au
 /// handler HTTP de construire la réponse sans re-fetch post-commit
 /// (review P3 — évite une fenêtre de race sur les lignes).
+/// Dévalide une facture : elle repasse en **brouillon**, garde son **numéro**,
+/// et son écriture comptable est supprimée (Story 25-2-b-1, #440).
+///
+/// # Ce que ce chemin remplace
+///
+/// La suppression directe d'une facture validée (#219) détruisait l'écriture
+/// comme **effet de bord du verbe « supprimer »**. Ici le geste est nommé,
+/// audité, et il laisse la facture en place : on peut la corriger puis la
+/// revalider, ou l'effacer ensuite comme un brouillon ordinaire.
+///
+/// # Les empêchements, et pourquoi leur ORDRE est figé
+///
+/// Cinq motifs sont contrôlés ici, **avant** l'appel à
+/// [`journal_entries::delete_in_tx`] ; trois autres y vivent déjà (exercice
+/// clos, écriture contre-passée, période verrouillée) et parlent après. La
+/// précédence est donc `Settled → Credited → HasReminders → Emailed →
+/// MatchedBankTransaction`, puis celle de `delete_in_tx`.
+///
+/// ⛔ **Le motif 7 (rapprochement) ne peut PAS attendre `delete_in_tx`** : la FK
+/// `bank_transactions.matched_entry_id` est `ON DELETE SET NULL`, et le lien
+/// s'effacerait **en silence** au moment de la suppression.
+///
+/// # Le numéro survit, et c'est un critère
+///
+/// `invoice_number` n'est **pas** effacé : [`validate_invoice`] le reprend tel
+/// quel. Sans cela, chaque cycle dévalider/revalider brûlerait un numéro du
+/// compteur — qui ne redescend jamais — et creuserait un trou dans la séquence
+/// des **factures**, là où la story ne veut fermer que celle des écritures.
+pub async fn unvalidate(
+    pool: &MySqlPool,
+    company_id: i64,
+    invoice_id: i64,
+    user_id: i64,
+    version: i32,
+) -> Result<Invoice, DbError> {
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    let result = async {
+        // Étape 1 : verrouiller la facture. Tout ce qui suit lit son état.
+        let current =
+            sqlx::query_as::<_, Invoice>(&format!("{FIND_INVOICE_SCOPED_SQL} FOR UPDATE"))
+                .bind(invoice_id)
+                .bind(company_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(map_db_error)?;
+
+        let current = match current {
+            None => return Err(DbError::NotFound),
+            Some(inv) if inv.status != "validated" => {
+                return Err(DbError::IllegalStateTransition(format!(
+                    "seule une facture validée se dévalide (statut actuel : '{}')",
+                    inv.status
+                )));
+            }
+            Some(inv) => inv,
+        };
+
+        // Étape 2 : le verrou optimiste, avant les empêchements — inutile de
+        // dire POURQUOI c'est refusé si l'état lu n'est plus celui du client.
+        if current.version != version {
+            return Err(DbError::OptimisticLockConflict);
+        }
+
+        // Étape 3 : les cinq empêchements, dans l'ordre de précédence.
+        //
+        // (1) RÉGLÉE, même partiellement. ⛔ La lecture est DOUBLE et les deux
+        // moitiés sont nécessaires : `paid_at` n'est posé qu'au résiduel nul
+        // (il rate le règlement partiel), et `invoice_settlements` n'existe que
+        // depuis le 2026-08-28, sans rattrapage (elle rate les factures réglées
+        // avant). L'une sans l'autre laisse passer un cas réel.
+        let settlement: Option<(i64,)> =
+            sqlx::query_as("SELECT id FROM invoice_settlements WHERE invoice_id = ? LIMIT 1")
+                .bind(invoice_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(map_db_error)?;
+        if settlement.is_some() || current.paid_at.is_some() {
+            return Err(DbError::InvoiceNotUnvalidatable {
+                blocker: UnvalidationBlocker::Settled,
+                document_id: settlement.map(|(id,)| id),
+                document_label: current.invoice_number.clone(),
+            });
+        }
+
+        // (2) CRÉDITÉE par un avoir : l'avoir EST déjà la contre-passation.
+        let credited: Option<(i64, Option<String>)> = sqlx::query_as(
+            "SELECT id, credit_note_number FROM credit_notes WHERE invoice_id = ? LIMIT 1",
+        )
+        .bind(invoice_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
+        if let Some((cn_id, cn_number)) = credited {
+            return Err(DbError::InvoiceNotUnvalidatable {
+                blocker: UnvalidationBlocker::Credited,
+                document_id: Some(cn_id),
+                document_label: cn_number,
+            });
+        }
+
+        // (3) HISTORIQUE DE RAPPELS : le dévalider effacerait la preuve du
+        // recouvrement (#260) — `invoice_reminders` est en CASCADE.
+        let reminded: Option<(i64,)> =
+            sqlx::query_as("SELECT id FROM invoice_reminders WHERE invoice_id = ? LIMIT 1")
+                .bind(invoice_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(map_db_error)?;
+        if let Some((reminder_id,)) = reminded {
+            return Err(DbError::InvoiceNotUnvalidatable {
+                blocker: UnvalidationBlocker::HasReminders,
+                document_id: Some(reminder_id),
+                document_label: current.invoice_number.clone(),
+            });
+        }
+
+        // (4) ENVOYÉE AU CLIENT : refus SEC, non levable par confirmation.
+        //
+        // ⚠️ La garde n'attrape que ce que Kesh SAIT avoir envoyé : un PDF
+        // téléchargé puis transmis à la main ne laisse aucune trace. Et pendant
+        // l'expédition d'un e-mail, `emailed_at` n'étant posé qu'APRÈS l'envoi,
+        // une dévalidation concurrente peut encore passer. Limite écrite, non
+        // comblée : marquer avant d'expédier coûterait plus cher (cf. fiche).
+        if current.emailed_at.is_some() {
+            return Err(DbError::InvoiceNotUnvalidatable {
+                blocker: UnvalidationBlocker::Emailed,
+                document_id: None,
+                document_label: current.emailed_to.clone(),
+            });
+        }
+
+        // (5) ÉCRITURE RAPPROCHÉE d'une transaction bancaire.
+        if let Some(je_id) = current.journal_entry_id {
+            let matched: Option<(i64,)> = sqlx::query_as(
+                "SELECT id FROM bank_transactions WHERE matched_entry_id = ? LIMIT 1",
+            )
+            .bind(je_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(map_db_error)?;
+            if let Some((tx_id,)) = matched {
+                return Err(DbError::InvoiceNotUnvalidatable {
+                    blocker: UnvalidationBlocker::MatchedBankTransaction,
+                    document_id: Some(tx_id),
+                    document_label: current.invoice_number.clone(),
+                });
+            }
+        }
+
+        let lines = fetch_lines(&mut tx, invoice_id).await?;
+        let snapshot = invoice_snapshot_json(&current, &lines);
+
+        // Étape 4 : UN SEUL `UPDATE`.
+        //
+        // ⛔ Deux `UPDATE` dans l'ordre « `NULL` d'abord » violeraient
+        // `chk_invoices_validated_has_je` (`status <> 'validated' OR
+        // journal_entry_id IS NOT NULL`) dès le premier. Et un seul geste tient
+        // aussi le `version + 1`, que deux écritures rendraient ambigu.
+        //
+        // ⚠️ `invoice_number` n'est PAS touché : c'est le critère du numéro
+        // conservé.
+        let rows = sqlx::query(
+            "UPDATE invoices SET status = 'draft', journal_entry_id = NULL, \
+             version = version + 1 \
+             WHERE id = ? AND company_id = ? AND version = ? AND status = 'validated'",
+        )
+        .bind(invoice_id)
+        .bind(company_id)
+        .bind(version)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_db_error)?
+        .rows_affected();
+        if rows != 1 {
+            return Err(DbError::OptimisticLockConflict);
+        }
+
+        // Étape 5 : l'écriture part APRÈS que la facture a lâché sa référence —
+        // la FK `journal_entry_id` est `ON DELETE RESTRICT`.
+        //
+        // ⚠️ `enforce_immutability = false` : le gel de la 24-4b est levé ici, et
+        // ici seulement. Les trois autres gardes de `delete_in_tx` — exercice
+        // clos, contre-passation, période verrouillée (#443) — tiennent.
+        if let Some(je_id) = current.journal_entry_id {
+            journal_entries::delete_in_tx(&mut tx, company_id, je_id, user_id, false).await?;
+        }
+
+        // Étape 6 : l'audit NOMME le geste, avec l'état d'avant.
+        audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry::user(
+                user_id,
+                "invoice.unvalidated".to_string(),
+                "invoice".to_string(),
+                invoice_id,
+                Some(snapshot),
+            ),
+        )
+        .await?;
+
+        let after = sqlx::query_as::<_, Invoice>(FIND_INVOICE_SCOPED_SQL)
+            .bind(invoice_id)
+            .bind(company_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(map_db_error)?;
+
+        Ok(after)
+    }
+    .await;
+
+    match result {
+        Ok(invoice) => {
+            tx.commit().await.map_err(map_db_error)?;
+            Ok(invoice)
+        }
+        Err(e) => {
+            tx.rollback().await.map_err(map_db_error)?;
+            Err(e)
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ValidatedInvoice {
     pub invoice: Invoice,
@@ -1744,10 +1968,20 @@ pub async fn validate_invoice(
             .await?
             .ok_or(DbError::FiscalYearInvalid)?;
 
-        // (4) Sequence : lock + incrément.
-        let seq = invoice_number_sequences::next_number_for(&mut tx, company_id, fy.id).await?;
-
-        // (5) Render numéro de facture.
+        // (4) et (5) — LE NUMÉRO : tiré du compteur, ou REPRIS s'il existe.
+        //
+        // ⛔ **Une facture dévalidée garde son numéro** (Story 25-2-b-1, #440),
+        // et la revalidation le reprend **sans toucher au compteur**. Tirer un
+        // numéro neuf à chaque cycle en brûlerait un : `invoice_number_sequences`
+        // ne redescend jamais, et la séquence des FACTURES se creuserait de
+        // trous — précisément le défaut que la 25-2-c a fermé pour les écritures.
+        //
+        // ⚠️ Le compteur n'est donc **pas** verrouillé sur ce chemin : une
+        // revalidation ne sérialise plus rien, et c'est voulu — elle ne consomme
+        // aucun numéro.
+        //
+        // ⚠️ `year` se calcule AVANT le `match` : il sert aussi au libellé de
+        // l'écriture, plus bas, y compris quand le numéro est repris.
         let year = fy
             .start_date
             .format("%Y")
@@ -1760,14 +1994,19 @@ pub async fn validate_invoice(
                     fy.start_date
                 ))
             })?;
-        let invoice_number =
-            invoice_format::render(&settings.invoice_number_format, year, &fy.name, seq).map_err(
-                |e| {
-                    DbError::Invariant(format!(
-                        "rendu numéro facture échoué (config invalide ?) : {e}"
-                    ))
-                },
-            )?;
+        let invoice_number = match invoice_before.invoice_number.clone() {
+            Some(numero) => numero,
+            None => {
+                let seq =
+                    invoice_number_sequences::next_number_for(&mut tx, company_id, fy.id).await?;
+                invoice_format::render(&settings.invoice_number_format, year, &fy.name, seq)
+                    .map_err(|e| {
+                        DbError::Invariant(format!(
+                            "rendu numéro facture échoué (config invalide ?) : {e}"
+                        ))
+                    })?
+            }
+        };
 
         // (6) Contact name pour le libellé écriture.
         let contact_name: String =
