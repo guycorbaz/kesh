@@ -1,6 +1,6 @@
 # Story 25.2-b-2 : La suppression ne traite plus que les brouillons — l'écran et les manuels
 
-Status: ready-for-dev
+Status: review
 
 **Issue : [#440]**, qu'elle **ferme** : `closes #440` dans le **titre ET le corps** de sa PR.
 ⚠️ Elle **ne rouvre pas [#219]**, fermée : la story en remplace le chemin, pas la décision. Et elle
@@ -292,11 +292,11 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Dépôt** (AC 1, 2, 3) — retrait de la branche, **traitement** des huit sites de test selon le tableau de l'AC 3 (4 supprimés, 1 réécrit, 2 retargetés et renommés, 1 adapté).
-- [ ] **T2 — Écran** (AC 4, 5, 8).
-- [ ] **T3 — E2E des deux cycles** (AC 6).
-- [ ] **T4 — Manuels, PDF, `api-external.md`, `CHANGELOG`** (AC 7, 9, 10).
-- [ ] **T5 — Gates complets** (AC 11), PR avec `closes #440`.
+- [x] **T1 — Dépôt** (AC 1, 2, 3) — retrait de la branche, **traitement** des huit sites de test selon le tableau de l'AC 3 (4 supprimés, 1 réécrit, 2 retargetés et renommés, 1 adapté).
+- [x] **T2 — Écran** (AC 4, 5, 8).
+- [x] **T3 — E2E des deux cycles** (AC 6).
+- [x] **T4 — Manuels, PDF, `api-external.md`, `CHANGELOG`** (AC 7, 9, 10).
+- [x] **T5 — Gates complets** (AC 11), PR avec `closes #440`.
 
 ## Dev Notes
 
@@ -375,11 +375,92 @@ ce qu'une neuvième passe aurait regardé.*
 
 ### Agent Model Used
 
+Claude Opus 5 (1M context) — implémentation.
+
+### Les cinq décisions que la fiche laissait au développeur
+
+1. **Où vit `INVOICE_MUST_BE_UNVALIDATED_FIRST`** — question **sans objet** : la
+   **25-2-b-1 l'a déjà livré** (variante de `DbError`, `code()`, `409` et quatre
+   clés), sans appelant. La b-2 n'a eu qu'à le construire.
+2. **Le bras de refus neuf** là où partait le bras d'autorisation : fait, avec
+   un code propre plutôt que le fourre-tout `IllegalStateTransition` du bras
+   suivant.
+3. **La modale** : la branche validée reçoit la **sienne**, et le
+   `goto('/invoices')` ne sert plus que le brouillon — après une dévalidation la
+   facture reste, y naviguer n'aurait aucun sens.
+4. **Le motif 1 côté écran** — tranché : l'écran **assume le refus serveur** et
+   la condition `!invoice.paidAt` est **retirée**. Elle sous-couvrait le motif,
+   une facture *partiellement* réglée n'ayant pas de `paidAt` ; cacher le bouton
+   dans ces cas aurait privé l'utilisateur de tout message à lire.
+5. **`user-manual.tex:837`** — tranché : « strictement séquentielle » est
+   **nuancée**, non supprimée. Les numéros ne sont **jamais réattribués** ; la
+   séquence peut comporter des **trous**, et c'est la réattribution qui serait
+   fautive.
+
 ### Debug Log References
+
+- **Le choix de l'empêchement du test E2E de refus a coûté trois essais**, tous
+  écrits dans le test : « envoyée » suppose un SMTP réel ; ⛔ **l'avoir fait
+  passer la facture en `cancelled`**, donc le bouton disparaît et le test
+  n'atteint jamais le refus qu'il mesure ; le règlement exige des paramètres de
+  facturation et le rappel manuel un niveau de relance ; le verrou de période
+  polluerait la société que toutes les specs partagent. Retenu : le **conflit de
+  version**, sans montage, qui exerce le même chemin d'affichage.
+- **Base de gate reconstruite en cours de route** : un contrôle de mutation a
+  paniqué avant son nettoyage et laissé un exercice `Closed` — KF-039, causée
+  par mon propre geste.
+- Deux fautes de ma main, rattrapées par les garde-fous : **« Dévaliser »** dans
+  le FTL français (le mot vient de la fiche, dont l'AC 4 dit pourtant
+  « Dévalider »), et une interpolation `{$number}` par `.replace()` manuel au
+  lieu des arguments Fluent.
 
 ### Completion Notes List
 
+- ⛔ **Le trou que le traitement des tests a révélé, et que huit passes de
+  validation n'avaient pas vu** : le **motif 5 (exercice clos) n'était asserté
+  par aucun test de dévalidation**. La fiche prescrivait de supprimer
+  `test_delete_validated_in_closed_fy_is_rejected` au motif que la b-1 en
+  reprenait la propriété — elle avait vérifié que la contrepartie était
+  **prescrite**, non qu'elle **existait**. Le test de précédence pose bien un
+  exercice clos, mais il assert que le *rappel* parle avant.
+  `devalider_refuse_un_exercice_clos` écrit **d'abord**, mutation tuée sur
+  assertion, *puis* les quatre suppressions. *Une couverture retirée au nom d'un
+  équivalent qui n'existe pas disparaît sans que rien ne rougisse.*
+- ⚠️ **Reste non couvert, et dit** : le **motif 8** (écriture contre-passée)
+  n'est asserté nulle part sur le chemin de la dévalidation. Aucun test de
+  `delete` ne le couvrait non plus : cette story ne perd rien, mais le trou
+  existe.
+- **Le retrait du bloc hors `match` est la moitié qui comptait.** Le laisser
+  aurait paru inoffensif — un brouillon n'ayant pas de `journal_entry_id`, le
+  `if let` ne se serait jamais déclenché — et c'est ce qui le rendait dangereux :
+  **rien n'aurait rougi**, et `enforce_immutability = false` aurait gardé un
+  second appelant fantôme.
+- **Deux affirmations du manuel d'administration étaient fausses**, dont une
+  **indépendamment de cette story** : l'encadré sur les rappels reposait sur la
+  prémisse qu'un administrateur peut supprimer une facture relancée — faux
+  **depuis #260**.
+- ⛔ **Le site sous P8 n'a pas été touché**, et c'est vérifié :
+  `git diff crates/kesh-db/migrations/` est **vide**.
+
 ### File List
+
+| Fichier | Nature |
+|---|---|
+| `crates/kesh-db/src/repositories/invoices.rs` | bras de refus, retrait du bloc hors `match`, 4 tests supprimés + 1 ajouté + 1 retargeté-renommé (`#[tokio::test]` **40 → 37**) |
+| `crates/kesh-db/src/repositories/journal_entries.rs` | doc-comment de `delete_in_tx` (deux sites) |
+| `crates/kesh-api/src/lib.rs`, `src/routes/invoices.rs` | trois doc-comments d'ancrage |
+| `crates/kesh-api/src/errors.rs` | replis des deux messages réécrits |
+| `crates/kesh-api/tests/invoice_delete_e2e.rs` | doc de module, 1 test retargeté-renommé, 1 réécrit par la dévalidation |
+| `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl` | **9 lignes par locale** — 7 clés neuves, 2 messages réécrits |
+| `frontend/src/lib/features/invoices/invoices.api.ts` | `unvalidateInvoice` |
+| `frontend/src/routes/(app)/invoices/[id]/+page.svelte` | modale propre, deux gardes de rôle, retrait du résidu |
+| `frontend/src/routes/(app)/invoices/+page.svelte` | **second chemin** : garde de rôle et avertissement sur le numéro |
+| `frontend/src/lib/shared/i18n-keys.test.ts` | 1638 → **1651**, ventilé |
+| `frontend/src/lib/shared/i18n-libelle-en-dur.test.ts` | 43 → **42**, `ecartee` 7 → **6**, déclaration nommée |
+| `frontend/tests/e2e/invoice-unvalidate.spec.ts` | **3** tests neufs |
+| `frontend/tests/e2e/invoices.spec.ts` | « fiche fantôme » adaptée |
+| `docs/manual/fr/{user,admin}-manual.tex` + **3 PDF** | 6 sites + 4 sites, PDF régénérés et contrôlés à plat |
+| `docs/api-external.md`, `CHANGELOG.md`, `README.md` | note ², section `[0.12.1]`, feuille de route |
 
 ## Change Log
 
