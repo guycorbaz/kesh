@@ -239,7 +239,7 @@
 		deleteError = '';
 		try {
 			await deleteInvoice(deleteTarget.id);
-			notifySuccess('Facture supprimée');
+			notifySuccess(i18nMsg('invoice-deleted-success', 'Facture supprimée'));
 			deleteOpen = false;
 			deleteTarget = null;
 			await load();
@@ -485,7 +485,7 @@
 >
 	<Dialog.Content>
 		<Dialog.Header>
-			<Dialog.Title>Supprimer la facture</Dialog.Title>
+			<Dialog.Title>{i18nMsg('invoice-delete-confirm-title', 'Supprimer la facture ?')}</Dialog.Title>
 		</Dialog.Header>
 		<p class="text-sm">
 			Confirmer la suppression de la facture du {deleteTarget?.date} pour {deleteTarget?.contactName} ?

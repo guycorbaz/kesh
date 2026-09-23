@@ -235,7 +235,7 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * faux avec l'assurance de l'avoir mesuré.*
  */
 const ATTENDU = {
-	// Story 25-2-b-2 (#440) : 1638 → 1653, soit **+15**, ventilés — recomptés
+	// Story 25-2-b-2 (#440) : 1638 → 1655, soit **+17**, ventilés — recomptés
 	// depuis la source (`grep -c 'i18nMsg('` aux deux bornes), non incrémentés :
 	//   • `invoices/[id]/+page.svelte` 41 → 55 (**+14**) : la modale de
 	//     dévalidation qui naît (titre, corps, numéro conservé, bouton, annuler),
@@ -246,19 +246,26 @@ const ATTENDU = {
 	//     en français** sur des clés qui **dormaient au catalogue sans appelant** :
 	//     `invoice-delete-confirm-body` ×2, `invoice-delete-button`,
 	//     `invoice-delete-confirm-title` et `invoice-deleted-success` ;
-	//   • `invoices/+page.svelte` 7 → 8 (**+1**) — le même avertissement sur le
-	//     trou de séquence, sur l'écran de LISTE : le second chemin de suppression
-	//     d'un brouillon, que quatre passes de validation n'avaient pas énuméré.
+	//   • `invoices/+page.svelte` 7 → 10 (**+3**), sur l'écran de LISTE — le
+	//     second chemin de suppression d'un brouillon, que quatre passes de
+	//     validation n'avaient pas énuméré : l'avertissement sur le trou de
+	//     séquence (clé neuve), plus le titre de sa modale et son toast de
+	//     succès, qui restaient codés en dur alors que leurs clés dormaient au
+	//     catalogue.
 	//
 	// ⚠️ **La première rédaction de cette ventilation était FAUSSE sur deux
 	// points**, relevés en passe 1 de revue : elle rangeait
 	// `invoice-delete-numbered-warning` parmi les clés « qui existaient déjà »
 	// alors que cette story la crée, et elle annonçait « quatre libellés »
 	// réactivés là où le patch n'en câblait que **deux** — les deux autres
-	// restaient mortes. Elles le sont câblées ici, ce qui porte le compte à 15.
+	// restaient mortes, et elles sont câblées ici. ⛔ **Puis le grep de
+	// propagation a montré que je ne les avais câblées que sur UN des deux
+	// écrans** : la liste portait les deux mêmes libellés en dur. La fiche
+	// prévenait pourtant — *« un symptôme se grepe sur les DEUX écrans »* —, et
+	// c'est le patch qui corrigeait ce défaut qui l'a recommis un cran plus loin.
 	// *Un total juste peut cacher une ventilation fausse : c'est la ventilation
 	// qui se recompte, pas seulement la somme.*
-	sitesTotal: 1653,
+	sitesTotal: 1655,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,
