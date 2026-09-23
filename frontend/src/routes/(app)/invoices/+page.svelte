@@ -10,6 +10,11 @@
 	import { notifyError, notifySuccess } from '$lib/shared/utils/notify';
 
 	import { listInvoices, deleteInvoice } from '$lib/features/invoices/invoices.api';
+	// ⛔ Story 25-2-b-2 (#440) — cet écran n'avait AUCUNE notion de rôle : son
+	// bouton « Supprimer » était offert à tous. C'est le **second chemin de
+	// suppression d'un brouillon**, jumeau de celui de la fiche, et quatre
+	// passes de validation n'en avaient énuméré qu'un.
+	import { authState } from '$lib/app/stores/auth.svelte';
 	import type {
 		InvoiceListItemResponse,
 		InvoiceSortBy,
@@ -49,6 +54,9 @@
 	let mounted = $state(false);
 	let loadSeq = 0;
 
+	// Effacer reste réservé à l'Administrateur (#219) — l'asymétrie assumée
+	// avec la dévalidation, ouverte au Comptable.
+	let isAdmin = $derived(authState.currentUser?.role === 'Admin');
 	let deleteOpen = $state(false);
 	let deleteTarget = $state<InvoiceListItemResponse | null>(null);
 	let deleteSubmitting = $state(false);
@@ -231,7 +239,7 @@
 		deleteError = '';
 		try {
 			await deleteInvoice(deleteTarget.id);
-			notifySuccess('Facture supprimée');
+			notifySuccess(i18nMsg('invoice-deleted-success', 'Facture supprimée'));
 			deleteOpen = false;
 			deleteTarget = null;
 			await load();
@@ -424,9 +432,15 @@
 							<Button variant="ghost" size="sm" aria-label={`Modifier la facture ${inv.invoiceNumber ?? inv.contactName}`} onclick={() => goto(`/invoices/${inv.id}/edit`)}>
 								<Pencil class="h-4 w-4" aria-hidden="true" />
 							</Button>
-							<Button variant="ghost" size="sm" aria-label={`Supprimer la facture ${inv.invoiceNumber ?? inv.contactName}`} onclick={() => openDelete(inv)}>
-								<Trash2 class="h-4 w-4" aria-hidden="true" />
-							</Button>
+							<!-- ⛔ La garde va sur CE bouton, et non sur le `{#if}` de la
+							     ligne : il enveloppe aussi *Modifier*, que le Comptable doit
+							     garder. Même défaut que sur l'écran de fiche — un symptôme se
+							     grepe sur les DEUX écrans. -->
+							{#if isAdmin}
+								<Button variant="ghost" size="sm" aria-label={`Supprimer la facture ${inv.invoiceNumber ?? inv.contactName}`} onclick={() => openDelete(inv)}>
+									<Trash2 class="h-4 w-4" aria-hidden="true" />
+								</Button>
+							{/if}
 						{/if}
 					</td>
 				</tr>
@@ -471,20 +485,39 @@
 >
 	<Dialog.Content>
 		<Dialog.Header>
-			<Dialog.Title>Supprimer la facture</Dialog.Title>
+			<Dialog.Title>{i18nMsg('invoice-delete-confirm-title', 'Supprimer la facture ?')}</Dialog.Title>
 		</Dialog.Header>
 		<p class="text-sm">
-			Confirmer la suppression de la facture du {deleteTarget?.date} pour {deleteTarget?.contactName} ?
+			{i18nMsg(
+				'invoice-delete-confirm-body-context',
+				'Confirmer la suppression de la facture du { $date } pour { $contact } ?',
+				{ date: deleteTarget?.date ?? '', contact: deleteTarget?.contactName ?? '' },
+			)}
 		</p>
+		<!-- ⚠️ Un brouillon NUMÉROTÉ a déjà consommé son numéro — c'est le cas
+		     d'une facture qu'on vient de dévalider. Le compteur ne redescend pas,
+		     et le trou restera : il se voit et s'explique, là où une
+		     réattribution ne se verrait pas. -->
+		{#if deleteTarget?.invoiceNumber}
+			<div class="rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm">
+				{i18nMsg(
+					'invoice-delete-numbered-warning',
+					'Cette facture porte déjà le numéro { $number } : le supprimer laissera un trou définitif dans la séquence, le compteur ne redescendant pas.',
+					{ number: deleteTarget.invoiceNumber },
+				)}
+			</div>
+		{/if}
 		{#if deleteError}
 			<div class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
 				{deleteError}
 			</div>
 		{/if}
 		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (deleteOpen = false)}>Annuler</Button>
+			<Button variant="outline" onclick={() => (deleteOpen = false)}>
+				{i18nMsg('common-cancel', 'Annuler')}
+			</Button>
 			<Button variant="destructive" onclick={confirmDelete} disabled={deleteSubmitting}>
-				Supprimer
+				{i18nMsg('invoice-delete-button', 'Supprimer')}
 			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>

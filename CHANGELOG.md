@@ -8,6 +8,30 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.12.1] — Non publié
+
+### Changed
+
+- **Supprimer une facture validée n'est plus possible — il faut la « dévalider » d'abord.** Jusqu'ici, le bouton *Supprimer* d'une facture validée effaçait la facture **et son écriture comptable** d'un seul geste. La destruction d'une écriture était donc un **effet de bord du mot « supprimer »** : rien, dans le vocabulaire de l'écran, ne disait qu'on touchait aux livres.
+
+  Le geste existe toujours, mais il porte désormais son nom. Le bouton **« Dévalider »** repasse la facture en **brouillon**, supprime son écriture, et **conserve son numéro** — en la revalidant, elle reprend *le même*, sans consommer le compteur. Deux sorties s'ouvrent alors : corriger puis revalider, ou supprimer le brouillon.
+
+  **Ce que vous y gagnez** : le cas le plus fréquent — une erreur de saisie repérée après validation — se corrige maintenant **sans émettre un avoir** qui ne correspondrait à aucune réalité commerciale, et **sans perdre le numéro** de la facture.
+
+  ⚠️ **Dévalider est ouvert au Comptable ; effacer reste réservé à l'Administrateur.** L'asymétrie est voulue : dévalider est réversible, effacer ne l'est pas.
+
+  ⚠️ **Un brouillon dévalidé porte déjà un numéro.** Le supprimer laisse un **trou définitif** dans la séquence — le compteur ne redescend pas. Kesh vous le dit dans la fenêtre de confirmation, en nommant le numéro. Ce trou se voit et s'explique ; c'est la *réattribution* qui serait fautive, et elle n'a pas lieu.
+
+- **Huit motifs peuvent refuser une dévalidation, et le refus nomme toujours le sien** : facture réglée — **même partiellement** —, créditée par un avoir, relancée, envoyée au client par Kesh, écriture rapprochée d'une transaction bancaire, exercice clos, écriture contre-passée, période verrouillée. ⚠️ Le refus « envoyée au client » est **sec** : une facture que le client détient se corrige par un **avoir**. Kesh ne connaît toutefois que ce qu'il a envoyé lui-même — un PDF téléchargé puis transmis à la main ne laisse aucune trace.
+
+- **Le journal d'audit compte désormais 124 libellés traduits** (94 actions, 28 types d'entité, 2 types d'acteur), la dévalidation y figurant sous son propre nom.
+
+### Added
+
+- **API — `POST /api/v1/invoices/{id}/unvalidate`**, ouverte aux clés en écriture. Corps `{ "version": n }` (verrou optimiste), réponse identique à celle de la validation. ⚠️ **C'est un élargissement** : jusqu'ici, aucune clé API ne pouvait faire disparaître l'écriture d'une facture. Si cette capacité vous paraît trop large pour une intégration, donnez-lui une clé en *lecture seule*. `DELETE /api/v1/invoices/{id}` rend désormais `409 INVOICE_MUST_BE_UNVALIDATED_FIRST` sur une facture validée.
+
+---
+
 ## [0.12.0] — 2026-09-21
 
 ⚠️ **Cette version n'est pas encore destinée à tenir une comptabilité réelle.** Elle corrige le défaut fondateur du produit — l'encaissement d'une facture ne produisait aucune écriture — et referme les gardes qui rendaient les livres contestables. Mais plusieurs fonctions nécessaires à un exercice complet manquent encore, et l'export de sauvegarde est incomplet. Elle s'installe, elle s'exerce, elle ne tient pas vos livres.

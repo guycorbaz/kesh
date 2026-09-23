@@ -1272,56 +1272,25 @@ pub async fn delete(
         }
         // Brouillon : suppression inchangée (aucune écriture comptable).
         Some(inv) if inv.status == "draft" => inv,
-        // Facture validée (#219) : suppression définitive AVEC garde-fous.
-        // L'écriture comptable liée est supprimée plus bas (après la facture,
-        // car FK `journal_entry_id ON DELETE RESTRICT`), et la garde
-        // exercice-clos est assurée par `journal_entries::delete_in_tx`.
+        // ⛔ **Story 25-2-b-2 (#440) — la suppression ne traite plus QUE les
+        // brouillons.** Le chemin #219 supprimait une facture validée et son
+        // écriture d'un seul geste, sous trois gardes ; la destruction d'une
+        // écriture était donc un **effet de bord du verbe « supprimer »**.
+        //
+        // Le geste existe toujours, mais il se nomme : `unvalidate` repasse la
+        // facture en brouillon, garde son numéro et supprime l'écriture sous
+        // **huit** empêchements — les trois d'ici, plus le règlement partiel,
+        // l'envoi au client, le rapprochement bancaire, la contre-passation et
+        // le verrou de période. ⚠️ Ces trois gardes ne disparaissent donc pas :
+        // elles ont déménagé, et se sont élargies.
+        //
+        // ⚠️ Ce bras rend un code PROPRE, et non le fourre-tout
+        // `IllegalStateTransition` du bras suivant : l'utilisateur doit
+        // apprendre **quel geste** débloque le sien, pas seulement que le sien
+        // est refusé.
         Some(inv) if inv.status == "validated" => {
-            // Garde 1 : facture payée → refus (un règlement/rapprochement
-            // pointerait dans le vide).
-            if inv.paid_at.is_some() {
-                tx.rollback().await.map_err(map_db_error)?;
-                return Err(DbError::IllegalStateTransition(
-                    "impossible de supprimer une facture payée — annuler le règlement d'abord"
-                        .into(),
-                ));
-            }
-            // Garde 2 : facture créditée par un avoir → refus. La FK
-            // `credit_notes.invoice_id ON DELETE RESTRICT` est le backstop en
-            // base ; ce pré-check donne un message métier propre.
-            let credited: Option<(i64,)> =
-                sqlx::query_as("SELECT id FROM credit_notes WHERE invoice_id = ? LIMIT 1")
-                    .bind(id)
-                    .fetch_optional(&mut *tx)
-                    .await
-                    .map_err(map_db_error)?;
-            if credited.is_some() {
-                tx.rollback().await.map_err(map_db_error)?;
-                return Err(DbError::IllegalStateTransition(
-                    "impossible de supprimer une facture créditée par un avoir".into(),
-                ));
-            }
-            // Garde 3 (#260) : facture avec historique de rappels → refus. La FK
-            // `invoice_reminders.invoice_id ON DELETE CASCADE` effacerait sinon
-            // silencieusement la preuve de recouvrement (rappels envoyés au
-            // débiteur). Symétrique aux gardes payée/créditée : la suppression #219
-            // ne doit jamais détruire la piste d'audit débiteur. Pour retirer une
-            // facture erronée déjà relancée, passer par un avoir (contre-passation).
-            let reminded: Option<(i64,)> =
-                sqlx::query_as("SELECT id FROM invoice_reminders WHERE invoice_id = ? LIMIT 1")
-                    .bind(id)
-                    .fetch_optional(&mut *tx)
-                    .await
-                    .map_err(map_db_error)?;
-            if reminded.is_some() {
-                tx.rollback().await.map_err(map_db_error)?;
-                return Err(DbError::IllegalStateTransition(
-                    "impossible de supprimer une facture avec un historique de rappels — \
-                     la suppression effacerait la preuve de recouvrement"
-                        .into(),
-                ));
-            }
-            inv
+            tx.rollback().await.map_err(map_db_error)?;
+            return Err(DbError::InvoiceMustBeUnvalidatedFirst);
         }
         // Tout autre statut (ex. `cancelled`) reste non supprimable.
         Some(inv) => {
@@ -1371,32 +1340,19 @@ pub async fn delete(
         return Err(e);
     }
 
-    // #219 — facture validée : supprimer l'écriture comptable liée DANS la même
-    // transaction (après la facture, car FK `journal_entry_id ON DELETE
-    // RESTRICT`). `delete_in_tx` applique la garde exercice-clos (→
-    // `FiscalYearClosed`, rollback atomique de tout) et journalise
-    // `journal_entry.deleted`. Sur Err, le drop de `tx` rollback la suppression
-    // de la facture aussi.
-    if let Some(je_id) = current.journal_entry_id
-        && let Err(e) =
-            // ⚠️ Story 24-4b (#380) — `enforce_immutability = false`. ⚠️ Ce
-            // n'est plus le seul site du dépôt depuis la 25-2-b-1 (#440) :
-            // `unvalidate` le passe aussi. Ce chemin ne supprime pas une
-            // écriture : il supprime
-            // UNE FACTURE, dont l'écriture part avec elle, sous les trois
-            // gardes ci-dessus (non payée, non créditée, sans rappels). Le
-            // geler retirerait la suppression d'une facture validée (#219) —
-            // une décision de facturation, pas d'écriture.
-            //
-            // ⛔ Le résidu est assumé et tracé : cf. #380 (le gel) et #381 (les
-            // trous de numérotation, que ce chemin continue de creuser).
-            // `delete_in_tx` applique quand même la garde d'exercice clos ET le
-            // refus d'une écriture contre-passée — seul le gel est levé.
-            journal_entries::delete_in_tx(&mut tx, company_id, je_id, user_id, false).await
-    {
-        tx.rollback().await.map_err(map_db_error)?;
-        return Err(e);
-    }
+    // ⛔ **Story 25-2-b-2 (#440) — le bloc qui supprimait l'écriture est PARTI,
+    // et son retrait est la moitié qui compte.** Le bras `validated` du `match`
+    // ci-dessus refuse désormais ; ce bloc-ci vivait **hors** de ce `match`, et
+    // le laisser aurait été inoffensif en apparence — un brouillon n'ayant pas
+    // de `journal_entry_id`, le `if let` ne se serait jamais déclenché. C'est
+    // précisément ce qui le rendait dangereux : **rien n'aurait rougi**, et
+    // `enforce_immutability = false` aurait gardé ici un second appelant
+    // fantôme, prêt à revivre au premier chemin qui rattacherait une écriture
+    // à un brouillon.
+    //
+    // `unvalidate` est désormais le **seul** appelant de production à passer
+    // `false` — et elle, elle ne supprime pas une facture : elle la ramène au
+    // brouillon.
 
     tx.commit().await.map_err(map_db_error)?;
     Ok(())
@@ -3358,11 +3314,18 @@ mod tests {
         cleanup_contacts(&pool, &[contact_id]).await;
     }
 
-    /// #219 — happy path : une facture validée, impayée, en exercice ouvert
-    /// est supprimée définitivement AVEC son écriture comptable liée, et les
-    /// deux suppressions sont audit-loggées.
+    /// ⛔ **Le test du SUCCÈS est devenu le test du REFUS** (Story 25-2-b-2,
+    /// #440) — et il est **renommé**, ce qui n'est pas cosmétique :
+    /// `…_removes_invoice_and_je` affirmerait un résultat que ce test ne mesure
+    /// plus. *Un nom qui affirme l'ancien résultat est un test muet.*
+    ///
+    /// Après cette story, **aucun succès n'existe plus sur ce chemin** : une
+    /// facture validée se dévalide d'abord. Ce que le test garde de son état
+    /// d'avant, c'est le contrôle que **rien n'a bougé** — ni la facture, ni
+    /// son écriture : un refus qui détruirait à moitié serait pire que le
+    /// chemin retiré.
     #[tokio::test]
-    async fn test_delete_validated_unpaid_open_fy_removes_invoice_and_je() {
+    async fn test_delete_validated_requires_unvalidate_first() {
         let pool = test_pool().await;
         let company_id = get_company_id(&pool).await;
         let admin_user_id = get_admin_user_id(&pool).await;
@@ -3379,264 +3342,53 @@ mod tests {
         )
         .await;
 
-        delete(&pool, company_id, id, admin_user_id).await.unwrap();
-
-        // La facture a disparu.
-        let inv: Option<(i64,)> = sqlx::query_as("SELECT id FROM invoices WHERE id = ?")
-            .bind(id)
-            .fetch_optional(&pool)
+        let err = delete(&pool, company_id, id, admin_user_id)
             .await
-            .unwrap();
-        assert!(inv.is_none(), "la facture validée doit être supprimée");
+            .unwrap_err();
 
-        // L'écriture comptable liée a disparu (livres équilibrés, pas d'orphelin).
+        // ⛔ Un code PROPRE, et non le fourre-tout `IllegalStateTransition` :
+        // l'utilisateur doit apprendre QUEL geste débloque le sien.
+        assert!(
+            matches!(err, DbError::InvoiceMustBeUnvalidatedFirst),
+            "attendu InvoiceMustBeUnvalidatedFirst, obtenu {err:?}"
+        );
+
+        // La facture est intacte, et toujours validée.
+        let inv: Option<(String, Option<i64>)> =
+            sqlx::query_as("SELECT status, journal_entry_id FROM invoices WHERE id = ?")
+                .bind(id)
+                .fetch_optional(&pool)
+                .await
+                .unwrap();
+        let (statut, je_lie) = inv.expect("la facture ne doit PAS être supprimée");
+        assert_eq!(statut, "validated");
+        assert_eq!(je_lie, Some(je_id), "le lien vers l'écriture est intact");
+
+        // L'écriture comptable est intacte, elle aussi.
         let je: Option<(i64,)> = sqlx::query_as("SELECT id FROM journal_entries WHERE id = ?")
             .bind(je_id)
             .fetch_optional(&pool)
             .await
             .unwrap();
-        assert!(
-            je.is_none(),
-            "l'écriture comptable liée doit être supprimée"
-        );
+        assert!(je.is_some(), "l'écriture ne doit PAS être supprimée");
 
-        // Les deux suppressions sont tracées.
+        // Et rien n'est tracé : un refus n'est pas un geste.
         let inv_audit = audit_log::find_by_entity(&pool, "invoice", id, 10)
             .await
             .unwrap();
         assert!(
-            inv_audit.iter().any(|e| e.action == "invoice.deleted"),
-            "audit invoice.deleted attendu"
-        );
-        let je_audit = audit_log::find_by_entity(&pool, "journal_entry", je_id, 10)
-            .await
-            .unwrap();
-        assert!(
-            je_audit.iter().any(|e| e.action == "journal_entry.deleted"),
-            "audit journal_entry.deleted attendu"
+            !inv_audit.iter().any(|e| e.action == "invoice.deleted"),
+            "aucun `invoice.deleted` ne doit être journalisé sur un refus"
         );
 
-        cleanup_contacts(&pool, &[contact_id]).await;
-    }
-
-    /// #219 garde 1 — une facture validée **payée** refuse la suppression
-    /// (un règlement pointerait dans le vide). Rien n'est supprimé.
-    #[tokio::test]
-    async fn test_delete_validated_paid_is_rejected() {
-        let pool = test_pool().await;
-        let company_id = get_company_id(&pool).await;
-        let admin_user_id = get_admin_user_id(&pool).await;
-        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
-
-        let (id, _v, je_id) = create_and_validate(
-            &pool,
-            company_id,
-            admin_user_id,
-            contact_id,
-            today(),
-            None,
-            dec!(10.00),
-        )
-        .await;
-        sqlx::query("UPDATE invoices SET paid_at = ? WHERE id = ?")
-            .bind(chrono::Utc::now().naive_utc())
-            .bind(id)
-            .execute(&pool)
+        // Nettoyage : la facture ne part qu'une fois dévalidée — ce qui vérifie
+        // au passage que le chemin de sortie annoncé par le refus existe.
+        unvalidate(&pool, company_id, id, admin_user_id, 2)
             .await
-            .unwrap();
-
-        let err = delete(&pool, company_id, id, admin_user_id)
+            .expect("la dévalidation est le chemin que le refus désigne");
+        delete(&pool, company_id, id, admin_user_id)
             .await
-            .unwrap_err();
-        assert!(matches!(err, DbError::IllegalStateTransition(_)));
-
-        // Rollback atomique : facture + écriture toujours présentes.
-        let inv: Option<(i64,)> = sqlx::query_as("SELECT id FROM invoices WHERE id = ?")
-            .bind(id)
-            .fetch_optional(&pool)
-            .await
-            .unwrap();
-        assert!(inv.is_some(), "facture payée non supprimée");
-
-        cleanup_invoices(&pool, &[id]).await;
-        cleanup_journal_entries(&pool, &[je_id]).await;
-        cleanup_contacts(&pool, &[contact_id]).await;
-    }
-
-    /// #219 garde CO 958f — une facture validée dont l'écriture est dans un
-    /// exercice **clos** refuse la suppression. Rien n'est supprimé.
-    #[tokio::test]
-    async fn test_delete_validated_in_closed_fy_is_rejected() {
-        let pool = test_pool().await;
-        let company_id = get_company_id(&pool).await;
-        let admin_user_id = get_admin_user_id(&pool).await;
-        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
-
-        let (inv, _) = create(
-            &pool,
-            admin_user_id,
-            NewInvoice {
-                company_id,
-                contact_id,
-                date: today(),
-                due_date: None,
-                payment_terms: None,
-                lines: vec![sample_line("X", dec!(1), dec!(10.00))],
-                project_id: None,
-            },
-        )
-        .await
-        .unwrap();
-
-        // Exercice clos dédié + écriture stub liée.
-        let res = sqlx::query(
-            "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
-             VALUES (?, 'Closed219', '2019-01-01', '2019-12-31', 'Closed')",
-        )
-        .bind(company_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-        let closed_fy = res.last_insert_id() as i64;
-        let je_id = insert_stub_journal_entry(&pool, company_id, closed_fy).await;
-        sqlx::query(
-            "UPDATE invoices SET status = 'validated', journal_entry_id = ?, \
-             version = version + 1 WHERE id = ?",
-        )
-        .bind(je_id)
-        .bind(inv.id)
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        let err = delete(&pool, company_id, inv.id, admin_user_id)
-            .await
-            .unwrap_err();
-        assert!(matches!(err, DbError::FiscalYearClosed));
-
-        // Rollback atomique : facture toujours présente.
-        let still: Option<(i64,)> = sqlx::query_as("SELECT id FROM invoices WHERE id = ?")
-            .bind(inv.id)
-            .fetch_optional(&pool)
-            .await
-            .unwrap();
-        assert!(still.is_some(), "facture en exercice clos non supprimée");
-
-        cleanup_invoices(&pool, &[inv.id]).await;
-        cleanup_journal_entries(&pool, &[je_id]).await;
-        // Story 25-2-c (#381) — le compteur de numéros d'écriture référence
-        // l'exercice (FK RESTRICT). ⚠️ Sans ce nettoyage, la suppression
-        // ci-dessous n'ÉCHOUE PAS : son `.ok()` avale l'erreur et laisse
-        // l'exercice clos en base. Pas de rouge, un RÉSIDU — et c'est le gate
-        // suivant qui le paie, sur un module que la branche ne touche pas
-        // (KF-039).
-        sqlx::query("DELETE FROM journal_entry_number_sequences WHERE fiscal_year_id = ?")
-            .bind(closed_fy)
-            .execute(&pool)
-            .await
-            .ok();
-        sqlx::query("DELETE FROM fiscal_years WHERE id = ?")
-            .bind(closed_fy)
-            .execute(&pool)
-            .await
-            .ok();
-        cleanup_contacts(&pool, &[contact_id]).await;
-    }
-
-    /// #219 garde avoir — une facture validée **créditée par un avoir** refuse
-    /// la suppression (pré-check métier avant le backstop FK RESTRICT).
-    #[tokio::test]
-    async fn test_delete_validated_credited_by_avoir_is_rejected() {
-        let pool = test_pool().await;
-        let company_id = get_company_id(&pool).await;
-        let admin_user_id = get_admin_user_id(&pool).await;
-        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
-
-        let (id, _v, je_id) = create_and_validate(
-            &pool,
-            company_id,
-            admin_user_id,
-            contact_id,
-            today(),
-            None,
-            dec!(10.00),
-        )
-        .await;
-        let cn = sqlx::query(
-            "INSERT INTO credit_notes (company_id, contact_id, invoice_id, status, date) \
-             VALUES (?, ?, ?, 'draft', CURDATE())",
-        )
-        .bind(company_id)
-        .bind(contact_id)
-        .bind(id)
-        .execute(&pool)
-        .await
-        .unwrap();
-        let cn_id = cn.last_insert_id() as i64;
-
-        let err = delete(&pool, company_id, id, admin_user_id)
-            .await
-            .unwrap_err();
-        assert!(matches!(err, DbError::IllegalStateTransition(_)));
-
-        // Cleanup : l'avoir référence la facture (RESTRICT) → le supprimer d'abord.
-        sqlx::query("DELETE FROM credit_notes WHERE id = ?")
-            .bind(cn_id)
-            .execute(&pool)
-            .await
-            .ok();
-        cleanup_invoices(&pool, &[id]).await;
-        cleanup_journal_entries(&pool, &[je_id]).await;
-        cleanup_contacts(&pool, &[contact_id]).await;
-    }
-
-    /// #260 garde rappels — une facture validée avec un **historique de rappels**
-    /// (`invoice_reminders`) refuse la suppression : la FK `ON DELETE CASCADE`
-    /// effacerait sinon la preuve de recouvrement. Symétrique payée/créditée.
-    #[tokio::test]
-    async fn test_delete_validated_with_reminders_is_rejected() {
-        let pool = test_pool().await;
-        let company_id = get_company_id(&pool).await;
-        let admin_user_id = get_admin_user_id(&pool).await;
-        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
-
-        let (id, _v, je_id) = create_and_validate(
-            &pool,
-            company_id,
-            admin_user_id,
-            contact_id,
-            today(),
-            None,
-            dec!(10.00),
-        )
-        .await;
-        sqlx::query(
-            "INSERT INTO invoice_reminders \
-             (company_id, invoice_id, level_number, fee_amount, sent_at, channel, subject, body) \
-             VALUES (?, ?, 1, 0.00, NOW(6), 'email', 'Rappel 1', 'Corps du rappel')",
-        )
-        .bind(company_id)
-        .bind(id)
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        let err = delete(&pool, company_id, id, admin_user_id)
-            .await
-            .unwrap_err();
-        assert!(matches!(err, DbError::IllegalStateTransition(_)));
-
-        // Rollback atomique : facture toujours présente (rien n'a CASCADE).
-        let inv: Option<(i64,)> = sqlx::query_as("SELECT id FROM invoices WHERE id = ?")
-            .bind(id)
-            .fetch_optional(&pool)
-            .await
-            .unwrap();
-        assert!(inv.is_some(), "facture relancée non supprimée");
-
-        // Cleanup : DELETE brut (hors garde) → le rappel CASCADE avec la facture.
-        cleanup_invoices(&pool, &[id]).await;
-        cleanup_journal_entries(&pool, &[je_id]).await;
+            .expect("un brouillon se supprime");
         cleanup_contacts(&pool, &[contact_id]).await;
     }
 
@@ -4005,14 +3757,68 @@ mod tests {
     /// test (idempotent). Crée aussi un `journal_entries` stub et bascule
     /// l'invoice en `validated` avec la FK — nécessaire pour satisfaire la
     /// CHECK `chk_invoices_validated_has_je` (Story 5.2 mig 20260417000002).
+    /// ⛔ **Rouvre l'exercice qu'elle rend, et ce n'est pas une commodité.**
+    ///
+    /// Ces tests tournent sur une base **partagée et persistante**, et plusieurs
+    /// d'entre eux ferment cet exercice-là pour éprouver la garde
+    /// `FiscalYearClosed`, puis le rouvrent **après** leurs assertions. Qu'une
+    /// assertion panique — une mutation de contrôle, une régression — et la
+    /// réouverture ne s'exécute jamais : l'exercice reste `Closed`, et **tous**
+    /// les tests suivants qui valident une facture rougissent, sur un module
+    /// que la branche ne touche pas. C'est **KF-039** (#310), et c'est arrivé
+    /// pendant le développement de la 25-2-b-2.
+    ///
+    /// Le nettoyage confié à l'appelant ne survit pas à son propre échec. Le
+    /// remettre **ici**, au montage, le rend inconditionnel — comme le
+    /// `setup()` de `journal_entries::tests` efface toute borne de période
+    /// laissée derrière. *Un résidu se neutralise là où on le lit, pas là où on
+    /// l'a créé.*
+    ///
+    /// ⛔ **ET ELLE LE DIT — la réparation est BAVARDE, délibérément.** Muette,
+    /// elle désarmerait la réparation jumelle de `journal_entries::tests` :
+    /// `ensure_open_fiscal_year` ne purge les écritures, le compteur et
+    /// l'exercice **que** s'il le trouve `Closed`, et retourne sans rien faire
+    /// dès qu'il est `Open`. Rouvrir en silence ferait donc sauter sa purge —
+    /// deux résidus survivraient, et **le seul symptôme qui trahissait la mort
+    /// d'un run aurait disparu**. *On aurait échangé un rouge diagnosticable
+    /// contre un vert trompeur.* Un run qui a dû réparer doit le dire.
+    ///
+    /// ⚠️ **Constat daté, non garantie** : au 2026-09-23, aucun appelant ne
+    /// ferme l'exercice puis ne rappelle ce montage — les deux seules
+    /// fermetures du module le font **après** `create_and_validate`. Rien ne
+    /// l'impose, et un futur test qui inverserait cet ordre verrait sa
+    /// fermeture annulée sous lui. Il échouerait bruyamment — le refus attendu
+    /// n'arriverait pas —, mais le diagnostic partirait du mauvais bout.
     async fn ensure_fiscal_year(pool: &MySqlPool, company_id: i64) -> i64 {
         if let Some((id,)) =
-            sqlx::query_as::<_, (i64,)>("SELECT id FROM fiscal_years WHERE company_id = ? LIMIT 1")
-                .bind(company_id)
-                .fetch_optional(pool)
-                .await
-                .unwrap()
+            // ⚠️ `ORDER BY id` : la lecture non déterministe était sans
+            // conséquence, l'ÉCRITURE qui la suit en a une. Un second exercice
+            // sur cette société — aucun montage n'en crée aujourd'hui — ferait
+            // sinon rouvrir l'un d'eux au hasard.
+            sqlx::query_as::<_, (i64,)>(
+                "SELECT id FROM fiscal_years WHERE company_id = ? ORDER BY id LIMIT 1",
+            )
+            .bind(company_id)
+            .fetch_optional(pool)
+            .await
+            .unwrap()
         {
+            let repare = sqlx::query(
+                "UPDATE fiscal_years SET status = 'Open' WHERE id = ? AND status <> 'Open'",
+            )
+            .bind(id)
+            .execute(pool)
+            .await
+            .unwrap()
+            .rows_affected();
+            if repare == 1 {
+                eprintln!(
+                    "⚠️  ensure_fiscal_year : exercice {id} trouvé CLOS et rouvert — un run \
+                     précédent est mort avant son nettoyage (KF-039). Des écritures et une ligne \
+                     de `journal_entry_number_sequences` peuvent subsister : reconstruire la base \
+                     avant de diagnostiquer un rouge."
+                );
+            }
             return id;
         }
         let res = sqlx::query(
@@ -4636,6 +4442,66 @@ mod tests {
     /// `AND version = ?`, si bien qu'un conflit ressort même sans le contrôle
     /// initial. Retirer celui-ci ne faisait rougir aucun test — mutation jouée,
     /// survécue, d'où celui-ci.
+    /// Le motif **5**, et il n'était asserté NULLE PART sur le chemin facture.
+    ///
+    /// ⛔ La 25-2-b-2 supprime `test_delete_validated_in_closed_fy_is_rejected`
+    /// au motif que la b-1 en reprend la propriété. Elle ne la reprenait pas :
+    /// la fiche avait vérifié que la contrepartie était **prescrite**, non
+    /// qu'elle **existait**. Le test de précédence pose bien un exercice clos,
+    /// mais il assert que le **rappel** parle avant — donc il n'établit jamais
+    /// que l'exercice clos, seul, refuse.
+    ///
+    /// *Une couverture qu'on supprime au nom d'un équivalent qui n'existe pas
+    /// disparaît sans que rien ne rougisse.*
+    #[tokio::test]
+    async fn devalider_refuse_un_exercice_clos() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        let contact_id = create_test_contact(&pool, company_id, admin_user_id).await;
+        let (id, v, je_id) = create_and_validate(
+            &pool,
+            company_id,
+            admin_user_id,
+            contact_id,
+            NaiveDate::from_ymd_opt(2026, 3, 6).unwrap(),
+            None,
+            dec!(100),
+        )
+        .await;
+        // ⚠️ Aucun empêchement d'`unvalidate` n'est posé : sans cela, l'un des
+        // motifs 1 à 4 ou 7 parlerait avant et le test certifierait un autre
+        // refus que celui qu'il annonce.
+        let fy_id: i64 =
+            sqlx::query_scalar("SELECT fiscal_year_id FROM journal_entries WHERE id = ?")
+                .bind(je_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+            .bind(fy_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let (r, statut, _, ecriture_restante) =
+            devalider(&pool, company_id, id, admin_user_id, v, je_id).await;
+
+        assert!(
+            matches!(r, Err(DbError::FiscalYearClosed)),
+            "attendu FiscalYearClosed, obtenu {r:?}"
+        );
+        assert_eq!(statut, "validated", "le refus ne doit RIEN changer");
+        assert!(ecriture_restante);
+
+        sqlx::query("UPDATE fiscal_years SET status = 'Open' WHERE id = ?")
+            .bind(fy_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        nettoyer_facture(&pool, id, je_id).await;
+    }
+
     /// Le motif **6** vit dans `delete_in_tx`, pas dans `unvalidate` : rien ne
     /// prouverait qu'il **remonte** si aucun test ne le traversait par la
     /// dévalidation. Le test de précédence, lui, montre l'inverse — un

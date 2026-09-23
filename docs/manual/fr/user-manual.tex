@@ -464,7 +464,7 @@ Le \textbf{verrou de période} ferme cela. Dans \emph{Réglages} $\rightarrow$ \
 période}, indiquez une date~: «~les écritures jusqu'au 31 mars 2026 inclus sont verrouillées~». Aucune écriture ne pourra plus y être datée, \textbf{par aucun chemin} ---
 ni la saisie manuelle, ni la validation d'une facture antérieure, ni un rapprochement bancaire.
 Et aucune écriture déjà passée dans la période ne pourra plus en \textbf{disparaître}~: la
-suppression d'une facture validée, qui emporte son écriture, est refusée si cette écriture est
+\textbf{dévalidation} d'une facture, qui emporte son écriture, est refusée si cette écriture est
 datée d'une période verrouillée.
 
 \begin{keshtip}[title={\faLightbulb\ Deux gestes, deux exigences différentes}]
@@ -537,9 +537,8 @@ Jusqu'à cette version, ce numéro était repris~: une écriture au contenu tout
 portait alors un numéro déjà employé, \textbf{sans aucun message et sans trace visible}.
 
 \textbf{Cette numérotation peut en revanche comporter des trous}, et c'est assumé. Une
-écriture ne se supprime plus, mais il subsiste un chemin qui en creuse~: la suppression
-définitive d'une facture validée, qui emporte son écriture (voir «~Supprimer une
-facture~»). \emph{Un trou se voit et s'explique} --- le journal d'audit nomme ce qui a été
+écriture ne se supprime plus, mais il subsiste un chemin qui en creuse~: la \textbf{dévalidation}
+d'une facture, qui emporte son écriture (voir «~Supprimer ou dévalider une facture~»). \emph{Un trou se voit et s'explique} --- le journal d'audit nomme ce qui a été
 supprimé, quand et par qui. C'est la réattribution, elle, qui ne se voyait pas~; le combler
 exigerait de renuméroter des écritures existantes, ce qu'une comptabilité ne fait pas.
 
@@ -778,7 +777,7 @@ dans la recherche. La forme imprimée sur les documents officiels,
 Une facture passe par trois états :
 
 \begin{enumerate}
-    \item \textbf{Brouillon} : modification libre, pas de numéro définitif, n'apparaît pas dans les rapports.
+    \item \textbf{Brouillon} : modification libre, n'apparaît pas dans les rapports. Un brouillon n'a en général \emph{pas} de numéro --- sauf s'il vient d'être \textbf{dévalidé}, auquel cas il \textbf{conserve} celui qu'il portait, et le reprendra à la revalidation (cf. \S\ref{sec:suppression-facture}).
     \item \textbf{Validée} : numéro définitif attribué, PDF QR Bill généré, écriture comptable créée automatiquement (Débit 1100 Débiteurs / Crédit 3000 Ventes + 2200 TVA), et \textbf{comptes de produit figés}. Une facture validée n'est plus modifiable : le compte de chaque ligne reste néanmoins \textbf{consultable} dans la colonne « Compte de produit » de l'écran de détail, où les lignes suivant le compte par défaut de la société l'affichent avec la mention \emph{(défaut)}. C'est le moyen de contrôler la ventilation sans avoir à ouvrir l'écriture comptable et à la relire à l'envers.
     \item \textbf{Payée} : marquée comme payée après réconciliation avec une transaction bancaire entrante.
 \end{enumerate}
@@ -834,7 +833,7 @@ Le numéro de facture est généré automatiquement selon un pattern configurabl
 \begin{itemize}
     \item Pattern par défaut : \texttt{F-AAAA-NNNN} (ex. F-2026-0042).
     \item Patterns alternatifs : \texttt{INV-AAAAMM-NNN}, \texttt{F\{company\_id\}-AAAA-NNNN}, etc.
-    \item La numérotation est strictement séquentielle dans un exercice (CO Art. 957a al. 2 ch. 5 « traçabilité »).
+    \item La numérotation est séquentielle dans un exercice (CO Art. 957a al. 2 ch. 5 « traçabilité ») : les numéros sont attribués dans l'ordre et \textbf{jamais réattribués}. Elle peut en revanche comporter des \textbf{trous} --- supprimer un brouillon déjà numéroté en laisse un, le compteur ne redescendant pas. Un trou se voit et s'explique ; c'est la réattribution qui serait fautive, et elle n'a pas lieu.
     \item L'attribution du numéro se fait dans une transaction DB \texttt{SERIALIZABLE} pour garantir l'unicité même en cas de validations concurrentes.
 \end{itemize}
 
@@ -966,7 +965,7 @@ Une facture suspendue \textbf{reste dans l'échéancier et la balance âgée} �
 \subsection{Avoirs et notes de crédit}
 \label{sec:avoirs}
 
-Un avoir (note de crédit) annule une facture validée : c'est le moyen \textbf{correct} d'annuler une facture \emph{réellement émise} et déjà comptabilisée — l'écriture d'origine reste intacte (principe d'intangibilité comptable). Pour une facture validée \emph{par erreur} (jamais envoyée, ou créée pour un essai), une suppression définitive encadrée est également possible : voir \S\ref{sec:suppression-facture}. Pour créer un avoir, ouvrez la facture validée concernée et cliquez sur \textbf{« Créer un avoir »} (réservé aux rôles \emph{Comptable} et \emph{Administrateur}). En une seule étape, Kesh :
+Un avoir (note de crédit) annule une facture validée : c'est le moyen \textbf{correct} d'annuler une facture \emph{réellement émise} et déjà comptabilisée — l'écriture d'origine reste intacte (principe d'intangibilité comptable). Pour une facture validée \emph{par erreur} (jamais envoyée, ou créée pour un essai), il faut la \textbf{dévalider} d'abord --- elle redevient alors un brouillon, que l'on corrige ou que l'on supprime : voir \S\ref{sec:suppression-facture}. Pour créer un avoir, ouvrez la facture validée concernée et cliquez sur \textbf{« Créer un avoir »} (réservé aux rôles \emph{Comptable} et \emph{Administrateur}). En une seule étape, Kesh :
 
 \begin{itemize}
     \item crée un avoir reprenant toutes les lignes de la facture, avec son propre numéro issu d'une séquence dédiée (par défaut \keshcommand{AV-2026-0001}, configurable dans \emph{Paramètres → Facturation}) ;
@@ -1000,31 +999,81 @@ Deux précisions utiles. D'abord, la réactivation peut elle-même être refusé
 En version actuelle, l'avoir est \textbf{total} (il annule la facture entière). L'avoir \emph{partiel} et le remboursement d'une facture \emph{déjà encaissée} (un avoir est refusé sur une facture marquée payée) sont prévus pour une version ultérieure. Les paiements sortants par fichier \texttt{pain.001.001.09} sont, eux, \textbf{disponibles} (cf. \S\ref{sec:paiements-fournisseurs}).
 \end{keshnote}
 
-\subsection{Supprimer une facture}
+\subsection{Supprimer ou dévalider une facture}
 \label{sec:suppression-facture}
 
-Une facture \textbf{brouillon} peut être supprimée librement (aucune écriture, aucun numéro définitif n'a encore été émis) : bouton \textbf{« Supprimer »} sur la fiche de la facture.
+Une facture \textbf{brouillon} se supprime librement, par le bouton \textbf{« Supprimer »} de sa
+fiche ou depuis la liste des factures. Cette suppression est réservée à l'\emph{Administrateur}.
 
-Depuis la version 0.5.2, un \emph{Administrateur} peut aussi supprimer \textbf{définitivement} une facture \textbf{validée}. Cette opération efface la facture \emph{et} son écriture comptable liée, en une seule transaction atomique (les livres restent équilibrés, sans écriture orpheline). Elle est destinée à \textbf{corriger une validation par erreur} ou à \textbf{purger des factures d'essai} — et non à annuler une facture réellement émise à un client, pour laquelle l'\textbf{avoir} reste la voie correcte (cf. \S\ref{sec:avoirs}).
+\begin{keshwarning}
+\textbf{Un brouillon peut déjà porter un numéro} --- c'est le cas d'une facture que vous venez de
+\emph{dévalider} (voir ci-dessous). Le supprimer laisse alors un \textbf{trou définitif} dans la
+séquence de numérotation~: le compteur ne redescend pas. Kesh vous le dit dans la fenêtre de
+confirmation, en nommant le numéro concerné.
 
-Parce qu'elle est irréversible, la suppression d'une facture validée exige une \textbf{confirmation forte} : vous devez \emph{retaper le numéro de facture} pour armer le bouton de suppression.
+Ce trou est \textbf{assumé} et sans gravité~: il se voit et s'explique. Ce qui serait grave, c'est
+la \emph{réattribution} --- deux factures différentes portant le même numéro ---, et elle n'a pas
+lieu.
+\end{keshwarning}
 
-Kesh \textbf{refuse} la suppression dans les cas suivants, pour préserver la cohérence comptable :
+\medskip
+\noindent\textbf{Une facture validée, elle, ne se supprime plus.} Elle se \textbf{dévalide}
+d'abord.
+
+Le bouton \textbf{« Dévalider »} de la fiche (rôles \emph{Comptable} et \emph{Administrateur})
+repasse la facture en brouillon et \textbf{supprime son écriture comptable}, en une seule
+transaction. Trois effets, que la fenêtre de confirmation rappelle~:
 
 \begin{itemize}
-    \item facture \textbf{marquée payée} : annulez d'abord le règlement (un paiement rapproché ne doit pas pointer dans le vide) ;
-    \item facture déjà \textbf{créditée par un avoir} : l'avoir référence la facture, qui ne peut donc plus disparaître ;
-    \item facture ayant un \textbf{historique de rappels} : la supprimer effacerait la preuve du recouvrement ;
-    \item facture dont l'écriture est datée d'une \textbf{période verrouillée} (cf. \S\ref{sec:verrou-periode}) : la supprimer changerait les totaux d'une période déjà déclarée ;
-    \item facture dont l'écriture appartient à un \textbf{exercice clos} : la \textbf{suppression} est refusée — une facture d'un exercice clos ne peut jamais être supprimée. ⚠️ \textbf{En revanche, un avoir peut encore l'annuler} : seul l'exercice de l'\emph{avoir} est contrôlé, pas celui de la facture. Le statut de la facture bascule alors, et le décompte TVA de la période close s'en trouve modifié. L'intangibilité des périodes clôturées (CO art.~958f) n'est donc \textbf{pas} entièrement préservée sur ce chemin.
+    \item l'\textbf{écriture comptable} de la facture est supprimée~;
+    \item la facture redevient un \textbf{brouillon}, modifiable~;
+    \item son \textbf{numéro est conservé}. En la revalidant, elle reprendra \emph{le même} --- le
+          compteur n'est pas consommé une seconde fois.
+\end{itemize}
+
+Deux sorties s'ouvrent alors, et c'est tout l'intérêt du geste~: \textbf{corriger puis revalider}
+--- la facture retrouve son numéro et une écriture neuve ---, ou \textbf{supprimer} le brouillon.
+
+\begin{keshtip}[title={\faLightbulb\ Pourquoi deux gestes plutôt qu'un}]
+Jusqu'à la version 0.12, supprimer une facture validée effaçait son écriture comptable \emph{par
+effet de bord} du mot « supprimer ». La destruction d'une écriture mérite d'être nommée~: c'est ce
+que fait la dévalidation. Le geste est explicite, il est \textbf{journalisé sous son propre nom}
+dans le journal d'audit, et il laisse la facture en place --- on peut la relire avant de décider.
+\end{keshtip}
+
+Kesh \textbf{refuse} la dévalidation dans les cas suivants, pour préserver la cohérence comptable.
+Le refus \textbf{nomme toujours son motif}~:
+
+\begin{itemize}
+    \item facture \textbf{réglée}, même \textbf{partiellement}~: annulez d'abord le règlement, un
+          paiement rapproché ne devant pas pointer dans le vide~;
+    \item facture déjà \textbf{créditée par un avoir}~: l'avoir référence la facture, et il
+          \emph{est} déjà la correction~;
+    \item facture ayant un \textbf{historique de rappels}~: la dévalider effacerait la preuve du
+          recouvrement~;
+    \item facture \textbf{envoyée au client} par Kesh~: refus \textbf{sec}, que rien ne lève. Une
+          facture que le client détient se corrige par un \textbf{avoir} (\S\ref{sec:avoirs}).
+          ⚠️ Kesh ne connaît que ce qu'il a envoyé lui-même~: un PDF téléchargé puis transmis à la
+          main ne laisse aucune trace~;
+    \item écriture \textbf{rapprochée} d'une transaction bancaire~;
+    \item écriture d'un \textbf{exercice clos}~;
+    \item écriture déjà \textbf{contre-passée}~;
+    \item écriture datée d'une \textbf{période verrouillée} (cf. \S\ref{sec:verrou-periode})~: la
+          supprimer changerait les totaux d'une période déjà déclarée.
 \end{itemize}
 
 \begin{keshnote}
-Toute suppression (brouillon ou validée) est \textbf{journalisée dans l'audit-trail} : Kesh conserve qui a supprimé quoi et quand, ainsi qu'un instantané du contenu effacé — la trace subsiste même après la disparition de la facture.
+Toute dévalidation et toute suppression sont \textbf{journalisées dans l'audit-trail}~: Kesh
+conserve qui a fait quoi et quand, ainsi qu'un instantané du contenu concerné --- la trace subsiste
+même après la disparition de la facture.
 \end{keshnote}
 
 \begin{keshtip}
-\textbf{Avoir ou suppression ?} Si la facture a été \emph{envoyée au client} ou concerne un exercice déjà déclaré, utilisez un \textbf{avoir} (\S\ref{sec:avoirs}) : l'historique reste complet. Réservez la \textbf{suppression} aux erreurs de saisie et aux essais qui n'auraient jamais dû être validés, tant que l'exercice est encore ouvert et la facture ni payée ni créditée.
+\textbf{Avoir ou dévalidation ?} Si la facture a été \emph{envoyée au client}, ou si elle appartient
+à un exercice déjà déclaré, utilisez un \textbf{avoir} (\S\ref{sec:avoirs})~: l'historique reste
+complet, et c'est la voie que la loi attend. Réservez la \textbf{dévalidation} aux erreurs de saisie
+et aux essais qui n'auraient jamais dû être validés --- tant que l'exercice est ouvert et la facture
+ni réglée, ni créditée, ni partie chez le client.
 \end{keshtip}
 
 %%─────────────────────────────────────────────────────────────────────────────

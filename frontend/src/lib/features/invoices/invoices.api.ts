@@ -69,6 +69,21 @@ export async function validateInvoice(id: number): Promise<InvoiceResponse> {
 	return apiClient.post(`/api/v1/invoices/${id}/validate`, {});
 }
 
+/**
+ * Dévalide une facture (Story 25-2-b-1, #440) : elle repasse en brouillon,
+ * **garde son numéro**, et son écriture comptable est supprimée.
+ *
+ * ⚠️ Prend un `version` là où {@link validateInvoice} ne prend aucun corps :
+ * la dévalidation porte le verrou optimiste. Rend la facture à jour, lignes
+ * comprises — l'appelant n'a pas à la relire.
+ */
+export async function unvalidateInvoice(
+	id: number,
+	version: number,
+): Promise<InvoiceResponse> {
+	return apiClient.post(`/api/v1/invoices/${id}/unvalidate`, { version });
+}
+
 export async function getInvoiceSettings(): Promise<InvoiceSettingsResponse> {
 	return apiClient.get('/api/v1/company/invoice-settings');
 }

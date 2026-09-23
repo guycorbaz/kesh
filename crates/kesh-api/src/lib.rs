@@ -231,8 +231,10 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             put(routes::dunning_levels::update_dunning_level)
                 .delete(routes::dunning_levels::delete_dunning_level),
         )
-        // #219 : suppression définitive d'une facture (brouillon ou validée
-        // avec garde-fous) — Admin uniquement. Même path que le PUT
+        // #219, restreint par #440 : le DELETE ne traite plus QUE les
+        // brouillons — une facture validée se dévalide d'abord, et rend sinon
+        // `409 INVOICE_MUST_BE_UNVALIDATED_FIRST`. Admin uniquement : effacer
+        // reste réservé, là où dévaliser est ouvert au Comptable. Même path que le PUT
         // (comptable_routes) mais méthode disjointe : les deux MethodRouter
         // fusionnent au merge sans conflit.
         .route(
@@ -413,8 +415,10 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             put(routes::products::archive_product),
         )
         // Story 5.1 : mutations factures brouillon (PUT Comptable+).
-        // #219 : le DELETE d'une facture (brouillon ou validée) est réservé
-        // Admin — enregistré dans `admin_routes` (même path, méthode disjointe,
+        // #219, restreint par #440 : le DELETE d'une facture — **brouillon
+        // seulement** désormais — est réservé Admin. L'asymétrie est voulue :
+        // dévaliser est réversible et ouvert au Comptable, effacer ne l'est pas.
+        // Enregistré dans `admin_routes` (même path, méthode disjointe,
         // mergé sans conflit, cf. pattern vat-rates GET/POST).
         .route("/api/v1/invoices", post(routes::invoices::create_invoice))
         .route(

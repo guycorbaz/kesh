@@ -250,7 +250,9 @@ Corps : `{ "version": n }` — le verrou optimiste. Réponse : la facture, même
 
 ⚠️ **Un brouillon qui porte déjà un numéro ne change pas d'exercice** : `PUT /invoices/{id}` refuse une date hors de l'exercice qui a émis le numéro (`INVOICE_NUMBER_FISCAL_YEAR_MISMATCH`, `409`).
 
-² **Deux opérations sur les factures sont réservées à l'interface web** : `DELETE /invoices/{id}` (suppression définitive) et `POST /invoices/{id}/reminders/{reminderId}/cancel` (annulation d'un rappel) sont des routes d'administration, donc fermées aux clés (`403 API_KEY_ADMIN_FORBIDDEN`, cf. §4). Tout le reste du cycle de facturation reste ouvert.
+² **Deux opérations sur les factures sont réservées à l'interface web** : `DELETE /invoices/{id}` et `POST /invoices/{id}/reminders/{reminderId}/cancel` (annulation d'un rappel) sont des routes d'administration, donc fermées aux clés (`403 API_KEY_ADMIN_FORBIDDEN`, cf. §4). Tout le reste du cycle de facturation reste ouvert.
+
+⚠️ **`DELETE /invoices/{id}` ne supprime plus que des BROUILLONS.** Sur une facture validée, elle rend `409 INVOICE_MUST_BE_UNVALIDATED_FIRST` : dévalidez-la d'abord (`POST /invoices/{id}/unvalidate`, ci-dessous), ce qui la ramène au brouillon et supprime son écriture comptable. **Cette route-là, elle, est ouverte aux clés en écriture** — l'asymétrie est voulue : dévalider est un geste de facturation réversible, effacer ne l'est pas.
 
 ³ **Changer le `accountType` d'un compte qui porte des écritures exige une
 confirmation explicite.** Sans elle, `PUT /accounts/{id}` répond **`409

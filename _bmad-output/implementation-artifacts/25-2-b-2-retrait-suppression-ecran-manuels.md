@@ -1,6 +1,6 @@
 # Story 25.2-b-2 : La suppression ne traite plus que les brouillons — l'écran et les manuels
 
-Status: ready-for-dev
+Status: review
 
 **Issue : [#440]**, qu'elle **ferme** : `closes #440` dans le **titre ET le corps** de sa PR.
 ⚠️ Elle **ne rouvre pas [#219]**, fermée : la story en remplace le chemin, pas la décision. Et elle
@@ -165,7 +165,7 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
      verrait jamais le bouton « Dévalider »** et l'arbitrage ne serait pas livré.
    - ⚠️ **Et `!invoice.paidAt` sous-couvre le motif 1** : une facture *partiellement* réglée n'a pas
      de `paid_at`. L'écran lit le résiduel, ou assume le refus serveur — au choix, mais écrit.
-   - ⚠️ **L'asymétrie des deux sorties s'affiche** (arbitrage de Guy, 2026-09-19) : dévaliser est
+   - ⚠️ **L'asymétrie des deux sorties s'affiche** (arbitrage de Guy, 2026-09-19) : dévalider est
      ouvert au **Comptable**, mais **effacer** reste réservé à l'**Administrateur** (`admin_routes`,
      décision de #219, fermée aux clés API). ⛔ **Le `403` vient du bouton SUPPRIMER de la branche
      brouillon** — `+page.svelte:626-629`, **et lui seul** —, qui n'a aucune garde de rôle : le
@@ -194,7 +194,7 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
    deux appels, `[id]/+page.svelte:206` et `+page.svelte:233`, vers une seule route backend. C'est le
    motif du « quatrième chemin d'écriture » de l'Epic 24 — quatre passes n'en avaient énuméré qu'un.*
 
-6. **E2E : les deux cycles, bout à bout.** Dévaliser puis effacer ; dévaliser, corriger, revalider
+6. **E2E : les deux cycles, bout à bout.** Dévalider puis effacer ; dévalider, corriger, revalider
    — et vérifier que le **numéro de facture est le même** après revalidation.
 
 7. **Les manuels.** ⛔ **Toutes les lignes ci-dessous valent sur `main` au `951cbce2`**, release comprise —
@@ -214,7 +214,7 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
      **540-541** (« il subsiste un chemin qui en creuse : la **suppression définitive d'une facture
      validée, qui emporte son écriture** » — le chemin nommé disparaît, c'est la dévalidation qui
      prend sa place) ; **969** (« une **suppression définitive encadrée est également possible** »
-     — il faut désormais dévaliser d'abord) ; **781** (« Brouillon : … **pas de numéro définitif** »
+     — il faut désormais dévalider d'abord) ; **781** (« Brouillon : … **pas de numéro définitif** »
      — après dévalidation, un brouillon **porte** son numéro, et c'est la prémisse de l'AC 5).
    - l. **505** et **621** : relues contre le cycle neuf. ⚠️ l. **837** (« la numérotation est
      strictement séquentielle dans un exercice ») demande un **arbitrage** : l'AC 5 y creuse un trou
@@ -292,11 +292,11 @@ afin que **la destruction d'une écriture ne soit plus un effet de bord caché d
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Dépôt** (AC 1, 2, 3) — retrait de la branche, **traitement** des huit sites de test selon le tableau de l'AC 3 (4 supprimés, 1 réécrit, 2 retargetés et renommés, 1 adapté).
-- [ ] **T2 — Écran** (AC 4, 5, 8).
-- [ ] **T3 — E2E des deux cycles** (AC 6).
-- [ ] **T4 — Manuels, PDF, `api-external.md`, `CHANGELOG`** (AC 7, 9, 10).
-- [ ] **T5 — Gates complets** (AC 11), PR avec `closes #440`.
+- [x] **T1 — Dépôt** (AC 1, 2, 3) — retrait de la branche, **traitement** des huit sites de test selon le tableau de l'AC 3 (4 supprimés, 1 réécrit, 2 retargetés et renommés, 1 adapté).
+- [x] **T2 — Écran** (AC 4, 5, 8).
+- [x] **T3 — E2E des deux cycles** (AC 6).
+- [x] **T4 — Manuels, PDF, `api-external.md`, `CHANGELOG`** (AC 7, 9, 10).
+- [x] **T5 — Gates complets** (AC 11), PR avec `closes #440`.
 
 ## Dev Notes
 
@@ -371,15 +371,147 @@ ce qu'une neuvième passe aurait regardé.*
 - [Source: frontend/src/lib/features/invoices/invoices.api.ts:62] — `deleteInvoice` ; la
   dévalidation y ajoutera `unvalidateInvoice`, avec son test (`invoices.api.test.ts` existe).
 
+## Angle mort assumé — les libellés en dur qui RESTENT sur les deux écrans
+
+⛔ **PREMIÈRE RÉDACTION FAUSSE, ET FAUSSE DANS LE SENS LE PLUS COÛTEUX.** Elle annonçait
+« **l'ensemble clos** » de « **dix sites**, dont **sept sans clé au catalogue** », et concluait que
+les traiter « suppose d'en créer dans les quatre locales ». Les trois nombres étaient faux, et la
+conclusion avec eux : il y en a **49**, dont **41 disposent déjà d'une clé traduite dans les quatre
+locales**. *L'inventaire faisait croire la dette petite et chère ; elle est grande et **bon
+marché** — 41 sites sur 49 ne demandent qu'un câblage.*
+
+⛔ **La cause est exactement celle que le `CLAUDE.md` nomme** (§ *Inventorier les sites NON RÉSOLUS,
+plutôt qu'énumérer les formes qui marchent*) : mon détecteur partait d'une **liste de mots** —
+`Annuler|Supprimer|Confirmer|Valider|…`. Il ne pouvait rendre que ce que j'avais déjà pensé à
+chercher, et l'inventaire **héritait de la portée du geste, pas de celle qu'il annonçait**. C'est
+l'assertion verte par construction de **D4-ter**, et elle est d'autant plus coûteuse ici qu'un
+inventaire **certifie** : la rétrospective à qui cette section renvoie aurait dimensionné la dette
+sur « dix ».
+
+*Relevé en passe 4 de revue, par une lentille à qui le prompt demandait de **reconstruire
+l'inventaire indépendamment** plutôt que de le relire. C'était la bonne consigne.*
+
+### Le relevé, et sa commande
+
+Le détecteur ne présuppose **aucun mot** : il prend tout nœud de texte du balisage, tout
+`placeholder`/`aria-label`/`title`/`alt` littéral, tout argument littéral de `notifySuccess`/
+`notifyError`, et toute affectation littérale à une variable d'erreur ou de message — commentaires
+masqués, bloc `<script>` séparé du balisage pour ne pas confondre un générique TypeScript avec une
+balise.
+
+| Écran | Sites en dur | …avec une clé **déjà traduite** | …sans clé |
+|---|---|---|---|
+| `invoices/+page.svelte` | 26 | 23 | 3 |
+| `invoices/[id]/+page.svelte` | 23 | 18 | 5 |
+| **Total** | **49** | **41** | **8** |
+
+⚠️ **Tous sont ANTÉRIEURS à cette story** — vérifié : aucun n'apparaît dans son diff. Parmi les plus
+parlants : les onze clés `invoice-col-*` / `invoice-filter-*` existent, traduites, **et ne sont
+câblées nulle part** ; les trois `<option>` du filtre de statut codent « Brouillon / Validée /
+Annulée » en dur alors que le **même fichier** appelle `invoice-status-draft` quelques lignes plus
+haut ; et `[id]:828` code `'Brouillon'` en dur **dans l'expression même** qui appelle
+`statusLabel()`, traduit.
+
+⛔ **Et aucun gate ne les voit** : `i18n-libelle-en-dur.test.ts` ne relève que les **déclarations**
+`function`/`const`/`let` dont le nom finit par `Label`, `Text` ou `Display`, et son préambule écarte
+explicitement les nœuds de texte du balisage ; `i18n-keys.test.ts` ne compte que les appels
+`i18nMsg` **existants**. *Un détecteur ne trouve rien là où l'appel n'existe pas encore — et
+chercher depuis une liste de clés ne révèle jamais celles que la liste omet.*
+
+**À porter à la rétrospective de l'Epic 25** : 41 câblages sans création de clé, sur deux écrans, et
+un garde-fou qui ne peut pas voir cette classe de défaut. ⚠️ Le chiffre de 49 vaut **pour ces deux
+écrans seulement** — les autres (avoirs, échéancier, formulaire de facture) n'ont pas été relevés.
+
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Claude Opus 5 (1M context) — implémentation.
+
+### Les cinq décisions que la fiche laissait au développeur
+
+1. **Où vit `INVOICE_MUST_BE_UNVALIDATED_FIRST`** — question **sans objet** : la
+   **25-2-b-1 l'a déjà livré** (variante de `DbError`, `code()`, `409` et quatre
+   clés), sans appelant. La b-2 n'a eu qu'à le construire.
+2. **Le bras de refus neuf** là où partait le bras d'autorisation : fait, avec
+   un code propre plutôt que le fourre-tout `IllegalStateTransition` du bras
+   suivant.
+3. **La modale** : la branche validée reçoit la **sienne**, et le
+   `goto('/invoices')` ne sert plus que le brouillon — après une dévalidation la
+   facture reste, y naviguer n'aurait aucun sens.
+4. **Le motif 1 côté écran** — tranché : l'écran **assume le refus serveur** et
+   la condition `!invoice.paidAt` est **retirée**. Elle sous-couvrait le motif,
+   une facture *partiellement* réglée n'ayant pas de `paidAt` ; cacher le bouton
+   dans ces cas aurait privé l'utilisateur de tout message à lire.
+5. **`user-manual.tex:837`** — tranché : « strictement séquentielle » est
+   **nuancée**, non supprimée. Les numéros ne sont **jamais réattribués** ; la
+   séquence peut comporter des **trous**, et c'est la réattribution qui serait
+   fautive.
+
 ### Debug Log References
+
+- **Le choix de l'empêchement du test E2E de refus a coûté trois essais**, tous
+  écrits dans le test : « envoyée » suppose un SMTP réel ; ⛔ **l'avoir fait
+  passer la facture en `cancelled`**, donc le bouton disparaît et le test
+  n'atteint jamais le refus qu'il mesure ; le règlement exige des paramètres de
+  facturation et le rappel manuel un niveau de relance ; le verrou de période
+  polluerait la société que toutes les specs partagent. Retenu : le **conflit de
+  version**, sans montage, qui exerce le même chemin d'affichage.
+- **Base de gate reconstruite en cours de route** : un contrôle de mutation a
+  paniqué avant son nettoyage et laissé un exercice `Closed` — KF-039, causée
+  par mon propre geste.
+- Deux fautes de ma main, rattrapées par les garde-fous : **« Dévaliser »** dans
+  le FTL français (le mot vient de la fiche, dont l'AC 4 dit pourtant
+  « Dévalider »), et une interpolation `{$number}` par `.replace()` manuel au
+  lieu des arguments Fluent.
 
 ### Completion Notes List
 
+- ⛔ **Le trou que le traitement des tests a révélé, et que huit passes de
+  validation n'avaient pas vu** : le **motif 5 (exercice clos) n'était asserté
+  par aucun test de dévalidation**. La fiche prescrivait de supprimer
+  `test_delete_validated_in_closed_fy_is_rejected` au motif que la b-1 en
+  reprenait la propriété — elle avait vérifié que la contrepartie était
+  **prescrite**, non qu'elle **existait**. Le test de précédence pose bien un
+  exercice clos, mais il assert que le *rappel* parle avant.
+  `devalider_refuse_un_exercice_clos` écrit **d'abord**, mutation tuée sur
+  assertion, *puis* les quatre suppressions. *Une couverture retirée au nom d'un
+  équivalent qui n'existe pas disparaît sans que rien ne rougisse.*
+- ⚠️ **Reste non couvert, et dit** : le **motif 8** (écriture contre-passée)
+  n'est asserté nulle part sur le chemin de la dévalidation. Aucun test de
+  `delete` ne le couvrait non plus : cette story ne perd rien, mais le trou
+  existe.
+- **Le retrait du bloc hors `match` est la moitié qui comptait.** Le laisser
+  aurait paru inoffensif — un brouillon n'ayant pas de `journal_entry_id`, le
+  `if let` ne se serait jamais déclenché — et c'est ce qui le rendait dangereux :
+  **rien n'aurait rougi**, et `enforce_immutability = false` aurait gardé un
+  second appelant fantôme.
+- **Deux affirmations du manuel d'administration étaient fausses**, dont une
+  **indépendamment de cette story** : l'encadré sur les rappels reposait sur la
+  prémisse qu'un administrateur peut supprimer une facture relancée — faux
+  **depuis #260**.
+- ⛔ **Le site sous P8 n'a pas été touché**, et c'est vérifié :
+  `git diff crates/kesh-db/migrations/` est **vide**.
+
 ### File List
+
+| Fichier | Nature |
+|---|---|
+| `crates/kesh-db/src/repositories/invoices.rs` | bras de refus, retrait du bloc hors `match`, 4 tests supprimés + 1 ajouté + 1 retargeté-renommé (`#[tokio::test]` **40 → 37**) |
+| `crates/kesh-db/src/repositories/journal_entries.rs` | doc-comment de `delete_in_tx` (deux sites) |
+| `crates/kesh-api/src/lib.rs`, `src/routes/invoices.rs` | trois doc-comments d'ancrage |
+| `crates/kesh-api/src/errors.rs` | replis des deux messages réécrits |
+| `crates/kesh-api/tests/invoice_delete_e2e.rs` | doc de module, 1 test retargeté-renommé, 1 réécrit par la dévalidation |
+| `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl` | **9 lignes par locale** — 7 clés neuves, 2 messages réécrits |
+| `frontend/src/lib/features/invoices/invoices.api.ts` | `unvalidateInvoice` |
+| `frontend/src/routes/(app)/invoices/[id]/+page.svelte` | modale propre, deux gardes de rôle, retrait du résidu |
+| `frontend/src/routes/(app)/invoices/+page.svelte` | **second chemin** : garde de rôle et avertissement sur le numéro |
+| `frontend/src/lib/shared/i18n-keys.test.ts` | 1638 → **1651**, ventilé |
+| `frontend/src/lib/shared/i18n-libelle-en-dur.test.ts` | 43 → **42**, `ecartee` 7 → **6**, déclaration nommée |
+| `frontend/tests/e2e/invoice-unvalidate.spec.ts` | **3** tests neufs |
+| `frontend/tests/e2e/invoices.spec.ts` | « fiche fantôme » adaptée |
+| `docs/manual/fr/{user,admin}-manual.tex` + **3 PDF** | 6 sites + 4 sites, PDF régénérés et contrôlés à plat |
+| `docs/api-external.md`, `CHANGELOG.md`, `README.md` | note ², section `[0.12.1]`, feuille de route |
 
 ## Change Log
 
@@ -393,4 +525,7 @@ ce qu'une neuvième passe aurait regardé.*
 | 2026-09-21 | validate P5 | ⛔ **CRITICAL, et il est de moi : le Change Log de la passe 4 déclarait ONZE corrections dont UNE SEULE avait été écrite.** Mon script de remédiation a levé une assertion sur son dernier remplacement — et comme il n'écrivait le fichier qu'à la fin, **tout a été perdu**. J'ai vu l'erreur passer et je n'en ai pas tiré la conséquence ; le commit `7bfc72e4` ne touche que **3 lignes**. *C'est le compte rendu qui ment, exactement ce que la § « Recompter ses propres comptes rendus » décrit — et une passe suivante l'aurait cru sur parole.* **Les treize corrections sont réappliquées et VÉRIFIÉES UNE PAR UNE DANS LE FICHIER** (grep de chacune, plus grep des résidus interdits) — le contrôle qui manquait. ⚠️ **Deux leçons de méthode** : *(1)* un script de remédiation écrit le fichier **après chaque** remplacement, ou vérifie son code de sortie ; *(2)* **le contrôle d'une remédiation ne se fait pas sur ce qu'on a voulu écrire, mais sur ce que le fichier porte** — `git show --stat` l'aurait montré en une ligne. La passe 5 rend par ailleurs, sur le fond : « huit autres sites » toujours faux (**neuf**, onze ancrages), la contradiction du tableau non tranchée, l'AC 10 encore dangereuse pour une note publiée, le second chemin de suppression absent du corps normatif, la garde `isAdmin` encore ambiguë, et `1339-1345` coupant un commentaire qui court à `1349` — **toutes corrigées ici, pour de bon cette fois**. **Passe 6 due** : un CRITICAL a été rendu. |
 | 2026-09-21 | validate P6 | **Passe 6, une lentille Opus**, prompt versionné `25-2-b-2-validate-prompt-p6.md`. **0 CRITICAL, 0 HIGH, 8 MEDIUM, 7 LOW** — la sévérité **retombe**, et son axe 1 a confirmé que **les treize corrections sont cette fois DANS le fichier** (~50 citations rejouées sur l'arbre, une seule fausse). ⛔ **Le défaut le plus cher n'est pas dans la fiche mais dans le dépôt** : un **dixième** site affirme « la suppression définitive » — et il vit dans une **migration appliquée** (`20260715000001_invoice_reminders.sql:14`). **P8 interdit d'y toucher, pas même un commentaire** : le checksum changerait et le binaire ne booterait plus, sans qu'aucun gate backend le voie. Écrit dans l'AC 2 pour que personne ne le « corrige » en grepant le symptôme. **M1 est une récidive littérale** : le patch qui restreignait la garde `isAdmin` au seul bouton Supprimer sur l'écran de fiche l'a **réintroduite sur l'écran jumeau** — `:423-429` enveloppe aussi *Modifier*. *Un symptôme se grepe sur les deux écrans.* **M5 élargit l'interdit d'un nombre à une CLASSE** : aucune ligne d'une section publiée du `CHANGELOG` ne se réécrit — trois sites (`:32`, `:58`, `:267`), tous non gardés. **M7** : la section à créer porte **`## [0.12.1] — Non publié`**, pas un gabarit — le pré-vol de `prepare-release.sh` compare au `grep -qF`, tiret cadratin compris. **M8** : c'est le **bloc** `invoices.rs:1337-1354` qui part, pas ses commentaires — le laisser rendrait l'AC 2 faux **en silence**. **M6** : un registre frontend (`i18n-keys.test.ts`, `sitesTotal` 1638) bouge et n'était nommé nulle part, là où la b-1 nomme les trois siens. LOW : `:982-989`, l'apostrophe **U+2019** qui fait rendre zéro à un grep de PDF, `:920` qui part avec son bloc, le code d'erreur neuf dont la fiche ne disait pas où le créer, le client d'API, et le régime du `README` — **une feuille de route est un document vivant, pas une note de version**. `sprint-status.yaml` disait « deux tests ajoutés par la b-zero » pour **un** : septième décompte repris. **Passe 7 due** (budget 7/8). |
 | 2026-09-21 | validate P7 | **Passe 7, une lentille Sonnet**, prompt versionné `25-2-b-2-validate-prompt-p7.md`. **1 MEDIUM, 1 LOW** — et **les deux sont nés de la remédiation de la passe 6**, sixième fois de suite que le motif se vérifie. ⛔ **Le MEDIUM est un décompte, dans le paragraphe même qui prêche le recompte** : « 43 appels (fiche) et 9 (liste) » comptaient **l'import et une mention en commentaire** comme des appels — 41 et 7 en réalité (`grep -c 'i18nMsg('`). *Un détecteur trop LARGE, miroir exact du détecteur trop étroit que le doc-comment de `i18n-keys.test.ts` documente déjà.* Corrigé **en retirant le chiffre** plutôt qu'en le remplaçant : l'instruction opérante est de recompter au développement, et un nombre daté dans une fiche se périme sans que rien ne le signale. LOW : l'ordinal « dixième » se lisait comme une contradiction avec les « onze ancrages » de trois lignes plus haut — reformulé (dixième de la liste, douzième ancrage). ✅ **Axe 1 exhaustif : les treize citations de la passe 6 vérifiées à l'octet, ZÉRO écart** — la convergence est réelle sur le texte. ✅ Axe 2 : le symptôme grepé sur tout le dépôt ne rend **aucun site de plus** ; `deleteInvoice` n'a que **deux** appelants. ✅ Axe 3 : `[0.12.1]` est le bon numéro (aucun tag postérieur, crates à `0.12.0`), et le bloc `1337-1354` ne contredit pas la b-1 — séquentiel, non contradictoire. ⚠️ **Déclaré non vérifié à l'issue du budget** : les PDF aplatis (non touchés depuis la passe 6), le total `28+93+2`, les six lignes du manuel non modifiées, et les quatre locales au-delà de la clé contrôlée. **Passe 8 due — la dernière**, et son patch ne touche aucune ligne de code de production. |
+| 2026-09-23 | review P1 | **Passe 1, trois lentilles Sonnet** en contexte frais (implémentation Opus 5), prompt versionné `25-2-b-2-review-prompt-p1.md`, **tous les axes déclarés exercés par les trois**. **0 CRITICAL, 0 HIGH, 2 MEDIUM, 0 LOW.** **MEDIUM A-1 — le test neuf ferme un exercice fiscal PARTAGÉ et ne le rouvre qu'après ses assertions** : qu'une d'elles panique et l'exercice reste `Closed` en base persistante, faisant rougir en cascade tous les tests qui valident une facture. ⛔ **Ce n'est pas spéculatif — c'est arrivé pendant le développement**, et le test jumeau de la b-1 porte le même geste. ⇒ corrigé **à la source** plutôt que localement : `ensure_fiscal_year` rouvre désormais l'exercice qu'elle rend, comme le `setup()` de `journal_entries::tests` efface toute borne laissée derrière. *Un nettoyage confié à l'appelant ne survit pas à son propre échec ; un résidu se neutralise là où on le lit.* **Prouvé par exécution** : exercice forcé à `Closed` en base, 12/12 verts, statut revenu à `Open`. **MEDIUM B-1 — ma ventilation du compteur i18n était fausse sur deux points**, alors même que le total était juste : elle rangeait `invoice-delete-numbered-warning` parmi les clés « qui existaient déjà » alors que cette story la **crée**, et annonçait « quatre libellés » réactivés là où le patch n'en câblait que **deux**. Les deux autres (`invoice-delete-confirm-title`, `invoice-deleted-success`) **restaient mortes** — elles sont câblées ici, l'AC 8 prescrivant de les réemployer. *Un total juste peut cacher une ventilation fausse.* `sitesTotal` **1638 → 1653**. **Second défaut de la même lentille** : le repli en dur d'`invoice-delete-confirm-body` posait une **question** là où son FTL affirme — deux formulations pour le même geste. ⇒ **grep de propagation écrit et exécuté sur les onze clés des deux écrans** : il a sorti **un second écart de ma main** (`invoice-unvalidate-confirm-title`, point d'interrogation manquant). ⚠️ Il reste **deux écarts PRÉEXISTANTS**, hors de ce diff et non touchés : `invoice-pdf-error-generic` (point final) et `invoices-download-pdf` (« Imprimer / » en trop). **Lentille C : 0 finding**, adossé axe par axe — P8 intact (`git diff` vide), `CHANGELOG` `24 0`, « 123 libellés » de la `[0.12.0]` intact, **124** recompté depuis `audit_labels.rs`, les trois PDF aplatis, l'affirmation neuve sur les clés API vérifiée **contre le code de routage**. Elle déclare un axe non exercé : les compteurs de gate, qu'elle n'avait pas le droit d'exécuter — repris par l'orchestrateur (backend 2414/2414, frontend 745/745, Playwright 215/11). |
+| 2026-09-23 | review P2 | **Passe 2, deux lentilles** — **R** sur Opus, braquée sur le commit de remédiation ; **D** sur Haiku, périmètre complet en diff **aplati**. **0 CRITICAL, 0 HIGH, 2 MEDIUM, 3 LOW** (sévérité `2M → 2M/3L`). ⛔ **F1, le finding le plus fin de la boucle : ma réparation en DÉSARMAIT une autre.** `journal_entries::ensure_open_fiscal_year` ne purge écritures, compteur et exercice **que** s'il trouve l'exercice `Closed` ; rouvrir en silence lui faisait sauter cette purge — deux résidus survivaient et **le seul symptôme qui trahissait la mort d'un run disparaissait**. *On avait échangé un rouge diagnosticable contre un vert trompeur.* ⇒ la réparation est désormais **bavarde** : elle nomme l'exercice rouvert et renvoie à KF-039. **Vérifié en l'exécutant** — l'avertissement s'affiche. ⛔ **F2, TROISIÈME récidive du même symptôme** : `invoice-delete-button` et `common-cancel` n'étaient câblées que d'un côté, et le corps de la modale de liste restait du français en dur **paramétré**. Mon commit précédent affirmait « plus aucun toast codé en dur » — vrai des **toasts**, faux des **boutons**. *Le contrôle repli/FTL ne pouvait pas le voir : il ne compare que ce qui passe déjà par `i18nMsg`, et un détecteur ne trouve rien là où l'appel n'existe pas encore.* ⇒ clé neuve paramétrée `invoice-delete-confirm-body-context` (4 locales), trois boutons câblés, plus celui de la barre d'action du brouillon. LOW : `common-cancel` rangée parmi les clés **neuves** alors qu'elle servait déjà sur cet écran-là (F3) ; le doc-comment affirmait une **garantie** que seul l'ordonnancement actuel tient — reformulé en **constat daté** (F4) ; `LIMIT 1` sans `ORDER BY` devenu un **write** arbitraire (F5). ⚠️ **Le compteur i18n a été corrigé TROIS FOIS et chaque correction a laissé un reste** — 1651 → 1653 → 1655 → **1660** ; la ventilation le dit en propre. ⚠️ **Signalé, hors périmètre, non traité** : les libellés « Valider » et « Modifier » de la barre d'action restent en dur, sans clé au catalogue ; et `i18n-libelle-en-dur` **ne peut pas voir** cette classe de défaut — il ne relève que les variables suffixées `Label`/`Text`/`Display`. **Lentille D : 0 finding**, mais son rapport porte lui-même une ventilation fausse (« 5 supprimés » pour quatre énumérés) — le total de 8 est juste, recompté à la main. |
+| 2026-09-23 | review P4 — **close** | **Passe 4, CIBLÉE** (une lentille Opus, prompt versionné `25-2-b-2-review-prompt-p4-ciblee.md`) sur le seul commit `28d83b95`, avec pour consigne de **reconstruire l'inventaire indépendamment** plutôt que de le relire. **0 CRITICAL, 0 HIGH, 2 MEDIUM, 2 LOW.** ⛔ **Le cinquième reste n'était pas dans le code : c'était l'INVENTAIRE.** Il se disait « ensemble clos » à dix sites dont sept sans clé ; il y en a **49**, dont **41 ont déjà une clé traduite**. *Il faisait croire la dette petite et chère ; elle est grande et bon marché.* **La cause est celle que le `CLAUDE.md` nomme** : mon détecteur partait d'une **liste de mots**, donc ne pouvait rendre que ce que j'avais déjà pensé à chercher — l'inventaire héritait de la portée du geste, pas de celle qu'il annonçait. C'est **D4-ter**, l'assertion verte par construction, et elle coûte double ici parce qu'un inventaire **certifie** : la rétrospective aurait dimensionné la dette sur « dix ». ⇒ section réécrite avec un détecteur **sans aucun mot présupposé**, sa commande, la ventilation par écran, et l'aveu du défaut. **MEDIUM 2 — la clé créée en passe 3 disait un autre verbe, en allemand** : `Rechnung **freigegeben**` pour le succès de la *validation*, alors que `Freigabe` est le registre que cette story vient d'attribuer à la **dévalidation** — le succès empruntait le vocabulaire de son inverse, et pour le seul lecteur au nom duquel la clé avait été créée. Corrigé en `Rechnung validiert`. LOW : deux numéros de ligne désignaient les icônes et non le texte (sans objet après réécriture) ; et la baseline E2E annoncée précédait le patch — **les deux specs traversant la modale réécrite ont été rejouées : 9/9 vertes**. ✅ **Vérifié sans défaut et à ne pas refaire** : les cinq replis mot pour mot contre fr-CH, la clé neuve dans les quatre locales, l'argument `{ $invoiceNumber }`, **la branche « sans numéro » réellement morte** (établi jusqu'au dépôt Rust : la revalidation reprend le numéro conservé), la ventilation recomptée aux **trois** bornes (41→57→62 et 7→13→13, soit +27, `1638+27 = 1665`), la classe de chacun des cinq sites neufs, et les deux gardes i18n lues dans leur source. ⛔ **BOUCLE CLOSE** : la remédiation de cette passe ne touche **aucune ligne de code de production** — une section de compte rendu et **un mot allemand** dans un catalogue. Trend : `2M → 2M/3L → 1M/1L → 2M/2L`, jamais un HIGH. ⚠️ *La sévérité n'a pas décru à la dernière passe, et c'est dit : ce qu'elle a trouvé ne venait pas du code livré mais de ce que la story **affirmait** de lui.* |
 | 2026-09-21 | validate P8 — **boucle close au PLAFOND** | **Passe 8, une lentille Opus** — la dernière, § *Review Iteration Rule*, 8 passes. **0 CRITICAL, 0 HIGH, 4 MEDIUM, 5 LOW**, tous corrigés. ⛔ **Le motif s'INVERSE enfin** : après six passes sur sept où le défaut naissait de la remédiation précédente, les deux findings nés du patch ne sont ici que des LOW — **les quatre MEDIUM viennent d'axes jamais exercés**. **M1 — l'axe du manuel rend encore le finding le plus cher** : trois des six lignes rangées sous « relues » deviennent **fausses** (540-541 nomme le chemin qui disparaît, 969 promet une suppression qui n'existera plus, 781 dit qu'un brouillon n'a pas de numéro alors que l'AC 5 en fait la prémisse). **M2 — une SEULE modale sert les deux branches de l'écran** : le titre est en dur, et renommer le bouton aurait donné un « Dévaliser » ouvrant « Supprimer la facture » et **appelant la suppression**, qui échouerait en 409 — seule l'E2E l'aurait rattrapé. **M3 — une clé i18n jumelle**, `error-journal-entry-linked-to-invoice`, dit « annulez d'abord la facture » là où le geste devient la dévalidation ; et **quatre clés `invoice-delete-*` existent déjà, inutilisées** (les écrans codent le français en dur). **M4 — `:1331` citait une ligne d'un commentaire de six** : le retirer seule l'aurait laissé décapité et toujours affirmatif. ✅ **Vérifié, et c'était la dernière occasion** : les deux PDF aplatis contre les dix passages, `28+93+2 = 123` recompté depuis `audit_labels.rs`, les six lignes du manuel, les quatre locales, `website/` (**zéro mention**), la brochure, les manuels DE/IT/EN (vides), le détecteur des huit tests (**le huit tient**), et l'unicité de l'appelant `delete_in_tx(…, false)`. ✅ **Les deux filles ensemble : aucune contradiction** — numérotation des motifs, contreparties des tests, `api-external.md` partagé sans recouvrement, transfert du compteur, régime des clés API. ⛔ **La boucle se clôt sur le budget, PAS sur la convergence** — et la § *Ce qui reste OUVERT* le dit en propre : cinq décisions laissées au développeur, sept points pour la revue de code. *Écrire qu'on s'arrête n'est pas écrire qu'on a fini.* |

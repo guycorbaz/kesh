@@ -2418,7 +2418,7 @@ impl IntoResponse for AppError {
                             "JOURNAL_ENTRY_LINKED_TO_INVOICE",
                             &t(
                                 "error-journal-entry-linked-to-invoice",
-                                "Cette écriture comptable a été générée par une facture validée et ne peut pas être supprimée directement. Annulez d'abord la facture concernée.",
+                                "Cette écriture comptable a été générée par une facture validée et ne peut pas être supprimée directement. Dévalidez d'abord la facture concernée, ou corrigez-la par un avoir.",
                             ),
                         )
                     } else {
@@ -2458,7 +2458,7 @@ impl IntoResponse for AppError {
                         ),
                         ReversalBlocker::OwnedByInvoice => (
                             "journal-entries-reverse-blocked-invoice",
-                            "Cette écriture appartient à une facture client : corrigez-la par un avoir.",
+                            "Cette écriture appartient à une facture client : dévalidez la facture, ou corrigez-la par un avoir.",
                         ),
                         ReversalBlocker::OwnedByCreditNote => (
                             "journal-entries-reverse-blocked-credit-note",

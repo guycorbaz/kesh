@@ -235,7 +235,50 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * faux avec l'assurance de l'avoir mesuré.*
  */
 const ATTENDU = {
-	sitesTotal: 1638,
+	// Story 25-2-b-2 (#440) : 1638 → 1665, soit **+27**, ventilés — recomptés
+	// depuis la source (`grep -c 'i18nMsg('` aux deux bornes), non incrémentés :
+	//   • `invoices/[id]/+page.svelte` 41 → 62 (**+21**) : la modale de
+	//     dévalidation qui naît — titre, corps, numéro conservé, bouton, plus son
+	//     « Annuler » qui passe par `common-cancel`, **déjà en service ailleurs**
+	//     et non une clé neuve —, ses deux messages de retour, le bouton de la
+	//     barre d'action, `invoice-delete-numbered-warning` (neuve), et **5 sites
+	//     qui cessent d'être codés en dur** sur des clés qui dormaient au
+	//     catalogue : `invoice-delete-confirm-body` ×2, `invoice-delete-button`,
+	//     `invoice-delete-confirm-title`, `invoice-deleted-success` — plus
+	//     l'« Annuler » de cette modale-là, resté en dur à vingt-cinq lignes de
+	//     sa jumelle —, **plus le bouton « Supprimer » de la barre d'action du
+	//     brouillon**, en dur lui aussi et dans le bloc même que cette story
+	//     entoure d'une garde de rôle ;
+	//   • `invoices/+page.svelte` 7 → 13 (**+6**), sur l'écran de LISTE — le
+	//     second chemin de suppression d'un brouillon, que quatre passes de
+	//     validation n'avaient pas énuméré : l'avertissement sur le trou de
+	//     séquence, le titre de sa modale, son toast de succès, ses deux boutons,
+	//     et son corps, qui devient `invoice-delete-confirm-body-context` (clé
+	//     **neuve et paramétrée** : la formulation de la liste nomme la date et
+	//     le contact, que la clé de la fiche ne porte pas).
+	//
+	// ⛔ **Et un QUATRIÈME reste, trouvé en passe 3** : la modale de
+	// **validation**, dont cette story avait câblé le titre et lui seul. Son
+	// corps, ses deux boutons et son toast de succès restaient en français en
+	// dur — alors que `invoice-validate-confirm-body`, `invoice-validate-button`
+	// et `invoice-validate-success` dormaient, traduites, dans les quatre
+	// catalogues. ⚠️ Le toast **invalidait rétroactivement** l'affirmation « plus
+	// aucun toast codé en dur » d'un commit précédent : elle était plus large
+	// que ce qui avait été vérifié. *(Une clé a dû être créée pour le cas sans
+	// numéro : `invoice-validate-success` impose `{ $invoiceNumber }`.)*
+	//
+	// ⛔ **Ce compteur a donc été corrigé QUATRE FOIS, et chaque correction a
+	// laissé un reste** : d'abord une ventilation fausse sous un total juste ; puis deux
+	// clés câblées sur **un seul** des deux écrans, alors que la fiche de la
+	// story prévenait qu'« un symptôme se grepe sur les DEUX écrans » ; puis les
+	// **boutons**, que le contrôle repli/FTL ne voyait pas parce qu'il ne compare
+	// que ce qui passe déjà par `i18nMsg` ; puis la modale de validation, qu'aucun
+	// des trois contrôles précédents ne regardait parce qu'ils partaient tous
+	// des clés `invoice-delete-*` énumérées par la fiche. *Un détecteur ne
+	// trouve rien là où l'appel n'existe pas encore : chercher les clés mal
+	// traduites ne révèle jamais celles qui ne sont pas appelées du tout — et
+	// partir d'une liste de clés ne révèle jamais celles que la liste omet.*
+	sitesTotal: 1665,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,
