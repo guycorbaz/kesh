@@ -355,8 +355,18 @@ test.describe('Factures — suspension & historique sur la fiche (21-6c)', () =>
 		await expect(page.getByTestId('dunning-resume-button')).toBeVisible();
 
 		// La facture est supprimée par un autre acteur (autre onglet/utilisateur).
+		// ⛔ Story 25-2-b-2 (#440) — en DEUX temps désormais : une facture validée
+		// ne se supprime plus directement, elle se **dévalide** d'abord. Le
+		// parcours que ce test mesure — la fiche fantôme — ne change pas ; son
+		// chemin, si. *Une facture disparaît toujours, mais plus d'un seul geste.*
 		const ctxDel = await authedApiContext(page);
 		try {
+			const avant = await ctxDel.get(`/api/v1/invoices/${invoiceId}`);
+			const { version } = await avant.json();
+			const dev = await ctxDel.post(`/api/v1/invoices/${invoiceId}/unvalidate`, {
+				data: { version },
+			});
+			expect(dev.ok(), `unvalidate failed: ${dev.status()}`).toBeTruthy();
 			const del = await ctxDel.delete(`/api/v1/invoices/${invoiceId}`);
 			expect(del.ok(), `delete failed: ${del.status()}`).toBeTruthy();
 		} finally {
