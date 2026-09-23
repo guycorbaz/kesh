@@ -2061,3 +2061,4 @@ invoice-unvalidated-success = Fattura tornata in bozza
 invoice-unvalidate-error = Errore durante l'annullamento della convalida
 invoice-delete-numbered-warning = Questa fattura porta già il numero { $number }: eliminarla lascerà un vuoto definitivo nella sequenza, poiché il contatore non torna indietro.
 invoice-delete-confirm-body-context = Confermare l'eliminazione della fattura del { $date } per { $contact }?
+invoice-validate-success-no-number = Fattura convalidata

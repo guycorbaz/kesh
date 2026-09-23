@@ -278,9 +278,17 @@
 		try {
 			const updated = await validateInvoice(invoice.id);
 			invoice = updated;
-			// Review edge #13 : fallback si invoiceNumber null (ne devrait pas arriver mais défensif).
+			// Review edge #13 : repli si `invoiceNumber` est nul (ne devrait pas
+			// arriver, mais défensif). ⚠️ Les deux branches passent par une clé :
+			// `invoice-validate-success` **impose** `{ $invoiceNumber }`, d'où une
+			// seconde clé pour le cas sans numéro, plutôt qu'une chaîne en dur qui
+			// aurait laissé un germanophone devant du français.
 			notifySuccess(
-				updated.invoiceNumber ? `Facture validée — ${updated.invoiceNumber}` : 'Facture validée',
+				updated.invoiceNumber
+					? i18nMsg('invoice-validate-success', 'Facture validée — { $invoiceNumber }', {
+							invoiceNumber: updated.invoiceNumber,
+						})
+					: i18nMsg('invoice-validate-success-no-number', 'Facture validée'),
 			);
 			validateOpen = false;
 		} catch (err) {
@@ -1100,8 +1108,10 @@
 				<Dialog.Title>{i18nMsg('invoice-validate-confirm-title', 'Valider la facture')}</Dialog.Title>
 			</Dialog.Header>
 			<p class="text-sm">
-				Une fois validée, cette facture sera immuable, recevra un numéro définitif et
-				générera une écriture comptable. Continuer&nbsp;?
+				{i18nMsg(
+					'invoice-validate-confirm-body',
+					'Une fois validée, cette facture sera immuable, recevra un numéro définitif et générera une écriture comptable. Continuer ?',
+				)}
 			</p>
 			{#if validateError}
 				<div class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -1109,8 +1119,12 @@
 				</div>
 			{/if}
 			<Dialog.Footer>
-				<Button variant="outline" onclick={() => (validateOpen = false)}>Annuler</Button>
-				<Button onclick={confirmValidate} disabled={validateSubmitting}>Valider</Button>
+				<Button variant="outline" onclick={() => (validateOpen = false)}>
+					{i18nMsg('common-cancel', 'Annuler')}
+				</Button>
+				<Button onclick={confirmValidate} disabled={validateSubmitting}>
+					{i18nMsg('invoice-validate-button', 'Valider')}
+				</Button>
 			</Dialog.Footer>
 		</Dialog.Content>
 	</Dialog.Root>

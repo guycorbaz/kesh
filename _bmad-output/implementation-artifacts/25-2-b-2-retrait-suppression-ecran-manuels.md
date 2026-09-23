@@ -371,6 +371,36 @@ ce qu'une neuvième passe aurait regardé.*
 - [Source: frontend/src/lib/features/invoices/invoices.api.ts:62] — `deleteInvoice` ; la
   dévalidation y ajoutera `unvalidateInvoice`, avec son test (`invoices.api.test.ts` existe).
 
+## Angle mort assumé — les libellés en dur qui RESTENT sur les deux écrans
+
+⛔ **Inventorié, non énuméré** : ce qui suit est l'ensemble **clos** des textes visibles de
+l'utilisateur qui, sur les deux écrans de factures, **ne passent pas** par `i18nMsg` au
+2026-09-23 — relevé par un détecteur qui part du **texte affiché**, non d'une liste de clés.
+*C'est ce renversement qui a fait apparaître le quatrième reste que trois contrôles successifs
+avaient manqué : partir d'une liste de clés ne révèle jamais celles que la liste omet.*
+
+**Dix sites, tous ANTÉRIEURS à cette story** — vérifié : aucun n'apparaît dans son diff.
+
+| Fichier | Ligne | Texte | Clé au catalogue ? |
+|---|---|---|---|
+| `invoices/+page.svelte` | 282, 286 | « Factures — Kesh », « Factures » | non |
+| `invoices/+page.svelte` | 251 | « Erreur lors de la suppression » | non |
+| `invoices/[id]/+page.svelte` | 666, 826 | « Facture — Kesh », « Facture » | non |
+| `invoices/[id]/+page.svelte` | 677, 681 | boutons « Valider », « Modifier » de la barre d'action | **oui** pour Valider (`invoice-validate-button`) |
+| `invoices/[id]/+page.svelte` | 234 | « Erreur lors de la suppression » | non |
+| `invoices/[id]/+page.svelte` | 306 | « Demandez à votre administrateur… » | non |
+| `invoices/[id]/+page.svelte` | 329 | « Erreur lors de la validation » | non |
+
+⚠️ **Sept des dix n'ont aucune clé au catalogue** : les traiter suppose d'en créer dans les quatre
+locales, ce qui déborde une story dont l'objet est la dévalidation. Les trois autres relèvent de la
+même dette (#255) que l'Epic 23 a ouverte.
+
+⛔ **Et aucun gate ne les voit** : `i18n-libelle-en-dur.test.ts` ne relève que les **variables**
+suffixées `Label`, `Text` ou `Display`, et son préambule écarte explicitement les nœuds de texte du
+balisage. `i18n-keys` ne compte que les appels **existants**. *Un détecteur ne trouve rien là où
+l'appel n'existe pas encore.* C'est ce qui a permis quatre récidives sur une seule story, et cela
+vaut d'être porté à la rétrospective de l'Epic 25.
+
 ## Dev Agent Record
 
 ### Agent Model Used

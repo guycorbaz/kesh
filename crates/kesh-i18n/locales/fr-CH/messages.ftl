@@ -2114,3 +2114,4 @@ invoice-unvalidated-success = Facture repassée en brouillon
 invoice-unvalidate-error = Erreur lors de la dévalidation
 invoice-delete-numbered-warning = Cette facture porte déjà le numéro { $number } : le supprimer laissera un trou définitif dans la séquence, le compteur ne redescendant pas.
 invoice-delete-confirm-body-context = Confirmer la suppression de la facture du { $date } pour { $contact } ?
+invoice-validate-success-no-number = Facture validée

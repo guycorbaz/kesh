@@ -2060,3 +2060,4 @@ invoice-unvalidated-success = Rechnung wieder im Entwurfsstatus
 invoice-unvalidate-error = Fehler beim Aufheben der Freigabe
 invoice-delete-numbered-warning = Diese Rechnung trägt bereits die Nummer { $number }: durch das Löschen entsteht eine endgültige Lücke in der Nummernfolge, da der Zähler nicht zurückgesetzt wird.
 invoice-delete-confirm-body-context = Löschung der Rechnung vom { $date } für { $contact } bestätigen?
+invoice-validate-success-no-number = Rechnung freigegeben

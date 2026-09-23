@@ -2066,3 +2066,4 @@ invoice-unvalidated-success = Invoice returned to draft
 invoice-unvalidate-error = Could not unvalidate the invoice
 invoice-delete-numbered-warning = This invoice already carries number { $number }: deleting it will leave a permanent gap in the sequence, as the counter does not go back.
 invoice-delete-confirm-body-context = Confirm deletion of the invoice dated { $date } for { $contact }?
+invoice-validate-success-no-number = Invoice validated
