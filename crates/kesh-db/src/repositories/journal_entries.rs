@@ -994,8 +994,10 @@ pub async fn delete_by_id(
 /// plus : c'est la même, en plus large. Cf. le doc-comment de chacune. ⚠️ Le gel levé, les autres
 /// gardes de cette fonction tiennent — exercice clos, contre-passation et
 /// **verrou de période** (#443) : `false` ne lève que le gel. Le geler reviendrait à retirer la
-/// suppression d'une facture validée (#219) — une décision de facturation, pas
-/// d'écriture. Le résidu est assumé et tracé (cf. #380, #381).
+/// **dévalidation** d'une facture (#440) — une décision de facturation, pas
+/// d'écriture. ⚠️ La suppression directe d'une facture validée (#219), qui
+/// passait aussi `false`, n'existe plus depuis la 25-2-b-2. Le résidu est
+/// assumé et tracé (cf. #380, #381).
 ///
 /// ⛔ **Le drapeau vit ICI et non chez l'appelant** : une garde posée dans
 /// `delete_by_id` laisserait `delete_in_tx` nu, et un futur appelant obtiendrait

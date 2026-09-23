@@ -2,7 +2,7 @@
 //!
 //! - GETs (`list`, `get`) → `authenticated_routes` (tout rôle).
 //! - Mutations `create`, `update` → `comptable_routes`.
-//! - `delete` (#219 — suppression définitive brouillon/validée) → `admin_routes`.
+//! - `delete` (#219, restreint par #440 — **brouillons seulement**) → `admin_routes`.
 //!
 //! `total_amount` est recalculé par le repository à partir des lignes —
 //! le frontend peut l'afficher en temps réel, mais la valeur persistée

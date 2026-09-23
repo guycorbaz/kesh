@@ -1,10 +1,16 @@
-//! #219 — tests E2E pour la suppression définitive d'une facture validée.
+//! #219, **restreint par #440** — tests E2E de la suppression d'une facture.
 //!
-//! Focalisé sur la couche HTTP/auth (le repository couvre déjà les gardes
-//! métier — payée / exercice clos / créditée : cf. `kesh_db::repositories::
-//! invoices::tests::test_delete_validated_*`). Ici on vérifie :
-//! - `DELETE /api/v1/invoices/:id` en Admin sur une validée impayée → 204 +
-//!   facture ET écriture comptable liée supprimées ;
+//! ⛔ **Une facture validée ne se supprime plus** : elle se **dévalide**
+//! d'abord. Ce fichier a donc changé d'objet — il vérifiait un succès, il
+//! vérifie désormais un **refus nommé**, et le chemin que ce refus désigne.
+//!
+//! Focalisé sur la couche HTTP/auth (le dépôt couvre les gardes métier : cf.
+//! `kesh_db::repositories::invoices::tests::devalider_*`). Ici on vérifie :
+//! - `DELETE /api/v1/invoices/:id` en Admin sur une validée → `409
+//!   INVOICE_MUST_BE_UNVALIDATED_FIRST`, rien n'est détruit, et la
+//!   dévalidation puis la suppression du brouillon aboutissent ;
+//! - le **verrou de période** par la dévalidation, seul site de bout en bout du
+//!   chemin facture ;
 //! - la réservation **Admin** (401 sans token, 403 en Comptable).
 //!
 //! Seed via `kesh_db::test_fixtures::seed_accounting_company` + validation via
