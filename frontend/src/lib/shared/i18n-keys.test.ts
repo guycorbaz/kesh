@@ -235,18 +235,30 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * faux avec l'assurance de l'avoir mesuré.*
  */
 const ATTENDU = {
-	// Story 25-2-b-2 (#440) : 1638 → 1651, soit **+13**, ventilés — recomptés
+	// Story 25-2-b-2 (#440) : 1638 → 1653, soit **+15**, ventilés — recomptés
 	// depuis la source (`grep -c 'i18nMsg('` aux deux bornes), non incrémentés :
-	//   • `invoices/[id]/+page.svelte` 41 → 53 (**+12**) — la modale de
+	//   • `invoices/[id]/+page.svelte` 41 → 55 (**+14**) : la modale de
 	//     dévalidation qui naît (titre, corps, numéro conservé, bouton, annuler),
 	//     ses deux messages de retour (succès, erreur), le bouton de la barre
-	//     d'action, et les quatre libellés de la modale de suppression qui
-	//     cessent d'être codés en dur en français (`invoice-delete-*`, qui
-	//     existaient déjà au catalogue sans être appelés) ;
-	//   • `invoices/+page.svelte` 7 → 8 (**+1**) — l'avertissement sur le trou de
-	//     séquence, sur l'écran de LISTE : le second chemin de suppression d'un
-	//     brouillon, que quatre passes de validation n'avaient pas énuméré.
-	sitesTotal: 1651,
+	//     d'action — soit 8 sites pour des clés **neuves** —, plus
+	//     `invoice-delete-numbered-warning` (neuve elle aussi, l'avertissement
+	//     sur le trou de séquence), et **5 sites qui cessent d'être codés en dur
+	//     en français** sur des clés qui **dormaient au catalogue sans appelant** :
+	//     `invoice-delete-confirm-body` ×2, `invoice-delete-button`,
+	//     `invoice-delete-confirm-title` et `invoice-deleted-success` ;
+	//   • `invoices/+page.svelte` 7 → 8 (**+1**) — le même avertissement sur le
+	//     trou de séquence, sur l'écran de LISTE : le second chemin de suppression
+	//     d'un brouillon, que quatre passes de validation n'avaient pas énuméré.
+	//
+	// ⚠️ **La première rédaction de cette ventilation était FAUSSE sur deux
+	// points**, relevés en passe 1 de revue : elle rangeait
+	// `invoice-delete-numbered-warning` parmi les clés « qui existaient déjà »
+	// alors que cette story la crée, et elle annonçait « quatre libellés »
+	// réactivés là où le patch n'en câblait que **deux** — les deux autres
+	// restaient mortes. Elles le sont câblées ici, ce qui porte le compte à 15.
+	// *Un total juste peut cacher une ventilation fausse : c'est la ventilation
+	// qui se recompte, pas seulement la somme.*
+	sitesTotal: 1653,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

@@ -222,7 +222,7 @@
 		deleteError = '';
 		try {
 			await deleteInvoice(invoice.id);
-			notifySuccess('Facture supprimée');
+			notifySuccess(i18nMsg('invoice-deleted-success', 'Facture supprimée'));
 			goto('/invoices');
 		} catch (err) {
 			// Cohérence avec la modale de conflit (InvoiceForm) : erreur visible
@@ -979,7 +979,9 @@
 	>
 		<Dialog.Content>
 			<Dialog.Header>
-				<Dialog.Title>Supprimer la facture</Dialog.Title>
+				<Dialog.Title>
+					{i18nMsg('invoice-delete-confirm-title', 'Supprimer la facture ?')}
+				</Dialog.Title>
 			</Dialog.Header>
 			<!-- ⛔ Story 25-2-b-2 (#440) — cette modale ne sert plus QUE le
 			     brouillon : une facture validée se dévalide, elle ne se supprime
@@ -987,7 +989,7 @@
 			     vers la présence d'un NUMÉRO. -->
 			{#if invoice?.invoiceNumber}
 				<div class="space-y-3 text-sm">
-					<p>{i18nMsg('invoice-delete-confirm-body', 'Confirmer la suppression définitive de cette facture brouillon ?')}</p>
+					<p>{i18nMsg('invoice-delete-confirm-body', 'Cette facture brouillon sera supprimée définitivement.')}</p>
 					<!-- ⚠️ Un brouillon NUMÉROTÉ a déjà consommé son numéro : le
 					     compteur ne redescend pas, et le trou restera. Il se voit et
 					     s'explique — c'est la réattribution qui serait grave. -->
@@ -1000,7 +1002,7 @@
 					</div>
 				</div>
 			{:else}
-				<p class="text-sm">{i18nMsg('invoice-delete-confirm-body', 'Confirmer la suppression définitive de cette facture brouillon ?')}</p>
+				<p class="text-sm">{i18nMsg('invoice-delete-confirm-body', 'Cette facture brouillon sera supprimée définitivement.')}</p>
 			{/if}
 			{#if deleteError}
 				<div class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -1031,7 +1033,7 @@
 		<Dialog.Content data-testid="invoice-unvalidate-dialog">
 			<Dialog.Header>
 				<Dialog.Title>
-					{i18nMsg('invoice-unvalidate-confirm-title', 'Dévalider la facture')}
+					{i18nMsg('invoice-unvalidate-confirm-title', 'Dévalider la facture ?')}
 				</Dialog.Title>
 			</Dialog.Header>
 			<div class="space-y-3 text-sm">

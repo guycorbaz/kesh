@@ -3757,6 +3757,25 @@ mod tests {
     /// test (idempotent). Crée aussi un `journal_entries` stub et bascule
     /// l'invoice en `validated` avec la FK — nécessaire pour satisfaire la
     /// CHECK `chk_invoices_validated_has_je` (Story 5.2 mig 20260417000002).
+    /// ⛔ **Rouvre l'exercice qu'elle rend, et ce n'est pas une commodité.**
+    ///
+    /// Ces tests tournent sur une base **partagée et persistante**, et plusieurs
+    /// d'entre eux ferment cet exercice-là pour éprouver la garde
+    /// `FiscalYearClosed`, puis le rouvrent **après** leurs assertions. Qu'une
+    /// assertion panique — une mutation de contrôle, une régression — et la
+    /// réouverture ne s'exécute jamais : l'exercice reste `Closed`, et **tous**
+    /// les tests suivants qui valident une facture rougissent, sur un module
+    /// que la branche ne touche pas. C'est **KF-039** (#310), et c'est arrivé
+    /// pendant le développement de la 25-2-b-2.
+    ///
+    /// Le nettoyage confié à l'appelant ne survit pas à son propre échec. Le
+    /// remettre **ici**, au montage, le rend inconditionnel — comme le
+    /// `setup()` de `journal_entries::tests` efface toute borne de période
+    /// laissée derrière. *Un résidu se neutralise là où on le lit, pas là où on
+    /// l'a créé.*
+    ///
+    /// ⚠️ Sans effet sur les tests qui ferment l'exercice : ils le font **après**
+    /// `create_and_validate`, donc après cet appel.
     async fn ensure_fiscal_year(pool: &MySqlPool, company_id: i64) -> i64 {
         if let Some((id,)) =
             sqlx::query_as::<_, (i64,)>("SELECT id FROM fiscal_years WHERE company_id = ? LIMIT 1")
@@ -3765,6 +3784,13 @@ mod tests {
                 .await
                 .unwrap()
         {
+            sqlx::query(
+                "UPDATE fiscal_years SET status = 'Open' WHERE id = ? AND status <> 'Open'",
+            )
+            .bind(id)
+            .execute(pool)
+            .await
+            .unwrap();
             return id;
         }
         let res = sqlx::query(
