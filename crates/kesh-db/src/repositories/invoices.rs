@@ -3774,23 +3774,51 @@ mod tests {
     /// laissée derrière. *Un résidu se neutralise là où on le lit, pas là où on
     /// l'a créé.*
     ///
-    /// ⚠️ Sans effet sur les tests qui ferment l'exercice : ils le font **après**
-    /// `create_and_validate`, donc après cet appel.
+    /// ⛔ **ET ELLE LE DIT — la réparation est BAVARDE, délibérément.** Muette,
+    /// elle désarmerait la réparation jumelle de `journal_entries::tests` :
+    /// `ensure_open_fiscal_year` ne purge les écritures, le compteur et
+    /// l'exercice **que** s'il le trouve `Closed`, et retourne sans rien faire
+    /// dès qu'il est `Open`. Rouvrir en silence ferait donc sauter sa purge —
+    /// deux résidus survivraient, et **le seul symptôme qui trahissait la mort
+    /// d'un run aurait disparu**. *On aurait échangé un rouge diagnosticable
+    /// contre un vert trompeur.* Un run qui a dû réparer doit le dire.
+    ///
+    /// ⚠️ **Constat daté, non garantie** : au 2026-09-23, aucun appelant ne
+    /// ferme l'exercice puis ne rappelle ce montage — les deux seules
+    /// fermetures du module le font **après** `create_and_validate`. Rien ne
+    /// l'impose, et un futur test qui inverserait cet ordre verrait sa
+    /// fermeture annulée sous lui. Il échouerait bruyamment — le refus attendu
+    /// n'arriverait pas —, mais le diagnostic partirait du mauvais bout.
     async fn ensure_fiscal_year(pool: &MySqlPool, company_id: i64) -> i64 {
         if let Some((id,)) =
-            sqlx::query_as::<_, (i64,)>("SELECT id FROM fiscal_years WHERE company_id = ? LIMIT 1")
-                .bind(company_id)
-                .fetch_optional(pool)
-                .await
-                .unwrap()
+            // ⚠️ `ORDER BY id` : la lecture non déterministe était sans
+            // conséquence, l'ÉCRITURE qui la suit en a une. Un second exercice
+            // sur cette société — aucun montage n'en crée aujourd'hui — ferait
+            // sinon rouvrir l'un d'eux au hasard.
+            sqlx::query_as::<_, (i64,)>(
+                "SELECT id FROM fiscal_years WHERE company_id = ? ORDER BY id LIMIT 1",
+            )
+            .bind(company_id)
+            .fetch_optional(pool)
+            .await
+            .unwrap()
         {
-            sqlx::query(
+            let repare = sqlx::query(
                 "UPDATE fiscal_years SET status = 'Open' WHERE id = ? AND status <> 'Open'",
             )
             .bind(id)
             .execute(pool)
             .await
-            .unwrap();
+            .unwrap()
+            .rows_affected();
+            if repare == 1 {
+                eprintln!(
+                    "⚠️  ensure_fiscal_year : exercice {id} trouvé CLOS et rouvert — un run \
+                     précédent est mort avant son nettoyage (KF-039). Des écritures et une ligne \
+                     de `journal_entry_number_sequences` peuvent subsister : reconstruire la base \
+                     avant de diagnostiquer un rouge."
+                );
+            }
             return id;
         }
         let res = sqlx::query(

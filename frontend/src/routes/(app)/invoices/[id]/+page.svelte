@@ -680,7 +680,7 @@
 			{#if isAdmin}
 				<Button variant="destructive" onclick={() => (deleteOpen = true)}>
 					<Trash2 class="h-4 w-4" aria-hidden="true" />
-					Supprimer
+					{i18nMsg('invoice-delete-button', 'Supprimer')}
 				</Button>
 			{/if}
 		</div>
@@ -1010,7 +1010,9 @@
 				</div>
 			{/if}
 			<Dialog.Footer>
-				<Button variant="outline" onclick={() => (deleteOpen = false)}>Annuler</Button>
+				<Button variant="outline" onclick={() => (deleteOpen = false)}>
+					{i18nMsg('common-cancel', 'Annuler')}
+				</Button>
 				<Button variant="destructive" onclick={confirmDelete} disabled={deleteSubmitting}>
 					{i18nMsg('invoice-delete-button', 'Supprimer')}
 				</Button>

@@ -235,37 +235,37 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * faux avec l'assurance de l'avoir mesuré.*
  */
 const ATTENDU = {
-	// Story 25-2-b-2 (#440) : 1638 → 1655, soit **+17**, ventilés — recomptés
+	// Story 25-2-b-2 (#440) : 1638 → 1660, soit **+22**, ventilés — recomptés
 	// depuis la source (`grep -c 'i18nMsg('` aux deux bornes), non incrémentés :
-	//   • `invoices/[id]/+page.svelte` 41 → 55 (**+14**) : la modale de
-	//     dévalidation qui naît (titre, corps, numéro conservé, bouton, annuler),
-	//     ses deux messages de retour (succès, erreur), le bouton de la barre
-	//     d'action — soit 8 sites pour des clés **neuves** —, plus
-	//     `invoice-delete-numbered-warning` (neuve elle aussi, l'avertissement
-	//     sur le trou de séquence), et **5 sites qui cessent d'être codés en dur
-	//     en français** sur des clés qui **dormaient au catalogue sans appelant** :
-	//     `invoice-delete-confirm-body` ×2, `invoice-delete-button`,
-	//     `invoice-delete-confirm-title` et `invoice-deleted-success` ;
-	//   • `invoices/+page.svelte` 7 → 10 (**+3**), sur l'écran de LISTE — le
+	//   • `invoices/[id]/+page.svelte` 41 → 57 (**+16**) : la modale de
+	//     dévalidation qui naît — titre, corps, numéro conservé, bouton, plus son
+	//     « Annuler » qui passe par `common-cancel`, **déjà en service ailleurs**
+	//     et non une clé neuve —, ses deux messages de retour, le bouton de la
+	//     barre d'action, `invoice-delete-numbered-warning` (neuve), et **5 sites
+	//     qui cessent d'être codés en dur** sur des clés qui dormaient au
+	//     catalogue : `invoice-delete-confirm-body` ×2, `invoice-delete-button`,
+	//     `invoice-delete-confirm-title`, `invoice-deleted-success` — plus
+	//     l'« Annuler » de cette modale-là, resté en dur à vingt-cinq lignes de
+	//     sa jumelle —, **plus le bouton « Supprimer » de la barre d'action du
+	//     brouillon**, en dur lui aussi et dans le bloc même que cette story
+	//     entoure d'une garde de rôle ;
+	//   • `invoices/+page.svelte` 7 → 13 (**+6**), sur l'écran de LISTE — le
 	//     second chemin de suppression d'un brouillon, que quatre passes de
 	//     validation n'avaient pas énuméré : l'avertissement sur le trou de
-	//     séquence (clé neuve), plus le titre de sa modale et son toast de
-	//     succès, qui restaient codés en dur alors que leurs clés dormaient au
-	//     catalogue.
+	//     séquence, le titre de sa modale, son toast de succès, ses deux boutons,
+	//     et son corps, qui devient `invoice-delete-confirm-body-context` (clé
+	//     **neuve et paramétrée** : la formulation de la liste nomme la date et
+	//     le contact, que la clé de la fiche ne porte pas).
 	//
-	// ⚠️ **La première rédaction de cette ventilation était FAUSSE sur deux
-	// points**, relevés en passe 1 de revue : elle rangeait
-	// `invoice-delete-numbered-warning` parmi les clés « qui existaient déjà »
-	// alors que cette story la crée, et elle annonçait « quatre libellés »
-	// réactivés là où le patch n'en câblait que **deux** — les deux autres
-	// restaient mortes, et elles sont câblées ici. ⛔ **Puis le grep de
-	// propagation a montré que je ne les avais câblées que sur UN des deux
-	// écrans** : la liste portait les deux mêmes libellés en dur. La fiche
-	// prévenait pourtant — *« un symptôme se grepe sur les DEUX écrans »* —, et
-	// c'est le patch qui corrigeait ce défaut qui l'a recommis un cran plus loin.
-	// *Un total juste peut cacher une ventilation fausse : c'est la ventilation
-	// qui se recompte, pas seulement la somme.*
-	sitesTotal: 1655,
+	// ⛔ **Ce compteur a été corrigé TROIS FOIS, et chaque correction a laissé un
+	// reste** : d'abord une ventilation fausse sous un total juste ; puis deux
+	// clés câblées sur **un seul** des deux écrans, alors que la fiche de la
+	// story prévenait qu'« un symptôme se grepe sur les DEUX écrans » ; puis les
+	// **boutons**, que le contrôle repli/FTL ne voyait pas parce qu'il ne compare
+	// que ce qui passe déjà par `i18nMsg`. *Un détecteur ne trouve rien là où
+	// l'appel n'existe pas encore : chercher les clés mal traduites ne révèle
+	// jamais celles qui ne sont pas appelées du tout.*
+	sitesTotal: 1660,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

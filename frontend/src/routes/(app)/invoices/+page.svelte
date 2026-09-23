@@ -488,7 +488,11 @@
 			<Dialog.Title>{i18nMsg('invoice-delete-confirm-title', 'Supprimer la facture ?')}</Dialog.Title>
 		</Dialog.Header>
 		<p class="text-sm">
-			Confirmer la suppression de la facture du {deleteTarget?.date} pour {deleteTarget?.contactName} ?
+			{i18nMsg(
+				'invoice-delete-confirm-body-context',
+				'Confirmer la suppression de la facture du { $date } pour { $contact } ?',
+				{ date: deleteTarget?.date ?? '', contact: deleteTarget?.contactName ?? '' },
+			)}
 		</p>
 		<!-- ⚠️ Un brouillon NUMÉROTÉ a déjà consommé son numéro — c'est le cas
 		     d'une facture qu'on vient de dévalider. Le compteur ne redescend pas,
@@ -509,9 +513,11 @@
 			</div>
 		{/if}
 		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (deleteOpen = false)}>Annuler</Button>
+			<Button variant="outline" onclick={() => (deleteOpen = false)}>
+				{i18nMsg('common-cancel', 'Annuler')}
+			</Button>
 			<Button variant="destructive" onclick={confirmDelete} disabled={deleteSubmitting}>
-				Supprimer
+				{i18nMsg('invoice-delete-button', 'Supprimer')}
 			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
