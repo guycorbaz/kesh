@@ -169,6 +169,63 @@ impl UnvalidationBlocker {
     }
 }
 
+/// Ce qui empêche d'**annuler un règlement** (Story 25-3-a-1, #414).
+///
+/// ⛔ **Une tête propre à chaque pièce, une queue commune.** Le rang 1 est
+/// celui du client (`InvoiceCredited`) ; les rangs 2 à 5 s'évaluent sur
+/// l'**écriture de règlement**, sans rien savoir de la pièce qui la possède
+/// (`settlement_cancellation::settlement_entry_cancel_blocker`), pour que le
+/// règlement fournisseur (25-3-a-2) les réutilise tels quels — une seconde
+/// précédence pour le même socle divergerait.
+///
+/// ⚠️ **L'ordre des variantes EST la précédence**, testée paire par paire : le
+/// définitif d'abord, puis ce qui se lève. Les rangs 4 et 5 suivent l'ordre
+/// **réel** de `reverse_in_tx`, qui contrôle les comptes archivés (étape 3)
+/// avant l'exercice du jour (étape 4) : la lecture se règle sur l'écriture.
+///
+/// ⚠️ **Qui refuse, à l'écriture** : le geste ne refuse lui-même que les rangs
+/// 1 et 2 ([`DbError::SettlementNotCancellable`]) ; les rangs 3 à 5 sont
+/// refusés par le socle, avec son erreur canonique — c'est ce qui garde le 400
+/// qui **nomme** les comptes archivés.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettlementCancelBlocker {
+    /// La facture a été **créditée** par un avoir après ce règlement. Le
+    /// règlement est alors un paiement **à lettrer** (Epic 15), pas une
+    /// anomalie — il ne s'annule pas. ⚠️ Le statut `cancelled` d'une facture
+    /// ne naît en production que de l'avoir (`credit_notes.rs`).
+    InvoiceCredited,
+    /// L'écriture de règlement est dans un exercice **clos** : un
+    /// Administrateur peut le rouvrir (`fiscal_years::reopen`), et c'est le
+    /// chemin (arbitrage Q5).
+    FiscalYearClosed,
+    /// L'écriture de règlement est rapprochée d'une transaction bancaire : le
+    /// dé-rapprochement (25-3-b) défait ce lien d'abord.
+    MatchedBankTransaction,
+    /// Un compte de l'écriture de règlement a été archivé depuis.
+    AccountArchived,
+    /// Aucun exercice **ouvert** ne couvre le jour, où la contre-passation
+    /// serait datée.
+    NoOpenFiscalYearToday,
+}
+
+impl SettlementCancelBlocker {
+    /// Code canonique, jamais une phrase.
+    ///
+    /// ⚠️ **Tous** ces codes réemploient ceux d'états du monde déjà nommés
+    /// (`INVOICE_CREDITED` de [`UnvalidationBlocker`], `FISCAL_YEAR_CLOSED`,
+    /// `MATCHED_BANK_TRANSACTION`, `ACCOUNT_ARCHIVED`, `FISCAL_YEAR_INVALID`) :
+    /// un même fait ne reçoit pas un second nom.
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::InvoiceCredited => "INVOICE_CREDITED",
+            Self::FiscalYearClosed => "FISCAL_YEAR_CLOSED",
+            Self::MatchedBankTransaction => "MATCHED_BANK_TRANSACTION",
+            Self::AccountArchived => "ACCOUNT_ARCHIVED",
+            Self::NoOpenFiscalYearToday => "FISCAL_YEAR_INVALID",
+        }
+    }
+}
+
 /// Un compte de l'écriture d'origine, archivé depuis (Story 24-4a, #380).
 ///
 /// Le refus **nomme** le compte à réactiver — un « interdit » sec ne serait pas
@@ -362,6 +419,15 @@ pub enum DbError {
         document_label: Option<String>,
     },
 
+    /// Le règlement ne peut pas être annulé (Story 25-3-a-1, #414).
+    ///
+    /// Conflit d'état → HTTP **409**, avec le code canonique du
+    /// [`SettlementCancelBlocker`]. ⚠️ Seuls les rangs que le **geste** refuse
+    /// lui-même passent par ici (facture créditée, exercice clos) ; les autres
+    /// sont refusés par la contre-passation, avec son erreur propre.
+    #[error("Règlement non annulable ({})", .blocker.code())]
+    SettlementNotCancellable { blocker: SettlementCancelBlocker },
+
     /// Un brouillon **numéroté** changerait d'exercice (Story 25-2-b-1, #440).
     ///
     /// Le numéro vient du compteur de l'exercice qui couvre la date : le
@@ -528,6 +594,7 @@ impl DbError {
             Self::EntryNotReversable { .. } => "ENTRY_NOT_REVERSABLE",
             Self::ReversalAccountsArchived(_) => "ACCOUNT_ARCHIVED",
             Self::InvoiceNotUnvalidatable { blocker, .. } => blocker.code(),
+            Self::SettlementNotCancellable { blocker } => blocker.code(),
             Self::InvoiceNumberFiscalYearMismatch => "INVOICE_NUMBER_FISCAL_YEAR_MISMATCH",
             Self::InvoiceMustBeUnvalidatedFirst => "INVOICE_MUST_BE_UNVALIDATED_FIRST",
             Self::EntryIsReversed => "ENTRY_IS_REVERSED",

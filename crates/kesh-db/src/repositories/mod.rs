@@ -38,6 +38,7 @@ pub mod projects;
 pub mod reconciliation;
 pub mod reconciliation_rules;
 pub mod refresh_tokens;
+pub mod settlement_cancellation;
 pub mod supplier_invoices;
 pub mod users;
 pub mod vat_rates;

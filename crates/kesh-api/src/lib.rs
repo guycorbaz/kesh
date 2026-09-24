@@ -514,11 +514,15 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         // et `unmark-paid`, tous deux supprimés.
         //
         // ⚠️ Un marquage qui n'écrivait rien s'annulait gratuitement ; un
-        // règlement qui produit son écriture ne s'annule pas, il se
-        // CONTRE-PASSE — issue #414, les deux côtés.
+        // règlement qui produit son écriture s'annule par CONTRE-PASSATION —
+        // route ci-dessous (Story 25-3-a-1, #414).
         .route(
             "/api/v1/invoices/{id}/settlements",
             post(routes::invoices::settle_invoice_handler),
+        )
+        .route(
+            "/api/v1/invoices/{id}/settlements/{settlement_id}/cancel",
+            post(routes::invoices::cancel_invoice_settlement_handler),
         )
         // Story 21-5a — rappels débiteurs (Comptable+) : liste à rappeler groupée
         // par contact, suspension/reprise par facture, enregistrement d'un rappel manuel.
@@ -735,6 +739,12 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route(
             "/api/v1/invoices/{id}/reminders",
             get(routes::dunning_reminders::list_reminder_history),
+        )
+        // Story 25-3-a-1 (#414) : les règlements d'une facture, avec ce qui
+        // empêche de les annuler (tout rôle authentifié).
+        .route(
+            "/api/v1/invoices/{id}/settlements",
+            get(routes::invoices::list_invoice_settlements_handler),
         )
         // Story 5.3 : téléchargement PDF QR Bill (tout rôle authentifié)
         .route(

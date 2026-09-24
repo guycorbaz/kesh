@@ -1216,10 +1216,15 @@ pub async fn delete_all_by_company(pool: &MySqlPool, company_id: i64) -> Result<
     Ok(rows)
 }
 
+/// Un motif de refus de contre-passation : le motif, l'identifiant de la pièce
+/// qui le porte, et son étiquette lisible (numéro de pièce ou de compte).
+pub type ReversalBlockerHit = (ReversalBlocker, Option<i64>, Option<String>);
+
 /// Recense ce qui **empêche** de contre-passer une écriture (Story 24-4a, #380).
 ///
 /// Rend `None` quand l'écriture est contre-passable, et `Some((motif, id de la
-/// pièce))` sinon. ⛔ **Une seule requête** : les sept causes se calculent par
+/// pièce))` sinon — c'est-à-dire le **premier** des motifs de
+/// [`reversal_blockers`], qui porte seul la logique (Story 25-3-a-1). ⛔ **Une seule requête** : les sept causes se calculent par
 /// sous-requêtes corrélées, jamais par sept allers-retours.
 ///
 /// ⚠️ La **précédence** est celle de l'ordre des tests ci-dessous, et elle est
@@ -1235,7 +1240,33 @@ pub async fn reversal_blocker<'e, E>(
     executor: E,
     company_id: i64,
     id: i64,
-) -> Result<Option<(ReversalBlocker, Option<i64>, Option<String>)>, DbError>
+) -> Result<Option<ReversalBlockerHit>, DbError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::MySql>,
+{
+    Ok(reversal_blockers(executor, company_id, id)
+        .await?
+        .into_iter()
+        .next())
+}
+
+/// **Tous** les motifs qui empêchent de contre-passer une écriture, dans l'ordre
+/// de précédence (Story 25-3-a-1).
+///
+/// ⛔ **Pourquoi la liste, et pas seulement le premier.** Une contre-passation
+/// « au titre de son propriétaire » ([`reverse_owned_in_tx`]) lève **un** motif
+/// — celui de la pièce qu'elle annule — et doit voir les **suivants**. Un
+/// règlement encaissé par rapprochement bancaire porte `OwnedBySettlement`
+/// (rang 6) **et** `MatchedBankTransaction` (rang 7) : ne connaître que le
+/// premier ferait contre-passer en silence un paiement que la banque dit
+/// rapproché.
+///
+/// Écriture introuvable (ou d'une autre société) → [`DbError::NotFound`].
+pub async fn reversal_blockers<'e, E>(
+    executor: E,
+    company_id: i64,
+    id: i64,
+) -> Result<Vec<ReversalBlockerHit>, DbError>
 where
     E: sqlx::Executor<'e, Database = sqlx::MySql>,
 {
@@ -1296,37 +1327,45 @@ where
     // message qui dit « la facture F-2026-014 » se comprend, un `documentId: 47`
     // ne se comprend pas. Toutes les pièces n'en ont pas — un règlement et une
     // transaction bancaire n'ont que leur identifiant.
-    let blocker = if row.reverses_entry_id.is_some() {
-        Some((ReversalBlocker::IsAReversal, row.reverses_entry_id, None))
-    } else if row.reversed_by.is_some() {
-        Some((ReversalBlocker::AlreadyReversed, row.reversed_by, None))
-    } else if row.invoice_id.is_some() {
-        Some((
+    let mut blockers: Vec<ReversalBlockerHit> = Vec::new();
+    if row.reverses_entry_id.is_some() {
+        blockers.push((ReversalBlocker::IsAReversal, row.reverses_entry_id, None));
+    }
+    if row.reversed_by.is_some() {
+        blockers.push((ReversalBlocker::AlreadyReversed, row.reversed_by, None));
+    }
+    if row.invoice_id.is_some() {
+        blockers.push((
             ReversalBlocker::OwnedByInvoice,
             row.invoice_id,
             row.invoice_number,
-        ))
-    } else if row.credit_note_id.is_some() {
-        Some((
+        ));
+    }
+    if row.credit_note_id.is_some() {
+        blockers.push((
             ReversalBlocker::OwnedByCreditNote,
             row.credit_note_id,
             row.credit_note_number,
-        ))
-    } else if row.supplier_invoice_id.is_some() {
-        Some((
+        ));
+    }
+    if row.supplier_invoice_id.is_some() {
+        blockers.push((
             ReversalBlocker::OwnedBySupplierInvoice,
             row.supplier_invoice_id,
             row.supplier_invoice_number,
-        ))
-    } else if row.settlement_id.is_some() {
-        Some((ReversalBlocker::OwnedBySettlement, row.settlement_id, None))
-    } else if row.bank_transaction_id.is_some() {
-        Some((
+        ));
+    }
+    if row.settlement_id.is_some() {
+        blockers.push((ReversalBlocker::OwnedBySettlement, row.settlement_id, None));
+    }
+    if row.bank_transaction_id.is_some() {
+        blockers.push((
             ReversalBlocker::MatchedBankTransaction,
             row.bank_transaction_id,
             None,
-        ))
-    } else if row.archived_account_number.is_some() {
+        ));
+    }
+    if row.archived_account_number.is_some() {
         // ⛔ En dernier : c'est le seul motif que l'utilisateur peut lever
         // lui-même (réactiver le compte), et l'annoncer avant un motif de
         // propriété ferait croire qu'une facture deviendrait contre-passable.
@@ -1336,15 +1375,13 @@ where
         // « réactivez-LE » sans dire lequel, sur une écriture qui peut porter dix
         // lignes — le refus qui NOMME (le 400 de l'écriture) étant devenu
         // inatteignable depuis que le bouton est masqué. *(Passe 2 de revue.)*
-        Some((
+        blockers.push((
             ReversalBlocker::AccountArchived,
             None,
             row.archived_account_number,
-        ))
-    } else {
-        None
-    };
-    Ok(blocker)
+        ));
+    }
+    Ok(blockers)
 }
 
 /// Rend l'écriture qui **contre-passe** celle-ci, s'il en existe une.
@@ -1404,6 +1441,65 @@ pub async fn reverse_in_tx(
     id: i64,
     user_id: i64,
 ) -> Result<JournalEntryWithLines, DbError> {
+    reverse_in_tx_inner(tx, company_id, id, user_id, None).await
+}
+
+/// Ce qu'un appelant a **qualité** pour lever quand il contre-passe l'écriture
+/// d'une pièce qu'il annule (Story 25-3-a-1).
+///
+/// ⛔ **Une autorité est ÉTROITE** : elle lève **un** motif, **pour une pièce
+/// nommée**, et laisse la précédence se poursuivre. Un règlement client ne lève
+/// pas le motif d'un autre règlement, et un règlement encaissé par
+/// rapprochement reste refusé en `MatchedBankTransaction` — c'est le
+/// dé-rapprochement (25-3-b) qui défait ce lien, pas l'annulation.
+///
+/// ⚠️ Une variante par geste d'annulation, **et seulement celles qu'un geste
+/// exerce** : la 25-3-a-2 ajoutera celle du règlement fournisseur, dont
+/// l'exemption devra vérifier en plus que l'écriture est bien
+/// `settlement_journal_entry_id` — `reversal_blocker` attribue le même motif à
+/// l'écriture d'achat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReversalAuthority {
+    /// Annulation d'un règlement client : lève `OwnedBySettlement` pour la
+    /// ligne `invoice_settlements` nommée, et pour elle seule.
+    ClientSettlement { settlement_id: i64 },
+}
+
+impl ReversalAuthority {
+    /// L'autorité lève-t-elle ce motif, porté par cette pièce ?
+    fn exempts(self, blocker: ReversalBlocker, document_id: Option<i64>) -> bool {
+        match self {
+            Self::ClientSettlement { settlement_id } => {
+                blocker == ReversalBlocker::OwnedBySettlement && document_id == Some(settlement_id)
+            }
+        }
+    }
+}
+
+/// Contre-passe une écriture **au titre de son propriétaire**, dans une
+/// transaction fournie (Story 25-3-a-1).
+///
+/// Même logique que [`reverse_in_tx`] — c'est la **même** fonction interne —,
+/// à ceci près que le motif que l'`authority` a qualité pour lever n'est pas
+/// opposé. Tous les autres le restent, dans leur ordre.
+pub async fn reverse_owned_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    id: i64,
+    user_id: i64,
+    authority: ReversalAuthority,
+) -> Result<JournalEntryWithLines, DbError> {
+    reverse_in_tx_inner(tx, company_id, id, user_id, Some(authority)).await
+}
+
+/// La contre-passation, **écrite une seule fois** (25-3-zero, 25-3-a-1).
+async fn reverse_in_tx_inner(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    id: i64,
+    user_id: i64,
+    authority: Option<ReversalAuthority>,
+) -> Result<JournalEntryWithLines, DbError> {
     // (1) Verrou sur l'origine, puis recensement des empêchements.
     let origin: Option<(i64, i64, String)> = sqlx::query_as(
         "SELECT je.id, je.entry_number, fy.name \
@@ -1424,15 +1520,24 @@ pub async fn reverse_in_tx(
     // l'écriture doit rendre un **400 qui NOMME les comptes à réactiver**
     // (étape 3 ci-dessous). Un refus qui ne dit pas quel compte n'est pas
     // utilisable.
-    match reversal_blocker(&mut **tx, company_id, id).await? {
-        Some((ReversalBlocker::AccountArchived, _, _)) | None => {}
-        Some((blocker, document_id, document_label)) => {
-            return Err(DbError::EntryNotReversable {
-                blocker,
-                document_id,
-                document_label,
-            });
-        }
+    //
+    // ⛔ **Le motif levé par l'autorité est SAUTÉ, pas la liste.** Le premier
+    // motif restant est opposé — `AccountArchived` étant le dernier de la
+    // précédence, le sauter revient exactement à l'ancien `match` sur le
+    // premier motif quand aucune autorité n'est donnée.
+    let refused = reversal_blockers(&mut **tx, company_id, id)
+        .await?
+        .into_iter()
+        .find(|(blocker, document_id, _)| {
+            *blocker != ReversalBlocker::AccountArchived
+                && !authority.is_some_and(|a| a.exempts(*blocker, *document_id))
+        });
+    if let Some((blocker, document_id, document_label)) = refused {
+        return Err(DbError::EntryNotReversable {
+            blocker,
+            document_id,
+            document_label,
+        });
     }
 
     // (2) Lignes de l'origine, dans l'ordre CONTRACTUEL, inversées D ↔ C.

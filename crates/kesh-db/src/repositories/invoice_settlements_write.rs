@@ -20,7 +20,11 @@ use crate::entities::NewAuditLogEntry;
 use crate::entities::{
     Journal, NewInvoiceSettlement, NewJournalEntry, NewJournalEntryLine, SettlementChoice,
 };
-use crate::errors::{DbError, map_db_error};
+use crate::errors::{DbError, SettlementCancelBlocker, map_db_error};
+use crate::repositories::journal_entries::ReversalAuthority;
+use crate::repositories::settlement_cancellation::{
+    SettlementCancelHit, settlement_entry_cancel_blocker,
+};
 use crate::repositories::{audit_log, fiscal_years, invoice_settlements, journal_entries};
 
 /// Ce que rend un règlement enregistré : l'écriture créée, et le résiduel après.
@@ -275,4 +279,205 @@ pub async fn settle_invoice(
         amount_due_after: due_after,
         fully_settled,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Story 25-3-a-1 (#414) — annuler un règlement client
+// ---------------------------------------------------------------------------
+
+/// Ce qui empêche d'annuler le règlement `settlement_id` — la **tête** client
+/// (rang 1), puis la queue commune sur son écriture (rangs 2 à 5).
+///
+/// ⛔ **Une seule fonction pour lire et pour écrire** : `GET …/settlements`
+/// l'appelle pour masquer le bouton avant le clic, [`cancel_settlement_in_tx`]
+/// pour refuser. Une lecture qui divergerait de l'écriture afficherait un
+/// bouton qui échoue.
+///
+/// Règlement introuvable (ou d'une autre société) → [`DbError::NotFound`].
+pub async fn settlement_cancel_blocker(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    settlement_id: i64,
+) -> Result<Option<SettlementCancelHit>, DbError> {
+    let row: Option<(i64, String)> = sqlx::query_as(
+        "SELECT s.journal_entry_id, i.status FROM invoice_settlements s \
+         JOIN invoices i ON i.id = s.invoice_id AND i.company_id = s.company_id \
+         WHERE s.id = ? AND s.company_id = ?",
+    )
+    .bind(settlement_id)
+    .bind(company_id)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(map_db_error)?;
+    let (entry_id, status) = row.ok_or(DbError::NotFound)?;
+
+    // Rang 1. ⚠️ Une facture qui porte un règlement ne peut être que
+    // `validated` ou `cancelled` : l'encaissement exige `validated`, la
+    // dévalidation refuse une facture réglée, et `cancelled` ne naît en
+    // production que de l'avoir. Hors `validated`, c'est donc un avoir.
+    if status != "validated" {
+        return Ok(Some((SettlementCancelBlocker::InvoiceCredited, None, None)));
+    }
+    settlement_entry_cancel_blocker(conn, company_id, entry_id).await
+}
+
+/// Ce que rend une annulation de règlement.
+#[derive(Debug, Clone)]
+pub struct SettlementCancellation {
+    /// L'écriture inverse, datée du jour.
+    pub reversal_journal_entry_id: i64,
+    /// Le reste dû après l'annulation.
+    pub amount_due_after: Decimal,
+}
+
+/// Annule un règlement client **dans une transaction fournie**, sans `BEGIN`
+/// ni `COMMIT` (Story 25-3-a-1, #414).
+///
+/// Contre-passe l'écriture de règlement (datée du jour), **retire** la ligne
+/// `invoice_settlements` (arbitrage : retirée, non marquée annulée — le
+/// résiduel se calcule depuis cette table), projette `paid_at` et journalise.
+///
+/// ⛔ **Forme `_in_tx` publique, et rien qui présuppose l'appelant HTTP** : le
+/// dé-rapprochement (25-3-b) l'appellera après avoir défait le lien bancaire
+/// dans la même transaction — ce qui lève le rang 3 sans aucune exemption.
+///
+/// ⛔ **Qui refuse** : ce geste ne refuse lui-même que les rangs 1 et 2
+/// ([`DbError::SettlementNotCancellable`]) ; les rangs 3 à 5 sont refusés par
+/// la contre-passation, avec son erreur canonique (409 `EntryNotReversable`,
+/// 400 qui nomme les comptes, 400 `FiscalYearInvalid`). Une seule garde par
+/// motif : deux gardes du même motif masqueraient chacune la mutation de
+/// l'autre.
+///
+/// N'exécute **pas** de rollback : l'appelant, propriétaire de la transaction,
+/// en est responsable.
+pub async fn cancel_settlement_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    invoice_id: i64,
+    settlement_id: i64,
+    user_id: i64,
+) -> Result<SettlementCancellation, DbError> {
+    // (1) Verrou facture — même ordre que `settle_invoice`.
+    let locked: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM invoices WHERE id = ? AND company_id = ? FOR UPDATE")
+            .bind(invoice_id)
+            .bind(company_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(map_db_error)?;
+    locked.ok_or(DbError::NotFound)?;
+
+    // (2) Verrou sur la ligne de règlement, scopée par société ET facture : un
+    //     règlement d'une autre facture n'existe pas pour cette route.
+    let settlement: Option<(i64, Decimal, NaiveDate)> = sqlx::query_as(
+        "SELECT journal_entry_id, amount, settled_on FROM invoice_settlements \
+         WHERE id = ? AND company_id = ? AND invoice_id = ? FOR UPDATE",
+    )
+    .bind(settlement_id)
+    .bind(company_id)
+    .bind(invoice_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    let (entry_id, amount, settled_on) = settlement.ok_or(DbError::NotFound)?;
+
+    // (3) Les motifs du geste. Rangs 1-2 : refusés ici. Rangs 3-5 : laissés au
+    //     socle, qui les refuse avec son erreur canonique.
+    if let Some((
+        blocker @ (SettlementCancelBlocker::InvoiceCredited
+        | SettlementCancelBlocker::FiscalYearClosed),
+        _,
+        _,
+    )) = settlement_cancel_blocker(tx, company_id, settlement_id).await?
+    {
+        return Err(DbError::SettlementNotCancellable { blocker });
+    }
+
+    // (4) La contre-passation, au titre de ce règlement et de lui seul.
+    let reversal = journal_entries::reverse_owned_in_tx(
+        tx,
+        company_id,
+        entry_id,
+        user_id,
+        ReversalAuthority::ClientSettlement { settlement_id },
+    )
+    .await?;
+
+    // (5) Le retrait.
+    sqlx::query("DELETE FROM invoice_settlements WHERE id = ? AND company_id = ?")
+        .bind(settlement_id)
+        .bind(company_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+
+    // (6) ⛔ `paid_at` est la PROJECTION du résiduel : il retombe à `NULL` si
+    //     le résiduel redevient positif, et seulement alors. Un résiduel resté
+    //     ≤ 0 le laisse intact — branche défensive, que l'application ne
+    //     produit pas (trop-perçu refusé ; facture créditée arrêtée au rang 1).
+    //     ⚠️ `version` et `updated_at` bougent **toujours** : l'encaissement ne
+    //     les bumpe qu'au solde, mais une annulation change toujours l'état.
+    let due_after = invoice_settlements::amount_due(&mut **tx, invoice_id).await?;
+    let sql = if due_after > Decimal::ZERO {
+        "UPDATE invoices SET paid_at = NULL, version = version + 1, updated_at = NOW(3) \
+         WHERE id = ? AND company_id = ?"
+    } else {
+        "UPDATE invoices SET version = version + 1, updated_at = NOW(3) \
+         WHERE id = ? AND company_id = ?"
+    };
+    sqlx::query(sql)
+        .bind(invoice_id)
+        .bind(company_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+
+    // (7) L'audit du GESTE. ⚠️ La contre-passation a déjà écrit
+    //     `journal_entry.reversed` sur l'écriture : deux lignes, c'est voulu —
+    //     l'une dit le fait comptable, l'autre le geste métier.
+    audit_log::insert_in_tx(
+        tx,
+        NewAuditLogEntry::user(
+            user_id,
+            "invoice.settlement_cancelled",
+            "invoice",
+            invoice_id,
+            Some(serde_json::json!({
+                "settlementId": settlement_id,
+                "settledAmount": amount,
+                "settledOn": settled_on,
+                "settlementJournalEntryId": entry_id,
+                "reversalJournalEntryId": reversal.entry.id,
+                "amountDueAfter": due_after,
+            })),
+        ),
+    )
+    .await?;
+
+    Ok(SettlementCancellation {
+        reversal_journal_entry_id: reversal.entry.id,
+        amount_due_after: due_after,
+    })
+}
+
+/// Annule un règlement client, transaction comprise — mince enveloppement de
+/// [`cancel_settlement_in_tx`].
+pub async fn cancel_settlement(
+    pool: &MySqlPool,
+    user_id: i64,
+    company_id: i64,
+    invoice_id: i64,
+    settlement_id: i64,
+) -> Result<SettlementCancellation, DbError> {
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+    match cancel_settlement_in_tx(&mut tx, company_id, invoice_id, settlement_id, user_id).await {
+        Ok(done) => {
+            tx.commit().await.map_err(map_db_error)?;
+            Ok(done)
+        }
+        Err(e) => {
+            let _ = tx.rollback().await;
+            Err(e)
+        }
+    }
 }

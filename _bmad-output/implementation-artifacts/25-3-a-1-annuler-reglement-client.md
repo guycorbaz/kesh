@@ -1,6 +1,6 @@
 # Story 25.3-a-1 : Annuler un règlement client — par contre-passation
 
-Status: ready-for-dev
+Status: in-progress
 
 **Issue : [#414]** — `refs #414`, **sans la fermer** : l'issue couvre aussi le fournisseur, que
 porte la sœur **25-3-a-2**, et c'est **elle** qui la fermera. ⚠️ Ne mettre `closes` nulle part ici.

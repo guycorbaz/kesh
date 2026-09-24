@@ -11,7 +11,8 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use kesh_db::errors::{
-    DbError, RejectedRevenueAccount, RevenueAccountRejection, ReversalBlocker, UnvalidationBlocker,
+    DbError, RejectedRevenueAccount, RevenueAccountRejection, ReversalBlocker,
+    SettlementCancelBlocker, UnvalidationBlocker,
 };
 use kesh_i18n::{FluentArgs, I18nBundle, Locale};
 use serde::Serialize;
@@ -2470,7 +2471,7 @@ impl IntoResponse for AppError {
                         ),
                         ReversalBlocker::OwnedBySettlement => (
                             "journal-entries-reverse-blocked-settlement",
-                            "Cette écriture est un règlement de facture : son annulation viendra avec la contre-passation des règlements.",
+                            "Cette écriture est un règlement de facture : annulez le règlement depuis la fiche de la facture, qui indique si c'est possible.",
                         ),
                         ReversalBlocker::MatchedBankTransaction => (
                             "journal-entries-reverse-blocked-bank-match",
@@ -2561,6 +2562,38 @@ impl IntoResponse for AppError {
                         }
                     });
                     (StatusCode::CONFLICT, Json(body)).into_response()
+                }
+                // Story 25-3-a-1 (#414) — l'annulation d'un règlement refusée.
+                //
+                // ⚠️ Seuls les rangs que le GESTE refuse lui-même arrivent ici
+                // (facture créditée, exercice clos) ; les autres sont refusés
+                // par la contre-passation, avec son erreur propre. Les branches
+                // restantes gardent le `match` exhaustif. ⛔ **Les clés sont
+                // celles de l'écran** : un seul texte par motif.
+                DbError::SettlementNotCancellable { blocker } => {
+                    let (key, fallback) = match blocker {
+                        SettlementCancelBlocker::InvoiceCredited => (
+                            "invoices-settlement-cancel-blocked-credited",
+                            "Cette facture a été créditée par un avoir : ce règlement est un paiement à lettrer, il ne s'annule pas.",
+                        ),
+                        SettlementCancelBlocker::FiscalYearClosed => (
+                            "settlement-cancel-blocked-fiscal-year-closed",
+                            "Ce règlement appartient à un exercice clôturé : un administrateur doit rouvrir l'exercice pour pouvoir l'annuler.",
+                        ),
+                        SettlementCancelBlocker::MatchedBankTransaction => (
+                            "settlement-cancel-blocked-bank-match",
+                            "Ce règlement est rapproché d'une transaction bancaire : annulez d'abord le rapprochement.",
+                        ),
+                        SettlementCancelBlocker::AccountArchived => (
+                            "settlement-cancel-blocked-account-archived",
+                            "Un compte de ce règlement a été archivé : réactivez-le pour pouvoir annuler le règlement.",
+                        ),
+                        SettlementCancelBlocker::NoOpenFiscalYearToday => (
+                            "settlement-cancel-blocked-no-fiscal-year",
+                            "Aucun exercice ouvert ne couvre la date du jour : créez-le pour pouvoir annuler ce règlement.",
+                        ),
+                    };
+                    build_response(StatusCode::CONFLICT, blocker.code(), &t(key, fallback))
                 }
                 // Story 25-2-b-1 (#440) — un brouillon numéroté qu'on redate
                 // hors de son exercice. Conflit d'état → 409.

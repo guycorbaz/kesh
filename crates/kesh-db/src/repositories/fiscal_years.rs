@@ -532,23 +532,50 @@ pub async fn find_covering_date_in_tx(
     .map_err(map_db_error)
 }
 
+/// Exercice **ouvert** couvrant une date — requête partagée par
+/// [`find_open_covering_date`] (verrouillante) et [`has_open_covering_date`]
+/// (lecture seule), pour que les deux ne divergent jamais.
+const OPEN_COVERING_DATE_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+     FROM fiscal_years \
+     WHERE company_id = ? AND start_date <= ? AND end_date >= ? AND status = 'Open' \
+     LIMIT 1";
+
 pub async fn find_open_covering_date(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     date: NaiveDate,
 ) -> Result<Option<FiscalYear>, DbError> {
-    sqlx::query_as::<_, FiscalYear>(
-        "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
-         FROM fiscal_years \
-         WHERE company_id = ? AND start_date <= ? AND end_date >= ? AND status = 'Open' \
-         LIMIT 1 FOR UPDATE",
-    )
-    .bind(company_id)
-    .bind(date)
-    .bind(date)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(map_db_error)
+    sqlx::query_as::<_, FiscalYear>(&format!("{OPEN_COVERING_DATE_SQL} FOR UPDATE"))
+        .bind(company_id)
+        .bind(date)
+        .bind(date)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)
+}
+
+/// Un exercice **ouvert** couvre-t-il cette date ? **Sans verrou** — pour une
+/// lecture qui annonce à l'écran ce que l'écriture refuserait (Story 25-3-a-1).
+///
+/// ⚠️ Ne sert **qu'à la lecture** : une écriture passe par
+/// [`find_open_covering_date`], dont le `FOR UPDATE` sérialise avec une
+/// clôture concurrente. Même prédicat, par construction (`OPEN_COVERING_DATE_SQL`).
+pub async fn has_open_covering_date<'e, E>(
+    executor: E,
+    company_id: i64,
+    date: NaiveDate,
+) -> Result<bool, DbError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::MySql>,
+{
+    Ok(sqlx::query_as::<_, FiscalYear>(OPEN_COVERING_DATE_SQL)
+        .bind(company_id)
+        .bind(date)
+        .bind(date)
+        .fetch_optional(executor)
+        .await
+        .map_err(map_db_error)?
+        .is_some())
 }
 
 /// Retourne le premier exercice de la company qui chevauche l'intervalle
