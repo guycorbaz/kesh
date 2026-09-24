@@ -93,8 +93,18 @@ Et la levée naïve est **fausse**, pour une raison de précédence :
    facture fournisseur (« sauf exercice clos »). ⚠️ C'est **plus strict** que `reverse_in_tx`, qui
    accepte une origine en exercice clos (contre-passation datée du jour) : la borne appartient donc
    au **geste d'annulation**, pas au socle, dont le comportement ne change pas. Erreur existante :
-   `DbError::FiscalYearClosed` → 400 `FISCAL_YEAR_CLOSED` (`crates/kesh-api/src/errors.rs:2682`),
-   aucune variante neuve.
+   `DbError::FiscalYearClosed` → 400 `FISCAL_YEAR_CLOSED` (`crates/kesh-api/src/errors.rs:2682`,
+   le mapping de la variante **`DbError`** — à ne pas confondre avec `AppError::FiscalYearClosed`,
+   `:304`, autre type), aucune variante neuve.
+
+   **Comment lire « exercice clos »** — ne pas l'inventer : `fiscal_years.status = 'Closed'`,
+   joint par `journal_entries.fiscal_year_id` de l'écriture de **règlement** (non de l'exercice du
+   jour). Le patron existe : `delete_in_tx` (`journal_entries.rs:1014-1035`) lit
+   `fy.status` dans la même requête que le verrou de l'écriture. ⚠️ Le texte générique du repli
+   serveur (« aucune écriture ne peut y être ajoutée ou modifiée ») est **approximatif** ici — la
+   contre-passation serait datée d'un exercice ouvert ; ce n'est pas un défaut, parce que l'écran
+   masque le bouton avant le clic et affiche le texte **propre** de la famille
+   `invoice-settlement-cancel-blocked-*` (AC 13).
 
    **Ce qui empêche une annulation, et dans quel ordre.** Le calcul qui sert à la fois le refus et
    le `cancellable` de la lecture (AC 11) rend, par précédence **figée et testée** :
@@ -216,8 +226,9 @@ Et la levée naïve est **fausse**, pour une raison de précédence :
       n'a que des appelants de test) : sans elle, l'écran n'a aucun moyen de **désigner** le
       règlement à annuler. Tout rôle (`authenticated_routes`, comme `GET /invoices/{id}`). Chaque
       élément : `id`, `journalEntryId`, `amount`, `settledOn`, `settlementType`, et
-      **`cancellable` + `cancelBlockedBy`** — calculés par la **même** fonction que le refus
-      (AC 1), pour que l'écran masque le bouton **avant** le clic (patron de la 24-4a, AC 11).
+      **`cancellable` + `cancelBlockedBy`** — calculés par la **même** fonction que le refus du
+      geste d'annulation, **celle de l'AC 3-bis** (sa précédence propre, exercice clos en tête — et
+      non `reversal_blocker` du socle, AC 1, qui ignore l'exercice de l'origine), pour que l'écran masque le bouton **avant** le clic (patron de la 24-4a, AC 11).
       ⛔ Un bouton affiché qui échoue au clic est le défaut que la 24-4a a déjà payé.
       **Valeurs atteignables** de `cancelBlockedBy` pour une ligne présente : celles de l'AC 3-bis —
       `FISCAL_YEAR_CLOSED`, le statut de facture, `MATCHED_BANK_TRANSACTION` et `ACCOUNT_ARCHIVED` (avec le numéro du compte en libellé, comme `reversalBlockedLabel`) ;
@@ -225,7 +236,14 @@ Et la levée naïve est **fausse**, pour une raison de précédence :
       même qui contre-passe — mais le type les admet, et l'écran les traite (AC 13).
     - **Côté fournisseur**, même besoin : `SupplierInvoiceResponse` gagne
       `settlementCancellable` / `settlementCancelBlockedBy`, calculés par la même fonction, pour une
-      facture `paid`. Seuls `FISCAL_YEAR_CLOSED` et `ACCOUNT_ARCHIVED` y sont atteignables aujourd'hui — aucun des cinq sites de
+      facture `paid`. ⚠️ **Où les calculer** : `SupplierInvoiceResponse::from_parts`
+      (`routes/supplier_invoices.rs:86`) est **synchrone** et partagée par quatre handlers (GET,
+      création, `pay`, `cancel`) ; le calcul demande une lecture en base. Suivre le patron
+      `InvoiceResponse::from_parts(..).with_settlement(settled, due)` (`routes/invoices.rs:640`) :
+      un **constructeur additionnel** appelé par le **GET** et par la réponse de l'annulation du
+      règlement ; ailleurs les champs sont **absents** (`Option` + `skip_serializing_if`), jamais une
+      valeur par défaut qui mentirait (`settlementCancellable: false` sur une facture annulable).
+      La liste (`SupplierInvoiceListItem`) n'est pas touchée. Seuls `FISCAL_YEAR_CLOSED` et `ACCOUNT_ARCHIVED` y sont atteignables aujourd'hui — aucun des cinq sites de
       `reconciliation.rs` qui posent `matched_entry_id` ne rapproche une écriture fournisseur
       (vérifié en passe 1) —, et c'est précisément pourquoi le calcul ne doit pas le **supposer**.
     - Réponse des deux `cancel` : la facture relue (`InvoiceResponse` avec `amountSettled` /
@@ -332,8 +350,8 @@ Et la levée naïve est **fausse**, pour une raison de précédence :
 
 - [ ] **T1 — Le socle** (AC 1, 2, 3) : motifs en liste ordonnée, contre-passation « au titre de »,
       `reverse_in_tx` inchangé. Tests de précédence et d'exemption **avant** tout appelant.
-- [ ] **T2 — Le règlement client** (AC 4-7) : `cancel_settlement_in_tx` + wrapper, `paid_at`.
-- [ ] **T3 — Le règlement fournisseur** (AC 8, 9).
+- [ ] **T2 — Le règlement client** (AC 3-bis, 4-7) — la précédence d'annulation de l'AC 3-bis, écrite **une** fois et partagée avec T3 : `cancel_settlement_in_tx` + wrapper, `paid_at`.
+- [ ] **T3 — Le règlement fournisseur** (AC 3-bis, 8, 9).
 - [ ] **T4 — Audit et routes** (AC 10, 11) : codes, libellés ×4, `ACTIONS`, registre de routes
       recompté, `GET /invoices/{id}/settlements`.
 - [ ] **T5 — Motifs de refus** (AC 12) : FTL ×4, replis serveur et Svelte, grep de la clé.
@@ -485,6 +503,7 @@ qu'elle suggère (refuser l'avoir) contredit ce modèle — à reprendre avec Gu
 | Date | Étape | Note |
 |---|---|---|
 | 2026-09-24 | spec | Fille de la 25-3 (split), sur le socle `reverse_in_tx` mergé (PR #453). ⛔ **Fait établi à la lecture, et il structure la story** : `reverse_in_tx` **refuse lui-même** les écritures de règlement (`OWNED_BY_SETTLEMENT`, `OWNED_BY_SUPPLIER_INVOICE`) — le socle ne suffit pas tel quel. Et la levée naïve est **fausse** : `reversal_blocker` ne rend que le premier motif, et un règlement **rapproché** porte `OWNED_BY_SETTLEMENT` (rang 6) **avant** `MATCHED_BANK_TRANSACTION` (rang 7) — l'ignorer contre-passerait en silence un paiement que la banque dit rapproché. D'où une exemption **étroite** (un motif, une pièce nommée) qui **laisse la précédence se poursuivre** (AC 1, AC 7). Deux autres faits établis : **aucune route ne liste les règlements d'une facture** (`list_for_invoice` n'a que des appelants de test), donc l'écran ne pouvait pas désigner le règlement à annuler — route ajoutée (AC 11) ; et le manuel **promet déjà** le geste (`:1048`). La question de date laissée ouverte par la mère est **tranchée par le socle** : jour, exercice ouvert (AC 3). Trois questions laissées à Guy (Q1-Q3), chacune avec une recommandation. |
+| 2026-09-24 | validate P2 | **Deux lentilles Haiku 4.5** en contexte frais, prompt versionné `25-3-a-validate-prompt-p2.md`. Lentille A : **1 MEDIUM, 2 LOW** ; lentille B : **0 finding**, axes déclarés tous exercés — mais deux d'entre eux effleurés, **repris par l'orchestrateur**, qui y trouve **1 MEDIUM et 1 LOW**. ✅ **MEDIUM (A)** : l'AC 11 faisait calculer `cancelBlockedBy` par la précédence du **socle** (AC 1), qui ignore l'exercice de l'origine, au lieu de celle du **geste** (AC 3-bis) — corrigé. ✅ **MEDIUM (orchestrateur)** : `SupplierInvoiceResponse::from_parts` est synchrone et partagée par quatre handlers, le calcul demandé ne pouvait pas y vivre — patron `with_settlement` prescrit, champs **absents** ailleurs plutôt que faux. ✅ LOW : l'AC 3-bis n'était rattaché à aucune tâche ; la lecture de « exercice clos » n'était pas dite (patron `delete_in_tx`). ❌ **LOW (A) réfuté** : « `errors.rs:2682` devrait être `:304` » — la 2682 est bien le mapping de `DbError::FiscalYearClosed`, la 304 est `AppError::FiscalYearClosed`, un autre type ; faux positif Haiku, et la citation précise désormais les deux. |
 | 2026-09-24 | Q5 | Guy répond « continue » sans trancher Q5 : la fiche **applique la recommandation** — un règlement dont l'écriture est en exercice **clos** ne s'annule pas (AC 3-bis, `FISCAL_YEAR_CLOSED`, erreur existante), marquée comme **position de la fiche**, non comme arbitrage. La précédence des motifs d'annulation est écrite (exercice clos, statut, rapprochement, compte archivé). |
 | 2026-09-24 | arbitrages (2) | ⛔ **Guy corrige Q1** : une facture fournisseur s'annule **dans tous les cas, sauf exercice clos** ; payée, son règlement **reste** et **redevient à lettrer** ; un paiement doit correspondre à une facture, au besoin créée pour lui (« comme bexio ») ; une facture client envoyée ne se modifie plus. ⇒ **25-3-c** créée au registre, qui absorbe #454 ; cette story garde l'annulation du **règlement**. L'ancienne Q4 est tranchée par ce modèle (le règlement d'une facture créditée est **à lettrer**, refus nommé ici) ; **#456 change de nature**. Q5 posée (borne « exercice clos » pour l'annulation d'un règlement). |
 | 2026-09-24 | validate P1 | **Deux lentilles Sonnet** en contexte frais, prompt versionné `25-3-a-validate-prompt-p1.md`, **tous les axes déclarés** (non exercés : recalcul des compteurs i18n du frontend, contenu linguistique des trois locales non françaises, concurrence avec `confirm_batch`). **1 HIGH, 3 MEDIUM, 3 LOW**, tous vérifiés dans le code avant correction. ⛔ **HIGH (A)** : un avoir **peut** viser une facture partiellement réglée (`credit_notes.rs:291-304` ne lit que `paid_at`), la bascule en `cancelled` et laisse le règlement en place — que la garde `validated` de l'AC 6 rend alors inannulable ; et le test « facture couverte par un avoir » de l'AC 14 décrivait un état que l'application **ne produit pas**. Corrigé : le cas est nommé, refusé et renvoyé à **#456** (défaut antérieur, ouvert), la branche « résiduel ≤ 0 » est déclarée **défensive** et testée sur état forgé **dit tel**. ⚠️ **Deux défauts ANTÉRIEURS trouvés au passage, et ouverts** : **#456** (l'avoir sur facture partiellement réglée rend la créance créditrice) et **#455** (`amount_due` retranche un avoir **HT** d'un total **TTC**). **MEDIUM (B)** : aucun texte pour les motifs sur les **nouveaux** écrans — famille de clés `invoice-settlement-cancel-blocked-*` et **un seul** module de mapping ; côté fournisseur, `SupplierInvoiceResponse` gagne `settlementCancellable` / `settlementCancelBlockedBy` ; bullet API qui prescrivait un 403 à Consultation sur une route ouverte à tout rôle ; **le manuel n'a aucune section sur l'enregistrement d'un règlement client** — sous-section « Enregistrer et annuler un règlement » à créer. **LOW** : tables du test multi-tenant **énumérées** au lieu d'être comptées (il y en a cinq, pas quatre) ; second commentaire E2E périmé (`invoices.spec.ts:322-324`) ; deux plages de lignes décalées d'une unité. Symptômes grepés sur la fiche après correction : aucun résidu. Q4 posée à Guy. |
