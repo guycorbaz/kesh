@@ -1746,3 +1746,139 @@ async fn export_global_zip_repo_scoping_all_list_all_by_company(pool: MySqlPool)
         "ligne retournée pour A ne pointe pas vers l'invoice de A — fuite cross-tenant"
     );
 }
+
+// ============================================================
+// Story 25-5-a (#386) — les onze tables ajoutées : elles SORTENT,
+// et elles ne fuient pas d'une société à l'autre.
+// ============================================================
+
+/// ⛔ **Deux propriétés en un seul test, et il faut les deux.**
+///
+/// Qu'un CSV soit présent ne prouve rien — un sérialiseur qui n'écrirait que
+/// son en-tête produirait un fichier, et le test de structure resterait vert.
+/// Ce test vérifie donc que **la ligne de la société A y figure**.
+///
+/// Et le symétrique compte autant : **la ligne de la société B n'y est pas**.
+/// Les trois tables enfants (`credit_note_lines`, `supplier_invoice_lines`,
+/// `payment_batch_items`) n'ont **pas de `company_id`** — leur filtre passe par
+/// une jointure sur le parent, et c'est exactement le genre de scoping qu'on
+/// oublie. *Une fonction d'export non scopée exfiltrerait les données d'une
+/// autre société sans que rien ne le signale.*
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn export_global_zip_onze_tables_neuves_sortent_et_sont_scopees(pool: MySqlPool) {
+    let a = seed_company(&pool, "co_386_a", Role::Comptable).await;
+    let b = seed_company(&pool, "co_386_b", Role::Comptable).await;
+
+    // Un jeu minimal par société : contact → projet → personne de contact,
+    // puis facture + avoir, facture fournisseur + lot de paiement, règlement.
+    for (ctx, suffixe) in [(&a, "A"), (&b, "B")] {
+        let cid = ctx.company_id;
+        let contact_id: i64 = sqlx::query_scalar(
+            "INSERT INTO contacts (company_id, contact_type, name, version) \
+             VALUES (?, 'Entreprise', ?, 1) RETURNING id",
+        )
+        .bind(cid)
+        .bind(format!("Contact {suffixe}"))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO projects (company_id, code, name, archived, version) \
+             VALUES (?, ?, ?, FALSE, 1)",
+        )
+        .bind(cid)
+        .bind(format!("PRJ-{suffixe}"))
+        .bind(format!("Projet {suffixe}"))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO contact_persons (company_id, contact_id, first_name, last_name, \
+             active, version) VALUES (?, ?, ?, 'Nom', TRUE, 1)",
+        )
+        .bind(cid)
+        .bind(contact_id)
+        .bind(format!("Prenom{suffixe}"))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO imported_supplier_invoices (company_id, status, file_hash, \
+             storage_path, original_filename, mime_type, byte_size, creditor_iban, \
+             is_qr_iban, creditor_address_type, creditor_name, creditor_country, \
+             reference_type, currency, version) \
+             VALUES (?, 'to_complete', ?, ?, ?, 'application/pdf', 1024, \
+             'CH9300762011623852957', FALSE, 'S', ?, 'CH', 'NON', 'CHF', 1)",
+        )
+        .bind(cid)
+        .bind(format!("hash-{suffixe}"))
+        .bind(format!("/inbox/{suffixe}.pdf"))
+        .bind(format!("piece-{suffixe}.pdf"))
+        .bind(format!("Fournisseur {suffixe}"))
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    let app = spawn_app(pool.clone()).await;
+    let resp = app
+        .client
+        .get(app.url("/api/v1/exports/global.zip"))
+        .bearer_auth(&a.jwt)
+        .send()
+        .await
+        .unwrap();
+    let body = resp.bytes().await.unwrap();
+    let entries = assert_zip_response(&body);
+    let lire = |nom: &str| -> String {
+        entries
+            .iter()
+            .find(|(n, _)| n == nom)
+            .map(|(_, c)| String::from_utf8_lossy(c).to_string())
+            .unwrap_or_else(|| panic!("`{nom}` absent du ZIP"))
+    };
+
+    // Les quatre tables peuplées ci-dessus : la ligne de A sort, celle de B non.
+    for (fichier, marqueur_a, marqueur_b) in [
+        ("projects.csv", "Projet A", "Projet B"),
+        ("contact_persons.csv", "PrenomA", "PrenomB"),
+        (
+            "imported_supplier_invoices.csv",
+            "Fournisseur A",
+            "Fournisseur B",
+        ),
+        ("contacts.csv", "Contact A", "Contact B"),
+    ] {
+        let csv = lire(fichier);
+        assert!(
+            csv.contains(marqueur_a),
+            "`{fichier}` doit porter la ligne de la société A ({marqueur_a})"
+        );
+        assert!(
+            !csv.contains(marqueur_b),
+            "⛔ FUITE MULTI-TENANT : `{fichier}` porte une ligne de la société B ({marqueur_b})"
+        );
+    }
+
+    // Les sept autres sont vides ici, mais leur fichier et leur en-tête
+    // doivent exister — un sérialiseur qui ne tourne pas ne produit rien.
+    for (fichier, entete) in [
+        ("credit_notes.csv", "credit_note_number"),
+        ("credit_note_lines.csv", "credit_note_id"),
+        ("supplier_invoices.csv", "supplier_invoice_number"),
+        ("supplier_invoice_lines.csv", "expense_account_id"),
+        ("payment_batches.csv", "requested_execution_date"),
+        ("payment_batch_items.csv", "end_to_end_id"),
+        ("invoice_settlements.csv", "settled_on"),
+        ("audit_log.csv", "actor_label"),
+    ] {
+        let csv = lire(fichier);
+        assert!(
+            csv.contains(entete),
+            "`{fichier}` doit porter son en-tête (colonne `{entete}` attendue)"
+        );
+    }
+}
