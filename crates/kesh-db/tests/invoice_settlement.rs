@@ -1139,9 +1139,26 @@ async fn la_queue_commune_se_lit_sur_l_ecriture(pool: MySqlPool) {
 /// Attend qu'une AUTRE connexion de la base de ce test soit bloquée sur une
 /// requête `… fiscal_years … FOR UPDATE`. Échoue au bout de dix secondes — une
 /// annulation qui n'attend jamais de verrou est elle-même une anomalie.
-async fn attendre_un_verrou_sur_l_exercice(pool: &MySqlPool) {
+///
+/// ⚠️ **Couplée à la forme textuelle du verrou** : un correctif tout aussi
+/// valide en `LOCK IN SHARE MODE` ne serait pas vu, et le test expirerait en
+/// accusant l'annulation. Changer la forme du verrou, c'est changer ce motif.
+///
+/// ⚠️ Si l'annulation se termine AVANT d'avoir attendu (erreur précoce :
+/// montage cassé, `NotFound`…), son résultat est affiché tel quel — sans quoi
+/// la sonde tournerait dix secondes et masquerait la vraie erreur.
+async fn attendre_un_verrou_sur_l_exercice<T: std::fmt::Debug>(
+    pool: &MySqlPool,
+    annulation: &mut tokio::task::JoinHandle<T>,
+) {
     let debut = std::time::Instant::now();
     loop {
+        if annulation.is_finished() {
+            panic!(
+                "l'annulation a fini sans attendre de verrou : {:?}",
+                annulation.await
+            );
+        }
         let en_attente: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM information_schema.PROCESSLIST \
              WHERE ID <> CONNECTION_ID() AND DB = DATABASE() \
@@ -1197,7 +1214,7 @@ async fn une_cloture_concurrente_attend_l_annulation(pool: MySqlPool) {
     // (2) L'annulation démarre pendant ce temps.
     let p = pool.clone();
     let (company_id, user_id) = (seeded.company_id, seeded.admin_user_id);
-    let annulation = tokio::spawn(async move {
+    let mut annulation = tokio::spawn(async move {
         invoice_settlements_write::cancel_settlement(&p, user_id, company_id, inv_id, sid).await
     });
     // ⛔ **Synchronisation déterministe, pas un délai** (passe 2 de revue de
@@ -1208,7 +1225,7 @@ async fn une_cloture_concurrente_attend_l_annulation(pool: MySqlPool) {
     // l'annulation y attend AVANT de juger ; sans lui, elle juge d'abord, puis
     // attend au verrou du socle — dans les deux cas elle attend, et c'est ce qui
     // rend l'issue indépendante du minutage.
-    attendre_un_verrou_sur_l_exercice(&pool).await;
+    attendre_un_verrou_sur_l_exercice(&pool, &mut annulation).await;
 
     // (3) La clôture est validée.
     closing.commit().await.unwrap();

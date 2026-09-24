@@ -386,7 +386,8 @@ pub async fn cancel_settlement_in_tx(
     //     sans verrou : une clôture (`fiscal_years::close`, un simple `UPDATE`)
     //     validée entre cette lecture et la contre-passation passerait
     //     inaperçue, et l'on annulerait un règlement d'exercice clos. Le socle
-    //     ne le rattraperait pas : il ne verrouille que l'exercice du JOUR.
+    //     ne le rattraperait pas : il verrouille bien l'exercice de l'origine,
+    //     mais APRÈS cette lecture, et n'en relit jamais le statut.
     //     Patron : `journal_entries::delete_in_tx`, qui verrouille écriture et
     //     exercice dans la même requête. *(Passe 1 de revue de code.)*
     //
