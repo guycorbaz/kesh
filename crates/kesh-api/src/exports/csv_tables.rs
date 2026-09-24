@@ -1,4 +1,10 @@
-//! Story 9-2b — 16 fonctions `serialize_<table>_csv` (Decision §scope-tables).
+//! Story 9-2b — les fonctions `serialize_<table>_csv` (Decision §scope-tables).
+//!
+//! ⚠️ **Ce nombre était écrit ici, et il mentait** : l'en-tête annonçait « 16
+//! fonctions » alors qu'il y en avait **19**, puis **30** avec la 25-5-a. Il a
+//! été retiré plutôt que corrigé — *un décompte qu'aucun calcul ne tient se
+//! périme en silence, et celui-ci l'avait fait deux fois.* Le seul nombre qui
+//! compte est désormais **dérivé** : cf. `TABLES_EXPORTEES` (`exports/global.rs`).
 //!
 //! Format CSV identique Story 9-2a §csv-format :
 //! - UTF-8 BOM en tête (`\xEF\xBB\xBF`)
@@ -111,7 +117,27 @@ fn fmt_opt_i64(v: Option<i64>) -> String {
 
 /// Format `Option<String>` → string ou chaîne vide.
 fn fmt_opt_str(s: &Option<String>) -> String {
-    s.clone().unwrap_or_default()
+    txt(s.clone().unwrap_or_default())
+}
+
+/// Toute cellule de **texte libre** passe par ici (Story 25-5-a, #386).
+///
+/// ⛔ **`csv_sanitize` existait et cet export ne l'employait NULLE PART.** Elle
+/// avait été extraite de `routes::invoices` par la 25-1c-a précisément pour
+/// être réutilisée ; l'export de souveraineté, qui produit le fichier qu'un
+/// utilisateur ouvrira dans un tableur pour migrer, était passé à côté.
+///
+/// Une cellule commençant par `=`, `+`, `-` ou `@` est interprétée comme une
+/// **formule** par Excel et LibreOffice. Un nom de contact, une description de
+/// ligne ou un `details_json` d'audit sont du texte que l'utilisateur contrôle.
+///
+/// ⚠️ La 25-5-a ajoute onze tables **pleines de texte libre** — libellés
+/// d'avoirs, descriptions de lignes fournisseurs, noms de projets, personnes de
+/// contact, instantanés d'audit —, donc elle élargissait la surface sans
+/// fermer le trou. *L'omission est antérieure ; c'est cette story qui la rendait
+/// coûteuse.*
+fn txt(s: String) -> String {
+    crate::util::csv_sanitize(s)
 }
 
 /// Format `bool` → `"true"` / `"false"` (interopérable Excel / Sheets).
@@ -150,8 +176,8 @@ pub fn serialize_company_csv<W: Write>(rows: &[Company], writer: W) -> Result<()
     for c in rows {
         csv.write_record([
             c.id.to_string(),
-            c.name.clone(),
-            c.address.clone(),
+            txt(c.name.clone()),
+            txt(c.address.clone()),
             fmt_opt_str(&c.ide_number),
             c.org_type.as_str().to_string(),
             c.accounting_language.as_str().to_string(),
@@ -191,7 +217,7 @@ pub fn serialize_fiscal_years_csv<W: Write>(
         csv.write_record([
             fy.id.to_string(),
             fy.company_id.to_string(),
-            fy.name.clone(),
+            txt(fy.name.clone()),
             fmt_date(fy.start_date),
             fmt_date(fy.end_date),
             fy.status.as_str().to_string(),
@@ -229,8 +255,8 @@ pub fn serialize_accounts_csv<W: Write>(rows: &[Account], writer: W) -> Result<(
         csv.write_record([
             a.id.to_string(),
             a.company_id.to_string(),
-            a.number.clone(),
-            a.name.clone(),
+            txt(a.number.clone()),
+            txt(a.name.clone()),
             a.account_type.as_str().to_string(),
             fmt_opt_i64(a.parent_id),
             fmt_bool(a.active),
@@ -281,7 +307,7 @@ pub fn serialize_journal_entries_csv<W: Write>(
             je.entry_number.to_string(),
             fmt_date(je.entry_date),
             je.journal.as_str().to_string(),
-            je.description.clone(),
+            txt(je.description.clone()),
             je.version.to_string(),
             je.reverses_entry_id
                 .map(|v| v.to_string())
@@ -358,7 +384,7 @@ pub fn serialize_contacts_csv<W: Write>(rows: &[Contact], writer: W) -> Result<(
             c.id.to_string(),
             c.company_id.to_string(),
             c.contact_type.as_str().to_string(),
-            c.name.clone(),
+            txt(c.name.clone()),
             fmt_bool(c.is_client),
             fmt_bool(c.is_supplier),
             fmt_opt_str(&c.address),
@@ -402,7 +428,7 @@ pub fn serialize_products_csv<W: Write>(rows: &[Product], writer: W) -> Result<(
         csv.write_record([
             p.id.to_string(),
             p.company_id.to_string(),
-            p.name.clone(),
+            txt(p.name.clone()),
             fmt_opt_str(&p.description),
             fmt_decimal(p.unit_price),
             fmt_decimal(p.vat_rate),
@@ -452,7 +478,7 @@ pub fn serialize_invoices_csv<W: Write>(rows: &[Invoice], writer: W) -> Result<(
             i.company_id.to_string(),
             i.contact_id.to_string(),
             fmt_opt_str(&i.invoice_number),
-            i.status.clone(),
+            txt(i.status.clone()),
             fmt_date(i.date),
             fmt_opt_date(i.due_date),
             fmt_opt_str(&i.payment_terms),
@@ -509,7 +535,7 @@ pub fn serialize_invoice_lines_csv<W: Write>(
             il.id.to_string(),
             il.invoice_id.to_string(),
             il.position.to_string(),
-            il.description.clone(),
+            txt(il.description.clone()),
             fmt_decimal(il.quantity),
             fmt_decimal(il.unit_price),
             fmt_decimal(il.vat_rate),
@@ -547,8 +573,8 @@ pub fn serialize_bank_accounts_csv<W: Write>(
         csv.write_record([
             b.id.to_string(),
             b.company_id.to_string(),
-            b.bank_name.clone(),
-            b.iban.clone(),
+            txt(b.bank_name.clone()),
+            txt(b.iban.clone()),
             fmt_opt_str(&b.qr_iban),
             fmt_bool(b.is_primary),
             fmt_opt_i64(b.journal_account_id),
@@ -591,8 +617,8 @@ pub fn serialize_bank_imports_csv<W: Write>(
             bi.id.to_string(),
             bi.company_id.to_string(),
             bi.bank_account_id.to_string(),
-            bi.filename.clone(),
-            bi.file_hash.clone(),
+            txt(bi.filename.clone()),
+            txt(bi.file_hash.clone()),
             bi.source_format.as_str().to_string(),
             fmt_opt_str(&bi.statement_id),
             fmt_date(bi.period_from),
@@ -648,9 +674,9 @@ pub fn serialize_bank_transactions_csv<W: Write>(
             fmt_date(bt.booking_date),
             fmt_opt_date(bt.value_date),
             fmt_decimal(bt.amount),
-            bt.currency.clone(),
+            txt(bt.currency.clone()),
             fmt_opt_str(&bt.reference),
-            bt.details.clone(),
+            txt(bt.details.clone()),
             fmt_opt_str(&bt.end_to_end_id),
             fmt_opt_str(&bt.transaction_id),
             fmt_opt_str(&bt.counterparty_iban),
@@ -694,8 +720,8 @@ pub fn serialize_vat_rates_csv<W: Write>(rows: &[VatRate], writer: W) -> Result<
         csv.write_record([
             v.id.to_string(),
             v.company_id.to_string(),
-            v.category.clone(),
-            v.label.clone(),
+            txt(v.category.clone()),
+            txt(v.label.clone()),
             fmt_decimal(v.rate),
             fmt_date(v.valid_from),
             fmt_opt_date(v.valid_to),
@@ -809,10 +835,10 @@ pub fn serialize_invoice_reminders_csv<W: Write>(
             r.level_number.to_string(),
             fmt_decimal(r.fee_amount),
             fmt_dt(r.sent_at),
-            r.channel.clone(),
+            txt(r.channel.clone()),
             r.sent_to.clone().unwrap_or_default(),
-            r.subject.clone(),
-            r.body.clone(),
+            txt(r.subject.clone()),
+            txt(r.body.clone()),
             r.note.clone().unwrap_or_default(),
             r.actor_user_id.map(|v| v.to_string()).unwrap_or_default(),
             fmt_opt_dt(r.cancelled_at),
@@ -851,14 +877,14 @@ pub fn serialize_company_invoice_settings_csv<W: Write>(
     for cis in rows {
         csv.write_record([
             cis.company_id.to_string(),
-            cis.invoice_number_format.clone(),
+            txt(cis.invoice_number_format.clone()),
             fmt_opt_i64(cis.default_receivable_account_id),
             fmt_opt_i64(cis.default_revenue_account_id),
             fmt_opt_i64(cis.default_vat_payable_account_id),
             fmt_opt_i64(cis.default_vat_recoverable_account_id),
             fmt_opt_i64(cis.default_vat_decompte_account_id),
             cis.default_sales_journal.as_str().to_string(),
-            cis.journal_entry_description_template.clone(),
+            txt(cis.journal_entry_description_template.clone()),
             cis.version.to_string(),
             fmt_dt(cis.created_at),
             fmt_dt(cis.updated_at),
@@ -898,9 +924,9 @@ pub fn serialize_reconciliation_rules_csv<W: Write>(
         csv.write_record([
             r.id.to_string(),
             r.company_id.to_string(),
-            r.label.clone(),
+            txt(r.label.clone()),
             r.match_type.as_str().to_string(),
-            r.match_value.clone(),
+            txt(r.match_value.clone()),
             r.counterparty_account_id.to_string(),
             r.priority.to_string(),
             fmt_bool(r.active),
@@ -944,12 +970,12 @@ pub fn serialize_bank_profiles_csv<W: Write>(
         csv.write_record([
             bp.id.to_string(),
             bp.company_id.to_string(),
-            bp.bank_name.clone(),
+            txt(bp.bank_name.clone()),
             fmt_opt_str(&bp.filename_pattern),
-            bp.column_mapping_json.clone(),
-            bp.date_format.clone(),
-            bp.decimal_separator.clone(),
-            bp.field_separator.clone(),
+            txt(bp.column_mapping_json.clone()),
+            txt(bp.date_format.clone()),
+            txt(bp.decimal_separator.clone()),
+            txt(bp.field_separator.clone()),
             fmt_opt_str(&bp.encoding),
             bp.header_row_count.to_string(),
             fmt_dt(bp.created_at),
