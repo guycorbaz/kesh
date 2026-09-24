@@ -158,3 +158,26 @@ where
     .await
     .map_err(map_db_error)
 }
+
+// ---------------------------------------------------------------------------
+// Story 25-5-a (#386) — lecture exhaustive pour l'export de souveraineté
+// ---------------------------------------------------------------------------
+
+/// Tous les règlements de factures d'une société (Story 25-5-a, #386).
+///
+/// ⛔ **Non bornée** : un export de souveraineté qui tronque ment sur ce qu'il
+/// contient. ⚠️ Cette table est née à l'**Epic 24** — c'est-à-dire APRÈS
+/// l'écriture de l'issue #386, qui ne la mentionne donc pas. *L'export se
+/// périmait à chaque epic ; c'est ce que la garde d'exhaustivité ferme.*
+pub async fn list_all_by_company(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<Vec<InvoiceSettlement>, DbError> {
+    sqlx::query_as::<_, InvoiceSettlement>(&format!(
+        "SELECT {COLUMNS} FROM invoice_settlements WHERE company_id = ? ORDER BY id"
+    ))
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .map_err(map_db_error)
+}

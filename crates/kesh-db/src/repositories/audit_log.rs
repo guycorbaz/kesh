@@ -326,6 +326,41 @@ pub async fn list_for_export(
         .map_err(map_db_error)
 }
 
+// ---------------------------------------------------------------------------
+// Story 25-5-a (#386) — lecture exhaustive pour l'export de souveraineté
+// ---------------------------------------------------------------------------
+
+/// Toute la piste de contrôle d'une société, **sans borne** (Story 25-5-a, #386).
+///
+/// ⛔ **Pourquoi une TROISIÈME fonction de lecture, et non la réutilisation de
+/// [`list_for_export`].** Cette dernière prend un `max_rows` fourni par
+/// l'appelant, et la route qui l'emploie aujourd'hui lui passe
+/// `MAX_EXPORT_ROWS + 1` pour **rejeter la requête entière** au-delà de 10 000
+/// lignes. Ce contrat est juste pour un écran — mieux vaut refuser que de
+/// laisser croire à un export complet. Il est **faux pour la souveraineté** :
+/// l'export d'une société active échouerait en bloc, ou rendrait une piste
+/// d'audit tronquée **sans le dire**.
+///
+/// *Une troncature silencieuse dans le fichier même qui prouve ce qui s'est
+/// passé est le pire des deux mondes : elle a l'air d'un export complet.*
+///
+/// ⚠️ **Le filtre est STRICT sur `company_id`** : les entrées sans société ne
+/// sortent pas — arbitrage du 2026-09-15, *« si on importe une sauvegarde,
+/// c'est que la base a disparu »*. `company_id` est nullable depuis la
+/// 25-1c-zero, et une entrée orpheline n'appartient à personne.
+pub async fn list_all_by_company(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<Vec<AuditLogEntry>, DbError> {
+    sqlx::query_as::<_, AuditLogEntry>(&format!(
+        "SELECT {COLUMNS} FROM audit_log WHERE company_id = ? ORDER BY id"
+    ))
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .map_err(map_db_error)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

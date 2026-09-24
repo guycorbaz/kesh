@@ -634,6 +634,53 @@ pub async fn create_credit_note(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Story 25-5-a (#386) — lecture exhaustive pour l'export de souveraineté
+// ---------------------------------------------------------------------------
+
+/// Tous les avoirs d'une société, pour l'export de souveraineté (Story 25-5-a, #386).
+///
+/// ⛔ **Non bornée, et c'est voulu** : un export de souveraineté qui tronque ment
+/// sur ce qu'il contient. Les lectures paginées du même module servent l'écran,
+/// pas l'export.
+pub async fn list_all_by_company(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<Vec<CreditNote>, DbError> {
+    sqlx::query_as::<_, CreditNote>(
+        "SELECT id, company_id, contact_id, invoice_id, credit_note_number, status, date, \
+         total_amount, journal_entry_id, version, created_at, updated_at \
+         FROM credit_notes WHERE company_id = ? ORDER BY id",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .map_err(map_db_error)
+}
+
+/// Toutes les lignes d'avoir d'une société (Story 25-5-a, #386).
+///
+/// ⚠️ `credit_note_lines` **n'a pas de `company_id`** : le scoping passe par une
+/// jointure sur le parent. Sans elle, l'export d'une société emporterait les
+/// lignes de toutes les autres.
+pub async fn list_all_lines_by_company(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<Vec<CreditNoteLine>, DbError> {
+    sqlx::query_as::<_, CreditNoteLine>(
+        "SELECT cnl.id, cnl.credit_note_id, cnl.position, cnl.description, cnl.quantity, \
+         cnl.unit_price, cnl.vat_rate, cnl.line_total, cnl.revenue_account_id, cnl.created_at \
+         FROM credit_note_lines cnl \
+         JOIN credit_notes cn ON cnl.credit_note_id = cn.id \
+         WHERE cn.company_id = ? \
+         ORDER BY cnl.credit_note_id, cnl.position",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .map_err(map_db_error)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

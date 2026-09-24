@@ -892,6 +892,52 @@ pub async fn cancel(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Story 25-5-a (#386) — lecture exhaustive pour l'export de souveraineté
+// ---------------------------------------------------------------------------
+
+/// Toutes les factures fournisseurs d'une société (Story 25-5-a, #386).
+///
+/// ⛔ **Non bornée** : cf. `credit_notes::list_all_by_company`.
+pub async fn list_all_by_company(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<Vec<SupplierInvoice>, DbError> {
+    sqlx::query_as::<_, SupplierInvoice>(
+        "SELECT id, company_id, contact_id, supplier_invoice_number, status, invoice_date, \
+         due_date, total_amount, creditor_iban, creditor_qr_iban, payment_reference, \
+         expected_payment_amount, project_id, purchase_journal_entry_id, settlement_type, \
+         settlement_bank_account_id, settlement_account_id, settlement_journal_entry_id, \
+         paid_at, version, created_at, updated_at \
+         FROM supplier_invoices WHERE company_id = ? ORDER BY id",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .map_err(map_db_error)
+}
+
+/// Toutes les lignes de factures fournisseurs d'une société (Story 25-5-a, #386).
+///
+/// ⚠️ Scoping par jointure : `supplier_invoice_lines` n'a pas de `company_id`.
+pub async fn list_all_lines_by_company(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<Vec<SupplierInvoiceLine>, DbError> {
+    sqlx::query_as::<_, SupplierInvoiceLine>(
+        "SELECT sil.id, sil.supplier_invoice_id, sil.position, sil.description, sil.quantity, \
+         sil.unit_price, sil.vat_rate, sil.line_total, sil.expense_account_id, sil.created_at \
+         FROM supplier_invoice_lines sil \
+         JOIN supplier_invoices si ON sil.supplier_invoice_id = si.id \
+         WHERE si.company_id = ? \
+         ORDER BY sil.supplier_invoice_id, sil.position",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .map_err(map_db_error)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
