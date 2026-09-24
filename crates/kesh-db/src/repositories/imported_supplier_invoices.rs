@@ -286,3 +286,24 @@ pub async fn list_by_status(
     .await
     .map_err(map_db_error)
 }
+
+// ---------------------------------------------------------------------------
+// Story 25-5-a (#386) — lecture exhaustive pour l'export de souveraineté
+// ---------------------------------------------------------------------------
+
+/// Toutes les pièces fournisseurs importées d'une société (Story 25-5-a, #386).
+///
+/// ⚠️ **Tous statuts** — `to_complete` comme `completed` : une pièce reçue fait
+/// partie de ce qu'on emporte, qu'elle ait été transformée en facture ou non.
+pub async fn list_all_by_company(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<Vec<ImportedSupplierInvoice>, DbError> {
+    sqlx::query_as::<_, ImportedSupplierInvoice>(
+        "SELECT * FROM imported_supplier_invoices WHERE company_id = ? ORDER BY id",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .map_err(map_db_error)
+}

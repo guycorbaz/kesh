@@ -644,3 +644,42 @@ pub async fn generate_pain001_xml(
 
     generate_pain001(&pain).map_err(|e| DbError::Invariant(format!("génération pain.001 : {e}")))
 }
+
+// ---------------------------------------------------------------------------
+// Story 25-5-a (#386) — lecture exhaustive pour l'export de souveraineté
+// ---------------------------------------------------------------------------
+
+/// Tous les lots de paiement d'une société (Story 25-5-a, #386).
+pub async fn list_all_by_company(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<Vec<PaymentBatch>, DbError> {
+    sqlx::query_as::<_, PaymentBatch>(&format!(
+        "SELECT {BATCH_COLS} FROM payment_batches WHERE company_id = ? ORDER BY id"
+    ))
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .map_err(map_db_error)
+}
+
+/// Tous les items de lots de paiement d'une société (Story 25-5-a, #386).
+///
+/// ⚠️ Scoping par jointure : `payment_batch_items` n'a pas de `company_id`.
+pub async fn list_all_items_by_company(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<Vec<PaymentBatchItem>, DbError> {
+    sqlx::query_as::<_, PaymentBatchItem>(
+        "SELECT pbi.id, pbi.payment_batch_id, pbi.supplier_invoice_id, pbi.position, \
+         pbi.end_to_end_id, pbi.amount, pbi.created_at \
+         FROM payment_batch_items pbi \
+         JOIN payment_batches pb ON pbi.payment_batch_id = pb.id \
+         WHERE pb.company_id = ? \
+         ORDER BY pbi.payment_batch_id, pbi.position",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .map_err(map_db_error)
+}

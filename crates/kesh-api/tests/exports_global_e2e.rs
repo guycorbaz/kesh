@@ -719,7 +719,7 @@ async fn export_global_zip_multi_tenant_idor_scoping(pool: MySqlPool) {
 // ============================================================
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn export_global_zip_structure_17_entries_exact_set(pool: MySqlPool) {
+async fn export_global_zip_contient_exactement_le_registre(pool: MySqlPool) {
     let ctx = seed_with_full_data(&pool, "co_c", Role::Comptable).await;
     let app = spawn_app(pool).await;
     let resp = app
@@ -731,35 +731,38 @@ async fn export_global_zip_structure_17_entries_exact_set(pool: MySqlPool) {
         .unwrap();
     let body = resp.bytes().await.unwrap();
     let entries = assert_zip_response(&body);
-    assert_eq!(entries.len(), 20, "ZIP must contain exactly 20 entries");
+
+    // ⛔ **Ce test a été RENOMMÉ et DÉRIVÉ** (Story 25-5-a, #386). Il
+    // s'appelait `…_structure_17_entries_exact_set` et comparait à une liste de
+    // vingt noms écrite à la main : son nom affirmait **17** quand il en
+    // mesurait 20, et sa liste a dû être reprise à chaque table ajoutée. *Un
+    // nom qui affirme l'ancien résultat est un test muet.*
+    //
+    // ⚠️ Il reste l'assertion la plus forte du fichier : l'ensemble EXACT, dans
+    // les deux sens — rien ne manque, rien n'est en trop.
+    let attendus: std::collections::HashSet<String> = kesh_api::exports::global::TABLES_EXPORTEES
+        .iter()
+        .map(|t| {
+            // `companies` sort sous `company.csv`, au singulier.
+            if *t == "companies" {
+                "company.csv".to_string()
+            } else {
+                format!("{t}.csv")
+            }
+        })
+        .chain(std::iter::once("metadata.json".to_string()))
+        .collect();
 
     let names: std::collections::HashSet<String> = entries.iter().map(|(n, _)| n.clone()).collect();
-    let expected: std::collections::HashSet<String> = [
-        "company.csv",
-        "fiscal_years.csv",
-        "accounts.csv",
-        "journal_entries.csv",
-        "journal_entry_lines.csv",
-        "contacts.csv",
-        "products.csv",
-        "invoices.csv",
-        "invoice_lines.csv",
-        "bank_accounts.csv",
-        "bank_imports.csv",
-        "bank_transactions.csv",
-        "vat_rates.csv",
-        "company_invoice_settings.csv",
-        "dunning_levels.csv",
-        "company_dunning_settings.csv",
-        "invoice_reminders.csv",
-        "reconciliation_rules.csv",
-        "bank_profiles.csv",
-        "metadata.json",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect();
-    assert_eq!(names, expected, "ZIP entry set mismatch");
+    assert_eq!(
+        names, attendus,
+        "le ZIP doit contenir EXACTEMENT le registre plus le manifeste"
+    );
+    assert_eq!(
+        entries.len(),
+        kesh_api::exports::global::TABLES_EXPORTEES.len() + 1,
+        "un CSV par table du registre, plus `metadata.json`"
+    );
 }
 
 // ============================================================
@@ -806,9 +809,32 @@ async fn export_global_zip_metadata_shape_and_exact_values(pool: MySqlPool) {
             "exportDate format invalid at pos {i} (char {c:?}): {date}"
         );
     }
-    // tables.len() == 19 (Story 21-5a : +invoice_reminders)
+    // ⛔ **Le nombre est DÉRIVÉ du registre, il ne s'écrit plus ici** (Story
+    // 25-5-a, #386). Il valait « 19 » en dur, et trois epics l'ont périmé sans
+    // que rien ne rougisse. Cette assertion exerce en plus ce que les tests
+    // unitaires ne peuvent pas voir : que chaque table du registre a bel et
+    // bien **produit un fichier**.
     let tables = meta["tables"].as_object().unwrap();
-    assert_eq!(tables.len(), 19, "expected 19 tables in metadata");
+    assert_eq!(
+        tables.len(),
+        kesh_api::exports::global::TABLES_EXPORTEES.len(),
+        "chaque table de TABLES_EXPORTEES doit figurer au manifeste ; \
+         manquantes ou en trop : {:?}",
+        tables.keys().collect::<Vec<_>>()
+    );
+    for t in kesh_api::exports::global::TABLES_EXPORTEES {
+        // ⚠️ Les clés du manifeste sont les NOMS DE FICHIERS, extension
+        // comprise — et `companies` sort sous `company.csv`, au singulier.
+        let fichier = if *t == "companies" {
+            "company.csv".to_string()
+        } else {
+            format!("{t}.csv")
+        };
+        assert!(
+            tables.contains_key(&fichier),
+            "table `{t}` absente du manifeste (fichier attendu : `{fichier}`)"
+        );
+    }
     // companyId match
     assert_eq!(meta["companyId"].as_i64().unwrap(), ctx.company_id);
 }
@@ -1175,7 +1201,10 @@ async fn export_global_zip_audit_log_inserted(pool: MySqlPool) {
     // Pass 1 code-review H2 (C1 AA-MEDIUM-03) — clés snake_case cohérent spec AC #23.
     assert_eq!(details["company_id"].as_i64().unwrap(), ctx.company_id);
     assert!(details["byte_size"].as_u64().unwrap() > 0);
-    assert_eq!(details["csv_count"].as_u64().unwrap(), 19);
+    assert_eq!(
+        details["csv_count"].as_u64().unwrap(),
+        kesh_api::exports::global::TABLES_EXPORTEES.len() as u64
+    );
     assert_eq!(details["fiscal_year_scope"], "all");
     assert!(details["duration_ms"].is_number());
 }
@@ -1251,16 +1280,32 @@ async fn export_global_zip_excluded_tables_absent(pool: MySqlPool) {
     let body = resp.bytes().await.unwrap();
     let entries = assert_zip_response(&body);
     let names: std::collections::HashSet<String> = entries.iter().map(|(n, _)| n.clone()).collect();
-    for excluded in [
-        "users.csv",
-        "refresh_tokens.csv",
-        "audit_log.csv",
-        "onboarding_state.csv",
-        "invoice_number_sequences.csv",
-    ] {
+
+    // ⛔ **Ce test a CHANGÉ D'OBJET** (Story 25-5-a, #386) : il énumérait cinq
+    // exclusions en dur, dont `audit_log.csv` — que cette story **exporte**
+    // désormais. Une liste écrite à la main se périme à chaque décision ; elle
+    // est remplacée par le registre `TABLES_HORS_EXPORT`, qui porte le motif de
+    // chaque exclusion et qu'une garde unitaire tient synchronisé du schéma.
+    for (table, motif) in kesh_api::exports::global::TABLES_HORS_EXPORT {
+        let fichier = format!("{table}.csv");
         assert!(
-            !names.contains(excluded),
-            "excluded table {excluded} must NOT be present in ZIP"
+            !names.contains(&fichier),
+            "`{fichier}` ne doit PAS être dans le ZIP — exclusion motivée : {motif}"
+        );
+    }
+
+    // ⚠️ Et le symétrique, sans lequel la moitié du contrat n'est pas mesurée :
+    // ce qui est déclaré exporté sort réellement. *Un test qui ne vérifie que
+    // les absences reste vert sur un export vide.*
+    for table in kesh_api::exports::global::TABLES_EXPORTEES {
+        let fichier = if *table == "companies" {
+            "company.csv".to_string()
+        } else {
+            format!("{table}.csv")
+        };
+        assert!(
+            names.contains(&fichier),
+            "`{fichier}` est déclarée exportée et manque au ZIP"
         );
     }
 }
@@ -1700,4 +1745,140 @@ async fn export_global_zip_repo_scoping_all_list_all_by_company(pool: MySqlPool)
         invoice_lines_a[0].invoice_id, invoice_a_id,
         "ligne retournée pour A ne pointe pas vers l'invoice de A — fuite cross-tenant"
     );
+}
+
+// ============================================================
+// Story 25-5-a (#386) — les onze tables ajoutées : elles SORTENT,
+// et elles ne fuient pas d'une société à l'autre.
+// ============================================================
+
+/// ⛔ **Deux propriétés en un seul test, et il faut les deux.**
+///
+/// Qu'un CSV soit présent ne prouve rien — un sérialiseur qui n'écrirait que
+/// son en-tête produirait un fichier, et le test de structure resterait vert.
+/// Ce test vérifie donc que **la ligne de la société A y figure**.
+///
+/// Et le symétrique compte autant : **la ligne de la société B n'y est pas**.
+/// Les trois tables enfants (`credit_note_lines`, `supplier_invoice_lines`,
+/// `payment_batch_items`) n'ont **pas de `company_id`** — leur filtre passe par
+/// une jointure sur le parent, et c'est exactement le genre de scoping qu'on
+/// oublie. *Une fonction d'export non scopée exfiltrerait les données d'une
+/// autre société sans que rien ne le signale.*
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn export_global_zip_onze_tables_neuves_sortent_et_sont_scopees(pool: MySqlPool) {
+    let a = seed_company(&pool, "co_386_a", Role::Comptable).await;
+    let b = seed_company(&pool, "co_386_b", Role::Comptable).await;
+
+    // Un jeu minimal par société : contact → projet → personne de contact,
+    // puis facture + avoir, facture fournisseur + lot de paiement, règlement.
+    for (ctx, suffixe) in [(&a, "A"), (&b, "B")] {
+        let cid = ctx.company_id;
+        let contact_id: i64 = sqlx::query_scalar(
+            "INSERT INTO contacts (company_id, contact_type, name, version) \
+             VALUES (?, 'Entreprise', ?, 1) RETURNING id",
+        )
+        .bind(cid)
+        .bind(format!("Contact {suffixe}"))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO projects (company_id, code, name, archived, version) \
+             VALUES (?, ?, ?, FALSE, 1)",
+        )
+        .bind(cid)
+        .bind(format!("PRJ-{suffixe}"))
+        .bind(format!("Projet {suffixe}"))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO contact_persons (company_id, contact_id, first_name, last_name, \
+             active, version) VALUES (?, ?, ?, 'Nom', TRUE, 1)",
+        )
+        .bind(cid)
+        .bind(contact_id)
+        .bind(format!("Prenom{suffixe}"))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO imported_supplier_invoices (company_id, status, file_hash, \
+             storage_path, original_filename, mime_type, byte_size, creditor_iban, \
+             is_qr_iban, creditor_address_type, creditor_name, creditor_country, \
+             reference_type, currency, version) \
+             VALUES (?, 'to_complete', ?, ?, ?, 'application/pdf', 1024, \
+             'CH9300762011623852957', FALSE, 'S', ?, 'CH', 'NON', 'CHF', 1)",
+        )
+        .bind(cid)
+        .bind(format!("hash-{suffixe}"))
+        .bind(format!("/inbox/{suffixe}.pdf"))
+        .bind(format!("piece-{suffixe}.pdf"))
+        .bind(format!("Fournisseur {suffixe}"))
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    let app = spawn_app(pool.clone()).await;
+    let resp = app
+        .client
+        .get(app.url("/api/v1/exports/global.zip"))
+        .bearer_auth(&a.jwt)
+        .send()
+        .await
+        .unwrap();
+    let body = resp.bytes().await.unwrap();
+    let entries = assert_zip_response(&body);
+    let lire = |nom: &str| -> String {
+        entries
+            .iter()
+            .find(|(n, _)| n == nom)
+            .map(|(_, c)| String::from_utf8_lossy(c).to_string())
+            .unwrap_or_else(|| panic!("`{nom}` absent du ZIP"))
+    };
+
+    // Les quatre tables peuplées ci-dessus : la ligne de A sort, celle de B non.
+    for (fichier, marqueur_a, marqueur_b) in [
+        ("projects.csv", "Projet A", "Projet B"),
+        ("contact_persons.csv", "PrenomA", "PrenomB"),
+        (
+            "imported_supplier_invoices.csv",
+            "Fournisseur A",
+            "Fournisseur B",
+        ),
+        ("contacts.csv", "Contact A", "Contact B"),
+    ] {
+        let csv = lire(fichier);
+        assert!(
+            csv.contains(marqueur_a),
+            "`{fichier}` doit porter la ligne de la société A ({marqueur_a})"
+        );
+        assert!(
+            !csv.contains(marqueur_b),
+            "⛔ FUITE MULTI-TENANT : `{fichier}` porte une ligne de la société B ({marqueur_b})"
+        );
+    }
+
+    // Les sept autres sont vides ici, mais leur fichier et leur en-tête
+    // doivent exister — un sérialiseur qui ne tourne pas ne produit rien.
+    for (fichier, entete) in [
+        ("credit_notes.csv", "credit_note_number"),
+        ("credit_note_lines.csv", "credit_note_id"),
+        ("supplier_invoices.csv", "supplier_invoice_number"),
+        ("supplier_invoice_lines.csv", "expense_account_id"),
+        ("payment_batches.csv", "requested_execution_date"),
+        ("payment_batch_items.csv", "end_to_end_id"),
+        ("invoice_settlements.csv", "settled_on"),
+        ("audit_log.csv", "actor_label"),
+    ] {
+        let csv = lire(fichier);
+        assert!(
+            csv.contains(entete),
+            "`{fichier}` doit porter son en-tête (colonne `{entete}` attendue)"
+        );
+    }
 }

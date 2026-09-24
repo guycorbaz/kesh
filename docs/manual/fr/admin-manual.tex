@@ -1943,7 +1943,7 @@ Synthèse :
 \begin{itemize}
     \item al. 1 : conservation 10 ans à compter de la fin de l'exercice → garanti par la persistance MariaDB (sous réserve d'admin DB + backup approprié).
     \item al. 2 : rapport de gestion imprimé et signé → \textbf{responsabilité de la PME utilisatrice}, hors scope logiciel.
-    \item al. 3 : support libre + lien garanti + lisibilité possible → garanti par \texttt{audit\_log} + SHA-256 + format CSV/PDF ouverts du ZIP d'export. ⚠️ \emph{Réserve~: le ZIP d'export ne contient pas encore \texttt{audit\_log} (19 tables sur 38). La piste existe et est conservée, mais elle ne voyage pas avec l'export --- issue \#386.}
+    \item al. 3 : support libre + lien garanti + lisibilité possible → garanti par \texttt{audit\_log} + SHA-256 + format CSV ouvert du ZIP d'export. \textbf{Depuis la v0.12.1, la piste de contrôle VOYAGE avec l'export} (\texttt{audit\_log.csv}, issue \#386)~: elle n'est plus seulement conservée dans l'instance, elle part avec les livres.
 \end{itemize}
 
 \subsection{Rétention des rappels débiteurs (dossier de recouvrement)}\label{sec:dunning-retention}

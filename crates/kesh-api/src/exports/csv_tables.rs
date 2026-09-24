@@ -1,4 +1,10 @@
-//! Story 9-2b — 16 fonctions `serialize_<table>_csv` (Decision §scope-tables).
+//! Story 9-2b — les fonctions `serialize_<table>_csv` (Decision §scope-tables).
+//!
+//! ⚠️ **Ce nombre était écrit ici, et il mentait** : l'en-tête annonçait « 16
+//! fonctions » alors qu'il y en avait **19**, puis **30** avec la 25-5-a. Il a
+//! été retiré plutôt que corrigé — *un décompte qu'aucun calcul ne tient se
+//! périme en silence, et celui-ci l'avait fait deux fois.* Le seul nombre qui
+//! compte est désormais **dérivé** : cf. `TABLES_EXPORTEES` (`exports/global.rs`).
 //!
 //! Format CSV identique Story 9-2a §csv-format :
 //! - UTF-8 BOM en tête (`\xEF\xBB\xBF`)
@@ -24,11 +30,15 @@ use chrono::{NaiveDate, NaiveDateTime, SecondsFormat, TimeZone, Utc};
 use rust_decimal::Decimal;
 
 use crate::errors::AppError;
+use kesh_db::entities::audit_log::AuditLogEntry;
+use kesh_db::entities::contact_person::ContactPerson;
+use kesh_db::entities::imported_supplier_invoice::ImportedSupplierInvoice;
 use kesh_db::entities::{
     Account, BankAccount, BankImport, BankProfile, BankTransaction, Company,
-    CompanyDunningSettings, CompanyInvoiceSettings, Contact, DunningLevel, FiscalYear, Invoice,
-    InvoiceLine, InvoiceReminder, JournalEntry, JournalEntryLine, Product, ReconciliationRule,
-    VatRate,
+    CompanyDunningSettings, CompanyInvoiceSettings, Contact, CreditNote, CreditNoteLine,
+    DunningLevel, FiscalYear, Invoice, InvoiceLine, InvoiceReminder, InvoiceSettlement,
+    JournalEntry, JournalEntryLine, PaymentBatch, PaymentBatchItem, Product, Project,
+    ReconciliationRule, SupplierInvoice, SupplierInvoiceLine, VatRate,
 };
 
 // ===========================================================================
@@ -111,7 +121,27 @@ fn fmt_opt_i64(v: Option<i64>) -> String {
 
 /// Format `Option<String>` → string ou chaîne vide.
 fn fmt_opt_str(s: &Option<String>) -> String {
-    s.clone().unwrap_or_default()
+    txt(s.clone().unwrap_or_default())
+}
+
+/// Toute cellule de **texte libre** passe par ici (Story 25-5-a, #386).
+///
+/// ⛔ **`csv_sanitize` existait et cet export ne l'employait NULLE PART.** Elle
+/// avait été extraite de `routes::invoices` par la 25-1c-a précisément pour
+/// être réutilisée ; l'export de souveraineté, qui produit le fichier qu'un
+/// utilisateur ouvrira dans un tableur pour migrer, était passé à côté.
+///
+/// Une cellule commençant par `=`, `+`, `-` ou `@` est interprétée comme une
+/// **formule** par Excel et LibreOffice. Un nom de contact, une description de
+/// ligne ou un `details_json` d'audit sont du texte que l'utilisateur contrôle.
+///
+/// ⚠️ La 25-5-a ajoute onze tables **pleines de texte libre** — libellés
+/// d'avoirs, descriptions de lignes fournisseurs, noms de projets, personnes de
+/// contact, instantanés d'audit —, donc elle élargissait la surface sans
+/// fermer le trou. *L'omission est antérieure ; c'est cette story qui la rendait
+/// coûteuse.*
+fn txt(s: String) -> String {
+    crate::util::csv_sanitize(s)
 }
 
 /// Format `bool` → `"true"` / `"false"` (interopérable Excel / Sheets).
@@ -150,8 +180,8 @@ pub fn serialize_company_csv<W: Write>(rows: &[Company], writer: W) -> Result<()
     for c in rows {
         csv.write_record([
             c.id.to_string(),
-            c.name.clone(),
-            c.address.clone(),
+            txt(c.name.clone()),
+            txt(c.address.clone()),
             fmt_opt_str(&c.ide_number),
             c.org_type.as_str().to_string(),
             c.accounting_language.as_str().to_string(),
@@ -191,7 +221,7 @@ pub fn serialize_fiscal_years_csv<W: Write>(
         csv.write_record([
             fy.id.to_string(),
             fy.company_id.to_string(),
-            fy.name.clone(),
+            txt(fy.name.clone()),
             fmt_date(fy.start_date),
             fmt_date(fy.end_date),
             fy.status.as_str().to_string(),
@@ -229,8 +259,8 @@ pub fn serialize_accounts_csv<W: Write>(rows: &[Account], writer: W) -> Result<(
         csv.write_record([
             a.id.to_string(),
             a.company_id.to_string(),
-            a.number.clone(),
-            a.name.clone(),
+            txt(a.number.clone()),
+            txt(a.name.clone()),
             a.account_type.as_str().to_string(),
             fmt_opt_i64(a.parent_id),
             fmt_bool(a.active),
@@ -281,7 +311,7 @@ pub fn serialize_journal_entries_csv<W: Write>(
             je.entry_number.to_string(),
             fmt_date(je.entry_date),
             je.journal.as_str().to_string(),
-            je.description.clone(),
+            txt(je.description.clone()),
             je.version.to_string(),
             je.reverses_entry_id
                 .map(|v| v.to_string())
@@ -358,7 +388,7 @@ pub fn serialize_contacts_csv<W: Write>(rows: &[Contact], writer: W) -> Result<(
             c.id.to_string(),
             c.company_id.to_string(),
             c.contact_type.as_str().to_string(),
-            c.name.clone(),
+            txt(c.name.clone()),
             fmt_bool(c.is_client),
             fmt_bool(c.is_supplier),
             fmt_opt_str(&c.address),
@@ -402,7 +432,7 @@ pub fn serialize_products_csv<W: Write>(rows: &[Product], writer: W) -> Result<(
         csv.write_record([
             p.id.to_string(),
             p.company_id.to_string(),
-            p.name.clone(),
+            txt(p.name.clone()),
             fmt_opt_str(&p.description),
             fmt_decimal(p.unit_price),
             fmt_decimal(p.vat_rate),
@@ -452,7 +482,7 @@ pub fn serialize_invoices_csv<W: Write>(rows: &[Invoice], writer: W) -> Result<(
             i.company_id.to_string(),
             i.contact_id.to_string(),
             fmt_opt_str(&i.invoice_number),
-            i.status.clone(),
+            txt(i.status.clone()),
             fmt_date(i.date),
             fmt_opt_date(i.due_date),
             fmt_opt_str(&i.payment_terms),
@@ -509,7 +539,7 @@ pub fn serialize_invoice_lines_csv<W: Write>(
             il.id.to_string(),
             il.invoice_id.to_string(),
             il.position.to_string(),
-            il.description.clone(),
+            txt(il.description.clone()),
             fmt_decimal(il.quantity),
             fmt_decimal(il.unit_price),
             fmt_decimal(il.vat_rate),
@@ -547,8 +577,8 @@ pub fn serialize_bank_accounts_csv<W: Write>(
         csv.write_record([
             b.id.to_string(),
             b.company_id.to_string(),
-            b.bank_name.clone(),
-            b.iban.clone(),
+            txt(b.bank_name.clone()),
+            txt(b.iban.clone()),
             fmt_opt_str(&b.qr_iban),
             fmt_bool(b.is_primary),
             fmt_opt_i64(b.journal_account_id),
@@ -591,8 +621,8 @@ pub fn serialize_bank_imports_csv<W: Write>(
             bi.id.to_string(),
             bi.company_id.to_string(),
             bi.bank_account_id.to_string(),
-            bi.filename.clone(),
-            bi.file_hash.clone(),
+            txt(bi.filename.clone()),
+            txt(bi.file_hash.clone()),
             bi.source_format.as_str().to_string(),
             fmt_opt_str(&bi.statement_id),
             fmt_date(bi.period_from),
@@ -648,9 +678,9 @@ pub fn serialize_bank_transactions_csv<W: Write>(
             fmt_date(bt.booking_date),
             fmt_opt_date(bt.value_date),
             fmt_decimal(bt.amount),
-            bt.currency.clone(),
+            txt(bt.currency.clone()),
             fmt_opt_str(&bt.reference),
-            bt.details.clone(),
+            txt(bt.details.clone()),
             fmt_opt_str(&bt.end_to_end_id),
             fmt_opt_str(&bt.transaction_id),
             fmt_opt_str(&bt.counterparty_iban),
@@ -694,8 +724,8 @@ pub fn serialize_vat_rates_csv<W: Write>(rows: &[VatRate], writer: W) -> Result<
         csv.write_record([
             v.id.to_string(),
             v.company_id.to_string(),
-            v.category.clone(),
-            v.label.clone(),
+            txt(v.category.clone()),
+            txt(v.label.clone()),
             fmt_decimal(v.rate),
             fmt_date(v.valid_from),
             fmt_opt_date(v.valid_to),
@@ -809,10 +839,10 @@ pub fn serialize_invoice_reminders_csv<W: Write>(
             r.level_number.to_string(),
             fmt_decimal(r.fee_amount),
             fmt_dt(r.sent_at),
-            r.channel.clone(),
+            txt(r.channel.clone()),
             r.sent_to.clone().unwrap_or_default(),
-            r.subject.clone(),
-            r.body.clone(),
+            txt(r.subject.clone()),
+            txt(r.body.clone()),
             r.note.clone().unwrap_or_default(),
             r.actor_user_id.map(|v| v.to_string()).unwrap_or_default(),
             fmt_opt_dt(r.cancelled_at),
@@ -851,14 +881,14 @@ pub fn serialize_company_invoice_settings_csv<W: Write>(
     for cis in rows {
         csv.write_record([
             cis.company_id.to_string(),
-            cis.invoice_number_format.clone(),
+            txt(cis.invoice_number_format.clone()),
             fmt_opt_i64(cis.default_receivable_account_id),
             fmt_opt_i64(cis.default_revenue_account_id),
             fmt_opt_i64(cis.default_vat_payable_account_id),
             fmt_opt_i64(cis.default_vat_recoverable_account_id),
             fmt_opt_i64(cis.default_vat_decompte_account_id),
             cis.default_sales_journal.as_str().to_string(),
-            cis.journal_entry_description_template.clone(),
+            txt(cis.journal_entry_description_template.clone()),
             cis.version.to_string(),
             fmt_dt(cis.created_at),
             fmt_dt(cis.updated_at),
@@ -898,9 +928,9 @@ pub fn serialize_reconciliation_rules_csv<W: Write>(
         csv.write_record([
             r.id.to_string(),
             r.company_id.to_string(),
-            r.label.clone(),
+            txt(r.label.clone()),
             r.match_type.as_str().to_string(),
-            r.match_value.clone(),
+            txt(r.match_value.clone()),
             r.counterparty_account_id.to_string(),
             r.priority.to_string(),
             fmt_bool(r.active),
@@ -944,12 +974,12 @@ pub fn serialize_bank_profiles_csv<W: Write>(
         csv.write_record([
             bp.id.to_string(),
             bp.company_id.to_string(),
-            bp.bank_name.clone(),
+            txt(bp.bank_name.clone()),
             fmt_opt_str(&bp.filename_pattern),
-            bp.column_mapping_json.clone(),
-            bp.date_format.clone(),
-            bp.decimal_separator.clone(),
-            bp.field_separator.clone(),
+            txt(bp.column_mapping_json.clone()),
+            txt(bp.date_format.clone()),
+            txt(bp.decimal_separator.clone()),
+            txt(bp.field_separator.clone()),
             fmt_opt_str(&bp.encoding),
             bp.header_row_count.to_string(),
             fmt_dt(bp.created_at),
@@ -963,6 +993,528 @@ pub fn serialize_bank_profiles_csv<W: Write>(
 // ===========================================================================
 // Tests unit (Story 9-2b T2.6 + AC #30 / T10.1)
 // ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Story 25-5-a (#386) — les onze tables comptables qui manquaient
+// ---------------------------------------------------------------------------
+//
+// ⛔ **Onze tables, et le trou était DEUX FOIS plus large que l'issue.** Elle en
+// annonçait dix ; il y en avait vingt et une, dont `invoice_settlements`, née à
+// l'Epic 24 — c'est-à-dire APRÈS l'écriture de l'issue. *L'export se périmait à
+// chaque epic, en silence.* Les dix restantes sont exclues avec motif écrit,
+// et la garde `export_couvre_toutes_les_tables` refuse désormais qu'une table
+// soit ni exportée ni exclue.
+
+pub fn serialize_credit_notes_csv<W: Write>(
+    rows: &[CreditNote],
+    writer: W,
+) -> Result<(), AppError> {
+    let mut w = writer;
+    write_csv_bom(&mut w)?;
+    let mut csv = make_csv_writer(w);
+    csv.write_record([
+        "id",
+        "company_id",
+        "contact_id",
+        "invoice_id",
+        "credit_note_number",
+        "status",
+        "date",
+        "total_amount",
+        "journal_entry_id",
+        "version",
+        "created_at",
+        "updated_at",
+    ])
+    .map_err(|e| map_csv_err("credit_notes", e))?;
+    for cn in rows {
+        csv.write_record([
+            cn.id.to_string(),
+            cn.company_id.to_string(),
+            cn.contact_id.to_string(),
+            cn.invoice_id.to_string(),
+            fmt_opt_str(&cn.credit_note_number),
+            txt(cn.status.clone()),
+            fmt_date(cn.date),
+            fmt_decimal(cn.total_amount),
+            fmt_opt_i64(cn.journal_entry_id),
+            cn.version.to_string(),
+            fmt_dt(cn.created_at),
+            fmt_dt(cn.updated_at),
+        ])
+        .map_err(|e| map_csv_err("credit_notes", e))?;
+    }
+    csv.flush().map_err(|e| map_flush_err("credit_notes", e))
+}
+
+pub fn serialize_credit_note_lines_csv<W: Write>(
+    rows: &[CreditNoteLine],
+    writer: W,
+) -> Result<(), AppError> {
+    let mut w = writer;
+    write_csv_bom(&mut w)?;
+    let mut csv = make_csv_writer(w);
+    csv.write_record([
+        "id",
+        "credit_note_id",
+        "position",
+        "description",
+        "quantity",
+        "unit_price",
+        "vat_rate",
+        "line_total",
+        "revenue_account_id",
+        "created_at",
+    ])
+    .map_err(|e| map_csv_err("credit_note_lines", e))?;
+    for l in rows {
+        csv.write_record([
+            l.id.to_string(),
+            l.credit_note_id.to_string(),
+            l.position.to_string(),
+            txt(l.description.clone()),
+            fmt_decimal(l.quantity),
+            fmt_decimal(l.unit_price),
+            fmt_decimal(l.vat_rate),
+            fmt_decimal(l.line_total),
+            fmt_opt_i64(l.revenue_account_id),
+            fmt_dt(l.created_at),
+        ])
+        .map_err(|e| map_csv_err("credit_note_lines", e))?;
+    }
+    csv.flush()
+        .map_err(|e| map_flush_err("credit_note_lines", e))
+}
+
+pub fn serialize_supplier_invoices_csv<W: Write>(
+    rows: &[SupplierInvoice],
+    writer: W,
+) -> Result<(), AppError> {
+    let mut w = writer;
+    write_csv_bom(&mut w)?;
+    let mut csv = make_csv_writer(w);
+    csv.write_record([
+        "id",
+        "company_id",
+        "contact_id",
+        "supplier_invoice_number",
+        "status",
+        "invoice_date",
+        "due_date",
+        "total_amount",
+        "creditor_iban",
+        "creditor_qr_iban",
+        "payment_reference",
+        "expected_payment_amount",
+        "project_id",
+        "purchase_journal_entry_id",
+        "settlement_type",
+        "settlement_bank_account_id",
+        "settlement_account_id",
+        "settlement_journal_entry_id",
+        "paid_at",
+        "version",
+        "created_at",
+        "updated_at",
+    ])
+    .map_err(|e| map_csv_err("supplier_invoices", e))?;
+    for si in rows {
+        csv.write_record([
+            si.id.to_string(),
+            si.company_id.to_string(),
+            si.contact_id.to_string(),
+            fmt_opt_str(&si.supplier_invoice_number),
+            txt(si.status.clone()),
+            fmt_date(si.invoice_date),
+            fmt_opt_date(si.due_date),
+            fmt_decimal(si.total_amount),
+            fmt_opt_str(&si.creditor_iban),
+            fmt_opt_str(&si.creditor_qr_iban),
+            fmt_opt_str(&si.payment_reference),
+            fmt_opt_decimal(si.expected_payment_amount),
+            fmt_opt_i64(si.project_id),
+            si.purchase_journal_entry_id.to_string(),
+            fmt_opt_str(&si.settlement_type),
+            fmt_opt_i64(si.settlement_bank_account_id),
+            fmt_opt_i64(si.settlement_account_id),
+            fmt_opt_i64(si.settlement_journal_entry_id),
+            fmt_opt_dt(si.paid_at),
+            si.version.to_string(),
+            fmt_dt(si.created_at),
+            fmt_dt(si.updated_at),
+        ])
+        .map_err(|e| map_csv_err("supplier_invoices", e))?;
+    }
+    csv.flush()
+        .map_err(|e| map_flush_err("supplier_invoices", e))
+}
+
+pub fn serialize_supplier_invoice_lines_csv<W: Write>(
+    rows: &[SupplierInvoiceLine],
+    writer: W,
+) -> Result<(), AppError> {
+    let mut w = writer;
+    write_csv_bom(&mut w)?;
+    let mut csv = make_csv_writer(w);
+    csv.write_record([
+        "id",
+        "supplier_invoice_id",
+        "position",
+        "description",
+        "quantity",
+        "unit_price",
+        "vat_rate",
+        "line_total",
+        "expense_account_id",
+        "created_at",
+    ])
+    .map_err(|e| map_csv_err("supplier_invoice_lines", e))?;
+    for l in rows {
+        csv.write_record([
+            l.id.to_string(),
+            l.supplier_invoice_id.to_string(),
+            l.position.to_string(),
+            txt(l.description.clone()),
+            fmt_decimal(l.quantity),
+            fmt_decimal(l.unit_price),
+            fmt_decimal(l.vat_rate),
+            fmt_decimal(l.line_total),
+            l.expense_account_id.to_string(),
+            fmt_dt(l.created_at),
+        ])
+        .map_err(|e| map_csv_err("supplier_invoice_lines", e))?;
+    }
+    csv.flush()
+        .map_err(|e| map_flush_err("supplier_invoice_lines", e))
+}
+
+pub fn serialize_payment_batches_csv<W: Write>(
+    rows: &[PaymentBatch],
+    writer: W,
+) -> Result<(), AppError> {
+    let mut w = writer;
+    write_csv_bom(&mut w)?;
+    let mut csv = make_csv_writer(w);
+    csv.write_record([
+        "id",
+        "company_id",
+        "bank_account_id",
+        "status",
+        "requested_execution_date",
+        "total_amount",
+        "msg_id",
+        "payment_info_id",
+        "confirmed_at",
+        "version",
+        "created_at",
+        "updated_at",
+    ])
+    .map_err(|e| map_csv_err("payment_batches", e))?;
+    for b in rows {
+        csv.write_record([
+            b.id.to_string(),
+            b.company_id.to_string(),
+            b.bank_account_id.to_string(),
+            txt(b.status.clone()),
+            fmt_date(b.requested_execution_date),
+            fmt_decimal(b.total_amount),
+            txt(b.msg_id.clone()),
+            txt(b.payment_info_id.clone()),
+            fmt_opt_dt(b.confirmed_at),
+            b.version.to_string(),
+            fmt_dt(b.created_at),
+            fmt_dt(b.updated_at),
+        ])
+        .map_err(|e| map_csv_err("payment_batches", e))?;
+    }
+    csv.flush().map_err(|e| map_flush_err("payment_batches", e))
+}
+
+pub fn serialize_payment_batch_items_csv<W: Write>(
+    rows: &[PaymentBatchItem],
+    writer: W,
+) -> Result<(), AppError> {
+    let mut w = writer;
+    write_csv_bom(&mut w)?;
+    let mut csv = make_csv_writer(w);
+    csv.write_record([
+        "id",
+        "payment_batch_id",
+        "supplier_invoice_id",
+        "position",
+        "end_to_end_id",
+        "amount",
+        "created_at",
+    ])
+    .map_err(|e| map_csv_err("payment_batch_items", e))?;
+    for it in rows {
+        csv.write_record([
+            it.id.to_string(),
+            it.payment_batch_id.to_string(),
+            it.supplier_invoice_id.to_string(),
+            it.position.to_string(),
+            txt(it.end_to_end_id.clone()),
+            fmt_decimal(it.amount),
+            fmt_dt(it.created_at),
+        ])
+        .map_err(|e| map_csv_err("payment_batch_items", e))?;
+    }
+    csv.flush()
+        .map_err(|e| map_flush_err("payment_batch_items", e))
+}
+
+pub fn serialize_invoice_settlements_csv<W: Write>(
+    rows: &[InvoiceSettlement],
+    writer: W,
+) -> Result<(), AppError> {
+    let mut w = writer;
+    write_csv_bom(&mut w)?;
+    let mut csv = make_csv_writer(w);
+    csv.write_record([
+        "id",
+        "company_id",
+        "invoice_id",
+        "journal_entry_id",
+        "amount",
+        "settled_on",
+        "settlement_type",
+        "settlement_bank_account_id",
+        "settlement_account_id",
+        "created_at",
+    ])
+    .map_err(|e| map_csv_err("invoice_settlements", e))?;
+    for st in rows {
+        csv.write_record([
+            st.id.to_string(),
+            st.company_id.to_string(),
+            st.invoice_id.to_string(),
+            st.journal_entry_id.to_string(),
+            fmt_decimal(st.amount),
+            fmt_date(st.settled_on),
+            txt(st.settlement_type.clone()),
+            fmt_opt_i64(st.settlement_bank_account_id),
+            fmt_opt_i64(st.settlement_account_id),
+            fmt_dt(st.created_at),
+        ])
+        .map_err(|e| map_csv_err("invoice_settlements", e))?;
+    }
+    csv.flush()
+        .map_err(|e| map_flush_err("invoice_settlements", e))
+}
+
+/// ⚠️ **La table de correspondance des projets, sans laquelle
+/// `journal_entry_lines.csv` porte des identifiants ORPHELINS** — l'export
+/// exportait déjà le `project_id` des lignes, mais rien ne disait à quel projet
+/// il correspondait (issue #386).
+pub fn serialize_projects_csv<W: Write>(rows: &[Project], writer: W) -> Result<(), AppError> {
+    let mut w = writer;
+    write_csv_bom(&mut w)?;
+    let mut csv = make_csv_writer(w);
+    csv.write_record([
+        "id",
+        "company_id",
+        "parent_id",
+        "code",
+        "name",
+        "description",
+        "archived",
+        "start_date",
+        "end_date",
+        "version",
+        "created_at",
+        "updated_at",
+    ])
+    .map_err(|e| map_csv_err("projects", e))?;
+    for p in rows {
+        csv.write_record([
+            p.id.to_string(),
+            p.company_id.to_string(),
+            fmt_opt_i64(p.parent_id),
+            txt(p.code.clone()),
+            txt(p.name.clone()),
+            fmt_opt_str(&p.description),
+            fmt_bool(p.archived),
+            fmt_opt_date(p.start_date),
+            fmt_opt_date(p.end_date),
+            p.version.to_string(),
+            fmt_dt(p.created_at),
+            fmt_dt(p.updated_at),
+        ])
+        .map_err(|e| map_csv_err("projects", e))?;
+    }
+    csv.flush().map_err(|e| map_flush_err("projects", e))
+}
+
+pub fn serialize_contact_persons_csv<W: Write>(
+    rows: &[ContactPerson],
+    writer: W,
+) -> Result<(), AppError> {
+    let mut w = writer;
+    write_csv_bom(&mut w)?;
+    let mut csv = make_csv_writer(w);
+    csv.write_record([
+        "id",
+        "company_id",
+        "contact_id",
+        "first_name",
+        "last_name",
+        "role",
+        "email",
+        "phone",
+        "active",
+        "version",
+        "created_at",
+        "updated_at",
+    ])
+    .map_err(|e| map_csv_err("contact_persons", e))?;
+    for cp in rows {
+        csv.write_record([
+            cp.id.to_string(),
+            cp.company_id.to_string(),
+            cp.contact_id.to_string(),
+            txt(cp.first_name.clone()),
+            txt(cp.last_name.clone()),
+            fmt_opt_str(&cp.role),
+            fmt_opt_str(&cp.email),
+            fmt_opt_str(&cp.phone),
+            fmt_bool(cp.active),
+            cp.version.to_string(),
+            fmt_dt(cp.created_at),
+            fmt_dt(cp.updated_at),
+        ])
+        .map_err(|e| map_csv_err("contact_persons", e))?;
+    }
+    csv.flush().map_err(|e| map_flush_err("contact_persons", e))
+}
+
+/// La **piste de contrôle** (issue #386, V.6).
+///
+/// ⛔ **Non bornée** — cf. `audit_log::list_all_by_company` et son doc-comment :
+/// la fonction paginée et `list_for_export` rejettent ou tronquent, ce qui est
+/// juste pour un écran et faux pour la souveraineté.
+///
+/// ⚠️ `details_json` est un instantané JSON **écrit par l'application**, mais il
+/// contient des valeurs saisies par l'utilisateur (libellés, motifs, noms) :
+/// il passe par `txt` comme toute autre cellule de texte.
+pub fn serialize_audit_log_csv<W: Write>(
+    rows: &[AuditLogEntry],
+    writer: W,
+) -> Result<(), AppError> {
+    let mut w = writer;
+    write_csv_bom(&mut w)?;
+    let mut csv = make_csv_writer(w);
+    csv.write_record([
+        "id",
+        "user_id",
+        "actor_label",
+        "actor_type",
+        "actor_api_key_id",
+        "action",
+        "entity_type",
+        "entity_id",
+        "details_json",
+        "company_id",
+        "created_at",
+    ])
+    .map_err(|e| map_csv_err("audit_log", e))?;
+    for e in rows {
+        csv.write_record([
+            e.id.to_string(),
+            e.user_id.to_string(),
+            txt(e.actor_label.clone()),
+            e.actor_type.as_str().to_string(),
+            fmt_opt_i64(e.actor_api_key_id),
+            txt(e.action.clone()),
+            txt(e.entity_type.clone()),
+            e.entity_id.to_string(),
+            txt(e
+                .details_json
+                .as_ref()
+                .map(|v| v.to_string())
+                .unwrap_or_default()),
+            fmt_opt_i64(e.company_id),
+            fmt_dt(e.created_at),
+        ])
+        .map_err(|err| map_csv_err("audit_log", err))?;
+    }
+    csv.flush().map_err(|e| map_flush_err("audit_log", e))
+}
+
+/// Les pièces fournisseurs **importées**, tous statuts (issue #386).
+///
+/// ⚠️ `storage_path` désigne un **fichier qui n'est PAS dans cet export** : les
+/// justificatifs ne sont ni dans l'export de souveraineté, ni dans la
+/// sauvegarde. C'est un manque connu, qui relève d'une story séparée sur la
+/// sauvegarde. *Exporter le chemin sans le fichier vaut mieux que de taire les
+/// deux : il dit au moins qu'une pièce existait.*
+pub fn serialize_imported_supplier_invoices_csv<W: Write>(
+    rows: &[ImportedSupplierInvoice],
+    writer: W,
+) -> Result<(), AppError> {
+    let mut w = writer;
+    write_csv_bom(&mut w)?;
+    let mut csv = make_csv_writer(w);
+    csv.write_record([
+        "id",
+        "company_id",
+        "status",
+        "supplier_invoice_id",
+        "file_hash",
+        "storage_path",
+        "original_filename",
+        "mime_type",
+        "byte_size",
+        "creditor_iban",
+        "is_qr_iban",
+        "creditor_address_type",
+        "creditor_name",
+        "creditor_postal_code",
+        "creditor_town",
+        "creditor_country",
+        "reference_type",
+        "reference_value",
+        "amount",
+        "currency",
+        "unstructured_message",
+        "billing_information",
+        "version",
+        "created_at",
+        "updated_at",
+    ])
+    .map_err(|e| map_csv_err("imported_supplier_invoices", e))?;
+    for i in rows {
+        csv.write_record([
+            i.id.to_string(),
+            i.company_id.to_string(),
+            txt(i.status.clone()),
+            fmt_opt_i64(i.supplier_invoice_id),
+            txt(i.file_hash.clone()),
+            txt(i.storage_path.clone()),
+            txt(i.original_filename.clone()),
+            txt(i.mime_type.clone()),
+            i.byte_size.to_string(),
+            txt(i.creditor_iban.clone()),
+            fmt_bool(i.is_qr_iban),
+            txt(i.creditor_address_type.clone()),
+            txt(i.creditor_name.clone()),
+            fmt_opt_str(&i.creditor_postal_code),
+            fmt_opt_str(&i.creditor_town),
+            txt(i.creditor_country.clone()),
+            txt(i.reference_type.clone()),
+            fmt_opt_str(&i.reference_value),
+            fmt_opt_decimal(i.amount),
+            txt(i.currency.clone()),
+            fmt_opt_str(&i.unstructured_message),
+            fmt_opt_str(&i.billing_information),
+            i.version.to_string(),
+            fmt_dt(i.created_at),
+            fmt_dt(i.updated_at),
+        ])
+        .map_err(|e| map_csv_err("imported_supplier_invoices", e))?;
+    }
+    csv.flush()
+        .map_err(|e| map_flush_err("imported_supplier_invoices", e))
+}
 
 #[cfg(test)]
 mod tests {

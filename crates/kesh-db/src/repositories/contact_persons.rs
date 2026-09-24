@@ -169,3 +169,26 @@ pub async fn archive(
     }
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// Story 25-5-a (#386) — lecture exhaustive pour l'export de souveraineté
+// ---------------------------------------------------------------------------
+
+/// Toutes les personnes de contact d'une société (Story 25-5-a, #386).
+///
+/// ⚠️ **Inactives comprises**, contrairement à `list_by_contact` : c'est un
+/// export de souveraineté (CO art. 958f, conservation dix ans), non un écran.
+/// Même raison que l'`include_archived = true` verrouillé sur les comptes et
+/// les contacts dans `build_global_export`.
+pub async fn list_all_by_company(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<Vec<ContactPerson>, DbError> {
+    sqlx::query_as::<_, ContactPerson>(&format!(
+        "SELECT {COLUMNS} FROM contact_persons WHERE company_id = ? ORDER BY contact_id, id"
+    ))
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .map_err(map_db_error)
+}
