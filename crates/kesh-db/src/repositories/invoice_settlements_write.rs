@@ -381,6 +381,31 @@ pub async fn cancel_settlement_in_tx(
     .map_err(map_db_error)?;
     let (entry_id, amount, settled_on) = settlement.ok_or(DbError::NotFound)?;
 
+    // (2-bis) ⛔ Verrou sur l'EXERCICE de l'écriture de règlement — et sur
+    //     l'écriture elle-même, jointe. Sans lui, le rang 2 serait une lecture
+    //     sans verrou : une clôture (`fiscal_years::close`, un simple `UPDATE`)
+    //     validée entre cette lecture et la contre-passation passerait
+    //     inaperçue, et l'on annulerait un règlement d'exercice clos. Le socle
+    //     ne le rattraperait pas : il ne verrouille que l'exercice du JOUR.
+    //     Patron : `journal_entries::delete_in_tx`, qui verrouille écriture et
+    //     exercice dans la même requête. *(Passe 1 de revue de code.)*
+    //
+    //     ⚠️ La lecture du rang 2, plus bas, reste une lecture sans verrou — et
+    //     elle voit l'état juste : la clôture concurrente attend désormais ce
+    //     verrou, et l'instantané de lecture de la transaction ne se fige qu'à
+    //     sa première lecture non verrouillante, qui vient APRÈS.
+    sqlx::query(
+        "SELECT fy.id FROM journal_entries je \
+         JOIN fiscal_years fy ON fy.id = je.fiscal_year_id \
+         WHERE je.id = ? AND je.company_id = ? FOR UPDATE",
+    )
+    .bind(entry_id)
+    .bind(company_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .ok_or(DbError::NotFound)?;
+
     // (3) Les motifs du geste. Rangs 1-2 : refusés ici. Rangs 3-5 : laissés au
     //     socle, qui les refuse avec son erreur canonique.
     if let Some((

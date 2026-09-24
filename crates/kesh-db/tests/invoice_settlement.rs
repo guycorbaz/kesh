@@ -1135,3 +1135,67 @@ async fn la_queue_commune_se_lit_sur_l_ecriture(pool: MySqlPool) {
         .expect_err("autre société");
     assert!(matches!(err, DbError::NotFound), "got {err:?}");
 }
+
+/// ⛔ **Une clôture concurrente ne passe pas entre la lecture du rang 2 et la
+/// contre-passation** (passe 1 de revue de code).
+///
+/// ⚠️ **Pourquoi un ENTRELACEMENT, et non un état final.** Le socle verrouille
+/// lui aussi l'exercice de l'écriture d'origine — mais à l'étape 4, APRÈS la
+/// lecture du rang 2. Un test qui ne regarde que la fin verrait donc un verrou
+/// dans les deux cas et ne prouverait rien (vérifié : une première rédaction
+/// passait sous la mutation qui retire le verrou). Ici :
+/// 1. une clôture est EN COURS, non validée — elle tient la ligne d'exercice ;
+/// 2. l'annulation démarre pendant ce temps ;
+/// 3. la clôture est validée.
+///
+/// **Avec** le verrou de l'étape 2-bis, l'annulation attend la clôture, puis lit
+/// l'exercice CLOS et refuse. **Sans** lui, elle lit l'exercice encore ouvert
+/// (la clôture n'est pas validée), passe le rang 2, attend au verrou du socle…
+/// puis contre-passe un règlement d'exercice désormais clos.
+///
+/// Le règlement est dans un exercice **autre** que celui du jour, pour que le
+/// verrou que le socle pose sur l'exercice du jour ne serve pas de garde par
+/// accident.
+#[sqlx::test(migrations = "./test-schema")]
+async fn une_cloture_concurrente_attend_l_annulation(pool: MySqlPool) {
+    let (seeded, inv_id, sid) = monter(&pool, &[]).await;
+
+    // (1) La clôture en cours, non validée.
+    let mut closing = pool.begin().await.unwrap();
+    sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+        .bind(seeded.fiscal_year_id)
+        .execute(&mut *closing)
+        .await
+        .unwrap();
+
+    // (2) L'annulation démarre pendant ce temps.
+    let p = pool.clone();
+    let (company_id, user_id) = (seeded.company_id, seeded.admin_user_id);
+    let annulation = tokio::spawn(async move {
+        invoice_settlements_write::cancel_settlement(&p, user_id, company_id, inv_id, sid).await
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    // (3) La clôture est validée.
+    closing.commit().await.unwrap();
+
+    let result = annulation.await.expect("tâche d'annulation");
+    assert!(
+        matches!(
+            result,
+            Err(DbError::SettlementNotCancellable {
+                blocker: SettlementCancelBlocker::FiscalYearClosed
+            })
+        ),
+        "l'annulation devait attendre la clôture puis refuser l'exercice clos — reçu {result:?}"
+    );
+    assert_eq!(
+        count(
+            &pool,
+            &format!("SELECT COUNT(*) FROM invoice_settlements WHERE id = {sid}")
+        )
+        .await,
+        1,
+        "rien n'a été annulé"
+    );
+}

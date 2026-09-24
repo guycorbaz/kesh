@@ -33,9 +33,13 @@ pub type SettlementCancelHit = (SettlementCancelBlocker, Option<i64>, Option<Str
 /// évalué ici — il se contrôle au clic (`PERIOD_LOCKED`, 400). Une borne ne
 /// peut pas être future ; seule une borne égale au jour l'atteindrait.
 ///
-/// **Lecture seule** : aucun verrou n'est posé. L'écriture (le geste) verrouille
-/// la facture puis le règlement avant d'appeler cette fonction, et le socle
-/// verrouille l'écriture et l'exercice du jour.
+/// **Lecture seule** : aucun verrou n'est posé ici. ⛔ **Un geste qui s'en sert
+/// pour REFUSER doit donc verrouiller avant** — la pièce, puis l'écriture de
+/// règlement **et son exercice** (`… JOIN fiscal_years … FOR UPDATE`) : sans ce
+/// dernier verrou, une clôture validée entre la lecture du rang 2 et la
+/// contre-passation passerait inaperçue, le socle ne verrouillant l'exercice de
+/// l'origine qu'APRÈS (passe 1 de revue de code, 25-3-a-1). Patron :
+/// `invoice_settlements_write::cancel_settlement_in_tx`, étape 2-bis.
 ///
 /// Écriture introuvable (ou d'une autre société) → [`DbError::NotFound`].
 pub async fn settlement_entry_cancel_blocker(

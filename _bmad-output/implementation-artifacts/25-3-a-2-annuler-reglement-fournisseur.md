@@ -77,7 +77,12 @@ les cinq sites de `reconciliation.rs` qui posent `matched_entry_id` (`:1467`, `:
    `payment_batches.rs:265`, a un autre sens).
 
 3. **Le geste.** Wrapper + cœur `_in_tx`, sur le modèle de `pay` / `pay_in_tx` :
-   1. verrou facture `FOR UPDATE` ;
+   1. verrou facture `FOR UPDATE`, **puis** l'écriture de règlement **et son exercice**
+      (`… JOIN fiscal_years … FOR UPDATE`) — ⛔ **obligatoire**, trouvé en passe 1 de revue de
+      code de la 25-3-a-1 : la queue commune lit l'exercice **sans verrou**, et le socle ne
+      verrouille l'exercice de l'origine qu'après ; sans ce verrou, une clôture concurrente
+      passerait entre les deux. Patron : `cancel_settlement_in_tx`, étape 2-bis, et son test
+      d'entrelacement `une_cloture_concurrente_attend_l_annulation` ;
    2. `supplier_settlement_cancel_blocker` : rangs 1 et « exercice clos » → refus ; les autres → on
       continue, le socle refuse (même partage que la 25-3-a-1) ;
    3. contre-passation de `settlement_journal_entry_id` au titre de l'autorité (AC 1) ;

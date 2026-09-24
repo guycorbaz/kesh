@@ -1207,8 +1207,11 @@ pub async fn settle_invoice_handler(
 ///
 /// ⛔ **`cancellable` et ses trois compagnons sont calculés par la fonction même
 /// qui refuse l'annulation** (`invoice_settlements_write::settlement_cancel_blocker`) :
-/// l'écran masque le bouton **avant** le clic, et ne peut pas annoncer autre
-/// chose que ce que l'écriture refuserait.
+/// l'écran masque le bouton **avant** le clic, et n'annonce pas autre chose que
+/// ce que l'écriture refuserait — ⚠️ **à une exception près, assumée** : le
+/// verrou de période **du jour** n'est pas évalué à la lecture (une borne ne
+/// peut pas être future ; seule une borne égale au jour l'atteint), et se
+/// refuse au clic en `400 PERIOD_LOCKED`. Cf. `settlement_entry_cancel_blocker`.
 ///
 /// ⚠️ `cancellable` ne tient **pas** compte du rôle : un utilisateur
 /// Consultation lit `true` et reçoit 403 au clic. C'est le patron des écrans
