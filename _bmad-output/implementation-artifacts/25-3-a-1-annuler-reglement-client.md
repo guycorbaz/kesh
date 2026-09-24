@@ -213,7 +213,7 @@ silence un paiement que la banque dit rapproché. ⇒ **exemption ÉTROITE, pré
    - **La queue** (rangs 2-5, communs au fournisseur) : famille **`settlement-cancel-blocked-*`**
      dans un module **partagé** (`frontend/src/lib/shared/…`), qui mappe ces quatre codes en
      `switch` exhaustif avec garde `never`. `lint-i18n-ownership` ne balaie que
-     `frontend/src/lib/features/` (`FEATURES_PATH`, script `:17`, `:247-251`) : un module partagé
+     `frontend/src/lib/features/` (`FEATURES_PATH`, script `:17`, `:246-251`) : un module partagé
      n'y est pas soumis — vérifié. La 25-3-a-2 **le réutilise**, sans jumeau.
    - **La tête client** (rang 1) : clé **`invoices-settlement-cancel-blocked-credited`** dans
      `features/invoices/` — préfixe **pluriel**, pour passer le lint (le singulier `invoice-` l'y
@@ -233,7 +233,7 @@ silence un paiement que la banque dit rapproché. ⇒ **exemption ÉTROITE, pré
    annulation viendra avec la contre-passation des règlements » → nommer le chemin : annuler le
    règlement depuis la fiche de la facture, **qui indique si c'est possible**). Sites, tous
    ensemble (grep de la **clé** et du **code**) : FTL `journal-entries-reverse-blocked-settlement`
-   ×4 (fr-CH `:343`, autres `:349`), repli serveur `errors.rs:2466-2478`, repli Svelte
+   ×4 (fr-CH `:343`, autres `:349`), repli serveur `errors.rs:2471-2474` (le bras `OwnedBySettlement`), repli Svelte
    `journal-entries/[id]/+page.svelte:151-165`. ⚠️ `OWNED_BY_SUPPLIER_INVOICE` est l'affaire de la
    25-3-a-2 ; `MATCHED_BANK_TRANSACTION` celle de la 25-3-b. **Les refus restent** : contre-passer
    directement une écriture de règlement reste faux.
@@ -337,12 +337,16 @@ silence un paiement que la banque dit rapproché. ⇒ **exemption ÉTROITE, pré
 ## Tasks / Subtasks
 
 - [ ] **T1 — Le socle** (AC 1, 2) : motifs en liste ordonnée, autorité, `reverse_in_tx` inchangé.
-- [ ] **T2 — Les motifs du geste** (AC 3) : `SettlementCancelBlocker`, `settlement_cancel_blocker`,
-      `DbError::SettlementNotCancellable` et son mapping.
+- [ ] **T2 — Les motifs du geste** (AC 3) : `SettlementCancelBlocker`, la **queue commune**
+      `settlement_entry_cancel_blocker(entry_id)` (rangs 2-5) et la **tête** client
+      `settlement_cancel_blocker(settlement_id)` (rang 1, puis délégation), `DbError::SettlementNotCancellable`
+      et son mapping.
 - [ ] **T3 — Le geste** (AC 4, 5, 6) et l'audit (AC 7).
 - [ ] **T4 — Les routes** (AC 8), registre de routes recompté.
-- [ ] **T5 — Les textes** (AC 9) : famille `invoices-settlement-cancel-blocked-*` ×4, module de
-      mapping, `OWNED_BY_SETTLEMENT` ×4 + replis, correction du repli `OWNED_BY_INVOICE`.
+- [ ] **T5 — Les textes** (AC 9) : famille `settlement-cancel-blocked-*` ×4 (queue, module
+      **partagé** dans `frontend/src/lib/shared/`), clé `invoices-settlement-cancel-blocked-credited`
+      ×4 (tête, `features/invoices/`), type TypeScript union tête + queue, `OWNED_BY_SETTLEMENT` ×4
+      + replis, correction du repli `OWNED_BY_INVOICE`.
 - [ ] **T6 — L'écran** (AC 10) et les commentaires devenus faux.
 - [ ] **T7 — Tests et mutations** (AC 11).
 - [ ] **T8 — Documentation** (AC 12), gates (AC 13), PR en `refs #414`.
@@ -419,6 +423,7 @@ Modules : `kesh-db`, `kesh-api`, `kesh-i18n`, `frontend` — quatre. Issue elle-
 
 | Date | Étape | Note |
 |---|---|---|
+| 2026-09-24 | validate P6 (ciblée) | **Une** lentille Sonnet, contexte frais, braquée sur le diff de `18f39bf5` pour cette fiche (prompt `25-3-a-validate-prompt-p5-couple.md`, lentille A), axes déclarés. ✅ **1 MEDIUM** : la reprise avait réécrit les AC 3 et 9 **sans propager aux tâches** — T2 ne nommait que la tête, T5 décrivait encore l'**ancien module unique** dans `features/invoices/` ; corrigés. Module partagé **confirmé hors** du lint d'appartenance **et** des trois gardes vitest (qui parcourent `src` sans règle de dossier ; `i18n-un-repli-par-cle` est opt-in par préfixe et indifférente à ces clés). Citation `:247-251` → `:246-251`. Symptôme grepé après correction (`module`, `invoices-settlement-cancel-blocked-\*`, `settlement_cancel_blocker` hors tête) : aucun autre résidu. |
 | 2026-09-24 | reprise (validation de la sœur) | ⛔ **Rouverte par la passe 4 de la 25-3-a-2** (lentille A, A4-2 ; lentille B, B-1) : la fiche fournisseur ne pouvait ni **étendre** le calcul des motifs (il prenait un `settlement_id`, que le fournisseur n'a pas ; un `switch` commun aurait porté des cas morts des deux côtés) ni en écrire un **jumeau** (seconde précédence, celle-là même dont cette fiche a dû corriger l'ordre en passe 4). ⇒ l'AC 3 scinde le calcul en une **tête** client (rang 1) et une **queue commune** sur l'**écriture** (rangs 2-5), `settlement_entry_cancel_blocker(entry_id)` ; l'AC 9 met les textes de la queue dans un module **partagé** (`lib/shared/`, hors du lint d'appartenance — vérifié dans le script), la tête restant dans `features/invoices/` ; l'AC 11 teste la queue à son propre niveau. Aucun rang, aucun ordre, aucun code ne change. Une passe ciblée suit. |
 | 2026-09-24 | validate P5 | **Passe ciblée** (CLAUDE.md § « La passe ciblée ») : **une** lentille Haiku 4.5, contexte frais, braquée sur le seul commit de remédiation `3494ea21`, prompt versionné `25-3-a-1-validate-prompt-p5.md`, axes déclarés. Permutation des rangs **vérifiée juste et complète** (code du socle relu, `grep -nE "rang|dernier"` sur les deux fiches, aucune phrase contradictoire). ❌ **2 MEDIUM réfutés** : « README non modifié » et « manuel `:1771-1774` non corrigé » reprochent au dépôt de ne pas **encore** faire ce que la fiche prescrit — ce n'est pas un défaut de la spec (le prompt le rappelait ; `git diff` d'un commit de spec ne touche pas le manuel). Seule prise réelle : la mention « README — ajouté » du Change Log P4 était ambiguë, précisée. ⇒ **0 finding au-dessus de LOW : boucle close.** **Trend** (mère puis fille) : P1 Sonnet 1 HIGH / 3 MED → P2 Haiku 2 MED → P3 Opus 1 HIGH / ~9 MED (**découpage**) → P4 Sonnet 3 MED → P5 Haiku ciblée **0**. Modèles : Sonnet, Haiku, Opus, Sonnet, Haiku. Reclassements : 1 LOW réfuté en P2, 2 MED réfutés en P5, tous faux positifs Haiku sur lecture de diff ou de périmètre. |
 | 2026-09-24 | validate P4 | **Deux lentilles Sonnet** en contexte frais, prompt `25-3-a-1-validate-prompt-p4.md`, axes déclarés (non exercés : recompte détaillé des gardes i18n, exécution). **3 MEDIUM, 2 LOW** — **aucun HIGH** : la sévérité décroît (P3 : HIGH + MEDIUM). ✅ **MEDIUM (A)** : la table mettait l'exercice du jour (rang 4) avant le compte archivé (rang 5), l'**inverse** de l'ordre réel du socle (`reverse_in_tx` : étape 3 archivés, étape 4 exercice du jour) — lecture et écriture auraient rendu deux motifs différents ; rangs 4 et 5 **permutés**, test de la paire des deux côtés, jumelle 25-3-a-2 corrigée du même défaut. ✅ **MEDIUM (B)** : `:1771-1774` du manuel tombait entre les deux fiches — ici client seulement, la 25-3-a-2 l'étend ; **`README.md`** absent de l'AC 12 — ajouté **à l'AC 12** (la modification du README elle-même se fait au développement). LOW : `:1769` sans verbe (« le relire ») ; coût de la lecture par règlement écrit comme voulu. Symptôme grepé (« rang 4 », « rang 5 », rangs de la table) sur les deux fiches : six sites repris dans la 25-3-a-1 (table, garde du 400, libellé, textes, montage, « pas le 5 »), deux dans la 25-3-a-2 (table, libellé) ; lignes du socle citées **recomptées** (`:1460-1462`, `:1479-1481` — la lentille donnait des lignes approchées). |

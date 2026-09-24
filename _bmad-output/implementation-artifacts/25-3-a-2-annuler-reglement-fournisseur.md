@@ -64,7 +64,7 @@ les cinq sites de `reconciliation.rs` qui posent `matched_entry_id` (`:1467`, `:
    | rang | motif | code | à l'écriture |
    |---|---|---|---|
    | 1 | facture non `paid` | **`SUPPLIER_INVOICE_NOT_PAID`** (variante `SupplierInvoiceNotPaid` de `SettlementCancelBlocker`, ajoutée ici) | 409 `DbError::SettlementNotCancellable` |
-   | 2-4 | **queue commune** de la 25-3-a-1 : exercice de l'écriture de règlement clos (`FISCAL_YEAR_CLOSED`, par le geste, 409) ; compte archivé (`ACCOUNT_ARCHIVED`, par le socle, 400 qui **nomme**) ; aucun exercice ouvert le jour (`FISCAL_YEAR_INVALID`, par le socle, 400) | — | — |
+   | 2, 4, 5 | **queue commune** de la 25-3-a-1, **numérotée comme elle** : rang 2, exercice de l'écriture de règlement clos (`FISCAL_YEAR_CLOSED`, par le geste, 409) ; rang 4, compte archivé (`ACCOUNT_ARCHIVED`, par le socle, 400 qui **nomme**) ; rang 5, aucun exercice ouvert le jour (`FISCAL_YEAR_INVALID`, par le socle, 400). **Rang 3 volontairement absent** (`MATCHED_BANK_TRANSACTION`, inatteignable ici) | — | — |
 
    ⛔ **Aucun jumeau** : la tête fournisseur `supplier_settlement_cancel_blocker(executor,
    company_id, supplier_invoice_id)` évalue le rang 1 puis **appelle**
@@ -93,22 +93,34 @@ les cinq sites de `reconciliation.rs` qui posent `matched_entry_id` (`:1467`, `:
    dans l'audit **et** au grand livre (l'écriture d'origine ressort ensuite en `ALREADY_REVERSED`).
 
    ⚠️ **Pourquoi le geste n'appelle PAS `guard_not_in_generated_batch`** : une facture `paid` ne peut
-   pas être dans un lot `generated` — `create_batch` exige `open` (`payment_batches.rs:264`), `pay`
+   pas être dans un lot `generated` — `create_batch` exige `open` (`payment_batches.rs:265`), `pay`
    et `cancel` refusent une facture en lot `generated` (`supplier_invoices.rs:474-503`), et
    `confirm_batch` règle la facture et passe le lot en `confirmed` dans la même transaction
    (`:360-376`). Ne pas recopier la garde, ne pas la chercher.
 
    ⛔ **Lot confirmé, puis nouveau lot : le risque de DOUBLE PAIEMENT.** Une facture revenue à `open`
    repart dans la liste des factures proposées pour un lot (`create_batch` n'écarte que les
-   non-`open` et les lots `generated`, `payment_batches.rs:264-283` ;
+   non-`open` et les lots `generated`, `payment_batches.rs:265-283` ;
    `payment-batches/+page.svelte:52,90`). Si l'ordre a **réellement** été exécuté par la banque et
    qu'on annule le règlement pour une autre raison (mauvaise date, mauvais compte), un nouveau lot
    **paierait deux fois**. L'arbitrage autorise l'annulation ; la story **le dit** :
-   - la réponse de lecture porte **`settledByConfirmedBatchId`** (l'identifiant du lot confirmé qui
-     contient la facture, s'il y en a un) ;
-   - la **confirmation** d'annulation, dans ce cas, avertit : « cette facture a été payée par le lot
-     n° X ; si la banque a exécuté l'ordre, corrigez par un nouveau règlement direct, jamais par un
-     nouveau lot » ;
+   - la réponse de lecture porte **`lastConfirmedBatch`** — `{ id, confirmedAt }` du lot confirmé
+     **le plus récent** (`ORDER BY confirmed_at DESC, id DESC`) qui contient la facture, ou `null` ;
+   - ⛔ **Ce champ est HISTORIQUE, et il est nommé comme tel.** `payment_batch_items` ne relie
+     aucune ligne à un règlement précis (aucune colonne vers l'écriture, migration
+     `20260628000002`), et ses lignes survivent à toute annulation. Après un cycle « lot confirmé →
+     annulation → nouveau règlement **direct** », le lot le plus récent **n'a pas produit** le
+     règlement courant. Le champ ne prétend donc **jamais** dire d'où vient le règlement courant
+     (passe 5, lentille B : c'était le défaut de la première rédaction, qui aurait affiché un fait
+     **faux et nommé**) ;
+   - la **confirmation** d'annulation, s'il est renseigné, dit un fait **toujours vrai** : « cette
+     facture figure dans le lot de paiement n° X, confirmé le … ; si la banque a exécuté cet ordre,
+     elle a déjà été payée — corrigez alors par un nouveau règlement direct, jamais par un nouveau
+     lot » ;
+   - ⚠️ *Alternative écartée* : une colonne liant le règlement au lot qui l'a produit (migration,
+     écriture dans `confirm_batch`) rendrait l'avertissement exact au lieu d'historique ; elle
+     déborde de l'objet de la story, et l'avertissement historique suffit à prévenir le double
+     paiement ;
    - le manuel le dit (AC 10).
 
 4. **L'audit** : `supplier_invoice.settlement_cancelled`, littéral, inscrit à `ACTIONS` (triée),
@@ -121,7 +133,7 @@ les cinq sites de `reconciliation.rs` qui posent `matched_entry_id` (`:1467`, `:
 
 6. **Les champs de lecture, et où ils vivent.** `SupplierInvoiceResponse` gagne
    `settlementCancellable`, `settlementCancelBlockedBy`, `settlementCancelBlockedLabel` (numéro du
-   compte archivé) et `settledByConfirmedBatchId` (AC 3). ⚠️ `from_parts`
+   compte archivé) et `lastConfirmedBatch` (AC 3). ⚠️ `from_parts`
    (`routes/supplier_invoices.rs:90`) est **synchrone** et a **cinq** appelants (`:251`, `:287`,
    `:312`, `:327`, `imported_supplier_invoices.rs:282`). Patron : `InvoiceResponse::with_settlement`
    (`routes/invoices.rs:640`) et sa discipline (`:240-250`) — **`Option`, sérialisé `null` quand
@@ -157,8 +169,8 @@ les cinq sites de `reconciliation.rs` qui posent `matched_entry_id` (`:1467`, `:
      Nouveau texte **qui couvre les deux rôles** sans changer `reversal_blocker` : « Cette écriture
      appartient à une facture fournisseur : annulez la facture ou son règlement depuis sa fiche. »
      Sites, ensemble : FTL `journal-entries-reverse-blocked-supplier-invoice` ×4 (fr-CH `:342`,
-     autres `:348`), repli serveur `errors.rs:2466-2478`, repli Svelte
-     `journal-entries/[id]/+page.svelte:151-165`, doc-comment `kesh-db/src/errors.rs:67-68`, manuel
+     autres `:348`), repli serveur `errors.rs:2467-2470` (le bras
+     `OwnedBySupplierInvoice`), repli Svelte `journal-entries/[id]/+page.svelte:151-165`, doc-comment `kesh-db/src/errors.rs:67-68`, manuel
      (`:502-507`, `:1769`). ⚠️ **Limite assumée** : pour l'écriture d'achat d'une facture **déjà
      annulée**, le texte reste approximatif — `cancel` ne pose pas `reverses_entry_id`
      (`supplier_invoices.rs:820-836`), si bien que `reversal_blocker` rend encore
@@ -176,8 +188,11 @@ les cinq sites de `reconciliation.rs` qui posent `matched_entry_id` (`:1467`, `:
      du jour absent** des deux côtés (lecture **et** clic rendent `ACCOUNT_ARCHIVED`) ;
    - `paid → open`, colonnes vidées, **deux cycles complets** (payer, annuler, payer, annuler) — la
      première écriture de règlement ressort en `ALREADY_REVERSED` et ne gêne pas le second cycle ;
-   - facture réglée **par lot confirmé** : annulation, lot inchangé, `settledByConfirmedBatchId`
-     renseigné avant, et l'avertissement à l'écran ;
+   - facture réglée **par lot confirmé** : annulation, lot inchangé, `lastConfirmedBatch` renseigné,
+     l'avertissement à l'écran ;
+   - ⛔ **deux cycles sur `lastConfirmedBatch`** : lot confirmé → annulation → règlement **direct**
+     → le champ désigne toujours l'ancien lot et le texte reste **vrai** (il ne dit pas « payée par
+     ce lot ») ; puis deux lots confirmés successifs → le champ désigne le **plus récent** ;
    - **composition et rollback** (appel `_in_tx`, lecture **positive** dans la transaction,
      abandon, rien n'a changé) ;
    - étanchéité multi-tenant table par table (`journal_entries`, `journal_entry_lines`,
@@ -233,7 +248,7 @@ les cinq sites de `reconciliation.rs` qui posent `matched_entry_id` (`:1467`, `:
 ### References
 
 - [Source: crates/kesh-db/src/repositories/supplier_invoices.rs:470-898] — garde de lot, `pay`, `pay_in_tx`, `cancel`.
-- [Source: crates/kesh-db/src/repositories/payment_batches.rs:264-283,360-376] — création et confirmation de lot.
+- [Source: crates/kesh-db/src/repositories/payment_batches.rs:265-283,360-376] — création et confirmation de lot.
 - [Source: crates/kesh-db/migrations/20260628000001_supplier_invoices.sql:65-73] — contraintes de statut.
 - [Source: crates/kesh-api/src/routes/supplier_invoices.rs:62-90,295-331] — réponse, `pay`, `cancel`.
 - [Source: crates/kesh-api/src/routes/invoices.rs:240-250,640] — discipline `Option` de `with_settlement`.
@@ -255,5 +270,6 @@ les cinq sites de `reconciliation.rs` qui posent `matched_entry_id` (`:1467`, `:
 
 | Date | Étape | Note |
 |---|---|---|
+| 2026-09-24 | validate P5 | **Une** lentille Sonnet, passe complète, contexte frais (prompt `25-3-a-validate-prompt-p5-couple.md`, lentille B), axes déclarés (non exercés : exécution, PDF — rien n'est encore régénéré —, clés FTL de la queue non encore créées, recomptes différés au dev). ⛔ **1 HIGH, né de la remédiation P4** : `settledByConfirmedBatchId` n'était pas lié au règlement **courant** — `payment_batch_items` ne porte aucun lien vers une écriture, et ses lignes survivent aux annulations ; après « lot confirmé → annulation → règlement direct », l'avertissement aurait affirmé « payée par le lot n° X » à tort. ⇒ champ **historique** `lastConfirmedBatch` (le plus récent, critère d'ordre écrit), texte **toujours vrai**, test à deux cycles ; colonne de corrélation écartée et **dite** écartée. LOW : rangs de la queue **numérotés comme la 25-3-a-1** (2, 4, 5 ; rang 3 absent, dit) ; citation du repli serveur ramenée au bras exact (`:2467-2470`) ; `payment_batches.rs:264` → `:265`. Symptôme grepé (`settledByConfirmedBatchId`) : quatre sites, tous repris. |
 | 2026-09-24 | validate P4 | **Deux lentilles Opus** en contexte frais, prompt `25-3-a-2-validate-prompt-p4.md`, axes déclarés (non exercés : exécution, recompte des gardes i18n et du registre de routes, sens des traductions, écrans de détail d'un lot). **9 MEDIUM, 10 LOW, aucun HIGH**, recoupés. Fiche **réécrite**. ⛔ **Le constat de fond** : « étendus ou jumeaux, au choix du développeur » ne se choisissait pas — étendre le calcul client (qui prenait un `settlement_id`) mettait des cas morts dans les deux `switch`, le jumeler recréait une seconde précédence. ⇒ **tête propre + queue commune** sur l'écriture, **posée par la 25-3-a-1** (qui en est rouverte) ; code de tête **figé** (`SUPPLIER_INVOICE_NOT_PAID`) ; textes : queue partagée, tête en `supplier-invoices-…`. Autres MEDIUM corrigés : le contrôle de l'autorité vit **dans le socle** (dans le geste il était vrai par construction, donc intestable), contre-passation **avant** le vidage de la colonne ; paire « 1-2 » **impossible** remplacée par la double annulation, et la paire compte archivé / exercice du jour exigée ; ⛔ **risque de double paiement** après un lot confirmé, désormais **dit** (champ `settledByConfirmedBatchId`, avertissement à la confirmation, manuel pain.001) sans toucher à l'arbitrage ; écran : condition d'affichage du motif, masquage par rôle, confirmation, refus au clic **hors** `errorMsg` (qui efface la fiche) ; `README.md:40`. LOW : pourquoi pas de garde de lot ; « annuler ensuite (25-3-c) » inexact ; deux cycles complets ; `null` et non `skip_serializing_if` (patron `with_settlement`) ; majuscule du texte ; limite assumée du texte d'`OWNED_BY_SUPPLIER_INVOICE` pour une facture annulée (fermée par la 25-3-c) ; recompte du CHANGELOG ; contenu d'`api-external.md` ; grep `#414` après la sœur, puisque c'est **cette** story qui ferme l'issue ; renvoi au manuel pain.001 ; fichier vitest à créer. |
 | 2026-09-24 | split | Née du découpage de la 25-3-a. Intègre les corrections de la passe 3 côté fournisseur : bouton conditionné à `settlementCancellable` et non au statut ; champs portés aussi par la réponse de `pay` (qui remplace l'état de l'écran) ; **cinq** appelants de `from_parts`, non quatre ; texte d'`OWNED_BY_SUPPLIER_INVOICE` qui couvre l'écriture d'achat **et** celle de règlement ; motif « non `paid` » **codé** ; test de rollback par composition. Ferme #414, **après** la 25-3-a-1. |
