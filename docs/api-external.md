@@ -250,6 +250,24 @@ Corps : `{ "version": n }` — le verrou optimiste. Réponse : la facture, même
 
 ⚠️ **Un brouillon qui porte déjà un numéro ne change pas d'exercice** : `PUT /invoices/{id}` refuse une date hors de l'exercice qui a émis le numéro (`INVOICE_NUMBER_FISCAL_YEAR_MISMATCH`, `409`).
 
+### Lister et annuler les règlements d'une facture
+
+**`GET /api/v1/invoices/{id}/settlements`** — lecture (`read` suffit). Les règlements de la facture, du plus ancien au plus récent : `id`, `journalEntryId`, `amount`, `settledOn`, `settlementType` (`bank_transfer` / `internal_account`), et **`cancellable`** — calculé par la fonction même qui refuserait l'annulation. Quand il vaut `false`, `cancelBlockedBy` porte le code du motif, `cancelBlockedLabel` le numéro du compte archivé et `cancelBlockedDocumentId` l'identifiant de la transaction bancaire rapprochée. ⚠️ `cancellable` ne dit rien des **droits** de la clé : une clé `read` lit `true` et reçoit `403` à l'annulation.
+
+**`POST /api/v1/invoices/{id}/settlements/{settlementId}/cancel`** — écriture (`read-write`), ouverte aux clés comme `POST /invoices/{id}/settlements`. Sans corps. Annule le règlement par **contre-passation** : une écriture inverse **datée du jour**, dans l'exercice ouvert qui le couvre ; la ligne de règlement est retirée ; `paidAt` retombe à `null` si le reste dû redevient positif. Réponse : `{ invoice, reversalJournalEntryId }`, la facture relue.
+
+| Refus | Code | Statut |
+|---|---|---|
+| Facture créditée par un avoir — le règlement est un paiement **à lettrer** | `INVOICE_CREDITED` | `409` |
+| Règlement d'un exercice **clos** — un administrateur doit le rouvrir | `FISCAL_YEAR_CLOSED` | `409` |
+| Règlement rapproché d'une transaction bancaire | `MATCHED_BANK_TRANSACTION` | `409`, `details.documentId` = la transaction |
+| Compte du règlement archivé | `ACCOUNT_ARCHIVED` | `400`, `details.rejected[]` nomme les comptes |
+| Aucun exercice ouvert ne couvre la date du jour | `FISCAL_YEAR_INVALID` | `400` |
+| Date du jour dans une période verrouillée | `PERIOD_LOCKED` | `400` |
+| Facture ou règlement introuvable (ou d'une autre société) | `NOT_FOUND` | `404` |
+
+⚠️ **`FISCAL_YEAR_CLOSED` rend ici `409`**, alors que la dévalidation le rend en `400` : c'est un refus du **geste** d'annulation, qui porte sur l'exercice du **règlement** ; la contre-passation, elle, serait datée d'un exercice ouvert.
+
 ² **Deux opérations sur les factures sont réservées à l'interface web** : `DELETE /invoices/{id}` et `POST /invoices/{id}/reminders/{reminderId}/cancel` (annulation d'un rappel) sont des routes d'administration, donc fermées aux clés (`403 API_KEY_ADMIN_FORBIDDEN`, cf. §4). Tout le reste du cycle de facturation reste ouvert.
 
 ⚠️ **`DELETE /invoices/{id}` ne supprime plus que des BROUILLONS.** Sur une facture validée, elle rend `409 INVOICE_MUST_BE_UNVALIDATED_FIRST` : dévalidez-la d'abord (`POST /invoices/{id}/unvalidate`, ci-dessous), ce qui la ramène au brouillon et supprime son écriture comptable. **Cette route-là, elle, est ouverte aux clés en écriture** — l'asymétrie est voulue : dévalider est un geste de facturation réversible, effacer ne l'est pas.
