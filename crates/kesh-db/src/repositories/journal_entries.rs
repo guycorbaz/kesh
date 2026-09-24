@@ -3652,6 +3652,26 @@ mod tests {
                 Some(origine.entry.id),
                 "l'écriture inverse pointe l'origine"
             );
+
+            // ⛔ **Et elle existe VRAIMENT EN BASE, à l'intérieur de la
+            // transaction.** Sans cette lecture-ci, le test ne distinguerait pas
+            // « écrite puis annulée » de « jamais écrite » : les deux assertions
+            // qui suivent le bloc sont **négatives**, donc satisfaites aussi bien
+            // par un `reverse_in_tx` qui ne ferait rien. *Un test de rollback
+            // qui ne prouve pas l'écriture ne prouve pas le rollback.*
+            let vue_dans_la_tx: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM journal_entries WHERE reverses_entry_id = ?",
+            )
+            .bind(origine.entry.id)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+            assert_eq!(
+                vue_dans_la_tx, 1,
+                "l'écriture inverse doit être VISIBLE en base dans la transaction, \
+                 avant tout rollback"
+            );
+
             // ⚠️ Le rollback est IMPLICITE : `tx` est droppée sans `commit`,
             // exactement comme si l'étape suivante de l'appelant avait échoué.
         }
@@ -3669,7 +3689,11 @@ mod tests {
              `reverse_in_tx` a commité pour son compte"
         );
 
-        // Et l'origine est intacte, donc contre-passable à nouveau.
+        // ⚠️ **Redondante avec l'assertion précédente, et gardée exprès** :
+        // `reversed_by` exécute le même prédicat que le `COUNT(*)` ci-dessus.
+        // Elle documente le chemin qu'emprunte la PRODUCTION pour poser la même
+        // question — mais elle ne vaut pas une garde de plus, et ne doit pas
+        // être comptée comme telle.
         let apres = reversed_by(&pool, company_id, origine.entry.id)
             .await
             .unwrap();
