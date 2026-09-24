@@ -54,8 +54,11 @@ fournisseur (vérifié en passes 1 et 3 de la mère).
    |---|---|---|---|
    | 1 | facture non `paid` | `ILLEGAL_STATE_TRANSITION` n'est **pas** acceptable — code dédié, p. ex. `SUPPLIER_INVOICE_NOT_PAID` | 409 par le geste |
    | 2 | exercice de l'écriture de règlement **clos** | `FISCAL_YEAR_CLOSED` | 409 par le geste |
-   | 3 | aucun exercice ouvert ne couvre le jour | `FISCAL_YEAR_INVALID` | laissé au socle (400) |
-   | 4 | compte archivé | `ACCOUNT_ARCHIVED` | laissé au socle (400 qui **nomme**) |
+   | 3 | compte archivé | `ACCOUNT_ARCHIVED` | laissé au socle (400 qui **nomme**) |
+   | 4 | aucun exercice ouvert ne couvre le jour | `FISCAL_YEAR_INVALID` | laissé au socle (400) |
+
+   ⛔ Rangs 3 et 4 dans l'ordre **réel** du socle (archivés à l'étape 3 de `reverse_in_tx`, exercice
+   du jour à l'étape 4) — même correction que la 25-3-a-1, passe 4.
 
    ⚠️ Le rang 1 **précède** le rang 2 par nécessité : une facture non `paid` n'a pas d'écriture de
    règlement, l'exercice ne s'y évalue même pas. Pas de rang « rapprochement » : il n'est pas
@@ -89,7 +92,7 @@ fournisseur (vérifié en passes 1 et 3 de la mère).
 
 6. **Les champs de lecture, et où ils vivent.** `SupplierInvoiceResponse` gagne
    `settlementCancellable`, `settlementCancelBlockedBy`, `settlementCancelBlockedLabel` (numéro du
-   compte au rang 4). ⚠️ `SupplierInvoiceResponse::from_parts` (`routes/supplier_invoices.rs:90`) est
+   compte au rang 3). ⚠️ `SupplierInvoiceResponse::from_parts` (`routes/supplier_invoices.rs:90`) est
    **synchrone** et a **cinq** appelants (GET, création, `pay`, `cancel`,
    `imported_supplier_invoices.rs:282`) : suivre le patron
    `InvoiceResponse::from_parts(..).with_settlement(..)` (`routes/invoices.rs:640`) — un constructeur
@@ -125,7 +128,9 @@ fournisseur (vérifié en passes 1 et 3 de la mère).
    (payer puis annuler le règlement). Gardes i18n **recomptées**.
 
 10. **Documentation** : manuel, « Régler une facture fournisseur » (`:1098-1108`) — le geste, ses
-    refus, le lot laissé tel quel ; `api-external.md` ; `CHANGELOG` `[0.12.1] — Non publié` ; PDF
+    refus, le lot laissé tel quel ; ⛔ **`:1771-1774`** (écriture d'exercice clos « reste
+    contre-passable ») : la 25-3-a-1 l'a corrigé pour le règlement **client** — **l'étendre au
+    règlement fournisseur** (Q5 vaut des deux côtés) ; `api-external.md` ; `CHANGELOG` `[0.12.1] — Non publié` ; PDF
     contrôlé **aplati**. **Gate complet** (`kesh-db`).
 
 ## Tasks / Subtasks

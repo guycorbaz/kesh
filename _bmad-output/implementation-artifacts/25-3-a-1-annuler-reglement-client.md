@@ -94,17 +94,22 @@ silence un paiement que la banque dit rapproché. ⇒ **exemption ÉTROITE, pré
    | 1 | `InvoiceCredited` | `INVOICE_CREDITED` (réemploi de `UnvalidationBlocker` : même état du monde) | **non** — un avoir ne se supprime pas | 409, `DbError::SettlementNotCancellable` |
    | 2 | `FiscalYearClosed` | `FISCAL_YEAR_CLOSED` | oui — un Administrateur rouvre l'exercice (`fiscal_years::reopen`) | 409, `DbError::SettlementNotCancellable` |
    | 3 | `MatchedBankTransaction` | `MATCHED_BANK_TRANSACTION` | oui — dé-rapprocher (25-3-b) | **laissé au socle** : 409 `EntryNotReversable` |
-   | 4 | `NoOpenFiscalYearToday` | `FISCAL_YEAR_INVALID` | oui — créer l'exercice du jour | **laissé au socle** : 400 `FiscalYearInvalid` |
-   | 5 | `AccountArchived` | `ACCOUNT_ARCHIVED` | oui — réactiver le compte | **laissé au socle** : 400 qui **nomme** les comptes |
+   | 4 | `AccountArchived` | `ACCOUNT_ARCHIVED` | oui — réactiver le compte | **laissé au socle** : 400 qui **nomme** les comptes |
+   | 5 | `NoOpenFiscalYearToday` | `FISCAL_YEAR_INVALID` | oui — créer l'exercice du jour | **laissé au socle** : 400 `FiscalYearInvalid` |
 
    ⛔ **Ordre : le définitif d'abord, puis ce qui se lève, du plus lourd au plus léger** — sans quoi
-   l'écran ferait rouvrir un exercice pour découvrir ensuite une facture créditée. Le compte archivé
-   reste **dernier**, comme dans `reversal_blocker`.
+   l'écran ferait rouvrir un exercice pour découvrir ensuite une facture créditée.
+   ⛔ **Les rangs 4 et 5 suivent l'ordre RÉEL du socle**, qui contrôle les comptes archivés
+   (étape 3 de `reverse_in_tx`, `journal_entries.rs:1460-1462`) **avant** l'exercice du jour
+   (étape 4, `:1479-1481`). Les écrire dans l'ordre inverse ferait annoncer un motif à la lecture et
+   en refuser un autre au clic sur un règlement qui cumule les deux (passe 4, lentille A). *La lecture
+   se règle sur l'écriture, jamais l'inverse* — et le test de la paire 4-5 le vérifie des deux
+   côtés.
 
    ⛔ **Qui refuse, à l'écriture.** Le geste ne refuse **lui-même** que les rangs 1 et 2, qui sont
    les siens (le socle ne les connaît pas). Pour les rangs 3 à 5, il **laisse passer** et c'est le
    socle qui refuse, avec son erreur canonique. C'est ce qui garde le 400 qui nomme les comptes
-   (rang 5) et fait du socle la **seule** garde écrite du rapprochement (rang 3) — pas deux gardes
+   (rang 4) et fait du socle la **seule** garde écrite du rapprochement (rang 3) — pas deux gardes
    qui se recouvrent, dont l'une masquerait la mutation de l'autre.
 
    **Lecture de « exercice clos »** : `fiscal_years.status = 'Closed'`, joint par
@@ -115,6 +120,11 @@ silence un paiement que la banque dit rapproché. ⇒ **exemption ÉTROITE, pré
    ⚠️ **Limite assumée** : le verrou de période **du jour** (24-4c interdit une borne future, une
    borne égale au jour reste possible) n'est **pas** dans le calcul — il se contrôle au clic
    (`PERIOD_LOCKED`, 400). À écrire au doc-comment.
+
+   ⚠️ **Coût de la lecture** : `GET …/settlements` appelle `settlement_cancel_blocker` **par
+   règlement** — N petites requêtes bornées par le nombre de règlements **d'une** facture (quelques
+   unités). Acceptable et voulu (une seule fonction pour lire et écrire) ; ne pas l'« optimiser » en
+   une seconde requête qui dupliquerait la précédence.
 
    `DbError::SettlementNotCancellable { blocker }` est une **variante neuve** (gabarit :
    `EntryNotReversable`), mappée en 409 avec `blocker.code()` dans `crates/kesh-api/src/errors.rs`.
@@ -179,7 +189,7 @@ silence un paiement que la banque dit rapproché. ⇒ **exemption ÉTROITE, pré
      ne sont pas au registre de routes (il ne porte que les mutantes). Chaque élément : `id`,
      `journalEntryId`, `amount`, `settledOn`, `settlementType`, **`cancellable`**,
      **`cancelBlockedBy`** (code de l'AC 3), **`cancelBlockedLabel`** (le **numéro du compte** au
-     rang 5 — sans lui l'écran dirait « réactivez-le » sans dire lequel, cf. `reversal_blocker`
+     rang 4 — sans lui l'écran dirait « réactivez-le » sans dire lequel, cf. `reversal_blocker`
      `:1325-1334`), **`cancelBlockedDocumentId`** (l'identifiant de la **transaction bancaire** au
      rang 3). Tous calculés par `settlement_cancel_blocker`.
    - ⚠️ `cancellable` ne tient pas compte du **rôle** : un utilisateur Consultation lira `true` et
@@ -199,8 +209,8 @@ silence un paiement que la banque dit rapproché. ⇒ **exemption ÉTROITE, pré
      (autre écran, « cette écriture »), ne pas le détourner.
    - Textes : rang 1, le chemin est le **lettrage** (paiement à lettrer) ; rang 2, **rouvrir
      l'exercice** (Administrateur) ; rang 3, **annuler d'abord le rapprochement** — tant que la
-     25-3-b n'est pas livrée, sans promettre de bouton ; rang 4, **créer l'exercice** couvrant le
-     jour ; rang 5, **réactiver le compte n° X**.
+     25-3-b n'est pas livrée, sans promettre de bouton ; rang 4, **réactiver le compte n° X** ;
+     rang 5, **créer l'exercice** couvrant le jour.
    - Le repli en dur dit **mot pour mot** le FTL fr-CH.
 
    **Les motifs de la contre-passation directe** : seul `OWNED_BY_SETTLEMENT` change ici (« son
@@ -250,9 +260,11 @@ silence un paiement que la banque dit rapproché. ⇒ **exemption ÉTROITE, pré
       `create_credit_note`), clôture (`fiscal_years::close`), rapprochement
       (`accept_one_invoice`), exercice du jour absent, archivage d'un compte. Mutation : inverser
       deux rangs ⇒ rouge.
-    - **Exercice du jour absent** (rang 4) : ⚠️ **montage explicite** — le règlement dans un exercice
+    - **Paire 4-5** (compte archivé **et** exercice du jour absent) : la lecture rend
+      `ACCOUNT_ARCHIVED` **et** l'écriture aussi — c'est la preuve que la lecture suit le socle.
+    - **Exercice du jour absent** (rang 5) : ⚠️ **montage explicite** — le règlement dans un exercice
       **ouvert** qui **ne couvre pas** le jour, et **aucun** exercice couvrant le jour (le cas de
-      janvier). Le montage « régler aujourd'hui puis clore » produit le rang **2**, pas le 4.
+      janvier). Le montage « régler aujourd'hui puis clore » produit le rang **2**, pas le 5.
     - **Client** : règlement unique annulé (résiduel = TTC, `paid_at` NULL, ligne retirée, écriture
       inverse avec `reverses_entry_id`, l'origine en `ALREADY_REVERSED` et l'inverse en
       `IS_A_REVERSAL`) ; règlement **partiel** parmi deux (AC 5) ; branche défensive sur état
@@ -285,13 +297,19 @@ silence un paiement que la banque dit rapproché. ⇒ **exemption ÉTROITE, pré
       d'un exercice **clos** → rouvrir l'exercice) ;
     - ⛔ **`:1771-1774` devient faux** pour les règlements (Q5) : le corriger ;
     - `:1048` (dévalidation : « annulez d'abord le règlement ») devient vrai — le relire ;
-    - `:1769` (contre-passation : « passez par le chemin de la pièce ») ;
+    - `:1769` (contre-passation : « passez par le chemin de la pièce ») — reste vrai : **le relire**,
+      sans le modifier ;
     - ⚠️ **défaut antérieur dans la section que cette story touche** : l'encadré `:514-515` affirme
       qu'« aucun verrou de période plus fin […] n'existe encore », faux depuis la 24-4c (`:454`) —
       corriger.
 
     Régénérer le PDF et le **contrôler aplati** (`pdftotext f.pdf - | tr '\n' ' ' | tr -s ' '`).
-    `api-external.md` : les deux routes, clés API d'écriture admises. `CHANGELOG.md`, section
+    `api-external.md` : les deux routes, clés API d'écriture admises. **`README.md`** : le bloc
+    « Fonctionnalités » ne porte aucune entrée pour le règlement client (seule la ligne 40 couvre le
+    fournisseur) — en ajouter une (enregistrer et annuler un règlement), règle de synchronisation du
+    README. `website/` : rien (le site ignore toute l'Epic 24, dette antérieure hors périmètre).
+    ⚠️ **`:1771-1774` ne se corrige ici que pour le règlement CLIENT** : la 25-3-a-2 l'étend au
+    fournisseur quand son geste existera — l'écrire générique maintenant décrirait un geste absent. `CHANGELOG.md`, section
     **`[0.12.1] — Non publié`** — aucune ligne d'une section publiée ne se réécrit, et le décompte
     « 94 actions » **se recompte**.
 
@@ -383,4 +401,5 @@ Modules : `kesh-db`, `kesh-api`, `kesh-i18n`, `frontend` — quatre. Issue elle-
 
 | Date | Étape | Note |
 |---|---|---|
+| 2026-09-24 | validate P4 | **Deux lentilles Sonnet** en contexte frais, prompt `25-3-a-1-validate-prompt-p4.md`, axes déclarés (non exercés : recompte détaillé des gardes i18n, exécution). **3 MEDIUM, 2 LOW** — **aucun HIGH** : la sévérité décroît (P3 : HIGH + MEDIUM). ✅ **MEDIUM (A)** : la table mettait l'exercice du jour (rang 4) avant le compte archivé (rang 5), l'**inverse** de l'ordre réel du socle (`reverse_in_tx` : étape 3 archivés, étape 4 exercice du jour) — lecture et écriture auraient rendu deux motifs différents ; rangs 4 et 5 **permutés**, test de la paire des deux côtés, jumelle 25-3-a-2 corrigée du même défaut. ✅ **MEDIUM (B)** : `:1771-1774` du manuel tombait entre les deux fiches — ici client seulement, la 25-3-a-2 l'étend ; **`README.md`** absent de l'AC 12 — ajouté. LOW : `:1769` sans verbe (« le relire ») ; coût de la lecture par règlement écrit comme voulu. Symptôme grepé (« rang 4 », « rang 5 », rangs de la table) sur les deux fiches : six sites repris dans la 25-3-a-1 (table, garde du 400, libellé, textes, montage, « pas le 5 »), deux dans la 25-3-a-2 (table, libellé) ; lignes du socle citées **recomptées** (`:1460-1462`, `:1479-1481` — la lentille donnait des lignes approchées). |
 | 2026-09-24 | split | Née du découpage de la 25-3-a (règle de découpage : sévérité P2 → P3 non décroissante ; découpage proposé indépendamment par les deux lentilles de la passe 3). Intègre les corrections de la passe 3 pour le côté client : **Q5 tranchée par Guy** (règlement d'exercice clos → refus, **rouvrir l'exercice** reste le chemin ; le manuel `:1771-1774` devient faux) ; **type fermé** `SettlementCancelBlocker` et précédence **définitif d'abord** (`INVOICE_CREDITED`, puis exercice clos, rapprochement, exercice du jour absent, compte archivé) ; **une seule garde par motif** à l'écriture (le geste refuse ses rangs, le socle les autres — ce qui garde le 400 qui nomme les comptes et rend la mutation de l'AC 7 observable) ; champs `cancelBlockedLabel` / `cancelBlockedDocumentId` ; exercice du jour absent **dans** `cancellable`, verrou de période du jour en **limite assumée** ; clés au préfixe **pluriel** `invoices-` (lint d'appartenance) ; test de rollback par **composition** au lieu d'un conflit de version impossible ; montage explicite du rang 4 ; inventaire des commentaires #414 élargi à `frontend/src` et `crates/` ; deux défauts antérieurs corrigés au passage (repli `OWNED_BY_INVOICE`, encadré `:514-515` du manuel). `refs #414` seulement : la 25-3-a-2 fermera l'issue. |
