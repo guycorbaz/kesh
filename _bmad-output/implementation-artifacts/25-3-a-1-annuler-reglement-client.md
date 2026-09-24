@@ -83,11 +83,22 @@ silence un paiement que la banque dit rapproché. ⇒ **exemption ÉTROITE, pré
 
 ### Ce qui empêche l'annulation
 
-3. **Un type fermé, une précédence figée, une seule fonction.** Un enum `SettlementCancelBlocker`
-   (`kesh-db/src/errors.rs`, à côté de `UnvalidationBlocker`, même discipline : un code par motif,
-   jamais le générique), et **une** fonction de dépôt
-   `settlement_cancel_blocker(executor, company_id, settlement_id)` qui sert **à la fois** la lecture
-   (AC 8) et l'écriture (AC 4). Précédence, **testée paire par paire** :
+3. **Un type fermé, une précédence figée — une TÊTE propre au client, une QUEUE commune.** Un enum
+   `SettlementCancelBlocker` (`kesh-db/src/errors.rs`, à côté de `UnvalidationBlocker`, même
+   discipline : un code par motif, jamais le générique), et **deux** fonctions de dépôt :
+   - ⛔ **la queue commune** `settlement_entry_cancel_blocker(executor, company_id, entry_id)` —
+     rangs 2 à 5 ci-dessous, évalués sur l'**écriture de règlement**, sans rien savoir de la pièce
+     qui la possède. **La 25-3-a-2 l'appellera telle quelle** pour le fournisseur, qui n'a pas de
+     ligne `invoice_settlements` : c'est pourquoi elle prend un `entry_id`, jamais un
+     `settlement_id`. *Une seconde précédence pour le même socle divergerait — la passe 4 de cette
+     fiche a déjà dû corriger l'ordre des rangs 4 et 5 une fois* ;
+   - **la tête client** `settlement_cancel_blocker(executor, company_id, settlement_id)` — rang 1,
+     puis délégation à la queue avec le `journal_entry_id` du règlement. Elle sert **à la fois** la
+     lecture (AC 8) et l'écriture (AC 4).
+
+   L'enum porte **aussi** la variante de tête du fournisseur (`SupplierInvoiceNotPaid`, code
+   `SUPPLIER_INVOICE_NOT_PAID`) **seulement quand la 25-3-a-2 l'ajoutera** : ici, pas de variante
+   que rien n'exerce. Précédence, **testée paire par paire** :
 
    | rang | variante | code | levable ? | à l'écriture |
    |---|---|---|---|---|
@@ -198,15 +209,20 @@ silence un paiement que la banque dit rapproché. ⇒ **exemption ÉTROITE, pré
 
 ### Les textes
 
-9. **Les motifs de l'annulation ont leurs PROPRES textes, écrits UNE fois.**
-   - Famille **`invoices-settlement-cancel-blocked-*`** — préfixe **pluriel**, pour passer
-     `lint-i18n-ownership` depuis `frontend/src/lib/features/invoices/` (le singulier `invoice-`
-     l'y fait échouer, dette #30, cf. les `KNOWN_VIOLATIONS` du script) —, une clé par code de
-     l'AC 3, **quatre** locales, **plus** un texte d'erreur pour `SettlementNotCancellable` au repli
-     serveur (`crates/kesh-api/src/errors.rs`).
-   - **Un seul** module dans `features/invoices/` qui mappe `cancelBlockedBy` → texte, en `switch`
-     exhaustif avec garde `never`. ⛔ Ne pas recopier le mapping de `journal-entries/[id]/+page.svelte`
-     (autre écran, « cette écriture »), ne pas le détourner.
+9. **Les motifs de l'annulation ont leurs PROPRES textes, écrits UNE fois — la queue en commun.**
+   - **La queue** (rangs 2-5, communs au fournisseur) : famille **`settlement-cancel-blocked-*`**
+     dans un module **partagé** (`frontend/src/lib/shared/…`), qui mappe ces quatre codes en
+     `switch` exhaustif avec garde `never`. `lint-i18n-ownership` ne balaie que
+     `frontend/src/lib/features/` (`FEATURES_PATH`, script `:17`, `:247-251`) : un module partagé
+     n'y est pas soumis — vérifié. La 25-3-a-2 **le réutilise**, sans jumeau.
+   - **La tête client** (rang 1) : clé **`invoices-settlement-cancel-blocked-credited`** dans
+     `features/invoices/` — préfixe **pluriel**, pour passer le lint (le singulier `invoice-` l'y
+     fait échouer, dette #30, cf. `KNOWN_VIOLATIONS`). Le type TypeScript du client est l'union
+     **de sa tête et de la queue** : aucun cas mort dans un `switch`.
+   - **Quatre** locales pour toutes ces clés, **plus** un texte d'erreur pour
+     `SettlementNotCancellable` au repli serveur (`crates/kesh-api/src/errors.rs`).
+   - ⛔ Ne pas recopier le mapping de `journal-entries/[id]/+page.svelte` (autre écran, « cette
+     écriture »), ne pas le détourner.
    - Textes : rang 1, le chemin est le **lettrage** (paiement à lettrer) ; rang 2, **rouvrir
      l'exercice** (Administrateur) ; rang 3, **annuler d'abord le rapprochement** — tant que la
      25-3-b n'est pas livrée, sans promettre de bouton ; rang 4, **réactiver le compte n° X** ;
@@ -255,6 +271,8 @@ silence un paiement que la banque dit rapproché. ⇒ **exemption ÉTROITE, pré
       doit rendre `MATCHED_BANK_TRANSACTION` ; mutation « l'exemption court-circuite toute la
       précédence » ⇒ rouge. `reverse_in_tx` sans autorité **inchangé** : les **27** tests de
       `journal_entry_reversal_e2e` passent **sans retouche**.
+    - **La queue commune** (AC 3) testée **au niveau de `settlement_entry_cancel_blocker`**, sur un
+      `entry_id`, pour que la 25-3-a-2 n'ait pas à re-tester ce qu'elle réutilise.
     - **Précédence du geste** (AC 3) : chaque rang seul, et **chaque paire** de rangs cumulés,
       produits par les **vrais** chemins — avoir après règlement partiel (`settle_invoice` puis
       `create_credit_note`), clôture (`fiscal_years::close`), rapprochement
@@ -401,6 +419,7 @@ Modules : `kesh-db`, `kesh-api`, `kesh-i18n`, `frontend` — quatre. Issue elle-
 
 | Date | Étape | Note |
 |---|---|---|
+| 2026-09-24 | reprise (validation de la sœur) | ⛔ **Rouverte par la passe 4 de la 25-3-a-2** (lentille A, A4-2 ; lentille B, B-1) : la fiche fournisseur ne pouvait ni **étendre** le calcul des motifs (il prenait un `settlement_id`, que le fournisseur n'a pas ; un `switch` commun aurait porté des cas morts des deux côtés) ni en écrire un **jumeau** (seconde précédence, celle-là même dont cette fiche a dû corriger l'ordre en passe 4). ⇒ l'AC 3 scinde le calcul en une **tête** client (rang 1) et une **queue commune** sur l'**écriture** (rangs 2-5), `settlement_entry_cancel_blocker(entry_id)` ; l'AC 9 met les textes de la queue dans un module **partagé** (`lib/shared/`, hors du lint d'appartenance — vérifié dans le script), la tête restant dans `features/invoices/` ; l'AC 11 teste la queue à son propre niveau. Aucun rang, aucun ordre, aucun code ne change. Une passe ciblée suit. |
 | 2026-09-24 | validate P5 | **Passe ciblée** (CLAUDE.md § « La passe ciblée ») : **une** lentille Haiku 4.5, contexte frais, braquée sur le seul commit de remédiation `3494ea21`, prompt versionné `25-3-a-1-validate-prompt-p5.md`, axes déclarés. Permutation des rangs **vérifiée juste et complète** (code du socle relu, `grep -nE "rang|dernier"` sur les deux fiches, aucune phrase contradictoire). ❌ **2 MEDIUM réfutés** : « README non modifié » et « manuel `:1771-1774` non corrigé » reprochent au dépôt de ne pas **encore** faire ce que la fiche prescrit — ce n'est pas un défaut de la spec (le prompt le rappelait ; `git diff` d'un commit de spec ne touche pas le manuel). Seule prise réelle : la mention « README — ajouté » du Change Log P4 était ambiguë, précisée. ⇒ **0 finding au-dessus de LOW : boucle close.** **Trend** (mère puis fille) : P1 Sonnet 1 HIGH / 3 MED → P2 Haiku 2 MED → P3 Opus 1 HIGH / ~9 MED (**découpage**) → P4 Sonnet 3 MED → P5 Haiku ciblée **0**. Modèles : Sonnet, Haiku, Opus, Sonnet, Haiku. Reclassements : 1 LOW réfuté en P2, 2 MED réfutés en P5, tous faux positifs Haiku sur lecture de diff ou de périmètre. |
 | 2026-09-24 | validate P4 | **Deux lentilles Sonnet** en contexte frais, prompt `25-3-a-1-validate-prompt-p4.md`, axes déclarés (non exercés : recompte détaillé des gardes i18n, exécution). **3 MEDIUM, 2 LOW** — **aucun HIGH** : la sévérité décroît (P3 : HIGH + MEDIUM). ✅ **MEDIUM (A)** : la table mettait l'exercice du jour (rang 4) avant le compte archivé (rang 5), l'**inverse** de l'ordre réel du socle (`reverse_in_tx` : étape 3 archivés, étape 4 exercice du jour) — lecture et écriture auraient rendu deux motifs différents ; rangs 4 et 5 **permutés**, test de la paire des deux côtés, jumelle 25-3-a-2 corrigée du même défaut. ✅ **MEDIUM (B)** : `:1771-1774` du manuel tombait entre les deux fiches — ici client seulement, la 25-3-a-2 l'étend ; **`README.md`** absent de l'AC 12 — ajouté **à l'AC 12** (la modification du README elle-même se fait au développement). LOW : `:1769` sans verbe (« le relire ») ; coût de la lecture par règlement écrit comme voulu. Symptôme grepé (« rang 4 », « rang 5 », rangs de la table) sur les deux fiches : six sites repris dans la 25-3-a-1 (table, garde du 400, libellé, textes, montage, « pas le 5 »), deux dans la 25-3-a-2 (table, libellé) ; lignes du socle citées **recomptées** (`:1460-1462`, `:1479-1481` — la lentille donnait des lignes approchées). |
 | 2026-09-24 | split | Née du découpage de la 25-3-a (règle de découpage : sévérité P2 → P3 non décroissante ; découpage proposé indépendamment par les deux lentilles de la passe 3). Intègre les corrections de la passe 3 pour le côté client : **Q5 tranchée par Guy** (règlement d'exercice clos → refus, **rouvrir l'exercice** reste le chemin ; le manuel `:1771-1774` devient faux) ; **type fermé** `SettlementCancelBlocker` et précédence **définitif d'abord** (`INVOICE_CREDITED`, puis exercice clos, rapprochement, exercice du jour absent, compte archivé) ; **une seule garde par motif** à l'écriture (le geste refuse ses rangs, le socle les autres — ce qui garde le 400 qui nomme les comptes et rend la mutation de l'AC 7 observable) ; champs `cancelBlockedLabel` / `cancelBlockedDocumentId` ; exercice du jour absent **dans** `cancellable`, verrou de période du jour en **limite assumée** ; clés au préfixe **pluriel** `invoices-` (lint d'appartenance) ; test de rollback par **composition** au lieu d'un conflit de version impossible ; montage explicite du rang 4 ; inventaire des commentaires #414 élargi à `frontend/src` et `crates/` ; deux défauts antérieurs corrigés au passage (repli `OWNED_BY_INVOICE`, encadré `:514-515` du manuel). `refs #414` seulement : la 25-3-a-2 fermera l'issue. |
