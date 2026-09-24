@@ -133,7 +133,8 @@ Et la levée naïve est **fausse**, pour une raison de précédence :
    **le refuse**. ⚠️ **Ce n'est pas cette story qui crée l'état, et ce n'est pas elle qui doit le
    réparer** : l'avoir y rend déjà la créance **créditrice** du montant encaissé — défaut
    antérieur, tracé par **[#456]**, dont la correction naturelle est de refuser l'avoir en amont.
-   *Position de la fiche, à confirmer par Guy (Q4)* : garder le refus, le **nommer** à l'écran
+   *Position de la fiche, conforme aux arbitrages du 2026-09-24* (le paiement est **à lettrer**,
+   cf. § Arbitrages) : garder le refus, le **nommer** à l'écran
    (`ILLEGAL_STATE_TRANSITION` ne dit rien — cf. AC 13), et renvoyer à #456. ⚠️ Et le reste dû
    affiché pour une telle facture est lui-même faux : `amount_due` retranche l'avoir **HT** d'un
    total **TTC** — **[#455]**. Ni l'un ni l'autre n'est dans le périmètre.
@@ -163,9 +164,12 @@ Et la levée naïve est **fausse**, pour une raison de précédence :
    n'impose rien à une facture `open`. Le lien historique survit dans l'audit **et** au grand livre,
    où l'écriture d'origine porte désormais `reversed_by`.
 
-   ⚠️ **Pas de passage direct `paid → cancelled`.** Annuler une facture fournisseur réglée se fait
-   en deux gestes : annuler le règlement (cette story), puis annuler la facture (`cancel`, qui
-   n'accepte que `open` et ne bouge pas). **Arbitrage de Guy du 2026-09-24 (Q1) : deux gestes.**
+   ⚠️ **Le passage direct `paid → cancelled` n'est PAS dans cette story — il existe, ailleurs.**
+   Guy a corrigé son arbitrage Q1 le 2026-09-24 : une facture fournisseur **s'annule dans tous les
+   cas, sauf si l'exercice de son écriture d'achat est clos** ; payée, son règlement **reste** au
+   grand livre et **redevient à lettrer**. C'est l'objet de la **25-3-c**. Ici, « annuler le
+   règlement » ramène la facture à `open` et ne touche pas à l'écriture d'achat ; `cancel` n'est
+   pas modifiée par cette story.
 
 9. **Lot de paiement.** Une facture réglée par un lot **confirmé** (`payment_batches::confirm_batch`
    → `pay_in_tx`) reste annulable : le lot confirmé est l'historique d'un ordre transmis à la
@@ -325,7 +329,7 @@ Et la levée naïve est **fausse**, pour une raison de précédence :
   `OwnedByCreditNote`) — inchangé.
 - **`supplier_invoices::cancel`** et sa contre-passation écrite à la main (ne pose pas
   `reverses_entry_id`, ne consulte pas `reversal_blocker`) : **défaut antérieur, non corrigé ici**
-  — **issue distincte [#454]**, arbitrage de Guy (Q3). ⚠️ Ne pas l'imiter pour le règlement fournisseur.
+  — **[#454]**, absorbée par la **25-3-c** (annulation d'une facture fournisseur dans tous les cas). ⚠️ Ne pas l'imiter pour le règlement fournisseur.
 - La propagation du résiduel aux rapports agrégés (#416) ; l'imputation d'un écart (#384).
 - L'avoir émis sur une facture partiellement réglée (**#456**) et l'avoir HT retranché d'un TTC
   dans `amount_due` (**#455**) — deux défauts antérieurs trouvés par la passe 1, cf. AC 6.
@@ -402,21 +406,34 @@ est **client / fournisseur** (deux appelants du même socle, sans code partagé 
 
 ### Arbitrages rendus par Guy le 2026-09-24
 
-- **Q1 — Facture fournisseur réglée : deux gestes.** Annuler le règlement (`paid → open`), puis, si
-  on le veut, annuler la facture (`cancel`, inchangée). Pas de passage direct `paid → cancelled`.
-- **Q2 — Lot pain.001 confirmé : annulation autorisée, lot laissé tel quel.** Le lot reste
-  l'historique de l'ordre transmis ; le cas d'usage est le rejet bancaire.
-- **Q3 — `supplier_invoices::cancel` : issue distincte, [#454].** Sa contre-passation écrite à la
-  main n'est pas corrigée ici.
+- **Q1 — corrigé par Guy le même jour.** Première réponse : « deux gestes ». Correction : **une
+  facture fournisseur s'annule dans tous les cas, sauf si l'exercice est clos** (l'exercice, non le
+  verrou de période de la 24-4c) ; si elle est payée, le règlement **reste** et **redevient à
+  lettrer**. ⇒ story **25-3-c**, hors de celle-ci. Cette story garde l'annulation du **règlement**
+  (`paid → open`), qui reste un geste propre.
+- **Factures clients** : *« une fois envoyée, on ne devrait plus la modifier »* — le chemin reste
+  l'**avoir**, rien ne change ici.
+- **Un paiement doit correspondre à une facture** : un règlement détaché de sa facture n'a pas
+  vocation à rester seul, il attend d'être **lettré** à une facture — au besoin créée pour lui
+  (*« c'est la manière dont bexio travaille »*). Le lettrage est l'**Epic 15**.
+- **Q2 — Lot pain.001 confirmé : annulation du règlement autorisée, lot laissé tel quel.**
+- **Q3 — `supplier_invoices::cancel`** : d'abord renvoyée à une issue distincte (**#454**) ; la
+  25-3-c, qui réécrit `cancel`, l'absorbe naturellement.
 
 ⚠️ **Ne pas contester ces arbitrages en revue** : en contester la mise en œuvre.
 
+**Ce que ces arbitrages disent du cas de l'AC 6** (ancienne Q4) : le règlement antérieur d'une
+facture client **créditée** est un paiement **à lettrer**, pas une anomalie à effacer. Cette story
+**n'y touche pas** : elle refuse d'annuler ce règlement, en le **nommant** (AC 6, AC 13), et le
+chemin est le lettrage à une facture (Epic 15). ⚠️ **#456 change donc de nature** : la correction
+qu'elle suggère (refuser l'avoir) contredit ce modèle — à reprendre avec Guy.
+
 **En attente** :
 
-- **Q4** — Règlement antérieur sur une facture **créditée** (état produit par #456) : la fiche
-  **le refuse** et renvoie à #456 (AC 6). *Recommandation : garder le refus* — ouvrir l'annulation
-  sur une facture `cancelled` ferait porter à cette story la réparation d'un défaut qu'elle n'a pas
-  créé, et masquerait #456.
+- **Q5** — La borne « exercice clos » vaut-elle aussi pour l'annulation d'un **règlement** ? La fiche
+  l'accepte aujourd'hui (contre-passation datée du jour, comme `reverse_in_tx`). *Recommandation :
+  oui, par cohérence avec la règle de Guy sur la facture fournisseur* — un règlement dont l'écriture
+  est dans un exercice clos ne s'annulerait plus.
 
 ### References
 
@@ -446,5 +463,6 @@ est **client / fournisseur** (deux appelants du même socle, sans code partagé 
 | Date | Étape | Note |
 |---|---|---|
 | 2026-09-24 | spec | Fille de la 25-3 (split), sur le socle `reverse_in_tx` mergé (PR #453). ⛔ **Fait établi à la lecture, et il structure la story** : `reverse_in_tx` **refuse lui-même** les écritures de règlement (`OWNED_BY_SETTLEMENT`, `OWNED_BY_SUPPLIER_INVOICE`) — le socle ne suffit pas tel quel. Et la levée naïve est **fausse** : `reversal_blocker` ne rend que le premier motif, et un règlement **rapproché** porte `OWNED_BY_SETTLEMENT` (rang 6) **avant** `MATCHED_BANK_TRANSACTION` (rang 7) — l'ignorer contre-passerait en silence un paiement que la banque dit rapproché. D'où une exemption **étroite** (un motif, une pièce nommée) qui **laisse la précédence se poursuivre** (AC 1, AC 7). Deux autres faits établis : **aucune route ne liste les règlements d'une facture** (`list_for_invoice` n'a que des appelants de test), donc l'écran ne pouvait pas désigner le règlement à annuler — route ajoutée (AC 11) ; et le manuel **promet déjà** le geste (`:1048`). La question de date laissée ouverte par la mère est **tranchée par le socle** : jour, exercice ouvert (AC 3). Trois questions laissées à Guy (Q1-Q3), chacune avec une recommandation. |
+| 2026-09-24 | arbitrages (2) | ⛔ **Guy corrige Q1** : une facture fournisseur s'annule **dans tous les cas, sauf exercice clos** ; payée, son règlement **reste** et **redevient à lettrer** ; un paiement doit correspondre à une facture, au besoin créée pour lui (« comme bexio ») ; une facture client envoyée ne se modifie plus. ⇒ **25-3-c** créée au registre, qui absorbe #454 ; cette story garde l'annulation du **règlement**. L'ancienne Q4 est tranchée par ce modèle (le règlement d'une facture créditée est **à lettrer**, refus nommé ici) ; **#456 change de nature**. Q5 posée (borne « exercice clos » pour l'annulation d'un règlement). |
 | 2026-09-24 | validate P1 | **Deux lentilles Sonnet** en contexte frais, prompt versionné `25-3-a-validate-prompt-p1.md`, **tous les axes déclarés** (non exercés : recalcul des compteurs i18n du frontend, contenu linguistique des trois locales non françaises, concurrence avec `confirm_batch`). **1 HIGH, 3 MEDIUM, 3 LOW**, tous vérifiés dans le code avant correction. ⛔ **HIGH (A)** : un avoir **peut** viser une facture partiellement réglée (`credit_notes.rs:291-304` ne lit que `paid_at`), la bascule en `cancelled` et laisse le règlement en place — que la garde `validated` de l'AC 6 rend alors inannulable ; et le test « facture couverte par un avoir » de l'AC 14 décrivait un état que l'application **ne produit pas**. Corrigé : le cas est nommé, refusé et renvoyé à **#456** (défaut antérieur, ouvert), la branche « résiduel ≤ 0 » est déclarée **défensive** et testée sur état forgé **dit tel**. ⚠️ **Deux défauts ANTÉRIEURS trouvés au passage, et ouverts** : **#456** (l'avoir sur facture partiellement réglée rend la créance créditrice) et **#455** (`amount_due` retranche un avoir **HT** d'un total **TTC**). **MEDIUM (B)** : aucun texte pour les motifs sur les **nouveaux** écrans — famille de clés `invoice-settlement-cancel-blocked-*` et **un seul** module de mapping ; côté fournisseur, `SupplierInvoiceResponse` gagne `settlementCancellable` / `settlementCancelBlockedBy` ; bullet API qui prescrivait un 403 à Consultation sur une route ouverte à tout rôle ; **le manuel n'a aucune section sur l'enregistrement d'un règlement client** — sous-section « Enregistrer et annuler un règlement » à créer. **LOW** : tables du test multi-tenant **énumérées** au lieu d'être comptées (il y en a cinq, pas quatre) ; second commentaire E2E périmé (`invoices.spec.ts:322-324`) ; deux plages de lignes décalées d'une unité. Symptômes grepés sur la fiche après correction : aucun résidu. Q4 posée à Guy. |
 | 2026-09-24 | arbitrages | Guy tranche les trois questions dans le sens recommandé : **deux gestes** côté fournisseur (Q1), **lot confirmé laissé tel quel** (Q2), **`cancel` en issue distincte [#454]** (Q3). |
