@@ -64,7 +64,7 @@
 		<p class="text-sm text-gray-700">
 			{i18nMsg(
 				'export-global-description',
-				"Exportez vos données comptables (comptes, écritures, contacts, produits, factures de vente, comptes et transactions bancaires) au format CSV dans un fichier ZIP. Utilisez cet export pour archiver ou conserver vos données 10 ans (CO suisse art. 958f). ⚠️ Il ne couvre pas encore l'ensemble de votre comptabilité : lisez ci-dessous ce qu'il ne contient pas avant de compter dessus pour migrer vers un autre logiciel.",
+				"Exportez toute votre comptabilité au format CSV dans un fichier ZIP : plan comptable, écritures, factures de vente et d'achat, avoirs, règlements, projets, contacts, données bancaires et journal d'audit. Utilisez cet export pour archiver vos données 10 ans (CO suisse art. 958f) ou pour migrer vers un autre logiciel.",
 			)}
 		</p>
 	</header>
@@ -73,13 +73,13 @@
 		<p>
 			{i18nMsg(
 				'export-global-content-includes',
-				"L'export contient : plan comptable, écritures, contacts, produits, factures, comptes bancaires, transactions, règles de réconciliation, et un manifeste metadata.json avec hash SHA-256 de chaque fichier pour vérification d'intégrité.",
+				"L'export contient 30 tables : plan comptable, exercices, écritures et leurs lignes, contacts et personnes de contact, produits, projets analytiques, factures de vente et leurs lignes, avoirs et leurs lignes, règlements, factures fournisseurs et leurs lignes, pièces fournisseurs importées, lots de paiement et leurs postes, comptes bancaires, imports et transactions, taux de TVA, paramètres de facturation et de rappel, règles de réconciliation, profils d'import, journal d'audit — et un manifeste metadata.json avec le hash SHA-256 de chaque fichier.",
 			)}
 		</p>
 		<p class="mt-2">
 			{i18nMsg(
 				'export-global-content-excludes',
-				"Ne contient pas : factures fournisseurs et leurs lignes, avoirs, projets analytiques (les écritures portent un identifiant de projet, mais la table des projets est absente), lots de paiement, personnes de contact, pièces justificatives importées, utilisateurs (données personnelles et mots de passe), tokens de session, journal d'audit interne, état d'onboarding.",
+				"Ne contient pas, délibérément : les compteurs de numérotation (les numéros attribués figurent déjà sur les pièces), les clés d'API et les jetons de session (ce sont des secrets), le registre des utilisateurs (le journal d'audit porte le nom de son auteur au moment de l'écriture), les gabarits d'e-mail et l'état d'installation (configuration, non comptabilité). Les pièces justificatives (fichiers) ne sont pas encore incluses.",
 			)}
 		</p>
 		<p class="mt-2 italic">
