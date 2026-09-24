@@ -10,6 +10,18 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [0.12.1] — Non publié
 
+### Fixed
+
+- **L'export de souveraineté ne portait que la moitié de votre comptabilité.** Il promettait de quoi « migrer vers un autre logiciel » et laissait dehors **les factures fournisseurs, les avoirs, les règlements, les projets, les ordres de virement, les personnes de contact, les pièces reçues et le journal d'audit** — onze tables comptables sur les trente que compte désormais l'archive.
+
+  ⚠️ **Un cas était particulièrement trompeur** : les écritures exportaient bien un identifiant de projet, mais la table des projets manquait — l'identifiant ne renvoyait donc à rien. *Un fichier qui a l'air complet est pire qu'un fichier manifestement incomplet.*
+
+  **Ce que vous y gagnez** : l'export tient maintenant sa promesse. Vous pouvez partir — changer de logiciel, ou répondre à un contrôle — sans découvrir que la moitié de vos pièces n'y est pas.
+
+- **Une garde empêche désormais ce trou de se rouvrir.** L'export avait été écrit une fois puis jamais rattrapé sur trois versions successives : chaque nouveauté — les achats, les projets, les règlements — s'ajoutait aux livres sans entrer dans l'archive, **sans qu'aucun signal ne le dise**. Toute table qui n'est ni exportée ni explicitement écartée fait désormais échouer la construction du logiciel.
+
+- **Les cellules de texte de l'export n'étaient pas neutralisées contre l'injection de formule.** Un libellé commençant par `=` ou `+` pouvait être interprété comme une formule à l'ouverture du fichier dans un tableur. La protection existait ailleurs dans Kesh ; elle est désormais appliquée ici aussi.
+
 ### Changed
 
 - **Supprimer une facture validée n'est plus possible — il faut la « dévalider » d'abord.** Jusqu'ici, le bouton *Supprimer* d'une facture validée effaçait la facture **et son écriture comptable** d'un seul geste. La destruction d'une écriture était donc un **effet de bord du mot « supprimer »** : rien, dans le vocabulaire de l'écran, ne disait qu'on touchait aux livres.

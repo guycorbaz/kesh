@@ -1586,48 +1586,66 @@ contestation, complétez cet export par un dispositif d'archivage tiers.
 
 \subsection{Contenu du ZIP}
 
+L'archive contient \textbf{un fichier CSV par table}, plus un manifeste. Les trente tables
+couvrent l'ensemble de votre comptabilité~:
+
 \begin{itemize}
-    \item \texttt{metadata.json} : métadonnées de l'export (version Kesh, date, user, hash SHA-256 par fichier).
-    \item \texttt{accounts.csv} : plan comptable.
-    \item \texttt{contacts.csv} : carnet d'adresses.
-    \item \texttt{products.csv} : catalogue produits.
-    \item \texttt{journal\_entries.csv} : toutes les écritures.
-    \item \texttt{invoices.csv} : toutes les factures.
-    \item \texttt{bank\_transactions.csv} : toutes les transactions bancaires.
-    \item \texttt{fiscal\_years.csv} : tous les exercices.
-    \item \texttt{reports/} : tous les rapports PDF générés (bilan, P\&L, balance, journal).
+    \item \textbf{Écritures et plan comptable}~: \texttt{accounts.csv}, \texttt{journal\_entries.csv},
+          \texttt{journal\_entry\_lines.csv}, \texttt{fiscal\_years.csv}.
+    \item \textbf{Ventes}~: \texttt{invoices.csv} et \texttt{invoice\_lines.csv},
+          \texttt{credit\_notes.csv} et \texttt{credit\_note\_lines.csv} (les avoirs),
+          \texttt{invoice\_settlements.csv} (les règlements), \texttt{invoice\_reminders.csv}.
+    \item \textbf{Achats}~: \texttt{supplier\_invoices.csv} et \texttt{supplier\_invoice\_lines.csv},
+          \texttt{imported\_supplier\_invoices.csv} (les pièces reçues),
+          \texttt{payment\_batches.csv} et \texttt{payment\_batch\_items.csv} (les ordres de virement).
+    \item \textbf{Tiers et analytique}~: \texttt{contacts.csv}, \texttt{contact\_persons.csv},
+          \texttt{products.csv}, \texttt{projects.csv}.
+    \item \textbf{Banque}~: \texttt{bank\_accounts.csv}, \texttt{bank\_imports.csv},
+          \texttt{bank\_transactions.csv}, \texttt{reconciliation\_rules.csv}, \texttt{bank\_profiles.csv}.
+    \item \textbf{Réglages et traçabilité}~: \texttt{company.csv}, \texttt{vat\_rates.csv},
+          \texttt{company\_invoice\_settings.csv}, \texttt{dunning\_levels.csv},
+          \texttt{company\_dunning\_settings.csv}, et \texttt{audit\_log.csv} --- le journal d'audit.
+    \item \texttt{metadata.json}~: le manifeste (version de Kesh, date, auteur, et le hash
+          SHA-256 de chaque fichier).
 \end{itemize}
+
+\begin{keshnote}
+\textbf{Ce que l'export ne contient pas, et pourquoi.} Les \textbf{compteurs de numérotation}
+(les numéros attribués figurent déjà sur les pièces), les \textbf{clés d'API et jetons de
+session} (ce sont des secrets~: les exporter dans un fichier destiné à être transmis serait une
+fuite), le \textbf{registre des utilisateurs} (sans perte~: chaque entrée du journal d'audit
+porte le nom de son auteur \emph{au moment de l'écriture}), les \textbf{gabarits d'e-mail} et
+l'\textbf{état d'installation} (configuration, non comptabilité).
+
+⚠️ Les \textbf{pièces justificatives} --- les fichiers eux-mêmes --- ne sont \textbf{pas encore}
+incluses. Le chemin de chaque pièce figure dans \texttt{imported\_supplier\_invoices.csv}, mais
+le document doit être sauvegardé séparément.
+\end{keshnote}
 
 \subsection{Génération}
 
-\keshscreenshot{export-souverainete.png}{Génération d'un export de souveraineté (archive ZIP annuelle pour la conservation OLICo).}  % TODO capture: ecran export souverainete
+\keshscreenshot{export-souverainete.png}{Génération d'un export de souveraineté (archive ZIP pour la conservation OLICo).}  % TODO capture: ecran export souverainete
 
-\emph{Administration} → \emph{Export global}. Sélectionner :
-
-\begin{itemize}
-    \item Exercice(s) à inclure (par défaut tous).
-    \item Format des rapports inclus : PDF, CSV, ou les deux.
-\end{itemize}
-
-Cliquer sur \emph{Générer}. Le ZIP est téléchargeable immédiatement (durée de génération : 5--30 secondes selon le volume).
+\emph{Administration} → \emph{Export global}, puis \textbf{« Lancer l'export »}. L'export porte
+\textbf{toute} votre comptabilité~: il n'y a ni exercice à choisir ni format à sélectionner. Le
+ZIP est téléchargeable immédiatement (quelques secondes à une minute selon le volume).
 
 \subsection{Vérification d'intégrité}
 
-Le \texttt{metadata.json} contient un hash SHA-256 par fichier du ZIP. Pour vérifier l'intégrité après archivage :
+Le \texttt{metadata.json} contient un hash SHA-256 par fichier. Pour vérifier l'intégrité après
+archivage~:
 
 \begin{lstlisting}[language=bash]
-# Extraction du ZIP
 unzip kesh-export-2026-05-20.zip -d kesh-export/
 cd kesh-export/
 
-# Verification du hash de chaque fichier
-for f in *.csv reports/*.pdf; do
+for f in *.csv; do
     actual=$(sha256sum "$f" | cut -d' ' -f1)
-    expected=$(jq -r ".sha256_per_file[\"$f\"]" metadata.json)
+    expected=$(jq -r ".tables[\"$f\"].sha256" metadata.json)
     if [ "$actual" = "$expected" ]; then
-        echo "✓ $f OK"
+        echo "OK      $f"
     else
-        echo "✗ $f CORROMPU"
+        echo "CORROMPU $f"
     fi
 done
 \end{lstlisting}
