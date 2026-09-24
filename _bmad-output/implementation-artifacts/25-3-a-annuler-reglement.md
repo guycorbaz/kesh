@@ -149,12 +149,12 @@ Et la levée naïve est **fausse**, pour une raison de précédence :
 
    ⚠️ **Pas de passage direct `paid → cancelled`.** Annuler une facture fournisseur réglée se fait
    en deux gestes : annuler le règlement (cette story), puis annuler la facture (`cancel`, qui
-   n'accepte que `open` et ne bouge pas). *Recommandation — cf. Questions ouvertes, Q1.*
+   n'accepte que `open` et ne bouge pas). **Arbitrage de Guy du 2026-09-24 (Q1) : deux gestes.**
 
 9. **Lot de paiement.** Une facture réglée par un lot **confirmé** (`payment_batches::confirm_batch`
    → `pay_in_tx`) reste annulable : le lot confirmé est l'historique d'un ordre transmis à la
    banque, et le cas typique d'annulation est précisément un **rejet bancaire**. Le lot n'est pas
-   modifié. ⚠️ **À confirmer par Guy — Q2.** Une facture dans un lot `generated` ne peut pas être
+   modifié. **Arbitrage de Guy du 2026-09-24 (Q2) : le lot est laissé tel quel.** Une facture dans un lot `generated` ne peut pas être
    `paid`, le cas ne se pose donc pas.
 
 ### Traçabilité, refus, écrans
@@ -271,7 +271,7 @@ Et la levée naïve est **fausse**, pour une raison de précédence :
   `OwnedByCreditNote`) — inchangé.
 - **`supplier_invoices::cancel`** et sa contre-passation écrite à la main (ne pose pas
   `reverses_entry_id`, ne consulte pas `reversal_blocker`) : **défaut antérieur, non corrigé ici**
-  dans la recommandation actuelle — cf. Q3. ⚠️ Ne pas l'imiter pour le règlement fournisseur.
+  — **issue distincte [#454]**, arbitrage de Guy (Q3). ⚠️ Ne pas l'imiter pour le règlement fournisseur.
 - La propagation du résiduel aux rapports agrégés (#416) ; l'imputation d'un écart (#384).
 
 ### Ce qu'il faut savoir du code existant
@@ -344,18 +344,16 @@ est **client / fournisseur** (deux appelants du même socle, sans code partagé 
   `frontend/src/routes/(app)/journal-entries/[id]/+page.svelte`, `frontend/src/lib/features/invoices/`,
   `frontend/src/lib/features/supplier-invoices/`.
 
-### Questions ouvertes — à trancher par Guy avant le développement
+### Arbitrages rendus par Guy le 2026-09-24
 
-- **Q1** — Facture fournisseur réglée : **deux gestes** (annuler le règlement, puis la facture) ou
-  un passage direct `paid → cancelled` ? *Recommandation : deux gestes* — chacun a son écriture et
-  son audit, et le second existe déjà.
-- **Q2** — Facture réglée par un **lot pain.001 confirmé** : annulation autorisée, lot inchangé ?
-  *Recommandation : oui* — le cas d'usage est le rejet bancaire ; le lot reste l'historique de
-  l'ordre transmis.
-- **Q3** — `supplier_invoices::cancel` réécrit sa contre-passation à la main. Le faire passer par le
-  socle **ici** (même famille de geste, pose enfin `reverses_entry_id`) ou ouvrir une **issue**
-  distincte ? *Recommandation : issue distincte* — le corriger change la description et les liens
-  d'écritures existantes, ce qui n'est pas l'objet de #414.
+- **Q1 — Facture fournisseur réglée : deux gestes.** Annuler le règlement (`paid → open`), puis, si
+  on le veut, annuler la facture (`cancel`, inchangée). Pas de passage direct `paid → cancelled`.
+- **Q2 — Lot pain.001 confirmé : annulation autorisée, lot laissé tel quel.** Le lot reste
+  l'historique de l'ordre transmis ; le cas d'usage est le rejet bancaire.
+- **Q3 — `supplier_invoices::cancel` : issue distincte, [#454].** Sa contre-passation écrite à la
+  main n'est pas corrigée ici.
+
+⚠️ **Ne pas contester ces arbitrages en revue** : en contester la mise en œuvre.
 
 ### References
 
@@ -385,3 +383,4 @@ est **client / fournisseur** (deux appelants du même socle, sans code partagé 
 | Date | Étape | Note |
 |---|---|---|
 | 2026-09-24 | spec | Fille de la 25-3 (split), sur le socle `reverse_in_tx` mergé (PR #453). ⛔ **Fait établi à la lecture, et il structure la story** : `reverse_in_tx` **refuse lui-même** les écritures de règlement (`OWNED_BY_SETTLEMENT`, `OWNED_BY_SUPPLIER_INVOICE`) — le socle ne suffit pas tel quel. Et la levée naïve est **fausse** : `reversal_blocker` ne rend que le premier motif, et un règlement **rapproché** porte `OWNED_BY_SETTLEMENT` (rang 6) **avant** `MATCHED_BANK_TRANSACTION` (rang 7) — l'ignorer contre-passerait en silence un paiement que la banque dit rapproché. D'où une exemption **étroite** (un motif, une pièce nommée) qui **laisse la précédence se poursuivre** (AC 1, AC 7). Deux autres faits établis : **aucune route ne liste les règlements d'une facture** (`list_for_invoice` n'a que des appelants de test), donc l'écran ne pouvait pas désigner le règlement à annuler — route ajoutée (AC 11) ; et le manuel **promet déjà** le geste (`:1048`). La question de date laissée ouverte par la mère est **tranchée par le socle** : jour, exercice ouvert (AC 3). Trois questions laissées à Guy (Q1-Q3), chacune avec une recommandation. |
+| 2026-09-24 | arbitrages | Guy tranche les trois questions dans le sens recommandé : **deux gestes** côté fournisseur (Q1), **lot confirmé laissé tel quel** (Q2), **`cancel` en issue distincte [#454]** (Q3). |
