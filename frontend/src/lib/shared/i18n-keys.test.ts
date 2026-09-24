@@ -235,6 +235,21 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * faux avec l'assurance de l'avoir mesuré.*
  */
 const ATTENDU = {
+	// Story 25-3-a-1 (#414) : 1665 → 1685, soit **+20**, recomptés depuis la
+	// source (`grep -o 'i18nMsg('` aux deux bornes, HEAD contre l'arbre) :
+	//   • `lib/shared/utils/settlement-cancel-blocked.ts` 0 → 4 : la queue
+	//     commune des motifs d'annulation (exercice clos, rapprochement, compte
+	//     archivé, pas d'exercice du jour) ;
+	//   • `features/invoices/settlement-cancel.ts` 0 → 1 : la tête client
+	//     (facture créditée) ;
+	//   • `features/invoices/InvoiceSettlements.svelte` 0 → 9 : titre, quatre
+	//     en-têtes, deux modes de règlement, lien vers l'écriture, bouton ;
+	//   • `invoices/[id]/+page.svelte` 62 → 68 (+6) : le dialogue de
+	//     confirmation (titre, corps, « Retour » par `common-back`, bouton), le
+	//     toast de succès, et le repli `common-error`.
+	//   ⚠️ `journal-entries/[id]/+page.svelte` reste à 17 : deux REPLIS y changent
+	//   de texte (`OWNED_BY_SETTLEMENT`, `OWNED_BY_INVOICE`), aucun site n'y naît.
+	//
 	// Story 25-2-b-2 (#440) : 1638 → 1665, soit **+27**, ventilés — recomptés
 	// depuis la source (`grep -c 'i18nMsg('` aux deux bornes), non incrémentés :
 	//   • `invoices/[id]/+page.svelte` 41 → 62 (**+21**) : la modale de
@@ -278,7 +293,7 @@ const ATTENDU = {
 	// trouve rien là où l'appel n'existe pas encore : chercher les clés mal
 	// traduites ne révèle jamais celles qui ne sont pas appelées du tout — et
 	// partir d'une liste de clés ne révèle jamais celles que la liste omet.*
-	sitesTotal: 1665,
+	sitesTotal: 1685,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

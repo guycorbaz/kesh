@@ -16,6 +16,8 @@ import type {
 	SettleInvoiceRequest,
 	SendInvoiceEmailRequest,
 	SettleInvoiceResponse,
+	InvoiceSettlementResponse,
+	CancelSettlementResponse,
 	UpdateInvoiceRequest,
 	UpdateInvoiceSettingsRequest,
 } from './invoices.types';
@@ -121,7 +123,8 @@ export async function listDueDates(query: DueDatesQuery = {}): Promise<DueDatesR
  *
  * ⛔ **Remplace `markInvoicePaid` / `unmarkInvoicePaid`, supprimés avec leurs
  * routes.** Un marquage qui n'écrivait rien s'annulait gratuitement ; un
- * règlement qui produit son écriture se **contre-passe** (issue #414).
+ * règlement qui produit son écriture s'annule par **contre-passation** —
+ * `cancelInvoiceSettlement` (Story 25-3-a-1).
  *
  * ⚠️ Pas de `version` : enregistrer un règlement n'est pas modifier la facture,
  * c'est y ajouter un fait. Le garde qui compte est le refus du trop-perçu,
@@ -132,6 +135,22 @@ export async function settleInvoice(
 	req: SettleInvoiceRequest,
 ): Promise<SettleInvoiceResponse> {
 	return apiClient.post(`/api/v1/invoices/${id}/settlements`, req);
+}
+
+/** Les règlements d'une facture, avec ce qui empêche de les annuler — Story 25-3-a-1 (#414). */
+export async function listInvoiceSettlements(id: number): Promise<InvoiceSettlementResponse[]> {
+	return apiClient.get(`/api/v1/invoices/${id}/settlements`);
+}
+
+/**
+ * Annule un règlement par **contre-passation** datée du jour — Story 25-3-a-1 (#414).
+ * La réponse porte la facture relue (`paidAt`, `amountDue` à jour).
+ */
+export async function cancelInvoiceSettlement(
+	id: number,
+	settlementId: number,
+): Promise<CancelSettlementResponse> {
+	return apiClient.post(`/api/v1/invoices/${id}/settlements/${settlementId}/cancel`, {});
 }
 
 // Story 20-3b2 — Envoi de facture par e-mail (#224)

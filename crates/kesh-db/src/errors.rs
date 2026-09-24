@@ -69,7 +69,10 @@ pub enum ReversalBlocker {
     OwnedBySupplierInvoice,
     /// ⛔ Le cas le plus grave : le résiduel se calcule depuis
     /// `invoice_settlements.amount`, que la contre-passation ne toucherait pas —
-    /// grand livre et résiduel divergeraient **en silence**. Chemin : #414.
+    /// grand livre et résiduel divergeraient **en silence**. Chemin :
+    /// `invoice_settlements_write::cancel_settlement` (Story 25-3-a-1), qui
+    /// contre-passe **au titre** du règlement et retire sa ligne dans la même
+    /// transaction — la contre-passation directe, elle, reste refusée.
     OwnedBySettlement,
     /// Écriture rapprochée d'une transaction bancaire. ⚠️ Aucune route de
     /// dé-rapprochement n'existe (#418) : le refus laisse un manque, assumé,

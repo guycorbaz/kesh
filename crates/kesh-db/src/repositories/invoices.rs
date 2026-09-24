@@ -2185,8 +2185,9 @@ pub async fn validate_invoice(
 // enregistrer un règlement n'est pas modifier la facture, c'est y ajouter un
 // fait, et deux faits concurrents ne se contredisent pas.
 //
-// ⚠️ **Annuler un règlement demande une CONTRE-PASSATION** — issue #414, ouverte
-// à ce titre et couvrant aussi le côté fournisseur, qui n'a jamais su le faire.
+// ⚠️ **Annuler un règlement demande une CONTRE-PASSATION** — issue #414 :
+// `invoice_settlements_write::cancel_settlement` pour le client (Story
+// 25-3-a-1) ; le côté fournisseur, qui n'a jamais su le faire, est la 25-3-a-2.
 // ---------------------------------------------------------------------------
 
 /// Suspend (`paused = true`) ou reprend (`paused = false`) les rappels débiteurs d'une

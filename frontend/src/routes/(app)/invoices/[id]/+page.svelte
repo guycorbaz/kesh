@@ -21,7 +21,9 @@
 		validateInvoice,
 		unvalidateInvoice,
 		settleInvoice,
-			getInvoiceEmailPreview,
+		listInvoiceSettlements,
+		cancelInvoiceSettlement,
+		getInvoiceEmailPreview,
 		sendInvoiceEmail,
 		getInvoiceSettings,
 	} from '$lib/features/invoices/invoices.api';
@@ -38,6 +40,7 @@
 		type BankAccountSummary,
 	} from '$lib/features/bank-accounts/bank-accounts.api';
 	import SendEmailDialog from '$lib/features/invoices/SendEmailDialog.svelte';
+	import InvoiceSettlements from '$lib/features/invoices/InvoiceSettlements.svelte';
 	import DunningPausedBadge from '$lib/features/invoices/DunningPausedBadge.svelte';
 	import ReminderHistory from '$lib/features/reminders/ReminderHistory.svelte';
 	import DunningPauseDialog from '$lib/features/reminders/DunningPauseDialog.svelte';
@@ -52,6 +55,7 @@
 	import type {
 		EmailPreviewResponse,
 		InvoiceResponse,
+		InvoiceSettlementResponse,
 	} from '$lib/features/invoices/invoices.types';
 	import { formatInvoiceTotal } from '$lib/features/invoices/invoice-helpers';
 	import { apiClient, isApiError } from '$lib/shared/utils/api-client';
@@ -137,6 +141,53 @@
 		}
 	}
 
+	// Story 25-3-a-1 (#414) — les règlements, et leur annulation.
+	let settlements = $state<InvoiceSettlementResponse[]>([]);
+	let cancelTarget = $state<InvoiceSettlementResponse | null>(null);
+	let cancelSubmitting = $state(false);
+	let cancelError = $state('');
+
+	/**
+	 * Relit les règlements. Échec toléré : sans la liste, la fiche reste
+	 * lisible — seul le geste d'annulation manque.
+	 */
+	async function loadSettlements() {
+		try {
+			settlements = await listInvoiceSettlements(id);
+		} catch {
+			settlements = [];
+		}
+	}
+
+	/**
+	 * Annule le règlement confirmé. ⚠️ Le refus s'affiche DANS le dialogue :
+	 * son message est celui du serveur, qui nomme le motif (409) ou les comptes
+	 * archivés (400) — jamais « transition interdite ».
+	 */
+	async function confirmCancelSettlement() {
+		if (!invoice || !cancelTarget) return;
+		cancelSubmitting = true;
+		cancelError = '';
+		try {
+			const res = await cancelInvoiceSettlement(invoice.id, cancelTarget.id);
+			invoice = res.invoice;
+			notifySuccess(
+				i18nMsg(
+					'invoices-settlement-cancelled',
+					"Règlement annulé : l'écriture inverse a été passée.",
+				),
+			);
+			cancelTarget = null;
+			await loadSettlements();
+		} catch (err) {
+			cancelError = isApiError(err) ? err.message : i18nMsg('common-error', 'Erreur inattendue');
+			// L'état a pu changer (autre onglet, rapprochement entre-temps) : relire.
+			await loadSettlements();
+		} finally {
+			cancelSubmitting = false;
+		}
+	}
+
 	onMount(async () => {
 		if (!Number.isFinite(id) || id <= 0) {
 			errorMsg = 'Identifiant de facture invalide';
@@ -152,6 +203,8 @@
 		}
 		// Story 21-6c : historique des rappels (après getInvoice, échec toléré).
 		if (invoice) await loadReminderHistory();
+		// Story 25-3-a-1 : les règlements (échec toléré).
+		if (invoice) await loadSettlements();
 		// Story 19-4 : référentiel projets (archivés inclus — un tag historique
 		// doit rester lisible). Échec toléré : libellé fallback `#id`.
 		try {
@@ -339,7 +392,8 @@
 	let markSubmitting = $state(false);
 	let markError = $state('');
 	// ⛔ Story 24-3 (#372) : plus de « dé-marquer ». Annuler un règlement demande
-	// une CONTRE-PASSATION, pas un retrait de drapeau — issue #414.
+	// une CONTRE-PASSATION, pas un retrait de drapeau — c'est la liste des
+	// règlements et son bouton « Annuler le règlement » (Story 25-3-a-1).
 	let settleAccounts = $state<AccountResponse[]>([]);
 	let settleBankAccounts = $state<BankAccountSummary[]>([]);
 	$effect(() => {
@@ -374,6 +428,7 @@
 		try {
 			const res = await settleInvoice(invoice.id, payload);
 			invoice = res.invoice;
+			await loadSettlements();
 			notifySuccess(
 				res.fullySettled
 					? i18nMsg('invoice-settle-success-full', 'Règlement enregistré — facture soldée')
@@ -694,9 +749,9 @@
 		</div>
 	{:else if invoice?.status === 'validated'}
 		<div class="flex gap-2">
-			<!-- ⛔ Le bouton disparaît quand la facture est soldée, et rien ne le
-			     remplace : annuler un règlement demande une contre-passation
-			     (issue #414), pas un retrait de drapeau. -->
+			<!-- Le bouton disparaît quand la facture est soldée. Annuler un
+			     règlement se fait depuis la liste des règlements (Story 25-3-a-1),
+			     par contre-passation — pas par un retrait de drapeau. -->
 			{#if !invoice.paidAt}
 				<Button variant="outline" onclick={() => (markOpen = true)} data-testid="settle-open">
 					{i18nMsg('invoice-settle-button', 'Enregistrer un règlement')}
@@ -972,6 +1027,17 @@
 			</tfoot>
 		</table>
 
+		<!-- Story 25-3-a-1 (#414) : les règlements — aussi sur une facture
+		     créditée, où le motif dit pourquoi ils ne s'annulent pas. -->
+		<InvoiceSettlements
+			{settlements}
+			{canManage}
+			onCancel={(s) => {
+				cancelError = '';
+				cancelTarget = s;
+			}}
+		/>
+
 		{#if invoice.status === 'validated'}
 			<!-- Story 21-6c : historique des rappels (rappels uniquement sur factures validées). -->
 			<ReminderHistory {reminders} />
@@ -1176,12 +1242,52 @@
 		onConfirm={confirmPause}
 	/>
 
-	<!-- ⛔ Story 24-3 (#372) : le dialogue « Dé-marquer payée » est SUPPRIMÉ.
-	     Il ne coûtait rien parce que le marquage n'écrivait rien. Depuis que le
-	     règlement produit son écriture, revenir en arrière demande une
-	     contre-passation — une écriture inverse, à sa propre date, qui laisse les
-	     deux visibles au grand livre. C'est l'objet de l'issue #414, qui couvre
-	     aussi le côté fournisseur, lequel n'a jamais su le faire. -->
+	<!-- ⛔ Story 24-3 (#372) : le dialogue « Dé-marquer payée » est SUPPRIMÉ —
+	     il ne coûtait rien parce que le marquage n'écrivait rien. Revenir en
+	     arrière est désormais une CONTRE-PASSATION : une écriture inverse, datée
+	     du jour, qui laisse les deux visibles au grand livre (Story 25-3-a-1). -->
+	<Dialog.Root
+		open={cancelTarget !== null}
+		onOpenChange={(o) => {
+			if (!o) {
+				cancelTarget = null;
+				cancelError = '';
+			}
+		}}
+	>
+		<Dialog.Content>
+			<Dialog.Header>
+				<Dialog.Title>
+					{i18nMsg('invoices-settlement-cancel-button', 'Annuler le règlement')}
+				</Dialog.Title>
+				<Dialog.Description>
+					{i18nMsg(
+						'invoices-settlement-cancel-confirm',
+						"Annuler ce règlement ? Une écriture inverse datée d'aujourd'hui sera passée au grand livre, et le montant redeviendra dû.",
+					)}
+				</Dialog.Description>
+			</Dialog.Header>
+			{#if cancelError}
+				<p class="text-sm text-destructive" role="alert" data-testid="invoice-settlement-cancel-error">
+					{cancelError}
+				</p>
+			{/if}
+			<Dialog.Footer>
+				<!-- « Retour » et non « Annuler » : à côté d'« Annuler le règlement »,
+				     le mot serait ambigu. -->
+				<Button variant="outline" onclick={() => (cancelTarget = null)}>
+					{i18nMsg('common-back', 'Retour')}
+				</Button>
+				<Button
+					onclick={confirmCancelSettlement}
+					disabled={cancelSubmitting}
+					data-testid="invoice-settlement-cancel-confirm"
+				>
+					{i18nMsg('invoices-settlement-cancel-button', 'Annuler le règlement')}
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
 
 	<Dialog.Root
 		open={creditNoteOpen}

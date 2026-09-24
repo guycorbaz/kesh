@@ -319,9 +319,9 @@ test.describe('Factures — suspension & historique sur la fiche (21-6c)', () =>
 		await page.getByTestId('settle-type').selectOption('internal_account');
 		await page.getByTestId('settle-account').selectOption({ index: 1 });
 		await page.getByTestId('settle-confirm').click();
-		// Succès prouvé : le bouton de règlement s'efface (la facture est soldée)
-		// — et rien ne le remplace, l'annulation demandant une contre-passation
-		// (issue #414).
+		// Succès prouvé : le bouton de règlement s'efface (la facture est soldée).
+		// Son annulation se fait par contre-passation, depuis la ligne du
+		// règlement (Story 25-3-a-1, #414).
 		await expect(page.getByTestId('settle-open')).toHaveCount(0);
 		// Le badge de suspension persiste (la pause n'a pas été perdue).
 		await expect(page.getByTestId('invoice-paused-badge')).toBeVisible();
