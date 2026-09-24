@@ -1,6 +1,6 @@
 # Story 25.3-a-1 : Annuler un règlement client — par contre-passation
 
-Status: in-progress
+Status: review
 
 **Issue : [#414]** — `refs #414`, **sans la fermer** : l'issue couvre aussi le fournisseur, que
 porte la sœur **25-3-a-2**, et c'est **elle** qui la fermera. ⚠️ Ne mettre `closes` nulle part ici.
@@ -336,20 +336,20 @@ silence un paiement que la banque dit rapproché. ⇒ **exemption ÉTROITE, pré
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Le socle** (AC 1, 2) : motifs en liste ordonnée, autorité, `reverse_in_tx` inchangé.
-- [ ] **T2 — Les motifs du geste** (AC 3) : `SettlementCancelBlocker`, la **queue commune**
+- [x] **T1 — Le socle** (AC 1, 2) : motifs en liste ordonnée, autorité, `reverse_in_tx` inchangé.
+- [x] **T2 — Les motifs du geste** (AC 3) : `SettlementCancelBlocker`, la **queue commune**
       `settlement_entry_cancel_blocker(entry_id)` (rangs 2-5) et la **tête** client
       `settlement_cancel_blocker(settlement_id)` (rang 1, puis délégation), `DbError::SettlementNotCancellable`
       et son mapping.
-- [ ] **T3 — Le geste** (AC 4, 5, 6) et l'audit (AC 7).
-- [ ] **T4 — Les routes** (AC 8), registre de routes recompté.
-- [ ] **T5 — Les textes** (AC 9) : famille `settlement-cancel-blocked-*` ×4 (queue, module
+- [x] **T3 — Le geste** (AC 4, 5, 6) et l'audit (AC 7).
+- [x] **T4 — Les routes** (AC 8), registre de routes recompté.
+- [x] **T5 — Les textes** (AC 9) : famille `settlement-cancel-blocked-*` ×4 (queue, module
       **partagé** dans `frontend/src/lib/shared/`), clé `invoices-settlement-cancel-blocked-credited`
       ×4 (tête, `features/invoices/`), type TypeScript union tête + queue, `OWNED_BY_SETTLEMENT` ×4
       + replis, correction du repli `OWNED_BY_INVOICE`.
-- [ ] **T6 — L'écran** (AC 10) et les commentaires devenus faux.
-- [ ] **T7 — Tests et mutations** (AC 11).
-- [ ] **T8 — Documentation** (AC 12), gates (AC 13), PR en `refs #414`.
+- [x] **T6 — L'écran** (AC 10) et les commentaires devenus faux.
+- [x] **T7 — Tests et mutations** (AC 11).
+- [x] **T8 — Documentation** (AC 12), gates (AC 13), PR en `refs #414`.
 
 ## Dev Notes
 
@@ -413,16 +413,134 @@ Modules : `kesh-db`, `kesh-api`, `kesh-i18n`, `frontend` — quatre. Issue elle-
 
 ### Agent Model Used
 
+Claude Opus 5.5 (1M context) — implémentation.
+
 ### Debug Log References
+
+- Clippy : deux corrections mécaniques (`&mut **tx` superflu, boucle indexée dans le test des paires).
+- `find_open_covering_date` pose un `FOR UPDATE` et exige une transaction : la lecture de
+  `GET …/settlements` ne devait pas verrouiller les exercices. D'où `has_open_covering_date`
+  (lecture seule) et `OPEN_COVERING_DATE_SQL`, requête **partagée** par les deux pour qu'elles
+  ne divergent jamais.
+- Registre des routes : un premier recompte « par lignes » rendait 110 / 18 exemptions — il
+  débordait de `LIB_ROUTES` sur les trois routes de test. Recompté par analyse des tuples :
+  **107** routes, **89** tracées, 15 exemptées, 3 sans effet, **110** avec les routes de test.
 
 ### Completion Notes List
 
+- ⛔ **Le socle** (`journal_entries.rs`) : `reversal_blockers` rend la **liste ordonnée** des
+  motifs, `reversal_blocker` en garde le premier (appelants inchangés). `ReversalAuthority`
+  (une variante, `ClientSettlement`) et `reverse_owned_in_tx` délèguent, avec `reverse_in_tx`,
+  à **une seule** fonction interne ; le motif levé est **sauté**, la précédence se poursuit.
+  **Les 27 tests de `journal_entry_reversal_e2e` passent sans retouche.**
+- **Les motifs** : `SettlementCancelBlocker` (5 variantes), la queue commune
+  `settlement_cancellation::settlement_entry_cancel_blocker(entry_id)` et la tête client
+  `invoice_settlements_write::settlement_cancel_blocker(settlement_id)`.
+  `DbError::SettlementNotCancellable` (variante neuve) → 409 avec le code du motif ; ses textes
+  serveur réutilisent **les clés de l'écran** — un seul texte par motif.
+- **Le geste** : `cancel_settlement_in_tx` + `cancel_settlement`, dans l'ordre de l'AC 4.
+- **Tests de dépôt** (+10, `kesh-db/tests/invoice_settlement.rs`, dont la queue au niveau de
+  l'écriture) : ⛔ `la_precedence_de_l_annulation_lecture_et_ecriture` monte **les 15 cas**
+  (5 rangs seuls, 10 paires) **par les vrais chemins** — avoir après règlement partiel, clôture,
+  archivage, exercice raccourci — et vérifie que la **lecture** annonce le rang le plus fort et
+  que l'**écriture** refuse pour ce même motif. ⚠️ **Deux montages en SQL, et dits tels** : le
+  lien bancaire (le rapprochement réel vit dans `kesh-api` — il y est exercé, cf. ci-dessous) et
+  le raccourcissement de l'exercice seedé (qui court jusqu'en 2030).
+- **Mutations, toutes vues rouges sur assertion puis restaurées** (script qui restaure le
+  fichier) :
+  1. l'exemption court-circuite toute la précédence → `socle_la_precedence…`,
+     `socle_l_autorite…`, `la_precedence…` rouges ;
+  2. l'exemption ignore l'identifiant de pièce → `socle_l_autorite…` rouge ;
+  3. rangs 4 et 5 inversés dans la queue → `la_precedence…` rouge sur la paire
+     `[AccountArchived, NoOpenFiscalYearToday]` ;
+  4. la tête ignore l'avoir → rouge sur `[InvoiceCredited]` ;
+  5. l'exercice clos n'est pas lu → rouge sur `[FiscalYearClosed]` ;
+  6. `paid_at` retombe toujours → `residuel_reste_nul…` rouge ;
+  7. la ligne n'est pas retirée → quatre tests rouges.
+  Côté écran : `canManage` ignoré, bouton affiché hors `cancellable`, relecture supprimée,
+  refus écrit dans `errorMsg` — chacun rougit son test.
+- **Tests d'API** : +3 (`invoice_echeancier_e2e.rs` — parcours nominal, rôles et 404, exercice
+  clos annoncé puis refusé) et +1 **par le chemin réel** du rapprochement
+  (`reconciliation_e2e.rs::cancelling_a_reconciled_settlement_is_refused` : `POST
+  /reconciliation/accept`, puis la liste annonce `MATCHED_BANK_TRANSACTION` avec
+  l'identifiant de la transaction, et le clic est refusé **par le socle**).
+- **Écran** : `InvoiceSettlements.svelte` (liste, bouton ou motif), dialogue de confirmation
+  dans la fiche, relecture après succès, refus affiché **dans le dialogue**. « Retour » et non
+  « Annuler » pour fermer (`common-back`), le mot étant ambigu à côté d'« Annuler le règlement ».
+  Queue des textes dans `lib/shared/utils/settlement-cancel-blocked.ts` (hors lint
+  d'appartenance), tête dans `features/invoices/settlement-cancel.ts`.
+- ⚠️ **Hors AC, ajoutés parce que l'écran en avait besoin** : deux clés
+  `invoices-settlements-type-bank` / `-internal` — les clés existantes au singulier
+  (`invoice-settle-type-*`) auraient fait échouer `lint-i18n-ownership` dans `features/`.
+- **Gardes i18n recomptées depuis la source** : `sitesTotal` 1665 → **1685** (+20 : 4 + 1 + 9 + 6,
+  `grep -o 'i18nMsg('` aux deux bornes) ; `CANDIDATES_ATTENDUES` 42 → **43** (`typeLabel`,
+  `conforme` 36 → 37). `CLES_RELEVEES` inchangé : la garde est *opt-in* par préfixe.
+- **Commentaires #414** : réécrits là où ils étaient devenus faux (fiche facture ×3,
+  `invoices.api.ts`, `lib.rs`, `kesh-db/errors.rs` sur `OwnedBySettlement`, `invoices.rs:2188`,
+  deux specs E2E). ⚠️ **Deux laissés, à dessein** : `i18n-keys.test.ts:139` (historique d'un
+  décompte, **resté vrai**) et `kesh-db/errors.rs:67-68` (fournisseur → 25-3-a-2).
+  `invoices_echeancier.spec.ts` vérifie désormais la **présence** du bouton ; « Annulla » a été
+  retiré de son expression d'absence, qu'aurait fait rougir le bouton italien « Annulla il
+  pagamento ».
+- **Documentation** : section **« Enregistrer et annuler un règlement »** créée ; `:782`,
+  `:1048`, `:1771-1774` (Q5) corrigés ; ⚠️ **deux défauts antérieurs corrigés dans les passages
+  touchés** — l'encadré `:514-515` (« aucun verrou de période plus fin », faux depuis la 24-4c) et
+  la ligne « Rapprochement bancaire : déliaison (*Délier* sur la transaction) », qui promettait
+  un bouton **inexistant** (le seul « Délier » de l'application lie un compte bancaire à son
+  compte comptable) — c'est la 25-3-b qui le créera. PDF régénéré et **contrôlé aplati**.
+  `api-external.md`, `CHANGELOG` (`[0.12.1]`, décompte recompté : 95 actions, **125** libellés),
+  `README` (puce « Règlements clients »).
+
+### Gates
+
+- Backend : base remise à zéro, `scripts/test-fast.sh` → **2433 / 2433** (2419 + 14 : 10 dépôt,
+  3 échéancier, 1 rapprochement), fmt et clippy propres.
+- Frontend : `npm run check` 0 erreur (27 avertissements, tous antérieurs), `lint-i18n-ownership`
+  PASS, `test:unit` **759 / 759**, `build` OK.
+- E2E, base `kesh_e2e` **reconstruite** (DROP + migrations), montage complet de `docs/testing.md`
+  (`smtpConfigured: true`), run à 20:23 UTC : **219 passés / 8 échoués / 19 ignorés**, **zéro
+  régression**. Les 8 : les **7 de KF-029** (#97) à la ligne près, et
+  `sidebar-navigation.spec.ts:75` — **KF-052 (#424)**, déterministe, **rejoué seul : rouge**,
+  connu et inscrit dans `docs/testing.md`. KF-045 ne s'applique pas (run après 12:00 UTC). La
+  spec neuve `invoices-settlement-cancel.spec.ts` et `invoices_echeancier.spec.ts` (présence du
+  bouton) passent.
+
 ### File List
+
+| Fichier | Nature |
+|---|---|
+| `crates/kesh-db/src/repositories/journal_entries.rs` | `reversal_blockers`, `ReversalAuthority`, `reverse_owned_in_tx`, fonction interne unique |
+| `crates/kesh-db/src/repositories/settlement_cancellation.rs` | **neuf** — la queue commune |
+| `crates/kesh-db/src/repositories/invoice_settlements_write.rs` | tête client, `cancel_settlement_in_tx`, `cancel_settlement` |
+| `crates/kesh-db/src/repositories/fiscal_years.rs` | `OPEN_COVERING_DATE_SQL`, `has_open_covering_date` |
+| `crates/kesh-db/src/repositories/mod.rs` | module enregistré |
+| `crates/kesh-db/src/repositories/invoices.rs` | commentaire #414 |
+| `crates/kesh-db/src/errors.rs` | `SettlementCancelBlocker`, `SettlementNotCancellable`, doc d'`OwnedBySettlement` |
+| `crates/kesh-db/tests/invoice_settlement.rs` | +10 tests |
+| `crates/kesh-api/src/errors.rs` | mapping 409, texte d'`OWNED_BY_SETTLEMENT` |
+| `crates/kesh-api/src/routes/invoices.rs` | `GET …/settlements`, `POST …/cancel` |
+| `crates/kesh-api/src/lib.rs` | deux routes |
+| `crates/kesh-api/src/audit_labels.rs` | `invoice.settlement_cancelled` |
+| `crates/kesh-api/tests/audit_route_registry.rs` | route inscrite, totaux recomptés |
+| `crates/kesh-api/tests/invoice_echeancier_e2e.rs` | +3 tests |
+| `crates/kesh-api/tests/reconciliation_e2e.rs` | +1 test (chemin réel) |
+| `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` | **17** clés neuves ×4, plus le texte réécrit d'`OWNED_BY_SETTLEMENT` (recompté : 18 lignes `+clé =` par locale) |
+| `frontend/src/lib/shared/utils/settlement-cancel-blocked.ts` (+ `.test.ts`) | **neufs** — queue des textes |
+| `frontend/src/lib/features/invoices/settlement-cancel.ts` | **neuf** — tête des textes |
+| `frontend/src/lib/features/invoices/InvoiceSettlements.svelte` (+ `.test.ts`) | **neufs** — la liste |
+| `frontend/src/lib/features/invoices/invoices.api.ts` (+ `.test.ts`), `invoices.types.ts` | API et types |
+| `frontend/src/routes/(app)/invoices/[id]/+page.svelte` (+ `invoice-settlements-page.test.ts`) | la fiche |
+| `frontend/src/routes/(app)/journal-entries/[id]/+page.svelte` | deux replis |
+| `frontend/src/lib/shared/i18n-keys.test.ts`, `i18n-libelle-en-dur.test.ts` | décomptes recomptés |
+| `frontend/tests/e2e/invoices-settlement-cancel.spec.ts` | **neuf** |
+| `frontend/tests/e2e/invoices_echeancier.spec.ts`, `invoices.spec.ts` | présence du geste, commentaire |
+| `docs/manual/fr/user-manual.tex` / `.pdf`, `docs/api-external.md`, `CHANGELOG.md`, `README.md` | documentation |
 
 ## Change Log
 
 | Date | Étape | Note |
 |---|---|---|
+| 2026-09-24 | dev | Implémentée (Opus 5.5). Socle étendu sans changer `reverse_in_tx` (27 tests intacts), motifs en tête client + queue commune, geste, deux routes, écran, textes ×4, documentation. **Précédence prouvée sur 15 cas des deux côtés** (lecture et écriture), sept mutations de dépôt et quatre d'écran vues rouges. Deux ajouts hors AC, dits : `has_open_covering_date` (lecture sans verrou), deux clés de mode de règlement au préfixe pluriel. Deux défauts antérieurs du manuel corrigés dans les passages touchés (verrou « annuel », « Délier » inexistant). Gates : backend **2433/2433**, frontend 759/759 + check + lint + build, E2E 219/8/19 **sans régression** (7 KF-029 + KF-052). `refs #414` seulement. |
 | 2026-09-24 | validate P7 (ciblée) | **Une** lentille Haiku 4.5, contexte frais, braquée sur le commit `514900dc` (prompt `25-3-a-validate-prompt-p6-couple.md`, lentille A), axes déclarés. **0 au-dessus de LOW** : T2 et T5 conformes aux AC 3 et 9, aucun résidu de l'ancien module, citations `errors.rs:2471-2474` et `lint-i18n-ownership.js:246-251` exactes. 2 LOW stylistiques (signatures abrégées dans T2, textes non répétés dans T5) — non retenus : les tâches renvoient aux AC. ⇒ **Boucle close à nouveau.** Trend complet (mère puis fille) : P1 1 HIGH / 3 MED → P2 2 MED → P3 1 HIGH / ~9 MED (**découpage**) → P4 3 MED → P5 0 → reprise par la sœur → P6 ciblée 1 MED (propagation aux tâches) → P7 ciblée **0**. Modèles : Sonnet, Haiku, Opus, Sonnet, Haiku, Sonnet, Haiku. |
 | 2026-09-24 | validate P6 (ciblée) | **Une** lentille Sonnet, contexte frais, braquée sur le diff de `18f39bf5` pour cette fiche (prompt `25-3-a-validate-prompt-p5-couple.md`, lentille A), axes déclarés. ✅ **1 MEDIUM** : la reprise avait réécrit les AC 3 et 9 **sans propager aux tâches** — T2 ne nommait que la tête, T5 décrivait encore l'**ancien module unique** dans `features/invoices/` ; corrigés. Module partagé **confirmé hors** du lint d'appartenance **et** des trois gardes vitest (qui parcourent `src` sans règle de dossier ; `i18n-un-repli-par-cle` est opt-in par préfixe et indifférente à ces clés). Citation `:247-251` → `:246-251`. Symptôme grepé après correction (`module`, `invoices-settlement-cancel-blocked-\*`, `settlement_cancel_blocker` hors tête) : aucun autre résidu. |
 | 2026-09-24 | reprise (validation de la sœur) | ⛔ **Rouverte par la passe 4 de la 25-3-a-2** (lentille A, A4-2 ; lentille B, B-1) : la fiche fournisseur ne pouvait ni **étendre** le calcul des motifs (il prenait un `settlement_id`, que le fournisseur n'a pas ; un `switch` commun aurait porté des cas morts des deux côtés) ni en écrire un **jumeau** (seconde précédence, celle-là même dont cette fiche a dû corriger l'ordre en passe 4). ⇒ l'AC 3 scinde le calcul en une **tête** client (rang 1) et une **queue commune** sur l'**écriture** (rangs 2-5), `settlement_entry_cancel_blocker(entry_id)` ; l'AC 9 met les textes de la queue dans un module **partagé** (`lib/shared/`, hors du lint d'appartenance — vérifié dans le script), la tête restant dans `features/invoices/` ; l'AC 11 teste la queue à son propre niveau. Aucun rang, aucun ordre, aucun code ne change. Une passe ciblée suit. |
