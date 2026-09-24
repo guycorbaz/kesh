@@ -133,12 +133,6 @@ Claude Opus 5 (1M context) — implémentation.
 |---|---|
 | `crates/kesh-db/src/repositories/journal_entries.rs` | `reverse_in_tx` extraite, `reverse` réduite à un wrapper, 1 test neuf |
 
-### Debug Log References
-
-### Completion Notes List
-
-### File List
-
 ## Change Log
 
 | Date | Étape | Note |
