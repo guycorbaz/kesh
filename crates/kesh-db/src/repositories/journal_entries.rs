@@ -1375,23 +1375,164 @@ where
     .map_err(map_db_error)
 }
 
-/// Contre-passe une écriture : crée l'écriture **inverse** (Story 24-4a, #380).
+/// Contre-passe une écriture **dans une transaction fournie**, sans `BEGIN` ni
+/// `COMMIT` (Story 25-3-zero).
 ///
-/// ⛔ **L'écriture d'origine n'est pas touchée** — ni ses lignes, ni sa date, ni
-/// son `entry_number`, ni sa `version`. Corriger, en comptabilité, c'est ajouter
-/// une écriture, jamais en réécrire une (art. 958f CO, Olico art. 3).
+/// ⛔ **Pourquoi cette fonction existe.** Annuler un règlement ou un
+/// rapprochement suppose, dans **une seule** transaction : contre-passer
+/// l'écriture, défaire l'état dérivé — ligne de règlement côté client,
+/// colonnes de statut côté fournisseur, lien de rapprochement côté banque — et
+/// journaliser. Avec [`reverse`], qui commite elle-même, c'est impossible : la
+/// contre-passation serait validée **avant** le reste, et un échec ultérieur
+/// laisserait une écriture inverse sans son effet. *Une facture qui se dit
+/// impayée alors que le grand livre dit le contraire.*
 ///
-/// Séquence, calquée sur `supplier_invoices::cancel` :
-/// 1. verrou `FOR UPDATE` sur l'origine + recensement des empêchements ;
-/// 2. relecture des lignes **`ORDER BY line_order`** et inversion `D ↔ C` ;
-/// 3. exercice **ouvert** couvrant **la date du jour** ;
-/// 4. création au journal `OD`, `enforce_postable = false`, projets non re-validés ;
-/// 5. audit `journal_entry.reversed`.
+/// ⛔ **ET C'EST CE QUI EMPÊCHE UNE TROISIÈME CONTRE-PASSATION.**
+/// `supplier_invoices::cancel` contourne déjà le problème en réécrivant la
+/// sienne à la main : elle relit les lignes, inverse débit et crédit, et
+/// appelle `create_in_tx` — qui passe toujours `None`. Elle ne pose donc
+/// **jamais** `reverses_entry_id` et ne consulte **jamais**
+/// [`reversal_blocker`]. ⚠️ **Ne pas l'imiter** : la 25-3 allait en écrire une
+/// troisième, et c'est ce refactor qui l'évite.
 ///
-/// ⚠️ La contre-passation porte la date du **jour**, jamais celle de l'origine :
-/// une origine dans un exercice clos serait sinon incorrigible, et dater la
-/// correction du jour de l'erreur la rendrait invisible dans la période où elle
-/// a été décidée.
+/// N'exécute **pas** de rollback en cas d'erreur (n'a qu'un `&mut` sur la
+/// transaction) : l'appelant, propriétaire, en est responsable — le drop de
+/// `Transaction` déclenche le rollback automatique de `sqlx`.
+pub async fn reverse_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    id: i64,
+    user_id: i64,
+) -> Result<JournalEntryWithLines, DbError> {
+    // (1) Verrou sur l'origine, puis recensement des empêchements.
+    let origin: Option<(i64, i64, String)> = sqlx::query_as(
+        "SELECT je.id, je.entry_number, fy.name \
+         FROM journal_entries je \
+         JOIN fiscal_years fy ON fy.id = je.fiscal_year_id \
+         WHERE je.id = ? AND je.company_id = ? FOR UPDATE",
+    )
+    .bind(id)
+    .bind(company_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    let (_, entry_number, origin_fy_name) = origin.ok_or(DbError::NotFound)?;
+
+    // ⛔ **`AccountArchived` est le seul motif que l'ÉCRITURE ne traite pas
+    // ici.** Le recensement le rend pour que l'écran masque le bouton avant
+    // le clic (AC 11) ; mais s'arrêter dessus produirait un 409 muet, là où
+    // l'écriture doit rendre un **400 qui NOMME les comptes à réactiver**
+    // (étape 3 ci-dessous). Un refus qui ne dit pas quel compte n'est pas
+    // utilisable.
+    match reversal_blocker(&mut **tx, company_id, id).await? {
+        Some((ReversalBlocker::AccountArchived, _, _)) | None => {}
+        Some((blocker, document_id, document_label)) => {
+            return Err(DbError::EntryNotReversable {
+                blocker,
+                document_id,
+                document_label,
+            });
+        }
+    }
+
+    // (2) Lignes de l'origine, dans l'ordre CONTRACTUEL, inversées D ↔ C.
+    //
+    // ⛔ `ORDER BY line_order` et non `id` : `uq_jel_entry_order` fait de
+    // `line_order` la position, et le `project_id` se reprend POSITIONNELLEMENT
+    // — une écriture manuelle porte un tag par ligne (Story 19-2), là où le
+    // gabarit `cancel` n'a qu'un projet document-level à propager.
+    let origin_lines: Vec<(i64, Decimal, Decimal, Option<i64>)> = sqlx::query_as(
+        "SELECT account_id, debit, credit, project_id FROM journal_entry_lines \
+         WHERE entry_id = ? ORDER BY line_order",
+    )
+    .bind(id)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    if origin_lines.is_empty() {
+        return Err(DbError::Invariant(
+            "écriture sans ligne : rien à contre-passer".into(),
+        ));
+    }
+
+    // (3) Comptes archivés depuis — refus qui NOMME, cf. `ReversalAccountsArchived`.
+    let account_ids: Vec<i64> = origin_lines.iter().map(|(a, _, _, _)| *a).collect();
+    let archived = archived_accounts_in_tx(tx, company_id, &account_ids).await?;
+    if !archived.is_empty() {
+        return Err(DbError::ReversalAccountsArchived(archived));
+    }
+
+    let reversal_lines: Vec<NewJournalEntryLine> = origin_lines
+        .iter()
+        .map(
+            |(account_id, debit, credit, project_id)| NewJournalEntryLine {
+                account_id: *account_id,
+                debit: *credit,
+                credit: *debit,
+                project_id: *project_id,
+            },
+        )
+        .collect();
+
+    // (4) Exercice ouvert du JOUR.
+    let today = Utc::now().date_naive();
+    let fy = super::fiscal_years::find_open_covering_date(tx, company_id, today)
+        .await?
+        .ok_or(DbError::FiscalYearInvalid)?;
+
+    // Le nom de l'exercice DE L'ORIGINE lève l'ambiguïté du numéro, qui
+    // REPART À 1 à chaque exercice. Celui de la contre-passation
+    // n'apprendrait rien.
+    let description = if fy.name == origin_fy_name {
+        format!("Contre-passation écriture n° {entry_number}")
+    } else {
+        format!("Contre-passation écriture n° {entry_number} ({origin_fy_name})")
+    };
+
+    let created = create_in_tx_inner(
+        tx,
+        fy.id,
+        user_id,
+        NewJournalEntry {
+            company_id,
+            entry_date: today,
+            journal: Journal::OD,
+            description,
+            // ⛔ `None` au niveau document : les projets sont repris PAR LIGNE.
+            project_id: None,
+            lines: reversal_lines,
+        },
+        // Les comptes viennent de l'origine : exiger la postabilité rendrait
+        // l'écriture incorrigible à cause d'un changement de config postérieur.
+        false,
+        // Idem pour les projets — les tags sont COPIÉS, pas choisis.
+        false,
+        Some(id),
+    )
+    .await?;
+
+    audit_log::insert_in_tx(
+        tx,
+        NewAuditLogEntry::user(
+            user_id,
+            "journal_entry.reversed".to_string(),
+            "journal_entry".to_string(),
+            id,
+            Some(serde_json::json!({
+                "reversalJournalEntryId": created.entry.id,
+            })),
+        ),
+    )
+    .await?;
+
+    Ok(created)
+}
+
+/// Contre-passe une écriture, transaction comprise.
+///
+/// ⚠️ **Mince enveloppement de [`reverse_in_tx`], qui porte toute la logique**
+/// (Story 25-3-zero) : `BEGIN`, appel, `COMMIT`. Rien ne doit revenir ici —
+/// sinon les appelants transactionnels ne l'auraient pas.
 pub async fn reverse(
     pool: &MySqlPool,
     company_id: i64,
@@ -1399,134 +1540,7 @@ pub async fn reverse(
     user_id: i64,
 ) -> Result<JournalEntryWithLines, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
-
-    let result = async {
-        // (1) Verrou sur l'origine, puis recensement des empêchements.
-        let origin: Option<(i64, i64, String)> = sqlx::query_as(
-            "SELECT je.id, je.entry_number, fy.name \
-             FROM journal_entries je \
-             JOIN fiscal_years fy ON fy.id = je.fiscal_year_id \
-             WHERE je.id = ? AND je.company_id = ? FOR UPDATE",
-        )
-        .bind(id)
-        .bind(company_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(map_db_error)?;
-        let (_, entry_number, origin_fy_name) = origin.ok_or(DbError::NotFound)?;
-
-        // ⛔ **`AccountArchived` est le seul motif que l'ÉCRITURE ne traite pas
-        // ici.** Le recensement le rend pour que l'écran masque le bouton avant
-        // le clic (AC 11) ; mais s'arrêter dessus produirait un 409 muet, là où
-        // l'écriture doit rendre un **400 qui NOMME les comptes à réactiver**
-        // (étape 3 ci-dessous). Un refus qui ne dit pas quel compte n'est pas
-        // utilisable.
-        match reversal_blocker(&mut *tx, company_id, id).await? {
-            Some((ReversalBlocker::AccountArchived, _, _)) | None => {}
-            Some((blocker, document_id, document_label)) => {
-                return Err(DbError::EntryNotReversable {
-                    blocker,
-                    document_id,
-                    document_label,
-                });
-            }
-        }
-
-        // (2) Lignes de l'origine, dans l'ordre CONTRACTUEL, inversées D ↔ C.
-        //
-        // ⛔ `ORDER BY line_order` et non `id` : `uq_jel_entry_order` fait de
-        // `line_order` la position, et le `project_id` se reprend POSITIONNELLEMENT
-        // — une écriture manuelle porte un tag par ligne (Story 19-2), là où le
-        // gabarit `cancel` n'a qu'un projet document-level à propager.
-        let origin_lines: Vec<(i64, Decimal, Decimal, Option<i64>)> = sqlx::query_as(
-            "SELECT account_id, debit, credit, project_id FROM journal_entry_lines \
-             WHERE entry_id = ? ORDER BY line_order",
-        )
-        .bind(id)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(map_db_error)?;
-        if origin_lines.is_empty() {
-            return Err(DbError::Invariant(
-                "écriture sans ligne : rien à contre-passer".into(),
-            ));
-        }
-
-        // (3) Comptes archivés depuis — refus qui NOMME, cf. `ReversalAccountsArchived`.
-        let account_ids: Vec<i64> = origin_lines.iter().map(|(a, _, _, _)| *a).collect();
-        let archived = archived_accounts_in_tx(&mut tx, company_id, &account_ids).await?;
-        if !archived.is_empty() {
-            return Err(DbError::ReversalAccountsArchived(archived));
-        }
-
-        let reversal_lines: Vec<NewJournalEntryLine> = origin_lines
-            .iter()
-            .map(
-                |(account_id, debit, credit, project_id)| NewJournalEntryLine {
-                    account_id: *account_id,
-                    debit: *credit,
-                    credit: *debit,
-                    project_id: *project_id,
-                },
-            )
-            .collect();
-
-        // (4) Exercice ouvert du JOUR.
-        let today = Utc::now().date_naive();
-        let fy = super::fiscal_years::find_open_covering_date(&mut tx, company_id, today)
-            .await?
-            .ok_or(DbError::FiscalYearInvalid)?;
-
-        // Le nom de l'exercice DE L'ORIGINE lève l'ambiguïté du numéro, qui
-        // REPART À 1 à chaque exercice. Celui de la contre-passation
-        // n'apprendrait rien.
-        let description = if fy.name == origin_fy_name {
-            format!("Contre-passation écriture n° {entry_number}")
-        } else {
-            format!("Contre-passation écriture n° {entry_number} ({origin_fy_name})")
-        };
-
-        let created = create_in_tx_inner(
-            &mut tx,
-            fy.id,
-            user_id,
-            NewJournalEntry {
-                company_id,
-                entry_date: today,
-                journal: Journal::OD,
-                description,
-                // ⛔ `None` au niveau document : les projets sont repris PAR LIGNE.
-                project_id: None,
-                lines: reversal_lines,
-            },
-            // Les comptes viennent de l'origine : exiger la postabilité rendrait
-            // l'écriture incorrigible à cause d'un changement de config postérieur.
-            false,
-            // Idem pour les projets — les tags sont COPIÉS, pas choisis.
-            false,
-            Some(id),
-        )
-        .await?;
-
-        audit_log::insert_in_tx(
-            &mut tx,
-            NewAuditLogEntry::user(
-                user_id,
-                "journal_entry.reversed".to_string(),
-                "journal_entry".to_string(),
-                id,
-                Some(serde_json::json!({
-                    "reversalJournalEntryId": created.entry.id,
-                })),
-            ),
-        )
-        .await?;
-
-        Ok(created)
-    }
-    .await;
-
-    match result {
+    match reverse_in_tx(&mut tx, company_id, id, user_id).await {
         Ok(created) => {
             tx.commit().await.map_err(map_db_error)?;
             Ok(created)
@@ -3578,6 +3592,93 @@ mod tests {
             "saisie manuelle sur le compte de résultat doit être rejetée, obtenu {:?}",
             res
         );
+        delete_all_by_company(&pool, company_id).await.unwrap();
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 25-3-zero — la composabilité, seule propriété que le refactor apporte
+    // -----------------------------------------------------------------------
+
+    /// ⛔ **LE test de cette story.** Tout le reste n'est qu'un déplacement de
+    /// lignes, prouvé sans régression par les tests existants (non modifiés).
+    /// Ce que `reverse_in_tx` apporte et que [`reverse`] ne pouvait pas donner,
+    /// c'est de **participer à la transaction de l'appelant** — donc de
+    /// disparaître avec elle si la suite échoue.
+    ///
+    /// Sans cette propriété, annuler un règlement laisserait, en cas d'échec
+    /// après la contre-passation, **une écriture inverse sans son effet** : une
+    /// facture qui se dit impayée quand le grand livre dit le contraire.
+    #[tokio::test]
+    async fn reverse_in_tx_disparait_avec_le_rollback_de_l_appelant() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        let today = chrono::Utc::now().naive_utc().date();
+
+        let origine = create(
+            &pool,
+            fy_id,
+            admin_user_id,
+            mk_entry(
+                company_id,
+                today,
+                vec![
+                    NewJournalEntryLine {
+                        account_id: a1,
+                        debit: dec!(17),
+                        credit: dec!(0),
+                        project_id: None,
+                    },
+                    NewJournalEntryLine {
+                        account_id: a2,
+                        debit: dec!(0),
+                        credit: dec!(17),
+                        project_id: None,
+                    },
+                ],
+            ),
+        )
+        .await
+        .expect("création de l'écriture d'origine");
+
+        // L'appelant ouvre SA transaction, contre-passe, puis échoue.
+        {
+            let mut tx = pool.begin().await.unwrap();
+            let inverse = reverse_in_tx(&mut tx, company_id, origine.entry.id, admin_user_id)
+                .await
+                .expect("la contre-passation doit réussir dans la transaction");
+            assert_eq!(
+                inverse.entry.reverses_entry_id,
+                Some(origine.entry.id),
+                "l'écriture inverse pointe l'origine"
+            );
+            // ⚠️ Le rollback est IMPLICITE : `tx` est droppée sans `commit`,
+            // exactement comme si l'étape suivante de l'appelant avait échoué.
+        }
+
+        // ⛔ Rien ne doit subsister : ni l'écriture inverse, ni le lien.
+        let inverses: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE reverses_entry_id = ?")
+                .bind(origine.entry.id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            inverses, 0,
+            "⛔ une écriture inverse a SURVÉCU au rollback de l'appelant : \
+             `reverse_in_tx` a commité pour son compte"
+        );
+
+        // Et l'origine est intacte, donc contre-passable à nouveau.
+        let apres = reversed_by(&pool, company_id, origine.entry.id)
+            .await
+            .unwrap();
+        assert!(
+            apres.is_none(),
+            "l'origine ne doit porter aucune contre-passation après le rollback"
+        );
+
+        // Nettoyage : la base est partagée.
         delete_all_by_company(&pool, company_id).await.unwrap();
     }
 }

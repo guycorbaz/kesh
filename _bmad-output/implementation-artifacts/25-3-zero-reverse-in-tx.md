@@ -1,6 +1,6 @@
 # Story 25.3-zero : `reverse_in_tx` — la contre-passation composable
 
-Status: ready-for-dev
+Status: review
 
 **Issues : aucune qu'elle ferme.** Elle est le **socle** de la 25-3-a ([#414]) et de la 25-3-b
 ([#418]), qui ne peuvent pas être écrites sans elle. Commits en `refs #414`.
@@ -69,9 +69,9 @@ implémentation parallèle, et la 25-3 allait en écrire une troisième.
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Extraire `reverse_in_tx`** (AC 1, 2, 3), wrapper compris.
-- [ ] **T2 — Le test de composabilité** (AC 6) et les doc-comments (AC 7).
-- [ ] **T3 — Gate complet** (AC 8) et PR en `refs #414`.
+- [x] **T1 — Extraire `reverse_in_tx`** (AC 1, 2, 3), wrapper compris.
+- [x] **T2 — Le test de composabilité** (AC 6) et les doc-comments (AC 7).
+- [x] **T3 — Gate complet** (AC 8) et PR en `refs #414`.
 
 ## Dev Notes
 
@@ -101,6 +101,37 @@ et l'AC 3 interdit d'y toucher.
 ## Dev Agent Record
 
 ### Agent Model Used
+
+Claude Opus 5 (1M context) — implémentation.
+
+### Debug Log References
+
+- L'extraction a demandé trois corrections mécaniques, toutes dues au passage
+  d'une `Transaction` possédée à une `&mut Transaction` : `&mut *tx` devient
+  `&mut **tx` (3 sites), et `&mut tx` devient `tx` là où la transaction est
+  passée telle quelle (4 sites).
+
+### Completion Notes List
+
+- ⛔ **L'AC 3 est MESURÉ, non affirmé** : `git diff --stat` sur
+  `crates/kesh-api/tests/` et `crates/kesh-db/tests/` est **vide**, et les 27
+  tests de `journal_entry_reversal_e2e` passent sans retouche. *Un refactor qui
+  se dit « sans changement de comportement » et qui ajuste ses tests ne prouve
+  rien.*
+- ⛔ **Le test de composabilité TRANCHE, et c'est prouvé** : en simulant
+  l'ancien contrat — un `COMMIT` au milieu de `reverse_in_tx` —, il rougit sur
+  assertion en nommant la cause (« une écriture inverse a SURVÉCU au rollback de
+  l'appelant »). *Sans cette épreuve, la story ne serait qu'un déplacement de
+  lignes.*
+- Le rollback du test est **implicite** : la transaction est droppée sans
+  `commit`, exactement comme si l'étape suivante de l'appelant avait échoué —
+  c'est le scénario réel, pas une simulation.
+
+### File List
+
+| Fichier | Nature |
+|---|---|
+| `crates/kesh-db/src/repositories/journal_entries.rs` | `reverse_in_tx` extraite, `reverse` réduite à un wrapper, 1 test neuf |
 
 ### Debug Log References
 
