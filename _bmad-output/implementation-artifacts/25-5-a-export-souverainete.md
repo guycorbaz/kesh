@@ -1,6 +1,6 @@
 # Story 25.5-a : L'export de souveraineté porte enfin la comptabilité — et une garde l'y tient
 
-Status: ready-for-dev
+Status: review
 
 **Issue : [#386]**, qu'elle **ferme** : `closes #386` dans le **titre ET le corps** de sa PR.
 
@@ -210,17 +210,17 @@ ligne-à-ligne n'en rend que **6** sur 19. *C'est le précédent de `INSERT INTO
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Les lectures** (AC 5, 6) : neuf fonctions de repository, scopées `company_id`.
-- [ ] **T2 — Les sérialiseurs et l'export** (AC 1, 4, **4-bis**) : onze entrées `csv_tables` +
+- [x] **T1 — Les lectures** (AC 5, 6) : neuf fonctions de repository, scopées `company_id`.
+- [x] **T2 — Les sérialiseurs et l'export** (AC 1, 4, **4-bis**) : onze entrées `csv_tables` +
       `push_csv!`, et le `metadata.json`.
-- [ ] **T3 — LA GARDE** (AC 2, 3) : liste d'exclusions à motif obligatoire, et le test qui refuse
+- [x] **T3 — LA GARDE** (AC 2, 3) : liste d'exclusions à motif obligatoire, et le test qui refuse
       toute table ni exportée ni exclue. **Prouvée par mutation.**
-- [ ] **T4 — L'écran et les quatre locales** (AC 7).
-- [ ] **T4-bis — Les compteurs codés en dur** (AC 4-bis) : rendre le nombre **dérivé**, et non
+- [x] **T4 — L'écran et les quatre locales** (AC 7).
+- [x] **T4-bis — Les compteurs codés en dur** (AC 4-bis) : rendre le nombre **dérivé**, et non
       mettre à jour sept sites. Deux d'entre eux **paniquent** en test.
-- [ ] **T5 — Manuels, PDF, CHANGELOG** (AC 8, 8-bis, 9) — dont **deux sites de manuel déjà faux**
+- [x] **T5 — Manuels, PDF, CHANGELOG** (AC 8, 8-bis, 9) — dont **deux sites de manuel déjà faux**
       (un dossier `reports/` inventé, un « 38 » pour 39) et l'arbitrage sur `csv_sanitize`.
-- [ ] **T6 — Gates complets** (AC 11), PR avec `closes #386`.
+- [x] **T6 — Gates complets** (AC 11), PR avec `closes #386`.
 
 ## Dev Notes
 
@@ -261,6 +261,57 @@ celle-ci.
 ## Dev Agent Record
 
 ### Agent Model Used
+
+Claude Opus 5 (1M context) — implémentation.
+
+### Les deux arbitrages que la fiche laissait ouverts, et comment ils ont été tranchés
+
+1. **`csv_sanitize`** : **appliquée**, non assumée. La fonction existait — extraite
+   par la 25-1c-a *précisément pour être réutilisée* — et cet export ne l'employait
+   nulle part. **Trente cellules** des dix-neuf tables déjà exportées partaient
+   brutes. Fermé **avant** d'ajouter les onze tables, qui sont pleines de texte libre.
+2. **`audit_log`** : **troisième fonction de lecture**, non réutilisation de
+   `list_for_export`. Celle-ci rejette la requête au-delà de 10 000 lignes — juste
+   pour un écran, faux pour la souveraineté. *Une piste d'audit tronquée dans le
+   fichier même qui prouve ce qui s'est passé aurait l'air d'un export complet.*
+
+### Debug Log References
+
+- ⛔ **La garde m'a pris en défaut à sa première exécution** : `companies` figurait
+  dans les **deux** registres. Elle n'est pas exclue — elle est exportée sous
+  `company.csv`, au singulier. ⇒ **la fiche se trompait** : 20 tables absentes et non
+  21, partition **11 + 9** et non 11 + 10. *Une garde qui corrige la spécification
+  qui l'a demandée.*
+- ⚠️ **La mutation « retirer un `push_csv!` » échappait aux tests unitaires** — le
+  `debug_assert` vit dans une fonction qui exige une base. C'est le E2E **dérivé du
+  registre** qui la tue. La garde unitaire seule aurait été rassurante et incomplète.
+- ⚠️ Le montage du test multi-tenant a d'abord rougi pour rien : `chk_contacts_type`
+  n'admet que `Personne` ou `Entreprise`.
+
+### Completion Notes List
+
+- **Trois passages du manuel étaient FAUX, deux avant cette story** : un dossier
+  `reports/` de rapports PDF **qui n'existe pas** ; un écran de sélection
+  (exercices, formats) alors qu'il n'y a **qu'un bouton** ; et ⛔ une commande de
+  vérification d'intégrité lisant `.sha256_per_file[…]`, **clé inexistante** —
+  *un lecteur qui la copiait obtenait « CORROMPU » sur chaque fichier de son
+  archive.*
+- ⚠️ **Signalé, hors périmètre** : quatre lignes `projects` (`P19-2-*`) subsistent
+  dans la base de gate partagée, laissées par des tests de l'**Epic 19**. Mon test
+  utilise une base éphémère.
+
+### File List
+
+| Fichier | Nature |
+|---|---|
+| `crates/kesh-db/src/repositories/{credit_notes,supplier_invoices,payment_batches,invoice_settlements,contact_persons,imported_supplier_invoices,audit_log}.rs` | **10** lectures exhaustives scopées |
+| `crates/kesh-api/src/exports/csv_tables.rs` | **11** sérialiseurs (19 → 30), helper `txt` + 30 cellules sanitisées |
+| `crates/kesh-api/src/exports/global.rs` | `TABLES_EXPORTEES` (30), `TABLES_HORS_EXPORT` (9), **3 gardes**, nombre dérivé |
+| `crates/kesh-api/tests/exports_global_e2e.rs` | 2 tests dérivés du registre, 1 retargeté, 1 renommé, **1 neuf** (multi-tenant) |
+| `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl` | 3 textes réécrits × 4 |
+| `frontend/src/routes/(app)/export/+page.svelte` | replis alignés mot pour mot |
+| `docs/manual/fr/{user,admin}-manual.tex` + **3 PDF** | section refondue, réserve levée |
+| `CHANGELOG.md` | 3 entrées dans `[0.12.1]`, **12 lignes ajoutées / 0 supprimée** |
 
 ### Debug Log References
 
