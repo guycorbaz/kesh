@@ -1,0 +1,483 @@
+# Story 25.3-b : Annuler un rapprochement bancaire — par contre-passation
+
+Status: ready-for-dev
+
+**Issue : [#418]** — c'est cette story qui la **ferme** : `closes #418` dans le **titre ET le corps**
+de sa PR (le dépôt merge en squash ; un `refs` partout laisserait l'issue ouverte sans signal).
+
+**Grand-mère : `25-3-annuler-reglement-et-rapprochement.md`** (statut `split`) — **source des faits**,
+ses corrections valent ici. **Socle** : `25-3-zero-reverse-in-tx.md` (PR #453). **Sœurs mergées** :
+25-3-a-1 (règlement client, PR #457) et 25-3-a-2 (règlement fournisseur, PR #462) — cette story
+**appelle** le geste de la 25-3-a-1 et **réutilise** la queue commune des motifs. **Cousine** :
+25-3-c (annuler une facture fournisseur, #454), sans recouvrement.
+
+## Story
+
+En tant que comptable,
+je veux annuler un rapprochement bancaire accepté par erreur,
+afin que la transaction redevienne « à rapprocher » et que le grand livre, la facture et le relevé
+restent d'accord — sans écriture manuelle, que le gel de la 24-4b interdit de toute façon.
+
+## Pourquoi
+
+⛔ **Aujourd'hui, un rapprochement ne se défait pas, et son écriture est définitivement
+incorrigible.** Les routes de réconciliation montées sont `accept`, `reject`, `manual` et `split`
+(`crates/kesh-api/src/lib.rs:610-631`) — aucune ne défait. La contre-passation directe refuse une
+écriture rapprochée (`ReversalBlocker::MatchedBankTransaction`, dont la doc dit elle-même
+« aucune route de dé-rapprochement n'existe (#418) », `errors.rs:78-81`), le gel de la 24-4b en
+interdit la modification, et le règlement client né d'un rapprochement est refusé par la 25-3-a-1
+au rang 3 (« annulez d'abord le rapprochement ») — **un chemin que l'application ne propose pas**.
+Le manuel l'avoue (`user-manual.tex:1846-1848`, « il ne se défait pas encore depuis
+l'application »).
+
+## ⛔ Les faits qui structurent la story — établis depuis la source le 2026-09-25
+
+1. **Cinq chemins posent le lien, deux familles d'écritures.** `matched_entry_id` s'écrit en SQL
+   brut à **cinq** sites de `routes/reconciliation.rs` :
+
+   | site | chemin | ce qui est créé |
+   |---|---|---|
+   | `:1467` | `accept_one_invoice` (proposition « facture ») | écriture d'**encaissement** `D banque / C créance` **+ ligne `invoice_settlements`** (`:1416`) + `paid_at` projeté |
+   | `:1892` | `accept_one_split` (proposition « éclatement ») | une écriture `banque / contreparties` |
+   | `:2256` | `accept_one_rule` (proposition « règle ») | une écriture `banque / contrepartie` |
+   | `:2948` | `post_manual` | une écriture `banque / contrepartie` |
+   | `:3409` | `post_split` | une écriture `banque / contreparties` |
+
+   ⇒ **Deux cas seulement pour défaire** : l'écriture est un **règlement client** (une ligne
+   `invoice_settlements` la porte) — on appelle le geste de la 25-3-a-1 ; sinon l'écriture n'est
+   possédée **que** par la transaction — on la contre-passe. Les éclatements, règles et
+   rapprochements manuels n'imputent **que** des comptes de contrepartie (`SplitProposalLine`,
+   `:372-380`) : aucun ne règle de facture. Aucun chemin ne rapproche un règlement **fournisseur**.
+
+2. **Le lien d'abord, le reste ensuite — c'est ce qui lève le rang 3 sans exemption.** La
+   25-3-a-1 l'a préparé en toutes lettres (`invoice_settlements_write.rs:340-342`) : son geste
+   `cancel_settlement_in_tx` est `pub`, sans `BEGIN`/`COMMIT`, et le socle refuse une écriture
+   rapprochée **tant que le lien existe**. Remettre `matched_entry_id` à `NULL` **dans la même
+   transaction, avant** la contre-passation, fait disparaître le motif — aucune variante
+   d'autorité nouvelle n'est nécessaire.
+
+3. ⛔ **Jamais par la suppression.** La FK `fk_bank_transactions_matched_entry` est
+   `ON DELETE SET NULL` (`20260504000001_bank_imports.sql:83`) : supprimer l'écriture effacerait le
+   lien **en silence**. Et **aucune contrainte** ne lie `status` à `matched_entry_id`
+   (`chk_bank_transactions_status` ne porte que les deux valeurs) : un `reconciled` sans lien est
+   **possible** en base (écriture supprimée avant le gel de la 24-4b).
+
+4. ⚠️ **Les rapprochements antérieurs à la 24-2 pointent sur l'écriture de VENTE.** Avant la
+   Story 24-2 (v0.12.0), `accept_one_invoice` liait la transaction à l'écriture de **vente** de la
+   facture, sans écriture d'encaissement ni ligne de règlement, et posait `paid_at`. La migration
+   `20260827000001_invoice_settlements.sql` est du DDL pur : **rien n'a été repris**. Une
+   installation venue de la v0.11.1 ou d'avant, ou une sauvegarde de cette époque restaurée, peut
+   donc porter ce lien. ⛔ **Le contre-passer annulerait la VENTE** — le socle le refuserait
+   (`OWNED_BY_INVOICE` précède `MATCHED_BANK_TRANSACTION`), mais le cas doit être traité
+   explicitement (AC 5).
+
+5. **Le verrou.** Les quatre routes mutantes de la réconciliation se sérialisent par un verrou
+   nommé MariaDB, par compte bancaire (`kesh_reconciliation::mutex::with_account_lock`,
+   `GET_LOCK('reconcile:{db}:{company}:{account}')`). Le dé-rapprochement prend **le même**.
+
+6. **Où l'on voit une transaction rapprochée : un seul écran.** La page de réconciliation ne liste
+   que les transactions **en attente**. La seule page qui montre une transaction `reconciled` est
+   le **détail d'un import** (`frontend/src/routes/(app)/bank-import/[id]/+page.svelte`), qui
+   affiche le statut **brut** (`{tx.status}`, `:101`), ne donne aucun lien vers l'écriture, et dont
+   tous les libellés sont **en dur** (dette antérieure — cf. Dev Notes).
+
+7. **Le marqueur de rejet.** Quatre des cinq chemins remettent `auto_match_rejected_at` à `NULL`
+   en rapprochant ; le chemin « facture » ne part que de transactions non rejetées. Une transaction
+   dé-rapprochée dont le marqueur resterait posé **n'apparaîtrait plus** dans les propositions
+   (`find_pending_transactions_for_account` filtre `auto_match_rejected_at IS NULL`,
+   `repositories/reconciliation.rs:158`).
+
+## Arbitrages de Guy qui s'appliquent ici
+
+- **Ligne `invoice_settlements` RETIRÉE**, non marquée annulée (grand-mère, 2026-09-24).
+- **Un paiement détaché de sa facture redevient à lettrer** (2026-09-24) : la transaction revient
+  « à rapprocher ».
+- ⛔ **Q5 — un règlement dont l'écriture est dans un exercice CLOS ne s'annule pas ; rouvrir
+  l'exercice doit rester possible** (2026-09-24). Le dé-rapprochement d'une facture **en hérite**
+  par le geste de la 25-3-a-1 (rang 2) — la 25-3-a-1 le disait (`25-3-a-1…md:160-162`).
+- **Le lettrage est un prérequis de la mise en service** (décision kesh:D5, 2026-09-25) : défaire
+  un rapprochement est le geste inverse du lettrage, et il doit exister avant.
+
+## Positions de la fiche — à confirmer par Guy (cf. « Questions » en fin de fiche)
+
+- **P1 — Rapprochement hérité (fait 4)** : on **défait le lien sans rien contre-passer** — aucune
+  écriture d'encaissement n'a jamais été passée, il n'y a rien à annuler au grand livre — et
+  `paid_at` de la facture est **recalculé** (il retombe à `NULL` si la facture n'a aucun
+  règlement). Refuser laisserait l'état incorrigible, ce que la story répare.
+- **P2 — Exercice clos, hors facture** : le dé-rapprochement d'une écriture d'éclatement, de règle
+  ou manuelle dont l'exercice est **clos** est **refusé** (`FISCAL_YEAR_CLOSED`), comme celui
+  d'une facture — une seule règle pour tous les rapprochements, dans l'esprit de Q5.
+- **P3 — Où est le bouton** : sur le **détail de l'import bancaire**, par transaction rapprochée ;
+  et, sur la fiche facture client, le motif « rapproché » (rang 3 de la 25-3-a-1) devient un
+  **bouton qui ouvre le même dialogue**.
+
+## Acceptance Criteria
+
+### Le geste
+
+1. **`reconciliation_cancel::cancel_in_tx(tx, company_id, bank_transaction_id, user_id)`** — nouveau
+   module de dépôt `crates/kesh-db/src/repositories/reconciliation_cancel.rs`, sans `BEGIN` ni
+   `COMMIT`, plus son enveloppement. Il rend : la transaction relue, l'écriture inverse
+   (`Option<i64>` — absente pour un lien hérité ou orphelin), et la facture touchée
+   (`Option<i64>`). **Dans cet ordre** :
+   1. verrou `FOR UPDATE` sur la transaction bancaire, scopé par `company_id` — `NotFound` sinon ;
+      `status <> 'reconciled'` → refus `BANK_TRANSACTION_NOT_RECONCILED` (AC 3, tête) ;
+   2. **classement** du lien (lecture non verrouillante, puis verrous) :
+      - `matched_entry_id IS NULL` → **orphelin** (AC 5) ;
+      - une ligne `invoice_settlements` porte `journal_entry_id = matched_entry_id` → **règlement
+        client** ; verrou `FOR UPDATE` de la **facture puis** de la ligne — ⛔ **l'ordre de
+        `cancel_settlement_in_tx`** (facture → règlement → écriture + exercice), pour ne jamais
+        croiser une annulation de règlement lancée depuis la fiche facture ;
+      - une facture porte `journal_entry_id = matched_entry_id` (sa **vente**) → **hérité**
+        (AC 5) ;
+      - sinon → **écriture propre** à la transaction ;
+   3. verrou de l'écriture **et de son exercice** (`journal_entries JOIN fiscal_years … FOR
+      UPDATE`) **avant** de juger — la leçon de la revue de la 25-3-a-1 (course avec
+      `fiscal_years::close`) ;
+   4. les motifs (AC 3) : la tête et le rang 2 refusent ici ; les rangs 4-5 sont laissés au socle ;
+   5. `UPDATE bank_transactions SET matched_entry_id = NULL, status = 'pending',
+      auto_match_rejected_at = NULL, version = version + 1, updated_at = NOW(3) WHERE id = ? AND
+      company_id = ? AND status = 'reconciled' AND version = ?` — `rows_affected() == 1`, sinon
+      `OptimisticLockConflict` ; ⛔ **avant** toute contre-passation (fait 2) ;
+   6. selon le cas :
+      - **règlement client** → `invoice_settlements_write::cancel_settlement_in_tx(tx, company_id,
+        invoice_id, settlement_id, user_id)`, **appelé, jamais réécrit** : il contre-passe,
+        retire la ligne, projette `paid_at`, bumpe la facture et écrit
+        `invoice.settlement_cancelled` ;
+      - **écriture propre** → `journal_entries::reverse_in_tx` (sans autorité) ;
+      - **hérité** → aucune contre-passation ; `paid_at` recalculé par
+        `invoice_settlements::amount_due` (P1), `version + 1` ;
+      - **orphelin** → rien d'autre ;
+   7. audit `reconciliation.cancelled` (AC 4).
+
+   ⛔ **Aucune troisième contre-passation** : le socle et le geste de la 25-3-a-1, rien d'autre.
+   ⛔ **Aucune suppression** d'écriture (fait 3).
+
+2. **La date de la contre-passation est celle du JOUR, dans un exercice ouvert — tranchée par le
+   socle**, comme dans les deux sœurs. Pas de date fournie par l'appelant. `PERIOD_LOCKED` (400) si
+   la période du jour est verrouillée, sans code neuf.
+
+### Ce qui empêche l'annulation
+
+3. **Une précédence, la queue commune réutilisée, une exemption ÉTROITE.** La fonction de lecture
+   `reconciliation_cancel::cancel_blocker(conn, company_id, bank_transaction_id)` sert **à la fois**
+   la lecture (AC 7) et l'écriture (AC 1). Elle ajoute à `SettlementCancelBlocker`
+   (`kesh-db/src/errors.rs`) **une** variante de tête, `BankTransactionNotReconciled` (code
+   `BANK_TRANSACTION_NOT_RECONCILED`), et délègue le reste :
+
+   | rang | variante | code | s'applique à | à l'écriture |
+   |---|---|---|---|---|
+   | 0 | `BankTransactionNotReconciled` | `BANK_TRANSACTION_NOT_RECONCILED` | tous | 409, `SettlementNotCancellable` |
+   | 1 | `InvoiceCredited` | `INVOICE_CREDITED` | règlement client | 409 — refusé par le geste de la 25-3-a-1 |
+   | 2 | `FiscalYearClosed` | `FISCAL_YEAR_CLOSED` | règlement client, écriture propre (P2) | 409, `SettlementNotCancellable` |
+   | 3 | `MatchedBankTransaction` | `MATCHED_BANK_TRANSACTION` | seulement si une **autre** transaction pointe la même écriture | laissé au socle : 409 `EntryNotReversable` |
+   | 4 | `AccountArchived` | `ACCOUNT_ARCHIVED` | règlement client, écriture propre | laissé au socle : 400 qui **nomme** les comptes |
+   | 5 | `NoOpenFiscalYearToday` | `FISCAL_YEAR_INVALID` | règlement client, écriture propre | laissé au socle : 400 `FiscalYearInvalid` |
+
+   - ⛔ **Rangs 2 à 5 : la queue commune** `settlement_cancellation::settlement_entry_cancel_blocker`,
+     sur l'écriture liée, **pas un jumeau**. Elle rend aujourd'hui `MatchedBankTransaction` pour
+     toute écriture rapprochée — donc pour **chaque** dé-rapprochement. Elle reçoit une
+     **exemption étroite** : le rang 3 est levé **pour la transaction qu'on défait**, et seulement
+     elle. ⚠️ `reversal_blockers` ne rend qu'**un** identifiant de transaction (`LIMIT 1`,
+     `journal_entries.rs:1309`) : l'exemption doit vérifier qu'**aucune autre** transaction ne
+     pointe l'écriture — sinon le rang 3 tient, avec l'identifiant de l'autre. Les deux sœurs
+     appellent la queue **sans** exemption : comportement inchangé, leurs tests passent sans
+     retouche.
+   - **Rang 1** : celui de la tête client de la 25-3-a-1 (`settlement_cancel_blocker`), **sans
+     copie** — si sa forme actuelle (tête puis queue sans exemption) empêche de le réutiliser,
+     extraire le rang 1 en fonction et l'appeler des deux côtés.
+   - **Hérité et orphelin** : seul le rang 0 s'applique (P1 ; rien n'est contre-passé).
+   - **Qui refuse à l'écriture** : comme dans les sœurs — le geste refuse la tête et le rang 2 ;
+     les rangs 3 à 5 sont refusés par le socle avec son erreur canonique (une seule garde par
+     motif). Au rang 1, c'est `cancel_settlement_in_tx` qui refuse, **après** que le lien a été
+     défait dans la transaction : l'erreur remonte, et le **rollback** rétablit le lien (AC 11,
+     composition).
+   - ⚠️ **Limite assumée** héritée : le verrou de période du jour n'est pas dans la lecture — il se
+     contrôle au clic (`PERIOD_LOCKED`).
+
+### L'audit
+
+4. **`reconciliation.cancelled`**, **littéral** au site d'insertion, inscrit à
+   `audit_labels.rs::ACTIONS` (liste triée) et libellé dans les **quatre** locales. Entité
+   `bank_transaction`. Charge : `kind` (`invoice_settlement` / `entry` / `legacy_sale_entry` /
+   `orphan`), `matchedEntryId`, `reversalJournalEntryId`, `invoiceId`, `settlementId`, montant,
+   `wasPreviouslyRejected`. ⚠️ Pour un règlement client, **trois** lignes au total —
+   `reconciliation.cancelled`, `invoice.settlement_cancelled` (le geste de la 25-3-a-1) et
+   `journal_entry.reversed` (le socle) : c'est voulu, chacune nomme son objet.
+
+### Les cas particuliers
+
+5. **Hérité et orphelin — défaits, jamais contre-passés.**
+   - **Hérité** (fait 4, P1) : le lien est défait, la transaction revient « à rapprocher », la
+     **vente n'est pas touchée**, `paid_at` de la facture est recalculé par
+     `invoice_settlements::amount_due` (NULL si le reste dû est positif), la facture bumpée
+     (`version + 1`). La facture redevient alors dévalidable si rien d'autre ne l'en empêche : le
+     refus `error-invoice-unvalidate-blocked-matched` (« annulez le rapprochement d'abord ») devient
+     **vrai**. Test sur état **forgé par SQL et déclaré tel** (l'application ne le produit plus).
+   - **Orphelin** (fait 3) : `reconciled` sans lien → la transaction revient « à rapprocher »,
+     rien d'autre. Test sur état forgé, déclaré tel.
+
+### L'API
+
+6. **`POST /api/v1/reconciliation/transactions/{id}/cancel`** — **Comptable+**, à côté des quatre
+   routes de réconciliation (`lib.rs:610-631`) ; clés API d'écriture admises, comme elles
+   (`actor_api_key_id` porté à l'audit). Le handler : lecture de la transaction (société) pour
+   connaître son compte, **`with_account_lock`** sur ce compte (patron `post_manual` : mapping de
+   `LockReleaseFailed`, `AccountLocked` → 409 existant), puis `cancel_in_tx`, puis `COMMIT`.
+   Réponse : la transaction relue (même forme que dans le détail d'import, AC 8),
+   `reversalJournalEntryId`, `invoiceId`. Erreurs : 404 hors société, 409 avec `code` (AC 3),
+   400 comptes archivés / exercice / période. Au registre `audit_route_registry.rs` : `Traced`,
+   totaux **recomptés depuis la source** (départ : **108 routes / 90 tracées / 15 exemptées / 3
+   sans objet, 111 avec les routes de test**), message de ventilation compris.
+
+7. **`GET /api/v1/reconciliation/transactions/{id}`** — Comptable+ (comme les propositions) :
+   `id`, `status`, `matchedEntryId`, `kind` (AC 4), `invoiceId`, `invoiceNumber`, `amount`,
+   **`cancellable`**, **`cancelBlockedBy`**, **`cancelBlockedLabel`** (numéro du compte au rang 4),
+   **`cancelBlockedDocumentId`** (l'**autre** transaction au rang 3). Lus **dans une seule
+   transaction de lecture** — la leçon de la revue P1 de la 25-3-a-2 (une réponse qui mêle deux
+   instantanés peut se contredire). Route GET : hors registre (il ne porte que les mutantes).
+   ⚠️ **Pourquoi une route et pas des champs dans le détail d'import** : un import porte des
+   centaines de transactions ; calculer la précédence pour chacune coûterait des milliers de
+   requêtes. Le calcul se fait **au clic**, pour une transaction.
+
+8. **`GET /api/v1/bank-imports/{id}`** : chaque transaction gagne **`matchedEntryId`** (lien vers
+   l'écriture) — lecture de colonne, sans calcul. `api-external.md` le dit.
+
+### Les textes
+
+9. **Propres au rapprochement, écrits une fois.** Famille **`reconciliation-cancel-*`** dans
+   `frontend/src/lib/features/reconciliation/` (bouton, confirmation par `kind`, succès, lien vers
+   l'écriture inverse) et **`reconciliation-cancel-blocked-*`** pour les six codes de l'AC 3 —
+   ⛔ **pas** la famille partagée `settlement-cancel-blocked-*`, qui dit « ce règlement » : une
+   écriture d'éclatement n'est pas un règlement (même raison que la 25-3-a-1 pour ne pas détourner
+   le mapping des écritures). `switch` exhaustif, garde `never`. **Quatre** locales, repli en dur
+   **mot pour mot** le FTL fr-CH, et un texte serveur pour le nouveau code
+   (`crates/kesh-api/src/errors.rs`).
+
+   **Les refus qui orientaient vers un chemin absent nomment le chemin réel** — sites, tous
+   ensemble (grep de la **clé**, du **code** et de la **phrase**) :
+   - `journal-entries-reverse-blocked-bank-match` ×4 (fr-CH `:344`) + repli serveur
+     (`errors.rs:2478`) + repli Svelte (`journal-entries/[id]/+page.svelte:161-165`) : « Cette
+     écriture est rapprochée d'une transaction bancaire » → dire **où** l'annuler (détail de
+     l'import bancaire) ;
+   - `settlement-cancel-blocked-bank-match` ×4 (`:725`) + replis (`errors.rs:2589`,
+     `lib/shared/utils/settlement-cancel-blocked.ts:41-45`) ;
+   - `error-invoice-unvalidate-blocked-matched` ×4 (`:30`) + repli (`errors.rs:2546`) : devient
+     vrai (P1) — le relire ;
+   - la doc de `ReversalBlocker::MatchedBankTransaction` (`kesh-db/src/errors.rs:78-81`, « aucune
+     route de dé-rapprochement n'existe ») et les commentaires qui annoncent la 25-3-b
+     (`errors.rs:212`, `journal_entries.rs:1454`, `invoice_settlements_write.rs:341`,
+     `tests/reconciliation_e2e.rs:2964`) — **les relire et les mettre au présent**.
+   ⛔ **Les refus restent** : contre-passer directement une écriture rapprochée reste faux.
+
+### L'écran
+
+10. **Détail d'un import** (`bank-import/[id]/+page.svelte`) : pour une transaction `reconciled`,
+    un lien vers l'écriture liée et un bouton **« Annuler le rapprochement »**, masqué pour un rôle
+    sans droit d'écriture. Au clic : lecture de l'AC 7, puis un dialogue qui montre **soit le
+    motif** (AC 9), **soit la confirmation** — qui dit ce qui va se passer selon le `kind` (« une
+    écriture inverse datée d'aujourd'hui sera passée » ; pour une facture, « le règlement de la
+    facture N° … sera retiré et la facture redeviendra à régler » ; pour un lien hérité, « aucune
+    écriture ne sera passée »). Après succès : le détail est **relu**. Un refus au clic affiche son
+    motif — le 409 porte `code` et `details`, le 400 `ACCOUNT_ARCHIVED` porte `details.rejected[]`
+    —, jamais un message générique. Les **nouveaux** libellés passent par `i18nMsg` ; les libellés
+    en dur **existants** de la page ne sont pas migrés ici (dette antérieure, cf. Dev Notes).
+
+11. **Fiche facture client** (P3) : un règlement dont le motif est `MATCHED_BANK_TRANSACTION`
+    (rang 3 de la 25-3-a-1, `cancelBlockedDocumentId` = la transaction) montre, à côté du motif,
+    un bouton **« Annuler le rapprochement »** qui ouvre **le même dialogue** (même composant, même
+    lecture AC 7) ; après succès, la liste des règlements et la facture sont relues. ⛔ **Un seul
+    composant de dialogue**, dans `features/reconciliation/`.
+
+### Tests
+
+12. ⛔ Chaque garde **prouvée par mutation**, vue **rouge sur assertion**, mutation décrite au Dev
+    Agent Record.
+    - **Les cinq chemins, par les VRAIS chemins** (`kesh-api/tests/reconciliation_e2e.rs`, qui
+      sait déjà accepter une proposition) : rapprocher puis dé-rapprocher par **facture**,
+      **éclatement accepté**, **règle**, **manuel**, **éclatement manuel**. Pour chacun :
+      transaction `pending`, `matched_entry_id` NULL, marqueur de rejet NULL, écriture inverse
+      avec `reverses_entry_id`, l'origine en `ALREADY_REVERSED`, **la transaction réapparaît dans
+      `GET /reconciliation/proposals`**. Facture : ligne de règlement retirée, reste dû = TTC,
+      `paid_at` NULL.
+    - **Facture partiellement réglée deux fois** (un règlement manuel + un rapprochement) :
+      dé-rapprocher ne retire que le règlement rapproché ; `paid_at` reste NULL, reste dû correct.
+    - **Re-rapprocher** après dé-rapprochement : la même transaction s'accepte à nouveau.
+    - **Précédence** : chaque rang seul, par les vrais chemins (clôture par
+      `fiscal_years::close`, avoir, archivage, exercice du jour absent — ⚠️ montage de la 25-3-a-1 :
+      écriture dans un exercice ouvert qui ne couvre pas le jour) ; **l'exemption étroite** — deux
+      transactions pointant la même écriture (état **forgé**, déclaré tel) ⇒ rang 3 avec
+      l'identifiant de l'**autre** ; mutation « l'exemption lève tout rang 3 » ⇒ rouge.
+    - **Les sœurs inchangées** : les tests de la queue et des deux gestes de règlement passent
+      **sans retouche** (preuve que l'exemption est optionnelle).
+    - **Hérité et orphelin** (AC 5), états forgés et déclarés tels : aucune écriture créée, vente
+      intacte, `paid_at` recalculé (hérité).
+    - ⛔ **Composition et rollback** : sur un règlement d'une facture **créditée** (rang 1, refusé
+      par `cancel_settlement_in_tx` **après** que le lien a été défait) — la route rend 409 et,
+      **après**, le lien est **toujours là** (lecture positive de `matched_entry_id`), rien n'est
+      écrit.
+    - **Concurrence** : une clôture d'exercice concurrente attend le dé-rapprochement (sonde
+      `kesh_db::test_fixtures::attendre_une_requete_en_cours`, déterministe) — mutation « pas de
+      verrou de l'exercice » ⇒ rouge ; deux dé-rapprochements simultanés de la même transaction :
+      l'un réussit, l'autre rend 409 `BANK_TRANSACTION_NOT_RECONCILED`.
+    - **Étanchéité multi-tenant** : société B ne peut ni lire ni annuler (404), et **rien n'est
+      écrit** — table par table : `bank_transactions`, `journal_entries`, `journal_entry_lines`,
+      `invoice_settlements`, `invoices`, `audit_log`.
+    - **API** : 200, **403 pour Consultation**, 404, 409 avec `code`, 400 ; `GET` → 200 Comptable,
+      403 Consultation.
+    - **Vitest** : le dialogue (motif pour chaque code, confirmation par `kind`, rôle), le bouton
+      de la fiche facture. **Gardes i18n recomptées depuis la source** (`i18n-keys.test.ts`,
+      `i18n-un-repli-par-cle.test.ts` `CLES_RELEVEES`, `i18n-libelle-en-dur.test.ts`).
+    - **Playwright** : importer, rapprocher, annuler depuis le détail de l'import ; la transaction
+      revient dans la réconciliation.
+
+### Documentation et gates
+
+13. **Manuel utilisateur FR** (`docs/manual/fr/user-manual.tex`), liste **close** :
+    - section « Réconciliation bancaire » (`:1309`) : sous-section **« Annuler un
+      rapprochement »** — où (détail de l'import, fiche facture), ce qui est écrit, les motifs de
+      refus, le cas hérité ;
+    - `:1846-1848` (« il ne se défait pas encore ») → **faux** : réécrire ;
+    - `:970-971` (règlement rapproché → « annuler ce rapprochement ») : dire **où** ;
+    - `:1102` (dévalidation refusée, écriture rapprochée) : relire ;
+    - `:1836-1838` (« passez par le chemin de la pièce ») : relire, sans modifier ;
+    - `:1839-1844` (exception de l'exercice clos) : l'étendre aux **rapprochements** (Q5, P2).
+    Régénérer le PDF et le **contrôler aplati** (`pdftotext f.pdf - | tr '\n' ' ' | tr -s ' '`).
+    `api-external.md` : les deux routes, le champ `matchedEntryId`, clés API admises. `README.md` :
+    la ligne « Réconciliation » des fonctionnalités. `CHANGELOG.md`, section **`[0.12.1] — Non
+    publié`** (existe, `:11`) — aucune ligne d'une section publiée ne se réécrit, décomptes
+    **recomptés**. `website/` : rien (dette antérieure hors périmètre).
+
+14. **Gate complet** — `kesh-db` touché : ciblage interdit, même en boucle de revue ; base remise à
+    zéro avant chaque gate complet ; E2E sur `kesh_e2e` **reconstruite** (DROP + migrations).
+
+## Tasks / Subtasks
+
+- [ ] **T1 — Les motifs** (AC 3) : variante `BankTransactionNotReconciled`, exemption étroite de la
+      queue, rang 1 réutilisé sans copie, `cancel_blocker`.
+- [ ] **T2 — Le geste** (AC 1, 2, 5) et l'audit (AC 4).
+- [ ] **T3 — Les routes** (AC 6, 7, 8), registre recompté.
+- [ ] **T4 — Les textes** (AC 9) : familles `reconciliation-cancel-*` ×4, refus réorientés ×4 +
+      replis, commentaires mis au présent.
+- [ ] **T5 — Les écrans** (AC 10, 11) : dialogue unique, détail d'import, fiche facture.
+- [ ] **T6 — Tests et mutations** (AC 12).
+- [ ] **T7 — Documentation** (AC 13), gates (AC 14), PR `closes #418`.
+
+## Dev Notes
+
+### Ce que cette story ne fait pas
+
+- **Le lettrage** (Epic 15, #459-#461) : une transaction dé-rapprochée revient « à rapprocher » ;
+  la rattacher à une autre facture est le geste existant (accepter une proposition, rapprocher
+  manuellement).
+- **Le dé-rapprochement en lot** : une transaction à la fois. Pas de `FailedProposal` : la route
+  n'est pas un batch, les erreurs sont des `AppError` normales.
+- **Reprendre les rapprochements hérités** en règlements (backfill) : P1 les défait, rien de plus.
+- **La traduction des libellés existants** du détail d'import (dette antérieure, cf. ci-dessous).
+- #455, #456, #416, #384, 25-3-c (#454).
+
+### Ce qu'il faut savoir du code existant
+
+- **`accept_one_invoice`** (`routes/reconciliation.rs:1056-1603`) : écriture d'encaissement
+  `D banque / C créance` du **montant de la transaction**, créance lue sur l'écriture de vente,
+  trop-perçu refusé, ligne `invoice_settlements` (`BankTransfer`), `paid_at` projeté, deux audits
+  (`reconciliation.accepted`, `invoice.paid` ou `invoice.partially_settled`). C'est exactement ce
+  que `cancel_settlement_in_tx` sait défaire.
+- **`cancel_settlement_in_tx`** (`invoice_settlements_write.rs:353`) : verrou facture → ligne →
+  écriture + exercice → rangs 1-2 → `reverse_owned_in_tx(ClientSettlement)` → retrait → `paid_at`
+  → audit. ⚠️ Il **refuse** au rang 1 **après** que le dé-rapprochement a déjà défait le lien : ce
+  n'est pas un défaut, c'est la transaction qui le rattrape (AC 12, composition).
+- **Socle** : `reverse_in_tx` (`journal_entries.rs:1438`), `reverse_owned_in_tx` (`:1500`),
+  `reversal_blockers` (`:1265`, sous-requête `bank_transaction_id` en `LIMIT 1`, `:1309`).
+- **Queue commune** : `settlement_cancellation::settlement_entry_cancel_blocker` — rang 2 lu par
+  jointure `fiscal_years`, rangs 3-4 par `reversal_blockers`, rang 5 par
+  `fiscal_years::has_open_covering_date`.
+- **Verrou de compte** : `kesh_reconciliation::mutex::with_account_lock` ; patron d'appel et de
+  mapping d'erreurs : `post_manual` (`routes/reconciliation.rs:2874-3010`). ⚠️ Le verrou est
+  relâché **avant** le `COMMIT` (comportement existant des quatre routes, non modifié ici) : la
+  garde de version et le verrou de ligne de l'AC 1 tiennent la fenêtre.
+- **Rechargement de transaction** : `reconciliation::find_pending_by_id_for_account` ne filtre
+  **pas** le statut malgré son nom (dette `dette-naming-reconciliation-helpers`) ; le geste écrit
+  sa propre lecture `FOR UPDATE`.
+- **Détail d'import** : `routes/bank_imports.rs::detail` (`:1278`), `TransactionResponse`.
+- **Erreurs** : `DbError::SettlementNotCancellable { blocker }` → 409 avec `blocker.code()` ;
+  `EntryNotReversable` → 409 + `details` ; `ReversalAccountsArchived` → 400 + `details.rejected[]` ;
+  `FiscalYearInvalid`, `PeriodLocked` → 400 ; `OptimisticLockConflict` → 409.
+- **i18n** : `lint-i18n-ownership` ne balaie que `frontend/src/lib/features/` ; une clé
+  `reconciliation-*` y vit dans `features/reconciliation/`.
+
+### Pièges nommés d'avance
+
+1. **Contre-passer avant de défaire le lien** : le socle refuse (`MATCHED_BANK_TRANSACTION`) —
+   l'ordre de l'AC 1 est porteur.
+2. **Supprimer l'écriture** : le lien disparaît en silence (fait 3).
+3. **L'exemption large** : lever le rang 3 pour toute transaction masquerait une seconde
+   transaction liée à la même écriture — **muet**, seul un état forgé le révèle.
+4. **Oublier `auto_match_rejected_at`** : la transaction ne revient jamais dans les propositions
+   (fait 7) — le test de l'AC 12 lit les propositions, pas la colonne.
+5. **Un ordre de verrous différent** de `cancel_settlement_in_tx` : interblocage avec une annulation
+   de règlement lancée depuis la fiche facture.
+6. **Contre-passer un lien hérité** : ce serait annuler la **vente** (fait 4).
+6-bis. ⚠️ **Interblocage possible, à trancher en validation.** `accept_one_invoice` verrouille
+   l'**exercice du jour** (`find_open_covering_date … FOR UPDATE`, `:1350`) **avant** la facture
+   (`UPDATE invoices`, `:1498`) ; le dé-rapprochement d'un règlement verrouille la **facture** puis,
+   par le socle, l'exercice du jour. Sur **deux comptes bancaires différents** (verrous nommés
+   distincts), une acceptation sur la facture X et le dé-rapprochement d'un autre règlement de X
+   peuvent s'interbloquer : InnoDB en tue un (erreur 1213), rendu aujourd'hui en 500.
+   `cancel_settlement_in_tx` (25-3-a-1, route de la fiche facture) porte **déjà** le même ordre :
+   le risque est antérieur, cette story l'étend. Options : verrouiller l'exercice du jour **en
+   tête** du geste, ou mapper 1213 en 409 « réessayez » — à décider en validation, avec un test.
+7. Une réponse qui mêle deux lectures (AC 7) ; des totaux incrémentés au lieu d'être recomptés ; un
+   motif corrigé à un site sur quatre.
+
+### Dette antérieure constatée, hors périmètre
+
+La page de détail d'un import est **entièrement en libellés en dur** (« Détail import bancaire »,
+« Transactions », en-têtes de colonnes, statut brut `reconciled`/`pending`). Cette story n'ajoute
+que des libellés traduits ; migrer la page relève d'une issue à ouvrir (à proposer à Guy).
+
+### Règle de splitting
+
+Modules : `kesh-db`, `kesh-api`, `kesh-i18n`, `frontend` — **quatre**, sous le seuil. ⚠️ Signal à
+surveiller en validation : si la sévérité ne décroît pas d'une passe à l'autre, sortir les écrans
+(AC 10-11) en story propre — ils sont la partie la plus séparable.
+
+### References
+
+- [Source: crates/kesh-api/src/routes/reconciliation.rs:1056-1603] — `accept_one_invoice`.
+- [Source: crates/kesh-api/src/routes/reconciliation.rs:1892,2256,2948,3409] — les quatre autres sites.
+- [Source: crates/kesh-reconciliation/src/mutex.rs:66] — `with_account_lock`.
+- [Source: crates/kesh-db/src/repositories/invoice_settlements_write.rs:297-353] — tête client, geste.
+- [Source: crates/kesh-db/src/repositories/settlement_cancellation.rs] — la queue commune.
+- [Source: crates/kesh-db/src/repositories/journal_entries.rs:1265-1509] — socle.
+- [Source: crates/kesh-db/src/errors.rs:57-100,196-240] — `ReversalBlocker`, `SettlementCancelBlocker`.
+- [Source: crates/kesh-db/migrations/20260504000001_bank_imports.sql:83] — `ON DELETE SET NULL`.
+- [Source: crates/kesh-db/src/repositories/invoices.rs:1384,1496-1512] — dévalidation, lien hérité.
+- [Source: frontend/src/routes/(app)/bank-import/[id]/+page.svelte] — le seul écran des transactions rapprochées.
+- [Source: docs/manual/fr/user-manual.tex:970,1102,1309,1836-1848] — ce que le manuel dit.
+- [Source: _bmad-output/implementation-artifacts/25-3-a-1-annuler-reglement-client.md] — patron, leçons.
+
+## Questions pour Guy
+
+- **Q1 (P1)** — rapprochements antérieurs à la v0.12.0, liés à la vente : les défaire sans
+  contre-passation, `paid_at` recalculé (recommandé), ou les refuser ?
+- **Q2 (P2)** — rapprochement d'un exercice clos qui n'est pas une facture : refuser comme pour
+  une facture (recommandé), ou l'autoriser, la contre-passation tombant dans l'exercice courant ?
+- **Q3 (P3)** — le bouton sur le détail de l'import **et** sur la fiche facture (recommandé), ou
+  seulement sur le détail de l'import ?
+
+## Dev Agent Record
+
+### Agent Model Used
+
+### Debug Log References
+
+### Completion Notes List
+
+### File List
+
+## Change Log
+
+| Date | Étape | Note |
+|---|---|---|
+| 2026-09-25 | spec | Spécifiée (Opus 5.5) sur les deux sœurs mergées. **Faits établis depuis la source** : cinq sites posent `matched_entry_id`, deux familles d'écritures seulement (règlement client par `accept_one_invoice`, écriture propre pour les quatre autres) ; défaire le lien **avant** la contre-passation lève le rang 3 sans autorité nouvelle ; aucune contrainte ne lie statut et lien (orphelins possibles) ; ⛔ les rapprochements **antérieurs à la 24-2** pointent sur l'écriture de **vente** et n'ont jamais été repris ; le seul écran des transactions rapprochées est le détail d'import ; le marqueur de rejet doit être remis à NULL. Trois positions soumises à Guy (Q1-Q3). Ultimate context engine analysis completed - comprehensive developer guide created. |
