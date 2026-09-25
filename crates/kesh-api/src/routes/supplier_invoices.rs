@@ -85,7 +85,7 @@ pub struct SupplierInvoiceResponse {
     ///
     /// ⚠️ **`None` veut dire « non calculé ici », jamais « non »** — même
     /// discipline que `InvoiceResponse::amount_settled` : seuls le GET, `pay` et
-    /// l'annulation du règlement le calculent ([`Self::with_settlement_cancellation`]).
+    /// l'annulation du règlement le calculent ([`Self::load_with_settlement_cancellation`]).
     /// Calculé par la fonction même qui refuse l'annulation : l'écran masque le
     /// bouton avant le clic. Ne tient pas compte du rôle.
     pub settlement_cancellable: Option<bool>,
@@ -144,32 +144,30 @@ impl SupplierInvoiceResponse {
         }
     }
 
-    /// Story 25-3-a-2 (#414) — calcule les champs d'annulation du règlement et le
-    /// dernier lot confirmé. ⚠️ Appelé par le GET, `pay` (dont la réponse
-    /// remplace l'état de l'écran) et l'annulation du règlement ; ailleurs, les
-    /// champs restent `None` — « non calculé », jamais une valeur qui mentirait.
-    pub async fn with_settlement_cancellation(
-        mut self,
+    /// Story 25-3-a-2 (#414) — la réponse complète, champs d'annulation du
+    /// règlement et dernier lot confirmé compris, **depuis un seul instantané**
+    /// ([`supplier_invoices::get_settlement_view`]). ⚠️ Servie par le GET, `pay`
+    /// (dont la réponse remplace l'état de l'écran) et l'annulation du
+    /// règlement ; ailleurs, les champs restent `None` — « non calculé », jamais
+    /// une valeur qui mentirait. Après une écriture, la facture est **relue** :
+    /// la réponse décrit l'état courant, cohérent avec ses propres champs.
+    pub async fn load_with_settlement_cancellation(
         pool: &sqlx::MySqlPool,
         company_id: i64,
+        id: i64,
     ) -> Result<Self, AppError> {
-        let mut conn = pool
-            .acquire()
-            .await
-            .map_err(|e| AppError::Database(kesh_db::errors::map_db_error(e)))?;
-        let hit =
-            supplier_invoices::supplier_settlement_cancel_blocker(&mut conn, company_id, self.id)
-                .await?;
-        self.settlement_cancellable = Some(hit.is_none());
-        self.settlement_cancel_blocked_by = hit.as_ref().map(|h| h.0.code());
-        self.settlement_cancel_blocked_label = hit.and_then(|h| h.2);
-        self.last_confirmed_batch =
-            kesh_db::repositories::payment_batches::last_confirmed_batch_for_invoice(
-                &mut *conn, company_id, self.id,
-            )
+        let view = supplier_invoices::get_settlement_view(pool, company_id, id)
             .await?
+            .ok_or(AppError::Database(DbError::NotFound))?;
+        let hit = view.cancel_blocker;
+        let mut resp = Self::from_parts(view.invoice, view.lines);
+        resp.settlement_cancellable = Some(hit.is_none());
+        resp.settlement_cancel_blocked_by = hit.as_ref().map(|h| h.0.code());
+        resp.settlement_cancel_blocked_label = hit.and_then(|h| h.2);
+        resp.last_confirmed_batch = view
+            .last_confirmed_batch
             .map(|(id, confirmed_at)| LastConfirmedBatchResponse { id, confirmed_at });
-        Ok(self)
+        Ok(resp)
     }
 }
 
@@ -304,12 +302,8 @@ pub async fn get_supplier_invoice(
     Path(id): Path<i64>,
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    let (inv, lines) = supplier_invoices::get(&state.pool, company.id, id)
-        .await?
-        .ok_or(AppError::Database(DbError::NotFound))?;
     Ok(Json(
-        SupplierInvoiceResponse::from_parts(inv, lines)
-            .with_settlement_cancellation(&state.pool, company.id)
+        SupplierInvoiceResponse::load_with_settlement_cancellation(&state.pool, company.id, id)
             .await?,
     ))
 }
@@ -363,7 +357,7 @@ pub async fn pay_supplier_invoice(
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
     let (choice, payment_date) = req.into_choice()?;
-    let paid = supplier_invoices::pay(
+    supplier_invoices::pay(
         &state.pool,
         company.id,
         id,
@@ -373,8 +367,7 @@ pub async fn pay_supplier_invoice(
     )
     .await?;
     Ok(Json(
-        SupplierInvoiceResponse::from_parts(paid.invoice, paid.lines)
-            .with_settlement_cancellation(&state.pool, company.id)
+        SupplierInvoiceResponse::load_with_settlement_cancellation(&state.pool, company.id, id)
             .await?,
     ))
 }
@@ -417,9 +410,12 @@ pub async fn cancel_supplier_invoice_settlement(
         supplier_invoices::cancel_settlement(&state.pool, company.id, id, current_user.user_id)
             .await?;
     Ok(Json(CancelSupplierSettlementResponse {
-        invoice: SupplierInvoiceResponse::from_parts(done.invoice.invoice, done.invoice.lines)
-            .with_settlement_cancellation(&state.pool, company.id)
-            .await?,
+        invoice: SupplierInvoiceResponse::load_with_settlement_cancellation(
+            &state.pool,
+            company.id,
+            id,
+        )
+        .await?,
         reversal_journal_entry_id: done.reversal_journal_entry_id,
     }))
 }

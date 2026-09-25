@@ -48,7 +48,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 - **API — `GET /api/v1/invoices/{id}/settlements`** (lecture) et **`POST /api/v1/invoices/{id}/settlements/{settlementId}/cancel`** (écriture, ouverte aux clés). La liste dit, règlement par règlement, s'il est annulable et sinon pourquoi.
 
-- **API — `POST /api/v1/supplier-invoices/{id}/settlement/cancel`** (écriture, ouverte aux clés) ; la fiche d'une facture fournisseur porte désormais `settlementCancellable`, `settlementCancelBlockedBy` et `lastConfirmedBatch`.
+- **API — `POST /api/v1/supplier-invoices/{id}/settlement/cancel`** (écriture, ouverte aux clés) ; la fiche d'une facture fournisseur porte désormais `settlementCancellable`, `settlementCancelBlockedBy`, `settlementCancelBlockedLabel` et `lastConfirmedBatch`.
 
 - **API — `POST /api/v1/invoices/{id}/unvalidate`**, ouverte aux clés en écriture. Corps `{ "version": n }` (verrou optimiste), réponse identique à celle de la validation. ⚠️ **C'est un élargissement** : jusqu'ici, aucune clé API ne pouvait faire disparaître l'écriture d'une facture. Si cette capacité vous paraît trop large pour une intégration, donnez-lui une clé en *lecture seule*. `DELETE /api/v1/invoices/{id}` rend désormais `409 INVOICE_MUST_BE_UNVALIDATED_FIRST` sur une facture validée.
 

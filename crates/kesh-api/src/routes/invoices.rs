@@ -1254,18 +1254,21 @@ pub async fn list_invoice_settlements_handler(
     invoices::find_by_id_with_lines(&state.pool, company.id, id)
         .await?
         .ok_or(AppError::Database(DbError::NotFound))?;
-    let settlements =
-        kesh_db::repositories::invoice_settlements::list_for_invoice(&state.pool, company.id, id)
-            .await?;
-    let mut conn = state
+    // ⛔ Une transaction de lecture, pour un seul instantané (revue P1 de la
+    // 25-3-a-2) : lus séparément, un règlement annulé entre la liste et son
+    // motif rendait `NotFound` — un 404 sur toute la liste.
+    let mut tx = state
         .pool
-        .acquire()
+        .begin()
         .await
         .map_err(|e| AppError::Database(kesh_db::errors::map_db_error(e)))?;
+    let settlements =
+        kesh_db::repositories::invoice_settlements::list_for_invoice(&mut *tx, company.id, id)
+            .await?;
     let mut out = Vec::with_capacity(settlements.len());
     for s in settlements {
         let hit = kesh_db::repositories::invoice_settlements_write::settlement_cancel_blocker(
-            &mut conn, company.id, s.id,
+            &mut tx, company.id, s.id,
         )
         .await?;
         out.push(InvoiceSettlementResponse {
@@ -1280,6 +1283,9 @@ pub async fn list_invoice_settlements_handler(
             cancel_blocked_document_id: hit.as_ref().and_then(|h| h.1),
         });
     }
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Database(kesh_db::errors::map_db_error(e)))?;
     Ok(Json(out))
 }
 

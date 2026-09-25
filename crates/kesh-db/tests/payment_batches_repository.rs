@@ -465,6 +465,37 @@ async fn cancelling_a_batch_paid_settlement_leaves_the_batch_alone(pool: MySqlPo
     assert_eq!(last.map(|(id, _)| id), Some(batch_id));
 }
 
+/// ⛔ **La facture est bornée à la société, pas seulement le lot** (revue P1).
+/// L'état est forcé à la main — aucun chemin de l'application ne met la facture
+/// d'une société dans le lot d'une autre : on rattache le lot confirmé à une
+/// seconde société. Sans la jointure sur `supplier_invoices.company_id`, la
+/// seconde société verrait le lot sur la facture de la première.
+#[sqlx::test(migrations = "./test-schema")]
+async fn last_confirmed_batch_scopes_the_invoice_to_the_company(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let inv = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("R1"), dec!(100.00)).await;
+    let batch_id = confirmed_batch(&pool, &ctx, inv, d(2026, 7, 2)).await;
+    let other = sqlx::query(
+        "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+         VALUES ('Autre', 'Rue 1\n1000 Lausanne', 'Independant', 'FR', 'FR')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    sqlx::query("UPDATE payment_batches SET company_id = ? WHERE id = ?")
+        .bind(other)
+        .bind(batch_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let last = payment_batches::last_confirmed_batch_for_invoice(&pool, other, inv)
+        .await
+        .unwrap();
+    assert_eq!(last, None, "la facture n'est pas de cette société");
+}
+
 /// ⛔ **Le champ est HISTORIQUE** : après « lot confirmé → annulation →
 /// règlement DIRECT », il désigne toujours l'ancien lot (qui n'a pas produit le
 /// règlement courant) — c'est pourquoi le texte d'avertissement ne dit jamais

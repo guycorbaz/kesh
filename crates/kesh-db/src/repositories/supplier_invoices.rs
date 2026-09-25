@@ -1097,6 +1097,59 @@ pub async fn cancel_settlement(
     }
 }
 
+/// Une facture fournisseur, ses lignes, et ce qui décide de l'annulation de
+/// son règlement — **lus dans un seul instantané** (Story 25-3-a-2, revue P1).
+#[derive(Debug, Clone)]
+pub struct SupplierInvoiceSettlementView {
+    pub invoice: SupplierInvoice,
+    pub lines: Vec<SupplierInvoiceLine>,
+    /// Le premier motif qui refuse l'annulation du règlement, ou `None`.
+    pub cancel_blocker: Option<super::settlement_cancellation::SettlementCancelHit>,
+    /// Cf. [`super::payment_batches::last_confirmed_batch_for_invoice`].
+    pub last_confirmed_batch: Option<(i64, Option<chrono::NaiveDateTime>)>,
+}
+
+/// Lit une facture fournisseur **et** ses champs d'annulation dans une même
+/// transaction de lecture, ou `None` si elle n'existe pas pour cette société.
+///
+/// ⛔ **Pourquoi une transaction pour lire.** Sous `REPEATABLE READ` (défaut de
+/// MariaDB), toutes les lectures non verrouillantes d'une transaction voient
+/// l'instantané pris à la première : la facture, son motif de refus et son
+/// dernier lot décrivent donc le **même** état. Lus séparément — ce que faisait
+/// la première version, après le `COMMIT` de `pay` ou de l'annulation —, un
+/// règlement ou une annulation concurrents pouvaient s'intercaler, et la
+/// réponse se contredire : `status: "paid"` à côté de
+/// `SUPPLIER_INVOICE_NOT_PAID`. ⚠️ Aucune de ces lectures ne doit devenir
+/// verrouillante (`FOR UPDATE`) : une lecture verrouillante lit le dernier état
+/// validé, **hors** de l'instantané.
+pub async fn get_settlement_view(
+    pool: &MySqlPool,
+    company_id: i64,
+    id: i64,
+) -> Result<Option<SupplierInvoiceSettlementView>, DbError> {
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+    let Some(invoice) = sqlx::query_as::<_, SupplierInvoice>(FIND_SCOPED_SQL)
+        .bind(id)
+        .bind(company_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_db_error)?
+    else {
+        return Ok(None);
+    };
+    let lines = fetch_lines(&mut tx, invoice.id).await?;
+    let cancel_blocker = supplier_settlement_cancel_blocker(&mut tx, company_id, id).await?;
+    let last_confirmed_batch =
+        super::payment_batches::last_confirmed_batch_for_invoice(&mut *tx, company_id, id).await?;
+    tx.commit().await.map_err(map_db_error)?;
+    Ok(Some(SupplierInvoiceSettlementView {
+        invoice,
+        lines,
+        cancel_blocker,
+        last_confirmed_batch,
+    }))
+}
+
 // ---------------------------------------------------------------------------
 // Story 25-5-a (#386) — lecture exhaustive pour l'export de souveraineté
 // ---------------------------------------------------------------------------

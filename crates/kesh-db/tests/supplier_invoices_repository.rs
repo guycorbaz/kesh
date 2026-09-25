@@ -1108,6 +1108,57 @@ async fn cancel_settlement_composes_and_rolls_back(pool: MySqlPool) {
     assert_eq!(status, "paid", "rien n'a survécu à l'abandon");
 }
 
+/// ⛔ **La vue de règlement décrit un seul état** (revue P1) : la facture et
+/// son motif de refus viennent de la même lecture — `paid` et annulable,
+/// puis, après l'annulation, `open` et `SUPPLIER_INVOICE_NOT_PAID` ; une autre
+/// société n'y lit rien. ⚠️ Ce test ne prouve pas l'instantané lui-même (aucun
+/// point d'entrée ne permet d'intercaler une écriture entre deux lectures) :
+/// il prouve que la vue assemble la facture et ses champs, cohérents entre eux.
+#[sqlx::test(migrations = "./test-schema")]
+async fn settlement_view_reads_the_invoice_and_its_motive_together(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let c = ctx.seeded.company_id;
+    let (id, _, _) = paid_invoice(&pool, &ctx, d(2026, 6, 15), d(2026, 6, 20)).await;
+
+    let view = supplier_invoices::get_settlement_view(&pool, c, id)
+        .await
+        .unwrap()
+        .expect("facture");
+    assert_eq!(view.invoice.status, "paid");
+    assert!(!view.lines.is_empty(), "les lignes suivent");
+    assert!(view.cancel_blocker.is_none(), "{:?}", view.cancel_blocker);
+    assert_eq!(view.last_confirmed_batch, None, "réglée hors lot");
+
+    supplier_invoices::cancel_settlement(&pool, c, id, ctx.seeded.admin_user_id)
+        .await
+        .unwrap();
+    let view = supplier_invoices::get_settlement_view(&pool, c, id)
+        .await
+        .unwrap()
+        .expect("facture");
+    assert_eq!(view.invoice.status, "open");
+    assert!(matches!(
+        view.cancel_blocker,
+        Some((SettlementCancelBlocker::SupplierInvoiceNotPaid, None, None))
+    ));
+
+    let other = sqlx::query(
+        "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+         VALUES ('Autre', 'Rue 1\n1000 Lausanne', 'Independant', 'FR', 'FR')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    assert!(
+        supplier_invoices::get_settlement_view(&pool, other, id)
+            .await
+            .unwrap()
+            .is_none(),
+        "autre société"
+    );
+}
+
 /// ⛔ **Étanchéité multi-tenant** : table par table, rien n'est écrit.
 #[sqlx::test(migrations = "./test-schema")]
 async fn another_company_cannot_cancel_the_settlement(pool: MySqlPool) {

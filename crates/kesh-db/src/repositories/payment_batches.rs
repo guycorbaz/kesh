@@ -658,6 +658,10 @@ pub async fn generate_pain001_xml(
 /// → règlement direct », ce lot n'a **pas** produit le règlement courant. Il
 /// sert à dire, avant d'annuler, que la banque a peut-être déjà exécuté un
 /// ordre pour cette facture — et donc à prévenir un double paiement.
+///
+/// ⚠️ **La facture ET le lot sont bornés à la société** : `create_batch` ne
+/// met dans un lot que des factures de sa société, mais la lecture ne s'en
+/// remet pas à cet invariant d'écriture.
 pub async fn last_confirmed_batch_for_invoice<'e, E>(
     executor: E,
     company_id: i64,
@@ -669,10 +673,13 @@ where
     sqlx::query_as(
         "SELECT pb.id, pb.confirmed_at FROM payment_batch_items pbi \
          JOIN payment_batches pb ON pb.id = pbi.payment_batch_id \
-         WHERE pbi.supplier_invoice_id = ? AND pb.company_id = ? AND pb.status = 'confirmed' \
+         JOIN supplier_invoices si ON si.id = pbi.supplier_invoice_id \
+         WHERE pbi.supplier_invoice_id = ? AND pb.company_id = ? AND si.company_id = ? \
+           AND pb.status = 'confirmed' \
          ORDER BY pb.confirmed_at DESC, pb.id DESC LIMIT 1",
     )
     .bind(supplier_invoice_id)
+    .bind(company_id)
     .bind(company_id)
     .fetch_optional(executor)
     .await
