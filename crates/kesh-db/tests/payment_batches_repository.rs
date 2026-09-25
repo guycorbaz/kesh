@@ -399,3 +399,111 @@ async fn generate_pain001_xml_is_well_formed(pool: MySqlPool) {
     assert!(xml.contains(&format!("<IBAN>{IBAN_A}</IBAN>")));
     assert!(xml.contains(&format!("<Ref>{QRR}</Ref>")));
 }
+
+// ===========================================================================
+// Story 25-3-a-2 (#414) — annuler le règlement d'une facture payée par lot
+// ===========================================================================
+
+/// Crée un lot `[id]` et le confirme à `on` ; rend l'id du lot.
+async fn confirmed_batch(pool: &MySqlPool, ctx: &Ctx, id: i64, on: NaiveDate) -> i64 {
+    let batch_id =
+        payment_batches::create_batch(pool, new_batch(ctx, vec![id]), ctx.seeded.admin_user_id)
+            .await
+            .unwrap()
+            .batch
+            .expect("lot créé")
+            .batch
+            .id;
+    payment_batches::confirm_batch(
+        pool,
+        ctx.seeded.company_id,
+        batch_id,
+        on,
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .expect("confirmation");
+    batch_id
+}
+
+/// ⛔ **Une facture payée par un lot CONFIRMÉ s'annule, et le lot n'est pas
+/// modifié** (arbitrage : il reste l'historique de l'ordre transmis). Le champ
+/// historique `last_confirmed_batch_for_invoice` le nomme.
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancelling_a_batch_paid_settlement_leaves_the_batch_alone(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let inv = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("R1"), dec!(100.00)).await;
+    let batch_id = confirmed_batch(&pool, &ctx, inv, d(2026, 7, 2)).await;
+
+    let done = supplier_invoices::cancel_settlement(
+        &pool,
+        ctx.seeded.company_id,
+        inv,
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .expect("annulation");
+    assert_eq!(done.invoice.invoice.status, "open");
+
+    let (status, items): (String, i64) = sqlx::query_as(
+        "SELECT pb.status, (SELECT COUNT(*) FROM payment_batch_items WHERE payment_batch_id = pb.id) \
+         FROM payment_batches pb WHERE pb.id = ?",
+    )
+    .bind(batch_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        (status.as_str(), items),
+        ("confirmed", 1),
+        "le lot est inchangé"
+    );
+
+    let last = payment_batches::last_confirmed_batch_for_invoice(&pool, ctx.seeded.company_id, inv)
+        .await
+        .unwrap();
+    assert_eq!(last.map(|(id, _)| id), Some(batch_id));
+}
+
+/// ⛔ **Le champ est HISTORIQUE** : après « lot confirmé → annulation →
+/// règlement DIRECT », il désigne toujours l'ancien lot (qui n'a pas produit le
+/// règlement courant) — c'est pourquoi le texte d'avertissement ne dit jamais
+/// « payée par ce lot ». Puis, après un second lot confirmé, il désigne le plus
+/// récent.
+#[sqlx::test(migrations = "./test-schema")]
+async fn last_confirmed_batch_is_historical_and_most_recent(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let (c, u) = (ctx.seeded.company_id, ctx.seeded.admin_user_id);
+    let inv = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("R1"), dec!(100.00)).await;
+    let first = confirmed_batch(&pool, &ctx, inv, d(2026, 7, 2)).await;
+
+    supplier_invoices::cancel_settlement(&pool, c, inv, u)
+        .await
+        .unwrap();
+    supplier_invoices::pay(
+        &pool,
+        c,
+        inv,
+        SettlementChoice::InternalAccount {
+            account_id: ctx.seeded.accounts["1000"],
+        },
+        d(2026, 7, 5),
+        u,
+    )
+    .await
+    .expect("règlement direct");
+    let last = payment_batches::last_confirmed_batch_for_invoice(&pool, c, inv)
+        .await
+        .unwrap();
+    assert_eq!(last.map(|(id, _)| id), Some(first), "toujours l'ancien lot");
+
+    supplier_invoices::cancel_settlement(&pool, c, inv, u)
+        .await
+        .unwrap();
+    let second = confirmed_batch(&pool, &ctx, inv, d(2026, 7, 9)).await;
+    let last = payment_batches::last_confirmed_batch_for_invoice(&pool, c, inv)
+        .await
+        .unwrap();
+    assert_eq!(last.map(|(id, _)| id), Some(second), "le plus récent");
+    assert_ne!(first, second);
+}

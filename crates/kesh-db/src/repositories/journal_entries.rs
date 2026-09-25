@@ -1454,15 +1454,24 @@ pub async fn reverse_in_tx(
 /// dé-rapprochement (25-3-b) qui défait ce lien, pas l'annulation.
 ///
 /// ⚠️ Une variante par geste d'annulation, **et seulement celles qu'un geste
-/// exerce** : la 25-3-a-2 ajoutera celle du règlement fournisseur, dont
-/// l'exemption devra vérifier en plus que l'écriture est bien
-/// `settlement_journal_entry_id` — `reversal_blocker` attribue le même motif à
-/// l'écriture d'achat.
+/// exerce**.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReversalAuthority {
     /// Annulation d'un règlement client : lève `OwnedBySettlement` pour la
     /// ligne `invoice_settlements` nommée, et pour elle seule.
     ClientSettlement { settlement_id: i64 },
+    /// Annulation d'un règlement fournisseur (Story 25-3-a-2) : lève
+    /// `OwnedBySupplierInvoice` pour la facture nommée — **et pour son écriture
+    /// de RÈGLEMENT seulement**.
+    ///
+    /// ⛔ `reversal_blocker` attribue le même motif, avec le même identifiant de
+    /// pièce, à l'écriture d'**achat** de la facture. La correspondance
+    /// motif + pièce ne suffit donc pas : [`reverse_in_tx_inner`] vérifie en
+    /// base que l'écriture est bien `settlement_journal_entry_id` de cette
+    /// facture, et retire l'autorité sinon. ⚠️ Le contrôle vit **dans le
+    /// socle**, pas dans le geste : le geste ne passe jamais que l'écriture de
+    /// règlement, le contrôle y serait vrai par construction, donc intestable.
+    SupplierSettlement { supplier_invoice_id: i64 },
 }
 
 impl ReversalAuthority {
@@ -1471,6 +1480,12 @@ impl ReversalAuthority {
         match self {
             Self::ClientSettlement { settlement_id } => {
                 blocker == ReversalBlocker::OwnedBySettlement && document_id == Some(settlement_id)
+            }
+            Self::SupplierSettlement {
+                supplier_invoice_id,
+            } => {
+                blocker == ReversalBlocker::OwnedBySupplierInvoice
+                    && document_id == Some(supplier_invoice_id)
             }
         }
     }
@@ -1513,6 +1528,29 @@ async fn reverse_in_tx_inner(
     .await
     .map_err(map_db_error)?;
     let (_, entry_number, origin_fy_name) = origin.ok_or(DbError::NotFound)?;
+
+    // (1-bis) ⛔ L'autorité fournisseur ne vaut que pour l'écriture de
+    // RÈGLEMENT de la facture nommée — jamais pour son écriture d'achat, que
+    // `reversal_blockers` rattache à la même pièce. Faute de correspondance,
+    // l'autorité est retirée et le motif est opposé comme sans elle.
+    let authority = match authority {
+        Some(ReversalAuthority::SupplierSettlement {
+            supplier_invoice_id,
+        }) => {
+            let is_settlement_entry: Option<i64> = sqlx::query_scalar(
+                "SELECT id FROM supplier_invoices \
+                 WHERE id = ? AND company_id = ? AND settlement_journal_entry_id = ?",
+            )
+            .bind(supplier_invoice_id)
+            .bind(company_id)
+            .bind(id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(map_db_error)?;
+            is_settlement_entry.and(authority)
+        }
+        other => other,
+    };
 
     // ⛔ **`AccountArchived` est le seul motif que l'ÉCRITURE ne traite pas
     // ici.** Le recensement le rend pour que l'écran masque le bouton avant

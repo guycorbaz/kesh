@@ -2576,6 +2576,10 @@ impl IntoResponse for AppError {
                             "invoices-settlement-cancel-blocked-credited",
                             "Cette facture a été créditée par un avoir : ce règlement est un paiement à lettrer, il ne s'annule pas.",
                         ),
+                        SettlementCancelBlocker::SupplierInvoiceNotPaid => (
+                            "supplier-invoices-settlement-cancel-blocked-not-paid",
+                            "Cette facture fournisseur n'est pas payée : il n'y a pas de règlement à annuler.",
+                        ),
                         SettlementCancelBlocker::FiscalYearClosed => (
                             "settlement-cancel-blocked-fiscal-year-closed",
                             "Ce règlement appartient à un exercice clôturé : un administrateur doit rouvrir l'exercice pour pouvoir l'annuler.",

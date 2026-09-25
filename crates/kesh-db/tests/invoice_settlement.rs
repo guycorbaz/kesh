@@ -1021,7 +1021,9 @@ async fn monter(pool: &MySqlPool, motifs: &[SettlementCancelBlocker]) -> (Seeded
 /// L'erreur que l'ÉCRITURE doit rendre pour un motif donné.
 fn ecriture_attendue(motif: SettlementCancelBlocker, err: &DbError) -> bool {
     match motif {
-        SettlementCancelBlocker::InvoiceCredited | SettlementCancelBlocker::FiscalYearClosed => {
+        SettlementCancelBlocker::InvoiceCredited
+        | SettlementCancelBlocker::SupplierInvoiceNotPaid
+        | SettlementCancelBlocker::FiscalYearClosed => {
             matches!(err, DbError::SettlementNotCancellable { blocker } if *blocker == motif)
         }
         SettlementCancelBlocker::MatchedBankTransaction => matches!(
@@ -1136,48 +1138,6 @@ async fn la_queue_commune_se_lit_sur_l_ecriture(pool: MySqlPool) {
     assert!(matches!(err, DbError::NotFound), "got {err:?}");
 }
 
-/// Attend qu'une AUTRE connexion de la base de ce test soit bloquée sur une
-/// requête `… fiscal_years … FOR UPDATE`. Échoue au bout de dix secondes — une
-/// annulation qui n'attend jamais de verrou est elle-même une anomalie.
-///
-/// ⚠️ **Couplée à la forme textuelle du verrou** : un correctif tout aussi
-/// valide en `LOCK IN SHARE MODE` ne serait pas vu, et le test expirerait en
-/// accusant l'annulation. Changer la forme du verrou, c'est changer ce motif.
-///
-/// ⚠️ Si l'annulation se termine AVANT d'avoir attendu (erreur précoce :
-/// montage cassé, `NotFound`…), son résultat est affiché tel quel — sans quoi
-/// la sonde tournerait dix secondes et masquerait la vraie erreur.
-async fn attendre_un_verrou_sur_l_exercice<T: std::fmt::Debug>(
-    pool: &MySqlPool,
-    annulation: &mut tokio::task::JoinHandle<T>,
-) {
-    let debut = std::time::Instant::now();
-    loop {
-        if annulation.is_finished() {
-            panic!(
-                "l'annulation a fini sans attendre de verrou : {:?}",
-                annulation.await
-            );
-        }
-        let en_attente: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM information_schema.PROCESSLIST \
-             WHERE ID <> CONNECTION_ID() AND DB = DATABASE() \
-             AND INFO LIKE '%fiscal_years%' AND INFO LIKE '%FOR UPDATE%'",
-        )
-        .fetch_one(pool)
-        .await
-        .expect("liste des processus");
-        if en_attente > 0 {
-            return;
-        }
-        assert!(
-            debut.elapsed() < std::time::Duration::from_secs(10),
-            "l'annulation n'a jamais attendu de verrou sur l'exercice"
-        );
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-    }
-}
-
 /// ⛔ **Une clôture concurrente ne passe pas entre la lecture du rang 2 et la
 /// contre-passation** (passe 1 de revue de code ; synchronisation rendue
 /// déterministe en passe 2).
@@ -1214,7 +1174,7 @@ async fn une_cloture_concurrente_attend_l_annulation(pool: MySqlPool) {
     // (2) L'annulation démarre pendant ce temps.
     let p = pool.clone();
     let (company_id, user_id) = (seeded.company_id, seeded.admin_user_id);
-    let mut annulation = tokio::spawn(async move {
+    let annulation = tokio::spawn(async move {
         invoice_settlements_write::cancel_settlement(&p, user_id, company_id, inv_id, sid).await
     });
     // ⛔ **Synchronisation déterministe, pas un délai** (passe 2 de revue de
@@ -1225,7 +1185,18 @@ async fn une_cloture_concurrente_attend_l_annulation(pool: MySqlPool) {
     // l'annulation y attend AVANT de juger ; sans lui, elle juge d'abord, puis
     // attend au verrou du socle — dans les deux cas elle attend, et c'est ce qui
     // rend l'issue indépendante du minutage.
-    attendre_un_verrou_sur_l_exercice(&pool, &mut annulation).await;
+    let vue = kesh_db::test_fixtures::attendre_une_requete_en_cours(
+        &pool,
+        &["fiscal_years", "FOR UPDATE"],
+        || annulation.is_finished(),
+    )
+    .await;
+    if !vue {
+        panic!(
+            "l'annulation a fini sans attendre de verrou : {:?}",
+            annulation.await
+        );
+    }
 
     // (3) La clôture est validée.
     closing.commit().await.unwrap();

@@ -490,6 +490,60 @@ pub async fn seed_contact_and_product(
     Ok((contact_id, product_id))
 }
 
+/// Attend qu'une AUTRE connexion de la base courante soit en train d'exécuter
+/// une requête qui contient **tous** les `motifs` — typiquement une requête
+/// `… fiscal_years … FOR UPDATE` bloquée sur un verrou (Story 25-3-a-1).
+///
+/// Sert aux tests d'**entrelacement** : valider une transaction concurrente
+/// seulement quand la transaction observée est vue en attente, plutôt qu'après
+/// un délai — l'issue ne dépend plus du minutage.
+///
+/// ⚠️ Lit `information_schema.PROCESSLIST` **filtré sur la base courante**
+/// (`DB = DATABASE()`) : les tests voisins tournent en parallèle sous le même
+/// utilisateur, qui n'a pas le privilège `PROCESS` mais voit ses propres
+/// connexions.
+///
+/// ⚠️ **Couplé à la forme textuelle de la requête** : un verrou écrit
+/// autrement (`LOCK IN SHARE MODE`) ne serait pas vu. Changer la forme du
+/// verrou, c'est changer les motifs.
+///
+/// `interrompre` est consulté à chaque tour : s'il rend `true` (la tâche
+/// observée a fini sans attendre), la fonction rend `false` aussitôt, pour que
+/// l'appelant affiche la vraie issue au lieu d'attendre dix secondes. Rend
+/// `true` quand l'attente est vue, et panique au bout de dix secondes.
+pub async fn attendre_une_requete_en_cours(
+    pool: &MySqlPool,
+    motifs: &[&str],
+    mut interrompre: impl FnMut() -> bool,
+) -> bool {
+    let mut sql = String::from(
+        "SELECT COUNT(*) FROM information_schema.PROCESSLIST \
+         WHERE ID <> CONNECTION_ID() AND DB = DATABASE()",
+    );
+    for _ in motifs {
+        sql.push_str(" AND INFO LIKE CONCAT('%', ?, '%')");
+    }
+    let debut = std::time::Instant::now();
+    loop {
+        if interrompre() {
+            return false;
+        }
+        let mut q = sqlx::query_scalar::<_, i64>(&sql);
+        for m in motifs {
+            q = q.bind(*m);
+        }
+        let n = q.fetch_one(pool).await.expect("liste des processus");
+        if n > 0 {
+            return true;
+        }
+        assert!(
+            debut.elapsed() < std::time::Duration::from_secs(10),
+            "aucune requête contenant {motifs:?} n'a été vue en cours"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

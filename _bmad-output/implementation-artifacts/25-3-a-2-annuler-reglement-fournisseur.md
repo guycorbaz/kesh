@@ -1,6 +1,6 @@
 # Story 25.3-a-2 : Annuler un règlement fournisseur — par contre-passation
 
-Status: ready-for-dev
+Status: in-progress
 
 **Issue : [#414]**, qu'elle **ferme** : `closes #414` dans le **titre ET le corps** de la PR (squash).
 ⛔ **Derrière la 25-3-a-1**, qui porte le côté client et **pose tout ce que celle-ci réutilise** :
