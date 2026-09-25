@@ -152,7 +152,9 @@ l'application »).
         invoice_id, settlement_id, user_id)`, **appelé, jamais réécrit** : il contre-passe,
         retire la ligne, projette `paid_at`, bumpe la facture et écrit
         `invoice.settlement_cancelled` ;
-      - **écriture propre** → `journal_entries::reverse_in_tx` (sans autorité) ;
+      - **écriture propre** → `journal_entries::reverse_in_tx` (sans autorité), dont l'identifiant
+        d'écriture inverse est `.entry.id` du `JournalEntryWithLines` rendu (celui du règlement :
+        `SettlementCancellation::reversal_journal_entry_id`) ;
    7. audit `reconciliation.cancelled` (AC 4).
 
    ⛔ **Aucune troisième contre-passation** : le socle et le geste de la 25-3-a-1, rien d'autre.
@@ -241,10 +243,29 @@ l'application »).
    sans objet, 111 avec les routes de test**), message de ventilation compris. ⚠️ L'**en-tête** du
    fichier (`audit_route_registry.rs:17-24`) dit encore « 106 routes » et « 109 » — **déjà faux**
    avant cette story : le corriger au passage, en recomptant.
-   ⛔ **Rejeu sur interblocage** : le handler enveloppe **toute** l'opération (`BEGIN`, verrou de
-   compte, geste, `COMMIT`) dans `kesh_db::retry::retry_with(DEFAULT_MAX_DEADLOCK_ATTEMPTS,
-   is_deadlock_error, …)` — patron de `routes/onboarding.rs:596-621` (KF-002-H-002, #43). Cf. piège
-   6-bis.
+   ⛔ **Rejeu sur interblocage** : le handler enveloppe **toute** l'opération dans
+   `kesh_db::retry::retry_with` — patron de `routes/onboarding.rs:596-621` (KF-002-H-002, #43), cf.
+   piège 6-bis. **Emboîtement, du dehors vers le dedans** :
+
+   ```text
+   retry_with(DEFAULT_MAX_DEADLOCK_ATTEMPTS,
+              |e: &AppError| matches!(e, AppError::Database(db) if is_deadlock_error(db)),
+              || async {                         // une tentative = tout, depuis zéro
+                  let mut tx = pool.begin();     // transaction NEUVE à chaque tentative
+                  with_account_lock(&mut tx, company, account, timeout, |tx| cancel_in_tx(tx, …))
+                  → mapping ReconciliationError → AppError (patron post_manual :3006-3080)
+                  → tx.commit()
+              })
+   ```
+
+   Pourquoi dans cet ordre : `retry_with` rejoue une closure **`Fn`** qui doit repartir de zéro
+   (le 1213 a déjà annulé la transaction côté MariaDB) ; le verrou nommé est relâché par
+   `with_account_lock` à chaque sortie, succès ou erreur, donc chaque tentative le reprend. ⚠️ **Le
+   prédicat porte sur `AppError`**, pas sur `DbError` : `is_deadlock_error` ne reconnaît que
+   `DbError::Sqlx(1213)`, et c'est la chaîne de mapping qui doit le **préserver** —
+   `ReconciliationError::Db(db)` → `AppError::Database(db)` et `ReconciliationError::Database(e)` →
+   `AppError::Database(DbError::Sqlx(e))`, comme `post_manual` le fait déjà (`:3046-3052`). Un
+   mapping qui convertirait l'erreur en autre chose (`Internal`, texte) rendrait le rejeu **muet**.
 
 7. **`GET /api/v1/reconciliation/transactions/{id}`** — Comptable+ (comme les propositions) :
    `id`, `status`, `matchedEntryId`, `kind` (AC 4), `invoiceId`, `invoiceNumber`, `amount`,
@@ -267,7 +288,13 @@ l'application »).
    ⛔ **pas** la famille partagée `settlement-cancel-blocked-*`, qui dit « ce règlement » : une
    écriture d'éclatement n'est pas un règlement (même raison que la 25-3-a-1 pour ne pas détourner
    le mapping des écritures). `switch` exhaustif, garde `never`. **Quatre** locales, repli en dur
-   **mot pour mot** le FTL fr-CH, et, côté serveur, le **bloc de mapping** de
+   **mot pour mot** le FTL fr-CH. ⛔ **Qui affiche quoi** : le **dialogue** traduit toujours le **`code`**
+   reçu — par la lecture de l'AC 7 comme par le refus au clic — avec **sa** famille
+   `reconciliation-cancel-blocked-*`, pour les six codes, `INVOICE_CREDITED` compris ; le texte de
+   **repli serveur** dépend, lui, de qui refuse : rangs 0 et 2 → `ReconciliationNotCancellable`
+   (famille neuve) ; rang 1 → `SettlementNotCancellable` de la 25-3-a-1, dont le texte (« ce
+   règlement… ») est **juste** puisque l'écriture est alors un règlement ; rangs 3 à 5 → les
+   erreurs du socle. Côté serveur, donc, le **bloc de mapping** de
    `ReconciliationNotCancellable` (`crates/kesh-api/src/errors.rs`) — un texte par code qu'il porte
    (rangs 0 et 2), clés `reconciliation-cancel-blocked-*`.
 
@@ -525,6 +552,7 @@ Toutes tranchées le 2026-09-25 (cf. « Arbitrages de Guy sur cette fiche »).
 
 | Date | Étape | Note |
 |---|---|---|
+| 2026-09-25 | validate P2 | **Deux lentilles Haiku 4.5** en contexte frais, diff de la remédiation **aplati**, prompt versionné `25-3-b-validate-prompt-p2.md`, axes déclarés. Lentille A (régressions de P1) : 1 LOW (type rendu par `reverse_in_tx` → `.entry.id`, précisé). Lentille B (à froid) : 1 HIGH **reclassé MEDIUM** — pas une contradiction mais une ambiguïté : le dialogue traduit le **code** par sa propre famille pour les six codes ; seul le repli serveur du rang 1 reste celui du règlement, et il est juste ⇒ « qui affiche quoi » écrit à l'AC 9 ; 1 MEDIUM — l'emboîtement rejeu / transaction / verrou n'était pas écrit ⇒ pseudo-code à l'AC 6. ⚠️ **Axes laissés par la lentille A et repris par l'orchestrateur** : rejouer une closure qui prend un verrou nommé est sûr (relâché à chaque sortie, transaction neuve à chaque tentative) ; ⛔ le prédicat de `retry_with` doit porter sur `AppError`, et la chaîne de mapping **préserver** `DbError::Sqlx` — vérifié sur `post_manual:3046-3052` ; écrit à l'AC 6 (un mapping qui masquerait le 1213 rendrait le rejeu muet). **Trend** : P1 2 HIGH / 3 MED / 2 LOW → P2 2 MED / 1 LOW. |
 | 2026-09-25 | validate P1 | **Deux lentilles Sonnet** en contexte frais, prompt versionné `25-3-b-validate-prompt-p1.md`, axes déclarés par chacune. Lentille A : les faits 1-7 et ~25 citations `fichier:ligne` **tous exacts**, registre recompté exact ; **2 MEDIUM, 1 LOW**. Lentille B : **2 HIGH, 1 MEDIUM, 1 LOW**. Corrigés : ① (B, HIGH) le refus propre du geste passait par `SettlementNotCancellable`, dont le texte dit « ce règlement » — faux pour un éclatement ⇒ variante neuve `DbError::ReconciliationNotCancellable`, mappée vers `reconciliation-cancel-blocked-*`, test du texte ; ② (B, HIGH) l'exemption étroite ne pouvait pas s'appuyer sur le `LIMIT 1` sans `ORDER BY` de `reversal_blockers` ⇒ requête dédiée prescrite (`id <> ?`), test aux deux ordres d'insertion ; ③ (A, MEDIUM) l'étape 4 ne disait pas d'appeler la forme **exemptée** ⇒ écrit ; ④ (A, MEDIUM) le piège d'interblocage ignorait le patron du dépôt ⇒ **tranché : rejeu** par `kesh_db::retry::retry_with` (patron `onboarding.rs`, KF-002-H-002) ; ⚠️ un test prescrit par ce correctif (« 1213 forgé ») a été **retiré avant commit** : aucun point d'injection, limite assumée, vérification en revue ; ⑤ (B, MEDIUM) contrat du dialogue partagé écrit (props, qui lit, qui relit) ; ⑥ (A, LOW) en-tête du registre de routes déjà faux (106/109) — à corriger au passage ; ⑦ (B, LOW) ligne du README nommée juste. Reformulé (B, info) : les sœurs gardent comportement et tests, leur code reçoit un argument. ⚠️ **À signaler à Guy** : la route d'annulation de règlement de la 25-3-a-1 porte le même risque d'interblocage, sans rejeu. |
 | 2026-09-25 | arbitrages (2) | **Q2 précisée** par Guy : la **date** de la facture compte (échéance à défaut de date limite) — seul son **exercice** n'arrête pas le rapprochement ; deux faits voisins relevés et signalés (échéance par défaut = date de facture sans délai de contact ; fenêtre d'acceptation bornée sur la date, non sur l'échéance), hors périmètre. **Q3 : les deux boutons** (Guy, « ok »). Toutes les questions sont tranchées. |
 | 2026-09-25 | arbitrages | **Q1** (Guy) : « kesh n'est pas encore en production : il n'y a aucune donnée à préserver » ⇒ liens hérités (vente) et orphelins sans chemin dédié ; le socle refuse le premier, `Invariant` le second (AC 5 réécrit, un texte de refus laissé tel quel). **Q2** (Guy) : une facture d'un exercice clos, payée dans le suivant, doit pouvoir être rapprochée ⇒ le seul exercice qui compte est celui de l'écriture **de rapprochement** — déjà le cas à l'acceptation (`reconciliation.rs:1349-1350`) et dans la queue commune ; fixé par un test et une mutation (AC 12). **Q3** reformulée, en attente. |
