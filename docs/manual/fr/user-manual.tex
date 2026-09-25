@@ -968,7 +968,8 @@ Quand l'annulation n'est pas possible, le bouton est remplacé par la raison~:
     \item \textbf{l'exercice du règlement est clôturé}~: un administrateur doit d'abord
           \textbf{rouvrir} l'exercice~;
     \item \textbf{le règlement est rapproché} d'une transaction bancaire~: il faut d'abord
-          annuler ce rapprochement~;
+          annuler ce rapprochement --- le bouton \emph{Annuler le rapprochement} apparaît à
+          côté du motif (\S\ref{sec:annuler-rapprochement})~;
     \item \textbf{un compte du règlement a été archivé}~: réactivez-le (son numéro est indiqué)~;
     \item \textbf{aucun exercice ouvert ne couvre la date du jour}, où la contre-passation serait
           datée~: créez-le.
@@ -1401,6 +1402,42 @@ Lors de l'import bancaire, Kesh applique automatiquement les règles aux transac
 \subsubsection{Acceptation par lot d'écritures issues de règles}
 
 Si plusieurs écritures sont en brouillon issues des règles d'affectation, cocher et valider en lot. Même pattern \emph{FailedProposal per-proposal} qu'en réconciliation : retour HTTP 200 avec \texttt{\{ accepted, failed \}}.
+
+\subsection{Annuler un rapprochement}\label{sec:annuler-rapprochement}
+
+Un rapprochement accepté par erreur --- mauvaise facture, mauvais compte de contrepartie ---
+s'annule. On le fait depuis le \textbf{détail de l'import bancaire} (\emph{Import bancaire},
+puis l'import concerné)~: chaque transaction rapprochée y porte un lien vers son écriture et un
+bouton \emph{Annuler le rapprochement}. Quand le rapprochement a réglé une \textbf{facture
+client}, le même bouton apparaît aussi sur la fiche de la facture, à côté du règlement qui ne
+peut pas s'annuler seul.
+
+Avant de confirmer, Kesh dit ce qui va se passer. À la confirmation~:
+
+\begin{itemize}
+    \item une \textbf{écriture inverse}, datée du jour, contre-passe l'écriture du rapprochement
+          --- l'une et l'autre restent au grand livre~;
+    \item si le rapprochement avait réglé une facture, son \textbf{règlement est retiré}~: la
+          facture redevient à régler (ou partiellement réglée, si d'autres règlements
+          subsistent)~;
+    \item la transaction redevient \textbf{à rapprocher}, et réapparaît dans la réconciliation,
+          prête à être rattachée à la bonne pièce.
+\end{itemize}
+
+Le journal d'audit nomme le geste. Quand l'annulation n'est pas possible, Kesh en donne la
+raison~:
+
+\begin{itemize}
+    \item \textbf{la facture a été créditée} par un avoir~: son règlement est un paiement
+          \emph{à lettrer}, il ne s'annule pas~;
+    \item \textbf{l'exercice de l'écriture du rapprochement est clôturé}~: un administrateur
+          doit d'abord le rouvrir. ⚠️ C'est l'exercice du \textbf{paiement} qui compte, jamais
+          celui de la facture~: une facture de décembre dont l'exercice est clôturé, payée en
+          janvier, se rapproche et se dé-rapproche normalement~;
+    \item \textbf{un compte de l'écriture a été archivé}~: réactivez-le (son numéro est
+          indiqué)~;
+    \item \textbf{aucun exercice ouvert ne couvre la date du jour}~: créez-le.
+\end{itemize}
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Rapports comptables}
@@ -1840,12 +1877,13 @@ Selon l'action :
           contre-passation tombe dans l'exercice \textbf{courant} --- c'est la pratique
           comptable, et il n'y a donc aucune raison de rouvrir l'exercice pour corriger une
           écriture. \textbf{Une exception}~: un \textbf{règlement} --- de facture client
-          (\S\ref{sec:reglement-client}) comme de facture fournisseur --- d'un exercice
-          clôturé ne s'annule pas~: un administrateur doit d'abord rouvrir l'exercice.
+          (\S\ref{sec:reglement-client}) comme de facture fournisseur --- et un
+          \textbf{rapprochement bancaire} (\S\ref{sec:annuler-rapprochement}) d'un exercice
+          clôturé ne s'annulent pas~: un administrateur doit d'abord rouvrir l'exercice.
     \item Facture validée : passage en avoir + génération d'une nouvelle facture.
-    \item Rapprochement bancaire~: il ne se défait pas encore depuis l'application --- c'est
-          l'objet d'une évolution à venir. Un règlement né d'un rapprochement ne s'annule donc
-          pas non plus pour l'instant.
+    \item Rapprochement bancaire~: il s'annule depuis le détail de l'import bancaire, ou depuis
+          la fiche de la facture qu'il a réglée (\S\ref{sec:annuler-rapprochement})~; son
+          écriture est contre-passée, et un règlement de facture qu'il avait créé est retiré.
 \end{itemize}
 
 L'\texttt{audit\_log} garde toujours la trace de l'action originale ET de l'action de retour.

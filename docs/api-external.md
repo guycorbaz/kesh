@@ -276,6 +276,26 @@ Refus : `SUPPLIER_INVOICE_NOT_PAID` (`409`, la facture n'est pas payée), `FISCA
 
 ⚠️ **`FISCAL_YEAR_CLOSED` rend ici `409`**, alors que la dévalidation le rend en `400` : c'est un refus du **geste** d'annulation, qui porte sur l'exercice du **règlement** ; la contre-passation, elle, serait datée d'un exercice ouvert.
 
+### Annuler un rapprochement bancaire
+
+**`GET /api/v1/reconciliation/transactions/{id}`** — lecture, rôle Comptable (comme les propositions). La transaction bancaire (mêmes champs que dans le détail d'un import, dont `matchedEntryId`), `kind` (`invoice_settlement` : le rapprochement a réglé une facture client ; `entry` : une écriture que seule la transaction possède — éclatement, règle, rapprochement manuel ; `null` : la transaction n'est pas rapprochée), `invoiceId`, `invoiceNumber`, et **`cancellable`** — calculé par la fonction même qui refuserait l'annulation, lu **dans un seul instantané**. Quand il vaut `false`, `cancelBlockedBy` porte le code du motif, `cancelBlockedLabel` le numéro du compte archivé et `cancelBlockedDocumentId` l'**autre** transaction qui pointe la même écriture. ⚠️ Calculé pour **une** transaction : le détail d'un import ne le porte pas.
+
+**`POST /api/v1/reconciliation/transactions/{id}/cancel`** — écriture (`read-write`), ouverte aux clés comme les autres routes de réconciliation ; la clé est nommée au journal d'audit (`reconciliation.cancelled`). Sans corps. Défait le lien, contre-passe l'écriture du rapprochement (**datée du jour**) et, pour une facture, retire son règlement ; la transaction revient `pending` et réapparaît dans `GET /reconciliation/proposals`. Réponse : `{ bankTransaction, reversalJournalEntryId, invoiceId }`. Un interblocage transitoire avec une autre opération est **rejoué** par le serveur, sans être montré.
+
+| Refus | Code | Statut |
+|---|---|---|
+| La transaction n'est pas rapprochée | `BANK_TRANSACTION_NOT_RECONCILED` | `409` |
+| Facture créditée par un avoir — son règlement est un paiement **à lettrer** | `INVOICE_CREDITED` | `409` |
+| Écriture du rapprochement dans un exercice **clos** — l'exercice du **paiement**, jamais celui de la facture | `FISCAL_YEAR_CLOSED` | `409` |
+| Une autre transaction pointe la même écriture | `MATCHED_BANK_TRANSACTION` | `409` |
+| Compte de l'écriture archivé | `ACCOUNT_ARCHIVED` | `400`, `details.rejected[]` nomme les comptes |
+| Aucun exercice ouvert ne couvre la date du jour | `FISCAL_YEAR_INVALID` | `400` |
+| Date du jour dans une période verrouillée | `PERIOD_LOCKED` | `400` |
+| Compte bancaire en cours de réconciliation par une autre opération | `RECONCILIATION_ACCOUNT_LOCKED` | `409` |
+| Transaction introuvable (ou d'une autre société) | `NOT_FOUND` | `404` |
+
+**`GET /api/v1/bank-imports/{id}`** : chaque transaction porte désormais `matchedEntryId`, l'écriture liée par son rapprochement (`null` sinon).
+
 ² **Deux opérations sur les factures sont réservées à l'interface web** : `DELETE /invoices/{id}` et `POST /invoices/{id}/reminders/{reminderId}/cancel` (annulation d'un rappel) sont des routes d'administration, donc fermées aux clés (`403 API_KEY_ADMIN_FORBIDDEN`, cf. §4). Tout le reste du cycle de facturation reste ouvert.
 
 ⚠️ **`DELETE /invoices/{id}` ne supprime plus que des BROUILLONS.** Sur une facture validée, elle rend `409 INVOICE_MUST_BE_UNVALIDATED_FIRST` : dévalidez-la d'abord (`POST /invoices/{id}/unvalidate`, ci-dessous), ce qui la ramène au brouillon et supprime son écriture comptable. **Cette route-là, elle, est ouverte aux clés en écriture** — l'asymétrie est voulue : dévalider est un geste de facturation réversible, effacer ne l'est pas.

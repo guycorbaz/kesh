@@ -1,6 +1,6 @@
 # Story 25.3-b : Annuler un rapprochement bancaire — par contre-passation
 
-Status: ready-for-dev
+Status: review
 
 **Issue : [#418]** — c'est cette story qui la **ferme** : `closes #418` dans le **titre ET le corps**
 de sa PR (le dépôt merge en squash ; un `refs` partout laisserait l'issue ouverte sans signal).
@@ -433,15 +433,15 @@ l'application »).
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Les motifs** (AC 3) : variante `BankTransactionNotReconciled`, exemption étroite de la
+- [x] **T1 — Les motifs** (AC 3) : variante `BankTransactionNotReconciled`, exemption étroite de la
       queue, rang 1 réutilisé sans copie, `cancel_blocker`.
-- [ ] **T2 — Le geste** (AC 1, 2, 5) et l'audit (AC 4).
-- [ ] **T3 — Les routes** (AC 6, 7, 8), registre recompté.
-- [ ] **T4 — Les textes** (AC 9) : familles `reconciliation-cancel-*` ×4, refus réorientés ×4 +
+- [x] **T2 — Le geste** (AC 1, 2, 5) et l'audit (AC 4).
+- [x] **T3 — Les routes** (AC 6, 7, 8), registre recompté.
+- [x] **T4 — Les textes** (AC 9) : familles `reconciliation-cancel-*` ×4, refus réorientés ×4 +
       replis, commentaires mis au présent.
-- [ ] **T5 — Les écrans** (AC 10, 11) : dialogue unique, détail d'import, fiche facture.
-- [ ] **T6 — Tests et mutations** (AC 12).
-- [ ] **T7 — Documentation** (AC 13), gates (AC 14), PR `closes #418`.
+- [x] **T5 — Les écrans** (AC 10, 11) : dialogue unique, détail d'import, fiche facture.
+- [x] **T6 — Tests et mutations** (AC 12).
+- [x] **T7 — Documentation** (AC 13), gates (AC 14), PR `closes #418`.
 
 ## Dev Notes
 
@@ -565,16 +565,125 @@ Toutes tranchées le 2026-09-25 (cf. « Arbitrages de Guy sur cette fiche »).
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5[1m]`), 2026-09-25.
+
 ### Debug Log References
+
+- ⛔ **Défaut trouvé par le test d'entrelacement, au développement** : la première version
+  classait le lien (règlement client ou écriture propre) par une lecture **non verrouillante**
+  faite AVANT le verrou de l'exercice. Sous `REPEATABLE READ`, l'instantané se fige à la
+  première lecture non verrouillante : le rang 2, relu après avoir attendu le verrou,
+  voyait encore l'exercice **ouvert**, et le dé-rapprochement **réussissait** sur une
+  écriture d'exercice clos. `a_concurrent_close_waits_for_the_unreconciliation` l'a montré
+  (`reçu Ok(...)`). Correctif : le classement est une lecture **verrouillante** ; mutation
+  « classement non verrouillant » (M10) ⇒ rouge.
+- `a_previously_rejected_transaction_comes_back_to_the_proposals` : première version par les
+  vrais chemins (rejet puis acceptation d'une facture) — **refusée en 400** au contrôle
+  préalable de l'acceptation. L'état « rejetée puis rapprochée » n'est atteignable par aucun
+  chemin réel ; le test forge l'état et le dit.
+- `ensure_fiscal_year_today` créait d'abord un exercice 2026 que `seed_validated_invoice`
+  recréait (`uq_fiscal_years_company_start_date`) : il passe désormais par
+  `insert_fake_fiscal_year` avant de compléter.
+- `confirmDuplicateLines` n'accepte que `skip` / `import` (la spec E2E l'envoyait à `true`).
 
 ### Completion Notes List
 
+- **Écarts assumés à la fiche** :
+  1. ⚠️ **Ordre des verrous (AC 1, étape 2)** : la fiche prescrivait « facture puis ligne de
+     règlement », l'ordre de `cancel_settlement_in_tx`. Il est devenu **ligne de règlement
+     (lecture verrouillante de classement) puis facture**, pour le défaut ci-dessus. Prix :
+     les deux gestes ne se croisent que sur le **même** règlement annulé au même instant
+     depuis la fiche facture et depuis l'import ; l'interblocage (1213) est rejoué par la
+     route du dé-rapprochement, et relève de **#463** côté fiche facture. Écrit au
+     doc-comment du geste.
+  2. **Rang 2 gardé deux fois pour un règlement client** : le geste le refuse (AC 3), et
+     `cancel_settlement_in_tx` le refuserait aussi. La mutation du garde du geste se prouve
+     donc sur une écriture **propre** (M4, M1).
+  3. **Marqueur de rejet** : sa remise à zéro est une **défense** (aucun chemin réel ne le
+     laisse sur une transaction rapprochée) — gardée, testée sur état forgé et déclaré.
+- **Ce qui est livré** : `kesh-db` — `SettlementCancelBlocker::BankTransactionNotReconciled`,
+  `DbError::ReconciliationNotCancellable`, l'exemption étroite de la queue commune (requête
+  dédiée `id <> ?`, les sœurs passent `None`), `settlement_cancel_blocker_unlinking` (le rang 1
+  sans copie), le module `reconciliation_cancel` (`cancel_blocker`, `get_view` en un
+  instantané, `cancel_in_tx`, `cancel`). `kesh-api` — `GET` et `POST
+  /api/v1/reconciliation/transactions/{id}[/cancel]` (rejeu `retry_with` au dehors, verrou de
+  compte, mapping qui préserve `DbError::Sqlx`), `matchedEntryId` au détail d'import, le
+  mapping de `ReconciliationNotCancellable` vers sa famille de textes, audit
+  `reconciliation.cancelled` par `for_actor`. Frontend — `CancelReconciliationDialog` (un
+  seul composant, deux pages), le module de textes, la colonne du détail d'import, le bouton
+  de la fiche facture. Textes ×4 locales, replis réorientés, manuel, API, CHANGELOG, README.
+- **Tests neufs** (périmètre : `main` → ce commit) : **15 Rust** — 13 dans
+  `reconciliation_e2e.rs` (les chemins facture, manuel, éclatement manuel, éclatement accepté ;
+  deux règlements ; Q2 ; rang 2 et son texte ; composition et rollback ; exemption aux deux
+  ordres ; simultanéité ; rôles, portée et tête ; marqueur de rejet ; clé API), 1 dans
+  `reconciliation_rules_e2e.rs` (chemin « règle »), 1 dans `kesh-db/tests/reconciliation_cancel.rs`
+  (clôture concurrente) ; **10 Vitest** (4 textes, 4 dialogue, 2 liste des règlements) ;
+  **1 Playwright** (`reconciliation-cancel.spec.ts`).
+- **Mutations, toutes vues rouges sur assertion** (fichier restauré après chacune) :
+  M1 sans verrou de l'exercice ⇒ `reconciliation_cancel` ; M2 exemption naïve (id du
+  `LIMIT 1` comparé) ⇒ `another_transaction_on_the_same_entry_still_refuses` ; M3 exemption
+  qui lève tout rang 3 ⇒ idem ; M4 `SettlementNotCancellable` au rang 2 ⇒
+  `a_closed_year_refuses_with_the_reconciliation_text` ; M5 marqueur non remis à zéro ⇒
+  `a_previously_rejected_…` ; M6 contre-passer sans défaire le lien ⇒
+  `cancelling_a_manual_reconciliation_…` ; M7 rang 2 lu sur l'exercice de la **vente** ⇒
+  `an_invoice_of_a_closed_year_paid_the_next_year_…` ; M8 audit sans la clé ⇒
+  `an_api_key_cancels_…` ; M9 forme non exemptée ⇒ `cancelling_a_manual_reconciliation_…` ;
+  M10 classement non verrouillant ⇒ `reconciliation_cancel` ; M11 (E2E) détail non relu après
+  succès ⇒ `reconciliation-cancel.spec.ts`.
+- **Registres recomptés depuis la source** : routes **109 / 91 tracées / 15 / 3, 112** avec les
+  routes de test (en-tête du fichier corrigé : il disait 106 / 109) ; audit **97 actions,
+  127 libellés** ; i18n `sitesTotal` **1692 → 1709** (+17, ventilés par fichier dans la garde),
+  `CANDIDATES_ATTENDUES` **43 → 44** (`confirmText`, `conforme` 37 → 38).
+- **Gates** (tête du commit de dev) : backend `scripts/test-fast.sh` **2463/2463** (base remise
+  à zéro ; 2448 + 15) ; frontend `check` 0 erreur, `lint-i18n-ownership` PASS, **777/777**,
+  build OK ; E2E, `kesh_e2e` **reconstruite**, run à 18:10 UTC : **222 passés / 7 échoués /
+  19 ignorés** — les 7 de la KF-029, **zéro régression**.
+
 ### File List
+
+- `crates/kesh-db/src/repositories/reconciliation_cancel.rs` (nouveau)
+- `crates/kesh-db/src/repositories/mod.rs`
+- `crates/kesh-db/src/repositories/settlement_cancellation.rs`
+- `crates/kesh-db/src/repositories/invoice_settlements_write.rs`
+- `crates/kesh-db/src/repositories/supplier_invoices.rs`
+- `crates/kesh-db/src/repositories/bank_transactions.rs`
+- `crates/kesh-db/src/errors.rs`
+- `crates/kesh-db/tests/reconciliation_cancel.rs` (nouveau)
+- `crates/kesh-db/tests/invoice_settlement.rs`
+- `crates/kesh-api/src/routes/reconciliation.rs`
+- `crates/kesh-api/src/routes/bank_imports.rs`
+- `crates/kesh-api/src/errors.rs`
+- `crates/kesh-api/src/lib.rs`
+- `crates/kesh-api/src/audit_labels.rs`
+- `crates/kesh-api/tests/reconciliation_e2e.rs`
+- `crates/kesh-api/tests/reconciliation_rules_e2e.rs`
+- `crates/kesh-api/tests/audit_route_registry.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `frontend/src/lib/features/reconciliation/CancelReconciliationDialog.svelte` (nouveau)
+- `frontend/src/lib/features/reconciliation/CancelReconciliationDialog.test.ts` (nouveau)
+- `frontend/src/lib/features/reconciliation/reconciliation-cancel.ts` (nouveau)
+- `frontend/src/lib/features/reconciliation/reconciliation-cancel.test.ts` (nouveau)
+- `frontend/src/lib/features/reconciliation/reconciliation.api.ts`
+- `frontend/src/lib/features/reconciliation/reconciliation.types.ts`
+- `frontend/src/lib/features/bank-import/bank-import.types.ts`
+- `frontend/src/lib/features/invoices/InvoiceSettlements.svelte`
+- `frontend/src/lib/features/invoices/InvoiceSettlements.test.ts`
+- `frontend/src/lib/shared/utils/settlement-cancel-blocked.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/src/lib/shared/i18n-libelle-en-dur.test.ts`
+- `frontend/src/routes/(app)/bank-import/[id]/+page.svelte`
+- `frontend/src/routes/(app)/invoices/[id]/+page.svelte`
+- `frontend/src/routes/(app)/journal-entries/[id]/+page.svelte`
+- `frontend/tests/e2e/reconciliation-cancel.spec.ts` (nouveau)
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`
+- `docs/api-external.md`, `CHANGELOG.md`, `README.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
 
 | Date | Étape | Note |
 |---|---|---|
+| 2026-09-25 | dev | Implémentée (Opus 5.5). ⛔ **Un défaut trouvé par son propre test d'entrelacement** : un classement non verrouillant, fait avant le verrou de l'exercice, figeait l'instantané et laissait passer un dé-rapprochement d'exercice clos — corrigé (lecture verrouillante), ce qui **inverse l'ordre des verrous** prescrit (ligne de règlement puis facture ; écart assumé, cf. Completion Notes). 15 tests Rust, 10 Vitest, 1 Playwright ; **11 mutations tuées**. Gates : backend 2463/2463, frontend 777/777, E2E 222/7/19 (KF-029 seule). |
 | 2026-09-25 | validate P4 | **Passe ciblée** : une lentille **Sonnet** en contexte frais, sur la remédiation de P3 (91 lignes aplaties) et le commit `cd96d7a3`, prompt versionné `25-3-b-validate-prompt-p4.md`, axes déclarés (non exercés : `cargo check` sans objet, frontend inexistant, exécution interdite). **Vérifié juste** : signature du geste cohérente partout, `for_actor` exact, liste des codes hors motifs **close par construction** (repli sur le message serveur, traduit pour chaque code), pseudo-code et limite du verrou fidèles au code. **3 findings, tous de citation** : ① une citation pour deux sites (sœur et socle) — classé MEDIUM par la lentille, **reclassé LOW** (documentation d'une limite assumée, sans effet sur l'implémentation ; « documentation mineure » au sens de la règle) ; ② le défaut du socle attribué à tort à la 25-3-a-1 ; ③ codes et numéros de ligne cités dans des ordres différents. Corrigés. ⇒ **0 finding au-dessus de LOW : boucle close.** **Trend** : P1 Sonnet 2 HIGH / 3 MED / 2 LOW → P2 Haiku 2 MED / 1 LOW → P3 Opus ciblée 2 MED / 2 LOW → P4 Sonnet ciblée 3 LOW. Signal de découpage (MED → MED entre P2 et P3) soumis à Guy : **pas de découpage**. Reclassements : P2 1 HIGH → MED ; P4 1 MED → LOW. Issues ouvertes ou complétées en route : **#463**, commentaire sur **#431**. |
 | 2026-09-25 | validate P3 | **Passe ciblée** : une lentille **Opus** en contexte frais, sur la seule remédiation de P2 (72 lignes aplaties), prompt versionné `25-3-b-validate-prompt-p3.md`, axes déclarés (non exercés : `cargo check`, frontend inexistant, 1213 sur `GET_LOCK` supposé impossible). **Vérifié juste** : `map_db_error` laisse un 1213 en `DbError::Sqlx` — le rejeu n'est pas muet ; chaîne de mapping exacte ; aucun état partiel entre tentatives ; `.entry.id` exact. **2 MEDIUM, 2 LOW, corrigés** : ① les codes **hors motifs** (`PERIOD_LOCKED`, `OPTIMISTIC_LOCK_CONFLICT`, verrou de compte, `NOT_FOUND`) n'avaient pas de destination dans le dialogue ⇒ message serveur, garde `never` sur l'union des six seulement, test ; ② (hors diff) `actor_api_key_id` absent de la signature du geste alors que l'AC 6 admet les clés ⇒ ajouté, audit par `for_actor` ; limite assumée : les lignes d'audit de la sœur et du socle ne portent pas la clé — défauts **antérieurs** (la sœur : propre à la route de la 25-3-a-1 ; le socle : limite générale de toute contre-passation, antérieure à l'Epic 25), suivis par **#431** ; ③ pseudo-code rendu compilable (`async move` + clones ; `async |tx| Ok(…?)`) ; ④ « relâché à chaque sortie » nuancé — un verrou nommé est de session, fuite possible si `RELEASE_LOCK` échoue, limite assumée antérieure. **Trend** : P1 2 HIGH / 3 MED / 2 LOW → P2 2 MED / 1 LOW → P3 2 MED / 2 LOW. ⚠️ Le correctif ② touche un AC (signature) et non le seul diff de P2 : la passe suivante doit rester ciblée **sur cette remédiation**. |
 | 2026-09-25 | validate P2 | **Deux lentilles Haiku 4.5** en contexte frais, diff de la remédiation **aplati**, prompt versionné `25-3-b-validate-prompt-p2.md`, axes déclarés. Lentille A (régressions de P1) : 1 LOW (type rendu par `reverse_in_tx` → `.entry.id`, précisé). Lentille B (à froid) : 1 HIGH **reclassé MEDIUM** — pas une contradiction mais une ambiguïté : le dialogue traduit le **code** par sa propre famille pour les six codes ; seul le repli serveur du rang 1 reste celui du règlement, et il est juste ⇒ « qui affiche quoi » écrit à l'AC 9 ; 1 MEDIUM — l'emboîtement rejeu / transaction / verrou n'était pas écrit ⇒ pseudo-code à l'AC 6. ⚠️ **Axes laissés par la lentille A et repris par l'orchestrateur** : rejouer une closure qui prend un verrou nommé est sûr (relâché à chaque sortie, transaction neuve à chaque tentative) ; ⛔ le prédicat de `retry_with` doit porter sur `AppError`, et la chaîne de mapping **préserver** `DbError::Sqlx` — vérifié sur `post_manual:3046-3052` ; écrit à l'AC 6 (un mapping qui masquerait le 1213 rendrait le rejeu muet). **Trend** : P1 2 HIGH / 3 MED / 2 LOW → P2 2 MED / 1 LOW. |
