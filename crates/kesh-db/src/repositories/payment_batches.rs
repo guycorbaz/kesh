@@ -649,6 +649,43 @@ pub async fn generate_pain001_xml(
 // Story 25-5-a (#386) — lecture exhaustive pour l'export de souveraineté
 // ---------------------------------------------------------------------------
 
+/// Le lot **confirmé le plus récent** qui contient la facture fournisseur —
+/// `(id, confirmed_at)`, ou `None` (Story 25-3-a-2).
+///
+/// ⛔ **Un fait HISTORIQUE, jamais l'origine du règlement courant.**
+/// `payment_batch_items` ne relie aucune ligne à une écriture de règlement, et
+/// ses lignes survivent à toute annulation : après « lot confirmé → annulation
+/// → règlement direct », ce lot n'a **pas** produit le règlement courant. Il
+/// sert à dire, avant d'annuler, que la banque a peut-être déjà exécuté un
+/// ordre pour cette facture — et donc à prévenir un double paiement.
+///
+/// ⚠️ **La facture ET le lot sont bornés à la société** : `create_batch` ne
+/// met dans un lot que des factures de sa société, mais la lecture ne s'en
+/// remet pas à cet invariant d'écriture.
+pub async fn last_confirmed_batch_for_invoice<'e, E>(
+    executor: E,
+    company_id: i64,
+    supplier_invoice_id: i64,
+) -> Result<Option<(i64, Option<chrono::NaiveDateTime>)>, DbError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::MySql>,
+{
+    sqlx::query_as(
+        "SELECT pb.id, pb.confirmed_at FROM payment_batch_items pbi \
+         JOIN payment_batches pb ON pb.id = pbi.payment_batch_id \
+         JOIN supplier_invoices si ON si.id = pbi.supplier_invoice_id \
+         WHERE pbi.supplier_invoice_id = ? AND pb.company_id = ? AND si.company_id = ? \
+           AND pb.status = 'confirmed' \
+         ORDER BY pb.confirmed_at DESC, pb.id DESC LIMIT 1",
+    )
+    .bind(supplier_invoice_id)
+    .bind(company_id)
+    .bind(company_id)
+    .fetch_optional(executor)
+    .await
+    .map_err(map_db_error)
+}
+
 /// Tous les lots de paiement d'une société (Story 25-5-a, #386).
 pub async fn list_all_by_company(
     pool: &MySqlPool,

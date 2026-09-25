@@ -4,6 +4,7 @@
 
 import { apiClient } from '$lib/shared/utils/api-client';
 import type {
+	CancelSupplierSettlementResponse,
 	CreateSupplierInvoiceRequest,
 	ListResponse,
 	ListSupplierInvoicesQuery,
@@ -44,6 +45,17 @@ export async function paySupplierInvoice(
 	req: PaySupplierInvoiceRequest,
 ): Promise<SupplierInvoiceResponse> {
 	return apiClient.post(`/api/v1/supplier-invoices/${id}/pay`, req);
+}
+
+/**
+ * Annule le **règlement** d'une facture « payée » par contre-passation datée du
+ * jour, et la ramène à « ouverte » — Story 25-3-a-2 (#414). Distinct de
+ * `cancelSupplierInvoice`, qui annule la facture elle-même.
+ */
+export async function cancelSupplierInvoiceSettlement(
+	id: number,
+): Promise<CancelSupplierSettlementResponse> {
+	return apiClient.post(`/api/v1/supplier-invoices/${id}/settlement/cancel`, {});
 }
 
 /** Annule une facture fournisseur « ouverte » (contre-passe l'écriture d'achat). */

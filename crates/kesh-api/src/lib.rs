@@ -443,6 +443,12 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/supplier-invoices/{id}/cancel",
             post(routes::supplier_invoices::cancel_supplier_invoice),
         )
+        // Story 25-3-a-2 (#414) : annuler le RÈGLEMENT (paid → open), par
+        // contre-passation — distinct de l'annulation de la facture ci-dessus.
+        .route(
+            "/api/v1/supplier-invoices/{id}/settlement/cancel",
+            post(routes::supplier_invoices::cancel_supplier_invoice_settlement),
+        )
         // Story 12.4 : scan QR-facture → pré-remplissage (Comptable+, lecture seule).
         .route(
             "/api/v1/supplier-invoices/scan-qr",

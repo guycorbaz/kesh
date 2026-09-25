@@ -1,6 +1,6 @@
 # Story 25.3-a-2 : Annuler un règlement fournisseur — par contre-passation
 
-Status: ready-for-dev
+Status: done
 
 **Issue : [#414]**, qu'elle **ferme** : `closes #414` dans le **titre ET le corps** de la PR (squash).
 ⛔ **Derrière la 25-3-a-1**, qui porte le côté client et **pose tout ce que celle-ci réutilise** :
@@ -230,12 +230,12 @@ les cinq sites de `reconciliation.rs` qui posent `matched_entry_id` (`:1467`, `:
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Autorité fournisseur dans le socle** (AC 1).
-- [ ] **T2 — Tête des motifs** (AC 2), `SupplierInvoiceNotPaid`.
-- [ ] **T3 — Le geste** (AC 3), l'audit (AC 4), la route (AC 5).
-- [ ] **T4 — Champs de lecture** (AC 6) et écran (AC 7).
-- [ ] **T5 — Textes** (AC 8), dont `OWNED_BY_SUPPLIER_INVOICE`.
-- [ ] **T6 — Tests** (AC 9), documentation et gates (AC 10), PR `closes #414`.
+- [x] **T1 — Autorité fournisseur dans le socle** (AC 1).
+- [x] **T2 — Tête des motifs** (AC 2), `SupplierInvoiceNotPaid`.
+- [x] **T3 — Le geste** (AC 3), l'audit (AC 4), la route (AC 5).
+- [x] **T4 — Champs de lecture** (AC 6) et écran (AC 7).
+- [x] **T5 — Textes** (AC 8), dont `OWNED_BY_SUPPLIER_INVOICE`.
+- [x] **T6 — Tests** (AC 9), documentation et gates (AC 10), PR `closes #414`.
 
 ## Dev Notes
 
@@ -265,16 +265,108 @@ les cinq sites de `reconciliation.rs` qui posent `matched_entry_id` (`:1467`, `:
 
 ### Agent Model Used
 
+Claude Opus 5.5 (1M context) — implémentation.
+
 ### Debug Log References
+
+- Une insertion dans `test_fixtures.rs` a d'abord atterri **dans le commentaire d'en-tête** du
+  module, qui cite `#[cfg(test)]` : fichier restauré depuis git, insertion refaite avant le vrai
+  bloc de tests.
+- Tests d'API : la société de test n'a pas de compte fournisseurs par défaut — réglé au montage,
+  comme le fait `supplier_invoices_repository.rs::setup`.
 
 ### Completion Notes List
 
+- **Socle** : `ReversalAuthority::SupplierSettlement { supplier_invoice_id }`. L'exemption vérifie
+  motif + pièce, **puis**, dans `reverse_in_tx_inner` (étape 1-bis), que l'écriture est bien
+  `settlement_journal_entry_id` de la facture — sinon l'autorité est retirée et
+  `OWNED_BY_SUPPLIER_INVOICE` opposé comme sans elle.
+- **Motifs** : `SettlementCancelBlocker::SupplierInvoiceNotPaid` (`SUPPLIER_INVOICE_NOT_PAID`), tête
+  `supplier_invoices::supplier_settlement_cancel_blocker`, qui **appelle** la queue commune de la
+  25-3-a-1 — aucun jumeau.
+- **Geste** `supplier_invoices::cancel_settlement_in_tx` + `cancel_settlement` : verrou facture, puis
+  ⛔ **verrou écriture + exercice** (étape 1-bis, la leçon de la passe 1 de revue de la 25-3-a-1),
+  motifs, contre-passation au titre de la facture **avant** l'`UPDATE` qui vide la colonne, retour à
+  `open`, audit `supplier_invoice.settlement_cancelled` (garde le lien que la colonne perd).
+- **Lot** : `payment_batches::last_confirmed_batch_for_invoice` — champ **historique**, jamais
+  « payée par ce lot ». Le lot confirmé n'est pas modifié.
+- **Sonde d'entrelacement** déplacée dans `kesh_db::test_fixtures::attendre_une_requete_en_cours`
+  (DRY : servie aux deux côtés), le test client la réutilise.
+- **Mutations**, vues rouges puis restaurées : contrôle de l'écriture de règlement retiré du socle
+  → `supplier_authority_never_covers_the_purchase_entry` rouge ; verrou de l'étape 1-bis retiré →
+  `a_concurrent_close_waits_for_the_cancellation` rouge ; rang 1 supprimé → `not_paid_…` rouge.
+  ⚠️ **Mutant équivalent relevé** : « la tête ignore le statut » **survit** — une facture non
+  `paid` a toujours la colonne de règlement vide (aucun chemin ne produit l'inverse : le geste la
+  vide en revenant à `open`), si bien que tester le statut en plus de la colonne ne change rien.
+  Côté écran : bouton sur le seul statut, avertissement de lot omis → rouges.
+- **API** : `POST /api/v1/supplier-invoices/{id}/settlement/cancel` ; `SupplierInvoiceResponse`
+  gagne `settlementCancellable`, `settlementCancelBlockedBy`, `settlementCancelBlockedLabel`,
+  `lastConfirmedBatch` (`None` = non calculé), remplis par `load_with_settlement_cancellation` (renommé en revue P1) au GET,
+  à `pay` et à l'annulation. Registre de routes recompté : **108** / **90** tracées / 15 / 3,
+  **111** avec les routes de test. Premier fichier de tests HTTP fournisseur :
+  `supplier_settlement_cancel_e2e.rs`.
+- **Écran** : bouton si `status === 'paid' && settlementCancellable === true` et rôle d'écriture ;
+  motif seulement sur une facture payée ; `confirm()` natif (celui que la fiche utilise déjà) qui
+  porte l'avertissement de double paiement ; refus dans `settlementCancelError`, **jamais**
+  `errorMsg` ; lien vers l'écriture de règlement.
+- **Textes** : 6 clés `supplier-invoices-settlement-*` ×4, audit ×4, `OWNED_BY_SUPPLIER_INVOICE`
+  réécrit pour couvrir achat **et** règlement (FTL ×4, repli serveur, repli Svelte, doc-comment).
+  Gardes i18n recomptées : `sitesTotal` 1685 → **1692** (+6 fiche, +1 tête), `CLES_RELEVEES`
+  195 → **201** (+6 nommées).
+- **Documentation** : manuel — annulation du règlement dans « Régler une facture fournisseur »,
+  ⛔ avertissement de double paiement dans la section pain.001, exception d'exercice clos étendue
+  au fournisseur, phrase des pièces à `:502-507` complétée ; PDF contrôlé aplati. `api-external.md`,
+  CHANGELOG (96 actions, **126** libellés, recomptés), README. Inventaire `#414` refait : le
+  dernier commentaire fournisseur (`invoices.rs:2188`) corrigé.
+
+### Gates
+
+- Backend : base remise à zéro, `scripts/test-fast.sh` → **2446 / 2446** (2434 + 12 : 8 dépôt
+  fournisseur, 2 lots, 2 API).
+- Frontend : check 0 erreur, lint i18n PASS, `test:unit` **767 / 767**, build OK.
+- E2E, `kesh_e2e` reconstruite, montage complet, run à **08:12 UTC** (avant midi) : **217 passés /
+  11 échoués / 19 ignorés, zéro régression** — les **7 de KF-029** ; **2 de KF-045** (#421,
+  run matinal : `invoices.spec.ts:415` et `:439`) ; `product-revenue-account.spec.ts:133` et
+  `products.spec.ts:236`, **verts rejoués seuls** (pollution d'état). Le test neuf « payer puis
+  annuler le règlement » passe. ⚠️ `docs/testing.md` listait les deux tests de KF-045 aux lignes
+  `:405` et `:429` : **décalés de dix lignes par un commit antérieur** (vérifié : déjà `:415` et
+  `:439` sur `main` avant cette story) — corrigé, le titre du test ajouté pour qu'il fasse foi.
+
 ### File List
+
+| Fichier | Nature |
+|---|---|
+| `crates/kesh-db/src/repositories/journal_entries.rs` | `ReversalAuthority::SupplierSettlement`, contrôle 1-bis |
+| `crates/kesh-db/src/errors.rs` | `SupplierInvoiceNotPaid`, doc d'`OwnedBySupplierInvoice` |
+| `crates/kesh-db/src/repositories/supplier_invoices.rs` | tête, `cancel_settlement_in_tx`, `cancel_settlement` |
+| `crates/kesh-db/src/repositories/payment_batches.rs` | `last_confirmed_batch_for_invoice` |
+| `crates/kesh-db/src/repositories/invoices.rs` | commentaire #414 |
+| `crates/kesh-db/src/test_fixtures.rs` | `attendre_une_requete_en_cours` (sonde partagée) |
+| `crates/kesh-db/tests/supplier_invoices_repository.rs` | +8 tests |
+| `crates/kesh-db/tests/payment_batches_repository.rs` | +2 tests |
+| `crates/kesh-db/tests/invoice_settlement.rs` | sonde partagée, `match` complété |
+| `crates/kesh-api/src/routes/supplier_invoices.rs` | champs de lecture, route d'annulation |
+| `crates/kesh-api/src/lib.rs` | route |
+| `crates/kesh-api/src/errors.rs` | repli `SUPPLIER_INVOICE_NOT_PAID`, texte d'`OWNED_BY_SUPPLIER_INVOICE` |
+| `crates/kesh-api/src/audit_labels.rs` | `supplier_invoice.settlement_cancelled` |
+| `crates/kesh-api/tests/audit_route_registry.rs` | route inscrite, totaux recomptés |
+| `crates/kesh-api/tests/supplier_settlement_cancel_e2e.rs` | **neuf** — 2 tests |
+| `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` | 7 clés neuves ×4, texte réécrit |
+| `frontend/src/lib/features/supplier-invoices/settlement-cancel.ts` (+ `.test.ts`) | **neufs** — tête des textes |
+| `frontend/src/lib/features/supplier-invoices/supplier-invoices.api.ts`, `supplier-invoices.types.ts` | API, types |
+| `frontend/src/routes/(app)/supplier-invoices/[id]/+page.svelte` (+ `supplier-settlement-page.test.ts`) | la fiche |
+| `frontend/src/routes/(app)/journal-entries/[id]/+page.svelte` | repli d'`OWNED_BY_SUPPLIER_INVOICE` |
+| `frontend/src/lib/shared/i18n-keys.test.ts`, `i18n-un-repli-par-cle.test.ts` | décomptes recomptés |
+| `frontend/tests/e2e/supplier-invoices.spec.ts` | +1 test (payer puis annuler) |
+| `docs/manual/fr/user-manual.tex` / `.pdf`, `docs/api-external.md`, `CHANGELOG.md`, `README.md` | documentation |
 
 ## Change Log
 
 | Date | Étape | Note |
 |---|---|---|
+| 2026-09-25 | review P2 | **Trois lentilles Haiku 4.5** en contexte frais, diffs **aplatis** (`main..HEAD` complet et remédiation P1 seule), prompt versionné `25-3-a-2-review-prompt-p2.md`, axes déclarés par chacune. **0 finding au-dessus de LOW.** *Blind* : 1 MEDIUM **reclassé LOW** — transaction de lecture abandonnée sans `commit` sur les chemins d'erreur ; la lentille la reconnaît elle-même « techniquement correcte » (`sqlx` l'annule au `drop`, une lecture n'a rien à valider) : question de style, non de défaut ; + 1 LOW de même nature côté client. *Auditor* : 3 LOW cosmétiques ; décomptes **recomptés** conformes (96 actions, 126 libellés, 108/90/111 routes, 1692 sites, 201 clés). *Edge* : 0 finding ; ses deux axes laissés sans preuve ont été **repris par l'orchestrateur** : aucune requête de `get_settlement_view` n'est verrouillante (`reversal_blockers`, `has_open_covering_date` et la queue lus : pas de `FOR UPDATE`), et aucun code de production ne supprime une facture fournisseur (`grep "DELETE FROM supplier_invoices"` vide) — pas de 404 possible après une écriture réussie. ⇒ **Boucle close.** **Trend** : P1 Sonnet 2 MED / 2 LOW → P2 Haiku 0 > LOW. **Gates finaux** (tête `b6d041d5`, code inchangé depuis) : backend `scripts/test-fast.sh` **2448/2448**, base remise à zéro ; frontend `check` 0 erreur, `lint-i18n-ownership` PASS, **767/767**, build OK ; E2E, base `kesh_e2e` **reconstruite**, **217 passés / 11 échoués / 19 ignorés**, zéro régression : 7 KF-029, 2 KF-045 (run à 09:02 UTC), 1 KF-046 (`sidebar-navigation:75`), 1 pollution (`product-revenue-account:133`, vert rejoué seul deux fois, identité déjà relevée à `docs/testing.md:386`). ⚠️ Un premier run sur une base **seulement migrée** avait rendu 13 échecs, dont trois `fiscal-years.spec.ts` verts une fois la base reconstruite — la règle « reconstruire avant tout gate E2E » s'applique ici aussi. |
+| 2026-09-25 | review P1 | **Trois lentilles Sonnet** en contexte frais (Blind Hunter, Edge Case Hunter, Acceptance Auditor), prompt versionné `25-3-a-2-review-prompt-p1.md`, axes déclarés par chacune. **2 MEDIUM, 2 LOW.** ① *Blind*, MEDIUM : `last_confirmed_batch_for_invoice` ne bornait que le **lot** à la société, pas la facture → jointure `supplier_invoices` et `si.company_id = ?` ; test `last_confirmed_batch_scopes_the_invoice_to_the_company` (lot rattaché à la main à une seconde société), **mutation tuée** (filtre retiré → rouge). ② *Edge*, MEDIUM : les champs d'annulation étaient lus **après** le `COMMIT` de `pay` / de l'annulation, sur une autre connexion, alors que le corps venait de la transaction → sous concurrence, `status: "paid"` à côté de `SUPPLIER_INVOICE_NOT_PAID`. Correctif : `supplier_invoices::get_settlement_view` lit facture, lignes, motif et dernier lot **dans une seule transaction de lecture** (instantané `REPEATABLE READ`) ; les trois routes répondent depuis cette vue (`SupplierInvoiceResponse::load_with_settlement_cancellation`, renommée — ce n'est plus une méthode qui complète une réponse, c'est un constructeur) : après une écriture, la facture est relue et la réponse décrit l'état courant, cohérent avec ses champs. Test `settlement_view_reads_the_invoice_and_its_motive_together` — ⚠️ il prouve l'assemblage, **pas** l'instantané (aucun point d'entrée pour intercaler une écriture entre deux lectures). **Propagation** (symptôme grepé : lecture de motif hors de la transaction de la liste) : `list_invoice_settlements_handler` (client, 25-3-a-1) lisait la liste puis les motifs sur une autre connexion — un règlement annulé entre les deux rendait `NotFound`, donc un 404 sur toute la liste ; même correctif, `invoice_settlements::list_for_invoice` accepte désormais tout exécuteur. `docs/api-external.md` le dit. ③ *Auditor*, LOW : le CHANGELOG omettait `settlementCancelBlockedLabel` → ajouté. ④ *Blind*, LOW : `ok_or_else` d'invariant jugé mort → **gardé** (défense en profondeur, coût nul). Gate : base remise à zéro, `scripts/test-fast.sh` **2448/2448** (2446 + 2 tests neufs, périmètre : `fae82d40` → ce commit) ; frontend non touché. |
+| 2026-09-25 | dev | Implémentée (Opus 5.5) sur la 25-3-a-1 mergée. Autorité fournisseur contrôlée **dans le socle**, tête sur la queue commune, verrou de l'exercice repris de la revue de la a-1, lot confirmé laissé tel quel avec son historique, champs de lecture portés par la réponse de `pay`, écran, textes ×4, documentation. Sonde d'entrelacement **mise en commun** dans `test_fixtures`. Mutations rouges (dont un **mutant équivalent** relevé et expliqué). Gates : backend **2446/2446**, frontend 767/767 + check + lint + build, E2E 217/11/19 **sans régression**. Ferme #414 à la PR (`closes #414`). |
 | 2026-09-24 | validate P6 | **Une** lentille Haiku 4.5, passe complète, contexte frais (prompt `25-3-a-validate-prompt-p6-couple.md`, lentille B), axes déclarés (non exercés : exécution, PDF, clés FTL de la queue, recomptes — tous différés au dev). `lastConfirmedBatch` **vérifié** calculable et son texte vrai dans les cycles ; rangs 2, 4, 5 cohérents avec la sœur ; citations exactes. ❌ **1 MEDIUM réfuté** : « le texte d'`OWNED_BY_SUPPLIER_INVOICE` ne dit pas encore “ou son règlement” aux trois sites » reproche au **code** de ne pas encore porter ce que l'AC 8 prescrit — pas un défaut de la spec (le prompt le rappelait). ⇒ **0 au-dessus de LOW : boucle close.** Trend (mère puis fille) : P1 1 HIGH / 3 MED → P2 2 MED → P3 1 HIGH / ~9 MED (**découpage**) → P4 9 MED → P5 1 HIGH (**né de la remédiation P4**) → P6 **0**. Modèles : Sonnet, Haiku, Opus, Opus, Sonnet, Haiku. ⚠️ La remontée P4 → P5 (MEDIUM → HIGH) déclenchait formellement la règle de découpage ; non appliquée — le HIGH venait de la remédiation, non de la conception, et la fiche ne porte qu'un geste — **signalé à Guy**. |
 | 2026-09-24 | validate P5 | **Une** lentille Sonnet, passe complète, contexte frais (prompt `25-3-a-validate-prompt-p5-couple.md`, lentille B), axes déclarés (non exercés : exécution, PDF — rien n'est encore régénéré —, clés FTL de la queue non encore créées, recomptes différés au dev). ⛔ **1 HIGH, né de la remédiation P4** : `settledByConfirmedBatchId` n'était pas lié au règlement **courant** — `payment_batch_items` ne porte aucun lien vers une écriture, et ses lignes survivent aux annulations ; après « lot confirmé → annulation → règlement direct », l'avertissement aurait affirmé « payée par le lot n° X » à tort. ⇒ champ **historique** `lastConfirmedBatch` (le plus récent, critère d'ordre écrit), texte **toujours vrai**, test à deux cycles ; colonne de corrélation écartée et **dite** écartée. LOW : rangs de la queue **numérotés comme la 25-3-a-1** (2, 4, 5 ; rang 3 absent, dit) ; citation du repli serveur ramenée au bras exact (`:2467-2470`) ; `payment_batches.rs:264` → `:265`. Symptôme grepé (`settledByConfirmedBatchId`) : quatre sites, tous repris. |
 | 2026-09-24 | validate P4 | **Deux lentilles Opus** en contexte frais, prompt `25-3-a-2-validate-prompt-p4.md`, axes déclarés (non exercés : exécution, recompte des gardes i18n et du registre de routes, sens des traductions, écrans de détail d'un lot). **9 MEDIUM, 10 LOW, aucun HIGH**, recoupés. Fiche **réécrite**. ⛔ **Le constat de fond** : « étendus ou jumeaux, au choix du développeur » ne se choisissait pas — étendre le calcul client (qui prenait un `settlement_id`) mettait des cas morts dans les deux `switch`, le jumeler recréait une seconde précédence. ⇒ **tête propre + queue commune** sur l'écriture, **posée par la 25-3-a-1** (qui en est rouverte) ; code de tête **figé** (`SUPPLIER_INVOICE_NOT_PAID`) ; textes : queue partagée, tête en `supplier-invoices-…`. Autres MEDIUM corrigés : le contrôle de l'autorité vit **dans le socle** (dans le geste il était vrai par construction, donc intestable), contre-passation **avant** le vidage de la colonne ; paire « 1-2 » **impossible** remplacée par la double annulation, et la paire compte archivé / exercice du jour exigée ; ⛔ **risque de double paiement** après un lot confirmé, désormais **dit** (champ `settledByConfirmedBatchId`, avertissement à la confirmation, manuel pain.001) sans toucher à l'arbitrage ; écran : condition d'affichage du motif, masquage par rôle, confirmation, refus au clic **hors** `errorMsg` (qui efface la fiche) ; `README.md:40`. LOW : pourquoi pas de garde de lot ; « annuler ensuite (25-3-c) » inexact ; deux cycles complets ; `null` et non `skip_serializing_if` (patron `with_settlement`) ; majuscule du texte ; limite assumée du texte d'`OWNED_BY_SUPPLIER_INVOICE` pour une facture annulée (fermée par la 25-3-c) ; recompte du CHANGELOG ; contenu d'`api-external.md` ; grep `#414` après la sœur, puisque c'est **cette** story qui ferme l'issue ; renvoi au manuel pain.001 ; fichier vitest à créer. |

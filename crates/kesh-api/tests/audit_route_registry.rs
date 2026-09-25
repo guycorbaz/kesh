@@ -110,6 +110,7 @@ const LIB_ROUTES: &[(&str, &str, Status)] = &[
     ("post", "invoices::unvalidate_invoice_handler", Traced),
     ("post", "invoices::settle_invoice_handler", Traced),
     ("post", "invoices::cancel_invoice_settlement_handler", Traced),
+    ("post", "supplier_invoices::cancel_supplier_invoice_settlement", Traced),
     ("put", "dunning_reminders::pause_dunning", Traced),
     ("put", "dunning_reminders::resume_dunning", Traced),
     ("post", "dunning_reminders::record_manual_reminder", Traced),
@@ -447,12 +448,12 @@ fn the_registry_partition_is_what_the_story_declares() {
         .filter(|(_, _, s)| matches!(s, NoMatter(_)))
         .count();
 
-    assert_eq!(LIB_ROUTES.len(), 107, "l'inventaire porte sur 107 routes");
+    assert_eq!(LIB_ROUTES.len(), 108, "l'inventaire porte sur 108 routes");
     assert_eq!(traced + exempt + no_matter, LIB_ROUTES.len());
     assert_eq!(
-        traced, 89,
+        traced, 90,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
-         plus l'annulation d'un règlement (25-3-a-1, #414)"
+         plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414)"
     );
     assert_eq!(
         exempt, 15,
@@ -461,7 +462,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     assert_eq!(no_matter, 3, "trois routes mutantes qui ne mutent rien");
     assert_eq!(
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        110,
+        111,
         "le registre est plus large que l'inventaire, et c'est voulu"
     );
 }

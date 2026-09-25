@@ -337,8 +337,8 @@ régression au milieu.
 | `onboarding.spec.ts:77` | KF-029 (#97) |
 | `onboarding.spec.ts:150` | KF-029 (#97) |
 | **un huitième, VARIABLE** | pollution d'état entre specs — voir ci-dessous |
-| `invoices.spec.ts:405` | ⏰ **KF-045 (#421)** — seulement **avant 12:00 UTC** |
-| `invoices.spec.ts:429` | ⏰ **KF-045 (#421)** — idem |
+| `invoices.spec.ts:415` | ⏰ **KF-045 (#421)** — seulement **avant 12:00 UTC** — « historique des rappels affiché » *(décalé de :405 par un commit antérieur ; les numéros de ligne dérivent, le **titre** du test fait foi)* |
+| `invoices.spec.ts:439` | ⏰ **KF-045 (#421)** — idem — « axe-core sans violations sur la fiche » *(ex-:429)* |
 | `sidebar-navigation.spec.ts:75` | **KF-046 (#424)** — déterministe, dépend de la route d'atterrissage |
 
 ⏰ **Les deux dernières ne rougissent QUE le matin, et c'est vérifié.** Le helper poste un rappel

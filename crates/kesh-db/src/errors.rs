@@ -65,7 +65,8 @@ pub enum ReversalBlocker {
     /// L'avoir EST déjà la contre-passation de la facture.
     OwnedByCreditNote,
     /// Écriture d'achat ou de règlement d'une facture fournisseur → le chemin
-    /// est `supplier_invoices::cancel`, ou l'issue #414 pour le règlement.
+    /// est `supplier_invoices::cancel` pour l'achat, `cancel_settlement` pour le
+    /// règlement (Story 25-3-a-2), qui contre-passe au titre de la facture.
     OwnedBySupplierInvoice,
     /// ⛔ Le cas le plus grave : le résiduel se calcule depuis
     /// `invoice_settlements.amount`, que la contre-passation ne toucherait pas —
@@ -175,7 +176,8 @@ impl UnvalidationBlocker {
 /// Ce qui empêche d'**annuler un règlement** (Story 25-3-a-1, #414).
 ///
 /// ⛔ **Une tête propre à chaque pièce, une queue commune.** Le rang 1 est
-/// celui du client (`InvoiceCredited`) ; les rangs 2 à 5 s'évaluent sur
+/// propre à la pièce — `InvoiceCredited` pour le client,
+/// `SupplierInvoiceNotPaid` pour le fournisseur (Story 25-3-a-2) ; les rangs 2 à 5 s'évaluent sur
 /// l'**écriture de règlement**, sans rien savoir de la pièce qui la possède
 /// (`settlement_cancellation::settlement_entry_cancel_blocker`), pour que le
 /// règlement fournisseur (25-3-a-2) les réutilise tels quels — une seconde
@@ -197,6 +199,11 @@ pub enum SettlementCancelBlocker {
     /// anomalie — il ne s'annule pas. ⚠️ Le statut `cancelled` d'une facture
     /// ne naît en production que de l'avoir (`credit_notes.rs`).
     InvoiceCredited,
+    /// Tête **fournisseur** (Story 25-3-a-2) : la facture n'est pas `paid` — il
+    /// n'y a pas de règlement à annuler. ⚠️ Coupe court par construction : une
+    /// facture non `paid` n'a pas d'écriture de règlement, la queue ne s'évalue
+    /// pas. Même rang que `InvoiceCredited` : chaque pièce n'a que sa propre tête.
+    SupplierInvoiceNotPaid,
     /// L'écriture de règlement est dans un exercice **clos** : un
     /// Administrateur peut le rouvrir (`fiscal_years::reopen`), et c'est le
     /// chemin (arbitrage Q5).
@@ -221,6 +228,7 @@ impl SettlementCancelBlocker {
     pub fn code(self) -> &'static str {
         match self {
             Self::InvoiceCredited => "INVOICE_CREDITED",
+            Self::SupplierInvoiceNotPaid => "SUPPLIER_INVOICE_NOT_PAID",
             Self::FiscalYearClosed => "FISCAL_YEAR_CLOSED",
             Self::MatchedBankTransaction => "MATCHED_BANK_TRANSACTION",
             Self::AccountArchived => "ACCOUNT_ARCHIVED",

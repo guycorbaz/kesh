@@ -3,6 +3,8 @@
  * Miroir camelCase des réponses backend (kesh-api routes/supplier_invoices.rs).
  */
 
+import type { SupplierSettlementCancelCode } from './settlement-cancel';
+
 export type SupplierInvoiceStatus = 'open' | 'paid' | 'cancelled';
 export type SettlementType = 'bank_transfer' | 'internal_account';
 
@@ -39,6 +41,28 @@ export interface SupplierInvoiceResponse {
 	version: number;
 	createdAt: string;
 	lines: SupplierInvoiceLineResponse[];
+	/**
+	 * Story 25-3-a-2 (#414) — le règlement peut-il être annulé ?
+	 *
+	 * ⚠️ **`null` veut dire « non calculé », jamais « non »** : seuls le GET,
+	 * `pay` et l'annulation du règlement le calculent. Calculé par la fonction
+	 * même qui refuse l'annulation ; ne tient pas compte du rôle.
+	 */
+	settlementCancellable: boolean | null;
+	settlementCancelBlockedBy: SupplierSettlementCancelCode | null;
+	/** Le numéro du compte archivé, quand c'est le motif. */
+	settlementCancelBlockedLabel: string | null;
+	/**
+	 * Le lot de paiement **confirmé le plus récent** qui contient la facture.
+	 * ⛔ **Historique** : il ne dit PAS d'où vient le règlement courant — il sert
+	 * à prévenir un double paiement avant d'annuler.
+	 */
+	lastConfirmedBatch: { id: number; confirmedAt: string | null } | null;
+}
+
+export interface CancelSupplierSettlementResponse {
+	invoice: SupplierInvoiceResponse;
+	reversalJournalEntryId: number;
 }
 
 export interface SupplierInvoiceListItemResponse {

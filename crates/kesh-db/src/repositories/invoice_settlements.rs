@@ -100,18 +100,21 @@ pub async fn create_in_tx(
 }
 
 /// Les règlements d'une facture, du plus ancien au plus récent.
-pub async fn list_for_invoice(
-    pool: &MySqlPool,
+pub async fn list_for_invoice<'e, E>(
+    executor: E,
     company_id: i64,
     invoice_id: i64,
-) -> Result<Vec<InvoiceSettlement>, DbError> {
+) -> Result<Vec<InvoiceSettlement>, DbError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::MySql>,
+{
     sqlx::query_as::<_, InvoiceSettlement>(&format!(
         "SELECT {COLUMNS} FROM invoice_settlements WHERE company_id = ? AND invoice_id = ? \
          ORDER BY settled_on ASC, id ASC"
     ))
     .bind(company_id)
     .bind(invoice_id)
-    .fetch_all(pool)
+    .fetch_all(executor)
     .await
     .map_err(map_db_error)
 }

@@ -101,8 +101,14 @@ const PREFIXES = [
  * la baisse signale une clé qui a cessé d'être demandée (régression), la hausse signale des
  * clés neuves — mais seulement si on peut les nommer. Un +11 dont on ne sait pas dire lesquels
  * se recompte, il ne s'entérine pas.
+ *
+ * ⚠️ **195 → 201, +6 nommées** (Story 25-3-a-2, #414) — l'annulation d'un règlement
+ * fournisseur, toutes au préfixe `supplier-invoices-` : `-settlement-cancel-button`,
+ * `-settlement-cancel-confirm`, `-settlement-cancel-batch-warning`,
+ * `-settlement-cancelled`, `-settlement-entry-link` et
+ * `-settlement-cancel-blocked-not-paid` (recompté : `git diff main` du FTL fr-CH).
  */
-const CLES_RELEVEES = 195;
+const CLES_RELEVEES = 201;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

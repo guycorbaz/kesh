@@ -2467,7 +2467,7 @@ impl IntoResponse for AppError {
                         ),
                         ReversalBlocker::OwnedBySupplierInvoice => (
                             "journal-entries-reverse-blocked-supplier-invoice",
-                            "Cette écriture appartient à une facture fournisseur : annulez la facture.",
+                            "Cette écriture appartient à une facture fournisseur : annulez la facture ou son règlement depuis sa fiche.",
                         ),
                         ReversalBlocker::OwnedBySettlement => (
                             "journal-entries-reverse-blocked-settlement",
@@ -2575,6 +2575,10 @@ impl IntoResponse for AppError {
                         SettlementCancelBlocker::InvoiceCredited => (
                             "invoices-settlement-cancel-blocked-credited",
                             "Cette facture a été créditée par un avoir : ce règlement est un paiement à lettrer, il ne s'annule pas.",
+                        ),
+                        SettlementCancelBlocker::SupplierInvoiceNotPaid => (
+                            "supplier-invoices-settlement-cancel-blocked-not-paid",
+                            "Cette facture fournisseur n'est pas payée : il n'y a pas de règlement à annuler.",
                         ),
                         SettlementCancelBlocker::FiscalYearClosed => (
                             "settlement-cancel-blocked-fiscal-year-closed",

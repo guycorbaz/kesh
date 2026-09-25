@@ -893,6 +893,264 @@ pub async fn cancel(
 }
 
 // ---------------------------------------------------------------------------
+// Story 25-3-a-2 (#414) — annuler un règlement fournisseur
+// ---------------------------------------------------------------------------
+
+/// Ce qui empêche d'annuler le règlement de la facture fournisseur
+/// `supplier_invoice_id` — la **tête** fournisseur (rang 1 : la facture n'est
+/// pas `paid`), puis la queue commune sur son écriture de règlement.
+///
+/// ⛔ **Aucun jumeau** : la queue est
+/// [`super::settlement_cancellation::settlement_entry_cancel_blocker`], la même
+/// que pour le client (Story 25-3-a-1). Une seule fonction pour lire (l'écran
+/// masque le bouton avant le clic) et pour écrire (le geste refuse).
+///
+/// Facture introuvable (ou d'une autre société) → [`DbError::NotFound`].
+pub async fn supplier_settlement_cancel_blocker(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    supplier_invoice_id: i64,
+) -> Result<Option<super::settlement_cancellation::SettlementCancelHit>, DbError> {
+    let row: Option<(String, Option<i64>)> = sqlx::query_as(
+        "SELECT status, settlement_journal_entry_id FROM supplier_invoices \
+         WHERE id = ? AND company_id = ?",
+    )
+    .bind(supplier_invoice_id)
+    .bind(company_id)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(map_db_error)?;
+    let (status, settlement_entry) = row.ok_or(DbError::NotFound)?;
+    // Rang 1. ⚠️ `chk_supplier_invoices_paid_has_settlement` garantit qu'une
+    // facture `paid` porte son écriture de règlement : l'absence ne peut venir
+    // que d'une facture non `paid`.
+    let Some(entry_id) = settlement_entry.filter(|_| status == "paid") else {
+        return Ok(Some((
+            crate::errors::SettlementCancelBlocker::SupplierInvoiceNotPaid,
+            None,
+            None,
+        )));
+    };
+    super::settlement_cancellation::settlement_entry_cancel_blocker(conn, company_id, entry_id)
+        .await
+}
+
+/// Ce que rend l'annulation d'un règlement fournisseur.
+#[derive(Debug, Clone)]
+pub struct SupplierSettlementCancellation {
+    /// La facture relue, revenue à `open`.
+    pub invoice: SupplierInvoiceWithLines,
+    /// L'écriture inverse, datée du jour.
+    pub reversal_journal_entry_id: i64,
+}
+
+/// Annule le règlement d'une facture fournisseur **dans une transaction
+/// fournie**, sans `BEGIN` ni `COMMIT` (Story 25-3-a-2, #414) : contre-passe
+/// l'écriture de règlement (datée du jour), ramène la facture à `open` et vide
+/// ses colonnes de règlement.
+///
+/// ⚠️ **Ne pas imiter [`cancel`]**, qui réécrit sa contre-passation à la main
+/// (#454) : celle-ci passe par le socle, qui pose `reverses_entry_id`.
+///
+/// ⚠️ **Pas de `guard_not_in_generated_batch`** : une facture `paid` ne peut pas
+/// être dans un lot `generated` (`create_batch` exige `open`, `pay` et `cancel`
+/// refusent une facture en lot `generated`, et `confirm_batch` règle et confirme
+/// dans la même transaction). Le lot confirmé qui l'a éventuellement réglée
+/// **n'est pas modifié** (arbitrage : il reste l'historique de l'ordre transmis).
+pub async fn cancel_settlement_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    id: i64,
+    user_id: i64,
+) -> Result<SupplierSettlementCancellation, DbError> {
+    use crate::errors::SettlementCancelBlocker;
+    use crate::repositories::journal_entries::{self, ReversalAuthority};
+
+    // (1) Verrou facture.
+    let inv = sqlx::query_as::<_, SupplierInvoice>(&format!("{FIND_SCOPED_SQL} FOR UPDATE"))
+        .bind(id)
+        .bind(company_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)?
+        .ok_or(DbError::NotFound)?;
+
+    // (1-bis) ⛔ Verrou sur l'écriture de règlement ET son exercice — même
+    // raison que l'étape 2-bis du geste client (Story 25-3-a-1, passe 1 de
+    // revue) : la queue lit l'exercice SANS verrou, et le socle ne verrouille
+    // l'exercice de l'origine qu'APRÈS ; une clôture concurrente passerait
+    // entre les deux. Une facture non `paid` n'a pas d'écriture : le rang 1
+    // la refuse juste après.
+    if let (true, Some(entry_id)) = (inv.status == "paid", inv.settlement_journal_entry_id) {
+        sqlx::query(
+            "SELECT fy.id FROM journal_entries je \
+             JOIN fiscal_years fy ON fy.id = je.fiscal_year_id \
+             WHERE je.id = ? AND je.company_id = ? FOR UPDATE",
+        )
+        .bind(entry_id)
+        .bind(company_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)?
+        .ok_or(DbError::NotFound)?;
+    }
+
+    // (2) Les motifs. Rang 1 et « exercice clos » : refusés ici. Les autres :
+    //     laissés au socle, qui les refuse avec son erreur canonique.
+    if let Some((
+        blocker @ (SettlementCancelBlocker::SupplierInvoiceNotPaid
+        | SettlementCancelBlocker::FiscalYearClosed),
+        _,
+        _,
+    )) = supplier_settlement_cancel_blocker(tx, company_id, id).await?
+    {
+        return Err(DbError::SettlementNotCancellable { blocker });
+    }
+    let entry_id = inv
+        .settlement_journal_entry_id
+        .ok_or_else(|| DbError::Invariant("facture payée sans écriture de règlement".into()))?;
+
+    // (3) La contre-passation, au titre de cette facture. ⚠️ AVANT l'UPDATE qui
+    //     vide la colonne : le socle y vérifie que l'écriture est bien celle du
+    //     règlement.
+    let reversal = journal_entries::reverse_owned_in_tx(
+        tx,
+        company_id,
+        entry_id,
+        user_id,
+        ReversalAuthority::SupplierSettlement {
+            supplier_invoice_id: id,
+        },
+    )
+    .await?;
+
+    // (4) Retour à `open`, colonnes de règlement vidées. Il n'y en a qu'un jeu ;
+    //     le lien survit dans l'audit et au grand livre (`reverses_entry_id`).
+    let rows = sqlx::query(
+        "UPDATE supplier_invoices SET status = 'open', settlement_type = NULL, \
+         settlement_bank_account_id = NULL, settlement_account_id = NULL, \
+         settlement_journal_entry_id = NULL, paid_at = NULL, version = version + 1 \
+         WHERE id = ? AND company_id = ? AND version = ? AND status = 'paid'",
+    )
+    .bind(id)
+    .bind(company_id)
+    .bind(inv.version)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .rows_affected();
+    if rows == 0 {
+        return Err(DbError::OptimisticLockConflict);
+    }
+
+    // (5) L'audit du GESTE — il garde le lien que la colonne vient de perdre.
+    audit_log::insert_in_tx(
+        tx,
+        NewAuditLogEntry::user(
+            user_id,
+            "supplier_invoice.settlement_cancelled".to_string(),
+            "supplier_invoice".to_string(),
+            id,
+            Some(serde_json::json!({
+                "settlementType": inv.settlement_type,
+                "settlementJournalEntryId": entry_id,
+                "reversalJournalEntryId": reversal.entry.id,
+                "paidAt": inv.paid_at,
+            })),
+        ),
+    )
+    .await?;
+
+    let updated = sqlx::query_as::<_, SupplierInvoice>(FIND_SCOPED_SQL)
+        .bind(id)
+        .bind(company_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+    let lines = fetch_lines(tx, id).await?;
+    Ok(SupplierSettlementCancellation {
+        invoice: SupplierInvoiceWithLines {
+            invoice: updated,
+            lines,
+        },
+        reversal_journal_entry_id: reversal.entry.id,
+    })
+}
+
+/// Annule le règlement d'une facture fournisseur, transaction comprise.
+pub async fn cancel_settlement(
+    pool: &MySqlPool,
+    company_id: i64,
+    id: i64,
+    user_id: i64,
+) -> Result<SupplierSettlementCancellation, DbError> {
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+    match cancel_settlement_in_tx(&mut tx, company_id, id, user_id).await {
+        Ok(done) => {
+            tx.commit().await.map_err(map_db_error)?;
+            Ok(done)
+        }
+        Err(e) => {
+            let _ = tx.rollback().await;
+            Err(e)
+        }
+    }
+}
+
+/// Une facture fournisseur, ses lignes, et ce qui décide de l'annulation de
+/// son règlement — **lus dans un seul instantané** (Story 25-3-a-2, revue P1).
+#[derive(Debug, Clone)]
+pub struct SupplierInvoiceSettlementView {
+    pub invoice: SupplierInvoice,
+    pub lines: Vec<SupplierInvoiceLine>,
+    /// Le premier motif qui refuse l'annulation du règlement, ou `None`.
+    pub cancel_blocker: Option<super::settlement_cancellation::SettlementCancelHit>,
+    /// Cf. [`super::payment_batches::last_confirmed_batch_for_invoice`].
+    pub last_confirmed_batch: Option<(i64, Option<chrono::NaiveDateTime>)>,
+}
+
+/// Lit une facture fournisseur **et** ses champs d'annulation dans une même
+/// transaction de lecture, ou `None` si elle n'existe pas pour cette société.
+///
+/// ⛔ **Pourquoi une transaction pour lire.** Sous `REPEATABLE READ` (défaut de
+/// MariaDB), toutes les lectures non verrouillantes d'une transaction voient
+/// l'instantané pris à la première : la facture, son motif de refus et son
+/// dernier lot décrivent donc le **même** état. Lus séparément — ce que faisait
+/// la première version, après le `COMMIT` de `pay` ou de l'annulation —, un
+/// règlement ou une annulation concurrents pouvaient s'intercaler, et la
+/// réponse se contredire : `status: "paid"` à côté de
+/// `SUPPLIER_INVOICE_NOT_PAID`. ⚠️ Aucune de ces lectures ne doit devenir
+/// verrouillante (`FOR UPDATE`) : une lecture verrouillante lit le dernier état
+/// validé, **hors** de l'instantané.
+pub async fn get_settlement_view(
+    pool: &MySqlPool,
+    company_id: i64,
+    id: i64,
+) -> Result<Option<SupplierInvoiceSettlementView>, DbError> {
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+    let Some(invoice) = sqlx::query_as::<_, SupplierInvoice>(FIND_SCOPED_SQL)
+        .bind(id)
+        .bind(company_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_db_error)?
+    else {
+        return Ok(None);
+    };
+    let lines = fetch_lines(&mut tx, invoice.id).await?;
+    let cancel_blocker = supplier_settlement_cancel_blocker(&mut tx, company_id, id).await?;
+    let last_confirmed_batch =
+        super::payment_batches::last_confirmed_batch_for_invoice(&mut *tx, company_id, id).await?;
+    tx.commit().await.map_err(map_db_error)?;
+    Ok(Some(SupplierInvoiceSettlementView {
+        invoice,
+        lines,
+        cancel_blocker,
+        last_confirmed_batch,
+    }))
+}
+
+// ---------------------------------------------------------------------------
 // Story 25-5-a (#386) — lecture exhaustive pour l'export de souveraineté
 // ---------------------------------------------------------------------------
 

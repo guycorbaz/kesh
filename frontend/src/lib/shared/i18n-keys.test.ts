@@ -235,6 +235,16 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * faux avec l'assurance de l'avoir mesuré.*
  */
 const ATTENDU = {
+	// Story 25-3-a-2 (#414) : 1685 → 1692, soit **+7**, recomptés depuis la
+	// source (`grep -o 'i18nMsg('`, `main` contre l'arbre) :
+	//   • `supplier-invoices/[id]/+page.svelte` 29 → 35 (+6) : le bouton, la
+	//     confirmation, l'avertissement de lot, le toast, le lien vers l'écriture
+	//     de règlement, le repli `common-error` ;
+	//   • `features/supplier-invoices/settlement-cancel.ts` 0 → 1 : la tête
+	//     fournisseur. La queue commune, partagée, n'ajoute aucun site.
+	//   ⚠️ `journal-entries/[id]/+page.svelte` reste à 17 : le repli
+	//   d'`OWNED_BY_SUPPLIER_INVOICE` change de texte, aucun site n'y naît.
+	//
 	// Story 25-3-a-1 (#414) : 1665 → 1685, soit **+20**, recomptés depuis la
 	// source (`grep -o 'i18nMsg('` aux deux bornes, HEAD contre l'arbre) :
 	//   • `lib/shared/utils/settlement-cancel-blocked.ts` 0 → 4 : la queue
@@ -293,7 +303,7 @@ const ATTENDU = {
 	// trouve rien là où l'appel n'existe pas encore : chercher les clés mal
 	// traduites ne révèle jamais celles qui ne sont pas appelées du tout — et
 	// partir d'une liste de clés ne révèle jamais celles que la liste omet.*
-	sitesTotal: 1685,
+	sitesTotal: 1692,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,
