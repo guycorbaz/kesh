@@ -226,7 +226,7 @@ l'application »).
    assumée** : les deux dernières sont écrites par `NewAuditLogEntry::user` (sœur et socle,
    `invoice_settlements_write.rs:466`) et ne portent **pas** la clé API ; seule
    `reconciliation.cancelled` la porte, dans la même transaction. Ne pas modifier la sœur ici —
-   le défaut est **antérieur** (sa propre route admet les clés), signalé à Guy.
+   le défaut est **antérieur** (sa propre route admet les clés) : suivi par **[#431]** (commentaire du 2026-09-25, trois sites nommés).
 
 ### Les cas particuliers
 
@@ -515,8 +515,8 @@ l'application »).
    pour cette route (non déterministe, et aucun point d'injection d'une erreur 1213) — la
    couverture du mécanisme est celle de `retry.rs` ; l'enveloppement se vérifie **en revue**, au
    Dev Agent Record. ⚠️ **Le même risque subsiste** sur la route d'annulation de
-   règlement de la 25-3-a-1 (`cancel_settlement_in_tx` appelé sans rejeu) : **à signaler à Guy**,
-   hors périmètre.
+   règlement de la 25-3-a-1 (`cancel_settlement_in_tx` appelé sans rejeu) : **[#463]**, hors
+   périmètre.
 7. Une réponse qui mêle deux lectures (AC 7) ; des totaux incrémentés au lieu d'être recomptés ; un
    motif corrigé à un site sur quatre.
 
