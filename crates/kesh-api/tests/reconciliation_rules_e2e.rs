@@ -1960,3 +1960,88 @@ async fn patch_default_project_null_clears_the_column(pool: MySqlPool) {
         "omettre defaultProjectId doit laisser la valeur inchangée"
     );
 }
+
+// ============================================================
+// Story 25-3-b (#418) — annuler un rapprochement né d'une règle
+// ============================================================
+
+/// ⛔ **Chemin « règle »** (proposition `type: rule`) : l'écriture que seule la
+/// transaction possède est contre-passée, la transaction redevient à
+/// rapprocher. ⚠️ La contre-passation est datée du JOUR : l'exercice 2026 du
+/// montage le couvre en 2026 ; au-delà, un exercice du jour est ajouté.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn cancelling_a_rule_reconciliation_reverses_its_entry(pool: MySqlPool) {
+    let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let today = chrono::Utc::now().date_naive();
+    if chrono::Datelike::year(&today) != 2026 {
+        use kesh_db::entities::NewFiscalYear;
+        let year = chrono::Datelike::year(&today);
+        kesh_db::repositories::fiscal_years::create(
+            &pool,
+            ctx.user_id,
+            NewFiscalYear {
+                company_id: ctx.company_id,
+                name: format!("{year}"),
+                start_date: NaiveDate::from_ymd_opt(year, 1, 1).unwrap(),
+                end_date: NaiveDate::from_ymd_opt(year, 12, 31).unwrap(),
+            },
+        )
+        .await
+        .expect("exercice du jour");
+    }
+    let app = spawn_app(pool.clone()).await;
+    let (rule_id, tx_id) = create_rule_and_tx(
+        &pool,
+        &app,
+        &ctx,
+        "Swisscom Schweiz AG",
+        "Swisscom",
+        dec!(-150.00),
+        "CHF",
+        Some(NaiveDate::from_ymd_opt(2026, 5, 10).unwrap()),
+    )
+    .await;
+    let resp = post_accept_rule(
+        &app,
+        &ctx.jwt,
+        ctx.bank_account_id,
+        tx_id,
+        rule_id,
+        ctx.counterparty_account_id,
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+    let entry_id: i64 =
+        sqlx::query_scalar("SELECT matched_entry_id FROM bank_transactions WHERE id = ?")
+            .bind(tx_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    let resp = app
+        .client
+        .post(app.url(&format!(
+            "/api/v1/reconciliation/transactions/{tx_id}/cancel"
+        )))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let done: Value = resp.json().await.unwrap();
+    let reversal_id = done["reversalJournalEntryId"].as_i64().unwrap();
+    let (status, matched): (String, Option<i64>) =
+        sqlx::query_as("SELECT status, matched_entry_id FROM bank_transactions WHERE id = ?")
+            .bind(tx_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!((status.as_str(), matched), ("pending", None));
+    let reverses: Option<i64> =
+        sqlx::query_scalar("SELECT reverses_entry_id FROM journal_entries WHERE id = ?")
+            .bind(reversal_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(reverses, Some(entry_id));
+}

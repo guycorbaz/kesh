@@ -92,4 +92,50 @@ describe('InvoiceSettlements', () => {
 			cleanup();
 		}
 	});
+
+	it('rapproché ⇒ bouton « Annuler le rapprochement » qui remonte la TRANSACTION nommée (Story 25-3-b ; mutation : identifiant du règlement remonté)', async () => {
+		const onCancelReconciliation = vi.fn();
+		const { getByTestId } = render(InvoiceSettlements, {
+			settlements: [
+				s({
+					id: 1,
+					cancellable: false,
+					cancelBlockedBy: 'MATCHED_BANK_TRANSACTION',
+					cancelBlockedDocumentId: 77,
+				}),
+			],
+			canManage: true,
+			onCancel: vi.fn(),
+			onCancelReconciliation,
+		});
+		await fireEvent.click(getByTestId('invoice-settlement-cancel-reconciliation'));
+		expect(onCancelReconciliation).toHaveBeenCalledWith(77);
+	});
+
+	it('le bouton du rapprochement : seulement pour ce motif, et avec le droit d’écriture (mutation : autre motif, ou `canManage` ignoré)', () => {
+		const autre = render(InvoiceSettlements, {
+			settlements: [
+				s({ id: 1, cancellable: false, cancelBlockedBy: 'FISCAL_YEAR_CLOSED' }),
+			],
+			canManage: true,
+			onCancel: vi.fn(),
+			onCancelReconciliation: vi.fn(),
+		});
+		expect(autre.queryByTestId('invoice-settlement-cancel-reconciliation')).toBeNull();
+		cleanup();
+		const lecture = render(InvoiceSettlements, {
+			settlements: [
+				s({
+					id: 1,
+					cancellable: false,
+					cancelBlockedBy: 'MATCHED_BANK_TRANSACTION',
+					cancelBlockedDocumentId: 77,
+				}),
+			],
+			canManage: false,
+			onCancel: vi.fn(),
+			onCancelReconciliation: vi.fn(),
+		});
+		expect(lecture.queryByTestId('invoice-settlement-cancel-reconciliation')).toBeNull();
+	});
 });

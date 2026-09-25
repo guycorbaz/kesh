@@ -3520,6 +3520,196 @@ pub async fn post_split(
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Story 25-3-b (#418) — annuler un rapprochement
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Une transaction bancaire et ce qui décide de l'annulation de son
+/// rapprochement — lus dans un seul instantané
+/// ([`kesh_db::repositories::reconciliation_cancel::get_view`]).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReconciliationTransactionResponse {
+    #[serde(flatten)]
+    pub transaction: crate::routes::bank_imports::TransactionResponse,
+    /// `invoice_settlement` ou `entry` ; `None` si la transaction n'est pas
+    /// rapprochée.
+    pub kind: Option<&'static str>,
+    pub invoice_id: Option<i64>,
+    pub invoice_number: Option<String>,
+    pub cancellable: bool,
+    /// Code du premier motif qui refuse l'annulation.
+    pub cancel_blocked_by: Option<&'static str>,
+    /// Le numéro du compte archivé (rang 4).
+    pub cancel_blocked_label: Option<String>,
+    /// L'**autre** transaction qui pointe la même écriture (rang 3).
+    pub cancel_blocked_document_id: Option<i64>,
+}
+
+/// `GET /api/v1/reconciliation/transactions/{id}` — la transaction et ce qui
+/// empêche d'annuler son rapprochement (Comptable+, Story 25-3-b).
+///
+/// ⚠️ **Une route, et non des champs du détail d'import** : un import porte des
+/// centaines de transactions, et la précédence coûte quelques requêtes par
+/// transaction — elle se calcule au clic, pour une seule.
+pub async fn get_reconciliation_transaction(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    axum::extract::Path(id): axum::extract::Path<i64>,
+) -> Result<Json<ReconciliationTransactionResponse>, AppError> {
+    let view = kesh_db::repositories::reconciliation_cancel::get_view(
+        &state.pool,
+        current_user.company_id,
+        id,
+    )
+    .await?
+    .ok_or(AppError::Database(DbError::NotFound))?;
+    let (invoice_id, kind) = match view.kind {
+        Some(k @ kesh_db::repositories::reconciliation_cancel::ReconciliationKind::InvoiceSettlement {
+            invoice_id,
+            ..
+        }) => (Some(invoice_id), Some(k.code())),
+        Some(k) => (None, Some(k.code())),
+        None => (None, None),
+    };
+    let hit = view.cancel_blocker;
+    Ok(Json(ReconciliationTransactionResponse {
+        transaction: view.bank_transaction.into(),
+        kind,
+        invoice_id,
+        invoice_number: view.invoice_number,
+        cancellable: hit.is_none(),
+        cancel_blocked_by: hit.as_ref().map(|h| h.0.code()),
+        cancel_blocked_label: hit.as_ref().and_then(|h| h.2.clone()),
+        cancel_blocked_document_id: hit.as_ref().and_then(|h| h.1),
+    }))
+}
+
+/// Réponse de l'annulation d'un rapprochement.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CancelReconciliationResponse {
+    /// La transaction relue, revenue « à rapprocher ».
+    pub bank_transaction: crate::routes::bank_imports::TransactionResponse,
+    /// L'écriture inverse, datée du jour.
+    pub reversal_journal_entry_id: i64,
+    /// La facture dont le règlement a été retiré, pour un règlement client.
+    pub invoice_id: Option<i64>,
+}
+
+/// `POST /api/v1/reconciliation/transactions/{id}/cancel` — annule un
+/// rapprochement par contre-passation (Comptable+, clés API d'écriture
+/// admises, Story 25-3-b, #418).
+///
+/// ⛔ **Rejeu sur interblocage, au plus dehors.** Une acceptation de
+/// proposition verrouille l'exercice du jour avant la facture ; ce geste, la
+/// facture avant l'exercice du jour : sur deux comptes bancaires, ils peuvent
+/// s'interbloquer (1213). `retry_with` rejoue alors **toute** l'opération —
+/// transaction neuve, verrou de compte repris —, patron de
+/// `onboarding::finalize` (KF-002-H-002, #43). ⚠️ Le prédicat porte sur
+/// `AppError` : le mapping ci-dessous **préserve** `DbError::Sqlx`, sans quoi
+/// le rejeu serait muet.
+pub async fn post_cancel_reconciliation(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    axum::extract::Path(id): axum::extract::Path<i64>,
+) -> Result<Json<CancelReconciliationResponse>, AppError> {
+    use kesh_db::retry::{DEFAULT_MAX_DEADLOCK_ATTEMPTS, is_deadlock_error, retry_with};
+    let company_id = current_user.company_id;
+    let user_id = current_user.user_id;
+    let actor_api_key_id = current_user.api_key_id;
+    retry_with(
+        DEFAULT_MAX_DEADLOCK_ATTEMPTS,
+        |err: &AppError| matches!(err, AppError::Database(db) if is_deadlock_error(db)),
+        || {
+            let pool = state.pool.clone();
+            async move {
+                cancel_reconciliation_once(&pool, company_id, id, user_id, actor_api_key_id).await
+            }
+        },
+    )
+    .await
+    .map(Json)
+}
+
+/// Une tentative : transaction neuve, verrou du compte bancaire, geste, commit.
+async fn cancel_reconciliation_once(
+    pool: &sqlx::MySqlPool,
+    company_id: i64,
+    bank_transaction_id: i64,
+    user_id: i64,
+    actor_api_key_id: Option<i64>,
+) -> Result<CancelReconciliationResponse, AppError> {
+    // Le compte, pour nommer le verrou — lu hors verrou, scopé par société :
+    // il ne change jamais pour une transaction.
+    let bank_account_id: i64 = sqlx::query_scalar(
+        "SELECT bank_account_id FROM bank_transactions WHERE id = ? AND company_id = ?",
+    )
+    .bind(bank_transaction_id)
+    .bind(company_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| AppError::Database(DbError::Sqlx(e)))?
+    .ok_or(AppError::Database(DbError::NotFound))?;
+
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
+    let result = with_account_lock(
+        &mut tx,
+        company_id,
+        bank_account_id,
+        LOCK_TIMEOUT_SECS,
+        async move |tx_inner| {
+            Ok(kesh_db::repositories::reconciliation_cancel::cancel_in_tx(
+                tx_inner,
+                company_id,
+                bank_transaction_id,
+                user_id,
+                actor_api_key_id,
+            )
+            .await?)
+        },
+    )
+    .await;
+    match result {
+        Ok(done) => {
+            tx.commit()
+                .await
+                .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
+            Ok(CancelReconciliationResponse {
+                bank_transaction: done.bank_transaction.into(),
+                reversal_journal_entry_id: done.reversal_journal_entry_id,
+                invoice_id: done.invoice_id,
+            })
+        }
+        Err(e) => {
+            let _ = tx.rollback().await;
+            Err(match e {
+                ReconciliationError::AccountLocked {
+                    bank_account_id,
+                    timeout_secs,
+                } => AppError::ReconciliationAccountLocked {
+                    bank_account_id,
+                    timeout_secs,
+                },
+                ReconciliationError::LockReleaseFailed {
+                    bank_account_id, ..
+                } => AppError::ReconciliationLockReleaseFailed { bank_account_id },
+                // ⛔ Les deux formes d'erreur de base PRÉSERVENT `DbError::Sqlx` :
+                // c'est ce que lit le prédicat du rejeu.
+                ReconciliationError::Db(db) => AppError::Database(db),
+                ReconciliationError::Database(e) => AppError::Database(DbError::Sqlx(e)),
+                other => {
+                    tracing::error!(error = %other, "variante inattendue au dé-rapprochement");
+                    AppError::Internal("internal: unexpected reconciliation error".into())
+                }
+            })
+        }
+    }
+}
+
 #[cfg(test)]
 mod period_lock_tests {
     use super::*;

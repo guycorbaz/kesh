@@ -17,12 +17,12 @@
 //! ⚠️ Comparer des NOMBRES ne détecterait pas une route retirée pendant qu'une
 //! autre est ajoutée : le compte resterait égal et la dérive invisible. Le test
 //! `admin_pat_denied_e2e` peut compter, lui, parce qu'il opère sur un bloc clos
-//! entre marqueurs ; les 106 routes sont réparties dans tout le fichier.
+//! entre marqueurs ; les 109 routes sont réparties dans tout le fichier.
 //!
 //! # Deux fichiers, deux volets
 //!
-//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (106 routes) ; celui du
-//! REGISTRE est plus large (109), car trois routes mutantes vivent dans
+//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (109 routes) ; celui du
+//! REGISTRE est plus large (112), car trois routes mutantes vivent dans
 //! `routes/test_endpoints.rs` et sont montées par un `nest()`. D'où :
 //!
 //! - volet « route absente du registre » → sur les **deux** fichiers, faute de
@@ -129,6 +129,8 @@ const LIB_ROUTES: &[(&str, &str, Status)] = &[
     ("post", "reconciliation::post_reject", Traced),
     ("post", "reconciliation::post_manual", Traced),
     ("post", "reconciliation::post_split", Traced),
+    // Story 25-3-b (#418) — `reconciliation.cancelled`.
+    ("post", "reconciliation::post_cancel_reconciliation", Traced),
     ("post", "bank_accounts::create_bank_account", Traced),
     ("patch", "bank_accounts::patch_bank_account_journal_link", Traced),
     ("put", "bank_accounts::update_bank_account", Traced),
@@ -246,7 +248,7 @@ fn every_mutating_route_of_lib_is_in_the_registry() {
         Vec::<(String, String)>::new(),
         "⛔ Site(s) de montage de route que l'extracteur du registre NE SAIT PAS \
          lire : {non_resolus:?}\n\n\
-         Soit la route est écrite `post(routes::module::handler)` comme les 106 \
+         Soit la route est écrite `post(routes::module::handler)` comme toutes les \
          autres, soit cet inventaire doit l'accueillir explicitement comme angle \
          mort assumé. ⚠️ Ne PAS élargir le filtre d'extraction sans élargir aussi \
          cet inventaire : c'est lui qui empêche une forme imprévue de passer."
@@ -448,12 +450,13 @@ fn the_registry_partition_is_what_the_story_declares() {
         .filter(|(_, _, s)| matches!(s, NoMatter(_)))
         .count();
 
-    assert_eq!(LIB_ROUTES.len(), 108, "l'inventaire porte sur 108 routes");
+    assert_eq!(LIB_ROUTES.len(), 109, "l'inventaire porte sur 109 routes");
     assert_eq!(traced + exempt + no_matter, LIB_ROUTES.len());
     assert_eq!(
-        traced, 90,
+        traced, 91,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
-         plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414)"
+         plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
+         plus l'annulation d'un rapprochement (25-3-b, #418)"
     );
     assert_eq!(
         exempt, 15,
@@ -462,7 +465,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     assert_eq!(no_matter, 3, "trois routes mutantes qui ne mutent rien");
     assert_eq!(
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        111,
+        112,
         "le registre est plus large que l'inventaire, et c'est voulu"
     );
 }

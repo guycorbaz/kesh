@@ -36,6 +36,7 @@ pub mod payment_batches;
 pub mod products;
 pub mod projects;
 pub mod reconciliation;
+pub mod reconciliation_cancel;
 pub mod reconciliation_rules;
 pub mod refresh_tokens;
 pub mod settlement_cancellation;

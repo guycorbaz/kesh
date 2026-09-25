@@ -117,3 +117,41 @@ export interface SplitResponse {
 	bankTransactionId: number;
 	journalEntryId: number;
 }
+
+// Story 25-3-b (#418) — annuler un rapprochement.
+
+/** Les six motifs qui refusent l'annulation, dans l'ordre de précédence du serveur. */
+export type ReconciliationCancelCode =
+	| 'BANK_TRANSACTION_NOT_RECONCILED'
+	| 'INVOICE_CREDITED'
+	| 'FISCAL_YEAR_CLOSED'
+	| 'MATCHED_BANK_TRANSACTION'
+	| 'ACCOUNT_ARCHIVED'
+	| 'FISCAL_YEAR_INVALID';
+
+/** `GET /api/v1/reconciliation/transactions/{id}` — lu au clic, pour une transaction. */
+export interface ReconciliationTransactionResponse {
+	id: number;
+	status: string;
+	amount: string;
+	currency: string;
+	bookingDate: string;
+	matchedEntryId: number | null;
+	/** `invoice_settlement` ou `entry` ; `null` si la transaction n'est pas rapprochée. */
+	kind: 'invoice_settlement' | 'entry' | null;
+	invoiceId: number | null;
+	invoiceNumber: string | null;
+	cancellable: boolean;
+	cancelBlockedBy: ReconciliationCancelCode | null;
+	/** Numéro du compte archivé (rang 4). */
+	cancelBlockedLabel: string | null;
+	/** L'AUTRE transaction qui pointe la même écriture (rang 3). */
+	cancelBlockedDocumentId: number | null;
+}
+
+/** `POST /api/v1/reconciliation/transactions/{id}/cancel`. */
+export interface CancelReconciliationResponse {
+	bankTransaction: { id: number; status: string; matchedEntryId: number | null };
+	reversalJournalEntryId: number;
+	invoiceId: number | null;
+}

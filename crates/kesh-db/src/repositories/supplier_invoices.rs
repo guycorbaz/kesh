@@ -931,8 +931,10 @@ pub async fn supplier_settlement_cancel_blocker(
             None,
         )));
     };
-    super::settlement_cancellation::settlement_entry_cancel_blocker(conn, company_id, entry_id)
-        .await
+    super::settlement_cancellation::settlement_entry_cancel_blocker(
+        conn, company_id, entry_id, None,
+    )
+    .await
 }
 
 /// Ce que rend l'annulation d'un règlement fournisseur.

@@ -75,9 +75,11 @@ pub enum ReversalBlocker {
     /// contre-passe **au titre** du règlement et retire sa ligne dans la même
     /// transaction — la contre-passation directe, elle, reste refusée.
     OwnedBySettlement,
-    /// Écriture rapprochée d'une transaction bancaire. ⚠️ Aucune route de
-    /// dé-rapprochement n'existe (#418) : le refus laisse un manque, assumé,
-    /// parce que l'alternative recrée une désynchronisation muette.
+    /// Écriture rapprochée d'une transaction bancaire. Le chemin est le
+    /// **dé-rapprochement** (Story 25-3-b, `reconciliation_cancel::cancel_in_tx`,
+    /// `POST /reconciliation/transactions/{id}/cancel`), qui défait le lien puis
+    /// contre-passe dans la même transaction — la contre-passation directe, elle,
+    /// reste refusée : elle laisserait la transaction pointer une écriture annulée.
     MatchedBankTransaction,
     /// Un compte de l'écriture a été **archivé** depuis.
     ///
@@ -194,6 +196,10 @@ impl UnvalidationBlocker {
 /// qui **nomme** les comptes archivés.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettlementCancelBlocker {
+    /// Tête du **dé-rapprochement** (Story 25-3-b, #418), rang 0 : la
+    /// transaction bancaire n'est pas `reconciled` — il n'y a pas de
+    /// rapprochement à annuler. Coupe court : aucun rang suivant ne s'évalue.
+    BankTransactionNotReconciled,
     /// La facture a été **créditée** par un avoir après ce règlement. Le
     /// règlement est alors un paiement **à lettrer** (Epic 15), pas une
     /// anomalie — il ne s'annule pas. ⚠️ Le statut `cancelled` d'une facture
@@ -209,7 +215,9 @@ pub enum SettlementCancelBlocker {
     /// chemin (arbitrage Q5).
     FiscalYearClosed,
     /// L'écriture de règlement est rapprochée d'une transaction bancaire : le
-    /// dé-rapprochement (25-3-b) défait ce lien d'abord.
+    /// dé-rapprochement (Story 25-3-b, `reconciliation_cancel`) défait ce lien
+    /// d'abord. Pour le dé-rapprochement lui-même, ce rang ne tient que si une
+    /// **autre** transaction pointe la même écriture (exemption étroite).
     MatchedBankTransaction,
     /// Un compte de l'écriture de règlement a été archivé depuis.
     AccountArchived,
@@ -227,6 +235,7 @@ impl SettlementCancelBlocker {
     /// un même fait ne reçoit pas un second nom.
     pub fn code(self) -> &'static str {
         match self {
+            Self::BankTransactionNotReconciled => "BANK_TRANSACTION_NOT_RECONCILED",
             Self::InvoiceCredited => "INVOICE_CREDITED",
             Self::SupplierInvoiceNotPaid => "SUPPLIER_INVOICE_NOT_PAID",
             Self::FiscalYearClosed => "FISCAL_YEAR_CLOSED",
@@ -439,6 +448,19 @@ pub enum DbError {
     #[error("Règlement non annulable ({})", .blocker.code())]
     SettlementNotCancellable { blocker: SettlementCancelBlocker },
 
+    /// Le rapprochement bancaire ne peut pas être annulé (Story 25-3-b, #418).
+    ///
+    /// Conflit d'état → HTTP **409**, avec le code canonique du
+    /// [`SettlementCancelBlocker`]. ⛔ **Distincte de `SettlementNotCancellable`**,
+    /// dont le texte dit « ce règlement » : une écriture d'éclatement, de règle
+    /// ou de rapprochement manuel n'est pas un règlement. Seuls les rangs que
+    /// le dé-rapprochement refuse **lui-même** passent par ici (rang 0 :
+    /// transaction non rapprochée ; rang 2 : exercice clos) ; le rang 1 est
+    /// refusé par le geste d'annulation du règlement client, les rangs 3 à 5
+    /// par la contre-passation.
+    #[error("Rapprochement non annulable ({})", .blocker.code())]
+    ReconciliationNotCancellable { blocker: SettlementCancelBlocker },
+
     /// Un brouillon **numéroté** changerait d'exercice (Story 25-2-b-1, #440).
     ///
     /// Le numéro vient du compteur de l'exercice qui couvre la date : le
@@ -606,6 +628,7 @@ impl DbError {
             Self::ReversalAccountsArchived(_) => "ACCOUNT_ARCHIVED",
             Self::InvoiceNotUnvalidatable { blocker, .. } => blocker.code(),
             Self::SettlementNotCancellable { blocker } => blocker.code(),
+            Self::ReconciliationNotCancellable { blocker } => blocker.code(),
             Self::InvoiceNumberFiscalYearMismatch => "INVOICE_NUMBER_FISCAL_YEAR_MISMATCH",
             Self::InvoiceMustBeUnvalidatedFirst => "INVOICE_MUST_BE_UNVALIDATED_FIRST",
             Self::EntryIsReversed => "ENTRY_IS_REVERSED",

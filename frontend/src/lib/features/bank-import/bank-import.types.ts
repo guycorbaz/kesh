@@ -116,6 +116,8 @@ export interface BankTransactionDto {
 	counterpartyIban: string | null;
 	counterpartyName: string | null;
 	status: string;
+	/** L'écriture liée par le rapprochement, `null` si la transaction n'est pas rapprochée (Story 25-3-b). */
+	matchedEntryId: number | null;
 }
 
 export interface BankImportDetailResponse extends BankImportResponse {

@@ -249,6 +249,31 @@ pub struct TransactionResponse {
     pub counterparty_iban: Option<String>,
     pub counterparty_name: Option<String>,
     pub status: String,
+    /// L'écriture liée par le rapprochement, `None` si la transaction n'est
+    /// pas rapprochée (Story 25-3-b) — une lecture de colonne, sans calcul :
+    /// ce qui empêche d'annuler se lit au clic, pour UNE transaction
+    /// (`GET /reconciliation/transactions/{id}`).
+    pub matched_entry_id: Option<i64>,
+}
+
+impl From<kesh_db::entities::bank_transaction::BankTransaction> for TransactionResponse {
+    fn from(t: kesh_db::entities::bank_transaction::BankTransaction) -> Self {
+        Self {
+            id: t.id,
+            booking_date: t.booking_date,
+            value_date: t.value_date,
+            amount: t.amount,
+            currency: t.currency,
+            reference: t.reference,
+            details: t.details,
+            end_to_end_id: t.end_to_end_id,
+            transaction_id: t.transaction_id,
+            counterparty_iban: t.counterparty_iban,
+            counterparty_name: t.counterparty_name,
+            status: t.status.as_str().to_string(),
+            matched_entry_id: t.matched_entry_id,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -1289,23 +1314,7 @@ pub async fn detail(
 
     let import_resp = import_to_response(import);
 
-    let tx_resps: Vec<TransactionResponse> = txs
-        .into_iter()
-        .map(|t| TransactionResponse {
-            id: t.id,
-            booking_date: t.booking_date,
-            value_date: t.value_date,
-            amount: t.amount,
-            currency: t.currency,
-            reference: t.reference,
-            details: t.details,
-            end_to_end_id: t.end_to_end_id,
-            transaction_id: t.transaction_id,
-            counterparty_iban: t.counterparty_iban,
-            counterparty_name: t.counterparty_name,
-            status: t.status.as_str().to_string(),
-        })
-        .collect();
+    let tx_resps: Vec<TransactionResponse> = txs.into_iter().map(Into::into).collect();
 
     Ok(Json(BankImportDetailResponse {
         import: import_resp,

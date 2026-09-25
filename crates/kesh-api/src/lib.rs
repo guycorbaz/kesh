@@ -629,6 +629,17 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/reconciliation/split",
             post(routes::reconciliation::post_split),
         )
+        // Story 25-3-b (#418) : annuler un rapprochement (Comptable+, clés API
+        // d'écriture admises). La lecture calcule, pour UNE transaction, ce qui
+        // empêche d'annuler — au clic, pas dans le détail d'un import.
+        .route(
+            "/api/v1/reconciliation/transactions/{id}",
+            get(routes::reconciliation::get_reconciliation_transaction),
+        )
+        .route(
+            "/api/v1/reconciliation/transactions/{id}/cancel",
+            post(routes::reconciliation::post_cancel_reconciliation),
+        )
         // Story 8-5a-zero : configuration `bank_account.journal_account_id`
         // (Comptable+ pour la mutation, foundation FR45/FR48).
         // Story v014-1 : CRUD complet post-onboarding (POST/PUT/DELETE).

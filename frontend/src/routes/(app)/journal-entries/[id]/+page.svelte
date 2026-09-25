@@ -161,7 +161,7 @@
 			case 'MATCHED_BANK_TRANSACTION':
 				return i18nMsg(
 					'journal-entries-reverse-blocked-bank-match',
-					"Cette écriture est rapprochée d'une transaction bancaire."
+					"Cette écriture est rapprochée d'une transaction bancaire : annulez le rapprochement depuis le détail de l'import bancaire."
 				);
 			case 'ACCOUNT_ARCHIVED':
 				return i18nMsg(

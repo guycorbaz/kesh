@@ -41,6 +41,7 @@
 	} from '$lib/features/bank-accounts/bank-accounts.api';
 	import SendEmailDialog from '$lib/features/invoices/SendEmailDialog.svelte';
 	import InvoiceSettlements from '$lib/features/invoices/InvoiceSettlements.svelte';
+	import CancelReconciliationDialog from '$lib/features/reconciliation/CancelReconciliationDialog.svelte';
 	import DunningPausedBadge from '$lib/features/invoices/DunningPausedBadge.svelte';
 	import ReminderHistory from '$lib/features/reminders/ReminderHistory.svelte';
 	import DunningPauseDialog from '$lib/features/reminders/DunningPauseDialog.svelte';
@@ -151,6 +152,21 @@
 	 * Relit les règlements. Échec toléré : sans la liste, la fiche reste
 	 * lisible — seul le geste d'annulation manque.
 	 */
+	/** Story 25-3-b — la transaction dont on annule le rapprochement, ou `null`. */
+	let reconciliationTxId = $state<number | null>(null);
+
+	/** Après l'annulation d'un rapprochement : la facture et ses règlements, relus. */
+	async function afterReconciliationCancelled() {
+		reconciliationTxId = null;
+		notifySuccess(i18nMsg('reconciliation-cancel-done', 'Rapprochement annulé.'));
+		try {
+			invoice = await getInvoice(id);
+		} catch (err) {
+			if (isApiError(err)) errorMsg = err.message;
+		}
+		await loadSettlements();
+	}
+
 	async function loadSettlements() {
 		try {
 			settlements = await listInvoiceSettlements(id);
@@ -1036,7 +1052,16 @@
 				cancelError = '';
 				cancelTarget = s;
 			}}
+			onCancelReconciliation={(txId) => (reconciliationTxId = txId)}
 		/>
+		{#if reconciliationTxId !== null}
+			<CancelReconciliationDialog
+				bankTransactionId={reconciliationTxId}
+				open={reconciliationTxId !== null}
+				onClose={() => (reconciliationTxId = null)}
+				onSuccess={afterReconciliationCancelled}
+			/>
+		{/if}
 
 		{#if invoice.status === 'validated'}
 			<!-- Story 21-6c : historique des rappels (rappels uniquement sur factures validées). -->

@@ -2475,7 +2475,7 @@ impl IntoResponse for AppError {
                         ),
                         ReversalBlocker::MatchedBankTransaction => (
                             "journal-entries-reverse-blocked-bank-match",
-                            "Cette écriture est rapprochée d'une transaction bancaire.",
+                            "Cette écriture est rapprochée d'une transaction bancaire : annulez le rapprochement depuis le détail de l'import bancaire.",
                         ),
                         // ⚠️ **Aucun chemin ne construit ce cas aujourd'hui** :
                         // l'écriture l'exclut délibérément pour atteindre
@@ -2586,7 +2586,7 @@ impl IntoResponse for AppError {
                         ),
                         SettlementCancelBlocker::MatchedBankTransaction => (
                             "settlement-cancel-blocked-bank-match",
-                            "Ce règlement est rapproché d'une transaction bancaire : annulez d'abord le rapprochement.",
+                            "Ce règlement est rapproché d'une transaction bancaire : annulez d'abord le rapprochement, depuis cette fiche ou le détail de l'import bancaire.",
                         ),
                         SettlementCancelBlocker::AccountArchived => (
                             "settlement-cancel-blocked-account-archived",
@@ -2596,7 +2596,22 @@ impl IntoResponse for AppError {
                             "settlement-cancel-blocked-no-fiscal-year",
                             "Aucun exercice ouvert ne couvre la date du jour : créez-le pour pouvoir annuler ce règlement.",
                         ),
+                        // Tête du dé-rapprochement : jamais produite par
+                        // l'annulation d'un règlement ; son texte est celui
+                        // du dé-rapprochement.
+                        SettlementCancelBlocker::BankTransactionNotReconciled => {
+                            reconciliation_cancel_blocked_text(blocker)
+                        }
                     };
+                    build_response(StatusCode::CONFLICT, blocker.code(), &t(key, fallback))
+                }
+                // Story 25-3-b (#418) — le dé-rapprochement refusé par le geste
+                // lui-même (rang 0 : transaction non rapprochée ; rang 2 :
+                // exercice clos). ⛔ Ses PROPRES textes : ceux du règlement
+                // disent « ce règlement », faux pour un éclatement ou un
+                // rapprochement manuel.
+                DbError::ReconciliationNotCancellable { blocker } => {
+                    let (key, fallback) = reconciliation_cancel_blocked_text(blocker);
                     build_response(StatusCode::CONFLICT, blocker.code(), &t(key, fallback))
                 }
                 // Story 25-2-b-1 (#440) — un brouillon numéroté qu'on redate
@@ -2925,6 +2940,48 @@ impl IntoResponse for AppError {
                 }
             },
         }
+    }
+}
+
+/// Story 25-3-b (#418) — le texte d'un motif de dé-rapprochement refusé, un
+/// par variante de [`SettlementCancelBlocker`] : clé FTL de la famille
+/// `reconciliation-cancel-blocked-*` et repli en dur, **mot pour mot** le FTL
+/// fr-CH. ⛔ Les clés sont celles de l'écran (`features/reconciliation/`) : un
+/// seul texte par motif.
+fn reconciliation_cancel_blocked_text(
+    blocker: SettlementCancelBlocker,
+) -> (&'static str, &'static str) {
+    match blocker {
+        SettlementCancelBlocker::BankTransactionNotReconciled => (
+            "reconciliation-cancel-blocked-not-reconciled",
+            "Cette transaction bancaire n'est pas rapprochée : il n'y a pas de rapprochement à annuler.",
+        ),
+        SettlementCancelBlocker::InvoiceCredited => (
+            "reconciliation-cancel-blocked-credited",
+            "La facture de ce rapprochement a été créditée par un avoir : son règlement est un paiement à lettrer, il ne s'annule pas.",
+        ),
+        // Aucun rapprochement ne règle une facture fournisseur : le motif ne
+        // peut pas naître ici ; le `match` reste exhaustif.
+        SettlementCancelBlocker::SupplierInvoiceNotPaid => (
+            "supplier-invoices-settlement-cancel-blocked-not-paid",
+            "Cette facture fournisseur n'est pas payée : il n'y a pas de règlement à annuler.",
+        ),
+        SettlementCancelBlocker::FiscalYearClosed => (
+            "reconciliation-cancel-blocked-fiscal-year-closed",
+            "Ce rapprochement appartient à un exercice clôturé : un administrateur doit rouvrir l'exercice pour pouvoir l'annuler.",
+        ),
+        SettlementCancelBlocker::MatchedBankTransaction => (
+            "reconciliation-cancel-blocked-bank-match",
+            "L'écriture de ce rapprochement est aussi rapprochée d'une autre transaction bancaire : annulez d'abord cet autre rapprochement.",
+        ),
+        SettlementCancelBlocker::AccountArchived => (
+            "reconciliation-cancel-blocked-account-archived",
+            "Un compte de l'écriture de ce rapprochement a été archivé : réactivez-le pour pouvoir annuler le rapprochement.",
+        ),
+        SettlementCancelBlocker::NoOpenFiscalYearToday => (
+            "reconciliation-cancel-blocked-no-fiscal-year",
+            "Aucun exercice ouvert ne couvre la date du jour : créez-le pour pouvoir annuler ce rapprochement.",
+        ),
     }
 }
 
