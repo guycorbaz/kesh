@@ -122,7 +122,8 @@ l'application »).
 
 ### Le geste
 
-1. **`reconciliation_cancel::cancel_in_tx(tx, company_id, bank_transaction_id, user_id)`** — nouveau
+1. **`reconciliation_cancel::cancel_in_tx(tx, company_id, bank_transaction_id, user_id,
+   actor_api_key_id: Option<i64>)`** — nouveau
    module de dépôt `crates/kesh-db/src/repositories/reconciliation_cancel.rs`, sans `BEGIN` ni
    `COMMIT`, plus son enveloppement. Il rend : la transaction relue, l'écriture inverse
    (`i64`), et la facture touchée
@@ -214,12 +215,18 @@ l'application »).
 
 ### L'audit
 
-4. **`reconciliation.cancelled`**, **littéral** au site d'insertion, inscrit à
+4. **`reconciliation.cancelled`**, **littéral** au site d'insertion, écrit par
+   `NewAuditLogEntry::for_actor(user_id, actor_api_key_id, …)` — patron des quatre routes de
+   réconciliation (`post_manual`, `routes/reconciliation.rs:2986-2995`) —, inscrit à
    `audit_labels.rs::ACTIONS` (liste triée) et libellé dans les **quatre** locales. Entité
    `bank_transaction`. Charge : `kind` (`invoice_settlement` / `entry`), `matchedEntryId`, `reversalJournalEntryId`, `invoiceId`, `settlementId`, montant,
    `wasPreviouslyRejected`. ⚠️ Pour un règlement client, **trois** lignes au total —
    `reconciliation.cancelled`, `invoice.settlement_cancelled` (le geste de la 25-3-a-1) et
-   `journal_entry.reversed` (le socle) : c'est voulu, chacune nomme son objet.
+   `journal_entry.reversed` (le socle) : c'est voulu, chacune nomme son objet. ⚠️ **Limite
+   assumée** : les deux dernières sont écrites par `NewAuditLogEntry::user` (sœur et socle,
+   `invoice_settlements_write.rs:466`) et ne portent **pas** la clé API ; seule
+   `reconciliation.cancelled` la porte, dans la même transaction. Ne pas modifier la sœur ici —
+   le défaut est **antérieur** (sa propre route admet les clés), signalé à Guy.
 
 ### Les cas particuliers
 
@@ -250,17 +257,26 @@ l'application »).
    ```text
    retry_with(DEFAULT_MAX_DEADLOCK_ATTEMPTS,
               |e: &AppError| matches!(e, AppError::Database(db) if is_deadlock_error(db)),
-              || async {                         // une tentative = tout, depuis zéro
-                  let mut tx = pool.begin();     // transaction NEUVE à chaque tentative
-                  with_account_lock(&mut tx, company, account, timeout, |tx| cancel_in_tx(tx, …))
-                  → mapping ReconciliationError → AppError (patron post_manual :3006-3080)
-                  → tx.commit()
+              || {                                  // closure Fn : cloner, puis async move
+                  let pool = state.pool.clone();    // (patron onboarding.rs:614-620)
+                  async move {
+                      let mut tx = pool.begin();    // transaction NEUVE à chaque tentative
+                      with_account_lock(&mut tx, company, account, timeout,
+                          async |tx| Ok(cancel_in_tx(tx, …).await?))  // DbError → ReconciliationError::Db
+                      → mapping ReconciliationError → AppError (patron post_manual :3006-3080)
+                      → tx.commit()
+                  }
               })
    ```
 
    Pourquoi dans cet ordre : `retry_with` rejoue une closure **`Fn`** qui doit repartir de zéro
    (le 1213 a déjà annulé la transaction côté MariaDB) ; le verrou nommé est relâché par
-   `with_account_lock` à chaque sortie, succès ou erreur, donc chaque tentative le reprend. ⚠️ **Le
+   `with_account_lock` à chaque sortie **tant que `RELEASE_LOCK` aboutit** — ⚠️ un `GET_LOCK` est
+   lié à la **session**, non à la transaction : si le relâchement échoue sur un chemin d'erreur,
+   `mutex.rs` ne fait que journaliser, et le verrou fuit jusqu'à la fin de session (L22) ; la
+   tentative suivante attendrait alors le délai et rendrait 409 `AccountLocked`, non rejoué.
+   Cas pathologique (après un 1213, la connexion est vivante), **antérieur** à cette story :
+   limite assumée. ⚠️ **Le
    prédicat porte sur `AppError`**, pas sur `DbError` : `is_deadlock_error` ne reconnaît que
    `DbError::Sqlx(1213)`, et c'est la chaîne de mapping qui doit le **préserver** —
    `ReconciliationError::Db(db)` → `AppError::Database(db)` et `ReconciliationError::Database(e)` →
@@ -294,7 +310,13 @@ l'application »).
    **repli serveur** dépend, lui, de qui refuse : rangs 0 et 2 → `ReconciliationNotCancellable`
    (famille neuve) ; rang 1 → `SettlementNotCancellable` de la 25-3-a-1, dont le texte (« ce
    règlement… ») est **juste** puisque l'écriture est alors un règlement ; rangs 3 à 5 → les
-   erreurs du socle. Côté serveur, donc, le **bloc de mapping** de
+   erreurs du socle. ⛔ **Les codes qui ne sont pas des motifs** — au clic, la route rend aussi
+   `PERIOD_LOCKED`, `OPTIMISTIC_LOCK_CONFLICT`, `RECONCILIATION_ACCOUNT_LOCKED`,
+   `RECONCILIATION_LOCK_RELEASE_FAILED`, `NOT_FOUND` (`kesh-api/src/errors.rs:1913, 1927, 2257,
+   2262, 2698`) — : le dialogue affiche le **`message` du serveur**, déjà traduit et propre à
+   chacun. La garde `never` porte sur l'**union typée des six motifs** ; la branche de repli, hors
+   de l'union, lit le message serveur — jamais un texte générique (AC 10). Test Vitest avec
+   `PERIOD_LOCKED`. Côté serveur, donc, le **bloc de mapping** de
    `ReconciliationNotCancellable` (`crates/kesh-api/src/errors.rs`) — un texte par code qu'il porte
    (rangs 0 et 2), clés `reconciliation-cancel-blocked-*`.
 
@@ -552,6 +574,7 @@ Toutes tranchées le 2026-09-25 (cf. « Arbitrages de Guy sur cette fiche »).
 
 | Date | Étape | Note |
 |---|---|---|
+| 2026-09-25 | validate P3 | **Passe ciblée** : une lentille **Opus** en contexte frais, sur la seule remédiation de P2 (72 lignes aplaties), prompt versionné `25-3-b-validate-prompt-p3.md`, axes déclarés (non exercés : `cargo check`, frontend inexistant, 1213 sur `GET_LOCK` supposé impossible). **Vérifié juste** : `map_db_error` laisse un 1213 en `DbError::Sqlx` — le rejeu n'est pas muet ; chaîne de mapping exacte ; aucun état partiel entre tentatives ; `.entry.id` exact. **2 MEDIUM, 2 LOW, corrigés** : ① les codes **hors motifs** (`PERIOD_LOCKED`, `OPTIMISTIC_LOCK_CONFLICT`, verrou de compte, `NOT_FOUND`) n'avaient pas de destination dans le dialogue ⇒ message serveur, garde `never` sur l'union des six seulement, test ; ② (hors diff) `actor_api_key_id` absent de la signature du geste alors que l'AC 6 admet les clés ⇒ ajouté, audit par `for_actor` ; limite assumée : les lignes d'audit de la sœur et du socle ne portent pas la clé — **défaut antérieur de la 25-3-a-1, signalé à Guy** ; ③ pseudo-code rendu compilable (`async move` + clones ; `async |tx| Ok(…?)`) ; ④ « relâché à chaque sortie » nuancé — un verrou nommé est de session, fuite possible si `RELEASE_LOCK` échoue, limite assumée antérieure. **Trend** : P1 2 HIGH / 3 MED / 2 LOW → P2 2 MED / 1 LOW → P3 2 MED / 2 LOW. ⚠️ Le correctif ② touche un AC (signature) et non le seul diff de P2 : la passe suivante doit rester ciblée **sur cette remédiation**. |
 | 2026-09-25 | validate P2 | **Deux lentilles Haiku 4.5** en contexte frais, diff de la remédiation **aplati**, prompt versionné `25-3-b-validate-prompt-p2.md`, axes déclarés. Lentille A (régressions de P1) : 1 LOW (type rendu par `reverse_in_tx` → `.entry.id`, précisé). Lentille B (à froid) : 1 HIGH **reclassé MEDIUM** — pas une contradiction mais une ambiguïté : le dialogue traduit le **code** par sa propre famille pour les six codes ; seul le repli serveur du rang 1 reste celui du règlement, et il est juste ⇒ « qui affiche quoi » écrit à l'AC 9 ; 1 MEDIUM — l'emboîtement rejeu / transaction / verrou n'était pas écrit ⇒ pseudo-code à l'AC 6. ⚠️ **Axes laissés par la lentille A et repris par l'orchestrateur** : rejouer une closure qui prend un verrou nommé est sûr (relâché à chaque sortie, transaction neuve à chaque tentative) ; ⛔ le prédicat de `retry_with` doit porter sur `AppError`, et la chaîne de mapping **préserver** `DbError::Sqlx` — vérifié sur `post_manual:3046-3052` ; écrit à l'AC 6 (un mapping qui masquerait le 1213 rendrait le rejeu muet). **Trend** : P1 2 HIGH / 3 MED / 2 LOW → P2 2 MED / 1 LOW. |
 | 2026-09-25 | validate P1 | **Deux lentilles Sonnet** en contexte frais, prompt versionné `25-3-b-validate-prompt-p1.md`, axes déclarés par chacune. Lentille A : les faits 1-7 et ~25 citations `fichier:ligne` **tous exacts**, registre recompté exact ; **2 MEDIUM, 1 LOW**. Lentille B : **2 HIGH, 1 MEDIUM, 1 LOW**. Corrigés : ① (B, HIGH) le refus propre du geste passait par `SettlementNotCancellable`, dont le texte dit « ce règlement » — faux pour un éclatement ⇒ variante neuve `DbError::ReconciliationNotCancellable`, mappée vers `reconciliation-cancel-blocked-*`, test du texte ; ② (B, HIGH) l'exemption étroite ne pouvait pas s'appuyer sur le `LIMIT 1` sans `ORDER BY` de `reversal_blockers` ⇒ requête dédiée prescrite (`id <> ?`), test aux deux ordres d'insertion ; ③ (A, MEDIUM) l'étape 4 ne disait pas d'appeler la forme **exemptée** ⇒ écrit ; ④ (A, MEDIUM) le piège d'interblocage ignorait le patron du dépôt ⇒ **tranché : rejeu** par `kesh_db::retry::retry_with` (patron `onboarding.rs`, KF-002-H-002) ; ⚠️ un test prescrit par ce correctif (« 1213 forgé ») a été **retiré avant commit** : aucun point d'injection, limite assumée, vérification en revue ; ⑤ (B, MEDIUM) contrat du dialogue partagé écrit (props, qui lit, qui relit) ; ⑥ (A, LOW) en-tête du registre de routes déjà faux (106/109) — à corriger au passage ; ⑦ (B, LOW) ligne du README nommée juste. Reformulé (B, info) : les sœurs gardent comportement et tests, leur code reçoit un argument. ⚠️ **À signaler à Guy** : la route d'annulation de règlement de la 25-3-a-1 porte le même risque d'interblocage, sans rejeu. |
 | 2026-09-25 | arbitrages (2) | **Q2 précisée** par Guy : la **date** de la facture compte (échéance à défaut de date limite) — seul son **exercice** n'arrête pas le rapprochement ; deux faits voisins relevés et signalés (échéance par défaut = date de facture sans délai de contact ; fenêtre d'acceptation bornée sur la date, non sur l'échéance), hors périmètre. **Q3 : les deux boutons** (Guy, « ok »). Toutes les questions sont tranchées. |
