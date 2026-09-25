@@ -138,7 +138,11 @@ l'application »).
    3. verrou de l'écriture **et de son exercice** (`journal_entries JOIN fiscal_years … FOR
       UPDATE`) **avant** de juger — la leçon de la revue de la 25-3-a-1 (course avec
       `fiscal_years::close`) ;
-   4. les motifs (AC 3) : la tête et le rang 2 refusent ici ; les rangs 4-5 sont laissés au socle ;
+   4. les motifs, par `cancel_blocker` (AC 3) — ⛔ **la forme EXEMPTÉE**, pour la transaction qu'on
+      défait : le lien existe encore à cette étape, et la forme non exemptée ferait échouer
+      **chaque** dé-rapprochement au rang 3 sur son propre lien. La tête (rang 0) et le rang 2
+      refusent ici, par `DbError::ReconciliationNotCancellable` (AC 3) ; le rang 3 ne subsiste que
+      si une **autre** transaction pointe l'écriture ; les rangs 4-5 sont laissés au socle ;
    5. `UPDATE bank_transactions SET matched_entry_id = NULL, status = 'pending',
       auto_match_rejected_at = NULL, version = version + 1, updated_at = NOW(3) WHERE id = ? AND
       company_id = ? AND status = 'reconciled' AND version = ?` — `rows_affected() == 1`, sinon
@@ -168,9 +172,9 @@ l'application »).
 
    | rang | variante | code | s'applique à | à l'écriture |
    |---|---|---|---|---|
-   | 0 | `BankTransactionNotReconciled` | `BANK_TRANSACTION_NOT_RECONCILED` | tous | 409, `SettlementNotCancellable` |
+   | 0 | `BankTransactionNotReconciled` | `BANK_TRANSACTION_NOT_RECONCILED` | tous | 409, `ReconciliationNotCancellable` |
    | 1 | `InvoiceCredited` | `INVOICE_CREDITED` | règlement client | 409 — refusé par le geste de la 25-3-a-1 |
-   | 2 | `FiscalYearClosed` | `FISCAL_YEAR_CLOSED` | tous — exercice de l'écriture **de rapprochement**, jamais de la facture (Q2) | 409, `SettlementNotCancellable` |
+   | 2 | `FiscalYearClosed` | `FISCAL_YEAR_CLOSED` | tous — exercice de l'écriture **de rapprochement**, jamais de la facture (Q2) | 409, `ReconciliationNotCancellable` |
    | 3 | `MatchedBankTransaction` | `MATCHED_BANK_TRANSACTION` | seulement si une **autre** transaction pointe la même écriture | laissé au socle : 409 `EntryNotReversable` |
    | 4 | `AccountArchived` | `ACCOUNT_ARCHIVED` | règlement client, écriture propre | laissé au socle : 400 qui **nomme** les comptes |
    | 5 | `NoOpenFiscalYearToday` | `FISCAL_YEAR_INVALID` | règlement client, écriture propre | laissé au socle : 400 `FiscalYearInvalid` |
@@ -179,14 +183,25 @@ l'application »).
      sur l'écriture liée, **pas un jumeau**. Elle rend aujourd'hui `MatchedBankTransaction` pour
      toute écriture rapprochée — donc pour **chaque** dé-rapprochement. Elle reçoit une
      **exemption étroite** : le rang 3 est levé **pour la transaction qu'on défait**, et seulement
-     elle. ⚠️ `reversal_blockers` ne rend qu'**un** identifiant de transaction (`LIMIT 1`,
-     `journal_entries.rs:1309`) : l'exemption doit vérifier qu'**aucune autre** transaction ne
-     pointe l'écriture — sinon le rang 3 tient, avec l'identifiant de l'autre. Les deux sœurs
-     appellent la queue **sans** exemption : comportement inchangé, leurs tests passent sans
-     retouche.
+     elle. ⛔ **Pas par l'identifiant de `reversal_blockers`** : sa sous-requête est un `LIMIT 1`
+     **sans `ORDER BY`** (`journal_entries.rs:1309`) — elle rend **une** transaction arbitraire,
+     et « l'identifiant rendu est celui qu'on défait » ne prouve pas qu'il n'y en a pas d'autre.
+     Quand une exemption est fournie, la queue fait sa **propre requête** — `SELECT id FROM
+     bank_transactions WHERE company_id = ? AND matched_entry_id = ? AND id <> ? ORDER BY id LIMIT
+     1` — et le rang 3 tient, avec **cet** identifiant, si elle rend une ligne ; sans exemption, le
+     chemin actuel est inchangé. Les deux sœurs appellent la queue **sans** exemption : le
+     **comportement** et leurs **tests** ne changent pas — leur **code** reçoit l'argument
+     supplémentaire (`None`), imposé par le compilateur.
    - **Rang 1** : celui de la tête client de la 25-3-a-1 (`settlement_cancel_blocker`), **sans
      copie** — si sa forme actuelle (tête puis queue sans exemption) empêche de le réutiliser,
      extraire le rang 1 en fonction et l'appeler des deux côtés.
+   - ⛔ **Une erreur PROPRE au geste** : `DbError::ReconciliationNotCancellable { blocker:
+     SettlementCancelBlocker }` (409, `blocker.code()`), mappée dans `crates/kesh-api/src/errors.rs`
+     vers la famille **`reconciliation-cancel-blocked-*`** (AC 9). ⛔ **Pas**
+     `SettlementNotCancellable`, dont le texte serveur dit « ce règlement »
+     (`kesh-api/src/errors.rs:2573-2601`) — faux pour un éclatement, une règle ou un rapprochement
+     manuel. Le rang 1, lui, reste refusé par `cancel_settlement_in_tx` en
+     `SettlementNotCancellable` : dans ce cas l'écriture **est** un règlement, et le texte est juste.
    - **Qui refuse à l'écriture** : comme dans les sœurs — le geste refuse la tête et le rang 2 ;
      les rangs 3 à 5 sont refusés par le socle avec son erreur canonique (une seule garde par
      motif). Au rang 1, c'est `cancel_settlement_in_tx` qui refuse, **après** que le lien a été
@@ -223,7 +238,13 @@ l'application »).
    `reversalJournalEntryId`, `invoiceId`. Erreurs : 404 hors société, 409 avec `code` (AC 3),
    400 comptes archivés / exercice / période. Au registre `audit_route_registry.rs` : `Traced`,
    totaux **recomptés depuis la source** (départ : **108 routes / 90 tracées / 15 exemptées / 3
-   sans objet, 111 avec les routes de test**), message de ventilation compris.
+   sans objet, 111 avec les routes de test**), message de ventilation compris. ⚠️ L'**en-tête** du
+   fichier (`audit_route_registry.rs:17-24`) dit encore « 106 routes » et « 109 » — **déjà faux**
+   avant cette story : le corriger au passage, en recomptant.
+   ⛔ **Rejeu sur interblocage** : le handler enveloppe **toute** l'opération (`BEGIN`, verrou de
+   compte, geste, `COMMIT`) dans `kesh_db::retry::retry_with(DEFAULT_MAX_DEADLOCK_ATTEMPTS,
+   is_deadlock_error, …)` — patron de `routes/onboarding.rs:596-621` (KF-002-H-002, #43). Cf. piège
+   6-bis.
 
 7. **`GET /api/v1/reconciliation/transactions/{id}`** — Comptable+ (comme les propositions) :
    `id`, `status`, `matchedEntryId`, `kind` (AC 4), `invoiceId`, `invoiceNumber`, `amount`,
@@ -246,8 +267,9 @@ l'application »).
    ⛔ **pas** la famille partagée `settlement-cancel-blocked-*`, qui dit « ce règlement » : une
    écriture d'éclatement n'est pas un règlement (même raison que la 25-3-a-1 pour ne pas détourner
    le mapping des écritures). `switch` exhaustif, garde `never`. **Quatre** locales, repli en dur
-   **mot pour mot** le FTL fr-CH, et un texte serveur pour le nouveau code
-   (`crates/kesh-api/src/errors.rs`).
+   **mot pour mot** le FTL fr-CH, et, côté serveur, le **bloc de mapping** de
+   `ReconciliationNotCancellable` (`crates/kesh-api/src/errors.rs`) — un texte par code qu'il porte
+   (rangs 0 et 2), clés `reconciliation-cancel-blocked-*`.
 
    **Les refus qui orientaient vers un chemin absent nomment le chemin réel** — sites, tous
    ensemble (grep de la **clé**, du **code** et de la **phrase**) :
@@ -281,7 +303,13 @@ l'application »).
     (rang 3 de la 25-3-a-1, `cancelBlockedDocumentId` = la transaction) montre, à côté du motif,
     un bouton **« Annuler le rapprochement »** qui ouvre **le même dialogue** (même composant, même
     lecture AC 7) ; après succès, la liste des règlements et la facture sont relues. ⛔ **Un seul
-    composant de dialogue**, dans `features/reconciliation/`.
+    composant de dialogue**, `features/reconciliation/CancelReconciliationDialog.svelte` — premier
+    dialogue partagé entre deux pages (la 25-3-a-1 confirme **dans** la page, `InvoiceSettlements`
+    déléguant au parent) ; gabarits d'extraction : `SettleInvoiceDialog.svelte`,
+    `SendEmailDialog.svelte`. **Contrat** : props `bankTransactionId: number`, `open: boolean`,
+    `onClose()`, `onSuccess(result)` — le composant fait **lui-même** la lecture de l'AC 7 à
+    l'ouverture et l'appel de l'AC 6 ; chaque page ne fait que **relire** dans `onSuccess`, et
+    masque le bouton selon le rôle.
 
 ### Tests
 
@@ -301,7 +329,12 @@ l'application »).
       `fiscal_years::close`, avoir, archivage, exercice du jour absent — ⚠️ montage de la 25-3-a-1 :
       écriture dans un exercice ouvert qui ne couvre pas le jour) ; **l'exemption étroite** — deux
       transactions pointant la même écriture (état **forgé**, déclaré tel) ⇒ rang 3 avec
-      l'identifiant de l'**autre** ; mutation « l'exemption lève tout rang 3 » ⇒ rouge.
+      l'identifiant de l'**autre** ; mutation « l'exemption lève tout rang 3 » ⇒ rouge. ⛔ Le test
+      forge les **deux ordres d'insertion** (la transaction défaite créée avant, puis après
+      l'autre) : un test à un seul ordre passerait avec la lecture naïve du `LIMIT 1`.
+    - **Texte du refus** : un rang 2 sur une écriture d'**éclatement** rend le code
+      `FISCAL_YEAR_CLOSED` et un message qui ne dit **pas** « règlement » (réponse HTTP lue) ;
+      mutation « `SettlementNotCancellable` au lieu de `ReconciliationNotCancellable` » ⇒ rouge.
     - **Les sœurs inchangées** : les tests de la queue et des deux gestes de règlement passent
       **sans retouche** (preuve que l'exemption est optionnelle).
     - ⛔ **Q2 — facture d'un exercice clos, payée dans le suivant** : facture validée en fin
@@ -340,7 +373,8 @@ l'application »).
     - `:1839-1844` (exception de l'exercice clos) : l'étendre aux **rapprochements** (Q5).
     Régénérer le PDF et le **contrôler aplati** (`pdftotext f.pdf - | tr '\n' ' ' | tr -s ' '`).
     `api-external.md` : les deux routes, le champ `matchedEntryId`, clés API admises. `README.md` :
-    la ligne « Réconciliation » des fonctionnalités. `CHANGELOG.md`, section **`[0.12.1] — Non
+    la ligne « Import bancaire … » des fonctionnalités (`README.md:39`, qui énumère les
+    réconciliations). `CHANGELOG.md`, section **`[0.12.1] — Non
     publié`** (existe, `:11`) — aucune ligne d'une section publiée ne se réécrit, décomptes
     **recomptés**. `website/` : rien (dette antérieure hors périmètre).
 
@@ -396,7 +430,9 @@ l'application »).
   **pas** le statut malgré son nom (dette `dette-naming-reconciliation-helpers`) ; le geste écrit
   sa propre lecture `FOR UPDATE`.
 - **Détail d'import** : `routes/bank_imports.rs::detail` (`:1278`), `TransactionResponse`.
-- **Erreurs** : `DbError::SettlementNotCancellable { blocker }` → 409 avec `blocker.code()` ;
+- **Erreurs** : `DbError::ReconciliationNotCancellable { blocker }` (**neuve**, AC 3) → 409 ;
+  `DbError::SettlementNotCancellable { blocker }` → 409 avec `blocker.code()` (rang 1, via
+  `cancel_settlement_in_tx`) ;
   `EntryNotReversable` → 409 + `details` ; `ReversalAccountsArchived` → 400 + `details.rejected[]` ;
   `FiscalYearInvalid`, `PeriodLocked` → 400 ; `OptimisticLockConflict` → 409.
 - **i18n** : `lint-i18n-ownership` ne balaie que `frontend/src/lib/features/` ; une clé
@@ -414,15 +450,24 @@ l'application »).
 5. **Un ordre de verrous différent** de `cancel_settlement_in_tx` : interblocage avec une annulation
    de règlement lancée depuis la fiche facture.
 6. **Contre-passer un lien hérité** : ce serait annuler la **vente** (fait 4).
-6-bis. ⚠️ **Interblocage possible, à trancher en validation.** `accept_one_invoice` verrouille
+6-bis. ⚠️ **Interblocage possible — tranché : REJEU** (passe 1 de validation). `accept_one_invoice` verrouille
    l'**exercice du jour** (`find_open_covering_date … FOR UPDATE`, `:1350`) **avant** la facture
    (`UPDATE invoices`, `:1498`) ; le dé-rapprochement d'un règlement verrouille la **facture** puis,
    par le socle, l'exercice du jour. Sur **deux comptes bancaires différents** (verrous nommés
    distincts), une acceptation sur la facture X et le dé-rapprochement d'un autre règlement de X
    peuvent s'interbloquer : InnoDB en tue un (erreur 1213), rendu aujourd'hui en 500.
    `cancel_settlement_in_tx` (25-3-a-1, route de la fiche facture) porte **déjà** le même ordre :
-   le risque est antérieur, cette story l'étend. Options : verrouiller l'exercice du jour **en
-   tête** du geste, ou mapper 1213 en 409 « réessayez » — à décider en validation, avec un test.
+   le risque est antérieur, cette story l'étend. **Retenu** : le rejeu par
+   `kesh_db::retry::retry_with` (AC 6), mécanisme **éprouvé** du dépôt (`onboarding.rs:596-621`,
+   son test d'intégration `retry.rs::integration_real_deadlock_recovers_via_retry`), qui absorbe
+   un événement transitoire sans le montrer à l'utilisateur. ⛔ **Écartés** : réordonner les
+   verrous toucherait `accept_one_invoice` et `cancel_settlement_in_tx`, hors périmètre ; un 409
+   « réessayez » exposerait l'accident. ⚠️ **Limite assumée** : pas de test d'interblocage réel
+   pour cette route (non déterministe, et aucun point d'injection d'une erreur 1213) — la
+   couverture du mécanisme est celle de `retry.rs` ; l'enveloppement se vérifie **en revue**, au
+   Dev Agent Record. ⚠️ **Le même risque subsiste** sur la route d'annulation de
+   règlement de la 25-3-a-1 (`cancel_settlement_in_tx` appelé sans rejeu) : **à signaler à Guy**,
+   hors périmètre.
 7. Une réponse qui mêle deux lectures (AC 7) ; des totaux incrémentés au lieu d'être recomptés ; un
    motif corrigé à un site sur quatre.
 
@@ -480,6 +525,7 @@ Toutes tranchées le 2026-09-25 (cf. « Arbitrages de Guy sur cette fiche »).
 
 | Date | Étape | Note |
 |---|---|---|
+| 2026-09-25 | validate P1 | **Deux lentilles Sonnet** en contexte frais, prompt versionné `25-3-b-validate-prompt-p1.md`, axes déclarés par chacune. Lentille A : les faits 1-7 et ~25 citations `fichier:ligne` **tous exacts**, registre recompté exact ; **2 MEDIUM, 1 LOW**. Lentille B : **2 HIGH, 1 MEDIUM, 1 LOW**. Corrigés : ① (B, HIGH) le refus propre du geste passait par `SettlementNotCancellable`, dont le texte dit « ce règlement » — faux pour un éclatement ⇒ variante neuve `DbError::ReconciliationNotCancellable`, mappée vers `reconciliation-cancel-blocked-*`, test du texte ; ② (B, HIGH) l'exemption étroite ne pouvait pas s'appuyer sur le `LIMIT 1` sans `ORDER BY` de `reversal_blockers` ⇒ requête dédiée prescrite (`id <> ?`), test aux deux ordres d'insertion ; ③ (A, MEDIUM) l'étape 4 ne disait pas d'appeler la forme **exemptée** ⇒ écrit ; ④ (A, MEDIUM) le piège d'interblocage ignorait le patron du dépôt ⇒ **tranché : rejeu** par `kesh_db::retry::retry_with` (patron `onboarding.rs`, KF-002-H-002) ; ⚠️ un test prescrit par ce correctif (« 1213 forgé ») a été **retiré avant commit** : aucun point d'injection, limite assumée, vérification en revue ; ⑤ (B, MEDIUM) contrat du dialogue partagé écrit (props, qui lit, qui relit) ; ⑥ (A, LOW) en-tête du registre de routes déjà faux (106/109) — à corriger au passage ; ⑦ (B, LOW) ligne du README nommée juste. Reformulé (B, info) : les sœurs gardent comportement et tests, leur code reçoit un argument. ⚠️ **À signaler à Guy** : la route d'annulation de règlement de la 25-3-a-1 porte le même risque d'interblocage, sans rejeu. |
 | 2026-09-25 | arbitrages (2) | **Q2 précisée** par Guy : la **date** de la facture compte (échéance à défaut de date limite) — seul son **exercice** n'arrête pas le rapprochement ; deux faits voisins relevés et signalés (échéance par défaut = date de facture sans délai de contact ; fenêtre d'acceptation bornée sur la date, non sur l'échéance), hors périmètre. **Q3 : les deux boutons** (Guy, « ok »). Toutes les questions sont tranchées. |
 | 2026-09-25 | arbitrages | **Q1** (Guy) : « kesh n'est pas encore en production : il n'y a aucune donnée à préserver » ⇒ liens hérités (vente) et orphelins sans chemin dédié ; le socle refuse le premier, `Invariant` le second (AC 5 réécrit, un texte de refus laissé tel quel). **Q2** (Guy) : une facture d'un exercice clos, payée dans le suivant, doit pouvoir être rapprochée ⇒ le seul exercice qui compte est celui de l'écriture **de rapprochement** — déjà le cas à l'acceptation (`reconciliation.rs:1349-1350`) et dans la queue commune ; fixé par un test et une mutation (AC 12). **Q3** reformulée, en attente. |
 | 2026-09-25 | spec | Spécifiée (Opus 5.5) sur les deux sœurs mergées. **Faits établis depuis la source** : cinq sites posent `matched_entry_id`, deux familles d'écritures seulement (règlement client par `accept_one_invoice`, écriture propre pour les quatre autres) ; défaire le lien **avant** la contre-passation lève le rang 3 sans autorité nouvelle ; aucune contrainte ne lie statut et lien (orphelins possibles) ; ⛔ les rapprochements **antérieurs à la 24-2** pointent sur l'écriture de **vente** et n'ont jamais été repris ; le seul écran des transactions rapprochées est le détail d'import ; le marqueur de rejet doit être remis à NULL. Trois positions soumises à Guy (Q1-Q3). Ultimate context engine analysis completed - comprehensive developer guide created. |
