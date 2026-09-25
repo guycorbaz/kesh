@@ -112,7 +112,11 @@ l'application »).
   `reconciliation.rs:1349-1350`) et dans la queue commune (rang 2 lu sur l'écriture de
   **règlement**) ; un test le fixe (AC 12). Le refus du rang 2 porte donc sur un rapprochement
   dont l'écriture **elle-même** est dans un exercice clos — Q5, pour tous les rapprochements.
-- **Q3** — l'emplacement du bouton : en attente (cf. AC 11).
+  ⚠️ **L'EXERCICE de la facture n'arrête rien — sa DATE, si** (précision de Guy) : elle fixe
+  l'échéance à défaut de date limite, et borne la fenêtre de l'acceptation automatique. Cette
+  story ne touche ni l'une ni l'autre (cf. Dev Notes, faits voisins).
+- **Q3 — Les deux boutons** : sur le détail de l'import **et**, sur la fiche facture client, à côté
+  du motif « rapproché » d'un règlement (AC 11).
 
 ## Acceptance Criteria
 
@@ -273,7 +277,7 @@ l'application »).
     —, jamais un message générique. Les **nouveaux** libellés passent par `i18nMsg` ; les libellés
     en dur **existants** de la page ne sont pas migrés ici (dette antérieure, cf. Dev Notes).
 
-11. **Fiche facture client** (Q3, en attente) : un règlement dont le motif est `MATCHED_BANK_TRANSACTION`
+11. **Fiche facture client** (Q3) : un règlement dont le motif est `MATCHED_BANK_TRANSACTION`
     (rang 3 de la 25-3-a-1, `cancelBlockedDocumentId` = la transaction) montre, à côté du motif,
     un bouton **« Annuler le rapprochement »** qui ouvre **le même dialogue** (même composant, même
     lecture AC 7) ; après succès, la liste des règlements et la facture sont relues. ⛔ **Un seul
@@ -422,6 +426,15 @@ l'application »).
 7. Une réponse qui mêle deux lectures (AC 7) ; des totaux incrémentés au lieu d'être recomptés ; un
    motif corrigé à un site sur quatre.
 
+### Faits voisins, signalés à Guy, hors périmètre
+
+- **Échéance par défaut** (`routes/invoices.rs:667-683`) : sans date limite saisie, l'échéance
+  est `date + délai du contact`, **sinon la date de la facture elle-même** — aucun délai d'usage
+  au niveau de la société.
+- **Fenêtre de l'acceptation automatique** (`reconciliation.rs:55`, `:1180`) : un paiement n'est
+  accepté contre une facture que s'il arrive au plus **30 jours après sa DATE** — l'échéance n'y
+  entre pas.
+
 ### Dette antérieure constatée, hors périmètre
 
 La page de détail d'un import est **entièrement en libellés en dur** (« Détail import bancaire »,
@@ -451,10 +464,7 @@ surveiller en validation : si la sévérité ne décroît pas d'une passe à l'a
 
 ## Questions pour Guy
 
-- ~~Q1~~, ~~Q2~~ — tranchées le 2026-09-25 (cf. « Arbitrages de Guy sur cette fiche »).
-- **Q3** — le bouton « Annuler le rapprochement » : sur le détail de l'import **et** à côté du
-  motif « rapproché » dans la liste des règlements de la fiche facture, ou seulement sur le
-  détail de l'import ?
+Toutes tranchées le 2026-09-25 (cf. « Arbitrages de Guy sur cette fiche »).
 
 ## Dev Agent Record
 
@@ -470,5 +480,6 @@ surveiller en validation : si la sévérité ne décroît pas d'une passe à l'a
 
 | Date | Étape | Note |
 |---|---|---|
+| 2026-09-25 | arbitrages (2) | **Q2 précisée** par Guy : la **date** de la facture compte (échéance à défaut de date limite) — seul son **exercice** n'arrête pas le rapprochement ; deux faits voisins relevés et signalés (échéance par défaut = date de facture sans délai de contact ; fenêtre d'acceptation bornée sur la date, non sur l'échéance), hors périmètre. **Q3 : les deux boutons** (Guy, « ok »). Toutes les questions sont tranchées. |
 | 2026-09-25 | arbitrages | **Q1** (Guy) : « kesh n'est pas encore en production : il n'y a aucune donnée à préserver » ⇒ liens hérités (vente) et orphelins sans chemin dédié ; le socle refuse le premier, `Invariant` le second (AC 5 réécrit, un texte de refus laissé tel quel). **Q2** (Guy) : une facture d'un exercice clos, payée dans le suivant, doit pouvoir être rapprochée ⇒ le seul exercice qui compte est celui de l'écriture **de rapprochement** — déjà le cas à l'acceptation (`reconciliation.rs:1349-1350`) et dans la queue commune ; fixé par un test et une mutation (AC 12). **Q3** reformulée, en attente. |
 | 2026-09-25 | spec | Spécifiée (Opus 5.5) sur les deux sœurs mergées. **Faits établis depuis la source** : cinq sites posent `matched_entry_id`, deux familles d'écritures seulement (règlement client par `accept_one_invoice`, écriture propre pour les quatre autres) ; défaire le lien **avant** la contre-passation lève le rang 3 sans autorité nouvelle ; aucune contrainte ne lie statut et lien (orphelins possibles) ; ⛔ les rapprochements **antérieurs à la 24-2** pointent sur l'écriture de **vente** et n'ont jamais été repris ; le seul écran des transactions rapprochées est le détail d'import ; le marqueur de rejet doit être remis à NULL. Trois positions soumises à Guy (Q1-Q3). Ultimate context engine analysis completed - comprehensive developer guide created. |
