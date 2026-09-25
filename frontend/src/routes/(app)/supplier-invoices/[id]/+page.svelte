@@ -4,9 +4,12 @@
 	import { page } from '$app/state';
 	import {
 		cancelSupplierInvoice,
+		cancelSupplierInvoiceSettlement,
 		getSupplierInvoice,
 		paySupplierInvoice,
 	} from '$lib/features/supplier-invoices/supplier-invoices.api';
+	import { supplierSettlementCancelMessage } from '$lib/features/supplier-invoices/settlement-cancel';
+	import { authState } from '$lib/app/stores/auth.svelte';
 	import {
 		formatSupplierInvoiceTotal,
 		supplierInvoiceStatusLabel,
@@ -20,7 +23,7 @@
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
-	import { notifyInfo, notifyWarning, notifyError } from '$lib/shared/utils/notify';
+	import { notifyInfo, notifyWarning, notifyError, notifySuccess } from '$lib/shared/utils/notify';
 	import { downloadSupplierInvoiceSourceDocument } from '$lib/features/imported-supplier-invoices/imported-supplier-invoices.api';
 
 	const id = Number(page.params.id);
@@ -49,6 +52,15 @@
 	let payAccountId = $state<number | null>(null);
 	let paying = $state(false);
 	let payError = $state('');
+
+	// Story 25-3-a-2 (#414) — annuler le règlement.
+	let canManage = $derived(
+		authState.currentUser?.role === 'Admin' || authState.currentUser?.role === 'Comptable',
+	);
+	let cancellingSettlement = $state(false);
+	// ⛔ Le refus s'affiche ICI, jamais dans `errorMsg` : celui-ci remplace toute
+	// la fiche.
+	let settlementCancelError = $state('');
 
 	async function load() {
 		invoice = await getSupplierInvoice(id);
@@ -95,6 +107,48 @@
 			if (isApiError(err)) payError = err.message;
 		} finally {
 			paying = false;
+		}
+	}
+
+	/**
+	 * Annule le règlement (Story 25-3-a-2). La confirmation dit ce qui va
+	 * s'écrire et, si la facture figure dans un lot confirmé, prévient du
+	 * double paiement — un fait HISTORIQUE, jamais « payée par ce lot ».
+	 */
+	async function cancelSettlement() {
+		if (!invoice) return;
+		settlementCancelError = '';
+		let message = i18nMsg(
+			'supplier-invoices-settlement-cancel-confirm',
+			"Annuler ce règlement ? Une écriture inverse datée d'aujourd'hui sera passée au grand livre, et la facture redeviendra ouverte, à payer.",
+		);
+		const batch = invoice.lastConfirmedBatch;
+		if (batch) {
+			message +=
+				'\n\n' +
+				i18nMsg(
+					'supplier-invoices-settlement-cancel-batch-warning',
+					'Cette facture figure dans le lot de paiement n° { $batch }, confirmé le { $date }. Si la banque a exécuté cet ordre, elle a déjà été payée : corrigez alors par un nouveau règlement direct, jamais par un nouveau lot.',
+					{ batch: batch.id, date: (batch.confirmedAt ?? '').slice(0, 10) },
+				);
+		}
+		if (!confirm(message)) return;
+		cancellingSettlement = true;
+		try {
+			const res = await cancelSupplierInvoiceSettlement(id);
+			invoice = res.invoice;
+			notifySuccess(
+				i18nMsg(
+					'supplier-invoices-settlement-cancelled',
+					"Règlement annulé : l'écriture inverse a été passée et la facture est de nouveau ouverte.",
+				),
+			);
+		} catch (err) {
+			settlementCancelError = isApiError(err)
+				? err.message
+				: i18nMsg('common-error', 'Erreur inattendue');
+		} finally {
+			cancellingSettlement = false;
 		}
 	}
 
@@ -278,9 +332,51 @@
 			</div>
 		</div>
 	{:else if invoice.status === 'paid'}
-		<p class="text-sm text-text-muted" data-testid="supplier-invoice-paid-info">
-			{i18nMsg('supplier-invoices-paid-info', 'Facture réglée.')}
-			{invoice.paidAt ?? ''}
-		</p>
+		<div class="mb-6 space-y-2" data-testid="supplier-invoice-settlement">
+			<p class="text-sm text-text-muted" data-testid="supplier-invoice-paid-info">
+				{i18nMsg('supplier-invoices-paid-info', 'Facture réglée.')}
+				{invoice.paidAt ?? ''}
+			</p>
+			{#if invoice.settlementJournalEntryId}
+				<a
+					class="text-sm underline"
+					href="/journal-entries/{invoice.settlementJournalEntryId}"
+					data-testid="supplier-invoice-settlement-entry"
+				>
+					{i18nMsg('supplier-invoices-settlement-entry-link', "Voir l'écriture de règlement")}
+				</a>
+			{/if}
+			<!-- Story 25-3-a-2 (#414) : le bouton seulement si le serveur a dit
+			     « annulable » ; sinon le MOTIF, et seulement sur une facture payée
+			     (le rang 1 dirait « non payée » à côté du formulaire « Payer »). -->
+			{#if invoice.settlementCancellable === true}
+				{#if canManage}
+					<button
+						class="rounded border px-4 py-2 text-sm text-destructive"
+						data-testid="supplier-invoice-settlement-cancel"
+						onclick={cancelSettlement}
+						disabled={cancellingSettlement}
+					>
+						{i18nMsg('supplier-invoices-settlement-cancel-button', 'Annuler le règlement')}
+					</button>
+				{/if}
+			{:else if invoice.settlementCancelBlockedBy}
+				<p class="text-xs text-text-muted" data-testid="supplier-invoice-settlement-cancel-blocked">
+					{supplierSettlementCancelMessage(
+						invoice.settlementCancelBlockedBy,
+						invoice.settlementCancelBlockedLabel,
+					)}
+				</p>
+			{/if}
+			{#if settlementCancelError}
+				<p
+					class="text-sm text-destructive"
+					role="alert"
+					data-testid="supplier-invoice-settlement-cancel-error"
+				>
+					{settlementCancelError}
+				</p>
+			{/if}
+		</div>
 	{/if}
 {/if}

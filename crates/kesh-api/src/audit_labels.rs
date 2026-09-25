@@ -150,6 +150,7 @@ pub const ACTIONS: &[&str] = &[
     "supplier_invoice.cancelled",
     "supplier_invoice.created",
     "supplier_invoice.paid",
+    "supplier_invoice.settlement_cancelled",
     "user.created",
     "user.disabled",
     "user.password_reset",

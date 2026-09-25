@@ -81,6 +81,33 @@ pub struct SupplierInvoiceResponse {
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub lines: Vec<SupplierInvoiceLineResponse>,
+    /// Story 25-3-a-2 (#414) — le règlement peut-il être annulé ?
+    ///
+    /// ⚠️ **`None` veut dire « non calculé ici », jamais « non »** — même
+    /// discipline que `InvoiceResponse::amount_settled` : seuls le GET, `pay` et
+    /// l'annulation du règlement le calculent ([`Self::with_settlement_cancellation`]).
+    /// Calculé par la fonction même qui refuse l'annulation : l'écran masque le
+    /// bouton avant le clic. Ne tient pas compte du rôle.
+    pub settlement_cancellable: Option<bool>,
+    /// Code du motif qui empêche l'annulation, quand il y en a un.
+    pub settlement_cancel_blocked_by: Option<&'static str>,
+    /// Le numéro du compte archivé, quand c'est le motif.
+    pub settlement_cancel_blocked_label: Option<String>,
+    /// Le lot de paiement **confirmé le plus récent** qui contient la facture.
+    ///
+    /// ⛔ **Historique** : il ne dit PAS d'où vient le règlement courant
+    /// (`payment_batch_items` ne relie aucune ligne à une écriture). Il sert à
+    /// prévenir, avant d'annuler, que la banque a peut-être déjà exécuté un
+    /// ordre pour cette facture — donc un double paiement.
+    pub last_confirmed_batch: Option<LastConfirmedBatchResponse>,
+}
+
+/// Le lot confirmé le plus récent qui contient une facture (Story 25-3-a-2).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LastConfirmedBatchResponse {
+    pub id: i64,
+    pub confirmed_at: Option<NaiveDateTime>,
 }
 
 impl SupplierInvoiceResponse {
@@ -110,7 +137,39 @@ impl SupplierInvoiceResponse {
             version: inv.version,
             created_at: inv.created_at,
             lines: lines.into_iter().map(Into::into).collect(),
+            settlement_cancellable: None,
+            settlement_cancel_blocked_by: None,
+            settlement_cancel_blocked_label: None,
+            last_confirmed_batch: None,
         }
+    }
+
+    /// Story 25-3-a-2 (#414) — calcule les champs d'annulation du règlement et le
+    /// dernier lot confirmé. ⚠️ Appelé par le GET, `pay` (dont la réponse
+    /// remplace l'état de l'écran) et l'annulation du règlement ; ailleurs, les
+    /// champs restent `None` — « non calculé », jamais une valeur qui mentirait.
+    pub async fn with_settlement_cancellation(
+        mut self,
+        pool: &sqlx::MySqlPool,
+        company_id: i64,
+    ) -> Result<Self, AppError> {
+        let mut conn = pool
+            .acquire()
+            .await
+            .map_err(|e| AppError::Database(kesh_db::errors::map_db_error(e)))?;
+        let hit =
+            supplier_invoices::supplier_settlement_cancel_blocker(&mut conn, company_id, self.id)
+                .await?;
+        self.settlement_cancellable = Some(hit.is_none());
+        self.settlement_cancel_blocked_by = hit.as_ref().map(|h| h.0.code());
+        self.settlement_cancel_blocked_label = hit.and_then(|h| h.2);
+        self.last_confirmed_batch =
+            kesh_db::repositories::payment_batches::last_confirmed_batch_for_invoice(
+                &mut *conn, company_id, self.id,
+            )
+            .await?
+            .map(|(id, confirmed_at)| LastConfirmedBatchResponse { id, confirmed_at });
+        Ok(self)
     }
 }
 
@@ -248,7 +307,11 @@ pub async fn get_supplier_invoice(
     let (inv, lines) = supplier_invoices::get(&state.pool, company.id, id)
         .await?
         .ok_or(AppError::Database(DbError::NotFound))?;
-    Ok(Json(SupplierInvoiceResponse::from_parts(inv, lines)))
+    Ok(Json(
+        SupplierInvoiceResponse::from_parts(inv, lines)
+            .with_settlement_cancellation(&state.pool, company.id)
+            .await?,
+    ))
 }
 
 /// `POST /api/v1/supplier-invoices` — enregistre une facture fournisseur (Comptable+).
@@ -309,10 +372,11 @@ pub async fn pay_supplier_invoice(
         current_user.user_id,
     )
     .await?;
-    Ok(Json(SupplierInvoiceResponse::from_parts(
-        paid.invoice,
-        paid.lines,
-    )))
+    Ok(Json(
+        SupplierInvoiceResponse::from_parts(paid.invoice, paid.lines)
+            .with_settlement_cancellation(&state.pool, company.id)
+            .await?,
+    ))
 }
 
 /// `POST /api/v1/supplier-invoices/{id}/cancel` — annule une facture `open` (Comptable+).
@@ -328,6 +392,36 @@ pub async fn cancel_supplier_invoice(
         cancelled.invoice,
         cancelled.lines,
     )))
+}
+
+/// Réponse de l'annulation d'un règlement fournisseur : la facture relue, et
+/// l'écriture inverse produite (Story 25-3-a-2).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CancelSupplierSettlementResponse {
+    pub invoice: SupplierInvoiceResponse,
+    pub reversal_journal_entry_id: i64,
+}
+
+/// `POST /api/v1/supplier-invoices/{id}/settlement/cancel` — annule le
+/// règlement d'une facture `paid` par contre-passation datée du jour et la
+/// ramène à `open` (Comptable+, Story 25-3-a-2, #414). Le lot de paiement
+/// confirmé qui l'a éventuellement réglée n'est pas modifié.
+pub async fn cancel_supplier_invoice_settlement(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+) -> Result<Json<CancelSupplierSettlementResponse>, AppError> {
+    let company = get_company_for(&current_user, &state.pool).await?;
+    let done =
+        supplier_invoices::cancel_settlement(&state.pool, company.id, id, current_user.user_id)
+            .await?;
+    Ok(Json(CancelSupplierSettlementResponse {
+        invoice: SupplierInvoiceResponse::from_parts(done.invoice.invoice, done.invoice.lines)
+            .with_settlement_cancellation(&state.pool, company.id)
+            .await?,
+        reversal_journal_entry_id: done.reversal_journal_entry_id,
+    }))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

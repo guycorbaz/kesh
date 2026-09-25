@@ -151,7 +151,7 @@
 			case 'OWNED_BY_SUPPLIER_INVOICE':
 				return i18nMsg(
 					'journal-entries-reverse-blocked-supplier-invoice',
-					'Cette écriture appartient à une facture fournisseur : annulez la facture.'
+					'Cette écriture appartient à une facture fournisseur : annulez la facture ou son règlement depuis sa fiche.'
 				);
 			case 'OWNED_BY_SETTLEMENT':
 				return i18nMsg(

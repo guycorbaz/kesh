@@ -2467,7 +2467,7 @@ impl IntoResponse for AppError {
                         ),
                         ReversalBlocker::OwnedBySupplierInvoice => (
                             "journal-entries-reverse-blocked-supplier-invoice",
-                            "Cette écriture appartient à une facture fournisseur : annulez la facture.",
+                            "Cette écriture appartient à une facture fournisseur : annulez la facture ou son règlement depuis sa fiche.",
                         ),
                         ReversalBlocker::OwnedBySettlement => (
                             "journal-entries-reverse-blocked-settlement",

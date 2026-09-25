@@ -65,7 +65,8 @@ pub enum ReversalBlocker {
     /// L'avoir EST déjà la contre-passation de la facture.
     OwnedByCreditNote,
     /// Écriture d'achat ou de règlement d'une facture fournisseur → le chemin
-    /// est `supplier_invoices::cancel`, ou l'issue #414 pour le règlement.
+    /// est `supplier_invoices::cancel` pour l'achat, `cancel_settlement` pour le
+    /// règlement (Story 25-3-a-2), qui contre-passe au titre de la facture.
     OwnedBySupplierInvoice,
     /// ⛔ Le cas le plus grave : le résiduel se calcule depuis
     /// `invoice_settlements.amount`, que la contre-passation ne toucherait pas —

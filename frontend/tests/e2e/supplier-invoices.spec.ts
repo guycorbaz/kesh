@@ -128,6 +128,38 @@ async function createSupplierInvoiceViaApi(
 }
 
 test.describe('Factures fournisseurs', () => {
+	// Story 25-3-a-2 (#414) — payer, puis annuler le RÈGLEMENT : la facture
+	// redevient « ouverte », à payer, et l'écriture inverse est passée.
+	test('payer puis annuler le règlement : la facture redevient ouverte', async ({ page }) => {
+		await login(page);
+		const { expenseAccountId, internalAccountId } = await ensureConfigAndAccounts(page);
+		const supplierId = await createSupplierViaApi(page, uniq('Fournisseur'));
+		const invoiceId = await createSupplierInvoiceViaApi(page, supplierId, expenseAccountId);
+
+		await page.goto(`/supplier-invoices/${invoiceId}`);
+		await page.getByLabel(/Compte interne/i).check();
+		await page.getByTestId('pay-internal-account').selectOption(String(internalAccountId));
+		await page.getByTestId('supplier-invoice-pay-submit').click();
+		await expect(page.getByTestId('supplier-invoice-status')).toContainText(/Payée/i);
+
+		// La confirmation est un `confirm()` natif : l'accepter.
+		page.once('dialog', (d) => void d.accept());
+		await page.getByTestId('supplier-invoice-settlement-cancel').click();
+
+		await expect(page.getByTestId('supplier-invoice-status')).toContainText(/Ouverte/i);
+		await expect(page.getByTestId('supplier-invoice-pay')).toBeVisible();
+
+		const ctx = await authedApiContext(page);
+		try {
+			const inv = await (await ctx.get(`/api/v1/supplier-invoices/${invoiceId}`)).json();
+			expect(inv.status).toBe('open');
+			expect(inv.settlementJournalEntryId).toBeNull();
+			expect(inv.paidAt).toBeNull();
+		} finally {
+			await disposeContextSafe(ctx);
+		}
+	});
+
 	test('enregistre et règle (compte interne) une facture fournisseur', async ({ page }) => {
 		await login(page);
 		const { expenseAccountId, internalAccountId } = await ensureConfigAndAccounts(page);
