@@ -266,6 +266,14 @@ Corps : `{ "version": n }` — le verrou optimiste. Réponse : la facture, même
 | Date du jour dans une période verrouillée | `PERIOD_LOCKED` | `400` |
 | Facture ou règlement introuvable (ou d'une autre société) | `NOT_FOUND` | `404` |
 
+### Annuler le règlement d'une facture fournisseur
+
+**`POST /api/v1/supplier-invoices/{id}/settlement/cancel`** — écriture (`read-write`), ouverte aux clés comme `POST /supplier-invoices/{id}/pay`. Sans corps. Contre-passe l'écriture de règlement (datée du jour) et ramène la facture à `open` : `settlementType`, `settlementJournalEntryId`, `paidAt`… reviennent à `null`. Le lot de paiement confirmé qui l'a éventuellement réglée **n'est pas modifié**. Réponse : `{ invoice, reversalJournalEntryId }`. Distinct de `POST /supplier-invoices/{id}/cancel`, qui annule la **facture** (seulement `open`).
+
+`GET /supplier-invoices/{id}`, la réponse de `pay` et celle de l'annulation portent `settlementCancellable`, `settlementCancelBlockedBy` (code du motif), `settlementCancelBlockedLabel` (numéro du compte archivé) et `lastConfirmedBatch` (`{ id, confirmedAt }` du lot confirmé **le plus récent** qui contient la facture — un fait **historique**, qui ne dit pas d'où vient le règlement courant). Ailleurs, ces champs valent `null` : *non calculés*.
+
+Refus : `SUPPLIER_INVOICE_NOT_PAID` (`409`, la facture n'est pas payée), `FISCAL_YEAR_CLOSED` (`409`), `ACCOUNT_ARCHIVED` (`400`, `details.rejected[]`), `FISCAL_YEAR_INVALID` (`400`), `PERIOD_LOCKED` (`400`), `NOT_FOUND` (`404`).
+
 ⚠️ **`FISCAL_YEAR_CLOSED` rend ici `409`**, alors que la dévalidation le rend en `400` : c'est un refus du **geste** d'annulation, qui porte sur l'exercice du **règlement** ; la contre-passation, elle, serait datée d'un exercice ouvert.
 
 ² **Deux opérations sur les factures sont réservées à l'interface web** : `DELETE /invoices/{id}` et `POST /invoices/{id}/reminders/{reminderId}/cancel` (annulation d'un rappel) sont des routes d'administration, donc fermées aux clés (`403 API_KEY_ADMIN_FORBIDDEN`, cf. §4). Tout le reste du cycle de facturation reste ouvert.

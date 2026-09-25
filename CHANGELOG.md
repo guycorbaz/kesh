@@ -36,7 +36,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 - **Huit motifs peuvent refuser une dévalidation, et le refus nomme toujours le sien** : facture réglée — **même partiellement** —, créditée par un avoir, relancée, envoyée au client par Kesh, écriture rapprochée d'une transaction bancaire, exercice clos, écriture contre-passée, période verrouillée. ⚠️ Le refus « envoyée au client » est **sec** : une facture que le client détient se corrige par un **avoir**. Kesh ne connaît toutefois que ce qu'il a envoyé lui-même — un PDF téléchargé puis transmis à la main ne laisse aucune trace.
 
-- **Le journal d'audit compte désormais 125 libellés traduits** (95 actions, 28 types d'entité, 2 types d'acteur), la dévalidation et l'annulation d'un règlement y figurant chacune sous son propre nom.
+- **Le journal d'audit compte désormais 126 libellés traduits** (96 actions, 28 types d'entité, 2 types d'acteur), la dévalidation et l'annulation d'un règlement — client comme fournisseur — y figurant chacune sous son propre nom.
 
 ### Added
 
@@ -44,9 +44,11 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
   Le bouton est remplacé par la raison quand l'annulation n'est pas possible : facture **créditée** (le règlement est alors un paiement à lettrer), exercice du règlement **clôturé** (un administrateur doit le rouvrir), règlement **rapproché** d'une transaction bancaire (le rapprochement ne se défait pas encore), compte **archivé**, ou aucun exercice ouvert pour la date du jour.
 
-  ⚠️ **Côté fournisseur, l'annulation d'un règlement n'est pas encore là** : elle suit.
+- **Annuler le règlement d'une facture fournisseur.** Même geste côté fournisseur : sur une facture payée, *Annuler le règlement* passe une écriture inverse datée du jour et ramène la facture à « ouverte », à payer. La fiche montre aussi un lien vers l'écriture de règlement. Une facture payée par un **lot pain.001 confirmé** reste annulable — le cas d'usage est le rejet bancaire — et le lot n'est pas modifié ; ⚠️ Kesh rappelle alors, en nommant le lot, que si la banque a exécuté l'ordre la facture est **déjà payée** : un nouveau lot la paierait deux fois.
 
 - **API — `GET /api/v1/invoices/{id}/settlements`** (lecture) et **`POST /api/v1/invoices/{id}/settlements/{settlementId}/cancel`** (écriture, ouverte aux clés). La liste dit, règlement par règlement, s'il est annulable et sinon pourquoi.
+
+- **API — `POST /api/v1/supplier-invoices/{id}/settlement/cancel`** (écriture, ouverte aux clés) ; la fiche d'une facture fournisseur porte désormais `settlementCancellable`, `settlementCancelBlockedBy` et `lastConfirmedBatch`.
 
 - **API — `POST /api/v1/invoices/{id}/unvalidate`**, ouverte aux clés en écriture. Corps `{ "version": n }` (verrou optimiste), réponse identique à celle de la validation. ⚠️ **C'est un élargissement** : jusqu'ici, aucune clé API ne pouvait faire disparaître l'écriture d'une facture. Si cette capacité vous paraît trop large pour une intégration, donnez-lui une clé en *lecture seule*. `DELETE /api/v1/invoices/{id}` rend désormais `409 INVOICE_MUST_BE_UNVALIDATED_FIRST` sur une facture validée.
 

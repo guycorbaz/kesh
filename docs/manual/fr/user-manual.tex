@@ -503,7 +503,8 @@ fiduciaire ou un organe de révision le retrouve sans ouvrir le logiciel.
 Une écriture n'est pas toujours contre-passable, et l'écran vous dit alors pourquoi plutôt
 que de vous laisser essayer~: une écriture qui appartient à une \textbf{pièce} se corrige
 par le chemin de cette pièce (une facture client par un \textbf{avoir}, une facture
-fournisseur par son \textbf{annulation}), une écriture déjà contre-passée ne l'est pas deux
+fournisseur par son \textbf{annulation}, un \textbf{règlement} --- client ou fournisseur --- par
+l'annulation du règlement depuis la fiche de la facture), une écriture déjà contre-passée ne l'est pas deux
 fois, et une écriture dont un \textbf{compte a été archivé} attend que vous réactiviez ce
 compte --- son numéro vous est indiqué.
 
@@ -1150,6 +1151,18 @@ cas selon le moyen de paiement :
     choisissez un \emph{compte de contrepartie} libre.
 \end{itemize}
 
+\textbf{Annuler le règlement.} Un règlement enregistré par erreur ne se supprime pas~: sur la
+fiche d'une facture payée, \emph{Annuler le règlement} (comptable ou administrateur) passe une
+écriture inverse \textbf{datée du jour} et ramène la facture à \emph{ouverte}, à payer --- vous
+pouvez alors la régler à nouveau, ou l'annuler elle-même. L'écriture d'origine et sa
+contre-passation restent toutes deux au grand livre, et le journal d'audit nomme le geste. Un
+lien mène de la fiche à l'écriture de règlement.
+
+Quand l'annulation n'est pas possible, le bouton est remplacé par la raison~: l'exercice du
+règlement est \textbf{clôturé} (un administrateur doit d'abord le rouvrir), un compte du
+règlement a été \textbf{archivé} (réactivez-le), ou aucun exercice ouvert ne couvre la date du
+jour (créez-le).
+
 \subsection{Paiements par fichier pain.001}
 \label{sec:paiements-fournisseurs}
 
@@ -1165,6 +1178,18 @@ dans l'e-banking. Le flux est en \textbf{deux temps} :
     dans Kesh : les écritures de règlement sont alors passées (un lot peut aussi
     être \textbf{annulé} tant qu'il n'est pas confirmé).
 \end{enumerate}
+
+\begin{keshwarning}[title=\faExclamationTriangle\ Annuler le règlement d'une facture payée par lot]
+Le règlement d'une facture payée par un lot \textbf{confirmé} peut être annulé --- le cas
+d'usage est le \textbf{rejet} du virement par la banque. Le lot, lui, n'est pas modifié~: il
+reste la trace de l'ordre transmis. La facture redevient \emph{ouverte} et peut repartir dans un
+nouveau lot.
+
+\textbf{Si la banque a réellement exécuté l'ordre}, la facture est déjà payée~: un nouveau lot
+la paierait \textbf{deux fois}. Kesh vous le rappelle au moment d'annuler, en nommant le dernier
+lot confirmé qui la contient. Dans ce cas, corrigez par un nouveau règlement direct depuis la
+fiche, jamais par un nouveau lot.
+\end{keshwarning}
 
 \subsection{Importer des factures depuis un dossier}
 \label{sec:import-factures}
@@ -1814,9 +1839,9 @@ Selon l'action :
     \item Écriture d'un exercice \textbf{clôturé}~: elle reste contre-passable, et la
           contre-passation tombe dans l'exercice \textbf{courant} --- c'est la pratique
           comptable, et il n'y a donc aucune raison de rouvrir l'exercice pour corriger une
-          écriture. \textbf{Une exception}~: un \textbf{règlement} de facture client d'un
-          exercice clôturé ne s'annule pas --- un administrateur doit d'abord rouvrir
-          l'exercice (\S\ref{sec:reglement-client}).
+          écriture. \textbf{Une exception}~: un \textbf{règlement} --- de facture client
+          (\S\ref{sec:reglement-client}) comme de facture fournisseur --- d'un exercice
+          clôturé ne s'annule pas~: un administrateur doit d'abord rouvrir l'exercice.
     \item Facture validée : passage en avoir + génération d'une nouvelle facture.
     \item Rapprochement bancaire~: il ne se défait pas encore depuis l'application --- c'est
           l'objet d'une évolution à venir. Un règlement né d'un rapprochement ne s'annule donc
