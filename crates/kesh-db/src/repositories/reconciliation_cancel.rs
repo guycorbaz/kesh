@@ -124,7 +124,7 @@ async fn find(
         .ok_or(DbError::NotFound)
 }
 
-/// Le premier motif qui empêche de dé-rapprocher `bank_transaction_id`, ou
+/// Le premier motif qui empêche de dé-rapprocher la transaction `bt`, ou
 /// `None`.
 ///
 /// ⛔ **Une seule précédence, pas de jumeau** : rang 0 ici
@@ -135,20 +135,11 @@ async fn find(
 /// elle qu'on défait —, une autre transaction pointant la même écriture restant
 /// un refus.
 ///
-/// Sert **à la fois** la lecture (l'écran, au clic) et le geste
-/// ([`cancel_in_tx`]), qui verrouille avant de l'appeler.
-///
-/// Transaction introuvable (ou d'une autre société) → [`DbError::NotFound`].
-pub async fn cancel_blocker(
-    conn: &mut MySqlConnection,
-    company_id: i64,
-    bank_transaction_id: i64,
-) -> Result<Option<SettlementCancelHit>, DbError> {
-    let bt = find(conn, company_id, bank_transaction_id, false).await?;
-    blocker_for(conn, company_id, &bt).await
-}
-
-async fn blocker_for(
+/// ⛔ **La seule fonction qui calcule les motifs** : [`get_view`] l'appelle pour
+/// la lecture (l'écran, au clic), [`cancel_in_tx`] pour refuser, sur la
+/// transaction qu'il vient de verrouiller. Elle prend la transaction déjà lue,
+/// pour que chaque appelant choisisse sa lecture (verrouillante ou non).
+async fn cancel_blocker(
     conn: &mut MySqlConnection,
     company_id: i64,
     bt: &BankTransaction,
@@ -225,13 +216,13 @@ pub async fn get_view(
     } else {
         (None, None)
     };
-    let cancel_blocker = blocker_for(&mut tx, company_id, &bt).await?;
+    let blocker = cancel_blocker(&mut tx, company_id, &bt).await?;
     tx.commit().await.map_err(map_db_error)?;
     Ok(Some(ReconciliationView {
         bank_transaction: bt,
         kind,
         invoice_number,
-        cancel_blocker,
+        cancel_blocker: blocker,
     }))
 }
 
@@ -327,7 +318,7 @@ pub async fn cancel_in_tx(
     // (4) Les motifs — forme EXEMPTÉE : le lien existe encore, et la forme
     //     non exemptée refuserait chaque dé-rapprochement sur son propre lien.
     if let Some((SettlementCancelBlocker::FiscalYearClosed, _, _)) =
-        blocker_for(tx, company_id, &bt).await?
+        cancel_blocker(tx, company_id, &bt).await?
     {
         return Err(DbError::ReconciliationNotCancellable {
             blocker: SettlementCancelBlocker::FiscalYearClosed,
