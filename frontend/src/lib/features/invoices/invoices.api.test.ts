@@ -12,7 +12,13 @@ vi.mock('$lib/shared/utils/api-client', () => ({
 }));
 
 import { apiClient } from '$lib/shared/utils/api-client';
-import { getInvoiceEmailPreview, listInvoices, sendInvoiceEmail } from './invoices.api';
+import {
+	cancelInvoiceSettlement,
+	getInvoiceEmailPreview,
+	listInvoiceSettlements,
+	listInvoices,
+	sendInvoiceEmail,
+} from './invoices.api';
 
 describe('invoices.api — envoi par e-mail (20-3b2)', () => {
 	it('getInvoiceEmailPreview GET le bon path', async () => {
@@ -76,5 +82,19 @@ describe('invoices.api — filtre paused (21-6a)', () => {
 		expect(apiClient.get).toHaveBeenCalledWith(
 			'/api/v1/invoices?status=validated&paused=paused&limit=20',
 		);
+	});
+});
+
+describe('invoices.api — règlements (25-3-a-1)', () => {
+	it('listInvoiceSettlements GET le bon path', async () => {
+		(apiClient.get as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+		await listInvoiceSettlements(42);
+		expect(apiClient.get).toHaveBeenCalledWith('/api/v1/invoices/42/settlements');
+	});
+
+	it('cancelInvoiceSettlement POST sur le règlement NOMMÉ (mutation : id de facture et de règlement inversés)', async () => {
+		(apiClient.post as ReturnType<typeof vi.fn>).mockResolvedValue({});
+		await cancelInvoiceSettlement(42, 7);
+		expect(apiClient.post).toHaveBeenCalledWith('/api/v1/invoices/42/settlements/7/cancel', {});
 	});
 });

@@ -169,15 +169,17 @@ test.describe('Échéancier factures — Story 5.4', () => {
 		await expect(paidRow).toBeVisible({ timeout: 5000 });
 		await expect(paidRow.getByText(/Payée|Paid|Pagata|Bezahlt/i).first()).toBeVisible();
 
-		// ⛔ Story 24-3 : le « dé-marquage » a DISPARU, et rien ne le remplace.
-		// Annuler un règlement demande une contre-passation — une écriture
-		// inverse, à sa propre date — et non le retrait d'un drapeau : c'est
-		// l'objet de l'issue #414. Le cas vérifie donc l'ABSENCE du bouton, ce
-		// qui est la seule assertion honnête tant que #414 n'est pas livrée.
+		// ⛔ Story 24-3 : le « dé-marquage » a DISPARU. Annuler un règlement est
+		// une CONTRE-PASSATION — une écriture inverse, datée du jour — et non le
+		// retrait d'un drapeau. Story 25-3-a-1 (#414) : le geste EXISTE, sur la
+		// ligne du règlement. On vérifie sa PRÉSENCE sans cliquer (la suite de ce
+		// parcours a besoin d'une facture payée) ; le parcours complet « régler
+		// puis annuler » est `invoices-settlement-cancel.spec.ts`.
 		await page.goto(`/invoices/${overdueId}`);
 		await expect(
-			page.getByRole('button', { name: /Dé-marquer|Unmark|Annulla|rückgängig/i }),
+			page.getByRole('button', { name: /Dé-marquer|Unmark|rückgängig/i }),
 		).toHaveCount(0);
+		await expect(page.getByTestId('invoice-settlement-cancel')).toBeVisible();
 		// Et le bouton de règlement s'efface aussi : la facture est soldée.
 		await expect(page.getByTestId('settle-open')).toHaveCount(0);
 

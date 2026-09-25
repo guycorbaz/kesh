@@ -36,9 +36,17 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 - **Huit motifs peuvent refuser une dévalidation, et le refus nomme toujours le sien** : facture réglée — **même partiellement** —, créditée par un avoir, relancée, envoyée au client par Kesh, écriture rapprochée d'une transaction bancaire, exercice clos, écriture contre-passée, période verrouillée. ⚠️ Le refus « envoyée au client » est **sec** : une facture que le client détient se corrige par un **avoir**. Kesh ne connaît toutefois que ce qu'il a envoyé lui-même — un PDF téléchargé puis transmis à la main ne laisse aucune trace.
 
-- **Le journal d'audit compte désormais 124 libellés traduits** (94 actions, 28 types d'entité, 2 types d'acteur), la dévalidation y figurant sous son propre nom.
+- **Le journal d'audit compte désormais 125 libellés traduits** (95 actions, 28 types d'entité, 2 types d'acteur), la dévalidation et l'annulation d'un règlement y figurant chacune sous son propre nom.
 
 ### Added
+
+- **Annuler un règlement client.** Un règlement enregistré par erreur était jusqu'ici **définitivement incorrigible** : la contre-passation directe de son écriture était refusée, et la seule sortie — une écriture manuelle — laissait la facture se dire réglée quand le grand livre disait le contraire. La fiche facture liste désormais ses règlements, et chacun s'**annule par contre-passation** : une écriture inverse **datée du jour**, le règlement retiré de la facture, le montant redevenu dû. Les deux écritures restent visibles au grand livre.
+
+  Le bouton est remplacé par la raison quand l'annulation n'est pas possible : facture **créditée** (le règlement est alors un paiement à lettrer), exercice du règlement **clôturé** (un administrateur doit le rouvrir), règlement **rapproché** d'une transaction bancaire (le rapprochement ne se défait pas encore), compte **archivé**, ou aucun exercice ouvert pour la date du jour.
+
+  ⚠️ **Côté fournisseur, l'annulation d'un règlement n'est pas encore là** : elle suit.
+
+- **API — `GET /api/v1/invoices/{id}/settlements`** (lecture) et **`POST /api/v1/invoices/{id}/settlements/{settlementId}/cancel`** (écriture, ouverte aux clés). La liste dit, règlement par règlement, s'il est annulable et sinon pourquoi.
 
 - **API — `POST /api/v1/invoices/{id}/unvalidate`**, ouverte aux clés en écriture. Corps `{ "version": n }` (verrou optimiste), réponse identique à celle de la validation. ⚠️ **C'est un élargissement** : jusqu'ici, aucune clé API ne pouvait faire disparaître l'écriture d'une facture. Si cette capacité vous paraît trop large pour une intégration, donnez-lui une clé en *lecture seule*. `DELETE /api/v1/invoices/{id}` rend désormais `409 INVOICE_MUST_BE_UNVALIDATED_FIRST` sur une facture validée.
 

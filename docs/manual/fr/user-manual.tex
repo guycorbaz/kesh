@@ -514,8 +514,9 @@ modification et la suppression d'une écriture sont refusées. Ce qui manque enc
 et l'historique complet des corrections apportées à vos écritures \textbf{peut désormais être
 produit} --- liste filtrable et export CSV, dans votre langue --- mais par l'\textbf{interface
 de programmation} seulement, ce qui suppose un outil technique. La page qui le rendra lisible
-depuis l'application reste à venir. Le verrou reste par ailleurs \textbf{annuel}~: aucun
-verrou de période plus fin --- le trimestre TVA déclaré, par exemple --- n'existe encore.
+depuis l'application reste à venir. Un verrou \textbf{plus fin} que l'exercice existe, lui~:
+le verrou de période arrête les livres à la date de votre choix --- le trimestre TVA déclaré,
+par exemple (\S\ref{sec:verrou-periode}).
 
 Une seule exception, déjà en vigueur~: une écriture \textbf{déjà contre-passée} ne peut plus
 être supprimée --- la supprimer effacerait la correction.
@@ -779,7 +780,10 @@ Une facture passe par trois états :
 \begin{enumerate}
     \item \textbf{Brouillon} : modification libre, n'apparaît pas dans les rapports. Un brouillon n'a en général \emph{pas} de numéro --- sauf s'il vient d'être \textbf{dévalidé}, auquel cas il \textbf{conserve} celui qu'il portait, et le reprendra à la revalidation (cf. \S\ref{sec:suppression-facture}).
     \item \textbf{Validée} : numéro définitif attribué, PDF QR Bill généré, écriture comptable créée automatiquement (Débit 1100 Débiteurs / Crédit 3000 Ventes + 2200 TVA), et \textbf{comptes de produit figés}. Une facture validée n'est plus modifiable : le compte de chaque ligne reste néanmoins \textbf{consultable} dans la colonne « Compte de produit » de l'écran de détail, où les lignes suivant le compte par défaut de la société l'affichent avec la mention \emph{(défaut)}. C'est le moyen de contrôler la ventilation sans avoir à ouvrir l'écriture comptable et à la relire à l'envers.
-    \item \textbf{Payée} : marquée comme payée après réconciliation avec une transaction bancaire entrante.
+    \item \textbf{Payée} : \textbf{soldée} par un ou plusieurs règlements --- enregistrés à la main
+          depuis la fiche, ou par le rapprochement d'une transaction bancaire entrante
+          (\S\ref{sec:reglement-client}). Une facture réglée en partie reste \emph{validée}, avec
+          son reste dû.
 \end{enumerate}
 
 \subsection{Vos coordonnées sur la facture}\label{sec:coordonnees-emetteur}
@@ -936,6 +940,44 @@ les modèles par défaut — rien à configurer.
 
 Pour relancer les factures en retard, Kesh dispose d'un \textbf{écran de rappels} dédié — voir \S\ref{sec:relances-user}. Une facture suspendue de rappels reste visible dans l'échéancier (rien ne se cache).
 
+\subsection{Enregistrer et annuler un règlement}\label{sec:reglement-client}
+
+\textbf{Enregistrer.} Sur la fiche d'une facture validée, \emph{Enregistrer un règlement}~: le
+mode (virement sur un compte bancaire, ou espèces et tout autre compte), le montant et la date.
+Kesh passe l'écriture \emph{Débit contrepartie / Crédit débiteurs} et calcule ce qui reste dû.
+Un règlement \textbf{partiel} est permis~: la facture reste validée, avec son reste dû, et
+redevient «~payée~» quand le solde atteint zéro. Un montant supérieur au reste dû est
+\textbf{refusé}. Le rapprochement bancaire enregistre, lui, ses règlements tout seul.
+
+\textbf{La liste des règlements.} La fiche liste chaque règlement --- date, montant, mode --- avec
+un lien vers son écriture.
+
+\textbf{Annuler.} Un règlement enregistré par erreur ne se supprime pas~: il s'\textbf{annule par
+contre-passation}. Le bouton \emph{Annuler le règlement} de sa ligne (comptable ou
+administrateur) passe une écriture inverse \textbf{datée du jour}, retire le règlement de la
+facture, et le montant redevient dû --- la facture repasse «~validée~» si plus rien ne la solde.
+L'écriture d'origine et sa contre-passation restent toutes deux au grand livre, et le journal
+d'audit nomme le geste.
+
+Quand l'annulation n'est pas possible, le bouton est remplacé par la raison~:
+
+\begin{itemize}
+    \item \textbf{la facture a été créditée} par un avoir~: le règlement est alors un paiement
+          \emph{à lettrer} à une autre facture --- il ne s'annule pas~;
+    \item \textbf{l'exercice du règlement est clôturé}~: un administrateur doit d'abord
+          \textbf{rouvrir} l'exercice~;
+    \item \textbf{le règlement est rapproché} d'une transaction bancaire~: il faut d'abord
+          annuler ce rapprochement~;
+    \item \textbf{un compte du règlement a été archivé}~: réactivez-le (son numéro est indiqué)~;
+    \item \textbf{aucun exercice ouvert ne couvre la date du jour}, où la contre-passation serait
+          datée~: créez-le.
+\end{itemize}
+
+\begin{keshnote}
+Les factures réglées avant la version qui a introduit les règlements (Kesh 0.12) portent la
+mention «~payée~» sans règlement enregistré~: il n'y a rien à annuler sur elles.
+\end{keshnote}
+
 \subsection{Relancer les débiteurs}\label{sec:relances-user}
 
 Depuis la version \textbf{0.7}, l'écran \emph{Factures → Rappels} (réservé aux rôles \emph{Comptable} et \emph{Administrateur}) liste les factures à relancer, groupées par débiteur, avec leur \textbf{prochain niveau} de rappel. Les niveaux, délais et frais se configurent par l'administrateur (\emph{Paramètres → Rappels débiteurs}).
@@ -1045,8 +1087,9 @@ Kesh \textbf{refuse} la dévalidation dans les cas suivants, pour préserver la 
 Le refus \textbf{nomme toujours son motif}~:
 
 \begin{itemize}
-    \item facture \textbf{réglée}, même \textbf{partiellement}~: annulez d'abord le règlement, un
-          paiement rapproché ne devant pas pointer dans le vide~;
+    \item facture \textbf{réglée}, même \textbf{partiellement}~: annulez d'abord le règlement
+          (\S\ref{sec:reglement-client}), un paiement rapproché ne devant pas pointer dans le
+          vide~;
     \item facture déjà \textbf{créditée par un avoir}~: l'avoir référence la facture, et il
           \emph{est} déjà la correction~;
     \item facture ayant un \textbf{historique de rappels}~: la dévalider effacerait la preuve du
@@ -1771,9 +1814,13 @@ Selon l'action :
     \item Écriture d'un exercice \textbf{clôturé}~: elle reste contre-passable, et la
           contre-passation tombe dans l'exercice \textbf{courant} --- c'est la pratique
           comptable, et il n'y a donc aucune raison de rouvrir l'exercice pour corriger une
-          écriture.
+          écriture. \textbf{Une exception}~: un \textbf{règlement} de facture client d'un
+          exercice clôturé ne s'annule pas --- un administrateur doit d'abord rouvrir
+          l'exercice (\S\ref{sec:reglement-client}).
     \item Facture validée : passage en avoir + génération d'une nouvelle facture.
-    \item Rapprochement bancaire : déliaison (\emph{Délier} sur la transaction).
+    \item Rapprochement bancaire~: il ne se défait pas encore depuis l'application --- c'est
+          l'objet d'une évolution à venir. Un règlement né d'un rapprochement ne s'annule donc
+          pas non plus pour l'instant.
 \end{itemize}
 
 L'\texttt{audit\_log} garde toujours la trace de l'action originale ET de l'action de retour.

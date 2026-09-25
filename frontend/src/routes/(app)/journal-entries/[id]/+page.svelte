@@ -141,7 +141,7 @@
 			case 'OWNED_BY_INVOICE':
 				return i18nMsg(
 					'journal-entries-reverse-blocked-invoice',
-					'Cette écriture appartient à une facture client : corrigez-la par un avoir.'
+					'Cette écriture appartient à une facture client : dévalidez la facture, ou corrigez-la par un avoir.'
 				);
 			case 'OWNED_BY_CREDIT_NOTE':
 				return i18nMsg(
@@ -156,7 +156,7 @@
 			case 'OWNED_BY_SETTLEMENT':
 				return i18nMsg(
 					'journal-entries-reverse-blocked-settlement',
-					'Cette écriture est un règlement de facture : son annulation viendra avec la contre-passation des règlements.'
+					"Cette écriture est un règlement de facture : annulez le règlement depuis la fiche de la facture, qui indique si c'est possible."
 				);
 			case 'MATCHED_BANK_TRANSACTION':
 				return i18nMsg(

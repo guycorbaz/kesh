@@ -125,8 +125,16 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * *(Chacune des écritures de ce paragraphe a suivi la lecture de la ventilation
  * réelle, jamais l'inverse : ce garde-fou interdit d'ajuster un chiffre sans le
  * recompter, et sa toute première rédaction annonçait `conforme` sans l'avoir vérifié.)*
+ *
+ * ⚠️ **42 → 43, et la déclaration est NOMMÉE** : `typeLabel`
+ * (`lib/features/invoices/InvoiceSettlements.svelte`), née avec la liste des
+ * règlements de la Story 25-3-a-1 (#414). Ses deux branches délèguent à `i18nMsg`
+ * (`invoices-settlements-type-bank` / `-internal`) : aucun littéral, donc
+ * `conforme` **36 → 37** ; `ecartee` ne bouge pas. *Identifiée en cherchant les
+ * suffixes `Label`, `Text`, `Display` dans les fichiers de la story — la seule
+ * déclaration neuve qui en porte un.*
  */
-const CANDIDATES_ATTENDUES = 42;
+const CANDIDATES_ATTENDUES = 43;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -643,7 +651,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 6, conforme: 36 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 6, conforme: 37 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

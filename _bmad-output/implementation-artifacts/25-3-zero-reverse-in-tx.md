@@ -1,6 +1,6 @@
 # Story 25.3-zero : `reverse_in_tx` — la contre-passation composable
 
-Status: review
+Status: done
 
 **Issues : aucune qu'elle ferme.** Elle est le **socle** de la 25-3-a ([#414]) et de la 25-3-b
 ([#418]), qui ne peuvent pas être écrites sans elle. Commits en `refs #414`.

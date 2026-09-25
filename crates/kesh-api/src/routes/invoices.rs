@@ -1203,6 +1203,128 @@ pub async fn settle_invoice_handler(
     }))
 }
 
+/// Un règlement d'une facture, tel que l'écran le liste (Story 25-3-a-1, #414).
+///
+/// ⛔ **`cancellable` et ses trois compagnons sont calculés par la fonction même
+/// qui refuse l'annulation** (`invoice_settlements_write::settlement_cancel_blocker`) :
+/// l'écran masque le bouton **avant** le clic, et n'annonce pas autre chose que
+/// ce que l'écriture refuserait — ⚠️ **à une exception près, assumée** : le
+/// verrou de période **du jour** n'est pas évalué à la lecture (une borne ne
+/// peut pas être future ; seule une borne égale au jour l'atteint), et se
+/// refuse au clic en `400 PERIOD_LOCKED`. Cf. `settlement_entry_cancel_blocker`.
+///
+/// ⚠️ `cancellable` ne tient **pas** compte du rôle : un utilisateur
+/// Consultation lit `true` et reçoit 403 au clic. C'est le patron des écrans
+/// existants — l'écran masque le bouton par rôle, le serveur refuse de toute
+/// façon.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InvoiceSettlementResponse {
+    pub id: i64,
+    pub journal_entry_id: i64,
+    pub amount: Decimal,
+    pub settled_on: NaiveDate,
+    pub settlement_type: String,
+    pub cancellable: bool,
+    /// Code du motif qui empêche l'annulation (`SettlementCancelBlocker::code`).
+    pub cancel_blocked_by: Option<&'static str>,
+    /// Le **numéro du compte** archivé, quand c'est le motif — sans lui l'écran
+    /// dirait « réactivez-le » sans dire lequel.
+    pub cancel_blocked_label: Option<String>,
+    /// L'identifiant de la **transaction bancaire** rapprochée, quand c'est le
+    /// motif.
+    pub cancel_blocked_document_id: Option<i64>,
+}
+
+/// `GET /api/v1/invoices/:id/settlements` — les règlements d'une facture, du
+/// plus ancien au plus récent, avec ce qui empêche de les annuler (Story
+/// 25-3-a-1). Tout rôle authentifié.
+///
+/// ⚠️ **Un calcul de motifs par règlement** : quelques petites requêtes, bornées
+/// par le nombre de règlements d'**une** facture. Voulu — une seule fonction
+/// pour lire et pour écrire ; une requête « optimisée » dupliquerait la
+/// précédence.
+pub async fn list_invoice_settlements_handler(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+) -> Result<Json<Vec<InvoiceSettlementResponse>>, AppError> {
+    let company = get_company_for(&current_user, &state.pool).await?;
+    // 404 si la facture n'est pas de la société, en plus du scoping des lignes.
+    invoices::find_by_id_with_lines(&state.pool, company.id, id)
+        .await?
+        .ok_or(AppError::Database(DbError::NotFound))?;
+    let settlements =
+        kesh_db::repositories::invoice_settlements::list_for_invoice(&state.pool, company.id, id)
+            .await?;
+    let mut conn = state
+        .pool
+        .acquire()
+        .await
+        .map_err(|e| AppError::Database(kesh_db::errors::map_db_error(e)))?;
+    let mut out = Vec::with_capacity(settlements.len());
+    for s in settlements {
+        let hit = kesh_db::repositories::invoice_settlements_write::settlement_cancel_blocker(
+            &mut conn, company.id, s.id,
+        )
+        .await?;
+        out.push(InvoiceSettlementResponse {
+            id: s.id,
+            journal_entry_id: s.journal_entry_id,
+            amount: s.amount,
+            settled_on: s.settled_on,
+            settlement_type: s.settlement_type,
+            cancellable: hit.is_none(),
+            cancel_blocked_by: hit.as_ref().map(|h| h.0.code()),
+            cancel_blocked_label: hit.as_ref().and_then(|h| h.2.clone()),
+            cancel_blocked_document_id: hit.as_ref().and_then(|h| h.1),
+        });
+    }
+    Ok(Json(out))
+}
+
+/// Réponse : la facture relue, et l'écriture inverse produite.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CancelSettlementResponse {
+    pub invoice: InvoiceResponse,
+    pub reversal_journal_entry_id: i64,
+}
+
+/// `POST /api/v1/invoices/:id/settlements/:settlement_id/cancel` — annule un
+/// règlement par contre-passation (Story 25-3-a-1, #414). Comptable+.
+///
+/// La contre-passation est datée du **jour**, dans l'exercice ouvert qui le
+/// couvre ; la ligne de règlement est retirée ; `paid_at` retombe si le
+/// résiduel redevient positif. Les refus : 409 avec le code du motif, ou 400
+/// qui nomme les comptes archivés.
+pub async fn cancel_invoice_settlement_handler(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path((id, settlement_id)): Path<(i64, i64)>,
+) -> Result<Json<CancelSettlementResponse>, AppError> {
+    let company = get_company_for(&current_user, &state.pool).await?;
+    let done = kesh_db::repositories::invoice_settlements_write::cancel_settlement(
+        &state.pool,
+        current_user.user_id,
+        company.id,
+        id,
+        settlement_id,
+    )
+    .await?;
+
+    let (invoice, lines) = invoices::find_by_id_with_lines(&state.pool, company.id, id)
+        .await?
+        .ok_or(AppError::Database(DbError::NotFound))?;
+    let settled =
+        kesh_db::repositories::invoice_settlements::amount_settled(&state.pool, id).await?;
+    Ok(Json(CancelSettlementResponse {
+        invoice: InvoiceResponse::from_parts(invoice, lines)
+            .with_settlement(settled, done.amount_due_after),
+        reversal_journal_entry_id: done.reversal_journal_entry_id,
+    }))
+}
+
 /// Clés FTL des en-têtes CSV (locale = `companies.accounting_language`).
 const CSV_HEADER_KEYS: [&str; 7] = [
     "echeancier-csv-header-number",

@@ -545,3 +545,186 @@ async fn removed_mark_paid_routes_are_gone(pool: MySqlPool) {
         );
     }
 }
+
+// ===========================================================================
+// Story 25-3-a-1 (#414) — lister et annuler les règlements d'une facture
+// ===========================================================================
+
+/// Facture validée réglée en espèces ; rend `(invoice_id, settlement_id)`.
+async fn settled_invoice(pool: &MySqlPool, app: &TestApp, token: &str) -> (i64, i64) {
+    let (company_id, admin_id): (i64, i64) =
+        sqlx::query_as("SELECT company_id, id FROM users WHERE username = 'admin'")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    let contact_id = seed_contact(pool, company_id, admin_id).await;
+    let (id, _v) = create_validated_invoice(
+        pool,
+        company_id,
+        contact_id,
+        admin_id,
+        NaiveDate::from_ymd_opt(2026, 4, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2026, 4, 30).unwrap(),
+        dec!(100.00),
+    )
+    .await;
+    let caisse = caisse_id(pool, company_id).await;
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{id}/settlements")))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&json!({
+            "settlementType": "internal_account",
+            "accountId": caisse,
+            "amount": "108.10",
+            "settledOn": "2026-04-15"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let sid: i64 = sqlx::query_scalar("SELECT id FROM invoice_settlements WHERE invoice_id = ?")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    (id, sid)
+}
+
+async fn get_settlements(app: &TestApp, token: &str, id: i64) -> reqwest::Response {
+    app.client
+        .get(app.url(&format!("/api/v1/invoices/{id}/settlements")))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap()
+}
+
+async fn post_cancel(app: &TestApp, token: &str, id: i64, sid: i64) -> reqwest::Response {
+    app.client
+        .post(app.url(&format!("/api/v1/invoices/{id}/settlements/{sid}/cancel")))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap()
+}
+
+/// ⛔ **Le parcours nominal** : la liste annonce le règlement annulable,
+/// l'annulation rend la facture relue — `paidAt` retombé, reste dû entier —,
+/// puis la liste est vide.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn cancel_settlement_returns_200_and_reopens_the_invoice(pool: MySqlPool) {
+    seed_base(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    let (id, sid) = settled_invoice(&pool, &app, &token).await;
+
+    let resp = get_settlements(&app, &token, id).await;
+    assert_eq!(resp.status(), 200);
+    let list: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(list.as_array().unwrap().len(), 1);
+    assert_eq!(list[0]["id"], sid);
+    assert_eq!(list[0]["cancellable"], true);
+    assert!(list[0]["cancelBlockedBy"].is_null(), "got {list:?}");
+    assert_eq!(list[0]["settlementType"], "internal_account");
+
+    let resp = post_cancel(&app, &token, id, sid).await;
+    assert_eq!(resp.status(), 200);
+    let v: serde_json::Value = resp.json().await.unwrap();
+    assert!(v["reversalJournalEntryId"].as_i64().unwrap() > 0);
+    assert!(v["invoice"]["paidAt"].is_null(), "got {v:?}");
+    assert_eq!(
+        v["invoice"]["amountDue"]
+            .as_str()
+            .unwrap()
+            .parse::<f64>()
+            .unwrap(),
+        108.10
+    );
+
+    let list: serde_json::Value = get_settlements(&app, &token, id)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(list.as_array().unwrap().is_empty(), "got {list:?}");
+}
+
+/// Consultation LIT la liste (200) mais n'annule pas (403) ; une facture ou un
+/// règlement étranger rend 404.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn cancel_settlement_roles_and_not_found(pool: MySqlPool) {
+    let (_admin, company_id) = seed_base(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    let (id, sid) = settled_invoice(&pool, &app, &token).await;
+
+    kesh_db::repositories::users::create(
+        &pool,
+        kesh_db::entities::NewUser {
+            username: "lecteur".into(),
+            password_hash: kesh_api::auth::password::hash_password("password123").unwrap(),
+            role: kesh_db::entities::Role::Consultation,
+            active: true,
+            company_id,
+            email: None,
+        },
+    )
+    .await
+    .unwrap();
+    let resp = app
+        .client
+        .post(app.url("/api/v1/auth/login"))
+        .json(&json!({ "username": "lecteur", "password": "password123" }))
+        .send()
+        .await
+        .unwrap();
+    let lecteur = resp.json::<serde_json::Value>().await.unwrap()["accessToken"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    assert_eq!(get_settlements(&app, &lecteur, id).await.status(), 200);
+    assert_eq!(post_cancel(&app, &lecteur, id, sid).await.status(), 403);
+
+    assert_eq!(get_settlements(&app, &token, id + 9999).await.status(), 404);
+    assert_eq!(
+        post_cancel(&app, &token, id + 9999, sid).await.status(),
+        404
+    );
+    assert_eq!(
+        post_cancel(&app, &token, id, sid + 9999).await.status(),
+        404
+    );
+}
+
+/// ⛔ **Exercice clos : la liste le dit AVANT le clic, et le clic le refuse
+/// avec le même code** (arbitrage Q5 — rouvrir l'exercice est le chemin).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_closed_fiscal_year_is_announced_and_refused(pool: MySqlPool) {
+    let (admin_id, company_id) = seed_base(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    let (id, sid) = settled_invoice(&pool, &app, &token).await;
+    let fy_id: i64 = sqlx::query_scalar("SELECT id FROM fiscal_years WHERE company_id = ?")
+        .bind(company_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    kesh_db::repositories::fiscal_years::close(&pool, admin_id, company_id, fy_id)
+        .await
+        .unwrap();
+
+    let list: serde_json::Value = get_settlements(&app, &token, id)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(list[0]["cancellable"], false);
+    assert_eq!(list[0]["cancelBlockedBy"], "FISCAL_YEAR_CLOSED");
+
+    let resp = post_cancel(&app, &token, id, sid).await;
+    assert_eq!(resp.status(), 409);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "FISCAL_YEAR_CLOSED", "got {body:?}");
+}

@@ -7,6 +7,8 @@
  * via `rust_decimal::serde-str`. Ne JAMAIS convertir en `number`.
  */
 
+import type { InvoiceSettlementCancelCode } from './settlement-cancel';
+
 export type InvoiceSortBy = 'Date' | 'DueDate' | 'TotalAmount' | 'ContactName' | 'CreatedAt';
 export type SortDirection = 'Asc' | 'Desc';
 export type InvoiceStatus = 'draft' | 'validated' | 'cancelled';
@@ -213,6 +215,31 @@ export interface SettleInvoiceResponse {
 	journalEntryId: number;
 	amountDueAfter: string;
 	fullySettled: boolean;
+}
+
+/**
+ * Un règlement d'une facture, tel que la fiche le liste — Story 25-3-a-1 (#414).
+ *
+ * ⛔ `cancellable` et ses compagnons sont calculés par la fonction même qui
+ * refuse l'annulation : l'écran masque le bouton **avant** le clic.
+ */
+export interface InvoiceSettlementResponse {
+	id: number;
+	journalEntryId: number;
+	amount: string;
+	settledOn: string;
+	settlementType: 'bank_transfer' | 'internal_account';
+	cancellable: boolean;
+	cancelBlockedBy: InvoiceSettlementCancelCode | null;
+	/** Le numéro du compte archivé, quand c'est le motif. */
+	cancelBlockedLabel: string | null;
+	/** L'identifiant de la transaction bancaire rapprochée, quand c'est le motif. */
+	cancelBlockedDocumentId: number | null;
+}
+
+export interface CancelSettlementResponse {
+	invoice: InvoiceResponse;
+	reversalJournalEntryId: number;
 }
 
 export interface CreateInvoiceLineRequest {

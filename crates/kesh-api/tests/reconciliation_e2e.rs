@@ -2959,3 +2959,103 @@ async fn accept_refuses_an_overpayment_without_writing_anything(pool: MySqlPool)
         "la créance est intacte"
     );
 }
+
+/// ⛔ **Story 25-3-a-1 (#414) — un règlement né d'un rapprochement ne s'annule
+/// pas : c'est le dé-rapprochement (25-3-b) qui défait ce lien d'abord.**
+///
+/// Par le **chemin réel** (`POST /reconciliation/accept`) : le règlement porte
+/// à la fois une ligne `invoice_settlements` et un `matched_entry_id`. La
+/// liste l'annonce avant le clic, avec l'identifiant de la transaction ; le
+/// clic est refusé par la contre-passation elle-même — l'exemption du
+/// règlement ne lève QUE son motif, la précédence se poursuit jusqu'au
+/// rapprochement. Rien n'est retiré.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn cancelling_a_reconciled_settlement_is_refused(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let (inv_id, _) = seed_validated_invoice(
+        &pool,
+        ctx.company_id,
+        ctx.contact_id,
+        "INV-2026-001",
+        NaiveDate::from_ymd_opt(2026, 4, 20).unwrap(),
+        dec!(1234.56),
+    )
+    .await;
+    let tx_id = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("cancel_reconciled"),
+        day,
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            day,
+            Some(day),
+            dec!(1234.56),
+            "CHF",
+            "INV-2026-001",
+            Some("Acme Client"),
+        )],
+    )
+    .await[0];
+    let app = spawn_app(pool.clone()).await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/accept"))
+        .bearer_auth(&ctx.jwt)
+        .json(&serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "proposals": [{ "type": "invoice", "bankTransactionId": tx_id, "invoiceId": inv_id }],
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let sid: i64 = sqlx::query_scalar("SELECT id FROM invoice_settlements WHERE invoice_id = ?")
+        .bind(inv_id)
+        .fetch_one(&pool)
+        .await
+        .expect("le rapprochement a créé une ligne de règlement");
+
+    let list: Value = app
+        .client
+        .get(app.url(&format!("/api/v1/invoices/{inv_id}/settlements")))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(list[0]["cancellable"], false, "got {list:?}");
+    assert_eq!(list[0]["cancelBlockedBy"], "MATCHED_BANK_TRANSACTION");
+    assert_eq!(list[0]["cancelBlockedDocumentId"], tx_id);
+
+    let resp = app
+        .client
+        .post(app.url(&format!(
+            "/api/v1/invoices/{inv_id}/settlements/{sid}/cancel"
+        )))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 409);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["error"]["code"], "MATCHED_BANK_TRANSACTION",
+        "got {body:?}"
+    );
+    assert_eq!(body["error"]["details"]["documentId"], tx_id);
+    let restantes: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM invoice_settlements WHERE id = ?")
+            .bind(sid)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(restantes, 1, "refusée ⇒ rien de retiré");
+}
