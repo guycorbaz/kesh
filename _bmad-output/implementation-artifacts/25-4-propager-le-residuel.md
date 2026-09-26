@@ -105,6 +105,10 @@ Pour 25-4-b, donc :
   `invoice_pdf_service.rs:218-250`) et **doit le garder à l'identique** — c'est ce que lit le
   rapprochement ; le PDF du rappel le nomme en toutes lettres, avec montant initial, déjà réglé,
   reste à payer.
+- ✅ **Les frais restent configurables, et à zéro rien ne s'affiche** (Guy, 2026-09-27) : *« ils
+  doivent être configurables : si 0, ne rien afficher. »* Les frais sont déjà réglés par niveau de
+  rappel (`dunning_levels.fee_amount`) ; le PDF et le texte du rappel n'ont **aucune ligne de
+  frais** quand le montant est nul — ni « frais : 0.00 », ni total qui les mentionne.
 - ⚠️ **Point ouvert pour la spécification de 25-4-b — les frais de rappel.** Le texte réclame
   aujourd'hui `TTC + frais` (`invoice_email.rs:334`), mais les frais ne semblent **pas
   comptabilisés** (aucune écriture dans `invoice_reminders.rs`, à vérifier). Si la QR portait
@@ -116,6 +120,7 @@ Pour 25-4-b, donc :
 
 ## Change Log
 
+- **2026-09-27** — Frais de rappel : configurables, aucune ligne affichée à zéro.
 - **2026-09-27** — Q1 retranchée : la QR du rappel porte le reste dû (le TTC s'il n'y a aucun règlement) ; numéro de facture conservé ; point ouvert sur les frais.
 - **2026-09-27** — Recadrage de Q1 : le document est un rappel pour un montant partiel, pas la facture réémise.
 - **2026-09-26** — Complément de Q1 : le reste à payer figure aussi sur le PDF joint.
