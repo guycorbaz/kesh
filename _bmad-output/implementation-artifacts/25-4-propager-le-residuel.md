@@ -20,7 +20,9 @@ Le découpage (quatre stories depuis le 2026-09-27) suit l'ordre des dépendance
 | Story | Issues | Ce qu'elle fait | Pourquoi à ce rang |
 |---|---|---|---|
 | **25-4-a** — le résiduel juste | [#455], [#456] | la formule canonique soustrait l'avoir **TTC** ; un avoir est refusé sur une facture **réglée, même en partie** ; le test de parité promis et jamais écrit | ⛔ **les deux suivantes réemploient la formule** : la propager avant de la corriger propagerait le défaut |
-| **25-4-b** — le résiduel aux agrégats | [#416] | balance âgée, totaux de l'échéancier, **colonne « reste dû »** de l'échéancier et de son CSV, dialogue de règlement pré-rempli, **montant réclamé par les relances** | le cœur de #416 ; première utilisatrice des formes jointes |
+| **25-4-b** — ⚠️ **découpée le 2026-09-27** en **b1** et **b2** : les arbitrages de Q1 ont ajouté les rappels (texte, QR, PDF, frais), et le tout touchait six modules | [#416] | — | — |
+| **25-4-b1** — le résiduel aux agrégats | [#416] | balance âgée, totaux et **colonne « reste dû »** de l'échéancier et de son CSV, statut « partiellement payée » dans l'échéancier, dialogue de règlement **pré-rempli** ; formes jointes du résiduel, invariant balance âgée ↔ grand livre | le cœur de #416 ; première utilisatrice des formes jointes |
+| **25-4-b2** — le résiduel aux rappels | [#416] | le rappel réclame le **reste dû** (texte, QR, PDF avec montant initial / déjà réglé / reste), frais configurables et masqués à zéro ; question des frais non comptabilisés | les arbitrages Q1 ; repose sur la grandeur de b1 |
 | **25-4-c** — le résiduel au rapprochement | [#420] | filtre des candidats, score, re-score à l'acceptation, montant affiché dans la proposition | indépendante de 25-4-b, mais du même socle |
 | **25-4-d** — solder le reste | [#384] | imputer l'écart d'un règlement partiel — **perte sur débiteur**, escompte, frais bancaires — pour clore une facture partiellement réglée ; la part de **TVA** réduit la TVA due, seule la part HT va au compte de perte | ramenée de la 25-6 le 2026-09-27 (Guy) : elle repose entièrement sur le résiduel juste de 25-4-a |
 
@@ -131,6 +133,7 @@ Pour 25-4-b, donc :
 
 ## Change Log
 
+- **2026-09-27** — 25-4-b découpée en b1 (agrégats) / b2 (rappels) : six modules une fois les arbitrages Q1 ajoutés.
 - **2026-09-27** — Arbitrages : avoir sur facture réglée refusé en 25-4-a, levée tracée par #471 ; #384 ramenée en 25-4-d.
 - **2026-09-27** — Frais de rappel : configurables, aucune ligne affichée à zéro.
 - **2026-09-27** — Q1 retranchée : la QR du rappel porte le reste dû (le TTC s'il n'y a aucun règlement) ; numéro de facture conservé ; point ouvert sur les frais.
