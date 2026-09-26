@@ -1,6 +1,6 @@
 # Story 25.2-b-1 : Dévalider une facture — le dépôt et l'API
 
-Status: ready-for-dev
+Status: done
 
 **Issue : [#440]**, qu'elle **ne ferme pas** : la 25-2-b-2 le fera. Commits en `refs #440`.
 

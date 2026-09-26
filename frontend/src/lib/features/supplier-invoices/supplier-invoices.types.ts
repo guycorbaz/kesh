@@ -4,6 +4,7 @@
  */
 
 import type { SupplierSettlementCancelCode } from './settlement-cancel';
+import type { SupplierInvoiceCancelCode } from './invoice-cancel';
 
 export type SupplierInvoiceStatus = 'open' | 'paid' | 'cancelled';
 export type SettlementType = 'bank_transfer' | 'internal_account';
@@ -58,6 +59,17 @@ export interface SupplierInvoiceResponse {
 	 * à prévenir un double paiement avant d'annuler.
 	 */
 	lastConfirmedBatch: { id: number; confirmedAt: string | null } | null;
+	/**
+	 * Story 25-3-c (#454) — la **facture** peut-elle être annulée ?
+	 *
+	 * ⚠️ Même discipline que `settlementCancellable` : `null` = non calculé,
+	 * jamais « non ». Calculé par la fonction même qui refuse ; ne tient pas
+	 * compte du rôle.
+	 */
+	cancellable: boolean | null;
+	cancelBlockedBy: SupplierInvoiceCancelCode | null;
+	/** Le numéro du compte archivé, quand c'est le motif. */
+	cancelBlockedLabel: string | null;
 }
 
 export interface CancelSupplierSettlementResponse {

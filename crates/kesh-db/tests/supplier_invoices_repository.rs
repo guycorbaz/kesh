@@ -282,6 +282,30 @@ async fn cancel_reverses_purchase_entry(pool: MySqlPool) {
     assert_eq!(charge, dec!(0.00));
     assert_eq!(vat, dec!(0.00));
     assert_eq!(payable, dec!(0.00));
+
+    // Story 25-3-c (#454) : une VRAIE contre-passation, liée à l'achat — que
+    // le grand livre présente désormais comme déjà contre-passée.
+    let purchase = created.invoice.purchase_journal_entry_id;
+    let reverses: Option<i64> = sqlx::query_scalar(
+        "SELECT reverses_entry_id FROM journal_entries \
+         WHERE company_id = ? AND reverses_entry_id IS NOT NULL",
+    )
+    .bind(ctx.seeded.company_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(reverses, Some(purchase));
+    let blocker = kesh_db::repositories::journal_entries::reversal_blocker(
+        &pool,
+        ctx.seeded.company_id,
+        purchase,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        blocker.map(|h| h.0),
+        Some(kesh_db::errors::ReversalBlocker::AlreadyReversed)
+    );
 }
 
 #[sqlx::test(migrations = "./test-schema")]
@@ -448,38 +472,117 @@ async fn pay_with_non_postable_account_is_rejected(pool: MySqlPool) {
     );
 }
 
+/// ⛔ **Story 25-3-c (#454) — une facture PAYÉE s'annule**, et son règlement en
+/// est DÉTACHÉ (arbitrage du 2026-09-26) : il reste au grand livre, sans
+/// contre-passation, sans propriétaire — un paiement sans facture. Ce test
+/// posait l'ancien comportement (refus) ; il est réécrit, non supprimé.
 #[sqlx::test(migrations = "./test-schema")]
-async fn cancel_paid_invoice_rejected(pool: MySqlPool) {
+async fn cancel_paid_invoice_detaches_its_settlement(pool: MySqlPool) {
+    use kesh_db::errors::ReversalBlocker;
+    use kesh_db::repositories::journal_entries;
+
     let ctx = setup(&pool).await;
-    let created = supplier_invoices::create(
+    let (c, u) = (ctx.seeded.company_id, ctx.seeded.admin_user_id);
+    let created = supplier_invoices::create(&pool, one_line(&ctx, dec!(100.00), dec!(8.10)), u)
+        .await
+        .unwrap();
+    let paid = supplier_invoices::pay(
         &pool,
-        one_line(&ctx, dec!(100.00), dec!(0)),
-        ctx.seeded.admin_user_id,
-    )
-    .await
-    .unwrap();
-    supplier_invoices::pay(
-        &pool,
-        ctx.seeded.company_id,
+        c,
         created.invoice.id,
         SettlementChoice::InternalAccount {
             account_id: ctx.seeded.accounts["1000"],
         },
         d(2026, 6, 20),
-        ctx.seeded.admin_user_id,
+        u,
     )
     .await
     .unwrap();
+    let settlement = paid.invoice.settlement_journal_entry_id.unwrap();
 
-    let err = supplier_invoices::cancel(
-        &pool,
-        ctx.seeded.company_id,
-        created.invoice.id,
-        ctx.seeded.admin_user_id,
+    let cancelled = supplier_invoices::cancel(&pool, c, created.invoice.id, u)
+        .await
+        .expect("une facture payée s'annule");
+    let inv = &cancelled.invoice;
+    assert_eq!(inv.status, "cancelled");
+    assert!(inv.settlement_type.is_none());
+    assert!(inv.settlement_bank_account_id.is_none());
+    assert!(inv.settlement_account_id.is_none());
+    assert!(
+        inv.settlement_journal_entry_id.is_none(),
+        "règlement détaché"
+    );
+    assert!(inv.paid_at.is_none());
+
+    // L'écriture de règlement existe toujours, et n'est pas contre-passée.
+    assert_eq!(
+        count(
+            &pool,
+            &format!("SELECT COUNT(*) FROM journal_entries WHERE reverses_entry_id = {settlement}")
+        )
+        .await,
+        0
+    );
+    // Soldes : charge et TVA à zéro, 2000 débiteur du TTC, caisse créditée.
+    let ttc = dec!(108.10);
+    assert_eq!(
+        account_balance(&pool, c, ctx.seeded.accounts["4000"]).await,
+        dec!(0.00)
+    );
+    assert_eq!(
+        account_balance(&pool, c, ctx.recoverable_id).await,
+        dec!(0.00)
+    );
+    assert_eq!(
+        account_balance(&pool, c, ctx.seeded.accounts["2000"]).await,
+        ttc
+    );
+    assert_eq!(
+        account_balance(&pool, c, ctx.seeded.accounts["1000"]).await,
+        -ttc
+    );
+
+    // ⛔ La preuve du détachement : plus de propriétaire, et la
+    // contre-passation à la main passe.
+    let motifs = journal_entries::reversal_blockers(&pool, c, settlement)
+        .await
+        .unwrap();
+    assert!(
+        !motifs
+            .iter()
+            .any(|(b, _, _)| *b == ReversalBlocker::OwnedBySupplierInvoice),
+        "le règlement n'appartient plus à la facture : {motifs:?}"
+    );
+    journal_entries::reverse(&pool, c, settlement, u)
+        .await
+        .expect("un paiement sans facture se contre-passe depuis sa fiche");
+
+    // L'audit garde le lien que la colonne a perdu.
+    let details: serde_json::Value = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log WHERE action = 'supplier_invoice.cancelled' \
+         AND entity_id = ?",
     )
+    .bind(created.invoice.id)
+    .fetch_one(&pool)
     .await
-    .unwrap_err();
-    assert!(matches!(err, DbError::IllegalStateTransition(_)));
+    .unwrap();
+    assert_eq!(details["previousStatus"], "paid");
+    assert_eq!(details["settlementJournalEntryId"], settlement);
+    assert_eq!(details["settlementType"], "internal_account");
+
+    // L'annulation du règlement n'a plus d'objet.
+    let err = supplier_invoices::cancel_settlement(&pool, c, created.invoice.id, u)
+        .await
+        .expect_err("plus de règlement");
+    assert!(
+        matches!(
+            err,
+            DbError::SettlementNotCancellable {
+                blocker: kesh_db::errors::SettlementCancelBlocker::SupplierInvoiceNotPaid
+            }
+        ),
+        "got {err:?}"
+    );
 }
 
 #[sqlx::test(migrations = "./test-schema")]
@@ -1126,7 +1229,11 @@ async fn settlement_view_reads_the_invoice_and_its_motive_together(pool: MySqlPo
         .expect("facture");
     assert_eq!(view.invoice.status, "paid");
     assert!(!view.lines.is_empty(), "les lignes suivent");
-    assert!(view.cancel_blocker.is_none(), "{:?}", view.cancel_blocker);
+    assert!(
+        view.settlement_cancel_blocker.is_none(),
+        "{:?}",
+        view.settlement_cancel_blocker
+    );
     assert_eq!(view.last_confirmed_batch, None, "réglée hors lot");
 
     supplier_invoices::cancel_settlement(&pool, c, id, ctx.seeded.admin_user_id)
@@ -1138,7 +1245,7 @@ async fn settlement_view_reads_the_invoice_and_its_motive_together(pool: MySqlPo
         .expect("facture");
     assert_eq!(view.invoice.status, "open");
     assert!(matches!(
-        view.cancel_blocker,
+        view.settlement_cancel_blocker,
         Some((SettlementCancelBlocker::SupplierInvoiceNotPaid, None, None))
     ));
 
@@ -1354,5 +1461,440 @@ async fn a_concurrent_close_waits_for_the_cancellation(pool: MySqlPool) {
             })
         ),
         "l'annulation devait attendre la clôture puis refuser — reçu {result:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Story 25-3-c (#454) — annuler une facture fournisseur, même payée
+// ---------------------------------------------------------------------------
+
+/// ⛔ **Le socle — l'autorité ACHAT ne couvre QUE l'écriture d'achat.** Appel
+/// DIRECT sur l'écriture de RÈGLEMENT : refusé en `OWNED_BY_SUPPLIER_INVOICE`,
+/// comme sans autorité. Le témoin positif — l'écriture d'achat — passe.
+#[sqlx::test(migrations = "./test-schema")]
+async fn purchase_authority_never_covers_the_settlement_entry(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let (id, purchase, settlement) =
+        paid_invoice(&pool, &ctx, d(2026, 6, 15), d(2026, 6, 20)).await;
+    let authority = ReversalAuthority::SupplierPurchase {
+        supplier_invoice_id: id,
+    };
+
+    let mut tx = pool.begin().await.unwrap();
+    let err = journal_entries::reverse_owned_in_tx(
+        &mut tx,
+        ctx.seeded.company_id,
+        settlement,
+        ctx.seeded.admin_user_id,
+        authority,
+    )
+    .await
+    .expect_err("le règlement ne se contre-passe pas au titre de l'achat");
+    assert!(
+        matches!(
+            err,
+            DbError::EntryNotReversable {
+                blocker: ReversalBlocker::OwnedBySupplierInvoice,
+                ..
+            }
+        ),
+        "got {err:?}"
+    );
+    drop(tx);
+
+    let mut tx = pool.begin().await.unwrap();
+    journal_entries::reverse_owned_in_tx(
+        &mut tx,
+        ctx.seeded.company_id,
+        purchase,
+        ctx.seeded.admin_user_id,
+        authority,
+    )
+    .await
+    .expect("témoin : l'écriture d'achat, elle, se contre-passe");
+}
+
+/// Engage la facture dans un lot `generated` — état produit en production par
+/// `payment_batches::create_batch`, forgé ici en SQL (le lot n'est pas l'objet
+/// du test, seul son statut compte).
+async fn engager_dans_un_lot(pool: &MySqlPool, ctx: &Ctx, supplier_invoice_id: i64) {
+    let bank = sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, is_primary) \
+         VALUES (?, 'Banque lot', 'CH9300762011623852957', FALSE)",
+    )
+    .bind(ctx.seeded.company_id)
+    .execute(pool)
+    .await
+    .expect("compte bancaire")
+    .last_insert_id() as i64;
+    let batch = sqlx::query(
+        "INSERT INTO payment_batches (company_id, bank_account_id, status, \
+         requested_execution_date, total_amount, msg_id, payment_info_id) \
+         VALUES (?, ?, 'generated', '2026-06-30', 100, 'MSG-25-3-C', 'PMT-25-3-C')",
+    )
+    .bind(ctx.seeded.company_id)
+    .bind(bank)
+    .execute(pool)
+    .await
+    .expect("lot")
+    .last_insert_id() as i64;
+    sqlx::query(
+        "INSERT INTO payment_batch_items (payment_batch_id, supplier_invoice_id, position, \
+         end_to_end_id, amount) VALUES (?, ?, 1, 'E2E-25-3-C', 100)",
+    )
+    .bind(batch)
+    .bind(supplier_invoice_id)
+    .execute(pool)
+    .await
+    .expect("ligne de lot");
+}
+
+/// Monte une facture fournisseur dont l'ACHAT est daté dans un exercice
+/// raccourci à `D = aujourd'hui − 60 j` (même calendrier que [`monter`]),
+/// payée ou non, puis applique les motifs demandés : exercice clos, compte de
+/// charge 4000 archivé, aucun exercice couvrant le jour, lot `generated`.
+async fn monter_achat(
+    pool: &MySqlPool,
+    motifs: &[SettlementCancelBlocker],
+    payee: bool,
+) -> (Ctx, i64) {
+    kesh_db::test_fixtures::truncate_all(pool)
+        .await
+        .expect("truncate");
+    let ctx = setup(pool).await;
+    let today = chrono::Utc::now().date_naive();
+    let dd = today - chrono::Duration::days(60);
+    sqlx::query("UPDATE fiscal_years SET end_date = ? WHERE id = ?")
+        .bind(dd)
+        .bind(ctx.seeded.fiscal_year_id)
+        .execute(pool)
+        .await
+        .expect("raccourcir l'exercice");
+    if !motifs.contains(&SettlementCancelBlocker::NoOpenFiscalYearToday) {
+        fiscal_years::create(
+            pool,
+            ctx.seeded.admin_user_id,
+            kesh_db::entities::NewFiscalYear {
+                company_id: ctx.seeded.company_id,
+                name: "Courant".into(),
+                start_date: dd + chrono::Duration::days(1),
+                end_date: d(2030, 12, 31),
+            },
+        )
+        .await
+        .expect("exercice courant");
+    }
+    let id = if payee {
+        paid_invoice(
+            pool,
+            &ctx,
+            dd - chrono::Duration::days(20),
+            dd - chrono::Duration::days(10),
+        )
+        .await
+        .0
+    } else {
+        let mut new = one_line(&ctx, dec!(100.00), dec!(0));
+        new.invoice_date = dd - chrono::Duration::days(20);
+        new.due_date = Some(new.invoice_date);
+        supplier_invoices::create(pool, new, ctx.seeded.admin_user_id)
+            .await
+            .expect("création")
+            .invoice
+            .id
+    };
+    if motifs.contains(&SettlementCancelBlocker::SupplierInvoiceInPaymentBatch) {
+        engager_dans_un_lot(pool, &ctx, id).await;
+    }
+    if motifs.contains(&SettlementCancelBlocker::AccountArchived) {
+        let charge = ctx.seeded.accounts["4000"];
+        let version: i32 = sqlx::query_scalar("SELECT version FROM accounts WHERE id = ?")
+            .bind(charge)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        accounts::archive(pool, charge, version, ctx.seeded.admin_user_id)
+            .await
+            .expect("archivage du compte de charge");
+    }
+    if motifs.contains(&SettlementCancelBlocker::FiscalYearClosed) {
+        fiscal_years::close(
+            pool,
+            ctx.seeded.admin_user_id,
+            ctx.seeded.company_id,
+            ctx.seeded.fiscal_year_id,
+        )
+        .await
+        .expect("clôture");
+    }
+    (ctx, id)
+}
+
+/// ⛔ **La précédence de l'annulation d'une facture, lecture ET clic.** Chaque
+/// motif atteignable seul, puis les paires où le lot est en concurrence : le
+/// lot passe TOUJOURS en dernier. La lecture annonce le motif, l'écriture
+/// refuse pour ce même motif.
+#[sqlx::test(migrations = "./test-schema")]
+async fn invoice_cancel_motives_and_their_precedence(pool: MySqlPool) {
+    use SettlementCancelBlocker::*;
+    let cas: [(&[SettlementCancelBlocker], bool, SettlementCancelBlocker); 7] = [
+        (&[FiscalYearClosed], false, FiscalYearClosed),
+        (&[FiscalYearClosed], true, FiscalYearClosed),
+        (&[AccountArchived], false, AccountArchived),
+        (&[NoOpenFiscalYearToday], false, NoOpenFiscalYearToday),
+        (
+            &[SupplierInvoiceInPaymentBatch],
+            false,
+            SupplierInvoiceInPaymentBatch,
+        ),
+        (
+            &[FiscalYearClosed, SupplierInvoiceInPaymentBatch],
+            false,
+            FiscalYearClosed,
+        ),
+        (
+            &[AccountArchived, SupplierInvoiceInPaymentBatch],
+            false,
+            AccountArchived,
+        ),
+    ];
+    for (motifs, payee, attendu) in cas {
+        let (ctx, id) = monter_achat(&pool, motifs, payee).await;
+        let mut conn = pool.acquire().await.unwrap();
+        let lu = supplier_invoices::supplier_invoice_cancel_blocker(
+            &mut conn,
+            ctx.seeded.company_id,
+            id,
+        )
+        .await
+        .expect("lecture");
+        drop(conn);
+        assert_eq!(
+            lu.as_ref().map(|h| h.0),
+            Some(attendu),
+            "lecture, motifs {motifs:?} (payée : {payee})"
+        );
+        if attendu == AccountArchived {
+            assert_eq!(lu.and_then(|h| h.2).as_deref(), Some("4000"));
+        }
+        let err =
+            supplier_invoices::cancel(&pool, ctx.seeded.company_id, id, ctx.seeded.admin_user_id)
+                .await
+                .expect_err("refusée");
+        let ok = match attendu {
+            FiscalYearClosed | SupplierInvoiceInPaymentBatch => matches!(
+                err,
+                DbError::SupplierInvoiceNotCancellable { blocker } if blocker == attendu
+            ),
+            AccountArchived => matches!(err, DbError::ReversalAccountsArchived(_)),
+            NoOpenFiscalYearToday => matches!(err, DbError::FiscalYearInvalid),
+            _ => false,
+        };
+        assert!(ok, "écriture, motifs {motifs:?} : reçu {err:?}");
+    }
+}
+
+/// Rang 1 : une facture déjà annulée — la seconde annulation.
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_second_cancellation_is_refused_with_its_code(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let (c, u) = (ctx.seeded.company_id, ctx.seeded.admin_user_id);
+    let id = supplier_invoices::create(&pool, one_line(&ctx, dec!(50.00), dec!(0)), u)
+        .await
+        .unwrap()
+        .invoice
+        .id;
+    supplier_invoices::cancel(&pool, c, id, u).await.unwrap();
+    let mut conn = pool.acquire().await.unwrap();
+    let lu = supplier_invoices::supplier_invoice_cancel_blocker(&mut conn, c, id)
+        .await
+        .unwrap();
+    drop(conn);
+    assert_eq!(
+        lu.map(|h| h.0),
+        Some(SettlementCancelBlocker::SupplierInvoiceCancelled)
+    );
+    let err = supplier_invoices::cancel(&pool, c, id, u)
+        .await
+        .expect_err("double annulation");
+    assert!(
+        matches!(
+            err,
+            DbError::SupplierInvoiceNotCancellable {
+                blocker: SettlementCancelBlocker::SupplierInvoiceCancelled
+            }
+        ),
+        "got {err:?}"
+    );
+}
+
+/// ⛔ **Une clôture concurrente attend l'annulation de la facture** — et, une
+/// fois validée, la fait refuser. Prouve le verrou de l'écriture d'achat ET de
+/// son exercice, et qu'aucune lecture non verrouillante ne le précède (sinon
+/// l'instantané, figé avant l'attente, relirait l'exercice « ouvert »).
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_concurrent_close_waits_for_the_invoice_cancellation(pool: MySqlPool) {
+    let (ctx, id) = monter_achat(&pool, &[], true).await;
+    let mut closing = pool.begin().await.unwrap();
+    sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+        .bind(ctx.seeded.fiscal_year_id)
+        .execute(&mut *closing)
+        .await
+        .unwrap();
+    let p = pool.clone();
+    let (c, u) = (ctx.seeded.company_id, ctx.seeded.admin_user_id);
+    let annulation = tokio::spawn(async move { supplier_invoices::cancel(&p, c, id, u).await });
+    let vue = kesh_db::test_fixtures::attendre_une_requete_en_cours(
+        &pool,
+        &["fiscal_years", "FOR UPDATE"],
+        || annulation.is_finished(),
+    )
+    .await;
+    if !vue {
+        panic!(
+            "l'annulation a fini sans attendre de verrou : {:?}",
+            annulation.await.map(|r| r.map(|_| ()))
+        );
+    }
+    closing.commit().await.unwrap();
+    let result = annulation.await.expect("tâche").map(|_| ());
+    assert!(
+        matches!(
+            result,
+            Err(DbError::SupplierInvoiceNotCancellable {
+                blocker: SettlementCancelBlocker::FiscalYearClosed
+            })
+        ),
+        "l'annulation devait attendre la clôture puis refuser — reçu {result:?}"
+    );
+}
+
+/// ⛔ **Composition et rollback** : dans une transaction fournie, le geste
+/// écrit (lecture positive), puis l'abandon efface tout.
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancel_composes_and_rolls_back(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let (id, _, _) = paid_invoice(&pool, &ctx, d(2026, 6, 15), d(2026, 6, 20)).await;
+    let tables = ["journal_entries", "journal_entry_lines", "audit_log"];
+    let mut avant = Vec::new();
+    for t in tables {
+        avant.push(count(&pool, &format!("SELECT COUNT(*) FROM {t}")).await);
+    }
+    let mut tx = pool.begin().await.unwrap();
+    let done = supplier_invoices::cancel_in_tx(
+        &mut tx,
+        ctx.seeded.company_id,
+        id,
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .expect("annulation dans la transaction");
+    assert_eq!(done.invoice.status, "cancelled");
+    let dedans: String = sqlx::query_scalar("SELECT status FROM supplier_invoices WHERE id = ?")
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+    assert_eq!(dedans, "cancelled", "lecture positive dans la transaction");
+    tx.rollback().await.unwrap();
+
+    let apres: (String, Option<i64>) = sqlx::query_as(
+        "SELECT status, settlement_journal_entry_id FROM supplier_invoices WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(apres.0, "paid");
+    assert!(apres.1.is_some(), "le règlement est toujours attaché");
+    for (t, n) in tables.iter().zip(avant) {
+        assert_eq!(
+            count(&pool, &format!("SELECT COUNT(*) FROM {t}")).await,
+            n,
+            "rien ne reste dans {t}"
+        );
+    }
+}
+
+/// ⛔ **Étanchéité multi-tenant** : table par table, rien n'est écrit.
+#[sqlx::test(migrations = "./test-schema")]
+async fn another_company_cannot_cancel_the_invoice(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let (id, _, _) = paid_invoice(&pool, &ctx, d(2026, 6, 15), d(2026, 6, 20)).await;
+    let other = sqlx::query(
+        "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+         VALUES ('Autre', 'Rue 1\n1000 Lausanne', 'Independant', 'FR', 'FR')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let tables = [
+        "journal_entries",
+        "journal_entry_lines",
+        "supplier_invoices",
+        "audit_log",
+    ];
+    let mut avant = Vec::new();
+    for t in tables {
+        avant.push(count(&pool, &format!("SELECT COUNT(*) FROM {t}")).await);
+    }
+    let err = supplier_invoices::cancel(&pool, other, id, ctx.seeded.admin_user_id)
+        .await
+        .expect_err("autre société");
+    assert!(matches!(err, DbError::NotFound), "got {err:?}");
+    let mut conn = pool.acquire().await.unwrap();
+    let err = supplier_invoices::supplier_invoice_cancel_blocker(&mut conn, other, id)
+        .await
+        .expect_err("autre société — lecture");
+    assert!(matches!(err, DbError::NotFound), "got {err:?}");
+    for (t, n) in tables.iter().zip(avant) {
+        assert_eq!(
+            count(&pool, &format!("SELECT COUNT(*) FROM {t}")).await,
+            n,
+            "rien d'écrit dans {t}"
+        );
+    }
+}
+
+/// Une facture à DEUX lignes de comptes différents, taguée projet : la
+/// contre-passation du socle reprend le projet sur CHAQUE ligne.
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancel_keeps_the_project_on_every_line(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let project_id = make_project(&pool, ctx.seeded.company_id, "DEUX", false).await;
+    let mut new = one_line(&ctx, dec!(100.00), dec!(8.10));
+    new.project_id = Some(project_id);
+    new.lines.push(NewSupplierInvoiceLine {
+        description: "Seconde".into(),
+        quantity: dec!(1),
+        unit_price: dec!(50.00),
+        vat_rate: dec!(0),
+        expense_account_id: ctx.seeded.accounts["4000"],
+    });
+    let created = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+        .await
+        .unwrap();
+    supplier_invoices::cancel(
+        &pool,
+        ctx.seeded.company_id,
+        created.invoice.id,
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .unwrap();
+    let sans_projet = count(
+        &pool,
+        &format!(
+            "SELECT COUNT(*) FROM journal_entry_lines jel \
+             JOIN journal_entries je ON je.id = jel.entry_id \
+             WHERE je.reverses_entry_id = {} AND (jel.project_id IS NULL OR jel.project_id <> {project_id})",
+            created.invoice.purchase_journal_entry_id
+        ),
+    )
+    .await;
+    assert_eq!(
+        sans_projet, 0,
+        "chaque ligne de la contre-passation porte le projet"
     );
 }

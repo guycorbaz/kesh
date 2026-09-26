@@ -235,6 +235,13 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * faux avec l'assurance de l'avoir mesuré.*
  */
 const ATTENDU = {
+	// Story 25-3-c (#454) : 1709 → 1719, soit **+10**, recomptés depuis la source
+	// (`grep -o 'i18nMsg('`, `main` contre l'arbre) :
+	//   • `features/supplier-invoices/invoice-cancel.ts` 0 → 6 : les six motifs ;
+	//   • `supplier-invoices/[id]/+page.svelte` 35 → 39 : le complément « payée »
+	//     de la confirmation, le toast, l'état « annulée », le repli `common-error`.
+	//   ⚠️ `journal-entries/[id]/+page.svelte` ne bouge pas : son repli change de
+	//   TEXTE, pas de nombre d'appels.
 	// Story 25-3-b (#418) : 1692 → 1709, soit **+17**, recomptés depuis la source
 	// (`grep -o 'i18nMsg('`, `main` contre l'arbre) :
 	//   • `features/reconciliation/reconciliation-cancel.ts` 0 → 6 : les six motifs ;
@@ -313,7 +320,7 @@ const ATTENDU = {
 	// trouve rien là où l'appel n'existe pas encore : chercher les clés mal
 	// traduites ne révèle jamais celles qui ne sont pas appelées du tout — et
 	// partir d'une liste de clés ne révèle jamais celles que la liste omet.*
-	sitesTotal: 1709,
+	sitesTotal: 1719,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

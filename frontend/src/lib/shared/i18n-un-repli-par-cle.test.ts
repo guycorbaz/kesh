@@ -107,8 +107,16 @@ const PREFIXES = [
  * `-settlement-cancel-confirm`, `-settlement-cancel-batch-warning`,
  * `-settlement-cancelled`, `-settlement-entry-link` et
  * `-settlement-cancel-blocked-not-paid` (recompté : `git diff main` du FTL fr-CH).
+ *
+ * ⚠️ **201 → 210, +9 nommées** (Story 25-3-c, #454) — l'annulation d'une facture
+ * fournisseur, toutes au préfixe `supplier-invoices-` : `-cancel-confirm-paid`,
+ * `-cancelled`, `-cancelled-info` et les six `-cancel-blocked-*` (`cancelled`,
+ * `fiscal-year-closed`, `bank-match`, `account-archived`, `no-fiscal-year`,
+ * `in-payment-batch`) — recompté : `git diff main` du FTL fr-CH, onze lignes dont
+ * deux clés existantes réécrites (`-cancel-confirm`,
+ * `journal-entries-reverse-blocked-supplier-invoice`).
  */
-const CLES_RELEVEES = 201;
+const CLES_RELEVEES = 210;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

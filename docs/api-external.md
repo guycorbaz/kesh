@@ -268,11 +268,19 @@ Corps : `{ "version": n }` — le verrou optimiste. Réponse : la facture, même
 
 ### Annuler le règlement d'une facture fournisseur
 
-**`POST /api/v1/supplier-invoices/{id}/settlement/cancel`** — écriture (`read-write`), ouverte aux clés comme `POST /supplier-invoices/{id}/pay`. Sans corps. Contre-passe l'écriture de règlement (datée du jour) et ramène la facture à `open` : `settlementType`, `settlementJournalEntryId`, `paidAt`… reviennent à `null`. Le lot de paiement confirmé qui l'a éventuellement réglée **n'est pas modifié**. Réponse : `{ invoice, reversalJournalEntryId }`. Distinct de `POST /supplier-invoices/{id}/cancel`, qui annule la **facture** (seulement `open`).
+**`POST /api/v1/supplier-invoices/{id}/settlement/cancel`** — écriture (`read-write`), ouverte aux clés comme `POST /supplier-invoices/{id}/pay`. Sans corps. Contre-passe l'écriture de règlement (datée du jour) et ramène la facture à `open` : `settlementType`, `settlementJournalEntryId`, `paidAt`… reviennent à `null`. Le lot de paiement confirmé qui l'a éventuellement réglée **n'est pas modifié**. Réponse : `{ invoice, reversalJournalEntryId }`. Distinct de `POST /supplier-invoices/{id}/cancel`, qui annule la **facture** elle-même (ci-dessous).
 
 `GET /supplier-invoices/{id}`, la réponse de `pay` et celle de l'annulation portent `settlementCancellable`, `settlementCancelBlockedBy` (code du motif), `settlementCancelBlockedLabel` (numéro du compte archivé) et `lastConfirmedBatch` (`{ id, confirmedAt }` du lot confirmé **le plus récent** qui contient la facture — un fait **historique**, qui ne dit pas d'où vient le règlement courant). Ailleurs, ces champs valent `null` : *non calculés*. Après `pay` ou l'annulation, la facture est **relue** avec ses champs, dans une même lecture : la réponse décrit l'état courant — celui d'une écriture concurrente éventuelle —, jamais un état qui se contredit.
 
 Refus : `SUPPLIER_INVOICE_NOT_PAID` (`409`, la facture n'est pas payée), `FISCAL_YEAR_CLOSED` (`409`), `ACCOUNT_ARCHIVED` (`400`, `details.rejected[]`), `FISCAL_YEAR_INVALID` (`400`), `PERIOD_LOCKED` (`400`), `NOT_FOUND` (`404`).
+
+### Annuler une facture fournisseur
+
+**`POST /api/v1/supplier-invoices/{id}/cancel`** — écriture (`read-write`), ouverte aux clés comme `pay`. Sans corps. Annule la facture, **ouverte ou payée** : contre-passe l'écriture d'**achat** (datée du jour, liée par `reversesEntryId`) et passe la facture à `cancelled`. Payée, son **règlement reste au grand livre, détaché** : `settlementType`, `settlementJournalEntryId`, `paidAt`… reviennent à `null`, et l'écriture de règlement, qui n'appartient plus à aucune pièce, devient un paiement sans facture — contre-passable depuis sa fiche d'écriture. L'audit `supplier_invoice.cancelled` garde le lien (`settlementJournalEntryId`). Réponse : la facture relue, avec ses champs de lecture (Story 25-3-c).
+
+`GET /supplier-invoices/{id}`, les réponses de `pay`, de l'annulation du règlement et de l'annulation de la facture portent aussi `cancellable`, `cancelBlockedBy` (code du motif) et `cancelBlockedLabel` (numéro du compte archivé) — même discipline : `null` = *non calculé*.
+
+Refus, dans l'ordre de précédence : `SUPPLIER_INVOICE_CANCELLED` (`409`, déjà annulée), `FISCAL_YEAR_CLOSED` (`409`, exercice de l'**achat** clôturé), `ACCOUNT_ARCHIVED` (`400`, `details.rejected[]`), `FISCAL_YEAR_INVALID` (`400`, aucun exercice ouvert le jour), `SUPPLIER_INVOICE_IN_PAYMENT_BATCH` (`409`, facture dans un lot de paiement en cours — en dernier), `PERIOD_LOCKED` (`400`), `NOT_FOUND` (`404`). ⚠️ **Changement** : une facture **payée** était refusée (`409 ILLEGAL_STATE_TRANSITION`) ; une facture ouverte dont l'achat est dans un exercice clôturé était annulée, elle est désormais refusée.
 
 ⚠️ **`FISCAL_YEAR_CLOSED` rend ici `409`**, alors que la dévalidation le rend en `400` : c'est un refus du **geste** d'annulation, qui porte sur l'exercice du **règlement** ; la contre-passation, elle, serait datée d'un exercice ouvert.
 

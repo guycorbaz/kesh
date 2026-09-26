@@ -345,7 +345,7 @@ journal-entries-reverse-blocked-is-a-reversal = This entry is itself a reversal.
 journal-entries-reverse-blocked-already-reversed = This entry has already been reversed.
 journal-entries-reverse-blocked-invoice = This entry belongs to a customer invoice: unvalidate the invoice, or correct it with a credit note.
 journal-entries-reverse-blocked-credit-note = This entry belongs to a credit note, which is already a reversal.
-journal-entries-reverse-blocked-supplier-invoice = This entry belongs to a supplier invoice: cancel the invoice or its settlement from its page.
+journal-entries-reverse-blocked-supplier-invoice = This entry belongs to a supplier invoice: it is corrected from the invoice page, which shows what is possible.
 journal-entries-reverse-blocked-settlement = This entry is an invoice settlement: cancel the settlement from the invoice page, which shows whether it is possible.
 journal-entries-reverse-blocked-bank-match = This entry is reconciled with a bank transaction: undo the reconciliation from the bank import detail.
 journal-entries-reverse-blocked-account-archived = An account of this entry has been archived: reactivate it to be able to reverse.
@@ -1724,7 +1724,16 @@ imported-supplier-invoices-error-file-read-error = Could not read the file
 imported-supplier-invoices-error-field-too-long = A QR-bill field exceeds the allowed length
 supplier-invoices-add-line = Add a line
 supplier-invoices-cancel = Cancel the invoice
-supplier-invoices-cancel-confirm = Cancel this supplier invoice?
+supplier-invoices-cancel-confirm = Cancel this invoice? A reversing entry of the purchase, dated today, will be posted to the general ledger.
+supplier-invoices-cancel-confirm-paid = It is paid: its settlement stays in the general ledger, detached from the invoice — a payment without an invoice, to be matched. If the payment itself is wrong, cancel the settlement first instead.
+supplier-invoices-cancelled = Invoice cancelled: the reversing entry of the purchase has been posted to the general ledger.
+supplier-invoices-cancelled-info = Invoice cancelled.
+supplier-invoices-cancel-blocked-cancelled = This supplier invoice is already cancelled.
+supplier-invoices-cancel-blocked-fiscal-year-closed = This invoice belongs to a closed fiscal year: an administrator must reopen the fiscal year before it can be cancelled.
+supplier-invoices-cancel-blocked-bank-match = The purchase entry of this invoice is matched with a bank transaction: cancel that reconciliation first.
+supplier-invoices-cancel-blocked-account-archived = An account of this invoice's purchase entry has been archived: reactivate it to be able to cancel the invoice.
+supplier-invoices-cancel-blocked-no-fiscal-year = No open fiscal year covers today's date: create it to be able to cancel this invoice.
+supplier-invoices-cancel-blocked-in-payment-batch = This invoice is part of a payment batch in progress: cancel the batch first.
 
 ## Story 25-3-a-2 (#414) — annuler un règlement fournisseur
 supplier-invoices-settlement-cancel-button = Cancel the settlement
