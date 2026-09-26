@@ -135,3 +135,7 @@ Pass 1 Opus 4.8 × 3 reviewers (Blind Hunter + Edge Case Hunter + Acceptance Aud
 ## Deferred from: code review of 22-4a-couche-anti-pat-routes-admin, passe 3 (2026-08-14)
 
 - **Apostrophes perdues dans deux commentaires anciens de `sprint-status.yaml`** (`sprint-status.yaml:213` « C est », `:343` « L unique »). Hors du diff de la branche `spec/22-4-validate-p1` — préexistantes, cosmétiques, sens préservé. La passe 3 a corrigé les occurrences des lignes 249-250, seules introduites par la branche. À reprendre à l'occasion d'un prochain toilettage du fichier.
+
+## Deferred from: code review of 25-5-a-export-souverainete (2026-09-26)
+
+- L'export de souveraineté lit ses trente tables sans instantané commun (défaut antérieur, aggravé par la 25-5-a) — tracé par **#465**, source de vérité.
