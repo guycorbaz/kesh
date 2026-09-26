@@ -811,7 +811,7 @@ fiscal-year-closed = Exercice clôturé.
 # Story 14-2 — réouverture d'un exercice clôturé (Admin, motif, audit, garde LIFO)
 fiscal-year-reopen-button = Réouvrir
 fiscal-year-reopen-confirmation-title = Rouvrir cet exercice ?
-fiscal-year-reopen-confirmation-body = Vous êtes sur le point de rouvrir l’exercice « { $name } ». Il redeviendra modifiable (saisie d’écritures) jusqu’à une nouvelle clôture. Un motif est obligatoire et sera conservé dans la piste d’audit.
+fiscal-year-reopen-confirmation-body = Vous êtes sur le point de rouvrir l’exercice « { $name } ». Il redeviendra modifiable (saisie d’écritures) jusqu’à une nouvelle clôture. Un motif est obligatoire et sera conservé dans le journal d’audit.
 fiscal-year-reopen-motif-label = Motif de la réouverture
 fiscal-year-reopen-confirmation-action = Rouvrir l’exercice
 fiscal-year-reopened = Exercice rouvert.

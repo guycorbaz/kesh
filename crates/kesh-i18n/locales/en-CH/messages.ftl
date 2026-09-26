@@ -774,7 +774,7 @@ fiscal-year-closed = Fiscal year closed.
 # Story 14-2 — reopening a closed fiscal year (Admin, reason, audit, LIFO guard)
 fiscal-year-reopen-button = Reopen
 fiscal-year-reopen-confirmation-title = Reopen this fiscal year?
-fiscal-year-reopen-confirmation-body = You are about to reopen fiscal year "{ $name }". It will become editable again (entry posting) until it is closed anew. A reason is required and will be kept in the audit trail.
+fiscal-year-reopen-confirmation-body = You are about to reopen fiscal year "{ $name }". It will become editable again (entry posting) until it is closed anew. A reason is required and will be kept in the audit log.
 fiscal-year-reopen-motif-label = Reason for reopening
 fiscal-year-reopen-confirmation-action = Reopen fiscal year
 fiscal-year-reopened = Fiscal year reopened.

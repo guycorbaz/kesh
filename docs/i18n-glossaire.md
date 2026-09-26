@@ -181,6 +181,7 @@ comptable. `Kostenträger` et `commessa` ont leur place dans le **manuel**, pas 
 
 Concerne quatre libellés, tous portés par les rollouts 23-3 et 23-5 : « Projet analytique »,
 « Projet analytique (optionnel) », « Projet analytique par défaut », « Projets analytiques ».
+| **journal d'audit** | **Audit-Protokoll** | **registro di audit** | **audit log** | `export-global-content-excludes` (story 25-5-a, **conforme dans les quatre langues**) ; `fiscal-year-reopen-confirmation-body` en allemand. Arbitrage du Project Lead du 2026-09-15 (story 25-1c-b2, #378) ; l'italien n'avait **aucun** précédent. ⚠️ Ne PAS employer « piste d'audit », « audit-trail », « pista di audit », « audit trail » : alignés par la 25-1c-b2. ⚠️ `nav-audit-log` et les clés de l'écran naissent dans la même PR : **pas** des précédents |
 
 ---
 

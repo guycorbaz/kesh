@@ -1,6 +1,6 @@
 # Story 25.1c-b2 : Ce que l'écran du journal d'audit rend faux — manuels, README, vocabulaire
 
-Status: in-progress
+Status: review
 
 ⛔ **Historique de la fiche** : validée en 7 passes le 2026-09-15, rouverte, revalidée le 2026-09-16 ; restée
 dix jours sur une branche locale jamais poussée ; la revalidation R5 « dérive » (2026-09-26) l'a trouvée
@@ -228,12 +228,12 @@ conserve. Les **manques connus** de la section (séquence d'installation #434, g
 
 - [x] **T0 — Réécriture de la fiche** contre le texte actuel, **après la 25-1c-b1** *(fait le 2026-09-26,
       cette version)* ; puis revalidation.
-- [ ] **T1 — Glossaire et catalogue** (AC 1, 2).
-- [ ] **T2 — Vocabulaire des manuels, de la brochure et du README** (AC 3).
-- [ ] **T3 — Encadré et section « Traçabilité » du manuel utilisateur** (AC 4, 5) — chaque affirmation
+- [x] **T1 — Glossaire et catalogue** (AC 1, 2).
+- [x] **T2 — Vocabulaire des manuels, de la brochure et du README** (AC 3).
+- [x] **T3 — Encadré et section « Traçabilité » du manuel utilisateur** (AC 4, 5) — chaque affirmation
       neuve contrôlée **contre le code de la b1**.
-- [ ] **T4 — Manuel d'administration, README, CHANGELOG** (AC 6, 7).
-- [ ] **T5 — Régénération, contrôle aplati, inventaire rejoué** (AC 8) ; gardes (AC 9).
+- [x] **T4 — Manuel d'administration, README, CHANGELOG** (AC 6, 7).
+- [x] **T5 — Régénération, contrôle aplati, inventaire rejoué** (AC 8) ; gardes (AC 9).
 
 ## Dev Notes
 
@@ -288,14 +288,69 @@ Aucun code applicatif, hors **un repli Svelte** (AC 2).
 
 ### Agent Model Used
 
+Claude Opus 5.5 — réécriture de la fiche (T0) et implémentation.
+
 ### Debug Log References
+
+- La substitution « piste d’audit » → « journal d’audit » a d'abord laissé l'article féminin
+  (« dans la journal d’audit ») : corrigé avant tout commit, trouvé en relisant la valeur.
+- `admin-manual.tex:1946` porte « la piste de contrôle **VOYAGE** avec l'export », en capitales — la
+  phrase citée par la fiche, en minuscules, ne se trouvait pas : relue sur la source, accords compris
+  (« il n'est plus seulement conservé »).
+- ⛔ **Défaut de la b1 trouvé en relisant le glossaire** : sa section « Registre » prescrit la **2ᵉ personne
+  du singulier** en italien ; le sous-titre de l'écran disait « della vostra società » → « della tua
+  società ». L'allemand (« Ihres », forme *Sie*) est conforme.
 
 ### Completion Notes List
 
+- **Glossaire** : ligne « journal d'audit / Audit-Protokoll / registro di audit / audit log » en partie A,
+  avec ses précédents et les formes proscrites.
+- **Catalogue** : `fiscal-year-reopen-confirmation-body` alignée en fr, it, en ; **son repli Svelte**
+  (`fiscal-years/+page.svelte`) aussi.
+- **Vocabulaire** : les 21 sites de l'inventaire de l'AC 3 (dont les accords de la section
+  « Traçabilité »), les deux entrées de glossaire des manuels renommées « Journal d'audit (angl. audit log) »
+  et déplacées à la lettre J — celle du manuel utilisateur dit la différence avec le *journal* des
+  écritures.
+- **Encadré** du manuel utilisateur devenu une **note** : contre-passation imposée ; en usage courant, la
+  dévalidation comme seule disparition d'une écriture, **hors restauration d'une sauvegarde** ; consultation
+  à l'écran ; verrou de période. La phrase « Si vous supprimez la dernière écriture » de la numérotation
+  réécrite.
+- **Section « Traçabilité »** : `\label{sec:tracabilite}` et sous-section **« Consulter le journal
+  d'audit »**, chaque comportement contrôlé contre le code de la b1 (rôles, jours UTC, plage inversée,
+  numéro exigeant un type et vidé au changement, action ancienne, « — », export plafonné et plage
+  inversée à l'export → #469, rien de journalisé).
+- **Manuel d'administration** : « l'écran reste à venir » → existe ; « 5 rôles » → trois ; `:1803`
+  complété des dévalidations ; `:1802` nuancé « en usage courant » avec renvoi à la restauration.
+- **README** (ligne v0.12.1 : écran livré, #434 / #435 restent ouverts ; liste des fonctionnalités) et
+  **CHANGELOG** `[0.12.1]` *Added* « Consulter le journal d'audit à l'écran ». L'historique publié
+  (v0.12.0) n'est pas touché.
+- **Contrôle aplati** (césures recollées) : 0 `??` ; 8 anciennes phrases absentes, 8 nouvelles présentes ;
+  **inventaire rejoué** — reste exactement l'attendu (deux entrées de glossaire, « piste de correction »,
+  « Une piste pour les fiduciaires », la ligne v0.12.0 du README).
+
+### Gates *(b1 + b2, sur la même branche)*
+
+- Frontend : `check` 0 erreur (27 avertissements), `lint-i18n-ownership` PASS, `test:unit` **817 / 817**
+  (777 + 40 de la b1), build OK ; gardes i18n **inchangées** par la b2 (une valeur de clé et un repli).
+- Backend : `cargo test -p kesh-i18n` 29 / 29 ; base remise à zéro, `scripts/test-fast.sh` **2463 / 2463**.
+- E2E : `kesh_e2e` reconstruite, montage complet, frontend buildé après le dernier patch, run à
+  **13:30 UTC** : **224 passés / 7 échoués / 19 ignorés, zéro régression** — les 7 de KF-029.
+
 ### File List
+
+| Fichier | Nature |
+|---|---|
+| `docs/i18n-glossaire.md` | ligne « journal d'audit » en partie A |
+| `crates/kesh-i18n/locales/{fr,it,en}-CH/messages.ftl` | `fiscal-year-reopen-confirmation-body` ; it-CH : sous-titre de l'écran (registre) |
+| `frontend/src/routes/(app)/settings/fiscal-years/+page.svelte` | repli |
+| `docs/manual/fr/user-manual.tex` / `.pdf` | vocabulaire, encadré, numérotation, « Traçabilité », glossaire |
+| `docs/manual/fr/admin-manual.tex` / `.pdf` | vocabulaire, « Champs », rôles, `:1802-1803`, glossaire |
+| `docs/manual/fr/marketing-brochure.tex` / `.pdf` | vocabulaire |
+| `README.md`, `CHANGELOG.md` | feuille de route v0.12.1, fonctionnalités, *Added* |
 
 ## Change Log
 
+- **2026-09-26** — **dev** — Implémentée (Opus 5.5) sur la branche de la b1. Glossaire, une clé et son repli, 21 sites de vocabulaire, encadré devenu note (« en usage courant, hors restauration »), sous-section « Consulter le journal d'audit » contrôlée contre le code, manuel d'administration, README, CHANGELOG. **Défaut de la b1 trouvé en route** : registre italien du sous-titre (« vostra » → « tua »). Contrôle aplati et inventaire rejoué conformes. Gates **b1 + b2** : frontend 817/817, backend 2463/2463, E2E 224/7/19 sans régression.
 - **2026-09-26** — **revalidation R7 ciblée** — **Une lentille Haiku 4.5**, contexte frais, braquée sur la seule remédiation R6 (`git diff ef575755 5291c693`), prompt `25-1c-b2-validate-prompt-r7-ciblee.md`. **0 finding** : chaque ligne ajoutée vérifiée par `grep -nF` à sa source ; repli Svelte présent ; réserve « hors restauration » fondée contre `backup.rs` et `kesh-seed` ; aucun « seule » sans réserve ; **grep lexical rejoué — 20 lignes, ensemble égal à celui de l'inventaire**. La remédiation ne touchait que la fiche ⇒ **boucle close**, fiche validée. *(Trend : R5 Sonnet 1 CRIT / 4 HIGH → réécriture T0 → R6 Opus 1 HIGH / 4 MED → R7 Haiku 0.)*
 - **2026-09-26** — **revalidation R6** — **Une lentille Opus**, passe complète, prompt `25-1c-b2-validate-prompt-r6.md`, axes déclarés (non exercés : fiche de la b1 lue par son code seulement, manuels DE/IT/EN, lecture exhaustive de « trace » / « tracé »). **1 HIGH, 4 MEDIUM, 8 LOW**, tous retenus : ① HIGH — `user-manual.tex:301` (« pour préserver l'audit-trail »), rendu par le grep même de la fiche, **absent de l'inventaire** : c'est le HIGH de la passe 3 qui revient, perdu à la réécriture. ② MEDIUM — `admin-manual.tex:1760` et `:1946` mal classés (« piste de contrôle » y désigne le journal) ; ③ MEDIUM — trois sites non triés au rejeu (`user-manual.tex:624`, `marketing-brochure.tex:209` — tri de la passe 5 perdu —, `README.md:220`, ligne v0.12.1 **non publiée**) ; ④ MEDIUM — « la dévalidation, seule disparition d'une écriture » est **faux contre le code** : la restauration d'une sauvegarde (`backup.rs:457`) et la réinitialisation de démonstration effacent aussi des écritures ⇒ « en usage courant, hors restauration » — et `admin-manual.tex:1802`, même défaut, **réécrit aussi** (l'AC 6 disait de ne pas y toucher) ; ⑤ MEDIUM — le repli Svelte de `fiscal-year-reopen-confirmation-body` (`fiscal-years/+page.svelte:554`) non propagé ⇒ inscrit à l'AC 2 et aux zones touchées. LOW : l'encadré a **cinq** énoncés (le verrou de période reste) ; `:543` classé deux fois ; `admin-manual.tex:1766`, `:1816`, `:1969` et les accords de `user-manual.tex:1809-1812` ajoutés ; préambule périmé réécrit ; AC 5 complétée (numéro invalide ignoré, « — », plage inversée à l'export → #469) ; `user-manual.tex:536` (« Si vous supprimez la dernière écriture ») ajouté à l'AC 4 ; `\label{sec:tracabilite}` prescrit ; bruit du motif `journal` / `protokoll` dit. Ces deux entrées-ci et les deux précédentes, d'abord insérées par erreur dans le tableau de tendance de la passe 7, sont **remontées** en tête du Change Log.
 - **2026-09-26** — **réécriture T0** — Après la 25-1c-b1 (revue close), la fiche est **réécrite contre le texte de `main`** : AC 2 réduite à **une clé, trois cellules** (la 25-5-a a aligné l'autre) ; AC 3 : **inventaire refait** (16 sites à changer, dont les « piste de contrôle » ajoutés depuis, et la liste des sites déjà conformes ou d'autre sens) ; AC 4 : l'encadré a **quatre** énoncés, trois périmés, et la seule disparition d'une écriture est la **dévalidation** ; AC 5 : l'écran décrit tel que la b1 le livre (dont le refus de la plage inversée et le vidage du numéro au changement de type, ajoutés par sa revue) ; AC 6 : ce qui reste à corriger au manuel d'administration (« reste à venir », « 5 rôles », `:1803`) ; AC 7 : la ligne v0.12.1 du README et une entrée CHANGELOG *Added* — ⚠️ l'historique publié ne se réécrit pas. Revalidation à passer.

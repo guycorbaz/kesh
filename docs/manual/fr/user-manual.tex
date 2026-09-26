@@ -298,7 +298,7 @@ Le plan comptable est la colonne vertébrale de votre comptabilité. Kesh fourni
 
 \subsection{Modification d'un compte}
 
-Cliquer sur un compte ouvre son détail. Vous pouvez modifier le libellé, le compte parent, le \textbf{rôle} et l'indicateur \textbf{postable}. Le numéro n'est pas modifiable une fois des écritures saisies (pour préserver l'audit-trail). Le \textbf{type} se modifie librement tant que le compte ne porte aucune écriture ; au-delà, Kesh vous avertit avant de le laisser faire (voir ci-dessous).
+Cliquer sur un compte ouvre son détail. Vous pouvez modifier le libellé, le compte parent, le \textbf{rôle} et l'indicateur \textbf{postable}. Le numéro n'est pas modifiable une fois des écritures saisies (pour préserver le journal d'audit). Le \textbf{type} se modifie librement tant que le compte ne porte aucune écriture ; au-delà, Kesh vous avertit avant de le laisser faire (voir ci-dessous).
 
 \begin{keshwarning}
 \textbf{Changer le type d'un compte qui porte des écritures reclasse tout son historique.} Le type — Actif, Passif, Produit, Charge — ne décrit pas seulement le compte : c'est lui qui décide dans quel état ses montants apparaissent. Les rapports le lisent \textbf{au moment où vous les demandez}, jamais au moment où l'écriture a été passée.
@@ -508,24 +508,21 @@ l'annulation du règlement depuis la fiche de la facture), une écriture déjà 
 fois, et une écriture dont un \textbf{compte a été archivé} attend que vous réactiviez ce
 compte --- son numéro vous est indiqué.
 
-\begin{keshwarning}[title=\faExclamationTriangle\ Ce que le logiciel ne fait pas encore à votre place]
-La contre-passation est désormais \textbf{imposée} et non plus seulement offerte~: la
-modification et la suppression d'une écriture sont refusées. Ce qui manque encore, c'est
-\textbf{l'écran} de consultation du journal d'audit~: les opérations y sont bien enregistrées,
-et l'historique complet des corrections apportées à vos écritures \textbf{peut désormais être
-produit} --- liste filtrable et export CSV, dans votre langue --- mais par l'\textbf{interface
-de programmation} seulement, ce qui suppose un outil technique. La page qui le rendra lisible
-depuis l'application reste à venir. Un verrou \textbf{plus fin} que l'exercice existe, lui~:
-le verrou de période arrête les livres à la date de votre choix --- le trimestre TVA déclaré,
-par exemple (\S\ref{sec:verrou-periode}).
+\begin{keshnote}
+La contre-passation est \textbf{imposée}~: la modification et la suppression d'une écriture
+sont refusées. En usage courant, une seule voie fait encore disparaître une écriture~: la
+\textbf{dévalidation} d'une facture, qui la repasse en brouillon avec l'écriture que sa
+validation avait créée (voir «~Supprimer ou dévalider une facture~») --- une décision de
+facturation, inscrite au journal d'audit sous son propre nom. \emph{La restauration d'une
+sauvegarde, qui remet les livres dans l'état de l'archive, fait exception à cette règle.}
 
-Une seule exception, déjà en vigueur~: une écriture \textbf{déjà contre-passée} ne peut plus
-être supprimée --- la supprimer effacerait la correction.
-
-Si vos livres doivent être opposables --- à une fiduciaire, à un organe de révision, à
-l'administration fiscale ---, \textbf{préférez la contre-passation} à la modification et à
-la suppression, tant que le logiciel vous laisse le choix.
-\end{keshwarning}
+L'historique complet des corrections apportées à vos écritures se \textbf{consulte à
+l'écran}~: \emph{Administration} → \emph{Journal d'audit} (\S\ref{sec:tracabilite}), avec
+ses filtres et son export CSV, dans votre langue --- et par l'interface de programmation. Un
+verrou \textbf{plus fin} que l'exercice existe aussi~: le verrou de période arrête les livres
+à la date de votre choix --- le trimestre TVA déclaré, par exemple
+(\S\ref{sec:verrou-periode}).
+\end{keshnote}
 
 \subsection{Numérotation}
 
@@ -533,8 +530,8 @@ Chaque écriture reçoit un numéro séquentiel par société et par exercice, t
 \textbf{compteur qui ne redescend jamais}.
 
 \textbf{Un numéro attribué ne sera jamais réattribué à une autre écriture.} C'est la
-garantie qui compte devant un contrôle. Si vous supprimez la dernière écriture d'un
-exercice, la suivante prendra le numéro d'après --- pas celui qui vient d'être libéré.
+garantie qui compte devant un contrôle. Si la dernière écriture d'un exercice disparaît --- par
+la dévalidation de sa facture ---, la suivante prendra le numéro d'après --- pas celui qui vient d'être libéré.
 Jusqu'à cette version, ce numéro était repris~: une écriture au contenu tout différent
 portait alors un numéro déjà employé, \textbf{sans aucun message et sans trace visible}.
 
@@ -885,7 +882,7 @@ une fenêtre pré-remplie :
 
 Après l'envoi, la fiche facture affiche \emph{Envoyée le} suivi de la date
 et de l'adresse du destinataire. Le bouton devient \emph{Renvoyer par
-e-mail} — le renvoi est autorisé (nouvelle date, nouvelle trace d'audit).
+e-mail} — le renvoi est autorisé (nouvelle date, nouvelle entrée au journal d'audit).
 
 \begin{keshnote}
 « Envoyée » signifie que le message a été \textbf{remis au serveur
@@ -1108,7 +1105,7 @@ Le refus \textbf{nomme toujours son motif}~:
 \end{itemize}
 
 \begin{keshnote}
-Toute dévalidation et toute suppression sont \textbf{journalisées dans l'audit-trail}~: Kesh
+Toute dévalidation et toute suppression sont \textbf{inscrites au journal d'audit}~: Kesh
 conserve qui a fait quoi et quand, ainsi qu'un instantané du contenu concerné --- la trace subsiste
 même après la disparition de la facture.
 \end{keshnote}
@@ -1786,9 +1783,10 @@ ultérieure.
 \end{keshnote}
 
 %%─────────────────────────────────────────────────────────────────────────────
-\section{Traçabilité (audit-trail)}
+\section{Traçabilité (journal d'audit)}
+\label{sec:tracabilite}
 
-Kesh enregistre une \textbf{piste d'audit} (\texttt{audit\_log}) des actions
+Kesh tient un \textbf{journal d'audit} (\texttt{audit\_log}) des actions
 comptables significatives — création, modification et annulation d'entités,
 imports, réconciliations, exports, gestion des utilisateurs et modification de
 la société — avec l'auteur, l'horodatage et le contexte.
@@ -1800,21 +1798,50 @@ déconnexion, changement de votre propre mot de passe. Ce sont des manques
 connus et suivis, pas des oublis.
 
 \begin{keshnote}
-Cette piste d'audit est \textbf{insert-only} : aucune entrée ne peut être modifiée,
+Ce journal d'audit est \textbf{insert-only} : aucune entrée ne peut être modifiée,
 et \textbf{aucune ne peut être supprimée sur une installation en service}. Deux
 précisions, parce qu'une garantie vague ne vaut rien~: l'\textbf{import d'une
-sauvegarde ne la remplace plus} --- les entrées de l'archive s'y ajoutent, les vôtres
+sauvegarde ne le remplace plus} --- les entrées de l'archive s'y ajoutent, les vôtres
 restent ---, et la \textbf{réinitialisation des données de démonstration} reste
 possible, mais elle est réservée à un administrateur \emph{et} refusée dès que
-l'installation est finalisée. Elle \textbf{contribue} à la traçabilité attendue par
+l'installation est finalisée. Il \textbf{contribue} à la traçabilité attendue par
 l'OLICo Art.~9 al.~1.b ch.~4 --- sans que cela vaille attestation de conformité~:
 celle-ci se juge sur l'installation entière et son exploitation, non sur une table.
-Dans la version actuelle, elle est \textbf{enregistrée en base}
-à des fins de conformité et d'expertise, mais n'est pas encore consultable via un
-écran dédié dans l'interface (page de consultation prévue pour une version
-ultérieure). De même, un \textbf{centre de notifications} (rappels d'échéance,
+Il est \textbf{enregistré en base} à des fins de conformité et d'expertise, et se
+\textbf{consulte à l'écran} (ci-dessous). Un \textbf{centre de notifications} (rappels d'échéance,
 transactions à rapprocher) est prévu mais pas encore disponible.
 \end{keshnote}
+
+\subsection{Consulter le journal d'audit}
+
+\emph{Administration} → \emph{Journal d'audit}. L'écran est réservé aux rôles
+\textbf{Comptable} et \textbf{Administrateur}~; il n'est pas proposé au rôle
+\emph{Consultation}, et le journal n'est pas lisible par une clé API.
+
+\begin{itemize}
+    \item \textbf{Les filtres}~: une période, un type d'entité, un numéro d'entité et une action,
+          choisis dans des listes traduites dans la langue de votre installation. Le
+          \textbf{numéro d'entité exige un type}~: le champ reste inactif tant qu'aucun type n'est
+          choisi, et se vide quand vous changez de type --- un numéro ne désigne une pièce que dans
+          son type. Un numéro nul, négatif ou non entier est ignoré.
+    \item \textbf{Les dates filtrent sur des jours UTC}, alors que le tableau affiche l'heure
+          \textbf{locale}. Une opération faite peu après minuit, heure suisse, appartient donc au
+          jour UTC \emph{précédent}~: si elle manque, élargissez la période d'un jour. Une date de
+          début postérieure à la date de fin est refusée par l'écran.
+    \item \textbf{Le tableau}~: la date, l'auteur (tel qu'il s'appelait au moment de l'opération,
+          et «~clé API~» si elle a été faite par une clé), l'action et le type d'entité
+          \textbf{traduits}, le numéro de la pièce --- «~---~» quand l'opération ne vise pas une pièce
+          précise --- et un bouton qui déplie le \textbf{détail} enregistré.
+    \item \textbf{Une action ancienne}, écrite par une version antérieure et absente de la liste
+          «~Action~», s'affiche sous son \textbf{code technique}~; on la retrouve en filtrant par le
+          type et le numéro d'entité.
+    \item \textbf{L'export CSV} reprend les filtres affichés, avec des heures en UTC et les libellés
+          dans la langue de l'installation. Il est \textbf{plafonné à 10~000 lignes}~: au-delà, un
+          message vous demande d'affiner les filtres. \emph{À l'export, une période inversée est
+          refusée par le serveur avec un message qui n'est pas encore traduit.}
+\end{itemize}
+
+\emph{Ni la consultation ni l'export ne s'inscrivent eux-mêmes au journal.}
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{FAQ et dépannage utilisateur}
@@ -1886,7 +1913,7 @@ Selon l'action :
           écriture est contre-passée, et un règlement de facture qu'il avait créé est retiré.
 \end{itemize}
 
-L'\texttt{audit\_log} garde toujours la trace de l'action originale ET de l'action de retour.
+Le journal d'audit garde toujours la trace de l'action originale ET de l'action de retour.
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Conseils d'utilisation au quotidien}
@@ -1941,7 +1968,6 @@ L'\texttt{audit\_log} garde toujours la trace de l'action originale ET de l'acti
 \begin{description}
     \item[Actif] Ce que possède l'entreprise (liquidités, créances, stocks, immobilisations). Classe 1 du plan comptable.
     \item[Amortissement] Constatation comptable de la perte de valeur d'une immobilisation sur sa durée d'utilisation.
-    \item[Audit-trail (piste d'audit)] Journal des modifications comptables (qui, quand, quelle valeur), exigé par le CO Art. 957a. ⚠️ \emph{La couverture n'est pas totale --- voir la section «~Traçabilité~» pour les deux familles d'opérations qui n'y figurent pas encore.} Aucune entrée ne peut y être modifiée, ni supprimée sur une installation en service.
     \item[Avoir (note de crédit)] Document qui annule tout ou partie d'une facture émise (l'inverse d'une facture).
     \item[Balance des comptes] Liste de tous les comptes avec leurs soldes débiteurs et créditeurs à une date donnée.
     \item[Bilan] État du patrimoine d'une entreprise à une date donnée (actifs = passifs + capitaux propres).
@@ -1957,6 +1983,7 @@ L'\texttt{audit\_log} garde toujours la trace de l'action originale ET de l'acti
     \item[Grand-livre] Ensemble des comptes individuels reprenant toutes les écritures qui les concernent.
     \item[IDE] Identifiant Unique des Entreprises (Suisse), format CHE-XXX.XXX.XXX.
     \item[Journal] Enregistrement chronologique de toutes les écritures comptables.
+    \item[Journal d'audit (angl. audit log)] Registre des modifications comptables (qui, quand, quelle valeur), exigé par le CO Art. 957a. ⚠️ \emph{La couverture n'est pas totale --- voir la section «~Traçabilité~» pour les deux familles d'opérations qui n'y figurent pas encore.} Il se consulte à l'écran, \emph{Administration} → \emph{Journal d'audit} (\S\ref{sec:tracabilite}). À ne pas confondre avec le \emph{journal} des écritures, ci-dessus. Aucune entrée ne peut y être modifiée, ni supprimée sur une installation en service.
     \item[Lettrage] Rapprochement d'une facture avec son paiement pour solder la créance ou la dette correspondante.
     \item[Liquidités] Avoirs immédiatement disponibles (caisse, comptes bancaires et postaux).
     \item[Partie double] Principe selon lequel toute opération est enregistrée sur au moins deux comptes, débit = crédit.

@@ -774,7 +774,7 @@ fiscal-year-closed = Esercizio chiuso.
 # Story 14-2 — riapertura di un esercizio chiuso (Admin, motivo, audit, regola LIFO)
 fiscal-year-reopen-button = Riapri
 fiscal-year-reopen-confirmation-title = Riaprire questo esercizio?
-fiscal-year-reopen-confirmation-body = Stai per riaprire l’esercizio « { $name } ». Tornerà modificabile (registrazione di scritture) fino a una nuova chiusura. Un motivo è obbligatorio e sarà conservato nella pista di audit.
+fiscal-year-reopen-confirmation-body = Stai per riaprire l’esercizio « { $name } ». Tornerà modificabile (registrazione di scritture) fino a una nuova chiusura. Un motivo è obbligatorio e sarà conservato nel registro di audit.
 fiscal-year-reopen-motif-label = Motivo della riapertura
 fiscal-year-reopen-confirmation-action = Riapri l’esercizio
 fiscal-year-reopened = Esercizio riaperto.
@@ -2101,7 +2101,7 @@ audit-log-export-error-too-large = Troppi risultati (> { $limit }). Affinare i f
 # --- Journal d'audit — écran (Story 25-1c-b1) ---
 nav-audit-log = Registro di audit
 audit-log-title = Registro di audit
-audit-log-subtitle = La traccia di ogni operazione che modifica i libri della vostra società: chi, cosa, quando.
+audit-log-subtitle = La traccia di ogni operazione che modifica i libri della tua società: chi, cosa, quando.
 audit-log-filter-date-from = Dal (giorno UTC)
 audit-log-filter-date-to = Al (giorno UTC)
 audit-log-filter-entity-type = Tipo di entità
