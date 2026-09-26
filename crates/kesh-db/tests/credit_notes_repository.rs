@@ -10,9 +10,9 @@
 
 use chrono::NaiveDate;
 use kesh_db::entities::contact::{ContactType, NewContact};
-use kesh_db::entities::{NewCreditNote, NewInvoice, NewInvoiceLine};
+use kesh_db::entities::{NewCreditNote, NewInvoice, NewInvoiceLine, SettlementChoice};
 use kesh_db::errors::DbError;
-use kesh_db::repositories::{contacts, credit_notes, invoices};
+use kesh_db::repositories::{contacts, credit_notes, invoice_settlements_write, invoices};
 use kesh_db::test_fixtures::{SeededCompany, seed_accounting_company};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -290,9 +290,18 @@ async fn credit_note_refused_on_paid_invoice(pool: MySqlPool) {
     )
     .await
     .unwrap_err();
+    // Story 25-4-a (#456) : la garde AC2bis rend sa variante dédiée, plus le
+    // générique — le motif « payée » et le motif « réglée en partie » sont un
+    // seul et même refus. `settlement_id` est `None` : seul `paid_at` est posé.
     assert!(
-        matches!(err, DbError::IllegalStateTransition(_)),
-        "refus facture payée"
+        matches!(
+            err,
+            DbError::CreditNoteBlockedBySettlement {
+                settlement_id: None,
+                ..
+            }
+        ),
+        "refus facture payée — reçu {err:?}"
     );
 }
 
@@ -422,4 +431,226 @@ async fn credit_note_inherits_project_and_nets_to_zero(pool: MySqlPool) {
     .await
     .unwrap();
     assert_eq!(debit, credit, "net par projet doit être 0 après l'avoir");
+}
+
+// ─── Story 25-4-a (#456) — pas d'avoir sur une facture réglée, même en partie ───
+
+async fn settle(pool: &MySqlPool, seeded: &SeededCompany, invoice_id: i64, amount: Decimal) -> i64 {
+    let out = invoice_settlements_write::settle_invoice(
+        pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        invoice_id,
+        SettlementChoice::InternalAccount {
+            account_id: seeded.accounts["1000"],
+        },
+        amount,
+        d(2026, 6, 20),
+    )
+    .await
+    .expect("règlement");
+    sqlx::query_scalar("SELECT id FROM invoice_settlements WHERE journal_entry_id = ?")
+        .bind(out.journal_entry_id)
+        .fetch_one(pool)
+        .await
+        .expect("ligne de règlement")
+}
+
+async fn try_credit(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    invoice_id: i64,
+) -> Result<credit_notes::IssuedCreditNote, DbError> {
+    credit_notes::create_credit_note(
+        pool,
+        NewCreditNote {
+            company_id: seeded.company_id,
+            invoice_id,
+            date: d(2026, 7, 1),
+        },
+        seeded.admin_user_id,
+    )
+    .await
+}
+
+/// Ce qu'un refus ne doit pas avoir touché : avoirs, statut et version de la
+/// facture, solde de la créance, séquence de numéros d'avoir.
+async fn empreinte(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    invoice_id: i64,
+) -> (i64, String, i32, Decimal, i64) {
+    let avoirs: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM credit_notes WHERE company_id = ?")
+        .bind(seeded.company_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let (status, version): (String, i32) =
+        sqlx::query_as("SELECT status, version FROM invoices WHERE id = ?")
+            .bind(invoice_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    let creance: Decimal = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(debit) - SUM(credit), 0) FROM journal_entry_lines WHERE account_id = ?",
+    )
+    .bind(seeded.accounts["1100"])
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let sequence: i64 = sqlx::query_scalar(
+        "SELECT CAST(COALESCE(SUM(next_number), 0) AS SIGNED) FROM credit_note_number_sequences WHERE company_id = ?",
+    )
+    .bind(seeded.company_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    (avoirs, status, version, creance, sequence)
+}
+
+/// AC 9, AC 10 — une facture réglée en partie (`paid_at` NULL) est refusée, et
+/// **rien n'est écrit**. C'est le chemin que l'ancienne garde laissait passer.
+#[sqlx::test(migrations = "./test-schema")]
+async fn credit_note_refused_on_partially_settled_invoice(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+    let invoice_id =
+        create_and_validate(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00))]).await;
+    let sid = settle(&pool, &seeded, invoice_id, dec!(40.00)).await;
+
+    let paid_at: Option<chrono::NaiveDateTime> =
+        sqlx::query_scalar("SELECT paid_at FROM invoices WHERE id = ?")
+            .bind(invoice_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(
+        paid_at.is_none(),
+        "anti-vacuité : la facture n'est PAS soldée"
+    );
+
+    let avant = empreinte(&pool, &seeded, invoice_id).await;
+    let err = try_credit(&pool, &seeded, invoice_id).await.unwrap_err();
+    match &err {
+        DbError::CreditNoteBlockedBySettlement {
+            invoice_id: iid,
+            settlement_id,
+            invoice_number,
+        } => {
+            assert_eq!(*iid, invoice_id);
+            assert_eq!(*settlement_id, Some(sid));
+            assert!(invoice_number.is_some(), "le numéro est rendu");
+        }
+        other => panic!("attendu CreditNoteBlockedBySettlement, reçu {other:?}"),
+    }
+    assert_eq!(err.error_code(), "CREDIT_NOTE_INVOICE_SETTLED");
+    assert_eq!(
+        empreinte(&pool, &seeded, invoice_id).await,
+        avant,
+        "rien n'est écrit"
+    );
+}
+
+/// La promesse du message : annuler le règlement rouvre l'avoir.
+#[sqlx::test(migrations = "./test-schema")]
+async fn credit_note_accepted_after_the_settlement_is_cancelled(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+    let invoice_id =
+        create_and_validate(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00))]).await;
+    let sid = settle(&pool, &seeded, invoice_id, dec!(40.00)).await;
+    assert!(try_credit(&pool, &seeded, invoice_id).await.is_err());
+
+    invoice_settlements_write::cancel_settlement(
+        &pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        invoice_id,
+        sid,
+    )
+    .await
+    .expect("annulation du règlement");
+
+    try_credit(&pool, &seeded, invoice_id)
+        .await
+        .expect("l'avoir passe une fois le règlement annulé");
+}
+
+/// AC 9 — ⛔ **entrelacement** : un règlement commité PENDANT que l'avoir
+/// attend le verrou de la facture doit être vu.
+///
+/// 1. une transaction verrouille la facture et y rattache un règlement, sans
+///    valider ;
+/// 2. l'avoir démarre et attend au `FOR UPDATE` de la facture ;
+/// 3. la transaction est validée.
+///
+/// La garde lit les règlements **après** le verrou, par une lecture
+/// verrouillante : elle voit la ligne et refuse. Lue **avant** le verrou, en
+/// lecture simple, elle aurait vu « aucun règlement » et laissé passer.
+///
+/// Le règlement vient du vrai chemin, sur une facture auxiliaire : seul son
+/// rattachement se fait dans la transaction concurrente.
+#[sqlx::test(migrations = "./test-schema")]
+async fn credit_note_waits_for_a_concurrent_settlement(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+    let invoice_id =
+        create_and_validate(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00))]).await;
+    let parking = create_and_validate(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00))]).await;
+    let sid = settle(&pool, &seeded, parking, dec!(40.00)).await;
+
+    // (1) Le règlement concurrent, non validé, qui tient la facture.
+    let mut concurrent = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM invoices WHERE id = ? FOR UPDATE")
+        .bind(invoice_id)
+        .execute(&mut *concurrent)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE invoice_settlements SET invoice_id = ? WHERE id = ?")
+        .bind(invoice_id)
+        .bind(sid)
+        .execute(&mut *concurrent)
+        .await
+        .unwrap();
+
+    // (2) L'avoir démarre et attend.
+    let p = pool.clone();
+    let (company_id, user_id) = (seeded.company_id, seeded.admin_user_id);
+    let avoir = tokio::spawn(async move {
+        credit_notes::create_credit_note(
+            &p,
+            NewCreditNote {
+                company_id,
+                invoice_id,
+                date: d(2026, 7, 1),
+            },
+            user_id,
+        )
+        .await
+    });
+    let vue = kesh_db::test_fixtures::attendre_une_requete_en_cours(
+        &pool,
+        &["FROM invoices", "FOR UPDATE"],
+        || avoir.is_finished(),
+    )
+    .await;
+    if !vue {
+        panic!("l'avoir a fini sans attendre le verrou : {:?}", avoir.await);
+    }
+
+    // (3) Le règlement concurrent est validé.
+    concurrent.commit().await.unwrap();
+
+    let result = avoir.await.expect("tâche d'avoir");
+    assert!(
+        matches!(
+            result,
+            Err(DbError::CreditNoteBlockedBySettlement {
+                settlement_id: Some(s),
+                ..
+            }) if s == sid
+        ),
+        "l'avoir devait attendre le règlement puis refuser — reçu {:?}",
+        result.map(|c| c.credit_note.id)
+    );
 }

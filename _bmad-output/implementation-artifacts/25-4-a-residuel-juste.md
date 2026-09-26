@@ -1,6 +1,6 @@
 # Story 25.4-a : Le résiduel juste — l'avoir compté TTC, et refusé sur une facture réglée
 
-Status: ready-for-dev
+Status: review
 
 **Issues : [#455], [#456]**, qu'elle **ferme** : `closes #455, closes #456` dans le **titre ET le
 corps** de la PR (squash ; un `refs` partout laisserait les issues ouvertes sans signal).
@@ -271,22 +271,22 @@ restreint aux lignes qui parlent d'avoir, plus le PDF aplati. Les manuels DE/IT/
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — formule de l'avoir TTC** (AC 1-5) : factoriser la formule de ligne, réécrire les deux
+- [x] **T1 — formule de l'avoir TTC** (AC 1-5) : factoriser la formule de ligne, réécrire les deux
       constantes d'avoir, doc-comments.
-- [ ] **T2 — parité et concordance** (AC 6-8) : nouveau fichier de test sur le patron
+- [x] **T2 — parité et concordance** (AC 6-8) : nouveau fichier de test sur le patron
       `invoice_ttc_parity.rs`. ⚠️ Le helper `validated_invoice` (`invoice_settlement.rs:32`) est
       **à 0 % en dur** et passe une écriture de vente **au HT** : les factures à 8,1 % se montent
       par le **vrai chemin de validation**, sur le patron de `create_and_validate`
       (`credit_notes_repository.rs`) ; l'état hérité, par le gabarit de l'AC 13.
-- [ ] **T3 — garde de l'avoir** (AC 9-11) : lecture verrouillante des règlements après le verrou,
+- [x] **T3 — garde de l'avoir** (AC 9-11) : lecture verrouillante des règlements après le verrou,
       variante `DbError`, `error_code()`.
-- [ ] **T4 — API et i18n** (AC 12) : mapping, clé ×4 ; e2e 409.
-- [ ] **T5 — fixture `monter`** (AC 13) : gabarit « détacher, créditer, rattacher », commentaire ;
+- [x] **T4 — API et i18n** (AC 12) : mapping, clé ×4 ; e2e 409.
+- [x] **T5 — fixture `monter`** (AC 13) : gabarit « détacher, créditer, rattacher », commentaire ;
       **les quinze cas** de la précédence restent verts, dont les quatre paires avec `InvoiceCredited`.
-- [ ] **T6 — frontend** (AC 14) : condition du bouton retirée, commentaire, Vitest.
-- [ ] **T7 — tests et mutations** (AC 16) : m1 à **m7** exécutées, résultats consignés.
-- [ ] **T8 — textes** (AC 17) : manuel, PDF aplati, CHANGELOG.
-- [ ] **T9 — gates** : backend complet (base remise à zéro), frontend complet, E2E complet.
+- [x] **T6 — frontend** (AC 14) : condition du bouton retirée, commentaire, Vitest.
+- [x] **T7 — tests et mutations** (AC 16) : m1 à **m7** exécutées, résultats consignés.
+- [x] **T8 — textes** (AC 17) : manuel, PDF aplati, CHANGELOG.
+- [x] **T9 — gates** : backend complet (base remise à zéro), frontend complet, E2E complet.
 
 ## Dev Notes
 
@@ -362,14 +362,105 @@ bloque **25-4-b**, pas celle-ci.
 
 ### Agent Model Used
 
+Claude Opus 5.5.
+
 ### Debug Log References
+
+- `settled_and_credited_forms_are_at_parity` attendait **huit** factures ; il y en a **sept** (six du jeu +
+  la facture auxiliaire du gabarit). Erreur de décompte dans le test, pas dans le code — corrigée,
+  et l'assertion anti-vacuité garde des valeurs **non nulles** des deux côtés.
+- `SUM(next_number)` rend un `DECIMAL` sous MariaDB : `CAST(… AS SIGNED)` dans l'empreinte du test de
+  refus.
+- Un doc-comment égaré (« Paramètres de recherche, tri et pagination. ») précédait
+  `INVOICE_TTC_SUBQUERY_SQL` : remis au-dessus d'`InvoiceListQuery`, qu'il décrit.
+- ⚠️ **Relevé hors périmètre, non corrigé** : la clé voisine `error-invoice-unvalidate-blocked-settled`
+  (it-CH) dit « annullatelo » — forme *voi*, contraire au registre du glossaire (2ᵉ personne du
+  singulier). La nouvelle clé suit le glossaire (« annullalo »).
 
 ### Completion Notes List
 
+- **Formule du TTC d'une ligne, source unique** (AC 5) : macro `line_ttc_sql!` (`invoices.rs`),
+  rendant un littéral via `concat!` ; les **quatre** constantes en dérivent (TTC facture scalaire et
+  jointe, avoir scalaire et joint), qui restent des `&'static str`.
+- **Avoir compté TTC** (AC 1-4) : les deux constantes d'avoir somment `credit_note_lines` (jointes à
+  `credit_notes`, `status = 'issued'`), arrondi ligne par ligne ; doc-comments sur l'unité et sur
+  `total_amount` HT. Aucune migration.
+- **Parité et concordance** (AC 6-8) : `tests/invoice_amount_due_parity.rs`, 4 tests, **tous à TVA
+  non nulle** ; factures par le vrai chemin de validation ; l'état hérité par le gabarit « détacher,
+  créditer, rattacher ». Le crédit de l'avoir égale le crédit de la créance **dans l'écriture**
+  (1207.71 sur trois lignes à 8,1 % / 2,6 % / sous-centime), et le test s'assure que `total_amount`
+  (HT) en diffère — sans quoi il ne distinguerait rien.
+- **Garde de l'avoir** (AC 9-11) : lecture **verrouillante** des règlements, **après** le verrou de la
+  facture ; une ligne **ou** `paid_at` ; variante `DbError::CreditNoteBlockedBySettlement`
+  (`CREDIT_NOTE_INVOICE_SETTLED`), qui remplace aussi le générique du cas « payée ».
+- **API et i18n** (AC 12) : 409, message suffixé du numéro de facture, `details { invoiceId,
+  settlementId }` ; clé `error-credit-note-blocked-settled` ×4.
+- **Fixture `monter`** (AC 13) : gabarit « détacher, créditer, rattacher » ; les **quinze cas** de la
+  précédence restent verts. Doc-comments de `InvoiceCredited` et du rang 1 : état hérité.
+- **Frontend** (AC 14) : condition `!invoice.paidAt` retirée du bouton, commentaires Suspendre/Reprendre
+  corrigé ; `data-testid` sur le bouton, la confirmation et l'erreur du dialogue.
+- **Textes** (AC 17) : manuel (refus nommé en § Avoirs, deux limites reformulées « réglée, même en
+  partie », deux motifs d'annulation de règlement précisés comme **cas hérité**), PDF régénéré et
+  contrôlé aplati (0 `??`, six phrases de contrôle présentes, « marquée payée » absente) ; CHANGELOG
+  *Fixed* ×2 (dont **l'API** pour #455) et *Changed* (le bouton). Grep large du symptôme « avoir sur
+  facture payée » : aucun autre site.
+
+**Tests ajoutés** (recomptés depuis la source, `main` → arbre de travail) : `invoice_amount_due_parity`
+0 → 4, `credit_notes_repository` 6 → 9 (dont `credit_note_refused_on_paid_invoice` réécrit),
+`invoice_echeancier_e2e` 11 → 13, Vitest `invoice-settlements-page.test.ts` 2 → 5.
+
+**Mutations** (résultat **observé**, chaque fichier restauré après) :
+
+| Mutation | Tests rouges |
+|---|---|
+| m1 — avoir scalaire en `SUM(cn.total_amount)` | 4 / 4 de `invoice_amount_due_parity` |
+| m2 — avoir joint seul en `SUM(total_amount)` | `settled_and_credited_forms_are_at_parity` |
+| m3 — garde sur `paid_at` seul | `…refused_on_partially_settled_invoice`, `…accepted_after_the_settlement_is_cancelled`, `…waits_for_a_concurrent_settlement` |
+| m4 — garde sur la ligne seule | `credit_note_refused_on_paid_invoice` |
+| m5 — lecture avant le verrou, non verrouillante | `credit_note_waits_for_a_concurrent_settlement` |
+| m6 — `!invoice.paidAt` remis sur le bouton | 2 Vitest (bouton sur facture payée ; refus dans le dialogue) |
+| m7 — code mappé sur `ILLEGAL_STATE_TRANSITION` | `credit_note_on_partially_settled_invoice_is_409` |
+
+### Gates
+
+- Backend : base remise à zéro (tmpfs + migrations + seed), `scripts/test-fast.sh` (fmt + clippy +
+  nextest) **2484 / 2484** (2475 + 9).
+- Frontend : `check` 0 erreur (27 avertissements), `lint-i18n-ownership` PASS, `test:unit`
+  **826 / 826** (823 + 3), build OK.
+- E2E : `kesh_e2e` reconstruite, montage complet (`smtpConfigured:true`, répertoires inbox et documents),
+  frontend buildé après le dernier patch, run à **22:52 UTC** : **222 passés / 10 échoués / 19
+  ignorés**. Les 7 de KF-029 ; les 3 autres — `product-revenue-account:133`, `sidebar-navigation:75`
+  (pollution documentée) et ⚠️ `accounts.spec.ts:185` (**non documenté**) — passent **rejoués seuls,
+  18 / 18**, et ne touchent aucun écran de la story. Trois pollutions dans un même run, là où la
+  baseline en compte une : à surveiller, sans régression de la story.
+
 ### File List
+
+| Fichier | Nature |
+|---|---|
+| `crates/kesh-db/src/repositories/invoices.rs` | macro `line_ttc_sql!`, constantes TTC recomposées, doc-comment replacé |
+| `crates/kesh-db/src/repositories/invoice_settlements.rs` | avoir TTC (scalaire, joint), doc d'`amount_due` |
+| `crates/kesh-db/src/repositories/credit_notes.rs` | garde : lecture verrouillante des règlements |
+| `crates/kesh-db/src/errors.rs` | `CreditNoteBlockedBySettlement`, `error_code()`, doc d'`InvoiceCredited` |
+| `crates/kesh-db/src/repositories/invoice_settlements_write.rs` | commentaire du rang 1 |
+| `crates/kesh-api/src/errors.rs` | mapping 409 |
+| `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` | `error-credit-note-blocked-settled` |
+| `crates/kesh-db/tests/invoice_amount_due_parity.rs` | **nouveau** — parité, concordance, zéro, hérité |
+| `crates/kesh-db/tests/credit_notes_repository.rs` | refus payée réécrit ; partiel, réouverture, entrelacement |
+| `crates/kesh-db/tests/invoice_settlement.rs` | `monter` : gabarit « détacher, créditer, rattacher » |
+| `crates/kesh-api/tests/invoice_echeancier_e2e.rs` | e2e : `amountDue` nul, 409 |
+| `frontend/src/routes/(app)/invoices/[id]/+page.svelte` | bouton, commentaires, `data-testid` |
+| `frontend/src/routes/(app)/invoices/[id]/invoice-settlements-page.test.ts` | 3 Vitest |
+| `docs/manual/fr/user-manual.tex` / `.pdf` | avoirs, limites, cas hérité |
+| `CHANGELOG.md` | *Fixed* ×2, *Changed* |
 
 ## Change Log
 
+- **2026-09-27** — **dev** (Opus 5.5) : formule du TTC de ligne factorisée (`line_ttc_sql!`), avoir
+  compté TTC, garde verrouillante de l'avoir sur facture réglée, variante `CREDIT_NOTE_INVOICE_SETTLED`
+  ×4 locales, fixture `monter` par le gabarit, bouton aligné sur « Dévalider », manuel et CHANGELOG.
+  +9 tests Rust, +3 Vitest ; **7 / 7 mutations tuées**. Gates : backend 2484/2484, frontend 826/826,
+  E2E 222/10/19 sans régression (7 KF-029 + 3 pollutions, rejouées seules vertes).
 - **2026-09-27** — **validation P4 ciblée** (Sonnet, diff `1344b3a2..b18f7cd2`, prompt
   `25-4-a-validate-prompt-p4.md`) — rapporte **1 MEDIUM, 3 LOW**, tous confirmés et corrigés.
   **MEDIUM reclassé LOW** par l'orchestrateur : `invoice_settlements_write.rs` manquait au tableau

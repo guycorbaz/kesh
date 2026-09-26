@@ -728,3 +728,116 @@ async fn a_closed_fiscal_year_is_announced_and_refused(pool: MySqlPool) {
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["error"]["code"], "FISCAL_YEAR_CLOSED", "got {body:?}");
 }
+
+// --- Story 25-4-a (#455, #456) — le résiduel juste, à la frontière HTTP --------
+
+async fn post_credit_note(app: &TestApp, token: &str, invoice_id: i64) -> reqwest::Response {
+    app.client
+        .post(app.url("/api/v1/credit-notes"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&json!({ "invoiceId": invoice_id, "date": "2026-05-10" }))
+        .send()
+        .await
+        .unwrap()
+}
+
+/// Lit un montant rendu par l'API : **présent, non `null`, chaîne**, parsé en
+/// `Decimal` — ni comparaison de chaîne (l'échelle suit le calcul SQL), ni
+/// `f64`. `null` voudrait dire « non calculé » : ce serait un échec.
+fn montant(v: &serde_json::Value, champ: &str) -> rust_decimal::Decimal {
+    let s = v[champ]
+        .as_str()
+        .unwrap_or_else(|| panic!("`{champ}` doit être une chaîne présente, reçu {v:?}"));
+    s.parse::<rust_decimal::Decimal>()
+        .unwrap_or_else(|e| panic!("`{champ}` = {s:?} n'est pas un décimal : {e}"))
+}
+
+/// #455 — une facture à 8,1 % créditée, jamais réglée : `GET /invoices/{id}`
+/// — ouverte aux clés API en lecture — rend un reste dû **nul**, et non la TVA.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn get_credited_invoice_reports_zero_amount_due(pool: MySqlPool) {
+    let (company_id, admin_id) = seed_base(&pool).await;
+    let contact_id = seed_contact(&pool, company_id, admin_id).await;
+    let (id, _v) = create_validated_invoice(
+        &pool,
+        company_id,
+        contact_id,
+        admin_id,
+        NaiveDate::from_ymd_opt(2026, 4, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2026, 4, 30).unwrap(),
+        dec!(100.00),
+    )
+    .await;
+
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    assert_eq!(post_credit_note(&app, &token, id).await.status(), 201);
+
+    let resp = app
+        .client
+        .get(app.url(&format!("/api/v1/invoices/{id}")))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let v: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(v["status"], "cancelled", "anti-vacuité : l'avoir est passé");
+    assert_eq!(
+        montant(&v, "amountDue"),
+        rust_decimal::Decimal::ZERO,
+        "et non 8.10 — got {v:?}"
+    );
+    assert_eq!(montant(&v, "amountSettled"), rust_decimal::Decimal::ZERO);
+}
+
+/// #456 — un avoir sur une facture réglée en partie est refusé en **409**, avec
+/// son code et un message qui dit quoi faire.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn credit_note_on_partially_settled_invoice_is_409(pool: MySqlPool) {
+    let (company_id, admin_id) = seed_base(&pool).await;
+    let contact_id = seed_contact(&pool, company_id, admin_id).await;
+    let (id, _v) = create_validated_invoice(
+        &pool,
+        company_id,
+        contact_id,
+        admin_id,
+        NaiveDate::from_ymd_opt(2026, 4, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2026, 4, 30).unwrap(),
+        dec!(100.00),
+    )
+    .await;
+    let caisse = caisse_id(&pool, company_id).await;
+
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    let settle = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{id}/settlements")))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&json!({
+            "settlementType": "internal_account",
+            "accountId": caisse,
+            "amount": "40.00",
+            "settledOn": "2026-04-15"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(settle.status(), 200);
+
+    let resp = post_credit_note(&app, &token, id).await;
+    assert_eq!(resp.status(), 409);
+    let v: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(
+        v["error"]["code"], "CREDIT_NOTE_INVOICE_SETTLED",
+        "got {v:?}"
+    );
+    let message = v["error"]["message"].as_str().unwrap();
+    assert!(
+        message.starts_with("Cette facture porte un règlement, même partiel"),
+        "message fr attendu, reçu {message:?}"
+    );
+    assert_eq!(v["error"]["details"]["invoiceId"], id);
+    assert!(v["error"]["details"]["settlementId"].as_i64().is_some());
+}

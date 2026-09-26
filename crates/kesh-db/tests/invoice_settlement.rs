@@ -974,6 +974,25 @@ async fn monter(pool: &MySqlPool, motifs: &[SettlementCancelBlocker]) -> (Seeded
     .await;
 
     if motifs.contains(&SettlementCancelBlocker::InvoiceCredited) {
+        // ⚠️ **État HÉRITÉ, plus atteignable par l'application** depuis la
+        // Story 25-4-a (#456) : un avoir est désormais refusé sur une facture
+        // réglée, même en partie. Il reste possible par l'**import d'une
+        // sauvegarde antérieure** — c'est ce qui justifie de garder le motif
+        // `InvoiceCredited` et ce montage.
+        //
+        // Gabarit « détacher, créditer, rattacher » : les deux écritures
+        // (règlement, avoir) viennent des VRAIS chemins ; seul le rattachement
+        // de la ligne de règlement passe en SQL, le temps de l'avoir. La
+        // facture auxiliaire est datée dans l'exercice seedé, que le cas
+        // « aucun exercice ouvert » garde valide.
+        let parking =
+            validated_invoice(pool, &seeded, dec!(10.00), d - chrono::Duration::days(20)).await;
+        sqlx::query("UPDATE invoice_settlements SET invoice_id = ? WHERE id = ?")
+            .bind(parking)
+            .bind(sid)
+            .execute(pool)
+            .await
+            .expect("détacher le règlement");
         credit_notes::create_credit_note(
             pool,
             kesh_db::entities::NewCreditNote {
@@ -984,7 +1003,13 @@ async fn monter(pool: &MySqlPool, motifs: &[SettlementCancelBlocker]) -> (Seeded
             seeded.admin_user_id,
         )
         .await
-        .expect("avoir après règlement partiel — le vrai chemin l'accepte");
+        .expect("avoir sur la facture détachée de son règlement");
+        sqlx::query("UPDATE invoice_settlements SET invoice_id = ? WHERE id = ?")
+            .bind(inv_id)
+            .bind(sid)
+            .execute(pool)
+            .await
+            .expect("rattacher le règlement");
     }
     if motifs.contains(&SettlementCancelBlocker::MatchedBankTransaction) {
         match_to_bank(

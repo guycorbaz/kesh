@@ -24,6 +24,7 @@ error-journal-entry-linked-to-invoice = Diese Buchung stammt aus einer freigegeb
 error-check-constraint = Ungültiger Wert
 error-illegal-state = Unzulässiger Statusübergang
 error-invoice-unvalidate-blocked-settled = Diese Rechnung weist eine — auch nur teilweise — Zahlung auf: stornieren Sie diese zuerst.
+error-credit-note-blocked-settled = Diese Rechnung weist eine — auch nur teilweise — Zahlung auf: Stornieren Sie diese zuerst, um eine Gutschrift ausstellen zu können.
 error-invoice-unvalidate-blocked-credited = Diese Rechnung wurde durch eine Gutschrift korrigiert, die bereits die Korrektur darstellt.
 error-invoice-unvalidate-blocked-reminders = Diese Rechnung hat eine Mahnhistorie: deren Löschung würde den Nachweis des Inkassos vernichten.
 error-invoice-unvalidate-blocked-emailed = Diese Rechnung wurde dem Kunden zugestellt: korrigieren Sie sie mit einer Gutschrift.

@@ -24,6 +24,7 @@ error-journal-entry-linked-to-invoice = Questa registrazione contabile è stata 
 error-check-constraint = Valore non valido
 error-illegal-state = Transizione di stato non consentita
 error-invoice-unvalidate-blocked-settled = Questa fattura presenta un pagamento, anche parziale: annullatelo prima.
+error-credit-note-blocked-settled = Questa fattura presenta un pagamento, anche parziale: annullalo prima per poter emettere una nota di credito.
 error-invoice-unvalidate-blocked-credited = Questa fattura è stornata da una nota di credito, che ne è già la correzione.
 error-invoice-unvalidate-blocked-reminders = Questa fattura ha uno storico di solleciti: eliminarlo cancellerebbe la prova del recupero.
 error-invoice-unvalidate-blocked-emailed = Questa fattura è stata inviata al cliente: correggetela con una nota di credito.

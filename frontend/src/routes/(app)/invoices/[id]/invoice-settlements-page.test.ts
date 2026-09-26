@@ -1,5 +1,6 @@
 /**
- * La fiche facture, côté annulation d'un règlement — Story 25-3-a-1 (#414).
+ * La fiche facture, côté annulation d'un règlement — Story 25-3-a-1 (#414) —
+ * et côté avoir sur une facture réglée — Story 25-4-a (#456).
  *
  * Ce que le composant de liste ne peut pas prouver seul : que la fiche
  * **confirme** avant d'envoyer, **relit** facture et règlements après succès, et
@@ -70,8 +71,9 @@ vi.mock("$lib/features/reminders/reminders.api", () => ({
 vi.mock("$lib/features/projects/projects.api", () => ({
   listProjects: vi.fn(async () => []),
 }));
+const createCreditNoteMock = vi.fn();
 vi.mock("$lib/features/credit-notes/credit-notes.api", () => ({
-  createCreditNote: vi.fn(),
+  createCreditNote: (req: unknown) => createCreditNoteMock(req),
 }));
 
 import Page from "./+page.svelte";
@@ -174,5 +176,37 @@ describe("fiche facture — annuler un règlement", () => {
     expect(erreur.textContent).toContain("rouvrir l");
     // La fiche est toujours là.
     expect(await findByText("F-2026-005", { exact: false })).toBeTruthy();
+  });
+});
+
+describe("fiche facture — créer un avoir sur une facture réglée (Story 25-4-a)", () => {
+  it("le bouton s'affiche sur une facture ENTIÈREMENT payée (mutation m6 : `!invoice.paidAt` remis)", async () => {
+    const { findByTestId } = render(Page);
+    expect(await findByTestId("invoice-credit-note-button")).toBeTruthy();
+  });
+
+  it("le bouton s'affiche sur une facture réglée EN PARTIE, sans `paidAt`", async () => {
+    getInvoiceMock.mockResolvedValue(
+      invoice({ paidAt: null, amountSettled: "40.00", amountDue: "60.00" }),
+    );
+    const { findByTestId } = render(Page);
+    expect(await findByTestId("invoice-credit-note-button")).toBeTruthy();
+  });
+
+  it("le refus du serveur s'affiche DANS le dialogue, avec son motif (le serveur tranche, l'écran le dit)", async () => {
+    createCreditNoteMock.mockRejectedValue({
+      code: "CREDIT_NOTE_INVOICE_SETTLED",
+      message:
+        "Cette facture porte un règlement, même partiel : annulez-le d'abord pour pouvoir émettre un avoir. (F-2026-005)",
+      status: 409,
+    });
+    const { findByTestId, getByTestId } = render(Page);
+
+    await fireEvent.click(await findByTestId("invoice-credit-note-button"));
+    await fireEvent.click(getByTestId("invoice-credit-note-confirm"));
+
+    await waitFor(() => expect(createCreditNoteMock).toHaveBeenCalledTimes(1));
+    const erreur = await findByTestId("invoice-credit-note-error");
+    expect(erreur.textContent).toContain("annulez-le d'abord");
   });
 });
