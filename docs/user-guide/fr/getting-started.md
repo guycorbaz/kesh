@@ -9,7 +9,7 @@ Kesh est un logiciel de comptabilité en partie double pour la Suisse, conforme 
 - **QR Bill 2.2** — génération de factures avec QR code SIX.
 - **pain.001.001.09** — fichiers de paiement ISO 20022 (Swiss Payment Standards / SIX).
 - **CAMT.053.001.04** + CSV multi-encodage — import des relevés bancaires.
-- **CO Art. 957–958f** — audit-trail comptable Suisse (conservation 10 ans).
+- **CO Art. 957–958f** — journal d'audit comptable, conservé 10 ans.
 
 L'application est multilingue **FR / DE / IT / EN**, hébergée localement (sur le NAS Synology de l'utilisateur, par exemple). Les données ne quittent jamais la machine.
 

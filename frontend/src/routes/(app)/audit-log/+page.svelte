@@ -2,7 +2,7 @@
 	/**
 	 * Le journal d'audit — Story 25-1c-b1 (#378).
 	 *
-	 * Consulter la piste de contrôle de la société : filtrer, déplier le
+	 * Consulter le journal d'audit de la société : filtrer, déplier le
 	 * détail d'une entrée, exporter. ⛔ L'écran ne traduit RIEN du vocabulaire :
 	 * la route rend `actionLabel`, `entityTypeLabel` et le vocabulaire traduit
 	 * (Story 25-1c-a). ⚠️ Les dates filtrent sur des jours **UTC** (contrat de la
