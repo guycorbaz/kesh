@@ -176,7 +176,7 @@ pouvoir émettre un avoir. » Registre du glossaire (`docs/i18n-glossaire.md` §
 sauvegarde antérieure — ce qui justifie de garder `SettlementCancelBlocker::InvoiceCredited`.
 ⛔ Ne **pas** supprimer ce motif ni ses tests. Ses doc-comments, qui le présentent comme un chemin
 normal (« créditée par un avoir après ce règlement … pas une anomalie », `errors.rs:214-217` ;
-« Hors `validated`, c'est donc un avoir », `invoice_settlements_write.rs:326-329`), disent
+« Hors `validated`, c'est donc un avoir », `invoice_settlements_write.rs:327-330`), disent
 désormais que l'état n'est plus atteignable **que par l'import d'une sauvegarde antérieure**.
 
 ⚠️ **`monter` sert quinze cas, pas un** : `la_precedence_de_l_annulation_lecture_et_ecriture`
@@ -309,7 +309,8 @@ restreint aux lignes qui parlent d'avoir, plus le PDF aplati. Les manuels DE/IT/
 | `crates/kesh-db/src/repositories/invoice_settlements.rs:24-58, 122-145` | les quatre constantes, `amount_due` |
 | `crates/kesh-db/src/repositories/invoices.rs:155-190` | `INVOICE_TTC_SUBQUERY_SQL` / `…_DERIVED_JOIN_SQL`, `total_ttc` |
 | `crates/kesh-db/src/repositories/credit_notes.rs:187-257, 260-330, 510-575` | écriture de l'avoir, garde AC2bis, `total_amount`, bascule `cancelled` |
-| `crates/kesh-db/src/errors.rs:119-175, 300-470, 641-670` | `UnvalidationBlocker`, `DbError`, `error_code()` |
+| `crates/kesh-db/src/errors.rs:119-175, 205-260, 300-470, 641-670` | `UnvalidationBlocker`, `SettlementCancelBlocker` (doc d'`InvoiceCredited` `:214-217`), `DbError`, `error_code()` |
+| `crates/kesh-db/src/repositories/invoice_settlements_write.rs:60-72, 320-333` | verrou de `settle_invoice` ; rang 1 de `settlement_cancel_blocker` (commentaire `:327-330`, AC 13) |
 | `crates/kesh-db/src/repositories/invoices.rs:1430-1448` | la garde de dévalidation, patron de l'AC 9 |
 | `crates/kesh-api/src/errors.rs:2515-2560, 2741-2748` | mapping `InvoiceNotUnvalidatable`, générique |
 | `crates/kesh-api/src/routes/credit_notes.rs:183-205` | handler de création |
@@ -369,6 +370,17 @@ bloque **25-4-b**, pas celle-ci.
 
 ## Change Log
 
+- **2026-09-27** — **validation P4 ciblée** (Sonnet, diff `1344b3a2..b18f7cd2`, prompt
+  `25-4-a-validate-prompt-p4.md`) — rapporte **1 MEDIUM, 3 LOW**, tous confirmés et corrigés.
+  **MEDIUM reclassé LOW** par l'orchestrateur : `invoice_settlements_write.rs` manquait au tableau
+  « Où regarder », mais l'AC 13 qui prescrit son édition le **nomme avec sa ligne** — une omission de
+  navigation, sans risque qu'une prescription soit perdue. LOW : citation `:326-329` → `:327-330` ;
+  plage d'`errors.rs` étendue à `SettlementCancelBlocker` ; commentaire de la ligne mère de
+  `sprint-status` resté à trois stories. Le gabarit de l'AC 13, l'AC 8 et l'AC 14 revérifiés sans
+  défaut ; la sérialisation en chaîne confirmée dans la source de `rust_decimal` 1.42.1.
+  ⛔ **Boucle de validation CLOSE en 4 passes** : `1H/3M/1L → 1M → 2M/5L → 0 > LOW` (après
+  reclassement), rotation Sonnet → Haiku → Opus → Sonnet, deux passes ciblées ; toutes les
+  corrections ont porté sur la spec, aucune sur du code. **Prête pour le dev.**
 - **2026-09-27** — Arbitrage de Guy : le refus de l'avoir sur facture réglée (en tout ou en partie) reste ; sa levée est tracée par #471.
 - **2026-09-27** — **validation P3 ciblée** (Opus, diff aplati des remédiations P1-P2, prompt
   `25-4-a-validate-prompt-p3.md`) — **2 MEDIUM, 5 LOW**, tous de **propagation** des corrections P1,
