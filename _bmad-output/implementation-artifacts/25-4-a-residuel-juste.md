@@ -456,6 +456,13 @@ Claude Opus 5.5.
 
 ## Change Log
 
+- **2026-09-27** — ⚠️ **Rectification après livraison** (relevée en validation de 25-4-b1, P3-P4) :
+  l'AC 13 dit l'état « avoir après règlement partiel » atteignable **« que par l'import d'une
+  sauvegarde antérieure »**. C'est **faux par omission** : la **0.12.0 publiée** accepte cet avoir
+  (`git show v0.12.0:crates/kesh-db/src/repositories/credit_notes.rs:302`), si bien qu'une
+  installation **mise à jour sur place** peut le porter. Lire : « des données antérieures à la
+  0.12.1, restaurées ou mises à jour ». Les quatre commentaires de code qui reprenaient la
+  formulation sont rectifiés par 25-4-b1 (T0) ; le manuel disait déjà juste.
 - **2026-09-27** — **revue de code P1** (Sonnet, diff `ab9b9448..9bf2bb2b`, prompt
   `25-4-a-review-prompt-p1.md`) — **0 au-dessus de LOW, 1 LOW** : le compte rendu attribuait la
   formule « réglée, même en partie » aux deux limites du manuel, la seconde dit « déjà encaissée,

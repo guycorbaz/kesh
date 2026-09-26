@@ -81,7 +81,10 @@ RÉSOLUS ».)*
 **La règle** : l'égalité vaut **si et seulement si** le compte débiteurs n'est mouvementé **que** par
 les écritures de **vente**, de **règlement client** et d'**avoir** que Kesh passe pour des factures
 **validées**, toutes **datées au plus tard à la date d'arrêté** (`as_of`), et **n'a jamais changé**
-dans les réglages de facturation. Tout autre mouvement l'en écarte. *Exemples*, non exhaustifs, tous
+dans les réglages de facturation. Les **contre-passations** de ces mouvements (annulation d'un
+règlement, d'un rapprochement de facture) restent **dans** la règle : elles inversent exactement
+les mêmes comptes et montants, pendant que le reste dû remonte d'autant. Tout autre mouvement l'en
+écarte. *Exemples*, non exhaustifs, tous
 vérifiés atteignables : solde d'ouverture ; écriture saisie au journal ; rapprochement bancaire hors
 facture — manuel, ventilé, par règle (`post_manual`, `post_split`, `accept_one_split`,
 `accept_one_rule`) ; règlement d'une facture **fournisseur** par compte interne imputé au compte
@@ -149,7 +152,8 @@ corrigé.
 | **E2E** `invoices_echeancier.spec.ts` | le cas de la 24-3 (`:147-158`) cesse de **saisir** le montant : il vérifie qu'il est **pré-rempli** au reste dû, sur une facture partiellement réglée |
 
 ⛔ **Chaque facture de test porte une TVA non nulle** (leçon de 25-4-a). ⛔ Mutations à exécuter et
-consigner : TTC remis dans une tranche de la balance âgée ; `amount_due` retiré de `list_for_export`
+consigner : TTC remis dans une tranche de la balance âgée — **et TTC remis dans le seul total** (doit
+faire rougir `aged_total_matches_receivable_ledger`) ; `amount_due` retiré de `list_for_export`
 seul ; `partial` retiré de `statusOf` ; `amountDue={null}` remis.
 
 **AC 13** — Textes (`docs/manual/fr/user-manual.tex`, PDF **contrôlé aplati**), § Balance âgée
@@ -160,10 +164,11 @@ seul ; `partial` retiré de `statusOf` ; `amountDue={null}` remis.
 - `:1580-1581` : « La colonne « Non échu » **garantit** que le total général réconcilie avec le
   solde du compte clients » — vrai **seulement** dans la règle de l'AC 5. La phrase devient, par la
   règle et non par une liste : *« Le total général réconcilie avec le solde du compte clients tant
-  que ce compte n'est mouvementé que par les factures, leurs règlements et leurs avoirs. Toute autre
-  écriture qui le touche — solde de départ, écriture saisie au journal, rapprochement bancaire ou
-  règlement (y compris d'une facture fournisseur) imputé directement à ce compte — l'en écarte, de
-  même qu'un changement du compte clients dans les réglages de facturation, ou des données
+  que ce compte n'est mouvementé que par les factures, leurs règlements et leurs avoirs (y compris
+  leurs annulations). Toute autre écriture qui le touche l'en écarte : solde de départ, écriture
+  saisie au journal, virement bancaire affecté à ce compte sans passer par une facture, paiement
+  d'une facture fournisseur compensé sur ce compte, ou règlement dont la contrepartie est ce compte
+  lui-même. De même un changement du compte clients dans les réglages de facturation, ou des données
   antérieures à la version 0.12.1, restaurées ou mises à jour. »* ;
 - `:1587-1588`, note : « le **total dû TTC** de chaque facture, jamais le montant hors taxe » → « le
   **reste dû** de chaque facture, jamais le montant hors taxe ni le total facturé ».
@@ -174,10 +179,12 @@ CHANGELOG `[0.12.1]` *Fixed*. README : rien, sauf si la ligne v0.12.1 cite la ba
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — rectifier la portée de l'état hérité posée par 25-4-a** : quatre commentaires disent
+- [ ] **T0 — rectifier la portée de l'état hérité posée par 25-4-a** : **cinq** sites disent
       l'état « avoir après règlement partiel » atteignable **seulement par l'import d'une
-      sauvegarde** — `errors.rs:221`, `invoice_settlements_write.rs:333`,
-      `tests/invoice_amount_due_parity.rs:139`, `tests/invoice_settlement.rs:980`. Faux : la **0.12.0
+      sauvegarde** — quatre commentaires, `errors.rs:221`, `invoice_settlements_write.rs:333`,
+      `tests/invoice_amount_due_parity.rs:139`, `tests/invoice_settlement.rs:980`, et **leur source**,
+      la fiche `25-4-a-residuel-juste.md` (AC 13, `:180`), rectifiée par une note datée plutôt que
+      réécrite (story livrée). Faux : la **0.12.0
       publiée** accepte cet avoir, une installation **mise à jour sur place** le porte. Écrire « des
       données antérieures à la 0.12.1, restaurées ou mises à jour ». *(Le manuel de 25-4-a dit
       déjà « avant la version 0.12.1, ou restaurée » : juste.)*
@@ -244,6 +251,14 @@ CHANGELOG `[0.12.1]` *Fixed*. README : rien, sauf si la ligne v0.12.1 cite la ba
 
 ## Change Log
 
+- **2026-09-27** — **validation P4 ciblée** (Sonnet, prompt `25-4-b1-validate-prompt-p4.md`) — **1
+  MEDIUM, 3 LOW**. MEDIUM : un **cinquième** site de la formulation fausse — la fiche de 25-4-a
+  elle-même (AC 13, `:180`), source des quatre commentaires ; ajouté à T0, rectifiée par une note
+  datée. LOW : la règle ne disait pas que les contre-passations (annulation de règlement ou de
+  rapprochement) restent dans sa portée — ajouté ; mutation dédiée au test de l'AC 5 ; réserve du
+  manuel reformulée pour ne plus pouvoir se lire comme visant les règlements ordinaires. Éprouvée
+  contre la dévalidation, l'annulation de règlement et de rapprochement, la facture soldée et le
+  reste dû négatif : **la règle tient**.
 - **2026-09-27** — **validation P3 ciblée** (Opus, prompt `25-4-b1-validate-prompt-p3.md`, inventaire
   de **tous** les chemins qui écrivent une ligne d'écriture) — **3 MEDIUM, 3 LOW** : **quatre chemins
   oubliés** par la portée de l'AC 5 — règlement fournisseur par compte interne imputé au compte
