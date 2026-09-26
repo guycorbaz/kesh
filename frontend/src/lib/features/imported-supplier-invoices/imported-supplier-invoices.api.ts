@@ -64,9 +64,9 @@ async function saveBlobResponse(response: Response, fallbackBase: string): Promi
 
 /**
  * Déclenche le download navigateur via une ancre `<a download>` éphémère.
- * Duplication locale (~10 lignes) cohérente avec la décision projet (cf.
- * `exports.api.ts::triggerDownload`, non exportée) — try/finally pour le cleanup
- * même si `a.click()` jette.
+ * Duplication locale (~10 lignes), antérieure au module partagé
+ * `lib/shared/utils/download.ts` (Story 25-1c-b1) — sa migration est suivie par
+ * l'issue #438. try/finally pour le cleanup même si `a.click()` jette.
  */
 function triggerDownload(blob: Blob, filename: string): void {
 	const objectUrl = URL.createObjectURL(blob);

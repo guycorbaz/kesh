@@ -2098,6 +2098,34 @@ audit-log-csv-header-api-key-id = Chiave API
 audit-log-csv-header-details = Dettagli
 audit-log-export-error-too-large = Troppi risultati (> { $limit }). Affinare i filtri (intervallo date, azione o tipo di entità) prima di esportare.
 
+# --- Journal d'audit — écran (Story 25-1c-b1) ---
+nav-audit-log = Registro di audit
+audit-log-title = Registro di audit
+audit-log-subtitle = La traccia di ogni operazione che modifica i libri della vostra società: chi, cosa, quando.
+audit-log-filter-date-from = Dal (giorno UTC)
+audit-log-filter-date-to = Al (giorno UTC)
+audit-log-filter-entity-type = Tipo di entità
+audit-log-filter-entity-type-all = Tutti
+audit-log-filter-entity-id = N. entità
+audit-log-filter-action = Azione
+audit-log-filter-action-all = Tutte
+audit-log-filter-reset = Reimposta
+audit-log-export = Esporta in CSV
+audit-log-col-date = Data
+audit-log-col-actor = Autore
+audit-log-col-action = Azione
+audit-log-col-entity-type = Tipo di entità
+audit-log-col-entity-id = N.
+audit-log-col-details = Dettagli
+audit-log-api-key = chiave API
+audit-log-details-show = Mostra
+audit-log-details-hide = Nascondi
+audit-log-empty = Nessuna voce corrisponde a questi filtri.
+audit-log-error = Il registro di audit non ha potuto essere caricato.
+audit-log-prev = Precedente
+audit-log-next = Successivo
+audit-log-range = { $from }–{ $to } di { $total }
+
 # --- Story 25-2-b-2 (#440): annullare la convalida, e il vuoto assunto ---
 invoice-unvalidate-button = Annulla convalida
 invoice-unvalidate-confirm-title = Annullare la convalida della fattura?

@@ -2103,6 +2103,34 @@ audit-log-csv-header-api-key-id = API key
 audit-log-csv-header-details = Details
 audit-log-export-error-too-large = Too many results (> { $limit }). Please refine your filters (e.g. date range, action or entity type) before exporting.
 
+# --- Journal d'audit — écran (Story 25-1c-b1) ---
+nav-audit-log = Audit log
+audit-log-title = Audit log
+audit-log-subtitle = The trace of every operation that changes your company's books: who, what, when.
+audit-log-filter-date-from = From (UTC day)
+audit-log-filter-date-to = To (UTC day)
+audit-log-filter-entity-type = Entity type
+audit-log-filter-entity-type-all = All
+audit-log-filter-entity-id = Entity no.
+audit-log-filter-action = Action
+audit-log-filter-action-all = All
+audit-log-filter-reset = Reset
+audit-log-export = Export as CSV
+audit-log-col-date = Date
+audit-log-col-actor = Author
+audit-log-col-action = Action
+audit-log-col-entity-type = Entity type
+audit-log-col-entity-id = No.
+audit-log-col-details = Details
+audit-log-api-key = API key
+audit-log-details-show = Show
+audit-log-details-hide = Hide
+audit-log-empty = No entries match these filters.
+audit-log-error = The audit log could not be loaded.
+audit-log-prev = Previous
+audit-log-next = Next
+audit-log-range = { $from }–{ $to } of { $total }
+
 # --- Story 25-2-b-2 (#440): unvalidate from the screen, and the assumed gap ---
 invoice-unvalidate-button = Unvalidate
 invoice-unvalidate-confirm-title = Unvalidate the invoice?

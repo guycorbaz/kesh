@@ -1,6 +1,6 @@
 # Story 25.1c-b1 : L'écran de consultation du journal d'audit
 
-Status: ready-for-dev
+Status: review
 
 ⚠️ **RÉOUVERTE le 2026-09-15 au soir**, après sa validation en 7 passes : trois arbitrages du Project Lead
 changent le contrat de la 25-1c-a, donc ce que l'écran consomme et affiche (cf. « Réouverture » au Change
@@ -427,19 +427,19 @@ Les scénarios :
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Rebase** sur `main` après le merge de la 25-1c-a (ne pas implémenter avant) ; vérifier que
+- [x] **T0 — Rebase** sur `main` après le merge de la 25-1c-a (ne pas implémenter avant) ; vérifier que
       les **trois** routes répondent (`curl` authentifié) sur le backend local, et que les libellés du
       vocabulaire sortent dans la langue de `KESH_LANG`.
-- [ ] **T1 — Module de téléchargement** (AC 9) et ses tests ; les trois commentaires de l'AC 9 (`reports.api.ts` intact).
-- [ ] **T2 — Locale conservée (`i18nLocale()`), types, API, options des listes, paramètres d'URL** (AC 1-4)
+- [x] **T1 — Module de téléchargement** (AC 9) et ses tests ; les trois commentaires de l'AC 9 (`reports.api.ts` intact).
+- [x] **T2 — Locale conservée (`i18nLocale()`), types, API, options des listes, paramètres d'URL** (AC 1-4)
       et leurs tests (AC 12).
-- [ ] **T3 — Page, garde, menu, sélecteurs** (AC 5-8) et tests de page (AC 12).
-- [ ] **T4 — i18n de l'écran, quatre locales** (AC 10) — ⚠️ recompte depuis la source.
-- [ ] **T5 — Gardes i18n** (AC 11), compteurs **recomptés** et ventilés.
-- [ ] **T6 — E2E** (AC 13). ⛔ *Une tâche qui décrit un test est une promesse ; la cocher sans l'avoir
+- [x] **T3 — Page, garde, menu, sélecteurs** (AC 5-8) et tests de page (AC 12).
+- [x] **T4 — i18n de l'écran, quatre locales** (AC 10) — ⚠️ recompte depuis la source.
+- [x] **T5 — Gardes i18n** (AC 11), compteurs **recomptés** et ventilés.
+- [x] **T6 — E2E** (AC 13). ⛔ *Une tâche qui décrit un test est une promesse ; la cocher sans l'avoir
       écrit la transforme en mensonge.*
-- [ ] **T7 — Mutations** (AC 14), résultats observés.
-- [ ] **T8 — Gates**, **après** l'implémentation de la 25-1c-b2 sur la même branche :
+- [x] **T7 — Mutations** (AC 14), résultats observés.
+- [x] **T8 — Gates** *(exécutés sur la b1 seule, le 2026-09-26 — **à rejouer après la 25-1c-b2**, sur la même branche)*, **après** l'implémentation de la 25-1c-b2 sur la même branche :
   - frontend complet : `npm run check`, `lint-i18n-ownership`, `test:unit`, `build` ;
   - backend : `cargo test -p kesh-i18n` (parité des catalogues), puis `scripts/test-fast.sh` ;
   - **E2E complète**, `kesh_e2e` reconstruite, **build frontend postérieur au dernier patch**.
@@ -531,11 +531,76 @@ Les scénarios :
 
 ### Agent Model Used
 
+Claude Opus 5.5 — implémentation.
+
 ### Debug Log References
+
+- **T0** : la 25-1c-a est mergée (PR #439) ; les fiches, restées dix jours sur une branche locale jamais
+  poussée, ont été reprises sur `main` et revalidées (R5 « dérive », R6 ciblée). Les trois routes répondent
+  (couvertes par la spec E2E, qui lit `/vocabulary` et télécharge `/export.csv`).
+- La garde des libellés en dur a relevé une variable nommée `entityIdText` : suffixe `Text`, mais c'est la
+  valeur d'un champ, non un libellé ⇒ renommée `entityIdValue` ; `CANDIDATES_ATTENDUES` reste à 44.
+- **Mutant qui a survécu** au premier passage : « `entityId` conservé au retour à Tous ». La requête était
+  déjà juste — `buildQuery` n'envoie jamais un identifiant sans type —, mais le CHAMP gardait l'ancienne
+  valeur et la renvoyait dès qu'on rechoisissait un type. Le test vérifie désormais le champ et la
+  resélection ; mutant tué.
 
 ### Completion Notes List
 
+- **Téléchargement partagé** : `lib/shared/utils/download.ts` (`triggerDownload`,
+  `parseContentDispositionFilename`), repris à l'identique d'`exports.api.ts` ; `triggerDownload` testé
+  directement pour la première fois (dont le cas où `click()` jette). Aucune copie migrée (#438) ; trois
+  commentaires mis à jour, `reports.api.ts` intact.
+- **Locale** : `i18nLocale()` conserve la locale servie avec les messages (`'fr-CH'` avant chargement).
+- **Feature** `features/audit-log/` : types (miroir exact du DTO, sans `companyId`), API (paramètre vide non
+  envoyé ; l'export porte les filtres, sans `offset` ni `limit`), `toSelectOptions` (tri `Intl.Collator`
+  par libellé dans la locale de l'interface, code historique ajouté), `query-helpers` (`entityId` sans type
+  ignoré et omis).
+- **Écran** `routes/(app)/audit-log/` : filtres (dates en « jour UTC », deux `<select>` natifs pilotables
+  par valeur, identifiant désactivé sans type et vidé au retour à « Tous »), tableau (date locale
+  `Intl.DateTimeFormat(i18nLocale())`, `actionLabel`, `entityTypeLabel`, « — » pour 0, détail JSON
+  indenté, `data-action` / `data-entity-type`), trois états — l'échec du vocabulaire remplace la page,
+  celui de la liste le tableau seul —, pagination, export (`RESULT_TOO_LARGE` affiché dans la page, le
+  reste par `notifyError`). Garde `+page.ts` ; entrée de menu `comptableOnly`.
+- **i18n** : **26 clés** ×4 (`nav-audit-log` + 25 `audit-log-*` d'écran), bloc « Journal d'audit — écran » ;
+  total `audit-log-*` + `nav-audit-log` par catalogue : 138 + 26 = **164**, recompté (`grep -c`).
+  Vocabulaire arbitré : « journal d'audit » / Audit-Protokoll / registro di audit / audit log.
+- **Gardes i18n** : `'audit-log'` dans `FAMILLES_RESOLUES['nav-']` ; `sitesTotal` 1709 → **1738** (+29,
+  tous dans la page, ventilés en commentaire) ; `sitesNonResolus`, `relais`, `sitesGabarit`,
+  `MOTIFS_DYNAMIQUES`, `CARDINALITES`, `PREFIXES_A_COUVERTURE_CLOSE`, `CANDIDATES_ATTENDUES` **inchangés**.
+- **Tests** : vitest **+35** (download 8, i18n 2, options 4, query-helpers 5, API 3, page 13) ; E2E **+2**
+  (`audit-log.spec.ts` : parcours Comptable — menu, filtre isolé par type et identifiant, libellé égal au
+  vocabulaire de la route, URL rechargée, détail, export, période passée puis jour UTC — et Consultation).
+- **Mutations — 17 sur 17 tuées**, observées : garde retirée ; colonne rendue avec `action` ; tri par code ;
+  code hors vocabulaire non ajouté ; échec du vocabulaire avalé ; `vocabulary.actions` rendu sans
+  `toSelectOptions` ; `i18nLocale` toujours `'fr-CH'` ; valeur initiale vide ; `'fr-CH'` en dur au tri ;
+  date en `'fr-CH'` en dur ; `entityId` conservé (après renforcement) ; `entityId` sans type relu ; filtres
+  non sérialisés à l'export ; export appelé avec `{}` ; `revokeObjectURL` hors du `finally` ;
+  `nav-audit-log` retirée des quatre catalogues ; entrée de menu passée à la liste commune (E2E
+  Consultation, rouge sur `nav-link-audit-log` à `toHaveCount(0)`).
+
+### Gates *(b1 seule — à rejouer après la b2)*
+
+- Frontend : `check` 0 erreur (27 avertissements), `lint-i18n-ownership` PASS, `test:unit` **812 / 812**
+  (777 + 35), build OK.
+- Backend : `cargo test -p kesh-i18n` 29 / 29 (parité) ; base remise à zéro, `scripts/test-fast.sh`
+  **2463 / 2463**.
+- E2E : `kesh_e2e` reconstruite, montage complet, frontend buildé après le dernier patch, run à **12:38 UTC** :
+  **223 passés / 8 échoués / 19 ignorés, zéro régression** — 7 KF-029, `sidebar-navigation:75`.
+
 ### File List
+
+| Fichier | Nature |
+|---|---|
+| `frontend/src/lib/shared/utils/download.ts` (+ `download.test.ts`) | **neufs** — téléchargement partagé |
+| `frontend/src/lib/features/export/exports.api.ts`, `admin-backup/admin-backup.api.ts`, `imported-supplier-invoices/imported-supplier-invoices.api.ts` | commentaires seulement |
+| `frontend/src/lib/shared/utils/i18n.svelte.ts` (+ `.test.ts`) | `i18nLocale()` |
+| `frontend/src/lib/features/audit-log/` — `audit-log.types.ts`, `audit-log.api.ts`, `vocabulary-options.ts`, `query-helpers.ts` + trois tests | **neufs** |
+| `frontend/src/routes/(app)/audit-log/+page.svelte`, `+page.ts`, `audit-log-page.test.ts` | **neufs** |
+| `frontend/src/routes/(app)/+layout.svelte` | entrée de menu |
+| `frontend/src/lib/shared/i18n-keys.test.ts` | famille `nav-`, `sitesTotal` |
+| `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` | 26 clés ×4 |
+| `frontend/tests/e2e/audit-log.spec.ts` | **neuf** |
 
 ## Change Log
 
@@ -699,6 +764,7 @@ de texte de spec, sans assertion ajoutée ni ligne de code.
 
 | passe | modèle | rendu (après reclassement) |
 |---|---|---|
+| 2026-09-26 | dev | Implémentée (Opus 5.5) sur `main` à `0e4c2682` + fiches. Téléchargement partagé, `i18nLocale()`, feature `audit-log`, écran, garde, menu, 26 clés ×4, gardes i18n recomptées (`sitesTotal` 1738). **17 mutations sur 17 tuées** — une a d'abord survécu, le test a été renforcé. Gates sur la b1 seule : frontend 812/812, backend 2463/2463, E2E 223/8/19 sans régression. ⚠️ **La PR attend la 25-1c-b2** (fiche à réécrire, R5) : c'est elle qui porte `closes #378`. |
 | 2026-09-26 | revalidation R6 ciblée | **Une lentille Haiku 4.5**, contexte frais, braquée sur la seule remédiation R5 (`git diff bc4fee4b 6358639e`), prompt `25-1c-b1-validate-prompt-r6-ciblee.md`, axes déclarés. **0 finding** : 28 types, 97 actions, 138 clés recomptés ; chaque numéro de ligne vérifié par `grep` ; « 133 » et « 92 » ne subsistent que dans l'historique. La remédiation ne touchait que la fiche ⇒ **boucle close**, fiche revalidée contre `main` à `0e4c2682`. |
 | 2026-09-26 | revalidation R5 « dérive » | Reprise sur `main` à `0e4c2682` après dix jours sur une branche locale jamais poussée. **Une lentille Sonnet**, prompt `25-1c-b-validate-prompt-r5-derive.md`, axes déclarés (non exercés : manuels — délégués à la b2 —, contenu détaillé des specs E2E non modifiées depuis). **Contrat de la route mergée (PR #439) confirmé champ par champ** ; rien de ce que la fiche prescrit n'a été livré entre-temps ; sept copies de téléchargement toujours sept. **1 MEDIUM** : « 133 clés / 92 actions » périmé — **138 / 97** au 2026-09-26 (`account.retyped`, `invoice.unvalidated`, `invoice.settlement_cancelled`, `supplier_invoice.settlement_cancelled`, `reconciliation.cancelled`) ; la fiche ne fige plus le nombre, à recompter au développement. **3 LOW** : lignes de `i18n-keys.test.ts` (+109 à +120) et de `i18n-libelle-en-dur.test.ts` rafraîchies ; décalages d'une dizaine de lignes dans les patrons cités (`invoices/+page.svelte`, `invoices_echeancier.spec.ts`, commentaires de l'AC 9), contenu intact — non repris, T0 relit par contenu. #386 citée hors périmètre : désormais fermée, sans effet. |
 | 1 | Sonnet + Haiku | 2 M, 2 L |
