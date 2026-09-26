@@ -122,8 +122,12 @@ créance par l'écriture de l'avoir** (`credit_notes.journal_entry_id` → ligne
 seul HT ou à une valeur recalculée en Rust **ne suffit pas**.
 
 **AC 8** — Une facture validée à 8,1 %, **non réglée, créditée** : `amount_due` = **0** (et non la
-TVA) — **au repository ET à la frontière HTTP** : `GET /api/v1/invoices/{id}` rend `amountDue` =
-`"0.00"` (ou sa forme décimale normalisée), `amountSettled` = `0`. Une facture validée à 8,1 %, **réglée de 40 puis créditée** (état **monté en SQL**, cf.
+TVA) — **au repository ET à la frontière HTTP** : `GET /api/v1/invoices/{id}` rend `amountDue` **non nul
+(pas `null` : `null` veut dire « non calculé »,** `routes/invoices.rs:242-248`**)**, sérialisé en
+**chaîne** (`rust_decimal` avec `serde-str`, `kesh-api/Cargo.toml:39`), dont la valeur **parsée en
+`Decimal`** vaut zéro — ⛔ ni comparaison de chaîne (l'échelle suit le calcul SQL : `"0.0000"` et
+`"0.00"` sont également justes), ni `f64` (patron à ne pas suivre :
+`invoice_echeancier_e2e.rs:636-641`). Même règle pour `amountSettled`. Une facture validée à 8,1 %, **réglée de 40 puis créditée** (état **monté en SQL**, cf.
 AC 13) : `amount_due` = **−40**, le montant encaissé en trop sur une vente annulée — et non
 `TVA − 40`. ⚠️ **Pas d'écrêtage à zéro** : le doc-comment d'`amount_due` l'interdit déjà.
 
@@ -173,8 +177,14 @@ donc une écriture de contre-passation valide. **Gabarit recommandé**, qui gard
 écritures produites par les vrais chemins** et ne touche en SQL qu'un rattachement : régler (vrai
 chemin) ; **détacher** la ligne de règlement vers une facture auxiliaire validée de la même société
 (`UPDATE invoice_settlements SET invoice_id = ?`) ; créer l'avoir (vrai chemin, désormais accepté) ;
-**rattacher** la ligne à la facture d'origine. Vérifier les contraintes d'unicité de
-`invoice_settlements` avant de retenir ce gabarit ; à défaut, construire l'écriture d'avoir par
+**rattacher** la ligne à la facture d'origine. La facture auxiliaire est créée **dans `monter`**
+par le helper existant `validated_invoice` (même société, montant quelconque), n'est jamais réglée
+ni créditée, et ne sert qu'à porter la ligne le temps de l'avoir ; aucun motif ne la lit. Seule
+contrainte d'unicité d'`invoice_settlements` : `uq_invoice_settlements_entry (journal_entry_id)`
+(`20260827000001_invoice_settlements.sql:65`) — le détachement ne la touche pas. ⚠️ Pendant le
+détachement, l'écriture de règlement reste celle de la facture d'origine : aucun motif de
+`settlement_cancel_blocker` ne doit être évalué entre les deux `UPDATE`. Si le gabarit se révèle
+impraticable, à défaut, construire l'écriture d'avoir par
 `journal_entries::create_in_tx` avec les lignes de `generate_credit_note_journal_lines`, jamais à la
 main ligne par ligne.
 
@@ -187,6 +197,11 @@ couvre entière se désynchronise à la première évolution du serveur. La gard
 **unique** côté serveur (AC 11), le motif « payée » et le motif « réglée en partie » s'affichent de
 la même façon. Le commentaire de `:864-871` est étendu aux deux boutons, ou dupliqué au-dessus du
 second.
+
+⚠️ **Changement visible sur une facture entièrement payée** : le bouton, masqué jusqu'ici, apparaît ;
+l'utilisateur ouvre le dialogue, confirme, et lit le refus nommé (AC 12) dans le dialogue même
+(`creditNoteError`, `:77`, `:101`). C'est le comportement de « Dévalider » depuis le 2026-09-19, et
+le CHANGELOG le dit.
 
 **AC 15** — Rien n'est **réparé** dans les données existantes : pas de migration, pas de rejeu
 (`CLAUDE.md` : aucune donnée de production à protéger ; précédent 24-2 D7). Les états hérités
@@ -332,6 +347,18 @@ bloque **25-4-b**, pas celle-ci.
 
 ## Change Log
 
+- **2026-09-27** — **validation P2** (Haiku, diff aplati, prompt `25-4-a-validate-prompt-p2.md`) —
+  rapporte 3 MEDIUM et 1 LOW ; **un seul MEDIUM retenu** : l'AC 13 ne disait pas d'où vient la facture
+  auxiliaire du gabarit — précisé (helper `validated_invoice`, contrainte d'unicité vérifiée, aucun
+  motif évalué pendant le détachement). **Écartés** : deux « MEDIUM » reprochent au **code** de ne pas
+  encore faire ce que la fiche prescrit (bouton `:836`, test e2e absent) — ce n'est pas un défaut de
+  spec ; le LOW (deux formulations du manuel) est déjà couvert par l'AC 17. ⚠️ **Repris par
+  l'orchestrateur**, la priorité 3 que la passe n'a pas tranchée : `amountDue` est une **chaîne** à
+  l'échelle du calcul SQL — l'AC 8 impose désormais `null` interdit et une comparaison **en
+  `Decimal`**, ni chaîne ni `f64` ; et la priorité 2 : ce que voit l'utilisateur sur une facture
+  entièrement payée (bouton désormais visible, refus nommé dans le dialogue) est écrit à l'AC 14.
+  La passe affirmait aussi que `accept_one_invoice` ne crée pas de règlement — faux
+  (`invoice_settlements::create_in_tx`, `reconciliation.rs:1416-1428`) ; sans conséquence sur la fiche.
 - **2026-09-26** — **validation P1** (Sonnet, prompt `25-4-a-validate-prompt-p1.md`) — **1 HIGH,
   3 MEDIUM, 1 LOW**, tous confirmés dans le code avant correction. **HIGH** : le récit « #455
   latent » était faux — `get_invoice` rend `amountDue` sans condition de statut, et
