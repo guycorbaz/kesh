@@ -18,9 +18,9 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
   **Ce que vous y gagnez** : l'export tient maintenant sa promesse. Vous pouvez partir — changer de logiciel, ou répondre à un contrôle — sans découvrir que la moitié de vos pièces n'y est pas.
 
-- **Une garde empêche désormais ce trou de se rouvrir.** L'export avait été écrit une fois puis jamais rattrapé sur trois versions successives : chaque nouveauté — les achats, les projets, les règlements — s'ajoutait aux livres sans entrer dans l'archive, **sans qu'aucun signal ne le dise**. Toute table qui n'est ni exportée ni explicitement écartée fait désormais échouer la construction du logiciel.
+- **Une garde empêche désormais ce trou de se rouvrir.** L'export avait été écrit une fois puis jamais rattrapé sur trois versions successives : chaque nouveauté — les achats, les projets, les règlements — s'ajoutait aux livres sans entrer dans l'archive, **sans qu'aucun signal ne le dise**. Toute table qui n'est ni exportée ni explicitement écartée fait désormais échouer les tests du logiciel, et donc sa livraison.
 
-- **Les cellules de texte de l'export n'étaient pas neutralisées contre l'injection de formule.** Un libellé commençant par `=` ou `+` pouvait être interprété comme une formule à l'ouverture du fichier dans un tableur. La protection existait ailleurs dans Kesh ; elle est désormais appliquée ici aussi.
+- **Les cellules de texte de l'export n'étaient pas neutralisées contre l'injection de formule.** Un libellé commençant par `=` ou `+` pouvait être interprété comme une formule à l'ouverture du fichier dans un tableur. La protection existait ailleurs dans Kesh ; elle est désormais appliquée ici aussi, à toutes les cellules de texte.
 
 ### Changed
 

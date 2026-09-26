@@ -3,7 +3,7 @@
 //! 21 tests minimum (AC #29 a-u) :
 //! - (a) Success path → 200 + ZIP signature `PK\x03\x04` + `application/zip`
 //! - (b) Multi-tenant 2 companies → assert IDOR scoping sur 7 CSV (5 directes + 2 JOINées)
-//! - (c) ZIP structure → 17 entrées exactes (16 CSV + metadata.json)
+//! - (c) ZIP structure → l'ensemble exact : `TABLES_EXPORTEES` + metadata.json
 //! - (d) metadata.json parsing → shape + valeurs exactes
 //! - (e) SHA-256 intégrité → recomputed match meta.tables[*].sha256
 //! - (f) Empty company → 200 + rowCount map explicite (5 accounts + 4 vat_rates + 1 company + 1 cis seed defaults)
@@ -22,6 +22,8 @@
 //! - (s) Inclusion vat_rates historiques (active=FALSE)
 //! - (t) Inclusion reconciliation_rules soft-deleted (active=FALSE)
 //! - (u) Multi-tenant scoping toutes fns `list_all_by_company`
+//! - Story 25-5-a (#386) : les onze tables ajoutées sortent, peuplées pour
+//!   deux sociétés, et aucune ligne ne fuit de l'une à l'autre
 //!
 //! Pré-requis : MariaDB démarré (sqlx::test crée une DB éphémère par test).
 //! Pattern hérité reports_export_e2e.rs Story 9-2a.
@@ -715,7 +717,7 @@ async fn export_global_zip_multi_tenant_idor_scoping(pool: MySqlPool) {
 }
 
 // ============================================================
-// AC #29(c) — ZIP structure : 17 entrées exactes (set complet)
+// AC #29(c) — ZIP structure : l'ensemble exact du registre (set complet)
 // ============================================================
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -738,8 +740,12 @@ async fn export_global_zip_contient_exactement_le_registre(pool: MySqlPool) {
     // mesurait 20, et sa liste a dû être reprise à chaque table ajoutée. *Un
     // nom qui affirme l'ancien résultat est un test muet.*
     //
-    // ⚠️ Il reste l'assertion la plus forte du fichier : l'ensemble EXACT, dans
-    // les deux sens — rien ne manque, rien n'est en trop.
+    // ⚠️ **Ce qu'il prouve, et ce qu'il ne prouve pas** (revue P1) : l'ensemble
+    // EXACT des fichiers, dans les deux sens, CONTRE LE REGISTRE — donc qu'aucun
+    // `push_csv!` ne manque ni ne déborde. Il ne dit rien de la justesse du
+    // registre lui-même, qui est aussi la source de l'export : c'est la garde
+    // unitaire `export_couvre_toutes_les_tables` (`exports/global.rs`) qui le
+    // confronte à une source indépendante, `TABLES_TO_TRUNCATE` (`kesh-db`).
     let attendus: std::collections::HashSet<String> = kesh_api::exports::global::TABLES_EXPORTEES
         .iter()
         .map(|t| {
@@ -1821,6 +1827,123 @@ async fn export_global_zip_onze_tables_neuves_sortent_et_sont_scopees(pool: MySq
         .execute(&pool)
         .await
         .unwrap();
+
+        // Les huit autres tables neuves, dont les trois enfants scopées par
+        // jointure — revue P1 : elles n'étaient vérifiées que VIDES, ce qui ne
+        // prouvait rien de leur scoping.
+        //
+        // ⚠️ Montage par SQL direct, clés étrangères suspendues sur UNE
+        // connexion dédiée : ce test éprouve le FILTRE de l'export (chaque
+        // ligne sort pour sa société, jamais pour l'autre), pas les flux
+        // métier qui produisent ces lignes — les monter par les vrais chemins
+        // (facture validée, avoir, règlement, lot) coûterait un plan comptable
+        // et des réglages complets par société, sans rien ajouter à la preuve.
+        // Les identifiants référencés hors de ces tables (écritures, comptes,
+        // compte bancaire) sont donc fictifs. Les contraintes CHECK, elles,
+        // restent actives.
+        let mut conn = pool.acquire().await.unwrap();
+        // Identifiants fictifs DISTINCTS par société : certaines colonnes sont
+        // uniques (`uq_credit_notes_invoice`).
+        let fictif = 900_000 + cid * 100;
+        sqlx::query("SET FOREIGN_KEY_CHECKS = 0")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        let credit_note_id: i64 = sqlx::query_scalar(
+            "INSERT INTO credit_notes (company_id, contact_id, invoice_id, \
+             credit_note_number, status, date, total_amount) \
+             VALUES (?, ?, ?, ?, 'draft', '2026-03-01', 10) RETURNING id",
+        )
+        .bind(cid)
+        .bind(contact_id)
+        .bind(fictif + 1)
+        .bind(format!("AV-386-{suffixe}"))
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO credit_note_lines (credit_note_id, position, description, \
+             quantity, unit_price, vat_rate, line_total) VALUES (?, 1, ?, 1, 10, 0, 10)",
+        )
+        .bind(credit_note_id)
+        .bind(format!("LigneAvoir386{suffixe}"))
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+        let supplier_invoice_id: i64 = sqlx::query_scalar(
+            "INSERT INTO supplier_invoices (company_id, contact_id, supplier_invoice_number, \
+             status, invoice_date, total_amount, purchase_journal_entry_id) \
+             VALUES (?, ?, ?, 'open', '2026-03-01', 10, ?) RETURNING id",
+        )
+        .bind(cid)
+        .bind(contact_id)
+        .bind(format!("FF-386-{suffixe}"))
+        .bind(fictif + 2)
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO supplier_invoice_lines (supplier_invoice_id, position, description, \
+             quantity, unit_price, vat_rate, line_total, expense_account_id) \
+             VALUES (?, 1, ?, 1, 10, 0, 10, ?)",
+        )
+        .bind(supplier_invoice_id)
+        .bind(format!("LigneAchat386{suffixe}"))
+        .bind(fictif + 3)
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+        let batch_id: i64 = sqlx::query_scalar(
+            "INSERT INTO payment_batches (company_id, bank_account_id, status, \
+             requested_execution_date, total_amount, msg_id, payment_info_id) \
+             VALUES (?, ?, 'generated', '2026-03-02', 10, ?, ?) RETURNING id",
+        )
+        .bind(cid)
+        .bind(fictif + 4)
+        .bind(format!("MSG-386-{suffixe}"))
+        .bind(format!("PMT-386-{suffixe}"))
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO payment_batch_items (payment_batch_id, supplier_invoice_id, position, \
+             end_to_end_id, amount) VALUES (?, ?, 1, ?, 10)",
+        )
+        .bind(batch_id)
+        .bind(supplier_invoice_id)
+        .bind(format!("E2E-386-{suffixe}"))
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+        // `invoice_settlements` n'a aucune colonne de texte : le marqueur est
+        // un MONTANT propre à chaque société.
+        sqlx::query(
+            "INSERT INTO invoice_settlements (company_id, invoice_id, journal_entry_id, \
+             amount, settled_on, settlement_type, settlement_account_id) \
+             VALUES (?, ?, ?, ?, '2026-03-03', 'internal_account', ?)",
+        )
+        .bind(cid)
+        .bind(fictif + 5)
+        .bind(fictif + 6)
+        .bind(if suffixe == "A" { "7777.77" } else { "8888.88" })
+        .bind(fictif + 7)
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO audit_log (user_id, action, entity_type, entity_id, actor_label, \
+             company_id) VALUES (?, 'test.marker', 'marker', 1, ?, ?)",
+        )
+        .bind(ctx.user_id)
+        .bind(format!("Acteur386{suffixe}"))
+        .bind(cid)
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+        sqlx::query("SET FOREIGN_KEY_CHECKS = 1")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
     }
 
     let app = spawn_app(pool.clone()).await;
@@ -1841,7 +1964,10 @@ async fn export_global_zip_onze_tables_neuves_sortent_et_sont_scopees(pool: MySq
             .unwrap_or_else(|| panic!("`{nom}` absent du ZIP"))
     };
 
-    // Les quatre tables peuplées ci-dessus : la ligne de A sort, celle de B non.
+    // Les douze tables peuplées ci-dessus : la ligne de A sort, celle de B non.
+    // ⛔ Les trois enfants sans `company_id` (`credit_note_lines`,
+    // `supplier_invoice_lines`, `payment_batch_items`) sont celles dont le
+    // filtre passe par une jointure : c'est leur ligne qui compte le plus.
     for (fichier, marqueur_a, marqueur_b) in [
         ("projects.csv", "Projet A", "Projet B"),
         ("contact_persons.csv", "PrenomA", "PrenomB"),
@@ -1851,6 +1977,18 @@ async fn export_global_zip_onze_tables_neuves_sortent_et_sont_scopees(pool: MySq
             "Fournisseur B",
         ),
         ("contacts.csv", "Contact A", "Contact B"),
+        ("credit_notes.csv", "AV-386-A", "AV-386-B"),
+        ("credit_note_lines.csv", "LigneAvoir386A", "LigneAvoir386B"),
+        ("supplier_invoices.csv", "FF-386-A", "FF-386-B"),
+        (
+            "supplier_invoice_lines.csv",
+            "LigneAchat386A",
+            "LigneAchat386B",
+        ),
+        ("payment_batches.csv", "MSG-386-A", "MSG-386-B"),
+        ("payment_batch_items.csv", "E2E-386-A", "E2E-386-B"),
+        ("invoice_settlements.csv", "7777.77", "8888.88"),
+        ("audit_log.csv", "Acteur386A", "Acteur386B"),
     ] {
         let csv = lire(fichier);
         assert!(
@@ -1860,25 +1998,6 @@ async fn export_global_zip_onze_tables_neuves_sortent_et_sont_scopees(pool: MySq
         assert!(
             !csv.contains(marqueur_b),
             "⛔ FUITE MULTI-TENANT : `{fichier}` porte une ligne de la société B ({marqueur_b})"
-        );
-    }
-
-    // Les sept autres sont vides ici, mais leur fichier et leur en-tête
-    // doivent exister — un sérialiseur qui ne tourne pas ne produit rien.
-    for (fichier, entete) in [
-        ("credit_notes.csv", "credit_note_number"),
-        ("credit_note_lines.csv", "credit_note_id"),
-        ("supplier_invoices.csv", "supplier_invoice_number"),
-        ("supplier_invoice_lines.csv", "expense_account_id"),
-        ("payment_batches.csv", "requested_execution_date"),
-        ("payment_batch_items.csv", "end_to_end_id"),
-        ("invoice_settlements.csv", "settled_on"),
-        ("audit_log.csv", "actor_label"),
-    ] {
-        let csv = lire(fichier);
-        assert!(
-            csv.contains(entete),
-            "`{fichier}` doit porter son en-tête (colonne `{entete}` attendue)"
         );
     }
 }

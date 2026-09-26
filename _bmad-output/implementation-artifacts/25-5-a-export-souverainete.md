@@ -1,6 +1,6 @@
 # Story 25.5-a : L'export de souveraineté porte enfin la comptabilité — et une garde l'y tient
 
-Status: review
+Status: in-progress
 
 **Issue : [#386]**, qu'elle **ferme** : `closes #386` dans le **titre ET le corps** de sa PR.
 
@@ -65,7 +65,7 @@ ligne-à-ligne n'en rend que **6** sur 19. *C'est le précédent de `INSERT INTO
    | `invoice_number_sequences`, `credit_note_number_sequences`, `journal_entry_number_sequences` | compteurs **internes à Kesh** : les numéros sont déjà portés par les pièces exportées |
    | `api_keys`, `refresh_tokens`, `password_reset_tokens` | ⛔ **secrets** — les exporter dans un fichier destiné à être transmis serait une **fuite** |
    | `users` | l'audit porte le **nom de son auteur en instantané** depuis la 25-1a : rien ne se perd |
-   | `companies` | déjà couverte par `company.csv` (au singulier) |
+   | ~~`companies`~~ | ⚠️ **erreur de la fiche, corrigée au développement** : `companies` n'est pas exclue, elle est **exportée** sous `company.csv` (au singulier). La partition réelle est **11 + 9** (Dev Agent Record, Debug Log). *Barrée ici plutôt qu'effacée, à la revue P1 : le corps de l'AC contredisait sa propre correction.* |
    | `email_templates`, `onboarding_state` | **configuration**, non comptabilité |
 
 3. ⛔ **LA GARDE D'EXHAUSTIVITÉ — c'est la vraie livraison de cette story.** Un test échoue dès
@@ -222,6 +222,23 @@ ligne-à-ligne n'en rend que **6** sur 19. *C'est le précédent de `INSERT INTO
       (un dossier `reports/` inventé, un « 38 » pour 39) et l'arbitrage sur `csv_sanitize`.
 - [x] **T6 — Gates complets** (AC 11), PR avec `closes #386`.
 
+### Review Findings
+
+*Revue de code **a posteriori** — la story a été mergée (PR #452) sans revue. Passe 1, 2026-09-26,
+prompt `25-5-a-review-prompt-p1.md`.*
+
+- [x] [Review][Patch] **HIGH** — Le manuel contredisait encore la story : la boîte « Ce que cet export couvre » disait qu'il ne contient pas les factures fournisseurs, les avoirs ni les projets [`docs/manual/fr/user-manual.tex:1670`]
+- [x] [Review][Patch] **HIGH** — Test multi-sociétés : huit des onze tables neuves n'étaient vérifiées que **vides**, dont les trois enfants scopées par jointure [`crates/kesh-api/tests/exports_global_e2e.rs`]
+- [x] [Review][Patch] **HIGH** — `creditor_line1` / `creditor_line2` absentes de `imported_supplier_invoices.csv` : une adresse « combinée » (type K) sortait sans adresse [`crates/kesh-api/src/exports/csv_tables.rs`]
+- [x] [Review][Patch] **HIGH** — `sent_to` et `note` des rappels échappaient à `csv_sanitize` [`crates/kesh-api/src/exports/csv_tables.rs:843,846`]
+- [x] [Review][Patch] **MEDIUM** — AC 4-bis : le doc-comment de module de `global.rs` portait encore 19 / 18 / 18 [`crates/kesh-api/src/exports/global.rs:4,247`]
+- [x] [Review][Patch] **MEDIUM** — AC 11 : aucun gate déclaré au Dev Agent Record — gates exécutés et déclarés en revue
+- [x] [Review][Patch] **MEDIUM** — CHANGELOG : « fait échouer la construction du logiciel » ; c'est un test qui échoue [`CHANGELOG.md:21`]
+- [x] [Review][Patch] **MEDIUM** — Le commentaire du test de structure le disait « l'assertion la plus forte » alors qu'il compare l'export à sa propre source [`crates/kesh-api/tests/exports_global_e2e.rs`]
+- [x] [Review][Patch] **MEDIUM** — L'AC 2 listait encore `companies` parmi les exclusions, contre sa propre correction
+- [x] [Review][Patch] **LOW** — « 3 PDF » pour 2 ; « sept autres » pour huit ; « 17 entrées » dans l'en-tête et un intertitre du fichier de tests
+- [x] [Review][Defer] **MEDIUM** — L'export lit ses trente tables sans instantané commun [`crates/kesh-api/src/exports/global.rs`] — deferred, pre-existing → **#465**
+
 ## Dev Notes
 
 ### Ce que cette story ne fait pas
@@ -310,7 +327,7 @@ Claude Opus 5 (1M context) — implémentation.
 | `crates/kesh-api/tests/exports_global_e2e.rs` | 2 tests dérivés du registre, 1 retargeté, 1 renommé, **1 neuf** (multi-tenant) |
 | `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl` | 3 textes réécrits × 4 |
 | `frontend/src/routes/(app)/export/+page.svelte` | replis alignés mot pour mot |
-| `docs/manual/fr/{user,admin}-manual.tex` + **3 PDF** | section refondue, réserve levée |
+| `docs/manual/fr/{user,admin}-manual.tex` + **2 PDF** (« 3 » corrigé en revue P1 : `git show --stat 91a20d76 \| grep -c '\.pdf'` rend 2) | section refondue, réserve levée |
 | `CHANGELOG.md` | 3 entrées dans `[0.12.1]`, **12 lignes ajoutées / 0 supprimée** |
 
 ### Debug Log References
@@ -323,5 +340,6 @@ Claude Opus 5 (1M context) — implémentation.
 
 | Date | Étape | Note |
 |---|---|---|
+| 2026-09-26 | review P1 | **Revue de code A POSTERIORI** : la story avait été mergée (PR #452) sans revue ni gate déclaré. Branche `story/25-5-a-revue-code`. **Trois lentilles Sonnet** en contexte frais (auteur : Opus 5), prompt versionné `25-5-a-review-prompt-p1.md`, axes déclarés par chacune. **4 HIGH, 5 MEDIUM, LOW divers, 1 report** — chaque HIGH vérifié par `grep -nF` avant d'être retenu. ① Manuel : la boîte « Ce que cet export couvre » disait encore l'inverse de la story (factures fournisseurs, avoirs, projets absents) → réécrite, PDF régénéré et **contrôlé aplati** (0 occurrence de l'ancienne phrase). ② Test multi-sociétés : huit des onze tables neuves n'étaient vérifiées que **vides** → peuplées pour deux sociétés (SQL direct, clés étrangères suspendues sur une connexion dédiée, identifiants fictifs distincts par société — `uq_credit_notes_invoice` l'a exigé au premier run), douze tables assertées présence A / absence B ; **mutation tuée** : filtre de société retiré de `credit_notes::list_all_lines_by_company` ⇒ « FUITE MULTI-TENANT : `credit_note_lines.csv` ». ③ `creditor_line1` / `creditor_line2` absentes de `imported_supplier_invoices.csv` — une adresse de type K sortait **sans adresse** → ajoutées (27 colonnes sur 27 du schéma) ; test d'en-tête. ④ `sent_to` et `note` des rappels échappaient à `csv_sanitize` → `fmt_opt_str` ; test unitaire, **mutation tuée** (note remise brute ⇒ rouge). MEDIUM : doc-comment de `global.rs` (19 / 18 / 18) réécrit sans nombre ; CHANGELOG « construction du logiciel » → « tests » ; commentaire « assertion la plus forte » rendu exact (le test compare à sa propre source, c'est la garde unitaire qui confronte à `TABLES_TO_TRUNCATE`) ; `companies` barrée dans l'AC 2. LOW : « 3 PDF » → 2, « sept » → huit (disparu avec la réécriture), « 17 entrées » dans le fichier de tests. **Écarté** : `SELECT *` d'`imported_supplier_invoices::list_all_by_company` — c'est la convention de tout ce module (`:125`). **Reporté** : lectures sans instantané commun, défaut antérieur → **#465**. **Gate ciblé** : `fmt` + `clippy --workspace -D warnings` verts ; `nextest` `binary(exports_global_e2e) | test(/csv_tables/)` **34/34**, plus les 2 tests unitaires neufs. ⚠️ **Gate complet NON exécuté à ce stade** — au push. Aucun fichier `kesh-db` touché par la remédiation. |
 | 2026-09-23 | validate P1 | **Passe 1, une lentille Sonnet en contexte frais**, checklist du workflow. **0 CRITICAL, 4 HIGH, 3 MEDIUM, 3 LOW** — tous vérifiés depuis la source avant d'être retenus. ⛔ **H1 — la fiche écrivait « neuf » tables annoncées par l'issue ; son tableau en porte DIX.** *Un décompte non recompté, dans la fiche même qui en dénonce trois autres.* ⛔ **H2/H3 — le nombre 19 est codé en dur à SEPT endroits**, dont deux `debug_assert_eq!` qui **paniquent en test** et un `csv_count: 19` **littéral** qui ferait mentir le manifeste ; plus deux assertions de test et l'en-tête de `csv_tables.rs`, qui annonce « 16 fonctions » pour 19. La tâche ne prescrivait que **le commentaire**. ⇒ AC 4-bis, et le geste attendu devient *rendre le nombre dérivé*, non corriger sept sites. ⛔ **H4 — « `audit_log` : oui » était FAUX et dangereux** : ses deux fonctions sont bornées, et la route qui les emploie **rejette la requête entière** au-delà de 10 000 lignes. Réutiliser ce chemin ferait échouer l'export d'une société active, ou **tronquer la piste d'audit en silence** — le défaut muet que cette story existe pour fermer. **MEDIUM** : le manuel utilisateur promet un dossier `reports/` **qui n'existe pas** — un AC générique ne peut pas attraper un contenu *inventé*, d'où deux sites nommés ; le manuel admin écrit « 38 » pour 39 et sa réserve entière tombe avec la livraison ; et ⛔ **`csv_sanitize` EXISTE** (`util.rs:220`, extraite à la 25-1c-a) **et cet export ne l'emploie nulle part**, alors que la story y ajoute des colonnes de texte libre. **LOW** : « différence des deux » invite à faire 39 − 19 = 20 — la différence se calcule **par NOM** ; la crate d'accueil de la garde n'était pas dite ; et un des trois replis de l'écran **diverge déjà** de son FTL. Vérifié exact et à ne pas refaire : 19 / 39 / 21, la partition 11 + 10 sans recouvrement, les six repositories sans lecture exhaustive, l'absence de `company_id` sur les trois tables enfants, `actor_label` comme instantané (migration `20260910000001`), `company.csv`, les trois clés dans les quatre locales, et la section `[0.12.1]` du CHANGELOG. |
 | 2026-09-23 | spec | Story née du **découpage de la 25-5** (arbitrage de Guy) : [#385] et [#386] n'ont en commun que le mot « état ». ⛔ **Trois faits établis avant rédaction, et chacun corrige l'issue** : (1) **21** tables absentes et non 10 — et « neuf » écrit d'abord ici même, recompté depuis le corps de l'issue ; (2) le trou **s'est creusé depuis l'écriture de l'issue** — `invoice_settlements`, livrée par l'Epic 24 ; (3) **six repositories sur huit n'ont aucune fonction de liste exhaustive**, ce qui est le vrai coût de la story et ne figure nulle part dans l'issue. ⚠️ Le décompte des `push_csv!` **ne se fait que sur le source aplati** : un grep ligne-à-ligne en rend 6 sur 19 — *le précédent `INSERT INTO … SELECT`, rencontré en préparant cette fiche*. ⚠️ Et le commentaire `// Queries 18 tables` du fichier dit **déjà faux**. Arbitrage de Guy sur le périmètre : *« l'export CSV n'a besoin que des données comptables ; seuls les backups ont besoin de tout »* ⇒ 11 dedans, 10 dehors **avec motif écrit**, les justificatifs en story séparée sur la **sauvegarde**. |

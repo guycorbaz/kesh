@@ -840,10 +840,10 @@ pub fn serialize_invoice_reminders_csv<W: Write>(
             fmt_decimal(r.fee_amount),
             fmt_dt(r.sent_at),
             txt(r.channel.clone()),
-            r.sent_to.clone().unwrap_or_default(),
+            fmt_opt_str(&r.sent_to),
             txt(r.subject.clone()),
             txt(r.body.clone()),
-            r.note.clone().unwrap_or_default(),
+            fmt_opt_str(&r.note),
             r.actor_user_id.map(|v| v.to_string()).unwrap_or_default(),
             fmt_opt_dt(r.cancelled_at),
             fmt_dt(r.created_at),
@@ -1468,6 +1468,8 @@ pub fn serialize_imported_supplier_invoices_csv<W: Write>(
         "is_qr_iban",
         "creditor_address_type",
         "creditor_name",
+        "creditor_line1",
+        "creditor_line2",
         "creditor_postal_code",
         "creditor_town",
         "creditor_country",
@@ -1497,6 +1499,10 @@ pub fn serialize_imported_supplier_invoices_csv<W: Write>(
             fmt_bool(i.is_qr_iban),
             txt(i.creditor_address_type.clone()),
             txt(i.creditor_name.clone()),
+            // Adresse « combinée » (type K) : toute l'adresse tient dans ces
+            // deux lignes, NPA et localité restant vides (revue P1).
+            fmt_opt_str(&i.creditor_line1),
+            fmt_opt_str(&i.creditor_line2),
             fmt_opt_str(&i.creditor_postal_code),
             fmt_opt_str(&i.creditor_town),
             txt(i.creditor_country.clone()),
@@ -1922,6 +1928,59 @@ mod tests {
             text.lines().count(),
             1,
             "expected header-only, got: {text:?}"
+        );
+    }
+
+    // ----- Story 25-5-a, revue P1 -----
+
+    /// `sent_to` et `note` d'un rappel sont du texte saisi : ils passent par
+    /// `csv_sanitize` comme les autres cellules (ils lui échappaient).
+    #[test]
+    fn serialize_invoice_reminders_csv_neutralise_destinataire_et_note() {
+        let dt = NaiveDate::from_ymd_opt(2026, 6, 1)
+            .unwrap()
+            .and_hms_opt(9, 0, 0)
+            .unwrap();
+        let r = InvoiceReminder {
+            id: 1,
+            company_id: 1,
+            invoice_id: 1,
+            level_number: 1,
+            fee_amount: Decimal::ZERO,
+            sent_at: dt,
+            channel: "manual".into(),
+            sent_to: Some("=HYPERLINK(\"x\")".into()),
+            subject: "Rappel".into(),
+            body: "Corps".into(),
+            note: Some("+cmd|' /C calc'!A0".into()),
+            actor_user_id: None,
+            cancelled_at: None,
+            created_at: dt,
+        };
+        let mut buf = Vec::new();
+        serialize_invoice_reminders_csv(&[r], &mut buf).expect("serialize ok");
+        let text = String::from_utf8(buf[3..].to_vec()).expect("utf8");
+        assert!(
+            text.contains("'=HYPERLINK"),
+            "`sent_to` doit être neutralisé : {text}"
+        );
+        assert!(
+            text.contains("'+cmd"),
+            "`note` doit être neutralisée : {text}"
+        );
+    }
+
+    /// Une adresse « combinée » (type K) tient dans `creditor_line1` et
+    /// `creditor_line2` : les deux colonnes sortent.
+    #[test]
+    fn serialize_imported_supplier_invoices_csv_porte_les_lignes_d_adresse() {
+        let mut buf = Vec::new();
+        serialize_imported_supplier_invoices_csv(&[], &mut buf).expect("serialize ok");
+        let text = String::from_utf8(buf[3..].to_vec()).expect("utf8");
+        let header = text.lines().next().expect("header");
+        assert!(
+            header.contains("creditor_name;creditor_line1;creditor_line2;creditor_postal_code"),
+            "{header}"
         );
     }
 }
