@@ -131,9 +131,57 @@ patrons d'écran, sémantique des entrées, données disponibles après un impor
    (it), `audit log` (en). À porter au glossaire ; les catalogues emploient aujourd'hui aussi
    « piste d'audit » et « journal d'audit interne ».
 
-⚠️ **Choix par défaut, non arbitré explicitement** : une entrée sans société (`company_id` vide,
-auteur inexistant) est **montrée**, marquée « société indéterminée » — dans une installation à une
-seule société, elle ne peut appartenir qu'à celle-là.
+#### ✅ Arbitrage du 2026-09-15 (soir) — la 25-1c-b, découpée à son tour
+
+À la passe 2 de validation de sa spec, la sévérité maximale est restée **MEDIUM → MEDIUM**, sur des
+défauts **d'origine** répartis dans des zones distinctes (écran, tests, manuel, glossaire,
+téléchargement) : le signal de largeur de la § *Règle de splitting préventif*. Le Project Lead accepte
+les deux propositions :
+
+1. **La 25-1c-b est découpée** en **25-1c-b1** (l'écran : page, garde, menu, libellés et leurs gardes
+   i18n, tests unitaires et E2E) et **25-1c-b2** (les textes : manuels, README, alignement du vocabulaire
+   « journal d'audit » dans les catalogues et le manuel) — **livrées dans la même PR**, sans quoi le
+   manuel annoncerait un écran absent. C'est cette PR qui porte `closes #378`.
+2. **L'extraction du téléchargement sort de la story** : sept copies et non quatre, dont trois au
+   comportement différent. L'écran utilise un module partagé neuf ; le regroupement des copies
+   existantes part en **issue de dette**.
+
+#### ✅ Arbitrage du 2026-09-15 (fin de soirée) — les trois choix hérités de la 25-1c-a, et leurs suites
+
+Réponses du Project Lead aux trois choix de conception laissés par défaut :
+
+- **« Chaque export CSV du journal s'inscrit-il lui-même dans le journal ? » → non.** L'AC 14 de la 25-1c-a
+  (action `audit_log.exported`) sort. Conséquence en cascade : le type d'entité `audit_log` n'existe plus,
+  et la carte de la 25-1c-b1 revient à 28 types.
+- **« Le fichier CSV garde-t-il les codes techniques des actions et des types d'entité, sans les
+  traduire ? » → non.** Cité : *« dans l'export csv, il faut mettre la traduction de la langue utilisée par
+  l'utilisateur de kesh, sinon ce sera difficile à utiliser »*. ⇒ **types d'entité ET actions traduits**.
+  Kesh n'a pas de langue par utilisateur : la langue de l'interface est celle de l'installation
+  (`KESH_LANG`, `config.rs:831`, servie à l'écran par `routes/i18n.rs:21`), et le CSV suit la même. Le
+  code compte **92 codes d'action** distincts — 82 écrits en littéral (dont `admin_break_glass_reset`, sans
+  point) et 10 par des variables conditionnelles ou un helper —, **sans aucun libellé** aujourd'hui
+  *(« 81 », puis « 82 » d'abord écrits ici : le premier manquait l'action sans point, le second les dix
+  actions indirectes, établies par la revalidation R1 de la 25-1c-a)*.
+- **« Une entrée sans société s'affiche-t-elle ? »** → cité : *« le cas réel n'existe pas : le système ne
+  sera pas en production avant de pouvoir faire les sauvegardes complètes. le cas théorique est …
+  théorique »*. ⇒ **retour au filtre strict** de l'arbitrage 2 : la route ne rend que `company_id = ?`
+  (le `OR company_id IS NULL` de la 25-1c-a sort) ; l'écran perd la colonne « Société » et la mention
+  « société indéterminée ».
+
+**Les trois questions de suite, et leurs réponses** (même soirée) :
+
+- **« À l'écran, faut-il aussi traduire les actions ? »** — proposition : afficher la traduction à l'écran
+  aussi, puisqu'elle existera de toute façon. → *« ok »*. ⇒ **actions et types traduits à l'écran comme
+  dans le CSV** ; l'arbitrage d'origine (« le code d'action tel quel ») est amendé.
+- **« Faut-il écrire les traductions des actions dans une story séparée ? »** — proposition : une story
+  dédiée, placée avant la route. → *« non, maintenant »*. ⇒ **les libellés s'écrivent dans la 25-1c-a**.
+- **« Le manuel d'administration : faut-il corriger dans la même PR les lignes 1796 (« sans exception ») et
+  1778 (« 5 rôles ») ? »** → *« corrige »*. ⇒ **corrigées dans la 25-1c-b2**.
+
+~~⚠️ **Choix par défaut, non arbitré explicitement** : une entrée sans société (`company_id` vide,
+auteur inexistant) est **montrée**, marquée « société indéterminée »~~ — **périmé** : remplacé par le
+filtre strict arbitré ci-dessus *(paragraphe laissé barré, pour que la décision qu'il décrivait reste
+lisible)*.
 
 ### 25-2 — Les gardes structurelles : numérotation et type de compte
 
