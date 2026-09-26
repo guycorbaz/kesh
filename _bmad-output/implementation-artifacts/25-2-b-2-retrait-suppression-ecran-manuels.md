@@ -1,6 +1,6 @@
 # Story 25.2-b-2 : La suppression ne traite plus que les brouillons — l'écran et les manuels
 
-Status: review
+Status: done
 
 **Issue : [#440]**, qu'elle **ferme** : `closes #440` dans le **titre ET le corps** de sa PR.
 ⚠️ Elle **ne rouvre pas [#219]**, fermée : la story en remplace le chemin, pas la décision. Et elle
