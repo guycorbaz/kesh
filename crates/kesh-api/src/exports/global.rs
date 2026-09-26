@@ -1,18 +1,27 @@
 //! Story 9-2b T3 — Orchestrateur `build_global_export` + builder ZIP +
 //! struct `GlobalExportMeta` (retournée au handler pour audit + tracing).
 //!
-//! Pipeline (19 CSV + 1 manifeste) :
+//! Pipeline (un CSV par entrée de [`TABLES_EXPORTEES`], plus un manifeste) :
 //! 1. `Instant::now()` start.
-//! 2. Pour chaque table §scope-tables : appel repo (queries 18 SELECTs +
-//!    JOIN scoping `company_id`).
+//! 2. Pour chaque table exportée : appel repo (un SELECT par table, scopé
+//!    par `company_id` — directement, ou par jointure sur le parent).
 //! 3. Pour chaque table : `serialize_<table>_csv(rows, &mut Vec<u8>)` →
 //!    `Vec<u8>` par CSV.
 //! 4. SHA-256 par CSV (sur les bytes décompressés) → `TableMeta`.
 //! 5. `build_metadata_json(...)` → `metadata.json` bytes (camelCase
 //!    + BTreeMap tables alphabétique).
-//! 6. `build_zip(&files)` — 18 CSV puis `metadata.json` (en dernier,
+//! 6. `build_zip(&files)` — les CSV puis `metadata.json` (en dernier,
 //!    Pass 1 ECH-LOW-02).
-//! 7. `GlobalExportMeta { byte_size, csv_count: 19, duration_ms }`.
+//! 7. `GlobalExportMeta { byte_size, csv_count, duration_ms }`.
+//!
+//! ⚠️ **Aucun nombre de tables n'est écrit ici** : ce doc-comment en portait
+//! trois (19, 18, 18), tous faux après la 25-5-a (revue P1). Le seul nombre
+//! qui compte est **dérivé** de [`TABLES_EXPORTEES`].
+//!
+//! ⚠️ **Lectures successives, sans instantané commun** : chaque table est lue
+//! par sa propre requête sur le pool. Une écriture concurrente pendant
+//! l'export peut donc y laisser une incohérence (ligne fille sans parent).
+//! Défaut antérieur à la 25-5-a, tracé par #465.
 
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -244,7 +253,7 @@ pub async fn build_global_export(
     let start = Instant::now();
     let company_id = company.id;
 
-    // -------- 1. Queries 18 tables (single-fetch each) --------
+    // -------- 1. Une requête par table exportée --------
     let company_rows = vec![company.clone()];
     let fiscal_years_rows = fiscal_years::list_by_company(pool, company_id)
         .await

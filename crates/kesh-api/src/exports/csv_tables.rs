@@ -161,7 +161,17 @@ pub fn serialize_company_csv<W: Write>(rows: &[Company], writer: W) -> Result<()
     csv.write_record([
         "id",
         "name",
+        "first_name",
+        "last_name",
         "address",
+        "address_street",
+        "address_building",
+        "address_postal_code",
+        "address_city",
+        "address_country",
+        "email",
+        "phone",
+        "website",
         "ide_number",
         "org_type",
         "accounting_language",
@@ -172,6 +182,7 @@ pub fn serialize_company_csv<W: Write>(rows: &[Company], writer: W) -> Result<()
         // doit l'etre, PAS parce qu'elle protegerait d'une restauration : ce
         // CSV n'a aucun importeur (cf. l'audit `books.restored`).
         "books_locked_through",
+        "is_stub",
         "version",
         "created_at",
         "updated_at",
@@ -181,7 +192,17 @@ pub fn serialize_company_csv<W: Write>(rows: &[Company], writer: W) -> Result<()
         csv.write_record([
             c.id.to_string(),
             txt(c.name.clone()),
+            fmt_opt_str(&c.first_name),
+            fmt_opt_str(&c.last_name),
             txt(c.address.clone()),
+            txt(c.address_street.clone()),
+            txt(c.address_building.clone()),
+            txt(c.address_postal_code.clone()),
+            txt(c.address_city.clone()),
+            txt(c.address_country.clone()),
+            fmt_opt_str(&c.email),
+            fmt_opt_str(&c.phone),
+            fmt_opt_str(&c.website),
             fmt_opt_str(&c.ide_number),
             c.org_type.as_str().to_string(),
             c.accounting_language.as_str().to_string(),
@@ -189,6 +210,7 @@ pub fn serialize_company_csv<W: Write>(rows: &[Company], writer: W) -> Result<()
             c.books_locked_through
                 .map(|d| d.to_string())
                 .unwrap_or_default(),
+            fmt_bool(c.is_stub),
             c.version.to_string(),
             fmt_dt(c.created_at),
             fmt_dt(c.updated_at),
@@ -369,9 +391,19 @@ pub fn serialize_contacts_csv<W: Write>(rows: &[Contact], writer: W) -> Result<(
         "company_id",
         "contact_type",
         "name",
+        "first_name",
+        "last_name",
+        "salutation",
+        "language",
+        "client_number",
         "is_client",
         "is_supplier",
         "address",
+        "address_street",
+        "address_building",
+        "address_postal_code",
+        "address_city",
+        "address_country",
         "email",
         "phone",
         "ide_number",
@@ -389,9 +421,21 @@ pub fn serialize_contacts_csv<W: Write>(rows: &[Contact], writer: W) -> Result<(
             c.company_id.to_string(),
             c.contact_type.as_str().to_string(),
             txt(c.name.clone()),
+            fmt_opt_str(&c.first_name),
+            fmt_opt_str(&c.last_name),
+            c.salutation.as_str().to_string(),
+            c.language
+                .map(|l| l.as_str().to_string())
+                .unwrap_or_default(),
+            fmt_opt_str(&c.client_number),
             fmt_bool(c.is_client),
             fmt_bool(c.is_supplier),
             fmt_opt_str(&c.address),
+            fmt_opt_str(&c.address_street),
+            fmt_opt_str(&c.address_building),
+            fmt_opt_str(&c.address_postal_code),
+            fmt_opt_str(&c.address_city),
+            fmt_opt_str(&c.address_country),
             fmt_opt_str(&c.email),
             fmt_opt_str(&c.phone),
             fmt_opt_str(&c.ide_number),
@@ -568,6 +612,7 @@ pub fn serialize_bank_accounts_csv<W: Write>(
         "qr_iban",
         "is_primary",
         "journal_account_id",
+        "archived",
         "version",
         "created_at",
         "updated_at",
@@ -582,6 +627,7 @@ pub fn serialize_bank_accounts_csv<W: Write>(
             fmt_opt_str(&b.qr_iban),
             fmt_bool(b.is_primary),
             fmt_opt_i64(b.journal_account_id),
+            fmt_bool(b.archived),
             b.version.to_string(),
             fmt_dt(b.created_at),
             fmt_dt(b.updated_at),
@@ -840,10 +886,10 @@ pub fn serialize_invoice_reminders_csv<W: Write>(
             fmt_decimal(r.fee_amount),
             fmt_dt(r.sent_at),
             txt(r.channel.clone()),
-            r.sent_to.clone().unwrap_or_default(),
+            fmt_opt_str(&r.sent_to),
             txt(r.subject.clone()),
             txt(r.body.clone()),
-            r.note.clone().unwrap_or_default(),
+            fmt_opt_str(&r.note),
             r.actor_user_id.map(|v| v.to_string()).unwrap_or_default(),
             fmt_opt_dt(r.cancelled_at),
             fmt_dt(r.created_at),
@@ -873,6 +919,8 @@ pub fn serialize_company_invoice_settings_csv<W: Write>(
         "default_vat_decompte_account_id",
         "default_sales_journal",
         "journal_entry_description_template",
+        "credit_note_number_format",
+        "default_payable_account_id",
         "version",
         "created_at",
         "updated_at",
@@ -889,6 +937,8 @@ pub fn serialize_company_invoice_settings_csv<W: Write>(
             fmt_opt_i64(cis.default_vat_decompte_account_id),
             cis.default_sales_journal.as_str().to_string(),
             txt(cis.journal_entry_description_template.clone()),
+            txt(cis.credit_note_number_format.clone()),
+            fmt_opt_i64(cis.default_payable_account_id),
             cis.version.to_string(),
             fmt_dt(cis.created_at),
             fmt_dt(cis.updated_at),
@@ -1468,6 +1518,8 @@ pub fn serialize_imported_supplier_invoices_csv<W: Write>(
         "is_qr_iban",
         "creditor_address_type",
         "creditor_name",
+        "creditor_line1",
+        "creditor_line2",
         "creditor_postal_code",
         "creditor_town",
         "creditor_country",
@@ -1497,6 +1549,10 @@ pub fn serialize_imported_supplier_invoices_csv<W: Write>(
             fmt_bool(i.is_qr_iban),
             txt(i.creditor_address_type.clone()),
             txt(i.creditor_name.clone()),
+            // Adresse « combinée » (type K) : toute l'adresse tient dans ces
+            // deux lignes, NPA et localité restant vides (revue P1).
+            fmt_opt_str(&i.creditor_line1),
+            fmt_opt_str(&i.creditor_line2),
             fmt_opt_str(&i.creditor_postal_code),
             fmt_opt_str(&i.creditor_town),
             txt(i.creditor_country.clone()),
@@ -1924,4 +1980,282 @@ mod tests {
             "expected header-only, got: {text:?}"
         );
     }
+
+    // ----- Story 25-5-a, revue P1 -----
+
+    /// `sent_to` et `note` d'un rappel sont du texte saisi : ils passent par
+    /// `csv_sanitize` comme les autres cellules (ils lui échappaient).
+    #[test]
+    fn serialize_invoice_reminders_csv_neutralise_destinataire_et_note() {
+        let dt = NaiveDate::from_ymd_opt(2026, 6, 1)
+            .unwrap()
+            .and_hms_opt(9, 0, 0)
+            .unwrap();
+        let r = InvoiceReminder {
+            id: 1,
+            company_id: 1,
+            invoice_id: 1,
+            level_number: 1,
+            fee_amount: Decimal::ZERO,
+            sent_at: dt,
+            channel: "manual".into(),
+            sent_to: Some("=HYPERLINK(\"x\")".into()),
+            subject: "Rappel".into(),
+            body: "Corps".into(),
+            note: Some("+cmd|' /C calc'!A0".into()),
+            actor_user_id: None,
+            cancelled_at: None,
+            created_at: dt,
+        };
+        let mut buf = Vec::new();
+        serialize_invoice_reminders_csv(&[r], &mut buf).expect("serialize ok");
+        let text = String::from_utf8(buf[3..].to_vec()).expect("utf8");
+        assert!(
+            text.contains("'=HYPERLINK"),
+            "`sent_to` doit être neutralisé : {text}"
+        );
+        assert!(
+            text.contains("'+cmd"),
+            "`note` doit être neutralisée : {text}"
+        );
+    }
+
+    /// Une adresse « combinée » (type K) tient dans `creditor_line1` et
+    /// `creditor_line2` : les deux colonnes sortent.
+    #[test]
+    fn serialize_imported_supplier_invoices_csv_porte_les_lignes_d_adresse() {
+        let mut buf = Vec::new();
+        serialize_imported_supplier_invoices_csv(&[], &mut buf).expect("serialize ok");
+        let text = String::from_utf8(buf[3..].to_vec()).expect("utf8");
+        let header = text.lines().next().expect("header");
+        assert!(
+            header.contains("creditor_name;creditor_line1;creditor_line2;creditor_postal_code"),
+            "{header}"
+        );
+    }
+
+    /// ⛔ **Garde d'exhaustivité des COLONNES** (Story 25-5-a, revue P2).
+    ///
+    /// La garde de `exports/global.rs` tient les **tables** ; rien ne tenait
+    /// les **colonnes** — et sept des dix-neuf tables d'origine en omettaient,
+    /// dont les noms et l'adresse structurée des contacts et de la société.
+    /// Chaque en-tête est confronté au schéma de `test-schema/` (une source
+    /// **indépendante** du sérialiseur, que `test_schema_guard.rs` tient
+    /// lui-même égale au schéma réel) : toute colonne du schéma absente de
+    /// l'en-tête fait rougir, sauf celles de [`COLONNES_HORS_EXPORT`], qui
+    /// portent leur motif.
+    #[test]
+    fn chaque_colonne_du_schema_est_exportee_ou_ecartee() {
+        const SCHEMA: &str = include_str!("../../../kesh-db/test-schema/0001_schema_squash.sql");
+        fn entete(f: impl Fn(&mut Vec<u8>) -> Result<(), AppError>) -> Vec<String> {
+            let mut buf = Vec::new();
+            f(&mut buf).expect("serialize ok");
+            let text = String::from_utf8(buf[3..].to_vec()).expect("utf8");
+            text.lines()
+                .next()
+                .expect("header")
+                .split(';')
+                .map(str::to_string)
+                .collect()
+        }
+        fn colonnes(table: &str) -> Vec<String> {
+            let debut = SCHEMA
+                .find(&format!("CREATE TABLE `{table}` ("))
+                .unwrap_or_else(|| panic!("table `{table}` absente du schéma"));
+            let bloc = &SCHEMA[debut..];
+            let bloc = &bloc[..bloc.find(") ENGINE").expect("fin de table")];
+            bloc.lines()
+                .skip(1)
+                .filter_map(|l| l.trim().strip_prefix('`'))
+                .filter_map(|l| l.split('`').next())
+                .map(str::to_string)
+                .collect()
+        }
+        let tables: Vec<(&str, Vec<String>)> = vec![
+            ("companies", entete(|w| serialize_company_csv(&[], w))),
+            (
+                "fiscal_years",
+                entete(|w| serialize_fiscal_years_csv(&[], w)),
+            ),
+            ("accounts", entete(|w| serialize_accounts_csv(&[], w))),
+            (
+                "journal_entries",
+                entete(|w| serialize_journal_entries_csv(&[], w)),
+            ),
+            (
+                "journal_entry_lines",
+                entete(|w| serialize_journal_entry_lines_csv(&[], w)),
+            ),
+            ("contacts", entete(|w| serialize_contacts_csv(&[], w))),
+            ("products", entete(|w| serialize_products_csv(&[], w))),
+            ("invoices", entete(|w| serialize_invoices_csv(&[], w))),
+            (
+                "invoice_lines",
+                entete(|w| serialize_invoice_lines_csv(&[], w)),
+            ),
+            (
+                "bank_accounts",
+                entete(|w| serialize_bank_accounts_csv(&[], w)),
+            ),
+            (
+                "bank_imports",
+                entete(|w| serialize_bank_imports_csv(&[], w)),
+            ),
+            (
+                "bank_transactions",
+                entete(|w| serialize_bank_transactions_csv(&[], w)),
+            ),
+            ("vat_rates", entete(|w| serialize_vat_rates_csv(&[], w))),
+            (
+                "dunning_levels",
+                entete(|w| serialize_dunning_levels_csv(&[], w)),
+            ),
+            (
+                "company_dunning_settings",
+                entete(|w| serialize_company_dunning_settings_csv(&[], w)),
+            ),
+            (
+                "invoice_reminders",
+                entete(|w| serialize_invoice_reminders_csv(&[], w)),
+            ),
+            (
+                "company_invoice_settings",
+                entete(|w| serialize_company_invoice_settings_csv(&[], w)),
+            ),
+            (
+                "reconciliation_rules",
+                entete(|w| serialize_reconciliation_rules_csv(&[], w)),
+            ),
+            (
+                "bank_profiles",
+                entete(|w| serialize_bank_profiles_csv(&[], w)),
+            ),
+            (
+                "credit_notes",
+                entete(|w| serialize_credit_notes_csv(&[], w)),
+            ),
+            (
+                "credit_note_lines",
+                entete(|w| serialize_credit_note_lines_csv(&[], w)),
+            ),
+            (
+                "supplier_invoices",
+                entete(|w| serialize_supplier_invoices_csv(&[], w)),
+            ),
+            (
+                "supplier_invoice_lines",
+                entete(|w| serialize_supplier_invoice_lines_csv(&[], w)),
+            ),
+            (
+                "payment_batches",
+                entete(|w| serialize_payment_batches_csv(&[], w)),
+            ),
+            (
+                "payment_batch_items",
+                entete(|w| serialize_payment_batch_items_csv(&[], w)),
+            ),
+            (
+                "invoice_settlements",
+                entete(|w| serialize_invoice_settlements_csv(&[], w)),
+            ),
+            ("projects", entete(|w| serialize_projects_csv(&[], w))),
+            (
+                "contact_persons",
+                entete(|w| serialize_contact_persons_csv(&[], w)),
+            ),
+            ("audit_log", entete(|w| serialize_audit_log_csv(&[], w))),
+            (
+                "imported_supplier_invoices",
+                entete(|w| serialize_imported_supplier_invoices_csv(&[], w)),
+            ),
+        ];
+        // ⛔ Contre le REGISTRE, pas contre un nombre (revue P3) : une table
+        // ajoutée demain à `TABLES_EXPORTEES` sans entrer ici échapperait,
+        // sinon, à tout contrôle de ses colonnes.
+        let ici: std::collections::BTreeSet<&str> = tables.iter().map(|(t, _)| *t).collect();
+        let registre: std::collections::BTreeSet<&str> = crate::exports::global::TABLES_EXPORTEES
+            .iter()
+            .copied()
+            .collect();
+        assert_eq!(
+            ici, registre,
+            "la garde de colonnes doit couvrir exactement `TABLES_EXPORTEES`"
+        );
+        let mut manques = Vec::new();
+        for (table, entete) in &tables {
+            for col in colonnes(table) {
+                let ecartee = COLONNES_HORS_EXPORT
+                    .iter()
+                    .any(|(t, c, _)| t == table && *c == col);
+                // Le seul renommage : `bank_profiles.column_mapping` sort sous
+                // `column_mapping_json`. Écrit en dur, pas en règle générale
+                // (revue P3) : une règle couvrirait sans motif toute colonne future.
+                let renommee = *table == "bank_profiles"
+                    && col == "column_mapping"
+                    && entete.iter().any(|h| h == "column_mapping_json");
+                if !entete.contains(&col) && !ecartee && !renommee {
+                    manques.push(format!("{table}.{col}"));
+                }
+            }
+        }
+        assert!(
+            manques.is_empty(),
+            "colonnes ni exportées ni écartées (ajouter au sérialiseur, ou à \
+             COLONNES_HORS_EXPORT avec un motif) : {manques:?}"
+        );
+        for (t, c, motif) in COLONNES_HORS_EXPORT {
+            assert!(!motif.trim().is_empty(), "{t}.{c} : motif vide");
+            assert!(
+                colonnes(t).iter().any(|x| x == c),
+                "{t}.{c} : écartée mais absente du schéma — exemption périmée"
+            );
+            // Une colonne écartée qui entrerait dans l'en-tête garderait un
+            // motif devenu faux (revue P3).
+            let entete = &tables
+                .iter()
+                .find(|(n, _)| n == t)
+                .expect("table écartée exportée")
+                .1;
+            assert!(
+                !entete.iter().any(|h| h == c),
+                "{t}.{c} : écartée mais exportée — exemption périmée"
+            );
+        }
+    }
+
+    /// Les colonnes du schéma **volontairement** absentes de l'export, avec
+    /// leur motif. Chacune est une colonne **technique** : aucune ne porte une
+    /// information que l'export ne dirait pas déjà ailleurs.
+    const COLONNES_HORS_EXPORT: &[(&str, &str, &str)] = &[
+        (
+            "accounts",
+            "singleton_role",
+            "colonne GÉNÉRÉE (unicité d'un rôle actif) : recalculée de `role` et `active`, exportés",
+        ),
+        (
+            "contacts",
+            "client_number_canonical",
+            "forme de comparaison de `client_number` (exporté), jamais affichée",
+        ),
+        (
+            "contacts",
+            "client_number_uniq",
+            "colonne GÉNÉRÉE (unicité des numéros actifs) : dérivée de `active` et de `client_number_canonical`, elle-même forme de `client_number` (exporté)",
+        ),
+        (
+            "reconciliation_rules",
+            "active_uniq",
+            "colonne GÉNÉRÉE (unicité des règles actives) : dérivée de `active` et `match_value`, exportés",
+        ),
+        (
+            "companies",
+            "country",
+            "code pays de la Story 5.3 que rien n'écrit (il vaut toujours son défaut, `CH`) : le pays réel est `address_country`, exporté. ⚠️ La QR-facture le lit pourtant — défaut tracé par #466",
+        ),
+        (
+            "contacts",
+            "country",
+            "code pays de la Story 5.3 que rien n'écrit (il vaut toujours son défaut, `CH`) : le pays réel est `address_country`, exporté. ⚠️ La QR-facture le lit pourtant — défaut tracé par #466",
+        ),
+    ];
 }
