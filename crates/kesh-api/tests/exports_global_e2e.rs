@@ -1841,6 +1841,10 @@ async fn export_global_zip_onze_tables_neuves_sortent_et_sont_scopees(pool: MySq
         // Les identifiants référencés hors de ces tables (écritures, comptes,
         // compte bancaire) sont donc fictifs. Les contraintes CHECK, elles,
         // restent actives.
+        //
+        // ⚠️ Une panique entre les deux `SET` rendrait la connexion au pool sans
+        // contrôle des clés : sans effet — base et pool sont propres à ce test
+        // (`#[sqlx::test]`), et le test a déjà échoué (revue P2, reclassé LOW).
         let mut conn = pool.acquire().await.unwrap();
         // Identifiants fictifs DISTINCTS par société : certaines colonnes sont
         // uniques (`uq_credit_notes_invoice`).

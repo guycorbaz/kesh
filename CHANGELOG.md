@@ -22,6 +22,8 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 - **Les cellules de texte de l'export n'étaient pas neutralisées contre l'injection de formule.** Un libellé commençant par `=` ou `+` pouvait être interprété comme une formule à l'ouverture du fichier dans un tableur. La protection existait ailleurs dans Kesh ; elle est désormais appliquée ici aussi, à toutes les cellules de texte.
 
+- **Des colonnes manquaient aux tables que l'export portait déjà.** Les contacts et la société sortaient sans leur prénom, leur nom ni leur **adresse structurée** (rue, numéro, NPA, localité, pays) — seule l'ancienne adresse d'un bloc y figurait —, les contacts sans leur formule d'appel, leur langue ni leur numéro de client ; manquaient aussi l'archivage des comptes bancaires, le compte fournisseurs par défaut et le format de numérotation des avoirs. Une garde confronte désormais chaque colonne exportée au schéma de la base : une colonne ajoutée sans être exportée ni explicitement écartée fait échouer les tests.
+
 ### Changed
 
 - **Supprimer une facture validée n'est plus possible — il faut la « dévalider » d'abord.** Jusqu'ici, le bouton *Supprimer* d'une facture validée effaçait la facture **et son écriture comptable** d'un seul geste. La destruction d'une écriture était donc un **effet de bord du mot « supprimer »** : rien, dans le vocabulaire de l'écran, ne disait qu'on touchait aux livres.
