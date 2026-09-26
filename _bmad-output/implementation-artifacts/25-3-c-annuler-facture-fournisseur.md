@@ -1,6 +1,6 @@
 # Story 25.3-c : Annuler une facture fournisseur — dans tous les cas, par le socle
 
-Status: ready-for-dev
+Status: review
 
 **Issue : [#454]**, qu'elle **ferme** : `closes #454` dans le **titre ET le corps** de la PR (squash ;
 un `refs` partout laisserait l'issue ouverte sans signal).
@@ -372,16 +372,16 @@ d'annulation ne se présente pas comme une contre-passation (limite relevée par
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Socle** : `ReversalAuthority::SupplierPurchase`, 1-bis factorisée (AC 1).
-- [ ] **T2 — Motifs** : variantes `SupplierInvoiceCancelled`, `SupplierInvoiceInPaymentBatch` (placées, doc-comment de l'enum complété) ; doc-comments de la queue réécrits ;
+- [x] **T1 — Socle** : `ReversalAuthority::SupplierPurchase`, 1-bis factorisée (AC 1).
+- [x] **T2 — Motifs** : variantes `SupplierInvoiceCancelled`, `SupplierInvoiceInPaymentBatch` (placées, doc-comment de l'enum complété) ; doc-comments de la queue réécrits ;
       `supplier_invoice_cancel_blocker` ; `in_generated_batch`
       extraite ; `DbError::SupplierInvoiceNotCancellable` et son mapping 409 (AC 2).
-- [ ] **T3 — Le geste** : `cancel_in_tx` + `cancel` (AC 3), audit enrichi.
-- [ ] **T4 — Lecture** : `get_settlement_view` étendue, trois champs, réponse de `cancel` (AC 4, 5).
-- [ ] **T5 — Textes** : `OWNED_BY_SUPPLIER_INVOICE` (AC 6), familles et replis (AC 8).
-- [ ] **T6 — Écran** (AC 7).
-- [ ] **T7 — Tests** (AC 9), dont les mutations.
-- [ ] **T8 — Documentation et gates** (AC 10), PR `closes #454`.
+- [x] **T3 — Le geste** : `cancel_in_tx` + `cancel` (AC 3), audit enrichi.
+- [x] **T4 — Lecture** : `get_settlement_view` étendue, trois champs, réponse de `cancel` (AC 4, 5).
+- [x] **T5 — Textes** : `OWNED_BY_SUPPLIER_INVOICE` (AC 6), familles et replis (AC 8).
+- [x] **T6 — Écran** (AC 7).
+- [x] **T7 — Tests** (AC 9), dont les mutations.
+- [x] **T8 — Documentation et gates** (AC 10), PR `closes #454`.
 
 ## Dev Notes
 
@@ -430,16 +430,104 @@ d'annulation ne se présente pas comme une contre-passation (limite relevée par
 
 ### Agent Model Used
 
+Claude Opus 5.5 — implémentation.
+
 ### Debug Log References
+
+- Premier montage d'un lot de paiement en SQL direct : il faut un vrai compte bancaire (FK), créé
+  dans le test ; le lot n'est pas l'objet du test, seul son statut `generated` compte.
+- Une mutation mal ancrée (le texte de l'`UPDATE` apparaît **deux fois** — dans `cancel_in_tx` et
+  dans `cancel_settlement_in_tx`) a d'abord laissé le code intact et le test vert : l'outil de
+  mutation l'a refusée, elle a été refaite sur le seul `UPDATE` du geste. *Une mutation qui ne
+  s'applique pas ressemble à une mutation qui survit.*
 
 ### Completion Notes List
 
+- **Socle** : `ReversalAuthority::SupplierPurchase`. L'étape 1-bis de `reverse_in_tx_inner` est
+  **factorisée** pour les deux autorités fournisseur : un `match` choisit le littéral SQL complet
+  (colonne `settlement_journal_entry_id` ou `purchase_journal_entry_id`), jamais interpolé.
+- **Motifs** : `SupplierInvoiceCancelled` (après `SupplierInvoiceNotPaid`) et
+  `SupplierInvoiceInPaymentBatch` (en dernier) ; doc-comment de l'enum complété (précédence
+  composée par la fonction de tête). `supplier_invoices::supplier_invoice_cancel_blocker` : rang 1,
+  puis la **queue commune** sur l'écriture d'**achat** (aucun jumeau), puis le lot.
+  `in_generated_batch` extraite, appelée par la garde de `pay` et par le dernier rang.
+  `DbError::SupplierInvoiceNotCancellable` → 409 avec le code. Doc-comments de la queue réécrits
+  (elle ne dit plus « règlement » seulement).
+- **Geste** : `cancel_in_tx` + `cancel` (signature inchangée). Verrous d'abord — facture, puis
+  écriture d'achat **et** exercice —, puis les motifs ; contre-passation par le socle ; `UPDATE`
+  unique pour `open` et `paid`, colonnes de règlement **remises à `NULL`** (arbitrage Q1) ; audit
+  `supplier_invoice.cancelled` avec `previousStatus`, `purchaseJournalEntryId`,
+  `reversalJournalEntryId` et, payée, `settlementJournalEntryId`, `settlementType`, `paidAt`.
+  **Plus aucune ligne ne lit `journal_entry_lines`** dans `cancel`.
+- **Lecture** : `SupplierInvoiceSettlementView.cancel_blocker` renommé `settlement_cancel_blocker`,
+  champ neuf `invoice_cancel_blocker`, lus dans le même instantané. `SupplierInvoiceResponse` gagne
+  `cancellable`, `cancelBlockedBy`, `cancelBlockedLabel` (`null` = non calculé) ; la réponse de
+  `cancel` est désormais relue par `load_with_settlement_cancellation` (nom conservé).
+- **Textes** : `OWNED_BY_SUPPLIER_INVOICE` réécrit (FTL ×4, repli serveur, repli Svelte) ; neuf
+  clés neuves ×4 ; `supplier-invoices-cancel-confirm` réécrite ; famille propre
+  `supplier-invoices-cancel-blocked-*` (serveur : `supplier_invoice_cancel_blocked_text` ; écran :
+  `features/supplier-invoices/invoice-cancel.ts`). Gardes i18n **recomptées** depuis la source :
+  `sitesTotal` 1709 → **1719** (page 35 → 39, `invoice-cancel.ts` 0 → 6), `CLES_RELEVEES`
+  201 → **210** (+9 nommées).
+- **Écran** : un seul bloc d'annulation hors des branches `open` / `paid`, bouton si
+  `cancellable === true` **et** rôle d'écriture (il était visible du Consultant) ; motif sinon,
+  jamais « déjà annulée » ; confirmation `confirm()` qui, payée, dit « paiement sans facture » ;
+  refus dans `cancelError`, **jamais** `errorMsg` ; fiche `cancelled` : « Facture annulée. » seul.
+- **Mutations**, vues rouges puis restaurées : contrôle de l'autorité achat neutralisé
+  (`OR TRUE`) → `purchase_authority_never_covers_the_settlement_entry` ; colonne de règlement non
+  vidée → `cancel_paid_invoice_detaches_its_settlement` (« règlement détaché ») ; lot avant la
+  queue → `invoice_cancel_motives_and_their_precedence` ; verrou d'exercice retiré **et** lecture
+  non verrouillante avant les verrous → `a_concurrent_close_waits_for_the_invoice_cancellation`
+  (la seconde : « reçu Ok(()) » — l'annulation passe sur un exercice qu'on vient de clore) ; écran :
+  bloc réservé à `open`, refus dans `errorMsg` → rouges.
+- **Documentation** : manuel — sous-section « Annuler une facture fournisseur » (§ 11.3), phrase
+  de l'annulation du règlement **réécrite** (annuler le règlement n'est plus un préalable), chemin
+  par pièce, exception d'exercice clôturé étendue, liste des corrections ; PDF régénéré et
+  **contrôlé aplati** (référence résolue, ancienne phrase absente). `api-external.md` (route, champs,
+  codes, changement de comportement), README, CHANGELOG (*Fixed* #454 et le bouton du Consultant ;
+  *Changed* : facture payée annulable, refus nouveaux, description). Inventaire `#454` refait : le
+  doc-comment du socle qui décrivait l'ancien `cancel` est réécrit.
+
+### Gates
+
+- Backend : base remise à zéro (redémarrage tmpfs, 69 migrations, seed), `scripts/test-fast.sh`
+  → **2472 / 2472** (4 ignorés) — 2463 + 9 : 7 tests de dépôt neufs (un huitième, réécrit, remplace
+  `cancel_paid_invoice_rejected`) et 2 tests HTTP.
+- Frontend : `check` 0 erreur (27 avertissements), `lint-i18n-ownership` PASS, `test:unit`
+  **783 / 783** (777 + 6), build OK.
+- E2E : `kesh_e2e` migrée à neuf après le redémarrage, montage complet (`smtpConfigured:true`),
+  run à **10:12 UTC** : **220 passés / 10 échoués / 19 ignorés, zéro régression** — les 7 de
+  KF-029, les 2 de KF-045 (`invoices.spec.ts:415`, `:439`, run matinal), `sidebar-navigation:75`
+  (pollution déjà relevée). Le test neuf « annuler une facture payée : le règlement reste, détaché
+  et contre-passable » passe.
+
 ### File List
+
+| Fichier | Nature |
+|---|---|
+| `crates/kesh-db/src/repositories/journal_entries.rs` | `SupplierPurchase`, 1-bis factorisée, doc du socle |
+| `crates/kesh-db/src/errors.rs` | deux variantes de motif, `SupplierInvoiceNotCancellable`, docs |
+| `crates/kesh-db/src/repositories/settlement_cancellation.rs` | doc-comments de la queue |
+| `crates/kesh-db/src/repositories/supplier_invoices.rs` | `in_generated_batch`, tête, `cancel_in_tx`, `cancel`, vue |
+| `crates/kesh-db/tests/supplier_invoices_repository.rs` | 1 test complété, 1 réécrit, 7 neufs |
+| `crates/kesh-db/tests/invoice_settlement.rs` | `match` complété |
+| `crates/kesh-api/src/errors.rs` | mapping 409, `supplier_invoice_cancel_blocked_text`, texte d'`OWNED_BY_SUPPLIER_INVOICE` |
+| `crates/kesh-api/src/routes/supplier_invoices.rs` | trois champs, réponse de `cancel` relue |
+| `crates/kesh-api/tests/supplier_settlement_cancel_e2e.rs` | +2 tests |
+| `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` | 9 clés neuves ×4, 2 réécrites |
+| `frontend/src/lib/features/supplier-invoices/invoice-cancel.ts` | **neuf** — textes des motifs |
+| `frontend/src/lib/features/supplier-invoices/supplier-invoices.{api,types}.ts` | commentaire, champs |
+| `frontend/src/routes/(app)/supplier-invoices/[id]/+page.svelte` (+ `supplier-settlement-page.test.ts`) | la fiche, +6 tests |
+| `frontend/src/routes/(app)/journal-entries/[id]/+page.svelte` | repli d'`OWNED_BY_SUPPLIER_INVOICE` |
+| `frontend/src/lib/shared/i18n-keys.test.ts`, `i18n-un-repli-par-cle.test.ts` | décomptes recomptés |
+| `frontend/tests/e2e/supplier-invoices.spec.ts` | +1 test |
+| `docs/manual/fr/user-manual.tex` / `.pdf`, `docs/api-external.md`, `CHANGELOG.md`, `README.md` | documentation |
 
 ## Change Log
 
 | Date | Étape | Note |
 |---|---|---|
+| 2026-09-26 | dev | Implémentée (Opus 5.5) sur `main` à `0e4c2682`. Socle étendu (`SupplierPurchase`, 1-bis factorisée), tête de l'annulation de facture sur la queue commune, geste par le socle — verrous d'abord —, règlement **détaché** (Q1), trois champs de lecture, écran à bloc unique réservé aux rôles d'écriture, textes ×4, documentation. Sept mutations vues rouges. Gates : backend **2472/2472**, frontend 783/783 + check + lint + build, E2E 220/10/19 **sans régression**. Ferme #454 à la PR (`closes #454`). |
 | 2026-09-26 | validate P2 | **Deux lentilles Haiku 4.5** en contexte frais, prompt versionné `25-3-c-validate-prompt-p2.md` (premier suspect : la remédiation P1, `git diff 33fbe9ec 3dc2e617`), axes déclarés par chacune (non exercés : `cargo check`, `supplier_settlement_cancel_e2e.rs` et vitest ligne à ligne, manuels DE/IT/EN, `payment_batches.rs` au-delà du grep). **Lentille A : 0 finding.** **Lentille B : 1 « MEDIUM » que la lentille déclare elle-même « pas un défaut, juste noté »** (l'AC 5 et l'AC 2 sont dans deux sections — le nommage des deux champs y est pourtant imposé), reclassé LOW ; 5 LOW, tous de même nature (« le dev devra déduire… »), aucun ne signale une absence ou une erreur de la fiche. ⚠️ Une affirmation de la lentille B est **fausse** et écartée : la confirmation n'est pas un fragment Svelte à assembler, c'est le `confirm()` natif que la fiche utilise déjà (`+page.svelte:135`, `:156`). ⇒ **0 au-dessus de LOW : boucle close.** **Trend** : P1 Sonnet 3 MED / 6 LOW → P2 Haiku 0 > LOW. Spec **validée**. |
 | 2026-09-26 | validate P1 | **Deux lentilles Sonnet** en contexte frais, prompt versionné `25-3-c-validate-prompt-p1.md`, axes déclarés par chacune (non exercés : `cargo check`, `confirm_batch` ligne à ligne, `supplier_settlement_cancel_e2e.rs` ligne à ligne, manuels DE/IT/EN). **Lentille A : 1 « CRITICAL » reclassé MEDIUM, 1 LOW ; lentille B : 2 MEDIUM, 5 LOW.** Le reclassement : la collision de noms se serait vue à la **compilation**, elle n'aurait rien livré de faux — mais le nommage n'était pas donné. ① **Collision** : `SupplierInvoiceSettlementView` a **déjà** un champ `cancel_blocker` (celui du règlement, `supplier_invoices.rs:1109`) → nommage **imposé** : l'existant devient `settlement_cancel_blocker`, le neuf `invoice_cancel_blocker` (`grep -rnF ".cancel_blocker" crates` : la route `:162` et deux assertions de test ; `reconciliation.rs:3575` lit l'homonyme d'une **autre** vue — ⚠️ la première rédaction de ce correctif disait « un seul lecteur », rattrapé par le grep de propagation). ② La fiche affirmait que le doc-comment de la queue « dit déjà » qu'elle porte sur une écriture — **faux**, il dit « règlement » (`settlement_cancellation.rs:1-11`, `:24-25`) → réécriture exigée (T2). ③ Manuel `:1157-1160` : à **réécrire**, non à citer — il laissait croire qu'annuler une facture payée exige d'annuler d'abord son règlement. LOW : place des deux variantes dans l'enum dont l'ordre « est la précédence » ; `errors.rs:66-69` → `:67-70`, `:324-331` → `:322-332` ; un seul bloc de marquage pour le bouton ; variable `cancelError` ; clés de texte nommées (deux, non une). Tout le reste **confirmé** par les deux lentilles : les cinq sites `matched_entry_id`, `chk_supplier_invoices_paid_has_settlement`, les huit sites du texte `OWNED_BY_SUPPLIER_INVOICE`, `journal_entries.rs:426`, la collision de codes vide, le registre de routes inchangé, `lint-i18n-ownership`. Symptôme grepé : `cancel_blocker` (4 occurrences dans la fiche, toutes relues), `:66-69` (2 sites, corrigés). Périmètre : cinq modules, **au seuil** de découpage sans le franchir. |
 | 2026-09-26 | arbitrage Q1 | Guy : *« son règlement repasse dans l'état “à réconcilier”, comme si aucune facture n'y était liée »* ⇒ le règlement est **détaché** : colonnes `settlement_*` et `paid_at` remises à `NULL`, écriture de règlement libre (contre-passable depuis sa fiche), lien gardé par l'audit. Retirés : le dédoublement de la tête du règlement et sa clé ; la fiche `cancelled` n'affiche plus de lien. « À réconcilier » lu « sans facture, à rattacher » — aucune transaction bancaire n'est touchée (dit en § Arbitrage). |

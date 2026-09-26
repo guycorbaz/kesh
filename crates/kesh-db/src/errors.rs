@@ -65,8 +65,10 @@ pub enum ReversalBlocker {
     /// L'avoir EST déjà la contre-passation de la facture.
     OwnedByCreditNote,
     /// Écriture d'achat ou de règlement d'une facture fournisseur → le chemin
-    /// est `supplier_invoices::cancel` pour l'achat, `cancel_settlement` pour le
-    /// règlement (Story 25-3-a-2), qui contre-passe au titre de la facture.
+    /// est la fiche de la facture : `supplier_invoices::cancel` pour l'achat
+    /// (par le socle depuis la Story 25-3-c), `cancel_settlement` pour le
+    /// règlement (Story 25-3-a-2) — tous deux contre-passent au titre de la
+    /// facture.
     OwnedBySupplierInvoice,
     /// ⛔ Le cas le plus grave : le résiduel se calcule depuis
     /// `invoice_settlements.amount`, que la contre-passation ne toucherait pas —
@@ -194,6 +196,15 @@ impl UnvalidationBlocker {
 /// 1 et 2 ([`DbError::SettlementNotCancellable`]) ; les rangs 3 à 5 sont
 /// refusés par le socle, avec son erreur canonique — c'est ce qui garde le 400
 /// qui **nomme** les comptes archivés.
+///
+/// ⚠️ **L'annulation d'une FACTURE fournisseur** (Story 25-3-c, #454) emprunte
+/// cet enum sans en suivre l'ordre de déclaration : sa précédence est
+/// **composée par sa fonction de tête**
+/// (`supplier_invoices::supplier_invoice_cancel_blocker` — rang 1
+/// `SupplierInvoiceCancelled`, la queue sur l'écriture d'ACHAT, puis
+/// `SupplierInvoiceInPaymentBatch` en dernier), et c'est cette fonction qu'un
+/// test fixe. Refusés par son geste ([`DbError::SupplierInvoiceNotCancellable`]) :
+/// les deux têtes et l'exercice clos.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettlementCancelBlocker {
     /// Tête du **dé-rapprochement** (Story 25-3-b, #418), rang 0 : la
@@ -210,6 +221,9 @@ pub enum SettlementCancelBlocker {
     /// facture non `paid` n'a pas d'écriture de règlement, la queue ne s'évalue
     /// pas. Même rang que `InvoiceCredited` : chaque pièce n'a que sa propre tête.
     SupplierInvoiceNotPaid,
+    /// Tête de l'**annulation d'une facture fournisseur** (Story 25-3-c), rang
+    /// 1 : la facture est déjà `cancelled`. Coupe court.
+    SupplierInvoiceCancelled,
     /// L'écriture de règlement est dans un exercice **clos** : un
     /// Administrateur peut le rouvrir (`fiscal_years::reopen`), et c'est le
     /// chemin (arbitrage Q5).
@@ -224,6 +238,11 @@ pub enum SettlementCancelBlocker {
     /// Aucun exercice **ouvert** ne couvre le jour, où la contre-passation
     /// serait datée.
     NoOpenFiscalYearToday,
+    /// Annulation d'une facture fournisseur (Story 25-3-c), **dernier** rang :
+    /// la facture est engagée dans un lot de paiement `generated`. Dernier
+    /// parce que le lever est le geste le plus lourd — annuler le lot — et
+    /// qu'il serait vain avant un exercice clos.
+    SupplierInvoiceInPaymentBatch,
 }
 
 impl SettlementCancelBlocker {
@@ -238,10 +257,12 @@ impl SettlementCancelBlocker {
             Self::BankTransactionNotReconciled => "BANK_TRANSACTION_NOT_RECONCILED",
             Self::InvoiceCredited => "INVOICE_CREDITED",
             Self::SupplierInvoiceNotPaid => "SUPPLIER_INVOICE_NOT_PAID",
+            Self::SupplierInvoiceCancelled => "SUPPLIER_INVOICE_CANCELLED",
             Self::FiscalYearClosed => "FISCAL_YEAR_CLOSED",
             Self::MatchedBankTransaction => "MATCHED_BANK_TRANSACTION",
             Self::AccountArchived => "ACCOUNT_ARCHIVED",
             Self::NoOpenFiscalYearToday => "FISCAL_YEAR_INVALID",
+            Self::SupplierInvoiceInPaymentBatch => "SUPPLIER_INVOICE_IN_PAYMENT_BATCH",
         }
     }
 }
@@ -461,6 +482,18 @@ pub enum DbError {
     #[error("Rapprochement non annulable ({})", .blocker.code())]
     ReconciliationNotCancellable { blocker: SettlementCancelBlocker },
 
+    /// La facture fournisseur ne peut pas être annulée (Story 25-3-c, #454).
+    ///
+    /// Conflit d'état → HTTP **409**, avec le code canonique du
+    /// [`SettlementCancelBlocker`]. ⛔ **Distincte de `SettlementNotCancellable`**
+    /// pour la même raison que `ReconciliationNotCancellable` : ses textes
+    /// disent « cette facture », non « ce règlement ». Seuls les rangs que le
+    /// geste refuse lui-même passent par ici (facture déjà annulée, exercice de
+    /// l'achat clos, lot en cours) ; les autres sont refusés par la
+    /// contre-passation, avec son erreur propre.
+    #[error("Facture fournisseur non annulable ({})", .blocker.code())]
+    SupplierInvoiceNotCancellable { blocker: SettlementCancelBlocker },
+
     /// Un brouillon **numéroté** changerait d'exercice (Story 25-2-b-1, #440).
     ///
     /// Le numéro vient du compteur de l'exercice qui couvre la date : le
@@ -629,6 +662,7 @@ impl DbError {
             Self::InvoiceNotUnvalidatable { blocker, .. } => blocker.code(),
             Self::SettlementNotCancellable { blocker } => blocker.code(),
             Self::ReconciliationNotCancellable { blocker } => blocker.code(),
+            Self::SupplierInvoiceNotCancellable { blocker } => blocker.code(),
             Self::InvoiceNumberFiscalYearMismatch => "INVOICE_NUMBER_FISCAL_YEAR_MISMATCH",
             Self::InvoiceMustBeUnvalidatedFirst => "INVOICE_MUST_BE_UNVALIDATED_FIRST",
             Self::EntryIsReversed => "ENTRY_IS_REVERSED",

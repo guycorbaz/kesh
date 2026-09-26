@@ -339,7 +339,7 @@ journal-entries-reverse-blocked-is-a-reversal = Cette écriture est elle-même u
 journal-entries-reverse-blocked-already-reversed = Cette écriture a déjà été contre-passée.
 journal-entries-reverse-blocked-invoice = Cette écriture appartient à une facture client : dévalidez la facture, ou corrigez-la par un avoir.
 journal-entries-reverse-blocked-credit-note = Cette écriture est celle d'un avoir, qui est déjà une contre-passation.
-journal-entries-reverse-blocked-supplier-invoice = Cette écriture appartient à une facture fournisseur : annulez la facture ou son règlement depuis sa fiche.
+journal-entries-reverse-blocked-supplier-invoice = Cette écriture appartient à une facture fournisseur : elle se corrige depuis la fiche de la facture, qui indique ce qui est possible.
 journal-entries-reverse-blocked-settlement = Cette écriture est un règlement de facture : annulez le règlement depuis la fiche de la facture, qui indique si c'est possible.
 journal-entries-reverse-blocked-bank-match = Cette écriture est rapprochée d'une transaction bancaire : annulez le rapprochement depuis le détail de l'import bancaire.
 journal-entries-reverse-blocked-account-archived = Un compte de cette écriture a été archivé : réactivez-le pour pouvoir la contre-passer.
@@ -1745,7 +1745,16 @@ imported-supplier-invoices-error-file-read-error = Lecture du fichier impossible
 imported-supplier-invoices-error-field-too-long = Un champ du QR dépasse la longueur autorisée
 supplier-invoices-add-line = Ajouter une ligne
 supplier-invoices-cancel = Annuler la facture
-supplier-invoices-cancel-confirm = Annuler cette facture fournisseur ?
+supplier-invoices-cancel-confirm = Annuler cette facture ? Une écriture inverse de l'achat, datée d'aujourd'hui, sera passée au grand livre.
+supplier-invoices-cancel-confirm-paid = Elle est payée : son règlement reste au grand livre, détaché de la facture — un paiement sans facture, à rattacher. Si c'est le paiement lui-même qui est erroné, annulez plutôt le règlement d'abord.
+supplier-invoices-cancelled = Facture annulée : l'écriture inverse de l'achat a été passée au grand livre.
+supplier-invoices-cancelled-info = Facture annulée.
+supplier-invoices-cancel-blocked-cancelled = Cette facture fournisseur est déjà annulée.
+supplier-invoices-cancel-blocked-fiscal-year-closed = Cette facture appartient à un exercice clôturé : un administrateur doit rouvrir l'exercice pour pouvoir l'annuler.
+supplier-invoices-cancel-blocked-bank-match = L'écriture d'achat de cette facture est rapprochée d'une transaction bancaire : annulez d'abord ce rapprochement.
+supplier-invoices-cancel-blocked-account-archived = Un compte de l'écriture d'achat de cette facture a été archivé : réactivez-le pour pouvoir annuler la facture.
+supplier-invoices-cancel-blocked-no-fiscal-year = Aucun exercice ouvert ne couvre la date du jour : créez-le pour pouvoir annuler cette facture.
+supplier-invoices-cancel-blocked-in-payment-batch = Cette facture figure dans un lot de paiement en cours : annulez d'abord le lot.
 
 ## Story 25-3-a-2 (#414) — annuler un règlement fournisseur
 supplier-invoices-settlement-cancel-button = Annuler le règlement
