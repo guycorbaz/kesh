@@ -58,7 +58,11 @@ export async function cancelSupplierInvoiceSettlement(
 	return apiClient.post(`/api/v1/supplier-invoices/${id}/settlement/cancel`, {});
 }
 
-/** Annule une facture fournisseur « ouverte » (contre-passe l'écriture d'achat). */
+/**
+ * Annule une facture fournisseur, ouverte ou payée (Story 25-3-c) : contre-passe
+ * l'écriture d'achat ; payée, son règlement reste au grand livre, détaché.
+ * Rend la facture relue avec ses champs de lecture.
+ */
 export async function cancelSupplierInvoice(id: number): Promise<SupplierInvoiceResponse> {
 	return apiClient.post(`/api/v1/supplier-invoices/${id}/cancel`, {});
 }

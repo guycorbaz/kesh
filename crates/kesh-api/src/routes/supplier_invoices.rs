@@ -4,7 +4,7 @@
 //! - `GET    /api/v1/supplier-invoices/{id}`     détail + lignes (tout rôle)
 //! - `POST   /api/v1/supplier-invoices`          enregistrer (Comptable+, RBAC routing)
 //! - `POST   /api/v1/supplier-invoices/{id}/pay` régler binaire (Comptable+)
-//! - `POST   /api/v1/supplier-invoices/{id}/cancel` annuler (Comptable+)
+//! - `POST   /api/v1/supplier-invoices/{id}/cancel` annuler, même payée (Comptable+)
 //!
 //! Erreurs métier (config absente, déjà payée, compte étranger/inactif, etc.)
 //! → `AppError` typée 4xx, jamais 500 (AC5/AC9).
@@ -100,6 +100,17 @@ pub struct SupplierInvoiceResponse {
     /// prévenir, avant d'annuler, que la banque a peut-être déjà exécuté un
     /// ordre pour cette facture — donc un double paiement.
     pub last_confirmed_batch: Option<LastConfirmedBatchResponse>,
+    /// Story 25-3-c (#454) — la **facture** peut-elle être annulée ?
+    ///
+    /// ⚠️ Même discipline que `settlement_cancellable` : **`None` = non
+    /// calculé ici**, jamais « non ». Calculé par la fonction même qui refuse
+    /// (`supplier_invoices::supplier_invoice_cancel_blocker`), dans le même
+    /// instantané que la facture. Ne tient pas compte du rôle.
+    pub cancellable: Option<bool>,
+    /// Code du motif qui empêche l'annulation de la facture.
+    pub cancel_blocked_by: Option<&'static str>,
+    /// Le numéro du compte archivé, quand c'est le motif.
+    pub cancel_blocked_label: Option<String>,
 }
 
 /// Le lot confirmé le plus récent qui contient une facture (Story 25-3-a-2).
@@ -141,6 +152,9 @@ impl SupplierInvoiceResponse {
             settlement_cancel_blocked_by: None,
             settlement_cancel_blocked_label: None,
             last_confirmed_batch: None,
+            cancellable: None,
+            cancel_blocked_by: None,
+            cancel_blocked_label: None,
         }
     }
 
@@ -159,11 +173,15 @@ impl SupplierInvoiceResponse {
         let view = supplier_invoices::get_settlement_view(pool, company_id, id)
             .await?
             .ok_or(AppError::Database(DbError::NotFound))?;
-        let hit = view.cancel_blocker;
+        let hit = view.settlement_cancel_blocker;
+        let invoice_hit = view.invoice_cancel_blocker;
         let mut resp = Self::from_parts(view.invoice, view.lines);
         resp.settlement_cancellable = Some(hit.is_none());
         resp.settlement_cancel_blocked_by = hit.as_ref().map(|h| h.0.code());
         resp.settlement_cancel_blocked_label = hit.and_then(|h| h.2);
+        resp.cancellable = Some(invoice_hit.is_none());
+        resp.cancel_blocked_by = invoice_hit.as_ref().map(|h| h.0.code());
+        resp.cancel_blocked_label = invoice_hit.and_then(|h| h.2);
         resp.last_confirmed_batch = view
             .last_confirmed_batch
             .map(|(id, confirmed_at)| LastConfirmedBatchResponse { id, confirmed_at });
@@ -372,19 +390,22 @@ pub async fn pay_supplier_invoice(
     ))
 }
 
-/// `POST /api/v1/supplier-invoices/{id}/cancel` — annule une facture `open` (Comptable+).
+/// `POST /api/v1/supplier-invoices/{id}/cancel` — annule une facture
+/// fournisseur, **ouverte ou payée** (Comptable+, Story 25-3-c, #454) :
+/// contre-passe l'écriture d'achat par le socle ; payée, son règlement reste au
+/// grand livre, détaché. La réponse est relue avec ses champs de lecture, dans
+/// un seul instantané.
 pub async fn cancel_supplier_invoice(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    let cancelled =
-        supplier_invoices::cancel(&state.pool, company.id, id, current_user.user_id).await?;
-    Ok(Json(SupplierInvoiceResponse::from_parts(
-        cancelled.invoice,
-        cancelled.lines,
-    )))
+    supplier_invoices::cancel(&state.pool, company.id, id, current_user.user_id).await?;
+    Ok(Json(
+        SupplierInvoiceResponse::load_with_settlement_cancellation(&state.pool, company.id, id)
+            .await?,
+    ))
 }
 
 /// Réponse de l'annulation d'un règlement fournisseur : la facture relue, et

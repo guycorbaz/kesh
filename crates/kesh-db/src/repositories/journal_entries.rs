@@ -1424,13 +1424,12 @@ where
 /// laisserait une écriture inverse sans son effet. *Une facture qui se dit
 /// impayée alors que le grand livre dit le contraire.*
 ///
-/// ⛔ **ET C'EST CE QUI EMPÊCHE UNE TROISIÈME CONTRE-PASSATION.**
-/// `supplier_invoices::cancel` contourne déjà le problème en réécrivant la
-/// sienne à la main : elle relit les lignes, inverse débit et crédit, et
-/// appelle `create_in_tx` — qui passe toujours `None`. Elle ne pose donc
-/// **jamais** `reverses_entry_id` et ne consulte **jamais**
-/// [`reversal_blocker`]. ⚠️ **Ne pas l'imiter** : la 25-3 allait en écrire une
-/// troisième, et c'est ce refactor qui l'évite.
+/// ⛔ **ET C'EST CE QUI EMPÊCHE UNE SECONDE CONTRE-PASSATION.**
+/// `supplier_invoices::cancel` réécrivait la sienne à la main — elle ne posait
+/// jamais `reverses_entry_id` et ne consultait jamais [`reversal_blocker`]
+/// (#454). Depuis la Story 25-3-c, elle passe par ce socle. ⚠️ Toute
+/// annulation qui contre-passe une écriture passe par ici : ne pas en réécrire
+/// une à la main.
 ///
 /// N'exécute **pas** de rollback en cas d'erreur (n'a qu'un `&mut` sur la
 /// transaction) : l'appelant, propriétaire, en est responsable — le drop de
@@ -1472,6 +1471,11 @@ pub enum ReversalAuthority {
     /// socle**, pas dans le geste : le geste ne passe jamais que l'écriture de
     /// règlement, le contrôle y serait vrai par construction, donc intestable.
     SupplierSettlement { supplier_invoice_id: i64 },
+    /// Annulation d'une facture fournisseur (Story 25-3-c, #454) : lève
+    /// `OwnedBySupplierInvoice` pour la facture nommée — **et pour son écriture
+    /// d'ACHAT seulement**. Symétrique exact de `SupplierSettlement` : le même
+    /// contrôle en base, sur l'autre colonne.
+    SupplierPurchase { supplier_invoice_id: i64 },
 }
 
 impl ReversalAuthority {
@@ -1482,6 +1486,9 @@ impl ReversalAuthority {
                 blocker == ReversalBlocker::OwnedBySettlement && document_id == Some(settlement_id)
             }
             Self::SupplierSettlement {
+                supplier_invoice_id,
+            }
+            | Self::SupplierPurchase {
                 supplier_invoice_id,
             } => {
                 blocker == ReversalBlocker::OwnedBySupplierInvoice
@@ -1529,27 +1536,41 @@ async fn reverse_in_tx_inner(
     .map_err(map_db_error)?;
     let (_, entry_number, origin_fy_name) = origin.ok_or(DbError::NotFound)?;
 
-    // (1-bis) ⛔ L'autorité fournisseur ne vaut que pour l'écriture de
-    // RÈGLEMENT de la facture nommée — jamais pour son écriture d'achat, que
-    // `reversal_blockers` rattache à la même pièce. Faute de correspondance,
-    // l'autorité est retirée et le motif est opposé comme sans elle.
-    let authority = match authority {
+    // (1-bis) ⛔ Une autorité fournisseur ne vaut que pour l'écriture de SON
+    // rôle — règlement (25-3-a-2) ou achat (25-3-c) — de la facture nommée :
+    // `reversal_blockers` rattache les deux écritures à la même pièce. Faute de
+    // correspondance, l'autorité est retirée et le motif est opposé comme sans
+    // elle. ⚠️ La colonne est choisie par le `match`, en littéral SQL complet —
+    // jamais interpolée.
+    let role_check = match authority {
         Some(ReversalAuthority::SupplierSettlement {
             supplier_invoice_id,
-        }) => {
-            let is_settlement_entry: Option<i64> = sqlx::query_scalar(
-                "SELECT id FROM supplier_invoices \
-                 WHERE id = ? AND company_id = ? AND settlement_journal_entry_id = ?",
-            )
-            .bind(supplier_invoice_id)
-            .bind(company_id)
-            .bind(id)
-            .fetch_optional(&mut **tx)
-            .await
-            .map_err(map_db_error)?;
-            is_settlement_entry.and(authority)
+        }) => Some((
+            supplier_invoice_id,
+            "SELECT id FROM supplier_invoices \
+             WHERE id = ? AND company_id = ? AND settlement_journal_entry_id = ?",
+        )),
+        Some(ReversalAuthority::SupplierPurchase {
+            supplier_invoice_id,
+        }) => Some((
+            supplier_invoice_id,
+            "SELECT id FROM supplier_invoices \
+             WHERE id = ? AND company_id = ? AND purchase_journal_entry_id = ?",
+        )),
+        Some(ReversalAuthority::ClientSettlement { .. }) | None => None,
+    };
+    let authority = match role_check {
+        Some((supplier_invoice_id, sql)) => {
+            let plays_the_role: Option<i64> = sqlx::query_scalar(sql)
+                .bind(supplier_invoice_id)
+                .bind(company_id)
+                .bind(id)
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(map_db_error)?;
+            plays_the_role.and(authority)
         }
-        other => other,
+        None => authority,
     };
 
     // ⛔ **`AccountArchived` est le seul motif que l'ÉCRITURE ne traite pas

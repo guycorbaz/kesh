@@ -1,4 +1,5 @@
-//! Annuler le règlement d'une facture fournisseur par l'API — Story 25-3-a-2 (#414).
+//! Annuler le règlement d'une facture fournisseur par l'API — Story 25-3-a-2 (#414) —
+//! et annuler la facture elle-même, même payée — Story 25-3-c (#454).
 //!
 //! ⚠️ Premier fichier de tests HTTP des factures fournisseurs : le montage de
 //! l'application est repris de `invoice_echeancier_e2e.rs` (chaque binaire de
@@ -307,5 +308,146 @@ async fn cancel_settlement_roles_and_refusals(pool: MySqlPool) {
         .await
         .status(),
         404
+    );
+}
+
+/// ⛔ **Story 25-3-c — annuler une facture PAYÉE, par HTTP.** Le GET dit
+/// « annulable » ; l'annulation rend la facture relue avec ses champs :
+/// `cancelled`, règlement détaché, « déjà annulée » comme motif.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn pay_then_cancel_the_invoice(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let id = open_invoice(&pool, &seeded).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    let v: Value = get(&app, &token, &format!("/api/v1/supplier-invoices/{id}"))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(v["cancellable"], true, "ouverte : annulable");
+    assert!(v["cancelBlockedBy"].is_null());
+
+    supplier_invoices::pay(
+        &pool,
+        seeded.company_id,
+        id,
+        SettlementChoice::InternalAccount {
+            account_id: seeded.accounts["1000"],
+        },
+        NaiveDate::from_ymd_opt(2026, 6, 20).unwrap(),
+        seeded.admin_user_id,
+    )
+    .await
+    .unwrap();
+    let v: Value = get(&app, &token, &format!("/api/v1/supplier-invoices/{id}"))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(v["cancellable"], true, "payée : annulable aussi");
+
+    let resp = post(
+        &app,
+        &token,
+        &format!("/api/v1/supplier-invoices/{id}/cancel"),
+        json!({}),
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+    let v: Value = resp.json().await.unwrap();
+    assert_eq!(v["status"], "cancelled");
+    assert!(v["settlementJournalEntryId"].is_null(), "règlement détaché");
+    assert!(v["paidAt"].is_null());
+    assert_eq!(
+        v["cancellable"], false,
+        "la réponse est relue avec ses champs de lecture"
+    );
+    assert_eq!(v["cancelBlockedBy"], "SUPPLIER_INVOICE_CANCELLED");
+}
+
+/// Story 25-3-c — rôles et refus : Consultation 403 ; facture étrangère 404 ;
+/// seconde annulation 409 avec son code ; compte de charge archivé, 400 qui
+/// NOMME le compte.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn cancel_invoice_roles_and_refusals(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let id = open_invoice(&pool, &seeded).await;
+    kesh_db::repositories::users::create(
+        &pool,
+        kesh_db::entities::NewUser {
+            username: "lecteur".into(),
+            password_hash: kesh_api::auth::password::hash_password("password123").unwrap(),
+            role: kesh_db::entities::Role::Consultation,
+            active: true,
+            company_id: seeded.company_id,
+            email: None,
+        },
+    )
+    .await
+    .unwrap();
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+    let lecteur = login(&app, "lecteur", "password123").await;
+    let path = format!("/api/v1/supplier-invoices/{id}/cancel");
+
+    assert_eq!(post(&app, &lecteur, &path, json!({})).await.status(), 403);
+    assert_eq!(
+        post(
+            &app,
+            &token,
+            &format!("/api/v1/supplier-invoices/{}/cancel", id + 9999),
+            json!({})
+        )
+        .await
+        .status(),
+        404
+    );
+
+    // Compte de charge archivé : le socle refuse, en NOMMANT le compte.
+    let charge = seeded.accounts["4000"];
+    let version: i32 = sqlx::query_scalar("SELECT version FROM accounts WHERE id = ?")
+        .bind(charge)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    kesh_db::repositories::accounts::archive(&pool, charge, version, seeded.admin_user_id)
+        .await
+        .unwrap();
+    let v: Value = get(&app, &token, &format!("/api/v1/supplier-invoices/{id}"))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(v["cancelBlockedBy"], "ACCOUNT_ARCHIVED");
+    assert_eq!(v["cancelBlockedLabel"], "4000");
+    let resp = post(&app, &token, &path, json!({})).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ACCOUNT_ARCHIVED", "got {body:?}");
+
+    // Compte réactivé : l'annulation passe ; la seconde est refusée, avec son code.
+    let version: i32 = sqlx::query_scalar("SELECT version FROM accounts WHERE id = ?")
+        .bind(charge)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    kesh_db::repositories::accounts::reactivate(
+        &pool,
+        charge,
+        version,
+        seeded.admin_user_id,
+        false,
+    )
+    .await
+    .unwrap();
+    assert_eq!(post(&app, &token, &path, json!({})).await.status(), 200);
+    let resp = post(&app, &token, &path, json!({})).await;
+    assert_eq!(resp.status(), 409);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["error"]["code"], "SUPPLIER_INVOICE_CANCELLED",
+        "got {body:?}"
     );
 }

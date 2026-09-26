@@ -1040,9 +1040,12 @@ fn ecriture_attendue(motif: SettlementCancelBlocker, err: &DbError) -> bool {
         SettlementCancelBlocker::NoOpenFiscalYearToday => {
             matches!(err, DbError::FiscalYearInvalid)
         }
-        // Tête du dé-rapprochement (25-3-b) : jamais produite par l'annulation
+        // Tête du dé-rapprochement (25-3-b) et motifs de l'annulation d'une
+        // facture fournisseur (25-3-c) : jamais produits par l'annulation
         // d'un règlement.
-        SettlementCancelBlocker::BankTransactionNotReconciled => false,
+        SettlementCancelBlocker::BankTransactionNotReconciled
+        | SettlementCancelBlocker::SupplierInvoiceCancelled
+        | SettlementCancelBlocker::SupplierInvoiceInPaymentBatch => false,
     }
 }
 

@@ -160,6 +160,38 @@ test.describe('Factures fournisseurs', () => {
 		}
 	});
 
+	// Story 25-3-c (#454) — annuler une facture PAYÉE : elle passe « annulée »,
+	// et son règlement, détaché, redevient une écriture libre — contre-passable
+	// depuis sa fiche d'écriture.
+	test('annuler une facture payée : le règlement reste, détaché et contre-passable', async ({
+		page,
+	}) => {
+		await login(page);
+		const { expenseAccountId, internalAccountId } = await ensureConfigAndAccounts(page);
+		const supplierId = await createSupplierViaApi(page, uniq('Fournisseur'));
+		const invoiceId = await createSupplierInvoiceViaApi(page, supplierId, expenseAccountId);
+
+		await page.goto(`/supplier-invoices/${invoiceId}`);
+		await page.getByLabel(/Compte interne/i).check();
+		await page.getByTestId('pay-internal-account').selectOption(String(internalAccountId));
+		await page.getByTestId('supplier-invoice-pay-submit').click();
+		await expect(page.getByTestId('supplier-invoice-status')).toContainText(/Payée/i);
+		const settlementHref = await page
+			.getByTestId('supplier-invoice-settlement-entry')
+			.getAttribute('href');
+		expect(settlementHref).toMatch(/^\/journal-entries\/\d+$/);
+
+		page.once('dialog', (d) => void d.accept());
+		await page.getByTestId('supplier-invoice-cancel').click();
+		await expect(page.getByTestId('supplier-invoice-cancelled-info')).toBeVisible();
+		await expect(page.getByTestId('supplier-invoice-settlement-entry')).toHaveCount(0);
+
+		// Le règlement n'appartient plus à la facture : sa fiche offre la contre-passation.
+		await page.goto(settlementHref!);
+		await expect(page.getByTestId('reverse-entry')).toBeVisible();
+		await expect(page.getByTestId('reverse-blocked-reason')).toHaveCount(0);
+	});
+
 	test('enregistre et règle (compte interne) une facture fournisseur', async ({ page }) => {
 		await login(page);
 		const { expenseAccountId, internalAccountId } = await ensureConfigAndAccounts(page);

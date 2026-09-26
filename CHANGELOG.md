@@ -24,6 +24,10 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 - **Des colonnes manquaient aux tables que l'export portait déjà.** Les contacts et la société sortaient sans leur prénom, leur nom ni leur **adresse structurée** (rue, numéro, NPA, localité, pays) — seule l'ancienne adresse d'un bloc y figurait —, la société sans son e-mail, son téléphone ni son site web, les contacts sans leur formule d'appel, leur langue ni leur numéro de client ; manquaient aussi l'archivage des comptes bancaires, le compte fournisseurs par défaut et le format de numérotation des avoirs. Une garde confronte désormais chaque colonne exportée au schéma de la base : une colonne ajoutée sans être exportée ni explicitement écartée fait échouer les tests.
 
+- **L'annulation d'une facture fournisseur contre-passait son achat « à la main » ([#454](https://github.com/guycorbaz/kesh/issues/454)).** L'écriture d'annulation n'était pas reliée à l'achat qu'elle neutralisait : au grand livre, l'achat se présentait comme une écriture encore active, dont la correction proposée était « annulez la facture » — déjà annulée. Elle passe désormais par le même mécanisme que toutes les contre-passations : l'écriture inverse est **liée** à l'achat, que le grand livre présente comme *déjà contre-passé*, et un compte de charge archivé depuis est **nommé** au lieu d'un refus opaque. ⚠️ Les annulations passées avant cette version ne sont pas reliées rétroactivement.
+
+- **Sur la fiche d'une facture fournisseur, le bouton *Annuler la facture* s'affichait aussi pour un utilisateur en consultation**, qui ne pouvait que se heurter à un refus ; et un refus effaçait toute la fiche au profit d'un message d'erreur. Le bouton est désormais réservé aux comptables et administrateurs, et un refus s'affiche sous le bouton, la fiche restant visible.
+
 ### Changed
 
 - **Supprimer une facture validée n'est plus possible — il faut la « dévalider » d'abord.** Jusqu'ici, le bouton *Supprimer* d'une facture validée effaçait la facture **et son écriture comptable** d'un seul geste. La destruction d'une écriture était donc un **effet de bord du mot « supprimer »** : rien, dans le vocabulaire de l'écran, ne disait qu'on touchait aux livres.
@@ -39,6 +43,10 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 - **Huit motifs peuvent refuser une dévalidation, et le refus nomme toujours le sien** : facture réglée — **même partiellement** —, créditée par un avoir, relancée, envoyée au client par Kesh, écriture rapprochée d'une transaction bancaire, exercice clos, écriture contre-passée, période verrouillée. ⚠️ Le refus « envoyée au client » est **sec** : une facture que le client détient se corrige par un **avoir**. Kesh ne connaît toutefois que ce qu'il a envoyé lui-même — un PDF téléchargé puis transmis à la main ne laisse aucune trace.
 
 - **Le journal d'audit compte désormais 127 libellés traduits** (97 actions, 28 types d'entité, 2 types d'acteur), la dévalidation, l'annulation d'un règlement — client comme fournisseur — et l'annulation d'un rapprochement y figurant chacune sous son propre nom.
+
+- **Une facture fournisseur s'annule désormais même payée.** Jusqu'ici, seule une facture ouverte pouvait être annulée : une facture payée par erreur — doublon, mauvais fournisseur — était refusée sans explication. Elle s'annule maintenant depuis sa fiche ; son **règlement reste au grand livre**, car l'argent est bien sorti, mais il est **détaché** de la facture et devient un *paiement sans facture*, que le compte fournisseurs porte en solde débiteur en attendant d'être rattaché. Le journal d'audit garde le lien. Si c'est le paiement qui est faux, annuler d'abord le règlement reste possible.
+
+  ⚠️ **Deux refus nouveaux, nommés** : une facture dont l'**achat** est dans un exercice **clôturé** ne s'annule plus (elle s'annulait) — un administrateur doit rouvrir l'exercice ; une facture engagée dans un **lot de paiement en cours** est refusée avec son motif, en dernier. L'écriture d'annulation s'intitule désormais « Contre-passation écriture n° … » au lieu de « Annulation facture fournisseur … ».
 
 ### Added
 

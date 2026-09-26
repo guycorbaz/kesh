@@ -345,7 +345,7 @@ journal-entries-reverse-blocked-is-a-reversal = Questa scrittura è essa stessa 
 journal-entries-reverse-blocked-already-reversed = Questa scrittura è già stata stornata.
 journal-entries-reverse-blocked-invoice = Questa registrazione appartiene a una fattura cliente: annulla la convalida della fattura, oppure correggila con una nota di credito.
 journal-entries-reverse-blocked-credit-note = Questa scrittura appartiene a una nota di credito, che è già uno storno.
-journal-entries-reverse-blocked-supplier-invoice = Questa scrittura appartiene a una fattura fornitore: annullate la fattura o il suo pagamento dalla sua scheda.
+journal-entries-reverse-blocked-supplier-invoice = Questa scrittura appartiene a una fattura fornitore: si corregge dalla scheda della fattura, che indica cosa è possibile.
 journal-entries-reverse-blocked-settlement = Questa scrittura è un pagamento di fattura: annulla il pagamento dalla scheda della fattura, che indica se è possibile.
 journal-entries-reverse-blocked-bank-match = Questa scrittura è riconciliata con una transazione bancaria: annulla la riconciliazione dal dettaglio dell'importazione bancaria.
 journal-entries-reverse-blocked-account-archived = Un conto di questa scrittura è stato archiviato: riattivatelo per poterla stornare.
@@ -1719,7 +1719,16 @@ imported-supplier-invoices-error-file-read-error = Impossibile leggere il file
 imported-supplier-invoices-error-field-too-long = Un campo della fattura QR supera la lunghezza consentita
 supplier-invoices-add-line = Aggiungi una riga
 supplier-invoices-cancel = Annulla la fattura
-supplier-invoices-cancel-confirm = Annullare questa fattura fornitore?
+supplier-invoices-cancel-confirm = Annullare questa fattura? Una scrittura inversa dell'acquisto, datata oggi, sarà registrata nel libro mastro.
+supplier-invoices-cancel-confirm-paid = È pagata: il suo pagamento resta nel libro mastro, staccato dalla fattura — un pagamento senza fattura, da abbinare. Se è il pagamento stesso a essere errato, annullate piuttosto prima il pagamento.
+supplier-invoices-cancelled = Fattura annullata: la scrittura inversa dell'acquisto è stata registrata nel libro mastro.
+supplier-invoices-cancelled-info = Fattura annullata.
+supplier-invoices-cancel-blocked-cancelled = Questa fattura fornitore è già annullata.
+supplier-invoices-cancel-blocked-fiscal-year-closed = Questa fattura appartiene a un esercizio chiuso: un amministratore deve riaprire l'esercizio per poterla annullare.
+supplier-invoices-cancel-blocked-bank-match = La scrittura d'acquisto di questa fattura è riconciliata con una transazione bancaria: annullate prima questa riconciliazione.
+supplier-invoices-cancel-blocked-account-archived = Un conto della scrittura d'acquisto di questa fattura è stato archiviato: riattivatelo per poter annullare la fattura.
+supplier-invoices-cancel-blocked-no-fiscal-year = Nessun esercizio aperto copre la data odierna: createlo per poter annullare questa fattura.
+supplier-invoices-cancel-blocked-in-payment-batch = Questa fattura figura in un lotto di pagamento in corso: annullate prima il lotto.
 
 ## Story 25-3-a-2 (#414) — annuler un règlement fournisseur
 supplier-invoices-settlement-cancel-button = Annulla il pagamento
