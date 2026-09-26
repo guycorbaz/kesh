@@ -183,7 +183,7 @@ protège rien : c'est le 403 de la route qui fait foi.
 
 **7. Le menu** — entrée `{ i18nKey: 'nav-audit-log', fallback: "Journal d'audit", href: '/audit-log' }`
 dans la liste **`comptableOnly`** du groupe `administration` (`routes/(app)/+layout.svelte:130-136`).
-⚠️ **`'audit-log'` s'ajoute à `FAMILLES_RESOLUES['nav-']`** (`i18n-keys.test.ts:321-327`) : une clé de
+⚠️ **`'audit-log'` s'ajoute à `FAMILLES_RESOLUES['nav-']`** (`i18n-keys.test.ts`, bloc `FAMILLES_RESOLUES`, `:428-436` au 2026-09-26) : une clé de
 menu est une donnée lue par `getItemLabel`, et c'est ce trou qui avait laissé quatre entrées en
 français dans les quatre langues (commentaire `i18n-keys.test.ts:311-314`).
 
@@ -242,13 +242,13 @@ libération différée des trois copies écrites dans les pages.
 - états vide et erreur ;
 - bouton d'export.
 
-⚠️ **Les clés du vocabulaire ne sont PAS de cette story** : les 133 clés de la 25-1c-a (en-têtes du CSV,
-message de refus, types d'auteur, 28 types d'entité, 92 actions, à la spécification) **existent déjà** et
+⚠️ **Les clés du vocabulaire ne sont PAS de cette story** : les clés `audit-log-*` de la 25-1c-a (en-têtes du CSV,
+message de refus, types d'auteur, 28 types d'entité et les actions — **138** clés et **97** actions au 2026-09-26, 133 et 92 à la spécification : cinq stories mergées depuis en ont ajouté, et le nombre **dérivera encore**, d'où un décompte à refaire au développement et jamais figé ici) **existent déjà** et
 ne se recréent ni ne s'appellent ici. Le **total** de cette story se recompte depuis la source à
 l'implémentation et s'écrit avec sa ventilation.
 
 ⛔ **Préfixe partagé** : les clés de l'écran commencent par `audit-log-`, comme celles du backend. Ne
-**jamais** ajouter `audit-log-` à `PREFIXES_A_COUVERTURE_CLOSE` (`i18n-keys.test.ts:388`) : les 133 clés
+**jamais** ajouter `audit-log-` à `PREFIXES_A_COUVERTURE_CLOSE` (`i18n-keys.test.ts:497` au 2026-09-26) : les clés `audit-log-*`
 servies par le backend y deviendraient des orphelines, alors qu'elles ont un lecteur, la route.
 
 Les termes suivent `docs/i18n-glossaire.md` : partie A là où elle les atteste — notamment « journal
@@ -263,13 +263,13 @@ supposer.
 
 | site | attendu |
 |---|---|
-| `MOTIFS_DYNAMIQUES` (`:234`), `CARDINALITES` (`:292-301`) | **inchangés** — aucun préfixe dynamique neuf |
-| `ATTENDU.sitesGabarit` (`:210`), `SITES_GABARIT_ATTENDUS` (`:365-376`) | **inchangés** — 10 |
-| `FAMILLES_RESOLUES['nav-']` (`:321-327`) | **+ `'audit-log'`** (AC 7) |
-| `ATTENDU.sitesTotal`, `sitesNonResolus`, `relais` (`:207-209`) | **recomptés** — les appels littéraux de la page ajoutent des sites —, historique commenté prolongé |
-| `PREFIXES_A_COUVERTURE_CLOSE` (`:388`) | **inchangé** (AC 10) |
+| `MOTIFS_DYNAMIQUES` (`:343`), `CARDINALITES` (`:401-410`) | **inchangés** — aucun préfixe dynamique neuf |
+| `ATTENDU.sitesGabarit` (`:319`), `SITES_GABARIT_ATTENDUS` (`:474-485`) | **inchangés** — 10 |
+| `FAMILLES_RESOLUES['nav-']` (`:428-436`) | **+ `'audit-log'`** (AC 7) |
+| `ATTENDU.sitesTotal`, `sitesNonResolus`, `relais` (`:316-318`) | **recomptés** — les appels littéraux de la page ajoutent des sites —, historique commenté prolongé |
+| `PREFIXES_A_COUVERTURE_CLOSE` (`:497`) | **inchangé** (AC 10) |
 
-`src/lib/shared/i18n-libelle-en-dur.test.ts` : `CANDIDATES_ATTENDUES` (`:115`) et la partition (`:632`)
+`src/lib/shared/i18n-libelle-en-dur.test.ts` : `CANDIDATES_ATTENDUES` (`:144`) et la partition (`:661`)
 **inchangés** — sauf si le code déclare une fonction ou une variable dont le nom finit par `Label`,
 `Text` ou `Display` (`SUFFIXES`, `:72`), y compris un `$derived` (`:245`). ⚠️ `toSelectOptions` n'en est
 pas une ; un `let actionLabel = $derived(…)` en serait une. **Dans ce cas, recompter et ventiler.**
@@ -699,6 +699,7 @@ de texte de spec, sans assertion ajoutée ni ligne de code.
 
 | passe | modèle | rendu (après reclassement) |
 |---|---|---|
+| 2026-09-26 | revalidation R5 « dérive » | Reprise sur `main` à `0e4c2682` après dix jours sur une branche locale jamais poussée. **Une lentille Sonnet**, prompt `25-1c-b-validate-prompt-r5-derive.md`, axes déclarés (non exercés : manuels — délégués à la b2 —, contenu détaillé des specs E2E non modifiées depuis). **Contrat de la route mergée (PR #439) confirmé champ par champ** ; rien de ce que la fiche prescrit n'a été livré entre-temps ; sept copies de téléchargement toujours sept. **1 MEDIUM** : « 133 clés / 92 actions » périmé — **138 / 97** au 2026-09-26 (`account.retyped`, `invoice.unvalidated`, `invoice.settlement_cancelled`, `supplier_invoice.settlement_cancelled`, `reconciliation.cancelled`) ; la fiche ne fige plus le nombre, à recompter au développement. **3 LOW** : lignes de `i18n-keys.test.ts` (+109 à +120) et de `i18n-libelle-en-dur.test.ts` rafraîchies ; décalages d'une dizaine de lignes dans les patrons cités (`invoices/+page.svelte`, `invoices_echeancier.spec.ts`, commentaires de l'AC 9), contenu intact — non repris, T0 relit par contenu. #386 citée hors périmètre : désormais fermée, sans effet. |
 | 1 | Sonnet + Haiku | 2 M, 2 L |
 | 2 | Opus | 6 M, 7 L → **split** |
 | 3 | Sonnet | 1 M, 3 L |

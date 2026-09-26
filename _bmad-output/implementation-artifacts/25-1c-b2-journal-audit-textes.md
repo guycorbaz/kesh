@@ -1,6 +1,15 @@
 # Story 25.1c-b2 : Ce que l'écran du journal d'audit rend faux — manuels, README, vocabulaire
 
-Status: ready-for-dev
+Status: ready-for-dev — ⛔ **À REPRENDRE avant son développement** (revalidation R5 « dérive », 2026-09-26)
+
+⛔ **REVALIDATION R5 « DÉRIVE » — 1 CRITICAL, 4 HIGH, 4 MEDIUM** (Change Log). La fiche a dormi dix jours sur
+une branche locale ; entre-temps, la 25-1c-a (PR #439), les 25-2-b-1/b-2 (#440) et la 25-5-a (#386) ont
+**réécrit** une partie des textes qu'elle prescrit de corriger, et **changé le mécanisme** qu'elle décrit :
+une facture validée ne se **supprime** plus, elle se **dévalide** (`invoices.rs:1293`,
+`InvoiceMustBeUnvalidatedFirst`) ; #381 est fermée. **Les AC 2, 4, 6 et 7 et l'inventaire de l'AC 3 sont à
+réécrire contre le texte ACTUEL**, dans la tâche T0, **une fois la 25-1c-b1 implémentée** — la fiche le
+prévoyait déjà (« relire chaque site par sa phrase ») ; la réécrire deux fois ne servirait à rien. Puis
+revalidation, puis développement.
 
 ⚠️ **RÉOUVERTE le 2026-09-15 au soir**, après sa validation en 7 passes : les arbitrages qui ont rouvert la
 25-1c-a changent la section « Traçabilité » et le manuel d'administration (cf. « Réouverture » au Change
@@ -556,6 +565,7 @@ aucune ligne de code, pas plus que la story, qui n'est que texte.
 
 | passe | modèle | rendu (après reclassement) |
 |---|---|---|
+| 2026-09-26 | revalidation R5 « dérive » | Reprise sur `main` à `0e4c2682`. **Une lentille Sonnet**, prompt `25-1c-b-validate-prompt-r5-derive.md`, axes déclarés (non exercés : rejeu complet de la procédure Python de l'AC 3/8, manuels DE/IT/EN, PDF de la brochure, CHANGELOG). Constats **vérifiés par l'orchestrateur** (`grep -nF`) avant d'être retenus. ⛔ **CRITICAL** — le mécanisme des AC 4 et 6 n'existe plus : une facture validée ne se supprime plus (`invoices.rs:1293`, `DbError::InvoiceMustBeUnvalidatedFirst`), elle se **dévalide** (`invoice.unvalidated`) ; le code cité (`invoices.rs:1339-1350`) a disparu ; #381 est **fermée**. **HIGH** — (1) `admin-manual.tex` « sans exception » : déjà réécrit ailleurs, la formule n'existe plus à ce site ; (2) item « Champs » (`:1790`) déjà corrigé par la 25-1c-a — reste « L'écran, lui, reste à venir (issue #378) » ; (3) encadré du manuel utilisateur (`:511-528`) déjà réécrit par la 25-1c-a — l'énoncé du verrou de période a disparu ; (4) AC 2 : `export-global-content-excludes` réécrite par la 25-5-a dans les quatre locales, **déjà conforme** — reste une seule clé à aligner (`fiscal-year-reopen-confirmation-body`, fr/it/en). **MEDIUM** — 97 actions et 138 clés `audit-log-*` (non 92 / 133) ; inventaire lexical plus large (nouveaux « piste de contrôle » `admin-manual.tex:1589`, `:1760`, `:1817`, `:1946`, et `user-manual.tex:1111` reformulée) ; toutes les lignes des manuels décalées ; la phrase du README citée par l'AC 7 n'existe plus (la ligne v0.12.1 porte « Restent ouverts : l'écran de consultation ([#378]) »). **LOW** — les entrées de glossaire portent un avertissement ajouté. ⇒ **Décision de l'orchestrateur** : pas de réécriture partielle maintenant — la fiche se réécrit en T0, contre le texte réel, **après** la 25-1c-b1, puis se revalide. |
 | 1 | Sonnet + Haiku | 2 M, 2 L |
 | 2 | Opus | 6 M, 7 L → **split** |
 | 3 | Sonnet | 1 H, 2 M, 4 L |
