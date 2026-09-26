@@ -74,9 +74,13 @@ soldée, créditée —, le **total de la balance âgée = solde du compte 1100 
 pour aucun écran.
 
 ⚠️ **Portée de l'invariant, écrite et non supposée.** Il ne tient que si le compte débiteurs n'est
-mû **que** par des factures, règlements et avoirs de Kesh. Trois choses le rompent, légitimement,
+mû **que** par des factures, règlements et avoirs de Kesh. Quatre choses le rompent, légitimement,
 et la balance âgée ne les montre pas :
 - un **solde d'ouverture** ou une **écriture manuelle** sur le compte débiteurs ;
+- une **ventilation** ou une **règle** de rapprochement bancaire imputée au compte débiteurs
+  (`accept_one_split`, `accept_one_rule`, `kesh-api/src/routes/reconciliation.rs:1619`, `:1997`) —
+  la contrepartie y est un compte choisi par l'utilisateur, sans facture ; *(ajouté par
+  l'orchestrateur en vérifiant la P2)* ;
 - l'**état hérité** de 25-4-a — une facture **`cancelled`** créditée **après** un règlement
   partiel (plus atteignable par l'application, mais possible par l'import d'un `.keshbackup`
   antérieur) : le compte 1100 porte **−(montant réglé)**, la facture `cancelled` est hors du
@@ -148,8 +152,8 @@ seul ; `partial` retiré de `statusOf` ; `amountDue={null}` remis.
 - `:1578`, légende de la capture : « encours débiteur **TTC** » → « reste dû » ;
 - `:1580-1581` : « La colonne « Non échu » **garantit** que le total général réconcilie avec le
   solde du compte clients » — vrai **seulement** dans la portée de l'AC 5 : la phrase porte la
-  réserve (soldes d'ouverture, écritures manuelles sur le compte débiteurs, sauvegardes
-  antérieures à la 0.12.1) ;
+  réserve (soldes d'ouverture, écritures manuelles ou rapprochements bancaires imputés directement
+  au compte débiteurs, sauvegardes antérieures à la 0.12.1) ;
 - `:1587-1588`, note : « le **total dû TTC** de chaque facture, jamais le montant hors taxe » → « le
   **reste dû** de chaque facture, jamais le montant hors taxe ni le total facturé ».
 
@@ -222,6 +226,15 @@ CHANGELOG `[0.12.1]` *Fixed*. README : rien, sauf si la ligne v0.12.1 cite la ba
 
 ## Change Log
 
+- **2026-09-27** — **validation P2** (Haiku, prompt `25-4-b1-validate-prompt-p2.md`) — rapporte **0
+  finding**. ⚠️ **Non pris pour argent comptant** : la passe affirmait le CHANGELOG « à créer » (il
+  existe) et n'a cité aucun des fichiers qu'on lui demandait de lire pour éprouver la portée de
+  l'AC 5. **Repris par l'orchestrateur** : la portée oubliait un chemin — la **ventilation** et la
+  **règle** de rapprochement bancaire (`accept_one_split`, `accept_one_rule`), dont la contrepartie
+  est un compte libre, donc possiblement le compte débiteurs, sans facture. **1 MEDIUM** ajouté,
+  corrigé (portée à quatre cas, réserve du manuel étendue). Vérifié aussi : le filtre « payées »
+  de l'échéancier existe (`due-dates/+page.svelte:45`) — ses lignes montreront un reste dû nul,
+  cohérent.
 - **2026-09-27** — **validation P1** (Sonnet, prompt `25-4-b1-validate-prompt-p1.md`) — **2 MEDIUM,
   3 LOW**, confirmés dans le code et le manuel. MEDIUM : l'invariant balance âgée = grand livre
   (AC 5) était énoncé sans portée — l'état hérité de 25-4-a (facture `cancelled` créditée après
