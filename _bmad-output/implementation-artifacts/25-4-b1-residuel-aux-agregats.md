@@ -73,6 +73,18 @@ soldée, créditée —, le **total de la balance âgée = solde du compte 1100 
 (`general_ledger` ou somme `debit − credit`). C'est l'assertion que #416 réclame et qui n'existe
 pour aucun écran.
 
+⚠️ **Portée de l'invariant, écrite et non supposée.** Il ne tient que si le compte débiteurs n'est
+mû **que** par des factures, règlements et avoirs de Kesh. Trois choses le rompent, légitimement,
+et la balance âgée ne les montre pas :
+- un **solde d'ouverture** ou une **écriture manuelle** sur le compte débiteurs ;
+- l'**état hérité** de 25-4-a — une facture **`cancelled`** créditée **après** un règlement
+  partiel (plus atteignable par l'application, mais possible par l'import d'un `.keshbackup`
+  antérieur) : le compte 1100 porte **−(montant réglé)**, la facture `cancelled` est hors du
+  périmètre `validated`. *(Relevé en validation P1.)*
+
+Le test de l'AC 5 porte sur les quatre états **vivants** ; ⛔ il n'y ajoute **pas** l'état hérité.
+Cette portée est dite dans le doc-comment de `generate` et dans le manuel (AC 13).
+
 **AC 6** — Doc-comment de `generate` (`:95-99` : « Montants = TTC dérivé ») et libellés : la balance
 âgée montre le **reste dû** ; l'écran (`AgedReceivablesView.svelte`) et son CSV gardent leur
 structure — seules les valeurs changent. Si un libellé visible dit « TTC » ou « total facturé »,
@@ -129,9 +141,20 @@ corrigé.
 consigner : TTC remis dans une tranche de la balance âgée ; `amount_due` retiré de `list_for_export`
 seul ; `partial` retiré de `statusOf` ; `amountDue={null}` remis.
 
-**AC 13** — Textes (`docs/manual/fr/user-manual.tex`, PDF **contrôlé aplati**) : § Balance âgée
-(`\label{sec:balance-agee}`, « encours débiteur (le total dû, TVA comprise) ») dit **reste dû après
-règlements partiels et avoirs** ; § Échéancier (`:927`) décrit la colonne et le pré-remplissage.
+**AC 13** — Textes (`docs/manual/fr/user-manual.tex`, PDF **contrôlé aplati**), § Balance âgée
+(`\label{sec:balance-agee}`) — **quatre** passages, tous au TTC aujourd'hui :
+- `:1576` « encours débiteur (le total dû, TVA comprise) » → le **reste dû**, après règlements
+  partiels et avoirs ;
+- `:1578`, légende de la capture : « encours débiteur **TTC** » → « reste dû » ;
+- `:1580-1581` : « La colonne « Non échu » **garantit** que le total général réconcilie avec le
+  solde du compte clients » — vrai **seulement** dans la portée de l'AC 5 : la phrase porte la
+  réserve (soldes d'ouverture, écritures manuelles sur le compte débiteurs, sauvegardes
+  antérieures à la 0.12.1) ;
+- `:1587-1588`, note : « le **total dû TTC** de chaque facture, jamais le montant hors taxe » → « le
+  **reste dû** de chaque facture, jamais le montant hors taxe ni le total facturé ».
+
+⚠️ Greper le symptôme (`TTC`, `total dû`) dans **toute** la section et dans le PDF aplati, pas
+seulement ces lignes. Puis : § Échéancier (`:927`) décrit la colonne et le pré-remplissage.
 CHANGELOG `[0.12.1]` *Fixed*. README : rien, sauf si la ligne v0.12.1 cite la balance âgée.
 
 ## Tasks / Subtasks
@@ -152,6 +175,17 @@ CHANGELOG `[0.12.1]` *Fixed*. README : rien, sauf si la ligne v0.12.1 cite la ba
 - ⛔ **Ne pas utiliser `amount_due` scalaire dans une boucle** sur les lignes d'une liste : N+1.
 - ⛔ **Ne pas retirer `total_ttc`** de la liste : l'échéancier affiche les deux, et d'autres écrans le
   lisent.
+- ⚠️ **Double calcul du TTC dans les listes** : `total_ttc` y vient de la forme **corrélée**
+  (`invoices.rs:819`, `:2459`), et la forme jointe de l'AC 1 recalcule `lt.ttc`. Il est **permis** —
+  et préférable — de dériver `total_ttc` de `lt.ttc` dans ces deux SELECT : `invoice_ttc_parity.rs`
+  prouve déjà l'égalité des deux formes.
+- ⚠️ **Pré-remplissage à reste dû ≤ 0** : `SettleInvoiceDialog` affiche alors une erreur client dès
+  l'ouverture (`:104-112`). Comportement **déjà présent** sur la fiche
+  (`invoices/[id]/+page.svelte:1241`) ; un reste dû ≤ 0 sur une facture `validated` sans `paid_at`
+  n'existe que par un état hérité. Ne pas le corriger ici ; ne pas l'aggraver.
+- **Montage E2E** du cas « partiellement réglée » : régler une partie par l'API
+  (`authedApiContext(page)`, patron `invoices-settlement-cancel.spec.ts:46`), puis ouvrir le dialogue
+  depuis l'échéancier.
 - ⚠️ **Le tri** « TotalAmount » de l'échéancier trie sur `i.total_amount` (HT) alors que la colonne
   affiche le TTC — défaut **préexistant**, hors périmètre ; ne pas l'aggraver, le signaler.
 
@@ -188,6 +222,16 @@ CHANGELOG `[0.12.1]` *Fixed*. README : rien, sauf si la ligne v0.12.1 cite la ba
 
 ## Change Log
 
+- **2026-09-27** — **validation P1** (Sonnet, prompt `25-4-b1-validate-prompt-p1.md`) — **2 MEDIUM,
+  3 LOW**, confirmés dans le code et le manuel. MEDIUM : l'invariant balance âgée = grand livre
+  (AC 5) était énoncé sans portée — l'état hérité de 25-4-a (facture `cancelled` créditée après
+  règlement) et les soldes d'ouverture le rompent ; portée écrite, test borné aux états vivants, et
+  le manuel, qui **garantit** la concordance sans réserve, recevra la réserve. MEDIUM : l'AC 13 ne
+  citait qu'un des quatre passages « TTC » de la section Balance âgée — les trois autres ajoutés.
+  LOW (Dev Notes) : double calcul du TTC dans les listes (dériver `total_ttc` de `lt.ttc` permis) ;
+  pré-remplissage à reste dû ≤ 0 (préexistant, hors périmètre) ; montage E2E du cas partiel.
+  L'inventaire des sites au TTC, refait depuis le symptôme, n'a trouvé **aucun site orphelin**
+  (b1, b2, 25-4-c ou légitimement TTC).
 - **2026-09-27** — Créée (Opus 5.5) après découpage de la 25-4-b (arbitrages Q1 ⇒ six modules).
   Sites revérifiés dans le code ; 25-4-a en est le socle.
 
