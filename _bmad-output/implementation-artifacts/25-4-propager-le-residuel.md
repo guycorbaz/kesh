@@ -96,11 +96,27 @@ Pour 25-4-b, donc :
   tombe donc — ce n'est pas la facture —, et #387 ne s'en trouve pas touché. ⚠️ **Point ouvert
   posé à Guy** : dès lors, la QR du rappel doit-elle porter le **reste à payer** plutôt que rester
   sans montant ?
+- ✅ **Tranché (Guy, 2026-09-27)** : *« si c'est un rappel pour facture impayée, on met le montant
+  total de la facture, et si c'est un montant partiel, on met le montant à payer : on traite les
+  deux types de rappel de la même manière. »* Une seule règle : **la QR du rappel porte le reste
+  dû** — qui vaut le TTC sur une facture sans règlement. L'option (b) « sans montant » est
+  **abandonnée**. Guy suggère aussi de rappeler **le numéro de la facture d'origine** : la QR le
+  porte déjà (référence QRR dérivée de la facture, ou message non structuré = numéro,
+  `invoice_pdf_service.rs:218-250`) et **doit le garder à l'identique** — c'est ce que lit le
+  rapprochement ; le PDF du rappel le nomme en toutes lettres, avec montant initial, déjà réglé,
+  reste à payer.
+- ⚠️ **Point ouvert pour la spécification de 25-4-b — les frais de rappel.** Le texte réclame
+  aujourd'hui `TTC + frais` (`invoice_email.rs:334`), mais les frais ne semblent **pas
+  comptabilisés** (aucune écriture dans `invoice_reminders.rs`, à vérifier). Si la QR portait
+  « reste dû + frais », le virement du client **dépasserait le reste dû** et serait refusé comme
+  trop-perçu, au rapprochement comme au règlement manuel (`RECONCILIATION_OVERPAYMENT`). À établir
+  avant de fixer le montant de la QR.
 
 ⚠️ **Ne pas contester l'arbitrage en revue** : en contester la mise en œuvre.
 
 ## Change Log
 
+- **2026-09-27** — Q1 retranchée : la QR du rappel porte le reste dû (le TTC s'il n'y a aucun règlement) ; numéro de facture conservé ; point ouvert sur les frais.
 - **2026-09-27** — Recadrage de Q1 : le document est un rappel pour un montant partiel, pas la facture réémise.
 - **2026-09-26** — Complément de Q1 : le reste à payer figure aussi sur le PDF joint.
 - **2026-09-26** — Q1 tranchée par Guy : QR sans montant pour une facture partiellement réglée, et le reste à payer dit au client (rattaché à 25-4-b).
