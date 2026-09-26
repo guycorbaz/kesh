@@ -1,6 +1,6 @@
 # Story 25.4-a : Le résiduel juste — l'avoir compté TTC, et refusé sur une facture réglée
 
-Status: review
+Status: done
 
 **Issues : [#455], [#456]**, qu'elle **ferme** : `closes #455, closes #456` dans le **titre ET le
 corps** de la PR (squash ; un `refs` partout laisserait les issues ouvertes sans signal).
@@ -399,8 +399,8 @@ Claude Opus 5.5.
   précédence restent verts. Doc-comments de `InvoiceCredited` et du rang 1 : état hérité.
 - **Frontend** (AC 14) : condition `!invoice.paidAt` retirée du bouton, commentaires Suspendre/Reprendre
   corrigé ; `data-testid` sur le bouton, la confirmation et l'erreur du dialogue.
-- **Textes** (AC 17) : manuel (refus nommé en § Avoirs, deux limites reformulées « réglée, même en
-  partie », deux motifs d'annulation de règlement précisés comme **cas hérité**), PDF régénéré et
+- **Textes** (AC 17) : manuel (refus nommé en § Avoirs, deux limites corrigées pour couvrir le règlement
+  partiel — l'une « réglée, même en partie », l'autre « déjà encaissée, même en partie », deux motifs d'annulation de règlement précisés comme **cas hérité**), PDF régénéré et
   contrôlé aplati (0 `??`, six phrases de contrôle présentes, « marquée payée » absente) ; CHANGELOG
   *Fixed* ×2 (dont **l'API** pour #455) et *Changed* (le bouton). Grep large du symptôme « avoir sur
   facture payée » : aucun autre site.
@@ -456,6 +456,15 @@ Claude Opus 5.5.
 
 ## Change Log
 
+- **2026-09-27** — **revue de code P1** (Sonnet, diff `ab9b9448..9bf2bb2b`, prompt
+  `25-4-a-review-prompt-p1.md`) — **0 au-dessus de LOW, 1 LOW** : le compte rendu attribuait la
+  formule « réglée, même en partie » aux deux limites du manuel, la seconde dit « déjà encaissée,
+  même en partie » — compte rendu corrigé, le manuel était juste. Les huit axes exercés avec preuve :
+  les constantes TTC facture **octet pour octet identiques** à leur forme d'avant, l'entrelacement ne
+  peut pas passer à vide (le motif ne correspond qu'à la requête verrouillante de l'avoir), tous les
+  lecteurs d'`amount_due` inchangés et resserrés, PDF aplati, i18n, Vitest, décomptes recomptés.
+  Non exercé : la ré-exécution des gates et des mutations (interdite à la lentille). **Revue close en
+  une passe ; story `done`.**
 - **2026-09-27** — **dev** (Opus 5.5) : formule du TTC de ligne factorisée (`line_ttc_sql!`), avoir
   compté TTC, garde verrouillante de l'avoir sur facture réglée, variante `CREDIT_NOTE_INVOICE_SETTLED`
   ×4 locales, fixture `monter` par le gabarit, bouton aligné sur « Dévalider », manuel et CHANGELOG.
