@@ -41,11 +41,21 @@ pub type SettlementCancelHit = (SettlementCancelBlocker, Option<i64>, Option<Str
 /// l'origine qu'APRÈS (passe 1 de revue de code, 25-3-a-1). Patron :
 /// `invoice_settlements_write::cancel_settlement_in_tx`, étape 2-bis.
 ///
+/// ⛔ **L'exemption étroite du rang 3** (`unlinking`, Story 25-3-b) : le
+/// dé-rapprochement de la transaction `unlinking` défait **ce** lien-là —
+/// il ne peut donc pas en être empêché. Le rang 3 ne tient alors que si une
+/// **autre** transaction pointe la même écriture, lue par une requête dédiée :
+/// l'identifiant que rend `reversal_blockers` sort d'un `LIMIT 1` **sans
+/// `ORDER BY`**, et « c'est celui qu'on défait » ne prouverait pas qu'il n'y en
+/// a pas d'autre. Les annulations de règlement passent `None` : leur
+/// comportement est inchangé.
+///
 /// Écriture introuvable (ou d'une autre société) → [`DbError::NotFound`].
 pub async fn settlement_entry_cancel_blocker(
     conn: &mut MySqlConnection,
     company_id: i64,
     entry_id: i64,
+    unlinking: Option<i64>,
 ) -> Result<Option<SettlementCancelHit>, DbError> {
     // Rang 2 — l'exercice de l'écriture de RÈGLEMENT (non celui du jour).
     // Patron : `journal_entries::delete_in_tx`, qui lit `fy.status` joint par
@@ -74,13 +84,27 @@ pub async fn settlement_entry_cancel_blocker(
     // y figurent aussi : ils sont ignorés ici, c'est l'autorité du geste qui
     // les lève.
     let blockers = journal_entries::reversal_blockers(&mut *conn, company_id, entry_id).await?;
-    if let Some((_, bank_transaction_id, _)) = blockers
-        .iter()
-        .find(|(b, _, _)| *b == ReversalBlocker::MatchedBankTransaction)
-    {
+    let matched = match unlinking {
+        None => blockers
+            .iter()
+            .find(|(b, _, _)| *b == ReversalBlocker::MatchedBankTransaction)
+            .map(|(_, bank_transaction_id, _)| *bank_transaction_id),
+        Some(unlinked) => sqlx::query_scalar::<_, i64>(
+            "SELECT id FROM bank_transactions \
+             WHERE company_id = ? AND matched_entry_id = ? AND id <> ? ORDER BY id LIMIT 1",
+        )
+        .bind(company_id)
+        .bind(entry_id)
+        .bind(unlinked)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(map_db_error)?
+        .map(Some),
+    };
+    if let Some(bank_transaction_id) = matched {
         return Ok(Some((
             SettlementCancelBlocker::MatchedBankTransaction,
-            *bank_transaction_id,
+            bank_transaction_id,
             None,
         )));
     }

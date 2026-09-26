@@ -235,6 +235,16 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * faux avec l'assurance de l'avoir mesuré.*
  */
 const ATTENDU = {
+	// Story 25-3-b (#418) : 1692 → 1709, soit **+17**, recomptés depuis la source
+	// (`grep -o 'i18nMsg('`, `main` contre l'arbre) :
+	//   • `features/reconciliation/reconciliation-cancel.ts` 0 → 6 : les six motifs ;
+	//   • `features/reconciliation/CancelReconciliationDialog.svelte` 0 → 6 : le titre,
+	//     la lecture, les deux confirmations, Fermer, Confirmer ;
+	//   • `bank-import/[id]/+page.svelte` 0 → 3 : la colonne, le lien, le bouton ;
+	//   • `features/invoices/InvoiceSettlements.svelte` 9 → 10 : le bouton du rapprochement ;
+	//   • `invoices/[id]/+page.svelte` 68 → 69 : le toast.
+	//   ⚠️ `journal-entries/[id]/+page.svelte` (17) et `settlement-cancel-blocked.ts` (4)
+	//   ne bougent pas : leur repli change de TEXTE, pas de nombre d'appels.
 	// Story 25-3-a-2 (#414) : 1685 → 1692, soit **+7**, recomptés depuis la
 	// source (`grep -o 'i18nMsg('`, `main` contre l'arbre) :
 	//   • `supplier-invoices/[id]/+page.svelte` 29 → 35 (+6) : le bouton, la
@@ -303,7 +313,7 @@ const ATTENDU = {
 	// trouve rien là où l'appel n'existe pas encore : chercher les clés mal
 	// traduites ne révèle jamais celles qui ne sont pas appelées du tout — et
 	// partir d'une liste de clés ne révèle jamais celles que la liste omet.*
-	sitesTotal: 1692,
+	sitesTotal: 1709,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

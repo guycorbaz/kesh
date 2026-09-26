@@ -3059,3 +3059,1015 @@ async fn cancelling_a_reconciled_settlement_is_refused(pool: MySqlPool) {
             .unwrap();
     assert_eq!(restantes, 1, "refusée ⇒ rien de retiré");
 }
+
+// ============================================================
+// Story 25-3-b (#418) — annuler un rapprochement
+// ============================================================
+
+/// Un exercice ouvert qui couvre la date du JOUR — celle où la contre-passation
+/// est datée. `insert_fake_fiscal_year` ne crée que 2026 : sans ce complément,
+/// ces tests cesseraient de passer au 1er janvier.
+async fn ensure_fiscal_year_today(pool: &MySqlPool, company_id: i64) {
+    // 2026 d'abord, par l'outil commun — sans quoi ses appels suivants
+    // entreraient en collision (`uq_fiscal_years_company_start_date`).
+    let _ = insert_fake_fiscal_year(pool, company_id).await;
+    let today = Utc::now().date_naive();
+    let covered: Option<i64> = sqlx::query_scalar(
+        "SELECT id FROM fiscal_years WHERE company_id = ? AND start_date <= ? AND end_date >= ?",
+    )
+    .bind(company_id)
+    .bind(today)
+    .bind(today)
+    .fetch_optional(pool)
+    .await
+    .unwrap();
+    if covered.is_none() {
+        let year = chrono::Datelike::year(&today);
+        sqlx::query(
+            "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status, \
+             created_at, updated_at) VALUES (?, ?, ?, ?, 'Open', NOW(3), NOW(3))",
+        )
+        .bind(company_id)
+        .bind(format!("FY {year} jour c{company_id}"))
+        .bind(NaiveDate::from_ymd_opt(year, 1, 1).unwrap())
+        .bind(NaiveDate::from_ymd_opt(year, 12, 31).unwrap())
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+}
+
+async fn cancel_reco(app: &TestApp, jwt: &str, tx_id: i64) -> (u16, Value) {
+    let resp = app
+        .client
+        .post(app.url(&format!(
+            "/api/v1/reconciliation/transactions/{tx_id}/cancel"
+        )))
+        .bearer_auth(jwt)
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status().as_u16();
+    (status, resp.json().await.unwrap_or(Value::Null))
+}
+
+async fn get_reco(app: &TestApp, jwt: &str, tx_id: i64) -> (u16, Value) {
+    let resp = app
+        .client
+        .get(app.url(&format!("/api/v1/reconciliation/transactions/{tx_id}")))
+        .bearer_auth(jwt)
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status().as_u16();
+    (status, resp.json().await.unwrap_or(Value::Null))
+}
+
+async fn matched_entry_of(pool: &MySqlPool, tx_id: i64) -> Option<i64> {
+    sqlx::query_scalar("SELECT matched_entry_id FROM bank_transactions WHERE id = ?")
+        .bind(tx_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// ⛔ Ce qu'un dé-rapprochement doit laisser, quel que soit le chemin : la
+/// transaction « à rapprocher » (statut, lien, marqueur de rejet), l'écriture
+/// d'origine contre-passée par une écriture inverse, et — surtout — la
+/// transaction **de retour dans les propositions** : c'est ce que l'écran lit.
+async fn assert_back_to_reconcile(
+    pool: &MySqlPool,
+    app: &TestApp,
+    jwt: &str,
+    bank_account_id: i64,
+    tx_id: i64,
+    entry_id: i64,
+    reversal_id: i64,
+) {
+    let (status, matched, rejected): (String, Option<i64>, Option<NaiveDateTime>) = sqlx::query_as(
+        "SELECT status, matched_entry_id, auto_match_rejected_at \
+             FROM bank_transactions WHERE id = ?",
+    )
+    .bind(tx_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(status, "pending");
+    assert_eq!(matched, None, "le lien est défait");
+    assert_eq!(rejected, None, "le marqueur de rejet est remis à zéro");
+    let reverses: Option<i64> =
+        sqlx::query_scalar("SELECT reverses_entry_id FROM journal_entries WHERE id = ?")
+            .bind(reversal_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        reverses,
+        Some(entry_id),
+        "l'écriture inverse vise l'origine"
+    );
+    let origin_left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE id = ?")
+        .bind(entry_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        origin_left, 1,
+        "l'origine reste — contre-passée, jamais supprimée"
+    );
+    let body: Value = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reconciliation/proposals?bankAccountId={bank_account_id}"
+        )))
+        .bearer_auth(jwt)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let back = body["proposals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|p| p["bankTransactionId"].as_i64() == Some(tx_id));
+    assert!(
+        back,
+        "la transaction revient dans les propositions — got {body:?}"
+    );
+}
+
+/// Une facture rapprochée par une proposition acceptée, prête à dé-rapprocher.
+async fn reconciled_invoice(
+    pool: &MySqlPool,
+    app: &TestApp,
+    ctx: &CompanyCtx,
+    number: &str,
+    invoice_date: NaiveDate,
+    paid_on: NaiveDate,
+    amount: Decimal,
+) -> (i64, i64) {
+    let (inv_id, _) = seed_validated_invoice(
+        pool,
+        ctx.company_id,
+        ctx.contact_id,
+        number,
+        invoice_date,
+        amount,
+    )
+    .await;
+    let tx_id = seed_bank_transactions(
+        pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash(number),
+        paid_on,
+        paid_on,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            paid_on,
+            Some(paid_on),
+            amount,
+            "CHF",
+            number,
+            Some("Acme Client"),
+        )],
+    )
+    .await[0];
+    let accepted = post_accept_one(app, ctx, tx_id, inv_id).await;
+    assert_eq!(
+        accepted["accepted"].as_array().map(Vec::len),
+        Some(1),
+        "got {accepted:?}"
+    );
+    (inv_id, tx_id)
+}
+
+/// ⛔ **Chemin « facture »** : le règlement retiré, la facture de nouveau à
+/// régler, la transaction de retour — puis re-rapprochable.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn cancelling_an_invoice_reconciliation_undoes_everything(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    ensure_fiscal_year_today(&pool, ctx.company_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let (inv_id, tx_id) = reconciled_invoice(
+        &pool,
+        &app,
+        &ctx,
+        "INV-2026-001",
+        NaiveDate::from_ymd_opt(2026, 4, 20).unwrap(),
+        day,
+        dec!(1234.56),
+    )
+    .await;
+    let entry_id = matched_entry_of(&pool, tx_id).await.expect("rapprochée");
+
+    let (st, view) = get_reco(&app, &ctx.jwt, tx_id).await;
+    assert_eq!(st, 200, "got {view:?}");
+    assert_eq!(view["kind"], "invoice_settlement");
+    assert_eq!(view["invoiceId"], inv_id);
+    assert_eq!(view["invoiceNumber"], "INV-2026-001");
+    assert_eq!(view["matchedEntryId"], entry_id);
+    assert_eq!(view["cancellable"], true, "got {view:?}");
+
+    let (st, done) = cancel_reco(&app, &ctx.jwt, tx_id).await;
+    assert_eq!(st, 200, "got {done:?}");
+    assert_eq!(done["invoiceId"], inv_id);
+    assert_eq!(done["bankTransaction"]["status"], "pending");
+    let reversal_id = done["reversalJournalEntryId"].as_i64().unwrap();
+    assert_back_to_reconcile(
+        &pool,
+        &app,
+        &ctx.jwt,
+        ctx.bank_account_id,
+        tx_id,
+        entry_id,
+        reversal_id,
+    )
+    .await;
+
+    let (settlements, paid_at): (i64, Option<NaiveDateTime>) = sqlx::query_as(
+        "SELECT (SELECT COUNT(*) FROM invoice_settlements WHERE invoice_id = i.id), i.paid_at \
+         FROM invoices i WHERE i.id = ?",
+    )
+    .bind(inv_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        (settlements, paid_at),
+        (0, None),
+        "la facture redevient à régler"
+    );
+    let audits: Vec<String> = sqlx::query_scalar(
+        "SELECT action FROM audit_log WHERE action IN \
+         ('reconciliation.cancelled', 'invoice.settlement_cancelled', 'journal_entry.reversed') \
+         ORDER BY action",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        audits,
+        [
+            "invoice.settlement_cancelled",
+            "journal_entry.reversed",
+            "reconciliation.cancelled"
+        ],
+        "trois lignes, chacune nomme son objet"
+    );
+
+    // Re-rapprochable : la même transaction s'accepte à nouveau.
+    let again = post_accept_one(&app, &ctx, tx_id, inv_id).await;
+    assert_eq!(
+        again["accepted"].as_array().map(Vec::len),
+        Some(1),
+        "got {again:?}"
+    );
+}
+
+/// Une facture réglée en deux fois — un règlement en caisse, un rapprochement :
+/// dé-rapprocher ne retire que le règlement rapproché.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn cancelling_one_of_two_settlements_keeps_the_other(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    ensure_fiscal_year_today(&pool, ctx.company_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let (inv_id, _) = seed_validated_invoice(
+        &pool,
+        ctx.company_id,
+        ctx.contact_id,
+        "INV-2026-002",
+        NaiveDate::from_ymd_opt(2026, 4, 20).unwrap(),
+        dec!(1000.00),
+    )
+    .await;
+    let tx_id = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("two_settlements"),
+        day,
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            day,
+            Some(day),
+            dec!(400.00),
+            "CHF",
+            "INV-2026-002",
+            Some("Acme Client"),
+        )],
+    )
+    .await[0];
+    let accepted = post_accept_one(&app, &ctx, tx_id, inv_id).await;
+    assert_eq!(
+        accepted["accepted"].as_array().map(Vec::len),
+        Some(1),
+        "got {accepted:?}"
+    );
+    // Le second règlement, par la route d'encaissement (vrai chemin).
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{inv_id}/settlements")))
+        .bearer_auth(&ctx.jwt)
+        .json(&serde_json::json!({
+            "settlementType": "bank_transfer",
+            "bankAccountId": ctx.bank_account_id,
+            "amount": "250.00",
+            "settledOn": "2026-05-20",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "got {:?}", resp.text().await);
+
+    let (st, done) = cancel_reco(&app, &ctx.jwt, tx_id).await;
+    assert_eq!(st, 200, "got {done:?}");
+    let amounts: Vec<Decimal> =
+        sqlx::query_scalar("SELECT amount FROM invoice_settlements WHERE invoice_id = ?")
+            .bind(inv_id)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        amounts,
+        vec![dec!(250.00)],
+        "seul le règlement rapproché est retiré"
+    );
+    let paid_at: Option<NaiveDateTime> =
+        sqlx::query_scalar("SELECT paid_at FROM invoices WHERE id = ?")
+            .bind(inv_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(paid_at, None, "toujours partiellement réglée");
+}
+
+/// ⛔ **Chemin « rapprochement manuel »** : une écriture que seule la
+/// transaction possède, contre-passée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn cancelling_a_manual_reconciliation_reverses_its_entry(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let _ = insert_fake_fiscal_year(&pool, ctx.company_id).await;
+    ensure_fiscal_year_today(&pool, ctx.company_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let (_, revenue_id) = account_ids(&pool, ctx.company_id).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let tx_id = manual_reconciled(&pool, &app, &ctx, revenue_id, day, "manual").await;
+    let entry_id = matched_entry_of(&pool, tx_id).await.expect("rapprochée");
+
+    let (st, view) = get_reco(&app, &ctx.jwt, tx_id).await;
+    assert_eq!(st, 200);
+    assert_eq!(view["kind"], "entry");
+    assert_eq!(view["invoiceId"], Value::Null);
+    assert_eq!(view["cancellable"], true, "got {view:?}");
+
+    let (st, done) = cancel_reco(&app, &ctx.jwt, tx_id).await;
+    assert_eq!(st, 200, "got {done:?}");
+    assert_eq!(done["invoiceId"], Value::Null);
+    let reversal_id = done["reversalJournalEntryId"].as_i64().unwrap();
+    assert_back_to_reconcile(
+        &pool,
+        &app,
+        &ctx.jwt,
+        ctx.bank_account_id,
+        tx_id,
+        entry_id,
+        reversal_id,
+    )
+    .await;
+}
+
+/// Une transaction entrante rapprochée manuellement (`POST /manual`).
+async fn manual_reconciled(
+    pool: &MySqlPool,
+    app: &TestApp,
+    ctx: &CompanyCtx,
+    counterparty_account_id: i64,
+    day: NaiveDate,
+    seed: &str,
+) -> i64 {
+    let tx_id = seed_bank_transactions(
+        pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash(seed),
+        day,
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            day,
+            Some(day),
+            dec!(80.00),
+            "CHF",
+            seed,
+            Some("Divers"),
+        )],
+    )
+    .await[0];
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/manual"))
+        .bearer_auth(&ctx.jwt)
+        .json(&serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "bankTransactionId": tx_id,
+            "counterpartyAccountId": counterparty_account_id,
+            "description": "Recette diverse",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "got {:?}", resp.text().await);
+    tx_id
+}
+
+/// ⛔ **Chemin « éclatement manuel »** (`POST /split`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn cancelling_a_manual_split_reverses_its_entry(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let _ = insert_fake_fiscal_year(&pool, ctx.company_id).await;
+    ensure_fiscal_year_today(&pool, ctx.company_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let (receivable_id, revenue_id) = account_ids(&pool, ctx.company_id).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let tx_id = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("post_split"),
+        day,
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            day,
+            Some(day),
+            dec!(100.00),
+            "CHF",
+            "SPLIT",
+            Some("Divers"),
+        )],
+    )
+    .await[0];
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/split"))
+        .bearer_auth(&ctx.jwt)
+        .json(&serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "bankTransactionId": tx_id,
+            "splits": [
+                { "counterpartyAccountId": revenue_id, "amount": "60.00", "description": "Part A" },
+                { "counterpartyAccountId": receivable_id, "amount": "40.00", "description": "Part B" },
+            ],
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "got {:?}", resp.text().await);
+    let entry_id = matched_entry_of(&pool, tx_id).await.expect("rapprochée");
+
+    let (st, done) = cancel_reco(&app, &ctx.jwt, tx_id).await;
+    assert_eq!(st, 200, "got {done:?}");
+    let reversal_id = done["reversalJournalEntryId"].as_i64().unwrap();
+    assert_back_to_reconcile(
+        &pool,
+        &app,
+        &ctx.jwt,
+        ctx.bank_account_id,
+        tx_id,
+        entry_id,
+        reversal_id,
+    )
+    .await;
+}
+
+/// ⛔ **Chemin « éclatement accepté »** (proposition `type: split`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn cancelling_an_accepted_split_reverses_its_entry(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let _ = insert_fake_fiscal_year(&pool, ctx.company_id).await;
+    ensure_fiscal_year_today(&pool, ctx.company_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let (receivable_id, revenue_id) = account_ids(&pool, ctx.company_id).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let tx_id = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("accept_split_cancel"),
+        day,
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            day,
+            Some(day),
+            dec!(100.00),
+            "CHF",
+            "SPLIT",
+            Some("Divers"),
+        )],
+    )
+    .await[0];
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/accept"))
+        .bearer_auth(&ctx.jwt)
+        .json(&serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "proposals": [{
+                "type": "split",
+                "bankTransactionId": tx_id,
+                "splits": [
+                    { "counterpartyAccountId": revenue_id, "amount": "60.00", "description": "A" },
+                    { "counterpartyAccountId": receivable_id, "amount": "40.00", "description": "B" },
+                ],
+            }],
+        }))
+        .send()
+        .await
+        .unwrap();
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["accepted"].as_array().map(Vec::len),
+        Some(1),
+        "got {body:?}"
+    );
+    let entry_id = matched_entry_of(&pool, tx_id).await.expect("rapprochée");
+
+    let (st, done) = cancel_reco(&app, &ctx.jwt, tx_id).await;
+    assert_eq!(st, 200, "got {done:?}");
+    let reversal_id = done["reversalJournalEntryId"].as_i64().unwrap();
+    assert_back_to_reconcile(
+        &pool,
+        &app,
+        &ctx.jwt,
+        ctx.bank_account_id,
+        tx_id,
+        entry_id,
+        reversal_id,
+    )
+    .await;
+}
+
+/// ⛔ **Arbitrage Q2 de Guy** : une facture de décembre, dans un exercice
+/// **clos**, payée en janvier — se rapproche, et se dé-rapproche. Seul
+/// l'exercice de l'écriture DE RAPPROCHEMENT compte, jamais celui de la vente.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn an_invoice_of_a_closed_year_paid_the_next_year_is_unreconcilable(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    ensure_fiscal_year_today(&pool, ctx.company_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let (inv_id, sale_entry) = seed_validated_invoice(
+        &pool,
+        ctx.company_id,
+        ctx.contact_id,
+        "INV-2025-099",
+        NaiveDate::from_ymd_opt(2025, 12, 20).unwrap(),
+        dec!(500.00),
+    )
+    .await;
+    // La vente appartient à l'exercice 2025, clos par le vrai chemin.
+    let fy_2025 = sqlx::query(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status, \
+         created_at, updated_at) VALUES (?, 'FY 2025', '2025-01-01', '2025-12-31', 'Open', \
+         NOW(3), NOW(3))",
+    )
+    .bind(ctx.company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    sqlx::query(
+        "UPDATE journal_entries SET fiscal_year_id = ?, entry_date = '2025-12-20' WHERE id = ?",
+    )
+    .bind(fy_2025)
+    .bind(sale_entry)
+    .execute(&pool)
+    .await
+    .unwrap();
+    kesh_db::repositories::fiscal_years::close(&pool, ctx.user_id, ctx.company_id, fy_2025)
+        .await
+        .expect("clôture de 2025");
+
+    let paid_on = NaiveDate::from_ymd_opt(2026, 1, 10).unwrap();
+    let tx_id = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("closed_year_invoice"),
+        paid_on,
+        paid_on,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            paid_on,
+            Some(paid_on),
+            dec!(500.00),
+            "CHF",
+            "INV-2025-099",
+            Some("Acme Client"),
+        )],
+    )
+    .await[0];
+    let accepted = post_accept_one(&app, &ctx, tx_id, inv_id).await;
+    assert_eq!(
+        accepted["accepted"].as_array().map(Vec::len),
+        Some(1),
+        "got {accepted:?}"
+    );
+
+    let (st, view) = get_reco(&app, &ctx.jwt, tx_id).await;
+    assert_eq!(view["cancellable"], true, "got {st} {view:?}");
+    let (st, done) = cancel_reco(&app, &ctx.jwt, tx_id).await;
+    assert_eq!(st, 200, "got {done:?}");
+}
+
+/// Rang 2 sur une écriture **propre** : l'exercice de l'écriture de
+/// rapprochement est clos. ⛔ Le refus est le 409 du DÉ-RAPPROCHEMENT, dont le
+/// texte ne dit pas « règlement » — une écriture manuelle n'en est pas un.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_closed_year_refuses_with_the_reconciliation_text(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    // Un exercice passé, qui ne couvre pas le jour : le clore ne ferme pas le
+    // jour — c'est bien le rang 2 qui parle, pas le rang 5.
+    let fy_2024 = sqlx::query(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status, \
+         created_at, updated_at) VALUES (?, 'FY 2024', '2024-01-01', '2024-12-31', 'Open', \
+         NOW(3), NOW(3))",
+    )
+    .bind(ctx.company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    ensure_fiscal_year_today(&pool, ctx.company_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let (_, revenue_id) = account_ids(&pool, ctx.company_id).await;
+    let tx_id = manual_reconciled(
+        &pool,
+        &app,
+        &ctx,
+        revenue_id,
+        NaiveDate::from_ymd_opt(2024, 6, 3).unwrap(),
+        "closed_manual",
+    )
+    .await;
+    kesh_db::repositories::fiscal_years::close(&pool, ctx.user_id, ctx.company_id, fy_2024)
+        .await
+        .expect("clôture");
+
+    let (_, view) = get_reco(&app, &ctx.jwt, tx_id).await;
+    assert_eq!(
+        view["cancelBlockedBy"], "FISCAL_YEAR_CLOSED",
+        "got {view:?}"
+    );
+    let (st, body) = cancel_reco(&app, &ctx.jwt, tx_id).await;
+    assert_eq!(st, 409, "got {body:?}");
+    assert_eq!(body["error"]["code"], "FISCAL_YEAR_CLOSED");
+    let message = body["error"]["message"].as_str().unwrap_or_default();
+    assert!(
+        !message.contains("règlement") && message.contains("rapprochement"),
+        "le texte du dé-rapprochement, pas celui du règlement — got {message:?}"
+    );
+    assert!(
+        matched_entry_of(&pool, tx_id).await.is_some(),
+        "rien n'a bougé"
+    );
+}
+
+/// ⛔ **Composition et rollback** : le rang 1 (facture créditée) est refusé par
+/// le geste du règlement **après** que le lien a été défait dans la
+/// transaction — le 409 remonte, et le lien est toujours là.
+/// ⚠️ État **forgé** : la facture passe à `cancelled` par SQL (l'avoir par le
+/// vrai chemin exige une facture complète) ; c'est l'état que produit l'avoir.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_credited_invoice_refuses_and_the_link_survives(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    ensure_fiscal_year_today(&pool, ctx.company_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let (inv_id, tx_id) = reconciled_invoice(
+        &pool,
+        &app,
+        &ctx,
+        "INV-2026-003",
+        NaiveDate::from_ymd_opt(2026, 4, 20).unwrap(),
+        NaiveDate::from_ymd_opt(2026, 5, 15).unwrap(),
+        dec!(300.00),
+    )
+    .await;
+    let entry_id = matched_entry_of(&pool, tx_id).await;
+    sqlx::query("UPDATE invoices SET status = 'cancelled' WHERE id = ?")
+        .bind(inv_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (_, view) = get_reco(&app, &ctx.jwt, tx_id).await;
+    assert_eq!(view["cancelBlockedBy"], "INVOICE_CREDITED", "got {view:?}");
+    let (st, body) = cancel_reco(&app, &ctx.jwt, tx_id).await;
+    assert_eq!(st, 409, "got {body:?}");
+    assert_eq!(body["error"]["code"], "INVOICE_CREDITED");
+    assert_eq!(
+        matched_entry_of(&pool, tx_id).await,
+        entry_id,
+        "le rollback a rétabli le lien"
+    );
+    let n: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log WHERE action = 'reconciliation.cancelled'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(n, 0, "rien n'est écrit");
+}
+
+/// ⛔ **L'exemption étroite** : deux transactions pointent la même écriture
+/// (état **forgé** — aucun chemin de l'application ne le produit). Défaire l'une
+/// est refusé au rang 3, avec l'identifiant de l'**autre** — dans les deux
+/// ordres d'insertion, pour que la lecture naïve d'un `LIMIT 1` sans ordre ne
+/// passe pas par chance.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn another_transaction_on_the_same_entry_still_refuses(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let _ = insert_fake_fiscal_year(&pool, ctx.company_id).await;
+    ensure_fiscal_year_today(&pool, ctx.company_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let (_, revenue_id) = account_ids(&pool, ctx.company_id).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    // L'ordre « celle qu'on défait est la plus ancienne » : elle est rapprochée
+    // d'abord, l'autre forgée ensuite (id plus grand).
+    let first = manual_reconciled(&pool, &app, &ctx, revenue_id, day, "exempt_a").await;
+    let entry = matched_entry_of(&pool, first).await.unwrap();
+    let later = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("exempt_b"),
+        day,
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            day,
+            Some(day),
+            dec!(80.00),
+            "CHF",
+            "exempt_b",
+            Some("Divers"),
+        )],
+    )
+    .await[0];
+    sqlx::query(
+        "UPDATE bank_transactions SET status = 'reconciled', matched_entry_id = ? WHERE id = ?",
+    )
+    .bind(entry)
+    .bind(later)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(first < later);
+
+    for (undone, other) in [(first, later), (later, first)] {
+        let (_, view) = get_reco(&app, &ctx.jwt, undone).await;
+        assert_eq!(
+            view["cancelBlockedBy"], "MATCHED_BANK_TRANSACTION",
+            "got {view:?}"
+        );
+        assert_eq!(
+            view["cancelBlockedDocumentId"], other,
+            "l'AUTRE transaction"
+        );
+        let (st, body) = cancel_reco(&app, &ctx.jwt, undone).await;
+        assert_eq!(st, 409, "got {body:?}");
+        assert_eq!(body["error"]["code"], "MATCHED_BANK_TRANSACTION");
+        assert_eq!(
+            matched_entry_of(&pool, undone).await,
+            Some(entry),
+            "rien n'a bougé"
+        );
+    }
+}
+
+/// Deux annulations simultanées de la même transaction : l'une réussit,
+/// l'autre trouve une transaction qui n'est plus rapprochée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn two_simultaneous_cancellations_one_wins(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let _ = insert_fake_fiscal_year(&pool, ctx.company_id).await;
+    ensure_fiscal_year_today(&pool, ctx.company_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let (_, revenue_id) = account_ids(&pool, ctx.company_id).await;
+    let tx_id = manual_reconciled(
+        &pool,
+        &app,
+        &ctx,
+        revenue_id,
+        NaiveDate::from_ymd_opt(2026, 5, 15).unwrap(),
+        "twice",
+    )
+    .await;
+    let (a, b) = tokio::join!(
+        cancel_reco(&app, &ctx.jwt, tx_id),
+        cancel_reco(&app, &ctx.jwt, tx_id)
+    );
+    let mut statuses = [a.0, b.0];
+    statuses.sort_unstable();
+    assert_eq!(statuses, [200, 409], "got {a:?} / {b:?}");
+    let refused = if a.0 == 409 { &a.1 } else { &b.1 };
+    assert_eq!(refused["error"]["code"], "BANK_TRANSACTION_NOT_RECONCILED");
+    let reversals: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM journal_entries WHERE reverses_entry_id IS NOT NULL",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(reversals, 1, "une seule contre-passation");
+}
+
+/// Rôles, portée et motif de tête : Consultation → 403 ; autre société → 404
+/// et rien d'écrit ; transaction non rapprochée → 409.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn cancel_reconciliation_roles_scope_and_head(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let _ = insert_fake_fiscal_year(&pool, ctx.company_id).await;
+    ensure_fiscal_year_today(&pool, ctx.company_id).await;
+    let other = setup_company(&pool, "Autre", "CH9300762011623852957", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let (_, revenue_id) = account_ids(&pool, ctx.company_id).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let tx_id = manual_reconciled(&pool, &app, &ctx, revenue_id, day, "roles").await;
+
+    let reader_id = create_user(&pool, "lecteur", Role::Consultation, ctx.company_id).await;
+    let reader = forge_jwt(reader_id, "Consultation", ctx.company_id);
+    assert_eq!(cancel_reco(&app, &reader, tx_id).await.0, 403);
+    assert_eq!(get_reco(&app, &reader, tx_id).await.0, 403);
+
+    let tables = [
+        "bank_transactions WHERE matched_entry_id IS NOT NULL",
+        "journal_entries",
+        "journal_entry_lines",
+        "invoice_settlements",
+        "audit_log",
+    ];
+    let mut before = Vec::new();
+    for t in tables {
+        before.push(
+            sqlx::query_scalar::<_, i64>(&format!("SELECT COUNT(*) FROM {t}"))
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+        );
+    }
+    assert_eq!(cancel_reco(&app, &other.jwt, tx_id).await.0, 404);
+    assert_eq!(get_reco(&app, &other.jwt, tx_id).await.0, 404);
+    for (t, n) in tables.iter().zip(before) {
+        let now: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {t}"))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(now, n, "rien d'écrit dans {t}");
+    }
+
+    assert_eq!(cancel_reco(&app, &ctx.jwt, tx_id).await.0, 200);
+    let (_, view) = get_reco(&app, &ctx.jwt, tx_id).await;
+    assert_eq!(view["cancelBlockedBy"], "BANK_TRANSACTION_NOT_RECONCILED");
+    assert_eq!(view["kind"], Value::Null);
+    let (st, body) = cancel_reco(&app, &ctx.jwt, tx_id).await;
+    assert_eq!(st, 409);
+    assert_eq!(body["error"]["code"], "BANK_TRANSACTION_NOT_RECONCILED");
+}
+
+/// ⛔ **Le marqueur de rejet** : une transaction dé-rapprochée doit revenir
+/// dans les propositions, qui écartent toute transaction marquée rejetée.
+/// ⚠️ **État FORGÉ, et dit tel** : aucun chemin réel ne laisse le marqueur sur
+/// une transaction rapprochée — quatre chemins le remettent à zéro, et le
+/// chemin « facture » refuse une transaction rejetée dès son contrôle
+/// préalable (400, vérifié au développement). La remise à zéro du geste est
+/// donc une **défense** ; sans ce test, l'oublier ne rougirait nulle part.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_previously_rejected_transaction_comes_back_to_the_proposals(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    ensure_fiscal_year_today(&pool, ctx.company_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let (inv_id, _) = seed_validated_invoice(
+        &pool,
+        ctx.company_id,
+        ctx.contact_id,
+        "INV-2026-004",
+        NaiveDate::from_ymd_opt(2026, 4, 20).unwrap(),
+        dec!(700.00),
+    )
+    .await;
+    let tx_id = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("rejected_then_accepted"),
+        day,
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            day,
+            Some(day),
+            dec!(700.00),
+            "CHF",
+            "INV-2026-004",
+            Some("Acme Client"),
+        )],
+    )
+    .await[0];
+    let accepted = post_accept_one(&app, &ctx, tx_id, inv_id).await;
+    assert_eq!(
+        accepted["accepted"].as_array().map(Vec::len),
+        Some(1),
+        "got {accepted:?}"
+    );
+    sqlx::query("UPDATE bank_transactions SET auto_match_rejected_at = NOW(3) WHERE id = ?")
+        .bind(tx_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let entry_id = matched_entry_of(&pool, tx_id).await.unwrap();
+
+    let (st, done) = cancel_reco(&app, &ctx.jwt, tx_id).await;
+    assert_eq!(st, 200, "got {done:?}");
+    let reversal_id = done["reversalJournalEntryId"].as_i64().unwrap();
+    assert_back_to_reconcile(
+        &pool,
+        &app,
+        &ctx.jwt,
+        ctx.bank_account_id,
+        tx_id,
+        entry_id,
+        reversal_id,
+    )
+    .await;
+}
+
+/// ⛔ **Clés API d'écriture admises, et portées à l'audit** : la ligne
+/// `reconciliation.cancelled` nomme la clé (`for_actor`). ⚠️ Les lignes écrites
+/// par le socle et par le geste du règlement ne la portent pas — défaut
+/// antérieur suivi par #431.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn an_api_key_cancels_and_is_named_in_the_audit(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let _ = insert_fake_fiscal_year(&pool, ctx.company_id).await;
+    ensure_fiscal_year_today(&pool, ctx.company_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let (_, revenue_id) = account_ids(&pool, ctx.company_id).await;
+    let tx_id = manual_reconciled(
+        &pool,
+        &app,
+        &ctx,
+        revenue_id,
+        NaiveDate::from_ymd_opt(2026, 5, 15).unwrap(),
+        "by_key",
+    )
+    .await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/settings/api-keys"))
+        .bearer_auth(&ctx.jwt)
+        .json(&serde_json::json!({ "name": "rw", "scope": "read-write" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201);
+    let body: Value = resp.json().await.unwrap();
+    let (key_id, key) = (
+        body["id"].as_i64().unwrap(),
+        body["key"].as_str().unwrap().to_string(),
+    );
+
+    let (st, done) = cancel_reco(&app, &key, tx_id).await;
+    assert_eq!(st, 200, "got {done:?}");
+    let (actor_type, actor_key): (String, Option<i64>) = sqlx::query_as(
+        "SELECT actor_type, actor_api_key_id FROM audit_log \
+         WHERE action = 'reconciliation.cancelled' AND entity_id = ?",
+    )
+    .bind(tx_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!((actor_type.as_str(), actor_key), ("api_key", Some(key_id)));
+}

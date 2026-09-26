@@ -299,6 +299,19 @@ pub async fn settlement_cancel_blocker(
     company_id: i64,
     settlement_id: i64,
 ) -> Result<Option<SettlementCancelHit>, DbError> {
+    settlement_cancel_blocker_unlinking(conn, company_id, settlement_id, None).await
+}
+
+/// [`settlement_cancel_blocker`], avec l'**exemption étroite** du rang 3 pour
+/// la transaction bancaire `unlinking` que l'on dé-rapproche (Story 25-3-b) —
+/// cf. [`settlement_entry_cancel_blocker`]. ⛔ Le rang 1 n'est écrit qu'ici :
+/// le dé-rapprochement d'un règlement client l'appelle, il ne le recopie pas.
+pub async fn settlement_cancel_blocker_unlinking(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    settlement_id: i64,
+    unlinking: Option<i64>,
+) -> Result<Option<SettlementCancelHit>, DbError> {
     let row: Option<(i64, String)> = sqlx::query_as(
         "SELECT s.journal_entry_id, i.status FROM invoice_settlements s \
          JOIN invoices i ON i.id = s.invoice_id AND i.company_id = s.company_id \
@@ -318,7 +331,7 @@ pub async fn settlement_cancel_blocker(
     if status != "validated" {
         return Ok(Some((SettlementCancelBlocker::InvoiceCredited, None, None)));
     }
-    settlement_entry_cancel_blocker(conn, company_id, entry_id).await
+    settlement_entry_cancel_blocker(conn, company_id, entry_id, unlinking).await
 }
 
 /// Ce que rend une annulation de règlement.
@@ -338,8 +351,9 @@ pub struct SettlementCancellation {
 /// résiduel se calcule depuis cette table), projette `paid_at` et journalise.
 ///
 /// ⛔ **Forme `_in_tx` publique, et rien qui présuppose l'appelant HTTP** : le
-/// dé-rapprochement (25-3-b) l'appellera après avoir défait le lien bancaire
-/// dans la même transaction — ce qui lève le rang 3 sans aucune exemption.
+/// dé-rapprochement (Story 25-3-b, `reconciliation_cancel::cancel_in_tx`)
+/// l'appelle après avoir défait le lien bancaire dans la même transaction — ce
+/// qui lève le rang 3 sans aucune exemption.
 ///
 /// ⛔ **Qui refuse** : ce geste ne refuse lui-même que les rangs 1 et 2
 /// ([`DbError::SettlementNotCancellable`]) ; les rangs 3 à 5 sont refusés par

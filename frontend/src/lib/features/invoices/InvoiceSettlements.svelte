@@ -11,6 +11,11 @@
   ⚠️ Le rôle n'entre pas dans `cancellable` : c'est `canManage` qui masque le
   bouton pour un rôle en lecture seule, le serveur refusant de toute façon.
 
+  Story 25-3-b (#418) — un règlement refusé parce que RAPPROCHÉ porte, à côté
+  de son motif, le bouton « Annuler le rapprochement » : le parent ouvre le
+  dialogue partagé (`features/reconciliation/CancelReconciliationDialog`) sur
+  la transaction bancaire que le serveur nomme (`cancelBlockedDocumentId`).
+
   Namespace i18n : clés `invoices-*` (composant sous `features/invoices/`,
   contrainte lint #30) ; les motifs communs viennent du module partagé.
 -->
@@ -25,10 +30,13 @@
 		settlements,
 		canManage,
 		onCancel,
+		onCancelReconciliation,
 	}: {
 		settlements: InvoiceSettlementResponse[];
 		canManage: boolean;
 		onCancel: (settlement: InvoiceSettlementResponse) => void;
+		/** Story 25-3-b — ouvre l'annulation du rapprochement de la transaction nommée. */
+		onCancelReconciliation?: (bankTransactionId: number) => void;
 	} = $props();
 
 	function typeLabel(t: InvoiceSettlementResponse['settlementType']): string {
@@ -85,6 +93,21 @@
 								>
 									{invoiceSettlementCancelMessage(s.cancelBlockedBy, s.cancelBlockedLabel)}
 								</span>
+								{#if s.cancelBlockedBy === 'MATCHED_BANK_TRANSACTION' && s.cancelBlockedDocumentId !== null && canManage && onCancelReconciliation}
+									{@const bankTransactionId = s.cancelBlockedDocumentId}
+									<Button
+										variant="outline"
+										size="sm"
+										class="mt-1"
+										onclick={() => onCancelReconciliation(bankTransactionId)}
+										data-testid="invoice-settlement-cancel-reconciliation"
+									>
+										{i18nMsg(
+											'invoices-settlement-cancel-reconciliation',
+											'Annuler le rapprochement',
+										)}
+									</Button>
+								{/if}
 							{/if}
 						</td>
 					</tr>

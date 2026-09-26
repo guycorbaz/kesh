@@ -10,12 +10,25 @@
 	import { getBankImportDetail } from '$lib/features/bank-import/bank-import.api';
 	import type { BankImportDetailResponse } from '$lib/features/bank-import/bank-import.types';
 	import { isApiError } from '$lib/shared/utils/api-client';
+	import { authState } from '$lib/app/stores/auth.svelte';
+	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	import CancelReconciliationDialog from '$lib/features/reconciliation/CancelReconciliationDialog.svelte';
+
+	// Story 25-3-b (#418) — annuler un rapprochement depuis le détail d'import,
+	// le seul écran qui montre une transaction rapprochée. Le bouton est masqué
+	// pour un rôle sans droit d'écriture ; le serveur refuse de toute façon.
+	let canManage = $derived(
+		authState.currentUser?.role === 'Admin' || authState.currentUser?.role === 'Comptable',
+	);
+	let cancelTxId = $state<number | null>(null);
 
 	let detail = $state<BankImportDetailResponse | null>(null);
 	let errorMessage = $state<string | null>(null);
 	let loading = $state(true);
 
-	onMount(async () => {
+	onMount(() => load());
+
+	async function load() {
 		const idStr = page.params.id;
 		const id = idStr ? Number(idStr) : NaN;
 		if (!Number.isFinite(id) || id <= 0) {
@@ -35,7 +48,7 @@
 		} finally {
 			loading = false;
 		}
-	});
+	}
 </script>
 
 <svelte:head>
@@ -89,6 +102,9 @@
 					<th class="text-left">Référence</th>
 					<th class="text-left">Détails</th>
 					<th class="text-left">Statut</th>
+					<th class="text-left">
+						{i18nMsg('reconciliation-cancel-column', 'Rapprochement')}
+					</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -99,9 +115,42 @@
 						<td>{tx.reference ?? '—'}</td>
 						<td>{tx.details}</td>
 						<td>{tx.status}</td>
+						<td>
+							{#if tx.matchedEntryId !== null}
+								<a
+									href="/journal-entries/{tx.matchedEntryId}"
+									class="text-primary underline"
+									data-testid="detail-tx-entry-link"
+								>
+									{i18nMsg('reconciliation-cancel-entry-link', "Voir l'écriture")}
+								</a>
+							{/if}
+							{#if tx.status === 'reconciled' && canManage}
+								<button
+									type="button"
+									class="ml-2 text-destructive underline"
+									data-testid="detail-tx-cancel-reconciliation"
+									onclick={() => (cancelTxId = tx.id)}
+								>
+									{i18nMsg('reconciliation-cancel-button', 'Annuler le rapprochement')}
+								</button>
+							{/if}
+						</td>
 					</tr>
 				{/each}
 			</tbody>
 		</table>
 	</section>
+{/if}
+
+{#if cancelTxId !== null}
+	<CancelReconciliationDialog
+		bankTransactionId={cancelTxId}
+		open={cancelTxId !== null}
+		onClose={() => (cancelTxId = null)}
+		onSuccess={() => {
+			cancelTxId = null;
+			void load();
+		}}
+	/>
 {/if}

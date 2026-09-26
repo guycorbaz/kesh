@@ -133,8 +133,15 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * `conforme` **36 → 37** ; `ecartee` ne bouge pas. *Identifiée en cherchant les
  * suffixes `Label`, `Text`, `Display` dans les fichiers de la story — la seule
  * déclaration neuve qui en porte un.*
+ *
+ * ⚠️ **43 → 44, et la déclaration est NOMMÉE** : `confirmText`
+ * (`lib/features/reconciliation/CancelReconciliationDialog.svelte`), né avec le dialogue
+ * d'annulation d'un rapprochement de la Story 25-3-b (#418). Ses deux branches délèguent
+ * à `i18nMsg` (`reconciliation-cancel-confirm-invoice` / `-entry`) : aucun littéral, donc
+ * `conforme` **37 → 38** ; `ecartee` ne bouge pas. *Identifiée par la même recherche des
+ * trois suffixes dans les fichiers de la story — la seule déclaration neuve qui en porte un.*
  */
-const CANDIDATES_ATTENDUES = 43;
+const CANDIDATES_ATTENDUES = 44;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -651,7 +658,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 6, conforme: 37 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 6, conforme: 38 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

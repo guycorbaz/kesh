@@ -138,6 +138,7 @@ pub const ACTIONS: &[&str] = &[
     "project.unarchived",
     "project.updated",
     "reconciliation.accepted",
+    "reconciliation.cancelled",
     "reconciliation.manual_matched",
     "reconciliation.rejected",
     "reconciliation.split_applied",

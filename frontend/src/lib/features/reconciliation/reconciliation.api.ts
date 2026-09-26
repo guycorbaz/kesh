@@ -4,8 +4,10 @@ import { apiClient } from '$lib/shared/utils/api-client';
 import type {
 	AcceptProposalInput,
 	AcceptResponse,
+	CancelReconciliationResponse,
 	GetProposalsResponse,
 	ManualMatchResponse,
+	ReconciliationTransactionResponse,
 	RejectResponse,
 	SplitProposalLine,
 	SplitResponse,
@@ -100,4 +102,31 @@ export async function splitTransaction(
 	};
 	if (valueDate !== undefined && valueDate !== '') body.valueDate = valueDate;
 	return apiClient.post<SplitResponse>('/api/v1/reconciliation/split', body);
+}
+
+/**
+ * Story 25-3-b (#418) — la transaction et ce qui empêche d'annuler son
+ * rapprochement. Lu **au clic**, pour une seule transaction : calculé pour
+ * chaque ligne d'un import, il coûterait des milliers de requêtes.
+ */
+export async function getReconciliationTransaction(
+	bankTransactionId: number,
+): Promise<ReconciliationTransactionResponse> {
+	return apiClient.get<ReconciliationTransactionResponse>(
+		`/api/v1/reconciliation/transactions/${bankTransactionId}`,
+	);
+}
+
+/**
+ * Story 25-3-b (#418) — annule un rapprochement : l'écriture est
+ * contre-passée (datée du jour), la transaction redevient à rapprocher, et le
+ * règlement d'une facture est retiré.
+ */
+export async function cancelReconciliation(
+	bankTransactionId: number,
+): Promise<CancelReconciliationResponse> {
+	return apiClient.post<CancelReconciliationResponse>(
+		`/api/v1/reconciliation/transactions/${bankTransactionId}/cancel`,
+		{},
+	);
 }

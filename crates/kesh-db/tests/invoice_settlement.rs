@@ -787,8 +787,9 @@ async fn socle_la_precedence_se_poursuit_apres_le_motif_leve(pool: MySqlPool) {
     }
 }
 
-/// ⛔ **Composition et rollback** — le cas réel de la 25-3-b, qui appellera
-/// `cancel_settlement_in_tx` dans sa propre transaction.
+/// ⛔ **Composition et rollback** — le cas réel de la 25-3-b, qui appelle
+/// `cancel_settlement_in_tx` dans sa propre transaction
+/// (`reconciliation_cancel::cancel_in_tx`).
 ///
 /// La lecture **positive** dans la transaction prouve que le geste a bien
 /// écrit ; l'abandon prouve qu'il n'a rien commité. *Un test de rollback aux
@@ -1039,6 +1040,9 @@ fn ecriture_attendue(motif: SettlementCancelBlocker, err: &DbError) -> bool {
         SettlementCancelBlocker::NoOpenFiscalYearToday => {
             matches!(err, DbError::FiscalYearInvalid)
         }
+        // Tête du dé-rapprochement (25-3-b) : jamais produite par l'annulation
+        // d'un règlement.
+        SettlementCancelBlocker::BankTransactionNotReconciled => false,
     }
 }
 
@@ -1114,7 +1118,7 @@ async fn la_queue_commune_se_lit_sur_l_ecriture(pool: MySqlPool) {
     let mut conn = pool.acquire().await.unwrap();
 
     assert_eq!(
-        settlement_entry_cancel_blocker(&mut conn, seeded.company_id, entry_id)
+        settlement_entry_cancel_blocker(&mut conn, seeded.company_id, entry_id, None)
             .await
             .unwrap(),
         None,
@@ -1122,7 +1126,7 @@ async fn la_queue_commune_se_lit_sur_l_ecriture(pool: MySqlPool) {
     );
     let bt = match_to_bank(&pool, seeded.company_id, entry_id, ymd(2026, 3, 5)).await;
     assert_eq!(
-        settlement_entry_cancel_blocker(&mut conn, seeded.company_id, entry_id)
+        settlement_entry_cancel_blocker(&mut conn, seeded.company_id, entry_id, None)
             .await
             .unwrap(),
         Some((
@@ -1132,7 +1136,7 @@ async fn la_queue_commune_se_lit_sur_l_ecriture(pool: MySqlPool) {
         )),
         "l'identifiant de la transaction accompagne le motif"
     );
-    let err = settlement_entry_cancel_blocker(&mut conn, seeded.company_id + 999, entry_id)
+    let err = settlement_entry_cancel_blocker(&mut conn, seeded.company_id + 999, entry_id, None)
         .await
         .expect_err("autre société");
     assert!(matches!(err, DbError::NotFound), "got {err:?}");

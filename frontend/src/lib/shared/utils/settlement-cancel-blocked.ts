@@ -41,7 +41,7 @@ export function settlementCancelTailMessage(
     case "MATCHED_BANK_TRANSACTION":
       return i18nMsg(
         "settlement-cancel-blocked-bank-match",
-        "Ce règlement est rapproché d'une transaction bancaire : annulez d'abord le rapprochement.",
+        "Ce règlement est rapproché d'une transaction bancaire : annulez d'abord le rapprochement, depuis cette fiche ou le détail de l'import bancaire.",
       );
     case "ACCOUNT_ARCHIVED": {
       const base = i18nMsg(
