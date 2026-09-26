@@ -72,7 +72,7 @@ où `settlement_cancel_blocker` la déclare inannulable (`SettlementCancelBlocke
 (`UnvalidationBlocker::Settled`, `errors.rs:134-160` ; `invoices.rs:1430-1448`).
 
 ⚠️ **Un test encode le défaut comme attendu** : la fixture `monter`
-(`crates/kesh-db/tests/invoice_settlement.rs:937-990`) règle 40 sur 100 puis appelle
+(`crates/kesh-db/tests/invoice_settlement.rs:937-1019`) règle 40 sur 100 puis appelle
 `create_credit_note` avec `.expect("avoir après règlement partiel — le vrai chemin l'accepte")`.
 
 ⚠️ **Le frontend masque le bouton sur une facture payée, pas sur une facture partiellement
@@ -278,7 +278,7 @@ restreint aux lignes qui parlent d'avoir, plus le PDF aplati. Les manuels DE/IT/
 | `crates/kesh-api/src/routes/credit_notes.rs:183-205` | handler de création |
 | `crates/kesh-db/tests/invoice_ttc_parity.rs` | patron du test de parité |
 | `crates/kesh-db/tests/credit_notes_repository.rs:267-299` | `credit_note_refused_on_paid_invoice` |
-| `crates/kesh-db/tests/invoice_settlement.rs:32, 116-125, 937-990` | helper à 0 %, `solde()`, `monter` |
+| `crates/kesh-db/tests/invoice_settlement.rs:32, 116-125, 937-1019` | helper à 0 %, `solde()`, `monter` |
 | `frontend/src/routes/(app)/invoices/[id]/+page.svelte:90-104, 836, 864-871, 1022-1041` | dialogue d'avoir (`err.message` `:101`), bouton, précédent « Dévalider », reste dû |
 | `crates/kesh-api/src/routes/invoices.rs:621-642` | `get_invoice` : `amountDue` rendu sans condition de statut |
 

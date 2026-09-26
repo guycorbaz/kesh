@@ -53,7 +53,7 @@ Le découpage suit l'ordre des dépendances, non celui des issues :
 6. **Pourquoi aucun test n'a vu #455** : toutes les factures des tests de règlement sont à **0 % de
    TVA** (`crates/kesh-db/tests/invoice_settlement.rs:32`), où HT = TTC.
 7. ⚠️ **Un test encode #456 comme attendu** : la fixture `monter`
-   (`crates/kesh-db/tests/invoice_settlement.rs:937-990`) règle 40 sur 100 puis crée un avoir avec
+   (`crates/kesh-db/tests/invoice_settlement.rs:937-1019`) règle 40 sur 100 puis crée un avoir avec
    `.expect("avoir après règlement partiel — le vrai chemin l'accepte")`. Il **décrit le défaut** ;
    il se corrige, il ne se contourne pas.
 
