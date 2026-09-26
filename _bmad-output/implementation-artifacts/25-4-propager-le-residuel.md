@@ -72,8 +72,25 @@ facture partiellement réglée joint un PDF **sans montant dans la QR** (la norm
 client saisit le montant) ; (c) laisser tel quel et le dire dans le texte de la relance. Ma
 recommandation : (b), qui ne ment pas et ne modifie pas la facture. **À trancher avant 25-4-b.**
 
+### ✅ Arbitrage du 2026-09-26 (Q1) — (b), et le reste à payer dit au client
+
+*« b, mais indiquer au client ce qu'il reste à payer. »* (Guy)
+
+Pour 25-4-b, donc :
+
+- la relance d'une facture **partiellement réglée** joint un PDF dont la QR-facture **ne porte pas
+  de montant** — le client le saisit ; une facture sans règlement garde sa QR à montant ;
+- la relance **dit ce qu'il reste à payer** : `{totalDue}` devient **reste dû + frais**, et non plus
+  TTC + frais (`invoice_email.rs:334`) — c'est le montant que le client doit saisir.
+
+⚠️ **Ne pas contester l'arbitrage en revue** : en contester la mise en œuvre. Reste à établir en
+spécification de 25-4-b : si le reste dû figure **aussi sur le PDF** joint (mention à côté de la
+QR sans montant), ou dans le seul texte de la relance — le PDF est aujourd'hui celui de la facture,
+et #387 (l'archivage du PDF envoyé) le touche.
+
 ## Change Log
 
+- **2026-09-26** — Q1 tranchée par Guy : QR sans montant pour une facture partiellement réglée, et le reste à payer dit au client (rattaché à 25-4-b).
 - **2026-09-26** — Découpée avant spécification (§ *Règle de splitting préventif*, six modules),
   sur inventaire vérifié. #455 et #456 rattachées (même grandeur, même jalon). Deux sites trouvés
   hors des issues : le filtre SQL des candidats du rapprochement (#420), et le montant des relances
