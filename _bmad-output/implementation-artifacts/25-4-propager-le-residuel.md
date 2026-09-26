@@ -88,10 +88,18 @@ Pour 25-4-b, donc :
   calculs »*. Le PDF d'une relance de facture partiellement réglée n'est donc plus exactement la
   facture d'origine — à articuler en spécification avec #387 (l'archivage du PDF envoyé).
 
+- ✅ **Recadrage (Guy, 2026-09-27)** : *« en fait c'est un rappel pour un montant partiel. »* Le
+  document joint à une relance de facture partiellement réglée n'est pas la facture réémise : c'est
+  **un rappel pour le montant restant**. L'objection « le PDF n'est plus la facture d'origine »
+  tombe donc — ce n'est pas la facture —, et #387 ne s'en trouve pas touché. ⚠️ **Point ouvert
+  posé à Guy** : dès lors, la QR du rappel doit-elle porter le **reste à payer** plutôt que rester
+  sans montant ?
+
 ⚠️ **Ne pas contester l'arbitrage en revue** : en contester la mise en œuvre.
 
 ## Change Log
 
+- **2026-09-27** — Recadrage de Q1 : le document est un rappel pour un montant partiel, pas la facture réémise.
 - **2026-09-26** — Complément de Q1 : le reste à payer figure aussi sur le PDF joint.
 - **2026-09-26** — Q1 tranchée par Guy : QR sans montant pour une facture partiellement réglée, et le reste à payer dit au client (rattaché à 25-4-b).
 - **2026-09-26** — Découpée avant spécification (§ *Règle de splitting préventif*, six modules),
