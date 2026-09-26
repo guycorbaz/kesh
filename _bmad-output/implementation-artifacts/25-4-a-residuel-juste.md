@@ -80,6 +80,17 @@ réglée** : `invoices/[id]/+page.svelte:836` n'exige que `!invoice.paidAt`. Le 
 « Dévalider » a **retiré** cette condition pour cette raison même (commentaire `:864-871`) et laisse
 le serveur refuser avec un motif nommé ; « Créer un avoir » n'a pas été aligné.
 
+## ✅ Arbitrage du 2026-09-27 — le refus reste, sa levée a son issue
+
+Guy : *« si on peut créer un avoir pour une facture payée, il faudrait aussi pouvoir le faire pour
+une facture partiellement payée »* — les deux cas sont traités **de la même façon**, et, pour
+l'instant, **dans le sens du refus** : un avoir sur facture encaissée laisse au client un crédit que
+Kesh ne sait ni montrer, ni rembourser, ni imputer. La levée du refus est tracée par **[#471]**. Le
+message de refus (AC 12) n'a donc pas à promettre une fonction à venir ; le manuel (AC 17) renvoie à
+la limite existante « avoir sur facture déjà encaissée ».
+
+⚠️ **Ne pas contester l'arbitrage en revue** : en contester la mise en œuvre.
+
 ## Acceptance Criteria
 
 ### Volet 1 — l'avoir compté TTC (#455)
@@ -358,6 +369,7 @@ bloque **25-4-b**, pas celle-ci.
 
 ## Change Log
 
+- **2026-09-27** — Arbitrage de Guy : le refus de l'avoir sur facture réglée (en tout ou en partie) reste ; sa levée est tracée par #471.
 - **2026-09-27** — **validation P3 ciblée** (Opus, diff aplati des remédiations P1-P2, prompt
   `25-4-a-validate-prompt-p3.md`) — **2 MEDIUM, 5 LOW**, tous de **propagation** des corrections P1,
   tous confirmés par grep. MEDIUM : T7 disait encore « m1 à m6 » (m7 ajoutée) ; l'AC 14 rendait faux
@@ -398,5 +410,6 @@ bloque **25-4-b**, pas celle-ci.
   ne se voit que dans l'état que #456 produit — d'où leur réunion ; et la fixture `monter` encode
   #456 comme attendu.
 
+[#471]: https://github.com/guycorbaz/kesh/issues/471
 [#455]: https://github.com/guycorbaz/kesh/issues/455
 [#456]: https://github.com/guycorbaz/kesh/issues/456

@@ -1,4 +1,4 @@
-# Story 25.4 : Propager le résiduel — découpée en 25-4-a / 25-4-b / 25-4-c
+# Story 25.4 : Propager le résiduel — découpée en 25-4-a / 25-4-b / 25-4-c / 25-4-d
 
 Status: split
 
@@ -15,13 +15,14 @@ Inventaire des sites fait le 2026-09-26 (trois lectures du code, chaque site rev
 `kesh-i18n`, `frontend` (fiche facture, échéancier, dialogue de règlement). Le seuil est **5** : la
 règle impose le découpage **avant** `bmad-create-story`.
 
-Le découpage suit l'ordre des dépendances, non celui des issues :
+Le découpage (quatre stories depuis le 2026-09-27) suit l'ordre des dépendances, non celui des issues :
 
 | Story | Issues | Ce qu'elle fait | Pourquoi à ce rang |
 |---|---|---|---|
 | **25-4-a** — le résiduel juste | [#455], [#456] | la formule canonique soustrait l'avoir **TTC** ; un avoir est refusé sur une facture **réglée, même en partie** ; le test de parité promis et jamais écrit | ⛔ **les deux suivantes réemploient la formule** : la propager avant de la corriger propagerait le défaut |
 | **25-4-b** — le résiduel aux agrégats | [#416] | balance âgée, totaux de l'échéancier, **colonne « reste dû »** de l'échéancier et de son CSV, dialogue de règlement pré-rempli, **montant réclamé par les relances** | le cœur de #416 ; première utilisatrice des formes jointes |
 | **25-4-c** — le résiduel au rapprochement | [#420] | filtre des candidats, score, re-score à l'acceptation, montant affiché dans la proposition | indépendante de 25-4-b, mais du même socle |
+| **25-4-d** — solder le reste | [#384] | imputer l'écart d'un règlement partiel — **perte sur débiteur**, escompte, frais bancaires — pour clore une facture partiellement réglée ; la part de **TVA** réduit la TVA due, seule la part HT va au compte de perte | ramenée de la 25-6 le 2026-09-27 (Guy) : elle repose entièrement sur le résiduel juste de 25-4-a |
 
 ## Ce que l'inventaire a trouvé, et que les issues ne disaient pas
 
@@ -57,9 +58,19 @@ Le découpage suit l'ordre des dépendances, non celui des issues :
    `.expect("avoir après règlement partiel — le vrai chemin l'accepte")`. Il **décrit le défaut** ;
    il se corrige, il ne se contourne pas.
 
-## Hors périmètre des trois stories
+## ✅ Arbitrages du 2026-09-27 — l'avoir sur facture encaissée, et la perte
 
-- **L'imputation de l'écart** d'un règlement partiel (escompte, frais, perte) — [#384], 25-6.
+- **L'avoir reste refusé sur une facture réglée, en tout ou en partie** (25-4-a). Un avoir sur
+  facture encaissée est un geste normal, mais il laisse au client un **crédit** que Kesh ne sait ni
+  montrer, ni rembourser, ni imputer : l'autoriser seul reproduirait la dette muette de #456. Sa
+  levée est tracée par **[#471]** (crédit visible, remboursement ou imputation).
+- **#384 est ramenée dans la 25-4, en 25-4-d**, pour clore une facture partiellement réglée dont le
+  solde ne sera pas payé (perte sur débiteur), ou réglée sous déduction d'un escompte ou de frais.
+  ⚠️ La part de TVA du montant passé en perte **réduit la TVA due** (correction de l'impôt sur
+  créance irrécouvrable) ; seule la part HT va au compte de perte.
+
+## Hors périmètre des quatre stories
+
 - **Le côté fournisseur** : une facture fournisseur se règle en une fois, il n'y a pas de résiduel
   partiel (#416, § Portée).
 - **L'avoir partiel et le remboursement** — v0.2, inchangé.
@@ -120,6 +131,7 @@ Pour 25-4-b, donc :
 
 ## Change Log
 
+- **2026-09-27** — Arbitrages : avoir sur facture réglée refusé en 25-4-a, levée tracée par #471 ; #384 ramenée en 25-4-d.
 - **2026-09-27** — Frais de rappel : configurables, aucune ligne affichée à zéro.
 - **2026-09-27** — Q1 retranchée : la QR du rappel porte le reste dû (le TTC s'il n'y a aucun règlement) ; numéro de facture conservé ; point ouvert sur les frais.
 - **2026-09-27** — Recadrage de Q1 : le document est un rappel pour un montant partiel, pas la facture réémise.
@@ -131,6 +143,7 @@ Pour 25-4-b, donc :
   (rattaché à 25-4-b). 25-4-a spécifiée dans la foulée.
 
 [#384]: https://github.com/guycorbaz/kesh/issues/384
+[#471]: https://github.com/guycorbaz/kesh/issues/471
 [#387]: https://github.com/guycorbaz/kesh/issues/387
 [#416]: https://github.com/guycorbaz/kesh/issues/416
 [#420]: https://github.com/guycorbaz/kesh/issues/420
