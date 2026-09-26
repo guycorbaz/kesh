@@ -73,21 +73,28 @@ soldée, créditée —, le **total de la balance âgée = solde du compte 1100 
 (`general_ledger` ou somme `debit − credit`). C'est l'assertion que #416 réclame et qui n'existe
 pour aucun écran.
 
-⚠️ **Portée de l'invariant, écrite et non supposée.** Il ne tient que si le compte débiteurs n'est
-mû **que** par des factures, règlements et avoirs de Kesh. Quatre choses le rompent, légitimement,
-et la balance âgée ne les montre pas :
-- un **solde d'ouverture** ou une **écriture manuelle** sur le compte débiteurs ;
-- une **ventilation** ou une **règle** de rapprochement bancaire imputée au compte débiteurs
-  (`accept_one_split`, `accept_one_rule`, `kesh-api/src/routes/reconciliation.rs:1619`, `:1997`) —
-  la contrepartie y est un compte choisi par l'utilisateur, sans facture ; *(ajouté par
-  l'orchestrateur en vérifiant la P2)* ;
-- l'**état hérité** de 25-4-a — une facture **`cancelled`** créditée **après** un règlement
-  partiel (plus atteignable par l'application, mais possible par l'import d'un `.keshbackup`
-  antérieur) : le compte 1100 porte **−(montant réglé)**, la facture `cancelled` est hors du
-  périmètre `validated`. *(Relevé en validation P1.)*
+⚠️ **Portée de l'invariant — énoncée par une RÈGLE, pas par une liste.** *(Réécrite en validation
+P3 : trois passes ont chacune trouvé des chemins que la liste précédente omettait — quatre en P3.
+Une énumération de formes est ouverte par nature ; `CLAUDE.md` § « Inventorier les sites NON
+RÉSOLUS ».)*
 
-Le test de l'AC 5 porte sur les quatre états **vivants** ; ⛔ il n'y ajoute **pas** l'état hérité.
-Cette portée est dite dans le doc-comment de `generate` et dans le manuel (AC 13).
+**La règle** : l'égalité vaut **si et seulement si** le compte débiteurs n'est mouvementé **que** par
+les écritures de **vente**, de **règlement client** et d'**avoir** que Kesh passe pour des factures
+**validées**, toutes **datées au plus tard à la date d'arrêté** (`as_of`), et **n'a jamais changé**
+dans les réglages de facturation. Tout autre mouvement l'en écarte. *Exemples*, non exhaustifs, tous
+vérifiés atteignables : solde d'ouverture ; écriture saisie au journal ; rapprochement bancaire hors
+facture — manuel, ventilé, par règle (`post_manual`, `post_split`, `accept_one_split`,
+`accept_one_rule`) ; règlement d'une facture **fournisseur** par compte interne imputé au compte
+débiteurs (compensation) ; changement du compte débiteurs par défaut (et l'avoir qui, depuis, crédite
+le nouveau compte — **défaut produit, #473**) ; règlement client imputé au compte débiteurs lui-même
+(**#474**) ; **données antérieures à la 0.12.1** — factures marquées payées sans écriture par
+l'ancien `mark_as_paid` (avant 0.12.0), facture annulée par un avoir après règlement partiel
+(**0.12.0 publiée**, `git show v0.12.0:…/credit_notes.rs:302`) — qu'elles viennent d'une
+**restauration** ou d'une **mise à jour sur place**.
+
+Le test de l'AC 5 se place **dans** la règle : les quatre états **vivants**, et un `as_of`
+postérieur ou égal à toutes les dates de pièces. ⛔ Il n'y ajoute aucun cas hors règle. Le
+doc-comment de `generate` énonce la règle, pas la liste des exemples.
 
 **AC 6** — Doc-comment de `generate` (`:95-99` : « Montants = TTC dérivé ») et libellés : la balance
 âgée montre le **reste dû** ; l'écran (`AgedReceivablesView.svelte`) et son CSV gardent leur
@@ -151,9 +158,13 @@ seul ; `partial` retiré de `statusOf` ; `amountDue={null}` remis.
   partiels et avoirs ;
 - `:1578`, légende de la capture : « encours débiteur **TTC** » → « reste dû » ;
 - `:1580-1581` : « La colonne « Non échu » **garantit** que le total général réconcilie avec le
-  solde du compte clients » — vrai **seulement** dans la portée de l'AC 5 : la phrase porte la
-  réserve (soldes d'ouverture, écritures manuelles ou rapprochements bancaires imputés directement
-  au compte débiteurs, sauvegardes antérieures à la 0.12.1) ;
+  solde du compte clients » — vrai **seulement** dans la règle de l'AC 5. La phrase devient, par la
+  règle et non par une liste : *« Le total général réconcilie avec le solde du compte clients tant
+  que ce compte n'est mouvementé que par les factures, leurs règlements et leurs avoirs. Toute autre
+  écriture qui le touche — solde de départ, écriture saisie au journal, rapprochement bancaire ou
+  règlement (y compris d'une facture fournisseur) imputé directement à ce compte — l'en écarte, de
+  même qu'un changement du compte clients dans les réglages de facturation, ou des données
+  antérieures à la version 0.12.1, restaurées ou mises à jour. »* ;
 - `:1587-1588`, note : « le **total dû TTC** de chaque facture, jamais le montant hors taxe » → « le
   **reste dû** de chaque facture, jamais le montant hors taxe ni le total facturé ».
 
@@ -163,6 +174,13 @@ CHANGELOG `[0.12.1]` *Fixed*. README : rien, sauf si la ligne v0.12.1 cite la ba
 
 ## Tasks / Subtasks
 
+- [ ] **T0 — rectifier la portée de l'état hérité posée par 25-4-a** : quatre commentaires disent
+      l'état « avoir après règlement partiel » atteignable **seulement par l'import d'une
+      sauvegarde** — `errors.rs:221`, `invoice_settlements_write.rs:333`,
+      `tests/invoice_amount_due_parity.rs:139`, `tests/invoice_settlement.rs:980`. Faux : la **0.12.0
+      publiée** accepte cet avoir, une installation **mise à jour sur place** le porte. Écrire « des
+      données antérieures à la 0.12.1, restaurées ou mises à jour ». *(Le manuel de 25-4-a dit
+      déjà « avant la version 0.12.1, ou restaurée » : juste.)*
 - [ ] **T1 — la grandeur jointe** (AC 1-2).
 - [ ] **T2 — balance âgée** (AC 3-6), dont l'invariant de concordance.
 - [ ] **T3 — échéancier, backend** (AC 7-9, AC 11).
@@ -226,6 +244,19 @@ CHANGELOG `[0.12.1]` *Fixed*. README : rien, sauf si la ligne v0.12.1 cite la ba
 
 ## Change Log
 
+- **2026-09-27** — **validation P3 ciblée** (Opus, prompt `25-4-b1-validate-prompt-p3.md`, inventaire
+  de **tous** les chemins qui écrivent une ligne d'écriture) — **3 MEDIUM, 3 LOW** : **quatre chemins
+  oubliés** par la portée de l'AC 5 — règlement fournisseur par compte interne imputé au compte
+  débiteurs ; changement du compte débiteurs par défaut, que l'avoir suit alors que la vente ne le
+  suit pas ; données héritées plus larges (`mark_as_paid` sans écriture) et **pas seulement par
+  import** (la 0.12.0 publiée accepte l'avoir après règlement partiel) ; règlement client imputé au
+  compte débiteurs lui-même. LOW : deux handlers de rapprochement non cités ; `as_of` non borné.
+  ⛔ **Troisième passe consécutive à trouver des cas hors d'une liste** : la portée est **réécrite
+  par une règle**, avec des exemples non exhaustifs ; le test se place dans la règle, `as_of`
+  postérieur à toutes les pièces ; la réserve du manuel suit la même forme. **Deux défauts produit
+  sortis en issues** : #473 (l'avoir crédite le compte débiteurs des réglages, pas celui de la
+  vente), #474 (règlement client sur le compte débiteurs lui-même). **T0 ajoutée** : quatre
+  commentaires de 25-4-a bornaient à tort l'état hérité à l'import.
 - **2026-09-27** — **validation P2** (Haiku, prompt `25-4-b1-validate-prompt-p2.md`) — rapporte **0
   finding**. ⚠️ **Non pris pour argent comptant** : la passe affirmait le CHANGELOG « à créer » (il
   existe) et n'a cité aucun des fichiers qu'on lui demandait de lire pour éprouver la portée de
