@@ -29,32 +29,35 @@ sorti de la banque reste au grand livre, en attente d'être rattaché à la bonn
 
 ⚠️ **Ne pas contester ces arbitrages en revue** : en contester la mise en œuvre.
 
-### Ce que « redevient à lettrer » veut dire ici — lecture retenue, à confirmer par Guy (Q1)
+### ✅ Arbitrage du 2026-09-26 (Q1) — le règlement est DÉTACHÉ de la facture
 
-Le modèle existe déjà côté **client** : le règlement d'une facture **créditée** est « un paiement
-**à lettrer**, pas une anomalie » ; il **reste attaché** à la facture annulée (sa ligne
-`invoice_settlements` survit) et son annulation est **refusée en le nommant** (`INVOICE_CREDITED`,
-`errors.rs:204-209`, `SettlementCancelBlocker::InvoiceCredited`). Cette story applique **le même
-modèle** au fournisseur :
+*« Quand on annule une facture fournisseur payée, son règlement repasse dans l'état “à
+réconcilier”, comme si aucune facture n'y était liée. »* (Guy)
 
-- les colonnes `settlement_*` et `paid_at` **restent posées** sur la facture annulée
-  (`chk_supplier_invoices_paid_has_settlement` n'impose rien à une facture `cancelled`,
-  `20260628000001_supplier_invoices.sql:70-72`) — la fiche garde le lien vers le paiement, et
-  « factures `cancelled` avec `settlement_journal_entry_id` non nul » est **exactement** la liste
-  des paiements à lettrer que l'Epic 15 consommera ;
-- l'écriture de règlement reste **possédée** par la facture (`reversal_blockers` rend
-  `OWNED_BY_SUPPLIER_INVOICE`) : ni supprimable, ni contre-passable à la main ;
-- **annuler ce règlement est refusé**, nommé : nouveau motif `SUPPLIER_INVOICE_CANCELLED` (AC 2).
+Donc, à l'annulation d'une facture payée :
 
-⛔ **Conséquence à dire à l'utilisateur, parce qu'elle est irréversible** : une facture payée annulée
-par erreur ne se « désannule » pas, et son paiement ne s'annule plus. **Si c'est le PAIEMENT qui est
-faux, il faut annuler le règlement D'ABORD** (25-3-a-2), puis la facture. La confirmation le dit
-(AC 7), le manuel aussi (AC 10).
+- les colonnes `settlement_type`, `settlement_bank_account_id`, `settlement_account_id`,
+  `settlement_journal_entry_id` et `paid_at` sont **remises à `NULL`** — exactement comme
+  l'annulation du règlement le fait (25-3-a-2, `supplier_invoices.rs:1031-1035`) ;
+  `chk_supplier_invoices_paid_has_settlement` n'impose rien à une facture `cancelled`
+  (`20260628000001_supplier_invoices.sql:70-72`) ;
+- l'écriture de règlement **reste au grand livre, non contre-passée**, et n'est plus **possédée**
+  par aucune pièce : `reversal_blockers` ne lui oppose plus `OWNED_BY_SUPPLIER_INVOICE`. C'est un
+  paiement **sans facture**, en attente d'être rattaché (Epic 15) — ou contre-passé à la main
+  depuis sa fiche d'écriture s'il était lui-même erroné ;
+- le lien historique survit dans l'**audit** du geste (AC 3.5), qui garde l'identifiant de
+  l'écriture de règlement, son type et sa date.
 
-*Alternative écartée (sous réserve de Q1)* : vider les colonnes `settlement_*` comme le fait
-l'annulation du règlement. Le paiement deviendrait une écriture **libre** — contre-passable à la
-main, mais **sans aucun lien visible** vers la facture (seul l'audit le garderait) et **divergent**
-du modèle client. Si Guy retient cette lecture, les AC 2, 3.4, 7 et 10 changent ; le reste tient.
+⚠️ **Vocabulaire — à ne pas confondre.** Dans Kesh, « à rapprocher » est l'état d'une
+**transaction bancaire** importée (`reconciliation-cancel-confirm-*`, `messages.ftl:738-739`). Le
+règlement fournisseur n'est **jamais** lié à une transaction bancaire (vérifié par la 25-3-a-2 :
+les cinq sites qui posent `matched_entry_id` lient une écriture qu'ils viennent de créer). Cette
+story ne touche donc **aucune** transaction bancaire : « à réconcilier » s'y lit **« sans facture,
+à rattacher »**. Les textes (AC 7, 8, 10) disent « paiement sans facture », jamais « à rapprocher ».
+
+⚠️ **Limite assumée** : Kesh n'a pas encore d'écran qui liste les paiements sans facture — le
+compte 2000 n'a pas de sous-compte par fournisseur. Le paiement détaché se retrouve au **grand
+livre** (compte 2000, solde débiteur) et dans le **journal d'audit**. Le lettrage est l'Epic 15.
 
 ## Ce que fait `cancel` aujourd'hui (#454), vérifié dans le code
 
@@ -127,13 +130,11 @@ d'annulation ne se présente pas comme une contre-passation (limite relevée par
      → **409** avec `blocker.code()`. ⛔ **Distincte de `SettlementNotCancellable`**, dont le texte
      dit « ce règlement » — précédent exact : `ReconciliationNotCancellable` (25-3-b,
      `errors.rs:451-462`). Textes : famille propre, AC 8.
-   - **La tête du RÈGLEMENT change aussi** (`supplier_settlement_cancel_blocker`,
-     `supplier_invoices.rs:909-938`) : son rang 1 se dédouble —
-     `status = 'cancelled'` **et** `settlement_journal_entry_id` posé → **`SUPPLIER_INVOICE_CANCELLED`**
-     (le règlement est à lettrer, il ne s'annule pas — symétrique d'`INVOICE_CREDITED`) ; tout autre
-     non-`paid` → `SUPPLIER_INVOICE_NOT_PAID` comme aujourd'hui. `cancel_settlement_in_tx` (étape 2,
-     `:1002-1010`) refuse **aussi** ce nouveau code. Sans cela, l'API répondrait « facture non
-     payée » à propos d'une facture qui l'a été — un motif **faux et nommé**.
+   - **La tête du RÈGLEMENT ne change pas** (`supplier_settlement_cancel_blocker`,
+     `supplier_invoices.rs:909-938`) : une facture annulée n'a plus d'écriture de règlement
+     (arbitrage Q1), son rang 1 rend `SUPPLIER_INVOICE_NOT_PAID` — vrai : il n'y a plus de
+     règlement **de cette facture** à annuler. Le commentaire de `:924-926` (« l'absence ne peut
+     venir que d'une facture non `paid` ») reste juste ; ne rien y ajouter.
    - ⚠️ Codes neufs : `grep -rn "SUPPLIER_INVOICE_CANCELLED\|SUPPLIER_INVOICE_IN_PAYMENT_BATCH" crates frontend/src`
      doit être **vide** avant ajout (collision). `SUPPLIER_INVOICE_NOT_OPEN`
      (`payment_batches.rs:265`) a un autre sens et **ne se réemploie pas**.
@@ -162,14 +163,21 @@ d'annulation ne se présente pas comme une contre-passation (limite relevée par
       `journal_entries::reverse_owned_in_tx(…, ReversalAuthority::SupplierPurchase { supplier_invoice_id: id })`.
       **Plus aucune réécriture à la main** : les lignes lues par `jel.id`, le `project_id: None` par
       ligne et la description « Annulation facture fournisseur N » **disparaissent**.
-   4. `UPDATE supplier_invoices SET status = 'cancelled', version = version + 1 WHERE id = ? AND
+   4. `UPDATE supplier_invoices SET status = 'cancelled', settlement_type = NULL,
+      settlement_bank_account_id = NULL, settlement_account_id = NULL,
+      settlement_journal_entry_id = NULL, paid_at = NULL, version = version + 1 WHERE id = ? AND
       company_id = ? AND version = ? AND status IN ('open', 'paid')` — 0 ligne ⇒
-      `OptimisticLockConflict`. ⛔ **Les colonnes `settlement_*` et `paid_at` ne sont PAS touchées**
-      (§ « redevient à lettrer »). **L'écriture de règlement n'est PAS contre-passée.**
+      `OptimisticLockConflict`. Pour une facture `open`, les colonnes sont déjà `NULL` : une seule
+      requête pour les deux cas. ⛔ **L'écriture de règlement n'est PAS contre-passée** — elle est
+      **détachée** (arbitrage Q1).
+      ⚠️ **Ordre imposé** : la contre-passation (étape 3) **précède** l'`UPDATE`. L'inverse ne
+      casserait pas l'autorité d'achat (elle lit `purchase_journal_entry_id`, non vidé), mais le
+      patron de la 25-3-a-2 est celui-là ; ne pas en créer un second.
    5. Audit `supplier_invoice.cancelled` (action **existante**, libellés ×4 inchangés) — payload
       enrichi : `previousStatus` (`open` | `paid`), `purchaseJournalEntryId`,
-      `reversalJournalEntryId`, et, si la facture était payée, `settlementJournalEntryId`. Le socle
-      écrit en plus `journal_entry.reversed` — voulu.
+      `reversalJournalEntryId`, et, si la facture était payée, `settlementJournalEntryId`,
+      `settlementType` et `paidAt` — ⛔ **seule trace du lien**, les colonnes étant remises à
+      `NULL`. Le socle écrit en plus `journal_entry.reversed` — voulu.
 
    ⚠️ **Ce qui change au grand livre, et c'est voulu** (#454) : l'écriture d'annulation porte
    `reverses_entry_id` et la description du socle (« Contre-passation écriture n° … », suffixée de
@@ -181,8 +189,8 @@ d'annulation ne se présente pas comme une contre-passation (limite relevée par
 
    ⚠️ **Écriture comptable d'une facture payée annulée** : achat D charges + TVA préalable / C 2000 ;
    règlement D 2000 / C banque (reste) ; annulation D 2000 / C charges + TVA préalable. Charges et
-   TVA reviennent à zéro, **2000 porte un solde DÉBITEUR** du TTC (créance sur le fournisseur,
-   paiement à lettrer), la banque reste créditée. Test d'équilibre à l'AC 9.
+   TVA reviennent à zéro, **2000 porte un solde DÉBITEUR** du TTC (créance sur le fournisseur :
+   le paiement sans facture), la banque reste créditée. Test d'équilibre à l'AC 9.
 
 4. **La route** — `POST /api/v1/supplier-invoices/{id}/cancel`, **inchangée** (Comptable+, clés API
    d'écriture admises). Registre de routes **inchangé** : ni route ni action d'audit neuves — le
@@ -204,8 +212,11 @@ d'annulation ne se présente pas comme une contre-passation (limite relevée par
      `SupplierInvoiceListItemResponse` n'est pas touché.
 
 6. **Les textes du grand livre — `OWNED_BY_SUPPLIER_INVOICE`.** Le texte actuel (« annulez la
-   facture ou son règlement depuis sa fiche ») devient **faux** pour l'écriture de règlement d'une
-   facture annulée : ni l'un ni l'autre n'est possible. Nouveau texte, **vrai dans tous les cas** :
+   facture ou son règlement depuis sa fiche ») est **faux** pour l'écriture d'achat d'une facture
+   annulée **avant** cette story (annulation non reliée, § Dev Notes « Legacy ») : la facture est
+   déjà annulée, et elle n'a pas de règlement. ⚠️ Après cette story, le cas ne naît plus — l'achat
+   annulé ressort en `ALREADY_REVERSED`, le règlement détaché n'a plus de propriétaire. Nouveau
+   texte, **vrai dans tous les cas** :
    « Cette écriture appartient à une facture fournisseur : elle se corrige depuis la fiche de la
    facture, qui indique ce qui est possible. » (patron : le texte d'`OWNED_BY_SETTLEMENT`,
    `kesh-api/src/errors.rs:2472-2474`). **Sites, ensemble** : FTL
@@ -225,16 +236,19 @@ d'annulation ne se présente pas comme une contre-passation (limite relevée par
    - **Confirmation** avant l'envoi, qui dit ce qui va s'écrire :
      - `open` : « Annuler cette facture ? Une écriture inverse de l'achat, datée d'aujourd'hui, sera
        passée au grand livre. »
-     - `paid` : la même, **plus** « Elle est payée : son règlement reste au grand livre et devient
-       un paiement à lettrer — il ne pourra plus être annulé. Si c'est le paiement qui est erroné,
-       annulez d'abord le règlement. »
+     - `paid` : la même, **plus** « Elle est payée : son règlement reste au grand livre, détaché
+       de la facture — un paiement sans facture, à rattacher. Si c'est le paiement lui-même qui est
+       erroné, annulez plutôt le règlement d'abord. » ⚠️ Ce dernier conseil n'est pas une
+       obligation (le paiement détaché reste contre-passable depuis sa fiche d'écriture), mais
+       c'est le chemin qui garde le lien au grand livre (`reverses_entry_id` posé au titre de la
+       facture).
    - ⛔ **Refus au clic affiché LOCALEMENT** (409 `code`, 400 `details.rejected[]`), **jamais** dans
      `errorMsg`, qui remplace **toute la fiche** (`:200-201`) — c'est le défaut actuel de `cancel()`
      (`:161`). Patron : `settlementCancelError` (`:60-63`, `:146-149`).
    - **Facture `cancelled`** — aujourd'hui la fiche n'affiche **rien** sous les lignes. Afficher
-     « Facture annulée. » ; si `settlementJournalEntryId` est posé : le lien vers l'écriture de
-     règlement (réutiliser celui de `:339-346`) et le texte de `SUPPLIER_INVOICE_CANCELLED` (AC 8),
-     qui dit que ce paiement est à lettrer.
+     « Facture annulée. » — et **rien d'autre** : ses colonnes de règlement sont vides (arbitrage
+     Q1), la fiche ne sait plus qu'elle a été payée. ⚠️ Ne pas aller chercher l'ancien règlement
+     dans l'audit pour l'afficher : ce serait ré-attacher à l'écran ce que l'arbitrage détache.
    - Après l'annulation : notification de succès, état remplacé par la réponse.
 
 8. **Les textes.**
@@ -250,10 +264,7 @@ d'annulation ne se présente pas comme une contre-passation (limite relevée par
      doit rouvrir l'exercice pour pouvoir l'annuler. » ; lot → « Cette facture figure dans un lot de
      paiement en cours : annulez d'abord le lot. » ; les autres calqués sur la famille
      `reconciliation-cancel-blocked-*` (`messages.ftl:730-735`).
-   - **Tête du règlement** : clé `supplier-invoices-settlement-cancel-blocked-cancelled` —
-     « Cette facture a été annulée alors qu'elle était payée : son règlement est un paiement à
-     lettrer, il ne s'annule pas. » (calque d'`invoices-settlement-cancel-blocked-credited`,
-     `:724`). Le type `SupplierSettlementCancelCode` (`settlement-cancel.ts:15-16`) gagne le code.
+   - **Tête du règlement** : **inchangée** (AC 2) ; aucune clé neuve côté règlement.
    - Textes de confirmation et de succès (AC 7), « Facture annulée. ».
    - **Quatre** locales ; repli serveur de `SupplierInvoiceNotCancellable` (fonction
      `supplier_invoice_cancel_blocked_text`, patron `reconciliation_cancel_blocked_text`) et de
@@ -268,11 +279,14 @@ d'annulation ne se présente pas comme une contre-passation (limite relevée par
      `AlreadyReversed` ; charges, TVA préalable et 2000 à zéro (le test
      `cancel_reverses_purchase_entry` est **complété**, pas remplacé).
    - **Facture payée** : ⛔ `cancel_paid_invoice_rejected` (`supplier_invoices_repository.rs:452`)
-     pose l'**ancien** comportement — il est **réécrit** en `cancel_paid_invoice_keeps_its_settlement` :
-     `cancelled` ; colonnes `settlement_*` et `paid_at` **inchangées** ; l'écriture de règlement
-     **n'a pas** de contre-passation ; soldes : charges et TVA à 0, **2000 débiteur du TTC**, banque
-     (ou compte interne) crédité du TTC. Puis `cancel_settlement` → 409
-     `SUPPLIER_INVOICE_CANCELLED` (et non `NOT_PAID`) ; lecture du règlement cohérente.
+     pose l'**ancien** comportement — il est **réécrit** en `cancel_paid_invoice_detaches_its_settlement` :
+     `cancelled` ; colonnes `settlement_*` et `paid_at` **à `NULL`** ; l'écriture de règlement
+     existe toujours et **n'a pas** de contre-passation ; soldes : charges et TVA à 0, **2000
+     débiteur du TTC**, banque (ou compte interne) crédité du TTC ; audit portant
+     `settlementJournalEntryId`. ⛔ **La preuve du détachement** : `reversal_blockers(écriture de
+     règlement)` ne contient **plus** `OwnedBySupplierInvoice`, et `journal_entries::reverse` sur
+     elle **réussit** — mutation « ne pas vider `settlement_journal_entry_id` » ⇒ rouge. Puis
+     `cancel_settlement` → 409 `SUPPLIER_INVOICE_NOT_PAID`.
    - **Précédence**, paire par paire atteignable : déjà annulée (seconde annulation → rang 1) ;
      exercice d'achat clos (facture ouverte **et** facture payée) ; compte d'achat archivé → **400
      qui nomme** au clic, `ACCOUNT_ARCHIVED` + numéro à la lecture ; aucun exercice ouvert le jour ;
@@ -296,16 +310,19 @@ d'annulation ne se présente pas comme une contre-passation (limite relevée par
      `code` pour chaque motif refusé par le geste, 400 `ACCOUNT_ARCHIVED` nommé.
    - **Vitest** (`supplier-settlement-page.test.ts` étendu ou fichier voisin) : bouton selon
      `cancellable` **et** le rôle, présent sur `paid` ; motif affiché, **pas** pour
-     `SUPPLIER_INVOICE_CANCELLED` ; confirmation `paid` qui dit « à lettrer » et « annulez d'abord
-     le règlement » ; refus au clic affiché **sans effacer la fiche** ; fiche `cancelled` avec lien
-     de règlement et texte à lettrer.
+     `SUPPLIER_INVOICE_CANCELLED` ; confirmation `paid` qui dit « paiement sans facture » ; refus au
+     clic affiché **sans effacer la fiche** ; fiche `cancelled` qui dit « Facture annulée. » sans
+     lien de règlement.
    - **Playwright** (`supplier-invoices.spec.ts`) : payer, annuler la facture, voir « Facture
-     annulée » et le lien vers le règlement.
+     annulée », puis ouvrir l'écriture de règlement depuis le grand livre et constater qu'elle est
+     contre-passable.
 
 10. **Documentation.**
     - Manuel utilisateur, § « Factures fournisseurs et paiements » (`:1125-1166`) : **sous-section
       « Annuler une facture fournisseur »** — ouverte ou payée ; ce qui s'écrit ; le règlement qui
-      reste, **à lettrer** ; ⛔ l'ordre « paiement faux → annuler d'abord le règlement » ; les
+      reste au grand livre, **détaché**, paiement sans facture (où le retrouver : compte 2000,
+      journal d'audit ; le rattachement est à venir) ; le conseil « paiement erroné → annuler
+      plutôt le règlement d'abord » ; les
       refus (exercice clos, lot en cours, compte archivé, exercice du jour). La phrase « l'annuler
       elle-même » de `:1159` s'y rattache.
     - `:504-507` (le chemin par pièce) et la liste `:1873-1885` : facture fournisseur « annulable
@@ -356,7 +373,8 @@ d'annulation ne se présente pas comme une contre-passation (limite relevée par
   reste vrai. Aucune donnée réelle à préserver (CLAUDE.md, « Deployed is not the same as keeping
   the books »).
 - L'export de souveraineté (25-5-a) exporte `supplier_invoices` tel quel : une facture `cancelled`
-  avec `settlement_journal_entry_id` posé y apparaît — c'est l'information voulue.
+  y a des colonnes de règlement vides ; le lien reste retrouvable par `audit_log` (exportée) et au
+  grand livre (`journal_entries.csv`).
 - ⚠️ **Hors périmètre** : le lettrage (Epic 15) ; « désannuler » une facture ; la dette #455/#456
   côté client.
 
@@ -377,12 +395,8 @@ d'annulation ne se présente pas comme une contre-passation (limite relevée par
 
 ## Questions pour Guy
 
-- **Q1 — Le règlement d'une facture payée annulée reste-t-il ATTACHÉ à la facture ?** La fiche
-  retient **oui** (colonnes conservées, paiement gelé et nommé « à lettrer », annulation du
-  règlement refusée) par symétrie avec la facture client créditée. L'autre lecture — le détacher —
-  rendrait le paiement contre-passable à la main, mais sans lien visible vers la facture. *La
-  différence se voit surtout quand on annule par erreur une facture payée : avec la lecture
-  retenue, on ne peut plus rien défaire avant l'Epic 15.*
+- ✅ **Q1 — tranchée le 2026-09-26** : le règlement est **détaché** (§ Arbitrage du 2026-09-26).
+  Aucune question ouverte.
 
 ## Dev Agent Record
 
@@ -398,4 +412,5 @@ d'annulation ne se présente pas comme une contre-passation (limite relevée par
 
 | Date | Étape | Note |
 |---|---|---|
+| 2026-09-26 | arbitrage Q1 | Guy : *« son règlement repasse dans l'état “à réconcilier”, comme si aucune facture n'y était liée »* ⇒ le règlement est **détaché** : colonnes `settlement_*` et `paid_at` remises à `NULL`, écriture de règlement libre (contre-passable depuis sa fiche), lien gardé par l'audit. Retirés : le dédoublement de la tête du règlement et sa clé ; la fiche `cancelled` n'affiche plus de lien. « À réconcilier » lu « sans facture, à rattacher » — aucune transaction bancaire n'est touchée (dit en § Arbitrage). |
 | 2026-09-26 | create | Spécifiée (Opus 5.5) depuis l'arbitrage du 2026-09-24, #454 et le code de `main` à `0e4c2682`. Modèle « à lettrer » repris du côté client (`INVOICE_CREDITED`) — **Q1 posée**. Aucune migration. Prochaine étape : `bmad-create-story validate`. |
