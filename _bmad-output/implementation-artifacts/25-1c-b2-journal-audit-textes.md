@@ -2,38 +2,22 @@
 
 Status: ready-for-dev — ✅ **RÉÉCRITE le 2026-09-26 (T0)** contre le texte actuel ; revalidation R6 à passer
 
-⛔ **REVALIDATION R5 « DÉRIVE » — 1 CRITICAL, 4 HIGH, 4 MEDIUM** (Change Log). La fiche a dormi dix jours sur
-une branche locale ; entre-temps, la 25-1c-a (PR #439), les 25-2-b-1/b-2 (#440) et la 25-5-a (#386) ont
-**réécrit** une partie des textes qu'elle prescrit de corriger, et **changé le mécanisme** qu'elle décrit :
-une facture validée ne se **supprime** plus, elle se **dévalide** (`invoices.rs:1293`,
-`InvoiceMustBeUnvalidatedFirst`) ; #381 est fermée. **Les AC 2, 4, 6 et 7 et l'inventaire de l'AC 3 sont à
-réécrire contre le texte ACTUEL**, dans la tâche T0, **une fois la 25-1c-b1 implémentée** — la fiche le
-prévoyait déjà (« relire chaque site par sa phrase ») ; la réécrire deux fois ne servirait à rien. Puis
-revalidation, puis développement.
+⛔ **Historique de la fiche** : validée en 7 passes le 2026-09-15, rouverte, revalidée le 2026-09-16 ; restée
+dix jours sur une branche locale jamais poussée ; la revalidation R5 « dérive » (2026-09-26) l'a trouvée
+périmée — d'autres stories avaient réécrit une partie des textes visés, et une facture validée se
+**dévalide** désormais au lieu de se supprimer. **Réécrite en T0 le 2026-09-26** contre le texte de `main`,
+après l'implémentation de la 25-1c-b1, puis revalidée (R6, R7 — Change Log). Les lignes citées sont celles
+du 2026-09-26 ; **chaque site se retrouve par sa phrase**.
 
-⚠️ **RÉOUVERTE le 2026-09-15 au soir**, après sa validation en 7 passes : les arbitrages qui ont rouvert la
-25-1c-a changent la section « Traçabilité » et le manuel d'administration (cf. « Réouverture » au Change
-Log). **Revalidation ciblée en cours.**
-
-⚠️ **Issue du SPLIT de la 25-1c-b** (arbitrage du Project Lead du 2026-09-15, après la passe 2 de
-validation) :
-
-| | objet | état |
+| | objet | état au 2026-09-26 |
 |---|---|---|
-| 25-1c-zero | la colonne `audit_log.company_id` | done — PR #437 ouverte |
-| 25-1c-a | la route de consultation, son vocabulaire traduit et son export CSV — backend | ready-for-dev, réouverte |
-| 25-1c-b1 | l'écran : feature, page, garde, menu, gardes i18n, tests | ready-for-dev, réouverte |
-| **25-1c-b2** *(celle-ci)* | **les textes : manuels, README, vocabulaire « journal d'audit »** | ready-for-dev, réouverte |
+| 25-1c-zero | la colonne `audit_log.company_id` | mergée (PR #437) |
+| 25-1c-a | la route de consultation, son vocabulaire traduit et son export CSV | mergée (PR #439) |
+| 25-1c-b1 | l'écran | implémentée, revue close, même branche |
+| **25-1c-b2** *(celle-ci)* | **les textes : manuels, README, CHANGELOG, vocabulaire « journal d'audit »** | fiche réécrite |
 
-⛔ **Livrée dans la MÊME PR que la 25-1c-b1, et implémentée APRÈS elle** sur la même branche : les
-manuels décrivent l'écran **tel qu'il est construit** (menu, rôles, filtres), et ne se relisent contre
-le code qu'une fois ce code écrit. C'est cette PR qui porte `closes #378`.
-
-⛔ **Dépendance à la 25-1c-a** : elle réécrit elle-même trois passages du manuel d'administration
-(`admin-manual.tex:1585`, `:1590`, `:1803-1810`) et la phrase de `:1786`. **Les numéros de ligne de cette
-fiche sont ceux de la branche `story/25-1c-b-journal-audit-ecran` au 2026-09-15** — empilée sur la
-25-1c-zero, **avant** la 25-1c-a et la b1, et donc déjà différente de `main` (la 25-1c-zero a réécrit
-`admin-manual.tex:1786`). Chaque site se retrouve **par sa phrase citée**, et se relit après le rebase.
+⛔ **Livrée dans la MÊME PR que la 25-1c-b1**, qui porte `closes #378` : les textes décrivent l'écran **tel
+qu'il est construit**.
 
 ## Story
 
@@ -85,12 +69,20 @@ aligné l'autre, `export-global-content-excludes`) :
 audit » (« sarà conservato nel registro di audit »), en « audit log ». La règle 3 du glossaire l'impose :
 la ligne de l'AC 1 ne s'écrit pas sans cet alignement.
 
+⛔ **Et son repli Svelte** (revalidation R6) : `frontend/src/routes/(app)/settings/fiscal-years/+page.svelte:554`
+porte « … sera conservé dans la piste d'audit. » → « … dans le journal d'audit. », **mot pour mot** le FTL
+fr-CH (à l'apostrophe près : le repli emploie l'apostrophe droite `'` là où le FTL a `’` — la garde
+`i18n-un-repli-par-cle` dit si l'écart compte). Le catalogue gagne sur le repli, le défaut est latent — mais
+la règle 3 vise « toutes ses occurrences déjà livrées ».
+
 **Contrôle**, exécutable, **sur la VALEUR seule** (Python) : pour chaque `.ftl`, chaque clé dont la valeur
 — lignes de continuation rattachées — contient `audit|protokoll|registro|journal|piste|trail` (sans casse)
 est triée à la main. **Triés, à laisser** : `bank-accounts-errors-has-transactions` (« audit comptable » :
 la **révision**, autre sens, quatre langues) ; les clés `audit-log-*` du vocabulaire de la 25-1c-a (codes
 et libellés d'actions : « écriture », etc.) ; les clés d'écran de la b1, **déjà conformes** (vérifié :
-« Journal d'audit » / « Audit-Protokoll » / « Registro di audit » / « Audit log »).
+« Journal d'audit » / « Audit-Protokoll » / « Registro di audit » / « Audit log »). ⚠️ Le motif `journal`
+rend une quarantaine de clés « journal comptable », et `protokoll` des mots allemands d'un autre sens
+(`protokolliertem Grund`, `Serverprotokolle`) : **tri à la main**, attendu.
 
 **3. Les manuels, la brochure et le README** — inventaire du 2026-09-26, réunion de deux procédés :
 **lexical** (`grep -niE "piste d.audit|audit-trail|audit trail|audit log|piste de contr|trace d.audit|dans l.audit\b"`
@@ -99,29 +91,39 @@ ces mots) :
 
 | fichier | ligne | texte actuel | devient |
 |---|---|---|---|
+| `user-manual.tex` | `:301` | « (pour préserver l'audit-trail) » | « (pour préserver le journal d'audit) » |
 | `user-manual.tex` | `:888` | « nouvelle trace d'audit » | « nouvelle entrée au journal d'audit » |
 | `user-manual.tex` | `:1111` | « journalisées dans l'audit-trail » | « inscrites au journal d'audit » |
 | `user-manual.tex` | `:1789` | `\section{Traçabilité (audit-trail)}` | `\section{Traçabilité (journal d'audit)}` |
 | `user-manual.tex` | `:1791` | « une \textbf{piste d'audit} (\texttt{audit\_log}) » | « un \textbf{journal d'audit} (\texttt{audit\_log}) » — accords suivants ajustés |
-| `user-manual.tex` | `:1803` | « Cette piste d'audit est » | « Ce journal d'audit est » — accords (« enregistré ») |
+| `user-manual.tex` | `:1803-1812` | « Cette piste d'audit est » … « Elle \textbf{contribue} » … « elle est \textbf{enregistrée} » | « Ce journal d'audit est » … « Il contribue » … « il est enregistré » — **tous** les accords du paragraphe |
 | `user-manual.tex` | `:1889` | « L'\texttt{audit\_log} garde toujours la trace » *(concept)* | « Le journal d'audit garde toujours la trace » |
 | `user-manual.tex` | `:1944` | `\item[Audit-trail (piste d'audit)]` — glossaire | `\item[Journal d'audit (angl. audit log)]`, **déplacé à la lettre J**, après `\item[Journal]` (le journal des écritures) — la définition rend la différence lisible ; l'avertissement de couverture qui suit est **conservé** |
 | `admin-manual.tex` | `:1088` | « La demande reste tracée dans l'audit » | « … dans le journal d'audit » |
 | `admin-manual.tex` | `:1141` | « l'audit-trail (\texttt{invoice.emailed}, …) » | « le journal d'audit (…) » |
 | `admin-manual.tex` | `:1143` | « laisse sa propre trace d'audit » | « laisse sa propre entrée au journal d'audit » |
 | `admin-manual.tex` | `:1589` | « les conséquences sur la piste de contrôle » | « … sur le journal d'audit » |
+| `admin-manual.tex` | `:1760` | « La piste de contrôle se lit dans l'interface web » | « Le journal d'audit se lit dans l'interface web » |
+| `admin-manual.tex` | `:1766` | `\item \textbf{Audit} : les mutations […] tracées dans \texttt{audit\_log}` | `\item \textbf{Journal d'audit} : …` (le nom de table reste) |
 | `admin-manual.tex` | `:1784` | `\subsection{Audit-trail (audit\_log)}` | `\subsection{Journal d'audit (audit\_log)}` |
+| `admin-manual.tex` | `:1816` | « les entrées d'audit \textbf{déjà présentes chez vous} » | « les entrées du journal d'audit déjà présentes … » |
 | `admin-manual.tex` | `:1817` | « la piste de contrôle mêlerait deux comptabilités » | « le journal d'audit mêlerait … » |
+| `admin-manual.tex` | `:1946` | « la piste de contrôle voyage avec l'export » *(la ligne cite aussi `audit\_log`, la table : lui reste)* | « le journal d'audit voyage avec l'export » |
+| `admin-manual.tex` | `:1969` | « \texttt{audit\_log} en conserve la trace » *(concept)* | « le journal d'audit en conserve la trace » |
 | `admin-manual.tex` | `:2197` | `\item[Audit-trail]` — glossaire | `\item[Journal d'audit (angl. audit log)]`, **déplacé à la lettre J**, avant `\item[Journal entry]` ; avertissement conservé |
 | `marketing-brochure.tex` | `:319` | « Audit-trail centralisé pour la responsabilité fiduciaire. » | « Journal d'audit centralisé … » |
 | `README.md` | `:29` | « audit log » (liste des fonctionnalités, en français) | « journal d'audit consultable à l'écran » |
+| `README.md` | `:220` | « la **piste de contrôle survit désormais à l'import d'une sauvegarde** » — ligne **v0.12.1, non publiée** | « le **journal d'audit survit désormais …** » |
 
 **Déjà conformes, à laisser** : `user-manual.tex:474`, `:514`, `:543`, `:593`, `:1039`, `:1085`, `:1159`,
-`:1427`, `:1712`, `:1721` ; `admin-manual.tex:1066`, `:1613`, `:1760`, `:1810` ; `marketing-brochure.tex:139`.
-**Autre sens, à laisser** : `admin-manual.tex:159`, `:1242`, `:1946`, `:2082` (`audit\_log` y nomme la
-**table**, non le concept) ; `README.md:219` (« audit par trois experts ») ; la section *« Numérotation »*
-(`user-manual.tex:543`) parle de **trou**, non du journal. ⚠️ **L'historique publié ne se réécrit pas** :
-les lignes v0.12.0 du README et la section `[0.12.0]` du CHANGELOG gardent « piste de contrôle ».
+`:1427`, `:1712`, `:1721` ; `admin-manual.tex:1066`, `:1613`, `:1810` ; `marketing-brochure.tex:139`.
+**Autre sens, à laisser** : `admin-manual.tex:159`, `:1242`, `:2082` (`audit\_log` y nomme la
+**table**, non le concept) ; `README.md:219` (« audit par trois experts ») ; `user-manual.tex:624` (« une
+piste de correction lisible ») ; `marketing-brochure.tex:209` (« Une piste pour les fiduciaires », piste
+commerciale). ⚠️ **L'historique publié ne se réécrit pas** :
+la ligne **v0.12.0** du README (`:219`, dont « n'est consultable par aucun écran ») et la section
+`[0.12.0]` du CHANGELOG ne se touchent pas. La ligne **v0.12.1**, elle, n'est pas publiée : elle se met à
+jour (AC 3, AC 7).
 `website/` (anglais, « audit log » déjà) ne se touche pas.
 
 ⛔ **Le nom technique `audit\_log`** ne change pas là où il désigne la table ou le champ.
@@ -130,20 +132,30 @@ les lignes v0.12.0 du README et la section `[0.12.0]` du CHANGELOG gardent « pi
 
 **4. Le manuel utilisateur, l'encadré** `\begin{keshwarning}[title=… Ce que le logiciel ne fait pas
 encore à votre place]` (`user-manual.tex:511-528`, juste avant `\subsection{Numérotation}`). Il porte
-aujourd'hui **quatre** énoncés, dont **trois sont périmés** :
+aujourd'hui **cinq** énoncés, dont **trois sont périmés** :
 
 | énoncé actuel | état |
 |---|---|
 | « La contre-passation est désormais imposée […] : la modification et la suppression d'une écriture sont refusées » | **vrai**, à conserver — avec la seule voie qui fait disparaître une écriture : la **dévalidation** d'une facture (renvoi à « Supprimer ou dévalider une facture ») |
 | « Ce qui manque encore, c'est l'écran de consultation du journal d'audit […] par l'interface de programmation seulement […] La page […] reste à venir » | **faux** : l'écran existe (25-1c-b1) |
+| « Un verrou plus fin que l'exercice existe, lui : le verrou de période […] » | **vrai**, à conserver |
 | « Une seule exception, déjà en vigueur : une écriture déjà contre-passée ne peut plus être supprimée » | **périmé** : **aucune** écriture ne se supprime plus |
 | « préférez la contre-passation […], tant que le logiciel vous laisse le choix » | **périmé** : il ne laisse plus le choix |
 
 ⇒ L'encadré devient une **note** (`keshnote`), qui n'annonce plus de fonction manquante : contre-passation
-imposée ; la dévalidation comme seule disparition d'une écriture, **journalisée sous son propre nom** ;
+imposée ; **en usage courant**, la dévalidation d'une facture est la seule voie qui fait disparaître une
+écriture, **journalisée sous son propre nom** — ⚠️ **hors restauration d'une sauvegarde**, qui remet les
+livres dans l'état de l'archive (`backup.rs`, import d'installation), et hors réinitialisation des données de
+démonstration, refusée après la finalisation (revalidation R6 : `delete_in_tx` n'a qu'un appelant qui
+supprime, `invoices.rs` — la dévalidation ; mais `backup.rs:457` et `kesh-seed` effacent des tables) ;
 l'historique des corrections **consultable à l'écran** — *Administration → Journal d'audit*, renvoi à la
-section « Traçabilité » — et par l'API ; le verrou de période conservé tel quel. ⛔ **Aucune formule
-absolue** (« en aucun cas ») sur la disparition d'une écriture.
+section « Traçabilité », qui reçoit pour cela un `\label{sec:tracabilite}` — et par l'API ; le verrou de période conservé tel quel. ⛔ **Aucune formule
+absolue** (« en aucun cas », « seule » sans réserve) sur la disparition d'une écriture.
+
+⚠️ **Voisin, dans la même section** (`user-manual.tex:536`, sous-section « Numérotation ») : « Si vous
+supprimez la dernière écriture d'un exercice, la suivante prendra le numéro d'après » — une écriture ne se
+supprime plus → « Si la dernière écriture d'un exercice disparaît (par la dévalidation de sa facture), la
+suivante… ».
 
 **5. Le manuel utilisateur, section « Traçabilité »** — la fin de son `keshnote` (`:1812-1816`) :
 *« n'est pas encore consultable via un écran dédié dans l'interface (page de consultation prévue pour une
@@ -158,14 +170,15 @@ inattendue se dit** :
   appartient au jour UTC **précédent** ; une date de début postérieure à la date de fin est refusée par
   l'écran ;
 - **le numéro d'entité exige un type** : le champ reste inactif sans type, et se vide quand on change de
-  type ;
+  type ; un numéro nul, négatif ou non entier est ignoré ; une entrée sans entité précise affiche « — » ;
 - **la langue** : actions et types d'entité traduits dans la langue de l'installation, à l'écran comme dans
   le CSV ;
 - **une action historique**, absente du vocabulaire, s'affiche sous son **code** et n'est pas proposée
   dans la liste « Action » — on la retrouve par le type et le numéro d'entité ;
 - le détail déplié (JSON), la pagination ;
 - **l'export CSV** porte les filtres affichés, en UTC, **plafonné à 10 000 lignes** — au-delà, un message
-  demande d'affiner ;
+  demande d'affiner ; ⚠️ une plage inversée, à l'export, est refusée par le serveur, avec un message qui
+  n'est pas encore traduit (#469) ;
 - ⚠️ ni la consultation ni l'export ne s'inscrivent eux-mêmes au journal.
 
 La phrase sur le **centre de notifications** (« prévu mais pas encore disponible ») reste vraie et se
@@ -181,8 +194,10 @@ conserve. Les **manques connus** de la section (séquence d'installation #434, g
 - `:1782` — « Les **5** rôles standards » → **trois**, en accord avec `:1345` (`entities/user.rs`) ;
 - `:1803` — « Il conserve aussi les modifications et suppressions **antérieures au gel** » : à compléter
   par les **dévalidations** de factures, postérieures au gel et journalisées (`invoice.unvalidated`) — sans
-  quoi la phrase laisse croire qu'aucune disparition postérieure n'est tracée. ⚠️ Le paragraphe qui précède
-  (`:1802`) nomme déjà la dévalidation : **ne pas le réécrire**.
+  quoi la phrase laisse croire qu'aucune disparition postérieure n'est tracée ;
+- `:1802` — « ⚠️ \textbf{Une seule voie fait encore disparaître une écriture} » : même réserve que l'AC 4 —
+  **en usage courant**, hors restauration d'une sauvegarde (la sous-section « Restaurer » et l'encadré des
+  réserves le disent déjà) ; le reste du paragraphe (dévalidation, huit motifs) se conserve.
 
 **7. Le README et le CHANGELOG** :
 
@@ -202,8 +217,9 @@ conserve. Les **manques connus** de la section (séquence d'installation #434, g
   `re.sub(r"(\w)- (\w)", r"\1\2", t)`) : les anciennes phrases absentes, les nouvelles présentes ;
 - **inventaire REJOUÉ** sur les PDF aplatis et le README, motif, sans casse :
   `piste|trace d.audit|dans l.audit\b|audit-?trail|audit log` — **reste attendu, et seulement lui** : les
-  deux « (angl. audit log) » des glossaires, et les sites « autre sens » de l'AC 3 ; on compare des
-  **sites**, pas des nombres (un site peut apparaître au sommaire).
+  deux « (angl. audit log) » des glossaires ; `user-manual.tex:624` (« piste de correction ») ;
+  `marketing-brochure.tex:209` (« Une piste pour les fiduciaires ») ; dans le README, la ligne **v0.12.0**
+  (historique publié). On compare des **sites**, pas des nombres (un site peut apparaître au sommaire).
 
 **9. Les gardes** : `cargo test -p kesh-i18n` (parité) ; `npm run test:unit` — la clé de l'AC 2 change de
 **valeur**, pas de nom : **aucun compteur ne doit bouger** ; s'il bouge, l'écrire.
@@ -225,11 +241,11 @@ conserve. Les **manques connus** de la section (séquence d'installation #434, g
 
 | zone | fichiers |
 |---|---|
-| vocabulaire | `docs/i18n-glossaire.md` ; `crates/kesh-i18n/locales/{fr,it,en}-CH/messages.ftl` (une clé, trois cellules) |
+| vocabulaire | `docs/i18n-glossaire.md` ; `crates/kesh-i18n/locales/{fr,it,en}-CH/messages.ftl` (une clé, trois cellules) ; le repli `frontend/src/routes/(app)/settings/fiscal-years/+page.svelte:554` |
 | manuels | `docs/manual/fr/user-manual.tex`, `admin-manual.tex`, `marketing-brochure.tex` + les trois PDF |
 | README, CHANGELOG | `README.md`, `CHANGELOG.md` |
 
-Aucun code applicatif.
+Aucun code applicatif, hors **un repli Svelte** (AC 2).
 
 ### Faits établis à la réécriture (2026-09-26), et non supposés
 
@@ -280,6 +296,9 @@ Aucun code applicatif.
 
 ## Change Log
 
+- **2026-09-26** — **revalidation R6** — **Une lentille Opus**, passe complète, prompt `25-1c-b2-validate-prompt-r6.md`, axes déclarés (non exercés : fiche de la b1 lue par son code seulement, manuels DE/IT/EN, lecture exhaustive de « trace » / « tracé »). **1 HIGH, 4 MEDIUM, 8 LOW**, tous retenus : ① HIGH — `user-manual.tex:301` (« pour préserver l'audit-trail »), rendu par le grep même de la fiche, **absent de l'inventaire** : c'est le HIGH de la passe 3 qui revient, perdu à la réécriture. ② MEDIUM — `admin-manual.tex:1760` et `:1946` mal classés (« piste de contrôle » y désigne le journal) ; ③ MEDIUM — trois sites non triés au rejeu (`user-manual.tex:624`, `marketing-brochure.tex:209` — tri de la passe 5 perdu —, `README.md:220`, ligne v0.12.1 **non publiée**) ; ④ MEDIUM — « la dévalidation, seule disparition d'une écriture » est **faux contre le code** : la restauration d'une sauvegarde (`backup.rs:457`) et la réinitialisation de démonstration effacent aussi des écritures ⇒ « en usage courant, hors restauration » — et `admin-manual.tex:1802`, même défaut, **réécrit aussi** (l'AC 6 disait de ne pas y toucher) ; ⑤ MEDIUM — le repli Svelte de `fiscal-year-reopen-confirmation-body` (`fiscal-years/+page.svelte:554`) non propagé ⇒ inscrit à l'AC 2 et aux zones touchées. LOW : l'encadré a **cinq** énoncés (le verrou de période reste) ; `:543` classé deux fois ; `admin-manual.tex:1766`, `:1816`, `:1969` et les accords de `user-manual.tex:1809-1812` ajoutés ; préambule périmé réécrit ; AC 5 complétée (numéro invalide ignoré, « — », plage inversée à l'export → #469) ; `user-manual.tex:536` (« Si vous supprimez la dernière écriture ») ajouté à l'AC 4 ; `\label{sec:tracabilite}` prescrit ; bruit du motif `journal` / `protokoll` dit. Ces deux entrées-ci et les deux précédentes, d'abord insérées par erreur dans le tableau de tendance de la passe 7, sont **remontées** en tête du Change Log.
+- **2026-09-26** — **réécriture T0** — Après la 25-1c-b1 (revue close), la fiche est **réécrite contre le texte de `main`** : AC 2 réduite à **une clé, trois cellules** (la 25-5-a a aligné l'autre) ; AC 3 : **inventaire refait** (16 sites à changer, dont les « piste de contrôle » ajoutés depuis, et la liste des sites déjà conformes ou d'autre sens) ; AC 4 : l'encadré a **quatre** énoncés, trois périmés, et la seule disparition d'une écriture est la **dévalidation** ; AC 5 : l'écran décrit tel que la b1 le livre (dont le refus de la plage inversée et le vidage du numéro au changement de type, ajoutés par sa revue) ; AC 6 : ce qui reste à corriger au manuel d'administration (« reste à venir », « 5 rôles », `:1803`) ; AC 7 : la ligne v0.12.1 du README et une entrée CHANGELOG *Added* — ⚠️ l'historique publié ne se réécrit pas. Revalidation à passer.
+- **2026-09-26** — **revalidation R5 « dérive »** — Reprise sur `main` à `0e4c2682`. **Une lentille Sonnet**, prompt `25-1c-b-validate-prompt-r5-derive.md`, axes déclarés (non exercés : rejeu complet de la procédure Python de l'AC 3/8, manuels DE/IT/EN, PDF de la brochure, CHANGELOG). Constats **vérifiés par l'orchestrateur** (`grep -nF`) avant d'être retenus. ⛔ **CRITICAL** — le mécanisme des AC 4 et 6 n'existe plus : une facture validée ne se supprime plus (`invoices.rs:1293`, `DbError::InvoiceMustBeUnvalidatedFirst`), elle se **dévalide** (`invoice.unvalidated`) ; le code cité (`invoices.rs:1339-1350`) a disparu ; #381 est **fermée**. **HIGH** — (1) `admin-manual.tex` « sans exception » : déjà réécrit ailleurs, la formule n'existe plus à ce site ; (2) item « Champs » (`:1790`) déjà corrigé par la 25-1c-a — reste « L'écran, lui, reste à venir (issue #378) » ; (3) encadré du manuel utilisateur (`:511-528`) déjà réécrit par la 25-1c-a — l'énoncé du verrou de période a disparu ; (4) AC 2 : `export-global-content-excludes` réécrite par la 25-5-a dans les quatre locales, **déjà conforme** — reste une seule clé à aligner (`fiscal-year-reopen-confirmation-body`, fr/it/en). **MEDIUM** — 97 actions et 138 clés `audit-log-*` (non 92 / 133) ; inventaire lexical plus large (nouveaux « piste de contrôle » `admin-manual.tex:1589`, `:1760`, `:1817`, `:1946`, et `user-manual.tex:1111` reformulée) ; toutes les lignes des manuels décalées ; la phrase du README citée par l'AC 7 n'existe plus (la ligne v0.12.1 porte « Restent ouverts : l'écran de consultation ([#378]) »). **LOW** — les entrées de glossaire portent un avertissement ajouté. ⇒ **Décision de l'orchestrateur** : pas de réécriture partielle maintenant — la fiche se réécrit en T0, contre le texte réel, **après** la 25-1c-b1, puis se revalide.
 - **2026-09-15** — **Fiche créée par le split de la 25-1c-b** (arbitrage du Project Lead). Les volets
   « vocabulaire » et « ce que l'écran rend faux » viennent de la parente (AC 13-18) ; deux findings de sa
   passe 2 sont appliqués **ici** :
@@ -479,8 +498,6 @@ aucune ligne de code, pas plus que la story, qui n'est que texte.
 
 | passe | modèle | rendu (après reclassement) |
 |---|---|---|
-| 2026-09-26 | réécriture T0 | Après la 25-1c-b1 (revue close), la fiche est **réécrite contre le texte de `main`** : AC 2 réduite à **une clé, trois cellules** (la 25-5-a a aligné l'autre) ; AC 3 : **inventaire refait** (16 sites à changer, dont les « piste de contrôle » ajoutés depuis, et la liste des sites déjà conformes ou d'autre sens) ; AC 4 : l'encadré a **quatre** énoncés, trois périmés, et la seule disparition d'une écriture est la **dévalidation** ; AC 5 : l'écran décrit tel que la b1 le livre (dont le refus de la plage inversée et le vidage du numéro au changement de type, ajoutés par sa revue) ; AC 6 : ce qui reste à corriger au manuel d'administration (« reste à venir », « 5 rôles », `:1803`) ; AC 7 : la ligne v0.12.1 du README et une entrée CHANGELOG *Added* — ⚠️ l'historique publié ne se réécrit pas. Revalidation à passer. |
-| 2026-09-26 | revalidation R5 « dérive » | Reprise sur `main` à `0e4c2682`. **Une lentille Sonnet**, prompt `25-1c-b-validate-prompt-r5-derive.md`, axes déclarés (non exercés : rejeu complet de la procédure Python de l'AC 3/8, manuels DE/IT/EN, PDF de la brochure, CHANGELOG). Constats **vérifiés par l'orchestrateur** (`grep -nF`) avant d'être retenus. ⛔ **CRITICAL** — le mécanisme des AC 4 et 6 n'existe plus : une facture validée ne se supprime plus (`invoices.rs:1293`, `DbError::InvoiceMustBeUnvalidatedFirst`), elle se **dévalide** (`invoice.unvalidated`) ; le code cité (`invoices.rs:1339-1350`) a disparu ; #381 est **fermée**. **HIGH** — (1) `admin-manual.tex` « sans exception » : déjà réécrit ailleurs, la formule n'existe plus à ce site ; (2) item « Champs » (`:1790`) déjà corrigé par la 25-1c-a — reste « L'écran, lui, reste à venir (issue #378) » ; (3) encadré du manuel utilisateur (`:511-528`) déjà réécrit par la 25-1c-a — l'énoncé du verrou de période a disparu ; (4) AC 2 : `export-global-content-excludes` réécrite par la 25-5-a dans les quatre locales, **déjà conforme** — reste une seule clé à aligner (`fiscal-year-reopen-confirmation-body`, fr/it/en). **MEDIUM** — 97 actions et 138 clés `audit-log-*` (non 92 / 133) ; inventaire lexical plus large (nouveaux « piste de contrôle » `admin-manual.tex:1589`, `:1760`, `:1817`, `:1946`, et `user-manual.tex:1111` reformulée) ; toutes les lignes des manuels décalées ; la phrase du README citée par l'AC 7 n'existe plus (la ligne v0.12.1 porte « Restent ouverts : l'écran de consultation ([#378]) »). **LOW** — les entrées de glossaire portent un avertissement ajouté. ⇒ **Décision de l'orchestrateur** : pas de réécriture partielle maintenant — la fiche se réécrit en T0, contre le texte réel, **après** la 25-1c-b1, puis se revalide. |
 | 1 | Sonnet + Haiku | 2 M, 2 L |
 | 2 | Opus | 6 M, 7 L → **split** |
 | 3 | Sonnet | 1 H, 2 M, 4 L |
