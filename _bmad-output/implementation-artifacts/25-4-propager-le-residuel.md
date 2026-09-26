@@ -83,13 +83,16 @@ Pour 25-4-b, donc :
 - la relance **dit ce qu'il reste à payer** : `{totalDue}` devient **reste dû + frais**, et non plus
   TTC + frais (`invoice_email.rs:334`) — c'est le montant que le client doit saisir.
 
-⚠️ **Ne pas contester l'arbitrage en revue** : en contester la mise en œuvre. Reste à établir en
-spécification de 25-4-b : si le reste dû figure **aussi sur le PDF** joint (mention à côté de la
-QR sans montant), ou dans le seul texte de la relance — le PDF est aujourd'hui celui de la facture,
-et #387 (l'archivage du PDF envoyé) le touche.
+- ✅ **Le reste à payer figure AUSSI sur le PDF joint**, à côté de la QR sans montant (Guy,
+  2026-09-26) : *« sinon le client ne peut pas savoir ce qu'il reste à payer sans recherche et
+  calculs »*. Le PDF d'une relance de facture partiellement réglée n'est donc plus exactement la
+  facture d'origine — à articuler en spécification avec #387 (l'archivage du PDF envoyé).
+
+⚠️ **Ne pas contester l'arbitrage en revue** : en contester la mise en œuvre.
 
 ## Change Log
 
+- **2026-09-26** — Complément de Q1 : le reste à payer figure aussi sur le PDF joint.
 - **2026-09-26** — Q1 tranchée par Guy : QR sans montant pour une facture partiellement réglée, et le reste à payer dit au client (rattaché à 25-4-b).
 - **2026-09-26** — Découpée avant spécification (§ *Règle de splitting préventif*, six modules),
   sur inventaire vérifié. #455 et #456 rattachées (même grandeur, même jalon). Deux sites trouvés
