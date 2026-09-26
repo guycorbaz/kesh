@@ -2122,6 +2122,7 @@ audit-log-details-show = Mostra
 audit-log-details-hide = Nascondi
 audit-log-empty = Nessuna voce corrisponde a questi filtri.
 audit-log-error = Il registro di audit non ha potuto essere caricato.
+audit-log-error-date-range = La data d'inizio deve precedere o essere uguale alla data di fine.
 audit-log-prev = Precedente
 audit-log-next = Successivo
 audit-log-range = { $from }–{ $to } di { $total }

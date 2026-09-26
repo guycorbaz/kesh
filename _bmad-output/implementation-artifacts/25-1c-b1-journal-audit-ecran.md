@@ -444,6 +444,22 @@ Les scénarios :
   - backend : `cargo test -p kesh-i18n` (parité des catalogues), puis `scripts/test-fast.sh` ;
   - **E2E complète**, `kesh_e2e` reconstruite, **build frontend postérieur au dernier patch**.
 
+### Review Findings
+
+*Passe 1, 2026-09-26, prompt `25-1c-b1-review-prompt-p1.md`.*
+
+- [x] [Review][Patch] **HIGH** — Passer d'un type d'entité à un AUTRE conservait l'identifiant : filtrage silencieux sur l'entité d'un autre type [`+page.svelte`, `onEntityTypeChange`]
+- [x] [Review][Patch] **HIGH** — Deux chargements concurrents : une réponse périmée pouvait remplacer la plus récente [`+page.svelte`, `loadList`] — jeton de requête
+- [x] [Review][Patch] **MEDIUM** — Plage de dates inversée : refus de la route, non traduit — contrôlée désormais dans la page, message traduit ×4 ; `min`/`max` sur les dates
+- [x] [Review][Patch] **MEDIUM** — Une URL au-delà de la dernière page laissait une liste vide sans « Précédent » [`+page.svelte`]
+- [x] [Review][Patch] **MEDIUM** — `Object.assign(URL, …)` mutait le vrai `URL`, que `vi.unstubAllGlobals()` ne restaure pas [`audit-log.api.test.ts`] — sous-classe
+- [x] [Review][Patch] **MEDIUM** — L'ordre montage / effet d'URL n'était vérifiable par aucun test (mock de `goto` inerte) — `goto` boucle désormais sur l'URL relue, test ajouté, mutation tuée
+- [x] [Review][Patch] **LOW** — Numérotation des étapes de la spec E2E dans le désordre
+- [x] [Review][Defer] **MEDIUM** — Les refus de validation de la route du journal d'audit ne sont pas traduits (backend, 25-1c-a) → **#469** ; la fiche affirmait à tort qu'un 400 de la route arrive déjà traduit
+- [x] [Review][Dismiss] **LOW** — `browser &&` redondant sous `ssr = false` : la garde est un patron **exact** imposé par l'AC 6
+- [x] [Review][Dismiss] **LOW** — `createdAt` invalide : format garanti par la route (`chrono`)
+- [x] [Review][Dismiss] **LOW** — L'AC 12 décrit `servir` comme étendu à la locale ; les tests neufs appellent le chargement directement — le résultat prescrit est obtenu
+
 ## Dev Notes
 
 ### Ce que la story touche
@@ -764,6 +780,7 @@ de texte de spec, sans assertion ajoutée ni ligne de code.
 
 | passe | modèle | rendu (après reclassement) |
 |---|---|---|
+| 2026-09-26 | review P1 | **Trois lentilles Sonnet** en contexte frais (auteur : Opus 5.5), prompt versionné `25-1c-b1-review-prompt-p1.md`, axes déclarés. **2 HIGH, 4 MEDIUM, LOW divers, 1 report.** *Edge* : identifiant conservé d'un type à l'autre (HIGH) ; réponses concurrentes non ordonnées (HIGH) ; plage inversée refusée par la route en français (MEDIUM) ; page au-delà de la fin sans issue (MEDIUM) ; a aussi **vérifié dans le runtime Svelte** que `onMount`, déclaré avant l'effet d'URL, s'exécute avant lui. *Blind* : mock d'`URL` qui mutait le global (MEDIUM) ; ordre montage / effet non testable, `goto` inerte (MEDIUM). *Auditor* : 0 au-dessus de LOW, décomptes **recomptés** (26 ×4, 164, +29, +35, +2, 17 mutations jugées discriminantes), `download.ts` identique à l'octet. Correctifs : identifiant vidé à **tout** changement de type ; **jeton de requête** ; plage contrôlée dans la page (clé `audit-log-error-date-range` ×4, 27 clés d'écran, 165 par catalogue) et `min`/`max` ; « Précédent » dans l'état vide ; `FakeURL` sous-classe ; `goto` bouclé sur l'URL relue. **Cinq mutations, toutes tuées** (jeton retiré, vidage conditionnel, plage non contrôlée, « Précédent » absent, effet d'URL déplacé avant la lecture — 7 tests rougissent). `sitesTotal` 1738 → **1740** (+2, recomptés). **Reporté** : refus de validation non traduits côté route → **#469**. Gate ciblé : vitest `audit-log` 30/30, gardes `shared` 189/189, `cargo test -p kesh-i18n` 29/29, `check` 0 erreur, lint PASS. ⚠️ Gate complet et E2E à rejouer. |
 | 2026-09-26 | dev | Implémentée (Opus 5.5) sur `main` à `0e4c2682` + fiches. Téléchargement partagé, `i18nLocale()`, feature `audit-log`, écran, garde, menu, 26 clés ×4, gardes i18n recomptées (`sitesTotal` 1738). **17 mutations sur 17 tuées** — une a d'abord survécu, le test a été renforcé. Gates sur la b1 seule : frontend 812/812, backend 2463/2463, E2E 223/8/19 sans régression. ⚠️ **La PR attend la 25-1c-b2** (fiche à réécrire, R5) : c'est elle qui porte `closes #378`. |
 | 2026-09-26 | revalidation R6 ciblée | **Une lentille Haiku 4.5**, contexte frais, braquée sur la seule remédiation R5 (`git diff bc4fee4b 6358639e`), prompt `25-1c-b1-validate-prompt-r6-ciblee.md`, axes déclarés. **0 finding** : 28 types, 97 actions, 138 clés recomptés ; chaque numéro de ligne vérifié par `grep` ; « 133 » et « 92 » ne subsistent que dans l'historique. La remédiation ne touchait que la fiche ⇒ **boucle close**, fiche revalidée contre `main` à `0e4c2682`. |
 | 2026-09-26 | revalidation R5 « dérive » | Reprise sur `main` à `0e4c2682` après dix jours sur une branche locale jamais poussée. **Une lentille Sonnet**, prompt `25-1c-b-validate-prompt-r5-derive.md`, axes déclarés (non exercés : manuels — délégués à la b2 —, contenu détaillé des specs E2E non modifiées depuis). **Contrat de la route mergée (PR #439) confirmé champ par champ** ; rien de ce que la fiche prescrit n'a été livré entre-temps ; sept copies de téléchargement toujours sept. **1 MEDIUM** : « 133 clés / 92 actions » périmé — **138 / 97** au 2026-09-26 (`account.retyped`, `invoice.unvalidated`, `invoice.settlement_cancelled`, `supplier_invoice.settlement_cancelled`, `reconciliation.cancelled`) ; la fiche ne fige plus le nombre, à recompter au développement. **3 LOW** : lignes de `i18n-keys.test.ts` (+109 à +120) et de `i18n-libelle-en-dur.test.ts` rafraîchies ; décalages d'une dizaine de lignes dans les patrons cités (`invoices/+page.svelte`, `invoices_echeancier.spec.ts`, commentaires de l'AC 9), contenu intact — non repris, T0 relit par contenu. #386 citée hors périmètre : désormais fermée, sans effet. |

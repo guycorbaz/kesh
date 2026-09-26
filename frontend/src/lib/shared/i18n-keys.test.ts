@@ -235,6 +235,8 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * faux avec l'assurance de l'avoir mesuré.*
  */
 const ATTENDU = {
+	// Story 25-1c-b1 (#378), revue P1 : 1738 → 1740, soit **+2** — le message de plage
+	// inversée (`audit-log-error-date-range`) et le « Précédent » de l'état vide.
 	// Story 25-1c-b1 (#378) : 1709 → 1738, soit **+29**, recomptés depuis la source
 	// (`grep -o 'i18nMsg('`, `main` contre l'arbre) — tous dans
 	// `routes/(app)/audit-log/+page.svelte` (0 → 29) : titre ×2 (en-tête et
@@ -324,7 +326,7 @@ const ATTENDU = {
 	// trouve rien là où l'appel n'existe pas encore : chercher les clés mal
 	// traduites ne révèle jamais celles qui ne sont pas appelées du tout — et
 	// partir d'une liste de clés ne révèle jamais celles que la liste omet.*
-	sitesTotal: 1738,
+	sitesTotal: 1740,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

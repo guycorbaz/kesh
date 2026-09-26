@@ -2175,6 +2175,7 @@ audit-log-details-show = Afficher
 audit-log-details-hide = Masquer
 audit-log-empty = Aucune entrée ne correspond à ces filtres.
 audit-log-error = Le journal d'audit n'a pas pu être chargé.
+audit-log-error-date-range = La date de début doit précéder ou égaler la date de fin.
 audit-log-prev = Précédent
 audit-log-next = Suivant
 audit-log-range = { $from }–{ $to } sur { $total }

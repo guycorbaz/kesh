@@ -121,25 +121,25 @@ test('un Comptable ouvre le journal par le menu, filtre, déplie et exporte', as
 	await page.reload();
 	await expect(row).toHaveCount(1);
 
-	// 5. Le détail se déplie et contient le JSON.
+	// 3. Le détail se déplie et contient le JSON.
 	await row.getByTestId('audit-log-details-toggle').click();
 	await expect(row.getByTestId('audit-log-details')).toContainText('{');
 
-	// 6. L'export télécharge le fichier nommé par la route.
+	// 4. L'export télécharge le fichier nommé par la route.
 	const [download] = await Promise.all([
 		page.waitForEvent('download'),
 		page.getByTestId('audit-log-export').click(),
 	]);
 	expect(download.suggestedFilename()).toMatch(/^kesh-journal-audit-/);
 
-	// 3. Une période PASSÉE l'écarte.
+	// 5. Une période PASSÉE l'écarte.
 	await page.getByTestId('audit-log-filter-date-from').fill('2000-01-01');
 	await page.getByTestId('audit-log-filter-date-to').fill('2000-01-02');
 	await page.getByTestId('audit-log-filter-date-to').blur();
 	await expect(page.getByTestId('audit-log-empty')).toBeVisible();
 	await expect(row).toHaveCount(0);
 
-	// 4. ⛔ La période qui la GARDE se calcule en jour UTC, non en jour local :
+	// 6. ⛔ La période qui la GARDE se calcule en jour UTC, non en jour local :
 	// entre 00:00 et 02:00 à Zurich, le jour local précède le jour UTC.
 	await page.getByTestId('audit-log-filter-date-from').fill(todayUtc());
 	await page.getByTestId('audit-log-filter-date-to').fill(todayUtc());

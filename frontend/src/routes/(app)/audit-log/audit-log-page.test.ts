@@ -9,7 +9,12 @@ import { render, fireEvent, cleanup, waitFor } from '@testing-library/svelte';
 import type { AuditLogEntry, AuditLogVocabulary } from '$lib/features/audit-log/audit-log.types';
 
 vi.mock('$app/environment', () => ({ browser: true }));
-vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
+// ⚠️ `goto` BOUCLE sur l'URL que la page relit (revue P1) : un mock inerte
+// masquerait un effet qui écraserait l'URL avant que `onMount` ne la lise.
+const gotoMock = vi.fn((u: URL | string) => {
+	url.value = new URL(String(u), 'http://localhost');
+});
+vi.mock('$app/navigation', () => ({ goto: (u: URL | string) => gotoMock(u) }));
 const url = { value: new URL('http://localhost/audit-log') };
 vi.mock('$app/state', () => ({
 	page: {
@@ -244,5 +249,68 @@ describe('la page', () => {
 			'Trop de résultats',
 		);
 		expect(notifyErrorMock).not.toHaveBeenCalled();
+	});
+});
+
+describe('revue P1', () => {
+	it("⛔ passer d'un type à un AUTRE vide aussi l'identifiant (mutation : vidé seulement au retour à « Tous »)", async () => {
+		url.value = new URL('http://localhost/audit-log?entityType=contact&entityId=12');
+		const { findByTestId, getByTestId } = render(Page);
+		const select = (await findByTestId('audit-log-filter-entity-type')) as HTMLSelectElement;
+		await waitFor(() => expect(select.value).toBe('contact'));
+		select.value = 'journal_entry';
+		await fireEvent.change(select);
+		await waitFor(() => expect(listMock).toHaveBeenCalledTimes(2));
+		expect(listMock.mock.calls[1][0]).toMatchObject({ entityType: 'journal_entry' });
+		expect((listMock.mock.calls[1][0] as Record<string, unknown>).entityId).toBeUndefined();
+		expect((getByTestId('audit-log-filter-entity-id') as HTMLInputElement).value).toBe('');
+	});
+
+	it('⛔ une réponse PÉRIMÉE ne remplace pas la plus récente (mutation : jeton de requête retiré)', async () => {
+		let resolveFirst!: (v: unknown) => void;
+		listMock
+			.mockImplementationOnce(() => new Promise((r) => (resolveFirst = r)))
+			.mockResolvedValueOnce(page1([entry({ id: 2, actionLabel: 'RÉCENTE' })]));
+		const { findByTestId, getByTestId } = render(Page);
+		const select = (await findByTestId('audit-log-filter-action')) as HTMLSelectElement;
+		await waitFor(() => expect(select.options.length).toBe(4));
+		select.value = 'contact.created';
+		await fireEvent.change(select);
+		expect((await findByTestId('audit-log-row-action')).textContent).toBe('RÉCENTE');
+		resolveFirst(page1([entry({ id: 1, actionLabel: 'PÉRIMÉE' })]));
+		await new Promise((r) => setTimeout(r, 20));
+		expect(getByTestId('audit-log-row-action').textContent).toBe('RÉCENTE');
+	});
+
+	it("⛔ une plage inversée est refusée DANS LA PAGE, traduite, sans appel à la route", async () => {
+		url.value = new URL('http://localhost/audit-log?dateFrom=2026-09-20&dateTo=2026-09-01');
+		const { findByTestId } = render(Page);
+		expect((await findByTestId('audit-log-error')).textContent).toContain(
+			'La date de début doit précéder',
+		);
+		expect(listMock).not.toHaveBeenCalled();
+	});
+
+	it('⛔ une page vide au-delà de la fin garde un « Précédent » (mutation : pagination absente de l’état vide)', async () => {
+		url.value = new URL('http://localhost/audit-log?offset=500');
+		listMock.mockResolvedValue({ items: [], total: 3, offset: 500, limit: 50 });
+		const { findByTestId } = render(Page);
+		await findByTestId('audit-log-empty');
+		await fireEvent.click(await findByTestId('audit-log-prev'));
+		await waitFor(() => expect(listMock).toHaveBeenCalledTimes(2));
+		expect((listMock.mock.calls[1][0] as Record<string, unknown>).offset).toBe(450);
+	});
+
+	it("⛔ l'URL de départ n'est pas écrasée au montage (mutation : effet d'URL avant la lecture)", async () => {
+		url.value = new URL('http://localhost/audit-log?action=contact.created&entityType=contact&entityId=12');
+		render(Page);
+		await waitFor(() => expect(listMock).toHaveBeenCalled());
+		expect(listMock.mock.calls[0][0]).toMatchObject({
+			action: 'contact.created',
+			entityType: 'contact',
+			entityId: 12,
+		});
+		expect(url.value.searchParams.get('action')).toBe('contact.created');
+		expect(url.value.searchParams.get('entityId')).toBe('12');
 	});
 });

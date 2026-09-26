@@ -77,21 +77,42 @@
 		return q;
 	}
 
+	// ⛔ Jeton de requête (revue P1) : deux chargements peuvent se chevaucher —
+	// un filtre changé pendant un chargement. Seule la réponse du DERNIER
+	// chargement s'affiche : sans cela, une réponse lente à un filtre périmé
+	// écraserait celle du filtre affiché, sans rien signaler.
+	let requestSeq = 0;
+
 	async function loadList() {
+		const seq = ++requestSeq;
 		loading = true;
 		listError = '';
+		// Une plage inversée est refusée ICI, dans la langue de l'interface :
+		// la route la refuserait aussi, mais avec un message non traduit.
+		if (dateFrom && dateTo && dateFrom > dateTo) {
+			entries = [];
+			total = 0;
+			listError = i18nMsg(
+				'audit-log-error-date-range',
+				'La date de début doit précéder ou égaler la date de fin.',
+			);
+			loading = false;
+			return;
+		}
 		try {
 			const res = await listAuditLog(buildQuery());
+			if (seq !== requestSeq) return;
 			entries = res.items;
 			total = res.total;
 		} catch (err) {
+			if (seq !== requestSeq) return;
 			entries = [];
 			total = 0;
 			listError = isApiError(err)
 				? err.message
 				: i18nMsg('audit-log-error', "Le journal d'audit n'a pas pu être chargé.");
 		} finally {
-			loading = false;
+			if (seq === requestSeq) loading = false;
 		}
 	}
 
@@ -134,9 +155,12 @@
 	}
 
 	function onEntityTypeChange() {
-		// ⛔ Revenir à « Tous » VIDE l'identifiant : désactiver le champ ne
-		// suffit pas, sa valeur partirait à la route, qui répondrait 400.
-		if (!entityType) entityIdValue = '';
+		// ⛔ Tout changement de type VIDE l'identifiant : un identifiant ne
+		// désigne une entité que dans SON type. Revenir à « Tous » l'exige
+		// (la route répondrait 400) ; passer d'un type à un autre aussi — sinon
+		// l'écran filtrerait, sans rien dire, sur l'entité d'un autre type
+		// (revue P1).
+		entityIdValue = '';
 		applyFilters();
 	}
 
@@ -215,6 +239,8 @@
 				id="audit-log-filter-date-from"
 				data-testid="audit-log-filter-date-from"
 				type="date"
+				min="1000-01-01"
+				max="9999-12-31"
 				bind:value={dateFrom}
 				onchange={applyFilters}
 			/>
@@ -227,6 +253,8 @@
 				id="audit-log-filter-date-to"
 				data-testid="audit-log-filter-date-to"
 				type="date"
+				min="1000-01-01"
+				max="9999-12-31"
 				bind:value={dateTo}
 				onchange={applyFilters}
 			/>
@@ -306,6 +334,13 @@
 		<p class="text-sm text-text-muted" data-testid="audit-log-empty">
 			{i18nMsg('audit-log-empty', 'Aucune entrée ne correspond à ces filtres.')}
 		</p>
+		<!-- Une URL qui pointe au-delà de la dernière page (lien partagé, entrées
+		     moins nombreuses) ne doit pas laisser sans issue (revue P1). -->
+		{#if offset > 0}
+			<Button variant="outline" class="mt-2" data-testid="audit-log-prev" onclick={onPrev}>
+				{i18nMsg('audit-log-prev', 'Précédent')}
+			</Button>
+		{/if}
 	{:else}
 		<table class="w-full border-collapse text-sm" data-testid="audit-log-table">
 			<thead>

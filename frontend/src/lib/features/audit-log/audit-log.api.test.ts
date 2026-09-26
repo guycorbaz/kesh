@@ -55,10 +55,14 @@ describe('audit-log.api', () => {
 	});
 
 	it('⛔ l’URL passée à getBlob porte les filtres, sans offset ni limit (mutation : filtres non sérialisés)', async () => {
-		vi.stubGlobal('URL', Object.assign(URL, {
-			createObjectURL: vi.fn().mockReturnValue('blob:x'),
-			revokeObjectURL: vi.fn(),
-		}));
+		// Une SOUS-CLASSE, jamais `Object.assign(URL, …)` : muter le vrai `URL`
+		// survivrait à `vi.unstubAllGlobals()` (revue P1). `new URL(...)` reste
+		// utilisable plus bas.
+		class FakeURL extends URL {
+			static createObjectURL = vi.fn().mockReturnValue('blob:x');
+			static revokeObjectURL = vi.fn();
+		}
+		vi.stubGlobal('URL', FakeURL);
 		vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
 		fetchMock.mockResolvedValue({
 			ok: true,

@@ -2121,6 +2121,7 @@ audit-log-details-show = Anzeigen
 audit-log-details-hide = Ausblenden
 audit-log-empty = Keine Einträge für diese Filter.
 audit-log-error = Das Audit-Protokoll konnte nicht geladen werden.
+audit-log-error-date-range = Das Anfangsdatum muss vor dem Enddatum liegen oder ihm entsprechen.
 audit-log-prev = Zurück
 audit-log-next = Weiter
 audit-log-range = { $from }–{ $to } von { $total }

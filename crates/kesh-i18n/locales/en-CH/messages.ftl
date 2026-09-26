@@ -2127,6 +2127,7 @@ audit-log-details-show = Show
 audit-log-details-hide = Hide
 audit-log-empty = No entries match these filters.
 audit-log-error = The audit log could not be loaded.
+audit-log-error-date-range = The start date must be on or before the end date.
 audit-log-prev = Previous
 audit-log-next = Next
 audit-log-range = { $from }–{ $to } of { $total }
