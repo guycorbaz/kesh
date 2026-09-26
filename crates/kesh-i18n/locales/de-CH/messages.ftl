@@ -2106,6 +2106,35 @@ audit-log-csv-header-api-key-id = API-Schlüssel
 audit-log-csv-header-details = Details
 audit-log-export-error-too-large = Zu viele Ergebnisse (> { $limit }). Bitte die Filter verfeinern (z. B. Datumsbereich, Aktion oder Entitätstyp), bevor der Export erneut gestartet wird.
 
+# --- Journal d'audit — écran (Story 25-1c-b1) ---
+nav-audit-log = Audit-Protokoll
+audit-log-title = Audit-Protokoll
+audit-log-subtitle = Die Spur jedes Vorgangs, der die Bücher Ihres Unternehmens verändert: wer, was, wann.
+audit-log-filter-date-from = Von (UTC-Tag)
+audit-log-filter-date-to = Bis (UTC-Tag)
+audit-log-filter-entity-type = Entitätstyp
+audit-log-filter-entity-type-all = Alle
+audit-log-filter-entity-id = Entitäts-Nr.
+audit-log-filter-action = Aktion
+audit-log-filter-action-all = Alle
+audit-log-filter-reset = Zurücksetzen
+audit-log-export = Als CSV exportieren
+audit-log-col-date = Datum
+audit-log-col-actor = Urheber
+audit-log-col-action = Aktion
+audit-log-col-entity-type = Entitätstyp
+audit-log-col-entity-id = Nr.
+audit-log-col-details = Details
+audit-log-api-key = API-Schlüssel
+audit-log-details-show = Anzeigen
+audit-log-details-hide = Ausblenden
+audit-log-empty = Keine Einträge für diese Filter.
+audit-log-error = Das Audit-Protokoll konnte nicht geladen werden.
+audit-log-error-date-range = Das Anfangsdatum muss vor dem Enddatum liegen oder ihm entsprechen.
+audit-log-prev = Zurück
+audit-log-next = Weiter
+audit-log-range = { $from }–{ $to } von { $total }
+
 # --- Story 25-2-b-2 (#440) : Freigabe aufheben, und die bewusste Lücke ---
 invoice-unvalidate-button = Freigabe aufheben
 invoice-unvalidate-confirm-title = Freigabe der Rechnung aufheben?

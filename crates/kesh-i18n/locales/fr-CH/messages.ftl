@@ -811,7 +811,7 @@ fiscal-year-closed = Exercice clôturé.
 # Story 14-2 — réouverture d'un exercice clôturé (Admin, motif, audit, garde LIFO)
 fiscal-year-reopen-button = Réouvrir
 fiscal-year-reopen-confirmation-title = Rouvrir cet exercice ?
-fiscal-year-reopen-confirmation-body = Vous êtes sur le point de rouvrir l’exercice « { $name } ». Il redeviendra modifiable (saisie d’écritures) jusqu’à une nouvelle clôture. Un motif est obligatoire et sera conservé dans la piste d’audit.
+fiscal-year-reopen-confirmation-body = Vous êtes sur le point de rouvrir l’exercice « { $name } ». Il redeviendra modifiable (saisie d’écritures) jusqu’à une nouvelle clôture. Un motif est obligatoire et sera conservé dans le journal d’audit.
 fiscal-year-reopen-motif-label = Motif de la réouverture
 fiscal-year-reopen-confirmation-action = Rouvrir l’exercice
 fiscal-year-reopened = Exercice rouvert.
@@ -2159,6 +2159,35 @@ audit-log-csv-header-entity-id = Identifiant d'entité
 audit-log-csv-header-api-key-id = Clé API
 audit-log-csv-header-details = Détails
 audit-log-export-error-too-large = Trop de résultats (> { $limit }). Veuillez affiner vos filtres (par ex. plage de dates, action ou type d'entité) avant de relancer l'export.
+
+# --- Journal d'audit — écran (Story 25-1c-b1) ---
+nav-audit-log = Journal d'audit
+audit-log-title = Journal d'audit
+audit-log-subtitle = La trace de chaque opération qui modifie les livres de votre société : qui, quoi, quand.
+audit-log-filter-date-from = Du (jour UTC)
+audit-log-filter-date-to = Au (jour UTC)
+audit-log-filter-entity-type = Type d'entité
+audit-log-filter-entity-type-all = Tous
+audit-log-filter-entity-id = N° d'entité
+audit-log-filter-action = Action
+audit-log-filter-action-all = Toutes
+audit-log-filter-reset = Réinitialiser
+audit-log-export = Exporter en CSV
+audit-log-col-date = Date
+audit-log-col-actor = Auteur
+audit-log-col-action = Action
+audit-log-col-entity-type = Type d'entité
+audit-log-col-entity-id = N°
+audit-log-col-details = Détails
+audit-log-api-key = clé API
+audit-log-details-show = Afficher
+audit-log-details-hide = Masquer
+audit-log-empty = Aucune entrée ne correspond à ces filtres.
+audit-log-error = Le journal d'audit n'a pas pu être chargé.
+audit-log-error-date-range = La date de début doit précéder ou égaler la date de fin.
+audit-log-prev = Précédent
+audit-log-next = Suivant
+audit-log-range = { $from }–{ $to } sur { $total }
 
 # --- Story 25-2-b-2 (#440) : dévalidation depuis l'écran, et le trou assumé ---
 invoice-unvalidate-button = Dévalider

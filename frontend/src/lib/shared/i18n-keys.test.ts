@@ -235,6 +235,21 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * faux avec l'assurance de l'avoir mesuré.*
  */
 const ATTENDU = {
+	// Fusion 25-1c-b1 + 25-3-c : 1709 + 31 + 10 = 1750 — les deux hausses portent sur des
+	// fichiers disjoints et se cumulent.
+	// Story 25-1c-b1 (#378), revue P1 : 1738 → 1740, soit **+2** — le message de plage
+	// inversée (`audit-log-error-date-range`) et le « Précédent » de l'état vide.
+	// Story 25-1c-b1 (#378) : 1709 → 1738, soit **+29**, recomptés depuis la source
+	// (`grep -o 'i18nMsg('`, `main` contre l'arbre) — tous dans
+	// `routes/(app)/audit-log/+page.svelte` (0 → 29) : titre ×2 (en-tête et
+	// `<h1>`), sous-titre, huit libellés de filtres dont « Tous » / « Toutes » et
+	// « Réinitialiser », l'export, six en-têtes de colonnes, « clé API »,
+	// Afficher / Masquer, vide, erreur ×2 (liste et vocabulaire), Précédent /
+	// Suivant, la plage « X–Y sur N », et les replis `common-loading` /
+	// `common-error`. ⚠️ L'entrée de menu ne compte pas ici : c'est une DONNÉE
+	// (`i18nKey`), résolue par `FAMILLES_RESOLUES['nav-']`, où `'audit-log'` entre.
+	// `sitesNonResolus`, `relais` et `sitesGabarit` ne bougent pas : l'écran
+	// n'appelle aucune clé à gabarit (le vocabulaire est traduit par la route).
 	// Story 25-3-c (#454) : 1709 → 1719, soit **+10**, recomptés depuis la source
 	// (`grep -o 'i18nMsg('`, `main` contre l'arbre) :
 	//   • `features/supplier-invoices/invoice-cancel.ts` 0 → 6 : les six motifs ;
@@ -320,7 +335,7 @@ const ATTENDU = {
 	// trouve rien là où l'appel n'existe pas encore : chercher les clés mal
 	// traduites ne révèle jamais celles qui ne sont pas appelées du tout — et
 	// partir d'une liste de clés ne révèle jamais celles que la liste omet.*
-	sitesTotal: 1719,
+	sitesTotal: 1750,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,
@@ -439,7 +454,9 @@ const FAMILLES_RESOLUES: Record<string, readonly string[]> = {
 		'credit-notes', 'supplier-invoices', 'supplier-invoices-import', 'payment-batches',
 		'accounts', 'fiscal-years', 'bank-accounts', 'bank-profiles', 'reconciliation-rules',
 		'projects', 'export-global', 'settings', 'opening-balances', 'email-templates',
-		'admin-backup', 'admin-restore'
+		'admin-backup', 'admin-restore',
+		// Story 25-1c-b1 (#378) — l'écran du journal d'audit.
+		'audit-log'
 	],
 	// routes/(app)/reports/+page.svelte:628 — table `labelKey` des onglets
 	'reports-': [

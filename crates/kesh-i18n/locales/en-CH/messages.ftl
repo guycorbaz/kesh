@@ -774,7 +774,7 @@ fiscal-year-closed = Fiscal year closed.
 # Story 14-2 — reopening a closed fiscal year (Admin, reason, audit, LIFO guard)
 fiscal-year-reopen-button = Reopen
 fiscal-year-reopen-confirmation-title = Reopen this fiscal year?
-fiscal-year-reopen-confirmation-body = You are about to reopen fiscal year "{ $name }". It will become editable again (entry posting) until it is closed anew. A reason is required and will be kept in the audit trail.
+fiscal-year-reopen-confirmation-body = You are about to reopen fiscal year "{ $name }". It will become editable again (entry posting) until it is closed anew. A reason is required and will be kept in the audit log.
 fiscal-year-reopen-motif-label = Reason for reopening
 fiscal-year-reopen-confirmation-action = Reopen fiscal year
 fiscal-year-reopened = Fiscal year reopened.
@@ -2111,6 +2111,35 @@ audit-log-csv-header-entity-id = Entity ID
 audit-log-csv-header-api-key-id = API key
 audit-log-csv-header-details = Details
 audit-log-export-error-too-large = Too many results (> { $limit }). Please refine your filters (e.g. date range, action or entity type) before exporting.
+
+# --- Journal d'audit — écran (Story 25-1c-b1) ---
+nav-audit-log = Audit log
+audit-log-title = Audit log
+audit-log-subtitle = The trace of every operation that changes your company's books: who, what, when.
+audit-log-filter-date-from = From (UTC day)
+audit-log-filter-date-to = To (UTC day)
+audit-log-filter-entity-type = Entity type
+audit-log-filter-entity-type-all = All
+audit-log-filter-entity-id = Entity no.
+audit-log-filter-action = Action
+audit-log-filter-action-all = All
+audit-log-filter-reset = Reset
+audit-log-export = Export as CSV
+audit-log-col-date = Date
+audit-log-col-actor = Author
+audit-log-col-action = Action
+audit-log-col-entity-type = Entity type
+audit-log-col-entity-id = No.
+audit-log-col-details = Details
+audit-log-api-key = API key
+audit-log-details-show = Show
+audit-log-details-hide = Hide
+audit-log-empty = No entries match these filters.
+audit-log-error = The audit log could not be loaded.
+audit-log-error-date-range = The start date must be on or before the end date.
+audit-log-prev = Previous
+audit-log-next = Next
+audit-log-range = { $from }–{ $to } of { $total }
 
 # --- Story 25-2-b-2 (#440): unvalidate from the screen, and the assumed gap ---
 invoice-unvalidate-button = Unvalidate

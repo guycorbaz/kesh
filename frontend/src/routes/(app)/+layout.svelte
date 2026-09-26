@@ -133,6 +133,9 @@
 					fallback: 'Soldes de départ',
 					href: '/settings/opening-balances',
 				},
+				// Story 25-1c-b1 (#378) — consulter le journal d'audit : Comptable et
+				// Admin (la route refuse Consultation et les clés API).
+				{ i18nKey: 'nav-audit-log', fallback: "Journal d'audit", href: '/audit-log' },
 			],
 			// (Idem pour les deux items admin-only : traduits par la story 23-3b.)
 			adminOnly: [

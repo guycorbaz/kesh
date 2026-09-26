@@ -551,7 +551,7 @@
 				{#if reopenTarget}
 					{i18nMsg(
 						'fiscal-year-reopen-confirmation-body',
-						`Vous êtes sur le point de rouvrir l'exercice « ${reopenTarget.name} ». Il redeviendra modifiable (saisie d'écritures) jusqu'à une nouvelle clôture. Un motif est obligatoire et sera conservé dans la piste d'audit.`,
+						`Vous êtes sur le point de rouvrir l'exercice « ${reopenTarget.name} ». Il redeviendra modifiable (saisie d'écritures) jusqu'à une nouvelle clôture. Un motif est obligatoire et sera conservé dans le journal d'audit.`,
 						{ name: reopenTarget.name }
 					)}
 				{/if}

@@ -1085,7 +1085,7 @@ Si votre instance envoie vers plusieurs domaines de messagerie (Gmail, Infomania
     \item \textbf{Horloges synchronisées requises} : la validité du lien (30 min) compare l'horloge de l'application à celle de MariaDB. Un décalage (NTP absent, timezone MariaDB non-UTC) raccourcit ou allonge la fenêtre — un offset d'une heure rendrait les liens inutilisables. En pratique : activez NTP sur l'hôte ; avec le \keshpath{docker-compose} fourni, les deux conteneurs partagent l'horloge de l'hôte.
     \item \textbf{Reverse proxy et limitation de débit} : la limite « 5 requêtes/15 min » est comptée \textbf{par IP source TCP}. Derrière un reverse proxy, tous les clients partagent l'IP du proxy : 5 demandes (même légitimes, d'utilisateurs différents) bloquent le recovery 30 minutes pour toute l'installation. Suivi : \href{https://github.com/guycorbaz/kesh/issues/173}{issue \#173} (support \texttt{X-Forwarded-For} opt-in).
     \item \textbf{Blocage = durée du lien} : un utilisateur qui épuise ses 5 essais à mi-parcours doit attendre 30 minutes — et son lien aura expiré entre-temps.
-    \item \textbf{Arrêt du serveur pendant l'envoi} : l'email part en tâche de fond après la réponse ; un redémarrage du conteneur à cet instant précis peut perdre l'envoi. La demande reste tracée dans l'audit (\texttt{auth.password\_reset\_requested} sans \texttt{auth.password\_reset\_completed} correspondant), mais l'échec d'envoi lui-même n'apparaît pas dans les logs (le processus s'est arrêté avant de pouvoir l'écrire — un échec SMTP \emph{ordinaire}, lui, est toujours loggé). Il suffit de refaire une demande.
+    \item \textbf{Arrêt du serveur pendant l'envoi} : l'email part en tâche de fond après la réponse ; un redémarrage du conteneur à cet instant précis peut perdre l'envoi. La demande reste tracée dans le journal d'audit (\texttt{auth.password\_reset\_requested} sans \texttt{auth.password\_reset\_completed} correspondant), mais l'échec d'envoi lui-même n'apparaît pas dans les logs (le processus s'est arrêté avant de pouvoir l'écrire — un échec SMTP \emph{ordinaire}, lui, est toujours loggé). Il suffit de refaire une demande.
 \end{itemize}
 
 \begin{keshtip}
@@ -1138,9 +1138,9 @@ spam — ou est rejet\'ee — chez vos clients.
     \item \textbf{Anti-abus} : 20 envois par fen\^etre de 15 minutes et par
           utilisateur (puis blocage temporaire 15 minutes).
     \item \textbf{Tra\c{c}abilit\'e} : chaque envoi est journalis\'e dans
-          l'audit-trail (\texttt{invoice.emailed}, avec destinataire et objet).
+          le journal d'audit (\texttt{invoice.emailed}, avec destinataire et objet).
     \item \textbf{Renvoi} : autoris\'e (chaque renvoi \'ecrase la date
-          d'envoi affich\'ee et laisse sa propre trace d'audit).
+          d'envoi affich\'ee et laisse sa propre entrée au journal d'audit).
 \end{itemize}
 
 \begin{keshnote}
@@ -1586,7 +1586,7 @@ Le fichier \keshcommand{.keshbackup} est un \textbf{secret} : il contient les \t
 
 Menu \textbf{Administration → Restaurer / Importer} (\keshpath{/admin/restore}) → sélection du fichier \keshcommand{.keshbackup} → bouton \textbf{« Importer et remplacer l'installation »} → \textbf{confirmation forte} dans une fenêtre modale.
 
-\textbf{Cette fonction sert à restaurer \emph{votre} installation} --- la remettre dans un état antérieur, ou la déplacer telle quelle vers un autre serveur. Ce n'est \textbf{pas} un outil pour verser les données d'une \emph{autre} installation dans la vôtre~: c'est techniquement possible, et les conséquences sur la piste de contrôle sont décrites plus bas (section \emph{Conformité OLICo}).
+\textbf{Cette fonction sert à restaurer \emph{votre} installation} --- la remettre dans un état antérieur, ou la déplacer telle quelle vers un autre serveur. Ce n'est \textbf{pas} un outil pour verser les données d'une \emph{autre} installation dans la vôtre~: c'est techniquement possible, et les conséquences sur le journal d'audit sont décrites plus bas (section \emph{Conformité OLICo}).
 
 \begin{keshwarning}
 \textbf{Opération destructrice et irréversible.} L'import \textbf{remplace l'intégralité des données} de l'installation actuelle par celles du fichier. À la fin, vous êtes \textbf{déconnecté} et devez vous reconnecter avec les \textbf{identifiants tels qu'ils étaient au moment de la sauvegarde} --- tout compte créé, renommé ou dont le mot de passe a changé \emph{depuis} cette sauvegarde revient à son état d'alors, et les comptes créés depuis n'existent plus. Avant toute suppression, Kesh crée \textbf{automatiquement une sauvegarde de l'état courant} côté serveur (répertoire \keshcommand{KESH\_ADMIN\_BACKUP\_DIR}, défaut \keshpath{/tmp}) en filet de sécurité ; conservez ce répertoire à l'abri et purgez-le selon votre politique.
@@ -1757,13 +1757,13 @@ En complément de l'authentification web par cookie, Kesh permet à des \textbf{
 \begin{itemize}
     \item \textbf{Gestion} : les clés se créent et se révoquent depuis l'interface web, page \textbf{Paramètres → Clés API} (\texttt{/settings/api-keys}), accessible aux rôles Comptable et Administrateur. La gestion des clés est \textbf{impossible via l'API elle-même} (protection anti-auto-propagation : une clé compromise ne peut pas en créer d'autres).
     \item \textbf{Administration} : plus largement, \textbf{aucune route réservée au rôle Administrateur n'est atteignable avec une clé API}, quel que soit le rôle de son créateur --- gestion des utilisateurs et des mots de passe, paramètres de facturation et de relance, taux de TVA, niveaux de rappel, modèles d'e-mail, coordonnées de l'entreprise, suppression de facture, export et import d'installation, réouverture d'exercice. La réponse est \texttt{403 API\_KEY\_ADMIN\_FORBIDDEN}. Ces opérations se font dans l'interface web. \textbf{Attention à la version} : cette fermeture n'est pas dans la v0.9.0 --- voir l'encadré \emph{« Dans quelle version ? »} plus bas.
-    \item \textbf{Journal d'audit} : la \textbf{consultation du journal} --- la liste, le vocabulaire et l'export CSV (\texttt{/api/v1/audit-log*}) --- est elle aussi \textbf{fermée aux clés API}, y compris en lecture seule et y compris pour une clé créée par un Administrateur. ⚠️ \emph{La réponse porte ici un \textbf{autre} code~: \texttt{403 API\_KEY\_MANAGEMENT\_FORBIDDEN}, et non \texttt{API\_KEY\_ADMIN\_FORBIDDEN} --- le journal n'est pas une route d'administration. Le libellé parle de «~gestion de clés~» pour des raisons historiques~; sur ces trois routes, il signifie simplement qu'une clé n'y a pas accès. Ne cherchez pas le défaut dans la configuration de la clé.} La piste de contrôle se lit dans l'interface web, par un Comptable ou un Administrateur.
+    \item \textbf{Journal d'audit} : la \textbf{consultation du journal} --- la liste, le vocabulaire et l'export CSV (\texttt{/api/v1/audit-log*}) --- est elle aussi \textbf{fermée aux clés API}, y compris en lecture seule et y compris pour une clé créée par un Administrateur. ⚠️ \emph{La réponse porte ici un \textbf{autre} code~: \texttt{403 API\_KEY\_MANAGEMENT\_FORBIDDEN}, et non \texttt{API\_KEY\_ADMIN\_FORBIDDEN} --- le journal n'est pas une route d'administration. Le libellé parle de «~gestion de clés~» pour des raisons historiques~; sur ces trois routes, il signifie simplement qu'une clé n'y a pas accès. Ne cherchez pas le défaut dans la configuration de la clé.} Le journal d'audit se lit dans l'interface web, par un Comptable ou un Administrateur.
     \item ⚠️ \textbf{Ce qu'une clé \texttt{read-write} peut faire depuis la v0.12.1, et qu'elle ne pouvait pas avant} : \textbf{dévalider une facture}, donc \textbf{supprimer l'écriture comptable} que sa validation avait créée. La route n'est pas réservée à l'administrateur --- elle est ouverte au Comptable, et donc aux clés --- par un choix délibéré, aligné sur les API de facturation comparables. Les huit refus de la dévalidation s'y appliquent intégralement (exercice clos, verrou de période, facture réglée, créditée, relancée, envoyée, rapprochée, contre-passée), et chaque dévalidation est journalisée sous son propre nom. Si cette capacité vous paraît trop large pour une intégration, donnez-lui une clé en \emph{lecture seule}.
     \item \textbf{Portée} : chaque clé est en \emph{lecture seule} (\texttt{read} --- méthodes GET/HEAD/OPTIONS) ou \emph{lecture-écriture} (\texttt{read-write} --- toutes les méthodes). La permission effective est l'intersection de la portée de la clé et du rôle de son créateur --- \textbf{et l'administration en est exclue dans tous les cas} (point \emph{Administration} ci-dessus), \textbf{de même que le journal d'audit} (point précédent).
     \item \textbf{Périmètre} : une clé est liée à \textbf{une seule entreprise} (\emph{company}) et agit au nom de son créateur (rôle relu en base à chaque requête --- désactiver le créateur invalide ses clés immédiatement).
     \item \textbf{Stockage} : seul un condensé SHA-256 de la clé est conservé en base (table \texttt{api\_keys}) ; le secret en clair n'est affiché qu'une seule fois, à la création.
     \item \textbf{Expiration / révocation} : une clé peut avoir une date d'expiration optionnelle ; la révocation prend effet immédiatement.
-    \item \textbf{Audit} : les mutations effectuées via une clé sont tracées dans \texttt{audit\_log}. ⚠️ \emph{L'attribution n'est pas encore complète~: une quinzaine de dépôts de données inscrivent \texttt{actor\_type = 'user'} au lieu de \texttt{'api\_key'}, si bien qu'une action faite par une intégration peut être journalisée comme venant d'une personne. L'imputabilité humaine est préservée --- c'est le créateur de la clé qui figure --- mais l'information «~c'était une intégration~» se perd. Correction suivie à l'issue \#431.}
+    \item \textbf{Journal d'audit} : les mutations effectuées via une clé sont tracées dans \texttt{audit\_log}. ⚠️ \emph{L'attribution n'est pas encore complète~: une quinzaine de dépôts de données inscrivent \texttt{actor\_type = 'user'} au lieu de \texttt{'api\_key'}, si bien qu'une action faite par une intégration peut être journalisée comme venant d'une personne. L'imputabilité humaine est préservée --- c'est le créateur de la clé qui figure --- mais l'information «~c'était une intégration~» se perd. Correction suivie à l'issue \#431.}
 \end{itemize}
 
 \begin{keshwarning}
@@ -1779,15 +1779,15 @@ Le guide d'intégration complet (exemples \texttt{curl}, Python, JavaScript, MCP
 
 \subsection{RBAC et permissions}
 
-Le contrôle d'accès basé sur les rôles est appliqué \textbf{au niveau de chaque endpoint API} via un middleware Tower (Axum). Les 5 rôles standards (cf. section Premier démarrage) sont définis dans le code (pas de rôles custom dynamiques v0.1).
+Le contrôle d'accès basé sur les rôles est appliqué \textbf{au niveau de chaque endpoint API} via un middleware Tower (Axum). Les trois rôles standards (cf. section Premier démarrage) sont définis dans le code (pas de rôles custom dynamiques v0.1).
 
-\subsection{Audit-trail (audit\_log)}
+\subsection{Journal d'audit (audit\_log)}
 
 La quasi-totalité des actions métier mutantes est enregistrée dans la table \texttt{audit\_log} --- 87 des 105 routes à verbe mutant au moment de la rédaction. ⚠️ \emph{Les exceptions sont connues et suivies~: la séquence d'installation (issue \#434) et les gestes de session --- connexion, déconnexion, changement de son propre mot de passe (issue \#435). Trois autres routes n'écrivent rien parce qu'elles ne modifient rien.} La liste complète, route par route, est tenue dans le dépôt et contrôlée par un test~:
 
 \begin{itemize}
     \item Contrainte \textbf{insert-only} : aucune route API ne permet de modifier ou supprimer une entrée \texttt{audit\_log}, et \textbf{aucune ne permet d'effacer la table} sur une installation finalisée. \emph{La formulation antérieure ne parlait que d'«~une entrée~»~: elle était exacte au mot près et trompeuse en substance, une route effaçant alors la table entière.}
-    \item Champs : \texttt{id}, \texttt{user\_id}, \texttt{actor\_label} (le nom de l'auteur \emph{au moment} de l'écriture), \texttt{actor\_type} et \texttt{actor\_api\_key\_id}, \texttt{company\_id} (la société de l'auteur au moment de l'écriture, vide quand elle est indéterminable), \texttt{action}, \texttt{entity\_type}, \texttt{entity\_id}, \texttt{details\_json}, \texttt{created\_at}. ⚠️ \emph{Chaque entrée porte la société de son auteur. Le journal se \textbf{consulte} désormais depuis l'API~: une liste paginée et filtrable, un vocabulaire des codes traduits, et un export CSV --- réservés aux rôles \textbf{Comptable} et \textbf{Administrateur}, et refusés aux clés API. L'\textbf{écran}, lui, reste à venir (issue \#378). La consultation ne filtre que votre société, et ne s'inscrit pas elle-même au journal.}
+    \item Champs : \texttt{id}, \texttt{user\_id}, \texttt{actor\_label} (le nom de l'auteur \emph{au moment} de l'écriture), \texttt{actor\_type} et \texttt{actor\_api\_key\_id}, \texttt{company\_id} (la société de l'auteur au moment de l'écriture, vide quand elle est indéterminable), \texttt{action}, \texttt{entity\_type}, \texttt{entity\_id}, \texttt{details\_json}, \texttt{created\_at}. ⚠️ \emph{Chaque entrée porte la société de son auteur. Le journal se \textbf{consulte} désormais depuis l'API~: une liste paginée et filtrable, un vocabulaire des codes traduits, et un export CSV --- réservés aux rôles \textbf{Comptable} et \textbf{Administrateur}, et refusés aux clés API. L'\textbf{écran} existe aussi~: \emph{Administration} → \emph{Journal d'audit}, pour les mêmes rôles. La consultation ne filtre que votre société, et ne s'inscrit pas elle-même au journal.}
     \item Conservation 10 ans (selon CO Art. 958f al. 1).
 \end{itemize}
 
@@ -1799,8 +1799,8 @@ Kesh met en place les éléments que l'OLICo Art. 9 al. 1.b attend d'un support 
     \item \textbf{Un verrou de période} arrête les écritures à une date choisie, indépendamment de la clôture annuelle~: aucune écriture ne peut plus être datée d'une période déjà déclarée (typiquement un trimestre TVA déposé), par aucun chemin --- ni la saisie manuelle, ni les flux automatiques --- et aucune écriture de la période ne peut plus en être \textbf{supprimée}, pas même en \textbf{dévalidant} la facture qui la porte. Le \textbf{déverrouillage} est réservé à un administrateur, exige un \textbf{motif} et s'inscrit au journal d'audit ; une restauration de sauvegarde qui ferait reculer la borne y laisse également une trace (\texttt{books.restored}).
     \item \textbf{Une écriture enregistrée n'est plus ni modifiable ni supprimable} --- l'application refuse les deux quel que soit le rôle, sur la route des écritures ; la correction passe par la \textbf{contre-passation}, qui laisse l'origine et sa correction dans les livres (CO Art.~958f : l'exigence n'est pas qu'on ne se trompe jamais, c'est que la correction soit apparente). L'immutabilité n'est donc plus seulement \emph{tracée}, elle est \textbf{imposée}.
 
-    ⚠️ \textbf{Une seule voie fait encore disparaître une écriture, et elle est nommée}~: la \textbf{dévalidation} d'une facture (depuis la v0.12.1), qui la repasse en brouillon et supprime l'écriture que sa validation avait créée. Ce n'est pas une brèche dans l'immutabilité mais une \textbf{décision de facturation}~: elle est journalisée sous son propre nom, refusée sous huit motifs --- dont l'exercice clos, le verrou de période, la contre-passation et l'envoi au client ---, et elle ne touche jamais une écriture saisie à la main.
-    \item \texttt{audit\_log} alimenté à chaque création d'écriture, avec instantané (condition 1). \emph{Il conserve aussi les modifications et suppressions antérieures au gel, ainsi que celles des autres entités.}
+    ⚠️ \textbf{En usage courant, une seule voie fait encore disparaître une écriture, et elle est nommée}~: la \textbf{dévalidation} d'une facture (depuis la v0.12.1), qui la repasse en brouillon et supprime l'écriture que sa validation avait créée. Ce n'est pas une brèche dans l'immutabilité mais une \textbf{décision de facturation}~: elle est journalisée sous son propre nom, refusée sous huit motifs --- dont l'exercice clos, le verrou de période, la contre-passation et l'envoi au client ---, et elle ne touche jamais une écriture saisie à la main. \emph{Hors usage courant, la restauration d'une sauvegarde remet les livres dans l'état de l'archive (\S\ref{sec:backup-ui-keshbackup}).}
+    \item \texttt{audit\_log} alimenté à chaque création d'écriture, avec instantané (condition 1). \emph{Il conserve aussi les modifications et suppressions antérieures au gel, les dévalidations de factures, postérieures (\texttt{invoice.unvalidated}), ainsi que les opérations des autres entités.}
     \item \texttt{SHA-256} par fichier dans le \texttt{metadata.json} du ZIP d'export (condition 1 renforcée).
     \item Horodatage \texttt{created\_at} pour le moment d'enregistrement (condition 2).
     \item Documentation des procédures dans ce manuel et dans le journal de bord (conditions 3 et 4).
@@ -1813,8 +1813,8 @@ entrées de l'archive sont \textbf{fusionnées} avec celles de l'installation, e
 porte le nom de son auteur au moment de l'écriture --- il survit donc au remplacement des
 comptes utilisateurs. \faExclamationTriangle\ \textbf{Cette fusion suppose que la sauvegarde
 soit celle de votre propre installation.} Importer celle d'une \emph{autre} installation est techniquement
-possible, et les entrées d'audit \textbf{déjà présentes chez vous} se retrouveraient alors
-rattachées à la société importée~: la piste de contrôle mêlerait deux comptabilités sans
+possible, et les entrées du journal d'audit \textbf{déjà présentes chez vous} se retrouveraient alors
+rattachées à la société importée~: le journal d'audit mêlerait deux comptabilités sans
 qu'aucun message ne le signale. N'importez que vos propres sauvegardes. La
 \textbf{réinitialisation des données de démonstration} efface encore
 la table, mais elle exige le rôle d'administrateur \emph{et} est refusée dès que
@@ -1943,7 +1943,7 @@ Synthèse :
 \begin{itemize}
     \item al. 1 : conservation 10 ans à compter de la fin de l'exercice → garanti par la persistance MariaDB (sous réserve d'admin DB + backup approprié).
     \item al. 2 : rapport de gestion imprimé et signé → \textbf{responsabilité de la PME utilisatrice}, hors scope logiciel.
-    \item al. 3 : support libre + lien garanti + lisibilité possible → garanti par \texttt{audit\_log} + SHA-256 + format CSV ouvert du ZIP d'export. \textbf{Depuis la v0.12.1, la piste de contrôle VOYAGE avec l'export} (\texttt{audit\_log.csv}, issue \#386)~: elle n'est plus seulement conservée dans l'instance, elle part avec les livres.
+    \item al. 3 : support libre + lien garanti + lisibilité possible → garanti par \texttt{audit\_log} + SHA-256 + format CSV ouvert du ZIP d'export. \textbf{Depuis la v0.12.1, le journal d'audit VOYAGE avec l'export} (\texttt{audit\_log.csv}, issue \#386)~: il n'est plus seulement conservé dans l'instance, il part avec les livres.
 \end{itemize}
 
 \subsection{Rétention des rappels débiteurs (dossier de recouvrement)}\label{sec:dunning-retention}
@@ -1966,7 +1966,7 @@ Pour annuler une facture déjà relancée, la voie reste l'\textbf{avoir}~: l'hi
 
 \begin{itemize}
     \item Art. 1 : journal chronologique → implémenté (rapport \emph{Journaux}). ⚠️ \textbf{Le grand livre --- l'extrait d'un compte donné --- n'existe pas encore} : aucun rapport ne le produit, et la liste des écritures ne se filtre pas par compte. C'est la première pièce que demande une révision ; elle doit aujourd'hui être reconstituée depuis l'export CSV.
-    \item Art. 3 : intégrité (modification apparente) → les corrections passent par \textbf{contre-passation}, qui laisse l'écriture d'origine en place, et \texttt{audit\_log} en conserve la trace. ⚠️ \emph{La couverture du journal n'est pas encore complète, mais la réserve a changé d'objet~: la gestion des utilisateurs, la modification de la société et les pièces importées y sont désormais inscrites. Ce qui manque est la séquence d'installation (issue \#434) et les gestes de session (issue \#435).}
+    \item Art. 3 : intégrité (modification apparente) → les corrections passent par \textbf{contre-passation}, qui laisse l'écriture d'origine en place, et le journal d'audit en conserve la trace. ⚠️ \emph{La couverture du journal n'est pas encore complète, mais la réserve a changé d'objet~: la gestion des utilisateurs, la modification de la société et les pièces importées y sont désormais inscrites. Ce qui manque est la séquence d'installation (issue \#434) et les gestes de session (issue \#435).}
     \item Art. 9 al. 1.b : supports modifiables (disque dur, SSD) → conditions 1-4 satisfaites (cf. section sécurité plus haut).
     \item Art. 10 : contrôle et migration → test de restauration annuel obligatoire (cf. section Sauvegarde).
 \end{itemize}
@@ -2194,11 +2194,11 @@ export global) ou par les mécanismes documentés ailleurs dans ce manuel :
 \subsection{Glossaire}
 
 \begin{description}
-    \item[Audit-trail] Trace des actions métier (table \texttt{audit\_log}), inaltérable sur une installation en service. ⚠️ \emph{La couverture n'est pas totale~: voir les réserves de la section «~Conformité~».}
     \item[CAMT.053] Standard ISO 20022 d'extrait de compte bancaire suisse.
     \item[Company] Entité comptable (PME, association) dans Kesh ; isolation multi-tenant par \texttt{company\_id}.
     \item[Fiscal year] Exercice comptable, généralement annuel (1\textsuperscript{er} janvier -- 31 décembre par défaut).
     \item[IDOR] Insecure Direct Object Reference, classe d'attaque évitée via le scoping \texttt{company\_id}.
+    \item[Journal d'audit (angl. audit log)] Trace des actions métier (table \texttt{audit\_log}), inaltérable sur une installation en service. ⚠️ \emph{La couverture n'est pas totale~: voir les réserves de la section «~Conformité~».}
     \item[Journal entry] Écriture comptable en partie double.
     \item[OLICo] Ordonnance sur la tenue et la conservation des livres de comptes (RS 221.431).
     \item[pain.001] Standard ISO 20022 d'ordre de paiement (Customer Credit Transfer Initiation).

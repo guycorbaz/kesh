@@ -80,3 +80,21 @@ describe('i18nMsg — le chemin que la production emprunte', () => {
 		).toBe('et 4 autres');
 	});
 });
+
+describe('i18nLocale — la locale servie (Story 25-1c-b1)', () => {
+	it("rend la locale que le serveur sert avec les messages (mutation : toujours 'fr-CH')", async () => {
+		getMock.mockResolvedValue({ locale: 'de-CH', messages: {} });
+		await loadI18nMessages();
+		const { i18nLocale } = await import('./i18n.svelte');
+		expect(i18nLocale()).toBe('de-CH');
+	});
+
+	it("rend 'fr-CH' avant tout chargement — lu sur un module FRAIS", async () => {
+		// ⛔ Ce fichier ne remet jamais son module à zéro : sans `resetModules`,
+		// l'état d'un chargement précédent rendrait cette assertion vraie ou
+		// fausse selon sa place dans le fichier.
+		vi.resetModules();
+		const frais = await import('./i18n.svelte');
+		expect(frais.i18nLocale()).toBe('fr-CH');
+	});
+});

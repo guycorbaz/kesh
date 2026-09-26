@@ -8,10 +8,9 @@
 // l'export per-company CSV (`/exports/global.zip`). Ici = installation complète.
 //
 // DC-B1 (cf. story 17-3b) : `parseContentDispositionFilename` + `triggerDownload`
-// sont **dupliqués localement** depuis `exports.api.ts` (~30 lignes) plutôt
-// qu'importés cross-feature (anti-pattern) ou extraits maintenant. L'extraction
-// vers `lib/shared/utils/download.ts` (3ᵉ feature à dupliquer) est tracée comme
-// cleanup v0.2 / Epic 15 (note umbrella 9-2b §triggerDownload-reuse).
+// sont **dupliqués localement** depuis `exports.api.ts` (~30 lignes). Le module
+// partagé `lib/shared/utils/download.ts` existe désormais (Story 25-1c-b1) ; la
+// migration de cette copie et des six autres est suivie par l'issue #438.
 
 import { apiClient } from '$lib/shared/utils/api-client';
 

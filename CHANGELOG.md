@@ -50,6 +50,8 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ### Added
 
+- **Consulter le journal d'audit à l'écran.** La trace de chaque opération qui modifie les livres se lisait depuis la v0.12.0 par l'interface de programmation seulement, ce qui supposait un outil technique. Elle se consulte désormais dans l'application — *Administration → Journal d'audit*, pour les comptables et les administrateurs : filtres par période, type d'entité, numéro et action, actions et types traduits dans la langue de l'installation, détail de chaque entrée, export CSV. ⚠️ Les dates filtrent sur des **jours UTC** ; le tableau affiche l'heure locale. ([#378](https://github.com/guycorbaz/kesh/issues/378))
+
 - **Annuler un règlement client.** Un règlement enregistré par erreur était jusqu'ici **définitivement incorrigible** : la contre-passation directe de son écriture était refusée, et la seule sortie — une écriture manuelle — laissait la facture se dire réglée quand le grand livre disait le contraire. La fiche facture liste désormais ses règlements, et chacun s'**annule par contre-passation** : une écriture inverse **datée du jour**, le règlement retiré de la facture, le montant redevenu dû. Les deux écritures restent visibles au grand livre.
 
   Le bouton est remplacé par la raison quand l'annulation n'est pas possible : facture **créditée** (le règlement est alors un paiement à lettrer), exercice du règlement **clôturé** (un administrateur doit le rouvrir), règlement **rapproché** d'une transaction bancaire (annulez d'abord le rapprochement — le bouton est à côté du motif), compte **archivé**, ou aucun exercice ouvert pour la date du jour.

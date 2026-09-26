@@ -87,9 +87,10 @@ export function parseContentDispositionFilename(header: string | null): string |
  * Déclenche le download navigateur via un lien `<a download>` éphémère.
  *
  * **Decision §triggerDownload-reuse** (Pass 1 BH-MEDIUM-02) : duplication
- * locale de la fn `triggerDownload` de `reports.api.ts:237` (~10 lignes) —
- * refactor d'extraction vers `lib/shared/utils/download.ts` reporté Epic 15
- * v0.2 si > 2 features dupliquent.
+ * locale de la fn `triggerDownload` de `reports.api.ts:237` (~10 lignes). Le
+ * module partagé `lib/shared/utils/download.ts` existe désormais (Story
+ * 25-1c-b1, qui en reprend cette forme) ; la migration des copies est suivie
+ * par l'issue #438.
  *
  * Cleanup robuste (Pass 1 code-review M11) : `removeChild` + `revokeObjectURL`
  * dans un `finally` pour éviter une fuite mémoire si `a.click()` jette
