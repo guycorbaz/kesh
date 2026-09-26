@@ -40,12 +40,12 @@ Le découpage suit l'ordre des dépendances, non celui des issues :
    (`invoice_email.rs:1140-1166`, `invoice_pdf_service::render`). Un client qui paie la relance en
    scannant la QR paie **à nouveau le montant entier**. Question posée à Guy (Q1 ci-dessous).
 4. ⚠️ **#455 est masqué à l'écran — mais pas à l'API.** *(Corrigé en validation P1 de 25-4-a : la
-   première rédaction disait « latent ». `GET /invoices/{id}`, ouverte aux clés API, rend
-   `amountDue` sans condition de statut : sur une facture créditée à TVA non nulle, il vaut la TVA.)* Un avoir est **total** et fait passer la facture à
-   `cancelled` (`credit_notes.rs:560-563`) ; or les agrégats, le rapprochement et le règlement ne
-   lisent que des factures `validated`. Le terme « avoir » du résiduel n'est donc **non nul que sur
-   une facture annulée**, et le reste dû ne s'y affiche que si `amountSettled > 0` — c'est-à-dire
-   **seulement dans l'état que #456 permet de produire**. Les deux issues se corrigent ensemble.
+   première rédaction disait « latent ».)* L'avoir est **total** et fait passer la facture à
+   `cancelled` (`credit_notes.rs:560-575`) ; le terme « avoir » n'est donc non nul que sur une
+   facture annulée. L'**écran** n'y affiche le reste dû que si `amountSettled > 0` — l'état que #456
+   permet de produire. Mais `GET /invoices/{id}`, ouverte aux clés API, rend `amountDue` **sans
+   condition de statut** : sur toute facture créditée à TVA non nulle, il vaut la TVA. Les deux
+   issues se corrigent ensemble parce qu'elles portent sur la même grandeur et le même état.
 5. ⚠️ **Les formes jointes existent et ne servent nulle part.** `INVOICE_SETTLED_DERIVED_JOIN_SQL`
    et `INVOICE_CREDITED_DERIVED_JOIN_SQL` (`invoice_settlements.rs:40`, `:56`) n'ont aucun appelant,
    et le « test de parité » annoncé par le commentaire des lignes 27-29 **n'existe pas**. 25-4-b sera

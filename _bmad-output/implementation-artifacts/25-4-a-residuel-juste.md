@@ -122,9 +122,10 @@ créance par l'écriture de l'avoir** (`credit_notes.journal_entry_id` → ligne
 seul HT ou à une valeur recalculée en Rust **ne suffit pas**.
 
 **AC 8** — Une facture validée à 8,1 %, **non réglée, créditée** : `amount_due` = **0** (et non la
-TVA) — **au repository ET à la frontière HTTP** : `GET /api/v1/invoices/{id}` rend `amountDue` **non nul
-(pas `null` : `null` veut dire « non calculé »,** `routes/invoices.rs:242-248`**)**, sérialisé en
-**chaîne** (`rust_decimal` avec `serde-str`, `kesh-api/Cargo.toml:39`), dont la valeur **parsée en
+TVA) — **au repository ET à la frontière HTTP** : `GET /api/v1/invoices/{id}` rend `amountDue` **présent et non `null`**
+(`null` veut dire « non calculé », `routes/invoices.rs:242-248` ; ⛔ aucun `unwrap_or`, aucune
+valeur par défaut dans l'assertion), sérialisé en
+**chaîne** (sérialisation par défaut de `rust_decimal`, `kesh-api/Cargo.toml:39`), dont la valeur **parsée en
 `Decimal`** vaut zéro — ⛔ ni comparaison de chaîne (l'échelle suit le calcul SQL : `"0.0000"` et
 `"0.00"` sont également justes), ni `f64` (patron à ne pas suivre :
 `invoice_echeancier_e2e.rs:636-641`). Même règle pour `amountSettled`. Une facture validée à 8,1 %, **réglée de 40 puis créditée** (état **monté en SQL**, cf.
@@ -142,7 +143,7 @@ transaction ; elle est **verrouillante** (`… FOR UPDATE` ou `LOCK IN SHARE MOD
 **avant** le verrou.
 
 **AC 10** — Le refus est une **variante dédiée** de `DbError`, pas `IllegalStateTransition` — même
-motif que `InvoiceNotUnvalidatable` (`errors.rs:119-130`) : le générique ne dit ni ce qui bloque ni
+motif que `InvoiceNotUnvalidatable` (`errors.rs:453`, raison écrite `:119-130`) : le générique ne dit ni ce qui bloque ni
 quoi faire. Elle porte l'identifiant du premier règlement trouvé (`Option<i64>`, `None` si seul
 `paid_at` est posé) et le numéro de la facture. Code machine **`CREDIT_NOTE_INVOICE_SETTLED`**,
 HTTP **409**, ajouté à `DbError::error_code()` (`errors.rs:641`) et à toute garde qui énumère les
@@ -162,7 +163,10 @@ pouvoir émettre un avoir. » Registre du glossaire (`docs/i18n-glossaire.md` §
 `InvoiceCredited` **par le chemin que 25-4-a ferme**, avec un commentaire qui dit que l'état n'est
 **plus atteignable par l'application** depuis 25-4-a, mais **reste possible** par l'import d'une
 sauvegarde antérieure — ce qui justifie de garder `SettlementCancelBlocker::InvoiceCredited`.
-⛔ Ne **pas** supprimer ce motif ni ses tests.
+⛔ Ne **pas** supprimer ce motif ni ses tests. Ses doc-comments, qui le présentent comme un chemin
+normal (« créditée par un avoir après ce règlement … pas une anomalie », `errors.rs:214-217` ;
+« Hors `validated`, c'est donc un avoir », `invoice_settlements_write.rs:326-329`), disent
+désormais que l'état n'est plus atteignable **que par l'import d'une sauvegarde antérieure**.
 
 ⚠️ **`monter` sert quinze cas, pas un** : `la_precedence_de_l_annulation_lecture_et_ecriture`
 (`:1056-1064`) l'appelle avec les cinq motifs seuls **et les dix paires** (`RANGS`,
@@ -184,9 +188,11 @@ contrainte d'unicité d'`invoice_settlements` : `uq_invoice_settlements_entry (j
 (`20260827000001_invoice_settlements.sql:65`) — le détachement ne la touche pas. ⚠️ Pendant le
 détachement, l'écriture de règlement reste celle de la facture d'origine : aucun motif de
 `settlement_cancel_blocker` ne doit être évalué entre les deux `UPDATE`. Si le gabarit se révèle
-impraticable, à défaut, construire l'écriture d'avoir par
-`journal_entries::create_in_tx` avec les lignes de `generate_credit_note_journal_lines`, jamais à la
-main ligne par ligne.
+impraticable, **arrêter et demander** : le repli naturel — construire l'écriture d'avoir avec les
+lignes de `generate_credit_note_journal_lines` — est **impossible depuis un test**, la fonction
+étant privée (`credit_notes.rs:187`), et la rendre publique pour un test n'est pas un choix du
+développeur. La facture auxiliaire est datée **dans l'exercice seedé** (`d − 20` suffit) : c'est ce
+qui garde valide le cas « aucun exercice ouvert ».
 
 **AC 14** — Frontend : le bouton « Créer un avoir » (`invoices/[id]/+page.svelte:836`) **suit le
 précédent du bouton « Dévalider »** (`:864-871`) : la condition `!invoice.paidAt` est **retirée**, le
@@ -196,7 +202,9 @@ une condition client qui en couvre une moitié laisse l'utilisateur sans rien à
 couvre entière se désynchronise à la première évolution du serveur. La garde étant désormais
 **unique** côté serveur (AC 11), le motif « payée » et le motif « réglée en partie » s'affichent de
 la même façon. Le commentaire de `:864-871` est étendu aux deux boutons, ou dupliqué au-dessus du
-second.
+second. ⚠️ Le commentaire du bloc Suspendre/Reprendre (`:842-844`) affirme que ces boutons sont
+« masqués, comme les boutons voisins « Créer un avoir » / « Supprimer » » : il devient faux et se
+corrige dans le même patch.
 
 ⚠️ **Changement visible sur une facture entièrement payée** : le bouton, masqué jusqu'ici, apparaît ;
 l'utilisateur ouvre le dialogue, confirme, et lit le refus nommé (AC 12) dans le dialogue même
@@ -255,14 +263,17 @@ restreint aux lignes qui parlent d'avoir, plus le PDF aplati. Les manuels DE/IT/
 - [ ] **T1 — formule de l'avoir TTC** (AC 1-5) : factoriser la formule de ligne, réécrire les deux
       constantes d'avoir, doc-comments.
 - [ ] **T2 — parité et concordance** (AC 6-8) : nouveau fichier de test sur le patron
-      `invoice_ttc_parity.rs` ; montage de l'état hérité en SQL.
+      `invoice_ttc_parity.rs`. ⚠️ Le helper `validated_invoice` (`invoice_settlement.rs:32`) est
+      **à 0 % en dur** et passe une écriture de vente **au HT** : les factures à 8,1 % se montent
+      par le **vrai chemin de validation**, sur le patron de `create_and_validate`
+      (`credit_notes_repository.rs`) ; l'état hérité, par le gabarit de l'AC 13.
 - [ ] **T3 — garde de l'avoir** (AC 9-11) : lecture verrouillante des règlements après le verrou,
       variante `DbError`, `error_code()`.
 - [ ] **T4 — API et i18n** (AC 12) : mapping, clé ×4 ; e2e 409.
 - [ ] **T5 — fixture `monter`** (AC 13) : gabarit « détacher, créditer, rattacher », commentaire ;
       **les quinze cas** de la précédence restent verts, dont les quatre paires avec `InvoiceCredited`.
 - [ ] **T6 — frontend** (AC 14) : condition du bouton retirée, commentaire, Vitest.
-- [ ] **T7 — tests et mutations** (AC 16) : m1 à m6 exécutées, résultats consignés.
+- [ ] **T7 — tests et mutations** (AC 16) : m1 à **m7** exécutées, résultats consignés.
 - [ ] **T8 — textes** (AC 17) : manuel, PDF aplati, CHANGELOG.
 - [ ] **T9 — gates** : backend complet (base remise à zéro), frontend complet, E2E complet.
 
@@ -347,6 +358,17 @@ bloque **25-4-b**, pas celle-ci.
 
 ## Change Log
 
+- **2026-09-27** — **validation P3 ciblée** (Opus, diff aplati des remédiations P1-P2, prompt
+  `25-4-a-validate-prompt-p3.md`) — **2 MEDIUM, 5 LOW**, tous de **propagation** des corrections P1,
+  tous confirmés par grep. MEDIUM : T7 disait encore « m1 à m6 » (m7 ajoutée) ; l'AC 14 rendait faux
+  le commentaire Suspendre/Reprendre (`:842-844`) et l'AC 13 laissait deux doc-comments décrire
+  l'avoir après règlement comme un chemin normal. LOW : « non nul » pour « non `null` » (et
+  `unwrap_or` interdit) ; repli de l'AC 13 impossible (fonction privée) — remplacé par « arrêter et
+  demander », date de la facture auxiliaire précisée ; cause de la sérialisation en chaîne ;
+  fiche mère et `sprint-status` en retard d'une passe ; T2 ne disait pas comment monter une facture
+  à 8,1 %. Le gabarit « détacher, créditer, rattacher » a été **exécuté mentalement** contre
+  `create_credit_note`, le rang 1 et les quatre paires : il tient. Référence de l'AC 10 corrigée
+  (`errors.rs:453`). Aucun code de production touché par ces corrections.
 - **2026-09-27** — **validation P2** (Haiku, diff aplati, prompt `25-4-a-validate-prompt-p2.md`) —
   rapporte 3 MEDIUM et 1 LOW ; **un seul MEDIUM retenu** : l'AC 13 ne disait pas d'où vient la facture
   auxiliaire du gabarit — précisé (helper `validated_invoice`, contrainte d'unicité vérifiée, aucun
