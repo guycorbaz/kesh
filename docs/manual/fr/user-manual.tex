@@ -503,7 +503,7 @@ fiduciaire ou un organe de révision le retrouve sans ouvrir le logiciel.
 Une écriture n'est pas toujours contre-passable, et l'écran vous dit alors pourquoi plutôt
 que de vous laisser essayer~: une écriture qui appartient à une \textbf{pièce} se corrige
 par le chemin de cette pièce (une facture client par un \textbf{avoir}, une facture
-fournisseur par son \textbf{annulation}, un \textbf{règlement} --- client ou fournisseur --- par
+fournisseur par son \textbf{annulation}, même payée (\S\ref{sec:annuler-facture-fournisseur}), un \textbf{règlement} --- client ou fournisseur --- par
 l'annulation du règlement depuis la fiche de la facture), une écriture déjà contre-passée ne l'est pas deux
 fois, et une écriture dont un \textbf{compte a été archivé} attend que vous réactiviez ce
 compte --- son numéro vous est indiqué.
@@ -1151,15 +1151,42 @@ cas selon le moyen de paiement :
 
 \textbf{Annuler le règlement.} Un règlement enregistré par erreur ne se supprime pas~: sur la
 fiche d'une facture payée, \emph{Annuler le règlement} (comptable ou administrateur) passe une
-écriture inverse \textbf{datée du jour} et ramène la facture à \emph{ouverte}, à payer --- vous
-pouvez alors la régler à nouveau, ou l'annuler elle-même. L'écriture d'origine et sa
-contre-passation restent toutes deux au grand livre, et le journal d'audit nomme le geste. Un
-lien mène de la fiche à l'écriture de règlement.
+écriture inverse \textbf{datée du jour} et ramène la facture à \emph{ouverte}, à payer --- c'est
+le geste à choisir quand c'est le \textbf{paiement} qui est faux et que vous voulez le refaire.
+L'écriture d'origine et sa contre-passation restent toutes deux au grand livre, et le journal
+d'audit nomme le geste. Un lien mène de la fiche à l'écriture de règlement. Si c'est la
+\textbf{facture} elle-même qui est à écarter, payée ou non, voyez «~Annuler une facture
+fournisseur~» ci-dessous~: il n'est pas nécessaire d'annuler d'abord son règlement.
 
 Quand l'annulation n'est pas possible, le bouton est remplacé par la raison~: l'exercice du
 règlement est \textbf{clôturé} (un administrateur doit d'abord le rouvrir), un compte du
 règlement a été \textbf{archivé} (réactivez-le), ou aucun exercice ouvert ne couvre la date du
 jour (créez-le).
+
+\subsection{Annuler une facture fournisseur}
+\label{sec:annuler-facture-fournisseur}
+
+Une facture fournisseur saisie par erreur --- doublon, mauvais fournisseur, facture qui n'était
+pas due --- s'annule depuis sa fiche, \textbf{qu'elle soit ouverte ou déjà payée}~: bouton
+\emph{Annuler la facture} (comptable ou administrateur). Kesh passe une écriture inverse de
+l'achat, \textbf{datée du jour}, liée à l'écriture d'origine~: la charge et l'impôt préalable
+reviennent à zéro, et la facture passe à \emph{annulée}. Le journal d'audit nomme le geste.
+
+\textbf{Si la facture était payée}, son règlement \textbf{reste au grand livre}~: l'argent est
+bien sorti. Il est \textbf{détaché} de la facture et devient un \emph{paiement sans facture}~---
+au compte fournisseurs (2000), il laisse un solde débiteur, une somme que le fournisseur vous
+doit ou qui attend d'être rattachée à la bonne facture. Kesh n'a pas encore d'écran qui liste
+ces paiements~: ils se retrouvent au grand livre du compte 2000 et dans le journal d'audit, qui
+garde le lien vers la facture annulée. Si le paiement lui-même était une erreur, sa fiche
+d'écriture offre la contre-passation~--- mais le plus simple est alors d'\textbf{annuler le
+règlement d'abord}, puis la facture~: le lien avec la facture reste lisible au grand livre.
+
+Quand l'annulation n'est pas possible, le bouton est remplacé par la raison~: l'exercice de
+l'\textbf{achat} est clôturé (un administrateur doit d'abord le rouvrir), un compte de l'achat
+a été \textbf{archivé} (réactivez-le), aucun exercice ouvert ne couvre la date du jour
+(créez-le), ou la facture figure dans un \textbf{lot de paiement en cours} (annulez d'abord le
+lot). Une facture annulée ne se \emph{désannule} pas~: si l'annulation était une erreur,
+saisissez-la de nouveau.
 
 \subsection{Paiements par fichier pain.001}
 \label{sec:paiements-fournisseurs}
@@ -1904,10 +1931,15 @@ Selon l'action :
           contre-passation tombe dans l'exercice \textbf{courant} --- c'est la pratique
           comptable, et il n'y a donc aucune raison de rouvrir l'exercice pour corriger une
           écriture. \textbf{Une exception}~: un \textbf{règlement} --- de facture client
-          (\S\ref{sec:reglement-client}) comme de facture fournisseur --- et un
-          \textbf{rapprochement bancaire} (\S\ref{sec:annuler-rapprochement}) d'un exercice
-          clôturé ne s'annulent pas~: un administrateur doit d'abord rouvrir l'exercice.
+          (\S\ref{sec:reglement-client}) comme de facture fournisseur ---, un
+          \textbf{rapprochement bancaire} (\S\ref{sec:annuler-rapprochement}) et une
+          \textbf{facture fournisseur} dont l'achat est dans un exercice clôturé
+          (\S\ref{sec:annuler-facture-fournisseur}) ne s'annulent pas~: un administrateur doit
+          d'abord rouvrir l'exercice.
     \item Facture validée : passage en avoir + génération d'une nouvelle facture.
+    \item Facture fournisseur~: elle s'annule depuis sa fiche, ouverte ou payée
+          (\S\ref{sec:annuler-facture-fournisseur})~; payée, son règlement reste au grand
+          livre, détaché --- un paiement sans facture.
     \item Rapprochement bancaire~: il s'annule depuis le détail de l'import bancaire, ou depuis
           la fiche de la facture qu'il a réglée (\S\ref{sec:annuler-rapprochement})~; son
           écriture est contre-passée, et un règlement de facture qu'il avait créé est retiré.

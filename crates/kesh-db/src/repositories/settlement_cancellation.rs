@@ -1,14 +1,18 @@
-//! Ce qui empêche d'annuler un règlement — la **queue commune** (Story 25-3-a-1, #414).
+//! Ce qui empêche d'annuler une pièce en contre-passant son écriture — la
+//! **queue commune** (Story 25-3-a-1, #414).
 //!
 //! ⛔ **Pourquoi un module à part.** Annuler un règlement contre-passe son
 //! écriture ; ce qui peut l'empêcher tient pour l'essentiel à cette **écriture**
 //! — son exercice, son rapprochement bancaire, ses comptes, l'exercice du jour
 //! où la contre-passation serait datée —, et non à la pièce qui la possède. Le
-//! règlement client (ligne `invoice_settlements`) et le règlement fournisseur
-//! (colonnes de `supplier_invoices`, Story 25-3-a-2) ont chacun leur **tête**
-//! propre, mais partagent **cette** queue. Une seconde précédence pour le même
-//! socle divergerait : la spec a déjà dû corriger une fois l'ordre des deux
-//! derniers rangs.
+//! règlement client (ligne `invoice_settlements`), le règlement fournisseur
+//! (colonnes de `supplier_invoices`, Story 25-3-a-2), le dé-rapprochement
+//! (Story 25-3-b) **et l'annulation d'une facture fournisseur, sur son
+//! écriture d'ACHAT** (Story 25-3-c, #454) ont chacun leur **tête** propre,
+//! mais partagent **cette** queue. Une seconde précédence pour le même socle
+//! divergerait : la spec a déjà dû corriger une fois l'ordre des deux derniers
+//! rangs. ⚠️ Le nom du module et de la fonction disent « règlement » par
+//! histoire : la queue ne lit rien de la pièce.
 
 use chrono::Utc;
 use sqlx::MySqlConnection;
@@ -21,8 +25,10 @@ use crate::repositories::{fiscal_years, journal_entries};
 /// numéro du compte archivé au rang 4).
 pub type SettlementCancelHit = (SettlementCancelBlocker, Option<i64>, Option<String>);
 
-/// Les rangs 2 à 5 de [`SettlementCancelBlocker`], évalués sur l'**écriture de
-/// règlement** `entry_id` — le premier qui s'applique, ou `None`.
+/// Les rangs 2 à 5 de [`SettlementCancelBlocker`], évalués sur l'écriture
+/// `entry_id` — celle d'un **règlement**, d'un **rapprochement**, ou l'écriture
+/// d'**achat** d'une facture fournisseur qu'on annule (Story 25-3-c) — le
+/// premier qui s'applique, ou `None`.
 ///
 /// ⚠️ **Rangs 4 et 5 dans l'ordre RÉEL du socle** : `reverse_in_tx` contrôle
 /// les comptes archivés (étape 3) avant l'exercice du jour (étape 4). Les
@@ -57,7 +63,8 @@ pub async fn settlement_entry_cancel_blocker(
     entry_id: i64,
     unlinking: Option<i64>,
 ) -> Result<Option<SettlementCancelHit>, DbError> {
-    // Rang 2 — l'exercice de l'écriture de RÈGLEMENT (non celui du jour).
+    // Rang 2 — l'exercice de l'écriture EXAMINÉE (règlement, rapprochement ou
+    // achat), non celui du jour.
     // Patron : `journal_entries::delete_in_tx`, qui lit `fy.status` joint par
     // `fiscal_year_id`.
     let status: Option<String> = sqlx::query_scalar(

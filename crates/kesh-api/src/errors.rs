@@ -2467,7 +2467,7 @@ impl IntoResponse for AppError {
                         ),
                         ReversalBlocker::OwnedBySupplierInvoice => (
                             "journal-entries-reverse-blocked-supplier-invoice",
-                            "Cette écriture appartient à une facture fournisseur : annulez la facture ou son règlement depuis sa fiche.",
+                            "Cette écriture appartient à une facture fournisseur : elle se corrige depuis la fiche de la facture, qui indique ce qui est possible.",
                         ),
                         ReversalBlocker::OwnedBySettlement => (
                             "journal-entries-reverse-blocked-settlement",
@@ -2602,6 +2602,12 @@ impl IntoResponse for AppError {
                         SettlementCancelBlocker::BankTransactionNotReconciled => {
                             reconciliation_cancel_blocked_text(blocker)
                         }
+                        // Motifs propres à l'annulation d'une FACTURE
+                        // fournisseur (25-3-c) : jamais produits ici.
+                        SettlementCancelBlocker::SupplierInvoiceCancelled
+                        | SettlementCancelBlocker::SupplierInvoiceInPaymentBatch => {
+                            supplier_invoice_cancel_blocked_text(blocker)
+                        }
                     };
                     build_response(StatusCode::CONFLICT, blocker.code(), &t(key, fallback))
                 }
@@ -2612,6 +2618,15 @@ impl IntoResponse for AppError {
                 // rapprochement manuel.
                 DbError::ReconciliationNotCancellable { blocker } => {
                     let (key, fallback) = reconciliation_cancel_blocked_text(blocker);
+                    build_response(StatusCode::CONFLICT, blocker.code(), &t(key, fallback))
+                }
+                // Story 25-3-c (#454) — l'annulation d'une facture fournisseur
+                // refusée par le geste lui-même (déjà annulée, exercice de
+                // l'achat clos, lot en cours). ⛔ Ses PROPRES textes, qui
+                // disent « cette facture » : ceux du règlement disent « ce
+                // règlement ».
+                DbError::SupplierInvoiceNotCancellable { blocker } => {
+                    let (key, fallback) = supplier_invoice_cancel_blocked_text(blocker);
                     build_response(StatusCode::CONFLICT, blocker.code(), &t(key, fallback))
                 }
                 // Story 25-2-b-1 (#440) — un brouillon numéroté qu'on redate
@@ -2982,6 +2997,54 @@ fn reconciliation_cancel_blocked_text(
             "reconciliation-cancel-blocked-no-fiscal-year",
             "Aucun exercice ouvert ne couvre la date du jour : créez-le pour pouvoir annuler ce rapprochement.",
         ),
+        // Motifs propres à l'annulation d'une facture fournisseur : jamais
+        // produits par un dé-rapprochement ; le `match` reste exhaustif.
+        SettlementCancelBlocker::SupplierInvoiceCancelled
+        | SettlementCancelBlocker::SupplierInvoiceInPaymentBatch => {
+            supplier_invoice_cancel_blocked_text(blocker)
+        }
+    }
+}
+
+/// Clé FTL et repli fr-CH d'un motif qui refuse l'**annulation d'une facture
+/// fournisseur** (Story 25-3-c, #454). Mêmes clés que l'écran
+/// (`features/supplier-invoices/invoice-cancel.ts`) : un seul texte par motif,
+/// et les replis disent **mot pour mot** le FTL fr-CH.
+fn supplier_invoice_cancel_blocked_text(
+    blocker: SettlementCancelBlocker,
+) -> (&'static str, &'static str) {
+    match blocker {
+        SettlementCancelBlocker::SupplierInvoiceCancelled => (
+            "supplier-invoices-cancel-blocked-cancelled",
+            "Cette facture fournisseur est déjà annulée.",
+        ),
+        SettlementCancelBlocker::FiscalYearClosed => (
+            "supplier-invoices-cancel-blocked-fiscal-year-closed",
+            "Cette facture appartient à un exercice clôturé : un administrateur doit rouvrir l'exercice pour pouvoir l'annuler.",
+        ),
+        SettlementCancelBlocker::MatchedBankTransaction => (
+            "supplier-invoices-cancel-blocked-bank-match",
+            "L'écriture d'achat de cette facture est rapprochée d'une transaction bancaire : annulez d'abord ce rapprochement.",
+        ),
+        SettlementCancelBlocker::AccountArchived => (
+            "supplier-invoices-cancel-blocked-account-archived",
+            "Un compte de l'écriture d'achat de cette facture a été archivé : réactivez-le pour pouvoir annuler la facture.",
+        ),
+        SettlementCancelBlocker::NoOpenFiscalYearToday => (
+            "supplier-invoices-cancel-blocked-no-fiscal-year",
+            "Aucun exercice ouvert ne couvre la date du jour : créez-le pour pouvoir annuler cette facture.",
+        ),
+        SettlementCancelBlocker::SupplierInvoiceInPaymentBatch => (
+            "supplier-invoices-cancel-blocked-in-payment-batch",
+            "Cette facture figure dans un lot de paiement en cours : annulez d'abord le lot.",
+        ),
+        // Têtes d'autres gestes : jamais produites par l'annulation d'une
+        // facture fournisseur ; leurs textes sont les leurs.
+        SettlementCancelBlocker::BankTransactionNotReconciled
+        | SettlementCancelBlocker::InvoiceCredited
+        | SettlementCancelBlocker::SupplierInvoiceNotPaid => {
+            reconciliation_cancel_blocked_text(blocker)
+        }
     }
 }
 

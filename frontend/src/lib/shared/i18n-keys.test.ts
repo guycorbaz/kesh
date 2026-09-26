@@ -235,6 +235,8 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * faux avec l'assurance de l'avoir mesuré.*
  */
 const ATTENDU = {
+	// Fusion 25-1c-b1 + 25-3-c : 1709 + 31 + 10 = 1750 — les deux hausses portent sur des
+	// fichiers disjoints et se cumulent.
 	// Story 25-1c-b1 (#378), revue P1 : 1738 → 1740, soit **+2** — le message de plage
 	// inversée (`audit-log-error-date-range`) et le « Précédent » de l'état vide.
 	// Story 25-1c-b1 (#378) : 1709 → 1738, soit **+29**, recomptés depuis la source
@@ -248,6 +250,13 @@ const ATTENDU = {
 	// (`i18nKey`), résolue par `FAMILLES_RESOLUES['nav-']`, où `'audit-log'` entre.
 	// `sitesNonResolus`, `relais` et `sitesGabarit` ne bougent pas : l'écran
 	// n'appelle aucune clé à gabarit (le vocabulaire est traduit par la route).
+	// Story 25-3-c (#454) : 1709 → 1719, soit **+10**, recomptés depuis la source
+	// (`grep -o 'i18nMsg('`, `main` contre l'arbre) :
+	//   • `features/supplier-invoices/invoice-cancel.ts` 0 → 6 : les six motifs ;
+	//   • `supplier-invoices/[id]/+page.svelte` 35 → 39 : le complément « payée »
+	//     de la confirmation, le toast, l'état « annulée », le repli `common-error`.
+	//   ⚠️ `journal-entries/[id]/+page.svelte` ne bouge pas : son repli change de
+	//   TEXTE, pas de nombre d'appels.
 	// Story 25-3-b (#418) : 1692 → 1709, soit **+17**, recomptés depuis la source
 	// (`grep -o 'i18nMsg('`, `main` contre l'arbre) :
 	//   • `features/reconciliation/reconciliation-cancel.ts` 0 → 6 : les six motifs ;
@@ -326,7 +335,7 @@ const ATTENDU = {
 	// trouve rien là où l'appel n'existe pas encore : chercher les clés mal
 	// traduites ne révèle jamais celles qui ne sont pas appelées du tout — et
 	// partir d'une liste de clés ne révèle jamais celles que la liste omet.*
-	sitesTotal: 1740,
+	sitesTotal: 1750,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

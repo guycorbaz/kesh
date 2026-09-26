@@ -14,7 +14,6 @@
 //! Helper de génération d'écriture en kesh-db (PAS kesh-core : `NewJournalEntryLine`
 //! et `DbError` y sont définis — dépendance circulaire sinon [O-C1]).
 
-use chrono::Utc;
 use rust_decimal::Decimal;
 use sqlx::MySqlPool;
 
@@ -487,21 +486,34 @@ async fn guard_not_in_generated_batch(
     if exists.is_none() {
         return Err(DbError::NotFound);
     }
-    let in_batch: Option<i64> = sqlx::query_scalar(
-        "SELECT pbi.id FROM payment_batch_items pbi \
-         JOIN payment_batches pb ON pb.id = pbi.payment_batch_id \
-         WHERE pbi.supplier_invoice_id = ? AND pb.status = 'generated' LIMIT 1",
-    )
-    .bind(id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(map_db_error)?;
-    if in_batch.is_some() {
+    if in_generated_batch(tx, id).await?.is_some() {
         return Err(DbError::IllegalStateTransition(
             "facture engagée dans un lot de paiement en cours (annuler le lot d'abord)".into(),
         ));
     }
     Ok(())
+}
+
+/// Le lot de paiement **`generated`** qui engage la facture, s'il y en a un —
+/// écrit une seule fois pour [`guard_not_in_generated_batch`] (`pay`) et pour
+/// le dernier rang de [`supplier_invoice_cancel_blocker`] (Story 25-3-c).
+///
+/// Lecture **non verrouillante** : un geste qui s'en sert pour refuser doit
+/// avoir verrouillé la facture avant — `payment_batches::create_batch`
+/// verrouille la même ligne, ce qui sérialise les deux.
+async fn in_generated_batch(
+    conn: &mut sqlx::MySqlConnection,
+    supplier_invoice_id: i64,
+) -> Result<Option<i64>, DbError> {
+    sqlx::query_scalar(
+        "SELECT pbi.id FROM payment_batch_items pbi \
+         JOIN payment_batches pb ON pb.id = pbi.payment_batch_id \
+         WHERE pbi.supplier_invoice_id = ? AND pb.status = 'generated' LIMIT 1",
+    )
+    .bind(supplier_invoice_id)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(map_db_error)
 }
 
 /// Règle une facture fournisseur `open` (choix binaire). Poste l'écriture de
@@ -749,141 +761,215 @@ pub async fn pay_in_tx(
     })
 }
 
-/// Annule une facture fournisseur `open` : contre-passe l'écriture d'achat
-/// (relecture des lignes + swap débit↔crédit) et passe en `cancelled` [DC7].
+// ---------------------------------------------------------------------------
+// Story 25-3-c (#454) — annuler une facture fournisseur, même payée
+// ---------------------------------------------------------------------------
+
+/// Ce qui empêche d'annuler la facture fournisseur `id` — le premier motif,
+/// ou `None` (Story 25-3-c, #454).
+///
+/// ⚠️ **La précédence est composée ICI**, non par l'ordre de déclaration de
+/// [`SettlementCancelBlocker`] : rang 1, la facture est déjà `cancelled` (coupe
+/// court) ; rangs 2 à 5, la **queue commune** évaluée sur l'écriture d'**achat**
+/// ([`super::settlement_cancellation::settlement_entry_cancel_blocker`], aucun
+/// jumeau) ; rang 6, **en dernier**, un lot de paiement `generated` — le lever
+/// est le geste le plus lourd, et il serait vain avant un exercice clos.
+///
+/// Une seule fonction pour lire (l'écran masque le bouton avant le clic) et
+/// pour refuser (le geste). **Lecture seule**, sans verrou : cf.
+/// [`cancel_in_tx`] pour l'ordre des verrous.
+///
+/// Facture introuvable (ou d'une autre société) → [`DbError::NotFound`].
+///
+/// [`SettlementCancelBlocker`]: crate::errors::SettlementCancelBlocker
+pub async fn supplier_invoice_cancel_blocker(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    id: i64,
+) -> Result<Option<super::settlement_cancellation::SettlementCancelHit>, DbError> {
+    use crate::errors::SettlementCancelBlocker;
+
+    let row: Option<(String, i64)> = sqlx::query_as(
+        "SELECT status, purchase_journal_entry_id FROM supplier_invoices \
+         WHERE id = ? AND company_id = ?",
+    )
+    .bind(id)
+    .bind(company_id)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(map_db_error)?;
+    let (status, purchase_entry) = row.ok_or(DbError::NotFound)?;
+    if status == "cancelled" {
+        return Ok(Some((
+            SettlementCancelBlocker::SupplierInvoiceCancelled,
+            None,
+            None,
+        )));
+    }
+    if let Some(hit) = super::settlement_cancellation::settlement_entry_cancel_blocker(
+        conn,
+        company_id,
+        purchase_entry,
+        None,
+    )
+    .await?
+    {
+        return Ok(Some(hit));
+    }
+    if in_generated_batch(conn, id).await?.is_some() {
+        return Ok(Some((
+            SettlementCancelBlocker::SupplierInvoiceInPaymentBatch,
+            None,
+            None,
+        )));
+    }
+    Ok(None)
+}
+
+/// Annule une facture fournisseur, **ouverte ou payée**, dans une transaction
+/// fournie, sans `BEGIN` ni `COMMIT` (Story 25-3-c, #454).
+///
+/// Contre-passe l'écriture d'**achat** par le socle
+/// ([`journal_entries::reverse_owned_in_tx`], autorité `SupplierPurchase`) —
+/// qui pose `reverses_entry_id` et consulte les motifs du grand livre — et passe
+/// la facture en `cancelled`. Payée, son règlement **reste au grand livre** et
+/// en est **détaché** (arbitrage du 2026-09-26) : les colonnes `settlement_*`
+/// et `paid_at` reviennent à `NULL`, l'écriture de règlement n'a plus de
+/// propriétaire ; l'audit garde le lien.
+///
+/// ⛔ **Les verrous d'abord, tous, avant toute lecture non verrouillante**
+/// (leçon de la Story 25-3-b) : sous `REPEATABLE READ`, la première lecture non
+/// verrouillante fige l'instantané ; placée avant un verrou, elle ferait relire
+/// après l'attente un exercice « ouvert » qu'une clôture concurrente vient de
+/// fermer. ⚠️ Un appelant qui compose ne doit donc avoir fait **aucune**
+/// lecture non verrouillante dans la transaction avant d'appeler ceci.
+///
+/// N'exécute **pas** de rollback : l'appelant, propriétaire de la
+/// transaction, en est responsable.
+///
+/// [`journal_entries::reverse_owned_in_tx`]: crate::repositories::journal_entries::reverse_owned_in_tx
+pub async fn cancel_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    id: i64,
+    user_id: i64,
+) -> Result<SupplierInvoiceWithLines, DbError> {
+    use crate::errors::SettlementCancelBlocker;
+    use crate::repositories::journal_entries::{self, ReversalAuthority};
+
+    // (1) Verrou facture, puis verrou de l'écriture d'achat ET de son exercice.
+    let inv = sqlx::query_as::<_, SupplierInvoice>(&format!("{FIND_SCOPED_SQL} FOR UPDATE"))
+        .bind(id)
+        .bind(company_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)?
+        .ok_or(DbError::NotFound)?;
+    sqlx::query(
+        "SELECT fy.id FROM journal_entries je \
+         JOIN fiscal_years fy ON fy.id = je.fiscal_year_id \
+         WHERE je.id = ? AND je.company_id = ? FOR UPDATE",
+    )
+    .bind(inv.purchase_journal_entry_id)
+    .bind(company_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .ok_or_else(|| DbError::Invariant("facture fournisseur sans écriture d'achat".into()))?;
+
+    // (2) Les motifs. Têtes et exercice clos : refusés ici. Les autres :
+    //     laissés au socle, qui les refuse avec son erreur canonique (400 qui
+    //     NOMME les comptes archivés).
+    if let Some((
+        blocker @ (SettlementCancelBlocker::SupplierInvoiceCancelled
+        | SettlementCancelBlocker::FiscalYearClosed
+        | SettlementCancelBlocker::SupplierInvoiceInPaymentBatch),
+        _,
+        _,
+    )) = supplier_invoice_cancel_blocker(tx, company_id, id).await?
+    {
+        return Err(DbError::SupplierInvoiceNotCancellable { blocker });
+    }
+
+    // (3) La contre-passation de l'achat, au titre de cette facture.
+    let reversal = journal_entries::reverse_owned_in_tx(
+        tx,
+        company_id,
+        inv.purchase_journal_entry_id,
+        user_id,
+        ReversalAuthority::SupplierPurchase {
+            supplier_invoice_id: id,
+        },
+    )
+    .await?;
+
+    // (4) `cancelled`, règlement DÉTACHÉ (colonnes à NULL — déjà NULL pour une
+    //     facture ouverte). ⛔ L'écriture de règlement n'est PAS contre-passée.
+    let rows = sqlx::query(
+        "UPDATE supplier_invoices SET status = 'cancelled', settlement_type = NULL, \
+         settlement_bank_account_id = NULL, settlement_account_id = NULL, \
+         settlement_journal_entry_id = NULL, paid_at = NULL, version = version + 1 \
+         WHERE id = ? AND company_id = ? AND version = ? AND status IN ('open', 'paid')",
+    )
+    .bind(id)
+    .bind(company_id)
+    .bind(inv.version)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .rows_affected();
+    if rows == 0 {
+        return Err(DbError::OptimisticLockConflict);
+    }
+
+    // (5) L'audit du GESTE — seule trace du règlement détaché.
+    let mut details = serde_json::json!({
+        "previousStatus": inv.status,
+        "purchaseJournalEntryId": inv.purchase_journal_entry_id,
+        "reversalJournalEntryId": reversal.entry.id,
+    });
+    if let Some(settlement_entry) = inv.settlement_journal_entry_id {
+        details["settlementJournalEntryId"] = serde_json::json!(settlement_entry);
+        details["settlementType"] = serde_json::json!(inv.settlement_type);
+        details["paidAt"] = serde_json::json!(inv.paid_at);
+    }
+    audit_log::insert_in_tx(
+        tx,
+        NewAuditLogEntry::user(
+            user_id,
+            "supplier_invoice.cancelled".to_string(),
+            "supplier_invoice".to_string(),
+            id,
+            Some(details),
+        ),
+    )
+    .await?;
+
+    let updated = sqlx::query_as::<_, SupplierInvoice>(FIND_SCOPED_SQL)
+        .bind(id)
+        .bind(company_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+    let lines = fetch_lines(tx, id).await?;
+    Ok(SupplierInvoiceWithLines {
+        invoice: updated,
+        lines,
+    })
+}
+
+/// Annule une facture fournisseur, transaction comprise — cf. [`cancel_in_tx`].
 pub async fn cancel(
     pool: &MySqlPool,
     company_id: i64,
     id: i64,
     user_id: i64,
 ) -> Result<SupplierInvoiceWithLines, DbError> {
-    use crate::entities::{Journal, NewJournalEntry};
-    use crate::repositories::{fiscal_years, journal_entries};
-
     let mut tx = pool.begin().await.map_err(map_db_error)?;
-
-    let result = async {
-        // (1) Verrou facture + garde statut.
-        let inv = sqlx::query_as::<_, SupplierInvoice>(&format!("{FIND_SCOPED_SQL} FOR UPDATE"))
-            .bind(id)
-            .bind(company_id)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(map_db_error)?
-            .ok_or(DbError::NotFound)?;
-        if inv.status != "open" {
-            return Err(DbError::IllegalStateTransition(format!(
-                "seule une facture ouverte peut être annulée (statut actuel : '{}')",
-                inv.status
-            )));
-        }
-        // Guard lot-membership [Story 12.3] : refus si engagée dans un lot generated
-        // (la facture est déjà verrouillée par le FOR UPDATE ci-dessus).
-        guard_not_in_generated_batch(&mut tx, company_id, id).await?;
-
-        // (2) Relire les lignes de l'écriture d'achat et les inverser (swap D↔C).
-        let purchase_lines: Vec<(i64, Decimal, Decimal)> = sqlx::query_as(
-            "SELECT jel.account_id, jel.debit, jel.credit FROM journal_entry_lines jel \
-             JOIN journal_entries je ON je.id = jel.entry_id \
-             WHERE jel.entry_id = ? AND je.company_id = ? ORDER BY jel.id",
-        )
-        .bind(inv.purchase_journal_entry_id)
-        .bind(company_id)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(map_db_error)?;
-        if purchase_lines.is_empty() {
-            return Err(DbError::Invariant(
-                "écriture d'achat introuvable pour contre-passation".into(),
-            ));
-        }
-        let reversal_lines: Vec<NewJournalEntryLine> = purchase_lines
-            .iter()
-            .map(|(account_id, debit, credit)| NewJournalEntryLine {
-                account_id: *account_id,
-                debit: *credit,
-                credit: *debit,
-                project_id: None,
-            })
-            .collect();
-
-        // (3) Exercice ouvert couvrant la date du jour.
-        let today = Utc::now().date_naive();
-        let fy = fiscal_years::find_open_covering_date(&mut tx, company_id, today)
-            .await?
-            .ok_or(DbError::FiscalYearInvalid)?;
-
-        let number_label = inv
-            .supplier_invoice_number
-            .clone()
-            .unwrap_or_else(|| inv.id.to_string());
-        let je = journal_entries::create_in_tx(
-            &mut tx,
-            fy.id,
-            user_id,
-            NewJournalEntry {
-                company_id,
-                entry_date: today,
-                journal: Journal::OD,
-                description: format!("Annulation facture fournisseur {number_label}"),
-                // La contre-passation reprend le projet → net par projet = 0 après annulation.
-                project_id: inv.project_id,
-                lines: reversal_lines,
-            },
-            // Flux automatique (annulation facture fournisseur) : garde de
-            // postabilité désactivée (Story 14-3b, D-A0).
-            false,
-        )
-        .await?;
-
-        // (4) UPDATE facture → cancelled.
-        let rows = sqlx::query(
-            "UPDATE supplier_invoices SET status = 'cancelled', version = version + 1 \
-             WHERE id = ? AND company_id = ? AND version = ? AND status = 'open'",
-        )
-        .bind(id)
-        .bind(company_id)
-        .bind(inv.version)
-        .execute(&mut *tx)
-        .await
-        .map_err(map_db_error)?
-        .rows_affected();
-        if rows == 0 {
-            return Err(DbError::OptimisticLockConflict);
-        }
-
-        let updated = sqlx::query_as::<_, SupplierInvoice>(FIND_SCOPED_SQL)
-            .bind(id)
-            .bind(company_id)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(map_db_error)?;
-        let inv_lines = fetch_lines(&mut tx, id).await?;
-        audit_log::insert_in_tx(
-            &mut tx,
-            NewAuditLogEntry::user(
-                user_id,
-                "supplier_invoice.cancelled".to_string(),
-                "supplier_invoice".to_string(),
-                id,
-                Some(serde_json::json!({
-                    "reversalJournalEntryId": je.entry.id,
-                })),
-            ),
-        )
-        .await?;
-
-        Ok(SupplierInvoiceWithLines {
-            invoice: updated,
-            lines: inv_lines,
-        })
-    }
-    .await;
-
-    match result {
-        Ok(v) => {
+    match cancel_in_tx(&mut tx, company_id, id, user_id).await {
+        Ok(done) => {
             tx.commit().await.map_err(map_db_error)?;
-            Ok(v)
+            Ok(done)
         }
         Err(e) => {
             let _ = tx.rollback().await;
@@ -951,8 +1037,8 @@ pub struct SupplierSettlementCancellation {
 /// l'écriture de règlement (datée du jour), ramène la facture à `open` et vide
 /// ses colonnes de règlement.
 ///
-/// ⚠️ **Ne pas imiter [`cancel`]**, qui réécrit sa contre-passation à la main
-/// (#454) : celle-ci passe par le socle, qui pose `reverses_entry_id`.
+/// Passe par le socle, qui pose `reverses_entry_id` — comme [`cancel`] depuis
+/// la Story 25-3-c.
 ///
 /// ⚠️ **Pas de `guard_not_in_generated_batch`** : une facture `paid` ne peut pas
 /// être dans un lot `generated` (`create_batch` exige `open`, `pay` et `cancel`
@@ -1105,8 +1191,11 @@ pub async fn cancel_settlement(
 pub struct SupplierInvoiceSettlementView {
     pub invoice: SupplierInvoice,
     pub lines: Vec<SupplierInvoiceLine>,
-    /// Le premier motif qui refuse l'annulation du règlement, ou `None`.
-    pub cancel_blocker: Option<super::settlement_cancellation::SettlementCancelHit>,
+    /// Le premier motif qui refuse l'annulation du **règlement**, ou `None`.
+    pub settlement_cancel_blocker: Option<super::settlement_cancellation::SettlementCancelHit>,
+    /// Le premier motif qui refuse l'annulation de la **facture** (Story
+    /// 25-3-c), ou `None` — cf. [`supplier_invoice_cancel_blocker`].
+    pub invoice_cancel_blocker: Option<super::settlement_cancellation::SettlementCancelHit>,
     /// Cf. [`super::payment_batches::last_confirmed_batch_for_invoice`].
     pub last_confirmed_batch: Option<(i64, Option<chrono::NaiveDateTime>)>,
 }
@@ -1140,14 +1229,17 @@ pub async fn get_settlement_view(
         return Ok(None);
     };
     let lines = fetch_lines(&mut tx, invoice.id).await?;
-    let cancel_blocker = supplier_settlement_cancel_blocker(&mut tx, company_id, id).await?;
+    let settlement_cancel_blocker =
+        supplier_settlement_cancel_blocker(&mut tx, company_id, id).await?;
+    let invoice_cancel_blocker = supplier_invoice_cancel_blocker(&mut tx, company_id, id).await?;
     let last_confirmed_batch =
         super::payment_batches::last_confirmed_batch_for_invoice(&mut *tx, company_id, id).await?;
     tx.commit().await.map_err(map_db_error)?;
     Ok(Some(SupplierInvoiceSettlementView {
         invoice,
         lines,
-        cancel_blocker,
+        settlement_cancel_blocker,
+        invoice_cancel_blocker,
         last_confirmed_batch,
     }))
 }

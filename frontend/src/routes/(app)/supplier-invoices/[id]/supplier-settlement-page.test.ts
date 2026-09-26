@@ -44,10 +44,11 @@ vi.mock("$lib/app/stores/auth.svelte", () => ({
 const getMock = vi.fn();
 const payMock = vi.fn();
 const cancelSettlementMock = vi.fn();
+const cancelInvoiceMock = vi.fn();
 vi.mock("$lib/features/supplier-invoices/supplier-invoices.api", () => ({
   getSupplierInvoice: (id: number) => getMock(id),
   paySupplierInvoice: (id: number, req: unknown) => payMock(id, req),
-  cancelSupplierInvoice: vi.fn(),
+  cancelSupplierInvoice: (id: number) => cancelInvoiceMock(id),
   cancelSupplierInvoiceSettlement: (id: number) => cancelSettlementMock(id),
 }));
 vi.mock("$lib/features/bank-accounts/bank-accounts.api", () => ({
@@ -99,6 +100,9 @@ function inv(
     settlementCancelBlockedBy: null,
     settlementCancelBlockedLabel: null,
     lastConfirmedBatch: null,
+    cancellable: true,
+    cancelBlockedBy: null,
+    cancelBlockedLabel: null,
     ...partial,
   };
 }
@@ -232,5 +236,86 @@ describe("fiche facture fournisseur — annuler le règlement", () => {
       await findByTestId("supplier-invoice-settlement-cancel"),
     ).toBeTruthy();
     expect(getMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("fiche facture fournisseur — annuler la facture (Story 25-3-c)", () => {
+  it("payée et annulable ⇒ le bouton, AUSSI sur une facture payée (mutation : bouton réservé à `open`)", async () => {
+    getMock.mockResolvedValue(inv());
+    const { findByTestId } = render(Page);
+    expect(await findByTestId("supplier-invoice-cancel")).toBeTruthy();
+  });
+
+  it("Consultation ⇒ pas de bouton (mutation : rôle ignoré)", async () => {
+    role.value = "Consultation";
+    getMock.mockResolvedValue(inv({ status: "open", settlementJournalEntryId: null }));
+    const { findByTestId, queryByTestId } = render(Page);
+    await findByTestId("supplier-invoice-status");
+    expect(queryByTestId("supplier-invoice-cancel")).toBeNull();
+  });
+
+  it("non annulable ⇒ le motif à la place du bouton, avec le numéro du compte (mutation : bouton sur le seul statut)", async () => {
+    getMock.mockResolvedValue(
+      inv({
+        status: "open",
+        cancellable: false,
+        cancelBlockedBy: "ACCOUNT_ARCHIVED",
+        cancelBlockedLabel: "4000",
+      }),
+    );
+    const { findByTestId, queryByTestId } = render(Page);
+    const motif = await findByTestId("supplier-invoice-cancel-blocked");
+    expect(motif.textContent).toContain("archivé");
+    expect(motif.textContent).toContain("4000");
+    expect(queryByTestId("supplier-invoice-cancel")).toBeNull();
+  });
+
+  it("confirmation d'une facture payée ⇒ elle dit « paiement sans facture » (mutation : texte `open` seul)", async () => {
+    getMock.mockResolvedValue(inv());
+    cancelInvoiceMock.mockResolvedValue(
+      inv({
+        status: "cancelled",
+        settlementJournalEntryId: null,
+        paidAt: null,
+        cancellable: false,
+        cancelBlockedBy: "SUPPLIER_INVOICE_CANCELLED",
+      }),
+    );
+    const { findByTestId, queryByTestId } = render(Page);
+    await fireEvent.click(await findByTestId("supplier-invoice-cancel"));
+    await waitFor(() => expect(cancelInvoiceMock).toHaveBeenCalledWith(9));
+    const message = String(confirmSpy.mock.calls[0][0]);
+    expect(message).toContain("paiement sans facture");
+    expect(message).toContain("annulez plutôt le règlement d'abord");
+    // Annulée : l'état, et ni bouton, ni motif « déjà annulée », ni lien de règlement.
+    await findByTestId("supplier-invoice-cancelled-info");
+    expect(queryByTestId("supplier-invoice-cancel")).toBeNull();
+    expect(queryByTestId("supplier-invoice-cancel-blocked")).toBeNull();
+    expect(queryByTestId("supplier-invoice-settlement-entry")).toBeNull();
+  });
+
+  it("confirmation d'une facture ouverte ⇒ sans le paragraphe du paiement", async () => {
+    getMock.mockResolvedValue(inv({ status: "open", settlementJournalEntryId: null }));
+    cancelInvoiceMock.mockResolvedValue(inv({ status: "cancelled", cancellable: false }));
+    const { findByTestId } = render(Page);
+    await fireEvent.click(await findByTestId("supplier-invoice-cancel"));
+    await waitFor(() => expect(cancelInvoiceMock).toHaveBeenCalled());
+    expect(String(confirmSpy.mock.calls[0][0])).not.toContain("paiement sans facture");
+  });
+
+  it("refus au clic ⇒ affiché LOCALEMENT, la fiche reste (mutation : refus dans `errorMsg`)", async () => {
+    getMock.mockResolvedValue(inv({ status: "open", settlementJournalEntryId: null }));
+    cancelInvoiceMock.mockRejectedValue({
+      code: "FISCAL_YEAR_CLOSED",
+      message: "Cette facture appartient à un exercice clôturé",
+      status: 409,
+    });
+    const { findByTestId } = render(Page);
+    await fireEvent.click(await findByTestId("supplier-invoice-cancel"));
+    expect((await findByTestId("supplier-invoice-cancel-error")).textContent).toContain(
+      "exercice clôturé",
+    );
+    // La fiche est toujours là.
+    expect(await findByTestId("supplier-invoice-status")).toBeTruthy();
   });
 });

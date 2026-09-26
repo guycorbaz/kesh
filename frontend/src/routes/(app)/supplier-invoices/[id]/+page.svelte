@@ -9,6 +9,7 @@
 		paySupplierInvoice,
 	} from '$lib/features/supplier-invoices/supplier-invoices.api';
 	import { supplierSettlementCancelMessage } from '$lib/features/supplier-invoices/settlement-cancel';
+	import { supplierInvoiceCancelMessage } from '$lib/features/supplier-invoices/invoice-cancel';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import {
 		formatSupplierInvoiceTotal,
@@ -61,6 +62,11 @@
 	// ⛔ Le refus s'affiche ICI, jamais dans `errorMsg` : celui-ci remplace toute
 	// la fiche.
 	let settlementCancelError = $state('');
+
+	// Story 25-3-c (#454) — annuler la facture, même payée. ⛔ Même règle : le
+	// refus s'affiche localement, jamais dans `errorMsg`.
+	let cancelling = $state(false);
+	let cancelError = $state('');
 
 	async function load() {
 		invoice = await getSupplierInvoice(id);
@@ -152,13 +158,40 @@
 		}
 	}
 
+	/**
+	 * Annule la facture (Story 25-3-c), ouverte ou payée. La confirmation dit
+	 * ce qui va s'écrire ; payée, elle dit que le règlement reste au grand
+	 * livre, détaché — un paiement sans facture.
+	 */
 	async function cancel() {
-		if (!confirm(i18nMsg('supplier-invoices-cancel-confirm', 'Annuler cette facture fournisseur ?')))
-			return;
+		if (!invoice) return;
+		cancelError = '';
+		let message = i18nMsg(
+			'supplier-invoices-cancel-confirm',
+			"Annuler cette facture ? Une écriture inverse de l'achat, datée d'aujourd'hui, sera passée au grand livre.",
+		);
+		if (invoice.status === 'paid') {
+			message +=
+				'\n\n' +
+				i18nMsg(
+					'supplier-invoices-cancel-confirm-paid',
+					"Elle est payée : son règlement reste au grand livre, détaché de la facture — un paiement sans facture, à rattacher. Si c'est le paiement lui-même qui est erroné, annulez plutôt le règlement d'abord.",
+				);
+		}
+		if (!confirm(message)) return;
+		cancelling = true;
 		try {
 			invoice = await cancelSupplierInvoice(id);
+			notifySuccess(
+				i18nMsg(
+					'supplier-invoices-cancelled',
+					"Facture annulée : l'écriture inverse de l'achat a été passée au grand livre.",
+				),
+			);
 		} catch (err) {
-			if (isApiError(err)) errorMsg = err.message;
+			cancelError = isApiError(err) ? err.message : i18nMsg('common-error', 'Erreur inattendue');
+		} finally {
+			cancelling = false;
 		}
 	}
 
@@ -322,13 +355,6 @@
 				>
 					{paying ? '…' : i18nMsg('supplier-invoices-pay-submit', 'Payer')}
 				</button>
-				<button
-					class="rounded border px-4 py-2 text-sm text-destructive"
-					data-testid="supplier-invoice-cancel"
-					onclick={cancel}
-				>
-					{i18nMsg('supplier-invoices-cancel', 'Annuler la facture')}
-				</button>
 			</div>
 		</div>
 	{:else if invoice.status === 'paid'}
@@ -375,6 +401,42 @@
 					data-testid="supplier-invoice-settlement-cancel-error"
 				>
 					{settlementCancelError}
+				</p>
+			{/if}
+		</div>
+	{:else if invoice.status === 'cancelled'}
+		<!-- Story 25-3-c : « annulée », et rien d'autre — un règlement éventuel a
+		     été DÉTACHÉ (colonnes vidées), la fiche ne sait plus qu'elle a été
+		     payée. Ne pas le rechercher dans l'audit pour l'afficher. -->
+		<p class="mb-6 text-sm text-text-muted" data-testid="supplier-invoice-cancelled-info">
+			{i18nMsg('supplier-invoices-cancelled-info', 'Facture annulée.')}
+		</p>
+	{/if}
+
+	<!-- Story 25-3-c (#454) : UN seul bloc pour annuler la facture, ouverte ou
+	     payée. Le bouton seulement si le serveur a dit « annulable » et pour un
+	     rôle d'écriture ; sinon le MOTIF — jamais « déjà annulée ». -->
+	{#if invoice.status !== 'cancelled'}
+		<div class="mb-6 space-y-2" data-testid="supplier-invoice-cancel-block">
+			{#if invoice.cancellable === true}
+				{#if canManage}
+					<button
+						class="rounded border px-4 py-2 text-sm text-destructive"
+						data-testid="supplier-invoice-cancel"
+						onclick={cancel}
+						disabled={cancelling}
+					>
+						{i18nMsg('supplier-invoices-cancel', 'Annuler la facture')}
+					</button>
+				{/if}
+			{:else if invoice.cancelBlockedBy && invoice.cancelBlockedBy !== 'SUPPLIER_INVOICE_CANCELLED'}
+				<p class="text-xs text-text-muted" data-testid="supplier-invoice-cancel-blocked">
+					{supplierInvoiceCancelMessage(invoice.cancelBlockedBy, invoice.cancelBlockedLabel)}
+				</p>
+			{/if}
+			{#if cancelError}
+				<p class="text-sm text-destructive" role="alert" data-testid="supplier-invoice-cancel-error">
+					{cancelError}
 				</p>
 			{/if}
 		</div>

@@ -345,7 +345,7 @@ journal-entries-reverse-blocked-is-a-reversal = Diese Buchung ist selbst eine St
 journal-entries-reverse-blocked-already-reversed = Diese Buchung wurde bereits storniert.
 journal-entries-reverse-blocked-invoice = Diese Buchung gehört zu einer Kundenrechnung: Heben Sie die Freigabe der Rechnung auf oder korrigieren Sie sie mit einer Gutschrift.
 journal-entries-reverse-blocked-credit-note = Diese Buchung gehört zu einer Gutschrift, die bereits eine Stornobuchung ist.
-journal-entries-reverse-blocked-supplier-invoice = Diese Buchung gehört zu einer Lieferantenrechnung: Stornieren Sie die Rechnung oder ihre Zahlung auf der Rechnungsseite.
+journal-entries-reverse-blocked-supplier-invoice = Diese Buchung gehört zu einer Lieferantenrechnung: Sie wird auf der Rechnungsseite korrigiert, die angibt, was möglich ist.
 journal-entries-reverse-blocked-settlement = Diese Buchung ist eine Rechnungszahlung: Stornieren Sie die Zahlung auf der Rechnungsseite, die angibt, ob dies möglich ist.
 journal-entries-reverse-blocked-bank-match = Diese Buchung ist mit einer Banktransaktion abgeglichen: Heben Sie den Abgleich im Detail des Bankimports auf.
 journal-entries-reverse-blocked-account-archived = Ein Konto dieser Buchung wurde archiviert: Reaktivieren Sie es, um stornieren zu können.
@@ -1718,7 +1718,16 @@ imported-supplier-invoices-error-file-read-error = Datei konnte nicht gelesen we
 imported-supplier-invoices-error-field-too-long = Ein Feld der QR-Rechnung überschreitet die zulässige Länge
 supplier-invoices-add-line = Zeile hinzufügen
 supplier-invoices-cancel = Rechnung stornieren
-supplier-invoices-cancel-confirm = Diese Lieferantenrechnung stornieren?
+supplier-invoices-cancel-confirm = Diese Rechnung stornieren? Eine Gegenbuchung des Einkaufs mit dem heutigen Datum wird ins Hauptbuch gebucht.
+supplier-invoices-cancel-confirm-paid = Sie ist bezahlt: Ihre Zahlung bleibt im Hauptbuch, von der Rechnung gelöst — eine Zahlung ohne Rechnung, die noch zuzuordnen ist. Ist die Zahlung selbst fehlerhaft, stornieren Sie besser zuerst die Zahlung.
+supplier-invoices-cancelled = Rechnung storniert: Die Gegenbuchung des Einkaufs wurde ins Hauptbuch gebucht.
+supplier-invoices-cancelled-info = Rechnung storniert.
+supplier-invoices-cancel-blocked-cancelled = Diese Lieferantenrechnung ist bereits storniert.
+supplier-invoices-cancel-blocked-fiscal-year-closed = Diese Rechnung gehört zu einem abgeschlossenen Geschäftsjahr: Ein Administrator muss das Geschäftsjahr wieder öffnen, damit sie storniert werden kann.
+supplier-invoices-cancel-blocked-bank-match = Die Einkaufsbuchung dieser Rechnung ist mit einer Banktransaktion abgeglichen: Heben Sie zuerst diesen Abgleich auf.
+supplier-invoices-cancel-blocked-account-archived = Ein Konto der Einkaufsbuchung dieser Rechnung wurde archiviert: Reaktivieren Sie es, um die Rechnung stornieren zu können.
+supplier-invoices-cancel-blocked-no-fiscal-year = Kein offenes Geschäftsjahr deckt das heutige Datum ab: Legen Sie es an, um diese Rechnung stornieren zu können.
+supplier-invoices-cancel-blocked-in-payment-batch = Diese Rechnung ist in einem laufenden Zahlungslauf enthalten: Stornieren Sie zuerst den Zahlungslauf.
 
 ## Story 25-3-a-2 (#414) — annuler un règlement fournisseur
 supplier-invoices-settlement-cancel-button = Zahlung stornieren
