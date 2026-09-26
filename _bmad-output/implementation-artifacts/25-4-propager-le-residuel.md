@@ -39,7 +39,9 @@ Le découpage suit l'ordre des dépendances, non celui des issues :
 3. ⚠️ **La relance joint le PDF de la facture**, dont la QR-facture porte le TTC
    (`invoice_email.rs:1140-1166`, `invoice_pdf_service::render`). Un client qui paie la relance en
    scannant la QR paie **à nouveau le montant entier**. Question posée à Guy (Q1 ci-dessous).
-4. ⚠️ **#455 est latent sur les données neuves.** Un avoir est **total** et fait passer la facture à
+4. ⚠️ **#455 est masqué à l'écran — mais pas à l'API.** *(Corrigé en validation P1 de 25-4-a : la
+   première rédaction disait « latent ». `GET /invoices/{id}`, ouverte aux clés API, rend
+   `amountDue` sans condition de statut : sur une facture créditée à TVA non nulle, il vaut la TVA.)* Un avoir est **total** et fait passer la facture à
    `cancelled` (`credit_notes.rs:560-563`) ; or les agrégats, le rapprochement et le règlement ne
    lisent que des factures `validated`. Le terme « avoir » du résiduel n'est donc **non nul que sur
    une facture annulée**, et le reste dû ne s'y affiche que si `amountSettled > 0` — c'est-à-dire
