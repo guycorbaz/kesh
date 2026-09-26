@@ -251,6 +251,14 @@ CHANGELOG `[0.12.1]` *Fixed*. README : rien, sauf si la ligne v0.12.1 cite la ba
 
 ## Change Log
 
+- **2026-09-27** — **validation P5 ciblée** (Haiku, diff `5480b4f8..5824c048`, prompt
+  `25-4-b1-validate-prompt-p5.md`) — **0 finding**, preuves recopiées (grep des cinq sites de T0,
+  garde de la 0.12.0) et **concordantes avec les greps de l'orchestrateur**. ⛔ **Boucle close en 5
+  passes** : `2M/3L → 0 (+1M orchestrateur) → 3M/3L → 1M/3L → 0`, rotation Sonnet → Haiku → Opus →
+  Sonnet → Haiku, trois passes ciblées ; toutes les corrections sur la spec, aucune sur du code.
+  ⚠️ **Signal de découpage à remonter à Guy** : quatre passes consécutives au niveau MEDIUM
+  (§ *Règle de splitting préventif*, critère de sévérité). Toutes portaient sur **une seule
+  phrase** — la portée de l'invariant de l'AC 5 —, close par le passage d'une liste à une règle.
 - **2026-09-27** — **validation P4 ciblée** (Sonnet, prompt `25-4-b1-validate-prompt-p4.md`) — **1
   MEDIUM, 3 LOW**. MEDIUM : un **cinquième** site de la formulation fausse — la fiche de 25-4-a
   elle-même (AC 13, `:180`), source des quatre commentaires ; ajouté à T0, rectifiée par une note
