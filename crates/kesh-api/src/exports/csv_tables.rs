@@ -2169,15 +2169,30 @@ mod tests {
                 entete(|w| serialize_imported_supplier_invoices_csv(&[], w)),
             ),
         ];
-        assert_eq!(tables.len(), 30, "une entrée par table exportée");
+        // ⛔ Contre le REGISTRE, pas contre un nombre (revue P3) : une table
+        // ajoutée demain à `TABLES_EXPORTEES` sans entrer ici échapperait,
+        // sinon, à tout contrôle de ses colonnes.
+        let ici: std::collections::BTreeSet<&str> = tables.iter().map(|(t, _)| *t).collect();
+        let registre: std::collections::BTreeSet<&str> = crate::exports::global::TABLES_EXPORTEES
+            .iter()
+            .copied()
+            .collect();
+        assert_eq!(
+            ici, registre,
+            "la garde de colonnes doit couvrir exactement `TABLES_EXPORTEES`"
+        );
         let mut manques = Vec::new();
         for (table, entete) in &tables {
             for col in colonnes(table) {
                 let ecartee = COLONNES_HORS_EXPORT
                     .iter()
                     .any(|(t, c, _)| t == table && *c == col);
-                // `bank_profiles.column_mapping` sort sous `column_mapping_json`.
-                let renommee = entete.iter().any(|h| *h == format!("{col}_json"));
+                // Le seul renommage : `bank_profiles.column_mapping` sort sous
+                // `column_mapping_json`. Écrit en dur, pas en règle générale
+                // (revue P3) : une règle couvrirait sans motif toute colonne future.
+                let renommee = *table == "bank_profiles"
+                    && col == "column_mapping"
+                    && entete.iter().any(|h| h == "column_mapping_json");
                 if !entete.contains(&col) && !ecartee && !renommee {
                     manques.push(format!("{table}.{col}"));
                 }
@@ -2193,6 +2208,17 @@ mod tests {
             assert!(
                 colonnes(t).iter().any(|x| x == c),
                 "{t}.{c} : écartée mais absente du schéma — exemption périmée"
+            );
+            // Une colonne écartée qui entrerait dans l'en-tête garderait un
+            // motif devenu faux (revue P3).
+            let entete = &tables
+                .iter()
+                .find(|(n, _)| n == t)
+                .expect("table écartée exportée")
+                .1;
+            assert!(
+                !entete.iter().any(|h| h == c),
+                "{t}.{c} : écartée mais exportée — exemption périmée"
             );
         }
     }
@@ -2214,7 +2240,7 @@ mod tests {
         (
             "contacts",
             "client_number_uniq",
-            "colonne GÉNÉRÉE (unicité des numéros actifs) : dérivée de colonnes exportées",
+            "colonne GÉNÉRÉE (unicité des numéros actifs) : dérivée de `active` et de `client_number_canonical`, elle-même forme de `client_number` (exporté)",
         ),
         (
             "reconciliation_rules",
