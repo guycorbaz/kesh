@@ -44,7 +44,7 @@ Une facture de 1 081.— réglée de 900.— est relancée pour **1 081.— + fr
    `routes/reconciliation.rs:1326-1345`). ⇒ **La QR porte le reste dû, sans les frais.** Le point
    ouvert de la mère (§ *Point ouvert … les frais de rappel*) est ainsi **clos par la règle
    existante** ; comptabiliser les frais n'est pas dans cette story.
-2. **Le PDF d'un rappel est la facture elle-même** : trois appelants de `render`, tous
+2. **Le PDF d'un rappel est la facture elle-même** : quatre appelants de `render` (`invoice_email.rs:500`, `:722`, `:1141`, `invoice_pdf.rs:37`), tous
    `(pool, i18n, locale, company, invoice_id)`, aucun montant ni variante. Précédent de variante :
    l'**avoir**, qui surcharge `invoice-pdf-title` et `invoice-pdf-number` dans `i18n.entries`
    (`routes/credit_notes.rs:334-347`) — ⚠️ dans la langue de l'**installation**, qui ne convient pas
@@ -75,10 +75,15 @@ niveau`, le reste dû venant d'`invoice_settlements::amount_due` (forme **scalai
 la fois). ⛔ Aucune réécriture de la formule. Le doc-comment `:312` suit.
 
 **AC 2** — Une variable **`{feeNotice}`** rejoint la liste blanche du type `InvoiceReminder`
-(`entities/email_template.rs:63-74`) : phrase localisée (4 locales) disant le montant des frais
+(`entities/email_template.rs:63-74`) : phrase localisée (4 langues, **en Rust indexé par
+`Language`**, sur le patron de `salutation_line`, `invoice_email.rs:109-150` — `build_reminder_vars`
+est pur et n'a pas le bundle Fluent) disant le montant des frais
 **cumulés** inclus dans `{totalDue}`, rendue **vide** quand ce cumul est nul. Les gabarits par défaut
 des 4 langues et de tous les niveaux n'écrivent plus aucune phrase de frais en dur : ils emploient
-`{feeNotice}`. `{reminderFee}` reste disponible pour les gabarits personnalisés.
+`{feeNotice}`. `{reminderFee}` reste disponible pour les gabarits personnalisés. ⚠️ **Test qui rougira** :
+`reminder_vars_ajoute_les_4_variables_rappel` (`invoice_email.rs:1494`) exige que les clés rendues
+égalent la liste blanche (`:1507-1514`) — `build_reminder_vars` doit donc insérer `feeNotice`, et le
+test est mis à jour, pas contourné.
 
 **AC 3** — À frais cumulés nuls, le texte rendu par un gabarit **par défaut** ne contient ni le mot
 « frais » (et ses équivalents de/it/en), ni un montant de frais. ⚠️ Un gabarit **personnalisé** qui
@@ -90,7 +95,9 @@ réinterprété.
 
 ### Volet 2 — le PDF joint au rappel
 
-**AC 5** — Le PDF joint à un rappel (unitaire et lot) est un **rappel**, pas la facture : titre
+**AC 5** — Le PDF joint à un rappel (unitaire et lot) est un **rappel**, pas la facture ; la pièce
+jointe se nomme `rappel-{n}.pdf` et non plus `facture-{n}.pdf` (`invoice_email.rs:510`, `:1161`) —
+⚠️ l'E2E `dunning-roundtrip.spec.ts:81-82` (`^facture-.*\.pdf$`) suit. Titre
 localisé « Rappel » (4 locales), sur le patron de surcharge de l'avoir. ⛔ **Dans la locale déjà
 résolue** que `render` reçoit (langue du contact, `resolve_language`) — **pas** `state.config.locale`
 comme l'avoir (`credit_notes.rs:335-346`), qui produirait un titre dans la langue de l'installation
@@ -98,8 +105,12 @@ sur un PDF dans celle du contact. Le téléchargement de la
 facture (`GET …/pdf`) et l'envoi de facture (`POST …/send-email`) sont **inchangés**.
 
 **AC 6** — Le PDF du rappel nomme **en toutes lettres le numéro de la facture d'origine** et, sous le
-total TTC, porte : **déjà réglé** (et **avoir** s'il y en a un), puis **reste à payer** en gras. Les
-lignes nulles ne s'affichent pas (même règle que les frais) ; une facture sans règlement ni avoir ne
+total TTC, porte : **déjà réglé**, puis **reste à payer** en gras. ⛔ **Pas de ligne « avoir »** : une facture
+qui porte un avoir est `cancelled` (`credit_notes.rs:586`), un avoir est refusé sur une facture
+réglée même en partie (`:325`), et le rendu comme l'éligibilité exigent `validated`
+(`invoice_pdf_service.rs:102`, `dunning_eligibility.rs:86`) — une facture créditée ne reçoit jamais
+de rappel ; la ligne serait du code mort. Si #471 lève un jour le refus, elle y reviendra. Les
+lignes nulles ne s'affichent pas (même règle que les frais) ; une facture sans règlement ne
 montre que le total, qui **est** le reste à payer *(arbitrage Q2, Guy, 2026-09-27)*.
 
 **AC 7** — La QR du PDF de rappel porte le **reste dû** — le TTC s'il n'y a aucun règlement.
@@ -107,12 +118,22 @@ montre que le total, qui **est** le reste à payer *(arbitrage Q2, Guy, 2026-09-
 `MidpointAwayFromZero` (la stratégie de `pdf.rs:682-684` et `generator.rs:38-39`), et **cette même
 valeur** nourrit le « reste à payer » imprimé, la QR et `{totalDue}`. Le refus de l'AC 9 porte sur la
 valeur **arrondie** (≤ 0.00) : un reste brut de 0.004 est refusé, pas envoyé à une QR invalide.
+⚠️ **Limite connue, préexistante, non corrigée ici** : les montants ont jusqu'à 4 décimales
+(`routes/limits.rs:28`), et un reste brut de 10.0050 donne une QR à 10.01 ; le trop-perçu se juge sur
+la valeur **brute** (`invoice_settlements_write.rs:167`, `routes/reconciliation.rs:1336`) : le paiement
+exact de la QR serait refusé. La QR de **facture** a le même défaut (`generator.rs:38-39`). Tracé par
+**[#476]**, à rattacher à la 25-4-c (#420, comparaison du rapprochement).
 ⛔ La **référence** (QRR ou aucune) et le **message non structuré** (`Facture {n}`) sont **identiques**
 à ceux du PDF de facture, octet pour octet. Les frais **ne** sont **pas** dans la QR.
 
 **AC 8** — Les frais cumulés figurent sur le PDF du rappel par une ligne **« Frais de rappel »**
 (4 locales) portant la mention qu'ils **ne sont pas compris dans le bulletin de versement** ;
-**absente** quand les frais sont nuls *(arbitrage Q1, Guy, 2026-09-27)*.
+**absente** quand les frais sont nuls *(arbitrage Q1, Guy, 2026-09-27)*. ⚠️ **Largeur** : la colonne
+des libellés du récapitulatif n'a que 50 mm (`col_unit` → `col_tot`, `pdf.rs:532-534`), soit ~23
+caractères à 9 pt (calibrage `IDENTITY_MAX_CHARS`, `:202`) ; la mention en compte ~58 en français,
+plus en allemand. Le libellé court (« Frais de rappel ») reste dans la colonne ; la **mention** part
+sur une ligne à elle depuis `col_desc`, comptée dans la réserve. Un test borne sa longueur dans les
+4 locales, sur le patron de `IDENTITY_MAX_CHARS` — les gardes ne surveillent que l'ordonnée.
 
 **AC 9** — Reste dû ≤ 0 : le rappel est **refusé** avec un code dédié `REMINDER_NOTHING_DUE`
 (unitaire : erreur HTTP ; lot : échec **par facture** dans la réponse, jamais d'erreur globale —
@@ -124,6 +145,17 @@ erreur de `render_reminder` en panne (`.map_err(|e| BatchItemError::infra("rende
 donc en fausse alerte d'infrastructure. Il sort en `BatchItemError::failed("REMINDER_NOTHING_DUE")`
 (`:885`), sur le patron de `classify_render_error` (`:937`) et de son test
 `classify_render_error_ne_deguise_pas_un_refus_en_panne` (`:1557`) — un test symétrique l'établit.
+⛔ **Et sur le second site** : le lot recalcule le reste dans le rendu PDF (`:1140-1143`,
+`classify_render_error`) ; un règlement enregistré entre les deux appels y ferait tomber le refus
+dans le bras final `other => BatchItemError::infra("render pdf", …)` (`:947`). Le variant du refus
+rejoint le `match` de `classify_render_error` **et** le tableau `metier` de son test (`:1557`) —
+le doc-comment `:924-936` l'impose.
+**Où vit le refus** : dans `render_reminder` (aperçu, lot) **et** dans la variante PDF — l'envoi
+unitaire n'appelle pas `render_reminder` (le texte vient de l'aperçu, `:486-487`), seul son rendu PDF
+(`:499-500`) recalcule le reste. Un variant `AppError::ReminderNothingDue` et sa clé
+`error-reminder-nothing-due` (4 locales), sur le patron de `DunningPaused` (`errors.rs:1312`) :
+l'aperçu et l'unitaire affichent `err.message` ; `reminder-error-label.ts` ne sert qu'au compte-rendu
+du lot (`ReminderBatchReport.svelte:30`).
 L'éligibilité (`dunning_eligibility.rs:85-89`) **n'est pas** modifiée : l'état est hérité et rare
 (25-4-b1, revue P1), et un refus nommé à l'envoi le rend visible, là où une exclusion en amont le
 ferait disparaître de la liste sans dire pourquoi.
@@ -134,7 +166,7 @@ ferait disparaître de la liste sans dire pourquoi.
 une TVA **non nulle** :
 - `render_reminder` : `totalDue` = reste + frais (et non TTC + frais) — la formule elle-même, pas
   une valeur passée à la main comme `reminder_vars_ajoute_les_4_variables_rappel`
-  (`invoice_email.rs:1497-1520`) ;
+  (`invoice_email.rs:1494-1520`) ;
 - `{feeNotice}` vide à frais nuls, non vide sinon ; gabarits par défaut sans « frais » à zéro ;
 - construction des entrées QR du rappel, **sans base** (patron `invoice_pdf_service.rs:553-655`) :
   `qr.amount` = reste dû ; `qr.reference` et `unstructured_message` **égaux** à ceux de la facture ;
@@ -142,7 +174,8 @@ une TVA **non nulle** :
   (§ *Comment tester un PDF*, `16-3a-coordonnees-emetteur-pdf.md:416-429`) ;
 - `REMINDER_NOTHING_DUE` en unitaire et en lot — en lot, **classé** en échec par facture et non en
   `DATABASE_ERROR` ; un reste brut de 0.004 est refusé ;
-- le rendu du PDF de rappel au **nombre maximal de lignes** avec le bloc complet (quatre lignes) ;
+- le rendu du PDF de rappel au **nombre maximal de lignes** avec le bloc complet (trois lignes, dont
+  la mention des frais — AC 8) ;
 - un E2E Playwright : facture réglée en partie → aperçu du rappel montre le reste + frais, pas le TTC.
 
 **AC 11** — Manuels : `user-manual.tex` § rappels (`:990-997`) dit ce que réclame un rappel et ce
@@ -152,17 +185,23 @@ sont documentées NULLE PART** : les deux manuels ne listent que les six variabl
 (`admin-manual.tex:1163-1167`, `user-manual.tex:906-909`). Les deux sites gagnent la liste des
 variables propres au rappel — `{reminderLevel}`, `{reminderFee}` (frais du niveau), `{totalDue}`
 (**reste dû + frais cumulés**), `{daysOverdue}`, `{feeNotice}` (vide sans frais) — et disent que
-`{amount}` reste le TTC de la facture. PDF régénérés et contrôlés **aplatis**. CHANGELOG `[0.12.1]` *Fixed*.
+`{amount}` reste le TTC de la facture. Le rappel des CGV `dunning-cgv-hint` (`fr-CH/messages.ftl:1528`,
+3 autres locales, repli `settings/dunning/+page.svelte:263`) ne dit plus « le QR de la facture
+jointe » mais celui du **rappel joint**. ⚠️ Le manuel dit aussi, sans le corriger, qu'un client qui
+paie `{totalDue}` (reste + frais) sera refusé en trop-perçu : conséquence des frais non comptabilisés,
+tracée par **#401**. PDF régénérés et contrôlés **aplatis**. CHANGELOG `[0.12.1]` *Fixed*.
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — texte** (AC 1-4) : `render_reminder`, `{feeNotice}` (liste blanche, clés Fluent ×4,
+- [ ] **T1 — texte** (AC 1-4) : `render_reminder`, `{feeNotice}` (liste blanche, phrase Rust par `Language` ×4,
   rendu serveur), gabarits par défaut ×4 langues × niveaux.
 - [ ] **T2 — PDF de rappel** (AC 5-8) : variante de `render` (paramètre explicite, pas de booléen
-  muet), champs optionnels dans `InvoicePdfData` sur le patron d'`origin_reference`, bloc sous le
+  muet, qui **porte les montants déjà calculés** — la construction des entrées QR reste testable sans
+  base), champs optionnels dans `InvoicePdfData` sur le patron d'`origin_reference`, bloc sous le
   total dans `pdf.rs`, clés `I18N_KEYS`/`DEFAULT_EN` ajoutées **en fin** des deux tableaux, les deux
   appelants de rappel branchés.
-- [ ] **T3 — refus du reste nul** (AC 9) : code, unitaire, lot, aperçu, libellé frontend ×4.
+- [ ] **T3 — refus du reste nul** (AC 9) : variant `AppError`, clé `error-*` ×4, `render_reminder`
+  et variante PDF, **deux** sites classés en lot, libellé du compte-rendu ×4.
 - [ ] **T4 — tests et mutations** (AC 10).
 - [ ] **T5 — textes** (AC 11).
 - [ ] **T6 — gates** : backend complet (base remise à zéro), frontend complet, **E2E complet**.
@@ -180,7 +219,7 @@ variables propres au rappel — `{reminderLevel}`, `{reminderFee}` (frais du niv
   scoping est déjà fait par le chargement de la facture (`find_by_id_with_lines(pool, company.id, …)`).
 - ⛔ **Un booléen `is_reminder` passé à `render`** : un paramètre qui dit ce qu'il porte (enum ou
   struct d'options), sans quoi l'appel `render(…, true)` ne se relit pas.
-- ⚠️ **Géométrie du PDF** : le bloc (jusqu'à quatre lignes : déjà réglé, avoir, reste, frais)
+- ⚠️ **Géométrie du PDF** : le bloc (jusqu'à trois lignes : déjà réglé, reste, frais)
   ajoute de la hauteur ; il **entre dans `recap_reserve`** (calculée avant la boucle des lignes,
   `pdf.rs:579-586`) et respecte les gardes `HeaderOverflow` / `TooManyLines` (`:527-529`,
   `:582-595`). ⛔ **Ne pas copier le bloc `payment_terms`** (`:700-708`), le plus proche en apparence :
@@ -198,7 +237,7 @@ variables propres au rappel — `{reminderLevel}`, `{reminderFee}` (frais du niv
 | `crates/kesh-api/src/routes/credit_notes.rs:334-347` | patron de surcharge du titre — ⚠️ **sauf sa locale** (`state.config.locale`), cf. AC 5 |
 | `crates/kesh-qrbill/src/types.rs:120-159, 216-315` ; `pdf.rs:388-712` | données PDF, clés, rendu |
 | `crates/kesh-db/src/entities/email_template.rs:63-74` ; `email_template_defaults.rs:71-215` | liste blanche, gabarits par défaut |
-| `crates/kesh-db/src/repositories/invoice_settlements.rs:60, 187-220` | `amount_due`, `amount_settled` ; ⚠️ l'**avoir** n'a pas de fonction scalaire, seulement le fragment `INVOICE_CREDITED_SUBQUERY_SQL` (`:60`) — en ajouter une (`amount_credited`) sur le patron des deux autres, plutôt que de réécrire la sous-requête |
+| `crates/kesh-db/src/repositories/invoice_settlements.rs:187-220` | `amount_due`, `amount_settled` — suffisants : aucune ligne « avoir » (AC 6) |
 | `crates/kesh-db/src/repositories/invoice_reminders.rs:65-89` | frais cumulés |
 | `docs/manual/fr/user-manual.tex:990-997` ; `admin-manual.tex:1183-1200` | textes |
 
@@ -229,6 +268,18 @@ variables propres au rappel — `{reminderLevel}`, `{reminderFee}` (frais du niv
 
 ## Change Log
 
+- **2026-09-27** — **Validation P3** (Opus, protocole complet, prompt `25-4-b2-validate-prompt-p3.md`)
+  — **5 MEDIUM, 5 LOW**, tous sur la fiche ; les citations clés vérifiées par `grep -nF`. Corrigés :
+  M1 la ligne « avoir » et `amount_credited` retirées — une facture créditée est `cancelled` et ne
+  reçoit jamais de rappel ; M2 la largeur de la mention des frais (50 mm de colonne, ~58 caractères) ;
+  M3 le refus classé aussi dans `classify_render_error` (second site du lot) ; M4 l'arrondi loin de
+  zéro fait refuser le paiement exact de la QR — limite préexistante écrite dans l'AC 7, tracée par
+  **#476** (ouverte) ; L1 où vit le refus, variant et clé ; L2 `{feeNotice}` en Rust par `Language`,
+  test qui rougira nommé ; L3 quatre appelants de `render`, pas trois ; L4 nom de la pièce jointe et
+  `dunning-cgv-hint` ; L5 la conséquence de `{totalDue}` = reste + frais, citée avec **#401**.
+  ⚠️ **Deux points remontés à Guy** : M5 (le rappel papier n'a aucun PDF juste) et le **signal de
+  découpage** — P2 (1M, orchestrateur) → P3 (5M) : sévérité égale (§ *Règle de splitting
+  préventif*).
 - **2026-09-27** — **Validation P2** (Haiku, prompt `25-4-b2-validate-prompt-p2.md`) — **0 finding**
   rendu, sans aucune commande citée ; l'axe 10 lisait de travers `amount_credited` (« LOW accepté »,
   alors que la fiche prescrit de la créer). ⛔ **Repris par l'orchestrateur** (§ *un 0 finding se
@@ -252,3 +303,5 @@ variables propres au rappel — `{reminderLevel}`, `{reminderFee}` (frais du niv
 
 [#387]: https://github.com/guycorbaz/kesh/issues/387
 [#416]: https://github.com/guycorbaz/kesh/issues/416
+[#476]: https://github.com/guycorbaz/kesh/issues/476
+[#401]: https://github.com/guycorbaz/kesh/issues/401
