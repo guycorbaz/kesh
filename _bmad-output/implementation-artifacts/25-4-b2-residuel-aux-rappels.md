@@ -255,6 +255,10 @@ tracée par **#401**. PDF régénérés et contrôlés **aplatis**. CHANGELOG `[
   QR reste au reste dû (AC 7, AC 8).
 - **Q2 — « déjà réglé » à zéro** : *« ok »*. Sans règlement ni avoir, le PDF ne montre que le total,
   qui est le reste à payer (AC 6).
+- **Signal de découpage P2 → P3 (MED → MED)** : *« ne découpe pas »* (Guy, 2026-09-27).
+- **M5 — le rappel papier** : *« les 1er et 2ème rappels n'ont pas besoin d'être en recommandé »*
+  (Guy, 2026-09-27) — seul le **3ᵉ** (mise en demeure, `user-manual.tex:1003`) part en recommandé ;
+  suite de l'arbitrage en attente (§ Change Log).
 
 ## Dev Agent Record
 
