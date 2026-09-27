@@ -195,7 +195,10 @@ variables propres au rappel — `{reminderLevel}`, `{reminderFee}` (frais du niv
 3 autres locales, repli `settings/dunning/+page.svelte:263`) ne dit plus « le QR de la facture
 jointe » mais celui du **rappel joint**. ⚠️ Le manuel dit aussi, sans le corriger, qu'un client qui
 paie `{totalDue}` (reste + frais) sera refusé en trop-perçu : conséquence des frais non comptabilisés,
-tracée par **[#401]**. PDF régénérés et contrôlés **aplatis**. CHANGELOG `[0.12.1]` *Fixed*.
+tracée par **[#401]**. Et il dit la **limite du papier** : le PDF « Rappel » ne part qu'avec un rappel
+**envoyé par e-mail** ; pour une sommation envoyée hors de Kesh (`user-manual.tex:1003`) ou un contact
+sans e-mail, le PDF de la **facture** porte toujours le TTC complet dans sa QR — ne pas le joindre tel
+quel à une facture partiellement réglée (**[#477]**). PDF régénérés et contrôlés **aplatis**. CHANGELOG `[0.12.1]` *Fixed*.
 
 ## Tasks / Subtasks
 
@@ -262,9 +265,10 @@ tracée par **[#401]**. PDF régénérés et contrôlés **aplatis**. CHANGELOG 
 - **Q2 — « déjà réglé » à zéro** : *« ok »*. Sans règlement ni avoir, le PDF ne montre que le total,
   qui est le reste à payer (AC 6).
 - **Signal de découpage P2 → P3 (MED → MED)** : *« ne découpe pas »* (Guy, 2026-09-27).
-- **M5 — le rappel papier** : *« les 1er et 2ème rappels n'ont pas besoin d'être en recommandé »*
-  (Guy, 2026-09-27) — seul le **3ᵉ** (mise en demeure, `user-manual.tex:1003`) part en recommandé ;
-  suite de l'arbitrage en attente (§ Change Log).
+- **M5 — le rappel papier** : *« les 1er et 2ème rappels n'ont pas besoin d'être en recommandé »*,
+  puis *« le troisième rappel, la sommation, sera envoyé par un autre moyen, pas par kesh (pour
+  l'instant) »* (Guy, 2026-09-27). ⇒ **Hors périmètre** : l'impression du PDF de rappel (sommation,
+  contact sans e-mail) est tracée par **[#477]** ; le manuel dit la limite (AC 11).
 
 ## Dev Agent Record
 
@@ -278,6 +282,9 @@ tracée par **[#401]**. PDF régénérés et contrôlés **aplatis**. CHANGELOG 
 
 ## Change Log
 
+- **2026-09-27** — **M5 arbitré** (Guy) : la sommation part hors de Kesh pour l'instant ; l'impression du
+  PDF de rappel sort du périmètre, tracée par **#477** (ouverte) ; l'AC 11 ajoute la limite au manuel.
+  Changement de texte seul, issu d'un arbitrage et non d'un finding : pas de passe supplémentaire.
 - **2026-09-27** — **Validation P5 ciblée** (Haiku, `d06b5c6c`, prompt `25-4-b2-validate-prompt-p5.md`)
   — 2 findings rendus MEDIUM, **reclassés LOW** par l'orchestrateur : `pdf.rs` et `dunning_levels.rs`
   nus et homonymes, mais sans numéro de ligne, et le contexte désigne le bon fichier (`pdf.rs` est
@@ -333,3 +340,4 @@ tracée par **[#401]**. PDF régénérés et contrôlés **aplatis**. CHANGELOG 
 [#416]: https://github.com/guycorbaz/kesh/issues/416
 [#476]: https://github.com/guycorbaz/kesh/issues/476
 [#401]: https://github.com/guycorbaz/kesh/issues/401
+[#477]: https://github.com/guycorbaz/kesh/issues/477
