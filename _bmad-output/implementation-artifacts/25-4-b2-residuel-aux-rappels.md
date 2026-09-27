@@ -147,8 +147,12 @@ une TVA **non nulle** :
 
 **AC 11** — Manuels : `user-manual.tex` § rappels (`:990-997`) dit ce que réclame un rappel et ce
 que porte le PDF joint ; `admin-manual.tex:1200` n'écrit plus que la QR porte « le total TTC de la
-facture d'origine », mais le **reste dû**, frais toujours exclus ; `{feeNotice}` documentée avec les
-variables de gabarit. PDF régénérés et contrôlés **aplatis**. CHANGELOG `[0.12.1]` *Fixed*.
+facture d'origine », mais le **reste dû**, frais toujours exclus. ⚠️ **Les variables de rappel ne
+sont documentées NULLE PART** : les deux manuels ne listent que les six variables de la facture
+(`admin-manual.tex:1163-1167`, `user-manual.tex:906-909`). Les deux sites gagnent la liste des
+variables propres au rappel — `{reminderLevel}`, `{reminderFee}` (frais du niveau), `{totalDue}`
+(**reste dû + frais cumulés**), `{daysOverdue}`, `{feeNotice}` (vide sans frais) — et disent que
+`{amount}` reste le TTC de la facture. PDF régénérés et contrôlés **aplatis**. CHANGELOG `[0.12.1]` *Fixed*.
 
 ## Tasks / Subtasks
 
@@ -225,6 +229,13 @@ variables de gabarit. PDF régénérés et contrôlés **aplatis**. CHANGELOG `[
 
 ## Change Log
 
+- **2026-09-27** — **Validation P2** (Haiku, prompt `25-4-b2-validate-prompt-p2.md`) — **0 finding**
+  rendu, sans aucune commande citée ; l'axe 10 lisait de travers `amount_credited` (« LOW accepté »,
+  alors que la fiche prescrit de la créer). ⛔ **Repris par l'orchestrateur** (§ *un 0 finding se
+  vérifie comme un finding*) : forme de `BatchItemError::failed` conforme (`invoice_email.rs:885`) ;
+  aucun autre site ne dit `totalDue` hors des six fichiers connus ; mais **1 MEDIUM** sur l'axe 8
+  qu'elle déclarait exercé — l'AC 11 renvoyait à une documentation des variables de rappel qui
+  **n'existe pas** (les manuels ne listent que celles de la facture). AC 11 rectifié.
 - **2026-09-27** — **Validation P1** (Sonnet, prompt `25-4-b2-validate-prompt-p1.md`) — **1 HIGH,
   3 MEDIUM, 2 LOW**, tous des défauts de la fiche. HIGH : en lot, le refus du reste nul serait sorti
   en `DATABASE_ERROR` — `render_reminder` y est classé en panne (`invoice_email.rs:1118`) ; AC 9
