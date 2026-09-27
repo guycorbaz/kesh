@@ -47,7 +47,8 @@ Une facture de 1 081.— réglée de 900.— est relancée pour **1 081.— + fr
 2. **Le PDF d'un rappel est la facture elle-même** : trois appelants de `render`, tous
    `(pool, i18n, locale, company, invoice_id)`, aucun montant ni variante. Précédent de variante :
    l'**avoir**, qui surcharge `invoice-pdf-title` et `invoice-pdf-number` dans `i18n.entries`
-   (`routes/credit_notes.rs:334-347`).
+   (`routes/credit_notes.rs:334-347`) — ⚠️ dans la langue de l'**installation**, qui ne convient pas
+   à un rappel (AC 5).
 3. **Le message non structuré de la QR vaut `Facture {n}`** (`invoice_pdf_service.rs:246-250`), pas
    le numéro seul comme l'écrit la mère (`:115-117`). Il est émis même avec une QRR. **Il reste
    identique**, comme la référence (`build_qrr(company.id, invoice.id)`, `:218-229`) : c'est ce que
@@ -90,7 +91,10 @@ réinterprété.
 ### Volet 2 — le PDF joint au rappel
 
 **AC 5** — Le PDF joint à un rappel (unitaire et lot) est un **rappel**, pas la facture : titre
-localisé « Rappel » (4 locales), sur le patron de surcharge de l'avoir. Le téléchargement de la
+localisé « Rappel » (4 locales), sur le patron de surcharge de l'avoir. ⛔ **Dans la locale déjà
+résolue** que `render` reçoit (langue du contact, `resolve_language`) — **pas** `state.config.locale`
+comme l'avoir (`credit_notes.rs:335-346`), qui produirait un titre dans la langue de l'installation
+sur un PDF dans celle du contact. Le téléchargement de la
 facture (`GET …/pdf`) et l'envoi de facture (`POST …/send-email`) sont **inchangés**.
 
 **AC 6** — Le PDF du rappel nomme **en toutes lettres le numéro de la facture d'origine** et, sous le
@@ -99,6 +103,10 @@ lignes nulles ne s'affichent pas (même règle que les frais) ; une facture sans
 montre que le total, qui **est** le reste à payer *(arbitrage Q2, Guy, 2026-09-27)*.
 
 **AC 7** — La QR du PDF de rappel porte le **reste dû** — le TTC s'il n'y a aucun règlement.
+⛔ **Un seul arrondi** : `amount_due` (DECIMAL(19,4)) est arrondi **une fois**, à 2 décimales,
+`MidpointAwayFromZero` (la stratégie de `pdf.rs:682-684` et `generator.rs:38-39`), et **cette même
+valeur** nourrit le « reste à payer » imprimé, la QR et `{totalDue}`. Le refus de l'AC 9 porte sur la
+valeur **arrondie** (≤ 0.00) : un reste brut de 0.004 est refusé, pas envoyé à une QR invalide.
 ⛔ La **référence** (QRR ou aucune) et le **message non structuré** (`Facture {n}`) sont **identiques**
 à ceux du PDF de facture, octet pour octet. Les frais **ne** sont **pas** dans la QR.
 
@@ -110,6 +118,15 @@ montre que le total, qui **est** le reste à payer *(arbitrage Q2, Guy, 2026-09-
 (unitaire : erreur HTTP ; lot : échec **par facture** dans la réponse, jamais d'erreur globale —
 § *Pattern batch*), au lieu d'un `INVOICE_NOT_PDF_READY` trompeur. L'aperçu le signale aussi. Le
 frontend traduit le code (`frontend/src/lib/features/reminders/reminder-error-label.ts`).
+⛔ **En lot, le refus doit être CLASSÉ** : aujourd'hui `send_one_batch_reminder` range **toute**
+erreur de `render_reminder` en panne (`.map_err(|e| BatchItemError::infra("render reminder", …))`,
+`invoice_email.rs:1118`), qui rend `DATABASE_ERROR` et journalise en `error!`. Le refus y sortirait
+donc en fausse alerte d'infrastructure. Il sort en `BatchItemError::failed("REMINDER_NOTHING_DUE")`
+(`:885`), sur le patron de `classify_render_error` (`:937`) et de son test
+`classify_render_error_ne_deguise_pas_un_refus_en_panne` (`:1557`) — un test symétrique l'établit.
+L'éligibilité (`dunning_eligibility.rs:85-89`) **n'est pas** modifiée : l'état est hérité et rare
+(25-4-b1, revue P1), et un refus nommé à l'envoi le rend visible, là où une exclusion en amont le
+ferait disparaître de la liste sans dire pourquoi.
 
 ### Volet 3 — tests, textes
 
@@ -123,7 +140,9 @@ une TVA **non nulle** :
   `qr.amount` = reste dû ; `qr.reference` et `unstructured_message` **égaux** à ceux de la facture ;
 - PDF de rappel : génération `Ok`, et le bloc réglé / reste mesuré selon la doctrine du dépôt
   (§ *Comment tester un PDF*, `16-3a-coordonnees-emetteur-pdf.md:416-429`) ;
-- `REMINDER_NOTHING_DUE` en unitaire et en lot ;
+- `REMINDER_NOTHING_DUE` en unitaire et en lot — en lot, **classé** en échec par facture et non en
+  `DATABASE_ERROR` ; un reste brut de 0.004 est refusé ;
+- le rendu du PDF de rappel au **nombre maximal de lignes** avec le bloc complet (quatre lignes) ;
 - un E2E Playwright : facture réglée en partie → aperçu du rappel montre le reste + frais, pas le TTC.
 
 **AC 11** — Manuels : `user-manual.tex` § rappels (`:990-997`) dit ce que réclame un rappel et ce
@@ -157,9 +176,12 @@ variables de gabarit. PDF régénérés et contrôlés **aplatis**. CHANGELOG `[
   scoping est déjà fait par le chargement de la facture (`find_by_id_with_lines(pool, company.id, …)`).
 - ⛔ **Un booléen `is_reminder` passé à `render`** : un paramètre qui dit ce qu'il porte (enum ou
   struct d'options), sans quoi l'appel `render(…, true)` ne se relit pas.
-- ⚠️ **Géométrie du PDF** : le bloc ajoute de la hauteur ; il doit entrer dans la réserve
-  `recap_reserve` et respecter les gardes `HeaderOverflow` / `TooManyLines` (`pdf.rs:527-529`,
-  `:582-595`).
+- ⚠️ **Géométrie du PDF** : le bloc (jusqu'à quatre lignes : déjà réglé, avoir, reste, frais)
+  ajoute de la hauteur ; il **entre dans `recap_reserve`** (calculée avant la boucle des lignes,
+  `pdf.rs:579-586`) et respecte les gardes `HeaderOverflow` / `TooManyLines` (`:527-529`,
+  `:582-595`). ⛔ **Ne pas copier le bloc `payment_terms`** (`:700-708`), le plus proche en apparence :
+  il n'est pas réservé et se contente de **clamper** à `content_floor + 5.0`, d'où un tassement
+  silencieux au lieu d'un refus. Un test à nombre de lignes maximal **avec** le bloc complet le prouve.
 - ⚠️ **`I18N_KEYS.len() == DEFAULT_EN.len()`** (`types.rs:276-279`) ne garantit pas l'appariement :
   ajouter en fin des deux tableaux, et le test positionnel `pdf.rs:1835-1852` doit suivre.
 
@@ -169,10 +191,10 @@ variables de gabarit. PDF régénérés et contrôlés **aplatis**. CHANGELOG `[
 |---|---|
 | `crates/kesh-api/src/routes/invoice_email.rs:161-230, 313-404, 412-562, 1029-1190` | variables, `render_reminder`, aperçu, unitaire, lot |
 | `crates/kesh-api/src/routes/invoice_pdf_service.rs:90-345, 553-655` | `render`, entrées QR, tests sans base |
-| `crates/kesh-api/src/routes/credit_notes.rs:334-347` | patron de surcharge du titre |
+| `crates/kesh-api/src/routes/credit_notes.rs:334-347` | patron de surcharge du titre — ⚠️ **sauf sa locale** (`state.config.locale`), cf. AC 5 |
 | `crates/kesh-qrbill/src/types.rs:120-159, 216-315` ; `pdf.rs:388-712` | données PDF, clés, rendu |
 | `crates/kesh-db/src/entities/email_template.rs:63-74` ; `email_template_defaults.rs:71-215` | liste blanche, gabarits par défaut |
-| `crates/kesh-db/src/repositories/invoice_settlements.rs:173-218` | `amount_due`, `amount_settled` |
+| `crates/kesh-db/src/repositories/invoice_settlements.rs:60, 187-220` | `amount_due`, `amount_settled` ; ⚠️ l'**avoir** n'a pas de fonction scalaire, seulement le fragment `INVOICE_CREDITED_SUBQUERY_SQL` (`:60`) — en ajouter une (`amount_credited`) sur le patron des deux autres, plutôt que de réécrire la sous-requête |
 | `crates/kesh-db/src/repositories/invoice_reminders.rs:65-89` | frais cumulés |
 | `docs/manual/fr/user-manual.tex:990-997` ; `admin-manual.tex:1183-1200` | textes |
 
@@ -203,6 +225,14 @@ variables de gabarit. PDF régénérés et contrôlés **aplatis**. CHANGELOG `[
 
 ## Change Log
 
+- **2026-09-27** — **Validation P1** (Sonnet, prompt `25-4-b2-validate-prompt-p1.md`) — **1 HIGH,
+  3 MEDIUM, 2 LOW**, tous des défauts de la fiche. HIGH : en lot, le refus du reste nul serait sorti
+  en `DATABASE_ERROR` — `render_reminder` y est classé en panne (`invoice_email.rs:1118`) ; AC 9
+  exige désormais la classification. MEDIUM : la locale du titre (le précédent de l'avoir prend celle
+  de l'installation) ; la géométrie (le bloc le plus proche, `payment_terms`, clampe au lieu de
+  réserver) ; l'arrondi (un seul, partagé par le texte, le PDF et la QR). LOW : l'éligibilité reste
+  inchangée, motif écrit ; l'avoir n'a pas de fonction scalaire. Neuf axes exercés, références toutes
+  exactes ; périmètre recompté à cinq modules.
 - **2026-09-27** — Créée. Inventaire vérifié par deux explorations et contrôle direct des citations ;
   le point ouvert de la mère sur les frais est clos par la règle existante (non comptabilisés, hors
   QR) ; message de la QR rectifié (`Facture {n}`, pas le numéro seul) ; deux questions à Guy.
