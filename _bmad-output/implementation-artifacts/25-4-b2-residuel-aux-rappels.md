@@ -1,6 +1,6 @@
 # Story 25.4-b2 : Le résiduel aux rappels — le rappel réclame le reste dû
 
-Status: review
+Status: done
 
 **Issue : [#416]** — cette story en livre la partie **rappels** ; la partie agrégats est la 25-4-b1
 (PR #475). ⛔ **La PR de b2 porte `closes #416`**, titre ET corps (§ *Issue Tracking Rule*).
@@ -226,6 +226,17 @@ Sonnet, sur `46081964..7b20d687`. Brut : 4 + 3 + 0 ; après dédoublonnage et tr
 - [x] [Review][Patch] **LOW — les libellés courts du bloc (déjà réglé, reste à payer, frais de rappel) ne sont bornés ni testés en largeur** [crates/kesh-qrbill/src/pdf.rs] — seule la mention pleine largeur l'est ; la colonne n'a que ~23 caractères. Edge Case Hunter.
 - [x] [Review][Defer] **près du seuil de capacité, `payment_terms` se clampe sur le bas du bloc** [crates/kesh-qrbill/src/pdf.rs:728-736] — deferred, pre-existing : `payment_terms` n'est pas réservé et se clampe à `content_floor + 5` ; avant la story il pouvait déjà chevaucher la ligne du total au seuil, le bloc de rappel reproduit la même géométrie sans l'aggraver. Le réserver changerait la capacité des factures.
 
+*Passe 2 (2026-09-27) — Haiku ×3, protocole complet (la passe 1 touchait plusieurs modules), diff aplati
+`46081964..75417026`. Brut : 6 + 0 + 0 ; après vérification : **0 au-dessus de LOW**.* Écartés : décimaux
+en chaîne JSON (comparaison de valeur, testée) ; double arrondi (idempotent, défense documentée) ;
+attendus absents acceptés (voulu : clients d'API, documenté) ; transaction de lecture annulée
+(usage correct pour un instantané) ; commentaires français des `.ftl` (convention du dépôt) ; sens de
+`{reminderFee}` (documenté dans les deux manuels). ⚠️ L'Edge Case Hunter rendait 0 finding avec deux
+affirmations inexactes (décimaux « en nombres », classement de `ReminderAmountsChanged` en lot, qui
+n'y survient pas) ; l'axe du **changement de niveau dans le dialogue** repris par l'orchestrateur :
+`refetchPreview` remplace `sendPreview`, relu par `confirmSend`, et le dialogue ré-hydrate son texte
+depuis ce même aperçu (`ReminderSendDialog.svelte:60-65`) — cohérent.
+
 Écartés : montant imprimé sur le bulletin (Blind F3) — il vient de `data.amount`, le montant de la QR
 (`pdf.rs:819-822`, `:947-950`) ; borne en caractères d'une police proportionnelle (Blind F4) —
 limite documentée, même méthode qu'`IDENTITY_MAX_CHARS`. L'Acceptance Auditor : 0 finding, recomptes
@@ -369,6 +380,13 @@ Claude Opus 5.5 (`claude-opus-5-5`).
 
 ## Change Log
 
+- **2026-09-27** — **Revue de code CLOSE en 2 passes, story `done`.** Tendance : passe 1 `1H/1M/1L`
+  (Sonnet ×3 ; HIGH tranché par Guy) → passe 2 **0 au-dessus de LOW** (Haiku ×3, protocole complet ; 6
+  points écartés à la vérification, un axe repris par l'orchestrateur). Gates au dernier commit de
+  code : backend **2510 / 2510**, frontend **835 / 835** ; E2E complet sur `kesh_e2e` reconstruite
+  **223 / 11 / 19** — les 7 KF-029, `product-revenue-account:133` (pollution répertoriée) et trois
+  **verts rejoués seuls** : `reminders.spec.ts:84` (le test de la story — tombé sur le symptôme
+  **KF-053, #478**, `#username` introuvable), `invoices.spec.ts:415` et `:536`. Conforme.
 - **2026-09-27** — **Revue de code, passe 1** (Sonnet ×3, `46081964..7b20d687`) — **1 HIGH (décision),
   1 MEDIUM, 1 LOW** corrigés, 1 différé, 2 écartés (§ *Review Findings*) :
   - HIGH, tranché par Guy : l'aperçu rend `amountDue` et `fees` ; l'envoi unitaire les renvoie
