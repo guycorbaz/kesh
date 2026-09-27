@@ -1,6 +1,6 @@
 # Story 25.4-b1 : Le résiduel aux agrégats — balance âgée et échéancier
 
-Status: review
+Status: done
 
 **Issue : [#416]** — cette story en livre la partie **agrégats** ; la partie **rappels** est la
 25-4-b2. ⛔ **La PR de b1 porte `refs #416`, pas `closes`** : l'issue ne se ferme qu'avec b2.
@@ -212,7 +212,25 @@ Sonnet, sur `bd06e789..87cbc8b4`. Brut : 4 + 4 + 2 findings ; après dédoublonn
 - [x] [Review][Defer] **`as_of` borne les tranches, pas les règlements** [crates/kesh-report/src/aged_receivables.rs:109] — deferred : limite écrite dans le doc-comment de `generate`, la route fixe `as_of` à aujourd'hui ; ne mord que si un appelant passait une date passée.
 - [x] [Review][Defer] **trois tests préexistants déstructurent `seed_base` dans le mauvais ordre** [crates/kesh-api/tests/invoice_echeancier_e2e.rs] — deferred, pre-existing : déjà relevé au Debug Log, verts parce que les deux identifiants valent 1.
 
-Écartés : pré-remplissage négatif du dialogue de règlement (Blind + Edge — tranché hors périmètre par
+*Passe 2 (2026-09-27) — les trois lentilles, Haiku ×3, sur le diff aplati `bd06e789..03951962`,
+protocole complet (la passe 1 avait changé une règle métier). Brut : 8 + 0 + 0 ; après vérification
+`grep -nF` : **0 au-dessus de LOW**.*
+
+- [x] [Review][Patch] **LOW — assertion d'anti-vacuité sans message** [crates/kesh-db/tests/invoice_amount_due_parity.rs:338]
+
+Écartés en passe 2 — **quatre faux positifs Haiku réfutés par `grep -nF`** : « CRITICAL » compteur
+i18n +1 pour deux clés (la clé d'en-tête CSV n'est lue que côté backend — aucun `i18nMsg` du frontend
+ne l'appelle, `grep -rnF echeancier-csv-header-amount-due frontend/src` vide) ; `id="settle-amount"`
+prétendu absent (`SettleInvoiceDialog.svelte:213`) ; ordre de `seed_base` prétendu douteux (elle rend
+`(seeded.admin_user_id, seeded.company_id)`, `invoice_echeancier_e2e.rs:113`) ; arrondi prétendu perdu
+par `toFixed(2)` (tous les termes sont à deux décimales en amont, « 68.1000 » n'est que l'échelle
+SQL). Plus : affirmation de T0 sur la 0.12.0 (fait établi par la spec) et trois remarques sans
+défaut. ⚠️ L'Edge Case Hunter rendait 0 finding en **8 appels d'outils**, sans déclarer le manuel, les
+locales ni le frontend : axes repris par l'orchestrateur — `{due}` jamais NULL (trois `COALESCE`,
+`invoice_settlements.rs:106`), deux clés présentes dans les 4 locales, PDF aplati conforme au `.tex`
+sur les dix passages « reste dû ». Rien trouvé.
+
+Écartés en passe 1 : pré-remplissage négatif du dialogue de règlement (Blind + Edge — tranché hors périmètre par
 la spec, et la garde `n <= 0` bloque la soumission) ; deux remarques LOW de l'Acceptance Auditor
 (piège de décompte `i18nMsg(` dans un commentaire, parité d'export couverte par un autre fichier que
 celui nommé) — constats sans défaut.
@@ -325,7 +343,11 @@ de le saisir, et un cas « réglée en partie » est ajouté.
 - Backend : base remise à zéro, `scripts/test-fast.sh` **2491 / 2491** (2484 + 7).
 - Frontend : `check` 0 erreur (27 avertissements), `lint-i18n-ownership` PASS, `test:unit`
   **834 / 834** (826 + 8), build OK.
-- E2E : sur `kesh_e2e` reconstruite, **225 passed / 8 failed / 19 skipped** — les 7 KF-029 (#97)
+- **Après la boucle de revue** (dernier commit) : base remise à zéro, `scripts/test-fast.sh`
+  **2494 / 2494** (2484 + 10) ; frontend `check` 0 erreur, `lint-i18n-ownership` PASS, `test:unit`
+  **834 / 834**, build OK ; E2E sur binaire recompilé et `kesh_e2e` reconstruite **225 / 8 / 19**,
+  les mêmes huit que ci-dessous.
+- E2E (avant revue) : sur `kesh_e2e` reconstruite, **225 passed / 8 failed / 19 skipped** — les 7 KF-029 (#97)
   et `product-revenue-account.spec.ts:133`, victime de pollution déjà répertoriée
   (`docs/testing.md` § « Les échecs attendus ») et **verte rejouée seule** (deux fois, 4/4).
   ⚠️ Un **premier run** avait rendu 214/19 : les 7 KF-029 et **12 échecs hors liste**, tous sur le
@@ -359,6 +381,15 @@ de le saisir, et un cas « réglée en partie » est ajouté.
 
 ## Change Log
 
+- **2026-09-27** — **Revue de code CLOSE en 2 passes, story `done`.** Tendance : passe 1 `2M/1L`
+  (Sonnet ×3) → passe 2 **0 au-dessus de LOW** (Haiku ×3, protocole complet, diff aplati ; 1 LOW
+  corrigé dans un test, 4 faux positifs réfutés par `grep -nF`). La dernière remédiation ne touche
+  aucune ligne de production. Gates complets verts au dernier commit (§ *Gates*).
+  ⚠️ **Un gate complet perdu, et pourquoi** : il a rougi sur `aged_compensating_…` avec le message de
+  la mutation, `git diff HEAD` vide. La mutation avait été défaite par `mv` d'une copie `cp` datée
+  d'AVANT son build : source juste mais plus ancienne que le binaire, cargo n'a pas recompilé.
+  `touch` puis gate rejoué : vert. Le gate ciblé et clippy de la passe 1 avaient été lancés AVANT la
+  mutation, ils restent valables.
 - **2026-09-27** — **Revue de code, passe 1** (Blind Hunter, Edge Case Hunter, Acceptance Auditor —
   Sonnet ×3, `bd06e789..87cbc8b4`) — **2 MEDIUM, 1 LOW à corriger**, 2 différés, 3 écartés (§ *Review
   Findings*). Corrigés :

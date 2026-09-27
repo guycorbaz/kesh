@@ -335,7 +335,10 @@ async fn settled_and_credited_forms_are_at_parity(pool: MySqlPool) {
         joined.iter().any(|(_, d)| *d < Decimal::ZERO),
         "état hérité : reste dû négatif"
     );
-    assert!(joined.iter().any(|(_, d)| *d > Decimal::ZERO));
+    assert!(
+        joined.iter().any(|(_, d)| *d > Decimal::ZERO),
+        "anti-vacuité : au moins un reste dû positif"
+    );
 }
 
 // ─── Story 25-4-b1 (#416) — l'échéancier porte le reste dû ────────────────────
