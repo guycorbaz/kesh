@@ -144,18 +144,12 @@ test.describe('Échéancier factures — Story 5.4', () => {
 		// Le premier compte proposé suffit : ce cas porte sur le PARCOURS, pas sur
 		// le choix du compte — celui-ci est couvert par les tests Rust.
 		await page.getByTestId('settle-account').selectOption({ index: 1 });
-		// ⚠️ **Le montant doit être SAISI ici, et c'est délibéré.** L'échéancier
-		// ne connaît pas encore le résiduel (colonnes reportées à une issue
-		// séparée), donc le dialogue reçoit `amountDue = null` — « non calculé »
-		// — et laisse le champ vide plutôt que de pré-remplir.
-		//
-		// ⛔ Y pré-remplir le TTC de la ligne serait FAUX : sur une facture
-		// déjà partiellement réglée, TTC ≠ résiduel, et l'utilisateur serait
-		// conduit vers un trop-perçu que le serveur refuse. Un champ vide dit la
-		// vérité ; un champ pré-rempli d'un mauvais chiffre ment.
-		//
-		// 100.00 HT à 8.10 % ⇒ 108.10 TTC (cf. `createAndValidateInvoice`).
-		await page.getByLabel(/Montant|Amount|Importo|Betrag/i).fill('108.10');
+		// Story 25-4-b1 (#416) — le montant n'est plus SAISI : l'échéancier porte
+		// le reste dû, et le dialogue le pré-remplit. Sans règlement, le reste dû
+		// est le TTC : 100.00 HT à 8.10 % ⇒ 108.10 (cf. `createAndValidateInvoice`).
+		// Le cas d'une facture PARTIELLEMENT réglée, où reste dû ≠ TTC, est le
+		// test suivant.
+		await expect(page.getByLabel(/Montant|Amount|Importo|Betrag/i)).toHaveValue("108.10");
 		await page.getByTestId('settle-confirm').click();
 
 		// Après reload, la facture en retard disparaît du filtre "Impayées".
@@ -197,8 +191,67 @@ test.describe('Échéancier factures — Story 5.4', () => {
 		expect(futureId).toBeGreaterThan(0);
 	});
 
-	// Story 21-2a (#246) — la colonne Total de l'échéancier affiche le TTC.
-	test('la colonne Total affiche le TTC (montant dû), pas le HT', async ({ page }) => {
+	// Story 25-4-b1 (#416) — une facture réglée en partie montre son reste dû,
+	// son statut « partiellement payée », et le dialogue se pré-remplit au reste
+	// dû — pas au TTC, qui conduirait à un trop-perçu refusé.
+	test('facture réglée en partie : reste dû, statut, dialogue pré-rempli', async ({ page }) => {
+		await login(page);
+		const contactName = uniq('EchPartiel');
+		const contactId = await createContactViaApi(page, contactName);
+		const id = await createAndValidateInvoice(
+			page,
+			contactId,
+			daysFromToday(-10),
+			daysFromToday(20),
+			'100.00',
+		);
+
+		const ctx = await authedApiContext(page);
+		try {
+			// Un compte de liquidités (classe 10) actif et imputable — le numéro
+			// exact dépend du plan comptable : ne pas le figer.
+			const accounts = await ctx.get('/api/v1/accounts?includeArchived=false');
+			expect(accounts.ok(), `comptes: ${accounts.status()}`).toBeTruthy();
+			const cash = (
+				(await accounts.json()) as {
+					id: number;
+					number: string;
+					accountType: string;
+					active: boolean;
+					postable: boolean;
+				}[]
+			).find((a) => a.active && a.postable && a.accountType === 'Asset' && a.number.startsWith('10'));
+			expect(cash, 'un compte de liquidités imputable').toBeTruthy();
+			const settled = await ctx.post(`/api/v1/invoices/${id}/settlements`, {
+				data: {
+					settlementType: 'internal_account',
+					accountId: cash!.id,
+					amount: '40.00',
+					settledOn: daysFromToday(0),
+				},
+			});
+			expect(settled.ok(), `règlement: ${settled.status()}`).toBeTruthy();
+		} finally {
+			await disposeContextSafe(ctx);
+		}
+
+		await page.goto('/invoices/due-dates');
+		const row = page.locator('tbody tr', { hasText: contactName });
+		await expect(row).toBeVisible({ timeout: 5000 });
+		// 108.10 − 40.00 = 68.10
+		await expect(row.getByTestId('due-dates-amount-due')).toHaveText(/68\.10/);
+		await expect(
+			row.getByText(/Partiellement payée|Partially paid|Parzialmente pagata|Teilweise bezahlt/i),
+		).toBeVisible();
+
+		await row.getByRole('button', { name: /Régler|Settle|Pagare|Erfassen/i }).click();
+		await expect(page.getByRole('dialog')).toBeVisible();
+		await expect(page.getByLabel(/Montant|Amount|Importo|Betrag/i)).toHaveValue("68.10");
+	});
+
+	// Story 21-2a (#246) — la colonne Total de l'échéancier affiche le TTC émis ;
+	// le reste dû a sa propre colonne depuis la Story 25-4-b1.
+	test('la colonne Total affiche le TTC, pas le HT', async ({ page }) => {
 		await login(page);
 		const contactName = uniq('EchTtc');
 		const contactId = await createContactViaApi(page, contactName);
@@ -209,7 +262,11 @@ test.describe('Échéancier factures — Story 5.4', () => {
 		const row = page.locator('tbody tr', { hasText: contactName }).first();
 		await expect(row).toBeVisible({ timeout: 5000 });
 		// Le TTC formaté suisse est affiché ; le HT nu ne l'est pas.
-		await expect(row.getByText('108.10')).toBeVisible();
+		// ⚠️ Story 25-4-b1 : sans règlement, la colonne « Reste dû » affiche le
+		// même 108.10 — viser la cellule Total (5ᵉ colonne) et non le texte seul,
+		// qui désignerait désormais deux cellules.
+		await expect(row.locator('td').nth(4)).toHaveText(/108\.10/);
+		await expect(row.getByTestId('due-dates-amount-due')).toHaveText(/108\.10/);
 		await expect(row.getByText(/^100\.00$/)).toHaveCount(0);
 	});
 

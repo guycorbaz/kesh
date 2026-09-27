@@ -756,7 +756,7 @@ fn montant(v: &serde_json::Value, champ: &str) -> rust_decimal::Decimal {
 /// — ouverte aux clés API en lecture — rend un reste dû **nul**, et non la TVA.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn get_credited_invoice_reports_zero_amount_due(pool: MySqlPool) {
-    let (company_id, admin_id) = seed_base(&pool).await;
+    let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
     let (id, _v) = create_validated_invoice(
         &pool,
@@ -795,7 +795,7 @@ async fn get_credited_invoice_reports_zero_amount_due(pool: MySqlPool) {
 /// son code et un message qui dit quoi faire.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn credit_note_on_partially_settled_invoice_is_409(pool: MySqlPool) {
-    let (company_id, admin_id) = seed_base(&pool).await;
+    let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
     let (id, _v) = create_validated_invoice(
         &pool,
@@ -840,4 +840,103 @@ async fn credit_note_on_partially_settled_invoice_is_409(pool: MySqlPool) {
     );
     assert_eq!(v["error"]["details"]["invoiceId"], id);
     assert!(v["error"]["details"]["settlementId"].as_i64().is_some());
+}
+
+// --- Story 25-4-b1 (#416) — l'échéancier porte le reste dû, à la frontière HTTP --
+
+/// Une facture de 108.10 (100.— à 8,1 %) réglée de 40.— en espèces, par HTTP.
+async fn partially_settled_invoice(
+    pool: &MySqlPool,
+    app: &TestApp,
+    token: &str,
+    admin_id: i64,
+    company_id: i64,
+) -> i64 {
+    let contact_id = seed_contact(pool, company_id, admin_id).await;
+    let (id, _v) = create_validated_invoice(
+        pool,
+        company_id,
+        contact_id,
+        admin_id,
+        NaiveDate::from_ymd_opt(2026, 4, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2026, 4, 30).unwrap(),
+        dec!(100.00),
+    )
+    .await;
+    let caisse = caisse_id(pool, company_id).await;
+    let settle = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{id}/settlements")))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&json!({
+            "settlementType": "internal_account",
+            "accountId": caisse,
+            "amount": "40.00",
+            "settledOn": "2026-04-15"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(settle.status(), 200);
+    id
+}
+
+/// AC 8-9 — la liste de l'échéancier rend `amountSettled` et `amountDue` par
+/// ligne, et le résumé somme le reste dû.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn due_dates_list_carries_amount_due(pool: MySqlPool) {
+    let (admin_id, company_id) = seed_base(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    let id = partially_settled_invoice(&pool, &app, &token, admin_id, company_id).await;
+
+    let resp = app
+        .client
+        .get(app.url("/api/v1/invoices/due-dates"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let v: serde_json::Value = resp.json().await.unwrap();
+    let item = v["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["id"] == id)
+        .unwrap_or_else(|| panic!("facture {id} absente : {v:?}"));
+    assert_eq!(montant(item, "totalTtc"), dec!(108.10));
+    assert_eq!(montant(item, "amountSettled"), dec!(40.00));
+    assert_eq!(montant(item, "amountDue"), dec!(68.10));
+    assert_eq!(
+        montant(&v["summary"], "unpaidTotal"),
+        dec!(68.10),
+        "résumé : {v:?}"
+    );
+}
+
+/// AC 11 — l'export CSV porte une colonne « Reste dû » et le statut « partiellement
+/// payée ».
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn due_dates_csv_has_amount_due_and_partial_status(pool: MySqlPool) {
+    let (admin_id, company_id) = seed_base(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    let _id = partially_settled_invoice(&pool, &app, &token, admin_id, company_id).await;
+
+    let resp = app
+        .client
+        .get(app.url("/api/v1/invoices/due-dates/export.csv"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let text = String::from_utf8_lossy(&resp.bytes().await.unwrap()).to_string();
+    let mut lines = text.trim_start_matches('\u{feff}').lines();
+    let header = lines.next().unwrap();
+    assert!(header.contains(";Total;Reste dû;"), "en-tête : {header}");
+    let row = lines.next().expect("une ligne");
+    assert!(row.contains(";108.10;68.10;"), "ligne : {row}");
+    assert!(row.contains("Partiellement payée"), "statut : {row}");
 }

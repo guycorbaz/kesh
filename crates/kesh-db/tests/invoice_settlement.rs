@@ -976,8 +976,9 @@ async fn monter(pool: &MySqlPool, motifs: &[SettlementCancelBlocker]) -> (Seeded
     if motifs.contains(&SettlementCancelBlocker::InvoiceCredited) {
         // ⚠️ **État HÉRITÉ, plus atteignable par l'application** depuis la
         // Story 25-4-a (#456) : un avoir est désormais refusé sur une facture
-        // réglée, même en partie. Il reste possible par l'**import d'une
-        // sauvegarde antérieure** — c'est ce qui justifie de garder le motif
+        // réglée, même en partie. Des **données antérieures à la 0.12.1** peuvent
+        // encore le porter — la 0.12.0 publiée acceptait cet avoir —, restaurées
+        // ou mises à jour sur place : c'est ce qui justifie de garder le motif
         // `InvoiceCredited` et ce montage.
         //
         // Gabarit « détacher, créditer, rattacher » : les deux écritures

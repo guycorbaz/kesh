@@ -27,7 +27,7 @@
 		InvoiceSortBy,
 		SortDirection,
 	} from '$lib/features/invoices/invoices.types';
-	import { formatInvoiceTotal } from '$lib/features/invoices/invoice-helpers';
+	import { formatInvoiceTotal, paymentStatusOf } from '$lib/features/invoices/invoice-helpers';
 	import ContactPicker from '$lib/components/invoices/ContactPicker.svelte';
 	import type { ContactResponse } from '$lib/features/contacts/contacts.types';
 	import { getContact } from '$lib/features/contacts/contacts.api';
@@ -303,14 +303,10 @@
 		}
 	}
 
-	function statusOf(inv: DueDateItem): 'paid' | 'unpaid' | 'overdue' {
-		if (inv.paidAt) return 'paid';
-		// `isOverdue` peut être `undefined` lors d'un déploiement échelonné
-		// (frontend en avance sur backend). Strict comparison `=== true`
-		// évite de classer overdue silencieusement toute valeur truthy
-		// inattendue, et vice-versa.
-		if (inv.isOverdue === true) return 'overdue';
-		return 'unpaid';
+	// Story 25-4-b1 (#416) — même règle que la fiche, `partial` compris : une
+	// facture réglée en partie n'est plus affichée « impayée ».
+	function statusOf(inv: DueDateItem) {
+		return paymentStatusOf(inv);
 	}
 </script>
 
@@ -431,6 +427,9 @@
 				<th class="cursor-pointer py-2 pr-2 text-right" onclick={() => toggleSort('TotalAmount')}>
 					{i18nMsg('due-dates-column-total', 'Total')}
 				</th>
+				<th class="py-2 pr-2 text-right">
+					{i18nMsg('due-dates-column-amount-due', 'Reste dû')}
+				</th>
 				<th class="py-2 pr-2">
 					{i18nMsg('due-dates-column-payment-status', 'Statut')}
 				</th>
@@ -449,8 +448,13 @@
 						<a class="underline" href={`/invoices/${inv.id}`}>{inv.invoiceNumber ?? '—'}</a>
 					</td>
 					<td class="py-2 pr-2">{inv.contactName}</td>
-					<!-- #246 : TTC (montant dû) — cohérent avec les KPI du résumé. -->
+					<!-- #246 : TTC émis. ⚠️ Ce n'est plus le montant dû depuis la 24-2 :
+					     la colonne suivante le porte (Story 25-4-b1), cohérente avec les
+					     totaux du résumé. -->
 					<td class="py-2 pr-2 text-right font-mono">{formatInvoiceTotal(inv.totalTtc)}</td>
+					<td class="py-2 pr-2 text-right font-mono" data-testid="due-dates-amount-due">
+						{formatInvoiceTotal(inv.amountDue)}
+					</td>
 					<td class="py-2 pr-2">
 						<PaymentStatusBadge status={statusOf(inv)} />
 					</td>
@@ -490,10 +494,8 @@
 {/if}
 
 {#if markTarget}
-	<!-- ⚠️ `amountDue={null}` : l'échéancier ne porte pas encore le résiduel
-	     (colonnes reportées à une issue séparée, arbitrage du 2026-08-27).
-	     `null` dit « non calculé » et non « zéro » — le dialogue laisse alors le
-	     montant entièrement à saisir plutôt que de pré-remplir un chiffre faux. -->
+	<!-- Story 25-4-b1 (#416) — la ligne porte le reste dû : le dialogue est
+	     pré-rempli, et sa garde client de trop-perçu redevient active. -->
 	<SettleInvoiceDialog
 		open={markOpen}
 		onOpenChange={(o: boolean) => {
@@ -504,7 +506,7 @@
 			}
 		}}
 		invoiceDate={markTarget.date}
-		amountDue={null}
+		amountDue={markTarget.amountDue}
 		accounts={settleAccounts}
 		bankAccounts={settleBankAccounts}
 		submitting={markSubmitting}

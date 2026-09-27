@@ -79,3 +79,28 @@ export function addDaysIso(iso: string, days: number): string {
 	const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + days));
 	return d.toISOString().slice(0, 10);
 }
+
+/** Les quatre états de paiement qu'affiche `PaymentStatusBadge`. */
+export type PaymentStatus = 'paid' | 'unpaid' | 'overdue' | 'partial';
+
+/**
+ * Le statut de paiement d'une facture — **une seule règle** pour la fiche et
+ * l'échéancier (Story 25-4-b1, #416).
+ *
+ * - `paid` : `paidAt` posé — le reste dû est tombé à zéro (24-2, D4) ;
+ * - `partial` : un règlement est entré sans éteindre la créance. ⚠️ Le test
+ *   porte sur `amountSettled`, pas sur `amountDue` : sur la fiche, `null` veut
+ *   dire « non calculé » et ne doit pas se lire comme un zéro ;
+ * - `overdue` / `unpaid` : `isOverdue` vient du serveur — seule source de
+ *   « aujourd'hui » (évite la désynchronisation de fuseau). `=== true` strict :
+ *   une valeur absente (déploiement échelonné) ne classe pas « en retard ».
+ */
+export function paymentStatusOf(inv: {
+	paidAt: string | null;
+	amountSettled: string | null;
+	isOverdue?: boolean;
+}): PaymentStatus {
+	if (inv.paidAt) return 'paid';
+	if (inv.amountSettled !== null && new Big(inv.amountSettled).gt(0)) return 'partial';
+	return inv.isOverdue === true ? 'overdue' : 'unpaid';
+}

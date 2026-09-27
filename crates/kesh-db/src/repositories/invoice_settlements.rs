@@ -80,6 +80,34 @@ pub const INVOICE_CREDITED_DERIVED_JOIN_SQL: &str = concat!(
      WHERE cn.status = 'issued' GROUP BY cn.invoice_id) cnt ON cnt.invoice_id = i.id"
 );
 
+/// Les trois tables dérivées du **reste dû sous forme jointe** — TTC (`lt`),
+/// avoir émis (`cnt`), réglé (`st`) — à placer après `FROM invoices i …`
+/// (Story 25-4-b1, #416). **Prérequis : alias `i` sur `invoices`.**
+///
+/// ⛔ Forme des **listes et agrégats** : la forme scalaire
+/// ([`amount_due`]) y serait réévaluée par ligne — un N+1 déguisé (24-2, D3).
+/// Les deux formes sont tenues d'accord par `tests/invoice_amount_due_parity.rs`.
+///
+/// Une fonction et non une constante : les trois jointures sont elles-mêmes des
+/// constantes, que `concat!` ne sait pas assembler.
+pub fn amount_due_derived_joins() -> String {
+    format!(
+        "{} {INVOICE_CREDITED_DERIVED_JOIN_SQL} {INVOICE_SETTLED_DERIVED_JOIN_SQL}",
+        crate::repositories::invoices::INVOICE_TTC_DERIVED_JOIN_SQL
+    )
+}
+
+/// Le **reste dû** d'une ligne, sur les tables de
+/// [`amount_due_derived_joins`] : `TTC − avoir émis − Σ règlements`, trois
+/// termes TTC. Miroir exact de [`amount_due`]. ⛔ Ne pas le réécrire à la main
+/// dans une requête : c'est ainsi que les agrégats ont sommé le TTC pendant
+/// un mois après la 24-2 (#416).
+pub const INVOICE_AMOUNT_DUE_DERIVED_SQL: &str =
+    "(COALESCE(lt.ttc, 0) - COALESCE(cnt.credited, 0) - COALESCE(st.settled, 0))";
+
+/// Le **total réglé** d'une ligne, sur les tables de [`amount_due_derived_joins`].
+pub const INVOICE_AMOUNT_SETTLED_DERIVED_SQL: &str = "COALESCE(st.settled, 0)";
+
 /// Enregistre un règlement dans la transaction courante.
 ///
 /// ⚠️ **Ne pose PAS `paid_at`** : c'est à l'appelant de le faire, et seulement

@@ -58,7 +58,7 @@
 		InvoiceResponse,
 		InvoiceSettlementResponse,
 	} from '$lib/features/invoices/invoices.types';
-	import { formatInvoiceTotal } from '$lib/features/invoices/invoice-helpers';
+	import { formatInvoiceTotal, paymentStatusOf } from '$lib/features/invoices/invoice-helpers';
 	import { apiClient, isApiError } from '$lib/shared/utils/api-client';
 	import {
 		notifyError,
@@ -421,20 +421,10 @@
 			.catch(() => (settleBankAccounts = []));
 	});
 
-	function paymentStatus(inv: InvoiceResponse): 'paid' | 'unpaid' | 'overdue' | 'partial' {
-		if (inv.paidAt) return 'paid';
-		// Story 24-2 (#371) — « partiellement payée » : un règlement est entré
-		// sans éteindre la créance.
-		//
-		// ⚠️ Le test porte sur `amountSettled`, pas sur `amountDue` : `null` veut
-		// dire « non calculé », et il ne faut surtout pas le lire comme un zéro.
-		// La facture reste par ailleurs relançable — c'est voulu, il reste dû.
-		if (inv.amountSettled !== null && Number(inv.amountSettled) > 0) return 'partial';
-		// P6 (review pass 2) : `isOverdue` est calculé backend → single source
-		// of truth pour « aujourd'hui » (évite la désync TZ client/serveur).
-		// Pass 2 G2 D : strict `=== true` symétrique avec la page échéancier
-		// (defensive contre `undefined` en rollout échelonné).
-		return inv.isOverdue === true ? 'overdue' : 'unpaid';
+	// Story 25-4-b1 (#416) — la règle vit dans `paymentStatusOf`, partagée avec
+	// l'échéancier : deux écrans, un seul statut.
+	function paymentStatus(inv: InvoiceResponse) {
+		return paymentStatusOf(inv);
 	}
 
 	async function handleSettleConfirm(payload: SettlementPayload) {

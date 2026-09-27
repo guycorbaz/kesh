@@ -139,3 +139,8 @@ Pass 1 Opus 4.8 × 3 reviewers (Blind Hunter + Edge Case Hunter + Acceptance Aud
 ## Deferred from: code review of 25-5-a-export-souverainete (2026-09-26)
 
 - L'export de souveraineté lit ses trente tables sans instantané commun (défaut antérieur, aggravé par la 25-5-a) — tracé par **#465**, source de vérité.
+
+## Deferred from: code review of 25-4-b1-residuel-aux-agregats (2026-09-27)
+
+- **La balance âgée déduit tous les règlements, quelle que soit `as_of`** (`crates/kesh-report/src/aged_receivables.rs`, `generate`). Depuis la 25-4-b1 le montant sommé est le reste dû, qui soustrait les règlements et avoirs **existants** sans comparer leur date à `as_of` : une balance « au jour J » passé serait sous-évaluée. **Différé** : la limite est écrite dans le doc-comment de `generate`, et la seule route appelante fixe `as_of` à aujourd'hui. À reprendre si une balance âgée historique (audit, clôture) est demandée.
+- **Trois tests préexistants de `invoice_echeancier_e2e.rs` déstructurent `seed_base` en `(company_id, admin_id)`** alors qu'elle rend `(admin_id, company_id)`. Ils passent parce que les deux valent 1 sur une base neuve. **Différé** : préexistant, relevé au Debug Log de la 25-4-b1 ; les deux tests hérités de la 25-4-a ont été rectifiés.

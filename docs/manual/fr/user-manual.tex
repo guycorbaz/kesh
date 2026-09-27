@@ -936,6 +936,12 @@ les modèles par défaut — rien à configurer.
     \item Factures payées (historique).
 \end{itemize}
 
+Chaque ligne montre le \textbf{total} de la facture (TTC) et son \textbf{reste dû}, qui tient compte des
+règlements partiels ; une facture réglée en partie porte le statut «~Partiellement payée~». Les
+totaux du haut de page additionnent les restes dus. Le bouton \emph{Régler} ouvre le dialogue de
+règlement \textbf{pré-rempli au reste dû} --- modifiable pour un nouvel acompte. L'export CSV porte
+la même colonne «~Reste dû~».
+
 Pour relancer les factures en retard, Kesh dispose d'un \textbf{écran de rappels} dédié — voir \S\ref{sec:relances-user}. Une facture suspendue de rappels reste visible dans l'échéancier (rien ne se cache).
 
 \subsection{Enregistrer et annuler un règlement}\label{sec:reglement-client}
@@ -1573,18 +1579,18 @@ livres.
 
 \subsection{Balance âgée des créances}\label{sec:balance-agee}
 
-Depuis la version \textbf{0.7}, l'onglet \emph{Rapports → Balance âgée} répartit l'\textbf{encours débiteur} (le total dû, TVA comprise) par \textbf{client} et par \textbf{tranche d'ancienneté}, arrêté à ce jour. C'est l'outil de pilotage du recouvrement : il montre d'un coup d'œil quelles créances vieillissent et lesquelles prioriser.
+Depuis la version \textbf{0.7}, l'onglet \emph{Rapports → Balance âgée} répartit l'\textbf{encours débiteur} --- le \textbf{reste dû} de chaque facture, TVA comprise, après ses règlements partiels et son avoir éventuel --- par \textbf{client} et par \textbf{tranche d'ancienneté}, arrêté à ce jour. C'est l'outil de pilotage du recouvrement : il montre d'un coup d'œil quelles créances vieillissent et lesquelles prioriser.
 
-\keshscreenshot{balance-agee.png}{Balance âgée : encours débiteur TTC par client et par tranche de retard, avec total général.}  % TODO capture: onglet Rapports/Balance âgée
+\keshscreenshot{balance-agee.png}{Balance âgée : reste dû par client et par tranche de retard, avec total général.}  % TODO capture: onglet Rapports/Balance âgée
 
 \begin{itemize}
-    \item \textbf{Colonnes} : \emph{Non échu} \textbar{} \emph{1-30} \textbar{} \emph{31-60} \textbar{} \emph{61-90} \textbar{} \emph{90+} jours de retard. La colonne « Non échu » garantit que le \textbf{total général réconcilie} avec le solde du compte clients (débiteurs) du bilan.
+    \item \textbf{Colonnes} : \emph{Non échu} \textbar{} \emph{1-30} \textbar{} \emph{31-60} \textbar{} \emph{61-90} \textbar{} \emph{90+} jours de retard. Avec la colonne « Non échu », le \textbf{total général réconcilie} avec le solde du compte clients (débiteurs) du bilan \emph{tant que ce compte n'est mouvementé que par les factures, leurs règlements et leurs avoirs} (y compris leurs annulations). Toute autre écriture qui le touche l'en écarte : solde de départ, écriture saisie au journal, virement bancaire affecté à ce compte sans passer par une facture, paiement d'une facture fournisseur compensé sur ce compte, ou règlement dont la contrepartie est ce compte lui-même. De même un changement du compte clients dans les réglages de facturation, ou des données antérieures à la version 0.12.1, restaurées ou mises à jour.
     \item \textbf{Détail} : une ligne par client, un total par tranche, et un total général. Chaque client renvoie d'un clic vers \textbf{ses factures}.
     \item \textbf{Export CSV} : réservé aux rôles \emph{Comptable} et \emph{Administrateur} (le rapport lui-même est consultable par tous les rôles).
 \end{itemize}
 
 \begin{keshnote}
-Les factures dont les rappels sont \textbf{suspendus restent comptées} dans la balance âgée (elles ne sortent que de la liste « à rappeler »). Le montant réparti est le \textbf{total dû TTC} de chaque facture, jamais le montant hors taxe.
+Les factures dont les rappels sont \textbf{suspendus restent comptées} dans la balance âgée (elles ne sortent que de la liste « à rappeler »). Le montant réparti est le \textbf{reste dû} de chaque facture, jamais le montant hors taxe ni le total facturé : une facture de 1\,081.--- réglée de 900.--- y pèse 181.---, dans la tranche de \emph{son échéance} --- un règlement partiel ne rajeunit pas la créance.
 \end{keshnote}
 
 \subsection{Journal des écritures}

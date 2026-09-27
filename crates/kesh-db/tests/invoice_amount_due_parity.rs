@@ -19,8 +19,9 @@ use chrono::NaiveDate;
 use kesh_db::entities::contact::{ContactType, NewContact};
 use kesh_db::entities::{NewCreditNote, NewInvoice, NewInvoiceLine, SettlementChoice};
 use kesh_db::repositories::invoice_settlements::{
-    INVOICE_CREDITED_DERIVED_JOIN_SQL, INVOICE_CREDITED_SUBQUERY_SQL,
-    INVOICE_SETTLED_DERIVED_JOIN_SQL, INVOICE_SETTLED_SUBQUERY_SQL, amount_due,
+    INVOICE_AMOUNT_DUE_DERIVED_SQL, INVOICE_CREDITED_DERIVED_JOIN_SQL,
+    INVOICE_CREDITED_SUBQUERY_SQL, INVOICE_SETTLED_DERIVED_JOIN_SQL, INVOICE_SETTLED_SUBQUERY_SQL,
+    amount_due, amount_due_derived_joins,
 };
 use kesh_db::repositories::{contacts, credit_notes, invoice_settlements_write, invoices};
 use kesh_db::test_fixtures::{SeededCompany, seed_accounting_company};
@@ -136,7 +137,8 @@ async fn credit(
 }
 
 /// L'état hérité **règlement puis avoir**, que 25-4-a rend inatteignable par
-/// l'application mais qu'un `.keshbackup` v0.12.0 peut ramener.
+/// l'application, mais que des données antérieures à la 0.12.1 peuvent porter —
+/// la 0.12.0 publiée acceptait cet avoir —, restaurées ou mises à jour sur place.
 ///
 /// Gabarit « détacher, créditer, rattacher » (AC 13) : les deux écritures
 /// viennent des **vrais chemins** ; seul le rattachement de la ligne de
@@ -308,4 +310,139 @@ async fn settled_and_credited_forms_are_at_parity(pool: MySqlPool) {
         Decimal::ZERO,
         "un brouillon n'éteint rien"
     );
+
+    // Story 25-4-b1 (AC 2) — le reste dû sous forme JOINTE, celle des listes et
+    // agrégats, égale la forme scalaire facture par facture.
+    let joined: Vec<(i64, Decimal)> = sqlx::query_as(&format!(
+        "SELECT i.id, {INVOICE_AMOUNT_DUE_DERIVED_SQL} FROM invoices i {} \
+         WHERE i.company_id = ? ORDER BY i.id",
+        amount_due_derived_joins()
+    ))
+    .bind(seeded.company_id)
+    .fetch_all(&pool)
+    .await
+    .expect("reste dû joint");
+    assert_eq!(joined.len(), rows.len());
+    for (id, due) in &joined {
+        assert_eq!(
+            *due,
+            amount_due(&pool, *id).await.unwrap(),
+            "reste dû joint ≠ scalaire, facture {id}"
+        );
+    }
+    // Anti-vacuité : le jeu porte des restes dus distincts, dont un négatif.
+    assert!(
+        joined.iter().any(|(_, d)| *d < Decimal::ZERO),
+        "état hérité : reste dû négatif"
+    );
+    assert!(
+        joined.iter().any(|(_, d)| *d > Decimal::ZERO),
+        "anti-vacuité : au moins un reste dû positif"
+    );
+}
+
+// ─── Story 25-4-b1 (#416) — l'échéancier porte le reste dû ────────────────────
+
+fn unpaid_query() -> invoices::InvoiceListQuery {
+    invoices::InvoiceListQuery {
+        status: Some("validated".into()),
+        payment_status: Some(invoices::PaymentStatusFilter::Unpaid),
+        limit: 100,
+        ..Default::default()
+    }
+}
+
+/// AC 7 — les totaux du résumé somment le reste dû : 108.10 réglé 40 pèse 68.10.
+#[sqlx::test(migrations = "./test-schema")]
+async fn due_dates_summary_totals_are_amount_due(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, &seeded).await;
+    let partial = validated(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00))]).await;
+    settle(&pool, &seeded, partial, dec!(40.00)).await;
+    let _open = validated(&pool, &seeded, contact, &[(dec!(2.60), dec!(50.00))]).await;
+
+    let summary = invoices::due_dates_summary(&pool, seeded.company_id, &unpaid_query())
+        .await
+        .unwrap();
+    assert_eq!(summary.unpaid_count, 2);
+    // 68.10 + 51.30
+    assert_eq!(
+        summary.unpaid_total,
+        dec!(119.40),
+        "reste dû, pas 159.40 de TTC"
+    );
+}
+
+/// AC 8 — les DEUX SELECT qui désérialisent `InvoiceListItem` portent le réglé
+/// et le reste dû : la liste paginée ET l'export.
+#[sqlx::test(migrations = "./test-schema")]
+async fn list_items_carry_amount_due(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, &seeded).await;
+    let partial = validated(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00))]).await;
+    settle(&pool, &seeded, partial, dec!(40.00)).await;
+    let open = validated(&pool, &seeded, contact, &[(dec!(8.10), dec!(10.00))]).await;
+
+    let page = invoices::list_by_company_paginated(&pool, seeded.company_id, unpaid_query())
+        .await
+        .unwrap();
+    let (export, _) = invoices::list_for_export(&pool, seeded.company_id, &unpaid_query(), 100)
+        .await
+        .unwrap();
+    for (surface, items) in [("liste", &page.items), ("export", &export)] {
+        let p = items.iter().find(|i| i.id == partial).expect(surface);
+        assert_eq!(p.total_ttc, dec!(108.10), "{surface} : TTC");
+        assert_eq!(p.amount_settled, dec!(40.00), "{surface} : réglé");
+        assert_eq!(p.amount_due, dec!(68.10), "{surface} : reste dû");
+        let o = items.iter().find(|i| i.id == open).expect(surface);
+        assert_eq!(o.amount_settled, Decimal::ZERO, "{surface}");
+        assert_eq!(o.amount_due, dec!(10.81), "{surface}");
+    }
+}
+
+/// Revue de code 25-4-b1, passe 1 — un règlement ANNULÉ ne compte plus sur
+/// aucune surface agrégée : liste, export et résumé repèsent le TTC entier.
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancelled_settlement_leaves_the_aggregates(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, &seeded).await;
+    let inv = validated(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00))]).await;
+    let entry = settle(&pool, &seeded, inv, dec!(40.00)).await;
+    // Témoin : avant l'annulation, le résumé porte le reste dû.
+    let avant = invoices::due_dates_summary(&pool, seeded.company_id, &unpaid_query())
+        .await
+        .unwrap();
+    assert_eq!(avant.unpaid_total, dec!(68.10));
+
+    let settlement_id: i64 =
+        sqlx::query_scalar("SELECT id FROM invoice_settlements WHERE journal_entry_id = ?")
+            .bind(entry)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    invoice_settlements_write::cancel_settlement(
+        &pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        inv,
+        settlement_id,
+    )
+    .await
+    .expect("annulation du règlement");
+
+    let summary = invoices::due_dates_summary(&pool, seeded.company_id, &unpaid_query())
+        .await
+        .unwrap();
+    assert_eq!(summary.unpaid_total, dec!(108.10), "résumé");
+    let page = invoices::list_by_company_paginated(&pool, seeded.company_id, unpaid_query())
+        .await
+        .unwrap();
+    let (export, _) = invoices::list_for_export(&pool, seeded.company_id, &unpaid_query(), 100)
+        .await
+        .unwrap();
+    for (surface, items) in [("liste", &page.items), ("export", &export)] {
+        let i = items.iter().find(|i| i.id == inv).expect(surface);
+        assert_eq!(i.amount_settled, Decimal::ZERO, "{surface} : réglé");
+        assert_eq!(i.amount_due, dec!(108.10), "{surface} : reste dû");
+    }
 }

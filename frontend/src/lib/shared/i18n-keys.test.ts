@@ -235,6 +235,9 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * faux avec l'assurance de l'avoir mesuré.*
  */
 const ATTENDU = {
+	// Story 25-4-b1 (#416) : 1750 → 1751, soit **+1**, recompté depuis la source
+	// (`grep -o 'i18nMsg('`, `main` contre l'arbre) — l'en-tête de la colonne
+	// « Reste dû » de l'échéancier (`invoices/due-dates/+page.svelte` 29 → 30).
 	// Fusion 25-1c-b1 + 25-3-c : 1709 + 31 + 10 = 1750 — les deux hausses portent sur des
 	// fichiers disjoints et se cumulent.
 	// Story 25-1c-b1 (#378), revue P1 : 1738 → 1740, soit **+2** — le message de plage
@@ -335,7 +338,7 @@ const ATTENDU = {
 	// trouve rien là où l'appel n'existe pas encore : chercher les clés mal
 	// traduites ne révèle jamais celles qui ne sont pas appelées du tout — et
 	// partir d'une liste de clés ne révèle jamais celles que la liste omet.*
-	sitesTotal: 1750,
+	sitesTotal: 1751,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

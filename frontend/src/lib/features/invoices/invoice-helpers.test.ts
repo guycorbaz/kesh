@@ -3,7 +3,8 @@ import {
 	addDaysIso,
 	computeInvoiceTotal,
 	computeLineTotal,
-	formatInvoiceTotal
+	formatInvoiceTotal,
+	paymentStatusOf
 } from './invoice-helpers';
 
 describe('computeLineTotal', () => {
@@ -61,5 +62,25 @@ describe('addDaysIso (#245)', () => {
 		expect(addDaysIso('', 30)).toBe('');
 		expect(addDaysIso('not-a-date', 30)).toBe('not-a-date');
 		expect(addDaysIso('2026-07-01', 1.5)).toBe('2026-07-01');
+	});
+});
+
+describe('paymentStatusOf — une règle pour la fiche et l’échéancier (Story 25-4-b1)', () => {
+	it('payée dès que `paidAt` est posé, même avec un règlement', () => {
+		expect(paymentStatusOf({ paidAt: '2026-03-05', amountSettled: '108.10' })).toBe('paid');
+	});
+	it('partiellement payée : un règlement, pas de `paidAt`', () => {
+		expect(paymentStatusOf({ paidAt: null, amountSettled: '0.01', isOverdue: true })).toBe(
+			'partial',
+		);
+	});
+	it('`amountSettled` nul (non calculé) ne se lit pas comme un règlement', () => {
+		expect(paymentStatusOf({ paidAt: null, amountSettled: null })).toBe('unpaid');
+	});
+	it('en retard seulement si le serveur le dit, strictement', () => {
+		expect(paymentStatusOf({ paidAt: null, amountSettled: '0.00', isOverdue: true })).toBe(
+			'overdue',
+		);
+		expect(paymentStatusOf({ paidAt: null, amountSettled: '0.00' })).toBe('unpaid');
 	});
 });

@@ -32,6 +32,9 @@ use crate::entities::audit_log::NewAuditLogEntry;
 use crate::entities::invoice::{Invoice, InvoiceLine, InvoiceUpdate, NewInvoice, NewInvoiceLine};
 use crate::errors::{DbError, UnvalidationBlocker, map_db_error};
 use crate::repositories::audit_log;
+use crate::repositories::invoice_settlements::{
+    INVOICE_AMOUNT_DUE_DERIVED_SQL, INVOICE_AMOUNT_SETTLED_DERIVED_SQL, amount_due_derived_joins,
+};
 use crate::repositories::journal_entries;
 use crate::util::search::{escape_boolean_ft, escape_like};
 
@@ -254,9 +257,16 @@ pub struct InvoiceListItem {
     pub due_date: Option<NaiveDate>,
     pub payment_terms: Option<String>,
     pub total_amount: Decimal,
-    /// TTC canonique (#246) — colonne SQL calculée (`INVOICE_TTC_SUBQUERY_SQL`),
-    /// la projection ne charge pas les lignes.
+    /// TTC canonique (#246) — colonne SQL calculée (table dérivée `lt` depuis
+    /// la Story 25-4-b1 ; `invoice_ttc_parity.rs` la tient égale à la forme
+    /// corrélée), la projection ne charge pas les lignes.
     pub total_ttc: Decimal,
+    /// Story 25-4-b1 (#416) — total déjà réglé, forme jointe.
+    pub amount_settled: Decimal,
+    /// Story 25-4-b1 (#416) — **reste dû** : TTC − avoir émis − Σ règlements,
+    /// forme jointe (`INVOICE_AMOUNT_DUE_DERIVED_SQL`). Peut être négatif
+    /// (trop-perçu hérité) : jamais écrêté.
+    pub amount_due: Decimal,
     pub paid_at: Option<NaiveDateTime>,
     /// Story 21-6a (D10) — suspension des rappels, exposée en liste (badge).
     ///
@@ -816,10 +826,14 @@ pub async fn list_by_company_paginated(
     let mut items_qb: QueryBuilder<sqlx::MySql> = QueryBuilder::new(format!(
         "SELECT i.id, i.company_id, i.contact_id, c.name AS contact_name, \
          i.invoice_number, i.status, i.date, i.due_date, i.payment_terms, \
-         i.total_amount, {INVOICE_TTC_SUBQUERY_SQL} AS total_ttc, \
+         i.total_amount, COALESCE(lt.ttc, 0) AS total_ttc, \
+         {settled} AS amount_settled, {due} AS amount_due, \
          i.paid_at, i.dunning_paused_at, i.dunning_paused_note, \
          i.version, i.created_at, i.updated_at \
-         FROM invoices i INNER JOIN contacts c ON c.id = i.contact_id",
+         FROM invoices i INNER JOIN contacts c ON c.id = i.contact_id {joins}",
+        settled = INVOICE_AMOUNT_SETTLED_DERIVED_SQL,
+        due = INVOICE_AMOUNT_DUE_DERIVED_SQL,
+        joins = amount_due_derived_joins(),
     ));
     push_where_clauses(&mut items_qb, company_id, &query);
     items_qb.push(" ORDER BY ");
@@ -887,16 +901,19 @@ pub async fn due_dates_summary(
     let mut qb: QueryBuilder<sqlx::MySql> = QueryBuilder::new(format!(
         // CAST AS SIGNED pour forcer BIGINT : MariaDB SUM(CASE…) retourne
         // DECIMAL par défaut, incompatible avec Rust i64.
-        // #246 (Story 21-2a) : totaux en TTC via la table dérivée `lt`
-        // (INVOICE_TTC_DERIVED_JOIN_SQL) — les KPI de l'échéancier sont des
-        // montants dus, pas des HT comptables.
+        // Story 25-4-b1 (#416) : les KPI de l'échéancier sont des RESTES DUS —
+        // TTC − avoir émis − Σ règlements, forme jointe — et non plus le TTC
+        // émis (#246, 21-2a), qui comptait une facture de 1 000.— réglée à
+        // 900.— pour 1 000.—.
         "SELECT \
             COUNT(*) AS unpaid_count, \
-            COALESCE(SUM(COALESCE(lt.ttc, 0)), CAST(0 AS DECIMAL(19,4))) AS unpaid_total, \
+            COALESCE(SUM({due}), CAST(0 AS DECIMAL(19,4))) AS unpaid_total, \
             CAST(COALESCE(SUM(CASE WHEN i.due_date < UTC_DATE() THEN 1 ELSE 0 END), 0) AS SIGNED) AS overdue_count, \
-            COALESCE(SUM(CASE WHEN i.due_date < UTC_DATE() THEN COALESCE(lt.ttc, 0) ELSE 0 END), CAST(0 AS DECIMAL(19,4))) AS overdue_total \
+            COALESCE(SUM(CASE WHEN i.due_date < UTC_DATE() THEN {due} ELSE 0 END), CAST(0 AS DECIMAL(19,4))) AS overdue_total \
          FROM invoices i INNER JOIN contacts c ON c.id = i.contact_id \
-         {INVOICE_TTC_DERIVED_JOIN_SQL}",
+         {joins}",
+        due = INVOICE_AMOUNT_DUE_DERIVED_SQL,
+        joins = amount_due_derived_joins(),
     ));
     qb.push(" WHERE i.company_id = ");
     qb.push_bind(company_id);
@@ -2456,10 +2473,14 @@ pub async fn list_for_export(
     let mut items_qb: QueryBuilder<sqlx::MySql> = QueryBuilder::new(format!(
         "SELECT i.id, i.company_id, i.contact_id, c.name AS contact_name, \
          i.invoice_number, i.status, i.date, i.due_date, i.payment_terms, \
-         i.total_amount, {INVOICE_TTC_SUBQUERY_SQL} AS total_ttc, \
+         i.total_amount, COALESCE(lt.ttc, 0) AS total_ttc, \
+         {settled} AS amount_settled, {due} AS amount_due, \
          i.paid_at, i.dunning_paused_at, i.dunning_paused_note, \
          i.version, i.created_at, i.updated_at \
-         FROM invoices i INNER JOIN contacts c ON c.id = i.contact_id",
+         FROM invoices i INNER JOIN contacts c ON c.id = i.contact_id {joins}",
+        settled = INVOICE_AMOUNT_SETTLED_DERIVED_SQL,
+        due = INVOICE_AMOUNT_DUE_DERIVED_SQL,
+        joins = amount_due_derived_joins(),
     ));
     push_where_clauses(&mut items_qb, company_id, query);
     // P13 (review pass 3 A) : défense en profondeur — l'export ne doit
