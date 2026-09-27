@@ -343,6 +343,11 @@ pub struct InvoiceListItemResponse {
     pub total_amount: Decimal,
     /// TTC canonique (#246, Story 21-2a) — colonne SQL calculée de la liste.
     pub total_ttc: Decimal,
+    /// Story 25-4-b1 (#416) — total réglé et **reste dû**, **toujours
+    /// calculés** dans une liste (forme jointe) : jamais `null` ici, à la
+    /// différence de la fiche où `None` veut dire « non calculé ».
+    pub amount_settled: Decimal,
+    pub amount_due: Decimal,
     pub paid_at: Option<NaiveDateTime>,
     /// Story 21-6a (D10) — suspension des rappels, alimente le badge
     /// « suspendu » de la liste des factures et le filtre `paused`.
@@ -379,6 +384,8 @@ impl From<InvoiceListItem> for InvoiceListItemResponse {
             payment_terms: i.payment_terms,
             total_amount: i.total_amount,
             total_ttc: i.total_ttc,
+            amount_settled: i.amount_settled,
+            amount_due: i.amount_due,
             paid_at: i.paid_at,
             dunning_paused_at: i.dunning_paused_at,
             dunning_paused_note: i.dunning_paused_note,
@@ -1332,12 +1339,13 @@ pub async fn cancel_invoice_settlement_handler(
 }
 
 /// Clés FTL des en-têtes CSV (locale = `companies.accounting_language`).
-const CSV_HEADER_KEYS: [&str; 7] = [
+const CSV_HEADER_KEYS: [&str; 8] = [
     "echeancier-csv-header-number",
     "echeancier-csv-header-date",
     "echeancier-csv-header-due-date",
     "echeancier-csv-header-contact",
     "echeancier-csv-header-total",
+    "echeancier-csv-header-amount-due",
     "echeancier-csv-header-payment-status",
     "echeancier-csv-header-paid-at",
 ];
@@ -1347,12 +1355,13 @@ const CSV_HEADER_KEYS: [&str; 7] = [
 // interdit la recopie. Comportement identique ; ses tests unitaires, qui
 // n'existaient pas, ont été écrits à l'extraction (`util.rs`).
 
-const CSV_HEADER_FALLBACKS: [&str; 7] = [
+const CSV_HEADER_FALLBACKS: [&str; 8] = [
     "Numéro",
     "Date",
     "Date d'échéance",
     "Client",
     "Total",
+    "Reste dû",
     "Statut paiement",
     "Date paiement",
 ];
@@ -1440,8 +1449,12 @@ pub async fn export_due_dates_csv_handler(
 
         for inv in rows {
             // B3 (review pass 1 G2 B) : utilise le helper centralisé.
+            // Story 25-4-b1 (#416) : « partiellement payée » — même règle que la
+            // fiche : pas de `paid_at`, mais un règlement.
             let payment_status_key = if inv.paid_at.is_some() {
                 "payment-status-paid"
+            } else if inv.amount_settled > Decimal::ZERO {
+                "payment-status-partial"
             } else if is_invoice_overdue(&inv.status, inv.paid_at, inv.due_date, today) {
                 "payment-status-overdue"
             } else {
@@ -1460,9 +1473,12 @@ pub async fn export_due_dates_csv_handler(
                 format_date(&inv.date),
                 inv.due_date.as_ref().map(format_date).unwrap_or_default(),
                 csv_sanitize(inv.contact_name.clone()),
-                // #246 (Story 21-2a) : colonne Total = TTC (montant dû),
-                // cohérente avec les KPI du summary — pas le HT comptable.
+                // #246 (Story 21-2a) : colonne Total = TTC émis — pas le HT
+                // comptable. ⚠️ Ce n'est PAS le montant dû depuis la 24-2 : la
+                // colonne suivante le porte (Story 25-4-b1), cohérente avec les
+                // KPI du résumé.
                 format_money(&inv.total_ttc),
+                format_money(&inv.amount_due),
                 // B19 (review pass 2 G2 B) : défense en profondeur — la valeur
                 // vient d'un fichier FTL contrôlé, mais une compromission
                 // (clé locale altérée) ne doit pas ouvrir un vecteur d'injection.

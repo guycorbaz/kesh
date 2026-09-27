@@ -179,7 +179,7 @@ CHANGELOG `[0.12.1]` *Fixed*. README : rien, sauf si la ligne v0.12.1 cite la ba
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — rectifier la portée de l'état hérité posée par 25-4-a** : **cinq** sites disent
+- [x] **T0 — rectifier la portée de l'état hérité posée par 25-4-a** : **cinq** sites disent
       l'état « avoir après règlement partiel » atteignable **seulement par l'import d'une
       sauvegarde** — quatre commentaires, `errors.rs:221`, `invoice_settlements_write.rs:333`,
       `tests/invoice_amount_due_parity.rs:139`, `tests/invoice_settlement.rs:980`, et **leur source**,
@@ -188,12 +188,12 @@ CHANGELOG `[0.12.1]` *Fixed*. README : rien, sauf si la ligne v0.12.1 cite la ba
       publiée** accepte cet avoir, une installation **mise à jour sur place** le porte. Écrire « des
       données antérieures à la 0.12.1, restaurées ou mises à jour ». *(Le manuel de 25-4-a dit
       déjà « avant la version 0.12.1, ou restaurée » : juste.)*
-- [ ] **T1 — la grandeur jointe** (AC 1-2).
-- [ ] **T2 — balance âgée** (AC 3-6), dont l'invariant de concordance.
-- [ ] **T3 — échéancier, backend** (AC 7-9, AC 11).
-- [ ] **T4 — échéancier, frontend** (AC 10), i18n.
-- [ ] **T5 — tests et mutations** (AC 12).
-- [ ] **T6 — textes** (AC 13).
+- [x] **T1 — la grandeur jointe** (AC 1-2).
+- [x] **T2 — balance âgée** (AC 3-6), dont l'invariant de concordance.
+- [x] **T3 — échéancier, backend** (AC 7-9, AC 11).
+- [x] **T4 — échéancier, frontend** (AC 10), i18n.
+- [x] **T5 — tests et mutations** (AC 12).
+- [x] **T6 — textes** (AC 13).
 - [ ] **T7 — gates** : backend complet (base remise à zéro), frontend complet, **E2E complet**.
 
 ## Dev Notes
@@ -243,11 +243,92 @@ CHANGELOG `[0.12.1]` *Fixed*. README : rien, sauf si la ligne v0.12.1 cite la ba
 
 ### Agent Model Used
 
+Claude Opus 5.5.
+
 ### Debug Log References
+
+- La mutation « reste dû retiré du seul export » a d'abord **échoué à compiler** (argument nommé
+  `due` devenu inutilisé dans le `format!`) : mutation invalide, refaite en gardant l'argument
+  (`({due}) * 0 + COALESCE(lt.ttc, 0)`) — elle est alors tuée.
+- Le reste dû arrive de l'API à l'échelle du calcul SQL (« 68.1000 ») ; `SettleInvoiceDialog`
+  le recopiait tel quel dans le champ montant — **aussi sur la fiche**, depuis la 24-2. Le
+  pré-remplissage passe désormais par `Big(amountDue).toFixed(2)`.
+- ⚠️ **Relevé, non corrigé** : dans `invoice_echeancier_e2e.rs`, trois tests préexistants
+  déstructurent `seed_base` en `(company_id, admin_id)` alors qu'il rend `(admin_id, company_id)`
+  — ils passent parce que les deux identifiants valent 1 dans une base neuve. Les tests de 25-4-a,
+  qui avaient copié ce patron, sont rectifiés ici.
 
 ### Completion Notes List
 
+- **T0** : les quatre commentaires de 25-4-a qui bornaient l'état hérité à l'import disent
+  désormais « données antérieures à la 0.12.1, restaurées ou mises à jour sur place » ; la fiche
+  de 25-4-a porte sa note datée (validation P4).
+- **La grandeur jointe** (AC 1-2) : `amount_due_derived_joins()` (les trois tables dérivées ; une
+  fonction, `concat!` ne sachant pas assembler des constantes), `INVOICE_AMOUNT_DUE_DERIVED_SQL`,
+  `INVOICE_AMOUNT_SETTLED_DERIVED_SQL` ; la parité de 25-4-a étendue — reste dû joint = scalaire,
+  facture par facture, reste dû négatif compris.
+- **Balance âgée** (AC 3-6) : les cinq tranches et le total somment le reste dû, tranches sur
+  `due_date` ; doc-comments (module et `generate`) énoncent la **règle** de concordance et
+  l'absence de filtre des règlements par `as_of`.
+- **Échéancier, serveur** (AC 7-9, 11) : résumé au reste dû ; `InvoiceListItem` porte
+  `amount_settled` / `amount_due`, projetés par **les deux** SELECT (liste et export) ; `total_ttc`
+  y vient désormais de `lt.ttc` (permis par les Dev Notes) ; DTO camelCase ; export CSV : colonne
+  « Reste dû » (clé ×4) et statut « Partiellement payée ».
+- **Échéancier, écran** (AC 10) : `paymentStatusOf` partagé par la fiche et l'échéancier ;
+  colonne « Reste dû » (clé ×4, `sitesTotal` 1750 → 1751 recompté) ; dialogue pré-rempli, garde
+  client de trop-perçu rendue active ; commentaires qui disaient « TTC (montant dû) » corrigés.
+- **Textes** (AC 13) : les **quatre** passages de la § Balance âgée (dont la réserve, par la
+  règle) et la § Échéancier ; PDF régénéré et **contrôlé aplati** (0 `??`, six phrases de contrôle
+  présentes, trois formules « TTC » absentes) ; CHANGELOG *Fixed*. Grep du symptôme sur le dépôt :
+  seule la ligne v0.7.0 publiée du README, légitime.
+
+**Tests ajoutés** (recomptés, branche de 25-4-a → arbre de travail) : `invoice_amount_due_parity`
+4 → 6, `kesh-report/tests/aged_receivables` 4 → 7, `invoice_echeancier_e2e` 13 → 15, Vitest
+`invoice-helpers.test.ts` 12 → 16, `due-dates-page.test.ts` 0 → 4 (nouveau). E2E
+`invoices_echeancier.spec.ts` : le parcours de la 24-3 **vérifie** le montant pré-rempli au lieu
+de le saisir, et un cas « réglée en partie » est ajouté.
+
+**Mutations** (observées, fichiers restaurés) :
+
+| Mutation | Tests rouges |
+|---|---|
+| TTC dans une tranche de la balance âgée | `aged_uses_amount_due_not_ttc` |
+| TTC dans le seul total | `aged_total_matches_receivable_ledger`, `aged_uses_amount_due_not_ttc` |
+| reste dû retiré du seul export | `list_items_carry_amount_due` |
+| TTC dans le résumé de l'échéancier | `due_dates_summary_totals_are_amount_due` |
+| `partial` retiré de `paymentStatusOf` | 2 Vitest (helper, page) |
+| `amountDue={null}` remis | Vitest « dialogue pré-rempli » |
+
+### Gates
+
+- Backend : base remise à zéro, `scripts/test-fast.sh` **2491 / 2491** (2484 + 7).
+- Frontend : `check` 0 erreur (27 avertissements), `lint-i18n-ownership` PASS, `test:unit`
+  **834 / 834** (826 + 8), build OK.
+- E2E : EN_ATTENTE
+
 ### File List
+
+| Fichier | Nature |
+|---|---|
+| `crates/kesh-db/src/repositories/invoice_settlements.rs` | grandeur jointe |
+| `crates/kesh-db/src/repositories/invoices.rs` | résumé, `InvoiceListItem`, deux SELECT |
+| `crates/kesh-report/src/aged_receivables.rs` | requête, doc |
+| `crates/kesh-api/src/routes/invoices.rs` | DTO, export CSV |
+| `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` | `echeancier-csv-header-amount-due`, `due-dates-column-amount-due` |
+| `crates/kesh-db/src/errors.rs`, `invoice_settlements_write.rs` | T0 |
+| `crates/kesh-db/tests/invoice_amount_due_parity.rs` | parité étendue, résumé, listes ; T0 |
+| `crates/kesh-db/tests/invoice_settlement.rs` | T0 |
+| `crates/kesh-report/tests/aged_receivables.rs` | 3 tests |
+| `crates/kesh-api/tests/invoice_echeancier_e2e.rs` | 2 e2e ; ordre de `seed_base` rectifié (tests 25-4-a) |
+| `frontend/src/lib/features/invoices/invoice-helpers.ts` / `.test.ts` | `paymentStatusOf` |
+| `frontend/src/lib/features/invoices/invoices.types.ts` | `amountSettled`, `amountDue` |
+| `frontend/src/lib/features/invoices/SettleInvoiceDialog.svelte` | pré-remplissage au centime |
+| `frontend/src/routes/(app)/invoices/[id]/+page.svelte` | statut partagé |
+| `frontend/src/routes/(app)/invoices/due-dates/+page.svelte` / `due-dates-page.test.ts` | colonne, statut, dialogue |
+| `frontend/src/lib/shared/i18n-keys.test.ts` | `sitesTotal` 1751 |
+| `frontend/tests/e2e/invoices_echeancier.spec.ts` | pré-remplissage, cas partiel |
+| `docs/manual/fr/user-manual.tex` / `.pdf` | balance âgée, échéancier |
+| `CHANGELOG.md` | *Fixed* |
 
 ## Change Log
 

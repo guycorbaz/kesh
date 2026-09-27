@@ -11,9 +11,9 @@
 use chrono::{Duration, NaiveDate};
 use kesh_core::accounting::vat::invoice_total_ttc;
 use kesh_db::entities::contact::{ContactType, NewContact, Salutation};
-use kesh_db::entities::{NewInvoice, NewInvoiceLine};
+use kesh_db::entities::{NewCreditNote, NewInvoice, NewInvoiceLine, SettlementChoice};
 use kesh_db::repositories::invoices::ValidatedInvoice;
-use kesh_db::repositories::{contacts, invoices};
+use kesh_db::repositories::{contacts, credit_notes, invoice_settlements_write, invoices};
 use kesh_db::test_fixtures::{SeededCompany, seed_accounting_company};
 use kesh_report::aged_receivables::generate;
 use rust_decimal::Decimal;
@@ -313,4 +313,183 @@ async fn aged_empty_when_no_open_items(pool: MySqlPool) {
     assert_eq!(report.totals.total, Decimal::ZERO);
     assert_eq!(report.totals.not_due, Decimal::ZERO);
     assert_eq!(report.as_of, as_of());
+}
+
+// ─── Story 25-4-b1 (#416) — la balance âgée somme le RESTE DÛ ─────────────────
+
+async fn settle(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    invoice_id: i64,
+    amount: Decimal,
+    on: NaiveDate,
+) {
+    invoice_settlements_write::settle_invoice(
+        pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        invoice_id,
+        SettlementChoice::InternalAccount {
+            account_id: seeded.accounts["1000"],
+        },
+        amount,
+        on,
+    )
+    .await
+    .expect("règlement");
+}
+
+/// Solde du compte débiteurs au grand livre, pour la société.
+async fn receivable_balance(pool: &MySqlPool, seeded: &SeededCompany) -> Decimal {
+    sqlx::query_scalar(
+        "SELECT COALESCE(SUM(l.debit) - SUM(l.credit), 0) FROM journal_entry_lines l \
+         INNER JOIN journal_entries e ON e.id = l.entry_id \
+         WHERE e.company_id = ? AND l.account_id = ?",
+    )
+    .bind(seeded.company_id)
+    .bind(seeded.accounts["1100"])
+    .fetch_one(pool)
+    .await
+    .expect("solde 1100")
+}
+
+/// AC 3 — une facture de 1 081.— (1 000.— à 8,1 %) réglée de 900.— pèse **181.—**
+/// dans sa tranche, pas 1 081.—.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn aged_uses_amount_due_not_ttc(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let alpha = mk_contact(&pool, &seeded, "Alpha SA").await;
+    let v = mk_validated(
+        &pool,
+        &seeded,
+        alpha,
+        Some(days_before(45)),
+        dec!(8.10),
+        dec!(1000.00),
+    )
+    .await;
+    settle(&pool, &seeded, v.invoice.id, dec!(900.00), days_before(40)).await;
+
+    let r = generate(&pool, seeded.company_id, as_of()).await.unwrap();
+    assert_eq!(r.rows.len(), 1);
+    assert_eq!(
+        r.rows[0].buckets.days_31_to_60,
+        dec!(181.00),
+        "reste dû, pas le TTC"
+    );
+    assert_eq!(r.rows[0].buckets.total, dec!(181.00));
+    assert_eq!(r.totals.total, dec!(181.00));
+}
+
+/// AC 3 — ⛔ un règlement partiel ne rajeunit pas la créance : la tranche suit
+/// l'échéance de la facture, pas la date du règlement.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn aged_partial_payment_keeps_original_bucket(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let alpha = mk_contact(&pool, &seeded, "Alpha SA").await;
+    let v = mk_validated(
+        &pool,
+        &seeded,
+        alpha,
+        Some(days_before(100)),
+        dec!(8.10),
+        dec!(100.00),
+    )
+    .await;
+    // Réglé en partie HIER : la créance restante reste à plus de 90 jours.
+    settle(&pool, &seeded, v.invoice.id, dec!(8.10), days_before(1)).await;
+
+    let r = generate(&pool, seeded.company_id, as_of()).await.unwrap();
+    let b = &r.rows[0].buckets;
+    assert_eq!(b.days_over_90, dec!(100.00));
+    assert_eq!(
+        b.not_due + b.days_1_to_30 + b.days_31_to_60 + b.days_61_to_90,
+        Decimal::ZERO
+    );
+}
+
+/// AC 5 — ⛔ le total de la balance âgée égale le solde du compte débiteurs au
+/// grand livre, **dans la règle** : compte mû seulement par les ventes,
+/// règlements clients et avoirs de factures validées, datés au plus tard à
+/// `as_of`. Quatre états vivants : sans règlement, réglée en partie, soldée,
+/// créditée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn aged_total_matches_receivable_ledger(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let alpha = mk_contact(&pool, &seeded, "Alpha SA").await;
+    let beta = mk_contact(&pool, &seeded, "Beta SA").await;
+
+    let _open = mk_validated(
+        &pool,
+        &seeded,
+        alpha,
+        Some(days_before(20)),
+        dec!(8.10),
+        dec!(500.00),
+    )
+    .await;
+    let partial = mk_validated(
+        &pool,
+        &seeded,
+        alpha,
+        Some(days_before(70)),
+        dec!(2.60),
+        dec!(333.33),
+    )
+    .await;
+    settle(
+        &pool,
+        &seeded,
+        partial.invoice.id,
+        dec!(100.00),
+        days_before(10),
+    )
+    .await;
+    let paid = mk_validated(
+        &pool,
+        &seeded,
+        beta,
+        Some(days_before(30)),
+        dec!(8.10),
+        dec!(200.00),
+    )
+    .await;
+    settle(
+        &pool,
+        &seeded,
+        paid.invoice.id,
+        dec!(216.20),
+        days_before(5),
+    )
+    .await;
+    let credited = mk_validated(
+        &pool,
+        &seeded,
+        beta,
+        Some(days_before(15)),
+        dec!(8.10),
+        dec!(50.00),
+    )
+    .await;
+    credit_notes::create_credit_note(
+        &pool,
+        NewCreditNote {
+            company_id: seeded.company_id,
+            invoice_id: credited.invoice.id,
+            date: days_before(2),
+        },
+        seeded.admin_user_id,
+    )
+    .await
+    .expect("avoir");
+
+    let r = generate(&pool, seeded.company_id, as_of()).await.unwrap();
+    let ledger = receivable_balance(&pool, &seeded).await;
+    // 540.50 + (341.996… arrondi par ligne : 333.33 + 8.67 = 342.00) − 100 = 782.50
+    assert_eq!(
+        ledger,
+        dec!(782.50),
+        "anti-vacuité : le grand livre porte les quatre états"
+    );
+    assert_eq!(r.totals.total, ledger, "balance âgée = compte débiteurs");
 }

@@ -140,6 +140,13 @@ export interface InvoiceListItemResponse {
 	totalAmount: string;
 	/** TTC canonique (#246). String décimale, jamais Number. */
 	totalTtc: string;
+	/**
+	 * Story 25-4-b1 (#416) — total réglé et **reste dû**. Toujours calculés dans
+	 * une liste (jamais `null`, à la différence de la fiche). Le reste dû peut
+	 * être négatif (trop-perçu hérité) : ne pas l'écrêter.
+	 */
+	amountSettled: string;
+	amountDue: string;
 	paidAt: string | null;
 	/** Story 21-6a (D10) — rappels suspendus. `null` = rappels actifs. */
 	dunningPausedAt: string | null;

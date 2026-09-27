@@ -217,8 +217,11 @@ pub enum SettlementCancelBlocker {
     /// production que de l'avoir (`credit_notes.rs`).
     ///
     /// ⚠️ **État hérité depuis la Story 25-4-a (#456)** : un avoir est refusé
-    /// sur une facture réglée, même en partie. L'état n'est plus atteignable
-    /// que par l'**import d'une sauvegarde antérieure** — d'où ce motif, gardé.
+    /// sur une facture réglée, même en partie. L'état n'est plus produit par
+    /// l'application, mais des **données antérieures à la 0.12.1** peuvent le
+    /// porter — la 0.12.0 publiée acceptait cet avoir —, qu'elles soient
+    /// **restaurées** d'une sauvegarde ou **mises à jour sur place**. D'où ce
+    /// motif, gardé.
     InvoiceCredited,
     /// Tête **fournisseur** (Story 25-3-a-2) : la facture n'est pas `paid` — il
     /// n'y a pas de règlement à annuler. ⚠️ Coupe court par construction : une

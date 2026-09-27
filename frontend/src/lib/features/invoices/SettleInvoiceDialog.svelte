@@ -13,6 +13,7 @@
   le parent gère l'appel API et ses erreurs.
 -->
 <script lang="ts">
+	import Big from 'big.js';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -69,7 +70,9 @@
 	$effect(() => {
 		if (open) {
 			settledOn = todayIso();
-			amount = amountDue ?? '';
+			// Story 25-4-b1 : le reste dû arrive à l'échelle du calcul SQL
+			// (« 68.1000 ») ; le champ montre des centimes.
+			amount = amountDue !== null ? new Big(amountDue).toFixed(2) : '';
 			settlementType = 'bank_transfer';
 			bankAccountId = bankAccounts.find((b) => b.isPrimary)?.id ?? bankAccounts[0]?.id ?? null;
 			accountId = null;

@@ -1,16 +1,26 @@
 //! Balance âgée des créances clients (Story 21-7, #231, §E items 23/25).
 //!
-//! Répartit l'encours débiteur **TTC** (postes ouverts = factures validées non
-//! payées) par contact et par tranche d'ancienneté relative à une date de
+//! Répartit l'encours débiteur — le **reste dû** de chaque facture validée non
+//! soldée, après règlements partiels et avoirs (Story 25-4-b1, #416) — par contact et par tranche d'ancienneté relative à une date de
 //! référence `as_of` :
 //!
 //! `Non échu | 1-30 | 31-60 | 61-90 | 90+` jours de retard (`days = as_of − due_date`).
 //!
 //! Invariants :
-//! - **TTC dérivé** via `INVOICE_TTC_DERIVED_JOIN_SQL` (#246, 21-2) — jamais
-//!   `total_amount` (qui est le HT). L'arrondi TVA est fait PAR LIGNE dans la
-//!   table dérivée (DC7), asservi au helper Rust `invoice_total_ttc` par un test
-//!   de parité (`tests/aged_receivables.rs`).
+//! - **Reste dû dérivé** (`INVOICE_AMOUNT_DUE_DERIVED_SQL` sur
+//!   `amount_due_derived_joins`, Story 25-4-b1) : TTC − avoir émis − Σ
+//!   règlements, jamais le TTC seul ni `total_amount` (le HT). Le TTC y est
+//!   arrondi PAR LIGNE (DC7), asservi au helper Rust `invoice_total_ttc`
+//!   (`tests/aged_receivables.rs`) ; le reste dû joint, à `amount_due`
+//!   (`kesh-db/tests/invoice_amount_due_parity.rs`).
+//! - ⛔ **Concordance avec le grand livre** — le total égale le solde du compte
+//!   débiteurs **si et seulement si** ce compte n'est mouvementé que par les
+//!   écritures de vente, de règlement client et d'avoir de factures validées
+//!   (contre-passations comprises), datées au plus tard à `as_of`, sans que le
+//!   compte débiteurs ait changé dans les réglages. Tout autre mouvement — solde
+//!   d'ouverture, écriture au journal, rapprochement hors facture, compensation
+//!   fournisseur, données antérieures à la 0.12.1 — l'en écarte, et la balance
+//!   âgée ne le montre pas (règle, non liste : `tests/aged_receivables.rs`).
 //! - **Factures suspendues INCLUSES** (D10) : le prédicat postes ouverts
 //!   n'exclut PAS `dunning_paused_at` — une facture suspendue reste dans la
 //!   balance âgée (elle ne sort que de la liste « à rappeler »).
@@ -18,7 +28,9 @@
 //! - Totaux généraux **sommés en Rust** (patron `balance_sheet`), pas en SQL.
 
 use chrono::NaiveDate;
-use kesh_db::repositories::invoices::INVOICE_TTC_DERIVED_JOIN_SQL;
+use kesh_db::repositories::invoice_settlements::{
+    INVOICE_AMOUNT_DUE_DERIVED_SQL, amount_due_derived_joins,
+};
 use rust_decimal::Decimal;
 use serde::Serialize;
 use sqlx::MySqlPool;
@@ -95,8 +107,9 @@ struct AgedRowSql {
 ///
 /// Une seule requête agrégée groupée par contact. Buckets calculés via
 /// `DATEDIFF(as_of, due_date)` ; `due_date IS NULL` → « Non échu ». Montants =
-/// TTC dérivé (`INVOICE_TTC_DERIVED_JOIN_SQL`, alias `lt`). Scoping multi-tenant
-/// obligatoire (`i.company_id = ?`).
+/// **reste dû** dérivé (Story 25-4-b1) ; ⚠️ il ne filtre pas les règlements
+/// par date : `as_of` borne les tranches, pas les pièces — la route le fixe à
+/// aujourd'hui. Scoping multi-tenant obligatoire (`i.company_id = ?`).
 pub async fn generate(
     pool: &MySqlPool,
     company_id: i64,
@@ -106,28 +119,36 @@ pub async fn generate(
     //   Non échu : due_date NULL OU DATEDIFF <= 0 (échéance >= as_of)
     //   1-30 / 31-60 / 61-90 : DATEDIFF dans [lo, hi]
     //   90+ : DATEDIFF >= 91 (strictement plus de 90 jours — pas de recouvrement)
-    // Le TTC par facture vient de la table dérivée `lt`. HAVING total <> 0
-    // écarte une facture legacy sans lignes (TTC 0) qui polluerait la liste.
+    // HAVING total <> 0 écarte une facture legacy sans lignes (reste dû 0)
+    // qui polluerait la liste. ⚠️ Un reste dû NÉGATIF (trop-perçu hérité)
+    // n'est pas écrêté : il apparaît.
+    // ⛔ Story 25-4-b1 (#416) : chaque tranche somme le RESTE DÛ, jamais le
+    // TTC — une facture de 1 000.— réglée à 900.— pèse 100.—. Les tranches
+    // restent assises sur `due_date` : un règlement partiel ne rajeunit pas la
+    // créance restante. Forme JOINTE (`amount_due_derived_joins`) : la forme
+    // scalaire serait réévaluée par ligne et par CASE.
+    let due = INVOICE_AMOUNT_DUE_DERIVED_SQL;
     let sql = format!(
         "SELECT c.id AS contact_id, c.name AS contact_name, \
             COALESCE(SUM(CASE WHEN i.due_date IS NULL OR DATEDIFF(?, i.due_date) <= 0 \
-                THEN COALESCE(lt.ttc, 0) ELSE 0 END), CAST(0 AS DECIMAL(19,4))) AS not_due, \
+                THEN {due} ELSE 0 END), CAST(0 AS DECIMAL(19,4))) AS not_due, \
             COALESCE(SUM(CASE WHEN DATEDIFF(?, i.due_date) BETWEEN 1 AND 30 \
-                THEN COALESCE(lt.ttc, 0) ELSE 0 END), CAST(0 AS DECIMAL(19,4))) AS d1_30, \
+                THEN {due} ELSE 0 END), CAST(0 AS DECIMAL(19,4))) AS d1_30, \
             COALESCE(SUM(CASE WHEN DATEDIFF(?, i.due_date) BETWEEN 31 AND 60 \
-                THEN COALESCE(lt.ttc, 0) ELSE 0 END), CAST(0 AS DECIMAL(19,4))) AS d31_60, \
+                THEN {due} ELSE 0 END), CAST(0 AS DECIMAL(19,4))) AS d31_60, \
             COALESCE(SUM(CASE WHEN DATEDIFF(?, i.due_date) BETWEEN 61 AND 90 \
-                THEN COALESCE(lt.ttc, 0) ELSE 0 END), CAST(0 AS DECIMAL(19,4))) AS d61_90, \
+                THEN {due} ELSE 0 END), CAST(0 AS DECIMAL(19,4))) AS d61_90, \
             COALESCE(SUM(CASE WHEN DATEDIFF(?, i.due_date) >= 91 \
-                THEN COALESCE(lt.ttc, 0) ELSE 0 END), CAST(0 AS DECIMAL(19,4))) AS d90p, \
-            COALESCE(SUM(COALESCE(lt.ttc, 0)), CAST(0 AS DECIMAL(19,4))) AS total \
+                THEN {due} ELSE 0 END), CAST(0 AS DECIMAL(19,4))) AS d90p, \
+            COALESCE(SUM({due}), CAST(0 AS DECIMAL(19,4))) AS total \
          FROM invoices i \
          INNER JOIN contacts c ON c.id = i.contact_id \
-         {INVOICE_TTC_DERIVED_JOIN_SQL} \
+         {joins} \
          WHERE i.company_id = ? AND i.status = 'validated' AND i.paid_at IS NULL \
          GROUP BY c.id, c.name \
          HAVING total <> 0 \
-         ORDER BY c.name, c.id"
+         ORDER BY c.name, c.id",
+        joins = amount_due_derived_joins()
     );
 
     let sql_rows = sqlx::query_as::<_, AgedRowSql>(&sql)
