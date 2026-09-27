@@ -11,7 +11,13 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { seedTestState, clearAuthStorage, fetchSentEmails } from './helpers/test-state';
+import {
+	seedTestState,
+	clearAuthStorage,
+	fetchSentEmails,
+	authedApiContext,
+	disposeContextSafe,
+} from './helpers/test-state';
 import {
 	createContactWithAddressViaApi,
 	ensurePrimaryBankAccountViaApi,
@@ -68,6 +74,51 @@ test.describe('Page Rappels (Story 21-6b)', () => {
 		const sent = (await fetchSentEmails(page)).at(-1)!;
 		expect(sent.to).toBe('debiteur@example.ch');
 		expect(String(sent.attachmentFilename)).toMatch(/\.pdf$/);
+	});
+
+	// Story 25-4-b2 (#416, AC 10) — une facture RÉGLÉE EN PARTIE : l'aperçu du
+	// rappel réclame le reste dû, pas le TTC. 4.5 × 200.— à 8.1 % = 972.90 ;
+	// réglée de 400.— → reste 572.90, montant qui n'existait nulle part avant la
+	// story (le texte réclamait 972.90 + frais). Seule la frontière HTTP réelle
+	// dit que la grandeur traverse jusqu'à l'écran.
+	test('facture réglée en partie : l’aperçu réclame le reste dû', async ({ page }) => {
+		await login(page);
+		await ensurePrimaryBankAccountViaApi(page);
+		const name = uniq('Partiel SA');
+		const contact = await createContactWithAddressViaApi(page, name, 'partiel@example.ch', 'Madame');
+		const invoiceId = await createAndValidateInvoiceViaApi(page, contact, overdueDate());
+		const ctx = await authedApiContext(page);
+		try {
+			const accounts = await ctx.get('/api/v1/accounts?includeArchived=false');
+			expect(accounts.ok(), `comptes: ${accounts.status()}`).toBeTruthy();
+			const cash = (
+				(await accounts.json()) as {
+					id: number;
+					number: string;
+					accountType: string;
+					active: boolean;
+					postable: boolean;
+				}[]
+			).find((a) => a.active && a.postable && a.accountType === 'Asset' && a.number.startsWith('10'));
+			expect(cash, 'un compte de liquidités imputable').toBeTruthy();
+			const settled = await ctx.post(`/api/v1/invoices/${invoiceId}/settlements`, {
+				data: {
+					settlementType: 'internal_account',
+					accountId: cash!.id,
+					amount: '400.00',
+					settledOn: new Date().toISOString().slice(0, 10),
+				},
+			});
+			expect(settled.ok(), `règlement: ${settled.status()}`).toBeTruthy();
+		} finally {
+			await disposeContextSafe(ctx);
+		}
+
+		await page.goto('/invoices/reminders');
+		const group = page.locator('div.rounded', { hasText: name });
+		await group.getByTestId('reminder-row').first().getByTestId('reminder-send-open').click();
+		await expect(page.getByTestId('reminder-send-confirm')).toBeEnabled();
+		await expect(page.getByRole('dialog').locator('textarea')).toHaveValue(/572\.90/);
 	});
 
 	test('contact sans e-mail : badge + case désactivée + envoi absent, manuel possible', async ({

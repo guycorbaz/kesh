@@ -68,6 +68,10 @@ fn invoice_send_default(language: Language) -> (&'static str, &'static str) {
 /// (courtois → ferme → mise en demeure avant poursuite) ; le bras `_` (niveau 0
 /// générique ou ≥ 4) est un rappel neutre-ferme. N'utilise que des tokens déclarés
 /// dans `allowed_variables(InvoiceReminder)` (`reminderLevel` volontairement non utilisé).
+///
+/// ⛔ Story 25-4-b2 (#416) : aucune phrase de frais n'est écrite en dur — les
+/// frais passent par `{feeNotice}`, vide quand ils sont nuls. `{totalDue}` est le
+/// **reste dû** plus les frais cumulés ; `{amount}` reste le TTC de la facture.
 fn reminder_default(language: Language, level_number: i16) -> (&'static str, &'static str) {
     match (language, level_number) {
         // ---- Français ----
@@ -76,7 +80,7 @@ fn reminder_default(language: Language, level_number: i16) -> (&'static str, &'s
             "{salutation},\n\n\
              Sauf erreur de notre part, la facture {invoiceNumber} d'un montant de {amount}, \
              échue le {dueDate}, demeure impayée à ce jour ({daysOverdue} jours de retard).\n\n\
-             Nous vous remercions de bien vouloir régler le montant dû de {totalDue} dans les meilleurs délais.\n\n\
+             Nous vous remercions de bien vouloir régler le montant dû de {totalDue} dans les meilleurs délais.{feeNotice}\n\n\
              Avec nos meilleures salutations,\n{companyName}",
         ),
         (Language::Fr, 2) => (
@@ -84,7 +88,7 @@ fn reminder_default(language: Language, level_number: i16) -> (&'static str, &'s
             "{salutation},\n\n\
              Malgré notre premier rappel, la facture {invoiceNumber} de {amount}, échue le {dueDate}, \
              reste impayée ({daysOverdue} jours de retard).\n\n\
-             Des frais de rappel de {reminderFee} ont été ajoutés ; le montant total dû s'élève désormais à {totalDue}. \
+             Le montant dû s'élève à {totalDue}.{feeNotice} \
              Nous vous invitons à le régler sous huitaine.\n\n\
              Avec nos salutations,\n{companyName}",
         ),
@@ -93,8 +97,8 @@ fn reminder_default(language: Language, level_number: i16) -> (&'static str, &'s
             "{salutation},\n\n\
              La facture {invoiceNumber} de {amount}, échue le {dueDate}, demeure impayée malgré nos rappels \
              ({daysOverdue} jours de retard).\n\n\
-             Nous vous mettons en demeure de régler le montant total dû de {totalDue} \
-             (frais de rappel de {reminderFee} inclus) sans délai. À défaut de paiement, \
+             Nous vous mettons en demeure de régler le montant dû de {totalDue} sans délai.{feeNotice} \
+             À défaut de paiement, \
              nous engagerons une procédure de recouvrement sans autre avis.\n\n\
              {companyName}",
         ),
@@ -103,7 +107,7 @@ fn reminder_default(language: Language, level_number: i16) -> (&'static str, &'s
             "{salutation},\n\n\
              La facture {invoiceNumber} d'un montant de {amount}, échue le {dueDate}, \
              reste impayée ({daysOverdue} jours de retard).\n\n\
-             Nous vous prions de régler le montant total dû de {totalDue} dans les meilleurs délais.\n\n\
+             Nous vous prions de régler le montant dû de {totalDue} dans les meilleurs délais.{feeNotice}\n\n\
              Avec nos meilleures salutations,\n{companyName}",
         ),
         // ---- Deutsch ----
@@ -112,7 +116,7 @@ fn reminder_default(language: Language, level_number: i16) -> (&'static str, &'s
             "{salutation}\n\n\
              Sofern sich unsere Angaben mit den Ihren decken, ist die Rechnung {invoiceNumber} über {amount}, \
              fällig am {dueDate}, bis heute unbeglichen ({daysOverdue} Tage überfällig).\n\n\
-             Wir bitten Sie, den offenen Betrag von {totalDue} baldmöglichst zu begleichen.\n\n\
+             Wir bitten Sie, den offenen Betrag von {totalDue} baldmöglichst zu begleichen.{feeNotice}\n\n\
              Freundliche Grüsse\n{companyName}",
         ),
         (Language::De, 2) => (
@@ -120,7 +124,7 @@ fn reminder_default(language: Language, level_number: i16) -> (&'static str, &'s
             "{salutation}\n\n\
              Trotz unserer ersten Erinnerung ist die Rechnung {invoiceNumber} über {amount}, \
              fällig am {dueDate}, weiterhin offen ({daysOverdue} Tage überfällig).\n\n\
-             Wir haben Mahngebühren von {reminderFee} erhoben; der Gesamtbetrag beläuft sich nun auf {totalDue}. \
+             Der offene Betrag beläuft sich auf {totalDue}.{feeNotice} \
              Wir bitten um Begleichung innert acht Tagen.\n\n\
              Freundliche Grüsse\n{companyName}",
         ),
@@ -129,8 +133,8 @@ fn reminder_default(language: Language, level_number: i16) -> (&'static str, &'s
             "{salutation}\n\n\
              Die Rechnung {invoiceNumber} über {amount}, fällig am {dueDate}, ist trotz mehrfacher Mahnung \
              unbeglichen ({daysOverdue} Tage überfällig).\n\n\
-             Wir fordern Sie letztmals auf, den Gesamtbetrag von {totalDue} (inkl. Mahngebühren von {reminderFee}) \
-             unverzüglich zu begleichen. Andernfalls leiten wir ohne weitere Ankündigung die Betreibung ein.\n\n\
+             Wir fordern Sie letztmals auf, den offenen Betrag von {totalDue} \
+             unverzüglich zu begleichen.{feeNotice} Andernfalls leiten wir ohne weitere Ankündigung die Betreibung ein.\n\n\
              {companyName}",
         ),
         (Language::De, _) => (
@@ -138,7 +142,7 @@ fn reminder_default(language: Language, level_number: i16) -> (&'static str, &'s
             "{salutation}\n\n\
              Die Rechnung {invoiceNumber} über {amount}, fällig am {dueDate}, ist offen \
              ({daysOverdue} Tage überfällig).\n\n\
-             Wir bitten Sie, den Gesamtbetrag von {totalDue} baldmöglichst zu begleichen.\n\n\
+             Wir bitten Sie, den offenen Betrag von {totalDue} baldmöglichst zu begleichen.{feeNotice}\n\n\
              Freundliche Grüsse\n{companyName}",
         ),
         // ---- Italiano ----
@@ -147,7 +151,7 @@ fn reminder_default(language: Language, level_number: i16) -> (&'static str, &'s
             "{salutation},\n\n\
              Salvo errore da parte nostra, la fattura {invoiceNumber} di {amount}, scaduta il {dueDate}, \
              risulta ancora non saldata ({daysOverdue} giorni di ritardo).\n\n\
-             La preghiamo di saldare l'importo dovuto di {totalDue} al più presto.\n\n\
+             La preghiamo di saldare l'importo dovuto di {totalDue} al più presto.{feeNotice}\n\n\
              Distinti saluti,\n{companyName}",
         ),
         (Language::It, 2) => (
@@ -155,7 +159,7 @@ fn reminder_default(language: Language, level_number: i16) -> (&'static str, &'s
             "{salutation},\n\n\
              Nonostante il nostro primo sollecito, la fattura {invoiceNumber} di {amount}, scaduta il {dueDate}, \
              risulta ancora non saldata ({daysOverdue} giorni di ritardo).\n\n\
-             Sono state applicate spese di sollecito di {reminderFee}; l'importo totale dovuto ammonta ora a {totalDue}. \
+             L'importo dovuto ammonta a {totalDue}.{feeNotice} \
              La invitiamo a saldarlo entro otto giorni.\n\n\
              Distinti saluti,\n{companyName}",
         ),
@@ -164,8 +168,8 @@ fn reminder_default(language: Language, level_number: i16) -> (&'static str, &'s
             "{salutation},\n\n\
              La fattura {invoiceNumber} di {amount}, scaduta il {dueDate}, risulta non saldata nonostante i nostri solleciti \
              ({daysOverdue} giorni di ritardo).\n\n\
-             La diffidiamo a saldare l'importo totale dovuto di {totalDue} (spese di sollecito di {reminderFee} incluse) \
-             senza indugio. In mancanza di pagamento, avvieremo una procedura esecutiva senza ulteriore avviso.\n\n\
+             La diffidiamo a saldare l'importo dovuto di {totalDue} \
+             senza indugio.{feeNotice} In mancanza di pagamento, avvieremo una procedura esecutiva senza ulteriore avviso.\n\n\
              {companyName}",
         ),
         (Language::It, _) => (
@@ -173,7 +177,7 @@ fn reminder_default(language: Language, level_number: i16) -> (&'static str, &'s
             "{salutation},\n\n\
              La fattura {invoiceNumber} di {amount}, scaduta il {dueDate}, risulta non saldata \
              ({daysOverdue} giorni di ritardo).\n\n\
-             La preghiamo di saldare l'importo totale dovuto di {totalDue} al più presto.\n\n\
+             La preghiamo di saldare l'importo dovuto di {totalDue} al più presto.{feeNotice}\n\n\
              Distinti saluti,\n{companyName}",
         ),
         // ---- English ----
@@ -182,7 +186,7 @@ fn reminder_default(language: Language, level_number: i16) -> (&'static str, &'s
             "{salutation},\n\n\
              Unless our records are mistaken, invoice {invoiceNumber} for {amount}, due on {dueDate}, \
              remains unpaid ({daysOverdue} days overdue).\n\n\
-             We kindly ask you to settle the amount due of {totalDue} at your earliest convenience.\n\n\
+             We kindly ask you to settle the amount due of {totalDue} at your earliest convenience.{feeNotice}\n\n\
              Kind regards,\n{companyName}",
         ),
         (Language::En, 2) => (
@@ -190,7 +194,7 @@ fn reminder_default(language: Language, level_number: i16) -> (&'static str, &'s
             "{salutation},\n\n\
              Despite our first reminder, invoice {invoiceNumber} for {amount}, due on {dueDate}, \
              remains unpaid ({daysOverdue} days overdue).\n\n\
-             A reminder fee of {reminderFee} has been added; the total amount due is now {totalDue}. \
+             The amount due is {totalDue}.{feeNotice} \
              Please settle it within eight days.\n\n\
              Kind regards,\n{companyName}",
         ),
@@ -199,8 +203,8 @@ fn reminder_default(language: Language, level_number: i16) -> (&'static str, &'s
             "{salutation},\n\n\
              Invoice {invoiceNumber} for {amount}, due on {dueDate}, remains unpaid despite our reminders \
              ({daysOverdue} days overdue).\n\n\
-             We formally request payment of the total amount due of {totalDue} (including a reminder fee of {reminderFee}) \
-             without delay. Failing payment, we will initiate debt-collection proceedings without further notice.\n\n\
+             We formally request payment of the amount due of {totalDue} \
+             without delay.{feeNotice} Failing payment, we will initiate debt-collection proceedings without further notice.\n\n\
              {companyName}",
         ),
         (Language::En, _) => (
@@ -208,7 +212,7 @@ fn reminder_default(language: Language, level_number: i16) -> (&'static str, &'s
             "{salutation},\n\n\
              Invoice {invoiceNumber} for {amount}, due on {dueDate}, remains unpaid \
              ({daysOverdue} days overdue).\n\n\
-             Please settle the total amount due of {totalDue} at your earliest convenience.\n\n\
+             Please settle the amount due of {totalDue} at your earliest convenience.{feeNotice}\n\n\
              Kind regards,\n{companyName}",
         ),
     }
@@ -242,6 +246,38 @@ mod tests {
                         );
                     }
                 }
+            }
+        }
+    }
+    /// Story 25-4-b2 (AC 3) — à frais nuls (`{feeNotice}` vide), aucun rappel par
+    /// défaut ne parle de frais, dans aucune langue ni à aucun niveau. Avant la
+    /// story, les niveaux 2 et 3 écrivaient « frais de rappel de {reminderFee} »
+    /// en dur — soit « frais de 0.00 » sans frais configurés.
+    #[test]
+    fn reminder_defaults_say_nothing_of_fees_when_there_are_none() {
+        let mut vars = std::collections::HashMap::new();
+        for name in EmailTemplateType::InvoiceReminder.allowed_variables() {
+            vars.insert(name.to_string(), "X".to_string());
+        }
+        vars.insert("feeNotice".to_string(), String::new());
+        for language in [Language::Fr, Language::De, Language::It, Language::En] {
+            for level in 0..=4 {
+                let (subject, body) =
+                    default_template(EmailTemplateType::InvoiceReminder, language, level);
+                let text =
+                    kesh_core::email_template_engine::render(&format!("{subject} {body}"), &vars)
+                        .to_lowercase();
+                for word in ["frais", "gebühr", "spese", "fee"] {
+                    assert!(
+                        !text.contains(word),
+                        "{language:?}/niv{level} parle de frais sans frais : « {word} »"
+                    );
+                }
+                // Anti-vacuité : le gabarit porte bien la variable.
+                assert!(
+                    format!("{subject} {body}").contains("{feeNotice}"),
+                    "{language:?}/niv{level} n'emploie pas {{feeNotice}}"
+                );
             }
         }
     }

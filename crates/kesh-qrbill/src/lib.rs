@@ -18,11 +18,11 @@ pub mod validation;
 pub use generator::build_payload;
 pub use parser::{ScannedAddress, ScannedQrBill, ScannedReference, parse_spc_payload};
 pub use pdf::{
-    generate_credit_note_pdf, generate_credit_note_pdf_with_date, generate_qr_bill_pdf,
-    generate_qr_bill_pdf_with_date,
+    REMINDER_NOTE_MAX_CHARS, generate_credit_note_pdf, generate_credit_note_pdf_with_date,
+    generate_qr_bill_pdf, generate_qr_bill_pdf_with_date,
 };
 pub use types::{
     Address, AddressType, Currency, InvoiceLinePdf, InvoicePdfData, InvoiceVatLinePdf, QrBillData,
-    QrBillError, QrBillI18n, Reference,
+    QrBillError, QrBillI18n, Reference, ReminderPdf,
 };
 pub use validation::validate;

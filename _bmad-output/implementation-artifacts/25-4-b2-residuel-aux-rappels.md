@@ -1,6 +1,6 @@
 # Story 25.4-b2 : Le résiduel aux rappels — le rappel réclame le reste dû
 
-Status: ready-for-dev
+Status: review
 
 **Issue : [#416]** — cette story en livre la partie **rappels** ; la partie agrégats est la 25-4-b1
 (PR #475). ⛔ **La PR de b2 porte `closes #416`**, titre ET corps (§ *Issue Tracking Rule*).
@@ -202,18 +202,18 @@ quel à une facture partiellement réglée (**[#477]**). PDF régénérés et co
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — texte** (AC 1-4) : `render_reminder`, `{feeNotice}` (liste blanche, phrase Rust par `Language` ×4,
+- [x] **T1 — texte** (AC 1-4) : `render_reminder`, `{feeNotice}` (liste blanche, phrase Rust par `Language` ×4,
   rendu serveur), gabarits par défaut ×4 langues × niveaux.
-- [ ] **T2 — PDF de rappel** (AC 5-8) : variante de `render` (paramètre explicite, pas de booléen
+- [x] **T2 — PDF de rappel** (AC 5-8) : variante de `render` (paramètre explicite, pas de booléen
   muet, qui **porte les montants déjà calculés** — la construction des entrées QR reste testable sans
   base), champs optionnels dans `InvoicePdfData` sur le patron d'`origin_reference`, bloc sous le
   total dans `pdf.rs`, clés `I18N_KEYS`/`DEFAULT_EN` ajoutées **en fin** des deux tableaux, les deux
   appelants de rappel branchés.
-- [ ] **T3 — refus du reste nul** (AC 9) : variant `AppError`, clé `error-*` ×4, `render_reminder`
+- [x] **T3 — refus du reste nul** (AC 9) : variant `AppError`, clé `error-*` ×4, `render_reminder`
   et variante PDF, **deux** sites classés en lot, libellé du compte-rendu ×4.
-- [ ] **T4 — tests et mutations** (AC 10).
-- [ ] **T5 — textes** (AC 11).
-- [ ] **T6 — gates** : backend complet (base remise à zéro), frontend complet, **E2E complet**.
+- [x] **T4 — tests et mutations** (AC 10).
+- [x] **T5 — textes** (AC 11).
+- [x] **T6 — gates** : backend complet (base remise à zéro), frontend complet, **E2E complet**.
 
 ## Dev Notes
 
@@ -274,14 +274,88 @@ quel à une facture partiellement réglée (**[#477]**). PDF régénérés et co
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`).
+
 ### Debug Log References
+
+- Clippy `too_many_arguments` sur `build_qrbill_inputs` (8 arguments avec `PdfDocument`) : `allow`
+  explicite, comme `build_reminder_vars`.
+- Débordement LaTeX de 6 pt sur le paragraphe des variables (`user-manual.tex`) : `sloppypar`. Celui de
+  `admin-manual.tex:1163` (60 pt) est **préexistant** — premier élément de la liste, non touché.
+- Le signe moins typographique (U+2212) devant « déjà réglé » n'existe pas dans l'encodage WinAnsi des
+  polices intégrées : tiret ASCII.
 
 ### Completion Notes List
 
+- **Deux écarts de mise en œuvre, qui servent l'intention mieux que la lettre** :
+  - **Le titre « Rappel » ne passe pas par une surcharge de `i18n.entries`** (patron de l'avoir) mais
+    par un champ `reminder: Option<ReminderPdf>` d'`InvoicePdfData` : `draw_invoice_section` choisit
+    `invoice-pdf-reminder-title`, résolu par `build_i18n` dans la locale **passée à `render_document`**
+    (celle du contact). Le piège de locale de l'AC 5 disparaît **par construction**.
+  - **Les montants se calculent une fois** : `render_reminder` rend `(sujet, corps, ReminderAmounts)`,
+    et le lot passe **ces mêmes montants** au PDF — le texte et la QR ne peuvent pas diverger, même si
+    un règlement arrive entre les deux. Le variant reste classé dans `classify_render_error` (AC 9,
+    second site), en défense : `build_qrbill_inputs` refait `reminder_amount_due` sur les montants reçus.
+- **Où vit le refus** : `reminder_amount_due` (arrondi `MidpointAwayFromZero`, puis refus ≤ 0.00) —
+  appelé par `reminder_amounts` (aperçu, lot, et unitaire **avant le SMTP**) et par
+  `build_qrbill_inputs`. `AppError::ReminderNothingDue` (422, `REMINDER_NOTHING_DUE`).
+- **`{feeNotice}`** : Rust indexé par `Language` (patron `salutation_line`), précédé d'une espace,
+  vide à frais cumulés nuls ; les 16 bras des gabarits par défaut l'emploient, plus aucune phrase de
+  frais en dur. `{totalDue}` passe de « montant total dû » à « montant dû ».
+- **Mutation exécutée** : retirer la hauteur du bloc de `recap_reserve` fait rougir
+  `reminder_block_is_reserved_in_the_capacity_guard` (« la réserve ne sert à rien ») — tuée,
+  restaurée par `sed` (qui date le fichier du présent, cf. l'incident de mutation de la b1). Les
+  autres tests échoueraient **par construction** sur le code d'avant (montants 128.10 / 972.90,
+  `facture-…pdf`, `INVOICE_NOT_PDF_READY`) ; non mutés un à un.
+- **Tests ajoutés**, recomptés (`#[test]`/`#[sqlx::test]`/`it(` ajoutés dans le diff) : `kesh-db` 1,
+  `kesh-qrbill` 4, `kesh-api` 5 unitaires (dont `reminder_vars_ajoute_les_4_variables_rappel`
+  **renommé** et étendu, non compté) + 3 d'intégration, `kesh-i18n` 1 — **14** backend ; frontend 1
+  Vitest ; Playwright 1 test ajouté (`reminders.spec.ts`), 1 assertion changée
+  (`dunning-roundtrip.spec.ts`).
+- **Sept clés i18n × 4 locales** : cinq `invoice-pdf-*`, `error-reminder-nothing-due`,
+  `reminders-error-nothing-due` ; `dunning-cgv-hint` ×4 et son repli Svelte rectifiés.
+
+### Gates
+
+- Backend : base remise à zéro, `scripts/test-fast.sh` **2508 / 2508** (2494 + 14).
+- Frontend : `check` 0 erreur (27 avertissements, préexistants), `lint-i18n-ownership` PASS,
+  `test:unit` **835 / 835** (834 + 1), build OK.
+- E2E : ciblé `reminders.spec.ts` + `dunning-roundtrip.spec.ts` **10 / 10**. Complet, deux runs sur
+  `kesh_e2e` reconstruite :
+  - run 1 : **214 / 20 / 19** — les 7 KF-029, `product-revenue-account:133` (pollution répertoriée) et
+    **12 hors liste**, tous `page.fill('#username')` sur un `/login` en « Erreur 500 » : **12 / 12 verts
+    rejoués seuls**. Second passage du symptôme vu en b1 ⇒ **KF-053 ouverte ([#478])**, ajoutée à
+    `docs/testing.md` § « Les échecs attendus » ;
+  - run 2 : **224 / 10 / 19** — les 7 KF-029, `sidebar-navigation:75` (**KF-046, #424** : rouge rejoué
+    seul, déterministe), `bank-accounts-crud:112` et `setup:75` (**verts rejoués seuls** : pollution).
+    Conforme à la baseline.
+
 ### File List
+
+| Fichier | Nature |
+|---|---|
+| `crates/kesh-qrbill/src/types.rs`, `lib.rs` | `ReminderPdf`, champ `reminder`, 5 clés `I18N_KEYS`/`DEFAULT_EN` |
+| `crates/kesh-qrbill/src/pdf.rs` | titre, bloc sous le total, réserve, `REMINDER_NOTE_MAX_CHARS`, 4 tests |
+| `crates/kesh-qrbill/tests/golden_test.rs` | `reminder: None` |
+| `crates/kesh-api/src/routes/invoice_pdf_service.rs` | `PdfDocument`, `ReminderAmounts`, `reminder_amount_due`, `reminder_amounts`, `render_document`, 3 tests |
+| `crates/kesh-api/src/routes/invoice_email.rs` | `fee_notice`, `render_reminder`, unitaire, lot, classement, pièce jointe `rappel-`, 2 tests |
+| `crates/kesh-api/src/routes/credit_notes.rs` | `reminder: None` |
+| `crates/kesh-api/src/errors.rs` | `ReminderNothingDue` |
+| `crates/kesh-api/tests/invoice_send_email_e2e.rs` | 3 tests d'intégration |
+| `crates/kesh-db/src/entities/email_template.rs` | `feeNotice` en liste blanche |
+| `crates/kesh-db/src/entities/email_template_defaults.rs` | 16 bras, 1 test |
+| `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`, `src/loader.rs` | 7 clés, `dunning-cgv-hint`, 1 test |
+| `frontend/src/lib/features/reminders/reminder-error-label.ts` / `.test.ts` | `REMINDER_NOTHING_DUE` |
+| `frontend/src/routes/(app)/settings/dunning/+page.svelte` | repli `dunning-cgv-hint` |
+| `frontend/tests/e2e/reminders.spec.ts`, `dunning-roundtrip.spec.ts` | reste dû ; `rappel-…pdf` |
+| `docs/manual/fr/user-manual.tex` / `.pdf`, `admin-manual.tex` / `.pdf` | ce que réclame un rappel, variables, QR, #401, #477 |
+| `CHANGELOG.md` | *Fixed* |
 
 ## Change Log
 
+- **2026-09-27** — **Dev** : T1-T5 faits (§ *Completion Notes*) ; deux écarts de mise en œuvre écrits
+  (titre par champ plutôt que par surcharge de locale ; montants calculés une fois et partagés).
+  Gates verts (§ *Gates*) ; **KF-053 (#478) ouverte** pour le symptôme E2E revenu. Story en `review`.
 - **2026-09-27** — **M5 arbitré** (Guy) : la sommation part hors de Kesh pour l'instant ; l'impression du
   PDF de rappel sort du périmètre, tracée par **#477** (ouverte) ; l'AC 11 ajoute la limite au manuel.
   Changement de texte seul, issu d'un arbitrage et non d'un finding : pas de passe supplémentaire.
@@ -341,3 +415,4 @@ quel à une facture partiellement réglée (**[#477]**). PDF régénérés et co
 [#476]: https://github.com/guycorbaz/kesh/issues/476
 [#401]: https://github.com/guycorbaz/kesh/issues/401
 [#477]: https://github.com/guycorbaz/kesh/issues/477
+[#478]: https://github.com/guycorbaz/kesh/issues/478

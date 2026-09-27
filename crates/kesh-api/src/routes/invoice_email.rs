@@ -205,10 +205,34 @@ pub(crate) fn days_overdue(due_date: Option<chrono::NaiveDate>, today: chrono::N
     due_date.map(|d| (today - d).num_days().max(0)).unwrap_or(0)
 }
 
+/// `{feeNotice}` (Story 25-4-b2, #416) : la phrase qui dit les frais **cumulés**
+/// compris dans `{totalDue}`, **précédée d'une espace** — elle se colle à la fin de
+/// la phrase du montant dans les gabarits par défaut. **Vide** quand il n'y a pas
+/// de frais : le moteur de gabarits n'a pas de condition, c'est la seule façon de
+/// ne rien afficher à zéro (arbitrage de Guy : « si 0, ne rien afficher »).
+///
+/// En Rust indexé par `Language`, comme [`salutation_line`] : le builder est pur
+/// et n'a pas le bundle Fluent.
+fn fee_notice(fees: &rust_decimal::Decimal, language: Language) -> String {
+    if *fees <= rust_decimal::Decimal::ZERO {
+        return String::new();
+    }
+    let amount = format_money(fees);
+    match language {
+        Language::Fr => format!(" Ce montant comprend des frais de rappel de {amount}."),
+        Language::De => format!(" Dieser Betrag enthält Mahngebühren von {amount}."),
+        Language::It => format!(" Questo importo comprende spese di sollecito di {amount}."),
+        Language::En => format!(" This amount includes reminder fees of {amount}."),
+    }
+}
+
 /// Variables de substitution pour un rappel débiteur (Story 21-5b) : les 6 variables
-/// de base de [`build_invoice_vars`] (`amount` = TTC facture) + les 4 spécifiques rappel.
-/// `total_due`/`reminder_fee`/`days_overdue`/`level_number` sont **pré-calculés** par
-/// l'appelant (le builder reste pur, sans accès DB).
+/// de base de [`build_invoice_vars`] (`amount` = TTC facture) + les 5 spécifiques rappel.
+/// `total_due`/`reminder_fee`/`fees_total`/`days_overdue`/`level_number` sont
+/// **pré-calculés** par l'appelant (le builder reste pur, sans accès DB).
+///
+/// ⛔ Story 25-4-b2 : `total_due` est le **reste dû** plus les frais cumulés, pas le
+/// TTC ; `{amount}` reste le TTC de la facture.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_reminder_vars(
     invoice: &kesh_db::entities::Invoice,
@@ -218,12 +242,14 @@ pub(crate) fn build_reminder_vars(
     language: Language,
     level_number: i16,
     reminder_fee: &rust_decimal::Decimal,
+    fees_total: &rust_decimal::Decimal,
     total_due: &rust_decimal::Decimal,
     days_overdue: i64,
 ) -> HashMap<String, String> {
     let mut vars = build_invoice_vars(invoice, lines, contact, company, language);
     vars.insert("reminderLevel".to_string(), level_number.to_string());
     vars.insert("reminderFee".to_string(), format_money(reminder_fee));
+    vars.insert("feeNotice".to_string(), fee_notice(fees_total, language));
     vars.insert("totalDue".to_string(), format_money(total_due));
     vars.insert("daysOverdue".to_string(), days_overdue.to_string());
     vars
@@ -307,9 +333,13 @@ fn next_reminder_level(
         .min()
 }
 
-/// Calcule `{totalDue}`, `{reminderFee}`, `{daysOverdue}` puis rend subject+body d'un
-/// rappel de niveau `level` pour la facture (helper partagé preview/preview-lot).
-/// `total_due` = TTC + Σ frais non-annulés dédupliqués (hors niveau courant) + frais du niveau.
+/// Calcule `{totalDue}`, `{reminderFee}`, `{feeNotice}`, `{daysOverdue}` puis rend
+/// subject+body d'un rappel de niveau `level` pour la facture (helper partagé
+/// aperçu / lot). Rend aussi les **montants** : le lot les passe au PDF, si bien
+/// que le texte et la QR ne peuvent pas diverger.
+///
+/// `total_due` = **reste dû** (arrondi au centime) + frais cumulés — Story 25-4-b2
+/// (#416) ; avant, le TTC. Reste ≤ 0 → `AppError::ReminderNothingDue`.
 #[allow(clippy::too_many_arguments)]
 async fn render_reminder(
     state: &AppState,
@@ -320,18 +350,16 @@ async fn render_reminder(
     language: Language,
     level_number: i16,
     level_fee: &rust_decimal::Decimal,
-) -> Result<(String, String), AppError> {
-    let ttc = kesh_core::accounting::vat::invoice_total_ttc(
-        lines.iter().map(|l| (l.line_total, l.vat_rate)),
-    );
-    let other_fees = invoice_reminders::sum_fees_deduped_excluding(
+) -> Result<(String, String, invoice_pdf_service::ReminderAmounts), AppError> {
+    let amounts = invoice_pdf_service::reminder_amounts(
         &state.pool,
         company.id,
         invoice.id,
         level_number,
+        *level_fee,
     )
     .await?;
-    let total_due = ttc + other_fees + *level_fee;
+    let total_due = amounts.amount_due + amounts.fees;
     let today = chrono::Utc::now().naive_utc().date();
     let days = days_overdue(invoice.due_date, today);
 
@@ -351,12 +379,13 @@ async fn render_reminder(
         language,
         level_number,
         level_fee,
+        &amounts.fees,
         &total_due,
         days,
     );
     let subject = kesh_core::email_template_engine::render(&template.subject, &vars);
     let body = kesh_core::email_template_engine::render(&template.body, &vars);
-    Ok((subject, body))
+    Ok((subject, body, amounts))
 }
 
 /// `GET /api/v1/invoices/{id}/reminder-preview?level=N` — Comptable+ (Story 21-5b).
@@ -382,7 +411,7 @@ pub async fn preview_reminder_email(
     let contact = load_active_contact(&state.pool, invoice.contact_id, company.id).await?;
     let language = resolve_language(&contact, &company);
 
-    let (subject, body) = render_reminder(
+    let (subject, body, _amounts) = render_reminder(
         &state,
         &company,
         &invoice,
@@ -496,8 +525,26 @@ pub async fn send_reminder(
     validate_text_len(&body, REMINDER_BODY_MAX, "corps")?;
     let language = resolve_language(&contact, &company);
     let locale = kesh_i18n::Locale::from(language.as_str());
-    let rendered =
-        invoice_pdf_service::render(&state.pool, &state.i18n, locale, &company, id).await?;
+    // Story 25-4-b2 (#416) : le texte vient de l'aperçu (déjà édité), mais le PDF
+    // est un RAPPEL dont la QR porte le reste dû — calculé ICI, avant le SMTP, ce
+    // qui refuse aussi un reste nul (`ReminderNothingDue`) avant tout envoi.
+    let amounts = invoice_pdf_service::reminder_amounts(
+        &state.pool,
+        company.id,
+        id,
+        req.level_number,
+        level.fee_amount,
+    )
+    .await?;
+    let rendered = invoice_pdf_service::render_document(
+        &state.pool,
+        &state.i18n,
+        locale,
+        &company,
+        id,
+        invoice_pdf_service::PdfDocument::Reminder(amounts),
+    )
+    .await?;
 
     let email = OutgoingEmail {
         to: to.clone(),
@@ -506,7 +553,7 @@ pub async fn send_reminder(
         from_display_name: Some(company.name.clone()),
         reply_to: company.email.clone(),
         attachment: Some(EmailAttachment {
-            filename: format!("facture-{}.pdf", rendered.filename_base),
+            filename: format!("rappel-{}.pdf", rendered.filename_base),
             content_type: "application/pdf".to_string(),
             bytes: rendered.bytes,
         }),
@@ -944,7 +991,21 @@ fn classify_render_error(e: AppError, invoice_id: i64) -> BatchItemError {
         AppError::InvoiceNotPdfReady(_)
         | AppError::InvoiceTooManyLinesForPdf(_)
         | AppError::InvoicePdfHeaderOverflow => BatchItemError::failed("INVOICE_NOT_PDF_READY"),
+        // Story 25-4-b2 (#416) — reste dû nul : un refus métier, pas une panne.
+        AppError::ReminderNothingDue => BatchItemError::failed("REMINDER_NOTHING_DUE"),
         other => BatchItemError::infra("render pdf", invoice_id, other),
+    }
+}
+
+/// Classe une erreur de [`render_reminder`] pour la boucle du lot (Story 25-4-b2,
+/// #416). Même règle que [`classify_render_error`] : le refus métier est énuméré,
+/// le bras final est réservé aux pannes. ⛔ Avant cette story, TOUTE erreur de
+/// `render_reminder` partait en `infra` — le refus du reste nul y serait ressorti
+/// en `DATABASE_ERROR`, avec une fausse alerte d'infrastructure.
+fn classify_reminder_render_error(e: AppError, invoice_id: i64) -> BatchItemError {
+    match e {
+        AppError::ReminderNothingDue => BatchItemError::failed("REMINDER_NOTHING_DUE"),
+        other => BatchItemError::infra("render reminder", invoice_id, other),
     }
 }
 
@@ -1111,11 +1172,11 @@ async fn send_one_batch_reminder(
         .ok_or_else(|| BatchItemError::failed("CONTACT_EMAIL_MISSING"))?;
     let language = resolve_language(&contact, company);
 
-    let (subject, body) = render_reminder(
+    let (subject, body, amounts) = render_reminder(
         state, company, &invoice, &lines, &contact, language, next_level, &level_fee,
     )
     .await
-    .map_err(|e| BatchItemError::infra("render reminder", invoice_id, e))?;
+    .map_err(|e| classify_reminder_render_error(e, invoice_id))?;
     if subject.trim().is_empty() || body.trim().is_empty() {
         return Err(BatchItemError::failed("REMINDER_CONTENT_EMPTY"));
     }
@@ -1137,10 +1198,18 @@ async fn send_one_batch_reminder(
     // toutes les écraser sur `INVOICE_NOT_PDF_READY` (AC 12 énumère les codes
     // séparément). Le bras final ne fourre PAS les pannes d'infra dans un code
     // métier (review Pass 2) : les causes métier sont énumérées explicitement.
-    let rendered =
-        invoice_pdf_service::render(&state.pool, &state.i18n, locale, company, invoice_id)
-            .await
-            .map_err(|e| classify_render_error(e, invoice_id))?;
+    // Story 25-4-b2 : le PDF reçoit les montants DU TEXTE — texte et QR ne
+    // peuvent pas diverger, même si un règlement arrive entre-temps.
+    let rendered = invoice_pdf_service::render_document(
+        &state.pool,
+        &state.i18n,
+        locale,
+        company,
+        invoice_id,
+        invoice_pdf_service::PdfDocument::Reminder(amounts),
+    )
+    .await
+    .map_err(|e| classify_render_error(e, invoice_id))?;
 
     // Rate-limit : consomme 1 slot par e-mail (le pré-check a garanti la capacité, mais un
     // envoi concurrent peut avoir consommé entre-temps → RATE_LIMITED per-facture).
@@ -1161,7 +1230,7 @@ async fn send_one_batch_reminder(
         from_display_name: Some(company.name.clone()),
         reply_to: company.email.clone(),
         attachment: Some(EmailAttachment {
-            filename: format!("facture-{}.pdf", rendered.filename_base),
+            filename: format!("rappel-{}.pdf", rendered.filename_base),
             content_type: "application/pdf".to_string(),
             bytes: rendered.bytes,
         }),
@@ -1491,7 +1560,7 @@ mod tests {
     }
 
     #[test]
-    fn reminder_vars_ajoute_les_4_variables_rappel() {
+    fn reminder_vars_ajoute_les_variables_rappel() {
         let invoice = sample_invoice(Some("F-2026-0042"), NaiveDate::from_ymd_opt(2026, 6, 30));
         let vars = build_reminder_vars(
             &invoice,
@@ -1501,10 +1570,13 @@ mod tests {
             Language::Fr,
             2,
             &Decimal::new(2000, 2),   // 20.00 (frais niveau 2)
+            &Decimal::new(2500, 2),   // 25.00 (frais cumulés)
             &Decimal::new(135456, 2), // 1354.56 (total dû)
             45,
         );
-        // 10 variables = les 6 base + 4 rappel (allowed_variables InvoiceReminder).
+        // 11 variables = les 6 base + 5 rappel (allowed_variables InvoiceReminder) —
+        // dont `feeNotice` (Story 25-4-b2) : la liste blanche et le builder vont
+        // ensemble, ce test les tient d'accord.
         let mut keys: Vec<&str> = vars.keys().map(String::as_str).collect();
         keys.sort_unstable();
         let mut expected = EmailTemplateType::InvoiceReminder
@@ -1517,6 +1589,41 @@ mod tests {
         assert_eq!(vars["totalDue"], "1\u{2019}354.56", "apostrophe U+2019");
         assert_eq!(vars["daysOverdue"], "45", "entier brut, pas format_money");
         assert_eq!(vars["amount"], "1\u{2019}334.56", "TTC facture inchangé");
+        assert_eq!(
+            vars["feeNotice"], " Ce montant comprend des frais de rappel de 25.00.",
+            "les frais CUMULÉS, pas ceux du seul niveau"
+        );
+    }
+
+    /// Story 25-4-b2 (AC 2, 3) — `{feeNotice}` est VIDE sans frais, dans les 4
+    /// langues, et dit le montant sinon : « à zéro, rien ne s'affiche ».
+    #[test]
+    fn fee_notice_est_vide_sans_frais() {
+        for language in [Language::Fr, Language::De, Language::It, Language::En] {
+            assert_eq!(fee_notice(&Decimal::ZERO, language), "", "{language:?}");
+            let notice = fee_notice(&Decimal::new(2000, 2), language);
+            assert!(
+                notice.starts_with(' '),
+                "{language:?} : colle à la phrase précédente"
+            );
+            assert!(notice.contains("20.00"), "{language:?} : {notice}");
+        }
+    }
+
+    /// Story 25-4-b2 (AC 9) — ⛔ en lot, le refus du reste nul est un échec MÉTIER
+    /// par facture ; avant la story, toute erreur de `render_reminder` partait en
+    /// `DATABASE_ERROR`. Symétrique de `classify_render_error_ne_deguise_pas_un_refus_en_panne`.
+    #[test]
+    fn classify_reminder_render_error_ne_deguise_pas_le_reste_nul_en_panne() {
+        assert_eq!(
+            classify_reminder_render_error(AppError::ReminderNothingDue, 1).code(),
+            "REMINDER_NOTHING_DUE"
+        );
+        assert_eq!(
+            classify_reminder_render_error(AppError::Internal("pool fermé".into()), 1).code(),
+            "DATABASE_ERROR",
+            "une panne d'infrastructure doit rester détectée comme telle"
+        );
     }
 
     #[test]
@@ -1567,6 +1674,8 @@ mod tests {
                 "INVOICE_NOT_PDF_READY",
             ),
             (AppError::InvoicePdfHeaderOverflow, "INVOICE_NOT_PDF_READY"),
+            // Story 25-4-b2 (#416) — second site du lot : le rendu du PDF de rappel.
+            (AppError::ReminderNothingDue, "REMINDER_NOTHING_DUE"),
         ];
         for (err, attendu) in metier {
             let libelle = format!("{err:?}");

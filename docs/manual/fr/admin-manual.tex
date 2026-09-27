@@ -1166,6 +1166,18 @@ contact, sinon celle de l'instance).
           \texttt{\{companyName\}} — remplac\'ees automatiquement \`a
           l'envoi (montants et dates au format suisse). Une variable inconnue
           est refus\'ee \`a l'enregistrement avec un message explicite.
+    \item \textbf{Variables propres aux rappels} :
+          \texttt{\{reminderLevel\}} (niveau), \texttt{\{reminderFee\}}
+          (frais du seul niveau envoy\'e), \texttt{\{totalDue\}} (\textbf{reste
+          d\^u} de la facture \textbf{plus} les frais de rappel cumul\'es),
+          \texttt{\{daysOverdue\}} (jours de retard) et \texttt{\{feeNotice\}}
+          (phrase disant les frais compris dans \texttt{\{totalDue\}},
+          pr\'ec\'ed\'ee d'une espace, \textbf{vide} sans frais) ;
+          \texttt{\{amount\}} reste le montant total de la facture. Les mod\`eles
+          fournis n'\'ecrivent aucune phrase de frais en dur et passent par
+          \texttt{\{feeNotice\}} : \`a frais nuls, ils n'en parlent pas. Un mod\`ele
+          \textbf{personnalis\'e} qui \'ecrit \texttt{\{reminderFee\}} en toutes
+          lettres affichera « 0.00 » sans frais — c'est \`a vous de l'\'eviter.
     \item \textbf{Z\'ero configuration requise} : un mod\`ele par d\'efaut
           soign\'e est fourni pour chaque langue — une PME peut envoyer une
           facture correcte sans jamais ouvrir cette section.
@@ -1197,7 +1209,7 @@ Les \textbf{frais de rappel} exigent une \textbf{base contractuelle} : ils ne so
 \end{keshwarning}
 
 \begin{keshnote}
-En v0.7, les frais de rappel sont \textbf{affichés mais non comptabilisés} (produit accessoire) et \textbf{ne figurent pas sur la QR-facture} : le montant demandé par la QR-facture reste le \textbf{total TTC de la facture d'origine}, jamais le total augmenté des frais. Les frais apparaissent dans le courrier de rappel et dans l'historique, à titre de créance accessoire.
+Les frais de rappel sont \textbf{affichés mais non comptabilisés} (produit accessoire, issue \#401) et \textbf{ne figurent pas sur la QR-facture} du rappel : depuis la version \textbf{0.12.1}, celle-ci demande le \textbf{reste dû} de la facture (son total TTC diminué des règlements partiels), jamais augmenté des frais. Les frais apparaissent dans le courrier de rappel, sur une ligne à part du rappel PDF et dans l'historique, à titre de créance accessoire.
 \end{keshnote}
 
 \subsection{J'ai oublié mon mot de passe administrateur (recovery break-glass)}

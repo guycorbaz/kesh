@@ -901,15 +901,24 @@ e-mail »).
 
 \subsubsection{Personnaliser les modèles d'e-mail}
 
+\begin{sloppypar}
 \emph{Paramètres → Modèles d'e-mail} (réservé à l'administrateur) : l'objet
 et le corps du message se personnalisent par langue (onglets FR/DE/IT/EN),
 avec des variables remplacées automatiquement à l'envoi
 (\texttt{\{salutation\}}, \texttt{\{contactName\}},
 \texttt{\{invoiceNumber\}}, \texttt{\{amount\}}, \texttt{\{dueDate\}},
-\texttt{\{companyName\}} — la liste est affichée à côté de l'éditeur). Un
+\texttt{\{companyName\}} — la liste est affichée à côté de l'éditeur). Les
+modèles de \textbf{rappel} ont en plus : \texttt{\{reminderLevel\}} (le niveau),
+\texttt{\{reminderFee\}} (les frais du seul niveau envoyé),
+\texttt{\{totalDue\}} (le \textbf{reste dû} de la facture \textbf{plus} les frais
+de rappel cumulés), \texttt{\{daysOverdue\}} (les jours de retard) et
+\texttt{\{feeNotice\}} (une phrase qui dit les frais compris dans
+\texttt{\{totalDue\}}, \textbf{vide} quand il n'y en a pas) ;
+\texttt{\{amount\}} y reste le montant total de la facture. Un
 modèle par défaut est fourni pour chaque langue ; \emph{Restaurer le défaut}
 y revient à tout moment. Sans aucune personnalisation, les envois utilisent
 les modèles par défaut — rien à configurer.
+\end{sloppypar}
 
 \subsubsection{Langue et civilité du contact, adresse de réponse}
 
@@ -992,12 +1001,22 @@ Depuis la version \textbf{0.7}, l'écran \emph{Factures → Rappels} (réservé 
 \keshscreenshot{rappels-liste.png}{Écran Rappels : factures à relancer groupées par débiteur, prochain niveau, envoi unitaire ou par lot.}  % TODO capture: page /invoices/reminders
 
 \begin{itemize}
-    \item \textbf{Envoi unitaire} : un aperçu du courrier (dans la langue et le ton du niveau — 1er rappel courtois jusqu'à la mise en demeure) s'affiche, modifiable avant envoi ; la \textbf{QR-facture PDF} est jointe. Le destinataire est \textbf{verrouillé} sur l'e-mail de la fiche contact (sécurité).
+    \item \textbf{Envoi unitaire} : un aperçu du courrier (dans la langue et le ton du niveau — 1er rappel courtois jusqu'à la mise en demeure) s'affiche, modifiable avant envoi ; un \textbf{rappel PDF} est joint (voir ci-dessous). Le destinataire est \textbf{verrouillé} sur l'e-mail de la fiche contact (sécurité).
     \item \textbf{Envoi par lot} : sélectionnez plusieurs factures (jusqu'à 20) et envoyez-les d'un coup, chacune à son prochain niveau ; un compte-rendu liste les envois réussis et les échecs par facture.
     \item \textbf{Rappel manuel} : enregistrez un rappel déjà envoyé hors Kesh (courrier, recommandé) — utile pour tracer un envoi papier. Le saut direct à un niveau élevé (mise en demeure) est autorisé.
     \item Un contact \textbf{sans adresse e-mail} reste visible (badge « sans e-mail ») : l'envoi e-mail est impossible, mais le rappel papier reste enregistrable.
     \item Une \textbf{protection anti-double-envoi} empêche qu'un double-clic n'envoie deux fois le même rappel. Une facture arrivée au \textbf{dernier niveau} reste affichée avec le badge « Dernier niveau atteint » (poursuite à envisager) — elle ne disparaît jamais silencieusement.
 \end{itemize}
+
+\paragraph{Ce que réclame un rappel.} Un rappel réclame ce que le client \textbf{doit encore} : le \textbf{reste dû} de la facture, après ses règlements partiels --- le montant total s'il n'a rien payé. Le courrier annonce ce reste, augmenté des frais de rappel s'il y en a ; à frais nuls, il ne parle pas de frais. Le PDF joint n'est pas la facture réémise, c'est un \textbf{rappel} : il en porte le titre, rappelle le numéro de la facture d'origine et, sous le total, ce qui est \textbf{déjà réglé} puis le \textbf{reste à payer} (ces deux lignes n'apparaissent qu'après un règlement). Sa \textbf{QR-facture porte le reste dû}, avec la même référence que la facture, ce qui permet au rapprochement bancaire de reconnaître le paiement. Les \textbf{frais de rappel n'y sont jamais inclus} : ils figurent sur une ligne à part, avec la mention qu'ils ne sont pas compris dans le bulletin de versement.
+
+\begin{keshwarning}
+Les frais de rappel ne sont \textbf{pas comptabilisés} par Kesh. Un client qui paie le montant du courrier (reste dû \emph{et} frais) verra son versement \textbf{refusé comme trop-perçu} au rapprochement comme au règlement manuel ; seul le montant de la QR-facture s'enregistre (issue \#401).
+\end{keshwarning}
+
+\begin{keshnote}
+Le rappel PDF ne part qu'avec un rappel \textbf{envoyé par e-mail}. Pour une mise en demeure envoyée hors de Kesh, ou pour un contact sans adresse e-mail, le seul PDF imprimable est celui de la \textbf{facture}, dont la QR porte toujours le \textbf{montant total} : ne le joignez pas tel quel à une facture déjà réglée en partie (issue \#477).
+\end{keshnote}
 
 \begin{keshtip}
 Pour le \textbf{dernier niveau} (mise en demeure), privilégiez un envoi \textbf{recommandé} : il constitue une preuve de la mise en demeure en cas de poursuite. Envoyez le recommandé hors Kesh, puis enregistrez-le via \textbf{« Rappel manuel »} pour en garder la trace dans l'historique.
