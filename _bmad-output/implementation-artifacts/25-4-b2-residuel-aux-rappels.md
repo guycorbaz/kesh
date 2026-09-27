@@ -96,14 +96,15 @@ facture (`GET …/pdf`) et l'envoi de facture (`POST …/send-email`) sont **inc
 **AC 6** — Le PDF du rappel nomme **en toutes lettres le numéro de la facture d'origine** et, sous le
 total TTC, porte : **déjà réglé** (et **avoir** s'il y en a un), puis **reste à payer** en gras. Les
 lignes nulles ne s'affichent pas (même règle que les frais) ; une facture sans règlement ni avoir ne
-montre que le total, qui **est** le reste à payer.
+montre que le total, qui **est** le reste à payer *(arbitrage Q2, Guy, 2026-09-27)*.
 
 **AC 7** — La QR du PDF de rappel porte le **reste dû** — le TTC s'il n'y a aucun règlement.
 ⛔ La **référence** (QRR ou aucune) et le **message non structuré** (`Facture {n}`) sont **identiques**
 à ceux du PDF de facture, octet pour octet. Les frais **ne** sont **pas** dans la QR.
 
-**AC 8** — Les frais figurent sur le PDF du rappel **seulement s'ils sont non nuls**, avec la mention
-qu'ils ne sont pas compris dans le bulletin de versement *(présentation proposée, cf. Question 1)*.
+**AC 8** — Les frais cumulés figurent sur le PDF du rappel par une ligne **« Frais de rappel »**
+(4 locales) portant la mention qu'ils **ne sont pas compris dans le bulletin de versement** ;
+**absente** quand les frais sont nuls *(arbitrage Q1, Guy, 2026-09-27)*.
 
 **AC 9** — Reste dû ≤ 0 : le rappel est **refusé** avec un code dédié `REMINDER_NOTHING_DUE`
 (unitaire : erreur HTTP ; lot : échec **par facture** dans la réponse, jamais d'erreur globale —
@@ -182,17 +183,13 @@ variables de gabarit. PDF régénérés et contrôlés **aplatis**. CHANGELOG `[
 - Modules touchés : `kesh-qrbill`, `kesh-api`, `kesh-db`, `kesh-i18n`, `frontend` — **cinq**, à la
   limite de la règle de découpage (> 5) : ne pas en ajouter sans le signaler.
 
-## Questions pour Guy
+## ✅ Arbitrages de Guy (2026-09-27)
 
-**Q1 — les frais sur le PDF du rappel.** La QR porte le reste dû sans frais (règle existante). Si le
-PDF montre aussi les frais (AC 8), le client voit « reste à payer 181.— » et « frais de rappel
-20.— », pour une QR à 181.—. Proposition : une ligne *« Frais de rappel : 20.— (non compris dans le
-bulletin de versement) »*, absente à zéro. Alternative : pas de frais sur le PDF, seulement dans le
-texte de l'e-mail (comme aujourd'hui).
-
-**Q2 — « déjà réglé » à zéro.** Proposé (AC 6) : une facture sans règlement n'affiche que le total,
-qui est le reste — même règle que les frais. Alternative : toujours les trois lignes (montant
-initial / déjà réglé 0.— / reste).
+- **Q1 — les frais sur le PDF du rappel** : *« oui, rajouter une ligne "Frais de rappel" »*. Une
+  ligne « Frais de rappel : 20.— (non compris dans le bulletin de versement) », absente à zéro — la
+  QR reste au reste dû (AC 7, AC 8).
+- **Q2 — « déjà réglé » à zéro** : *« ok »*. Sans règlement ni avoir, le PDF ne montre que le total,
+  qui est le reste à payer (AC 6).
 
 ## Dev Agent Record
 
@@ -209,6 +206,8 @@ initial / déjà réglé 0.— / reste).
 - **2026-09-27** — Créée. Inventaire vérifié par deux explorations et contrôle direct des citations ;
   le point ouvert de la mère sur les frais est clos par la règle existante (non comptabilisés, hors
   QR) ; message de la QR rectifié (`Facture {n}`, pas le numéro seul) ; deux questions à Guy.
+  Tranchées le jour même : ligne « Frais de rappel » sur le PDF (Q1), « déjà réglé » masqué à zéro
+  (Q2).
 
 [#387]: https://github.com/guycorbaz/kesh/issues/387
 [#416]: https://github.com/guycorbaz/kesh/issues/416
