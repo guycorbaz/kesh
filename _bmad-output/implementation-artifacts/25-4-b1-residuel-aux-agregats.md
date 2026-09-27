@@ -1,6 +1,6 @@
 # Story 25.4-b1 : Le résiduel aux agrégats — balance âgée et échéancier
 
-Status: ready-for-dev
+Status: in-progress
 
 **Issue : [#416]** — cette story en livre la partie **agrégats** ; la partie **rappels** est la
 25-4-b2. ⛔ **La PR de b1 porte `refs #416`, pas `closes`** : l'issue ne se ferme qu'avec b2.
@@ -251,6 +251,7 @@ CHANGELOG `[0.12.1]` *Fixed*. README : rien, sauf si la ligne v0.12.1 cite la ba
 
 ## Change Log
 
+- **2026-09-27** — Signal MED→MED arbitré par Guy : **pas de découpage** (« continue ainsi »). Dev lancé.
 - **2026-09-27** — **validation P5 ciblée** (Haiku, diff `5480b4f8..5824c048`, prompt
   `25-4-b1-validate-prompt-p5.md`) — **0 finding**, preuves recopiées (grep des cinq sites de T0,
   garde de la 0.12.0) et **concordantes avec les greps de l'orchestrateur**. ⛔ **Boucle close en 5
