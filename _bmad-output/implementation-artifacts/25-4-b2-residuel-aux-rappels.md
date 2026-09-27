@@ -12,6 +12,12 @@ PR #475). ⚠️ Branche `story/25-4-b2-residuel-aux-rappels` **empilée** sur c
 
 ⚠️ **Ne pas contester les arbitrages en validation** : en contester la mise en œuvre.
 
+**Noms de fichier nus** — plusieurs existent dans deux crates ; dans cette fiche, sauf chemin
+explicite : `pdf.rs` et `types.rs` = `crates/kesh-qrbill/src/` (pas `kesh-report`, pas
+`kesh-import`) ; `dunning_eligibility.rs` = `crates/kesh-db/src/repositories/` (pas le fichier de
+tests homonyme) ; `dunning_levels.rs` = **les deux** fichiers de ce nom, route et dépôt. *(Inventaire
+fait en validation P5 : `find crates -name <nom>` sur chaque nom nu de la fiche.)*
+
 ## Story
 
 En tant que gérant d'une PME,
@@ -272,6 +278,17 @@ tracée par **[#401]**. PDF régénérés et contrôlés **aplatis**. CHANGELOG 
 
 ## Change Log
 
+- **2026-09-27** — **Validation P5 ciblée** (Haiku, `d06b5c6c`, prompt `25-4-b2-validate-prompt-p5.md`)
+  — 2 findings rendus MEDIUM, **reclassés LOW** par l'orchestrateur : `pdf.rs` et `dunning_levels.rs`
+  nus et homonymes, mais sans numéro de ligne, et le contexte désigne le bon fichier (`pdf.rs` est
+  qualifié `kesh-qrbill` dans « Où regarder » ; « aucune écriture » vaut pour les deux
+  `dunning_levels.rs`). Traités **comme classe** : inventaire de tous les noms nus de la fiche et de
+  leurs homonymes (`pdf.rs`, `types.rs`, `dunning_eligibility.rs`, `dunning_levels.rs` ; `errors.rs`
+  et `credit_notes.rs` ne restent nus que dans le Change Log), et une convention en tête de fiche.
+  ⛔ **Boucle close en 5 passes** : `1H/3M/2L → 0 (+1M orchestrateur) → 5M/5L → 1M/2L → 0 >LOW`,
+  rotation Sonnet → Haiku → Opus → Sonnet → Haiku, deux passes ciblées ; toutes les corrections sur la
+  fiche. ⚠️ **M5 (le rappel papier) reste en attente d'arbitrage** : s'il ajoute du périmètre, une
+  passe de plus sera due.
 - **2026-09-27** — **Validation P4 ciblée** (Sonnet, `6197bffd`, prompt `25-4-b2-validate-prompt-p4.md`)
   — **1 MEDIUM, 2 LOW**, tous de référence : `credit_notes.rs:586`/`:325` sans chemin, alors que deux
   fichiers portent ce nom (le contenu est dans `kesh-db/src/repositories/`) ; `invoice_email.rs:510`/
