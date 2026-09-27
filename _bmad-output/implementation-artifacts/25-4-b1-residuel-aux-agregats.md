@@ -1,6 +1,6 @@
 # Story 25.4-b1 : Le résiduel aux agrégats — balance âgée et échéancier
 
-Status: in-progress
+Status: review
 
 **Issue : [#416]** — cette story en livre la partie **agrégats** ; la partie **rappels** est la
 25-4-b2. ⛔ **La PR de b1 porte `refs #416`, pas `closes`** : l'issue ne se ferme qu'avec b2.
@@ -194,7 +194,7 @@ CHANGELOG `[0.12.1]` *Fixed*. README : rien, sauf si la ligne v0.12.1 cite la ba
 - [x] **T4 — échéancier, frontend** (AC 10), i18n.
 - [x] **T5 — tests et mutations** (AC 12).
 - [x] **T6 — textes** (AC 13).
-- [ ] **T7 — gates** : backend complet (base remise à zéro), frontend complet, **E2E complet**.
+- [x] **T7 — gates** : backend complet (base remise à zéro), frontend complet, **E2E complet**.
 
 ## Dev Notes
 
@@ -304,7 +304,13 @@ de le saisir, et un cas « réglée en partie » est ajouté.
 - Backend : base remise à zéro, `scripts/test-fast.sh` **2491 / 2491** (2484 + 7).
 - Frontend : `check` 0 erreur (27 avertissements), `lint-i18n-ownership` PASS, `test:unit`
   **834 / 834** (826 + 8), build OK.
-- E2E : EN_ATTENTE
+- E2E : sur `kesh_e2e` reconstruite, **225 passed / 8 failed / 19 skipped** — les 7 KF-029 (#97)
+  et `product-revenue-account.spec.ts:133`, victime de pollution déjà répertoriée
+  (`docs/testing.md` § « Les échecs attendus ») et **verte rejouée seule** (deux fois, 4/4).
+  ⚠️ Un **premier run** avait rendu 214/19 : les 7 KF-029 et **12 échecs hors liste**, tous sur le
+  même symptôme — `/login` rendant la page SvelteKit « Erreur 500 — Internal Error » avant le
+  formulaire, sans aucune erreur côté backend. **Rejoués seuls, 12/12 verts** ; non reproduit au
+  run suivant. Symptôme non documenté, non tracé à ce jour.
 
 ### File List
 
@@ -332,6 +338,9 @@ de le saisir, et un cas « réglée en partie » est ajouté.
 
 ## Change Log
 
+- **2026-09-27** — **T7 tenu, story en `review`.** Commit de sauvegarde `87cbc8b4` après un crash de
+  la station (intégrité vérifiée : `git fsck`, fins de fichiers, fmt, clippy, `check`). Gate E2E :
+  cf. § *Gates* — premier run pollué (12 hors liste, verts seuls), second conforme à la baseline.
 - **2026-09-27** — Signal MED→MED arbitré par Guy : **pas de découpage** (« continue ainsi »). Dev lancé.
 - **2026-09-27** — **validation P5 ciblée** (Haiku, diff `5480b4f8..5824c048`, prompt
   `25-4-b1-validate-prompt-p5.md`) — **0 finding**, preuves recopiées (grep des cinq sites de T0,
