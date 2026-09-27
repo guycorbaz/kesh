@@ -63,9 +63,13 @@ chaque facture du jeu, l'expression jointe de l'AC 1 = `amount_due` scalaire.
 rajeunit pas la créance restante**.
 
 **AC 4** — Le périmètre des factures ne change pas : `status = 'validated' AND paid_at IS NULL`
-(une facture soldée a `paid_at`, 24-2 D4). Le `HAVING total <> 0` reste, et porte désormais sur le
-reste dû. ⚠️ Un reste dû **négatif** (trop-perçu hérité) n'est **pas écrêté** : il apparaît, en
+(une facture soldée a `paid_at`, 24-2 D4). ~~Le `HAVING total <> 0` reste, et porte désormais sur le
+reste dû.~~ Le `HAVING` garde un contact dès qu'**une** de ses factures a un reste dû non nul.
+⚠️ Un reste dû **négatif** (trop-perçu hérité) n'est **pas écrêté** : il apparaît, en
 négatif — le doc-comment d'`amount_due` l'exige.
+*(Rectifié le 2026-09-27, passe 1 de revue de code : la phrase barrée contredisait la suivante. Sur
+le total du contact, un trop-perçu hérité compensant une facture ouverte faisait sortir le contact
+entier — et le négatif n'apparaissait pas.)*
 
 **AC 5** — ⛔ **Invariant de concordance** (test) : sur une société dont le compte débiteurs n'est mû
 que par des factures, des règlements et des avoirs — factures sans règlement, partiellement réglée,
@@ -195,6 +199,23 @@ CHANGELOG `[0.12.1]` *Fixed*. README : rien, sauf si la ligne v0.12.1 cite la ba
 - [x] **T5 — tests et mutations** (AC 12).
 - [x] **T6 — textes** (AC 13).
 - [x] **T7 — gates** : backend complet (base remise à zéro), frontend complet, **E2E complet**.
+
+### Review Findings
+
+*Passe 1 de `bmad-code-review` (2026-09-27) — Blind Hunter, Edge Case Hunter, Acceptance Auditor, tous
+Sonnet, sur `bd06e789..87cbc8b4`. Brut : 4 + 4 + 2 findings ; après dédoublonnage et tri : 3 patch,
+2 defer, 3 écartés.*
+
+- [x] [Review][Patch] **MEDIUM — `HAVING total <> 0` fait disparaître un client dont les restes dus se compensent** [crates/kesh-report/src/aged_receivables.rs:149] — la grandeur sommée admet désormais le négatif ; une facture ouverte de 100.— et un trop-perçu hérité de −100.— chez le même contact donnent `total = 0` et la ligne entière sort du résultat, contrairement à ce que promet la spec (« il apparaît, en négatif »). Atteignable seulement par données héritées (les trois chemins d'écriture refusent le trop-perçu ou annulent la facture — tracé par l'Edge Case Hunter). Convergé Blind + Edge.
+- [x] [Review][Patch] **MEDIUM — commentaire devenu faux : « la fiche est la seule surface où le résiduel est calculé »** [crates/kesh-api/src/routes/invoices.rs:638] — la story ajoute l'échéancier (liste, export, résumé) et la balance âgée. Symptôme grepé (`seule surface`) : aucun autre site.
+- [x] [Review][Patch] **LOW — aucun test des agrégats après annulation d'un règlement** [crates/kesh-db/tests/invoice_amount_due_parity.rs] — `cancel_settlement` n'est exercé que sur la fiche ; ni l'échéancier ni la balance âgée ne sont vérifiés après retrait d'un règlement.
+- [x] [Review][Defer] **`as_of` borne les tranches, pas les règlements** [crates/kesh-report/src/aged_receivables.rs:109] — deferred : limite écrite dans le doc-comment de `generate`, la route fixe `as_of` à aujourd'hui ; ne mord que si un appelant passait une date passée.
+- [x] [Review][Defer] **trois tests préexistants déstructurent `seed_base` dans le mauvais ordre** [crates/kesh-api/tests/invoice_echeancier_e2e.rs] — deferred, pre-existing : déjà relevé au Debug Log, verts parce que les deux identifiants valent 1.
+
+Écartés : pré-remplissage négatif du dialogue de règlement (Blind + Edge — tranché hors périmètre par
+la spec, et la garde `n <= 0` bloque la soumission) ; deux remarques LOW de l'Acceptance Auditor
+(piège de décompte `i18nMsg(` dans un commentaire, parité d'export couverte par un autre fichier que
+celui nommé) — constats sans défaut.
 
 ## Dev Notes
 
@@ -338,6 +359,25 @@ de le saisir, et un cas « réglée en partie » est ajouté.
 
 ## Change Log
 
+- **2026-09-27** — **Revue de code, passe 1** (Blind Hunter, Edge Case Hunter, Acceptance Auditor —
+  Sonnet ×3, `bd06e789..87cbc8b4`) — **2 MEDIUM, 1 LOW à corriger**, 2 différés, 3 écartés (§ *Review
+  Findings*). Corrigés :
+  - le `HAVING` de la balance âgée porte sur le **nombre de factures à reste dû non nul**, plus sur le
+    total du contact (`aged_receivables.rs`) ; l'AC 4 est rectifié, sa phrase contradictoire barrée.
+    Test `aged_compensating_legacy_overpayment_keeps_the_contact` — ⛔ **mutation vérifiée** : avec
+    l'ancien `HAVING total <> 0`, il rougit seul (« Alpha ne doit pas disparaître »), les 8 autres
+    restent verts ;
+  - le commentaire de `get_invoice` (`routes/invoices.rs`) ne prétend plus que la fiche est la seule
+    surface calculant le résiduel ; symptôme `seule surface` grepé sur `crates/`, `frontend/src` et le
+    manuel : aucun autre site ;
+  - règlement annulé : `aged_cancelled_settlement_no_longer_counts` et
+    `cancelled_settlement_leaves_the_aggregates` (liste, export, résumé), chacun avec un témoin avant
+    annulation.
+  Tests, recomptés (`#[sqlx::test]`) de `87cbc8b4` à ce commit : `aged_receivables.rs` 7 → 9,
+  `invoice_amount_due_parity.rs` 6 → 7, soit **+3** ; de `bd06e789` : +10 backend. Manuel : rien ne
+  décrivait la sélection des contacts, pas de régénération. **Gate ciblé** : fmt et clippy workspace
+  verts, `binary(aged_receivables) | binary(invoice_amount_due_parity)` **16/16** ; gate complet au
+  dernier commit de la boucle.
 - **2026-09-27** — **T7 tenu, story en `review`.** Commit de sauvegarde `87cbc8b4` après un crash de
   la station (intégrité vérifiée : `git fsck`, fins de fichiers, fmt, clippy, `check`). Gate E2E :
   cf. § *Gates* — premier run pollué (12 hors liste, verts seuls), second conforme à la baseline.

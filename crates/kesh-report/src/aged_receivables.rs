@@ -119,9 +119,13 @@ pub async fn generate(
     //   Non échu : due_date NULL OU DATEDIFF <= 0 (échéance >= as_of)
     //   1-30 / 31-60 / 61-90 : DATEDIFF dans [lo, hi]
     //   90+ : DATEDIFF >= 91 (strictement plus de 90 jours — pas de recouvrement)
-    // HAVING total <> 0 écarte une facture legacy sans lignes (reste dû 0)
-    // qui polluerait la liste. ⚠️ Un reste dû NÉGATIF (trop-perçu hérité)
-    // n'est pas écrêté : il apparaît.
+    // Le HAVING garde un contact dès qu'UNE de ses factures a un reste dû non
+    // nul ; il écarte ainsi une facture legacy sans lignes (reste dû 0) qui
+    // polluerait la liste. ⚠️ Un reste dû NÉGATIF (trop-perçu hérité) n'est
+    // pas écrêté : il apparaît. ⛔ Ne PAS revenir à `HAVING total <> 0` : la
+    // grandeur admet le négatif, et un trop-perçu hérité compensant une facture
+    // ouverte du même contact ferait disparaître la ligne entière — la relance
+    // due avec (revue de code 25-4-b1, passe 1).
     // ⛔ Story 25-4-b1 (#416) : chaque tranche somme le RESTE DÛ, jamais le
     // TTC — une facture de 1 000.— réglée à 900.— pèse 100.—. Les tranches
     // restent assises sur `due_date` : un règlement partiel ne rajeunit pas la
@@ -146,7 +150,7 @@ pub async fn generate(
          {joins} \
          WHERE i.company_id = ? AND i.status = 'validated' AND i.paid_at IS NULL \
          GROUP BY c.id, c.name \
-         HAVING total <> 0 \
+         HAVING SUM(CASE WHEN {due} <> 0 THEN 1 ELSE 0 END) > 0 \
          ORDER BY c.name, c.id",
         joins = amount_due_derived_joins()
     );

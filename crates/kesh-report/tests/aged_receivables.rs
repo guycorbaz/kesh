@@ -493,3 +493,123 @@ async fn aged_total_matches_receivable_ledger(pool: MySqlPool) {
     );
     assert_eq!(r.totals.total, ledger, "balance âgée = compte débiteurs");
 }
+
+/// AC 4 — ⛔ un trop-perçu hérité qui COMPENSE une facture ouverte du même
+/// contact ne fait pas disparaître le contact : la relance de la facture
+/// ouverte reste visible, le négatif apparaît dans sa tranche.
+///
+/// L'état est inatteignable par l'application (le trop-perçu est refusé à
+/// l'écriture) ; il est fabriqué comme le porteraient des données héritées :
+/// un règlement réel, passé sur une facture « parking » d'un autre contact
+/// qui peut l'absorber, puis rattaché en SQL à la facture cible.
+///
+/// Revue de code 25-4-b1, passe 1 : avec `HAVING total <> 0`, Alpha
+/// (108.10 − 108.10 = 0) sortait du résultat.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn aged_compensating_legacy_overpayment_keeps_the_contact(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let alpha = mk_contact(&pool, &seeded, "Alpha SA").await;
+    let beta = mk_contact(&pool, &seeded, "Beta SA").await;
+
+    // Alpha : 108.10 ouverte, en retard de 20 jours…
+    let _open = mk_validated(
+        &pool,
+        &seeded,
+        alpha,
+        Some(days_before(20)),
+        dec!(8.10),
+        dec!(100.00),
+    )
+    .await;
+    // … et 54.05 qui portera un règlement hérité de 162.15 → reste −108.10.
+    let target = mk_validated(
+        &pool,
+        &seeded,
+        alpha,
+        Some(days_before(70)),
+        dec!(8.10),
+        dec!(50.00),
+    )
+    .await;
+    // Parking : 216.20 chez Beta, réglée en partie (162.15) — paid_at reste NULL.
+    let parking = mk_validated(
+        &pool,
+        &seeded,
+        beta,
+        Some(days_before(10)),
+        dec!(8.10),
+        dec!(200.00),
+    )
+    .await;
+    settle(
+        &pool,
+        &seeded,
+        parking.invoice.id,
+        dec!(162.15),
+        days_before(5),
+    )
+    .await;
+    sqlx::query("UPDATE invoice_settlements SET invoice_id = ? WHERE invoice_id = ?")
+        .bind(target.invoice.id)
+        .bind(parking.invoice.id)
+        .execute(&pool)
+        .await
+        .expect("rattacher le règlement hérité");
+
+    let r = generate(&pool, seeded.company_id, as_of()).await.unwrap();
+    let a = r
+        .rows
+        .iter()
+        .find(|row| row.contact_id == alpha)
+        .expect("Alpha ne doit pas disparaître : sa facture ouverte est due");
+    assert_eq!(a.buckets.days_1_to_30, dec!(108.10), "relance due visible");
+    assert_eq!(a.buckets.days_61_to_90, dec!(-108.10), "négatif non écrêté");
+    assert_eq!(a.buckets.total, Decimal::ZERO);
+    let b = r
+        .rows
+        .iter()
+        .find(|row| row.contact_id == beta)
+        .expect("Beta");
+    assert_eq!(b.buckets.total, dec!(216.20), "parking : tout redevient dû");
+}
+
+/// Revue de code 25-4-b1, passe 1 — un règlement ANNULÉ ne compte plus : la
+/// facture repèse son TTC entier dans sa tranche.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn aged_cancelled_settlement_no_longer_counts(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let alpha = mk_contact(&pool, &seeded, "Alpha SA").await;
+    let v = mk_validated(
+        &pool,
+        &seeded,
+        alpha,
+        Some(days_before(45)),
+        dec!(8.10),
+        dec!(1000.00),
+    )
+    .await;
+    settle(&pool, &seeded, v.invoice.id, dec!(900.00), days_before(40)).await;
+    // Témoin : avant l'annulation, la tranche porte le reste dû.
+    let avant = generate(&pool, seeded.company_id, as_of()).await.unwrap();
+    assert_eq!(avant.rows[0].buckets.days_31_to_60, dec!(181.00));
+
+    let settlement_id: i64 =
+        sqlx::query_scalar("SELECT id FROM invoice_settlements WHERE invoice_id = ?")
+            .bind(v.invoice.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    invoice_settlements_write::cancel_settlement(
+        &pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        v.invoice.id,
+        settlement_id,
+    )
+    .await
+    .expect("annulation du règlement");
+
+    let r = generate(&pool, seeded.company_id, as_of()).await.unwrap();
+    assert_eq!(r.rows[0].buckets.days_31_to_60, dec!(1081.00));
+    assert_eq!(r.totals.total, dec!(1081.00));
+}

@@ -396,3 +396,50 @@ async fn list_items_carry_amount_due(pool: MySqlPool) {
         assert_eq!(o.amount_due, dec!(10.81), "{surface}");
     }
 }
+
+/// Revue de code 25-4-b1, passe 1 — un règlement ANNULÉ ne compte plus sur
+/// aucune surface agrégée : liste, export et résumé repèsent le TTC entier.
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancelled_settlement_leaves_the_aggregates(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, &seeded).await;
+    let inv = validated(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00))]).await;
+    let entry = settle(&pool, &seeded, inv, dec!(40.00)).await;
+    // Témoin : avant l'annulation, le résumé porte le reste dû.
+    let avant = invoices::due_dates_summary(&pool, seeded.company_id, &unpaid_query())
+        .await
+        .unwrap();
+    assert_eq!(avant.unpaid_total, dec!(68.10));
+
+    let settlement_id: i64 =
+        sqlx::query_scalar("SELECT id FROM invoice_settlements WHERE journal_entry_id = ?")
+            .bind(entry)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    invoice_settlements_write::cancel_settlement(
+        &pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        inv,
+        settlement_id,
+    )
+    .await
+    .expect("annulation du règlement");
+
+    let summary = invoices::due_dates_summary(&pool, seeded.company_id, &unpaid_query())
+        .await
+        .unwrap();
+    assert_eq!(summary.unpaid_total, dec!(108.10), "résumé");
+    let page = invoices::list_by_company_paginated(&pool, seeded.company_id, unpaid_query())
+        .await
+        .unwrap();
+    let (export, _) = invoices::list_for_export(&pool, seeded.company_id, &unpaid_query(), 100)
+        .await
+        .unwrap();
+    for (surface, items) in [("liste", &page.items), ("export", &export)] {
+        let i = items.iter().find(|i| i.id == inv).expect(surface);
+        assert_eq!(i.amount_settled, Decimal::ZERO, "{surface} : réglé");
+        assert_eq!(i.amount_due, dec!(108.10), "{surface} : reste dû");
+    }
+}

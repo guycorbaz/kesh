@@ -635,8 +635,11 @@ pub async fn get_invoice(
         invoices::find_by_id_with_lines(&state.pool, current_user.company_id, id)
             .await?
             .ok_or(AppError::Database(DbError::NotFound))?;
-    // Story 24-2 (#371) — la fiche est la seule surface où le résiduel est
-    // calculé. ⚠️ Une requête de plus, sur UNE facture : pas de N+1 possible ici.
+    // Story 24-2 (#371) — la fiche calcule le résiduel par la forme SCALAIRE.
+    // ⚠️ Une requête de plus, sur UNE facture : pas de N+1 possible ici. Les
+    // agrégats (échéancier : liste, export, résumé ; balance âgée) le calculent
+    // par la forme JOINTE `amount_due_derived_joins` depuis la Story 25-4-b1 —
+    // les deux sont tenues à parité par `invoice_amount_due_parity.rs`.
     let settled = kesh_db::repositories::invoice_settlements::amount_settled(&state.pool, id)
         .await
         .map_err(AppError::Database)?;
