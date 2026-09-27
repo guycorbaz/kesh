@@ -2563,6 +2563,36 @@ impl IntoResponse for AppError {
                     });
                     (StatusCode::CONFLICT, Json(body)).into_response()
                 }
+                // Story 25-4-a (#456) — l'avoir refusé sur une facture réglée,
+                // même en partie. ⛔ Un code et un message propres : l'ancienne
+                // garde rendait `ILLEGAL_STATE_TRANSITION`, dont le texte n'était
+                // que journalisé. Le numéro de la facture est suffixé, comme
+                // pour la dévalidation.
+                DbError::CreditNoteBlockedBySettlement {
+                    invoice_id,
+                    settlement_id,
+                    invoice_number,
+                } => {
+                    let base = t(
+                        "error-credit-note-blocked-settled",
+                        "Cette facture porte un règlement, même partiel : annulez-le d'abord pour pouvoir émettre un avoir.",
+                    );
+                    let message = match invoice_number.as_deref() {
+                        Some(numero) => format!("{base} ({numero})"),
+                        None => base,
+                    };
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "CREDIT_NOTE_INVOICE_SETTLED",
+                            "message": message,
+                            "details": {
+                                "invoiceId": invoice_id,
+                                "settlementId": settlement_id,
+                            },
+                        }
+                    });
+                    (StatusCode::CONFLICT, Json(body)).into_response()
+                }
                 // Story 25-3-a-1 (#414) — l'annulation d'un règlement refusée.
                 //
                 // ⚠️ Seuls les rangs que le GESTE refuse lui-même arrivent ici

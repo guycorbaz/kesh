@@ -24,6 +24,7 @@ error-journal-entry-linked-to-invoice = Cette écriture comptable a été géné
 error-check-constraint = Valeur invalide
 error-illegal-state = Transition d'état interdite
 error-invoice-unvalidate-blocked-settled = Cette facture porte un règlement, même partiel : annulez-le d'abord.
+error-credit-note-blocked-settled = Cette facture porte un règlement, même partiel : annulez-le d'abord pour pouvoir émettre un avoir.
 error-invoice-unvalidate-blocked-credited = Cette facture est créditée par un avoir, qui en est déjà la correction.
 error-invoice-unvalidate-blocked-reminders = Cette facture a un historique de rappels : le dévalider effacerait la preuve du recouvrement.
 error-invoice-unvalidate-blocked-emailed = Cette facture a été envoyée au client : corrigez-la par un avoir.

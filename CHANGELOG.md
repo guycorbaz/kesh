@@ -28,7 +28,13 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 - **Sur la fiche d'une facture fournisseur, le bouton *Annuler la facture* s'affichait aussi pour un utilisateur en consultation**, qui ne pouvait que se heurter à un refus ; et un refus effaçait toute la fiche au profit d'un message d'erreur. Le bouton est désormais réservé aux comptables et administrateurs, et un refus s'affiche sous le bouton, la fiche restant visible.
 
+- **Une facture créditée gardait sa TVA en « reste dû » ([#455](https://github.com/guycorbaz/kesh/issues/455)).** Le reste dû retranchait l'avoir **hors taxes** d'un total **TTC** : une facture de 100.— HT à 8,1 %, entièrement créditée, restait due de 8.10, alors que le grand livre, lui, avait soldé la créance. L'écran ne l'affichait que dans un cas rare, mais ⚠️ **l'API le rendait toujours** : `GET /api/v1/invoices/{id}`, ouverte aux clés API en lecture, renvoyait la TVA dans `amountDue` pour toute facture créditée. **Si une intégration lisait ce champ, ses chiffres étaient faux.** Le reste dû compte désormais l'avoir TTC, arrondi ligne par ligne comme son écriture.
+
+- **Un avoir pouvait viser une facture déjà réglée en partie ([#456](https://github.com/guycorbaz/kesh/issues/456)), et le compte du client devenait créditeur sans que rien ne le signale.** L'avoir était refusé sur une facture **payée**, mais pas sur une facture réglée **en partie** — qui, depuis le règlement partiel, n'est « payée » qu'une fois soldée. Comme l'avoir annule tout le montant de la facture, le client se retrouvait avec un crédit du montant déjà encaissé, que Kesh ne sait ni montrer, ni rembourser. L'avoir est désormais refusé dès qu'un règlement existe, avec un message qui dit quoi faire : annuler d'abord le règlement. *(Autoriser l'avoir sur une facture encaissée, avec le remboursement ou l'imputation qu'il appelle, est suivi par [#471](https://github.com/guycorbaz/kesh/issues/471).)*
+
 ### Changed
+
+- **Le bouton *Créer un avoir* s'affiche aussi sur une facture payée**, et c'est voulu. Il était masqué sur une facture payée mais pas sur une facture réglée en partie : l'écran ne couvrait que la moitié de la règle. Il reste désormais visible, et Kesh explique le refus dans le dialogue — comme le bouton *Dévalider*.
 
 - **Supprimer une facture validée n'est plus possible — il faut la « dévalider » d'abord.** Jusqu'ici, le bouton *Supprimer* d'une facture validée effaçait la facture **et son écriture comptable** d'un seul geste. La destruction d'une écriture était donc un **effet de bord du mot « supprimer »** : rien, dans le vocabulaire de l'écran, ne disait qu'on touchait aux livres.
 

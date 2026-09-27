@@ -833,15 +833,26 @@
 					Voir l'écriture comptable
 				</Button>
 			{/if}
-			{#if canManage && !invoice.paidAt}
-				<Button variant="outline" onclick={() => (creditNoteOpen = true)}>
+			<!-- Story 25-4-a (#456) — même règle que « Dévalider » ci-dessous : la
+			     condition `!invoice.paidAt` est RETIRÉE. Elle masquait le bouton sur
+			     une facture payée mais pas sur une facture réglée en PARTIE, qui n'a
+			     pas de `paidAt` ; le serveur refuse désormais les deux, avec un motif
+			     nommé que le dialogue affiche (`creditNoteError`). L'écran ne rejoue
+			     pas la règle métier. -->
+			{#if canManage}
+				<Button
+					variant="outline"
+					data-testid="invoice-credit-note-button"
+					onclick={() => (creditNoteOpen = true)}
+				>
 					{i18nMsg('credit-notes-create-button', 'Créer un avoir')}
 				</Button>
 			{/if}
 			{#if canManage && !invoice.paidAt}
 				<!-- Une facture payée est hors du périmètre dunning (jamais candidate
-				     à un rappel) : les boutons Suspendre/Reprendre sont masqués, comme
-				     les boutons voisins « Créer un avoir » / « Supprimer » (review P1 BH1). -->
+				     à un rappel) : les boutons Suspendre/Reprendre sont masqués (review
+				     P1 BH1). ⚠️ « Créer un avoir » ne l'est plus depuis la Story 25-4-a :
+				     il s'affiche, et le serveur refuse avec le motif nommé. -->
 				{#if invoice.dunningPausedAt === null}
 					<Button
 						variant="outline"
@@ -1332,7 +1343,10 @@
 				)}
 			</p>
 			{#if creditNoteError}
-				<div class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
+				<div
+					class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive"
+					data-testid="invoice-credit-note-error"
+				>
 					{creditNoteError}
 				</div>
 			{/if}
@@ -1340,7 +1354,11 @@
 				<Button variant="outline" onclick={() => (creditNoteOpen = false)}>
 					{i18nMsg('common-cancel', 'Annuler')}
 				</Button>
-				<Button onclick={confirmCreateCreditNote} disabled={creditNoteSubmitting}>
+				<Button
+					onclick={confirmCreateCreditNote}
+					disabled={creditNoteSubmitting}
+					data-testid="invoice-credit-note-confirm"
+				>
 					{i18nMsg('credit-notes-create-button', 'Créer un avoir')}
 				</Button>
 			</Dialog.Footer>

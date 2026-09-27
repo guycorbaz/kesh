@@ -961,7 +961,9 @@ Quand l'annulation n'est pas possible, le bouton est remplacé par la raison~:
 
 \begin{itemize}
     \item \textbf{la facture a été créditée} par un avoir~: le règlement est alors un paiement
-          \emph{à lettrer} à une autre facture --- il ne s'annule pas~;
+          \emph{à lettrer} à une autre facture --- il ne s'annule pas. Ce cas ne se présente plus
+          que sur une facture créditée \emph{avant} la version 0.12.1, ou restaurée d'une sauvegarde
+          antérieure~: un avoir est désormais refusé sur une facture réglée (\S\ref{sec:avoirs})~;
     \item \textbf{l'exercice du règlement est clôturé}~: un administrateur doit d'abord
           \textbf{rouvrir} l'exercice~;
     \item \textbf{le règlement est rapproché} d'une transaction bancaire~: il faut d'abord
@@ -1017,6 +1019,16 @@ Un avoir (note de crédit) annule une facture validée : c'est le moyen \textbf{
 L'avoir est consultable dans \emph{Avoirs} (menu \emph{Quotidien}), avec un \textbf{PDF « Avoir »} téléchargeable (mention « Avoir », référence à la facture d'origine, sans section QR de paiement). Le \emph{Décompte TVA} de la période tient compte de l'annulation (la TVA de la facture annulée est exclue).
 
 \begin{keshwarning}
+\textbf{Avoir refusé : « la facture porte un règlement ».} Un avoir annule \emph{toute} la facture. Si
+le client en a déjà réglé une partie, l'avoir lui laisserait un crédit du montant encaissé, que
+Kesh ne sait encore ni afficher, ni rembourser, ni imputer sur une autre facture. L'avoir est donc
+refusé dès qu'un règlement existe --- même partiel ---, et Kesh le dit dans le dialogue.
+\textbf{Annulez d'abord le règlement} depuis la fiche de la facture (\S\ref{sec:reglement-client}),
+puis émettez l'avoir. Si le client ne paiera simplement pas le solde, ce n'est pas un avoir qu'il
+faut, mais passer le reste en perte --- fonction prévue.
+\end{keshwarning}
+
+\begin{keshwarning}
 \textbf{Avoir refusé : « compte de produit archivé ».} Si une ligne de la facture impute un compte de produit qui a été \textbf{archivé depuis la validation}, Kesh refuse d'émettre l'avoir et nomme la ligne et le compte concernés.
 
 Ce refus est \textbf{volontaire}. Se replier sur le compte de produit par défaut du jour ferait extourner un compte que la facture n'a jamais crédité : le total resterait juste et le bilan équilibré, mais deux comptes de produit garderaient un solde résiduel se compensant, sans qu'aucun message ne le signale. Mieux vaut vous demander un geste explicite que fausser silencieusement votre compte de résultat.
@@ -1037,7 +1049,7 @@ Deux précisions utiles. D'abord, la réactivation peut elle-même être refusé
 \end{keshwarning}
 
 \begin{keshnote}
-En version actuelle, l'avoir est \textbf{total} (il annule la facture entière). L'avoir \emph{partiel} et le remboursement d'une facture \emph{déjà encaissée} (un avoir est refusé sur une facture marquée payée) sont prévus pour une version ultérieure. Les paiements sortants par fichier \texttt{pain.001.001.09} sont, eux, \textbf{disponibles} (cf. \S\ref{sec:paiements-fournisseurs}).
+En version actuelle, l'avoir est \textbf{total} (il annule la facture entière). L'avoir \emph{partiel} et le remboursement d'une facture \emph{déjà encaissée} (un avoir est refusé sur une facture \textbf{réglée, même en partie}) sont prévus pour une version ultérieure. Les paiements sortants par fichier \texttt{pain.001.001.09} sont, eux, \textbf{disponibles} (cf. \S\ref{sec:paiements-fournisseurs}).
 \end{keshnote}
 
 \subsection{Supprimer ou dévalider une facture}
@@ -1453,7 +1465,8 @@ raison~:
 
 \begin{itemize}
     \item \textbf{la facture a été créditée} par un avoir~: son règlement est un paiement
-          \emph{à lettrer}, il ne s'annule pas~;
+          \emph{à lettrer}, il ne s'annule pas --- cas hérité d'une version antérieure à la 0.12.1
+          ou d'une sauvegarde restaurée~;
     \item \textbf{l'exercice de l'écriture du rapprochement est clôturé}~: un administrateur
           doit d'abord le rouvrir. ⚠️ C'est l'exercice du \textbf{paiement} qui compte, jamais
           celui de la facture~: une facture de décembre dont l'exercice est clôturé, payée en
@@ -2070,7 +2083,7 @@ Fonctionnalités non encore disponibles :
 \begin{itemize}
     \item Mono-devise CHF (multi-devises prévu pour une version ultérieure).
     \item Décompte TVA au format officiel AFC / e-décompte ESTV (les montants du décompte Kesh sont à reporter manuellement sur le formulaire AFC).
-    \item Avoir \emph{partiel} et avoir sur facture \emph{déjà encaissée} (l'avoir total sur facture non payée est, lui, disponible — cf. \S\ref{sec:avoirs}).
+    \item Avoir \emph{partiel} et avoir sur facture \emph{déjà encaissée}, même en partie (l'avoir total sur une facture sans aucun règlement est, lui, disponible — cf. \S\ref{sec:avoirs}).
     \item Sélecteur de langue dans l'interface (la langue est fixée à l'onboarding ; le changement en cours de session est prévu pour une version ultérieure).
     \item Pas de signature électronique qualifiée (QES) sur les exports (verdict (b) de la recherche réglementaire, prévu Epic 14).
     \item Format PDF standard, non PDF/A (migration prévue selon ISO 19005).

@@ -20,13 +20,14 @@ const COLUMNS: &str = "id, company_id, invoice_id, journal_entry_id, amount, set
 
 use crate::entities::{InvoiceSettlement, NewInvoiceSettlement};
 use crate::errors::{DbError, map_db_error};
+use crate::repositories::invoices::line_ttc_sql;
 
 /// Forme **scalaire par facture** du total réglé — sous-requête corrélée.
 /// **Prérequis : alias `i` sur `invoices`.**
 ///
 /// Miroir exact de [`INVOICE_SETTLED_DERIVED_JOIN_SQL`], qui en est la forme
 /// agrégée. Les deux doivent rester d'accord : c'est ce que vérifie le test de
-/// parité.
+/// parité (`tests/invoice_amount_due_parity.rs`).
 ///
 /// ⚠️ Même discipline que `INVOICE_TTC_SUBQUERY_SQL` (`invoices.rs`) : la forme
 /// corrélée sert **une** facture, jamais une liste — elle y serait ré-évaluée
@@ -40,22 +41,44 @@ pub const INVOICE_SETTLED_SUBQUERY_SQL: &str =
 pub const INVOICE_SETTLED_DERIVED_JOIN_SQL: &str = "LEFT JOIN (SELECT invoice_id, SUM(amount) AS settled \
      FROM invoice_settlements GROUP BY invoice_id) st ON st.invoice_id = i.id";
 
-/// Forme **scalaire par facture** de l'avoir émis — `0` s'il n'y en a pas.
-/// **Prérequis : alias `i` sur `invoices`.**
+/// Forme **scalaire par facture** de l'avoir émis, **TTC** — `0` s'il n'y en
+/// a pas. **Prérequis : alias `i` sur `invoices`.**
+///
+/// ⛔ **TTC, arrondi ligne par ligne** — la grandeur que l'écriture de l'avoir
+/// porte au crédit de la créance (`credit_notes::generate_credit_note_journal_lines` :
+/// `total_ht + total_vat`, TVA par [`kesh_core::accounting::vat::line_vat_amount`]).
+/// Le résiduel soustrait ce terme d'un TTC : il doit être dans la même unité.
+/// **Jamais `credit_notes.total_amount`**, qui est **HT** (miroir de
+/// `invoices.total_amount`) : le lire ici laissait la TVA d'une facture
+/// créditée en reste dû (#455, Story 25-4-a).
 ///
 /// ⚠️ **Seul un avoir `issued` compte.** Les statuts sont
 /// `draft / issued / cancelled` (`chk_credit_notes_status`) : un brouillon n'a
 /// pas d'écriture et n'éteint donc rien. `credit_notes.invoice_id` est
 /// `NOT NULL UNIQUE` — au plus un avoir par facture, la somme est donc une
 /// commodité de forme, pas un cumul réel.
-pub const INVOICE_CREDITED_SUBQUERY_SQL: &str = "(SELECT COALESCE(SUM(cn.total_amount), 0) FROM credit_notes cn \
-     WHERE cn.invoice_id = i.id AND cn.status = 'issued')";
+pub const INVOICE_CREDITED_SUBQUERY_SQL: &str = concat!(
+    "(SELECT COALESCE(SUM(",
+    line_ttc_sql!("cl."),
+    "), 0) FROM credit_note_lines cl \
+     INNER JOIN credit_notes cn ON cn.id = cl.credit_note_id \
+     WHERE cn.invoice_id = i.id AND cn.status = 'issued')"
+);
 
-/// Forme **agrégat multi-factures** de l'avoir émis — alias `cnt`.
-/// **Prérequis : alias `i` sur `invoices`.**
-pub const INVOICE_CREDITED_DERIVED_JOIN_SQL: &str = "LEFT JOIN (SELECT invoice_id, SUM(total_amount) AS credited \
-     FROM credit_notes WHERE status = 'issued' GROUP BY invoice_id) cnt \
-     ON cnt.invoice_id = i.id";
+/// Forme **agrégat multi-factures** de l'avoir émis, **TTC** — table dérivée
+/// à joindre (alias `cnt`), puis `COALESCE(cnt.credited, 0)` côté requête
+/// externe. **Prérequis : alias `i` sur `invoices`.**
+///
+/// Miroir exact de [`INVOICE_CREDITED_SUBQUERY_SQL`] — même unité, même
+/// arrondi ; les deux sont tenues d'accord par le test de parité
+/// (`tests/invoice_amount_due_parity.rs`).
+pub const INVOICE_CREDITED_DERIVED_JOIN_SQL: &str = concat!(
+    "LEFT JOIN (SELECT cn.invoice_id, SUM(",
+    line_ttc_sql!("cl."),
+    ") AS credited FROM credit_note_lines cl \
+     INNER JOIN credit_notes cn ON cn.id = cl.credit_note_id \
+     WHERE cn.status = 'issued' GROUP BY cn.invoice_id) cnt ON cnt.invoice_id = i.id"
+);
 
 /// Enregistre un règlement dans la transaction courante.
 ///
@@ -120,6 +143,10 @@ where
 }
 
 /// Ce qui reste dû sur une facture : `TTC − avoir émis − Σ règlements`.
+///
+/// ⛔ **Trois termes TTC.** Le TTC de la facture et celui de l'avoir sont
+/// arrondis ligne par ligne par la même formule (`line_ttc_sql!`) ; les
+/// règlements sont des montants encaissés, donc TTC par nature.
 ///
 /// ⚠️ **Calculé, jamais stocké.** C'est la seule source de vérité du « combien
 /// reste-t-il ? », et elle est adossée aux mêmes données que le grand livre.

@@ -297,15 +297,38 @@ pub async fn create_credit_note(
                     inv.status
                 )));
             }
-            // AC2bis : pas d'avoir sur une facture déjà encaissée (v0.2, pas de
-            // flux de remboursement — éviterait un solde débiteur négatif).
-            Some(inv) if inv.paid_at.is_some() => {
-                return Err(DbError::IllegalStateTransition(
-                    "impossible de créer un avoir sur une facture déjà payée".into(),
-                ));
-            }
             Some(inv) => inv,
         };
+
+        // AC2bis, refondue par la Story 25-4-a (#456) : pas d'avoir sur une
+        // facture ENCAISSÉE, même en partie. L'avoir contre-passe tout le TTC ;
+        // sur une facture réglée, la créance deviendrait créditrice du montant
+        // encaissé, et Kesh n'a ni remboursement ni imputation pour le dénouer
+        // (#471 porte la levée de ce refus).
+        //
+        // ⛔ **Une ligne de règlement OU `paid_at`** — jamais `paid_at` seul :
+        // depuis la 24-2, il n'est posé qu'au solde.
+        //
+        // ⛔ **Lecture VERROUILLANTE, et après le verrou de la facture** (leçon
+        // de la 25-3-b) : sous REPEATABLE READ, une lecture simple fige
+        // l'instantané. Un règlement commité pendant que nous attendions le
+        // verrou de la facture doit être vu ici.
+        let settlement: Option<i64> = sqlx::query_scalar(
+            "SELECT id FROM invoice_settlements \
+             WHERE invoice_id = ? AND company_id = ? ORDER BY id LIMIT 1 FOR UPDATE",
+        )
+        .bind(invoice_id)
+        .bind(company_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
+        if settlement.is_some() || invoice.paid_at.is_some() {
+            return Err(DbError::CreditNoteBlockedBySettlement {
+                invoice_id,
+                settlement_id: settlement,
+                invoice_number: invoice.invoice_number.clone(),
+            });
+        }
 
         // AC3 : une seule note de crédit par facture (UNIQUE(invoice_id) en DB ;
         // check explicite pour une erreur métier claire plutôt qu'une FK 1062).

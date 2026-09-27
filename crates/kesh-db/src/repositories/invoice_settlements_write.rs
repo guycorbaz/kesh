@@ -328,6 +328,9 @@ pub async fn settlement_cancel_blocker_unlinking(
     // `validated` ou `cancelled` : l'encaissement exige `validated`, la
     // dévalidation refuse une facture réglée, et `cancelled` ne naît en
     // production que de l'avoir. Hors `validated`, c'est donc un avoir.
+    // ⚠️ Depuis la Story 25-4-a (#456), l'avoir est refusé sur une facture
+    // réglée : ce rang ne se déclenche plus que sur un état HÉRITÉ, ramené par
+    // l'import d'une sauvegarde antérieure.
     if status != "validated" {
         return Ok(Some((SettlementCancelBlocker::InvoiceCredited, None, None)));
     }

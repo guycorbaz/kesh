@@ -212,9 +212,13 @@ pub enum SettlementCancelBlocker {
     /// rapprochement à annuler. Coupe court : aucun rang suivant ne s'évalue.
     BankTransactionNotReconciled,
     /// La facture a été **créditée** par un avoir après ce règlement. Le
-    /// règlement est alors un paiement **à lettrer** (Epic 15), pas une
-    /// anomalie — il ne s'annule pas. ⚠️ Le statut `cancelled` d'une facture
-    /// ne naît en production que de l'avoir (`credit_notes.rs`).
+    /// règlement est alors un paiement **à lettrer** (Epic 15) — il ne
+    /// s'annule pas. ⚠️ Le statut `cancelled` d'une facture ne naît en
+    /// production que de l'avoir (`credit_notes.rs`).
+    ///
+    /// ⚠️ **État hérité depuis la Story 25-4-a (#456)** : un avoir est refusé
+    /// sur une facture réglée, même en partie. L'état n'est plus atteignable
+    /// que par l'**import d'une sauvegarde antérieure** — d'où ce motif, gardé.
     InvoiceCredited,
     /// Tête **fournisseur** (Story 25-3-a-2) : la facture n'est pas `paid` — il
     /// n'y a pas de règlement à annuler. ⚠️ Coupe court par construction : une
@@ -460,6 +464,29 @@ pub enum DbError {
         document_label: Option<String>,
     },
 
+    /// Un avoir ne peut pas viser cette facture : elle porte un **règlement**,
+    /// même partiel (Story 25-4-a, #456).
+    ///
+    /// ⛔ **Les deux conditions, jamais l'une seule** : une ligne
+    /// `invoice_settlements` **ou** `paid_at` posé — comme
+    /// [`UnvalidationBlocker::Settled`]. Depuis la 24-2, `paid_at` n'est posé
+    /// qu'au solde : la garde qui ne lisait que lui laissait passer une facture
+    /// réglée en partie, et l'avoir, qui contre-passe tout le TTC, rendait la
+    /// créance **créditrice** du montant encaissé.
+    ///
+    /// Conflit d'état → HTTP **409** `CREDIT_NOTE_INVOICE_SETTLED`. Remplace le
+    /// générique `IllegalStateTransition` de l'ancienne garde AC2bis, qui ne
+    /// disait ni ce qui bloquait ni quoi faire.
+    #[error("Avoir refusé : la facture porte un règlement")]
+    CreditNoteBlockedBySettlement {
+        invoice_id: i64,
+        /// Le premier règlement trouvé ; `None` quand seul `paid_at` est posé
+        /// (facture soldée avant la 24-2, sans ligne de règlement).
+        settlement_id: Option<i64>,
+        /// Le **numéro** de la facture, que l'utilisateur connaît.
+        invoice_number: Option<String>,
+    },
+
     /// Le règlement ne peut pas être annulé (Story 25-3-a-1, #414).
     ///
     /// Conflit d'état → HTTP **409**, avec le code canonique du
@@ -655,6 +682,7 @@ impl DbError {
             Self::AccountRoleInvalidForType { .. } => "ACCOUNT_ROLE_INVALID_FOR_TYPE",
             Self::InvalidRevenueAccounts(_) => "INVOICE_LINE_REVENUE_ACCOUNT_INVALID",
             Self::CreditNoteRevenueAccountsArchived(_) => "CREDIT_NOTE_REVENUE_ACCOUNT_ARCHIVED",
+            Self::CreditNoteBlockedBySettlement { .. } => "CREDIT_NOTE_INVOICE_SETTLED",
             // ⚠️ Le code EXPOSÉ est celui du `ReversalBlocker` (huit valeurs) ;
             // celui-ci n'est que le repli générique du mapping structuré.
             Self::EntryNotReversable { .. } => "ENTRY_NOT_REVERSABLE",

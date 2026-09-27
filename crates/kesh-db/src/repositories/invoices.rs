@@ -147,7 +147,32 @@ pub enum PausedFilter {
     NotPaused,
 }
 
-/// Paramètres de recherche, tri et pagination.
+/// **Source unique** de la formule SQL du TTC d'UNE ligne (facture ou avoir) —
+/// Story 25-4-a (#455). Rend un **littéral** (`concat!`), pour que les
+/// constantes qui la composent restent des `&'static str`.
+///
+/// `$p` est le préfixe de colonne : `"l."`, `"cl."`, ou `""` dans une table
+/// dérivée sans alias. Arrondi **par ligne**, half-away-from-zero : miroir de
+/// `kesh_core::accounting::vat::line_vat_amount`, que l'écriture de vente
+/// comme celle de l'avoir emploient.
+///
+/// ⛔ Ne pas recopier la formule à la main : la TVA de l'avoir a été soustraite
+/// au HT pendant des mois (#455) parce que la grandeur « avoir » n'empruntait
+/// pas cette formule-ci.
+macro_rules! line_ttc_sql {
+    ($p:literal) => {
+        concat!(
+            $p,
+            "line_total + ROUND(",
+            $p,
+            "line_total * ",
+            $p,
+            "vat_rate / 100, 2)"
+        )
+    };
+}
+pub(crate) use line_ttc_sql;
+
 /// Forme **scalaire par facture** du TTC canonique (#246, Story 21-2a) —
 /// sous-requête corrélée. **Prérequis : alias `i` sur `invoices`.**
 ///
@@ -158,8 +183,11 @@ pub enum PausedFilter {
 ///
 /// `pub` (PAS `pub(crate)`) : consommée par `repositories::reconciliation`
 /// (21-2b) et par `kesh-report` (balance âgée 21-7) — source de vérité unique.
-pub const INVOICE_TTC_SUBQUERY_SQL: &str = "(SELECT COALESCE(SUM(l.line_total + ROUND(l.line_total * l.vat_rate / 100, 2)), 0) \
-     FROM invoice_lines l WHERE l.invoice_id = i.id)";
+pub const INVOICE_TTC_SUBQUERY_SQL: &str = concat!(
+    "(SELECT COALESCE(SUM(",
+    line_ttc_sql!("l."),
+    "), 0) FROM invoice_lines l WHERE l.invoice_id = i.id)"
+);
 
 /// Forme **agrégat multi-factures** du TTC canonique (#246) — table dérivée à
 /// joindre (alias `lt`), puis `SUM(COALESCE(lt.ttc, 0))` côté requête externe.
@@ -168,9 +196,11 @@ pub const INVOICE_TTC_SUBQUERY_SQL: &str = "(SELECT COALESCE(SUM(l.line_total + 
 /// Choix de la table dérivée plutôt que la corrélée dans le `SUM()` externe :
 /// raison de **performance** (la corrélée serait ré-évaluée par ligne et par
 /// `CASE`), pas un interdit SQL (MariaDB accepte les deux — vérifié).
-pub const INVOICE_TTC_DERIVED_JOIN_SQL: &str = "LEFT JOIN (SELECT invoice_id, \
-     SUM(line_total + ROUND(line_total * vat_rate / 100, 2)) AS ttc \
-     FROM invoice_lines GROUP BY invoice_id) lt ON lt.invoice_id = i.id";
+pub const INVOICE_TTC_DERIVED_JOIN_SQL: &str = concat!(
+    "LEFT JOIN (SELECT invoice_id, SUM(",
+    line_ttc_sql!(""),
+    ") AS ttc FROM invoice_lines GROUP BY invoice_id) lt ON lt.invoice_id = i.id"
+);
 
 /// TTC canonique d'UNE facture (#246) via la forme scalaire — pour les
 /// call-sites qui n'ont pas les lignes chargées (ex. re-score de la
@@ -189,6 +219,7 @@ where
     .map_err(map_db_error)
 }
 
+/// Paramètres de recherche, tri et pagination.
 #[derive(Debug, Clone, Default)]
 pub struct InvoiceListQuery {
     pub search: Option<String>,

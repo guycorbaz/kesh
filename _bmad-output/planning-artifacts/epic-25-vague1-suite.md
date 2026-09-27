@@ -211,6 +211,11 @@ propagé aux rapports agrégés — balance âgée et échéancier ([#416]) — 
 rapprochement compare au TTC et non au résiduel**, si bien que le virement du solde d'une
 facture partiellement réglée **score 0** ([#420]).
 
+⚠️ **Découpée le 2026-09-26 en 25-4-a / b / c, puis d** : [#455] et [#456] (même grandeur, même
+jalon) y sont rattachées, et **[#384] y est ramenée de la 25-6 le 2026-09-27** (arbitrage de Guy)
+en 25-4-d — solder le reste d'une facture partiellement réglée repose sur le résiduel juste. Détail :
+`25-4-propager-le-residuel.md`.
+
 ### 25-5 — Les états et l'export
 
 **Issues : [#385], [#386].** La **Balance des comptes ne concorde pas avec le Bilan** — il
@@ -225,8 +230,7 @@ tient*.
 - La tuile **« Dernières écritures » n'appelle rien** et affiche toujours « Aucune écriture »
   ([#388]) — *une tuile qui est un décor*.
 - Le **« solde bancaire » est le solde comptable**, donc faux ([#389]).
-- **Imputer l'écart d'un règlement partiel** — escompte, frais bancaires, perte sur débiteur
-  ([#384]).
+- ~~**Imputer l'écart d'un règlement partiel**~~ — [#384] **ramenée en 25-4-d** le 2026-09-27.
 - **Le PDF d'une facture n'est jamais archivé**, il est régénéré à la volée ([#387], IV.9) —
   un document réémis n'est pas le document envoyé.
 
