@@ -96,18 +96,18 @@ réinterprété.
 ### Volet 2 — le PDF joint au rappel
 
 **AC 5** — Le PDF joint à un rappel (unitaire et lot) est un **rappel**, pas la facture ; la pièce
-jointe se nomme `rappel-{n}.pdf` et non plus `facture-{n}.pdf` (`invoice_email.rs:510`, `:1161`) —
+jointe se nomme `rappel-{n}.pdf` et non plus `facture-{n}.pdf` (`invoice_email.rs:509`, `:1164` ; `:733`, l'envoi de facture, reste `facture-`) —
 ⚠️ l'E2E `dunning-roundtrip.spec.ts:81-82` (`^facture-.*\.pdf$`) suit. Titre
 localisé « Rappel » (4 locales), sur le patron de surcharge de l'avoir. ⛔ **Dans la locale déjà
 résolue** que `render` reçoit (langue du contact, `resolve_language`) — **pas** `state.config.locale`
-comme l'avoir (`credit_notes.rs:335-346`), qui produirait un titre dans la langue de l'installation
+comme l'avoir (`crates/kesh-api/src/routes/credit_notes.rs:335-346`), qui produirait un titre dans la langue de l'installation
 sur un PDF dans celle du contact. Le téléchargement de la
 facture (`GET …/pdf`) et l'envoi de facture (`POST …/send-email`) sont **inchangés**.
 
 **AC 6** — Le PDF du rappel nomme **en toutes lettres le numéro de la facture d'origine** et, sous le
 total TTC, porte : **déjà réglé**, puis **reste à payer** en gras. ⛔ **Pas de ligne « avoir »** : une facture
-qui porte un avoir est `cancelled` (`credit_notes.rs:586`), un avoir est refusé sur une facture
-réglée même en partie (`:325`), et le rendu comme l'éligibilité exigent `validated`
+qui porte un avoir est `cancelled` (`crates/kesh-db/src/repositories/credit_notes.rs:586`), un avoir est refusé sur une
+facture réglée même en partie (même fichier, `:325`), et le rendu comme l'éligibilité exigent `validated`
 (`invoice_pdf_service.rs:102`, `dunning_eligibility.rs:86`) — une facture créditée ne reçoit jamais
 de rappel ; la ligne serait du code mort. Si #471 lève un jour le refus, elle y reviendra. Les
 lignes nulles ne s'affichent pas (même règle que les frais) ; une facture sans règlement ne
@@ -149,11 +149,11 @@ donc en fausse alerte d'infrastructure. Il sort en `BatchItemError::failed("REMI
 `classify_render_error`) ; un règlement enregistré entre les deux appels y ferait tomber le refus
 dans le bras final `other => BatchItemError::infra("render pdf", …)` (`:947`). Le variant du refus
 rejoint le `match` de `classify_render_error` **et** le tableau `metier` de son test (`:1557`) —
-le doc-comment `:924-936` l'impose.
+le doc-comment `:922-936` l'impose.
 **Où vit le refus** : dans `render_reminder` (aperçu, lot) **et** dans la variante PDF — l'envoi
 unitaire n'appelle pas `render_reminder` (le texte vient de l'aperçu, `:486-487`), seul son rendu PDF
 (`:499-500`) recalcule le reste. Un variant `AppError::ReminderNothingDue` et sa clé
-`error-reminder-nothing-due` (4 locales), sur le patron de `DunningPaused` (`errors.rs:1312`) :
+`error-reminder-nothing-due` (4 locales), sur le patron de `DunningPaused` (`crates/kesh-api/src/errors.rs:1312`) :
 l'aperçu et l'unitaire affichent `err.message` ; `reminder-error-label.ts` ne sert qu'au compte-rendu
 du lot (`ReminderBatchReport.svelte:30`).
 L'éligibilité (`dunning_eligibility.rs:85-89`) **n'est pas** modifiée : l'état est hérité et rare
@@ -189,7 +189,7 @@ variables propres au rappel — `{reminderLevel}`, `{reminderFee}` (frais du niv
 3 autres locales, repli `settings/dunning/+page.svelte:263`) ne dit plus « le QR de la facture
 jointe » mais celui du **rappel joint**. ⚠️ Le manuel dit aussi, sans le corriger, qu'un client qui
 paie `{totalDue}` (reste + frais) sera refusé en trop-perçu : conséquence des frais non comptabilisés,
-tracée par **#401**. PDF régénérés et contrôlés **aplatis**. CHANGELOG `[0.12.1]` *Fixed*.
+tracée par **[#401]**. PDF régénérés et contrôlés **aplatis**. CHANGELOG `[0.12.1]` *Fixed*.
 
 ## Tasks / Subtasks
 
@@ -272,6 +272,13 @@ tracée par **#401**. PDF régénérés et contrôlés **aplatis**. CHANGELOG `[
 
 ## Change Log
 
+- **2026-09-27** — **Validation P4 ciblée** (Sonnet, `6197bffd`, prompt `25-4-b2-validate-prompt-p4.md`)
+  — **1 MEDIUM, 2 LOW**, tous de référence : `credit_notes.rs:586`/`:325` sans chemin, alors que deux
+  fichiers portent ce nom (le contenu est dans `kesh-db/src/repositories/`) ; `invoice_email.rs:510`/
+  `:1161` décalés (`:509`/`:1164`) ; `[#401]` défini mais jamais invoqué. Symptôme grepé (nom de
+  fichier nu) : **deux sites de plus** que la passe, `credit_notes.rs:335-346` et `errors.rs:1312`,
+  eux aussi présents dans deux crates — qualifiés. Cinq axes exercés, commandes citées ; les
+  corrections de P3 jugées justes et sans contradiction.
 - **2026-09-27** — **Validation P3** (Opus, protocole complet, prompt `25-4-b2-validate-prompt-p3.md`)
   — **5 MEDIUM, 5 LOW**, tous sur la fiche ; les citations clés vérifiées par `grep -nF`. Corrigés :
   M1 la ligne « avoir » et `amount_credited` retirées — une facture créditée est `cancelled` et ne
