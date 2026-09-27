@@ -1513,6 +1513,7 @@ reminders-error-content-too-long = Mahninhalt zu lang
 reminders-error-not-pdf-ready = Rechnung nicht als PDF druckbar
 reminders-error-nothing-due = Nichts offen
 error-reminder-nothing-due = Auf dieser Rechnung ist nichts mehr offen: keine Mahnung zu versenden.
+error-reminder-amounts-changed = Der offene Betrag hat sich seit der Vorschau geändert (eine Zahlung ist eingegangen): Öffnen Sie die Vorschau erneut, bevor Sie senden.
 reminders-error-rate-limited = Sendelimit erreicht
 reminders-error-database-error = Technischer Fehler
 reminders-error-smtp-failed = E-Mail-Versand fehlgeschlagen

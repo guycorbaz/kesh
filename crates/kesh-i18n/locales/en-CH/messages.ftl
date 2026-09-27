@@ -1518,6 +1518,7 @@ reminders-error-content-too-long = Reminder content too long
 reminders-error-not-pdf-ready = Invoice not printable as PDF
 reminders-error-nothing-due = Nothing due
 error-reminder-nothing-due = Nothing is left to claim on this invoice: no reminder to send.
+error-reminder-amounts-changed = The amount due has changed since the preview (a payment came in): reopen the preview before sending.
 reminders-error-rate-limited = Send limit reached
 reminders-error-database-error = Technical error
 reminders-error-smtp-failed = E-mail sending failed

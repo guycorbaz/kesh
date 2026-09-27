@@ -1511,6 +1511,7 @@ reminders-error-content-too-long = Contenuto del sollecito troppo lungo
 reminders-error-not-pdf-ready = Fattura non stampabile in PDF
 reminders-error-nothing-due = Nulla da esigere
 error-reminder-nothing-due = Su questa fattura non resta nulla da esigere: nessun sollecito da inviare.
+error-reminder-amounts-changed = L'importo dovuto è cambiato dall'anteprima (è arrivato un pagamento): riaprire l'anteprima prima di inviare.
 reminders-error-rate-limited = Limite di invio raggiunto
 reminders-error-database-error = Errore tecnico
 reminders-error-smtp-failed = Invio e-mail non riuscito

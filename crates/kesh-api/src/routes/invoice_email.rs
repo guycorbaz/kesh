@@ -308,6 +308,12 @@ pub struct ReminderPreviewResponse {
     pub level: i16,
     pub subject: String,
     pub body: String,
+    /// Story 25-4-b2 (#416) — le reste dû (arrondi) et les frais cumulés sur
+    /// lesquels le texte a été rendu. Le client les renvoie à l'envoi : s'ils ont
+    /// changé entre-temps (un règlement est arrivé), l'envoi est refusé — sans quoi
+    /// le courrier annoncerait l'ancien reste et la QR le nouveau.
+    pub amount_due: rust_decimal::Decimal,
+    pub fees: rust_decimal::Decimal,
 }
 
 /// Corps de l'envoi unitaire d'un rappel (Story 21-5b). **PAS de champ `to`**
@@ -318,6 +324,15 @@ pub struct SendReminderRequest {
     pub level_number: i16,
     pub subject: String,
     pub body: String,
+    /// Story 25-4-b2 (#416) — les montants de l'aperçu (`amountDue`, `fees`). Présents,
+    /// ils sont comparés aux montants recalculés à l'envoi : un écart →
+    /// `409 REMINDER_AMOUNTS_CHANGED`, rien n'est envoyé. Absents (client d'API qui
+    /// ne passe pas par l'aperçu), aucune comparaison — le texte est alors de la
+    /// seule responsabilité de l'appelant.
+    #[serde(default)]
+    pub expected_amount_due: Option<rust_decimal::Decimal>,
+    #[serde(default)]
+    pub expected_fees: Option<rust_decimal::Decimal>,
 }
 
 /// Prochain niveau de rappel à envoyer = plus petit `level_number > current_level`
@@ -411,7 +426,7 @@ pub async fn preview_reminder_email(
     let contact = load_active_contact(&state.pool, invoice.contact_id, company.id).await?;
     let language = resolve_language(&contact, &company);
 
-    let (subject, body, _amounts) = render_reminder(
+    let (subject, body, amounts) = render_reminder(
         &state,
         &company,
         &invoice,
@@ -429,6 +444,8 @@ pub async fn preview_reminder_email(
         level: q.level,
         subject,
         body,
+        amount_due: amounts.amount_due,
+        fees: amounts.fees,
     }))
 }
 
@@ -536,6 +553,7 @@ pub async fn send_reminder(
         level.fee_amount,
     )
     .await?;
+    check_amounts_unchanged(&amounts, req.expected_amount_due, req.expected_fees)?;
     let rendered = invoice_pdf_service::render_document(
         &state.pool,
         &state.i18n,
@@ -995,6 +1013,24 @@ fn classify_render_error(e: AppError, invoice_id: i64) -> BatchItemError {
         AppError::ReminderNothingDue => BatchItemError::failed("REMINDER_NOTHING_DUE"),
         other => BatchItemError::infra("render pdf", invoice_id, other),
     }
+}
+
+/// Refuse l'envoi unitaire si les montants ont changé depuis l'aperçu (revue de
+/// code 25-4-b2, P1 — HIGH). Le texte envoyé vient de l'aperçu, la QR des montants
+/// recalculés : sans cette garde, un règlement arrivé entre les deux faisait
+/// annoncer au courrier l'ancien reste et à la QR le nouveau. Comparaison de
+/// VALEUR (`Decimal` : 68.1 = 68.1000). Un attendu absent n'est pas comparé.
+fn check_amounts_unchanged(
+    amounts: &invoice_pdf_service::ReminderAmounts,
+    expected_amount_due: Option<rust_decimal::Decimal>,
+    expected_fees: Option<rust_decimal::Decimal>,
+) -> Result<(), AppError> {
+    let changed = expected_amount_due.is_some_and(|e| e != amounts.amount_due)
+        || expected_fees.is_some_and(|e| e != amounts.fees);
+    if changed {
+        return Err(AppError::ReminderAmountsChanged);
+    }
+    Ok(())
 }
 
 /// Classe une erreur de [`render_reminder`] pour la boucle du lot (Story 25-4-b2,
@@ -1608,6 +1644,29 @@ mod tests {
             );
             assert!(notice.contains("20.00"), "{language:?} : {notice}");
         }
+    }
+
+    /// Revue de code 25-4-b2, P1 (HIGH) — l'envoi unitaire refuse si les montants
+    /// ont changé depuis l'aperçu ; la comparaison porte sur la VALEUR, et un
+    /// attendu absent n'est pas comparé.
+    #[test]
+    fn check_amounts_unchanged_compare_des_valeurs() {
+        let amounts = invoice_pdf_service::ReminderAmounts {
+            amount_settled: Decimal::new(4000, 2),
+            amount_due: Decimal::new(6810, 2),
+            fees: Decimal::new(2000, 2),
+        };
+        let v = |s: &str| Some(s.parse::<Decimal>().unwrap());
+        assert!(check_amounts_unchanged(&amounts, v("68.1000"), v("20")).is_ok());
+        assert!(check_amounts_unchanged(&amounts, None, None).is_ok());
+        assert!(matches!(
+            check_amounts_unchanged(&amounts, v("108.10"), v("20.00")),
+            Err(AppError::ReminderAmountsChanged)
+        ));
+        assert!(matches!(
+            check_amounts_unchanged(&amounts, v("68.10"), v("40.00")),
+            Err(AppError::ReminderAmountsChanged)
+        ));
     }
 
     /// Story 25-4-b2 (AC 9) — ⛔ en lot, le refus du reste nul est un échec MÉTIER

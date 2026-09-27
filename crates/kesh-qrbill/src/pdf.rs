@@ -716,7 +716,7 @@ fn draw_invoice_section(
             let label = if line.full_width {
                 truncate_display(&line.label, REMINDER_NOTE_MAX_CHARS)
             } else {
-                line.label
+                truncate_display(&line.label, REMINDER_LABEL_MAX_CHARS)
             };
             layer.use_text(label, 9.0, Mm(x), Mm(ty), font);
             if let Some(amount) = line.amount {
@@ -1150,6 +1150,12 @@ const REMINDER_LINE_STEP: f32 = 4.5;
 /// ⚠️ Les gardes de capacité ne surveillent que l'ORDONNÉE : sans cette borne,
 /// une traduction plus longue déborderait à droite sans que rien ne rougisse.
 pub const REMINDER_NOTE_MAX_CHARS: usize = 78;
+
+/// Longueur maximale des **libellés courts** du bloc de rappel (déjà réglé, reste
+/// à payer, frais de rappel), dessinés dans la colonne des libellés : 50 mm de
+/// `col_unit` à `col_tot`, soit 23 caractères au calibrage d'[`IDENTITY_MAX_CHARS`].
+/// Au-delà, le libellé chevaucherait le montant (revue de code 25-4-b2, P1).
+pub const REMINDER_LABEL_MAX_CHARS: usize = 23;
 
 /// Une ligne du bloc de rappel, **construite** avant d'être dessinée — c'est ce
 /// qui rend son contenu testable (le texte d'un PDF est hex-encodé dans les

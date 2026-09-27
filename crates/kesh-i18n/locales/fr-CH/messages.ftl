@@ -1610,6 +1610,7 @@ reminders-error-content-too-long = Contenu du rappel trop long
 reminders-error-not-pdf-ready = Facture non imprimable en PDF
 reminders-error-nothing-due = Rien à réclamer
 error-reminder-nothing-due = Il ne reste rien à réclamer sur cette facture : aucun rappel à envoyer.
+error-reminder-amounts-changed = Le montant dû a changé depuis l'aperçu (un règlement est arrivé) : rouvrez l'aperçu avant d'envoyer.
 reminders-error-rate-limited = Limite d'envoi atteinte
 reminders-error-database-error = Erreur technique
 reminders-error-smtp-failed = Échec de l'envoi e-mail

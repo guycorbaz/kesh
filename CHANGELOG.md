@@ -36,6 +36,8 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 - **Un rappel réclamait le montant entier d'une facture déjà réglée en partie ([#416](https://github.com/guycorbaz/kesh/issues/416)).** Une facture de 1 081.— réglée de 900.— était relancée pour **1 081.— plus les frais**, et le PDF joint — la facture elle-même — portait une QR-facture à 1 081.— : le client qui la scannait **payait une seconde fois** ce qu'il avait déjà réglé. Le rappel réclame désormais le **reste dû** : le courrier l'annonce (plus les frais s'il y en a), et le PDF joint est un **rappel** — il en porte le titre, dit ce qui est déjà réglé et ce qui reste à payer, et sa QR demande le reste, avec la **même référence** que la facture, pour que le rapprochement reconnaisse le paiement.
 
+  **Un règlement arrivé pendant que l'aperçu est ouvert fait refuser l'envoi** : le courrier validé annoncerait un autre montant que la QR jointe. Il suffit de rouvrir l'aperçu.
+
   **Les frais de rappel ne s'affichent plus quand ils sont nuls** — les modèles fournis écrivaient « frais de rappel de 0.00 ». Ils ne sont **jamais** dans la QR : ils ne sont pas comptabilisés ([#401](https://github.com/guycorbaz/kesh/issues/401)), et un versement qui les inclurait serait refusé comme trop-perçu ; le PDF les mentionne sur une ligne à part.
 
   ⚠️ **Le rappel PDF ne part qu'avec un rappel envoyé par e-mail.** Pour une mise en demeure envoyée hors de Kesh ou un contact sans e-mail, le PDF imprimable reste celui de la facture, au montant total ([#477](https://github.com/guycorbaz/kesh/issues/477)). ⚠️ **Un modèle de rappel personnalisé** qui écrit `{reminderFee}` en toutes lettres affiche toujours « 0.00 » sans frais : la nouvelle variable `{feeNotice}` est vide dans ce cas.

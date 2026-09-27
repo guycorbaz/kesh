@@ -196,7 +196,17 @@
 		sendingUnit = true; // (C)
 		sendError = '';
 		try {
-			await sendReminder(sendTarget.invoiceId, { levelNumber, subject, body });
+			// Story 25-4-b2 (#416) : les montants de l'aperçu repartent avec le texte —
+			// si un règlement est arrivé entre-temps, le serveur refuse (409
+			// REMINDER_AMOUNTS_CHANGED) plutôt que d'envoyer un courrier dont le
+			// montant ne serait plus celui de la QR jointe.
+			await sendReminder(sendTarget.invoiceId, {
+				levelNumber,
+				subject,
+				body,
+				expectedAmountDue: sendPreview?.amountDue,
+				expectedFees: sendPreview?.fees,
+			});
 			notifySuccess(i18nMsg('reminders-send-success', 'Rappel envoyé'));
 			sendOpen = false;
 			await load();

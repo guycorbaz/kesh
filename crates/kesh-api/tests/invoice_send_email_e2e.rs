@@ -2268,3 +2268,70 @@ async fn reminder_with_nothing_due_is_refused_by_name(pool: MySqlPool) {
     assert_eq!(mock.sent_emails().len(), 0);
     assert_eq!(reminder_count(&pool, invoice_id).await, 0);
 }
+
+/// Revue de code 25-4-b2, P1 (HIGH) — ⛔ un règlement arrivé entre l'aperçu et
+/// l'envoi unitaire : le texte validé annonce l'ancien reste, la QR recalculée le
+/// nouveau. L'envoi qui renvoie les montants de l'aperçu est REFUSÉ (409), rien
+/// ne part ; un nouvel aperçu permet l'envoi.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn send_reminder_refuses_amounts_changed_since_preview(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (admin_id, company_id, invoice_id) = seed_sendable(&pool).await;
+    seed_dunning(&pool, company_id).await;
+    let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+    let preview = || async {
+        let v: serde_json::Value = app
+            .client
+            .get(app.url(&format!(
+                "/api/v1/invoices/{invoice_id}/reminder-preview?level=1"
+            )))
+            .bearer_auth(&token)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        v
+    };
+    let send = |p: serde_json::Value| {
+        app.client
+            .post(app.url(&format!("/api/v1/invoices/{invoice_id}/reminders/send")))
+            .bearer_auth(&token)
+            .json(&json!({
+                "levelNumber": 1,
+                "subject": p["subject"],
+                "body": p["body"],
+                "expectedAmountDue": p["amountDue"],
+                "expectedFees": p["fees"],
+            }))
+            .send()
+    };
+
+    let avant = preview().await;
+    assert_eq!(
+        avant["amountDue"]
+            .as_str()
+            .unwrap()
+            .parse::<rust_decimal::Decimal>()
+            .unwrap(),
+        dec!(108.10),
+        "l'aperçu dit le reste sur lequel il a rendu le texte : {avant}"
+    );
+    // Un règlement arrive pendant que l'aperçu est ouvert.
+    settle(&pool, admin_id, company_id, invoice_id, dec!(40.00)).await;
+
+    let refus = send(avant).await.unwrap();
+    assert_eq!(refus.status(), 409);
+    let body: serde_json::Value = refus.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "REMINDER_AMOUNTS_CHANGED", "{body}");
+    assert_eq!(mock.sent_emails().len(), 0, "rien n'est parti");
+    assert_eq!(reminder_count(&pool, invoice_id).await, 0);
+
+    // Un nouvel aperçu : le texte et la QR disent le même reste.
+    let apres = preview().await;
+    assert!(apres["body"].as_str().unwrap().contains("68.10"), "{apres}");
+    assert_eq!(send(apres).await.unwrap().status(), 201);
+    assert_eq!(mock.sent_emails().len(), 1);
+}

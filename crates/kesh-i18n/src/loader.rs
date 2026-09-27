@@ -289,6 +289,7 @@ mod tests {
             "invoice-pdf-reminder-fees",
             "invoice-pdf-reminder-fees-note",
             "error-reminder-nothing-due",
+            "error-reminder-amounts-changed",
             "reminders-error-nothing-due",
         ] {
             let fr = bundle.format(&Locale::FrCh, key, None);

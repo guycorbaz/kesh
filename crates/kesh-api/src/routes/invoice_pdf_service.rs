@@ -123,6 +123,12 @@ pub fn reminder_amount_due(raw: Decimal) -> Result<Decimal, AppError> {
 /// facture à la fois) — jamais réécrit. ⚠️ `amount_due` et `amount_settled` ne
 /// prennent pas de `company_id` : l'appelant DOIT avoir chargé la facture par
 /// `find_by_id_with_lines(pool, company.id, …)`, qui porte le scoping.
+///
+/// ⛔ Les trois lectures se font dans UNE transaction (revue de code 25-4-b2, P1) :
+/// sous REPEATABLE READ, elles voient le même instantané. Lues séparément, un
+/// règlement inséré entre deux d'entre elles rendait « déjà réglé » et « reste à
+/// payer » incohérents entre eux, et la QR pouvait réclamer un reste d'avant le
+/// paiement.
 pub async fn reminder_amounts(
     pool: &sqlx::MySqlPool,
     company_id: i64,
@@ -130,11 +136,24 @@ pub async fn reminder_amounts(
     level_number: i16,
     level_fee: Decimal,
 ) -> Result<ReminderAmounts, AppError> {
-    let amount_due = reminder_amount_due(invoice_settlements::amount_due(pool, invoice_id).await?)?;
-    let amount_settled = invoice_settlements::amount_settled(pool, invoice_id).await?;
-    let other_fees =
-        invoice_reminders::sum_fees_deduped_excluding(pool, company_id, invoice_id, level_number)
-            .await?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(format!("begin tx: {e}")))?;
+    let raw_due = invoice_settlements::amount_due(&mut *tx, invoice_id).await?;
+    let amount_settled = invoice_settlements::amount_settled(&mut *tx, invoice_id).await?;
+    let other_fees = invoice_reminders::sum_fees_deduped_excluding(
+        &mut *tx,
+        company_id,
+        invoice_id,
+        level_number,
+    )
+    .await?;
+    // Lecture seule : rien à valider, la transaction ne sert qu'à l'instantané.
+    tx.rollback()
+        .await
+        .map_err(|e| AppError::Internal(format!("rollback tx: {e}")))?;
+    let amount_due = reminder_amount_due(raw_due)?;
     Ok(ReminderAmounts {
         amount_settled,
         amount_due,
@@ -918,6 +937,20 @@ mod tests {
                 "{locale:?} : « {note} » dépasse {} caractères",
                 kesh_qrbill::REMINDER_NOTE_MAX_CHARS
             );
+            // Revue de code 25-4-b2, P1 — les libellés COURTS, dans leur colonne de
+            // 50 mm : la troncature au dessin est une défense, pas une mise en page.
+            for key in [
+                "invoice-pdf-settled",
+                "invoice-pdf-amount-due",
+                "invoice-pdf-reminder-fees",
+            ] {
+                let label = build_i18n(&bundle, locale).get(key).to_string();
+                assert!(
+                    label.chars().count() <= kesh_qrbill::REMINDER_LABEL_MAX_CHARS,
+                    "{locale:?} : « {label} » dépasse {} caractères",
+                    kesh_qrbill::REMINDER_LABEL_MAX_CHARS
+                );
+            }
         }
     }
 }

@@ -215,6 +215,22 @@ quel à une facture partiellement réglée (**[#477]**). PDF régénérés et co
 - [x] **T5 — textes** (AC 11).
 - [x] **T6 — gates** : backend complet (base remise à zéro), frontend complet, **E2E complet**.
 
+### Review Findings
+
+*Passe 1 de `bmad-code-review` (2026-09-27) — Blind Hunter, Edge Case Hunter, Acceptance Auditor, tous
+Sonnet, sur `46081964..7b20d687`. Brut : 4 + 3 + 0 ; après dédoublonnage et tri : 1 décision, 2 patch,
+1 defer, 2 écartés.*
+
+- [x] [Review][Decision] **HIGH — à l'envoi unitaire, le texte et la QR peuvent diverger** — `send_reminder` envoie le sujet et le corps de l'aperçu (`invoice_email.rs:515-516`) mais recalcule les montants de la QR au moment de l'envoi (`:531`) : un règlement enregistré entre l'aperçu et le clic fait annoncer au courrier l'ancien reste, et à la QR le nouveau. Le lot n'a pas le défaut (montants calculés une fois). Convergé Blind + Edge. Options : refuser l'envoi si le reste a changé depuis l'aperçu (l'aperçu rend le reste, l'envoi le renvoie, écart → 409 à rouvrir) ; ou l'accepter et le documenter. ✅ **Tranché (Guy, « ok, continue » sur la recommandation)** : refuser — `409 REMINDER_AMOUNTS_CHANGED`.
+- [x] [Review][Patch] **MEDIUM — `reminder_amounts` lit reste, réglé et frais en trois requêtes hors transaction** [crates/kesh-api/src/routes/invoice_pdf_service.rs] — un règlement inséré entre la lecture du reste et celle du réglé rend « déjà réglé » et « reste à payer » incohérents entre eux, et la QR peut réclamer un reste d'avant le paiement. Risque introduit par la story (avant, le TTC se calculait des lignes). Blind Hunter.
+- [x] [Review][Patch] **LOW — les libellés courts du bloc (déjà réglé, reste à payer, frais de rappel) ne sont bornés ni testés en largeur** [crates/kesh-qrbill/src/pdf.rs] — seule la mention pleine largeur l'est ; la colonne n'a que ~23 caractères. Edge Case Hunter.
+- [x] [Review][Defer] **près du seuil de capacité, `payment_terms` se clampe sur le bas du bloc** [crates/kesh-qrbill/src/pdf.rs:728-736] — deferred, pre-existing : `payment_terms` n'est pas réservé et se clampe à `content_floor + 5` ; avant la story il pouvait déjà chevaucher la ligne du total au seuil, le bloc de rappel reproduit la même géométrie sans l'aggraver. Le réserver changerait la capacité des factures.
+
+Écartés : montant imprimé sur le bulletin (Blind F3) — il vient de `data.amount`, le montant de la QR
+(`pdf.rs:819-822`, `:947-950`) ; borne en caractères d'une police proportionnelle (Blind F4) —
+limite documentée, même méthode qu'`IDENTITY_MAX_CHARS`. L'Acceptance Auditor : 0 finding, recomptes
+concordants.
+
 ## Dev Notes
 
 ### Ce qu'il ne faut pas faire
@@ -353,6 +369,26 @@ Claude Opus 5.5 (`claude-opus-5-5`).
 
 ## Change Log
 
+- **2026-09-27** — **Revue de code, passe 1** (Sonnet ×3, `46081964..7b20d687`) — **1 HIGH (décision),
+  1 MEDIUM, 1 LOW** corrigés, 1 différé, 2 écartés (§ *Review Findings*) :
+  - HIGH, tranché par Guy : l'aperçu rend `amountDue` et `fees` ; l'envoi unitaire les renvoie
+    (`expectedAmountDue`, `expectedFees`, optionnels pour un client d'API) et un écart →
+    `409 REMINDER_AMOUNTS_CHANGED`, rien ne part. Test d'intégration
+    `send_reminder_refuses_amounts_changed_since_preview` (aperçu → règlement → envoi refusé → nouvel
+    aperçu → envoi) — ⛔ **mutation vérifiée** : sans l'appel à la garde, 201 au lieu de 409. Test
+    unitaire `check_amounts_unchanged_compare_des_valeurs`. Page des rappels, types, clé
+    `error-reminder-amounts-changed` ×4, manuel et CHANGELOG ;
+  - MEDIUM : `reminder_amounts` lit reste, réglé et frais dans **une** transaction (instantané
+    REPEATABLE READ) ; `sum_fees_deduped_excluding` devient générique sur l'exécuteur. ⚠️ **Pas de
+    test** : la course demande une concurrence réelle, non reproductible de façon déterministe —
+    correctif structurel ;
+  - LOW : `REMINDER_LABEL_MAX_CHARS = 23`, troncature défensive au dessin, borne testée dans les 4
+    locales.
+  Tests, recomptés depuis le diff de `7b20d687` : **+2** backend (1 unitaire, 1 intégration).
+  ⛔ Un repository de `kesh-db` touché ⇒ **gate complet** : base remise à zéro, **2510 / 2510** ;
+  frontend `check` 0 erreur, **835 / 835**, build OK ; E2E ciblé `reminders` + `dunning-roundtrip`
+  **10 / 10** ; E2E complet au dernier commit de la boucle. PDF du manuel utilisateur régénéré,
+  contrôlé aplati.
 - **2026-09-27** — **Dev** : T1-T5 faits (§ *Completion Notes*) ; deux écarts de mise en œuvre écrits
   (titre par champ plutôt que par surcharge de locale ; montants calculés une fois et partagés).
   Gates verts (§ *Gates*) ; **KF-053 (#478) ouverte** pour le symptôme E2E revenu. Story en `review`.

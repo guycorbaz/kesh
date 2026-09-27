@@ -66,12 +66,18 @@ pub async fn list_all_by_company(
 /// ré-émis — D18 — ne compte le frais qu'UNE fois : `MAX(fee_amount)`), en **excluant**
 /// `exclude_level` (le niveau en cours d'envoi, dont le frais de config est ajouté à part
 /// par l'appelant — évite le double comptage H2). Pour `{totalDue}` (21-5b). 0 si aucun.
-pub async fn sum_fees_deduped_excluding(
-    pool: &MySqlPool,
+///
+/// Générique sur l'exécuteur (Story 25-4-b2) : les montants d'un rappel se lisent
+/// dans UNE transaction, avec le reste dû et le réglé, pour voir le même instantané.
+pub async fn sum_fees_deduped_excluding<'e, E>(
+    executor: E,
     company_id: i64,
     invoice_id: i64,
     exclude_level: i16,
-) -> Result<rust_decimal::Decimal, DbError> {
+) -> Result<rust_decimal::Decimal, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
     let sum: Option<rust_decimal::Decimal> = sqlx::query_scalar(
         "SELECT SUM(fee) FROM ( \
             SELECT level_number, MAX(fee_amount) AS fee FROM invoice_reminders \
@@ -82,7 +88,7 @@ pub async fn sum_fees_deduped_excluding(
     .bind(company_id)
     .bind(invoice_id)
     .bind(exclude_level)
-    .fetch_one(pool)
+    .fetch_one(executor)
     .await
     .map_err(map_db_error)?;
     Ok(sum.unwrap_or(rust_decimal::Decimal::ZERO))
