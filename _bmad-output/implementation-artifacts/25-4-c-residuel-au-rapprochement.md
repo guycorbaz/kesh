@@ -3,12 +3,12 @@
 Status: ready-for-dev
 
 **Issue : [#420]** — ⛔ la PR porte `closes #420`, titre ET corps (§ *Issue Tracking Rule*). Voisine :
-**[#476]** (arrondi de la QR contre garde de trop-perçu), dont l'inclusion est une question à Guy (Q1).
+**[#476]** (arrondi de la QR contre garde de trop-perçu), **incluse** (Q1) — la PR porte aussi `closes #476`.
 
 **Mère : `25-4-propager-le-residuel.md`** (`split`) — source des faits. **Sœurs** : 25-4-a (mergée, #472 :
-le reste dû juste), 25-4-b1 (mergée, #475 : formes jointes aux agrégats), 25-4-b2 (PR #479 : les
-rappels). Indépendante de b2 : branche `story/25-4-c-residuel-au-rapprochement` tirée de `main`
-(`b10109be`).
+le reste dû juste), 25-4-b1 (mergée, #475 : formes jointes aux agrégats), 25-4-b2 (mergée, #479 : les
+rappels). Branche `story/25-4-c-residuel-au-rapprochement`, rebasée sur `main` (`9098b2be`) ;
+la b2 ne touche aucun fichier du rapprochement.
 
 ## Story
 
@@ -83,14 +83,16 @@ tous ses lecteurs suivent) ; son doc-comment le dit.
 plus « TTC ».
 
 **AC 3** — Le montant affiché dans la proposition (`invoice_amount`, `:594`) est le **reste dû** ; le
-commentaire `:591-593` suit *(présentation : Q3)*.
+commentaire `:591-593` suit. Présentation *(Q3)* : le reste dû ; sur une facture déjà réglée en
+partie, suivi de « reste dû sur <TTC> » (libellé dans les 4 locales), pour que le comptable
+reconnaisse la facture. Sans règlement, rien n'est ajouté.
 
 **AC 4** — Une facture **sans règlement** se comporte exactement comme avant : reste dû = TTC ;
 candidats, scores et montant affiché inchangés. Les tests existants le tiennent
 (`reconciliation_repository.rs:484-531`, `:807` ; `reconciliation_e2e.rs:819-822`), noms et messages
 mis à jour là où ils disent « TTC ».
 
-### Volet 2 — l'arrondi au centime *(si Q1 l'inclut)*
+### Volet 2 — l'arrondi au centime *(Q1 : inclus)*
 
 **AC 5** — Une seule grandeur, **le reste dû arrondi au centime** (`MidpointAwayFromZero`, la stratégie
 de la QR — `generator.rs:38-39`), sert de montant à régler : filtre des candidats, score, garde de
@@ -111,21 +113,23 @@ TVA **non nulle** :
 - propositions (e2e API) : `amountScore == 1.0` et `invoiceAmount` = le reste ;
 - acceptation (e2e API) : le virement du solde s'accepte et solde la facture — sans passer par le
   score de référence (numéro de facture absent de la transaction) ;
-- *(si Q1)* le cas 10.0050 de l'AC 6, au rapprochement et au règlement manuel ;
+- le cas 10.0050 de l'AC 6, au rapprochement et au règlement manuel ;
 - Playwright : une facture réglée en partie apparaît dans les propositions avec son reste.
 
 **AC 8** — Manuel : `user-manual.tex` § rapprochement dit que la proposition porte sur **ce qui reste
 à payer** et qu'un solde de facture partiellement réglée est reconnu. ⚠️ **Le paragraphe du score
 (`:1362-1371`) est faux sur le code, indépendamment de cette story** : il annonce un score gradué
 (« écart < 1 CHF = score moyen »), un critère « Date », une « référence QR Bill », un seuil de 80 % et
-un auto-accept à 95 % — rien de tel n'existe *(portée : Q2)*. PDF régénéré, contrôlé aplati.
+un auto-accept à 95 % — rien de tel n'existe. Il est **réécrit dans cette story** sur le code réel *(Q2)* ; les deux autres
+passages faux (lot dit « atomique », rapprochement manuel / éclatement dits « par facture »,
+`:1392`, `:1396-1420`) font l'objet d'une **issue séparée**, ouverte à l'implémentation. PDF régénéré, contrôlé aplati.
 CHANGELOG `[0.12.1]` *Fixed*.
 
 ## Tasks / Subtasks
 
 - [ ] **T1 — candidats** (AC 1, 4) : forme jointe, champ renommé, lecteurs.
 - [ ] **T2 — score et re-score** (AC 2, 3) : les deux appelants, affichage, `matching.rs`.
-- [ ] **T3 — arrondi** (AC 5, 6) *(selon Q1)* : helper, cinq sites.
+- [ ] **T3 — arrondi** (AC 5, 6) : helper, cinq sites.
 - [ ] **T4 — tests et mutations** (AC 7).
 - [ ] **T5 — textes** (AC 8).
 - [ ] **T6 — gates** : backend complet (base remise à zéro), frontend complet, **E2E complet**.
@@ -160,26 +164,30 @@ CHANGELOG `[0.12.1]` *Fixed*.
 ### Gardes-fous du dépôt
 
 - Aucune migration. Repositories `kesh-db` touchés ⇒ **gate complet même en cours de boucle de revue**.
-- Modules : `kesh-db`, `kesh-reconciliation`, `kesh-api`, `frontend` — **quatre** (cinq avec
-  `kesh-i18n` si un libellé change).
+- Modules : `kesh-db`, `kesh-reconciliation`, `kesh-api`, `frontend`, `kesh-i18n` (le libellé « reste
+  dû sur » de Q3) — **cinq**, sous le seuil de découpage (« plus de 5 »).
 
-## Questions pour Guy
+## Arbitrages
+
+*Retenus le 2026-09-29 : Guy a demandé de continuer sans trancher ; ce sont les recommandations de
+la création, appliquées par défaut et **révisables par lui**. La validation n'a pas à les contester,
+seulement leur mise en œuvre.*
 
 **Q1 — inclure #476 (l'arrondi) ?** Le reste dû peut porter des demi-centimes ; comparé brut, il
 empêche le score de valoir 1, fait refuser le paiement exact de la QR comme trop-perçu, et laisse une
 facture « partiellement réglée » pour 0.005. C'est la même comparaison que cette story touche, aux
-mêmes sites, plus le règlement manuel. **Recommandé : l'inclure** (volet 2) — sans lui, la 25-4-c
+mêmes sites, plus le règlement manuel. **Retenu : inclus** (volet 2) — sans lui, la 25-4-c
 reconnaît le solde d'une facture à 2 décimales mais pas celui d'une facture dont le TTC en a 4.
 
 **Q2 — le manuel du rapprochement.** Le paragraphe du score est faux sur le code (score gradué, date,
 référence QR, seuils 80/95 % — inexistants), et deux autres passages aussi : l'acceptation par lot
 dite « atomique » alors qu'elle est en succès partiel, et le rapprochement manuel / l'éclatement dits
-« par facture » alors qu'ils n'en portent aucune (`:1392`, `:1396-1420`). **Recommandé** : corriger
+« par facture » alors qu'ils n'en portent aucune (`:1392`, `:1396-1420`). **Retenu** : corriger
 dans cette story le paragraphe du score (il décrit la grandeur que la story change) ; ouvrir une issue
 pour les deux autres.
 
-**Q3 — le montant affiché.** Proposé : le **reste dû** seul (« 600.00 ») ; sur une facture réglée en
-partie, ajouter « reste dû sur 1 000.00 » pour que le comptable reconnaisse la facture ?
+**Q3 — le montant affiché.** **Retenu** : le **reste dû** (« 600.00 ») ; sur une facture réglée en
+partie, suivi de « reste dû sur 1 000.00 » pour que le comptable reconnaisse la facture.
 
 ## Dev Agent Record
 
@@ -196,6 +204,8 @@ partie, ajouter « reste dû sur 1 000.00 » pour que le comptable reconnaisse l
 - **2026-09-28** — Créée. Inventaire par exploration, citations clés vérifiées ; le défaut est
   l'**exclusion** par le filtre SQL, pas seulement un score nul ; un cinquième site d'arrondi trouvé
   (`invoice_settlements_write.rs:233`) ; trois questions à Guy.
+- **2026-09-29** — Rebasée sur `main` après le merge de la b2 (#479). Q1–Q3 retenues selon les
+  recommandations (Guy : « continue ») ; #476 incluse.
 
 [#416]: https://github.com/guycorbaz/kesh/issues/416
 [#420]: https://github.com/guycorbaz/kesh/issues/420
