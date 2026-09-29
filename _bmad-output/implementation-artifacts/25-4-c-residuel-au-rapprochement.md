@@ -198,10 +198,10 @@ seulement leur mise en œuvre.*
 demi-centime au grand livre — une question comptable, pas une comparaison. → **25-4-c3**.
 
 **Q2 — le manuel du rapprochement.** Le paragraphe du score est faux sur le code (score gradué, date,
-référence QR, seuils 80/95 % — inexistants), et deux autres passages aussi : l'acceptation par lot
-dite « atomique » alors qu'elle est en succès partiel, et le rapprochement manuel / l'éclatement dits
-« par facture » alors qu'ils n'en portent aucune (`:1411`, `:1421` et suivantes) ; s'y ajoute, trouvée en
-P4, l'action « Modifier » (`:1406`), que l'écran n'offre pas. **Retenu** : corriger
+référence QR, seuils 80/95 % — inexistants), et trois autres passages aussi : l'action « Modifier »
+(`:1406`, trouvée en P4), que l'écran n'offre pas ; l'acceptation par lot dite « atomique » alors
+qu'elle est en succès partiel (`:1411`) ; le rapprochement manuel / l'éclatement dits « par facture »
+alors qu'ils n'en portent aucune (`:1421` et suivantes). **Retenu** : corriger
 dans cette story le paragraphe du score (il décrit la grandeur que la story change) ; ouvrir une issue
 pour les trois autres.
 
@@ -261,6 +261,16 @@ partie, suivi de « reste dû sur 1 000.00 » pour que le comptable reconnaisse 
   (`user-manual.tex:1406`), absent de l'inventaire → ajouté au périmètre de l'issue séparée (AC 6, Q2).
   F1 LOW : `:1224` → `:1226`. Frontière du découpage confirmée : réalisable sans c2 ni c3, aucun état
   pire. Axe non exercé : tuabilité des mutations (pas d'outillage, raisonnée seulement).
+- **2026-09-29** — Validation P5 **ciblée** (Haiku, prompt `25-4-c-validate-prompt-p5.md`, sur
+  `08646df7`), preuves jointes : **1 finding annoncé MEDIUM, reclassé LOW** — « deux autres passages »
+  dans Q2, suivi de l'ajout de « Modifier » : décompte maladroit, non faux ; la lentille qualifie
+  elle-même la sévérité globale de LOW. Reformulé. Section rapprochement du manuel relue en entier
+  contre le code : **aucun passage faux hors des quatre inventoriés**. La remédiation ne touche que la
+  prose de la fiche : **validation close**.
+
+  **Bilan de la validation** — P1 Sonnet 3H/2M/1L → P2 Haiku 0 sans preuve, 2M repris par
+  l'orchestrateur → P3 Opus 1C/3H/3M/5L → **découpage** (c2 #480, c3 #476) → P4 Sonnet 1M/1L → P5 Haiku
+  ciblée 0 > LOW. Modèles : Sonnet, Haiku, Opus, Sonnet, Haiku. Reclassements : P5-F1 MEDIUM → LOW.
 
 [#416]: https://github.com/guycorbaz/kesh/issues/416
 [#420]: https://github.com/guycorbaz/kesh/issues/420
