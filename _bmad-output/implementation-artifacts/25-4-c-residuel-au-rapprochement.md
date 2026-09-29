@@ -114,7 +114,7 @@ TVA **non nulle** :
 - acceptation (e2e API) : le virement du solde s'accepte et solde la facture — sans passer par le
   score de référence (numéro de facture absent de la transaction) **ni par le score de contact**
   (contrepartie absente ou différente du contact : sinon le total vaut 0.10 et l'acceptation passe
-  déjà sur le code actuel, `:1224`) ; la réponse asserte `amountScore == 1.0` ;
+  déjà sur le code actuel, `:1226`) ; la réponse asserte `amountScore == 1.0` ;
 - Playwright : une facture réglée en partie apparaît dans les propositions avec son reste.
 
 **AC 6** — Manuel : `user-manual.tex` § rapprochement dit que la proposition porte sur **ce qui reste
@@ -125,9 +125,10 @@ paiement » — vrai **par** cette story, à garder cohérent ; `:1014` dit le v
 n'est refusé en trop-perçu que s'il porte la référence de la facture : à préciser. ⚠️ **Le paragraphe du score
 (`:1384-1390`) est faux sur le code, indépendamment de cette story** : il annonce un score gradué
 (« écart < 1 CHF = score moyen »), un critère « Date », une « référence QR Bill », un seuil de 80 % et
-un auto-accept à 95 % — rien de tel n'existe. Il est **réécrit dans cette story** sur le code réel *(Q2)* ; les deux autres
-passages faux (lot dit « atomique », rapprochement manuel / éclatement dits « par facture »,
-`:1411`, sous-section à partir de `:1421`) font l'objet d'une **issue séparée**, ouverte à l'implémentation. PDF régénéré, contrôlé aplati.
+un auto-accept à 95 % — rien de tel n'existe. Il est **réécrit dans cette story** sur le code réel *(Q2)* ; les trois autres
+passages faux (action « Modifier » — choisir une autre facture — qui n'existe pas, `:1406` ; lot dit
+« atomique », `:1411` ; rapprochement manuel / éclatement dits « par facture », sous-section à partir
+de `:1421`) font l'objet d'une **issue séparée**, ouverte à l'implémentation. PDF régénéré, contrôlé aplati.
 CHANGELOG `[0.12.1]` *Fixed*.
 
 ## Tasks / Subtasks
@@ -136,7 +137,7 @@ CHANGELOG `[0.12.1]` *Fixed*.
 - [ ] **T2 — score et re-score** (AC 2, 3) : les deux appelants, affichage et mention, `matching.rs`.
 - [ ] **T3 — tests et mutations** (AC 5).
 - [ ] **T4 — textes** (AC 6) ; le champ TTC ajouté à la réponse : vérifier `docs/api-external.md`
-  (aujourd'hui muet sur ses champs) ; ouvrir l'issue des deux passages faux du manuel (Q2).
+  (aujourd'hui muet sur ses champs) ; ouvrir l'issue des trois passages faux du manuel (Q2).
 - [ ] **T5 — gates** : backend complet (base remise à zéro), frontend complet, **E2E complet**.
 
 ## Dev Notes
@@ -199,9 +200,10 @@ demi-centime au grand livre — une question comptable, pas une comparaison. →
 **Q2 — le manuel du rapprochement.** Le paragraphe du score est faux sur le code (score gradué, date,
 référence QR, seuils 80/95 % — inexistants), et deux autres passages aussi : l'acceptation par lot
 dite « atomique » alors qu'elle est en succès partiel, et le rapprochement manuel / l'éclatement dits
-« par facture » alors qu'ils n'en portent aucune (`:1411`, `:1421` et suivantes). **Retenu** : corriger
+« par facture » alors qu'ils n'en portent aucune (`:1411`, `:1421` et suivantes) ; s'y ajoute, trouvée en
+P4, l'action « Modifier » (`:1406`), que l'écran n'offre pas. **Retenu** : corriger
 dans cette story le paragraphe du score (il décrit la grandeur que la story change) ; ouvrir une issue
-pour les deux autres.
+pour les trois autres.
 
 **Q3 — le montant affiché.** **Retenu** : le **reste dû** (« 600.00 ») ; sur une facture réglée en
 partie, suivi de « reste dû sur 1 000.00 » pour que le comptable reconnaisse la facture.
@@ -254,6 +256,11 @@ partie, suivi de « reste dû sur 1 000.00 » pour que le comptable reconnaisse 
   appliqués ici : F5 (filtre sur le brut, candidat portant reste dû **et** TTC), F6 (test d'acceptation
   hors score de contact), F9 (manuel `:1011`, `:1014`), F11 (recette Playwright). AC renumérotées :
   ex-AC 7 → AC 5, ex-AC 8 → AC 6.
+- **2026-09-29** — Validation P4 (Sonnet, prompt `25-4-c-validate-prompt-p4.md`, périmètre réduit) :
+  **1 MEDIUM, 1 LOW**, vérifiés. F2 MEDIUM : un troisième passage faux du manuel, l'action « Modifier »
+  (`user-manual.tex:1406`), absent de l'inventaire → ajouté au périmètre de l'issue séparée (AC 6, Q2).
+  F1 LOW : `:1224` → `:1226`. Frontière du découpage confirmée : réalisable sans c2 ni c3, aucun état
+  pire. Axe non exercé : tuabilité des mutations (pas d'outillage, raisonnée seulement).
 
 [#416]: https://github.com/guycorbaz/kesh/issues/416
 [#420]: https://github.com/guycorbaz/kesh/issues/420
