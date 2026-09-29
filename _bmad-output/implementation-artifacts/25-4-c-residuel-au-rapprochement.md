@@ -145,7 +145,7 @@ le verrou d'exercice (`fiscal_years::find_open_covering_date`, `:1350`, `FOR UPD
 |---|---|
 | `accept_one_invoice` (après patch) | `GET_LOCK` du compte bancaire (`with_account_lock`, tout le lot) → transaction bancaire lue **sans** verrou → **facture** → exercice → écritures, puis `UPDATE bank_transactions` |
 | `settle_invoice` (`invoice_settlements_write.rs`) | **facture** (`:68`) → compte bancaire (`:116`) → compte (`:151`) → exercice (`:174`) |
-| `cancel_reconciliation` (`reconciliation_cancel.rs`) | transaction bancaire (`:284`) → ligne de règlement (`:293`) → **facture** (`:296`) → écriture/exercice (`:309`) |
+| `cancel_in_tx` (`reconciliation_cancel.rs:276`) | transaction bancaire (`:284`) → ligne de règlement (`:294`) → **facture** (`:296`) → écriture/exercice (`:309`) |
 
 Facture avant exercice partout : conforme. L'annulation, elle, verrouille la transaction bancaire et
 la ligne de règlement **avant** la facture ; une acceptation et une annulation concurrentes **sur la même
