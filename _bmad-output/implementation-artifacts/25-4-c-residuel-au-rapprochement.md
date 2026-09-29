@@ -64,8 +64,25 @@ par l'API directe, grâce au score de **référence**, et n'asserte ni candidat 
    - les **tests de solde** aussi : `reconciliation.rs:1451` et `invoice_settlements_write.rs:233`
      (`due_after <= 0`) — un paiement de 10.00 laisse 0.0050, la facture reste « partiellement réglée »
      pour un demi-centime, sans `paid_at`.
+   - l'**annulation d'un règlement** aussi : `invoice_settlements_write.rs:464-465`
+     (`due_after > Decimal::ZERO` rouvre la facture) — un résidu de 0.0040 la rouvrirait ;
+   - le **dialogue de règlement** du frontend : `SettleInvoiceDialog.svelte:111` compare la saisie à
+     `Number(amountDue)` **brut**, alors que le champ est pré-rempli arrondi (`:75`, `toFixed(2)`) —
+     le 10.01 proposé par le dialogue lui-même y est refusé comme dépassant le reste (10.005).
    Le filtre, lui, tolère l'écart grâce aux ± 0.05.
-6. **`LIMIT 50` sans `ORDER BY`** (`reconciliation.rs:116`, dépôt) : au-delà de 50 candidats, lesquels
+   - **L'arrondi existe déjà, deux fois** : `Money::round_to_centimes()`
+     (`crates/kesh-core/src/types/money.rs:61-69`, `MidpointAwayFromZero`) et `reminder_amount_due`
+     (`crates/kesh-api/src/routes/invoice_pdf_service.rs:112-118`, la 25-4-b2 : arrondi du reste dû
+     pour la QR du rappel, refus si ≤ 0 ; son test `:894` porte déjà le cas 10.0050 → 10.01).
+6. **Aucun verrou sur la facture à l'acceptation** : `accept_one_invoice` lit la facture par
+   `find_invoice_by_id_for_company` (`crates/kesh-db/src/repositories/reconciliation.rs:217-230`,
+   `SELECT` simple) puis le reste dû (`:1329`) sans `FOR UPDATE`, alors que le règlement manuel
+   (`invoice_settlements_write.rs:63-68`), son annulation (`:380`) et l'annulation d'un rapprochement
+   (`reconciliation_cancel.rs:296`) verrouillent `invoices`. Deux acceptations concurrentes, ou une
+   acceptation contre un règlement manuel, peuvent lire le même reste et passer toutes deux la garde
+   de trop-perçu. Préexistant — mais cette story fait d'une facture partiellement réglée un candidat
+   **ordinaire**, là où elle était exclue : la course devient atteignable. D'où l'AC 5-bis.
+7. **`LIMIT 50` sans `ORDER BY`** (`reconciliation.rs:116`, dépôt) : au-delà de 50 candidats, lesquels
    sont gardés n'est pas déterminé. Préexistant, hors périmètre — à ne pas aggraver.
 
 ## Acceptance Criteria
@@ -97,13 +114,29 @@ mis à jour là où ils disent « TTC ».
 **AC 5** — Une seule grandeur, **le reste dû arrondi au centime** (`MidpointAwayFromZero`, la stratégie
 de la QR — `generator.rs:38-39`), sert de montant à régler : filtre des candidats, score, garde de
 trop-perçu du rapprochement (`:1336`) **et** du règlement manuel (`invoice_settlements_write.rs:167`),
-tests de solde (`:1451` et `:233`). Un helper unique, à côté d'`amount_due`, la porte ; aucun site ne
+tests de solde (`:1451` et `:233`), réouverture à l'annulation d'un règlement
+(`invoice_settlements_write.rs:464-465`), et contrôle de saisie du dialogue de règlement
+(`SettleInvoiceDialog.svelte:111`, comparé au reste arrondi et non à `Number(amountDue)`). Côté Rust,
+un helper unique, à côté d'`amount_due`, la porte ; il **s'appuie sur `Money::round_to_centimes()`**
+(`kesh-core`) sans recopier la stratégie, et **`reminder_amount_due` (b2) l'appelle** en gardant son
+refus du reste nul — il ne reste qu'une définition du « reste dû au centime ». Aucun site ne
 réarrondit à sa façon. ⛔ Le reste dû **stocké/calculé** n'est pas modifié : seule la comparaison
 arrondit.
 
 **AC 6** — Sur une facture dont le reste dû brut est 10.0050 : le virement de **10.01** est candidat,
 score 1 sur le montant, s'accepte, et **solde** la facture (`paid_at` posé, audit `invoice.paid`) ; un
-virement de **10.02** reste un trop-perçu refusé ; un règlement manuel de 10.01 solde aussi.
+virement de **10.02** reste un trop-perçu refusé ; un règlement manuel de 10.01 solde aussi, **y
+compris depuis le dialogue** (le 10.01 pré-rempli est accepté). L'annulation d'un règlement qui laisse
+un reste brut de 0.0040 ne rouvre pas la facture.
+
+**AC 5-bis** — `accept_one_invoice` **verrouille la facture** (`SELECT … FROM invoices WHERE id = ? AND
+company_id = ? FOR UPDATE`, le patron de `invoice_settlements_write.rs:63-68`) avant de lire le reste dû
+pour le re-score et la garde de trop-perçu. ⚠️ **Ordre des verrous** : relever l'ordre que prennent
+déjà le règlement manuel et l'annulation d'un rapprochement (facture, transaction bancaire, exercice)
+et s'y conformer, faute de quoi le verrou ajouté ouvre un interblocage ; le dire dans le Dev Agent
+Record. Test : deux acceptations concurrentes du même solde sur une facture partiellement réglée → une
+acceptée, l'autre en `RECONCILIATION_OVERPAYMENT` (ou refusée par la garde de statut), jamais deux
+règlements.
 
 ### Volet 3 — tests, textes
 
@@ -113,25 +146,30 @@ TVA **non nulle** :
 - propositions (e2e API) : `amountScore == 1.0` et `invoiceAmount` = le reste ;
 - acceptation (e2e API) : le virement du solde s'accepte et solde la facture — sans passer par le
   score de référence (numéro de facture absent de la transaction) ;
-- le cas 10.0050 de l'AC 6, au rapprochement et au règlement manuel ;
+- le cas 10.0050 de l'AC 6, au rapprochement, au règlement manuel (API et Vitest du dialogue) et à
+  l'annulation ;
+- la concurrence de l'AC 5-bis ;
 - Playwright : une facture réglée en partie apparaît dans les propositions avec son reste.
 
 **AC 8** — Manuel : `user-manual.tex` § rapprochement dit que la proposition porte sur **ce qui reste
 à payer** et qu'un solde de facture partiellement réglée est reconnu. ⚠️ **Le paragraphe du score
-(`:1362-1371`) est faux sur le code, indépendamment de cette story** : il annonce un score gradué
+(`:1384-1390`) est faux sur le code, indépendamment de cette story** : il annonce un score gradué
 (« écart < 1 CHF = score moyen »), un critère « Date », une « référence QR Bill », un seuil de 80 % et
 un auto-accept à 95 % — rien de tel n'existe. Il est **réécrit dans cette story** sur le code réel *(Q2)* ; les deux autres
 passages faux (lot dit « atomique », rapprochement manuel / éclatement dits « par facture »,
-`:1392`, `:1396-1420`) font l'objet d'une **issue séparée**, ouverte à l'implémentation. PDF régénéré, contrôlé aplati.
+`:1411`, sous-section à partir de `:1421`) font l'objet d'une **issue séparée**, ouverte à l'implémentation. PDF régénéré, contrôlé aplati.
 CHANGELOG `[0.12.1]` *Fixed*.
 
 ## Tasks / Subtasks
 
 - [ ] **T1 — candidats** (AC 1, 4) : forme jointe, champ renommé, lecteurs.
 - [ ] **T2 — score et re-score** (AC 2, 3) : les deux appelants, affichage, `matching.rs`.
-- [ ] **T3 — arrondi** (AC 5, 6) : helper, cinq sites.
+- [ ] **T3 — arrondi** (AC 5, 6) : helper sur `Money::round_to_centimes()`, `reminder_amount_due`
+  rebranché, sept sites (dont le dialogue frontend).
+- [ ] **T3-bis — verrou** (AC 5-bis) : `FOR UPDATE` dans `accept_one_invoice`, ordre des verrous.
 - [ ] **T4 — tests et mutations** (AC 7).
-- [ ] **T5 — textes** (AC 8).
+- [ ] **T5 — textes** (AC 8) ; si un champ TTC s'ajoute à la réponse des propositions (Q3), vérifier
+  `docs/api-external.md` (aujourd'hui muet sur ses champs).
 - [ ] **T6 — gates** : backend complet (base remise à zéro), frontend complet, **E2E complet**.
 
 ## Dev Notes
@@ -157,9 +195,11 @@ CHANGELOG `[0.12.1]` *Fixed*.
 | `crates/kesh-reconciliation/src/matching.rs:1-145` | score, triplet |
 | `crates/kesh-api/src/routes/reconciliation.rs:480-640, 1056-1600` | propositions, acceptation, gardes |
 | `crates/kesh-db/src/repositories/invoice_settlements.rs:27-220` | formes jointe et scalaire |
-| `crates/kesh-db/src/repositories/invoice_settlements_write.rs:160-260` | règlement manuel (Q1) |
+| `crates/kesh-db/src/repositories/invoice_settlements_write.rs:60-70, 160-260, 460-470` | verrou, règlement manuel, annulation |
+| `crates/kesh-core/src/types/money.rs:61-69`, `crates/kesh-api/src/routes/invoice_pdf_service.rs:112-118` | arrondis existants |
+| `frontend/src/lib/features/invoices/SettleInvoiceDialog.svelte:70-115` | contrôle de saisie |
 | `frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte:285`, `reconciliation.types.ts:30` | affichage |
-| `docs/manual/fr/user-manual.tex:1355-1420` | rapprochement |
+| `docs/manual/fr/user-manual.tex:1375-1440` | rapprochement |
 
 ### Gardes-fous du dépôt
 
@@ -182,7 +222,7 @@ reconnaît le solde d'une facture à 2 décimales mais pas celui d'une facture d
 **Q2 — le manuel du rapprochement.** Le paragraphe du score est faux sur le code (score gradué, date,
 référence QR, seuils 80/95 % — inexistants), et deux autres passages aussi : l'acceptation par lot
 dite « atomique » alors qu'elle est en succès partiel, et le rapprochement manuel / l'éclatement dits
-« par facture » alors qu'ils n'en portent aucune (`:1392`, `:1396-1420`). **Retenu** : corriger
+« par facture » alors qu'ils n'en portent aucune (`:1411`, `:1421` et suivantes). **Retenu** : corriger
 dans cette story le paragraphe du score (il décrit la grandeur que la story change) ; ouvrir une issue
 pour les deux autres.
 
@@ -206,6 +246,14 @@ partie, suivi de « reste dû sur 1 000.00 » pour que le comptable reconnaisse 
   (`invoice_settlements_write.rs:233`) ; trois questions à Guy.
 - **2026-09-29** — Rebasée sur `main` après le merge de la b2 (#479). Q1–Q3 retenues selon les
   recommandations (Guy : « continue ») ; #476 incluse.
+- **2026-09-29** — Validation P1 (Sonnet, prompt `25-4-c-validate-prompt-p1.md`) : **3 HIGH, 2 MEDIUM,
+  1 LOW**, tous vérifiés sur le code avant patch. F1 HIGH : l'arrondi existait deux fois
+  (`Money::round_to_centimes`, `reminder_amount_due`) → le helper s'appuie sur le premier, le second
+  l'appelle. F2 HIGH : `SettleInvoiceDialog.svelte:111` refusait le 10.01 qu'il pré-remplit → ajouté à
+  l'AC 5. F3 MEDIUM : réouverture à l'annulation (`invoice_settlements_write.rs:464`) → ajoutée.
+  F4 MEDIUM : lignes du manuel décalées de 20 à 30 → corrigées. F5 HIGH : aucun verrou facture dans
+  `accept_one_invoice`, course rendue atteignable par la story → AC 5-bis. F6 LOW : `api-external.md`
+  → T5. Axes non exercés par la lentille : faisabilité du Playwright et tuabilité des mutations.
 
 [#416]: https://github.com/guycorbaz/kesh/issues/416
 [#420]: https://github.com/guycorbaz/kesh/issues/420
