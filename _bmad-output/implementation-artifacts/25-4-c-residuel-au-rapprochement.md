@@ -3,11 +3,13 @@
 Status: ready-for-dev
 
 **Issue : [#420]** — ⛔ la PR porte `closes #420`, titre ET corps (§ *Issue Tracking Rule*). Voisine :
-**[#476]** (arrondi de la QR contre garde de trop-perçu), **incluse** (Q1) — la PR porte aussi `closes #476`.
+**[#476]** (arrondi au centime) et **[#480]** (verrou à l'acceptation) — **hors périmètre**, sorties
+au découpage du 2026-09-29 vers les sœurs **25-4-c3** et **25-4-c2**. La PR ne ferme que #420.
 
 **Mère : `25-4-propager-le-residuel.md`** (`split`) — source des faits. **Sœurs** : 25-4-a (mergée, #472 :
 le reste dû juste), 25-4-b1 (mergée, #475 : formes jointes aux agrégats), 25-4-b2 (mergée, #479 : les
-rappels). Branche `story/25-4-c-residuel-au-rapprochement`, rebasée sur `main` (`9098b2be`) ;
+rappels) ; **25-4-c2** (#480, verrou et instantané à l'acceptation) et **25-4-c3** (#476, l'arrondi
+au centime), nées du découpage de cette story. Branche `story/25-4-c-residuel-au-rapprochement`, rebasée sur `main` (`9098b2be`) ;
 la b2 ne touche aucun fichier du rapprochement.
 
 ## Story
@@ -55,37 +57,25 @@ par l'API directe, grâce au score de **référence**, et n'asserte ni candidat 
 4. **L'avoir** : une facture créditée est `cancelled` (`credit_notes.rs:586`, dépôt) et sort du filtre
    `status = 'validated'` ; le terme « avoir » du reste dû y vaut 0 en pratique — la forme jointe le
    porte de toute façon.
-5. **L'arrondi (#476)** : `line_total` est à 4 décimales (`invoices.rs:425-427`), la TVA seule
-   arrondie à 2 (`:165-176`) — le **reste dû peut avoir 4 décimales** (10.0050). La transaction bancaire
-   est à 2 (`bank_imports.sql:62`). Conséquences :
-   - le **score** ne peut jamais valoir 1 : 10.01 ≠ 10.005 après `normalize` (`matching.rs:113`) ;
-   - les **gardes de trop-perçu** comparent la valeur brute : `reconciliation.rs:1336`,
-     `invoice_settlements_write.rs:167` — le paiement exact de la QR (10.01) est refusé ;
-   - les **tests de solde** aussi : `reconciliation.rs:1451` et `invoice_settlements_write.rs:233`
-     (`due_after <= 0`) — un paiement de 10.00 laisse 0.0050, la facture reste « partiellement réglée »
-     pour un demi-centime, sans `paid_at`.
-   - l'**annulation d'un règlement** aussi : `invoice_settlements_write.rs:464-465`
-     (`due_after > Decimal::ZERO` rouvre la facture). ⚠️ Branche **défensive** : l'application ne peut
-     pas y produire un résidu non nul inférieur au centime — il faudrait qu'avant l'annulation la
-     facture ait été **trop** payée, ce que la garde de trop-perçu refuse (le commentaire `:458-461`
-     le dit). Elle suit le helper par cohérence, et se teste par une ligne de règlement **insérée
-     directement en base** ;
-   - le **dialogue de règlement** du frontend : `SettleInvoiceDialog.svelte:111` compare la saisie à
-     `Number(amountDue)` **brut**, alors que le champ est pré-rempli arrondi (`:75`, `toFixed(2)`) —
-     le 10.01 proposé par le dialogue lui-même y est refusé comme dépassant le reste (10.005).
-   Le filtre, lui, tolère l'écart grâce aux ± 0.05.
-   - **L'arrondi existe déjà, deux fois** : `Money::round_to_centimes()`
-     (`crates/kesh-core/src/types/money.rs:61-69`, `MidpointAwayFromZero`) et `reminder_amount_due`
-     (`crates/kesh-api/src/routes/invoice_pdf_service.rs:112-118`, la 25-4-b2 : arrondi du reste dû
-     pour la QR du rappel, refus si ≤ 0 ; son test `:894` porte déjà le cas 10.0050 → 10.01).
-6. **Aucun verrou sur la facture à l'acceptation** : `accept_one_invoice` lit la facture par
-   `find_invoice_by_id_for_company` (`crates/kesh-db/src/repositories/reconciliation.rs:217-230`,
-   `SELECT` simple) puis le reste dû (`:1329`) sans `FOR UPDATE`, alors que le règlement manuel
-   (`invoice_settlements_write.rs:63-68`), son annulation (`:380`) et l'annulation d'un rapprochement
-   (`reconciliation_cancel.rs:296`) verrouillent `invoices`. Deux acceptations concurrentes, ou une
-   acceptation contre un règlement manuel, peuvent lire le même reste et passer toutes deux la garde
-   de trop-perçu. Préexistant — mais cette story fait d'une facture partiellement réglée un candidat
-   **ordinaire**, là où elle était exclue : la course devient atteignable. D'où l'AC 5-bis.
+5. **L'arrondi — hors périmètre (25-4-c3, #476).** `line_total` est à 4 décimales
+   (`invoices.rs:425-427`) : le reste dû peut en porter 4 (10.0050), la transaction bancaire 2
+   (`bank_imports.sql:62`). Ce que cette story en laisse, **sans l'aggraver** :
+   - le **filtre** reste juste sur le reste **brut** : la tolérance ± 0.05 couvre l'écart
+     |brut − arrondi| ≤ 0.005 ; aucun `ROUND` n'y est ajouté (ce serait une seconde définition de
+     l'arrondi, que la c3 doit poser une seule fois) ;
+   - le **score** d'une facture à reste de 4 décimales ne vaut pas 1 (10.01 ≠ 10.005 après `normalize`,
+     `matching.rs:113`) — **comme aujourd'hui avec le TTC** ;
+   - les gardes de trop-perçu, les tests de solde, le dialogue de règlement comparent toujours le brut.
+   Tout cela est la c3 — y compris l'écart d'un demi-centime qu'un paiement arrondi laisserait au grand
+   livre (lignes en `DECIMAL(19,4)`), question comptable ouverte à Guy.
+6. **Le verrou à l'acceptation — hors périmètre (25-4-c2, #480).** `accept_one_invoice` ne verrouille
+   pas la facture. ⛔ **Cette story n'y ajoute aucun `FOR UPDATE`** : sous REPEATABLE READ, un verrou
+   posé après la première lecture de la transaction lirait `version` à jour et `amount_due` périmé, et
+   désarmerait le contrôle optimiste (`reconciliation.rs:1498-1506`) qui refuse aujourd'hui une seconde
+   acceptation concurrente. Ce qui reste exposé après cette story : une acceptation contre un règlement
+   manuel **partiel** simultané (`settle_invoice` n'incrémente `version` qu'au solde,
+   `invoice_settlements_write.rs:233-236`). Préexistant — atteignable aujourd'hui par le score de
+   référence — et rendu plus fréquent par cette story ; la c2 le ferme, et **doit suivre**.
 7. **`LIMIT 50` sans `ORDER BY`** (`reconciliation.rs:116`, dépôt) : au-delà de 50 candidats, lesquels
    sont gardés n'est pas déterminé. Préexistant, hors périmètre — à ne pas aggraver.
 
@@ -95,82 +85,44 @@ par l'API directe, grâce au score de **référence**, et n'asserte ni candidat 
 
 **AC 1** — `find_unpaid_invoices_for_window` filtre sur le **reste dû** par la forme **jointe** : les
 tables dérivées d'`amount_due_derived_joins()` et `INVOICE_AMOUNT_DUE_DERIVED_SQL`, jamais réécrites à
-la main, ni la forme corrélée. Le candidat porte le reste dû (le champ est renommé — `amount_due` — et
-tous ses lecteurs suivent) ; son doc-comment le dit.
+la main, ni la forme corrélée — sur le reste **brut**, tolérance inchangée (inventaire § 5). Le
+candidat porte **le reste dû (`amount_due`) et le TTC (`total_ttc`)** : le premier pour le filtre, le
+score et l'affichage, le second pour la mention de l'AC 3 ; tous les lecteurs de l'actuel `total_ttc`
+passent au reste dû, sauf cette mention. Les doc-comments le disent.
 
 **AC 2** — `propose_matches` reçoit le **reste dû** aux deux appels : propositions (`:575`) et re-score
 à l'acceptation (`:1196-1208`, forme scalaire `invoice_settlements::amount_due` **dans la transaction**,
 à la place d'`invoices::total_ttc`). `matching.rs` : noms et doc-comments disent « montant à régler »,
 plus « TTC ».
 
-**AC 3** — Le montant affiché dans la proposition (`invoice_amount`, `:594`) est le **reste dû** ; le
-commentaire `:591-593` suit. Présentation *(Q3)* : le reste dû ; sur une facture déjà réglée en
-partie, suivi de « reste dû sur <TTC> » (libellé dans les 4 locales), pour que le comptable
-reconnaisse la facture. Sans règlement, rien n'est ajouté.
+**AC 3** — Le montant affiché dans la proposition (`invoice_amount`, `:594`) est le **reste dû**, au
+même format qu'aujourd'hui (`normalize().to_string()`) ; le commentaire `:591-593` suit. Présentation
+*(Q3)* : sur une facture déjà réglée en partie (reste ≠ TTC), suivi de « reste dû sur <TTC> » —
+champ TTC ajouté à la réponse, libellé dans les 4 locales. Sans règlement, rien n'est ajouté.
 
 **AC 4** — Une facture **sans règlement** se comporte exactement comme avant : reste dû = TTC ;
 candidats, scores et montant affiché inchangés. Les tests existants le tiennent
 (`reconciliation_repository.rs:484-531`, `:807` ; `reconciliation_e2e.rs:819-822`), noms et messages
 mis à jour là où ils disent « TTC ».
 
-### Volet 2 — l'arrondi au centime *(Q1 : inclus)*
+### Volet 2 — tests, textes
 
-**AC 5** — Une seule grandeur, **le reste dû arrondi au centime** (`MidpointAwayFromZero`, la stratégie
-de la QR — `generator.rs:38-39`), sert de montant à régler : filtre des candidats, score, garde de
-trop-perçu du rapprochement (`:1336`) **et** du règlement manuel (`invoice_settlements_write.rs:167`),
-tests de solde (`:1451` et `:233`), réouverture à l'annulation d'un règlement
-(`invoice_settlements_write.rs:464-465`), et contrôle de saisie du dialogue de règlement
-(`SettleInvoiceDialog.svelte:111`, comparé au reste arrondi et non à `Number(amountDue)`). Côté Rust,
-un helper unique, à côté d'`amount_due`, la porte ; il **s'appuie sur `Money::round_to_centimes()`**
-(`kesh-core`) sans recopier la stratégie, et **`reminder_amount_due` (b2) l'appelle** en gardant son
-refus du reste nul — il ne reste qu'une définition du « reste dû au centime ». Aucun site ne
-réarrondit à sa façon. ⛔ Le reste dû **stocké/calculé** n'est pas modifié : seule la comparaison
-arrondit.
-
-**AC 6** — Sur une facture dont le reste dû brut est 10.0050 : le virement de **10.01** est candidat,
-score 1 sur le montant, s'accepte, et **solde** la facture (`paid_at` posé, audit `invoice.paid`) ; un
-virement de **10.02** reste un trop-perçu refusé ; un règlement manuel de 10.01 solde aussi, **y
-compris depuis le dialogue** (le 10.01 pré-rempli est accepté). L'annulation d'un règlement qui laisse
-un reste brut de 0.0040 ne rouvre pas la facture — test de **dépôt**, règlements insérés directement
-en base (état inatteignable par l'application, cf. inventaire § 5), et le test le dit.
-
-**AC 5-bis** — `accept_one_invoice` **verrouille la facture** (`SELECT … FROM invoices WHERE id = ? AND
-company_id = ? FOR UPDATE`, le patron de `invoice_settlements_write.rs:63-68`) avant de lire le reste dû
-pour le re-score et la garde de trop-perçu : au **chargement** de la facture (étape 5,
-`reconciliation.rs:1104-1106`), donc avant la garde de statut, le re-score, la garde de trop-perçu et
-le verrou d'exercice (`fiscal_years::find_open_covering_date`, `:1350`, `FOR UPDATE`).
-**Ordre des verrous, relevé dans le code** :
-
-| Chemin | Ordre |
-|---|---|
-| `accept_one_invoice` (après patch) | `GET_LOCK` du compte bancaire (`with_account_lock`, tout le lot) → transaction bancaire lue **sans** verrou → **facture** → exercice → écritures, puis `UPDATE bank_transactions` |
-| `settle_invoice` (`invoice_settlements_write.rs`) | **facture** (`:68`) → compte bancaire (`:116`) → compte (`:151`) → exercice (`:174`) |
-| `cancel_in_tx` (`reconciliation_cancel.rs:276`) | transaction bancaire (`:284`) → ligne de règlement (`:294`) → **facture** (`:296`) → écriture/exercice (`:309`) |
-
-Facture avant exercice partout : conforme. L'annulation, elle, verrouille la transaction bancaire et
-la ligne de règlement **avant** la facture ; une acceptation et une annulation concurrentes **sur la même
-facture** (deux transactions bancaires distinctes) peuvent donc s'interbloquer. InnoDB le détecte et
-annule **toute** la transaction perdante (erreur 1213) — pas seulement le point de sauvegarde de la
-proposition : le lot entier échoue en `DATABASE_ERROR` et se rejoue. Risque accepté, préexistant en
-nature (le verrou d'exercice l'ouvre déjà) ; le Dev Agent Record le consigne, sans l'aggraver. Test : deux acceptations concurrentes du même solde sur une facture partiellement réglée → une
-acceptée, l'autre en `RECONCILIATION_OVERPAYMENT` (ou refusée par la garde de statut), jamais deux
-règlements.
-
-### Volet 3 — tests, textes
-
-**AC 7** — Tests qui auraient échoué avant le patch, chacun sur une facture **partiellement réglée** à
+**AC 5** — Tests qui auraient échoué avant le patch, chacun sur une facture **partiellement réglée** à
 TVA **non nulle** :
 - dépôt : la facture 1 000 réglée 400 est **candidate** pour 600, et ne l'est plus pour 1 000 ;
 - propositions (e2e API) : `amountScore == 1.0` et `invoiceAmount` = le reste ;
 - acceptation (e2e API) : le virement du solde s'accepte et solde la facture — sans passer par le
-  score de référence (numéro de facture absent de la transaction) ;
-- le cas 10.0050 de l'AC 6, au rapprochement, au règlement manuel (API et Vitest du dialogue) et à
-  l'annulation ;
-- la concurrence de l'AC 5-bis ;
+  score de référence (numéro de facture absent de la transaction) **ni par le score de contact**
+  (contrepartie absente ou différente du contact : sinon le total vaut 0.10 et l'acceptation passe
+  déjà sur le code actuel, `:1224`) ; la réponse asserte `amountScore == 1.0` ;
 - Playwright : une facture réglée en partie apparaît dans les propositions avec son reste.
 
-**AC 8** — Manuel : `user-manual.tex` § rapprochement dit que la proposition porte sur **ce qui reste
-à payer** et qu'un solde de facture partiellement réglée est reconnu. ⚠️ **Le paragraphe du score
+**AC 6** — Manuel : `user-manual.tex` § rapprochement dit que la proposition porte sur **ce qui reste
+à payer** et qu'un solde de facture partiellement réglée est reconnu. Deux passages voisins suivent :
+`:1011` promet déjà que la QR du rappel « permet au rapprochement bancaire de reconnaître le
+paiement » — vrai **par** cette story, à garder cohérent ; `:1014` dit le versement « reste dû + frais »
+« refusé comme trop-perçu au rapprochement » — en réalité il n'est **pas proposé** (hors tolérance), et
+n'est refusé en trop-perçu que s'il porte la référence de la facture : à préciser. ⚠️ **Le paragraphe du score
 (`:1384-1390`) est faux sur le code, indépendamment de cette story** : il annonce un score gradué
 (« écart < 1 CHF = score moyen »), un critère « Date », une « référence QR Bill », un seuil de 80 % et
 un auto-accept à 95 % — rien de tel n'existe. Il est **réécrit dans cette story** sur le code réel *(Q2)* ; les deux autres
@@ -180,15 +132,12 @@ CHANGELOG `[0.12.1]` *Fixed*.
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — candidats** (AC 1, 4) : forme jointe, champ renommé, lecteurs.
-- [ ] **T2 — score et re-score** (AC 2, 3) : les deux appelants, affichage, `matching.rs`.
-- [ ] **T3 — arrondi** (AC 5, 6) : helper sur `Money::round_to_centimes()`, `reminder_amount_due`
-  rebranché, sept sites (dont le dialogue frontend).
-- [ ] **T3-bis — verrou** (AC 5-bis) : `FOR UPDATE` dans `accept_one_invoice`, ordre des verrous.
-- [ ] **T4 — tests et mutations** (AC 7).
-- [ ] **T5 — textes** (AC 8) ; si un champ TTC s'ajoute à la réponse des propositions (Q3), vérifier
-  `docs/api-external.md` (aujourd'hui muet sur ses champs).
-- [ ] **T6 — gates** : backend complet (base remise à zéro), frontend complet, **E2E complet**.
+- [ ] **T1 — candidats** (AC 1, 4) : forme jointe, `amount_due` + `total_ttc` au candidat, lecteurs.
+- [ ] **T2 — score et re-score** (AC 2, 3) : les deux appelants, affichage et mention, `matching.rs`.
+- [ ] **T3 — tests et mutations** (AC 5).
+- [ ] **T4 — textes** (AC 6) ; le champ TTC ajouté à la réponse : vérifier `docs/api-external.md`
+  (aujourd'hui muet sur ses champs) ; ouvrir l'issue des deux passages faux du manuel (Q2).
+- [ ] **T5 — gates** : backend complet (base remise à zéro), frontend complet, **E2E complet**.
 
 ## Dev Notes
 
@@ -199,6 +148,9 @@ CHANGELOG `[0.12.1]` *Fixed*.
 - ⛔ **Rendre le score gradué** : le binaire est une décision v0.1 assumée (`matching.rs:108-117`) ; cette
   story change la grandeur comparée, pas la forme du score.
 - ⛔ **Toucher l'écriture** : elle porte le montant de la transaction, c'est juste.
+- ⛔ **Ajouter un `FOR UPDATE` dans `accept_one_invoice`** (inventaire § 6) : c'est la c2, et fait à
+  moitié il désarme le contrôle optimiste.
+- ⛔ **Arrondir le reste dû** où que ce soit, filtre compris (inventaire § 5) : c'est la c3.
 - ⚠️ **L'ordre des gardes à l'acceptation** : le score (`:1226`) précède le trop-perçu (`:1336`). Un
   virement supérieur au reste doit continuer de sortir en `RECONCILIATION_OVERPAYMENT` s'il passe le
   score, en `SCORE_TOO_LOW` sinon — ne pas l'inverser sans le dire.
@@ -213,29 +165,36 @@ CHANGELOG `[0.12.1]` *Fixed*.
 | `crates/kesh-reconciliation/src/matching.rs:1-145` | score, triplet |
 | `crates/kesh-api/src/routes/reconciliation.rs:480-640, 1056-1600` | propositions, acceptation, gardes |
 | `crates/kesh-db/src/repositories/invoice_settlements.rs:27-220` | formes jointe et scalaire |
-| `crates/kesh-db/src/repositories/invoice_settlements_write.rs:60-70, 160-260, 460-470` | verrou, règlement manuel, annulation |
-| `crates/kesh-core/src/types/money.rs:61-69`, `crates/kesh-api/src/routes/invoice_pdf_service.rs:112-118` | arrondis existants |
-| `frontend/src/lib/features/invoices/SettleInvoiceDialog.svelte:70-115` | contrôle de saisie |
 | `frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte:285`, `reconciliation.types.ts:30` | affichage |
-| `docs/manual/fr/user-manual.tex:1375-1440` | rapprochement |
+| `docs/manual/fr/user-manual.tex:1005-1016, 1375-1440` | rappel (QR), rapprochement |
+
+### Montage du Playwright (AC 5)
+
+Aucune spec ne montre aujourd'hui une facture candidate (`reconciliation.spec.ts:9-13` le déclare hors
+périmètre). Recette : `createAndValidateInvoiceViaApi(page, contactId, '2026-05-10')`
+(`frontend/tests/e2e/helpers/api-fixtures.ts:100`), règlement partiel par
+`POST /api/v1/invoices/{id}/settlements`, puis import d'un CAMT réécrit comme dans
+`reconciliation-cancel.spec.ts:87-107` (date de comptabilisation 2026-05-15, montant unique égal au
+reste, sans référence de facture).
 
 ### Gardes-fous du dépôt
 
 - Aucune migration. Repositories `kesh-db` touchés ⇒ **gate complet même en cours de boucle de revue**.
 - Modules : `kesh-db`, `kesh-reconciliation`, `kesh-api`, `frontend`, `kesh-i18n` (le libellé « reste
   dû sur » de Q3) — **cinq**, sous le seuil de découpage (« plus de 5 »).
+- Née d'un **découpage** (règle de splitting, non-convergence P2 → P3) : la validation reprend sur ce
+  périmètre réduit.
 
 ## Arbitrages
 
-*Retenus le 2026-09-29 : Guy a demandé de continuer sans trancher ; ce sont les recommandations de
+*Retenus le 2026-09-29 : Guy a demandé de continuer sans trancher (le découpage, lui, a son accord
+explicite) ; ce sont les recommandations de
 la création, appliquées par défaut et **révisables par lui**. La validation n'a pas à les contester,
 seulement leur mise en œuvre.*
 
-**Q1 — inclure #476 (l'arrondi) ?** Le reste dû peut porter des demi-centimes ; comparé brut, il
-empêche le score de valoir 1, fait refuser le paiement exact de la QR comme trop-perçu, et laisse une
-facture « partiellement réglée » pour 0.005. C'est la même comparaison que cette story touche, aux
-mêmes sites, plus le règlement manuel. **Retenu : inclus** (volet 2) — sans lui, la 25-4-c
-reconnaît le solde d'une facture à 2 décimales mais pas celui d'une facture dont le TTC en a 4.
+**Q1 — inclure #476 (l'arrondi) ?** Retenu d'abord par défaut, puis **retiré au découpage du
+2026-09-29** (accord de Guy) : la validation P3 a montré qu'arrondir la comparaison laisse un
+demi-centime au grand livre — une question comptable, pas une comparaison. → **25-4-c3**.
 
 **Q2 — le manuel du rapprochement.** Le paragraphe du score est faux sur le code (score gradué, date,
 référence QR, seuils 80/95 % — inexistants), et deux autres passages aussi : l'acceptation par lot
@@ -290,7 +249,13 @@ partie, suivi de « reste dû sur 1 000.00 » pour que le comptable reconnaisse 
   décrit était le mauvais et son issue est un 500 sans rejeu (F3). F4 HIGH : payer 10.01 une facture de
   10.0050 laisse la créance **créditrice** de 0.0050 au grand livre (lignes en `DECIMAL(19,4)`) et
   affiche « Reste dû −0.01 ». **Règle de découpage déclenchée** : sévérité P3 > P2 (F7).
+- **2026-09-29** — **Découpée** (accord de Guy) : l'arrondi (ex-volet 2, #476) part en **25-4-c3**, le
+  verrou (ex-AC 5-bis, #480 ouverte) en **25-4-c2** ; F1–F4, F7, F8, F10, F12 de P3 les suivent. Restent
+  appliqués ici : F5 (filtre sur le brut, candidat portant reste dû **et** TTC), F6 (test d'acceptation
+  hors score de contact), F9 (manuel `:1011`, `:1014`), F11 (recette Playwright). AC renumérotées :
+  ex-AC 7 → AC 5, ex-AC 8 → AC 6.
 
 [#416]: https://github.com/guycorbaz/kesh/issues/416
 [#420]: https://github.com/guycorbaz/kesh/issues/420
 [#476]: https://github.com/guycorbaz/kesh/issues/476
+[#480]: https://github.com/guycorbaz/kesh/issues/480
