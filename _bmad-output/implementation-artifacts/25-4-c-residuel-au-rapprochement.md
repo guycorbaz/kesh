@@ -280,6 +280,16 @@ partie, suivi de « reste dû sur 1 000.00 » pour que le comptable reconnaisse 
   dans le code (`GET_LOCK` / facture / exercice ; annulation : transaction bancaire / règlement /
   facture), placement du verrou fixé à l'étape 5, interblocage acceptation-annulation écrit comme
   risque accepté.
+- **2026-09-29** — Validation P3 (Opus, prompt `25-4-c-validate-prompt-p3.md`) : **1 CRITICAL, 3 HIGH,
+  3 MEDIUM, 5 LOW** — **non appliqués, en attente d'arbitrage**. Le CRITICAL et deux HIGH portent sur
+  l'AC 5-bis écrit par la remédiation P2 : sous REPEATABLE READ, un `FOR UPDATE` posé après la première
+  lecture laisse `amount_due` lire l'instantané périmé tout en rafraîchissant `version` — il **désarme**
+  le verrou optimiste qui refuse aujourd'hui la seconde acceptation (F1, vérifié : `settle_invoice` ne
+  bumpe `version` qu'au solde, `invoice_settlements_write.rs:233-236` ; l'acceptation toujours,
+  `reconciliation.rs:1498-1501`) ; le test de concurrence ne discriminait rien (F2) ; l'interblocage
+  décrit était le mauvais et son issue est un 500 sans rejeu (F3). F4 HIGH : payer 10.01 une facture de
+  10.0050 laisse la créance **créditrice** de 0.0050 au grand livre (lignes en `DECIMAL(19,4)`) et
+  affiche « Reste dû −0.01 ». **Règle de découpage déclenchée** : sévérité P3 > P2 (F7).
 
 [#416]: https://github.com/guycorbaz/kesh/issues/416
 [#420]: https://github.com/guycorbaz/kesh/issues/420
