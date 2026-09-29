@@ -65,7 +65,11 @@ par l'API directe, grâce au score de **référence**, et n'asserte ni candidat 
      (`due_after <= 0`) — un paiement de 10.00 laisse 0.0050, la facture reste « partiellement réglée »
      pour un demi-centime, sans `paid_at`.
    - l'**annulation d'un règlement** aussi : `invoice_settlements_write.rs:464-465`
-     (`due_after > Decimal::ZERO` rouvre la facture) — un résidu de 0.0040 la rouvrirait ;
+     (`due_after > Decimal::ZERO` rouvre la facture). ⚠️ Branche **défensive** : l'application ne peut
+     pas y produire un résidu non nul inférieur au centime — il faudrait qu'avant l'annulation la
+     facture ait été **trop** payée, ce que la garde de trop-perçu refuse (le commentaire `:458-461`
+     le dit). Elle suit le helper par cohérence, et se teste par une ligne de règlement **insérée
+     directement en base** ;
    - le **dialogue de règlement** du frontend : `SettleInvoiceDialog.svelte:111` compare la saisie à
      `Number(amountDue)` **brut**, alors que le champ est pré-rempli arrondi (`:75`, `toFixed(2)`) —
      le 10.01 proposé par le dialogue lui-même y est refusé comme dépassant le reste (10.005).
@@ -127,14 +131,28 @@ arrondit.
 score 1 sur le montant, s'accepte, et **solde** la facture (`paid_at` posé, audit `invoice.paid`) ; un
 virement de **10.02** reste un trop-perçu refusé ; un règlement manuel de 10.01 solde aussi, **y
 compris depuis le dialogue** (le 10.01 pré-rempli est accepté). L'annulation d'un règlement qui laisse
-un reste brut de 0.0040 ne rouvre pas la facture.
+un reste brut de 0.0040 ne rouvre pas la facture — test de **dépôt**, règlements insérés directement
+en base (état inatteignable par l'application, cf. inventaire § 5), et le test le dit.
 
 **AC 5-bis** — `accept_one_invoice` **verrouille la facture** (`SELECT … FROM invoices WHERE id = ? AND
 company_id = ? FOR UPDATE`, le patron de `invoice_settlements_write.rs:63-68`) avant de lire le reste dû
-pour le re-score et la garde de trop-perçu. ⚠️ **Ordre des verrous** : relever l'ordre que prennent
-déjà le règlement manuel et l'annulation d'un rapprochement (facture, transaction bancaire, exercice)
-et s'y conformer, faute de quoi le verrou ajouté ouvre un interblocage ; le dire dans le Dev Agent
-Record. Test : deux acceptations concurrentes du même solde sur une facture partiellement réglée → une
+pour le re-score et la garde de trop-perçu : au **chargement** de la facture (étape 5,
+`reconciliation.rs:1104-1106`), donc avant la garde de statut, le re-score, la garde de trop-perçu et
+le verrou d'exercice (`fiscal_years::find_open_covering_date`, `:1350`, `FOR UPDATE`).
+**Ordre des verrous, relevé dans le code** :
+
+| Chemin | Ordre |
+|---|---|
+| `accept_one_invoice` (après patch) | `GET_LOCK` du compte bancaire (`with_account_lock`, tout le lot) → transaction bancaire lue **sans** verrou → **facture** → exercice → écritures, puis `UPDATE bank_transactions` |
+| `settle_invoice` (`invoice_settlements_write.rs`) | **facture** (`:68`) → compte bancaire (`:116`) → compte (`:151`) → exercice (`:174`) |
+| `cancel_reconciliation` (`reconciliation_cancel.rs`) | transaction bancaire (`:284`) → ligne de règlement (`:293`) → **facture** (`:296`) → écriture/exercice (`:309`) |
+
+Facture avant exercice partout : conforme. L'annulation, elle, verrouille la transaction bancaire et
+la ligne de règlement **avant** la facture ; une acceptation et une annulation concurrentes **sur la même
+facture** (deux transactions bancaires distinctes) peuvent donc s'interbloquer. InnoDB le détecte et
+annule **toute** la transaction perdante (erreur 1213) — pas seulement le point de sauvegarde de la
+proposition : le lot entier échoue en `DATABASE_ERROR` et se rejoue. Risque accepté, préexistant en
+nature (le verrou d'exercice l'ouvre déjà) ; le Dev Agent Record le consigne, sans l'aggraver. Test : deux acceptations concurrentes du même solde sur une facture partiellement réglée → une
 acceptée, l'autre en `RECONCILIATION_OVERPAYMENT` (ou refusée par la garde de statut), jamais deux
 règlements.
 
@@ -254,6 +272,14 @@ partie, suivi de « reste dû sur 1 000.00 » pour que le comptable reconnaisse 
   F4 MEDIUM : lignes du manuel décalées de 20 à 30 → corrigées. F5 HIGH : aucun verrou facture dans
   `accept_one_invoice`, course rendue atteignable par la story → AC 5-bis. F6 LOW : `api-external.md`
   → T5. Axes non exercés par la lentille : faisabilité du Playwright et tuabilité des mutations.
+- **2026-09-29** — Validation P2 (Haiku, prompt `25-4-c-validate-prompt-p2.md`) : **0 finding, rendu
+  sans aucune preuve** ; déclaré « constructible » le cas d'annulation à 0.0040 et « cohérent » l'ordre
+  des verrous sans l'avoir établi. Repris par l'orchestrateur : **2 MEDIUM**. (a) Le cas d'annulation
+  de l'AC 6 est **inatteignable** par l'application (il suppose un trop-perçu préalable) → test de
+  dépôt par insertion directe, dit comme tel. (b) L'AC 5-bis laissait l'ordre des verrous au dev → relevé
+  dans le code (`GET_LOCK` / facture / exercice ; annulation : transaction bancaire / règlement /
+  facture), placement du verrou fixé à l'étape 5, interblocage acceptation-annulation écrit comme
+  risque accepté.
 
 [#416]: https://github.com/guycorbaz/kesh/issues/416
 [#420]: https://github.com/guycorbaz/kesh/issues/420
