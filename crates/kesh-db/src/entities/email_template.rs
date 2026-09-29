@@ -71,6 +71,11 @@ impl EmailTemplateType {
                 "reminderFee",
                 "totalDue",
                 "daysOverdue",
+                // Story 25-4-b2 (#416) : phrase disant les frais cumulés compris
+                // dans `{totalDue}`, précédée d'une espace — VIDE sans frais. Le
+                // moteur n'a pas de condition : c'est la seule façon de ne rien
+                // afficher à zéro.
+                "feeNotice",
             ],
         }
     }

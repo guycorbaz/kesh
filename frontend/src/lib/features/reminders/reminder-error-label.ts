@@ -18,6 +18,8 @@ const LABELS: Record<string, [string, string]> = {
 	REMINDER_CONTENT_EMPTY: ['content-empty', 'Modèle de rappel vide'],
 	REMINDER_CONTENT_TOO_LONG: ['content-too-long', 'Contenu du rappel trop long'],
 	INVOICE_NOT_PDF_READY: ['not-pdf-ready', 'Facture non imprimable en PDF'],
+	// Story 25-4-b2 (#416) : reste dû nul — rien à réclamer.
+	REMINDER_NOTHING_DUE: ['nothing-due', 'Rien à réclamer'],
 	RATE_LIMITED: ['rate-limited', "Limite d'envoi atteinte"],
 	DATABASE_ERROR: ['database-error', 'Erreur technique'],
 	// Codes « e-mail parti » : le message dit explicitement qu'il a été envoyé.

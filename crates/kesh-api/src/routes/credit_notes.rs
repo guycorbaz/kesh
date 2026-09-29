@@ -258,6 +258,8 @@ fn build_credit_note_pdf_data(
         total: ttc,
         currency: Currency::Chf,
         origin_reference,
+        // Un avoir n'est jamais un rappel (Story 25-4-b2).
+        reminder: None,
     }
 }
 

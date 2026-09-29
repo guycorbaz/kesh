@@ -260,7 +260,7 @@
 
 			<!-- Avertissement CGV (D13) -->
 			<p class="mt-4 rounded border border-warning/30 bg-warning/5 p-3 text-xs text-text-muted" data-testid="dunning-cgv-hint">
-				{i18nMsg('dunning-cgv-hint', 'Les frais de rappel ne sont exigibles qu’avec une base contractuelle (CGV). Ils ne sont pas inclus dans le QR de la facture jointe.')}
+				{i18nMsg('dunning-cgv-hint', 'Les frais de rappel ne sont exigibles qu’avec une base contractuelle (CGV). Ils ne sont pas inclus dans le QR du rappel joint.')}
 			</p>
 		</section>
 

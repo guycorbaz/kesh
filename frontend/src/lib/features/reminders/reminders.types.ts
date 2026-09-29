@@ -47,6 +47,13 @@ export interface ReminderPreviewResponse {
 	level: number;
 	subject: string;
 	body: string;
+	/**
+	 * Story 25-4-b2 (#416) — reste dû (arrondi) et frais cumulés sur lesquels le
+	 * texte a été rendu (décimales string). À renvoyer à l'envoi : le serveur refuse
+	 * (409 `REMINDER_AMOUNTS_CHANGED`) s'ils ont changé entre-temps.
+	 */
+	amountDue: string;
+	fees: string;
 }
 
 // --- Envoi unitaire (POST /api/v1/invoices/{id}/reminders/send) ---
@@ -56,6 +63,9 @@ export interface SendReminderRequest {
 	levelNumber: number;
 	subject: string;
 	body: string;
+	/** Montants de l'aperçu (Story 25-4-b2) — cf. `ReminderPreviewResponse`. */
+	expectedAmountDue?: string;
+	expectedFees?: string;
 }
 
 /** Un rappel enregistré (réponse d'envoi unitaire / manuel, 201). */

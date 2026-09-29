@@ -15,14 +15,16 @@
 
 use kesh_db::entities::{BankAccount, Company, Invoice, InvoiceLine, contact::Contact};
 use kesh_db::errors::DbError;
-use kesh_db::repositories::{bank_accounts, contacts, invoices};
+use kesh_db::repositories::{
+    bank_accounts, contacts, invoice_reminders, invoice_settlements, invoices,
+};
 use kesh_i18n::Locale;
 use kesh_qrbill::{
     Address, AddressType, Currency, InvoiceLinePdf, InvoicePdfData, InvoiceVatLinePdf, QrBillData,
-    QrBillError, QrBillI18n, Reference,
+    QrBillError, QrBillI18n, Reference, ReminderPdf,
     validation::{build_qrr, normalize_iban},
 };
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, RoundingStrategy};
 use std::collections::HashMap;
 
 use crate::errors::AppError;
@@ -74,6 +76,91 @@ pub struct RenderedInvoicePdf {
     pub filename_base: String,
 }
 
+/// Le document à produire (Story 25-4-b2, #416) : la facture, ou un **rappel**
+/// pour le montant restant. Un paramètre qui dit ce qu'il porte, plutôt qu'un
+/// booléen : `render_document(…, PdfDocument::Invoice)` se relit.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PdfDocument {
+    /// La facture : titre « Facture », QR au TTC — inchangée (téléchargement,
+    /// envoi et renvoi de facture).
+    Invoice,
+    /// Un rappel : titre « Rappel », bloc réglé / reste / frais, QR au **reste
+    /// dû**. Les montants sont **déjà calculés** par [`reminder_amounts`] — la
+    /// construction des entrées QR reste testable sans base.
+    Reminder(ReminderAmounts),
+}
+
+/// Les montants d'un rappel, calculés **une fois** et partagés par le texte
+/// (`{totalDue}`), le PDF et la QR (Story 25-4-b2, AC 7).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ReminderAmounts {
+    /// Total des règlements enregistrés.
+    pub amount_settled: Decimal,
+    /// Reste dû **arrondi au centime** (`MidpointAwayFromZero`), strictement
+    /// positif — le montant de la QR.
+    pub amount_due: Decimal,
+    /// Frais cumulés : ceux des niveaux déjà émis (dédupliqués, hors niveau
+    /// courant) plus ceux du niveau envoyé. ⛔ Jamais dans la QR : ils ne sont pas
+    /// comptabilisés (#401), un virement qui les inclurait serait refusé.
+    pub fees: Decimal,
+}
+
+/// Arrondit un reste dû brut au centime et refuse ce qui ne se réclame pas
+/// (Story 25-4-b2, AC 7 et 9). Le refus porte sur la valeur **arrondie** : un
+/// reste de 0.004 est refusé ici, au lieu d'atteindre une QR invalide et de
+/// ressortir en `INVOICE_NOT_PDF_READY`.
+pub fn reminder_amount_due(raw: Decimal) -> Result<Decimal, AppError> {
+    let due = raw.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
+    if due <= Decimal::ZERO {
+        return Err(AppError::ReminderNothingDue);
+    }
+    Ok(due)
+}
+
+/// Calcule les montants d'un rappel de niveau `level_number` (Story 25-4-b2).
+///
+/// Le reste dû vient d'`invoice_settlements::amount_due` (forme scalaire : une
+/// facture à la fois) — jamais réécrit. ⚠️ `amount_due` et `amount_settled` ne
+/// prennent pas de `company_id` : l'appelant DOIT avoir chargé la facture par
+/// `find_by_id_with_lines(pool, company.id, …)`, qui porte le scoping.
+///
+/// ⛔ Les trois lectures se font dans UNE transaction (revue de code 25-4-b2, P1) :
+/// sous REPEATABLE READ, elles voient le même instantané. Lues séparément, un
+/// règlement inséré entre deux d'entre elles rendait « déjà réglé » et « reste à
+/// payer » incohérents entre eux, et la QR pouvait réclamer un reste d'avant le
+/// paiement.
+pub async fn reminder_amounts(
+    pool: &sqlx::MySqlPool,
+    company_id: i64,
+    invoice_id: i64,
+    level_number: i16,
+    level_fee: Decimal,
+) -> Result<ReminderAmounts, AppError> {
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(format!("begin tx: {e}")))?;
+    let raw_due = invoice_settlements::amount_due(&mut *tx, invoice_id).await?;
+    let amount_settled = invoice_settlements::amount_settled(&mut *tx, invoice_id).await?;
+    let other_fees = invoice_reminders::sum_fees_deduped_excluding(
+        &mut *tx,
+        company_id,
+        invoice_id,
+        level_number,
+    )
+    .await?;
+    // Lecture seule : rien à valider, la transaction ne sert qu'à l'instantané.
+    tx.rollback()
+        .await
+        .map_err(|e| AppError::Internal(format!("rollback tx: {e}")))?;
+    let amount_due = reminder_amount_due(raw_due)?;
+    Ok(ReminderAmounts {
+        amount_settled,
+        amount_due,
+        fees: other_fees + level_fee,
+    })
+}
+
 /// Génère le PDF QR-facture d'une facture **validée**, scopée à
 /// `company` (anti-IDOR).
 ///
@@ -93,6 +180,28 @@ pub async fn render(
     locale: Locale,
     company: &Company,
     invoice_id: i64,
+) -> Result<RenderedInvoicePdf, AppError> {
+    render_document(
+        pool,
+        i18n,
+        locale,
+        company,
+        invoice_id,
+        PdfDocument::Invoice,
+    )
+    .await
+}
+
+/// [`render`], pour un document au choix : la facture, ou un rappel (Story
+/// 25-4-b2). Le titre du rappel est résolu dans `locale` — celle du contact
+/// pour un envoi —, pas dans celle de l'installation.
+pub async fn render_document(
+    pool: &sqlx::MySqlPool,
+    i18n: &kesh_i18n::I18nBundle,
+    locale: Locale,
+    company: &Company,
+    invoice_id: i64,
+    document: PdfDocument,
 ) -> Result<RenderedInvoicePdf, AppError> {
     // Chargement facture + lignes (scopé company).
     let (invoice, lines) = invoices::find_by_id_with_lines(pool, company.id, invoice_id)
@@ -143,6 +252,7 @@ pub async fn render(
         &primary_bank,
         &creditor_country,
         &debtor_country,
+        document,
     )?;
     let qr_i18n = build_i18n(i18n, locale);
 
@@ -159,6 +269,7 @@ pub async fn render(
 }
 
 /// Convertit les entités DB en `QrBillData` + `InvoicePdfData`.
+#[allow(clippy::too_many_arguments)]
 fn build_qrbill_inputs(
     invoice: &Invoice,
     lines: &[InvoiceLine],
@@ -167,6 +278,7 @@ fn build_qrbill_inputs(
     primary_bank: &BankAccount,
     creditor_country: &str,
     debtor_country: &str,
+    document: PdfDocument,
 ) -> Result<(QrBillData, InvoicePdfData), AppError> {
     // Adresse créancier — STRUCTURÉE type S (#213, conformité SIX 21.11.2025).
     let ca = company.structured_address();
@@ -236,11 +348,31 @@ fn build_qrbill_inputs(
         lines.iter().map(|l| (l.line_total, l.vat_rate)),
     );
 
+    // Story 25-4-b2 (#416, AC 7) : la QR d'un rappel porte le RESTE DÛ — la même
+    // valeur, déjà arrondie, que le texte et le bloc imprimé. ⛔ La référence et
+    // le message ci-dessous ne dépendent PAS du document : c'est ce que lit le
+    // rapprochement.
+    let (qr_amount, reminder) = match document {
+        PdfDocument::Invoice => (total_ttc, None),
+        PdfDocument::Reminder(a) => {
+            // Défense : `reminder_amounts` ne produit jamais un reste ≤ 0.
+            let due = reminder_amount_due(a.amount_due)?;
+            (
+                due,
+                Some(ReminderPdf {
+                    amount_settled: a.amount_settled,
+                    amount_due: due,
+                    fees: a.fees,
+                }),
+            )
+        }
+    };
+
     let qr_data = QrBillData {
         creditor_iban: iban,
         creditor: creditor.clone(),
         ultimate_debtor: Some(debtor.clone()),
-        amount: Some(total_ttc),
+        amount: Some(qr_amount),
         currency: Currency::Chf,
         reference,
         unstructured_message: invoice.invoice_number.as_ref().map(|n| {
@@ -301,6 +433,7 @@ fn build_qrbill_inputs(
         total: total_ttc,
         currency: Currency::Chf,
         origin_reference: None,
+        reminder,
     };
 
     Ok((qr_data, pdf_data))
@@ -561,6 +694,7 @@ mod tests {
             &primary_bank(),
             "CH",
             "CH",
+            PdfDocument::Invoice,
         )
         .expect("le montage doit produire un PDF exploitable");
 
@@ -600,6 +734,7 @@ mod tests {
             &primary_bank(),
             "CH",
             "CH",
+            PdfDocument::Invoice,
         )
         .expect("le montage doit produire un PDF exploitable");
 
@@ -627,6 +762,7 @@ mod tests {
             &primary_bank(),
             "CH",
             "CH",
+            PdfDocument::Invoice,
         )
         .expect("le montage doit produire un PDF exploitable");
 
@@ -648,9 +784,173 @@ mod tests {
             &primary_bank(),
             "CH",
             "CH",
+            PdfDocument::Invoice,
         )
         .expect("le montage doit produire un PDF exploitable");
 
         assert!(data.debtor_client_number.is_none());
+    }
+
+    // ─── Story 25-4-b2 (#416) — le PDF de rappel ──────────────────────────
+
+    /// Une ligne à TVA non nulle : 1 000.— HT à 8,1 % = 1 081.— TTC.
+    fn lines_1081() -> Vec<kesh_db::entities::InvoiceLine> {
+        vec![kesh_db::entities::InvoiceLine {
+            id: 1,
+            invoice_id: 1,
+            position: 1,
+            description: "Prestation".into(),
+            quantity: dec!(1),
+            unit_price: dec!(1000.00),
+            vat_rate: dec!(8.10),
+            line_total: dec!(1000.00),
+            revenue_account_id: None,
+            created_at: chrono::NaiveDateTime::default(),
+        }]
+    }
+
+    fn qr_bank() -> kesh_db::entities::BankAccount {
+        kesh_db::entities::BankAccount {
+            qr_iban: Some("CH4431999123000889012".into()),
+            ..primary_bank()
+        }
+    }
+
+    fn inputs(
+        bank: &kesh_db::entities::BankAccount,
+        document: PdfDocument,
+    ) -> (QrBillData, InvoicePdfData) {
+        build_qrbill_inputs(
+            &invoice(),
+            &lines_1081(),
+            &contact_with_structured_address(),
+            &company_with_contact_details(),
+            bank,
+            "CH",
+            "CH",
+            document,
+        )
+        .expect("montage exploitable")
+    }
+
+    /// AC 7 — ⛔ la QR du rappel d'une facture réglée en partie porte le RESTE
+    /// DÛ ; la référence (QRR ou aucune) et le message sont ceux de la facture,
+    /// à l'identique — c'est ce que lit le rapprochement. Les frais n'y sont pas.
+    #[test]
+    fn reminder_qr_carries_the_amount_due_and_keeps_the_reference() {
+        let amounts = ReminderAmounts {
+            amount_settled: dec!(900.00),
+            amount_due: dec!(181.00),
+            fees: dec!(20.00),
+        };
+        for bank in [primary_bank(), qr_bank()] {
+            let (facture_qr, facture_pdf) = inputs(&bank, PdfDocument::Invoice);
+            let (rappel_qr, rappel_pdf) = inputs(&bank, PdfDocument::Reminder(amounts));
+
+            assert_eq!(
+                facture_qr.amount,
+                Some(dec!(1081.00)),
+                "la facture reste au TTC"
+            );
+            assert_eq!(
+                rappel_qr.amount,
+                Some(dec!(181.00)),
+                "le rappel au reste, sans frais"
+            );
+            assert_eq!(
+                rappel_qr.reference, facture_qr.reference,
+                "référence identique"
+            );
+            assert_eq!(
+                rappel_qr.unstructured_message, facture_qr.unstructured_message,
+                "message identique"
+            );
+            assert!(
+                facture_pdf.reminder.is_none(),
+                "la facture n'est pas un rappel"
+            );
+            let r = rappel_pdf.reminder.expect("le rappel porte son bloc");
+            assert_eq!(r.amount_due, dec!(181.00), "même valeur que la QR");
+            assert_eq!(r.amount_settled, dec!(900.00));
+            assert_eq!(r.fees, dec!(20.00));
+            assert_eq!(
+                rappel_pdf.total,
+                dec!(1081.00),
+                "le total imprimé reste le TTC"
+            );
+        }
+        // Anti-vacuité : la branche QR-IBAN porte bien une QRR.
+        assert!(matches!(
+            inputs(&qr_bank(), PdfDocument::Invoice).0.reference,
+            Reference::Qrr(_)
+        ));
+    }
+
+    /// AC 7 et 9 — un seul arrondi, au centime, loin de zéro ; le refus porte sur
+    /// la valeur ARRONDIE.
+    #[test]
+    fn reminder_amount_due_rounds_once_and_refuses_nothing_due() {
+        assert_eq!(reminder_amount_due(dec!(181.0000)).unwrap(), dec!(181.00));
+        assert_eq!(reminder_amount_due(dec!(10.0050)).unwrap(), dec!(10.01));
+        for rien in [dec!(0), dec!(0.0040), dec!(-40.00)] {
+            assert!(
+                matches!(reminder_amount_due(rien), Err(AppError::ReminderNothingDue)),
+                "{rien} ne se réclame pas"
+            );
+        }
+        // Défense : des montants de rappel à reste nul ne passent pas non plus
+        // au montage des entrées QR.
+        let nul = ReminderAmounts {
+            amount_settled: dec!(1081.00),
+            amount_due: dec!(0.00),
+            fees: dec!(0),
+        };
+        assert!(matches!(
+            build_qrbill_inputs(
+                &invoice(),
+                &lines_1081(),
+                &contact_with_structured_address(),
+                &company_with_contact_details(),
+                &primary_bank(),
+                "CH",
+                "CH",
+                PdfDocument::Reminder(nul),
+            ),
+            Err(AppError::ReminderNothingDue)
+        ));
+    }
+
+    /// AC 8 — ⚠️ la mention des frais court sur toute la largeur utile ; les
+    /// gardes du PDF ne surveillent que l'ordonnée. Sa traduction, dans les 4
+    /// locales réelles, tient dans `REMINDER_NOTE_MAX_CHARS` — l'allemand est le
+    /// plus long.
+    #[test]
+    fn reminder_fees_note_fits_its_width_in_all_four_locales() {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../kesh-i18n/locales");
+        let bundle = kesh_i18n::I18nBundle::load(&dir).unwrap();
+        for locale in [Locale::FrCh, Locale::DeCh, Locale::ItCh, Locale::EnCh] {
+            let note = build_i18n(&bundle, locale)
+                .get("invoice-pdf-reminder-fees-note")
+                .to_string();
+            assert!(
+                note.chars().count() <= kesh_qrbill::REMINDER_NOTE_MAX_CHARS,
+                "{locale:?} : « {note} » dépasse {} caractères",
+                kesh_qrbill::REMINDER_NOTE_MAX_CHARS
+            );
+            // Revue de code 25-4-b2, P1 — les libellés COURTS, dans leur colonne de
+            // 50 mm : la troncature au dessin est une défense, pas une mise en page.
+            for key in [
+                "invoice-pdf-settled",
+                "invoice-pdf-amount-due",
+                "invoice-pdf-reminder-fees",
+            ] {
+                let label = build_i18n(&bundle, locale).get(key).to_string();
+                assert!(
+                    label.chars().count() <= kesh_qrbill::REMINDER_LABEL_MAX_CHARS,
+                    "{locale:?} : « {label} » dépasse {} caractères",
+                    kesh_qrbill::REMINDER_LABEL_MAX_CHARS
+                );
+            }
+        }
     }
 }

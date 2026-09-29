@@ -2104,3 +2104,234 @@ async fn send_reminder_batch_partial_success(pool: MySqlPool) {
         "BATCH_TOO_LARGE"
     );
 }
+
+// ─── Story 25-4-b2 (#416) — le rappel réclame le reste dû ─────────────────────
+
+/// Règle `amount` sur la facture par compte interne (caisse 1000), à une date
+/// postérieure à la facture du montage (14.04.2026).
+async fn settle(
+    pool: &MySqlPool,
+    admin_id: i64,
+    company_id: i64,
+    invoice_id: i64,
+    amount: rust_decimal::Decimal,
+) {
+    let (cash,): (i64,) =
+        sqlx::query_as("SELECT id FROM accounts WHERE company_id = ? AND number = '1000'")
+            .bind(company_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    kesh_db::repositories::invoice_settlements_write::settle_invoice(
+        pool,
+        admin_id,
+        company_id,
+        invoice_id,
+        kesh_db::entities::SettlementChoice::InternalAccount { account_id: cash },
+        amount,
+        NaiveDate::from_ymd_opt(2026, 5, 20).unwrap(),
+    )
+    .await
+    .expect("règlement");
+}
+
+/// AC 1, 2, 10 — l'aperçu d'un rappel sur une facture RÉGLÉE EN PARTIE réclame
+/// le reste dû plus les frais : 108.10 réglée de 40 → reste 68.10 ; niveau 2
+/// (frais 20.00) → `{totalDue}` = 88.10, et non 128.10 (TTC + frais). Niveau 1
+/// (frais nuls) : 68.10, et aucune phrase de frais.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reminder_preview_claims_the_amount_due(pool: MySqlPool) {
+    let (admin_id, company_id, invoice_id) = seed_sendable(&pool).await;
+    seed_dunning(&pool, company_id).await;
+    settle(&pool, admin_id, company_id, invoice_id, dec!(40.00)).await;
+    let app = spawn_app(pool.clone(), MockMailer::new(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    let preview = |level: i16| {
+        app.client
+            .get(app.url(&format!(
+                "/api/v1/invoices/{invoice_id}/reminder-preview?level={level}"
+            )))
+            .bearer_auth(&token)
+            .send()
+    };
+    let body: serde_json::Value = preview(2).await.unwrap().json().await.unwrap();
+    let text = body["body"].as_str().unwrap();
+    assert!(text.contains("88.10"), "reste 68.10 + frais 20.00 : {text}");
+    assert!(!text.contains("128.10"), "plus le TTC + frais : {text}");
+    assert!(
+        text.contains("108.10"),
+        "{{amount}} reste le TTC de la facture : {text}"
+    );
+    assert!(
+        text.contains("frais de rappel de 20.00"),
+        "{{feeNotice}} dit les frais : {text}"
+    );
+
+    let body: serde_json::Value = preview(1).await.unwrap().json().await.unwrap();
+    let text = body["body"].as_str().unwrap();
+    assert!(
+        text.contains("68.10"),
+        "niveau 1 sans frais : le reste seul : {text}"
+    );
+    assert!(
+        !text.to_lowercase().contains("frais"),
+        "à zéro, rien ne s'affiche : {text}"
+    );
+}
+
+/// AC 5 — l'envoi unitaire joint un RAPPEL, nommé comme tel.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn send_reminder_attaches_a_reminder_pdf(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (admin_id, company_id, invoice_id) = seed_sendable(&pool).await;
+    seed_dunning(&pool, company_id).await;
+    settle(&pool, admin_id, company_id, invoice_id, dec!(40.00)).await;
+    let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/reminders/send")))
+        .bearer_auth(&token)
+        .json(&json!({ "levelNumber": 1, "subject": "Rappel", "body": "Corps." }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201);
+    let sent = mock.sent_emails();
+    let name = sent[0].attachment_filename.as_deref().unwrap();
+    assert!(
+        name.starts_with("rappel-") && name.ends_with(".pdf"),
+        "la pièce jointe est un rappel : {name}"
+    );
+}
+
+/// AC 9 — reste dû nul sur une facture validée sans `paid_at` (état hérité,
+/// fabriqué en SQL) : refus NOMMÉ `REMINDER_NOTHING_DUE` à l'aperçu, à l'envoi
+/// unitaire — avant le SMTP — et, en lot, en échec PAR FACTURE, pas en
+/// `DATABASE_ERROR`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reminder_with_nothing_due_is_refused_by_name(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (admin_id, company_id, invoice_id) = seed_sendable(&pool).await;
+    seed_dunning(&pool, company_id).await;
+    settle(&pool, admin_id, company_id, invoice_id, dec!(108.10)).await;
+    sqlx::query("UPDATE invoices SET paid_at = NULL WHERE id = ?")
+        .bind(invoice_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    let preview = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/invoices/{invoice_id}/reminder-preview?level=1"
+        )))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(preview.status(), 422);
+    let body: serde_json::Value = preview.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "REMINDER_NOTHING_DUE", "{body}");
+
+    let unit = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/reminders/send")))
+        .bearer_auth(&token)
+        .json(&json!({ "levelNumber": 1, "subject": "Rappel", "body": "Corps." }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(unit.status(), 422);
+    assert_eq!(mock.sent_emails().len(), 0, "refusé AVANT le SMTP");
+
+    let batch = app
+        .client
+        .post(app.url("/api/v1/dunning/reminders/send-batch"))
+        .bearer_auth(&token)
+        .json(&json!({ "invoiceIds": [invoice_id] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(batch.status(), 200);
+    let body: serde_json::Value = batch.json().await.unwrap();
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1, "{body}");
+    assert_eq!(
+        failed[0]["errorCode"], "REMINDER_NOTHING_DUE",
+        "pas DATABASE_ERROR"
+    );
+    assert_eq!(mock.sent_emails().len(), 0);
+    assert_eq!(reminder_count(&pool, invoice_id).await, 0);
+}
+
+/// Revue de code 25-4-b2, P1 (HIGH) — ⛔ un règlement arrivé entre l'aperçu et
+/// l'envoi unitaire : le texte validé annonce l'ancien reste, la QR recalculée le
+/// nouveau. L'envoi qui renvoie les montants de l'aperçu est REFUSÉ (409), rien
+/// ne part ; un nouvel aperçu permet l'envoi.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn send_reminder_refuses_amounts_changed_since_preview(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (admin_id, company_id, invoice_id) = seed_sendable(&pool).await;
+    seed_dunning(&pool, company_id).await;
+    let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+    let preview = || async {
+        let v: serde_json::Value = app
+            .client
+            .get(app.url(&format!(
+                "/api/v1/invoices/{invoice_id}/reminder-preview?level=1"
+            )))
+            .bearer_auth(&token)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        v
+    };
+    let send = |p: serde_json::Value| {
+        app.client
+            .post(app.url(&format!("/api/v1/invoices/{invoice_id}/reminders/send")))
+            .bearer_auth(&token)
+            .json(&json!({
+                "levelNumber": 1,
+                "subject": p["subject"],
+                "body": p["body"],
+                "expectedAmountDue": p["amountDue"],
+                "expectedFees": p["fees"],
+            }))
+            .send()
+    };
+
+    let avant = preview().await;
+    assert_eq!(
+        avant["amountDue"]
+            .as_str()
+            .unwrap()
+            .parse::<rust_decimal::Decimal>()
+            .unwrap(),
+        dec!(108.10),
+        "l'aperçu dit le reste sur lequel il a rendu le texte : {avant}"
+    );
+    // Un règlement arrive pendant que l'aperçu est ouvert.
+    settle(&pool, admin_id, company_id, invoice_id, dec!(40.00)).await;
+
+    let refus = send(avant).await.unwrap();
+    assert_eq!(refus.status(), 409);
+    let body: serde_json::Value = refus.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "REMINDER_AMOUNTS_CHANGED", "{body}");
+    assert_eq!(mock.sent_emails().len(), 0, "rien n'est parti");
+    assert_eq!(reminder_count(&pool, invoice_id).await, 0);
+
+    // Un nouvel aperçu : le texte et la QR disent le même reste.
+    let apres = preview().await;
+    assert!(apres["body"].as_str().unwrap().contains("68.10"), "{apres}");
+    assert_eq!(send(apres).await.unwrap().status(), 201);
+    assert_eq!(mock.sent_emails().len(), 1);
+}

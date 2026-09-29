@@ -14,6 +14,10 @@ describe('reminderErrorLabel', () => {
 		expect(reminderErrorLabel('INVOICE_ALREADY_PAID')).toBe('Facture déjà payée');
 	});
 
+	it('libelle le refus du reste nul (Story 25-4-b2), pas le fallback brut', () => {
+		expect(reminderErrorLabel('REMINDER_NOTHING_DUE')).toBe('Rien à réclamer');
+	});
+
 	it('retombe sur le fallback avec le code brut pour un code inconnu', () => {
 		expect(reminderErrorLabel('SOMETHING_NEW')).toContain('SOMETHING_NEW');
 	});

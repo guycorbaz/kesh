@@ -82,6 +82,7 @@ fn sample_invoice() -> InvoicePdfData {
         total: dec!(1329.62), // 1234.56 + 95.06
         currency: Currency::Chf,
         origin_reference: None,
+        reminder: None,
     }
 }
 

@@ -9,7 +9,7 @@
 //! Uses `BuiltinFont::Helvetica` (PDF standard 14) — no external font embedding.
 
 use crate::generator::{build_payload, render_qr_image};
-use crate::types::{InvoicePdfData, QrBillData, QrBillError, QrBillI18n, Reference};
+use crate::types::{InvoicePdfData, QrBillData, QrBillError, QrBillI18n, Reference, ReminderPdf};
 use chrono::{Datelike, NaiveDate};
 use kesh_core::text::is_invisible;
 use printpdf::{
@@ -463,8 +463,15 @@ fn draw_invoice_section(
     // Title + metadata (right).
     let meta_x = 120.0;
     let meta_title_y = PAGE_H - 20.0;
+    // Story 25-4-b2 (#416) : un rappel n'est pas la facture réémise — il le dit
+    // en titre. La clé est résolue dans la locale que l'appelant a passée.
+    let title_key = if inv.reminder.is_some() {
+        "invoice-pdf-reminder-title"
+    } else {
+        "invoice-pdf-title"
+    };
     layer.use_text(
-        i18n.get("invoice-pdf-title"),
+        i18n.get(title_key),
         18.0,
         Mm(meta_x),
         Mm(meta_title_y),
@@ -583,7 +590,7 @@ fn draw_invoice_section(
         0.0
     } else {
         4.5 + 4.5 * inv.vat_lines.len() as f32 + 1.0
-    };
+    } + reminder_block_height(inv.reminder.as_ref());
 
     for line in &inv.lines {
         if ty < content_floor + 15.0 + recap_reserve {
@@ -696,6 +703,27 @@ fn draw_invoice_section(
         Mm(ty),
         helv_bold,
     );
+
+    // Story 25-4-b2 (#416) — le bloc du rappel, sous le total. Sa hauteur est
+    // RÉSERVÉE dans `recap_reserve` (garde `TooManyLines`) : ⛔ ne pas le traiter
+    // comme `payment_terms` ci-dessous, qui se contente de clamper et tasserait
+    // le bloc sur la zone de paiement au lieu de refuser.
+    if let Some(r) = &inv.reminder {
+        for line in reminder_lines(r, i18n, inv.currency.code()) {
+            ty -= REMINDER_LINE_STEP;
+            let x = if line.full_width { col_desc } else { col_unit };
+            let font = if line.bold { helv_bold } else { helv };
+            let label = if line.full_width {
+                truncate_display(&line.label, REMINDER_NOTE_MAX_CHARS)
+            } else {
+                truncate_display(&line.label, REMINDER_LABEL_MAX_CHARS)
+            };
+            layer.use_text(label, 9.0, Mm(x), Mm(ty), font);
+            if let Some(amount) = line.amount {
+                layer.use_text(amount, 9.0, Mm(col_tot), Mm(ty), font);
+            }
+        }
+    }
 
     if let Some(terms) = &inv.payment_terms {
         ty -= 8.0;
@@ -1111,6 +1139,93 @@ fn format_date_ch(d: NaiveDate) -> String {
 // ne pas dessiner une ligne blanche qui consommerait un `META_LINE_STEP` pour
 // une valeur faite de ZWSP/BOM/word-joiner, vides à l'impression.
 
+/// Pas vertical entre deux lignes du bloc de rappel, en mm (Story 25-4-b2).
+const REMINDER_LINE_STEP: f32 = 4.5;
+
+/// Longueur maximale, en caractères, de la **mention** des frais de rappel, qui
+/// court sur toute la largeur utile (170 mm, de `col_desc` à la marge droite).
+/// Même calibrage que [`IDENTITY_MAX_CHARS`] (46 caractères pour 100 mm à 9 pt),
+/// avec la même limite : une borne en caractères, pas une largeur mesurée.
+///
+/// ⚠️ Les gardes de capacité ne surveillent que l'ORDONNÉE : sans cette borne,
+/// une traduction plus longue déborderait à droite sans que rien ne rougisse.
+pub const REMINDER_NOTE_MAX_CHARS: usize = 78;
+
+/// Longueur maximale des **libellés courts** du bloc de rappel (déjà réglé, reste
+/// à payer, frais de rappel), dessinés dans la colonne des libellés : 50 mm de
+/// `col_unit` à `col_tot`, soit 23 caractères au calibrage d'[`IDENTITY_MAX_CHARS`].
+/// Au-delà, le libellé chevaucherait le montant (revue de code 25-4-b2, P1).
+pub const REMINDER_LABEL_MAX_CHARS: usize = 23;
+
+/// Une ligne du bloc de rappel, **construite** avant d'être dessinée — c'est ce
+/// qui rend son contenu testable (le texte d'un PDF est hex-encodé dans les
+/// opérateurs `Tj` et ne se compare pas).
+#[derive(Debug, Clone, PartialEq)]
+struct ReminderLine {
+    label: String,
+    amount: Option<String>,
+    bold: bool,
+    /// `true` ⇒ la ligne part de `col_desc` et court sur toute la largeur (la
+    /// mention des frais, trop longue pour la colonne des libellés).
+    full_width: bool,
+}
+
+/// Les lignes du bloc de rappel, dans l'ordre (Story 25-4-b2, AC 6 et 8) :
+/// « déjà réglé » et « reste à payer » **seulement s'il y a eu un règlement**
+/// (sinon le total est le reste — arbitrage Q2), puis « frais de rappel » et sa
+/// mention **seulement si les frais sont non nuls** (arbitrage Q1).
+fn reminder_lines(r: &ReminderPdf, i18n: &QrBillI18n, currency: &str) -> Vec<ReminderLine> {
+    let money = |d: Decimal| {
+        format!(
+            "{} {}",
+            currency,
+            format_ch(
+                d.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
+                2
+            )
+        )
+    };
+    let mut out = Vec::new();
+    if r.amount_settled > Decimal::ZERO {
+        out.push(ReminderLine {
+            label: i18n.get("invoice-pdf-settled").to_string(),
+            amount: Some(format!("-{}", money(r.amount_settled))),
+            bold: false,
+            full_width: false,
+        });
+        out.push(ReminderLine {
+            label: i18n.get("invoice-pdf-amount-due").to_string(),
+            amount: Some(money(r.amount_due)),
+            bold: true,
+            full_width: false,
+        });
+    }
+    if r.fees > Decimal::ZERO {
+        out.push(ReminderLine {
+            label: i18n.get("invoice-pdf-reminder-fees").to_string(),
+            amount: Some(money(r.fees)),
+            bold: false,
+            full_width: false,
+        });
+        out.push(ReminderLine {
+            label: i18n.get("invoice-pdf-reminder-fees-note").to_string(),
+            amount: None,
+            bold: false,
+            full_width: true,
+        });
+    }
+    out
+}
+
+/// Hauteur du bloc de rappel, à réserver dans la garde de capacité.
+fn reminder_block_height(r: Option<&ReminderPdf>) -> f32 {
+    r.map(|r| {
+        // Le `QrBillI18n` par défaut suffit : seul le NOMBRE de lignes compte.
+        reminder_lines(r, &QrBillI18n::default(), "CHF").len() as f32 * REMINDER_LINE_STEP
+    })
+    .unwrap_or(0.0)
+}
+
 fn truncate_display(s: &str, max_chars: usize) -> String {
     if s.chars().count() <= max_chars {
         s.to_string()
@@ -1191,6 +1306,7 @@ mod tests {
             total: dec!(1292.40), // 1200.00 + 92.40
             currency: Currency::Chf,
             origin_reference: None,
+            reminder: None,
         };
         (data, invoice, QrBillI18n::default())
     }
@@ -1387,6 +1503,128 @@ mod tests {
             matches!(err, QrBillError::HeaderOverflow(_)),
             "erreur attendue HeaderOverflow, obtenue : {err:?}"
         );
+    }
+
+    fn reminder(settled: Decimal, due: Decimal, fees: Decimal) -> ReminderPdf {
+        ReminderPdf {
+            amount_settled: settled,
+            amount_due: due,
+            fees,
+        }
+    }
+
+    /// Story 25-4-b2 (AC 6, 8) — le CONTENU du bloc, mesuré sur les lignes
+    /// construites (le texte d'un PDF ne se compare pas, cf. `golden_test.rs`) :
+    /// réglé et reste seulement après un règlement, frais et mention seulement
+    /// avec des frais, montants au centime.
+    #[test]
+    fn reminder_lines_show_only_what_is_not_zero() {
+        let i18n = QrBillI18n::default();
+        let full = reminder_lines(
+            &reminder(dec!(900.00), dec!(181.0000), dec!(20.00)),
+            &i18n,
+            "CHF",
+        );
+        let labels: Vec<&str> = full.iter().map(|l| l.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            [
+                "Already paid",
+                "Amount due",
+                "Reminder fees",
+                "Reminder fees are not included in the payment slip."
+            ]
+        );
+        assert_eq!(full[0].amount.as_deref(), Some("-CHF 900.00"));
+        assert_eq!(full[1].amount.as_deref(), Some("CHF 181.00"));
+        assert!(full[1].bold, "le reste à payer est en gras");
+        assert_eq!(full[2].amount.as_deref(), Some("CHF 20.00"));
+        assert!(full[3].full_width && full[3].amount.is_none());
+
+        // Q2 : sans règlement, le total EST le reste — ni réglé, ni reste.
+        let unpaid = reminder_lines(&reminder(dec!(0), dec!(1081.00), dec!(20.00)), &i18n, "CHF");
+        assert_eq!(unpaid.len(), 2);
+        assert_eq!(unpaid[0].label, "Reminder fees");
+        // Q1 : sans frais, ni ligne de frais, ni mention.
+        let no_fees = reminder_lines(&reminder(dec!(900.00), dec!(181.00), dec!(0)), &i18n, "CHF");
+        assert_eq!(no_fees.len(), 2);
+        assert!(no_fees.iter().all(|l| !l.label.contains("fee")));
+        assert!(
+            reminder_lines(&reminder(dec!(0), dec!(1081.00), dec!(0)), &i18n, "CHF").is_empty()
+        );
+    }
+
+    /// Story 25-4-b2 (AC 5) — un rappel se rend, et n'est pas la facture : titre
+    /// et bloc ajoutent du texte (delta de taille, date figée).
+    #[test]
+    fn reminder_pdf_renders_and_differs_from_the_invoice() {
+        let (data, base, i18n) = invoice_fixture();
+        let facture = generate_qr_bill_pdf_with_date(&data, &base, &i18n, fixed_date())
+            .unwrap()
+            .len();
+        let rappel = InvoicePdfData {
+            reminder: Some(reminder(dec!(900.00), dec!(392.40), dec!(20.00))),
+            ..base
+        };
+        let bytes = generate_qr_bill_pdf_with_date(&data, &rappel, &i18n, fixed_date()).unwrap();
+        assert!(bytes.starts_with(b"%PDF-1."));
+        assert!(
+            bytes.len() > facture,
+            "le rappel porte titre et bloc : {} ≤ {facture}",
+            bytes.len()
+        );
+    }
+
+    /// Story 25-4-b2 (AC 10) — ⛔ la hauteur du bloc est RÉSERVÉE : il existe un
+    /// nombre de lignes que la facture tient et que le rappel complet (trois
+    /// lignes et la mention) refuse en `TooManyLines`, au lieu de se tasser sur
+    /// la zone de paiement. Et un rappel ne tient jamais là où la facture ne
+    /// tient pas.
+    #[test]
+    fn reminder_block_is_reserved_in_the_capacity_guard() {
+        let (data, base, i18n) = invoice_fixture();
+        let with_lines = |n: usize, r: Option<ReminderPdf>| InvoicePdfData {
+            lines: (0..n)
+                .map(|i| InvoiceLinePdf {
+                    description: format!("Ligne {i}"),
+                    quantity: dec!(1),
+                    unit_price: dec!(100.00),
+                    vat_rate: dec!(7.70),
+                    line_total: dec!(100.00),
+                })
+                .collect(),
+            reminder: r,
+            ..base.clone()
+        };
+        let full = || Some(reminder(dec!(100.00), dec!(50.00), dec!(20.00)));
+        let mut discriminated = false;
+        for n in 1..=12 {
+            let facture_ok = generate_qr_bill_pdf(&data, &with_lines(n, None), &i18n).is_ok();
+            let rappel = generate_qr_bill_pdf(&data, &with_lines(n, full()), &i18n);
+            if rappel.is_ok() {
+                assert!(
+                    facture_ok,
+                    "{n} lignes : le rappel tient là où la facture ne tient pas"
+                );
+            } else {
+                assert!(matches!(rappel, Err(QrBillError::TooManyLines(m)) if m == n));
+                discriminated |= facture_ok;
+            }
+        }
+        assert!(
+            discriminated,
+            "aucun nombre de lignes ne sépare facture et rappel : la réserve ne sert à rien"
+        );
+    }
+
+    /// Story 25-4-b2 (AC 8) — la mention de repli tient dans sa largeur. Les
+    /// traductions sont bornées côté API, sur les 4 locales.
+    #[test]
+    fn reminder_fees_note_fallback_fits_its_width() {
+        let note = QrBillI18n::default()
+            .get("invoice-pdf-reminder-fees-note")
+            .to_string();
+        assert!(note.chars().count() <= REMINDER_NOTE_MAX_CHARS);
     }
 
     /// #151 (code-review HIGH) : une facture dont les lignes **plus** le bloc
@@ -1810,6 +2048,7 @@ mod tests {
         let lines = build_meta_lines(
             &InvoicePdfData {
                 origin_reference: Some(origin.into()),
+                reminder: None,
                 ..base
             },
             &i18n,

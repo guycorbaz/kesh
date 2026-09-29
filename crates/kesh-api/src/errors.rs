@@ -448,6 +448,17 @@ pub enum AppError {
     /// Story 21-5b — rappel sur une facture aux rappels suspendus. 422.
     #[error("Rappels suspendus pour cette facture")]
     DunningPaused,
+    /// Story 25-4-b2 (#416) — rappel d'une facture dont le reste dû, arrondi au
+    /// centime, est nul ou négatif (état hérité : trop-perçu d'avant la 0.12.1).
+    /// Refus NOMMÉ plutôt qu'un `INVOICE_NOT_PDF_READY` trompeur (la QR refuse
+    /// un montant ≤ 0). 422.
+    #[error("Rien à réclamer sur cette facture")]
+    ReminderNothingDue,
+    /// Story 25-4-b2 (#416) — les montants d'un rappel ont changé entre l'aperçu et
+    /// l'envoi (un règlement est arrivé) : le texte validé ne correspond plus à la
+    /// QR. Rien n'est envoyé ; rouvrir l'aperçu. 409.
+    #[error("Montants du rappel modifiés depuis l'aperçu")]
+    ReminderAmountsChanged,
     /// Story 21-5b — envoi d'un niveau de rappel > prochain attendu (saut interdit,
     /// ou niveau déjà couvert par un envoi concurrent). 409.
     #[error("Niveau de rappel déjà couvert")]
@@ -1315,6 +1326,22 @@ impl IntoResponse for AppError {
                 &t(
                     "error-dunning-paused",
                     "Les rappels sont suspendus pour cette facture.",
+                ),
+            ),
+            AppError::ReminderAmountsChanged => build_response(
+                StatusCode::CONFLICT,
+                "REMINDER_AMOUNTS_CHANGED",
+                &t(
+                    "error-reminder-amounts-changed",
+                    "Le montant dû a changé depuis l'aperçu (un règlement est arrivé) : rouvrez l'aperçu avant d'envoyer.",
+                ),
+            ),
+            AppError::ReminderNothingDue => build_response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "REMINDER_NOTHING_DUE",
+                &t(
+                    "error-reminder-nothing-due",
+                    "Il ne reste rien à réclamer sur cette facture : aucun rappel à envoyer.",
                 ),
             ),
             AppError::LevelAlreadySent => build_response(

@@ -156,6 +156,29 @@ pub struct InvoicePdfData {
     /// Référence à la facture d'origine, affichée uniquement sur les avoirs
     /// (Story 12.1). `None` pour une facture normale (pas de régression).
     pub origin_reference: Option<String>,
+    /// Story 25-4-b2 (#416) — `Some` fait du document un **rappel** : titre
+    /// « Rappel », et sous le total, ce qui est déjà réglé, le reste à payer et
+    /// les frais de rappel. `None` pour une facture ou un avoir (pas de
+    /// régression). Même patron conditionnel qu'`origin_reference`.
+    pub reminder: Option<ReminderPdf>,
+}
+
+/// Les montants d'un rappel (Story 25-4-b2, #416), **déjà calculés et arrondis**
+/// par l'appelant — le crate reste présentationnel.
+///
+/// ⛔ La QR du rappel porte `amount_due`, jamais `total` ni `amount_due + fees` :
+/// les frais ne sont pas comptabilisés, un virement qui les inclurait serait
+/// refusé comme trop-perçu. C'est à l'appelant de passer ce même montant dans
+/// `QrBillData::amount`.
+#[derive(Debug, Clone)]
+pub struct ReminderPdf {
+    /// Total des règlements enregistrés. Nul ⇒ les lignes « déjà réglé » et
+    /// « reste à payer » ne s'affichent pas : le total **est** le reste.
+    pub amount_settled: Decimal,
+    /// Reste dû, arrondi au centime — le montant de la QR.
+    pub amount_due: Decimal,
+    /// Frais de rappel cumulés. Nuls ⇒ ni ligne de frais, ni mention.
+    pub fees: Decimal,
 }
 
 #[derive(Debug, Clone)]
@@ -255,6 +278,13 @@ pub const I18N_KEYS: &[&str] = &[
     // seul filet contre le décalage d'appariement (cf. le doc-comment de
     // l'assertion ci-dessous).
     "invoice-pdf-client-number",
+    // Story 25-4-b2 (#416) — le rappel. Ajoutées EN FIN, mêmes positions que
+    // dans `DEFAULT_EN`.
+    "invoice-pdf-reminder-title",
+    "invoice-pdf-settled",
+    "invoice-pdf-amount-due",
+    "invoice-pdf-reminder-fees",
+    "invoice-pdf-reminder-fees-note",
 ];
 
 /// ⚠️ Invariant tenu **à la compilation** : `I18N_KEYS` et `DEFAULT_EN` ont
@@ -312,6 +342,12 @@ const DEFAULT_EN: &[&str] = &[
     "Web",
     // Story 16-3b (#151) — MÊME POSITION que la dernière de `I18N_KEYS`.
     "Client no.",
+    // Story 25-4-b2 (#416) — MÊMES POSITIONS que les cinq dernières de `I18N_KEYS`.
+    "Reminder",
+    "Already paid",
+    "Amount due",
+    "Reminder fees",
+    "Reminder fees are not included in the payment slip.",
 ];
 
 #[derive(Debug, Error)]

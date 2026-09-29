@@ -276,6 +276,32 @@ mod tests {
         }
     }
 
+    /// **Story 25-4-b2 (#416)** — les libellés du PDF de rappel et le refus du
+    /// reste nul existent dans les quatre locales, et ne replient pas sur le
+    /// français (même mécanisme que la KF #283, cf. le test précédent).
+    #[test]
+    fn reminder_pdf_labels_are_translated_in_all_four_locales() {
+        let bundle = I18nBundle::load(&locales_dir()).unwrap();
+        for key in [
+            "invoice-pdf-reminder-title",
+            "invoice-pdf-settled",
+            "invoice-pdf-amount-due",
+            "invoice-pdf-reminder-fees",
+            "invoice-pdf-reminder-fees-note",
+            "error-reminder-nothing-due",
+            "error-reminder-amounts-changed",
+            "reminders-error-nothing-due",
+        ] {
+            let fr = bundle.format(&Locale::FrCh, key, None);
+            assert_ne!(fr, key, "{key} doit exister en fr-CH");
+            for locale in [Locale::DeCh, Locale::ItCh, Locale::EnCh] {
+                let msg = bundle.format(&locale, key, None);
+                assert_ne!(msg, key, "{key} doit exister en {locale:?}");
+                assert_ne!(msg, fr, "{key} en {locale:?} replie sur le français");
+            }
+        }
+    }
+
     /// **Story 22-2b (#301)** — les quatre libellés des sondes anti-doublon
     /// existent dans les quatre locales.
     ///

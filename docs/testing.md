@@ -325,6 +325,15 @@ re-dériver à la main quels échecs sont connus. Le risque n'est pas le temps p
 l'inverse : conclure « ce sont les échecs habituels » sans regarder, et laisser passer une vraie
 régression au milieu.
 
+⛔ **Une DOUZAINE d'échecs d'un coup, tous en `page.fill('#username')` : KF-053 ([#478]).**
+Observé deux fois le 2026-09-27 (214 / 19, puis 214 / 20). `/login` rend la page SvelteKit
+« Erreur 500 — Internal Error » au lieu du formulaire, le backend ne journalise rien, et le run
+dure ~14,7 min au lieu de ~9. Les specs touchées changent d'un run à l'autre et **passent toutes
+rejouées seules** ; une suite relancée sur base reconstruite revient à la baseline. **Ce n'est pas
+une régression — mais cela ne se conclut qu'après le rejeu isolé, jamais au nombre.**
+
+[#478]: https://github.com/guycorbaz/kesh/issues/478
+
 **Relevé du 2026-08-26** (montage complet de la § précédente, base `kesh_e2e` reconstruite) :
 
 | Test | Cause |
