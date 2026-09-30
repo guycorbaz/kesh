@@ -179,5 +179,11 @@ contrôlé aplati. `docs/api-external.md` si les réglages de facturation y sont
   → écrit sans objet (instantané figé). Faits utiles reportés : sauvegarde dynamique, précédent de test
   `strip_column`, `assert_eq!(total, 69)`, pas d'E2E de l'écran. Toutes les références exactes ; P5
   sain (69 = 69, 8 + 61 + 0).
+- **2026-09-30** — Validation P2 **ciblée** (Haiku, prompt `25-4-c3-a1-validate-prompt-p2.md`, sur
+  `06c075be`) : **0 finding**, preuves jointes sur les quatre axes (routes d'archivage relues,
+  `INFORMATION_SCHEMA` et `is_required()` lus, test `strip_column` et `assert_eq!(total, 69)` trouvés,
+  P5 recompté). La remédiation ne touchait que la fiche : **validation close, 0 > LOW.**
+
+  **Bilan** — P1 Sonnet 2 MEDIUM → P2 Haiku ciblée 0. Modèles : Sonnet, Haiku.
 
 [#476]: https://github.com/guycorbaz/kesh/issues/476
