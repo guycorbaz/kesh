@@ -82,7 +82,10 @@ manuel) **égale le reste dû arrondi** et que le reste **brut** en diffère :
   borne reste la garde de fond (la couche dépôt ne présume pas du handler). Le rapprochement n'est pas
   exposé : `bank_transactions.amount` est `DECIMAL(18,2)`. ⚠️ **`normalize()` d'abord** : `scale_within` lit
   `Decimal::scale()` (`limits.rs:31`), et « 10.000 » a une échelle de 3 pour une valeur au centime — sans
-  normalisation, une saisie correcte serait refusée (validation P2).
+  normalisation, une saisie correcte serait refusée (validation P2). `normalize()` retire **tous** les
+  zéros de fin (« 10.000 » → « 10 », « 10.10 » → « 10.1 ») : c'est un **contrôle**, pas une mise à
+  l'échelle. `into_parts` rend le montant **tel que reçu** — la comparaison `Decimal` est insensible à
+  l'échelle, et `invoice_settlements.amount` le stocke en `DECIMAL(19,4)` (validation P3, F1).
 - Reste brut déjà au centime : deux lignes, comme aujourd'hui.
 
 **AC 4 — Le compte d'arrondi manquant.** L'écart ne s'écrit que sur le compte désigné, **actif, imputable,
@@ -98,7 +101,10 @@ le dialogue compare la saisie au reste **arrondi** (big.js, arrondi loin de zér
 plus de deux décimales** (valeur normalisée : « 10.000 » passe, « 10.008 » non), avec un message propre
 (clé neuve, 4 locales) — sans quoi 10.008 passerait le contrôle client (≤ 10.01) pour tomber sur le 400
 d'échelle du serveur. Avec ce contrôle, « saisie > reste arrondi » équivaut côté client à la double borne de
-l'AC 3. Le code d'erreur de l'AC 4 a son
+l'AC 3 (démontré en validation P3 : `r` vaut toujours le centime inférieur ou supérieur de `b`).
+⛔ **Compter les décimales sur la forme canonique big.js** (`new Big(saisie).toString()`, partie après le
+point ; big.js n'a pas de `.dp()`), **jamais par une regex sur la saisie brute** : le champ est du texte
+libre, et « 1e-3 » n'a pas de point littéral pour trois décimales réelles (validation P3, F2). Le code d'erreur de l'AC 4 a son
 libellé dans les 4 locales (`reminder-error-label.ts` / libellés d'erreur existants : suivre le patron du
 dépôt).
 
@@ -112,12 +118,15 @@ annulé) contre-passe **les trois lignes** et rend le reste dû brut d'avant —
   soldée (`paid_at`, audit `invoice.paid`), règlement de 10.0050, écriture à trois lignes (écart **crédit**
   0.0050 sur le compte d'arrondi), **créance soldée à zéro** au grand livre ; virement de 10.02 refusé en
   trop-perçu ;
-- règlement manuel de **10.008** sur reste brut 10.0050 → **400** (échelle), rien d'écrit ; et, au niveau du
-  dépôt (`settle_invoice` appelé directement), **trop-perçu refusé** (double borne) — pas de partiel
-  silencieux, `paid_at` non posé ;
+- règlement manuel de **10.008** sur reste brut 10.0050 → 400 avec le **code d'erreur d'échelle** asserté
+  (et non le seul statut : la garde actuelle le refuse déjà en 400 *trop-perçu*, un test sur le statut
+  serait vert avant le patch — validation P3, F4), rien d'écrit ; et, au niveau du dépôt (`settle_invoice`
+  appelé directement), **trop-perçu refusé**, `paid_at` non posé. ⚠️ Ce second test est vert avant le patch
+  aussi : c'est un **garde de non-régression de la double borne**, discriminé par la mutation « borne
+  `p > b` retirée », non par l'état d'avant ;
 - facture à reste brut **10.004** : règlement manuel de **10.00** → soldée, écart **débit** 0.004 ;
 - règlement manuel de 10.01 sur 10.0050 → soldé (API) ; « 10.000 » accepté (normalisation) ; Vitest du
-  dialogue : 10.01 accepté, 10.008 refusé avec le message d'échelle ;
+  dialogue : 10.01 accepté, 10.008 et « 1e-3 » refusés avec le message d'échelle ;
 - règlements successifs 5.00 puis 5.01 sur 10.0050 → le premier partiel, le second solde avec écart ;
 - compte d'arrondi absent, puis archivé → refus, rien d'écrit (manuel et rapprochement) ;
 - annulation d'un règlement à trois lignes → reste dû restauré, créance et compte d'arrondi revenus ;
@@ -169,8 +178,8 @@ centime et la troisième ligne. PDF régénérés, contrôlés aplatis (attentio
 
 ### Limite connue — le reste inférieur au demi-centime ([#490])
 
-Un reste **brut** strictement entre 0 et 0.005 (avoir de 10.00 sur 10.004 ; acompte de 10.00 saisi avant
-cette story) a un arrondi nul : aucun paiement ne l'égale, 0.01 le dépasse. La facture ne peut être soldée.
+Un reste **brut** strictement entre 0 et 0.005 (avoir de 10.00 sur 10.004 ; ou règlement partiel de 10.00
+sur 10.004 **déjà enregistré** sous l'ancien code, qu'aucune migration ne rejoue) a un arrondi nul : aucun paiement ne l'égale, 0.01 le dépasse. La facture ne peut être soldée.
 **Défaut antérieur** (0.01 est déjà refusé aujourd'hui), **ni créé ni fermé ici** : ne pas l'élargir dans
 cette story. Un reste brut négatif ou nul reste inchangé (tout paiement `p > 0` est un trop-perçu).
 
@@ -236,6 +245,12 @@ cette story. Un reste brut négatif ou nul reste inchangé (tout paiement `p > 0
   reste brut entre 0 et 0.005 insoldable, défaut antérieur → issue [#490], limite écrite. Tests ajoutés
   (normalisation, deux paiements successifs). Aucune occurrence de règlement à plus de deux décimales dans
   les tests existants (`grep` sur `crates/*/tests`, `frontend/tests`).
+- **2026-09-30** — Validation P3 ciblée (Sonnet) sur la remédiation P2 : 3 MED, 1 LOW, tous retenus.
+  F1 (LOW) : `into_parts` rend le montant reçu, `normalize()` n'est qu'un contrôle. F2 (MED) : décimales
+  comptées sur la forme canonique big.js, pas par regex (« 1e-3 ») ; test ajouté. F3 (MED) : la seconde
+  voie d'arrivée de #490 décrivait le cas que la story **ferme** — reformulée (règlement historique non
+  rejoué), fiche et issue. F4 (MED) : le test 10.008 asserte le code d'échelle ; le test de dépôt déclaré
+  garde de mutation. Équivalence client ⇔ double borne démontrée par la lentille (algèbre + 10⁶ cas).
 
 [#476]: https://github.com/guycorbaz/kesh/issues/476
 [#490]: https://github.com/guycorbaz/kesh/issues/490
