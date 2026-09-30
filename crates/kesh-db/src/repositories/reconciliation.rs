@@ -41,16 +41,28 @@ use crate::entities::bank_transaction::BankTransaction;
 use crate::entities::contact::Contact;
 use crate::entities::invoice::Invoice;
 use crate::errors::{DbError, map_db_error};
+use crate::repositories::invoice_settlements::{
+    INVOICE_AMOUNT_DUE_DERIVED_SQL, amount_due_derived_joins,
+};
 
 /// Colonnes Invoice pour SELECT (cohérent FIND_INVOICE_SCOPED_SQL).
 const INVOICE_COLUMNS: &str = "id, company_id, contact_id, invoice_number, status, date, \
      due_date, payment_terms, total_amount, journal_entry_id, paid_at, emailed_at, emailed_to, \
      project_id, dunning_paused_at, dunning_paused_note, version, created_at, updated_at";
 
-/// Facture candidate à la réconciliation, accompagnée de son **TTC** (#246,
-/// Story 21-2b) — le montant réellement comparé à l'encaissement bancaire
-/// (`invoice.total_amount` est le HT et ne matcherait jamais une facture
-/// avec TVA).
+/// Facture candidate à la réconciliation, accompagnée de son **reste dû** et
+/// de son **TTC**.
+///
+/// - `amount_due` (#420, Story 25-4-c) — le montant réellement comparé à
+///   l'encaissement bancaire : `TTC − avoir émis − Σ règlements`. Une facture
+///   déjà réglée en partie attend son **solde**, pas son TTC ; comparer le TTC
+///   l'excluait des candidates du virement qui la soldait.
+/// - `total_ttc` (#246, Story 21-2b) — conservé pour l'**affichage** seulement
+///   (« reste dû sur 1 000.00 »), jamais pour comparer. `invoice.total_amount`
+///   est le HT et ne matcherait jamais une facture avec TVA.
+///
+/// Le reste dû est **brut** (jusqu'à 4 décimales) : l'arrondi au centime est
+/// la Story 25-4-c3 (#476), pas celle-ci.
 ///
 /// `#[sqlx(flatten)]` : **premier usage du workspace** — `Invoice` dérive
 /// `FromRow` et le SELECT liste ses colonnes via `INVOICE_COLUMNS`, donc le
@@ -60,6 +72,7 @@ const INVOICE_COLUMNS: &str = "id, company_id, contact_id, invoice_number, statu
 pub struct UnpaidInvoiceCandidate {
     #[sqlx(flatten)]
     pub invoice: Invoice,
+    pub amount_due: Decimal,
     pub total_ttc: Decimal,
 }
 
@@ -77,10 +90,15 @@ const BANK_TX_COLUMNS: &str = "id, company_id, import_id, bank_account_id, booki
 /// 2. `status = 'validated' AND paid_at IS NULL AND journal_entry_id IS NOT NULL`
 ///    (factures éligibles à la réconciliation v0.1).
 /// 3. `date BETWEEN tx_date - window_days AND tx_date + window_days`.
-/// 4. **TTC** `BETWEEN tx_amount - amount_tolerance AND tx_amount + amount_tolerance`
-///    (#246, Story 21-2b) — le filtre porte sur le TTC (dérivé des lignes via
-///    l'expression SQL canonique `INVOICE_TTC_SUBQUERY_SQL`), plus sur le HT
-///    `total_amount` : une facture avec TVA ne matchait jamais un encaissement.
+/// 4. **Reste dû** `BETWEEN tx_amount - amount_tolerance AND tx_amount + amount_tolerance`
+///    (#420, Story 25-4-c) — après le HT (#246 : une facture avec TVA ne
+///    matchait jamais) puis le TTC (une facture réglée en partie ne matchait
+///    jamais son solde). Le reste dû est pris **brut** : la tolérance couvre
+///    l'écart à son arrondi au centime (au plus 0.005).
+///
+/// ⛔ **Forme jointe** ([`amount_due_derived_joins`] +
+/// [`INVOICE_AMOUNT_DUE_DERIVED_SQL`]) : c'est une liste, la forme corrélée y
+/// serait réévaluée par ligne — un N+1 déguisé.
 ///
 /// **Pas de filtre currency v0.1** — colonne inexistante (cf. L38 + S4-1 Pass 4).
 ///
@@ -89,7 +107,7 @@ const BANK_TX_COLUMNS: &str = "id, company_id, import_id, bank_account_id, booki
 ///
 /// **Index** : `idx_invoices_company_validated_unpaid_date` créé en
 /// migration `20260507100001_reconciliation_8_4.sql` (couvre le `WHERE` ;
-/// le filtre TTC est appliqué en `HAVING` après retrait des non-éligibles).
+/// le filtre du reste dû est appliqué en `HAVING` après retrait des non-éligibles).
 pub async fn find_unpaid_invoices_for_window<'e, E>(
     executor: E,
     company_id: i64,
@@ -101,19 +119,23 @@ pub async fn find_unpaid_invoices_for_window<'e, E>(
 where
     E: sqlx::Executor<'e, Database = MySql>,
 {
-    // Alias `i` requis par la sous-requête corrélée TTC (`WHERE l.invoice_id = i.id`).
-    // Filtre TTC en HAVING pour référencer l'alias `total_ttc` sans dupliquer
-    // l'expression (SQL n'autorise pas un alias de SELECT dans le WHERE).
-    let ttc_sql = crate::repositories::invoices::INVOICE_TTC_SUBQUERY_SQL;
+    // Alias `i` requis par les tables dérivées du reste dû (`… ON … = i.id`).
+    // Elles n'exposent que `invoice_id` et leur agrégat : les colonnes de
+    // `INVOICE_COLUMNS` restent sans ambiguïté. Filtre en HAVING pour
+    // référencer l'alias `amount_due` sans dupliquer l'expression (SQL
+    // n'autorise pas un alias de SELECT dans le WHERE).
     sqlx::query_as::<_, UnpaidInvoiceCandidate>(&format!(
-        "SELECT {INVOICE_COLUMNS}, {ttc_sql} AS total_ttc FROM invoices i \
-         WHERE company_id = ? \
-           AND status = 'validated' \
-           AND paid_at IS NULL \
-           AND journal_entry_id IS NOT NULL \
-           AND date BETWEEN DATE_SUB(?, INTERVAL ? DAY) AND DATE_ADD(?, INTERVAL ? DAY) \
-         HAVING total_ttc BETWEEN ? - ? AND ? + ? \
+        "SELECT {INVOICE_COLUMNS}, {due} AS amount_due, COALESCE(lt.ttc, 0) AS total_ttc \
+         FROM invoices i {joins} \
+         WHERE i.company_id = ? \
+           AND i.status = 'validated' \
+           AND i.paid_at IS NULL \
+           AND i.journal_entry_id IS NOT NULL \
+           AND i.date BETWEEN DATE_SUB(?, INTERVAL ? DAY) AND DATE_ADD(?, INTERVAL ? DAY) \
+         HAVING amount_due BETWEEN ? - ? AND ? + ? \
          LIMIT 50",
+        due = INVOICE_AMOUNT_DUE_DERIVED_SQL,
+        joins = amount_due_derived_joins(),
     ))
     .bind(company_id)
     .bind(tx_date)

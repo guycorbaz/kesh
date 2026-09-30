@@ -31,9 +31,10 @@ vi.mock('$lib/features/accounts/accounts.api', () => ({
 }));
 
 // Mock i18n util pour rendre le composant déterministe (renvoie le
-// fallback fourni en deuxième argument).
+// fallback fourni en deuxième argument, variables `{ $x }` interpolées).
 vi.mock('$lib/shared/utils/i18n.svelte', () => ({
-	i18nMsg: (_key: string, fallback: string) => fallback,
+	i18nMsg: (_key: string, fallback: string, args?: Record<string, string | number>) =>
+		args ? fallback.replace(/\{\s*\$(\w+)\s*\}/g, (_, k) => String(args[k] ?? '')) : fallback,
 }));
 
 import * as api from './reconciliation.api';
@@ -45,6 +46,10 @@ function makeProposalWithCandidate(
 	bankTransactionId: number,
 	invoiceId: number,
 	scoreTotal: number,
+	amounts: { invoiceAmount: string; invoiceTotalTtc: string | null } = {
+		invoiceAmount: '100.00',
+		invoiceTotalTtc: null,
+	},
 ): GetProposalsResponse['proposals'][number] {
 	return {
 		bankTransactionId,
@@ -61,7 +66,8 @@ function makeProposalWithCandidate(
 				candidateType: 'invoice' as const,
 				invoiceId,
 				invoiceNumber: `INV-2026-${invoiceId}`,
-				invoiceAmount: '100.00',
+				invoiceAmount: amounts.invoiceAmount,
+				invoiceTotalTtc: amounts.invoiceTotalTtc,
 				invoiceDate: '2026-05-10',
 				ruleId: null,
 				ruleLabel: null,
@@ -126,6 +132,28 @@ describe('ReconciliationProposals', () => {
 		expect(badges.length).toBeGreaterThanOrEqual(1);
 		// La proposal 1 a score=1.0 → tier high.
 		expect(badges[0].getAttribute('data-score-tier')).toBe('high');
+	});
+
+	// Story 25-4-c (#420) — la candidate affiche le RESTE DÛ ; le TTC ne
+	// suit, en mention, que pour une facture déjà réglée en partie.
+	it('shows the amount due, and the TTC only for a partially settled invoice', async () => {
+		mockApi.getProposals.mockResolvedValue({
+			proposals: [
+				makeProposalWithCandidate(1, 101, 1.0, { invoiceAmount: '600', invoiceTotalTtc: '1000' }),
+				makeProposalWithCandidate(2, 102, 1.0),
+			],
+			hasMore: false,
+		} satisfies GetProposalsResponse);
+
+		const { findAllByTestId, queryAllByTestId } = render(ReconciliationProposals, {
+			bankAccountId: 17,
+		});
+
+		const tops = await findAllByTestId('candidate-top-1');
+		expect(tops[0].textContent).toContain('(600, reste dû sur 1000)');
+		expect(tops[1].textContent).toContain('(100.00)');
+		expect(tops[1].textContent).not.toContain('reste dû sur');
+		expect(queryAllByTestId('candidate-top-1-amount-due-of')).toHaveLength(1);
 	});
 
 	it('shows neutral state for tx without candidates', async () => {

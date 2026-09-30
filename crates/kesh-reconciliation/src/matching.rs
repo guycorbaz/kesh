@@ -5,10 +5,11 @@
 //!
 //! - **Montant** (0.50) : `1.0` si exact ([`Decimal::normalize`]),
 //!   sinon `0.0` (pas de gradient — décision conservatrice v0.1). Le montant
-//!   comparé est le **TTC** de la facture (#246, Story 21-2b) — un encaissement
-//!   bancaire est TTC ; le HT `invoice.total_amount` ne matcherait jamais une
-//!   facture avec TVA. Le crate restant pur (pas d'accès DB), le caller fournit
-//!   le TTC dans le tuple candidat.
+//!   comparé est le **montant à régler** de la facture, son **reste dû**
+//!   (`TTC − avoir émis − Σ règlements`, #420, Story 25-4-c) : un virement qui
+//!   solde une facture réglée en partie porte ce reste, pas le TTC — et
+//!   encore moins le HT `invoice.total_amount` (#246). Le crate restant pur
+//!   (pas d'accès DB), le caller fournit ce montant dans le tuple candidat.
 //! - **Référence** (0.40) : `1.0` si containment bidirectionnel post
 //!   normalisation `coalesce(reference, end_to_end_id, transaction_id)`
 //!   vs `invoice.invoice_number`, `0.5` si common prefix ≥ 4 chars
@@ -55,17 +56,17 @@ pub struct MatchProposal {
 /// candidates. Retourne uniquement les paires `score.total > 0.0`,
 /// triées par `score.total DESC`. Pure (zéro I/O).
 ///
-/// Chaque candidat est un triplet `(facture, contact, total_ttc)` — le
-/// **TTC** (#246, Story 21-2b) fourni par le caller (le crate reste pur) et
-/// comparé au montant de la transaction bancaire.
+/// Chaque candidat est un triplet `(facture, contact, montant à régler)` — le
+/// **reste dû** de la facture (#420, Story 25-4-c), fourni par le caller (le
+/// crate reste pur) et comparé au montant de la transaction bancaire.
 pub fn propose_matches(
     tx: &BankTransaction,
     candidates: &[(Invoice, Option<Contact>, Decimal)],
 ) -> Vec<MatchProposal> {
     let mut out: Vec<MatchProposal> = candidates
         .iter()
-        .filter_map(|(invoice, contact, total_ttc)| {
-            let amount_score = amount_score(tx.amount, *total_ttc);
+        .filter_map(|(invoice, contact, amount_to_settle)| {
+            let amount_score = amount_score(tx.amount, *amount_to_settle);
             let reference_score = reference_score(
                 tx.reference.as_deref(),
                 tx.end_to_end_id.as_deref(),
@@ -105,12 +106,12 @@ pub fn propose_matches(
     out
 }
 
-fn amount_score(tx_amount: rust_decimal::Decimal, invoice_amount: rust_decimal::Decimal) -> f64 {
+fn amount_score(tx_amount: rust_decimal::Decimal, amount_to_settle: rust_decimal::Decimal) -> f64 {
     // M4 (équivalent Story 8-3) : `Decimal::normalize()` strip trailing
     // zeros pour matcher 1.50 == 1.5 (DB peut renvoyer scale différent
     // du parser). Décision v0.1 : binaire 0/1 (pas de gradient sur
     // écart de centimes) — cf. L17.
-    if tx_amount.normalize() == invoice_amount.normalize() {
+    if tx_amount.normalize() == amount_to_settle.normalize() {
         1.0
     } else {
         0.0
@@ -271,13 +272,13 @@ mod tests {
         }
     }
 
-    /// Construit un triplet candidat `(facture, contact, ttc)` pour les tests
-    /// (#246, 21-2b). Ces fixtures n'ont pas de lignes TVA → le TTC vaut le
-    /// `total_amount` posé directement, ce qui préserve exactement les
-    /// assertions de montant existantes.
+    /// Construit un triplet candidat `(facture, contact, montant à régler)`
+    /// pour les tests (#246, #420). Ces fixtures n'ont ni lignes TVA ni
+    /// règlement → le reste dû vaut le `total_amount` posé directement, ce qui
+    /// préserve exactement les assertions de montant existantes.
     fn cand(invoice: Invoice, contact: Option<Contact>) -> (Invoice, Option<Contact>, Decimal) {
-        let ttc = invoice.total_amount;
-        (invoice, contact, ttc)
+        let amount_to_settle = invoice.total_amount;
+        (invoice, contact, amount_to_settle)
     }
 
     /// AC #30 — full match → score 1.0 (0.50 + 0.40 + 0.10).

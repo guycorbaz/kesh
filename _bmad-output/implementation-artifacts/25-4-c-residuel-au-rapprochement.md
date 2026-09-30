@@ -1,6 +1,6 @@
 # Story 25.4-c : Le résiduel au rapprochement bancaire
 
-Status: ready-for-dev
+Status: review
 
 **Issue : [#420]** — ⛔ la PR porte `closes #420`, titre ET corps (§ *Issue Tracking Rule*). Voisine :
 **[#476]** (arrondi au centime) et **[#480]** (verrou à l'acceptation) — **hors périmètre**, sorties
@@ -133,12 +133,12 @@ CHANGELOG `[0.12.1]` *Fixed*.
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — candidats** (AC 1, 4) : forme jointe, `amount_due` + `total_ttc` au candidat, lecteurs.
-- [ ] **T2 — score et re-score** (AC 2, 3) : les deux appelants, affichage et mention, `matching.rs`.
-- [ ] **T3 — tests et mutations** (AC 5).
-- [ ] **T4 — textes** (AC 6) ; le champ TTC ajouté à la réponse : vérifier `docs/api-external.md`
+- [x] **T1 — candidats** (AC 1, 4) : forme jointe, `amount_due` + `total_ttc` au candidat, lecteurs.
+- [x] **T2 — score et re-score** (AC 2, 3) : les deux appelants, affichage et mention, `matching.rs`.
+- [x] **T3 — tests et mutations** (AC 5).
+- [x] **T4 — textes** (AC 6) ; le champ TTC ajouté à la réponse : vérifier `docs/api-external.md`
   (aujourd'hui muet sur ses champs) ; ouvrir l'issue des trois passages faux du manuel (Q2).
-- [ ] **T5 — gates** : backend complet (base remise à zéro), frontend complet, **E2E complet**.
+- [x] **T5 — gates** : backend complet (base remise à zéro), frontend complet, **E2E complet**.
 
 ## Dev Notes
 
@@ -212,11 +212,74 @@ partie, suivi de « reste dû sur 1 000.00 » pour que le comptable reconnaisse 
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`).
+
 ### Debug Log References
+
+- Mutations (chacune restaurée, fichier touché ensuite) : filtre remis sur `total_ttc` → le test de
+  dépôt **et** le Playwright échouent ; re-score remis sur `invoices::total_ttc` → le test
+  d'acceptation échoue ; triplet des propositions remis sur `total_ttc` → le test des propositions
+  échoue ; montant affiché remis sur le TTC → idem. Les quatre mutations sont tuées.
+- Gate E2E complet : 9 échecs, tous à la liste de `docs/testing.md` § « Les échecs attendus » —
+  7 KF-029 (#97) et 2 KF-045 (#421, run à 09:22 UTC, avant midi) ; aucune pollution.
 
 ### Completion Notes List
 
+- **Dépôt** : `find_unpaid_invoices_for_window` filtre sur le reste dû par la forme jointe
+  (`amount_due_derived_joins()` + `INVOICE_AMOUNT_DUE_DERIVED_SQL`), sur le brut, tolérance
+  inchangée ; `UnpaidInvoiceCandidate` porte `amount_due` **et** `total_ttc` (`COALESCE(lt.ttc, 0)`,
+  la graphie de `invoices.rs` pour les listes). Conditions `WHERE` qualifiées `i.` ; les colonnes de
+  `INVOICE_COLUMNS` restent non qualifiées — les tables dérivées n'exposent que `invoice_id` et leur
+  agrégat.
+- **API** : les propositions passent le reste dû au score et l'affichent (`invoiceAmount`) ; nouveau
+  champ `invoiceTotalTtc`, présent seulement si reste ≠ TTC. Le re-score à l'acceptation lit
+  `invoice_settlements::amount_due` dans la transaction ; `invoices::total_ttc` n'a plus d'appelant
+  dans la réconciliation (import `invoices` retiré). **Aucun verrou ajouté** (c2), **aucun arrondi**
+  (c3).
+- **Moteur** (`matching.rs`) : doc et noms disent « montant à régler », plus « TTC ».
+- **Frontend** : mention `reconciliation-labels-amount-due-of` (« reste dû sur { $total } »), clé
+  neuve dans les 4 catalogues ; la garde i18n passe de 1751 à 1752 sites (recompté).
+- **Tests** (périmètre : `main` → cette branche) : +1 test de dépôt, +2 e2e API (propositions,
+  acceptation hors score de référence **et** de contact, `amountScore == 1` asserté), +1 Vitest,
+  +1 spec Playwright (`reconciliation-amount-due.spec.ts`) ; l'e2e existant sans règlement asserte
+  en plus `invoiceTotalTtc` nul (AC 4).
+- **Textes** : le paragraphe du score du manuel réécrit sur le code (candidates, trois critères et
+  leurs poids, pas de seuil ni d'acceptation automatique) ; `:1011` (QR du rappel) et `:1014`
+  (versement reste + frais : **non proposé**, refusé en trop-perçu au règlement manuel) ajustés.
+  **Trouvé par grep du symptôme** : la brochure marketing annonçait le même scoring faux (« date,
+  montant, référence, libellé ») → corrigée. PDF régénérés et contrôlés aplatis ;
+  `admin-manual.pdf`, régénéré sans changement de source, remis à l'identique. CHANGELOG
+  `[0.12.1]` *Fixed*. `docs/api-external.md` ne décrit pas les champs des propositions : rien à y
+  changer. Issue **#481** ouverte pour les trois passages faux restants (Q2).
+- ⚠️ **Limite connue, à la c3** : une facture dont le reste dû a plus de deux décimales reste
+  candidate (tolérance ± 0.05) mais son score de montant vaut 0 ; sans référence ni contact
+  reconnus, elle n'est pas proposée. C'était déjà le cas sur le TTC.
+- ⚠️ **À la c2** : la course acceptation / règlement manuel partiel (#480) devient plus atteignable ;
+  la c2 doit suivre.
+
 ### File List
+
+- `CHANGELOG.md`
+- `crates/kesh-api/src/routes/reconciliation.rs`
+- `crates/kesh-api/tests/reconciliation_e2e.rs`
+- `crates/kesh-db/src/repositories/reconciliation.rs`
+- `crates/kesh-db/tests/reconciliation_repository.rs`
+- `crates/kesh-i18n/locales/de-CH/messages.ftl`
+- `crates/kesh-i18n/locales/en-CH/messages.ftl`
+- `crates/kesh-i18n/locales/fr-CH/messages.ftl`
+- `crates/kesh-i18n/locales/it-CH/messages.ftl`
+- `crates/kesh-reconciliation/src/matching.rs`
+- `docs/manual/fr/marketing-brochure.pdf`
+- `docs/manual/fr/marketing-brochure.tex`
+- `docs/manual/fr/user-manual.pdf`
+- `docs/manual/fr/user-manual.tex`
+- `frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte`
+- `frontend/src/lib/features/reconciliation/ReconciliationProposals.test.ts`
+- `frontend/src/lib/features/reconciliation/reconciliation.types.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/tests/e2e/reconciliation-amount-due.spec.ts`
+- `_bmad-output/implementation-artifacts/25-4-c-residuel-au-rapprochement.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
 
@@ -271,6 +334,11 @@ partie, suivi de « reste dû sur 1 000.00 » pour que le comptable reconnaisse 
   **Bilan de la validation** — P1 Sonnet 3H/2M/1L → P2 Haiku 0 sans preuve, 2M repris par
   l'orchestrateur → P3 Opus 1C/3H/3M/5L → **découpage** (c2 #480, c3 #476) → P4 Sonnet 1M/1L → P5 Haiku
   ciblée 0 > LOW. Modèles : Sonnet, Haiku, Opus, Sonnet, Haiku. Reclassements : P5-F1 MEDIUM → LOW.
+- **2026-09-30** — Implémentée (`bmad-dev-story`) : reste dû au filtre, au score, au re-score et à
+  l'affichage, mention du TTC ; manuel et brochure réécrits sur le code ; issue #481. Gates **réellement
+  exécutés** : backend complet sur base remise à zéro **2513/2513** (4 ignorés) ; frontend `check`,
+  `lint-i18n-ownership`, **836/836**, build ; **E2E complet 226 passed / 19 skipped / 9 failed**,
+  les 9 à la liste des échecs attendus. Statut → `review`.
 
 [#416]: https://github.com/guycorbaz/kesh/issues/416
 [#420]: https://github.com/guycorbaz/kesh/issues/420

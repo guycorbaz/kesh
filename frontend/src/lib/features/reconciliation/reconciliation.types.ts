@@ -27,7 +27,10 @@ export interface ReconciliationCandidate {
 	// Invoice candidate fields
 	invoiceId: number | null;
 	invoiceNumber: string | null;
+	/** Montant à régler : le reste dû de la facture (Story 25-4-c, #420). */
 	invoiceAmount: string | null;
+	/** TTC, présent seulement si la facture est déjà réglée en partie (Story 25-4-c). */
+	invoiceTotalTtc: string | null;
 	invoiceDate: string | null;
 	// Story 8-5b — Rule candidate fields
 	ruleId: number | null;

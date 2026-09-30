@@ -358,9 +358,10 @@ async fn insert_invoice(
     .await
     .expect("invoice insert");
     let invoice_id = result.last_insert_id() as i64;
-    // #246 (21-2b) : le matching filtre sur le TTC (dérivé des lignes). Sans
-    // ligne, TTC = 0 → jamais candidate. Ligne unique vat_rate 0 → TTC =
-    // total_amount, les assertions de montant existantes restent valides.
+    // #246 (21-2b), #420 (25-4-c) : le matching filtre sur le reste dû (TTC
+    // dérivé des lignes, moins les règlements). Sans ligne, reste dû = 0 →
+    // jamais candidate. Ligne unique vat_rate 0, sans règlement → reste dû =
+    // TTC = total_amount, les assertions de montant existantes restent valides.
     sqlx::query(
         "INSERT INTO invoice_lines (invoice_id, position, description, quantity, unit_price, vat_rate, line_total) \
          VALUES (?, 1, 'Ligne test', 1, ?, 0, ?)",
@@ -817,9 +818,14 @@ async fn get_proposals_matches_and_shows_ttc(pool: MySqlPool) {
         .expect("facture candidate pour la tx TTC");
     assert_eq!(
         inv_cand["invoiceAmount"], "108.1",
-        "invoiceAmount doit être le TTC (normalisé), pas le HT 100"
+        "invoiceAmount doit être le TTC (normalisé), pas le HT 100 — sans \
+         règlement, le reste dû vaut le TTC (#420, Story 25-4-c)"
     );
     assert_eq!(inv_cand["score"]["amountScore"], 1.0);
+    assert!(
+        inv_cand["invoiceTotalTtc"].is_null(),
+        "sans règlement, pas de mention « reste dû sur » : reste dû = TTC"
+    );
 
     // tx 100.00 (HT) → pas de candidate facture (le HT ne matche plus).
     let ht_prop = proposals
@@ -2891,6 +2897,160 @@ async fn accept_settles_an_invoice_in_two_payments(pool: MySqlPool) {
     assert_eq!(settlements[0].1, dec!(60.00));
     assert_eq!(settlements[1].1, dec!(40.00));
     assert!(settlements.iter().all(|(entry_id, _)| *entry_id != je_id));
+}
+
+/// Story 25-4-c (#420) — une facture de 1 000.— **à TVA non nulle** (HT 925.07
+/// @ 8.1 % → TVA 74.93), déjà réglée de 400.— par un premier virement accepté,
+/// plus une transaction de 600.— — le solde — qui ne porte **ni** la référence
+/// de la facture **ni** le nom du contact : seul le score de MONTANT peut la
+/// relier à la facture. Retourne `(invoice_id, tx_du_solde)`.
+async fn seed_partially_settled_vat_invoice(
+    pool: &MySqlPool,
+    app: &TestApp,
+    ctx: &CompanyCtx,
+) -> (i64, i64) {
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let inv_date = NaiveDate::from_ymd_opt(2026, 4, 20).unwrap();
+    // L'écriture de vente débite la créance du TTC, 1 000.— ; la ligne de
+    // facture est ensuite remplacée par sa forme à TVA, de même TTC.
+    let (inv_id, _je_id) = seed_validated_invoice(
+        pool,
+        ctx.company_id,
+        ctx.contact_id,
+        "INV-VAT-PART",
+        inv_date,
+        dec!(1000.00),
+    )
+    .await;
+    sqlx::query(
+        "UPDATE invoice_lines SET unit_price = 925.07, line_total = 925.07, vat_rate = 8.10 \
+         WHERE invoice_id = ?",
+    )
+    .bind(inv_id)
+    .execute(pool)
+    .await
+    .expect("ligne à TVA");
+    sqlx::query("UPDATE invoices SET total_amount = 925.07 WHERE id = ?")
+        .bind(inv_id)
+        .execute(pool)
+        .await
+        .expect("HT de la facture");
+
+    let tx_ids = seed_bank_transactions(
+        pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("partially_settled_vat"),
+        day,
+        day,
+        vec![
+            // Premier virement : 400.—, avec la référence (score de référence).
+            make_new_tx(
+                ctx.company_id,
+                ctx.bank_account_id,
+                day,
+                Some(day),
+                dec!(400.00),
+                "CHF",
+                "INV-VAT-PART",
+                Some("Solde Client"),
+            ),
+            // Le solde : 600.—, sans référence ni contact reconnaissables.
+            make_new_tx(
+                ctx.company_id,
+                ctx.bank_account_id,
+                day,
+                Some(day),
+                dec!(600.00),
+                "CHF",
+                "VIREMENT DIVERS",
+                Some("Tiers Inconnu SA"),
+            ),
+        ],
+    )
+    .await;
+    let body = post_accept_one(app, ctx, tx_ids[0], inv_id).await;
+    assert_eq!(
+        body["accepted"].as_array().unwrap().len(),
+        1,
+        "le premier virement doit régler 400.— ; failed = {:?}",
+        body["failed"]
+    );
+    (inv_id, tx_ids[1])
+}
+
+/// #420 (Story 25-4-c) — le virement du **solde** d'une facture réglée en
+/// partie est proposé, score de montant 1, montant affiché = le reste, et le
+/// TTC en mention. Avant la correction, la facture n'était même pas candidate.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn get_proposals_offers_the_amount_due_of_a_partially_settled_invoice(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Solde", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let (inv_id, balance_tx_id) = seed_partially_settled_vat_invoice(&pool, &app, &ctx).await;
+
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reconciliation/proposals?bankAccountId={}",
+            ctx.bank_account_id
+        )))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let prop = body["proposals"]
+        .as_array()
+        .expect("proposals array")
+        .iter()
+        .find(|p| p["bankTransactionId"] == balance_tx_id)
+        .expect("proposition pour le virement du solde");
+    let cand = prop["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["invoiceId"] == inv_id)
+        .expect("la facture réglée en partie doit être candidate pour son solde");
+    assert_eq!(cand["score"]["amountScore"], 1.0);
+    assert_eq!(cand["score"]["referenceScore"], 0.0);
+    assert_eq!(cand["score"]["contactScore"], 0.0);
+    assert_eq!(
+        cand["invoiceAmount"], "600",
+        "le montant affiché est le reste dû"
+    );
+    assert_eq!(cand["invoiceTotalTtc"], "1000", "le TTC suit, en mention");
+}
+
+/// #420 (Story 25-4-c) — le virement du solde **s'accepte** et solde la
+/// facture, sur le seul score de montant : sans référence ni contact, le total
+/// valait 0 avant la correction (`RECONCILIATION_SCORE_TOO_LOW`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accept_settles_the_balance_of_a_partially_settled_invoice_on_amount(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Solde2", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let (inv_id, balance_tx_id) = seed_partially_settled_vat_invoice(&pool, &app, &ctx).await;
+
+    let body = post_accept_one(&app, &ctx, balance_tx_id, inv_id).await;
+    let accepted = body["accepted"].as_array().unwrap();
+    assert_eq!(accepted.len(), 1, "failed = {:?}", body["failed"]);
+    assert_eq!(accepted[0]["score"]["amountScore"], 1.0);
+    assert_eq!(accepted[0]["score"]["referenceScore"], 0.0);
+    assert_eq!(accepted[0]["score"]["contactScore"], 0.0);
+
+    let paid_at: Option<NaiveDateTime> =
+        sqlx::query_scalar("SELECT paid_at FROM invoices WHERE id = ?")
+            .bind(inv_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(paid_at.is_some(), "le solde versé, la facture est payée");
+    assert_eq!(
+        receivable_balance(&pool, ctx.receivable_account_id).await,
+        Decimal::ZERO,
+        "⛔ le compte de créance se solde exactement"
+    );
 }
 
 /// ⛔ **Le trop-perçu est refusé, il ne s'écrit pas.**

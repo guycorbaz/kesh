@@ -27,8 +27,8 @@ use kesh_db::errors::DbError;
 use kesh_db::repositories::reconciliation::UnpaidInvoiceCandidate;
 use kesh_db::repositories::{
     accounts as accounts_repo, audit_log, bank_accounts, contacts as contacts_repo, fiscal_years,
-    invoice_settlements, invoices, journal_entries, projects,
-    reconciliation as reconciliation_repo, reconciliation_rules,
+    invoice_settlements, journal_entries, projects, reconciliation as reconciliation_repo,
+    reconciliation_rules,
 };
 use kesh_reconciliation::{
     MatchScore, ReconciliationError, SplitDetail, build_journal_entry_for_counterparty,
@@ -118,7 +118,13 @@ pub struct ReconciliationCandidate {
     // ----- Invoice candidate fields -----
     pub invoice_id: Option<i64>,
     pub invoice_number: Option<String>,
+    /// Montant à régler de la facture : son **reste dû** (#420, Story 25-4-c),
+    /// le montant comparé à la transaction — le TTC tant que rien n'est réglé.
     pub invoice_amount: Option<String>,
+    /// TTC de la facture, **seulement** si elle est déjà réglée en partie
+    /// (reste dû ≠ TTC) — pour la mention « reste dû sur <TTC> » qui la fait
+    /// reconnaître (Story 25-4-c, Q3). `None` sinon : rien à ajouter.
+    pub invoice_total_ttc: Option<String>,
     pub invoice_date: Option<chrono::NaiveDate>,
     // ----- Rule candidate fields (Story 8-5b) -----
     pub rule_id: Option<i64>,
@@ -557,7 +563,8 @@ pub async fn get_proposals(
     let proposals: Vec<ReconciliationProposal> = tx_candidates
         .into_iter()
         .map(|(tx, candidate_invoices)| {
-            // #246 (21-2b) : le triplet candidat porte le TTC (matching sur TTC).
+            // #420 (25-4-c) : le triplet candidat porte le RESTE DÛ — le TTC
+            // excluait le virement qui soldait une facture réglée en partie.
             let candidates_with_contacts: Vec<(
                 Invoice,
                 Option<kesh_db::entities::Contact>,
@@ -568,7 +575,7 @@ pub async fn get_proposals(
                     (
                         c.invoice.clone(),
                         contacts_map.get(&c.invoice.contact_id).cloned(),
-                        c.total_ttc,
+                        c.amount_due,
                     )
                 })
                 .collect();
@@ -588,10 +595,13 @@ pub async fn get_proposals(
                         candidate_type: CandidateType::Invoice,
                         invoice_id: Some(inv.id),
                         invoice_number: inv.invoice_number.clone(),
-                        // #246 (21-2b, V4-1) : montant affiché dans l'UI candidats
-                        // = TTC (à côté du montant de la tx, TTC lui aussi) —
-                        // `total_amount` (HT) affichait un montant ≠ tx.
-                        invoice_amount: Some(cand.total_ttc.normalize().to_string()),
+                        // #420 (25-4-c) : montant affiché dans l'UI candidats
+                        // = reste dû, la grandeur comparée à la tx (après le
+                        // HT, #246, puis le TTC, qui affichait 1 000 pour un
+                        // solde de 600). Le TTC ne suit que si les deux diffèrent.
+                        invoice_amount: Some(cand.amount_due.normalize().to_string()),
+                        invoice_total_ttc: (cand.amount_due != cand.total_ttc)
+                            .then(|| cand.total_ttc.normalize().to_string()),
                         invoice_date: Some(inv.date),
                         rule_id: None,
                         rule_label: None,
@@ -624,6 +634,7 @@ pub async fn get_proposals(
                     invoice_id: None,
                     invoice_number: None,
                     invoice_amount: None,
+                    invoice_total_ttc: None,
                     invoice_date: None,
                     rule_id: Some(rule.id),
                     rule_label: Some(rule.label.clone()),
@@ -1190,10 +1201,11 @@ async fn accept_one_invoice(
     let sale_entry_id = invoice.journal_entry_id.unwrap();
 
     // Step 7 — re-calculer score serveur-side (M7 Pass 1).
-    // #246 (21-2b) : re-score sur le TTC — `invoice` est chargé sans lignes,
-    // on récupère le TTC via l'expression SQL canonique (identique au filtre
-    // de `find_unpaid_invoices_for_window`, parité garantie 21-2a).
-    let invoice_ttc = invoices::total_ttc(&mut **tx, invoice.id)
+    // #420 (25-4-c) : re-score sur le RESTE DÛ, la grandeur du filtre de
+    // `find_unpaid_invoices_for_window` — forme scalaire (UNE facture), dans
+    // la transaction ; les deux formes sont tenues d'accord par le test de
+    // parité (`invoice_amount_due_parity.rs`).
+    let invoice_amount_due = invoice_settlements::amount_due(&mut **tx, invoice.id)
         .await
         .map_err(|e| FailedProposal {
             bank_transaction_id,
@@ -1204,7 +1216,7 @@ async fn accept_one_invoice(
         Invoice,
         Option<kesh_db::entities::Contact>,
         rust_decimal::Decimal,
-    )> = vec![(invoice.clone(), contact.clone(), invoice_ttc)];
+    )> = vec![(invoice.clone(), contact.clone(), invoice_amount_due)];
     let proposals_score = propose_matches(&bank_transaction, &candidates_for_score);
     let score = proposals_score
         .first()
