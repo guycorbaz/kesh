@@ -2338,3 +2338,54 @@ async fn characterization_full_import_keeps_company_ids_as_written(pool: MySqlPo
     assert_eq!(import_company, Some(u1.company_id));
     assert_ne!(import_company, Some(u2.company_id));
 }
+
+/// **Story 25-4-c3-a1 (#476) — un backup antérieur au compte de différences
+/// d'arrondi reste importable, et le réglage arrive `NULL`.**
+///
+/// La sauvegarde lit ses colonnes dans `INFORMATION_SCHEMA` : elle suit la
+/// colonne d'elle-même. Ce test prouve l'autre sens — un `.keshbackup` produit
+/// avant la migration `20260930000001`, donc sans la colonne, passe
+/// `check_schema_compat` (colonne facultative) et laisse le réglage vide : la
+/// société le désignera à nouveau dans les paramètres.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_without_rounding_account_column_leaves_the_setting_null(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = seed_admin(&pool, "arrondi_absent").await;
+    let charge = sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type) \
+         VALUES (?, '6940', 'Différences d''arrondi', 'Expense')",
+    )
+    .bind(ctx.company_id)
+    .execute(&pool)
+    .await
+    .expect("compte de charge")
+    .last_insert_id() as i64;
+    sqlx::query(
+        "INSERT INTO company_invoice_settings (company_id, default_rounding_account_id) \
+         VALUES (?, ?) ON DUPLICATE KEY UPDATE default_rounding_account_id = VALUES(default_rounding_account_id)",
+    )
+    .bind(ctx.company_id)
+    .bind(charge)
+    .execute(&pool)
+    .await
+    .expect("réglage");
+
+    let backup = export_backup(&app, &ctx.jwt).await;
+    let (mut manifest, data) = unzip(&backup);
+    strip_column(
+        &mut manifest,
+        "company_invoice_settings",
+        "default_rounding_account_id",
+    );
+    import_ok(&app, &ctx.jwt, &manifest, &data).await;
+
+    let rounding: Vec<Option<i64>> =
+        sqlx::query_scalar("SELECT default_rounding_account_id FROM company_invoice_settings")
+            .fetch_all(&pool)
+            .await
+            .expect("lecture du réglage");
+    assert!(
+        !rounding.is_empty() && rounding.iter().all(Option::is_none),
+        "un backup sans la colonne laisse le réglage vide : {rounding:?}"
+    );
+}

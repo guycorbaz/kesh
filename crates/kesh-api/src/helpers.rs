@@ -72,6 +72,21 @@ pub async fn get_company_for(
         })
 }
 
+/// Deserializer « double option » (Story 19-5) : distingue un champ **absent**
+/// (→ `None`, inchangé) d'un champ **présent à `null`** (→ `Some(None)`,
+/// effacement). Sans ce helper, serde replie `null` sur le `None` externe et
+/// un effacement via un corps partiel serait un no-op silencieux (bug HIGH
+/// Pass 1 Blind Hunter, 19-5). À combiner avec `#[serde(default)]` pour gérer le
+/// cas absent. Partagé par les règles de rapprochement et les réglages de
+/// facturation (Story 25-4-c3-a1).
+pub fn double_option<'de, T, D>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: serde::Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    serde::Deserialize::deserialize(deserializer).map(Some)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

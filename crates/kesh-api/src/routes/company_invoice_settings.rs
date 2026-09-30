@@ -41,6 +41,8 @@ pub struct InvoiceSettingsResponse {
     pub journal_entry_description_template: String,
     pub credit_note_number_format: String,
     pub default_payable_account_id: Option<i64>,
+    /// Story 25-4-c3-a1 (#476) — compte de différences d'arrondi.
+    pub default_rounding_account_id: Option<i64>,
     pub version: i32,
 }
 
@@ -58,6 +60,7 @@ impl From<CompanyInvoiceSettings> for InvoiceSettingsResponse {
             journal_entry_description_template: s.journal_entry_description_template,
             credit_note_number_format: s.credit_note_number_format,
             default_payable_account_id: s.default_payable_account_id,
+            default_rounding_account_id: s.default_rounding_account_id,
             version: s.version,
         }
     }
@@ -79,6 +82,12 @@ pub struct UpdateInvoiceSettingsRequest {
     #[serde(default)]
     pub credit_note_number_format: Option<String>,
     pub default_payable_account_id: Option<i64>,
+    /// Story 25-4-c3-a1 (#476) — compte de différences d'arrondi. **Absent du
+    /// corps : préservé** (comme `credit_note_number_format`, #216), pour qu'un
+    /// client qui ignore encore le champ — clé d'API, onglet ouvert avant la mise
+    /// à jour — ne l'efface pas en silence. **Présent à `null` : effacé.**
+    #[serde(default, deserialize_with = "crate::helpers::double_option")]
+    pub default_rounding_account_id: Option<Option<i64>>,
     pub version: i32,
 }
 
@@ -98,6 +107,33 @@ async fn validate_account(
     expected: AccountType,
     field_label: &str,
 ) -> Result<(), AppError> {
+    validate_account_of(
+        state,
+        company_id,
+        account_id,
+        &[expected],
+        false,
+        field_label,
+    )
+    .await
+}
+
+/// Forme générale de [`validate_account`] (Story 25-4-c3-a1) : plusieurs types
+/// acceptés, et la postabilité exigée ou non.
+///
+/// ⚠️ `require_postable` est exigé pour un compte que des **écritures
+/// automatiques** utiliseront : elles passent `enforce_postable = false`
+/// (`journal_entries::create_in_tx`), si bien que la garde doit tenir ici, au
+/// moment où le compte est désigné. Les champs historiques ne l'exigent pas
+/// (comportement inchangé).
+async fn validate_account_of(
+    state: &AppState,
+    company_id: i64,
+    account_id: Option<i64>,
+    accepted: &[AccountType],
+    require_postable: bool,
+    field_label: &str,
+) -> Result<(), AppError> {
     let Some(id) = account_id else {
         return Ok(());
     };
@@ -114,10 +150,16 @@ async fn validate_account(
             "{field_label} : compte archivé"
         )));
     }
-    if account.account_type != expected {
+    if !accepted.contains(&account.account_type) {
+        let attendus: Vec<&str> = accepted.iter().map(|t| t.as_str()).collect();
         return Err(AppError::Validation(format!(
             "{field_label} : type de compte incompatible (attendu {})",
-            expected.as_str()
+            attendus.join(" ou ")
+        )));
+    }
+    if require_postable && !account.postable {
+        return Err(AppError::Validation(format!(
+            "{field_label} : compte non imputable (compte de regroupement ou de clôture)"
         )));
     }
     Ok(())
@@ -219,6 +261,22 @@ pub async fn update_invoice_settings(
     )
     .await?;
 
+    // Compte de différences d'arrondi (Story 25-4-c3-a1) : un écart d'arrondi est
+    // un résultat, dans un sens ou dans l'autre — charge ou produit, imputable.
+    // Absent du corps : la valeur en place est préservée.
+    let default_rounding_account_id = req
+        .default_rounding_account_id
+        .unwrap_or(current.default_rounding_account_id);
+    validate_account_of(
+        &state,
+        company.id,
+        default_rounding_account_id,
+        &[AccountType::Expense, AccountType::Revenue],
+        true,
+        "Compte de différences d'arrondi",
+    )
+    .await?;
+
     // 5. Persister.
     let update = CompanyInvoiceSettingsUpdate {
         invoice_number_format: req.invoice_number_format,
@@ -231,6 +289,7 @@ pub async fn update_invoice_settings(
         journal_entry_description_template: req.journal_entry_description_template,
         credit_note_number_format,
         default_payable_account_id: req.default_payable_account_id,
+        default_rounding_account_id,
     };
     let settings = company_invoice_settings::update(
         &state.pool,

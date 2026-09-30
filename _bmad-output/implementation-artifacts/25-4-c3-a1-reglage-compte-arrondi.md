@@ -1,6 +1,6 @@
 # Story 25.4-c3-a1 : Le réglage du compte de différences d'arrondi
 
-Status: ready-for-dev
+Status: review
 
 **Issue : [#476]** — ⛔ la PR porte `refs #476` (la sœur **25-4-c3-b** la fermera).
 
@@ -111,13 +111,13 @@ contrôlé aplati. `docs/api-external.md` si les réglages de facturation y sont
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — migration et squash** (AC 1).
-- [ ] **T2 — entité, dépôt, route, validation** (AC 2, 3, 5).
-- [ ] **T3 — export et sauvegarde** (AC 6).
-- [ ] **T4 — écran et i18n** (AC 4).
-- [ ] **T5 — tests** (AC 7).
-- [ ] **T6 — textes** (AC 8).
-- [ ] **T7 — gates** : backend complet (base remise à zéro ; ⛔ `kesh-db` touché ⇒ gate complet même en
+- [x] **T1 — migration et squash** (AC 1).
+- [x] **T2 — entité, dépôt, route, validation** (AC 2, 3, 5).
+- [x] **T3 — export et sauvegarde** (AC 6).
+- [x] **T4 — écran et i18n** (AC 4).
+- [x] **T5 — tests** (AC 7).
+- [x] **T6 — textes** (AC 8).
+- [x] **T7 — gates** : backend complet (base remise à zéro ; ⛔ `kesh-db` touché ⇒ gate complet même en
   cours de boucle), frontend complet, **E2E complet**.
 
 ## Dev Notes
@@ -162,11 +162,83 @@ contrôlé aplati. `docs/api-external.md` si les réglages de facturation y sont
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`).
+
 ### Debug Log References
+
+- Mutations (restaurées, fichier touché ensuite) : garde `postable` neutralisée → `settings_rounding_account_is_validated`
+  rouge (« charge non imputable » acceptée) ; préservation de l'absent remplacée par `None` →
+  `settings_rounding_account_absent_preserves_null_clears` rouge. Le test d'import antérieur est
+  discriminant par construction : sans le retrait de la colonne, l'import restaurerait le compte.
+- Le jeu E2E `with-company` ne porte que deux comptes de résultat (3000, 4000) : le Playwright choisit
+  la charge 4000, pas un compte du plan PME.
+- Deux gardes frontend ont rougi et ont été suivies : le compteur de sites i18n (1752 → 1756, recompté
+  32 → 36 dans la page) et `e2e-selecteurs-traduits` (le spec visait « Enregistrer » par son libellé) →
+  `data-testid="settings-invoicing-save"`.
+- Gate E2E : 229 passed / 19 skipped / 7 failed — les 7 KF-029 (#97), rien d'autre (run à 15:55 UTC).
 
 ### Completion Notes List
 
+- **Migration** `20260930000001_invoice_settings_rounding_account.sql` : `ADD COLUMN
+  default_rounding_account_id BIGINT NULL` + FK `fk_cis_rounding` `ON DELETE RESTRICT`, DDL seul, non
+  breaking. P5 : ligne d'audit `tracked-by-sqlx`, compteurs **recomptés** (70 fichiers = 70 lignes ;
+  8 + 62 + 0). P6 : `migrations_upgrade_path` 69 → 70 **et** soustracteur 35 → 36 (frontière 34
+  inchangée), valeur grepée dans tout le fichier (sept sites mis à jour, les historiques laissés). P7
+  sans objet. P8 : ligne ajoutée à `migrations.sha384`. Squash régénéré (`scripts/regen-test-schema.sh`,
+  rejeu vérifié).
+- **Dépôt et entité** : le champ traverse `COLUMNS`, le JSON d'audit, `is_no_op_change`, l'`UPDATE` et
+  les deux projections miroirs de `insert_with_defaults*` (qui le laissent `NULL`).
+- **API** : `GET`/`PUT /company/invoice-settings` portent `defaultRoundingAccountId`. **Absent du corps
+  d'un `PUT` : préservé** (comme `creditNoteNumberFormat`, #216) ; **à `null` : effacé** — par
+  `double_option`, déplacé de `reconciliation_rules.rs` vers `crate::helpers` (partagé, DRY).
+  `validate_account_of` généralise `validate_account` (plusieurs types, postabilité exigée ou non) sans
+  changer les champs existants ; le compte d'arrondi exige charge **ou** produit, actif, **imputable**,
+  de la société.
+- **Export** : colonne ajoutée au CSV. **Sauvegarde** : dynamique (`INFORMATION_SCHEMA`), rien à changer ;
+  l'import d'un backup antérieur est prouvé par test.
+- **Écran** : section *Différences d'arrondi* dans *Paramètres → Facturation* — sélecteur filtré (actifs,
+  imputables, charges et produits), compte courant conservé (`withCurrentAccount`), texte d'aide qui
+  renvoie au plan comptable ; trois clés dans les quatre catalogues.
+- **AC 5** : aucune route ne supprime un compte ; l'archivage non gardé des comptes désignés (TVA et
+  arrondi) → **issue #486**.
+- **Tests** (périmètre : `e52cde9f` → cette branche) : +1 dépôt, +2 API (validation sur sept cas,
+  absent / `null`), +1 import de sauvegarde, +3 Vitest (nouveau fichier), +1 Playwright (nouveau spec).
+- **Textes** : `admin-manual.tex` — paragraphe *Compte de différences d'arrondi*, qui dit que le réglage
+  n'est encore lu par aucune écriture ; PDF régénéré, contrôlé aplati. CHANGELOG `[0.12.1]` *Added*.
+  `docs/api-external.md` ne décrit pas ces réglages : sans objet.
+
 ### File List
+
+- `CHANGELOG.md`
+- `crates/kesh-api/src/exports/csv_tables.rs`
+- `crates/kesh-api/src/helpers.rs`
+- `crates/kesh-api/src/routes/company_invoice_settings.rs`
+- `crates/kesh-api/src/routes/reconciliation_rules.rs`
+- `crates/kesh-api/tests/admin_full_import_e2e.rs`
+- `crates/kesh-api/tests/idor_multi_tenant_e2e.rs`
+- `crates/kesh-db/migrations.sha384`
+- `crates/kesh-db/migrations/20260930000001_invoice_settings_rounding_account.sql`
+- `crates/kesh-db/src/entities/company_invoice_settings.rs`
+- `crates/kesh-db/src/repositories/company_invoice_settings.rs`
+- `crates/kesh-db/test-schema/0001_schema_squash.sql`
+- `crates/kesh-db/tests/company_invoice_settings_repository.rs`
+- `crates/kesh-db/tests/migrations_upgrade_path.rs`
+- `crates/kesh-i18n/locales/de-CH/messages.ftl`
+- `crates/kesh-i18n/locales/en-CH/messages.ftl`
+- `crates/kesh-i18n/locales/fr-CH/messages.ftl`
+- `crates/kesh-i18n/locales/it-CH/messages.ftl`
+- `docs/manual/fr/admin-manual.pdf`
+- `docs/manual/fr/admin-manual.tex`
+- `docs/migrations-idempotence-audit.md`
+- `frontend/src/lib/features/invoices/invoices.types.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/src/routes/(app)/settings/invoicing/+page.svelte`
+- `frontend/src/routes/(app)/settings/invoicing/settings-invoicing-page.test.ts`
+- `frontend/tests/e2e/settings-rounding-account.spec.ts`
+- `_bmad-output/implementation-artifacts/25-4-c3-a1-reglage-compte-arrondi.md`
+- `_bmad-output/implementation-artifacts/25-4-c3-a1-validate-prompt-p1.md`
+- `_bmad-output/implementation-artifacts/25-4-c3-a1-validate-prompt-p2.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
 
@@ -185,5 +257,8 @@ contrôlé aplati. `docs/api-external.md` si les réglages de facturation y sont
   P5 recompté). La remédiation ne touchait que la fiche : **validation close, 0 > LOW.**
 
   **Bilan** — P1 Sonnet 2 MEDIUM → P2 Haiku ciblée 0. Modèles : Sonnet, Haiku.
+- **2026-09-30** — Implémentée (`bmad-dev-story`). Gates **réellement exécutés** : backend complet sur base
+  remise à zéro **2520/2520** (4 ignorés), fmt, clippy ; frontend `check`, `lint-i18n-ownership`,
+  **839/839**, build ; **E2E 229 / 19 / 7** (les 7 KF-029). Issue #486 ouverte. Statut → `review`.
 
 [#476]: https://github.com/guycorbaz/kesh/issues/476

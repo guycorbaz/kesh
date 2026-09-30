@@ -278,6 +278,7 @@ async fn update_no_op_returns_unchanged_entity_no_audit(pool: MySqlPool) {
             journal_entry_description_template: settings.journal_entry_description_template.clone(),
             credit_note_number_format: settings.credit_note_number_format.clone(),
             default_payable_account_id: settings.default_payable_account_id,
+            default_rounding_account_id: None,
         },
     )
     .await
@@ -347,6 +348,7 @@ async fn update_partial_change_bumps_version(pool: MySqlPool) {
             journal_entry_description_template: settings.journal_entry_description_template.clone(),
             credit_note_number_format: settings.credit_note_number_format.clone(),
             default_payable_account_id: settings.default_payable_account_id,
+            default_rounding_account_id: None,
         },
     )
     .await
@@ -438,6 +440,7 @@ async fn update_vat_accounts_round_trip(pool: MySqlPool) {
             journal_entry_description_template: settings.journal_entry_description_template.clone(),
             credit_note_number_format: settings.credit_note_number_format.clone(),
             default_payable_account_id: settings.default_payable_account_id,
+            default_rounding_account_id: None,
         },
     )
     .await
@@ -531,6 +534,7 @@ async fn update_vat_account_foreign_id_rejected_by_fk(pool: MySqlPool) {
                 .clone(),
             credit_note_number_format: settings_a.credit_note_number_format.clone(),
             default_payable_account_id: settings_a.default_payable_account_id,
+            default_rounding_account_id: None,
         },
     )
     .await;
@@ -937,4 +941,65 @@ async fn insert_with_defaults_in_tx_fails_fast_when_no_receivable_role(pool: MyS
     );
     // Le caller possède la tx → rollback explicite (la fonction ne le fait pas).
     tx.rollback().await.unwrap();
+}
+
+/// Story 25-4-c3-a1 (#476) — le compte de différences d'arrondi traverse
+/// `update` et la relecture (COLUMNS / FromRow / UPDATE), et changer **lui seul**
+/// n'est pas un no-op : `version` bouge, l'audit est écrit.
+#[sqlx::test(migrations = "./test-schema")]
+async fn update_rounding_account_round_trip(pool: MySqlPool) {
+    let company = company_with_pme_chart(&pool, "Arrondi Co").await;
+    let admin_user_id = create_admin_user(&pool, company).await;
+    let settings = company_invoice_settings::insert_with_defaults(&pool, company)
+        .await
+        .unwrap();
+    assert_eq!(
+        settings.default_rounding_account_id, None,
+        "l'onboarding ne le pose pas (Story 25-4-c3-a2)"
+    );
+    // Un compte de charge du plan PME.
+    let rounding = account_id_by_number(&pool, company, "6900").await;
+
+    let result = company_invoice_settings::update(
+        &pool,
+        company,
+        settings.version,
+        admin_user_id,
+        CompanyInvoiceSettingsUpdate {
+            invoice_number_format: settings.invoice_number_format.clone(),
+            default_receivable_account_id: settings.default_receivable_account_id,
+            default_revenue_account_id: settings.default_revenue_account_id,
+            default_vat_payable_account_id: settings.default_vat_payable_account_id,
+            default_vat_recoverable_account_id: settings.default_vat_recoverable_account_id,
+            default_vat_decompte_account_id: settings.default_vat_decompte_account_id,
+            default_sales_journal: settings.default_sales_journal,
+            journal_entry_description_template: settings.journal_entry_description_template.clone(),
+            credit_note_number_format: settings.credit_note_number_format.clone(),
+            default_payable_account_id: settings.default_payable_account_id,
+            default_rounding_account_id: Some(rounding),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        result.version,
+        settings.version + 1,
+        "changer le seul compte d'arrondi n'est pas un no-op"
+    );
+    assert_eq!(result.default_rounding_account_id, Some(rounding));
+
+    let reread = company_invoice_settings::get_or_create_default(&pool, company)
+        .await
+        .unwrap();
+    assert_eq!(reread.default_rounding_account_id, Some(rounding));
+
+    let audited: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log WHERE entity_type = 'company_invoice_settings' \
+         AND JSON_EXTRACT(details_json, '$.after.defaultRoundingAccountId') = ?",
+    )
+    .bind(rounding)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(audited, 1, "l'audit porte le compte d'arrondi");
 }

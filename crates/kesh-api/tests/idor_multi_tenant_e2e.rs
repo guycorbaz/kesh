@@ -804,3 +804,123 @@ async fn settings_update_without_credit_note_format_preserves_and_returns_200(po
         "le format d'avoir doit être préservé quand le champ est absent"
     );
 }
+
+/// `PUT /company/invoice-settings` depuis la config courante, le compte de
+/// différences d'arrondi posé à `rounding` — ou **absent** du corps si `None`.
+/// Rend le statut et le corps de la réponse.
+async fn put_rounding_account(
+    app: &TestApp,
+    token: &str,
+    rounding: Option<serde_json::Value>,
+) -> (u16, serde_json::Value) {
+    let settings: serde_json::Value = app
+        .client
+        .get(app.url("/api/v1/company/invoice-settings"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .expect("get")
+        .json()
+        .await
+        .expect("json");
+    let mut body = json!({
+        "invoiceNumberFormat": settings["invoiceNumberFormat"],
+        "defaultReceivableAccountId": settings["defaultReceivableAccountId"],
+        "defaultRevenueAccountId": settings["defaultRevenueAccountId"],
+        "defaultVatPayableAccountId": settings["defaultVatPayableAccountId"],
+        "defaultVatRecoverableAccountId": settings["defaultVatRecoverableAccountId"],
+        "defaultVatDecompteAccountId": settings["defaultVatDecompteAccountId"],
+        "defaultSalesJournal": settings["defaultSalesJournal"],
+        "journalEntryDescriptionTemplate": settings["journalEntryDescriptionTemplate"],
+        "version": settings["version"],
+    });
+    if let Some(value) = rounding {
+        body["defaultRoundingAccountId"] = value;
+    }
+    let resp = app
+        .client
+        .put(app.url("/api/v1/company/invoice-settings"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&body)
+        .send()
+        .await
+        .expect("put");
+    let status = resp.status().as_u16();
+    (status, resp.json().await.unwrap_or(serde_json::Value::Null))
+}
+
+/// Story 25-4-c3-a1 (#476) — le compte de différences d'arrondi : charge **ou**
+/// produit, actif, **imputable**, de la société. Tout autre compte est refusé en
+/// 400 ; le refus du compte non imputable est la garde que les écritures
+/// automatiques ne portent pas (`enforce_postable = false`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn settings_rounding_account_is_validated(pool: MySqlPool) {
+    truncate_all(&pool).await.expect("truncate");
+    let (company_id, accounts) = create_seeded_company(&pool).await;
+    let (_other_company, other_accounts) = create_seeded_company(&pool).await;
+    create_company_user_with_role(&pool, company_id, "alice", "password123", Role::Admin).await;
+    // Un compte de charge de regroupement (non imputable), et un archivé.
+    let mut extra = std::collections::HashMap::new();
+    for (code, active, postable) in [("6000", true, false), ("6100", false, true)] {
+        let id = sqlx::query(
+            "INSERT INTO accounts (company_id, number, name, account_type, active, postable) \
+             VALUES (?, ?, 'Charge test', 'Expense', ?, ?)",
+        )
+        .bind(company_id)
+        .bind(code)
+        .bind(active)
+        .bind(postable)
+        .execute(&pool)
+        .await
+        .expect("account insert")
+        .last_insert_id() as i64;
+        extra.insert(code, id);
+    }
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app, "alice", "password123").await;
+
+    for (label, account, expected) in [
+        ("charge imputable", accounts["4000"], 200),
+        ("produit imputable", accounts["3000"], 200),
+        ("actif", accounts["1000"], 400),
+        ("passif", accounts["2000"], 400),
+        ("charge non imputable", extra["6000"], 400),
+        ("charge archivée", extra["6100"], 400),
+        ("charge d'une autre société", other_accounts["4000"], 400),
+    ] {
+        let (status, body) = put_rounding_account(&app, &token, Some(json!(account))).await;
+        assert_eq!(status, expected, "{label} : {body}");
+        if expected == 200 {
+            assert_eq!(body["defaultRoundingAccountId"], account, "{label}");
+        }
+    }
+}
+
+/// Story 25-4-c3-a1 — **absent** du corps, le compte d'arrondi est **préservé**
+/// (un client qui ignore encore le champ ne l'efface pas) ; **présent à `null`**,
+/// il est effacé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn settings_rounding_account_absent_preserves_null_clears(pool: MySqlPool) {
+    truncate_all(&pool).await.expect("truncate");
+    let (company_id, accounts) = create_seeded_company(&pool).await;
+    create_company_user_with_role(&pool, company_id, "alice", "password123", Role::Admin).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app, "alice", "password123").await;
+
+    let (status, body) = put_rounding_account(&app, &token, Some(json!(accounts["4000"]))).await;
+    assert_eq!(status, 200, "{body}");
+
+    let (status, body) = put_rounding_account(&app, &token, None).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        body["defaultRoundingAccountId"], accounts["4000"],
+        "absent du corps : préservé"
+    );
+
+    let (status, body) = put_rounding_account(&app, &token, Some(serde_json::Value::Null)).await;
+    assert_eq!(status, 200, "{body}");
+    assert!(
+        body["defaultRoundingAccountId"].is_null(),
+        "présent à null : effacé ; corps = {body}"
+    );
+}

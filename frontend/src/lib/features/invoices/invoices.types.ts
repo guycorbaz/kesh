@@ -112,6 +112,8 @@ export interface InvoiceSettingsResponse {
 	defaultVatDecompteAccountId: number | null;
 	defaultSalesJournal: JournalCode;
 	journalEntryDescriptionTemplate: string;
+	/** Compte de différences d'arrondi — charge ou produit (Story 25-4-c3-a1). */
+	defaultRoundingAccountId: number | null;
 	version: number;
 }
 
@@ -124,6 +126,8 @@ export interface UpdateInvoiceSettingsRequest {
 	defaultVatDecompteAccountId: number | null;
 	defaultSalesJournal: JournalCode;
 	journalEntryDescriptionTemplate: string;
+	/** Compte de différences d'arrondi — charge ou produit (Story 25-4-c3-a1). */
+	defaultRoundingAccountId: number | null;
 	version: number;
 }
 

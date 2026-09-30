@@ -343,7 +343,13 @@ const ATTENDU = {
 	// `grep -c "i18nMsg("` aux deux bornes de `ReconciliationProposals.svelte`
 	// (17 → 18) — la mention `reconciliation-labels-amount-due-of` (« reste dû
 	// sur … »), clé neuve dans les quatre catalogues.
-	sitesTotal: 1752,
+	//
+	// Story 25-4-c3-a1 (#476) : **1752 → 1756**, recompté par ce test et par
+	// `grep -o "i18nMsg("` aux deux bornes de `settings/invoicing/+page.svelte`
+	// (+4) — la section « Différences d'arrondi » : titre, aide, libellé du
+	// sélecteur (trois clés neuves `settings-invoicing-rounding-*` dans les quatre
+	// catalogues) et son option vide, qui réemploie `settings-invoicing-select-none`.
+	sitesTotal: 1756,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,
