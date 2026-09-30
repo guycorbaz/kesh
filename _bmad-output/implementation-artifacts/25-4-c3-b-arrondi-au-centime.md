@@ -76,11 +76,13 @@ manuel) **égale le reste dû arrondi** et que le reste **brut** en diffère :
   3. sinon (`p <= b`) → règlement ordinaire au montant payé, deux lignes (partiel, ou solde exact si `p == b`).
   La garde de trop-perçu des sites 4 et 6 **est** cette règle : `p > b && p != r` → refus. L'AC 2 (« compare
   au reste arrondi ») se lit ainsi.
-- **Le règlement manuel refuse un montant à plus de deux décimales** (400, `scale_within(&amount, 2)` dans
+- **Le règlement manuel refuse un montant à plus de deux décimales** (400, `scale_within(&amount.normalize(), 2)` dans
   `SettleInvoiceRequest::into_parts`, `invoices.rs:1141`, patron de `dunning_levels.rs:82`) : un paiement
   se fait au centime. Aujourd'hui aucun contrôle d'échelle n'existe (`invoices.rs:1118-1125`). La double
   borne reste la garde de fond (la couche dépôt ne présume pas du handler). Le rapprochement n'est pas
-  exposé : `bank_transactions.amount` est `DECIMAL(18,2)`.
+  exposé : `bank_transactions.amount` est `DECIMAL(18,2)`. ⚠️ **`normalize()` d'abord** : `scale_within` lit
+  `Decimal::scale()` (`limits.rs:31`), et « 10.000 » a une échelle de 3 pour une valeur au centime — sans
+  normalisation, une saisie correcte serait refusée (validation P2).
 - Reste brut déjà au centime : deux lignes, comme aujourd'hui.
 
 **AC 4 — Le compte d'arrondi manquant.** L'écart ne s'écrit que sur le compte désigné, **actif, imputable,
@@ -92,7 +94,11 @@ n'exige rien.
 
 **AC 5 — Le règlement manuel et le dialogue.** Sites 6 et 7 : garde et solde au centime (AC 3). Site 8 :
 le dialogue compare la saisie au reste **arrondi** (big.js, arrondi loin de zéro — l'équivalent de
-`MidpointAwayFromZero` sur un positif) ; le 10.01 pré-rempli est accepté. Le code d'erreur de l'AC 4 a son
+`MidpointAwayFromZero` sur un positif) ; le 10.01 pré-rempli est accepté. Il **refuse aussi une saisie à
+plus de deux décimales** (valeur normalisée : « 10.000 » passe, « 10.008 » non), avec un message propre
+(clé neuve, 4 locales) — sans quoi 10.008 passerait le contrôle client (≤ 10.01) pour tomber sur le 400
+d'échelle du serveur. Avec ce contrôle, « saisie > reste arrondi » équivaut côté client à la double borne de
+l'AC 3. Le code d'erreur de l'AC 4 a son
 libellé dans les 4 locales (`reminder-error-label.ts` / libellés d'erreur existants : suivre le patron du
 dépôt).
 
@@ -110,7 +116,9 @@ annulé) contre-passe **les trois lignes** et rend le reste dû brut d'avant —
   dépôt (`settle_invoice` appelé directement), **trop-perçu refusé** (double borne) — pas de partiel
   silencieux, `paid_at` non posé ;
 - facture à reste brut **10.004** : règlement manuel de **10.00** → soldée, écart **débit** 0.004 ;
-- règlement manuel de 10.01 sur 10.0050 → soldé (API) ; Vitest du dialogue : 10.01 accepté ;
+- règlement manuel de 10.01 sur 10.0050 → soldé (API) ; « 10.000 » accepté (normalisation) ; Vitest du
+  dialogue : 10.01 accepté, 10.008 refusé avec le message d'échelle ;
+- règlements successifs 5.00 puis 5.01 sur 10.0050 → le premier partiel, le second solde avec écart ;
 - compte d'arrondi absent, puis archivé → refus, rien d'écrit (manuel et rapprochement) ;
 - annulation d'un règlement à trois lignes → reste dû restauré, créance et compte d'arrondi revenus ;
 - `reminder_amount_due` inchangé (tests existants verts) ;
@@ -158,6 +166,13 @@ centime et la troisième ligne. PDF régénérés, contrôlés aplatis (attentio
   `roundHalfUp`, arrondit l'équidistant **loin de zéro** : c'est `MidpointAwayFromZero`, sur un positif comme
   sur un négatif. **Hors périmètre, légitimes** : le frontend ne peut pas appeler le helper Rust, et son
   formatage donne déjà le même centime. Rien à changer ; le dialogue (site 8) suit la même règle big.js.
+
+### Limite connue — le reste inférieur au demi-centime ([#490])
+
+Un reste **brut** strictement entre 0 et 0.005 (avoir de 10.00 sur 10.004 ; acompte de 10.00 saisi avant
+cette story) a un arrondi nul : aucun paiement ne l'égale, 0.01 le dépasse. La facture ne peut être soldée.
+**Défaut antérieur** (0.01 est déjà refusé aujourd'hui), **ni créé ni fermé ici** : ne pas l'élargir dans
+cette story. Un reste brut négatif ou nul reste inchangé (tout paiement `p > 0` est un trop-perçu).
 
 ### Pièges
 
@@ -212,5 +227,15 @@ centime et la troisième ligne. PDF régénérés, contrôlés aplatis (attentio
   en-tête de facture triés hors périmètre (big.js `roundHalfUp` = loin de zéro). **F3** (LOW) :
   `ConfigurationRequired` signalé comme faux patron. **F4** (LOW) : mécanisme d'archivage à la
   contre-passation précisé (`archived_accounts_in_tx`), test ajouté à l'AC 7 par les Pièges.
+- **2026-09-30** — Validation P2 (Haiku) : 2 findings rendus (MED, LOW), **tous deux réfutés** — ils
+  reprochent aux manuels de ne pas encore porter le texte que l'AC 8 demande d'écrire, ce que le prompt
+  excluait. La passe déclarait l'axe 3 non exercé et ne rendait rien sur l'impact du refus d'échelle :
+  **repris par l'orchestrateur**, qui y trouve trois défauts réels. (1) MED : `scale_within` lit l'échelle
+  et non la valeur (« 10.000 » refusé) → `normalize()` prescrit. (2) MED : le dialogue laissait passer
+  10.008 jusqu'au 400 serveur → contrôle client des deux décimales, clé i18n neuve. (3) MED hors périmètre :
+  reste brut entre 0 et 0.005 insoldable, défaut antérieur → issue [#490], limite écrite. Tests ajoutés
+  (normalisation, deux paiements successifs). Aucune occurrence de règlement à plus de deux décimales dans
+  les tests existants (`grep` sur `crates/*/tests`, `frontend/tests`).
 
 [#476]: https://github.com/guycorbaz/kesh/issues/476
+[#490]: https://github.com/guycorbaz/kesh/issues/490
