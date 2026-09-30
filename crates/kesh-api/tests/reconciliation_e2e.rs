@@ -4231,3 +4231,443 @@ async fn an_api_key_cancels_and_is_named_in_the_audit(pool: MySqlPool) {
     .unwrap();
     assert_eq!((actor_type.as_str(), actor_key), ("api_key", Some(key_id)));
 }
+
+// ============================================================
+// Story 25-4-c2 (#480) — l'acceptation contre les écritures concurrentes
+// ============================================================
+
+/// Lance `POST /reconciliation/accept` pour une seule proposition, **en tâche** :
+/// le test garde la main pour agir pendant que l'acceptation attend. Rend le
+/// statut HTTP et le corps.
+fn accept_in_background(
+    app: &TestApp,
+    ctx: &CompanyCtx,
+    tx_id: i64,
+    inv_id: i64,
+) -> tokio::task::JoinHandle<(u16, Value)> {
+    let client = app.client.clone();
+    let url = app.url("/api/v1/reconciliation/accept");
+    let jwt = ctx.jwt.clone();
+    let body = serde_json::json!({
+        "bankAccountId": ctx.bank_account_id,
+        "proposals": [{ "type": "invoice", "bankTransactionId": tx_id, "invoiceId": inv_id }],
+    });
+    tokio::spawn(async move {
+        let resp = client
+            .post(url)
+            .bearer_auth(jwt)
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        let status = resp.status().as_u16();
+        (status, resp.json().await.unwrap_or(Value::Null))
+    })
+}
+
+/// ⛔ **#480, la course n° 1 : un règlement manuel PARTIEL validé pendant
+/// qu'une acceptation est en cours ne doit pas laisser régler la facture deux fois.**
+///
+/// La fenêtre réelle de la course va de la **première lecture** de la
+/// transaction d'acceptation (l'instantané se fige à l'étape 2) jusqu'à sa
+/// recherche d'exercice (d) : dans cet intervalle elle ne pose aucun verrou de
+/// ligne, et un règlement manuel peut s'y valider entièrement. Après (d), elle
+/// tient les exercices de la société — la recherche d'exercice les parcourt en
+/// les verrouillant —, et le règlement manuel l'attend : ce sens-là est sûr.
+///
+/// Montage, sans `sleep` — une lecture simple n'attend jamais un verrou de
+/// ligne, mais elle attend un verrou de **métadonnées** :
+/// 1. une connexion de test tient `LOCK TABLES contacts WRITE` ;
+/// 2. l'acceptation (1 000.— sur une facture de 1 000.—) part en tâche : elle
+///    fige son instantané, lit la facture, puis s'arrête à la lecture du
+///    contact (étape 5bis), **avant** sa garde de trop-perçu — on l'y attend ;
+/// 3. un règlement manuel de 400.— est validé (il ne lit pas `contacts`) ;
+/// 4. `UNLOCK TABLES` : l'acceptation reprend, sur un instantané où la
+///    facture doit encore 1 000.—.
+///
+/// Avant la 25-4-c2, le règlement partiel n'incrémentait pas `version` :
+/// l'`UPDATE invoices … version = ?` de l'acceptation réussissait, et la
+/// facture finissait réglée 1 400.— pour 1 000.—, compte clients créditeur.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accept_refuses_when_a_partial_manual_settlement_lands_meanwhile(pool: MySqlPool) {
+    use kesh_db::entities::SettlementChoice;
+    use kesh_db::repositories::invoice_settlements_write;
+
+    let ctx = setup_company(&pool, "Course1", "CH4431999123000889012", Role::Comptable).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let inv_date = NaiveDate::from_ymd_opt(2026, 4, 20).unwrap();
+    let (inv_id, _) = seed_validated_invoice(
+        &pool,
+        ctx.company_id,
+        ctx.contact_id,
+        "INV-RACE-1",
+        inv_date,
+        dec!(1000.00),
+    )
+    .await;
+    let tx_ids = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("race_partial_manual"),
+        day,
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            day,
+            Some(day),
+            dec!(1000.00),
+            "CHF",
+            "INV-RACE-1",
+            Some("Course1 Client"),
+        )],
+    )
+    .await;
+    let app = spawn_app(pool.clone()).await;
+
+    // (1) Le verrou de métadonnées, sur une connexion hors transaction —
+    // DÉTACHÉE du pool : si le test panique avant `UNLOCK TABLES`, elle se
+    // ferme au lieu de retourner au pool verrouillée, et sa session emporte le
+    // verrou (sinon la suppression de la base éphémère attendrait sans fin).
+    let mut verrou = pool.acquire().await.unwrap().detach();
+    sqlx::query("LOCK TABLES contacts WRITE")
+        .execute(&mut verrou)
+        .await
+        .unwrap();
+
+    // (2) L'acceptation, jusqu'à la lecture du contact.
+    let acceptation = accept_in_background(&app, &ctx, tx_ids[0], inv_id);
+    let bloquee =
+        kesh_db::test_fixtures::attendre_une_requete_en_cours(&pool, &["FROM contacts"], || {
+            acceptation.is_finished()
+        })
+        .await;
+    assert!(
+        bloquee,
+        "l'acceptation devait attendre sur `contacts` — le montage ne prouve rien sinon"
+    );
+
+    // (3) Le règlement manuel partiel, validé pendant l'attente.
+    let partiel = invoice_settlements_write::settle_invoice(
+        &pool,
+        ctx.user_id,
+        ctx.company_id,
+        inv_id,
+        SettlementChoice::BankTransfer {
+            bank_account_id: ctx.bank_account_id,
+        },
+        dec!(400.00),
+        day,
+    )
+    .await
+    .expect("règlement manuel partiel");
+    assert!(!partiel.fully_settled);
+
+    // (4) Relâcher : l'acceptation reprend sur un reste périmé.
+    sqlx::query("UNLOCK TABLES")
+        .execute(&mut verrou)
+        .await
+        .unwrap();
+    drop(verrou);
+    let (status, body) = acceptation.await.unwrap();
+    assert_eq!(status, 200, "succès partiel = succès HTTP ; corps = {body}");
+    assert!(
+        body["accepted"].as_array().unwrap().is_empty(),
+        "⛔ l'acceptation a réglé une facture déjà réglée de 400.— entre-temps : {body}"
+    );
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1);
+    assert_eq!(
+        failed[0]["errorCode"],
+        "RECONCILIATION_INVOICE_NOT_ELIGIBLE"
+    );
+    assert_eq!(failed[0]["details"]["reason"], "race_during_update");
+
+    // Rien d'écrit par l'acceptation : un seul règlement, le manuel.
+    let settled: Vec<Decimal> =
+        sqlx::query_scalar("SELECT amount FROM invoice_settlements WHERE invoice_id = ?")
+            .bind(inv_id)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(settled, vec![dec!(400.0000)]);
+    let tx_status: String = sqlx::query_scalar("SELECT status FROM bank_transactions WHERE id = ?")
+        .bind(tx_ids[0])
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(tx_status, "pending", "la transaction reste à rapprocher");
+    assert_eq!(
+        receivable_balance(&pool, ctx.receivable_account_id).await,
+        dec!(600.00),
+        "le compte clients porte le reste, jamais un solde créditeur"
+    );
+}
+
+/// ⛔ **#480 — un interblocage dont l'acceptation est la victime se REJOUE.**
+///
+/// Avant la 25-4-c2, InnoDB annulait toute la transaction du lot, l'instruction
+/// fautive ressortait en `FailedProposal` `DATABASE_ERROR`, le `ROLLBACK TO
+/// SAVEPOINT` suivant échouait (1305) et la route rendait un **500** — sans
+/// rejeu, `retry_with` n'existant que sur l'annulation.
+///
+/// Montage d'un interblocage **déterministe**, dont l'acceptation est la
+/// victime :
+/// 1. une transaction de test s'alourdit (500 lignes insérées : InnoDB choisit
+///    pour victime la transaction la plus légère), puis verrouille la facture ;
+/// 2. l'acceptation prend l'exercice (d), passe son écriture, puis attend la
+///    facture dès l'insertion du règlement — la clé étrangère vers `invoices`
+///    y pose un verrou partagé sur la ligne — : on l'y attend ;
+/// 3. le test demande l'exercice : cycle, InnoDB annule l'acceptation ;
+/// 4. le test annule sa transaction ; le rejeu repart à neuf et accepte.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accept_replays_the_batch_when_it_is_the_deadlock_victim(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Victime", "CH4431999123000889012", Role::Comptable).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let inv_date = NaiveDate::from_ymd_opt(2026, 4, 20).unwrap();
+    let (inv_id, _) = seed_validated_invoice(
+        &pool,
+        ctx.company_id,
+        ctx.contact_id,
+        "INV-DEADLOCK-1",
+        inv_date,
+        dec!(250.00),
+    )
+    .await;
+    let tx_ids = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("deadlock_victim"),
+        day,
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            day,
+            Some(day),
+            dec!(250.00),
+            "CHF",
+            "INV-DEADLOCK-1",
+            Some("Victime Client"),
+        )],
+    )
+    .await;
+    let fy_2026: i64 = sqlx::query_scalar(
+        "SELECT id FROM fiscal_years WHERE company_id = ? AND start_date <= ? AND end_date >= ? \
+         AND status = 'Open' LIMIT 1",
+    )
+    .bind(ctx.company_id)
+    .bind(day)
+    .bind(day)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    // Une table de lest, hors du flux d'acceptation (DDL hors transaction).
+    sqlx::query(
+        "CREATE TABLE lest_interblocage (id INT AUTO_INCREMENT PRIMARY KEY, x INT) ENGINE=InnoDB",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let app = spawn_app(pool.clone()).await;
+
+    // (1) La transaction de test : lourde, puis la facture.
+    let mut lourde = pool.begin().await.unwrap();
+    for _ in 0..10 {
+        sqlx::query("INSERT INTO lest_interblocage (x) SELECT seq FROM seq_1_to_50")
+            .execute(&mut *lourde)
+            .await
+            .unwrap();
+    }
+    sqlx::query("SELECT id FROM invoices WHERE id = ? FOR UPDATE")
+        .bind(inv_id)
+        .fetch_one(&mut *lourde)
+        .await
+        .unwrap();
+
+    // (2) L'acceptation, jusqu'à l'insertion de son règlement.
+    let acceptation = accept_in_background(&app, &ctx, tx_ids[0], inv_id);
+    let bloquee = kesh_db::test_fixtures::attendre_une_requete_en_cours(
+        &pool,
+        &["INSERT INTO invoice_settlements"],
+        || acceptation.is_finished(),
+    )
+    .await;
+    assert!(
+        bloquee,
+        "l'acceptation devait attendre la facture — le montage ne prouve rien sinon"
+    );
+
+    // (3) Le cycle : l'exercice, que tient l'acceptation. La transaction de
+    // test DOIT l'obtenir — sinon c'est elle la victime, et le test ne dit rien.
+    sqlx::query("SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE")
+        .bind(fy_2026)
+        .fetch_one(&mut *lourde)
+        .await
+        .expect("la transaction de test doit survivre à l'interblocage");
+
+    // (4) Relâcher : le rejeu repart à neuf.
+    lourde.rollback().await.unwrap();
+    let (status, body) = acceptation.await.unwrap();
+    assert_eq!(
+        status, 200,
+        "⛔ un interblocage doit être rejoué, pas rendu en erreur : {body}"
+    );
+    assert_eq!(
+        body["accepted"].as_array().unwrap().len(),
+        1,
+        "le rejeu accepte la proposition ; corps = {body}"
+    );
+    let settled: Vec<Decimal> =
+        sqlx::query_scalar("SELECT amount FROM invoice_settlements WHERE invoice_id = ?")
+            .bind(inv_id)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        settled,
+        vec![dec!(250.0000)],
+        "un seul règlement, celui du rejeu"
+    );
+}
+
+/// #480, la course n° 2 — **deux acceptations du même solde, depuis deux
+/// comptes bancaires** (donc deux `GET_LOCK` distincts) : une seule règle la
+/// facture. Déjà refusée avant la 25-4-c2, puisque l'acceptation incrémente
+/// toujours `version` ; ce test la garde, parce que c'est ce refus qu'un
+/// `FOR UPDATE` mal placé désarmerait.
+///
+/// Montage : une transaction de test tient la facture ; l'acceptation A prend
+/// l'exercice et bute sur la facture (insertion du règlement) ; l'acceptation B,
+/// son instantané déjà figé, bute sur l'exercice que tient A. Le test relâche :
+/// A règle, B lit un reste périmé et doit être refusée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn two_acceptances_of_the_same_balance_settle_it_once(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Course2", "CH4431999123000889012", Role::Comptable).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let inv_date = NaiveDate::from_ymd_opt(2026, 4, 20).unwrap();
+    let (inv_id, _) = seed_validated_invoice(
+        &pool,
+        ctx.company_id,
+        ctx.contact_id,
+        "INV-RACE-2",
+        inv_date,
+        dec!(700.00),
+    )
+    .await;
+    // Le second compte bancaire, câblé sur le même compte du grand livre.
+    let second_account = create_bank_account(&pool, ctx.company_id, "CH9300762011623852957").await;
+    sqlx::query("UPDATE bank_accounts SET journal_account_id = ? WHERE id = ?")
+        .bind(ctx.bank_ledger_account_id)
+        .bind(second_account)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let tx_a = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("race2_a"),
+        day,
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            day,
+            Some(day),
+            dec!(700.00),
+            "CHF",
+            "INV-RACE-2",
+            Some("Course2 Client"),
+        )],
+    )
+    .await[0];
+    let tx_b = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        second_account,
+        ctx.user_id,
+        &unique_hash("race2_b"),
+        day,
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            second_account,
+            day,
+            Some(day),
+            dec!(700.00),
+            "CHF",
+            "INV-RACE-2",
+            Some("Course2 Client"),
+        )],
+    )
+    .await[0];
+    let app = spawn_app(pool.clone()).await;
+    let ctx_b = CompanyCtx {
+        bank_account_id: second_account,
+        jwt: ctx.jwt.clone(),
+        ..ctx
+    };
+
+    let mut verrou = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM invoices WHERE id = ? FOR UPDATE")
+        .bind(inv_id)
+        .fetch_one(&mut *verrou)
+        .await
+        .unwrap();
+
+    let acceptation_a = accept_in_background(&app, &ctx, tx_a, inv_id);
+    assert!(
+        kesh_db::test_fixtures::attendre_une_requete_en_cours(
+            &pool,
+            &["INSERT INTO invoice_settlements"],
+            || acceptation_a.is_finished(),
+        )
+        .await,
+        "A devait attendre la facture"
+    );
+    let acceptation_b = accept_in_background(&app, &ctx_b, tx_b, inv_id);
+    assert!(
+        kesh_db::test_fixtures::attendre_une_requete_en_cours(
+            &pool,
+            &["FROM fiscal_years", "FOR UPDATE"],
+            || acceptation_b.is_finished(),
+        )
+        .await,
+        "B devait attendre l'exercice que tient A"
+    );
+
+    verrou.rollback().await.unwrap();
+    let (status_a, body_a) = acceptation_a.await.unwrap();
+    let (status_b, body_b) = acceptation_b.await.unwrap();
+    assert_eq!(
+        (status_a, status_b),
+        (200, 200),
+        "A = {body_a} ; B = {body_b}"
+    );
+    assert_eq!(
+        body_a["accepted"].as_array().unwrap().len(),
+        1,
+        "A règle : {body_a}"
+    );
+    assert!(
+        body_b["accepted"].as_array().unwrap().is_empty(),
+        "⛔ B a réglé une seconde fois une facture déjà soldée : {body_b}"
+    );
+    assert_eq!(
+        body_b["failed"][0]["details"]["reason"],
+        "race_during_update"
+    );
+    let settled: Vec<Decimal> =
+        sqlx::query_scalar("SELECT amount FROM invoice_settlements WHERE invoice_id = ?")
+            .bind(inv_id)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(settled, vec![dec!(700.0000)], "un seul règlement");
+}

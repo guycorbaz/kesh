@@ -719,6 +719,13 @@ pub enum AppError {
     #[error("Échec de libération du verrou de réconciliation")]
     ReconciliationLockReleaseFailed { bank_account_id: i64 },
 
+    /// Story 25-4-c2 (#480) — la transaction d'un lot d'acceptation a été
+    /// annulée par InnoDB (interblocage). **Rejouable** : `post_accept` la
+    /// rejoue ; elle n'arrive au client, en `500`, qu'une fois les tentatives
+    /// épuisées.
+    #[error("Transaction de réconciliation annulée par un interblocage")]
+    ReconciliationTransactionAborted,
+
     // ----- Story 8-5a-base — réconciliation manuelle FR45 -----
     /// Le `bank_account` ciblé n'a pas de `journal_account_id`
     /// configuré (8-5a-zero foundation). Le user doit configurer le
@@ -1943,6 +1950,14 @@ impl IntoResponse for AppError {
                     }
                 });
                 (StatusCode::CONFLICT, Json(body)).into_response()
+            }
+            AppError::ReconciliationTransactionAborted => {
+                tracing::error!("reconciliation accept: transaction aborted, retries exhausted");
+                build_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "INTERNAL_ERROR",
+                    &t("error-internal", "Erreur interne"),
+                )
             }
             AppError::ReconciliationLockReleaseFailed { bank_account_id } => {
                 let msg = t(

@@ -807,25 +807,76 @@ pub async fn post_accept(
         )));
     }
 
-    // Step 1 — Acquire UN seul lock pour tout le batch (H5).
-    let mut tx_outer = state
-        .pool
-        .begin()
-        .await
-        .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
-    let bank_account_id = body.bank_account_id;
-    let proposals = body.proposals.clone();
-    let user_id = current_user.user_id;
-    // Story 17-2a (DC5 cat ii) — attribution PAT propagée dans les helpers/closures.
-    let actor_api_key_id = current_user.api_key_id;
-    let company_id = current_user.company_id;
-
     // C2 Pass 1 — `tx_map` (snapshot pré-flight 0ter) n'est plus passé
     // dans le lock : `accept_one` recharge la BankTransaction inside
     // lock pour fermer la fenêtre TOCTOU entre le pré-flight (hors-lock)
     // et l'UPDATE step 8. Le pré-flight 0ter reste utile pour valider
     // le batch ownership avant d'acquérir le lock (fail-fast 400).
     drop(tx_map);
+
+    // Step 1 — UN seul lock pour tout le batch (H5), dans une tentative que
+    // `retry_with` rejoue en entier sur interblocage (Story 25-4-c2, #480).
+    //
+    // ⛔ **Rejeu au plus dehors** — transaction neuve, verrou de compte repris —,
+    // patron de `post_cancel_reconciliation`. Deux causes, deux formes :
+    // - un 1213 qui remonte **directement** par un `?` (`SAVEPOINT`, `RELEASE`)
+    //   arrive en `AppError::Database(DbError::Sqlx(_))`, que `is_deadlock_error`
+    //   reconnaît ;
+    // - un 1213 levé **dans** une proposition y est absorbé en `FailedProposal` ;
+    //   InnoDB a pourtant annulé toute la transaction, et c'est le
+    //   `ROLLBACK TO SAVEPOINT` suivant qui échoue (1305) — `accept_batch` le
+    //   remonte en `ReconciliationError::TransactionAborted`, rendu ici en
+    //   `AppError::ReconciliationTransactionAborted`.
+    // ⚠️ Prédicat LOCAL à cette route : `is_deadlock_error` reste 1213 seul, un
+    // 1305 ailleurs dans le crate n'a pas ce sens.
+    use kesh_db::retry::{DEFAULT_MAX_DEADLOCK_ATTEMPTS, is_deadlock_error, retry_with};
+    let company_id = current_user.company_id;
+    let user_id = current_user.user_id;
+    // Story 17-2a (DC5 cat ii) — attribution PAT propagée dans les helpers/closures.
+    let actor_api_key_id = current_user.api_key_id;
+    let bank_account_id = body.bank_account_id;
+    retry_with(
+        DEFAULT_MAX_DEADLOCK_ATTEMPTS,
+        |err: &AppError| {
+            matches!(err, AppError::Database(db) if is_deadlock_error(db))
+                || matches!(err, AppError::ReconciliationTransactionAborted)
+        },
+        || {
+            let pool = state.pool.clone();
+            let proposals = body.proposals.clone();
+            async move {
+                accept_once(
+                    &pool,
+                    company_id,
+                    bank_account_id,
+                    user_id,
+                    actor_api_key_id,
+                    proposals,
+                )
+                .await
+            }
+        },
+    )
+    .await
+    .map(Json)
+}
+
+/// Une tentative de `POST /accept` : transaction neuve, verrou du compte
+/// bancaire, lot, commit (Story 25-4-c2 — extraite de `post_accept` pour que
+/// `retry_with` puisse la rejouer en entier).
+async fn accept_once(
+    pool: &sqlx::MySqlPool,
+    company_id: i64,
+    bank_account_id: i64,
+    user_id: i64,
+    actor_api_key_id: Option<i64>,
+    proposals: Vec<AcceptProposalInput>,
+) -> Result<AcceptResponse, AppError> {
+    let mut tx_outer = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
+
     let lock_result = with_account_lock(
         &mut tx_outer,
         company_id,
@@ -851,7 +902,14 @@ pub async fn post_accept(
                 .commit()
                 .await
                 .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
-            Ok(Json(response))
+            Ok(response)
+        }
+        // Story 25-4-c2 — la transaction du lot a été annulée sous lui par
+        // InnoDB (interblocage) : rejouable, cf. `post_accept`.
+        Err(ReconciliationError::TransactionAborted { source }) => {
+            drop(tx_outer);
+            tracing::warn!(error = %source, "reconciliation accept: transaction aborted underneath (deadlock), retrying");
+            Err(AppError::ReconciliationTransactionAborted)
         }
         Err(ReconciliationError::AccountLocked {
             bank_account_id,
@@ -970,21 +1028,59 @@ async fn accept_batch(
         .await
         {
             Ok(entry) => {
-                sqlx::query(&format!("RELEASE SAVEPOINT {savepoint}"))
+                // Même lecture que la branche d'échec : un point de sauvegarde
+                // disparu signale une transaction annulée sous le lot.
+                if let Err(e) = sqlx::query(&format!("RELEASE SAVEPOINT {savepoint}"))
                     .execute(&mut **tx_outer)
-                    .await?;
+                    .await
+                {
+                    if is_savepoint_lost(&e) {
+                        return Err(ReconciliationError::TransactionAborted { source: e });
+                    }
+                    return Err(ReconciliationError::Database(e));
+                }
                 accepted.push(entry);
             }
             Err(failure) => {
-                sqlx::query(&format!("ROLLBACK TO SAVEPOINT {savepoint}"))
+                // Story 25-4-c2 (#480) — un 1213 absorbé dans la proposition a
+                // annulé TOUTE la transaction : le point de sauvegarde n'existe
+                // plus (1305). Le signaler comme tel, pour que la route rejoue
+                // le lot au lieu de rendre un 500 opaque.
+                if let Err(e) = sqlx::query(&format!("ROLLBACK TO SAVEPOINT {savepoint}"))
                     .execute(&mut **tx_outer)
-                    .await?;
+                    .await
+                {
+                    if is_savepoint_lost(&e) {
+                        return Err(ReconciliationError::TransactionAborted { source: e });
+                    }
+                    return Err(ReconciliationError::Database(e));
+                }
                 failed.push(failure);
             }
         }
     }
 
     Ok(AcceptResponse { accepted, failed })
+}
+
+/// `TransactionAborted` n'est posée que par `accept_batch` : ailleurs, elle
+/// signale un défaut, rendu en `500` (Story 25-4-c2 — bras défensif partagé par
+/// `post_reject`, `post_manual` et `post_split`).
+fn transaction_aborted_outside_accept(source: &sqlx::Error) -> AppError {
+    tracing::error!(error = %source, "unexpected TransactionAborted outside accept_batch");
+    AppError::ReconciliationTransactionAborted
+}
+
+/// Code MariaDB `ER_SP_DOES_NOT_EXIST` — ici, un point de sauvegarde disparu
+/// avec la transaction qu'InnoDB a annulée.
+const MARIADB_SAVEPOINT_DOES_NOT_EXIST: u16 = 1305;
+
+/// Le point de sauvegarde du lot a-t-il disparu ? Lu sur le **code** MySQL,
+/// jamais sur le texte du message (Story 25-4-c2).
+fn is_savepoint_lost(err: &sqlx::Error) -> bool {
+    err.as_database_error()
+        .and_then(|db| db.try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>())
+        .is_some_and(|my| my.number() == MARIADB_SAVEPOINT_DOES_NOT_EXIST)
 }
 
 /// Helper interne — dispatch sur le variant `AcceptProposalInput` Q2.
@@ -1502,6 +1598,28 @@ async fn accept_one_invoice(
     // ⛔ `paid_at` seulement si le solde est tombé à zéro (Story 24-2). Un
     // encaissement partiel bump la version et `updated_at` — la facture a bien
     // changé d'état — mais laisse `paid_at` à NULL.
+    //
+    // ⛔ **Ce `version = ?` est le verrou qui interdit de régler deux fois**
+    // (Story 25-4-c2, #480). Le reste dû (`due_before`, garde (c)) est lu sur
+    // l'**instantané** de la transaction, fixé dès sa première lecture : un
+    // écrit validé depuis est invisible. Cet `UPDATE`, lui, lit la version
+    // **courante** : il ne touche aucune ligne si la facture a changé depuis
+    // l'instantané, et la proposition est refusée sans rien écrire. Cela ne
+    // vaut que par l'invariant : **tout écrit qui change le reste dû incrémente
+    // `version`** — l'acceptation (ici), le règlement manuel
+    // (`invoice_settlements_write::settle_invoice`, partiel compris), l'annulation
+    // d'un règlement (`cancel_settlement_in_tx`), l'émission d'un avoir
+    // (`credit_notes::create_credit_note`), la dévalidation (`invoices::unvalidate`).
+    //
+    // ⛔ **Pas de `FOR UPDATE` sur la facture en amont** : il lirait `version` à
+    // jour — ce contrôle passerait toujours — alors que le reste dû resterait lu
+    // sur l'instantané. Il désarmerait le verrou au lieu de le renforcer.
+    //
+    // ⚠️ MariaDB 10.11, `innodb_snapshot_isolation = OFF`. À partir de la 11.6,
+    // la valeur par défaut passe à `ON` : un `UPDATE` sur une ligne modifiée
+    // depuis l'instantané échoue alors en 1020 (*Record has changed since last
+    // read*) au lieu de lire la version courante. Le refus reste juste, mais il
+    // sortirait en `DATABASE_ERROR` et non en `race_during_update`.
     let paid_at_to_set: Option<chrono::NaiveDateTime> = if fully_settled {
         Some(paid_at_dt)
     } else {
@@ -2538,6 +2656,10 @@ pub async fn post_reject(
         }
         // Story 8-5a-bis — branche exhaustive uniquement (reject_batch
         // n'émet pas SplitImbalance). Unreachable en pratique.
+        Err(ReconciliationError::TransactionAborted { source }) => {
+            drop(tx_outer);
+            Err(transaction_aborted_outside_accept(&source))
+        }
         Err(ReconciliationError::SplitImbalance {
             expected,
             actual,
@@ -3065,6 +3187,10 @@ pub async fn post_manual(
         }
         // Story 8-5a-bis — branche exhaustive (post_manual ne fait pas
         // de split, unreachable en pratique).
+        Err(ReconciliationError::TransactionAborted { source }) => {
+            drop(tx_outer);
+            Err(transaction_aborted_outside_accept(&source))
+        }
         Err(ReconciliationError::SplitImbalance {
             expected,
             actual,
@@ -3503,6 +3629,10 @@ pub async fn post_split(
             let _ = tx_outer.rollback().await;
             Err(AppError::Database(DbError::Sqlx(e)))
         }
+        Err(ReconciliationError::TransactionAborted { source }) => {
+            drop(tx_outer);
+            Err(transaction_aborted_outside_accept(&source))
+        }
         Err(ReconciliationError::SplitImbalance {
             expected,
             actual,
@@ -3713,6 +3843,10 @@ async fn cancel_reconciliation_once(
                 // c'est ce que lit le prédicat du rejeu.
                 ReconciliationError::Db(db) => AppError::Database(db),
                 ReconciliationError::Database(e) => AppError::Database(DbError::Sqlx(e)),
+                // Story 25-4-c2 — posée par `accept_batch` seulement ; défensif ici.
+                ReconciliationError::TransactionAborted { .. } => {
+                    AppError::ReconciliationTransactionAborted
+                }
                 other => {
                     tracing::error!(error = %other, "variante inattendue au dé-rapprochement");
                     AppError::Internal("internal: unexpected reconciliation error".into())

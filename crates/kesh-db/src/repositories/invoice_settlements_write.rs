@@ -229,19 +229,40 @@ pub async fn settle_invoice(
     .await?;
 
     // (8) ⛔ `paid_at` est la PROJECTION du résiduel à zéro, pas un drapeau.
+    //
+    // ⛔ **`version` bouge À CHAQUE règlement, partiel compris** (Story 25-4-c2,
+    // #480). C'est l'invariant dont dépend le verrou optimiste de l'acceptation
+    // d'un rapprochement (`accept_one_invoice`, `UPDATE invoices … AND version = ?`) :
+    // **tout écrit qui change le reste dû d'une facture incrémente `version` dans
+    // la même transaction.** L'acceptation lit le reste dû sur son instantané ;
+    // un règlement partiel validé depuis, qui n'incrémentait pas `version`,
+    // passait sous son contrôle — la facture finissait réglée deux fois. Les
+    // autres écrivains le tiennent déjà : l'acceptation elle-même, l'annulation
+    // d'un règlement (`cancel_settlement_in_tx`, les deux branches), l'émission
+    // d'un avoir (`credit_notes::create_credit_note`) et la dévalidation
+    // (`invoices::unvalidate`). Un nouvel écrivain qui y manquerait rouvrirait
+    // la course.
     let due_after = invoice_settlements::amount_due(&mut *tx, invoice_id).await?;
     let fully_settled = due_after <= Decimal::ZERO;
-    if fully_settled {
-        sqlx::query(
-            "UPDATE invoices SET paid_at = ?, version = version + 1, updated_at = NOW(3) \
-             WHERE id = ? AND company_id = ? AND status = 'validated'",
-        )
-        .bind(settled_on.and_hms_opt(0, 0, 0).expect("minuit est valide"))
-        .bind(invoice_id)
-        .bind(company_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(map_db_error)?;
+    let paid_at =
+        fully_settled.then(|| settled_on.and_hms_opt(0, 0, 0).expect("minuit est valide"));
+    let marked = sqlx::query(
+        "UPDATE invoices SET paid_at = ?, version = version + 1, updated_at = NOW(3) \
+         WHERE id = ? AND company_id = ? AND status = 'validated'",
+    )
+    .bind(paid_at)
+    .bind(invoice_id)
+    .bind(company_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(map_db_error)?;
+    // Le verrou de l'étape (1) rend ce cas impossible aujourd'hui ; s'il se
+    // produisait, le règlement serait écrit SANS incrémenter `version` et
+    // l'invariant ci-dessus serait rompu en silence : on refuse tout.
+    if marked.rows_affected() != 1 {
+        return Err(DbError::Invariant(
+            "règlement : la facture n'a pas pu être marquée modifiée (version)".into(),
+        ));
     }
 
     // (9) ⛔ L'audit, dans la MÊME transaction. Un règlement est un fait
@@ -469,12 +490,20 @@ pub async fn cancel_settlement_in_tx(
         "UPDATE invoices SET version = version + 1, updated_at = NOW(3) \
          WHERE id = ? AND company_id = ?"
     };
-    sqlx::query(sql)
+    let marked = sqlx::query(sql)
         .bind(invoice_id)
         .bind(company_id)
         .execute(&mut **tx)
         .await
         .map_err(map_db_error)?;
+    // Même garde que `settle_invoice` (Story 25-4-c2) : une annulation qui ne
+    // marquerait pas la facture romprait l'invariant de version.
+    if marked.rows_affected() != 1 {
+        return Err(DbError::Invariant(
+            "annulation de règlement : la facture n'a pas pu être marquée modifiée (version)"
+                .into(),
+        ));
+    }
 
     // (7) L'audit du GESTE. ⚠️ La contre-passation a déjà écrit
     //     `journal_entry.reversed` sur l'écriture : deux lignes, c'est voulu —
