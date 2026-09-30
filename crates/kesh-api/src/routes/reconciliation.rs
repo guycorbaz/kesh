@@ -1538,11 +1538,16 @@ async fn accept_one_invoice(
         rounding_account_id,
     ) {
         Ok(lines) => lines,
+        // Seule erreur possible : un écart sans compte d'arrondi — impossible
+        // tant que (c-bis) exige le compte dès que réglé ≠ payé. Si un refactor
+        // défaisait ce couplage, c'est un BUG STRUCTUREL : tracé, et rendu sous
+        // un code qui ne se confond pas avec une panne de base (revue P1, C).
         Err(e) => {
+            tracing::error!("encaissement : lignes d'écriture impossibles à construire : {e}");
             return Err(FailedProposal {
                 bank_transaction_id,
-                error_code: "DATABASE_ERROR".to_string(),
-                details: Some(serde_json::json!({ "message": e.to_string() })),
+                error_code: "INTERNAL_ERROR".to_string(),
+                details: None,
             });
         }
     };

@@ -177,6 +177,10 @@ pub fn classify_payment(paid: Decimal, raw_due: Decimal) -> PaymentAgainstDue {
 ///
 /// Un écart sans compte d'arrondi est une erreur de l'appelant
 /// ([`DbError::Invariant`]) : c'est à lui d'avoir obtenu le compte, ou refusé.
+///
+/// Si le compte d'arrondi est aussi la contrepartie (compte interne choisi au
+/// règlement), l'écriture porte deux lignes sur le même compte : équilibrée,
+/// comptablement exacte, laissée telle quelle (revue P1 de la 25-4-c3-b).
 pub fn settlement_journal_lines(
     counterparty_account_id: i64,
     receivable_account_id: i64,

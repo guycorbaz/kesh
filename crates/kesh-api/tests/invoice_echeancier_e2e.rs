@@ -1321,3 +1321,30 @@ async fn cancelling_a_three_line_settlement_reverses_the_rounding_line(pool: MyS
     );
     assert!(v["invoice"]["paidAt"].is_null());
 }
+
+/// Le compte d'arrondi peut être un **produit** (AC 4 : « charge ou produit ») —
+/// la revérification au moment d'écrire l'accepte, et l'écart s'y écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_revenue_rounding_account_receives_the_gap(pool: MySqlPool) {
+    seed_base(&pool).await;
+    let (company_id, _) = ids(&pool).await;
+    let rounding = designate_rounding(&pool, company_id).await;
+    sqlx::query("UPDATE accounts SET account_type = 'Revenue', number = '3990' WHERE id = ?")
+        .bind(rounding)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let id = raw_due_invoice(&pool, dec!(9.2550)).await;
+    let caisse = caisse_id(&pool, company_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+
+    assert_eq!(
+        post_settle(&app, &token, id, caisse, "10.01")
+            .await
+            .status(),
+        200
+    );
+    let s = settlements_with_lines(&pool, id).await;
+    assert_eq!(s[0].1[2], (rounding, dec!(0), dec!(0.0050)));
+}

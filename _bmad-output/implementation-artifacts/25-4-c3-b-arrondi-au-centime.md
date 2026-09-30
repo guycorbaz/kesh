@@ -322,6 +322,18 @@ Claude Opus 5.5 (`claude-opus-5-5`).
   `settlement_journal_lines`), compte d'arrondi revérifié au moment d'écrire, code dédié, refus d'échelle,
   dialogue au centime ; 13 tests Rust et 6 Vitest neufs, 7 mutations tuées ; gates backend 2544/2544,
   frontend 845/845, E2E 227/19/9 expliqués.
+- **2026-09-30** — Revue de code P1 (Sonnet ×3, prompt `25-4-c3-b-review-prompt-p1.md`) : A 1 MED, B 1 MED/2 LOW,
+  C 1 MED. **A-MED réfuté** (interblocage contrepartie × compte d'arrondi) : inventaire des verrous sur
+  `accounts` — le compte d'arrondi, unique par société, est toujours pris en DERNIER ; `validate_lines_accounts_in_tx`
+  lit sans verrou ; aucun chemin ne prend R puis un autre compte. **B-F1 reclassé LOW, préexistant** : le cycle
+  règlement manuel × rapprochement sur la même facture existe déjà par le verrou d'exercice ; R s'y insère dans
+  le même sens ; seul le règlement manuel n'est pas rejoué → issue [#491]. **C-MED retenu** : l'invariant de
+  `settlement_journal_lines` au rapprochement sortait en `DATABASE_ERROR` sans trace → `tracing::error!` et code
+  `INTERNAL_ERROR` (la signature `FailedProposal` interdit le 500 sans refondre le flux d'acceptation). **B-F2
+  retenu** : test du compte d'arrondi de type produit (mutation « Revenue retiré du filtre » tuée). **B-F3** :
+  compte d'arrondi = contrepartie, deux lignes sur le même compte, documenté comme accepté. Gate complet
+  (kesh-db touché) : **2545/2545**.
 
 [#476]: https://github.com/guycorbaz/kesh/issues/476
 [#490]: https://github.com/guycorbaz/kesh/issues/490
+[#491]: https://github.com/guycorbaz/kesh/issues/491
