@@ -236,6 +236,54 @@ pub async fn update(
     Ok(after)
 }
 
+/// Le compte de **différences d'arrondi** qu'une société reçoit d'office à la
+/// création de ses réglages (Story 25-4-c3-a2, #476) : celui dont le numéro est
+/// l'entrée **marquée** (`roundingDifference`) du plan de sa forme juridique.
+///
+/// Partagé par les deux `insert_with_defaults*` (DRY). Le plan est **relu** ici
+/// parce que la finalisation de l'onboarding arrive dans une autre requête que
+/// l'étape qui a semé les comptes ; la forme juridique ne change plus après
+/// l'étape 3, donc c'est bien le plan qui les a semés.
+///
+/// ⛔ **Facultatif, jamais une erreur** — contrairement à la créance et au
+/// produit : plan sans marqueur, compte renuméroté, archivé, rendu non imputable
+/// ou retypé depuis l'étape 4 → `None`, et la société le choisira dans les
+/// paramètres. Mêmes exigences que la validation du réglage
+/// (`validate_account_of`, `kesh-api`) : actif, imputable, charge ou produit.
+///
+/// `FOR UPDATE`, comme les recherches par rôle (F1) : une désactivation
+/// concurrente ne doit pas laisser un réglage pointer sur un compte mort.
+async fn rounding_account_from_chart(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+) -> Result<Option<i64>, DbError> {
+    let org_type: Option<String> =
+        sqlx::query_scalar("SELECT org_type FROM companies WHERE id = ?")
+            .bind(company_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(map_db_error)?;
+    let Some(org_type) = org_type else {
+        return Ok(None);
+    };
+    let Ok(chart) = kesh_core::chart_of_accounts::load_chart(&org_type) else {
+        return Ok(None);
+    };
+    let Some(number) = kesh_core::chart_of_accounts::rounding_difference_number(&chart) else {
+        return Ok(None);
+    };
+    sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM accounts WHERE company_id = ? AND number = ? AND active = TRUE \
+         AND postable = TRUE AND account_type IN ('Expense', 'Revenue') \
+         ORDER BY id LIMIT 1 FOR UPDATE",
+    )
+    .bind(company_id)
+    .bind(number)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)
+}
+
 /// Creates company_invoice_settings with auto-prefill of default accounts resolved
 /// by role (`Receivable`, `DefaultRevenue`, `Payable` — Story 14-3b : no longer by
 /// hardcoded account number). Called during onboarding finalization (after chart of
@@ -330,19 +378,24 @@ pub async fn insert_with_defaults(
         return Err(DbError::InactiveOrInvalidAccounts);
     }
 
+    // Story 25-4-c3-a2 : le compte de différences d'arrondi du plan — facultatif.
+    let rounding = rounding_account_from_chart(&mut tx, company_id).await?;
+
     // P1-C1: Check rows_affected to distinguish newly inserted vs pre-existing rows
     // INSERT IGNORE suppresses errors but returns rows_affected=0 if DUPLICATE KEY
     let rows = sqlx::query(
         "INSERT IGNORE INTO company_invoice_settings \
          (company_id, invoice_number_format, default_receivable_account_id, \
           default_revenue_account_id, default_payable_account_id, \
+          default_rounding_account_id, \
           default_sales_journal, journal_entry_description_template) \
-         VALUES (?, 'F-{YEAR}-{SEQ:04}', ?, ?, ?, 'Ventes', '{YEAR}-{INVOICE_NUMBER}')",
+         VALUES (?, 'F-{YEAR}-{SEQ:04}', ?, ?, ?, ?, 'Ventes', '{YEAR}-{INVOICE_NUMBER}')",
     )
     .bind(company_id)
     .bind(receivable)
     .bind(revenue)
     .bind(payable)
+    .bind(rounding)
     .execute(&mut *tx)
     .await
     .map_err(map_db_error)?
@@ -452,19 +505,24 @@ pub async fn insert_with_defaults_in_tx(
         return Err(DbError::InactiveOrInvalidAccounts);
     }
 
+    // Story 25-4-c3-a2 : le compte de différences d'arrondi du plan — facultatif.
+    let rounding = rounding_account_from_chart(tx, company_id).await?;
+
     // P1-C1: Check rows_affected to distinguish newly inserted vs pre-existing rows
     // INSERT IGNORE suppresses errors but returns rows_affected=0 if DUPLICATE KEY
     let rows = sqlx::query(
         "INSERT IGNORE INTO company_invoice_settings \
          (company_id, invoice_number_format, default_receivable_account_id, \
           default_revenue_account_id, default_payable_account_id, \
+          default_rounding_account_id, \
           default_sales_journal, journal_entry_description_template) \
-         VALUES (?, 'F-{YEAR}-{SEQ:04}', ?, ?, ?, 'Ventes', '{YEAR}-{INVOICE_NUMBER}')",
+         VALUES (?, 'F-{YEAR}-{SEQ:04}', ?, ?, ?, ?, 'Ventes', '{YEAR}-{INVOICE_NUMBER}')",
     )
     .bind(company_id)
     .bind(receivable)
     .bind(revenue)
     .bind(payable)
+    .bind(rounding)
     .execute(&mut **tx)
     .await
     .map_err(map_db_error)?

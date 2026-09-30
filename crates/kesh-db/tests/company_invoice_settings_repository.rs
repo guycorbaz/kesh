@@ -278,7 +278,7 @@ async fn update_no_op_returns_unchanged_entity_no_audit(pool: MySqlPool) {
             journal_entry_description_template: settings.journal_entry_description_template.clone(),
             credit_note_number_format: settings.credit_note_number_format.clone(),
             default_payable_account_id: settings.default_payable_account_id,
-            default_rounding_account_id: None,
+            default_rounding_account_id: settings.default_rounding_account_id,
         },
     )
     .await
@@ -348,7 +348,7 @@ async fn update_partial_change_bumps_version(pool: MySqlPool) {
             journal_entry_description_template: settings.journal_entry_description_template.clone(),
             credit_note_number_format: settings.credit_note_number_format.clone(),
             default_payable_account_id: settings.default_payable_account_id,
-            default_rounding_account_id: None,
+            default_rounding_account_id: settings.default_rounding_account_id,
         },
     )
     .await
@@ -440,7 +440,7 @@ async fn update_vat_accounts_round_trip(pool: MySqlPool) {
             journal_entry_description_template: settings.journal_entry_description_template.clone(),
             credit_note_number_format: settings.credit_note_number_format.clone(),
             default_payable_account_id: settings.default_payable_account_id,
-            default_rounding_account_id: None,
+            default_rounding_account_id: settings.default_rounding_account_id,
         },
     )
     .await
@@ -534,7 +534,7 @@ async fn update_vat_account_foreign_id_rejected_by_fk(pool: MySqlPool) {
                 .clone(),
             credit_note_number_format: settings_a.credit_note_number_format.clone(),
             default_payable_account_id: settings_a.default_payable_account_id,
-            default_rounding_account_id: None,
+            default_rounding_account_id: settings_a.default_rounding_account_id,
         },
     )
     .await;
@@ -953,11 +953,13 @@ async fn update_rounding_account_round_trip(pool: MySqlPool) {
     let settings = company_invoice_settings::insert_with_defaults(&pool, company)
         .await
         .unwrap();
+    // Story 25-4-c3-a2 : le plan PME marque 6940, désigné d'office.
     assert_eq!(
-        settings.default_rounding_account_id, None,
-        "l'onboarding ne le pose pas (Story 25-4-c3-a2)"
+        settings.default_rounding_account_id,
+        Some(account_id_by_number(&pool, company, "6940").await),
+        "le compte marqué du plan est désigné à la création"
     );
-    // Un compte de charge du plan PME.
+    // On le change pour une autre charge du plan PME.
     let rounding = account_id_by_number(&pool, company, "6900").await;
 
     let result = company_invoice_settings::update(
@@ -1002,4 +1004,120 @@ async fn update_rounding_account_round_trip(pool: MySqlPool) {
     .await
     .unwrap();
     assert_eq!(audited, 1, "l'audit porte le compte d'arrondi");
+}
+
+/// Une société d'une forme juridique donnée, avec son plan livré semé.
+async fn company_with_chart(pool: &MySqlPool, name: &str, org_type: OrgType) -> i64 {
+    let company = companies::create(
+        pool,
+        NewCompany {
+            name: name.to_string(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
+            ide_number: None,
+            org_type,
+            accounting_language: Language::Fr,
+            instance_language: Language::Fr,
+        },
+    )
+    .await
+    .expect("create company");
+    let chart = kesh_core::chart_of_accounts::load_chart(org_type.as_str()).expect("load chart");
+    accounts::bulk_create_from_chart(pool, company.id, &chart, "fr")
+        .await
+        .expect("seed chart");
+    company.id
+}
+
+/// Story 25-4-c3-a2 (#476) — pour **chaque** plan livré, la création des réglages
+/// désigne d'office le compte marqué du plan (`6940`), par les deux variantes.
+#[sqlx::test(migrations = "./test-schema")]
+async fn insert_with_defaults_designates_the_charts_rounding_account(pool: MySqlPool) {
+    for (i, org_type) in [OrgType::Pme, OrgType::Association, OrgType::Independant]
+        .into_iter()
+        .enumerate()
+    {
+        let pool_variant = company_with_chart(&pool, &format!("Arrondi pool {i}"), org_type).await;
+        let settings = company_invoice_settings::insert_with_defaults(&pool, pool_variant)
+            .await
+            .expect("insert_with_defaults");
+        assert_eq!(
+            settings.default_rounding_account_id,
+            Some(account_id_by_number(&pool, pool_variant, "6940").await),
+            "{org_type:?} (pool)"
+        );
+
+        let tx_variant = company_with_chart(&pool, &format!("Arrondi tx {i}"), org_type).await;
+        let mut tx = pool.begin().await.unwrap();
+        let settings = company_invoice_settings::insert_with_defaults_in_tx(&mut tx, tx_variant)
+            .await
+            .expect("insert_with_defaults_in_tx");
+        tx.commit().await.unwrap();
+        assert_eq!(
+            settings.default_rounding_account_id,
+            Some(account_id_by_number(&pool, tx_variant, "6940").await),
+            "{org_type:?} (tx)"
+        );
+    }
+}
+
+/// Story 25-4-c3-a2 — le compte d'arrondi est **facultatif** : renuméroté ou
+/// archivé entre la création des comptes et celle des réglages, il est laissé
+/// `NULL`, et la création des réglages réussit.
+#[sqlx::test(migrations = "./test-schema")]
+async fn insert_with_defaults_leaves_rounding_null_when_the_account_is_gone(pool: MySqlPool) {
+    for (label, sql) in [
+        (
+            "renuméroté",
+            "UPDATE accounts SET number = '6941' WHERE company_id = ? AND number = '6940'",
+        ),
+        (
+            "archivé",
+            "UPDATE accounts SET active = FALSE WHERE company_id = ? AND number = '6940'",
+        ),
+    ] {
+        let company = company_with_chart(&pool, &format!("Arrondi {label}"), OrgType::Pme).await;
+        sqlx::query(sql)
+            .bind(company)
+            .execute(&pool)
+            .await
+            .expect(label);
+        let settings = company_invoice_settings::insert_with_defaults(&pool, company)
+            .await
+            .unwrap_or_else(|e| panic!("{label} : la création des réglages doit réussir ({e:?})"));
+        assert_eq!(settings.default_rounding_account_id, None, "{label}");
+    }
+}
+
+/// Story 25-4-c3-a2 — une société qui a **déjà** ses réglages n'est pas touchée :
+/// `INSERT IGNORE`, aucune mise à jour.
+#[sqlx::test(migrations = "./test-schema")]
+async fn insert_with_defaults_does_not_touch_existing_settings(pool: MySqlPool) {
+    let company = company_with_chart(&pool, "Arrondi existant", OrgType::Pme).await;
+    let first = company_invoice_settings::insert_with_defaults(&pool, company)
+        .await
+        .unwrap();
+    // L'utilisateur a vidé le réglage depuis.
+    sqlx::query(
+        "UPDATE company_invoice_settings SET default_rounding_account_id = NULL WHERE company_id = ?",
+    )
+    .bind(company)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let again = company_invoice_settings::insert_with_defaults(&pool, company)
+        .await
+        .unwrap();
+    assert!(first.default_rounding_account_id.is_some());
+    assert_eq!(
+        again.default_rounding_account_id, None,
+        "un second appel ne réécrit pas le réglage que l'utilisateur a vidé"
+    );
 }

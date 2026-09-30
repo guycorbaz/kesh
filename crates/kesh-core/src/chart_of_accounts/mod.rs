@@ -203,6 +203,16 @@ pub struct ChartEntry {
     /// rouvre ni un compte de regroupement ni le résultat de l'exercice.
     #[serde(default)]
     pub postable: Option<bool>,
+    /// Marque **l'**entrée qui deviendra le compte de **différences d'arrondi**
+    /// d'une société créée depuis ce plan (Story 25-4-c3-a2, #476) : ses réglages
+    /// de facturation la désignent d'office (`default_rounding_account_id`).
+    ///
+    /// Un **marqueur** et non un rôle de compte (arbitrage du 2026-09-30) ni un
+    /// numéro dans le code : le numéro — `6940` dans les plans livrés — vit dans
+    /// les données. `false` par défaut : un plan sans marqueur reste valide, et ses
+    /// sociétés choisiront le compte dans les paramètres.
+    #[serde(default)]
+    pub rounding_difference: bool,
 }
 
 /// Résout le nom d'un compte dans la langue demandée, avec fallback FR.
@@ -304,7 +314,48 @@ fn validate_chart(entries: &[ChartEntry]) -> Result<(), CoreError> {
         }
     }
 
+    // Story 25-4-c3-a2 : le compte de différences d'arrondi — au plus un, de charge
+    // ou de produit, imputable. Mêmes conditions que la validation du réglage
+    // (`validate_account_of`, `kesh-api`) : un plan livré ne doit pas désigner un
+    // compte que les paramètres refuseraient.
+    let parents = parent_numbers(entries);
+    let mut rounding = entries.iter().filter(|e| e.rounding_difference);
+    if let Some(entry) = rounding.next() {
+        if let Some(second) = rounding.next() {
+            return Err(CoreError::InvalidChart(format!(
+                "plusieurs comptes de différences d'arrondi : {} et {}",
+                entry.number, second.number
+            )));
+        }
+        if !matches!(
+            entry.account_type,
+            AccountType::Expense | AccountType::Revenue
+        ) {
+            return Err(CoreError::InvalidChart(format!(
+                "compte {} : le compte de différences d'arrondi doit être une charge ou un produit, pas {}",
+                entry.number,
+                entry.account_type.as_str()
+            )));
+        }
+        if !is_postable(entry, &parents) {
+            return Err(CoreError::InvalidChart(format!(
+                "compte {} : le compte de différences d'arrondi doit être imputable",
+                entry.number
+            )));
+        }
+    }
+
     Ok(())
+}
+
+/// Le numéro de l'entrée marquée compte de **différences d'arrondi** d'un plan,
+/// s'il en a une (Story 25-4-c3-a2). `validate_chart` garantit qu'il y en a au
+/// plus une ; c'est la seule recherche du marqueur — ne pas la recopier.
+pub fn rounding_difference_number(entries: &[ChartEntry]) -> Option<&str> {
+    entries
+        .iter()
+        .find(|e| e.rounding_difference)
+        .map(|e| e.number.as_str())
 }
 
 /// `true` si l'entrée doit être créée **postable**.
@@ -500,6 +551,7 @@ mod tests {
             parent_number: None,
             role: None,
             postable: None,
+            rounding_difference: false,
         };
         assert_eq!(resolve_name(&entry, "de"), "Kasse");
         assert_eq!(resolve_name(&entry, "DE"), "Kasse");
@@ -514,6 +566,7 @@ mod tests {
             parent_number: None,
             role: None,
             postable: None,
+            rounding_difference: false,
         };
         assert_eq!(resolve_name(&entry, "de"), "Caisse");
     }
@@ -527,6 +580,7 @@ mod tests {
             parent_number: None,
             role: None,
             postable: None,
+            rounding_difference: false,
         };
         assert_eq!(resolve_name(&entry, "fr"), "1000");
     }
@@ -541,6 +595,7 @@ mod tests {
                 parent_number: None,
                 role: None,
                 postable: None,
+                rounding_difference: false,
             },
             ChartEntry {
                 number: "1000".to_string(),
@@ -549,6 +604,7 @@ mod tests {
                 parent_number: None,
                 role: None,
                 postable: None,
+                rounding_difference: false,
             },
         ];
         let err = validate_chart(&entries).unwrap_err();
@@ -564,6 +620,7 @@ mod tests {
             parent_number: Some("999".to_string()),
             role: None,
             postable: None,
+            rounding_difference: false,
         }];
         let err = validate_chart(&entries).unwrap_err();
         assert!(err.to_string().contains("parent inexistant"));
@@ -631,6 +688,7 @@ mod tests {
             parent_number: None,
             role,
             postable: None,
+            rounding_difference: false,
         };
 
         // Deux comptes portant Receivable (singleton) → rejet.
@@ -697,6 +755,7 @@ mod tests {
             parent_number: None,
             role: Some(AccountRole::Payable),
             postable: None,
+            rounding_difference: false,
         }];
         let err = validate_chart(&entries).expect_err("Payable sur une charge doit être rejeté");
         let msg = format!("{err:?}");
@@ -786,6 +845,7 @@ mod tests {
             parent_number: None,
             role,
             postable,
+            rounding_difference: false,
         }
     }
 
@@ -882,5 +942,95 @@ mod tests {
                 );
             }
         }
+    }
+
+    // =======================================================================
+    // Story 25-4-c3-a2 — le compte de différences d'arrondi (marqueur de plan)
+    // =======================================================================
+
+    /// Chaque plan livré porte **exactement un** compte de différences d'arrondi :
+    /// `6940`, une charge imputable, nommée dans les quatre langues.
+    #[test]
+    fn each_shipped_chart_marks_exactly_one_rounding_account() {
+        for org in ["Pme", "Association", "Independant"] {
+            let chart = load_chart(org).expect("load_chart");
+            let marked: Vec<&ChartEntry> = chart.iter().filter(|e| e.rounding_difference).collect();
+            assert_eq!(marked.len(), 1, "{org} : un seul compte marqué");
+            let entry = marked[0];
+            assert_eq!(entry.number, "6940", "{org}");
+            assert_eq!(entry.account_type, AccountType::Expense, "{org}");
+            assert!(
+                is_postable(entry, &parent_numbers(&chart)),
+                "{org} : imputable"
+            );
+            for lang in ["fr", "de", "it", "en"] {
+                assert!(
+                    entry.name.get(lang).is_some_and(|n| !n.is_empty()),
+                    "{org} : nom {lang} manquant"
+                );
+            }
+            assert_eq!(rounding_difference_number(&chart), Some("6940"), "{org}");
+        }
+    }
+
+    fn rounding_entry(number: &str, account_type: AccountType) -> ChartEntry {
+        ChartEntry {
+            account_type,
+            rounding_difference: true,
+            ..entry_24_5(number, None, None)
+        }
+    }
+
+    #[test]
+    fn validate_chart_rejects_two_rounding_accounts() {
+        let entries = vec![
+            rounding_entry("6940", AccountType::Expense),
+            rounding_entry("6941", AccountType::Expense),
+        ];
+        let err = validate_chart(&entries).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("plusieurs comptes de différences d'arrondi"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn validate_chart_rejects_rounding_account_of_wrong_type() {
+        for account_type in [AccountType::Asset, AccountType::Liability] {
+            let err = validate_chart(&[rounding_entry("1099", account_type)]).unwrap_err();
+            assert!(err.to_string().contains("charge ou un produit"), "{err}");
+        }
+        // Charge et produit sont acceptés.
+        validate_chart(&[rounding_entry("6940", AccountType::Expense)]).expect("charge");
+        validate_chart(&[rounding_entry("7940", AccountType::Revenue)]).expect("produit");
+    }
+
+    #[test]
+    fn validate_chart_rejects_non_postable_rounding_account() {
+        // Un compte de regroupement : parent d'une autre entrée.
+        let parent = rounding_entry("69", AccountType::Expense);
+        let child = ChartEntry {
+            parent_number: Some("69".into()),
+            ..entry_24_5("6940", None, None)
+        };
+        let err = validate_chart(&[parent, child]).unwrap_err();
+        assert!(err.to_string().contains("imputable"), "{err}");
+        // Imposé non imputable par le plan.
+        let closed = ChartEntry {
+            postable: Some(false),
+            ..rounding_entry("6940", AccountType::Expense)
+        };
+        let err = validate_chart(&[closed]).unwrap_err();
+        assert!(err.to_string().contains("imputable"), "{err}");
+    }
+
+    #[test]
+    fn chart_without_rounding_marker_still_parses() {
+        let json = r#"[{"number": "6900", "name": {"fr": "Charges financières"}, "type": "Expense", "parentNumber": null}]"#;
+        let entries: Vec<ChartEntry> = serde_json::from_str(json).expect("parse");
+        assert!(!entries[0].rounding_difference);
+        validate_chart(&entries).expect("valide sans marqueur");
+        assert_eq!(rounding_difference_number(&entries), None);
     }
 }

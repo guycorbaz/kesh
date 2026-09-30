@@ -1832,3 +1832,50 @@ async fn reopen_lifo_blocked_returns_409_distinct_message(pool: MySqlPool) {
         "LIFO message must differ from already-open and generic, got: {msg}"
     );
 }
+
+/// Story 25-4-c3-a2 (#476) — de bout en bout, chemin « production » : l'étape 4
+/// sème le plan PME **livré** (aucun plan minimal posé avant), la finalisation —
+/// une autre requête — crée les réglages de facturation, et le compte de
+/// différences d'arrondi y est désigné d'office : le `6940` que le plan marque.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn path_b_finalize_designates_the_charts_rounding_account(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+    let company_id: i64 = sqlx::query_scalar("SELECT id FROM companies ORDER BY id LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    run_path_b_until_finalize(&app, &token).await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/onboarding/finalize"))
+        .header("Authorization", auth(&token))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        200,
+        "{}",
+        resp.text().await.unwrap_or_default()
+    );
+
+    let rounding: Option<i64> = sqlx::query_scalar(
+        "SELECT default_rounding_account_id FROM company_invoice_settings WHERE company_id = ?",
+    )
+    .bind(company_id)
+    .fetch_one(&pool)
+    .await
+    .expect("réglages créés");
+    let expected: i64 =
+        sqlx::query_scalar("SELECT id FROM accounts WHERE company_id = ? AND number = '6940'")
+            .bind(company_id)
+            .fetch_one(&pool)
+            .await
+            .expect("le plan livré porte le 6940");
+    assert_eq!(
+        rounding,
+        Some(expected),
+        "le compte marqué est désigné d'office"
+    );
+}

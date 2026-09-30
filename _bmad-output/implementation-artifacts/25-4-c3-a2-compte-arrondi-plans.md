@@ -1,6 +1,6 @@
 # Story 25.4-c3-a2 : Le compte de différences d'arrondi dans les plans livrés
 
-Status: in-progress
+Status: review
 
 **Issue : [#476]** — ⛔ la PR porte `refs #476` (la **25-4-c3-b** la fermera).
 
@@ -96,11 +96,11 @@ dresse pas la liste.
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — plans et marqueur** (AC 1, 2) : trois JSON, `ChartEntry`, `validate_chart`, fonction de numéro.
-- [ ] **T2 — désignation** (AC 3, 4) : les deux `insert_with_defaults*`.
-- [ ] **T3 — tests** (AC 5).
-- [ ] **T4 — textes** (AC 6).
-- [ ] **T5 — gates** : backend complet (base remise à zéro ; ⛔ dépôt `kesh-db` touché ⇒ gate complet même
+- [x] **T1 — plans et marqueur** (AC 1, 2) : trois JSON, `ChartEntry`, `validate_chart`, fonction de numéro.
+- [x] **T2 — désignation** (AC 3, 4) : les deux `insert_with_defaults*`.
+- [x] **T3 — tests** (AC 5).
+- [x] **T4 — textes** (AC 6).
+- [x] **T5 — gates** : backend complet (base remise à zéro ; ⛔ dépôt `kesh-db` touché ⇒ gate complet même
   en cours de boucle), frontend (inchangé en principe : `check` et `test:unit`), **E2E complet**.
 
 ## Dev Notes
@@ -137,14 +137,62 @@ dresse pas la liste.
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`).
+
 ### Debug Log References
+
+- Mutation (restaurée, fichier touché ensuite) : `rounding_account_from_chart` court-circuité en `None` →
+  `insert_with_defaults_designates_the_charts_rounding_account` **et**
+  `path_b_finalize_designates_the_charts_rounding_account` rouges.
+- Deux tests de la c3-a1 ont rougi, comme attendu : le no-op réémettait `None` (devenu un changement) et
+  `update_rounding_account_round_trip` affirmait un réglage vide après création. Les tests de mise à jour
+  réémettent désormais la valeur en place ; le second vérifie la désignation du `6940`.
+- Contrôle du PDF : la ligature « ﬀ » de « d'office » faisait rater un `grep` naïf — le paragraphe y est.
+- Gate E2E : 228 passed / 19 skipped / 8 failed — les 7 KF-029 (#97) et `sidebar-navigation.spec.ts:75`
+  (KF-046, #424, à la liste des échecs attendus).
 
 ### Completion Notes List
 
+- **Plans** : `6940`, `Expense`, parent `6`, quatre langues, `"roundingDifference": true`, dans `pme.json`
+  (85 entrées), `independant.json` (85) et `association.json` (82).
+- **Marqueur** : `ChartEntry.rounding_difference: bool` (`#[serde(default)]`, patron de `postable`) ;
+  `validate_chart` refuse deux marqueurs, un marqueur hors charge / produit, un marqueur non imputable (par
+  `is_postable`) ; `rounding_difference_number` est la seule recherche du marqueur.
+- **Désignation** : `rounding_account_from_chart`, partagé par les deux `insert_with_defaults*` (signatures
+  inchangées) — relit `companies.org_type`, `load_chart`, puis cherche le compte par numéro, **actif,
+  imputable, charge ou produit, `FOR UPDATE`**. Absent → `NULL`, jamais une erreur. `INSERT IGNORE` : une
+  société déjà réglée n'est pas touchée. Aucune migration, rien chez les sociétés existantes. Le numéro
+  `6940` n'apparaît que dans les JSON, les tests et les textes.
+- **Tests** (périmètre : `74c6cc05` → cette branche) : +5 `kesh-core`, +3 `kesh-db`, +1 `kesh-api`
+  (onboarding de bout en bout) ; `accounts_role_backfill.rs` passe **sans changement**, comme prévu.
+- **Textes** : `admin-manual.tex` — les plans livrés proposent `6940`, désigné d'office ; la phrase « n'est
+  encore lu par aucune écriture » reste. PDF régénéré, contrôlé aplati. CHANGELOG `[0.12.1]` : l'entrée
+  *Added* de la c3-a1 complétée. Manuel utilisateur : il ne dresse pas la liste des comptes des plans
+  (son paragraphe général est faux sur le nombre de plans : #488).
+
 ### File List
+
+- `CHANGELOG.md`
+- `crates/kesh-api/tests/fiscal_years_e2e.rs`
+- `crates/kesh-core/assets/charts/association.json`
+- `crates/kesh-core/assets/charts/independant.json`
+- `crates/kesh-core/assets/charts/pme.json`
+- `crates/kesh-core/src/chart_of_accounts/mod.rs`
+- `crates/kesh-db/src/repositories/accounts.rs`
+- `crates/kesh-db/src/repositories/company_invoice_settings.rs`
+- `crates/kesh-db/tests/company_invoice_settings_repository.rs`
+- `docs/manual/fr/admin-manual.pdf`
+- `docs/manual/fr/admin-manual.tex`
+- `_bmad-output/implementation-artifacts/25-4-c3-a2-compte-arrondi-plans.md`
+- `_bmad-output/implementation-artifacts/25-4-c3-a2-validate-prompt-p1.md`
+- `_bmad-output/implementation-artifacts/25-4-c3-a2-validate-prompt-p2.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
 
+- **2026-09-30** — Implémentée (`bmad-dev-story`). Gates **réellement exécutés** : backend complet sur base
+  remise à zéro **2530/2530** (4 ignorés), fmt, clippy ; frontend `check`, **839/839** ; **E2E 228 / 19 / 8**
+  (7 KF-029 + KF-046). Statut → `review`.
 - **2026-09-30** — Validation P2 **ciblée** (Haiku, prompt `25-4-c3-a2-validate-prompt-p2.md`) : **0 finding**,
   preuves jointes (`FOR UPDATE` des six recherches par rôle, `set_org_type` limité à l'étape 3, assertions
   d'`accounts_role_backfill.rs` dérivées de `load_chart`, `is_postable:340`, #488 ouverte). La remédiation ne
