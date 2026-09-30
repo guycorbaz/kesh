@@ -1,6 +1,6 @@
 # Story 25.4-c3-a2 : Le compte de différences d'arrondi dans les plans livrés
 
-Status: review
+Status: done
 
 **Issue : [#476]** — ⛔ la PR porte `refs #476` (la **25-4-c3-b** la fermera).
 
@@ -187,6 +187,7 @@ Claude Opus 5.5 (`claude-opus-5-5`).
 - `_bmad-output/implementation-artifacts/25-4-c3-a2-validate-prompt-p1.md`
 - `_bmad-output/implementation-artifacts/25-4-c3-a2-validate-prompt-p2.md`
 - `_bmad-output/implementation-artifacts/25-4-c3-a2-review-prompt-p1.md`
+- `_bmad-output/implementation-artifacts/25-4-c3-a2-review-prompt-p2.md`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
@@ -206,6 +207,14 @@ Claude Opus 5.5 (`claude-opus-5-5`).
   v0.1) ; `org_type` lu sans verrou (figé à l'étape 3 par l'onboarding) ; E2E limité au plan PME (les trois
   plans sont couverts au niveau du dépôt) ; test d'idempotence sur une autre valeur que `NULL`. Gate
   **complet** (`kesh-db` touché) : **2531/2531**.
+- **2026-09-30** — Revue de code P2 **ciblée** (Haiku, prompt `25-4-c3-a2-review-prompt-p2.md`, sur
+  `a1da814e`) : **0 finding**, quatre axes prouvés (les trois `6940` sans rôle, encodage d'`AccountType`
+  identique à la colonne, 4 `?` pour 4 `bind`, `tracing` dépendance de `kesh-db`, doc-comment fidèle).
+  **Revue close.** Gate complet au dernier commit : backend **2531/2531**, frontend inchangé (839/839),
+  **E2E 227 / 19 / 9** — 7 KF-029, KF-046 (`sidebar-navigation:75`) et `product-revenue-account.spec.ts:133`,
+  **vert rejoué seul deux fois** (pollution d'état, déjà observée à la 25-4-c2).
+
+  **Bilan de la revue** — P1 Sonnet ×3 : 4 MEDIUM corrigés, LOW triés → P2 Haiku ciblée : 0. Statut → `done`.
 - **2026-09-30** — Validation P2 **ciblée** (Haiku, prompt `25-4-c3-a2-validate-prompt-p2.md`) : **0 finding**,
   preuves jointes (`FOR UPDATE` des six recherches par rôle, `set_org_type` limité à l'étape 3, assertions
   d'`accounts_role_backfill.rs` dérivées de `load_chart`, `is_postable:340`, #488 ouverte). La remédiation ne
