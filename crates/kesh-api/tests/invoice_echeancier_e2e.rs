@@ -940,3 +940,384 @@ async fn due_dates_csv_has_amount_due_and_partial_status(pool: MySqlPool) {
     assert!(row.contains(";108.10;68.10;"), "ligne : {row}");
     assert!(row.contains("Partiellement payée"), "statut : {row}");
 }
+
+// --- Story 25-4-c3-b (#476) — le règlement manuel au centime ------------------
+
+/// `(company_id, admin_id)` relus en base — `seed_base` rend ses ids dans un
+/// ordre que les appelants historiques échangent sans conséquence (ids égaux).
+async fn ids(pool: &MySqlPool) -> (i64, i64) {
+    sqlx::query_as("SELECT company_id, id FROM users WHERE username = 'admin'")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Désigne un compte de différences d'arrondi (6940, charge). Rend son id.
+async fn designate_rounding(pool: &MySqlPool, company_id: i64) -> i64 {
+    let id = sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type) \
+         VALUES (?, '6940', 'Différences d''arrondi', 'Expense')",
+    )
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    sqlx::query(
+        "UPDATE company_invoice_settings SET default_rounding_account_id = ? WHERE company_id = ?",
+    )
+    .bind(id)
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .unwrap();
+    id
+}
+
+/// Une facture validée dont le reste brut porte quatre décimales :
+/// `unit_price` 9.2550 à 8.1 % → **10.0050** ; 9.2540 → **10.004** (la TVA seule
+/// est arrondie à deux décimales, `line_ttc_sql`).
+async fn raw_due_invoice(pool: &MySqlPool, unit_price: rust_decimal::Decimal) -> i64 {
+    let (company_id, admin_id) = ids(pool).await;
+    let contact_id = seed_contact(pool, company_id, admin_id).await;
+    let (id, _v) = create_validated_invoice(
+        pool,
+        company_id,
+        contact_id,
+        admin_id,
+        NaiveDate::from_ymd_opt(2026, 4, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2026, 4, 30).unwrap(),
+        unit_price,
+    )
+    .await;
+    id
+}
+
+async fn post_settle(
+    app: &TestApp,
+    token: &str,
+    id: i64,
+    caisse: i64,
+    amount: &str,
+) -> reqwest::Response {
+    app.client
+        .post(app.url(&format!("/api/v1/invoices/{id}/settlements")))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&json!({
+            "settlementType": "internal_account",
+            "accountId": caisse,
+            "amount": amount,
+            "settledOn": "2026-04-15"
+        }))
+        .send()
+        .await
+        .unwrap()
+}
+
+/// `(montant réglé, lignes (compte, débit, crédit))` des règlements d'une facture.
+async fn settlements_with_lines(
+    pool: &MySqlPool,
+    id: i64,
+) -> Vec<(
+    rust_decimal::Decimal,
+    Vec<(i64, rust_decimal::Decimal, rust_decimal::Decimal)>,
+)> {
+    let rows: Vec<(rust_decimal::Decimal, i64)> = sqlx::query_as(
+        "SELECT amount, journal_entry_id FROM invoice_settlements WHERE invoice_id = ? ORDER BY id",
+    )
+    .bind(id)
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    let mut out = Vec::new();
+    for (amount, entry) in rows {
+        let lines = sqlx::query_as(
+            "SELECT account_id, debit, credit FROM journal_entry_lines WHERE entry_id = ? \
+             ORDER BY line_order, id",
+        )
+        .bind(entry)
+        .fetch_all(pool)
+        .await
+        .unwrap();
+        out.push((amount, lines));
+    }
+    out
+}
+
+async fn receivable_id(pool: &MySqlPool, company_id: i64) -> i64 {
+    sqlx::query_scalar("SELECT id FROM accounts WHERE company_id = ? AND number = '1100'")
+        .bind(company_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+async fn paid(pool: &MySqlPool, id: i64) -> bool {
+    sqlx::query_scalar::<_, Option<chrono::NaiveDateTime>>(
+        "SELECT paid_at FROM invoices WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+    .is_some()
+}
+
+/// ⛔ **10.01 sur un reste brut de 10.0050 solde la facture** : réglé au brut,
+/// écart de 0.0050 au crédit du compte d'arrondi. Avant : trop-perçu refusé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn settle_a_centime_amount_on_a_half_centime_invoice(pool: MySqlPool) {
+    seed_base(&pool).await;
+    let (company_id, _) = ids(&pool).await;
+    let rounding = designate_rounding(&pool, company_id).await;
+    let id = raw_due_invoice(&pool, dec!(9.2550)).await;
+    let caisse = caisse_id(&pool, company_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+
+    let resp = post_settle(&app, &token, id, caisse, "10.01").await;
+    assert_eq!(resp.status(), 200);
+    let v: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(v["fullySettled"], true, "got {v:?}");
+    let receivable = receivable_id(&pool, company_id).await;
+    assert_eq!(
+        settlements_with_lines(&pool, id).await,
+        vec![(
+            dec!(10.0050),
+            vec![
+                (caisse, dec!(10.01), dec!(0)),
+                (receivable, dec!(0), dec!(10.0050)),
+                (rounding, dec!(0), dec!(0.0050)),
+            ]
+        )]
+    );
+    assert!(paid(&pool, id).await);
+}
+
+/// « 10.000 » sur un reste brut de 10.004 : un montant au centime (normalisé,
+/// pas refusé pour ses zéros), qui solde avec un écart de 0.004 au **débit**.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn settle_below_the_raw_due_debits_the_rounding_account(pool: MySqlPool) {
+    seed_base(&pool).await;
+    let (company_id, _) = ids(&pool).await;
+    let rounding = designate_rounding(&pool, company_id).await;
+    let id = raw_due_invoice(&pool, dec!(9.2540)).await;
+    let caisse = caisse_id(&pool, company_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+
+    let resp = post_settle(&app, &token, id, caisse, "10.000").await;
+    assert_eq!(resp.status(), 200, "« 10.000 » est au centime");
+    let receivable = receivable_id(&pool, company_id).await;
+    assert_eq!(
+        settlements_with_lines(&pool, id).await,
+        vec![(
+            dec!(10.004),
+            vec![
+                (caisse, dec!(10.00), dec!(0)),
+                (receivable, dec!(0), dec!(10.004)),
+                (rounding, dec!(0.004), dec!(0)),
+            ]
+        )]
+    );
+    assert!(paid(&pool, id).await);
+}
+
+/// ⛔ **10.008 est refusé pour ses décimales**, avec le code d'échelle : la garde
+/// d'avant le refusait déjà — en trop-perçu (`INVALID_INPUT`) — si bien qu'un
+/// test sur le seul statut 400 serait vert sans le patch. Et au niveau du dépôt,
+/// la double borne le refuse aussi (garde de mutation : borne `p > b` retirée).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_three_decimal_amount_is_refused_at_both_layers(pool: MySqlPool) {
+    seed_base(&pool).await;
+    let (company_id, admin_id) = ids(&pool).await;
+    designate_rounding(&pool, company_id).await;
+    let id = raw_due_invoice(&pool, dec!(9.2550)).await;
+    let caisse = caisse_id(&pool, company_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+
+    let resp = post_settle(&app, &token, id, caisse, "10.008").await;
+    assert_eq!(resp.status(), 400);
+    let v: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(v["error"]["code"], "VALIDATION_ERROR", "got {v:?}");
+    assert!(settlements_with_lines(&pool, id).await.is_empty());
+
+    let err = kesh_db::repositories::invoice_settlements_write::settle_invoice(
+        &pool,
+        admin_id,
+        company_id,
+        id,
+        kesh_db::entities::SettlementChoice::InternalAccount { account_id: caisse },
+        dec!(10.008),
+        NaiveDate::from_ymd_opt(2026, 4, 15).unwrap(),
+    )
+    .await
+    .expect_err("entre le brut et l'arrondi : trop-perçu, jamais un partiel");
+    assert!(
+        matches!(&err, kesh_db::errors::DbError::InvalidInput(m) if m.starts_with("overpayment")),
+        "got {err:?}"
+    );
+    assert!(settlements_with_lines(&pool, id).await.is_empty());
+    assert!(!paid(&pool, id).await);
+}
+
+/// Deux paiements, 5.00 puis 5.01, sur 10.0050 : le premier est un partiel à
+/// deux lignes, le second solde avec l'écart.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_second_of_two_payments_carries_the_rounding_line(pool: MySqlPool) {
+    seed_base(&pool).await;
+    let (company_id, _) = ids(&pool).await;
+    let rounding = designate_rounding(&pool, company_id).await;
+    let id = raw_due_invoice(&pool, dec!(9.2550)).await;
+    let caisse = caisse_id(&pool, company_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+
+    assert_eq!(
+        post_settle(&app, &token, id, caisse, "5.00").await.status(),
+        200
+    );
+    assert!(!paid(&pool, id).await, "partiel");
+    assert_eq!(
+        post_settle(&app, &token, id, caisse, "5.01").await.status(),
+        200
+    );
+    let receivable = receivable_id(&pool, company_id).await;
+    let s = settlements_with_lines(&pool, id).await;
+    assert_eq!(s.len(), 2);
+    assert_eq!(s[0].0, dec!(5.00));
+    assert_eq!(s[0].1.len(), 2, "le partiel n'a pas d'écart");
+    assert_eq!(
+        s[1],
+        (
+            dec!(5.0050),
+            vec![
+                (caisse, dec!(5.01), dec!(0)),
+                (receivable, dec!(0), dec!(5.0050)),
+                (rounding, dec!(0), dec!(0.0050)),
+            ]
+        )
+    );
+    assert!(paid(&pool, id).await);
+}
+
+/// ⛔ **Sans compte d'arrondi utilisable, 400 dédié et rien d'écrit** — réglage
+/// absent, puis compte archivé depuis sa désignation (#486). Un paiement SANS
+/// écart, lui, n'exige rien.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_rounding_gap_without_a_usable_account_is_a_dedicated_400(pool: MySqlPool) {
+    seed_base(&pool).await;
+    let (company_id, _) = ids(&pool).await;
+    let id = raw_due_invoice(&pool, dec!(9.2550)).await;
+    let caisse = caisse_id(&pool, company_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+
+    let resp = post_settle(&app, &token, id, caisse, "10.01").await;
+    assert_eq!(resp.status(), 400);
+    let v: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(
+        v["error"]["code"], "ROUNDING_ACCOUNT_NOT_CONFIGURED",
+        "got {v:?}"
+    );
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Paramètres"),
+        "le message dit où agir, got {v:?}"
+    );
+    assert!(settlements_with_lines(&pool, id).await.is_empty());
+
+    let rounding = designate_rounding(&pool, company_id).await;
+    sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
+        .bind(rounding)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let resp = post_settle(&app, &token, id, caisse, "10.01").await;
+    assert_eq!(resp.status(), 400);
+    let v: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(v["error"]["code"], "ROUNDING_ACCOUNT_NOT_CONFIGURED");
+    assert!(settlements_with_lines(&pool, id).await.is_empty());
+
+    // Sans écart, rien n'est exigé : un partiel passe.
+    assert_eq!(
+        post_settle(&app, &token, id, caisse, "5.00").await.status(),
+        200
+    );
+}
+
+/// ⛔ **Annuler un règlement à trois lignes les contre-passe toutes** et rend le
+/// reste brut d'avant ; si le compte d'arrondi a été archivé entre-temps, le
+/// refus NOMME le compte à réactiver (`archived_accounts_in_tx`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn cancelling_a_three_line_settlement_reverses_the_rounding_line(pool: MySqlPool) {
+    seed_base(&pool).await;
+    let (company_id, _) = ids(&pool).await;
+    let rounding = designate_rounding(&pool, company_id).await;
+    let id = raw_due_invoice(&pool, dec!(9.2550)).await;
+    let caisse = caisse_id(&pool, company_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    assert_eq!(
+        post_settle(&app, &token, id, caisse, "10.01")
+            .await
+            .status(),
+        200
+    );
+    let sid: i64 = sqlx::query_scalar("SELECT id FROM invoice_settlements WHERE invoice_id = ?")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
+        .bind(rounding)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let resp = post_cancel(&app, &token, id, sid).await;
+    assert_eq!(resp.status(), 400);
+    let v: serde_json::Value = resp.json().await.unwrap();
+    assert!(
+        v.to_string().contains("6940"),
+        "le refus nomme le compte d'arrondi à réactiver, got {v:?}"
+    );
+
+    sqlx::query("UPDATE accounts SET active = TRUE WHERE id = ?")
+        .bind(rounding)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let resp = post_cancel(&app, &token, id, sid).await;
+    assert_eq!(resp.status(), 200);
+    let v: serde_json::Value = resp.json().await.unwrap();
+    let reversal = v["reversalJournalEntryId"].as_i64().unwrap();
+    let receivable = receivable_id(&pool, company_id).await;
+    let lines: Vec<(i64, rust_decimal::Decimal, rust_decimal::Decimal)> = sqlx::query_as(
+        "SELECT account_id, debit, credit FROM journal_entry_lines WHERE entry_id = ? \
+         ORDER BY line_order, id",
+    )
+    .bind(reversal)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        lines,
+        vec![
+            (caisse, dec!(0), dec!(10.01)),
+            (receivable, dec!(10.0050), dec!(0)),
+            (rounding, dec!(0.0050), dec!(0)),
+        ]
+    );
+    assert_eq!(
+        v["invoice"]["amountDue"]
+            .as_str()
+            .map(|s| s.parse::<rust_decimal::Decimal>().unwrap()),
+        Some(dec!(10.0050)),
+        "le reste brut d'avant, got {v:?}"
+    );
+    assert!(v["invoice"]["paidAt"].is_null());
+}

@@ -297,6 +297,48 @@ async fn rounding_account_from_chart(
     .map_err(map_db_error)
 }
 
+/// Le compte de différences d'arrondi, **au moment d'écrire** un écart
+/// (Story 25-4-c3-b, AC 4).
+///
+/// Lit le réglage (`default_rounding_account_id`, c3-a1) et revérifie le compte :
+/// **de la société, actif, imputable, charge ou produit** — les exigences de la
+/// validation du réglage (`validate_account_of`, `kesh-api`). Le compte a pu être
+/// archivé depuis sa désignation (#486) : c'est ici, et non à l'enregistrement du
+/// réglage, que l'écriture est protégée.
+///
+/// `FOR UPDATE` sur le compte, comme le compte interne du règlement manuel : une
+/// désactivation concurrente attend la fin de l'écriture au lieu de la précéder.
+///
+/// Absent ou invalide → [`DbError::RoundingAccountNotConfigured`]. ⛔ Jamais de
+/// repli sur un compte déduit (produit par défaut, charges diverses).
+pub async fn rounding_account_for_write(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+) -> Result<i64, DbError> {
+    let designated: Option<Option<i64>> = sqlx::query_scalar(
+        "SELECT default_rounding_account_id FROM company_invoice_settings WHERE company_id = ?",
+    )
+    .bind(company_id)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(map_db_error)?;
+    let Some(account_id) = designated.flatten() else {
+        return Err(DbError::RoundingAccountNotConfigured);
+    };
+    sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM accounts WHERE id = ? AND company_id = ? AND active = TRUE \
+         AND postable = TRUE AND account_type IN (?, ?) FOR UPDATE",
+    )
+    .bind(account_id)
+    .bind(company_id)
+    .bind(AccountType::Expense)
+    .bind(AccountType::Revenue)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(map_db_error)?
+    .ok_or(DbError::RoundingAccountNotConfigured)
+}
+
 /// Creates company_invoice_settings with auto-prefill of default accounts resolved
 /// by role (`Receivable`, `DefaultRevenue`, `Payable` — Story 14-3b : no longer by
 /// hardcoded account number). Called during onboarding finalization (after chart of

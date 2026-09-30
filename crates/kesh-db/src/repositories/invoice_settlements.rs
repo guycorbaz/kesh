@@ -18,7 +18,7 @@ use sqlx::MySqlPool;
 const COLUMNS: &str = "id, company_id, invoice_id, journal_entry_id, amount, settled_on, \
      settlement_type, settlement_bank_account_id, settlement_account_id, created_at";
 
-use crate::entities::{InvoiceSettlement, NewInvoiceSettlement};
+use crate::entities::{InvoiceSettlement, NewInvoiceSettlement, NewJournalEntryLine};
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::invoices::line_ttc_sql;
 
@@ -107,6 +107,119 @@ pub const INVOICE_AMOUNT_DUE_DERIVED_SQL: &str =
 
 /// Le **total réglé** d'une ligne, sur les tables de [`amount_due_derived_joins`].
 pub const INVOICE_AMOUNT_SETTLED_DERIVED_SQL: &str = "COALESCE(st.settled, 0)";
+
+// ---------------------------------------------------------------------------
+// Story 25-4-c3-b (#476) — le reste dû au centime, et l'écart d'arrondi
+// ---------------------------------------------------------------------------
+
+/// Le reste dû **au centime** — la seule définition (AC 1).
+///
+/// `line_total` porte quatre décimales, la TVA seule est arrondie à deux : le
+/// reste dû calculé ([`amount_due`], [`INVOICE_AMOUNT_DUE_DERIVED_SQL`]) peut
+/// valoir 10.0050, alors que la QR, les rappels et le dialogue réclament 10.01.
+/// Toute comparaison d'un paiement au reste dû, et tout affichage de ce reste,
+/// passe par ici.
+///
+/// ⛔ Le reste dû **calculé** n'est jamais arrondi : seules les comparaisons et
+/// l'affichage le sont. Et la stratégie n'est pas recopiée : c'est celle de
+/// [`kesh_core::types::Money::round_to_centimes`] (`MidpointAwayFromZero`).
+pub fn amount_due_to_centime(raw: Decimal) -> Decimal {
+    kesh_core::types::Money::new(raw)
+        .round_to_centimes()
+        .amount()
+}
+
+/// Ce que devient un paiement face au reste dû **brut** (AC 3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaymentAgainstDue {
+    /// Règlement au montant payé, deux lignes : partiel, ou solde exact quand le
+    /// paiement égale le reste brut.
+    Ordinary,
+    /// Le paiement égale le reste **arrondi**, qui diffère du brut : le règlement
+    /// s'enregistre au **brut** — le reste dû tombe à zéro exactement — et
+    /// `paid − raw_due` passe en troisième ligne, sur le compte de différences
+    /// d'arrondi.
+    SettlesWithRounding { raw_due: Decimal },
+    /// Trop-perçu : refusé, jamais écrit.
+    Overpayment,
+}
+
+/// Classe un paiement contre le reste dû brut (AC 3), dans cet ordre :
+///
+/// 1. `paid == arrondi` et `arrondi != brut` → [`PaymentAgainstDue::SettlesWithRounding`],
+///    y compris quand l'arrondi est **inférieur** au brut (10.00 sur 10.004) ;
+/// 2. `paid > brut` → [`PaymentAgainstDue::Overpayment`] ;
+/// 3. sinon → [`PaymentAgainstDue::Ordinary`].
+///
+/// ⛔ **Les deux bornes.** Comparer à l'arrondi seul laissait un paiement
+/// **strictement entre** le brut et l'arrondi (10.008 sur 10.0050) passer en
+/// partiel : le reste dû devenait négatif, `paid_at` se posait sans écart, et la
+/// créance restait créditrice (validation P1 de la story, F1).
+///
+/// Un reste brut nul ou négatif, ou inférieur au demi-centime (arrondi nul),
+/// refuse tout paiement positif en trop-perçu — limite connue, #490.
+pub fn classify_payment(paid: Decimal, raw_due: Decimal) -> PaymentAgainstDue {
+    let rounded = amount_due_to_centime(raw_due);
+    if paid == rounded && rounded != raw_due {
+        PaymentAgainstDue::SettlesWithRounding { raw_due }
+    } else if paid > raw_due {
+        PaymentAgainstDue::Overpayment
+    } else {
+        PaymentAgainstDue::Ordinary
+    }
+}
+
+/// Les lignes de l'écriture d'un règlement (AC 3) : débit de la contrepartie du
+/// montant **payé**, crédit de la créance du montant **réglé**, et — s'ils
+/// diffèrent — l'écart sur `rounding_account_id` : au **crédit** si le paiement
+/// dépasse le réglé, au **débit** sinon. Équilibrée par construction, sans ligne
+/// à zéro (`chk_jel_debit_credit_exclusive`).
+///
+/// Un écart sans compte d'arrondi est une erreur de l'appelant
+/// ([`DbError::Invariant`]) : c'est à lui d'avoir obtenu le compte, ou refusé.
+pub fn settlement_journal_lines(
+    counterparty_account_id: i64,
+    receivable_account_id: i64,
+    paid: Decimal,
+    settled: Decimal,
+    rounding_account_id: Option<i64>,
+) -> Result<Vec<NewJournalEntryLine>, DbError> {
+    let mut lines = vec![
+        NewJournalEntryLine {
+            account_id: counterparty_account_id,
+            debit: paid,
+            credit: Decimal::ZERO,
+            project_id: None,
+        },
+        NewJournalEntryLine {
+            account_id: receivable_account_id,
+            debit: Decimal::ZERO,
+            credit: settled,
+            project_id: None,
+        },
+    ];
+    let gap = paid - settled;
+    if !gap.is_zero() {
+        let account_id = rounding_account_id.ok_or_else(|| {
+            DbError::Invariant("écart d'arrondi sans compte de différences d'arrondi".into())
+        })?;
+        lines.push(NewJournalEntryLine {
+            account_id,
+            debit: if gap < Decimal::ZERO {
+                -gap
+            } else {
+                Decimal::ZERO
+            },
+            credit: if gap > Decimal::ZERO {
+                gap
+            } else {
+                Decimal::ZERO
+            },
+            project_id: None,
+        });
+    }
+    Ok(lines)
+}
 
 /// Enregistre un règlement dans la transaction courante.
 ///
@@ -238,4 +351,80 @@ pub async fn list_all_by_company(
     .fetch_all(pool)
     .await
     .map_err(map_db_error)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_decimal_macros::dec;
+
+    #[test]
+    fn le_reste_au_centime_arrondit_le_demi_centime_loin_de_zero() {
+        assert_eq!(amount_due_to_centime(dec!(10.0050)), dec!(10.01));
+        assert_eq!(amount_due_to_centime(dec!(10.004)), dec!(10.00));
+        assert_eq!(amount_due_to_centime(dec!(-10.0050)), dec!(-10.01));
+        assert_eq!(amount_due_to_centime(dec!(68.1000)), dec!(68.10));
+    }
+
+    #[test]
+    fn classification_a_double_borne() {
+        use PaymentAgainstDue::*;
+        // Solde avec écart, arrondi au-dessus puis au-dessous du brut.
+        assert_eq!(
+            classify_payment(dec!(10.01), dec!(10.0050)),
+            SettlesWithRounding {
+                raw_due: dec!(10.0050)
+            }
+        );
+        assert_eq!(
+            classify_payment(dec!(10.00), dec!(10.004)),
+            SettlesWithRounding {
+                raw_due: dec!(10.004)
+            }
+        );
+        // ⛔ Entre le brut et l'arrondi : trop-perçu, jamais un partiel.
+        assert_eq!(classify_payment(dec!(10.008), dec!(10.0050)), Overpayment);
+        assert_eq!(classify_payment(dec!(10.02), dec!(10.0050)), Overpayment);
+        // Ordinaire : partiel, solde exact, reste déjà au centime.
+        assert_eq!(classify_payment(dec!(5.00), dec!(10.0050)), Ordinary);
+        assert_eq!(classify_payment(dec!(10.00), dec!(10.0000)), Ordinary);
+        assert_eq!(classify_payment(dec!(10.01), dec!(10.00)), Overpayment);
+        // Reste nul, négatif ou sous le demi-centime (#490) : tout est trop-perçu.
+        assert_eq!(classify_payment(dec!(0.01), dec!(0)), Overpayment);
+        assert_eq!(classify_payment(dec!(0.01), dec!(-0.004)), Overpayment);
+        assert_eq!(classify_payment(dec!(0.01), dec!(0.004)), Overpayment);
+    }
+
+    #[test]
+    fn lignes_ecart_au_credit_ou_au_debit() {
+        let l = settlement_journal_lines(1, 2, dec!(10.01), dec!(10.0050), Some(3)).unwrap();
+        assert_eq!(l.len(), 3);
+        assert_eq!((l[0].account_id, l[0].debit), (1, dec!(10.01)));
+        assert_eq!((l[1].account_id, l[1].credit), (2, dec!(10.0050)));
+        assert_eq!(
+            (l[2].account_id, l[2].debit, l[2].credit),
+            (3, dec!(0), dec!(0.0050))
+        );
+
+        let l = settlement_journal_lines(1, 2, dec!(10.00), dec!(10.004), Some(3)).unwrap();
+        assert_eq!(
+            (l[2].account_id, l[2].debit, l[2].credit),
+            (3, dec!(0.004), dec!(0))
+        );
+        let debit: Decimal = l.iter().map(|x| x.debit).sum();
+        let credit: Decimal = l.iter().map(|x| x.credit).sum();
+        assert_eq!(debit, credit, "écriture équilibrée");
+
+        let l = settlement_journal_lines(1, 2, dec!(5), dec!(5), None).unwrap();
+        assert_eq!(
+            l.len(),
+            2,
+            "sans écart, deux lignes et aucun compte d'arrondi requis"
+        );
+
+        assert!(matches!(
+            settlement_journal_lines(1, 2, dec!(10.01), dec!(10.0050), None),
+            Err(DbError::Invariant(_))
+        ));
+    }
 }

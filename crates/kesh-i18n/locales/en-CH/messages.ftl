@@ -272,6 +272,7 @@ journal-od = Miscellaneous
 journal-entry-saved = Entry saved
 error-fiscal-year-closed-generic = The fiscal year is closed — no entries can be added or modified (Swiss CO art. 957-964).
 error-inactive-accounts = One or more accounts are archived or invalid.
+error-rounding-account-not-configured = This payment settles the invoice to the centime, but no usable rounding-difference account is designated: choose one in Settings → Invoicing.
 
 # Per-line revenue account (Story 16-1a, #152)
 invoice-line-account-subject-line = Line { $line }
@@ -722,6 +723,7 @@ invoice-error-settled-on-required = Settlement date required
 invoice-error-settled-on-before-invoice-date = The settlement date cannot precede the invoice date
 invoice-error-amount-positive = The amount must be greater than zero
 invoice-error-amount-over-due = The amount exceeds what remains due on this invoice
+invoice-error-amount-scale = The amount cannot have more than two decimal places
 invoice-error-bank-account-required = Choose a bank account
 invoice-error-account-required = Choose an account
 

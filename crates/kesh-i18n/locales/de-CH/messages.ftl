@@ -272,6 +272,7 @@ journal-od = Diverse Operationen
 journal-entry-saved = Buchung gespeichert
 error-fiscal-year-closed-generic = Das Geschäftsjahr ist abgeschlossen — keine Buchungen können hinzugefügt oder geändert werden (OR Art. 957-964).
 error-inactive-accounts = Ein oder mehrere Konten sind archiviert oder ungültig.
+error-rounding-account-not-configured = Diese Zahlung begleicht die Rechnung auf den Rappen genau, aber es ist kein verwendbares Konto für Rundungsdifferenzen festgelegt: Wählen Sie eines unter Einstellungen → Fakturierung.
 
 # Ertragskonto pro Rechnungsposition (Story 16-1a, #152)
 invoice-line-account-subject-line = Position { $line }
@@ -722,6 +723,7 @@ invoice-error-settled-on-required = Zahlungsdatum erforderlich
 invoice-error-settled-on-before-invoice-date = Das Zahlungsdatum darf nicht vor dem Rechnungsdatum liegen
 invoice-error-amount-positive = Der Betrag muss grösser als null sein
 invoice-error-amount-over-due = Der Betrag übersteigt den offenen Saldo dieser Rechnung
+invoice-error-amount-scale = Der Betrag darf höchstens zwei Dezimalstellen haben
 invoice-error-bank-account-required = Wählen Sie ein Bankkonto
 invoice-error-account-required = Wählen Sie ein Konto
 

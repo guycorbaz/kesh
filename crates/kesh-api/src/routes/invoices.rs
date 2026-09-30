@@ -1161,6 +1161,16 @@ impl SettleInvoiceRequest {
                 )));
             }
         };
+        // Story 25-4-c3-b (AC 3) : un paiement se fait au centime. Sans ce refus,
+        // un montant à trois décimales pouvait tomber entre le reste brut et son
+        // arrondi. `normalize()` d'abord : « 10.000 » est un montant au centime, et
+        // `scale_within` lit l'échelle, pas la valeur. Le montant est rendu TEL
+        // QUE REÇU — `normalize()` n'est qu'un contrôle.
+        if !scale_within(&self.amount.normalize(), 2) {
+            return Err(AppError::Validation(
+                "Le montant d'un règlement ne peut avoir plus de 2 décimales.".into(),
+            ));
+        }
         Ok((choice, self.amount, self.settled_on))
     }
 }

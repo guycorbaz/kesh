@@ -272,6 +272,7 @@ journal-od = Operazioni diverse
 journal-entry-saved = Scrittura salvata
 error-fiscal-year-closed-generic = L'esercizio contabile è chiuso — nessuna scrittura può essere aggiunta o modificata (CO art. 957-964).
 error-inactive-accounts = Uno o più conti sono archiviati o non validi.
+error-rounding-account-not-configured = Questo pagamento salda la fattura al centesimo, ma non è designato alcun conto utilizzabile per le differenze di arrotondamento: sceglierne uno in Impostazioni → Fatturazione.
 
 # Conto di ricavo per riga di fattura (Story 16-1a, #152)
 invoice-line-account-subject-line = Riga { $line }
@@ -722,6 +723,7 @@ invoice-error-settled-on-required = Data del pagamento obbligatoria
 invoice-error-settled-on-before-invoice-date = La data del pagamento non può precedere la data della fattura
 invoice-error-amount-positive = L'importo deve essere superiore a zero
 invoice-error-amount-over-due = L'importo supera il saldo dovuto su questa fattura
+invoice-error-amount-scale = L'importo non può avere più di due decimali
 invoice-error-bank-account-required = Scegliete un conto bancario
 invoice-error-account-required = Scegliete un conto
 

@@ -1,6 +1,6 @@
 # Story 25.4-c3-b : L'arrondi au centime, et l'écart passé en écriture
 
-Status: ready-for-dev
+Status: review
 
 **Issue : [#476]** — ⛔ la PR porte `closes #476`, titre ET corps (§ *Issue Tracking Rule*).
 
@@ -141,14 +141,14 @@ centime et la troisième ligne. PDF régénérés, contrôlés aplatis (attentio
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — le helper** (AC 1) : `invoice_settlements`, `reminder_amount_due` rebranché.
-- [ ] **T2 — le rapprochement** (AC 2, 3, 4) : triplet, re-score, affichage, garde, solde et troisième ligne.
-- [ ] **T3 — le règlement manuel** (AC 3, 4, 5) : garde, solde, troisième ligne, code d'erreur.
-- [ ] **T4 — le dialogue et l'i18n** (AC 5).
-- [ ] **T5 — l'annulation** (AC 6).
-- [ ] **T6 — tests et mutations** (AC 7).
-- [ ] **T7 — textes** (AC 8).
-- [ ] **T8 — gates** : backend complet (base remise à zéro ; ⛔ `kesh-db` touché ⇒ gate complet même en
+- [x] **T1 — le helper** (AC 1) : `invoice_settlements`, `reminder_amount_due` rebranché.
+- [x] **T2 — le rapprochement** (AC 2, 3, 4) : triplet, re-score, affichage, garde, solde et troisième ligne.
+- [x] **T3 — le règlement manuel** (AC 3, 4, 5) : garde, solde, troisième ligne, code d'erreur.
+- [x] **T4 — le dialogue et l'i18n** (AC 5).
+- [x] **T5 — l'annulation** (AC 6).
+- [x] **T6 — tests et mutations** (AC 7).
+- [x] **T7 — textes** (AC 8).
+- [x] **T8 — gates** : backend complet (base remise à zéro ; ⛔ `kesh-db` touché ⇒ gate complet même en
   cours de boucle), frontend complet, **E2E complet**.
 
 ## Dev Notes
@@ -218,11 +218,73 @@ cette story. Un reste brut négatif ou nul reste inchangé (tout paiement `p > 0
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`).
+
 ### Debug Log References
+
+- Clippy `explicit_auto_deref` sur l'appel de `rounding_account_for_write` au rapprochement (`&mut **tx` → `tx`),
+  au premier gate complet.
+- Mutation M1 d'abord **jouée à vide** : le remplacement, sans `assert`, ne trouvait plus la ligne après
+  `cargo fmt`. Rejouée avec contrôle (regex + `assert n == 1`).
 
 ### Completion Notes List
 
+- **Le cœur, une seule fois** (`invoice_settlements.rs`) : `amount_due_to_centime` (sur
+  `Money::round_to_centimes`), `classify_payment` (double borne, trois cas dans l'ordre de l'AC 3) et
+  `settlement_journal_lines` (deux ou trois lignes, écart au crédit ou au débit). Rapprochement et règlement
+  manuel les appellent tous deux ; `reminder_amount_due` appelle le helper.
+- **Le compte d'arrondi au moment d'écrire** : `company_invoice_settings::rounding_account_for_write`
+  (réglage + compte actif, imputable, charge ou produit, de la société, `FOR UPDATE`), appelé **seulement**
+  quand la classification produit un écart. Variante dédiée `DbError::RoundingAccountNotConfigured` →
+  400 `ROUNDING_ACCOUNT_NOT_CONFIGURED` (message qui renvoie à *Paramètres → Facturation*) ; au rapprochement,
+  `FailedProposal` du même code.
+- **Échelle** : `SettleInvoiceRequest::into_parts` refuse `scale_within(&amount.normalize(), 2)` en
+  `VALIDATION_ERROR` ; le montant est rendu tel que reçu.
+- **Audits** : `settled_amount` est désormais le montant **réglé** ; `paid_amount` et `rounding_difference`
+  s'y ajoutent (règlement manuel, `reconciliation.accepted`, `invoice.paid`/`partially_settled`).
+- **Dialogue** : `dueToCentime` (big.js `toFixed(2)`, `roundHalfUp`) pour le pré-remplissage et la
+  comparaison ; `centimesDigits` compte les décimales sur `new Big(saisie).toFixed()` ; la saisie envoyée est
+  nettoyée (`trim`). Clé `invoice-error-amount-scale` (4 locales, exemption #30 comme ses voisines),
+  `sitesTotal` 1756 → 1757 recompté (`SettleInvoiceDialog.svelte` 18 → 19 `i18nMsg(`).
+- **AC 6** : aucun code — `reverse_in_tx` retourne toutes les lignes, `archived_accounts_in_tx` nomme le compte
+  d'arrondi archivé ; doc-comment de la réouverture mis à jour (il disait encore que l'encaissement ne bumpait
+  `version` qu'au solde, faux depuis la 25-4-c2).
+- **Tests** (périmètre : ce commit contre `e44b2b1a`…`262100d2`, la branche avant dev) : **13** Rust neufs
+  (3 unitaires dans `invoice_settlements.rs`, 4 dans `reconciliation_e2e.rs`, 6 dans
+  `invoice_echeancier_e2e.rs`) et **6** Vitest (`SettleInvoiceDialog.test.ts`, fichier neuf) — recomptés par
+  `git diff | grep -cE '^\+\s*#\[(sqlx::)?test'` et `grep -c "it("`.
+- **Mutations**, chacune tuée : M1 helper court-circuité (8 tests rouges) ; M2 troisième ligne retirée (6) ;
+  M3 borne `p > b` retirée (1 — le test d'échelle, volet dépôt) ; M4 refus d'échelle serveur retiré (1) ;
+  F1 dialogue comparé au brut (1) ; F2 contrôle d'échelle client retiré (2) ; F3 décimales comptées sur la
+  saisie brute (2).
+- **Gates** : backend complet sur base remise à zéro, `scripts/test-fast.sh` (fmt + clippy + nextest) —
+  **2544/2544** ; frontend complet — check 0 erreur, lint i18n PASS, **845/845** Vitest, build ; **E2E
+  complet** sur `kesh_e2e` reconstruite, 18:26 UTC (KF-045 hors fenêtre) — **227 passés, 19 ignorés,
+  9 échecs**, tous expliqués : les 7 KF-029, et `product-revenue-account:133` + `products:185`, pollution
+  d'état entre specs produits (rejoués seuls : un rouge au premier passage, les deux verts au second).
+
 ### File List
+
+- `crates/kesh-db/src/errors.rs`
+- `crates/kesh-db/src/repositories/invoice_settlements.rs`
+- `crates/kesh-db/src/repositories/invoice_settlements_write.rs`
+- `crates/kesh-db/src/repositories/company_invoice_settings.rs`
+- `crates/kesh-db/src/repositories/reconciliation.rs`
+- `crates/kesh-api/src/errors.rs`
+- `crates/kesh-api/src/routes/invoices.rs`
+- `crates/kesh-api/src/routes/invoice_pdf_service.rs`
+- `crates/kesh-api/src/routes/reconciliation.rs`
+- `crates/kesh-api/tests/reconciliation_e2e.rs`
+- `crates/kesh-api/tests/invoice_echeancier_e2e.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `frontend/src/lib/features/invoices/SettleInvoiceDialog.svelte`
+- `frontend/src/lib/features/invoices/SettleInvoiceDialog.test.ts` (neuf)
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/scripts/lint-i18n-ownership.js`
+- `docs/manual/fr/admin-manual.tex` + `.pdf`
+- `docs/manual/fr/user-manual.tex` + `.pdf`
+- `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
 
@@ -256,6 +318,10 @@ cette story. Un reste brut négatif ou nul reste inchangé (tout paiement `p > 0
   → refus » est la condition exacte du refus, `p == r` relevant du cas 1. **Boucle close** : trend
   1 HIGH/1 MED/2 LOW → 3 MED (orchestrateur ; 2 réfutés à la lentille) → 3 MED/1 LOW → 0 ; lentilles
   Sonnet → Haiku → Sonnet → Haiku ; P3 et P4 ciblées ; aucune remédiation ne touche de code.
+- **2026-09-30** — Implémentée (T1–T8) : cœur partagé (`amount_due_to_centime`, `classify_payment`,
+  `settlement_journal_lines`), compte d'arrondi revérifié au moment d'écrire, code dédié, refus d'échelle,
+  dialogue au centime ; 13 tests Rust et 6 Vitest neufs, 7 mutations tuées ; gates backend 2544/2544,
+  frontend 845/845, E2E 227/19/9 expliqués.
 
 [#476]: https://github.com/guycorbaz/kesh/issues/476
 [#490]: https://github.com/guycorbaz/kesh/issues/490

@@ -17,15 +17,16 @@ use rust_decimal::Decimal;
 use sqlx::MySqlPool;
 
 use crate::entities::NewAuditLogEntry;
-use crate::entities::{
-    Journal, NewInvoiceSettlement, NewJournalEntry, NewJournalEntryLine, SettlementChoice,
-};
+use crate::entities::{Journal, NewInvoiceSettlement, NewJournalEntry, SettlementChoice};
 use crate::errors::{DbError, SettlementCancelBlocker, map_db_error};
+use crate::repositories::invoice_settlements::PaymentAgainstDue;
 use crate::repositories::journal_entries::ReversalAuthority;
 use crate::repositories::settlement_cancellation::{
     SettlementCancelHit, settlement_entry_cancel_blocker,
 };
-use crate::repositories::{audit_log, fiscal_years, invoice_settlements, journal_entries};
+use crate::repositories::{
+    audit_log, company_invoice_settings, fiscal_years, invoice_settlements, journal_entries,
+};
 
 /// Ce que rend un règlement enregistré : l'écriture créée, et le résiduel après.
 #[derive(Debug, Clone)]
@@ -162,20 +163,37 @@ pub async fn settle_invoice(
         }
     };
 
-    // (4) ⛔ Le trop-perçu est refusé AVANT toute écriture.
+    // (4) ⛔ Le trop-perçu est refusé AVANT toute écriture — à DOUBLE BORNE
+    //     (Story 25-4-c3-b, AC 3) : un paiement égal au reste arrondi au centime
+    //     solde la facture, l'écart passant en écriture ; au-delà du brut, tout le
+    //     reste est un trop-perçu, y compris entre le brut et l'arrondi.
     let due_before = invoice_settlements::amount_due(&mut *tx, invoice_id).await?;
-    if amount > due_before {
-        return Err(DbError::InvalidInput(format!(
-            "overpayment: amountDue={due_before}, amount={amount}"
-        )));
-    }
+    let (settled_amount, rounding_account_id) =
+        match invoice_settlements::classify_payment(amount, due_before) {
+            PaymentAgainstDue::Overpayment => {
+                return Err(DbError::InvalidInput(format!(
+                    "overpayment: amountDue={due_before}, amount={amount}"
+                )));
+            }
+            PaymentAgainstDue::Ordinary => (amount, None),
+            // (4bis) Le compte d'arrondi n'est exigé QUE s'il y a un écart, et il
+            //        est revérifié ici, au moment d'écrire (AC 4).
+            PaymentAgainstDue::SettlesWithRounding { raw_due } => (
+                raw_due,
+                Some(
+                    company_invoice_settings::rounding_account_for_write(&mut tx, company_id)
+                        .await?,
+                ),
+            ),
+        };
 
     // (5) Exercice OUVERT couvrant la date de règlement.
     let fy = fiscal_years::find_open_covering_date(&mut tx, company_id, settled_on)
         .await?
         .ok_or(DbError::FiscalYearInvalid)?;
 
-    // (6) `D contrepartie / C créance`.
+    // (6) `D contrepartie (payé) / C créance (réglé)`, plus l'écart d'arrondi
+    //     s'il y en a un.
     let label = invoice_number.unwrap_or_else(|| invoice_id.to_string());
     let journal = match choice {
         SettlementChoice::BankTransfer { .. } => Journal::Banque,
@@ -194,34 +212,28 @@ pub async fn settle_invoice(
             journal,
             description: format!("Règlement facture {label}"),
             project_id,
-            lines: vec![
-                NewJournalEntryLine {
-                    account_id: counterparty_account_id,
-                    debit: amount,
-                    credit: Decimal::ZERO,
-                    project_id: None,
-                },
-                NewJournalEntryLine {
-                    account_id: receivable_account_id,
-                    debit: Decimal::ZERO,
-                    credit: amount,
-                    project_id: None,
-                },
-            ],
+            lines: invoice_settlements::settlement_journal_lines(
+                counterparty_account_id,
+                receivable_account_id,
+                amount,
+                settled_amount,
+                rounding_account_id,
+            )?,
         },
         // Flux automatique : garde de postabilité désactivée (14-3b, D-A0).
         false,
     )
     .await?;
 
-    // (7) La liaison.
+    // (7) La liaison — au montant RÉGLÉ : le reste brut quand le paiement solde
+    //     avec un écart, sans quoi le reste dû resterait à ±0.0050.
     invoice_settlements::create_in_tx(
         &mut tx,
         NewInvoiceSettlement {
             company_id,
             invoice_id,
             journal_entry_id: je.entry.id,
-            amount,
+            amount: settled_amount,
             settled_on,
             choice,
         },
@@ -285,7 +297,9 @@ pub async fn settle_invoice(
                 "paid_via": "manual_settlement",
                 "settlement_type": choice.type_str(),
                 "settlement_journal_entry_id": je.entry.id,
-                "settled_amount": amount,
+                "settled_amount": settled_amount,
+                "paid_amount": amount,
+                "rounding_difference": amount - settled_amount,
                 "settled_on": settled_on,
                 "amount_due_after": due_after,
                 "fully_settled": fully_settled,
@@ -480,8 +494,14 @@ pub async fn cancel_settlement_in_tx(
     //     le résiduel redevient positif, et seulement alors. Un résiduel resté
     //     ≤ 0 le laisse intact — branche défensive, que l'application ne
     //     produit pas (trop-perçu refusé ; facture créditée arrêtée au rang 1).
-    //     ⚠️ `version` et `updated_at` bougent **toujours** : l'encaissement ne
-    //     les bumpe qu'au solde, mais une annulation change toujours l'état.
+    //     ⚠️ `version` et `updated_at` bougent **toujours** : une annulation
+    //     change toujours le reste dû (invariant de la Story 25-4-c2).
+    //
+    //     La comparaison reste au **brut**, et elle est juste (Story 25-4-c3-b,
+    //     AC 6) : un règlement soldé avec écart a été enregistré au reste brut,
+    //     son retrait rend donc exactement le reste brut d'avant — et la
+    //     contre-passation de l'étape (4) retourne ses trois lignes, écart
+    //     compris.
     let due_after = invoice_settlements::amount_due(&mut **tx, invoice_id).await?;
     let sql = if due_after > Decimal::ZERO {
         "UPDATE invoices SET paid_at = NULL, version = version + 1, updated_at = NOW(3) \
