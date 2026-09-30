@@ -264,18 +264,27 @@ pub async fn update_invoice_settings(
     // Compte de différences d'arrondi (Story 25-4-c3-a1) : un écart d'arrondi est
     // un résultat, dans un sens ou dans l'autre — charge ou produit, imputable.
     // Absent du corps : la valeur en place est préservée.
+    //
+    // ⚠️ Validé **seulement s'il change**. Le compte désigné peut devenir archivé
+    // ou non imputable par une autre route (l'archivage n'est pas gardé, #486) ;
+    // le revalider à chaque enregistrement bloquerait tout changement SANS
+    // rapport — un format de numérotation — sur un champ que l'utilisateur n'a
+    // pas touché. L'écriture de l'écart (Story 25-4-c3-b) refusera d'écrire sur un
+    // compte devenu invalide : c'est là que la garde doit tenir, pas ici.
     let default_rounding_account_id = req
         .default_rounding_account_id
         .unwrap_or(current.default_rounding_account_id);
-    validate_account_of(
-        &state,
-        company.id,
-        default_rounding_account_id,
-        &[AccountType::Expense, AccountType::Revenue],
-        true,
-        "Compte de différences d'arrondi",
-    )
-    .await?;
+    if default_rounding_account_id != current.default_rounding_account_id {
+        validate_account_of(
+            &state,
+            company.id,
+            default_rounding_account_id,
+            &[AccountType::Expense, AccountType::Revenue],
+            true,
+            "Compte de différences d'arrondi",
+        )
+        .await?;
+    }
 
     // 5. Persister.
     let update = CompanyInvoiceSettingsUpdate {

@@ -238,6 +238,7 @@ Claude Opus 5.5 (`claude-opus-5-5`).
 - `_bmad-output/implementation-artifacts/25-4-c3-a1-reglage-compte-arrondi.md`
 - `_bmad-output/implementation-artifacts/25-4-c3-a1-validate-prompt-p1.md`
 - `_bmad-output/implementation-artifacts/25-4-c3-a1-validate-prompt-p2.md`
+- `_bmad-output/implementation-artifacts/25-4-c3-a1-review-prompt-p1.md`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
@@ -260,5 +261,18 @@ Claude Opus 5.5 (`claude-opus-5-5`).
 - **2026-09-30** — Implémentée (`bmad-dev-story`). Gates **réellement exécutés** : backend complet sur base
   remise à zéro **2520/2520** (4 ignorés), fmt, clippy ; frontend `check`, `lint-i18n-ownership`,
   **839/839**, build ; **E2E 229 / 19 / 7** (les 7 KF-029). Issue #486 ouverte. Statut → `review`.
+- **2026-09-30** — Revue de code P1 (3 lentilles Sonnet, prompt `25-4-c3-a1-review-prompt-p1.md`, sur
+  `55d98555`) : Blind Hunter 2 MEDIUM / 9 LOW, Edge Case Hunter 1 HIGH / 1 MEDIUM, Acceptance Auditor **0**
+  (décomptes recomptés depuis la source). Vérifiés. **Corrigés** : HIGH (Edge) — le compte d'arrondi était
+  revalidé à chaque `PUT` même reconduit tel quel : devenu archivé ailleurs (#486), il aurait bloqué tout
+  enregistrement des paramètres, format de numérotation compris → **validé seulement s'il change** ; test
+  `settings_unchanged_archived_rounding_account_does_not_block_other_changes`, éprouvé par mutation ; la
+  même face du défaut pour les comptes TVA, hors périmètre, **commentée sur #486**. MEDIUM (Blind + Edge) —
+  le Playwright laissait le réglage posé s'il échouait en route → `try/finally`, patron de
+  `company-contact-details.spec.ts`. LOW retenus : cas « produit non imputable / archivé » ajoutés ;
+  `double_option` en `pub(crate)`. **Laissés LOW** : message « A ou B » pour un troisième type futur ; type
+  SQL `BIGINT` (identique au patron TVA, squash vérifié par Edge) ; `toMatchObject` du Vitest ; pas de test
+  du 400 ni du 409 côté écran. Gates ciblés : `idor_multi_tenant_e2e` 3/3 sur l'arrondi, Playwright vert,
+  garde des sélecteurs E2E verte, fmt, clippy ; **`kesh-db` non touché** par la remédiation.
 
 [#476]: https://github.com/guycorbaz/kesh/issues/476

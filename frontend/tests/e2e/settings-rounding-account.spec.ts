@@ -47,13 +47,17 @@ test('désigner le compte de différences d’arrondi et le retrouver', async ({
 	const charge = select.locator('option', { hasText: '4000' });
 	const chargeId = await charge.getAttribute('value');
 	expect(chargeId, 'le compte 4000 est proposé').toBeTruthy();
-	await select.selectOption(chargeId!);
-	await saveSettings(page);
+	try {
+		await select.selectOption(chargeId!);
+		await saveSettings(page);
 
-	await page.reload();
-	await expect(page.getByTestId('settings-rounding-account')).toHaveValue(chargeId!);
-
-	// Remise à vide : le réglage ne doit pas fuir vers les autres specs.
-	await page.getByTestId('settings-rounding-account').selectOption({ index: 0 });
-	await saveSettings(page);
+		await page.reload();
+		await expect(page.getByTestId('settings-rounding-account')).toHaveValue(chargeId!);
+	} finally {
+		// Remise à vide, même si une assertion a échoué : le réglage ne doit pas
+		// fuir vers les autres specs (patron de `company-contact-details.spec.ts`).
+		await page.goto('/settings/invoicing');
+		await page.getByTestId('settings-rounding-account').selectOption({ index: 0 });
+		await saveSettings(page);
+	}
 });

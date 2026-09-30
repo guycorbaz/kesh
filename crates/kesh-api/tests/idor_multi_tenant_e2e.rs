@@ -861,13 +861,19 @@ async fn settings_rounding_account_is_validated(pool: MySqlPool) {
     create_company_user_with_role(&pool, company_id, "alice", "password123", Role::Admin).await;
     // Un compte de charge de regroupement (non imputable), et un archivé.
     let mut extra = std::collections::HashMap::new();
-    for (code, active, postable) in [("6000", true, false), ("6100", false, true)] {
+    for (code, account_type, active, postable) in [
+        ("6000", "Expense", true, false),
+        ("6100", "Expense", false, true),
+        ("3900", "Revenue", true, false),
+        ("3910", "Revenue", false, true),
+    ] {
         let id = sqlx::query(
             "INSERT INTO accounts (company_id, number, name, account_type, active, postable) \
-             VALUES (?, ?, 'Charge test', 'Expense', ?, ?)",
+             VALUES (?, ?, 'Compte test', ?, ?, ?)",
         )
         .bind(company_id)
         .bind(code)
+        .bind(account_type)
         .bind(active)
         .bind(postable)
         .execute(&pool)
@@ -886,6 +892,8 @@ async fn settings_rounding_account_is_validated(pool: MySqlPool) {
         ("passif", accounts["2000"], 400),
         ("charge non imputable", extra["6000"], 400),
         ("charge archivée", extra["6100"], 400),
+        ("produit non imputable", extra["3900"], 400),
+        ("produit archivé", extra["3910"], 400),
         ("charge d'une autre société", other_accounts["4000"], 400),
     ] {
         let (status, body) = put_rounding_account(&app, &token, Some(json!(account))).await;
@@ -923,4 +931,38 @@ async fn settings_rounding_account_absent_preserves_null_clears(pool: MySqlPool)
         body["defaultRoundingAccountId"].is_null(),
         "présent à null : effacé ; corps = {body}"
     );
+}
+
+/// Story 25-4-c3-a1 — un compte d'arrondi devenu **archivé** après sa désignation
+/// (l'archivage n'est pas gardé, #486) ne doit pas bloquer l'enregistrement d'un
+/// réglage SANS rapport : reconduit tel quel, il n'est pas revalidé. Le changer
+/// pour un compte invalide, lui, reste refusé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn settings_unchanged_archived_rounding_account_does_not_block_other_changes(
+    pool: MySqlPool,
+) {
+    truncate_all(&pool).await.expect("truncate");
+    let (company_id, accounts) = create_seeded_company(&pool).await;
+    create_company_user_with_role(&pool, company_id, "alice", "password123", Role::Admin).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app, "alice", "password123").await;
+
+    let (status, body) = put_rounding_account(&app, &token, Some(json!(accounts["4000"]))).await;
+    assert_eq!(status, 200, "{body}");
+    // Le compte est archivé ailleurs, après coup.
+    sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
+        .bind(accounts["4000"])
+        .execute(&pool)
+        .await
+        .expect("archivage");
+
+    // L'écran renvoie la valeur telle qu'il l'a lue : reconduite, elle passe.
+    let (status, body) = put_rounding_account(&app, &token, Some(json!(accounts["4000"]))).await;
+    assert_eq!(
+        status, 200,
+        "⛔ un compte d'arrondi reconduit ne doit pas bloquer l'enregistrement : {body}"
+    );
+    // Désigner un compte invalide, en revanche, reste refusé.
+    let (status, body) = put_rounding_account(&app, &token, Some(json!(accounts["1000"]))).await;
+    assert_eq!(status, 400, "{body}");
 }
