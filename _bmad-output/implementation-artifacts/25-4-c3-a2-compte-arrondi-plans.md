@@ -186,6 +186,7 @@ Claude Opus 5.5 (`claude-opus-5-5`).
 - `_bmad-output/implementation-artifacts/25-4-c3-a2-compte-arrondi-plans.md`
 - `_bmad-output/implementation-artifacts/25-4-c3-a2-validate-prompt-p1.md`
 - `_bmad-output/implementation-artifacts/25-4-c3-a2-validate-prompt-p2.md`
+- `_bmad-output/implementation-artifacts/25-4-c3-a2-review-prompt-p1.md`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
@@ -193,6 +194,18 @@ Claude Opus 5.5 (`claude-opus-5-5`).
 - **2026-09-30** — Implémentée (`bmad-dev-story`). Gates **réellement exécutés** : backend complet sur base
   remise à zéro **2530/2530** (4 ignorés), fmt, clippy ; frontend `check`, **839/839** ; **E2E 228 / 19 / 8**
   (7 KF-029 + KF-046). Statut → `review`.
+- **2026-09-30** — Revue de code P1 (3 lentilles Sonnet, prompt `25-4-c3-a2-review-prompt-p1.md`, sur
+  `07661e85`) : Blind Hunter 4 MEDIUM / 7 LOW, Edge Case Hunter 2 MEDIUM / 1 LOW, Acceptance Auditor **0**
+  (décomptes recomptés). Vérifiés. **Corrigés** : MEDIUM (Blind + Edge) — une entrée marquée pouvait porter
+  aussi un rôle (un même compte désigné produit **et** arrondi, en silence) → `validate_chart` le refuse, test
+  `validate_chart_rejects_rounding_account_with_a_role` ; MEDIUM — `load_chart` en erreur avalé sans trace →
+  `tracing::warn!` ; MEDIUM — types de compte en chaînes SQL → liés par l'enum `AccountType` ; MEDIUM
+  (Edge) — le doc-comment disait « jamais une erreur » → précisé : une **absence** donne `NULL`, une **erreur
+  SQL** remonte (même transaction que les recherches obligatoires, qu'on ne poursuit pas dans un état
+  douteux). **Laissés LOW** : verrou pris avant un `INSERT IGNORE` sans effet (contention sans conséquence en
+  v0.1) ; `org_type` lu sans verrou (figé à l'étape 3 par l'onboarding) ; E2E limité au plan PME (les trois
+  plans sont couverts au niveau du dépôt) ; test d'idempotence sur une autre valeur que `NULL`. Gate
+  **complet** (`kesh-db` touché) : **2531/2531**.
 - **2026-09-30** — Validation P2 **ciblée** (Haiku, prompt `25-4-c3-a2-validate-prompt-p2.md`) : **0 finding**,
   preuves jointes (`FOR UPDATE` des six recherches par rôle, `set_org_type` limité à l'étape 3, assertions
   d'`accounts_role_backfill.rs` dérivées de `load_chart`, `is_postable:340`, #488 ouverte). La remédiation ne

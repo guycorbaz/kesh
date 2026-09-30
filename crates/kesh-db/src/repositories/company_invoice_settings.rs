@@ -19,7 +19,9 @@
 use sqlx::mysql::MySqlPool;
 
 use crate::entities::audit_log::NewAuditLogEntry;
-use crate::entities::{AccountRole, CompanyInvoiceSettings, CompanyInvoiceSettingsUpdate, Journal};
+use crate::entities::{
+    AccountRole, AccountType, CompanyInvoiceSettings, CompanyInvoiceSettingsUpdate, Journal,
+};
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::audit_log;
 
@@ -245,10 +247,12 @@ pub async fn update(
 /// l'étape qui a semé les comptes ; la forme juridique ne change plus après
 /// l'étape 3, donc c'est bien le plan qui les a semés.
 ///
-/// ⛔ **Facultatif, jamais une erreur** — contrairement à la créance et au
-/// produit : plan sans marqueur, compte renuméroté, archivé, rendu non imputable
-/// ou retypé depuis l'étape 4 → `None`, et la société le choisira dans les
-/// paramètres. Mêmes exigences que la validation du réglage
+/// ⛔ **Facultatif : une absence n'est jamais une erreur** — contrairement à la
+/// créance et au produit : plan sans marqueur, compte renuméroté, archivé, rendu
+/// non imputable ou retypé depuis l'étape 4 → `None`, et la société le choisira
+/// dans les paramètres. ⚠️ Une **erreur SQL**, elle, remonte : elle survient dans
+/// la transaction même des recherches obligatoires, qu'on ne poursuit pas dans un
+/// état douteux. Mêmes exigences que la validation du réglage
 /// (`validate_account_of`, `kesh-api`) : actif, imputable, charge ou produit.
 ///
 /// `FOR UPDATE`, comme les recherches par rôle (F1) : une désactivation
@@ -266,19 +270,28 @@ async fn rounding_account_from_chart(
     let Some(org_type) = org_type else {
         return Ok(None);
     };
-    let Ok(chart) = kesh_core::chart_of_accounts::load_chart(&org_type) else {
-        return Ok(None);
+    let chart = match kesh_core::chart_of_accounts::load_chart(&org_type) {
+        Ok(chart) => chart,
+        Err(e) => {
+            // Une forme juridique sans plan livré est possible ; un plan livré
+            // invalide ne l'est pas — ne pas l'avaler sans trace.
+            tracing::warn!(company_id, org_type = %org_type, error = %e,
+                "compte de différences d'arrondi : plan introuvable ou invalide, réglage laissé vide");
+            return Ok(None);
+        }
     };
     let Some(number) = kesh_core::chart_of_accounts::rounding_difference_number(&chart) else {
         return Ok(None);
     };
     sqlx::query_scalar::<_, i64>(
         "SELECT id FROM accounts WHERE company_id = ? AND number = ? AND active = TRUE \
-         AND postable = TRUE AND account_type IN ('Expense', 'Revenue') \
+         AND postable = TRUE AND account_type IN (?, ?) \
          ORDER BY id LIMIT 1 FOR UPDATE",
     )
     .bind(company_id)
     .bind(number)
+    .bind(AccountType::Expense)
+    .bind(AccountType::Revenue)
     .fetch_optional(&mut **tx)
     .await
     .map_err(map_db_error)

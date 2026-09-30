@@ -343,6 +343,15 @@ fn validate_chart(entries: &[ChartEntry]) -> Result<(), CoreError> {
                 entry.number
             )));
         }
+        // Un compte à rôle est déjà désigné ailleurs (produit par défaut…) : le
+        // marquer aussi en ferait silencieusement deux réglages distincts.
+        if let Some(role) = entry.role {
+            return Err(CoreError::InvalidChart(format!(
+                "compte {} : le compte de différences d'arrondi ne peut pas porter de rôle ({})",
+                entry.number,
+                role.as_str()
+            )));
+        }
     }
 
     Ok(())
@@ -1023,6 +1032,19 @@ mod tests {
         };
         let err = validate_chart(&[closed]).unwrap_err();
         assert!(err.to_string().contains("imputable"), "{err}");
+    }
+
+    #[test]
+    fn validate_chart_rejects_rounding_account_with_a_role() {
+        let with_role = ChartEntry {
+            role: Some(AccountRole::DefaultRevenue),
+            ..rounding_entry("3000", AccountType::Revenue)
+        };
+        let err = validate_chart(&[with_role]).unwrap_err();
+        assert!(
+            err.to_string().contains("ne peut pas porter de rôle"),
+            "{err}"
+        );
     }
 
     #[test]
