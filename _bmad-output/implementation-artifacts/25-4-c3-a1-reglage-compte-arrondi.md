@@ -80,14 +80,22 @@ qu'on peut le **créer dans le plan comptable** puis le choisir ici. Libellés d
 `lint-i18n-ownership` et la garde `i18n-keys.test.ts` (compteur de sites recompté).
 
 **AC 5 — Les gardes voisines.** Un compte désigné ici ne peut pas disparaître en silence :
-- **suppression** : bloquée par la FK (vérifier que l'API rend un refus lisible, pas un 500) ;
-- **archivage** : vérifier comment l'archivage d'un compte TVA désigné est traité aujourd'hui, et
-  faire de même pour ce compte — s'il n'y a **aucune** garde pour les comptes TVA non plus, le dire et
-  ouvrir une issue plutôt que de l'inventer ici.
+- **suppression** : **sans objet** — aucune route ne supprime un compte (`crates/kesh-api/src/lib.rs:340-352` :
+  création, modification, archivage, réactivation seulement) ; la FK `ON DELETE RESTRICT` reste le
+  filet en base ;
+- **archivage** : **aucune garde n'existe aujourd'hui pour les comptes TVA désignés** (validation P1).
+  Ne pas l'inventer ici : ouvrir une issue qui couvre les **quatre** comptes désignés dans les
+  réglages (trois TVA et l'arrondi), et le dire dans le Dev Agent Record. La c3-b refusera de toute
+  façon d'écrire sur un compte archivé ou non imputable (garde au moment de l'écriture).
 
 **AC 6 — Export et sauvegarde.** L'export CSV de la table porte la colonne (garde d'exhaustivité verte).
-Un `.keshbackup` produit **avant** cette migration s'importe toujours : la colonne manquante vaut `NULL`
-— test existant à étendre ou test neuf (`admin_backup_e2e` / `admin_full_import_e2e`).
+La sauvegarde, elle, lit ses colonnes dans `INFORMATION_SCHEMA` (`export_table`, `column_constraints`) :
+elle suit d'elle-même. Un `.keshbackup` produit **avant** cette migration s'importe toujours
+(`check_schema_compat` : colonne absente, facultative) et la colonne vaut `NULL` — le prouver par un
+test, patron `full_import_without_company_column_merges_archive_entries_as_null`
+(`crates/kesh-api/tests/admin_full_import_e2e.rs:2167`, technique `strip_column`). Un `.keshbackup`
+postérieur importé par un binaire antérieur est refusé en `400 IMPORT_SCHEMA_MISMATCH` (mécanisme
+générique, déjà testé) : rien à faire.
 
 **AC 7 — Tests.** Dépôt : le champ survit à `update` et à la relecture ; validation API : refus d'un
 compte d'une autre société, archivé, **non imputable**, de type actif/passif ; acceptation d'une charge
@@ -124,6 +132,12 @@ contrôlé aplati. `docs/api-external.md` si les réglages de facturation y sont
 - ⛔ **Un numéro de compte dans le code applicatif** (`14-3a`, migration `20260722000001:3-8`).
 - ⛔ **Utiliser le réglage pour écrire** : c'est la c3-b.
 - ⚠️ **Les deux `insert_with_defaults*` sont miroirs** : les modifier ensemble.
+- **Sans objet** : `docs/optimistic-locking-patterns.md:48` énumère les champs comparés par `update` —
+  instantané de la Story 7-3, jamais tenu à jour depuis (il omet déjà les trois comptes TVA,
+  `credit_note_number_format` et `default_payable_account_id`). Ne pas le mettre à jour ici.
+- ⚠️ `migrations_upgrade_path.rs` porte `assert_eq!(total, 69, …)` : il rougira — c'est son rôle
+  (P6) ; le passer à 70 **et** vérifier l'assertion de montage qui l'accompagne.
+- ⚠️ Aucun E2E n'est dédié à *Paramètres → Facturation* : le spec de l'AC 7 est à créer.
 
 ### Où regarder
 
@@ -159,5 +173,11 @@ contrôlé aplati. `docs/api-external.md` si les réglages de facturation y sont
 - **2026-09-30** — Créée au découpage de la 25-4-c3 (sept modules), selon les arbitrages de Guy : réglage
   dans les paramètres, compte créable dans le plan et choisi ici ; les plans livrés et l'onboarding à la
   c3-a2 ; l'arrondi et l'écriture à la c3-b.
+- **2026-09-30** — Validation P1 (Sonnet, prompt `25-4-c3-a1-validate-prompt-p1.md`) : **2 MEDIUM**,
+  vérifiés. AC 5 visait une suppression de compte que l'API n'offre pas → sans objet ; l'archivage non
+  gardé des comptes TVA → issue couvrant les quatre comptes des réglages. `optimistic-locking-patterns.md:48`
+  → écrit sans objet (instantané figé). Faits utiles reportés : sauvegarde dynamique, précédent de test
+  `strip_column`, `assert_eq!(total, 69)`, pas d'E2E de l'écran. Toutes les références exactes ; P5
+  sain (69 = 69, 8 + 61 + 0).
 
 [#476]: https://github.com/guycorbaz/kesh/issues/476
