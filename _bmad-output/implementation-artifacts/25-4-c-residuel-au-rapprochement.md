@@ -1,6 +1,6 @@
 # Story 25.4-c : Le résiduel au rapprochement bancaire
 
-Status: review
+Status: done
 
 **Issue : [#420]** — ⛔ la PR porte `closes #420`, titre ET corps (§ *Issue Tracking Rule*). Voisine :
 **[#476]** (arrondi au centime) et **[#480]** (verrou à l'acceptation) — **hors périmètre**, sorties
@@ -281,6 +281,7 @@ Claude Opus 5.5 (`claude-opus-5-5`).
 - `_bmad-output/implementation-artifacts/25-4-c-residuel-au-rapprochement.md`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
 - `_bmad-output/implementation-artifacts/25-4-c-review-prompt-p1.md`
+- `_bmad-output/implementation-artifacts/25-4-c-review-prompt-p2.md`
 
 ## Change Log
 
@@ -357,6 +358,25 @@ Claude Opus 5.5 (`claude-opus-5-5`).
   score de référence → **issue #482**. LOW laissés : conversion centimes du Playwright (Blind F8),
   TOCTOU du compte bancaire hérité de `reconciliation-cancel.spec.ts` (Edge F4). Gates ciblés :
   `kesh-i18n` 30/30, Playwright de la story vert, `npm run check` ; aucune ligne Rust modifiée.
+- **2026-09-30** — Revue de code P2 (2 lentilles **Haiku 4.5**, prompt `25-4-c-review-prompt-p2.md`, diff
+  unique aplati `7aa56d2f..8d33460c`) : Blind Hunter 3 CRITICAL / 5 HIGH / 5 MEDIUM / 2 LOW, Edge Case
+  Hunter 3 findings — **aucun ne survit à la vérification**. Réfutés : C1–C3 (« non visible dans le
+  diff » — code hors diff, compilé, testé, alias `lt` vérifié en P1) ; H1 et Edge-F1 (`Decimal` à
+  échelles différentes) — **réfuté par exécution** : `600.0000 == 600.00` rend `true` (rust_decimal de
+  `Cargo.lock`, programme jetable) ; H3 et Edge-F3 (collision `Date.now()`) — `workers: 1`,
+  `playwright.config.ts:53` ; M2 (doc de `matching.rs`) — `grep -nF` : la doc dit déjà « montant à
+  régler » (`:59`) ; H2 — la formule borne le règlement à 499.99 < 972.90. Reclassés **LOW** et
+  laissés : `amount_due > 0` au `HAVING` (Edge-F2 — reste négatif inatteignable, et dans la fenêtre
+  seulement pour une transaction < 0.05) ; formulation du CHANGELOG (H5) et du libellé anglais (M1) ;
+  nom de `get_proposals_matches_and_shows_ttc` (H4 — sans règlement, il montre bien le TTC).
+  **Revue close : 0 > LOW.** Gate **complet** au dernier commit de la boucle, base remise à zéro :
+  backend **2513/2513** ; frontend `check`, `lint-i18n-ownership`, **836/836**, build ; E2E **226 passed
+  / 19 skipped / 9 failed**, les 9 à la liste des échecs attendus (run à 10:15 UTC).
+
+  **Bilan de la revue** — P1 Sonnet ×3 : 1 HIGH / 7 MEDIUM / 5 LOW (1 HIGH et 2 MEDIUM corrigés,
+  2 MEDIUM → LOW corrigés, 3 écartés, 1 reporté en #482) → P2 Haiku ×2 : 0 > LOW après vérification.
+  Reclassements : P1 Edge-F3 MEDIUM → LOW ; P2 tous les CRITICAL/HIGH/MEDIUM réfutés ou LOW. Statut
+  → `done`.
 
 [#416]: https://github.com/guycorbaz/kesh/issues/416
 [#420]: https://github.com/guycorbaz/kesh/issues/420
