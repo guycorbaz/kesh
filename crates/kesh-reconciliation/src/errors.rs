@@ -33,6 +33,20 @@ pub enum ReconciliationError {
     #[error("database error: {0}")]
     Database(#[from] sqlx::Error),
 
+    /// Story 25-4-c2 (#480) — la transaction d'un lot a été **annulée sous lui**
+    /// par InnoDB : un interblocage (1213) levé dans une proposition y a été
+    /// absorbé en `FailedProposal`, mais il a annulé toute la transaction, et le
+    /// `ROLLBACK TO SAVEPOINT` qui suit échoue faute de point de sauvegarde
+    /// (1305). Le lot entier est rejouable ; la route d'acceptation le rejoue.
+    ///
+    /// ⚠️ Posée par `accept_batch` **seulement** : c'est le seul site du dépôt à
+    /// utiliser des `SAVEPOINT` nommés. Ailleurs, un 1305 n'a pas ce sens.
+    #[error("transaction aborted underneath the batch (deadlock victim)")]
+    TransactionAborted {
+        #[source]
+        source: sqlx::Error,
+    },
+
     /// Story 8-5a-base — l'exercice fiscal couvrant `entry_date` est
     /// soit inexistant soit `Closed` (helper
     /// `fiscal_years::find_open_covering_date` retourne `None` pour

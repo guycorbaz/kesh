@@ -229,20 +229,33 @@ pub async fn settle_invoice(
     .await?;
 
     // (8) ⛔ `paid_at` est la PROJECTION du résiduel à zéro, pas un drapeau.
+    //
+    // ⛔ **`version` bouge À CHAQUE règlement, partiel compris** (Story 25-4-c2,
+    // #480). C'est l'invariant dont dépend le verrou optimiste de l'acceptation
+    // d'un rapprochement (`accept_one_invoice`, `UPDATE invoices … AND version = ?`) :
+    // **tout écrit qui change le reste dû d'une facture incrémente `version` dans
+    // la même transaction.** L'acceptation lit le reste dû sur son instantané ;
+    // un règlement partiel validé depuis, qui n'incrémentait pas `version`,
+    // passait sous son contrôle — la facture finissait réglée deux fois. Les
+    // autres écrivains le tiennent déjà : l'acceptation elle-même, l'annulation
+    // d'un règlement (`cancel_settlement_in_tx`, les deux branches), l'émission
+    // d'un avoir (`credit_notes::create_credit_note`) et la dévalidation
+    // (`invoices::unvalidate`). Un nouvel écrivain qui y manquerait rouvrirait
+    // la course.
     let due_after = invoice_settlements::amount_due(&mut *tx, invoice_id).await?;
     let fully_settled = due_after <= Decimal::ZERO;
-    if fully_settled {
-        sqlx::query(
-            "UPDATE invoices SET paid_at = ?, version = version + 1, updated_at = NOW(3) \
-             WHERE id = ? AND company_id = ? AND status = 'validated'",
-        )
-        .bind(settled_on.and_hms_opt(0, 0, 0).expect("minuit est valide"))
-        .bind(invoice_id)
-        .bind(company_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(map_db_error)?;
-    }
+    let paid_at =
+        fully_settled.then(|| settled_on.and_hms_opt(0, 0, 0).expect("minuit est valide"));
+    sqlx::query(
+        "UPDATE invoices SET paid_at = ?, version = version + 1, updated_at = NOW(3) \
+         WHERE id = ? AND company_id = ? AND status = 'validated'",
+    )
+    .bind(paid_at)
+    .bind(invoice_id)
+    .bind(company_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(map_db_error)?;
 
     // (9) ⛔ L'audit, dans la MÊME transaction. Un règlement est un fait
     //     comptable : s'il s'enregistre sans laisser de trace, la piste d'audit

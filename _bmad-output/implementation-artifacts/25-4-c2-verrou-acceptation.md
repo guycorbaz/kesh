@@ -1,6 +1,6 @@
 # Story 25.4-c2 : Le verrou à l'acceptation d'un rapprochement
 
-Status: ready-for-dev
+Status: review
 
 **Issue : [#480]** — ⛔ la PR porte `closes #480`, titre ET corps (§ *Issue Tracking Rule*).
 
@@ -178,14 +178,14 @@ dire dans le Dev Agent Record.
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — l'invariant** (AC 1, 6) : `settle_invoice` incrémente `version` à chaque règlement ;
+- [x] **T1 — l'invariant** (AC 1, 6) : `settle_invoice` incrémente `version` à chaque règlement ;
   doc-comments ; réponse du règlement relue après validation ; tests existants de `version`.
-- [ ] **T2 — le rejeu** (AC 4) : `accept_batch` reconnaît la transaction annulée (erreur typée
+- [x] **T2 — le rejeu** (AC 4) : `accept_batch` reconnaît la transaction annulée (erreur typée
   dédiée) ; route d'acceptation sous `retry_with` (une fonction « une tentative », comme
   `cancel_reconciliation_once`), prédicat local à la route.
-- [ ] **T3 — tests de course et mutations** (AC 2, 3, 5).
-- [ ] **T4 — textes** (AC 7).
-- [ ] **T5 — gates** : backend complet (base remise à zéro — ⛔ `kesh-db` touché : gate complet même en
+- [x] **T3 — tests de course et mutations** (AC 2, 3, 5).
+- [x] **T4 — textes** (AC 7).
+- [x] **T5 — gates** : backend complet (base remise à zéro — ⛔ `kesh-db` touché : gate complet même en
   cours de boucle), frontend complet, **E2E complet**.
 
 ## Dev Notes
@@ -239,11 +239,75 @@ interblocage que la 25-4-c rend plus probable, et le patron existe déjà sur l'
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`).
+
 ### Debug Log References
+
+- **Le montage proposé par l'AC 5 ne tient pas** : la recherche d'exercice (`find_open_covering_date … FOR
+  UPDATE`) parcourt les exercices de la société par ordre de date de début (index
+  `uq_fiscal_years_company_start_date`) et verrouille chaque ligne examinée. Le règlement manuel et
+  l'acceptation se croisent donc **toujours** sur les exercices, quel que soit celui que le test tient
+  — premier essai : le règlement attend 50 s (1205). La vraie fenêtre de la course va de la première
+  lecture de l'acceptation à sa recherche d'exercice, et l'acceptation n'y fait que des lectures
+  simples. **Montage retenu** : une lecture simple n'attend pas un verrou de ligne, mais elle attend un
+  verrou de **métadonnées** — `LOCK TABLES contacts WRITE` arrête l'acceptation à la lecture du contact
+  (étape 5bis), instantané figé, **avant** la garde de trop-perçu. Le règlement manuel ne lit pas
+  `contacts`.
+- **Rouge avant correctif, pour la bonne raison** : `accept_refuses_when_a_partial_manual_settlement_lands_meanwhile`
+  a rendu `accepted: [1]` — la facture de 1 000.— réglée 1 400.—.
+- L'acceptation bute sur la facture dès l'**insertion du règlement** (la clé étrangère vers `invoices`
+  y pose un verrou partagé), pas à l'`UPDATE invoices` : motif d'attente du test d'interblocage ajusté.
+- Mutations (chacune restaurée, fichier touché ensuite) : incrément conditionnel rétabli au règlement
+  partiel → test de la course n° 1 rouge (double règlement) ; prédicat de rejeu à `false` → test
+  d'interblocage rouge (500 `INTERNAL_ERROR`) ; `is_savepoint_lost` à `false` → idem ; `version = ?`
+  relâché en `version >= ?` dans l'acceptation → les tests des courses n° 1 **et** n° 2 rouges.
+- Gate E2E : 225 passed / 19 skipped / 10 failed. Les 10, un par un : 7 KF-029 (#97) ;
+  `sidebar-navigation.spec.ts:75` = KF-046 (#424), à la liste, vert rejoué seul deux fois ;
+  `accounts.spec.ts:145` et `product-revenue-account.spec.ts:133` rouges rejoués sur la base salie par
+  la suite, **verts sur `kesh_e2e` reconstruite** — pollution d'état. KF-045 non déclenchée (run à
+  14:13 UTC).
 
 ### Completion Notes List
 
+- **L'invariant (AC 1)** : `settle_invoice` incrémente `version` et `updated_at` à **chaque** règlement ;
+  `paid_at` n'est posé qu'au solde (`NULL` sinon — il l'était déjà : une facture payée n'accepte plus de
+  règlement). Doc-comments sur `settle_invoice` et sur l'`UPDATE … version = ?` d'`accept_one_invoice`,
+  qui nomment les deux inventaires, l'interdit du `FOR UPDATE` et la bascule MariaDB 11.6.
+- **Le rejeu (AC 4)** : variante `ReconciliationError::TransactionAborted`, posée par `accept_batch`
+  quand `ROLLBACK TO SAVEPOINT` échoue en **1305** (`is_savepoint_lost`, sur le code MySQL) ;
+  `AppError::ReconciliationTransactionAborted` → 500 `INTERNAL_ERROR` une fois les tentatives épuisées ;
+  `post_accept` rejoue `accept_once` (transaction neuve, `GET_LOCK` repris) par `retry_with`, prédicat
+  **local** : `is_deadlock_error` **ou** la variante. `is_deadlock_error` inchangé (1213 seul). Les
+  quatre autres `match` exhaustifs de `ReconciliationError` reçoivent un bras défensif.
+- **AC 6** : aucun `FOR UPDATE` ajouté dans `accept_one_invoice`, formule du reste dû et ordre des gardes
+  intacts. La réponse de `POST /invoices/{id}/settlements` relit déjà la facture après validation
+  (`routes/invoices.rs`, validation P1) : aucun écran ne garde une version périmée. **Aucun test
+  existant** n'assertait la version d'une facture après un règlement partiel : le gate backend passe
+  de 2513 à 2516, les trois nouveaux seuls.
+- **Tests** (périmètre : `4c36ac99` → cette branche) : +3 e2e dans `reconciliation_e2e.rs` — course
+  n° 1 (règlement manuel partiel pendant l'acceptation), course n° 2 (deux acceptations, deux comptes),
+  interblocage dont l'acceptation est la victime (transaction de test alourdie de 500 lignes, cycle
+  facture / exercice), chacun sans `sleep`.
+- **Textes (AC 7)** : `docs/api-external.md` — entrée neuve *Accepter des propositions de
+  rapprochement* (accès, corps, succès partiel, `race_during_update`, rejeu, champs de la 25-4-c) ;
+  CHANGELOG `[0.12.1]` *Fixed*. **Le manuel ne promet rien** sur les opérations simultanées dans le
+  règlement ni le rapprochement : rien écrit. En le vérifiant, une affirmation fausse trouvée ailleurs
+  (numérotation des factures « dans une transaction `SERIALIZABLE` », qui n'existe nulle part) →
+  **issue #484**.
+
 ### File List
+
+- `CHANGELOG.md`
+- `crates/kesh-api/src/errors.rs`
+- `crates/kesh-api/src/routes/reconciliation.rs`
+- `crates/kesh-api/tests/reconciliation_e2e.rs`
+- `crates/kesh-db/src/repositories/invoice_settlements_write.rs`
+- `crates/kesh-reconciliation/src/errors.rs`
+- `docs/api-external.md`
+- `_bmad-output/implementation-artifacts/25-4-c2-verrou-acceptation.md`
+- `_bmad-output/implementation-artifacts/25-4-c2-validate-prompt-p1.md`
+- `_bmad-output/implementation-artifacts/25-4-c2-validate-prompt-p2.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
 
@@ -269,5 +333,12 @@ interblocage que la 25-4-c rend plus probable, et le patron existe déjà sur l'
   `AppError`, 1213 direct déjà couvert — précisions ajoutées à l'AC 4. **Validation close : 0 > LOW.**
 
   **Bilan** — P1 Sonnet 1H/2M/2L → P2 Haiku 0 > LOW (3 annoncés, écartés). Modèles : Sonnet, Haiku.
+- **2026-09-30** — Implémentée (`bmad-dev-story`) : invariant d'incrément au règlement manuel, rejeu sur
+  interblocage, trois tests de course éprouvés par mutation, entrée d'API, issue #484. ⚠️ Le montage
+  de test de l'AC 5 (verrou d'exercice) s'est révélé impossible — les deux flux se croisent toujours sur
+  les exercices — et a été remplacé par un verrou de métadonnées (Debug Log). Gates **réellement
+  exécutés** : backend complet sur base remise à zéro **2516/2516** (4 ignorés), fmt, clippy ;
+  frontend `check`, `lint-i18n-ownership`, **836/836**, build ; **E2E 225 / 19 / 10**, les 10 expliqués
+  un par un. Statut → `review`.
 
 [#480]: https://github.com/guycorbaz/kesh/issues/480
