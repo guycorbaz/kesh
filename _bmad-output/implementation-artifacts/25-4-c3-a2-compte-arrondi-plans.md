@@ -1,6 +1,6 @@
 # Story 25.4-c3-a2 : Le compte de différences d'arrondi dans les plans livrés
 
-Status: ready-for-dev
+Status: in-progress
 
 **Issue : [#476]** — ⛔ la PR porte `refs #476` (la **25-4-c3-b** la fermera).
 
@@ -145,6 +145,10 @@ dresse pas la liste.
 
 ## Change Log
 
+- **2026-09-30** — Validation P2 **ciblée** (Haiku, prompt `25-4-c3-a2-validate-prompt-p2.md`) : **0 finding**,
+  preuves jointes (`FOR UPDATE` des six recherches par rôle, `set_org_type` limité à l'étape 3, assertions
+  d'`accounts_role_backfill.rs` dérivées de `load_chart`, `is_postable:340`, #488 ouverte). La remédiation ne
+  touchait que la fiche : **validation close, 0 > LOW.** Bilan : P1 Sonnet 3 MEDIUM → P2 Haiku ciblée 0.
 - **2026-09-30** — Validation P1 (Sonnet, prompt `25-4-c3-a2-validate-prompt-p1.md`) : **3 MEDIUM, 2 LOW**,
   vérifiés. AC 3 laissait ouvert comment lire la forme juridique → **lecture interne**, signatures
   inchangées ; et le verrou → **même `FOR UPDATE`** que les recherches par rôle. AC 5 citait à tort
