@@ -4327,10 +4327,13 @@ async fn accept_refuses_when_a_partial_manual_settlement_lands_meanwhile(pool: M
     .await;
     let app = spawn_app(pool.clone()).await;
 
-    // (1) Le verrou de métadonnées, sur une connexion hors transaction.
-    let mut verrou = pool.acquire().await.unwrap();
+    // (1) Le verrou de métadonnées, sur une connexion hors transaction —
+    // DÉTACHÉE du pool : si le test panique avant `UNLOCK TABLES`, elle se
+    // ferme au lieu de retourner au pool verrouillée, et sa session emporte le
+    // verrou (sinon la suppression de la base éphémère attendrait sans fin).
+    let mut verrou = pool.acquire().await.unwrap().detach();
     sqlx::query("LOCK TABLES contacts WRITE")
-        .execute(&mut *verrou)
+        .execute(&mut verrou)
         .await
         .unwrap();
 
@@ -4364,7 +4367,7 @@ async fn accept_refuses_when_a_partial_manual_settlement_lands_meanwhile(pool: M
 
     // (4) Relâcher : l'acceptation reprend sur un reste périmé.
     sqlx::query("UNLOCK TABLES")
-        .execute(&mut *verrou)
+        .execute(&mut verrou)
         .await
         .unwrap();
     drop(verrou);

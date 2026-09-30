@@ -1028,9 +1028,17 @@ async fn accept_batch(
         .await
         {
             Ok(entry) => {
-                sqlx::query(&format!("RELEASE SAVEPOINT {savepoint}"))
+                // Même lecture que la branche d'échec : un point de sauvegarde
+                // disparu signale une transaction annulée sous le lot.
+                if let Err(e) = sqlx::query(&format!("RELEASE SAVEPOINT {savepoint}"))
                     .execute(&mut **tx_outer)
-                    .await?;
+                    .await
+                {
+                    if is_savepoint_lost(&e) {
+                        return Err(ReconciliationError::TransactionAborted { source: e });
+                    }
+                    return Err(ReconciliationError::Database(e));
+                }
                 accepted.push(entry);
             }
             Err(failure) => {
@@ -1053,6 +1061,14 @@ async fn accept_batch(
     }
 
     Ok(AcceptResponse { accepted, failed })
+}
+
+/// `TransactionAborted` n'est posée que par `accept_batch` : ailleurs, elle
+/// signale un défaut, rendu en `500` (Story 25-4-c2 — bras défensif partagé par
+/// `post_reject`, `post_manual` et `post_split`).
+fn transaction_aborted_outside_accept(source: &sqlx::Error) -> AppError {
+    tracing::error!(error = %source, "unexpected TransactionAborted outside accept_batch");
+    AppError::ReconciliationTransactionAborted
 }
 
 /// Code MariaDB `ER_SP_DOES_NOT_EXIST` — ici, un point de sauvegarde disparu
@@ -2640,11 +2656,9 @@ pub async fn post_reject(
         }
         // Story 8-5a-bis — branche exhaustive uniquement (reject_batch
         // n'émet pas SplitImbalance). Unreachable en pratique.
-        // Story 25-4-c2 — posée par `accept_batch` seulement ; défensif ici.
         Err(ReconciliationError::TransactionAborted { source }) => {
             drop(tx_outer);
-            tracing::error!(error = %source, "unexpected TransactionAborted outside accept_batch");
-            Err(AppError::ReconciliationTransactionAborted)
+            Err(transaction_aborted_outside_accept(&source))
         }
         Err(ReconciliationError::SplitImbalance {
             expected,
@@ -3173,11 +3187,9 @@ pub async fn post_manual(
         }
         // Story 8-5a-bis — branche exhaustive (post_manual ne fait pas
         // de split, unreachable en pratique).
-        // Story 25-4-c2 — posée par `accept_batch` seulement ; défensif ici.
         Err(ReconciliationError::TransactionAborted { source }) => {
             drop(tx_outer);
-            tracing::error!(error = %source, "unexpected TransactionAborted outside accept_batch");
-            Err(AppError::ReconciliationTransactionAborted)
+            Err(transaction_aborted_outside_accept(&source))
         }
         Err(ReconciliationError::SplitImbalance {
             expected,
@@ -3617,11 +3629,9 @@ pub async fn post_split(
             let _ = tx_outer.rollback().await;
             Err(AppError::Database(DbError::Sqlx(e)))
         }
-        // Story 25-4-c2 — posée par `accept_batch` seulement ; défensif ici.
         Err(ReconciliationError::TransactionAborted { source }) => {
             drop(tx_outer);
-            tracing::error!(error = %source, "unexpected TransactionAborted outside accept_batch");
-            Err(AppError::ReconciliationTransactionAborted)
+            Err(transaction_aborted_outside_accept(&source))
         }
         Err(ReconciliationError::SplitImbalance {
             expected,

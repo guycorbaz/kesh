@@ -307,6 +307,7 @@ Claude Opus 5.5 (`claude-opus-5-5`).
 - `_bmad-output/implementation-artifacts/25-4-c2-verrou-acceptation.md`
 - `_bmad-output/implementation-artifacts/25-4-c2-validate-prompt-p1.md`
 - `_bmad-output/implementation-artifacts/25-4-c2-validate-prompt-p2.md`
+- `_bmad-output/implementation-artifacts/25-4-c2-review-prompt-p1.md`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
@@ -340,5 +341,20 @@ Claude Opus 5.5 (`claude-opus-5-5`).
   exécutés** : backend complet sur base remise à zéro **2516/2516** (4 ignorés), fmt, clippy ;
   frontend `check`, `lint-i18n-ownership`, **836/836**, build ; **E2E 225 / 19 / 10**, les 10 expliqués
   un par un. Statut → `review`.
+- **2026-09-30** — Revue de code P1 (3 lentilles Sonnet, prompt `25-4-c2-review-prompt-p1.md`, diff
+  `6810cd97..177135f2`) : Blind Hunter 1 HIGH / 3 MEDIUM / 7 LOW, Edge Case Hunter 5 findings non cotés,
+  Acceptance Auditor **0** (sept AC, interdits, manuel, API vérifiés). Vérifiés sur le code. **Corrigés** :
+  HIGH (Blind + Edge) — l'`UPDATE` de `settle_invoice`, ligne dont dépend l'invariant, ne vérifiait pas
+  `rows_affected` (sûr aujourd'hui par le `FOR UPDATE` initial, muet s'il disparaissait) → `DbError::Invariant`
+  si ≠ 1, **et** même garde dans `cancel_settlement_in_tx` ; MEDIUM — `RELEASE SAVEPOINT` sans la lecture du
+  1305 de la branche d'échec → symétrique ; MEDIUM — `LOCK TABLES` sur une connexion rendue au pool
+  verrouillée si le test panique (la suppression de la base éphémère attendrait sans fin) → connexion
+  **détachée** ; MEDIUM — trois bras défensifs identiques → `transaction_aborted_outside_accept` ;
+  MEDIUM — `api-external.md` taisait le `500` quand les tentatives s'épuisent → écrit. **Laissés LOW** :
+  archivage du compte non revérifié entre deux tentatives (fenêtre ≤ 150 ms, préexistante hors verrou) ;
+  `RELEASE_LOCK` en échec après une erreur métier (préexistant, le rejeu ne l'aggrave pas) ; message brut
+  du 1305 (déjà journalisé) ; `drop` contre `rollback` (cohérent avec les bras voisins) ; heuristique de
+  la victime (le test asserte que sa transaction survit, il ne peut passer à vide) ; branche non-1305 non
+  testée ; doublon documentaire de l'invariant. Gate **complet** (`kesh-db` touché) : **2516/2516**.
 
 [#480]: https://github.com/guycorbaz/kesh/issues/480
