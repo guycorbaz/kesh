@@ -42,6 +42,7 @@
 	let vatPayableId = $state<number | null>(null);
 	let vatRecoverableId = $state<number | null>(null);
 	let vatDecompteId = $state<number | null>(null);
+	let roundingId = $state<number | null>(null);
 	let salesJournal = $state<JournalCode>('Ventes');
 	let version = $state(0);
 
@@ -56,6 +57,13 @@
 	let liabilityAccounts = $derived(
 		accounts.filter((a) => a.active && a.postable && a.accountType === 'Liability'),
 	);
+	// Story 25-4-c3-a1 : un écart d'arrondi est un résultat — charge ou produit.
+	let resultAccounts = $derived(
+		accounts.filter(
+			(a) =>
+				a.active && a.postable && (a.accountType === 'Expense' || a.accountType === 'Revenue'),
+		),
+	);
 
 	// Issue #271 : chaque `<select>` a SA liste, parce que chacun a sa valeur
 	// courante — deux champs partageant `assetAccounts` ne réintroduisent pas le
@@ -68,6 +76,7 @@
 		withCurrentAccount(assetAccounts, vatRecoverableId, accounts),
 	);
 	let vatDecompteOptions = $derived(withCurrentAccount(liabilityAccounts, vatDecompteId, accounts));
+	let roundingOptions = $derived(withCurrentAccount(resultAccounts, roundingId, accounts));
 
 	let formatValidation = $derived(validateFormatTemplate(format));
 	let formatPreview = $derived(
@@ -89,6 +98,7 @@
 			vatPayableId = s.defaultVatPayableAccountId;
 			vatRecoverableId = s.defaultVatRecoverableAccountId;
 			vatDecompteId = s.defaultVatDecompteAccountId;
+			roundingId = s.defaultRoundingAccountId;
 			salesJournal = s.defaultSalesJournal;
 			version = s.version;
 		} catch (err) {
@@ -122,6 +132,7 @@
 				defaultVatPayableAccountId: vatPayableId,
 				defaultVatRecoverableAccountId: vatRecoverableId,
 				defaultVatDecompteAccountId: vatDecompteId,
+				defaultRoundingAccountId: roundingId,
 				defaultSalesJournal: salesJournal,
 				journalEntryDescriptionTemplate: descriptionTemplate,
 				version,
@@ -144,6 +155,7 @@
 						vatPayableId = fresh.defaultVatPayableAccountId;
 						vatRecoverableId = fresh.defaultVatRecoverableAccountId;
 						vatDecompteId = fresh.defaultVatDecompteAccountId;
+						roundingId = fresh.defaultRoundingAccountId;
 						salesJournal = fresh.defaultSalesJournal;
 						version = fresh.version;
 					} catch {
@@ -332,8 +344,40 @@
 			</div>
 		</section>
 
+		<section class="space-y-3 rounded-lg border border-border bg-white p-6 shadow-sm">
+			<h2 class="text-lg font-semibold">
+				{i18nMsg('settings-invoicing-rounding-title', "Différences d'arrondi")}
+			</h2>
+			<p class="text-xs text-text-muted" data-testid="settings-rounding-hint">
+				{i18nMsg(
+					'settings-invoicing-rounding-hint',
+					"Compte qui reçoit l'écart d'un demi-centime au plus qu'un paiement arrondi au centime laisse sur une facture. Charge ou produit, imputable. S'il n'existe pas encore, créez-le dans le plan comptable, puis choisissez-le ici.",
+				)}
+			</p>
+			<div>
+				<label class="mb-1 block text-sm font-medium" for="{uid}-rounding">
+					{i18nMsg('settings-invoicing-rounding-account', "Compte de différences d'arrondi")}
+				</label>
+				<select
+					id="{uid}-rounding"
+					data-testid="settings-rounding-account"
+					class="w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
+					bind:value={roundingId}
+				>
+					<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
+					{#each roundingOptions as a (a.id)}
+						<option value={a.id}>{a.number} — {a.name}</option>
+					{/each}
+				</select>
+			</div>
+		</section>
+
 		<div class="flex justify-end">
-			<Button type="submit" disabled={submitting || !formatValidation.ok || !descriptionValidation.ok}>
+			<Button
+				type="submit"
+				data-testid="settings-invoicing-save"
+				disabled={submitting || !formatValidation.ok || !descriptionValidation.ok}
+			>
 				{submitting
 					? i18nMsg('common-saving', 'Enregistrement…')
 					: i18nMsg('settings-invoicing-save', 'Enregistrer')}
