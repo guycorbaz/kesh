@@ -182,9 +182,10 @@ async fn insert_test_invoice(
     .await
     .expect("invoice insert");
     let invoice_id = result.last_insert_id() as i64;
-    // #246 (21-2b) : le matching filtre désormais sur le TTC (dérivé des
-    // lignes). Une facture sans ligne aurait un TTC = 0 et ne matcherait
-    // jamais. On pose une ligne unique à vat_rate 0 → TTC = total_amount,
+    // #246 (21-2b), #420 (25-4-c) : le matching filtre sur le reste dû,
+    // dérivé des lignes (TTC) et des règlements. Une facture sans ligne
+    // aurait un reste dû = 0 et ne matcherait jamais. On pose une ligne
+    // unique à vat_rate 0, sans règlement → reste dû = TTC = total_amount,
     // les assertions de montant existantes restent inchangées.
     sqlx::query(
         "INSERT INTO invoice_lines (invoice_id, position, description, quantity, unit_price, vat_rate, line_total) \
@@ -805,6 +806,9 @@ async fn find_unpaid_matches_on_ttc_not_ht(pool: MySqlPool) {
         "la facture doit matcher l'encaissement TTC 108.10"
     );
     assert_eq!(cand.unwrap().total_ttc, dec!(108.10));
+    // #420 (Story 25-4-c) : sans règlement, le reste dû — la grandeur filtrée
+    // et comparée — vaut exactement le TTC.
+    assert_eq!(cand.unwrap().amount_due, dec!(108.10));
 
     // tx = 100.00 (HT) → PAS de match (le bug d'avant matchait le HT).
     let found_ht = reconciliation_repo::find_unpaid_invoices_for_window(
@@ -820,5 +824,107 @@ async fn find_unpaid_matches_on_ttc_not_ht(pool: MySqlPool) {
     assert!(
         !found_ht.iter().any(|c| c.invoice.id == inv_id),
         "le HT 100.00 ne doit plus matcher (régression #246 corrigée)"
+    );
+}
+
+/// #420 (Story 25-4-c) — le filtre porte sur le **reste dû**, plus sur le TTC.
+/// Régression corrigée : une facture de 1 000.— (TVA 8.1 %) déjà réglée de
+/// 400.— était **exclue** des candidates d'un virement de 600.— — le solde
+/// exact qu'attendait le client —, parce que le filtre comparait le TTC.
+#[sqlx::test(migrations = "./test-schema")]
+async fn find_unpaid_matches_on_amount_due_of_partially_settled_invoice(pool: MySqlPool) {
+    let company_id = create_test_company(&pool, "Reste Co").await;
+    let user_id = create_test_user(&pool, "carla", company_id).await;
+    let contact_id = create_test_contact(&pool, company_id, user_id, "Client reste").await;
+    let bank_id = create_test_bank_account(&pool, company_id, "CH9300762011623852957").await;
+    let fy_id = insert_fake_fiscal_year(&pool, company_id).await;
+    let sale_je_id = insert_fake_journal_entry(&pool, company_id, fy_id).await;
+
+    let tx_date = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let inv_date = NaiveDate::from_ymd_opt(2026, 4, 30).unwrap();
+
+    // HT 925.07 @ 8.1 % → TVA 74.93 → TTC 1 000.00.
+    let inv_id = sqlx::query(
+        "INSERT INTO invoices (company_id, contact_id, invoice_number, status, date, \
+         total_amount, journal_entry_id, version, created_at, updated_at) \
+         VALUES (?, ?, 'INV-PART-1', 'validated', ?, ?, ?, 1, NOW(3), NOW(3))",
+    )
+    .bind(company_id)
+    .bind(contact_id)
+    .bind(inv_date)
+    .bind(dec!(925.07))
+    .bind(sale_je_id)
+    .execute(&pool)
+    .await
+    .expect("invoice insert")
+    .last_insert_id() as i64;
+    sqlx::query(
+        "INSERT INTO invoice_lines (invoice_id, position, description, quantity, unit_price, vat_rate, line_total) \
+         VALUES (?, 1, 'Prestation', 1, 925.07, 8.10, 925.07)",
+    )
+    .bind(inv_id)
+    .execute(&pool)
+    .await
+    .expect("line insert");
+
+    // Règlement partiel de 400.— : il lui faut sa propre écriture
+    // (`uq_invoice_settlements_entry`).
+    let settle_je_id = sqlx::query(
+        "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, entry_date, \
+         journal, description, version, created_at, updated_at) \
+         VALUES (?, ?, 2, '2026-05-05', 'Banque', 'règlement partiel', 1, NOW(3), NOW(3))",
+    )
+    .bind(company_id)
+    .bind(fy_id)
+    .execute(&pool)
+    .await
+    .expect("settlement journal_entry insert")
+    .last_insert_id() as i64;
+    sqlx::query(
+        "INSERT INTO invoice_settlements (company_id, invoice_id, journal_entry_id, amount, \
+         settled_on, settlement_type, settlement_bank_account_id) \
+         VALUES (?, ?, ?, 400.00, '2026-05-05', 'bank_transfer', ?)",
+    )
+    .bind(company_id)
+    .bind(inv_id)
+    .bind(settle_je_id)
+    .bind(bank_id)
+    .execute(&pool)
+    .await
+    .expect("settlement insert");
+
+    // Virement du solde, 600.— → la facture est candidate, avec son reste
+    // ET son TTC (la mention « reste dû sur 1 000.00 » de l'écran).
+    let found_due = reconciliation_repo::find_unpaid_invoices_for_window(
+        &pool,
+        company_id,
+        tx_date,
+        dec!(600.00),
+        30,
+        dec!(0.05),
+    )
+    .await
+    .expect("find_unpaid reste dû");
+    let cand = found_due
+        .iter()
+        .find(|c| c.invoice.id == inv_id)
+        .expect("la facture réglée en partie doit être candidate pour son reste de 600.00");
+    assert_eq!(cand.amount_due, dec!(600.00));
+    assert_eq!(cand.total_ttc, dec!(1000.00));
+
+    // Virement du TTC, 1 000.— → plus candidate : il dépasserait le reste.
+    let found_ttc = reconciliation_repo::find_unpaid_invoices_for_window(
+        &pool,
+        company_id,
+        tx_date,
+        dec!(1000.00),
+        30,
+        dec!(0.05),
+    )
+    .await
+    .expect("find_unpaid TTC");
+    assert!(
+        !found_ttc.iter().any(|c| c.invoice.id == inv_id),
+        "le TTC 1 000.00 ne doit plus matcher une facture dont il reste 600.00"
     );
 }

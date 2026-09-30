@@ -934,6 +934,7 @@ reconciliation-labels-empty = Nessuna transazione in attesa di riconciliazione.
 reconciliation-labels-no-account = Nessun conto bancario configurato.
 reconciliation-labels-account-select = Conto bancario
 reconciliation-labels-no-candidate = Nessuna corrispondenza
+reconciliation-labels-amount-due-of = residuo su { $total }
 reconciliation-labels-success-suffix = operazione/i riuscita/e.
 reconciliation-labels-failed = Errori parziali
 reconciliation-cols-tx-date = Data

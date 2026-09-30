@@ -934,6 +934,7 @@ reconciliation-labels-empty = Keine Transaktionen zur Abstimmung vorhanden.
 reconciliation-labels-no-account = Kein Bankkonto konfiguriert.
 reconciliation-labels-account-select = Bankkonto
 reconciliation-labels-no-candidate = Keine Übereinstimmung
+reconciliation-labels-amount-due-of = Rest von insgesamt { $total }
 reconciliation-labels-success-suffix = Vorgang/Vorgänge erfolgreich.
 reconciliation-labels-failed = Teilfehler
 reconciliation-cols-tx-date = Datum

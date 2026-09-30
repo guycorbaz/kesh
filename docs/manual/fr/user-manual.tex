@@ -1008,10 +1008,10 @@ Depuis la version \textbf{0.7}, l'écran \emph{Factures → Rappels} (réservé 
     \item Une \textbf{protection anti-double-envoi} empêche qu'un double-clic n'envoie deux fois le même rappel. Une facture arrivée au \textbf{dernier niveau} reste affichée avec le badge « Dernier niveau atteint » (poursuite à envisager) — elle ne disparaît jamais silencieusement.
 \end{itemize}
 
-\paragraph{Ce que réclame un rappel.} Un rappel réclame ce que le client \textbf{doit encore} : le \textbf{reste dû} de la facture, après ses règlements partiels --- le montant total s'il n'a rien payé. Le courrier annonce ce reste, augmenté des frais de rappel s'il y en a ; à frais nuls, il ne parle pas de frais. Si un règlement est enregistré \textbf{entre l'ouverture de l'aperçu et l'envoi}, l'envoi est \textbf{refusé} : le courrier validé annoncerait un autre montant que la QR-facture jointe. Fermez puis rouvrez l'aperçu, qui reprend le nouveau reste. Le PDF joint n'est pas la facture réémise, c'est un \textbf{rappel} : il en porte le titre, rappelle le numéro de la facture d'origine et, sous le total, ce qui est \textbf{déjà réglé} puis le \textbf{reste à payer} (ces deux lignes n'apparaissent qu'après un règlement). Sa \textbf{QR-facture porte le reste dû}, avec la même référence que la facture, ce qui permet au rapprochement bancaire de reconnaître le paiement. Les \textbf{frais de rappel n'y sont jamais inclus} : ils figurent sur une ligne à part, avec la mention qu'ils ne sont pas compris dans le bulletin de versement.
+\paragraph{Ce que réclame un rappel.} Un rappel réclame ce que le client \textbf{doit encore} : le \textbf{reste dû} de la facture, après ses règlements partiels --- le montant total s'il n'a rien payé. Le courrier annonce ce reste, augmenté des frais de rappel s'il y en a ; à frais nuls, il ne parle pas de frais. Si un règlement est enregistré \textbf{entre l'ouverture de l'aperçu et l'envoi}, l'envoi est \textbf{refusé} : le courrier validé annoncerait un autre montant que la QR-facture jointe. Fermez puis rouvrez l'aperçu, qui reprend le nouveau reste. Le PDF joint n'est pas la facture réémise, c'est un \textbf{rappel} : il en porte le titre, rappelle le numéro de la facture d'origine et, sous le total, ce qui est \textbf{déjà réglé} puis le \textbf{reste à payer} (ces deux lignes n'apparaissent qu'après un règlement). Sa \textbf{QR-facture porte le reste dû}, avec la même référence que la facture : le rapprochement bancaire propose la facture pour un paiement de ce montant, même après des règlements partiels. Les \textbf{frais de rappel n'y sont jamais inclus} : ils figurent sur une ligne à part, avec la mention qu'ils ne sont pas compris dans le bulletin de versement.
 
 \begin{keshwarning}
-Les frais de rappel ne sont \textbf{pas comptabilisés} par Kesh. Un client qui paie le montant du courrier (reste dû \emph{et} frais) verra son versement \textbf{refusé comme trop-perçu} au rapprochement comme au règlement manuel ; seul le montant de la QR-facture s'enregistre (issue \#401).
+Les frais de rappel ne sont \textbf{pas comptabilisés} par Kesh. Un client qui paie le montant du courrier (reste dû \emph{et} frais) ne verra pas son versement \textbf{proposé} au rapprochement, puisqu'il dépasse ce qui reste à payer ; saisi comme règlement manuel, il est \textbf{refusé comme trop-perçu}. Seul le montant de la QR-facture s'enregistre (issue \#401).
 \end{keshwarning}
 
 \begin{keshnote}
@@ -1378,16 +1378,17 @@ La réconciliation consiste à rapprocher les transactions bancaires importées 
 
 \subsubsection{Algorithme de matching}
 
-Lors de l'import, Kesh propose automatiquement des correspondances entre transactions bancaires et factures impayées / écritures comptables. L'algorithme utilise un score combinant :
+À l'ouverture de la page de réconciliation, Kesh cherche, pour chaque transaction bancaire en attente (créditrice, en CHF), les factures qui pourraient lui correspondre. Une facture est \textbf{candidate} si elle est validée et pas encore payée, datée à 30 jours au plus de la transaction, et si \textbf{ce qui reste à payer} --- son \textbf{reste dû} : le montant total, moins l'avoir éventuel, moins les règlements déjà enregistrés --- égale le montant de la transaction à 5 centimes près. Un virement qui \textbf{solde} une facture déjà réglée en partie est donc reconnu : la proposition porte sur le reste, pas sur le montant d'origine.
+
+Chaque candidate reçoit un score, somme de trois critères :
 
 \begin{itemize}
-    \item \textbf{Montant} : correspondance exacte = score maximal, écart < 1 CHF = score moyen.
-    \item \textbf{Date} : transaction bancaire dans les 30 jours de l'échéance facture = bon score.
-    \item \textbf{Référence} : matching exact de la référence QR Bill = score très élevé.
-    \item \textbf{Libellé} : matching partiel du nom du client = score moyen.
+    \item \textbf{Montant} (50\,\%) : le montant de la transaction égale exactement le reste dû. Il n'y a pas de score intermédiaire : un écart d'un centime donne zéro sur ce critère.
+    \item \textbf{Référence} (40\,\%) : la référence de la transaction contient le numéro de la facture, ou l'inverse (score plein) ; ou les deux commencent par les mêmes quatre caractères au moins (demi-score).
+    \item \textbf{Contact} (10\,\%) : le nom de la contrepartie contient celui du client de la facture, ou l'inverse.
 \end{itemize}
 
-Le score total détermine la confiance du match. Au-dessus d'un seuil paramétrable (par défaut 80\%), le match est proposé pour acceptation. Au-dessus de 95\%, le match peut être pré-validé automatiquement (option \emph{auto-accept high confidence}).
+La meilleure candidate est affichée avec son score et le \textbf{montant qui reste à payer}. Si la facture est déjà réglée en partie, ce montant est suivi du total d'origine --- par exemple « 600, reste dû sur 1000 » --- pour que vous la reconnaissiez. Une candidate dont le score vaut zéro n'est pas proposée. Rien n'est jamais rapproché sans votre acceptation : il n'y a ni seuil de confiance réglable, ni acceptation automatique.
 
 \subsubsection{Acceptation des propositions}
 

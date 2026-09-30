@@ -338,7 +338,12 @@ const ATTENDU = {
 	// trouve rien là où l'appel n'existe pas encore : chercher les clés mal
 	// traduites ne révèle jamais celles qui ne sont pas appelées du tout — et
 	// partir d'une liste de clés ne révèle jamais celles que la liste omet.*
-	sitesTotal: 1751,
+	//
+	// Story 25-4-c (#420) : **1751 → 1752**, recompté par ce test et par
+	// `grep -c "i18nMsg("` aux deux bornes de `ReconciliationProposals.svelte`
+	// (17 → 18) — la mention `reconciliation-labels-amount-due-of` (« reste dû
+	// sur … »), clé neuve dans les quatre catalogues.
+	sitesTotal: 1752,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

@@ -282,7 +282,12 @@
 								{:else}
 									<span data-testid="candidate-top-1" data-candidate-type="invoice" data-invoice-id={p.candidates[0].invoiceId}>
 										{p.candidates[0].invoiceNumber ?? `#${p.candidates[0].invoiceId}`}
-										({p.candidates[0].invoiceAmount})
+										({p.candidates[0].invoiceAmount}{#if p.candidates[0].invoiceTotalTtc}
+											<span data-testid="candidate-top-1-amount-due-of"
+												>, {i18nMsg('reconciliation-labels-amount-due-of', 'reste dû sur { $total }', {
+													total: p.candidates[0].invoiceTotalTtc,
+												})}</span
+											>{/if})
 									</span>
 								{/if}
 							</td>
