@@ -1,6 +1,6 @@
 # Story 25.4-c2 : Le verrou à l'acceptation d'un rapprochement
 
-Status: review
+Status: done
 
 **Issue : [#480]** — ⛔ la PR porte `closes #480`, titre ET corps (§ *Issue Tracking Rule*).
 
@@ -308,6 +308,7 @@ Claude Opus 5.5 (`claude-opus-5-5`).
 - `_bmad-output/implementation-artifacts/25-4-c2-validate-prompt-p1.md`
 - `_bmad-output/implementation-artifacts/25-4-c2-validate-prompt-p2.md`
 - `_bmad-output/implementation-artifacts/25-4-c2-review-prompt-p1.md`
+- `_bmad-output/implementation-artifacts/25-4-c2-review-prompt-p2.md`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
@@ -356,5 +357,15 @@ Claude Opus 5.5 (`claude-opus-5-5`).
   du 1305 (déjà journalisé) ; `drop` contre `rollback` (cohérent avec les bras voisins) ; heuristique de
   la victime (le test asserte que sa transaction survit, il ne peut passer à vide) ; branche non-1305 non
   testée ; doublon documentaire de l'invariant. Gate **complet** (`kesh-db` touché) : **2516/2516**.
+- **2026-09-30** — Revue de code P2 **ciblée** (Haiku, prompt `25-4-c2-review-prompt-p2.md`, sur
+  `b3a740a8`) : **0 > LOW**, cinq axes exercés. Recoupée par l'orchestrateur sur l'axe le plus sensible :
+  `cancel_settlement_in_tx` verrouille la facture en tête et son `UPDATE` n'a pas de garde de statut — la
+  nouvelle garde ne peut pas refuser à tort ; `DbError::Invariant` rend un `500` journalisé. **Revue
+  close.** Gate complet au dernier commit : backend **2516/2516** (base remise à zéro), frontend inchangé
+  depuis le gate précédent (836/836), **E2E 228 passed / 19 skipped / 7 failed** — les 7 KF-029, rien
+  d'autre (run à 14:43 UTC).
+
+  **Bilan de la revue** — P1 Sonnet ×3 : 1 HIGH / 4 MEDIUM corrigés, 7 LOW laissés → P2 Haiku ciblée :
+  0 > LOW. Statut → `done`.
 
 [#480]: https://github.com/guycorbaz/kesh/issues/480
