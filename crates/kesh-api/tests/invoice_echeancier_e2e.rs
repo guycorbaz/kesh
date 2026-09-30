@@ -1329,7 +1329,8 @@ async fn a_revenue_rounding_account_receives_the_gap(pool: MySqlPool) {
     seed_base(&pool).await;
     let (company_id, _) = ids(&pool).await;
     let rounding = designate_rounding(&pool, company_id).await;
-    sqlx::query("UPDATE accounts SET account_type = 'Revenue', number = '3990' WHERE id = ?")
+    // Retypage seul : atteignable par l'API (`PUT /accounts/{id}`), le numéro ne l'est pas.
+    sqlx::query("UPDATE accounts SET account_type = 'Revenue' WHERE id = ?")
         .bind(rounding)
         .execute(&pool)
         .await

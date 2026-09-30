@@ -1,6 +1,6 @@
 # Story 25.4-c3-b : L'arrondi au centime, et l'écart passé en écriture
 
-Status: review
+Status: done
 
 **Issue : [#476]** — ⛔ la PR porte `closes #476`, titre ET corps (§ *Issue Tracking Rule*).
 
@@ -333,7 +333,19 @@ Claude Opus 5.5 (`claude-opus-5-5`).
   retenu** : test du compte d'arrondi de type produit (mutation « Revenue retiré du filtre » tuée). **B-F3** :
   compte d'arrondi = contrepartie, deux lignes sur le même compte, documenté comme accepté. Gate complet
   (kesh-db touché) : **2545/2545**.
+- **2026-09-30** — Revue de code P2 ciblée (Haiku, `25-4-c3-b-review-prompt-p2.md`, sur `1e1aaebf`) : 3 MED rendus,
+  **aucun ne touche la production**. (1) Code `INTERNAL_ERROR` affiché brut : vrai, mais **toute** la liste des
+  refus du rapprochement affiche ses codes bruts (`ReconciliationProposals.svelte:362`), `RECONCILIATION_OVERPAYMENT`
+  compris ; l'AC 4 n'exigeait le message que pour le règlement manuel → **reclassé LOW**, issue [#492]. (2) Le test
+  du compte produit changeait aussi le numéro, inatteignable par l'écran → **retenu**, retypage seul (atteignable
+  par l'API). (3) « R pris en dernier » jugé inexact : **réfuté**, l'argument de la P1 porte sur les verrous de la
+  table `accounts` — l'exercice, pris après, est le cycle de #491, déjà tracé. Remédiation : un test et ce Change
+  Log, **aucune ligne de production** ⇒ **boucle close** (§ *La passe ciblée*). Trend : P1 3 MED/2 LOW (dont
+  1 réfuté, 1 reclassé) → P2 3 MED (1 reclassé, 1 réfuté, 1 test) ; lentilles Sonnet ×3 → Haiku. Gate backend complet au
+  dernier commit, base remise à zéro : **2545/2545** ; frontend et E2E inchangés depuis leur run (aucun fichier
+  frontend touché par les deux passes).
 
 [#476]: https://github.com/guycorbaz/kesh/issues/476
 [#490]: https://github.com/guycorbaz/kesh/issues/490
 [#491]: https://github.com/guycorbaz/kesh/issues/491
+[#492]: https://github.com/guycorbaz/kesh/issues/492
