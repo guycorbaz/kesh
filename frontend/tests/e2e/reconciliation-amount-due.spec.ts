@@ -11,6 +11,11 @@
  * ⚠️ **Des montants UNIQUES à chaque exécution** : la base est partagée entre
  * specs. Le règlement partiel varie, donc le reste aussi ; le relevé est
  * réécrit (références, montant) comme dans `reconciliation-cancel.spec.ts`.
+ * La contrepartie du relevé porte en outre le nom du contact de la facture :
+ * si une autre facture de la base partagée tombait sur le même reste, le score
+ * de contact départagerait — c'est la NÔTRE qui serait la candidate affichée.
+ * (Que le score de montant suffise seul est l'objet des e2e API,
+ * `reconciliation_e2e.rs`.)
  *
  * Pré-requis : MariaDB up + KESH_TEST_MODE=true (cf. docs/testing.md).
  */
@@ -68,7 +73,8 @@ async function partiallySettledInvoiceAndItsBalance(
 	page: Page,
 ): Promise<{ bankAccountId: number; invoiceId: number; dueCents: number }> {
 	const unique = `${Date.now()}`;
-	const contactId = await createContactWithAddressViaApi(page, `Solde ${unique}`);
+	const contactName = `Solde ${unique}`;
+	const contactId = await createContactWithAddressViaApi(page, contactName);
 	// Date de facture dans la fenêtre de 30 jours autour du relevé (2026-05-15).
 	const invoiceId = await createAndValidateInvoiceViaApi(page, contactId, '2026-05-10');
 
@@ -114,12 +120,19 @@ async function partiallySettledInvoiceAndItsBalance(
 		}
 		const bankAccountId = ba!.id;
 
-		const xml = fs
-			.readFileSync(FIXTURE, 'utf8')
-			.replace('STMT-2026-05-001', `STMT-SOLDE-${unique}`)
-			.replace('BANK-TX-42', `BANK-TX-SOLDE-${unique}`)
-			.replace('E2E-2026-05-001', `E2E-SOLDE-${unique}`)
-			.replace('<Amt Ccy="CHF">1234.56</Amt>', `<Amt Ccy="CHF">${(dueCents / 100).toFixed(2)}</Amt>`);
+		// Chaque remplacement est vérifié : une fixture modifiée ailleurs ne doit
+		// pas laisser passer un relevé à moitié réécrit.
+		let xml = fs.readFileSync(FIXTURE, 'utf8');
+		for (const [from, to] of [
+			['STMT-2026-05-001', `STMT-SOLDE-${unique}`],
+			['BANK-TX-42', `BANK-TX-SOLDE-${unique}`],
+			['E2E-2026-05-001', `E2E-SOLDE-${unique}`],
+			['<Amt Ccy="CHF">1234.56</Amt>', `<Amt Ccy="CHF">${(dueCents / 100).toFixed(2)}</Amt>`],
+			['<Nm>Acme SA</Nm>', `<Nm>${contactName}</Nm>`],
+		]) {
+			expect(xml.includes(from), `fixture : « ${from} » introuvable`).toBeTruthy();
+			xml = xml.replace(from, to);
+		}
 		const imported = await ctx.post('/api/v1/bank-imports', {
 			multipart: {
 				bankAccountId: bankAccountId.toString(),

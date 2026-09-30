@@ -280,6 +280,7 @@ Claude Opus 5.5 (`claude-opus-5-5`).
 - `frontend/tests/e2e/reconciliation-amount-due.spec.ts`
 - `_bmad-output/implementation-artifacts/25-4-c-residuel-au-rapprochement.md`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `_bmad-output/implementation-artifacts/25-4-c-review-prompt-p1.md`
 
 ## Change Log
 
@@ -339,6 +340,23 @@ Claude Opus 5.5 (`claude-opus-5-5`).
   exécutés** : backend complet sur base remise à zéro **2513/2513** (4 ignorés) ; frontend `check`,
   `lint-i18n-ownership`, **836/836**, build ; **E2E complet 226 passed / 19 skipped / 9 failed**,
   les 9 à la liste des échecs attendus. Statut → `review`.
+- **2026-09-30** — Revue de code P1 (3 lentilles Sonnet, prompt `25-4-c-review-prompt-p1.md`, diff
+  `7aa56d2f..63a6d6a7`) : Blind Hunter 1 HIGH / 4 MEDIUM / 4 LOW, Edge Case Hunter 3 MEDIUM / 1 LOW,
+  Acceptance Auditor 0 (AC 1–6, interdits, manuel et PDF vérifiés). Tous vérifiés sur le code.
+  **Corrigés** : HIGH — l'entrée #420 du CHANGELOG coupait le bloc #416 de ses paragraphes de suite
+  (vérifié : ils s'y rattachaient au rendu) → placée en fin de `### Fixed` ; MEDIUM — traductions EN
+  (« balance due of ») et DE (« Restbetrag von ») lisibles à contresens → « remaining out of »,
+  « Rest von insgesamt » ; MEDIUM → LOW — Playwright exposé à une collision de reste sur la base
+  partagée → la contrepartie du relevé porte le nom du contact (le score de contact départage), et
+  chaque remplacement dans la fixture est vérifié ; LOW — CHANGELOG précise « TTC » et documente le
+  changement de sens de `invoiceAmount` (Blind Hunter F2, gardé sous ce nom : identique au TTC tant
+  que rien n'est réglé). **Écartés** : l'avoir (Edge F1, Blind F5) — émettre un avoir passe la
+  facture en `cancelled` dans la même transaction (`credit_notes.rs:586`), une candidate n'en porte
+  donc jamais ; fan-out des jointures (Blind F4) — tables dérivées agrégées par facture, confirmé par
+  Edge. **Reporté** : aucune garde de signe dans `accept_one_invoice` (Edge F2), préexistant par le
+  score de référence → **issue #482**. LOW laissés : conversion centimes du Playwright (Blind F8),
+  TOCTOU du compte bancaire hérité de `reconciliation-cancel.spec.ts` (Edge F4). Gates ciblés :
+  `kesh-i18n` 30/30, Playwright de la story vert, `npm run check` ; aucune ligne Rust modifiée.
 
 [#416]: https://github.com/guycorbaz/kesh/issues/416
 [#420]: https://github.com/guycorbaz/kesh/issues/420
