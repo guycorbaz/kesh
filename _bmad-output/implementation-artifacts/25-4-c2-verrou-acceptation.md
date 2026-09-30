@@ -131,7 +131,14 @@ un variant `ReconciliationError::TransactionAborted`, posé explicitement quand 
 `is_deadlock_error`. ⛔ **Ne pas élargir `kesh_db::retry::is_deadlock_sqlx` / `is_deadlock_error`**
 (`retry.rs:71-85`, 1213 seulement) : ils sont partagés par tout le crate, et reclasser tout 1305 en
 interblocage masquerait ailleurs un vrai défaut de point de sauvegarde. ⛔ **Ne pas classer en lisant
-le texte d'un message d'erreur** : le code d'erreur MySQL, pas la chaîne. Après `DEFAULT_MAX_DEADLOCK_ATTEMPTS` tentatives, l'erreur finale reste un 500.
+le texte d'un message d'erreur** : le code d'erreur MySQL, pas la chaîne.
+Chemin à tenir, vérifié dans le code : le prédicat de `retry_with` voit un **`AppError`** (patron
+`:3635`) ; la variante typée traverse donc le `match lock_result` de la route (exhaustif, un bras à
+ajouter) vers une variante d'`AppError` que le prédicat reconnaît, et qui, faute de rejeu possible,
+rend un 500. Un 1213 qui remonte **directement** par un `?` (`SAVEPOINT`, `RELEASE SAVEPOINT`) arrive
+déjà en `AppError::Database(DbError::Sqlx(1213))` : `is_deadlock_error` le couvre. `GET_LOCK` est un
+verrou de **session**, relâché par `with_account_lock` même quand la closure échoue
+(`mutex.rs:66-160`) : une nouvelle tentative, transaction neuve, le reprend proprement. Après `DEFAULT_MAX_DEADLOCK_ATTEMPTS` tentatives, l'erreur finale reste un 500.
 Test : un interblocage provoqué de façon déterministe (deux connexions,
 `attendre_une_requete_en_cours`) est rejoué et la proposition finit acceptée. Si un interblocage
 déterministe s'avère impossible à monter, le Dev Agent Record le dit et le test porte sur la
@@ -252,5 +259,15 @@ interblocage que la 25-4-c rend plus probable, et le patron existe déjà sur l'
   (vérifiés : `FOR UPDATE` en tête, incrément inconditionnel). LOW : `pool.rs:17-21`,
   `reconciliation_cancel.rs:292-293`. Remarque intégrée à l'AC 5 : `ROLLBACK TO SAVEPOINT` ne relâche
   pas les verrous de ligne.
+- **2026-09-30** — Validation P2 (Haiku, prompt `25-4-c2-validate-prompt-p2.md`) : 1 CRITICAL, 1 HIGH,
+  1 MEDIUM annoncés — **tous écartés, erreur de catégorie** : la lentille reproche au code de ne pas
+  encore porter ce que la fiche prévoit (variante typée, `retry_with`, entrée d'API), ce qui est
+  l'objet de l'implémentation. Axes utiles, preuves jointes : inventaire avoir / dévalidation vérifié ;
+  **aucun contre-exemple** à l'invariant (relève aussi la suspension des rappels, qui incrémente
+  `version` : une acceptation concurrente est refusée, sens prudent). Axe mal exercé (faisabilité du
+  rejeu) **repris par l'orchestrateur** : `GET_LOCK` de session relâché sur erreur, prédicat sur
+  `AppError`, 1213 direct déjà couvert — précisions ajoutées à l'AC 4. **Validation close : 0 > LOW.**
+
+  **Bilan** — P1 Sonnet 1H/2M/2L → P2 Haiku 0 > LOW (3 annoncés, écartés). Modèles : Sonnet, Haiku.
 
 [#480]: https://github.com/guycorbaz/kesh/issues/480
