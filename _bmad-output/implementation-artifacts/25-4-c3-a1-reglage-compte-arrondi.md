@@ -1,6 +1,6 @@
 # Story 25.4-c3-a1 : Le réglage du compte de différences d'arrondi
 
-Status: review
+Status: done
 
 **Issue : [#476]** — ⛔ la PR porte `refs #476` (la sœur **25-4-c3-b** la fermera).
 
@@ -239,6 +239,7 @@ Claude Opus 5.5 (`claude-opus-5-5`).
 - `_bmad-output/implementation-artifacts/25-4-c3-a1-validate-prompt-p1.md`
 - `_bmad-output/implementation-artifacts/25-4-c3-a1-validate-prompt-p2.md`
 - `_bmad-output/implementation-artifacts/25-4-c3-a1-review-prompt-p1.md`
+- `_bmad-output/implementation-artifacts/25-4-c3-a1-review-prompt-p2.md`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
@@ -274,5 +275,16 @@ Claude Opus 5.5 (`claude-opus-5-5`).
   SQL `BIGINT` (identique au patron TVA, squash vérifié par Edge) ; `toMatchObject` du Vitest ; pas de test
   du 400 ni du 409 côté écran. Gates ciblés : `idor_multi_tenant_e2e` 3/3 sur l'arrondi, Playwright vert,
   garde des sélecteurs E2E verte, fmt, clippy ; **`kesh-db` non touché** par la remédiation.
+- **2026-09-30** — Revue de code P2 **ciblée** (Haiku, prompt `25-4-c3-a1-review-prompt-p2.md`, sur
+  `aa76eb2c`) : **1 LOW** (le `finally` du Playwright pourrait masquer l'erreur d'origine s'il échouait
+  lui-même), 0 > LOW, quatre axes prouvés. Recoupée par l'orchestrateur sur la course entre deux `PUT` :
+  une valeur reconduite est celle en place, donc validée quand elle fut posée ; un `PUT` concurrent qui la
+  change bouge `version`, et le nôtre sort en 409. **Revue close.** Gate complet au dernier commit : backend
+  **2521/2521** (base remise à zéro), frontend **839/839**, **E2E 228 / 19 / 8** — les 7 KF-029, et
+  `products.spec.ts:109`, **vert rejoué seul deux fois** (pollution d'état, famille déjà relevée à la liste
+  des échecs attendus : `products.spec.ts:166`).
+
+  **Bilan de la revue** — P1 Sonnet ×3 : 1 HIGH / 2 MEDIUM corrigés, LOW triés → P2 Haiku ciblée : 0 > LOW.
+  Statut → `done`.
 
 [#476]: https://github.com/guycorbaz/kesh/issues/476
