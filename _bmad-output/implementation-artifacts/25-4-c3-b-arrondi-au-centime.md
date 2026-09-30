@@ -67,8 +67,20 @@ manuel) **égale le reste dû arrondi** et que le reste **brut** en diffère :
   créance du reste **brut** ; et l'**écart** sur le compte de différences d'arrondi — au **crédit** si le
   paiement dépasse le brut (10.01 contre 10.0050), au **débit** sinon (10.00 contre 10.004). Écriture
   équilibrée, aucune ligne à zéro (`chk_jel_debit_credit_exclusive`).
-- Un paiement **inférieur** au reste arrondi reste un règlement partiel ordinaire (montant payé, deux
-  lignes) ; un paiement **supérieur** reste un trop-perçu refusé.
+- ⛔ **La classification tient compte des DEUX bornes, dans cet ordre** (brut `b`, arrondi `r`, payé `p`) :
+  1. `p == r` et `r != b` → solde avec écart (ci-dessus) — y compris quand `r < b` (10.00 sur 10.004) ;
+  2. `p > b` → **trop-perçu refusé** — y compris un montant **strictement entre** `b` et `r` (10.008 sur
+     10.0050) : sans cette borne, la garde arrondie de l'AC 2 le laisserait passer en « partiel », `due_after`
+     deviendrait négatif, `paid_at` se poserait **sans écriture d'écart** et la créance resterait créditrice —
+     le défaut que la story ferme (validation P1, F1) ;
+  3. sinon (`p <= b`) → règlement ordinaire au montant payé, deux lignes (partiel, ou solde exact si `p == b`).
+  La garde de trop-perçu des sites 4 et 6 **est** cette règle : `p > b && p != r` → refus. L'AC 2 (« compare
+  au reste arrondi ») se lit ainsi.
+- **Le règlement manuel refuse un montant à plus de deux décimales** (400, `scale_within(&amount, 2)` dans
+  `SettleInvoiceRequest::into_parts`, `invoices.rs:1141`, patron de `dunning_levels.rs:82`) : un paiement
+  se fait au centime. Aujourd'hui aucun contrôle d'échelle n'existe (`invoices.rs:1118-1125`). La double
+  borne reste la garde de fond (la couche dépôt ne présume pas du handler). Le rapprochement n'est pas
+  exposé : `bank_transactions.amount` est `DECIMAL(18,2)`.
 - Reste brut déjà au centime : deux lignes, comme aujourd'hui.
 
 **AC 4 — Le compte d'arrondi manquant.** L'écart ne s'écrit que sur le compte désigné, **actif, imputable,
@@ -94,12 +106,15 @@ annulé) contre-passe **les trois lignes** et rend le reste dû brut d'avant —
   soldée (`paid_at`, audit `invoice.paid`), règlement de 10.0050, écriture à trois lignes (écart **crédit**
   0.0050 sur le compte d'arrondi), **créance soldée à zéro** au grand livre ; virement de 10.02 refusé en
   trop-perçu ;
+- règlement manuel de **10.008** sur reste brut 10.0050 → **400** (échelle), rien d'écrit ; et, au niveau du
+  dépôt (`settle_invoice` appelé directement), **trop-perçu refusé** (double borne) — pas de partiel
+  silencieux, `paid_at` non posé ;
 - facture à reste brut **10.004** : règlement manuel de **10.00** → soldée, écart **débit** 0.004 ;
 - règlement manuel de 10.01 sur 10.0050 → soldé (API) ; Vitest du dialogue : 10.01 accepté ;
 - compte d'arrondi absent, puis archivé → refus, rien d'écrit (manuel et rapprochement) ;
 - annulation d'un règlement à trois lignes → reste dû restauré, créance et compte d'arrondi revenus ;
 - `reminder_amount_due` inchangé (tests existants verts) ;
-- mutations : helper court-circuité, troisième ligne retirée.
+- mutations : helper court-circuité, troisième ligne retirée, borne `p > b` retirée (le test 10.008 rougit).
 
 **AC 8 — Textes.** `admin-manual.tex` (*Compte de différences d'arrondi*) : retirer « n'est encore lu par
 aucune écriture » ; dire ce que fait l'écart et quand un règlement est refusé faute de compte.
@@ -135,6 +150,28 @@ centime et la troisième ligne. PDF régénérés, contrôlés aplatis (attentio
 - ⚠️ **Le verrou optimiste de la 25-4-c2** (`UPDATE invoices … version = ?`) et l'ordre des gardes (score
   avant trop-perçu) : ne rien y changer.
 
+### Sites hors des huit, triés (validation P1, F2)
+
+- **Échéancier** (`invoices/due-dates/+page.svelte:456`) et **en-tête de la fiche facture**
+  (`invoices/[id]/+page.svelte:1040`) affichent `amountDue` brut via `formatInvoiceTotal` →
+  `formatSwissAmount` → `big.toFixed(2)` (`journal-entries/balance.ts:93`). Le mode par défaut de big.js,
+  `roundHalfUp`, arrondit l'équidistant **loin de zéro** : c'est `MidpointAwayFromZero`, sur un positif comme
+  sur un négatif. **Hors périmètre, légitimes** : le frontend ne peut pas appeler le helper Rust, et son
+  formatage donne déjà le même centime. Rien à changer ; le dialogue (site 8) suit la même règle big.js.
+
+### Pièges
+
+- ⚠️ **`DbError::ConfigurationRequired` n'est PAS le patron de l'AC 4** (validation P1, F3). C'est le voisin
+  le plus proche (compte de banque manquant, `invoice_settlements_write.rs:126`), mais son mapping
+  (`kesh-api/src/errors.rs:2913-2922`) jette le champ dans un `warn!` et rend un code générique
+  `CONFIGURATION_REQUIRED`. L'AC 4 exige un code **dédié** : une variante propre (DbError → AppError →
+  `ROUNDING_ACCOUNT_NOT_CONFIGURED`), et son pendant `FailedProposal` au rapprochement.
+- **La contre-passation d'un compte d'arrondi archivé est déjà couverte** (validation P1, F4) — non par la
+  garde `active` de `create_in_tx`, mais par le pré-contrôle `archived_accounts_in_tx`
+  (`journal_entries.rs:1723`, dans `reverse_in_tx_inner` `:1518`), qui rend un 400
+  `ReversalAccountsArchived` **nommant** les comptes à réactiver. Rien à écrire pour l'AC 6 de ce côté ;
+  un test le confirme (annulation après archivage du compte d'arrondi → 400 nommant 6940).
+
 ### Où regarder
 
 | Fichier | Pourquoi |
@@ -168,5 +205,12 @@ centime et la troisième ligne. PDF régénérés, contrôlés aplatis (attentio
 - **2026-09-30** — Créée : huit sites de comparaison recontrôlés ; au solde, règlement au reste **brut** et
   écart en **troisième ligne** sur le compte désigné (arbitrage de Guy) ; refus lisible si le compte manque ou
   est devenu invalide.
+- **2026-09-30** — Validation P1 (Sonnet) : 1 HIGH, 1 MEDIUM, 2 LOW, tous retenus après contrôle dans le
+  code. **F1** (HIGH) : la garde arrondie de l'AC 2 × la classification binaire de l'AC 3 laissaient un
+  paiement manuel entre brut et arrondi (10.008 sur 10.0050) solder la facture sans écart — classification à
+  double borne, refus d'échelle > 2 au règlement manuel, test et mutation dédiés. **F2** (MED) : échéancier et
+  en-tête de facture triés hors périmètre (big.js `roundHalfUp` = loin de zéro). **F3** (LOW) :
+  `ConfigurationRequired` signalé comme faux patron. **F4** (LOW) : mécanisme d'archivage à la
+  contre-passation précisé (`archived_accounts_in_tx`), test ajouté à l'AC 7 par les Pièges.
 
 [#476]: https://github.com/guycorbaz/kesh/issues/476
