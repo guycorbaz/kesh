@@ -251,6 +251,11 @@ cette story. Un reste brut négatif ou nul reste inchangé (tout paiement `p > 0
   voie d'arrivée de #490 décrivait le cas que la story **ferme** — reformulée (règlement historique non
   rejoué), fiche et issue. F4 (MED) : le test 10.008 asserte le code d'échelle ; le test de dépôt déclaré
   garde de mutation. Équivalence client ⇔ double borne démontrée par la lentille (algèbre + 10⁶ cas).
+- **2026-09-30** — Validation P4 ciblée (Haiku) sur `b1853bb4` : **0 finding**, trois axes déclarés et
+  prouvés (six affirmations recontrôlées contre le code et big.js). Remarque non retenue : « `p > b && p != r`
+  → refus » est la condition exacte du refus, `p == r` relevant du cas 1. **Boucle close** : trend
+  1 HIGH/1 MED/2 LOW → 3 MED (orchestrateur ; 2 réfutés à la lentille) → 3 MED/1 LOW → 0 ; lentilles
+  Sonnet → Haiku → Sonnet → Haiku ; P3 et P4 ciblées ; aucune remédiation ne touche de code.
 
 [#476]: https://github.com/guycorbaz/kesh/issues/476
 [#490]: https://github.com/guycorbaz/kesh/issues/490
