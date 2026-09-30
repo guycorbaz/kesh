@@ -52,6 +52,19 @@ ne touche aucune ligne et la proposition sort en `RECONCILIATION_INVOICE_NOT_ELI
 | Rejeu post-restauration | `post_restore/20260828000001_invoice_settlements_type.sql:23` | hors ligne (import d'installation) |
 | Tests | `invoices.rs:4220`, `:4257` | `mod tests` |
 
+**Au-delà des règlements** — le reste dû soustrait aussi l'**avoir émis**
+(`INVOICE_AMOUNT_DUE_DERIVED_SQL`, `invoice_settlements.rs:105-106`), et l'acceptation exige le statut
+`validated`. Les autres écrivains qui touchent ces grandeurs, vérifiés sûrs :
+
+| Écrivain | Site | Incrémente `version` ? |
+|---|---|---|
+| Émission d'un avoir — `create_credit_note` | `credit_notes.rs:283` (`FOR UPDATE` en tête) + `:586` (`status = 'cancelled'`) | **toujours** |
+| Dévalidation — `invoices::unvalidate` | `invoices.rs:1453` (`FOR UPDATE` en tête) + `:1577` | **toujours** |
+| Lignes de facture (`invoice_lines`) | brouillon seulement : une facture validée est immuable | sans objet |
+
+L'`UPDATE … AND version = ? AND status = 'validated'` d'`accept_one_invoice` refuse donc déjà ces deux
+courses. **C'est l'ensemble complet** qu'énonce l'invariant de l'AC 1.
+
 **Le trou est unique** : un règlement manuel **partiel** ne touche pas `version`. D'où les deux
 courses :
 
@@ -71,7 +84,7 @@ depuis son `UPDATE`) puis lit un état à jour : ce sens-là est sûr.
 
 Posé au chargement de la facture, il lirait `version` **à jour** — donc le contrôle `version = ?`
 passerait toujours — alors que `amount_due`, lecture simple, lirait encore l'**instantané**
-(`reconciliation_cancel.rs:291` et `users.rs:100-107` documentent la même règle). Il **désarmerait**
+(`reconciliation_cancel.rs:292-293` et `users.rs:100-107` documentent la même règle). Il **désarmerait**
 le verrou optimiste qui refuse aujourd'hui la course n° 2, sans fermer la n° 1. Le patron de
 `settle_invoice` ne se transpose pas : son `FOR UPDATE` est la première instruction de SA transaction,
 alors que dans un lot l'instantané est fixé dès la première proposition.
@@ -96,7 +109,8 @@ défaut) : le point de sauvegarde survit, la proposition sort en échec au bout 
 dans la **même** transaction. Concrètement : `settle_invoice` incrémente `version` (et `updated_at`)
 **à chaque règlement**, partiel compris — `paid_at` n'est posé qu'au solde, comme aujourd'hui. Le
 doc-comment de `settle_invoice` et celui d'`accept_one_invoice` (au `UPDATE … version = ?`) énoncent
-l'invariant et nomment l'inventaire ci-dessus.
+l'invariant et nomment les **deux** inventaires ci-dessus (règlements, et avoir / dévalidation) : le
+prochain écrivain qui y manquerait doit trouver la règle écrite là où il écrit.
 
 **AC 2 — La course n° 1 est refusée.** Une acceptation dont l'instantané précède un règlement manuel
 partiel validé depuis sort en `RECONCILIATION_INVOICE_NOT_ELIGIBLE` (`race_during_update`), sans rien
@@ -108,12 +122,16 @@ deux comptes bancaires : une acceptée, l'autre refusée, jamais deux règlement
 
 **AC 4 — Un interblocage se rejoue.** Quand la transaction du lot est annulée par InnoDB (1213), la
 route d'acceptation **rejoue toute l'opération** — transaction neuve, verrou de compte repris —, par
-`retry_with` et le prédicat `is_deadlock_error`, patron de `post_cancel_reconciliation`
-(`reconciliation.rs:3612-3646`). ⚠️ L'erreur qui remonte aujourd'hui n'est **pas** le 1213 mais l'échec
-du `ROLLBACK TO SAVEPOINT` (1305) : `accept_batch` doit reconnaître qu'une transaction a été annulée
-sous lui et le faire remonter **comme un interblocage** (prédicat `is_deadlock_error` vrai), jamais
-comme un 500 opaque. ⛔ **Ne pas classer en lisant le texte d'un message d'erreur** : le code d'erreur
-MySQL, pas la chaîne. Après `DEFAULT_MAX_DEADLOCK_ATTEMPTS` tentatives, l'erreur finale reste un 500.
+`retry_with`, patron de `post_cancel_reconciliation` (`reconciliation.rs:3612-3646`). ⚠️ L'erreur qui
+remonte aujourd'hui n'est **pas** le 1213 mais l'échec du `ROLLBACK TO SAVEPOINT` (1305, mode d'échec
+connu du couple interblocage / point de sauvegarde) : `accept_batch` doit reconnaître qu'une
+transaction a été annulée sous lui et le faire remonter par une **erreur typée dédiée** (par exemple
+un variant `ReconciliationError::TransactionAborted`, posé explicitement quand `ROLLBACK TO SAVEPOINT`
+échoue en 1305), que le prédicat de rejeu **de la route d'acceptation** reconnaît, au même titre que
+`is_deadlock_error`. ⛔ **Ne pas élargir `kesh_db::retry::is_deadlock_sqlx` / `is_deadlock_error`**
+(`retry.rs:71-85`, 1213 seulement) : ils sont partagés par tout le crate, et reclasser tout 1305 en
+interblocage masquerait ailleurs un vrai défaut de point de sauvegarde. ⛔ **Ne pas classer en lisant
+le texte d'un message d'erreur** : le code d'erreur MySQL, pas la chaîne. Après `DEFAULT_MAX_DEADLOCK_ATTEMPTS` tentatives, l'erreur finale reste un 500.
 Test : un interblocage provoqué de façon déterministe (deux connexions,
 `attendre_une_requete_en_cours`) est rejoué et la proposition finit acceptée. Si un interblocage
 déterministe s'avère impossible à monter, le Dev Agent Record le dit et le test porte sur la
@@ -128,6 +146,10 @@ reconnaissance de l'annulation (1305 après `ROLLBACK`) — **jamais** un test q
 - ⚠️ le règlement manuel concurrent ne doit pas dépendre du verrou que tient le test : le dater dans
   un **autre exercice ouvert** que celui que l'acceptation attend, ou tout autre montage qui évite de
   bloquer le règlement derrière le verrou de test ;
+- ⚠️ ne met dans le lot **que** la proposition sous test : `ROLLBACK TO SAVEPOINT` ne relâche pas les
+  verrous de ligne pris après le point de sauvegarde (seuls ceux des lignes insérées) — une
+  proposition antérieure sur la même facture garderait la ligne `invoices` verrouillée jusqu'à la fin
+  du lot et fausserait le montage ;
 - est **éprouvé par mutation** : l'incrément de `version` retiré du règlement partiel, le test AC 2
   échoue (double règlement) ; le rejeu retiré, le test AC 4 échoue.
 
@@ -139,8 +161,11 @@ facture **relue après validation**, sans quoi un `pauseDunning` qui suit (`:512
 sortirait en 409. Les tests existants qui assertent la `version` d'une facture après un règlement
 partiel sont mis à jour, et le Dev Agent Record les nomme.
 
-**AC 7 — Textes.** `docs/api-external.md` : la route d'acceptation rejoue un interblocage, comme
-l'annulation (`:291`). CHANGELOG `[0.12.1]` *Fixed*. Le manuel : relire la section *Réconciliation
+**AC 7 — Textes.** `docs/api-external.md` ne documente **pas** `POST /api/v1/reconciliation/accept`
+(la section *Annuler un rapprochement bancaire*, `:287`, ne couvre que la consultation et
+l'annulation) : y ajouter une entrée courte pour l'acceptation — accès, corps, succès partiel
+`{ accepted, failed }`, et le rejeu d'un interblocage transitoire, dans les termes de l'annulation
+(`:291`). CHANGELOG `[0.12.1]` *Fixed*. Le manuel : relire la section *Réconciliation
 bancaire* et le règlement manuel — n'y rien écrire s'ils ne promettent rien sur la concurrence, et le
 dire dans le Dev Agent Record.
 
@@ -148,8 +173,9 @@ dire dans le Dev Agent Record.
 
 - [ ] **T1 — l'invariant** (AC 1, 6) : `settle_invoice` incrémente `version` à chaque règlement ;
   doc-comments ; réponse du règlement relue après validation ; tests existants de `version`.
-- [ ] **T2 — le rejeu** (AC 4) : `accept_batch` reconnaît la transaction annulée ; route d'acceptation
-  sous `retry_with` (une fonction « une tentative », comme `cancel_reconciliation_once`).
+- [ ] **T2 — le rejeu** (AC 4) : `accept_batch` reconnaît la transaction annulée (erreur typée
+  dédiée) ; route d'acceptation sous `retry_with` (une fonction « une tentative », comme
+  `cancel_reconciliation_once`), prédicat local à la route.
 - [ ] **T3 — tests de course et mutations** (AC 2, 3, 5).
 - [ ] **T4 — textes** (AC 7).
 - [ ] **T5 — gates** : backend complet (base remise à zéro — ⛔ `kesh-db` touché : gate complet même en
@@ -161,11 +187,13 @@ dire dans le Dev Agent Record.
 
 - ⛔ **`FOR UPDATE` sur la facture dans `accept_one_invoice`** — il désarme le verrou optimiste (voir
   plus haut). Toute autre lecture verrouillante qui rafraîchirait `invoice_version_pre` aussi.
-- ⛔ **Classer une erreur par son texte** (`contains("Deadlock")`) : le code MySQL, via
-  `kesh_db::retry::is_deadlock_error` ou un équivalent sur le code.
+- ⛔ **Classer une erreur par son texte** (`contains("Deadlock")`) : le code MySQL.
+- ⛔ **Élargir `is_deadlock_error` au 1305** : prédicat partagé ; la reconnaissance du point de
+  sauvegarde perdu reste locale à l'acceptation (`reconciliation.rs` est le seul site à utiliser des
+  `SAVEPOINT` nommés du dépôt).
 - ⛔ **Un test de course avec `sleep`** : il passe à vide un jour sur deux (`tests-qui-prouvent-moins`).
 - ⛔ **Changer le niveau d'isolation** (`READ COMMITTED`, `SERIALIZABLE`) pour régler la course :
-  `pool.rs:15-19` assume REPEATABLE READ pour tout le crate.
+  `pool.rs:17-21` assume REPEATABLE READ pour tout le crate.
 - ⚠️ **Mise à niveau de MariaDB** : à partir de la 11.6, `innodb_snapshot_isolation` vaut `ON` par
   défaut — une lecture verrouillante ou un `UPDATE` sur une ligne modifiée depuis l'instantané échoue
   alors (1020, *Record has changed since last read*) au lieu de lire la dernière version. Le verrou
@@ -216,5 +244,13 @@ interblocage que la 25-4-c rend plus probable, et le patron existe déjà sur l'
   isolation réelle relevée sur MariaDB 10.11 ; inventaire clos des écrivains de `invoice_settlements`
   — **un seul** n'incrémente pas `version` (le règlement manuel partiel) ; la solution retenue est
   l'invariant d'incrément, **pas** un `FOR UPDATE` ; rejeu sur interblocage inclus par défaut.
+- **2026-09-30** — Validation P1 (Sonnet, prompt `25-4-c2-validate-prompt-p1.md`) : **1 HIGH,
+  2 MEDIUM, 2 LOW**, vérifiés. HIGH : `is_deadlock_error` ne teste que le 1213 (`retry.rs:71-85`), l'AC 4
+  le nommait pour reconnaître un 1305 → erreur typée dédiée, prédicat local, interdiction d'élargir le
+  prédicat partagé. MEDIUM : `api-external.md` ne documente pas `/accept` → une entrée à écrire, pas une
+  phrase. MEDIUM : l'inventaire ne couvrait que `invoice_settlements` → avoir et dévalidation ajoutés
+  (vérifiés : `FOR UPDATE` en tête, incrément inconditionnel). LOW : `pool.rs:17-21`,
+  `reconciliation_cancel.rs:292-293`. Remarque intégrée à l'AC 5 : `ROLLBACK TO SAVEPOINT` ne relâche
+  pas les verrous de ligne.
 
 [#480]: https://github.com/guycorbaz/kesh/issues/480
