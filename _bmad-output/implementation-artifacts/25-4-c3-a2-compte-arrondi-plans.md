@@ -55,11 +55,18 @@ de l'entrée marquée d'un plan (`Option`), pour que personne ne recopie la rech
 
 **AC 3 — La désignation à la création.** `insert_with_defaults` **et** `insert_with_defaults_in_tx`
 (miroirs, modifiés ensemble) posent `default_rounding_account_id` sur le compte de la société dont le numéro
-est celui de l'entrée marquée du plan de sa forme juridique (`companies.org_type` → `load_chart`), **s'il
-existe, est actif, imputable, de charge ou de produit** — sinon ils le laissent `NULL`, **sans échouer** :
+est celui de l'entrée marquée du plan de sa forme juridique, **s'il existe, est actif, imputable, de
+charge ou de produit** — sinon ils le laissent `NULL`, **sans échouer** :
 le compte d'arrondi est facultatif (contrairement à la créance et au produit, qui font échouer
 l'onboarding). ⚠️ Le compte a pu être renuméroté ou supprimé entre l'étape 4 et la finalisation : `NULL`,
-jamais une erreur. Aucune ligne existante n'est modifiée : `INSERT IGNORE` reste la règle (une société qui
+jamais une erreur. **Tranché** (validation P1) :
+- la forme juridique se lit **à l'intérieur** des deux fonctions (`SELECT org_type FROM companies WHERE id = ?`,
+  puis `load_chart`) — leur signature **ne change pas**, aucun appelant n'est touché (15 appels de test,
+  `onboarding.rs:721`, `kesh-seed/src/lib.rs:194`) ; un `org_type` ne change plus après l'étape 3
+  (`set_org_type`, `onboarding.rs:322`), donc le plan relu est celui qui a semé les comptes ;
+- la recherche du compte par numéro prend le **même `FOR UPDATE`** que les trois recherches par rôle
+  (`company_invoice_settings.rs:288-318`, « F1 CRITICAL FIX ») : sans lui, une désactivation concurrente
+  rouvrirait la course que F1 a fermée. Aucune ligne existante n'est modifiée : `INSERT IGNORE` reste la règle (une société qui
 a déjà ses réglages n'est pas touchée).
 
 **AC 4 — Les sociétés existantes.** **Aucune migration, aucune donnée écrite** chez elles (arbitrage) :
@@ -74,9 +81,11 @@ elles créent le compte dans le plan et le choisissent dans les paramètres (c3-
   dont les réglages existent déjà n'est pas modifiée ;
 - `kesh-api` : l'onboarding de bout en bout (chemin « production », étape 4 puis finalisation) aboutit à un
   réglage désigné ;
-- les tests qui comptent les entrées des plans ou comparent le plan semé à un état attendu
-  (`accounts_role_backfill.rs`, `closing_accounts_backfill.rs`, `chart_of_accounts/mod.rs`, seed) sont
-  relus et mis à jour **sans affaiblir leur assertion**.
+- les tests qui comptent les entrées des plans ou comparent le plan semé à un état attendu sont relus et
+  mis à jour **sans affaiblir leur assertion**. Relevé en validation P1 : `accounts_role_backfill.rs` dérive
+  ses assertions de `load_chart` (`chart.len()`, `is_postable`) et devrait **passer sans changement** ;
+  `closing_accounts_backfill.rs` sème en SQL brut, il n'est **pas** concerné ; restent les tests de
+  `chart_of_accounts/mod.rs` et du seed à relire.
 
 **AC 6 — Textes.** `admin-manual.tex`, paragraphe *Compte de différences d'arrondi* (c3-a1) : les plans
 livrés proposent `6940 Différences d'arrondi`, désigné d'office à la création d'une société ; une société
@@ -112,7 +121,7 @@ dresse pas la liste.
 | Fichier | Pourquoi |
 |---|---|
 | `crates/kesh-core/assets/charts/{pme,independant,association}.json` | les plans |
-| `crates/kesh-core/src/chart_of_accounts/mod.rs:187-300` | `ChartEntry`, `load_chart`, `validate_chart`, `is_postable` |
+| `crates/kesh-core/src/chart_of_accounts/mod.rs:187-360` | `ChartEntry`, `load_chart` (`:231`), `validate_chart` (`:248`), `is_postable` (`:340`) |
 | `crates/kesh-db/src/repositories/company_invoice_settings.rs:277-500` | les deux `insert_with_defaults*` |
 | `crates/kesh-api/src/routes/onboarding.rs:370-390, 680-740` | étape 4 et finalisation |
 | `crates/kesh-seed/src/lib.rs:140-200` | le jeu de démonstration |
@@ -136,6 +145,13 @@ dresse pas la liste.
 
 ## Change Log
 
+- **2026-09-30** — Validation P1 (Sonnet, prompt `25-4-c3-a2-validate-prompt-p1.md`) : **3 MEDIUM, 2 LOW**,
+  vérifiés. AC 3 laissait ouvert comment lire la forme juridique → **lecture interne**, signatures
+  inchangées ; et le verrou → **même `FOR UPDATE`** que les recherches par rôle. AC 5 citait à tort
+  `closing_accounts_backfill.rs` et taisait qu'`accounts_role_backfill.rs` devrait passer tel quel → corrigé.
+  LOW : plage de lignes d'`is_postable` ; le manuel utilisateur annonce « deux plans » (trois livrés), hors
+  périmètre → **issue #488**. Chemins de création recensés : onboarding (démo, production), seed ; `/_test/seed`,
+  import de sauvegarde et reset démo hors du chemin de désignation, à raison.
 - **2026-09-30** — Créée au découpage de la 25-4-c3, selon les arbitrages de Guy : `6940 Différences
   d'arrondi` (charge) dans les trois plans, désigné d'office à la création d'une société par un **marqueur de
   plan** (pas de numéro dans le code, pas de rôle) ; rien chez les sociétés existantes.
