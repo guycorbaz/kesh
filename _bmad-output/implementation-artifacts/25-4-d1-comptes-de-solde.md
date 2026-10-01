@@ -56,7 +56,7 @@ afin que solder le reste d'une facture impute l'écart au bon compte sans que j'
 
 **AC 1 — Le marqueur de plan.** `ChartEntry.write_off_nature: Option<WriteOffNature>` (`#[serde(default)]`, JSON
 `writeOffNature`), `enum WriteOffNature { Discount, BankFees, BadDebt }` (`"discount" | "bankFees" | "badDebt"`).
-`validate_chart` : **au plus une entrée par nature**, charge ou produit, imputable, sans rôle — les règles du marqueur
+`validate_chart` : **au plus une entrée par nature** (et une seule nature par entrée, que le type `Option` garantit), charge ou produit, imputable, sans rôle — les règles du marqueur
 d'arrondi, **factorisées** dans un helper commun (et non recopiées), **paramétré par le libellé** : les messages du
 marqueur d'arrondi restent **mot pour mot** ceux d'aujourd'hui, dont dépendent quatre tests existants
 (`chart_of_accounts/mod.rs:994, :1008, :1019, :1038`, qui doivent passer sans modification). ⛔ **Une entrée ne porte
@@ -71,7 +71,7 @@ mauvais type, non imputable, avec rôle, double marqueur → refus.
 - **3800** marqué `discount` dans **pme** et **independant** seulement.
 - ⚠️ **Aucun test ne compte aujourd'hui les entrées exactes des plans** (seulement des bornes, `mod.rs:425, :439, :458`,
   et une comparaison dynamique, `accounts_role_backfill.rs:148-150` ; validation P1) : **en ajouter un**, qui fige
-  86/86/83 et les marqueurs attendus de chaque plan — l'ajout du 3805 ne serait vu par rien d'autre.
+  86/86/83 — l'état **après** l'ajout du 3805, contre 85/85/82 aujourd'hui — et les marqueurs attendus de chaque plan — l'ajout du 3805 ne serait vu par rien d'autre.
 
 **AC 3 — La migration** (non breaking) : `company_invoice_settings.default_discount_account_id`,
 `default_bank_fees_account_id`, `default_bad_debt_account_id`, `BIGINT NULL`, FK `ON DELETE RESTRICT` vers `accounts`
@@ -146,5 +146,8 @@ champs ensemble), et vérifier chaque site par le compilateur et par le test du 
 - **2026-10-01** — Validation P1 (Sonnet) : 4 MED, 1 LOW, retenus. Le test de comptage des plans annoncé n'existait pas
   → à créer ; double marqueur interdit (test) ; messages du marqueur d'arrondi gardés mot pour mot (quatre tests en
   dépendent) ; charge chiffrée (une soixantaine de sites) ; P7 sans objet écrit.
+- **2026-10-01** — Validation P2 ciblée (Haiku) : 1 MED rendu, **reclassé LOW** — les comptes 85/85/82 (« Les faits »,
+  l'état actuel) et 86/86/83 (AC 2, l'état visé) ne se contredisent pas ; précisé quand même, comme « une nature par
+  entrée ». **Boucle close** : 4 MED/1 LOW → 0 au-dessus de LOW ; Sonnet → Haiku ; remédiation sur la fiche seule.
 
 [#384]: https://github.com/guycorbaz/kesh/issues/384
