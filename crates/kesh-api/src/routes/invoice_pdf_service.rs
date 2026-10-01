@@ -345,8 +345,11 @@ fn build_qrbill_inputs(
     // « Total TTC » est le TTC canonique (helper kesh-core, même arithmétique
     // que le débit créance) — `total_amount` est le HT comptable et ne doit
     // JAMAIS être présenté comme montant dû.
-    let total_ttc = kesh_core::accounting::vat::invoice_total_ttc(
+    //
+    // Story 25-4-c4-a (#494) : arrondi à 5 centimes figé à la validation compris.
+    let total_ttc = kesh_core::accounting::vat::invoice_total_ttc_rounded(
         lines.iter().map(|l| (l.line_total, l.vat_rate)),
+        invoice.rounding_amount,
     );
 
     // Story 25-4-b2 (#416, AC 7) : la QR d'un rappel porte le RESTE DÛ — la même
@@ -641,6 +644,7 @@ mod tests {
             due_date: None,
             payment_terms: None,
             total_amount: dec!(100.00),
+            rounding_amount: dec!(0),
             journal_entry_id: None,
             paid_at: None,
             emailed_at: None,

@@ -57,12 +57,19 @@ pub const INVOICE_SETTLED_DERIVED_JOIN_SQL: &str = "LEFT JOIN (SELECT invoice_id
 /// pas d'écriture et n'éteint donc rien. `credit_notes.invoice_id` est
 /// `NOT NULL UNIQUE` — au plus un avoir par facture, la somme est donc une
 /// commodité de forme, pas un cumul réel.
+///
+/// ⛔ **Arrondi figé de l'avoir compris** (Story 25-4-c4-a, #494) : l'avoir
+/// recopie `rounding_amount` de sa facture, si bien qu'un avoir total éteint
+/// exactement le TTC arrondi. Le terme d'arrondi se somme sur `credit_notes`,
+/// **hors** de la somme des lignes — qui le compterait une fois par ligne.
 pub const INVOICE_CREDITED_SUBQUERY_SQL: &str = concat!(
-    "(SELECT COALESCE(SUM(",
+    "((SELECT COALESCE(SUM(",
     line_ttc_sql!("cl."),
     "), 0) FROM credit_note_lines cl \
      INNER JOIN credit_notes cn ON cn.id = cl.credit_note_id \
-     WHERE cn.invoice_id = i.id AND cn.status = 'issued')"
+     WHERE cn.invoice_id = i.id AND cn.status = 'issued') \
+     + (SELECT COALESCE(SUM(cn.rounding_amount), 0) FROM credit_notes cn \
+     WHERE cn.invoice_id = i.id AND cn.status = 'issued'))"
 );
 
 /// Forme **agrégat multi-factures** de l'avoir émis, **TTC** — table dérivée
@@ -72,11 +79,15 @@ pub const INVOICE_CREDITED_SUBQUERY_SQL: &str = concat!(
 /// Miroir exact de [`INVOICE_CREDITED_SUBQUERY_SQL`] — même unité, même
 /// arrondi ; les deux sont tenues d'accord par le test de parité
 /// (`tests/invoice_amount_due_parity.rs`).
+///
+/// L'arrondi figé de l'avoir (Story 25-4-c4-a) s'ajoute **par avoir**, après la
+/// somme de ses lignes (table dérivée `cl_ttc`), puis se somme par facture.
 pub const INVOICE_CREDITED_DERIVED_JOIN_SQL: &str = concat!(
-    "LEFT JOIN (SELECT cn.invoice_id, SUM(",
+    "LEFT JOIN (SELECT cn.invoice_id, SUM(cl_ttc.ttc + cn.rounding_amount) AS credited \
+     FROM credit_notes cn INNER JOIN (SELECT cl.credit_note_id, SUM(",
     line_ttc_sql!("cl."),
-    ") AS credited FROM credit_note_lines cl \
-     INNER JOIN credit_notes cn ON cn.id = cl.credit_note_id \
+    ") AS ttc FROM credit_note_lines cl GROUP BY cl.credit_note_id) cl_ttc \
+     ON cl_ttc.credit_note_id = cn.id \
      WHERE cn.status = 'issued' GROUP BY cn.invoice_id) cnt ON cnt.invoice_id = i.id"
 );
 
@@ -102,8 +113,7 @@ pub fn amount_due_derived_joins() -> String {
 /// termes TTC. Miroir exact de [`amount_due`]. ⛔ Ne pas le réécrire à la main
 /// dans une requête : c'est ainsi que les agrégats ont sommé le TTC pendant
 /// un mois après la 24-2 (#416).
-pub const INVOICE_AMOUNT_DUE_DERIVED_SQL: &str =
-    "(COALESCE(lt.ttc, 0) - COALESCE(cnt.credited, 0) - COALESCE(st.settled, 0))";
+pub const INVOICE_AMOUNT_DUE_DERIVED_SQL: &str = "(COALESCE(lt.ttc, 0) + i.rounding_amount - COALESCE(cnt.credited, 0) - COALESCE(st.settled, 0))";
 
 /// Le **total réglé** d'une ligne, sur les tables de [`amount_due_derived_joins`].
 pub const INVOICE_AMOUNT_SETTLED_DERIVED_SQL: &str = "COALESCE(st.settled, 0)";

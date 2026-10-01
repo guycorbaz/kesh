@@ -273,6 +273,7 @@ journal-entry-saved = Entry saved
 error-fiscal-year-closed-generic = The fiscal year is closed — no entries can be added or modified (Swiss CO art. 957-964).
 error-inactive-accounts = One or more accounts are archived or invalid.
 error-rounding-account-not-configured = This payment settles the invoice to the centime, but no usable rounding-difference account is designated: choose one in Settings → Invoicing.
+error-rounding-account-not-configured-issuance = The total of this document is rounded to 5 centimes, but no usable rounding-difference account is designated: choose one in Settings → Invoicing.
 
 # Per-line revenue account (Story 16-1a, #152)
 invoice-line-account-subject-line = Line { $line }

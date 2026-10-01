@@ -312,8 +312,10 @@ pub async fn get_credit_note_pdf(
 
     // TTC = HT + TVA (cohérent avec la contre-passation) — helper canonique
     // #246 (Story 21-2a), même arithmétique que le débit créance.
-    let ttc: Decimal = kesh_core::accounting::vat::invoice_total_ttc(
+    // Story 25-4-c4-a : arrondi figé recopié de la facture compris.
+    let ttc: Decimal = kesh_core::accounting::vat::invoice_total_ttc_rounded(
         lines.iter().map(|l| (l.line_total, l.vat_rate)),
+        cn.rounding_amount,
     );
     // #151 : récap TVA de l'avoir (montants positifs — la contre-passation gère
     // le signe séparément ; le PDF « Avoir » présente les montants crédités).
@@ -439,6 +441,7 @@ mod tests {
             status: "issued".into(),
             date: chrono::NaiveDate::from_ymd_opt(2026, 8, 6).unwrap(),
             total_amount: dec!(100.00),
+            rounding_amount: rust_decimal::Decimal::ZERO,
             journal_entry_id: None,
             version: 1,
             created_at: chrono::NaiveDateTime::default(),

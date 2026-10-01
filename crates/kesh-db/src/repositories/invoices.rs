@@ -50,7 +50,7 @@ pub(crate) const LINE_COLUMNS: &str = "id, invoice_id, position, description, qu
 // pub(crate) : réutilisé par `repositories::credit_notes` (lock de la
 // facture d'origine) — une seule liste de colonnes à maintenir.
 pub(crate) const FIND_INVOICE_SCOPED_SQL: &str = "SELECT id, company_id, contact_id, invoice_number, \
-    status, date, due_date, payment_terms, total_amount, journal_entry_id, paid_at, \
+    status, date, due_date, payment_terms, total_amount, rounding_amount, journal_entry_id, paid_at, \
     emailed_at, emailed_to, project_id, dunning_paused_at, dunning_paused_note, \
     version, created_at, updated_at \
     FROM invoices WHERE id = ? AND company_id = ?";
@@ -186,10 +186,14 @@ pub(crate) use line_ttc_sql;
 ///
 /// `pub` (PAS `pub(crate)`) : consommée par `repositories::reconciliation`
 /// (21-2b) et par `kesh-report` (balance âgée 21-7) — source de vérité unique.
+///
+/// ⛔ **Arrondi figé compris** (Story 25-4-c4-a, #494) : `+ i.rounding_amount`,
+/// l'écart à 5 centimes posé à la validation (0 pour une pièce émise sans
+/// arrondi ou un brouillon).
 pub const INVOICE_TTC_SUBQUERY_SQL: &str = concat!(
-    "(SELECT COALESCE(SUM(",
+    "((SELECT COALESCE(SUM(",
     line_ttc_sql!("l."),
-    "), 0) FROM invoice_lines l WHERE l.invoice_id = i.id)"
+    "), 0) FROM invoice_lines l WHERE l.invoice_id = i.id) + i.rounding_amount)"
 );
 
 /// Forme **agrégat multi-factures** du TTC canonique (#246) — table dérivée à
@@ -204,6 +208,13 @@ pub const INVOICE_TTC_DERIVED_JOIN_SQL: &str = concat!(
     line_ttc_sql!(""),
     ") AS ttc FROM invoice_lines GROUP BY invoice_id) lt ON lt.invoice_id = i.id"
 );
+
+/// Le TTC d'une ligne de liste, sur la table dérivée de
+/// [`INVOICE_TTC_DERIVED_JOIN_SQL`], **arrondi figé compris** (Story 25-4-c4-a) :
+/// la table dérivée somme les lignes par facture et ne peut pas porter l'en-tête.
+/// ⛔ Toute projection `total_ttc` d'une liste passe par ici, jamais par
+/// `lt.ttc` nu.
+pub const INVOICE_TTC_DERIVED_SQL: &str = "(COALESCE(lt.ttc, 0) + i.rounding_amount)";
 
 /// TTC canonique d'UNE facture (#246) via la forme scalaire — pour les
 /// call-sites qui n'ont pas les lignes chargées (ex. re-score de la
@@ -826,11 +837,12 @@ pub async fn list_by_company_paginated(
     let mut items_qb: QueryBuilder<sqlx::MySql> = QueryBuilder::new(format!(
         "SELECT i.id, i.company_id, i.contact_id, c.name AS contact_name, \
          i.invoice_number, i.status, i.date, i.due_date, i.payment_terms, \
-         i.total_amount, COALESCE(lt.ttc, 0) AS total_ttc, \
+         i.total_amount, {ttc} AS total_ttc, \
          {settled} AS amount_settled, {due} AS amount_due, \
          i.paid_at, i.dunning_paused_at, i.dunning_paused_note, \
          i.version, i.created_at, i.updated_at \
          FROM invoices i INNER JOIN contacts c ON c.id = i.contact_id {joins}",
+        ttc = INVOICE_TTC_DERIVED_SQL,
         settled = INVOICE_AMOUNT_SETTLED_DERIVED_SQL,
         due = INVOICE_AMOUNT_DUE_DERIVED_SQL,
         joins = amount_due_derived_joins(),
@@ -1303,7 +1315,7 @@ pub async fn delete(
 
     let current_opt = sqlx::query_as::<_, Invoice>(
         "SELECT id, company_id, contact_id, invoice_number, status, date, due_date, \
-         payment_terms, total_amount, journal_entry_id, paid_at, emailed_at, emailed_to, \
+         payment_terms, total_amount, rounding_amount, journal_entry_id, paid_at, emailed_at, emailed_to, \
          project_id, dunning_paused_at, dunning_paused_note, version, created_at, updated_at \
          FROM invoices WHERE id = ? AND company_id = ? FOR UPDATE",
     )
@@ -1572,9 +1584,13 @@ pub async fn unvalidate(
         //
         // ⚠️ `invoice_number` n'est PAS touché : c'est le critère du numéro
         // conservé.
+        //
+        // Story 25-4-c4-a : l'arrondi figé retombe à 0 — un brouillon n'en porte
+        // pas, et la prochaine validation le recalculera d'après le réglage du
+        // moment, avec son écriture.
         let rows = sqlx::query(
             "UPDATE invoices SET status = 'draft', journal_entry_id = NULL, \
-             version = version + 1 \
+             rounding_amount = 0, version = version + 1 \
              WHERE id = ? AND company_id = ? AND version = ? AND status = 'validated'",
         )
         .bind(invoice_id)
@@ -1811,6 +1827,48 @@ pub(in crate::repositories) fn generate_invoice_journal_lines(
     Ok(entry_lines)
 }
 
+/// L'écriture de vente **avec l'arrondi à 5 centimes** (Story 25-4-c4-a, #494) :
+/// [`generate_invoice_journal_lines`], puis, si `rounding` porte un écart non nul,
+/// le débit de créance porté au **TTC arrondi** et l'écart en **ligne finale** sur
+/// le compte de différences d'arrondi — au **crédit** s'il est positif (le total
+/// monte), au **débit** s'il est négatif.
+///
+/// ⛔ **La créance reste la PREMIÈRE ligne au débit.** Le règlement manuel et le
+/// rapprochement la lisent par `jel.debit > 0 ORDER BY jel.id LIMIT 1` : un
+/// arrondi négatif, écrit au débit, doit donc venir après elle.
+pub(in crate::repositories) fn generate_invoice_journal_lines_rounded(
+    lines: &[InvoiceLine],
+    receivable_account_id: i64,
+    default_revenue_account_id: i64,
+    vat_payable_account_id: Option<i64>,
+    rounding: Option<(i64, Decimal)>,
+) -> Result<Vec<crate::entities::NewJournalEntryLine>, DbError> {
+    let mut entry_lines = generate_invoice_journal_lines(
+        lines,
+        receivable_account_id,
+        default_revenue_account_id,
+        vat_payable_account_id,
+    )?;
+    if let Some((account_id, amount)) = rounding.filter(|(_, a)| !a.is_zero()) {
+        entry_lines[0].debit += amount;
+        entry_lines.push(crate::entities::NewJournalEntryLine {
+            account_id,
+            debit: if amount < Decimal::ZERO {
+                -amount
+            } else {
+                Decimal::ZERO
+            },
+            credit: if amount > Decimal::ZERO {
+                amount
+            } else {
+                Decimal::ZERO
+            },
+            project_id: None,
+        });
+    }
+    Ok(entry_lines)
+}
+
 /// Valide une facture brouillon : lui attribue un numéro définitif,
 /// génère l'écriture comptable associée, et bascule son statut en
 /// `validated`. Le tout dans une transaction atomique.
@@ -1927,6 +1985,31 @@ pub async fn validate_invoice(
         if total_ht == Decimal::ZERO {
             return Err(DbError::InvalidInput("invoiceTotalZero".into()));
         }
+
+        // (2 bis') Story 25-4-c4-a (#494) — l'arrondi à 5 centimes, calculé ICI,
+        // avant toute écriture, et figé plus bas sur la facture. Dans cet ordre :
+        // un total ARRONDI nul (pièce minuscule, 0.02 → 0.00) est refusé comme une
+        // pièce à zéro, AVANT de réclamer un compte d'arrondi qu'elle ne mérite pas ;
+        // puis, s'il y a un écart, le compte, sous le verrou de la facture (1).
+        let ttc_brut = kesh_core::accounting::vat::invoice_total_ttc(
+            lines_before.iter().map(|l| (l.line_total, l.vat_rate)),
+        );
+        let rounding_amount =
+            kesh_core::accounting::vat::invoice_rounding(ttc_brut, settings.round_to_5_centimes);
+        if (ttc_brut + rounding_amount).is_zero() {
+            return Err(DbError::InvalidInput("invoiceTotalZero".into()));
+        }
+        let rounding = if rounding_amount.is_zero() {
+            None
+        } else {
+            let account_id = company_invoice_settings::rounding_account_for_write(
+                &mut tx,
+                company_id,
+                crate::errors::RoundingContext::Issuance,
+            )
+            .await?;
+            Some((account_id, rounding_amount))
+        };
 
         // (2 ter) Story 16-1a (AC8, AC8-bis) — re-validation AU POSTING des
         // comptes de produit effectivement postés.
@@ -2101,11 +2184,12 @@ pub async fn validate_invoice(
         // (compte produit par ligne) s'y branche sans 2e refactor de cette fonction.
         let journal: Journal = settings.default_sales_journal;
 
-        let entry_lines = generate_invoice_journal_lines(
+        let entry_lines = generate_invoice_journal_lines_rounded(
             &lines_before,
             receivable_account_id,
             revenue_account_id,
             settings.default_vat_payable_account_id,
+            rounding,
         )?;
 
         let je = journal_entries::create_in_tx(
@@ -2138,11 +2222,12 @@ pub async fn validate_invoice(
         // si le lock disparaît).
         let rows = sqlx::query(
             "UPDATE invoices SET status = 'validated', invoice_number = ?, \
-             journal_entry_id = ?, version = version + 1 \
+             journal_entry_id = ?, rounding_amount = ?, version = version + 1 \
              WHERE id = ? AND company_id = ? AND version = ? AND status = 'draft'",
         )
         .bind(&invoice_number)
         .bind(je.entry.id)
+        .bind(rounding_amount)
         .bind(invoice_id)
         .bind(company_id)
         .bind(invoice_before.version)
@@ -2473,11 +2558,12 @@ pub async fn list_for_export(
     let mut items_qb: QueryBuilder<sqlx::MySql> = QueryBuilder::new(format!(
         "SELECT i.id, i.company_id, i.contact_id, c.name AS contact_name, \
          i.invoice_number, i.status, i.date, i.due_date, i.payment_terms, \
-         i.total_amount, COALESCE(lt.ttc, 0) AS total_ttc, \
+         i.total_amount, {ttc} AS total_ttc, \
          {settled} AS amount_settled, {due} AS amount_due, \
          i.paid_at, i.dunning_paused_at, i.dunning_paused_note, \
          i.version, i.created_at, i.updated_at \
          FROM invoices i INNER JOIN contacts c ON c.id = i.contact_id {joins}",
+        ttc = INVOICE_TTC_DERIVED_SQL,
         settled = INVOICE_AMOUNT_SETTLED_DERIVED_SQL,
         due = INVOICE_AMOUNT_DUE_DERIVED_SQL,
         joins = amount_due_derived_joins(),
@@ -2510,7 +2596,7 @@ pub async fn list_all_by_company(
 ) -> Result<Vec<Invoice>, DbError> {
     sqlx::query_as::<_, Invoice>(
         "SELECT id, company_id, contact_id, invoice_number, status, date, due_date, \
-         payment_terms, total_amount, journal_entry_id, paid_at, emailed_at, emailed_to, \
+         payment_terms, total_amount, rounding_amount, journal_entry_id, paid_at, emailed_at, emailed_to, \
          project_id, dunning_paused_at, dunning_paused_note, version, created_at, updated_at \
          FROM invoices \
          WHERE company_id = ? \

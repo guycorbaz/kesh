@@ -47,7 +47,7 @@ use crate::repositories::invoice_settlements::{
 
 /// Colonnes Invoice pour SELECT (cohérent FIND_INVOICE_SCOPED_SQL).
 const INVOICE_COLUMNS: &str = "id, company_id, contact_id, invoice_number, status, date, \
-     due_date, payment_terms, total_amount, journal_entry_id, paid_at, emailed_at, emailed_to, \
+     due_date, payment_terms, total_amount, rounding_amount, journal_entry_id, paid_at, emailed_at, emailed_to, \
      project_id, dunning_paused_at, dunning_paused_note, version, created_at, updated_at";
 
 /// Facture candidate à la réconciliation, accompagnée de son **reste dû** et
@@ -127,7 +127,7 @@ where
     // référencer l'alias `amount_due` sans dupliquer l'expression (SQL
     // n'autorise pas un alias de SELECT dans le WHERE).
     sqlx::query_as::<_, UnpaidInvoiceCandidate>(&format!(
-        "SELECT {INVOICE_COLUMNS}, {due} AS amount_due, COALESCE(lt.ttc, 0) AS total_ttc \
+        "SELECT {INVOICE_COLUMNS}, {due} AS amount_due, {ttc} AS total_ttc \
          FROM invoices i {joins} \
          WHERE i.company_id = ? \
            AND i.status = 'validated' \
@@ -137,6 +137,7 @@ where
          HAVING amount_due BETWEEN ? - ? AND ? + ? \
          LIMIT 50",
         due = INVOICE_AMOUNT_DUE_DERIVED_SQL,
+        ttc = crate::repositories::invoices::INVOICE_TTC_DERIVED_SQL,
         joins = amount_due_derived_joins(),
     ))
     .bind(company_id)

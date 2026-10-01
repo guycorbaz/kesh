@@ -147,6 +147,12 @@ async fn validate_zero_rate_no_vat_line(pool: MySqlPool) {
 #[sqlx::test(migrations = "./test-schema")]
 async fn validate_rounds_to_zero_no_vat_line(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
+    // Story 25-4-c4-a : TTC 0.01 s'arrondirait à 0.00 et la pièce serait refusée
+    // (`invoiceTotalZero`). Ce test porte sur l'absence de ligne de TVA, pas sur
+    // l'arrondi : la facture est émise sans arrondi.
+    kesh_db::test_fixtures::disable_rounding_to_5_centimes(&pool, seeded.company_id)
+        .await
+        .unwrap();
     let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
 
     // HT = 0.01 à 8.1 % → TVA = 0.00 après arrondi → pas de ligne 2200.
@@ -577,4 +583,277 @@ async fn validate_rejects_project_archived_after_draft(pool: MySqlPool) {
         matches!(err, DbError::IllegalStateTransition(_)),
         "posting sur projet archivé doit être refusé, got {err:?}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Story 25-4-c4-a (#494) — l'arrondi à 5 centimes, figé à la validation
+// ---------------------------------------------------------------------------
+
+mod arrondi_5_centimes {
+    use super::*;
+    use kesh_db::entities::{NewCreditNote, SettlementChoice};
+    use kesh_db::errors::RoundingContext;
+    use kesh_db::repositories::{credit_notes, invoice_settlements, invoice_settlements_write};
+    use kesh_db::test_fixtures::{designate_rounding_account, disable_rounding_to_5_centimes};
+
+    /// `(compte, débit, crédit)` des lignes d'une écriture, dans leur ordre.
+    fn lignes(je: &kesh_db::entities::JournalEntryWithLines) -> Vec<(i64, Decimal, Decimal)> {
+        let mut l: Vec<_> = je.lines.iter().collect();
+        l.sort_by_key(|x| x.line_order);
+        l.iter()
+            .map(|x| (x.account_id, x.debit, x.credit))
+            .collect()
+    }
+
+    async fn setup(pool: &MySqlPool) -> (SeededCompany, i64, i64) {
+        let seeded = seed_accounting_company(pool).await.unwrap();
+        let contact = make_contact(pool, seeded.company_id, seeded.admin_user_id).await;
+        let rounding = designate_rounding_account(pool, seeded.company_id)
+            .await
+            .unwrap();
+        (seeded, contact, rounding)
+    }
+
+    /// ⛔ 123.44 → +0.01 : créance 123.45, écart au CRÉDIT en ligne finale, reste
+    /// dû 123.45 ; l'arrondi est figé sur la facture.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn positive_rounding_is_credited_last(pool: MySqlPool) {
+        let (seeded, contact, rounding) = setup(&pool).await;
+        let v = create_and_validate(&pool, &seeded, contact, &[(dec!(0), dec!(123.44))])
+            .await
+            .expect("validate");
+        assert_eq!(v.invoice.rounding_amount, dec!(0.01));
+        assert_eq!(
+            lignes(&v.journal_entry),
+            vec![
+                (seeded.accounts["1100"], dec!(123.45), dec!(0)),
+                (seeded.accounts["3000"], dec!(0), dec!(123.44)),
+                (rounding, dec!(0), dec!(0.01)),
+            ]
+        );
+        assert_eq!(
+            invoice_settlements::amount_due(&pool, v.invoice.id)
+                .await
+                .unwrap(),
+            dec!(123.45)
+        );
+    }
+
+    /// ⛔ 234.52 → −0.02 : l'écart au DÉBIT vient APRÈS la créance, qui reste la
+    /// première ligne au débit (lecteurs `ORDER BY jel.id LIMIT 1`).
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn negative_rounding_is_debited_after_the_receivable(pool: MySqlPool) {
+        let (seeded, contact, rounding) = setup(&pool).await;
+        let v = create_and_validate(&pool, &seeded, contact, &[(dec!(0), dec!(234.52))])
+            .await
+            .expect("validate");
+        assert_eq!(v.invoice.rounding_amount, dec!(-0.02));
+        assert_eq!(
+            lignes(&v.journal_entry),
+            vec![
+                (seeded.accounts["1100"], dec!(234.50), dec!(0)),
+                (seeded.accounts["3000"], dec!(0), dec!(234.52)),
+                (rounding, dec!(0.02), dec!(0)),
+            ]
+        );
+        let first_debit: i64 = sqlx::query_scalar(
+            "SELECT account_id FROM journal_entry_lines WHERE entry_id = ? AND debit > 0 \
+             ORDER BY id LIMIT 1",
+        )
+        .bind(v.journal_entry.entry.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(first_debit, seeded.accounts["1100"], "la créance d'abord");
+    }
+
+    /// Réglage désactivé : aucun arrondi, deux lignes, aucun compte exigé.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn disabled_setting_leaves_the_total_unrounded(pool: MySqlPool) {
+        let seeded = seed_accounting_company(&pool).await.unwrap();
+        let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+        disable_rounding_to_5_centimes(&pool, seeded.company_id)
+            .await
+            .unwrap();
+        let v = create_and_validate(&pool, &seeded, contact, &[(dec!(0), dec!(123.44))])
+            .await
+            .expect("validate sans compte d'arrondi");
+        assert_eq!(v.invoice.rounding_amount, dec!(0));
+        assert_eq!(v.journal_entry.lines.len(), 2);
+    }
+
+    /// ⛔ Compte absent, puis archivé : refus au contexte ÉMISSION, la facture
+    /// reste brouillon. Un TTC déjà rond n'exige aucun compte.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn a_gap_without_a_usable_account_refuses_validation(pool: MySqlPool) {
+        let seeded = seed_accounting_company(&pool).await.unwrap();
+        let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+
+        let err = create_and_validate(&pool, &seeded, contact, &[(dec!(0), dec!(123.44))])
+            .await
+            .expect_err("pas de compte d'arrondi");
+        assert!(
+            matches!(
+                err,
+                DbError::RoundingAccountNotConfigured {
+                    context: RoundingContext::Issuance
+                }
+            ),
+            "got {err:?}"
+        );
+        let drafts: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM invoices WHERE company_id = ? AND status = 'draft' \
+             AND rounding_amount = 0",
+        )
+        .bind(seeded.company_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(drafts, 1, "rien d'écrit, la facture reste brouillon");
+
+        let rounding = designate_rounding_account(&pool, seeded.company_id)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
+            .bind(rounding)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let err = create_and_validate(&pool, &seeded, contact, &[(dec!(0), dec!(123.44))])
+            .await
+            .expect_err("compte archivé");
+        assert!(
+            matches!(err, DbError::RoundingAccountNotConfigured { .. }),
+            "got {err:?}"
+        );
+
+        create_and_validate(&pool, &seeded, contact, &[(dec!(0), dec!(100.00))])
+            .await
+            .expect("TTC rond : aucun compte exigé");
+    }
+
+    /// Ordre de l'AC 3 : un total ARRONDI nul est refusé comme pièce à zéro,
+    /// avant de réclamer un compte d'arrondi.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn a_total_rounded_to_zero_is_refused_before_the_account(pool: MySqlPool) {
+        let seeded = seed_accounting_company(&pool).await.unwrap();
+        let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+        let err = create_and_validate(&pool, &seeded, contact, &[(dec!(0), dec!(0.02))])
+            .await
+            .expect_err("0.02 → 0.00");
+        assert!(
+            matches!(&err, DbError::InvalidInput(c) if c == "invoiceTotalZero"),
+            "got {err:?}"
+        );
+    }
+
+    /// Un règlement du TTC arrondi solde en DEUX lignes : le chemin d'écart au
+    /// centime (25-4-c3-b) n'est pas pris.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn settling_the_rounded_total_takes_two_lines(pool: MySqlPool) {
+        let (seeded, contact, _rounding) = setup(&pool).await;
+        let v = create_and_validate(&pool, &seeded, contact, &[(dec!(0), dec!(123.44))])
+            .await
+            .expect("validate");
+        let out = invoice_settlements_write::settle_invoice(
+            &pool,
+            seeded.admin_user_id,
+            seeded.company_id,
+            v.invoice.id,
+            SettlementChoice::InternalAccount {
+                account_id: seeded.accounts["1000"],
+            },
+            dec!(123.45),
+            NaiveDate::from_ymd_opt(INVOICE_DATE.0, INVOICE_DATE.1, INVOICE_DATE.2).unwrap(),
+        )
+        .await
+        .expect("settle");
+        assert!(out.fully_settled);
+        let n: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM journal_entry_lines WHERE entry_id = ?")
+                .bind(out.journal_entry_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(n, 2);
+    }
+
+    /// ⛔ L'avoir recopie l'arrondi et l'annule en miroir : reste dû 0.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn a_credit_note_mirrors_the_rounding(pool: MySqlPool) {
+        let (seeded, contact, rounding) = setup(&pool).await;
+        let v = create_and_validate(&pool, &seeded, contact, &[(dec!(0), dec!(234.52))])
+            .await
+            .expect("validate");
+        let cn = credit_notes::create_credit_note(
+            &pool,
+            NewCreditNote {
+                company_id: seeded.company_id,
+                invoice_id: v.invoice.id,
+                date: NaiveDate::from_ymd_opt(INVOICE_DATE.0, INVOICE_DATE.1, INVOICE_DATE.2)
+                    .unwrap(),
+            },
+            seeded.admin_user_id,
+        )
+        .await
+        .expect("avoir");
+        assert_eq!(cn.credit_note.rounding_amount, dec!(-0.02));
+        assert_eq!(
+            lignes(&cn.journal_entry),
+            vec![
+                (seeded.accounts["1100"], dec!(0), dec!(234.50)),
+                (seeded.accounts["3000"], dec!(234.52), dec!(0)),
+                (rounding, dec!(0), dec!(0.02)),
+            ]
+        );
+        assert_eq!(
+            invoice_settlements::amount_due(&pool, v.invoice.id)
+                .await
+                .unwrap(),
+            dec!(0)
+        );
+    }
+
+    /// ⛔ Un arrondi NUL n'exige aucun compte pour l'avoir — factures émises sans
+    /// arrondi, antérieures comprises (validation P3).
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn a_credit_note_of_an_unrounded_invoice_needs_no_account(pool: MySqlPool) {
+        let seeded = seed_accounting_company(&pool).await.unwrap();
+        let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+        let v = create_and_validate(&pool, &seeded, contact, &[(dec!(0), dec!(100.00))])
+            .await
+            .expect("validate");
+        let cn = credit_notes::create_credit_note(
+            &pool,
+            NewCreditNote {
+                company_id: seeded.company_id,
+                invoice_id: v.invoice.id,
+                date: NaiveDate::from_ymd_opt(INVOICE_DATE.0, INVOICE_DATE.1, INVOICE_DATE.2)
+                    .unwrap(),
+            },
+            seeded.admin_user_id,
+        )
+        .await
+        .expect("avoir sans compte d'arrondi");
+        assert_eq!(cn.journal_entry.lines.len(), 2);
+    }
+
+    /// La dévalidation remet l'arrondi figé à zéro.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn unvalidation_resets_the_rounding(pool: MySqlPool) {
+        let (seeded, contact, _rounding) = setup(&pool).await;
+        let v = create_and_validate(&pool, &seeded, contact, &[(dec!(0), dec!(123.44))])
+            .await
+            .expect("validate");
+        let (inv, _) = invoices::unvalidate(
+            &pool,
+            seeded.company_id,
+            v.invoice.id,
+            seeded.admin_user_id,
+            v.invoice.version,
+        )
+        .await
+        .expect("unvalidate");
+        assert_eq!(inv.rounding_amount, dec!(0));
+    }
 }

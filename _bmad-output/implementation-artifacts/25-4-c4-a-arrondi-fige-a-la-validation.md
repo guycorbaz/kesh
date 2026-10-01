@@ -1,6 +1,6 @@
 # Story 25.4-c4-a : L'arrondi à 5 centimes, figé à la validation
 
-Status: ready-for-dev
+Status: review
 
 **Issue : [#494]** (CR) — ⛔ la PR porte `refs #494` : la c4-b, qui rend l'arrondi visible, la fermera.
 
@@ -194,17 +194,17 @@ visible, réglage). Le manuel n'est pas touché ici : la c4-b l'écrit avec l'é
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — la règle** (AC 1) : `round_to_5_centimes`, `invoice_rounding`, tests unitaires.
-- [ ] **T2 — la migration** (AC 2) : trois colonnes, garde-fous P5/P6/P7, squash, sommes de contrôle.
-- [ ] **T3 — la validation et la dévalidation** (AC 3).
-- [ ] **T4 — l'écriture de vente** (AC 4).
-- [ ] **T5 — les formes du TTC** (AC 5) : SQL, helper Rust, quatre appelants, parité, inventaire.
-- [ ] **T6 — l'avoir** (AC 6).
-- [ ] **T7 — tests et mutations** (AC 7) ; tests existants dont les montants changent (TTC non rond sous
+- [x] **T1 — la règle** (AC 1) : `round_to_5_centimes`, `invoice_rounding`, tests unitaires.
+- [x] **T2 — la migration** (AC 2) : trois colonnes, garde-fous P5/P6/P7, squash, sommes de contrôle.
+- [x] **T3 — la validation et la dévalidation** (AC 3).
+- [x] **T4 — l'écriture de vente** (AC 4).
+- [x] **T5 — les formes du TTC** (AC 5) : SQL, helper Rust, quatre appelants, parité, inventaire.
+- [x] **T6 — l'avoir** (AC 6).
+- [x] **T7 — tests et mutations** (AC 7) ; tests existants dont les montants changent (TTC non rond sous
   réglage par défaut) : les mettre à jour en **disant pourquoi**, jamais en désactivant le réglage pour les
   faire passer.
-- [ ] **T8 — CHANGELOG** (AC 8).
-- [ ] **T9 — gates** : backend complet (base remise à zéro ; migration ⇒ gate complet même en cours de
+- [x] **T8 — CHANGELOG** (AC 8).
+- [x] **T9 — gates** : backend complet (base remise à zéro ; migration ⇒ gate complet même en cours de
   boucle), frontend complet, **E2E complet** (des specs affirment des TTC précis).
 
 ## Dev Notes
@@ -243,11 +243,75 @@ arrondi, et c'est précisément le cas qu'ils couvrent. Les autres sont relus un
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`).
+
 ### Debug Log References
+
+- Deux scripts de remplacement se sont arrêtés à mi-chemin (motif reformaté par `cargo fmt`) : reprise sur le
+  code relu, vérification par compilation.
+- Mutation M2 d'abord **invalide** (accolade non fermée : ne compilait pas, donc ne mesurait rien) ; rejouée
+  sous une forme qui compile (`push` détourné vers un vecteur muet).
 
 ### Completion Notes List
 
+- **La règle** : `Money::round_to_5_centimes` (`round(x × 20) / 20`, même stratégie que `round_to_centimes`),
+  `vat::invoice_rounding` (écart, 0 si réglage inactif), `vat::invoice_total_ttc_rounded`.
+- **La migration** `20261001000001` : trois colonnes, non breaking ; somme de contrôle, squash régénéré, audit
+  (71 lignes, 8 + 63 = 71, recomptés), `migrations_upgrade_path.rs` 70 → 71 et 36 → 37.
+- **La validation** : TTC brut calculé à l'étape « 2 bis' », total arrondi nul refusé AVANT le compte, compte lu
+  au contexte `Issuance` sous le verrou de la facture, `rounding_amount` figé dans l'`UPDATE` ; `unvalidate` le
+  remet à 0.
+- **L'écriture** : `generate_invoice_journal_lines_rounded` enveloppe le générateur (dont les quinze appels de
+  test restent inchangés) — débit de créance au TTC arrondi, écart en ligne finale.
+- **Les formes du TTC** : scalaire `+ i.rounding_amount`, constante `INVOICE_TTC_DERIVED_SQL` pour les trois
+  projections `total_ttc` de liste, reste dû joint, avoir (scalaire et joint, l'arrondi sommé sur
+  `credit_notes` et non par ligne) ; quatre appelants Rust sur `invoice_total_ttc_rounded`.
+- **L'erreur à contexte** : `RoundingContext::{Payment, Issuance}`, six sites, clé
+  `error-rounding-account-not-configured-issuance` (4 locales) ; la c3-b passe `Payment`.
+- **L'avoir** : arrondi recopié, contre-passé en ligne finale ; aucun compte exigé pour un arrondi nul.
+- **L'export** : `rounding_amount` (factures, avoirs) et `round_to_5_centimes` (réglages) exportés — la garde
+  `chaque_colonne_du_schema_est_exportee_ou_ecartee` l'imposait.
+- **Commentaires corrigés** : « EXACTEMENT UNE ligne de débit » (`reconciliation.rs`) devenu « la PREMIÈRE » ;
+  même précision au règlement manuel.
+- **Tests existants qui ont bougé** (16 au premier gate, tous de la même cause : la société de test n'a pas de
+  compte d'arrondi). Traités selon ce que chaque test prouve :
+  - **compte d'arrondi désigné**, l'arrondi entrant dans ce qu'ils vérifient : parité du TTC à quatre voies
+    (12638.46 → 12638.45, arrondi négatif), parité du reste dû (deux montants figés ajustés : 1207.71 → 1207.70,
+    10.81 → 10.80), deux exports CSV de l'échéancier ;
+  - **réglage désactivé**, la facture étant émise sans arrondi par construction : les six tests de la c3-b (le
+    chemin d'écart au centime ne sert plus qu'à ces factures), le rapport TVA par ligne, la TVA arrondie à zéro
+    (0.01 serait refusée en pièce nulle), le backfill 16-1a-bis (qui ne rejoue que des sauvegardes antérieures à
+    tout arrondi, et dont la condition (3) verrait deux crédits) ;
+  - un en-tête CSV attendu.
+  Helpers partagés : `test_fixtures::designate_rounding_account` et `disable_rounding_to_5_centimes`.
+- **Tests neufs** (périmètre : ce commit contre `52d367be`) : **13** — 2 unitaires `kesh-core`, 9 dans
+  `invoices_validate_vat.rs` (module `arrondi_5_centimes`), 2 dans `admin_full_import_e2e.rs`. Recomptés par
+  `git diff HEAD -- crates/ | grep -cE '^\+\s*#\[(sqlx::)?test'`.
+- **Mutations**, toutes tuées : M1 arrondi omis de la forme scalaire (5 rouges) ; M2 ligne d'arrondi retirée,
+  débit gardé (7) ; M3 arrondi non recopié dans l'avoir (1) ; M4 garde de l'avoir retirée (2).
+- **Modules** : `kesh-core`, `kesh-db`, `kesh-api`, `kesh-i18n` (la clé d'émission, prescrite par l'AC 3), plus
+  un montage de test dans `kesh-reconciliation` — sous le seuil.
+- **Gates** : backend complet sur base remise à zéro, `scripts/test-fast.sh` (fmt + clippy + nextest) —
+  **2558/2558** ; frontend complet — check 0 erreur, lint i18n PASS, **845/845**, build ; **E2E complet** sur
+  `kesh_e2e` reconstruite, 08:11 UTC — **226 passés, 19 ignorés, 10 échecs**, tous connus : les 7 KF-029, les
+  2 KF-045 (avant 12:00 UTC, `invoices.spec.ts:415` et `:439`, rappel manuel en 422 — `docs/testing.md:349-350`)
+  et le KF-046 (`sidebar-navigation:75`).
+
 ### File List
+
+- `crates/kesh-core/src/types/money.rs`, `crates/kesh-core/src/accounting/vat.rs`
+- `crates/kesh-db/migrations/20261001000001_invoice_rounding_5_centimes.sql` (neuf), `crates/kesh-db/migrations.sha384`,
+  `crates/kesh-db/test-schema/0001_schema_squash.sql`
+- `crates/kesh-db/src/errors.rs`, `crates/kesh-db/src/test_fixtures.rs`
+- `crates/kesh-db/src/entities/{invoice,credit_note,company_invoice_settings}.rs`
+- `crates/kesh-db/src/repositories/{invoices,credit_notes,invoice_settlements,invoice_settlements_write,company_invoice_settings,reconciliation}.rs`
+- `crates/kesh-db/tests/{invoices_validate_vat,invoice_ttc_parity,invoice_amount_due_parity,invoice_lines_revenue_account_backfill,migrations_upgrade_path}.rs`
+- `crates/kesh-api/src/errors.rs`, `crates/kesh-api/src/exports/csv_tables.rs`
+- `crates/kesh-api/src/routes/{invoices,invoice_pdf_service,invoice_email,credit_notes,reconciliation}.rs`
+- `crates/kesh-api/tests/{admin_full_import_e2e,invoice_echeancier_e2e,vat_report_e2e}.rs`
+- `crates/kesh-reconciliation/src/matching.rs` (montage de test)
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `docs/migrations-idempotence-audit.md`, `CHANGELOG.md`, `sprint-status.yaml`
 
 ## Change Log
 
@@ -281,5 +345,10 @@ arrondi, et c'est précisément le cas qu'ils couvrent. Les autres sont relus un
   P2 et P3) signalé à Guy, avec recommandation de ne pas découper : le HIGH est un oubli de la conception
   d'origine (AC 6), non une régression de remédiation, et l'avoir ne peut sortir de la story sans laisser un
   reste dû faux sur les factures créditées.
+- **2026-10-01** — Implémentée (T1–T9), Guy ayant écarté le découpage. 13 tests neufs, 4 mutations tuées, 16 tests
+  existants ajustés selon ce qu'ils prouvent (compte d'arrondi désigné, ou réglage désactivé pour une facture
+  émise sans arrondi). Gates : backend 2558/2558, frontend 845/845, E2E 226/19/10 tous connus. ⚠️ Conséquence
+  produit, conforme à l'arbitrage et écrite au CHANGELOG : une société sans compte d'arrondi ne valide plus une
+  facture au total non multiple de 5 centimes.
 
 [#494]: https://github.com/guycorbaz/kesh/issues/494

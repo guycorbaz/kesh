@@ -184,8 +184,10 @@ fn build_invoice_vars(
             .clone()
             .unwrap_or_else(|| format!("#{}", invoice.id)),
     );
-    let total_ttc = kesh_core::accounting::vat::invoice_total_ttc(
+    // Story 25-4-c4-a : arrondi figé compris — le montant de la QR jointe.
+    let total_ttc = kesh_core::accounting::vat::invoice_total_ttc_rounded(
         lines.iter().map(|l| (l.line_total, l.vat_rate)),
+        invoice.rounding_amount,
     );
     vars.insert("amount".to_string(), format_money(&total_ttc));
     vars.insert(
@@ -1459,6 +1461,7 @@ mod tests {
             due_date: due,
             payment_terms: None,
             total_amount: Decimal::new(123_456, 2), // 1234.56
+            rounding_amount: Decimal::ZERO,
             journal_entry_id: Some(1),
             paid_at: None,
             emailed_at: None,

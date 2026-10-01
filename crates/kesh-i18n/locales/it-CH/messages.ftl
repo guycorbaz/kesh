@@ -273,6 +273,7 @@ journal-entry-saved = Scrittura salvata
 error-fiscal-year-closed-generic = L'esercizio contabile è chiuso — nessuna scrittura può essere aggiunta o modificata (CO art. 957-964).
 error-inactive-accounts = Uno o più conti sono archiviati o non validi.
 error-rounding-account-not-configured = Questo pagamento salda la fattura al centesimo, ma non è designato alcun conto utilizzabile per le differenze di arrotondamento: sceglierne uno in Impostazioni → Fatturazione.
+error-rounding-account-not-configured-issuance = Il totale di questo documento è arrotondato a 5 centesimi, ma non è designato alcun conto utilizzabile per le differenze di arrotondamento: sceglierne uno in Impostazioni → Fatturazione.
 
 # Conto di ricavo per riga di fattura (Story 16-1a, #152)
 invoice-line-account-subject-line = Riga { $line }

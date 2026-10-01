@@ -96,6 +96,8 @@ pub async fn settle_invoice(
 
     // (2) ⛔ Le compte de créance vient de l'écriture de vente. Miroir strict de
     //     l'étape (2) de `pay_in_tx`, qui lit la ligne de CRÉDIT de l'achat.
+    //     La créance est la PREMIÈRE ligne au débit — pas la seule si l'arrondi
+    //     à 5 centimes est négatif (Story 25-4-c4-a), qui vient après elle.
     let receivable_account_id: i64 = sqlx::query_scalar(
         "SELECT jel.account_id FROM journal_entry_lines jel \
          JOIN journal_entries je ON je.id = jel.entry_id \
@@ -181,8 +183,12 @@ pub async fn settle_invoice(
             PaymentAgainstDue::SettlesWithRounding { raw_due } => (
                 raw_due,
                 Some(
-                    company_invoice_settings::rounding_account_for_write(&mut tx, company_id)
-                        .await?,
+                    company_invoice_settings::rounding_account_for_write(
+                        &mut tx,
+                        company_id,
+                        crate::errors::RoundingContext::Payment,
+                    )
+                    .await?,
                 ),
             ),
         };

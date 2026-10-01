@@ -22,7 +22,7 @@ use crate::repositories::audit_log;
 
 /// SELECT scopé multi-tenant (anti-IDOR — toujours `AND company_id = ?`).
 const FIND_CREDIT_NOTE_SCOPED_SQL: &str = "SELECT id, company_id, contact_id, invoice_id, \
-    credit_note_number, status, date, total_amount, journal_entry_id, version, created_at, updated_at \
+    credit_note_number, status, date, total_amount, rounding_amount, journal_entry_id, version, created_at, updated_at \
     FROM credit_notes WHERE id = ? AND company_id = ?";
 
 /// Résultat de l'émission d'un avoir (entête + lignes + écriture de contre-passation).
@@ -118,7 +118,7 @@ pub async fn list(
 
     let items = sqlx::query_as::<_, CreditNote>(
         "SELECT id, company_id, contact_id, invoice_id, credit_note_number, status, date, \
-         total_amount, journal_entry_id, version, created_at, updated_at \
+         total_amount, rounding_amount, journal_entry_id, version, created_at, updated_at \
          FROM credit_notes WHERE company_id = ? ORDER BY date DESC, id DESC LIMIT ? OFFSET ?",
     )
     .bind(company_id)
@@ -504,12 +504,46 @@ pub async fn create_credit_note(
             .iter()
             .map(|l| (l.line_total, l.vat_rate, l.revenue_account_id))
             .collect();
-        let entry_lines = generate_credit_note_journal_lines(
+        let mut entry_lines = generate_credit_note_journal_lines(
             &triplets,
             receivable_account_id,
             revenue_account_id,
             settings.default_vat_payable_account_id,
         )?;
+
+        // (7 bis) Story 25-4-c4-a (#494) — l'arrondi à 5 centimes de la facture,
+        // RECOPIÉ et contre-passé : l'avoir éteint exactement le TTC arrondi. Le
+        // crédit de créance (ligne 0, qui reste la première au crédit) en est
+        // ajusté ; l'écart passe en ligne finale, au DÉBIT du compte d'arrondi
+        // s'il était positif sur la facture, au CRÉDIT s'il était négatif.
+        //
+        // ⛔ Un arrondi NUL n'exige aucun compte — factures émises sans arrondi,
+        // antérieures comprises (validation P3 de la story). Le compte est
+        // revérifié au moment d'écrire (#486 : il a pu être archivé depuis).
+        let rounding_amount = invoice.rounding_amount;
+        if !rounding_amount.is_zero() {
+            let rounding_account_id = super::company_invoice_settings::rounding_account_for_write(
+                &mut tx,
+                company_id,
+                crate::errors::RoundingContext::Issuance,
+            )
+            .await?;
+            entry_lines[0].credit += rounding_amount;
+            entry_lines.push(crate::entities::NewJournalEntryLine {
+                account_id: rounding_account_id,
+                debit: if rounding_amount > Decimal::ZERO {
+                    rounding_amount
+                } else {
+                    Decimal::ZERO
+                },
+                credit: if rounding_amount < Decimal::ZERO {
+                    -rounding_amount
+                } else {
+                    Decimal::ZERO
+                },
+                project_id: None,
+            });
+        }
         let journal: Journal = settings.default_sales_journal;
         let je = journal_entries::create_in_tx(
             &mut tx,
@@ -541,8 +575,8 @@ pub async fn create_credit_note(
         let cn_id: i64 = sqlx::query(
             "INSERT INTO credit_notes \
              (company_id, contact_id, invoice_id, credit_note_number, status, date, \
-              total_amount, journal_entry_id) \
-             VALUES (?, ?, ?, ?, 'issued', ?, ?, ?)",
+              total_amount, rounding_amount, journal_entry_id) \
+             VALUES (?, ?, ?, ?, 'issued', ?, ?, ?, ?)",
         )
         .bind(company_id)
         .bind(invoice.contact_id)
@@ -550,6 +584,7 @@ pub async fn create_credit_note(
         .bind(&credit_note_number)
         .bind(date)
         .bind(total_ht)
+        .bind(rounding_amount)
         .bind(je.entry.id)
         .execute(&mut *tx)
         .await
@@ -672,7 +707,7 @@ pub async fn list_all_by_company(
 ) -> Result<Vec<CreditNote>, DbError> {
     sqlx::query_as::<_, CreditNote>(
         "SELECT id, company_id, contact_id, invoice_id, credit_note_number, status, date, \
-         total_amount, journal_entry_id, version, created_at, updated_at \
+         total_amount, rounding_amount, journal_entry_id, version, created_at, updated_at \
          FROM credit_notes WHERE company_id = ? ORDER BY id",
     )
     .bind(company_id)

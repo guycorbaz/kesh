@@ -24,6 +24,10 @@ pub struct Invoice {
     pub due_date: Option<NaiveDate>,
     pub payment_terms: Option<String>,
     pub total_amount: Decimal,
+    /// Écart d'arrondi à 5 centimes du total TTC, **figé à la validation**
+    /// (Story 25-4-c4-a, #494) : positif quand le total monte, négatif quand il
+    /// descend, `0` pour un brouillon ou une pièce émise sans arrondi.
+    pub rounding_amount: Decimal,
     /// Référence vers l'écriture comptable générée à la validation (Story 5.2).
     /// NULL tant que la facture est en brouillon.
     pub journal_entry_id: Option<i64>,

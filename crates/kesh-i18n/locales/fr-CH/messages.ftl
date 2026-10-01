@@ -273,6 +273,7 @@ journal-entry-saved = Écriture enregistrée
 error-fiscal-year-closed-generic = L'exercice comptable est clôturé — aucune écriture ne peut y être ajoutée ou modifiée (CO art. 957-964).
 error-inactive-accounts = Un ou plusieurs comptes sont archivés ou invalides.
 error-rounding-account-not-configured = Ce paiement solde la facture au centime, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation.
+error-rounding-account-not-configured-issuance = Le total de cette pièce est arrondi à 5 centimes, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation.
 
 # Compte de produit par ligne de facture (Story 16-1a, #152)
 invoice-line-account-subject-line = Ligne { $line }

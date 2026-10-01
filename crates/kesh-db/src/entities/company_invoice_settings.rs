@@ -41,6 +41,10 @@ pub struct CompanyInvoiceSettings {
     /// Facultatif : il n'est lu que quand un écart se présente (Story 25-4-c3-b).
     /// Un réglage et non un rôle de compte (arbitrage du 2026-09-30).
     pub default_rounding_account_id: Option<i64>,
+    /// Arrondir à 5 centimes le total des pièces émises (Story 25-4-c4-a, #494).
+    /// Actif par défaut ; lu à la validation, qui fige l'écart sur la pièce. Son
+    /// API et son écran viennent avec la Story 25-4-c4-b.
+    pub round_to_5_centimes: bool,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,

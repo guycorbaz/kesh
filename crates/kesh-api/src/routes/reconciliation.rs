@@ -1417,8 +1417,11 @@ async fn accept_one_invoice(
     //     facture et son encaissement. Miroir strict de l'étape (2) de
     //     `pay_in_tx`, qui lit la ligne de CRÉDIT de l'écriture d'achat.
     //
-    //     `generate_invoice_journal_lines` pousse EXACTEMENT UNE ligne de débit,
-    //     en position 0, pour le TTC : l'invariante est vérifiée, pas supposée.
+    //     La créance est la PREMIÈRE ligne au débit de l'écriture de vente, en
+    //     position 0, pour le TTC — d'où `ORDER BY jel.id LIMIT 1`. ⚠️ Pas la
+    //     SEULE : un arrondi à 5 centimes négatif (Story 25-4-c4-a) ajoute une
+    //     ligne de débit, toujours APRÈS la créance
+    //     (`generate_invoice_journal_lines_rounded`).
     let receivable_row: Option<(i64,)> = sqlx::query_as(
         "SELECT jel.account_id FROM journal_entry_lines jel \
          JOIN journal_entries je ON je.id = jel.entry_id \
@@ -1481,9 +1484,15 @@ async fn accept_one_invoice(
     // (c-bis) Le compte d'arrondi, exigé SEULEMENT s'il y a un écart, et vérifié
     //         au moment d'écrire (AC 4) — refus per-proposal, pattern batch.
     let rounding_account_id = if settled_amount != bank_transaction.amount {
-        match company_invoice_settings::rounding_account_for_write(tx, company_id).await {
+        match company_invoice_settings::rounding_account_for_write(
+            tx,
+            company_id,
+            kesh_db::errors::RoundingContext::Payment,
+        )
+        .await
+        {
             Ok(id) => Some(id),
-            Err(DbError::RoundingAccountNotConfigured) => {
+            Err(DbError::RoundingAccountNotConfigured { .. }) => {
                 return Err(FailedProposal {
                     bank_transaction_id,
                     error_code: "ROUNDING_ACCOUNT_NOT_CONFIGURED".to_string(),

@@ -228,6 +228,7 @@ mod tests {
             due_date: None,
             payment_terms: None,
             total_amount: total,
+            rounding_amount: Decimal::ZERO,
             journal_entry_id: Some(999),
             paid_at: None,
             emailed_at: None,

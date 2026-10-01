@@ -287,9 +287,11 @@ impl InvoiceResponse {
         let today = chrono::Utc::now().naive_utc().date();
         let is_overdue =
             is_invoice_overdue(&invoice.status, invoice.paid_at, invoice.due_date, today);
-        // #246 : TTC dérivé des lignes (helper canonique kesh-core).
-        let total_ttc = kesh_core::accounting::vat::invoice_total_ttc(
+        // #246 : TTC dérivé des lignes (helper canonique kesh-core), arrondi à
+        // 5 centimes figé compris (Story 25-4-c4-a ; 0 pour un brouillon).
+        let total_ttc = kesh_core::accounting::vat::invoice_total_ttc_rounded(
             lines.iter().map(|l| (l.line_total, l.vat_rate)),
+            invoice.rounding_amount,
         );
         // #151 : ventilation TVA par taux (même source, arrondi par ligne DC7).
         let vat_breakdown = kesh_core::accounting::vat::vat_breakdown_by_rate(

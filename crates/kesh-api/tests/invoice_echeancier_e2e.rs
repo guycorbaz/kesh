@@ -269,6 +269,9 @@ async fn list_due_dates_default_returns_only_unpaid_validated(pool: MySqlPool) {
 async fn export_csv_has_bom_and_swiss_amounts(pool: MySqlPool) {
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
+    // Story 25-4-c4-a : le TTC de cette facture n'est pas un multiple de 5
+    // centimes ; sa validation exige un compte de différences d'arrondi.
+    designate_rounding(&pool, ids(&pool).await.0).await;
     let _ = create_validated_invoice(
         &pool,
         company_id,
@@ -335,6 +338,9 @@ async fn export_csv_over_limit_returns_400_result_too_large(pool: MySqlPool) {
     // technique : T6 testcoverage extended).
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
+    // Story 25-4-c4-a : le TTC de cette facture n'est pas un multiple de 5
+    // centimes ; sa validation exige un compte de différences d'arrondi.
+    designate_rounding(&pool, ids(&pool).await.0).await;
     let _ = create_validated_invoice(
         &pool,
         company_id,
@@ -979,6 +985,17 @@ async fn designate_rounding(pool: &MySqlPool, company_id: i64) -> i64 {
 /// est arrondie à deux décimales, `line_ttc_sql`).
 async fn raw_due_invoice(pool: &MySqlPool, unit_price: rust_decimal::Decimal) -> i64 {
     let (company_id, admin_id) = ids(pool).await;
+    // Story 25-4-c4-a : ces tests portent sur une facture émise SANS arrondi à
+    // 5 centimes — le cas que le chemin d'écart au centime (25-4-c3-b) couvre
+    // encore (réglage désactivé, factures antérieures). Le réglage est actif par
+    // défaut ; on le désactive ici, et c'est précisément le cas à tester.
+    sqlx::query(
+        "UPDATE company_invoice_settings SET round_to_5_centimes = FALSE WHERE company_id = ?",
+    )
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .unwrap();
     let contact_id = seed_contact(pool, company_id, admin_id).await;
     let (id, _v) = create_validated_invoice(
         pool,

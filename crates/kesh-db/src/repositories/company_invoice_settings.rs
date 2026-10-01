@@ -22,7 +22,7 @@ use crate::entities::audit_log::NewAuditLogEntry;
 use crate::entities::{
     AccountRole, AccountType, CompanyInvoiceSettings, CompanyInvoiceSettingsUpdate, Journal,
 };
-use crate::errors::{DbError, map_db_error};
+use crate::errors::{DbError, RoundingContext, map_db_error};
 use crate::repositories::audit_log;
 
 const COLUMNS: &str = "company_id, invoice_number_format, default_receivable_account_id, \
@@ -30,7 +30,7 @@ const COLUMNS: &str = "company_id, invoice_number_format, default_receivable_acc
     default_vat_recoverable_account_id, default_vat_decompte_account_id, \
     default_sales_journal, journal_entry_description_template, \
     credit_note_number_format, default_payable_account_id, \
-    default_rounding_account_id, \
+    default_rounding_account_id, round_to_5_centimes, \
     version, created_at, updated_at";
 
 fn settings_snapshot_json(s: &CompanyInvoiceSettings) -> serde_json::Value {
@@ -47,6 +47,7 @@ fn settings_snapshot_json(s: &CompanyInvoiceSettings) -> serde_json::Value {
         "creditNoteNumberFormat": s.credit_note_number_format,
         "defaultPayableAccountId": s.default_payable_account_id,
         "defaultRoundingAccountId": s.default_rounding_account_id,
+        "roundTo5Centimes": s.round_to_5_centimes,
         "version": s.version,
     })
 }
@@ -309,11 +310,13 @@ async fn rounding_account_from_chart(
 /// `FOR UPDATE` sur le compte, comme le compte interne du règlement manuel : une
 /// désactivation concurrente attend la fin de l'écriture au lieu de la précéder.
 ///
-/// Absent ou invalide → [`DbError::RoundingAccountNotConfigured`]. ⛔ Jamais de
+/// Absent ou invalide → [`DbError::RoundingAccountNotConfigured`], avec le
+/// `context` de l'appelant (paiement ou pièce émise). ⛔ Jamais de
 /// repli sur un compte déduit (produit par défaut, charges diverses).
 pub async fn rounding_account_for_write(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
+    context: RoundingContext,
 ) -> Result<i64, DbError> {
     let designated: Option<Option<i64>> = sqlx::query_scalar(
         "SELECT default_rounding_account_id FROM company_invoice_settings WHERE company_id = ?",
@@ -323,7 +326,7 @@ pub async fn rounding_account_for_write(
     .await
     .map_err(map_db_error)?;
     let Some(account_id) = designated.flatten() else {
-        return Err(DbError::RoundingAccountNotConfigured);
+        return Err(DbError::RoundingAccountNotConfigured { context });
     };
     sqlx::query_scalar::<_, i64>(
         "SELECT id FROM accounts WHERE id = ? AND company_id = ? AND active = TRUE \
@@ -336,7 +339,7 @@ pub async fn rounding_account_for_write(
     .fetch_optional(&mut *conn)
     .await
     .map_err(map_db_error)?
-    .ok_or(DbError::RoundingAccountNotConfigured)
+    .ok_or(DbError::RoundingAccountNotConfigured { context })
 }
 
 /// Creates company_invoice_settings with auto-prefill of default accounts resolved
@@ -471,6 +474,7 @@ pub async fn insert_with_defaults(
                     cis.default_sales_journal, \
                     cis.journal_entry_description_template, cis.credit_note_number_format, \
                     cis.default_payable_account_id, cis.default_rounding_account_id, \
+                    cis.round_to_5_centimes, \
                     cis.version, cis.created_at, cis.updated_at \
              FROM company_invoice_settings cis \
              JOIN accounts ar ON ar.id = cis.default_receivable_account_id AND ar.active = TRUE \
@@ -594,6 +598,7 @@ pub async fn insert_with_defaults_in_tx(
                     cis.default_sales_journal, \
                     cis.journal_entry_description_template, cis.credit_note_number_format, \
                     cis.default_payable_account_id, cis.default_rounding_account_id, \
+                    cis.round_to_5_centimes, \
                     cis.version, cis.created_at, cis.updated_at \
              FROM company_invoice_settings cis \
              JOIN accounts ar ON ar.id = cis.default_receivable_account_id AND ar.active = TRUE \

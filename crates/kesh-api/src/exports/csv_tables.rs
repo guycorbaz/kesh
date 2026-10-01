@@ -506,6 +506,7 @@ pub fn serialize_invoices_csv<W: Write>(rows: &[Invoice], writer: W) -> Result<(
         "due_date",
         "payment_terms",
         "total_amount",
+        "rounding_amount",
         "journal_entry_id",
         "paid_at",
         // #262 : envoi e-mail (Epic 20) — omis jusqu'ici de l'export souveraineté.
@@ -531,6 +532,7 @@ pub fn serialize_invoices_csv<W: Write>(rows: &[Invoice], writer: W) -> Result<(
             fmt_opt_date(i.due_date),
             fmt_opt_str(&i.payment_terms),
             fmt_decimal(i.total_amount),
+            fmt_decimal(i.rounding_amount),
             fmt_opt_i64(i.journal_entry_id),
             fmt_opt_dt(i.paid_at),
             // Dernier envoi e-mail (Epic 20, Story 20-3b1).
@@ -922,6 +924,7 @@ pub fn serialize_company_invoice_settings_csv<W: Write>(
         "credit_note_number_format",
         "default_payable_account_id",
         "default_rounding_account_id",
+        "round_to_5_centimes",
         "version",
         "created_at",
         "updated_at",
@@ -941,6 +944,7 @@ pub fn serialize_company_invoice_settings_csv<W: Write>(
             txt(cis.credit_note_number_format.clone()),
             fmt_opt_i64(cis.default_payable_account_id),
             fmt_opt_i64(cis.default_rounding_account_id),
+            fmt_bool(cis.round_to_5_centimes),
             cis.version.to_string(),
             fmt_dt(cis.created_at),
             fmt_dt(cis.updated_at),
@@ -1073,6 +1077,7 @@ pub fn serialize_credit_notes_csv<W: Write>(
         "status",
         "date",
         "total_amount",
+        "rounding_amount",
         "journal_entry_id",
         "version",
         "created_at",
@@ -1089,6 +1094,7 @@ pub fn serialize_credit_notes_csv<W: Write>(
             txt(cn.status.clone()),
             fmt_date(cn.date),
             fmt_decimal(cn.total_amount),
+            fmt_decimal(cn.rounding_amount),
             fmt_opt_i64(cn.journal_entry_id),
             cn.version.to_string(),
             fmt_dt(cn.created_at),
@@ -1672,6 +1678,7 @@ mod tests {
             due_date: Some(NaiveDate::from_ymd_opt(2026, 6, 30).unwrap()),
             payment_terms: Some("30 jours".into()),
             total_amount: dec!(1234.50),
+            rounding_amount: rust_decimal::Decimal::ZERO,
             journal_entry_id: Some(10),
             paid_at: None,
             emailed_at: Some(naive_dt(2026, 6, 2, 9, 30, 0)),
@@ -1701,7 +1708,7 @@ mod tests {
         assert_eq!(
             header,
             "id;company_id;contact_id;invoice_number;status;date;due_date;\
-             payment_terms;total_amount;journal_entry_id;paid_at;emailed_at;emailed_to;\
+             payment_terms;total_amount;rounding_amount;journal_entry_id;paid_at;emailed_at;emailed_to;\
              project_id;dunning_paused_at;dunning_paused_note;version;created_at;updated_at"
         );
     }

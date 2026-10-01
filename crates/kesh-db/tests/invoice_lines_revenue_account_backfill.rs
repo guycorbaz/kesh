@@ -1208,6 +1208,13 @@ async fn validated_invoice_from_the_real_engine_is_recovered_by_the_backfill(poo
     kesh_db::MIGRATOR.run(&pool).await.expect("schéma complet");
 
     let seeded = seed_accounting_company(&pool).await.expect("seed");
+    // Story 25-4-c4-a : ce backfill ne rejoue que des sauvegardes antérieures à
+    // 2026-07-29, donc à toute facture arrondie. Sa condition (3) cherche UN crédit
+    // hors créance et TVA : une ligne d'arrondi au crédit en ferait deux. Le cas ne
+    // peut pas se présenter en vrai ; le moteur est donc exercé sans arrondi.
+    kesh_db::test_fixtures::disable_rounding_to_5_centimes(&pool, seeded.company_id)
+        .await
+        .expect("réglage");
     let contact_id = insert_contact(&pool, seeded.company_id).await;
     let revenue = seeded.accounts["3000"];
     let other_revenue = insert_revenue_account(&pool, seeded.company_id, "3200").await;

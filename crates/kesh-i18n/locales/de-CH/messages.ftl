@@ -273,6 +273,7 @@ journal-entry-saved = Buchung gespeichert
 error-fiscal-year-closed-generic = Das Geschäftsjahr ist abgeschlossen — keine Buchungen können hinzugefügt oder geändert werden (OR Art. 957-964).
 error-inactive-accounts = Ein oder mehrere Konten sind archiviert oder ungültig.
 error-rounding-account-not-configured = Diese Zahlung begleicht die Rechnung auf den Rappen genau, aber es ist kein verwendbares Konto für Rundungsdifferenzen festgelegt: Wählen Sie eines unter Einstellungen → Fakturierung.
+error-rounding-account-not-configured-issuance = Der Gesamtbetrag dieses Belegs ist auf 5 Rappen gerundet, aber es ist kein verwendbares Konto für Rundungsdifferenzen festgelegt: Wählen Sie eines unter Einstellungen → Fakturierung.
 
 # Ertragskonto pro Rechnungsposition (Story 16-1a, #152)
 invoice-line-account-subject-line = Position { $line }

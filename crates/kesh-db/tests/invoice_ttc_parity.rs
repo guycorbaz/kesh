@@ -16,7 +16,7 @@
 //! Pré-requis : MariaDB démarré (`sqlx::test` crée une DB éphémère par test).
 
 use chrono::NaiveDate;
-use kesh_core::accounting::vat::invoice_total_ttc;
+use kesh_core::accounting::vat::{invoice_total_ttc, invoice_total_ttc_rounded};
 use kesh_db::entities::contact::{ContactType, NewContact};
 use kesh_db::entities::{NewInvoice, NewInvoiceLine};
 use kesh_db::repositories::invoices::{
@@ -109,6 +109,13 @@ async fn ttc_four_way_parity_mixed_rates_and_rounding_edges(pool: MySqlPool) {
         "forme SQL scalaire ≠ helper Rust (ROUND vs MidpointAwayFromZero ?)"
     );
 
+    // Story 25-4-c4-a : un compte d'arrondi désigné — l'arrondi à 5 centimes,
+    // actif par défaut, fait partie de ce que les quatre voies doivent tenir
+    // d'accord une fois la pièce validée (12638.46 → 12638.45, arrondi NÉGATIF).
+    kesh_db::test_fixtures::designate_rounding_account(&pool, seeded.company_id)
+        .await
+        .expect("compte d'arrondi");
+
     // Voie 4 — débit créance de l'écriture (validation de la facture).
     let validated =
         invoices::validate_invoice(&pool, seeded.company_id, inv.id, seeded.admin_user_id)
@@ -121,9 +128,25 @@ async fn ttc_four_way_parity_mixed_rates_and_rounding_edges(pool: MySqlPool) {
         .iter()
         .find(|l| l.account_id == receivable)
         .expect("ligne créance");
+    let rounding = validated.invoice.rounding_amount;
+    assert_eq!(rounding, dec!(-0.01), "arrondi figé à la validation");
+    let rust_ttc_rounded =
+        invoice_total_ttc_rounded(lines.iter().map(|l| (l.line_total, l.vat_rate)), rounding);
     assert_eq!(
-        creance.debit, rust_ttc,
-        "débit créance ≠ helper Rust (équivalence par associativité violée ?)"
+        creance.debit, rust_ttc_rounded,
+        "débit créance ≠ helper Rust arrondi (équivalence par associativité violée ?)"
+    );
+    // Voie 2 rejouée sur la pièce validée : la forme scalaire porte l'arrondi figé.
+    let sql_scalar_ttc_validated: Decimal = sqlx::query_scalar(&format!(
+        "SELECT {INVOICE_TTC_SUBQUERY_SQL} FROM invoices i WHERE i.id = ?"
+    ))
+    .bind(inv.id)
+    .fetch_one(&pool)
+    .await
+    .expect("scalar ttc query");
+    assert_eq!(
+        sql_scalar_ttc_validated, rust_ttc_rounded,
+        "forme scalaire, arrondi compris"
     );
 
     // Voie 3 — forme SQL agrégat (table dérivée) via due_dates_summary.
@@ -133,13 +156,15 @@ async fn ttc_four_way_parity_mixed_rates_and_rounding_edges(pool: MySqlPool) {
         .expect("summary");
     assert_eq!(summary.unpaid_count, 1);
     assert_eq!(
-        summary.unpaid_total, rust_ttc,
-        "forme SQL agrégat (table dérivée) ≠ helper Rust"
+        summary.unpaid_total, rust_ttc_rounded,
+        "forme SQL agrégat (table dérivée) ≠ helper Rust arrondi"
     );
 
     // Valeur absolue attendue (fige le comportement, indépendamment des 4 voies) :
-    // HT = 12505.60 ; TVA = 8.10 + 123.46 + 1.30 + 0 + 0.00 + 0.00 = 132.86.
+    // HT = 12505.60 ; TVA = 8.10 + 123.46 + 1.30 + 0 + 0.00 + 0.00 = 132.86 ;
+    // TTC brut 12638.46, arrondi à 5 centimes 12638.45.
     assert_eq!(rust_ttc, dec!(12638.46));
+    assert_eq!(rust_ttc_rounded, dec!(12638.45));
 }
 
 /// La colonne calculée `total_ttc` des items de liste (forme scalaire dans le

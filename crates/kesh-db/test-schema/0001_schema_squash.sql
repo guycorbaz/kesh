@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 70 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 71 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -304,6 +304,7 @@ CREATE TABLE `company_invoice_settings` (
   `credit_note_number_format` varchar(64) NOT NULL DEFAULT 'AV-{YEAR}-{SEQ:04}',
   `default_payable_account_id` bigint(20) DEFAULT NULL,
   `default_rounding_account_id` bigint(20) DEFAULT NULL,
+  `round_to_5_centimes` tinyint(1) NOT NULL DEFAULT 1,
   PRIMARY KEY (`company_id`),
   KEY `fk_cis_receivable` (`default_receivable_account_id`),
   KEY `fk_cis_revenue` (`default_revenue_account_id`),
@@ -461,6 +462,7 @@ CREATE TABLE `credit_notes` (
   `version` int(11) NOT NULL DEFAULT 1,
   `created_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
   `updated_at` datetime(3) NOT NULL DEFAULT current_timestamp(3) ON UPDATE current_timestamp(3),
+  `rounding_amount` decimal(19,4) NOT NULL DEFAULT 0.0000,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_credit_notes_invoice` (`invoice_id`),
   UNIQUE KEY `uq_credit_notes_number` (`company_id`,`credit_note_number`),
@@ -711,6 +713,7 @@ CREATE TABLE `invoices` (
   `emailed_to` varchar(320) DEFAULT NULL,
   `dunning_paused_at` datetime(6) DEFAULT NULL,
   `dunning_paused_note` varchar(500) DEFAULT NULL,
+  `rounding_amount` decimal(19,4) NOT NULL DEFAULT 0.0000,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_invoices_number` (`company_id`,`invoice_number`),
   KEY `idx_invoices_company_status` (`company_id`,`status`),
