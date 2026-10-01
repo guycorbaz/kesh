@@ -391,22 +391,11 @@ fn validate_chart(entries: &[ChartEntry]) -> Result<(), CoreError> {
     // compte que les paramètres refuseraient. Story 25-4-d1 : les comptes des
     // natures d'écart soldé suivent les mêmes règles, par le même helper.
     let parents = parent_numbers(entries);
-    validate_designated_account(
-        entries.iter().filter(|e| e.rounding_difference),
-        &parents,
-        &ROUNDING_LABEL,
-    )?;
-    for nature in WriteOffNature::ALL {
-        validate_designated_account(
-            entries
-                .iter()
-                .filter(|e| e.write_off_nature == Some(nature)),
-            &parents,
-            &nature.account_label(),
-        )?;
-    }
     // Deux marqueurs sur une même entrée en feraient deux réglages distincts
     // pointant le même compte — l'un des deux serait désigné à l'insu de l'autre.
+    // Contrôlé AVANT les validations par marqueur : sinon une entrée doublement
+    // marquée ET d'un mauvais type recevrait le message de type, qui oriente
+    // vers le mauvais correctif (revue de code P1).
     if let Some(entry) = entries
         .iter()
         .find(|e| e.rounding_difference && e.write_off_nature.is_some())
@@ -421,6 +410,20 @@ fn validate_chart(entries: &[ChartEntry]) -> Result<(), CoreError> {
         )));
     }
 
+    validate_designated_account(
+        entries.iter().filter(|e| e.rounding_difference),
+        &parents,
+        &ROUNDING_LABEL,
+    )?;
+    for nature in WriteOffNature::ALL {
+        validate_designated_account(
+            entries
+                .iter()
+                .filter(|e| e.write_off_nature == Some(nature)),
+            &parents,
+            &nature.account_label(),
+        )?;
+    }
     Ok(())
 }
 
@@ -1349,6 +1352,20 @@ mod tests {
             ..write_off_entry("6940", WriteOffNature::BankFees)
         };
         let err = validate_chart(&[both]).unwrap_err();
+        assert!(err.to_string().contains("deux marqueurs"), "{err}");
+    }
+
+    /// Revue de code P1 : une entrée doublement marquée ET invalide par ailleurs
+    /// (type de bilan, rôle) est refusée pour son double marqueur — la cause
+    /// structurelle —, et non pour son type.
+    #[test]
+    fn validate_chart_names_the_double_marker_before_the_type() {
+        let both_on_an_asset = ChartEntry {
+            rounding_difference: true,
+            account_type: AccountType::Asset,
+            ..write_off_entry("1099", WriteOffNature::BankFees)
+        };
+        let err = validate_chart(&[both_on_an_asset]).unwrap_err();
         assert!(err.to_string().contains("deux marqueurs"), "{err}");
     }
 }

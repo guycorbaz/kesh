@@ -239,5 +239,12 @@ Claude Opus 5.5 (`claude-opus-5-5`).
   par un helper commun, réglage (API, écran, i18n), manuel admin, CHANGELOG. 11 tests Rust neufs,
   4 étendus, 2 Vitest, 1 spec E2E. Gates : backend 2588/2588, frontend 853/853, E2E 231/8 (7 KF-029,
   1 spec neuve corrigée et rejouée seule). Statut → review.
+- **2026-10-01** — Revue de code P1 (Sonnet, lentilles A et C, prompt versionné) : **0 au-dessus de LOW**,
+  3 LOW. Appliqués : le double marqueur est contrôlé **avant** les validations par marqueur (une
+  entrée doublement marquée et de mauvais type recevait le message de type) — test
+  `validate_chart_names_the_double_marker_before_the_type` ; « sur ce compte » du manuel admin,
+  devenu lointain de son antécédent, nomme le compte de différences d'arrondi (PDF régénéré, contrôlé
+  aplati). Laissé : le libellé « différences d'arrondi » en dur du message de double marqueur, exact
+  tant qu'il n'existe que deux marqueurs. Gate ciblé `kesh-core` vert (44 tests), clippy propre.
 
 [#384]: https://github.com/guycorbaz/kesh/issues/384
