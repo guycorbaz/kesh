@@ -463,6 +463,27 @@ mod tests {
     /// ⚠️ Et il ne part **pas** d'une fixture de facture par `..base` : le
     /// champ serait hérité et le test passerait **sans exercer aucun code
     /// d'avoir**. La `Company` est construite entière, exprès.
+    /// Story 25-4-c4-b — le PDF de l'avoir porte l'arrondi RECOPIÉ de sa facture
+    /// (revue de code P1, lentille C : l'AC 6 le promettait sans test).
+    #[test]
+    fn credit_note_pdf_carries_its_rounding() {
+        let cn = kesh_db::entities::CreditNote {
+            rounding_amount: dec!(-0.02),
+            ..credit_note()
+        };
+        let data = build_credit_note_pdf_data(
+            &cn,
+            vec![],
+            &contact(),
+            &company_with_contact_details(),
+            dec!(234.52),
+            vec![],
+            dec!(234.50),
+            None,
+        );
+        assert_eq!(data.rounding, dec!(-0.02));
+    }
+
     #[test]
     fn credit_note_pdf_carries_the_issuer_contact_details() {
         let company = company_with_contact_details();

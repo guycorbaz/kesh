@@ -132,6 +132,9 @@ récapitulatif, lui, est désormais traduit.
 - ⛔ **Changer le `totalTtc` d'un brouillon** : l'aperçu est un champ à part, que seule la fiche lit.
 - ⚠️ La liste des factures affiche toujours le HT dans sa colonne « Total » (défaut antérieur, relevé à
   l'inventaire) : hors périmètre.
+- ⚠️ **L'écran d'un avoir** (`credit-notes/[id]/+page.svelte`) n'affiche que le total HT — ni TVA, ni TTC, ni
+  arrondi —, et `CreditNoteResponse` n'expose rien de plus : défaut antérieur, hors périmètre (l'AC 3 vise la
+  fiche facture). Le PDF de l'avoir, lui, porte la ligne « Arrondi » (revue de code P1, lentille C).
 
 ### Modules
 
@@ -211,5 +214,16 @@ Claude Opus 5.5 (`claude-opus-5-5`).
   sur toute réponse brouillon, fiche traduite, réglage exposé et case à cocher, manuels, CHANGELOG. 7 tests Rust,
   4 Vitest, 1 spec Playwright neufs ; 4 mutations tuées. Gates : backend 2566/2566, frontend 849/849, E2E 227/19/10
   expliqués.
+- **2026-10-01** — Revue de code P1 (Sonnet ×3, prompt `25-4-c4-b-review-prompt-p1.md`) : A 1 MED/2 LOW, B 1 MED,
+  C 1 MED/2 LOW — tous retenus. **B** : l'aperçu lisait le réglage par `get_or_create_default`, dont l'`INSERT
+  IGNORE` ouvrait une transaction d'écriture à chaque `GET` de brouillon, clés d'API en lecture seule comprises →
+  lecture pure `company_invoice_settings::round_to_5_centimes` (défaut actif si la ligne manque), test « une lecture
+  n'écrit rien ». **A** : un écart infra-centime (les lignes portent quatre décimales) imprimait « +0.00 » → ligne et
+  signe décidés au centime, au PDF comme à la fiche, tests (0.0004 sans ligne, −0.0050 → « −0.01 ») ; doc-comment de
+  `format_ch` remis à sa place, commentaire citant un `show_recap` inexistant corrigé. **C** : le manuel utilisateur
+  plaçait la ligne « Arrondi » sur la QR-facture — le bulletin de versement ne porte que le montant arrondi →
+  corrigé, PDF régénéré ; l'écran d'un avoir (HT seul) documenté comme défaut antérieur hors périmètre ; tests du
+  PDF de l'avoir et du rappel, que l'AC 6 promettait sans les avoir. Gates : backend **2569/2569**, frontend
+  **850/850** ; E2E rejouée au push.
 
 [#494]: https://github.com/guycorbaz/kesh/issues/494

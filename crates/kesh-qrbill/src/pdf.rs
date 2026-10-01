@@ -587,8 +587,8 @@ fn draw_invoice_section(
     // laisser le récap chevaucher la zone de paiement. `+15` couvrait déjà le
     // total seul ; on ajoute `sous-total + n×taux + espace` (chaque ligne = 4.5).
     //
-    // Story 25-4-c4-b : une ligne « Arrondi » s'ajoute quand l'écart n'est pas nul,
-    // et fait apparaître le sous-total même sans TVA — d'où `show_recap`.
+    // Story 25-4-c4-b : une ligne « Arrondi » s'ajoute quand l'écart n'est pas nul
+    // au centime, et fait apparaître le sous-total même sans TVA (`recap_lines`).
     // La réserve et le dessin lisent la MÊME liste (`recap_lines`) : ils ne
     // peuvent pas diverger.
     let recap = recap_lines(inv, i18n);
@@ -1041,9 +1041,10 @@ fn hline(layer: &PdfLayerReference, x1: f32, x2: f32, y: f32) {
     layer.add_line(l);
 }
 
-/// Swiss number format: apostrophe thousand separator, point decimal.
 /// [`format_ch`] avec un signe **toujours** affiché — `+0.01`, `-0.02` : la ligne
-/// « Arrondi » dit dans quel sens le total a bougé (Story 25-4-c4-b).
+/// « Arrondi » dit dans quel sens le total a bougé (Story 25-4-c4-b). L'appelant
+/// passe une valeur déjà arrondie à `decimals`, pour que le signe et le montant
+/// affiché disent la même chose.
 pub fn format_signed_ch(value: Decimal, decimals: u32) -> String {
     let sign = if value.is_sign_negative() && !value.is_zero() {
         "-"
@@ -1053,6 +1054,7 @@ pub fn format_signed_ch(value: Decimal, decimals: u32) -> String {
     format!("{sign}{}", format_ch(value.abs(), decimals))
 }
 
+/// Swiss number format: apostrophe thousand separator, point decimal.
 pub fn format_ch(value: Decimal, decimals: u32) -> String {
     let rounded = value.round_dp_with_strategy(decimals, RoundingStrategy::MidpointAwayFromZero);
     let s = rounded.abs().to_string();
@@ -1157,7 +1159,13 @@ struct RecapLine {
 /// Fonction pure : la hauteur réservée pour la garde `TooManyLines` se déduit de
 /// la même liste que le dessin.
 fn recap_lines(inv: &InvoicePdfData, i18n: &QrBillI18n) -> Vec<RecapLine> {
-    if inv.vat_lines.is_empty() && inv.rounding.is_zero() {
+    // ⛔ Décidé AU CENTIME, comme il s'affiche : l'écart figé peut porter quatre
+    // décimales (les lignes en ont quatre), et un écart de 0.0004 imprimerait
+    // « +0.00 » sur une ligne qui n'explique rien (revue de code P1, lentille A).
+    let rounding = inv
+        .rounding
+        .round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
+    if inv.vat_lines.is_empty() && rounding.is_zero() {
         return Vec::new();
     }
     let currency = inv.currency.code();
@@ -1184,10 +1192,10 @@ fn recap_lines(inv: &InvoicePdfData, i18n: &QrBillI18n) -> Vec<RecapLine> {
             amount: money(v.amount),
         });
     }
-    if !inv.rounding.is_zero() {
+    if !rounding.is_zero() {
         out.push(RecapLine {
             label: i18n.get("invoice-pdf-rounding").to_string(),
-            amount: format!("{currency} {}", format_signed_ch(inv.rounding, 2)),
+            amount: format!("{currency} {}", format_signed_ch(rounding, 2)),
         });
     }
     out
@@ -1601,6 +1609,21 @@ mod tests {
             labels(&rond).is_empty(),
             "ni TVA ni arrondi : le total seul"
         );
+        // Écart infra-centime : pas de ligne « +0.00 » ; un demi-centime s'affiche
+        // au centime, signe compris (revue de code P1, lentille A).
+        let infra = InvoicePdfData {
+            rounding: dec!(0.0004),
+            ..rond.clone()
+        };
+        assert!(
+            labels(&infra).is_empty(),
+            "0.0004 n'explique rien au centime"
+        );
+        let demi = InvoicePdfData {
+            rounding: dec!(-0.0050),
+            ..rond
+        };
+        assert_eq!(labels(&demi)[1].1, "CHF -0.01");
     }
 
     /// La ligne d'arrondi compte dans la réserve de la garde `TooManyLines` : une

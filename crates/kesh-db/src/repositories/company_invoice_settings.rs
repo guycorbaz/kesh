@@ -300,6 +300,26 @@ async fn rounding_account_from_chart(
     .map_err(map_db_error)
 }
 
+/// Le réglage `round_to_5_centimes` de la société, en **lecture pure** (Story
+/// 25-4-c4-b) — pour l'aperçu d'un brouillon, servi par des `GET` que rien ne
+/// doit transformer en écriture, clés d'API en lecture seule comprises.
+/// ⛔ Pas de `get_or_create_default` ici : son `INSERT IGNORE` ouvrirait une
+/// transaction d'écriture à chaque lecture. Ligne absente → le défaut de la
+/// colonne, actif.
+pub async fn round_to_5_centimes<'e, E>(executor: E, company_id: i64) -> Result<bool, DbError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::MySql>,
+{
+    Ok(sqlx::query_scalar::<_, bool>(
+        "SELECT round_to_5_centimes FROM company_invoice_settings WHERE company_id = ?",
+    )
+    .bind(company_id)
+    .fetch_optional(executor)
+    .await
+    .map_err(map_db_error)?
+    .unwrap_or(true))
+}
+
 /// Le compte de différences d'arrondi, **au moment d'écrire** un écart
 /// (Story 25-4-c3-b, AC 4).
 ///

@@ -298,12 +298,13 @@ async fn with_draft_rounding_preview(
     if response.status != "draft" {
         return Ok(response);
     }
-    let settings = kesh_db::repositories::company_invoice_settings::get_or_create_default(
+    // Lecture pure (revue de code P1, lentille B) : un `GET` ne doit rien écrire.
+    let enabled = kesh_db::repositories::company_invoice_settings::round_to_5_centimes(
         &state.pool,
         response.company_id,
     )
     .await?;
-    Ok(response.with_rounding_preview(settings.round_to_5_centimes))
+    Ok(response.with_rounding_preview(enabled))
 }
 
 /// B3 (review pass 1 G2 B) : règle « en retard » centralisée — une seule

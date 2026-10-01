@@ -690,6 +690,37 @@ mod tests {
     /// factures seraient sorties sans coordonnées pendant que les avoirs en
     /// portaient — la dissymétrie exacte que la story nomme « le piège qui
     /// coûterait le plus cher », et le document principal était le côté nu.
+    /// Story 25-4-c4-b — la facture ET le rappel portent l'arrondi figé de la
+    /// facture (revue de code P1, lentille C : l'AC 6 le promettait sans test).
+    #[test]
+    fn invoice_and_reminder_pdf_carry_the_frozen_rounding() {
+        let inv = kesh_db::entities::Invoice {
+            rounding_amount: dec!(0.01),
+            ..invoice()
+        };
+        for doc in [
+            PdfDocument::Invoice,
+            PdfDocument::Reminder(ReminderAmounts {
+                amount_settled: dec!(0),
+                amount_due: dec!(100.00),
+                fees: dec!(0),
+            }),
+        ] {
+            let (_qr, data) = build_qrbill_inputs(
+                &inv,
+                &[],
+                &contact_with_structured_address(),
+                &company_with_contact_details(),
+                &primary_bank(),
+                "CH",
+                "CH",
+                doc,
+            )
+            .expect("montage exploitable");
+            assert_eq!(data.rounding, dec!(0.01));
+        }
+    }
+
     #[test]
     fn invoice_pdf_carries_the_issuer_contact_details() {
         let company = company_with_contact_details();

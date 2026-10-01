@@ -1512,3 +1512,34 @@ async fn disabling_the_setting_leaves_issued_invoices_alone(pool: MySqlPool) {
     assert_eq!(dec_of(&v["roundingAmount"]), dec!(0.01));
     assert_eq!(dec_of(&v["totalTtc"]), dec!(123.45));
 }
+
+/// ⛔ Le `GET` d'un brouillon ne s'écrit pas : sans ligne de réglages, l'aperçu
+/// prend le défaut (actif) et la ligne n'est PAS recréée — revue de code P1,
+/// lentille B (l'ancien `get_or_create_default` faisait un `INSERT IGNORE` à
+/// chaque lecture, y compris sous une clé d'API en lecture seule).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reading_a_draft_writes_nothing(pool: MySqlPool) {
+    seed_base(&pool).await;
+    let (company_id, _) = ids(&pool).await;
+    let draft = draft_123_44(&pool).await;
+    sqlx::query("DELETE FROM company_invoice_settings WHERE company_id = ?")
+        .bind(company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    let v = get_invoice_json(&app, &token, draft).await;
+    assert_eq!(
+        dec_of(&v["roundingAmount"]),
+        dec!(0.01),
+        "défaut actif : {v}"
+    );
+    let rows: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM company_invoice_settings WHERE company_id = ?")
+            .bind(company_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(rows, 0, "la lecture n'a rien écrit");
+}

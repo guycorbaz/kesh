@@ -241,6 +241,15 @@ describe("fiche facture — créer un avoir sur une facture réglée (Story 25-4
     expect(container.textContent).toContain("234.50");
   });
 
+  it("un écart infra-centime ne montre pas « +0.00 » (mutation : décision sur la valeur brute)", async () => {
+    getInvoiceMock.mockResolvedValue(
+      invoice({ roundingAmount: "0.0004", roundingIsPreview: false, totalTtc: "123.4500" }),
+    );
+    const { findByText, queryByTestId } = render(Page);
+    expect(await findByText("F-2026-005", { exact: false })).toBeTruthy();
+    expect(queryByTestId("invoice-detail-rounding")).toBeNull();
+  });
+
   it("sans arrondi, aucune ligne « Arrondi »", async () => {
     const { findByText, queryByTestId } = render(Page);
     expect(await findByText("F-2026-005", { exact: false })).toBeTruthy();

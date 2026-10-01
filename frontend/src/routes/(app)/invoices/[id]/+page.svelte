@@ -412,7 +412,10 @@
 	// Story 25-4-c4-b (#494) — l'arrondi à 5 centimes. Figé sur une facture émise
 	// (déjà compris dans `totalTtc`) ; en APERÇU sur un brouillon, d'après le
 	// réglage courant — le serveur le calcule, la fiche l'additionne en « estimé ».
-	let hasRounding = $derived(!!invoice && !new Big(invoice.roundingAmount || '0').eq(0));
+	// Décidé AU CENTIME, comme il s'affiche : l'écart peut porter quatre
+	// décimales, et 0.0004 afficherait « +0.00 » (revue de code P1, lentille A).
+	let roundingCents = $derived(new Big(invoice?.roundingAmount || '0').round(2, Big.roundHalfUp));
+	let hasRounding = $derived(!!invoice && !roundingCents.eq(0));
 	let roundingPreview = $derived(!!invoice?.roundingIsPreview && hasRounding);
 	let displayedTotal = $derived(
 		!invoice
@@ -421,9 +424,8 @@
 				? new Big(invoice.totalTtc).plus(invoice.roundingAmount).toFixed(2)
 				: invoice.totalTtc,
 	);
-	function signedAmount(raw: string): string {
-		const b = new Big(raw);
-		return (b.gt(0) ? '+' : '') + formatInvoiceTotal(raw);
+	function signedAmount(cents: Big): string {
+		return (cents.gt(0) ? '+' : '') + formatInvoiceTotal(cents.toFixed(2));
 	}
 	// ⛔ Story 24-3 (#372) : plus de « dé-marquer ». Annuler un règlement demande
 	// une CONTRE-PASSATION, pas un retrait de drapeau — c'est la liste des
@@ -1032,7 +1034,7 @@
 									? i18nMsg('invoice-detail-rounding-estimated', 'Arrondi (estimé)')
 									: i18nMsg('invoice-detail-rounding', 'Arrondi')}
 							</td>
-							<td class="py-1 text-right font-mono">{signedAmount(invoice.roundingAmount)}</td>
+							<td class="py-1 text-right font-mono">{signedAmount(roundingCents)}</td>
 						</tr>
 					{/if}
 					<tr>
