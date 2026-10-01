@@ -62,8 +62,16 @@ seuil : accepté.
 facture émise avant qu'un seuil plus haut soit fixé).
 
 **AC 4 — Le réglage, API et écran.**
-- Dépôt : `CompanyInvoiceSettingsUpdate.minimum_invoice_amount: Option<Decimal>`, `UPDATE`, `is_no_op_change` ;
-  l'audit suit (`COLUMNS`).
+- Dépôt (`crates/kesh-db/src/repositories/company_invoice_settings.rs`) — ⛔ **chaque site qui énumère les
+  colonnes à la main** (validation P1) :
+  - l'entité `CompanyInvoiceSettings` et `COLUMNS` (`:28-34`, qui sert `get_or_create_default*` et les lectures
+    `before`/`after` de `update`) ;
+  - les **deux `SELECT` préfixés `cis.`** de `insert_with_defaults` et `insert_with_defaults_in_tx` (branche
+    `rows == 0`, `:493` et `:617`), qui **ne dérivent pas** de `COLUMNS` : un oubli y fait échouer en
+    `ColumnNotFound` le chemin idempotent de l'onboarding et du seed (test `company_invoice_settings_repository.rs:58`) ;
+  - l'instantané d'audit `settings_snapshot_json` (`:36-53`), manuscrit : un oubli y rend la piste d'audit
+    **silencieusement** incomplète sur le changement de seuil ;
+  - `CompanyInvoiceSettingsUpdate.minimum_invoice_amount: Option<Decimal>`, l'`UPDATE`, `is_no_op_change`.
 - Route : `minimumInvoiceAmount` en `GET` et `PUT` — **absent du corps : préservé ; présent à `null` : effacé**
   (`double_option`, patron du compte d'arrondi). Validation : **strictement positif**, au plus deux décimales
   (`scale_within(&v.normalize(), 2)`), sinon 400.
@@ -120,5 +128,9 @@ facture émise avant qu'un seuil plus haut soit fixé).
 
 - **2026-10-01** — Créée : réglage `minimum_invoice_amount` (`NULL` = aucun seuil), refus dédié à la validation
   sur le total arrondi, avoirs et rappels hors champ, API qui préserve l'absent, écran, manuels.
+- **2026-10-01** — Validation P1 (Sonnet) : 1 HIGH, 1 MED, retenus. La formule « l'audit suit (`COLUMNS`) » laissait
+  croire à un site unique : les deux `SELECT` `cis.`-préfixés des `insert_with_defaults*` (échec `ColumnNotFound`
+  au chemin idempotent) et l'instantané `settings_snapshot_json` (audit incomplet sans signal) énumèrent les
+  colonnes à la main — nommés à l'AC 4.
 
 [#495]: https://github.com/guycorbaz/kesh/issues/495
