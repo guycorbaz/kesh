@@ -31,6 +31,7 @@ const COLUMNS: &str = "company_id, invoice_number_format, default_receivable_acc
     default_sales_journal, journal_entry_description_template, \
     credit_note_number_format, default_payable_account_id, \
     default_rounding_account_id, round_to_5_centimes, minimum_invoice_amount, \
+    default_discount_account_id, default_bank_fees_account_id, default_bad_debt_account_id, \
     version, created_at, updated_at";
 
 fn settings_snapshot_json(s: &CompanyInvoiceSettings) -> serde_json::Value {
@@ -49,6 +50,9 @@ fn settings_snapshot_json(s: &CompanyInvoiceSettings) -> serde_json::Value {
         "defaultRoundingAccountId": s.default_rounding_account_id,
         "roundTo5Centimes": s.round_to_5_centimes,
         "minimumInvoiceAmount": s.minimum_invoice_amount,
+        "defaultDiscountAccountId": s.default_discount_account_id,
+        "defaultBankFeesAccountId": s.default_bank_fees_account_id,
+        "defaultBadDebtAccountId": s.default_bad_debt_account_id,
         "version": s.version,
     })
 }
@@ -131,6 +135,9 @@ fn is_no_op_change(
         && before.default_rounding_account_id == changes.default_rounding_account_id
         && before.round_to_5_centimes == changes.round_to_5_centimes
         && before.minimum_invoice_amount == changes.minimum_invoice_amount
+        && before.default_discount_account_id == changes.default_discount_account_id
+        && before.default_bank_fees_account_id == changes.default_bank_fees_account_id
+        && before.default_bad_debt_account_id == changes.default_bad_debt_account_id
 }
 
 /// Met à jour la config (tous les champs) avec verrou optimiste et audit.
@@ -184,7 +191,9 @@ pub async fn update(
              default_sales_journal = ?, \
              journal_entry_description_template = ?, credit_note_number_format = ?, \
              default_payable_account_id = ?, default_rounding_account_id = ?, \
-             round_to_5_centimes = ?, minimum_invoice_amount = ?, version = version + 1 \
+             round_to_5_centimes = ?, minimum_invoice_amount = ?, \
+             default_discount_account_id = ?, default_bank_fees_account_id = ?, \
+             default_bad_debt_account_id = ?, version = version + 1 \
          WHERE company_id = ? AND version = ?",
     )
     .bind(&changes.invoice_number_format)
@@ -200,6 +209,9 @@ pub async fn update(
     .bind(changes.default_rounding_account_id)
     .bind(changes.round_to_5_centimes)
     .bind(changes.minimum_invoice_amount)
+    .bind(changes.default_discount_account_id)
+    .bind(changes.default_bank_fees_account_id)
+    .bind(changes.default_bad_debt_account_id)
     .bind(company_id)
     .bind(expected_version)
     .execute(&mut *tx)
@@ -244,29 +256,40 @@ pub async fn update(
     Ok(after)
 }
 
-/// Le compte de **différences d'arrondi** qu'une société reçoit d'office à la
-/// création de ses réglages (Story 25-4-c3-a2, #476) : celui dont le numéro est
-/// l'entrée **marquée** (`roundingDifference`) du plan de sa forme juridique.
+/// Les comptes qu'une société reçoit d'office à la création de ses réglages,
+/// parce que le plan de sa forme juridique les **marque** : le compte de
+/// différences d'arrondi (`roundingDifference`, Story 25-4-c3-a2, #476) et ceux
+/// des natures d'écart soldé (`writeOffNature`, Story 25-4-d1, #384).
+#[derive(Debug, Default)]
+struct ChartDesignatedAccounts {
+    rounding: Option<i64>,
+    discount: Option<i64>,
+    bank_fees: Option<i64>,
+    bad_debt: Option<i64>,
+}
+
+/// Résout les comptes **marqués** du plan de la société (cf.
+/// [`ChartDesignatedAccounts`]).
 ///
 /// Partagé par les deux `insert_with_defaults*` (DRY). Le plan est **relu** ici
 /// parce que la finalisation de l'onboarding arrive dans une autre requête que
 /// l'étape qui a semé les comptes ; la forme juridique ne change plus après
 /// l'étape 3, donc c'est bien le plan qui les a semés.
 ///
-/// ⛔ **Facultatif : une absence n'est jamais une erreur** — contrairement à la
-/// créance et au produit : plan sans marqueur, compte renuméroté, archivé, rendu
-/// non imputable ou retypé depuis l'étape 4 → `None`, et la société le choisira
-/// dans les paramètres. ⚠️ Une **erreur SQL**, elle, remonte : elle survient dans
-/// la transaction même des recherches obligatoires, qu'on ne poursuit pas dans un
-/// état douteux. Mêmes exigences que la validation du réglage
-/// (`validate_account_of`, `kesh-api`) : actif, imputable, charge ou produit.
-///
-/// `FOR UPDATE`, comme les recherches par rôle (F1) : une désactivation
-/// concurrente ne doit pas laisser un réglage pointer sur un compte mort.
-async fn rounding_account_from_chart(
+/// ⛔ **Facultatifs : une absence n'est jamais une erreur** — contrairement à la
+/// créance et au produit : plan sans marqueur (l'escompte des associations),
+/// compte renuméroté, archivé, rendu non imputable ou retypé depuis l'étape 4 →
+/// `None`, et la société le choisira dans les paramètres. ⚠️ Une **erreur SQL**,
+/// elle, remonte : elle survient dans la transaction même des recherches
+/// obligatoires, qu'on ne poursuit pas dans un état douteux.
+async fn chart_designated_accounts(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
-) -> Result<Option<i64>, DbError> {
+) -> Result<ChartDesignatedAccounts, DbError> {
+    use kesh_core::chart_of_accounts::{
+        WriteOffNature, rounding_difference_number, write_off_account_number,
+    };
+
     let org_type: Option<String> =
         sqlx::query_scalar("SELECT org_type FROM companies WHERE id = ?")
             .bind(company_id)
@@ -274,7 +297,7 @@ async fn rounding_account_from_chart(
             .await
             .map_err(map_db_error)?;
     let Some(org_type) = org_type else {
-        return Ok(None);
+        return Ok(ChartDesignatedAccounts::default());
     };
     let chart = match kesh_core::chart_of_accounts::load_chart(&org_type) {
         Ok(chart) => chart,
@@ -282,11 +305,47 @@ async fn rounding_account_from_chart(
             // Une forme juridique sans plan livré est possible ; un plan livré
             // invalide ne l'est pas — ne pas l'avaler sans trace.
             tracing::warn!(company_id, org_type = %org_type, error = %e,
-                "compte de différences d'arrondi : plan introuvable ou invalide, réglage laissé vide");
-            return Ok(None);
+                "comptes désignés par le plan : plan introuvable ou invalide, réglages laissés vides");
+            return Ok(ChartDesignatedAccounts::default());
         }
     };
-    let Some(number) = kesh_core::chart_of_accounts::rounding_difference_number(&chart) else {
+    // Ordre de verrouillage fixe : arrondi, puis les natures dans l'ordre de
+    // `WriteOffNature::ALL`.
+    Ok(ChartDesignatedAccounts {
+        rounding: designated_account_id(tx, company_id, rounding_difference_number(&chart)).await?,
+        discount: designated_account_id(
+            tx,
+            company_id,
+            write_off_account_number(&chart, WriteOffNature::Discount),
+        )
+        .await?,
+        bank_fees: designated_account_id(
+            tx,
+            company_id,
+            write_off_account_number(&chart, WriteOffNature::BankFees),
+        )
+        .await?,
+        bad_debt: designated_account_id(
+            tx,
+            company_id,
+            write_off_account_number(&chart, WriteOffNature::BadDebt),
+        )
+        .await?,
+    })
+}
+
+/// Le compte de la société qui porte le numéro qu'un plan désigne, s'il est
+/// utilisable par un réglage. Mêmes exigences que sa validation
+/// (`validate_account_of`, `kesh-api`) : actif, imputable, charge ou produit.
+///
+/// `FOR UPDATE`, comme les recherches par rôle (F1) : une désactivation
+/// concurrente ne doit pas laisser un réglage pointer sur un compte mort.
+async fn designated_account_id(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    number: Option<&str>,
+) -> Result<Option<i64>, DbError> {
+    let Some(number) = number else {
         return Ok(None);
     };
     sqlx::query_scalar::<_, i64>(
@@ -461,8 +520,8 @@ pub async fn insert_with_defaults(
         return Err(DbError::InactiveOrInvalidAccounts);
     }
 
-    // Story 25-4-c3-a2 : le compte de différences d'arrondi du plan — facultatif.
-    let rounding = rounding_account_from_chart(&mut tx, company_id).await?;
+    // Story 25-4-c3-a2 / 25-4-d1 : les comptes désignés par le plan — facultatifs.
+    let designated = chart_designated_accounts(&mut tx, company_id).await?;
 
     // P1-C1: Check rows_affected to distinguish newly inserted vs pre-existing rows
     // INSERT IGNORE suppresses errors but returns rows_affected=0 if DUPLICATE KEY
@@ -470,15 +529,19 @@ pub async fn insert_with_defaults(
         "INSERT IGNORE INTO company_invoice_settings \
          (company_id, invoice_number_format, default_receivable_account_id, \
           default_revenue_account_id, default_payable_account_id, \
-          default_rounding_account_id, \
+          default_rounding_account_id, default_discount_account_id, \
+          default_bank_fees_account_id, default_bad_debt_account_id, \
           default_sales_journal, journal_entry_description_template) \
-         VALUES (?, 'F-{YEAR}-{SEQ:04}', ?, ?, ?, ?, 'Ventes', '{YEAR}-{INVOICE_NUMBER}')",
+         VALUES (?, 'F-{YEAR}-{SEQ:04}', ?, ?, ?, ?, ?, ?, ?, 'Ventes', '{YEAR}-{INVOICE_NUMBER}')",
     )
     .bind(company_id)
     .bind(receivable)
     .bind(revenue)
     .bind(payable)
-    .bind(rounding)
+    .bind(designated.rounding)
+    .bind(designated.discount)
+    .bind(designated.bank_fees)
+    .bind(designated.bad_debt)
     .execute(&mut *tx)
     .await
     .map_err(map_db_error)?
@@ -500,6 +563,8 @@ pub async fn insert_with_defaults(
                     cis.journal_entry_description_template, cis.credit_note_number_format, \
                     cis.default_payable_account_id, cis.default_rounding_account_id, \
                     cis.round_to_5_centimes, cis.minimum_invoice_amount, \
+                    cis.default_discount_account_id, cis.default_bank_fees_account_id, \
+                    cis.default_bad_debt_account_id, \
                     cis.version, cis.created_at, cis.updated_at \
              FROM company_invoice_settings cis \
              JOIN accounts ar ON ar.id = cis.default_receivable_account_id AND ar.active = TRUE \
@@ -589,8 +654,8 @@ pub async fn insert_with_defaults_in_tx(
         return Err(DbError::InactiveOrInvalidAccounts);
     }
 
-    // Story 25-4-c3-a2 : le compte de différences d'arrondi du plan — facultatif.
-    let rounding = rounding_account_from_chart(tx, company_id).await?;
+    // Story 25-4-c3-a2 / 25-4-d1 : les comptes désignés par le plan — facultatifs.
+    let designated = chart_designated_accounts(tx, company_id).await?;
 
     // P1-C1: Check rows_affected to distinguish newly inserted vs pre-existing rows
     // INSERT IGNORE suppresses errors but returns rows_affected=0 if DUPLICATE KEY
@@ -598,15 +663,19 @@ pub async fn insert_with_defaults_in_tx(
         "INSERT IGNORE INTO company_invoice_settings \
          (company_id, invoice_number_format, default_receivable_account_id, \
           default_revenue_account_id, default_payable_account_id, \
-          default_rounding_account_id, \
+          default_rounding_account_id, default_discount_account_id, \
+          default_bank_fees_account_id, default_bad_debt_account_id, \
           default_sales_journal, journal_entry_description_template) \
-         VALUES (?, 'F-{YEAR}-{SEQ:04}', ?, ?, ?, ?, 'Ventes', '{YEAR}-{INVOICE_NUMBER}')",
+         VALUES (?, 'F-{YEAR}-{SEQ:04}', ?, ?, ?, ?, ?, ?, ?, 'Ventes', '{YEAR}-{INVOICE_NUMBER}')",
     )
     .bind(company_id)
     .bind(receivable)
     .bind(revenue)
     .bind(payable)
-    .bind(rounding)
+    .bind(designated.rounding)
+    .bind(designated.discount)
+    .bind(designated.bank_fees)
+    .bind(designated.bad_debt)
     .execute(&mut **tx)
     .await
     .map_err(map_db_error)?
@@ -624,6 +693,8 @@ pub async fn insert_with_defaults_in_tx(
                     cis.journal_entry_description_template, cis.credit_note_number_format, \
                     cis.default_payable_account_id, cis.default_rounding_account_id, \
                     cis.round_to_5_centimes, cis.minimum_invoice_amount, \
+                    cis.default_discount_account_id, cis.default_bank_fees_account_id, \
+                    cis.default_bad_debt_account_id, \
                     cis.version, cis.created_at, cis.updated_at \
              FROM company_invoice_settings cis \
              JOIN accounts ar ON ar.id = cis.default_receivable_account_id AND ar.active = TRUE \

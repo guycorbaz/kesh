@@ -72,6 +72,9 @@ function settings(overrides: Partial<InvoiceSettingsResponse> = {}): InvoiceSett
 		defaultRoundingAccountId: null,
 		roundTo5Centimes: true,
 		minimumInvoiceAmount: null,
+		defaultDiscountAccountId: null,
+		defaultBankFeesAccountId: null,
+		defaultBadDebtAccountId: null,
 		version: 3,
 		...overrides,
 	};
@@ -163,5 +166,62 @@ describe('Paramètres → Facturation — compte de différences d’arrondi', (
 		await fireEvent.submit(container.querySelector('form')!);
 		await waitFor(() => expect(updateInvoiceSettingsMock).toHaveBeenCalledTimes(1));
 		expect(updateInvoiceSettingsMock.mock.calls[0][0]).toMatchObject({ minimumInvoiceAmount: null });
+	});
+});
+
+// Story 25-4-d1 (#384) — les comptes des natures d'écart soldé.
+describe('Paramètres → Facturation — solde du reste', () => {
+	const FIELDS = [
+		{ testid: 'settings-discount-account', key: 'defaultDiscountAccountId' },
+		{ testid: 'settings-bank-fees-account', key: 'defaultBankFeesAccountId' },
+		{ testid: 'settings-bad-debt-account', key: 'defaultBadDebtAccountId' },
+	] as const;
+
+	it('chaque sélecteur ne propose que les charges et produits actifs et imputables, et affiche le compte chargé', async () => {
+		getInvoiceSettingsMock.mockResolvedValue(
+			settings({ defaultDiscountAccountId: 3, defaultBankFeesAccountId: 4, defaultBadDebtAccountId: 6 }),
+		);
+		const { findByTestId } = render(Page);
+		for (const [field, loaded] of [
+			[FIELDS[0], '3'],
+			[FIELDS[1], '4'],
+			[FIELDS[2], '6'], // archivé, mais déjà choisi : gardé visible (#271)
+		] as const) {
+			const select = (await findByTestId(field.testid)) as HTMLSelectElement;
+			await waitFor(() => expect(select.value).toBe(loaded));
+			const values = optionValues(select);
+			expect(values).toContain('3');
+			expect(values).toContain('4');
+			expect(values).not.toContain('1');
+			expect(values).not.toContain('2');
+			expect(values).not.toContain('5');
+		}
+	});
+
+	it('envoie les trois comptes à l’enregistrement (mutation : un champ non envoyé)', async () => {
+		getInvoiceSettingsMock.mockResolvedValue(settings({ defaultBadDebtAccountId: 3 }));
+		updateInvoiceSettingsMock.mockResolvedValue(settings({ version: 4 }));
+		const { findByTestId, container } = render(Page);
+		for (const [testid, number] of [
+			['settings-discount-account', '3000'],
+			['settings-bank-fees-account', '6940'],
+		] as const) {
+			const select = (await findByTestId(testid)) as HTMLSelectElement;
+			const option = Array.from(select.options).find((o) => o.textContent?.includes(number))!;
+			option.selected = true;
+			await fireEvent.change(select);
+		}
+		const badDebt = (await findByTestId('settings-bad-debt-account')) as HTMLSelectElement;
+		await waitFor(() => expect(badDebt.value).toBe('3'));
+		badDebt.value = '';
+		Array.from(badDebt.options)[0].selected = true;
+		await fireEvent.change(badDebt);
+		await fireEvent.submit(container.querySelector('form')!);
+		await waitFor(() => expect(updateInvoiceSettingsMock).toHaveBeenCalledTimes(1));
+		expect(updateInvoiceSettingsMock.mock.calls[0][0]).toMatchObject({
+			defaultDiscountAccountId: 3,
+			defaultBankFeesAccountId: 4,
+			defaultBadDebtAccountId: null,
+		});
 	});
 });

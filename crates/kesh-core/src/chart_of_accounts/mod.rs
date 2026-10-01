@@ -177,6 +177,71 @@ impl std::str::FromStr for AccountRole {
     }
 }
 
+/// Nature d'un **écart soldé** sur une facture (Story 25-4-d1, #384) : ce qui
+/// reste dû et que le comptable choisit d'abandonner, en l'imputant au compte
+/// de la nature.
+///
+/// Comme le compte de différences d'arrondi, c'est un **marqueur de plan** et
+/// non un rôle de compte : le plan désigne l'entrée par défaut, la société la
+/// règle dans ses paramètres. Le reste d'arrondi n'est pas une nature de ce
+/// type — il a déjà son marqueur, `roundingDifference`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum WriteOffNature {
+    /// Escompte accordé au client.
+    Discount,
+    /// Frais bancaires retenus par la banque du client.
+    BankFees,
+    /// Perte sur débiteur.
+    BadDebt,
+}
+
+impl WriteOffNature {
+    /// Toutes les natures, dans l'ordre d'affichage.
+    pub const ALL: [Self; 3] = [Self::Discount, Self::BankFees, Self::BadDebt];
+
+    /// La graphie JSON du marqueur.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Discount => "discount",
+            Self::BankFees => "bankFees",
+            Self::BadDebt => "badDebt",
+        }
+    }
+
+    /// Le libellé du compte dans les messages de validation du plan.
+    fn account_label(&self) -> DesignatedAccountLabel {
+        match self {
+            Self::Discount => DesignatedAccountLabel {
+                singular: "compte d'escompte",
+                plural: "comptes d'escompte",
+            },
+            Self::BankFees => DesignatedAccountLabel {
+                singular: "compte de frais bancaires",
+                plural: "comptes de frais bancaires",
+            },
+            Self::BadDebt => DesignatedAccountLabel {
+                singular: "compte de pertes sur créances",
+                plural: "comptes de pertes sur créances",
+            },
+        }
+    }
+}
+
+/// Libellés d'un compte désigné par marqueur, pour les messages de
+/// [`validate_designated_account`].
+struct DesignatedAccountLabel {
+    singular: &'static str,
+    plural: &'static str,
+}
+
+/// Le compte de différences d'arrondi : ses messages sont ceux de la Story
+/// 25-4-c3-a2, mot pour mot.
+const ROUNDING_LABEL: DesignatedAccountLabel = DesignatedAccountLabel {
+    singular: "compte de différences d'arrondi",
+    plural: "comptes de différences d'arrondi",
+};
+
 /// Entrée d'un plan comptable JSON.
 ///
 /// Les noms sont multilingues (clés : `"fr"`, `"de"`, `"it"`, `"en"`).
@@ -213,6 +278,12 @@ pub struct ChartEntry {
     /// sociétés choisiront le compte dans les paramètres.
     #[serde(default)]
     pub rounding_difference: bool,
+    /// Marque l'entrée qui deviendra le compte par défaut d'une **nature
+    /// d'écart soldé** (Story 25-4-d1, #384) — escompte, frais bancaires, perte
+    /// sur débiteur. Même logique que `rounding_difference` : au plus une entrée
+    /// par nature, et jamais deux marqueurs sur une même entrée.
+    #[serde(default)]
+    pub write_off_nature: Option<WriteOffNature>,
 }
 
 /// Résout le nom d'un compte dans la langue demandée, avec fallback FR.
@@ -317,41 +388,37 @@ fn validate_chart(entries: &[ChartEntry]) -> Result<(), CoreError> {
     // Story 25-4-c3-a2 : le compte de différences d'arrondi — au plus un, de charge
     // ou de produit, imputable. Mêmes conditions que la validation du réglage
     // (`validate_account_of`, `kesh-api`) : un plan livré ne doit pas désigner un
-    // compte que les paramètres refuseraient.
+    // compte que les paramètres refuseraient. Story 25-4-d1 : les comptes des
+    // natures d'écart soldé suivent les mêmes règles, par le même helper.
     let parents = parent_numbers(entries);
-    let mut rounding = entries.iter().filter(|e| e.rounding_difference);
-    if let Some(entry) = rounding.next() {
-        if let Some(second) = rounding.next() {
-            return Err(CoreError::InvalidChart(format!(
-                "plusieurs comptes de différences d'arrondi : {} et {}",
-                entry.number, second.number
-            )));
-        }
-        if !matches!(
-            entry.account_type,
-            AccountType::Expense | AccountType::Revenue
-        ) {
-            return Err(CoreError::InvalidChart(format!(
-                "compte {} : le compte de différences d'arrondi doit être une charge ou un produit, pas {}",
-                entry.number,
-                entry.account_type.as_str()
-            )));
-        }
-        if !is_postable(entry, &parents) {
-            return Err(CoreError::InvalidChart(format!(
-                "compte {} : le compte de différences d'arrondi doit être imputable",
-                entry.number
-            )));
-        }
-        // Un compte à rôle est déjà désigné ailleurs (produit par défaut…) : le
-        // marquer aussi en ferait silencieusement deux réglages distincts.
-        if let Some(role) = entry.role {
-            return Err(CoreError::InvalidChart(format!(
-                "compte {} : le compte de différences d'arrondi ne peut pas porter de rôle ({})",
-                entry.number,
-                role.as_str()
-            )));
-        }
+    validate_designated_account(
+        entries.iter().filter(|e| e.rounding_difference),
+        &parents,
+        &ROUNDING_LABEL,
+    )?;
+    for nature in WriteOffNature::ALL {
+        validate_designated_account(
+            entries
+                .iter()
+                .filter(|e| e.write_off_nature == Some(nature)),
+            &parents,
+            &nature.account_label(),
+        )?;
+    }
+    // Deux marqueurs sur une même entrée en feraient deux réglages distincts
+    // pointant le même compte — l'un des deux serait désigné à l'insu de l'autre.
+    if let Some(entry) = entries
+        .iter()
+        .find(|e| e.rounding_difference && e.write_off_nature.is_some())
+    {
+        return Err(CoreError::InvalidChart(format!(
+            "compte {} : porte deux marqueurs (différences d'arrondi et {})",
+            entry.number,
+            entry
+                .write_off_nature
+                .map(|n| n.as_str())
+                .unwrap_or_default()
+        )));
     }
 
     Ok(())
@@ -365,6 +432,63 @@ pub fn rounding_difference_number(entries: &[ChartEntry]) -> Option<&str> {
         .iter()
         .find(|e| e.rounding_difference)
         .map(|e| e.number.as_str())
+}
+
+/// Le numéro de l'entrée marquée compte de la nature d'écart soldé `nature`,
+/// s'il y en a une (Story 25-4-d1). `validate_chart` garantit qu'il y en a au
+/// plus une.
+pub fn write_off_account_number(entries: &[ChartEntry], nature: WriteOffNature) -> Option<&str> {
+    entries
+        .iter()
+        .find(|e| e.write_off_nature == Some(nature))
+        .map(|e| e.number.as_str())
+}
+
+/// Valide les entrées portant un même marqueur de compte désigné : au plus une,
+/// de charge ou de produit, imputable, sans rôle. Partagé par le compte de
+/// différences d'arrondi et les natures d'écart soldé — ne pas le recopier.
+fn validate_designated_account<'a>(
+    mut marked: impl Iterator<Item = &'a ChartEntry>,
+    parents: &HashSet<&str>,
+    label: &DesignatedAccountLabel,
+) -> Result<(), CoreError> {
+    let Some(entry) = marked.next() else {
+        return Ok(());
+    };
+    if let Some(second) = marked.next() {
+        return Err(CoreError::InvalidChart(format!(
+            "plusieurs {} : {} et {}",
+            label.plural, entry.number, second.number
+        )));
+    }
+    if !matches!(
+        entry.account_type,
+        AccountType::Expense | AccountType::Revenue
+    ) {
+        return Err(CoreError::InvalidChart(format!(
+            "compte {} : le {} doit être une charge ou un produit, pas {}",
+            entry.number,
+            label.singular,
+            entry.account_type.as_str()
+        )));
+    }
+    if !is_postable(entry, parents) {
+        return Err(CoreError::InvalidChart(format!(
+            "compte {} : le {} doit être imputable",
+            entry.number, label.singular
+        )));
+    }
+    // Un compte à rôle est déjà désigné ailleurs (produit par défaut…) : le
+    // marquer aussi en ferait silencieusement deux réglages distincts.
+    if let Some(role) = entry.role {
+        return Err(CoreError::InvalidChart(format!(
+            "compte {} : le {} ne peut pas porter de rôle ({})",
+            entry.number,
+            label.singular,
+            role.as_str()
+        )));
+    }
+    Ok(())
 }
 
 /// `true` si l'entrée doit être créée **postable**.
@@ -561,6 +685,7 @@ mod tests {
             role: None,
             postable: None,
             rounding_difference: false,
+            write_off_nature: None,
         };
         assert_eq!(resolve_name(&entry, "de"), "Kasse");
         assert_eq!(resolve_name(&entry, "DE"), "Kasse");
@@ -576,6 +701,7 @@ mod tests {
             role: None,
             postable: None,
             rounding_difference: false,
+            write_off_nature: None,
         };
         assert_eq!(resolve_name(&entry, "de"), "Caisse");
     }
@@ -590,6 +716,7 @@ mod tests {
             role: None,
             postable: None,
             rounding_difference: false,
+            write_off_nature: None,
         };
         assert_eq!(resolve_name(&entry, "fr"), "1000");
     }
@@ -605,6 +732,7 @@ mod tests {
                 role: None,
                 postable: None,
                 rounding_difference: false,
+                write_off_nature: None,
             },
             ChartEntry {
                 number: "1000".to_string(),
@@ -614,6 +742,7 @@ mod tests {
                 role: None,
                 postable: None,
                 rounding_difference: false,
+                write_off_nature: None,
             },
         ];
         let err = validate_chart(&entries).unwrap_err();
@@ -630,6 +759,7 @@ mod tests {
             role: None,
             postable: None,
             rounding_difference: false,
+            write_off_nature: None,
         }];
         let err = validate_chart(&entries).unwrap_err();
         assert!(err.to_string().contains("parent inexistant"));
@@ -698,6 +828,7 @@ mod tests {
             role,
             postable: None,
             rounding_difference: false,
+            write_off_nature: None,
         };
 
         // Deux comptes portant Receivable (singleton) → rejet.
@@ -765,6 +896,7 @@ mod tests {
             role: Some(AccountRole::Payable),
             postable: None,
             rounding_difference: false,
+            write_off_nature: None,
         }];
         let err = validate_chart(&entries).expect_err("Payable sur une charge doit être rejeté");
         let msg = format!("{err:?}");
@@ -855,6 +987,7 @@ mod tests {
             role,
             postable,
             rounding_difference: false,
+            write_off_nature: None,
         }
     }
 
@@ -1054,5 +1187,168 @@ mod tests {
         assert!(!entries[0].rounding_difference);
         validate_chart(&entries).expect("valide sans marqueur");
         assert_eq!(rounding_difference_number(&entries), None);
+    }
+
+    // =======================================================================
+    // Story 25-4-d1 — les comptes des natures d'écart soldé
+    // =======================================================================
+
+    /// Fige le contenu des plans livrés : le nombre exact d'entrées et les
+    /// comptes que chaque nature désigne. Aucun autre test ne compte les entrées
+    /// (seulement des bornes) — sans celui-ci, un compte ajouté ou perdu ne
+    /// serait vu par rien.
+    #[test]
+    fn shipped_charts_have_exact_counts_and_write_off_markers() {
+        use WriteOffNature::*;
+        for (org, count, expected) in [
+            (
+                "Pme",
+                86,
+                [
+                    (Discount, Some("3800")),
+                    (BankFees, Some("6900")),
+                    (BadDebt, Some("3805")),
+                ],
+            ),
+            (
+                "Independant",
+                86,
+                [
+                    (Discount, Some("3800")),
+                    (BankFees, Some("6900")),
+                    (BadDebt, Some("3805")),
+                ],
+            ),
+            // Le 3800 des associations est « Autres produits » : pas d'escompte par défaut.
+            (
+                "Association",
+                83,
+                [
+                    (Discount, None),
+                    (BankFees, Some("6900")),
+                    (BadDebt, Some("3805")),
+                ],
+            ),
+        ] {
+            let chart = load_chart(org).unwrap();
+            assert_eq!(chart.len(), count, "{org}");
+            for (nature, number) in expected {
+                assert_eq!(
+                    write_off_account_number(&chart, nature),
+                    number,
+                    "{org} {nature:?}"
+                );
+            }
+            let bad_debt = chart.iter().find(|e| e.number == "3805").unwrap();
+            assert_eq!(bad_debt.name.get("fr").unwrap(), "Pertes sur créances");
+            assert_eq!(bad_debt.name.get("de").unwrap(), "Verluste aus Forderungen");
+            assert_eq!(bad_debt.name.get("it").unwrap(), "Perdite su crediti");
+            assert_eq!(bad_debt.name.get("en").unwrap(), "Bad debt losses");
+            assert_eq!(bad_debt.account_type, AccountType::Revenue);
+            assert_eq!(bad_debt.parent_number.as_deref(), Some("30"));
+        }
+    }
+
+    fn write_off_entry(number: &str, nature: WriteOffNature) -> ChartEntry {
+        ChartEntry {
+            write_off_nature: Some(nature),
+            ..entry_24_5(number, None, None)
+        }
+    }
+
+    #[test]
+    fn write_off_marker_parses_its_three_spellings() {
+        let json = r#"[
+            {"number": "3800", "name": {"fr": "A"}, "type": "Revenue", "parentNumber": null, "writeOffNature": "discount"},
+            {"number": "6900", "name": {"fr": "B"}, "type": "Expense", "parentNumber": null, "writeOffNature": "bankFees"},
+            {"number": "3805", "name": {"fr": "C"}, "type": "Revenue", "parentNumber": null, "writeOffNature": "badDebt"}
+        ]"#;
+        let entries: Vec<ChartEntry> = serde_json::from_str(json).expect("parse");
+        validate_chart(&entries).expect("valide");
+        for (nature, number) in [
+            (WriteOffNature::Discount, "3800"),
+            (WriteOffNature::BankFees, "6900"),
+            (WriteOffNature::BadDebt, "3805"),
+        ] {
+            assert_eq!(write_off_account_number(&entries, nature), Some(number));
+        }
+        // Une graphie inconnue est refusée au parsing, pas ignorée.
+        let typo = r#"[{"number": "1", "name": {}, "type": "Expense", "parentNumber": null, "writeOffNature": "bankfees"}]"#;
+        assert!(serde_json::from_str::<Vec<ChartEntry>>(typo).is_err());
+    }
+
+    #[test]
+    fn validate_chart_rejects_two_accounts_of_one_nature() {
+        for nature in WriteOffNature::ALL {
+            let err = validate_chart(&[
+                write_off_entry("6900", nature),
+                write_off_entry("6901", nature),
+            ])
+            .unwrap_err();
+            assert!(err.to_string().contains("plusieurs comptes"), "{err}");
+            assert!(err.to_string().contains("6900 et 6901"), "{err}");
+        }
+        // Deux natures différentes sur deux comptes : accepté.
+        validate_chart(&[
+            write_off_entry("6900", WriteOffNature::BankFees),
+            write_off_entry("6901", WriteOffNature::BadDebt),
+        ])
+        .expect("natures distinctes");
+    }
+
+    #[test]
+    fn validate_chart_rejects_write_off_account_of_wrong_type() {
+        for nature in WriteOffNature::ALL {
+            for account_type in [AccountType::Asset, AccountType::Liability] {
+                let entry = ChartEntry {
+                    account_type,
+                    ..write_off_entry("1099", nature)
+                };
+                let err = validate_chart(&[entry]).unwrap_err();
+                assert!(err.to_string().contains("charge ou un produit"), "{err}");
+            }
+            let revenue = ChartEntry {
+                account_type: AccountType::Revenue,
+                ..write_off_entry("3800", nature)
+            };
+            validate_chart(&[revenue]).expect("produit");
+        }
+    }
+
+    #[test]
+    fn validate_chart_rejects_non_postable_write_off_account() {
+        let parent = write_off_entry("69", WriteOffNature::BankFees);
+        let child = ChartEntry {
+            parent_number: Some("69".into()),
+            ..entry_24_5("6900", None, None)
+        };
+        let err = validate_chart(&[parent, child]).unwrap_err();
+        assert!(err.to_string().contains("imputable"), "{err}");
+        assert!(err.to_string().contains("frais bancaires"), "{err}");
+    }
+
+    #[test]
+    fn validate_chart_rejects_write_off_account_with_a_role() {
+        let with_role = ChartEntry {
+            role: Some(AccountRole::DefaultRevenue),
+            account_type: AccountType::Revenue,
+            ..write_off_entry("3000", WriteOffNature::Discount)
+        };
+        let err = validate_chart(&[with_role]).unwrap_err();
+        assert!(
+            err.to_string().contains("ne peut pas porter de rôle"),
+            "{err}"
+        );
+        assert!(err.to_string().contains("escompte"), "{err}");
+    }
+
+    #[test]
+    fn validate_chart_rejects_an_entry_with_two_markers() {
+        let both = ChartEntry {
+            rounding_difference: true,
+            ..write_off_entry("6940", WriteOffNature::BankFees)
+        };
+        let err = validate_chart(&[both]).unwrap_err();
+        assert!(err.to_string().contains("deux marqueurs"), "{err}");
     }
 }

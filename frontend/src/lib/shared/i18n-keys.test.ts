@@ -364,7 +364,12 @@ const ATTENDU = {
 	// Story 25-4-e (#495) : **1766 → 1769**, recompté par ce test et par
 	// `grep -o "i18nMsg("` aux deux bornes de `settings/invoicing/+page.svelte`
 	// (38 → 41) — la section « Montant minimum » : titre, libellé, aide.
-	sitesTotal: 1769,
+	//
+	// Story 25-4-d1 (#384) : **1769 → 1775**, recompté par ce test et par
+	// `grep -o "i18nMsg("` aux deux bornes de `settings/invoicing/+page.svelte`
+	// (41 → 47) — la section « Solde du reste » : titre, aide, trois libellés de
+	// compte, et le « — Sélectionner — » de son sélecteur.
+	sitesTotal: 1775,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

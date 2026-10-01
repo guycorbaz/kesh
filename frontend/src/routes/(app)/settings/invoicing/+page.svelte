@@ -25,6 +25,9 @@
 
 	const JOURNAL_CODES: JournalCode[] = ['Achats', 'Ventes', 'Banque', 'Caisse', 'OD'];
 
+	/** Les natures d'écart soldé qui ont un compte dans les réglages (Story 25-4-d1). */
+	type WriteOffKey = 'discount' | 'bankFees' | 'badDebt';
+
 	// IDs DOM stables et HTTP-LAN-safe ($props.id() — pas de crypto.randomUUID,
 	// indisponible hors contexte sécurisé sur déploiement HTTP NAS, cf. #145).
 	const uid = $props.id();
@@ -47,6 +50,12 @@
 	let roundTo5 = $state(true);
 	// Story 25-4-e : vide = aucun seuil.
 	let minimumAmount = $state('');
+	// Story 25-4-d1 : les comptes des natures d'écart soldé.
+	let writeOff = $state<Record<WriteOffKey, number | null>>({
+		discount: null,
+		bankFees: null,
+		badDebt: null,
+	});
 	let salesJournal = $state<JournalCode>('Ventes');
 	let version = $state(0);
 
@@ -81,6 +90,27 @@
 	);
 	let vatDecompteOptions = $derived(withCurrentAccount(liabilityAccounts, vatDecompteId, accounts));
 	let roundingOptions = $derived(withCurrentAccount(resultAccounts, roundingId, accounts));
+	// Story 25-4-d1 : un écart soldé est, lui aussi, un résultat — charge ou produit.
+	let writeOffFields = $derived([
+		{
+			key: 'discount' as const,
+			testid: 'settings-discount-account',
+			label: i18nMsg('settings-invoicing-discount-account', "Compte d'escompte accordé"),
+			options: withCurrentAccount(resultAccounts, writeOff.discount, accounts),
+		},
+		{
+			key: 'bankFees' as const,
+			testid: 'settings-bank-fees-account',
+			label: i18nMsg('settings-invoicing-bank-fees-account', 'Compte de frais bancaires'),
+			options: withCurrentAccount(resultAccounts, writeOff.bankFees, accounts),
+		},
+		{
+			key: 'badDebt' as const,
+			testid: 'settings-bad-debt-account',
+			label: i18nMsg('settings-invoicing-bad-debt-account', 'Compte de pertes sur créances'),
+			options: withCurrentAccount(resultAccounts, writeOff.badDebt, accounts),
+		},
+	]);
 
 	let formatValidation = $derived(validateFormatTemplate(format));
 	let formatPreview = $derived(
@@ -105,6 +135,7 @@
 			roundingId = s.defaultRoundingAccountId;
 			roundTo5 = s.roundTo5Centimes;
 			minimumAmount = s.minimumInvoiceAmount ?? '';
+			writeOff = writeOffFrom(s);
 			salesJournal = s.defaultSalesJournal;
 			version = s.version;
 		} catch (err) {
@@ -114,6 +145,15 @@
 			loading = false;
 		}
 	});
+
+	/** Les comptes des natures d'écart soldé, tels que le serveur les rend. */
+	function writeOffFrom(s: InvoiceSettingsResponse): Record<WriteOffKey, number | null> {
+		return {
+			discount: s.defaultDiscountAccountId,
+			bankFees: s.defaultBankFeesAccountId,
+			badDebt: s.defaultBadDebtAccountId,
+		};
+	}
 
 	async function save() {
 		if (!formatValidation.ok) {
@@ -141,6 +181,9 @@
 				defaultRoundingAccountId: roundingId,
 				roundTo5Centimes: roundTo5,
 				minimumInvoiceAmount: minimumAmount.trim() === '' ? null : minimumAmount.trim(),
+				defaultDiscountAccountId: writeOff.discount,
+				defaultBankFeesAccountId: writeOff.bankFees,
+				defaultBadDebtAccountId: writeOff.badDebt,
 				defaultSalesJournal: salesJournal,
 				journalEntryDescriptionTemplate: descriptionTemplate,
 				version,
@@ -166,6 +209,7 @@
 						roundingId = fresh.defaultRoundingAccountId;
 						roundTo5 = fresh.roundTo5Centimes;
 						minimumAmount = fresh.minimumInvoiceAmount ?? '';
+						writeOff = writeOffFrom(fresh);
 						salesJournal = fresh.defaultSalesJournal;
 						version = fresh.version;
 					} catch {
@@ -403,6 +447,36 @@
 					{/each}
 				</select>
 			</div>
+		</section>
+
+		<section class="space-y-3 rounded-lg border border-border bg-white p-6 shadow-sm">
+			<h2 class="text-lg font-semibold">
+				{i18nMsg('settings-invoicing-write-off-title', 'Solde du reste')}
+			</h2>
+			<p class="text-xs text-text-muted" data-testid="settings-write-off-hint">
+				{i18nMsg(
+					'settings-invoicing-write-off-hint',
+					"Comptes qui reçoivent ce qui reste dû quand vous soldez une facture : l'escompte accordé au client, les frais retenus par sa banque, la perte sur un débiteur. Charge ou produit, imputable. Les plans livrés en proposent un pour chaque nature, sauf l'escompte pour les associations.",
+				)}
+			</p>
+			{#each writeOffFields as field (field.key)}
+				<div>
+					<label class="mb-1 block text-sm font-medium" for="{uid}-{field.key}">
+						{field.label}
+					</label>
+					<select
+						id="{uid}-{field.key}"
+						data-testid={field.testid}
+						class="w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
+						bind:value={writeOff[field.key]}
+					>
+						<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
+						{#each field.options as a (a.id)}
+							<option value={a.id}>{a.number} — {a.name}</option>
+						{/each}
+					</select>
+				</div>
+			{/each}
 		</section>
 
 		<section class="space-y-3 rounded-lg border border-border bg-white p-6 shadow-sm">

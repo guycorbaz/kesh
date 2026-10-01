@@ -2347,8 +2347,12 @@ async fn characterization_full_import_keeps_company_ids_as_written(pool: MySqlPo
 /// avant la migration `20260930000001`, donc sans la colonne, passe
 /// `check_schema_compat` (colonne facultative) et laisse le réglage vide : la
 /// société le désignera à nouveau dans les paramètres.
+///
+/// Story 25-4-d1 (#384) : de même pour les trois comptes des natures d'écart
+/// soldé (migration `20261001000003`) — un backup qui ne les porte pas laisse
+/// les trois réglages vides.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn full_import_without_rounding_account_column_leaves_the_setting_null(pool: MySqlPool) {
+async fn full_import_without_designated_account_columns_leaves_the_settings_null(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = seed_admin(&pool, "arrondi_absent").await;
     let charge = sqlx::query(
@@ -2361,10 +2365,18 @@ async fn full_import_without_rounding_account_column_leaves_the_setting_null(poo
     .expect("compte de charge")
     .last_insert_id() as i64;
     sqlx::query(
-        "INSERT INTO company_invoice_settings (company_id, default_rounding_account_id) \
-         VALUES (?, ?) ON DUPLICATE KEY UPDATE default_rounding_account_id = VALUES(default_rounding_account_id)",
+        "INSERT INTO company_invoice_settings (company_id, default_rounding_account_id, \
+         default_discount_account_id, default_bank_fees_account_id, default_bad_debt_account_id) \
+         VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE \
+         default_rounding_account_id = VALUES(default_rounding_account_id), \
+         default_discount_account_id = VALUES(default_discount_account_id), \
+         default_bank_fees_account_id = VALUES(default_bank_fees_account_id), \
+         default_bad_debt_account_id = VALUES(default_bad_debt_account_id)",
     )
     .bind(ctx.company_id)
+    .bind(charge)
+    .bind(charge)
+    .bind(charge)
     .bind(charge)
     .execute(&pool)
     .await
@@ -2372,22 +2384,28 @@ async fn full_import_without_rounding_account_column_leaves_the_setting_null(poo
 
     let backup = export_backup(&app, &ctx.jwt).await;
     let (mut manifest, data) = unzip(&backup);
-    strip_column(
-        &mut manifest,
-        "company_invoice_settings",
+    const COLUMNS: [&str; 4] = [
         "default_rounding_account_id",
-    );
+        "default_discount_account_id",
+        "default_bank_fees_account_id",
+        "default_bad_debt_account_id",
+    ];
+    for column in COLUMNS {
+        strip_column(&mut manifest, "company_invoice_settings", column);
+    }
     import_ok(&app, &ctx.jwt, &manifest, &data).await;
 
-    let rounding: Vec<Option<i64>> =
-        sqlx::query_scalar("SELECT default_rounding_account_id FROM company_invoice_settings")
-            .fetch_all(&pool)
-            .await
-            .expect("lecture du réglage");
-    assert!(
-        !rounding.is_empty() && rounding.iter().all(Option::is_none),
-        "un backup sans la colonne laisse le réglage vide : {rounding:?}"
-    );
+    for column in COLUMNS {
+        let values: Vec<Option<i64>> =
+            sqlx::query_scalar(&format!("SELECT {column} FROM company_invoice_settings"))
+                .fetch_all(&pool)
+                .await
+                .expect("lecture du réglage");
+        assert!(
+            !values.is_empty() && values.iter().all(Option::is_none),
+            "un backup sans la colonne {column} laisse le réglage vide : {values:?}"
+        );
+    }
 }
 
 /// Story 25-4-c4-a (#494) — Un brouillon portant un arrondi figé (montage brut)

@@ -51,6 +51,15 @@ pub struct CompanyInvoiceSettings {
     /// Montant minimum d'une facture émise (Story 25-4-e, #495) : une facture dont
     /// le total TTC arrondi lui est inférieur ne se valide pas. `None` = aucun seuil.
     pub minimum_invoice_amount: Option<Decimal>,
+    /// Comptes des **natures d'écart soldé** (Story 25-4-d1, #384) : ce qui reste
+    /// dû sur une facture et que le comptable abandonne s'impute au compte de sa
+    /// nature — escompte accordé, frais bancaires retenus par la banque du
+    /// client, perte sur débiteur. Charge ou produit, imputable. Désignés
+    /// d'office depuis le marqueur `writeOffNature` du plan à la création de la
+    /// société ; `None` si le plan n'en marque pas (l'escompte des associations).
+    pub default_discount_account_id: Option<i64>,
+    pub default_bank_fees_account_id: Option<i64>,
+    pub default_bad_debt_account_id: Option<i64>,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -80,4 +89,8 @@ pub struct CompanyInvoiceSettingsUpdate {
     pub round_to_5_centimes: bool,
     /// Story 25-4-e (#495) — la valeur résolue (la route préserve l'absent).
     pub minimum_invoice_amount: Option<Decimal>,
+    /// Story 25-4-d1 (#384) — les valeurs résolues (la route préserve l'absent).
+    pub default_discount_account_id: Option<i64>,
+    pub default_bank_fees_account_id: Option<i64>,
+    pub default_bad_debt_account_id: Option<i64>,
 }

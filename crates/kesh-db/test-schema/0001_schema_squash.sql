@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 72 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 73 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -306,6 +306,9 @@ CREATE TABLE `company_invoice_settings` (
   `default_rounding_account_id` bigint(20) DEFAULT NULL,
   `round_to_5_centimes` tinyint(1) NOT NULL DEFAULT 1,
   `minimum_invoice_amount` decimal(19,4) DEFAULT NULL,
+  `default_discount_account_id` bigint(20) DEFAULT NULL,
+  `default_bank_fees_account_id` bigint(20) DEFAULT NULL,
+  `default_bad_debt_account_id` bigint(20) DEFAULT NULL,
   PRIMARY KEY (`company_id`),
   KEY `fk_cis_receivable` (`default_receivable_account_id`),
   KEY `fk_cis_revenue` (`default_revenue_account_id`),
@@ -315,7 +318,13 @@ CREATE TABLE `company_invoice_settings` (
   KEY `fk_cis_vat_decompte` (`default_vat_decompte_account_id`),
   KEY `fk_cis_payable_account` (`default_payable_account_id`),
   KEY `fk_cis_rounding` (`default_rounding_account_id`),
+  KEY `fk_cis_discount` (`default_discount_account_id`),
+  KEY `fk_cis_bank_fees` (`default_bank_fees_account_id`),
+  KEY `fk_cis_bad_debt` (`default_bad_debt_account_id`),
+  CONSTRAINT `fk_cis_bad_debt` FOREIGN KEY (`default_bad_debt_account_id`) REFERENCES `accounts` (`id`),
+  CONSTRAINT `fk_cis_bank_fees` FOREIGN KEY (`default_bank_fees_account_id`) REFERENCES `accounts` (`id`),
   CONSTRAINT `fk_cis_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`),
+  CONSTRAINT `fk_cis_discount` FOREIGN KEY (`default_discount_account_id`) REFERENCES `accounts` (`id`),
   CONSTRAINT `fk_cis_payable_account` FOREIGN KEY (`default_payable_account_id`) REFERENCES `accounts` (`id`),
   CONSTRAINT `fk_cis_receivable` FOREIGN KEY (`default_receivable_account_id`) REFERENCES `accounts` (`id`),
   CONSTRAINT `fk_cis_revenue` FOREIGN KEY (`default_revenue_account_id`) REFERENCES `accounts` (`id`),

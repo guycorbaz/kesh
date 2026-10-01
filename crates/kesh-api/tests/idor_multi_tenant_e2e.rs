@@ -805,13 +805,24 @@ async fn settings_update_without_credit_note_format_preserves_and_returns_200(po
     );
 }
 
-/// `PUT /company/invoice-settings` depuis la config courante, le compte de
-/// différences d'arrondi posé à `rounding` — ou **absent** du corps si `None`.
+/// Les champs des comptes **désignés** des réglages : le compte de différences
+/// d'arrondi (Story 25-4-c3-a1) et ceux des natures d'écart soldé (Story
+/// 25-4-d1, #384). Mêmes règles pour les quatre.
+const DESIGNATED_ACCOUNT_FIELDS: [&str; 4] = [
+    "defaultRoundingAccountId",
+    "defaultDiscountAccountId",
+    "defaultBankFeesAccountId",
+    "defaultBadDebtAccountId",
+];
+
+/// `PUT /company/invoice-settings` depuis la config courante, le compte désigné
+/// `field` posé à `value` — ou **absent** du corps si `None`.
 /// Rend le statut et le corps de la réponse.
-async fn put_rounding_account(
+async fn put_designated_account(
     app: &TestApp,
     token: &str,
-    rounding: Option<serde_json::Value>,
+    field: &str,
+    value: Option<serde_json::Value>,
 ) -> (u16, serde_json::Value) {
     let settings: serde_json::Value = app
         .client
@@ -834,8 +845,8 @@ async fn put_rounding_account(
         "journalEntryDescriptionTemplate": settings["journalEntryDescriptionTemplate"],
         "version": settings["version"],
     });
-    if let Some(value) = rounding {
-        body["defaultRoundingAccountId"] = value;
+    if let Some(value) = value {
+        body[field] = value;
     }
     let resp = app
         .client
@@ -852,9 +863,10 @@ async fn put_rounding_account(
 /// Story 25-4-c3-a1 (#476) — le compte de différences d'arrondi : charge **ou**
 /// produit, actif, **imputable**, de la société. Tout autre compte est refusé en
 /// 400 ; le refus du compte non imputable est la garde que les écritures
-/// automatiques ne portent pas (`enforce_postable = false`).
+/// automatiques ne portent pas (`enforce_postable = false`). Story 25-4-d1 : de
+/// même pour les trois comptes des natures d'écart soldé.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn settings_rounding_account_is_validated(pool: MySqlPool) {
+async fn settings_designated_accounts_are_validated(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
     let (company_id, accounts) = create_seeded_company(&pool).await;
     let (_other_company, other_accounts) = create_seeded_company(&pool).await;
@@ -885,52 +897,59 @@ async fn settings_rounding_account_is_validated(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let token = login(&app, "alice", "password123").await;
 
-    for (label, account, expected) in [
-        ("charge imputable", accounts["4000"], 200),
-        ("produit imputable", accounts["3000"], 200),
-        ("actif", accounts["1000"], 400),
-        ("passif", accounts["2000"], 400),
-        ("charge non imputable", extra["6000"], 400),
-        ("charge archivée", extra["6100"], 400),
-        ("produit non imputable", extra["3900"], 400),
-        ("produit archivé", extra["3910"], 400),
-        ("charge d'une autre société", other_accounts["4000"], 400),
-    ] {
-        let (status, body) = put_rounding_account(&app, &token, Some(json!(account))).await;
-        assert_eq!(status, expected, "{label} : {body}");
-        if expected == 200 {
-            assert_eq!(body["defaultRoundingAccountId"], account, "{label}");
+    for field in DESIGNATED_ACCOUNT_FIELDS {
+        for (label, account, expected) in [
+            ("charge imputable", accounts["4000"], 200),
+            ("produit imputable", accounts["3000"], 200),
+            ("actif", accounts["1000"], 400),
+            ("passif", accounts["2000"], 400),
+            ("charge non imputable", extra["6000"], 400),
+            ("charge archivée", extra["6100"], 400),
+            ("produit non imputable", extra["3900"], 400),
+            ("produit archivé", extra["3910"], 400),
+            ("charge d'une autre société", other_accounts["4000"], 400),
+        ] {
+            let (status, body) =
+                put_designated_account(&app, &token, field, Some(json!(account))).await;
+            assert_eq!(status, expected, "{field} — {label} : {body}");
+            if expected == 200 {
+                assert_eq!(body[field], account, "{field} — {label}");
+            }
         }
     }
 }
 
 /// Story 25-4-c3-a1 — **absent** du corps, le compte d'arrondi est **préservé**
 /// (un client qui ignore encore le champ ne l'efface pas) ; **présent à `null`**,
-/// il est effacé.
+/// il est effacé. Story 25-4-d1 : de même pour les comptes des natures.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn settings_rounding_account_absent_preserves_null_clears(pool: MySqlPool) {
+async fn settings_designated_accounts_absent_preserves_null_clears(pool: MySqlPool) {
     truncate_all(&pool).await.expect("truncate");
     let (company_id, accounts) = create_seeded_company(&pool).await;
     create_company_user_with_role(&pool, company_id, "alice", "password123", Role::Admin).await;
     let app = spawn_app(pool.clone()).await;
     let token = login(&app, "alice", "password123").await;
 
-    let (status, body) = put_rounding_account(&app, &token, Some(json!(accounts["4000"]))).await;
-    assert_eq!(status, 200, "{body}");
+    for field in DESIGNATED_ACCOUNT_FIELDS {
+        let (status, body) =
+            put_designated_account(&app, &token, field, Some(json!(accounts["4000"]))).await;
+        assert_eq!(status, 200, "{field} : {body}");
 
-    let (status, body) = put_rounding_account(&app, &token, None).await;
-    assert_eq!(status, 200, "{body}");
-    assert_eq!(
-        body["defaultRoundingAccountId"], accounts["4000"],
-        "absent du corps : préservé"
-    );
+        let (status, body) = put_designated_account(&app, &token, field, None).await;
+        assert_eq!(status, 200, "{field} : {body}");
+        assert_eq!(
+            body[field], accounts["4000"],
+            "{field} absent du corps : préservé"
+        );
 
-    let (status, body) = put_rounding_account(&app, &token, Some(serde_json::Value::Null)).await;
-    assert_eq!(status, 200, "{body}");
-    assert!(
-        body["defaultRoundingAccountId"].is_null(),
-        "présent à null : effacé ; corps = {body}"
-    );
+        let (status, body) =
+            put_designated_account(&app, &token, field, Some(serde_json::Value::Null)).await;
+        assert_eq!(status, 200, "{field} : {body}");
+        assert!(
+            body[field].is_null(),
+            "{field} présent à null : effacé ; corps = {body}"
+        );
+    }
 }
 
 /// Story 25-4-c3-a1 — un compte d'arrondi devenu **archivé** après sa désignation
@@ -947,7 +966,13 @@ async fn settings_unchanged_archived_rounding_account_does_not_block_other_chang
     let app = spawn_app(pool.clone()).await;
     let token = login(&app, "alice", "password123").await;
 
-    let (status, body) = put_rounding_account(&app, &token, Some(json!(accounts["4000"]))).await;
+    let (status, body) = put_designated_account(
+        &app,
+        &token,
+        "defaultRoundingAccountId",
+        Some(json!(accounts["4000"])),
+    )
+    .await;
     assert_eq!(status, 200, "{body}");
     // Le compte est archivé ailleurs, après coup.
     sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
@@ -957,13 +982,25 @@ async fn settings_unchanged_archived_rounding_account_does_not_block_other_chang
         .expect("archivage");
 
     // L'écran renvoie la valeur telle qu'il l'a lue : reconduite, elle passe.
-    let (status, body) = put_rounding_account(&app, &token, Some(json!(accounts["4000"]))).await;
+    let (status, body) = put_designated_account(
+        &app,
+        &token,
+        "defaultRoundingAccountId",
+        Some(json!(accounts["4000"])),
+    )
+    .await;
     assert_eq!(
         status, 200,
         "⛔ un compte d'arrondi reconduit ne doit pas bloquer l'enregistrement : {body}"
     );
     // Désigner un compte invalide, en revanche, reste refusé.
-    let (status, body) = put_rounding_account(&app, &token, Some(json!(accounts["1000"]))).await;
+    let (status, body) = put_designated_account(
+        &app,
+        &token,
+        "defaultRoundingAccountId",
+        Some(json!(accounts["1000"])),
+    )
+    .await;
     assert_eq!(status, 400, "{body}");
 }
 

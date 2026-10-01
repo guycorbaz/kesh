@@ -281,6 +281,9 @@ async fn update_no_op_returns_unchanged_entity_no_audit(pool: MySqlPool) {
             default_rounding_account_id: settings.default_rounding_account_id,
             round_to_5_centimes: true,
             minimum_invoice_amount: None,
+            default_discount_account_id: settings.default_discount_account_id,
+            default_bank_fees_account_id: settings.default_bank_fees_account_id,
+            default_bad_debt_account_id: settings.default_bad_debt_account_id,
         },
     )
     .await
@@ -353,6 +356,9 @@ async fn update_partial_change_bumps_version(pool: MySqlPool) {
             default_rounding_account_id: settings.default_rounding_account_id,
             round_to_5_centimes: true,
             minimum_invoice_amount: None,
+            default_discount_account_id: settings.default_discount_account_id,
+            default_bank_fees_account_id: settings.default_bank_fees_account_id,
+            default_bad_debt_account_id: settings.default_bad_debt_account_id,
         },
     )
     .await
@@ -447,6 +453,9 @@ async fn update_vat_accounts_round_trip(pool: MySqlPool) {
             default_rounding_account_id: settings.default_rounding_account_id,
             round_to_5_centimes: true,
             minimum_invoice_amount: None,
+            default_discount_account_id: settings.default_discount_account_id,
+            default_bank_fees_account_id: settings.default_bank_fees_account_id,
+            default_bad_debt_account_id: settings.default_bad_debt_account_id,
         },
     )
     .await
@@ -543,6 +552,9 @@ async fn update_vat_account_foreign_id_rejected_by_fk(pool: MySqlPool) {
             default_rounding_account_id: settings_a.default_rounding_account_id,
             round_to_5_centimes: true,
             minimum_invoice_amount: None,
+            default_discount_account_id: settings_a.default_discount_account_id,
+            default_bank_fees_account_id: settings_a.default_bank_fees_account_id,
+            default_bad_debt_account_id: settings_a.default_bad_debt_account_id,
         },
     )
     .await;
@@ -989,6 +1001,9 @@ async fn update_rounding_account_round_trip(pool: MySqlPool) {
             default_rounding_account_id: Some(rounding),
             round_to_5_centimes: true,
             minimum_invoice_amount: None,
+            default_discount_account_id: settings.default_discount_account_id,
+            default_bank_fees_account_id: settings.default_bank_fees_account_id,
+            default_bad_debt_account_id: settings.default_bad_debt_account_id,
         },
     )
     .await
@@ -1130,4 +1145,200 @@ async fn insert_with_defaults_does_not_touch_existing_settings(pool: MySqlPool) 
         again.default_rounding_account_id, None,
         "un second appel ne réécrit pas le réglage que l'utilisateur a vidé"
     );
+}
+
+/// Story 25-4-d1 (#384) — pour **chaque** plan livré, la création des réglages
+/// désigne d'office les comptes des natures d'écart soldé que le plan marque,
+/// par les deux variantes. Le plan des associations ne marque pas d'escompte :
+/// son 3800 est « Autres produits », et le réglage reste vide.
+#[sqlx::test(migrations = "./test-schema")]
+async fn insert_with_defaults_designates_the_charts_write_off_accounts(pool: MySqlPool) {
+    for (i, (org_type, discount)) in [
+        (OrgType::Pme, Some("3800")),
+        (OrgType::Association, None),
+        (OrgType::Independant, Some("3800")),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        for variant in ["pool", "tx"] {
+            let company =
+                company_with_chart(&pool, &format!("Solde {variant} {i}"), org_type).await;
+            let settings = if variant == "pool" {
+                company_invoice_settings::insert_with_defaults(&pool, company)
+                    .await
+                    .expect("insert_with_defaults")
+            } else {
+                let mut tx = pool.begin().await.unwrap();
+                let settings =
+                    company_invoice_settings::insert_with_defaults_in_tx(&mut tx, company)
+                        .await
+                        .expect("insert_with_defaults_in_tx");
+                tx.commit().await.unwrap();
+                settings
+            };
+            let expected_discount = match discount {
+                Some(number) => Some(account_id_by_number(&pool, company, number).await),
+                None => None,
+            };
+            assert_eq!(
+                settings.default_discount_account_id, expected_discount,
+                "{org_type:?} ({variant}) : escompte"
+            );
+            assert_eq!(
+                settings.default_bank_fees_account_id,
+                Some(account_id_by_number(&pool, company, "6900").await),
+                "{org_type:?} ({variant}) : frais bancaires"
+            );
+            assert_eq!(
+                settings.default_bad_debt_account_id,
+                Some(account_id_by_number(&pool, company, "3805").await),
+                "{org_type:?} ({variant}) : pertes sur créances"
+            );
+            // Relu depuis la base : la ligne porte bien les trois comptes.
+            let reread = company_invoice_settings::get_or_create_default(&pool, company)
+                .await
+                .unwrap();
+            assert_eq!(
+                reread.default_bad_debt_account_id,
+                settings.default_bad_debt_account_id
+            );
+            assert_eq!(
+                reread.default_bank_fees_account_id,
+                settings.default_bank_fees_account_id
+            );
+            assert_eq!(
+                reread.default_discount_account_id,
+                settings.default_discount_account_id
+            );
+        }
+    }
+}
+
+/// Story 25-4-d1 — les comptes des natures sont **facultatifs** : archivé entre
+/// la création des comptes et celle des réglages, le compte est laissé `NULL`,
+/// les autres sont désignés, et la création réussit.
+#[sqlx::test(migrations = "./test-schema")]
+async fn insert_with_defaults_leaves_a_write_off_account_null_when_it_is_gone(pool: MySqlPool) {
+    let company = company_with_chart(&pool, "Solde archivé", OrgType::Pme).await;
+    sqlx::query("UPDATE accounts SET active = FALSE WHERE company_id = ? AND number = '6900'")
+        .bind(company)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let settings = company_invoice_settings::insert_with_defaults(&pool, company)
+        .await
+        .expect("la création des réglages doit réussir");
+    assert_eq!(settings.default_bank_fees_account_id, None);
+    assert_eq!(
+        settings.default_bad_debt_account_id,
+        Some(account_id_by_number(&pool, company, "3805").await)
+    );
+    assert!(settings.default_discount_account_id.is_some());
+    assert!(settings.default_rounding_account_id.is_some());
+}
+
+/// Story 25-4-d1 — une société qui a **déjà** ses réglages n'est pas touchée :
+/// les comptes des natures qu'elle a vidés ne sont pas réécrits.
+#[sqlx::test(migrations = "./test-schema")]
+async fn insert_with_defaults_does_not_touch_existing_write_off_settings(pool: MySqlPool) {
+    let company = company_with_chart(&pool, "Solde existant", OrgType::Pme).await;
+    let first = company_invoice_settings::insert_with_defaults(&pool, company)
+        .await
+        .unwrap();
+    assert!(first.default_discount_account_id.is_some());
+    assert!(first.default_bank_fees_account_id.is_some());
+    assert!(first.default_bad_debt_account_id.is_some());
+    sqlx::query(
+        "UPDATE company_invoice_settings SET default_discount_account_id = NULL, \
+         default_bank_fees_account_id = NULL, default_bad_debt_account_id = NULL \
+         WHERE company_id = ?",
+    )
+    .bind(company)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let again = company_invoice_settings::insert_with_defaults(&pool, company)
+        .await
+        .unwrap();
+    assert_eq!(again.default_discount_account_id, None);
+    assert_eq!(again.default_bank_fees_account_id, None);
+    assert_eq!(again.default_bad_debt_account_id, None);
+}
+
+/// Story 25-4-d1 (#384) — chacun des trois comptes des natures traverse `update`
+/// et la relecture (COLUMNS / FromRow / UPDATE), et changer **lui seul** n'est
+/// pas un no-op : `version` bouge, l'audit porte la nouvelle valeur.
+#[sqlx::test(migrations = "./test-schema")]
+async fn update_write_off_accounts_round_trip(pool: MySqlPool) {
+    let company = company_with_pme_chart(&pool, "Solde Co").await;
+    let admin_user_id = create_admin_user(&pool, company).await;
+    let target = account_id_by_number(&pool, company, "4000").await;
+
+    for (field, json_key) in [
+        ("discount", "defaultDiscountAccountId"),
+        ("bank_fees", "defaultBankFeesAccountId"),
+        ("bad_debt", "defaultBadDebtAccountId"),
+    ] {
+        let settings = company_invoice_settings::get_or_create_default(&pool, company)
+            .await
+            .unwrap();
+        let mut changes = CompanyInvoiceSettingsUpdate {
+            invoice_number_format: settings.invoice_number_format.clone(),
+            default_receivable_account_id: settings.default_receivable_account_id,
+            default_revenue_account_id: settings.default_revenue_account_id,
+            default_vat_payable_account_id: settings.default_vat_payable_account_id,
+            default_vat_recoverable_account_id: settings.default_vat_recoverable_account_id,
+            default_vat_decompte_account_id: settings.default_vat_decompte_account_id,
+            default_sales_journal: settings.default_sales_journal,
+            journal_entry_description_template: settings.journal_entry_description_template.clone(),
+            credit_note_number_format: settings.credit_note_number_format.clone(),
+            default_payable_account_id: settings.default_payable_account_id,
+            default_rounding_account_id: settings.default_rounding_account_id,
+            round_to_5_centimes: settings.round_to_5_centimes,
+            minimum_invoice_amount: settings.minimum_invoice_amount,
+            default_discount_account_id: settings.default_discount_account_id,
+            default_bank_fees_account_id: settings.default_bank_fees_account_id,
+            default_bad_debt_account_id: settings.default_bad_debt_account_id,
+        };
+        match field {
+            "discount" => changes.default_discount_account_id = Some(target),
+            "bank_fees" => changes.default_bank_fees_account_id = Some(target),
+            _ => changes.default_bad_debt_account_id = Some(target),
+        }
+        let result = company_invoice_settings::update(
+            &pool,
+            company,
+            settings.version,
+            admin_user_id,
+            changes,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            result.version,
+            settings.version + 1,
+            "{field} : pas un no-op"
+        );
+
+        let reread = company_invoice_settings::get_or_create_default(&pool, company)
+            .await
+            .unwrap();
+        let value = match field {
+            "discount" => reread.default_discount_account_id,
+            "bank_fees" => reread.default_bank_fees_account_id,
+            _ => reread.default_bad_debt_account_id,
+        };
+        assert_eq!(value, Some(target), "{field} relu");
+
+        let audited: i64 = sqlx::query_scalar(&format!(
+            "SELECT COUNT(*) FROM audit_log WHERE entity_type = 'company_invoice_settings' \
+             AND JSON_EXTRACT(details_json, '$.after.{json_key}') = ?"
+        ))
+        .bind(target)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(audited >= 1, "{field} : l'audit porte le compte");
+    }
 }
