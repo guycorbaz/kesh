@@ -155,7 +155,13 @@ erreurs de l'AC 4 mappées (clés i18n, 4 locales). Inscrite au registre d'audit
 un solde **ne s'annule pas tant qu'un solde existe sur la facture** — « annulez d'abord le solde ». Sans lui, annuler un
 règlement de 998 après un escompte de 2 rouvrirait la facture (`paid_at = NULL`) avec l'escompte toujours passé et
 compté en « déjà réglé » (P2). Le motif couvre le dé-rapprochement, qui passe par `cancel_settlement_in_tx`
-(`reconciliation_cancel.rs:352`). Code, libellé serveur (4 locales) ; l'affichage du motif à l'écran suit en d2b. `GET …/settlements` : `settlementType = "write_off"` et un champ
+(`reconciliation_cancel.rs:352`). Le motif se place **juste après le rang 1** (`InvoiceCredited`), **avant** la queue commune de
+`settlement_entry_cancel_blocker` : comme lui, c'est une propriété de la **facture**, non de l'écriture ciblée — placé
+après, il ferait rouvrir un exercice clos pour rien (P3). Code, libellé serveur (4 locales). ⚠️ La liste existante
+(`GET …/settlements`, `routes/invoices.rs:1351-1364`) renverra ce code **dès cette story** : le frontend le reçoit, et sa
+table des motifs (`settlement-cancel-blocked.ts:58-62`) l'afficherait **brut**. D'où le geste minimal côté frontend :
+ajouter le code à `InvoiceSettlementCancelCode` (`features/invoices/settlement-cancel.ts`) et son message (clé i18n,
+4 locales) — sans autre écran, qui reste à la d2b. `GET …/settlements` : `settlementType = "write_off"` et un champ
 `writeOffNature` (`null` hors solde). L'annulation existante (`…/settlements/{id}/cancel`) contre-passe le solde,
 **TVA comprise**, rouvre la facture (`paid_at = NULL`), `version + 1` — prouvé par test, sans code nouveau si
 possible.
@@ -171,7 +177,9 @@ Le manuel utilisateur vient avec la d2b.
 - **#490** : un reste de `0.0040` (facture de `10.0040`, règlement partiel de `10.00` inséré au montage) soldé en nature
   `rounding`, créance à zéro ;
 - **le nouveau motif** : un règlement ne s'annule pas tant qu'un solde existe (manuel et dé-rapprochement), puis
-  s'annule une fois le solde annulé ;
+  s'annule une fois le solde annulé ; il précède un exercice clos (rang) ; Vitest : le message s'affiche, pas le code ;
+- **le sens inverse** : une proposition de rapprochement visant une facture déjà soldée est refusée (la facture sort des
+  candidats, `reconciliation.rs:119-127` ; une proposition en vol est refusée par la `version`) ;
 - refus : brouillon, facture annulée par avoir, facture soldée, **`paid_at` posé sans ligne de règlement**, `version`
   périmée (409), compte non configuré ou archivé, arrondi ≥ 0.05, date avant la facture, exercice
   clos, période verrouillée, compte TVA absent ;
@@ -189,7 +197,7 @@ Le manuel utilisateur vient avec la d2b.
 - [ ] **T2 — prorata** (AC 2).
 - [ ] **T3 — compte au moment d'écrire** (AC 3).
 - [ ] **T4 — écriture de solde** (AC 4).
-- [ ] **T5 — route, liste** (AC 5, AC 6).
+- [ ] **T5 — route, liste, motif d'annulation** (AC 5, AC 6), dont le code du motif côté frontend.
 - [ ] **T6 — CHANGELOG** (AC 7).
 - [ ] **T7 — tests** (AC 8).
 - [ ] **T8 — gates** : backend complet (migration), frontend (non touché : `check` et `test:unit` pour la forme),
@@ -204,12 +212,14 @@ Le manuel utilisateur vient avec la d2b.
   (l'inventaire des tables doit être identique) — d'où la colonne JSON.
 - ⛔ Recopier `rounding_account_for_write` : le généraliser.
 - ⛔ Un numéro de compte dans le code.
-- ⛔ Toucher le frontend : la d2b. (Conséquences assumées jusqu'à la d2b : l'écran affiche un solde fait par l'API comme
+- ⛔ Toucher le frontend, **hormis** le code du nouveau motif et son message (AC 6) : la d2b. (Conséquences assumées
+  jusqu'à la d2b : l'écran affiche un solde fait par l'API comme
   « Espèces ou autre compte », et la fiche compte le solde dans « Déjà réglé » — la d2b doit les distinguer.)
 
 ### Modules
 
-`kesh-core` (prorata), `kesh-db`, `kesh-api`, `kesh-i18n` (+ `CHANGELOG`) — quatre modules de code.
+`kesh-core` (prorata), `kesh-db`, `kesh-api`, `kesh-i18n`, `frontend` (le seul code de motif, AC 6) (+ `CHANGELOG`) —
+cinq modules de code, au seuil sans le dépasser.
 
 ## Dev Agent Record
 
@@ -240,6 +250,10 @@ Le manuel utilisateur vient avec la d2b.
   en fonction pure, exemple #490 reconstruit, `nature` en `String`, `Money::round_to_centimes`, CHECK de `write_off_vat`,
   phrase cassée par le patch de P1, choix de colonne par littéral, note 235 pour la d2c, refus « avoir » au test).
   ⚠️ Signal de découpage (HIGH → HIGH) : **non découpée** — quatre modules, défauts distincts et d'origine ; signalé à Guy.
+- **2026-10-01** — Validation P3 (Sonnet) : 3 MED, retenus. Le nouveau motif s'afficherait **brut** à l'écran dès cette
+  story (la liste existante le renvoie) → code et message côté frontend, la story passe à cinq modules ; son **rang**
+  précisé (après « avoir », avant la queue de l'écriture) ; test du **sens inverse** (rapprochement d'une facture soldée
+  refusé). Sévérité : HIGH → HIGH → MED.
 
 [#384]: https://github.com/guycorbaz/kesh/issues/384
 [#490]: https://github.com/guycorbaz/kesh/issues/490
