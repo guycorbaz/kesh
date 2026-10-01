@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 73 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 74 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -684,6 +684,8 @@ CREATE TABLE `invoice_settlements` (
   `settlement_type` varchar(20) NOT NULL DEFAULT 'bank_transfer',
   `settlement_bank_account_id` bigint(20) DEFAULT NULL,
   `settlement_account_id` bigint(20) DEFAULT NULL,
+  `write_off_nature` varchar(20) DEFAULT NULL,
+  `write_off_vat` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`write_off_vat`)),
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_invoice_settlements_entry` (`journal_entry_id`),
   KEY `idx_invoice_settlements_company_invoice` (`company_id`,`invoice_id`),
@@ -696,8 +698,9 @@ CREATE TABLE `invoice_settlements` (
   CONSTRAINT `fk_invoice_settlements_settlement_account` FOREIGN KEY (`settlement_account_id`) REFERENCES `accounts` (`id`),
   CONSTRAINT `fk_invoice_settlements_settlement_bank` FOREIGN KEY (`settlement_bank_account_id`) REFERENCES `bank_accounts` (`id`),
   CONSTRAINT `chk_invoice_settlements_amount_positive` CHECK (`amount` > 0),
-  CONSTRAINT `chk_invoice_settlements_type` CHECK (`settlement_type` in ('bank_transfer','internal_account')),
-  CONSTRAINT `chk_invoice_settlements_counterparty` CHECK (`settlement_type` = 'bank_transfer' and `settlement_bank_account_id` is not null and `settlement_account_id` is null or `settlement_type` = 'internal_account' and `settlement_account_id` is not null and `settlement_bank_account_id` is null)
+  CONSTRAINT `chk_invoice_settlements_type` CHECK (`settlement_type` in ('bank_transfer','internal_account','write_off')),
+  CONSTRAINT `chk_invoice_settlements_counterparty` CHECK (`settlement_type` = 'bank_transfer' and `settlement_bank_account_id` is not null and `settlement_account_id` is null or `settlement_type` = 'internal_account' and `settlement_account_id` is not null and `settlement_bank_account_id` is null or `settlement_type` = 'write_off' and `settlement_account_id` is not null and `settlement_bank_account_id` is null),
+  CONSTRAINT `chk_invoice_settlements_write_off_nature` CHECK (`settlement_type` = 'write_off' = (`write_off_nature` is not null) and `settlement_type` = 'write_off' = (`write_off_vat` is not null) and (`write_off_nature` is null or `write_off_nature` in ('discount','bank_fees','bad_debt','rounding')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `invoices`;

@@ -1346,6 +1346,8 @@ pub fn serialize_invoice_settlements_csv<W: Write>(
         "settlement_type",
         "settlement_bank_account_id",
         "settlement_account_id",
+        "write_off_nature",
+        "write_off_vat",
         "created_at",
     ])
     .map_err(|e| map_csv_err("invoice_settlements", e))?;
@@ -1360,6 +1362,13 @@ pub fn serialize_invoice_settlements_csv<W: Write>(
             txt(st.settlement_type.clone()),
             fmt_opt_i64(st.settlement_bank_account_id),
             fmt_opt_i64(st.settlement_account_id),
+            fmt_opt_str(&st.write_off_nature),
+            // Story 25-4-d2a : la ventilation figée, en JSON (patron `details_json`).
+            txt(st
+                .write_off_vat
+                .as_ref()
+                .map(|v| v.to_string())
+                .unwrap_or_default()),
             fmt_dt(st.created_at),
         ])
         .map_err(|e| map_csv_err("invoice_settlements", e))?;

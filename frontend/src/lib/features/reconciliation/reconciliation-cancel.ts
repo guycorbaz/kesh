@@ -4,7 +4,7 @@
  * ⛔ **Pas la famille `settlement-cancel-blocked-*`**, qui dit « ce règlement » :
  * une écriture d'éclatement, de règle ou de rapprochement manuel n'est pas un
  * règlement. Le dialogue traduit toujours le **code** reçu — par la lecture
- * (`GET …/transactions/{id}`) comme par le refus au clic —, pour les six motifs,
+ * (`GET …/transactions/{id}`) comme par le refus au clic —, pour les sept motifs,
  * `INVOICE_CREDITED` compris.
  *
  * ⚠️ Les replis en dur disent **mot pour mot** le FTL fr-CH — le serveur rend
@@ -18,13 +18,14 @@ import type { ReconciliationCancelCode } from './reconciliation.types';
 const MOTIFS: readonly ReconciliationCancelCode[] = [
 	'BANK_TRANSACTION_NOT_RECONCILED',
 	'INVOICE_CREDITED',
+	'INVOICE_WRITTEN_OFF',
 	'FISCAL_YEAR_CLOSED',
 	'MATCHED_BANK_TRANSACTION',
 	'ACCOUNT_ARCHIVED',
 	'FISCAL_YEAR_INVALID',
 ];
 
-/** Le code est-il l'un des six motifs du dé-rapprochement ? */
+/** Le code est-il l'un des sept motifs du dé-rapprochement ? */
 export function isReconciliationCancelCode(code: string): code is ReconciliationCancelCode {
 	return (MOTIFS as readonly string[]).includes(code);
 }
@@ -47,6 +48,11 @@ export function reconciliationCancelMessage(
 			return i18nMsg(
 				'reconciliation-cancel-blocked-credited',
 				"La facture de ce rapprochement a été créditée par un avoir : son règlement est un paiement à lettrer, il ne s'annule pas.",
+			);
+		case 'INVOICE_WRITTEN_OFF':
+			return i18nMsg(
+				'reconciliation-cancel-blocked-written-off',
+				"Le reste de la facture de ce rapprochement a été soldé : annulez d'abord le solde.",
 			);
 		case 'FISCAL_YEAR_CLOSED':
 			return i18nMsg(

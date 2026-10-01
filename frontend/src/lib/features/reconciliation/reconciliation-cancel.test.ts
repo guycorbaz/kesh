@@ -21,6 +21,7 @@ describe('reconciliationCancelMessage', () => {
 		const cas: [ReconciliationCancelCode, string][] = [
 			['BANK_TRANSACTION_NOT_RECONCILED', "n'est pas rapprochée"],
 			['INVOICE_CREDITED', 'paiement à lettrer'],
+			['INVOICE_WRITTEN_OFF', "annulez d'abord le solde"],
 			['FISCAL_YEAR_CLOSED', "rouvrir l'exercice"],
 			['MATCHED_BANK_TRANSACTION', 'autre transaction bancaire'],
 			['ACCOUNT_ARCHIVED', 'réactivez-le'],
@@ -39,7 +40,7 @@ describe('reconciliationCancelMessage', () => {
 });
 
 describe('reconciliationCancelErrorMessage', () => {
-	it('un code hors des six motifs ⇒ le message du SERVEUR (mutation : texte générique)', () => {
+	it('un code hors des sept motifs ⇒ le message du SERVEUR (mutation : texte générique)', () => {
 		expect(
 			reconciliationCancelErrorMessage({
 				code: 'PERIOD_LOCKED',
@@ -66,5 +67,20 @@ describe('reconciliationCancelErrorMessage', () => {
 				details: { rejected: [{ accountId: 3, accountNumber: '3200' }] },
 			}),
 		).toContain('(3200)');
+	});
+});
+
+// Story 25-4-d2a (#384) — le motif « un solde existe » est un motif du
+// dé-rapprochement : traduit, et reconnu comme tel.
+describe('le motif INVOICE_WRITTEN_OFF', () => {
+	it('est reconnu et traduit — pas affiché brut (mutation : code absent de MOTIFS)', () => {
+		expect(isReconciliationCancelCode('INVOICE_WRITTEN_OFF')).toBe(true);
+		expect(
+			reconciliationCancelErrorMessage({
+				code: 'INVOICE_WRITTEN_OFF',
+				message: 'texte serveur',
+				status: 409,
+			}),
+		).toContain("annulez d'abord le solde");
 	});
 });

@@ -124,6 +124,7 @@ pub const ACTIONS: &[&str] = &[
     "invoice.unvalidated",
     "invoice.updated",
     "invoice.validated",
+    "invoice.written_off",
     "journal_entry.created",
     "journal_entry.deleted",
     "journal_entry.reversed",

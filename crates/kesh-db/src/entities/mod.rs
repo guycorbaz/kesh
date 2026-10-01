@@ -62,7 +62,10 @@ pub use imported_supplier_invoice::{
 pub use invoice::{Invoice, InvoiceLine, InvoiceUpdate, NewInvoice, NewInvoiceLine};
 pub use invoice_number_sequence::InvoiceNumberSequence;
 pub use invoice_reminder::{InvoiceReminder, NewInvoiceReminder, ReminderChannel};
-pub use invoice_settlement::{InvoiceSettlement, NewInvoiceSettlement};
+pub use invoice_settlement::{
+    InvoiceSettlement, NewInvoiceSettlement, SettlementKind,
+    WriteOffNature as SettlementWriteOffNature,
+};
 pub use journal_entry::{
     Journal, JournalEntry, JournalEntryLine, JournalEntryWithLines, NewJournalEntry,
     NewJournalEntryLine,

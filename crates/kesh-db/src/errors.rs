@@ -223,6 +223,14 @@ pub enum SettlementCancelBlocker {
     /// **restaurées** d'une sauvegarde ou **mises à jour sur place**. D'où ce
     /// motif, gardé.
     InvoiceCredited,
+    /// Un **solde** existe sur la facture (Story 25-4-d2a, #384), rang 1 bis :
+    /// un règlement qui n'est pas lui-même un solde ne s'annule pas avant lui.
+    /// Sans ce motif, annuler un règlement après un escompte rouvrirait la
+    /// facture (`paid_at = NULL`) avec l'escompte toujours passé et compté en
+    /// « déjà réglé ». Propriété de la **facture**, comme `InvoiceCredited`,
+    /// d'où sa place avant la queue sur l'écriture : placé après, il ferait
+    /// rouvrir un exercice clos pour rien.
+    WriteOffExists,
     /// Tête **fournisseur** (Story 25-3-a-2) : la facture n'est pas `paid` — il
     /// n'y a pas de règlement à annuler. ⚠️ Coupe court par construction : une
     /// facture non `paid` n'a pas d'écriture de règlement, la queue ne s'évalue
@@ -263,6 +271,7 @@ impl SettlementCancelBlocker {
         match self {
             Self::BankTransactionNotReconciled => "BANK_TRANSACTION_NOT_RECONCILED",
             Self::InvoiceCredited => "INVOICE_CREDITED",
+            Self::WriteOffExists => "INVOICE_WRITTEN_OFF",
             Self::SupplierInvoiceNotPaid => "SUPPLIER_INVOICE_NOT_PAID",
             Self::SupplierInvoiceCancelled => "SUPPLIER_INVOICE_CANCELLED",
             Self::FiscalYearClosed => "FISCAL_YEAR_CLOSED",
@@ -354,6 +363,14 @@ pub enum DbError {
     /// pour que le message ne parle pas de paiement là où il n'y en a pas.
     #[error("Aucun compte de différences d'arrondi utilisable n'est désigné")]
     RoundingAccountNotConfigured { context: RoundingContext },
+
+    /// Le compte de la **nature** d'un solde (Story 25-4-d2a, #384) n'est pas
+    /// désigné dans les paramètres de facturation, ou ne l'est plus utilement
+    /// (archivé, non imputable, retypé). `nature` est la graphie persistée
+    /// (`discount`, `bank_fees`, `bad_debt`, `rounding`), pour que le message
+    /// nomme le réglage à remplir.
+    #[error("Aucun compte utilisable n'est désigné pour la nature de solde {nature}")]
+    WriteOffAccountNotConfigured { nature: &'static str },
 
     /// Le total TTC arrondi d'une facture est inférieur au montant minimum fixé
     /// dans les paramètres de facturation (Story 25-4-e, #495) : elle ne s'émet
@@ -713,6 +730,7 @@ impl DbError {
             Self::FiscalYearClosed => "FISCAL_YEAR_CLOSED",
             Self::InactiveOrInvalidAccounts => "INACTIVE_OR_INVALID_ACCOUNTS",
             Self::RoundingAccountNotConfigured { .. } => "ROUNDING_ACCOUNT_NOT_CONFIGURED",
+            Self::WriteOffAccountNotConfigured { .. } => "WRITE_OFF_ACCOUNT_NOT_CONFIGURED",
             Self::InvoiceBelowMinimum { .. } => "INVOICE_BELOW_MINIMUM",
             Self::DateOutsideFiscalYear => "DATE_OUTSIDE_FISCAL_YEAR",
             Self::AccountHasEntries { .. } => "ACCOUNT_HAS_ENTRIES",

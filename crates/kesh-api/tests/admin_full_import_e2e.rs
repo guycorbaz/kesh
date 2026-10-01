@@ -2568,3 +2568,98 @@ async fn full_import_without_minimum_amount_column_leaves_no_threshold(pool: MyS
         "{minimum:?}"
     );
 }
+
+/// **Story 25-4-d2a (#384) — un backup antérieur au solde du reste reste
+/// importable, et ses règlements arrivent sans nature ni ventilation.**
+///
+/// La migration `20261001000004` ajoute `write_off_nature` et `write_off_vat`
+/// (nullables) et recrée les CHECK de `invoice_settlements`. Un `.keshbackup`
+/// produit avant elle ne porte ni les deux colonnes ni aucun solde : ses lignes
+/// de règlement doivent s'importer en `NULL`, que la nouvelle contrainte
+/// `chk_invoice_settlements_write_off_nature` accepte pour un règlement.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_without_write_off_columns_keeps_the_settlements(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = seed_admin(&pool, "solde_absent").await;
+    // Montage brut : un exercice, une écriture, une facture validée et un
+    // règlement en compte interne.
+    let fy = sqlx::query(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date) \
+         VALUES (?, 'Exercice 2026', '2026-01-01', '2026-12-31')",
+    )
+    .bind(ctx.company_id)
+    .execute(&pool)
+    .await
+    .expect("exercice")
+    .last_insert_id() as i64;
+    let entry = sqlx::query(
+        "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, entry_date, journal, description) \
+         VALUES (?, ?, 1, '2026-06-15', 'OD', 'Règlement de montage')",
+    )
+    .bind(ctx.company_id)
+    .bind(fy)
+    .execute(&pool)
+    .await
+    .expect("écriture")
+    .last_insert_id() as i64;
+    let account = sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type) \
+         VALUES (?, '1000', 'Caisse', 'Asset')",
+    )
+    .bind(ctx.company_id)
+    .execute(&pool)
+    .await
+    .expect("compte")
+    .last_insert_id() as i64;
+    let contact = sqlx::query(
+        "INSERT INTO contacts (company_id, contact_type, name, is_client) \
+         VALUES (?, 'Personne', 'Client solde', TRUE)",
+    )
+    .bind(ctx.company_id)
+    .execute(&pool)
+    .await
+    .expect("contact")
+    .last_insert_id() as i64;
+    let invoice = sqlx::query(
+        "INSERT INTO invoices (company_id, contact_id, status, date, total_amount, journal_entry_id) \
+         VALUES (?, ?, 'validated', '2026-06-01', 100.00, ?)",
+    )
+    .bind(ctx.company_id)
+    .bind(contact)
+    .bind(entry)
+    .execute(&pool)
+    .await
+    .expect("facture")
+    .last_insert_id() as i64;
+    sqlx::query(
+        "INSERT INTO invoice_settlements (company_id, invoice_id, journal_entry_id, amount, \
+         settled_on, settlement_type, settlement_account_id) \
+         VALUES (?, ?, ?, 40.00, '2026-06-15', 'internal_account', ?)",
+    )
+    .bind(ctx.company_id)
+    .bind(invoice)
+    .bind(entry)
+    .bind(account)
+    .execute(&pool)
+    .await
+    .expect("règlement");
+
+    let backup = export_backup(&app, &ctx.jwt).await;
+    let (mut manifest, data) = unzip(&backup);
+    for column in ["write_off_nature", "write_off_vat"] {
+        strip_column(&mut manifest, "invoice_settlements", column);
+    }
+    import_ok(&app, &ctx.jwt, &manifest, &data).await;
+
+    let rows: Vec<(String, Option<String>, Option<serde_json::Value>)> = sqlx::query_as(
+        "SELECT settlement_type, write_off_nature, write_off_vat FROM invoice_settlements",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("règlements relus");
+    assert_eq!(
+        rows,
+        vec![("internal_account".to_string(), None, None)],
+        "le règlement est restauré, sans nature ni ventilation"
+    );
+}

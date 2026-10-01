@@ -2648,6 +2648,10 @@ impl IntoResponse for AppError {
                             "invoices-settlement-cancel-blocked-credited",
                             "Cette facture a été créditée par un avoir : ce règlement est un paiement à lettrer, il ne s'annule pas.",
                         ),
+                        SettlementCancelBlocker::WriteOffExists => (
+                            "invoices-settlement-cancel-blocked-written-off",
+                            "Le reste de cette facture a été soldé : annulez d'abord le solde.",
+                        ),
                         SettlementCancelBlocker::SupplierInvoiceNotPaid => (
                             "supplier-invoices-settlement-cancel-blocked-not-paid",
                             "Cette facture fournisseur n'est pas payée : il n'y a pas de règlement à annuler.",
@@ -2879,6 +2883,33 @@ impl IntoResponse for AppError {
                         &t(key, fallback),
                     )
                 }
+                // Story 25-4-d2a (#384) — le compte de la nature d'un solde : un
+                // message par nature, qui nomme le réglage à remplir.
+                DbError::WriteOffAccountNotConfigured { nature } => {
+                    let (key, fallback) = match nature {
+                        "discount" => (
+                            "error-write-off-account-not-configured-discount",
+                            "Aucun compte d'escompte utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation, section Solde du reste.",
+                        ),
+                        "bank_fees" => (
+                            "error-write-off-account-not-configured-bank-fees",
+                            "Aucun compte de frais bancaires utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation, section Solde du reste.",
+                        ),
+                        "bad_debt" => (
+                            "error-write-off-account-not-configured-bad-debt",
+                            "Aucun compte de pertes sur créances utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation, section Solde du reste.",
+                        ),
+                        _ => (
+                            "error-write-off-account-not-configured-rounding",
+                            "Aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation.",
+                        ),
+                    };
+                    build_response(
+                        StatusCode::BAD_REQUEST,
+                        "WRITE_OFF_ACCOUNT_NOT_CONFIGURED",
+                        &t(key, fallback),
+                    )
+                }
                 // Story 16-1a (#152) — comptes de produit de ligne de facture.
                 // Le générique `INACTIVE_OR_INVALID_ACCOUNTS` ci-dessus ne nomme
                 // aucune ligne ; sur une facture pouvant en porter 200, ce
@@ -2984,6 +3015,19 @@ impl IntoResponse for AppError {
                         "settledOnBeforeInvoiceDate" => (
                             "invoice-error-settled-on-before-invoice-date".to_string(),
                             "La date de règlement ne peut être antérieure à la date de facture.",
+                        ),
+                        // Story 25-4-d2a (#384, #490) — le solde du reste.
+                        "nothingToWriteOff" => (
+                            "invoice-error-nothing-to-write-off".to_string(),
+                            "Il ne reste rien à solder sur cette facture.",
+                        ),
+                        "writeOffRoundingTooLarge" => (
+                            "invoice-error-write-off-rounding-too-large".to_string(),
+                            "Un reste d'arrondi ne dépasse pas 5 centimes : choisissez une autre nature pour solder ce reste.",
+                        ),
+                        "invoiceAlreadyPaid" => (
+                            "invoice-error-already-paid".to_string(),
+                            "Cette facture est déjà payée : il n'y a rien à solder.",
                         ),
                         // N2 (review pass 3 B) : code "paidAtFuture" supprimé —
                         // `paid_at` peut être dans le futur (date d'exécution bancaire).
@@ -3092,6 +3136,10 @@ fn reconciliation_cancel_blocked_text(
             "reconciliation-cancel-blocked-credited",
             "La facture de ce rapprochement a été créditée par un avoir : son règlement est un paiement à lettrer, il ne s'annule pas.",
         ),
+        SettlementCancelBlocker::WriteOffExists => (
+            "reconciliation-cancel-blocked-written-off",
+            "Le reste de la facture de ce rapprochement a été soldé : annulez d'abord le solde.",
+        ),
         // Aucun rapprochement ne règle une facture fournisseur : le motif ne
         // peut pas naître ici ; le `match` reste exhaustif.
         SettlementCancelBlocker::SupplierInvoiceNotPaid => (
@@ -3159,6 +3207,7 @@ fn supplier_invoice_cancel_blocked_text(
         // facture fournisseur ; leurs textes sont les leurs.
         SettlementCancelBlocker::BankTransactionNotReconciled
         | SettlementCancelBlocker::InvoiceCredited
+        | SettlementCancelBlocker::WriteOffExists
         | SettlementCancelBlocker::SupplierInvoiceNotPaid => {
             reconciliation_cancel_blocked_text(blocker)
         }

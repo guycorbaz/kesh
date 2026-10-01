@@ -369,7 +369,12 @@ const ATTENDU = {
 	// `grep -o "i18nMsg("` aux deux bornes de `settings/invoicing/+page.svelte`
 	// (41 → 47) — la section « Solde du reste » : titre, aide, trois libellés de
 	// compte, et le « — Sélectionner — » de son sélecteur.
-	sitesTotal: 1775,
+	//
+	// Story 25-4-d2a (#384) : **1775 → 1777** — le motif « un solde existe »
+	// (`INVOICE_WRITTEN_OFF`), traduit dans les deux tables qui le reçoivent :
+	// `features/invoices/settlement-cancel.ts` (1 → 2) et
+	// `features/reconciliation/reconciliation-cancel.ts` (6 → 7).
+	sitesTotal: 1777,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

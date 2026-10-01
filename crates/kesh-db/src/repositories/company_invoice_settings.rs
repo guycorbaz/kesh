@@ -402,15 +402,67 @@ pub async fn rounding_account_for_write(
     company_id: i64,
     context: RoundingContext,
 ) -> Result<i64, DbError> {
-    let designated: Option<Option<i64>> = sqlx::query_scalar(
+    usable_designated_account(
+        conn,
+        company_id,
         "SELECT default_rounding_account_id FROM company_invoice_settings WHERE company_id = ?",
     )
-    .bind(company_id)
-    .fetch_optional(&mut *conn)
-    .await
-    .map_err(map_db_error)?;
+    .await?
+    .ok_or(DbError::RoundingAccountNotConfigured { context })
+}
+
+/// Le compte de la **nature** d'un solde (Story 25-4-d2a, #384), relu au moment
+/// d'écrire et revérifié comme le compte d'arrondi : actif, imputable, charge ou
+/// produit, verrouillé `FOR UPDATE`. Le reste d'arrondi lit le compte de
+/// différences d'arrondi.
+///
+/// Absent ou inutilisable → `WriteOffAccountNotConfigured { nature }`.
+/// ⛔ Jamais de repli sur un compte déduit.
+pub async fn write_off_account_for_write(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    nature: crate::entities::SettlementWriteOffNature,
+) -> Result<i64, DbError> {
+    use crate::entities::SettlementWriteOffNature as N;
+    // Un littéral SQL complet par nature — jamais de colonne interpolée.
+    let select = match nature {
+        N::Discount => {
+            "SELECT default_discount_account_id FROM company_invoice_settings WHERE company_id = ?"
+        }
+        N::BankFees => {
+            "SELECT default_bank_fees_account_id FROM company_invoice_settings WHERE company_id = ?"
+        }
+        N::BadDebt => {
+            "SELECT default_bad_debt_account_id FROM company_invoice_settings WHERE company_id = ?"
+        }
+        N::Rounding => {
+            "SELECT default_rounding_account_id FROM company_invoice_settings WHERE company_id = ?"
+        }
+    };
+    usable_designated_account(conn, company_id, select)
+        .await?
+        .ok_or(DbError::WriteOffAccountNotConfigured {
+            nature: nature.as_str(),
+        })
+}
+
+/// Le cœur commun des relectures de compte désigné : lit le réglage par
+/// `select` (un littéral de l'appelant), puis exige un compte actif, imputable,
+/// de charge ou de produit, de la société, verrouillé `FOR UPDATE`. `None` si le
+/// réglage est vide ou le compte inutilisable — chaque appelant pose **son**
+/// erreur.
+async fn usable_designated_account(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    select: &'static str,
+) -> Result<Option<i64>, DbError> {
+    let designated: Option<Option<i64>> = sqlx::query_scalar(select)
+        .bind(company_id)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(map_db_error)?;
     let Some(account_id) = designated.flatten() else {
-        return Err(DbError::RoundingAccountNotConfigured { context });
+        return Ok(None);
     };
     sqlx::query_scalar::<_, i64>(
         "SELECT id FROM accounts WHERE id = ? AND company_id = ? AND active = TRUE \
@@ -422,8 +474,7 @@ pub async fn rounding_account_for_write(
     .bind(AccountType::Revenue)
     .fetch_optional(&mut *conn)
     .await
-    .map_err(map_db_error)?
-    .ok_or(DbError::RoundingAccountNotConfigured { context })
+    .map_err(map_db_error)
 }
 
 /// Creates company_invoice_settings with auto-prefill of default accounts resolved

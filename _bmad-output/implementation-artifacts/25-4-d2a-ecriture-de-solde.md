@@ -1,6 +1,6 @@
 # Story 25.4-d2a : Solder le reste — l'écriture et son annulation
 
-Status: ready-for-dev
+Status: review
 
 **Issues : [#384], [#490]** — ⛔ la PR porte `refs #384, refs #490` : la **25-4-d2b** (le bouton) fermera #490, la
 **25-4-d2c** (le rapport TVA) fermera #384.
@@ -194,15 +194,15 @@ Le manuel utilisateur vient avec la d2b.
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — migration** (AC 1), dont la liste de colonnes **écrite à la main** de `serialize_invoice_settlements_csv`
+- [x] **T1 — migration** (AC 1), dont la liste de colonnes **écrite à la main** de `serialize_invoice_settlements_csv`
   (`exports/csv_tables.rs:1332-1368`) et son test d'en-tête.
-- [ ] **T2 — prorata** (AC 2).
-- [ ] **T3 — compte au moment d'écrire** (AC 3).
-- [ ] **T4 — écriture de solde** (AC 4).
-- [ ] **T5 — route, liste, motif d'annulation** (AC 5, AC 6), dont le code du motif côté frontend.
-- [ ] **T6 — CHANGELOG** (AC 7).
-- [ ] **T7 — tests** (AC 8).
-- [ ] **T8 — gates** : backend complet (migration), frontend (non touché : `check` et `test:unit` pour la forme),
+- [x] **T2 — prorata** (AC 2).
+- [x] **T3 — compte au moment d'écrire** (AC 3).
+- [x] **T4 — écriture de solde** (AC 4).
+- [x] **T5 — route, liste, motif d'annulation** (AC 5, AC 6), dont le code du motif côté frontend.
+- [x] **T6 — CHANGELOG** (AC 7).
+- [x] **T7 — tests** (AC 8).
+- [x] **T8 — gates** : backend complet (migration), frontend (non touché : `check` et `test:unit` pour la forme),
   **E2E complet**.
 
 ## Dev Notes
@@ -227,11 +227,83 @@ cinq modules de code, au seuil sans le dépasser.
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`).
+
 ### Debug Log References
+
+- **Écart à la fiche, assumé** : l'AC 6 ne citait que la table des motifs de la fiche facture. Le **dé-rapprochement**
+  lit le même motif (`settlement_cancel_blocker_unlinking`, via `GET /reconciliation/transactions/{id}` et le refus au
+  clic) : son écran l'aurait affiché brut aussi. Le code et son message ont donc été ajoutés aux **deux** tables
+  (`features/invoices/settlement-cancel.ts` et `features/reconciliation/reconciliation-cancel.ts`), toujours dans le
+  module `frontend` — `sitesTotal` 1775 → 1777.
+- **Hors AC, par la règle de synchronisation des docs** : `docs/api-external.md` documente la route, le type
+  `write_off`, `writeOffNature` et le motif `INVOICE_WRITTEN_OFF`.
 
 ### Completion Notes List
 
+- **T1** — `20261001000004_invoice_settlements_write_off.sql` : `write_off_nature`, `write_off_vat JSON`, les deux CHECK
+  recréés (une instruction par `DROP`/`ADD`), `chk_invoice_settlements_write_off_nature` (nature **et** ventilation ssi
+  solde). Audit à 74 (66 `tracked-by-sqlx` + 8 `yes`, recomptés), `migrations_upgrade_path.rs` 73 → 74 et 39 → 40,
+  frontière 34 (résidus grepés), squash régénéré — il porte le `CHECK (json_valid(...))` implicite —, sha384, export CSV.
+- **T2** — `write_off_vat_shares` (`kesh-core/accounting/vat.rs`) et `VatRateShare`, sur `vat_breakdown_by_rate`, arrondis
+  par `Money::round_to_centimes`, `total_ttc` = `invoice_total_ttc_rounded`.
+- **T3** — `usable_designated_account` (cœur commun, `Option`) ; `rounding_account_for_write` garde son erreur ;
+  `write_off_account_for_write` choisit la colonne par un `match` de littéraux SQL complets ;
+  `DbError::WriteOffAccountNotConfigured { nature }` → 400 `WRITE_OFF_ACCOUNT_NOT_CONFIGURED`, un message par nature.
+- **T4** — `write_off_invoice` : gardes (statut, `paid_at`, `version`, date), reste exact, seuil `rounding` < 0.05, compte
+  de la nature, créance, parts de TVA et compte de TVA due courant, exercice, écriture OD (« Solde facture … — intitulé »,
+  français figé, `WriteOffNature::entry_label`), ligne par `create_in_tx` (`SettlementKind`), `paid_at`, `version + 1`,
+  audit `invoice.written_off` (libellé, 4 locales). Fonction pure `write_off_journal_lines` avec la garde `Σ TVA < A`.
+- **T5** — `POST /api/v1/invoices/{id}/write-off` (`nature` en `String`, `version`, rejeu `retry_with` sur 1213), inscrite
+  au registre d'audit des routes (110 / 92 / 113) ; liste : `writeOffNature`. Motif `WriteOffExists`
+  (`INVOICE_WRITTEN_OFF`) au **rang 1 bis**, refusé par l'annulation elle-même (donc aussi par le dé-rapprochement) ;
+  messages serveur des deux familles (4 locales) et tables frontend (cf. Debug Log).
+- **T6** — CHANGELOG `[0.12.1]` *Added* (#384, #490) ; `docs/api-external.md`.
+- **T7** — périmètre `f6eff8d3` → arbre de travail, recompté aux deux bornes : **18 tests Rust neufs** (5 `vat.rs`
+  19 → 24 ; 10 `invoice_write_off.rs` 0 → 10 ; 2 `invoice_echeancier_e2e.rs` 28 → 30 ; 1 `admin_full_import_e2e.rs`
+  32 → 33), **3 Vitest neufs** (`settlement-cancel.test.ts` 0 → 2, `reconciliation-cancel.test.ts` 4 → 5) dont un cas
+  ajouté à une table existante. **Quatre mutations tuées** et restaurées (fichier touché ensuite) : motif supprimé → 2
+  rouges ; garde `paid_at` retirée → 1 ; TVA non corrigée → 2 ; contrôle de `version` retiré → 1.
+- **Gates** — base remise à zéro ; `scripts/test-fast.sh` **vert, 2607/2607** ; frontend `check` (0 erreur, 27
+  avertissements préexistants), `lint-i18n-ownership`, `test:unit` **856/856**, `build`.
+- **E2E complet** — base `kesh_e2e` reconstruite, montage complet (`smtpConfigured:true`), run à 21:44 UTC : **232
+  passés, 7 échecs, 19 ignorés** — exactement les sept **KF-029** de la liste nominative, aucune pollution.
+
 ### File List
+
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `CHANGELOG.md`
+- `crates/kesh-api/src/audit_labels.rs`
+- `crates/kesh-api/src/errors.rs`
+- `crates/kesh-api/src/exports/csv_tables.rs`
+- `crates/kesh-api/src/lib.rs`
+- `crates/kesh-api/src/routes/invoices.rs`
+- `crates/kesh-api/src/routes/reconciliation.rs`
+- `crates/kesh-api/tests/admin_full_import_e2e.rs`
+- `crates/kesh-api/tests/audit_route_registry.rs`
+- `crates/kesh-api/tests/invoice_echeancier_e2e.rs`
+- `crates/kesh-core/src/accounting/vat.rs`
+- `crates/kesh-db/migrations/20261001000004_invoice_settlements_write_off.sql` (nouveau)
+- `crates/kesh-db/migrations.sha384`
+- `crates/kesh-db/src/entities/invoice_settlement.rs`
+- `crates/kesh-db/src/entities/mod.rs`
+- `crates/kesh-db/src/errors.rs`
+- `crates/kesh-db/src/repositories/company_invoice_settings.rs`
+- `crates/kesh-db/src/repositories/invoice_settlements.rs`
+- `crates/kesh-db/src/repositories/invoice_settlements_write.rs`
+- `crates/kesh-db/test-schema/0001_schema_squash.sql`
+- `crates/kesh-db/tests/invoice_settlement.rs`
+- `crates/kesh-db/tests/invoice_write_off.rs` (nouveau)
+- `crates/kesh-db/tests/migrations_upgrade_path.rs`
+- `crates/kesh-i18n/locales/{de-CH,en-CH,fr-CH,it-CH}/messages.ftl`
+- `docs/api-external.md`
+- `docs/migrations-idempotence-audit.md`
+- `frontend/src/lib/features/invoices/settlement-cancel.ts`
+- `frontend/src/lib/features/invoices/settlement-cancel.test.ts` (nouveau)
+- `frontend/src/lib/features/reconciliation/reconciliation-cancel.ts`
+- `frontend/src/lib/features/reconciliation/reconciliation-cancel.test.ts`
+- `frontend/src/lib/features/reconciliation/reconciliation.types.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
 
 ## Change Log
 
@@ -261,6 +333,9 @@ cinq modules de code, au seuil sans le dépasser.
   répondu (le site `i18nMsg` du motif) repris par l'orchestrateur : `sitesTotal` à recompter, écrit à l'AC 6.
   **Boucle close** : P1 2H/4M/2L → P2 3H/1M/9L → P3 3M → P4 0 > LOW ; Sonnet → Opus → Sonnet → Haiku ; remédiation de
   P4 sur la fiche seule.
+- **2026-10-01** — Implémentée (T1–T8). 18 tests Rust et 3 Vitest neufs, 4 mutations tuées. Gates : backend 2607/2607,
+  frontend 856/856, E2E 232/7 (KF-029). Écart assumé : le motif traduit aussi dans la table du dé-rapprochement.
+  Statut → review.
 
 [#384]: https://github.com/guycorbaz/kesh/issues/384
 [#490]: https://github.com/guycorbaz/kesh/issues/490

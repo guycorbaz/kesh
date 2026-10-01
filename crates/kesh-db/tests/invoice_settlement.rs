@@ -1049,6 +1049,7 @@ async fn monter(pool: &MySqlPool, motifs: &[SettlementCancelBlocker]) -> (Seeded
 fn ecriture_attendue(motif: SettlementCancelBlocker, err: &DbError) -> bool {
     match motif {
         SettlementCancelBlocker::InvoiceCredited
+        | SettlementCancelBlocker::WriteOffExists
         | SettlementCancelBlocker::SupplierInvoiceNotPaid
         | SettlementCancelBlocker::FiscalYearClosed => {
             matches!(err, DbError::SettlementNotCancellable { blocker } if *blocker == motif)

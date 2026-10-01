@@ -16,7 +16,8 @@ use sqlx::MySqlPool;
 /// Colonnes de la table, dans l'ordre attendu par `FromRow`. Centralisées :
 /// une colonne ajoutée sans passer par ici casse la compilation, pas le runtime.
 const COLUMNS: &str = "id, company_id, invoice_id, journal_entry_id, amount, settled_on, \
-     settlement_type, settlement_bank_account_id, settlement_account_id, created_at";
+     settlement_type, settlement_bank_account_id, settlement_account_id, \
+     write_off_nature, write_off_vat, created_at";
 
 use crate::entities::{InvoiceSettlement, NewInvoiceSettlement, NewJournalEntryLine};
 use crate::errors::{DbError, map_db_error};
@@ -238,6 +239,75 @@ pub fn settlement_journal_lines(
     Ok(lines)
 }
 
+/// Les lignes de l'écriture d'un **solde** (Story 25-4-d2a, #384) : débit du
+/// compte de la nature `amount − Σ TVA`, débit de la TVA due par taux (une ligne
+/// par part, toutes sur `vat_account_id`), crédit de la créance `amount`.
+/// Équilibrée par construction : le reliquat de centimes du prorata reste sur le
+/// compte de la nature.
+///
+/// ⛔ Garde `Σ TVA < amount` → [`DbError::Invariant`] : le débit du compte de la
+/// nature doit rester strictement positif (`chk_jel_debit_credit_exclusive`).
+/// Inatteignable par le prorata ([`kesh_core::accounting::vat::write_off_vat_shares`]),
+/// elle protège la fonction de ce qu'on lui passe. Des parts sans compte de TVA
+/// sont de même une erreur de l'appelant.
+pub fn write_off_journal_lines(
+    nature_account_id: i64,
+    receivable_account_id: i64,
+    vat_account_id: Option<i64>,
+    amount: Decimal,
+    vat_shares: &[kesh_core::accounting::vat::VatRateShare],
+) -> Result<Vec<NewJournalEntryLine>, DbError> {
+    let total_vat: Decimal = vat_shares.iter().map(|s| s.vat_amount).sum();
+    if total_vat >= amount {
+        return Err(DbError::Invariant(format!(
+            "solde : la TVA corrigée ({total_vat}) atteint le montant soldé ({amount})"
+        )));
+    }
+    let mut lines = vec![NewJournalEntryLine {
+        account_id: nature_account_id,
+        debit: amount - total_vat,
+        credit: Decimal::ZERO,
+        project_id: None,
+    }];
+    if !vat_shares.is_empty() {
+        let vat_account_id = vat_account_id.ok_or_else(|| {
+            DbError::Invariant("solde : des parts de TVA sans compte de TVA due".into())
+        })?;
+        lines.extend(vat_shares.iter().map(|share| NewJournalEntryLine {
+            account_id: vat_account_id,
+            debit: share.vat_amount,
+            credit: Decimal::ZERO,
+            project_id: None,
+        }));
+    }
+    lines.push(NewJournalEntryLine {
+        account_id: receivable_account_id,
+        debit: Decimal::ZERO,
+        credit: amount,
+        project_id: None,
+    });
+    Ok(lines)
+}
+
+/// La ventilation figée d'un solde, telle que persistée en `write_off_vat` :
+/// `[{ratePercent, baseHt, vatAmount}]`, montants en chaînes décimales.
+pub fn write_off_vat_json(
+    shares: &[kesh_core::accounting::vat::VatRateShare],
+) -> serde_json::Value {
+    serde_json::Value::Array(
+        shares
+            .iter()
+            .map(|s| {
+                serde_json::json!({
+                    "ratePercent": s.rate_percent.to_string(),
+                    "baseHt": s.base_ht.to_string(),
+                    "vatAmount": s.vat_amount.to_string(),
+                })
+            })
+            .collect(),
+    )
+}
+
 /// Enregistre un règlement dans la transaction courante.
 ///
 /// ⚠️ **Ne pose PAS `paid_at`** : c'est à l'appelant de le faire, et seulement
@@ -251,21 +321,32 @@ pub async fn create_in_tx(
     // dissocier rouvrirait la possibilité d'un `bank_transfer` sans compte
     // bancaire, que `chk_invoice_settlements_counterparty` refuse de toute
     // façon, mais en 500 plutôt qu'en erreur métier.
-    let (bank_account_id, account_id) = new.choice.counterparty_refs();
+    let (bank_account_id, account_id) = new.kind.counterparty_refs();
+    // Story 25-4-d2a : nature et ventilation, ssi c'est un solde
+    // (`chk_invoice_settlements_write_off_nature`).
+    let (nature, vat) = match &new.kind {
+        crate::entities::SettlementKind::WriteOff { nature, vat, .. } => {
+            (Some(nature.as_str()), Some(vat.clone()))
+        }
+        crate::entities::SettlementKind::Choice(_) => (None, None),
+    };
     let id: u64 = sqlx::query(
         "INSERT INTO invoice_settlements \
          (company_id, invoice_id, journal_entry_id, amount, settled_on, \
-          settlement_type, settlement_bank_account_id, settlement_account_id) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          settlement_type, settlement_bank_account_id, settlement_account_id, \
+          write_off_nature, write_off_vat) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(new.company_id)
     .bind(new.invoice_id)
     .bind(new.journal_entry_id)
     .bind(new.amount)
     .bind(new.settled_on)
-    .bind(new.choice.type_str())
+    .bind(new.kind.type_str())
     .bind(bank_account_id)
     .bind(account_id)
+    .bind(nature)
+    .bind(vat)
     .execute(&mut **tx)
     .await
     .map_err(map_db_error)?
