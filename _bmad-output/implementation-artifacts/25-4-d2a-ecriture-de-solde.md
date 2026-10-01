@@ -59,7 +59,8 @@ afin que la créance se ferme et que l'écart — et la TVA qu'il corrige — so
 - **Comptes de nature** : seuls `rounding_account_for_write` (`company_invoice_settings.rs:400-427`) relit un compte
   désigné au moment d'écrire (actif, imputable, charge ou produit, `FOR UPDATE`).
 - **Lignes d'écriture** en `DECIMAL(19,4)` : une écriture peut créditer la créance au reste exact (la c3-b le fait).
-- **#490** : un reste brut inférieur au demi-centime (`10.0040` après un avoir de `10.00`) est **insoldable** —
+- **#490** : un reste brut inférieur au demi-centime (`0.0040`, p. ex. une facture de `10.0040` réglée de `10.00`) est
+  **insoldable** —
   tout paiement positif est un trop-perçu.
 
 ## Acceptance Criteria
@@ -67,64 +68,94 @@ afin que la créance se ferme et que l'écart — et la TVA qu'il corrige — so
 **AC 1 — La migration** (`20261001000004_invoice_settlements_write_off.sql`).
 - `ADD COLUMN write_off_nature VARCHAR(20) NULL`, `ADD COLUMN write_off_vat JSON NULL` (la ventilation figée, AC 4).
 - `chk_invoice_settlements_type` recréée avec `'write_off'` ; `chk_invoice_settlements_counterparty` recréée avec une
-  troisième branche — chaque `DROP CONSTRAINT` et chaque `ADD CONSTRAINT` en **instruction `ALTER TABLE` distincte**,
-  comme le seul précédent du dépôt (`20260714000002_email_templates_reminder.sql`) ; : `write_off` ⇒ `settlement_account_id IS NOT NULL AND settlement_bank_account_id IS NULL`.
+  troisième branche : `write_off` ⇒ `settlement_account_id IS NOT NULL AND settlement_bank_account_id IS NULL`. Chaque
+  `DROP CONSTRAINT` et chaque `ADD CONSTRAINT` en **instruction `ALTER TABLE` distincte**, comme le seul précédent du
+  dépôt (`20260714000002_email_templates_reminder.sql`).
 - Nouvelle `chk_invoice_settlements_write_off_nature` : `(settlement_type = 'write_off') = (write_off_nature IS NOT
-  NULL)` et `write_off_nature IN ('discount', 'bank_fees', 'bad_debt', 'rounding')`.
-- **DDL seul** (P7 sans objet) ; **non breaking** (confirmé en validation P1 : `settlement_type` est lu en `String`
-  partout, `check_schema_compat` n'exige que les colonnes `NOT NULL` sans défaut) à démontrer dans l'en-tête (un binaire antérieur lit
+  NULL)`, `(settlement_type = 'write_off') = (write_off_vat IS NOT NULL)` et `write_off_nature IN ('discount',
+  'bank_fees', 'bad_debt', 'rounding')`. ⚠️ L'alias `JSON` de MariaDB ajoute un `CHECK (JSON_VALID(write_off_vat))`
+  implicite : le squash régénéré doit le porter (`test_schema_guard` le contrôle).
+- **DDL seul** (P7 sans objet) ; **non breaking** — confirmé en validation (P1, P2) : `settlement_type` est lu en
+  `String` partout, `check_schema_compat` n'exige que les colonnes `NOT NULL` sans défaut. À écrire dans l'en-tête (un binaire antérieur lit
   `settlement_type` en chaîne, ignore les deux colonnes, contre-passe un solde comme un règlement ; `DROP CONSTRAINT`
   n'est pas une opération listée en P3) — la passe de revue le confirme. P5 (audit, 74), P6 (`migrations_upgrade_path.rs`
   73 → 74, 39 → 40), squash, `migrations.sha384`, export CSV des deux colonnes, sauvegarde antérieure → `NULL`.
 
 **AC 2 — Le prorata** (`kesh-core/src/accounting/vat.rs`). `write_off_vat_shares(lines, total_ttc, amount) ->
 Vec<VatRateShare { rate_percent, base_ht, vat_amount }>` : pour chaque taux > 0 de `vat_breakdown_by_rate(lines)`,
-`vat_amount = round_centime(amount × vat_r / total_ttc)` et `base_ht = round_centime(amount × base_r / total_ttc)`, où
+`vat_amount = Money::round_to_centimes(amount × vat_r / total_ttc)` et `base_ht = Money::round_to_centimes(amount × base_r / total_ttc)`, où
+`Money::round_to_centimes` est la fonction existante (`money.rs:66`, MidpointAwayFromZero — pas de helper neuf), et
 `total_ttc` est le TTC **figé** de la facture, calculé par `invoice_total_ttc_rounded` (`vat.rs:93-98`, lignes +
 `rounding_amount` — ne pas le recalculer). ⚠️ `base_ht` est **informatif** (il servira au rapport TVA, d2c) : l'écriture
-n'en dépend pas, et `A − Σ vat_amount` ne vaut pas `Σ base_ht` au centime près par construction — ne pas l'asserter. Tests : un taux, plusieurs taux, lignes à 0 %
+n'en dépend pas, et `A − Σ vat_amount` ne vaut pas `Σ base_ht` au centime près par construction — ne pas l'asserter. Note pour la d2c : `base_ht` ne couvre que les taux > 0 ; le chiffre 235 du décompte AFC
+(diminutions de contre-prestation) porte toute la réduction, part à 0 % comprise — la d2c la déduira de `amount`. Tests : un taux, plusieurs taux, lignes à 0 %
 (aucune part), arrondi figé (la part sans TVA ne porte rien), `amount == total_ttc` (la TVA corrigée égale la TVA
 facturée), montant à quatre décimales, `amount` minuscule (parts nulles omises).
 
 **AC 3 — Le compte au moment d'écrire.** `write_off_account_for_write(conn, company_id, nature)` généralise
 `rounding_account_for_write` (**un seul code**, le compte d'arrondi en devient un cas) : la colonne de la nature
-(`rounding` → `default_rounding_account_id`), actif, imputable, charge ou produit, `FOR UPDATE`. Absent ou invalide →
+(`rounding` → `default_rounding_account_id`), actif, imputable, charge ou produit, `FOR UPDATE`. La colonne se choisit
+par un `match` qui rend un **littéral SQL complet** — jamais interpolé (précédent : `role_check`,
+`journal_entries.rs:1546-1560`). Un cœur commun rend `Option<i64>` ; chaque enveloppe pose **sa** erreur —
+`rounding_account_for_write` garde `RoundingAccountNotConfigured`, sur lequel `routes/reconciliation.rs:1495` fait un
+`match`. Absent ou invalide →
 `DbError::WriteOffAccountNotConfigured { nature }` → **400 `WRITE_OFF_ACCOUNT_NOT_CONFIGURED`**, message qui nomme la
 nature et renvoie à *Paramètres → Facturation* (4 locales). `rounding_account_for_write` garde son erreur et ses
 messages.
 
 **AC 4 — L'écriture de solde.** `write_off_invoice(pool, user_id, company_id, invoice_id, nature, settled_on) ->
 WriteOffOutcome { journal_entry_id, amount }`, sur le patron de `settle_invoice` :
-1. verrou de la facture `FOR UPDATE`, statut `validated`, borne de date ;
+1. verrou de la facture `FOR UPDATE`, statut `validated` (une facture annulée par avoir est `cancelled` : refusée),
+   **`paid_at IS NULL`** — sinon `InvalidInput("invoiceAlreadyPaid")` : une facture réglée avant l'existence de
+   `invoice_settlements` a `paid_at` posé **sans aucune ligne** (`invoices.rs:1490-1505`) et serait soldée pour tout son
+   TTC ; l'avoir pose déjà ce garde (`credit_notes.rs:325`). *(`settle_invoice` ne l'a pas non plus : hors périmètre,
+   à signaler.)* ; **`version` attendue** — la facture verrouillée doit porter la `version` du corps, sinon
+   `OptimisticLockConflict` → 409 ; borne de date ;
 2. reste brut `A = amount_due` ; `A <= 0` → refus `InvalidInput("nothingToWriteOff")` ;
 3. nature `rounding` : seulement si `A < 0.05` (un reste d'arrondi ne dépasse pas l'unité de 5 centimes), sinon
    `InvalidInput("writeOffRoundingTooLarge")` ;
 4. compte de la nature (AC 3) ; créance = première ligne de débit de l'écriture de vente ;
 5. escompte et perte : parts de TVA (AC 2) ; garde `Σ vat_amount < A`, sinon `DbError::Invariant` (le débit du compte de
-   la nature doit rester strictement positif — `chk_jel_debit_credit_exclusive`) ; si une part est non nulle, compte `default_vat_payable_account_id`
+   la nature doit rester strictement positif — `chk_jel_debit_credit_exclusive`). Inatteignable par le prorata (P2 :
+   une part n'est non nulle que pour `A ≳ 0.06`, la somme n'atteint `A` que pour `A ≲ 0.017`) : la garde vit dans une
+   **fonction pure** qui bâtit les lignes de l'écriture à partir de `(A, parts)`, et c'est elle que le test exerce avec des
+   parts injectées ; si une part est non nulle, compte `default_vat_payable_account_id`
    **courant** (comme l'avoir), absent → `ConfigurationRequired` ;
 6. exercice ouvert couvrant `settled_on` ; écriture au journal **OD**, libellé « Solde facture {numéro} — {intitulé} », l'intitulé
    en **français figé** comme le libellé des règlements (`invoice_settlements_write.rs:219`) — « escompte accordé »,
    « frais bancaires », « perte sur débiteur », « reste d'arrondi » — par une fonction nommée de la nature,
    `project_id` de la facture, lignes : **débit** du compte de la nature `A − Σ TVA`, **débit** de la TVA due par taux,
    **crédit** de la créance `A` ;
-7. ligne `invoice_settlements` : `settlement_type = 'write_off'`, `settlement_account_id` = compte de la nature,
+7. ligne `invoice_settlements`, insérée par **le même** `invoice_settlements::create_in_tx` (`invoice_settlements.rs:246-281`) :
+   `NewInvoiceSettlement` porte désormais un `kind: SettlementKind { Choice(SettlementChoice), WriteOff { nature,
+   account_id, vat } }` qui fixe type, références, `write_off_nature` et `write_off_vat` — le second appelant
+   (`routes/reconciliation.rs:1595`) passe `Choice` ; les deux colonnes rejoignent `COLUMNS` et l'entité
+   `InvoiceSettlement` (`entities/invoice_settlement.rs:22-41`). La ligne : `settlement_type = 'write_off'`, `settlement_account_id` = compte de la nature,
    `amount = A`, `write_off_nature`, `write_off_vat` = les parts (JSON `[{ratePercent, baseHt, vatAmount}]`, `[]` sans
    TVA) ;
-8. `paid_at = settled_on`, **`version + 1`**. ⚠️ **Invariant : un solde éteint toujours la totalité du reste**, donc la
-   facture est toujours payée après un solde. C'est lui qui garde un solde hors du « déjà réglé » d'un rappel (un rappel
-   est refusé sur une facture payée, `dunning_reminders.rs:292`, `dunning_eligibility.rs:87`) et hors du statut
-   « partiellement payée » de l'export CSV (`routes/invoices.rs:1528`, `paid_at` lu d'abord) ;
+8. `paid_at = settled_on`, **`version + 1`**. ⚠️ **Invariant : tant qu'un solde existe, la facture est payée.** Le solde
+   éteint toujours la totalité du reste, **et aucun autre règlement de la facture ne peut être annulé tant qu'il existe**
+   (AC 6). C'est ce qui garde un solde hors du « déjà réglé » d'un rappel (un rappel est refusé sur une facture payée,
+   `dunning_reminders.rs:292`, `dunning_eligibility.rs:87`) et hors du statut « partiellement payée » de l'export CSV
+   (`routes/invoices.rs:1528`, `paid_at` lu d'abord) ;
 9. audit `invoice.written_off` (nature, montant, TVA corrigée, écriture), libellé dans `audit_labels.rs` (4 locales).
 
-**AC 5 — La route.** `POST /api/v1/invoices/{id}/write-off` `{ nature, settledOn }` — rôle Comptable+, **sans montant**
-(le serveur solde le reste exact). Réponse `{ invoice, journalEntryId, amount }`. Le handler est **rejoué sur
-interblocage** (`retry_with` / `is_deadlock_error`, patron `routes/reconciliation.rs:844-851`) : l'ordre des verrous
+**AC 5 — La route.** `POST /api/v1/invoices/{id}/write-off` `{ nature, settledOn, version }` — rôle Comptable+, **sans
+montant** (le serveur solde le reste exact) ; la **`version`** remplace le garde que le montant donne au règlement
+manuel (le refus du trop-perçu, `routes/invoices.rs:1170-1175`) : un écran périmé ou une tentative rejouée qui relit un
+reste changé est refusé en **409** (patron `UnvalidateInvoiceRequest`, `routes/invoices.rs:885-886`). `nature` est reçue
+en **`String`** et convertie à la main (une enum serde rendrait 422 — `into_parts`, `routes/invoices.rs:1189-1194`). Réponse `{ invoice, journalEntryId, amount }`. Le handler est **rejoué sur
+interblocage** — sûr grâce à la `version` : une tentative rejouée qui trouve un reste changé est refusée en 409 — (`retry_with` / `is_deadlock_error`, patron `routes/reconciliation.rs:844-851`) : l'ordre des verrous
 est celui de `settle_invoice` (facture → compte → exercice), qui peut former un cycle avec `accept_one_invoice` (#491 —
 le règlement manuel, lui, reste non rejoué : hors périmètre). Nature inconnue → 400. Toutes les
 erreurs de l'AC 4 mappées (clés i18n, 4 locales). Inscrite au registre d'audit des routes.
 
-**AC 6 — La liste et l'annulation.** `GET …/settlements` : `settlementType = "write_off"` et un champ
+**AC 6 — La liste et l'annulation.** **Nouveau motif de refus d'annulation** dans `settlement_cancel_blocker_unlinking`
+(la fonction qui sert la lecture **et** l'écriture, `invoice_settlements_write.rs:350-380`) : un règlement qui n'est pas
+un solde **ne s'annule pas tant qu'un solde existe sur la facture** — « annulez d'abord le solde ». Sans lui, annuler un
+règlement de 998 après un escompte de 2 rouvrirait la facture (`paid_at = NULL`) avec l'escompte toujours passé et
+compté en « déjà réglé » (P2). Le motif couvre le dé-rapprochement, qui passe par `cancel_settlement_in_tx`
+(`reconciliation_cancel.rs:352`). Code, libellé serveur (4 locales) ; l'affichage du motif à l'écran suit en d2b. `GET …/settlements` : `settlementType = "write_off"` et un champ
 `writeOffNature` (`null` hors solde). L'annulation existante (`…/settlements/{id}/cancel`) contre-passe le solde,
 **TVA comprise**, rouvre la facture (`paid_at = NULL`), `version + 1` — prouvé par test, sans code nouveau si
 possible.
@@ -137,14 +168,18 @@ Le manuel utilisateur vient avec la d2b.
 - une facture **non réglée** et une facture **réglée en partie** soldées, pour chaque nature : écriture équilibrée,
   comptes et montants, TVA par taux (escompte, perte), aucune TVA (frais, arrondi), reste dû nul, `paid_at`, `version`,
   audit ;
-- **#490** : un reste de `0.0040` soldé en nature `rounding`, créance à zéro ;
-- refus : brouillon, facture soldée, compte non configuré ou archivé, arrondi ≥ 0.05, date avant la facture, exercice
+- **#490** : un reste de `0.0040` (facture de `10.0040`, règlement partiel de `10.00` inséré au montage) soldé en nature
+  `rounding`, créance à zéro ;
+- **le nouveau motif** : un règlement ne s'annule pas tant qu'un solde existe (manuel et dé-rapprochement), puis
+  s'annule une fois le solde annulé ;
+- refus : brouillon, facture annulée par avoir, facture soldée, **`paid_at` posé sans ligne de règlement**, `version`
+  périmée (409), compte non configuré ou archivé, arrondi ≥ 0.05, date avant la facture, exercice
   clos, période verrouillée, compte TVA absent ;
 - annulation : reste rétabli, TVA contre-passée, `paid_at = NULL` ; l'avoir et la dévalidation sont refusés tant que
   le solde existe ;
 - API : rôle (Consultation refusée), nature inconnue, liste avec `writeOffNature` ;
-- l'invariant de l'AC 4 point 8 : après un solde d'une facture réglée en partie, un rappel est refusé et l'export CSV
-  donne « payée » ;
+- l'invariant de l'AC 4 point 8 : après un solde d'une facture réglée en partie, un rappel est refusé, l'export CSV
+  donne « payée », et l'annulation du règlement antérieur est refusée ;
 - sauvegarde antérieure sans les colonnes.
 
 ## Tasks / Subtasks
@@ -197,6 +232,14 @@ Le manuel utilisateur vient avec la d2b.
   rejeu sur interblocage de la route (H2, #491) ; CHECK recréés en instructions distinctes (M1) ; garde `Σ TVA < A` (M2) ;
   intitulé de nature nommé, français figé (M3) ; liste CSV en tâche explicite (M4) ; `invoice_total_ttc_rounded` réutilisé
   et `base_ht` dit informatif (L1, L2).
+- **2026-10-01** — Validation P2 (Opus) : 3 HIGH, 1 MED, 9 LOW, tous retenus. **Le reclassement du H1 de P1 est
+  réfuté** : l'invariant « un solde éteint le reste » n'était vérifié qu'à l'instant du solde — annuler ensuite un
+  règlement antérieur rouvrait la facture, escompte toujours passé. D'où un motif de refus d'annulation (AC 6).
+  Retenus aussi : `version` dans la requête (H2 — sans montant, rien ne gardait d'un écran périmé ni d'un rejeu) ; refus
+  d'une facture payée sans ligne de règlement (H3) ; `SettlementKind` dans `create_in_tx` (M1) ; et les LOW (garde de TVA
+  en fonction pure, exemple #490 reconstruit, `nature` en `String`, `Money::round_to_centimes`, CHECK de `write_off_vat`,
+  phrase cassée par le patch de P1, choix de colonne par littéral, note 235 pour la d2c, refus « avoir » au test).
+  ⚠️ Signal de découpage (HIGH → HIGH) : **non découpée** — quatre modules, défauts distincts et d'origine ; signalé à Guy.
 
 [#384]: https://github.com/guycorbaz/kesh/issues/384
 [#490]: https://github.com/guycorbaz/kesh/issues/490
