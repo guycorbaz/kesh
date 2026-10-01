@@ -57,20 +57,25 @@ afin que solder le reste d'une facture impute l'écart au bon compte sans que j'
 **AC 1 — Le marqueur de plan.** `ChartEntry.write_off_nature: Option<WriteOffNature>` (`#[serde(default)]`, JSON
 `writeOffNature`), `enum WriteOffNature { Discount, BankFees, BadDebt }` (`"discount" | "bankFees" | "badDebt"`).
 `validate_chart` : **au plus une entrée par nature**, charge ou produit, imputable, sans rôle — les règles du marqueur
-d'arrondi, **factorisées** dans un helper commun (et non recopiées). `write_off_account_number(entries, nature)`.
-Tests unitaires : doublon, mauvais type, non imputable, avec rôle → refus.
+d'arrondi, **factorisées** dans un helper commun (et non recopiées), **paramétré par le libellé** : les messages du
+marqueur d'arrondi restent **mot pour mot** ceux d'aujourd'hui, dont dépendent quatre tests existants
+(`chart_of_accounts/mod.rs:994, :1008, :1019, :1038`, qui doivent passer sans modification). ⛔ **Une entrée ne porte
+pas deux marqueurs** (`roundingDifference` et une nature, ou deux usages d'un même compte) : refus, sans quoi un même
+compte recevrait deux réglages distincts. `write_off_account_number(entries, nature)`. Tests unitaires : doublon,
+mauvais type, non imputable, avec rôle, double marqueur → refus.
 
 **AC 2 — Les plans livrés.**
 - **3805** ajouté aux trois plans : parent `30`, Revenue, « Pertes sur créances » / « Verluste aus Forderungen » /
   « Perdite su crediti » / « Bad debt losses », marqué `badDebt`.
 - **6900** marqué `bankFees` dans les trois plans.
 - **3800** marqué `discount` dans **pme** et **independant** seulement.
-- Le test qui compte les entrées des plans (85/85/82 → 86/86/83) et tout test qui compare un plan à un état attendu
-  sont mis à jour en disant pourquoi.
+- ⚠️ **Aucun test ne compte aujourd'hui les entrées exactes des plans** (seulement des bornes, `mod.rs:425, :439, :458`,
+  et une comparaison dynamique, `accounts_role_backfill.rs:148-150` ; validation P1) : **en ajouter un**, qui fige
+  86/86/83 et les marqueurs attendus de chaque plan — l'ajout du 3805 ne serait vu par rien d'autre.
 
 **AC 3 — La migration** (non breaking) : `company_invoice_settings.default_discount_account_id`,
 `default_bank_fees_account_id`, `default_bad_debt_account_id`, `BIGINT NULL`, FK `ON DELETE RESTRICT` vers `accounts`
-(patron `20260930000001`). Garde-fous : P5 (audit, 73), P6 (`migrations_upgrade_path.rs` 72 → 73, 38 → 39), squash,
+(patron `20260930000001`). **DDL seul, aucune donnée écrite : triage P7 sans objet.** Garde-fous : P5 (audit, 73), P6 (`migrations_upgrade_path.rs` 72 → 73, 38 → 39), squash,
 `migrations.sha384`, export de souveraineté, sauvegarde antérieure → `NULL`.
 
 **AC 4 — La désignation d'office.** Les deux `insert_with_defaults*` désignent, pour chaque nature, l'entrée marquée
@@ -119,6 +124,11 @@ bilan, archivé, non imputable, d'une autre société ; Vitest de l'écran ; sau
 `kesh-core` (marqueur, plans), `kesh-db`, `kesh-api`, `frontend`, `kesh-i18n` (+ `docs`) — cinq modules de code, au
 seuil sans le dépasser.
 
+⚠️ **La charge, elle, est triple** (validation P1) : la seule colonne d'arrondi touche 68 occurrences dans 16
+fichiers (`grep -rn "default_rounding_account_id\|defaultRoundingAccountId" crates/ frontend/src | wc -l`) ; trois
+colonnes en font **une soixantaine de sites mécaniques**. Les faire en **un seul passage par fichier** (les trois
+champs ensemble), et vérifier chaque site par le compilateur et par le test du `SELECT` `cis.` (chemin idempotent).
+
 ## Dev Agent Record
 
 ### Agent Model Used
@@ -133,5 +143,8 @@ seuil sans le dépasser.
 
 - **2026-10-01** — Créée après l'inventaire et les arbitrages (Q1–Q3 acceptées) : marqueur `writeOffNature`, 3805 dans
   les trois plans, 6900 et 3800 marqués, trois réglages désignés d'office, écran, manuel admin. Découpage d1 / d2.
+- **2026-10-01** — Validation P1 (Sonnet) : 4 MED, 1 LOW, retenus. Le test de comptage des plans annoncé n'existait pas
+  → à créer ; double marqueur interdit (test) ; messages du marqueur d'arrondi gardés mot pour mot (quatre tests en
+  dépendent) ; charge chiffrée (une soixantaine de sites) ; P7 sans objet écrit.
 
 [#384]: https://github.com/guycorbaz/kesh/issues/384
