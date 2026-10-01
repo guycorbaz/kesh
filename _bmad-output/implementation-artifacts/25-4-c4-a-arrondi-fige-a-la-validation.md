@@ -112,7 +112,7 @@ dans **cet ordre** (validation P1) :
    la facture reste brouillon.
 
 ⛔ **Le message du refus ne parle pas de paiement.** La variante de la c3-b
-(`DbError::RoundingAccountNotConfigured`, `errors.rs:351`) n'a pas de champ, et sa clé
+(`DbError::RoundingAccountNotConfigured`, `errors.rs:352`) n'a pas de champ, et sa clé
 `error-rounding-account-not-configured` dit « Ce **paiement** solde la facture au centime… » dans les quatre
 locales : réutilisée telle quelle, elle mentirait à chaque validation (validation P1, HIGH). La variante
 prend un **contexte** (`RoundingContext::Payment | Issuance`, passé par `rounding_account_for_write`) ; le
@@ -122,7 +122,8 @@ centimes, mais aucun compte de différences d'arrondi utilisable n'est désigné
 Paramètres → Facturation. » — « pièce », parce que l'**avoir** (AC 6) passe aussi par là. Clé dans les
 **4 locales**.
 
-**Les six sites de la variante** (`grep -rn "RoundingAccountNotConfigured" crates/`, validation P2) :
+**Les six sites de changement de la variante** (`grep -rn "RoundingAccountNotConfigured" crates/` en rend
+**sept** ; le septième, le doc-comment `company_invoice_settings.rs:312`, reste juste tel quel) :
 - la définition (`kesh-db/src/errors.rs:352`) et son code (`:692`, motif `{ .. }`, code inchangé) ;
 - les deux constructions de `rounding_account_for_write` (`company_invoice_settings.rs:326, :339`), qui
   reçoivent le contexte en paramètre ;
@@ -164,9 +165,11 @@ L'écriture est équilibrée, sans ligne à zéro.
 **AC 6 — L'avoir.**
 - `create_credit_note` recopie `rounding_amount` de la facture : l'avoir total annule **exactement** la
   facture, et le reste dû d'une facture créditée tombe à `0`.
-- L'écriture d'avoir porte l'arrondi en miroir (débit si l'arrondi de la facture est positif, crédit s'il
-  est négatif), sur le compte d'arrondi lu **au moment d'écrire**. Absent ou invalide →
-  `RoundingAccountNotConfigured`, rien d'écrit.
+- **Si `rounding_amount != 0`**, l'écriture d'avoir porte l'arrondi en miroir (débit si l'arrondi de la
+  facture est positif, crédit s'il est négatif), sur le compte d'arrondi lu **au moment d'écrire** ; absent ou
+  invalide → refus (contexte `Issuance`), rien d'écrit. ⛔ **Un arrondi nul n'exige aucun compte** — comme au
+  règlement (`invoice_settlements_write.rs:181-183`) : sans cette garde, une société sans compte d'arrondi ne
+  pourrait plus créditer aucune facture, antérieures comprises (validation P3, HIGH).
 - La créance reste la première ligne de l'avoir au crédit.
 
 **AC 7 — Tests.** Chacun aurait échoué avant le patch :
@@ -178,6 +181,8 @@ L'écriture est équilibrée, sans ligne à zéro.
 - TTC brut 0.02 sans compte d'arrondi → `invoiceTotalZero`, pas le refus de compte (ordre de l'AC 3) ;
 - règlement de 123.45 → soldée, **deux lignes** (le chemin d'écart au centime n'est pas pris) ;
 - avoir sur une facture arrondie → reste dû 0, écriture miroir ;
+- avoir sur une facture à arrondi **nul**, **sans** compte d'arrondi désigné → **accepté**, deux formes de
+  lignes inchangées (mutation : garde `rounding_amount != 0` retirée) ;
 - dévalidation → `rounding_amount` revenu à 0 ;
 - sauvegarde : export puis import d'une base à facture arrondie, `rounding_amount` restauré ;
 - mutations : arrondi omis de la forme SQL ; ligne d'arrondi retirée de l'écriture (déséquilibre) ;
@@ -264,5 +269,10 @@ arrondi, et c'est précisément le cas qu'ils couvrent. Les autres sont relus un
   variante recensés, contexte de chaque appelant écrit. (2) MED : emplacement du refus du total arrondi nul
   écrit (après le refus HT existant, `:1926-1929`). (3) LOW : message d'émission en « pièce », l'avoir y
   passant aussi.
+- **2026-10-01** — Validation P3 ciblée (Sonnet, sur `18f63026..7d848dbc`) : 1 HIGH, 1 LOW, retenus. **HIGH** :
+  l'AC 6 exigeait le compte d'arrondi pour tout avoir — garde `rounding_amount != 0` écrite, test de l'avoir à
+  arrondi nul sans compte ajouté. **LOW** : `errors.rs:351` → `:352` ; le grep cité rend sept occurrences,
+  dont un doc-comment inchangé. Vérifié par la lentille : aucun écran ni E2E ne lit le message de la c3-b ; le
+  refus de total nul n'est pas nécessaire à l'avoir (une facture validée a un TTC non nul, l'avoir le recopie).
 
 [#494]: https://github.com/guycorbaz/kesh/issues/494
