@@ -1,6 +1,6 @@
 # Story 25.4-e : Un montant minimum configurable sous lequel une facture n'est pas émise
 
-Status: review
+Status: done
 
 **Issue : [#495]** (CR) — ⛔ la PR porte `closes #495`, titre ET corps.
 
@@ -195,5 +195,11 @@ Claude Opus 5.5 (`claude-opus-5-5`).
   test. **C, LOW** : l'export réimplémentait `fmt_opt_decimal` — ⚠️ le Dev Agent Record affirmait l'appel au helper :
   le `sed` qui devait le poser n'avait rien changé, `cargo fmt` ayant coupé la ligne. *Un remplacement non vérifié a
   produit une déclaration fausse* ; corrigé, et la ligne relue. Gate complet (kesh-db touché) : **2577/2577**.
+- **2026-10-01** — Revue de code P2 ciblée (Haiku, `25-4-e-review-prompt-p2.md`) : 1 MED rendu, **reclassé LOW et non
+  appliqué** — le message de refus du seuil ne mentionne pas le plafond (`MAX_UNIT_PRICE`, un milliard), qui ne
+  concerne qu'une saisie absurde ; documenté ici. Les quatre axes vérifiés avec preuve : comparaison au centime par
+  `Money::round_to_centimes`, message qui nomme la valeur comparée, export par `fmt_opt_decimal`, tests qui
+  rougiraient sans le correctif. **Boucle close** : P1 1 MED/2 LOW → P2 0 au-dessus de LOW ; Sonnet ×2 → Haiku.
+  Gate backend complet au dernier commit de code : **2577/2577** ; frontend **851/851** ; E2E rejouée avant le push.
 
 [#495]: https://github.com/guycorbaz/kesh/issues/495
