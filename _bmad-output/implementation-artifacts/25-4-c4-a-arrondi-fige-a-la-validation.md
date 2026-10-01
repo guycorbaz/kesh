@@ -1,6 +1,6 @@
 # Story 25.4-c4-a : L'arrondi à 5 centimes, figé à la validation
 
-Status: review
+Status: done
 
 **Issue : [#494]** (CR) — ⛔ la PR porte `refs #494` : la c4-b, qui rend l'arrondi visible, la fermera.
 
@@ -363,5 +363,10 @@ Claude Opus 5.5 (`claude-opus-5-5`).
   (`accounts` en 1 bis). **LOW non retenu** : l'export CSV formate `rounding_amount` à deux décimales, comme
   `line_total` — convention du fichier, perte déjà assumée pour les lignes. Gate complet (kesh-db touché) :
   **2559/2559**.
+- **2026-10-01** — Revue de code P2 ciblée (Haiku, `25-4-c4-a-review-prompt-p2.md`, sur `34dd5dbf`) : **0 finding**,
+  quatre axes déclarés ; l'affirmation la plus fragile recontrôlée par l'orchestrateur (le numéro d'avoir est tiré
+  dans la transaction, `credit_notes.rs:375`, annulée avec elle — commit `:685`). **Boucle close** : P1 4 MED/2 LOW
+  (1 LOW non retenu) → P2 0 ; Sonnet ×3 → Haiku ; la passe 2 n'appelle aucune remédiation. Gate backend complet au
+  dernier commit de code : **2559/2559** ; E2E rejouée au push.
 
 [#494]: https://github.com/guycorbaz/kesh/issues/494
