@@ -274,5 +274,12 @@ arrondi, et c'est précisément le cas qu'ils couvrent. Les autres sont relus un
   arrondi nul sans compte ajouté. **LOW** : `errors.rs:351` → `:352` ; le grep cité rend sept occurrences,
   dont un doc-comment inchangé. Vérifié par la lentille : aucun écran ni E2E ne lit le message de la c3-b ; le
   refus de total nul n'est pas nécessaire à l'avoir (une facture validée a un TTC non nul, l'avoir le recopie).
+- **2026-10-01** — Validation P4 ciblée (Haiku, sur `2ee6bfa0`) : **0 finding**, trois axes déclarés ; axe 1
+  recontrôlé par l'orchestrateur (`grep -nF "compte d'arrondi"` : toutes les exigences du compte sont
+  conditionnelles). **Boucle close** : 1 HIGH/2 MED/2 LOW → 2 MED (orchestrateur ; lentille réfutée) → 1 HIGH/1 LOW
+  → 0 ; Sonnet → Haiku → Sonnet → Haiku, P3 et P4 ciblées. ⚠️ **Signal de non-convergence** (MED → HIGH entre
+  P2 et P3) signalé à Guy, avec recommandation de ne pas découper : le HIGH est un oubli de la conception
+  d'origine (AC 6), non une régression de remédiation, et l'avoir ne peut sortir de la story sans laisser un
+  reste dû faux sur les factures créditées.
 
 [#494]: https://github.com/guycorbaz/kesh/issues/494
