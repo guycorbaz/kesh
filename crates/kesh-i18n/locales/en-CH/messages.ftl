@@ -274,6 +274,7 @@ error-fiscal-year-closed-generic = The fiscal year is closed — no entries can 
 error-inactive-accounts = One or more accounts are archived or invalid.
 error-rounding-account-not-configured = This payment settles the invoice to the centime, but no usable rounding-difference account is designated: choose one in Settings → Invoicing.
 error-rounding-account-not-configured-issuance = The total of this document is rounded to 5 centimes, but no usable rounding-difference account is designated: choose one in Settings → Invoicing.
+error-invoice-below-minimum = The total of this invoice, CHF { $total }, is below the minimum amount set in Settings → Invoicing, CHF { $minimum }.
 
 # Per-line revenue account (Story 16-1a, #152)
 invoice-line-account-subject-line = Line { $line }
@@ -1634,6 +1635,9 @@ settings-invoicing-description-invalid = Invalid entry label
 settings-invoicing-rounding-title = Rounding differences
 settings-invoicing-round5-label = Round the total of issued invoices to 5 centimes
 settings-invoicing-round5-hint = The invoice shows a “Rounding” line (123.44 → 123.45); the difference is posted to the account below. Invoices already issued keep their total.
+settings-invoicing-minimum-title = Minimum amount
+settings-invoicing-minimum-label = Minimum invoice amount
+settings-invoicing-minimum-hint = An invoice whose total is lower cannot be validated. Leave empty to apply no threshold. Credit notes are not affected.
 settings-invoicing-rounding-hint = Account that receives rounding differences: that of invoices rounded to 5 centimes, and the at most half centime that a payment rounded to the centime leaves on an invoice issued without rounding. Expense or revenue, postable. If it does not exist yet, create it in the chart of accounts, then choose it here.
 settings-invoicing-rounding-account = Rounding differences account
 settings-invoicing-default-accounts-title = Default accounts

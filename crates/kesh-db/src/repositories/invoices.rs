@@ -2003,6 +2003,15 @@ pub async fn validate_invoice(
         if (ttc_brut + rounding_amount).is_zero() {
             return Err(DbError::InvalidInput("invoiceTotalZero".into()));
         }
+        // (2 bis'') Story 25-4-e (#495) — le montant minimum, comparé au total
+        // ARRONDI (celui que le client paiera ; le brut si l'arrondi est désactivé),
+        // avant de réclamer un compte d'arrondi. Égal au seuil : accepté.
+        if let Some(minimum) = settings.minimum_invoice_amount {
+            let total = ttc_brut + rounding_amount;
+            if total < minimum {
+                return Err(DbError::InvoiceBelowMinimum { total, minimum });
+            }
+        }
         let rounding = if rounding_amount.is_zero() {
             None
         } else {

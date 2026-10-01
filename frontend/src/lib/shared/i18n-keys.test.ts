@@ -360,7 +360,11 @@ const ATTENDU = {
 	// le récapitulatif passé en libellés traduits, sept sites dont la ligne
 	// « Arrondi » et ses variantes « estimé ») et `settings/invoicing/+page.svelte`
 	// (36 → 38 : la case « Arrondir à 5 centimes » et son aide).
-	sitesTotal: 1766,
+	//
+	// Story 25-4-e (#495) : **1766 → 1769**, recompté par ce test et par
+	// `grep -o "i18nMsg("` aux deux bornes de `settings/invoicing/+page.svelte`
+	// (38 → 41) — la section « Montant minimum » : titre, libellé, aide.
+	sitesTotal: 1769,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

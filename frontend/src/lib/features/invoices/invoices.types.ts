@@ -123,6 +123,8 @@ export interface InvoiceSettingsResponse {
 	defaultRoundingAccountId: number | null;
 	/** Arrondir à 5 centimes le total des pièces émises (Story 25-4-c4-b). */
 	roundTo5Centimes: boolean;
+	/** Montant minimum d'une facture, string décimale ; `null` = aucun seuil (Story 25-4-e). */
+	minimumInvoiceAmount: string | null;
 	version: number;
 }
 
@@ -139,6 +141,8 @@ export interface UpdateInvoiceSettingsRequest {
 	defaultRoundingAccountId: number | null;
 	/** Arrondir à 5 centimes le total des pièces émises (Story 25-4-c4-b). */
 	roundTo5Centimes: boolean;
+	/** Montant minimum d'une facture, string décimale ; `null` = aucun seuil (Story 25-4-e). */
+	minimumInvoiceAmount: string | null;
 	version: number;
 }
 

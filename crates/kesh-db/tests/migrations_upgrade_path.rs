@@ -35,9 +35,9 @@ async fn apply_migrations_up_to(
     assert!(
         n <= all.len(),
         "apply_migrations_up_to: n={} > total={} — vérifier que le calcul \
-         `total - 37` (fenêtre d'upgrade, FRONTIÈRE figée à 34) reste \
+         `total - 38` (fenêtre d'upgrade, FRONTIÈRE figée à 34) reste \
          cohérent avec l'ajout de migrations futures. Si une migration a été ajoutée à \
-         la branche, l'assertion `total == 71` du test upgrade_path_preserves_data \
+         la branche, l'assertion `total == 72` du test upgrade_path_preserves_data \
          doit également échouer, c'est son rôle : elle signale qu'il faut décider \
          explicitement si la fenêtre s'élargit (bumper `total` seul) ou si la \
          frontière doit rester à 34 (bumper `total` ET la fenêtre). Cf. garde-fou \
@@ -54,8 +54,8 @@ async fn apply_migrations_up_to(
     sub.run(pool).await
 }
 
-/// AC #15a — cas générique upgrade path : `total - 37` migrations appliquées
-/// (**34** à ce jour) + seed + `MIGRATOR.run()` final, qui applique les **37**
+/// AC #15a — cas générique upgrade path : `total - 38` migrations appliquées
+/// (**34** à ce jour) + seed + `MIGRATOR.run()` final, qui applique les **38**
 /// dernières. Assertion : seed préservé à travers la fenêtre d'upgrade.
 ///
 /// ⚠️ Les nombres ci-dessus se recomptent, ils ne se relisent pas — cf. le
@@ -97,14 +97,15 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // + audit_log_company_id (Story 25-1c-zero, refs #378) = 68,
     // + journal_entry_number_sequences (Story 25-2-c, refs #381) = 69,
     // + invoice_settings_rounding_account (Story 25-4-c3-a1, refs #476) = 70,
-    // + invoice_rounding_5_centimes (Story 25-4-c4-a, refs #494) = 71.
+    // + invoice_rounding_5_centimes (Story 25-4-c4-a, refs #494) = 71,
+    // + invoice_minimum_amount (Story 25-4-e, refs #495) = 72.
     let total = kesh_db::MIGRATOR.migrations.len();
     assert_eq!(
-        total, 71,
-        "71 migrations attendues (70 précédentes + Story 25-4-c4-a : invoice_rounding_5_centimes)"
+        total, 72,
+        "72 migrations attendues (71 précédentes + Story 25-4-e : invoice_minimum_amount)"
     );
 
-    // Étape 1 : applique toutes les migrations sauf les 37 dernières. La
+    // Étape 1 : applique toutes les migrations sauf les 38 dernières. La
     // fenêtre d'upgrade démarre donc à la 35ᵉ, `20260614000001_vat_accounts_config`
     // (Story 18-1a), et court jusqu'à la dernière du dépôt. Ne pas ré-énumérer
     // ici les migrations de la fenêtre : une liste nominative se périme à chaque
@@ -112,17 +113,17 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // plus bas. Le seul nombre qui fait foi est celui du `total - N` ci-dessous.
     //
     // Note `total - N` : expression relative à la longueur totale, tandis que
-    // l'assertion `total == 71` ci-dessus est INTENTIONNELLEMENT codée en dur
+    // l'assertion `total == 72` ci-dessus est INTENTIONNELLEMENT codée en dur
     // pour fail-loud sur toute évolution non revue. À chaque migration ajoutée,
     // le mainteneur doit (1) bumper ce compte (2) incrémenter `N` du même pas,
     // de sorte que `total - N` — la frontière — reste **constant**.
     //
     // Frontière actuelle : **34**. Le test applique donc les 34 premières
     // migrations (jusqu'à `20260613000001_vat_rates_crud` incluse), seede des
-    // données, puis joue les 37 restantes comme « fenêtre d’upgrade ».
+    // données, puis joue les 38 restantes comme « fenêtre d’upgrade ».
     //
-    // ⚠️ `N` DOIT être incrémenté en même temps que `total`. Le laisser à 36
-    // avec `total = 71` porterait la frontière à 35 : le test continuerait de
+    // ⚠️ `N` DOIT être incrémenté en même temps que `total`. Le laisser à 37
+    // avec `total = 72` porterait la frontière à 35 : le test continuerait de
     // passer en testant une fenêtre plus étroite d'une migration.
     // Story 16-1a : 21 → 22, frontière inchangée (56 - 22 = 55 - 21 = 34).
     // Story 16-1a-bis : 22 → 23, frontière inchangée (57 - 23 = 34).
@@ -169,16 +170,17 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // Story 25-2-c : 34 → 35, frontière inchangée (69 - 35 = 34).
     // Story 25-4-c3-a1 : 35 → 36, frontière inchangée (70 - 36 = 34).
     // Story 25-4-c4-a : 36 → 37, frontière inchangée (71 - 37 = 34).
+    // Story 25-4-e : 37 → 38, frontière inchangée (72 - 38 = 34).
     //
     // ⚠️ J'ai d'abord porté `total` à 69 SANS toucher à ce soustracteur : le socle
     // est alors passé de 34 à 35 migrations, la fenêtre a glissé d'un cran, et le
     // test a rougi non plus sur son compteur mais sur `COUNT(accounts) : expected
     // 4, got 2` — un échec qui ne ressemble en rien à sa cause. *Les deux nombres
     // se bougent du même pas, et le commentaire ci-dessus le disait.*
-    let n_before_upgrade_window = total - 37;
+    let n_before_upgrade_window = total - 38;
     apply_migrations_up_to(&pool, n_before_upgrade_window)
         .await
-        .expect("apply_migrations_up_to(total - 37) failed");
+        .expect("apply_migrations_up_to(total - 38) failed");
 
     // Étape 2 : seed 1 company + 1 user + 2 accounts + 1 invoice + 1 contact.
     let company_id: i64 = sqlx::query_scalar(
@@ -247,7 +249,7 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     .await
     .expect("INSERT invoice failed");
 
-    // Étape 3 : appliquer les 37 migrations restantes via MIGRATOR.run().
+    // Étape 3 : appliquer les 38 migrations restantes via MIGRATOR.run().
     kesh_db::MIGRATOR
         .run(&pool)
         .await

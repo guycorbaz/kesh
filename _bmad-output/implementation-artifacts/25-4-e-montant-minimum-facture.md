@@ -1,6 +1,6 @@
 # Story 25.4-e : Un montant minimum configurable sous lequel une facture n'est pas émise
 
-Status: ready-for-dev
+Status: review
 
 **Issue : [#495]** (CR) — ⛔ la PR porte `closes #495`, titre ET corps.
 
@@ -100,12 +100,12 @@ facture émise avant qu'un seuil plus haut soit fixé).
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — la migration** (AC 1) et ses garde-fous.
-- [ ] **T2 — le refus** (AC 2, 3).
-- [ ] **T3 — le réglage** (AC 4) : dépôt, route, écran.
-- [ ] **T4 — textes** (AC 5).
-- [ ] **T5 — tests et mutations** (AC 6).
-- [ ] **T6 — gates** : backend complet (migration), frontend complet, **E2E complet**.
+- [x] **T1 — la migration** (AC 1) et ses garde-fous.
+- [x] **T2 — le refus** (AC 2, 3).
+- [x] **T3 — le réglage** (AC 4) : dépôt, route, écran.
+- [x] **T4 — textes** (AC 5).
+- [x] **T5 — tests et mutations** (AC 6).
+- [x] **T6 — gates** : backend complet (migration), frontend complet, **E2E complet**.
 
 ## Dev Notes
 
@@ -124,11 +124,53 @@ facture émise avant qu'un seuil plus haut soit fixé).
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`).
+
 ### Debug Log References
+
+- Clippy `collapsible_if` sur la validation du seuil dans la route (fusionné en `if let … &&`).
+- Le premier gate n'a pas tourné : la chaîne de remise à zéro a échoué avant `test-fast.sh` (base pas encore
+  prête) ; rejouée pas à pas.
 
 ### Completion Notes List
 
+- **Migration** `20261001000002` (`minimum_invoice_amount DECIMAL(19,4) NULL`) : somme de contrôle, squash, audit
+  (72 lignes, 8 + 64, recomptés), `migrations_upgrade_path.rs` 71 → 72 et 37 → 38.
+- **Refus** à l'étape « 2 bis'' » de `validate_invoice`, sur le total arrondi, `<` strict ; variante
+  `DbError::InvoiceBelowMinimum { total, minimum }` → 400 `INVOICE_BELOW_MINIMUM`, message à deux montants (clé
+  `error-invoice-below-minimum`, 4 locales). L'avoir n'y passe pas.
+- **Réglage** à tous les sites nommés par l'AC 4 : entité (deux structs), `COLUMNS`, instantané d'audit, les deux
+  `SELECT` `cis.`-préfixés, `UPDATE`, `is_no_op_change` ; route (`double_option`, validation positif et au centime) ;
+  export CSV (`fmt_opt_decimal`) ; types frontend ; montages de test.
+- **Écran** : section *Montant minimum*, champ texte (vide → `null`) et aide ; `data-testid` posés sur le bouton
+  « Valider », sa confirmation et sa zone d'erreur (la spec E2E ne pouvait pas les cibler autrement). `sitesTotal`
+  1766 → 1769 recompté (réglages 38 → 41).
+- **Textes** : manuel utilisateur (paragraphe sous la validation), manuel admin (paramètres), PDF régénérés et
+  contrôlés aplatis, CHANGELOG *Added*.
+- **Tests** (périmètre : ce commit contre `87d022ee`) : **7** Rust (4 `invoices_validate_vat.rs`, 1
+  `idor_multi_tenant_e2e.rs`, 1 `invoice_echeancier_e2e.rs`, 1 `admin_full_import_e2e.rs`), **1** Vitest, **1** spec
+  Playwright (`invoice-minimum-amount.spec.ts`).
+- **Mutations**, toutes tuées : comparaison au brut (1 rouge), `<` → `<=` (2), seuil ignoré (1).
+- **Gates** : backend complet sur base remise à zéro — **2576/2576** ; frontend complet — 0 erreur, lint PASS,
+  **851/851**, build ; **E2E complet** sur `kesh_e2e` reconstruite, 14:12 UTC — **230 passés, 19 ignorés,
+  8 échecs** : les 7 KF-029, et `product-revenue-account:133`, pollution d'état (verte rejouée seule, avec la spec
+  neuve).
+
 ### File List
+
+- `crates/kesh-db/migrations/20261001000002_invoice_minimum_amount.sql` (neuf), `migrations.sha384`, squash
+- `crates/kesh-db/src/errors.rs`, `crates/kesh-db/src/entities/company_invoice_settings.rs`,
+  `crates/kesh-db/src/repositories/{company_invoice_settings,invoices}.rs`
+- `crates/kesh-db/tests/{invoices_validate_vat,company_invoice_settings_repository,migrations_upgrade_path}.rs`
+- `crates/kesh-api/src/errors.rs`, `crates/kesh-api/src/routes/company_invoice_settings.rs`,
+  `crates/kesh-api/src/exports/csv_tables.rs`
+- `crates/kesh-api/tests/{idor_multi_tenant_e2e,invoice_echeancier_e2e,admin_full_import_e2e}.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `frontend/src/lib/features/invoices/invoices.types.ts`, `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/src/routes/(app)/settings/invoicing/{+page.svelte,settings-invoicing-page.test.ts}`
+- `frontend/src/routes/(app)/invoices/[id]/+page.svelte` (`data-testid`)
+- `frontend/tests/e2e/invoice-minimum-amount.spec.ts` (neuf)
+- `docs/migrations-idempotence-audit.md`, `docs/manual/fr/{admin,user}-manual.tex` + `.pdf`, `CHANGELOG.md`
 
 ## Change Log
 
@@ -142,5 +184,8 @@ facture émise avant qu'un seuil plus haut soit fixé).
   nommait déjà et que sa garde automatique imposerait ; rendu explicite à l'AC 4, avec les types frontend et les
   montages de test. **Boucle close** : 1 HIGH/1 MED → 0 au-dessus de LOW ; Sonnet → Haiku ; remédiation sur la fiche
   seule.
+- **2026-10-01** — Implémentée (T1–T6) : réglage `minimum_invoice_amount`, refus `INVOICE_BELOW_MINIMUM` sur le total
+  arrondi, écran, manuels. 7 tests Rust, 1 Vitest, 1 spec Playwright neufs ; 3 mutations tuées. Gates : backend
+  2576/2576, frontend 851/851, E2E 230/19/8 expliqués.
 
 [#495]: https://github.com/guycorbaz/kesh/issues/495

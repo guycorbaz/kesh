@@ -1543,3 +1543,37 @@ async fn reading_a_draft_writes_nothing(pool: MySqlPool) {
             .unwrap();
     assert_eq!(rows, 0, "la lecture n'a rien écrit");
 }
+
+/// Story 25-4-e (#495) — sous le seuil, la validation par l'API rend un 400
+/// `INVOICE_BELOW_MINIMUM` dont le message nomme les deux montants.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn validating_below_the_minimum_is_a_named_400(pool: MySqlPool) {
+    seed_base(&pool).await;
+    let (company_id, _) = ids(&pool).await;
+    designate_rounding(&pool, company_id).await;
+    sqlx::query(
+        "UPDATE company_invoice_settings SET minimum_invoice_amount = 200.00 WHERE company_id = ?",
+    )
+    .bind(company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let id = draft_123_44(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{id}/validate")))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+    let v: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(v["error"]["code"], "INVOICE_BELOW_MINIMUM", "got {v}");
+    let msg = v["error"]["message"].as_str().unwrap();
+    assert!(
+        msg.contains("123.45") && msg.contains("200.00"),
+        "les deux montants : {msg}"
+    );
+}

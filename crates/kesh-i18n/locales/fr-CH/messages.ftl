@@ -274,6 +274,7 @@ error-fiscal-year-closed-generic = L'exercice comptable est clôturé — aucune
 error-inactive-accounts = Un ou plusieurs comptes sont archivés ou invalides.
 error-rounding-account-not-configured = Ce paiement solde la facture au centime, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation.
 error-rounding-account-not-configured-issuance = Le total de cette pièce est arrondi à 5 centimes, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation.
+error-invoice-below-minimum = Le total de cette facture, CHF { $total }, est inférieur au montant minimum fixé dans Paramètres → Facturation, CHF { $minimum }.
 
 # Compte de produit par ligne de facture (Story 16-1a, #152)
 invoice-line-account-subject-line = Ligne { $line }
@@ -605,6 +606,9 @@ settings-invoicing-description-invalid = Libellé invalide
 settings-invoicing-rounding-title = Différences d'arrondi
 settings-invoicing-round5-label = Arrondir le total des factures émises à 5 centimes
 settings-invoicing-round5-hint = La facture porte une ligne « Arrondi » (123.44 → 123.45) ; l'écart s'écrit sur le compte ci-dessous. Les factures déjà émises gardent leur total.
+settings-invoicing-minimum-title = Montant minimum
+settings-invoicing-minimum-label = Montant minimum d'une facture
+settings-invoicing-minimum-hint = Une facture dont le total est inférieur ne peut pas être validée. Laissez vide pour n'appliquer aucun seuil. Les avoirs ne sont pas concernés.
 settings-invoicing-rounding-hint = Compte qui reçoit les écarts d'arrondi : celui des factures arrondies à 5 centimes, et le demi-centime au plus qu'un paiement arrondi au centime laisse sur une facture émise sans arrondi. Charge ou produit, imputable. S'il n'existe pas encore, créez-le dans le plan comptable, puis choisissez-le ici.
 settings-invoicing-rounding-account = Compte de différences d'arrondi
 settings-invoicing-default-accounts-title = Comptes par défaut

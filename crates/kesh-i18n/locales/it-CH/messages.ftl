@@ -274,6 +274,7 @@ error-fiscal-year-closed-generic = L'esercizio contabile è chiuso — nessuna s
 error-inactive-accounts = Uno o più conti sono archiviati o non validi.
 error-rounding-account-not-configured = Questo pagamento salda la fattura al centesimo, ma non è designato alcun conto utilizzabile per le differenze di arrotondamento: sceglierne uno in Impostazioni → Fatturazione.
 error-rounding-account-not-configured-issuance = Il totale di questo documento è arrotondato a 5 centesimi, ma non è designato alcun conto utilizzabile per le differenze di arrotondamento: sceglierne uno in Impostazioni → Fatturazione.
+error-invoice-below-minimum = Il totale di questa fattura, CHF { $total }, è inferiore all'importo minimo fissato in Impostazioni → Fatturazione, CHF { $minimum }.
 
 # Conto di ricavo per riga di fattura (Story 16-1a, #152)
 invoice-line-account-subject-line = Riga { $line }
@@ -1628,6 +1629,9 @@ settings-invoicing-description-invalid = Testo di registrazione non valido
 settings-invoicing-rounding-title = Differenze di arrotondamento
 settings-invoicing-round5-label = Arrotondare a 5 centesimi il totale delle fatture emesse
 settings-invoicing-round5-hint = La fattura riporta una riga «Arrotondamento» (123.44 → 123.45); la differenza è registrata sul conto qui sotto. Le fatture già emesse mantengono il loro totale.
+settings-invoicing-minimum-title = Importo minimo
+settings-invoicing-minimum-label = Importo minimo di una fattura
+settings-invoicing-minimum-hint = Una fattura con un totale inferiore non può essere convalidata. Lasciare vuoto per non applicare alcuna soglia. Le note di credito non sono interessate.
 settings-invoicing-rounding-hint = Conto che riceve le differenze di arrotondamento: quella delle fatture arrotondate a 5 centesimi e il mezzo centesimo al massimo che un pagamento arrotondato al centesimo lascia su una fattura emessa senza arrotondamento. Costo o ricavo, contabilizzabile. Se non esiste ancora, crearlo nel piano dei conti, poi sceglierlo qui.
 settings-invoicing-rounding-account = Conto delle differenze di arrotondamento
 settings-invoicing-default-accounts-title = Conti predefiniti

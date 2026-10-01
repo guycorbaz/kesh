@@ -754,7 +754,7 @@
 	</Button>
 	{#if invoice?.status === 'draft'}
 		<div class="flex gap-2">
-			<Button onclick={() => (validateOpen = true)}>
+			<Button onclick={() => (validateOpen = true)} data-testid="invoice-validate-button">
 				<CheckCircle2 class="h-4 w-4" aria-hidden="true" />
 				Valider
 			</Button>
@@ -1251,7 +1251,10 @@
 				)}
 			</p>
 			{#if validateError}
-				<div class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
+				<div
+					class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive"
+					data-testid="invoice-validate-error"
+				>
 					{validateError}
 				</div>
 			{/if}
@@ -1259,7 +1262,11 @@
 				<Button variant="outline" onclick={() => (validateOpen = false)}>
 					{i18nMsg('common-cancel', 'Annuler')}
 				</Button>
-				<Button onclick={confirmValidate} disabled={validateSubmitting}>
+				<Button
+					onclick={confirmValidate}
+					disabled={validateSubmitting}
+					data-testid="invoice-validate-confirm"
+				>
 					{i18nMsg('invoice-validate-button', 'Valider')}
 				</Button>
 			</Dialog.Footer>

@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 71 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 72 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -305,6 +305,7 @@ CREATE TABLE `company_invoice_settings` (
   `default_payable_account_id` bigint(20) DEFAULT NULL,
   `default_rounding_account_id` bigint(20) DEFAULT NULL,
   `round_to_5_centimes` tinyint(1) NOT NULL DEFAULT 1,
+  `minimum_invoice_amount` decimal(19,4) DEFAULT NULL,
   PRIMARY KEY (`company_id`),
   KEY `fk_cis_receivable` (`default_receivable_account_id`),
   KEY `fk_cis_revenue` (`default_revenue_account_id`),

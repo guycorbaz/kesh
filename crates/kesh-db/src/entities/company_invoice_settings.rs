@@ -10,6 +10,7 @@
 //! `CONFIGURATION_REQUIRED`) si l'un des deux est NULL.
 
 use chrono::NaiveDateTime;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use super::Journal;
@@ -47,6 +48,9 @@ pub struct CompanyInvoiceSettings {
     /// Actif par défaut ; lu à la validation, qui fige l'écart sur la pièce. Son
     /// API et son écran viennent avec la Story 25-4-c4-b.
     pub round_to_5_centimes: bool,
+    /// Montant minimum d'une facture émise (Story 25-4-e, #495) : une facture dont
+    /// le total TTC arrondi lui est inférieur ne se valide pas. `None` = aucun seuil.
+    pub minimum_invoice_amount: Option<Decimal>,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -74,4 +78,6 @@ pub struct CompanyInvoiceSettingsUpdate {
     /// Story 25-4-c4-b (#494) — la valeur **résolue** (la route préserve un champ
     /// absent du corps de la requête).
     pub round_to_5_centimes: bool,
+    /// Story 25-4-e (#495) — la valeur résolue (la route préserve l'absent).
+    pub minimum_invoice_amount: Option<Decimal>,
 }

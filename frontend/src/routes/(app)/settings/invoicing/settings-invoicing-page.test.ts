@@ -71,6 +71,7 @@ function settings(overrides: Partial<InvoiceSettingsResponse> = {}): InvoiceSett
 		journalEntryDescriptionTemplate: '{YEAR}-{INVOICE_NUMBER}',
 		defaultRoundingAccountId: null,
 		roundTo5Centimes: true,
+		minimumInvoiceAmount: null,
 		version: 3,
 		...overrides,
 	};
@@ -149,5 +150,18 @@ describe('Paramètres → Facturation — compte de différences d’arrondi', (
 		expect(updateInvoiceSettingsMock.mock.calls[0][0]).toMatchObject({
 			roundTo5Centimes: false,
 		});
+	});
+
+	// Story 25-4-e (#495) — le montant minimum : chargé, envoyé, vide = aucun seuil.
+	it('le montant minimum est chargé et envoyé ; vide, il part à null (mutation : chaîne vide envoyée)', async () => {
+		getInvoiceSettingsMock.mockResolvedValue(settings({ minimumInvoiceAmount: '5.00' }));
+		updateInvoiceSettingsMock.mockResolvedValue(settings({ minimumInvoiceAmount: null, version: 4 }));
+		const { findByTestId, container } = render(Page);
+		const input = (await findByTestId('settings-minimum-invoice-amount')) as HTMLInputElement;
+		await waitFor(() => expect(input.value).toBe('5.00'));
+		await fireEvent.input(input, { target: { value: '  ' } });
+		await fireEvent.submit(container.querySelector('form')!);
+		await waitFor(() => expect(updateInvoiceSettingsMock).toHaveBeenCalledTimes(1));
+		expect(updateInvoiceSettingsMock.mock.calls[0][0]).toMatchObject({ minimumInvoiceAmount: null });
 	});
 });

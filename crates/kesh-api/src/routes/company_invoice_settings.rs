@@ -45,6 +45,8 @@ pub struct InvoiceSettingsResponse {
     pub default_rounding_account_id: Option<i64>,
     /// Story 25-4-c4-b (#494) — arrondir à 5 centimes le total des pièces émises.
     pub round_to_5_centimes: bool,
+    /// Story 25-4-e (#495) — montant minimum d'une facture ; `null` = aucun seuil.
+    pub minimum_invoice_amount: Option<rust_decimal::Decimal>,
     pub version: i32,
 }
 
@@ -64,6 +66,7 @@ impl From<CompanyInvoiceSettings> for InvoiceSettingsResponse {
             default_payable_account_id: s.default_payable_account_id,
             default_rounding_account_id: s.default_rounding_account_id,
             round_to_5_centimes: s.round_to_5_centimes,
+            minimum_invoice_amount: s.minimum_invoice_amount,
             version: s.version,
         }
     }
@@ -95,6 +98,10 @@ pub struct UpdateInvoiceSettingsRequest {
     /// préservé**, pour la même raison que le compte d'arrondi.
     #[serde(default)]
     pub round_to_5_centimes: Option<bool>,
+    /// Story 25-4-e (#495) — montant minimum d'une facture. **Absent : préservé ;
+    /// présent à `null` : effacé** (aucun seuil), patron du compte d'arrondi.
+    #[serde(default, deserialize_with = "crate::helpers::double_option")]
+    pub minimum_invoice_amount: Option<Option<rust_decimal::Decimal>>,
     pub version: i32,
 }
 
@@ -293,6 +300,19 @@ pub async fn update_invoice_settings(
         .await?;
     }
 
+    // Story 25-4-e (#495) — le montant minimum : strictement positif, au centime.
+    let minimum_invoice_amount = req
+        .minimum_invoice_amount
+        .unwrap_or(current.minimum_invoice_amount);
+    if let Some(min) = minimum_invoice_amount
+        && (min <= rust_decimal::Decimal::ZERO
+            || !crate::routes::limits::scale_within(&min.normalize(), 2))
+    {
+        return Err(AppError::Validation(
+            "Le montant minimum d'une facture doit être positif, au centime.".into(),
+        ));
+    }
+
     // 5. Persister.
     let update = CompanyInvoiceSettingsUpdate {
         invoice_number_format: req.invoice_number_format,
@@ -310,6 +330,7 @@ pub async fn update_invoice_settings(
         round_to_5_centimes: req
             .round_to_5_centimes
             .unwrap_or(current.round_to_5_centimes),
+        minimum_invoice_amount,
     };
     let settings = company_invoice_settings::update(
         &state.pool,
