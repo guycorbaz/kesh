@@ -272,6 +272,7 @@ journal-od = OD
 journal-entry-saved = Écriture enregistrée
 error-fiscal-year-closed-generic = L'exercice comptable est clôturé — aucune écriture ne peut y être ajoutée ou modifiée (CO art. 957-964).
 error-inactive-accounts = Un ou plusieurs comptes sont archivés ou invalides.
+error-rounding-account-not-configured = Ce paiement solde la facture au centime, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation.
 
 # Compte de produit par ligne de facture (Story 16-1a, #152)
 invoice-line-account-subject-line = Ligne { $line }
@@ -759,6 +760,7 @@ invoice-error-settled-on-required = Date de règlement obligatoire
 invoice-error-settled-on-before-invoice-date = La date de règlement ne peut être antérieure à la date de facture
 invoice-error-amount-positive = Le montant doit être supérieur à zéro
 invoice-error-amount-over-due = Le montant dépasse ce qui reste dû sur cette facture
+invoice-error-amount-scale = Le montant ne peut avoir plus de deux décimales
 invoice-error-bank-account-required = Choisissez un compte bancaire
 invoice-error-account-required = Choisissez un compte
 

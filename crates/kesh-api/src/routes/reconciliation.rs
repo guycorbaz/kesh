@@ -24,11 +24,12 @@ use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::bank_transaction::{BankTransaction, BankTransactionStatus};
 use kesh_db::entities::invoice::Invoice;
 use kesh_db::errors::DbError;
+use kesh_db::repositories::invoice_settlements::PaymentAgainstDue;
 use kesh_db::repositories::reconciliation::UnpaidInvoiceCandidate;
 use kesh_db::repositories::{
-    accounts as accounts_repo, audit_log, bank_accounts, contacts as contacts_repo, fiscal_years,
-    invoice_settlements, journal_entries, projects, reconciliation as reconciliation_repo,
-    reconciliation_rules,
+    accounts as accounts_repo, audit_log, bank_accounts, company_invoice_settings,
+    contacts as contacts_repo, fiscal_years, invoice_settlements, journal_entries, projects,
+    reconciliation as reconciliation_repo, reconciliation_rules,
 };
 use kesh_reconciliation::{
     MatchScore, ReconciliationError, SplitDetail, build_journal_entry_for_counterparty,
@@ -565,6 +566,8 @@ pub async fn get_proposals(
         .map(|(tx, candidate_invoices)| {
             // #420 (25-4-c) : le triplet candidat porte le RESTE DÛ — le TTC
             // excluait le virement qui soldait une facture réglée en partie.
+            // #476 (25-4-c3-b) : AU CENTIME — un virement de 10.01 sur un reste
+            // de 10.0050 marquait 0 au score de montant.
             let candidates_with_contacts: Vec<(
                 Invoice,
                 Option<kesh_db::entities::Contact>,
@@ -575,7 +578,7 @@ pub async fn get_proposals(
                     (
                         c.invoice.clone(),
                         contacts_map.get(&c.invoice.contact_id).cloned(),
-                        c.amount_due,
+                        invoice_settlements::amount_due_to_centime(c.amount_due),
                     )
                 })
                 .collect();
@@ -599,9 +602,18 @@ pub async fn get_proposals(
                         // = reste dû, la grandeur comparée à la tx (après le
                         // HT, #246, puis le TTC, qui affichait 1 000 pour un
                         // solde de 600). Le TTC ne suit que si les deux diffèrent.
-                        invoice_amount: Some(cand.amount_due.normalize().to_string()),
-                        invoice_total_ttc: (cand.amount_due != cand.total_ttc)
-                            .then(|| cand.total_ttc.normalize().to_string()),
+                        // #476 (25-4-c3-b) : l'un et l'autre AU CENTIME, comparés
+                        // comme affichés — « 10.005 » ne se lit sur aucun relevé.
+                        invoice_amount: Some(
+                            invoice_settlements::amount_due_to_centime(cand.amount_due)
+                                .normalize()
+                                .to_string(),
+                        ),
+                        invoice_total_ttc: {
+                            let due = invoice_settlements::amount_due_to_centime(cand.amount_due);
+                            let ttc = invoice_settlements::amount_due_to_centime(cand.total_ttc);
+                            (due != ttc).then(|| ttc.normalize().to_string())
+                        },
                         invoice_date: Some(inv.date),
                         rule_id: None,
                         rule_label: None,
@@ -1312,7 +1324,12 @@ async fn accept_one_invoice(
         Invoice,
         Option<kesh_db::entities::Contact>,
         rust_decimal::Decimal,
-    )> = vec![(invoice.clone(), contact.clone(), invoice_amount_due)];
+    )> = vec![(
+        invoice.clone(),
+        contact.clone(),
+        // #476 (25-4-c3-b) : au centime, comme le triplet des propositions.
+        invoice_settlements::amount_due_to_centime(invoice_amount_due),
+    )];
     let proposals_score = propose_matches(&bank_transaction, &candidates_for_score);
     let score = proposals_score
         .first()
@@ -1434,6 +1451,11 @@ async fn accept_one_invoice(
     // (c) ⛔ Le trop-perçu est REFUSÉ, il ne s'écrit pas. Sans ce garde, le
     //     compte de créance passerait CRÉDITEUR — un solde contre nature que le
     //     grand livre signalerait, mais après coup.
+    //
+    //     #476 (25-4-c3-b) : à DOUBLE BORNE, par la classification partagée avec
+    //     le règlement manuel. Une transaction égale au reste arrondi au centime
+    //     solde la facture : le règlement s'enregistre au reste BRUT et l'écart
+    //     passe sur le compte de différences d'arrondi.
     let due_before = invoice_settlements::amount_due(&mut **tx, invoice_id)
         .await
         .map_err(|e| FailedProposal {
@@ -1441,16 +1463,47 @@ async fn accept_one_invoice(
             error_code: "DATABASE_ERROR".to_string(),
             details: Some(serde_json::json!({ "message": e.to_string() })),
         })?;
-    if bank_transaction.amount > due_before {
-        return Err(FailedProposal {
-            bank_transaction_id,
-            error_code: "RECONCILIATION_OVERPAYMENT".to_string(),
-            details: Some(serde_json::json!({
-                "amountDue": due_before,
-                "transactionAmount": bank_transaction.amount,
-            })),
-        });
-    }
+    let settled_amount =
+        match invoice_settlements::classify_payment(bank_transaction.amount, due_before) {
+            PaymentAgainstDue::Overpayment => {
+                return Err(FailedProposal {
+                    bank_transaction_id,
+                    error_code: "RECONCILIATION_OVERPAYMENT".to_string(),
+                    details: Some(serde_json::json!({
+                        "amountDue": due_before,
+                        "transactionAmount": bank_transaction.amount,
+                    })),
+                });
+            }
+            PaymentAgainstDue::Ordinary => bank_transaction.amount,
+            PaymentAgainstDue::SettlesWithRounding { raw_due } => raw_due,
+        };
+    // (c-bis) Le compte d'arrondi, exigé SEULEMENT s'il y a un écart, et vérifié
+    //         au moment d'écrire (AC 4) — refus per-proposal, pattern batch.
+    let rounding_account_id = if settled_amount != bank_transaction.amount {
+        match company_invoice_settings::rounding_account_for_write(tx, company_id).await {
+            Ok(id) => Some(id),
+            Err(DbError::RoundingAccountNotConfigured) => {
+                return Err(FailedProposal {
+                    bank_transaction_id,
+                    error_code: "ROUNDING_ACCOUNT_NOT_CONFIGURED".to_string(),
+                    details: Some(serde_json::json!({
+                        "amountDue": due_before,
+                        "transactionAmount": bank_transaction.amount,
+                    })),
+                });
+            }
+            Err(e) => {
+                return Err(FailedProposal {
+                    bank_transaction_id,
+                    error_code: "DATABASE_ERROR".to_string(),
+                    details: Some(serde_json::json!({ "message": e.to_string() })),
+                });
+            }
+        }
+    } else {
+        None
+    };
 
     // (d) Exercice OUVERT couvrant la date de valeur. Jamais d'écriture dans un
     //     exercice clos — c'est le verrou de bouclement, pas une commodité.
@@ -1475,7 +1528,29 @@ async fn accept_one_invoice(
 
     // (e) `D banque / C créance`, du MONTANT DE LA TRANSACTION — jamais du total
     //     de la facture. L'écriture existe pour que le compte bancaire de Kesh
-    //     égale le relevé.
+    //     égale le relevé. #476 : la créance est créditée du montant RÉGLÉ, et
+    //     l'écart éventuel passe en troisième ligne.
+    let lines = match invoice_settlements::settlement_journal_lines(
+        bank_ledger_account_id,
+        receivable_account_id,
+        bank_transaction.amount,
+        settled_amount,
+        rounding_account_id,
+    ) {
+        Ok(lines) => lines,
+        // Seule erreur possible : un écart sans compte d'arrondi — impossible
+        // tant que (c-bis) exige le compte dès que réglé ≠ payé. Si un refactor
+        // défaisait ce couplage, c'est un BUG STRUCTUREL : tracé, et rendu sous
+        // un code qui ne se confond pas avec une panne de base (revue P1, C).
+        Err(e) => {
+            tracing::error!("encaissement : lignes d'écriture impossibles à construire : {e}");
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "INTERNAL_ERROR".to_string(),
+                details: None,
+            });
+        }
+    };
     let label = invoice
         .invoice_number
         .clone()
@@ -1489,20 +1564,7 @@ async fn accept_one_invoice(
         // Le règlement hérite du projet de la facture (cohérence analytique,
         // patron `pay_in_tx`).
         project_id: invoice.project_id,
-        lines: vec![
-            kesh_db::entities::NewJournalEntryLine {
-                account_id: bank_ledger_account_id,
-                debit: bank_transaction.amount,
-                credit: Decimal::ZERO,
-                project_id: None,
-            },
-            kesh_db::entities::NewJournalEntryLine {
-                account_id: receivable_account_id,
-                debit: Decimal::ZERO,
-                credit: bank_transaction.amount,
-                project_id: None,
-            },
-        ],
+        lines,
     };
     // Flux automatique (réconciliation) : garde de postabilité désactivée
     // (Story 14-3b, D-A0) — cohérent `pay_in_tx` et chemin `split`.
@@ -1527,7 +1589,8 @@ async fn accept_one_invoice(
             company_id,
             invoice_id,
             journal_entry_id,
-            amount: bank_transaction.amount,
+            // #476 : le reste BRUT quand la transaction solde avec un écart.
+            amount: settled_amount,
             settled_on: paid_at_candidate,
             // La réconciliation bancaire est, par définition, un virement — et
             // le compte est celui de l'import, pas un choix de l'utilisateur
@@ -1659,7 +1722,10 @@ async fn accept_one_invoice(
         // Story 24-2 : l'écriture d'ENCAISSEMENT, plus celle de vente.
         "journal_entry_id": journal_entry_id,
         "sale_journal_entry_id": sale_entry_id,
-        "settled_amount": bank_transaction.amount,
+        // #476 : réglé ≠ payé quand la transaction solde avec un écart d'arrondi.
+        "settled_amount": settled_amount,
+        "paid_amount": bank_transaction.amount,
+        "rounding_difference": bank_transaction.amount - settled_amount,
         "amount_due_after": due_after,
         "fully_settled": fully_settled,
     });
@@ -1698,7 +1764,10 @@ async fn accept_one_invoice(
         "paid_via": "reconciliation",
         "reconciliation_audit_id": entry_accepted.id,
         "settlement_journal_entry_id": journal_entry_id,
-        "settled_amount": bank_transaction.amount,
+        // #476 : réglé ≠ payé quand la transaction solde avec un écart d'arrondi.
+        "settled_amount": settled_amount,
+        "paid_amount": bank_transaction.amount,
+        "rounding_difference": bank_transaction.amount - settled_amount,
         "amount_due_after": due_after,
         "before": { "paid_at": null, "version": invoice_version_pre },
         "after": {

@@ -349,7 +349,12 @@ const ATTENDU = {
 	// (+4) — la section « Différences d'arrondi » : titre, aide, libellé du
 	// sélecteur (trois clés neuves `settings-invoicing-rounding-*` dans les quatre
 	// catalogues) et son option vide, qui réemploie `settings-invoicing-select-none`.
-	sitesTotal: 1756,
+	//
+	// Story 25-4-c3-b (#476) : **1756 → 1757**, recompté par ce test et par
+	// `grep -o "i18nMsg("` aux deux bornes de `SettleInvoiceDialog.svelte`
+	// (18 → 19) — le refus d'un montant à plus de deux décimales,
+	// `invoice-error-amount-scale`, clé neuve dans les quatre catalogues.
+	sitesTotal: 1757,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

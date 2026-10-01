@@ -340,6 +340,17 @@ pub enum DbError {
     #[error("Un ou plusieurs comptes sont archivés ou invalides")]
     InactiveOrInvalidAccounts,
 
+    /// Un paiement solde une facture au centime et produit un écart d'arrondi,
+    /// mais aucun compte de différences d'arrondi utilisable n'est désigné dans
+    /// les paramètres de facturation (Story 25-4-c3-b, #476) : réglage vide, ou
+    /// compte devenu archivé, non imputable ou d'un autre type depuis (#486).
+    ///
+    /// ⛔ **Variante dédiée, et non `ConfigurationRequired`** : le mapping de
+    /// celle-ci jette le champ et rend un code générique, alors que le refus doit
+    /// dire QUOI configurer — *Paramètres → Facturation*.
+    #[error("Aucun compte de différences d'arrondi utilisable n'est désigné")]
+    RoundingAccountNotConfigured,
+
     /// La date fournie ne tombe pas dans l'exercice courant de l'entité
     /// modifiée. Story 3.3 : empêche le déplacement d'une écriture vers
     /// un autre exercice via un simple changement de date.
@@ -678,6 +689,7 @@ impl DbError {
             Self::IllegalStateTransition(_) => "ILLEGAL_STATE_TRANSITION",
             Self::FiscalYearClosed => "FISCAL_YEAR_CLOSED",
             Self::InactiveOrInvalidAccounts => "INACTIVE_OR_INVALID_ACCOUNTS",
+            Self::RoundingAccountNotConfigured => "ROUNDING_ACCOUNT_NOT_CONFIGURED",
             Self::DateOutsideFiscalYear => "DATE_OUTSIDE_FISCAL_YEAR",
             Self::AccountHasEntries { .. } => "ACCOUNT_HAS_ENTRIES",
             Self::AccountRoleAlreadyAssigned { .. } => "ACCOUNT_ROLE_ALREADY_ASSIGNED",

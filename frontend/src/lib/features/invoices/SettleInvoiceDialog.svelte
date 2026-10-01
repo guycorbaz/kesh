@@ -55,6 +55,27 @@
 		onConfirm,
 	}: Props = $props();
 
+	/**
+	 * Le reste dû au centime (Story 25-4-c3-b). `toFixed(2)` arrondit en
+	 * `roundHalfUp` (mode par défaut de big.js, `Big.RM = 1`), qui porte
+	 * l'équidistant LOIN DE ZÉRO — la stratégie du serveur
+	 * (`Money::round_to_centimes`, `MidpointAwayFromZero`).
+	 */
+	function dueToCentime(raw: string): Big {
+		return new Big(new Big(raw).toFixed(2));
+	}
+
+	/** Nombre de décimales significatives d'un montant saisi ; `Infinity` si illisible. */
+	function centimesDigits(raw: string): number {
+		try {
+			const canon = new Big(raw.trim()).toFixed();
+			const dot = canon.indexOf('.');
+			return dot < 0 ? 0 : canon.length - dot - 1;
+		} catch {
+			return Number.POSITIVE_INFINITY;
+		}
+	}
+
 	function todayIso(): string {
 		return new Date().toISOString().slice(0, 10);
 	}
@@ -72,7 +93,7 @@
 			settledOn = todayIso();
 			// Story 25-4-b1 : le reste dû arrive à l'échelle du calcul SQL
 			// (« 68.1000 ») ; le champ montre des centimes.
-			amount = amountDue !== null ? new Big(amountDue).toFixed(2) : '';
+			amount = amountDue !== null ? dueToCentime(amountDue).toFixed(2) : '';
 			settlementType = 'bank_transfer';
 			bankAccountId = bankAccounts.find((b) => b.isPrimary)?.id ?? bankAccounts[0]?.id ?? null;
 			accountId = null;
@@ -108,7 +129,21 @@
 		if (!amount || !Number.isFinite(n) || n <= 0) {
 			return i18nMsg('invoice-error-amount-positive', 'Le montant doit être supérieur à zéro');
 		}
-		if (amountDue !== null && n > Number(amountDue)) {
+		// Story 25-4-c3-b (#476) : un règlement se fait au centime. Les décimales
+		// se comptent sur la forme CANONIQUE de big.js — jamais sur la saisie : le
+		// champ est du texte libre, et « 1e-3 » n'a pas de point pour trois
+		// décimales réelles ; « 10.000 », lui, en a trois pour une valeur au centime.
+		if (centimesDigits(amount) > 2) {
+			return i18nMsg(
+				'invoice-error-amount-scale',
+				'Le montant ne peut avoir plus de deux décimales',
+			);
+		}
+		// Comparé au reste dû AU CENTIME, celui que le champ pré-remplit : le
+		// comparer au brut (10.0050) refusait le 10.01 proposé. Avec deux
+		// décimales au plus, « saisie > reste arrondi » est exactement la règle à
+		// double borne du serveur (`classify_payment`).
+		if (amountDue !== null && new Big(amount.trim()).gt(dueToCentime(amountDue))) {
 			return i18nMsg(
 				'invoice-error-amount-over-due',
 				'Le montant dépasse ce qui reste dû sur cette facture',
@@ -129,7 +164,7 @@
 			settlementType,
 			bankAccountId: settlementType === 'bank_transfer' ? (bankAccountId ?? undefined) : undefined,
 			accountId: settlementType === 'internal_account' ? (accountId ?? undefined) : undefined,
-			amount,
+			amount: amount.trim(),
 			settledOn,
 		});
 	}

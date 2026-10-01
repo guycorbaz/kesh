@@ -2834,6 +2834,16 @@ impl IntoResponse for AppError {
                         "Un ou plusieurs comptes sont archivés ou invalides.",
                     ),
                 ),
+                // Story 25-4-c3-b (#476) — un écart d'arrondi à écrire, et pas de
+                // compte utilisable pour le recevoir. Le message dit OÙ agir.
+                DbError::RoundingAccountNotConfigured => build_response(
+                    StatusCode::BAD_REQUEST,
+                    "ROUNDING_ACCOUNT_NOT_CONFIGURED",
+                    &t(
+                        "error-rounding-account-not-configured",
+                        "Ce paiement solde la facture au centime, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation.",
+                    ),
+                ),
                 // Story 16-1a (#152) — comptes de produit de ligne de facture.
                 // Le générique `INACTIVE_OR_INVALID_ACCOUNTS` ci-dessus ne nomme
                 // aucune ligne ; sur une facture pouvant en porter 200, ce
