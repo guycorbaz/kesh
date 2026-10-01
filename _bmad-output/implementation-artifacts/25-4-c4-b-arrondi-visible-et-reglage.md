@@ -36,7 +36,7 @@ afin que le total imprimé s'explique ligne par ligne et que je choisisse la rè
   HT » → TVA par taux → « Total TTC » (valeurs serveur).
 - **Le réglage** : `CompanyInvoiceSettings.round_to_5_centimes` (entité, `COLUMNS`, instantané d'audit) existe ;
   ni `CompanyInvoiceSettingsUpdate`, ni l'`UPDATE` du dépôt (`company_invoice_settings.rs:182`), ni
-  `is_no_op_change` (`:129`), ni la route (`routes/company_invoice_settings.rs:45, 90, 274-301`), ni l'écran
+  `is_no_op_change` (`:116`), ni la route (`routes/company_invoice_settings.rs:45, 90, 274-301`), ni l'écran
   (`settings/invoicing/+page.svelte:349-360`, section *Différences d'arrondi*) ne le portent.
 
 ## Acceptance Criteria
@@ -55,18 +55,33 @@ ligne (et le sous-total qu'elle fait apparaître) ; la garde `TooManyLines` rest
   société, avec `roundingIsPreview: true`. Le `totalTtc` d'un brouillon reste celui des lignes ; l'aperçu
   n'altère aucun calcul ni aucune liste.
 
-Construit dans `get_invoice` (le seul consommateur de la fiche), par un builder du patron de
-`with_settlement`, pour ne pas toucher les autres appelants de `from_parts`. Type frontend
-(`invoices.types.ts`) aligné.
+Construit par un builder du patron de `with_settlement` (par ex. `with_rounding_preview(round_to_5_centimes)`),
+appliqué par **chaque handler qui renvoie un brouillon** : `get_invoice`, et aussi la **dévalidation**
+(`unvalidate_invoice_handler`, `invoices.rs:847-866`), dont la fiche consomme la réponse **sans relire** la facture
+(`+page.svelte:310-319`) — sans le builder, une facture tout juste redevenue brouillon montrerait `roundingAmount: 0`
+jusqu'au rechargement (validation P1, HIGH) —, ainsi que la création et la modification d'un brouillon, par
+cohérence. Les réponses d'une facture validée (règlement, e-mail, validation) portent l'arrondi figé, sans
+builder. Type frontend (`invoices.types.ts`) aligné.
 
 **AC 3 — La fiche facture.** Entre la TVA et le « Total TTC », une ligne **« Arrondi »** si `roundingAmount
 != 0` ; sur un brouillon, **« Arrondi (estimé) »** et un total estimé (`totalTtc + roundingAmount`), libellé
-« Total TTC (estimé) ». Comme au PDF, le sous-total s'affiche dès qu'il y a un arrondi. Libellés neufs dans les
-4 locales ; `sitesTotal` recompté ; `data-testid` sur la ligne (garde `e2e-selecteurs-traduits`).
+« Total TTC (estimé) ». Comme au PDF, le sous-total s'affiche dès qu'il y a un arrondi. `data-testid` sur la ligne
+(garde `e2e-selecteurs-traduits`).
+
+⛔ **Les libellés du récapitulatif passent tous en `i18nMsg`** — « Sous-total HT », « TVA {taux} % », « Total TTC »,
+« Total », plus les trois neufs —, dans les 4 locales, `sitesTotal` recompté. Ils sont aujourd'hui en français codé
+en dur (`+page.svelte:988-1011`) ; y glisser trois libellés traduits mélangerait deux conventions dans une même
+table (validation P1). ⚠️ Les **en-têtes de colonnes** du tableau des lignes restent codés en dur : c'est eux que
+vise la convention écrite à côté (`+page.svelte:959-964`, AC6-bis), et le commentaire est complété pour dire que le
+récapitulatif, lui, est désormais traduit.
 
 **AC 4 — Le réglage, API et écran.**
-- `CompanyInvoiceSettingsUpdate.round_to_5_centimes: bool`, l'`UPDATE`, `is_no_op_change` et l'audit le
-  portent ;
+- `CompanyInvoiceSettingsUpdate.round_to_5_centimes: bool`, l'`UPDATE` et `is_no_op_change`
+  (`company_invoice_settings.rs:116`) le portent ; l'audit suit sans code neuf (l'instantané `before`/`after`
+  relit `COLUMNS`, qui porte déjà le champ) ;
+- le doc-comment de `default_rounding_account_id` (`entities/company_invoice_settings.rs:41`, « Facultatif : il
+  n'est lu que quand un écart se présente ») est rectifié comme le manuel l'a été en c4-a : l'arrondi à 5
+  centimes, actif par défaut, rend ce compte nécessaire à la validation de la plupart des factures ;
 - la route : `roundTo5Centimes` en `GET` et en `PUT` — **absent du corps, la valeur en place est préservée**
   (`Option<bool>`, patron du compte d'arrondi) ;
 - l'écran : dans la section *Différences d'arrondi*, une case **« Arrondir le total des factures émises à 5
@@ -118,7 +133,8 @@ Construit dans `get_invoice` (le seul consommateur de la fiche), par un builder 
 ### Modules
 
 `kesh-qrbill`, `kesh-api`, `kesh-db` (le réglage), `frontend`, `kesh-i18n` (+ `docs`) — cinq modules de code,
-au seuil sans le dépasser.
+au seuil sans le dépasser **au compte par crate**. ⚠️ Au compte par module métier, le frontend en touche deux
+(fiche facture, paramètres de facturation), soit six : signal faible, soumis à Guy (validation P1).
 
 ## Dev Agent Record
 
@@ -134,5 +150,10 @@ au seuil sans le dépasser.
 
 - **2026-10-01** — Créée : ligne « Arrondi » au PDF (facture, avoir, rappel) et à la fiche, aperçu en brouillon
   calculé par le serveur, réglage exposé (API qui préserve l'absent, case à cocher), manuels, CHANGELOG.
+- **2026-10-01** — Validation P1 (Sonnet) : 1 HIGH, 2 MED, 3 LOW, tous retenus. **HIGH** : la dévalidation renvoie un
+  brouillon que la fiche affiche sans relecture — l'aperçu s'applique à toute réponse qui rend un brouillon.
+  **MED** : doc-comment du compte d'arrondi resté « facultatif » après la correction du manuel en c4-a — ajouté au
+  T4 ; libellés du récapitulatif codés en dur — passés tous en `i18nMsg` plutôt que mélanger. **LOW** : l'audit
+  suit sans code ; référence `:116` ; compte des modules signalé à Guy.
 
 [#494]: https://github.com/guycorbaz/kesh/issues/494
