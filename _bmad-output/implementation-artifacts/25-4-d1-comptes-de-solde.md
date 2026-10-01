@@ -1,6 +1,6 @@
 # Story 25.4-d1 : Les comptes de solde — escompte, frais bancaires, perte sur débiteur
 
-Status: review
+Status: done
 
 **Issue : [#384]** — ⛔ la PR porte `refs #384` : la **25-4-d2**, qui écrit le solde, la fermera.
 
@@ -246,5 +246,9 @@ Claude Opus 5.5 (`claude-opus-5-5`).
   devenu lointain de son antécédent, nomme le compte de différences d'arrondi (PDF régénéré, contrôlé
   aplati). Laissé : le libellé « différences d'arrondi » en dur du message de double marqueur, exact
   tant qu'il n'existe que deux marqueurs. Gate ciblé `kesh-core` vert (44 tests), clippy propre.
+- **2026-10-01** — Revue de code P2 ciblée (Haiku, sur la seule remédiation `b093bab1`, prompt versionné) :
+  **0 finding** ; axes déclarés tous exercés, et l'affirmation vérifiable (« aucun autre *ce compte*
+  ambigu ») recontrôlée par l'orchestrateur au `grep`. **Boucle close** : P1 3 LOW (2 appliqués) → P2 0 ;
+  Sonnet → Haiku. Gate complet au dernier commit, base remise à zéro : **2589/2589**. Statut → done.
 
 [#384]: https://github.com/guycorbaz/kesh/issues/384
