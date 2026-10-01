@@ -54,7 +54,7 @@ afin que la facture, sa QR-facture et la créance portent le montant que le clie
 - **Une ligne d'arrondi négative est impossible dans `invoice_lines`** :
   `chk_invoice_lines_line_total_non_negative`, `unit_price >= 0`, `quantity > 0` (squash `:607-611` ; avoirs
   `:422-426`). D'où une **colonne d'en-tête**.
-- **L'écriture de vente** est produite par `generate_invoice_journal_lines` (`invoices.rs:1735-1832`), dans
+- **L'écriture de vente** est produite par `generate_invoice_journal_lines` (`invoices.rs:1735-1812`), dans
   cet ordre :
   - (0) débit créance `total_ht + total_vat` ;
   - crédits produit ;
@@ -63,10 +63,11 @@ afin que la facture, sa QR-facture et la créance portent le montant que le clie
   LIMIT 1`) : `invoice_settlements_write.rs:99-110`, `routes/reconciliation.rs:1421-1426` (dont le commentaire
   dit « EXACTEMENT UNE ligne de débit »), et l'écriture d'avoir en miroir.
 - **La validation** : `validate_invoice` (`invoices.rs:1836`) lit les réglages (`:1903`), refuse une pièce à
-  zéro (`:1925`), produit l'écriture (`:2096-2103`), puis passe la facture en `validated` (`:2140`).
+  zéro (`:1928`), produit l'écriture (`:2104`), puis passe la facture en `validated` (`:2140`).
   **La dévalidation** : `unvalidate` (`:1441`, remise en brouillon `:1576`).
-- **L'avoir est toujours total** (`create_credit_note`, `credit_notes.rs:261`) : il recopie les lignes
-  (`:356-363`). Son écriture (`:187-259`) est le miroir de la vente, avec en (0) le crédit de la créance.
+- **L'avoir est toujours total** (`create_credit_note`, `credit_notes.rs:261`) : il lit les lignes de la facture
+  (`:350-354`) et les recopie (`INSERT` dans la boucle, `:559-568`) — c'est là que `rounding_amount` se recopie.
+  ⚠️ L'**avoir partiel** que mentionne #494 n'existe pas dans Kesh : la règle s'appliquera s'il naît un jour. Son écriture (`:187-259`) est le miroir de la vente, avec en (0) le crédit de la créance.
 - **La sauvegarde** suit les colonnes par `INFORMATION_SCHEMA` (`backup.rs:112, :355`) ; l'import complet
   tolère une colonne absente (`admin_full_import_e2e.rs:2351`).
 - **Le rapprochement compare au reste dû** : il suit sans changement dès que le reste dû inclut l'arrondi.
@@ -100,13 +101,24 @@ sont pour la **c4-b**.
 
 **AC 3 — Figé à la validation.** `validate_invoice` calcule le TTC brut des lignes (même formule que
 `invoice_total_ttc`), puis `rounding = invoice_rounding(brut, settings.round_to_5_centimes)`, et :
-- **si `rounding != 0`** :
-  - lit le compte d'arrondi par `company_invoice_settings::rounding_account_for_write`, dans la
-    transaction et **sous le verrou de la facture** ;
-  - absent ou invalide → `RoundingAccountNotConfigured` (400 `ROUNDING_ACCOUNT_NOT_CONFIGURED`), **rien
-    d'écrit**, la facture reste brouillon ;
-- **le total arrondi est nul** (pièce minuscule, par ex. TTC 0.02 → 0.00) → refus
-  `InvalidInput("invoiceTotalZero")`, comme une pièce à zéro ;
+dans **cet ordre** (validation P1) :
+1. **le total arrondi est nul** (pièce minuscule, par ex. TTC 0.02 → 0.00) → refus
+   `InvalidInput("invoiceTotalZero")`, comme une pièce à zéro — **avant** toute recherche de compte : on
+   n'exige pas de compte pour une pièce invalide de toute façon ;
+2. **si `rounding != 0`** : le compte d'arrondi par `company_invoice_settings::rounding_account_for_write`,
+   dans la transaction et **sous le verrou de la facture** ; absent ou invalide → refus, **rien d'écrit**,
+   la facture reste brouillon.
+
+⛔ **Le message du refus ne parle pas de paiement.** La variante de la c3-b
+(`DbError::RoundingAccountNotConfigured`, `errors.rs:351`) n'a pas de champ, et sa clé
+`error-rounding-account-not-configured` dit « Ce **paiement** solde la facture au centime… » dans les quatre
+locales : réutilisée telle quelle, elle mentirait à chaque validation (validation P1, HIGH). La variante
+prend un **contexte** (`RoundingContext::Payment | Issuance`, passé par `rounding_account_for_write`) ; le
+code HTTP reste `ROUNDING_ACCOUNT_NOT_CONFIGURED` pour les deux, et le contexte `Issuance` a sa propre clé,
+par ex. `error-rounding-account-not-configured-issuance` : « Le total de cette facture est arrondi à 5
+centimes, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans
+Paramètres → Facturation. » Clé dans les **4 locales** ; les appelants de la c3-b passent `Payment`.
+
 - `invoices.rounding_amount` est posé dans l'`UPDATE` qui passe la facture en `validated` (`:2140`) ;
 - `unvalidate` le remet à `0` (`:1576`).
 
@@ -126,6 +138,10 @@ L'écriture est équilibrée, sans ligne à zéro.
 - **Rust** : un helper (par ex. `invoice_total_ttc_rounded(lines, rounding)`) sert les quatre appelants
   (`routes/invoices.rs:291`, `invoice_pdf_service.rs:348`, `invoice_email.rs:187`, `credit_notes.rs:315`),
   qui lisent l'arrondi **figé** de la pièce.
+- **L'export de souveraineté** (`csv_tables.rs`, sérialiseurs à la main) : la garde existante
+  `chaque_colonne_du_schema_est_exportee_ou_ecartee` (`csv_tables.rs:2050`) rougira sur les trois colonnes
+  neuves dès le squash régénéré — les **exporter** (`invoices`, `credit_notes`, `company_invoice_settings`).
+- `repositories::invoices::total_ttc()` (`:212`) hérite de la forme scalaire : rien à faire.
 - **Les tests de parité** sont étendus à une pièce arrondie (positive et négative), dans les quatre voies,
   débit de créance compris.
 - ⛔ **Inventaire du symptôme avant de conclure** :
@@ -144,8 +160,9 @@ L'écriture est équilibrée, sans ligne à zéro.
 - validation de 123.44 → `rounding_amount` +0.01, écriture (crédit 0.01 sur le compte d'arrondi), créance
   123.45, reste dû 123.45 ; idem 234.52 → −0.02 en débit ;
 - réglage désactivé → `rounding_amount = 0`, écriture inchangée ;
-- compte d'arrondi absent, puis archivé → validation refusée, facture restée brouillon ; TTC déjà rond →
-  aucun compte exigé ;
+- compte d'arrondi absent, puis archivé → validation refusée **avec le message d'émission** (pas « ce
+  paiement »), facture restée brouillon ; TTC déjà rond → aucun compte exigé ;
+- TTC brut 0.02 sans compte d'arrondi → `invoiceTotalZero`, pas le refus de compte (ordre de l'AC 3) ;
 - règlement de 123.45 → soldée, **deux lignes** (le chemin d'écart au centime n'est pas pris) ;
 - avoir sur une facture arrondie → reste dû 0, écriture miroir ;
 - dévalidation → `rounding_amount` revenu à 0 ;
@@ -189,6 +206,12 @@ visible, réglage). Le manuel n'est pas touché ici : la c4-b l'écrit avec l'é
 
 ### Tests existants qui vont bouger
 
+⚠️ **Le volume est réel** (relevé heuristique de la validation P1) : au moins six fichiers backend du
+domaine (`invoice_ttc_parity.rs`, `invoice_amount_due_parity.rs`, `invoices_validate_vat.rs`,
+`invoice_echeancier_e2e.rs`, `reconciliation_repository.rs`, `reconciliation_e2e.rs`) et une quinzaine de
+specs `frontend/tests/e2e` portent des montants non multiples de 0.05. Les relire un par un ; le gate
+complet et l'E2E complet tranchent.
+
 Le réglage est actif par défaut. Toute facture de test au TTC non multiple de 0.05 change donc de total
 (par ex. 108.10 reste rond, mais 10.0050 et 9.2540 des tests de la c3-b deviennent 10.00 et 10.00). Les
 tests de la c3-b **désactivent le réglage** dans leur montage : ils portent sur des factures émises sans
@@ -214,5 +237,11 @@ arrondi, et c'est précisément le cas qu'ils couvrent. Les autres sont relus un
   dans une colonne d'en-tête (les lignes ne peuvent être négatives), écart en ligne finale de l'écriture de
   vente sur le compte d'arrondi, toutes les formes du TTC alignées, avoir en miroir. Découpage c4-a (fond) /
   c4-b (visible et réglage).
+- **2026-10-01** — Validation P1 (Sonnet) : 1 HIGH, 2 MED, 2 LOW, tous retenus. **HIGH** : le refus de la c3-b
+  dit « ce paiement » — la variante prend un contexte (`Payment | Issuance`), clé d'émission dans les 4
+  locales. **MED** : ordre des refus à la validation écrit (total nul d'abord), test ajouté ; référence fausse
+  de la recopie des lignes d'avoir corrigée (`:350-354`, `:559-568`). **LOW** : plages de lignes corrigées.
+  Ajouts : la garde d'export CSV nommée (colonnes à exporter), l'avoir partiel inexistant, le volume réel des
+  tests à relire.
 
 [#494]: https://github.com/guycorbaz/kesh/issues/494
