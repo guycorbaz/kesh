@@ -350,5 +350,18 @@ Claude Opus 5.5 (`claude-opus-5-5`).
   émise sans arrondi). Gates : backend 2558/2558, frontend 845/845, E2E 226/19/10 tous connus. ⚠️ Conséquence
   produit, conforme à l'arbitrage et écrite au CHANGELOG : une société sans compte d'arrondi ne valide plus une
   facture au total non multiple de 5 centimes.
+- **2026-10-01** — Revue de code P1 (Sonnet ×3, prompt `25-4-c4-a-review-prompt-p1.md`) : A 1 MED, B 2 MED/2 LOW,
+  C 1 MED — tous retenus sauf un LOW documenté. **A** : la forme jointe du montant crédité écartait un avoir sans
+  ligne (`INNER JOIN`), la scalaire non — asymétrie introduite par la story, inatteignable aujourd'hui (seul
+  l'avoir total existe) → `LEFT JOIN` + `COALESCE`. **C** : le manuel admin disait le compte d'arrondi
+  « facultatif tant qu'aucun écart ne se présente » — faux dès la c4-a, l'arrondi à 5 centimes étant actif par
+  défaut, et muet sur le refus de validation → paragraphe réécrit, PDF régénéré et contrôlé aplati (le manuel
+  n'était prévu qu'en c4-b : *un manuel qui devient faux se corrige dans la story qui le rend faux*). **B** :
+  refus de l'avoir quand le compte d'arrondi a été archivé non testé → test ajouté (rien d'écrit, numéro non
+  consommé) ; le test de sauvegarde n'avait aucun avoir, `credit_notes.rounding_amount` n'était exercé nulle part
+  → avoir ajouté au montage, assertions aux deux tests ; ordre des verrous de `validate_invoice` complété
+  (`accounts` en 1 bis). **LOW non retenu** : l'export CSV formate `rounding_amount` à deux décimales, comme
+  `line_total` — convention du fichier, perte déjà assumée pour les lignes. Gate complet (kesh-db touché) :
+  **2559/2559**.
 
 [#494]: https://github.com/guycorbaz/kesh/issues/494

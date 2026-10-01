@@ -1876,6 +1876,10 @@ pub(in crate::repositories) fn generate_invoice_journal_lines_rounded(
 /// # Ordre des locks (canonique — Story 5.2 section Concurrence)
 ///
 /// 1. `invoices` (`SELECT ... FOR UPDATE` sur la facture à valider).
+///    1 bis. `accounts` — le compte de différences d'arrondi, **seulement** s'il
+///    y a un écart à 5 centimes (`company_invoice_settings::rounding_account_for_write`,
+///    Story 25-4-c4-a). Aucun chemin ne verrouille `accounts` avant `invoices`
+///    ou `fiscal_years`.
 /// 2. `fiscal_years` (via [`fiscal_years::find_open_covering_date`]).
 /// 3. `invoice_number_sequences` (via [`invoice_number_sequences::next_number_for`]).
 /// 4. `journal_entries` (via [`journal_entries::create_in_tx`]).

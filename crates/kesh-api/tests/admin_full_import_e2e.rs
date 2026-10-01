@@ -2403,7 +2403,7 @@ async fn seed_rounding_state(pool: &MySqlPool, company_id: i64) {
     .await
     .expect("contact")
     .last_insert_id() as i64;
-    sqlx::query(
+    let invoice_id = sqlx::query(
         "INSERT INTO invoices (company_id, contact_id, status, date, total_amount, rounding_amount) \
          VALUES (?, ?, 'draft', '2026-06-15', 234.52, -0.02)",
     )
@@ -2411,7 +2411,21 @@ async fn seed_rounding_state(pool: &MySqlPool, company_id: i64) {
     .bind(contact_id)
     .execute(pool)
     .await
-    .expect("facture");
+    .expect("facture")
+    .last_insert_id() as i64;
+    // Un avoir aussi (brouillon, montage brut) : sans lui, la colonne
+    // `credit_notes.rounding_amount` ne serait exercée par aucun des deux tests
+    // (revue de code P1, lentille B).
+    sqlx::query(
+        "INSERT INTO credit_notes (company_id, contact_id, invoice_id, status, date, total_amount, rounding_amount) \
+         VALUES (?, ?, ?, 'draft', '2026-06-20', 234.52, -0.02)",
+    )
+    .bind(company_id)
+    .bind(contact_id)
+    .bind(invoice_id)
+    .execute(pool)
+    .await
+    .expect("avoir");
     sqlx::query(
         "INSERT INTO company_invoice_settings (company_id, round_to_5_centimes) VALUES (?, FALSE) \
          ON DUPLICATE KEY UPDATE round_to_5_centimes = FALSE",
@@ -2438,6 +2452,16 @@ async fn full_import_restores_the_rounding_columns(pool: MySqlPool) {
             .await
             .unwrap();
     assert_eq!(rounding, vec![rust_decimal_macros::dec!(-0.02)]);
+    let cn_rounding: Vec<rust_decimal::Decimal> =
+        sqlx::query_scalar("SELECT rounding_amount FROM credit_notes")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        cn_rounding,
+        vec![rust_decimal_macros::dec!(-0.02)],
+        "arrondi de l'avoir restauré"
+    );
     let enabled: Vec<bool> =
         sqlx::query_scalar("SELECT round_to_5_centimes FROM company_invoice_settings")
             .fetch_all(&pool)
@@ -2476,6 +2500,16 @@ async fn full_import_without_rounding_columns_takes_the_defaults(pool: MySqlPool
             .await
             .unwrap();
     assert_eq!(rounding, vec![rust_decimal::Decimal::ZERO]);
+    let cn_rounding: Vec<rust_decimal::Decimal> =
+        sqlx::query_scalar("SELECT rounding_amount FROM credit_notes")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        cn_rounding,
+        vec![rust_decimal::Decimal::ZERO],
+        "avoir émis sans arrondi"
+    );
     let enabled: Vec<bool> =
         sqlx::query_scalar("SELECT round_to_5_centimes FROM company_invoice_settings")
             .fetch_all(&pool)

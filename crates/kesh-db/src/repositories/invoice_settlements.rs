@@ -82,9 +82,12 @@ pub const INVOICE_CREDITED_SUBQUERY_SQL: &str = concat!(
 ///
 /// L'arrondi figé de l'avoir (Story 25-4-c4-a) s'ajoute **par avoir**, après la
 /// somme de ses lignes (table dérivée `cl_ttc`), puis se somme par facture.
+/// ⛔ `LEFT JOIN` + `COALESCE` : un avoir sans ligne garde son arrondi, comme dans
+/// la forme scalaire — un `INNER JOIN` l'écarterait d'une seule des deux formes
+/// (revue de code P1 de la 25-4-c4-a).
 pub const INVOICE_CREDITED_DERIVED_JOIN_SQL: &str = concat!(
-    "LEFT JOIN (SELECT cn.invoice_id, SUM(cl_ttc.ttc + cn.rounding_amount) AS credited \
-     FROM credit_notes cn INNER JOIN (SELECT cl.credit_note_id, SUM(",
+    "LEFT JOIN (SELECT cn.invoice_id, SUM(COALESCE(cl_ttc.ttc, 0) + cn.rounding_amount) AS credited \
+     FROM credit_notes cn LEFT JOIN (SELECT cl.credit_note_id, SUM(",
     line_ttc_sql!("cl."),
     ") AS ttc FROM credit_note_lines cl GROUP BY cl.credit_note_id) cl_ttc \
      ON cl_ttc.credit_note_id = cn.id \

@@ -838,6 +838,72 @@ mod arrondi_5_centimes {
         assert_eq!(cn.journal_entry.lines.len(), 2);
     }
 
+    /// ⛔ Avoir d'une facture ARRONDIE dont le compte d'arrondi a été archivé
+    /// depuis (#486) : refus au contexte émission, et RIEN d'écrit — ni avoir, ni
+    /// écriture, ni numéro consommé (la transaction emporte le compteur tiré plus
+    /// tôt). Revue de code P1, lentille B.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn a_credit_note_is_refused_when_the_rounding_account_was_archived(pool: MySqlPool) {
+        let (seeded, contact, rounding) = setup(&pool).await;
+        let v = create_and_validate(&pool, &seeded, contact, &[(dec!(0), dec!(123.44))])
+            .await
+            .expect("validate");
+        sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
+            .bind(rounding)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let entries_before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let new = || NewCreditNote {
+            company_id: seeded.company_id,
+            invoice_id: v.invoice.id,
+            date: NaiveDate::from_ymd_opt(INVOICE_DATE.0, INVOICE_DATE.1, INVOICE_DATE.2).unwrap(),
+        };
+        let err = credit_notes::create_credit_note(&pool, new(), seeded.admin_user_id)
+            .await
+            .expect_err("compte d'arrondi archivé");
+        assert!(
+            matches!(
+                err,
+                DbError::RoundingAccountNotConfigured {
+                    context: RoundingContext::Issuance
+                }
+            ),
+            "got {err:?}"
+        );
+        let notes: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM credit_notes")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let entries_after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!((notes, entries_after), (0, entries_before), "rien d'écrit");
+
+        // Le compte réactivé, l'avoir passe et prend le PREMIER numéro : le refus
+        // n'en a consommé aucun.
+        sqlx::query("UPDATE accounts SET active = TRUE WHERE id = ?")
+            .bind(rounding)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let cn = credit_notes::create_credit_note(&pool, new(), seeded.admin_user_id)
+            .await
+            .expect("avoir");
+        assert!(
+            cn.credit_note
+                .credit_note_number
+                .as_deref()
+                .is_some_and(|n| n.ends_with("0001")),
+            "numéro {:?}",
+            cn.credit_note.credit_note_number
+        );
+    }
+
     /// La dévalidation remet l'arrondi figé à zéro.
     #[sqlx::test(migrations = "./test-schema")]
     async fn unvalidation_resets_the_rounding(pool: MySqlPool) {
