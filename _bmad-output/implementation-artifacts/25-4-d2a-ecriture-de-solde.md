@@ -159,9 +159,11 @@ compté en « déjà réglé » (P2). Le motif couvre le dé-rapprochement, qui 
 `settlement_entry_cancel_blocker` : comme lui, c'est une propriété de la **facture**, non de l'écriture ciblée — placé
 après, il ferait rouvrir un exercice clos pour rien (P3). Code, libellé serveur (4 locales). ⚠️ La liste existante
 (`GET …/settlements`, `routes/invoices.rs:1351-1364`) renverra ce code **dès cette story** : le frontend le reçoit, et sa
-table des motifs (`settlement-cancel-blocked.ts:58-62`) l'afficherait **brut**. D'où le geste minimal côté frontend :
+table des motifs (`settlement-cancel-blocked.ts:31-62`, dont le `default` de `:58-62` rend le code tel quel) l'afficherait **brut**. D'où le geste minimal côté frontend :
 ajouter le code à `InvoiceSettlementCancelCode` (`features/invoices/settlement-cancel.ts`) et son message (clé i18n,
-4 locales) — sans autre écran, qui reste à la d2b. `GET …/settlements` : `settlementType = "write_off"` et un champ
+4 locales) dans `invoiceSettlementCancelMessage` (partie propre aux factures client, non la queue commune
+partagée avec le fournisseur) — un site `i18nMsg` de plus : `sitesTotal` (`i18n-keys.test.ts`) se recompte. Aucun autre
+écran, qui reste à la d2b. `GET …/settlements` : `settlementType = "write_off"` et un champ
 `writeOffNature` (`null` hors solde). L'annulation existante (`…/settlements/{id}/cancel`) contre-passe le solde,
 **TVA comprise**, rouvre la facture (`paid_at = NULL`), `version + 1` — prouvé par test, sans code nouveau si
 possible.
@@ -179,7 +181,7 @@ Le manuel utilisateur vient avec la d2b.
 - **le nouveau motif** : un règlement ne s'annule pas tant qu'un solde existe (manuel et dé-rapprochement), puis
   s'annule une fois le solde annulé ; il précède un exercice clos (rang) ; Vitest : le message s'affiche, pas le code ;
 - **le sens inverse** : une proposition de rapprochement visant une facture déjà soldée est refusée (la facture sort des
-  candidats, `reconciliation.rs:119-127` ; une proposition en vol est refusée par la `version`) ;
+  candidats, `reconciliation.rs:129-134` ; une proposition en vol est refusée par la `version`) ;
 - refus : brouillon, facture annulée par avoir, facture soldée, **`paid_at` posé sans ligne de règlement**, `version`
   périmée (409), compte non configuré ou archivé, arrondi ≥ 0.05, date avant la facture, exercice
   clos, période verrouillée, compte TVA absent ;
@@ -254,6 +256,11 @@ cinq modules de code, au seuil sans le dépasser.
   story (la liste existante le renvoie) → code et message côté frontend, la story passe à cinq modules ; son **rang**
   précisé (après « avoir », avant la queue de l'écriture) ; test du **sens inverse** (rapprochement d'une facture soldée
   refusé). Sévérité : HIGH → HIGH → MED.
+- **2026-10-01** — Validation P4 ciblée (Haiku, sur la seule remédiation de P3) : 2 MED **reclassés LOW** — deux plages
+  de lignes imprécises, sens juste (`settlement-cancel-blocked.ts`, `reconciliation.rs`) — corrigées. Axe déclaré non
+  répondu (le site `i18nMsg` du motif) repris par l'orchestrateur : `sitesTotal` à recompter, écrit à l'AC 6.
+  **Boucle close** : P1 2H/4M/2L → P2 3H/1M/9L → P3 3M → P4 0 > LOW ; Sonnet → Opus → Sonnet → Haiku ; remédiation de
+  P4 sur la fiche seule.
 
 [#384]: https://github.com/guycorbaz/kesh/issues/384
 [#490]: https://github.com/guycorbaz/kesh/issues/490
