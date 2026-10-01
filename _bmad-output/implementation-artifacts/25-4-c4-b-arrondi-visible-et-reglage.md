@@ -1,6 +1,6 @@
 # Story 25.4-c4-b : L'arrondi à 5 centimes, visible et réglable
 
-Status: review
+Status: done
 
 **Issue : [#494]** (CR) — ⛔ la PR commune c4-a + c4-b porte `closes #494`, titre ET corps.
 
@@ -225,5 +225,10 @@ Claude Opus 5.5 (`claude-opus-5-5`).
   corrigé, PDF régénéré ; l'écran d'un avoir (HT seul) documenté comme défaut antérieur hors périmètre ; tests du
   PDF de l'avoir et du rappel, que l'AC 6 promettait sans les avoir. Gates : backend **2569/2569**, frontend
   **850/850** ; E2E rejouée au push.
+- **2026-10-01** — Revue de code P2 ciblée (Haiku, `25-4-c4-b-review-prompt-p2.md`, sur `44925eea`) : 1 LOW rendu,
+  **réfuté par exécution** — la lentille affirmait que big.js `roundHalfUp` arrondit −0.005 à 0.00 ; `node -e` rend
+  −0.01 (loin de zéro, comme `MidpointAwayFromZero`), et −0.0249 → −0.02. Les quatre axes déclarés, aucune
+  remédiation. **Boucle close** : P1 3 MED/4 LOW → P2 0 réel ; Sonnet ×3 → Haiku. Gate backend complet au dernier
+  commit de code : **2569/2569** ; frontend **850/850** ; E2E rejouée avant le push de la PR commune.
 
 [#494]: https://github.com/guycorbaz/kesh/issues/494
