@@ -946,9 +946,7 @@ pub fn serialize_company_invoice_settings_csv<W: Write>(
             fmt_opt_i64(cis.default_payable_account_id),
             fmt_opt_i64(cis.default_rounding_account_id),
             fmt_bool(cis.round_to_5_centimes),
-            cis.minimum_invoice_amount
-                .map(fmt_decimal)
-                .unwrap_or_default(),
+            fmt_opt_decimal(cis.minimum_invoice_amount),
             cis.version.to_string(),
             fmt_dt(cis.created_at),
             fmt_dt(cis.updated_at),

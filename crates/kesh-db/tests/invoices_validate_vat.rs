@@ -995,6 +995,28 @@ mod montant_minimum {
         assert_eq!(v.invoice.rounding_amount, dec!(0.02));
     }
 
+    /// ⛔ Arrondi désactivé, un total à quatre décimales est comparé AU CENTIME :
+    /// 4.995 vaut 5.00 et passe un seuil de 5.00 ; 4.994 vaut 4.99 et est refusé, le
+    /// message nommant 4.99 (revue de code P1, lentille A).
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn the_minimum_compares_at_the_centime(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        kesh_db::test_fixtures::disable_rounding_to_5_centimes(&pool, seeded.company_id)
+            .await
+            .unwrap();
+        set_minimum(&pool, seeded.company_id, Some(dec!(5.00))).await;
+        create_and_validate(&pool, &seeded, contact, &[(dec!(0), dec!(4.995))])
+            .await
+            .expect("4.995 → 5.00 au centime : au seuil");
+        let err = create_and_validate(&pool, &seeded, contact, &[(dec!(0), dec!(4.994))])
+            .await
+            .expect_err("4.994 → 4.99");
+        assert!(
+            matches!(err, DbError::InvoiceBelowMinimum { total, .. } if total == dec!(4.99)),
+            "got {err:?}"
+        );
+    }
+
     /// Aucun seuil (le défaut) : une facture de 0.05 se valide.
     #[sqlx::test(migrations = "./test-schema")]
     async fn no_minimum_by_default(pool: MySqlPool) {

@@ -304,8 +304,10 @@ pub async fn update_invoice_settings(
     let minimum_invoice_amount = req
         .minimum_invoice_amount
         .unwrap_or(current.minimum_invoice_amount);
+    // Plafond : celui d'un prix unitaire (patron des frais de rappel, revue de code P1).
     if let Some(min) = minimum_invoice_amount
         && (min <= rust_decimal::Decimal::ZERO
+            || min > *crate::routes::limits::MAX_UNIT_PRICE
             || !crate::routes::limits::scale_within(&min.normalize(), 2))
     {
         return Err(AppError::Validation(

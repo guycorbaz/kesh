@@ -1104,7 +1104,7 @@ async fn settings_minimum_invoice_amount_is_set_preserved_cleared_and_validated(
         Some(rust_decimal_macros::dec!(5.00)),
         "absent : préservé"
     );
-    for bad in ["0", "-1.00", "4.005"] {
+    for bad in ["0", "-1.00", "4.005", "1000000000.01"] {
         let (status, body) = put(Some(json!(bad))).await;
         assert_eq!(status, 400, "{bad} : {body}");
     }

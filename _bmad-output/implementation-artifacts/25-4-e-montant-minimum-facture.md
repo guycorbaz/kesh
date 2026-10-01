@@ -187,5 +187,13 @@ Claude Opus 5.5 (`claude-opus-5-5`).
 - **2026-10-01** — Implémentée (T1–T6) : réglage `minimum_invoice_amount`, refus `INVOICE_BELOW_MINIMUM` sur le total
   arrondi, écran, manuels. 7 tests Rust, 1 Vitest, 1 spec Playwright neufs ; 3 mutations tuées. Gates : backend
   2576/2576, frontend 851/851, E2E 230/19/8 expliqués.
+- **2026-10-01** — Revue de code P1 (Sonnet ×2, prompt `25-4-e-review-prompt-p1.md`) : A 1 MED/1 LOW-MED, C 1 LOW —
+  tous retenus. **A, MED** : arrondi désactivé, le total gardait quatre décimales ; 4.995 refusé sous 5.00 aurait
+  affiché « 5.00 inférieur à 5.00 » → comparaison **au centime** (le montant payé, et celui que le message nomme),
+  test (4.995 accepté, 4.994 refusé en nommant 4.99). **A, LOW** (reclassé : l'erreur 1264 est déjà traduite en
+  `DataLengthOrRange`, pas en 500) : plafond `MAX_UNIT_PRICE` posé sur le seuil, patron des frais de rappel, cas de
+  test. **C, LOW** : l'export réimplémentait `fmt_opt_decimal` — ⚠️ le Dev Agent Record affirmait l'appel au helper :
+  le `sed` qui devait le poser n'avait rien changé, `cargo fmt` ayant coupé la ligne. *Un remplacement non vérifié a
+  produit une déclaration fausse* ; corrigé, et la ligne relue. Gate complet (kesh-db touché) : **2577/2577**.
 
 [#495]: https://github.com/guycorbaz/kesh/issues/495
