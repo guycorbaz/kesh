@@ -76,12 +76,15 @@ vise la convention écrite à côté (`+page.svelte:959-964`, AC6-bis), et le co
 récapitulatif, lui, est désormais traduit.
 
 **AC 4 — Le réglage, API et écran.**
-- `CompanyInvoiceSettingsUpdate.round_to_5_centimes: bool`, l'`UPDATE` et `is_no_op_change`
+- `CompanyInvoiceSettingsUpdate.round_to_5_centimes: bool` — la valeur **résolue** que le dépôt écrit (le corps
+  de la requête, lui, porte un `Option<bool>`, ci-dessous), l'`UPDATE` et `is_no_op_change`
   (`company_invoice_settings.rs:116`) le portent ; l'audit suit sans code neuf (l'instantané `before`/`after`
   relit `COLUMNS`, qui porte déjà le champ) ;
 - le doc-comment de `default_rounding_account_id` (`entities/company_invoice_settings.rs:41`, « Facultatif : il
   n'est lu que quand un écart se présente ») est rectifié comme le manuel l'a été en c4-a : l'arrondi à 5
-  centimes, actif par défaut, rend ce compte nécessaire à la validation de la plupart des factures ;
+  centimes, actif par défaut, rend ce compte nécessaire à la validation de la plupart des factures. ⚠️ Les
+  autres « facultatif » du dépôt (`company_invoice_settings.rs:251, 439, 567`, test `:1071`) parlent de la
+  **désignation à la création** d'une société, où l'absence n'est pas une erreur : ils restent justes ;
 - la route : `roundTo5Centimes` en `GET` et en `PUT` — **absent du corps, la valeur en place est préservée**
   (`Option<bool>`, patron du compte d'arrondi) ;
 - l'écran : dans la section *Différences d'arrondi*, une case **« Arrondir le total des factures émises à 5
@@ -155,5 +158,10 @@ au seuil sans le dépasser **au compte par crate**. ⚠️ Au compte par module 
   **MED** : doc-comment du compte d'arrondi resté « facultatif » après la correction du manuel en c4-a — ajouté au
   T4 ; libellés du récapitulatif codés en dur — passés tous en `i18nMsg` plutôt que mélanger. **LOW** : l'audit
   suit sans code ; référence `:116` ; compte des modules signalé à Guy.
+- **2026-10-01** — Validation P2 (Haiku) : 1 MED rendu, **réfuté** — il confondait le corps de la requête
+  (`Option<bool>`, l'absent préservé) et la valeur résolue que le dépôt écrit (`bool`), comme pour le compte
+  d'arrondi ; la phrase est clarifiée. Axe 0 recontrôlé par l'orchestrateur : les autres « facultatif » du dépôt
+  portent sur la désignation à la création, légitimes. **Boucle close** : 1 HIGH/2 MED/3 LOW → 0 réel ;
+  Sonnet → Haiku.
 
 [#494]: https://github.com/guycorbaz/kesh/issues/494
