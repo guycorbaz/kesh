@@ -460,14 +460,12 @@ pub async fn write_off_invoice(
     } else {
         Vec::new()
     };
-    let vat_account_id = if shares.is_empty() {
-        None
-    } else {
-        Some(company_invoice_settings::vat_payable_account_for_write(&mut tx, company_id).await?)
-    };
     // (5 bis) La fraction de centime d'un reste exact à quatre décimales va au
     //         compte de différences d'arrondi (convention du règlement au centime) ;
-    //         la nature `rounding` l'y impute déjà tout entière.
+    //         la nature `rounding` l'y impute déjà tout entière. ⚠️ Verrouillé
+    //         AVANT le compte de TVA, comme la validation d'une facture arrondie
+    //         (compte d'arrondi, puis lignes de TVA) : un ordre divergent formerait
+    //         un cycle (revue de code P2).
     let rounding_account_id = if nature == SettlementWriteOffNature::Rounding {
         Some(nature_account_id)
     } else if amount != invoice_settlements::amount_due_to_centime(amount) {
@@ -481,6 +479,12 @@ pub async fn write_off_invoice(
         )
     } else {
         None
+    };
+
+    let vat_account_id = if shares.is_empty() {
+        None
+    } else {
+        Some(company_invoice_settings::vat_payable_account_for_write(&mut tx, company_id).await?)
     };
 
     // (6) Exercice ouvert, puis l'écriture au journal OD.

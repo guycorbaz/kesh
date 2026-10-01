@@ -279,17 +279,24 @@ pub fn write_off_journal_lines(
     } else {
         amount - total_vat
     };
-    if nature_debit <= Decimal::ZERO {
+    // Un reste inférieur au demi-centime (0.0040) s'arrondit à zéro : il n'y a
+    // rien à imputer à la nature, tout le reste est une fraction de centime et
+    // va au compte d'arrondi (#490 — revue de code P2). Sans TVA par
+    // construction : une part de TVA non nulle exige un reste bien supérieur.
+    if nature_debit < Decimal::ZERO || (nature_debit.is_zero() && !separate_gap) {
         return Err(DbError::Invariant(format!(
             "solde : le débit du compte de la nature ({nature_debit}) n'est pas positif"
         )));
     }
-    let mut lines = vec![NewJournalEntryLine {
-        account_id: nature_account_id,
-        debit: nature_debit,
-        credit: Decimal::ZERO,
-        project_id: None,
-    }];
+    let mut lines = Vec::new();
+    if !nature_debit.is_zero() {
+        lines.push(NewJournalEntryLine {
+            account_id: nature_account_id,
+            debit: nature_debit,
+            credit: Decimal::ZERO,
+            project_id: None,
+        });
+    }
     if separate_gap {
         let account_id = rounding_account_id.ok_or_else(|| {
             DbError::Invariant(

@@ -351,6 +351,17 @@ Claude Opus 5.5 (`claude-opus-5-5`).
   immuable (P8), cas de configuration aberrant qui échouerait bruyamment sur le CHECK), C-L1 (type TS, conséquence
   assumée jusqu'à la d2b). **5 tests neufs** (périmètre `33b4f201` → remédiation : `invoice_write_off.rs` 10 → 15),
   mutation de B1 tuée. Gate complet, base remise à zéro : **2612/2612**.
+- **2026-10-02** — Revue de code P2 ciblée (Opus, sur la remédiation `b8663cc1`) : 1 MED, 4 LOW. **M1 — régression de mon
+  correctif de B1** : un reste inférieur au demi-centime (0.0040) soldé en escompte, frais ou perte s'arrondissait à
+  0.00 au centime, laissant un débit de nature nul → `Invariant` → **500** ; c'est le cas même de #490, qui passait avant
+  le correctif. Corrigé : quand l'arrondi vaut zéro, tout le reste va au compte d'arrondi, sans ligne de nature (tests
+  par la base, trois natures, et sur la fonction pure ; mutation de l'ancienne garde tuée par les deux). **L1** : le
+  correctif de B1 verrouillait le compte de TVA avant le compte d'arrondi, à l'inverse de la validation d'une facture
+  arrondie — ordre rétabli (arrondi, puis TVA). **L3** : cas « compte de TVA actif mais non imputable » ajouté ;
+  assertion du test de dé-rapprochement resserrée sur `SettlementNotCancellable` (le dé-rapprochement laisse le rang 1
+  au geste du règlement). Laissés LOW : L2 (le test à taux mêlés ne distingue pas TTC figé et brut — couvert par
+  `vat.rs`), L4 (un reste de 0.0050 en frais impute 0.01 de charge et crédite 0.0050 d'arrondi : équilibré, sans
+  perte). Tests : `invoice_write_off.rs` 15 → 17. Gate complet, base remise à zéro : **2614/2614**.
 
 [#384]: https://github.com/guycorbaz/kesh/issues/384
 [#490]: https://github.com/guycorbaz/kesh/issues/490

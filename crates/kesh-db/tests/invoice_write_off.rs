@@ -1032,6 +1032,16 @@ async fn an_archived_vat_payable_account_is_refused(pool: MySqlPool) {
         .await
         .unwrap_err();
     assert!(matches!(err, DbError::ConfigurationRequired(_)), "{err:?}");
+    // Revue P2 (L3) : actif mais NON imputable — refusé de même.
+    sqlx::query("UPDATE accounts SET active = TRUE, postable = FALSE WHERE id = ?")
+        .bind(seeded.accounts["2000"])
+        .execute(&pool)
+        .await
+        .unwrap();
+    let err = write_off(&pool, &seeded, inv, Nature::Discount)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, DbError::ConfigurationRequired(_)), "{err:?}");
 }
 
 /// Revue P1 (B3) — le **dé-rapprochement** rencontre le motif : la transaction
@@ -1105,9 +1115,9 @@ async fn unlinking_a_reconciled_settlement_is_refused_while_a_write_off_exists(p
     assert!(
         matches!(
             err,
+            // Le dé-rapprochement laisse le rang 1 (et 1 bis) au geste du
+            // règlement (`reconciliation_cancel.rs`, étape 4).
             DbError::SettlementNotCancellable {
-                blocker: SettlementCancelBlocker::WriteOffExists
-            } | DbError::ReconciliationNotCancellable {
                 blocker: SettlementCancelBlocker::WriteOffExists
             }
         ),
@@ -1123,5 +1133,56 @@ async fn unlinking_a_reconciled_settlement_is_refused_while_a_write_off_exists(p
         still,
         Some(entry),
         "le lien bancaire est rétabli par le rollback"
+    );
+}
+
+/// Revue P2 (M1) — un reste **inférieur au demi-centime** soldé en frais (ou
+/// escompte, ou perte) : l'arrondi au centime vaut zéro, rien n'est imputé à la
+/// nature, tout le reste va au compte d'arrondi. Avant ce correctif, une erreur
+/// interne (500) — le cas même de #490.
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_sub_half_centime_remainder_under_another_nature_goes_to_the_rounding_account(
+    pool: MySqlPool,
+) {
+    let seeded = company(&pool).await;
+    let rounding: i64 = sqlx::query_scalar(
+        "SELECT default_rounding_account_id FROM company_invoice_settings WHERE company_id = ?",
+    )
+    .bind(seeded.company_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    for nature in [Nature::BankFees, Nature::Discount, Nature::BadDebt] {
+        let inv = validated_invoice(&pool, &seeded, &[(dec!(0.0040), dec!(0))]).await;
+        let out = write_off(&pool, &seeded, inv, nature).await.expect("solde");
+        assert_eq!(
+            entry_lines(&pool, out.journal_entry_id).await,
+            vec![
+                (rounding, dec!(0.0040), dec!(0)),
+                (seeded.accounts["1100"], dec!(0), dec!(0.0040))
+            ],
+            "{nature:?}"
+        );
+        assert_eq!(
+            invoice_settlements::amount_due(&pool, inv).await.unwrap(),
+            dec!(0)
+        );
+    }
+}
+
+/// La même règle, sur la fonction pure : nature et compte d'arrondi distincts,
+/// reste nul au centime.
+#[test]
+fn write_off_lines_put_a_sub_half_centime_remainder_on_the_rounding_account() {
+    let lines =
+        invoice_settlements::write_off_journal_lines(1, 2, None, Some(9), dec!(0.0040), &[])
+            .unwrap();
+    let got: Vec<_> = lines
+        .iter()
+        .map(|l| (l.account_id, l.debit, l.credit))
+        .collect();
+    assert_eq!(
+        got,
+        vec![(9, dec!(0.0040), dec!(0)), (2, dec!(0), dec!(0.0040))]
     );
 }
