@@ -104,7 +104,9 @@ sont pour la **c4-b**.
 dans **cet ordre** (validation P1) :
 1. **le total arrondi est nul** (pièce minuscule, par ex. TTC 0.02 → 0.00) → refus
    `InvalidInput("invoiceTotalZero")`, comme une pièce à zéro — **avant** toute recherche de compte : on
-   n'exige pas de compte pour une pièce invalide de toute façon ;
+   n'exige pas de compte pour une pièce invalide de toute façon. Emplacement : **juste après** le refus
+   existant, qui porte sur le **HT** (`invoices.rs:1926-1929`, étape « 2 bis ») ; le TTC brut se calcule là
+   depuis `lines_before` (`line_total`, `vat_rate`), avec la formule de `invoice_total_ttc` ;
 2. **si `rounding != 0`** : le compte d'arrondi par `company_invoice_settings::rounding_account_for_write`,
    dans la transaction et **sous le verrou de la facture** ; absent ou invalide → refus, **rien d'écrit**,
    la facture reste brouillon.
@@ -115,9 +117,20 @@ dans **cet ordre** (validation P1) :
 locales : réutilisée telle quelle, elle mentirait à chaque validation (validation P1, HIGH). La variante
 prend un **contexte** (`RoundingContext::Payment | Issuance`, passé par `rounding_account_for_write`) ; le
 code HTTP reste `ROUNDING_ACCOUNT_NOT_CONFIGURED` pour les deux, et le contexte `Issuance` a sa propre clé,
-par ex. `error-rounding-account-not-configured-issuance` : « Le total de cette facture est arrondi à 5
+par ex. `error-rounding-account-not-configured-issuance` : « Le total de cette pièce est arrondi à 5
 centimes, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans
-Paramètres → Facturation. » Clé dans les **4 locales** ; les appelants de la c3-b passent `Payment`.
+Paramètres → Facturation. » — « pièce », parce que l'**avoir** (AC 6) passe aussi par là. Clé dans les
+**4 locales**.
+
+**Les six sites de la variante** (`grep -rn "RoundingAccountNotConfigured" crates/`, validation P2) :
+- la définition (`kesh-db/src/errors.rs:352`) et son code (`:692`, motif `{ .. }`, code inchangé) ;
+- les deux constructions de `rounding_account_for_write` (`company_invoice_settings.rs:326, :339`), qui
+  reçoivent le contexte en paramètre ;
+- le mapping HTTP (`kesh-api/src/errors.rs:2839`), qui choisit la clé selon le contexte ;
+- le `match` du rapprochement (`routes/reconciliation.rs:1486`, motif `{ .. }`).
+
+Appelants et contexte transmis : règlement manuel et rapprochement (c3-b) → `Payment` ; validation (AC 3)
+et avoir (AC 6) → `Issuance`.
 
 - `invoices.rounding_amount` est posé dans l'`UPDATE` qui passe la facture en `validated` (`:2140`) ;
 - `unvalidate` le remet à `0` (`:1576`).
@@ -243,5 +256,13 @@ arrondi, et c'est précisément le cas qu'ils couvrent. Les autres sont relus un
   de la recopie des lignes d'avoir corrigée (`:350-354`, `:559-568`). **LOW** : plages de lignes corrigées.
   Ajouts : la garde d'export CSV nommée (colonnes à exporter), l'avoir partiel inexistant, le volume réel des
   tests à relire.
+- **2026-10-01** — Validation P2 (Haiku) : 1 HIGH, 2 MED, 2 LOW rendus, **tous réfutés** : ils reprochent au
+  code de ne pas encore porter le travail décrit (variante sans contexte, commentaires à mettre à jour,
+  formes SQL sans l'arrondi, avoir sans recopie), ce que le prompt excluait ; le cinquième se trompe en
+  outre de table (l'arrondi va sur l'en-tête `credit_notes`, pas sur `credit_note_lines`). La passe déclarait
+  l'axe 0 exercé sans répondre à ses questions : **repris par l'orchestrateur**. (1) MED : six sites de la
+  variante recensés, contexte de chaque appelant écrit. (2) MED : emplacement du refus du total arrondi nul
+  écrit (après le refus HT existant, `:1926-1929`). (3) LOW : message d'émission en « pièce », l'avoir y
+  passant aussi.
 
 [#494]: https://github.com/guycorbaz/kesh/issues/494
