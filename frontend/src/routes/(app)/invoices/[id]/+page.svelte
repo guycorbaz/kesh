@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Big from 'big.js';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { onMount } from 'svelte';
@@ -407,6 +408,23 @@
 	let markOpen = $state(false);
 	let markSubmitting = $state(false);
 	let markError = $state('');
+
+	// Story 25-4-c4-b (#494) — l'arrondi à 5 centimes. Figé sur une facture émise
+	// (déjà compris dans `totalTtc`) ; en APERÇU sur un brouillon, d'après le
+	// réglage courant — le serveur le calcule, la fiche l'additionne en « estimé ».
+	let hasRounding = $derived(!!invoice && !new Big(invoice.roundingAmount || '0').eq(0));
+	let roundingPreview = $derived(!!invoice?.roundingIsPreview && hasRounding);
+	let displayedTotal = $derived(
+		!invoice
+			? '0'
+			: roundingPreview
+				? new Big(invoice.totalTtc).plus(invoice.roundingAmount).toFixed(2)
+				: invoice.totalTtc,
+	);
+	function signedAmount(raw: string): string {
+		const b = new Big(raw);
+		return (b.gt(0) ? '+' : '') + formatInvoiceTotal(raw);
+	}
 	// ⛔ Story 24-3 (#372) : plus de « dé-marquer ». Annuler un règlement demande
 	// une CONTRE-PASSATION, pas un retrait de drapeau — c'est la liste des
 	// règlements et son bouton « Annuler le règlement » (Story 25-3-a-1).
@@ -984,29 +1002,54 @@
 				{/each}
 			</tbody>
 			<tfoot>
-				<!-- #151 : récap TVA. Si des lignes sont taxées, on affiche
-				     Sous-total HT → TVA {taux}% (par taux) → Total TTC. Sinon
-				     (aucune TVA) un simple « Total » = TTC (== HT). -->
-				{#if invoice.vatBreakdown.length > 0}
+				<!-- #151 : récap TVA. Si des lignes sont taxées — ou s'il y a un arrondi
+				     à 5 centimes (Story 25-4-c4-b) —, on affiche Sous-total HT → TVA
+				     {taux}% (par taux) → Arrondi → Total TTC. Sinon un simple « Total ».
+				     Story 25-4-c4-b : ces libellés-ci sont TRADUITS (contrairement aux
+				     en-têtes de colonnes ci-dessus, AC6-bis) — y glisser la ligne
+				     « Arrondi » traduite aurait mélangé deux conventions dans une table. -->
+				{#if invoice.vatBreakdown.length > 0 || hasRounding}
 					<tr>
-						<td colspan="5" class="py-1 text-right">Sous-total HT</td>
+						<td colspan="5" class="py-1 text-right">
+							{i18nMsg('invoice-detail-subtotal-ht', 'Sous-total HT')}
+						</td>
 						<td class="py-1 text-right font-mono">{formatInvoiceTotal(invoice.totalAmount)}</td>
 					</tr>
 					{#each invoice.vatBreakdown as vb (vb.ratePercent)}
 						<tr>
-							<td colspan="5" class="py-1 text-right">TVA {Number(vb.ratePercent)}%</td>
+							<td colspan="5" class="py-1 text-right">
+								{i18nMsg('invoice-detail-vat-rate', 'TVA { $rate }%', {
+									rate: Number(vb.ratePercent),
+								})}
+							</td>
 							<td class="py-1 text-right font-mono">{formatInvoiceTotal(vb.vatAmount)}</td>
 						</tr>
 					{/each}
+					{#if hasRounding}
+						<tr data-testid="invoice-detail-rounding">
+							<td colspan="5" class="py-1 text-right">
+								{roundingPreview
+									? i18nMsg('invoice-detail-rounding-estimated', 'Arrondi (estimé)')
+									: i18nMsg('invoice-detail-rounding', 'Arrondi')}
+							</td>
+							<td class="py-1 text-right font-mono">{signedAmount(invoice.roundingAmount)}</td>
+						</tr>
+					{/if}
 					<tr>
-						<td colspan="5" class="py-3 text-right font-semibold">Total TTC</td>
+						<td colspan="5" class="py-3 text-right font-semibold">
+							{roundingPreview
+								? i18nMsg('invoice-detail-total-ttc-estimated', 'Total TTC (estimé)')
+								: i18nMsg('invoice-detail-total-ttc', 'Total TTC')}
+						</td>
 						<td class="py-3 text-right font-mono text-lg font-semibold">
-							{formatInvoiceTotal(invoice.totalTtc)}
+							{formatInvoiceTotal(displayedTotal)}
 						</td>
 					</tr>
 				{:else}
 					<tr>
-						<td colspan="5" class="py-3 text-right font-semibold">Total</td>
+						<td colspan="5" class="py-3 text-right font-semibold">
+							{i18nMsg('invoice-detail-total', 'Total')}
+						</td>
 						<td class="py-3 text-right font-mono text-lg font-semibold">
 							{formatInvoiceTotal(invoice.totalTtc)}
 						</td>

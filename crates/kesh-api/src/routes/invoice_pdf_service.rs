@@ -434,6 +434,8 @@ fn build_qrbill_inputs(
         lines: invoice_lines_pdf,
         subtotal_ht,
         vat_lines,
+        // Story 25-4-c4-b : l'arrondi figé de la facture — un rappel montre aussi le sien.
+        rounding: invoice.rounding_amount,
         total: total_ttc,
         currency: Currency::Chf,
         origin_reference: None,

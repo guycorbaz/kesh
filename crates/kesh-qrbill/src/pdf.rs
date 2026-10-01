@@ -586,10 +586,16 @@ fn draw_invoice_section(
     // récap ne tiennent pas au-dessus du séparateur QR (`SEP_Y`), plutôt que de
     // laisser le récap chevaucher la zone de paiement. `+15` couvrait déjà le
     // total seul ; on ajoute `sous-total + n×taux + espace` (chaque ligne = 4.5).
-    let recap_reserve = if inv.vat_lines.is_empty() {
+    //
+    // Story 25-4-c4-b : une ligne « Arrondi » s'ajoute quand l'écart n'est pas nul,
+    // et fait apparaître le sous-total même sans TVA — d'où `show_recap`.
+    // La réserve et le dessin lisent la MÊME liste (`recap_lines`) : ils ne
+    // peuvent pas diverger.
+    let recap = recap_lines(inv, i18n);
+    let recap_reserve = if recap.is_empty() {
         0.0
     } else {
-        4.5 + 4.5 * inv.vat_lines.len() as f32 + 1.0
+        4.5 * recap.len() as f32 + 1.0
     } + reminder_block_height(inv.reminder.as_ref());
 
     for line in &inv.lines {
@@ -637,52 +643,16 @@ fn draw_invoice_section(
     hline(layer, col_unit, PAGE_W - 20.0, ty);
     ty -= 5.0;
 
-    // Bloc récap seulement s'il existe des lignes taxées : Sous-total HT, puis
-    // une ligne « TVA {taux}% » par taux. Sinon (société non assujettie / lignes
-    // 0 %) on n'affiche que le total — comportement rétro-compatible.
-    if !inv.vat_lines.is_empty() {
-        let subtotal = inv
-            .subtotal_ht
-            .round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
-        layer.use_text(
-            i18n.get("invoice-pdf-subtotal"),
-            9.0,
-            Mm(col_unit),
-            Mm(ty),
-            helv,
-        );
-        layer.use_text(
-            format!("{} {}", inv.currency.code(), format_ch(subtotal, 2)),
-            9.0,
-            Mm(col_tot),
-            Mm(ty),
-            helv,
-        );
+    // Bloc récap s'il existe des lignes taxées OU un arrondi : Sous-total HT, une
+    // ligne « TVA {taux}% » par taux, puis la ligne « Arrondi » (Story 25-4-c4-b).
+    // Sinon (société non assujettie, total déjà rond) on n'affiche que le total —
+    // comportement rétro-compatible.
+    for line in &recap {
+        layer.use_text(&line.label, 9.0, Mm(col_unit), Mm(ty), helv);
+        layer.use_text(&line.amount, 9.0, Mm(col_tot), Mm(ty), helv);
         ty -= 4.5;
-        for v in &inv.vat_lines {
-            let amount = v
-                .amount
-                .round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
-            layer.use_text(
-                format!(
-                    "{} {}%",
-                    i18n.get("invoice-pdf-vat"),
-                    format_ch(v.rate_percent, 1)
-                ),
-                9.0,
-                Mm(col_unit),
-                Mm(ty),
-                helv,
-            );
-            layer.use_text(
-                format!("{} {}", inv.currency.code(), format_ch(amount, 2)),
-                9.0,
-                Mm(col_tot),
-                Mm(ty),
-                helv,
-            );
-            ty -= 4.5;
-        }
+    }
+    if !recap.is_empty() {
         ty -= 1.0; // léger espace avant le total en gras
     }
 
@@ -1072,6 +1042,17 @@ fn hline(layer: &PdfLayerReference, x1: f32, x2: f32, y: f32) {
 }
 
 /// Swiss number format: apostrophe thousand separator, point decimal.
+/// [`format_ch`] avec un signe **toujours** affiché — `+0.01`, `-0.02` : la ligne
+/// « Arrondi » dit dans quel sens le total a bougé (Story 25-4-c4-b).
+pub fn format_signed_ch(value: Decimal, decimals: u32) -> String {
+    let sign = if value.is_sign_negative() && !value.is_zero() {
+        "-"
+    } else {
+        "+"
+    };
+    format!("{sign}{}", format_ch(value.abs(), decimals))
+}
+
 pub fn format_ch(value: Decimal, decimals: u32) -> String {
     let rounded = value.round_dp_with_strategy(decimals, RoundingStrategy::MidpointAwayFromZero);
     let s = rounded.abs().to_string();
@@ -1156,6 +1137,61 @@ pub const REMINDER_NOTE_MAX_CHARS: usize = 78;
 /// `col_unit` à `col_tot`, soit 23 caractères au calibrage d'[`IDENTITY_MAX_CHARS`].
 /// Au-delà, le libellé chevaucherait le montant (revue de code 25-4-b2, P1).
 pub const REMINDER_LABEL_MAX_CHARS: usize = 23;
+
+/// Une ligne du récapitulatif, au-dessus du total : sous-total HT, TVA par taux,
+/// arrondi à 5 centimes.
+#[derive(Debug, Clone, PartialEq)]
+struct RecapLine {
+    label: String,
+    amount: String,
+}
+
+/// Le récapitulatif d'une pièce (#151, Story 25-4-c4-b) — sans le total, que le
+/// gabarit dessine en gras à part.
+///
+/// Affiché s'il existe des lignes taxées **ou** un arrondi : « Sous-total », une
+/// ligne « TVA {taux} % » par taux, puis « Arrondi » avec l'écart signé. Sinon
+/// (société non assujettie, total déjà rond) : vide, et le gabarit n'imprime que
+/// le total — comportement rétro-compatible.
+///
+/// Fonction pure : la hauteur réservée pour la garde `TooManyLines` se déduit de
+/// la même liste que le dessin.
+fn recap_lines(inv: &InvoicePdfData, i18n: &QrBillI18n) -> Vec<RecapLine> {
+    if inv.vat_lines.is_empty() && inv.rounding.is_zero() {
+        return Vec::new();
+    }
+    let currency = inv.currency.code();
+    let money = |d: Decimal| {
+        format!(
+            "{currency} {}",
+            format_ch(
+                d.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
+                2
+            )
+        )
+    };
+    let mut out = vec![RecapLine {
+        label: i18n.get("invoice-pdf-subtotal").to_string(),
+        amount: money(inv.subtotal_ht),
+    }];
+    for v in &inv.vat_lines {
+        out.push(RecapLine {
+            label: format!(
+                "{} {}%",
+                i18n.get("invoice-pdf-vat"),
+                format_ch(v.rate_percent, 1)
+            ),
+            amount: money(v.amount),
+        });
+    }
+    if !inv.rounding.is_zero() {
+        out.push(RecapLine {
+            label: i18n.get("invoice-pdf-rounding").to_string(),
+            amount: format!("{currency} {}", format_signed_ch(inv.rounding, 2)),
+        });
+    }
+    out
+}
 
 /// Une ligne du bloc de rappel, **construite** avant d'être dessinée — c'est ce
 /// qui rend son contenu testable (le texte d'un PDF est hex-encodé dans les
@@ -1303,6 +1339,7 @@ mod tests {
                 rate_percent: dec!(7.70),
                 amount: dec!(92.40), // 1200.00 × 7.70 %
             }],
+            rounding: rust_decimal::Decimal::ZERO,
             total: dec!(1292.40), // 1200.00 + 92.40
             currency: Currency::Chf,
             origin_reference: None,
@@ -1517,6 +1554,94 @@ mod tests {
     /// construites (le texte d'un PDF ne se compare pas, cf. `golden_test.rs`) :
     /// réglé et reste seulement après un règlement, frais et mention seulement
     /// avec des frais, montants au centime.
+    /// Story 25-4-c4-b — la ligne « Arrondi » : signée, en dernier, et elle fait
+    /// apparaître le sous-total même sans TVA ; rien sans arrondi ni TVA.
+    #[test]
+    fn recap_lines_show_the_rounding_line() {
+        let (_, base, i18n) = invoice_fixture();
+        let labels = |inv: &InvoicePdfData| {
+            recap_lines(inv, &i18n)
+                .into_iter()
+                .map(|l| (l.label, l.amount))
+                .collect::<Vec<_>>()
+        };
+        let sans_tva = InvoicePdfData {
+            subtotal_ht: dec!(123.44),
+            vat_lines: vec![],
+            rounding: dec!(0.01),
+            total: dec!(123.45),
+            ..base.clone()
+        };
+        assert_eq!(
+            labels(&sans_tva),
+            vec![
+                ("Subtotal".to_string(), "CHF 123.44".to_string()),
+                ("Rounding".to_string(), "CHF +0.01".to_string()),
+            ]
+        );
+        let avec_tva = InvoicePdfData {
+            subtotal_ht: dec!(216.95),
+            vat_lines: vec![InvoiceVatLinePdf {
+                rate_percent: dec!(8.10),
+                amount: dec!(17.57),
+            }],
+            rounding: dec!(-0.02),
+            total: dec!(234.50),
+            ..base.clone()
+        };
+        let l = labels(&avec_tva);
+        assert_eq!(l.len(), 3);
+        assert_eq!(l[2], ("Rounding".to_string(), "CHF -0.02".to_string()));
+        let rond = InvoicePdfData {
+            vat_lines: vec![],
+            rounding: Decimal::ZERO,
+            ..base
+        };
+        assert!(
+            labels(&rond).is_empty(),
+            "ni TVA ni arrondi : le total seul"
+        );
+    }
+
+    /// La ligne d'arrondi compte dans la réserve de la garde `TooManyLines` : une
+    /// facture qui tient de justesse sans elle déborde avec elle.
+    #[test]
+    fn the_rounding_line_counts_in_the_recap_reserve() {
+        let (data, base, i18n) = invoice_fixture();
+        let fits_at = |n: usize, rounding: Decimal| {
+            let lines: Vec<InvoiceLinePdf> = (0..n)
+                .map(|i| InvoiceLinePdf {
+                    description: format!("Ligne {i}"),
+                    quantity: dec!(1),
+                    unit_price: dec!(1.00),
+                    vat_rate: dec!(0),
+                    line_total: dec!(1.00),
+                })
+                .collect();
+            let inv = InvoicePdfData {
+                lines,
+                subtotal_ht: Decimal::from(n as i64),
+                vat_lines: vec![],
+                rounding,
+                total: Decimal::from(n as i64) + rounding,
+                ..base.clone()
+            };
+            generate_qr_bill_pdf(&data, &inv, &i18n).is_ok()
+        };
+        // Le plus grand nombre de lignes qui tient sans arrondi…
+        let max = (1..60)
+            .take_while(|n| fits_at(*n, Decimal::ZERO))
+            .last()
+            .unwrap();
+        assert!(max < 59, "la garde doit finir par refuser");
+        // …ne tient plus une fois le sous-total et la ligne d'arrondi réservés.
+        let max_rounded = (1..60)
+            .take_while(|n| fits_at(*n, dec!(0.01)))
+            .last()
+            .unwrap();
+        assert!(max_rounded < max, "réserve : {max_rounded} < {max}");
+    }
+
     #[test]
     fn reminder_lines_show_only_what_is_not_zero() {
         let i18n = QrBillI18n::default();
@@ -1669,6 +1794,7 @@ mod tests {
                     amount: dec!(5.20),
                 },
             ],
+            rounding: rust_decimal::Decimal::ZERO,
             total: dec!(744.70),
             ..base
         };
@@ -1711,6 +1837,7 @@ mod tests {
                     amount: dec!(5.20),
                 },
             ],
+            rounding: rust_decimal::Decimal::ZERO,
             total: dec!(529.50),
             ..base
         };
@@ -1740,6 +1867,7 @@ mod tests {
                 rate_percent: dec!(8.10),
                 amount: dec!(48.60),
             }],
+            rounding: rust_decimal::Decimal::ZERO,
             total: dec!(648.60),
             ..base
         };

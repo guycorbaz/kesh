@@ -43,6 +43,8 @@
 	let vatRecoverableId = $state<number | null>(null);
 	let vatDecompteId = $state<number | null>(null);
 	let roundingId = $state<number | null>(null);
+	// Story 25-4-c4-b : actif par défaut côté serveur ; relu au chargement.
+	let roundTo5 = $state(true);
 	let salesJournal = $state<JournalCode>('Ventes');
 	let version = $state(0);
 
@@ -99,6 +101,7 @@
 			vatRecoverableId = s.defaultVatRecoverableAccountId;
 			vatDecompteId = s.defaultVatDecompteAccountId;
 			roundingId = s.defaultRoundingAccountId;
+			roundTo5 = s.roundTo5Centimes;
 			salesJournal = s.defaultSalesJournal;
 			version = s.version;
 		} catch (err) {
@@ -133,6 +136,7 @@
 				defaultVatRecoverableAccountId: vatRecoverableId,
 				defaultVatDecompteAccountId: vatDecompteId,
 				defaultRoundingAccountId: roundingId,
+				roundTo5Centimes: roundTo5,
 				defaultSalesJournal: salesJournal,
 				journalEntryDescriptionTemplate: descriptionTemplate,
 				version,
@@ -156,6 +160,7 @@
 						vatRecoverableId = fresh.defaultVatRecoverableAccountId;
 						vatDecompteId = fresh.defaultVatDecompteAccountId;
 						roundingId = fresh.defaultRoundingAccountId;
+						roundTo5 = fresh.roundTo5Centimes;
 						salesJournal = fresh.defaultSalesJournal;
 						version = fresh.version;
 					} catch {
@@ -348,10 +353,33 @@
 			<h2 class="text-lg font-semibold">
 				{i18nMsg('settings-invoicing-rounding-title', "Différences d'arrondi")}
 			</h2>
+			<div class="flex items-start gap-2">
+				<input
+					id="{uid}-round5"
+					type="checkbox"
+					class="mt-1"
+					data-testid="settings-round-to-5-centimes"
+					bind:checked={roundTo5}
+				/>
+				<div>
+					<label class="text-sm font-medium" for="{uid}-round5">
+						{i18nMsg(
+							'settings-invoicing-round5-label',
+							'Arrondir le total des factures émises à 5 centimes',
+						)}
+					</label>
+					<p class="text-xs text-text-muted" data-testid="settings-round5-hint">
+						{i18nMsg(
+							'settings-invoicing-round5-hint',
+							"La facture porte une ligne « Arrondi » (123.44 → 123.45) ; l'écart s'écrit sur le compte ci-dessous. Les factures déjà émises gardent leur total.",
+						)}
+					</p>
+				</div>
+			</div>
 			<p class="text-xs text-text-muted" data-testid="settings-rounding-hint">
 				{i18nMsg(
 					'settings-invoicing-rounding-hint',
-					"Compte qui reçoit l'écart d'un demi-centime au plus qu'un paiement arrondi au centime laisse sur une facture. Charge ou produit, imputable. S'il n'existe pas encore, créez-le dans le plan comptable, puis choisissez-le ici.",
+					"Compte qui reçoit les écarts d'arrondi : celui des factures arrondies à 5 centimes, et le demi-centime au plus qu'un paiement arrondi au centime laisse sur une facture émise sans arrondi. Charge ou produit, imputable. S'il n'existe pas encore, créez-le dans le plan comptable, puis choisissez-le ici.",
 				)}
 			</p>
 			<div>

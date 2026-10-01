@@ -70,6 +70,13 @@ export interface InvoiceResponse {
 	 * décimale (jamais Number).
 	 */
 	vatBreakdown: VatBreakdownLine[];
+	/**
+	 * Story 25-4-c4-b (#494) — l'écart d'arrondi à 5 centimes, string décimale.
+	 * Figé pour une facture émise (déjà compris dans `totalTtc`) ; pour un
+	 * brouillon, un APERÇU (`roundingIsPreview`) que `totalTtc` n'inclut pas.
+	 */
+	roundingAmount: string;
+	roundingIsPreview: boolean;
 	journalEntryId: number | null;
 	paidAt: string | null;
 	/** Dernier envoi par e-mail (Story 20-3b2). `null` = jamais envoyée. */
@@ -114,6 +121,8 @@ export interface InvoiceSettingsResponse {
 	journalEntryDescriptionTemplate: string;
 	/** Compte de différences d'arrondi — charge ou produit (Story 25-4-c3-a1). */
 	defaultRoundingAccountId: number | null;
+	/** Arrondir à 5 centimes le total des pièces émises (Story 25-4-c4-b). */
+	roundTo5Centimes: boolean;
 	version: number;
 }
 
@@ -128,6 +137,8 @@ export interface UpdateInvoiceSettingsRequest {
 	journalEntryDescriptionTemplate: string;
 	/** Compte de différences d'arrondi — charge ou produit (Story 25-4-c3-a1). */
 	defaultRoundingAccountId: number | null;
+	/** Arrondir à 5 centimes le total des pièces émises (Story 25-4-c4-b). */
+	roundTo5Centimes: boolean;
 	version: number;
 }
 

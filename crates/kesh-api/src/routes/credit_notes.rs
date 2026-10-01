@@ -255,6 +255,7 @@ fn build_credit_note_pdf_data(
         lines: pdf_lines,
         subtotal_ht,
         vat_lines,
+        rounding: cn.rounding_amount,
         total: ttc,
         currency: Currency::Chf,
         origin_reference,

@@ -43,6 +43,8 @@ pub struct InvoiceSettingsResponse {
     pub default_payable_account_id: Option<i64>,
     /// Story 25-4-c3-a1 (#476) — compte de différences d'arrondi.
     pub default_rounding_account_id: Option<i64>,
+    /// Story 25-4-c4-b (#494) — arrondir à 5 centimes le total des pièces émises.
+    pub round_to_5_centimes: bool,
     pub version: i32,
 }
 
@@ -61,6 +63,7 @@ impl From<CompanyInvoiceSettings> for InvoiceSettingsResponse {
             credit_note_number_format: s.credit_note_number_format,
             default_payable_account_id: s.default_payable_account_id,
             default_rounding_account_id: s.default_rounding_account_id,
+            round_to_5_centimes: s.round_to_5_centimes,
             version: s.version,
         }
     }
@@ -88,6 +91,10 @@ pub struct UpdateInvoiceSettingsRequest {
     /// à jour — ne l'efface pas en silence. **Présent à `null` : effacé.**
     #[serde(default, deserialize_with = "crate::helpers::double_option")]
     pub default_rounding_account_id: Option<Option<i64>>,
+    /// Story 25-4-c4-b (#494) — arrondir à 5 centimes. **Absent du corps :
+    /// préservé**, pour la même raison que le compte d'arrondi.
+    #[serde(default)]
+    pub round_to_5_centimes: Option<bool>,
     pub version: i32,
 }
 
@@ -299,6 +306,10 @@ pub async fn update_invoice_settings(
         credit_note_number_format,
         default_payable_account_id: req.default_payable_account_id,
         default_rounding_account_id,
+        // Changer le réglage ne touche aucune pièce émise : leur arrondi est figé.
+        round_to_5_centimes: req
+            .round_to_5_centimes
+            .unwrap_or(current.round_to_5_centimes),
     };
     let settings = company_invoice_settings::update(
         &state.pool,

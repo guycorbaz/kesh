@@ -79,6 +79,7 @@ fn sample_invoice() -> InvoicePdfData {
             rate_percent: dec!(7.70),
             amount: dec!(95.06), // 1234.56 × 7.70 % arrondi
         }],
+        rounding: rust_decimal::Decimal::ZERO,
         total: dec!(1329.62), // 1234.56 + 95.06
         currency: Currency::Chf,
         origin_reference: None,

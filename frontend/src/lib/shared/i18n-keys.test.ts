@@ -354,7 +354,13 @@ const ATTENDU = {
 	// `grep -o "i18nMsg("` aux deux bornes de `SettleInvoiceDialog.svelte`
 	// (18 → 19) — le refus d'un montant à plus de deux décimales,
 	// `invoice-error-amount-scale`, clé neuve dans les quatre catalogues.
-	sitesTotal: 1757,
+	//
+	// Story 25-4-c4-b (#494) : **1757 → 1766**, recompté par ce test et par
+	// `grep -o "i18nMsg("` aux deux bornes — `invoices/[id]/+page.svelte` (69 → 76 :
+	// le récapitulatif passé en libellés traduits, sept sites dont la ligne
+	// « Arrondi » et ses variantes « estimé ») et `settings/invoicing/+page.svelte`
+	// (36 → 38 : la case « Arrondir à 5 centimes » et son aide).
+	sitesTotal: 1766,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

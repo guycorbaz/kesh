@@ -603,7 +603,9 @@ settings-invoicing-seq-range = (NN entre 1 et 10)
 settings-invoicing-description-help = Placeholders : {"{"}YEAR{"}"}, {"{"}INVOICE_NUMBER{"}"}, {"{"}CONTACT_NAME{"}"}.
 settings-invoicing-description-invalid = Libellé invalide
 settings-invoicing-rounding-title = Différences d'arrondi
-settings-invoicing-rounding-hint = Compte qui reçoit l'écart d'un demi-centime au plus qu'un paiement arrondi au centime laisse sur une facture. Charge ou produit, imputable. S'il n'existe pas encore, créez-le dans le plan comptable, puis choisissez-le ici.
+settings-invoicing-round5-label = Arrondir le total des factures émises à 5 centimes
+settings-invoicing-round5-hint = La facture porte une ligne « Arrondi » (123.44 → 123.45) ; l'écart s'écrit sur le compte ci-dessous. Les factures déjà émises gardent leur total.
+settings-invoicing-rounding-hint = Compte qui reçoit les écarts d'arrondi : celui des factures arrondies à 5 centimes, et le demi-centime au plus qu'un paiement arrondi au centime laisse sur une facture émise sans arrondi. Charge ou produit, imputable. S'il n'existe pas encore, créez-le dans le plan comptable, puis choisissez-le ici.
 settings-invoicing-rounding-account = Compte de différences d'arrondi
 settings-invoicing-default-accounts-title = Comptes par défaut
 settings-invoicing-select-none = — Sélectionner —
@@ -642,6 +644,7 @@ invoice-pdf-vat = TVA
 invoice-pdf-line-total = Total
 invoice-pdf-subtotal = Sous-total
 invoice-pdf-total = Total
+invoice-pdf-rounding = Arrondi
 invoice-pdf-total-ttc = Total TTC
 invoice-pdf-payment-terms = Conditions de paiement
 invoice-pdf-qr-section-payment = Section paiement
@@ -766,6 +769,13 @@ invoice-error-bank-account-required = Choisissez un compte bancaire
 invoice-error-account-required = Choisissez un compte
 
 invoice-detail-paid-at-label = Payée le
+invoice-detail-subtotal-ht = Sous-total HT
+invoice-detail-vat-rate = TVA { $rate }%
+invoice-detail-rounding = Arrondi
+invoice-detail-rounding-estimated = Arrondi (estimé)
+invoice-detail-total-ttc = Total TTC
+invoice-detail-total-ttc-estimated = Total TTC (estimé)
+invoice-detail-total = Total
 
 # Erreurs validation paidAt
 invoice-error-mark-paid-not-validated = Seules les factures validées peuvent être marquées payées

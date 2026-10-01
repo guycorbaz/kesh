@@ -150,7 +150,13 @@ pub struct InvoicePdfData {
     /// DC7). **Vide** = aucune ligne taxée → pas de bloc TVA (0 % / hors champ),
     /// on n'affiche alors que le total (rétro-compatible).
     pub vat_lines: Vec<InvoiceVatLinePdf>,
+    /// Écart d'arrondi à 5 centimes du total (Story 25-4-c4-b, #494) — figé sur la
+    /// pièce à la validation (25-4-c4-a). `0` = pas de ligne « Arrondi ». Non nul,
+    /// il fait aussi apparaître le sous-total, même sans TVA : le total doit
+    /// s'expliquer ligne par ligne.
+    pub rounding: Decimal,
     /// TTC total, from DB (Decimal(19,4)). Rounded to 2 decimals for display.
+    /// Arrondi à 5 centimes compris.
     pub total: Decimal,
     pub currency: Currency,
     /// Référence à la facture d'origine, affichée uniquement sur les avoirs
@@ -285,6 +291,8 @@ pub const I18N_KEYS: &[&str] = &[
     "invoice-pdf-amount-due",
     "invoice-pdf-reminder-fees",
     "invoice-pdf-reminder-fees-note",
+    // Story 25-4-c4-b (#494) — la ligne d'arrondi à 5 centimes. EN FIN.
+    "invoice-pdf-rounding",
 ];
 
 /// ⚠️ Invariant tenu **à la compilation** : `I18N_KEYS` et `DEFAULT_EN` ont
@@ -348,6 +356,7 @@ const DEFAULT_EN: &[&str] = &[
     "Amount due",
     "Reminder fees",
     "Reminder fees are not included in the payment slip.",
+    "Rounding",
 ];
 
 #[derive(Debug, Error)]

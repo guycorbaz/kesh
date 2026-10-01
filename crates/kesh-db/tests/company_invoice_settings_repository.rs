@@ -279,6 +279,7 @@ async fn update_no_op_returns_unchanged_entity_no_audit(pool: MySqlPool) {
             credit_note_number_format: settings.credit_note_number_format.clone(),
             default_payable_account_id: settings.default_payable_account_id,
             default_rounding_account_id: settings.default_rounding_account_id,
+            round_to_5_centimes: true,
         },
     )
     .await
@@ -349,6 +350,7 @@ async fn update_partial_change_bumps_version(pool: MySqlPool) {
             credit_note_number_format: settings.credit_note_number_format.clone(),
             default_payable_account_id: settings.default_payable_account_id,
             default_rounding_account_id: settings.default_rounding_account_id,
+            round_to_5_centimes: true,
         },
     )
     .await
@@ -441,6 +443,7 @@ async fn update_vat_accounts_round_trip(pool: MySqlPool) {
             credit_note_number_format: settings.credit_note_number_format.clone(),
             default_payable_account_id: settings.default_payable_account_id,
             default_rounding_account_id: settings.default_rounding_account_id,
+            round_to_5_centimes: true,
         },
     )
     .await
@@ -535,6 +538,7 @@ async fn update_vat_account_foreign_id_rejected_by_fk(pool: MySqlPool) {
             credit_note_number_format: settings_a.credit_note_number_format.clone(),
             default_payable_account_id: settings_a.default_payable_account_id,
             default_rounding_account_id: settings_a.default_rounding_account_id,
+            round_to_5_centimes: true,
         },
     )
     .await;
@@ -979,6 +983,7 @@ async fn update_rounding_account_round_trip(pool: MySqlPool) {
             credit_note_number_format: settings.credit_note_number_format.clone(),
             default_payable_account_id: settings.default_payable_account_id,
             default_rounding_account_id: Some(rounding),
+            round_to_5_centimes: true,
         },
     )
     .await

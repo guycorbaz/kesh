@@ -1,6 +1,6 @@
 # Story 25.4-c4-b : L'arrondi à 5 centimes, visible et réglable
 
-Status: ready-for-dev
+Status: review
 
 **Issue : [#494]** (CR) — ⛔ la PR commune c4-a + c4-b porte `closes #494`, titre ET corps.
 
@@ -113,13 +113,13 @@ récapitulatif, lui, est désormais traduit.
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — le PDF** (AC 1) : `InvoicePdfData.rounding`, gabarit, `recap_reserve`, trois remplisseurs, libellé.
-- [ ] **T2 — l'API de la facture** (AC 2).
-- [ ] **T3 — la fiche** (AC 3).
-- [ ] **T4 — le réglage** (AC 4) : dépôt, route, écran.
-- [ ] **T5 — textes** (AC 5).
-- [ ] **T6 — tests** (AC 6).
-- [ ] **T7 — gates** : backend complet (base remise à zéro ; `kesh-db` touché), frontend complet, **E2E
+- [x] **T1 — le PDF** (AC 1) : `InvoicePdfData.rounding`, gabarit, `recap_reserve`, trois remplisseurs, libellé.
+- [x] **T2 — l'API de la facture** (AC 2).
+- [x] **T3 — la fiche** (AC 3).
+- [x] **T4 — le réglage** (AC 4) : dépôt, route, écran.
+- [x] **T5 — textes** (AC 5).
+- [x] **T6 — tests** (AC 6).
+- [x] **T7 — gates** : backend complet (base remise à zéro ; `kesh-db` touché), frontend complet, **E2E
   complet** (avant le push de la PR commune).
 
 ## Dev Notes
@@ -143,11 +143,55 @@ au seuil sans le dépasser **au compte par crate**. ⚠️ Au compte par module 
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`).
+
 ### Debug Log References
+
+- Aucun test du dépôt n'extrait le texte d'un PDF : le récapitulatif est devenu une **fonction pure**
+  (`recap_lines`), patron du bloc du rappel ; le dessin et la réserve `TooManyLines` lisent la même liste, ce qui
+  les garde d'accord par construction (la réserve d'avant est reproduite à l'identique sans arrondi).
 
 ### Completion Notes List
 
+- **PDF (AC 1)** : `InvoicePdfData.rounding` ; `recap_lines` (sous-total, TVA par taux, « Arrondi » signé par
+  `format_signed_ch`) affichée dès qu'il y a TVA **ou** arrondi ; clé `invoice-pdf-rounding` (FTL ×4 et
+  `I18N_KEYS`/`DEFAULT_EN`, en fin) ; remplisseurs : facture et rappel (`invoice.rounding_amount`), avoir
+  (`cn.rounding_amount`).
+- **API (AC 2)** : `roundingAmount`, `roundingIsPreview` ; `with_rounding_preview` + `with_draft_rounding_preview`
+  (réglages lus seulement pour un brouillon), appliqué à la lecture, la création, la modification et la
+  **dévalidation**.
+- **Fiche (AC 3)** : ligne « Arrondi » / « Arrondi (estimé) », total estimé (big.js) ; le récapitulatif entier
+  passé en `i18nMsg` (sept sites, sept clés ×4) ; commentaire de convention complété.
+- **Réglage (AC 4)** : `CompanyInvoiceSettingsUpdate.round_to_5_centimes`, `UPDATE`, `is_no_op_change` ; route
+  `roundTo5Centimes` (`Option<bool>` préservé) ; case à cocher et aide ; aide du compte d'arrondi actualisée (elle
+  ne parlait que du demi-centime) ; doc-comment de `default_rounding_account_id` rectifié.
+- **Textes (AC 5)** : manuel utilisateur (paragraphe *Le total arrondi à 5 centimes* sous la validation), manuel
+  admin (l'interrupteur nommé), PDF régénérés et contrôlés aplatis ; CHANGELOG complété (la mention « suivent »
+  retirée).
+- **Tests** (périmètre : ce commit contre `becfe6b2`) : **7** Rust neufs (2 `kesh-qrbill`, 4
+  `invoice_echeancier_e2e.rs`, 1 `idor_multi_tenant_e2e.rs`), **4** Vitest, **1** spec Playwright neuve
+  (`invoice-rounding-5-centimes.spec.ts`) ; `sitesTotal` 1757 → 1766 recompté (fiche 69 → 76, réglages 36 → 38).
+- **Mutations**, toutes tuées : ligne d'arrondi retirée du récapitulatif ; aperçu absent de la dévalidation ;
+  réglage ignoré par la route ; total estimé sans l'aperçu.
+- **Gates** : backend complet sur base remise à zéro — **2566/2566** ; frontend complet — 0 erreur, lint PASS,
+  **849/849**, build ; **E2E complet** sur `kesh_e2e` reconstruite, 09:18 UTC — **227 passés, 19 ignorés,
+  10 échecs**, tous expliqués : les 7 KF-029, les 2 KF-045 (avant 12:00 UTC), et `products.spec.ts:109`,
+  pollution d'état (vert rejoué seul, avec la spec neuve, elle aussi verte).
+
 ### File List
+
+- `crates/kesh-qrbill/src/{pdf,types}.rs`, `crates/kesh-qrbill/tests/golden_test.rs`
+- `crates/kesh-api/src/routes/{invoices,invoice_pdf_service,credit_notes,company_invoice_settings}.rs`
+- `crates/kesh-api/tests/{invoice_echeancier_e2e,idor_multi_tenant_e2e}.rs`
+- `crates/kesh-db/src/entities/company_invoice_settings.rs`, `crates/kesh-db/src/repositories/company_invoice_settings.rs`,
+  `crates/kesh-db/tests/company_invoice_settings_repository.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `frontend/src/lib/features/invoices/invoices.types.ts`
+- `frontend/src/routes/(app)/invoices/[id]/+page.svelte`, `…/invoice-settlements-page.test.ts`
+- `frontend/src/routes/(app)/settings/invoicing/+page.svelte`, `…/settings-invoicing-page.test.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/tests/e2e/invoice-rounding-5-centimes.spec.ts` (neuf)
+- `docs/manual/fr/{admin,user}-manual.tex` + `.pdf`, `CHANGELOG.md`, `sprint-status.yaml`
 
 ## Change Log
 
@@ -163,5 +207,9 @@ au seuil sans le dépasser **au compte par crate**. ⚠️ Au compte par module 
   d'arrondi ; la phrase est clarifiée. Axe 0 recontrôlé par l'orchestrateur : les autres « facultatif » du dépôt
   portent sur la désignation à la création, légitimes. **Boucle close** : 1 HIGH/2 MED/3 LOW → 0 réel ;
   Sonnet → Haiku.
+- **2026-10-01** — Implémentée (T1–T7) : ligne « Arrondi » au PDF (récapitulatif en fonction pure), API à aperçu
+  sur toute réponse brouillon, fiche traduite, réglage exposé et case à cocher, manuels, CHANGELOG. 7 tests Rust,
+  4 Vitest, 1 spec Playwright neufs ; 4 mutations tuées. Gates : backend 2566/2566, frontend 849/849, E2E 227/19/10
+  expliqués.
 
 [#494]: https://github.com/guycorbaz/kesh/issues/494

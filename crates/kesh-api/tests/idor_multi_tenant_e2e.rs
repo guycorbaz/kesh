@@ -966,3 +966,73 @@ async fn settings_unchanged_archived_rounding_account_does_not_block_other_chang
     let (status, body) = put_rounding_account(&app, &token, Some(json!(accounts["1000"]))).await;
     assert_eq!(status, 400, "{body}");
 }
+
+/// Story 25-4-c4-b (#494) — `roundTo5Centimes` : lu en `GET`, changé en `PUT`,
+/// **préservé** quand il est absent du corps.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn settings_round_to_5_centimes_is_exposed_and_preserved(pool: MySqlPool) {
+    truncate_all(&pool).await.expect("truncate");
+    let (company_id, _accounts) = create_seeded_company(&pool).await;
+    create_company_user_with_role(&pool, company_id, "alice", "password123", Role::Admin).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app, "alice", "password123").await;
+
+    let put = |value: Option<bool>| {
+        let app = &app;
+        let token = token.clone();
+        async move {
+            let settings: serde_json::Value = app
+                .client
+                .get(app.url("/api/v1/company/invoice-settings"))
+                .header("Authorization", format!("Bearer {token}"))
+                .send()
+                .await
+                .expect("get")
+                .json()
+                .await
+                .expect("json");
+            assert!(
+                settings["roundTo5Centimes"].is_boolean(),
+                "GET : {settings}"
+            );
+            let mut body = json!({
+                "invoiceNumberFormat": settings["invoiceNumberFormat"],
+                "defaultReceivableAccountId": settings["defaultReceivableAccountId"],
+                "defaultRevenueAccountId": settings["defaultRevenueAccountId"],
+                "defaultVatPayableAccountId": settings["defaultVatPayableAccountId"],
+                "defaultVatRecoverableAccountId": settings["defaultVatRecoverableAccountId"],
+                "defaultVatDecompteAccountId": settings["defaultVatDecompteAccountId"],
+                "defaultSalesJournal": settings["defaultSalesJournal"],
+                "journalEntryDescriptionTemplate": settings["journalEntryDescriptionTemplate"],
+                "version": settings["version"],
+            });
+            if let Some(v) = value {
+                body["roundTo5Centimes"] = json!(v);
+            }
+            let resp = app
+                .client
+                .put(app.url("/api/v1/company/invoice-settings"))
+                .header("Authorization", format!("Bearer {token}"))
+                .json(&body)
+                .send()
+                .await
+                .expect("put");
+            let status = resp.status().as_u16();
+            let body: serde_json::Value = resp.json().await.unwrap_or(serde_json::Value::Null);
+            (status, body)
+        }
+    };
+
+    let (status, body) = put(Some(false)).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["roundTo5Centimes"], false);
+    let (status, body) = put(None).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        body["roundTo5Centimes"], false,
+        "absent du corps : préservé"
+    );
+    let (status, body) = put(Some(true)).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["roundTo5Centimes"], true);
+}

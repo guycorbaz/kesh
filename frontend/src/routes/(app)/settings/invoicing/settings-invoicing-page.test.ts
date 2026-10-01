@@ -70,6 +70,7 @@ function settings(overrides: Partial<InvoiceSettingsResponse> = {}): InvoiceSett
 		defaultSalesJournal: 'Ventes',
 		journalEntryDescriptionTemplate: '{YEAR}-{INVOICE_NUMBER}',
 		defaultRoundingAccountId: null,
+		roundTo5Centimes: true,
 		version: 3,
 		...overrides,
 	};
@@ -132,6 +133,21 @@ describe('Paramètres → Facturation — compte de différences d’arrondi', (
 		await waitFor(() => expect(updateInvoiceSettingsMock).toHaveBeenCalledTimes(1));
 		expect(updateInvoiceSettingsMock.mock.calls[0][0]).toMatchObject({
 			defaultRoundingAccountId: 4,
+		});
+	});
+
+	// Story 25-4-c4-b (#494) — l'arrondi à 5 centimes, réglable.
+	it('la case reflète le réglage et son changement part à l’enregistrement (mutation : champ non envoyé)', async () => {
+		getInvoiceSettingsMock.mockResolvedValue(settings({ roundTo5Centimes: true }));
+		updateInvoiceSettingsMock.mockResolvedValue(settings({ roundTo5Centimes: false, version: 4 }));
+		const { findByTestId, container } = render(Page);
+		const box = (await findByTestId('settings-round-to-5-centimes')) as HTMLInputElement;
+		await waitFor(() => expect(box.checked).toBe(true));
+		await fireEvent.click(box);
+		await fireEvent.submit(container.querySelector('form')!);
+		await waitFor(() => expect(updateInvoiceSettingsMock).toHaveBeenCalledTimes(1));
+		expect(updateInvoiceSettingsMock.mock.calls[0][0]).toMatchObject({
+			roundTo5Centimes: false,
 		});
 	});
 });

@@ -128,6 +128,7 @@ fn is_no_op_change(
         && before.credit_note_number_format == changes.credit_note_number_format
         && before.default_payable_account_id == changes.default_payable_account_id
         && before.default_rounding_account_id == changes.default_rounding_account_id
+        && before.round_to_5_centimes == changes.round_to_5_centimes
 }
 
 /// Met à jour la config (tous les champs) avec verrou optimiste et audit.
@@ -181,7 +182,7 @@ pub async fn update(
              default_sales_journal = ?, \
              journal_entry_description_template = ?, credit_note_number_format = ?, \
              default_payable_account_id = ?, default_rounding_account_id = ?, \
-             version = version + 1 \
+             round_to_5_centimes = ?, version = version + 1 \
          WHERE company_id = ? AND version = ?",
     )
     .bind(&changes.invoice_number_format)
@@ -195,6 +196,7 @@ pub async fn update(
     .bind(&changes.credit_note_number_format)
     .bind(changes.default_payable_account_id)
     .bind(changes.default_rounding_account_id)
+    .bind(changes.round_to_5_centimes)
     .bind(company_id)
     .bind(expected_version)
     .execute(&mut *tx)
