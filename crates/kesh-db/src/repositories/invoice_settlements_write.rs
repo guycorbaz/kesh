@@ -462,10 +462,12 @@ pub async fn write_off_invoice(
     };
     // (5 bis) La fraction de centime d'un reste exact à quatre décimales va au
     //         compte de différences d'arrondi (convention du règlement au centime) ;
-    //         la nature `rounding` l'y impute déjà tout entière. ⚠️ Verrouillé
-    //         AVANT le compte de TVA, comme la validation d'une facture arrondie
-    //         (compte d'arrondi, puis lignes de TVA) : un ordre divergent formerait
-    //         un cycle (revue de code P2).
+    //         la nature `rounding` l'y impute déjà tout entière. Verrouillé avant
+    //         le compte de TVA : aucun autre chemin ne prend de verrou `FOR UPDATE`
+    //         sur le compte de TVA due (la validation et l'avoir le lisent dans les
+    //         réglages et y écrivent leurs lignes), si bien qu'aucun cycle n'est
+    //         connu ; l'ordre « arrondi, puis TVA » suit celui de la validation
+    //         d'une facture arrondie, par prudence (revues de code P2 et P3).
     let rounding_account_id = if nature == SettlementWriteOffNature::Rounding {
         Some(nature_account_id)
     } else if amount != invoice_settlements::amount_due_to_centime(amount) {

@@ -281,8 +281,9 @@ pub fn write_off_journal_lines(
     };
     // Un reste inférieur au demi-centime (0.0040) s'arrondit à zéro : il n'y a
     // rien à imputer à la nature, tout le reste est une fraction de centime et
-    // va au compte d'arrondi (#490 — revue de code P2). Sans TVA par
-    // construction : une part de TVA non nulle exige un reste bien supérieur.
+    // va au compte d'arrondi (#490 — revue de code P2). Le cas « débit nul sans
+    // écart séparé » est inatteignable — il vaudrait `total_vat == amount`,
+    // déjà refusé plus haut — et gardé par défense (revue de code P3).
     if nature_debit < Decimal::ZERO || (nature_debit.is_zero() && !separate_gap) {
         return Err(DbError::Invariant(format!(
             "solde : le débit du compte de la nature ({nature_debit}) n'est pas positif"

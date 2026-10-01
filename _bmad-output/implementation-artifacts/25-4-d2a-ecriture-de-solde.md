@@ -1,6 +1,6 @@
 # Story 25.4-d2a : Solder le reste — l'écriture et son annulation
 
-Status: review
+Status: done
 
 **Issues : [#384], [#490]** — ⛔ la PR porte `refs #384, refs #490` : la **25-4-d2b** (le bouton) fermera #490, la
 **25-4-d2c** (le rapport TVA) fermera #384.
@@ -362,6 +362,18 @@ Claude Opus 5.5 (`claude-opus-5-5`).
   au geste du règlement). Laissés LOW : L2 (le test à taux mêlés ne distingue pas TTC figé et brut — couvert par
   `vat.rs`), L4 (un reste de 0.0050 en frais impute 0.01 de charge et crédite 0.0050 d'arrondi : équilibré, sans
   perte). Tests : `invoice_write_off.rs` 15 → 17. Gate complet, base remise à zéro : **2614/2614**.
+- **2026-10-02** — Revue de code P3 ciblée (Sonnet, sur la remédiation `8a2537d9`) : 1 MED, 3 LOW. **M-1 reclassé LOW** :
+  un reste sous le demi-centime soldé en « frais bancaires » donne une écriture libellée « … — frais bancaires » qui ne
+  touche que le compte d'arrondi — le libellé désigne le **geste**, comme « Règlement facture » quand la troisième ligne
+  est un écart d'arrondi ; montant inférieur au demi-centime, audit exact. **L-1** : le commentaire justifiant l'ordre
+  des verrous invoquait une symétrie absente (aucun autre chemin ne verrouille le compte de TVA) — corrigé. **L-2** : la
+  seconde branche de la garde est inatteignable (`total_vat == amount`, refusé plus haut) — commentaire corrigé, garde
+  laissée par défense. **L-3** : quand TVA et arrondi manquent tous deux, l'erreur affichée a changé (arrondi d'abord) —
+  sans conséquence, consigné. Remédiation **en commentaires seulement**, aucune ligne exécutable : la boucle se clôt
+  (`CLAUDE.md`, passe ciblée). **Boucle close** : P1 1C/6M/4L (Sonnet ×3) → P2 1M/4L (Opus) → P3 0 > LOW (Sonnet).
+  Gate complet au dernier commit, base remise à zéro : **2614/2614** ; frontend non touché par la boucle (856/856 à
+  `33b4f201`) ; E2E au commit d'implémentation (232/7, KF-029), la boucle n'ayant modifié que le chemin du solde, qu'aucun
+  écran n'appelle encore. Statut → done.
 
 [#384]: https://github.com/guycorbaz/kesh/issues/384
 [#490]: https://github.com/guycorbaz/kesh/issues/490
