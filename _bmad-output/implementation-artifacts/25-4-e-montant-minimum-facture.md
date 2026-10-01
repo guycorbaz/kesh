@@ -72,6 +72,12 @@ facture émise avant qu'un seuil plus haut soit fixé).
   - l'instantané d'audit `settings_snapshot_json` (`:36-53`), manuscrit : un oubli y rend la piste d'audit
     **silencieusement** incomplète sur le changement de seuil ;
   - `CompanyInvoiceSettingsUpdate.minimum_invoice_amount: Option<Decimal>`, l'`UPDATE`, `is_no_op_change`.
+- Hors du dépôt, les autres sites qui énumèrent les champs des réglages : l'export de souveraineté
+  (`crates/kesh-api/src/exports/csv_tables.rs`, en-tête et valeurs de `company_invoice_settings`, cf. AC 1) ; les
+  types frontend `InvoiceSettingsResponse` et `UpdateInvoiceSettingsRequest`
+  (`frontend/src/lib/features/invoices/invoices.types.ts`) ; les montages de test qui construisent
+  `CompanyInvoiceSettingsUpdate` (`crates/kesh-db/tests/company_invoice_settings_repository.rs`) ou une réponse de
+  réglages (`settings-invoicing-page.test.ts`).
 - Route : `minimumInvoiceAmount` en `GET` et `PUT` — **absent du corps : préservé ; présent à `null` : effacé**
   (`double_option`, patron du compte d'arrondi). Validation : **strictement positif**, au plus deux décimales
   (`scale_within(&v.normalize(), 2)`), sinon 400.
@@ -132,5 +138,9 @@ facture émise avant qu'un seuil plus haut soit fixé).
   croire à un site unique : les deux `SELECT` `cis.`-préfixés des `insert_with_defaults*` (échec `ColumnNotFound`
   au chemin idempotent) et l'instantané `settings_snapshot_json` (audit incomplet sans signal) énumèrent les
   colonnes à la main — nommés à l'AC 4.
+- **2026-10-01** — Validation P2 ciblée (Haiku) : 1 MED rendu, **reclassé LOW** — l'export `csv_tables.rs`, que l'AC 1
+  nommait déjà et que sa garde automatique imposerait ; rendu explicite à l'AC 4, avec les types frontend et les
+  montages de test. **Boucle close** : 1 HIGH/1 MED → 0 au-dessus de LOW ; Sonnet → Haiku ; remédiation sur la fiche
+  seule.
 
 [#495]: https://github.com/guycorbaz/kesh/issues/495
