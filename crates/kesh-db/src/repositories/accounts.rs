@@ -2282,6 +2282,7 @@ mod tests {
                 parent_number: None,
                 role: None,
                 postable: None,
+                rounding_difference: false,
             },
             kesh_core::chart_of_accounts::ChartEntry {
                 number: "T10".into(),
@@ -2295,6 +2296,7 @@ mod tests {
                 parent_number: Some("T1".into()),
                 role: None,
                 postable: None,
+                rounding_difference: false,
             },
         ];
 

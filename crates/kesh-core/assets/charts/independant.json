@@ -73,6 +73,7 @@
   {"number": "6750", "name": {"fr": "Formation continue", "de": "Weiterbildung", "it": "Formazione continua", "en": "Continuing education"}, "type": "Expense", "parentNumber": "6"},
   {"number": "6800", "name": {"fr": "Amortissements", "de": "Abschreibungen", "it": "Ammortamenti", "en": "Depreciation"}, "type": "Expense", "parentNumber": "6"},
   {"number": "6900", "name": {"fr": "Charges financières", "de": "Finanzaufwand", "it": "Oneri finanziari", "en": "Financial expenses"}, "type": "Expense", "parentNumber": "6"},
+  {"number": "6940", "name": {"fr": "Différences d'arrondi", "de": "Rundungsdifferenzen", "it": "Differenze di arrotondamento", "en": "Rounding differences"}, "type": "Expense", "parentNumber": "6", "roundingDifference": true},
   {"number": "6950", "name": {"fr": "Produits financiers", "de": "Finanzertrag", "it": "Proventi finanziari", "en": "Financial income"}, "type": "Revenue", "parentNumber": "6"},
 
   {"number": "7", "name": {"fr": "Résultats annexes", "de": "Betriebsfremder Ertrag", "it": "Risultati accessori", "en": "Non-operating income"}, "type": "Revenue", "parentNumber": null},
