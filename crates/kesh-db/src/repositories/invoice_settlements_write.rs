@@ -329,8 +329,8 @@ pub async fn settle_invoice(
 // Story 25-4-d2a (#384, #490) — solder le reste d'une facture
 // ---------------------------------------------------------------------------
 
-/// Un reste d'arrondi ne dépasse pas l'unité de 5 centimes : au-delà, la nature
-/// `rounding` est refusée (Story 25-4-d2a, AC 4).
+/// Un reste d'arrondi reste **sous** l'unité de 5 centimes : à partir de 0.05,
+/// la nature `rounding` est refusée (Story 25-4-d2a, AC 4).
 const ROUNDING_WRITE_OFF_LIMIT: Decimal = Decimal::from_parts(5, 0, 0, false, 2);
 
 /// Ce que rend un solde : l'écriture créée et le montant soldé (le reste exact).
@@ -463,17 +463,24 @@ pub async fn write_off_invoice(
     let vat_account_id = if shares.is_empty() {
         None
     } else {
-        let account: Option<Option<i64>> = sqlx::query_scalar(
-            "SELECT default_vat_payable_account_id FROM company_invoice_settings \
-             WHERE company_id = ?",
+        Some(company_invoice_settings::vat_payable_account_for_write(&mut tx, company_id).await?)
+    };
+    // (5 bis) La fraction de centime d'un reste exact à quatre décimales va au
+    //         compte de différences d'arrondi (convention du règlement au centime) ;
+    //         la nature `rounding` l'y impute déjà tout entière.
+    let rounding_account_id = if nature == SettlementWriteOffNature::Rounding {
+        Some(nature_account_id)
+    } else if amount != invoice_settlements::amount_due_to_centime(amount) {
+        Some(
+            company_invoice_settings::write_off_account_for_write(
+                &mut tx,
+                company_id,
+                SettlementWriteOffNature::Rounding,
+            )
+            .await?,
         )
-        .bind(company_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(map_db_error)?;
-        Some(account.flatten().ok_or_else(|| {
-            DbError::ConfigurationRequired("default_vat_payable_account_id".into())
-        })?)
+    } else {
+        None
     };
 
     // (6) Exercice ouvert, puis l'écriture au journal OD.
@@ -495,6 +502,7 @@ pub async fn write_off_invoice(
                 nature_account_id,
                 receivable_account_id,
                 vat_account_id,
+                rounding_account_id,
                 amount,
                 &shares,
             )?,

@@ -446,6 +446,36 @@ pub async fn write_off_account_for_write(
         })
 }
 
+/// Le compte de **TVA due** d'un solde qui corrige la TVA (Story 25-4-d2a),
+/// relu au moment d'écrire : actif, imputable, de la société, `FOR UPDATE` —
+/// comme le compte de la nature, sans contrainte de type (un compte de TVA due
+/// est un passif). Absent ou inutilisable → `ConfigurationRequired`, le même
+/// refus que l'avoir pour un réglage absent.
+pub async fn vat_payable_account_for_write(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+) -> Result<i64, DbError> {
+    let missing = || DbError::ConfigurationRequired("default_vat_payable_account_id".into());
+    let designated: Option<Option<i64>> = sqlx::query_scalar(
+        "SELECT default_vat_payable_account_id FROM company_invoice_settings WHERE company_id = ?",
+    )
+    .bind(company_id)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(map_db_error)?;
+    let account_id = designated.flatten().ok_or_else(missing)?;
+    sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM accounts WHERE id = ? AND company_id = ? AND active = TRUE \
+         AND postable = TRUE FOR UPDATE",
+    )
+    .bind(account_id)
+    .bind(company_id)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(map_db_error)?
+    .ok_or_else(missing)
+}
+
 /// Le cœur commun des relectures de compte désigné : lit le réglage par
 /// `select` (un littéral de l'appelant), puis exige un compte actif, imputable,
 /// de charge ou de produit, de la société, verrouillé `FOR UPDATE`. `None` si le

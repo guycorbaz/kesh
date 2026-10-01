@@ -17,6 +17,7 @@ use kesh_db::entities::{
 use kesh_db::errors::{DbError, SettlementCancelBlocker};
 use kesh_db::repositories::{
     credit_notes, invoice_settlements, invoice_settlements_write, invoices, reconciliation,
+    reconciliation_cancel,
 };
 use kesh_db::test_fixtures::{SeededCompany, designate_rounding_account, seed_accounting_company};
 use rust_decimal::Decimal;
@@ -824,6 +825,7 @@ fn write_off_lines_refuse_vat_reaching_the_amount() {
         1,
         2,
         Some(3),
+        None,
         dec!(1.00),
         &[share(dec!(1.00))],
     )
@@ -834,6 +836,7 @@ fn write_off_lines_refuse_vat_reaching_the_amount() {
         1,
         2,
         Some(3),
+        None,
         dec!(1.00),
         &[share(dec!(0.99))],
     )
@@ -844,7 +847,281 @@ fn write_off_lines_refuse_vat_reaching_the_amount() {
     assert_eq!(lines[0].debit, dec!(0.01));
     // Des parts sans compte de TVA : erreur de l'appelant.
     assert!(
-        invoice_settlements::write_off_journal_lines(1, 2, None, dec!(10), &[share(dec!(1))])
+        invoice_settlements::write_off_journal_lines(1, 2, None, None, dec!(10), &[share(dec!(1))])
             .is_err()
+    );
+}
+
+/// Revue P1 (B1) — la **fraction de centime** d'un reste exact à quatre décimales
+/// va au compte de différences d'arrondi, pas au compte de la nature ; la nature
+/// `rounding`, elle, la garde tout entière sur son compte.
+#[test]
+fn write_off_lines_route_the_sub_centime_to_the_rounding_account() {
+    // 10.0050 → 10.01 au centime, écart −0.0050 au crédit du compte d'arrondi 9.
+    let lines =
+        invoice_settlements::write_off_journal_lines(1, 2, None, Some(9), dec!(10.0050), &[])
+            .unwrap();
+    let got: Vec<_> = lines
+        .iter()
+        .map(|l| (l.account_id, l.debit, l.credit))
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            (1, dec!(10.01), dec!(0)),
+            (9, dec!(0), dec!(0.0050)),
+            (2, dec!(0), dec!(10.0050))
+        ]
+    );
+    // Sans compte d'arrondi : erreur de l'appelant, rien n'est écrit en charge.
+    assert!(
+        invoice_settlements::write_off_journal_lines(1, 2, None, None, dec!(10.0050), &[]).is_err()
+    );
+    // Nature `rounding` : le compte de la nature EST le compte d'arrondi.
+    let lines =
+        invoice_settlements::write_off_journal_lines(9, 2, None, Some(9), dec!(0.0040), &[])
+            .unwrap();
+    let got: Vec<_> = lines
+        .iter()
+        .map(|l| (l.account_id, l.debit, l.credit))
+        .collect();
+    assert_eq!(
+        got,
+        vec![(9, dec!(0.0040), dec!(0)), (2, dec!(0), dec!(0.0040))]
+    );
+}
+
+/// Revue P1 (B1), par la base : une facture à prix fractionnaire (3.3350) soldée
+/// en frais bancaires — le compte de frais reçoit 3.34, l'écart va au compte
+/// d'arrondi, la créance tombe à zéro ; sans compte d'arrondi, refus.
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_four_decimal_remainder_sends_its_sub_centime_to_the_rounding_account(pool: MySqlPool) {
+    let seeded = company(&pool).await;
+    let rounding: i64 = sqlx::query_scalar(
+        "SELECT default_rounding_account_id FROM company_invoice_settings WHERE company_id = ?",
+    )
+    .bind(seeded.company_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let inv = validated_invoice(&pool, &seeded, &[(dec!(3.3350), dec!(0))]).await;
+    let out = write_off(&pool, &seeded, inv, Nature::BankFees)
+        .await
+        .expect("solde");
+    assert_eq!(out.amount, dec!(3.3350));
+    assert_eq!(
+        entry_lines(&pool, out.journal_entry_id).await,
+        vec![
+            (seeded.accounts["4000"], dec!(3.34), dec!(0)),
+            (rounding, dec!(0), dec!(0.0050)),
+            (seeded.accounts["1100"], dec!(0), dec!(3.3350)),
+        ]
+    );
+    assert_eq!(balance(&pool, seeded.accounts["1100"]).await, dec!(0));
+
+    let inv = validated_invoice(&pool, &seeded, &[(dec!(3.3350), dec!(0))]).await;
+    sqlx::query("UPDATE company_invoice_settings SET default_rounding_account_id = NULL WHERE company_id = ?")
+        .bind(seeded.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let err = write_off(&pool, &seeded, inv, Nature::BankFees)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            err,
+            DbError::WriteOffAccountNotConfigured { nature: "rounding" }
+        ),
+        "{err:?}"
+    );
+}
+
+/// Revue P1 (B4) — par la base, la combinaison que les tests purs ne composaient
+/// pas : plusieurs taux, une ligne à 0 %, un arrondi figé négatif, et un reste
+/// après règlement partiel.
+#[sqlx::test(migrations = "./test-schema")]
+async fn discount_with_several_rates_a_zero_rate_line_and_frozen_rounding(pool: MySqlPool) {
+    let seeded = company(&pool).await;
+    let rounding: i64 = sqlx::query_scalar(
+        "SELECT default_rounding_account_id FROM company_invoice_settings WHERE company_id = ?",
+    )
+    .bind(seeded.company_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    // 100 × 1.081 + 50 × 1.026 + 30.02 = 189.42 brut, arrondi figé −0.02 → 189.40.
+    let inv = validated_invoice(
+        &pool,
+        &seeded,
+        &[
+            (dec!(100.00), dec!(8.10)),
+            (dec!(50.00), dec!(2.60)),
+            (dec!(30.02), dec!(0)),
+        ],
+    )
+    .await;
+    // L'arrondi figé : sur la facture et dans l'écriture de vente (créance −0.02,
+    // compte d'arrondi au débit), comme le pose la validation.
+    let sale: i64 = sqlx::query_scalar("SELECT journal_entry_id FROM invoices WHERE id = ?")
+        .bind(inv)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE invoices SET rounding_amount = -0.02 WHERE id = ?")
+        .bind(inv)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE journal_entry_lines SET debit = debit - 0.02 WHERE entry_id = ? AND account_id = ?",
+    )
+    .bind(sale)
+    .bind(seeded.accounts["1100"])
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO journal_entry_lines (entry_id, account_id, debit, credit, line_order) \
+         SELECT ?, ?, 0.02, 0, COALESCE(MAX(line_order), 0) + 1 FROM journal_entry_lines WHERE entry_id = ?",
+    )
+    .bind(sale)
+    .bind(rounding)
+    .bind(sale)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        invoice_settlements::amount_due(&pool, inv).await.unwrap(),
+        dec!(189.40)
+    );
+
+    settle_cash(&pool, &seeded, inv, dec!(94.70)).await; // la moitié
+    let out = write_off(&pool, &seeded, inv, Nature::Discount)
+        .await
+        .expect("solde");
+    assert_eq!(out.amount, dec!(94.70));
+    // TVA corrigée : la moitié de 8.10 et de 1.30 ; la ligne à 0 % ne porte rien.
+    assert_eq!(
+        entry_lines(&pool, out.journal_entry_id).await,
+        vec![
+            (seeded.accounts["4000"], dec!(90.00), dec!(0)),
+            (seeded.accounts["2000"], dec!(4.05), dec!(0)),
+            (seeded.accounts["2000"], dec!(0.65), dec!(0)),
+            (seeded.accounts["1100"], dec!(0), dec!(94.70)),
+        ]
+    );
+    assert_eq!(
+        invoice_settlements::amount_due(&pool, inv).await.unwrap(),
+        dec!(0)
+    );
+}
+
+/// Revue P1 (B2) — un compte de TVA due archivé est refusé à la relecture, avec
+/// le refus de configuration, avant toute écriture.
+#[sqlx::test(migrations = "./test-schema")]
+async fn an_archived_vat_payable_account_is_refused(pool: MySqlPool) {
+    let seeded = company(&pool).await;
+    let inv = validated_invoice(&pool, &seeded, &[(dec!(100.00), dec!(8.10))]).await;
+    sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
+        .bind(seeded.accounts["2000"])
+        .execute(&pool)
+        .await
+        .unwrap();
+    let err = write_off(&pool, &seeded, inv, Nature::Discount)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, DbError::ConfigurationRequired(_)), "{err:?}");
+}
+
+/// Revue P1 (B3) — le **dé-rapprochement** rencontre le motif : la transaction
+/// bancaire rapprochée du règlement ne se dé-rapproche pas tant que le solde
+/// existe — à la lecture comme au geste.
+#[sqlx::test(migrations = "./test-schema")]
+async fn unlinking_a_reconciled_settlement_is_refused_while_a_write_off_exists(pool: MySqlPool) {
+    let seeded = company(&pool).await;
+    let inv = validated_invoice(&pool, &seeded, &[(dec!(1000.00), dec!(8.10))]).await;
+    let settlement = settle_cash(&pool, &seeded, inv, dec!(1000.00)).await;
+    let entry: i64 =
+        sqlx::query_scalar("SELECT journal_entry_id FROM invoice_settlements WHERE id = ?")
+            .bind(settlement)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    // Montage en SQL de l'état d'un rapprochement accepté (le chemin réel vit dans
+    // `kesh-api`) : une transaction `reconciled` qui pointe l'écriture du règlement.
+    let bank_account = sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban) VALUES (?, 'Banque', 'CH9300762011623852957')",
+    )
+    .bind(seeded.company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let import = sqlx::query(
+        "INSERT INTO bank_imports (company_id, bank_account_id, filename, file_hash, source_format, \
+         period_from, period_to, imported_by_user_id) \
+         VALUES (?, ?, 't.xml', REPEAT('b', 64), 'camt053', ?, ?, ?)",
+    )
+    .bind(seeded.company_id)
+    .bind(bank_account)
+    .bind(D())
+    .bind(D())
+    .bind(seeded.admin_user_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let bt = sqlx::query(
+        "INSERT INTO bank_transactions (company_id, import_id, bank_account_id, booking_date, amount, \
+         currency, details, matched_entry_id, status) \
+         VALUES (?, ?, ?, ?, 1000.00, 'CHF', 'virement', ?, 'reconciled')",
+    )
+    .bind(seeded.company_id)
+    .bind(import)
+    .bind(bank_account)
+    .bind(D())
+    .bind(entry)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+
+    write_off(&pool, &seeded, inv, Nature::BankFees)
+        .await
+        .expect("solde des 81.00");
+
+    let view = reconciliation_cancel::get_view(&pool, seeded.company_id, bt)
+        .await
+        .unwrap()
+        .expect("vue");
+    assert_eq!(
+        view.cancel_blocker.map(|h| h.0),
+        Some(SettlementCancelBlocker::WriteOffExists)
+    );
+    let err = reconciliation_cancel::cancel(&pool, seeded.company_id, bt, seeded.admin_user_id)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            err,
+            DbError::SettlementNotCancellable {
+                blocker: SettlementCancelBlocker::WriteOffExists
+            } | DbError::ReconciliationNotCancellable {
+                blocker: SettlementCancelBlocker::WriteOffExists
+            }
+        ),
+        "{err:?}"
+    );
+    let still: Option<i64> =
+        sqlx::query_scalar("SELECT matched_entry_id FROM bank_transactions WHERE id = ?")
+            .bind(bt)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        still,
+        Some(entry),
+        "le lien bancaire est rétabli par le rollback"
     );
 }

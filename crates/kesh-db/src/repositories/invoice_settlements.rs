@@ -240,10 +240,16 @@ pub fn settlement_journal_lines(
 }
 
 /// Les lignes de l'écriture d'un **solde** (Story 25-4-d2a, #384) : débit du
-/// compte de la nature `amount − Σ TVA`, débit de la TVA due par taux (une ligne
-/// par part, toutes sur `vat_account_id`), crédit de la créance `amount`.
-/// Équilibrée par construction : le reliquat de centimes du prorata reste sur le
-/// compte de la nature.
+/// compte de la nature `arrondi(amount) − Σ TVA`, débit de la TVA due par taux
+/// (une ligne par part, toutes sur `vat_account_id`), crédit de la créance
+/// `amount` — le reste **exact**, qui peut porter quatre décimales.
+///
+/// La **fraction de centime** (`amount − arrondi(amount)`, un demi-centime au
+/// plus) va au compte de différences d'arrondi `rounding_account_id`, au débit
+/// si elle est positive, au crédit sinon — même convention que le règlement au
+/// centime ([`settlement_journal_lines`]) : un compte de charge ou de produit ne
+/// reçoit pas de fraction de centime. Équilibrée par construction ; le reliquat
+/// de centimes du prorata reste sur le compte de la nature.
 ///
 /// ⛔ Garde `Σ TVA < amount` → [`DbError::Invariant`] : le débit du compte de la
 /// nature doit rester strictement positif (`chk_jel_debit_credit_exclusive`).
@@ -254,6 +260,7 @@ pub fn write_off_journal_lines(
     nature_account_id: i64,
     receivable_account_id: i64,
     vat_account_id: Option<i64>,
+    rounding_account_id: Option<i64>,
     amount: Decimal,
     vat_shares: &[kesh_core::accounting::vat::VatRateShare],
 ) -> Result<Vec<NewJournalEntryLine>, DbError> {
@@ -263,12 +270,47 @@ pub fn write_off_journal_lines(
             "solde : la TVA corrigée ({total_vat}) atteint le montant soldé ({amount})"
         )));
     }
+    // La fraction de centime sort du compte de la nature — sauf quand celui-ci
+    // EST le compte de différences d'arrondi (nature `rounding`) : elle y reste.
+    let gap = amount - amount_due_to_centime(amount);
+    let separate_gap = !gap.is_zero() && rounding_account_id != Some(nature_account_id);
+    let nature_debit = if separate_gap {
+        amount - gap - total_vat
+    } else {
+        amount - total_vat
+    };
+    if nature_debit <= Decimal::ZERO {
+        return Err(DbError::Invariant(format!(
+            "solde : le débit du compte de la nature ({nature_debit}) n'est pas positif"
+        )));
+    }
     let mut lines = vec![NewJournalEntryLine {
         account_id: nature_account_id,
-        debit: amount - total_vat,
+        debit: nature_debit,
         credit: Decimal::ZERO,
         project_id: None,
     }];
+    if separate_gap {
+        let account_id = rounding_account_id.ok_or_else(|| {
+            DbError::Invariant(
+                "solde : fraction de centime sans compte de différences d'arrondi".into(),
+            )
+        })?;
+        lines.push(NewJournalEntryLine {
+            account_id,
+            debit: if gap > Decimal::ZERO {
+                gap
+            } else {
+                Decimal::ZERO
+            },
+            credit: if gap < Decimal::ZERO {
+                -gap
+            } else {
+                Decimal::ZERO
+            },
+            project_id: None,
+        });
+    }
     if !vat_shares.is_empty() {
         let vat_account_id = vat_account_id.ok_or_else(|| {
             DbError::Invariant("solde : des parts de TVA sans compte de TVA due".into())

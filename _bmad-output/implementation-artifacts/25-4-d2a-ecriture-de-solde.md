@@ -336,6 +336,21 @@ Claude Opus 5.5 (`claude-opus-5-5`).
 - **2026-10-01** — Implémentée (T1–T8). 18 tests Rust et 3 Vitest neufs, 4 mutations tuées. Gates : backend 2607/2607,
   frontend 856/856, E2E 232/7 (KF-029). Écart assumé : le motif traduit aussi dans la table du dé-rapprochement.
   Statut → review.
+- **2026-10-02** — Revue de code P1 (Sonnet, lentilles A, B, C ; prompt versionné) : 1 CRIT, 6 MED, 4 LOW avant triage.
+  **B1, reclassé HIGH** (de CRITICAL) : un reste exact à quatre décimales (10.0050) laissait sa fraction de centime au
+  compte de la nature — corrigé, elle va au compte de différences d'arrondi, au débit ou au crédit, comme pour le
+  règlement au centime (la créance reste créditée du reste exact, convention de la c3-b) ; la nature `rounding` la garde
+  sur son compte. HIGH et non CRITICAL : aucun total n'était faux. ⚠️ **Mon propre patch de B1 cassait la nature
+  `rounding`** (garde fausse pour 0.0040, ligne à zéro) : vu à la relecture avant tout test, réécrit. **A-M1 = B2** : le
+  compte de TVA due est relu actif, imputable, `FOR UPDATE` (`vat_payable_account_for_write`) ; absent ou archivé →
+  `ConfigurationRequired`. **A-M2** : commentaire du seuil de 0.05 aligné sur le code (« à partir de »). **B3** : test du
+  dé-rapprochement refusé par le solde (lecture et geste, lien rétabli). **B4** : test par la base, plusieurs taux,
+  ligne à 0 %, arrondi figé négatif, reste partiel. **C-M1** : en-tête de `audit_route_registry.rs` (109/112 → 110/113).
+  Laissés LOW : A-L1 (pas de bouton, voulu — d2b), B5 (compte de nature égal au compte de TVA, mauvaise configuration
+  sans perte d'exactitude), B6 (le backfill `20260828000001` ne filtre pas `write_off` — migration appliquée,
+  immuable (P8), cas de configuration aberrant qui échouerait bruyamment sur le CHECK), C-L1 (type TS, conséquence
+  assumée jusqu'à la d2b). **5 tests neufs** (périmètre `33b4f201` → remédiation : `invoice_write_off.rs` 10 → 15),
+  mutation de B1 tuée. Gate complet, base remise à zéro : **2612/2612**.
 
 [#384]: https://github.com/guycorbaz/kesh/issues/384
 [#490]: https://github.com/guycorbaz/kesh/issues/490
