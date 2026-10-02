@@ -163,7 +163,8 @@ CHANGELOG `[0.12.1]` : l'entrée d2a (« le rapport TVA ne retranche pas encore 
   `CorruptData` sur le précédent `TrialBalanceUnbalanced` (L2). **M3 — le signal de découpage HIGH → HIGH (P1 → P2) a
   été écarté par un motif que la règle ne prévoit pas** (« défauts distincts, cinq modules ») : la règle demande le
   découpage, et l'arbitrage revient au Project Lead — signalé à Guy en P2 sans attendre sa réponse, **reposé
-  explicitement le 2026-10-02**. Le plafond de sévérité redescend en P3 (HIGH → HIGH → MED).
+  explicitement le 2026-10-02**. Le plafond de sévérité redescend en P3 (HIGH → HIGH → MED). **Arbitrage de Guy (2026-10-02, « ok, vas-y ») : pas de
+  découpage**, sur recommandation (défauts distincts, plafond redescendu, cinq modules).
 - **2026-10-02** — Validation P2 (Opus) : 1 HIGH, 3 MED, 5 LOW, retenus. L'E2E `reports.spec.ts` cherche « TVA due » et
   « Solde » par sous-chaîne — ancré, « TVA due nette » affichée seulement avec des soldes, et un scénario E2E « solde
   puis rapport » (H1) ; la limite du solde annulé dit sa conséquence fiscale — la reprise n'apparaît nulle part, l'alerte
