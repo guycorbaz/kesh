@@ -178,8 +178,13 @@ export function isReportEmpty(
 			// Story 18-1d : un décompte sans vente (rows vide) mais avec de la TVA
 			// récupérable (achats seuls) n'est PAS vide — il doit afficher le pied
 			// de tableau (récupérable + solde). Vide = aucune vente ET récupérable 0.
+			// Story 25-4-d2c : ni avec des soldes dans la période.
 			const vr = dto as VatReportDto;
-			return vr.rows.length === 0 && Number(vr.totalVatRecoverable) === 0;
+			return (
+				vr.rows.length === 0 &&
+				Number(vr.totalVatRecoverable) === 0 &&
+				vr.writeOffRows.length === 0
+			);
 		}
 	}
 }

@@ -50,6 +50,20 @@ pub struct VatReportRow {
     pub vat_due: Decimal,
 }
 
+/// Une diminution de contre-prestation de la période, pour un taux — la TVA
+/// corrigée par les **soldes** (escompte accordé, perte sur débiteur) datés dans
+/// la période (Story 25-4-d2c, #384).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VatWriteOffRow {
+    /// Taux de TVA en pourcent.
+    pub rate: Decimal,
+    /// Part de la base HT soldée à ce taux.
+    pub base_ht: Decimal,
+    /// TVA corrigée à ce taux.
+    pub vat: Decimal,
+}
+
 /// Rapport TVA complet pour une période.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -58,11 +72,26 @@ pub struct VatReport {
     pub rows: Vec<VatReportRow>,
     pub total_base_ht: Decimal,
     pub total_vat_due: Decimal,
+    /// Diminutions de contre-prestation de la période, par taux (Story 25-4-d2c) :
+    /// la TVA corrigée par les soldes dont la date tombe dans la période, lue dans
+    /// leur ventilation **figée**. Vide sans solde.
+    ///
+    /// ⚠️ Limites : un solde **annulé** disparaît de sa période (la ligne de
+    /// règlement est retirée) et sa contre-passation n'est jointe nulle part — la
+    /// reprise de TVA n'apparaît dans aucun décompte et l'écart reste muet (même
+    /// comportement que l'avoir, #390) ; les parts sans TVA (0 %, ou arrondies à
+    /// zéro) n'apparaissent pas.
+    pub write_off_rows: Vec<VatWriteOffRow>,
+    /// Somme de la TVA des soldes de la période.
+    pub total_vat_write_off: Decimal,
+    /// TVA due **nette** = `total_vat_due − total_vat_write_off` (Story 25-4-d2c).
+    pub total_vat_due_net: Decimal,
     /// TVA récupérable (achats / impôt préalable) = solde du compte
     /// `default_vat_recoverable_account_id` au grand livre sur la période
     /// (Story 18-1d). `0.00` si le compte n'est pas configuré.
     pub total_vat_recoverable: Decimal,
-    /// Solde = `total_vat_due - total_vat_recoverable`.
+    /// Solde = `total_vat_due_net − total_vat_recoverable` — sur la TVA **nette**
+    /// depuis la Story 25-4-d2c (auparavant sur la TVA facturée).
     pub vat_balance: Decimal,
     /// Écart de réconciliation (Story 18-1e, DC5) =
     /// `total_vat_due` (dérivé des `invoice_lines`, total de référence traçable)
@@ -129,6 +158,12 @@ pub async fn generate(
     let total_base_ht: Decimal = rows.iter().map(|r| r.base_ht).sum();
     let total_vat_due: Decimal = rows.iter().map(|r| r.vat_due).sum();
 
+    // Story 25-4-d2c : les diminutions — la ventilation figée des soldes de la
+    // période, agrégée par taux.
+    let write_off_rows = write_off_rows(pool, company_id, period).await?;
+    let total_vat_write_off: Decimal = write_off_rows.iter().map(|r| r.vat).sum();
+    let total_vat_due_net = total_vat_due - total_vat_write_off;
+
     // Stories 18-1d/18-1e : lecture des comptes TVA configurés en une seule requête.
     // La row `company_invoice_settings` existe dès l'onboarding ; chaque compte peut
     // ne pas être configuré (NULL) → récupérable/delta = 0 (comportement préservé).
@@ -150,7 +185,7 @@ pub async fn generate(
         Some(account_id) => recoverable_balance(pool, company_id, account_id, period).await?,
         None => Decimal::ZERO,
     };
-    let vat_balance = total_vat_due - total_vat_recoverable;
+    let vat_balance = total_vat_due_net - total_vat_recoverable;
 
     // Story 18-1e (DC5) : réconciliation TVA due. Cross-check de la TVA due dérivée
     // des `invoice_lines` (ci-dessus) contre le solde du compte TVA due au grand
@@ -163,9 +198,13 @@ pub async fn generate(
     // un faux écart si des factures validées pré-existantes portent de la TVA).
     let (reconciliation_delta, reconciliation_status) = match payable_account_id {
         Some(account_id) => {
-            let balance =
+            let sales =
                 due_account_balance_sales_scope(pool, company_id, account_id, period).await?;
-            let delta = total_vat_due - balance;
+            // Story 25-4-d2c : le grand livre NET — les écritures de solde de la
+            // période débitent la TVA due ; mesurées en `débit − crédit`.
+            let write_offs =
+                due_account_debit_write_off_scope(pool, company_id, account_id, period).await?;
+            let delta = total_vat_due_net - (sales - write_offs);
             // Seuil 1 centime. NB : `Decimal::new(1, 2)` (pas `dec!` — macro dev-only).
             let status = if delta.abs() >= Decimal::new(1, 2) {
                 "delta".to_string()
@@ -182,6 +221,9 @@ pub async fn generate(
         rows,
         total_base_ht,
         total_vat_due,
+        write_off_rows,
+        total_vat_write_off,
+        total_vat_due_net,
         total_vat_recoverable,
         vat_balance,
         reconciliation_delta,
@@ -232,6 +274,81 @@ async fn due_account_balance_sales_scope(
     .await
     .map_err(kesh_db::errors::map_db_error)?;
     Ok(balance)
+}
+
+/// Les diminutions de contre-prestation de la période (Story 25-4-d2c) : la
+/// ventilation figée (`write_off_vat`) des soldes de la société datés dans la
+/// période, agrégée par taux — tri par taux croissant, comme `rows`. Une
+/// ventilation de forme fausse est une erreur ([`ReportError::CorruptData`]).
+async fn write_off_rows(
+    pool: &MySqlPool,
+    company_id: i64,
+    period: &ReportPeriod,
+) -> Result<Vec<VatWriteOffRow>, ReportError> {
+    let breakdowns: Vec<(i64, Option<serde_json::Value>)> = sqlx::query_as(
+        "SELECT id, write_off_vat FROM invoice_settlements \
+         WHERE company_id = ? AND settlement_type = 'write_off' \
+           AND settled_on BETWEEN ? AND ?",
+    )
+    .bind(company_id)
+    .bind(period.start_date)
+    .bind(period.end_date)
+    .fetch_all(pool)
+    .await
+    .map_err(kesh_db::errors::map_db_error)?;
+
+    let mut by_rate: BTreeMap<Decimal, (Decimal, Decimal)> = BTreeMap::new();
+    for (id, breakdown) in breakdowns {
+        let breakdown = breakdown.ok_or_else(|| {
+            ReportError::CorruptData(format!("solde {id} sans ventilation (write_off_vat NULL)"))
+        })?;
+        let shares = kesh_db::repositories::invoice_settlements::parse_write_off_vat(&breakdown)
+            .map_err(|e| ReportError::CorruptData(format!("solde {id} : {e}")))?;
+        for share in shares {
+            let entry = by_rate
+                .entry(share.rate_percent)
+                .or_insert((Decimal::ZERO, Decimal::ZERO));
+            entry.0 += share.base_ht;
+            entry.1 += share.vat_amount;
+        }
+    }
+    Ok(by_rate
+        .into_iter()
+        .map(|(rate, (base_ht, vat))| VatWriteOffRow { rate, base_ht, vat })
+        .collect())
+}
+
+/// Le débit du compte de TVA due par les **écritures de solde** de la période
+/// (Story 25-4-d2c) : `SUM(debit) − SUM(credit)` — de signe **opposé** à
+/// [`due_account_balance_sales_scope`], car l'écriture de solde ne fait que
+/// débiter ce compte. Jointure par la ligne de règlement `write_off` : un solde
+/// annulé (ligne retirée) n'y est plus, ni son écriture ni sa contre-passation.
+///
+/// Limite : suppose le compte de TVA due **distinct** du compte d'une nature (un
+/// compte de nature réglé sur la TVA due ferait compter son débit ici).
+async fn due_account_debit_write_off_scope(
+    pool: &MySqlPool,
+    company_id: i64,
+    account_id: i64,
+    period: &ReportPeriod,
+) -> Result<Decimal, ReportError> {
+    let debit: Decimal = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(jel.debit), 0) - COALESCE(SUM(jel.credit), 0) \
+         FROM journal_entry_lines jel \
+         INNER JOIN invoice_settlements s ON s.journal_entry_id = jel.entry_id \
+         WHERE s.company_id = ? \
+           AND s.settlement_type = 'write_off' \
+           AND s.settled_on BETWEEN ? AND ? \
+           AND jel.account_id = ?",
+    )
+    .bind(company_id)
+    .bind(period.start_date)
+    .bind(period.end_date)
+    .bind(account_id)
+    .fetch_one(pool)
+    .await
+    .map_err(kesh_db::errors::map_db_error)?;
+    Ok(debit)
 }
 
 /// Solde du compte d'impôt préalable (`account_id`) au grand livre sur la période
@@ -295,6 +412,9 @@ mod tests {
         let total_vat_due: Decimal = rows.iter().map(|r| r.vat_due).sum();
         let total_vat_recoverable = Decimal::ZERO;
         let vat_balance = total_vat_due - total_vat_recoverable;
+        let write_off_rows = Vec::new();
+        let total_vat_write_off = Decimal::ZERO;
+        let total_vat_due_net = total_vat_due;
         VatReport {
             period: ReportPeriod {
                 fiscal_year_id: 1,
@@ -304,6 +424,9 @@ mod tests {
             rows,
             total_base_ht,
             total_vat_due,
+            write_off_rows,
+            total_vat_write_off,
+            total_vat_due_net,
             total_vat_recoverable,
             vat_balance,
             reconciliation_delta: Decimal::ZERO,

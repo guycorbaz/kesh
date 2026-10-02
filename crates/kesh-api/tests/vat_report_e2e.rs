@@ -324,6 +324,11 @@ async fn vat_report_aggregates_by_rate_validated_only(pool: MySqlPool) {
     assert_eq!(dec_field(&body, "totalVatDue"), dec!(256.00));
     assert_eq!(dec_field(&body, "totalVatRecoverable"), dec!(0));
     assert_eq!(dec_field(&body, "vatBalance"), dec!(256.00));
+    // Story 25-4-d2c : les champs des diminutions traversent la frontière HTTP —
+    // sans solde, liste vide, total nul, TVA nette égale à la TVA facturée.
+    assert_eq!(body["writeOffRows"], serde_json::json!([]), "{body}");
+    assert_eq!(dec_field(&body, "totalVatWriteOff"), dec!(0));
+    assert_eq!(dec_field(&body, "totalVatDueNet"), dec!(256.00));
 }
 
 /// AC#3 — arrondi PAR LIGNE ≠ global : 3 lignes 0.10 @ 8 % → 0.03 (pas 0.02).

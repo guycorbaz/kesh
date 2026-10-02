@@ -981,7 +981,8 @@ sa banque a retenu des frais, ou il ne paiera plus rien ---, le bouton \emph{Sol
 fiche (comptable ou administrateur) éteint \textbf{tout} le reste dû et le passe au compte de la
 \textbf{nature} choisie~: \emph{escompte accordé}, \emph{frais bancaires}, \emph{perte sur
 débiteur}, ou \emph{reste d'arrondi}. Le montant n'est pas saisi~: c'est le reste dû, exactement
---- affiché aux quatre décimales s'il porte une fraction de centime. L'escompte et la perte \textbf{corrigent la TVA due} au prorata des taux de la facture~; les
+--- affiché aux quatre décimales s'il porte une fraction de centime. L'escompte et la perte \textbf{corrigent la TVA due} au prorata des taux de la facture --- le
+décompte TVA de la période du solde la retranche (\S\ref{sec:decompte-tva})~; les
 frais et l'arrondi, non. Chaque nature a son compte, choisi par un administrateur dans
 \emph{Paramètres} → \emph{Facturation}, section \emph{Solde du reste}~; sans lui, le dialogue le
 signale. Le \emph{reste d'arrondi} n'est proposé que pour un reste de moins de 5~centimes~--- c'est
@@ -1646,24 +1647,25 @@ Les factures dont les rappels sont \textbf{suspendus restent comptées} dans la 
 
 \emph{Mensuel} → \emph{Rapports} → \emph{Journal}. Liste chronologique de toutes les écritures de la période sélectionnée. Vue brute, idéale pour audit ou contrôle.
 
-\subsection{Décompte TVA}
+\subsection{Décompte TVA}\label{sec:decompte-tva}
 
-\emph{Mensuel} → \emph{Rapports} → \emph{TVA}. Produit le décompte de la TVA pour la période sélectionnée, à partir des écritures réellement comptabilisées.
+\emph{Mensuel} → \emph{Rapports} → \emph{TVA}. Produit le décompte de la TVA pour la période sélectionnée. La TVA due est calculée \textbf{à partir des factures} validées de la période --- et non du grand livre ---, la TVA récupérable à partir du compte d'impôt préalable.
 
 \begin{itemize}
     \item \textbf{TVA due} : la TVA facturée sur les ventes, ventilée par taux (8.1\%, 3.7\%, 2.5\%, 0\%). Elle est comptabilisée automatiquement lors de la validation de chaque facture de vente (compte \emph{TVA due}, p.~ex. 2200).
     \item \textbf{TVA récupérable} (impôt préalable) : la TVA payée sur les achats, lue du solde du compte d'impôt préalable (p.~ex. 1171). Elle s'alimente via l'assistant de saisie d'achat (cf. \emph{Saisie d'une écriture}), qui pré-remplit la ligne d'impôt préalable à partir d'un taux.
-    \item \textbf{Solde net dû à l'AFC} : TVA due − TVA récupérable. Un solde négatif signifie un crédit d'impôt en votre faveur.
+    \item \textbf{Diminutions de contre-prestation (soldes)} : la TVA corrigée par les \emph{soldes} (escompte accordé, perte sur débiteur --- \S\ref{sec:reglement-client}) datés dans la période, ventilée par taux. La section n'apparaît que s'il y a de tels soldes, suivie de la \textbf{TVA due nette} (TVA due − TVA des soldes).
+    \item \textbf{Solde net dû à l'AFC} : TVA due \textbf{nette} − TVA récupérable. Un solde négatif signifie un crédit d'impôt en votre faveur.
 \end{itemize}
 
 \paragraph{Alerte d'écart --- ce qu'elle voit, et ce qu'elle ne voit pas.} Kesh compare le
-montant de TVA due calculé depuis les factures aux écritures comptables de ces mêmes factures.
+montant de TVA due nette calculé depuis les factures et les soldes aux écritures comptables de ces mêmes factures et de ces mêmes soldes.
 Si la ligne de TVA d'une facture a été \textbf{retouchée à la main} et ne correspond plus à la
 TVA facturée, un \textbf{bandeau d'alerte} affiche l'écart. L'alerte est informative --- elle
 ne bloque pas le rapport. Le décompte et l'écart figurent aussi dans les exports PDF et CSV.
 
 \begin{keshwarning}[title=\faExclamationTriangle\ Cette alerte ne rapproche pas le décompte du grand livre]
-Le contrôle porte sur les écritures \textbf{des factures retenues par le décompte}, et non sur
+Le contrôle porte sur les écritures \textbf{des factures et des soldes retenus par le décompte}, et non sur
 le \textbf{solde du compte de TVA due}. Il applique donc le même filtre des deux côtés : une
 facture qui sort du décompte sort aussi de la comparaison, et l'écart n'apparaît pas.
 
@@ -1673,6 +1675,14 @@ facture d'origine : elle quitte le décompte de sa période --- y compris si cet
 déjà été déclarée --- et la contre-passation est datée du jour de l'avoir, où le décompte ne
 la reprend pas non plus. Le grand livre, lui, est juste dans les deux périodes.
 \textbf{L'alerte n'en dira rien}, et affichera même que tout concorde.
+
+\medskip
+\noindent Le \textbf{solde annulé} suit le même chemin. Annuler un escompte ou une perte retire
+sa diminution de la période du solde --- y compris si elle a déjà été déclarée ---, et la
+contre-passation, datée du jour, n'est reprise nulle part : \textbf{la TVA reprise n'apparaît
+dans aucun décompte}, et l'alerte reste muette. Reportez-la à la main. N'apparaissent pas non
+plus les parts d'un solde sans TVA (lignes exonérées, ou part trop petite pour porter un
+centime de TVA).
 
 \medskip
 \noindent \textbf{Conséquence pratique.} Un décompte relancé plus tard peut donner un autre
@@ -2122,7 +2132,7 @@ dialogue qui le prennent en charge.
 Nouveautés de la version 0.3.0 :
 
 \begin{itemize}
-    \item TVA suisse comptabilisée : TVA due aux ventes (comptabilisée automatiquement à la validation des factures), impôt préalable sur les achats via l'assistant de saisie, décompte TVA (solde net dû à l'AFC) et contrôle de cohérence entre le décompte et les écritures des factures qu'il retient (cf. \emph{Décompte TVA}, dont l'encadré dit ce que ce contrôle ne voit pas). Le décompte officiel AFC / e-décompte ESTV et le taux de la dette fiscale nette restent à venir.
+    \item TVA suisse comptabilisée : TVA due aux ventes (comptabilisée automatiquement à la validation des factures), impôt préalable sur les achats via l'assistant de saisie, décompte TVA (solde net dû à l'AFC, après les diminutions de contre-prestation des soldes) et contrôle de cohérence entre le décompte et les écritures des factures et des soldes qu'il retient (cf. \emph{Décompte TVA}, dont l'encadré dit ce que ce contrôle ne voit pas). Le décompte officiel AFC / e-décompte ESTV et le taux de la dette fiscale nette restent à venir.
 \end{itemize}
 
 Disponibles depuis la version 0.2.0 :

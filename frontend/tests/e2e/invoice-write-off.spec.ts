@@ -112,6 +112,17 @@ test('solder le reste en escompte depuis la fiche, puis annuler le solde', async
 			"annulez d'abord le solde",
 		);
 
+		// Story 25-4-d2c — AVANT l'annulation (un solde annulé quitte le rapport) :
+		// le rapport TVA de la période retranche la TVA du solde. Seul test qui voit
+		// les champs des diminutions traverser la frontière HTTP.
+		await page.goto('/reports');
+		await page.waitForLoadState('networkidle');
+		await page.getByRole('tab', { name: /^TVA$/ }).click();
+		await page.getByRole('button', { name: /générer/i }).click();
+		await expect(page.getByTestId('vat-write-off-section')).toBeVisible();
+		await expect(page.getByTestId('vat-total-vat-due-net')).toBeVisible();
+		await page.goto(`/invoices/${invoiceId}`);
+
 		// Annuler le solde : le reste réapparaît.
 		const cancel = page.getByTestId('invoice-settlement-cancel');
 		await expect(cancel).toHaveCount(1);

@@ -65,8 +65,43 @@
 				<tr class="border-t font-semibold">
 					<td class="px-2 py-1">{i18nMsg('reports-vat-total-base-ht', 'Total CA HT')}</td>
 					<td class="px-2 py-1 text-right font-mono">{fmt(dto.totalBaseHt)}</td>
-					<td class="px-2 py-1 text-right font-mono">{fmt(dto.totalVatDue)}</td>
+					<td class="px-2 py-1 text-right font-mono" data-testid="vat-total-vat-due">
+						{fmt(dto.totalVatDue)}
+					</td>
 				</tr>
+				<!-- Story 25-4-d2c : les diminutions de contre-prestation (soldes) —
+				     seulement s'il y en a dans la période. -->
+				{#if dto.writeOffRows.length > 0}
+					<tr class="border-t" data-testid="vat-write-off-section">
+						<td colspan="3" class="px-2 py-1 font-semibold">
+							{i18nMsg(
+								'reports-vat-write-off-title',
+								'Diminutions de contre-prestation (soldes)',
+							)}
+						</td>
+					</tr>
+					{#each dto.writeOffRows as row (row.rate)}
+						<tr data-testid="vat-write-off-row">
+							<td class="px-2 py-1 font-mono">{fmtRate(row.rate)}</td>
+							<td class="px-2 py-1 text-right font-mono">{fmt(row.baseHt)}</td>
+							<td class="px-2 py-1 text-right font-mono">{fmt(row.vat)}</td>
+						</tr>
+					{/each}
+					<tr>
+						<td colspan="2" class="px-2 py-1"
+							>{i18nMsg('reports-vat-total-write-off', 'Total TVA des soldes')}</td
+						>
+						<td class="px-2 py-1 text-right font-mono">{fmt(dto.totalVatWriteOff)}</td>
+					</tr>
+					<tr class="font-semibold">
+						<td colspan="2" class="px-2 py-1"
+							>{i18nMsg('reports-vat-due-net', 'TVA due nette')}</td
+						>
+						<td class="px-2 py-1 text-right font-mono" data-testid="vat-total-vat-due-net">
+							{fmt(dto.totalVatDueNet)}
+						</td>
+					</tr>
+				{/if}
 				<tr>
 					<td colspan="2" class="px-2 py-1"
 						>{i18nMsg('reports-vat-recoverable', 'TVA récupérable')}</td
@@ -75,7 +110,9 @@
 				</tr>
 				<tr class="border-t font-semibold">
 					<td colspan="2" class="px-2 py-1">{i18nMsg('reports-vat-balance', 'Solde')}</td>
-					<td class="px-2 py-1 text-right font-mono">{fmt(dto.vatBalance)}</td>
+					<td class="px-2 py-1 text-right font-mono" data-testid="vat-balance">
+						{fmt(dto.vatBalance)}
+					</td>
 				</tr>
 			</tfoot>
 		</table>

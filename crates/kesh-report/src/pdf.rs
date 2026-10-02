@@ -1014,6 +1014,12 @@ pub struct VatPdfLabels {
     pub total_base_ht: String,
     /// Libellé total TVA due.
     pub total_vat_due: String,
+    /// Titre de la section des diminutions de contre-prestation (Story 25-4-d2c).
+    pub write_off_title: String,
+    /// Libellé total de la TVA des soldes (Story 25-4-d2c).
+    pub total_vat_write_off: String,
+    /// Libellé TVA due nette (Story 25-4-d2c).
+    pub total_vat_due_net: String,
     /// Libellé TVA récupérable.
     pub vat_recoverable: String,
     /// Libellé solde.
@@ -1033,6 +1039,9 @@ impl VatPdfLabels {
             col_vat_due: "TVA due".into(),
             total_base_ht: "Total chiffre d'affaires HT".into(),
             total_vat_due: "Total TVA due".into(),
+            write_off_title: "Diminutions de contre-prestation (soldes)".into(),
+            total_vat_write_off: "Total TVA des soldes".into(),
+            total_vat_due_net: "TVA due nette".into(),
             vat_recoverable: "TVA récupérable".into(),
             balance: "Solde".into(),
             reconciliation_delta: "Écart de réconciliation".into(),
@@ -1077,7 +1086,11 @@ pub fn render_vat_report_pdf(
     // Story 18-1d : un rapport sans vente (rows vide) mais avec de la TVA
     // récupérable (achats seuls) n'est PAS vide — on rend le bloc totaux
     // (récupérable + solde). On ne court-circuite que si AUSSI récupérable == 0.
-    if report.rows.is_empty() && report.total_vat_recoverable == Decimal::ZERO {
+    // Story 25-4-d2c : ni avec des soldes.
+    if report.rows.is_empty()
+        && report.total_vat_recoverable == Decimal::ZERO
+        && report.write_off_rows.is_empty()
+    {
         draw_empty_message(&mut builder, ctx);
         return builder.finalize();
     }
@@ -1107,6 +1120,30 @@ pub fn render_vat_report_pdf(
     // Totaux + récupérable + solde.
     draw_totals_footer(&mut builder, &labels.total_base_ht, report.total_base_ht);
     draw_totals_footer(&mut builder, &labels.total_vat_due, report.total_vat_due);
+    // Story 25-4-d2c : les diminutions (soldes) — seulement s'il y en a.
+    if !report.write_off_rows.is_empty() {
+        builder.cursor_y -= LINE_HEIGHT_MM * 0.5;
+        draw_vat_row(&mut builder, &labels.write_off_title, "", "", true);
+        for row in &report.write_off_rows {
+            draw_vat_row(
+                &mut builder,
+                &format_rate(row.rate),
+                &format_swiss_amount(row.base_ht),
+                &format_swiss_amount(row.vat),
+                false,
+            );
+        }
+        draw_totals_footer(
+            &mut builder,
+            &labels.total_vat_write_off,
+            report.total_vat_write_off,
+        );
+        draw_totals_footer(
+            &mut builder,
+            &labels.total_vat_due_net,
+            report.total_vat_due_net,
+        );
+    }
     draw_totals_footer(
         &mut builder,
         &labels.vat_recoverable,
@@ -2008,6 +2045,9 @@ mod tests {
             },
             total_base_ht: if empty { Decimal::ZERO } else { dec!(1000) },
             total_vat_due: if empty { Decimal::ZERO } else { dec!(81.00) },
+            write_off_rows: vec![],
+            total_vat_write_off: Decimal::ZERO,
+            total_vat_due_net: if empty { Decimal::ZERO } else { dec!(81.00) },
             total_vat_recoverable: Decimal::ZERO,
             vat_balance: if empty { Decimal::ZERO } else { dec!(81.00) },
             reconciliation_delta: Decimal::ZERO,
@@ -2044,6 +2084,9 @@ mod tests {
             rows: vec![],
             total_base_ht: Decimal::ZERO,
             total_vat_due: Decimal::ZERO,
+            write_off_rows: vec![],
+            total_vat_write_off: Decimal::ZERO,
+            total_vat_due_net: Decimal::ZERO,
             total_vat_recoverable: dec!(81.00),
             vat_balance: dec!(-81.00),
             reconciliation_delta: Decimal::ZERO,
@@ -2060,6 +2103,43 @@ mod tests {
             bytes.len() > empty_bytes.len(),
             "le PDF achats-seuls (totaux rendus) doit être plus gros que le message vide"
         );
+    }
+
+    /// Story 25-4-d2c — un rapport avec des soldes : sans vente ni récupérable,
+    /// il n'est PAS vide (garde de `render_vat_report_pdf`) ; avec des ventes, la
+    /// section des soldes l'allonge.
+    fn with_write_off(mut report: VatReport) -> VatReport {
+        report.write_off_rows = vec![crate::vat_report::VatWriteOffRow {
+            rate: dec!(8.10),
+            base_ht: dec!(20.00),
+            vat: dec!(1.62),
+        }];
+        report.total_vat_write_off = dec!(1.62);
+        report.total_vat_due_net = report.total_vat_due - dec!(1.62);
+        report
+    }
+
+    #[test]
+    fn vat_report_pdf_write_off_only_is_not_empty() {
+        let ctx = PdfContext::fr_ch_default("CI Test Company");
+        let labels = VatPdfLabels::fr_ch_defaults();
+        let empty = render_vat_report_pdf(&fixture_vat(true), &ctx, &labels).unwrap();
+        let write_off_only =
+            render_vat_report_pdf(&with_write_off(fixture_vat(true)), &ctx, &labels).unwrap();
+        assert!(
+            write_off_only.len() > empty.len(),
+            "un rapport avec des soldes ne court-circuite pas sur le message vide"
+        );
+    }
+
+    #[test]
+    fn vat_report_pdf_draws_the_write_off_section_only_with_write_offs() {
+        let ctx = PdfContext::fr_ch_default("CI Test Company");
+        let labels = VatPdfLabels::fr_ch_defaults();
+        let plain = render_vat_report_pdf(&fixture_vat(false), &ctx, &labels).unwrap();
+        let with =
+            render_vat_report_pdf(&with_write_off(fixture_vat(false)), &ctx, &labels).unwrap();
+        assert!(with.len() > plain.len(), "la section des soldes s'ajoute");
     }
 
     // --- AC #8 — empty report : génère un PDF valide avec empty_message ---

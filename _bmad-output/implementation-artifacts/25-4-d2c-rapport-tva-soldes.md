@@ -1,6 +1,6 @@
 # Story 25.4-d2c : Solder le reste — le rapport TVA retranche la TVA des soldes
 
-Status: in-progress
+Status: review
 
 **Issue : [#384]** — fermée par cette story (la PR porte `closes #384`, titre **et** corps). Dernière des trois stories
 de la 25-4-d2. Empilée sur la 25-4-d2b (branche `story/25-4-d2c-rapport-tva-soldes`).
@@ -122,13 +122,13 @@ CHANGELOG `[0.12.1]` : l'entrée d2a (« le rapport TVA ne retranche pas encore 
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — le calcul** (AC 1, AC 2, AC 3), `vat_report.rs`.
-- [ ] **T2 — les rendus** CSV et PDF (AC 4).
-- [ ] **T3 — l'écran et les types** (AC 4, AC 5).
-- [ ] **T4 — i18n** (AC 5).
-- [ ] **T5 — manuel, CHANGELOG** (AC 6).
-- [ ] **T6 — tests** (AC 7), dont les fixtures `VatReport` existantes complétées et l'E2E `reports.spec.ts` ancré.
-- [ ] **T7 — gates** : backend complet, frontend complet, **E2E complet**.
+- [x] **T1 — le calcul** (AC 1, AC 2, AC 3), `vat_report.rs`.
+- [x] **T2 — les rendus** CSV et PDF (AC 4).
+- [x] **T3 — l'écran et les types** (AC 4, AC 5).
+- [x] **T4 — i18n** (AC 5).
+- [x] **T5 — manuel, CHANGELOG** (AC 6).
+- [x] **T6 — tests** (AC 7), dont les fixtures `VatReport` existantes complétées et l'E2E `reports.spec.ts` ancré.
+- [x] **T7 — gates** : backend complet, frontend complet, **E2E complet**.
 
 ## Dev Notes
 
@@ -149,14 +149,67 @@ CHANGELOG `[0.12.1]` : l'entrée d2a (« le rapport TVA ne retranche pas encore 
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`).
+
 ### Debug Log References
+
+- `cargo clippy` : un commentaire de documentation orphelin (reste d'une copie) dans `vat_report_write_off.rs` —
+  `empty line after doc comment` — remplacé par la doc réelle de l'assistant `report`.
+- `gen` est un mot réservé (édition 2024) : l'assistant de test s'appelle `report`.
 
 ### Completion Notes List
 
+- **Calcul** (T1) : `VatWriteOffRow`, `write_off_rows` agrégées par taux (requête sur `invoice_settlements`,
+  `settlement_type='write_off'`, société, `settled_on` dans la période), `total_vat_write_off`, `total_vat_due_net` ;
+  `vat_balance` calculé sur le net ; le delta compare le net au grand livre net (`ventes − soldes`, `soldes` =
+  `SUM(debit) − SUM(credit)` du compte de TVA due sur les écritures de solde de la période). Lecture du JSON par
+  `parse_write_off_vat`, à côté de `write_off_vat_json` ; forme fausse → `ReportError::CorruptData` → 500
+  (`tracing::error!` + `AppError::Internal`, sur le précédent `TrialBalanceUnbalanced`).
+- **Rendus** (T2) : CSV (ligne de titre de section, lignes par taux, « Total TVA des soldes », « TVA due nette ») et
+  PDF (trois libellés neufs dans `VatPdfLabels`), conditionnels ; les deux gardes « vide » testent aussi l'absence de
+  soldes.
+- **Écran** (T3, T4) : section et « TVA due nette » conditionnelles, `isReportEmpty('vat')` tient compte des soldes ;
+  trois clés i18n × 4 locales, `sitesTotal` 1808 → 1811.
+- **Manuel, CHANGELOG** (T5) : § *Décompte TVA* — la phrase fausse sur la source de la TVA due corrigée, la puce des
+  diminutions, le solde sur le net, le contrôle étendu aux soldes, la limite du solde annulé et des parts sans TVA ;
+  renvoi depuis la section des soldes (`\label{sec:decompte-tva}`) ; glossaire. `README.md:44` relu : reste vrai, non
+  modifié. PDF régénéré, contrôlé aplati (`pdftotext | tr`), aucune référence indéfinie. CHANGELOG : l'entrée d2a ne
+  dit plus « ne retranche pas encore », entrée d2c ajoutée (dont le sens de `vatBalance`).
+- **Tests** (T6) — **périmètre : de `HEAD` = `ff116692` (fiche validée, aucun code) à l'arbre de travail** :
+  Rust **+13** — `vat_report_write_off.rs` 5 (base : escompte par taux et delta nul ; facture antérieure, delta nul ;
+  hors période / frais bancaires / autre société ignorés ; solde annulé disparu ; JSON de forme fausse →
+  `CorruptData`), `csv.rs` +3, `pdf.rs` +2, `errors.rs` (kesh-api) +1 (`CorruptData` → 500 sans fuite du détail),
+  `invoice_settlements.rs` (kesh-db) +2 (aller-retour écriture/lecture ; six formes fausses). `vat_report_e2e.rs` :
+  assertions sur les trois champs neufs, sans test neuf. Vitest **+5** (`VatReportView.test.ts`, neuf). E2E :
+  `reports.spec.ts` ancré, `invoice-write-off.spec.ts` étendu (rapport TVA avant l'annulation du solde).
+- **Gates** (T7, arbre de travail final) : base remise à zéro, `scripts/test-fast.sh` **2627/2627** (fmt, clippy,
+  nextest) ; frontend `check` 0 erreur, `lint-i18n-ownership` PASS, `test:unit` **886/886**, `build` OK ; **E2E complet**
+  sur `kesh_e2e` reconstruite (run de 14:29 UTC) : **230 passés, 10 échoués** — les 8 attendus (KF-029 ×7,
+  `sidebar-navigation:75` KF-046) et 2 de pollution, `accounts.spec.ts:185` et `product-revenue-account.spec.ts:133`,
+  **verts rejoués seuls** ; `invoice-write-off.spec.ts` et `reports.spec.ts` verts. ⚠️ L'E2E a tourné **avant** l'ajout
+  des tests `errors.rs` / `invoice_settlements.rs` (tests seuls, aucun code de production touché ensuite) ; le gate
+  backend, lui, est postérieur.
+- **Mutations tuées** : le delta sans les soldes (`vat_report_write_off.rs`) ; `CorruptData` mappé en `Validation`
+  (`errors.rs`) ; une clé absente lue comme `"0"` (`parse_write_off_vat`).
+
 ### File List
+
+- `CHANGELOG.md`
+- `crates/kesh-api/src/errors.rs`
+- `crates/kesh-api/tests/vat_report_e2e.rs`
+- `crates/kesh-db/src/repositories/invoice_settlements.rs`
+- `crates/kesh-i18n/locales/{de-CH,en-CH,fr-CH,it-CH}/messages.ftl`
+- `crates/kesh-report/src/{csv.rs,errors.rs,pdf.rs,vat_report.rs}`
+- `crates/kesh-report/tests/vat_report_write_off.rs` (neuf)
+- `docs/manual/fr/user-manual.{tex,pdf}`
+- `frontend/src/lib/features/reports/{VatReportView.svelte,reports.api.ts,reports.types.ts}`
+- `frontend/src/lib/features/reports/VatReportView.test.ts` (neuf)
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/tests/e2e/{invoice-write-off.spec.ts,reports.spec.ts}`
 
 ## Change Log
 
+- **2026-10-02** — Implémentée (dev-story) : T1–T7, gates ci-dessus. Statut → `review`.
 - **2026-10-02** — Créée (Guy : « oui, enchaîne »).
 - **2026-10-02** — Validation P4 ciblée (Haiku) : 1 LOW (plage `errors.rs:954-963` → `:953-965`), corrigé ; cohérence de
   l'AC 4, référence et réalisabilité de l'E2E confirmées, preuves fournies. **Boucle close** : P1 1H/1M/2L (Sonnet) →

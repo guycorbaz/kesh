@@ -384,7 +384,11 @@ const ATTENDU = {
 	// Revue de code P1 de la 25-4-d2b : **1807 → 1808** — `WriteOffDialog.svelte`
 	// (13 → 14) : « Reste dû en cours de calcul… », le dialogue restant monté
 	// quand le reste n'est pas calculé.
-	sitesTotal: 1808,
+	//
+	// Story 25-4-d2c (#384) : **1808 → 1811** — `reports/VatReportView.svelte`
+	// (9 → 12) : la section des diminutions de contre-prestation (titre, total
+	// de la TVA des soldes, TVA due nette).
+	sitesTotal: 1811,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

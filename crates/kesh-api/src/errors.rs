@@ -950,6 +950,12 @@ impl From<kesh_report::errors::ReportError> for AppError {
                 requested_start,
                 requested_end,
             },
+            // Story 25-4-d2c — même traitement qu'un invariant cassé : journalisé,
+            // 500, jamais un rapport faux.
+            ReportError::CorruptData(detail) => {
+                tracing::error!(%detail, "rapport : donnée corrompue — invariant cassé");
+                AppError::Internal(format!("corrupt data: {detail}"))
+            }
             ReportError::TrialBalanceUnbalanced {
                 total_debit,
                 total_credit,
@@ -3233,6 +3239,19 @@ mod tests {
         assert_eq!(status, StatusCode::UNAUTHORIZED);
         assert_eq!(body["error"]["code"], "INVALID_CREDENTIALS");
         assert_eq!(body["error"]["message"], "Identifiants invalides");
+    }
+
+    /// Story 25-4-d2c — un `write_off_vat` de forme fausse rend un 500 générique,
+    /// jamais un rapport faux, et le détail interne ne sort pas.
+    #[tokio::test]
+    async fn report_corrupt_data_maps_to_500_without_leak() {
+        let err = kesh_report::errors::ReportError::CorruptData("solde 42 : clé absente".into());
+        let resp = AppError::from(err).into_response();
+        let (status, body) = response_body(resp).await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["error"]["code"], "INTERNAL_ERROR");
+        let message = body["error"]["message"].as_str().unwrap();
+        assert!(!message.contains("solde 42"), "detail leaked: {message}");
     }
 
     #[tokio::test]

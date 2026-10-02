@@ -231,10 +231,13 @@ test('reports page generates VAT décompte with TVA due end-to-end (Story 18-1f 
 	// Le décompte affiche TVA due (81.00), TVA récupérable et solde.
 	const tabpanel = page.getByRole('tabpanel');
 	await expect(tabpanel).toBeVisible();
-	await expect(tabpanel.getByText(/TVA due/i)).toBeVisible();
+	// Story 25-4-d2c : sélecteurs ANCRÉS — « TVA due nette » et « Total TVA des
+	// soldes » contiennent « TVA due » et « soldes » ; une sous-chaîne les attrape
+	// dès qu'un solde existe en base (l'E2E du solde en crée un).
+	await expect(tabpanel.getByRole('columnheader', { name: 'TVA due', exact: true })).toBeVisible();
 	await expect(tabpanel.getByText('81.00').first()).toBeVisible({ timeout: 5000 });
 	await expect(tabpanel.getByText(/TVA récupérable/i)).toBeVisible();
-	await expect(tabpanel.getByText(/Solde/i)).toBeVisible();
+	await expect(tabpanel.getByTestId('vat-balance')).toBeVisible();
 	// Pas d'erreur backend rendue.
 	await expect(page.getByRole('alert')).toHaveCount(0);
 });
