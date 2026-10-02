@@ -1,6 +1,6 @@
 # Story 25.4-d2b : Solder le reste — le bouton, le dialogue, la liste
 
-Status: review
+Status: done
 
 **Issues : [#490]** (fermée par cette story — la PR porte `closes #490`), **[#384]** (`refs` — la 25-4-d2c, le rapport TVA,
 la fermera).
@@ -331,6 +331,11 @@ Claude Opus 5.5 (`claude-opus-5-5`).
   l'échéancier passe aussi par `formatExactAmount` (colonne et totaux cohérents), commentaire corrigé. **L3** :
   `formatExactAmount` retrouve la tolérance de `formatInvoiceTotal` (valeur illisible → chaîne vide). **L4** : la croix
   masquée pendant l'envoi est vérifiée (mutation tuée). Gates : `kesh-i18n` vert, frontend lint, **881/881**, build.
+- **2026-10-02** — Revue de code P3 ciblée (Haiku, sur la remédiation `8f6d4487`) : **0 finding**, mais rendu **sans
+  aucune commande ni sortie** — repris par l'orchestrateur au `grep` : clé fr-CH identique au repli, trois propriétés de
+  blocage présentes, garde du parent absente. **Boucle close** : P1 1H/3M/6L (Sonnet ×3) → P2 2M/4L (Opus, dont une
+  régression de mon correctif de P1) → P3 0 (Haiku). Gates au dernier commit : backend **2614/2614** (base remise à
+  zéro), frontend **881/881**, build, E2E **231/9** (7 KF-029 + 2 KF-045, run à 08:57 UTC). Statut → done.
 
 [#384]: https://github.com/guycorbaz/kesh/issues/384
 [#490]: https://github.com/guycorbaz/kesh/issues/490
