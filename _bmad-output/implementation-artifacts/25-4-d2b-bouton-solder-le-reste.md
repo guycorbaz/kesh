@@ -109,8 +109,9 @@ antérieur montre le motif « annulez d'abord le solde », le solde s'annule et 
 
 - L'**échéancier** (liste et export) affiche `amountSettled`, qui inclut les soldes : une facture soldée en perte y
   paraît « réglée » de tout son montant, au statut « Payée ». Distinguer exigerait un champ serveur
-  (`amountWrittenOff`) — hors périmètre ; à ouvrir en CR si Guy le veut.
-- Le statut d'une facture soldée reste **« Payée »** (`paymentStatusOf`) ; un statut « Soldée » est une autre story.
+  (`amountWrittenOff`) — hors périmètre : **[#496]** (CR ouverte le 2026-10-02, à la demande de Guy).
+- Le statut d'une facture soldée reste **« Payée »** (`paymentStatusOf`) ; un statut « Soldée » est une autre story :
+  **[#497]** (CR ouverte le 2026-10-02).
 
 ### Modules
 
@@ -128,7 +129,10 @@ antérieur montre le motif « annulez d'abord le solde », le solde s'annule et 
 
 ## Change Log
 
-- **2026-10-02** — Créée (Guy : « enchaîne »).
+- **2026-10-02** — Créée (Guy : « enchaîne »). Les deux limites assumées sont tracées en CR à la demande de Guy :
+  #496 (encaissé et soldé à l'échéancier), #497 (statut « Soldée »).
 
 [#384]: https://github.com/guycorbaz/kesh/issues/384
 [#490]: https://github.com/guycorbaz/kesh/issues/490
+[#496]: https://github.com/guycorbaz/kesh/issues/496
+[#497]: https://github.com/guycorbaz/kesh/issues/497
