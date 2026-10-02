@@ -84,7 +84,8 @@ Administrateur (`canManage`), à côté de « Enregistrer un règlement ».
   - `ILLEGAL_STATE_TRANSITION` (facture dévalidée entre-temps), et `INVALID_INPUT` « déjà payée » ou « rien à solder » :
     la facture est relue et le dialogue **se ferme** ;
   - après **toute** relecture : le dialogue se ferme si la facture est payée ou son reste nul ; la nature choisie est
-    réinitialisée si elle n'est plus proposée (reste d'arrondi devenu ≥ 0.05). ⚠️ Le dialogue **reste ouvert** et le
+    réinitialisée si elle n'est plus proposée (reste d'arrondi devenu ≥ 0.05). ⚠️ **Sinon** — facture encore validée,
+  non payée, reste positif, c'est le cas d'`OPTIMISTIC_LOCK_CONFLICT` — le dialogue **reste ouvert** et le
   **montant affiché comme la `version` envoyée suivent la facture relue** : ils se lisent dans la facture passée au
   dialogue **au moment de la confirmation**, pas dans une copie faite à l'ouverture (le patron `SettleInvoiceDialog` ne
   se resynchronise qu'à l'ouverture, `:91-101` — ne pas le reproduire ici, sans quoi une nouvelle tentative renverrait
@@ -135,7 +136,9 @@ sa notification (« solde » / « règlement » selon la cible) ; le récapitula
 le solde ») ; le récapitulatif (« Soldé » séparé, `big.js`). Vitest encore : `ILLEGAL_STATE_TRANSITION` ferme le dialogue ; « 68.1000 » n'exige pas le compte d'arrondi ;
 0.0040 s'affiche aux quatre décimales ; réglages inconnus → aucun pré-contrôle ; `amountDue` à `null` → pas de bouton ;
 relecture de la liste en échec après un solde → « Reste dû » seul. **E2E** `invoice-write-off.spec.ts` — **montage** :
-désigner un compte d'escompte imputable (le 4000 *Charges* du seed) par `PUT /company/invoice-settings` (Admin), une
+désigner un compte d'escompte imputable (le 4000 *Charges CI* du seed) **par le formulaire** *Paramètres → Facturation*
+(connecté en Admin), comme le patron — un `PUT` brut exigerait aussi `invoiceNumberFormat`, `defaultSalesJournal` et
+`journalEntryDescriptionTemplate` (`company_invoice_settings.rs:83-91`) —, une
 facture au TTC multiple de 0.05 à TVA 8.10 (le prorata s'exerce, sans compte d'arrondi requis) ; **nettoyage** : les
 réglages remis à vide (patron `invoice-settings-write-off-accounts.spec.ts`). Scénario : une facture réglée
 en partie, soldée en escompte depuis la fiche → reste dû nul, ligne « Solde — escompte accordé », le règlement
@@ -195,6 +198,10 @@ antérieur montre le motif « annulez d'abord le solde », le solde s'annule et 
 
 ## Change Log
 
+- **2026-10-02** — Validation P3 ciblée (Sonnet) : 1 MED, 1 LOW, retenus. La règle de fermeture « après toute
+  relecture » et la phrase « le dialogue reste ouvert » n'étaient pas reliées — le second cas est écrit comme le
+  complémentaire du premier ; le montage de l'E2E passe par le formulaire des paramètres. Un site CHANGELOG soupçonné
+  manquant a été vérifié couvert.
 - **2026-10-02** — Validation P2 (Opus) : 9 MED, 8 LOW, tous retenus. Un 409 n'est pas toujours une version périmée →
   cas distingués sur `err.code`, dialogue fermé sur facture dévalidée ou payée (M1) ; pré-contrôle « fraction de centime »
   en `Big.eq`, `dueToCentime` partagé (M2) ; reste à fraction de centime affiché aux quatre décimales — 0.0040 n'est
