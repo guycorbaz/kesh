@@ -1,6 +1,6 @@
 # Story 25.4-d2c : Solder le reste — le rapport TVA retranche la TVA des soldes
 
-Status: review
+Status: done
 
 **Issue : [#384]** — fermée par cette story (la PR porte `closes #384`, titre **et** corps). Dernière des trois stories
 de la 25-4-d2. Empilée sur la 25-4-d2b (branche `story/25-4-d2c-rapport-tva-soldes`).
@@ -176,9 +176,9 @@ Claude Opus 5.5 (`claude-opus-5-5`).
   modifié. PDF régénéré, contrôlé aplati (`pdftotext | tr`), aucune référence indéfinie. CHANGELOG : l'entrée d2a ne
   dit plus « ne retranche pas encore », entrée d2c ajoutée (dont le sens de `vatBalance`).
 - **Tests** (T6) — **périmètre : de `HEAD` = `ff116692` (fiche validée, aucun code) à l'arbre de travail** :
-  Rust **+13** — `vat_report_write_off.rs` 5 (base : escompte par taux et delta nul ; facture antérieure, delta nul ;
+  Rust **+13** au commit `043e8209`, **+14** revue comprise — `vat_report_write_off.rs` 5, puis 6 (base : escompte par taux et delta nul ; facture antérieure, delta nul ;
   hors période / frais bancaires / autre société ignorés ; solde annulé disparu ; JSON de forme fausse →
-  `CorruptData`), `csv.rs` +3, `pdf.rs` +2, `errors.rs` (kesh-api) +1 (`CorruptData` → 500 sans fuite du détail),
+  `CorruptData` ; en revue P1, deux soldes au même taux fusionnés), `csv.rs` +3, `pdf.rs` +2, `errors.rs` (kesh-api) +1 (`CorruptData` → 500 sans fuite du détail),
   `invoice_settlements.rs` (kesh-db) +2 (aller-retour écriture/lecture ; six formes fausses). `vat_report_e2e.rs` :
   assertions sur les trois champs neufs, sans test neuf. Vitest **+5** (`VatReportView.test.ts`, neuf). E2E :
   `reports.spec.ts` ancré, `invoice-write-off.spec.ts` étendu (rapport TVA avant l'annulation du solde).
@@ -190,7 +190,8 @@ Claude Opus 5.5 (`claude-opus-5-5`).
   des tests `errors.rs` / `invoice_settlements.rs` (tests seuls, aucun code de production touché ensuite) ; le gate
   backend, lui, est postérieur.
 - **Mutations tuées** : le delta sans les soldes (`vat_report_write_off.rs`) ; `CorruptData` mappé en `Validation`
-  (`errors.rs`) ; une clé absente lue comme `"0"` (`parse_write_off_vat`).
+  (`errors.rs`) ; une clé absente lue comme `"0"` (`parse_write_off_vat`) ; en revue P1, `+=` → `=` dans l'agrégation par taux
+  (seul le test neuf la tue).
 
 ### File List
 
@@ -209,6 +210,14 @@ Claude Opus 5.5 (`claude-opus-5-5`).
 
 ## Change Log
 
+- **2026-10-02** — Revue de code P1 (Sonnet ×3, prompt `25-4-d2c-review-prompt-p1.md`) : **0 CRITICAL/HIGH/MEDIUM**,
+  4 LOW. Corrigés : ligne vide du CHANGELOG (B, C) ; limite du compte d'arrondi confondu avec la TVA due, au
+  doc-comment de `due_account_debit_write_off_scope` (B — moins d'un centime, sous le seuil d'alerte) ; test neuf
+  `write_offs_of_several_invoices_merge_per_rate` (B — l'agrégation de deux soldes au même taux n'était tenue par aucun
+  test : la mutation `+=` → `=` n'était tuée que par lui). Écarté : la double journalisation du détail de
+  `CorruptData` (A) — l'AC 1 impose le précédent `TrialBalanceUnbalanced`, qui fait de même. **Boucle close** : la
+  remédiation ne touche aucune ligne de code de production (un test, un commentaire, le CHANGELOG). Gate ciblé
+  (`fmt`, `clippy` workspace, `binary(vat_report_write_off)` 6/6) vert ; **gate complet au push**. Statut → `done`.
 - **2026-10-02** — Implémentée (dev-story) : T1–T7, gates ci-dessus. Statut → `review`.
 - **2026-10-02** — Créée (Guy : « oui, enchaîne »).
 - **2026-10-02** — Validation P4 ciblée (Haiku) : 1 LOW (plage `errors.rs:954-963` → `:953-965`), corrigé ; cohérence de

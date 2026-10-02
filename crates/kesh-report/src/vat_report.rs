@@ -324,8 +324,9 @@ async fn write_off_rows(
 /// débiter ce compte. Jointure par la ligne de règlement `write_off` : un solde
 /// annulé (ligne retirée) n'y est plus, ni son écriture ni sa contre-passation.
 ///
-/// Limite : suppose le compte de TVA due **distinct** du compte d'une nature (un
-/// compte de nature réglé sur la TVA due ferait compter son débit ici).
+/// Limite : suppose le compte de TVA due **distinct** du compte d'une nature et
+/// du compte de différences d'arrondi (réglé sur la TVA due, l'un ou l'autre
+/// ferait compter son débit ici — moins d'un centime pour l'arrondi).
 async fn due_account_debit_write_off_scope(
     pool: &MySqlPool,
     company_id: i64,

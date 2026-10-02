@@ -194,6 +194,42 @@ async fn a_discount_in_the_period_is_subtracted_per_rate(pool: MySqlPool) {
     assert_eq!(r.reconciliation_status, "ok");
 }
 
+/// Deux soldes de deux factures, au même taux, dans la période : **une** ligne
+/// par taux, montants additionnés (revue P1, lentille B).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn write_offs_of_several_invoices_merge_per_rate(pool: MySqlPool) {
+    let seeded = company(&pool).await;
+    let contact = seed_contact(&pool, &seeded).await;
+    let a = create_validated_invoice(&pool, &seeded, contact, ymd(2026, 3, 1), &LINES).await;
+    // 50 × 1.081 = 54.05 (multiple de 0.05 : pas d'arrondi).
+    let b = create_validated_invoice(
+        &pool,
+        &seeded,
+        contact,
+        ymd(2026, 4, 1),
+        &[(dec!(8.10), dec!(50.00))],
+    )
+    .await;
+    write_off(&pool, &seeded, a, Nature::Discount, ymd(2026, 3, 10)).await;
+    write_off(&pool, &seeded, b, Nature::Discount, ymd(2026, 4, 10)).await;
+
+    let r = report(&pool, &seeded).await;
+    let rows: Vec<_> = r
+        .write_off_rows
+        .iter()
+        .map(|w| (w.rate, w.base_ht, w.vat))
+        .collect();
+    assert_eq!(
+        rows,
+        vec![
+            (dec!(2.60), dec!(100.00), dec!(2.60)),
+            (dec!(8.10), dec!(150.00), dec!(12.15))
+        ]
+    );
+    assert_eq!(r.total_vat_write_off, dec!(14.75));
+    assert_eq!(r.reconciliation_delta, dec!(0.00));
+}
+
 /// Un solde de la période sur une facture d'une période ANTÉRIEURE : la correction
 /// est retranchée, et l'écart reste nul (la TVA facturée manque des deux côtés).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
