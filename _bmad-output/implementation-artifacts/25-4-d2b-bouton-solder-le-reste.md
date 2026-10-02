@@ -38,7 +38,7 @@ afin de clore une facture sans passer par l'API ni par une écriture manuelle.
   dialogue, `submitting`).
 - **Types** `invoices.types.ts` : `InvoiceSettlementResponse.settlementType` est une union fermée de deux valeurs, sans
   `writeOffNature`.
-- **Manuel** `docs/manual/fr/user-manual.tex` § *Enregistrer et annuler un règlement* (`:960-1003`) : ne connaît ni le
+- **Manuel** `docs/manual/fr/user-manual.tex` § *Enregistrer et annuler un règlement* (`:960-1006`) : ne connaît ni le
   solde, ni le motif « un solde existe », ni le reste insoldable de #490.
 
 ## Acceptance Criteria
@@ -55,19 +55,34 @@ Administrateur (`canManage`), à côté de « Enregistrer un règlement ».
 - une nature dont le compte n'est **pas désigné** (`invoiceSettings.default*AccountId` à `null` ; le compte d'arrondi
   pour la nature `rounding`) est **signalée** dans le dialogue avec un renvoi à *Paramètres → Facturation* — et le
   bouton de confirmation est **désactivé** pour elle (le serveur refuserait de toute façon ; le signaler avant évite un
-  aller-retour) ;
+  aller-retour). ⚠️ **Le compte d'arrondi est aussi exigé pour les trois autres natures** dès que le reste dû a une
+  **fraction de centime** (`amountDue` ≠ son arrondi au centime) : le serveur y impute la fraction
+  (`invoice_settlements_write.rs:471-483`, d2a). Le pré-contrôle le vérifie donc pour **toute** nature dans ce cas ;
+- un compte désigné mais **archivé ou non imputable** n'est pas détectable côté client (`InvoiceSettingsResponse` ne
+  porte que l'identifiant) : le serveur le refuse au clic, et son message s'affiche dans le dialogue — limite assumée
+  (cf. *Limites assumées*) ;
 - la **date**, par défaut aujourd'hui ;
 - confirmation → `POST …/write-off` avec la `version` de la facture affichée ; succès : la facture et la liste sont
   relues, notification ; refus : le **message du serveur** dans le dialogue ; **409** (version périmée) : la facture est
-  relue et le dialogue le dit (« la facture a changé, vérifiez le reste dû »).
+  relue et le dialogue le dit (« la facture a changé, vérifiez le reste dû »). ⚠️ Le dialogue **reste ouvert** et le
+  **montant affiché comme la `version` envoyée suivent la facture relue** : ils se lisent dans la facture passée au
+  dialogue **au moment de la confirmation**, pas dans une copie faite à l'ouverture (le patron `SettleInvoiceDialog` ne
+  se resynchronise qu'à l'ouverture, `:91-101` — ne pas le reproduire ici, sans quoi une nouvelle tentative renverrait
+  l'ancienne version et bouclerait en 409).
 
 **AC 3 — La liste.** `typeLabel` connaît le solde : « Solde — escompte accordé » / « — frais bancaires » / « — perte
 sur débiteur » / « — reste d'arrondi » selon `writeOffNature`. Types TS : `settlementType` ajoute `'write_off'`,
-`writeOffNature` ajouté. Le bouton « Annuler le règlement » d'un solde dit « **Annuler le solde** ».
+`writeOffNature` ajouté. Le bouton « Annuler le règlement » d'un solde dit « **Annuler le solde** » — et, sur la fiche,
+le **dialogue de confirmation** qu'il ouvre (`+page.svelte`, titre `:1339`, description `:1343`, bouton `:1364`) et la
+**notification de succès** (`:193`) disent « solde » quand la cible est un solde (`cancelTarget.settlementType ===
+'write_off'`) : « Annuler ce solde ? … », « Solde annulé : l'écriture inverse a été passée. »
 
 **AC 4 — Le récapitulatif.** Sur la fiche, « Déjà réglé » ne compte plus les soldes : une ligne **« Soldé »** (la somme
 des lignes `write_off` de la liste) s'ajoute quand il y en a, et « Déjà réglé » = `amountSettled − soldé`. Les
-montants se calculent avec `big.js`, jamais en `Number`.
+montants se calculent avec `big.js`, jamais en `Number`. ⚠️ Si la liste des règlements **n'a pas pu être chargée**
+(échec toléré, `loadSettlements` → `[]`), la séparation est impossible : le récapitulatif n'affiche alors **que le
+« Reste dû »** (juste, il vient du serveur), sans « Déjà réglé » ni « Soldé » — plutôt qu'un « Déjà réglé » qui
+inclurait silencieusement le solde. Un drapeau « liste chargée » le distingue d'une liste vide.
 
 **AC 5 — i18n** : toutes les chaînes dans les 4 locales, `sitesTotal` recompté, compteur de libellés en dur
 (`i18n-libelle-en-dur.test.ts`) recompté si une déclaration `*Label` est ajoutée.
@@ -79,7 +94,9 @@ annulez d'abord le solde » ajouté à la liste des refus d'annulation. PDF rég
 l'entrée d2a (« le bouton arrive avec la suite ») mise à jour — le bouton est là ; #490 cité comme fermée.
 
 **AC 7 — Tests.** Vitest : le dialogue (natures proposées selon le reste, nature sans compte signalée et confirmation
-désactivée, payload envoyé avec la `version`, message serveur affiché, 409) ; la liste (libellé par nature, « Annuler
+désactivée, **compte d'arrondi exigé pour toute nature sur un reste à fraction de centime**, payload envoyé avec la
+`version`, message serveur affiché, 409 puis **nouvelle tentative avec la version relue**) ; le dialogue d'annulation et
+sa notification (« solde » / « règlement » selon la cible) ; le récapitulatif quand la liste n'a pas pu être chargée ; la liste (libellé par nature, « Annuler
 le solde ») ; le récapitulatif (« Soldé » séparé, `big.js`). **E2E** `invoice-write-off.spec.ts` : une facture réglée
 en partie, soldée en escompte depuis la fiche → reste dû nul, ligne « Solde — escompte accordé », le règlement
 antérieur montre le motif « annulez d'abord le solde », le solde s'annule et le reste réapparaît ; le test remet son
@@ -110,6 +127,11 @@ antérieur montre le motif « annulez d'abord le solde », le solde s'annule et 
 - L'**échéancier** (liste et export) affiche `amountSettled`, qui inclut les soldes : une facture soldée en perte y
   paraît « réglée » de tout son montant, au statut « Payée ». Distinguer exigerait un champ serveur
   (`amountWrittenOff`) — hors périmètre : **[#496]** (CR ouverte le 2026-10-02, à la demande de Guy).
+- Un compte de nature désigné mais **archivé ou non imputable** passe le pré-contrôle du dialogue : le serveur le
+  refuse au clic (`WRITE_OFF_ACCOUNT_NOT_CONFIGURED`), message affiché dans le dialogue.
+- Le nouveau bouton est réservé à Comptable et Administrateur (`canManage`), comme le patron le plus récent (« Annuler
+  le règlement ») ; le bouton voisin « Enregistrer un règlement » ne l'est pas — incohérence **antérieure**, laissée
+  telle quelle (le serveur refuse de toute façon).
 - Le statut d'une facture soldée reste **« Payée »** (`paymentStatusOf`) ; un statut « Soldée » est une autre story :
   **[#497]** (CR ouverte le 2026-10-02).
 
@@ -129,6 +151,11 @@ antérieur montre le motif « annulez d'abord le solde », le solde s'annule et 
 
 ## Change Log
 
+- **2026-10-02** — Validation P1 (Sonnet) : 2 HIGH, 3 MED, 2 LOW, tous retenus. Compte d'arrondi exigé pour **toute**
+  nature sur un reste à fraction de centime (H1) ; le dialogue de confirmation d'annulation et sa notification disent
+  « solde » pour un solde (H2) ; récapitulatif réduit au « Reste dû » si la liste des règlements n'a pas pu être chargée
+  (M1) ; compte archivé non détectable côté client, écrit en limite assumée (M2) ; montant et `version` lus au moment de
+  la confirmation, dialogue ouvert après un 409 (M3) ; plage du manuel corrigée, asymétrie `canManage` écrite (L1, L2).
 - **2026-10-02** — Créée (Guy : « enchaîne »). Les deux limites assumées sont tracées en CR à la demande de Guy :
   #496 (encaissé et soldé à l'échéancier), #497 (statut « Soldée »).
 
