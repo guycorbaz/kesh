@@ -243,6 +243,8 @@ describe("fiche facture — fermer pendant l'envoi (revue P1, B-H1)", () => {
     await fireEvent.click(r.getByTestId("write-off-confirm"));
     await fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
     expect(r.queryByTestId("write-off-confirm")).not.toBeNull();
+    // Revue P2 (L4) : la croix est masquée pendant l'envoi.
+    expect(document.querySelector('[data-slot="dialog-close"]')).toBeNull();
     reject({
       code: "WRITE_OFF_ACCOUNT_NOT_CONFIGURED",
       message: "Aucun compte d'escompte utilisable n'est désigné",

@@ -336,13 +336,13 @@
 <div class="mb-4 rounded-md border border-border bg-surface-alt px-4 py-3 text-sm">
 	<strong>{summary.unpaidCount}</strong>
 	{i18nMsg('due-dates-summary-unpaid', 'factures impayées')},
-	<strong>CHF {formatInvoiceTotal(summary.unpaidTotal)}</strong>
+	<strong>CHF {formatExactAmount(summary.unpaidTotal)}</strong>
 	{#if summary.overdueCount > 0}
 		—
 		<span class="text-warning">
 			{summary.overdueCount}
 			{i18nMsg('due-dates-summary-overdue', 'en retard')}
-			(CHF {formatInvoiceTotal(summary.overdueTotal)})
+			(CHF {formatExactAmount(summary.overdueTotal)})
 		</span>
 	{/if}
 </div>
@@ -453,8 +453,9 @@
 					</td>
 					<td class="py-2 pr-2">{inv.contactName}</td>
 					<!-- #246 : TTC émis. ⚠️ Ce n'est plus le montant dû depuis la 24-2 :
-					     la colonne suivante le porte (Story 25-4-b1), cohérente avec les
-					     totaux du résumé. -->
+					     la colonne suivante le porte (Story 25-4-b1), affichée comme les
+					     totaux du résumé — au centime, ou aux quatre décimales sur une
+					     fraction de centime (Story 25-4-d2b). -->
 					<td class="py-2 pr-2 text-right font-mono">{formatInvoiceTotal(inv.totalTtc)}</td>
 					<td class="py-2 pr-2 text-right font-mono" data-testid="due-dates-amount-due">
 						<!-- Story 25-4-d2b (revue P1) : un reste de 0.0040 ne se lit pas « 0.00 ». -->

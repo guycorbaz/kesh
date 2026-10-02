@@ -321,6 +321,16 @@ Claude Opus 5.5 (`claude-opus-5-5`).
   décimales — hors périmètre). **3 tests neufs** (`WriteOffDialog.test.ts` 4 → 5, `invoice-write-off-page.test.ts`
   10 → 11, `due-dates-page.test.ts` +1), la mutation de la fermeture tuée. Gates : `kesh-i18n` vert, frontend
   `check`, lint, **881/881**, build.
+- **2026-10-02** — Revue de code P2 ciblée (Opus, sur la remédiation `c575efa3`) : 2 MED, 4 LOW, retenus. **M1 —
+  régression de mon correctif de P1** : la garde ajoutée dans le parent (`if (!o && writeOffSubmitting) return`) ne
+  bloquait rien (le dialogue se ferme quand même, `open` étant relié en interne) et rendait **morte** la notification
+  « dialogue plus ouvert », que le Change Log de P1 revendiquait — garde retirée, l'état du parent suit l'état réel.
+  **M2** : le message « Reste dû en cours de calcul… » ne s'affichait jamais (`nature !== null` exigé) et rien ne
+  calcule — affiché quand le reste est inconnu, reformulé « … n'est pas connu : rechargez la fiche » (4 locales). **L1** :
+  la validation renvoie aussi `amountDue: null` — la fiche relit la facture après validation. **L2** : le résumé de
+  l'échéancier passe aussi par `formatExactAmount` (colonne et totaux cohérents), commentaire corrigé. **L3** :
+  `formatExactAmount` retrouve la tolérance de `formatInvoiceTotal` (valeur illisible → chaîne vide). **L4** : la croix
+  masquée pendant l'envoi est vérifiée (mutation tuée). Gates : `kesh-i18n` vert, frontend lint, **881/881**, build.
 
 [#384]: https://github.com/guycorbaz/kesh/issues/384
 [#490]: https://github.com/guycorbaz/kesh/issues/490

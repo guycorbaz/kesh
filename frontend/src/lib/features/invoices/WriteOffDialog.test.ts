@@ -89,6 +89,8 @@ describe('WriteOffDialog', () => {
 		});
 		expect(r.queryByTestId('write-off-nature-discount')).toBeNull();
 		expect((r.getByTestId('write-off-confirm') as HTMLButtonElement).disabled).toBe(true);
+		// Revue P2 (M2) : l'utilisateur sait pourquoi.
+		expect(r.getByText(/n'est pas connu/)).toBeTruthy();
 	});
 });
 

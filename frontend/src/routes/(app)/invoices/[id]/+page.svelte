@@ -375,6 +375,14 @@
 		try {
 			const updated = await validateInvoice(invoice.id);
 			invoice = updated;
+			// Story 25-4-d2b (revue P2) : la réponse de la validation ne calcule pas
+			// le reste dû (`amountDue: null`) — relire, sans quoi le bouton « Solder
+			// le reste » resterait absent jusqu'au rechargement.
+			try {
+				invoice = await getInvoice(updated.id);
+			} catch {
+				// Échec toléré : la facture validée renvoyée reste affichée.
+			}
 			// Review edge #13 : repli si `invoiceNumber` est nul (ne devrait pas
 			// arriver, mais défensif). ⚠️ Les deux branches passent par une clé :
 			// `invoice-validate-success` **impose** `{ $invoiceNumber }`, d'où une
@@ -1446,9 +1454,9 @@
 		open={writeOffOpen}
 		onOpenChange={(o: boolean) => {
 			// La fermeture pendant l'envoi est bloquée DANS le dialogue (Échap, clic
-			// extérieur, croix — revue P1, B-H1) ; ce test garde seulement l'état du
-			// parent cohérent si une fermeture passait malgré tout.
-			if (!o && writeOffSubmitting) return;
+			// extérieur, croix — revue P1, B-H1). L'état du parent suit l'état réel,
+			// sans garde : si une fermeture passait malgré tout, `writeOffOpen` faux
+			// déclenche la notification du refus (revue P2).
 			writeOffOpen = o;
 			if (!o) writeOffError = '';
 		}}

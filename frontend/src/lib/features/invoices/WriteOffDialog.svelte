@@ -91,7 +91,10 @@
 
 	let clientError = $derived.by(() => {
 		if (amountDue === null) {
-			return i18nMsg('invoices-write-off-error-unknown-due', 'Reste dû en cours de calcul…');
+			return i18nMsg(
+				'invoices-write-off-error-unknown-due',
+				'Le reste dû de cette facture n\'est pas connu : rechargez la fiche.',
+			);
 		}
 		if (nature === null) {
 			return i18nMsg('invoices-write-off-error-nature', "Choisissez la nature de l'écart.");
@@ -218,7 +221,7 @@
 			>
 				{errorMsg}
 			</div>
-		{:else if clientError && nature !== null}
+		{:else if clientError && (nature !== null || amountDue === null)}
 			<div
 				class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive"
 			>

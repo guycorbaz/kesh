@@ -80,7 +80,13 @@ export function hasSubCentime(raw: string): boolean {
  * (Story 25-4-d2b, cas de #490).
  */
 export function formatExactAmount(raw: string): string {
-	return formatSwissAmount(new Big(raw), hasSubCentime(raw) ? 4 : 2);
+	// Même tolérance que `formatInvoiceTotal` : une valeur illisible rend une
+	// chaîne vide plutôt que de faire échouer le rendu de toute une liste.
+	try {
+		return formatSwissAmount(new Big(raw), hasSubCentime(raw) ? 4 : 2);
+	} catch {
+		return '';
+	}
 }
 
 export function formatInvoiceTotal(d: string | null | undefined): string {
