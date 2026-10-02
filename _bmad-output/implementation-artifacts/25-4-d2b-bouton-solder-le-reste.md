@@ -198,10 +198,18 @@ antérieur montre le motif « annulez d'abord le solde », le solde s'annule et 
 
 ## Change Log
 
-- **2026-10-02** — Validation P3 ciblée (Sonnet) : 1 MED, 1 LOW, retenus. La règle de fermeture « après toute
+- **2026-10-02** — Validation P3 ciblée (Sonnet) : 1 MED, 1 LOW, retenus. **M1** : la règle de fermeture « après toute
   relecture » et la phrase « le dialogue reste ouvert » n'étaient pas reliées — le second cas est écrit comme le
-  complémentaire du premier ; le montage de l'E2E passe par le formulaire des paramètres. Un site CHANGELOG soupçonné
-  manquant a été vérifié couvert.
+  complémentaire du premier (« Sinon — … `OPTIMISTIC_LOCK_CONFLICT` »). **L1** : le montage de l'E2E passe par le
+  formulaire des paramètres (un `PUT` brut exigerait trois champs de plus). La lentille avait aussi soupçonné un site du
+  symptôme manquant à l'AC 6 — `CHANGELOG.md:81`, l'entrée d2a (« arrive avec la suite ») — et l'a trouvé couvert par la
+  phrase d'introduction de l'AC 6 (« l'entrée d2a … mise à jour ») : soupçon réfuté, aucune correction requise.
+- **2026-10-02** — Validation P4 ciblée (Haiku) : 1 MED, 1 LOW. **Le MED est réfuté** (erreur de catégorie) : il
+  reprochait à l'entrée P3 d'affirmer une vérification « sans trace dans le diff » — or un soupçon vérifié et réfuté
+  n'appelle pas de modification ; reclassé LOW, et l'entrée P3 nomme désormais le site (`CHANGELOG.md:81`) et la raison.
+  **L1** : les corrections de P3 sont étiquetées (M1, L1). La partition des refus de l'AC 2 et la référence
+  `company_invoice_settings.rs:83-91` sont confirmées. **Boucle close** : P1 2H/3M/2L (Sonnet) → P2 9M/8L (Opus) → P3
+  1M/1L (Sonnet) → P4 0 > LOW (Haiku) ; remédiation de P4 sur la fiche seule.
 - **2026-10-02** — Validation P2 (Opus) : 9 MED, 8 LOW, tous retenus. Un 409 n'est pas toujours une version périmée →
   cas distingués sur `err.code`, dialogue fermé sur facture dévalidée ou payée (M1) ; pré-contrôle « fraction de centime »
   en `Big.eq`, `dueToCentime` partagé (M2) ; reste à fraction de centime affiché aux quatre décimales — 0.0040 n'est
