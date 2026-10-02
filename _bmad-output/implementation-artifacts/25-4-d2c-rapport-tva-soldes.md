@@ -53,8 +53,9 @@ afin que la TVA due déclarée soit celle des contre-prestations réellement obt
 `Decimal` depuis les chaînes du JSON, par une fonction placée **à côté de** `write_off_vat_json` (`kesh-db`,
 `invoice_settlements.rs` — la forme ne s'écrit qu'à un endroit). Un JSON **de forme fausse** (pas un tableau, clé
 absente, valeur non chaîne, décimal illisible — la syntaxe, elle, est garantie par `json_valid`) est une **erreur**, jamais
-un zéro silencieux : variante neuve `ReportError::CorruptData(String)`, mappée en **500** avec `tracing::error!` dans
-`From<ReportError> for AppError` (`kesh-api/src/errors.rs:931-975`, `match` exhaustif).
+un zéro silencieux : variante neuve `ReportError::CorruptData(String)`, mappée en **500** dans `From<ReportError> for AppError`
+(`kesh-api/src/errors.rs:931-975`, `match` exhaustif) **sur le précédent de `TrialBalanceUnbalanced`** (`:954-963`) :
+`tracing::error!` puis `AppError::Internal(…)` (code `INTERNAL_ERROR`).
 
 **AC 2 — Le solde net.** `total_vat_due` et `rows` restent la TVA **facturée** (inchangés) ; un champ
 `total_vat_due_net = total_vat_due − total_vat_write_off` s'ajoute ; `vat_balance = total_vat_due_net −
@@ -69,8 +70,9 @@ jel.entry_id AND s.settlement_type = 'write_off'`, `s.company_id = ?`, `s.settle
 `71.00 − (81.00 − 10.00) = 0`. Un solde de la période sur une facture d'une période **antérieure** : la TVA facturée
 manque des deux côtés, la correction est des deux côtés — delta nul. Sans solde, le delta est inchangé.
 
-**AC 4 — Les rendus.** CSV : après les lignes par taux et le total de TVA due, une section « Diminutions de
-contre-prestation (soldes) » — une ligne par taux (taux, base HT, TVA), puis « Total TVA des soldes » et « TVA due
+**AC 4 — Les rendus.** Partout (CSV, PDF, écran), la section et la « TVA due nette » n'apparaissent **que s'il y a des
+soldes** dans la période : sans soldes, chaque rendu est inchangé. CSV : après les lignes par taux et le total de TVA
+due, une section « Diminutions de contre-prestation (soldes) » — une ligne par taux (taux, base HT, TVA), puis « Total TVA des soldes » et « TVA due
 nette » — et le solde existant calculé sur le net. PDF : la même section, dans le style des tableaux existants.
 Le CSV porte une **ligne de titre** pour la section (première colonne seule), qui la distingue des lignes de vente de même
 forme. `VatPdfLabels` (`pdf.rs:1004`) gagne trois libellés (titre de section, total des soldes, TVA due nette).
@@ -97,13 +99,15 @@ CHANGELOG `[0.12.1]` : l'entrée d2a (« le rapport TVA ne retranche pas encore 
   (`[]`) → aucune ligne ; un solde d'une **autre société** → ignoré ; un solde **annulé** → disparaît ;
 - le delta reste nul sans solde (non-régression) ;
 - JSON illisible → erreur ;
-- rendus CSV et PDF : la section et la TVA nette ;
+- rendus CSV et PDF : la section et la TVA nette avec des soldes, leur absence sans soldes, et **chacun des deux gardes
+  Rust** (`csv.rs:377`, `pdf.rs:1080`) : sans vente ni récupérable, mais avec un solde → rendu **non vide** ;
 - Vitest de la vue (`VatReportView.test.ts`, à créer) : sans soldes, section et TVA nette **absentes** ; avec soldes,
   présentes ; rapport vide ; bandeau d'écart inchangé ; et `isReportEmpty('vat', …)` : **pas de vente, un solde → pas
   vide** ; un test d'API sur la forme de la réponse ;
 - JSON de forme fausse inséré en SQL → `CorruptData` (500 à l'API) ;
 - **E2E** : `reports.spec.ts:234-237` ancré (`exact: true` ou `data-testid`) ; `invoice-write-off.spec.ts` étendu —
-  après le solde, le rapport TVA de la période montre la section des soldes (le seul test qui voit les trois champs
+  après le solde **et avant son annulation** (un solde annulé quitte le rapport, AC 8), le rapport TVA de la période
+  montre la section des soldes (le seul test qui voit les trois champs
   traverser la frontière HTTP).
 
 **AC 8 — Limites assumées** (écrites au manuel et dans le code) :
@@ -154,6 +158,12 @@ CHANGELOG `[0.12.1]` : l'entrée d2a (« le rapport TVA ne retranche pas encore 
 ## Change Log
 
 - **2026-10-02** — Créée (Guy : « oui, enchaîne »).
+- **2026-10-02** — Validation P3 ciblée (Sonnet) : 3 MED, 2 LOW. Retenus : l'E2E vérifie le rapport **avant**
+  l'annulation (M1) ; un test par garde Rust « vide » (M2) ; section et TVA nette conditionnelles **partout** (L1) ;
+  `CorruptData` sur le précédent `TrialBalanceUnbalanced` (L2). **M3 — le signal de découpage HIGH → HIGH (P1 → P2) a
+  été écarté par un motif que la règle ne prévoit pas** (« défauts distincts, cinq modules ») : la règle demande le
+  découpage, et l'arbitrage revient au Project Lead — signalé à Guy en P2 sans attendre sa réponse, **reposé
+  explicitement le 2026-10-02**. Le plafond de sévérité redescend en P3 (HIGH → HIGH → MED).
 - **2026-10-02** — Validation P2 (Opus) : 1 HIGH, 3 MED, 5 LOW, retenus. L'E2E `reports.spec.ts` cherche « TVA due » et
   « Solde » par sous-chaîne — ancré, « TVA due nette » affichée seulement avec des soldes, et un scénario E2E « solde
   puis rapport » (H1) ; la limite du solde annulé dit sa conséquence fiscale — la reprise n'apparaît nulle part, l'alerte
