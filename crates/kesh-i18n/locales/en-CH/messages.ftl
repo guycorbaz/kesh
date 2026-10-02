@@ -717,6 +717,7 @@ invoices-write-off-date-label = Write-off date
 invoices-write-off-dialog-body = The amount still due is extinguished and posted to the account of the chosen kind. A write-off is cancelled like a payment.
 invoices-write-off-dialog-title = Write off the remainder
 invoices-write-off-error-nature = Choose the kind of difference.
+invoices-write-off-error-unknown-due = Amount due being calculated…
 invoices-write-off-error-date-before-invoice = The write-off date cannot be earlier than the invoice date
 invoices-write-off-error-date-required = Write-off date required
 invoices-write-off-help-no-vat = No VAT correction.

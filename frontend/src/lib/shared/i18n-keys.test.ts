@@ -381,7 +381,10 @@ const ATTENDU = {
 	// dialogue d'annulation d'un solde, « Soldé »), `InvoiceSettlements.svelte`
 	// (10 → 12 : libellé d'un solde, « Annuler le solde »), `WriteOffDialog.svelte`
 	// (0 → 13) et `write-off.ts` (0 → 6 : quatre natures, deux aides).
-	sitesTotal: 1807,
+	// Revue de code P1 de la 25-4-d2b : **1807 → 1808** — `WriteOffDialog.svelte`
+	// (13 → 14) : « Reste dû en cours de calcul… », le dialogue restant monté
+	// quand le reste n'est pas calculé.
+	sitesTotal: 1808,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

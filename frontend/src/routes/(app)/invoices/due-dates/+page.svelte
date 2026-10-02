@@ -27,7 +27,11 @@
 		InvoiceSortBy,
 		SortDirection,
 	} from '$lib/features/invoices/invoices.types';
-	import { formatInvoiceTotal, paymentStatusOf } from '$lib/features/invoices/invoice-helpers';
+	import {
+		formatExactAmount,
+		formatInvoiceTotal,
+		paymentStatusOf,
+	} from '$lib/features/invoices/invoice-helpers';
 	import ContactPicker from '$lib/components/invoices/ContactPicker.svelte';
 	import type { ContactResponse } from '$lib/features/contacts/contacts.types';
 	import { getContact } from '$lib/features/contacts/contacts.api';
@@ -453,7 +457,8 @@
 					     totaux du résumé. -->
 					<td class="py-2 pr-2 text-right font-mono">{formatInvoiceTotal(inv.totalTtc)}</td>
 					<td class="py-2 pr-2 text-right font-mono" data-testid="due-dates-amount-due">
-						{formatInvoiceTotal(inv.amountDue)}
+						<!-- Story 25-4-d2b (revue P1) : un reste de 0.0040 ne se lit pas « 0.00 ». -->
+						{formatExactAmount(inv.amountDue)}
 					</td>
 					<td class="py-2 pr-2">
 						<PaymentStatusBadge status={statusOf(inv)} />

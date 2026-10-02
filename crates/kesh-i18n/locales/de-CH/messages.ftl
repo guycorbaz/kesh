@@ -717,6 +717,7 @@ invoices-write-off-date-label = Datum der Ausbuchung
 invoices-write-off-dialog-body = Der offene Restbetrag wird getilgt und auf das Konto der gewählten Art gebucht. Eine Ausbuchung wird wie eine Zahlung storniert.
 invoices-write-off-dialog-title = Restbetrag ausbuchen
 invoices-write-off-error-nature = Wählen Sie die Art der Differenz.
+invoices-write-off-error-unknown-due = Offener Betrag wird berechnet…
 invoices-write-off-error-date-before-invoice = Das Datum der Ausbuchung darf nicht vor dem Rechnungsdatum liegen
 invoices-write-off-error-date-required = Datum der Ausbuchung erforderlich
 invoices-write-off-help-no-vat = Ohne MWST-Korrektur.

@@ -36,8 +36,12 @@
 		onOpenChange: (v: boolean) => void;
 		/** Date facture (YYYY-MM-DD) — borne basse de `settledOn`. */
 		invoiceDate: string;
-		/** Le reste dû EXACT (quatre décimales possibles), lu à chaque rendu. */
-		amountDue: string;
+		/**
+		 * Le reste dû EXACT (quatre décimales possibles), lu à chaque rendu ;
+		 * `null` s'il n'est pas calculé (réponse d'un envoi d'e-mail) — le
+		 * dialogue reste monté, mais la confirmation est désactivée.
+		 */
+		amountDue: string | null;
 		/** Les réglages de facturation ; `null` si inconnus (aucun pré-contrôle). */
 		settings: InvoiceSettingsResponse | null;
 		submitting?: boolean;
@@ -71,7 +75,9 @@
 		}
 	});
 
-	let offered = $derived(WRITE_OFF_NATURES.filter((n) => isNatureOffered(n, amountDue)));
+	let offered = $derived(
+		amountDue === null ? [] : WRITE_OFF_NATURES.filter((n) => isNatureOffered(n, amountDue)),
+	);
 
 	// Après une relecture, une nature qui n'est plus proposée (reste d'arrondi
 	// devenu ≥ 0.05) est retirée de la saisie.
@@ -79,9 +85,14 @@
 		if (nature !== null && !offered.includes(nature)) nature = null;
 	});
 
-	let missing = $derived(nature === null ? null : missingAccount(settings, nature, amountDue));
+	let missing = $derived(
+		nature === null || amountDue === null ? null : missingAccount(settings, nature, amountDue),
+	);
 
 	let clientError = $derived.by(() => {
+		if (amountDue === null) {
+			return i18nMsg('invoices-write-off-error-unknown-due', 'Reste dû en cours de calcul…');
+		}
 		if (nature === null) {
 			return i18nMsg('invoices-write-off-error-nature', "Choisissez la nature de l'écart.");
 		}
@@ -104,7 +115,15 @@
 </script>
 
 <Dialog.Root {open} {onOpenChange}>
-	<Dialog.Content>
+	<!-- Pendant l'envoi, ni Échap, ni clic extérieur, ni croix : le refus
+	     éventuel ne serait plus montré nulle part (revue P1, B-H1). La garde
+	     vit ici, pas dans le parent : le composant `Dialog` du projet relie
+	     `open` en interne et se fermerait quoi que le parent décide. -->
+	<Dialog.Content
+		escapeKeydownBehavior={submitting ? 'ignore' : 'close'}
+		interactOutsideBehavior={submitting ? 'ignore' : 'close'}
+		showCloseButton={!submitting}
+	>
 		<Dialog.Header>
 			<Dialog.Title>
 				{i18nMsg('invoices-write-off-dialog-title', 'Solder le reste')}
@@ -123,10 +142,10 @@
 				{i18nMsg('invoices-write-off-amount-label', 'Montant soldé')}
 			</span>
 			<span class="font-mono font-semibold" data-testid="write-off-amount">
-				{formatExactAmount(amountDue)}
+				{amountDue === null ? '—' : formatExactAmount(amountDue)}
 			</span>
 		</div>
-		{#if hasSubCentime(amountDue)}
+		{#if amountDue !== null && hasSubCentime(amountDue)}
 			<p class="text-xs text-text-muted" data-testid="write-off-sub-centime">
 				{i18nMsg(
 					'invoices-write-off-sub-centime',

@@ -717,6 +717,7 @@ invoices-write-off-date-label = Data del saldo
 invoices-write-off-dialog-body = Il residuo dovuto è estinto e registrato sul conto della natura scelta. Un saldo si annulla come un pagamento.
 invoices-write-off-dialog-title = Saldare il residuo
 invoices-write-off-error-nature = Scegliete la natura dello scarto.
+invoices-write-off-error-unknown-due = Residuo dovuto in corso di calcolo…
 invoices-write-off-error-date-before-invoice = La data del saldo non può essere anteriore alla data della fattura
 invoices-write-off-error-date-required = Data del saldo obbligatoria
 invoices-write-off-help-no-vat = Senza correzione IVA.

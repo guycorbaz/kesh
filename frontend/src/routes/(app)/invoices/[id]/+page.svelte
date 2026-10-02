@@ -487,6 +487,7 @@
 		} catch (err) {
 			if (!isApiError(err)) {
 				writeOffError = i18nMsg('common-error', 'Erreur inattendue');
+				if (!writeOffOpen) notifyError(writeOffError);
 				return;
 			}
 			if (err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
@@ -506,7 +507,8 @@
 				!invoice.paidAt &&
 				invoice.amountDue !== null &&
 				new Big(invoice.amountDue).gt(0);
-			if (!stillOpen) {
+			// Le refus est notifié dès que le dialogue n'est plus là pour le montrer.
+			if (!stillOpen || !writeOffOpen) {
 				if (writeOffError) notifyError(writeOffError);
 				writeOffOpen = false;
 			}
@@ -1437,21 +1439,26 @@
 		onConfirm={handleSettleConfirm}
 	/>
 
-	{#if invoice.amountDue !== null}
-		<WriteOffDialog
-			open={writeOffOpen}
-			onOpenChange={(o: boolean) => {
-				writeOffOpen = o;
-				if (!o) writeOffError = '';
-			}}
-			invoiceDate={invoice.date}
-			amountDue={invoice.amountDue}
-			settings={invoiceSettings}
-			submitting={writeOffSubmitting}
-			errorMsg={writeOffError}
-			onConfirm={handleWriteOffConfirm}
-		/>
-	{/if}
+	<!-- Toujours monté (revue P1, lentille A) : conditionné à `amountDue`, qui
+	     passe par `null` pendant un envoi d'e-mail, il se démontait puis se
+	     rouvrait tout seul. Un reste inconnu désactive la confirmation. -->
+	<WriteOffDialog
+		open={writeOffOpen}
+		onOpenChange={(o: boolean) => {
+			// La fermeture pendant l'envoi est bloquée DANS le dialogue (Échap, clic
+			// extérieur, croix — revue P1, B-H1) ; ce test garde seulement l'état du
+			// parent cohérent si une fermeture passait malgré tout.
+			if (!o && writeOffSubmitting) return;
+			writeOffOpen = o;
+			if (!o) writeOffError = '';
+		}}
+		invoiceDate={invoice.date}
+		amountDue={invoice.amountDue}
+		settings={invoiceSettings}
+		submitting={writeOffSubmitting}
+		errorMsg={writeOffError}
+		onConfirm={handleWriteOffConfirm}
+	/>
 
 	<SendEmailDialog
 		open={sendEmailOpen}

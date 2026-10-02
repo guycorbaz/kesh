@@ -303,6 +303,24 @@ Claude Opus 5.5 (`claude-opus-5-5`).
   #496 (encaissé et soldé à l'échéancier), #497 (statut « Soldée »).
 - **2026-10-02** — Implémentée (T1–T8). 22 Vitest et 1 spec E2E neufs, 4 mutations tuées (un test à vide corrigé).
   Gates : backend 2614/2614, frontend 878/878, E2E 231/9 (KF-029 + KF-045). Statut → review.
+- **2026-10-02** — Revue de code P1 (Sonnet, lentilles A, B, C ; prompt versionné) : 1 HIGH, 3 MED, 6 LOW avant triage.
+  **B-H1, retenu** : on pouvait fermer le dialogue pendant l'envoi (Échap, croix, clic extérieur) et un refus du serveur
+  n'était plus montré nulle part — la fermeture est bloquée **dans** le dialogue pendant l'envoi
+  (`escapeKeydownBehavior`, `interactOutsideBehavior`, croix masquée : le composant `Dialog` du projet relie `open` en
+  interne, une garde dans le parent ne suffisait pas — vu par le test, rouge avec la seule garde du parent), et le refus
+  est notifié si le dialogue n'est plus là. **A-M1, retenu** : le dialogue, monté seulement si `amountDue` était connu,
+  se démontait puis se rouvrait seul après un envoi d'e-mail — il reste monté, confirmation désactivée sans reste connu
+  (« Reste dû en cours de calcul… », une clé × 4 locales, `sitesTotal` 1807 → 1808). **C-M1, retenu** : l'échéancier
+  affichait « 0.00 » pour un reste de 0.0040 — `formatExactAmount` (même symptôme, `due-dates/+page.svelte`).
+  **B-M1, reclassé LOW** : facture et liste lues par deux requêtes successives — un solde écrit par un tiers dans
+  l'intervalle fausserait le récapitulatif jusqu'à la lecture suivante, sans effet comptable. Laissés LOW : A-L1/A-L2
+  (gardes du bouton et du dialogue divergentes — le dialogue étant désormais toujours monté, la divergence n'a plus
+  d'objet ; message de compte manquant identique pour la nature `rounding`), B-L1 (l'E2E laisse sa facture — patron du
+  dépôt), B-L2 (une relecture qui échoue après un 409 garde la version périmée — deux pannes consécutives), B-L3
+  (double clic protégé par `disabled`, comme le patron), et l'export CSV de l'échéancier (formaté côté serveur à deux
+  décimales — hors périmètre). **3 tests neufs** (`WriteOffDialog.test.ts` 4 → 5, `invoice-write-off-page.test.ts`
+  10 → 11, `due-dates-page.test.ts` +1), la mutation de la fermeture tuée. Gates : `kesh-i18n` vert, frontend
+  `check`, lint, **881/881**, build.
 
 [#384]: https://github.com/guycorbaz/kesh/issues/384
 [#490]: https://github.com/guycorbaz/kesh/issues/490

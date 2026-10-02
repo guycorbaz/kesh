@@ -73,4 +73,22 @@ describe('WriteOffDialog', () => {
 		const r = open('60.0000', vi.fn(), 'Aucun compte de frais bancaires utilisable');
 		expect(r.getByTestId('write-off-error').textContent).toContain('frais bancaires');
 	});
+
+	// Revue P1 (lentille A) — le dialogue reste monté sans reste connu.
+	it('sans reste connu (`amountDue: null`), aucune nature n’est proposée et rien ne part (mutation : confirmation active)', () => {
+		const onConfirm = vi.fn();
+		const r = render(WriteOffDialog, {
+			props: {
+				open: true,
+				onOpenChange: vi.fn(),
+				invoiceDate: '2026-03-01',
+				amountDue: null,
+				settings,
+				onConfirm,
+			},
+		});
+		expect(r.queryByTestId('write-off-nature-discount')).toBeNull();
+		expect((r.getByTestId('write-off-confirm') as HTMLButtonElement).disabled).toBe(true);
+	});
 });
+

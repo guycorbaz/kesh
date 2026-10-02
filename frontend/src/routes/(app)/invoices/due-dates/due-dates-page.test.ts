@@ -118,6 +118,14 @@ describe("échéancier — le reste dû (Story 25-4-b1)", () => {
     expect(cell.textContent).toContain("68.10");
   });
 
+  it("un reste à fraction de centime s'affiche aux quatre décimales, pas « 0.00 » (Story 25-4-d2b ; mutation : `formatInvoiceTotal`)", async () => {
+    listDueDatesMock.mockResolvedValue(
+      response([item({ amountSettled: "9.9960", amountDue: "0.0040" })]),
+    );
+    const { findByTestId } = render(Page);
+    expect((await findByTestId("due-dates-amount-due")).textContent).toContain("0.0040");
+  });
+
   it("une facture réglée en partie est « partiellement payée » (mutation : `partial` retiré du statut)", async () => {
     const { findByText } = render(Page);
     expect(await findByText("Partiellement payée")).toBeTruthy();

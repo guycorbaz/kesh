@@ -234,6 +234,24 @@ describe("fiche facture — solder le reste", () => {
   });
 });
 
+describe("fiche facture — fermer pendant l'envoi (revue P1, B-H1)", () => {
+  it("Échap pendant l'envoi ne ferme pas le dialogue, et le refus s'y affiche (mutation : fermeture acceptée)", async () => {
+    let reject: (e: unknown) => void = () => {};
+    writeOffMock.mockReturnValue(new Promise((_, rej) => (reject = rej)));
+    const r = render(Page);
+    await openAndChoose(r);
+    await fireEvent.click(r.getByTestId("write-off-confirm"));
+    await fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    expect(r.queryByTestId("write-off-confirm")).not.toBeNull();
+    reject({
+      code: "WRITE_OFF_ACCOUNT_NOT_CONFIGURED",
+      message: "Aucun compte d'escompte utilisable n'est désigné",
+      status: 400,
+    });
+    expect((await r.findByTestId("write-off-error")).textContent).toContain("escompte");
+  });
+});
+
 describe("fiche facture — le récapitulatif sépare « Déjà réglé » et « Soldé »", () => {
   it("« Déjà réglé » ne compte plus le solde (mutation : `amountSettled` affiché tel quel)", async () => {
     getInvoiceMock.mockResolvedValue(

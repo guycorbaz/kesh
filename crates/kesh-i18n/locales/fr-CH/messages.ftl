@@ -764,6 +764,7 @@ invoices-write-off-date-label = Date du solde
 invoices-write-off-dialog-body = Le reste dû est éteint et passé au compte de la nature choisie. Un solde s'annule comme un règlement.
 invoices-write-off-dialog-title = Solder le reste
 invoices-write-off-error-nature = Choisissez la nature de l'écart.
+invoices-write-off-error-unknown-due = Reste dû en cours de calcul…
 invoices-write-off-error-date-before-invoice = La date du solde ne peut être antérieure à la date de facture
 invoices-write-off-error-date-required = Date du solde obligatoire
 invoices-write-off-help-no-vat = Sans correction de TVA.
